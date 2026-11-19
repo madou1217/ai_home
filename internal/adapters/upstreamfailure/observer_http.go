@@ -21,7 +21,8 @@ import (
 // 判断顺序（先具体后兜底）：
 //  1. 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）——与账号凭据无关，不按凭据失效处理；
 //  2. 2xx 且无业务错误码 → ErrNoFailureEvidence（按成功处理）；
-//  3. 状态码映射（OpenAI 错误体只用于确认「确有失败」，分类仍按状态码）。
+//  3. 明确结构化业务错误标识（insufficient_quota / quota_exhausted / billing / auth 等）优先于纯状态码映射；
+//  4. 状态码保守映射。
 func ObserveHTTP(
 	statusCode int,
 	header http.Header,
@@ -34,14 +35,28 @@ func ObserveHTTP(
 	if classification, rejected := ObserveEdgeRejection(statusCode, header, body); rejected {
 		return classification, nil
 	}
-	errorType, errorCode := readOpenAIErrorIdentity(body)
-	if statusCode < http.StatusMultipleChoices && errorType == "" && errorCode == "" {
+	rawType, rawCode := readOpenAIErrorIdentity(body)
+	errorType, _ := NormalizeErrorToken(rawType)
+	errorCode, _ := NormalizeErrorToken(rawCode)
+	if statusCode < http.StatusMultipleChoices && rawType == "" && rawCode == "" {
 		return Classification{}, ErrNoFailureEvidence
 	}
-	kind := classifyHTTPStatus(statusCode)
-	if statusCode == http.StatusPaymentRequired && errorCode == "deactivated_workspace" {
-		kind = runtimecore.FailureWorkspaceDeactivated
+
+	attachExplicit := func(classification Classification, err error) (Classification, error) {
+		if err != nil {
+			return classification, err
+		}
+		return AttachExplicitRetryAfter(classification, header, observedAt), nil
 	}
+
+	if kind, scope, blocking, matched := classifyKnownErrorIdentity(statusCode, errorType, errorCode); matched {
+		if blocking {
+			return attachExplicit(NewBlockingClassification(kind, scope))
+		}
+		return attachExplicit(NewClassification(kind, 0))
+	}
+
+	kind := classifyHTTPStatus(statusCode)
 	if kind == runtimecore.FailureUnclassified &&
 		statusCode != http.StatusRequestTimeout &&
 		statusCode != http.StatusPaymentRequired {
@@ -50,25 +65,57 @@ func ObserveHTTP(
 		kind = runtimecore.FailureUpstreamUnavailable
 	}
 	if kind == runtimecore.FailureCredentialRejected {
-		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
+		return attachExplicit(NewBlockingClassification(kind, runtimecore.BlockScopeAccount))
 	}
 	if kind == runtimecore.FailureRegionUnsupported {
-		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
+		return attachExplicit(NewBlockingClassification(kind, runtimecore.BlockScopeAccount))
 	}
 	if kind == runtimecore.FailureWorkspaceDeactivated {
-		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
+		return attachExplicit(NewBlockingClassification(kind, runtimecore.BlockScopeAccount))
 	}
 	// Retry-After 只对领域允许进入 cooldown 的瞬态分类生效；请求级无状态失败
 	// （例如普通 402/408）必须忽略该头并保持原始响应可透传。
+	explicitWait, hasExplicit := parseHeaderRetryAfter(header, observedAt)
 	if policy, policyErr := runtimecore.PolicyFor(kind); policyErr == nil && policy.EntersCooldown() {
-		if retryAfter := readRetryAfter(header, observedAt); retryAfter > 0 {
-			return NewClassification(kind, retryAfter)
+		if hasExplicit && explicitWait > 0 && explicitWait <= runtimecore.MaxCooldownHint {
+			return attachExplicit(NewClassification(kind, explicitWait))
 		}
 	}
 	if retryAfter := defaultRetryAfter(statusCode, kind); retryAfter > 0 {
-		return NewClassification(kind, retryAfter)
+		return attachExplicit(NewClassification(kind, retryAfter))
 	}
-	return NewClassification(kind, 0)
+	return attachExplicit(NewClassification(kind, 0))
+}
+
+// classifyKnownErrorIdentity 仅匹配结构化 OpenAI/Anthropic 稳定 error.type / error.code，
+// 不做自由文本启发式猜测，避免把硬额度耗尽/账单停用/凭据失效的 HTTP 429 误判为可重试限流。
+func classifyKnownErrorIdentity(
+	statusCode int,
+	errorType string,
+	errorCode string,
+) (kind runtimecore.FailureKind, scope runtimecore.BlockScope, blocking bool, matched bool) {
+	switch {
+	case errorCode == "insufficient_quota" || errorType == "insufficient_quota" ||
+		errorCode == "quota_exhausted" || errorType == "quota_exhausted" ||
+		errorCode == "quota_error" || errorType == "quota_error" ||
+		errorCode == "quota_exceeded" || errorType == "quota_exceeded" ||
+		errorCode == "usage_limit_reached" || errorType == "usage_limit_reached":
+		return runtimecore.FailureQuotaExhausted, runtimecore.BlockScopeAccount, true, true
+	case errorCode == "billing_not_active" || errorType == "billing_not_active" ||
+		errorCode == "billing_hard_limit_reached" || errorType == "billing_hard_limit_reached" ||
+		errorCode == "billing_error" || errorType == "billing_error":
+		return runtimecore.FailureBillingBlocked, runtimecore.BlockScopeAccount, true, true
+	case statusCode == http.StatusPaymentRequired && errorCode == "deactivated_workspace":
+		return runtimecore.FailureWorkspaceDeactivated, runtimecore.BlockScopeAccount, true, true
+	case errorCode == "invalid_api_key" || errorType == "authentication_error":
+		return runtimecore.FailureCredentialRejected, runtimecore.BlockScopeAccount, true, true
+	case errorCode == "content_policy_violation" || errorCode == "safety_rejected":
+		return runtimecore.FailureSafetyRejected, "", false, true
+	case errorCode == "model_not_found":
+		return runtimecore.FailureModelUnsupported, "", false, true
+	default:
+		return "", "", false, false
+	}
 }
 
 // classifyHTTPStatus 把状态码映射为失败种类（与家族包的 Classify 同口径）。
@@ -149,18 +196,41 @@ func readStringField(raw json.RawMessage) string {
 	return strings.TrimSpace(value)
 }
 
-// readRetryAfter 读取 Retry-After，超过冷却上限的值不采纳。
-func readRetryAfter(header http.Header, observedAt time.Time) time.Duration {
+// AttachExplicitRetryAfter 把真实 HTTP 响应头中的 Retry-After 事实独立附加到分类结果上，
+// 不改动分类的 FailureKind 或 BlockDirective；超出 duration 表示范围的合法纯数字头
+// 保留为溢出标记与原始纯数字值，使上游 429 控制器严格 fail-closed 而不截断或提前重试。
+func AttachExplicitRetryAfter(
+	classification Classification,
+	header http.Header,
+	observedAt time.Time,
+) Classification {
+	if !classification.IsValid() || header == nil || !isObservationTime(observedAt) {
+		return classification
+	}
+	if _, _, hasExplicit := classification.ExplicitRetryAfter(); hasExplicit {
+		return classification
+	}
+	value := strings.TrimSpace(header.Get("Retry-After"))
+	if value == "" || len(value) > maxRetryAfterLength || containsControlCharacter(value) {
+		return classification
+	}
+	if wait, ok := ParseRetryAfter(value, observedAt); ok {
+		return classification.WithExplicitRetryAfter(wait, observedAt)
+	}
+	if isDecimal(value) {
+		return classification.WithExplicitRetryAfterOverflow(value, observedAt)
+	}
+	return classification
+}
+
+// parseHeaderRetryAfter 仅在需要把有效 duration 传给运行态冷却提示时调用。
+func parseHeaderRetryAfter(header http.Header, observedAt time.Time) (time.Duration, bool) {
 	if header == nil {
-		return 0
+		return 0, false
 	}
 	value := strings.TrimSpace(header.Get("Retry-After"))
 	if value == "" {
-		return 0
+		return 0, false
 	}
-	wait, ok := ParseRetryAfter(value, observedAt)
-	if !ok || wait <= 0 || wait > runtimecore.MaxCooldownHint {
-		return 0
-	}
-	return wait
+	return ParseRetryAfter(value, observedAt)
 }

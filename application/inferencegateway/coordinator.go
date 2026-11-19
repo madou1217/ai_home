@@ -9,6 +9,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
@@ -101,6 +102,8 @@ type Dependencies struct {
 	UpstreamAttemptLimit int
 	// PoolRetries 只允许在 AGY 整池无提示模糊失败且零输出时执行一次第二轮。
 	PoolRetries *RequestPoolRetryPolicy
+	// Upstream429Retries 集中负责上游真实 HTTP 429 的有界可取消等待重试（可选）。
+	Upstream429Retries *upstreamretry.Controller
 	// RequestRewriter 在派发前按已解析的 Provider 改写请求。
 	//
 	// 目前唯一的实现是 vision guard：目标模型看不见图片时把图片换成可借视文本。
@@ -128,6 +131,7 @@ type Coordinator struct {
 	clock                func() time.Time
 	upstreamAttemptLimit int
 	poolRetries          *RequestPoolRetryPolicy
+	upstream429Retries   *upstreamretry.Controller
 	requestRewriter      RequestRewriter
 	gate                 *providerGate
 	accountGate          *claudeAccountGate
@@ -141,6 +145,7 @@ type routeExecution struct {
 	pendingFailure *attemptStream
 	poolExhausted  bool
 	onlyDeferred   bool
+	sawRawHTTP429  bool
 }
 
 // requestPoolRetryPermit 把账号池第二轮限制在一次外部 Execute 调用内。
@@ -229,6 +234,7 @@ func NewCoordinator(
 		clock:                dependencies.Clock,
 		upstreamAttemptLimit: attemptLimit,
 		poolRetries:          dependencies.PoolRetries,
+		upstream429Retries:   dependencies.Upstream429Retries,
 		requestRewriter:      dependencies.RequestRewriter,
 		gate:                 newProviderGate(),
 		accountGate:          newClaudeAccountGate(),
@@ -261,11 +267,13 @@ func (coordinator *Coordinator) executePlan(
 	plan RoutePlan,
 	emit EventSink,
 ) error {
-	if _, pinned := PinnedAccount(ctx); !pinned {
+	_, requestPinned := PinnedAccount(ctx)
+	if !requestPinned {
 		plan = coordinator.orderRoutePlan(request, plan)
 	}
 	// 请求级尝试记账（插件看到的 attempt 序号与最近失败文本）；没有插件时只多一次 ctx 包装。
 	ctx = withAttemptJournal(ctx)
+	ctx, reqState := upstreamretry.EnsureRequestState(ctx)
 	poolRetryPermit := coordinator.newRequestPoolRetryPermit(ctx)
 	defer poolRetryPermit.close()
 	var pendingFailure *attemptStream
@@ -277,14 +285,17 @@ func (coordinator *Coordinator) executePlan(
 	// 先遍历所有路由寻找钉选账号；不能在第一个不属于该账号的 Provider
 	// 路由上提前放弃钉选，否则用户指定 Codex 也可能被交给 Claude。
 	plans := []RoutePlan{plan}
-	if _, pinned := PinnedAccount(ctx); pinned {
+	if requestPinned {
 		plans = append(plans, coordinator.orderRoutePlan(request, plan))
 	}
 	for phase, phasePlan := range plans {
 		phaseCtx := ctx
+		phasePinned := requestPinned && phase == 0
 		if phase > 0 {
 			phaseCtx = withoutPinnedAccount(ctx)
 		}
+		phaseTracker := &upstream429Tracker{}
+		phaseQueueFailure := error(nil)
 		for _, route := range phasePlan.candidates[:phasePlan.count] {
 			if scope := currentProviderScope(); scope != "" && scope != "auto" && scope != string(route.ProviderID()) {
 				continue
@@ -293,13 +304,15 @@ func (coordinator *Coordinator) executePlan(
 				continue
 			}
 			supported = true
-			routeCtx := poolRetryPermit.routeContext(phaseCtx, coordinator.poolRetries, route)
 			// Claude takes its provider slot only after the per-account slot:
 			// waiting sessions on one upstream must not occupy the whole provider.
-			release, acquireErr := coordinator.acquireRouteSlot(routeCtx, route)
+			// Outer phaseCtx is used here so AGY's legacy 30s pool-retry timeout
+			// never caps initial or 429-backoff attempts.
+			release, acquireErr := coordinator.acquireRouteSlot(phaseCtx, route)
 			if acquireErr != nil {
 				if errors.Is(acquireErr, ErrProviderQueueFull) {
 					queueFailure = acquireErr
+					phaseQueueFailure = acquireErr
 					continue
 				}
 				return finishInterruptedPlan(pendingFailure, acquireErr)
@@ -307,12 +320,15 @@ func (coordinator *Coordinator) executePlan(
 			execution, err := func() (routeExecution, error) {
 				defer release()
 				return coordinator.executeCandidate(
-					routeCtx,
+					phaseCtx,
 					request,
 					route,
 					emit,
 					accountFailures,
 					poolRetryPermit,
+					phasePinned,
+					phaseTracker,
+					reqState,
 				)
 			}()
 			if execution.pendingFailure != nil {
@@ -321,6 +337,7 @@ func (coordinator *Coordinator) executePlan(
 			if err != nil {
 				if errors.Is(err, ErrProviderQueueFull) {
 					queueFailure = err
+					phaseQueueFailure = err
 					continue
 				}
 				if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
@@ -338,6 +355,34 @@ func (coordinator *Coordinator) executePlan(
 				return nil
 			}
 		}
+		if phaseQueueFailure == nil && phaseTracker.HasCandidates() && (pendingFailure == nil || !pendingFailure.Visible()) {
+			recovered, retryErr := coordinator.runUpstream429RetryLoop(
+				phaseCtx,
+				request,
+				phasePinned,
+				phaseTracker,
+				reqState,
+				emit,
+				accountFailures,
+				&pendingFailure,
+			)
+			if retryErr != nil {
+				if errors.Is(retryErr, context.Canceled) || errors.Is(retryErr, context.DeadlineExceeded) {
+					_ = accountFailures.FinalizeFailure(ctx)
+					return retryErr
+				}
+				if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
+					return finishInterruptedPlan(
+						pendingFailure,
+						fmt.Errorf("提交请求级上游失败状态失败: %w", finalizeErr),
+					)
+				}
+				return finishInterruptedPlan(pendingFailure, retryErr)
+			}
+			if recovered {
+				return nil
+			}
+		}
 	}
 	if !supported {
 		return ErrUnsupportedRouteCapabilities
@@ -348,6 +393,7 @@ func (coordinator *Coordinator) executePlan(
 	if err := accountFailures.FinalizeFailure(ctx); err != nil {
 		return fmt.Errorf("提交请求级上游失败状态失败: %w", err)
 	}
+	coordinator.finalizeExhausted429Headers(ctx, request, reqState, pendingFailure)
 	return finishExhaustedPlan(pendingFailure)
 }
 
@@ -531,6 +577,9 @@ func (coordinator *Coordinator) executeCandidate(
 	emit EventSink,
 	accountFailures *requestAccountFailureRecorder,
 	poolRetryPermit *requestPoolRetryPermit,
+	pinned bool,
+	tracker *upstream429Tracker,
+	reqState *upstreamretry.RequestState,
 ) (routeExecution, error) {
 	upstream, err := coordinator.upstreams.Resolve(route.ProtocolID())
 	if err != nil {
@@ -544,10 +593,13 @@ func (coordinator *Coordinator) executeCandidate(
 		emit,
 		accountFailures,
 		poolRetryPermit,
+		pinned,
+		tracker,
+		reqState,
 	)
 }
 
-// executeRoute 在 AGY 模糊整池失败且零输出时最多执行一次有界第二轮。
+// executeRoute 在 AGY 非 429 模糊整池失败且零输出时最多执行一次有界第二轮。
 func (coordinator *Coordinator) executeRoute(
 	ctx context.Context,
 	request inference.Request,
@@ -556,6 +608,9 @@ func (coordinator *Coordinator) executeRoute(
 	emit EventSink,
 	accountFailures *requestAccountFailureRecorder,
 	poolRetryPermit *requestPoolRetryPermit,
+	pinned bool,
+	tracker *upstream429Tracker,
+	reqState *upstreamretry.RequestState,
 ) (routeExecution, error) {
 	first, err := coordinator.executeRouteRound(
 		ctx,
@@ -564,24 +619,31 @@ func (coordinator *Coordinator) executeRoute(
 		upstream,
 		emit,
 		accountFailures,
+		pinned,
+		tracker,
+		reqState,
 	)
 	if err != nil || first.terminal ||
 		!coordinator.claimPoolRetry(ctx, route, first, poolRetryPermit) {
 		return first, err
 	}
-	if err := coordinator.poolRetries.wait(ctx); err != nil {
+	retryCtx := poolRetryPermit.routeContext(ctx, coordinator.poolRetries, route)
+	if err := coordinator.poolRetries.wait(retryCtx); err != nil {
 		if poolRetryPermit.exhaustedInternalBudget(err) {
 			return first, nil
 		}
 		return first, err
 	}
 	return coordinator.executeRouteRound(
-		ctx,
+		retryCtx,
 		request,
 		route,
 		upstream,
 		emit,
 		accountFailures,
+		pinned,
+		tracker,
+		reqState,
 	)
 }
 
@@ -607,10 +669,14 @@ func (coordinator *Coordinator) executeRouteRound(
 	upstream UpstreamAdapter,
 	emit EventSink,
 	accountFailures *requestAccountFailureRecorder,
+	pinned bool,
+	tracker *upstream429Tracker,
+	reqState *upstreamretry.RequestState,
 ) (routeExecution, error) {
 	request = coordinator.rewriteForRoute(request, route)
 	var pendingFailure *attemptStream
 	onlyDeferred := true
+	sawRawHTTP429 := false
 	attempted := 0
 	session, err := coordinator.beginRecruitment(ctx, request, route, upstream)
 	if err != nil {
@@ -636,10 +702,11 @@ func (coordinator *Coordinator) executeRouteRound(
 					pendingFailure: pendingFailure,
 					poolExhausted:  true,
 					onlyDeferred:   attempted > 0 && onlyDeferred,
+					sawRawHTTP429:  sawRawHTTP429,
 				}, nil
 			}
 			// 征召中断发生在任何写出之前，已记录的真实上游失败仍然可交付。
-			return routeExecution{pendingFailure: pendingFailure}, err
+			return routeExecution{pendingFailure: pendingFailure, sawRawHTTP429: sawRawHTTP429}, err
 		}
 		invocation, err := newInvocation(
 			request,
@@ -650,7 +717,7 @@ func (coordinator *Coordinator) executeRouteRound(
 			recruited.QuotaBucket(),
 		)
 		if err != nil {
-			return routeExecution{pendingFailure: pendingFailure}, err
+			return routeExecution{pendingFailure: pendingFailure, sawRawHTTP429: sawRawHTTP429}, err
 		}
 		outcome, err := coordinator.executeAttempt(
 			ctx,
@@ -669,7 +736,7 @@ func (coordinator *Coordinator) executeRouteRound(
 				// 本次调用已经写出事件，补发更早的失败会破坏事件序列。
 				return routeExecution{}, err
 			}
-			return routeExecution{pendingFailure: pendingFailure}, err
+			return routeExecution{pendingFailure: pendingFailure, sawRawHTTP429: sawRawHTTP429}, err
 		}
 		if !outcome.retry {
 			return routeExecution{terminal: true}, nil
@@ -678,11 +745,35 @@ func (coordinator *Coordinator) executeRouteRound(
 			onlyDeferred = false
 		}
 		pendingFailure = outcome.stream
+		recordFailureRetryAfterHint(reqState, outcome.failure)
+		if isRawHTTP429Failure(outcome.failure) {
+			sawRawHTTP429 = true
+			evidence := buildUpstream429Evidence(
+				"canonical:"+string(request.ClientProtocol()),
+				route,
+				recruited.Account().Ref(),
+				pinned,
+				outcome.stream,
+				outcome.failure,
+			)
+			if upstreamretry.Eligible(evidence) {
+				coordinator.upstream429Retries.FreezePolicyAtObservation(ctx, reqState, evidence)
+				tracker.Record(upstream429Candidate{
+					route:             route,
+					accountRef:        recruited.Account().Ref(),
+					evidence:          evidence,
+					cooldownReceipt:   outcome.cooldownReceipt,
+					originObservation: outcome.observation,
+					stream:            outcome.stream,
+				})
+			}
+		}
 		if recruited.SourceExhausted() {
 			return routeExecution{
 				pendingFailure: pendingFailure,
 				poolExhausted:  true,
 				onlyDeferred:   onlyDeferred,
+				sawRawHTTP429:  sawRawHTTP429,
 			}, nil
 		}
 	}
@@ -690,6 +781,7 @@ func (coordinator *Coordinator) executeRouteRound(
 		pendingFailure: pendingFailure,
 		poolExhausted:  false,
 		onlyDeferred:   attempted > 0 && onlyDeferred,
+		sawRawHTTP429:  sawRawHTTP429,
 	}, nil
 }
 
@@ -711,9 +803,13 @@ func (coordinator *Coordinator) claimPoolRetry(
 	execution routeExecution,
 	permit *requestPoolRetryPermit,
 ) bool {
+	// Raw HTTP 429 is governed exclusively by the new upstream 429 retry policy
+	// (including when disabled); legacy AGY 500ms pool retry handles only non-429
+	// ambiguous failures and never multiplies or overrides 429 attempts.
 	if coordinator.poolRetries == nil ||
 		permit == nil ||
 		route.ProviderID() != inference.ProviderAgy ||
+		execution.sawRawHTTP429 ||
 		execution.pendingFailure == nil ||
 		execution.pendingFailure.Visible() ||
 		!execution.poolExhausted ||
@@ -822,7 +918,7 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 		return outcome, err
 	}
 	defer release()
-	invocation, err = coordinator.refreshAdmittedInvocation(ctx, invocation, upstream)
+	invocation, err = coordinator.refreshAdmittedInvocationForAttempt(ctx, invocation, upstream)
 	if err != nil {
 		return outcome, err
 	}
@@ -864,7 +960,7 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 			accountFailures,
 		)
 	}
-	retry, err := coordinator.failAttempt(
+	retry, receipt, err := coordinator.failAttempt(
 		ctx,
 		route,
 		string(invocation.Route().ProviderID()),
@@ -876,7 +972,13 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 	if err != nil {
 		return outcome, err
 	}
-	return newFailedAttemptOutcome(stream, retry, result.Failure()), nil
+	return newFailedAttemptOutcomeWithReceipt(
+		stream,
+		retry,
+		result.Failure(),
+		receipt,
+		invocation.CredentialObservation(),
+	), nil
 }
 
 // completeAttempt 先清理当前元组状态，再提交成功终态。
@@ -915,22 +1017,23 @@ func (coordinator *Coordinator) failAttempt(
 	failure AttemptFailure,
 	stream *attemptStream,
 	accountFailures *requestAccountFailureRecorder,
-) (bool, error) {
+) (bool, runtimecore.CooldownReceipt, error) {
 	if stream.Completed() ||
 		stream.FailedWithDifferent(failure.ResponseFailure()) {
-		return false, ErrInvalidUpstreamEventStream
+		return false, runtimecore.CooldownReceipt{}, ErrInvalidUpstreamEventStream
 	}
 	if err := stream.EnsureFailureWithMetadata(failure.ResponseFailure(), failure.ResponseMetadata()); err != nil {
-		return false, err
+		return false, runtimecore.CooldownReceipt{}, err
 	}
-	if err := accountFailures.Record(
+	receipt, err := accountFailures.RecordWithReceipt(
 		ctx,
 		providerID,
 		route,
 		observation,
 		failure,
-	); err != nil {
-		return false, fmt.Errorf("记录上游失败状态失败: %w", err)
+	)
+	if err != nil {
+		return false, runtimecore.CooldownReceipt{}, fmt.Errorf("记录上游失败状态失败: %w", err)
 	}
 	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
 		// 刷新是修复后续路由快照的旁路任务；队列关闭或拒绝入队不能覆盖
@@ -942,12 +1045,26 @@ func (coordinator *Coordinator) failAttempt(
 		)
 	}
 	if !stream.Visible() && failure.retriesAnotherAccount() {
-		return true, nil
+		return true, receipt, nil
 	}
 	if err := accountFailures.FinalizeFailure(ctx); err != nil {
-		return false, fmt.Errorf("提交请求级上游失败状态失败: %w", err)
+		return false, runtimecore.CooldownReceipt{}, fmt.Errorf("提交请求级上游失败状态失败: %w", err)
 	}
-	return false, stream.FlushTerminal()
+	if reqState, ok := upstreamretry.RequestStateFromContext(ctx); ok {
+		recordFailureRetryAfterHint(reqState, failure)
+		if !stream.Visible() && isRawHTTP429Failure(failure) {
+			now := time.Now().UTC()
+			if coordinator.clock != nil {
+				now = coordinator.clock().UTC()
+			}
+			retries, totalWait := reqState.Summary()
+			retryAfter, action := reqState.RetryAfterHeader(now)
+			if retries > 0 || action == upstreamretry.RetryAfterHeaderSet {
+				observeUpstream429Headers(ctx, retries, totalWait, retryAfter)
+			}
+		}
+	}
+	return false, runtimecore.CooldownReceipt{}, stream.FlushTerminal()
 }
 
 // validateExecute 在调用任何外部端口前拒绝零值。

@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
@@ -96,6 +97,8 @@ type Dependencies struct {
 	Client HTTPClient
 	// Attempts 记录运行态（成功与失败都要记，否则 Go 承接的请求在仪表盘上会消失）。
 	Attempts inferencegateway.AttemptRecorder
+	// Upstream429Retries 集中负责上游真实 HTTP 429 的有界可取消等待重试（可选）。
+	Upstream429Retries *upstreamretry.Controller
 	// Clock 提供时间（可注入，便于测试）。
 	Clock func() time.Time
 	// MaxRequestBodyBytes 覆盖请求体上限；为空时用包默认。
@@ -123,6 +126,7 @@ type Handler struct {
 	credentials         CredentialResolver
 	client              HTTPClient
 	attempts            *inferencegateway.ObservedAttemptRecorder
+	upstream429Retries  *upstreamretry.Controller
 	clock               func() time.Time
 	maxRequestBodyBytes int64
 	unavailableMessage  string
@@ -164,6 +168,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		credentials:         dependencies.Credentials,
 		client:              dependencies.Client,
 		attempts:            attempts,
+		upstream429Retries:  dependencies.Upstream429Retries,
 		clock:               dependencies.Clock,
 		maxRequestBodyBytes: limit,
 		unavailableMessage:  message,
@@ -190,6 +195,8 @@ type attemptOutcome struct {
 	credentialUnfit bool
 	// retryAccount 表示该失败可以换账号重试。
 	retryAccount bool
+	// abortedReason 仅在自动 429 重试派发前门禁中止时非空（不触网，供调用方保留原 429）。
+	abortedReason upstreamretry.AbortReason
 	// failure 描述没有上游响应时该如何回复客户端。
 	failure relayFailure
 }
@@ -265,6 +272,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
+	reqCtx, reqState := upstreamretry.EnsureRequestState(request.Context())
+	pinned := isRelayRequestPinned(request)
+	tracker := &relay429Tracker{
+		pinned:     pinned,
+		reqState:   reqState,
+		controller: handler.upstream429Retries,
+	}
+	request = request.WithContext(withRelay429Tracker(reqCtx, tracker))
+
 	// 尝试循环：只要客户端还没收到任何字节，可重试失败就换号重发；耗尽时交付最后一次
 	// 真实上游响应，绝不把真实 429/5xx 洗成网关自有错误（那会让客户端按「网关故障」
 	// 立即重试，与限流要求的退避语义相反）。
@@ -281,6 +297,24 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		outcome = next
 		if !retry {
 			break
+		}
+	}
+	if tracker.HasCandidates() && (outcome.response == nil || outcome.response.StatusCode < 200 || outcome.response.StatusCode >= 300) {
+		var cancelled bool
+		outcome, cancelled = handler.runRelay429RetryLoop(
+			request,
+			source,
+			modelID,
+			body,
+			stream,
+			pinned,
+			tracker,
+			reqState,
+			outcome,
+		)
+		if cancelled {
+			outcome.closeResponse()
+			return
 		}
 	}
 	if outcome.response == nil {
@@ -300,8 +334,16 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			// 内部换号标记只能由当前 Server 生成，不能信任上游同名 Header。
 			response.Header().Set(gatewaycontract.RetryAccountHeader, gatewaycontract.RetryAccountValue)
 		}
-		writeRelayFailure(response, failure)
+		writeRelayFailureWith429Headers(response, failure, reqState, handler.clock())
 		return
+	}
+	if handler.upstream429Retries != nil && outcome.response.StatusCode == http.StatusTooManyRequests {
+		retries, _ := reqState.Summary()
+		outcomeLabel := "exhausted"
+		if retries == 0 {
+			outcomeLabel = "aborted"
+		}
+		handler.upstream429Retries.ReportOutcome(reqState, "family_relay:"+outcome.provider, outcome.provider, outcome.route.AccountRef().String(), outcomeLabel, upstreamretry.AbortNone)
 	}
 	handler.writeResponse(response, request, outcome, stream)
 }
@@ -397,14 +439,20 @@ func writeRelayError(response http.ResponseWriter, status int, code string, mess
 	_, _ = response.Write(payload)
 }
 
-// writeRelayFailure 交付网关自有错误，含 Provider 要求的响应头。
-func writeRelayFailure(response http.ResponseWriter, failure relayFailure) {
+// writeRelayFailureWith429Headers 交付网关自有错误，先复制 Provider 响应头再叠加 429 重试/剩余 Retry-After 头。
+func writeRelayFailureWith429Headers(
+	response http.ResponseWriter,
+	failure relayFailure,
+	reqState *upstreamretry.RequestState,
+	now time.Time,
+) {
 	for name, values := range failure.header {
 		response.Header().Del(name)
 		for _, value := range values {
 			response.Header().Add(name, value)
 		}
 	}
+	applyRelay429ResponseHeaders(response.Header(), reqState, failure.status == http.StatusTooManyRequests, now)
 	writeRelayError(response, failure.status, failure.code, failure.message)
 }
 
@@ -505,6 +553,9 @@ func (handler *Handler) businessFailureOutcome(
 	classification sharedfailure.Classification,
 ) (attemptOutcome, bool) {
 	retry := handler.recordClassification(ctx, route, observation, classification)
+	if tracker := relay429TrackerFromContext(ctx); tracker != nil {
+		tracker.reqState.ClearExplicitRetryAfter()
+	}
 	presentation := businessFailurePresentation(provider, classification)
 	return attemptOutcome{
 		route:        route,
@@ -567,6 +618,24 @@ func (source pinnedAccountSource) Accounts(
 		return nil, errNoRelayAccount
 	}
 	return &singleAccountCursor{accountRef: source.accountRef}, nil
+}
+
+// ReacquireFor429Retry 严格保持钉选目标，并委托底层账号来源链通过 Recruiter 重跑完整准入门禁。
+func (source pinnedAccountSource) ReacquireFor429Retry(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if source.handler == nil || !source.accountRef.IsValid() || target != source.accountRef {
+		return "", false, false, nil
+	}
+	if reacquirer, ok := source.handler.accounts.(RateLimitReacquirer); ok {
+		return reacquirer.ReacquireFor429Retry(ctx, providerID, modelID, target, receipt, originObservation)
+	}
+	return "", false, false, nil
 }
 
 // singleAccountCursor 只产出一个账号，之后即耗尽。
@@ -696,6 +765,37 @@ func (handler *Handler) attemptRelay(
 		}, false
 	}
 	provider.DecorateUpstream(upstream, token)
+	// 自动 429 重试派发前终检：在可能阻塞的凭据解析/刷新、请求改写之后、触网 client.Do 之前
+	// 复核自冷却豁免的原始凭据代次与实时有效 429 策略/not-before/取消状态。
+	if guard, active := relay429DispatchGuardFromContext(request.Context()); active {
+		if guard.enforcedWaiver {
+			current, checkErr := handler.attempts.IsCurrentCredentialObservation(request.Context(), guard.originObservation)
+			if checkErr != nil || !current || !sameRelayCredentialObservation(observation, guard.originObservation) {
+				return attemptOutcome{
+					route:         route,
+					abortedReason: upstreamretry.AbortReacquireUnavailable,
+					failure: relayFailure{
+						status:  http.StatusServiceUnavailable,
+						code:    "relay_account_unavailable",
+						message: "透传账号当前不可用",
+					},
+				}, false
+			}
+		}
+		if handler.upstream429Retries != nil {
+			if canDispatch, abortReason := handler.upstream429Retries.CanDispatchAfterWait(request.Context(), guard.evidence); !canDispatch {
+				return attemptOutcome{
+					route:         route,
+					abortedReason: abortReason,
+					failure: relayFailure{
+						status:  http.StatusServiceUnavailable,
+						code:    "relay_account_unavailable",
+						message: "透传账号当前不可用",
+					},
+				}, false
+			}
+		}
+	}
 	upstreamResponse, err := handler.client.Do(upstream)
 	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
 		closeUpstreamResponse(upstreamResponse)
@@ -801,6 +901,14 @@ func (handler *Handler) writeResponse(
 	// 与 Node 宿主及 Canonical 推理路径一致：声明实际服务的账号（覆盖上游同名 Header）。
 	response.Header().Set(inferenceapi.ServedAccountRefHeader, outcome.route.AccountRef().String())
 	response.Header().Set(inferenceapi.ServedProviderHeader, outcome.provider)
+	if reqState, ok := upstreamretry.RequestStateFromContext(request.Context()); ok {
+		applyRelay429ResponseHeaders(
+			response.Header(),
+			reqState,
+			upstreamResponse.StatusCode == http.StatusTooManyRequests,
+			handler.clock(),
+		)
+	}
 	// 有损改写必须让客户端看得见：日志里有注解，但客户端不读日志。
 	if len(outcome.rewritten.Degradations) > 0 {
 		response.Header().Set(DegradationHeader, strings.Join(outcome.rewritten.Degradations, ","))
@@ -995,28 +1103,44 @@ func (handler *Handler) recordHTTPFailure(
 		Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
 		Closer: originalBody,
 	}
+	observedAt := handler.clock()
 	classification, err := provider.ClassifyFailure(
 		response.StatusCode,
 		response.Header,
 		prefix,
-		handler.clock(),
+		observedAt,
 	)
 	if err != nil {
 		// 没有失败证据（例如 2xx）或分类不可用：不换号，按上游原样交付。
+		if tracker := relay429TrackerFromContext(ctx); tracker != nil {
+			tracker.reqState.ClearExplicitRetryAfter()
+		}
 		return httpFailureObservation{}
 	}
 	// 分类与交付保持原策略；边缘拒绝只否决刷新证据，不能借 401 刷凭据。
 	if _, edge := sharedfailure.ObserveEdgeRejection(response.StatusCode, response.Header, prefix); !edge {
 		classification, err = classification.WithObservedHTTPStatus(response.StatusCode)
 		if err != nil {
+			if tracker := relay429TrackerFromContext(ctx); tracker != nil {
+				tracker.reqState.ClearExplicitRetryAfter()
+			}
 			return httpFailureObservation{}
 		}
 	}
+	classification = sharedfailure.AttachExplicitRetryAfter(classification, response.Header, observedAt)
 	failure := httpFailureObservation{classification: classification, classified: true}
 	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：分类是 NoStateChange，
 	// 记账只留一次可观察的失败结果（不阻塞、不冷却、不换号），交付由调用方合成 502。
 	failure.edgeRejected = classification.Kind() == runtimecore.FailureUpstreamEdgeRejected
-	failure.retry = handler.recordClassification(ctx, route, observation, classification)
+	var receipt runtimecore.CooldownReceipt
+	failure.retry, receipt = handler.recordClassificationWithReceipt(ctx, route, observation, classification)
+	if tracker := relay429TrackerFromContext(ctx); tracker != nil {
+		if attemptFail, failErr := attemptfailure.New(classification); failErr == nil {
+			tracker.Record(ctx, provider.ID(), route, observation, attemptFail, receipt)
+		} else {
+			tracker.reqState.ClearExplicitRetryAfter()
+		}
+	}
 	return failure
 }
 
@@ -1027,16 +1151,25 @@ func (handler *Handler) recordClassification(
 	observation accountcredentials.CredentialObservation,
 	classification sharedfailure.Classification,
 ) bool {
+	retry, _ := handler.recordClassificationWithReceipt(ctx, route, observation, classification)
+	return retry
+}
+
+func (handler *Handler) recordClassificationWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	classification sharedfailure.Classification,
+) (bool, runtimecore.CooldownReceipt) {
 	failure, err := attemptfailure.New(classification)
 	if err != nil {
-		return false
+		return false, runtimecore.CooldownReceipt{}
 	}
-	recorded, err := handler.attempts.RecordFailure(ctx, route, observation, failure)
+	_, receipt, err := handler.attempts.RecordFailureWithReceipt(ctx, route, observation, failure)
 	if err != nil {
-		return false
+		return false, runtimecore.CooldownReceipt{}
 	}
-	_ = recorded
-	return retryableKind(classification.Kind())
+	return retryableKind(classification.Kind()), receipt
 }
 
 // retryableKind 判断该失败是否值得换账号重试。

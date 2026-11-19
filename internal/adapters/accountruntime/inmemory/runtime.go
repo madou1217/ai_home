@@ -52,9 +52,10 @@ type Runtime struct {
 }
 
 var (
-	_ accountrouting.RuntimeEligibilitySource = (*Runtime)(nil)
-	_ accountrouting.AccountWeightSource      = (*Runtime)(nil)
-	_ inferencegateway.AttemptRecorder        = (*Runtime)(nil)
+	_ accountrouting.RuntimeEligibilitySource        = (*Runtime)(nil)
+	_ accountrouting.AccountWeightSource             = (*Runtime)(nil)
+	_ inferencegateway.AttemptRecorder               = (*Runtime)(nil)
+	_ inferencegateway.ObservedFailureReceiptRuntime = (*Runtime)(nil)
 )
 
 // New 创建不预载账号池、也不持久化 cooldown 的纯内存运行态分发器。
@@ -166,19 +167,31 @@ func (runtime *Runtime) RecordFailure(
 	route runtimecore.ModelRoute,
 	failure inferencegateway.AttemptFailure,
 ) error {
+	_, err := runtime.RecordFailureWithReceipt(ctx, route, failure)
+	return err
+}
+
+// RecordFailureWithReceipt 原子记录失败并在同一锁内返回本次 cooldown 写入的代次凭证。
+// 非 cooldown 动作或失败校验不通过时返回零值凭证。
+func (runtime *Runtime) RecordFailureWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+) (runtimecore.CooldownReceipt, error) {
 	if err := runtime.validateRouteRequest(ctx, route); err != nil {
-		return err
+		return runtimecore.CooldownReceipt{}, err
 	}
 	if !failure.IsValid() {
-		return ErrInvalidRequest
+		return runtimecore.CooldownReceipt{}, ErrInvalidRequest
 	}
 
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 	now := runtime.clock()
 	runtime.reconcileCredentialRejectionSlot(route.AccountRef(), now)
-	if err := runtime.recordFailureLocked(ctx, route, failure, now); err != nil {
-		return err
+	receipt, err := runtime.recordFailureLockedWithReceipt(ctx, route, failure, now)
+	if err != nil {
+		return runtimecore.CooldownReceipt{}, err
 	}
 	if failure.BlockDirective().Scope() == runtimecore.BlockScopeAccount &&
 		failure.BlockDirective().RecoveryTrigger() == runtimecore.RecoveryCredentialsUpdated {
@@ -187,7 +200,7 @@ func (runtime *Runtime) RecordFailure(
 			slot.unknown = true
 		}
 	}
-	return nil
+	return receipt, nil
 }
 
 // recordFailureLocked 复用同一终态变更；调用方已校验输入并持有 mu。
@@ -197,30 +210,49 @@ func (runtime *Runtime) recordFailureLocked(
 	failure inferencegateway.AttemptFailure,
 	now time.Time,
 ) error {
-	transition, err := runtime.cooldowns.RecordFailure(
+	_, err := runtime.recordFailureLockedWithReceipt(ctx, route, failure, now)
+	return err
+}
+
+func (runtime *Runtime) recordFailureLockedWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+	now time.Time,
+) (runtimecore.CooldownReceipt, error) {
+	transition, revision, err := runtime.cooldowns.RecordFailureWithRevision(
 		ctx,
 		route,
 		failure.RuntimeKind(),
 		failure.RetryAfter(),
 	)
 	if err != nil {
-		return err
+		return runtimecore.CooldownReceipt{}, err
 	}
 	switch transition.Action() {
-	case runtimecore.ActionNoStateChange,
-		runtimecore.ActionModelCooldown:
-		return nil
+	case runtimecore.ActionNoStateChange:
+		return runtimecore.CooldownReceipt{}, nil
+	case runtimecore.ActionModelCooldown:
+		if transition.CoolingDown() && revision > 0 {
+			return runtimecore.NewCooldownReceipt(
+				route,
+				failure.RuntimeKind(),
+				transition.CooldownUntil(),
+				revision,
+			), nil
+		}
+		return runtimecore.CooldownReceipt{}, nil
 	case runtimecore.ActionCredentialBlock,
 		runtimecore.ActionQuotaBlock,
 		runtimecore.ActionPolicyBlock:
-		return runtime.recordBlock(
+		return runtimecore.CooldownReceipt{}, runtime.recordBlock(
 			route,
 			failure.RuntimeKind(),
 			failure.BlockDirective(),
 			now,
 		)
 	default:
-		return ErrInvalidRequest
+		return runtimecore.CooldownReceipt{}, ErrInvalidRequest
 	}
 }
 

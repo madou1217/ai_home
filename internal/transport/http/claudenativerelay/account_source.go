@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
@@ -31,21 +32,54 @@ type AccountCursor interface {
 	Next(ctx context.Context) (accountcore.AccountRef, bool, error)
 }
 
+// RateLimitReacquirer 是可选的 429 等待后重征召端口：重跑完整候选、UsageGate、
+// 运行态硬阻塞/精确 CooldownWaiver（receipt + 原始凭据代次）、新鲜凭据与传输策略校验。
+type RateLimitReacquirer interface {
+	ReacquireFor429Retry(
+		ctx context.Context,
+		modelID runtimecore.ModelID,
+		target accountcore.AccountRef,
+		receipt runtimecore.CooldownReceipt,
+		originObservation accountcredentials.CredentialObservation,
+	) (accountRef accountcore.AccountRef, usedWaiver bool, found bool, err error)
+}
+
 // leaseAccountSource 把既有租约鉴权包装成单账号来源。
 //
 // 官方客户端携带 Relay Token 时账号已被租约唯一确定，不参与调度，也不轮转——
 // 租约的语义就是「就用这一个」。
 type leaseAccountSource struct {
+	handler    *Handler
 	accountRef accountcore.AccountRef
 	model      runtimecore.ModelID
 }
 
 // newLeaseAccountSource 创建绑定单个已授权账号的来源。
 func newLeaseAccountSource(
+	handler *Handler,
 	accountRef accountcore.AccountRef,
 	model runtimecore.ModelID,
 ) *leaseAccountSource {
-	return &leaseAccountSource{accountRef: accountRef, model: model}
+	return &leaseAccountSource{handler: handler, accountRef: accountRef, model: model}
+}
+
+// ReacquireFor429Retry 保持租约的账号与模型约束，同时委托底层 Recruiter 重跑完整准入门禁。
+func (source *leaseAccountSource) ReacquireFor429Retry(
+	ctx context.Context,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if source == nil || modelID != source.model || target != source.accountRef {
+		return "", false, false, nil
+	}
+	if source.handler != nil && source.handler.accounts != nil {
+		if reacquirer, ok := source.handler.accounts.(RateLimitReacquirer); ok {
+			return reacquirer.ReacquireFor429Retry(ctx, modelID, target, receipt, originObservation)
+		}
+	}
+	return "", false, false, nil
 }
 
 // Accounts 校验模型与租约一致后返回单账号游标。
@@ -87,7 +121,7 @@ func (handler *Handler) resolveAccountSource(
 	request *http.Request,
 ) (AccountSource, bool) {
 	if accountRef, model, ok := handler.authorizer.Authorize(request); ok {
-		return newLeaseAccountSource(accountRef, model), true
+		return newLeaseAccountSource(handler, accountRef, model), true
 	}
 	// 声明了 Relay Token 却没通过鉴权，必须按租约调用方拒绝，不能降级成普通
 	// 客户端——否则无效 Token 会静默获得普通客户端权限，造成权限域混淆。
@@ -135,4 +169,21 @@ func (source pinnedAccountSource) Accounts(
 		return nil, ErrNoRelayAccount
 	}
 	return &singleAccountCursor{accountRef: source.accountRef}, nil
+}
+
+// ReacquireFor429Retry 严格保持钉选目标并委托底层 Recruiter 重跑完整候选、UsageGate 与运行态校验。
+func (source pinnedAccountSource) ReacquireFor429Retry(
+	ctx context.Context,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if source.handler == nil || !source.accountRef.IsValid() || target != source.accountRef {
+		return "", false, false, nil
+	}
+	if reacquirer, ok := source.handler.accounts.(RateLimitReacquirer); ok {
+		return reacquirer.ReacquireFor429Retry(ctx, modelID, target, receipt, originObservation)
+	}
+	return "", false, false, nil
 }

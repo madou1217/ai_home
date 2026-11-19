@@ -3,6 +3,7 @@ package relaycore
 import (
 	"context"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -31,7 +32,49 @@ func NewAccountSourceChain(sources ...AccountSource) *AccountSourceChain {
 	return &AccountSourceChain{sources: filtered}
 }
 
-var _ AccountSource = (*AccountSourceChain)(nil)
+var (
+	_ AccountSource       = (*AccountSourceChain)(nil)
+	_ RateLimitReacquirer = (*AccountSourceChain)(nil)
+)
+
+// ReacquireFor429Retry 按链顺序把 429 等待后的完整重征召（启用候选、UsageGate、
+// 运行态硬阻塞与精确 CooldownWaiver、新鲜凭据与传输策略）转发给支持该能力的底层来源。
+func (chain *AccountSourceChain) ReacquireFor429Retry(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if chain == nil || !target.IsValid() {
+		return "", false, false, nil
+	}
+	for _, source := range chain.sources {
+		reacquirer, ok := source.(RateLimitReacquirer)
+		if !ok {
+			continue
+		}
+		accountRef, usedWaiver, found, err := reacquirer.ReacquireFor429Retry(
+			ctx,
+			providerID,
+			modelID,
+			target,
+			receipt,
+			originObservation,
+		)
+		if err != nil {
+			if ctx != nil && ctx.Err() != nil {
+				return "", false, false, ctx.Err()
+			}
+			continue
+		}
+		if found && accountRef.IsValid() {
+			return accountRef, usedWaiver, true, nil
+		}
+	}
+	return "", false, false, nil
+}
 
 // Accounts 为每个来源各取一个游标，串成链式游标。
 //

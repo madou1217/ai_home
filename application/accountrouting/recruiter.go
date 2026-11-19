@@ -125,6 +125,40 @@ type Dependencies struct {
 	Strategy SelectionStrategy
 }
 
+// RateLimitCooldownWaiver 把运行态原子返回的 CooldownReceipt 与失败尝试当时读取的
+// 原始 CredentialObservation 绑定成请求级豁免凭证，确保 429 等待期间若账号已重新认证
+// 换代，旧代次的自冷却豁免绝不会转移到新凭据代次。
+type RateLimitCooldownWaiver struct {
+	Receipt     runtimecore.CooldownReceipt
+	Observation accountcredentials.CredentialObservation
+}
+
+// IsValid 检查豁免凭证同时具备有效的 FailureRateLimited 代次凭证与匹配的凭据观察。
+func (waiver RateLimitCooldownWaiver) IsValid() bool {
+	return waiver.Receipt.IsValid() &&
+		waiver.Receipt.Kind() == runtimecore.FailureRateLimited &&
+		waiver.Observation.IsValid() &&
+		waiver.Observation.AccountRef() == waiver.Receipt.Route().AccountRef()
+}
+
+// IsZero 判断豁免凭证是否为零值。
+func (waiver RateLimitCooldownWaiver) IsZero() bool {
+	return waiver.Receipt == (runtimecore.CooldownReceipt{}) &&
+		waiver.Observation == (accountcredentials.CredentialObservation{})
+}
+
+func sameCredentialObservation(
+	left accountcredentials.CredentialObservation,
+	right accountcredentials.CredentialObservation,
+) bool {
+	return left.IsValid() &&
+		right.IsValid() &&
+		left.AccountRef() == right.AccountRef() &&
+		left.ProviderID() == right.ProviderID() &&
+		left.UpdatedAt().Equal(right.UpdatedAt()) &&
+		left.IsStaticSecret() == right.IsStaticSecret()
+}
+
 // Request 是经过 Provider 注册表校验的征召请求。
 type Request struct {
 	providerID    string
@@ -137,6 +171,11 @@ type Request struct {
 	// preserveAffinity 表示该请求携带必须同账号续接的加密推理链，绑定账号即使仅被
 	// （账号,模型）软冷却挡住也要硬性优先（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
 	preserveAffinity bool
+	// rateLimitCooldownWaiver 仅用于 429 退避等待后的单次同账号重征召：只允许
+	// 越过由本次请求写入并从运行态同锁返回的精确 FailureRateLimited 代次凭证，且
+	// 要求重解析后的凭据仍属于失败当时观察到的同一持久化凭据代次；绝不放行任何硬阻塞、
+	// 额度门禁、不同模型、更新的并发冷却或已换代凭据。
+	rateLimitCooldownWaiver RateLimitCooldownWaiver
 }
 
 // NewRequest 规范化 Provider，并校验别名解析后的真实模型。
@@ -247,13 +286,49 @@ func (request Request) WithSessionAffinity(
 	return request
 }
 
+// WithRateLimitCooldownWaiver 附加本次 429 等待后允许重入的原子运行态与凭据代次豁免凭证。
+//
+// 仅对与 pinnedAccount、providerID、modelID 一致的单账号生效，且要求运行态当前仍精确
+// 匹配该 FailureRateLimited 的单调代次与 RetryAt，同时重解析凭据仍匹配失败时的原始
+// CredentialObservation；任何新并发失败、凭据换代、恢复、硬阻塞或额度阻断都会拒绝。
+func (request Request) WithRateLimitCooldownWaiver(
+	waiver RateLimitCooldownWaiver,
+) Request {
+	if !waiver.IsValid() ||
+		!request.pinnedAccount.IsValid() ||
+		request.pinnedAccount != waiver.Receipt.Route().AccountRef() ||
+		request.modelID != waiver.Receipt.Route().ModelID() ||
+		waiver.Observation.ProviderID() != request.providerID {
+		return request
+	}
+	request.rateLimitCooldownWaiver = waiver
+	return request
+}
+
+// allowsRateLimitCooldownRetry 判断候选是否严格命中本次 429 写入返回的原子代次凭证。
+func (request Request) allowsRateLimitCooldownRetry(
+	route runtimecore.ModelRoute,
+	eligibility runtimecore.Eligibility,
+) bool {
+	return request.rateLimitCooldownWaiver.IsValid() &&
+		request.pinnedAccount == route.AccountRef() &&
+		request.modelID == route.ModelID() &&
+		request.rateLimitCooldownWaiver.Observation.ProviderID() == request.providerID &&
+		request.rateLimitCooldownWaiver.Receipt.Matches(route, eligibility)
+}
+
 // isValid 防止零值或跨层篡改请求进入候选端口。
 func (request Request) isValid() bool {
 	if request.ProviderID() == "" ||
 		!request.ModelID().IsValid() ||
 		request.excludedCount > MaxExcludedAccounts ||
 		(request.pinnedAccount != "" && !request.pinnedAccount.IsValid()) ||
-		(request.pinnedAccount.IsValid() && request.excludedCount > 0) {
+		(request.pinnedAccount.IsValid() && request.excludedCount > 0) ||
+		(!request.rateLimitCooldownWaiver.IsZero() &&
+			(!request.rateLimitCooldownWaiver.IsValid() ||
+				request.pinnedAccount != request.rateLimitCooldownWaiver.Receipt.Route().AccountRef() ||
+				request.modelID != request.rateLimitCooldownWaiver.Receipt.Route().ModelID() ||
+				request.rateLimitCooldownWaiver.Observation.ProviderID() != request.providerID)) {
 		return false
 	}
 	for index := 0; index < int(request.excludedCount); index++ {
@@ -292,6 +367,8 @@ type Result struct {
 	sourceExhausted bool
 	// quotaBucket 是调度策略为本次请求选定的额度档位；空表示不区分档位。
 	quotaBucket string
+	// usedRateLimitCooldownWaiver 表示本次选中依赖了 429 自冷却豁免而非独立可用。
+	usedRateLimitCooldownWaiver bool
 }
 
 // Account 返回本次选中的紧凑账号投影。
@@ -327,6 +404,12 @@ func (result Result) Examined() int {
 // SourceExhausted 表示当前请求固定的候选快照已经扫描完毕。
 func (result Result) SourceExhausted() bool {
 	return result.sourceExhausted
+}
+
+// UsedRateLimitCooldownWaiver 返回本次征召是否实际依赖了 429 自冷却豁免。
+// 账号已独立可调度（冷却到期/已清除）时为 false，允许正常使用重新认证后的新凭据。
+func (result Result) UsedRateLimitCooldownWaiver() bool {
+	return result.usedRateLimitCooldownWaiver
 }
 
 // Recruiter 编排本地模型候选、运行态和凭据可用化。
@@ -573,7 +656,8 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 			return progress, usageErr
 		}
 		verdict := session.evaluate(candidate, eligibility, usage)
-		if !session.admits(verdict, eligibility, offset, candidate) {
+		admitted, usedRateLimitWaiver := session.admits(route, verdict, eligibility, usage.Blocked, offset, candidate)
+		if !admitted {
 			continue
 		}
 		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
@@ -595,6 +679,11 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if !credentialMatchesCandidate(candidate, binding, observation) {
 			return progress, ErrInvalidResolvedCredential
 		}
+		if usedRateLimitWaiver && !sameCredentialObservation(observation, session.request.rateLimitCooldownWaiver.Observation) {
+			// 自冷却豁免严格绑定失败时的原始持久化凭据代次；等待期间若账号已换代，
+			// 不得将旧代次的冷却豁免权转移给新凭据代次。
+			continue
+		}
 		credential := binding.Credential()
 		if !session.transport.SupportsCredential(credential) {
 			continue
@@ -603,6 +692,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		progress.binding = binding
 		progress.observation = observation
 		progress.quotaBucket = verdict.Bucket
+		progress.usedRateLimitCooldownWaiver = usedRateLimitWaiver
 		session.bindAffinity(candidate.Ref())
 		return progress, nil
 	}
@@ -768,34 +858,40 @@ func eligibilityStatusReason(status runtimecore.EligibilityStatus) schedcore.Rea
 // 携带加密推理链的续接请求会硬性优先其绑定账号：该账号只要不是硬阻塞，即使仅被
 // （账号,模型）软冷却挡住也放行（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
 func (session *RecruitmentSession) admits(
+	route runtimecore.ModelRoute,
 	verdict schedcore.Verdict,
 	eligibility runtimecore.Eligibility,
+	usageBlocked bool,
 	offset int,
 	candidate accountapp.RoutingAccount,
-) bool {
+) (bool, bool) {
 	if verdict.Schedulable() {
-		return true
+		return true, false
 	}
 	// 只有"该模型软冷却"还能走逃生阀；额度、凭据、策略硬阻塞一律跳过。
-	if verdict.Reason != schedcore.ReasonModelCooldown {
-		return false
+	if usageBlocked || verdict.Reason != schedcore.ReasonModelCooldown {
+		return false, false
+	}
+	// 429 等待后的单账号重征召：严格校验精确账号、模型与本请求写入返回的原子 FailureRateLimited 代次凭证。
+	if session.request.allowsRateLimitCooldownRetry(route, eligibility) {
+		return true, true
 	}
 	// An upstream throttle is not a local transport hiccup. Preserve its
 	// backoff even when every account is cooling or affinity is requested.
 	switch eligibility.FailureKind() {
 	case runtimecore.FailureRateLimited, runtimecore.FailureModelOverloaded:
-		return false
+		return false, false
 	}
 	if session.softCooldown.bypassesCooldown() {
-		return true
+		return true, false
 	}
 	if session.request.preserveAffinity &&
 		session.affinityAccount.IsValid() &&
 		candidate.Ref() == session.affinityAccount {
-		return true
+		return true, false
 	}
 	session.softCooldown.deferCandidate(offset)
-	return false
+	return false, false
 }
 
 // nextScanPosition 先按公平起点走完快照，再重放被软冷却延后的位置。

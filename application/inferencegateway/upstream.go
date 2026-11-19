@@ -173,6 +173,11 @@ type AttemptFailure struct {
 	observedHTTPStatus                     int
 	runtimeKind                            runtimecore.FailureKind
 	retryAfter                             time.Duration
+	hasExplicitRetryAfter                  bool
+	explicitRetryAfter                     time.Duration
+	explicitRetryAt                        time.Time
+	explicitRetryAfterOverflow             bool
+	explicitRetryAfterRaw                  string
 	blockDirective                         runtimecore.BlockDirective
 	deferAccountFailureUntilRequestOutcome bool
 }
@@ -189,6 +194,16 @@ type AttemptFailureInput struct {
 	ObservedHTTPStatus int
 	// RetryAfter 只允许用于有限时间自动恢复的模型 cooldown。
 	RetryAfter time.Duration
+	// HasExplicitRetryAfter 区分上游真实 HTTP Retry-After 头与运行态猜测冷却。
+	HasExplicitRetryAfter bool
+	// ExplicitRetryAfter 保存未裁剪的上游 Retry-After 时长。
+	ExplicitRetryAfter time.Duration
+	// ExplicitRetryAt 保存按观察时刻换算的精确 not-before UTC 时间戳。
+	ExplicitRetryAt time.Time
+	// ExplicitRetryAfterOverflow 标记真实 Retry-After 为超出 duration 范围的合法数字。
+	ExplicitRetryAfterOverflow bool
+	// ExplicitRetryAfterRaw 保存溢出场景下已校验的原始纯数字 Retry-After 字符串。
+	ExplicitRetryAfterRaw string
 	// BlockDirective 只允许用于 credential、quota 或 policy 硬阻塞。
 	BlockDirective runtimecore.BlockDirective
 	// DeferAccountFailureUntilRequestOutcome 表示当前失败可能属于请求或共享资源，
@@ -208,6 +223,7 @@ func NewAttemptFailure(
 		input.RetryAfter > runtimecore.MaxCooldownHint ||
 		input.RetryAfter%time.Millisecond != 0 ||
 		input.RetryAfter > 0 && !policy.EntersCooldown() ||
+		input.ExplicitRetryAfter < 0 ||
 		input.DeferAccountFailureUntilRequestOutcome &&
 			(!input.ResponseFailure.Retryable() ||
 				policy.Action() == runtimecore.ActionNoStateChange ||
@@ -225,6 +241,11 @@ func NewAttemptFailure(
 		runtimeKind:                            input.RuntimeKind,
 		observedHTTPStatus:                     input.ObservedHTTPStatus,
 		retryAfter:                             input.RetryAfter,
+		hasExplicitRetryAfter:                  input.HasExplicitRetryAfter,
+		explicitRetryAfter:                     input.ExplicitRetryAfter,
+		explicitRetryAt:                        input.ExplicitRetryAt,
+		explicitRetryAfterOverflow:             input.ExplicitRetryAfterOverflow,
+		explicitRetryAfterRaw:                  input.ExplicitRetryAfterRaw,
 		blockDirective:                         input.BlockDirective,
 		deferAccountFailureUntilRequestOutcome: input.DeferAccountFailureUntilRequestOutcome,
 	}, nil
@@ -250,6 +271,16 @@ func (failure AttemptFailure) RetryAfter() time.Duration {
 	return failure.retryAfter
 }
 
+// ExplicitRetryAfter 返回来自上游真实 HTTP Retry-After 头的未裁剪时长与 not-before 时间戳。
+func (failure AttemptFailure) ExplicitRetryAfter() (time.Duration, time.Time, bool) {
+	return failure.explicitRetryAfter, failure.explicitRetryAt, failure.hasExplicitRetryAfter
+}
+
+// ExplicitRetryAfterOverflow 报告真实 Retry-After 是否为合法但超出 duration 范围的数字。
+func (failure AttemptFailure) ExplicitRetryAfterOverflow() (string, bool) {
+	return failure.explicitRetryAfterRaw, failure.explicitRetryAfterOverflow
+}
+
 // BlockDirective 返回硬阻塞作用域和解除信号；非阻塞失败返回零值。
 func (failure AttemptFailure) BlockDirective() runtimecore.BlockDirective {
 	return failure.blockDirective
@@ -269,6 +300,11 @@ func (failure AttemptFailure) IsValid() bool {
 			RuntimeKind:                            failure.runtimeKind,
 			ObservedHTTPStatus:                     failure.observedHTTPStatus,
 			RetryAfter:                             failure.retryAfter,
+			HasExplicitRetryAfter:                  failure.hasExplicitRetryAfter,
+			ExplicitRetryAfter:                     failure.explicitRetryAfter,
+			ExplicitRetryAt:                        failure.explicitRetryAt,
+			ExplicitRetryAfterOverflow:             failure.explicitRetryAfterOverflow,
+			ExplicitRetryAfterRaw:                  failure.explicitRetryAfterRaw,
 			BlockDirective:                         failure.blockDirective,
 			DeferAccountFailureUntilRequestOutcome: failure.deferAccountFailureUntilRequestOutcome,
 		},

@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
@@ -89,11 +90,12 @@ type Dependencies struct {
 	// 没有它就必须在此拒绝，而跨协议请求（Messages 客户端 + 非 claude 模型）
 	// 本就该由 Canonical 承载——透传只会说 Anthropic 一种线协议。
 	Fallback       http.Handler
-	Credentials    CredentialResolver
-	Client         HTTPClient
-	Attempts       inferencegateway.AttemptRecorder
-	ModelRefreshes inferencegateway.ModelRefreshScheduler
-	Clock          func() time.Time
+	Credentials        CredentialResolver
+	Client             HTTPClient
+	Attempts           inferencegateway.AttemptRecorder
+	ModelRefreshes     inferencegateway.ModelRefreshScheduler
+	Upstream429Retries *upstreamretry.Controller
+	Clock              func() time.Time
 	// Rules 可选：账号自定义上游错误规则求值端口。为 nil 表示 Go 未承接该能力，
 	// 分类完全由内置观察器决定（与不接入规则时逐字节一致）。
 	Rules configured.Rules
@@ -106,17 +108,18 @@ type Dependencies struct {
 
 // Handler 编排可信账号绑定、原始请求透传和响应流回写。
 type Handler struct {
-	authorizer     Authorizer
-	accounts       AccountSource
-	fallback       http.Handler
-	credentials    CredentialResolver
-	client         HTTPClient
-	attempts       *inferencegateway.ObservedAttemptRecorder
-	modelRefreshes inferencegateway.ModelRefreshScheduler
-	clock          func() time.Time
-	rules          configured.Rules
-	disconnects    func(StreamDisconnect)
-	upstream       transportpolicy.MessagesUpstream
+	authorizer         Authorizer
+	accounts           AccountSource
+	fallback           http.Handler
+	credentials        CredentialResolver
+	client             HTTPClient
+	attempts           *inferencegateway.ObservedAttemptRecorder
+	modelRefreshes     inferencegateway.ModelRefreshScheduler
+	upstream429Retries *upstreamretry.Controller
+	clock              func() time.Time
+	rules              configured.Rules
+	disconnects        func(StreamDisconnect)
+	upstream           transportpolicy.MessagesUpstream
 }
 
 // NewHandler 创建默认失败关闭的 Claude Native Relay。
@@ -141,17 +144,18 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:     dependencies.Authorizer,
-		accounts:       dependencies.Accounts,
-		fallback:       dependencies.Fallback,
-		credentials:    dependencies.Credentials,
-		client:         dependencies.Client,
-		attempts:       attempts,
-		modelRefreshes: dependencies.ModelRefreshes,
-		clock:          dependencies.Clock,
-		rules:          dependencies.Rules,
-		disconnects:    dependencies.StreamDisconnects,
-		upstream:       upstream,
+		authorizer:         dependencies.Authorizer,
+		accounts:           dependencies.Accounts,
+		fallback:           dependencies.Fallback,
+		credentials:        dependencies.Credentials,
+		client:             dependencies.Client,
+		attempts:           attempts,
+		modelRefreshes:     dependencies.ModelRefreshes,
+		upstream429Retries: dependencies.Upstream429Retries,
+		clock:              dependencies.Clock,
+		rules:              dependencies.Rules,
+		disconnects:        dependencies.StreamDisconnects,
+		upstream:           upstream,
 	}, nil
 }
 
@@ -246,6 +250,15 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 
+	reqCtx, reqState := upstreamretry.EnsureRequestState(request.Context())
+	pinned := isClaudeRequestPinned(request, leased)
+	tracker := &claudeRelay429Tracker{
+		pinned:     pinned,
+		reqState:   reqState,
+		controller: handler.upstream429Retries,
+	}
+	request = request.WithContext(withClaudeRelay429Tracker(reqCtx, tracker))
+
 	// 尝试循环：只要客户端还没收到任何字节，可重试失败就换号重发。
 	//
 	// 每次只保留最新一次结果，被取代的上游连接立即关闭；耗尽时把最后一次真实
@@ -264,6 +277,23 @@ func (handler *Handler) ServeHTTP(
 		outcome = next
 		if !retry {
 			break
+		}
+	}
+	if tracker.HasCandidates() && (outcome.response == nil || outcome.response.StatusCode < 200 || outcome.response.StatusCode >= 300) {
+		var cancelled bool
+		outcome, cancelled = handler.runClaude429RetryLoop(
+			request,
+			source,
+			modelID,
+			body,
+			pinned,
+			tracker,
+			reqState,
+			outcome,
+		)
+		if cancelled {
+			outcome.closeResponse()
+			return
 		}
 	}
 	if outcome.response == nil {
@@ -332,6 +362,24 @@ func (handler *Handler) ServeHTTP(
 	// 与 Node 宿主及 Canonical 推理路径一致：声明实际服务的账号（覆盖上游同名 Header）。
 	response.Header().Set(inferenceapi.ServedAccountRefHeader, route.AccountRef().String())
 	response.Header().Set(inferenceapi.ServedProviderHeader, "claude")
+	applyClaude429ResponseHeaders(
+		response.Header(),
+		reqState,
+		upstreamResponse.StatusCode == http.StatusTooManyRequests,
+		handler.clock(),
+	)
+	if handler.upstream429Retries != nil && upstreamResponse.StatusCode == http.StatusTooManyRequests {
+		retries, _ := reqState.Summary()
+		outcomeLabel := "exhausted"
+		if retries == 0 {
+			outcomeLabel = "aborted"
+		}
+		outcomeProviderID := strings.TrimSpace(observation.ProviderID())
+		if outcomeProviderID == "" {
+			outcomeProviderID = claudeauth.ProviderID
+		}
+		handler.upstream429Retries.ReportOutcome(reqState, "claude_native_relay", outcomeProviderID, route.AccountRef().String(), outcomeLabel, upstreamretry.AbortNone)
+	}
 	response.WriteHeader(upstreamResponse.StatusCode)
 	var copyStartedAt time.Time
 	if handler.disconnects != nil {
@@ -463,16 +511,22 @@ func (handler *Handler) recordHTTPFailure(
 		Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
 		Closer: originalBody,
 	}
-	classification, err := configured.ClassifyWithRules(
+	observedAt := handler.clock()
+	classification, err := configured.ClassifyHTTPWithRules(
 		handler.rules,
 		string(route.AccountRef()),
 		response.StatusCode,
+		response.Header,
 		prefix,
+		observedAt,
 		func() (sharedfailure.Classification, error) {
-			return claudefailure.ObserveHTTP(&observation, handler.clock())
+			return claudefailure.ObserveHTTP(&observation, observedAt)
 		},
 	)
 	if err != nil {
+		if tracker := claudeRelay429TrackerFromContext(ctx); tracker != nil {
+			tracker.reqState.ClearExplicitRetryAfter()
+		}
 		return false, false
 	}
 	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：分类是 NoStateChange，
@@ -480,9 +534,17 @@ func (handler *Handler) recordHTTPFailure(
 	edgeRejected = classification.Kind() == runtimecore.FailureUpstreamEdgeRejected
 	failure, err := attemptfailure.New(classification)
 	if err != nil {
+		if tracker := claudeRelay429TrackerFromContext(ctx); tracker != nil {
+			tracker.reqState.ClearExplicitRetryAfter()
+		}
 		return false, false
 	}
-	return handler.recordFailure(ctx, route, credentialObservation, failure), edgeRejected
+	var receipt runtimecore.CooldownReceipt
+	retry, receipt = handler.recordFailureWithReceipt(ctx, route, credentialObservation, failure)
+	if tracker := claudeRelay429TrackerFromContext(ctx); tracker != nil {
+		tracker.Record(ctx, route, credentialObservation, failure, receipt)
+	}
+	return retry, edgeRejected
 }
 
 // recordTransportFailure 使用稳定 Go 错误身份记录尚未收到响应的失败。
@@ -547,17 +609,27 @@ func (handler *Handler) recordFailure(
 	observation accountcredentials.CredentialObservation,
 	failure inferencegateway.AttemptFailure,
 ) bool {
+	retry, _ := handler.recordFailureWithReceipt(ctx, route, observation, failure)
+	return retry
+}
+
+func (handler *Handler) recordFailureWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure inferencegateway.AttemptFailure,
+) (bool, runtimecore.CooldownReceipt) {
 	if !failure.IsValid() || handler.attempts == nil {
-		return false
+		return false, runtimecore.CooldownReceipt{}
 	}
-	recorded, err := handler.attempts.RecordFailure(
+	recorded, receipt, err := handler.attempts.RecordFailureWithReceipt(
 		ctx,
 		route,
 		observation,
 		failure,
 	)
 	if err != nil {
-		return false
+		return false, runtimecore.CooldownReceipt{}
 	}
 	if recorded && failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
 		_ = handler.modelRefreshes.ScheduleModelRefresh(
@@ -566,8 +638,8 @@ func (handler *Handler) recordFailure(
 			claudeauth.ProviderID,
 		)
 	}
-	// 凭据已变化或暂时无法验证时只跳过状态写；真实上游失败是否换号不变。
-	return failure.ResponseFailure().Retryable()
+	// 凭据已变化或暂时无法验证时只跳过状态写（receipt 为零值，fail-closed）；真实上游失败是否换号不变。
+	return failure.ResponseFailure().Retryable(), receipt
 }
 
 // replayReadCloser 先回放 Observer 已读取的前缀，再继续读取原始响应。

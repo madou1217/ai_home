@@ -3,7 +3,9 @@ package aihserver
 import (
 	"context"
 	"errors"
+	"strings"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -28,8 +30,11 @@ type relayAccountSource struct {
 	providers []inference.ProviderID
 }
 
-// 编译期确认适配器满足透传通道的账号来源端口。
-var _ claudenativerelay.AccountSource = (*relayAccountSource)(nil)
+// 编译期确认适配器满足透传通道的账号来源与 429 重征召端口。
+var (
+	_ claudenativerelay.AccountSource       = (*relayAccountSource)(nil)
+	_ claudenativerelay.RateLimitReacquirer = (*relayAccountSource)(nil)
+)
 
 // newRelayAccountSource 创建只依赖真实调度端口的账号来源。
 func newRelayAccountSource(
@@ -60,6 +65,74 @@ func (source *relayAccountSource) Accounts(
 		return nil, accountrouting.ErrInvalidRequest
 	}
 	return &relayAccountCursor{source: source, modelID: modelID}, nil
+}
+
+// ReacquireFor429Retry 在 429 退避等待后重跑完整征召（启用候选、UsageGate、硬阻塞、
+// 精确 CooldownWaiver、新鲜凭据与传输策略），绝不绕过普通准入门禁。
+//
+// 账号域优先匹配 originObservation 的真实 Provider（覆盖双协议厂商的 codex 账号），
+// 缺失观察时按 source.providers 顺序尝试；始终复用既有 Recruiter 与 transport 策略。
+func (source *relayAccountSource) ReacquireFor429Retry(
+	ctx context.Context,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if source == nil || source.catalog == nil || source.recruiter == nil || !target.IsValid() {
+		return "", false, false, nil
+	}
+	candidates := source.providers
+	if originObservation.IsValid() && originObservation.AccountRef() == target {
+		originProvider := strings.TrimSpace(originObservation.ProviderID())
+		if originProvider != "" {
+			matched := make([]inference.ProviderID, 0, 1)
+			for _, provider := range source.providers {
+				if string(provider) == originProvider {
+					matched = append(matched, provider)
+					break
+				}
+			}
+			if len(matched) == 0 {
+				return "", false, false, nil
+			}
+			candidates = matched
+		}
+	}
+	waiver := accountrouting.RateLimitCooldownWaiver{
+		Receipt:     receipt,
+		Observation: originObservation,
+	}
+	for _, provider := range candidates {
+		request, err := accountrouting.NewPinnedRequest(
+			source.catalog,
+			string(provider),
+			modelID.String(),
+			target,
+		)
+		if err != nil {
+			continue
+		}
+		if waiver.IsValid() {
+			request = request.WithRateLimitCooldownWaiver(waiver)
+		}
+		session, err := source.recruiter.Begin(ctx, request, source.transport)
+		if err != nil {
+			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+				continue
+			}
+			return "", false, false, err
+		}
+		recruited, err := session.Next(ctx)
+		if err != nil {
+			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+				continue
+			}
+			return "", false, false, err
+		}
+		return recruited.Account().Ref(), recruited.UsedRateLimitCooldownWaiver(), true, nil
+	}
+	return "", false, false, nil
 }
 
 // relayAccountCursor 按账号域顺序把多个征召会话包装成一个账号游标。

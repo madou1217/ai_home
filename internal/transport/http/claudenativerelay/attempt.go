@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -32,6 +33,8 @@ type attemptOutcome struct {
 	// 必须由失败分类给出，不能从状态码反推：上游可能伪造换号 Header，而部分
 	// 4xx 换号也不会改变结果。
 	retryAccount bool
+	// abortedReason 仅在自动 429 重试派发前门禁中止时非空（不触网，供调用方保留原 429）。
+	abortedReason upstreamretry.AbortReason
 	// failure 描述没有上游响应时该如何回复客户端。
 	failure relayFailure
 }
@@ -136,6 +139,38 @@ func (handler *Handler) attemptRelay(
 				message: "Claude Relay 请求无效",
 			},
 		}, false
+	}
+
+	// 自动 429 重试派发前终检：在可能阻塞的凭据解析/刷新与投影之后、触网 client.Do 之前
+	// 复核自冷却豁免的原始凭据代次与实时有效 429 策略/not-before/取消状态。
+	if guard, active := claudeRelay429DispatchGuardFromContext(request.Context()); active {
+		if guard.enforcedWaiver {
+			current, checkErr := handler.attempts.IsCurrentCredentialObservation(request.Context(), guard.originObservation)
+			if checkErr != nil || !current || !sameClaudeCredentialObservation(observation, guard.originObservation) {
+				return attemptOutcome{
+					route:         route,
+					abortedReason: upstreamretry.AbortReacquireUnavailable,
+					failure: relayFailure{
+						status:  http.StatusServiceUnavailable,
+						code:    "relay_account_unavailable",
+						message: "Claude Relay 账号当前不可用",
+					},
+				}, false
+			}
+		}
+		if handler.upstream429Retries != nil {
+			if canDispatch, abortReason := handler.upstream429Retries.CanDispatchAfterWait(request.Context(), guard.evidence); !canDispatch {
+				return attemptOutcome{
+					route:         route,
+					abortedReason: abortReason,
+					failure: relayFailure{
+						status:  http.StatusServiceUnavailable,
+						code:    "relay_account_unavailable",
+						message: "Claude Relay 账号当前不可用",
+					},
+				}, false
+			}
+		}
 	}
 
 	upstreamResponse, err := handler.client.Do(upstream)

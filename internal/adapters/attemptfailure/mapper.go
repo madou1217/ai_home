@@ -32,13 +32,20 @@ func New(
 			sharedfailure.ErrInvalidClassification
 	}
 	status, _ := classification.ObservedHTTPStatus()
+	explicitRetryAfter, explicitRetryAt, hasExplicitRetryAfter := classification.ExplicitRetryAfter()
+	explicitRetryAfterRaw, explicitRetryAfterOverflow := classification.ExplicitRetryAfterOverflow()
 	failure, err := inferencegateway.NewAttemptFailure(
 		inferencegateway.AttemptFailureInput{
-			ResponseFailure:    responseFailure,
-			RuntimeKind:        kind,
-			ObservedHTTPStatus: status,
-			RetryAfter:         classification.RetryAfter(),
-			BlockDirective:     classification.BlockDirective(),
+			ResponseFailure:            responseFailure,
+			RuntimeKind:                kind,
+			ObservedHTTPStatus:         status,
+			RetryAfter:                 classification.RetryAfter(),
+			HasExplicitRetryAfter:      hasExplicitRetryAfter,
+			ExplicitRetryAfter:         explicitRetryAfter,
+			ExplicitRetryAt:            explicitRetryAt,
+			ExplicitRetryAfterOverflow: explicitRetryAfterOverflow,
+			ExplicitRetryAfterRaw:      explicitRetryAfterRaw,
+			BlockDirective:             classification.BlockDirective(),
 		},
 	)
 	if err != nil {

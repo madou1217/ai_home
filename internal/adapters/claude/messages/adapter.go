@@ -180,11 +180,13 @@ func (adapter *Adapter) Execute(
 			return malformedAttempt()
 		}
 		response.Body = io.NopCloser(bytes.NewReader(rejectionBody))
-		classification, observeErr := configured.ClassifyWithRules(
+		classification, observeErr := configured.ClassifyHTTPWithRules(
 			adapter.rules,
 			string(invocation.Account().Ref()),
 			response.StatusCode,
+			response.Header,
 			rejectionBody,
+			observedAt,
 			func() (sharedfailure.Classification, error) {
 				return claudefailure.ObserveHTTP(
 					response,
@@ -363,11 +365,13 @@ func (adapter *Adapter) executeJSONResponse(
 		Header:     response.Header.Clone(),
 		Body:       io.NopCloser(bytes.NewReader(payload)),
 	}
-	classification, observeErr := configured.ClassifyWithRules(
+	classification, observeErr := configured.ClassifyHTTPWithRules(
 		adapter.rules,
 		accountRef,
 		observedResponse.StatusCode,
+		observedResponse.Header,
 		payload,
+		observedAt,
 		func() (sharedfailure.Classification, error) {
 			return claudefailure.ObserveHTTP(&observedResponse, observedAt)
 		},

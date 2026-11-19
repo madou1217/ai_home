@@ -20,9 +20,10 @@ const (
 
 // Eligibility 是不携带凭据和错误原文的路由资格值。
 type Eligibility struct {
-	status      EligibilityStatus
-	retryAt     time.Time
-	failureKind FailureKind
+	status           EligibilityStatus
+	retryAt          time.Time
+	failureKind      FailureKind
+	cooldownRevision uint64
 }
 
 // AvailableEligibility 创建允许继续征召的资格值。
@@ -77,6 +78,20 @@ func (eligibility Eligibility) FailureKind() FailureKind {
 	return eligibility.failureKind
 }
 
+// CooldownRevision 返回模型 cooldown 的单调运行态代次；非 cooldown 或无代次时为 0。
+func (eligibility Eligibility) CooldownRevision() uint64 {
+	return eligibility.cooldownRevision
+}
+
+// WithCooldownRevision 为模型 cooldown 资格附加运行态单调代次。
+func (eligibility Eligibility) WithCooldownRevision(revision uint64) Eligibility {
+	if eligibility.status != EligibilityModelCooldown || revision == 0 {
+		return eligibility
+	}
+	eligibility.cooldownRevision = revision
+	return eligibility
+}
+
 // IsValid 判断资格状态和恢复时间是否匹配。
 func (eligibility Eligibility) IsValid() bool {
 	switch eligibility.status {
@@ -84,7 +99,9 @@ func (eligibility Eligibility) IsValid() bool {
 		EligibilityCredentialBlocked,
 		EligibilityQuotaBlocked,
 		EligibilityPolicyBlocked:
-		return eligibility.retryAt.IsZero() && eligibility.failureKind == ""
+		return eligibility.retryAt.IsZero() &&
+			eligibility.failureKind == "" &&
+			eligibility.cooldownRevision == 0
 	case EligibilityModelCooldown:
 		policy, err := PolicyFor(eligibility.failureKind)
 		return isRuntimeTime(eligibility.retryAt) &&

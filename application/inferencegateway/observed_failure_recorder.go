@@ -41,6 +41,16 @@ type ObservedCredentialRejectionRuntime interface {
 		accountcredentials.CredentialObservation) (cleared bool, err error)
 }
 
+// ObservedFailureReceiptRuntime 是不扩展旧 AttemptRecorder 的可选能力，用于在同锁内
+// 原子返回本次被接受的 cooldown 写入所对应的单调代次凭证。
+type ObservedFailureReceiptRuntime interface {
+	RecordFailureWithReceipt(
+		ctx context.Context,
+		route runtimecore.ModelRoute,
+		failure AttemptFailure,
+	) (runtimecore.CooldownReceipt, error)
+}
+
 // ObservedAttemptRecorder 是所有推理入口共享的终态写入守卫。
 //
 // 只有请求读取的凭据仍是账号当前快照时才允许写运行态；凭据已经轮换或存储
@@ -103,8 +113,21 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 	observation accountcredentials.CredentialObservation,
 	failure AttemptFailure,
 ) (bool, error) {
+	recorded, _, err := recorder.RecordFailureWithReceipt(ctx, route, observation, failure)
+	return recorded, err
+}
+
+// RecordFailureWithReceipt 在失败冷路径复核凭据观察，并在写入实际被运行态接受且
+// 运行态实现 ObservedFailureReceiptRuntime 时原子返回本次 cooldown 写入代次凭证。
+// 凭据已变化或校验失败跳过写入时，必然返回 recorded=false 与零值凭证（fail-closed）。
+func (recorder *ObservedAttemptRecorder) RecordFailureWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure AttemptFailure,
+) (bool, runtimecore.CooldownReceipt, error) {
 	if !recorder.validObservation(ctx, route, observation) || !failure.IsValid() {
-		return false, ErrInvalidObservedAttempt
+		return false, runtimecore.CooldownReceipt{}, ErrInvalidObservedAttempt
 	}
 	if observation.IsStaticSecret() {
 		failure = failure.forStaticSecret()
@@ -122,9 +145,9 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 			if errors.Is(err, ErrObservedCredentialRejectionUnsupported) {
 				write = nil
 			} else if err != nil {
-				return false, err
+				return false, runtimecore.CooldownReceipt{}, err
 			} else if write == nil {
-				return false, ErrInvalidObservedAttemptRecorder
+				return false, runtimecore.CooldownReceipt{}, ErrInvalidObservedAttemptRecorder
 			}
 		}
 	}
@@ -133,22 +156,39 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 		observation,
 	)
 	if err != nil || !current {
-		return false, nil
+		return false, runtimecore.CooldownReceipt{}, nil
 	}
+	var receipt runtimecore.CooldownReceipt
 	if write != nil {
 		recorded, err := write.Commit(ctx, failure)
 		if err != nil || !recorded {
-			return recorded, err
+			return recorded, runtimecore.CooldownReceipt{}, err
+		}
+	} else if receiptRuntime, ok := recorder.attempts.(ObservedFailureReceiptRuntime); ok {
+		receipt, err = receiptRuntime.RecordFailureWithReceipt(ctx, route, failure)
+		if err != nil {
+			return false, runtimecore.CooldownReceipt{}, err
 		}
 	} else if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
-		return false, err
+		return false, runtimecore.CooldownReceipt{}, err
 	}
 	if eligible {
 		if scheduler, ok := recorder.attempts.(CredentialRejectionScheduler); ok {
 			scheduler.TryScheduleCredentialRejection(observation)
 		}
 	}
-	return true, nil
+	return true, receipt, nil
+}
+
+// IsCurrentCredentialObservation 在使用 429 自冷却豁免派发重试前复核原始失败凭据代次仍为当前快照。
+func (recorder *ObservedAttemptRecorder) IsCurrentCredentialObservation(
+	ctx context.Context,
+	observation accountcredentials.CredentialObservation,
+) (bool, error) {
+	if recorder == nil || recorder.observations == nil || ctx == nil || !observation.IsValid() {
+		return false, ErrInvalidObservedAttempt
+	}
+	return recorder.observations.IsCurrentCredentialObservation(ctx, observation)
 }
 
 // observedCredentialRejection 只接受内置分类保留的实际 HTTP401 证据。

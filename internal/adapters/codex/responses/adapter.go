@@ -159,11 +159,13 @@ func (adapter *Adapter) Execute(
 		response.StatusCode >= http.StatusMultipleChoices {
 		rejectionBody := bufferRejectionBody(response)
 		adapter.reportRejection(effectiveModel, response.StatusCode, rejectionBody)
-		classification, observeErr := configured.ClassifyWithRules(
+		classification, observeErr := configured.ClassifyHTTPWithRules(
 			adapter.rules,
 			string(invocation.Account().Ref()),
 			response.StatusCode,
+			response.Header,
 			rejectionBody,
+			observedAt,
 			func() (sharedfailure.Classification, error) {
 				return codexfailure.ObserveHTTP(response, observedAt)
 			},
@@ -329,11 +331,13 @@ func (adapter *Adapter) executeJSONResponse(
 		Header:     response.Header.Clone(),
 		Body:       io.NopCloser(bytes.NewReader(payload)),
 	}
-	classification, observeErr := configured.ClassifyWithRules(
+	classification, observeErr := configured.ClassifyHTTPWithRules(
 		adapter.rules,
 		accountRef,
 		observedResponse.StatusCode,
+		observedResponse.Header,
 		payload,
+		observedAt,
 		func() (sharedfailure.Classification, error) {
 			return codexfailure.ObserveHTTP(&observedResponse, observedAt)
 		},

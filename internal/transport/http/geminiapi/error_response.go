@@ -113,6 +113,11 @@ func writeCanonicalFailure(
 		writeError(response, http.StatusBadGateway, "INTERNAL", failure.SafeMessage())
 		return
 	}
+	if failure.Code() == string(runtimecore.FailureRateLimited) ||
+		failure.Code() == string(runtimecore.FailureQuotaExhausted) {
+		writeError(response, http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", failure.SafeMessage())
+		return
+	}
 	status := http.StatusBadGateway
 	statusName := "INTERNAL"
 	if !failure.Retryable() {

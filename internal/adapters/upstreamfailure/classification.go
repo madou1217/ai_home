@@ -109,10 +109,15 @@ func (response Response) RetryAfter() time.Duration {
 
 // Classification 是 Provider 语义映射后的不可变运行态分类。
 type Classification struct {
-	kind               runtimecore.FailureKind
-	retryAfter         time.Duration
-	blockDirective     runtimecore.BlockDirective
-	observedHTTPStatus int
+	kind                       runtimecore.FailureKind
+	retryAfter                 time.Duration
+	blockDirective             runtimecore.BlockDirective
+	observedHTTPStatus         int
+	hasExplicitRetryAfter      bool
+	explicitRetryAfter         time.Duration
+	explicitRetryAt            time.Time
+	explicitRetryAfterOverflow bool
+	explicitRetryAfterRaw      string
 }
 
 // NewClassification 创建不能绕过领域 cooldown 上限的分类结果。
@@ -218,6 +223,56 @@ func (classification Classification) ObservedHTTPStatus() (int, bool) {
 	return classification.observedHTTPStatus, classification.observedHTTPStatus != 0
 }
 
+// WithExplicitRetryAfter 附加来自上游真实 HTTP Retry-After 头的未裁剪等待事实。
+// 与运行态猜测冷却不同，该事实保留超过 MaxCooldownHint 的真实绝对 not-before，供 429 重试守门使用；
+// 缺少合法观察时间锚点时拒绝挂接，避免无锚点时长导致时钟重启或旧 Retry-After 漂移。
+func (classification Classification) WithExplicitRetryAfter(
+	retryAfter time.Duration,
+	observedAt time.Time,
+) Classification {
+	if retryAfter < 0 || !isObservationTime(observedAt) {
+		return classification
+	}
+	normalized := time.UnixMilli(observedAt.UnixMilli()).UTC()
+	classification.hasExplicitRetryAfter = true
+	classification.explicitRetryAfter = retryAfter
+	classification.explicitRetryAt = normalized.Add(retryAfter)
+	classification.explicitRetryAfterOverflow = false
+	classification.explicitRetryAfterRaw = ""
+	return classification
+}
+
+// WithExplicitRetryAfterOverflow 附加超出 time.Duration 表示范围的合法纯数字 Retry-After 事实。
+// 调用方据此 fail-closed，绝不截断为窗口内等待或当作无头提前重试。
+func (classification Classification) WithExplicitRetryAfterOverflow(
+	rawDecimal string,
+	observedAt time.Time,
+) Classification {
+	if !isObservationTime(observedAt) ||
+		!isDecimal(rawDecimal) ||
+		len(rawDecimal) > maxRetryAfterLength {
+		return classification
+	}
+	normalized := time.UnixMilli(observedAt.UnixMilli()).UTC()
+	classification.hasExplicitRetryAfter = true
+	classification.explicitRetryAfter = 0
+	classification.explicitRetryAt = normalized
+	classification.explicitRetryAfterOverflow = true
+	classification.explicitRetryAfterRaw = rawDecimal
+	return classification
+}
+
+// ExplicitRetryAfter 返回来自真实 HTTP Retry-After 头的未裁剪等待时长与 not-before 时间戳。
+func (classification Classification) ExplicitRetryAfter() (time.Duration, time.Time, bool) {
+	return classification.explicitRetryAfter, classification.explicitRetryAt, classification.hasExplicitRetryAfter
+}
+
+// ExplicitRetryAfterOverflow 报告真实 Retry-After 是否为合法但超出 duration 表示范围的数字，
+// 并返回已校验的原始纯数字字符串。
+func (classification Classification) ExplicitRetryAfterOverflow() (string, bool) {
+	return classification.explicitRetryAfterRaw, classification.explicitRetryAfterOverflow
+}
+
 // IsValid 判断分类是否能安全提交给运行态 Registry。
 func (classification Classification) IsValid() bool {
 	_, err := newClassification(
@@ -225,8 +280,10 @@ func (classification Classification) IsValid() bool {
 		classification.retryAfter,
 		classification.blockDirective,
 	)
-	return err == nil && (classification.observedHTTPStatus == 0 ||
-		classification.observedHTTPStatus >= 200 && classification.observedHTTPStatus <= 599)
+	return err == nil &&
+		classification.explicitRetryAfter >= 0 &&
+		(classification.observedHTTPStatus == 0 ||
+			classification.observedHTTPStatus >= 200 && classification.observedHTTPStatus <= 599)
 }
 
 // validBlockDirective 验证硬阻塞必须带指令，其他动作必须保持零值。

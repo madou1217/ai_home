@@ -104,7 +104,11 @@ func ObserveHTTP(
 		return sharedfailure.Classification{},
 			sharedfailure.ErrNoFailureEvidence
 	}
-	return Classify(input)
+	classification, err := Classify(input)
+	if err != nil {
+		return classification, err
+	}
+	return sharedfailure.AttachExplicitRetryAfter(classification, response.Header, observedAt), nil
 }
 
 // ObserveSSE 观察 SSE decoder 切出的单个 Codex JSON 事件。
@@ -265,7 +269,7 @@ func codexInputFromEnvelope(
 	errorType, _ := sharedfailure.NormalizeErrorToken(fields.Type)
 	errorCode := codexErrorCode(statusCode, fields)
 	retryAfter, _ := sharedfailure.ParseRetryAfter(
-		header.Get("Retry-After"),
+		strings.TrimSpace(header.Get("Retry-After")),
 		observedAt,
 	)
 	return Input{

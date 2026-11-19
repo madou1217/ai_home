@@ -244,19 +244,24 @@ func classifyHTTPFailure(
 		}
 	}
 	retryAfter, _ := sharedfailure.ParseRetryAfter(
-		response.Header.Get("Retry-After"),
+		strings.TrimSpace(response.Header.Get("Retry-After")),
 		observedAt,
 	)
+	classifierRetryAfter := retryAfter
+	if classifierRetryAfter > runtimecore.MaxCooldownHint {
+		classifierRetryAfter = runtimecore.MaxCooldownHint
+	}
 	classification, deferred, err := agyfailure.Classify(agyfailure.Input{
 		StatusCode:   response.StatusCode,
 		Status:       envelope.Error.Status,
 		Code:         code,
 		RegionDenied: isRegionDeniedMessage(envelope.Error.Message),
-		RetryAfter:   retryAfter,
+		RetryAfter:   classifierRetryAfter,
 	})
 	if err != nil {
 		return malformedAttempt()
 	}
+	classification = sharedfailure.AttachExplicitRetryAfter(classification, response.Header, observedAt)
 	if !edgeRejected {
 		classification, err = classification.WithObservedHTTPStatus(response.StatusCode)
 		if err != nil {
@@ -294,11 +299,15 @@ func newAgyAttemptFailure(
 		return inferencegateway.AttemptFailure{}, err
 	}
 	status, _ := classification.ObservedHTTPStatus()
+	explicitRetryAfter, explicitRetryAt, hasExplicitRetryAfter := classification.ExplicitRetryAfter()
 	return inferencegateway.NewAttemptFailure(inferencegateway.AttemptFailureInput{
 		ResponseFailure:                        responseFailure,
 		RuntimeKind:                            classification.Kind(),
 		ObservedHTTPStatus:                     status,
 		RetryAfter:                             classification.RetryAfter(),
+		HasExplicitRetryAfter:                  hasExplicitRetryAfter,
+		ExplicitRetryAfter:                     explicitRetryAfter,
+		ExplicitRetryAt:                        explicitRetryAt,
 		BlockDirective:                         classification.BlockDirective(),
 		DeferAccountFailureUntilRequestOutcome: deferred,
 	})

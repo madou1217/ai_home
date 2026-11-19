@@ -146,6 +146,33 @@ func (runtime outcomeRecordingRuntime) RecordFailure(
 	return err
 }
 
+// RecordFailureWithReceipt 转发内层运行态可选的原子 cooldown 代次凭证能力；
+// 内层不支持时只退回调用一次既有 RecordFailure 并返回零值凭证。outcome 计数与
+// quota 刷新按与 RecordFailure 相同口径只执行一次，不重复写运行态。
+func (runtime outcomeRecordingRuntime) RecordFailureWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+) (runtimecore.CooldownReceipt, error) {
+	var (
+		receipt runtimecore.CooldownReceipt
+		err     error
+	)
+	if receiptRuntime, ok := runtime.serverAccountRuntime.(inferencegateway.ObservedFailureReceiptRuntime); ok {
+		receipt, err = receiptRuntime.RecordFailureWithReceipt(ctx, route, failure)
+	} else {
+		err = runtime.serverAccountRuntime.RecordFailure(ctx, route, failure)
+	}
+	runtime.outcomes.Record(route.AccountRef(), string(failure.RuntimeKind()))
+	runtime.quotaRefresh.observe(route.AccountRef(), failure.RuntimeKind())
+	if err != nil {
+		return runtimecore.CooldownReceipt{}, err
+	}
+	return receipt, nil
+}
+
+var _ inferencegateway.ObservedFailureReceiptRuntime = outcomeRecordingRuntime{}
+
 // RecordImageUsage 把生图的 token 用量写进与推理路径同一个管道。
 //
 // 先入 Node 增量拉取的用量事件，再落 Go 自己的账本；与 RecordSuccess 的用量部分同义，

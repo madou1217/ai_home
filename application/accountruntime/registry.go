@@ -45,10 +45,12 @@ type StateStore interface {
 
 // Registry 是按账号与模型元组加锁更新的稀疏运行态索引。
 type Registry struct {
-	mu     sync.RWMutex
-	clock  Clock
-	store  StateStore
-	states map[runtimecore.ModelRoute]runtimecore.ModelState
+	mu           sync.RWMutex
+	clock        Clock
+	store        StateStore
+	states       map[runtimecore.ModelRoute]runtimecore.ModelState
+	revisions    map[runtimecore.ModelRoute]uint64
+	nextRevision uint64
 	// persistErr 保存最近一次持久化失败，供运行态健康检查读取。
 	//
 	// 写失败不返回给调用方：cooldown 在本进程内已经生效，让一次存储抖动把正常请求
@@ -74,8 +76,9 @@ func NewRegistry(clock Clock, options ...RegistryOption) (*Registry, error) {
 		return nil, ErrInvalidDependencies
 	}
 	registry := &Registry{
-		clock:  clock,
-		states: make(map[runtimecore.ModelRoute]runtimecore.ModelState),
+		clock:     clock,
+		states:    make(map[runtimecore.ModelRoute]runtimecore.ModelState),
+		revisions: make(map[runtimecore.ModelRoute]uint64),
 	}
 	for _, option := range options {
 		if option != nil {
@@ -118,7 +121,9 @@ func NewRegistryWithStore(
 			var pruned runtimecore.ModelState
 			pruned, _, restoreErr = state.Evaluate(now)
 			if restoreErr == nil && !pruned.IsZero() {
+				registry.nextRevision++
 				registry.states[entry.Route] = pruned
+				registry.revisions[entry.Route] = registry.nextRevision
 				continue
 			}
 		}
@@ -149,8 +154,24 @@ func (registry *Registry) RecordFailure(
 	kind runtimecore.FailureKind,
 	retryAfter time.Duration,
 ) (runtimecore.Transition, error) {
+	transition, _, err := registry.RecordFailureWithRevision(ctx, route, kind, retryAfter)
+	return transition, err
+}
+
+// RecordFailureWithRevision 原子记录失败并在同一锁内返回本次写入可豁免的自有单调代次。
+//
+// 仅当本次失败进入 cooldown 状态且该冷却完全归属本请求（此前无仍生效的跨请求冷却，或
+// 调用方上下文携带与当前仍生效冷却精确匹配的上一跳自有 CooldownReceipt）时返回非零代次；
+// 若 Apply 继承或叠加了其他请求的活跃冷却，运行态仍正常推进代次并保留较长冷却，但向调用方
+// 返回 0（fail-closed，绝不把他人更长限制包装成当前请求的可豁免凭证）。
+func (registry *Registry) RecordFailureWithRevision(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	kind runtimecore.FailureKind,
+	retryAfter time.Duration,
+) (runtimecore.Transition, uint64, error) {
 	if err := registry.validateRequest(ctx, route); err != nil {
-		return runtimecore.Transition{}, err
+		return runtimecore.Transition{}, 0, err
 	}
 	failure, err := runtimecore.NewFailure(
 		kind,
@@ -158,20 +179,42 @@ func (registry *Registry) RecordFailure(
 		retryAfter,
 	)
 	if err != nil {
-		return runtimecore.Transition{}, err
+		return runtimecore.Transition{}, 0, err
 	}
 
 	registry.mu.Lock()
-	next, transition, applyErr := registry.states[route].Apply(failure)
+	previous := registry.states[route]
+	prevRev := registry.revisions[route]
+	prevKind, prevUntil, prevActive := previous.ActiveCooldown(failure.OccurredAt())
+	next, transition, applyErr := previous.Apply(failure)
 	if applyErr != nil {
 		registry.mu.Unlock()
-		return runtimecore.Transition{}, applyErr
+		return runtimecore.Transition{}, 0, applyErr
 	}
-	registry.replaceState(route, next)
+	var revision uint64
+	if transition.Action() != runtimecore.ActionNoStateChange {
+		revision = registry.setStateWithNewRevision(route, next)
+	} else {
+		registry.pruneStateOnRead(route, next)
+	}
+	waivableRevision := uint64(0)
+	if transition.Action() == runtimecore.ActionModelCooldown && transition.CoolingDown() && revision > 0 {
+		if !prevActive {
+			waivableRevision = revision
+		} else if priorReceipt, hasPrior := runtimecore.PriorCooldownReceiptFromContext(ctx); hasPrior &&
+			priorReceipt.Route() == route &&
+			priorReceipt.Kind() == prevKind &&
+			priorReceipt.Kind() == kind &&
+			prevRev > 0 &&
+			priorReceipt.Revision() == prevRev &&
+			priorReceipt.RetryAt().Equal(prevUntil) {
+			waivableRevision = revision
+		}
+	}
 	persistErr := registry.persistState(ctx, route, next)
 	registry.mu.Unlock()
 	registry.reportPersistError(persistErr)
-	return transition, nil
+	return transition, waivableRevision, nil
 }
 
 // RecordSuccess 只用不早于最后失败的成功清除当前账号模型元组。
@@ -184,12 +227,15 @@ func (registry *Registry) RecordSuccess(
 		return err
 	}
 	registry.mu.Lock()
-	next, succeedErr := registry.states[route].Succeed(happenedAt)
+	previous := registry.states[route]
+	next, succeedErr := previous.Succeed(happenedAt)
 	if succeedErr != nil {
 		registry.mu.Unlock()
 		return succeedErr
 	}
-	registry.replaceState(route, next)
+	if next != previous {
+		registry.setStateWithNewRevision(route, next)
+	}
 	persistErr := registry.persistState(ctx, route, next)
 	registry.mu.Unlock()
 	registry.reportPersistError(persistErr)
@@ -220,7 +266,12 @@ func (registry *Registry) CheckEligibility(
 	if err != nil {
 		return runtimecore.Eligibility{}, err
 	}
-	registry.replaceState(route, next)
+	registry.pruneStateOnRead(route, next)
+	if eligibility.Status() == runtimecore.EligibilityModelCooldown {
+		if rev := registry.revisions[route]; rev > 0 {
+			eligibility = eligibility.WithCooldownRevision(rev)
+		}
+	}
 	return eligibility, nil
 }
 
@@ -270,6 +321,7 @@ func (registry *Registry) ForgetAccount(
 	for route := range registry.states {
 		if route.AccountRef() == accountRef {
 			delete(registry.states, route)
+			delete(registry.revisions, route)
 			forgotten = append(forgotten, route)
 		}
 	}
@@ -340,13 +392,31 @@ func (registry *Registry) validateRequest(
 	return nil
 }
 
-// replaceState 保持索引稀疏，零状态立即删除。
-func (registry *Registry) replaceState(
+// setStateWithNewRevision 在写路径更新状态并推进该元组的单调代次；零状态立即删除。
+func (registry *Registry) setStateWithNewRevision(
+	route runtimecore.ModelRoute,
+	state runtimecore.ModelState,
+) uint64 {
+	if state.IsZero() {
+		delete(registry.states, route)
+		delete(registry.revisions, route)
+		return 0
+	}
+	registry.nextRevision++
+	revision := registry.nextRevision
+	registry.states[route] = state
+	registry.revisions[route] = revision
+	return revision
+}
+
+// pruneStateOnRead 在读路径只回收过期零状态，不改动仍生效 cooldown 的代次。
+func (registry *Registry) pruneStateOnRead(
 	route runtimecore.ModelRoute,
 	state runtimecore.ModelState,
 ) {
 	if state.IsZero() {
 		delete(registry.states, route)
+		delete(registry.revisions, route)
 		return
 	}
 	registry.states[route] = state

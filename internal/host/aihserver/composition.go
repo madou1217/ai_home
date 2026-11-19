@@ -704,6 +704,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Claude OAuth Strategy 失败: %w", err)
 	}
+	upstream429Store, upstream429Controller := newUpstream429RetryRuntime(ctx, aiHomeDir, errorLog)
 	// agy 刷新可能带账号级出口绑定（Node 的 account:egress:<ref>）。Go 接管
 	// 刷新后必须沿用同一绑定：url/system/tun/pool/direct 先由 egress 解析成
 	// 具体出站目标（fail-closed），再交给刷新策略；未绑定时保持进程默认。
@@ -929,6 +930,18 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 						err,
 					)
 				}
+				if err := moveAccountUpstream429Override(
+					upstream429Store,
+					previous,
+					current,
+				); err != nil {
+					log.Printf(
+						"账号 429 重试策略迁移失败: from=%s to=%s err=%v",
+						previous,
+						current,
+						err,
+					)
+				}
 			},
 			ReKeyStore: store,
 		},
@@ -1088,7 +1101,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除宿主投影失败: %w", err)
 	}
-	deletionRuntime, err := newAccountDeletionRuntime(aiHomeDir, catalog, nodeBaseURL, managementKey, deletionOccupancy, deletionPreparation, func() *chatruntime.Service { return chatRuntimeService })
+	deletionRuntime, err := newAccountDeletionRuntime(aiHomeDir, catalog, nodeBaseURL, managementKey, deletionOccupancy, deletionPreparation, func() *chatruntime.Service { return chatRuntimeService }, upstream429Store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号删除运行保护失败: %w", err)
 	}
@@ -1500,6 +1513,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			codexRejections:           newCodexRejectionObserver(errorLog),
 			agyModelWires:             agyModelWires,
 			upstreamRules:             upstreamRuleEvaluator,
+			upstream429Retries:        upstream429Controller,
 			componentLog:              errorLog,
 		},
 	)
@@ -1677,17 +1691,18 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		)
 	}
 	codexHTTPHandler, err := codexresponseshttp.NewHandler(codexresponseshttp.Dependencies{
-		Authorizer:     clientAuthorizer,
-		Accounts:       codexHTTPAccountSource{catalog: catalog, routes: inference.models, recruiter: inference.recruiter, transport: inference.codexUpstream},
-		Upstream:       inference.codexUpstream,
-		Fallback:       inference.handler,
-		Attempts:       accountRuntime,
-		Credentials:    credentials,
-		ModelRefreshes: inference.modelRefreshes,
-		Clock:          time.Now,
-		Rules:          upstreamRuleEvaluator,
-		FailureLog:     newCodexResponsesFailureLogger(errorLog),
-		Ladders:        modelModalities,
+		Authorizer:         clientAuthorizer,
+		Accounts:           codexHTTPAccountSource{catalog: catalog, routes: inference.models, recruiter: inference.recruiter, transport: inference.codexUpstream},
+		Upstream:           inference.codexUpstream,
+		Fallback:           inference.handler,
+		Attempts:           accountRuntime,
+		Credentials:        credentials,
+		ModelRefreshes:     inference.modelRefreshes,
+		Upstream429Retries: upstream429Controller,
+		Clock:              time.Now,
+		Rules:              upstreamRuleEvaluator,
+		FailureLog:         newCodexResponsesFailureLogger(errorLog),
+		Ladders:            modelModalities,
 	})
 	if err != nil {
 		_ = inference.Close()
@@ -1749,17 +1764,18 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	nativeRelayHandler, err := claudenativerelay.NewHandler(
 		claudenativerelay.Dependencies{
-			Authorizer:        relayAuthorizer,
-			Accounts:          relayAccounts,
-			Fallback:          inference.handler,
-			Credentials:       credentials,
-			Client:            relayClient,
-			Attempts:          accountRuntime,
-			ModelRefreshes:    inference.modelRefreshes,
-			Clock:             time.Now,
-			Rules:             upstreamRuleEvaluator,
-			StreamDisconnects: newRelayDisconnectObserver(errorLog),
-			Upstream:          messagesUpstream,
+			Authorizer:         relayAuthorizer,
+			Accounts:           relayAccounts,
+			Fallback:           inference.handler,
+			Credentials:        credentials,
+			Client:             relayClient,
+			Attempts:           accountRuntime,
+			ModelRefreshes:     inference.modelRefreshes,
+			Upstream429Retries: upstream429Controller,
+			Clock:              time.Now,
+			Rules:              upstreamRuleEvaluator,
+			StreamDisconnects:  newRelayDisconnectObserver(errorLog),
+			Upstream:           messagesUpstream,
 		},
 	)
 	if err != nil {
@@ -1804,20 +1820,30 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 为什么不是两个 Handler 串接：每个 Handler 在「服务不了」时交回 Canonical，
 	// 串接会让第一个 Handler 直接交还、第二个永远轮不到。分派必须发生在**账号所属
 	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
-	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
-		codebuddyfamilyrelay.Dependencies{
-			Aliases: newChatAliasResolver(inference.modelAliases, dependencies.Store),
+	familyMembers := append(
+		[]relaycore.Provider{
+			codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
+				ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
+			}),
+		},
+		relayModuleProviders(relayModules)...,
+	)
+	familyRelayHandler, err := relaycore.NewHandler(
+		relaycore.Dependencies{
+			Provider: relaycore.NewProviderChain(familyMembers...),
+			Path:     codebuddyfamilyrelay.Path,
+			Aliases:  newChatAliasResolver(inference.modelAliases, dependencies.Store),
 			Accounts: relaycore.NewAccountSourceChain(
 				append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
 			),
-			Fallback:    inference.handler,
-			Credentials: credentials,
-			Client:      relayClient,
-			Attempts:    accountRuntime,
-			Clock:       time.Now,
-			// 同一入口上还要服务 cline / grok / kimi：把它们的 Provider 接进链里。
-			// kimi 的 Provider 是「按账号组装」的适配器（设备指纹依赖账号）。
-			ExtraProviders: relayModuleProviders(relayModules),
+			Fallback:            inference.handler,
+			Credentials:         credentials,
+			Client:              relayClient,
+			Attempts:            accountRuntime,
+			Upstream429Retries:  upstream429Controller,
+			Clock:               time.Now,
+			MaxRequestBodyBytes: codebuddyfamilyrelay.MaxRequestBodyBytes,
+			UnavailableMessage:  "家族透传当前不可用",
 			// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
 			Usage: attemptUsage,
 			// 档位与选号/诊断同源：记账时按策略选出的档位归因。
@@ -1960,9 +1986,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		ModelModalities:    modelModalities,
 		ModelAliasExpander: modelAliasExpander,
 		ModelSnapshot:      modelSnapshot,
-		MetadataResolver:   pricingResolver,
-		EgressManager:      egressManager,
-		HostHomeDir:        dependencies.HostHomeDir,
+		MetadataResolver:      pricingResolver,
+		EgressManager:         egressManager,
+		Upstream429RetryStore: upstream429Store,
+		HostHomeDir:           dependencies.HostHomeDir,
 		Store:              store,
 		NativeWorkPreparer: nativeWork,
 		AccountRuntime:     accountRuntime,

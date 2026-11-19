@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/application/inferencecatalog"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
@@ -115,6 +116,8 @@ type inferenceCompositionDependencies struct {
 	agyModelWires agycodeassist.ModelWireReader
 	// upstreamRules 是账号自定义上游错误规则求值端口；nil 表示 Go 未承接该能力。
 	upstreamRules configured.Rules
+	// upstream429Retries 是上游 HTTP 429 有界等待重试控制器（可选）。
+	upstream429Retries *upstreamretry.Controller
 	// componentLog 记录不影响启动的组件级失败（如初次目录刷新）；可为空。
 	componentLog *log.Logger
 }
@@ -263,10 +266,11 @@ func newInferenceComposition(
 			agyAdapter,
 			geminiAdapter,
 		},
-		ModelRefreshes:  dependencies.modelRefreshes,
-		Clock:           dependencies.clock,
-		PoolRetries:     poolRetries,
-		RequestRewriter: dependencies.requestRewriter,
+		ModelRefreshes:     dependencies.modelRefreshes,
+		Clock:              dependencies.clock,
+		PoolRetries:        poolRetries,
+		Upstream429Retries: dependencies.upstream429Retries,
+		RequestRewriter:    dependencies.requestRewriter,
 	})
 	if err != nil {
 		return nil, err

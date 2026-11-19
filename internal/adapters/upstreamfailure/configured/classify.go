@@ -6,6 +6,7 @@
 package configured
 
 import (
+	"net/http"
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -43,7 +44,7 @@ func ClassifyWithRules(
 ) (sharedfailure.Classification, error) {
 	if rules != nil && accountRef != "" {
 		if classification, matched := rules.Evaluate(accountRef, statusCode, body); matched {
-			return classification, nil
+			return classification.WithObservedHTTPStatus(statusCode)
 		}
 	}
 	classification, err := builtin()
@@ -51,6 +52,24 @@ func ClassifyWithRules(
 		return classification, err
 	}
 	return classification.WithObservedHTTPStatus(statusCode)
+}
+
+// ClassifyHTTPWithRules 在 ClassifyWithRules 的基础上，无论命中自定义规则还是内置分类，
+// 都把真实 HTTP 响应头中的 Retry-After 事实独立附加到最终分类（保留规则决定的类型与阻塞语义）。
+func ClassifyHTTPWithRules(
+	rules Rules,
+	accountRef string,
+	statusCode int,
+	header http.Header,
+	body []byte,
+	observedAt time.Time,
+	builtin func() (sharedfailure.Classification, error),
+) (sharedfailure.Classification, error) {
+	classification, err := ClassifyWithRules(rules, accountRef, statusCode, body, builtin)
+	if err != nil {
+		return classification, err
+	}
+	return sharedfailure.AttachExplicitRetryAfter(classification, header, observedAt), nil
 }
 
 // ClassifySSEWithRules 是流内事件（SSE / WebSocket 帧）的求值装饰器。

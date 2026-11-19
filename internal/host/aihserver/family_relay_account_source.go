@@ -3,13 +3,16 @@ package aihserver
 import (
 	"context"
 	"errors"
+	"strings"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
+	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
 // ErrInvalidFamilyRelayAccountSource 表示家族透传账号来源缺少目录、征召器或传输策略。
@@ -27,8 +30,11 @@ type familyRelayAccountSource struct {
 	transport accountrouting.CredentialTransportPolicy
 }
 
-// 编译期确认适配器满足家族透传通道的账号来源端口。
-var _ codebuddyfamilyrelay.AccountSource = (*familyRelayAccountSource)(nil)
+// 编译期确认适配器满足家族透传通道的账号来源与 429 重征召端口。
+var (
+	_ codebuddyfamilyrelay.AccountSource = (*familyRelayAccountSource)(nil)
+	_ relaycore.RateLimitReacquirer      = (*familyRelayAccountSource)(nil)
+)
 
 // newFamilyRelayAccountSource 创建只依赖真实调度端口的家族账号来源。
 func newFamilyRelayAccountSource(
@@ -55,6 +61,60 @@ func (source *familyRelayAccountSource) Accounts(
 		return nil, ErrInvalidFamilyRelayAccountSource
 	}
 	return &familyRelayAccountCursor{source: source, modelID: modelID}, nil
+}
+
+// ReacquireFor429Retry 在 429 等待后通过 Recruiter 重跑家族目标账号的完整准入门禁
+// （启用候选、UsageGate、硬阻塞、精确 CooldownWaiver、新鲜凭据与家族传输策略）。
+func (source *familyRelayAccountSource) ReacquireFor429Retry(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if source == nil || source.catalog == nil || source.recruiter == nil || !target.IsValid() {
+		return "", false, false, nil
+	}
+	trimmedProvider := strings.TrimSpace(providerID)
+	if trimmedProvider != "" && !codebuddyfamilyrelay.IsFamilyProvider(trimmedProvider) {
+		return "", false, false, nil
+	}
+	candidates := codebuddyfamilyrelay.FamilyProviders
+	if trimmedProvider != "" {
+		candidates = []string{trimmedProvider}
+	}
+	waiver := accountrouting.RateLimitCooldownWaiver{
+		Receipt:     receipt,
+		Observation: originObservation,
+	}
+	for _, candidateProvider := range candidates {
+		request, err := accountrouting.NewPinnedRequest(
+			source.catalog,
+			candidateProvider,
+			modelID.String(),
+			target,
+		)
+		if err != nil {
+			continue
+		}
+		if waiver.IsValid() {
+			request = request.WithRateLimitCooldownWaiver(waiver)
+		}
+		session, err := source.recruiter.Begin(ctx, request, source.transport)
+		if err != nil {
+			return "", false, false, err
+		}
+		recruited, err := session.Next(ctx)
+		if err != nil {
+			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+				continue
+			}
+			return "", false, false, err
+		}
+		return recruited.Account().Ref(), recruited.UsedRateLimitCooldownWaiver(), true, nil
+	}
+	return "", false, false, nil
 }
 
 // familyRelayAccountCursor 挨支征召：当前支候选耗尽后开启下一支。

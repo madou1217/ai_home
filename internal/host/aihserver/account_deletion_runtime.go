@@ -5,6 +5,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountdeletionruntime"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
+	runtimeupstreamretry "github.com/madou1217/ai_home/internal/runtime/upstreamretry"
 )
 
 // newAccountDeletionRuntime is the single host composition for browser aliases
@@ -17,12 +18,14 @@ func newAccountDeletionRuntime(
 	occupancy accountapp.DeletionOccupancy,
 	preparation accountapp.DeletionPreparation,
 	chat func() *chatruntime.Service,
+	upstream429Store *runtimeupstreamretry.Store,
 ) (*accountdeletionruntime.Guard, error) {
 	guard, err := accountdeletionruntime.New(occupancy, preparation,
 		accountdeletionruntime.NodeOwner{AIHomeDir: home, BaseURL: nodeURL, ManagementKey: managementKey},
 		accountdeletionruntime.ChatOwner{Service: chat},
 		accountdeletionruntime.NativeTerminalOwner{AIHomeDir: home},
 		accountdeletionruntime.HostOwner{AIHomeDir: home, Catalog: catalog},
+		upstream429DeletionOwner{store: upstream429Store},
 	)
 	if err == nil {
 		guard.AIHomeDir = home

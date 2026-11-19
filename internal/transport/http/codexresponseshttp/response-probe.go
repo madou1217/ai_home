@@ -34,6 +34,8 @@ type probeResult struct {
 	failure inferencegateway.AttemptFailure
 	// committed 表示窗口到期、正文尚未开始：调用方必须立即写响应头并提前交付。
 	committed bool
+	// buffered 保存探测阶段已读出的有界前缀，便于在等待退避前安全关闭底层泵与连接。
+	buffered []byte
 }
 
 // streamChunk 是泵交给消费者的一次读取结果。
@@ -158,20 +160,23 @@ func (handler *Handler) probeResponse(
 		}
 		observed := *upstream
 		observed.Body = io.NopCloser(bytes.NewReader(payload))
-		classification, err := configured.ClassifyWithRules(
+		observedAt := handler.Clock()
+		classification, err := configured.ClassifyHTTPWithRules(
 			handler.Rules,
 			accountRef,
 			observed.StatusCode,
+			observed.Header,
 			payload,
+			observedAt,
 			func() (sharedfailure.Classification, error) {
-				return codexfailure.ObserveHTTP(&observed, handler.Clock())
+				return codexfailure.ObserveHTTP(&observed, observedAt)
 			},
 		)
 		if err != nil {
 			return probeResult{}
 		}
 		failure, _ := attemptfailure.New(classification)
-		return probeResult{failure: failure}
+		return probeResult{failure: failure, buffered: bytes.Clone(prefix.Bytes())}
 	}
 
 	pump := newBodyPump(body)
@@ -219,7 +224,7 @@ func (handler *Handler) probeResponse(
 		)
 		if failed && err == nil {
 			failure, _ := attemptfailure.New(classification)
-			return probeResult{failure: failure}
+			return probeResult{failure: failure, buffered: bytes.Clone(prefix.Bytes())}
 		}
 		if !isResponsePreamble(event) {
 			return probeResult{}

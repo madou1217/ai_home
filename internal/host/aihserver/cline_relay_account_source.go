@@ -3,7 +3,9 @@ package aihserver
 import (
 	"context"
 	"errors"
+	"strings"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -29,8 +31,11 @@ type providerRelayAccountSource struct {
 	transport  accountrouting.CredentialTransportPolicy
 }
 
-// 编译期确认适配器满足 relaycore 的账号来源端口。
-var _ relaycore.AccountSource = (*providerRelayAccountSource)(nil)
+// 编译期确认适配器满足 relaycore 的账号来源与 429 重征召端口。
+var (
+	_ relaycore.AccountSource       = (*providerRelayAccountSource)(nil)
+	_ relaycore.RateLimitReacquirer = (*providerRelayAccountSource)(nil)
+)
 
 // newProviderRelayAccountSource 创建只依赖真实调度端口的单 Provider 账号来源。
 func newProviderRelayAccountSource(
@@ -76,6 +81,52 @@ func (source *providerRelayAccountSource) Accounts(
 		return nil, err
 	}
 	return &providerRelayAccountCursor{session: session}, nil
+}
+
+// ReacquireFor429Retry 在 429 等待后通过 Recruiter 重跑单 Provider 目标账号的完整准入门禁
+// （启用候选、UsageGate、硬阻塞、精确 CooldownWaiver、新鲜凭据与传输策略）。
+func (source *providerRelayAccountSource) ReacquireFor429Retry(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+	target accountcore.AccountRef,
+	receipt runtimecore.CooldownReceipt,
+	originObservation accountcredentials.CredentialObservation,
+) (accountcore.AccountRef, bool, bool, error) {
+	if source == nil || source.catalog == nil || source.recruiter == nil || !target.IsValid() {
+		return "", false, false, nil
+	}
+	if trimmed := strings.TrimSpace(providerID); trimmed != "" && !strings.EqualFold(trimmed, source.providerID) {
+		return "", false, false, nil
+	}
+	request, err := accountrouting.NewPinnedRequest(
+		source.catalog,
+		source.providerID,
+		modelID.String(),
+		target,
+	)
+	if err != nil {
+		return "", false, false, nil
+	}
+	waiver := accountrouting.RateLimitCooldownWaiver{
+		Receipt:     receipt,
+		Observation: originObservation,
+	}
+	if waiver.IsValid() {
+		request = request.WithRateLimitCooldownWaiver(waiver)
+	}
+	session, err := source.recruiter.Begin(ctx, request, source.transport)
+	if err != nil {
+		return "", false, false, err
+	}
+	recruited, err := session.Next(ctx)
+	if err != nil {
+		if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+			return "", false, false, nil
+		}
+		return "", false, false, err
+	}
+	return recruited.Account().Ref(), recruited.UsedRateLimitCooldownWaiver(), true, nil
 }
 
 // providerRelayAccountCursor 逐个产出征召会话的账号，耗尽即整体耗尽。

@@ -3,6 +3,7 @@ package upstreamfailure
 import (
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -57,7 +58,11 @@ func ObserveHTTP(
 		return sharedfailure.Classification{},
 			sharedfailure.ErrNoFailureEvidence
 	}
-	return Classify(input)
+	classification, err := Classify(input)
+	if err != nil {
+		return classification, err
+	}
+	return sharedfailure.AttachExplicitRetryAfter(classification, response.Header, observedAt), nil
 }
 
 // ObserveSSE 观察 SSE decoder 切出的单个 Claude JSON 事件。
@@ -136,7 +141,7 @@ func claudeInputFromEnvelope(
 	errorType, _ := sharedfailure.NormalizeErrorToken(fields.Type)
 	errorCode, _ := sharedfailure.NormalizeErrorToken(fields.Code)
 	retryAfter, _ := sharedfailure.ParseRetryAfter(
-		header.Get("Retry-After"),
+		strings.TrimSpace(header.Get("Retry-After")),
 		observedAt,
 	)
 	return Input{

@@ -45,8 +45,21 @@ func (recorder *requestAccountFailureRecorder) Record(
 	observation accountcredentials.CredentialObservation,
 	failure AttemptFailure,
 ) error {
+	_, err := recorder.RecordWithReceipt(ctx, providerID, route, observation, failure)
+	return err
+}
+
+// RecordWithReceipt 立即写入明确失败并返回原子 cooldown 代次凭证；延迟暂存失败尚未写
+// 运行态，返回零值凭证。
+func (recorder *requestAccountFailureRecorder) RecordWithReceipt(
+	ctx context.Context,
+	providerID string,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure AttemptFailure,
+) (runtimecore.CooldownReceipt, error) {
 	if !failure.DefersAccountFailureUntilRequestOutcome() {
-		return recorder.recordCurrentFailure(ctx, route, observation, failure)
+		return recorder.recordCurrentFailureWithReceipt(ctx, route, observation, failure)
 	}
 	key := pendingFailureAccountKey(providerID, route)
 	entry := pendingAccountFailure{
@@ -57,11 +70,11 @@ func (recorder *requestAccountFailureRecorder) Record(
 	}
 	if index, found := recorder.indices[key]; found {
 		recorder.pending[index] = entry
-		return nil
+		return runtimecore.CooldownReceipt{}, nil
 	}
 	recorder.indices[key] = len(recorder.pending)
 	recorder.pending = append(recorder.pending, entry)
-	return nil
+	return runtimecore.CooldownReceipt{}, nil
 }
 
 // ForgetPending 清除当前请求中已被后续成功证伪的同账号模型模糊失败。
@@ -157,16 +170,26 @@ func (recorder *requestAccountFailureRecorder) recordCurrentFailure(
 	observation accountcredentials.CredentialObservation,
 	failure AttemptFailure,
 ) error {
+	_, err := recorder.recordCurrentFailureWithReceipt(ctx, route, observation, failure)
+	return err
+}
+
+func (recorder *requestAccountFailureRecorder) recordCurrentFailureWithReceipt(
+	ctx context.Context,
+	route runtimecore.ModelRoute,
+	observation accountcredentials.CredentialObservation,
+	failure AttemptFailure,
+) (runtimecore.CooldownReceipt, error) {
 	if recorder == nil || recorder.failures == nil {
-		return nil
+		return runtimecore.CooldownReceipt{}, nil
 	}
-	_, err := recorder.failures.RecordFailure(
+	_, receipt, err := recorder.failures.RecordFailureWithReceipt(
 		ctx,
 		route,
 		observation,
 		failure,
 	)
-	return err
+	return receipt, err
 }
 
 func (recorder *requestAccountFailureRecorder) takePending() []pendingAccountFailure {

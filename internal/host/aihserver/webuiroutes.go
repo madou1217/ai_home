@@ -39,8 +39,10 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
+	runtimeupstreamretry "github.com/madou1217/ai_home/internal/runtime/upstreamretry"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/proxyleaseapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccount429retryapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
@@ -130,6 +132,7 @@ type webuiRouteDependencies struct {
 	ModelSnapshot          modelsnapshot.Reader
 	MetadataResolver       modelpricing.Resolver
 	EgressManager          *runtimeegress.Manager
+	Upstream429RetryStore  *runtimeupstreamretry.Store
 	HostHomeDir            string
 	Store                  *sqliteaccount.Store
 	NativeWorkPreparer     chatruntime.NativeLaunchPreparer
@@ -333,9 +336,28 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 server 配置数据源失败: %w", err)
 	}
-	serverConfig, err := webuiserverconfigapi.NewHandler(webuiserverconfigapi.Dependencies{Authorizer: authorizer, Store: serverConfigSource})
+	serverConfig, err := webuiserverconfigapi.NewHandler(webuiserverconfigapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      serverConfigSource,
+		OnSaved: func(saved webuiserverconfigapi.ConfigView) {
+			if dependencies.Upstream429RetryStore != nil {
+				dependencies.Upstream429RetryStore.UpdateGlobal(saved.Upstream429Retry)
+			}
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 server 配置接口失败: %w", err)
+	}
+	var accountUpstream429Retry http.Handler
+	if dependencies.Upstream429RetryStore != nil {
+		accountUpstream429Retry, err = webuiaccount429retryapi.NewHandler(webuiaccount429retryapi.Dependencies{
+			Authorizer: authorizer,
+			AIHomeDir:  dependencies.AIHomeDir,
+			Store:      dependencies.Upstream429RetryStore,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("创建账号 429 重试设置接口失败: %w", err)
+		}
 	}
 
 	toolkitTargets, err := webuitoolkittargetsapi.NewHandler(webuitoolkittargetsapi.Dependencies{Authorizer: authorizer, Store: sshSource})
@@ -1020,6 +1042,18 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST /v0/webui/accounts/activity/run", Handler: webuipublicalias.Rewrite("/v0/webui/accounts/activity", "/v1/management/webui/account-activity", accountActivity)},
 		{Pattern: "POST /v0/webui/accounts/activity/probe", Handler: webuipublicalias.Rewrite("/v0/webui/accounts/activity", "/v1/management/webui/account-activity", accountActivity)},
 		{Pattern: "POST " + webuiaccountactivityapi.AccountActionPath, Handler: accountActivity},
+	}
+	if accountUpstream429Retry != nil {
+		routes = append(routes,
+			webuiRoute{
+				Pattern: "GET " + webuiaccount429retryapi.Path + "/{provider}/{accountRef}" + webuiaccount429retryapi.RouteSuffix,
+				Handler: accountUpstream429Retry,
+			},
+			webuiRoute{
+				Pattern: "POST " + webuiaccount429retryapi.Path + "/{provider}/{accountRef}" + webuiaccount429retryapi.RouteSuffix,
+				Handler: accountUpstream429Retry,
+			},
+		)
 	}
 	if restoreScheduling != nil {
 		routes = append(routes, webuiRoute{

@@ -761,7 +761,7 @@ func (r *Runtime) ensureSupervisorLocked(ctx context.Context) (HostClient, error
 			defaultSock := ResolvePluginSocket(r.options.AIHomeDir, runtime.GOOS)
 			socketPath = strings.TrimSuffix(defaultSock, ".sock") + fmt.Sprintf("-r%d.sock", seq)
 		}
-		client, err = NewSupervisor(SupervisorOptions{
+		nodeHost, nodeErr := NewSupervisor(SupervisorOptions{
 			AIHomeDir:   r.options.AIHomeDir,
 			RepoRoot:    r.options.RepoRoot,
 			SocketPath:  socketPath,
@@ -773,6 +773,11 @@ func (r *Runtime) ensureSupervisorLocked(ctx context.Context) (HostClient, error
 			OnLog:       r.options.OnLog,
 			OnExit:      func(evt ExitEvent) { r.handleUnexpectedExit(client, evt) },
 		})
+		if nodeErr != nil {
+			return nil, nodeErr
+		}
+		// Node 后端继续承载 JS 插件并提供数据面 socket；process 后端承载任意语言插件。
+		client = NewHybridHost(nodeHost, NewProcessHost(r.options.OnLog))
 	}
 	if err != nil {
 		return nil, err

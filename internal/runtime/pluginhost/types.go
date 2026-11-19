@@ -18,10 +18,16 @@ import (
 
 // PluginSpec 描述一次候选代次里待加载的单个插件实例规格。
 type PluginSpec struct {
-	InstanceID    string         `json:"instanceId"`
-	PluginID      string         `json:"-"`
-	Version       string         `json:"-"`
-	EntryPath     string         `json:"entryPath"`
+	InstanceID string `json:"instanceId"`
+	PluginID   string `json:"-"`
+	Version    string `json:"-"`
+	EntryPath  string `json:"entryPath"`
+	// Directory 是插件包解压目录（process 后端的 cwd）；Node 后端只用 EntryPath。
+	Directory string `json:"-"`
+	// Runtime 是 node 或 process；process 后端按 ExecArgv 启动插件进程。
+	Runtime       string         `json:"-"`
+	ExecArgv      []string       `json:"-"`
+	ExecEnv       []string       `json:"-"`
 	Manifest      map[string]any `json:"manifest"`
 	Configuration map[string]any `json:"configuration"`
 }

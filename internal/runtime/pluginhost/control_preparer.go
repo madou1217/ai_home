@@ -581,6 +581,11 @@ func buildHostPluginsFromDoc(doc rawControlDoc) ([]PluginSpec, error) {
 		directory := stringField(installed, "directory")
 		entryRel := stringField(manifest, "entry")
 		entryPath := joinManifestEntry(directory, entryRel)
+		runtimeKind := strings.TrimSpace(stringField(manifest, "runtime"))
+		if runtimeKind == "" {
+			runtimeKind = "node"
+		}
+		execArgv, execEnv := processExecFields(manifest)
 		cfg, _ := inst["configuration"].(map[string]any)
 		if cfg == nil {
 			cfg = map[string]any{}
@@ -590,11 +595,38 @@ func buildHostPluginsFromDoc(doc rawControlDoc) ([]PluginSpec, error) {
 			PluginID:      pluginID,
 			Version:       version,
 			EntryPath:     entryPath,
+			Directory:     directory,
+			Runtime:       runtimeKind,
+			ExecArgv:      execArgv,
+			ExecEnv:       execEnv,
 			Manifest:      manifest,
 			Configuration: cfg,
 		})
 	}
 	return plugins, nil
+}
+
+func processExecFields(manifest map[string]any) ([]string, []string) {
+	exec, _ := manifest["exec"].(map[string]any)
+	argv := make([]string, 0)
+	if list, ok := exec["argv"].([]any); ok {
+		for _, item := range list {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" {
+				argv = append(argv, text)
+			}
+		}
+	}
+	env := make([]string, 0)
+	if list, ok := exec["env"].([]any); ok {
+		for _, item := range list {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" {
+				env = append(env, text)
+			}
+		}
+	}
+	return argv, env
 }
 
 func joinManifestEntry(directory, entryRel string) string {

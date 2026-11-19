@@ -61,6 +61,21 @@ func buildCapabilityVersions() map[string]int {
 	return versions
 }
 
+func processCapabilityUnsupported(capability string) bool {
+	switch {
+	case strings.HasPrefix(capability, "gateway."),
+		strings.HasPrefix(capability, "chat."),
+		strings.HasPrefix(capability, "tool"),
+		strings.HasPrefix(capability, "approval"),
+		strings.HasPrefix(capability, "ui"),
+		capability == "command",
+		capability == "observe":
+		return true
+	default:
+		return false
+	}
+}
+
 var accountCapabilities = map[string]bool{
 	"account.source":      true,
 	"account.login":       true,
@@ -98,6 +113,42 @@ func ValidateManifest(input any, options ManifestOptions) (map[string]any, error
 	if !validSemver(version) {
 		return nil, pluginerr.New(codeVersionInvalid, "")
 	}
+	runtimeKind, _ := manifest["runtime"].(string)
+	runtimeKind = strings.TrimSpace(runtimeKind)
+	if runtimeKind == "" {
+		runtimeKind = "node"
+	}
+	if runtimeKind != "node" && runtimeKind != "process" {
+		return nil, pluginerr.New(codeManifestInvalid, "插件运行时必须是 node 或 process")
+	}
+	if runtimeKind == "process" {
+		exec, _ := manifest["exec"].(map[string]any)
+		argv, _ := exec["argv"].([]any)
+		if len(argv) == 0 {
+			return nil, pluginerr.New(codeManifestInvalid, "process 插件必须声明 exec.argv")
+		}
+		for _, item := range argv {
+			text, _ := item.(string)
+			if strings.TrimSpace(text) == "" || len(text) > 512 {
+				return nil, pluginerr.New(codeManifestInvalid, "exec.argv 含非法参数")
+			}
+		}
+		if env, ok := exec["env"].([]any); ok {
+			permissions, _ := manifest["permissions"].(map[string]any)
+			declared := map[string]bool{}
+			if list, ok := permissions["environment"].([]any); ok {
+				for _, item := range list {
+					declared[fmt.Sprint(item)] = true
+				}
+			}
+			for _, item := range env {
+				name := fmt.Sprint(item)
+				if !declared[name] {
+					return nil, pluginerr.New(codeManifestInvalid, "exec.env 未在 permissions.environment 声明："+name)
+				}
+			}
+		}
+	}
 	hostVersion := strings.TrimSpace(options.HostVersion)
 	if hostVersion == "" {
 		hostVersion = "1.0.0"
@@ -107,7 +158,7 @@ func ValidateManifest(input any, options ManifestOptions) (map[string]any, error
 	if !validSemverRange(aihRange) || !satisfiesSemverRange(hostVersion, aihRange) {
 		return nil, pluginerr.New(codeHostIncompatible, "")
 	}
-	if nodeRangeValue, present := engines["node"]; present {
+	if nodeRangeValue, present := engines["node"]; present && runtimeKind == "node" {
 		nodeRange, _ := nodeRangeValue.(string)
 		if !validSemverRange(nodeRange) {
 			return nil, pluginerr.New(codeNodeIncompatible, "")
@@ -141,6 +192,9 @@ func ValidateManifest(input any, options ManifestOptions) (map[string]any, error
 	for _, item := range contributes {
 		contribution, _ := item.(map[string]any)
 		capability, _ := contribution["capability"].(string)
+		if runtimeKind == "process" && processCapabilityUnsupported(capability) {
+			return nil, pluginerr.New(codeCapabilityIncompatible, "process 插件不支持数据面能力："+capability)
+		}
 		requiredVersion, hasVersion := integerValue(contribution["version"])
 		actualVersion, known := capabilityVersions[capability]
 		if !known || !hasVersion || actualVersion != requiredVersion {

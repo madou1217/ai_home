@@ -1,6 +1,7 @@
 package webuisessionslistapi
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 const (
@@ -65,6 +67,73 @@ func (scan *scanner) codexProjects() []projectView {
 			Path:     cwd,
 			Sessions: sessions,
 			Provider: codexProvider,
+		})
+	}
+	return mergeCodexStateProjects(scan.ctx, scan.hostHome, projects, threadNames)
+}
+
+// mergeCodexStateProjects 用 state_*.sqlite threads 补齐 rollout 已删除的会话。
+//
+// Node 旧列表以 state DB 为准；Go 的 rollout 扫描只覆盖磁盘文件。这里按 cwd
+// 合并，rollout 已有的 sessionId 不重复添加，子代理/归档由 SQL 与排除集过滤。
+func mergeCodexStateProjects(ctx context.Context, hostHome string, projects []projectView, threadNames map[string]codexThreadName) []projectView {
+	stateSessions := sessionread.ListCodexStateSessions(ctx, hostHome)
+	if len(stateSessions) == 0 {
+		return projects
+	}
+	excluded := sessionread.ReadCodexExcludedThreadIDs(ctx, hostHome)
+	byPath := make(map[string]*projectView, len(projects))
+	seen := make(map[string]bool)
+	for index := range projects {
+		project := &projects[index]
+		byPath[project.Path] = project
+		for _, session := range project.Sessions {
+			seen[session.ID] = true
+		}
+	}
+	changed := false
+	for _, stateSession := range stateSessions {
+		if excluded[stateSession.ID] || seen[stateSession.ID] {
+			continue
+		}
+		cwd := strings.TrimRight(strings.TrimSpace(stateSession.CWD), "/")
+		if cwd == "" {
+			continue
+		}
+		title := stateSession.Title
+		if named, ok := threadNames[stateSession.ID]; ok && strings.TrimSpace(named.Title) != "" {
+			title = named.Title
+		}
+		if strings.TrimSpace(title) == "" {
+			continue
+		}
+		project, exists := byPath[cwd]
+		if !exists {
+			projects = append(projects, projectView{
+				ID:       codexProjectID(cwd),
+				Name:     filepath.Base(cwd),
+				Path:     cwd,
+				Sessions: []sessionView{},
+				Provider: codexProvider,
+			})
+			project = &projects[len(projects)-1]
+			byPath[cwd] = project
+		}
+		project.Sessions = append(project.Sessions, sessionView{
+			ID:        stateSession.ID,
+			Title:     title,
+			UpdatedAt: stateSession.UpdatedAtMS,
+			Provider:  codexProvider,
+		})
+		seen[stateSession.ID] = true
+		changed = true
+	}
+	if !changed {
+		return projects
+	}
+	for index := range projects {
+		sort.SliceStable(projects[index].Sessions, func(left, right int) bool {
+			return projects[index].Sessions[left].UpdatedAt > projects[index].Sessions[right].UpdatedAt
 		})
 	}
 	return projects

@@ -86,7 +86,7 @@ func (h *handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	rewrite := codexappserverws.RewriteOptions{Cwd: h.config.Cwd, SkipInjectCwd: !h.config.InjectCwd, ServiceTier: tier}
-	// 身份等价的终端复用同一后端：进程数不再随终端数线性增长。
+	// 身份等价的终端复用同一个 app-server 进程；插件/MCP 子进程仍按线程各自拉起。
 	// 共享后端不再携带进程级会话身份，改由每个终端在线程创建时声明。
 	if lease, ok := h.acquireSharedBackend(ctx); ok {
 		if session, dialErr := codexappserverws.DialSharedBackend(ctx, lease.URL, 0); dialErr == nil {

@@ -121,6 +121,9 @@ func newLeaseID() string {
 
 // acquirePooledBackend 返回一个共享 app-server：同指纹的终端复用一个进程，
 // 没有可用后端时按需启动，其余租约为空的后端会被顺带回收。
+//
+// 复用范围只有 app-server 本身：实测插件的 MCP 子进程随线程各自拉起，
+// 不随后端共享而收敛，因此终端侧的内存大头仍需按需激活策略单独处理。
 func acquirePooledBackend(ctx context.Context, config Config, env []string) (*PoolLease, error) {
 	root := poolRoot(env)
 	if err := os.MkdirAll(root, 0o755); err != nil {

@@ -170,8 +170,6 @@ async function buildTarget(options) {
   copyTree(modules, path.join(bundleRoot, 'node_modules'), { dereference: true });
 
   buildGoCore(repositoryRoot, target, log);
-  const { buildGoCLI } = require('../build-go-cli');
-  buildGoCLI({ repositoryRoot, platform: target.platform, arch: target.arch, stdio: 'inherit' });
 
   const finalized = finalizeBundle({
     repositoryRoot,

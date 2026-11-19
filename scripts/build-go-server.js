@@ -3,11 +3,13 @@
 
 // Builds the Go Core server into the exact path the Node supervisor resolves
 // (`resolveGoServerBinary`): bin/native/<platform>-<arch>/aih-server[.exe].
+// Builds the matching Go CLI before publishing the server: both share aih.db.
 // Local-only: no network beyond Go module download, never commits.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { buildGoCLI } = require('./build-go-cli');
 const { resolveGoServerBinary } = require('../lib/cli/services/server/go-core-supervisor');
 const {
   computeRouteManifestHash,
@@ -61,7 +63,15 @@ function buildGoServer(options = {}) {
     if (result.error) throw result.error;
     throw new Error(`go build exited with ${result.status}`);
   }
-  fs.renameSync(plan.temporaryOutput, plan.output);
+  try {
+    // Publish the matching CLI first. A newer server can migrate aih.db beyond
+    // the installed CLI's supported schema, breaking every native launch.
+    buildGoCLI({ ...options, repositoryRoot });
+    fs.renameSync(plan.temporaryOutput, plan.output);
+  } catch (error) {
+    fs.rmSync(plan.temporaryOutput, { force: true });
+    throw error;
+  }
   return {
     output: plan.output,
     target: plan.target,
@@ -81,7 +91,7 @@ function main(argv = process.argv.slice(2)) {
     return index >= 0 ? argv[index + 1] : undefined;
   };
   const built = buildGoServer({ platform: readValue('--platform'), arch: readValue('--arch') });
-  console.log(`[aih] Go Core built: ${path.relative(REPOSITORY_ROOT, built.output)} (sha256 ${built.stamp.binary_sha256.slice(0, 12)})`);
+  console.log(`[aih] Go Core + matching CLI built: ${path.relative(REPOSITORY_ROOT, built.output)} (sha256 ${built.stamp.binary_sha256.slice(0, 12)})`);
   return 0;
 }
 

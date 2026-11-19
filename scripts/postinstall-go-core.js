@@ -3,7 +3,7 @@
 
 // postinstall 的 Go Core 构件准备（Go Core 为显式 opt-in，任何失败都只提示、不让 npm install 失败）：
 //   1. 现有构件的 build stamp 与当前版本/manifest 一致 → 跳过；
-//   2. 本机有 Go 工具链 → 本地构建（scripts/build-go-server.js，同时写 stamp）；
+//   2. 本机有 Go 工具链 → 配套构建 Server/CLI 并写 stamp；失败保留现有工件，不单独下载 Server；
 //   3. 否则下载与 npm 版本匹配的预编译构件，按发布的 sha256 校验通过后才落盘并写 stamp。
 // 下载源固定 GitHub Release（v<version>）；离线/受限网络请改用 `npm run go:build`。
 // `--skip`（或 npm_config 里的 skip）完全跳过。
@@ -83,7 +83,8 @@ async function prepareGoCore(options = {}) {
       stdio: 'inherit'
     });
     if (build.status === 0) return { action: 'built', binaryPath };
-    log.log('ℹ️  Go Core local build failed; trying the prebuilt release binary');
+    log.log('ℹ️  Go Core/CLI paired build failed; keeping installed artifacts (run: npm run go:build)');
+    return { action: 'unavailable', reason: 'paired_build_failed' };
   }
 
   try {

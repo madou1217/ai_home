@@ -1,0 +1,55 @@
+﻿# aih-shell-options-v1: {"completion":false,"typo":false,"wrapper":false,"historyTail":1000}
+# aih 终端集成：TAB 补全 + 命令打错时的纠正建议。
+# 由 `aih shell apply` 生成，请勿手改；调整用 `aih shell apply <选项>`，移除用 `aih shell remove`。
+$global:AIH_SHELL_BIN = '__AIH_SHELL_BIN__'
+$global:AIH_SHELL_TYPO = $false
+$global:AIH_SHELL_WRAPPER = $false
+$global:AIH_SHELL_HISTORY_TAIL = 1000
+$global:_AIH_SHELL_US = [char]0x1f
+
+function global:Get-AihShellReady {
+    if ($global:AIH_SHELL_BIN -and (Test-Path -LiteralPath $global:AIH_SHELL_BIN)) { return $true }
+    $found = Get-Command aih -ErrorAction SilentlyContinue
+    if (-not $found) { return $false }
+    $global:AIH_SHELL_BIN = $found.Source
+    return [bool]$global:AIH_SHELL_BIN
+}
+
+function global:Get-AihShellHistory {
+    $items = @(Get-History | Select-Object -Last $global:AIH_SHELL_HISTORY_TAIL | ForEach-Object { $_.CommandLine })
+    return $items
+}
+
+function global:Get-AihShellReasonLabel {
+    param([string]$Reason)
+    switch ($Reason) {
+        'learned' { '你确认过' }
+        'case' { '大小写' }
+        'transposition' { '两个字母写反了' }
+        'typo' { '打错字符' }
+        'abbrev' { '少写了字母' }
+        'prefix' { '前缀匹配' }
+        'history' { '历史里用过' }
+        default { '拼写接近' }
+    }
+}
+
+# 调一次 aih 的轻量入口；返回原始输出行（不抛出）。
+function global:Invoke-AihShellTool {
+    param([string[]]$ToolArgs, [string[]]$HistoryLines)
+    try {
+        if (-not (Get-AihShellReady)) { return @() }
+        $historyText = ($HistoryLines -join "`n")
+        # Windows PowerShell 5.1 按 OEM 代码页解码原生命令输出：UTF-8 的中文说明会把
+        # 换行字节一起吞掉，候选只剩一两条。调用期间临时切到 UTF-8。
+        $prevOut = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            $out = $historyText | & $global:AIH_SHELL_BIN @ToolArgs 2>$null
+        } finally {
+            [Console]::OutputEncoding = $prevOut
+        }
+        return @($out)
+    } catch { return @() }
+}
+

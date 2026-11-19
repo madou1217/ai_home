@@ -1,0 +1,43 @@
+# aih-shell-options-v1: {"completion":false,"typo":false,"wrapper":false,"historyTail":1000}
+# aih 终端集成：TAB 补全 + 命令打错时的纠正建议。
+# 由 `aih shell apply` 生成，请勿手改；调整用 `aih shell apply <选项>`，移除用 `aih shell remove`。
+typeset -g AIH_SHELL_BIN='__AIH_SHELL_BIN__'
+typeset -g AIH_SHELL_TYPO=0
+typeset -g AIH_SHELL_WRAPPER=0
+typeset -g AIH_SHELL_HISTORY_TAIL=1000
+
+_aih_shell_ready() {
+  [[ -n "$AIH_SHELL_BIN" && -x "$AIH_SHELL_BIN" ]] && return 0
+  AIH_SHELL_BIN="${commands[aih]:-}"
+  [[ -n "$AIH_SHELL_BIN" ]]
+}
+
+_aih_shell_history() {
+  # fc is native and ordered oldest→newest; $history is an associative
+  # optional module parameter, not an array supporting negative slices.
+  fc -ln -${AIH_SHELL_HISTORY_TAIL} 2>/dev/null
+}
+
+_aih_shell_reason_label() {
+  local _aih_reason="${1:-}"
+  case "$_aih_reason" in
+    learned) _aih_reason='你确认过' ;;
+    case) _aih_reason='大小写' ;;
+    transposition) _aih_reason='两个字母写反了' ;;
+    typo) _aih_reason='打错字符' ;;
+    abbrev) _aih_reason='少写了字母' ;;
+    prefix) _aih_reason='前缀匹配' ;;
+    history) _aih_reason='历史里用过' ;;
+    *) _aih_reason='拼写接近' ;;
+  esac
+  print -r -- "$_aih_reason"
+}
+
+_aih_shell_split_argv() {
+  # 参数以 \x1f 分隔回传：不 eval、不重新解析引号，直接按词执行。
+  local _aih_ifs="$IFS"
+  IFS=$'\x1f'
+  _aih_reply=(${=1})
+  IFS="$_aih_ifs"
+}
+

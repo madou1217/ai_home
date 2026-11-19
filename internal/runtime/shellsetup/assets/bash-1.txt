@@ -1,0 +1,89 @@
+# aih-shell-options-v1: {"completion":true,"typo":false,"wrapper":false,"historyTail":1000}
+# aih 终端集成：TAB 补全 + 命令打错时的纠正建议。
+# 由 `aih shell apply` 生成，请勿手改；调整用 `aih shell apply <选项>`，移除用 `aih shell remove`。
+AIH_SHELL_BIN='__AIH_SHELL_BIN__'
+AIH_SHELL_TYPO=0
+AIH_SHELL_WRAPPER=0
+AIH_SHELL_HISTORY_TAIL=1000
+
+_aih_shell_ready() {
+  if [ -n "$AIH_SHELL_BIN" ] && [ -x "$AIH_SHELL_BIN" ]; then return 0; fi
+  AIH_SHELL_BIN="$(command -v aih 2>/dev/null)"
+  [ -n "$AIH_SHELL_BIN" ]
+}
+
+_aih_shell_history() {
+  history "$AIH_SHELL_HISTORY_TAIL" 2>/dev/null
+}
+
+_aih_shell_reason_label() {
+  case "${1:-}" in
+    learned) printf '%s' '你确认过' ;;
+    case) printf '%s' '大小写' ;;
+    transposition) printf '%s' '两个字母写反了' ;;
+    typo) printf '%s' '打错字符' ;;
+    abbrev) printf '%s' '少写了字母' ;;
+    prefix) printf '%s' '前缀匹配' ;;
+    history) printf '%s' '历史里用过' ;;
+    *) printf '%s' '拼写接近' ;;
+  esac
+}
+
+# ---- TAB 补全 ----
+_aih_complete() {
+  _aih_shell_ready || return 1
+  local _aih_cur _aih_i _aih_line _aih_out _aih_value _aih_prefix _aih_quote
+  local -a _aih_words
+  COMPREPLY=()
+  type compopt >/dev/null 2>&1 && compopt +o default
+  for (( _aih_i=1; _aih_i<=COMP_CWORD; _aih_i++ )); do
+    _aih_words+=("${COMP_WORDS[_aih_i]}")
+  done
+  # Bash splits --flag=value around =; keep the protocol words canonical.
+  if (( ${#_aih_words[@]} >= 2 )) && [[ "${_aih_words[${#_aih_words[@]}-1]}" == "=" ]]; then
+    _aih_words[${#_aih_words[@]}-1]=""
+  elif (( ${#_aih_words[@]} >= 3 )) && [[ "${_aih_words[${#_aih_words[@]}-2]}" == "=" ]]; then
+    _aih_value="${_aih_words[${#_aih_words[@]}-1]}"
+    unset "_aih_words[${#_aih_words[@]}-1]"
+    _aih_words[${#_aih_words[@]}-1]="$_aih_value"
+  fi
+  [ "${#_aih_words[@]}" -eq 0 ] && _aih_words=("")
+  _aih_out="$(_aih_shell_history | "$AIH_SHELL_BIN" __complete --history-stdin -- "${_aih_words[@]}" 2>/dev/null)"
+  while IFS= read -r _aih_line; do
+    [ -z "$_aih_line" ] && continue
+    _aih_value="${_aih_line%%$'\x1f'*}"
+    # Bash 3.2 keeps --flag=value in COMP_WORDS but readline replaces only
+    # the value after its = word break. Do not insert the flag twice.
+    if [[ "$COMP_WORDBREAKS" == *"="* && "${COMP_WORDS[COMP_CWORD]}" == --*=* ]]; then
+      _aih_prefix="${COMP_WORDS[COMP_CWORD]%%=*}="
+      [[ "$_aih_value" == "$_aih_prefix"* ]] && _aih_value="${_aih_value#"$_aih_prefix"}"
+    fi
+    COMPREPLY+=("$_aih_value")
+  done <<< "$_aih_out"
+  # 无 AIH 候选时交回 readline；命令位仍不混入文件名。
+  if (( ${#COMPREPLY[@]} == 0 && COMP_CWORD > 1 )); then
+    if type compopt >/dev/null 2>&1; then
+      compopt -o default
+    else
+      # macOS 自带 Bash 3.2 没有 compopt，保留路径及空格转义。
+      while IFS= read -r _aih_line; do
+        [[ -d "$_aih_line" ]] && _aih_line="${_aih_line%/}/"
+        case "${COMP_WORDS[COMP_CWORD]}" in
+          \"*)
+            _aih_cur="${_aih_line//\\/\\\\}"
+            _aih_cur="${_aih_cur//\$/\\\$}"
+            _aih_cur="${_aih_cur//\`/\\\`}"
+            _aih_cur="${_aih_cur//\"/\\\"}" ;;
+          \'*)
+            _aih_quote="'\\''"
+            _aih_cur="${_aih_line//\'/${_aih_quote}}" ;;
+          *) printf -v _aih_cur "%q" "$_aih_line" ;;
+        esac
+        COMPREPLY+=("$_aih_cur")
+      done < <(compgen -f -- "${COMP_WORDS[COMP_CWORD]}")
+    fi
+  fi
+  return 0
+}
+complete -F _aih_complete aih
+

@@ -31,6 +31,10 @@ func main() {
 	}
 	// 旧 Node 入口会为动作命令注入管理密钥；Go 命令直接读同一份 config:server，
 	// 显式环境变量优先，保证迁移后的命令不需要额外的宿主包装。
+	// 补全入口是最热的 shell 路径，必须在任何数据库访问之前分流。
+	if isCompletionEntry(os.Args[1:]) {
+		os.Exit(execute(os.Args[1:], defaultCommandRuntime()))
+	}
 	ensureManagementKeyEnv()
 	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到再交回 Node。
 	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {
@@ -42,6 +46,20 @@ func main() {
 		os.Exit(0)
 	}
 	os.Exit(execute(os.Args[1:], defaultCommandRuntime()))
+}
+
+// isCompletionEntry 判断是否为补全协议的内部入口。这些入口必须在
+// ensureManagementKeyEnv / 裸启动解析之前分流：TAB 补全不能先开数据库。
+func isCompletionEntry(arguments []string) bool {
+	if len(arguments) == 0 {
+		return false
+	}
+	switch arguments[0] {
+	case "__complete", "__suggest", "__learn":
+		return true
+	default:
+		return false
+	}
 }
 
 // execute 执行一次 CLI，并把 SIGINT/SIGTERM 的 shell 退出码透传出去。

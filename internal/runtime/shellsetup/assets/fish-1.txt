@@ -1,0 +1,49 @@
+# aih-shell-options-v1: {"completion":true,"typo":false,"wrapper":false,"historyTail":1000}
+# aih 终端集成：TAB 补全 + 命令打错时的纠正建议。
+# 由 `aih shell apply` 生成，请勿手改；调整用 `aih shell apply <选项>`，移除用 `aih shell remove`。
+set -g AIH_SHELL_BIN '__AIH_SHELL_BIN__'
+set -g AIH_SHELL_TYPO 0
+set -g AIH_SHELL_WRAPPER 0
+set -g AIH_SHELL_HISTORY_TAIL 1000
+set -g _AIH_SHELL_US (printf '\x1f')
+
+function __aih_shell_ready
+    test -n "$AIH_SHELL_BIN"; and test -x "$AIH_SHELL_BIN"; and return 0
+    set -g AIH_SHELL_BIN (command -v aih)
+    test -n "$AIH_SHELL_BIN"
+end
+
+function __aih_shell_history
+    builtin history search --max=$AIH_SHELL_HISTORY_TAIL --reverse 2>/dev/null
+end
+
+function __aih_shell_reason_label
+    switch "$argv[1]"
+        case learned; echo '你确认过'
+        case case; echo '大小写'
+        case transposition; echo '两个字母写反了'
+        case typo; echo '打错字符'
+        case abbrev; echo '少写了字母'
+        case prefix; echo '前缀匹配'
+        case history; echo '历史里用过'
+        case '*'; echo '拼写接近'
+    end
+end
+
+# ---- TAB 补全 ----
+# 候选由 aih 给出（`候选<TAB>说明`，fish 原生格式），历史用 fish 自己的活历史。
+function __aih_complete_candidates
+    __aih_shell_ready; or return 0
+    set -l prior (commandline -opc)
+    test (count $prior) -ge 1; and set -e prior[1]
+    set -l current (commandline -ct)
+    set -l candidates (__aih_shell_history | "$AIH_SHELL_BIN" __complete --shell fish --history-stdin "--current=$current" -- $prior 2>/dev/null)
+    if set -q candidates[1]
+        printf "%s\n" $candidates
+    else if test (count $prior) -gt 0
+        # -f 禁止 fish 自动补文件，空候选必须显式交回原生路径补全。
+        __fish_complete_path "$current"
+    end
+end
+complete -c aih -f -a '(__aih_complete_candidates)'
+

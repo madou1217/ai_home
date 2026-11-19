@@ -1,0 +1,118 @@
+﻿# aih-shell-options-v1: {"completion":true,"typo":false,"wrapper":true,"historyTail":1000}
+# aih 终端集成：TAB 补全 + 命令打错时的纠正建议。
+# 由 `aih shell apply` 生成，请勿手改；调整用 `aih shell apply <选项>`，移除用 `aih shell remove`。
+$global:AIH_SHELL_BIN = '__AIH_SHELL_BIN__'
+$global:AIH_SHELL_TYPO = $false
+$global:AIH_SHELL_WRAPPER = $true
+$global:AIH_SHELL_HISTORY_TAIL = 1000
+$global:_AIH_SHELL_US = [char]0x1f
+
+function global:Get-AihShellReady {
+    if ($global:AIH_SHELL_BIN -and (Test-Path -LiteralPath $global:AIH_SHELL_BIN)) { return $true }
+    $found = Get-Command aih -ErrorAction SilentlyContinue
+    if (-not $found) { return $false }
+    $global:AIH_SHELL_BIN = $found.Source
+    return [bool]$global:AIH_SHELL_BIN
+}
+
+function global:Get-AihShellHistory {
+    $items = @(Get-History | Select-Object -Last $global:AIH_SHELL_HISTORY_TAIL | ForEach-Object { $_.CommandLine })
+    return $items
+}
+
+function global:Get-AihShellReasonLabel {
+    param([string]$Reason)
+    switch ($Reason) {
+        'learned' { '你确认过' }
+        'case' { '大小写' }
+        'transposition' { '两个字母写反了' }
+        'typo' { '打错字符' }
+        'abbrev' { '少写了字母' }
+        'prefix' { '前缀匹配' }
+        'history' { '历史里用过' }
+        default { '拼写接近' }
+    }
+}
+
+# 调一次 aih 的轻量入口；返回原始输出行（不抛出）。
+function global:Invoke-AihShellTool {
+    param([string[]]$ToolArgs, [string[]]$HistoryLines)
+    try {
+        if (-not (Get-AihShellReady)) { return @() }
+        $historyText = ($HistoryLines -join "`n")
+        # Windows PowerShell 5.1 按 OEM 代码页解码原生命令输出：UTF-8 的中文说明会把
+        # 换行字节一起吞掉，候选只剩一两条。调用期间临时切到 UTF-8。
+        $prevOut = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            $out = $historyText | & $global:AIH_SHELL_BIN @ToolArgs 2>$null
+        } finally {
+            [Console]::OutputEncoding = $prevOut
+        }
+        return @($out)
+    } catch { return @() }
+}
+
+# ---- TAB 补全 ----
+Register-ArgumentCompleter -Native -CommandName aih -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    if (-not (Get-AihShellReady)) { return }
+    try {
+        $elements = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
+        $all = @()
+        if ($elements.Count -gt 1) { $all = @($elements[1..($elements.Count - 1)]) }
+        $prior = @()
+        # PS 5.1 对 native 命令在“空格后”仍把上一个词当作 $wordToComplete，
+        # 直接用会把 `aih server ` 补成顶层前缀。按光标前一个字符判断是否在词边界。
+        $boundary = $false
+        $text = [string]$commandAst.Extent.Text
+        if ($cursorPosition -gt $text.Length) {
+            $boundary = $true
+        } elseif ($cursorPosition -gt 0 -and [char]::IsWhiteSpace($text[$cursorPosition - 1])) {
+            $boundary = $true
+        }
+        if ($boundary) {
+            $prior = $all
+            $wordToComplete = ""
+        } elseif ($all.Count -ge 1 -and $all[-1] -eq $wordToComplete) {
+            if ($all.Count -ge 2) { $prior = @($all[0..($all.Count - 2)]) }
+        } else {
+            $prior = $all
+        }
+        $toolArgs = @("__complete", "--shell", "powershell", "--history-stdin", "--current=$wordToComplete", "--") + $prior
+        $lines = Invoke-AihShellTool -ToolArgs $toolArgs -HistoryLines (Get-AihShellHistory)
+        foreach ($line in $lines) {
+            if (-not $line) { continue }
+            $parts = $line -split [string]$global:_AIH_SHELL_US
+            $value = $parts[0]
+            $desc = ""
+            if ($parts.Count -ge 2) { $desc = $parts[1] }
+            [System.Management.Automation.CompletionResult]::new($value, $value, "ParameterValue", $desc)
+        }
+    } catch { }
+}
+
+# ---- aih 自身命令打错（如 ahi / aih codx）----
+function global:aih {
+    & $global:AIH_SHELL_BIN @args
+    $rc = $LASTEXITCODE
+    $interactive = -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+    if ($rc -eq 2 -and $global:AIH_SHELL_WRAPPER -and $interactive) {
+        try {
+            $toolArgs = @("__suggest", "--inside", "--history-stdin", "--", "aih") + @($args)
+            $head = "aih"
+            if ($args.Count -ge 1) { $head = $args[0] }
+            $corrected = Show-AihShellTypoSuggestions -Message "aih 不认识 $head" -Head $head -ToolArgs $toolArgs
+            if ($corrected) {
+                $line = ""
+                $cursor = 0
+                [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+                [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $line.Length, $corrected)
+            }
+        } catch { }
+    }
+    $global:LASTEXITCODE = $rc
+}
+
+try { Set-AihShellEnterHandler } catch { }
+

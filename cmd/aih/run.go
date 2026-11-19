@@ -81,6 +81,15 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	providerID := arguments[0]
+	if providerID == "__complete" {
+		return runCompleteEntry(arguments[1:], runtime)
+	}
+	if providerID == "__suggest" {
+		return runSuggestEntry(arguments[1:], runtime)
+	}
+	if providerID == "__learn" {
+		return runLearnEntry(arguments[1:], runtime)
+	}
 	if providerID == "plugin" {
 		return runPlugin(ctx, arguments[1:], runtime)
 	}
@@ -95,6 +104,19 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	}
 	if providerID == "edge" {
 		return runEdge(ctx, arguments[1:], runtime)
+	}
+	if providerID == "shell" {
+		return runShell(arguments[1:], runtime)
+	}
+	if providerID == "ssh" {
+		return runSSH(arguments[1:], runtime)
+	}
+	if providerID == "clip-agent" {
+		return runClipAgent(arguments[1:], runtime)
+	}
+	if providerID == "proxy" {
+		_, _ = fmt.Fprintln(runtime.stderr, "\x1b[31m[aih] `proxy` command has been replaced. Use `aih server ...` or `aih serve`.\x1b[0m")
+		return cliExitCode{code: 1}
 	}
 	if providerID == "skill" {
 		return runSkill(ctx, arguments[1:], runtime)

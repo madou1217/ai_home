@@ -111,6 +111,21 @@
   与旧输出逐字段一致。
 - Update CLI：`aih update --check|--dry-run|--force` 由 Go 执行；
   区分 source-link/package/npm 安装源，source-link 给出 git 手动更新提示。
+- Shell 集成 CLI：`aih shell status|plan|apply|remove|snippet|doctor|typo`
+  由 Go 执行；片段来自嵌入的 32 份静态资产（与 Node 输出逐字节一致），
+  rc 受管块、备份、原子写、UTF-16 保留、拼写纠正存储全部在 Go。
+- 终端内部入口：`aih __complete` / `__suggest` / `__learn` 由 Go 的
+  `internal/runtime/completion` 实现；命令面、provider 动作、旗标、历史、
+  拼写纠正、账号/会话/模型/别名/peer 候选都在 Go，且补全入口在
+  `ensureManagementKeyEnv` 之前分流，不再打开数据库准备管理密钥。
+  与 Node 真实数据对拍：顶层命令、provider 动作、账号、会话、resume、
+  `--model`/`--model-alias`、server config、peer、fish/分组格式一致；
+  peer 只差一处有意的改进——Node 取「最旧 50 条再倒序」，Go 取最新 50 条。
+- SSH 图像粘贴桥：`aih ssh` 由 Go 执行；SSH 参数转发、Alt+V/Ctrl+V 检测、
+  OSC 5379 帧编码、macOS/Linux/Windows 剪贴板读取、`--watch-clipboard` 都在 Go。
+  帧编码与 Node 逐字节对拍一致（id 随机值除外）。
+- 剪贴板代理：`aih clip-agent start` 由 Go 的 HTTP 服务执行；/health、/image、
+  x-aih-clip-max-bytes 与 Node 行为一致。
 - Backup 配置 CLI：`aih backup add/list/remove/enable/disable/config/show`
   由 Go 的 remote-backup config/state 读写；`run/test/status --remote/restore/
   recover` 也由 Go 执行（远端快照读取、Go 账号导入与保守的 writer-lock 恢复）。
@@ -129,8 +144,10 @@
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
 - 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop/Agent/Claim/Edge/
-  Skill/MCP/Native plugin/Update 命令已是 Go；`cmd/aih` 仍有顶层
-  ssh/shell/harness 走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
+  Shell/补全/SSH/Clip agent/Skill/MCP/Native plugin/Update 命令已是 Go；
+  `cmd/aih` 仍有顶层 `harness`、`ssh-clipboard` 走旧入口，另有 Node 服务端
+  启动的私有入口 `__background`、`__ssh_mcp__`、`__remote_ws__`、`__usage-probe`
+  尚未在 Go 落地。下一步按命令逐个迁到 Go 并真机对拍。
 
 ---
 

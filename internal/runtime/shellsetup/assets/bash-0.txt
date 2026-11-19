@@ -1,0 +1,31 @@
+# aih-shell-options-v1: {"completion":false,"typo":false,"wrapper":false,"historyTail":1000}
+# aih 终端集成：TAB 补全 + 命令打错时的纠正建议。
+# 由 `aih shell apply` 生成，请勿手改；调整用 `aih shell apply <选项>`，移除用 `aih shell remove`。
+AIH_SHELL_BIN='__AIH_SHELL_BIN__'
+AIH_SHELL_TYPO=0
+AIH_SHELL_WRAPPER=0
+AIH_SHELL_HISTORY_TAIL=1000
+
+_aih_shell_ready() {
+  if [ -n "$AIH_SHELL_BIN" ] && [ -x "$AIH_SHELL_BIN" ]; then return 0; fi
+  AIH_SHELL_BIN="$(command -v aih 2>/dev/null)"
+  [ -n "$AIH_SHELL_BIN" ]
+}
+
+_aih_shell_history() {
+  history "$AIH_SHELL_HISTORY_TAIL" 2>/dev/null
+}
+
+_aih_shell_reason_label() {
+  case "${1:-}" in
+    learned) printf '%s' '你确认过' ;;
+    case) printf '%s' '大小写' ;;
+    transposition) printf '%s' '两个字母写反了' ;;
+    typo) printf '%s' '打错字符' ;;
+    abbrev) printf '%s' '少写了字母' ;;
+    prefix) printf '%s' '前缀匹配' ;;
+    history) printf '%s' '历史里用过' ;;
+    *) printf '%s' '拼写接近' ;;
+  esac
+}
+

@@ -260,7 +260,11 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 			return fmt.Errorf("%s requires a value", flag)
 		}
 		index++
-		patch[key] = args[index]
+		value := args[index]
+		if key == "modelCacheSync" && value != "scheduler" && value != "go-batch" {
+			return errors.New("Invalid --model-cache-sync value: 只接受 scheduler 或 go-batch")
+		}
+		patch[key] = value
 	}
 	if clearManagementKey && !confirmClearManagementKey {
 		return errors.New("--clear-management-key requires --confirm-clear-management-key")
@@ -381,6 +385,7 @@ func configFlagKey(flag string) (string, bool) {
 		"--host": "host", "--port": "port", "--client-key": "apiKey",
 		"--management-key": "managementKey", "--proxy-url": "proxyUrl",
 		"--no-proxy": "noProxy", "--models-probe-accounts": "modelsProbeAccounts",
+		"--model-cache-sync":                      "modelCacheSync",
 		"--window-activation-default-interval-ms": "windowActivationDefaultIntervalMs",
 		"--window-activation-min-interval-ms":     "windowActivationMinIntervalMs",
 		"--go-core-routes":                        "goCoreRoutes", "--upstream-error-rules": "upstreamErrorRuleProviders",

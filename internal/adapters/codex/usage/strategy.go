@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	usageEndpoint   = "https://chatgpt.com/backend-api/wham/usage"
+	// usageEndpoint 见 probe.go 的 usageEndpoint()：官方默认 /wham/usage，
+	// 可由 AIH_CODEX_USAGE_PROBE 的 baseUrl/path 覆盖（与 Node 同口径）。
 	sourceID        = "codex_wham_usage"
 	maxResponseBody = 1 << 20
 )
@@ -99,6 +100,11 @@ func (strategy *Strategy) FetchUsageWithDocument(
 	}
 	auth, ok := credential.(*codexauth.OAuthAuth)
 	if !ok || auth == nil {
+		return usagecore.Snapshot{}, nil, usageapp.ErrUsageUnsupported
+	}
+	// Node 在 direct=0 时不产出直连快照；Go 只有直连一条路，因此按「凭据没有
+	// 可信额度接口」上报，避免把运维开关当成上游失败去记账。
+	if !directEnabled() {
 		return usagecore.Snapshot{}, nil, usageapp.ErrUsageUnsupported
 	}
 	request, err := newRequest(ctx, auth, strategy.versions.Current())
@@ -179,7 +185,7 @@ func newRequest(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		usageEndpoint,
+		usageEndpoint(),
 		nil,
 	)
 	if err != nil {

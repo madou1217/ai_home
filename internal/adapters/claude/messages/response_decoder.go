@@ -675,10 +675,12 @@ func (decoder *responseDecoder) completeWebSearch(block *decodedBlock) error {
 func (decoder *responseDecoder) completeText(block *decodedBlock) error {
 	// DeepSeek emits an empty text block after a thinking-only response. The
 	// canonical text event requires non-blank content, so close the block
-	// without inventing text.
+	// without inventing text —— 但必须补发块终态：下游 Renderer/Aggregator 只有
+	// 收到 ContentBlockCompleted 才会把该块标记完成，否则随后的 OutputItemCompleted
+	// 会被判成"Canonical 响应事件顺序无效"。
 	if strings.TrimSpace(block.text) == "" {
 		block.completed = true
-		return nil
+		return decoder.completeCanonicalContentBlock(block)
 	}
 	event, err := inference.NewTextCompletedEvent(
 		decoder.nextSequence,
@@ -701,10 +703,11 @@ func (decoder *responseDecoder) completeThinking(
 ) error {
 	// Some compatible providers omit the continuity signature or return an
 	// empty thinking block. Do not fail the whole response for that; close the
-	// output item without emitting an unusable reasoning item.
+	// block without emitting an unusable reasoning item —— 块终态仍然要发，
+	// 否则下游等到 OutputItemCompleted 时会认为块没关闭。
 	if strings.TrimSpace(block.text) == "" || strings.TrimSpace(block.signature) == "" {
 		block.completed = true
-		return nil
+		return decoder.completeCanonicalContentBlock(block)
 	}
 	content, err := inference.NewThinkingContent(
 		block.text,

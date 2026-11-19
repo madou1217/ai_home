@@ -2,6 +2,7 @@ package anthropicmessages
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
@@ -47,7 +48,8 @@ func (renderer *StreamRenderer) Render(
 		return nil, err
 	}
 	if err := renderer.state.apply(event); err != nil {
-		return nil, err
+		// 带上事件身份，否则"顺序无效"无法定位是哪一类 Canonical 事件越界。
+		return nil, fmt.Errorf("%w: %T seq=%d", err, event, event.Sequence())
 	}
 	return renderer.renderPreparedFrames(event, prepared)
 }

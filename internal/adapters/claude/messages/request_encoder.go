@@ -39,6 +39,10 @@ type requestEncoder struct {
 	betas          []string
 	// officialClient 表示本次调用使用订阅 OAuth，须按 Claude Code 客户端合同发送。
 	officialClient bool
+	// advancedToolUse 表示目标上游接受 advanced-tool-use beta 的工具字段
+	// （type=custom / defer_loading / allowed_callers / input_examples）。
+	// 只有官方订阅端点打开；API Key 的第三方 Anthropic 兼容上游一律发经典形状。
+	advancedToolUse bool
 }
 
 // encodeRequest 在创建网络请求前完成全部可表达性检查。
@@ -64,12 +68,13 @@ func encodeRequest(
 		return encodedRequest{}, err
 	}
 	encoder := &requestEncoder{
-		request:        request,
-		effectiveModel: effectiveModel,
-		maxTokens:      maxTokens,
-		cache:          cache,
-		toolNames:      toolNames,
-		officialClient: officialClient,
+		request:         request,
+		effectiveModel:  effectiveModel,
+		maxTokens:       maxTokens,
+		cache:           cache,
+		toolNames:       toolNames,
+		officialClient:  officialClient,
+		advancedToolUse: officialClient,
 	}
 	if err := encoder.validateRequest(); err != nil {
 		return encodedRequest{}, err
@@ -288,7 +293,6 @@ func (encoder *requestEncoder) encodeToolDefinition(
 		return nil, err
 	}
 	wire := toolDTO{
-		Type:         "custom",
 		Name:         wireName,
 		Description:  claudeToolDescription(tool),
 		InputSchema:  json.RawMessage(tool.InputSchema()),
@@ -298,33 +302,39 @@ func (encoder *requestEncoder) encodeToolDefinition(
 		wire.Strict = &strict
 		encoder.addBeta(betaStructuredOutputs)
 	}
-	for _, caller := range tool.AllowedCallers() {
-		wire.AllowedCallers = append(
-			wire.AllowedCallers,
-			string(caller),
-		)
-	}
-	if value, specified := tool.DeferLoading(); specified {
-		wire.DeferLoading = &value
-	}
-	if value, specified := tool.EagerInputStreaming(); specified {
-		wire.EagerInputStreaming = &value
-	}
-	for _, example := range tool.InputExamples() {
-		wire.InputExamples = append(
-			wire.InputExamples,
-			json.RawMessage(example),
-		)
-	}
-	if len(wire.AllowedCallers) > 0 ||
-		wire.DeferLoading != nil ||
-		wire.EagerInputStreaming != nil ||
-		len(wire.InputExamples) > 0 {
-		encoder.addBeta(betaClaudeCode)
-		encoder.addBeta(betaAdvancedToolUse)
-	}
-	if wire.CacheControl != nil && wire.CacheControl.Scope != "" {
-		encoder.addBeta(betaPromptCachingScope)
+	// advanced-tool-use 的字段与 beta 只对官方订阅端点发送。第三方 Anthropic 兼容
+	// 上游（DeepSeek/自建网关）会把未知的 type=custom、defer_loading、input_examples
+	// 和 anthropic-beta 整体判成非法请求，一个占位工具就能让整轮请求 400。
+	if encoder.advancedToolUse {
+		for _, caller := range tool.AllowedCallers() {
+			wire.AllowedCallers = append(
+				wire.AllowedCallers,
+				string(caller),
+			)
+		}
+		if value, specified := tool.DeferLoading(); specified {
+			wire.DeferLoading = &value
+		}
+		if value, specified := tool.EagerInputStreaming(); specified {
+			wire.EagerInputStreaming = &value
+		}
+		for _, example := range tool.InputExamples() {
+			wire.InputExamples = append(
+				wire.InputExamples,
+				json.RawMessage(example),
+			)
+		}
+		if len(wire.AllowedCallers) > 0 ||
+			wire.DeferLoading != nil ||
+			wire.EagerInputStreaming != nil ||
+			len(wire.InputExamples) > 0 {
+			wire.Type = "custom"
+			encoder.addBeta(betaClaudeCode)
+			encoder.addBeta(betaAdvancedToolUse)
+		}
+		if wire.CacheControl != nil && wire.CacheControl.Scope != "" {
+			encoder.addBeta(betaPromptCachingScope)
+		}
 	}
 	encoded, err := json.Marshal(wire)
 	if err != nil {

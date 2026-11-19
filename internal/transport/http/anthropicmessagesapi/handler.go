@@ -4,6 +4,7 @@ package anthropicmessagesapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -190,6 +191,11 @@ func (handler *Handler) executeNonStream(
 	failure, failed := sink.Failure()
 	switch {
 	case sink.Err() != nil:
+		// 聚合失败只对客户端暴露笼统 502；真实原因交给诊断观察者，
+		// 否则 "Invalid upstream response" 无法定位是哪个 Canonical 事件不合法。
+		if handler.decodeErrorObserver != nil {
+			handler.decodeErrorObserver(fmt.Errorf("Messages 响应聚合失败: %w", sink.Err()))
+		}
 		writeAPIError(
 			response,
 			http.StatusBadGateway,
@@ -250,6 +256,9 @@ func (handler *Handler) executeStream(
 	}
 	switch {
 	case execution.RenderFailed():
+		if handler.decodeErrorObserver != nil {
+			handler.decodeErrorObserver(fmt.Errorf("Messages 流式渲染失败: %w", execution.RenderError()))
+		}
 		writeStreamFailure(
 			stream,
 			response,

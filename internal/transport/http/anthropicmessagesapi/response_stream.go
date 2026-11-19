@@ -77,6 +77,14 @@ func (stream *responseStream) PreCommitFailure() (
 	return stream.pendingFailure, true
 }
 
+// RenderError 返回 Renderer 拒绝该事件的原因；没有被拒绝时返回 nil。
+func (stream *responseStream) RenderError() error {
+	if stream == nil {
+		return nil
+	}
+	return stream.renderErr
+}
+
 // RenderFailed 表示 Canonical 事件无法按 Messages 合同表达。
 func (stream *responseStream) RenderFailed() bool {
 	return stream != nil && stream.renderErr != nil

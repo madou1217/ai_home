@@ -40,6 +40,8 @@ type outcomeRecordingRuntime struct {
 	quotaRefresh *quotaFailureRefresh
 	// credentialRejectionRefresh 共享原请求观察到唯一 token daemon 的晚绑定端口。
 	credentialRejectionRefresh *credentialRejectionRefresh
+	// tokenEvents 把 Go 结算的 token 用量注入账号实时流（晚绑定，可为空）。
+	tokenEvents *tokenEventBus
 }
 
 // restoreSchedulingRuntime 是内层运行态的可选能力：人工清空账号阻塞。
@@ -89,6 +91,9 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 			if recordErr == nil && runtime.UsageProjectionMode() != "" {
 				runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
 			}
+			if recordErr == nil {
+				runtime.tokenEvents.PublishTokenConsumed(record)
+			}
 		}
 	}
 	return err
@@ -130,6 +135,9 @@ func (runtime outcomeRecordingRuntime) RecordAttemptUsage(
 	}
 	if err == nil && runtime.UsageProjectionMode() != "" {
 		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), at, usage)
+	}
+	if err == nil {
+		runtime.tokenEvents.PublishTokenConsumed(record)
 	}
 	return err
 }
@@ -211,6 +219,9 @@ func (runtime outcomeRecordingRuntime) RecordImageUsage(
 	}
 	if recordErr == nil && runtime.UsageProjectionMode() != "" {
 		runtime.usage.Append(ref, model, at, usage)
+	}
+	if recordErr == nil {
+		runtime.tokenEvents.PublishTokenConsumed(record)
 	}
 }
 

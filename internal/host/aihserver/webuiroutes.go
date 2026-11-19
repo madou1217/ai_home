@@ -138,6 +138,7 @@ type webuiRouteDependencies struct {
 	ImageExecutionDependencies imageexecution.Dependencies
 	HostHomeDir                string
 	Store                      *sqliteaccount.Store
+	TokenEvents                *tokenEventBus
 	NativeWorkPreparer         chatruntime.NativeLaunchPreparer
 	AccountRuntime             any
 	// AuthJobs 是 OAuth 作业服务：重新认证与新增账号都直接复用它的作业状态机。
@@ -848,6 +849,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if liveErr != nil {
 		return nil, fmt.Errorf("创建账号实时视图接口失败: %w", liveErr)
+	}
+	if dependencies.TokenEvents != nil {
+		dependencies.TokenEvents.SetPublisher(accountLive.Publish)
 	}
 	// 编辑成功后的响应必须用 live 行：局部读模型的零值会在前端 merge 时覆盖派生字段。
 	accountUpdate.SetLiveRows(accountLive)

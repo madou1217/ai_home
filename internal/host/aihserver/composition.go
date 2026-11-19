@@ -365,6 +365,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		}
 	}()
 	// 所有运行态记账入口都经过装饰器，为账号页状态条计数，见 account_outcomes.go。
+	tokenEvents := newTokenEventBus()
 	accountRuntime := outcomeRecordingRuntime{
 		serverAccountRuntime:       inMemoryRuntime,
 		outcomes:                   outcomeRecorder,
@@ -374,6 +375,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		errorLog:                   options.ErrorLog,
 		quotaRefresh:               newQuotaFailureRefresh(store, time.Now, options.ErrorLog),
 		credentialRejectionRefresh: newCredentialRejectionRefresh(),
+		tokenEvents:                tokenEvents,
 	}
 	// 账号删除的宿主运行时探测与强制释放都在 Go 侧完成：Node 不再为删除提供
 	// 宿主清理回调，tmux 会话按登记 + 账号 socket 两份事实核对，探测不确定即失败关闭。
@@ -441,6 +443,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		ModelModalities:            modelModalities,
 		RouteObserver:              codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
 		HostHomeDir:                hostHomeDir,
+		TokenEvents:                tokenEvents,
 	})
 	if err != nil {
 		_ = webuiAccountsSource.Close()
@@ -540,6 +543,8 @@ type handlerDependencies struct {
 	RouteObserver codexresponsesws.RouteObserver
 	// HostHomeDir 是宿主 CLI 配置文件所在家目录；工具权限设置的 host* 探测需要它。
 	HostHomeDir string
+	// TokenEvents 把推理结算的 token 用量注入账号实时流；晚绑定到 Hub。
+	TokenEvents *tokenEventBus
 	// WebUIAccountsSource 是账号页读模型数据源；watch 快照与列表共用同一份只读连接。
 	WebUIAccountsSource webuiaccountsapi.Source
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel；由 newHandlers 创建并随进程关闭。
@@ -2024,6 +2029,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		},
 		HostHomeDir:        dependencies.HostHomeDir,
 		Store:              store,
+		TokenEvents:        dependencies.TokenEvents,
 		NativeWorkPreparer: nativeWork,
 		AccountRuntime:     accountRuntime,
 		AuthJobs:           jobs,

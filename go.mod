@@ -18,6 +18,8 @@ require (
 	modernc.org/sqlite v1.42.2
 )
 
+require gopkg.in/yaml.v3 v3.0.1
+
 require (
 	github.com/aymanbagabas/go-pty v0.2.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

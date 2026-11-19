@@ -126,6 +126,18 @@
   帧编码与 Node 逐字节对拍一致（id 随机值除外）。
 - 剪贴板代理：`aih clip-agent start` 由 Go 的 HTTP 服务执行；/health、/image、
   x-aih-clip-max-bytes 与 Node 行为一致。
+- 零客户端剪贴板探针：`aih ssh-clipboard probe` 由 Go 执行；OSC 52 / OSC 5522
+  查询与解析、paste-events 模式、MIME 列表与图片读取、非 TTY 降级都在 Go；
+  解析器与 Node 对同一组响应逐字段一致（JSON 键顺序不同）。
+- 顶层保留命令：Node 的 `proxy` 已替换提示改由 Go 直接输出，不再绕回 Node。
+- Harness CLI：`aih harness list|help|<id>` 由 Go 执行；pi / dsh / dsh-tui
+  的账号选择、`--json` 计划、pinned 默认模型、`--model-alias` 直接启动、
+  模型目录、HOME/DSH_HOME 投影、cordis patch、托管插件参数、会话链接、
+  环境凭据剥离与子进程退出码都在 Go。pi 真机（假二进制）启动参数/env 与
+  Node 逐字段一致；dsh/dsh-tui 的投影文件与 Node 语义一致。
+  已知差异：Go 的 models.dev 适配器暂未提供展示名、输出上限与价格，
+  pi models.json 的 `name` 回退为 id、`maxTokens`/`cost` 省略；yaml.v3
+  序列化键序/缩进与 Node 不同但语义等价。
 - Backup 配置 CLI：`aih backup add/list/remove/enable/disable/config/show`
   由 Go 的 remote-backup config/state 读写；`run/test/status --remote/restore/
   recover` 也由 Go 执行（远端快照读取、Go 账号导入与保守的 writer-lock 恢复）。
@@ -144,10 +156,10 @@
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
 - 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop/Agent/Claim/Edge/
-  Shell/补全/SSH/Clip agent/Skill/MCP/Native plugin/Update 命令已是 Go；
-  `cmd/aih` 仍有顶层 `harness`、`ssh-clipboard` 走旧入口，另有 Node 服务端
-  启动的私有入口 `__background`、`__ssh_mcp__`、`__remote_ws__`、`__usage-probe`
-  尚未在 Go 落地。下一步按命令逐个迁到 Go 并真机对拍。
+  Shell/补全/SSH/SSH clipboard probe/Clip agent/Harness/Skill/MCP/Native
+  plugin/Update 命令已是 Go；仍有 Node 服务端启动的私有入口
+  `__background`、`__ssh_mcp__`、`__remote_ws__`、`__usage-probe`
+  尚未在 Go 落地。
 
 ---
 

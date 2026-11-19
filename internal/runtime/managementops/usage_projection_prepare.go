@@ -3,7 +3,6 @@ package managementops
 import (
 	"context"
 	"database/sql"
-	"fmt"
 )
 
 func cloneImmutableProjectionContext(src *UsageProjectionContext) *UsageProjectionContext {
@@ -65,6 +64,9 @@ func (s *UsageStore) prepareDashboardProjectionCached(ctx context.Context, norma
 	}
 	key := makeProjectionCacheKey(rev, normalized.FromMS, normalized.ToMS)
 	return s.projCache.getOrCompute(ctx, key, func(flightCtx context.Context) (*UsageProjectionContext, UsageProjectionRevision, error) {
+		if err := s.EnsureUsageRollupSynced(flightCtx, normalized); err != nil {
+			return nil, UsageProjectionRevision{}, err
+		}
 		conn, connErr := s.db.Conn(flightCtx)
 		if connErr != nil {
 			return nil, UsageProjectionRevision{}, connErr
@@ -75,6 +77,9 @@ func (s *UsageStore) prepareDashboardProjectionCached(ctx context.Context, norma
 }
 
 func (s *UsageStore) computeProjectionDirect(ctx context.Context, normalized UsageQuery) (*UsageProjectionContext, error) {
+	if err := s.EnsureUsageRollupSynced(ctx, normalized); err != nil {
+		return nil, err
+	}
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -136,42 +141,6 @@ func (s *UsageStore) computeProjectionContextSnapshotConn(ctx context.Context, c
 	return pCtx, rev, nil
 }
 
-func (s *UsageStore) buildProjectionContextBodyConn(
-	ctx context.Context,
-	conn *sql.Conn,
-	query UsageQuery,
-) (*UsageProjectionContext, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var recordHW, promptHW sql.NullInt64
-	if err := conn.QueryRowContext(ctx, `
-		SELECT
-			(SELECT COALESCE(MAX(id), 0) FROM model_usage_records),
-			(SELECT COALESCE(MAX(rowid), 0) FROM model_usage_prompt_events)`).Scan(&recordHW, &promptHW); err != nil {
-		return nil, fmt.Errorf("读取用量高水位线失败: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	forks, err := readForkDescriptorsConn(ctx, conn)
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	attrs, err := s.createAttributionsConn(ctx, conn, query, forks, recordHW.Int64)
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return &UsageProjectionContext{
-		ForkDescriptors:      forks,
-		Attributions:         attrs,
-		RecordHighWaterID:    maxInt64(0, recordHW.Int64),
-		PromptHighWaterRowID: maxInt64(0, promptHW.Int64),
-	}, nil
+func (s *UsageStore) buildProjectionContextBodyConn(ctx context.Context, conn *sql.Conn, query UsageQuery) (*UsageProjectionContext, error) {
+	return s.PrepareRollupProjectionContextConn(ctx, conn, query)
 }

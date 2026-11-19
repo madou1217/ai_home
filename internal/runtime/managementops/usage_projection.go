@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 )
@@ -1016,6 +1015,10 @@ func buildProjectedWhereClause(q UsageQuery, alias string, includeModel, include
 }
 
 func (s *UsageStore) openPreparedProjection(ctx context.Context, q UsageQuery, prebuilt *UsageProjectionContext) (*sql.Conn, string, *UsageProjectionContext, error) {
+	return s.openPreparedProjectionMode(ctx, q, prebuilt, true)
+}
+
+func (s *UsageStore) openPreparedProjectionMode(ctx context.Context, q UsageQuery, prebuilt *UsageProjectionContext, needTemp bool) (*sql.Conn, string, *UsageProjectionContext, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1030,6 +1033,9 @@ func (s *UsageStore) openPreparedProjection(ctx context.Context, q UsageQuery, p
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return nil, "", nil, err
+	}
+	if !needTemp {
+		return conn, "", pCtx, nil
 	}
 	if err := materializeProjectionConn(ctx, conn, pCtx); err != nil {
 		cleanupProjectionConn(conn)
@@ -1059,7 +1065,7 @@ func (s *UsageStore) QueryStats(ctx context.Context, query UsageQuery) (UsageSta
 		return hit, nil
 	}
 
-	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, nil)
+	conn, cte, pCtx, err := s.openPreparedProjectionMode(ctx, q, nil, false)
 	if err != nil {
 		return UsageStatsSummary{}, err
 	}
@@ -1075,40 +1081,8 @@ func (s *UsageStore) QueryStats(ctx context.Context, query UsageQuery) (UsageSta
 }
 
 func queryStatsConn(ctx context.Context, conn *sql.Conn, cte string, pCtx *UsageProjectionContext, q UsageQuery) (UsageStatsSummary, error) {
-	uWhere, uArgs := buildProjectedWhereClause(q, "u", true, false)
-	args := append(projectionBaseArgs(q, pCtx), uArgs...)
-	var out UsageStatsSummary
-	err := conn.QueryRowContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT
-			COUNT(*) AS total_calls,
-			COUNT(DISTINCT CASE WHEN u.session_id != '' THEN u.provider || ':' || u.session_id END) AS total_sessions,
-			COALESCE(SUM(u.input_tokens), 0),
-			COALESCE(SUM(u.output_tokens), 0),
-			COALESCE(SUM(u.cache_read_input_tokens), 0),
-			COALESCE(SUM(u.cache_creation_input_tokens), 0),
-			COALESCE(SUM(u.reasoning_output_tokens), 0),
-			COALESCE(SUM(u.total_tokens), 0),
-			COALESCE(SUM(u.cost_usd), 0)
-		FROM canonical_usage u
-		WHERE %s`, cte, uWhere), args...).Scan(
-		&out.TotalCalls, &out.TotalSessions,
-		&out.InputTokens, &out.OutputTokens, &out.CacheReadInputTokens,
-		&out.CacheCreationInputTokens, &out.ReasoningOutputTokens,
-		&out.TotalTokens, &out.TotalCostUSD,
-	)
-	if err != nil {
-		return UsageStatsSummary{}, fmt.Errorf("查询统计总览失败: %w", err)
-	}
-	pWhere, pArgs := buildProjectedWhereClause(q, "p", false, false)
-	if err := conn.QueryRowContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT COUNT(*) FROM canonical_prompt_events p WHERE %s`, cte, pWhere),
-		append(projectionBaseArgs(q, pCtx), pArgs...)...).Scan(&out.TotalPrompts); err != nil {
-		return UsageStatsSummary{}, fmt.Errorf("查询提示词统计失败: %w", err)
-	}
-	out.TotalCostUSD = NormalizeUsageCostUSD(out.TotalCostUSD)
-	return out, nil
+	_ = cte
+	return queryStatsWithRollupConn(ctx, conn, pCtx, q)
 }
 
 // QueryCostByModel 查询按 Provider 与模型分组的用量汇总。
@@ -1117,7 +1091,7 @@ func (s *UsageStore) QueryCostByModel(ctx context.Context, query UsageQuery) ([]
 		return nil, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
-	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, nil)
+	conn, cte, pCtx, err := s.openPreparedProjectionMode(ctx, q, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1129,54 +1103,8 @@ func (s *UsageStore) QueryCostByModel(ctx context.Context, query UsageQuery) ([]
 }
 
 func queryModelsConn(ctx context.Context, conn *sql.Conn, cte string, pCtx *UsageProjectionContext, q UsageQuery, includeRefs bool) ([]UsageModelItem, error) {
-	uWhere, uArgs := buildProjectedWhereClause(q, "u", true, false)
-	args := append(projectionBaseArgs(q, pCtx), uArgs...)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT
-			u.provider, u.model, COUNT(*) AS calls,
-			COALESCE(SUM(u.input_tokens), 0),
-			COALESCE(SUM(u.output_tokens), 0),
-			COALESCE(SUM(u.cache_read_input_tokens), 0),
-			COALESCE(SUM(u.cache_creation_input_tokens), 0),
-			COALESCE(SUM(u.reasoning_output_tokens), 0),
-			COALESCE(SUM(u.total_tokens), 0),
-			COALESCE(SUM(u.cost_usd), 0),
-			COALESCE(GROUP_CONCAT(DISTINCT NULLIF(u.account_ref, '')), ''),
-			COALESCE(SUM(CASE WHEN u.account_ref = '' THEN 1 ELSE 0 END), 0)
-		FROM canonical_usage u
-		WHERE %s
-		GROUP BY u.provider, u.model
-		ORDER BY cost_usd DESC, total_tokens DESC, calls DESC, u.model`, cte, uWhere), args...)
-	if err != nil {
-		return nil, fmt.Errorf("查询模型分布统计失败: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	items := make([]UsageModelItem, 0)
-	for rows.Next() {
-		var (
-			item    UsageModelItem
-			refsRaw string
-		)
-		if scanErr := rows.Scan(
-			&item.Provider, &item.Model, &item.Calls,
-			&item.InputTokens, &item.OutputTokens, &item.CacheReadInputTokens,
-			&item.CacheCreationInputTokens, &item.ReasoningOutputTokens,
-			&item.TotalTokens, &item.CostUSD, &refsRaw, &item.UnattributedCalls,
-		); scanErr != nil {
-			return nil, scanErr
-		}
-		refs := parseCommaAccountRefs(refsRaw)
-		item.CostUSD = NormalizeUsageCostUSD(item.CostUSD)
-		item.AccountCount = len(refs)
-		item.CacheHitRate = CalculateCacheHitRate(item.InputTokens, item.CacheReadInputTokens, item.CacheCreationInputTokens)
-		if includeRefs {
-			item.AccountRefs = refs
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	_ = cte
+	return queryModelsWithRollupConn(ctx, conn, pCtx, q, includeRefs)
 }
 
 // QuerySessions 查询会话列表。
@@ -1185,7 +1113,7 @@ func (s *UsageStore) QuerySessions(ctx context.Context, query UsageQuery) ([]Usa
 		return nil, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
-	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, nil)
+	conn, cte, pCtx, err := s.openPreparedProjectionMode(ctx, q, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1205,108 +1133,8 @@ func (s *UsageStore) QuerySessions(ctx context.Context, query UsageQuery) ([]Usa
 }
 
 func querySessionPartsConn(ctx context.Context, conn *sql.Conn, cte string, pCtx *UsageProjectionContext, q UsageQuery, applyLimit bool) ([]UsageSessionPart, error) {
-	rWhere, rArgs := buildProjectedWhereClause(q, "r", true, false)
-	args := append(projectionBaseArgs(q, pCtx), rArgs...)
-	limitClause := ""
-	if applyLimit {
-		limitClause = "LIMIT ?"
-		args = append(args, q.Limit)
-	}
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT
-			r.provider, r.session_id,
-			COALESCE(MAX(NULLIF(r.project, '')), '') AS usage_project,
-			COALESCE(MAX(NULLIF(s.project, '')), '') AS session_project,
-			COALESCE(MAX(NULLIF(r.cwd, '')), '') AS usage_cwd,
-			COALESCE(MAX(NULLIF(s.cwd, '')), '') AS session_cwd,
-			COALESCE(MAX(NULLIF(r.git_branch, '')), '') AS usage_git_branch,
-			COALESCE(MAX(NULLIF(s.git_branch, '')), '') AS session_git_branch,
-			MIN(r.timestamp_ms) AS usage_started_at_ms,
-			COALESCE(MIN(NULLIF(s.started_at_ms, 0)), 0) AS session_started_at_ms,
-			MAX(r.timestamp_ms) AS usage_updated_at_ms,
-			COALESCE(MAX(NULLIF(s.updated_at_ms, 0)), 0) AS session_updated_at_ms,
-			MAX(COALESCE(NULLIF(s.updated_at_ms, 0), r.timestamp_ms)) AS sort_updated_at_ms,
-			COUNT(*) AS calls,
-			COALESCE(SUM(r.input_tokens), 0),
-			COALESCE(SUM(r.output_tokens), 0),
-			COALESCE(SUM(r.cache_read_input_tokens), 0),
-			COALESCE(SUM(r.cache_creation_input_tokens), 0),
-			COALESCE(SUM(r.reasoning_output_tokens), 0),
-			COALESCE(SUM(r.total_tokens), 0),
-			COALESCE(SUM(r.cost_usd), 0),
-			COALESCE(GROUP_CONCAT(DISTINCT NULLIF(r.account_ref, '')), ''),
-			COALESCE(SUM(CASE WHEN r.account_ref = '' THEN 1 ELSE 0 END), 0)
-		FROM canonical_usage r
-		LEFT JOIN model_usage_sessions s
-			ON s.provider = r.provider AND s.session_id = r.session_id
-		WHERE %s AND r.session_id != ''
-		GROUP BY r.provider, r.session_id
-		ORDER BY sort_updated_at_ms DESC, r.provider, r.session_id
-		%s`, cte, rWhere, limitClause), args...)
-	if err != nil {
-		return nil, fmt.Errorf("查询会话聚合列表失败: %w", err)
-	}
-	var parts []UsageSessionPart
-	for rows.Next() {
-		var (
-			p             UsageSessionPart
-			sortUpdated   int64
-			accountRefRaw string
-		)
-		if scanErr := rows.Scan(
-			&p.Provider, &p.SessionID,
-			&p.UsageProject, &p.SessionProject,
-			&p.UsageCWD, &p.SessionCWD,
-			&p.UsageGitBranch, &p.SessionGitBranch,
-			&p.UsageStartedAtMS, &p.SessionStartedAtMS,
-			&p.UsageUpdatedAtMS, &p.SessionUpdatedAtMS,
-			&sortUpdated,
-			&p.Calls, &p.InputTokens, &p.OutputTokens, &p.CacheReadInputTokens,
-			&p.CacheCreationInputTokens, &p.ReasoningOutputTokens,
-			&p.TotalTokens, &p.CostUSD, &accountRefRaw, &p.UnattributedCalls,
-		); scanErr != nil {
-			_ = rows.Close()
-			return nil, scanErr
-		}
-		p.CostUSD = NormalizeUsageCostUSD(p.CostUSD)
-		p.AccountRefs = parseCommaAccountRefs(accountRefRaw)
-		parts = append(parts, p)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-
-	pWhere, pArgs := buildProjectedWhereClause(q, "p", false, false)
-	pRows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT p.provider, p.session_id, COUNT(*)
-		FROM canonical_prompt_events p
-		WHERE %s AND p.session_id != ''
-		GROUP BY p.provider, p.session_id`, cte, pWhere),
-		append(projectionBaseArgs(q, pCtx), pArgs...)...)
-	if err != nil {
-		return nil, fmt.Errorf("查询会话提示词数量失败: %w", err)
-	}
-	defer func() { _ = pRows.Close() }()
-	promptCounts := make(map[string]int)
-	for pRows.Next() {
-		var prov, sid string
-		var cnt int
-		if scanErr := pRows.Scan(&prov, &sid, &cnt); scanErr != nil {
-			return nil, scanErr
-		}
-		promptCounts[prov+"\x00"+sid] = cnt
-	}
-	if err := pRows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range parts {
-		parts[i].PromptCount = promptCounts[parts[i].Provider+"\x00"+parts[i].SessionID]
-	}
-	return parts, nil
+	_ = cte
+	return querySessionPartsWithRollupConn(ctx, conn, pCtx, q, applyLimit)
 }
 
 func materializeSessionFromPart(part UsageSessionPart) UsageSessionItem {
@@ -1342,70 +1170,8 @@ func materializeSessionFromPart(part UsageSessionPart) UsageSessionItem {
 }
 
 func queryTrendConn(ctx context.Context, conn *sql.Conn, cte string, pCtx *UsageProjectionContext, q UsageQuery, reqBucketMS, reqOriginMS int64) (UsageTrend, error) {
-	originMS, bucketMS, fromMS, toMS := ResolveUsageTrend(q.FromMS, q.ToMS, reqBucketMS, reqOriginMS)
-	if originMS <= 0 || bucketMS <= 0 {
-		return UsageTrend{FromMS: fromMS, ToMS: toMS, BucketMS: 0, Points: []UsageTrendPoint{}}, nil
-	}
-	uWhere, uArgs := buildProjectedWhereClause(q, "u", true, false)
-	args := projectionBaseArgs(q, pCtx)
-	args = append(args, originMS, bucketMS)
-	args = append(args, uArgs...)
-
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT
-			CAST((u.timestamp_ms - ?) / ? AS INTEGER) AS bucket_index,
-			COUNT(*) AS calls,
-			COALESCE(SUM(u.input_tokens), 0),
-			COALESCE(SUM(u.output_tokens), 0),
-			COALESCE(SUM(u.cache_read_input_tokens), 0),
-			COALESCE(SUM(u.cache_creation_input_tokens), 0),
-			COALESCE(SUM(u.reasoning_output_tokens), 0),
-			COALESCE(SUM(u.total_tokens), 0),
-			COALESCE(SUM(u.cost_usd), 0)
-		FROM canonical_usage u
-		WHERE %s
-		GROUP BY bucket_index
-		ORDER BY bucket_index`, cte, uWhere), args...)
-	if err != nil {
-		return UsageTrend{}, fmt.Errorf("查询趋势分桶失败: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	byStart := make(map[int64]UsageTrendPoint)
-	for rows.Next() {
-		var idx int64
-		var pt UsageTrendPoint
-		if scanErr := rows.Scan(
-			&idx, &pt.Calls, &pt.InputTokens, &pt.OutputTokens,
-			&pt.CacheReadInputTokens, &pt.CacheCreationInputTokens,
-			&pt.ReasoningOutputTokens, &pt.TotalTokens, &pt.CostUSD,
-		); scanErr != nil {
-			return UsageTrend{}, scanErr
-		}
-		pt.BucketStartMS = originMS + idx*bucketMS
-		pt.CostUSD = NormalizeUsageCostUSD(pt.CostUSD)
-		pt.CacheHitRate = CalculateCacheHitRate(pt.InputTokens, pt.CacheReadInputTokens, pt.CacheCreationInputTokens)
-		byStart[pt.BucketStartMS] = pt
-	}
-	if err := rows.Err(); err != nil {
-		return UsageTrend{}, err
-	}
-	starts := listTrendBucketStarts(fromMS, toMS, originMS, bucketMS)
-	points := make([]UsageTrendPoint, 0, len(starts))
-	for _, start := range starts {
-		if pt, ok := byStart[start]; ok {
-			points = append(points, pt)
-		} else {
-			points = append(points, UsageTrendPoint{BucketStartMS: start})
-		}
-	}
-	return UsageTrend{
-		FromMS:   fromMS,
-		ToMS:     toMS,
-		BucketMS: bucketMS,
-		Points:   points,
-	}, nil
+	_ = cte
+	return queryTrendWithRollupConn(ctx, conn, pCtx, q, reqBucketMS, reqOriginMS)
 }
 
 // QueryDashboard 一次性返回完整用量看板聚合结果。
@@ -1414,98 +1180,7 @@ func (s *UsageStore) QueryDashboard(ctx context.Context, query UsageQuery) (Usag
 		return UsageDashboardPayload{}, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
-	// 四段聚合共用同一份投影上下文，但各自用独立连接并发读取。
-	// 串行执行会把同一个投影重复扫描四遍，是看板首屏的主要延迟来源。
-	prepConn, err := s.db.Conn(ctx)
-	if err != nil {
-		return UsageDashboardPayload{}, err
-	}
-	pCtx, prepErr := s.prepareProjectionContextConn(ctx, prepConn, q)
-	_ = prepConn.Close()
-	if prepErr != nil {
-		return UsageDashboardPayload{}, prepErr
-	}
-
-	var (
-		stats        UsageStatsSummary
-		models       []UsageModelItem
-		parts        []UsageSessionPart
-		trend        UsageTrend
-		modelOptions []UsageModelItem
-	)
-	errCh := make(chan error, 4)
-	var wg sync.WaitGroup
-	run := func(fn func(conn *sql.Conn, cte string, p *UsageProjectionContext) error) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			conn, cte, p, err := s.openPreparedProjection(ctx, q, pCtx)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			defer func() {
-				cleanupProjectionConn(conn)
-				_ = conn.Close()
-			}()
-			if err := fn(conn, cte, p); err != nil {
-				errCh <- err
-			}
-		}()
-	}
-	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
-		var err error
-		stats, err = queryStatsConn(ctx, conn, cte, p, q)
-		return err
-	})
-	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
-		var err error
-		models, err = queryModelsConn(ctx, conn, cte, p, q, false)
-		return err
-	})
-	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
-		var err error
-		parts, err = querySessionPartsConn(ctx, conn, cte, p, q, true)
-		return err
-	})
-	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
-		var err error
-		trend, err = queryTrendConn(ctx, conn, cte, p, q, 0, 0)
-		return err
-	})
-	wg.Wait()
-	close(errCh)
-	for err := range errCh {
-		if err != nil {
-			return UsageDashboardPayload{}, err
-		}
-	}
-	sessions := make([]UsageSessionItem, 0, len(parts))
-	for _, p := range parts {
-		sessions = append(sessions, materializeSessionFromPart(p))
-	}
-	modelOptions = models
-	if q.Model != "" {
-		unfiltered := q
-		unfiltered.Model = ""
-		conn, cte, p, err := s.openPreparedProjection(ctx, q, pCtx)
-		if err != nil {
-			return UsageDashboardPayload{}, err
-		}
-		modelOptions, err = queryModelsConn(ctx, conn, cte, p, unfiltered, false)
-		cleanupProjectionConn(conn)
-		_ = conn.Close()
-		if err != nil {
-			return UsageDashboardPayload{}, err
-		}
-	}
-	return UsageDashboardPayload{
-		Stats:        stats,
-		Models:       models,
-		Sessions:     sessions,
-		ModelOptions: modelOptions,
-		Trend:        trend,
-	}, nil
+	return s.queryDashboardWithRollup(ctx, q)
 }
 
 // QueryDashboardShard 查询单个时间分片的中间看板统计，供渐进看板合并使用。
@@ -1519,47 +1194,7 @@ func (s *UsageStore) QueryDashboardShard(
 		return UsageDashboardShard{}, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(shardQuery)
-	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, prebuilt)
-	if err != nil {
-		return UsageDashboardShard{}, err
-	}
-	defer func() {
-		cleanupProjectionConn(conn)
-		_ = conn.Close()
-	}()
-
-	stats, err := queryStatsConn(ctx, conn, cte, pCtx, q)
-	if err != nil {
-		return UsageDashboardShard{}, err
-	}
-	models, err := queryModelsConn(ctx, conn, cte, pCtx, q, true)
-	if err != nil {
-		return UsageDashboardShard{}, err
-	}
-	parts, err := querySessionPartsConn(ctx, conn, cte, pCtx, q, false)
-	if err != nil {
-		return UsageDashboardShard{}, err
-	}
-	trend, err := queryTrendConn(ctx, conn, cte, pCtx, q, overallTrendBucketMS, overallTrendOriginMS)
-	if err != nil {
-		return UsageDashboardShard{}, err
-	}
-	modelOptions := models
-	if q.Model != "" {
-		unfiltered := q
-		unfiltered.Model = ""
-		modelOptions, err = queryModelsConn(ctx, conn, cte, pCtx, unfiltered, true)
-		if err != nil {
-			return UsageDashboardShard{}, err
-		}
-	}
-	return UsageDashboardShard{
-		Stats:        stats,
-		Models:       models,
-		SessionParts: parts,
-		ModelOptions: modelOptions,
-		Trend:        trend,
-	}, nil
+	return s.queryDashboardShardWithRollup(ctx, q, overallTrendBucketMS, overallTrendOriginMS, prebuilt)
 }
 
 // QueryBreakdown 查询按账号与模型交叉拆解的聚合详情。

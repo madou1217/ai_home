@@ -64,8 +64,11 @@
 - 账号列表 CLI：`aih ls` / `aih <provider> ls` 由 Go 处理，支持 `--scope`、
   provider 名/glob、数字 ID 过滤，并新增 Node 没有的 `--json`（稳定脚本接口，
   不输出凭据）；`sessions`/`ss` 也直接由 Go 输出。
-- 备份 CLI：根命令 `aih export` / `aih import`（含 `--dry-run` 与原生 help）
-  由 Go 直接执行；Provider 限定形式仍走旧入口，待后续迁移。
+- 备份 CLI：根命令与 Provider 限定的 `aih export` / `aih import`（含 `--dry-run`
+  与原生 help）都由 Go 直接执行；请求按 Provider 过滤，不再从旧 CLI 规划器绕行。
+- Provider 只读动作：`ls`、`usage`、`home`、`version`、`sessions`、`policy`、
+  `terminal-icon` 由 Go 直接处理；CLI 启动时从 `config:server` 注入管理密钥，
+  不再依赖旧宿主包装。终端会话内的 `aih` shim 也已固定 exec 同目录 Go CLI。
 - 账号活动（签到/领取/探测）由 `accountactivity.NativeExecutor` 原生 Go 执行，
   验证码走 Go 自带浏览器解算端口，不再逐账号调用 Node。
 - OAuth loopback 回调监听：新增 `internal/adapters/accountauth/oauthloopback`，
@@ -97,10 +100,10 @@
   空载荷探针，全部命中（`projects/pick` 会等待系统文件夹对话框，按预期阻塞）。
 - 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
-- 旧 CLI 动作迁移：`ls`（含 `--json`、`--scope`、provider 选择器）、
-  `sessions`/`ss`、根 `export`/`import`、`plugin` 与 Claude/peer 已是 Go；
-  `cmd/aih` 对少数旧 Provider 动作与 Provider 限定导出/导入仍整体转交 Node，
-  终端 shim 也仍把少数旧命令转给 Node CLI。下一步按命令逐个迁到 Go 并真机对拍。
+- 旧 CLI 动作迁移：上述只读/备份/列表命令已是 Go；`cmd/aih` 仍有
+  Provider 登录/删除/设默认/检测/自动换号/重启，以及顶层 ssh/desktop/edge/
+  shell/claim/agent/harness/mcp/skill/native plugin/update/backup/server 子命令
+  走旧入口。下一步按命令逐个迁到 Go 并真机对拍。
 
 ---
 

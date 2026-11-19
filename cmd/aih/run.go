@@ -99,6 +99,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "skill" {
 		return runSkill(ctx, arguments[1:], runtime)
 	}
+	if providerID == "mcp" {
+		return runMCP(ctx, arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}

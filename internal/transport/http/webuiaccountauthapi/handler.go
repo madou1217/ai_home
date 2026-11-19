@@ -698,6 +698,88 @@ func (handler *Handler) readAndDecodeHostArtifacts(
 	return credential, profile, code, message
 }
 
+// CompleteLocalImportForJob 用宿主登录态完成一次等待中的 Go OAuth 作业。
+//
+// sourceId 统一为 <provider>-host-local；Kiro IDE 的 kiro-ide-local 由组合
+// importer 先分流，不会进入这里。
+func (handler *Handler) CompleteLocalImportForJob(
+	ctx context.Context,
+	job webuiaccountaddapi.JobSnapshot,
+	sourceID string,
+) (webuiaccountaddapi.JobSnapshot, error) {
+	if handler == nil || handler.authJobs == nil || handler.catalog == nil {
+		return webuiaccountaddapi.JobSnapshot{}, accountauth.ErrInvalidDependencies
+	}
+	provider := strings.ToLower(strings.TrimSpace(job.Provider))
+	canonical, found := handler.catalog.CanonicalID(provider)
+	if !found || canonical != provider {
+		return webuiaccountaddapi.JobSnapshot{}, webuiaccountaddapi.ErrUnsupportedLocalSource
+	}
+	expectedSource := canonical + hostLocalSourceSuffix
+	if strings.TrimSpace(sourceID) != expectedSource {
+		return webuiaccountaddapi.JobSnapshot{}, webuiaccountaddapi.ErrUnsupportedLocalSource
+	}
+	policy := storagepolicy.Get(canonical)
+	if policy == nil || len(policy.AuthArtifacts) == 0 || hasExplicitAuthSourcesWithoutHostLocal(canonical) {
+		return webuiaccountaddapi.JobSnapshot{}, webuiaccountaddapi.ErrUnsupportedLocalSource
+	}
+	if strings.TrimSpace(handler.hostHomeDir) == "" {
+		return webuiaccountaddapi.JobSnapshot{}, webuiaccountaddapi.ErrLocalSourceUnavailable
+	}
+	envelope, _, profile, code, message := handler.readHostArtifacts(canonical, policy)
+	if code != "" {
+		_ = message
+		return webuiaccountaddapi.JobSnapshot{}, webuiaccountaddapi.ErrLocalSourceUnavailable
+	}
+	defer clear(envelope)
+	email := profileDisplayName(profile)
+	completed, err := handler.authJobs.CompleteWithArtifacts(
+		ctx,
+		job.ID,
+		envelope,
+		accountauth.Account{Email: email, DisplayName: email},
+	)
+	if err != nil {
+		return webuiaccountaddapi.JobSnapshot{}, err
+	}
+	return webuiaccountaddapi.NewJobView(completed), nil
+}
+
+type jobHostLocalImporter struct {
+	handler *Handler
+	kiro    webuiaccountaddapi.JobLocalImporter
+}
+
+func (importer *jobHostLocalImporter) CompleteLocalImport(
+	ctx context.Context,
+	job webuiaccountaddapi.JobSnapshot,
+	sourceID string,
+) (webuiaccountaddapi.JobSnapshot, error) {
+	if importer == nil || importer.handler == nil {
+		return webuiaccountaddapi.JobSnapshot{}, accountauth.ErrInvalidDependencies
+	}
+	if strings.EqualFold(strings.TrimSpace(job.Provider), "kiro") &&
+		strings.TrimSpace(sourceID) == "kiro-ide-local" {
+		if importer.kiro != nil {
+			return importer.kiro.CompleteLocalImport(ctx, job, sourceID)
+		}
+		return webuiaccountaddapi.JobSnapshot{}, webuiaccountaddapi.ErrUnsupportedLocalSource
+	}
+	return importer.handler.CompleteLocalImportForJob(ctx, job, sourceID)
+}
+
+// NewJobLocalImporter 同时支持 Kiro IDE 与通用 provider-host-local 的作业导入。
+func NewJobLocalImporter(dependencies Dependencies) (webuiaccountaddapi.JobLocalImporter, error) {
+	handler, err := NewHandler(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	return &jobHostLocalImporter{
+		handler: handler,
+		kiro:    NewKiroJobLocalImporter(dependencies.AuthJobs, dependencies.HostHomeDir),
+	}, nil
+}
+
 func newLocalImportArtifactReader(hostHomeDir string) *nativeartifact.Reader {
 	options := nativeartifact.Options{
 		UserHomeDir: func() (string, error) { return hostHomeDir, nil },

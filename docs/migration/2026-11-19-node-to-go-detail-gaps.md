@@ -77,29 +77,39 @@
 
 ## 清单：接口能返回 200，但字段/诊断被留空
 
-1. **账号行的调度规则为空**
-   `internal/transport/http/webuiaccountsapi/row.go:37,234`
-   `upstreamErrorRules` / `upstreamErrorGroupIds` 固定为空数组；WebUI 看不到账号已有的错误规则。
-2. **tokenUsageSource 为空**
-   `internal/transport/http/webuiaccountsapi/row.go:52`
-   Node 的 `go` / `node` 诊断字段未承接。
-3. **派生 status 留空**
-   `internal/transport/http/webuiaccountsapi/row.go:20`
-   Go 只回 `enabled`，Node 行原有 `status`（up/down）派生值缺失。
-4. **启停接口只回最小账号视图**
-   `internal/transport/http/webuiaccountstatusapi/handler.go:115-127`
-   只回 `accountRef/provider/status/configured`；Node 返回的可合并字段（displayName/updatedAt 等）未回，前端是否依赖需逐端点核对。
-5. **模型目录/账号更新等已修项**
-   - `webuimodelsyncapi` 的策略时间已归一（UTC 毫秒）。
-   - `webuiaccountupdateapi` 已补回 `account` 行；同类"成功响应少字段"的点仍需逐端点扫。
+2026-11-20 逐条核对后的实际状态（代码证据见后）：
+
+1. **已关闭：账号行的调度规则** — `webuiaccountsapi/source.go:239-242` 把
+   `upstreamErrorRules` / `upstreamErrorGroupIds` 从 aih.db 读出并落到行上；
+   `row.go` 里的 `[]any{}` 只是无规则时的占位。
+2. **不适用：tokenUsageSource** — 当前 Node 实现里没有这个字段（全仓库 `lib/`
+   无产出点），Go 保持空串与 Node 行同形；若前端将来需要 `go`/`node` 诊断，
+   应由读模型显式定义，而不是照抄历史残留。
+3. **已关闭：派生 status** — `row.go:234` `resolveAccountStatus`（含 Vertex 占位
+   账号保持 up）。
+4. **刻意最小：启停接口视图** — `webuiaccountstatusapi/handler.go:112-127`
+   只回 `accountRef/provider/status/configured`，注释写明不返回 displayName /
+   updatedAt：它们不是启停事实，回空值会覆盖前端已有展示字段。
+5. **已关闭：调度状态** — `webuiaccountsapi/row.go:294` `resolveSchedulableStatus`
+   在 Go 独有账号上算 `blocked_by_quota`；`webuiaccountliveapi/hub.go:721-738`
+   补 `runtimeModels` 与 `blocked_by_runtime_status` / `blocked_by_policy`。
+
+仍未承接的只剩：`tokenUsage` 的实际计量投影在无用量记录的账号上为 null（与 Node
+无快照时一致），以及下面「仍需迁移」里列出的插件宿主 / CLI 登录作业 / 聊天附件。
 
 ## 清单：`aih server serve` 参数缺口（当前 fail-closed）
 
 已映射到 Go flag/env：
 `host`、`port`、`client-key/api-key`、`management-key`、`proxy-url`、`no-proxy`、`strategy`、`codex-client-version`、`cooldown-ms`、`failure-threshold`、`upstream-timeout-ms`、`max-attempts`、`models-cache-ttl-ms`、`models-probe-accounts`、`codex/gemini/claude/agy/opencode-max-concurrency`、`queue-limit`、`session-affinity-ttl-ms`、`session-affinity-max`、`model-usage-scan*`、`no-request-log`、`backend`、`provider`、`provider-cli-auto-upgrade*`、`window-activation*`、`strict-port`、`allow-multi`；hooks 与 web-dir 由适配器自动传。
 
+已映射到 Go flag/env（2026-11-20 补齐）：`--codex-base-url`、`--claude-base-url`、
+`--agy-base-url`、`--gemini-base-url`。四个上游兜底由 `internal/runtime/upstreamdefaults`
+统一解析（env > `config:server` > 官方默认），推理侧、出口裁决（egress）与图片子系统
+读同一份值；CLI 适配器只在用户显式传参时下发给 Go，避免 args.js 的官方默认值压掉
+`config:server`。
+
 尚未移植（显式传入会报 `serve_options_not_ported`，不会静默忽略）：
-- 上游默认值：`--codex-base-url`、`--gemini-base-url`、`--claude-base-url`、`--agy-base-url`、`--codex-models`
+- `--codex-models`（canonical 合同要求调用方显式给模型，暂不承接）
 
 行为差异：
 - `--host` 非 loopback 现在显式拒绝（Go 只允许 loopback）。

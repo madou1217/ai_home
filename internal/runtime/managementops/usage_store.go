@@ -396,6 +396,7 @@ func (s *UsageStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_provider_model ON model_usage_records(provider, model)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_session ON model_usage_records(provider, session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_account_time ON model_usage_records(account_ref, timestamp_ms)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_usage_request_time ON model_usage_records(request_id, timestamp_ms DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_prompt_timestamp ON model_usage_prompt_events(timestamp_ms)`,
 		`CREATE INDEX IF NOT EXISTS idx_native_account_outcomes_time ON native_account_outcomes(timestamp_ms)`,
 		`CREATE INDEX IF NOT EXISTS idx_native_account_outcomes_account_time ON native_account_outcomes(account_ref, timestamp_ms)`,

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
@@ -269,6 +270,22 @@ func (s *UsageStore) createAttributionsConn(
 	if hw <= 0 {
 		hw = math.MaxInt64
 	}
+	// 归因只可能来自 session_jsonl/session_json 扫描行。没有候选行时直接返回，
+	// 避免按每个代理观测行做 ±5 分钟的 CROSS JOIN 扫描（纯网关流量下这是主要开销）。
+	var hasCandidate int
+	candidateErr := conn.QueryRowContext(ctx, `
+		SELECT 1 FROM model_usage_records INDEXED BY idx_model_usage_timestamp
+		WHERE timestamp_ms BETWEEN ? AND ?
+			AND id <= ?
+			AND source_kind IN ('session_jsonl', 'session_json')
+			AND model != ''
+		LIMIT 1`, fromMS, toMS, hw).Scan(&hasCandidate)
+	if candidateErr == sql.ErrNoRows {
+		return nil, nil
+	}
+	if candidateErr != nil {
+		return nil, fmt.Errorf("查询代理归因候选失败: %w", candidateErr)
+	}
 	proxyRows, err := conn.QueryContext(ctx, `
 		SELECT id, provider, account_ref, session_id, source_kind, model,
 			input_tokens, output_tokens, cache_read_input_tokens,
@@ -331,6 +348,36 @@ func (s *UsageStore) createAttributionsConn(
 	}
 	serialized, _ := json.Marshal(payload)
 
+	// 本地扫描行先收敛成带 token 键的临时表并按 token 建索引，再与代理观测等值连接。
+	// 原实现让每个代理行在 ±5 分钟窗口内扫全表，窗口 × 代理数会放大到千万级行。
+	for _, stmt := range []string{
+		`CREATE TEMP TABLE IF NOT EXISTS model_usage_read_session_candidates (
+			id INTEGER PRIMARY KEY, event_key TEXT NOT NULL, provider TEXT NOT NULL,
+			account_ref TEXT NOT NULL, session_id TEXT NOT NULL, source_kind TEXT NOT NULL,
+			model TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
+			cache_read_input_tokens INTEGER NOT NULL, cache_creation_input_tokens INTEGER NOT NULL,
+			reasoning_output_tokens INTEGER NOT NULL, total_tokens INTEGER NOT NULL,
+			cost_usd REAL NOT NULL, timestamp_ms INTEGER NOT NULL, project TEXT NOT NULL,
+			cwd TEXT NOT NULL, git_branch TEXT NOT NULL, context_tokens INTEGER NOT NULL,
+			generation_tokens INTEGER NOT NULL)`,
+		`DELETE FROM temp.model_usage_read_session_candidates`,
+		`CREATE INDEX IF NOT EXISTS temp.idx_usage_session_ctx ON model_usage_read_session_candidates(context_tokens, output_tokens, timestamp_ms)`,
+		`CREATE INDEX IF NOT EXISTS temp.idx_usage_session_gen ON model_usage_read_session_candidates(context_tokens, generation_tokens, timestamp_ms)`,
+	} {
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
+			return nil, fmt.Errorf("准备本地扫描配对候选失败: %w", err)
+		}
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO temp.model_usage_read_session_candidates
+			SELECT id, event_key, provider, account_ref, session_id, source_kind, model,
+				input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
+				reasoning_output_tokens, total_tokens, cost_usd, timestamp_ms, project, cwd, git_branch,
+				input_tokens + cache_read_input_tokens + cache_creation_input_tokens,
+				output_tokens + reasoning_output_tokens
+			FROM model_usage_records
+			WHERE source_kind IN ('session_jsonl', 'session_json') AND model != '' AND id <= ?`, hw); err != nil {
+		return nil, fmt.Errorf("准备本地扫描配对候选失败: %w", err)
+	}
 	candRows, err := conn.QueryContext(ctx, `
 		WITH proxy_observations AS (
 			SELECT
@@ -348,18 +395,12 @@ func (s *UsageStore) createAttributionsConn(
 			s.cost_usd, s.timestamp_ms, s.project, s.cwd, s.git_branch,
 			p.proxy_id
 		FROM proxy_observations p
-		CROSS JOIN model_usage_records AS s INDEXED BY idx_model_usage_timestamp
-			ON s.timestamp_ms BETWEEN p.timestamp_ms - ? AND p.timestamp_ms + ?
-			AND s.input_tokens + s.cache_read_input_tokens + s.cache_creation_input_tokens = p.context_tokens
-			AND (
-				s.output_tokens = p.output_tokens
-				OR s.output_tokens + s.reasoning_output_tokens = p.generation_tokens
-			)
-		WHERE s.source_kind IN ('session_jsonl', 'session_json')
-			AND s.model != ''
-			AND s.id <= ?
+		JOIN temp.model_usage_read_session_candidates s
+			ON s.context_tokens = p.context_tokens
+			AND (s.output_tokens = p.output_tokens OR s.generation_tokens = p.generation_tokens)
+			AND s.timestamp_ms BETWEEN p.timestamp_ms - ? AND p.timestamp_ms + ?
 		ORDER BY s.timestamp_ms, s.id, p.proxy_id`,
-		string(serialized), scannerBeforeProxyWindowMS, scannerAfterProxyWindowMS, hw,
+		string(serialized), scannerBeforeProxyWindowMS, scannerAfterProxyWindowMS,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("查询本地扫描配对候选失败: %w", err)
@@ -802,6 +843,7 @@ func cleanupProjectionConn(conn *sql.Conn) {
 	}
 	_, _ = conn.ExecContext(context.Background(), `DROP TABLE IF EXISTS temp.model_usage_read_attributions`)
 	_, _ = conn.ExecContext(context.Background(), `DROP TABLE IF EXISTS temp.model_usage_read_fork_contexts`)
+	_, _ = conn.ExecContext(context.Background(), `DROP TABLE IF EXISTS temp.model_usage_read_session_candidates`)
 }
 
 func buildCanonicalProjectionCTE() string {
@@ -1396,40 +1438,87 @@ func (s *UsageStore) QueryDashboard(ctx context.Context, query UsageQuery) (Usag
 		return UsageDashboardPayload{}, ErrUsageUnavailable
 	}
 	q := normalizeUsageQueryBounds(query)
-	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, nil)
+	// 四段聚合共用同一份投影上下文，但各自用独立连接并发读取。
+	// 串行执行会把同一个投影重复扫描四遍，是看板首屏的主要延迟来源。
+	prepConn, err := s.db.Conn(ctx)
 	if err != nil {
 		return UsageDashboardPayload{}, err
 	}
-	defer func() {
-		cleanupProjectionConn(conn)
-		_ = conn.Close()
-	}()
+	pCtx, prepErr := s.prepareProjectionContextConn(ctx, prepConn, q)
+	_ = prepConn.Close()
+	if prepErr != nil {
+		return UsageDashboardPayload{}, prepErr
+	}
 
-	stats, err := queryStatsConn(ctx, conn, cte, pCtx, q)
-	if err != nil {
-		return UsageDashboardPayload{}, err
+	var (
+		stats        UsageStatsSummary
+		models       []UsageModelItem
+		parts        []UsageSessionPart
+		trend        UsageTrend
+		modelOptions []UsageModelItem
+	)
+	errCh := make(chan error, 4)
+	var wg sync.WaitGroup
+	run := func(fn func(conn *sql.Conn, cte string, p *UsageProjectionContext) error) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, cte, p, err := s.openPreparedProjection(ctx, q, pCtx)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			defer func() {
+				cleanupProjectionConn(conn)
+				_ = conn.Close()
+			}()
+			if err := fn(conn, cte, p); err != nil {
+				errCh <- err
+			}
+		}()
 	}
-	models, err := queryModelsConn(ctx, conn, cte, pCtx, q, false)
-	if err != nil {
-		return UsageDashboardPayload{}, err
-	}
-	parts, err := querySessionPartsConn(ctx, conn, cte, pCtx, q, true)
-	if err != nil {
-		return UsageDashboardPayload{}, err
+	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
+		var err error
+		stats, err = queryStatsConn(ctx, conn, cte, p, q)
+		return err
+	})
+	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
+		var err error
+		models, err = queryModelsConn(ctx, conn, cte, p, q, false)
+		return err
+	})
+	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
+		var err error
+		parts, err = querySessionPartsConn(ctx, conn, cte, p, q, true)
+		return err
+	})
+	run(func(conn *sql.Conn, cte string, p *UsageProjectionContext) error {
+		var err error
+		trend, err = queryTrendConn(ctx, conn, cte, p, q, 0, 0)
+		return err
+	})
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return UsageDashboardPayload{}, err
+		}
 	}
 	sessions := make([]UsageSessionItem, 0, len(parts))
 	for _, p := range parts {
 		sessions = append(sessions, materializeSessionFromPart(p))
 	}
-	trend, err := queryTrendConn(ctx, conn, cte, pCtx, q, 0, 0)
-	if err != nil {
-		return UsageDashboardPayload{}, err
-	}
-	modelOptions := models
+	modelOptions = models
 	if q.Model != "" {
 		unfiltered := q
 		unfiltered.Model = ""
-		modelOptions, err = queryModelsConn(ctx, conn, cte, pCtx, unfiltered, false)
+		conn, cte, p, err := s.openPreparedProjection(ctx, q, pCtx)
+		if err != nil {
+			return UsageDashboardPayload{}, err
+		}
+		modelOptions, err = queryModelsConn(ctx, conn, cte, p, unfiltered, false)
+		cleanupProjectionConn(conn)
+		_ = conn.Close()
 		if err != nil {
 			return UsageDashboardPayload{}, err
 		}

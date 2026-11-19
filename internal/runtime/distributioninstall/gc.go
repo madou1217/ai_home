@@ -1,6 +1,7 @@
 package distributioninstall
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -37,7 +38,11 @@ type PruneOptions struct {
 	// MinAge protects directories touched by an in-flight install. Defaults
 	// to one hour.
 	MinAge time.Duration
-	DryRun bool
+	// FailedTransactionMaxAge is how long a failed or rolled-back install
+	// transaction is retained before the periodic GC removes it. Defaults to
+	// 24 hours; pass a negative value to retain failed transactions forever.
+	FailedTransactionMaxAge time.Duration
+	DryRun                  bool
 }
 
 // packageDirPattern matches the managed package directory name produced by the
@@ -81,6 +86,10 @@ func PruneArtifacts(options PruneOptions) (PruneReport, error) {
 	if minAge <= 0 {
 		minAge = time.Hour
 	}
+	failedMaxAge := options.FailedTransactionMaxAge
+	if failedMaxAge == 0 {
+		failedMaxAge = defaultFailedTransactionRetention
+	}
 	report.Current = filepath.Base(receipt.PackageRoot)
 
 	release, err := os.OpenFile(filepath.Join(home, "run", "distribution-install.lock"), os.O_CREATE|os.O_RDWR, 0600)
@@ -110,6 +119,7 @@ func PruneArtifacts(options PruneOptions) (PruneReport, error) {
 	collector := &pruneCollector{report: &report, dryRun: options.DryRun}
 	prunePackageVersions(home, report.Current, !options.DisablePrevious, minAge, now, protect, collector)
 	pruneInstallHistoryInto(home, receipt.Transaction, collector)
+	pruneStaleFailedTransactions(home, receipt.Transaction, now, failedMaxAge, collector)
 	pruneDownloads(home, minAge, now, protect, collector)
 	return report, nil
 }
@@ -321,6 +331,69 @@ func pruneDownloads(home string, minAge time.Duration, now time.Time, protect ma
 			collector.drop(item.path, dirSize(item.path))
 		}
 	}
+}
+
+const defaultFailedTransactionRetention = 24 * time.Hour
+
+// pruneStaleFailedTransactions removes failed or rolled-back install transaction
+// directories after their retention window. Successful transactions and the
+// receipt's rollback backup are owned by pruneInstallHistoryInto and are never
+// touched here. Unknown journals, symlinks and in-flight transactions are left
+// alone.
+func pruneStaleFailedTransactions(home, keep string, now time.Time, maxAge time.Duration, collector *pruneCollector) {
+	if maxAge < 0 {
+		return
+	}
+	root := transactionRoot(home)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	pending := readPendingTransaction(home)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		if filepath.Clean(path) == filepath.Clean(keep) || filepath.Clean(path) == filepath.Clean(pending) {
+			collector.keep(path)
+			continue
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if now.Sub(info.ModTime()) < maxAge {
+			collector.keep(path)
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(path, "journal.json"))
+		if err != nil || len(raw) > 4<<20 {
+			continue
+		}
+		var previous journal
+		if json.Unmarshal(raw, &previous) != nil || previous.Version != 1 || previous.ID != entry.Name() || previous.Home != home {
+			continue
+		}
+		if previous.Phase != "failed" && previous.Phase != "rolled_back" {
+			continue
+		}
+		collector.drop(path, dirSize(path))
+	}
+}
+
+func readPendingTransaction(home string) string {
+	raw, err := os.ReadFile(filepath.Join(home, "run", "distribution-install-pending.json"))
+	if err != nil || len(raw) > 1<<20 {
+		return ""
+	}
+	var pending struct {
+		Journal string `json:"journal"`
+	}
+	if json.Unmarshal(raw, &pending) != nil {
+		return ""
+	}
+	return strings.TrimSpace(pending.Journal)
 }
 
 func dirSize(path string) int64 {

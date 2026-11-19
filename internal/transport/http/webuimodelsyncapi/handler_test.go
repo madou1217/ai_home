@@ -442,8 +442,8 @@ func TestHandlerCatalogGlobalScopedETagAndMetadata(t *testing.T) {
 	if _, ok := catalog.Metadata["claude-sonnet-4-5"]; !ok {
 		t.Fatalf("expected models.dev metadata for claude-sonnet-4-5")
 	}
-	if _, ok := catalog.Metadata["custom-unknown-id"]; ok {
-		t.Fatalf("unknown model should not be in top-level metadata map")
+	if _, ok := catalog.Metadata["custom-unknown-id"]; !ok {
+		t.Fatalf("unknown managed model should be in top-level metadata map")
 	}
 
 	// 验证 managedData 含未知模型 unknown 元数据与正确 enabled/manual 状态。
@@ -451,8 +451,9 @@ func TestHandlerCatalogGlobalScopedETagAndMetadata(t *testing.T) {
 	for _, item := range catalog.ManagedData {
 		if item.ID == "custom-unknown-id" {
 			foundUnknownManaged = true
-			if !item.Manual || !item.Enabled || item.Metadata["metadataStatus"] != "unknown" {
-				t.Fatalf("unexpected unknown managed item: %+v", item)
+			meta, _ := catalog.Metadata[item.ID].(map[string]any)
+			if !item.Manual || !item.Enabled || meta["metadataStatus"] != "unknown" {
+				t.Fatalf("unexpected unknown managed item: %+v meta=%+v", item, meta)
 			}
 		}
 	}

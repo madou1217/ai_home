@@ -455,6 +455,20 @@ export const routingAPI = {
   }
 };
 
+function readAccountMutationResult(
+  value: { ok: boolean; account?: Account },
+  provider: string,
+  accountRef: string
+): { ok: true; account: Account } {
+  const account = value?.account;
+  if (value?.ok !== true || !account || account.accountRef !== accountRef || account.provider !== provider) {
+    // A successful HTTP response from an older Server may omit the account.
+    // Reject it before it can insert undefined into the rendered account list.
+    throw new Error('账号操作响应缺少匹配的账号数据，请重新加载账号列表');
+  }
+  return { ok: true, account };
+}
+
 export const accountsAPI = {
   // 获取所有账号
   list: async (): Promise<AccountsListResponse> => {
@@ -897,18 +911,18 @@ export const accountsAPI = {
 
   updateStatus: async (provider: string, accountRef: string, status: 'up' | 'down'): Promise<Account> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/status`, { status });
-    return response.data.account;
+    return readAccountMutationResult(response.data, provider, accountRef).account;
   },
 
   updateAccount: async (provider: string, accountRef: string, data: { apiKey?: string; baseUrl?: string; authMode?: string; credentialType?: string; upstreamErrorRules?: UpstreamErrorRule[]; upstreamErrorGroupIds?: string[]; clearErrorBlock?: boolean }): Promise<{ ok: boolean; account: Account }> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/update`, data);
-    return response.data;
+    return readAccountMutationResult(response.data, provider, accountRef);
   },
 
   /** 账号级强制恢复调度：人工覆盖，清空该账号的运行态阻塞（含余额/权限/额度类）。 */
   restoreScheduling: async (provider: string, accountRef: string): Promise<{ ok: boolean; account: Account }> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/restore-scheduling`);
-    return response.data;
+    return readAccountMutationResult(response.data, provider, accountRef);
   },
 
   /** 执行账号活动（签到 / 领臭鸡蛋）：单账号单动作。 */
@@ -990,22 +1004,22 @@ export const accountsAPI = {
 
   setDefault: async (provider: string, accountRef: string): Promise<Account> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/set-default`);
-    return response.data.account;
+    return readAccountMutationResult(response.data, provider, accountRef).account;
   },
 
   clearDefault: async (provider: string, accountRef: string): Promise<Account> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/clear-default`);
-    return response.data.account;
+    return readAccountMutationResult(response.data, provider, accountRef).account;
   },
 
   setMobile: async (provider: string, accountRef: string): Promise<Account> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/set-mobile`);
-    return response.data.account;
+    return readAccountMutationResult(response.data, provider, accountRef).account;
   },
 
   clearMobile: async (provider: string, accountRef: string): Promise<Account> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/clear-mobile`);
-    return response.data.account;
+    return readAccountMutationResult(response.data, provider, accountRef).account;
   },
 
   // 删除账号。force=true 表示用户已确认「终止占用该账号的会话后继续删除」。
@@ -1770,10 +1784,13 @@ export const modelsAPI = {
     const response = await api.get<WebUiOpenAIModelsResponse>('/webui/openai-models', {
       params: Object.keys(params).length > 0 ? params : undefined
     });
+    const metadata = response.data.metadata || {};
+    const managedData = (Array.isArray(response.data.managedData) ? response.data.managedData : [])
+      .map((item) => (item.metadata ? item : { ...item, metadata: metadata[item.id] }));
     return {
       ...response.data,
       data: Array.isArray(response.data.data) ? response.data.data : [],
-      managedData: Array.isArray(response.data.managedData) ? response.data.managedData : [],
+      managedData,
       accounts: Array.isArray(response.data.accounts) ? response.data.accounts : [],
       byProvider: response.data.byProvider || {},
       byAccountRef: response.data.byAccountRef || {},

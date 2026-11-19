@@ -50,7 +50,6 @@ type ManagedModelItem struct {
 	Description         string                              `json:"description"`
 	CustomPricing       *modelcatalogsettings.CustomPricing `json:"customPricing,omitempty"`
 	UpdatedAt           int64                               `json:"updatedAt"`
-	Metadata            map[string]any                      `json:"metadata"`
 }
 
 // AccountSummary 对齐 WebUI 模型页与账号详情页的 accounts[] 汇总行。
@@ -372,6 +371,10 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		if meta == nil {
 			meta = buildUnknownModelMetadata(entry.id, now)
 		}
+		// 元数据按 model id 去重放在顶层 metadata；账号行不再重复携带同一份成本/能力表。
+		if _, exists := metadataMap[entry.id]; !exists {
+			metadataMap[entry.id] = meta
+		}
 		managedData = append(managedData, ManagedModelItem{
 			ID:                  entry.id,
 			Object:              "model",
@@ -389,7 +392,6 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 			Description:         description,
 			CustomPricing:       customPricing,
 			UpdatedAt:           updatedAt,
-			Metadata:            meta,
 		})
 	}
 

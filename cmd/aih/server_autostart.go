@@ -18,7 +18,7 @@ import (
 // fallback. Unsupported platforms and unknown actions return handled=false so
 // the legacy CLI remains the fallback for Windows and other server verbs.
 func runServerAutostart(ctx context.Context, arguments []string, runtime commandRuntime) (bool, error) {
-	if len(arguments) < 3 || arguments[0] != "server" || arguments[1] != "autostart" {
+	if len(arguments) < 3 || (arguments[0] != "server" && arguments[0] != "daemon") || arguments[1] != "autostart" {
 		return false, nil
 	}
 	action := strings.TrimSpace(arguments[2])

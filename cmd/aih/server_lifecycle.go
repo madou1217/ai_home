@@ -19,10 +19,15 @@ import (
 // serve/config variants still delegate to the legacy CLI until each command has
 // a Go implementation.
 func runServerLifecycle(ctx context.Context, arguments []string, runtime commandRuntime) (bool, error) {
-	if len(arguments) != 2 || arguments[0] != "server" {
+	action := ""
+	switch {
+	case len(arguments) == 1 && arguments[0] == "serve":
+		action = "start"
+	case len(arguments) == 2 && (arguments[0] == "server" || arguments[0] == "daemon"):
+		action = strings.TrimSpace(arguments[1])
+	default:
 		return false, nil
 	}
-	action := strings.TrimSpace(arguments[1])
 	if action != "start" && action != "stop" && action != "restart" && action != "status" {
 		return false, nil
 	}

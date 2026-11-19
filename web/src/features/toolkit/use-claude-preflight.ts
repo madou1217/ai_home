@@ -3,10 +3,10 @@ import { claudePreflightAPI } from '@/services/api';
 import type { ClaudePreflightConfig, ClaudePreflightMode } from '@/types';
 
 /**
- * Claude Code 首屏检查策略的数据层：页面只负责渲染，保存与探测都在这里复用。
+ * Claude Code 首屏检查策略的数据层：面板只负责渲染，保存与探测都在这里复用。
  *
  * 探测会真实请求 api.anthropic.com / platform.claude.com，点"重新检测"或切换到
- * 开启/自动后执行一次；读接口本身不做网络探测，避免拖慢设置页。
+ * 开启/自动后执行一次；读接口本身不做网络探测，避免拖慢面板打开。
  */
 export function useClaudePreflight(options: { probeOnLoad?: boolean } = {}) {
   const [config, setConfig] = useState<ClaudePreflightConfig | null>(null);
@@ -53,6 +53,10 @@ export function useClaudePreflight(options: { probeOnLoad?: boolean } = {}) {
       setConfig(next);
       setError('');
       return next;
+    } catch (probeError) {
+      // 探测失败（网络错误 / 旧服务端没有该接口）只影响本次结论，保留已有策略。
+      setError(probeError instanceof Error ? probeError.message : '探测首屏端点失败');
+      return null;
     } finally {
       setProbing(false);
     }
@@ -68,7 +72,7 @@ export function useClaudePreflight(options: { probeOnLoad?: boolean } = {}) {
   return { config, loading, saving, probing, error, load, updateMode, probe };
 }
 
-/** 首屏检查的模式说明，供桌面与移动端共用。 */
+/** 首屏检查的模式说明，桌面与移动端工具箱共用。 */
 export function describeClaudePreflightMode(mode: ClaudePreflightMode): string {
   switch (mode) {
     case 'on':

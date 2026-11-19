@@ -27,6 +27,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--hos-space-4);
 }
+/* 单卡页签（截图与录制）：一张卡片占满内容宽度，不留半列空白。 */
+.settings-grid.settings-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
 .settings-panel {
   min-width: 0;
 }
@@ -1009,30 +1013,4 @@
   .settings-panel form .ant-form-item:has(.settings-actions) .ant-form-item-control { width: 100%; max-width: none; flex: 1; }
   .settings-actions { width: 100%; display: flex; gap: var(--hos-space-2-5); }
   .settings-actions .ant-btn { flex: 1; height: 44px; }
-}
-/* Claude 首屏检查：状态行 + 模式分段；状态只用圆点着色，不引入左侧色条。 */
-.settings-preflight-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--hos-space-2);
-  padding: var(--hos-space-2-5) var(--hos-space-3);
-  border-top: 1px solid var(--color-border);
-  font-size: var(--font-size-xs, 12px);
-  color: var(--color-muted-strong);
-}
-.settings-preflight-status .ant-btn {
-  margin-left: auto;
-}
-.settings-preflight-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-muted);
-}
-.settings-preflight-dot.is-ok {
-  background: var(--color-success);
-}
-.settings-preflight-dot.is-bad {
-  background: var(--color-danger);
 }

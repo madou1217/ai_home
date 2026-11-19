@@ -1,5 +1,6 @@
 import type { Account, ManagedAppItem } from '@/types';
 import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
+import { supportsClaudePreflight } from './managed-app-capabilities';
 
 const HOOK_REASON_LABELS: Record<string, string> = {
   disabled: '即时刷新已禁用',
@@ -49,13 +50,15 @@ export function getAppCurrentVersion(app: ManagedAppItem) {
  * 否则用户只会看到一支没有含义的铅笔。
  */
 export function getAppAdvancedEntryLabel(
-  app: Pick<ManagedAppItem, 'type'>,
+  app: Pick<ManagedAppItem, 'type' | 'provider'>,
   configFileCount: number
 ) {
   const fileCount = Math.max(0, Number(configFileCount) || 0);
   const hasPermission = app.type === 'cli';
+  const hasPreflight = supportsClaudePreflight(app);
   const parts = [
     hasPermission ? '启动权限' : '',
+    hasPreflight ? '首屏检查' : '',
     fileCount > 0 ? `配置文件 ${fileCount} 个` : ''
   ].filter(Boolean);
   return parts.length ? parts.join(' · ') : '高级设置';

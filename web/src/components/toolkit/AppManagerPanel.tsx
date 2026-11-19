@@ -18,6 +18,7 @@ import { describeClearBrokenResult } from './provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
 import { useAdoptLaunchedTerminal } from '@/features/web-terminal/use-adopt-launched-terminal';
 import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import { toolkitRequestError as requestError } from './request-error';
 
 const UPGRADE_TRACK_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 'danger'> = {
   success: 'success',
@@ -26,20 +27,6 @@ const UPGRADE_TRACK_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warn
   active: 'info',
   neutral: 'neutral'
 };
-
-function requestError(error: unknown, fallback: string) {
-  if (typeof error === 'object' && error) {
-    const candidate = error as {
-      response?: { data?: { message?: string; error?: string } };
-      message?: string;
-    };
-    return candidate.response?.data?.message
-      || candidate.response?.data?.error
-      || candidate.message
-      || fallback;
-  }
-  return fallback;
-}
 
 export default function AppManagerPanel() {
   const adoptLaunchedTerminal = useAdoptLaunchedTerminal();

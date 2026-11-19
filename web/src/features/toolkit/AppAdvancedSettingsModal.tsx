@@ -19,6 +19,9 @@ import type {
   ToolPermissionSettings
 } from '@/types';
 import ProviderConfigPanel from '@/features/provider-config/ProviderConfigPanel';
+import { supportsClaudePreflight } from '@/components/toolkit/managed-app-capabilities';
+import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
+import ClaudePreflightSettings from './ClaudePreflightSettings';
 import {
   blockingSubcommands,
   describeSelectionCommand,
@@ -36,17 +39,6 @@ import {
   type PermissionSelection
 } from './permission-catalog-view';
 import './app-advanced-settings.css';
-
-function errorText(error: unknown, fallback: string): string {
-  const candidate = error as {
-    response?: { data?: { message?: string; error?: string } };
-    message?: string;
-  };
-  return candidate?.response?.data?.message
-    || candidate?.response?.data?.error
-    || candidate?.message
-    || fallback;
-}
 
 function hostStateText(capability: ToolPermissionCapability): string {
   if (!capability.hostSupported) {
@@ -96,18 +88,23 @@ export default function AppAdvancedSettingsModal({
   const [reloadToken, setReloadToken] = useState(0);
 
   const showPermissionTab = app?.type === 'cli';
+  // 首屏检查与启动权限、配置文件一起收在同一个应用高级设置里。
+  const showPreflightTab = supportsClaudePreflight(app);
   const showConfigTab = Boolean(provider && (app?.configFileCount || 0) > 0);
   const tabs = useMemo(() => {
     const items = [];
     if (showPermissionTab) {
       items.push({ key: 'permission', label: '启动权限' });
     }
+    if (showPreflightTab) {
+      items.push({ key: 'preflight', label: '首屏检查' });
+    }
     if (showConfigTab) {
       items.push({ key: 'config', label: '配置文件' });
       items.push({ key: 'inspector', label: '参数解读' });
     }
     return items;
-  }, [showConfigTab, showPermissionTab]);
+  }, [showConfigTab, showPermissionTab, showPreflightTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -137,7 +134,7 @@ export default function AppAdvancedSettingsModal({
       })
       .catch((requestFailure: unknown) => {
         if (cancelled) return;
-        setError(errorText(requestFailure, '读取启动权限设置失败'));
+        setError(requestError(requestFailure, '读取启动权限设置失败'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -202,7 +199,7 @@ export default function AppAdvancedSettingsModal({
         message.success('启动权限已保存，新开的 aih CLI 会话会使用该设置');
       }
     } catch (requestFailure: unknown) {
-      setError(errorText(requestFailure, '保存启动权限失败'));
+      setError(requestError(requestFailure, '保存启动权限失败'));
     } finally {
       setSaving(false);
     }
@@ -526,6 +523,10 @@ export default function AppAdvancedSettingsModal({
                   </footer>
                 </>
               ) : null}
+            </div>
+          ) : activeTab === 'preflight' && showPreflightTab ? (
+            <div className="aas-config-pane">
+              <ClaudePreflightSettings />
             </div>
           ) : activeTab === 'config' && showConfigTab ? (
             <div className="aas-config-pane">

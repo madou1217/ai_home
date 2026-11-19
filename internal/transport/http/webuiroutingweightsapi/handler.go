@@ -313,21 +313,19 @@ func (handler *Handler) evaluateWeights(
 		load := handler.selectionLoad(accountProvider, ref, model)
 		loadsByRef[ref] = load
 
-		reason := narrowing.excludedReasons[ref]
-		if reason == "" {
-			reason = handler.evaluateAccountEligibility(
-				ctx,
-				account,
-				accountProvider,
-				model,
-				parsedModelID,
-				modelIDValid,
-				statesByRef[ref],
-				runtimeByRef[ref],
-				load,
-				now,
-			)
-		}
+		reason := handler.evaluateAccountEligibility(
+			ctx,
+			account,
+			accountProvider,
+			model,
+			parsedModelID,
+			modelIDValid,
+			statesByRef[ref],
+			runtimeByRef[ref],
+			load,
+			narrowing.facts[ref],
+			now,
+		)
 
 		eligible := reason == ""
 		if eligible {

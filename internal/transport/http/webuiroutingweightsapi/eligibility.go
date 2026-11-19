@@ -56,10 +56,11 @@ func (handler *Handler) evaluateAccountEligibility(
 	state runtimecore.AccountState,
 	runtimeView *runtimeapp.AccountView,
 	load sessionactivity.SelectionLoad,
+	catalog catalogFacts,
 	now time.Time,
 ) string {
 	evidence := handler.schedulingEvidence(
-		ctx, account, provider, model, parsedModelID, modelIDValid, state, runtimeView, load, now,
+		ctx, account, provider, model, parsedModelID, modelIDValid, state, runtimeView, load, catalog, now,
 	)
 	return string(handler.scheduling.Evaluate(evidence).Reason)
 }
@@ -75,12 +76,19 @@ func (handler *Handler) schedulingEvidence(
 	state runtimecore.AccountState,
 	runtimeView *runtimeapp.AccountView,
 	load sessionactivity.SelectionLoad,
+	catalog catalogFacts,
 	now time.Time,
 ) accountscheduling.Evidence {
 	evidence := accountscheduling.Evidence{
 		Provider:   provider,
 		AccountRef: account.AccountRef,
 		ModelID:    model,
+		Model: accountscheduling.ModelFacts{
+			CatalogKnown:  catalog.Known,
+			InCatalog:     catalog.InCatalog,
+			Excluded:      catalog.Excluded,
+			ExcludeReason: schedcore.Reason(catalog.Reason),
+		},
 		Account: accountscheduling.AccountFacts{
 			Enabled:           account.Enabled,
 			Configured:        account.Configured,

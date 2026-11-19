@@ -26,6 +26,20 @@ var (
 type catalogNarrowingResult struct {
 	status          string
 	excludedReasons map[string]string
+	// facts 是逐账号的目录事实，交给 Provider 策略判定；收窄结论不再由本层短路。
+	facts map[string]catalogFacts
+}
+
+// catalogFacts 是单个账号对该模型的目录事实。
+type catalogFacts struct {
+	// Known 表示该账号有可信且完整的模型目录。
+	Known bool
+	// InCatalog 表示目录里确实有这个模型。
+	InCatalog bool
+	// Excluded 表示显式停用或收窄已判定该 (账号,模型) 不参与调度。
+	Excluded bool
+	// Reason 是收窄给出的原因码。
+	Reason string
 }
 
 type accountModelInventory struct {
@@ -131,9 +145,23 @@ func narrowCatalog(
 		}
 	}
 
+	facts := make(map[string]catalogFacts, len(pool))
+	for _, account := range pool {
+		ref := strings.TrimSpace(account.AccountRef)
+		models := inventory.effectiveByRef[ref]
+		known := !isImageModel && !inventory.incomplete[ref] && len(models) > 0
+		facts[ref] = catalogFacts{
+			Known:     known,
+			InCatalog: known && catalogHasModel(models, model),
+			Excluded:  strings.TrimSpace(excluded[ref]) != "",
+			Reason:    excluded[ref],
+		}
+	}
+
 	return catalogNarrowingResult{
 		status:          status,
 		excludedReasons: excluded,
+		facts:           facts,
 	}
 }
 

@@ -70,6 +70,17 @@ func (policy *DefaultPolicy) EvaluateAccount(evidence Evidence) schedcore.Verdic
 //
 // 模型级失败只代表"这一对（账号, 模型）"不可用：账号仍然保留，调度器换模型即可。
 func (policy *DefaultPolicy) EvaluateModel(evidence Evidence) schedcore.Verdict {
+	// 目录/设置收窄是"这个账号对这个模型"的事实：只拦这一对，账号继续参与其他模型。
+	if evidence.Model.Excluded {
+		reason := evidence.Model.ExcludeReason
+		if strings.TrimSpace(string(reason)) == "" {
+			reason = schedcore.ReasonModelNotInCatalog
+		}
+		return schedcore.Blocked(reason)
+	}
+	if evidence.Model.CatalogKnown && !evidence.Model.InCatalog {
+		return schedcore.Blocked(schedcore.ReasonModelNotInCatalog)
+	}
 	now := policy.clock()
 	if !evidence.Observed.ModelCooldownUntil.IsZero() && evidence.Observed.ModelCooldownUntil.After(now) {
 		return schedcore.BlockedUntil(schedcore.ReasonModelCooldown, evidence.Observed.ModelCooldownUntil)

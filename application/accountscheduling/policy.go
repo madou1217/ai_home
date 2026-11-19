@@ -26,11 +26,16 @@ type AccountFacts struct {
 	SchedulableStatus string
 }
 
-// ModelFacts 是这个账号与目标模型的静态事实（来自该账号自己的模型目录）。
+// ModelFacts 是这个账号与目标模型的静态事实（来自该账号自己的模型目录与收窄）。
 type ModelFacts struct {
-	// CatalogKnown 表示该账号确实有模型目录；false 时不得据此判定"模型不存在"。
+	// CatalogKnown 表示该账号确实有可信模型目录；false 时不得据此判定"模型不存在"。
 	CatalogKnown bool
-	InCatalog    bool
+	// InCatalog 表示目录里确实有这个模型。
+	InCatalog bool
+	// Excluded 表示目录/设置收窄已经判定该 (账号,模型) 不参与调度。
+	Excluded bool
+	// ExcludeReason 是收窄给出的原因码；空时按 model_not_in_catalog 处理。
+	ExcludeReason schedcore.Reason
 }
 
 // ObservedFacts 是运行态观察（阻塞、冷却、在途）。

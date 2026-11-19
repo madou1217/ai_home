@@ -10,15 +10,16 @@ import (
 
 // RecalculateCostsResult summarizes an explicit pricing-driven cost rebuild.
 type RecalculateCostsResult struct {
-	Scanned      int `json:"scanned"`
-	Recalculated int `json:"recalculated"`
-	Batches      int `json:"batches"`
+	Scanned      int  `json:"scanned"`
+	Recalculated int  `json:"recalculated"`
+	Batches      int  `json:"batches"`
+	DryRun       bool `json:"dryRun,omitempty"`
 }
 
 // RecalculateCosts recomputes model_usage_records.cost_usd with the currently
 // active pricing table. It never deletes rows and skips models without pricing.
-func (s *UsageStore) RecalculateCosts(ctx context.Context) (RecalculateCostsResult, error) {
-	result := RecalculateCostsResult{}
+func (s *UsageStore) RecalculateCosts(ctx context.Context, dryRun bool) (RecalculateCostsResult, error) {
+	result := RecalculateCostsResult{DryRun: dryRun}
 	if s == nil || s.db == nil {
 		return result, errors.New("model_usage_store_unavailable")
 	}
@@ -49,6 +50,10 @@ func (s *UsageStore) RecalculateCosts(ctx context.Context) (RecalculateCostsResu
 	batch := make([]update, 0, 500)
 	flush := func() error {
 		if len(batch) == 0 {
+			return nil
+		}
+		if dryRun {
+			batch = batch[:0]
 			return nil
 		}
 		result.Batches++

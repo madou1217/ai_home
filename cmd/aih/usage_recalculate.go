@@ -31,19 +31,23 @@ func runUsageRecalculateCosts(ctx context.Context, home string, options usageOpt
 		return err
 	}
 	defer store.Close()
-	result, err := store.RecalculateCosts(ctx)
+	result, err := store.RecalculateCosts(ctx, options.dryRun)
 	if err != nil {
 		return err
 	}
 	if options.json {
-		encoded, err := json.MarshalIndent(map[string]any{"ok": true, "command": "recalculate-costs", "result": result}, "", "  ")
+		encoded, err := json.MarshalIndent(map[string]any{"ok": true, "command": "recalculate-costs", "dryRun": options.dryRun, "result": result}, "", "  ")
 		if err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 		return nil
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量成本重算完成: scanned=%d, recalculated=%d, batches=%d\n",
-		result.Scanned, result.Recalculated, result.Batches)
+	mode := ""
+	if options.dryRun {
+		mode = " (dry-run)"
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量成本重算完成%s: scanned=%d, recalculated=%d, batches=%d\n",
+		mode, result.Scanned, result.Recalculated, result.Batches)
 	return nil
 }

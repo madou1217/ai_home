@@ -25,6 +25,7 @@ type usageOptions struct {
 	limit                   int
 	scan                    bool
 	json                    bool
+	dryRun                  bool
 	reindexCodexForkHistory bool
 }
 
@@ -181,6 +182,8 @@ func parseUsageOptions(args []string) (usageOptions, error) {
 			options.scan = false
 		case "--json":
 			options.json = true
+		case "--dry-run":
+			options.dryRun = true
 		case "--reindex-codex-forks":
 			options.reindexCodexForkHistory = true
 		default:

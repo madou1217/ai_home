@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
@@ -25,6 +27,14 @@ func runUsageScan(ctx context.Context, home string, options usageOptions, runtim
 	if err != nil {
 		return err
 	}
+	cleanup := func() {}
+	if options.dryRun {
+		dbPath, cleanup, err = dryRunDatabase(ctx, dbPath)
+		if err != nil {
+			return err
+		}
+	}
+	defer cleanup()
 	ids := make([]string, 0)
 	for _, item := range catalog.List() {
 		if item.ID != "" {
@@ -57,8 +67,12 @@ func runUsageScan(ctx context.Context, home string, options usageOptions, runtim
 		_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 		return nil
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量扫描完成: files=%d, records=%d, prompts=%d, skipped=%d, filesDeferred=%d, reindexRequired=%d\n",
-		result.Files, result.Records, result.Prompts, result.Skipped, result.FilesDeferred, result.ReindexRequired)
+	mode := ""
+	if options.dryRun {
+		mode = " (dry-run)"
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量扫描完成%s: files=%d, records=%d, prompts=%d, skipped=%d, filesDeferred=%d, reindexRequired=%d\n",
+		mode, result.Files, result.Records, result.Prompts, result.Skipped, result.FilesDeferred, result.ReindexRequired)
 	for name, item := range result.Providers {
 		reason := ""
 		if item.Reason != "" {
@@ -71,6 +85,27 @@ func runUsageScan(ctx context.Context, home string, options usageOptions, runtim
 		_, _ = fmt.Fprintln(runtime.stdout, "  需要显式维护: aih usage scan --reindex-codex-forks")
 	}
 	return nil
+}
+
+func dryRunDatabase(ctx context.Context, source string) (string, func(), error) {
+	temp, err := os.CreateTemp("", "aih-usage-dry-*.db")
+	if err != nil {
+		return "", func() {}, err
+	}
+	path := temp.Name()
+	_ = temp.Close()
+	_ = os.Remove(path)
+	db, err := sql.Open("sqlite", source)
+	if err != nil {
+		return "", func() {}, err
+	}
+	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
+		_ = db.Close()
+		_ = os.Remove(path)
+		return "", func() {}, err
+	}
+	_ = db.Close()
+	return path, func() { _ = os.Remove(path) }, nil
 }
 
 func optionalProvider(provider string) []string {

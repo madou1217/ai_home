@@ -17,10 +17,6 @@ const (
 	// ChatCompletionsPath 是家族上游**唯一**接受的路径（约束 1）：
 	// `/v1/chat/completions` 实测 404 Route Not Found。
 	ChatCompletionsPath = "/v2/chat/completions"
-	// UserAgent 是上游网关要求的真实客户端标识。脚本默认 UA 会被 WAF 403
-	// `{"code":10085,"msg":"请求不合法"}`；版本号本身不参与鉴权，只用于通过检查。
-	// 它与渠道校验（code 11128）无关，后者只看会话 ID 家族（见 ConversationHeaders）。
-	UserAgent = "CLI/2.63.2 CodeBuddy/2.63.2"
 
 	// 渠道校验要求的会话 ID 家族（与 Node 侧 codebuddy-family-inference 同名同语义）。
 	ConversationIDHeader        = "X-Conversation-ID"
@@ -45,8 +41,6 @@ const (
 	PrivateDataHeader    = "X-Private-Data"
 	UserIDHeader         = "X-User-Id"
 	CodebuddyRequestHead = "x-codebuddy-request"
-	// IDEVersion 是官方身份头里的版本号（UA 里的版本同源）。
-	IDEVersion = "2.161.4"
 )
 
 // stainlessHeaders 是官方底层 OpenAI SDK 注入的一整套运行时标识（官方 CLI 跑在 Node 上）。
@@ -143,7 +137,7 @@ func IdentityHeaders(provider string, uid string) map[string]string {
 		ProductHeader:        "SaaS",
 		IDETypeHeader:        "CLI",
 		IDENameHeader:        "CLI",
-		IDEVersionHeader:     IDEVersion,
+		IDEVersionHeader:     CLIVersion(),
 		AgentPurposeHeader:   "conversation",
 		AgentIntentHeader:    "craft",
 		AgentTypeHeader:      "main",

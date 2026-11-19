@@ -158,7 +158,7 @@ func (source *ModelCatalogSource) fetchConfig(
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/json, text/plain, */*")
-	request.Header.Set("User-Agent", codebuddyfamilyrelay.UserAgent)
+	request.Header.Set("User-Agent", codebuddyfamilyrelay.UserAgentFor(codebuddyfamilyrelay.CLIVersion()))
 	request.Header.Set("Origin", source.baseURL)
 	request.Header.Set("Referer", source.baseURL+"/")
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")

@@ -120,7 +120,7 @@ func (provider Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, e
 // 身份才带）。此前本端补发它们，反而是一处与官方不符的差异。
 func (provider Provider) DecorateUpstream(request *http.Request, accessToken string) {
 	provider.BaseProvider.DecorateUpstream(request, accessToken)
-	request.Header.Set("User-Agent", UserAgent)
+	request.Header.Set("User-Agent", UserAgentFor(CLIVersion()))
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")
 	for name, value := range IdentityHeaders(provider.providerID, provider.userID) {
 		request.Header.Set(name, value)

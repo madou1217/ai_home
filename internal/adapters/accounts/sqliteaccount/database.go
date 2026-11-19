@@ -29,6 +29,10 @@ type OpenOptions struct {
 	AIHomeDir string
 	// Catalog 是当前进程唯一的 Provider 合同注册表。
 	Catalog *providers.Catalog
+	// WatchModelSettings keeps routing snapshots current for a long-lived server.
+	// Command-owned stores reconcile once on open; they must not keep a background
+	// writer (and its diagnostics) attached to the foreground provider terminal.
+	WatchModelSettings bool
 }
 
 // Store 是账号应用端口的 SQLite 实现。
@@ -93,9 +97,11 @@ func Open(ctx context.Context, options OpenOptions) (*Store, error) {
 		return nil, err
 	}
 	store.routes = routes
-	if err := store.startModelSettingsWatch(options.AIHomeDir); err != nil {
-		_ = db.Close()
-		return nil, err
+	if options.WatchModelSettings {
+		if err := store.startModelSettingsWatch(options.AIHomeDir); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 	}
 	return store, nil
 }

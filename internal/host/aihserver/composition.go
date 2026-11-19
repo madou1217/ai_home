@@ -265,8 +265,9 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, fmt.Errorf("创建 Provider Catalog 失败: %w", err)
 	}
 	store, err := sqliteaccount.Open(ctx, sqliteaccount.OpenOptions{
-		AIHomeDir: options.AIHomeDir,
-		Catalog:   catalog,
+		AIHomeDir:          options.AIHomeDir,
+		Catalog:            catalog,
+		WatchModelSettings: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("打开账号数据库失败: %w", err)

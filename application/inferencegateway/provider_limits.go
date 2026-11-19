@@ -13,10 +13,12 @@ const DefaultProviderQueueLimit = 200
 // ErrProviderQueueFull 表示某一 Provider 的等待队列已满。
 var ErrProviderQueueFull = errors.New("上游 Provider 队列已满")
 
+// Claude API Key accounts can point at independent upstreams. One provider
+// slot serializes every session, so keep a bounded multi-session default.
 var defaultProviderLimits = map[string]int{
 	"codex":    2,
 	"gemini":   1,
-	"claude":   1,
+	"claude":   8,
 	"agy":      1,
 	"opencode": 1,
 }

@@ -7,9 +7,12 @@
 package pluginruntime
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"sync"
+	"time"
 )
 
 // ErrInvalidProjection 表示推送的投影结构无效。
@@ -73,6 +76,11 @@ func (projection Projection) valid() bool {
 	return true
 }
 
+// EmbeddedInvoker 是不依赖本机 socket 的插件调用端口（process-only 代次使用）。
+type EmbeddedInvoker interface {
+	InvokeEmbedded(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error)
+}
+
 // HostAccess 是连接 Plugin Host 所需的本机地址与令牌（只经管理接口传入，不落日志）。
 type HostAccess struct {
 	Address string
@@ -83,6 +91,7 @@ type HostAccess struct {
 type Registry struct {
 	mu          sync.RWMutex
 	host        HostAccess
+	embedded    EmbeddedInvoker
 	generations map[int64]Projection
 	// accountRefs 把 Go 账号引用翻译成 Node 的账号引用（同步 rekey / 身份合并后两边可能不同），
 	// 让观察事件里的 accountRef 与 Node 路径一致。只含两边不同的条目。
@@ -105,7 +114,7 @@ func (registry *Registry) Replace(host HostAccess, projections []Projection, acc
 		contributions := append([]Contribution(nil), projection.Contributions...)
 		next[projection.Generation] = Projection{Generation: projection.Generation, Contributions: contributions}
 	}
-	if len(next) > 0 && (host.Address == "" || host.Token == "") {
+	if len(next) > 0 && (host.Address == "" || host.Token == "") && registry.embedded == nil {
 		return nil, ErrInvalidProjection
 	}
 	refs := make(map[string]string, len(accountRefs))
@@ -125,6 +134,20 @@ func (registry *Registry) Replace(host HostAccess, projections []Projection, acc
 	}
 	sort.Slice(accepted, func(left, right int) bool { return accepted[left] < accepted[right] })
 	return accepted, nil
+}
+
+// SetEmbeddedInvoker 设置不依赖 socket 的调用端口；进程后端只依赖它。
+func (registry *Registry) SetEmbeddedInvoker(invoker EmbeddedInvoker) {
+	registry.mu.Lock()
+	registry.embedded = invoker
+	registry.mu.Unlock()
+}
+
+// EmbeddedInvoker 返回当前内嵌调用端口（可能为 nil）。
+func (registry *Registry) EmbeddedInvoker() EmbeddedInvoker {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	return registry.embedded
 }
 
 // Get 返回某代次的投影。

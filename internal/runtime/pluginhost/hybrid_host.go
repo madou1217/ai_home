@@ -19,6 +19,7 @@ type HybridHost struct {
 	process *ProcessHost
 
 	mu                   sync.RWMutex
+	nodeStarted          bool
 	processContributions map[string]bool
 }
 
@@ -30,17 +31,13 @@ func NewHybridHost(node HostClient, process *ProcessHost) *HybridHost {
 }
 
 func (host *HybridHost) Start(ctx context.Context) error {
-	if host.node != nil {
-		if err := host.node.Start(ctx); err != nil {
-			return err
-		}
-	}
+	// Node 后端按需启动：process-only 代次不需要 Node 进程。
 	return host.process.Start(ctx)
 }
 
 func (host *HybridHost) Stop(ctx context.Context) error {
 	var first error
-	if host.node != nil {
+	if host.node != nil && host.nodeRunning() {
 		if err := host.node.Stop(ctx); err != nil {
 			first = err
 		}
@@ -75,7 +72,16 @@ func (host *HybridHost) Prepare(ctx context.Context, generation int64, plugins [
 			processContributions[contributionID] = true
 		}
 	}
-	if host.node != nil {
+	if host.node != nil && len(nodePlugins) > 0 {
+		if !host.nodeRunning() {
+			if err := host.node.Start(ctx); err != nil {
+				_ = host.process.Stop(context.Background())
+				return HostPrepareResult{}, err
+			}
+			host.mu.Lock()
+			host.nodeStarted = true
+			host.mu.Unlock()
+		}
 		nodeResult, err := host.node.Prepare(ctx, generation, nodePlugins)
 		if err != nil {
 			_ = host.process.Stop(context.Background())
@@ -92,7 +98,7 @@ func (host *HybridHost) Prepare(ctx context.Context, generation int64, plugins [
 }
 
 func (host *HybridHost) Activate(ctx context.Context, generation int64, retainPrevious bool) (HostActivateResult, error) {
-	if host.node != nil {
+	if host.node != nil && host.nodeRunning() {
 		if _, err := host.node.Activate(ctx, generation, retainPrevious); err != nil {
 			return HostActivateResult{}, err
 		}
@@ -117,7 +123,7 @@ func (host *HybridHost) Invoke(ctx context.Context, generation int64, contributi
 }
 
 func (host *HybridHost) Dispose(ctx context.Context, generation int64) (HostDisposeResult, error) {
-	if host.node != nil {
+	if host.node != nil && host.nodeRunning() {
 		_, _ = host.node.Dispose(ctx, generation)
 	}
 	_, _ = host.process.Dispose(ctx, generation)
@@ -126,7 +132,7 @@ func (host *HybridHost) Dispose(ctx context.Context, generation int64) (HostDisp
 
 func (host *HybridHost) Status(ctx context.Context) (HostStatusResult, error) {
 	result := HostStatusResult{Generations: []int64{}}
-	if host.node != nil {
+	if host.node != nil && host.nodeRunning() {
 		nodeStatus, err := host.node.Status(ctx)
 		if err == nil {
 			result = nodeStatus
@@ -149,7 +155,7 @@ func (host *HybridHost) Status(ctx context.Context) (HostStatusResult, error) {
 }
 
 func (host *HybridHost) Ping(ctx context.Context) error {
-	if host.node != nil {
+	if host.node != nil && host.nodeRunning() {
 		if err := host.node.Ping(ctx); err != nil {
 			return err
 		}
@@ -158,31 +164,37 @@ func (host *HybridHost) Ping(ctx context.Context) error {
 }
 
 func (host *HybridHost) SocketPath() string {
-	if host.node == nil {
+	if host.node == nil || !host.nodeRunning() {
 		return ""
 	}
 	return host.node.SocketPath()
 }
 
 func (host *HybridHost) Token() string {
-	if host.node == nil {
+	if host.node == nil || !host.nodeRunning() {
 		return ""
 	}
 	return host.node.Token()
 }
 
 func (host *HybridHost) PID() int {
-	if host.node == nil {
+	if host.node == nil || !host.nodeRunning() {
 		return host.process.PID()
 	}
 	return host.node.PID()
 }
 
 func (host *HybridHost) Running() bool {
-	if host.node != nil && host.node.Running() {
+	if host.node != nil && host.nodeRunning() {
 		return true
 	}
 	return host.process.Running()
+}
+
+func (host *HybridHost) nodeRunning() bool {
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+	return host.nodeStarted
 }
 
 var _ HostClient = (*HybridHost)(nil)

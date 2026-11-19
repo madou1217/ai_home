@@ -639,6 +639,12 @@ func (r *Runtime) Invoke(ctx context.Context, generation int64, contributionID s
 	return raw, err
 }
 
+// InvokeEmbedded 实现 application/pluginruntime.EmbeddedInvoker：
+// 进程后端没有本机 socket 时，数据面直接走 Runtime 的 Hybrid 路由。
+func (r *Runtime) InvokeEmbedded(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error) {
+	return r.Invoke(ctx, generation, contributionID, value, timeout)
+}
+
 // InvokeWithPayload 与 Invoke 相同，但保留宿主附带的二进制 payload。
 func (r *Runtime) InvokeWithPayload(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error) {
 	if ctx == nil {
@@ -1043,6 +1049,8 @@ func (r *Runtime) syncRegistry() {
 	sort.Slice(projections, func(i, j int) bool {
 		return projections[i].Generation < projections[j].Generation
 	})
+	// process-only 代次没有本机 socket：数据面走 Runtime 的内嵌路由。
+	r.registry.SetEmbeddedInvoker(r)
 	if len(projections) == 0 || host == nil {
 		_, _ = r.registry.Replace(appplugins.HostAccess{}, nil, nil)
 		return

@@ -74,6 +74,15 @@ func (invoker *HostInvoker) InvokeReverse(
 	timeout time.Duration,
 	onCall appplugins.ReverseCall,
 ) (json.RawMessage, error) {
+	host := invoker.registry.Host()
+	if host.Address == "" || host.Token == "" {
+		if embedded := invoker.registry.EmbeddedInvoker(); embedded != nil {
+			if onCall != nil {
+				return nil, &Error{Code: "plugin_runtime_inactive", Message: "进程插件不支持反向调用"}
+			}
+			return embedded.InvokeEmbedded(ctx, generation, contributionID, value, timeout)
+		}
+	}
 	client, err := invoker.connection(ctx)
 	if err != nil {
 		return nil, err

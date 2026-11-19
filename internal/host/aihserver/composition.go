@@ -1840,8 +1840,16 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 为什么不是两个 Handler 串接：每个 Handler 在「服务不了」时交回 Canonical，
 	// 串接会让第一个 Handler 直接交还、第二个永远轮不到。分派必须发生在**账号所属
 	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
+	pluginProviders := newPluginProviderRegistry()
+	pluginAccounts := &pluginRelayAccountSource{
+		registry:  pluginProviders,
+		catalog:   catalog,
+		recruiter: inference.recruiter,
+		transport: pluginRelayTransportPolicy{},
+	}
 	familyMembers := append(
 		[]relaycore.Provider{
+			pluginRelayProviderChain{registry: pluginProviders},
 			codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
 				ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
 			}),
@@ -1854,7 +1862,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Path:     codebuddyfamilyrelay.Path,
 			Aliases:  newChatAliasResolver(inference.modelAliases, dependencies.Store),
 			Accounts: relaycore.NewAccountSourceChain(
-				append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
+				append(append(relayModuleAccounts(relayModules), familyRelayAccounts), pluginAccounts)...,
 			),
 			Fallback:            inference.handler,
 			Credentials:         credentials,
@@ -1893,7 +1901,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Describe:             accountProviderResolver(store),
 		AIHomeDir:            aiHomeDir,
 		OnProviderDescriptors: func(result pluginhost.DescriptorCollectResult) {
-			modelDiscovery.SetPluginProviders(pluginProviderModelDescriptors(result), pluginModelFallback)
+			pluginProviders.Update(result)
+			catalog.ReplaceDynamic(pluginProviders.Definitions())
+			modelDiscovery.SetPluginProviders(pluginProviders.ModelDescriptors(), pluginModelFallback)
 		},
 		OnLog: func(message string) {
 			if errorLog != nil && strings.TrimSpace(message) != "" {
@@ -2706,43 +2716,6 @@ func descriptorStringSlice(value any) []string {
 	default:
 		return nil
 	}
-}
-
-// pluginProviderModelDescriptors 把插件描述符里的 models strategies 压成发现集合。
-// 只有宿主实现了 general 探测的 handler 才会进入；其它 handler 保持 unsupported。
-func pluginProviderModelDescriptors(result pluginhost.DescriptorCollectResult) []accountapp.PluginProviderDescriptor {
-	out := make([]accountapp.PluginProviderDescriptor, 0, len(result.Accepted))
-	for _, accepted := range result.Accepted {
-		descriptor := accepted.Descriptor
-		capabilities, _ := descriptor["capabilities"].(map[string]any)
-		models, _ := capabilities["models"].(map[string]any)
-		if models == nil || models["supported"] != true {
-			continue
-		}
-		strategies := descriptorMapSlice(models["strategies"])
-		handlers := make([]string, 0, 1)
-		modes := make([]string, 0, 2)
-		for _, strategy := range strategies {
-			handler := strings.TrimSpace(fmt.Sprint(strategy["handler"]))
-			if handler != "" {
-				handlers = append(handlers, handler)
-			}
-			for _, mode := range descriptorStringSlice(strategy["modes"]) {
-				modes = append(modes, strings.TrimSpace(mode))
-			}
-		}
-		for _, handler := range handlers {
-			if handler == "generic-models-probe" {
-				out = append(out, accountapp.PluginProviderDescriptor{
-					ProviderID:    accepted.ProviderID,
-					ModelsHandler: handler,
-					Modes:         modes,
-				})
-				break
-			}
-		}
-	}
-	return out
 }
 
 // newModelDiscovery 创建生产模型目录源（见 model_providers.go 注册表），

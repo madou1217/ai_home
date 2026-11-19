@@ -1,13 +1,21 @@
 package providers
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // Catalog 是只读 Provider 注册表，负责查询身份和声明式能力。
 //
 // 它不执行认证刷新、协议转换或会话读取；这些行为属于 Integration Adapter。
 type Catalog struct {
+	mu      sync.RWMutex
 	ordered []Definition
 	byID    map[string]int
+	// dynamic 是插件 Provider（provider.descriptor）注册的合同外条目。
+	// 内置合同仍然只读；动态条目整体替换，ID 不允许与内置冲突。
+	dynamicOrdered []Definition
+	dynamicByID    map[string]int
 }
 
 // NewCatalog 从已校验合同构建只读 Provider 注册表。
@@ -20,7 +28,38 @@ func NewCatalog(manifest Manifest) (*Catalog, error) {
 	for index, definition := range definitions {
 		byID[definition.ID] = index
 	}
-	return &Catalog{ordered: definitions, byID: byID}, nil
+	return &Catalog{ordered: definitions, byID: byID, dynamicByID: map[string]int{}}, nil
+}
+
+// ReplaceDynamic 用插件宿主当前接受的 Provider 定义替换动态集合。
+//
+// 动态 Provider 不参与内置合同校验；调用方（pluginhost）已经完成描述符校验。
+// 与内置 Provider 同 ID 的条目被忽略，避免插件覆盖内置能力。
+func (catalog *Catalog) ReplaceDynamic(definitions []Definition) {
+	if catalog == nil {
+		return
+	}
+	dynamicOrdered := make([]Definition, 0, len(definitions))
+	dynamicByID := make(map[string]int, len(definitions))
+	for _, definition := range definitions {
+		id := strings.ToLower(strings.TrimSpace(definition.ID))
+		if id == "" || definition.ID != id {
+			continue
+		}
+		if _, builtin := catalog.byID[id]; builtin {
+			continue
+		}
+		if _, duplicate := dynamicByID[id]; duplicate {
+			continue
+		}
+		definition.ID = id
+		dynamicByID[id] = len(dynamicOrdered)
+		dynamicOrdered = append(dynamicOrdered, cloneDefinition(definition))
+	}
+	catalog.mu.Lock()
+	catalog.dynamicOrdered = dynamicOrdered
+	catalog.dynamicByID = dynamicByID
+	catalog.mu.Unlock()
 }
 
 // List 返回按产品展示顺序排列的防御性副本。
@@ -28,7 +67,11 @@ func (catalog *Catalog) List() []Definition {
 	if catalog == nil {
 		return nil
 	}
-	return cloneDefinitions(catalog.ordered)
+	catalog.mu.RLock()
+	builtin := cloneDefinitions(catalog.ordered)
+	dynamic := cloneDefinitions(catalog.dynamicOrdered)
+	catalog.mu.RUnlock()
+	return append(builtin, dynamic...)
 }
 
 // Get 根据大小写不敏感的 Provider ID 返回防御性副本。
@@ -36,12 +79,16 @@ func (catalog *Catalog) Get(id string) (Definition, bool) {
 	if catalog == nil {
 		return Definition{}, false
 	}
-	canonicalID, ok := catalog.CanonicalID(id)
-	if !ok {
-		return Definition{}, false
+	key := strings.ToLower(strings.TrimSpace(id))
+	catalog.mu.RLock()
+	defer catalog.mu.RUnlock()
+	if index, found := catalog.byID[key]; found {
+		return cloneDefinition(catalog.ordered[index]), true
 	}
-	index := catalog.byID[canonicalID]
-	return cloneDefinition(catalog.ordered[index]), true
+	if index, found := catalog.dynamicByID[key]; found {
+		return cloneDefinition(catalog.dynamicOrdered[index]), true
+	}
+	return Definition{}, false
 }
 
 // CanonicalID 返回规范 Provider ID，不复制包含切片和指针的完整定义。
@@ -51,11 +98,16 @@ func (catalog *Catalog) CanonicalID(id string) (string, bool) {
 	if catalog == nil {
 		return "", false
 	}
-	index, found := catalog.byID[strings.ToLower(strings.TrimSpace(id))]
-	if !found {
-		return "", false
+	key := strings.ToLower(strings.TrimSpace(id))
+	catalog.mu.RLock()
+	defer catalog.mu.RUnlock()
+	if index, found := catalog.byID[key]; found {
+		return catalog.ordered[index].ID, true
 	}
-	return catalog.ordered[index].ID, true
+	if index, found := catalog.dynamicByID[key]; found {
+		return catalog.dynamicOrdered[index].ID, true
+	}
+	return "", false
 }
 
 // Contains 判断规范化后的 Provider ID 是否已经注册，不复制完整定义。

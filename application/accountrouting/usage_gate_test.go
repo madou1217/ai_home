@@ -60,34 +60,34 @@ func newUsageGateTestSession(t *testing.T, gate UsageGate) (*RecruitmentSession,
 	return session, candidate
 }
 
-func TestUsageBlockedSkipsBlockedCandidate(t *testing.T) {
+func TestUsageDecisionSkipsBlockedCandidate(t *testing.T) {
 	gate := &stubUsageGate{decision: UsageDecision{
 		Blocked: true,
 		Status:  "blocked_by_policy",
 		Reason:  "usage_below_server_threshold",
 	}}
 	session, candidate := newUsageGateTestSession(t, gate)
-	blocked, err := session.usageBlocked(context.Background(), candidate)
-	if err != nil || !blocked {
-		t.Fatalf("usageBlocked() = %v, %v; want blocked", blocked, err)
+	decision, err := session.usageDecision(context.Background(), candidate)
+	if err != nil || !decision.Blocked {
+		t.Fatalf("usageDecision() = %+v, %v; want blocked", decision, err)
 	}
 	if gate.calls != 1 {
 		t.Fatalf("gate calls = %d, want 1", gate.calls)
 	}
 }
 
-func TestUsageBlockedPropagatesGateFailure(t *testing.T) {
+func TestUsageDecisionPropagatesGateFailure(t *testing.T) {
 	gate := &stubUsageGate{err: errors.New("snapshot store unavailable")}
 	session, candidate := newUsageGateTestSession(t, gate)
-	if _, err := session.usageBlocked(context.Background(), candidate); err == nil {
-		t.Fatal("usageBlocked() error = nil, want fail-closed")
+	if _, err := session.usageDecision(context.Background(), candidate); err == nil {
+		t.Fatal("usageDecision() error = nil, want fail-closed")
 	}
 }
 
-func TestUsageBlockedWithoutGateAllows(t *testing.T) {
+func TestUsageDecisionWithoutGateAllows(t *testing.T) {
 	session, candidate := newUsageGateTestSession(t, nil)
-	blocked, err := session.usageBlocked(context.Background(), candidate)
-	if err != nil || blocked {
-		t.Fatalf("usageBlocked() = %v, %v; want allowed", blocked, err)
+	decision, err := session.usageDecision(context.Background(), candidate)
+	if err != nil || decision.Blocked {
+		t.Fatalf("usageDecision() = %+v, %v; want allowed", decision, err)
 	}
 }

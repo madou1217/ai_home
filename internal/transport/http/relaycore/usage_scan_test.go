@@ -181,7 +181,7 @@ func TestTrackUsageWrapsBodyWhenRecorderConfigured(t *testing.T) {
 	recorder := &fakeUsageRecorder{}
 	handler := &Handler{usage: recorder}
 	route := runtimecore.ModelRoute{} // 无效路由：这里只验证「挂载 + 结算」，不验证落库
-	body := handler.trackUsage(context.Background(), route, io.NopCloser(
+	body := handler.trackUsage(context.Background(), "claude", route, io.NopCloser(
 		strings.NewReader("data: {\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\n\n"),
 	))
 	if body == nil {
@@ -202,7 +202,7 @@ func TestTrackUsageWrapsBodyWhenRecorderConfigured(t *testing.T) {
 func TestTrackUsagePassesThroughWithoutRecorder(t *testing.T) {
 	handler := &Handler{}
 	original := io.NopCloser(strings.NewReader("payload"))
-	if handler.trackUsage(context.Background(), runtimecore.ModelRoute{}, original) != original {
+	if handler.trackUsage(context.Background(), "claude", runtimecore.ModelRoute{}, original) != original {
 		t.Fatal("没有 recorder 时不应包装 body")
 	}
 }

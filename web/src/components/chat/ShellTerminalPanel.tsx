@@ -32,6 +32,8 @@ interface ShellTerminalPanelProps {
   /** Keep the Server PTY alive while the page unmounts; a later mount attaches by key. */
   sessionKey?: string;
   persistent?: boolean;
+  /** When true, keyed attach failures return as-is instead of falling back to opening a new plain shell. */
+  strictExistingSession?: boolean;
   /** Controlled tabs used by the application-wide Web Terminal host. */
   sessionTabs?: Array<{
     id: string;
@@ -143,6 +145,7 @@ function ShellTerminalPanel({
   compactChrome = false,
   sessionKey = '',
   persistent = false,
+  strictExistingSession = false,
   sessionTabs,
   activeTabId: controlledActiveTabId,
   onActiveTabChange,
@@ -402,6 +405,7 @@ function ShellTerminalPanel({
         ? (async () => {
           const attached = await terminalAPI.attach(tabSessionKey, openingMux);
           if (attached.ok) return attached;
+          if (strictExistingSession) return attached;
           // A missing controlled account session must not silently become a
           // different shell. A persistent session is created only for an
           // explicit open/restart path; attach failures remain visible in the tab.
@@ -450,7 +454,7 @@ function ShellTerminalPanel({
       term.writeln(`\x1b[31m终端连接失败: ${String((error as Error)?.message || error)}\x1b[0m`);
       setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
     } finally { finishOpening(); }
-  }, [flushInput, pendingOutput, persistent, registerTermId, releaseLateAttachment, sessionKey, setOutputBlocked]);
+  }, [flushInput, pendingOutput, persistent, registerTermId, releaseLateAttachment, sessionKey, setOutputBlocked, strictExistingSession]);
 
   // ── 面板生命周期：建立 mux SSE + 首个 tab；卸载/关闭时全部回收 ──
   useEffect(() => {

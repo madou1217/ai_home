@@ -158,15 +158,6 @@ export default function SessionOffice({
   const deepLinkSignature = `${defaultOpenMailbox ? '1' : '0'}|${defaultMailboxScope ?? ''}|${defaultRoomKey ?? ''}|${defaultSessionKey ?? ''}`;
   const appliedDeepLinkRef = useRef<string>('');
 
-  // 服务器切换时立即清除原服务器上的关闭会话确认弹窗，防止跨节点误发关闭请求。
-  useEffect(() => {
-    if (prevServerIdRef.current !== serverId) {
-      prevServerIdRef.current = serverId;
-      setConfirmTarget(null);
-      setConfirmError('');
-    }
-  }, [serverId]);
-
   const clearZoomTimer = useCallback(() => {
     if (zoomTimerRef.current !== null && typeof window !== 'undefined') {
       window.clearTimeout(zoomTimerRef.current);
@@ -175,6 +166,20 @@ export default function SessionOffice({
   }, []);
 
   useEffect(() => clearZoomTimer, [clearZoomTimer]);
+
+  // 服务器切换时立即清理原服务器的缩放计时器、桌面、选中会话及关闭确认弹窗，防止跨节点状态残留或误发关闭请求。
+  useEffect(() => {
+    if (prevServerIdRef.current !== serverId) {
+      prevServerIdRef.current = serverId;
+      clearZoomTimer();
+      setZoomingSessionId(null);
+      setDesktopOpen(false);
+      setDesktopOriginRect(null);
+      setSelectedSessionId(null);
+      setConfirmTarget(null);
+      setConfirmError('');
+    }
+  }, [clearZoomTimer, serverId]);
 
   const triggerZoomCue = useCallback((sessionId: string) => {
     clearZoomTimer();
@@ -250,14 +255,18 @@ export default function SessionOffice({
     rooms,
   ]);
 
-  // 自动清理已不存在的选中会话，避免会话终止或退出后残留过期激活引用。
+  // 自动清理已不存在的选中会话并退出关联桌面，避免会话终止或退出后残留过期激活引用或桌面打开状态。
   useEffect(() => {
     if (!selectedSessionId) return;
     const stillExists = allSessions.some((session) => session.id === selectedSessionId);
     if (!stillExists) {
+      clearZoomTimer();
+      setZoomingSessionId(null);
+      setDesktopOpen(false);
+      setDesktopOriginRect(null);
       setSelectedSessionId(null);
     }
-  }, [allSessions, selectedSessionId]);
+  }, [allSessions, clearZoomTimer, selectedSessionId]);
 
   const activeRoom = useMemo<OfficeProjectRoom | null>(() => {
     if (filteredRooms.length === 0) return null;

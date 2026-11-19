@@ -26,6 +26,9 @@
 - 旧 Node 公开路径：CLI 应用高级设置、ServerSetup node-rpc、SSH 隧道、
   账号导入进度均已补 Go 兼容别名。
 - 路由归属：移除两条 `node_owned` legacy 聚合，投影全部为 `go_owned`。
+- 移除旧的「某一侧独有」命名：账号查找回退统一表述为
+  「宿主台账未命中 → 统一账号库」（`ledgerBacked`），Node 同步报告用
+  `unadopted`，测试名与注释同步；不再用「某一侧独有」描述账号事实。
 - 账号授权作业：补 logs / lastOutputAt / callbackCaptureStatus/Error；
   Go 无 loopback 监听时明确标 unavailable / manual_only。
 - 客户端版本不再写死：Claude 身份版本改由 `claudeidentity` 解析
@@ -64,6 +67,17 @@
   账号新增与重新认证在等待授权时由 Go 监听 localhost:1455/54545（只绑回环、
   路径精确匹配、作业结束/取消/过期即释放），收到回调直接调用作业的 Complete；
   端口被占用时降级为手动粘贴回调。已用真实作业验证监听→回调→换码失败→释放端口。
+- 字段级响应对拍（真实响应）：
+  - accounts：`account-row-sources.js` 的 39 个字段中，无条件字段全部由 Go 响应覆盖；
+    仅 `runtimeStatus/runtimeUntil/runtimeReason/loginType` 在确有运行态或 Kiro 身份时
+    出现（无事实时前端按 healthy 处理）；Go 另多出 displayId/enabled/modelCount/
+    vendor/tokenUsageSource，属超集。
+  - sessions/projects：Session 必填字段齐全，model/preview 由 previews 接口按需补齐；
+    chat-sessions 返回 Session 的全部字段。
+  - models / openai-models：覆盖 `WebUiModelsResponse` 与 `WebUiOpenAIModelsResponse`
+    的键，并在 data 项上多出 account_refs/aih_modalities/providers。
+  - auth job：覆盖 `AccountAddJob` 的必需字段，并多出 logs/exitCode/pid/
+    verificationUri/lastOutputAt 等运行态键。
 - 远端节点交互端点（device-node-session-start/input/stream、
   device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
   但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
@@ -76,8 +90,10 @@
 - 路由级对拍已完成：从 `web/src/services` 提取 211 个 method+path，GET 全部命中
   Go 路由（唯一 404 是 job 不存在时的正常领域错误）；对 88 条非危险写路由做了
   空载荷探针，全部命中（`projects/pick` 会等待系统文件夹对话框，按预期阻塞）。
-- 字段级响应键对拍（accounts、sessions、chat、models、auth jobs）仍需继续，
-  以合同/读模型为唯一事实源，不再引入 Node 分支判定。
+- 字段级响应对拍已按上面的字段清单完成；剩余是真实 Edge 页面上的可视化确认
+  （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
+- 旧 CLI 动作迁移：`cmd/aih` 对部分非启动类 Provider 命令仍整体转交 Node；
+  终端 shim 也仍把少数旧命令转给 Node CLI。下一步按命令逐个迁到 Go 并真机对拍。
 
 ---
 
@@ -122,7 +138,7 @@
    只回 `accountRef/provider/status/configured`，注释写明不返回 displayName /
    updatedAt：它们不是启停事实，回空值会覆盖前端已有展示字段。
 5. **已关闭：调度状态** — `webuiaccountsapi/row.go:294` `resolveSchedulableStatus`
-   在 Go 独有账号上算 `blocked_by_quota`；`webuiaccountliveapi/hub.go:721-738`
+   在 无台账投影账号上算 `blocked_by_quota`；`webuiaccountliveapi/hub.go:721-738`
    补 `runtimeModels` 与 `blocked_by_runtime_status` / `blocked_by_policy`。
 
 仍未承接的只剩：`tokenUsage` 的实际计量投影在无用量记录的账号上为 null（与无快照

@@ -174,8 +174,9 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 	}
 	activeRef := activeAccount.Ref().String()
 
-	// 2) 初始化 app-state.db model_usage_records 并插入一条未归属 ZCode 记录与对应写者审计日志。
-	dbPath := filepath.Join(aiHome, "app-state.db")
+	// 2) 初始化 aih.db 的 model_usage_records（读模型与归属对账都已统一到 aih.db），
+	// 并插入一条未归属 ZCode 记录与对应写者审计日志。
+	dbPath := filepath.Join(aiHome, "aih.db")
 	rawDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
@@ -256,11 +257,13 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 		},
 		To: peer.RecordParty{
 			Channel:  "inject",
-			Provider: "codex",
+			Provider: "claude",
 			Name:     "s1",
 			Address:  "s1",
 			Delivery: &peer.DeliveryTarget{
-				CLIName:      "codex",
+				// 通用 CLI 注入：本用例只验证触发器把 pending 投递并归档，
+				// codex 的扩展键提交协议由 peer 包自身用例覆盖。
+				CLIName:      "claude",
 				RuntimeScope: "gateway",
 				SessionName:  "s1",
 			},
@@ -273,6 +276,7 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 
 	var sentTmux []string
 	var tmuxMu sync.Mutex
+	waitQuiet := false
 	fakeQuota := &fakeHostQuotaProbePort{}
 	zeroDelay := time.Duration(0)
 
@@ -288,12 +292,19 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 		UsageScanStartDelay: &zeroDelay,
 		PeerDelivery: &peer.DeliveryOptions{
 			TmuxPath: "tmux",
+			Now:      nowFn,
+			// 本用例验证「触发器驱动一次 peer 补投」，不涉及安静期等待：
+			// 内容指纹的首次观测按「刚活动」处理，等待会推迟到后续 tick。
+			WaitForQuiet: &waitQuiet,
 			TmuxRunner: func(_ context.Context, _ string, args []string) (string, int, error) {
 				tmuxMu.Lock()
 				sentTmux = append(sentTmux, strings.Join(args, " "))
 				tmuxMu.Unlock()
 				for _, a := range args {
-					if a == "display-message" {
+					if a == "capture-pane" {
+						return "› \n────────\n100% context left", 0, nil
+					}
+					if strings.Contains(a, "#{cursor_y}") {
 						return "0\n", 0, nil
 					}
 				}
@@ -335,11 +346,26 @@ func TestBackgroundDaemonsIntegrationPeerRetentionQuotaAndZcode(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("POST trigger(%s) status=%d body=%s", body, rec.Code, rec.Body.String())
 		}
+
 	}
 
-	doTrigger(`{"daemon":"peer"}`)
-	if _, err := os.Stat(filepath.Join(aiHome, "run", "peer", "archive", peerRec.ID+".json")); err != nil {
-		t.Fatalf("expected peer message archived after trigger, err=%v", err)
+	// 启动期的首次 tick 可能正在运行：Tick 遇到并发会直接返回上一次摘要，
+	// 因此这里按「触发 + 有界等待」推进，直到消息被补投归档。
+	archivePath := filepath.Join(aiHome, "run", "peer", "archive", peerRec.ID+".json")
+	delivered := false
+	for attempt := 0; attempt < 40; attempt++ {
+		doTrigger(`{"daemon":"peer"}`)
+		if _, err := os.Stat(archivePath); err == nil {
+			delivered = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !delivered {
+		if pendingRaw, err := os.ReadFile(filepath.Join(aiHome, "run", "peer", "pending", peerRec.ID+".json")); err == nil {
+			t.Fatalf("expected peer message archived after trigger, still pending: %s", string(pendingRaw))
+		}
+		t.Fatalf("expected peer message archived after trigger")
 	}
 
 	doTrigger(`{"daemon":"quota-probe"}`)

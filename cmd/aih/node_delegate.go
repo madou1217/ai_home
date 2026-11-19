@@ -133,6 +133,9 @@ func delegateToNode(args []string) bool {
 	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss" || args[0] == "ls" || args[0] == "list" || args[0] == "export" || args[0] == "import" || args[0] == "desktop" || args[0] == "agent" || args[0] == "claim" || args[0] == "edge" || args[0] == "skill" || args[0] == "mcp") {
 		return false
 	}
+	if len(args) >= 2 && args[0] == "native" && args[1] == "plugin" {
+		return false
+	}
 	if len(args) >= 2 && launchProviders[args[0]] && providerActionOwnedByGo(args[1]) {
 		return false
 	}

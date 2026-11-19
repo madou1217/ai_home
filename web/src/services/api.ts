@@ -39,6 +39,8 @@ import type {
   AccountImportJob,
   AccountAddJob,
   UsageConfig,
+  ClaudePreflightConfig,
+  ClaudePreflightMode,
   ServerConfig,
   ControlPlaneEndpointHintsResponse,
   ChatMessage,
@@ -1478,6 +1480,24 @@ export const configAPI = {
         : {})
     });
     return response.data;
+  }
+};
+
+// Claude Code 首屏检查（onboarding preflight）策略
+export const claudePreflightAPI = {
+  get: async (): Promise<ClaudePreflightConfig> => {
+    const response = await api.get<{ ok: boolean; config: ClaudePreflightConfig }>('/webui/claude-preflight');
+    return response.data.config;
+  },
+
+  update: async (mode: ClaudePreflightMode): Promise<ClaudePreflightConfig> => {
+    const response = await api.post<{ ok: boolean; config: ClaudePreflightConfig }>('/webui/claude-preflight', { config: { mode } });
+    return response.data.config;
+  },
+
+  probe: async (): Promise<ClaudePreflightConfig> => {
+    const response = await api.post<{ ok: boolean; config: ClaudePreflightConfig }>('/webui/claude-preflight/probe');
+    return response.data.config;
   }
 };
 

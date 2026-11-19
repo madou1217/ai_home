@@ -9,7 +9,7 @@ import { useState, useEffect } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import './Settings.css';
 import { ProCard, StatisticCard } from '@ant-design/pro-components';
-import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal } from 'antd';
+import { Form, InputNumber, Input, message, Segmented, Space, Switch, Tabs, Select, Modal } from 'antd';
 import { CopyOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { configAPI, serverProfilesAPI } from '@/services/api';
 import {
@@ -62,6 +62,11 @@ import {
 } from '@/features/settings/settings-config';
 import { saveServerConfig } from '@/features/settings/save-server-config';
 import { useAppearanceSettings } from '@/features/settings/use-appearance-settings';
+import {
+  describeClaudePreflightMode,
+  describeClaudePreflightStatus,
+  useClaudePreflight
+} from '@/features/settings/use-claude-preflight';
 import { useManagementRestart } from '@/features/settings/use-management-restart';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
@@ -201,6 +206,22 @@ const Settings = ({ section }: SettingsProps) => {
   const [controlPlaneEndpointWarnings, setControlPlaneEndpointWarnings] = useState<string[]>([]);
   // 一键重启服务：restart + management watch 推送（与移动端设置共用）
   const { restarting, restartNote: restartAlert, restartServer: handleRestartServer } = useManagementRestart();
+  // Claude Code 首屏检查：默认自动（不可达时跳过）；开启后探测不可达会提示后果。
+  const preflight = useClaudePreflight({ probeOnLoad: true });
+  const handlePreflightMode = async (mode: 'auto' | 'on' | 'off') => {
+    try {
+      const next = await preflight.updateMode(mode);
+      if (mode !== 'off') {
+        const probed = await preflight.probe();
+        if (mode === 'on' && probed?.reachable === false) {
+          message.warning('当前环境不可达，开启后全新 Claude 配置首次启动会停在 403');
+        }
+      }
+      if (next.mode === 'off') message.success('已关闭 Claude 首屏检查');
+    } catch (_error) {
+      message.error('保存 Claude 首屏检查配置失败');
+    }
+  };
   // HUD 显示偏好（CRT / 音效）与主题：与 HUD 顶栏开关共用同一份状态，
   // 逻辑在 features/settings 与移动端设置共用。
   const {
@@ -468,6 +489,60 @@ const Settings = ({ section }: SettingsProps) => {
       </SettingsGroupCard>
 
       <LargePasteSettingCard />
+
+      <SettingsGroupCard
+        title="Claude Code 首屏检查"
+        description="Claude 首次启动会请求 api.anthropic.com 做连通性检查；网络或代理不可达时会停在 403。"
+      >
+        <SettingsItem
+          title="首屏检查"
+          subtitle={describeClaudePreflightMode(preflight.config?.mode || 'auto')}
+          action={
+            <Segmented
+              size="small"
+              value={preflight.config?.mode || 'auto'}
+              disabled={preflight.loading || preflight.saving}
+              options={[
+                { label: '自动', value: 'auto' },
+                { label: '开启', value: 'on' },
+                { label: '关闭', value: 'off' }
+              ]}
+              onChange={(value) => void handlePreflightMode(value as 'auto' | 'on' | 'off')}
+            />
+          }
+        />
+        <div className="settings-preflight-status">
+          <span
+            className={
+              'settings-preflight-dot' +
+              (preflight.config?.reachable === true ? ' is-ok' : preflight.config?.reachable === false ? ' is-bad' : '')
+            }
+            aria-hidden="true"
+          />
+          <span>
+            {describeClaudePreflightStatus(preflight.config)}
+            {preflight.config ? ` · 当前${preflight.config.effective ? '执行检查' : '跳过检查'}` : ''}
+          </span>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            loading={preflight.probing}
+            onClick={() => void preflight.probe()}
+          >
+            重新检测
+          </Button>
+        </div>
+        {preflight.config?.mode === 'on' && preflight.config.reachable === false ? (
+          <InlineNote tone="warning" className="settings-inline-alert">
+            开启后，全新 Claude 配置首次启动会请求 api.anthropic.com；当前环境不可达会 403 停在欢迎页。建议关闭本项或为 Claude 配置代理。
+          </InlineNote>
+        ) : null}
+        {preflight.error ? (
+          <InlineNote tone="error" className="settings-inline-alert">
+            {preflight.error}
+          </InlineNote>
+        ) : null}
+      </SettingsGroupCard>
 
       <SettingsGroupCard
         title="外观个性化"

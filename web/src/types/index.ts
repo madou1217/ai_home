@@ -1160,6 +1160,19 @@ export interface UsageConfig {
   threshold_pct: number;
 }
 
+/** Claude Code 首屏连通性检查策略；auto 按首次探测结果自动决定。 */
+export type ClaudePreflightMode = 'auto' | 'on' | 'off';
+
+export interface ClaudePreflightConfig {
+  mode: ClaudePreflightMode;
+  /** 当前是否保留官方首屏检查（false = 启动时跳过）。 */
+  effective: boolean;
+  /** 最近一次双端点探测结果；null 表示尚未检测。 */
+  reachable: boolean | null;
+  checked_at: number;
+  detail: string;
+}
+
 export interface ServerConfig {
   host: string;
   port: number;

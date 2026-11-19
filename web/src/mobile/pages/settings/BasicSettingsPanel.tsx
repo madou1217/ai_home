@@ -9,7 +9,7 @@ import {
   UndoOutlined
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
-import { Form, Input, InputNumber, Switch, message } from 'antd';
+import { Form, Input, InputNumber, Segmented, Switch, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { saveServerConfig } from '@/features/settings/save-server-config';
 import {
@@ -23,6 +23,11 @@ import {
   type UsageFormValues
 } from '@/features/settings/settings-config';
 import { useAppearanceSettings } from '@/features/settings/use-appearance-settings';
+import {
+  describeClaudePreflightMode,
+  describeClaudePreflightStatus,
+  useClaudePreflight
+} from '@/features/settings/use-claude-preflight';
 import { useManagementRestart } from '@/features/settings/use-management-restart';
 import { HudCard, HudIconButton, HudSection } from '@/mobile/ui';
 import { configAPI } from '@/services/api';
@@ -77,6 +82,21 @@ export default function BasicSettingsPanel() {
   const servers = useSettingsServers();
   const { restarting, restartNote, restartServer } = useManagementRestart();
   const appearance = useAppearanceSettings();
+  const preflight = useClaudePreflight();
+  const handlePreflightMode = async (mode: 'auto' | 'on' | 'off') => {
+    try {
+      await preflight.updateMode(mode);
+      if (mode !== 'off') {
+        const probed = await preflight.probe();
+        if (mode === 'on' && probed?.reachable === false) {
+          message.warning('当前环境不可达，开启后全新 Claude 配置首次启动会停在 403');
+        }
+      }
+      if (mode === 'off') message.success('已关闭 Claude 首屏检查');
+    } catch (_error) {
+      message.error('保存 Claude 首屏检查配置失败');
+    }
+  };
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -249,6 +269,51 @@ export default function BasicSettingsPanel() {
               />
             )}
           />
+        </div>
+      </HudSection>
+
+      <HudSection title="Claude Code 首屏检查" code="PREFLIGHT">
+        <p className={styles.groupDesc}>首次启动会请求 api.anthropic.com；网络或代理不可达时会停在 403。</p>
+        <div className={styles.group}>
+          <SettingRow
+            title="首屏检查"
+            subtitle={describeClaudePreflightMode(preflight.config?.mode || 'auto')}
+            control={(
+              <Segmented
+                size="small"
+                value={preflight.config?.mode || 'auto'}
+                disabled={preflight.loading || preflight.saving}
+                options={[
+                  { label: '自动', value: 'auto' },
+                  { label: '开启', value: 'on' },
+                  { label: '关闭', value: 'off' }
+                ]}
+                onChange={(value) => void handlePreflightMode(value as 'auto' | 'on' | 'off')}
+              />
+            )}
+          />
+          <div className={styles.preflightStatus}>
+            <span
+              className={
+                styles.preflightDot +
+                (preflight.config?.reachable === true ? ' ' + styles.preflightDotOk : '') +
+                (preflight.config?.reachable === false ? ' ' + styles.preflightDotBad : '')
+              }
+              aria-hidden="true"
+            />
+            <span>{describeClaudePreflightStatus(preflight.config)}</span>
+            <HudIconButton
+              icon={<ReloadOutlined />}
+              label="重新检测"
+              showLabel
+              loading={preflight.probing}
+              onClick={() => void preflight.probe()}
+            />
+          </div>
+          {preflight.config?.mode === 'on' && preflight.config.reachable === false ? (
+            <InlineHudNote type="error">当前环境不可达；开启后全新 Claude 配置首次启动会 403 停在欢迎页，请关闭本项或配置代理。</InlineHudNote>
+          ) : null}
+          {preflight.error ? <InlineHudNote type="error">{preflight.error}</InlineHudNote> : null}
         </div>
       </HudSection>
 

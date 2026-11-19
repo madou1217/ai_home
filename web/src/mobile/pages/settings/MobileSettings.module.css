@@ -229,3 +229,27 @@
 .panel[hidden] {
   display: none;
 }
+.preflightStatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 14px 12px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.preflightStatus button {
+  margin-left: auto;
+}
+.preflightDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-muted);
+}
+.preflightDotOk {
+  background: var(--color-success);
+}
+.preflightDotBad {
+  background: var(--color-danger);
+}

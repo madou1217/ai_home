@@ -743,7 +743,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Authorizer:    authorizer,
 		Jobs:          addJobs,
 		LoginJobs:     dependencies.LoginJobs,
-		LocalImporter: NewKiroJobLocalImporter(dependencies),
+		LocalImporter: NewAccountJobLocalImporter(dependencies),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建新增账号作业接口失败: %w", err)

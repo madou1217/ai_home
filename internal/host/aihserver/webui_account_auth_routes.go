@@ -17,9 +17,21 @@ func selfOrNodeBaseURL(dependencies webuiRouteDependencies) string {
 	return dependencies.NodeBaseURL
 }
 
-// NewKiroJobLocalImporter 装配 Kiro OAuth 新增/重登作业的本机 IDE 登录态导入端口。
-func NewKiroJobLocalImporter(dependencies webuiRouteDependencies) webuiaccountaddapi.JobLocalImporter {
-	return webuiaccountauthapi.NewKiroJobLocalImporter(dependencies.AuthJobs, dependencies.HostHomeDir)
+// NewAccountJobLocalImporter 装配新增/重登作业的本机登录态导入端口。
+// Kiro IDE 走专用导入；其它 Provider 走通用 provider-host-local。
+func NewAccountJobLocalImporter(dependencies webuiRouteDependencies) webuiaccountaddapi.JobLocalImporter {
+	importer, err := webuiaccountauthapi.NewJobLocalImporter(webuiaccountauthapi.Dependencies{
+		Authorizer:  dependencies.Authorizer,
+		Catalog:     dependencies.Catalog,
+		Store:       dependencies.Store,
+		AuthJobs:    dependencies.AuthJobs,
+		HostHomeDir: dependencies.HostHomeDir,
+		NodeBaseURL: selfOrNodeBaseURL(dependencies),
+	})
+	if err != nil {
+		return webuiaccountauthapi.NewKiroJobLocalImporter(dependencies.AuthJobs, dependencies.HostHomeDir)
+	}
+	return importer
 }
 
 // buildWebUIAccountAuthRoutes 装配 WebUI 账号认证迁移补齐路由（ZCode 协议回调、静态配置账号与本机直接导入）。

@@ -109,7 +109,7 @@
 ## 清单：合同/文档残留
 
 - `contracts/routeownership/contract.go:732,743` 仍保留两条 `node_owned` legacy aggregate；不是实际路由，但会让完成度看起来未清零。
-- `contracts/routeownership/contract.go` 的 `webui.static_shell` 注释仍写"web/dist 缺失回落 Node"；Go-only 已无 Node 可回落。
+- `webui.static_shell` 注释已改为缺失时由前置门返回明确错误。
 - `docs/testing/autostart-*.md` 保留 `--front-door --supervise-node` 历史参数，属历史证据，不应作为当前启动模板。
 
 ## 下一轮对拍建议

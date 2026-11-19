@@ -205,7 +205,7 @@ func Current() Manifest {
 				},
 			},
 			{
-				// 静态 WebUI 外壳：web/dist 存在时由 Go 托管 /ui；缺失时前端门自动回落 Node。
+				// 静态 WebUI 外壳：web/dist 存在时由 Go 托管 /ui；缺失时由前置门返回明确错误。
 				ID:              "webui.static_shell",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

@@ -17,14 +17,39 @@ import (
 
 const (
 	// DefaultUpstreamAttemptLimit 限制单个路由候选最多调用的不同上游账号数。
-	DefaultUpstreamAttemptLimit = 4
+	// 与 Node serve 的 maxAttempts 默认值一致。
+	DefaultUpstreamAttemptLimit = 3
+	// MaxUpstreamAttemptLimit 是进程配置允许的上限；Node 侧上限为 16。
+	MaxUpstreamAttemptLimit = 16
 )
+
+var configuredUpstreamAttemptLimit atomic.Int64
+
+// ConfigureUpstreamAttemptLimit 设置本进程的默认上游账号尝试上限。
+//
+// 0 表示使用领域默认；显式值必须在 [1, 16]。调用发生在服务启动前。
+func ConfigureUpstreamAttemptLimit(limit int) error {
+	if limit < 0 || limit > MaxUpstreamAttemptLimit {
+		return ErrInvalidUpstreamAttemptLimit
+	}
+	configuredUpstreamAttemptLimit.Store(int64(limit))
+	return nil
+}
+
+func effectiveUpstreamAttemptLimit() int {
+	if value := int(configuredUpstreamAttemptLimit.Load()); value > 0 {
+		return value
+	}
+	return DefaultUpstreamAttemptLimit
+}
 
 var (
 	// ErrInvalidCoordinatorDependencies 表示执行器缺少一个必要端口。
 	ErrInvalidCoordinatorDependencies = errors.New("Canonical 执行器依赖无效")
 	// ErrInvalidExecuteRequest 表示上下文、请求或输出端口无效。
 	ErrInvalidExecuteRequest = errors.New("Canonical 执行请求无效")
+	// ErrInvalidUpstreamAttemptLimit 表示进程级上游尝试上限越界。
+	ErrInvalidUpstreamAttemptLimit = errors.New("上游尝试上限必须在 0 到 16 之间")
 	// ErrNoRoutableAccount 表示有界扫描内没有可调用账号。
 	ErrNoRoutableAccount = errors.New("没有可执行 Canonical 请求的账号")
 	// ErrInvalidUpstreamEventStream 表示 Adapter 事件序号或终态违反合同。
@@ -171,7 +196,7 @@ func NewCoordinator(
 ) (*Coordinator, error) {
 	attemptLimit := dependencies.UpstreamAttemptLimit
 	if attemptLimit == 0 {
-		attemptLimit = DefaultUpstreamAttemptLimit
+		attemptLimit = effectiveUpstreamAttemptLimit()
 	}
 	if dependencies.Catalog == nil ||
 		dependencies.Routes == nil ||
@@ -182,7 +207,7 @@ func NewCoordinator(
 		dependencies.Clock == nil ||
 		dependencies.ModelRefreshes == nil ||
 		attemptLimit < 1 ||
-		attemptLimit > DefaultUpstreamAttemptLimit {
+		attemptLimit > MaxUpstreamAttemptLimit {
 		return nil, ErrInvalidCoordinatorDependencies
 	}
 	attempts, err := NewObservedAttemptRecorder(

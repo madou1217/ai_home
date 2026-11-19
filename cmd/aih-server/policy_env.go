@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/internal/host/aihserver"
 )
 
 // init applies the process-wide failure policy overrides exposed by
@@ -35,6 +37,22 @@ func init() {
 	}
 	if err := runtimecore.ConfigurePolicyDefaults(cooldown, thresholdValue); err != nil {
 		panic(fmt.Sprintf("失败策略环境变量无效: %v", err))
+	}
+
+	if attempts, ok, err := policyEnvInt64("AIH_SERVER_MAX_ATTEMPTS"); err != nil {
+		panic(err)
+	} else if ok {
+		if err := inferencegateway.ConfigureUpstreamAttemptLimit(int(attempts)); err != nil {
+			panic(fmt.Sprintf("AIH_SERVER_MAX_ATTEMPTS 无效: %v", err))
+		}
+	}
+
+	if timeoutMS, ok, err := policyEnvInt64("AIH_SERVER_UPSTREAM_TIMEOUT_MS"); err != nil {
+		panic(err)
+	} else if ok && timeoutMS > 0 {
+		if err := aihserver.ConfigureUpstreamTimeout(time.Duration(timeoutMS) * time.Millisecond); err != nil {
+			panic(fmt.Sprintf("AIH_SERVER_UPSTREAM_TIMEOUT_MS 无效: %v", err))
+		}
 	}
 }
 

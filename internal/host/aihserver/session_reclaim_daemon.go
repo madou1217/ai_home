@@ -49,6 +49,13 @@ func (daemon sessionReclaimDaemon) Start(ctx context.Context) {
 }
 
 func (daemon sessionReclaimDaemon) runOnce(ctx context.Context) {
+	// 先清空壳：tmux 服务还在、会话已不存在的注册表条目（supervisor 异常退出留下）。
+	// 整个 tmux 服务都没了属于重启场景，注册表要留给 restore，不动。
+	if pruned, pruneErr := sessionreclaim.PruneStale(ctx, daemon.aiHomeDir, 10*time.Minute); pruneErr != nil {
+		log.Printf("[session-reclaim] 清理空壳注册表失败: %v", pruneErr)
+	} else if pruned > 0 {
+		log.Printf("[session-reclaim] 清理空壳注册表 %d 条", pruned)
+	}
 	result, err := sessionreclaim.Reclaim(ctx, daemon.aiHomeDir, sessionreclaim.ReclaimOptions{
 		Options: sessionreclaim.Options{IdleThreshold: sessionReclaimIdleThreshold},
 		Apply:   true,

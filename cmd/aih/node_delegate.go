@@ -55,10 +55,9 @@ func isNativeLaunch(args []string) bool {
 	if len(args) == 0 || !launchProviders[args[0]] {
 		return false
 	}
-	if len(args) == 1 {
-		return true
-	}
-	if !isDigits(args[1]) {
+	// 只有显式账号编号才走原生：不带编号时 Node 有一套"默认账号/自动选择"
+	// 策略（含网关默认与优先级回退），Go 侧尚未完全对齐，先交回 Node。
+	if len(args) == 1 || !isDigits(args[1]) {
 		return false
 	}
 	for _, arg := range args[2:] {

@@ -3,6 +3,7 @@ package aihcli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	"github.com/madou1217/ai_home/application/providerruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
@@ -32,6 +34,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycli "github.com/madou1217/ai_home/internal/adapters/agy/clilaunch"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	clinecli "github.com/madou1217/ai_home/internal/adapters/cline/clilaunch"
 	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
@@ -397,6 +400,48 @@ func isInteractiveTTY(input io.Reader, output io.Writer) bool {
 		term.IsTerminal(int(stdin.Fd())) && term.IsTerminal(int(stdout.Fd()))
 }
 
+// resolveDefaultAccountIntent 把"不带账号编号"的启动解析成默认账号的原生直连。
+// 默认账号记录在 app_kv 的 account:default:<provider>，值是账号 ref 的 JSON。
+func (app *App) resolveDefaultAccountIntent(
+	ctx context.Context,
+	providerID string,
+	arguments []string,
+) (providerlaunch.LaunchIntent, bool) {
+	if app == nil || app.accountStore == nil || strings.TrimSpace(app.aiHomeDir) == "" {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	databasePath, err := appstate.DatabasePath(app.aiHomeDir)
+	if err != nil {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	raw, found, err := appstate.ReadKV(ctx, databasePath, "account:default:"+providerID)
+	if err != nil || !found {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	var accountRefText string
+	if json.Unmarshal([]byte(raw), &accountRefText) != nil {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	accountRefText = strings.TrimSpace(accountRefText)
+	if accountRefText == "" {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	account, err := app.accountStore.GetByRef(ctx, accountcore.AccountRef(accountRefText))
+	if err != nil || !account.Enabled() {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	cliAccountID := account.CLIAccountID()
+	if !cliAccountID.IsValid() {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	nativeArguments := append([]string{cliAccountID.String()}, arguments...)
+	nativeIntent, err := providerlaunch.ParseLaunchIntent(app.catalog, providerID, nativeArguments)
+	if err != nil || nativeIntent.Mode() != providerlaunch.LaunchModeNativeDirect {
+		return providerlaunch.LaunchIntent{}, false
+	}
+	return nativeIntent, true
+}
+
 // newApp 统一生产和包内测试的不变量校验。
 func newApp(
 	catalog *providers.Catalog,
@@ -439,6 +484,14 @@ func (app *App) Run(
 	intent, err := providerlaunch.ParseLaunchIntent(app.catalog, providerID, arguments)
 	if err != nil {
 		return fmt.Errorf("解析 Provider CLI 命令失败: %w", err)
+	}
+	// 不带账号编号的启动等价于"用宿主默认账号"（Node 入口一直是这个语义）。
+	// Go 侧原先只认 Relay，于是 codebuddy / gemini 这类没有 Gateway Profile 的
+	// 家族会被直接拒绝。这里先尝试落到默认账号，失败再走原有 Relay 校验。
+	if intent.Mode() == providerlaunch.LaunchModeGatewayRelay && !supportedGatewayCLIProvider(intent.RelayProviderID()) {
+		if nativeIntent, ok := app.resolveDefaultAccountIntent(ctx, providerID, arguments); ok {
+			intent = nativeIntent
+		}
 	}
 	var endpoint providerlaunch.GatewayEndpoint
 	if intent.Mode() == providerlaunch.LaunchModeGatewayRelay {

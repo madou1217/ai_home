@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"syscall"
 )
@@ -14,8 +13,10 @@ func execNode(entry string, args []string) bool {
 	if err != nil {
 		return false
 	}
-	argv := append([]string{"node", entry}, args...)
-	if err = syscall.Exec(nodePath, argv, os.Environ()); err != nil {
+	// argv[0] 必须是真实的 node 路径：Node 侧会用 process.argv[0] 判断是否需要重新 exec，
+	// 传字面量 "node" 会被当成另一个可执行文件而无限重入。
+	argv := append([]string{nodePath, entry}, args...)
+	if err = syscall.Exec(nodePath, argv, envWithDelegationMarker()); err != nil {
 		return false
 	}
 	return true

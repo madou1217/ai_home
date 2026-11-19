@@ -1,0 +1,33 @@
+#!/bin/sh
+# aih 入口：直接 exec 原生 Go CLI，不经过 Node。
+# 只有原生二进制缺失（例如未构建的旧安装）时才回落到 Node 入口。
+set -e
+
+target=$0
+# npm 生成的是符号链接，先解析到包内真实路径。
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case $link in
+    /*) target=$link ;;
+    *) target=$(dirname -- "$target")/$link ;;
+  esac
+done
+dir=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd)
+
+case $(uname -s) in
+  Darwin) platform=darwin ;;
+  Linux) platform=linux ;;
+  *) platform=$(uname -s | tr '[:upper:]' '[:lower:]') ;;
+esac
+case $(uname -m) in
+  arm64|aarch64) arch=arm64 ;;
+  x86_64|amd64) arch=amd64 ;;
+  *) arch=$(uname -m) ;;
+esac
+
+native="$dir/native/$platform-$arch/aih-go"
+if [ -x "$native" ]; then
+  exec "$native" "$@"
+fi
+
+exec node "$dir/ai-home.js" "$@"

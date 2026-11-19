@@ -6,6 +6,23 @@ import (
 	"strings"
 )
 
+// delegationMarker 标记"本次进程是被 Go 转交给 Node 的"。
+// Node 侧在维护动作里会反过来调用 aih-go（例如 server autostart install），
+// 没有这个标记就会出现 Go→Node→Go 的无限重入。
+const delegationMarker = "AIH_NODE_DELEGATED"
+
+// envWithDelegationMarker 返回带标记的环境变量副本。
+func envWithDelegationMarker() []string {
+	env := os.Environ()
+	for index, item := range env {
+		if strings.HasPrefix(item, delegationMarker+"=") {
+			env[index] = delegationMarker + "=1"
+			return env
+		}
+	}
+	return append(env, delegationMarker+"=1")
+}
+
 // launchProviders 是 aih 直接拉起的 provider 家族。
 var launchProviders = map[string]bool{
 	"codex":       true,
@@ -93,8 +110,8 @@ func delegateToNode(args []string) bool {
 	if isNativeLaunch(args) {
 		return false
 	}
-	// 只有以 aih 入口被调用时才回落 Node；直接调用 aih-go 的脚本保持原语义。
-	if filepath.Base(os.Args[0]) != "aih" {
+	// 已经由 Go 转交过一次的进程不再回落，避免 Go→Node→Go 循环。
+	if os.Getenv(delegationMarker) == "1" {
 		return false
 	}
 	entry, ok := resolveNodeEntry()

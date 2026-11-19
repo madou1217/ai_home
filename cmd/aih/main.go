@@ -22,6 +22,11 @@ var runCLI = run
 
 // main 为 Go CLI 建立可取消进程生命周期并统一输出根错误。
 func main() {
+	// 交给 Node 入口的动词必须在构造 runtime 之前分流：
+	// runtime 会持有账号写入租约等进程级资源，先构造再 exec 会让 Node 侧阻塞。
+	if delegateToNode(os.Args[1:]) {
+		os.Exit(0)
+	}
 	os.Exit(execute(os.Args[1:], defaultCommandRuntime()))
 }
 
@@ -30,17 +35,20 @@ func main() {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
-	// autostart 安装已迁到 Go，先于 Node 兜底处理，避免安装路径依赖 ai-home.js。
-	if handled, err := runServerAutostart(context.Background(), args, runtime); handled {
+	// server 生命周期与 autostart 先在 Go 处理；其余 server 子命令仍交回 Node。
+	if handled, err := runServerLifecycle(context.Background(), args, runtime); handled {
 		if err != nil {
 			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
 			return 1
 		}
 		return 0
 	}
-	// Go 尚未接管的顶层动词（resume/server/export…）整体交给 Node 入口，
-	// 成功时本进程已被替换，不会留下 Go 外壳。
-	if delegateToNode(args) {
+	// autostart 安装已迁到 Go，先于 Node 兜底处理，避免安装路径依赖 ai-home.js。
+	if handled, err := runServerAutostart(context.Background(), args, runtime); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
 		return 0
 	}
 	// Native terminal supervision owns its own signal/capture/drain order. Keep

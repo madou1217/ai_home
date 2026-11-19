@@ -133,19 +133,19 @@ function ensureNativeCli(rootDir) {
   return fs.existsSync(binary) ? binary : '';
 }
 
-// linkTarget 优先沿用 npm 的包目录链接（<prefix>/lib/node_modules/ai_home），
-// 这样目标不写死仓库路径，换目录后仍然有效。
+// linkTarget 指向包内的 bin/aih 启动器（不是 JS 入口，也不是裸二进制），
+// 这样 npm 重新安装、换目录、切换平台都不需要改链接。
 function linkTarget(dir, rootDir, binary) {
+  const launcher = path.join(rootDir, 'bin', 'aih');
   const packageDir = path.join(path.dirname(dir), 'lib', 'node_modules', 'ai_home');
   try {
     if (fs.realpathSync(packageDir) === rootDir) {
-      const fromPackage = path.join(packageDir, path.relative(rootDir, binary));
-      return path.relative(dir, fromPackage);
+      return path.relative(dir, path.join(packageDir, 'bin', 'aih'));
     }
   } catch (err) {
-    // 非 npm 布局（如 Homebrew 自带目录）时退回仓库相对路径。
+    // 非 npm 布局时退回仓库相对路径。
   }
-  return path.relative(dir, binary);
+  return path.relative(dir, launcher);
 }
 
 // relinkAihEntry 把全局 aih 入口指向 Go CLI：启动会话不再经过 Node 外壳。
@@ -173,6 +173,7 @@ function relinkAihEntry(rootDir, options = {}) {
     try {
       const target = fs.realpathSync(link);
       if (!target.startsWith(rootDir + path.sep)) continue;
+      if (target === path.join(rootDir, 'bin', 'aih')) continue;
       const temporary = link + '.aih-link-' + process.pid;
       fs.rmSync(temporary, { force: true });
       fs.symlinkSync(linkTarget(dir, rootDir, binary), temporary);

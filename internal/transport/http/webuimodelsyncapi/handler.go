@@ -236,6 +236,19 @@ type Handler struct {
 	jobOrder   []string
 	nextJobSeq atomic.Uint64
 	watchers   map[chan ModelCatalogJob]struct{}
+
+	catalogMu    sync.Mutex
+	catalogCache map[string]catalogCacheEntry
+}
+
+// catalogResponseTTL 与响应 Cache-Control 的 max-age 对齐：短 TTL 内复用
+// 已编码的目录字节，让 ETag 复核和连续页面加载不再付完整构建成本。
+const catalogResponseTTL = 3 * time.Second
+
+type catalogCacheEntry struct {
+	at   time.Time
+	body []byte
+	etag string
 }
 
 // ModelCatalogJob 对齐 WebUiOpenAIModelsJob 契约。
@@ -412,6 +425,15 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 		scopedRef = resolved.String()
 	}
 
+	key := fmt.Sprintf("%s\x00%d", scopedRef, handler.now().Unix()/int64(catalogResponseTTL/time.Second))
+	handler.catalogMu.Lock()
+	entry, cached := handler.catalogCache[key]
+	handler.catalogMu.Unlock()
+	if cached && time.Since(entry.at) < catalogResponseTTL {
+		handler.writeCatalogBody(response, request, entry.body, entry.etag)
+		return
+	}
+
 	catalog, err := handler.buildCatalog(ctx, scopedRef)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "get_openai_models_failed", "读取模型目录失败")
@@ -424,6 +446,22 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 	}
 	sum := sha1.Sum(body)
 	etag := `"` + hex.EncodeToString(sum[:])[:20] + `"`
+	handler.catalogMu.Lock()
+	if handler.catalogCache == nil {
+		handler.catalogCache = make(map[string]catalogCacheEntry)
+	}
+	if len(handler.catalogCache) >= 32 {
+		for stale := range handler.catalogCache {
+			delete(handler.catalogCache, stale)
+			break
+		}
+	}
+	handler.catalogCache[key] = catalogCacheEntry{at: time.Now(), body: body, etag: etag}
+	handler.catalogMu.Unlock()
+	handler.writeCatalogBody(response, request, body, etag)
+}
+
+func (handler *Handler) writeCatalogBody(response http.ResponseWriter, request *http.Request, body []byte, etag string) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("Cache-Control", "private, max-age=3, stale-while-revalidate=30")
 	response.Header().Set("Vary", "Accept-Encoding")

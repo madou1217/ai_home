@@ -90,6 +90,18 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__learn" {
 		return runLearnEntry(arguments[1:], runtime)
 	}
+	if providerID == "__remote_ws__" {
+		return runRemoteWorkspace(arguments[1:], runtime)
+	}
+	if providerID == "__usage-probe" {
+		return runUsageProbe(arguments[1:], runtime)
+	}
+	if providerID == "__ssh_mcp__" {
+		return runSSHMCPServer(arguments[1:], runtime)
+	}
+	if providerID == "__background" {
+		return runBackgroundSupervisorCommand(arguments[1:], runtime)
+	}
 	if providerID == "plugin" {
 		return runPlugin(ctx, arguments[1:], runtime)
 	}

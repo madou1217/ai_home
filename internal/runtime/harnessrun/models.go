@@ -20,9 +20,9 @@ type thinkingLevelMap struct {
 
 // harnessModel 是 pi / dsh 模型投影的共同事实。
 //
-// 与 Node buildHarnessModelEntry 的差异：Go 目前只有 models.dev 的模态、上下文与
-// 推理档位（internal/adapters/modelmetadata/modelsdev），没有 models.dev 的展示名、
-// 输出上限与价格，因此 name 回退为模型 id，maxTokens / cost 省略而不是伪造。
+// 展示名、模态、上下文/输出上限、推理标记与价格来自 assets/modelsdev-metadata.json
+// （与 Node attachModelMetadata 同源快照的压缩投影）；modelsdev 运行时索引只用于
+// 快速模态/档位回退。
 type harnessModel struct {
 	ID               string
 	Name             string
@@ -32,6 +32,7 @@ type harnessModel struct {
 	ThinkingLevelMap *thinkingLevelMap
 	ContextWindow    int64
 	MaxTokens        int64
+	Cost             *modelCost
 }
 
 var piThinkingLevels = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
@@ -127,13 +128,34 @@ func buildHarnessModel(entry gatewayModel, provider string, metadata *modelsdev.
 		Name:  id,
 		Input: normalizeInputModalities(nil, entry.Modalities),
 	}
+	metadataFound := false
+	if metadataEntry, found := lookupModelMetadata(provider, id); found {
+		metadataFound = true
+		if metadataEntry.Name != "" {
+			model.Name = metadataEntry.Name
+		}
+		if len(metadataEntry.Input) > 0 {
+			model.Input = normalizeInputModalities(metadataEntry.Input, entry.Modalities)
+		}
+		if metadataEntry.Context > 0 {
+			model.ContextWindow = metadataEntry.Context
+		}
+		if metadataEntry.Output > 0 {
+			model.MaxTokens = metadataEntry.Output
+		}
+		model.Reasoning = metadataEntry.Reasoning
+		model.ReasoningKnown = true
+		model.Cost = metadataEntry.Cost
+	}
 	var ladder []string
 	if metadata != nil {
-		if modalities, found := metadata.LookupModalities(provider, id); found {
-			model.Input = normalizeInputModalities(modalities.Input(), entry.Modalities)
-			model.ReasoningKnown = true
+		if !metadataFound {
+			if modalities, found := metadata.LookupModalities(provider, id); found {
+				model.Input = normalizeInputModalities(modalities.Input(), entry.Modalities)
+				model.ReasoningKnown = true
+			}
 		}
-		if contextWindow, found := metadata.LookupContextWindow(provider, id); found && contextWindow > 0 {
+		if contextWindow, found := metadata.LookupContextWindow(provider, id); found && contextWindow > 0 && model.ContextWindow == 0 {
 			model.ContextWindow = int64(contextWindow)
 			model.ReasoningKnown = true
 		}
@@ -144,7 +166,10 @@ func buildHarnessModel(entry gatewayModel, provider string, metadata *modelsdev.
 			model.ReasoningKnown = true
 		}
 	}
-	model.Reasoning = len(ladder) > 0 || len(entry.ReasoningEfforts) > 0
+	if len(ladder) > 0 || len(entry.ReasoningEfforts) > 0 {
+		model.Reasoning = true
+		model.ReasoningKnown = true
+	}
 	// 档位映射只认网关发布的 aih_reasoning_efforts（Node buildThinkingLevelMap
 	// 只读 entry.reasoningEfforts）；models.dev 的档位只用于能力判断。
 	model.ThinkingLevelMap = buildThinkingLevelMap(entry.ReasoningEfforts)
@@ -186,7 +211,7 @@ func selectLaunchModel(models []harnessModel, requested string) string {
 //
 // Node 的 reasoning 只有在 models.dev 有该模型能力记录时才出现
 // （metadata.capabilities 缺失时 `undefined` 会被 JSON.stringify 省略），
-// 因此这里用指针区分「未知」与「已知且为 false」。cost / maxTokens 暂不提供。
+// 因此这里用指针区分「未知」与「已知且为 false」。
 type piModelEntry struct {
 	ID               string            `json:"id"`
 	Name             string            `json:"name"`
@@ -195,6 +220,7 @@ type piModelEntry struct {
 	ThinkingLevelMap *thinkingLevelMap `json:"thinkingLevelMap,omitempty"`
 	ContextWindow    int64             `json:"contextWindow,omitempty"`
 	MaxTokens        int64             `json:"maxTokens,omitempty"`
+	Cost             *modelCost        `json:"cost,omitempty"`
 }
 
 func buildPiModelEntries(models []harnessModel) []piModelEntry {
@@ -213,6 +239,7 @@ func buildPiModelEntries(models []harnessModel) []piModelEntry {
 			ThinkingLevelMap: model.ThinkingLevelMap,
 			ContextWindow:    model.ContextWindow,
 			MaxTokens:        model.MaxTokens,
+			Cost:             model.Cost,
 		})
 	}
 	return entries

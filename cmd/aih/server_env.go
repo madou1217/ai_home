@@ -43,23 +43,29 @@ func runServerEnv(ctx context.Context, arguments []string, runtime commandRuntim
 		switch token {
 		case "--base-url":
 			if index+1 >= len(rest) || strings.TrimSpace(rest[index+1]) == "" {
-				return true, fmt.Errorf("Invalid --base-url value")
+				return serverEnvUsageError(runtime, "Invalid --base-url value")
 			}
 			index++
 			baseURL = strings.TrimSpace(rest[index])
 		case "--api-key":
 			if index+1 >= len(rest) || strings.TrimSpace(rest[index+1]) == "" {
-				return true, fmt.Errorf("Invalid --api-key value")
+				return serverEnvUsageError(runtime, "Invalid --api-key value")
 			}
 			index++
 			apiKey = strings.TrimSpace(rest[index])
 		default:
-			return true, fmt.Errorf("Unknown option: %s", token)
+			return serverEnvUsageError(runtime, "Unknown option: "+token)
 		}
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "export OPENAI_BASE_URL=\"%s\"\n", baseURL)
 	_, _ = fmt.Fprintf(runtime.stdout, "export OPENAI_API_KEY=\"%s\"\n", apiKey)
 	return true, nil
+}
+
+func serverEnvUsageError(runtime commandRuntime, message string) (bool, error) {
+	_, _ = fmt.Fprintf(runtime.stderr, "\x1b[31m[aih] %s\x1b[0m\n", message)
+	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server env [--base-url <url>] [--api-key <key>]")
+	return true, cliExitCode{code: 1}
 }
 
 func generateAPIKey() (string, error) {

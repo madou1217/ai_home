@@ -71,17 +71,6 @@ func isNativeLaunch(args []string) bool {
 	return true
 }
 
-func serverActionOwnedByGo(action string) bool {
-	switch action {
-	case "start", "stop", "restart", "status", "config", "env", "serve",
-		"autostart", "sync-codex", "sync_codex", "add", "ls", "list",
-		"use", "remove", "rm":
-		return true
-	default:
-		return false
-	}
-}
-
 func providerActionOwnedByGo(verb string) bool {
 	switch verb {
 	case "ls", "list", "export", "import", "version", "home", "sessions",
@@ -148,7 +137,7 @@ func delegateToNode(args []string) bool {
 		(containsArgument(args[2:], "--restart-client") || containsArgument(args[2:], "--force-quit-client")) {
 		return false
 	}
-	if len(args) >= 2 && (args[0] == "server" || args[0] == "daemon") && serverActionOwnedByGo(args[1]) {
+	if len(args) >= 1 && (args[0] == "server" || args[0] == "daemon") {
 		return false
 	}
 	if len(args) == 1 && args[0] == "serve" {

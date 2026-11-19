@@ -23,13 +23,36 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 	switch {
 	case len(arguments) == 1 && arguments[0] == "serve":
 		action = "start"
-	case len(arguments) == 2 && (arguments[0] == "server" || arguments[0] == "daemon"):
-		action = strings.TrimSpace(arguments[1])
+	case len(arguments) >= 1 && (arguments[0] == "server" || arguments[0] == "daemon"):
+		if len(arguments) > 1 {
+			action = strings.TrimSpace(arguments[1])
+		} else {
+			action = "start"
+		}
 	default:
 		return false, nil
 	}
+	if action == "help" || action == "--help" || action == "-h" {
+		showServerUsage(runtime)
+		return true, nil
+	}
 	if action != "start" && action != "stop" && action != "restart" && action != "status" {
 		return false, nil
+	}
+	if len(arguments) > 2 {
+		var message string
+		switch action {
+		case "start":
+			message = "server start does not accept serve options; update server config first"
+		case "stop":
+			message = "server stop does not accept serve options"
+		case "restart":
+			message = "server restart does not accept serve options; update server config first"
+		default:
+			message = "server status does not accept serve options"
+		}
+		_, _ = fmt.Fprintf(runtime.stderr, "\x1b[31m[aih] %s\x1b[0m\n", message)
+		return true, cliExitCode{code: 1}
 	}
 	options, err := resolveAutostartOptions(runtime)
 	if err != nil {

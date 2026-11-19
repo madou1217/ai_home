@@ -127,6 +127,10 @@ func execute(args []string, runtime commandRuntime) int {
 	}
 	if handled, err := runServerEnv(context.Background(), args, runtime); handled {
 		if err != nil {
+			var silent silentExit
+			if errors.As(err, &silent) {
+				return silent.ExitCode()
+			}
 			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
 			return 1
 		}
@@ -148,6 +152,10 @@ func execute(args []string, runtime commandRuntime) int {
 	}
 	if handled, err := runServerLifecycle(context.Background(), args, runtime); handled {
 		if err != nil {
+			var silent silentExit
+			if errors.As(err, &silent) {
+				return silent.ExitCode()
+			}
 			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
 			return 1
 		}
@@ -156,6 +164,17 @@ func execute(args []string, runtime commandRuntime) int {
 	// autostart 安装已迁到 Go，先于 Node 兜底处理，避免安装路径依赖 ai-home.js。
 	if handled, err := runServerAutostart(context.Background(), args, runtime); handled {
 		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
+	if handled, err := runServerFallback(args, runtime); handled {
+		if err != nil {
+			var silent silentExit
+			if errors.As(err, &silent) {
+				return silent.ExitCode()
+			}
 			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
 			return 1
 		}

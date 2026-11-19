@@ -11,3 +11,10 @@ var piExtensionSource string
 
 //go:embed assets/aih-model-refresh.mjs
 var dshModelRefreshSource string
+
+// models.dev-meta 是 @opencode-ai/models 离线快照的压缩投影：只保留 AIH 需要的
+// 展示名、模态、上下文/输出上限、推理标记与价格。生成来源与 Node 的
+// lib/server/models-dev-metadata.js 相同，避免运行时依赖 Node/网络。
+//
+//go:embed assets/modelsdev-metadata.json
+var modelsDevMetadataSource []byte

@@ -91,8 +91,9 @@
   - auth job：覆盖 `AccountAddJob` 的必需字段，并多出 logs/exitCode/pid/
     verificationUri/lastOutputAt 等运行态键。
 - Server CLI：`aih server start|stop|restart|status|config|env|profiles|serve|
-  autostart|sync-codex|add|ls|use|remove` 与 `aih serve` 均由 Go 执行；
-  只有未知子命令继续走旧入口。
+  autostart|sync-codex|add|ls|use|remove|help`、默认启动与未知动作错误
+  都由 Go 执行（`serve` 的选项直接交给 Go server flag 解析）；`aih serve`
+  同样由 Go 执行。
 - Desktop CLI：`aih desktop status [--json]` 由 Go 采集 canonical/影子副本/
   运行中实例/漂移；JSON 与旧输出逐字段一致（`checkedAt` 除外），human 表格不变。
 - Agent CLI：`aih agent adapters|capabilities|probe` 由 Go 输出 harness/adapter
@@ -134,10 +135,11 @@
   的账号选择、`--json` 计划、pinned 默认模型、`--model-alias` 直接启动、
   模型目录、HOME/DSH_HOME 投影、cordis patch、托管插件参数、会话链接、
   环境凭据剥离与子进程退出码都在 Go。pi 真机（假二进制）启动参数/env 与
-  Node 逐字段一致；dsh/dsh-tui 的投影文件与 Node 语义一致。
-  已知差异：Go 的 models.dev 适配器暂未提供展示名、输出上限与价格，
-  pi models.json 的 `name` 回退为 id、`maxTokens`/`cost` 省略；yaml.v3
-  序列化键序/缩进与 Node 不同但语义等价。
+  Node 逐字段一致；dsh/dsh-tui 的投影文件与 Node 语义一致。pi `models.json`
+  的展示名、模态、上下文/输出上限、推理标记与价格由嵌入的 models.dev 投影
+  提供，与 Node 对 codex/claude/gemini/cline 的真实目录逐字段一致。
+- Node 服务端私有入口：`__background`、`__ssh_mcp__`、`__remote_ws__`、
+  `__usage-probe` 均已有 Go 实现并在 `cmd/aih` 根分发；不再依赖 Node 入口。
 - Backup 配置 CLI：`aih backup add/list/remove/enable/disable/config/show`
   由 Go 的 remote-backup config/state 读写；`run/test/status --remote/restore/
   recover` 也由 Go 执行（远端快照读取、Go 账号导入与保守的 writer-lock 恢复）。
@@ -157,9 +159,7 @@
   （账号行、会话列表、模型选择器、auth job 进度），不是响应键缺失。
 - 旧 CLI 动作迁移：上述只读/备份/登录/启停/Server/Desktop/Agent/Claim/Edge/
   Shell/补全/SSH/SSH clipboard probe/Clip agent/Harness/Skill/MCP/Native
-  plugin/Update 命令已是 Go；仍有 Node 服务端启动的私有入口
-  `__background`、`__ssh_mcp__`、`__remote_ws__`、`__usage-probe`
-  尚未在 Go 落地。
+  plugin/Update 命令以及服务端私有入口都已是 Go。
 
 ---
 

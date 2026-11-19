@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -174,6 +176,23 @@ func ensureDirLink(src string, dst string) error {
 	}
 	if err := os.MkdirAll(filepath.Dir(src), privateDirMode); err != nil {
 		return err
+	}
+	return createDirLink(src, dst)
+}
+
+// createDirLink 在 Windows 使用目录 junction（普通用户无需符号链接权限），
+// 其它平台使用符号链接，与 Node ensureSharedStoreEntries 的平台策略一致。
+func createDirLink(src, dst string) error {
+	if runtime.GOOS == "windows" {
+		output, err := exec.Command("cmd", "/c", "mklink", "/J", src, dst).CombinedOutput()
+		if err != nil {
+			detail := strings.TrimSpace(string(output))
+			if detail == "" {
+				detail = err.Error()
+			}
+			return errors.New("mklink_junction_failed: " + detail)
+		}
+		return nil
 	}
 	return os.Symlink(dst, src)
 }

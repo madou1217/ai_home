@@ -84,7 +84,7 @@ D:39–317 共 **25 个规范名、6 个别名（31 个 token）**。此表已�
 | `zcode-url` | R:314 → `lib/cli/commands/zcode-url-router.js:92` | URL 回调接收/归属判断/转桌面。`zcode-scheme` 已移除：不再自动接管 `zcode:` 协议，登录改用 WebUI 手动粘贴回调 |
 | `proxy`（退役兼容入口） | R:121：报已替换，exit 1，提示 `server/serve` | 必须保留明确拒绝，不称为 server 别名 |
 | `__complete/__suggest/__learn`（内部） | E:1103 → `lib/cli/complete/index.js` | 补全、建议、学习三个叶子；不应为了补齐列表直接公开给普通补全 |
-| `__background run`、`__ssh_mcp__`、`__remote_ws__`、`__usage-probe`（内部） | R:94–158 → 后台 supervisor、SSH MCP loop、`lib/server/ssh-remote-supervisor.js`、额度探针 | 参数校验、启动/退出、协议/凭据边界各自登记；未执行。不是“隐藏所以缺失” |
+| `__background run`、`__ssh_mcp__`、`__remote_ws__`、`__usage-probe`（内部） | Go 根分发：`internal/runtime/backgroundsupervisor`、`internal/runtime/sshmcp`、`internal/transport/http/webuisshapi`、`cmd/aih/usage_probe.go` | 参数校验、启动/退出、协议/凭据边界各自登记；Node 同名入口仅保留兼容实现，Go 是运行路径 |
 
 ## 5. Provider 顶层与动作所有权
 

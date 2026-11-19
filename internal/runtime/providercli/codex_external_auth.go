@@ -118,7 +118,7 @@ func (runner *Runner) runCodexExternalAuth(
 	defer cancelTUI()
 	tuiDone := make(chan error, 1)
 	go func() {
-		tuiDone <- runner.runProviderProcess(tuiCtx, binary, remoteArguments, environment)
+		tuiDone <- runner.runProviderProcess(tuiCtx, spec.ProviderID(), binary, remoteArguments, environment)
 	}()
 	select {
 	case err := <-tuiDone:

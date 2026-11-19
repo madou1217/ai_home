@@ -14,5 +14,5 @@ func (runner *Runner) runPreparedProviderProcess(ctx context.Context, providerID
 		}
 		args = prepared
 	}
-	return runner.runProviderProcess(ctx, path, args, env)
+	return runner.runProviderProcess(ctx, providerID, path, args, env)
 }

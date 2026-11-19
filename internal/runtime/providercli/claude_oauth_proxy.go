@@ -249,7 +249,7 @@ func (runner *Runner) runWithHTTPProxy(
 	defer cancelProcess()
 	processDone := make(chan error, 1)
 	go func() {
-		processDone <- runner.runProviderProcess(processCtx, path, arguments, environment)
+		processDone <- runner.runProviderProcess(processCtx, providerID, path, arguments, environment)
 	}()
 	select {
 	case err := <-processDone:

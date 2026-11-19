@@ -286,10 +286,12 @@ func (runner *Runner) captureProjection(
 // 代理/OAuth 路径只负责旁路服务；TUI 进程必须同样走这里，不能各自 io.Copy。
 func (runner *Runner) runProviderProcess(
 	ctx context.Context,
+	providerID string,
 	path string,
 	arguments []string,
 	environment []string,
 ) error {
+	environment = applyProviderConfigRoot(providerID, runner.hostHomeDir, environment)
 	if runner.interactive && runner.ptyStarter != nil {
 		return runner.runInteractiveDirect(ctx, path, arguments, environment)
 	}

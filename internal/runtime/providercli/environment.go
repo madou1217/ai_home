@@ -1,6 +1,7 @@
 package providercli
 
 import (
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -62,6 +63,26 @@ func applyProjectionEnvironment(
 		return nil, err
 	}
 	return applyEnvironment(environment, patch), nil
+}
+
+// claudeConfigDirEnv 是 Claude Code 的配置根变量：它决定 CLI 读
+// <root>/.claude.json 而不是 $HOME/.claude.json，onboarding、凭据和账号状态都跟着它走。
+const claudeConfigDirEnv = "CLAUDE_CONFIG_DIR"
+
+// applyProviderConfigRoot 把共享 Provider 状态根投影回官方 CLI 的配置变量。
+//
+// Claude 会话始终共享宿主 ~/.claude（Node 启动策略同样只指向这里）。Go 启动若不
+// 显式设置，CLI 会改读从未完成 onboarding 的 $HOME/.claude.json，新版本会在首屏
+// 对 api.anthropic.com 做连通性预检，第三方 Base URL 也会被 403 挡在门外。
+func applyProviderConfigRoot(providerID string, hostHomeDir string, environment []string) []string {
+	if strings.ToLower(strings.TrimSpace(providerID)) != "claude" {
+		return environment
+	}
+	home := strings.TrimSpace(hostHomeDir)
+	if home == "" {
+		return environment
+	}
+	return setEnvironmentValue(environment, claudeConfigDirEnv, filepath.Join(home, ".claude"))
 }
 
 // setEnvironmentValue 覆盖 Runtime 动态分配的 Socket 等非持久配置。

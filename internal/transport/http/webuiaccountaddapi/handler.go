@@ -35,6 +35,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountauth"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 )
 
 const (
@@ -47,9 +48,10 @@ const (
 	Path = "/v1/management/webui/account-add"
 	// JobsSuffix 由共享 wiring 拼在 Path 之后，构成单作业资源模式。
 	JobsSuffix = "/jobs/{jobId}"
-	// CallbackSuffix / CancelSuffix / LocalImportSuffix / InstallSuffix 是作业动作。
+	// CallbackSuffix / CancelSuffix / CodeSuffix / LocalImportSuffix / InstallSuffix 是作业动作。
 	CallbackSuffix    = JobsSuffix + "/callback"
 	CancelSuffix      = JobsSuffix + "/cancel"
+	CodeSuffix        = JobsSuffix + "/code"
 	LocalImportSuffix = JobsSuffix + "/local-import"
 	InstallSuffix     = JobsSuffix + "/install"
 
@@ -95,6 +97,14 @@ type Jobs interface {
 	Cancel(jobID string) (JobSnapshot, error)
 }
 
+// LoginJobs 是 CLI code-paste 登录作业端口（agy native-cli 等）。
+type LoginJobs interface {
+	Start(ctx context.Context, providerID string) (aihloginjob.Snapshot, error)
+	Get(id string) (aihloginjob.Snapshot, bool)
+	Cancel(id string) bool
+	SubmitCode(id string, code string) bool
+}
+
 // JobLocalImporter 为等待中的 OAuth 作业执行本机登录态导入并收敛终态。
 type JobLocalImporter interface {
 	CompleteLocalImport(ctx context.Context, job JobSnapshot, sourceID string) (JobSnapshot, error)
@@ -120,6 +130,7 @@ type Started struct {
 type Dependencies struct {
 	Authorizer    Authorizer
 	Jobs          Jobs
+	LoginJobs     LoginJobs
 	LocalImporter JobLocalImporter
 }
 
@@ -127,6 +138,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer    Authorizer
 	jobs          Jobs
+	loginJobs     LoginJobs
 	localImporter JobLocalImporter
 }
 
@@ -138,6 +150,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		authorizer:    dependencies.Authorizer,
 		jobs:          dependencies.Jobs,
+		loginJobs:     dependencies.LoginJobs,
 		localImporter: dependencies.LocalImporter,
 	}, nil
 }
@@ -274,6 +287,11 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 	strategy := strings.TrimSpace(payload.AuthStrategy)
 	loginProvider := strings.TrimSpace(payload.LoginProvider)
 
+	if provider == "agy" && strings.EqualFold(strategy, "native-cli") && handler.loginJobs != nil {
+		handler.startLoginJob(response, request, provider)
+		return
+	}
+
 	started, err := handler.jobs.Start(request.Context(), StartRequest{
 		ProviderID:            provider,
 		AuthMode:              authMode,
@@ -333,12 +351,96 @@ func (handler *Handler) handleJob(response http.ResponseWriter, request *http.Re
 		handler.handleCallback(response, request, jobID)
 	case "cancel":
 		handler.handleCancel(response, request, jobID)
+	case "code":
+		handler.handleLoginCode(response, request, jobID)
 	case "local-import":
 		handler.handleLocalImport(response, request, jobID)
 	case "install":
 		handler.handleInstall(response, request, jobID)
 	default:
 		writeError(response, http.StatusNotFound, "not_found", "路由不存在", nil)
+	}
+}
+
+// startLoginJob 把 agy native-cli 启动委托给 Go CLI 登录作业引擎。
+func (handler *Handler) startLoginJob(response http.ResponseWriter, request *http.Request, provider string) {
+	snapshot, err := handler.loginJobs.Start(request.Context(), provider)
+	if err != nil {
+		writeError(response, http.StatusBadGateway, "login_job_start_failed", "CLI 登录作业启动失败", nil)
+		return
+	}
+	writeJSON(response, http.StatusOK, pendingResponse{
+		OK:                true,
+		Provider:          provider,
+		Purpose:           string(accountauth.PurposeRegister),
+		AuthMode:          "oauth-browser",
+		AuthStrategy:      "native-cli",
+		Status:            "pending",
+		JobID:             snapshot.ID,
+		AuthorizationURL:  snapshot.AuthURL,
+		PollIntervalMS:    1000,
+		AuthProgressState: progressAwaitingCode,
+		DerivedBy:         deriveByGo,
+	})
+}
+
+// handleLoginCode 把用户粘贴的授权码写回 CLI 登录作业。
+func (handler *Handler) handleLoginCode(response http.ResponseWriter, request *http.Request, jobID string) {
+	if request.Method != http.MethodPost {
+		response.Header().Set("Allow", http.MethodPost)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "只支持 POST", nil)
+		return
+	}
+	if handler.loginJobs == nil {
+		writeError(response, http.StatusNotFound, "job_not_found", "CLI 登录作业不存在", nil)
+		return
+	}
+	payload, err := decodeJSON[struct {
+		Code string `json:"code"`
+	}](request)
+	if err != nil || strings.TrimSpace(payload.Code) == "" {
+		writeError(response, http.StatusBadRequest, "invalid_payload", "code 不能为空", nil)
+		return
+	}
+	if !handler.loginJobs.SubmitCode(jobID, strings.TrimSpace(payload.Code)) {
+		writeError(response, http.StatusConflict, "job_not_running", "CLI 登录作业不在运行", nil)
+		return
+	}
+	snapshot, ok := handler.loginJobs.Get(jobID)
+	if !ok {
+		writeError(response, http.StatusNotFound, "job_not_found", "CLI 登录作业不存在", nil)
+		return
+	}
+	writeJSON(response, http.StatusOK, jobResponse{OK: true, Job: loginJobSnapshot(snapshot)})
+}
+
+// loginJobSnapshot 把 CLI 作业快照投影成 account-add 的公开作业形状。
+func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
+	status := "running"
+	progress := progressAwaitingCode
+	switch snapshot.Status {
+	case aihloginjob.StatusSucceeded:
+		status, progress = "succeeded", progressCompleted
+	case aihloginjob.StatusFailed:
+		status, progress = "failed", progressFailed
+	case aihloginjob.StatusCancelled:
+		status, progress = "cancelled", progressCancelled
+	}
+	return JobSnapshot{
+		ID:                snapshot.ID,
+		Provider:          snapshot.Provider,
+		Purpose:           string(accountauth.PurposeRegister),
+		Status:            status,
+		GoStatus:          string(snapshot.Status),
+		AuthMode:          "oauth-browser",
+		AuthStrategy:      "native-cli",
+		AuthProgressState: progress,
+		AuthorizationURL:  snapshot.AuthURL,
+		AccountRef:        snapshot.AccountRef,
+		CLIAccountID:      snapshot.CLIAccountID,
+		FailureCode:       snapshot.Error,
+		CreatedAt:         Millis(snapshot.StartedAt),
+		UpdatedAt:         Millis(snapshot.UpdatedAt),
 	}
 }
 
@@ -351,6 +453,12 @@ func (handler *Handler) handleGet(response http.ResponseWriter, request *http.Re
 	}
 	job, err := handler.jobs.GetJob(request.Context(), jobID)
 	if err != nil {
+		if errors.Is(err, accountauth.ErrJobNotFound) && handler.loginJobs != nil {
+			if snapshot, ok := handler.loginJobs.Get(jobID); ok {
+				writeJSON(response, http.StatusOK, jobResponse{OK: true, Job: loginJobSnapshot(snapshot)})
+				return
+			}
+		}
 		writeLookupError(response, err, nil)
 		return
 	}
@@ -392,6 +500,14 @@ func (handler *Handler) handleCancel(response http.ResponseWriter, request *http
 		response.Header().Set("Allow", http.MethodPost)
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "只支持 POST", nil)
 		return
+	}
+	if handler.loginJobs != nil {
+		if _, ok := handler.loginJobs.Get(jobID); ok {
+			handler.loginJobs.Cancel(jobID)
+			snapshot, _ := handler.loginJobs.Get(jobID)
+			writeJSON(response, http.StatusOK, jobResponse{OK: true, Job: loginJobSnapshot(snapshot)})
+			return
+		}
 	}
 	job, err := handler.jobs.Cancel(jobID)
 	if err == nil {

@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
+	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
@@ -739,6 +740,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	accountAdd, err := webuiaccountaddapi.NewHandler(webuiaccountaddapi.Dependencies{
 		Authorizer:    authorizer,
 		Jobs:          addJobs,
+		LoginJobs:     aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: dependencies.AIHomeDir, HostHomeDir: dependencies.HostHomeDir}),
 		LocalImporter: NewKiroJobLocalImporter(dependencies),
 	})
 	if err != nil {
@@ -973,6 +975,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST /v0/webui/accounts/add", Handler: newPublicAddAccountHandler(accountAdd, webuiaccountaddapi.Path, staticAddAccount)},
 		{Pattern: "GET " + webuiaccountaddapi.Path + webuiaccountaddapi.JobsSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CallbackSuffix, Handler: accountAdd},
+		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CodeSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.CancelSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.LocalImportSuffix, Handler: accountAdd},
 		{Pattern: "POST " + webuiaccountaddapi.Path + webuiaccountaddapi.InstallSuffix, Handler: accountAdd},

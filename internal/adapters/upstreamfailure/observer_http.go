@@ -102,11 +102,11 @@ func classifyHTTPStatus(statusCode int) runtimecore.FailureKind {
 func defaultRetryAfter(statusCode int, kind runtimecore.FailureKind) time.Duration {
 	switch {
 	case statusCode == http.StatusServiceUnavailable && kind == runtimecore.FailureUpstreamUnavailable:
-		return runtimecore.GuessedCooldown
+		return runtimecore.ConfiguredGuessedCooldown()
 	case statusCode >= http.StatusInternalServerError && kind == runtimecore.FailureUpstreamUnavailable:
-		return runtimecore.GuessedCooldown
+		return runtimecore.ConfiguredGuessedCooldown()
 	case statusCode == 529 && kind == runtimecore.FailureModelOverloaded:
-		return runtimecore.GuessedCooldown
+		return runtimecore.ConfiguredGuessedCooldown()
 	default:
 		return 0
 	}

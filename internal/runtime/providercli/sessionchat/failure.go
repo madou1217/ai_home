@@ -6,10 +6,12 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
 
-// 账号运行态冷却时长（与 Node 的 ACCOUNT_GUESSED_COOLDOWN_MS / ROUTING_BLOCK_RECHECK_MS 同值）。
-const accountGuessedCooldownMs int64 = 30 * 1000
+// accountGuessedCooldownMs 读当前进程的猜测冷却（默认 30s）。
+func accountGuessedCooldownMs() int64 { return runtimecore.ConfiguredGuessedCooldown().Milliseconds() }
 
 // failureRule 是声明式「错误签名 → 结论」规则。
 //
@@ -344,7 +346,7 @@ func buildAuthInvalidRuntimeState(reason string, nowMs int64) map[string]any {
 	if message == "" {
 		message = "auth_invalid_reauth_required"
 	}
-	until := nowMs + accountGuessedCooldownMs
+	until := nowMs + accountGuessedCooldownMs()
 	state := emptyRuntimeStateBase(message, nowMs)
 	state["cooldownUntil"] = until
 	state["lastFailureKind"] = "auth_invalid"
@@ -369,7 +371,7 @@ func buildPermissionDeniedRuntimeState(reason string, nowMs int64) map[string]an
 		"kind":       "permission_denied",
 		"reason":     message,
 		"observedAt": nowMs,
-		"until":      nowMs + accountGuessedCooldownMs,
+		"until":      nowMs + accountGuessedCooldownMs(),
 	}
 	return state
 }

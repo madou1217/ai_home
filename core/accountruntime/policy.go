@@ -6,6 +6,7 @@ package accountruntime
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -30,7 +31,50 @@ const (
 var (
 	// ErrUnknownFailureKind 表示 Provider 适配器提交了未注册的失败分类。
 	ErrUnknownFailureKind = errors.New("账号运行态失败类型未知")
+
+	policyDefaultsMu       sync.RWMutex
+	policyDefaultCooldown  time.Duration
+	policyDefaultThreshold uint8
 )
+
+// ConfigurePolicyDefaults 配置本进程的猜测冷却与失败阈值覆盖。
+//
+// 0 表示保留领域默认值；非 0 冷却必须落在 [1s, 24h]，阈值必须在 [1,10]。
+// 这是启动期设置：运行中修改会让同一进程内的策略前后不一致。
+func ConfigurePolicyDefaults(cooldown time.Duration, threshold uint8) error {
+	if cooldown != 0 && (cooldown < time.Second || cooldown > MaxCooldownHint) {
+		return errors.New("猜测冷却时长必须在 1s 到 24h 之间")
+	}
+	if threshold > 10 {
+		return errors.New("失败阈值必须在 0 到 10 之间")
+	}
+	policyDefaultsMu.Lock()
+	policyDefaultCooldown = cooldown
+	policyDefaultThreshold = threshold
+	policyDefaultsMu.Unlock()
+	return nil
+}
+
+// ConfiguredGuessedCooldown 返回当前进程生效的猜测冷却。
+func ConfiguredGuessedCooldown() time.Duration {
+	policyDefaultsMu.RLock()
+	cooldown := policyDefaultCooldown
+	policyDefaultsMu.RUnlock()
+	if cooldown > 0 {
+		return cooldown
+	}
+	return GuessedCooldown
+}
+
+func configuredFailureThreshold(base uint8) uint8 {
+	policyDefaultsMu.RLock()
+	threshold := policyDefaultThreshold
+	policyDefaultsMu.RUnlock()
+	if threshold > 0 {
+		return threshold
+	}
+	return base
+}
 
 // FailureKind 是 Codex 与 Claude 上游结果的稳定低敏分类。
 type FailureKind string
@@ -118,17 +162,17 @@ type FailurePolicy struct {
 func PolicyFor(kind FailureKind) (FailurePolicy, error) {
 	switch kind {
 	case FailureRateLimited:
-		return modelCooldownPolicy(1, GuessedCooldown, 0), nil
+		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
 	case FailureModelOverloaded:
-		return modelCooldownPolicy(1, GuessedCooldown, 0), nil
+		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
 	case FailureUpstreamUnavailable:
-		return modelCooldownPolicy(1, GuessedCooldown, 0), nil
+		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
 	case FailureRequestTimeout,
 		FailureConnectionReset,
 		FailureStreamDisconnected:
-		return modelCooldownPolicy(2, GuessedCooldown, time.Minute), nil
+		return modelCooldownPolicy(configuredFailureThreshold(2), ConfiguredGuessedCooldown(), time.Minute), nil
 	case FailureStaticCredentialRejected:
-		return modelCooldownPolicy(1, StaticCredentialRejectedCooldown, 0), nil
+		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
 	case FailureCredentialRejected, FailureReauthenticationRequired:
 		return blockingPolicy(ActionCredentialBlock), nil
 	case FailureQuotaExhausted, FailureBillingBlocked:

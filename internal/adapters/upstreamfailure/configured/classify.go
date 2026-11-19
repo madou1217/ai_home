@@ -6,17 +6,18 @@
 package configured
 
 import (
+	"time"
+
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/upstreamrules"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
-const (
-	// rateLimitedCooldown 与 Node 规则策略的 rate_limited 冷却一致（统一的猜测冷却）。
-	rateLimitedCooldown = runtimecore.GuessedCooldown
-	// serviceUnavailableCooldown 与 Node 规则策略的 service_unavailable 冷却一致。
-	serviceUnavailableCooldown = runtimecore.GuessedCooldown
-)
+// rateLimitedCooldown / serviceUnavailableCooldown 与 Node 规则策略一致（统一的猜测冷却）。
+// 每次求值读当前进程覆盖值，避免包初始化时把默认值固化。
+func rateLimitedCooldown() time.Duration { return runtimecore.ConfiguredGuessedCooldown() }
+
+func serviceUnavailableCooldown() time.Duration { return runtimecore.ConfiguredGuessedCooldown() }
 
 // Rules 是账号自定义规则求值端口；为 nil 表示 Go 未承接该能力。
 type Rules interface {
@@ -107,12 +108,12 @@ func Classify(rule upstreamrules.Rule) (sharedfailure.Classification, error) {
 	case upstreamrules.KindRateLimited:
 		return sharedfailure.NewClassification(
 			runtimecore.FailureRateLimited,
-			rateLimitedCooldown,
+			rateLimitedCooldown(),
 		)
 	case upstreamrules.KindServiceUnavailable:
 		return sharedfailure.NewClassification(
 			runtimecore.FailureUpstreamUnavailable,
-			serviceUnavailableCooldown,
+			serviceUnavailableCooldown(),
 		)
 	default:
 		return sharedfailure.Classification{}, upstreamrules.ErrInvalidRules

@@ -112,32 +112,17 @@ func (h platformHooks) Stop(ctx context.Context, o Options, s serviceSnapshot) e
 	return stopOwnedListener(ctx, o, s)
 }
 func (h platformHooks) Install(ctx context.Context, o Options) error {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		_, err := autostart.Install(ctx, autostart.Options{
-			Label:        serviceName(o),
-			Home:         o.Home,
-			HostHome:     o.HostHome,
-			ServerBinary: bundleServer(o.PackageRoot),
-			WebDir:       filepath.Join(o.PackageRoot, "web", "dist"),
-			LogFile:      filepath.Join(o.Home, "logs", "services", "background-supervisor.log"),
-		})
-		return err
-	}
-	// Windows still uses the existing scheduled-task adapter until it is
-	// migrated to Go.
-	script := `const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
-const root=process.argv[1],home=process.argv[2],host=process.argv[3],label=process.argv[4];
-const build=require(path.join(root,'lib/cli/services/server/autostart')).createServerAutostartService;
-const service=build({fs,path,spawnSync:cp.spawnSync,processObj:process,ensureDir:p=>fs.mkdirSync(p,{recursive:true}),aiHomeDir:home,hostHomeDir:host,launchdLabel:label,logFile:path.join(home,'logs/services/background-supervisor.log'),resolveStartEntryFilePath:()=>({entryFilePath:path.join(root,'bin/ai-home.js')})});
-const status=service.install();if(!status||!status.installed)throw Error('service installation did not persist');`
-	cmd := exec.CommandContext(ctx, bundleNode(o.PackageRoot), "-e", script, o.PackageRoot, o.Home, o.HostHome, serviceName(o))
-	cmd.Env = packageEnvironment(o)
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("安装后台服务失败（%s）: %w", strings.TrimSpace(string(raw)), err)
-	}
-	return startWindowsService(ctx, o)
+	_, err := autostart.Install(ctx, autostart.Options{
+		Label:        serviceName(o),
+		Home:         o.Home,
+		HostHome:     o.HostHome,
+		ServerBinary: bundleServer(o.PackageRoot),
+		WebDir:       filepath.Join(o.PackageRoot, "web", "dist"),
+		LogFile:      filepath.Join(o.Home, "logs", "services", "background-supervisor.log"),
+	})
+	return err
 }
+
 func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot) error {
 	for _, r := range s.Files {
 		if err := restoreFile(r); err != nil {

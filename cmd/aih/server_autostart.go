@@ -21,9 +21,6 @@ func runServerAutostart(ctx context.Context, arguments []string, runtime command
 	if len(arguments) < 3 || arguments[0] != "server" || arguments[1] != "autostart" {
 		return false, nil
 	}
-	if goruntime.GOOS == "windows" {
-		return false, nil
-	}
 	action := strings.TrimSpace(arguments[2])
 	if action != "install" && action != "uninstall" && action != "status" {
 		return false, nil
@@ -65,10 +62,14 @@ func writeAutostartStatus(runtime commandRuntime, status autostart.Status) {
 }
 
 func autostartType() string {
-	if goruntime.GOOS == "darwin" {
+	switch goruntime.GOOS {
+	case "darwin":
 		return "launchd"
+	case "windows":
+		return "windows-scheduled-task"
+	default:
+		return "systemd"
 	}
-	return "systemd"
 }
 
 func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) {
@@ -117,8 +118,12 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 			break
 		}
 	}
+	label := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_AUTOSTART_LABEL"))
+	if label == "" {
+		label = autostart.DefaultLabel
+	}
 	return autostart.Options{
-		Label:        autostart.DefaultLabel,
+		Label:        label,
 		Home:         home,
 		HostHome:     hostHome,
 		ServerBinary: serverBinary,

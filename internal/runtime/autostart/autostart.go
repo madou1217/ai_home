@@ -8,6 +8,7 @@ package autostart
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -89,6 +90,9 @@ func serviceArgs(options Options) []string {
 	if options.WebDir != "" {
 		args = append(args, "--web-dir", options.WebDir)
 	}
+	if port := strings.TrimSpace(os.Getenv("AIH_SERVER_PORT")); port != "" {
+		args = append(args, "--port", port)
+	}
 	return args
 }
 
@@ -102,6 +106,8 @@ func Install(ctx context.Context, options Options) (Status, error) {
 		return installLaunchd(ctx, options)
 	case "linux":
 		return installSystemd(ctx, options)
+	case "windows":
+		return installWindows(ctx, options)
 	default:
 		return Status{Label: options.Label}, ErrUnsupportedPlatform
 	}
@@ -117,6 +123,8 @@ func Uninstall(ctx context.Context, options Options) error {
 		return uninstallLaunchd(ctx, options)
 	case "linux":
 		return uninstallSystemd(ctx, options)
+	case "windows":
+		return uninstallWindows(ctx, options)
 	default:
 		return ErrUnsupportedPlatform
 	}
@@ -132,6 +140,8 @@ func StatusFor(ctx context.Context, options Options) (Status, error) {
 		return statusLaunchd(ctx, options)
 	case "linux":
 		return statusSystemd(ctx, options)
+	case "windows":
+		return statusWindows(options)
 	default:
 		return Status{Label: options.Label}, ErrUnsupportedPlatform
 	}
@@ -339,6 +349,122 @@ func buildUnit(options Options) []byte {
 		"",
 	}
 	return []byte(strings.Join(lines, string(rune(10))))
+}
+
+func windowsPaths(options Options) (serveScript, marker, startupDir, startupScript, launcherScript string) {
+	runDir := filepath.Join(options.Home, "run")
+	startupDir = filepath.Join(options.HostHome, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+	return filepath.Join(runDir, "aih-server-serve.cmd"),
+		filepath.Join(runDir, "windows-autostart-task.json"),
+		startupDir,
+		filepath.Join(startupDir, options.Label+".vbs"),
+		filepath.Join(startupDir, options.Label+".cmd")
+}
+
+func windowsQuote(value string) string {
+	quote := string(rune(34))
+	return quote + strings.ReplaceAll(value, quote, quote+quote) + quote
+}
+
+func windowsScriptCommand(options Options) string {
+	args := serviceArgs(options)
+	quoted := make([]string, 0, len(args))
+	for _, argument := range args {
+		quoted = append(quoted, windowsQuote(argument))
+	}
+	command := strings.Join(quoted, " ")
+	if options.LogFile != "" {
+		command += " >> " + windowsQuote(options.LogFile) + " 2>&1"
+	}
+	return command
+}
+
+func buildWindowsServeScript(options Options) []byte {
+	crlf := string(rune(13)) + string(rune(10))
+	lines := []string{
+		"@echo off",
+		"set " + windowsQuote("AIH_HOME_DIR="+options.Home),
+		windowsScriptCommand(options),
+		"",
+	}
+	return []byte(strings.Join(lines, crlf))
+}
+
+func buildWindowsVBS(options Options) []byte {
+	crlf := string(rune(13)) + string(rune(10))
+	pathValue := os.Getenv("PATH")
+	command := windowsScriptCommand(options)
+	lines := []string{
+		"Option Explicit",
+		"Dim shell, execObj",
+		"Set shell = CreateObject(" + windowsQuote("WScript.Shell") + ")",
+		"shell.Environment(" + windowsQuote("PROCESS") + ")(" + windowsQuote("PATH") + ") = " + windowsQuote(pathValue),
+		"shell.Environment(" + windowsQuote("PROCESS") + ")(" + windowsQuote("AIH_HOME_DIR") + ") = " + windowsQuote(options.Home),
+		"Set execObj = shell.Exec(" + windowsQuote("%ComSpec% /c "+windowsQuote(command)) + ")",
+		"",
+	}
+	return []byte(strings.Join(lines, crlf))
+}
+
+func installWindows(ctx context.Context, options Options) (Status, error) {
+	serveScript, marker, startupDir, startupScript, launcherScript := windowsPaths(options)
+	if err := os.MkdirAll(filepath.Dir(serveScript), 0700); err != nil {
+		return Status{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(options.LogFile), 0700); err != nil {
+		return Status{}, err
+	}
+	if err := atomicWrite(serveScript, buildWindowsServeScript(options), 0600); err != nil {
+		return Status{}, err
+	}
+	args := []string{"/Create", "/SC", "ONLOGON", "/TN", options.Label, "/TR", windowsQuote(serveScript), "/F"}
+	if user := strings.TrimSpace(os.Getenv("USERNAME")); user != "" {
+		args = append(args, "/RU", user, "/IT")
+	}
+	if _, err := run(ctx, "schtasks", args...); err != nil {
+		_ = os.Remove(marker)
+		// Fall back to the Startup folder only when Task Scheduler refuses.
+		if startupErr := os.MkdirAll(startupDir, 0700); startupErr != nil {
+			return Status{}, err
+		}
+		if startupErr := atomicWrite(startupScript, buildWindowsVBS(options), 0600); startupErr != nil {
+			return Status{}, err
+		}
+		launcher := []byte("@echo off" + string(rune(13)) + string(rune(10)) + "cscript //nologo " + windowsQuote(startupScript) + string(rune(13)) + string(rune(10)))
+		if startupErr := atomicWrite(launcherScript, launcher, 0600); startupErr != nil {
+			return Status{}, err
+		}
+		return statusWindows(options)
+	}
+	payload, _ := json.Marshal(map[string]string{"task": options.Label, "script": serveScript})
+	body := append(payload, byte(rune(10)))
+	if err := atomicWrite(marker, body, 0600); err != nil {
+		return Status{}, err
+	}
+	return statusWindows(options)
+}
+
+func uninstallWindows(ctx context.Context, options Options) error {
+	serveScript, marker, _, startupScript, launcherScript := windowsPaths(options)
+	for _, file := range []string{serveScript, marker, startupScript, launcherScript} {
+		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	_, _ = run(ctx, "schtasks", "/End", "/TN", options.Label)
+	_, _ = run(ctx, "schtasks", "/Delete", "/TN", options.Label, "/F")
+	return nil
+}
+
+func statusWindows(options Options) (Status, error) {
+	serveScript, marker, _, startupScript, _ := windowsPaths(options)
+	status := Status{Supported: true, Label: options.Label}
+	if _, err := os.Stat(marker); err == nil {
+		status.Installed, status.Loaded, status.File = true, true, serveScript
+	} else if _, err := os.Stat(startupScript); err == nil {
+		status.Installed, status.Loaded, status.File = true, true, startupScript
+	}
+	return status, nil
 }
 
 func installSystemd(ctx context.Context, options Options) (Status, error) {

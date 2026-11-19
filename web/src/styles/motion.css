@@ -227,8 +227,8 @@ details[open]::details-content {
 
 /* ── 3. 交互反馈 ─────────────────────────────────────────────────────────── */
 
-/* 按钮按下：快速干脆的触感微压（只给非禁用按钮 2.5% 瞬时缩放反馈，绝不阻断连点） */
-.ant-btn:not(:disabled):not(.ant-btn-loading):active {
+/* 按钮按下：快速干脆的触感微压（只给非禁用且非浮层触发器的按钮 2.5% 瞬时缩放反馈，绝不阻断连点或偏移弹层锚点） */
+.ant-btn:not(:disabled):not(.ant-btn-loading):not(.ant-dropdown-trigger):not(.ant-popover-open):active {
   transform: scale(0.975);
   transition-duration: var(--motion-instant);
 }
@@ -430,97 +430,161 @@ details[open]::details-content {
   animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
-/* 弹层：Popover / Tooltip 的展开曲线统一（antd 已有 zoom 动效，这里只调缓动） */
+/* 定位浮层根容器全生命周期禁止 CSS transition：
+ * @rc-component/trigger 的 useAlign 会同步写入 left:0 / top:0 后立刻调用 getBoundingClientRect()
+ * 测算偏移量（nextOffsetX = targetX - popupRect.x）。只要外层定位节点存在任何非 0s 的 transition
+ * （尤其默认 transition-property: all），同步测量就会读到过渡插值中的旧坐标，导致 nextOffsetX/Y
+ * 归零并把浮层甩到左上角。根容器始终保持 transition: none，内部菜单项的悬停颜色过渡不受影响。 */
+.ant-dropdown,
+.ant-select-dropdown,
 .ant-popover,
 .ant-tooltip,
-.ant-dropdown {
-  transition-timing-function: var(--ease-standard);
+.ant-picker-dropdown,
+.ant-cascader-dropdown,
+.ant-mentions-dropdown,
+.ant-tree-select-dropdown,
+.ant-menu-submenu-popup {
+  transition: none !important;
 }
 
-/* 弹层「点了没反应」的空窗：rc-motion 进场要走 prepare → start → active 三步，每步
- * nextFrame(delay=2) 等两帧，keyframes 只在 *-active 才挂上；前两步元素已在 DOM 里，
- * 却被 *-appear/*-enter 的 opacity:0 起始态压着，不可见约 4~6 帧（60Hz 下 70~100ms，
- * 卡顿时更长；实测下拉/选择/弹窗点击后 250~330ms 才开始出现）。
- * 这里只把**下拉类**弹层（dropdown / select / cascader / picker / auto-complete，
- * 都用 slide-up / slide-down）在 prepare/start 阶段就挂上同一组进场 keyframes，
- * 点击即开始播放。时长、曲线、终态与 antd 原动画一致，离场不改。
- *
- * -active 必须一起列出：rc-motion 在 prepare/start 之后会追加 -active，antd 的 active 规则
- * 会换回自己的 animation-name，动画从 0 重播 —— 菜单会先淡入一小截、突然归零、再淡入一次
- * （2026-11-06 账号操作菜单「点一下会闪」的根因）。保持同一个 animation-name 才能续播。 */
+/* 定位浮层（Select / Dropdown / Picker / Cascader 的 slide-up/down，Tooltip / Popover 的
+ * zoom-big-fast，以及 Menu 子菜单弹层的 zoom-big）：rc-trigger onAlign 会读取外层弹层实时几何并按
+ * 当前 scale 反算屏幕坐标，若 prepare/start/active/leave 任一阶段存在缩放或位移（含 antd 基础
+ * 进场态的 scale(0)），测量值就会失真并导致弹层落点偏移。因此定位浮层全阶段固定 transform: none，
+ * 仅做短促透明度动画：
+ *   1) 基础进离场相位类兜底 transform: none，阻断上游 antd 初始缩放；
+ *   2) prepare / start 显式取消动画并保持 opacity: 1 + transform: none（确保对齐测量尺寸非零且无缩放）；
+ *   3) active / leave-active 仅运行纯 opacity 命名关键帧（进场采用 0.999→1 近不透明收尾，避免 prepare/start 的 opacity: 1
+ *      切入 active 时出现 1→0→1 闪烁，同时保留 rc-motion 所需的 animationend 完成事件；不复用 Modal 的缩放关键帧）。 */
+.ant-slide-up-appear,
+.ant-slide-up-enter,
+.ant-slide-up-leave,
+.ant-slide-down-appear,
+.ant-slide-down-enter,
+.ant-slide-down-leave,
+.ant-zoom-big-fast-appear,
+.ant-zoom-big-fast-enter,
+.ant-zoom-big-fast-leave,
+.ant-zoom-big-appear,
+.ant-zoom-big-enter,
+.ant-zoom-big-leave {
+  transform: none !important;
+  transition: none !important;
+}
+
 .ant-slide-up-appear.ant-slide-up-appear-prepare,
 .ant-slide-up-appear.ant-slide-up-appear-start,
-.ant-slide-up-appear.ant-slide-up-appear-active,
 .ant-slide-up-enter.ant-slide-up-enter-prepare,
 .ant-slide-up-enter.ant-slide-up-enter-start,
-.ant-slide-up-enter.ant-slide-up-enter-active {
-  animation-name: aih-popup-slide-in !important;
-  animation-duration: var(--motion-base) !important;
-  animation-timing-function: var(--ease-standard) !important;
-  animation-fill-mode: both !important;
-  animation-play-state: running !important;
-  transform-origin: 0% 0%;
-}
 .ant-slide-down-appear.ant-slide-down-appear-prepare,
 .ant-slide-down-appear.ant-slide-down-appear-start,
-.ant-slide-down-appear.ant-slide-down-appear-active,
 .ant-slide-down-enter.ant-slide-down-enter-prepare,
 .ant-slide-down-enter.ant-slide-down-enter-start,
+.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-prepare,
+.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-start,
+.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-prepare,
+.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-start,
+.ant-zoom-big-appear.ant-zoom-big-appear-prepare,
+.ant-zoom-big-appear.ant-zoom-big-appear-start,
+.ant-zoom-big-enter.ant-zoom-big-enter-prepare,
+.ant-zoom-big-enter.ant-zoom-big-enter-start {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+.ant-slide-up-leave.ant-slide-up-leave-prepare,
+.ant-slide-up-leave.ant-slide-up-leave-start,
+.ant-slide-down-leave.ant-slide-down-leave-prepare,
+.ant-slide-down-leave.ant-slide-down-leave-start,
+.ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-prepare,
+.ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-start,
+.ant-zoom-big-leave.ant-zoom-big-leave-prepare,
+.ant-zoom-big-leave.ant-zoom-big-leave-start {
+  animation: none !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+@keyframes aih-popup-slide-in {
+  from { opacity: 0.999; }
+  to { opacity: 1; }
+}
+@keyframes aih-popup-slide-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes aih-popup-fade-in {
+  from { opacity: 0.999; }
+  to { opacity: 1; }
+}
+@keyframes aih-popup-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.ant-slide-up-appear.ant-slide-up-appear-active,
+.ant-slide-up-enter.ant-slide-up-enter-active,
+.ant-slide-down-appear.ant-slide-down-appear-active,
 .ant-slide-down-enter.ant-slide-down-enter-active {
   animation-name: aih-popup-slide-in !important;
   animation-duration: var(--motion-base) !important;
   animation-timing-function: var(--ease-standard) !important;
   animation-fill-mode: both !important;
   animation-play-state: running !important;
-  transform-origin: 0% 100%;
+  transform: none !important;
+  transition: none !important;
 }
-@keyframes aih-popup-slide-in {
-  from { opacity: 0; transform: scaleY(0.92); }
-  to { opacity: 1; transform: scaleY(1); }
-}
-@keyframes aih-popup-slide-out {
-  from { opacity: 1; transform: scaleY(1); }
-  to { opacity: 0; transform: scaleY(0.95); }
-}
-.ant-slide-up-leave.ant-slide-up-leave-active {
-  animation-name: aih-popup-slide-out !important;
-  animation-duration: var(--motion-fast) !important;
-  animation-timing-function: var(--ease-standard) !important;
-  animation-fill-mode: both !important;
-  transform-origin: 0% 0%;
-}
+
+.ant-slide-up-leave.ant-slide-up-leave-active,
 .ant-slide-down-leave.ant-slide-down-leave-active {
   animation-name: aih-popup-slide-out !important;
   animation-duration: var(--motion-fast) !important;
   animation-timing-function: var(--ease-standard) !important;
   animation-fill-mode: both !important;
-  transform-origin: 0% 100%;
+  animation-play-state: running !important;
+  transform: none !important;
+  transition: none !important;
 }
-/* Tooltip / Popover（zoom-big-fast）：进出场同步干脆 */
-.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-prepare,
-.ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-start,
+
+/* Tooltip / Popover（zoom-big-fast）与 Menu 子菜单浮层（zoom-big）：纯透明度干脆进出场，不触碰几何 transform */
 .ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-active,
-.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-prepare,
-.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-start,
-.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-active {
-  animation-name: aih-popup-zoom-in !important;
+.ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-active,
+.ant-zoom-big-appear.ant-zoom-big-appear-active,
+.ant-zoom-big-enter.ant-zoom-big-enter-active {
+  animation-name: aih-popup-fade-in !important;
   animation-duration: var(--motion-fast) !important;
   animation-timing-function: var(--ease-snappy, var(--ease-standard)) !important;
   animation-fill-mode: both !important;
   animation-play-state: running !important;
+  transform: none !important;
+  transition: none !important;
 }
-.ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-active {
-  animation-name: aih-popup-zoom-out !important;
+
+.ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-active,
+.ant-zoom-big-leave.ant-zoom-big-leave-active {
+  animation-name: aih-popup-fade-out !important;
   animation-duration: var(--motion-instant) !important;
   animation-timing-function: var(--ease-standard) !important;
   animation-fill-mode: both !important;
+  animation-play-state: running !important;
+  transform: none !important;
+  transition: none !important;
 }
 
-/* 弹窗（Modal，antd 用 zoom）进场与离场：prepare/start 期间就开始淡入，离场对称微收淡出。 */
+/* 弹窗（Modal，antd 用 zoom）进场与离场：仅在 active 阶段启动关键帧，确保 rc-motion STEP_ACTIVE 监听器已挂载。 */
 .ant-zoom-appear.ant-zoom-appear-prepare,
 .ant-zoom-appear.ant-zoom-appear-start,
 .ant-zoom-enter.ant-zoom-enter-prepare,
-.ant-zoom-enter.ant-zoom-enter-start,
+.ant-zoom-enter.ant-zoom-enter-start {
+  animation: none;
+  opacity: 0;
+}
+.ant-zoom-leave.ant-zoom-leave-prepare,
+.ant-zoom-leave.ant-zoom-leave-start {
+  animation: none;
+}
 .ant-zoom-appear.ant-zoom-appear-active,
 .ant-zoom-enter.ant-zoom-enter-active {
   animation-name: aih-popup-zoom-in;
@@ -534,6 +598,7 @@ details[open]::details-content {
   animation-duration: var(--motion-base);
   animation-timing-function: var(--ease-standard);
   animation-fill-mode: both;
+  animation-play-state: running;
 }
 @keyframes aih-popup-zoom-in {
   from { opacity: 0; transform: scale(0.95) translate3d(0, 4px, 0); }
@@ -683,13 +748,19 @@ details[open]::details-content {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 严禁对通配符 * 写非零 transition-duration（如 0.01ms）：
+   * CSS 默认 transition-property 为 all，非零时长会给原本无过渡的定位浮层（.ant-dropdown 等）
+   * 凭空注入 left/top 过渡，导致 @rc-component/trigger useAlign 在同步写入 left:0 后
+   * getBoundingClientRect() 读到插值旧坐标并把浮层甩回左上角 (0, y) / (0, 0)。
+   * 这里统一归零为 0s，仅在下方对明确依赖 transitionend 的少数 rc-motion 类按名放行 1ms。 */
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
   .ant-btn:not(:disabled):not(.ant-btn-loading):active,
@@ -699,12 +770,24 @@ details[open]::details-content {
     transform: none;
   }
 
+  .ant-dropdown,
+  .ant-select-dropdown,
+  .ant-popover,
+  .ant-tooltip,
+  .ant-picker-dropdown,
+  .ant-cascader-dropdown,
+  .ant-mentions-dropdown,
+  .ant-tree-select-dropdown,
+  .ant-menu-submenu-popup {
+    transition: none !important;
+  }
+
   /* rc-motion 仅在 STEP_ACTIVE 挂载 animationend/transitionend 监听（useStatus.js:131）。
    * 减少动态效果下：
-   * 1) prepare/start 阶段显式取消动画并立即呈现（opacity:1 + transform:none），防止 0ms 动画在
-   *    监听器挂载前提前跑完导致 active 阶段同名动画不再重播而卡在 motionDeadline(1000ms)；
+   * 1) prepare/start 阶段（含进场与离场）显式取消动画，防止 0.01ms 动画在监听器挂载前提前跑完
+   *    导致 active 阶段同名动画不再重播而卡在 motionDeadline(1000ms)；
    * 2) active / leave-active 阶段挂载无位移/无缩放/无模糊的 1ms 瞬时动画，保证 STEP_ACTIVE
-   *    的监听器在下一帧可靠收到 animationend 并立即退出 inMotion，不阻塞 Trigger triggerAlign。 */
+   *    的监听器在下一帧可靠收到 animationend 并立即退出 inMotion，不阻塞 Trigger triggerAlign 与 Modal 关闭。 */
   .ant-slide-up-appear.ant-slide-up-appear-prepare,
   .ant-slide-up-appear.ant-slide-up-appear-start,
   .ant-slide-up-enter.ant-slide-up-enter-prepare,
@@ -717,12 +800,43 @@ details[open]::details-content {
   .ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-start,
   .ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-prepare,
   .ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-start,
+  .ant-zoom-big-appear.ant-zoom-big-appear-prepare,
+  .ant-zoom-big-appear.ant-zoom-big-appear-start,
+  .ant-zoom-big-enter.ant-zoom-big-enter-prepare,
+  .ant-zoom-big-enter.ant-zoom-big-enter-start,
   .ant-zoom-appear.ant-zoom-appear-prepare,
   .ant-zoom-appear.ant-zoom-appear-start,
   .ant-zoom-enter.ant-zoom-enter-prepare,
-  .ant-zoom-enter.ant-zoom-enter-start {
+  .ant-zoom-enter.ant-zoom-enter-start,
+  .ant-fade-appear.ant-fade-appear-prepare,
+  .ant-fade-appear.ant-fade-appear-start,
+  .ant-fade-enter.ant-fade-enter-prepare,
+  .ant-fade-enter.ant-fade-enter-start,
+  .ant-motion-mask-appear-prepare,
+  .ant-motion-mask-appear-start,
+  .ant-motion-mask-enter-prepare,
+  .ant-motion-mask-enter-start {
     animation: none !important;
     opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .ant-slide-up-leave.ant-slide-up-leave-prepare,
+  .ant-slide-up-leave.ant-slide-up-leave-start,
+  .ant-slide-down-leave.ant-slide-down-leave-prepare,
+  .ant-slide-down-leave.ant-slide-down-leave-start,
+  .ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-prepare,
+  .ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-start,
+  .ant-zoom-big-leave.ant-zoom-big-leave-prepare,
+  .ant-zoom-big-leave.ant-zoom-big-leave-start,
+  .ant-zoom-leave.ant-zoom-leave-prepare,
+  .ant-zoom-leave.ant-zoom-leave-start,
+  .ant-fade-leave.ant-fade-leave-prepare,
+  .ant-fade-leave.ant-fade-leave-start,
+  .ant-motion-mask-leave-prepare,
+  .ant-motion-mask-leave-start {
+    animation: none !important;
     transform: none !important;
     transition: none !important;
   }
@@ -733,6 +847,8 @@ details[open]::details-content {
   .ant-slide-down-enter.ant-slide-down-enter-active,
   .ant-zoom-big-fast-appear.ant-zoom-big-fast-appear-active,
   .ant-zoom-big-fast-enter.ant-zoom-big-fast-enter-active,
+  .ant-zoom-big-appear.ant-zoom-big-appear-active,
+  .ant-zoom-big-enter.ant-zoom-big-enter-active,
   .ant-zoom-appear.ant-zoom-appear-active,
   .ant-zoom-enter.ant-zoom-enter-active,
   .ant-fade-appear.ant-fade-appear-active,
@@ -751,6 +867,7 @@ details[open]::details-content {
   .ant-slide-up-leave.ant-slide-up-leave-active,
   .ant-slide-down-leave.ant-slide-down-leave-active,
   .ant-zoom-big-fast-leave.ant-zoom-big-fast-leave-active,
+  .ant-zoom-big-leave.ant-zoom-big-leave-active,
   .ant-zoom-leave.ant-zoom-leave-active,
   .ant-fade-leave.ant-fade-leave-active,
   .ant-motion-mask-leave-active {
@@ -771,6 +888,27 @@ details[open]::details-content {
   .ant-motion-collapse-legacy-active {
     transition-duration: 1ms !important;
     transform: none !important;
+  }
+
+  /* rc-segmented MotionThumb 依赖真实 transform / width 变化触发 transitionend（无 motionDeadline），
+   * 绝不能覆写 transform: none !important（否则等宽项切换无 transform 差值而卡住）。 */
+  .ant-segmented .ant-segmented-thumb-motion-appear-active,
+  .ant-segmented .ant-segmented-thumb-motion-enter-active {
+    transition-property: transform, width !important;
+    transition-duration: 1ms !important;
+    transition-timing-function: linear !important;
+    transition-delay: 0ms !important;
+  }
+
+  /* antd Drawer 遮罩（ant-drawer-mask-motion-*）依赖 CSS opacity transitionend 完成进离场；
+   * 仅在 active 阶段放行 1ms opacity 过渡，避免关闭时等待 500ms motionDeadline 阻挡页面交互。 */
+  .ant-drawer-mask-motion-appear.ant-drawer-mask-motion-appear-active,
+  .ant-drawer-mask-motion-enter.ant-drawer-mask-motion-enter-active,
+  .ant-drawer-mask-motion-leave.ant-drawer-mask-motion-leave-active {
+    transition-property: opacity !important;
+    transition-duration: 1ms !important;
+    transition-timing-function: linear !important;
+    transition-delay: 0ms !important;
   }
   .ant-tabs .ant-tabs-switch-appear,
   .ant-tabs .ant-tabs-switch-enter,

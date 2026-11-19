@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/accountauth"
+	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/kirooauth"
@@ -625,22 +625,26 @@ func (handler *Handler) HandleLocalImport(response http.ResponseWriter, request 
 	})
 }
 
-func (handler *Handler) readAndDecodeHostArtifacts(
+// readHostArtifacts 读取宿主登录态并返回可交给账号解码器的原始 envelope。
+// 调用方负责在完成解码/注册后清空返回的 envelope。
+func (handler *Handler) readHostArtifacts(
 	canonical string,
 	policy *storagepolicy.Policy,
-) (accountapp.Credential, accountapp.PublicProfile, string, string) {
+) ([]byte, accountapp.Credential, accountapp.PublicProfile, string, string) {
 	if canonical == "claude" || canonical == "codex" {
 		reader := newLocalImportArtifactReader(handler.hostHomeDir)
 		artifacts, err := reader.Read(canonical)
 		if err != nil {
-			return nil, nil, "auth_source_unavailable:host_login_state_missing", "未检测到有效的本机登录态。"
+			return nil, nil, nil, "auth_source_unavailable:host_login_state_missing", "未检测到有效的本机登录态。"
 		}
-		defer clear(artifacts.Envelope)
-		credential, profile, err := handler.decoder.Decode(canonical, artifacts.Envelope)
+		envelope := append([]byte(nil), artifacts.Envelope...)
+		clear(artifacts.Envelope)
+		credential, profile, err := handler.decoder.Decode(canonical, envelope)
 		if err != nil || credential == nil {
-			return nil, nil, "auth_source_unavailable:host_login_state_invalid", "本机登录态格式无效或身份缺失。"
+			clear(envelope)
+			return nil, nil, nil, "auth_source_unavailable:host_login_state_invalid", "本机登录态格式无效或身份缺失。"
 		}
-		return credential, profile, "", ""
+		return envelope, credential, profile, "", ""
 	}
 	baseDir := handler.hostHomeDir
 	if len(policy.HostAuthRoot) > 0 {
@@ -654,35 +658,44 @@ func (handler *Handler) readAndDecodeHostArtifacts(
 			if artifact.Optional && errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return nil, nil, "auth_source_unavailable:host_login_state_missing", "未检测到有效的本机登录态文件。"
+			return nil, nil, nil, "auth_source_unavailable:host_login_state_missing", "未检测到有效的本机登录态文件。"
 		}
 		value, parseErr := parseStoragePolicyArtifactValue(artifact.Format, raw)
 		if parseErr != nil {
-			return nil, nil, "auth_source_unavailable:host_login_state_invalid", "本机登录态文件内容无法解析。"
+			return nil, nil, nil, "auth_source_unavailable:host_login_state_invalid", "本机登录态文件内容无法解析。"
 		}
 		if artifact.Field != "" {
 			nativeAuth[artifact.Field] = value
 		}
 	}
 	if len(nativeAuth) == 0 {
-		return nil, nil, "auth_source_unavailable:host_login_state_missing", "未检测到有效的本机登录态文件。"
+		return nil, nil, nil, "auth_source_unavailable:host_login_state_missing", "未检测到有效的本机登录态文件。"
 	}
 	rawNative, err := json.Marshal(nativeAuth)
 	if err != nil {
-		return nil, nil, "auth_source_unavailable:host_login_state_invalid", "构造本机登录态快照失败。"
+		return nil, nil, nil, "auth_source_unavailable:host_login_state_invalid", "构造本机登录态快照失败。"
 	}
 	envelope, err := json.Marshal(map[string]json.RawMessage{
 		"native_auth_json": rawNative,
 	})
 	if err != nil {
-		return nil, nil, "auth_source_unavailable:host_login_state_invalid", "构造本机登录态信封失败。"
+		return nil, nil, nil, "auth_source_unavailable:host_login_state_invalid", "构造本机登录态信封无效。"
 	}
-	defer clear(envelope)
 	credential, profile, err := handler.decoder.Decode(canonical, envelope)
 	if err != nil || credential == nil {
-		return nil, nil, "auth_source_unavailable:host_login_state_invalid", "本机登录态不可解码或缺少身份声明。"
+		clear(envelope)
+		return nil, nil, nil, "auth_source_unavailable:host_login_state_invalid", "本机登录态不可解码或缺少身份声明。"
 	}
-	return credential, profile, "", ""
+	return envelope, credential, profile, "", ""
+}
+
+func (handler *Handler) readAndDecodeHostArtifacts(
+	canonical string,
+	policy *storagepolicy.Policy,
+) (accountapp.Credential, accountapp.PublicProfile, string, string) {
+	envelope, credential, profile, code, message := handler.readHostArtifacts(canonical, policy)
+	clear(envelope)
+	return credential, profile, code, message
 }
 
 func newLocalImportArtifactReader(hostHomeDir string) *nativeartifact.Reader {

@@ -130,7 +130,7 @@ func resolveNodeEntry() (string, bool) {
 // delegateToNode 把非启动形态整体交给 Node 入口；成功时进程已被替换。
 func delegateToNode(args []string) bool {
 	// 持久会话列表与账号列表都在 Go 实现，不再转交旧入口。
-	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss" || args[0] == "ls" || args[0] == "list" || args[0] == "export" || args[0] == "import" || args[0] == "desktop") {
+	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss" || args[0] == "ls" || args[0] == "list" || args[0] == "export" || args[0] == "import" || args[0] == "desktop" || args[0] == "agent") {
 		return false
 	}
 	if len(args) >= 2 && launchProviders[args[0]] && providerActionOwnedByGo(args[1]) {

@@ -87,6 +87,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "desktop" {
 		return runDesktop(ctx, arguments[1:], runtime)
 	}
+	if providerID == "agent" {
+		return runAgent(arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}

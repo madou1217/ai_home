@@ -507,6 +507,7 @@ func buildImageStudioAccountSource(
 		Credentials: credentials,
 		Weights:     weights,
 		Usage:       usageGate,
+		Scheduling:  newSchedulingEvaluator(),
 		Strategy:    strategy,
 	})
 	if err != nil {

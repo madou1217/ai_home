@@ -67,7 +67,7 @@ func buildDshProviderConfig(baseURL string, accountRef string, models []harnessM
 		API:         "openai-completions",
 		BaseURL:     strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		Headers: routeOwnerHeaders{
-			RouteOwner: "node",
+			RouteOwner: "go",
 			AccountRef: strings.TrimSpace(accountRef),
 		},
 		Compat: dshCompat{SupportsDeveloperRole: false, MaxTokensField: "max_tokens"},

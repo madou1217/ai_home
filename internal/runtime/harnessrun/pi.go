@@ -45,7 +45,7 @@ func buildPiModelsDocument(baseURL string, accountRef string, models []harnessMo
 				API:     "openai-completions",
 				APIKey:  "$OPENAI_API_KEY",
 				Headers: routeOwnerHeaders{
-					RouteOwner: "node",
+					RouteOwner: "go",
 					AccountRef: strings.TrimSpace(accountRef),
 				},
 				Compat: piCompat{

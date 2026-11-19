@@ -602,6 +602,7 @@ func pluginRequest(ctx context.Context, method, path string, payload map[string]
 	// 宿主事实必须随请求带上：服务端用它判定插件 engines，不能由 Go 猜。
 	request.Header.Set("X-Aih-Host-Version", "1.0.0")
 	if nodeVersion := pluginNodeVersion(); nodeVersion != "" {
+		request.Header.Set("X-Aih-JS-Runtime-Version", nodeVersion)
 		request.Header.Set("X-Aih-Node-Version", nodeVersion)
 	}
 	if payload != nil {

@@ -39,9 +39,10 @@ const (
 	// maxBodyBytes 与插件管理路由的 MAX_BODY_BYTES（256KB）一致。
 	maxBodyBytes = 256 * 1024
 	// HostVersionHeader / RuntimeVersionHeader 是安装请求给出的宿主事实。
-	// JavaScript 插件最终在 JS 运行时执行，engines 必须按真正的运行时版本判断。
-	HostVersionHeader    = "X-Aih-Host-Version"
-	RuntimeVersionHeader = "X-Aih-Node-Version"
+	// 插件语言不限；JavaScript 插件按 JS 运行时版本判断 engines。
+	HostVersionHeader       = "X-Aih-Host-Version"
+	RuntimeVersionHeader    = "X-Aih-JS-Runtime-Version"
+	LegacyNodeVersionHeader = "X-Aih-Node-Version"
 )
 
 // Authorizer 校验管理密钥。
@@ -149,7 +150,7 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 	}
 	options := plugincontrol.AcceptOptions{
 		HostVersion:   headerOr(request, HostVersionHeader, "1.0.0"),
-		NodeVersion:   request.Header.Get(RuntimeVersionHeader),
+		NodeVersion:   firstHeader(request, RuntimeVersionHeader, LegacyNodeVersionHeader),
 		RequireSigned: payload.RequireSigned,
 	}
 	result, err := handler.installer.Install(request.Context(), payload.File, options)
@@ -552,4 +553,16 @@ func writeDomainError(response http.ResponseWriter, status int, code string, mes
 	}
 	diagnostics := []any{}
 	writeJSON(response, status, errorView{OK: false, Error: code, Message: message, Diagnostics: &diagnostics})
+}
+
+func firstHeader(request *http.Request, names ...string) string {
+	if request == nil {
+		return ""
+	}
+	for _, name := range names {
+		if value := strings.TrimSpace(request.Header.Get(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }

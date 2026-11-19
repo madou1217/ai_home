@@ -24,7 +24,7 @@ type nativeReceiptProbe struct {
 }
 
 func newNativeReceiptProbe(req NativeSendRequest, opts DeliveryOptions) *nativeReceiptProbe {
-	probe := &nativeReceiptProbe{session: req.SessionID, marker: "[aih-peer-id:" + req.MessageID + "]"}
+	probe := &nativeReceiptProbe{session: req.SessionID, marker: "[aih-peer #" + req.MessageID + " "}
 	if !recordIDPattern.MatchString(req.MessageID) || !sessionUUIDPattern.MatchString(req.SessionID) {
 		return probe
 	}

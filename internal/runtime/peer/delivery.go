@@ -204,9 +204,6 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 		opts.NoEnvelope = true
 	}
 	text := renderMessageText(rec, opts)
-	if rec.To.Channel == "native" && !opts.NoEnvelope {
-		text = "[aih-peer-id:" + rec.ID + "]\n" + text
-	}
 	channel := strings.TrimSpace(rec.To.Channel)
 	switch channel {
 	case "native":

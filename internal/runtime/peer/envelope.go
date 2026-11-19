@@ -122,14 +122,31 @@ func FormatRecordEnvelope(rec Record, maxChars int, now time.Time) string {
 	if sender == "" {
 		sender = "unknown"
 	}
-	header := fmt.Sprintf("[aih-peer #%s from %s | reply: aih peer reply %s]", short, CollapseBody(sender, "", 120), short)
-	metadata := ReadableMetadata(rec, now)
+	// User-facing mail stays compact. Unspecified fields and scheduling/
+	// transport machinery belong in `peer read --json`, not in every prompt.
+	header := fmt.Sprintf("[aih-peer #%s from %s]", rec.ID, CollapseBody(sender, "", 120))
+	if subject := strings.TrimSpace(rec.Subject); subject != "" {
+		header += " " + CollapseBody(subject, "", 180)
+	}
+	parts := []string{header}
+	if rec.Purpose != "" {
+		parts = append(parts, "缘由："+CollapseBody(rec.Purpose, "", 240))
+	}
+	if rec.Action != "" {
+		parts = append(parts, "待办："+CollapseBody(rec.Action, "", 240))
+	}
+	switch {
+	case rec.CanceledAt > 0:
+		parts = append(parts, "此消息已撤回，仅供查阅。")
+	case rec.ExpiresAt > 0 && rec.ExpiresAt <= now.UnixMilli():
+		parts = append(parts, "此消息已过期，请勿继续旧行动。")
+	case rec.ExpiresAt > 0:
+		parts = append(parts, "截止："+time.UnixMilli(rec.ExpiresAt).Local().Format("2006-01-02 15:04:05 MST"))
+	}
 	if rec.To.Channel == "native" || rec.To.Channel == "webui-chat" {
-		return header + "\n" + metadata + "\n原文：\n" + rec.Body
+		parts = append(parts, rec.Body)
+		return strings.Join(parts, "\n")
 	}
-	body := CollapseBody(rec.Body, short, maxChars)
-	if body == "" {
-		return header + " " + metadata
-	}
-	return header + " " + metadata + "｜原文：" + body
+	parts = append(parts, CollapseBody(rec.Body, short, maxChars))
+	return strings.Join(parts, " ")
 }

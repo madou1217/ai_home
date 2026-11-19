@@ -772,70 +772,7 @@ func matchObservationComponent(candidates []matchCandidate) []matchCandidate {
 }
 
 func materializeProjectionConn(ctx context.Context, conn *sql.Conn, pCtx *UsageProjectionContext) error {
-	for _, stmt := range []string{
-		`CREATE TEMP TABLE IF NOT EXISTS model_usage_read_fork_contexts (
-			source_hash TEXT PRIMARY KEY,
-			replay_pending INTEGER NOT NULL,
-			boundary_offset INTEGER NOT NULL,
-			session_id TEXT NOT NULL,
-			cwd TEXT NOT NULL,
-			project TEXT NOT NULL
-		)`,
-		`CREATE TEMP TABLE IF NOT EXISTS model_usage_read_attributions (
-			scanner_id INTEGER PRIMARY KEY,
-			proxy_id INTEGER NOT NULL UNIQUE,
-			model TEXT NOT NULL,
-			account_provider TEXT NOT NULL,
-			account_ref TEXT NOT NULL,
-			cost_usd REAL NOT NULL
-		)`,
-		`DELETE FROM temp.model_usage_read_fork_contexts`,
-		`DELETE FROM temp.model_usage_read_attributions`,
-	} {
-		if _, err := conn.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("准备临时读投影表失败: %w", err)
-		}
-	}
-	if pCtx == nil {
-		return nil
-	}
-	if len(pCtx.ForkDescriptors) > 0 {
-		stmt, err := conn.PrepareContext(ctx, `
-			INSERT INTO temp.model_usage_read_fork_contexts (
-				source_hash, replay_pending, boundary_offset, session_id, cwd, project
-			) VALUES (?, ?, ?, ?, ?, ?)`)
-		if err != nil {
-			return err
-		}
-		for _, f := range pCtx.ForkDescriptors {
-			rp := 0
-			if f.ReplayPending {
-				rp = 1
-			}
-			if _, err := stmt.ExecContext(ctx, f.SourceHash, rp, f.BoundaryOffset, f.SessionID, f.CWD, f.Project); err != nil {
-				_ = stmt.Close()
-				return err
-			}
-		}
-		_ = stmt.Close()
-	}
-	if len(pCtx.Attributions) > 0 {
-		stmt, err := conn.PrepareContext(ctx, `
-			INSERT INTO temp.model_usage_read_attributions (
-				scanner_id, proxy_id, model, account_provider, account_ref, cost_usd
-			) VALUES (?, ?, ?, ?, ?, ?)`)
-		if err != nil {
-			return err
-		}
-		for _, a := range pCtx.Attributions {
-			if _, err := stmt.ExecContext(ctx, a.ScannerID, a.ProxyID, a.Model, a.AccountProvider, a.AccountRef, a.CostUSD); err != nil {
-				_ = stmt.Close()
-				return err
-			}
-		}
-		_ = stmt.Close()
-	}
-	return nil
+	return populateProjectionTables(ctx, conn, pCtx)
 }
 
 func cleanupProjectionConn(conn *sql.Conn) {

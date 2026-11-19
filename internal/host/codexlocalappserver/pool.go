@@ -286,10 +286,11 @@ func releasePoolLock(lockPath string) {
 }
 
 // reapIdleBackends 回收没有任何存活租约的后端；仍在服务的后端保持不动。
-func reapIdleBackends(root string) {
+func reapIdleBackends(root string) int {
+	removed := 0
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return
+		return 0
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -312,9 +313,21 @@ func reapIdleBackends(root string) {
 			terminatePooledBackend(state)
 			_ = os.Remove(statePath)
 			_ = os.RemoveAll(filepath.Join(root, key+".leases"))
+			removed++
 		}
 		releasePoolLock(lock)
 	}
+	return removed
+}
+
+// ReapIdleBackends 回收没有任何存活租约的共享后端，返回清理掉的后端数。
+// 供宿主后台巡检调用：没有新的 acquire 时后端也不会一直占着内存。
+func ReapIdleBackends(aiHomeDir string) int {
+	root := poolRoot([]string{"AIH_HOME_DIR=" + aiHomeDir})
+	if strings.TrimSpace(root) == "" {
+		return 0
+	}
+	return reapIdleBackends(root)
 }
 
 func livePoolLeases(root, key string) int {

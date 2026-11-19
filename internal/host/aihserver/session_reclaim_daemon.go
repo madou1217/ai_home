@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/host/codexlocalappserver"
 	"github.com/madou1217/ai_home/internal/runtime/sessionreclaim"
 )
 
@@ -55,6 +56,11 @@ func (daemon sessionReclaimDaemon) runOnce(ctx context.Context) {
 		log.Printf("[session-reclaim] 清理空壳注册表失败: %v", pruneErr)
 	} else if pruned > 0 {
 		log.Printf("[session-reclaim] 清理空壳注册表 %d 条", pruned)
+	}
+	// 共享 codex 后端在没有租约后不会自己退出：没有新会话就不会触发下一次回收，
+	// 这里随巡检一起清理，避免几百 MB 的空后端长期驻留。
+	if reaped := codexlocalappserver.ReapIdleBackends(daemon.aiHomeDir); reaped > 0 {
+		log.Printf("[housekeeping] 回收空闲 codex 共享后端 %d 个", reaped)
 	}
 	result, err := sessionreclaim.Reclaim(ctx, daemon.aiHomeDir, sessionreclaim.ReclaimOptions{
 		Options: sessionreclaim.Options{IdleThreshold: sessionReclaimIdleThreshold},

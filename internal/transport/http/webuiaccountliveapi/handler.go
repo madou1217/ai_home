@@ -143,6 +143,29 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 }
 
 // Close 停止后台刷新工人；生产进程随 server 退出，测试用它回收 goroutine。
+// LiveAccountRow 返回单个账号的实时行（含 enrichRows 派生字段）。
+//
+// 账号编辑成功后用它作为响应，避免局部读模型的零值在前端 merge 时覆盖 live 字段。
+func (handler *Handler) LiveAccountRow(ctx context.Context, provider, accountRef string) (webuiaccountsapi.Row, bool) {
+	if handler == nil || handler.hub == nil {
+		return webuiaccountsapi.Row{}, false
+	}
+	rows, err := handler.hub.loadRows(ctx)
+	if err != nil {
+		return webuiaccountsapi.Row{}, false
+	}
+	handler.hub.enrichRows(ctx, rows)
+	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+	normalizedRef := strings.TrimSpace(accountRef)
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row.Provider), normalizedProvider) &&
+			strings.TrimSpace(row.AccountRef) == normalizedRef {
+			return row, true
+		}
+	}
+	return webuiaccountsapi.Row{}, false
+}
+
 func (handler *Handler) Close() {
 	if handler == nil || handler.hub == nil {
 		return

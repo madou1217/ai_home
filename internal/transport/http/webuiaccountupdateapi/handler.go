@@ -71,6 +71,14 @@ type AccountDirectory interface {
 	) (accountapp.AccountOverview, error)
 }
 
+// LiveRows 返回账号实时视图（含规则/活动/运行态等派生字段）。
+//
+// 编辑成功后必须返回 live 行：局部读模型的空值会在前端 merge 时把
+// upstreamErrorRules / activityActions / tokenUsage 等字段覆盖成零值。
+type LiveRows interface {
+	LiveAccountRow(ctx context.Context, provider, accountRef string) (webuiaccountsapi.Row, bool)
+}
+
 // Dependencies 汇总账号配置编辑的依赖。
 type Dependencies struct {
 	Authorizer Authorizer
@@ -87,6 +95,7 @@ type Handler struct {
 	accounts   AccountDirectory
 	editor     CredentialEditor
 	rows       webuiaccountsapi.Source
+	liveRows   LiveRows
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -236,6 +245,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	})
 }
 
+// SetLiveRows 注入实时行读取器（组合根在 live handler 创建后调用）。
+func (handler *Handler) SetLiveRows(liveRows LiveRows) {
+	if handler != nil {
+		handler.liveRows = liveRows
+	}
+}
+
 // updatedAccountView 读取编辑后的账号行；读模型失败时退化为最小视图。
 //
 // Node 的更新接口在写成功后重新读取账号行并返回 {ok, account}；WebUI 依赖
@@ -247,6 +263,11 @@ func (handler *Handler) updatedAccountView(
 	authKind string,
 	baseURL optionalString,
 ) any {
+	if handler.liveRows != nil {
+		if row, ok := handler.liveRows.LiveAccountRow(ctx, provider, accountRef.String()); ok {
+			return row
+		}
+	}
 	if handler.rows != nil {
 		result, err := handler.rows.ListAccountRows(ctx, webuiaccountsapi.Query{
 			Provider:   provider,

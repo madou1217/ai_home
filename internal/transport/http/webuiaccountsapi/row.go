@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Row 是账号页的一行。
@@ -17,8 +18,8 @@ type Row struct {
 	Provider   string `json:"provider"`
 	AccountRef string `json:"accountRef"`
 	DisplayID  string `json:"displayId,omitempty"`
-	// Enabled 是账号启停的原始事实。Node 行只有派生的 status（up/down），而 status 在本切片留空，
-	// 所以这里给出下一轮派生 status 的唯一静态来源（规则见 lib/server/account-row-sources.js）。
+	// Enabled 是账号启停的原始事实；Status 是与 Node 同词的 up/down 派生值。
+	// Vertex 占位账号在 Go 侧 enabled=false，但展示保持 up（见 newRow）。
 	Enabled     bool   `json:"enabled"`
 	Status      string `json:"status"`
 	DisplayName string `json:"displayName"`
@@ -96,16 +97,18 @@ type accountFact struct {
 	UIAuthMode        string
 	UIAPIKeyMode      int64
 	UIOAuthPending    int64
-	UIBaseURL         string
-	ProfileName       string
-	ProfileEmail      string
-	Subscription      string
-	SubscriptionRaw   string
-	QuotaStatus       string
-	QuotaReason       string
-	RemainingBPS      int64
-	HasRemaining      int64
-	CapturedAtMS      int64
+	// UIStateUpdatedAtMS 是账号 UI 状态的更新时间；用于派生 oauth pending 的 age/stale。
+	UIStateUpdatedAtMS int64
+	UIBaseURL          string
+	ProfileName        string
+	ProfileEmail       string
+	Subscription       string
+	SubscriptionRaw    string
+	QuotaStatus        string
+	QuotaReason        string
+	RemainingBPS       int64
+	HasRemaining       int64
+	CapturedAtMS       int64
 	// SnapshotPayload 是 account_usage_snapshots.payload_json 的原文；缺表/无快照时为空串。
 	SnapshotPayload string
 	IsDefault       int64
@@ -242,6 +245,19 @@ func newRow(fact accountFact) Row {
 		ActivityActions:       []any{},
 	}
 	row.DisplayNames = buildDisplayNames(fact, row.DisplayName, apiKeyMode)
+	if row.AuthPending && !row.APIKeyMode {
+		now := time.Now().UnixMilli()
+		if fact.UIStateUpdatedAtMS > 0 {
+			age := now - fact.UIStateUpdatedAtMS
+			if age < 0 {
+				age = 0
+			}
+			row.AuthPendingAgeMs = age
+			row.AuthPendingStale = age >= 5*60*1000
+		} else {
+			row.AuthPendingStale = true
+		}
+	}
 	row.UsageSnapshot = parseUsageSnapshot(fact.SnapshotPayload, fact.Provider)
 	row.PlanType = resolvePlanType(configured, apiKeyMode, fact.Subscription)
 	// 资料表没有套餐时，用额度快照里的 account.planType 兜底：CodeBuddy 家族的

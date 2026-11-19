@@ -843,6 +843,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if liveErr != nil {
 		return nil, fmt.Errorf("创建账号实时视图接口失败: %w", liveErr)
 	}
+	// 编辑成功后的响应必须用 live 行：局部读模型的零值会在前端 merge 时覆盖派生字段。
+	accountUpdate.SetLiveRows(accountLive)
 	// 账号导入作业：状态机、上传解码、文档解析与逐条导入都在 Go。事件走同一条
 	// 账号 watch 流（import-job 帧），Node 只保留 POST/GET 的协议外壳。
 	accountImport, importErr := webuiaccountimportapi.NewHandler(webuiaccountimportapi.Dependencies{

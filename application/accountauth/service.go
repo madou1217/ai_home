@@ -303,6 +303,23 @@ func (service *Service) checkStartCapacity(providerID string) error {
 	return nil
 }
 
+// ActiveJobForProvider 返回该 Provider 当前进行中的作业 ID；没有时返回 false。
+//
+// 浏览器「替换现有登录」需要它来取消旧作业或打开已有进度，避免只看到 409。
+func (service *Service) ActiveJobForProvider(providerID string) (string, bool) {
+	if service == nil {
+		return "", false
+	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	if provider == "" {
+		return "", false
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	jobID, ok := service.activeJobs[provider]
+	return jobID, ok && jobID != ""
+}
+
 // Get 返回当前 Job 的公开快照，并惰性执行过期和终态清理。
 //
 // 该方法是 HTTP 端口要求的无 context 形式，内部委托给 GetJob。

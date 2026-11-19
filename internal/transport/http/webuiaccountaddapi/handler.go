@@ -167,7 +167,12 @@ type startRequest struct {
 	AuthMode              string `json:"authMode"`
 	AuthStrategy          string `json:"authStrategy"`
 	LoginProvider         string `json:"loginProvider"`
+	ReplaceExisting       bool   `json:"replaceExisting"`
 	AliasPoolParticipates *bool  `json:"aliasPoolParticipates"`
+	// Config 是浏览器原始配置；Kiro 等 Provider 把登录方式放在 config.loginProvider。
+	Config *struct {
+		LoginProvider string `json:"loginProvider"`
+	} `json:"config"`
 }
 
 // callbackRequest 是浏览器回调的提交体，键与 Node 的同名输入一致。
@@ -289,6 +294,17 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 	}
 	strategy := strings.TrimSpace(payload.AuthStrategy)
 	loginProvider := strings.TrimSpace(payload.LoginProvider)
+	if loginProvider == "" && payload.Config != nil {
+		loginProvider = strings.TrimSpace(payload.Config.LoginProvider)
+	}
+	// 浏览器「替换现有登录」：先取消同 Provider 的活动作业，再启动新的。
+	if payload.ReplaceExisting {
+		if finder, ok := handler.jobs.(interface{ ActiveJobForProvider(string) (string, bool) }); ok {
+			if activeID, active := finder.ActiveJobForProvider(provider); active {
+				_, _ = handler.jobs.Cancel(activeID)
+			}
+		}
+	}
 
 	if provider == "agy" && strings.EqualFold(strategy, "native-cli") && handler.loginJobs != nil {
 		handler.startLoginJob(response, request, provider)
@@ -303,6 +319,10 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		AliasPoolParticipates: payload.AliasPoolParticipates,
 	})
 	if err != nil {
+		if errors.Is(err, accountauth.ErrActiveJobExists) {
+			handler.writeActiveJobConflict(response, request, provider)
+			return
+		}
 		writeStartError(response, err)
 		return
 	}
@@ -760,6 +780,19 @@ func decodeJSON[T any](request *http.Request) (T, error) {
 }
 
 // writeStartError 映射创建作业的失败。
+// writeActiveJobConflict 把已有作业的 ID 一并返回，前端可打开现有进度或重试替换。
+func (handler *Handler) writeActiveJobConflict(response http.ResponseWriter, request *http.Request, provider string) {
+	if finder, ok := handler.jobs.(interface{ ActiveJobForProvider(string) (string, bool) }); ok {
+		if activeID, active := finder.ActiveJobForProvider(provider); active {
+			if job, getErr := handler.jobs.GetJob(request.Context(), activeID); getErr == nil {
+				writeError(response, http.StatusConflict, "oauth_job_already_running", "该 Provider 已有进行中的登录任务", &job)
+				return
+			}
+		}
+	}
+	writeError(response, http.StatusConflict, "oauth_job_already_running", "该 Provider 已有进行中的登录任务", nil)
+}
+
 func writeStartError(response http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, accountauth.ErrUnsupportedProvider):

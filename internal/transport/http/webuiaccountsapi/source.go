@@ -3,6 +3,7 @@ package webuiaccountsapi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -77,6 +78,8 @@ const (
 	tableSnapshots   = "account_usage_snapshots"
 	tableDefaults    = "account_defaults"
 	tableModels      = "account_models"
+	tableRules       = "account_upstream_error_rule"
+	tableRuleGroups  = "account_upstream_error_group"
 )
 
 // trackedTables 是读模型关心的全部表：accounts 缺失时整页为空，
@@ -89,6 +92,8 @@ var trackedTables = []string{
 	tableSnapshots,
 	tableDefaults,
 	tableModels,
+	tableRules,
+	tableRuleGroups,
 }
 
 // SQLiteOptions 是打开只读数据源的依赖。
@@ -175,7 +180,68 @@ func (source *SQLiteSource) ListAccountRows(ctx context.Context, query Query) (R
 	if err := rows.Err(); err != nil {
 		return Result{}, fmt.Errorf("遍历账号页行失败: %w", err)
 	}
+	if len(result.Rows) > 0 && (available[tableRules] || available[tableRuleGroups]) {
+		source.attachRuleRows(ctx, available, result.Rows)
+	}
 	return result, nil
+}
+
+// attachRuleRows 批量补齐账号行上的上游错误规则与组挂载。
+//
+// Node 行里的 upstreamErrorRules / upstreamErrorGroupIds 来自 app-state 的账号规则；
+// Go 移植后落在 aih.db 的同名表。这里按当前页的 accountRef 一次取完，避免逐行查询。
+// 读失败保持空数组（与旧行为一致），不让规则表问题拖垮整页账号。
+func (source *SQLiteSource) attachRuleRows(ctx context.Context, available map[string]bool, rows []Row) {
+	refs := make([]any, 0, len(rows))
+	for _, row := range rows {
+		if strings.TrimSpace(row.AccountRef) != "" {
+			refs = append(refs, row.AccountRef)
+		}
+	}
+	if len(refs) == 0 {
+		return
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(refs)), ",")
+	byRefRules := make(map[string][]any, len(refs))
+	byRefGroups := make(map[string][]any, len(refs))
+	if available[tableRules] {
+		query := "SELECT account_ref, rule_json FROM account_upstream_error_rule WHERE source = 'account' AND account_ref IN (" + placeholders + ") ORDER BY account_ref, position"
+		if results, err := source.db.QueryContext(ctx, query, refs...); err == nil {
+			for results.Next() {
+				var ref, raw string
+				if results.Scan(&ref, &raw) != nil {
+					continue
+				}
+				var rule any
+				if json.Unmarshal([]byte(raw), &rule) == nil {
+					byRefRules[ref] = append(byRefRules[ref], rule)
+				}
+			}
+			_ = results.Close()
+		}
+	}
+	if available[tableRuleGroups] {
+		query := "SELECT account_ref, group_id FROM account_upstream_error_group WHERE account_ref IN (" + placeholders + ") ORDER BY account_ref, position"
+		if results, err := source.db.QueryContext(ctx, query, refs...); err == nil {
+			for results.Next() {
+				var ref, groupID string
+				if results.Scan(&ref, &groupID) != nil {
+					continue
+				}
+				byRefGroups[ref] = append(byRefGroups[ref], groupID)
+			}
+			_ = results.Close()
+		}
+	}
+	for index := range rows {
+		ref := rows[index].AccountRef
+		if rules, ok := byRefRules[ref]; ok {
+			rows[index].UpstreamErrorRules = rules
+		}
+		if groups, ok := byRefGroups[ref]; ok {
+			rows[index].UpstreamErrorGroupIDs = groups
+		}
+	}
 }
 
 // readTables 一次性读出库里实际存在的表，用于 fail-soft 拼 SQL。
@@ -237,6 +303,8 @@ func buildRowStatement(available map[string]bool, query Query) (string, []any) {
 			"COALESCE((SELECT u.api_key_mode FROM account_ui_state AS u WHERE u.account_ref = a.account_ref), 0)", "0"),
 		optionalColumn(available, tableUIState,
 			"COALESCE((SELECT u.oauth_pending FROM account_ui_state AS u WHERE u.account_ref = a.account_ref), 0)", "0"),
+		optionalColumn(available, tableUIState,
+			"COALESCE((SELECT u.updated_at_ms FROM account_ui_state AS u WHERE u.account_ref = a.account_ref), 0)", "0"),
 		optionalColumn(available, tableUIState,
 			"COALESCE((SELECT u.base_url FROM account_ui_state AS u WHERE u.account_ref = a.account_ref), '')", "''"),
 		optionalColumn(available, tableProfiles,
@@ -321,6 +389,7 @@ func scanAccountFact(rows *sql.Rows) (accountFact, error) {
 		&fact.UIAuthMode,
 		&fact.UIAPIKeyMode,
 		&fact.UIOAuthPending,
+		&fact.UIStateUpdatedAtMS,
 		&fact.UIBaseURL,
 		&fact.ProfileName,
 		&fact.ProfileEmail,

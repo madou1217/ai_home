@@ -134,6 +134,12 @@ func SerializeJob(job accountauth.Job) map[string]any {
 			pollIntervalMS = 1000
 		}
 	}
+	callbackStatus, callbackError := callbackCapturePresentation(authMode, job.Status(), job.AuthStrategy(), recovered)
+	logs := authProgressLogs(authMode, job.Status(), recovered)
+	lastOutputAt := createdAt
+	if !job.FinishedAt().IsZero() {
+		lastOutputAt = job.FinishedAt().UnixMilli()
+	}
 	account := job.Account()
 	return map[string]any{
 		"id":                      job.ID(),
@@ -145,13 +151,13 @@ func SerializeJob(job accountauth.Job) map[string]any {
 		"status":                  nodeStatus(job.Status()),
 		"goStatus":                string(job.Status()),
 		"authProgressState":       progressState(job.Status(), authMode, recovered),
-		"logs":                    "",
+		"logs":                    logs,
 		"exitCode":                nil,
 		"error":                   job.FailureCode(),
 		"failureCode":             job.FailureCode(),
 		"createdAt":               createdAt,
 		"updatedAt":               updatedAt,
-		"lastOutputAt":            0,
+		"lastOutputAt":            lastOutputAt,
 		"pid":                     nil,
 		"expiresAt":               expiresAt,
 		"pollIntervalMs":          pollIntervalMS,
@@ -160,15 +166,51 @@ func SerializeJob(job accountauth.Job) map[string]any {
 		"userCode":                job.UserCode(),
 		"authorizationUrl":        authorizationURL,
 		"redirectUri":             redirectURI,
-		"callbackCaptureStatus":   "",
+		"callbackCaptureStatus":   callbackStatus,
 		"callbackListeningUrl":    "",
-		"callbackCaptureError":    "",
+		"callbackCaptureError":    callbackError,
 		"email":                   account.Email,
 		"displayName":             account.DisplayName,
 		"planType":                account.PlanType,
 		"setupPhase":              "",
 		"installRequired":         false,
 		"installAttempts":         []any{},
+	}
+}
+
+// callbackCapturePresentation 说明 Go OAuth 作业的本机回调能力。
+//
+// Go 进程当前不监听 loopback 回调端口：HTTP 浏览器流程标记 unavailable，
+// 自定义协议（zcode://）标记 manual_only；设备码流程不需要回调，保持空。
+func callbackCapturePresentation(authMode string, status accountauth.Status, strategy string, recovered bool) (string, string) {
+	if recovered || status != accountauth.StatusPending && status != accountauth.StatusProcessing {
+		return "", ""
+	}
+	normalized := strings.ToLower(strings.TrimSpace(authMode))
+	if normalized == "oauth-device" || normalized == "oauth-refresh-token" {
+		return "", ""
+	}
+	if strings.Contains(strings.ToLower(strategy), "custom-scheme") {
+		return "manual_only", "callback_manual_paste_required"
+	}
+	if normalized == "oauth-browser" {
+		return "unavailable", "callback_capture_unavailable"
+	}
+	return "", ""
+}
+
+// authProgressLogs 给前端一个可读的当前阶段；Go OAuth 不采集 CLI stdout。
+func authProgressLogs(authMode string, status accountauth.Status, recovered bool) string {
+	if recovered || status != accountauth.StatusPending && status != accountauth.StatusProcessing {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(authMode)) {
+	case "oauth-device":
+		return "等待设备授权确认…"
+	case "oauth-browser":
+		return "等待浏览器回调，或粘贴回调地址…"
+	default:
+		return "等待授权…"
 	}
 }
 

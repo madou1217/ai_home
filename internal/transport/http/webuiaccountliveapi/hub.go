@@ -691,9 +691,13 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 	for index := range rows {
 		row := &rows[index]
 		ref := strings.TrimSpace(row.AccountRef)
-		row.Status = "up"
-		if !row.Enabled {
-			row.Status = "down"
+		// Status 已由账号行派生（含 Vertex 占位保持 up 的例外）；只有旧来源
+		// 没有给值时，才按 enabled 兜底，避免覆盖派生结果。
+		if strings.TrimSpace(row.Status) == "" {
+			row.Status = "up"
+			if !row.Enabled {
+				row.Status = "down"
+			}
 		}
 		lastUsed := int64(0)
 		if state, found := states[ref]; found {
@@ -717,6 +721,12 @@ func (hub *Hub) enrichRows(ctx context.Context, rows []webuiaccountsapi.Row) {
 		}
 		if captured := usageSnapshotCapturedAt(row.UsageSnapshot); captured > lastUsed {
 			lastUsed = captured
+		}
+		// 运行态阻塞优先于静态调度兜底；Node 的 deriveSchedulableState 同口径。
+		if runtime := strings.ToLower(strings.TrimSpace(row.RuntimeStatus)); runtime != "" &&
+			runtime != "healthy" && runtime != "unknown" && !row.APIKeyMode {
+			row.SchedulableStatus = "blocked_by_runtime_status"
+			row.SchedulableReason = runtime
 		}
 		if lastUsed > 0 {
 			value := lastUsed

@@ -30,8 +30,8 @@ if [ -x "$native" ]; then
   exec "$native" "$@"
 fi
 
-if [ "${1:-}" = claude ]; then
-  printf '%s\n' '[aih] Go CLI 未构建；请运行 npm run go:build。Claude 不会回落到 Node。' >&2
+if [ "${1:-}" = claude ] || [ "${1:-}" = peer ]; then
+  printf '%s\n' '[aih] Go CLI 未构建；请运行 npm run go:build。Claude / peer 不会回落到 Node。' >&2
   exit 126
 fi
 exec node "$dir/ai-home.js" "$@"

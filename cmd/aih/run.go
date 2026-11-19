@@ -81,6 +81,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	providerID := arguments[0]
+	if providerID == "peer" {
+		return runPeer(ctx, arguments[1:], runtime)
+	}
 	if providerID == "claude" && !commandNeedsNativeStore(providerID, arguments[1:]) {
 		configured, configErr := withClaudeGatewayConfig(ctx, runtime)
 		if configErr != nil {

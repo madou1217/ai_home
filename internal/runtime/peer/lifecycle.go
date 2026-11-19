@@ -96,6 +96,10 @@ func (s *DispatchStore) createScheduledMessage(input CreateMessageInput) (*Recor
 		return nil, err
 	}
 	defer unlock()
+	return s.createScheduledMessageLocked(input)
+}
+
+func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (*Record, error) {
 	id := NormalizeID(input.ID)
 	if id == "" {
 		id = NewMessageID()
@@ -117,8 +121,12 @@ func (s *DispatchStore) createScheduledMessage(input CreateMessageInput) (*Recor
 	rec := Record{
 		V: RecordVersion, ID: id, From: normalizeRecordParty(input.From), To: normalizeRecordParty(input.To),
 		ReplyTo: NormalizeID(input.ReplyTo), Body: input.Body, CreatedAt: s.now().UnixMilli(), State: "pending", Attempts: []AttemptRecord{},
-		Subject: input.Subject, Summary: input.Summary, Purpose: input.Purpose, Action: input.Action, ReplyPolicy: input.ReplyPolicy,
+		FromMode: input.FromMode, Subject: input.Subject, Summary: input.Summary, Purpose: input.Purpose, Action: input.Action, ReplyPolicy: input.ReplyPolicy,
 		ExpiresAt: input.ExpiresAt, Supersedes: NormalizeID(input.Supersedes),
+	}
+	if input.ReplyPolicy == "none" {
+		zero := int64(0)
+		input.AutoDeliverUntil = &zero
 	}
 	if input.AutoDeliverUntil != nil {
 		rec.AutoDeliverUntil = *input.AutoDeliverUntil
@@ -126,6 +134,7 @@ func (s *DispatchStore) createScheduledMessage(input CreateMessageInput) (*Recor
 	}
 	var previous *Record
 	var previousDir string
+	var err error
 	if rec.Supersedes != "" {
 		previous, previousDir, err = s.findExactLocked(rec.Supersedes)
 		if err != nil {
@@ -231,6 +240,9 @@ func (s *DispatchStore) ResumeMessage(input LifecycleInput) (*Record, error) {
 	}
 	if dir == "inflight" {
 		return nil, ErrMessageInflight
+	}
+	if rec.ReplyPolicy == "none" {
+		return nil, &policyError{reason: "inbox_only"}
 	}
 	at := s.now().UnixMilli()
 	until := at + DefaultAutoHorizon.Milliseconds()

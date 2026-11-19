@@ -139,6 +139,8 @@ func projectNotificationAt(rec *Record, gate TargetGate, at int64) {
 				reason = "manual"
 			}
 		}
+	case rec.ReplyPolicy == "none":
+		state, reason = "manual", "inbox_only"
 	case rec.AutoDeliverUntil <= 0 || at >= rec.AutoDeliverUntil:
 		state, reason = "manual", "auto_horizon_elapsed"
 	case budgetReason != "":

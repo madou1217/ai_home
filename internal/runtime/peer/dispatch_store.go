@@ -79,6 +79,8 @@ type Record struct {
 	SupersedesAppliedAt int64  `json:"supersedesAppliedAt,omitempty"`
 	FailureResetAt      int64  `json:"failureResetAt,omitempty"`
 	autoDeliverUntilSet bool
+	NativeStatus        string          `json:"nativeStatus,omitempty"`
+	FromMode            string          `json:"fromMode,omitempty"`
 	Subject             string          `json:"subject,omitempty"`
 	Summary             string          `json:"summary,omitempty"`
 	Purpose             string          `json:"purpose,omitempty"`
@@ -113,6 +115,7 @@ type Record struct {
 
 // CreateMessageInput 定义写入 pending 收件箱的新消息参数。
 type CreateMessageInput struct {
+	FromMode         string
 	Subject          string
 	Summary          string
 	Purpose          string
@@ -568,7 +571,7 @@ func (s *DispatchStore) Claim(id string) (*Record, bool, error) {
 // settle merges into the current generation under lock, rather than writing a
 // caller's stale body/target/attempt snapshot. A missing or replaced claim is
 // never recreated by settlement.
-func (s *DispatchStore) settle(rec *Record, state, errCode, channelMessageID string, retryAfter time.Duration) (*Record, error) {
+func (s *DispatchStore) settle(rec *Record, state, errCode, channelMessageID string, retryAfter time.Duration, nativeStatus ...string) (*Record, error) {
 	if rec == nil || strings.TrimSpace(rec.ID) == "" {
 		return nil, ErrInvalidRecord
 	}
@@ -583,6 +586,9 @@ func (s *DispatchStore) settle(rec *Record, state, errCode, channelMessageID str
 	}
 	if err := applyReadReceipt(s.root, next); err != nil {
 		return nil, err
+	}
+	if len(nativeStatus) > 0 {
+		next.NativeStatus = nativeStatus[0]
 	}
 	at := s.now().UnixMilli()
 	acknowledged := next.State == "read"
@@ -708,4 +714,10 @@ func pendingOrArchive(rec Record) string {
 		return "archive"
 	}
 	return "pending"
+}
+
+// SettleDeliveryResult archives a successful transport once, preserving its
+// independently observed admission status. A hold is never silently retried.
+func (s *DispatchStore) SettleDeliveryResult(rec *Record, result DeliveryResult) (*Record, error) {
+	return s.settle(rec, "delivered", "", result.ChannelMessageID, 0, result.NativeStatus)
 }

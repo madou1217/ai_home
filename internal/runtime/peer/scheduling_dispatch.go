@@ -144,7 +144,7 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 		res := DeliverRecord(ctx, *claimed, delivery)
 		switch {
 		case res.OK:
-			_, err = store.SettleDelivered(claimed, res.ChannelMessageID)
+			_, err = store.SettleDeliveryResult(claimed, res)
 			if err == nil {
 				summary.Delivered++
 			}

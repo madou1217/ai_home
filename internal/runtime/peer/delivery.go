@@ -58,6 +58,7 @@ type TmuxCommandRunner func(ctx context.Context, command string, args []string) 
 // NativeSendRequest 描述 native（Claude UDS）通道的单次投递输入。
 type NativeSendRequest struct {
 	PID         int
+	MessageID   string
 	SocketPath  string
 	Name        string
 	SessionID   string
@@ -70,7 +71,8 @@ type NativeSendRequest struct {
 
 // NativeSendResult 返回 native 通道生成的协议消息 ID。
 type NativeSendResult struct {
-	MsgID string
+	MsgID  string
+	Status string
 }
 
 // DeliveryOptions 配置单条消息单点投递所需的环境与可注入端口。
@@ -106,6 +108,7 @@ type DeliveryOptions struct {
 
 // DeliveryResult 表示单条消息投递的结果与失败分类错误码。
 type DeliveryResult struct {
+	NativeStatus     string `json:"nativeStatus,omitempty"`
 	OK               bool   `json:"ok"`
 	Channel          string `json:"channel,omitempty"`
 	ChannelMessageID string `json:"channelMessageId,omitempty"`
@@ -198,6 +201,9 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 		}
 	}
 	text := renderMessageText(rec, opts)
+	if rec.To.Channel == "native" && !opts.NoEnvelope {
+		text = "[aih-peer-id:" + rec.ID + "]\n" + text
+	}
 	channel := strings.TrimSpace(rec.To.Channel)
 	switch channel {
 	case "native":
@@ -238,12 +244,13 @@ func deliverNative(ctx context.Context, rec Record, text string, opts DeliveryOp
 	}
 	req := NativeSendRequest{
 		PID:         pid,
+		MessageID:   rec.ID,
 		SocketPath:  socket,
 		Name:        rec.To.Name,
 		SessionID:   rec.To.SessionID,
 		Body:        text,
 		FromAddress: strings.TrimSpace(rec.From.Address),
-		Mode:        strings.TrimSpace(opts.Mode),
+		Mode:        strings.TrimSpace(rec.FromMode),
 		BeforeWrite: func() error { return authorizeTransport(ctx, rec, opts) },
 	}
 	if opts.DryRun {
@@ -274,6 +281,7 @@ func deliverNative(ctx context.Context, rec Record, text string, opts DeliveryOp
 		OK:               true,
 		Channel:          "native",
 		ChannelMessageID: strings.TrimSpace(res.MsgID),
+		NativeStatus:     res.Status,
 	}
 }
 
@@ -430,6 +438,7 @@ func defaultSendNative(ctx context.Context, req NativeSendRequest, opts Delivery
 			return NativeSendResult{}, err
 		}
 	}
+	receipt := newNativeReceiptProbe(req, opts)
 	if _, err := conn.Write(wire); err != nil {
 		return NativeSendResult{}, err
 	}
@@ -444,7 +453,7 @@ func defaultSendNative(ctx context.Context, req NativeSendRequest, opts Delivery
 		return NativeSendResult{}, ctx.Err()
 	case <-timer.C:
 	}
-	return NativeSendResult{MsgID: msgID}, nil
+	return NativeSendResult{MsgID: msgID, Status: receipt.wait(ctx)}, nil
 }
 
 func deliverWebuiChat(ctx context.Context, rec Record, text string, opts DeliveryOptions) DeliveryResult {

@@ -108,7 +108,7 @@ func resolveNodeEntry() (string, bool) {
 func delegateToNode(args []string) bool {
 	// Claude launches and actions belong to Go, including unpinned Gateway
 	// sessions and --model-alias. Never silently re-enter the legacy host.
-	if len(args) > 0 && args[0] == "claude" {
+	if len(args) > 0 && (args[0] == "claude" || args[0] == "peer") {
 		return false
 	}
 	if isNativeLaunch(args) {

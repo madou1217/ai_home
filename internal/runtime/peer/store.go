@@ -36,6 +36,7 @@ type Party struct {
 
 // Message 是 WebUI 收件箱单条消息的只读投影。
 type Message struct {
+	NativeStatus      string `json:"nativeStatus,omitempty"`
 	Subject           string `json:"subject,omitempty"`
 	Summary           string `json:"summary,omitempty"`
 	Purpose           string `json:"purpose,omitempty"`
@@ -290,6 +291,7 @@ func readDirectory(directory string, dirName string) []Message {
 		}
 		msg := projectMessage(raw, stateFromDirectory(dirName, raw.State))
 		msg.ReceiptError = rec.ReceiptError
+		msg.NativeStatus = rec.NativeStatus
 		msg.Subject, msg.Summary, msg.Purpose, msg.Action, msg.ReplyPolicy = rec.Subject, rec.Summary, rec.Purpose, rec.Action, rec.ReplyPolicy
 		msg.AutoDeliverUntil, msg.ExpiresAt, msg.CanceledAt, msg.Supersedes = rec.AutoDeliverUntil, rec.ExpiresAt, rec.CanceledAt, rec.Supersedes
 		msg.NotificationState, msg.WaitingReason, msg.BusySince, msg.ProbeCount = rec.NotificationState, rec.WaitingReason, rec.BusySince, rec.ProbeCount

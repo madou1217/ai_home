@@ -324,7 +324,11 @@ func (strategy AgyStrategy) Generate(
 	if sendErr != nil {
 		return Result{}, sendErr
 	}
-	return parseGeminiImageResponse(response)
+	result, parseErr := parseGeminiImageResponse(response)
+	if parseErr != nil {
+		return Result{}, parseErr
+	}
+	return encodeNativeImageOutput(result, input.OutputFormat)
 }
 
 // buildGeminiImageConfig 把 OpenAI 尺寸映射为 Gemini imageConfig。

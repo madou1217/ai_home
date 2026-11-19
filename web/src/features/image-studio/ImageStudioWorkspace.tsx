@@ -271,7 +271,9 @@ const ImageStudioWorkspace: React.FC = () => {
     if (!selectedModel.capabilities.size) setSize('auto');
     if (!getImageStudioQualityOptions(selectedModel).includes(quality)) setQuality('auto');
     if (!selectedModel.capabilities.background) setBackground('auto');
-    if (!selectedModel.capabilities.outputFormat) setOutputFormat('');
+    if (!selectedModel.capabilities.outputFormat
+      || (outputFormat && selectedModel.capabilities.outputFormats?.length
+        && !selectedModel.capabilities.outputFormats.includes(outputFormat))) setOutputFormat('');
     if (!selectedModel.capabilities.outputCompression) setOutputCompression(100);
     if (!selectedModel.capabilities.moderation) setModeration('auto');
     if (outputFormat === 'jpeg' && background === 'transparent') setBackground('auto');

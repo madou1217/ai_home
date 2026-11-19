@@ -46,18 +46,19 @@ type CatalogDependencies struct {
 
 // CatalogCapabilities 描述前端渲染生图表单所需的模型能力矩阵。
 type CatalogCapabilities struct {
-	Generation        bool `json:"generation"`
-	Edit              bool `json:"edit"`
-	Mask              bool `json:"mask"`
-	Multiple          bool `json:"multiple"`
-	Size              bool `json:"size"`
-	Quality           bool `json:"quality"`
-	ResponseFormat    bool `json:"responseFormat"`
-	MaxInputImages    int  `json:"maxInputImages"`
-	Background        bool `json:"background"`
-	OutputFormat      bool `json:"outputFormat"`
-	OutputCompression bool `json:"outputCompression"`
-	Moderation        bool `json:"moderation"`
+	Generation        bool     `json:"generation"`
+	Edit              bool     `json:"edit"`
+	Mask              bool     `json:"mask"`
+	Multiple          bool     `json:"multiple"`
+	Size              bool     `json:"size"`
+	Quality           bool     `json:"quality"`
+	ResponseFormat    bool     `json:"responseFormat"`
+	MaxInputImages    int      `json:"maxInputImages"`
+	Background        bool     `json:"background"`
+	OutputFormat      bool     `json:"outputFormat"`
+	OutputFormats     []string `json:"outputFormats,omitempty"`
+	OutputCompression bool     `json:"outputCompression"`
+	Moderation        bool     `json:"moderation"`
 }
 
 // UnavailableReasonCount 统计同一不可用原因下的账号数量。
@@ -174,6 +175,7 @@ func toCatalogCaps(caps images.Capabilities) CatalogCapabilities {
 		MaxInputImages:    maxIn,
 		Background:        caps.Background,
 		OutputFormat:      caps.OutputFormat,
+		OutputFormats:     append([]string(nil), caps.OutputFormats...),
 		OutputCompression: caps.OutputCompression,
 		Moderation:        caps.Moderation,
 	}
@@ -194,6 +196,19 @@ func mergeCatalogCaps(dst *CatalogCapabilities, src CatalogCapabilities) {
 		dst.MaxInputImages = 1
 	}
 	dst.Background = dst.Background || src.Background
+	if src.OutputFormat {
+		if !dst.OutputFormat {
+			dst.OutputFormats = append([]string(nil), src.OutputFormats...)
+		} else if len(src.OutputFormats) == 0 {
+			dst.OutputFormats = nil
+		} else if len(dst.OutputFormats) > 0 {
+			for _, format := range src.OutputFormats {
+				if !containsOutputFormat(dst.OutputFormats, format) {
+					dst.OutputFormats = append(dst.OutputFormats, format)
+				}
+			}
+		}
+	}
 	dst.OutputFormat = dst.OutputFormat || src.OutputFormat
 	dst.OutputCompression = dst.OutputCompression || src.OutputCompression
 	dst.Moderation = dst.Moderation || src.Moderation
@@ -405,12 +420,19 @@ func ListModels(ctx context.Context, deps CatalogDependencies, providerFilter st
 			}
 			if isAPIKey {
 				caps, _ := images.NativeCapabilities("passthrough", modelID)
+				qualities := images.NativeQualityOptions("passthrough", modelID)
+				// 已知模型契约优先于透传的宽口径：API-key 中转不改变模型本身
+				// 支持的参数。否则目录会把 webp 等上游不存在的格式广告给 UI。
+				if known, knownQualities, ok := passthroughModelCapabilities(modelID); ok {
+					caps = known
+					qualities = knownQualities
+				}
 				recordAccount(
 					ensureAcc(provider, modelID, "", 500),
 					ov,
 					"discovered",
 					toCatalogCaps(caps),
-					images.NativeQualityOptions("passthrough", modelID),
+					qualities,
 				)
 				continue
 			}
@@ -513,10 +535,38 @@ func ResolveDefaultModelKey(models []ModelEntry) string {
 	return ""
 }
 
+// passthroughModelCapabilities 返回已知图片模型的固有参数契约。
+//
+// API-key 透传账号的通用矩阵是「全部可调」，但中转到 Gemini/Grok 这类
+// 参数集合固定的模型时，通用矩阵会把不存在的控件广告给 UI。模型契约与
+// 承载方式无关，因此优先采用原生模型规格；未知模型仍保持透传宽口径。
+func passthroughModelCapabilities(modelID string) (images.Capabilities, []string, bool) {
+	for _, provider := range []string{"agy", "gemini", "grok"} {
+		if !ImageModelBelongsToProvider(provider, modelID) {
+			continue
+		}
+		caps, ok := images.NativeCapabilities(provider, modelID)
+		if !ok {
+			continue
+		}
+		return caps, images.NativeQualityOptions(provider, modelID), true
+	}
+	return images.Capabilities{}, nil, false
+}
+
 // containsDiscoveredModel 只接受该账号完整目录的有效模型，不从厂商清单推断可用性。
 func containsDiscoveredModel(models []string, modelID string) bool {
 	for _, found := range models {
 		if found == modelID {
+			return true
+		}
+	}
+	return false
+}
+
+func containsOutputFormat(formats []string, value string) bool {
+	for _, format := range formats {
+		if format == value {
 			return true
 		}
 	}

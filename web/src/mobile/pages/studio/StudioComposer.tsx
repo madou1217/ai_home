@@ -283,7 +283,14 @@ function ComposerParameters({ studio, blockers }: { studio: MobileImageStudio; b
       ) : null}
       {capabilities?.outputFormat ? (
         <HudField label="输出格式">
-          <Select value={studio.outputFormat || 'png'} onChange={studio.setOutputFormat} options={IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS} aria-label="输出格式" />
+          <Select
+            value={studio.outputFormat || 'png'}
+            onChange={studio.setOutputFormat}
+            options={IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS.filter((option) => !option.value
+              || !capabilities.outputFormats?.length
+              || capabilities.outputFormats.includes(option.value))}
+            aria-label="输出格式"
+          />
         </HudField>
       ) : null}
       {capabilities?.outputCompression && (studio.outputFormat === 'jpeg' || studio.outputFormat === 'webp') ? (

@@ -126,6 +126,8 @@ type Capabilities struct {
 	MaxInputImages int
 	Background     bool
 	OutputFormat   bool
+	// OutputFormats limits selectable formats when the adapter supports only a subset.
+	OutputFormats []string
 	// DefaultOutputFormat 是不带格式参数时上游的实际输出格式；请求恰好要这个格式
 	// 不算格式控制，不因 OutputFormat=false 被拒。
 	DefaultOutputFormat string
@@ -245,7 +247,9 @@ var nativeCapabilities = map[string]Capabilities{
 		Edit:           true,
 		ResponseFormat: true,
 		MaxInputImages: 1,
-		// 历史出图实测 image/jpeg。
+		// Code Assist chooses its own encoding; the adapter can transcode PNG/JPEG.
+		OutputFormat:        true,
+		OutputFormats:       []string{"png", "jpeg"},
 		DefaultOutputFormat: "jpeg",
 	},
 	"passthrough": {
@@ -452,6 +456,11 @@ func CheckCapabilities(
 			"unsupported_image_output_format",
 			fmt.Sprintf("%s does not support image output format controls", providerName),
 		)
+	}
+	if request.OutputFormat != "" && len(capabilities.OutputFormats) > 0 &&
+		!containsString(capabilities.OutputFormats, request.OutputFormat) {
+		return newError(400, "unsupported_image_output_format",
+			fmt.Sprintf("%s supports image output formats: %s", providerName, strings.Join(capabilities.OutputFormats, ", ")))
 	}
 	if request.OutputCompression != nil && !capabilities.OutputCompression {
 		return newError(

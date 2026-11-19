@@ -335,7 +335,9 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
               <Select
                 value={outputFormat}
                 onChange={onOutputFormatChange}
-                options={IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS}
+                options={IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS.filter((option) => !option.value
+                  || !capabilities.outputFormats?.length
+                  || capabilities.outputFormats.includes(option.value))}
               />
             </label>
           )}

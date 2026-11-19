@@ -3974,6 +3974,7 @@ export interface ImageStudioModelCapabilities {
   maxInputImages: number;
   background: boolean;
   outputFormat: boolean;
+  outputFormats?: string[];
   outputCompression: boolean;
   moderation: boolean;
 }

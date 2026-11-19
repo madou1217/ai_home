@@ -800,9 +800,12 @@ func TestHandlerRefreshDedupeGlobalAndWatchSSE(t *testing.T) {
 	}
 
 	// 验证全局刷新覆盖所有账号
+	// 全局刷新会探测全部账号；清掉前面的单账号故障注入，避免把「一个账号失败」
+	// 当成全局作业失败。该失败的传播已由上一步的 failed 作业覆盖。
 	refresher.mu.Lock()
 	refresher.blockCh = nil
 	refresher.calls = nil
+	refresher.errByID = nil
 	refresher.mu.Unlock()
 
 	globalRec := doReq(h, http.MethodPost, CatalogRefreshPath, "")

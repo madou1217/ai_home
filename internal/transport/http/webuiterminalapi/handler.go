@@ -126,6 +126,9 @@ type Handler struct {
 	rowsCache  []persistent.SessionRow
 	rowsAt     time.Time
 	rowsCached bool
+
+	closedOnce sync.Once
+	closedCh   chan struct{}
 }
 
 // sessionMeta 是 terminalsession.Snapshot 之外、只有传输层关心的会话信息。
@@ -191,6 +194,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		now:            now,
 		muxes:          make(map[string]*muxStream),
 		meta:           make(map[string]*sessionMeta),
+		closedCh:       make(chan struct{}),
 	}, nil
 }
 
@@ -222,13 +226,19 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusServiceUnavailable, "terminal_unavailable", "终端服务不可用")
 		return
 	}
+	path := strings.TrimPrefix(request.URL.Path, Prefix)
+	if path == "/mux/ws" {
+		// 浏览器 WebSocket 握手无法附带 Authorization 头，必须在普通头鉴权前转入专用处理器；
+		// 专用处理器在校验同源且通过首帧鉴权前绝不创建 mux 或访问任何终端会话。
+		handler.handleMuxWebSocket(response, request)
+		return
+	}
 	if !handler.authorizer.Authorized(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
 	}
 
-	path := strings.TrimPrefix(request.URL.Path, Prefix)
 	switch {
 	case request.Method == http.MethodGet && path == "/sessions":
 		handler.handleSessions(response, request)
@@ -264,6 +274,9 @@ func (handler *Handler) Close() error {
 	if handler == nil {
 		return nil
 	}
+	if handler.closedCh != nil {
+		handler.closedOnce.Do(func() { close(handler.closedCh) })
+	}
 	handler.mu.Lock()
 	muxes := make([]*muxStream, 0, len(handler.muxes))
 	for id, stream := range handler.muxes {
@@ -275,6 +288,25 @@ func (handler *Handler) Close() error {
 		stream.shutdown()
 	}
 	return nil
+}
+
+func (handler *Handler) closedSignal() <-chan struct{} {
+	if handler == nil {
+		return nil
+	}
+	return handler.closedCh
+}
+
+func (handler *Handler) isClosed() bool {
+	if handler == nil || handler.closedCh == nil {
+		return false
+	}
+	select {
+	case <-handler.closedCh:
+		return true
+	default:
+		return false
+	}
 }
 
 // ---------- JSON 工具 ----------

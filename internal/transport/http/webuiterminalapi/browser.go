@@ -34,7 +34,7 @@ func BrowserHandler(handler http.Handler) http.Handler {
 func browserActionAllowed(method, action string) bool {
 	switch method {
 	case http.MethodGet:
-		return action == "/sessions" || action == "/mux" || action == "/stream"
+		return action == "/sessions" || action == "/mux" || action == "/mux/ws" || action == "/stream"
 	case http.MethodPost:
 		switch action {
 		case "/open", "/attach", "/focus", "/input", "/resize", "/close", "/clipboard-image":

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
@@ -107,6 +108,9 @@ type managedModelView struct {
 
 // enrichment 是本次请求的可选事实源快照（构造后只读）。
 type enrichment struct {
+	ctx         context.Context
+	metadata    pricingcontract.Resolver
+	hasMetadata bool
 	refs        AccountRefResolver
 	settings    modelcatalogsettings.Settings
 	hasSettings bool
@@ -121,14 +125,52 @@ type enrichment struct {
 	legacyByModel map[string][]modelcatalogsettings.LegacyModel
 }
 
+// resolveMetadata 通过插件契约读取模型展示元数据；未知与失败都返回未命中，
+// 不伪造来源，也不在核心代码里绑定任何具体插件实现。
+func (enrich *enrichment) resolveMetadata(providerID, modelID string) (*pricingcontract.Metadata, bool) {
+	if enrich == nil || enrich.metadata == nil || providerID == "" || modelID == "" {
+		return nil, false
+	}
+	ctx := enrich.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	resolved, err := enrich.metadata.ResolveMetadata(ctx, pricingcontract.MetadataRequest{
+		SchemaVersion: pricingcontract.WireSchemaVersion,
+		Kind:          "metadata",
+		ModelRef: pricingcontract.ModelRef{
+			Provider: providerID,
+			Model:    modelID,
+		},
+	})
+	if err != nil || resolved.MetadataStatus != pricingcontract.MetadataResolved {
+		return nil, false
+	}
+	enrich.hasMetadata = true
+	copy := resolved
+	return &copy, true
+}
+
+func removeFieldKey(keys []string, target string) []string {
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key == target {
+			continue
+		}
+		out = append(out, key)
+	}
+	return out
+}
+
 // newEnrichment 读取可选事实源。任一源失败都只降级为空并记入 unavailable，不影响主数据。
 func newEnrichment(
 	ctx context.Context,
 	refs AccountRefResolver,
 	settingsReader SettingsReader,
 	snapshotReader SnapshotReader,
+	metadataReader pricingcontract.Resolver,
 ) *enrichment {
-	enrich := &enrichment{refs: refs}
+	enrich := &enrichment{ctx: ctx, refs: refs, metadata: metadataReader}
 	if enrich.refs == nil {
 		enrich.refs = identityRefs{}
 	}

@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 )
 
 // Path 是模型只读投影的 WebUI 契约路径。
@@ -69,8 +70,10 @@ type Dependencies struct {
 	Settings SettingsReader
 	// Snapshot 读 WebUI 模型快照（显示名、上下文窗口、探测时刻）。
 	Snapshot SnapshotReader
-	// Refs 做 Go→Node 账号引用翻译；零值时按恒等处理。
+	// Refs 做账号引用翻译；零值时按恒等处理。
 	Refs AccountRefResolver
+	// Metadata 是 model.metadata 插件契约的可选读端口；不绑定具体插件实现。
+	Metadata pricingcontract.Resolver
 }
 
 // Handler 是模型只读投影的 HTTP 入站适配器。
@@ -80,6 +83,7 @@ type Handler struct {
 	settings   SettingsReader
 	snapshot   SnapshotReader
 	refs       AccountRefResolver
+	metadata   pricingcontract.Resolver
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -93,6 +97,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		settings:   dependencies.Settings,
 		snapshot:   dependencies.Snapshot,
 		refs:       dependencies.Refs,
+		metadata:   dependencies.Metadata,
 	}, nil
 }
 
@@ -195,7 +200,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		return
 	}
 	// 可选事实源读失败不影响主数据：降级为空并在 unavailable_sources 里说明。
-	enrich := newEnricher(request.Context(), handler.refs, handler.settings, handler.snapshot)
+	enrich := newEnricher(request.Context(), handler.refs, handler.settings, handler.snapshot, handler.metadata)
 	writeJSON(responseWriter, http.StatusOK, newResponse(catalog, enrich))
 }
 
@@ -263,7 +268,7 @@ func newAccountView(set accountapp.AccountModelSet, enrich *enricher) accountVie
 		ModelIDs:          modelIDs,
 		EffectiveModelIDs: effectiveModelIDs,
 		ProbedAtMS:        enrich.probedAtMS(nodeRef),
-		ModelDetails:      enrich.modelDetails(nodeRef, set.Models),
+		ModelDetails:      enrich.modelDetails(set.ProviderID, nodeRef, set.Models),
 		LastAttemptAtMS:   lastAttemptAtMS,
 		LastErrorCode:     set.LastErrorCode,
 		LastErrorMessage:  set.LastErrorMessage,

@@ -411,7 +411,7 @@ func TestFieldCoverageIsPartitionForEverySourceCombination(t *testing.T) {
 			if testCase.snapshot {
 				snapshotReader = fakeSnapshotReader{snapshot: testSnapshot(t)}
 			}
-			enrich := newEnricher(context.Background(), nil, settingsReader, snapshotReader)
+			enrich := newEnricher(context.Background(), nil, settingsReader, snapshotReader, nil)
 			filled, unfilled := enrich.fieldCoverage()
 
 			filledKeys := make(map[string]bool, len(filled))

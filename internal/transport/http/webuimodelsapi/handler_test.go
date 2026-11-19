@@ -237,7 +237,7 @@ func TestNewAccountViewNeverProbedKeepsZeroTimestamp(t *testing.T) {
 	view := newAccountView(accountapp.AccountModelSet{
 		AccountRef: mustAccountRef(t, claudeAccountRef),
 		ProviderID: "claude",
-	}, newEnricher(context.Background(), nil, nil, nil))
+	}, newEnricher(context.Background(), nil, nil, nil, nil))
 	if view.LastAttemptAtMS != 0 {
 		t.Fatalf("LastAttemptAtMS = %d, want 0", view.LastAttemptAtMS)
 	}

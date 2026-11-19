@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
+
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
@@ -75,9 +77,10 @@ const (
 // 快照的 contextLimits，setting 来自设置文档里该 (账号, 模型) 的记录。缺失就是缺失，
 // 不用默认值填充。
 type modelView struct {
-	ModelID      string            `json:"model_id"`
-	ContextLimit int               `json:"context_limit,omitempty"`
-	Setting      *modelSettingView `json:"setting,omitempty"`
+	ModelID      string                    `json:"model_id"`
+	ContextLimit int                       `json:"context_limit,omitempty"`
+	Setting      *modelSettingView         `json:"setting,omitempty"`
+	Metadata     *pricingcontract.Metadata `json:"metadata,omitempty"`
 }
 
 // modelSettingView 是一条 (账号, 模型) 设置记录。
@@ -95,6 +98,9 @@ type modelSettingView struct {
 
 // enricher 是本次请求的可选事实源快照（构造后只读）。
 type enricher struct {
+	ctx         context.Context
+	metadata    pricingcontract.Resolver
+	hasMetadata bool
 	refs        AccountRefResolver
 	settings    modelcatalogsettings.Settings
 	hasSettings bool
@@ -113,8 +119,9 @@ func newEnricher(
 	refs AccountRefResolver,
 	settingsReader SettingsReader,
 	snapshotReader SnapshotReader,
+	metadataReader pricingcontract.Resolver,
 ) *enricher {
-	enrich := &enricher{refs: refs}
+	enrich := &enricher{ctx: ctx, refs: refs, metadata: metadataReader}
 	if enrich.refs == nil {
 		enrich.refs = identityRefs{}
 	}
@@ -230,7 +237,7 @@ func (enrich *enricher) unavailableSources() []string {
 }
 
 // modelDetails 返回账号下每个模型的可证实事实；两个源都没有时返回 nil（键整体省略）。
-func (enrich *enricher) modelDetails(nodeRef string, models []accountapp.AccountModel) []modelView {
+func (enrich *enricher) modelDetails(providerID, nodeRef string, models []accountapp.AccountModel) []modelView {
 	if enrich == nil || (!enrich.hasSettings && !enrich.hasSnapshot) {
 		return nil
 	}
@@ -243,6 +250,9 @@ func (enrich *enricher) modelDetails(nodeRef string, models []accountapp.Account
 		}
 		if record, ok := enrich.setting(nodeRef, modelID); ok {
 			detail.Setting = newModelSettingView(record)
+		}
+		if metadata, ok := enrich.resolveMetadata(providerID, modelID); ok {
+			detail.Metadata = metadata
 		}
 		details = append(details, detail)
 	}
@@ -261,6 +271,32 @@ func newModelSettingView(record modelcatalogsettings.AccountModel) *modelSetting
 		CustomPricing: record.CustomPricing,
 		UpdatedAtMS:   record.UpdatedAtMS,
 	}
+}
+
+// resolveMetadata 通过插件契约读取模型展示元数据；未知与失败都返回未命中，
+// 不伪造来源，也不在核心代码里绑定任何具体插件实现。
+func (enrich *enricher) resolveMetadata(providerID, modelID string) (*pricingcontract.Metadata, bool) {
+	if enrich == nil || enrich.metadata == nil || providerID == "" || modelID == "" {
+		return nil, false
+	}
+	ctx := enrich.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	resolved, err := enrich.metadata.ResolveMetadata(ctx, pricingcontract.MetadataRequest{
+		SchemaVersion: pricingcontract.WireSchemaVersion,
+		Kind:          "metadata",
+		ModelRef: pricingcontract.ModelRef{
+			Provider: providerID,
+			Model:    modelID,
+		},
+	})
+	if err != nil || resolved.MetadataStatus != pricingcontract.MetadataResolved {
+		return nil, false
+	}
+	enrich.hasMetadata = true
+	copy := resolved
+	return &copy, true
 }
 
 // labels 只投影本次响应里出现过的 provider：快照可能残留已删除 Provider 的显示名，
@@ -322,6 +358,8 @@ var (
 		"probed_at_ms",
 		"context_limit",
 	}
+	// metadataFieldKeys 需要 model.metadata 插件返回 resolved 元数据。
+	metadataFieldKeys = []string{"metadata"}
 	// detailFieldKeys 需要两个源之一：model_details 容器本身没有任何单一源独占。
 	detailFieldKeys = []string{
 		"model_details",
@@ -335,7 +373,6 @@ var (
 // 「不伪造全量形状」的承诺（原因见 handler.go 的 unfilled 说明）。
 var legacyUnfilledFieldKeys = []string{
 	"models",
-	"metadata",
 	"selectableByAccountRef",
 	"defaultByAccountRef",
 	"errorsByAccountRef",
@@ -354,7 +391,7 @@ var dataFieldKeys = buildDataFieldKeys()
 
 func buildDataFieldKeys() []string {
 	keys := make([]string, 0, 32)
-	for _, group := range [][]string{alwaysFieldKeys, settingsFieldKeys, snapshotFieldKeys, detailFieldKeys} {
+	for _, group := range [][]string{alwaysFieldKeys, settingsFieldKeys, snapshotFieldKeys, detailFieldKeys, metadataFieldKeys} {
 		keys = append(keys, group...)
 	}
 	return keys
@@ -381,6 +418,9 @@ func (enrich *enricher) fieldCoverage() (filled []string, unfilled []string) {
 		for _, key := range detailFieldKeys {
 			present[key] = true
 		}
+	}
+	if enrich != nil && enrich.hasMetadata {
+		present["metadata"] = true
 	}
 	filled = make([]string, 0, len(dataFieldKeys))
 	unfilled = make([]string, 0, len(dataFieldKeys)+len(legacyUnfilledFieldKeys))

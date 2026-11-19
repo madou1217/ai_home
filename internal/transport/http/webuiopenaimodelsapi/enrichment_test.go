@@ -328,7 +328,11 @@ func TestSnapshotOnlyStillPublishesLabels(t *testing.T) {
 func TestFieldCoveragePartitionsEveryResponse(t *testing.T) {
 	// 目录层：容器键 + 两个视图的全部 JSON 字段。
 	expectedCatalog := []string{"generation", "catalog_updated_at_ms", "models", "account_models", "unavailable_sources"}
-	expectedCatalog = append(expectedCatalog, jsonFieldNames(reflect.TypeOf(modelView{}))...)
+	for _, name := range jsonFieldNames(reflect.TypeOf(modelView{})) {
+		if name != "metadata" {
+			expectedCatalog = append(expectedCatalog, name)
+		}
+	}
 	expectedCatalog = append(expectedCatalog, jsonFieldNames(reflect.TypeOf(accountModelView{}))...)
 	assertKeySet(t, "catalogFieldKeys", catalogFieldKeys, expectedCatalog)
 
@@ -340,6 +344,7 @@ func TestFieldCoveragePartitionsEveryResponse(t *testing.T) {
 	assertKeySet(t, "settingsFieldKeys", settingsFieldKeys, expectedSettings)
 
 	assertKeySet(t, "snapshotFieldKeys", snapshotFieldKeys, []string{"labels"})
+	assertKeySet(t, "metadataFieldKeys", metadataFieldKeys, []string{"metadata"})
 
 	configurations := []struct {
 		name     string

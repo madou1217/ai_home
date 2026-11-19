@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 )
 
 // Path 是 WebUI OpenAI 模型目录的 Go 读模型契约路径。
@@ -63,6 +64,8 @@ type Dependencies struct {
 	Settings    SettingsReader
 	Snapshot    SnapshotReader
 	AccountRefs AccountRefResolver
+	// Metadata 是 model.metadata 插件契约的可选读端口；不绑定具体插件实现。
+	Metadata pricingcontract.Resolver
 }
 
 // Handler 是 WebUI OpenAI 模型目录的 HTTP 入站适配器。
@@ -72,6 +75,7 @@ type Handler struct {
 	settings    SettingsReader
 	snapshot    SnapshotReader
 	accountRefs AccountRefResolver
+	metadata    pricingcontract.Resolver
 }
 
 // NewHandler 校验依赖并创建 Handler。
@@ -85,6 +89,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		settings:    dependencies.Settings,
 		snapshot:    dependencies.Snapshot,
 		accountRefs: dependencies.AccountRefs,
+		metadata:    dependencies.Metadata,
 	}, nil
 }
 
@@ -118,11 +123,12 @@ type response struct {
 // 同一个模型可能被多个账号发现：providers/account_refs 是去重后的集合；
 // upstream_available 与 effective 表示「至少有一个账号」满足，而不是所有账号。
 type modelView struct {
-	ID                string   `json:"id"`
-	Providers         []string `json:"providers"`
-	AccountRefs       []string `json:"account_refs"`
-	UpstreamAvailable bool     `json:"upstream_available"`
-	Effective         bool     `json:"effective"`
+	ID                string                    `json:"id"`
+	Providers         []string                  `json:"providers"`
+	AccountRefs       []string                  `json:"account_refs"`
+	UpstreamAvailable bool                      `json:"upstream_available"`
+	Effective         bool                      `json:"effective"`
+	Metadata          *pricingcontract.Metadata `json:"metadata,omitempty"`
 }
 
 // accountModelView 是一个账号的模型 ID 与探测事实。
@@ -166,6 +172,8 @@ var (
 		"last_model_count",
 		"unavailable_sources",
 	}
+	// metadataFieldKeys 需要 model.metadata 插件返回 resolved 元数据。
+	metadataFieldKeys = []string{"metadata"}
 	// settingsFieldKeys 需要 model-catalog-settings 文档。
 	settingsFieldKeys = []string{
 		"managed_data",
@@ -270,7 +278,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		writeError(responseWriter, http.StatusServiceUnavailable, "webui_openai_models_failed", "WebUI 模型目录读取失败")
 		return
 	}
-	enrich := newEnrichment(request.Context(), handler.accountRefs, handler.settings, handler.snapshot)
+	enrich := newEnrichment(request.Context(), handler.accountRefs, handler.settings, handler.snapshot, handler.metadata)
 	writeJSON(responseWriter, http.StatusOK, newResponse(catalog, enrich))
 }
 
@@ -325,13 +333,19 @@ func newResponse(catalog accountapp.AccountModelCatalog, enrich *enrichment) res
 	})
 	models := make([]modelView, 0, len(aggregates))
 	for modelID, aggregate := range aggregates {
-		models = append(models, modelView{
+		view := modelView{
 			ID:                modelID,
 			Providers:         sortedKeys(aggregate.providers),
 			AccountRefs:       sortedKeys(aggregate.accountRefs),
 			UpstreamAvailable: aggregate.upstreamAvailable,
 			Effective:         aggregate.effective,
-		})
+		}
+		if len(view.Providers) > 0 {
+			if metadata, ok := enrich.resolveMetadata(view.Providers[0], modelID); ok {
+				view.Metadata = metadata
+			}
+		}
+		models = append(models, view)
 	}
 	sort.Slice(models, func(left, right int) bool {
 		return models[left].ID < models[right].ID
@@ -377,8 +391,14 @@ func fieldCoverage(enrich *enrichment) (filled []string, unfilled []string) {
 	if hasSnapshot {
 		filled = append(filled, snapshotFieldKeys...)
 	}
+	if enrich != nil && enrich.hasMetadata {
+		filled = append(filled, metadataFieldKeys...)
+	}
 	unfilled = make([]string, 0, len(legacyUnfilledFieldKeys)+3)
 	unfilled = append(unfilled, legacyUnfilledFieldKeys...)
+	if enrich != nil && enrich.hasMetadata {
+		unfilled = removeFieldKey(unfilled, "metadata")
+	}
 	if !hasSettings {
 		unfilled = append(unfilled, "managedData", "settingsUpdatedAt")
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountoutcomes"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	"github.com/madou1217/ai_home/contracts/modelpricing"
 	"github.com/madou1217/ai_home/core/providers"
 	accountactivityadapter "github.com/madou1217/ai_home/internal/adapters/accountactivity"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
@@ -121,6 +122,7 @@ type webuiRouteDependencies struct {
 	AIHomeDir              string
 	Catalog                *providers.Catalog
 	ModelModalities        *modelsdev.Index
+	MetadataResolver       modelpricing.Resolver
 	EgressManager          *runtimeegress.Manager
 	HostHomeDir            string
 	Store                  *sqliteaccount.Store
@@ -387,6 +389,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Settings: webuimodelsapi.SettingsFile{DatabasePath: databasePath},
 		Snapshot: webuimodelsapi.SnapshotFile{DatabasePath: databasePath},
 		Refs:     refResolver,
+		Metadata: dependencies.MetadataResolver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建模型只读投影接口失败: %w", err)
@@ -396,6 +399,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Settings:    webuiopenaimodelsapi.SettingsFile{DatabasePath: databasePath},
 		Snapshot:    webuiopenaimodelsapi.SnapshotFile{DatabasePath: databasePath},
 		AccountRefs: refResolver,
+		Metadata:    dependencies.MetadataResolver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 OpenAI 模型读模型接口失败: %w", err)

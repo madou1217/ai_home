@@ -258,18 +258,30 @@ func collectAnthropicPages(
 	seenCursors := make(map[string]struct{}, maxModelCatalogPages)
 	page := first
 	cursor := ""
+	entries := 0
 	for range maxModelCatalogPages {
 		for _, entry := range *page.Data {
-			if !validModelCatalogID(entry.ID) || len(models) >= maxModelCatalogModels {
+			entries++
+			// 第三方 Anthropic 兼容中转会在这份分页目录里混入不能作为运行态键的
+			// 条目（如带空格的 “claude fable 5.2”）。单个不可用条目不应作废整份
+			// 目录：跳过它，与 OpenAI 形状解析的过滤规则保持一致。
+			if !validModelCatalogID(entry.ID) {
+				continue
+			}
+			if len(models) >= maxModelCatalogModels {
 				return nil, ErrInvalidModelCatalog
 			}
 			if _, found := seenModels[entry.ID]; found {
-				return nil, ErrInvalidModelCatalog
+				continue
 			}
 			seenModels[entry.ID] = struct{}{}
 			models = append(models, entry.ID)
 		}
 		if !*page.HasMore {
+			// 目录有条目但全部不可用才算合同无效；空目录保持「无可用模型」语义。
+			if entries > 0 && len(models) == 0 {
+				return nil, ErrInvalidModelCatalog
+			}
 			sort.Strings(models)
 			return models, nil
 		}

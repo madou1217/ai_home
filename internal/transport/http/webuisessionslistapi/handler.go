@@ -32,6 +32,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/sessionindex"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -45,6 +46,8 @@ const (
 	DefaultMaxEntries = 20000
 	// DefaultScanTimeout 是单次扫描的时间上限；超时返回已扫到的部分结果。
 	DefaultScanTimeout = 8 * time.Second
+	// DefaultIndexTTL 是 aih.db 会话索引的最长复用时间；过期后重新扫描并物化。
+	DefaultIndexTTL = 30 * time.Second
 )
 
 // 响应错误码；它们是契约的一部分，不要随文案改动。
@@ -79,6 +82,10 @@ type Dependencies struct {
 	MaxEntries int
 	// ScanTimeout 覆盖单次扫描的时间上限；<=0 时用 DefaultScanTimeout。
 	ScanTimeout time.Duration
+	// Index 是 aih.db 的会话索引；为 nil 时退化为每次扫描（测试/未接线宿主）。
+	Index sessionindex.Store
+	// IndexTTL 覆盖索引复用时间；<=0 时用 DefaultIndexTTL。
+	IndexTTL time.Duration
 }
 
 // Handler 是账号会话列表的 HTTP 入站适配器。
@@ -88,6 +95,8 @@ type Handler struct {
 	aiHomeDir   string
 	maxEntries  int
 	scanTimeout time.Duration
+	index       sessionindex.Store
+	indexTTL    time.Duration
 }
 
 // projectView 与 Node 的项目条目同形（键序按 Node 的构造顺序）。
@@ -139,12 +148,18 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 	if scanTimeout <= 0 {
 		scanTimeout = DefaultScanTimeout
 	}
+	indexTTL := dependencies.IndexTTL
+	if indexTTL <= 0 {
+		indexTTL = DefaultIndexTTL
+	}
 	return &Handler{
 		authorizer:  dependencies.Authorizer,
 		hostHomeDir: hostHomeDir,
 		aiHomeDir:   strings.TrimSpace(dependencies.AIHomeDir),
 		maxEntries:  maxEntries,
 		scanTimeout: scanTimeout,
+		index:       dependencies.Index,
+		indexTTL:    indexTTL,
 	}, nil
 }
 
@@ -199,11 +214,44 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	})
 }
 
-// collect 执行一次有界扫描并完成排序。
+// collect 优先读取 aih.db 的会话索引；索引缺失、过期、截断或读取失败时
+// 才执行一次有界扫描，并把扫描结果物化回 aih.db。
 //
 // 扫描被预算或超时打断时返回已收集到的部分结果（truncated=true），
 // 而不是把「读得慢」升级成 5xx：会话列表本来就是最终一致视图。
 func (handler *Handler) collect(ctx context.Context, provider, accountRef string) ([]projectView, bool) {
+	if handler.index != nil {
+		snapshot, found, err := handler.index.LoadSessionIndex(ctx, provider, accountRef)
+		if err == nil && found && !snapshot.Truncated && handler.indexFresh(snapshot.ScannedAtMS) {
+			return finalizeProjects(indexProjectsToViews(snapshot.Projects)), false
+		}
+	}
+	projects, truncated := handler.scanCollect(ctx, provider, accountRef)
+	if handler.index != nil {
+		// Persistence must not outlive the request or fail the read path: the
+		// scanner result is already authoritative for this response, and the
+		// next request will retry the index write.
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		_ = handler.index.ReplaceSessionIndex(persistCtx, provider, accountRef, sessionindex.Snapshot{
+			Projects:    viewsToIndexProjects(projects),
+			ScannedAtMS: time.Now().UnixMilli(),
+			Truncated:   truncated,
+		})
+		cancel()
+	}
+	return finalizeProjects(projects), truncated
+}
+
+// indexFresh 报告索引是否还在 TTL 内；未来时间戳也视为不可信。
+func (handler *Handler) indexFresh(scannedAtMS int64) bool {
+	if scannedAtMS <= 0 {
+		return false
+	}
+	age := time.Since(time.UnixMilli(scannedAtMS))
+	return age >= 0 && age < handler.indexTTL
+}
+
+func (handler *Handler) scanCollect(ctx context.Context, provider, accountRef string) ([]projectView, bool) {
 	scan := newScanner(ctx, handler.hostHomeDir, handler.maxEntries)
 	opts := sessionread.Options{
 		HostHomeDir: handler.hostHomeDir,
@@ -227,7 +275,65 @@ func (handler *Handler) collect(ctx context.Context, provider, accountRef string
 		listed, _ := sessionread.ListProjects(ctx, opts, provider)
 		projects = convertSessionReadToViews(listed)
 	}
-	return finalizeProjects(projects), scan.truncated
+	return projects, scan.truncated
+}
+
+func indexProjectsToViews(projects []sessionindex.Project) []projectView {
+	views := make([]projectView, 0, len(projects))
+	for _, project := range projects {
+		sessions := make([]sessionView, 0, len(project.Sessions))
+		for _, session := range project.Sessions {
+			provider := trimSpace(session.Provider)
+			if provider == "" {
+				provider = project.Provider
+			}
+			sessions = append(sessions, sessionView{
+				ID:             session.ID,
+				Title:          session.Title,
+				UpdatedAt:      session.UpdatedAtMS,
+				Provider:       provider,
+				ProjectDirName: session.ProjectDirName,
+			})
+		}
+		views = append(views, projectView{
+			ID:       project.ID,
+			Name:     project.Name,
+			Path:     project.Path,
+			Sessions: sessions,
+			Provider: project.Provider,
+		})
+	}
+	return views
+}
+
+func viewsToIndexProjects(projects []projectView) []sessionindex.Project {
+	indexed := make([]sessionindex.Project, 0, len(projects))
+	for _, project := range projects {
+		sessions := make([]sessionindex.Session, 0, len(project.Sessions))
+		for _, session := range project.Sessions {
+			if trimSpace(session.ID) == "" {
+				continue
+			}
+			sessions = append(sessions, sessionindex.Session{
+				ID:             session.ID,
+				Title:          session.Title,
+				UpdatedAtMS:    session.UpdatedAt,
+				Provider:       session.Provider,
+				ProjectDirName: session.ProjectDirName,
+			})
+		}
+		if len(sessions) == 0 {
+			continue
+		}
+		indexed = append(indexed, sessionindex.Project{
+			ID:       project.ID,
+			Name:     project.Name,
+			Path:     project.Path,
+			Provider: project.Provider,
+			Sessions: sessions,
+		})
+	}
+	return indexed
 }
 
 func filterExcludedCodexSessions(projects []projectView, excluded map[string]bool) []projectView {

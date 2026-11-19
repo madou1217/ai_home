@@ -5,6 +5,11 @@
 
 **单库原则：所有缺口只补进 aih.db，不新增第二个数据库。** 文中出现的 `state*.sqlite` 是 Codex CLI 自己的本地文件，不是 aih 的库，也不是要接入的存储；需要的会话元数据应落到 aih.db 的索引表。
 
+## 已关闭
+
+- `aih server serve` Node 常驻入口已切到 Go 适配器（`af264cf9`）。
+- 会话元数据已物化到 aih.db：schema v32 新增 `session_index` / `session_index_state`；列表优先读索引，30 秒 TTL，扫描结果回填。**不读取、不新增 Codex 的 `state*.sqlite`。**
+
 ## 清单：Node 已不再回落，当前会直接失败
 
 1. **会话列表非 codex provider**
@@ -16,9 +21,8 @@
 3. **会话消息非支持 provider**
    `internal/transport/http/webuisessionmessagesapi/handler.go:77,155`
    返回 501 `unsupported_provider`。
-4. **Codex 会话元数据未落到 aih.db**
-   `internal/transport/http/webuisessionslistapi/codex.go:32-33`
-   session list 每次从 rollout JSONL 扫描；缺少的 thread 元数据应物化到 aih.db 的 session index，由 aih.db 统一读出，不读取也不新增外部数据库。
+4. **已关闭：Codex 会话元数据已落到 aih.db**
+   `session_index` / `session_index_state` 由扫描结果回填；列表优先读 aih.db。仍未读取 Codex `state*.sqlite`（不引入第二库），非 codex provider 的会话读取仍未承接。
 5. **账号新增/本机导入只承接部分模式**
    `internal/transport/http/webuiaccountaddapi/handler.go:270,457,621`
    Go 只承接 OAuth 登录与 Kiro refresh_token；其他 auth mode / 本机登录态来源返回 400/503。

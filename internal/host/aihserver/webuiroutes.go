@@ -695,6 +695,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	sessionsList, err := webuisessionslistapi.NewHandler(webuisessionslistapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir, AIHomeDir: dependencies.AIHomeDir,
+		Index: dependencies.Store,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号会话列表接口失败: %w", err)

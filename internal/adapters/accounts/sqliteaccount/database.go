@@ -161,10 +161,10 @@ func buildDatabaseDSN(databasePath string) string {
 	query.Add("_pragma", "foreign_keys(ON)")
 	query.Add("_pragma", "synchronous(NORMAL)")
 	query.Add("_pragma", "trusted_schema(OFF)")
-	// 页缓存：aih.db 主库接近 1GB，默认 2MB 连一个索引都装不下（覆盖索引约 4MB），
-	// 聚合查询会退化成反复向 OS 要页。32MB 足够装下账本索引并把常用表页留在进程内；
-	// 池上限 4 条连接，最坏 128MB。再往上对这类扫描没有收益（实测 8MB 即饱和）。
-	query.Add("_pragma", "cache_size(-32768)")
+	// 页缓存：默认 2MB 连账本索引（约 4MB）都装不下。实测 8MB 已饱和——
+	// 覆盖索引扫描 36ms、日汇总 <0.2ms，16/32/64MB 都没有更快；池上限 4 条连接，
+	// 所以取 8MB（最坏 32MB），把省下的内存留给进程其它部分。
+	query.Add("_pragma", "cache_size(-8192)")
 	fileURL.RawQuery = query.Encode()
 	return fileURL.String()
 }

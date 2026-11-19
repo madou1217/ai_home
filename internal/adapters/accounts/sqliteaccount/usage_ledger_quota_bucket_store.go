@@ -33,14 +33,7 @@ func (store *Store) QueryUsageQuotaBuckets(
 
 	// 整日区间 [firstFullDay, lastFullDayEnd)：首日不齐就从次日零时算起，
 	// 尾日不齐就只汇总到当日零时之前。
-	firstFullDay := fromMS
-	if remainder := fromMS % dayMillis; remainder != 0 {
-		firstFullDay = fromMS - remainder + dayMillis
-	}
-	lastFullDayEnd := toMS + 1
-	if remainder := lastFullDayEnd % dayMillis; remainder != 0 {
-		lastFullDayEnd -= remainder
-	}
+	firstFullDay, lastFullDayEnd := fullDayWindow(fromMS, toMS)
 
 	merged := make(map[quotaBucketKey]*usageledger.QuotaBucketStats, 8)
 	addStats := func(rows []usageledger.QuotaBucketStats) {
@@ -113,9 +106,9 @@ type quotaBucketKey struct {
 	bucket   string
 }
 
-// quotaBucketFilter 生成明细表与汇总表共用的过滤条件：时间列名与上界语义
+// usageRangeFilter 生成明细表与汇总表共用的过滤条件：时间列名与上界语义
 // 由调用方给出（明细按毫秒闭区间，汇总按日半开区间）。
-func quotaBucketFilter(query usageledger.Query, timeColumn string, upperInclusive bool) (string, []any) {
+func usageRangeFilter(query usageledger.Query, timeColumn string, upperInclusive bool) (string, []any) {
 	upper := " < ?"
 	if upperInclusive {
 		upper = " <= ?"
@@ -143,7 +136,7 @@ func (store *Store) aggregateLedgerBuckets(
 	query usageledger.Query,
 	fromMS, toMS int64,
 ) ([]usageledger.QuotaBucketStats, error) {
-	where, filterArgs := quotaBucketFilter(query, "occurred_at_ms", true)
+	where, filterArgs := usageRangeFilter(query, "occurred_at_ms", true)
 	args := append([]any{fromMS, toMS}, filterArgs...)
 	rows, err := store.db.QueryContext(ctx, `
 		SELECT provider_id, quota_bucket,
@@ -169,7 +162,7 @@ func (store *Store) aggregateDailyBuckets(
 	query usageledger.Query,
 	fromMS, toEndMS int64,
 ) ([]usageledger.QuotaBucketStats, error) {
-	where, filterArgs := quotaBucketFilter(query, "day_ms", false)
+	where, filterArgs := usageRangeFilter(query, "day_ms", false)
 	args := append([]any{fromMS, toEndMS}, filterArgs...)
 	rows, err := store.db.QueryContext(ctx, `
 		SELECT provider_id, quota_bucket,

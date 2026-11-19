@@ -71,6 +71,7 @@ type jobView struct {
 	Status       string `json:"status"`
 	Logs         string `json:"logs"`
 	AuthURL      string `json:"authUrl,omitempty"`
+	Progress     string `json:"authProgressState,omitempty"`
 	AccountRef   string `json:"accountRef,omitempty"`
 	CLIAccountID int64  `json:"cliAccountId,omitempty"`
 	Error        string `json:"error,omitempty"`
@@ -180,6 +181,7 @@ func toJobView(snapshot aihloginjob.Snapshot) jobView {
 		Status:       string(snapshot.Status),
 		Logs:         snapshot.Logs,
 		AuthURL:      snapshot.AuthURL,
+		Progress:     snapshot.Progress,
 		AccountRef:   snapshot.AccountRef,
 		CLIAccountID: snapshot.CLIAccountID,
 		Error:        snapshot.Error,

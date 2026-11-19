@@ -429,8 +429,11 @@ func containsAny(value string, needles ...string) bool {
 
 func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
 	status := "running"
-	progress := progressStarting
-	if snapshot.Status == aihloginjob.StatusRunning {
+	progress := strings.TrimSpace(snapshot.Progress)
+	if progress == "" {
+		progress = progressStarting
+	}
+	if snapshot.Status == aihloginjob.StatusRunning && progress == progressStarting {
 		lowerLogs := strings.ToLower(snapshot.Logs)
 		switch {
 		case containsAny(lowerLogs, "submitted", "写回", "已回填"):

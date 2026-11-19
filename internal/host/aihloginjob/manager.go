@@ -55,9 +55,12 @@ type Snapshot struct {
 	AuthURL      string
 	AccountRef   string
 	CLIAccountID int64
-	Error        string
-	StartedAt    time.Time
-	UpdatedAt    time.Time
+	// Progress 是 CLI 交互进度（starting / auth_url_ready / await_code /
+	// login_method_selected / folder_trust_selected / submitted_code 等）。
+	Progress  string
+	Error     string
+	StartedAt time.Time
+	UpdatedAt time.Time
 }
 
 // RunFunc 与 aihlogin.Run 同签名，便于测试注入。
@@ -68,6 +71,8 @@ type PromptRule struct {
 	ID       string
 	Pattern  *regexp.Regexp
 	Response string
+	// Progress 非空时在该提示被回答后更新作业进度。
+	Progress string
 }
 
 // defaultPromptRules 返回 Provider 的默认提示规则（与 Node 登录策略同语义）。
@@ -79,6 +84,7 @@ func defaultPromptRules(provider string) []PromptRule {
 			ID:       "gemini-folder-trust",
 			Pattern:  regexp.MustCompile("(?is)Do you trust the files in this folder.*Trust parent folder"),
 			Response: "2\r",
+			Progress: "folder_trust_selected",
 		}}
 	case "agy":
 		// Node: 登录方式菜单自动选择 1. Google OAuth。三个条目必须同时出现，
@@ -87,6 +93,7 @@ func defaultPromptRules(provider string) []PromptRule {
 			ID:       "agy-login-method",
 			Pattern:  regexp.MustCompile("(?is)Select login method.*Google OAuth.*Google Cloud project"),
 			Response: "1\r",
+			Progress: "login_method_selected",
 		}}
 	default:
 		return nil
@@ -111,6 +118,7 @@ type job struct {
 	status   Status
 	logs     strings.Builder
 	authURL  string
+	progress string
 	account  accountcore.Account
 	err      error
 	started  time.Time
@@ -178,6 +186,7 @@ func (manager *Manager) Start(ctx context.Context, providerID string) (Snapshot,
 		id:       id,
 		provider: strings.ToLower(strings.TrimSpace(providerID)),
 		status:   StatusRunning,
+		progress: "starting",
 		started:  now,
 		updated:  now,
 		cancel:   cancel,
@@ -231,6 +240,9 @@ func (manager *Manager) SubmitCode(id string, code string) bool {
 	running := entry.status == StatusRunning
 	input := entry.input
 	entry.updated = manager.options.Clock()
+	if running {
+		entry.progress = "submitted_code"
+	}
 	entry.mu.Unlock()
 	if !running || input == nil {
 		return false
@@ -296,6 +308,7 @@ func (manager *Manager) snapshot(entry *job) Snapshot {
 		Status:    entry.status,
 		Logs:      entry.logs.String(),
 		AuthURL:   entry.authURL,
+		Progress:  entry.progress,
 		StartedAt: entry.started,
 		UpdatedAt: entry.updated,
 	}
@@ -326,6 +339,9 @@ func (writer *logWriter) Write(data []byte) (int, error) {
 	if writer.entry.authURL == "" {
 		if match := loginURLPattern.FindString(text); match != "" {
 			writer.entry.authURL = match
+			if writer.entry.progress == "" || writer.entry.progress == "starting" {
+				writer.entry.progress = "auth_url_ready"
+			}
 		}
 	}
 	// 站点菜单只属于 CodeBuddy 家族登录：其它 Provider（agy 的登录方式菜单）
@@ -347,6 +363,9 @@ func (writer *logWriter) Write(data []byte) (int, error) {
 		}
 		if rule.Pattern.MatchString(logs) {
 			writer.entry.fired[rule.ID] = true
+			if rule.Progress != "" {
+				writer.entry.progress = rule.Progress
+			}
 			pending = append(pending, rule)
 		}
 	}

@@ -30,6 +30,19 @@ func main() {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
+	// autostart 安装已迁到 Go，先于 Node 兜底处理，避免安装路径依赖 ai-home.js。
+	if handled, err := runServerAutostart(context.Background(), args, runtime); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
+	// Go 尚未接管的顶层动词（resume/server/export…）整体交给 Node 入口，
+	// 成功时本进程已被替换，不会留下 Go 外壳。
+	if delegateToNode(args) {
+		return 0
+	}
 	// Native terminal supervision owns its own signal/capture/drain order. Keep
 	// this adapter thin and leave provider dispatch in the shared runCLI entry.
 	if len(args) > 0 && args[0] == nativeterminal.Command {

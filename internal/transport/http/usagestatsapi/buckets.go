@@ -13,9 +13,12 @@ import (
 // BucketsPath 是 token 用量按时间桶聚合的只读接口（额度统计页图表）。
 const BucketsPath = "/v1/management/usage/buckets"
 
-// maxBucketRows 是补零后单次返回的桶数上限。90 天范围最多 90 个日桶 / 14 个周桶，
-// 这个上限只防查询区间被手写成几年后把响应撑爆。
-const maxBucketRows = 400
+// maxBucketRows 是补零后单次返回的桶数上限。
+//
+// 额度页常用 30/90 天，但「全量」查询会从账本第一天读到今天：日桶覆盖约 11 年
+// （4000 天），周桶覆盖约 76 年，足够容纳任何真实账本；再宽的区间只保留最近
+// maxBucketRows 个桶，避免响应被手写区间撑爆。
+const maxBucketRows = 4000
 
 // BucketsSource 是桶聚合端口。
 type BucketsSource interface {

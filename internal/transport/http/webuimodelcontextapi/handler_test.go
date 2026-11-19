@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	_ "modernc.org/sqlite"
 )
@@ -79,7 +80,7 @@ func seedAppState(t *testing.T, aiHomeDir string) {
 	}
 }
 
-func newTestHandler(t *testing.T, aiHomeDir string, metadata Metadata) http.Handler {
+func newTestHandler(t *testing.T, aiHomeDir string, metadata modelmetadata.ContextWindowLookup) http.Handler {
 	t.Helper()
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {

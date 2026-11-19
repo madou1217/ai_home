@@ -4,7 +4,7 @@
 //
 //	手动覆盖（app-state config:model-context-overrides）
 //	> 上游探测（app-state cache:webui-models-snapshot.json 的 contextLimits）
-//	> models.dev 目录（Go 嵌入索引）
+//	> 模型元数据插件目录（由组合层注入的实现提供）
 //	> unknown。
 //
 // GET 还会返回同 provider 下的同类型账号（供前端提示「是否一并设置」）。
@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
@@ -46,17 +47,12 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// Metadata 是 models.dev 上下文目录的最小端口。
-type Metadata interface {
-	LookupContextWindow(providerID string, modelID string) (int, bool)
-}
-
 // Dependencies 汇总只读依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	AIHomeDir  string
 	Catalog    *providers.Catalog
-	Metadata   Metadata
+	Metadata   modelmetadata.ContextWindowLookup
 }
 
 // Handler 处理模型上下文读取。
@@ -64,7 +60,7 @@ type Handler struct {
 	authorizer Authorizer
 	aiHomeDir  string
 	catalog    *providers.Catalog
-	metadata   Metadata
+	metadata   modelmetadata.ContextWindowLookup
 }
 
 // NewHandler 创建默认失败关闭的 Handler。

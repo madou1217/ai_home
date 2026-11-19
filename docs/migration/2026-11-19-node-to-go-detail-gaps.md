@@ -52,6 +52,9 @@
   会话存储、事件流都在 Go；legacy `/v0/webui/chat` 已退役并返回 409
   `chat_harness_required` 指向 `/v0/webui/chat/sessions`。无会话直连只在未挂载
   运行时时存在，它没有附件仓库，仍显式拒绝附件而不是静默丢弃。
+  Node 的 chat-runtime 服务入口（composition/service/capability-routed-driver 及其
+  驱动树、旧 smoke 脚本）已于 2026-11-20 删除，server 不再引用；Node 只保留
+  被 codex 适配层共享的交互适配叶子模块。
 - `aih server serve --codex-models` 已映射：Go 账号发现器追加静态模型名。
 - 插件控制面写入：`application/plugincontrol` + `plugincontrolapi`
   （install/uninstall/state/instances/{id}/enable|disable）由 Go 执行 revision CAS，

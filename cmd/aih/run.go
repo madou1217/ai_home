@@ -93,6 +93,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "claim" {
 		return runClaim(ctx, arguments[1:], runtime)
 	}
+	if providerID == "edge" {
+		return runEdge(ctx, arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}

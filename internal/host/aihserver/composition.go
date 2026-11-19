@@ -34,6 +34,7 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
+	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
@@ -71,6 +72,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -86,6 +88,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
+	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
@@ -1214,8 +1217,18 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量统计 Handler 失败: %w", err)
 	}
-	// 成本口径：定价表由 Node 维护，Go 只读；表不存在时成本标为「未知」而不是 0 元。
-	costCalculator, err := usagepricing.NewModelCostCalculator(store, providerIDs(catalog))
+	// 成本口径：优先走统一 Resolver（models.dev 内置来源 + 后续自定义插件），
+	// 旧定价表只作为未收录模型的兜底；都没有时成本标为「未知」而不是 0 元。
+	var costCalculator *usagepricing.ModelCostCalculator
+	if pricingAdapter, pricingErr := modelsdevpricing.New(); pricingErr == nil {
+		pricingResolver := pricingresolver.New(
+			[]pricingcontract.QuoteSource{pricingAdapter.QuoteSource()},
+			[]pricingcontract.MetadataSource{pricingAdapter.MetadataSource()},
+		)
+		costCalculator, err = usagepricing.NewModelCostCalculatorWithResolver(store, pricingResolver, providerIDs(catalog))
+	} else {
+		costCalculator, err = usagepricing.NewModelCostCalculator(store, providerIDs(catalog))
+	}
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量成本计算器失败: %w", err)
 	}

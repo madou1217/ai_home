@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/contracts/modelpricing"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/usageledger"
 )
@@ -55,6 +56,7 @@ func (snapshot *PricingSnapshot) CostFor(provider, model string, usage Usage) (f
 // 为什么按批而不是按行：目录加载要读一整张表，按行调用会把一次查询放大成 N 次。
 type ModelCostCalculator struct {
 	loader      ModelPricingLoader
+	resolver    modelpricing.Resolver
 	providerIDs []string
 	interval    time.Duration
 	now         func() time.Time
@@ -80,6 +82,25 @@ func NewModelCostCalculator(
 	}, nil
 }
 
+// NewModelCostCalculatorWithResolver 用统一的定价 Resolver 构造计算器。
+// Resolver 内部已包含 models.dev 与后续自定义插件来源；loader 只作为未知模型的兜底。
+func NewModelCostCalculatorWithResolver(
+	loader ModelPricingLoader,
+	resolver modelpricing.Resolver,
+	providerIDs []string,
+) (*ModelCostCalculator, error) {
+	if resolver == nil {
+		return nil, ErrInvalidDependencies
+	}
+	return &ModelCostCalculator{
+		loader:      loader,
+		resolver:    resolver,
+		providerIDs: append([]string(nil), providerIDs...),
+		interval:    DefaultPricingRefreshInterval,
+		now:         time.Now,
+	}, nil
+}
+
 // Costs 返回与输入等长的成本列表；第二个返回值表示定价目录是否可用。
 //
 // 目录读取失败时返回 supported=false 而不是错误：用量统计本身仍然有效，
@@ -88,24 +109,92 @@ func (calculator *ModelCostCalculator) Costs(
 	ctx context.Context,
 	models []usageledger.ModelStats,
 ) ([]float64, []bool, bool) {
-	snapshot := calculator.snapshotFor(ctx)
-	if snapshot == nil {
-		return nil, nil, false
-	}
 	costs := make([]float64, len(models))
 	known := make([]bool, len(models))
+	var snapshot *PricingSnapshot
 	for index, row := range models {
-		cost, ok := snapshot.CostFor(row.Provider, row.Model, Usage{
+		usage := Usage{
 			InputTokens:              int64(row.InputTokens),
 			OutputTokens:             int64(row.OutputTokens),
 			CacheReadInputTokens:     int64(row.CacheReadInputTokens),
 			CacheCreationInputTokens: int64(row.CacheWriteInputTokens),
 			ReasoningOutputTokens:    int64(row.ReasoningOutputTokens),
-		})
+		}
+		if cost, ok := calculator.costFromResolver(ctx, row.Provider, row.Model, usage); ok {
+			costs[index] = cost
+			known[index] = true
+			continue
+		}
+		if snapshot == nil {
+			snapshot = calculator.snapshotFor(ctx)
+		}
+		if snapshot == nil {
+			continue
+		}
+		cost, ok := snapshot.CostFor(row.Provider, row.Model, usage)
 		costs[index] = cost
 		known[index] = ok
 	}
+	if calculator.resolver == nil && snapshot == nil {
+		return nil, nil, false
+	}
 	return costs, known, true
+}
+
+func (calculator *ModelCostCalculator) costFromResolver(ctx context.Context, provider, model string, usage Usage) (float64, bool) {
+	if calculator == nil || calculator.resolver == nil {
+		return 0, false
+	}
+	quote, err := calculator.resolver.ResolveQuote(ctx, modelpricing.QuoteRequest{
+		SchemaVersion: modelpricing.WireSchemaVersion,
+		Kind:          "quote",
+		ModelRef:      modelpricing.ModelRef{Provider: provider, Model: model},
+	})
+	if err != nil || quote.Status == modelpricing.StatusUnknown {
+		return 0, false
+	}
+	record := recordFromQuote(quote)
+	return CalculateCostUSD(usage, &record), true
+}
+
+func recordFromQuote(quote modelpricing.Quote) Record {
+	record := Record{
+		Model:                       quote.Model,
+		InputCostPerToken:           perToken(quote.Input),
+		OutputCostPerToken:          perToken(quote.Output),
+		CacheReadInputTokenCost:     perToken(quote.CacheRead),
+		CacheCreationInputTokenCost: perToken(quote.CacheWrite),
+	}
+	if quote.Reasoning != nil {
+		value := *quote.Reasoning / 1_000_000
+		record.ReasoningOutputTokenCost = &value
+	}
+	for _, tier := range quote.Tiers {
+		record.ContextCostTiers = append(record.ContextCostTiers, Tier{
+			Size:                        float64(tier.When.ContextTokensGT),
+			InputCostPerToken:           perTokenPtr(tier.Input),
+			OutputCostPerToken:          perTokenPtr(tier.Output),
+			CacheReadInputTokenCost:     perTokenPtr(tier.CacheRead),
+			CacheCreationInputTokenCost: perTokenPtr(tier.CacheWrite),
+			ReasoningOutputTokenCost:    perTokenPtr(tier.Reasoning),
+		})
+	}
+	return record
+}
+
+func perToken(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value / 1_000_000
+}
+
+func perTokenPtr(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	converted := *value / 1_000_000
+	return &converted
 }
 
 // snapshotFor 返回缓存快照，过期或缺失时重新加载；加载失败返回 nil（下次再试）。
@@ -122,6 +211,9 @@ func (calculator *ModelCostCalculator) snapshotFor(ctx context.Context) *Pricing
 		return calculator.snapshot
 	}
 	calculator.lastAttempt = now
+	if calculator.loader == nil {
+		return nil
+	}
 	raw, err := calculator.loader.LoadModelPricing(ctx)
 	if err != nil {
 		calculator.snapshot = nil
@@ -151,15 +243,19 @@ func (pricer *WindowPricer) CostFor(
 	model string,
 	usage usagecore.QuotaWindowModelUsage,
 ) (float64, bool) {
-	snapshot := pricer.calculator.snapshotFor(ctx)
-	if snapshot == nil {
-		return 0, false
-	}
-	return snapshot.CostFor(provider, model, Usage{
+	value := Usage{
 		InputTokens:              usage.InputTokens,
 		OutputTokens:             usage.OutputTokens,
 		CacheReadInputTokens:     usage.CacheReadInputTokens,
 		CacheCreationInputTokens: usage.CacheCreationInputTokens,
 		ReasoningOutputTokens:    usage.ReasoningOutputTokens,
-	})
+	}
+	if cost, ok := pricer.calculator.costFromResolver(ctx, provider, model, value); ok {
+		return cost, true
+	}
+	snapshot := pricer.calculator.snapshotFor(ctx)
+	if snapshot == nil {
+		return 0, false
+	}
+	return snapshot.CostFor(provider, model, value)
 }

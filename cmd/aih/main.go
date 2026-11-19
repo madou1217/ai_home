@@ -22,6 +22,10 @@ var runCLI = run
 
 // main 为 Go CLI 建立可取消进程生命周期并统一输出根错误。
 func main() {
+	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到再交回 Node。
+	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {
+		os.Exit(execute(rewritten, defaultCommandRuntime()))
+	}
 	// 交给 Node 入口的动词必须在构造 runtime 之前分流：
 	// runtime 会持有账号写入租约等进程级资源，先构造再 exec 会让 Node 侧阻塞。
 	if delegateToNode(os.Args[1:]) {
@@ -35,7 +39,14 @@ func main() {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
-	// server profiles、config 与生命周期在 Go 处理；其余 server 子命令仍交回 Node。
+	// server env、profiles、config 与生命周期在 Go 处理；其余 server 子命令仍交回 Node。
+	if handled, err := runServerEnv(context.Background(), args, runtime); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
 	if handled, err := runServerProfiles(context.Background(), args, runtime); handled {
 		if err != nil {
 			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)

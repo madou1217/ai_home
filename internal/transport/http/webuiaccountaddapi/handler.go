@@ -62,6 +62,7 @@ const (
 	deriveByGo = "go"
 
 	// progress* 与 Node 的 AUTH_PROGRESS_STATES 逐字对齐。
+	progressStarting      = "starting"
 	progressAuthURLReady  = "auth_url_ready"
 	progressAwaitingCode  = "awaiting_code"
 	progressSubmittedCode = "submitted_code"
@@ -415,9 +416,29 @@ func (handler *Handler) handleLoginCode(response http.ResponseWriter, request *h
 }
 
 // loginJobSnapshot 把 CLI 作业快照投影成 account-add 的公开作业形状。
+func containsAny(value string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func loginJobSnapshot(snapshot aihloginjob.Snapshot) JobSnapshot {
 	status := "running"
-	progress := progressAwaitingCode
+	progress := progressStarting
+	if snapshot.Status == aihloginjob.StatusRunning {
+		lowerLogs := strings.ToLower(snapshot.Logs)
+		switch {
+		case containsAny(lowerLogs, "submitted", "写回", "已回填"):
+			progress = progressSubmittedCode
+		case containsAny(lowerLogs, "authorization code", "授权码"):
+			progress = progressAwaitingCode
+		case strings.TrimSpace(snapshot.AuthURL) != "":
+			progress = progressAuthURLReady
+		}
+	}
 	switch snapshot.Status {
 	case aihloginjob.StatusSucceeded:
 		status, progress = "succeeded", progressCompleted

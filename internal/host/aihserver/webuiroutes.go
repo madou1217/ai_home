@@ -623,6 +623,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	accountJobs, err := webuiaccountjobsapi.NewHandler(webuiaccountjobsapi.Dependencies{
 		Authorizer: authorizer,
 		Jobs:       dependencies.AuthJobs,
+		LoginJobs:  dependencies.LoginJobs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号作业快照接口失败: %w", err)

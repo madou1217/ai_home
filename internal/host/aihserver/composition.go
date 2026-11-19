@@ -1652,8 +1652,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建上游错误映射组接口失败: %w", err)
 	}
+	// 原生 Messages 上游投影：官方 OAuth 与厂商契约登记的 Anthropic 兼容端点
+	// 共用同一条判断，租约选择与 native relay 都只依赖这个抽象。
+	messagesUpstream := transportpolicy.NewDefaultMessagesUpstream()
 	claudeGatewayPolicy, err := transportpolicy.NewGatewayPolicy(
 		inference.claudeUpstream,
+		messagesUpstream,
 	)
 	if err != nil {
 		_ = inference.Close()
@@ -1745,6 +1749,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Clock:             time.Now,
 			Rules:             upstreamRuleEvaluator,
 			StreamDisconnects: newRelayDisconnectObserver(errorLog),
+			Upstream:          messagesUpstream,
 		},
 	)
 	if err != nil {

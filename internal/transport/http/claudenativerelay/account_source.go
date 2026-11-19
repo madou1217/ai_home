@@ -110,8 +110,8 @@ func (handler *Handler) resolveAccountSource(
 	return handler.accounts, false
 }
 
-// pinnedAccountSource 只在钉选账号本身是 claude 账号时透传；否则报告无可透传账号，
-// 让调用方交回 Canonical（Canonical 同样按钉选只用该账号）。
+// pinnedAccountSource 只在钉选账号凭据能投影出原生 Messages 端点时透传；否则报告
+// 无可透传账号，让调用方交回 Canonical（Canonical 同样按钉选只用该账号）。
 type pinnedAccountSource struct {
 	handler    *Handler
 	accountRef accountcore.AccountRef
@@ -125,7 +125,13 @@ func (source pinnedAccountSource) Accounts(
 		return nil, ErrNoRelayAccount
 	}
 	binding, _, err := source.handler.credentials.ResolveObservedCredentialBinding(ctx, source.accountRef)
-	if err != nil || !binding.IsValid() || binding.Credential().ProviderID() != "claude" {
+	if err != nil || !binding.IsValid() {
+		return nil, ErrNoRelayAccount
+	}
+	// 账号归属 Provider 不决定能否透传：claude 官方 OAuth 与双协议厂商的 codex
+	// 账号都可能有原生 Messages 端点，统一由上游投影判定。
+	target, ok := source.handler.upstream.Project(binding.Credential())
+	if !ok || !target.IsValid() {
 		return nil, ErrNoRelayAccount
 	}
 	return &singleAccountCursor{accountRef: source.accountRef}, nil

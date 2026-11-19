@@ -99,6 +99,9 @@ type Dependencies struct {
 	Rules configured.Rules
 	// StreamDisconnects 接收流中途断开的低敏诊断；可为空，见 stream_disconnect.go。
 	StreamDisconnects func(StreamDisconnect)
+	// Upstream 把凭据投影成原生 Messages 上游（官方 OAuth 或厂商兼容端点）。
+	// 为空时使用默认链，保持既有装配可用。
+	Upstream transportpolicy.MessagesUpstream
 }
 
 // Handler 编排可信账号绑定、原始请求透传和响应流回写。
@@ -113,6 +116,7 @@ type Handler struct {
 	clock          func() time.Time
 	rules          configured.Rules
 	disconnects    func(StreamDisconnect)
+	upstream       transportpolicy.MessagesUpstream
 }
 
 // NewHandler 创建默认失败关闭的 Claude Native Relay。
@@ -124,6 +128,10 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.ModelRefreshes == nil ||
 		dependencies.Clock == nil {
 		return nil, ErrInvalidDependencies
+	}
+	upstream := dependencies.Upstream
+	if upstream == nil {
+		upstream = transportpolicy.NewDefaultMessagesUpstream()
 	}
 	attempts, err := inferencegateway.NewObservedAttemptRecorder(
 		dependencies.Attempts,
@@ -143,6 +151,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		clock:          dependencies.Clock,
 		rules:          dependencies.Rules,
 		disconnects:    dependencies.StreamDisconnects,
+		upstream:       upstream,
 	}, nil
 }
 
@@ -674,41 +683,20 @@ func containsHeaderToken(values []string, expected string) bool {
 	return false
 }
 
-// nativeOAuthAccessToken 只接受必须由官方 Runtime 证明的 OAuth 凭据。
-func nativeOAuthAccessToken(
-	credential accountapp.Credential,
-) (string, error) {
-	if !transportpolicy.RequiresNativeOAuth(credential) {
-		return "", ErrUnsupportedCredential
-	}
-	switch auth := credential.(type) {
-	case *claudeauth.OAuthAuth:
-		if auth != nil && auth.AccessToken() != "" {
-			return auth.AccessToken(), nil
-		}
-	case *claudeauth.OAuthTokenAuth:
-		if auth != nil && auth.AccessToken() != "" {
-			return auth.AccessToken(), nil
-		}
-	}
-	return "", ErrUnsupportedCredential
-}
-
-// buildUpstreamRequest 保留原始 Body 和安全 Header，只替换数据库 OAuth。
+// buildUpstreamRequest 保留原始 Body 和安全 Header，只替换为投影后的上游认证。
 func buildUpstreamRequest(
 	incoming *http.Request,
-	accessToken string,
+	target transportpolicy.MessagesTarget,
 ) (*http.Request, error) {
 	if incoming == nil ||
 		incoming.Body == nil ||
-		accessToken == "" ||
-		strings.ContainsAny(accessToken, "\r\n") {
+		!target.IsValid() {
 		return nil, ErrUnsupportedCredential
 	}
 	upstream, err := http.NewRequestWithContext(
 		incoming.Context(),
 		http.MethodPost,
-		officialMessagesEndpoint,
+		target.Endpoint,
 		incoming.Body,
 	)
 	if err != nil {
@@ -718,8 +706,10 @@ func buildUpstreamRequest(
 	upstream.URL.RawQuery = incoming.URL.RawQuery
 	upstream.ContentLength = incoming.ContentLength
 	copyRequestHeaders(upstream.Header, incoming.Header)
-	upstream.Header.Set("Authorization", "Bearer "+accessToken)
-	ensureOAuthBeta(upstream.Header)
+	upstream.Header.Set(target.HeaderName, target.HeaderValue)
+	if target.OAuthBeta {
+		ensureOAuthBeta(upstream.Header)
+	}
 	// 上游一律返回未压缩字节：流观察器必须读明文 SSE 才能分类失败/完成。透传客户端
 	// 的 gzip/br 协商时，观察器面对压缩字节会误判 malformed（并给正常账号记失败），
 	// 旧实现还会因此截断下游，Claude Code 报 ZlibError。压缩对 SSE 收益也很小。

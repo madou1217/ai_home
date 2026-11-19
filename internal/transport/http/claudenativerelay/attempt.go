@@ -8,8 +8,6 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
-	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 )
 
 // attemptOutcome 描述一次上游尝试对编排的影响。
@@ -79,13 +77,15 @@ func (handler *Handler) attemptRelay(
 		request.Context(),
 		accountRef,
 	)
+	// Provider 不在这里写死：claude 账号与双协议厂商的 codex 账号都可能拥有
+	// 原生 Messages 端点，文件末尾由上游投影统一判定「能不能透传」。这里只校验
+	// 绑定与观察指向同一个账号、同一 Provider，避免跨账号错配。
 	if err != nil ||
 		!binding.IsValid() ||
 		binding.AccountRef() != accountRef ||
-		binding.ProviderID() != claudeauth.ProviderID ||
 		!observation.IsValid() ||
 		observation.AccountRef() != accountRef ||
-		observation.ProviderID() != claudeauth.ProviderID {
+		observation.ProviderID() != binding.ProviderID() {
 		// 凭据读取失败属该账号自身问题，换号可能成功；耗尽时按账号不可用回复。
 		return attemptOutcome{
 			route:        route,
@@ -98,11 +98,10 @@ func (handler *Handler) attemptRelay(
 		}, true
 	}
 	credential := binding.Credential()
-	// 透传只允许打官方 Messages 端点（officialMessagesEndpoint 是安全属性），
-	// 因此只有「官方端点上的订阅 OAuth」才适用。指向第三方中转的凭据即使也是
-	// OAuth 形态，也必须交回 Canonical——那里才尊重账号自带的 Base URL。
-	accessToken, err := nativeOAuthAccessToken(credential)
-	if err != nil || !transportpolicy.RequiresNativeOAuth(credential) {
+	// 「能否原生透传」只问投影：官方 OAuth 与厂商契约登记的 Anthropic 兼容端点
+	// 都会返回有效目标；其余凭据（任意第三方中转、非双协议厂商）交回 Canonical。
+	target, projectable := handler.upstream.Project(credential)
+	if !projectable || !target.IsValid() {
 		// 凭据不适配是账号的确定性属性，换号可能成功；但绝不能触网。
 		// 不换号：透传是传输优化，不该改变调度选中的账号。若因凭据不适配就
 		// 跳到下一个，透传会系统性偏向 OAuth 账号，让 API Key 账号在 Messages
@@ -114,17 +113,17 @@ func (handler *Handler) attemptRelay(
 			failure: relayFailure{
 				status:  http.StatusUnprocessableEntity,
 				code:    "unsupported_relay_credential",
-				message: "Claude Relay 账号必须使用官方 OAuth",
+				message: "Claude Relay 账号没有可用的原生 Messages 端点",
 			},
 		}, false
 	}
 
 	request.Body = io.NopCloser(bytes.NewReader(body))
 	request.ContentLength = int64(len(body))
-	upstream, err := buildUpstreamRequest(request, accessToken)
-	if err == nil && !hasNativeClaudeHeaders(request.Header) {
-		// 非原生客户端：正文身份已在入口补齐，外层标识在此补齐，两者缺一
-		// 都会被上游按非订阅调用拒绝。
+	upstream, err := buildUpstreamRequest(request, target)
+	if err == nil && target.OfficialClient && !hasNativeClaudeHeaders(request.Header) {
+		// 非原生客户端打官方端点：正文身份已在入口补齐，外层标识在此补齐，
+		// 两者缺一都会被上游按非订阅调用拒绝。厂商兼容端点不套官方合同。
 		applyOfficialClientHeaders(upstream.Header)
 	}
 	if err != nil {

@@ -50,6 +50,7 @@ func buildWebUIModelsRulesRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		AIHomeDir:      dependencies.AIHomeDir,
 		Catalog:        dependencies.Catalog,
 		Modalities:     dependencies.ModelModalities,
+		AliasExpander:  dependencies.ModelAliasExpander,
 		AccountRows:    dependencies.AccountRows,
 		ModelRefresher: dependencies.ModelRefresher,
 	})

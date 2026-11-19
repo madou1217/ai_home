@@ -242,7 +242,7 @@ export default function SessionOffice({
       appliedDeepLinkRef.current = deepLinkSignature;
       return;
     }
-    if (matchedRoom) {
+    if (matchedRoom && !defaultSessionKey) {
       appliedDeepLinkRef.current = deepLinkSignature;
     }
   }, [

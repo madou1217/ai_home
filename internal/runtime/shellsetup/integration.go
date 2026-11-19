@@ -3,6 +3,7 @@ package shellsetup
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -366,6 +367,41 @@ type ApplyResult struct {
 	Detail      string `json:"detail,omitempty"`
 }
 
+// MarshalJSON 对齐历史结果的字段集合：成功时显式输出 rcCreated/backupPath
+// （即使是 false/空串），已是最新时只输出 reason，错误时只输出错误相关字段。
+func (r ApplyResult) MarshalJSON() ([]byte, error) {
+	if r.OK && r.Error == "" {
+		if r.Reason == "already_up_to_date" {
+			return json.Marshal(struct {
+				Shell       string `json:"shell"`
+				OK          bool   `json:"ok"`
+				Changed     bool   `json:"changed"`
+				RcFile      string `json:"rcFile"`
+				SnippetFile string `json:"snippetFile"`
+				Reason      string `json:"reason"`
+			}{r.Shell, r.OK, r.Changed, r.RcFile, r.SnippetFile, r.Reason})
+		}
+		return json.Marshal(struct {
+			Shell       string `json:"shell"`
+			OK          bool   `json:"ok"`
+			Changed     bool   `json:"changed"`
+			RcFile      string `json:"rcFile"`
+			SnippetFile string `json:"snippetFile"`
+			RcCreated   bool   `json:"rcCreated"`
+			BackupPath  string `json:"backupPath"`
+			ReloadHint  string `json:"reloadHint"`
+		}{r.Shell, r.OK, r.Changed, r.RcFile, r.SnippetFile, r.RcCreated, r.BackupPath, r.ReloadHint})
+	}
+	return json.Marshal(struct {
+		Shell       string `json:"shell,omitempty"`
+		OK          bool   `json:"ok"`
+		RcFile      string `json:"rcFile,omitempty"`
+		SnippetFile string `json:"snippetFile,omitempty"`
+		Error       string `json:"error,omitempty"`
+		Detail      string `json:"detail,omitempty"`
+	}{r.Shell, r.OK, r.RcFile, r.SnippetFile, r.Error, r.Detail})
+}
+
 func reloadHint(shell, rcFile string) string {
 	if shell == "fish" {
 		return "exec fish"
@@ -447,6 +483,43 @@ type RemoveResult struct {
 	Error                 string `json:"error,omitempty"`
 	Detail                string `json:"detail,omitempty"`
 	RetainedSharedSnippet string `json:"retainedSharedSnippet,omitempty"`
+}
+
+// MarshalJSON 对齐历史结果的字段集合：成功移除时显式输出 snippetFileRemoved，
+// 未安装/rc 缺失时只输出原因，错误时保留已完成的移除事实。
+func (r RemoveResult) MarshalJSON() ([]byte, error) {
+	if r.OK && r.Removed {
+		return json.Marshal(struct {
+			Shell                 string `json:"shell"`
+			OK                    bool   `json:"ok"`
+			Removed               bool   `json:"removed"`
+			RcFile                string `json:"rcFile"`
+			SnippetFile           string `json:"snippetFile"`
+			SnippetFileRemoved    bool   `json:"snippetFileRemoved"`
+			BackupPath            string `json:"backupPath"`
+			RetainedSharedSnippet string `json:"retainedSharedSnippet,omitempty"`
+		}{r.Shell, r.OK, r.Removed, r.RcFile, r.SnippetFile, r.SnippetFileRemoved, r.BackupPath, r.RetainedSharedSnippet})
+	}
+	if r.OK {
+		return json.Marshal(struct {
+			Shell       string `json:"shell"`
+			OK          bool   `json:"ok"`
+			Removed     bool   `json:"removed"`
+			RcFile      string `json:"rcFile"`
+			SnippetFile string `json:"snippetFile,omitempty"`
+			Reason      string `json:"reason"`
+		}{r.Shell, r.OK, r.Removed, r.RcFile, r.SnippetFile, r.Reason})
+	}
+	return json.Marshal(struct {
+		Shell       string `json:"shell,omitempty"`
+		OK          bool   `json:"ok"`
+		Removed     bool   `json:"removed,omitempty"`
+		RcFile      string `json:"rcFile,omitempty"`
+		SnippetFile string `json:"snippetFile,omitempty"`
+		BackupPath  string `json:"backupPath,omitempty"`
+		Error       string `json:"error,omitempty"`
+		Detail      string `json:"detail,omitempty"`
+	}{r.Shell, r.OK, r.Removed, r.RcFile, r.SnippetFile, r.BackupPath, r.Error, r.Detail})
 }
 
 // Remove 摘除 rc 受管块，并在能证明归属时删除独立片段文件。

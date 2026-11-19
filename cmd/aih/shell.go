@@ -201,7 +201,12 @@ func runShell(arguments []string, runtime commandRuntime) error {
 	options := parseShellArgs(arguments)
 	if options.parseError != "" && !options.help {
 		if options.json {
-			_ = writeShellJSON(runtime, map[string]any{"ok": false, "error": "invalid_shell_arguments", "detail": options.parseError})
+			encoded, _ := json.Marshal(struct {
+				OK     bool   `json:"ok"`
+				Error  string `json:"error"`
+				Detail string `json:"detail"`
+			}{false, "invalid_shell_arguments", options.parseError})
+			_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 		} else {
 			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 参数无效：%s\n", options.parseError)
 		}
@@ -377,6 +382,10 @@ func runShellApply(service *shellsetup.Service, options shellOptions, shellOptio
 	targets := []string{}
 	if options.all {
 		targets = append(targets, shellsetup.SupportedShells()...)
+	} else if options.shellSet && options.shell != "" {
+		// 显式 --shell 即使不受支持也要进入结果数组：Node 会返回
+		// {shell, ok:false, error:"unsupported_shell"} 而不是静默跳过。
+		targets = append(targets, options.shell)
 	} else {
 		shell := shellsetup.DetectShell(shellOption, env)
 		if shell != "" {
@@ -388,14 +397,20 @@ func runShellApply(service *shellsetup.Service, options shellOptions, shellOptio
 		return cliExitCode{code: 1}
 	}
 	failed := false
-	reports := make([]map[string]any, 0, len(targets))
+	reports := make([]json.RawMessage, 0, len(targets))
 	results := make([]shellsetup.ApplyResult, 0, len(targets))
 	skipped := make([]bool, 0, len(targets))
 	for _, shell := range targets {
 		if options.all {
 			info := service.DescribeShell(shell, overrides)
 			if !info.ShellAvailable && !info.RcExists {
-				reports = append(reports, map[string]any{"shell": shell, "ok": true, "skipped": true, "reason": "shell_not_installed"})
+				report, _ := json.Marshal(struct {
+					Shell   string `json:"shell"`
+					OK      bool   `json:"ok"`
+					Skipped bool   `json:"skipped"`
+					Reason  string `json:"reason"`
+				}{shell, true, true, "shell_not_installed"})
+				reports = append(reports, report)
 				results = append(results, shellsetup.ApplyResult{})
 				skipped = append(skipped, true)
 				continue
@@ -406,25 +421,34 @@ func runShellApply(service *shellsetup.Service, options shellOptions, shellOptio
 		syntax := shellsetup.CheckShellSyntax(shell, snippet, shellsetup.ResolveShellBinary(shell, env))
 		if !syntax.OK {
 			failed = true
-			reports = append(reports, map[string]any{"shell": shell, "ok": false, "error": "snippet_syntax_invalid", "detail": syntax.Detail})
+			report, _ := json.Marshal(struct {
+				Shell  string `json:"shell"`
+				OK     bool   `json:"ok"`
+				Error  string `json:"error"`
+				Detail string `json:"detail"`
+			}{shell, false, "snippet_syntax_invalid", syntax.Detail})
+			reports = append(reports, report)
 			results = append(results, shellsetup.ApplyResult{Error: "snippet_syntax_invalid", Detail: syntax.Detail})
 			skipped = append(skipped, false)
 			continue
 		}
 		result := service.Apply(shell, rcOverride, overrides, false)
+		if result.Shell == "" {
+			result.Shell = shell
+		}
 		if !result.OK {
 			failed = true
 		}
 		encoded, _ := json.Marshal(result)
-		var report map[string]any
-		_ = json.Unmarshal(encoded, &report)
-		report["shell"] = shell
-		reports = append(reports, report)
+		reports = append(reports, encoded)
 		results = append(results, result)
 		skipped = append(skipped, false)
 	}
 	if options.json {
-		_ = writeShellJSON(runtime, map[string]any{"ok": !failed, "results": reports})
+		_ = writeShellJSON(runtime, struct {
+			OK      bool              `json:"ok"`
+			Results []json.RawMessage `json:"results"`
+		}{!failed, reports})
 	} else {
 		for index, shell := range targets {
 			result := results[index]
@@ -434,11 +458,6 @@ func runShellApply(service *shellsetup.Service, options shellOptions, shellOptio
 			}
 			if !result.OK {
 				detail := result.Detail
-				if detail == "" {
-					if reportError, ok := reports[index]["error"].(string); ok {
-						detail = reportError
-					}
-				}
 				_, _ = fmt.Fprintf(runtime.stderr, "\x1b[31m[aih] %s 写入失败：%s", shell, result.Error)
 				if detail != "" {
 					_, _ = fmt.Fprintf(runtime.stderr, "\n%s", detail)

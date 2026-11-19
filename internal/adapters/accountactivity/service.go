@@ -35,6 +35,7 @@ type Selection struct {
 	Providers []string
 	ActionID  string
 	Params    map[string]any
+	DryRun    bool
 }
 
 // Outcome 是服务层的 HTTP 结论。
@@ -191,7 +192,7 @@ func (service *Service) Run(ctx context.Context, selection Selection) Outcome {
 		Execute: func(jobContext context.Context, target Target) map[string]any {
 			callContext, cancel := context.WithTimeout(jobContext, JobExecutionTimeout)
 			defer cancel()
-			return service.execute(callContext, target, actionID, params, false)
+			return service.execute(callContext, target, actionID, params, selection.DryRun)
 		},
 		OnSettled: func(settled *Job) {
 			release()

@@ -78,6 +78,7 @@ type selectionRequest struct {
 	Providers []string       `json:"providers"`
 	ActionID  string         `json:"actionId"`
 	Params    map[string]any `json:"params"`
+	DryRun    bool           `json:"dryRun"`
 }
 
 type errorView struct {
@@ -186,6 +187,7 @@ func readSelection(response http.ResponseWriter, request *http.Request) (account
 		Providers: payload.Providers,
 		ActionID:  payload.ActionID,
 		Params:    payload.Params,
+		DryRun:    payload.DryRun,
 	}, true
 }
 

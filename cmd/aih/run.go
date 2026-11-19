@@ -283,6 +283,18 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
 	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_API_KEY", "")
 	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")
+	if catalog, catalogErr := providers.NewCatalog(providers.BuiltinManifest()); catalogErr == nil {
+		if intent, intentErr := providerlaunch.ParseLaunchIntent(catalog, providerID, arguments); intentErr == nil &&
+			intent.Mode() == providerlaunch.LaunchModeGatewayRelay &&
+			intent.HasPinnedAccount() &&
+			intent.RelayProviderID() != intent.ClientProviderID() {
+			rewritten, aliasErr := resolveHarnessAliasArgs(ctx, runtime.managementAPI, baseURL, managementKey, intent.RelayProviderID(), arguments)
+			if aliasErr != nil {
+				return aliasErr
+			}
+			arguments = rewritten
+		}
+	}
 	needsNativeStore := commandNeedsNativeStore(providerID, arguments)
 	var err error
 	var aiHomeDir string

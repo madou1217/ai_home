@@ -502,9 +502,9 @@ func (handler *Handler) handleCancel(response http.ResponseWriter, request *http
 		return
 	}
 	if handler.loginJobs != nil {
-		if _, ok := handler.loginJobs.Get(jobID); ok {
+		if snapshot, ok := handler.loginJobs.Get(jobID); ok {
 			handler.loginJobs.Cancel(jobID)
-			snapshot, _ := handler.loginJobs.Get(jobID)
+			snapshot.Status = aihloginjob.StatusCancelled
 			writeJSON(response, http.StatusOK, jobResponse{OK: true, Job: loginJobSnapshot(snapshot)})
 			return
 		}

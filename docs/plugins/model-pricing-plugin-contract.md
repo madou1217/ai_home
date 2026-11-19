@@ -236,3 +236,35 @@ type Resolver interface {
 3. Node 的 `pricing.catalog` / `model.metadata` 插件桥接到 `Resolver`；
 4. 自定义价格插件接入后，通过 `kind=official/vendor` 覆盖 models.dev；或在配置中禁用内置 aggregator；
 5. 回归口径：同一模型在“无插件 / models.dev / 自定义插件”三种情况下，价格、来源、stale 状态与 UI 展示可解释且可切换。
+
+## 7. Go 内置自定义价格来源（已实现）
+
+不新增数据库：价格定义放在 `aih.db` 的 `app_kv`，键 `config:model-pricing`。
+
+```json
+{
+  "enabled": true,
+  "sourceId": "custom:pricebook",
+  "kind": "official",
+  "disableModelsDev": false,
+  "quotes": [
+    {
+      "provider": "openai",
+      "model": "gpt-3.5-turbo",
+      "input": 1,
+      "output": 2,
+      "cacheRead": 0.1,
+      "cacheWrite": 0.4,
+      "specificity": 2
+    }
+  ]
+}
+```
+
+- `kind` 可用 `official` / `vendor` / `provider` / `community` / `derived`；
+  authority 由宿主按 kind 计算，不能自封为 `account` / `manual`
+- `disableModelsDev: true` 时不注册内置 aggregator 来源；价格完全由自定义来源提供
+- 未配置 / 配置无效 / `enabled=false` 时自动退回 models.dev
+- 配置按 30s TTL 缓存；元数据仍来自 models.dev，但展示成本与裁决后的报价保持一致
+- `accountRef` 可选：填写后只对该账号生效，同模型多账号可分别报价
+- 验证方式：同一模型在启用前后，`ResolveQuote` 与 `ResolveMetadata.Cost` 的来源应一起切换为 `custom:pricebook`

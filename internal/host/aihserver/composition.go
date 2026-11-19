@@ -34,7 +34,6 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
-	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
@@ -72,7 +71,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
-	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -519,6 +517,8 @@ type handlerDependencies struct {
 
 // newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
 func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Closer, resultErr error) {
+	// 价格插件配置在 app_kv；必须在 Default() 首次调用前注入。
+	pricingresolver.Configure(dependencies.Store)
 	// 局部别名让下面这段长流水线保持原有可读性；新增依赖只需在结构体里加字段。
 	ctx := dependencies.Context
 	catalog := dependencies.Catalog
@@ -1221,12 +1221,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 成本口径：优先走统一 Resolver（models.dev 内置来源 + 后续自定义插件），
 	// 旧定价表只作为未收录模型的兜底；都没有时成本标为「未知」而不是 0 元。
 	var costCalculator *usagepricing.ModelCostCalculator
-	var pricingResolver pricingcontract.Resolver
-	if pricingAdapter, pricingErr := modelsdevpricing.New(); pricingErr == nil {
-		pricingResolver = pricingresolver.New(
-			[]pricingcontract.QuoteSource{pricingAdapter.QuoteSource()},
-			[]pricingcontract.MetadataSource{pricingAdapter.MetadataSource()},
-		)
+	if pricingResolver, pricingErr := pricingresolver.Default(); pricingErr == nil {
 		costCalculator, err = usagepricing.NewModelCostCalculatorWithResolver(store, pricingResolver, providerIDs(catalog))
 	} else {
 		costCalculator, err = usagepricing.NewModelCostCalculator(store, providerIDs(catalog))

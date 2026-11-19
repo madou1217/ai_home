@@ -11,27 +11,49 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/contracts/modelpricing"
+	custompricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/custom"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 )
 
 var (
-	defaultOnce     sync.Once
-	defaultResolver *Resolver
-	defaultErr      error
+	defaultOnce         sync.Once
+	defaultResolver     *Resolver
+	defaultErr          error
+	defaultConfigLoader custompricing.RawConfigLoader
 )
 
-// Default 返回进程共享的 Resolver：models.dev 内置来源只加载一次。
+// Configure 在 Default 首次调用前注入配置加载器；通常传账号 Store。
+func Configure(loader custompricing.RawConfigLoader) {
+	defaultConfigLoader = loader
+}
+
+// Default 返回进程共享的 Resolver。
+// 若 config:model-pricing 启用了自定义价格来源，它以官方/厂商 authority
+// 参与裁决；配置设置 disableModelsDev 时不再注册内置 aggregator。
 func Default() (*Resolver, error) {
 	defaultOnce.Do(func() {
-		adapter, err := modelsdevpricing.New()
-		if err != nil {
-			defaultErr = err
-			return
-		}
-		defaultResolver = New(
-			[]modelpricing.QuoteSource{adapter.QuoteSource()},
-			[]modelpricing.MetadataSource{adapter.MetadataSource()},
+		var (
+			quotes   []modelpricing.QuoteSource
+			metadata []modelpricing.MetadataSource
 		)
+		modelsDevDisabled := false
+		if defaultConfigLoader != nil {
+			customSource := custompricing.New(defaultConfigLoader)
+			if document, ok := customSource.Config(context.Background()); ok {
+				quotes = append(quotes, customSource.Quote())
+				modelsDevDisabled = document.DisableModelsDev
+			}
+		}
+		if !modelsDevDisabled {
+			adapter, err := modelsdevpricing.New()
+			if err != nil {
+				defaultErr = err
+				return
+			}
+			quotes = append(quotes, adapter.QuoteSource())
+			metadata = append(metadata, adapter.MetadataSource())
+		}
+		defaultResolver = New(quotes, metadata)
 	})
 	return defaultResolver, defaultErr
 }
@@ -111,12 +133,56 @@ func (resolver *Resolver) ResolveMetadata(ctx context.Context, request modelpric
 		}
 	}
 	if found {
+		// 展示价格必须与计费价格一致：用裁决后的报价覆盖元数据的成本摘要。
+		if quote, err := resolver.ResolveQuote(ctx, modelpricing.QuoteRequest{
+			SchemaVersion: modelpricing.WireSchemaVersion,
+			Kind:          "quote",
+			Now:           request.Now,
+			ModelRef:      request.ModelRef,
+		}); err == nil && quote.Status != modelpricing.StatusUnknown && best.MetadataStatus == modelpricing.MetadataResolved {
+			best.Cost = costFromQuote(quote)
+			best.Pricing = pricingFromQuote(quote, best.Source)
+		}
 		return best, nil
 	}
 	if firstErr != nil {
 		return modelpricing.Metadata{}, firstErr
 	}
 	return unknownMetadata(request), nil
+}
+
+func costFromQuote(quote modelpricing.Quote) modelpricing.Cost {
+	cost := modelpricing.Cost{
+		Input: quote.Input, Output: quote.Output,
+		CacheRead: quote.CacheRead, CacheWrite: quote.CacheWrite,
+		CacheWrite1h: quote.CacheWrite1h, Reasoning: quote.Reasoning,
+	}
+	for _, tier := range quote.Tiers {
+		cost.Tiers = append(cost.Tiers, modelpricing.CostTier{
+			Tier: modelpricing.TierWhen{ContextTokensGT: tier.When.ContextTokensGT},
+			Cost: modelpricing.Cost{
+				Input: tier.Input, Output: tier.Output,
+				CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite,
+				CacheWrite1h: tier.CacheWrite1h, Reasoning: tier.Reasoning,
+			},
+		})
+	}
+	return cost
+}
+
+func pricingFromQuote(quote modelpricing.Quote, fallback modelpricing.Source) *modelpricing.Pricing {
+	source := quote.Source
+	if strings.TrimSpace(source.ID) == "" {
+		source = fallback
+	}
+	return &modelpricing.Pricing{
+		Status:      quote.Status,
+		Authority:   source.Authority,
+		Stale:       source.Stale,
+		Source:      source,
+		Derived:     quote.Derived,
+		DerivedFrom: quote.DerivedFrom,
+	}
 }
 
 func betterQuote(left, right modelpricing.Quote) bool {

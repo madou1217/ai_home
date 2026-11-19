@@ -117,6 +117,15 @@ func resolveProviderAccountView(
 			}
 		}
 	}
+	// 没有默认账号时按健康度/余量挑，而不是"第一个启用账号"：固定落回 #1 会让
+	// 额度用尽的账号每次都续聊即 429 退出，用户看到的就是"一发消息就退出"。
+	if displayID, picked := pickHealthyAccountDisplayID(providerID); picked {
+		for _, account := range accounts {
+			if account.CLIAccountID.String() == displayID {
+				return account, nil
+			}
+		}
+	}
 	for _, account := range accounts {
 		if account.Enabled {
 			return account, nil

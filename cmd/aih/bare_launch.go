@@ -26,10 +26,29 @@ func resolveBareLaunchArgs(args []string) ([]string, bool) {
 		return nil, false
 	}
 	provider := args[0]
+	candidate, found := pickHealthyAccount(provider)
+	if !found {
+		return nil, false
+	}
+	remaining := "未知"
+	if candidate.RemainingPct != nil {
+		remaining = fmt.Sprintf("%.1f%%", *candidate.RemainingPct)
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "[aih] 未指定账号，按健康度选用 %s #%s（剩余 %s）\n", provider, candidate.DisplayID, remaining)
+	return []string{provider, candidate.DisplayID}, true
+}
+
+// pickHealthyAccount 是裸启动与 resume 共用的选号口径：健康优先、余量最高、
+// 其次最久未用。挑不到（无 server/无密钥/无可用候选）时返回 false，调用方
+// 各自保留原有兜底，不因选号失败阻断启动。
+func pickHealthyAccount(provider string) (launchselection.Candidate, bool) {
+	if strings.TrimSpace(provider) == "" {
+		return launchselection.Candidate{}, false
+	}
 	aiHomeDir := bareLaunchHomeDir()
 	key := resolveManagementKey(aiHomeDir)
 	if aiHomeDir == "" || key == "" {
-		return nil, false
+		return launchselection.Candidate{}, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
@@ -40,14 +59,18 @@ func resolveBareLaunchArgs(args []string) ([]string, bool) {
 		Provider:      provider,
 	})
 	if err != nil || !found {
-		return nil, false
+		return launchselection.Candidate{}, false
 	}
-	remaining := "未知"
-	if candidate.RemainingPct != nil {
-		remaining = fmt.Sprintf("%.1f%%", *candidate.RemainingPct)
+	return candidate, true
+}
+
+// pickHealthyAccountDisplayID 返回裸启动口径下最该用的账号别名。
+func pickHealthyAccountDisplayID(provider string) (string, bool) {
+	candidate, found := pickHealthyAccount(provider)
+	if !found {
+		return "", false
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "[aih] 未指定账号，按健康度选用 %s #%s（剩余 %s）\n", provider, candidate.DisplayID, remaining)
-	return []string{provider, candidate.DisplayID}, true
+	return candidate.DisplayID, true
 }
 
 // bareLaunchHomeDir 与 CLI 其它部分保持同一口径：AIH_HOME_DIR 优先，否则 ~/.ai_home。

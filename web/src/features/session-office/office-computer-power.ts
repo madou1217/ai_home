@@ -434,12 +434,18 @@ export function useOfficeComputerPowerController({
     && effectiveBootState.phase !== 'exited',
   );
 
+  const latestIsTerminatingRef = useRef(isTerminating);
+  latestIsTerminatingRef.current = isTerminating;
+
   // Observe ShellTerminalPanel's tab dot status on attach so:
   // 1) real ready state is observed truthfully for config facts;
   // 2) missing identities transition cleanly to explicit unavailable/exited UI without fallback shells.
   useEffect(() => {
     if (!shouldMountTerminal || !scopeId) {
       setReadyScopeId((prev) => (prev ? '' : prev));
+      return undefined;
+    }
+    if (isTerminating) {
       return undefined;
     }
     const host = terminalHostRef.current;
@@ -451,6 +457,7 @@ export function useOfficeComputerPowerController({
     const evaluateTabDot = () => {
       if (
         !mountedRef.current
+        || latestIsTerminatingRef.current
         || latestScopeRef.current !== targetScope
         || latestPowerRef.current !== 'on'
         || resolveLiveActiveServerId() !== targetSid
@@ -500,7 +507,7 @@ export function useOfficeComputerPowerController({
       attributeFilter: ['data-status'],
     });
     return () => observer.disconnect();
-  }, [effectiveBootState.phase, scopeId, shouldMountTerminal, terminalHostRef, trimmedServerId]);
+  }, [effectiveBootState.phase, isTerminating, scopeId, shouldMountTerminal, terminalHostRef, trimmedServerId]);
 
   const updateAppearance = useCallback((
     patch: Partial<Pick<OfficeComputerPreferences, 'wallpaper' | 'dualMonitor' | 'rgbEnabled' | 'rgbColor'>>,

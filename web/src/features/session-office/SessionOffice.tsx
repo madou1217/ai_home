@@ -150,9 +150,37 @@ export default function SessionOffice({
   const [confirmTarget, setConfirmTarget] = useState<OfficeSessionItem | null>(null);
   const [confirmError, setConfirmError] = useState<string>('');
 
+  const mountedRef = useRef(true);
   const liveServerIdRef = useRef(serverId);
   liveServerIdRef.current = serverId;
   const prevServerIdRef = useRef(serverId);
+  const renderServerIdRef = useRef(serverId);
+  const serverGenerationRef = useRef(0);
+  if (renderServerIdRef.current !== serverId) {
+    renderServerIdRef.current = serverId;
+    serverGenerationRef.current += 1;
+  }
+
+  const latestAllSessionsRef = useRef(allSessions);
+  latestAllSessionsRef.current = allSessions;
+  const latestSelectedRoomKeyRef = useRef(selectedRoomKey);
+  latestSelectedRoomKeyRef.current = selectedRoomKey;
+  const latestSelectedSessionIdRef = useRef(selectedSessionId);
+  latestSelectedSessionIdRef.current = selectedSessionId;
+  const latestConfirmTargetRef = useRef(confirmTarget);
+  latestConfirmTargetRef.current = confirmTarget;
+
+  const confirmIdentity = confirmTarget
+    ? `${confirmTarget.serverId}\0${confirmTarget.sessionKey}\0${confirmTarget.id}`
+    : '';
+  const prevConfirmIdentityRef = useRef(confirmIdentity);
+  const confirmGenerationRef = useRef(0);
+  if (prevConfirmIdentityRef.current !== confirmIdentity) {
+    prevConfirmIdentityRef.current = confirmIdentity;
+    confirmGenerationRef.current += 1;
+  }
+  const inFlightConfirmGenRef = useRef<number | null>(null);
+
   const zoomTimerRef = useRef<number | null>(null);
   const prevDefaultsRef = useRef({ defaultOpenMailbox, defaultMailboxScope });
   const deepLinkSignature = `${defaultOpenMailbox ? '1' : '0'}|${defaultMailboxScope ?? ''}|${defaultRoomKey ?? ''}|${defaultSessionKey ?? ''}`;
@@ -165,7 +193,14 @@ export default function SessionOffice({
     }
   }, []);
 
-  useEffect(() => clearZoomTimer, [clearZoomTimer]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      serverGenerationRef.current += 1;
+      clearZoomTimer();
+    };
+  }, [clearZoomTimer]);
 
   // 服务器切换时立即清理原服务器的缩放计时器、桌面、选中会话及关闭确认弹窗，防止跨节点状态残留或误发关闭请求。
   useEffect(() => {
@@ -444,6 +479,10 @@ export default function SessionOffice({
   const handleConfirmTerminate = useCallback(async () => {
     if (!confirmTarget || confirmBusy) return;
     const target = confirmTarget;
+    const requestGeneration = serverGenerationRef.current;
+    const requestConfirmGeneration = confirmGenerationRef.current;
+    if (inFlightConfirmGenRef.current === requestConfirmGeneration) return;
+
     if (target.serverId !== serverId || target.serverId !== liveServerIdRef.current) {
       setConfirmTarget(null);
       setConfirmError('');
@@ -452,58 +491,78 @@ export default function SessionOffice({
     }
     setConfirmError('');
 
-    const wasViewingClosedSession =
-      selectedSessionId === target.id
-      || focusedSession?.sessionKey === target.sessionKey;
+    inFlightConfirmGenRef.current = requestConfirmGeneration;
+    try {
+      const result = await terminateWebSession(target);
+      if (
+        !mountedRef.current
+        || serverGenerationRef.current !== requestGeneration
+        || target.serverId !== liveServerIdRef.current
+      ) {
+        return;
+      }
 
-    if (wasViewingClosedSession) {
-      clearZoomTimer();
-      setZoomingSessionId(null);
-      setDesktopOpen(false);
-    }
+      const isSameActiveConfirm =
+        confirmGenerationRef.current === requestConfirmGeneration
+        && Boolean(latestConfirmTargetRef.current)
+        && latestConfirmTargetRef.current?.serverId === target.serverId
+        && latestConfirmTargetRef.current?.sessionKey === target.sessionKey
+        && latestConfirmTargetRef.current?.id === target.id;
 
-    const result = await terminateWebSession(target);
-    if (target.serverId !== liveServerIdRef.current) {
-      return;
-    }
+      if (!result.ok) {
+        const errMsg = result.error || '关闭会话失败';
+        if (isSameActiveConfirm) {
+          setConfirmError(errMsg);
+          message.error(errMsg);
+        }
+        return;
+      }
 
-    if (!result.ok) {
-      const errMsg = result.error || '关闭会话失败';
-      setConfirmError(errMsg);
-      message.error(errMsg);
-      return;
-    }
+      const currentSelectedId = latestSelectedSessionIdRef.current;
+      const currentSelectedSession = currentSelectedId
+        ? latestAllSessionsRef.current.find((item) => item.id === currentSelectedId) ?? null
+        : null;
+      const isViewingClosedTarget =
+        currentSelectedId === target.id
+        && (!currentSelectedSession || (
+          currentSelectedSession.sessionKey === target.sessionKey
+          && currentSelectedSession.serverId === target.serverId
+        ));
 
-    if (wasViewingClosedSession) {
-      clearZoomTimer();
-      setZoomingSessionId(null);
-      setSelectedSessionId(null);
-      setDesktopOpen(false);
-    }
+      if (isViewingClosedTarget) {
+        clearZoomTimer();
+        setZoomingSessionId(null);
+        setDesktopOriginRect(null);
+        setSelectedSessionId(null);
+        setDesktopOpen(false);
+      }
 
-    const remainingInRoom = allSessions.filter(
-      (item) => item.projectKey === target.projectKey && item.sessionKey !== target.sessionKey,
-    );
-    if (remainingInRoom.length === 0 && selectedRoomKey === target.projectKey) {
-      setSelectedRoomKey(null);
-    }
+      const remainingInRoom = latestAllSessionsRef.current.filter(
+        (item) => item.projectKey === target.projectKey && item.sessionKey !== target.sessionKey,
+      );
+      if (remainingInRoom.length === 0 && latestSelectedRoomKeyRef.current === target.projectKey) {
+        setSelectedRoomKey(null);
+      }
 
-    setConfirmTarget(null);
-    setConfirmError('');
+      if (isSameActiveConfirm) {
+        setConfirmTarget(null);
+        setConfirmError('');
+      }
 
-    if (result.alreadyGone) {
-      message.info(`会话「${target.label}」在服务端已结束，已清理残留视图并同步目录`);
-    } else {
-      message.success(`已关闭会话「${target.label}」`);
+      if (result.alreadyGone) {
+        message.info(`会话「${target.label}」在服务端已结束，已清理残留视图并同步目录`);
+      } else {
+        message.success(`已关闭会话「${target.label}」`);
+      }
+    } finally {
+      if (inFlightConfirmGenRef.current === requestConfirmGeneration) {
+        inFlightConfirmGenRef.current = null;
+      }
     }
   }, [
-    allSessions,
     clearZoomTimer,
     confirmBusy,
     confirmTarget,
-    focusedSession?.sessionKey,
-    selectedRoomKey,
-    selectedSessionId,
     serverId,
     terminateWebSession,
   ]);

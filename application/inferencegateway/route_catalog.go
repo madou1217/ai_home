@@ -60,7 +60,8 @@ func (catalog *RouteCatalog) Resolve(
 	}
 	modelProviders := catalog.modelProviders[request.Model()]
 	collector := routeCollector{
-		required: request.RequiredCapabilities(),
+		required:  request.RequiredCapabilities(),
+		preferred: preferredUpstreamProtocol(request.ClientProtocol()),
 	}
 	collector.addRules(
 		catalog.exact[request.Model()],
@@ -239,10 +240,31 @@ func cloneProviderIndex(input map[string][]string) map[string][]string {
 
 // routeCollector 在固定八个槽位内完成能力过滤和真实目标去重。
 type routeCollector struct {
-	routes   [MaxRouteCandidates]Route
-	count    int
-	matched  bool
-	required inference.CapabilitySet
+	routes    [MaxRouteCandidates]Route
+	count     int
+	matched   bool
+	required  inference.CapabilitySet
+	preferred inference.ProtocolID
+}
+
+// preferredUpstreamProtocol 返回客户端协议对应的「同协议上游」。
+//
+// 同一模型可能有多个 Provider 同时能服务（例如某厂商的 OpenAI 兼容账号与
+// Anthropic 兼容伴生账号）。客户端说哪种协议，就先走同协议的上游，避免把
+// 原生可用的一次请求变成协议转换；同协议候选耗尽后仍按原顺序回落到其余候选，
+// 因此单路由模型的行为完全不变。
+func preferredUpstreamProtocol(
+	clientProtocol inference.ClientProtocolID,
+) inference.ProtocolID {
+	switch clientProtocol {
+	case inference.ClientProtocolAnthropicMessages:
+		return inference.ProtocolClaudeMessages
+	case inference.ClientProtocolOpenAIChatCompletions,
+		inference.ClientProtocolOpenAIResponses:
+		return inference.ProtocolCodexResponses
+	default:
+		return ""
+	}
 }
 
 // addRules 按目录顺序收集当前模型可用的路由。
@@ -285,10 +307,32 @@ func (collector *routeCollector) full() bool {
 	return collector.count == MaxRouteCandidates
 }
 
+// ordered 把同协议上游的候选稳定前置；其余候选保持原有声明顺序。
+func (collector *routeCollector) ordered() []Route {
+	if collector.preferred == "" || collector.count < 2 {
+		return collector.routes[:collector.count]
+	}
+	var ordered [MaxRouteCandidates]Route
+	index := 0
+	for _, route := range collector.routes[:collector.count] {
+		if route.ProtocolID() == collector.preferred {
+			ordered[index] = route
+			index++
+		}
+	}
+	for _, route := range collector.routes[:collector.count] {
+		if route.ProtocolID() != collector.preferred {
+			ordered[index] = route
+			index++
+		}
+	}
+	return ordered[:collector.count]
+}
+
 // plan 返回不可变计划，并保留未知模型与能力不足的错误区别。
 func (collector *routeCollector) plan() (RoutePlan, error) {
 	if collector.count > 0 {
-		return NewRoutePlan(collector.routes[:collector.count]...)
+		return NewRoutePlan(collector.ordered()...)
 	}
 	if collector.matched {
 		return RoutePlan{}, ErrUnsupportedRouteCapabilities

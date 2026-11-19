@@ -22,6 +22,7 @@ type lsOptions struct {
 	Providers        []string
 	FilterID         int64
 	ProviderExplicit bool
+	JSON             bool
 }
 
 // lsData 是一次列表构建的完整数据。

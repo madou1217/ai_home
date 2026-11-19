@@ -106,8 +106,11 @@ func resolveNodeEntry() (string, bool) {
 
 // delegateToNode 把非启动形态整体交给 Node 入口；成功时进程已被替换。
 func delegateToNode(args []string) bool {
-	// 持久会话列表在 Go 实现（同一份 aih.db / 会话扫描），不再转交旧入口。
-	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss") {
+	// 持久会话列表与账号列表都在 Go 实现，不再转交旧入口。
+	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss" || args[0] == "ls" || args[0] == "list") {
+		return false
+	}
+	if len(args) >= 2 && launchProviders[args[0]] && (args[1] == "ls" || args[1] == "list") {
 		return false
 	}
 	// Claude launches and actions belong to Go, including unpinned Gateway

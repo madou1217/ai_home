@@ -9,6 +9,7 @@ import (
 
 type lsArguments struct {
 	Help       bool
+	JSON       bool
 	Scope      []string
 	FilterID   int64
 	Positional []string
@@ -19,6 +20,10 @@ func parseLSArguments(arguments []string) (lsArguments, error) {
 	for index := 0; index < len(arguments); index++ {
 		token := strings.TrimSpace(arguments[index])
 		if token == "" {
+			continue
+		}
+		if token == "--json" {
+			parsed.JSON = true
 			continue
 		}
 		if token == "--scope" {

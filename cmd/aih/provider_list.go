@@ -36,7 +36,7 @@ func runProviderList(ctx context.Context, providerID string, arguments []string,
 	if len(parsed.Positional) > 0 && parsed.FilterID == 0 {
 		return fmt.Errorf("%w: 账号 ID 必须是正整数", errInvalidCommand)
 	}
-	return runLSList(ctx, runtime, lsOptions{Providers: []string{providerID}, FilterID: parsed.FilterID, ProviderExplicit: true})
+	return runLSList(ctx, runtime, lsOptions{Providers: []string{providerID}, FilterID: parsed.FilterID, ProviderExplicit: true, JSON: parsed.JSON})
 }
 
 func writeProviderListUsage(output io.Writer, providerID string) {

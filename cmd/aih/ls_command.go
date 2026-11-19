@@ -20,6 +20,13 @@ func runLSList(ctx context.Context, runtime commandRuntime, options lsOptions) e
 	load := func() (*lsData, error) {
 		return loadLSData(ctx, runtime, options)
 	}
+	if options.JSON {
+		data, loadErr := load()
+		if loadErr != nil {
+			return loadErr
+		}
+		return writeLSJSON(runtime.stdout, data)
+	}
 	if isInteractiveLS(runtime) {
 		// 首帧只读 Go 账号库；Node 凭据镜像与完整额度在后台补算后刷新。
 		basic, basicErr := loadLSDataMode(ctx, runtime, options, false)
@@ -65,6 +72,7 @@ func writeLSHelp(output io.Writer, palette terminalPalette, target string) {
 	_, _ = fmt.Fprintf(output, "  %s\n", target)
 	_, _ = fmt.Fprintf(output, "  %s <id>\n", target)
 	_, _ = fmt.Fprintln(output, "  aih ls --scope <provider...>")
+	_, _ = fmt.Fprintln(output, "  aih ls --json")
 	_, _ = fmt.Fprintln(output, "  aih <name|glob> ls [id]")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, palette.yellow("Behavior:"))

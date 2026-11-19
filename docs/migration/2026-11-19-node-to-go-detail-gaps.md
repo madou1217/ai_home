@@ -48,6 +48,10 @@
   状态写 aih.db `app_kv/plugins.control.v1`；`pluginapi` 清单是同一事实的只读视图。
 - 账号活动（签到/领取/探测）由 `accountactivity.NativeExecutor` 原生 Go 执行，
   验证码走 Go 自带浏览器解算端口，不再逐账号调用 Node。
+- OAuth loopback 回调监听：新增 `internal/adapters/accountauth/oauthloopback`，
+  账号新增与重新认证在等待授权时由 Go 监听 localhost:1455/54545（只绑回环、
+  路径精确匹配、作业结束/取消/过期即释放），收到回调直接调用作业的 Complete；
+  端口被占用时降级为手动粘贴回调。已用真实作业验证监听→回调→换码失败→释放端口。
 - 远端节点交互端点（device-node-session-start/input/stream、
   device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
   但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
@@ -55,10 +59,6 @@
 
 ## 2026-11-20 仍需验证 / 迁移
 
-- OAuth loopback 回调监听：`codex`/`claude` 的 redirect 指向 localhost:1455/54545，
-  当前仍由宿主兼容入口监听并转发；纯 Go 部署可手填 callbackUrl 完成作业。
-  要让 Go 独占，需要把「按作业启动/释放 loopback listener → CompleteByState」
-  做成 Go 端口。
 - 插件控制 CLI：`aih plugin install/enable/disable/...` 仍委托 Node
   （服务端 plugincontrolapi 已是 Go）；下一步把 CLI 子命令直接接 Go 应用层。
 - 真机对拍：canonical 会话的附件上传 → turn.submit → timeline 回读（上传/落盘/

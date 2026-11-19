@@ -29,9 +29,9 @@ type JobEvents interface {
 
 // jobProgressView 是 WebUI 展示进度所需的公开字段。
 //
-// OAuth 作业本身不启动 Provider CLI，也不在进程内监听浏览器回调：
-// installRequired 恒为 false；callbackCaptureStatus 由宿主兼容回调监听填充，
-// 未启用时为空（用户仍可手填 callbackUrl 完成作业）。authProgressState 由
+// OAuth 作业本身不启动 Provider CLI，也不在本接口内监听浏览器回调：
+// installRequired 恒为 false；callbackCaptureStatus 由新增/重认证响应里的
+// oauthloopback 监听结果提供，本事件流未接入该字段时为空。authProgressState 由
 // 作业状态（与 Flow 形态）派生，不是按 Provider 猜测。
 type jobProgressView struct {
 	AuthProgressState     string `json:"auth_progress_state"`

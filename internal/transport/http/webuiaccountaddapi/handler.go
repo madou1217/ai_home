@@ -15,8 +15,8 @@
 // 传输层既不读取也不落库。
 //
 // 与宿主运行时的边界：
-//   - loopback 回调捕获：浏览器授权重定向到 localhost:1455/54545 时，当前由 Node
-//     兼容入口监听并转发；纯 Go 部署可在前端手填回调地址（callbackUrl）完成同一作业。
+//   - loopback 回调捕获：redirect_uri 是 localhost:1455/54545 等 HTTP 回环地址时，
+//     由 Go 的 oauthloopback 监听并直接收尾作业；端口被占用或自定义协议时降级为手填。
 //   - 本机登录态导入：内置 <provider>-host-local 与插件 directImport 由 Go 直接完成；
 //     localImporter 未装配时才显式返回 501。
 //   - CLI 安装确认：Go 的 OAuth Flow 不依赖本地 CLI，install 对 Go 作业恒为
@@ -29,7 +29,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -129,20 +128,31 @@ type Started struct {
 	UserCode         string
 }
 
+// LoopbackCapture 是新增作业用的本机回调监听端口。
+type LoopbackCapture = accountauth.LoopbackCapture
+
+// LoopbackCaptureRequest / LoopbackCaptureResult 是端口使用的公开类型。
+type (
+	LoopbackCaptureRequest = accountauth.LoopbackCaptureRequest
+	LoopbackCaptureResult  = accountauth.LoopbackCaptureResult
+)
+
 // Dependencies 汇总新增账号作业的依赖。
 type Dependencies struct {
-	Authorizer    Authorizer
-	Jobs          Jobs
-	LoginJobs     LoginJobs
-	LocalImporter JobLocalImporter
+	Authorizer      Authorizer
+	Jobs            Jobs
+	LoginJobs       LoginJobs
+	LocalImporter   JobLocalImporter
+	LoopbackCapture LoopbackCapture
 }
 
 // Handler 是新增账号 OAuth 作业的 HTTP 入站适配器。
 type Handler struct {
-	authorizer    Authorizer
-	jobs          Jobs
-	loginJobs     LoginJobs
-	localImporter JobLocalImporter
+	authorizer      Authorizer
+	jobs            Jobs
+	loginJobs       LoginJobs
+	localImporter   JobLocalImporter
+	loopbackCapture LoopbackCapture
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -151,10 +161,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:    dependencies.Authorizer,
-		jobs:          dependencies.Jobs,
-		loginJobs:     dependencies.LoginJobs,
-		localImporter: dependencies.LocalImporter,
+		authorizer:      dependencies.Authorizer,
+		jobs:            dependencies.Jobs,
+		loginJobs:       dependencies.LoginJobs,
+		localImporter:   dependencies.LocalImporter,
+		loopbackCapture: dependencies.LoopbackCapture,
 	}, nil
 }
 
@@ -206,6 +217,10 @@ type pendingResponse struct {
 	SetupPhase        string `json:"setupPhase"`
 	InstallRequired   bool   `json:"installRequired"`
 	DerivedBy         string `json:"derivedBy"`
+	// callbackCapture* 描述本机回调监听状态；未启用监听时按 omitempty 省略。
+	CallbackCaptureStatus string `json:"callbackCaptureStatus,omitempty"`
+	CallbackListeningURL  string `json:"callbackListeningUrl,omitempty"`
+	CallbackCaptureError  string `json:"callbackCaptureError,omitempty"`
 }
 
 // jobResponse 是查询、回调与取消共享的成功 envelope。
@@ -333,6 +348,11 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 	job.AuthorizationURL = started.AuthorizationURL
 	job.UserCode = started.UserCode
 	job.RedirectURI = deriveRedirectURI(started.AuthorizationURL)
+	var expiresAt time.Time
+	if started.Job.ExpiresAt > 0 {
+		expiresAt = time.UnixMilli(started.Job.ExpiresAt)
+	}
+	capture := handler.attachLoopbackCapture(request.Context(), job, expiresAt)
 	writeJSON(response, http.StatusOK, pendingResponse{
 		OK:                true,
 		Provider:          job.Provider,
@@ -351,6 +371,43 @@ func (handler *Handler) handleStart(response http.ResponseWriter, request *http.
 		SetupPhase:        "",
 		InstallRequired:   false,
 		DerivedBy:         deriveByGo,
+
+		CallbackCaptureStatus: capture.Status,
+		CallbackListeningURL:  capture.ListeningURL,
+		CallbackCaptureError:  capture.Error,
+	})
+}
+
+// attachLoopbackCapture 为等待授权的浏览器 OAuth 作业启动本机回调监听。
+//
+// 只尝试一次：绑定失败（端口被占用等）不阻塞作业，前端仍可手动粘贴回调地址。
+func (handler *Handler) attachLoopbackCapture(
+	ctx context.Context,
+	job JobSnapshot,
+	expiresAt time.Time,
+) LoopbackCaptureResult {
+	if handler.loopbackCapture == nil || strings.TrimSpace(job.RedirectURI) == "" {
+		return LoopbackCaptureResult{}
+	}
+	jobID := job.ID
+	return handler.loopbackCapture.Attach(ctx, LoopbackCaptureRequest{
+		JobID:       jobID,
+		RedirectURI: job.RedirectURI,
+		ExpiresAt:   expiresAt,
+		IsActive: func(ctx context.Context) bool {
+			snapshot, err := handler.jobs.GetJob(ctx, jobID)
+			return err == nil && snapshot.Status == "running"
+		},
+		Complete: func(ctx context.Context, callbackURL string) error {
+			_, err := handler.jobs.Complete(ctx, jobID, callbackURL)
+			if errors.Is(err, accountauth.ErrJobNotPending) ||
+				errors.Is(err, accountauth.ErrJobExpired) ||
+				errors.Is(err, accountauth.ErrJobNotFound) {
+				// 用户已经手动提交过回调，或作业已结束：回调已被别处消费。
+				return nil
+			}
+			return err
+		},
 	})
 }
 
@@ -769,23 +826,9 @@ func pollInterval(authMode string) int {
 	return 1000
 }
 
-// deriveRedirectURI 从授权地址里取回调地址；Node 用同一个参数驱动 loopback 捕获。
+// deriveRedirectURI 从授权地址里取回调地址；oauthloopback 用同一个参数启动监听。
 func deriveRedirectURI(authorizationURL string) string {
-	raw := strings.TrimSpace(authorizationURL)
-	if raw == "" {
-		return ""
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	query := parsed.Query()
-	for _, key := range []string{"redirect_uri", "redirectUri", "redirect"} {
-		if value := strings.TrimSpace(query.Get(key)); value != "" {
-			return value
-		}
-	}
-	return ""
+	return accountauth.RedirectURIFromAuthorizationURL(authorizationURL)
 }
 
 // Millis 输出 Node 侧使用的毫秒时间戳；零值输出 0。

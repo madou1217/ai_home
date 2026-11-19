@@ -8,14 +8,18 @@ import (
 
 // AccountAuthJobs 是 application/accountauth 作业服务的最小形状。
 //
-// *accountauth.Service 原样满足；这里不引入更大的服务接口，避免把无关的
-// Complete / Cancel 能力带进 WebUI 入口。
+// *accountauth.Service 原样满足；Complete 只用于本机回调监听消费浏览器回调。
 type AccountAuthJobs interface {
 	Start(
 		ctx context.Context,
 		request accountauth.StartRequest,
 	) (accountauth.StartResult, error)
 	Get(jobID string) (accountauth.Job, error)
+	Complete(
+		ctx context.Context,
+		jobID string,
+		callback string,
+	) (accountauth.Job, error)
 }
 
 // 编译期确认生产实现仍然满足适配器端口。
@@ -51,6 +55,7 @@ func (starter accountAuthStarter) Start(
 		return Job{}, err
 	}
 	job := result.Job()
+	authorizationURL := result.AuthorizationURL()
 	return Job{
 		ID:               job.ID(),
 		ProviderID:       job.ProviderID(),
@@ -59,9 +64,33 @@ func (starter accountAuthStarter) Start(
 		AuthStrategy:     job.AuthStrategy(),
 		PollIntervalMS:   pollIntervalForMode(job.AuthMode()),
 		Status:           string(job.Status()),
-		AuthorizationURL: result.AuthorizationURL(),
+		AuthorizationURL: authorizationURL,
+		RedirectURI:      accountauth.RedirectURIFromAuthorizationURL(authorizationURL),
 		UserCode:         result.UserCode(),
 		ExpiresAt:        job.ExpiresAt(),
+	}, nil
+}
+
+// Complete 用本机监听收到的完整回调 URL 收尾作业。
+func (starter accountAuthStarter) Complete(
+	ctx context.Context,
+	jobID string,
+	callbackURL string,
+) (Job, error) {
+	job, err := starter.jobs.Complete(ctx, jobID, callbackURL)
+	if err != nil {
+		return Job{}, err
+	}
+	return Job{
+		ID:             job.ID(),
+		ProviderID:     job.ProviderID(),
+		Purpose:        string(job.Purpose()),
+		AuthMode:       job.AuthMode(),
+		AuthStrategy:   job.AuthStrategy(),
+		PollIntervalMS: pollIntervalForMode(job.AuthMode()),
+		Status:         string(job.Status()),
+		UserCode:       job.UserCode(),
+		ExpiresAt:      job.ExpiresAt(),
 	}, nil
 }
 
@@ -75,6 +104,7 @@ func (starter accountAuthStarter) Active(jobID string) (bool, error) {
 }
 
 var (
-	_ JobStarter = accountAuthStarter{}
-	_ JobReader  = accountAuthStarter{}
+	_ JobStarter   = accountAuthStarter{}
+	_ JobReader    = accountAuthStarter{}
+	_ JobCompleter = accountAuthStarter{}
 )

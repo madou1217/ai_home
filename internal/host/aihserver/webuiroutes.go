@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/contracts/modelpricing"
 	"github.com/madou1217/ai_home/core/providers"
 	accountactivityadapter "github.com/madou1217/ai_home/internal/adapters/accountactivity"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthloopback"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accountstate"
@@ -759,6 +760,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	reauth, err := webuiaccountreauthapi.NewHandler(webuiaccountreauthapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
 		Accounts: dependencies.Store, Jobs: reauthStarter,
+		LoopbackCapture: oauthloopback.New(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建重新认证接口失败: %w", err)
@@ -778,10 +780,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建新增账号作业适配器失败: %w", err)
 	}
 	accountAdd, err := webuiaccountaddapi.NewHandler(webuiaccountaddapi.Dependencies{
-		Authorizer:    authorizer,
-		Jobs:          addJobs,
-		LoginJobs:     dependencies.LoginJobs,
-		LocalImporter: NewAccountJobLocalImporter(dependencies),
+		Authorizer:      authorizer,
+		Jobs:            addJobs,
+		LoginJobs:       dependencies.LoginJobs,
+		LocalImporter:   NewAccountJobLocalImporter(dependencies),
+		LoopbackCapture: oauthloopback.New(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建新增账号作业接口失败: %w", err)

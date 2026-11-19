@@ -5,17 +5,16 @@
 // 本包只做路径校验、账号归属确认、作业幂等与错误映射：OAuth 作业由
 // application/accountauth 的 Service 创建，传输层不接触授权码、PKCE 或 Token。
 //
-// 与 Node 的边界：Node 的 handleReauthAccountRequest 还会推断 authMode、检查
-// 运行中的会话与原生进程、写 account_state 投影；这些仍归 Node。本切片只返回
-// Go 能证明的字段，其余键在 unfilledFields 中显式列出，避免调用方把部分形状
-// 当成 Node 全量响应。
+// authMode / authStrategy 由账号状态推断；运行中的会话与原生进程检查由上层
+// 传入 ActiveNativeRun。响应只返回有可信来源的字段，其余键在 unfilledFields
+// 中显式列出，避免调用方把部分形状当成全量响应。
 package webuiaccountreauthapi
 
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -41,15 +40,11 @@ const (
 // ErrInvalidDependencies 表示 Handler 缺少鉴权策略或账号读端口。
 var ErrInvalidDependencies = errors.New("账号重新认证接口依赖无效")
 
-// unfilledFields 是 Node 的 reauth 响应有、而本切片没有可信来源的键。
+// unfilledFields 是 reauth 响应有、而本切片没有可信来源的键。
 //
-// authMode / authStrategy 由 Node 按账号状态推断；其余是 Node 侧回调捕获与
-// CLI 安装流程的运行态。Go 不伪造这些值。
+// authMode / authStrategy 由账号状态推断；其余是 CLI 安装流程的运行态。
+// Go 不伪造这些值。回调捕获字段在启用监听时由响应显式给出，不再列在这里。
 var unfilledFields = []string{
-	"redirectUri",
-	"callbackCaptureStatus",
-	"callbackListeningUrl",
-	"callbackCaptureError",
 	"authProgressState",
 	"setupPhase",
 	"installRequired",
@@ -105,6 +100,7 @@ type Job struct {
 	PollIntervalMS   int    `json:"pollIntervalMs"`
 	Status           string
 	AuthorizationURL string
+	RedirectURI      string
 	UserCode         string
 	ExpiresAt        time.Time
 }
@@ -117,6 +113,11 @@ type JobStarter interface {
 	Start(ctx context.Context, request Request) (Job, error)
 }
 
+// JobCompleter 是可选的回调消费端口：本机监听收到回调后用它换码。
+type JobCompleter interface {
+	Complete(ctx context.Context, jobID string, callbackURL string) (Job, error)
+}
+
 // JobReader 是可选的作业读端口，与 JobStarter 由同一个适配器实现。
 //
 // 它用来确认「本 Handler 记录的那次作业」是否仍在进行：只有仍然活动时才把重复
@@ -127,14 +128,15 @@ type JobReader interface {
 
 // Dependencies 汇总重新认证的依赖。
 //
-// Jobs 为 nil 时路由仍可装配，但请求返回 501 reauth_unavailable；这样 Node 侧
-// 登录流程尚未接入 Go 时不会阻塞整个管理面启动。
+// Jobs 为 nil 时路由仍可装配，但请求返回 501 reauth_unavailable；这样
+// 作业服务缺失时不会阻塞整个管理面启动。
 type Dependencies struct {
 	Authorizer Authorizer
 	// AIHomeDir 是 AI Home 根目录；本切片只做作业编排，不读磁盘状态。
-	AIHomeDir string
-	Accounts  AccountDirectory
-	Jobs      JobStarter
+	AIHomeDir       string
+	Accounts        AccountDirectory
+	Jobs            JobStarter
+	LoopbackCapture accountauth.LoopbackCapture
 }
 
 // activeJob 记录本 Handler 起过、且可能仍在进行中的作业。
@@ -155,10 +157,11 @@ func (job activeJob) isExpired(now time.Time) bool {
 
 // Handler 是账号重新认证的 HTTP 入站适配器。
 type Handler struct {
-	authorizer Authorizer
-	aiHomeDir  string
-	accounts   AccountDirectory
-	jobs       JobStarter
+	authorizer      Authorizer
+	aiHomeDir       string
+	accounts        AccountDirectory
+	jobs            JobStarter
+	loopbackCapture accountauth.LoopbackCapture
 
 	mu     sync.Mutex
 	active map[string]activeJob
@@ -170,18 +173,19 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		aiHomeDir:  strings.TrimSpace(dependencies.AIHomeDir),
-		accounts:   dependencies.Accounts,
-		jobs:       dependencies.Jobs,
-		active:     make(map[string]activeJob),
+		authorizer:      dependencies.Authorizer,
+		aiHomeDir:       strings.TrimSpace(dependencies.AIHomeDir),
+		accounts:        dependencies.Accounts,
+		jobs:            dependencies.Jobs,
+		loopbackCapture: dependencies.LoopbackCapture,
+		active:          make(map[string]activeJob),
 	}, nil
 }
 
 // successResponse 是一次重新认证受理的公开形状。
 //
-// 字段名沿用 Node 的 buildPendingOauthResponse（camelCase），只保留 Go 能证明的键；
-// Node 独有的键列在 unfilledFields。
+// 字段名沿用历史 buildPendingOauthResponse（camelCase），只保留有可信来源的键；
+// 其余键列在 unfilledFields。
 type successResponse struct {
 	OK               bool   `json:"ok"`
 	Provider         string `json:"provider"`
@@ -194,6 +198,7 @@ type successResponse struct {
 	Status           string `json:"status"`
 	JobID            string `json:"jobId"`
 	AuthorizationURL string `json:"authorizationUrl"`
+	RedirectURI      string `json:"redirectUri,omitempty"`
 	// UserCode 只对设备码流程非空：用户在验证页核对的短码，不是凭据。
 	UserCode       string   `json:"userCode,omitempty"`
 	ExpiresAtMS    int64    `json:"expiresAt"`
@@ -201,6 +206,10 @@ type successResponse struct {
 	DerivedBy      string   `json:"derivedBy"`
 	Partial        bool     `json:"partial"`
 	UnfilledFields []string `json:"unfilledFields"`
+	// callbackCapture* 描述本机回调监听状态；未启用监听时按 omitempty 省略。
+	CallbackCaptureStatus string `json:"callbackCaptureStatus,omitempty"`
+	CallbackListeningURL  string `json:"callbackListeningUrl,omitempty"`
+	CallbackCaptureError  string `json:"callbackCaptureError,omitempty"`
 }
 
 // errorView 与 Node 的 reauth 失败响应同名：error 是稳定错误族，code 是具体原因。
@@ -336,6 +345,10 @@ func (handler *Handler) startReauth(
 	result, err := handler.jobs.Start(ctx, startReq)
 	if err == nil {
 		response := newSuccessResponse(provider, overview, startReq, result)
+		capture := handler.attachLoopbackCapture(ctx, result)
+		response.CallbackCaptureStatus = capture.Status
+		response.CallbackListeningURL = capture.ListeningURL
+		response.CallbackCaptureError = capture.Error
 		handler.remember(provider, accountRef, response, result.ExpiresAt)
 		return response, nil
 	}
@@ -358,6 +371,49 @@ func (handler *Handler) startReauth(
 		body.AccountRef = entry.accountRef.String()
 	}
 	return successResponse{}, &failure{status: http.StatusConflict, body: body}
+}
+
+// attachLoopbackCapture 为等待授权的浏览器 OAuth 作业启动本机回调监听。
+//
+// 只尝试一次：绑定失败（端口被占用等）不阻塞作业，前端仍可手动粘贴回调地址。
+func (handler *Handler) attachLoopbackCapture(
+	ctx context.Context,
+	job Job,
+) accountauth.LoopbackCaptureResult {
+	if handler.loopbackCapture == nil || strings.TrimSpace(job.RedirectURI) == "" {
+		return accountauth.LoopbackCaptureResult{}
+	}
+	completer, ok := handler.jobs.(JobCompleter)
+	if !ok {
+		return accountauth.LoopbackCaptureResult{
+			Status: accountauth.LoopbackStatusUnavailable,
+			Error:  "callback_capture_unavailable",
+		}
+	}
+	jobID := job.ID
+	var isActive func(context.Context) bool
+	if reader, ok := handler.jobs.(JobReader); ok {
+		isActive = func(context.Context) bool {
+			active, err := reader.Active(jobID)
+			return err == nil && active
+		}
+	}
+	return handler.loopbackCapture.Attach(ctx, accountauth.LoopbackCaptureRequest{
+		JobID:       jobID,
+		RedirectURI: job.RedirectURI,
+		ExpiresAt:   job.ExpiresAt,
+		IsActive:    isActive,
+		Complete: func(ctx context.Context, callbackURL string) error {
+			_, err := completer.Complete(ctx, jobID, callbackURL)
+			if errors.Is(err, accountauth.ErrJobNotPending) ||
+				errors.Is(err, accountauth.ErrJobExpired) ||
+				errors.Is(err, accountauth.ErrJobNotFound) {
+				// 用户已经手动提交过回调，或作业已结束：回调已被别处消费。
+				return nil
+			}
+			return err
+		},
+	})
 }
 
 // replay 返回仍在进行中的同一个作业；目标账号不同或作业已终态时返回 false。
@@ -450,6 +506,7 @@ func newSuccessResponse(
 		Status:           job.Status,
 		JobID:            job.ID,
 		AuthorizationURL: job.AuthorizationURL,
+		RedirectURI:      job.RedirectURI,
 		UserCode:         job.UserCode,
 		ExpiresAtMS:      job.ExpiresAt.UnixMilli(),
 		AlreadyRunning:   false,

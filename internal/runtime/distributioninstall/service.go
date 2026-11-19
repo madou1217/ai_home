@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/autostart"
 )
 
 const defaultServiceLabel = "com.meadeo.ai_home"
@@ -110,8 +112,19 @@ func (h platformHooks) Stop(ctx context.Context, o Options, s serviceSnapshot) e
 	return stopOwnedListener(ctx, o, s)
 }
 func (h platformHooks) Install(ctx context.Context, o Options) error {
-	// Reuse the application's existing service installer, not the CLI composition
-	// root (which would start other runtime components while an upgrade is active).
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		_, err := autostart.Install(ctx, autostart.Options{
+			Label:        serviceName(o),
+			Home:         o.Home,
+			HostHome:     o.HostHome,
+			ServerBinary: bundleServer(o.PackageRoot),
+			WebDir:       filepath.Join(o.PackageRoot, "web", "dist"),
+			LogFile:      filepath.Join(o.Home, "logs", "services", "background-supervisor.log"),
+		})
+		return err
+	}
+	// Windows still uses the existing scheduled-task adapter until it is
+	// migrated to Go.
 	script := `const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
 const root=process.argv[1],home=process.argv[2],host=process.argv[3],label=process.argv[4];
 const build=require(path.join(root,'lib/cli/services/server/autostart')).createServerAutostartService;
@@ -123,15 +136,7 @@ const status=service.install();if(!status||!status.installed)throw Error('servic
 	if err != nil {
 		return fmt.Errorf("安装后台服务失败（%s）: %w", strings.TrimSpace(string(raw)), err)
 	}
-	switch runtime.GOOS {
-	case "linux":
-		_, err = command(ctx, "systemctl", "--user", "restart", serviceName(o)+".service")
-	case "darwin":
-		_, err = command(ctx, "launchctl", "kickstart", "-k", fmt.Sprintf("gui/%d/%s", os.Getuid(), serviceName(o)))
-	case "windows":
-		err = startWindowsService(ctx, o)
-	}
-	return err
+	return startWindowsService(ctx, o)
 }
 func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot) error {
 	for _, r := range s.Files {

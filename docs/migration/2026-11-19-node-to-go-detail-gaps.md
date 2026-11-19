@@ -28,6 +28,13 @@
 - 路由归属：移除两条 `node_owned` legacy 聚合，投影全部为 `go_owned`。
 - 账号授权作业：补 logs / lastOutputAt / callbackCaptureStatus/Error；
   Go 无 loopback 监听时明确标 unavailable / manual_only。
+- 客户端版本不再写死：Claude 身份版本改由 `claudeidentity` 解析
+  （编译期下限 → 本机 CLI 探测 → 学习值，Codex/Claude 共用一份版本存储），
+  messages 与 usage 同源；CodeBuddy 家族 UA 与 `X-IDE-Version` 改由
+  `codebuddyfamilyrelay.CLIVersion()` 从本机安装目录解析（此前两个头各自
+  写死且版本不一致，已落后于真实发行版）。Claude 版本目前没有「从入站真实
+  客户端学习」的来源：`/v1/messages` 的 relay token 为一次性凭据，不能在观察
+  阶段消费，因此该路径只靠本机 CLI 探测与下限。
 
 ## 2026-11-20 后续补齐（已关闭）
 

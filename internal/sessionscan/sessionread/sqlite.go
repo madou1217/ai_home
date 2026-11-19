@@ -4,11 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 
 	_ "modernc.org/sqlite"
 )
@@ -43,13 +42,7 @@ func openReadOnlySQLite(ctx context.Context, dbPath string) (*sql.DB, bool, erro
 }
 
 func buildReadOnlySQLiteDSN(dbPath string) string {
-	fileURL := sqlitefile.URL(filepath.Clean(dbPath))
-	query := url.Values{}
-	query.Set("mode", "ro")
-	query.Add("_pragma", "busy_timeout(5000)")
-	query.Add("_pragma", "query_only(1)")
-	fileURL.RawQuery = query.Encode()
-	return fileURL.String()
+	return sqlitex.ReadOnlyDSN(dbPath)
 }
 
 func sqliteTableExists(ctx context.Context, db *sql.DB, tableName string) bool {

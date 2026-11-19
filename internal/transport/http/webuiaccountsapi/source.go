@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 
 	_ "modernc.org/sqlite"
 )
@@ -135,12 +136,7 @@ func (source *SQLiteSource) Close() error {
 
 // readOnlyDSN 固定开启只读语义：query_only 让误写的语句也改不动库。
 func readOnlyDSN(databasePath string) string {
-	fileURL := sqlitefile.URL(databasePath)
-	query := fileURL.Query()
-	query.Add("_pragma", "busy_timeout(5000)")
-	query.Add("_pragma", "query_only(1)")
-	fileURL.RawQuery = query.Encode()
-	return fileURL.String()
+	return sqlitex.ReadOnlyDSN(databasePath)
 }
 
 // ListAccountRows 读取一页账号页行；缺表等可降级情况通过 Result.MissingTables 表达，不返回 error。

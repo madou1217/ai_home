@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"io"
 	"math"
 	"net/url"
@@ -18,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 	"unicode/utf8"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -4532,10 +4533,5 @@ func minInt64Val(a, b int64) int64 {
 }
 
 func buildReadOnlySQLiteDSN(dbPath string) string {
-	u := sqlitefile.URL(dbPath)
-	q := u.Query()
-	q.Set("mode", "ro")
-	q.Set("_pragma", "busy_timeout(2000)")
-	u.RawQuery = q.Encode()
-	return u.String()
+	return sqlitex.ReadOnlyDSNWithBusyTimeout(dbPath, 2000)
 }

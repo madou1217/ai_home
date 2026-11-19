@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 
 	_ "modernc.org/sqlite"
 )
@@ -18,13 +19,7 @@ const sqliteBusyTimeoutMS = 2000
 // buildReadOnlySQLiteDSN 生成只读 DSN：mode=ro + query_only，防止扫描过程改写
 // Provider 的原生数据库。
 func buildReadOnlySQLiteDSN(databasePath string) string {
-	fileURL := sqlitefile.URL(databasePath)
-	query := fileURL.Query()
-	query.Set("mode", "ro")
-	query.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", sqliteBusyTimeoutMS))
-	query.Add("_pragma", "query_only(1)")
-	fileURL.RawQuery = query.Encode()
-	return fileURL.String()
+	return sqlitex.ReadOnlyDSNWithBusyTimeout(databasePath, sqliteBusyTimeoutMS)
 }
 
 // openReadOnlySQLite 打开一个存在的只读数据库；文件不存在或打不开时 ok=false。

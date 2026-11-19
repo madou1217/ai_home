@@ -8,9 +8,10 @@
 //   - aih.db 的 account_models 与 account_model_probes 是始终存在的真值来源，
 //     发布为 models / account_models。
 //   - app-state.db 的 model-catalog-settings（设置文档）与 webui-models-snapshot.json
-//     （上游显示名快照）是可选来源，读到才发布 managed_data / labels /
-//     settings_updated_at_ms；两者由 Node 写入，账号引用是 Node ref，必须经
-//     accountrefmap 翻译成 Go 的 account_ref 才能与 account_models 对齐。
+//     （上游显示名与上下文窗口快照）是可选来源，读到才发布 managed_data / labels /
+//     settings_updated_at_ms。设置文档由 Go 的模型目录写入口维护；快照目前由宿主把
+//     Go 探测结果投影回 app-state，账号引用是 Node ref，必须经 accountrefmap 翻译成
+//     Go 的 account_ref 才能与 account_models 对齐。
 //
 // 无论可选源是否接线，本包都用 derived_by=go_partial 与 filled_fields/unfilled_fields
 // 显式标注边界，绝不返回空对象冒充 Node 全量形状。
@@ -197,17 +198,20 @@ var (
 	}
 )
 
-// legacyUnfilledFieldKeys 是 Node 的 /v0/webui/openai-models 有、Go 仍无真值来源的键。
+// legacyUnfilledFieldKeys 是 Node 的 /v0/webui/openai-models 有、本端点不输出的键。
 //
-// 分组说明：
-//   - data / metadata / managedData.metadata：Node 的展示目录与 models.dev 全量元数据
-//     （价格、模态、上下文）。managed_data 的条目级 metadata 因此仍在缺口里。
-//   - cached / source / sources / scannedAccounts / firstError：Node 探测缓存聚合。
-//   - accounts / byProvider / byAccountRef / errorsByAccountRef / accountProbedAt：
-//     Node 账号 ref 口径的汇总；Go 只有 account_ref 口径的 account_models。
-//   - accountScope：Node accountRef 与 Go account_ref 不是同一个值，本端点不支持过滤。
-//   - data.*：Node 单个模型项的展示/设置字段（object/created/owned_by/模态/价格等）。
-//   - SSE：watch 与 refresh 任务仍由 Node 负责。
+// 这些键不是「Go 没有真值来源」，而是由另一条 Go 契约完整提供；本端点不复制第二套
+// 实现，避免同一语义出现两个版本：
+//   - data / metadata / managedData.metadata：/v1/management/webui/openai-models/catalog
+//     已从 account_models 与 model.metadata 插件给出来源与模态/推理档位。
+//   - cached / source / sources / scannedAccounts / firstError：探测聚合。真值在 aih.db
+//     的 account_model_probes，派生实现在 catalog 与 workspace/models。
+//   - accounts / byProvider / byAccountRef / errorsByAccountRef / accountProbedAt：同样由
+//     catalog 以 Go account_ref 口径提供；本端点只输出 account_ref 口径的 account_models。
+//   - accountScope：Node accountRef 与 Go account_ref 不是同一个值，本端点不支持过滤；
+//     catalog 的 ?accountRef= 作用域由 catalog 处理器负责。
+//   - data.*：单个模型项的展示/设置字段，属于 catalog 的 data[] 形状。
+//   - SSE：watch 与 refresh 任务由 /v1/management/webui/openai-models/{watch,refresh} 承担。
 var legacyUnfilledFieldKeys = []string{
 	"endpoint",
 	"cached",

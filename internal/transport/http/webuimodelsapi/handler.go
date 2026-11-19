@@ -7,9 +7,10 @@
 //   - 展示与设置事实按来源可用性叠加：modelcatalogsettings（app-state 的
 //     model-catalog-settings）提供 (账号, 模型) 的开关 / 手工标记 / 默认标记 / 描述 / 自定义价；
 //     webuimodelssnapshot（cache:webui-models-snapshot.json）提供上游显示名、上下文窗口与
-//     账号真正被探测的时刻；accountrefmap 负责把 Go account_ref 翻成 Node 账号引用再去查
-//     这两份文档（没有链接时按恒等回落）。
-//   - 三份外部事实都可选：读不到就整块不填，用 filled_fields / unfilled_fields 与
+//     账号真正被探测的时刻；model.metadata 插件契约提供模态/推理档位等展示元数据；
+//     accountrefmap 负责把 Go account_ref 翻成 Node 账号引用再去查这两份文档
+//     （没有链接时按恒等回落）。
+//   - 这些外部事实都可选：读不到就整块不填，用 filled_fields / unfilled_fields 与
 //     unavailable_sources 显式标注，绝不用空对象冒充已知。
 //
 // 账号集合边界：只包含 account_models 或 account_model_probes 有行的账号；从未探测且
@@ -151,16 +152,16 @@ type accountView struct {
 	LastModelCount    int         `json:"last_model_count"`
 }
 
-// 仍然无来源的键及原因（仅文档用途，不进入响应）：
+// 本端点不输出的键及原因（仅文档用途，不进入响应）：
 //
-//   - models / metadata：Node 的展示目录（provider->ids 与 models.dev 元数据；标题、模态、价格）。
-//     本包按 provider/账号/模型维度输出同一批模型，metadata 需要 models.dev 目录，故整块不填。
+//   - models：provider->ids 的展示目录。本包按 provider/账号/模型维度输出同一批模型，
+//     目录聚合由 /v1/management/webui/openai-models/catalog 负责，不复制第二套。
 //   - selectableByAccountRef / defaultByAccountRef：以 Node 账号 ref 为键的聚合集合；
 //     本包已把同等开关事实放在 model_details[].setting，但不复制一份 Node-ref 键的集合，
 //     避免跨端身份误用。
 //   - errorsByAccountRef：每账号错误已由 last_error_message 表达（Go 事实表），不重复映射。
-//   - cached / source / sources / scannedAccounts / firstError：Node 刷新流程的运行态聚合，
-//     Go 没有对应的刷新流水线。
+//   - cached / source / sources / scannedAccounts / firstError：探测聚合。真值在 aih.db 的
+//     account_model_probes，派生实现在 catalog 与 workspace/models；本端点不重复实现。
 //   - accountScope：Node 账号 ref 的查询作用域；本接口不接受查询参数。
 //   - managedData：模型管理页的整页聚合（含未探测账号），属于另一条契约。
 

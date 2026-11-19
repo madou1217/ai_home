@@ -464,7 +464,7 @@ func builtinQoder() Definition {
 			// 设置项 `defaultPermissionMode` 收同样的取值，别名 yolo = bypass_permissions。
 			// 取值用下划线形态（原生取值），不用界面上的驼峰别名。
 			Permissions: NativePermissions{
-				Flags: []string{"--permission-mode", "--dangerously-skip-permissions"},
+				Flags: []string{"--permission-mode", "--dangerously-skip-permissions", "--allowed-tools", "--disallowed-tools", "--tools"},
 				Modes: []string{"default", "accept_edits", "auto", "bypass_permissions", "dont_ask"},
 			},
 		},
@@ -522,7 +522,7 @@ func builtinQoderCN() Definition {
 			},
 			// 权限与 qoder 同源（qoderclicn 的 --help 实测同样的旗标与取值）。
 			Permissions: NativePermissions{
-				Flags: []string{"--permission-mode", "--dangerously-skip-permissions"},
+				Flags: []string{"--permission-mode", "--dangerously-skip-permissions", "--allowed-tools", "--disallowed-tools", "--tools"},
 				Modes: []string{"default", "accept_edits", "auto", "bypass_permissions", "dont_ask"},
 			},
 		},

@@ -88,6 +88,9 @@ type Runner struct {
 	processes       processFactory
 	prepareNative   func(context.Context, string, string, []string, []string) ([]string, func(), error)
 	claudePreflight ClaudePreflight
+	// extraEnv 是本次启动的额外环境（如权限合同的 CODEBUDDY_IS_SANDBOX）。
+	// 由 RunWithOptions 通过浅拷贝注入，避免并发启动互相污染。
+	extraEnv map[string]string
 }
 
 // NewRunner 创建只依赖标准库操作系统边界的生产 Runtime。
@@ -123,8 +126,44 @@ func NewRunner(options Options) (*Runner, error) {
 	}, nil
 }
 
-// Run 按互斥计划执行一次官方 CLI；任何 Runtime 失败都不会切换认证模式。
+// RunOptions 是一次启动的额外事实。
+type RunOptions struct {
+	// ExtraEnv 叠加在 Strategy/投影环境之后；只作用于本次子进程。
+	ExtraEnv map[string]string
+}
+
+// Run 执行一次官方 CLI；不附加额外环境。
 func (runner *Runner) Run(
+	ctx context.Context,
+	plan providerlaunch.LaunchPlan,
+	arguments []string,
+) error {
+	return runner.RunWithOptions(ctx, plan, arguments, RunOptions{})
+}
+
+// RunWithOptions 执行一次官方 CLI，并把本次启动的额外环境带进子进程。
+func (runner *Runner) RunWithOptions(
+	ctx context.Context,
+	plan providerlaunch.LaunchPlan,
+	arguments []string,
+	options RunOptions,
+) error {
+	if runner == nil {
+		return ErrInvalidRunRequest
+	}
+	if len(options.ExtraEnv) == 0 {
+		return runner.run(ctx, plan, arguments)
+	}
+	clone := *runner
+	clone.extraEnv = make(map[string]string, len(options.ExtraEnv))
+	for name, value := range options.ExtraEnv {
+		clone.extraEnv[name] = value
+	}
+	return clone.run(ctx, plan, arguments)
+}
+
+// run 是 Run/RunWithOptions 的共同实现。
+func (runner *Runner) run(
 	ctx context.Context,
 	plan providerlaunch.LaunchPlan,
 	arguments []string,
@@ -297,6 +336,11 @@ func (runner *Runner) runProviderProcess(
 	environment []string,
 ) error {
 	environment = applyProviderConfigRoot(providerID, runner.hostHomeDir, environment)
+	if len(runner.extraEnv) > 0 {
+		if patch, err := providerlaunch.NewEnvironmentPatch(runner.extraEnv, nil); err == nil {
+			environment = applyEnvironment(environment, patch)
+		}
+	}
 	if strings.EqualFold(strings.TrimSpace(providerID), "claude") {
 		runner.applyClaudePreflight()
 	}

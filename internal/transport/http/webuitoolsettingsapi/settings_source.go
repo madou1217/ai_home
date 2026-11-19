@@ -1,201 +1,29 @@
 package webuitoolsettingsapi
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-	"strconv"
-	"strings"
-
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/appsettings"
 )
 
-// 工具启动权限设置存在业务库（app_kv）里，与 CLI 启动时读的是同一行。
-// 这里只读，不建库、不建表、不写回；写入口是 Go 的
-// webuitoolappsettingswriteapi（PUT /v0/webui/toolkit/apps/:id/settings）。
-const (
-	toolPermissionSettingsKey = "toolkit:tool-permission-settings"
-)
+// 工具启动权限设置的读取语义在 appsettings：CLI 启动与 WebUI 读取必须共用同一份
+// 解析（record 归一、默认值、只在显式 false 时关闭）。这里保留原有导出名，
+// 让 handler/write API 不需要感知包的位置。
+const toolPermissionSettingsKey = appsettings.Key
 
-// ErrInvalidSettingsSource 表示缺少 AIH 数据根目录。
-var ErrInvalidSettingsSource = errors.New("工具启动权限设置读取配置无效")
+// ToolPermissionSettings 是设置记录的传输层别名。
+type ToolPermissionSettings = appsettings.Settings
 
-// ToolPermissionSettings 是单个 Provider 的启动权限设置（camelCase，与 Node 逐字段一致）。
-type ToolPermissionSettings struct {
-	MaxPermission  bool     `json:"maxPermission"`
-	ApplyToHost    bool     `json:"applyToHost"`
-	PermissionArgs []string `json:"permissionArgs"`
-	UpdatedAt      int64    `json:"updatedAt"`
-}
+// SettingsSource 是只读设置源的传输层别名。
+type SettingsSource = appsettings.Source
 
-// DefaultToolPermissionSettings 与 Node 的 DEFAULT_APP_PERMISSION_SETTINGS 同值：
-// 新会话默认授予最大权限，因此没有记录时 maxPermission=true。
+// ErrInvalidSettingsSource 保留原错误值，供旧调用方判断。
+var ErrInvalidSettingsSource = appsettings.ErrInvalidRoot
+
+// DefaultToolPermissionSettings 返回默认设置。
 func DefaultToolPermissionSettings() ToolPermissionSettings {
-	return ToolPermissionSettings{
-		MaxPermission:  true,
-		ApplyToHost:    false,
-		PermissionArgs: []string{},
-		UpdatedAt:      0,
-	}
+	return appsettings.Default()
 }
 
-// SettingsSource 只读 app-state.db 里的 toolkit:tool-permission-settings。
-type SettingsSource struct {
-	databasePath string
-}
-
-// OpenSettingsSource 创建只读读取器；不要求数据库已存在（全新数据根返回默认值）。
+// OpenSettingsSource 创建只读读取器。
 func OpenSettingsSource(aiHomeDir string) (*SettingsSource, error) {
-	root := strings.TrimSpace(aiHomeDir)
-	if root == "" {
-		return nil, ErrInvalidSettingsSource
-	}
-	databasePath, err := appstate.DatabasePath(root)
-	if err != nil {
-		return nil, ErrInvalidSettingsSource
-	}
-	return &SettingsSource{databasePath: databasePath}, nil
-}
-
-// Read 返回某 Provider 的设置记录。
-//
-// 读失败一律返回默认值而不是错误：Node 侧 readJsonValue 走 bestEffort，数据库损坏或
-// 被占用时 GET 仍然可用（只是显示默认设置）。把它变成 500 会让权限面板整页打不开，
-// 而默认值本身就是合法状态。
-func (source *SettingsSource) Read(ctx context.Context, provider string) ToolPermissionSettings {
-	fallback := DefaultToolPermissionSettings()
-	normalized := strings.ToLower(strings.TrimSpace(provider))
-	if source == nil || source.databasePath == "" || normalized == "" || ctx == nil {
-		return fallback
-	}
-	info, err := os.Stat(source.databasePath)
-	if errors.Is(err, os.ErrNotExist) {
-		return fallback
-	}
-	if err != nil || !info.Mode().IsRegular() {
-		return fallback
-	}
-	db, err := appstate.OpenReadOnly(ctx, source.databasePath)
-	if err != nil {
-		return fallback
-	}
-	defer func() { _ = db.Close() }()
-
-	var value string
-	err = db.QueryRowContext(ctx,
-		`SELECT value FROM app_kv WHERE key = ?`, toolPermissionSettingsKey,
-	).Scan(&value)
-	if err != nil {
-		// 表不存在（sql.ErrNoRows / no such table）与从未保存过设置同义。
-		return fallback
-	}
-	return parseSettingsRecord(value, normalized, fallback)
-}
-
-// parseSettingsRecord 复刻 Node normalizeStore + normalizeRecord 的语义。
-func parseSettingsRecord(value string, provider string, fallback ToolPermissionSettings) ToolPermissionSettings {
-	decoder := json.NewDecoder(strings.NewReader(value))
-	decoder.UseNumber()
-	var store map[string]any
-	if err := decoder.Decode(&store); err != nil {
-		return fallback
-	}
-	apps, ok := store["apps"].(map[string]any)
-	if !ok {
-		return fallback
-	}
-	var record any
-	found := false
-	for key, candidate := range apps {
-		if strings.ToLower(strings.TrimSpace(key)) != provider {
-			continue
-		}
-		record = candidate
-		found = true
-	}
-	if !found {
-		return fallback
-	}
-	fields, ok := record.(map[string]any)
-	if !ok {
-		return fallback
-	}
-	settings := fallback
-	// Node：source.maxPermission !== false —— 只有显式 false 才关闭。
-	if flag, present := fields["maxPermission"]; present {
-		if boolean, isBool := flag.(bool); isBool {
-			settings.MaxPermission = boolean
-		}
-	}
-	settings.ApplyToHost = fields["applyToHost"] == true
-	settings.PermissionArgs = normalizePermissionArgs(fields["permissionArgs"])
-	settings.UpdatedAt = normalizeUpdatedAt(fields["updatedAt"])
-	return settings
-}
-
-func normalizePermissionArgs(value any) []string {
-	list, ok := value.([]any)
-	if !ok {
-		return []string{}
-	}
-	args := make([]string, 0, len(list))
-	for _, item := range list {
-		text := strings.TrimSpace(stringifyJSONValue(item))
-		if text == "" {
-			continue
-		}
-		args = append(args, text)
-	}
-	return args
-}
-
-// stringifyJSONValue 对齐 JS String(item)：只用于设置文件里的标量数组。
-func stringifyJSONValue(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	case json.Number:
-		return typed.String()
-	case bool:
-		return strconv.FormatBool(typed)
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
-func normalizeUpdatedAt(value any) int64 {
-	switch typed := value.(type) {
-	case json.Number:
-		parsed, err := typed.Int64()
-		if err != nil {
-			floating, floatErr := typed.Float64()
-			if floatErr != nil {
-				return 0
-			}
-			return int64(floating)
-		}
-		return parsed
-	case string:
-		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
-		if err != nil {
-			return 0
-		}
-		return int64(parsed)
-	case float64:
-		return int64(typed)
-	case bool:
-		// JS Number(true) === 1；Node 的 Number.isFinite(Number(value)) 会接受它。
-		if typed {
-			return 1
-		}
-		return 0
-	default:
-		return 0
-	}
+	return appsettings.Open(aiHomeDir)
 }

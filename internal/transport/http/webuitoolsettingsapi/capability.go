@@ -22,57 +22,6 @@ type capabilityView struct {
 	HostReason            string            `json:"hostReason"`
 }
 
-// deriveMaxPermissionArgs 从合同 nativeBoundary.permissions 推导默认最大权限参数。
-//
-// 顺序即优先级，与 Node deriveMaxPermissionArgs 完全一致：
-// claude 同时声明 --permission-mode 与 --dangerously-skip-permissions，必须优先返回
-// 模式（更窄且可被上游识别）；kimi 的 --auto 才是不再询问，--yolo 仍会询问高风险操作。
-func deriveMaxPermissionArgs(definition providers.Definition) []string {
-	flags := []string{}
-	modes := []string{}
-	if definition.NativeBoundary != nil {
-		flags = definition.NativeBoundary.Permissions.Flags
-		modes = definition.NativeBoundary.Permissions.Modes
-	}
-	has := func(list []string, value string) bool {
-		for _, item := range list {
-			if item == value {
-				return true
-			}
-		}
-		return false
-	}
-	if has(modes, "danger-full-access") && has(flags, "--sandbox") {
-		args := []string{"--sandbox", "danger-full-access"}
-		if has(flags, "--ask-for-approval") {
-			args = append(args, "--ask-for-approval", "never")
-		}
-		return args
-	}
-	if has(modes, "bypassPermissions") && has(flags, "--permission-mode") {
-		return []string{"--permission-mode", "bypassPermissions"}
-	}
-	if has(modes, "bypass_permissions") && has(flags, "--permission-mode") {
-		return []string{"--permission-mode", "bypass_permissions"}
-	}
-	if has(modes, "auto") && has(flags, "--auto") {
-		return []string{"--auto"}
-	}
-	if has(modes, "yolo") && has(flags, "--yolo") {
-		return []string{"--yolo"}
-	}
-	if has(modes, "yolo") && has(flags, "--approval-mode") {
-		return []string{"--approval-mode", "yolo"}
-	}
-	if has(flags, "--dangerously-skip-permissions") {
-		return []string{"--dangerously-skip-permissions"}
-	}
-	if has(flags, "--trust-all-tools") {
-		return []string{"--trust-all-tools"}
-	}
-	return []string{}
-}
-
 // providerMenuLabel 与 Node getProviderMenuLabel 同义：多站点产品带站点，
 // 单站产品直接用族名，避免出现「Codex · 国际站」这种零信息量后缀。
 func providerMenuLabel(catalog ProviderCatalog, providerID string) string {
@@ -130,7 +79,7 @@ func describeCapability(
 	home string,
 	lookupEnv func(string) string,
 ) capabilityView {
-	maxArgs := deriveMaxPermissionArgs(definition)
+	maxArgs := providers.MaxPermissionArgs(definition)
 	label := providerMenuLabel(catalog, definition.ID)
 	view := capabilityView{
 		MaxSupported:      len(maxArgs) > 0,

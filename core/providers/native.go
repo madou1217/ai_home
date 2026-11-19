@@ -27,8 +27,9 @@ func nativeCodex() *NativeCapability {
 			StopRequiresJSONStdout: true,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{"--sandbox", "--ask-for-approval"},
-			Modes: []string{"read-only", "workspace-write", "danger-full-access"},
+			Flags:               []string{"--sandbox", "--ask-for-approval", "--approve-for-me", "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust"},
+			Modes:               []string{"read-only", "workspace-write", "danger-full-access"},
+			BlockingSubcommands: []string{"resume", "fork"},
 		},
 	}
 }
@@ -60,7 +61,7 @@ func nativeClaude() *NativeCapability {
 			StopRequiresJSONStdout: true,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{"--permission-mode", "--allowedTools", "--disallowedTools"},
+			Flags: []string{"--permission-mode", "--allowedTools", "--disallowedTools", "--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"},
 			Modes: []string{"default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"},
 		},
 	}
@@ -94,7 +95,7 @@ func nativeGemini() *NativeCapability {
 			StopRequiresJSONStdout: true,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{"--approval-mode", "--policy", "--admin-policy"},
+			Flags: []string{"--approval-mode", "--policy", "--admin-policy", "--yolo", "--sandbox", "--allowed-tools"},
 			Modes: []string{"default", "auto_edit", "yolo", "plan"},
 		},
 	}
@@ -134,7 +135,7 @@ func nativeAntigravity() *NativeCapability {
 			StopRequiresJSONStdout: true,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{"--sandbox", "--dangerously-skip-permissions"},
+			Flags: []string{"--sandbox", "--dangerously-skip-permissions", "--mode"},
 			Modes: []string{"allow", "ask", "deny"},
 		},
 	}
@@ -164,7 +165,7 @@ func nativeGrok() *NativeCapability {
 			StopRequiresJSONStdout: true,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{"--sandbox", "--permission-mode"},
+			Flags: []string{"--sandbox", "--permission-mode", "--always-approve", "--allow", "--deny"},
 			Modes: []string{"default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"},
 		},
 	}
@@ -312,7 +313,7 @@ func nativeCline() *NativeCapability {
 			StopRequiresJSONStdout: false,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{},
+			Flags: []string{"--auto-approve", "--yolo", "--plan", "--tui"},
 			Modes: []string{},
 		},
 	}
@@ -405,7 +406,7 @@ func nativeCodebuddy() *NativeCapability {
 		// 跳过 HIGH/CRITICAL；刻意不做成 CLI 参数、也不会从 settings.json 的 env 注入，
 		// 只能由宿主进程环境带入）。`permissions.disableBypassPermissionsMode` 仍然生效。
 		Permissions: NativePermissions{
-			Flags: []string{"--permission-mode", "--allowedTools", "--disallowedTools", "--dangerously-skip-permissions"},
+			Flags: []string{"--permission-mode", "--allowedTools", "--disallowedTools", "--dangerously-skip-permissions", "--tools", "--sandbox"},
 			Modes: []string{"default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"},
 			Env:   map[string]string{"CODEBUDDY_IS_SANDBOX": "1"},
 		},

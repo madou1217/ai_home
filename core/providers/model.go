@@ -385,4 +385,8 @@ type NativePermissions struct {
 	Flags []string          `json:"flags"`
 	Modes []string          `json:"modes"`
 	Env   map[string]string `json:"env,omitempty"`
+	// BlockingSubcommands 声明「这些子命令不接受权限覆盖」：例如 codex 的
+	// resume / fork（恢复远程任务时上游会拒绝 Permission overrides）。启动器据此
+	// 跳过注入，而不是发出注定被拒的组合。
+	BlockingSubcommands []string `json:"blockingSubcommands,omitempty"`
 }

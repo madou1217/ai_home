@@ -53,6 +53,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/permissionlaunch"
 )
 
 const oauthHTTPTimeout = 15 * time.Second
@@ -121,18 +122,25 @@ type launchRunner interface {
 		plan providerlaunch.LaunchPlan,
 		arguments []string,
 	) error
+	RunWithOptions(
+		ctx context.Context,
+		plan providerlaunch.LaunchPlan,
+		arguments []string,
+		options providercli.RunOptions,
+	) error
 }
 
 // App 持有单库、双模式规划器和 Provider Runtime 的一次进程生命周期。
 type App struct {
-	catalog      *providers.Catalog
-	aiHomeDir    string
-	accountStore *sqliteaccount.Store
-	planner      launchPlanner
-	runner       launchRunner
-	resources    []io.Closer
-	closeOnce    sync.Once
-	closeErr     error
+	catalog           *providers.Catalog
+	aiHomeDir         string
+	accountStore      *sqliteaccount.Store
+	planner           launchPlanner
+	runner            launchRunner
+	permissionOptions permissionlaunch.Options
+	resources         []io.Closer
+	closeOnce         sync.Once
+	closeErr          error
 }
 
 // New 装配 Provider Catalog、aih.db、OAuth 刷新、双模式 Strategy 和官方 CLI Runtime。
@@ -358,14 +366,21 @@ func New(ctx context.Context, options Options) (*App, error) {
 		return fail("创建 Provider CLI Runtime 失败", err)
 	}
 	if store == nil {
-		return newApp(catalog, planner, runner)
+		app, err := newApp(catalog, planner, runner)
+		if err != nil {
+			return nil, err
+		}
+		app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir}
+		return app, nil
 	}
 	app, err := newApp(catalog, planner, runner, store)
-	if err == nil {
-		app.aiHomeDir = options.AIHomeDir
-		app.accountStore = store
+	if err != nil {
+		return nil, err
 	}
-	return app, err
+	app.aiHomeDir = options.AIHomeDir
+	app.accountStore = store
+	app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir}
+	return app, nil
 }
 
 // newProjectionProvisioner 装配已迁移 Provider 的投影策略、materializer、
@@ -521,7 +536,12 @@ func (app *App) Run(
 			return errors.New("native_account_unavailable")
 		}
 	}
-	if err := app.runner.Run(ctx, plan, intent.Arguments()); err != nil {
+	permission := permissionlaunch.Apply(ctx, app.permissionOptions, providerID, intent.Arguments(), false)
+	launchArguments := intent.Arguments()
+	if permission.Applied {
+		launchArguments = permission.Args
+	}
+	if err := app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{ExtraEnv: permission.Env}); err != nil {
 		return fmt.Errorf("执行 Provider CLI 失败: %w", err)
 	}
 	return nil

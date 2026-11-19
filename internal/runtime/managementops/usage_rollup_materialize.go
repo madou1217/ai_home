@@ -701,130 +701,17 @@ func (s *UsageStore) materializeHourRange(
 			}
 		}
 
-		// 准备批量写入语句。
-		hourStmt, err := tx.PrepareContext(ctx, `
-			INSERT OR REPLACE INTO model_usage_rollup_hours (
-				hour_ms, max_record_id, max_prompt_rowid,
-				attr_count, attr_digest, fork_digest,
-				pricing_rev, pricing_custom_digest,
-				has_codex_file, has_left_boundary_attr, has_right_boundary_attr, built_at_ms
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-		if err != nil {
+		if err := writeRollupBuildsTx(
+			ctx,
+			tx,
+			builtHours,
+			byHour,
+			forkDigest,
+			snapPricingRev,
+			customPricingDigest,
+			builtAtMS,
+		); err != nil {
 			return err
-		}
-		defer func() { _ = hourStmt.Close() }()
-
-		modelStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO model_usage_rollup_hourly_model (
-				hour_ms, provider, model, account_ref,
-				calls, input_tokens, output_tokens, cache_read_input_tokens,
-				cache_creation_input_tokens, reasoning_output_tokens, total_tokens, cost_usd
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = modelStmt.Close() }()
-
-		sessStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO model_usage_rollup_hourly_session (
-				hour_ms, provider, session_id, model, account_ref,
-				calls, input_tokens, output_tokens, cache_read_input_tokens,
-				cache_creation_input_tokens, reasoning_output_tokens, total_tokens, cost_usd,
-				min_timestamp_ms, max_timestamp_ms, max_project, max_cwd, max_git_branch
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = sessStmt.Close() }()
-
-		promptStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO model_usage_rollup_hourly_prompt (
-				hour_ms, provider, session_id, prompt_count
-			) VALUES (?, ?, ?, ?)`)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = promptStmt.Close() }()
-
-		attrStmt, err := tx.PrepareContext(ctx, `
-			INSERT OR REPLACE INTO model_usage_rollup_attributions (
-				scanner_id, proxy_id, scanner_timestamp_ms, proxy_timestamp_ms,
-				scanner_hour_ms, proxy_hour_ms, model, account_provider, account_ref, cost_usd
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = attrStmt.Close() }()
-
-		writtenAttrs := make(map[int64]struct{})
-		for _, h := range builtHours {
-			hb := byHour[h]
-			if hb.maxRecordID == 0 && hb.maxPromptRowID == 0 && len(hb.attrs) == 0 &&
-				len(hb.models) == 0 && len(hb.sessions) == 0 && len(hb.prompts) == 0 &&
-				!hb.hasLeftBoundaryAttr && !hb.hasRightBoundaryAttr {
-				continue
-			}
-			ad := computeAttrSliceDigest(hb.attrs)
-			hasCodex := 0
-			if hb.hasCodexFile {
-				hasCodex = 1
-			}
-			hasLeft := 0
-			if hb.hasLeftBoundaryAttr {
-				hasLeft = 1
-			}
-			hasRight := 0
-			if hb.hasRightBoundaryAttr {
-				hasRight = 1
-			}
-			if _, err := hourStmt.ExecContext(ctx,
-				h, hb.maxRecordID, hb.maxPromptRowID,
-				ad.count, ad.digest, forkDigest,
-				snapPricingRev, customPricingDigest,
-				hasCodex, hasLeft, hasRight, builtAtMS,
-			); err != nil {
-				return err
-			}
-			for mk, mAgg := range hb.models {
-				if _, err := modelStmt.ExecContext(ctx,
-					h, mk.provider, mk.model, mk.accountRef,
-					mAgg.calls, mAgg.inputTokens, mAgg.outputTokens, mAgg.cacheReadInputTokens,
-					mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens, mAgg.totalTokens, mAgg.costUSD,
-				); err != nil {
-					return err
-				}
-			}
-			for sk, sAgg := range hb.sessions {
-				if _, err := sessStmt.ExecContext(ctx,
-					h, sk.provider, sk.sessionID, sk.model, sk.accountRef,
-					sAgg.calls, sAgg.inputTokens, sAgg.outputTokens, sAgg.cacheReadInputTokens,
-					sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens, sAgg.totalTokens, sAgg.costUSD,
-					sAgg.minTimestampMS, sAgg.maxTimestampMS, sAgg.maxProject, sAgg.maxCWD, sAgg.maxGitBranch,
-				); err != nil {
-					return err
-				}
-			}
-			for pk, cnt := range hb.prompts {
-				if cnt <= 0 {
-					continue
-				}
-				if _, err := promptStmt.ExecContext(ctx, h, pk.provider, pk.sessionID, cnt); err != nil {
-					return err
-				}
-			}
-			for _, a := range hb.attrs {
-				if _, dup := writtenAttrs[a.ScannerID]; dup {
-					continue
-				}
-				writtenAttrs[a.ScannerID] = struct{}{}
-				if _, err := attrStmt.ExecContext(ctx,
-					a.ScannerID, a.ProxyID, a.ScannerTimestampMS, a.ProxyTimestampMS,
-					hourFloorMS(a.ScannerTimestampMS), hourFloorMS(a.ProxyTimestampMS),
-					a.Model, a.AccountProvider, a.AccountRef, a.CostUSD,
-				); err != nil {
-					return err
-				}
-			}
 		}
 
 		if markCoverage {

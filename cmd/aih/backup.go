@@ -19,7 +19,7 @@ import (
 var backupConfigCommands = map[string]bool{
 	"add": true, "list": true, "ls": true, "remove": true, "rm": true,
 	"enable": true, "disable": true, "config": true, "show": true,
-	"run": true, "test": true, "status": true, "restore": true,
+	"run": true, "test": true, "status": true, "restore": true, "recover": true,
 }
 
 func runBackup(ctx context.Context, arguments []string, runtime commandRuntime) error {
@@ -72,6 +72,8 @@ func runBackup(ctx context.Context, arguments []string, runtime commandRuntime) 
 		return backupStatus(ctx, home, arguments[1:], runtime)
 	case "restore":
 		return backupRestore(ctx, home, arguments[1:], runtime)
+	case "recover":
+		return backupRecover(ctx, home, arguments[1:], runtime)
 	}
 	return nil
 }
@@ -495,6 +497,48 @@ func backupRestore(ctx context.Context, home string, arguments []string, runtime
 		_, _ = fmt.Fprintf(runtime.stdout, "  %s %s → %s %s\n", entry.Status, entry.Provider, entry.AccountRef, entry.Reason)
 	}
 	if !result.OK || summary["failed"] > 0 {
+		return &cliExitCode{code: 1}
+	}
+	return nil
+}
+
+func backupRecover(ctx context.Context, home string, arguments []string, runtime commandRuntime) error {
+	positionals, flags, err := parseBackupTokens(arguments)
+	if err != nil {
+		return err
+	}
+	if len(positionals) == 0 {
+		return fmt.Errorf("用法：aih backup recover <id> [--dry-run] [--confirm-stopped --owner <token> --recovery-token <token> --attempt-token <token>]")
+	}
+	config, err := remotebackup.ReadBackupConfig(home)
+	if err != nil {
+		return err
+	}
+	target, ok := backupSelectTarget(config, positionals[0])
+	if !ok {
+		return fmt.Errorf("backup_target_not_found")
+	}
+	hostHome, _ := runtime.userHomeDir()
+	strategy := newBackupStrategy(target, hostHome)
+	if err := strategy.Connect(ctx); err != nil {
+		return err
+	}
+	defer func() { _ = strategy.Close() }()
+	result, err := remotebackup.RecoverRemoteBackup(ctx, strategy, target.ID, remotebackup.RecoveryOptions{
+		DryRun:         flags["dry-run"] == "true",
+		ConfirmStopped: flags["confirm-stopped"] == "true",
+		Owner:          flags["owner"],
+		RecoveryToken:  flags["recovery-token"],
+		AttemptToken:   flags["attempt-token"],
+	})
+	if err != nil {
+		_ = writeJSONDocument(runtime.stderr, map[string]any{"ok": false, "error": err.Error()})
+		return &cliExitCode{code: 1}
+	}
+	if err := writeJSONDocument(runtime.stdout, result); err != nil {
+		return err
+	}
+	if !result.OK {
 		return &cliExitCode{code: 1}
 	}
 	return nil

@@ -56,6 +56,12 @@
   驱动树、旧 smoke 脚本）已于 2026-11-20 删除，server 不再引用；Node 只保留
   被 codex 适配层共享的交互适配叶子模块。
 - `aih server serve --codex-models` 已映射：Go 账号发现器追加静态模型名。
+- 启动权限：Go CLI 启动与 WebUI 读同一份 `toolkit:tool-permission-settings`
+  （`runtime/toolkit/appsettings`），按合同推导最大权限参数或用户逐旗标选择，
+  并叠加合同的进程环境开关；显式权限旗标/`--help`/登录不覆盖，codex resume/fork
+  跳过注入。真机以假 claude 二进制验证 argv：默认注入
+  `--permission-mode bypassPermissions`，显式旗标与 `--help` 不注入。
+
 - 插件控制面写入：`application/plugincontrol` + `plugincontrolapi`
   （install/uninstall/state/instances/{id}/enable|disable）由 Go 执行 revision CAS，
   状态写 aih.db `app_kv/plugins.control.v1`；`pluginapi` 清单是同一事实的只读视图。

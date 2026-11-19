@@ -66,7 +66,10 @@
 
 - 真机对拍：canonical 会话的附件上传 → turn.submit → timeline 回读（上传/落盘/
   删除已实测），以及账号行 status/updatedAt/tokenUsageSource 的 UI 呈现。
-- 逐端点响应键对拍（accounts、sessions、chat、models、auth jobs）仍需继续，
+- 路由级对拍已完成：从 `web/src/services` 提取 211 个 method+path，GET 全部命中
+  Go 路由（唯一 404 是 job 不存在时的正常领域错误）；对 88 条非危险写路由做了
+  空载荷探针，全部命中（`projects/pick` 会等待系统文件夹对话框，按预期阻塞）。
+- 字段级响应键对拍（accounts、sessions、chat、models、auth jobs）仍需继续，
   以合同/读模型为唯一事实源，不再引入 Node 分支判定。
 
 ---

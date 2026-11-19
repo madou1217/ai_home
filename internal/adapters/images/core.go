@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
@@ -32,6 +33,56 @@ type Error struct {
 	UpstreamBody string
 	// UpstreamURL 是本次失败对应的上游地址，不含凭据。
 	UpstreamURL string
+	// ObservedHTTPStatus 仅在真实上游 HTTP 响应非 2xx 时写入，用于区分真实上游状态与本地合成错误。
+	ObservedHTTPStatus int
+	// UpstreamHeader 仅保存分类器与边缘拒绝判定所需的低敏响应头子集（不含任何凭据或 Cookie）。
+	UpstreamHeader http.Header
+	// ObservedAt 记录上游 HTTP 响应实际到达的 UTC 时间（早于慢响应体读取），用于锚定 Retry-After。
+	ObservedAt time.Time
+	// failureBody 保存供结构化分类器与边缘判定使用的完整有界上游错误正文（不输出给客户端或日志）。
+	failureBody []byte
+	// failureBodyComplete 标记 failureBody 是否为完整（未截断）的原始上游非 2xx 响应体。
+	failureBodyComplete bool
+	// cause 保存可选内部触发原因（如 SubmissionGate 拒绝），供 errors.As 精确识别而不暴露原文。
+	cause error
+}
+
+// Unwrap 暴露可选内部触发原因，供调用方用 errors.As 识别提交门禁中止。
+func (generationError *Error) Unwrap() error {
+	if generationError == nil {
+		return nil
+	}
+	return generationError.cause
+}
+
+// FailureEvidence 返回内部错误分类用的完整上游响应正文副本及其完整性标记。
+// 非 sendUpstream 产生的合成错误或截断证据返回 complete=false，供上层对新增 429 重试 fail-closed。
+func (generationError *Error) FailureEvidence() ([]byte, bool) {
+	if generationError == nil || !generationError.failureBodyComplete {
+		return nil, false
+	}
+	if len(generationError.failureBody) == 0 {
+		return nil, true
+	}
+	out := make([]byte, len(generationError.failureBody))
+	copy(out, generationError.failureBody)
+	return out, true
+}
+
+// FailureBody 返回用于内部错误分类的有界上游响应正文副本，未设置时退回 UpstreamBody。
+func (generationError *Error) FailureBody() []byte {
+	if generationError == nil {
+		return nil
+	}
+	if len(generationError.failureBody) > 0 {
+		out := make([]byte, len(generationError.failureBody))
+		copy(out, generationError.failureBody)
+		return out
+	}
+	if generationError.UpstreamBody == "" {
+		return nil
+	}
+	return []byte(generationError.UpstreamBody)
 }
 
 // Error 实现 error。

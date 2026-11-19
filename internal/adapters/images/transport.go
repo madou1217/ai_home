@@ -13,6 +13,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/imagedata"
 )
@@ -43,6 +44,15 @@ func sendUpstream(
 	if apply != nil {
 		apply(request)
 	}
+	// 在所有前置准备与鉴权头构造完成后、真正发起生成/编辑 POST 前执行最后提交门禁。
+	if gateErr := checkSubmissionGate(ctx); gateErr != nil {
+		return nil, &Error{
+			StatusCode: http.StatusServiceUnavailable,
+			Code:       "submission_aborted",
+			Detail:     "image upstream submission aborted before dispatch",
+			cause:      gateErr,
+		}
+	}
 	response, err := doer.Do(request)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
@@ -50,7 +60,14 @@ func sendUpstream(
 		}
 		return nil, newError(502, "upstream_failed", "upstream fetch failed: "+err.Error())
 	}
+	// 在读取响应体之前立即记录响应到达时间，避免慢响应体读取漂移 Retry-After 锚点。
+	observedAt := time.Now().UTC()
 	defer func() { _ = response.Body.Close() }()
+	// 上游对真实生成/编辑 POST 返回 HTTP 2xx 即意味着服务端已接受并可能已计费生成；
+	// 立即登记该不可逆事实，防止后续 body 读取、解析或本地转码失败再触发新增 429 重放。
+	if response.StatusCode >= 200 && response.StatusCode <= 299 {
+		notifySubmissionAccepted(ctx)
+	}
 
 	limited := io.LimitReader(response.Body, maxUpstreamBodyBytes+1)
 	payload, readErr := io.ReadAll(limited)
@@ -71,9 +88,47 @@ func sendUpstream(
 		)
 		generationErr.UpstreamBody = truncate(payload, 500)
 		generationErr.UpstreamURL = target
+		generationErr.ObservedHTTPStatus = response.StatusCode
+		generationErr.ObservedAt = observedAt
+		generationErr.UpstreamHeader = cloneSafeFailureHeaders(response.Header)
+		// payload 已受 maxUpstreamBodyBytes 总上限约束且读取至 EOF；保留完整内部副本
+		// （不外泄给客户端或日志）并标记 complete=true，杜绝 64KB 静默截断尾部硬配额字段。
+		generationErr.failureBody = cloneBytes(payload)
+		generationErr.failureBodyComplete = true
 		return nil, generationErr
 	}
 	return payload, nil
+}
+
+// cloneSafeFailureHeaders 仅复制分类器与边缘拒绝判定所需的四个低敏响应头，绝不保留凭据或 Cookie。
+func cloneSafeFailureHeaders(source http.Header) http.Header {
+	if len(source) == 0 {
+		return nil
+	}
+	cloned := make(http.Header, 4)
+	for _, key := range []string{"Retry-After", "Content-Type", "Server", "Cf-Mitigated"} {
+		values := source.Values(key)
+		if len(values) == 0 {
+			continue
+		}
+		copied := make([]string, len(values))
+		copy(copied, values)
+		cloned[textproto.CanonicalMIMEHeaderKey(key)] = copied
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
+// cloneBytes 复制完整已受 maxUpstreamBodyBytes 约束的非 2xx 响应体供内部分类器读取。
+func cloneBytes(payload []byte) []byte {
+	if len(payload) == 0 {
+		return nil
+	}
+	out := make([]byte, len(payload))
+	copy(out, payload)
+	return out
 }
 
 // readUpstreamErrorDetail 从上游错误体里取可读说明。

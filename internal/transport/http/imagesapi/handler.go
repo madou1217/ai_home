@@ -8,15 +8,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/upstreamretry"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const (
@@ -76,6 +80,13 @@ type Dependencies struct {
 	Usage UsageRecorder
 	// Outcomes 记录生图成功（账号页最近成功 + 清 cooldown）；为 nil 时不记录。
 	Outcomes ImageOutcomes
+	// Upstream429Retries 可选：共享上游 HTTP 429 有界等待重试控制器。
+	Upstream429Retries *upstreamretry.Controller
+	// Attempts 与 CredentialObservations 可选：装配后启用 ObservedAttemptRecorder 凭据代次守卫与原子冷却凭证。
+	Attempts               inferencegateway.AttemptRecorder
+	CredentialObservations inferencegateway.CredentialObservationVerifier
+	// Rules 可选：账号自定义上游错误规则求值端口。
+	Rules configured.Rules
 	// BlobBaseURL 是请求没有 Host 头时使用的 blob URL 兜底前缀。
 	BlobBaseURL string
 	// MaxBodyBytes 是单请求允许读取的最大字节数。
@@ -86,15 +97,12 @@ type Dependencies struct {
 
 // Handler 负责入口校验、请求归一、编排调用与响应渲染。
 type Handler struct {
-	registry     images.Registry
-	accounts     images.AccountSource
+	executor     *imageexecution.Executor
 	providers    ProviderResolver
-	http         images.HTTPDoer
 	authorizer   Authorizer
 	blobs        images.BlobWriter
 	fetcher      images.ImageFetcher
 	usage        UsageRecorder
-	outcomes     ImageOutcomes
 	blobBaseURL  string
 	maxBodyBytes int64
 	now          func() time.Time
@@ -118,16 +126,34 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if fetcher == nil {
 		fetcher = images.NewFetcher(dependencies.HTTP)
 	}
+	var legacyFailure imageexecution.LegacyFailureRecorder
+	var legacySuccess imageexecution.LegacySuccessRecorder
+	if dependencies.Outcomes != nil {
+		outcomes := dependencies.Outcomes
+		legacyFailure = outcomes.RecordImageFailure
+		legacySuccess = outcomes.RecordImageSuccess
+	}
+	executor := imageexecution.NewExecutor(imageexecution.Dependencies{
+		Surface:                "images_api",
+		Registry:               dependencies.Registry,
+		Accounts:               dependencies.Accounts,
+		HTTP:                   dependencies.HTTP,
+		Upstream429Retries:     dependencies.Upstream429Retries,
+		Attempts:               dependencies.Attempts,
+		CredentialObservations: dependencies.CredentialObservations,
+		Rules:                  dependencies.Rules,
+		LegacyFailure:          legacyFailure,
+		LegacySuccess:          legacySuccess,
+		Clock:                  dependencies.Now,
+		RecordTimeout:          recordTimeout,
+	})
 	return &Handler{
-		registry:     dependencies.Registry,
-		accounts:     dependencies.Accounts,
+		executor:     executor,
 		providers:    dependencies.Providers,
-		http:         dependencies.HTTP,
 		authorizer:   dependencies.Authorizer,
 		blobs:        dependencies.Blobs,
 		fetcher:      fetcher,
 		usage:        dependencies.Usage,
-		outcomes:     dependencies.Outcomes,
 		blobBaseURL:  strings.TrimRight(strings.TrimSpace(dependencies.BlobBaseURL), "/"),
 		maxBodyBytes: maxBodyBytes,
 		now:          dependencies.Now,
@@ -221,24 +247,10 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 
-	executeOptions := images.ExecuteOptions{HTTP: handler.http}
-	if handler.outcomes != nil {
-		// 观察者只在换号那一刻被调用：账号是我们自己选的，失败事实也由我们交出去。
-		// 记账用不受客户端断开取消的 ctx，且不参与执行结果。
-		requestCtx := request.Context()
-		executeOptions.AttemptFailure = func(account images.Account, model string, attemptErr error) {
-			recordCtx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), recordTimeout)
-			defer cancel()
-			handler.outcomes.RecordImageFailure(recordCtx, account.AccountRef, model, attemptErr)
-		}
-	}
-	execution, executeErr := images.Execute(
+	execResult, executeErr := handler.executor.Execute(
 		request.Context(),
-		handler.registry,
-		handler.accounts,
 		provider,
 		parsed,
-		executeOptions,
 	)
 	if executeErr != nil {
 		if parseErr != nil && isPassthroughUnavailable(executeErr) {
@@ -246,9 +258,11 @@ func (handler *Handler) ServeHTTP(
 			writeParseError(response, parseErr)
 			return
 		}
+		applyImage429Headers(response.Header(), execResult.Retry)
 		writeError(response, asImageError(executeErr))
 		return
 	}
+	execution := execResult.Execution
 
 	var (
 		payload     []byte
@@ -260,6 +274,7 @@ func (handler *Handler) ServeHTTP(
 		// 事件只能带 b64_json，上游只给链接时在这里补齐字节；失败仍在写头之前。
 		streamImages, inlineErr := handler.inlineStreamImages(request.Context(), execution.Result.Images)
 		if inlineErr != nil {
+			applyImage429Headers(response.Header(), clearRetryAfterMeta(execResult.Retry))
 			writeError(response, inlineErr)
 			return
 		}
@@ -287,6 +302,7 @@ func (handler *Handler) ServeHTTP(
 		})
 	}
 	if renderErr != nil {
+		applyImage429Headers(response.Header(), clearRetryAfterMeta(execResult.Retry))
 		writeError(response, &images.Error{
 			StatusCode: http.StatusBadGateway,
 			Code:       "invalid_image_output",
@@ -309,13 +325,14 @@ func (handler *Handler) ServeHTTP(
 	if execution.Account.Email != "" {
 		response.Header().Set("x-aih-server-account-email", execution.Account.Email)
 	}
+	applyImage429Headers(response.Header(), clearRetryAfterMeta(execResult.Retry))
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(payload)
 	// 响应已发出：记账与结果统计共用一份不被客户端断开取消的 ctx。
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), recordTimeout)
 	defer cancel()
 	handler.recordUsage(recordCtx, execution, parsed.Model)
-	handler.recordOutcome(recordCtx, execution, parsed.Model)
+	handler.executor.RecordSuccess(recordCtx, execResult, parsed.Model)
 }
 
 // UsageRecorder 记录一次成功生图的 token 用量。
@@ -396,16 +413,28 @@ func (handler *Handler) recordUsage(
 	)
 }
 
-// recordOutcome 把生图成功记给账号运行态；失败只影响统计，不影响已发出的响应。
-func (handler *Handler) recordOutcome(
-	ctx context.Context,
-	execution images.Execution,
-	model string,
-) {
-	if handler.outcomes == nil {
-		return
+func applyImage429Headers(header http.Header, meta imageexecution.RetryMetadata) {
+	retryAfter := ""
+	clearRetryAfter := false
+	switch meta.RetryAfterAction {
+	case upstreamretry.RetryAfterHeaderSet:
+		retryAfter = meta.RetryAfterHeader
+	case upstreamretry.RetryAfterHeaderClear:
+		clearRetryAfter = true
 	}
-	handler.outcomes.RecordImageSuccess(ctx, execution.Account.AccountRef, model, time.Now())
+	inferenceapi.ApplyUpstream429HeadersWithAction(
+		header,
+		meta.Retries,
+		meta.TotalWait,
+		retryAfter,
+		clearRetryAfter,
+	)
+}
+
+func clearRetryAfterMeta(meta imageexecution.RetryMetadata) imageexecution.RetryMetadata {
+	meta.RetryAfterHeader = ""
+	meta.RetryAfterAction = upstreamretry.RetryAfterHeaderClear
+	return meta
 }
 
 // blobBaseURL 返回客户端可达的 blob URL 前缀。

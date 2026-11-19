@@ -7,6 +7,7 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -54,6 +55,8 @@ type imageAccountSource struct {
 	catalog    *providers.Catalog
 	recruiter  *accountrouting.Recruiter
 	transports accountrouting.CredentialTransportPolicy
+	// onObserved 由请求级观察会话注入，用于保存 Recruiter 返回的真实 CredentialObservation。
+	onObserved func(accountcore.AccountRef, accountcredentials.CredentialObservation)
 }
 
 // Candidates 征召下一个尚未尝试过的账号。
@@ -102,6 +105,9 @@ func (source imageAccountSource) Candidates(
 	account, err := toImageAccount(provider, result.Account(), result.Credential())
 	if err != nil {
 		return nil, err
+	}
+	if source.onObserved != nil {
+		source.onObserved(result.Account().Ref(), result.CredentialObservation())
 	}
 	return []images.Account{account}, nil
 }

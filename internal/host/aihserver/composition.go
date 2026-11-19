@@ -2304,11 +2304,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			catalog: catalog,
 			models:  inference.models,
 		},
-		HTTP:       http.DefaultClient,
-		Authorizer: clientAuthorizer,
-		Blobs:      images.BlobStoreAdapter{Store: imageBlobs},
-		Usage:      imageUsage,
-		Outcomes:   imageOutcomes,
+		HTTP:                   http.DefaultClient,
+		Authorizer:             clientAuthorizer,
+		Blobs:                  images.BlobStoreAdapter{Store: imageBlobs},
+		Usage:                  imageUsage,
+		Outcomes:               imageOutcomes,
+		Upstream429Retries:     upstream429Controller,
+		Attempts:               accountRuntime,
+		CredentialObservations: credentials,
+		Rules:                  upstreamRuleEvaluator,
 	})
 	if err != nil {
 		_ = inference.Close()

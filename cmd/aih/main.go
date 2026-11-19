@@ -22,6 +22,13 @@ var runCLI = run
 
 // main 为 Go CLI 建立可取消进程生命周期并统一输出根错误。
 func main() {
+	if isNativeVersionArgs(os.Args[1:]) {
+		if err := writeNativeCLIVersion(os.Stdout); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "aih:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到再交回 Node。
 	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {
 		os.Exit(execute(rewritten, defaultCommandRuntime()))

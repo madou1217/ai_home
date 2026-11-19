@@ -33,11 +33,9 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	if len(arguments) == 0 || arguments[0] != "usage" {
 		return false, nil
 	}
-	if len(arguments) > 1 {
-		switch strings.TrimSpace(arguments[1]) {
-		case "--help", "-h", "help":
-			return false, nil
-		}
+	if nativeUsageHelpRequested(arguments[1:]) {
+		writeNativeUsageHelp(runtime.stdout)
+		return true, nil
 	}
 	options, err := parseUsageOptions(arguments[1:])
 	if err != nil {
@@ -54,8 +52,7 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 		return true, runUsageRecalculateCosts(ctx, home, options, runtime)
 	case "stats", "summary", "models", "cost-by-model", "by-model", "sessions", "session", "session-detail":
 	default:
-		// scan / recalculate-costs / help remain on the legacy CLI for now.
-		return false, nil
+		return true, fmt.Errorf("未知 usage 命令: %s", options.command)
 	}
 	config, err := webuiserverconfigapi.ReadFullConfig(ctx, home)
 	if err != nil {

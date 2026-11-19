@@ -113,6 +113,11 @@ func delegateToNode(args []string) bool {
 	if len(args) >= 2 && launchProviders[args[0]] && (args[1] == "ls" || args[1] == "list") {
 		return false
 	}
+	// Usage reports and their help are native Go commands. Dispatch them before
+	// resolving the legacy entry so installed source layouts cannot bypass Go.
+	if len(args) > 0 && (args[0] == "usage" || args[0] == "summary" || isRootHelp(args[0]) || isNativeVersionArgs(args)) {
+		return false
+	}
 	// Claude launches and actions belong to Go, including unpinned Gateway
 	// sessions and --model-alias. plugin 的离线命令与运行态调用也全部在 Go。
 	// Never silently re-enter the legacy host for these verbs.

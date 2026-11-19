@@ -18,6 +18,11 @@
 - 插件账号登录：`account.login` 状态机迁入 Go（start/poll/submit/cancel、持久化、
   success 投影注册）；HTTP 路由 `/v0/webui/accounts/plugin-login/*` 由 Go 应答；
   前端自动轮询按插件 job 分派。
+- 插件运行时：manifest 支持 `runtime: node|process`；Go ProcessHost 承载任意语言插件，
+  HybridHost 按 runtime 路由，process-only 代次通过 EmbeddedInvoker 不依赖 Node socket。
+- CLI 登录：agy native-cli、grok、qoder/qodercn、kimi、cline、CodeBuddy 家族统一走
+  Go `aihloginjob/clilogin`；codex 设备码走官方 CLI `--device-auth`；
+  `/v0/webui/account-jobs/{id}` 增加 CLI 登录作业回退。
 - 旧 Node 公开路径：CLI 应用高级设置、ServerSetup node-rpc、SSH 隧道、
   账号导入进度均已补 Go 兼容别名。
 - 路由归属：移除两条 `node_owned` legacy 聚合，投影全部为 `go_owned`。
@@ -26,14 +31,12 @@
 
 ## 2026-11-20 仍需迁移
 
-- 插件宿主后端仍由 Go 启动 Node `host-entry.mjs`，manifest `runtime` 仍固定为 node；
-  需要 `runtime: process` + Go 进程后端 + 复合 HostClient，才能让任意语言插件运行。
-- 账号 OAuth：codex `oauth-device` 尚未在 Go 适配器实现；qoder/qodercn/grok/kimi/
-  cline/codebuddy 家族的 CLI 登录作业仍只在 Node 本地作业中。
+- process 插件暂只开放控制面能力（account/pricing/model/descriptor 等）；
+  gateway/chat/tool/approval/ui/observe 仍由 Node 后端承载。
+- 账号行 `tokenUsageSource`、阈值/策略型 `schedulableStatus` 的部分口径仍需与 Node 对齐。
 - 会话读取：codex 列表只扫 rollout，不读 `state_*.sqlite`；非 codex 真实增量事件
   Node 也没有，保持空事件 + cursor。
-- 账号行：`tokenUsageSource`、`runtimeModels`、阈值/策略型 `schedulableStatus`
-  仍是静态/空值；`updatedAt` 语义与 Node 不同。
+- 账号行：`updatedAt` 语义与 Node 不同；runtimeModels/阈值型调度已补，仍需真机对拍。
 - 聊天：legacy `/v0/webui/chat` 切片仍无附件仓库与会话存储（主 UI 已走 canonical
   chat runtime）。
 - `aih server serve` 的 `--codex-models` 仍未映射到 Go。

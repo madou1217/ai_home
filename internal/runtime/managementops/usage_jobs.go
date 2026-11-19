@@ -598,18 +598,25 @@ func (m *UsageJobManager) runDashboardQueryJob(jobCtx context.Context, jobID str
 	m.broadcastDashboardQueryJob(snap)
 
 	store := m.service.usageStore
-	prebuilt, err := store.PrepareDashboardProjection(jobCtx, normQ)
+	shards := splitDashboardShardsReverseChronological(normQ, m.service.now().UnixMilli())
+	totalShards := len(shards)
+	originMS, bucketMS, _, _ := ResolveUsageTrend(normQ.FromMS, normQ.ToMS, 0, 0)
+	coldShards, coldReady, err := store.tryComputeColdDashboardShards(jobCtx, normQ, shards, originMS, bucketMS)
 	if err != nil {
 		m.finishDashboardQueryFailed(jobCtx, jobID, err)
 		return
 	}
+	var prebuilt *UsageProjectionContext
+	if !coldReady {
+		prebuilt, err = store.PrepareDashboardProjection(jobCtx, normQ)
+		if err != nil {
+			m.finishDashboardQueryFailed(jobCtx, jobID, err)
+			return
+		}
+	}
 	if jobCtx.Err() != nil {
 		return
 	}
-
-	shards := splitDashboardShardsReverseChronological(normQ, m.service.now().UnixMilli())
-	totalShards := len(shards)
-	originMS, bucketMS, _, _ := ResolveUsageTrend(normQ.FromMS, normQ.ToMS, 0, 0)
 	acc := newDashboardProgressiveAccumulator(normQ, originMS, bucketMS)
 
 	type shardResult struct {
@@ -640,6 +647,10 @@ func (m *UsageJobManager) runDashboardQueryJob(jobCtx context.Context, jobID str
 			for idx := range tasks {
 				if jobCtx.Err() != nil {
 					return
+				}
+				if coldReady {
+					results <- shardResult{idx: idx, shard: coldShards[idx]}
+					continue
 				}
 				sh, shErr := store.QueryDashboardShard(jobCtx, shards[idx], bucketMS, originMS, prebuilt)
 				results <- shardResult{idx: idx, shard: sh, err: shErr}

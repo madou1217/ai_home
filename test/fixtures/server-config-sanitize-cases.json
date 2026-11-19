@@ -27,7 +27,13 @@
       "egressEvidenceTtlMs": 0,
       "largePasteChars": 0,
       "apiKeyConfigured": false,
-      "managementKeyConfigured": false
+      "managementKeyConfigured": false,
+      "upstream429Retry": {
+        "enabled": true,
+        "backoffSeconds": [
+          30
+        ]
+      }
     }
   },
   {
@@ -88,7 +94,13 @@
       "egressEvidenceTtlMs": 0,
       "largePasteChars": 50,
       "apiKeyConfigured": true,
-      "managementKeyConfigured": true
+      "managementKeyConfigured": true,
+      "upstream429Retry": {
+        "enabled": true,
+        "backoffSeconds": [
+          30
+        ]
+      }
     }
   },
   {
@@ -132,7 +144,13 @@
       "egressEvidenceTtlMs": 60000,
       "largePasteChars": 100000,
       "apiKeyConfigured": false,
-      "managementKeyConfigured": false
+      "managementKeyConfigured": false,
+      "upstream429Retry": {
+        "enabled": true,
+        "backoffSeconds": [
+          30
+        ]
+      }
     }
   },
   {
@@ -167,7 +185,13 @@
       "egressEvidenceTtlMs": 0,
       "largePasteChars": 0,
       "apiKeyConfigured": false,
-      "managementKeyConfigured": false
+      "managementKeyConfigured": false,
+      "upstream429Retry": {
+        "enabled": true,
+        "backoffSeconds": [
+          30
+        ]
+      }
     }
   }
 ]

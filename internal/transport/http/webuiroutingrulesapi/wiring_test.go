@@ -25,7 +25,7 @@ var _ RuntimeBlockClearer = (*inmemory.Runtime)(nil)
 func storedEnvFor(t *testing.T, database *sql.DB, accountRef string) map[string]json.RawMessage {
 	t.Helper()
 	var raw string
-	if err := database.QueryRow("SELECT env_json FROM account_credentials WHERE account_ref = ?", accountRef).Scan(&raw); err != nil {
+	if err := database.QueryRow("SELECT env_json FROM compat_account_credentials WHERE account_ref = ?", accountRef).Scan(&raw); err != nil {
 		t.Fatalf("read env_json for %s: %v", accountRef, err)
 	}
 	env := map[string]json.RawMessage{}

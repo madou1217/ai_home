@@ -210,7 +210,9 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}
 	scheduling := dependencies.Scheduling
 	if scheduling == nil {
-		scheduling = accountscheduling.NewEvaluator(accountscheduling.NewRegistry(accountscheduling.NewDefaultPolicy("")))
+		scheduling = accountscheduling.NewEvaluator(accountscheduling.NewRegistry(
+			accountscheduling.NewDefaultPolicy("").WithClock(nowFn),
+		))
 	}
 	return &Handler{
 		authorizer:  dependencies.Authorizer,

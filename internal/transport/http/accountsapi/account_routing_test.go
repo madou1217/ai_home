@@ -20,6 +20,13 @@ type fakeRoutingExclusions struct {
 	err        error
 }
 
+func (fake *fakeRoutingExclusions) RoutingExclusionState(
+	_ context.Context,
+	_ accountcore.AccountRef,
+) (bool, bool, string, error) {
+	return fake.excluded, false, "", nil
+}
+
 func (fake *fakeRoutingExclusions) SetRoutingExclusion(
 	_ context.Context,
 	accountRef accountcore.AccountRef,
@@ -49,7 +56,7 @@ func TestAccountRoutingAcceptsExclusion(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.handleAccountRouting(
 		recorder,
-		newRoutingRequest(`{"excluded":true,"reason":"  自定义上游  "}`),
+		newRoutingRequest(`{"intent":"manual","excluded":true,"reason":"  自定义上游  "}`),
 		mustProbeRef(t),
 	)
 	if recorder.Code != http.StatusOK {
@@ -69,7 +76,7 @@ func TestAccountRoutingReturnsNotFound(t *testing.T) {
 	fake := &fakeRoutingExclusions{err: accountapp.ErrAccountNotFound}
 	handler := &Handler{routingExclusions: fake}
 	recorder := httptest.NewRecorder()
-	handler.handleAccountRouting(recorder, newRoutingRequest(`{"excluded":true}`), mustProbeRef(t))
+	handler.handleAccountRouting(recorder, newRoutingRequest(`{"intent":"manual","excluded":true}`), mustProbeRef(t))
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", recorder.Code)
 	}

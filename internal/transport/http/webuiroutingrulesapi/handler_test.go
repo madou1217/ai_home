@@ -48,7 +48,7 @@ func newFixture(t *testing.T, envJSON string) *fixture {
 	t.Cleanup(func() { _ = db.Close() })
 	for _, statement := range []string{
 		"CREATE TABLE account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-		"CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("create table: %v", err)
@@ -58,10 +58,10 @@ func newFixture(t *testing.T, envJSON string) *fixture {
 		t.Fatalf("insert account_refs: %v", err)
 	}
 	if _, err := db.Exec(
-		"INSERT INTO account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, '{}', ?, 1700000000111, 1700000000222)",
+		"INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, '{}', ?, 1700000000111, 1700000000222)",
 		testRef, envJSON, seededEnvUpdatedAt,
 	); err != nil {
-		t.Fatalf("insert account_credentials: %v", err)
+		t.Fatalf("insert compat_account_credentials: %v", err)
 	}
 	store, err := rulesenv.Open(context.Background(), path)
 	if err != nil {
@@ -105,17 +105,17 @@ func (f *fixture) newHandlerWithRuntime(
 	return handler
 }
 
-// seedAccount 追加一个额外的 account_refs + account_credentials 行。
+// seedAccount 追加一个额外的 account_refs + compat_account_credentials 行。
 func (f *fixture) seedAccount(t *testing.T, accountRef string, envJSON string) {
 	t.Helper()
 	if _, err := f.db.Exec("INSERT INTO account_refs VALUES (?, ?, 1, 1)", accountRef, testProvider); err != nil {
 		t.Fatalf("insert account_refs: %v", err)
 	}
 	if _, err := f.db.Exec(
-		"INSERT INTO account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, '{}', ?, 1700000000111, 1700000000222)",
+		"INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, '{}', ?, 1700000000111, 1700000000222)",
 		accountRef, envJSON, seededEnvUpdatedAt,
 	); err != nil {
-		t.Fatalf("insert account_credentials: %v", err)
+		t.Fatalf("insert compat_account_credentials: %v", err)
 	}
 }
 
@@ -154,7 +154,7 @@ func (f *fixture) post(t *testing.T, handler *Handler, provider, accountRef, bod
 func (f *fixture) storedEnv(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 	var raw string
-	if err := f.db.QueryRow("SELECT env_json FROM account_credentials WHERE account_ref = ?", testRef).Scan(&raw); err != nil {
+	if err := f.db.QueryRow("SELECT env_json FROM compat_account_credentials WHERE account_ref = ?", testRef).Scan(&raw); err != nil {
 		t.Fatalf("read env_json: %v", err)
 	}
 	env := map[string]json.RawMessage{}
@@ -167,7 +167,7 @@ func (f *fixture) storedEnv(t *testing.T) map[string]json.RawMessage {
 func (f *fixture) storedEnvUpdatedAt(t *testing.T) int64 {
 	t.Helper()
 	var value int64
-	if err := f.db.QueryRow("SELECT env_updated_at FROM account_credentials WHERE account_ref = ?", testRef).Scan(&value); err != nil {
+	if err := f.db.QueryRow("SELECT env_updated_at FROM compat_account_credentials WHERE account_ref = ?", testRef).Scan(&value); err != nil {
 		t.Fatalf("read env_updated_at: %v", err)
 	}
 	return value

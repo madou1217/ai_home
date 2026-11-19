@@ -66,7 +66,7 @@ func newAppStateRoot(t *testing.T, accountRef, provider string) string {
 	defer func() { _ = db.Close() }()
 	statements := []string{
 		"CREATE TABLE account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-		"CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {
@@ -84,10 +84,10 @@ func newAppStateRoot(t *testing.T, accountRef, provider string) string {
 func seedCredentialRow(t *testing.T, database *sql.DB, accountRef string) {
 	t.Helper()
 	if _, err := database.Exec(
-		"INSERT INTO account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, '{}', '{}', 0, 0, 1)",
+		"INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, '{}', '{}', 0, 0, 1)",
 		accountRef,
 	); err != nil {
-		t.Fatalf("insert account_credentials: %v", err)
+		t.Fatalf("insert compat_account_credentials: %v", err)
 	}
 }
 

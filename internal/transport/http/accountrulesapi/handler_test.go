@@ -72,6 +72,22 @@ func (service *fakeService) ListAccounts(context.Context) ([]rulesapp.AccountVie
 	return views, nil
 }
 
+func (service *fakeService) Collection(ctx context.Context) (rulesapp.Collection, error) {
+	views, err := service.ListAccounts(ctx)
+	if err != nil {
+		return rulesapp.Collection{}, err
+	}
+	refs := make([]string, 0, len(views))
+	for _, view := range views {
+		refs = append(refs, view.AccountRef)
+	}
+	return rulesapp.Collection{
+		Source:       string(rulesapp.SourceAccount),
+		Accounts:     views,
+		AcceptedRefs: refs,
+	}, nil
+}
+
 func (service *fakeService) SupportedProviders() []string { return []string{"codex"} }
 
 func (service *fakeService) Generation() int64 { return 1 }

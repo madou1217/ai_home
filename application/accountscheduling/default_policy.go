@@ -26,6 +26,22 @@ func NewDefaultPolicy(providerID string) *DefaultPolicy {
 	return &DefaultPolicy{providerID: strings.TrimSpace(providerID), now: time.Now}
 }
 
+// WithClock 返回使用给定时钟的策略副本；now 为 nil 时保持默认 time.Now。
+//
+// 适配层若有可注入的时钟，必须把同一时钟交给策略，否则「未来冷却」会按真实
+// 时间提前过期，诊断结论与注入时间线不一致。
+func (policy *DefaultPolicy) WithClock(now func() time.Time) *DefaultPolicy {
+	if policy == nil {
+		policy = NewDefaultPolicy("")
+	}
+	if now == nil {
+		return policy
+	}
+	clone := *policy
+	clone.now = now
+	return &clone
+}
+
 // ProviderID 返回该策略适用的 Provider。
 func (policy *DefaultPolicy) ProviderID() string { return policy.providerID }
 

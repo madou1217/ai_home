@@ -11,14 +11,12 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
+	modelsdevadapter "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 
 // ModelModalitiesView 对齐 /v1/models 的 aih_modalities 字段。
-type ModelModalitiesView struct {
-	Input  []string `json:"input"`
-	Output []string `json:"output"`
-}
+type ModelModalitiesView = modelsdevadapter.ModelModalitiesView
 
 // OpenAIModelItem 对齐 WebUI OpenAI 模型列表里的 data[] 条目。
 type OpenAIModelItem struct {
@@ -323,20 +321,20 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 			providersList = sortedSetKeys(own.providers)
 			accountRefsList = sortedSetKeys(own.accountRefs)
 		}
-		ownedBy := resolveModelOwner(entry.provider, entry.id)
+		ownedBy := modelsdevadapter.ResolveModelOwner(entry.provider, entry.id)
 		item := OpenAIModelItem{
 			ID:                  entry.id,
 			Object:              "model",
 			Created:             createdSec,
 			OwnedBy:             ownedBy,
-			AIHModalities:       resolveModalities(handler.modalities, entry.provider, entry.id),
-			AIHReasoningEfforts: resolveReasoningEfforts(handler.modalities, entry.provider, entry.id),
+			AIHModalities:       modelsdevadapter.ResolveModalities(handler.modalities, entry.provider, entry.id),
+			AIHReasoningEfforts: modelsdevadapter.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id),
 			Providers:           providersList,
 			AccountRefs:         accountRefsList,
 		}
 		data = append(data, item)
 		if _, exists := metadataMap[entry.id]; !exists {
-			if meta := resolveModelsDevMetadata(entry.provider, entry.id, now); meta != nil {
+			if meta := modelsdevadapter.ResolveMetadataMap(entry.provider, entry.id, now); meta != nil {
 				metadataMap[entry.id] = meta
 			}
 		}
@@ -344,9 +342,9 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 
 	managedData := make([]ManagedModelItem, 0, len(catalogEntries))
 	for _, entry := range catalogEntries {
-		ownedBy := resolveModelOwner(entry.provider, entry.id)
-		modalities := resolveModalities(handler.modalities, entry.provider, entry.id)
-		efforts := resolveReasoningEfforts(handler.modalities, entry.provider, entry.id)
+		ownedBy := modelsdevadapter.ResolveModelOwner(entry.provider, entry.id)
+		modalities := modelsdevadapter.ResolveModalities(handler.modalities, entry.provider, entry.id)
+		efforts := modelsdevadapter.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id)
 		var (
 			defaultModel  bool
 			description   string
@@ -367,9 +365,9 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		if entry.provider != "" {
 			providersField = []string{entry.provider}
 		}
-		meta := resolveModelsDevMetadata(entry.provider, entry.id, now)
+		meta := modelsdevadapter.ResolveMetadataMap(entry.provider, entry.id, now)
 		if meta == nil {
-			meta = buildUnknownModelMetadata(entry.id, now)
+			meta = modelsdevadapter.BuildUnknownMetadataMap(entry.id, now)
 		}
 		// 元数据按 model id 去重放在顶层 metadata；账号行不再重复携带同一份成本/能力表。
 		if _, exists := metadataMap[entry.id]; !exists {
@@ -621,7 +619,7 @@ func expandEnabledAliasEntries(
 			})
 			continue
 		}
-		for _, expandedID := range listWildcardAliasModels(aliasName, now) {
+		for _, expandedID := range modelsdevadapter.ListWildcardAliasModels(aliasName, now) {
 			if legacyDisabled[legacySettingKey("", expandedID)] || (provider != "" && legacyDisabled[legacySettingKey(provider, expandedID)]) {
 				continue
 			}
@@ -648,7 +646,7 @@ func buildByProviderMap(
 		grouped[provider] = make(map[string]struct{})
 	}
 	for _, item := range data {
-		provider := resolveOpenAIProviderFromModel(item.ID, item.OwnedBy)
+		provider := modelsdevadapter.ResolveOpenAIProviderFromModel(item.ID, item.OwnedBy)
 		if provider != "" {
 			if set := grouped[provider]; set != nil {
 				set[item.ID] = struct{}{}

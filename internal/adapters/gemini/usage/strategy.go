@@ -42,8 +42,6 @@ const (
 	sourceID = "gemini_refresh_user_quota"
 	// documentKind 与 Node USAGE_SNAPSHOT_KINDS.gemini 同值。
 	documentKind = "gemini_oauth_stats"
-	// defaultBaseURL 是 code-assist 的默认根；额度与模型目录同域。
-	defaultBaseURL = "https://cloudcode-pa.googleapis.com/v1internal"
 	// quotaMethod 是 code-assist 的配额读取方法（URL 用冒号拼接，不是路径段）。
 	quotaMethod = ":retrieveUserQuota"
 	// projectPlaceholder 是登录态个人账号的固定占位项目（Node 侧逐字相同）。
@@ -86,7 +84,7 @@ func New(client HTTPClient) (*Strategy, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Strategy{client: client, baseURL: defaultBaseURL}, nil
+	return &Strategy{client: client, baseURL: gemini.EffectiveCodeAssistBaseURL()}, nil
 }
 
 // ProviderID 返回 gemini。

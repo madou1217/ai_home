@@ -21,15 +21,16 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/gemini"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
+	geminiclientversion "github.com/madou1217/ai_home/internal/adapters/gemini/clientversion"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 )
 
-const (
-	// geminiCodeAssistBaseURL 是 Gemini CLI 的 Code Assist 数据面。
-	geminiCodeAssistBaseURL = "https://cloudcode-pa.googleapis.com/v1internal"
-	// geminiClientVersion 与 Node DEFAULT_GEMINI_CODE_ASSIST_CLIENT_VERSION 同值。
-	geminiClientVersion = "0.42.0"
-)
+// geminiCodeAssistBaseURL 返回进程级兜底或官方的 Gemini Code Assist 数据面。
+//
+// 每次请求重新读取，避免把兜底地址冻结在包初始化阶段。
+func geminiCodeAssistBaseURL() string {
+	return gemini.EffectiveCodeAssistBaseURL()
+}
 
 var (
 	// ErrGeminiCredential 表示账号凭据不是可用的 Gemini OAuth artifact。
@@ -141,7 +142,7 @@ func (adapter *GeminiAdapter) executeCodeAssist(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		geminiCodeAssistBaseURL+":streamGenerateContent?alt=sse",
+		geminiCodeAssistBaseURL()+":streamGenerateContent?alt=sse",
 		bytes.NewReader(payload),
 	)
 	if err != nil {
@@ -411,7 +412,7 @@ func (adapter *GeminiAdapter) loadProject(ctx context.Context, accessToken strin
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		geminiCodeAssistBaseURL+":loadCodeAssist",
+		geminiCodeAssistBaseURL()+":loadCodeAssist",
 		bytes.NewReader(payload),
 	)
 	if err != nil {
@@ -505,7 +506,7 @@ func geminiUserAgent(model string) string {
 	if arch == "amd64" {
 		arch = "x64"
 	}
-	return "GeminiCLI-cli-command/" + geminiClientVersion + "/" + modelID +
+	return "GeminiCLI-cli-command/" + geminiclientversion.Detect() + "/" + modelID +
 		" (" + platform + "; " + arch + "; terminal)"
 }
 

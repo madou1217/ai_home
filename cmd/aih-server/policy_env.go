@@ -15,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/accounts/gemini"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
@@ -172,6 +173,9 @@ func init() {
 	}
 	if err := agy.ConfigureDefaultBaseURL(defaults.AgyBaseURL); err != nil {
 		panic(fmt.Sprintf("AGY 上游默认地址无效: %v", err))
+	}
+	if err := gemini.ConfigureDefaultBaseURL(defaults.GeminiBaseURL); err != nil {
+		panic(fmt.Sprintf("Gemini 上游默认地址无效: %v", err))
 	}
 	if err := upstreamdefaults.Configure(defaults); err != nil {
 		panic(fmt.Sprintf("上游默认地址无效: %v", err))

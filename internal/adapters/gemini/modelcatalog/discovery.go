@@ -307,7 +307,7 @@ func (source *Source) postGemini(
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		"https://cloudcode-pa.googleapis.com/v1internal:"+method,
+		gemini.EffectiveCodeAssistBaseURL()+":"+method,
 		strings.NewReader(string(body)),
 	)
 	if err != nil {

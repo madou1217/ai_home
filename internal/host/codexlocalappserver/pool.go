@@ -25,7 +25,7 @@ import (
 const (
 	poolStateVersion   = 1
 	poolLockStaleAfter = 30 * time.Second
-	poolReadyTimeout   = 20 * time.Second
+	poolReadyTimeout   = 40 * time.Second
 )
 
 // poolFingerprintEnv 只纳入决定后端等价性的环境变量；终端级关联值必须排除。
@@ -130,6 +130,8 @@ func acquirePooledBackend(ctx context.Context, config Config, env []string) (*Po
 		return nil, err
 	}
 	args := codexappserverws.StripSessionHeaderArgs(config.Args)
+	// MCP 复用开关先落到参数里，指纹随之反映真实启动形态。
+	args = withSharedMCPFeatures(ctx, root, config.Command, args, env)
 	key := poolKey(config.Command, args, config.Cwd, env, config.InjectCwd)
 	reapIdleBackends(root)
 	deadline := time.Now().Add(poolReadyTimeout)
@@ -146,7 +148,7 @@ func acquirePooledBackend(ctx context.Context, config Config, env []string) (*Po
 			if lease, exists := leaseExistingBackend(root, key, config.Cwd); exists {
 				return lease, nil
 			}
-			return startPooledBackend(root, key, config, args, env)
+			return startPooledBackend(ctx, root, key, config, args, env)
 		}
 		if time.Now().After(deadline) {
 			return nil, errors.New("codex_backend_pool_lock_timeout")
@@ -159,7 +161,7 @@ func acquirePooledBackend(ctx context.Context, config Config, env []string) (*Po
 	}
 }
 
-func startPooledBackend(root, key string, config Config, args []string, env []string) (*PoolLease, error) {
+func startPooledBackend(ctx context.Context, root, key string, config Config, args []string, env []string) (*PoolLease, error) {
 	statePath := filepath.Join(root, key+".json")
 	backend, err := codexappserverws.StartSharedBackend(codexappserverws.SharedBackendOptions{
 		Command: config.Command,
@@ -171,6 +173,8 @@ func startPooledBackend(root, key string, config Config, args []string, env []st
 	if err != nil {
 		return nil, err
 	}
+	// 预热后再发布租约：避免并发终端各自拉起一套 MCP。
+	warmSharedBackend(ctx, backend.PID, backend.URL, config.Cwd)
 	if err = writePoolState(statePath, poolState{Version: poolStateVersion, PID: backend.PID, URL: backend.URL, CreatedAt: time.Now().Unix()}); err != nil {
 		return nil, err
 	}

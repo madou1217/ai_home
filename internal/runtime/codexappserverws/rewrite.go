@@ -16,6 +16,11 @@ type RewriteOptions struct {
 	// ServiceTier is an optional effective caller-owned launch preference.
 	// Only missing resume/fork fields inherit it; explicit values/null win.
 	ServiceTier *string
+	// SessionHeaderKey 指向 provider 的会话身份配置项（model_providers.<p>.http_headers.X-Session-Id）。
+	// 仅在共享后端时设置：进程级身份被移除，改由每个终端在线程创建时声明。
+	SessionHeaderKey string
+	// SessionHeaderValue 是本终端自己的会话身份。
+	SessionHeaderValue string
 }
 
 // RewriteClientMessage preserves the scoped app-server compatibility contract:
@@ -87,22 +92,32 @@ func RewriteClientMessage(raw []byte, opts RewriteOptions) []byte {
 
 	case "thread/start", "thread/resume", "thread/fork":
 		cfgRaw, hasCfg := params["config"]
-		if !hasCfg {
+		cfg := map[string]json.RawMessage{}
+		if hasCfg {
+			if parsed := parseRawObjectOrNil(cfgRaw); parsed != nil {
+				cfg = parsed
+			}
+		}
+		changed := false
+		if profileRaw, hasProfile := cfg["profile"]; hasProfile {
+			var profile string
+			if err := json.Unmarshal(profileRaw, &profile); err == nil && strings.TrimSpace(profile) != "" {
+				delete(cfg, "profile")
+				changed = true
+			}
+		}
+		// 共享后端不带进程级会话身份：改由每个终端在线程创建时声明自己的身份。
+		if key := strings.TrimSpace(opts.SessionHeaderKey); key != "" && strings.TrimSpace(opts.SessionHeaderValue) != "" {
+			if _, exists := cfg[key]; !exists {
+				if encoded, err := marshalNoEscapeHTML(strings.TrimSpace(opts.SessionHeaderValue)); err == nil {
+					cfg[key] = encoded
+					changed = true
+				}
+			}
+		}
+		if !changed {
 			return raw
 		}
-		cfg := parseRawObjectOrNil(cfgRaw)
-		if cfg == nil {
-			return raw
-		}
-		profileRaw, hasProfile := cfg["profile"]
-		if !hasProfile {
-			return raw
-		}
-		var profile string
-		if err := json.Unmarshal(profileRaw, &profile); err != nil || strings.TrimSpace(profile) == "" {
-			return raw
-		}
-		delete(cfg, "profile")
 		if len(cfg) > 0 {
 			encodedCfg, err := marshalNoEscapeHTML(cfg)
 			if err != nil {

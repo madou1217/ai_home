@@ -24,6 +24,8 @@ type Config struct {
 	AuthToken       string   `json:"authToken"`
 	InjectCwd       bool     `json:"injectCwd"`
 	WindowsVerbatim bool     `json:"windowsVerbatim"`
+	// Pooled 让同一身份的多个终端复用后端 app-server；缺省启用，显式 false 关闭。
+	Pooled *bool `json:"pooled"`
 }
 
 func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {

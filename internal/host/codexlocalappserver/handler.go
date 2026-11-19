@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,6 +78,32 @@ func (h *handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		http.Error(response, "local_app_server_effective_config_unavailable", http.StatusBadGateway)
 		return
 	}
+	controller := http.NewResponseController(response)
+	_ = controller.SetReadDeadline(time.Time{})
+	_ = controller.SetWriteDeadline(time.Time{})
+	conn, err := websocket.Accept(response, request, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
+	if err != nil {
+		return
+	}
+	rewrite := codexappserverws.RewriteOptions{Cwd: h.config.Cwd, SkipInjectCwd: !h.config.InjectCwd, ServiceTier: tier}
+	// 身份等价的终端复用同一后端：进程数不再随终端数线性增长。
+	// 共享后端不再携带进程级会话身份，改由每个终端在线程创建时声明。
+	if lease, ok := h.acquireSharedBackend(ctx); ok {
+		if session, dialErr := codexappserverws.DialSharedBackend(ctx, lease.URL, 0); dialErr == nil {
+			rewrite.SessionHeaderKey, rewrite.SessionHeaderValue = codexappserverws.SessionHeaderConfigKey(h.config.Args)
+			defer lease.Release()
+			codexappserverapi.BridgeAppServerStdio(ctx, conn, &codexappserverapi.StdioSession{
+				Stdin:  session.Stdin,
+				Stdout: session.Stdout,
+				Close:  session.Close,
+			}, codexappserverapi.StdioBridgeOptions{
+				Rewrite:      rewrite,
+				ThreadFilter: codexappserverws.NewThreadFilter(nil),
+			})
+			return
+		}
+		lease.Release()
+	}
 	process, err := codexappserverws.StartAppServerProcess(codexappserverws.StartProcessOptions{Command: h.config.Command, Args: h.config.Args, Env: h.env, Dir: h.config.Cwd, WindowsVerbatim: h.config.WindowsVerbatim})
 	if err != nil {
 		http.Error(response, "local_app_server_start_failed", http.StatusBadGateway)
@@ -87,13 +114,19 @@ func (h *handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		http.Error(response, "local_app_server_start_failed", http.StatusBadGateway)
 		return
 	}
-	controller := http.NewResponseController(response)
-	_ = controller.SetReadDeadline(time.Time{})
-	_ = controller.SetWriteDeadline(time.Time{})
-	conn, err := websocket.Accept(response, request, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
-	if err != nil {
-		return
-	}
 	stdio := &codexappserverapi.StdioSession{Stdin: process.Stdin(), Stdout: process.Stdout(), Stderr: process.Stderr(), Wait: func() error { <-process.Done(); return process.WaitErr() }, Close: func() error { process.Close(); return nil }}
-	codexappserverapi.BridgeAppServerStdio(ctx, conn, stdio, codexappserverapi.StdioBridgeOptions{Rewrite: codexappserverws.RewriteOptions{Cwd: h.config.Cwd, SkipInjectCwd: !h.config.InjectCwd, ServiceTier: tier}})
+	codexappserverapi.BridgeAppServerStdio(ctx, conn, stdio, codexappserverapi.StdioBridgeOptions{Rewrite: rewrite})
+}
+
+// acquireSharedBackend 按身份指纹借用可复用的后端；关闭时回落到每终端后端。
+func (h *handler) acquireSharedBackend(ctx context.Context) (*PoolLease, bool) {
+	if h.config.Pooled != nil && !*h.config.Pooled {
+		return nil, false
+	}
+	lease, err := acquirePooledBackend(ctx, h.config, h.env)
+	if err != nil || lease == nil {
+		fmt.Fprintf(os.Stderr, "aih pool acquire failed: %v\n", err)
+		return nil, false
+	}
+	return lease, true
 }

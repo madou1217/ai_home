@@ -12,6 +12,8 @@ type StdioBridgeOptions struct {
 	MaxFrameBytes int
 	LogDebug      func(string)
 	LogError      func(error)
+	// ThreadFilter 仅用于共享后端：丢弃不属于本终端的线程事件。
+	ThreadFilter *codexappserverws.ThreadFilter
 }
 
 type websocketFrameTransport struct{ conn *websocket.Conn }
@@ -42,5 +44,6 @@ func BridgeAppServerStdio(parent context.Context, conn *websocket.Conn, stdio *S
 	}, codexappserverws.FrameBridgeOptions{
 		Rewrite: options.Rewrite, MaxFrameBytes: limit,
 		LogDebug: options.LogDebug, LogError: options.LogError,
+		ThreadFilter: options.ThreadFilter,
 	})
 }

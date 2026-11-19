@@ -40,6 +40,9 @@ type FrameBridgeOptions struct {
 	// Native stdout then has its separate two-second drain window.
 	StdioHalfClose  bool
 	StdinEOFTimeout time.Duration
+	// ThreadFilter 仅用于共享后端：丢弃不属于本终端的线程事件，
+	// 保留响应与没有 threadId 的全局事件。
+	ThreadFilter *ThreadFilter
 }
 
 // ValidateStdioBridgePreflight is pure: a future stdio caller must call it
@@ -160,6 +163,9 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 			}
 			if len(line) > 0 {
 				patched := scopes.Patch(tracker.PatchResponse(line))
+				if !options.ThreadFilter.Allow(patched) {
+					continue
+				}
 				writeCtx, stopWrite := context.WithTimeout(ctx, 15*time.Second)
 				writeErr := frames.Write(writeCtx, patched)
 				stopWrite()
@@ -241,6 +247,7 @@ func BridgeStdio(parent context.Context, frames FrameTransport, stdio *StdioBrid
 			break
 		}
 		rewritten := RewriteClientMessage(raw, options.Rewrite)
+		options.ThreadFilter.ObserveClientMessage(rewritten)
 		if _, err = tracker.TryRememberRequest(rewritten); err != nil {
 			logError(err)
 			break

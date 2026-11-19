@@ -12,6 +12,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
+	"github.com/madou1217/ai_home/internal/runtime/usagedaemons"
 )
 
 // init applies the process-wide failure policy overrides exposed by
@@ -107,6 +108,57 @@ func init() {
 	}
 	if err := accountrouting.ConfigureSessionAffinity(time.Duration(affinityTTLMS)*time.Millisecond, int(affinityMax)); err != nil {
 		panic(fmt.Sprintf("会话亲和环境变量无效: %v", err))
+	}
+
+	scanEnabled, scanEnabledSet, err := policyEnvBool("AIH_SERVER_MODEL_USAGE_SCAN")
+	if err != nil {
+		panic(err)
+	}
+	scanStartMS, scanStartSet, err := policyEnvInt64("AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS")
+	if err != nil {
+		panic(err)
+	}
+	scanIntervalMS, scanIntervalSet, err := policyEnvInt64("AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS")
+	if err != nil {
+		panic(err)
+	}
+	if scanEnabledSet || scanStartSet || scanIntervalSet {
+		enabled := true
+		if scanEnabledSet {
+			enabled = scanEnabled
+		}
+		startDelay := usagedaemons.DefaultUsageScanStartDelay
+		if scanStartSet {
+			startDelay = time.Duration(scanStartMS) * time.Millisecond
+		}
+		interval := usagedaemons.DefaultUsageScanInterval
+		if scanIntervalSet {
+			interval = time.Duration(scanIntervalMS) * time.Millisecond
+		}
+		if err := usagedaemons.ConfigureUsageScan(enabled, startDelay, interval); err != nil {
+			panic(fmt.Sprintf("用量扫描环境变量无效: %v", err))
+		}
+	}
+
+	if requestLog, ok, err := policyEnvBool("AIH_SERVER_REQUEST_LOG"); err != nil {
+		panic(err)
+	} else if ok {
+		aihserver.ConfigureRequestLogging(requestLog)
+	}
+}
+
+func policyEnvBool(name string) (bool, bool, error) {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	if raw == "" {
+		return false, false, nil
+	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true, true, nil
+	case "0", "false", "no", "off":
+		return false, true, nil
+	default:
+		return false, false, fmt.Errorf("%s 不是布尔值: %q", name, raw)
 	}
 }
 

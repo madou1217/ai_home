@@ -91,7 +91,7 @@ func newServer(
 ) *Server {
 	return &Server{
 		httpServer: &http.Server{
-			Handler:           handler,
+			Handler:           withAccessLog(handler, options.ErrorLog),
 			ReadHeaderTimeout: readHeaderTimeout,
 			ReadTimeout:       readTimeout,
 			WriteTimeout:      writeTimeout,

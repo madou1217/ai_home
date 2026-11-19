@@ -57,13 +57,11 @@
 ## 清单：`aih server serve` 参数缺口（当前 fail-closed）
 
 已映射到 Go flag/env：
-`host`、`port`、`client-key/api-key`、`management-key`、`proxy-url`、`no-proxy`、`strategy`、`codex-client-version`、`cooldown-ms`、`failure-threshold`、`upstream-timeout-ms`、`max-attempts`、`models-cache-ttl-ms`、`models-probe-accounts`、`codex/gemini/claude/agy/opencode-max-concurrency`、`queue-limit`、`session-affinity-ttl-ms`、`session-affinity-max`、`provider-cli-auto-upgrade*`、`window-activation*`、`strict-port`、`allow-multi`；hooks 与 web-dir 由适配器自动传。
+`host`、`port`、`client-key/api-key`、`management-key`、`proxy-url`、`no-proxy`、`strategy`、`codex-client-version`、`cooldown-ms`、`failure-threshold`、`upstream-timeout-ms`、`max-attempts`、`models-cache-ttl-ms`、`models-probe-accounts`、`codex/gemini/claude/agy/opencode-max-concurrency`、`queue-limit`、`session-affinity-ttl-ms`、`session-affinity-max`、`model-usage-scan*`、`no-request-log`、`provider-cli-auto-upgrade*`、`window-activation*`、`strict-port`、`allow-multi`；hooks 与 web-dir 由适配器自动传。
 
 尚未移植（显式传入会报 `serve_options_not_ported`，不会静默忽略）：
 - 上游默认值：`--codex-base-url`、`--gemini-base-url`、`--claude-base-url`、`--agy-base-url`、`--codex-models`
 - 路由/重试：`--backend`、`--provider`、`--strategy`（strategy 已支持，backend/provider 非默认值未支持）
-- 用量扫描：`--model-usage-scan`、`--no-model-usage-scan`、`--model-usage-scan-start-delay-ms`、`--model-usage-scan-interval-ms`
-- 日志：`--no-request-log`
 
 行为差异：
 - `--host` 非 loopback 现在显式拒绝（Go 只允许 loopback）。

@@ -108,17 +108,23 @@ type UsageScanScheduler struct {
 // NewUsageScanScheduler 创建未启动的模型用量扫描后台调度器。
 func NewUsageScanScheduler(opts UsageScanSchedulerOptions) *UsageScanScheduler {
 	enabled := true
+	startDelay := DefaultUsageScanStartDelay
+	interval := DefaultUsageScanInterval
+	if cfg, ok := currentUsageScanConfig(); ok {
+		enabled = cfg.enabled
+		startDelay = cfg.startDelay
+		interval = cfg.interval
+	}
 	if opts.Enabled != nil {
 		enabled = *opts.Enabled
 	}
-	startDelay := DefaultUsageScanStartDelay
 	if opts.StartDelay != nil && *opts.StartDelay >= 0 {
 		startDelay = *opts.StartDelay
 	}
-	interval := opts.Interval
-	if interval <= 0 {
-		interval = DefaultUsageScanInterval
-	} else if interval < MinUsageScanInterval {
+	if opts.Interval > 0 {
+		interval = opts.Interval
+	}
+	if interval < MinUsageScanInterval {
 		interval = MinUsageScanInterval
 	}
 	nowFn := opts.Now

@@ -29,19 +29,31 @@
 - 账号授权作业：补 logs / lastOutputAt / callbackCaptureStatus/Error；
   Go 无 loopback 监听时明确标 unavailable / manual_only。
 
-## 2026-11-20 仍需迁移
+## 2026-11-20 后续补齐（已关闭）
 
-- process 插件暂只开放控制面能力（account/pricing/model/descriptor 等）；
-  gateway/chat/tool/approval/ui/observe 仍由 Node 后端承载。
-- 账号行 `tokenUsageSource`、阈值/策略型 `schedulableStatus` 的部分口径仍需与 Node 对齐。
-- 会话读取：codex 列表只扫 rollout，不读 `state_*.sqlite`；非 codex 真实增量事件
-  Node 也没有，保持空事件 + cursor。
-- 账号行：`updatedAt` 语义与 Node 不同；runtimeModels/阈值型调度已补，仍需真机对拍。
-- 聊天：legacy `/v0/webui/chat` 切片仍无附件仓库与会话存储（主 UI 已走 canonical
-  chat runtime）。
-- `aih server serve` 的 `--codex-models` 仍未映射到 Go。
-- 远端节点交互端点（device-node-session-start/input/stream 等）在仓库内没有服务端
-  实现，需确认是否由远端 node agent 提供。
+- process 插件能力不再限制：`contributes` 的合同能力全部可由进程插件承载，
+  反向调用（插件在 invoke 中回调网关的 gateway/chat/tool/approval/ui/observe）
+  由 `ProcessHost` 的 call 帧实现；`pluginartifact` 里旧的白名单判定已删除。
+- 账号行：`updatedAt` 改为账号行自身时间，`tokenUsageSource` 输出 `go`；
+  阈值/策略/runtime 型 `schedulableStatus` 在 live 行补齐。
+- 会话读取：`webuisessionslistapi` 合并 Codex `state_*.sqlite` 的 threads
+  （只读 CLI 自己的状态库，不复制成第二份存储）；非 codex 增量事件与历史一致。
+- 聊天：主 UI 走 canonical chat runtime，附件上传/解析（`chat_runtime_attachments`）、
+  会话存储、事件流都在 Go；legacy `/v0/webui/chat` 已退役并返回 409
+  `chat_harness_required` 指向 `/v0/webui/chat/sessions`。无会话直连只在未挂载
+  运行时时存在，它没有附件仓库，仍显式拒绝附件而不是静默丢弃。
+- `aih server serve --codex-models` 已映射：Go 账号发现器追加静态模型名。
+- 远端节点交互端点（device-node-session-start/input/stream、
+  device-node-session-run-events、device-session-stream）：WebUI 客户端有此调用，
+  但本仓库的 Node 与 Go 服务端都从未实现过，它们是发往远端 node agent 的契约，
+  不是迁移丢失；服务端侧的 device-sessions/device-session-messages 已由 Go 承载。
+
+## 2026-11-20 仍需验证 / 迁移
+
+- 真机对拍：用已登录 Edge 走一遍 canonical 会话的附件上传 → turn.submit →
+  timeline 回读，以及账号行 status/updatedAt/tokenUsageSource 的 UI 呈现。
+- 逐端点响应键对拍（accounts、sessions、chat、models、auth jobs）仍需继续，
+  以合同/读模型为唯一事实源，不再引入 Node 分支判定。
 
 ---
 
@@ -52,31 +64,24 @@
 - `aih server serve` Node 常驻入口已切到 Go 适配器（`af264cf9`）。
 - 会话元数据已物化到 aih.db：schema v32 新增 `session_index` / `session_index_state`；列表优先读索引，30 秒 TTL，扫描结果回填。**不读取、不新增 Codex 的 `state*.sqlite`。**
 
-## 清单：Node 已不再回落，当前会直接失败
+## 清单：2026-11-19 快照（以下均已关闭）
 
-1. **会话列表非 codex provider**
-   `internal/transport/http/webuisessionslistapi/handler.go:187`
-   返回 501 `unsupported_provider`，文案仍写"请走 Node 网关"。Node 常驻网关已移除，该提示已失效。
-2. **会话增量事件非 codex provider**
-   `internal/transport/http/webuisessioneventsapi/handler.go:169-171`
-   返回 501 `unsupported_provider`；注释仍写"由 Node 继续本地处理"。
-3. **会话消息非支持 provider**
-   `internal/transport/http/webuisessionmessagesapi/handler.go:77,155`
-   返回 501 `unsupported_provider`。
-4. **已关闭：Codex 会话元数据已落到 aih.db**
-   `session_index` / `session_index_state` 由扫描结果回填；列表优先读 aih.db。仍未读取 Codex `state*.sqlite`（不引入第二库），非 codex provider 的会话读取仍未承接。
-5. **账号新增/本机导入只承接部分模式**
-   `internal/transport/http/webuiaccountaddapi/handler.go:270,457,621`
-   Go 只承接 OAuth 登录与 Kiro refresh_token；其他 auth mode / 本机登录态来源返回 400/503。
-6. **聊天附件仓库未接入**
-   `internal/transport/http/webuichatapi/handler.go:268-270`
-   明确返回 503 `chat_attachment_store_unavailable`，用户上传的附件不会被接收。
-7. **聊天切片无会话存储**
-   `internal/transport/http/webuichatapi/handler.go:256,275`
-   模型必须由调用方显式给出；单连接内联流断线即取消上游，和 Node 的会话/轮次解耦语义不同。
-8. **auth-job 进度字段缺失**
-   `internal/transport/http/accountauthapi/jobs_watch.go:30-35`
-   `callbackCaptureStatus` 恒留空，注释说明由 Node loopback 捕获合并；Node 仅作为按需宿主能力存在时需确认该合并仍在。
+1. **已关闭：会话列表 provider 名单** — 由 Provider 合同 `session_history` 能力派生，
+   17 个载体全部走 Go；不再有 501 "请走 Node 网关"。
+2. **已关闭：会话增量事件** — 非 codex 与历史行为一致（空事件 + 文件 cursor）；
+   codex 事件与 state 库索引都由 Go 读取。
+3. **已关闭：会话消息** — provider 名单同样由合同派生，不再返回 501。
+4. **已关闭：Codex 会话元数据** — 列表合并 `state_*.sqlite` 的 threads（只读，
+   不复制成第二份存储），会话元数据仍落 aih.db。
+5. **已关闭：账号新增/本机导入模式** — OAuth、Kiro refresh_token、
+   agy/grok/qoder/qodercn/kimi/cline/CodeBuddy 家族 CLI 登录、codex 设备码
+   与插件 `account.login` 均由 Go 承接。
+6. **已关闭：聊天附件仓库** — canonical runtime 的 `/sessions/{id}/attachments`
+   与 `chat_runtime_attachments` 就在 Go；旧无会话直连明确拒绝附件只是降级语义。
+7. **已关闭：聊天会话存储** — canonical runtime 持有会话、轮次与事件流；
+   legacy `/v0/webui/chat` 返回 409 并指向 `/v0/webui/chat/sessions`。
+8. **已关闭：auth-job 进度字段** — logs / lastOutputAt /
+   callbackCaptureStatus/Error 已补齐；无 loopback 监听时明确标 unavailable / manual_only。
 
 ## 清单：接口能返回 200，但字段/诊断被留空
 
@@ -85,9 +90,8 @@
 1. **已关闭：账号行的调度规则** — `webuiaccountsapi/source.go:239-242` 把
    `upstreamErrorRules` / `upstreamErrorGroupIds` 从 aih.db 读出并落到行上；
    `row.go` 里的 `[]any{}` 只是无规则时的占位。
-2. **不适用：tokenUsageSource** — 当前 Node 实现里没有这个字段（全仓库 `lib/`
-   无产出点），Go 保持空串与 Node 行同形；若前端将来需要 `go`/`node` 诊断，
-   应由读模型显式定义，而不是照抄历史残留。
+2. **已变更：tokenUsageSource** — 历史 Node 实现没有这个字段；Go 读模型现在显式
+   输出 `go`，前端可据此区分事实来源，不再照抄历史空串。
 3. **已关闭：派生 status** — `row.go:234` `resolveAccountStatus`（含 Vertex 占位
    账号保持 up）。
 4. **刻意最小：启停接口视图** — `webuiaccountstatusapi/handler.go:112-127`
@@ -97,22 +101,22 @@
    在 Go 独有账号上算 `blocked_by_quota`；`webuiaccountliveapi/hub.go:721-738`
    补 `runtimeModels` 与 `blocked_by_runtime_status` / `blocked_by_policy`。
 
-仍未承接的只剩：`tokenUsage` 的实际计量投影在无用量记录的账号上为 null（与 Node
-无快照时一致），以及下面「仍需迁移」里列出的插件宿主 / CLI 登录作业 / 聊天附件。
+仍未承接的只剩：`tokenUsage` 的实际计量投影在无用量记录的账号上为 null（与无快照
+时的历史行为一致，不是字段丢失）。插件宿主 / CLI 登录作业 / 聊天附件均已在 Go。
 
 ## 清单：`aih server serve` 参数缺口（当前 fail-closed）
 
 已映射到 Go flag/env：
 `host`、`port`、`client-key/api-key`、`management-key`、`proxy-url`、`no-proxy`、`strategy`、`codex-client-version`、`cooldown-ms`、`failure-threshold`、`upstream-timeout-ms`、`max-attempts`、`models-cache-ttl-ms`、`models-probe-accounts`、`codex/gemini/claude/agy/opencode-max-concurrency`、`queue-limit`、`session-affinity-ttl-ms`、`session-affinity-max`、`model-usage-scan*`、`no-request-log`、`backend`、`provider`、`provider-cli-auto-upgrade*`、`window-activation*`、`strict-port`、`allow-multi`；hooks 与 web-dir 由适配器自动传。
 
-已映射到 Go flag/env（2026-11-20 补齐）：`--codex-base-url`、`--claude-base-url`、
-`--agy-base-url`、`--gemini-base-url`。四个上游兜底由 `internal/runtime/upstreamdefaults`
-统一解析（env > `config:server` > 官方默认），推理侧、出口裁决（egress）与图片子系统
-读同一份值；CLI 适配器只在用户显式传参时下发给 Go，避免 args.js 的官方默认值压掉
-`config:server`。
+已映射到 Go flag/env（2026-11-20 补齐）：`--codex-models`、`--codex-base-url`、
+`--claude-base-url`、`--agy-base-url`、`--gemini-base-url`。`--codex-models`
+以 `AIH_SERVER_CODEX_MODELS` 下发给 Go 账号模型发现器，与官方目录合并去重；
+四个上游兜底由 `internal/runtime/upstreamdefaults` 统一解析（env > `config:server` >
+官方默认），推理侧、出口裁决（egress）与图片子系统读同一份值；CLI 适配器只在用户
+显式传参时下发给 Go，避免 args.js 的官方默认值压掉 `config:server`。
 
-尚未移植（显式传入会报 `serve_options_not_ported`，不会静默忽略）：
-- `--codex-models`（canonical 合同要求调用方显式给模型，暂不承接）
+当前没有未移植的 serve 选项。
 
 行为差异：
 - `--host` 非 loopback 现在显式拒绝（Go 只允许 loopback）。
@@ -121,13 +125,12 @@
 
 ## 清单：合同/文档残留
 
-- `contracts/routeownership/contract.go:732,743` 仍保留两条 `node_owned` legacy aggregate；不是实际路由，但会让完成度看起来未清零。
+- 路由归属：两条 `node_owned` legacy aggregate 已移除，投影全部为 `go_owned`。
 - `webui.static_shell` 注释已改为缺失时由前置门返回明确错误。
 - `docs/testing/autostart-*.md` 保留 `--front-door --supervise-node` 历史参数，属历史证据，不应作为当前启动模板。
 
 ## 下一轮对拍建议
 
-1. 逐个 `/v0/webui/*` 端点比较 Node 响应键与 Go 响应键（尤其 accounts、sessions、chat、models、auth jobs）。
+1. 逐个 `/v0/webui/*` 端点核对 Go 响应键与前端消费字段（尤其 accounts、sessions、chat、models、auth jobs），缺失即读模型缺口。
 2. 逐字段核对 account/session row builder，优先补 P0/P1 的空字段。
-3. 把 serve 的 P2 选项按 Go 运行时配置逐项接线；每次只移一个 fail-closed 项。
-4. 清理 2 条 `node_owned` 合同标签并重新生成 `lib/generated/route-ownership.json`。
+3. serve 选项新增时同步补 Go flag/env 与文档，不再保留 fail-closed 清单。

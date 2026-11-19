@@ -16,7 +16,7 @@ const (
 	maxTurnAttachments = 8
 	// maxTurnMessages / maxTurnMessagesBytes 限制调用方带来的会话历史。
 	//
-	// 本切片不持有会话，多轮上下文只能由 Node 每次带上；没有上限时一份超大历史会
+	// 无会话直连不持有会话，多轮上下文只能由调用方每次带上；没有上限时一份超大历史会
 	// 绕过 1MB 请求体上限之外的所有约束，直接压给上游。
 	maxTurnMessages      = 200
 	maxTurnMessagesBytes = 512 * 1024

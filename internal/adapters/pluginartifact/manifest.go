@@ -61,11 +61,6 @@ func buildCapabilityVersions() map[string]int {
 	return versions
 }
 
-func processCapabilityUnsupported(string) bool {
-	// process 协议已支持 call/result 反向帧；所有合同能力都可由进程插件承载。
-	return false
-}
-
 var accountCapabilities = map[string]bool{
 	"account.source":      true,
 	"account.login":       true,
@@ -182,9 +177,6 @@ func ValidateManifest(input any, options ManifestOptions) (map[string]any, error
 	for _, item := range contributes {
 		contribution, _ := item.(map[string]any)
 		capability, _ := contribution["capability"].(string)
-		if runtimeKind == "process" && processCapabilityUnsupported(capability) {
-			return nil, pluginerr.New(codeCapabilityIncompatible, "process 插件不支持数据面能力："+capability)
-		}
 		requiredVersion, hasVersion := integerValue(contribution["version"])
 		actualVersion, known := capabilityVersions[capability]
 		if !known || !hasVersion || actualVersion != requiredVersion {

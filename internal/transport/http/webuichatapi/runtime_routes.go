@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	// ArtifactCollectionPath 是 Canonical Chat 产物下载前缀（Node 代理路径转写后的 Go 入口）。
+	// ArtifactCollectionPath 是 Canonical Chat 产物下载前缀（浏览器公开路径转写后的 Go 入口）。
 	ArtifactCollectionPath = "/v1/management/webui/chat/artifacts/"
 	// legacyArtifactCollectionPath 兼容直接从浏览器路径前缀进入的测试请求。
 	legacyArtifactCollectionPath = "/v0/webui/chat/artifacts/"

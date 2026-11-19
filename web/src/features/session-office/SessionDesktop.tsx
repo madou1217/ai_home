@@ -76,7 +76,7 @@ export interface SessionDesktopProps {
   onTerminateSession: (session: OfficeSessionItem) => void;
   onCloseToRoom: () => void;
   onSelectRoomSession: (session: OfficeSessionItem) => void;
-  onJumpToAnySession: (sessionKey: string, projectKey?: string | null) => void;
+  onJumpToAnySession: (sessionKey: string, projectKey?: string | null) => boolean;
   onCopyIdentity: (session: OfficeSessionItem) => void;
   onHideSession: (sessionId: string) => void;
   onRefreshAll: () => void;
@@ -555,13 +555,15 @@ export function SessionDesktop({
   }, [handleMinimizeMail, handleRestoreMail, mailVisible]);
 
   const handleJumpToSessionFromMail = useCallback((sessionKey: string, projectKey?: string | null) => {
+    if (!onJumpToAnySession(sessionKey, projectKey)) {
+      return;
+    }
     setStandbyMailOpen(false);
     setSettingsOpen(false);
     setLayoutMode('terminal-focus');
     setTerminalMinimized(false);
     setMailMinimized(true);
     setMailboxScope('session');
-    onJumpToAnySession(sessionKey, projectKey);
   }, [onJumpToAnySession]);
 
   const handleRequestTerminateCurrent = useCallback(() => {

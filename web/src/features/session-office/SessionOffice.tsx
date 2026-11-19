@@ -508,7 +508,7 @@ export default function SessionOffice({
     terminateWebSession,
   ]);
 
-  const handleJumpToSession = useCallback((sessionKey: string, projectKey?: string | null) => {
+  const handleJumpToSession = useCallback((sessionKey: string, projectKey?: string | null): boolean => {
     const targetSession = allSessions.find((session) => matchesSessionRef(session, sessionKey)) ?? null;
     const targetRoom = (targetSession ? rooms.find((room) => room.projectKey === targetSession.projectKey) : null)
       ?? (projectKey ? rooms.find((room) => room.projectKey === projectKey) : null)
@@ -530,17 +530,18 @@ export default function SessionOffice({
       setDesktopInitialMode('terminal-focus');
       setDesktopMailboxScope('session');
       setDesktopOpen(true);
-      return;
+      return true;
     }
 
     if (targetRoom) {
       setMailboxOverlayOpen(false);
       setDesktopOpen(false);
       message.info(`已切换到项目房间「${resolveRoomDisplayTitle(targetRoom)}」，目标会话当前未在线`);
-      return;
+      return true;
     }
 
     message.info('目标会话当前未在线，可在邮箱中继续查看消息上下文');
+    return false;
   }, [
     activateManagerSession,
     allSessions,

@@ -15,43 +15,62 @@ func runRootImport(ctx context.Context, arguments []string, runtime commandRunti
 	if len(arguments) == 0 || arguments[0] != "import" {
 		return false, nil
 	}
+	return true, executeImport(ctx, "", arguments[1:], runtime)
+}
+
+// runProviderImport \u5904\u7406 `aih <provider> import <file...>`\uff0c\u53ea\u5bfc\u5165\u8be5 Provider \u7684\u6761\u76ee\u3002
+func runProviderImport(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	return executeImport(ctx, providerID, arguments, runtime)
+}
+
+func executeImport(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
 	dryRun := false
-	files := make([]string, 0, len(arguments)-1)
-	for _, token := range arguments[1:] {
+	files := make([]string, 0, len(arguments))
+	for _, token := range arguments {
 		switch token {
 		case "--dry-run":
 			dryRun = true
 		case "--help", "-h", "help":
 			writeImportUsage(runtime.stdout)
-			return true, nil
+			return nil
 		default:
 			if strings.HasPrefix(token, "-") {
-				return true, fmt.Errorf("unknown option: %s", token)
+				return fmt.Errorf("unknown option: %s", token)
 			}
 			files = append(files, token)
 		}
 	}
 	if len(files) == 0 {
-		return true, fmt.Errorf("aih import requires at least one file")
+		return fmt.Errorf("aih import requires at least one file")
 	}
 	home, err := resolveAIHome(runtime)
 	if err != nil {
-		return true, err
+		return err
 	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
 	summary := map[string]int{"total": 0, "created": 0, "updated": 0, "unchanged": 0, "invalid": 0, "failed": 0}
 	failed := false
 	for _, file := range files {
 		raw, readErr := os.ReadFile(file)
 		if readErr != nil {
-			return true, readErr
+			return readErr
 		}
 		var request backupaccounts.Request
 		if json.Unmarshal([]byte(strings.TrimPrefix(string(raw), "\ufeff")), &request) != nil {
-			return true, fmt.Errorf("invalid account document: %s", file)
+			return fmt.Errorf("invalid account document: %s", file)
+		}
+		if provider != "" {
+			filtered := request.Accounts[:0]
+			for _, entry := range request.Accounts {
+				if strings.EqualFold(strings.TrimSpace(entry.Provider), provider) {
+					filtered = append(filtered, entry)
+				}
+			}
+			request.Accounts = filtered
 		}
 		result, importErr := backupaccounts.Import(ctx, home, request, dryRun)
 		if importErr != nil {
-			return true, importErr
+			return importErr
 		}
 		for key, value := range result.Summary {
 			summary[key] += value
@@ -72,9 +91,9 @@ func runRootImport(ctx context.Context, arguments []string, runtime commandRunti
 	_, _ = fmt.Fprintf(runtime.stdout, "  invalid: %d\n", summary["invalid"])
 	_, _ = fmt.Fprintf(runtime.stdout, "  failed: %d\n", summary["failed"])
 	if failed {
-		return true, &cliExitError{code: 1}
+		return &cliExitError{code: 1}
 	}
-	return true, nil
+	return nil
 }
 
 func writeImportUsage(output io.Writer) {

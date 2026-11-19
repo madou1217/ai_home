@@ -110,7 +110,7 @@ func delegateToNode(args []string) bool {
 	if len(args) > 0 && (args[0] == "sessions" || args[0] == "ss" || args[0] == "ls" || args[0] == "list" || args[0] == "export" || args[0] == "import") {
 		return false
 	}
-	if len(args) >= 2 && launchProviders[args[0]] && (args[1] == "ls" || args[1] == "list") {
+	if len(args) >= 2 && launchProviders[args[0]] && (args[1] == "ls" || args[1] == "list" || args[1] == "export" || args[1] == "import") {
 		return false
 	}
 	// Usage reports and their help are native Go commands. Dispatch them before

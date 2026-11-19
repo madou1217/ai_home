@@ -139,6 +139,14 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == accountCommandName {
 		return runAccount(ctx, arguments[1:], runtime)
 	}
+	// Provider 限定的备份命令由 Go 执行：请求只带该 Provider，不从旧的
+	// CLI 规划器绕行。
+	if len(arguments) >= 2 && arguments[1] == "export" {
+		return runProviderExport(ctx, providerID, arguments[2:], runtime)
+	}
+	if len(arguments) >= 2 && arguments[1] == "import" {
+		return runProviderImport(ctx, providerID, arguments[2:], runtime)
+	}
 	// aih ls [id] [--scope ...]：全量账号列表。
 	if providerID == "ls" {
 		return runGlobalAccountList(ctx, arguments[1:], runtime)

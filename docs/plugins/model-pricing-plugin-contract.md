@@ -37,7 +37,7 @@ manifest 示例（字段以 `contracts/plugins/manifest.schema.json` 为准）�
   "pluginId": "pricing.custom",
   "version": "1.0.0",
   "engines": { "aih": ">=1.0.0", "node": ">=20" },
-  "runtime": { "kind": "node" },
+  "runtime": "node",
   "entry": "index.js",
   "contributes": [
     { "id": "custom-catalog", "capability": "pricing.catalog", "version": 1, "order": 100, "failurePolicy": "delegate" },

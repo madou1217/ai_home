@@ -320,11 +320,10 @@ func (management *ModelManagement) RefreshAccountModelSnapshot(
 		management.recordModelProbeFailure(ctx, accountRef, err, credentialSnapshot.UpdatedAt())
 		return AccountModelRefreshSnapshot{AccountRef: accountRef}, err
 	}
-	discovered = management.mergeGatewayModels(
-		ctx,
-		credentialSnapshot.Credential(),
-		discovered,
-	)
+	// Only remote discovery is evidence that this account serves a model.
+	// The gateway-wide catalog includes other accounts/providers and must not
+	// be persisted as this upstream's capabilities (or fallback calls it with
+	// models it never advertised). Manual model policies are preserved below.
 	updatedAt, err := normalizeModelTime(management.clock())
 	if err != nil {
 		management.recordModelProbeFailure(ctx, accountRef, err, credentialSnapshot.UpdatedAt())

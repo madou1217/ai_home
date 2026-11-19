@@ -8,15 +8,15 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	modelsdevadapter "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 
 // ModelModalitiesView 对齐 /v1/models 的 aih_modalities 字段。
-type ModelModalitiesView = modelsdevadapter.ModelModalitiesView
+type ModelModalitiesView = modelmetadata.ModalitiesView
 
 // OpenAIModelItem 对齐 WebUI OpenAI 模型列表里的 data[] 条目。
 type OpenAIModelItem struct {
@@ -295,7 +295,7 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		finalEntries = append(finalEntries, entry)
 	}
 	if scopedAccountRef == "" {
-		aliasEntries := expandEnabledAliasEntries(aliases, enabledCatalogModels, legacyDisabled, now)
+		aliasEntries := expandEnabledAliasEntries(aliases, enabledCatalogModels, legacyDisabled, handler.aliasExpander, now)
 		for _, aliasEntry := range aliasEntries {
 			if _, exists := visibleByID[aliasEntry.id]; exists {
 				continue
@@ -321,14 +321,14 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 			providersList = sortedSetKeys(own.providers)
 			accountRefsList = sortedSetKeys(own.accountRefs)
 		}
-		ownedBy := modelsdevadapter.ResolveModelOwner(entry.provider, entry.id)
+		ownedBy := modelmetadata.ResolveModelOwner(entry.provider, entry.id)
 		item := OpenAIModelItem{
 			ID:                  entry.id,
 			Object:              "model",
 			Created:             createdSec,
 			OwnedBy:             ownedBy,
-			AIHModalities:       modelsdevadapter.ResolveModalities(handler.modalities, entry.provider, entry.id),
-			AIHReasoningEfforts: modelsdevadapter.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id),
+			AIHModalities:       modelmetadata.ResolveModalities(handler.modalities, entry.provider, entry.id),
+			AIHReasoningEfforts: modelmetadata.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id),
 			Providers:           providersList,
 			AccountRefs:         accountRefsList,
 		}
@@ -342,9 +342,9 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 
 	managedData := make([]ManagedModelItem, 0, len(catalogEntries))
 	for _, entry := range catalogEntries {
-		ownedBy := modelsdevadapter.ResolveModelOwner(entry.provider, entry.id)
-		modalities := modelsdevadapter.ResolveModalities(handler.modalities, entry.provider, entry.id)
-		efforts := modelsdevadapter.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id)
+		ownedBy := modelmetadata.ResolveModelOwner(entry.provider, entry.id)
+		modalities := modelmetadata.ResolveModalities(handler.modalities, entry.provider, entry.id)
+		efforts := modelmetadata.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id)
 		var (
 			defaultModel  bool
 			description   string
@@ -559,6 +559,7 @@ func expandEnabledAliasEntries(
 	aliases []modelalias.Record,
 	enabledCatalog []catalogModelEntry,
 	legacyDisabled map[string]bool,
+	expander modelmetadata.AliasExpander,
 	now time.Time,
 ) []catalogModelEntry {
 	if len(aliases) == 0 || len(enabledCatalog) == 0 {
@@ -616,7 +617,10 @@ func expandEnabledAliasEntries(
 			})
 			continue
 		}
-		for _, expandedID := range modelsdevadapter.ListWildcardAliasModels(aliasName, now) {
+		if expander == nil {
+			continue
+		}
+		for _, expandedID := range expander.ListWildcardAliasModels(aliasName, now) {
 			if legacyDisabled[legacySettingKey("", expandedID)] || (provider != "" && legacyDisabled[legacySettingKey(provider, expandedID)]) {
 				continue
 			}
@@ -643,7 +647,7 @@ func buildByProviderMap(
 		grouped[provider] = make(map[string]struct{})
 	}
 	for _, item := range data {
-		provider := modelsdevadapter.ResolveOpenAIProviderFromModel(item.ID, item.OwnedBy)
+		provider := modelmetadata.ResolveOpenAIProviderFromModel(item.ID, item.OwnedBy)
 		if provider != "" {
 			if set := grouped[provider]; set != nil {
 				set[item.ID] = struct{}{}

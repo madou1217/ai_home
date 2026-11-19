@@ -34,6 +34,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -42,7 +43,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
@@ -204,7 +204,8 @@ type Dependencies struct {
 	Snapshot       SnapshotReader
 	RefMapper      AccountRefMapper
 	Catalog        *providers.Catalog
-	Modalities     *modelsdev.Index
+	Modalities     modelmetadata.Catalog
+	AliasExpander  modelmetadata.AliasExpander
 	AccountRows    webuiaccountsapi.Source
 	ModelRefresher accountapp.AccountModelRefresher
 	// History 是终态刷新历史的落盘端口；未接线时按 AIHomeDir 自动构造。
@@ -223,7 +224,8 @@ type Handler struct {
 	snapshot       SnapshotReader
 	refMapper      AccountRefMapper
 	catalog        *providers.Catalog
-	modalities     *modelsdev.Index
+	modalities     modelmetadata.Catalog
+	aliasExpander  modelmetadata.AliasExpander
 	accountRows    webuiaccountsapi.Source
 	modelRefresher accountapp.AccountModelRefresher
 	history        JobHistoryStore
@@ -328,6 +330,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		refMapper:      refMapper,
 		catalog:        catalog,
 		modalities:     dependencies.Modalities,
+		aliasExpander:  dependencies.AliasExpander,
 		accountRows:    dependencies.AccountRows,
 		modelRefresher: dependencies.ModelRefresher,
 		history:        history,

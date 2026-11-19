@@ -6,27 +6,27 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/contracts/modelpricing"
-	modelsdevadapter "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 )
 
-// resolveMetadataMap 优先走统一 Resolver；未接线或未命中时回退 models.dev 适配器。
+// resolveMetadataMap 只经插件契约的 Resolver 取元数据。
 // 返回 map 是为了保持 /v0/webui/openai-models 既有的 metadata 形状不变。
+//
+// 未接线或来源失败时返回 nil，由调用方省略该条目；来源明确返回 unknown 时
+// 仍会输出 metadataStatus=unknown，让 UI 能区分「没有来源」和「模型未知」。
 func (handler *Handler) resolveMetadataMap(ctx context.Context, provider, modelID string, now time.Time) map[string]any {
-	if handler != nil && handler.resolver != nil {
-		metadata, err := handler.resolver.ResolveMetadata(ctx, modelpricing.MetadataRequest{
-			SchemaVersion: modelpricing.WireSchemaVersion,
-			Kind:          "metadata",
-			Now:           &now,
-			ModelRef:      modelpricing.ModelRef{Provider: provider, Model: modelID},
-		})
-		if err == nil && metadata.MetadataStatus == modelpricing.MetadataResolved {
-			return legacyMetadataMap(metadata)
-		}
+	if handler == nil || handler.resolver == nil {
+		return nil
 	}
-	if metadata := modelsdevadapter.ResolveMetadataMap(provider, modelID, now); metadata != nil {
-		return metadata
+	metadata, err := handler.resolver.ResolveMetadata(ctx, modelpricing.MetadataRequest{
+		SchemaVersion: modelpricing.WireSchemaVersion,
+		Kind:          "metadata",
+		Now:           &now,
+		ModelRef:      modelpricing.ModelRef{Provider: provider, Model: modelID},
+	})
+	if err != nil {
+		return nil
 	}
-	return modelsdevadapter.BuildUnknownMetadataMap(modelID, now)
+	return legacyMetadataMap(metadata)
 }
 
 func legacyMetadataMap(metadata modelpricing.Metadata) map[string]any {

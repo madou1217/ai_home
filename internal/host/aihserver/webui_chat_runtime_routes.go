@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"net/http"
 	"os"
 	"strings"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/transport/http/inprocesshttp"
@@ -23,7 +23,7 @@ type WebUIChatRuntimeBuildOptions struct {
 	HostHomeDir          string
 	DBPath               string
 	Catalog              *providers.Catalog
-	ModelModalities      *modelsdev.Index
+	ModelModalities      modelmetadata.Catalog
 	AccountStore         chatruntime.AccountPoolReader
 	NativeLaunchPreparer chatruntime.NativeLaunchPreparer
 	// Both dependencies remain nil until a paired owner transfer is authorized.

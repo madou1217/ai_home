@@ -71,6 +71,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -1222,6 +1223,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 旧定价表只作为未收录模型的兜底；都没有时成本标为「未知」而不是 0 元。
 	var costCalculator *usagepricing.ModelCostCalculator
 	pricingResolver, pricingErr := pricingresolver.Default()
+	// 别名展开属于目录数据源能力，由组合层注入具体插件；transport 只依赖接口。
+	modelAliasExpander, _ := modelsdevpricing.New()
 	if pricingErr == nil {
 		costCalculator, err = usagepricing.NewModelCostCalculatorWithResolver(store, pricingResolver, providerIDs(catalog))
 	} else {
@@ -1899,6 +1902,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		AIHomeDir:          aiHomeDir,
 		Catalog:            catalog,
 		ModelModalities:    modelModalities,
+		ModelAliasExpander: modelAliasExpander,
 		MetadataResolver:   pricingResolver,
 		EgressManager:      egressManager,
 		HostHomeDir:        dependencies.HostHomeDir,

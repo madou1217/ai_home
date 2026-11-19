@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"log"
 	"net/http"
 	"time"
@@ -22,7 +23,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/hostdetect"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
@@ -122,7 +122,8 @@ type webuiRouteDependencies struct {
 	Authorizer             interface{ Authorized(*http.Request) bool }
 	AIHomeDir              string
 	Catalog                *providers.Catalog
-	ModelModalities        *modelsdev.Index
+	ModelModalities        modelmetadata.Catalog
+	ModelAliasExpander     modelmetadata.AliasExpander
 	MetadataResolver       modelpricing.Resolver
 	EgressManager          *runtimeegress.Manager
 	HostHomeDir            string

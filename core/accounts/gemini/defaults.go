@@ -14,7 +14,7 @@ const (
 	DefaultAPIKeyBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 )
 
-var errInvalidBaseURL = errors.New("Gemini 上游默认地址无效")
+var errInvalidBaseURL = errors.New("必须是绝对 http/https URL，且不含查询串、片段或用户信息")
 
 var (
 	defaultBaseURLMu sync.RWMutex

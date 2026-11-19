@@ -12,7 +12,7 @@ import (
 // 账号级地址由调用方传入；这里只是进程级兜底，缺省值必须与官方 CLI 一致。
 const DefaultBaseURL = "https://daily-cloudcode-pa.googleapis.com/v1internal"
 
-var errInvalidBaseURL = errors.New("AGY 上游默认地址无效")
+var errInvalidBaseURL = errors.New("必须是绝对 http/https URL，且不含查询串、片段或用户信息")
 
 var (
 	defaultBaseURLMu sync.RWMutex

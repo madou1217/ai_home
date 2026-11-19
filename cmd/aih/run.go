@@ -84,6 +84,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "plugin" {
 		return runPlugin(ctx, arguments[1:], runtime)
 	}
+	if providerID == "desktop" {
+		return runDesktop(ctx, arguments[1:], runtime)
+	}
 	if providerID == "peer" {
 		return runPeer(ctx, arguments[1:], runtime)
 	}

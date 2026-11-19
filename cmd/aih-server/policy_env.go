@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
@@ -70,6 +71,42 @@ func init() {
 	}
 	if err := managementops.ConfigureModelDefaults(modelTTL, probeAccounts); err != nil {
 		panic(fmt.Sprintf("模型缓存/探测环境变量无效: %v", err))
+	}
+
+	providerLimits := map[string]int{}
+	for envName, provider := range map[string]string{
+		"AIH_SERVER_CODEX_MAX_CONCURRENCY":    "codex",
+		"AIH_SERVER_GEMINI_MAX_CONCURRENCY":   "gemini",
+		"AIH_SERVER_CLAUDE_MAX_CONCURRENCY":   "claude",
+		"AIH_SERVER_AGY_MAX_CONCURRENCY":      "agy",
+		"AIH_SERVER_OPENCODE_MAX_CONCURRENCY": "opencode",
+	} {
+		value, ok, err := policyEnvInt64(envName)
+		if err != nil {
+			panic(err)
+		}
+		if ok && value > 0 {
+			providerLimits[provider] = int(value)
+		}
+	}
+	queueLimit, _, err := policyEnvInt64("AIH_SERVER_QUEUE_LIMIT")
+	if err != nil {
+		panic(err)
+	}
+	if err := inferencegateway.ConfigureProviderLimits(providerLimits, int(queueLimit)); err != nil {
+		panic(fmt.Sprintf("Provider 并发/队列环境变量无效: %v", err))
+	}
+
+	affinityTTLMS, _, err := policyEnvInt64("AIH_SERVER_SESSION_AFFINITY_TTL_MS")
+	if err != nil {
+		panic(err)
+	}
+	affinityMax, _, err := policyEnvInt64("AIH_SERVER_SESSION_AFFINITY_MAX")
+	if err != nil {
+		panic(err)
+	}
+	if err := accountrouting.ConfigureSessionAffinity(time.Duration(affinityTTLMS)*time.Millisecond, int(affinityMax)); err != nil {
+		panic(fmt.Sprintf("会话亲和环境变量无效: %v", err))
 	}
 }
 

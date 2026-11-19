@@ -129,6 +129,7 @@ type Coordinator struct {
 	upstreamAttemptLimit int
 	poolRetries          *RequestPoolRetryPolicy
 	requestRewriter      RequestRewriter
+	gate                 *providerGate
 	routeCursor          atomic.Uint64
 	routeSourceCursor    atomic.Uint64
 }
@@ -228,6 +229,7 @@ func NewCoordinator(
 		upstreamAttemptLimit: attemptLimit,
 		poolRetries:          dependencies.PoolRetries,
 		requestRewriter:      dependencies.RequestRewriter,
+		gate:                 newProviderGate(),
 	}, nil
 }
 
@@ -265,6 +267,7 @@ func (coordinator *Coordinator) executePlan(
 	poolRetryPermit := coordinator.newRequestPoolRetryPermit(ctx)
 	defer poolRetryPermit.close()
 	var pendingFailure *attemptStream
+	var queueFailure error
 	accountFailures := newRequestAccountFailureRecorder(
 		coordinator.attempts,
 	)
@@ -286,14 +289,25 @@ func (coordinator *Coordinator) executePlan(
 			}
 			supported = true
 			routeCtx := poolRetryPermit.routeContext(phaseCtx, coordinator.poolRetries, route)
-			execution, err := coordinator.executeCandidate(
-				routeCtx,
-				request,
-				route,
-				emit,
-				accountFailures,
-				poolRetryPermit,
-			)
+			release, acquireErr := coordinator.gate.acquire(routeCtx, string(route.ProviderID()))
+			if acquireErr != nil {
+				if errors.Is(acquireErr, ErrProviderQueueFull) {
+					queueFailure = acquireErr
+					continue
+				}
+				return finishInterruptedPlan(pendingFailure, acquireErr)
+			}
+			execution, err := func() (routeExecution, error) {
+				defer release()
+				return coordinator.executeCandidate(
+					routeCtx,
+					request,
+					route,
+					emit,
+					accountFailures,
+					poolRetryPermit,
+				)
+			}()
 			if execution.pendingFailure != nil {
 				pendingFailure = execution.pendingFailure
 			}
@@ -316,6 +330,9 @@ func (coordinator *Coordinator) executePlan(
 	}
 	if !supported {
 		return ErrUnsupportedRouteCapabilities
+	}
+	if queueFailure != nil {
+		return queueFailure
 	}
 	if err := accountFailures.FinalizeFailure(ctx); err != nil {
 		return fmt.Errorf("提交请求级上游失败状态失败: %w", err)

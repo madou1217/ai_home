@@ -2,7 +2,9 @@ package accountrouting
 
 import (
 	"container/list"
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -14,6 +16,40 @@ const (
 	// DefaultSessionAffinityMaxEntries 与 Node 一致：每个 Provider 最多保留 10,000 条绑定。
 	DefaultSessionAffinityMaxEntries = 10_000
 )
+
+var (
+	configuredAffinityTTLMS atomic.Int64
+	configuredAffinityMax   atomic.Int64
+)
+
+// ConfigureSessionAffinity 设置进程级会话亲和 TTL 与容量上限。
+//
+// 0 表示领域默认；TTL 必须在 [30s, 24h]，容量必须在 [100, 100000]。
+func ConfigureSessionAffinity(ttl time.Duration, maxEntries int) error {
+	if ttl != 0 && (ttl < 30*time.Second || ttl > 24*time.Hour) {
+		return errors.New("会话亲和 TTL 必须在 30s 到 24h 之间")
+	}
+	if maxEntries != 0 && (maxEntries < 100 || maxEntries > 100_000) {
+		return errors.New("会话亲和容量必须在 100 到 100000 之间")
+	}
+	configuredAffinityTTLMS.Store(ttl.Milliseconds())
+	configuredAffinityMax.Store(int64(maxEntries))
+	return nil
+}
+
+func configuredSessionAffinityTTL() time.Duration {
+	if ms := configuredAffinityTTLMS.Load(); ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return DefaultSessionAffinityTTL
+}
+
+func configuredSessionAffinityMax() int {
+	if value := int(configuredAffinityMax.Load()); value > 0 {
+		return value
+	}
+	return DefaultSessionAffinityMaxEntries
+}
 
 // SessionAffinity 按 (Provider, 会话键) 记住上一次选中的账号。
 //
@@ -42,8 +78,8 @@ type affinityEntry struct {
 // NewSessionAffinity 创建使用默认 TTL 与容量上限的会话亲和存储。
 func NewSessionAffinity() *SessionAffinity {
 	return &SessionAffinity{
-		ttl:        DefaultSessionAffinityTTL,
-		maxEntries: DefaultSessionAffinityMaxEntries,
+		ttl:        configuredSessionAffinityTTL(),
+		maxEntries: configuredSessionAffinityMax(),
 		providers:  make(map[string]*affinityBucket),
 	}
 }

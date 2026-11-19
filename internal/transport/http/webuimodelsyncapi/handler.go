@@ -237,13 +237,18 @@ type Handler struct {
 	nextJobSeq atomic.Uint64
 	watchers   map[chan ModelCatalogJob]struct{}
 
-	catalogMu    sync.Mutex
-	catalogCache map[string]catalogCacheEntry
+	catalogMu         sync.Mutex
+	catalogCache      map[string]catalogCacheEntry
+	catalogRefreshing map[string]struct{}
 }
 
 // catalogResponseTTL 与响应 Cache-Control 的 max-age 对齐：短 TTL 内复用
 // 已编码的目录字节，让 ETag 复核和连续页面加载不再付完整构建成本。
 const catalogResponseTTL = 3 * time.Second
+
+// catalogStaleTTL 与 Cache-Control 的 stale-while-revalidate 对齐：
+// 陈旧窗口内立即返回旧字节，同时后台重建，避免冷页面加载等待目录构建。
+const catalogStaleTTL = 30 * time.Second
 
 type catalogCacheEntry struct {
 	at   time.Time
@@ -425,13 +430,22 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 		scopedRef = resolved.String()
 	}
 
-	key := fmt.Sprintf("%s\x00%d", scopedRef, handler.now().Unix()/int64(catalogResponseTTL/time.Second))
+	key := scopedRef
 	handler.catalogMu.Lock()
 	entry, cached := handler.catalogCache[key]
 	handler.catalogMu.Unlock()
-	if cached && time.Since(entry.at) < catalogResponseTTL {
-		handler.writeCatalogBody(response, request, entry.body, entry.etag)
-		return
+	if cached {
+		age := time.Since(entry.at)
+		if age < catalogResponseTTL {
+			handler.writeCatalogBody(response, request, entry.body, entry.etag)
+			return
+		}
+		if age < catalogStaleTTL {
+			// 陈旧但可用：立即返回，后台刷新；下次请求即可拿到新目录。
+			handler.refreshCatalog(key, scopedRef)
+			handler.writeCatalogBody(response, request, entry.body, entry.etag)
+			return
+		}
 	}
 
 	catalog, err := handler.buildCatalog(ctx, scopedRef)
@@ -459,6 +473,46 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 	handler.catalogCache[key] = catalogCacheEntry{at: time.Now(), body: body, etag: etag}
 	handler.catalogMu.Unlock()
 	handler.writeCatalogBody(response, request, body, etag)
+}
+
+// refreshCatalog 在后台重建目录；同一 key 只允许一个刷新在途，避免并发放大。
+func (handler *Handler) refreshCatalog(key, scopedRef string) {
+	handler.catalogMu.Lock()
+	if _, busy := handler.catalogRefreshing[key]; busy {
+		handler.catalogMu.Unlock()
+		return
+	}
+	if handler.catalogRefreshing == nil {
+		handler.catalogRefreshing = make(map[string]struct{})
+	}
+	handler.catalogRefreshing[key] = struct{}{}
+	handler.catalogMu.Unlock()
+
+	go func() {
+		defer func() {
+			handler.catalogMu.Lock()
+			delete(handler.catalogRefreshing, key)
+			handler.catalogMu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		catalog, err := handler.buildCatalog(ctx, scopedRef)
+		if err != nil {
+			return
+		}
+		body, err := json.Marshal(catalog)
+		if err != nil {
+			return
+		}
+		sum := sha1.Sum(body)
+		etag := `"` + hex.EncodeToString(sum[:])[:20] + `"`
+		handler.catalogMu.Lock()
+		if handler.catalogCache == nil {
+			handler.catalogCache = make(map[string]catalogCacheEntry)
+		}
+		handler.catalogCache[key] = catalogCacheEntry{at: time.Now(), body: body, etag: etag}
+		handler.catalogMu.Unlock()
+	}()
 }
 
 func (handler *Handler) writeCatalogBody(response http.ResponseWriter, request *http.Request, body []byte, etag string) {

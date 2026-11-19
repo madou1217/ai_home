@@ -46,6 +46,12 @@ type commandConfig struct {
 	upstreamErrorRuleProviders []string
 	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui。
 	webDir string
+	// nodeBaseURL 是 Node 宿主的回环管理地址（监督器注入）。
+	// 为空时没有可回退的宿主。
+	nodeBaseURL string
+	// frontDoor 表示本进程拥有公开端口：未注册的路径转交给 nodeBaseURL。
+	// 关闭时（缺省）Go 仍只跑私有端口，未注册路径保持 404。
+	frontDoor bool
 	// nodeExecPath 与 entryFilePath 通过 AIH_SERVER_NODE_EXEC / AIH_SERVER_ENTRY_FILE 注入，
 	// 供原生重启接口拉起独立后台重启进程；允许缺省，但显式设置损坏值时在启动期拦截。
 	nodeExecPath  string
@@ -114,6 +120,10 @@ func loadCommandConfig(
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")
 	var webDir string
 	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
+	var nodeBaseURL string
+	flags.StringVar(&nodeBaseURL, "node-base-url", "", "Node 宿主回环地址；由 Go Core 监督器注入，不面向用户")
+	var frontDoor bool
+	flags.BoolVar(&frontDoor, "front-door", false, "本进程拥有公开端口：未注册的路由转交给 --node-base-url")
 	hooksCfg := codexHooksConfig{
 		cliSelfHealIntervalMs:     defaultCodexHookSelfHealIntervalMs,
 		desktopSelfHealIntervalMs: defaultCodexHookSelfHealIntervalMs,
@@ -145,6 +155,20 @@ func loadCommandConfig(
 	}
 	if port < 0 || port > 65535 {
 		return commandConfig{}, errInvalidCommandConfig
+	}
+	nodeBaseURL = strings.TrimSpace(nodeBaseURL)
+	if nodeBaseURL != "" && !isLoopbackBaseURL(nodeBaseURL) {
+		return commandConfig{}, errInvalidCommandConfig
+	}
+	// 回退目标是可选的：Node 宿主缺席时 Go 仍能独立持有公开端口，
+	// 未注册路径按 404 失败关闭（不把「没有 Node」当成启动错误）。
+	// 提供目标时只拒绝自环：指向自身会让未注册路径无限转发，
+	// 表现为 CPU 打满而不是一个可定位的错误。
+	if frontDoor && nodeBaseURL != "" {
+		nodePort, portErr := loopbackURLPort(nodeBaseURL)
+		if portErr != nil || nodePort == port {
+			return commandConfig{}, errInvalidCommandConfig
+		}
 	}
 	// 环境变量是运维的临时覆盖；持久化配置才是权威来源。
 	managementKey := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", ""))
@@ -199,6 +223,8 @@ func loadCommandConfig(
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
+		nodeBaseURL:                nodeBaseURL,
+		frontDoor:                  frontDoor,
 		nodeExecPath:               nodeExecPath,
 		entryFilePath:              entryFilePath,
 		codexHooks:                 hooksCfg,

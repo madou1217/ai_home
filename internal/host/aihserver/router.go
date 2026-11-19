@@ -287,7 +287,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 的来源，且同协议下这些信息本来是 1:1 的。
 	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
 	// 未命中任何注册路由时统一 404：Go 是唯一入口，不存在回交给其他宿主的路径。
-	fallback := http.HandlerFunc(handleRouteNotFound)
+	//
+	// 例外是公开端口模式（前置门非空）：此时 Go 拥有监听端口，但 WebUI 数据面与新
+	// 插件运行时回调仍由 Node 承接，未注册路径必须原样转交而不是落到 404。前置门为
+	// nil（私有端口模式）时保持原有 404 合同，行为零漂移。
+	var fallback http.Handler = http.HandlerFunc(handleRouteNotFound)
+	if handlers.frontDoor != nil {
+		fallback = handlers.frontDoor
+	}
 	if handlers.codexAppServer != nil {
 		mux.Handle(codexappserverapi.AppServerProxyPath, handlers.codexAppServer)
 		mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {

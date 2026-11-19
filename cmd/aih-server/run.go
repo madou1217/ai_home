@@ -73,7 +73,9 @@ func run(
 	desktopOwner, _ := runtime.lookupEnv("AIH_DESKTOP_TRANSLATION_OWNER")
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
+		NodeBaseURL:                config.nodeBaseURL,
 		SelfBaseURL:                config.selfBaseURL(),
+		FrontDoorBaseURL:           config.frontDoorBaseURL(),
 		DesktopManagedByHost:       desktopOwner == "node",
 		ManagementKey:              func() string { return managementKey },
 		ClientKey:                  func() string { return clientKey },

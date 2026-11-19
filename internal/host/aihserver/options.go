@@ -83,6 +83,10 @@ type Options struct {
 	// SelfBaseURL 是本进程的回环地址（http://host:port），供不需要经过宿主的内部回调使用。
 	// 例如 Claude 审批桥：provider 进程直接回调 Go，Node 不在链路上。
 	SelfBaseURL string
+	// FrontDoorBaseURL 是 Go 拥有公开端口时 Node 宿主的私有回环地址。
+	// 非空表示本进程就是公开入口：Go 自己应答推理与管理路由，未注册的路径
+	// （WebUI 数据面 /v0/webui/*、插件运行时回调）整体转交给 Node。
+	FrontDoorBaseURL string
 	// DesktopManagedByHost keeps a legacy Node-parent topology single-owned.
 	DesktopManagedByHost bool
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——

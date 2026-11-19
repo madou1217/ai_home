@@ -11,7 +11,6 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipluginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // buildWebUIPluginRoutes 按统一 webuiRouteDependencies 签名装配插件诊断、调试调用、
@@ -48,9 +47,6 @@ func buildWebUIPluginRoutesWithHostService(
 		{Pattern: "POST " + webuipluginapi.AccountsImportPath, Handler: handler},
 		{Pattern: "POST " + webuipluginapi.AccountsRefreshPath, Handler: handler},
 		{Pattern: "POST " + webuipluginapi.AccountsMaterializePath, Handler: handler},
-		// 旧 Node 公开插件入口：浏览器仍会请求 /v0/plugins/doctor，
-		// 与 /v1/management/webui/plugins/doctor 是同一处理器，只做路径重写。
-		{Pattern: "GET /v0/plugins/doctor", Handler: webuipublicalias.RewritePath(webuipluginapi.DoctorPath, handler), SkipPublicAlias: true},
 	}, nil
 }
 

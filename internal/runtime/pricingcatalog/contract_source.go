@@ -2,18 +2,15 @@ package pricingcatalog
 
 import (
 	"context"
+	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/contracts/modelpricing"
 )
-
-// contractQuoteTTL 是插件来源到契约报价的缓存窗口。
-//
-// 计费批次会对每个模型行调用一次 ResolveQuote，而插件报价来自磁盘上的
-// sources/*.json；不缓存会把一次统计放大成 N 次文件读取。
-const contractQuoteTTL = 15 * time.Second
 
 // ContractQuoteSource 把已生效（已复核通过）的插件价格来源暴露成契约端口。
 //
@@ -27,10 +24,10 @@ type contractSource struct {
 	store *Store
 	now   func() time.Time
 
-	mu     sync.Mutex
-	built  time.Time
-	quotes map[string]modelpricing.Quote
-	all    []modelpricing.Quote
+	mu          sync.Mutex
+	fingerprint string
+	quotes      map[string]modelpricing.Quote
+	all         []modelpricing.Quote
 }
 
 func (source *contractSource) Capability() string { return modelpricing.CapabilityPricingCatalog }
@@ -71,16 +68,18 @@ func (source *contractSource) snapshot() map[string]modelpricing.Quote {
 	}
 	source.mu.Lock()
 	defer source.mu.Unlock()
-	now := source.now()
-	if source.quotes != nil && now.Sub(source.built) < contractQuoteTTL {
+	// 失效只按目录元数据判断：生产上的社区来源有数千条、JSON 数 MB，
+	// 按时间周期重解析会把计费批次拖慢；文件名 + 大小 + mtime 足以发现变更。
+	fingerprint := source.fingerprintLocked()
+	if source.quotes != nil && fingerprint == source.fingerprint {
 		return source.quotes
 	}
+	now := source.now()
 	documents, err := source.store.ListSources()
 	if err != nil {
 		if source.quotes == nil {
 			source.quotes = map[string]modelpricing.Quote{}
 		}
-		source.built = now
 		return source.quotes
 	}
 	quotes := make(map[string]modelpricing.Quote)
@@ -101,8 +100,37 @@ func (source *contractSource) snapshot() map[string]modelpricing.Quote {
 	}
 	source.quotes = quotes
 	source.all = all
-	source.built = now
+	source.fingerprint = fingerprint
 	return quotes
+}
+
+// fingerprintLocked 汇总 sources/ 下已生效快照的 (名称, 大小, mtime)。
+//
+// 目录不存在时返回稳定空值：没有来源不是「每次都要重读」。
+func (source *contractSource) fingerprintLocked() string {
+	directory := source.store.sourcesDir
+	if strings.TrimSpace(directory) == "" {
+		return ""
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return ""
+	}
+	parts := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") ||
+			strings.HasSuffix(entry.Name(), ".pending.json") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		parts = append(parts, entry.Name()+":"+strconv.FormatInt(info.Size(), 10)+
+			":"+strconv.FormatInt(info.ModTime().UnixNano(), 10))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "|")
 }
 
 // contractQuote 把来源文档里的一条报价转换成契约报价。

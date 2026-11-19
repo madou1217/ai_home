@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -19,6 +20,45 @@ import (
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 )
+
+// extraModelsDiscoverer 在官方目录后追加 --codex-models 的静态模型名。
+type extraModelsDiscoverer struct {
+	base   accountapp.ProviderModelDiscoverer
+	extras []string
+}
+
+func (discoverer extraModelsDiscoverer) ProviderID() string { return discoverer.base.ProviderID() }
+
+func (discoverer extraModelsDiscoverer) DiscoverModels(ctx context.Context, credential accountapp.Credential) ([]string, error) {
+	models, err := discoverer.base.DiscoverModels(ctx, credential)
+	if err != nil {
+		return models, err
+	}
+	seen := make(map[string]bool, len(models)+len(discoverer.extras))
+	out := make([]string, 0, len(models)+len(discoverer.extras))
+	for _, model := range append(models, discoverer.extras...) {
+		model = strings.TrimSpace(model)
+		if model == "" || seen[model] {
+			continue
+		}
+		seen[model] = true
+		out = append(out, model)
+	}
+	return out, nil
+}
+
+func staticCodexModels(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	models := make([]string, 0)
+	for _, item := range strings.Split(raw, ",") {
+		if model := strings.TrimSpace(item); model != "" {
+			models = append(models, model)
+		}
+	}
+	return models
+}
 
 // modelCatalogHTTPTimeout 限制账号管理阶段一次模型目录请求的等待时间。
 const modelCatalogHTTPTimeout = 60 * time.Second
@@ -132,9 +172,13 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return fail("创建 Codex 模型目录适配器失败", err)
 	}
+	var codexDiscoverer accountapp.ProviderModelDiscoverer = codexModels
+	if extra := staticCodexModels(strings.TrimSpace(os.Getenv("AIH_SERVER_CODEX_MODELS"))); len(extra) > 0 {
+		codexDiscoverer = extraModelsDiscoverer{base: codexDiscoverer, extras: extra}
+	}
 	discovery, err := accountapp.NewModelDiscovery(
 		catalog,
-		[]accountapp.ProviderModelDiscoverer{claudeModels, codexModels},
+		[]accountapp.ProviderModelDiscoverer{claudeModels, codexDiscoverer},
 	)
 	if err != nil {
 		return fail("创建账号模型发现注册表失败", err)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -601,7 +602,18 @@ func (decoder *responseDecoder) completeContentBlock(
 ) error {
 	block, err := decoder.openBlock(index)
 	if err != nil {
-		return err
+		// Some Anthropic-compatible upstreams (notably DeepSeek) close the
+		// current block with index == len(blocks) instead of the block's own
+		// index. Treat that one-past stop as closing the only open block;
+		// duplicate stops for an already completed block are idempotent.
+		if index != nil && int(*index) < len(decoder.blocks) && decoder.blocks[*index].completed {
+			return nil
+		}
+		if index != nil && int(*index) == len(decoder.blocks) && decoder.hasOpenBlock() {
+			block = decoder.blocks[len(decoder.blocks)-1]
+		} else {
+			return err
+		}
 	}
 	switch block.wireType {
 	case "text":
@@ -661,6 +673,13 @@ func (decoder *responseDecoder) completeWebSearch(block *decodedBlock) error {
 
 // completeText 提交完整文本和内容块终态。
 func (decoder *responseDecoder) completeText(block *decodedBlock) error {
+	// DeepSeek emits an empty text block after a thinking-only response. The
+	// canonical text event requires non-blank content, so close the block
+	// without inventing text.
+	if strings.TrimSpace(block.text) == "" {
+		block.completed = true
+		return nil
+	}
 	event, err := inference.NewTextCompletedEvent(
 		decoder.nextSequence,
 		block.outputIndex,
@@ -680,6 +699,13 @@ func (decoder *responseDecoder) completeText(block *decodedBlock) error {
 func (decoder *responseDecoder) completeThinking(
 	block *decodedBlock,
 ) error {
+	// Some compatible providers omit the continuity signature or return an
+	// empty thinking block. Do not fail the whole response for that; close the
+	// output item without emitting an unusable reasoning item.
+	if strings.TrimSpace(block.text) == "" || strings.TrimSpace(block.signature) == "" {
+		block.completed = true
+		return nil
+	}
 	content, err := inference.NewThinkingContent(
 		block.text,
 		block.signature,

@@ -389,7 +389,10 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		return commitMigration(ctx, connection)
 	}
 	if applicationID != 0 || schemaVersion != 0 {
-		return ErrIncompatibleDatabase
+		// 把版本号带出来：库被更新的二进制升过级时，旧 aih-go 只会报一句
+		// "结构不兼容"，看不出是"CLI 太旧"还是"文件损坏"。
+		return fmt.Errorf("%w: 数据库 schema=%d，当前程序最高支持=%d；请重建并安装 aih-go 与 aih-server",
+			ErrIncompatibleDatabase, schemaVersion, SchemaVersion)
 	}
 	if objectCount != 0 {
 		rows, err := connection.QueryContext(ctx, "SELECT type,tbl_name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")

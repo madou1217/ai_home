@@ -109,6 +109,11 @@ func delegateToNode(args []string) bool {
 	if isNativeLaunch(args) {
 		return false
 	}
+	// 内部子命令（__codex-cli-startup / __codex-local-app-server / __usage-facts …）
+	// 是宿主与 Go 之间的私有协议，必须由 Go 自己处理，转给 Node 只会拿到帮助文本。
+	if len(args) > 0 && strings.HasPrefix(args[0], "__") {
+		return false
+	}
 	// 已经由 Go 转交过一次的进程不再回落，避免 Go→Node→Go 循环。
 	if os.Getenv(delegationMarker) == "1" {
 		return false

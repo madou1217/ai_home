@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 type staticAuthorizer struct{ allow bool }
@@ -173,12 +174,17 @@ func TestWorkspaceModelsFullContractAndColdProbe(t *testing.T) {
 		},
 	}
 
+	snapshotReader, err := webuimodelssnapshot.NewReaderAt(dbPath)
+	if err != nil {
+		t.Fatalf("NewReaderAt: %v", err)
+	}
 	handler, err := NewHandler(Dependencies{
 		Authorizer:     staticAuthorizer{allow: true},
 		AiHomeDir:      aiHome,
 		Store:          store,
 		ModelRefresher: refresher,
 		MetadataIndex:  modalIndex,
+		Snapshot:       snapshotReader,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

@@ -8,8 +8,8 @@ import (
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuifstrustapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectswriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiworkspacefsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiworkspacegitapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiworkspacemodelsapi"
@@ -103,6 +103,7 @@ func buildWebUIProjectsFSRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 			Store:          dependencies.Store,
 			ModelRefresher: dependencies.ModelRefresher,
 			MetadataIndex:  dependencies.ModelModalities,
+			Snapshot:       dependencies.ModelSnapshot,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建工作区模型目录接口失败: %w", err)

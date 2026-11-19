@@ -23,7 +23,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
@@ -54,6 +53,7 @@ type Dependencies struct {
 	Store          Store
 	ModelRefresher accountapp.AccountModelRefresher
 	MetadataIndex  modelmetadata.Catalog
+	Snapshot       modelsnapshot.Reader
 }
 
 // Handler 处理 GET /v1/management/webui/workspace/models。
@@ -63,6 +63,7 @@ type Handler struct {
 	store         Store
 	refresher     accountapp.AccountModelRefresher
 	metadataIndex modelmetadata.Catalog
+	snapshot      modelsnapshot.Reader
 }
 
 // NewHandler 创建工作区模型目录 Handler。
@@ -76,6 +77,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		store:         dependencies.Store,
 		refresher:     dependencies.ModelRefresher,
 		metadataIndex: dependencies.MetadataIndex,
+		snapshot:      dependencies.Snapshot,
 	}, nil
 }
 
@@ -107,7 +109,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	resolver := loadRefResolver(ctx, handler.aiHomeDir)
 	dbPath := resolveAppStateDBPath(handler.aiHomeDir)
 	settings := loadSettings(ctx, dbPath)
-	snapshot := loadSnapshot(ctx, dbPath)
+	snapshot := handler.loadSnapshot(ctx)
 
 	catalog, err := handler.store.ListAllAccountModels(ctx)
 	if err != nil {
@@ -202,17 +204,14 @@ func loadSettings(ctx context.Context, dbPath string) modelcatalogsettings.Setti
 	return settings
 }
 
-func loadSnapshot(ctx context.Context, dbPath string) *modelsnapshot.Snapshot {
-	if dbPath == "" {
-		return &webuimodelssnapshot.Snapshot{}
+// loadSnapshot 读取注入的快照端口；未接线或读取失败时返回空快照。
+func (handler *Handler) loadSnapshot(ctx context.Context) *modelsnapshot.Snapshot {
+	if handler == nil || handler.snapshot == nil {
+		return &modelsnapshot.Snapshot{}
 	}
-	reader, err := webuimodelssnapshot.NewReaderAt(dbPath)
-	if err != nil {
-		return &webuimodelssnapshot.Snapshot{}
-	}
-	snapshot, err := reader.Read(ctx)
+	snapshot, err := handler.snapshot.Read(ctx)
 	if err != nil || snapshot == nil {
-		return &webuimodelssnapshot.Snapshot{}
+		return &modelsnapshot.Snapshot{}
 	}
 	return snapshot
 }

@@ -45,7 +45,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	custompricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/custom"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 
@@ -113,11 +112,6 @@ type SettingsStore interface {
 	) (modelcatalogsettings.Settings, error)
 }
 
-// SnapshotReader 读取可选的 WebUI 快照显示名（labels）。
-type SnapshotReader interface {
-	ReadSnapshot(ctx context.Context) (*webuimodelssnapshot.Snapshot, error)
-}
-
 // AccountRefMapper 读取可选的 Node/Go 账号引用映射表。
 type AccountRefMapper interface {
 	LoadTable(ctx context.Context) (accountrefmap.Table, error)
@@ -172,23 +166,6 @@ func (store DatabaseSettingsStore) Update(
 		return modelcatalogsettings.Settings{}, err
 	}
 	return saved, nil
-}
-
-// SnapshotFile 基于 app-state.db 路径实现 SnapshotReader。
-type SnapshotFile struct {
-	DatabasePath string
-}
-
-// Read 读取并归一快照显示名。
-func (file SnapshotFile) Read(ctx context.Context) (*modelsnapshot.Snapshot, error) {
-	if strings.TrimSpace(file.DatabasePath) == "" {
-		return &webuimodelssnapshot.Snapshot{}, nil
-	}
-	reader, err := webuimodelssnapshot.NewReaderAt(file.DatabasePath)
-	if err != nil {
-		return nil, err
-	}
-	return reader.Read(ctx)
 }
 
 // AccountRefMapDir 基于 AIHomeDir 加载 go-account-sync 映射表。
@@ -300,9 +277,6 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		if dbPath, err := appstate.DatabasePath(dependencies.AIHomeDir); err == nil {
 			if settings == nil {
 				settings = DatabaseSettingsStore{DatabasePath: dbPath}
-			}
-			if snapshot == nil {
-				snapshot = SnapshotFile{DatabasePath: dbPath}
 			}
 			if history == nil {
 				history = modelcatalogjobhistory.NewStore(dbPath)

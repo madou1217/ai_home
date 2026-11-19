@@ -15,6 +15,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -267,7 +268,7 @@ func mustModel(t *testing.T, refText, modelID string, upstream bool, policy acco
 func setupTempAppState(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "app-state.db")
+	dbPath := filepath.Join(dir, appstate.DatabaseFileName)
 	// 写入测试快照标签与 node->go 账号映射。
 	err := appstate.UpdateKV(context.Background(), dbPath, accountrefmap.SyncStateKey, func(string, bool) (string, error) {
 		return `{"links":{"` + testNodeRef + `":{"goRef":"` + testRefCodex + `","print":"p1"}},"validatorVersion":3}`, nil
@@ -298,10 +299,19 @@ func newTestHandler(t *testing.T, store Store, refresher accountapp.AccountModel
 	if err != nil {
 		t.Fatalf("pricingresolver.Default: %v", err)
 	}
+	var snapshot modelsnapshot.Reader
+	if dbPath, pathErr := appstate.DatabasePath(aiHomeDir); pathErr == nil {
+		reader, readerErr := webuimodelssnapshot.NewReaderAt(dbPath)
+		if readerErr != nil {
+			t.Fatalf("NewReaderAt: %v", readerErr)
+		}
+		snapshot = reader
+	}
 	h, err := NewHandler(Dependencies{
 		Authorizer:     stubAuthorizer{allowed: true},
 		Store:          store,
 		Resolver:       resolver,
+		Snapshot:       snapshot,
 		AIHomeDir:      aiHomeDir,
 		Modalities:     modalities,
 		AliasExpander:  expander,

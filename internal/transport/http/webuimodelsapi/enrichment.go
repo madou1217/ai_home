@@ -10,10 +10,9 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
-// 本文件是本包的「可选事实源」层：把 modelcatalogsettings / webuimodelssnapshot /
+// 本文件是本包的「可选事实源」层：把 modelcatalogsettings / 快照端口 /
 // accountrefmap 合成一个按账号查询的只读视图，并由它决定 filled_fields / unfilled_fields。
 //
 // 原则：外部事实源缺失时整块不填，绝不返回空对象冒充已知；哪些键被真正填上由实际
@@ -40,20 +39,6 @@ type SettingsFile struct {
 // ReadSettings 读取并归一 model-catalog-settings。
 func (file SettingsFile) ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error) {
 	return modelcatalogsettings.Load(ctx, file.DatabasePath)
-}
-
-// SnapshotFile 以 app-state.db 路径实现 modelsnapshot.Reader。
-type SnapshotFile struct {
-	DatabasePath string
-}
-
-// Read 读取并归一模型快照。
-func (file SnapshotFile) Read(ctx context.Context) (*modelsnapshot.Snapshot, error) {
-	reader, err := webuimodelssnapshot.NewReaderAt(file.DatabasePath)
-	if err != nil {
-		return nil, err
-	}
-	return reader.Read(ctx)
 }
 
 // identityRefs 是没有同步链接表时的翻译器：两侧引用本来就是同一个值。

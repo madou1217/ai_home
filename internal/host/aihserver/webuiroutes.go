@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"log"
 	"net/http"
 	"time"
@@ -124,6 +125,7 @@ type webuiRouteDependencies struct {
 	Catalog                *providers.Catalog
 	ModelModalities        modelmetadata.Catalog
 	ModelAliasExpander     modelmetadata.AliasExpander
+	ModelSnapshot          modelsnapshot.Reader
 	MetadataResolver       modelpricing.Resolver
 	EgressManager          *runtimeegress.Manager
 	HostHomeDir            string
@@ -391,7 +393,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	modelsRead, err := webuimodelsapi.NewHandler(webuimodelsapi.Dependencies{
 		Authorizer: authorizer, Reader: dependencies.Store,
 		Settings: webuimodelsapi.SettingsFile{DatabasePath: databasePath},
-		Snapshot: webuimodelsapi.SnapshotFile{DatabasePath: databasePath},
+		Snapshot: dependencies.ModelSnapshot,
 		Refs:     refResolver,
 		Metadata: dependencies.MetadataResolver,
 	})
@@ -401,7 +403,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	openaiModelsRead, err := webuiopenaimodelsapi.NewHandler(webuiopenaimodelsapi.Dependencies{
 		Authorizer: authorizer, Reader: dependencies.Store,
 		Settings:    webuiopenaimodelsapi.SettingsFile{DatabasePath: databasePath},
-		Snapshot:    webuiopenaimodelsapi.SnapshotFile{DatabasePath: databasePath},
+		Snapshot:    dependencies.ModelSnapshot,
 		AccountRefs: refResolver,
 		Metadata:    dependencies.MetadataResolver,
 	})

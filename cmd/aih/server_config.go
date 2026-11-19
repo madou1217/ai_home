@@ -70,7 +70,20 @@ func resolveAIHome(runtime commandRuntime) (string, error) {
 }
 
 func showServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
-	includeSecrets, jsonOutput, oneLine, filter := parseDisplayFlags(args)
+	flags := parseDisplayFlags(args)
+	includeSecrets, jsonOutput, oneLine, filter := flags.showSecrets, flags.json, flags.oneLine, flags.filter
+	if flags.qr {
+		if !includeSecrets {
+			return errors.New("--qr 需要同时传 --show-secrets")
+		}
+		if jsonOutput || oneLine {
+			return errors.New("--qr 仅用于终端显示，不能与 --json/--one-line 一起使用")
+		}
+		return printServerConfigQR(ctx, home, flags.qrURL, runtime)
+	}
+	if flags.qrURL != "" {
+		return errors.New("--qr-url 需要同时传 --qr")
+	}
 	config, err := webuiserverconfigapi.ReadFullConfig(ctx, home)
 	if err != nil {
 		return err
@@ -108,7 +121,17 @@ func showServerConfig(ctx context.Context, home string, args []string, runtime c
 }
 
 func getServerConfig(ctx context.Context, home string, key string, args []string, runtime commandRuntime) error {
-	includeSecrets, jsonOutput, _, _ := parseDisplayFlags(args)
+	flags := parseDisplayFlags(args)
+	includeSecrets, jsonOutput := flags.showSecrets, flags.json
+	if flags.qr {
+		if !includeSecrets {
+			return errors.New("--qr 需要同时传 --show-secrets")
+		}
+		return printServerConfigQR(ctx, home, flags.qrURL, runtime)
+	}
+	if flags.qrURL != "" {
+		return errors.New("--qr-url 需要同时传 --qr")
+	}
 	config, err := webuiserverconfigapi.ReadFullConfig(ctx, home)
 	if err != nil {
 		return err
@@ -146,6 +169,9 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 		flag := args[index]
 		if flag == "--json" || flag == "--one-line" || flag == "--verbose" || flag == "--show-secrets" {
 			continue
+		}
+		if flag == "--qr" || flag == "--qr-url" || strings.HasPrefix(flag, "--qr-url=") {
+			return errors.New("--qr 只能用于 show/get，不能和设置项一起使用")
 		}
 		if flag == "--clear-management-key" {
 			clearManagementKey = true
@@ -225,22 +251,40 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 	return nil
 }
 
-func parseDisplayFlags(args []string) (includeSecrets bool, jsonOutput bool, oneLine bool, filter string) {
-	for _, arg := range args {
-		switch arg {
-		case "--show-secrets":
-			includeSecrets = true
-		case "--json":
-			jsonOutput = true
-		case "--one-line":
-			oneLine = true
-		default:
-			if !strings.HasPrefix(arg, "-") {
-				filter = arg
+type configDisplayFlags struct {
+	showSecrets bool
+	json        bool
+	oneLine     bool
+	filter      string
+	qr          bool
+	qrURL       string
+}
+
+func parseDisplayFlags(args []string) configDisplayFlags {
+	flags := configDisplayFlags{}
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--show-secrets":
+			flags.showSecrets = true
+		case arg == "--json":
+			flags.json = true
+		case arg == "--one-line":
+			flags.oneLine = true
+		case arg == "--qr":
+			flags.qr = true
+		case strings.HasPrefix(arg, "--qr-url="):
+			flags.qrURL = strings.TrimPrefix(arg, "--qr-url=")
+		case arg == "--qr-url":
+			if index+1 < len(args) {
+				index++
+				flags.qrURL = strings.TrimSpace(args[index])
 			}
+		case !strings.HasPrefix(arg, "-"):
+			flags.filter = arg
 		}
 	}
-	return
+	return flags
 }
 
 func configFlagKey(flag string) (string, bool) {

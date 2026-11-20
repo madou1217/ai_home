@@ -19,7 +19,7 @@ const serverUsageText = `
   aih server ls [--json]
   aih server use <id|name|url>
   aih server remove <id|name|url>
-  aih server config [show|get|set|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only]
+  aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>] [--proxy-url <a,b,c>|--clear-proxy-url] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only]
   aih server autostart <install|uninstall|status>
   aih daemon <start|restart|stop|status|autostart>
   aih server serve
@@ -42,6 +42,7 @@ const serverUsageText = `
   aih server config
   aih server config list [--json] [--one-line] [<filter>]
   aih server config set --open-network --client-key <key> --management-key <key>
+  aih server config unset proxy-url
   aih server serve [--host <ip>] [--port <n>] [--backend codex-adapter] [--provider codex|gemini|claude|agy|opencode|auto] [--codex-base-url <url>] [--codex-client-version <version>] [--gemini-base-url <url>] [--claude-base-url <url>] [--agy-base-url <url>] [--codex-models <csv>] [--proxy-url <url>] [--no-proxy <hosts>] [--strategy round-robin|random] [--codex-max-concurrency <n>] [--gemini-max-concurrency <n>] [--claude-max-concurrency <n>] [--agy-max-concurrency <n>] [--opencode-max-concurrency <n>] [--queue-limit <n>] [--session-affinity-ttl-ms <ms>] [--session-affinity-max <n>] [--client-key <key>] [--management-key <key>] [--cooldown-ms <ms>] [--max-attempts <n>] [--upstream-timeout-ms <ms>]
   aih server env [--base-url <url>] [--api-key <key>]
   aih server sync-codex [--management-url <url>] [--key <management-key>] [--parallel <1-32>] [--limit <n>] [--dry-run]

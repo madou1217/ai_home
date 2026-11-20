@@ -43,9 +43,9 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 	if action != "start" && action != "stop" && action != "restart" && action != "status" {
 		return false, nil
 	}
-	// 重启/停止默认平滑：先切 drain，等存量推理流清零，再换进程。
-	// 只有显式 --force 才立即结束进程（会截断正在生成的会话）。
-	graceful := true
+	// 重启/停止默认强制：立即换进程，不等在跑的会话（脚本/自动化要的就是这个）。
+	// 只有显式 --graceful 才切 drain、等存量推理流清零（类似 nginx 的平滑重启）。
+	graceful := false
 	for _, argument := range arguments[2:] {
 		switch {
 		case argument == "--graceful" && (action == "restart" || action == "stop"):

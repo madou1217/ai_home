@@ -513,9 +513,10 @@ func Restart(ctx context.Context, options Options, force bool) (Status, error) {
 
 func restartLaunchd(ctx context.Context, options Options, force bool) (Status, error) {
 	target := launchdDomain() + "/" + options.Label
-	if current, err := os.ReadFile(plistPath(options)); err == nil &&
-		bytes.Equal(current, buildPlist(options)) &&
-		ServiceJobLoaded(ctx, options.Label) {
+	// 重启不比对 plist：plist 里带有调用方 PATH 等环境差异，逐次比较会把每次
+	// restart 都降级成 bootout+bootstrap（慢且多一个未注册窗口）。真正的重新
+	// 安装由 install/start 负责；restart 只在同一作业内换进程。
+	if ServiceJobLoaded(ctx, options.Label) {
 		if status, ok := kickstartLaunchd(ctx, target, options, force); ok {
 			status.Strategy = "in_place"
 			return status, nil

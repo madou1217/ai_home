@@ -12,7 +12,7 @@ const serverUsageText = `
   aih serve
   aih server
   aih server start
-  aih server restart [--force|--graceful]   # 默认平滑：等在跑的推理流收尾；--force 立即换进程
+  aih server restart [--graceful|--force]   # 默认强制：立即换进程；--graceful 等在跑的推理流收尾
   aih server stop [--force|--graceful]
   aih server status
   aih server add [name] --url <server-url> --management-key <key>

@@ -606,19 +606,18 @@ func builtinKiro() Definition {
 			BinaryName: "kiro-cli",
 			Package:    "",
 			EnvKeys:    []string{"KIRO_HOME", "KIRO_TEST_DB_PATH", "KIRO_API_KEY"},
-			// Kiro CLI.app 内含 kiro_cli_desktop 原生 GUI，是现有桌面启动/实例
-			// 隔离通道；Kiro.app（IDE）作为第二种落点保留。安装作业完成后的
-			// 校验优先使用安装计划回报的实际落点，因此装了 IDE 时不会被
-			// 先命中的 CLI 宿主掩盖。
+			// Kiro 桌面端现为 Kiro.app（bundle id dev.kiro.desktop，2026-11-21
+			// 实装确认）。旧版随 CLI 分发的 Kiro CLI.app 只是历史落点：官方
+			// kiro-cli 安装包现在只含二进制，仍保留为旧安装的回落。
 			DesktopClient: describeDesktopClient(desktopClient(
 				"Kiro",
-				[]string{"kiro_cli_desktop", "Kiro"},
-				[]string{"/Kiro CLI.app/Contents/MacOS/", "/Kiro.app/Contents/MacOS/"},
-				[]string{"/Applications/Kiro CLI.app", "{hostHomeDir}/Applications/Kiro CLI.app", "/Applications/Kiro.app", "{hostHomeDir}/Applications/Kiro.app"},
+				[]string{"Kiro", "kiro_cli_desktop"},
+				[]string{"/Kiro.app/Contents/MacOS/", "/Kiro CLI.app/Contents/MacOS/"},
+				[]string{"/Applications/Kiro.app", "{hostHomeDir}/Applications/Kiro.app", "/Applications/Kiro CLI.app", "{hostHomeDir}/Applications/Kiro CLI.app"},
 				[]string{"Kiro.exe"},
 				[]string{"Kiro.exe"},
 				[]string{"kiro", "Kiro"},
-			), "", []string{"Kiro"}),
+			), "dev.kiro.desktop", []string{"Kiro"}),
 		},
 		NativeBoundary: nativeKiro(),
 	}
@@ -662,7 +661,7 @@ func builtinZcode() Definition {
 			EnvKeys:    []string{"ZCODE_API_KEY", "ZCODE_BASE_URL", "ZCODE_DATA_BASE_DIR"},
 			// 非交互入口：`-p/--prompt`（ZCode 0.17.0 实测）。
 			Headless: &HeadlessConfig{TriggerFlags: []string{"-p", "--prompt"}},
-			DesktopClient: desktopClient(
+			DesktopClient: describeDesktopClient(desktopClient(
 				"ZCode",
 				[]string{"ZCode"},
 				[]string{"/ZCode.app/Contents/MacOS/"},
@@ -670,7 +669,7 @@ func builtinZcode() Definition {
 				[]string{"ZCode.exe"},
 				[]string{"ZCode.exe"},
 				[]string{"zcode"},
-			),
+			), "dev.zcode.app", nil),
 		},
 	}
 }

@@ -24,12 +24,18 @@ type desktopAppEntry struct {
 
 var desktopApps = []desktopAppEntry{
 	{Key: "zcode", Providers: []string{"zcode"}, BundleNames: []string{"ZCode.app", "ZCode Desktop.app"}, BundleIDs: []string{"dev.zcode.app"}, ShadowDirName: "zcode-shadow"},
-	{Key: "codebuddy", Providers: []string{"codebuddy", "codebuddycn"}, BundleNames: []string{"CodeBuddy.app"}, BundleIDs: []string{"com.tencent.codebuddy"}},
+	// 国际站与国内站是两个独立 App（2026-11-21 取证：官方 cask 分别为
+	// codebuddy / codebuddy-cn，bundle id 也不同）。
+	{Key: "codebuddy", Providers: []string{"codebuddy"}, BundleNames: []string{"CodeBuddy.app"}, BundleIDs: []string{"com.tencent.codebuddy"}},
+	{Key: "codebuddy-cn", Providers: []string{"codebuddycn"}, BundleNames: []string{"CodeBuddy CN.app"}, BundleIDs: []string{"com.tencent.codebuddycn"}},
 	{Key: "workbuddy", Providers: []string{"workbuddy"}, BundleNames: []string{"WorkBuddy AI.app"}, BundleIDs: []string{"com.workbuddy.workbuddy-ai"}},
 	{Key: "workbuddy-cn", Providers: []string{"workbuddycn"}, BundleNames: []string{"WorkBuddy.app"}, BundleIDs: []string{"com.tencent.workbuddy.mac"}},
 	{Key: "claude", Providers: []string{"claude"}, BundleNames: []string{"Claude.app"}, BundleIDs: []string{"com.anthropic.claudefordesktop"}},
 	{Key: "codex", Providers: []string{"codex"}, BundleNames: []string{"ChatGPT.app"}, BundleIDs: []string{"com.openai.codex"}},
-	{Key: "kiro", Providers: []string{"kiro"}, BundleNames: []string{"Kiro CLI.app"}, BundleIDs: []string{"com.amazon.codewhisperer"}},
+	// Kiro 桌面端现为 Kiro.app / dev.kiro.desktop；Kiro CLI.app 是旧版随 CLI
+	// 分发的 GUI 外壳（官方 CLI 安装包只含 kiro-cli 二进制，2026-11-21 实装确认），
+	// 仍保留为旧安装的回落落点。
+	{Key: "kiro", Providers: []string{"kiro"}, BundleNames: []string{"Kiro.app", "Kiro CLI.app"}, BundleIDs: []string{"dev.kiro.desktop", "com.amazon.codewhisperer"}},
 }
 
 type desktopStatusApp struct {

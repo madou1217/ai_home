@@ -1897,18 +1897,19 @@
           "macos": {
             "clientName": "Kiro",
             "execNames": [
-              "kiro_cli_desktop",
-              "Kiro"
+              "Kiro",
+              "kiro_cli_desktop"
             ],
             "pathIncludes": [
-              "/Kiro CLI.app/Contents/MacOS/",
-              "/Kiro.app/Contents/MacOS/"
+              "/Kiro.app/Contents/MacOS/",
+              "/Kiro CLI.app/Contents/MacOS/"
             ],
+            "bundleId": "dev.kiro.desktop",
             "installPaths": [
-              "/Applications/Kiro CLI.app",
-              "{hostHomeDir}/Applications/Kiro CLI.app",
               "/Applications/Kiro.app",
-              "{hostHomeDir}/Applications/Kiro.app"
+              "{hostHomeDir}/Applications/Kiro.app",
+              "/Applications/Kiro CLI.app",
+              "{hostHomeDir}/Applications/Kiro CLI.app"
             ]
           },
           "windows": {
@@ -2074,6 +2075,7 @@
             "pathIncludes": [
               "/ZCode.app/Contents/MacOS/"
             ],
+            "bundleId": "dev.zcode.app",
             "installPaths": [
               "/Applications/ZCode.app",
               "{hostHomeDir}/Applications/ZCode.app"

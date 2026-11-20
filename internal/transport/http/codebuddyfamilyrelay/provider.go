@@ -130,9 +130,6 @@ func (provider Provider) DecorateUpstream(request *http.Request, accessToken str
 	for name, value := range IdentityHeaders(provider.providerID, provider.userID) {
 		request.Header.Set(name, value)
 	}
-	for name, value := range StainlessHeaders() {
-		request.Header.Set(name, value)
-	}
 	for name, value := range TraceHeaders() {
 		request.Header.Set(name, value)
 	}

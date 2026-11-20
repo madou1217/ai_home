@@ -34,7 +34,7 @@ func TestApplyIdentityHeadersFillsClientProfile(t *testing.T) {
 		"X-Zcode-Session-Type": "main",
 		"X-Os-Version":         "23.5.0",
 		"Anthropic-Beta":       AnthropicBeta,
-		"User-Agent":           "ZCode/3.16.3 " + CLIUserAgentSuffix,
+		"User-Agent":           "ZCode/3.16.3",
 	}
 	for name, want := range expected {
 		if got := headers.Get(name); got != want {
@@ -80,8 +80,9 @@ func TestApplyIdentityHeadersKeepsClientValuesAndOverridesHostProfile(t *testing
 	if got := headers.Get("X-Release-Channel"); got != CLIReleaseChannel {
 		t.Errorf("X-Release-Channel 必须强制成 CLI 形态: %q", got)
 	}
-	if !strings.HasPrefix(headers.Get("User-Agent"), "ZCode/3.16.3 ") {
-		t.Errorf("UA 必须强制成 ZCode 形态: %q", headers.Get("User-Agent"))
+	// 没有学到真实 UA 时只发产品段：不自报写死的 SDK/运行时后缀。
+	if got := headers.Get("User-Agent"); got != "ZCode/3.16.3" {
+		t.Errorf("UA 必须强制成 ZCode 形态且不补写死后缀: %q", got)
 	}
 	if got := headers.Get("x-extra"); got != "kept" {
 		t.Errorf("宿主元数据的其它头应保留: %q", got)

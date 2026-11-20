@@ -44,17 +44,12 @@ const (
 	CodebuddyRequestHead = "x-codebuddy-request"
 )
 
-// stainlessHeaders 是官方底层 OpenAI SDK 注入的一整套运行时标识（官方 CLI 跑在 Node 上）。
-// 实测不参与渠道校验（删掉仍 200），复刻只为消掉可区分的差异。
-var stainlessHeaders = map[string]string{
-	"X-Stainless-Arch":            "arm64",
-	"X-Stainless-Lang":            "js",
-	"X-Stainless-Os":              "MacOS",
-	"X-Stainless-Package-Version": "6.25.0",
-	"X-Stainless-Retry-Count":     "0",
-	"X-Stainless-Runtime":         "node",
-	"X-Stainless-Runtime-Version": "v26.3.0",
-}
+// 官方客户端底层是 OpenAI SDK（Node 运行时），因此会带一整套 `x-stainless-*`。
+// 本端**不发**这组头（2026-11-20 用户明确要求）：
+//   - 它们的取值是**官方打包的 SDK/Node 版本**（曾写死 6.25.0 / v26.3.0），本端
+//     无法真实观测，写死即过时，属于给官方请求伪造一个会过期的身份；
+//   - 这组头不参与渠道校验（2026-10-21 在真上游逐项删除确认，删掉仍 200）。
+// 宁可少一组可选头，也不自报别人的运行时版本。
 
 // domainByProvider 是官方 `X-Domain` 的取值：**站点根域名**（不是 origin，不带协议与端口）。
 // 与 inferenceBaseURLs 同源，只差一个「取 hostname」。
@@ -119,15 +114,6 @@ func randomHex(n int) string {
 		return filler
 	}
 	return hex.EncodeToString(buf)
-}
-
-// StainlessHeaders 返回官方底层 SDK 的运行时标识（复刻官方画像用）。
-func StainlessHeaders() map[string]string {
-	out := make(map[string]string, len(stainlessHeaders))
-	for name, value := range stainlessHeaders {
-		out[name] = value
-	}
-	return out
 }
 
 // IdentityHeaders 返回官方身份头（不含会话 ID 家族与鉴权）。

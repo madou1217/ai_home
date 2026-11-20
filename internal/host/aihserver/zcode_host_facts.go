@@ -26,12 +26,15 @@ func loadZcodeHostFacts(aiHomeDir string) zcoderelay.HostFacts {
 	}
 	var profile struct {
 		AppVersion string           `json:"appVersion"`
+		UserAgent  string           `json:"userAgent"`
 		Blocks     []map[string]any `json:"blocks"`
 	}
 	if err := json.Unmarshal(data, &profile); err != nil {
 		return facts
 	}
 	facts.AppVersion = profile.AppVersion
+	// 真实 UA 随画像一起学（Node 抓包写入）；旧画像没有该字段时留空，relay 只发产品段。
+	facts.UserAgent = profile.UserAgent
 	facts.HarnessBlocks = profile.Blocks
 	return facts
 }

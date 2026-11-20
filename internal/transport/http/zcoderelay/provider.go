@@ -16,8 +16,10 @@ const ProviderID = "zcode"
 // 这些值来自本机 zcode 客户端安装目录，由接线层读取后注入；传输层不认识文件布局。
 type HostFacts struct {
 	// AIHomeDir 用于派生账号级稳定 device mid（读不到桌面端遗留文件时的兜底）。
-	AIHomeDir     string
-	AppVersion    string
+	AIHomeDir  string
+	AppVersion string
+	// UserAgent 是抓包学到的真实官方 UA（含 ai-sdk 等后缀）；为空时不补后缀。
+	UserAgent     string
 	DeviceMid     string
 	OSVersion     string
 	AccountUUID   string
@@ -128,6 +130,7 @@ func (provider *Provider) DecorateUpstream(request *http.Request, accessToken st
 	provider.BaseProvider.DecorateUpstream(request, accessToken)
 	ApplyIdentityHeaders(request.Header, HeaderInput{
 		AppVersion: provider.host.AppVersion,
+		UserAgent:  provider.host.UserAgent,
 		DeviceMid:  provider.host.DeviceMid,
 		OSVersion:  provider.host.OSVersion,
 		SessionKey: provider.sessionID(),

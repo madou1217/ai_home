@@ -31,7 +31,6 @@ const ROOT = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(ROOT, 'docs', 'providers', 'codebuddy-family-client-baseline.json');
 
 const {
-  CODEBUDDY_FAMILY_CLI_VERSION,
   resolveCodebuddyFamilyCliVersion,
   resolveCodebuddyFamilyUserId,
   buildCodebuddyFamilyUpstreamHeaders
@@ -63,10 +62,13 @@ function discoverInstalledVersions(home = os.homedir()) {
  * 用真实的头构造函数取，不在这里重抄一份字面量——抄一份就会漂移。
  */
 function collectHeaderPicture() {
+  // 用探测到的真实版本；探测不到时传空串，构造器会省略 UA / X-IDE-Version
+  // （不再有写死的兜底版本）。
+  const probedVersion = resolveCodebuddyFamilyCliVersion();
   const headers = buildCodebuddyFamilyUpstreamHeaders('workbuddy', null, {
     sessionKey: 'drift-probe',
     uid: 'drift-probe-uid',
-    version: CODEBUDDY_FAMILY_CLI_VERSION
+    version: probedVersion
   });
   const names = Object.keys(headers).sort();
   return {
@@ -149,9 +151,8 @@ function main(argv = process.argv.slice(2)) {
     client: {
       installedVersions: installed.map((row) => row.version),
       resolvedVersion,
-      // 探测不到时用的是常量兜底——这一点必须可见，否则会误以为「版本很新」。
-      usedFallbackVersion: resolvedVersion === CODEBUDDY_FAMILY_CLI_VERSION
-        && !installed.some((row) => row.version === CODEBUDDY_FAMILY_CLI_VERSION)
+      // 探测不到时不再回退写死常量：UA / X-IDE-Version 会直接缺席，这一点必须可见。
+      usedFallbackVersion: false,
     },
     headers: collectHeaderPicture()
   };

@@ -24,9 +24,12 @@ import (
 )
 
 // 官方客户端在 plan 端点上的固定画像（2026-10-28 抓包逐字）。
+//
+// 只保留**协议形状**常量：它们不是版本号，也不会随官方升级而变。
+// UA 的版本段与 ai-sdk 后缀都不在这里——版本段来自学习到的画像，后缀只可能来自
+// 真实客户端抓包（CLIUserAgentSuffix 曾写死 "ai-sdk/provider-utils/4.0.27
+// runtime/node.js/22"，那是官方打包的 SDK 版本，写死即过时，已删除）。
 const (
-	// CLIUserAgentSuffix 是官方客户端 UA 的 ai-sdk 后缀。
-	CLIUserAgentSuffix = "ai-sdk/provider-utils/4.0.27 runtime/node.js/22"
 	// CLITitle 是 plan 端点请求的 X-Title。
 	CLITitle = "Z Code@electron"
 	// CLIReleaseChannel 是官方客户端的发布通道（production，不是 stable）。
@@ -35,12 +38,18 @@ const (
 	AnthropicBeta = "mid-conversation-system-2026-04-07"
 	// IdentityAgent 是 X-ZCode-Agent 的固定值。
 	IdentityAgent = "glm"
+	// userAgentProduct 是官方 UA 的产品前缀。
+	userAgentProduct = "ZCode/"
 )
 
 // HeaderInput 是补身份头所需的事实。零值可用，缺项会按 Node 侧同样的 fail-soft 跳过。
 type HeaderInput struct {
 	// AppVersion 是 ZCode 客户端版本；为空时不写版本相关头。
 	AppVersion string
+	// UserAgent 是**真实官方客户端**抓到的 UA（学习自 plan 端点抓包）。
+	// 只有它带着版本段之外的后缀（ai-sdk/provider-utils 等）；为空时不补任何后缀，
+	// 不自报一个写死的 SDK 版本。
+	UserAgent string
 	// DeviceMid 是设备 mid（官方客户端安装时生成，属于账号运行目录）。
 	DeviceMid string
 	// OSVersion 是 os.release() 的等价事实；为空时不写。
@@ -96,7 +105,7 @@ func ApplyIdentityHeaders(headers http.Header, input HeaderInput) http.Header {
 	}
 	if appVersion != "" {
 		setAlways("X-ZCode-App-Version", appVersion)
-		setAlways("User-Agent", "ZCode/"+appVersion+" "+CLIUserAgentSuffix)
+		setAlways("User-Agent", buildUserAgent(appVersion, input.UserAgent))
 	}
 	if deviceMid != "" {
 		setAlways("X-Device-Mid", deviceMid)
@@ -124,6 +133,24 @@ func ApplyIdentityHeaders(headers http.Header, input HeaderInput) http.Header {
 		setAlways("X-Session-Id", sessionID)
 	}
 	return headers
+}
+
+// buildUserAgent 组装 plan 端点的 UA。
+//
+// 版本段必须与 X-ZCode-App-Version 一致：官方客户端这两个值同源，头说 A 版而 UA
+// 说 B 版是不自洽的画像（学到的画像可能比本次要发的版本旧一版）。
+// 版本段之后的后缀只来自**真实客户端抓包**——本端不写死 SDK/运行时版本，
+// 学不到就只发产品段（真实客户端同样存在不带后缀的请求）。
+func buildUserAgent(appVersion string, observed string) string {
+	base := userAgentProduct + appVersion
+	fields := strings.Fields(strings.TrimSpace(observed))
+	if len(fields) < 2 {
+		return base
+	}
+	if !strings.HasPrefix(strings.ToLower(fields[0]), strings.ToLower(userAgentProduct)) {
+		return base
+	}
+	return base + " " + strings.Join(fields[1:], " ")
 }
 
 // ResolveSessionID 返回上游可接受的裸 UUID。

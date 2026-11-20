@@ -64,11 +64,12 @@ type Entry struct {
 
 // Report 是一轮治理的结果。
 type Report struct {
-	ScannedAt  time.Time `json:"scannedAt"`
-	DryRun     bool      `json:"dryRun"`
-	Entries    []Entry   `json:"entries"`
-	FreedBytes int64     `json:"freedBytes"`
-	Errors     []string  `json:"errors"`
+	ScannedAt  time.Time     `json:"scannedAt"`
+	DryRun     bool          `json:"dryRun"`
+	Entries    []Entry       `json:"entries"`
+	FreedBytes int64         `json:"freedBytes"`
+	Errors     []string      `json:"errors"`
+	Dedupe     *DedupeReport `json:"dedupe,omitempty"`
 }
 
 // 产品持久目录：绝不因为"未知"被清理。新增产品目录时在这里加一行。
@@ -175,7 +176,36 @@ func Run(aiHomeDir string, opts Options) (Report, error) {
 	// 8) 构件库回收站：宽限期后真正删除。
 	report.removeAgedEntries(filepath.Join(home, "artifact-store", "trash"), "trash", opts.TrashMaxAge, opts, held, heldKnown)
 
+	// 9) 不可变证据/发布产物：内容相同的文件合并成硬链接（同卷、只读语义）。
+	//    一周最多跑一次；"能公用的坚决不复制"。
+	if dedupeDue(home, 7*24*time.Hour) {
+		dedupeReport := Dedupe([]string{
+			filepath.Join(home, "retained-evidence"),
+			filepath.Join(home, "run", "releases"),
+		}, DedupeOptions{DryRun: opts.DryRun})
+		report.Dedupe = &dedupeReport
+		if !opts.DryRun {
+			markDedupeRan(home)
+		}
+	}
+
 	return report, nil
+}
+
+func dedupeDue(home string, interval time.Duration) bool {
+	info, err := os.Stat(filepath.Join(home, "diagnostics", "space-gc", ".last-dedupe"))
+	if err != nil {
+		return true
+	}
+	return time.Since(info.ModTime()) >= interval
+}
+
+func markDedupeRan(home string) {
+	dir := filepath.Join(home, "diagnostics", "space-gc")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, ".last-dedupe"), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600)
 }
 
 func (report *Report) removeOrMark(path, kind, reason string, ageHours float64, opts Options, out *Report) {

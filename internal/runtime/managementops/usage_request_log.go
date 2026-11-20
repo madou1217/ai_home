@@ -353,30 +353,17 @@ func (s *UsageStore) QueryRequestDetails(ctx context.Context, query UsageQuery) 
 		clauses = append(clauses, "model = ?")
 		args = append(args, normalized.Model)
 	}
-	args = append(args, normalized.Limit)
-
+	// 与 ROW_NUMBER()=1 语义严格等价：按 (timestamp_ms, id) 倒序扫描时，每个 request_id
+	// 首次出现的行即该请求的最新行；流式首见去重到 Limit 即可，无需窗口函数与临时 B 树。
 	sqlText := fmt.Sprintf(`
 		SELECT
 			request_id, provider, model,
 			input_tokens, output_tokens, cache_read_input_tokens,
 			cache_creation_input_tokens, reasoning_output_tokens,
 			total_tokens, cost_usd, timestamp_ms
-		FROM (
-			SELECT
-				id, request_id, provider, model,
-				input_tokens, output_tokens, cache_read_input_tokens,
-				cache_creation_input_tokens, reasoning_output_tokens,
-				total_tokens, cost_usd, timestamp_ms,
-				ROW_NUMBER() OVER (
-					PARTITION BY request_id
-					ORDER BY timestamp_ms DESC, id DESC
-				) AS request_rank
-			FROM model_usage_records
-			WHERE %s
-		) AS ranked_request_usage
-		WHERE request_rank = 1
-		ORDER BY timestamp_ms DESC, id DESC
-		LIMIT ?`, strings.Join(clauses, " AND "))
+		FROM model_usage_records
+		WHERE %s
+		ORDER BY timestamp_ms DESC, id DESC`, strings.Join(clauses, " AND "))
 
 	rows, err := s.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
@@ -385,7 +372,8 @@ func (s *UsageStore) QueryRequestDetails(ctx context.Context, query UsageQuery) 
 	defer func() { _ = rows.Close() }()
 
 	logRecords := s.reqReader.read()
-	usage := make([]UsageRequestRow, 0)
+	usage := make([]UsageRequestRow, 0, normalized.Limit)
+	seenRequests := make(map[string]struct{}, normalized.Limit)
 	for rows.Next() {
 		var (
 			reqID, prov, model                              string
@@ -400,6 +388,10 @@ func (s *UsageStore) QueryRequestDetails(ctx context.Context, query UsageQuery) 
 		); scanErr != nil {
 			return UsageRequestDetailsPayload{}, fmt.Errorf("扫描请求用量明细行失败: %w", scanErr)
 		}
+		if _, dup := seenRequests[reqID]; dup {
+			continue
+		}
+		seenRequests[reqID] = struct{}{}
 		telemetry := logRecords[reqID]
 		item := UsageRequestRow{
 			RequestID:                reqID,
@@ -436,6 +428,9 @@ func (s *UsageStore) QueryRequestDetails(ctx context.Context, query UsageQuery) 
 			}
 		}
 		usage = append(usage, item)
+		if len(usage) >= normalized.Limit {
+			break
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return UsageRequestDetailsPayload{}, err

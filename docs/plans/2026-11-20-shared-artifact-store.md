@@ -257,7 +257,7 @@ GC(mode):
 | Linux ext4 | 本机 colima VM + Docker volume（非 AWS） | 硬链接回退路径；3 个账号 + 库同一 inode（nlink 4），5MB 树总占用 5MB |
 | Linux btrfs | 本机 colima VM + 1G loopback btrfs（非 AWS） | reflink 分支命中：5 份 20MB（源+库+3 账号）逻辑 100MiB，`btrfs filesystem du` Exclusive 仅 **20MiB**；二次启动全 unchanged |
 | Linux XFS | 本机 colima VM + 1G loopback XFS（`reflink=1`，非 AWS） | reflink 分支命中：5 份 20MB 逻辑 100MiB；`df` 实际只增加约 40MiB（源 20 + 库内共享 20）；删除其中一个 clone 后 `df` 用量**不变**，证明块与库共享 |
-| Windows NTFS | 仅交叉编译（spacegc / aihserver） | 未做运行时验证；策略为文件硬链接（目录真实、文件共享 inode），失败时逐文件退回复制 |
+| Windows NTFS | 真机 Windows 11（10.0.26300）+ Node 22（非 AWS） | 运行时通过：3 账号 + 库同一 NTFS File ID（nlink=4，只读 444），`.cmd` 可执行，二次 unchanged；模拟安装器重装后重新硬链接；旧版本进 trash 后成功清空；Go `spacegc` 能识别占用进程（PowerShell CIM）并跳过 |
 
 Linux 实测发现并修复了两个只在非 APFS 上暴露的问题：
 
@@ -266,8 +266,9 @@ Linux 实测发现并修复了两个只在非 APFS 上暴露的问题：
 2. 内容指纹包含权限位，而库内树被冻结成 0555、安装器刚写的是 0755 → 每个账号都触发一次
    "库内刷新"，把先前账号的链接孤立；指纹改为只算路径+大小。
 
-Windows 已知边界：Go `spacegc` 的 `ps/lsof` 在用判定不可用，只按空闲时长删除；NTFS 硬链接
-跨卷会失败（逐文件退回复制）。这两点需要在真机上补验证。
+Windows 实测补充：`wmic` 在新版系统已被移除，`ps/lsof` 不可用；已改为 PowerShell CIM
+读取命令行做在用判定。NTFS File ID 是 64 位，账本的 `dev/ino` 改用 BigInt 字符串记录，
+避免 Number 丢低位把"重装后的新对象"误判成同一 inode。跨卷硬链接会失败并逐文件退回复制。
 
 ## 10. 明确不做
 

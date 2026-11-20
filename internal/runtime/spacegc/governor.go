@@ -434,7 +434,20 @@ func snapshotHeldPaths() (map[string]bool, bool) {
 	held := make(map[string]bool)
 	known := false
 	if runtime.GOOS == "windows" {
-		return held, false
+		// 新版 Windows 移除了 wmic；用 PowerShell CIM 取命令行。失败则按"未知"处理。
+		output, err := exec.Command("powershell", "-NoProfile", "-Command",
+			"[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }").Output()
+		if err != nil {
+			return held, false
+		}
+		for _, line := range strings.Split(string(output), "\n") {
+			for _, token := range strings.Fields(strings.TrimSpace(line)) {
+				if len(token) > 2 && (strings.HasPrefix(token, "/") || strings.Contains(token, ":\\")) {
+					held[strings.Trim(token, "\"'")] = true
+				}
+			}
+		}
+		return held, true
 	}
 	if output, err := exec.Command("ps", "-axo", "command=").Output(); err == nil {
 		known = true

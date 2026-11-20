@@ -22,7 +22,7 @@ func (r *ModelCatalogResolver) listPublishedChatModels(ctx context.Context, sess
 	accountRef := strings.TrimSpace(session.ExecutionAccountRef)
 	pinned := !IsGatewayRuntimeScope(accountRef)
 	if pinned {
-		resolver := loadAccountRefResolver(ctx, r.aiHomeDirSafe())
+		resolver := r.accountRefResolver(ctx)
 		accountRef = mapAccountRefKey(accountRef, idx.AccountProvider, resolver)
 		if r.GatewayAccounts == nil {
 			return nil, NewErrorWithMessage("chat_harness_account_models_unavailable", http.StatusUnprocessableEntity,

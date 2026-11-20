@@ -11,6 +11,10 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/transport/http/inprocesshttp"
@@ -55,6 +59,27 @@ func BuildWebUIChatRuntimeService(
 		checkpoints = chatruntime.DefaultWorkspaceCheckpointsOpener(opts.AIHomeDir, hostHome, nil)
 	}
 	gatewayAccounts, _ := opts.AccountStore.(accountrouting.CandidateSource)
+	// 模型启停设置与宿主快照的存储位置只由 AIHomeDir 决定（业务库 aih.db）；
+	// opts.DBPath 是 Chat Runtime 自己的会话存储，绝不能拿来读模型目录。
+	aiHomeDir := strings.TrimSpace(opts.AIHomeDir)
+	dbPath := ""
+	if aiHomeDir != "" {
+		if resolved, pathErr := appstate.DatabasePath(aiHomeDir); pathErr == nil {
+			dbPath = resolved
+		}
+	}
+	var modelSettings chatruntime.ModelSettingsSource
+	var modelSnapshot chatruntime.ModelSnapshotSource
+	if dbPath != "" {
+		modelSettings = modelcatalogsettings.Reader{DatabasePath: dbPath}
+		if reader, readerErr := webuimodelssnapshot.NewReaderAt(dbPath); readerErr == nil {
+			modelSnapshot = reader
+		}
+	}
+	var accountRefs chatruntime.AccountRefTableSource
+	if aiHomeDir != "" {
+		accountRefs = accountrefmap.Dir{AIHomeDir: aiHomeDir}
+	}
 	legacyNative := chatruntime.NewLegacyNativeAdoptionManager(ctx, chatruntime.LegacyNativeAdoptionOptions{
 		AIHomeDir:   strings.TrimSpace(opts.AIHomeDir),
 		Owner:       opts.LegacyNativeOwner,
@@ -70,6 +95,9 @@ func BuildWebUIChatRuntimeService(
 		GatewayAccounts:        gatewayAccounts,
 		ProviderCatalog:        opts.Catalog,
 		MetadataIndex:          opts.ModelModalities,
+		ModelSettings:          modelSettings,
+		ModelSnapshot:          modelSnapshot,
+		AccountRefs:            accountRefs,
 		ChatStreamer:           opts.ChatStreamer,
 		WorkspaceCheckpoints:   checkpoints,
 		ArtifactReader:         opts.ArtifactReader,

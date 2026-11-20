@@ -84,6 +84,12 @@ type ServiceOptions struct {
 	IDFactory               func(string) string
 	ReleaseFailureSink      func(map[string]any)
 	RemoteTools             CodexRemoteToolExecutor
+	// ModelSettings 读取模型启停设置；为空时视为没有设置。
+	ModelSettings ModelSettingsSource
+	// ModelSnapshot 读取宿主写入的模型快照；为空时视为空快照。
+	ModelSnapshot ModelSnapshotSource
+	// AccountRefs 读取 Node→Go 账号引用映射；为空时引用按恒等翻译。
+	AccountRefs AccountRefTableSource
 	// OnSessionState 把 chat turn 状态交给宿主的 sessionevents.StateStore。
 	OnSessionState func(ctx context.Context, session *Session)
 }
@@ -211,6 +217,9 @@ func NewService(ctx context.Context, opts ServiceOptions) (*Service, error) {
 		MetadataIndex:   opts.MetadataIndex,
 		GatewayModels:   opts.GatewayModels,
 		GatewayAccounts: opts.GatewayAccounts,
+		Settings:        opts.ModelSettings,
+		Snapshot:        opts.ModelSnapshot,
+		Refs:            opts.AccountRefs,
 	}
 	if opts.NativeModelCatalog == nil && opts.NativeLaunchPreparer != nil {
 		opts.NativeModelCatalog = &NativeModelCatalogResolver{AccountStore: opts.AccountStore, Catalog: provCatalog, GatewayModels: opts.GatewayModels, Metadata: opts.MetadataIndex, ResolveExecution: opts.NativeLaunchPreparer.GetTarget}

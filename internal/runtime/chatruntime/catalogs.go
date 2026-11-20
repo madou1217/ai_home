@@ -10,16 +10,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/accountrefs"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 )
 
@@ -269,7 +268,25 @@ type AccountModelIndex struct {
 	ContextByAccount map[string]map[string]int
 }
 
+// ModelSettingsSource 读取 WebUI 持久化的模型启停设置；为空表示无设置。
+type ModelSettingsSource interface {
+	ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error)
+}
+
+// ModelSnapshotSource 读取宿主写入的 WebUI 模型快照投影；为空表示空快照。
+type ModelSnapshotSource interface {
+	Read(ctx context.Context) (*modelsnapshot.Snapshot, error)
+}
+
+// AccountRefTableSource 读取 Node→Go 账号引用映射表；为空表示未启用同步。
+type AccountRefTableSource interface {
+	LoadTable(ctx context.Context) (accountrefs.Table, error)
+}
+
 // ModelCatalogResolver 负责从 Go 账号库、app-state 设置/快照与 models.dev 构建模型目录并对齐推理强度。
+//
+// 设置、快照与引用映射一律经端口读取：本层不感知它们存在哪个库、用什么键，
+// 存储实现由组合根注入（internal/adapters 里的 Reader/Dir）。
 type ModelCatalogResolver struct {
 	AIHomeDir       string
 	Catalog         *providers.Catalog
@@ -277,6 +294,12 @@ type ModelCatalogResolver struct {
 	MetadataIndex   modelmetadata.Catalog
 	GatewayModels   GatewayModelReader
 	GatewayAccounts accountrouting.CandidateSource
+	// Settings 读取模型启停设置；为空时视为没有设置。
+	Settings ModelSettingsSource
+	// Snapshot 读取宿主写入的模型快照；为空时视为空快照。
+	Snapshot ModelSnapshotSource
+	// Refs 读取 Node→Go 账号引用映射；为空时引用按恒等翻译（未启用同步）。
+	Refs AccountRefTableSource
 }
 
 // BuildAccountModelIndex 构建模型-账号索引及启用的全局/账号模型视图。
@@ -323,10 +346,9 @@ func (r *ModelCatalogResolver) BuildAccountModelIndex(ctx context.Context) (*Acc
 		}
 	}
 
-	resolver := loadAccountRefResolver(ctx, r.aiHomeDirSafe())
-	dbPath := resolveAppStateDBPathSafe(r.aiHomeDirSafe())
-	settings := loadCatalogSettingsSafe(ctx, dbPath)
-	snapshot := loadWebUISnapshotSafe(ctx, dbPath)
+	resolver := r.accountRefResolver(ctx)
+	settings := r.catalogSettingsSafe(ctx)
+	snapshot := r.webUISnapshotSafe(ctx)
 
 	for _, overview := range overviews {
 		ref := overview.Account().Ref().String()
@@ -475,7 +497,7 @@ func (r *ModelCatalogResolver) ListGatewayModels(ctx context.Context, session *S
 	if IsGatewayRuntimeScope(session.ExecutionAccountRef) {
 		ids = idx.GlobalModels
 	} else {
-		resolver := loadAccountRefResolver(ctx, r.aiHomeDirSafe())
+		resolver := r.accountRefResolver(ctx)
 		goRef := strings.TrimSpace(resolver.GoRef(session.ExecutionAccountRef))
 		candidates := []string{session.ExecutionAccountRef}
 		if goRef != "" && goRef != session.ExecutionAccountRef {
@@ -659,7 +681,7 @@ func (r *ModelCatalogResolver) ResolveChatTurnRoute(
 		pinned = strings.TrimSpace(session.ExecutionAccountRef)
 	}
 	if pinned != "" && !IsGatewayRuntimeScope(pinned) {
-		resolver := loadAccountRefResolver(ctx, r.aiHomeDirSafe())
+		resolver := r.accountRefResolver(ctx)
 		prov := idx.AccountProvider[pinned]
 		if prov == "" {
 			if goRef := strings.TrimSpace(resolver.GoRef(pinned)); goRef != "" {
@@ -756,55 +778,40 @@ func (r *ModelCatalogResolver) catalogSafe() *providers.Catalog {
 	return cat
 }
 
-func resolveAppStateDBPathSafe(aiHomeDir string) string {
-	if aiHomeDir == "" {
-		return ""
-	}
-	p, err := appstate.DatabasePath(aiHomeDir)
-	if err != nil {
-		return ""
-	}
-	return p
-}
-
-func loadCatalogSettingsSafe(ctx context.Context, dbPath string) modelcatalogsettings.Settings {
-	if dbPath == "" {
+func (r *ModelCatalogResolver) catalogSettingsSafe(ctx context.Context) modelcatalogsettings.Settings {
+	if r == nil || r.Settings == nil {
 		return modelcatalogsettings.Settings{}
 	}
-	s, err := modelcatalogsettings.Load(ctx, dbPath)
+	settings, err := r.Settings.ReadSettings(ctx)
 	if err != nil {
 		return modelcatalogsettings.Settings{}
 	}
-	return s
+	return settings
 }
 
-func loadWebUISnapshotSafe(ctx context.Context, dbPath string) *webuimodelssnapshot.Snapshot {
-	if dbPath == "" {
-		return &webuimodelssnapshot.Snapshot{}
+func (r *ModelCatalogResolver) webUISnapshotSafe(ctx context.Context) *modelsnapshot.Snapshot {
+	if r == nil || r.Snapshot == nil {
+		return &modelsnapshot.Snapshot{}
 	}
-	reader, err := webuimodelssnapshot.NewReaderAt(dbPath)
+	snapshot, err := r.Snapshot.Read(ctx)
+	if err != nil || snapshot == nil {
+		return &modelsnapshot.Snapshot{}
+	}
+	return snapshot
+}
+
+func (r *ModelCatalogResolver) accountRefResolver(ctx context.Context) accountrefs.Resolver {
+	if r == nil || r.Refs == nil {
+		return accountrefs.NewResolver(false, accountrefs.Table{})
+	}
+	table, err := r.Refs.LoadTable(ctx)
 	if err != nil {
-		return &webuimodelssnapshot.Snapshot{}
+		return accountrefs.NewResolver(false, accountrefs.Table{})
 	}
-	snap, err := reader.Read(ctx)
-	if err != nil || snap == nil {
-		return &webuimodelssnapshot.Snapshot{}
-	}
-	return snap
+	return accountrefs.NewResolver(len(table.Links()) > 0, table)
 }
 
-func loadAccountRefResolver(ctx context.Context, aiHomeDir string) accountrefmap.Resolver {
-	if aiHomeDir == "" {
-		return accountrefmap.NewResolver(false, accountrefmap.Table{})
-	}
-	table, err := accountrefmap.Load(ctx, aiHomeDir)
-	if err != nil {
-		return accountrefmap.NewResolver(false, accountrefmap.Table{})
-	}
-	return accountrefmap.NewResolver(len(table.Links()) > 0, table)
-}
-
-func buildSettingEnabledIndex(items []modelcatalogsettings.AccountModel, resolver accountrefmap.Resolver) map[string]bool {
+func buildSettingEnabledIndex(items []modelcatalogsettings.AccountModel, resolver accountrefs.Resolver) map[string]bool {
 	out := make(map[string]bool, len(items)*2)
 	for _, item := range items {
 		ref := strings.TrimSpace(item.AccountRef)
@@ -823,7 +830,7 @@ func buildSettingEnabledIndex(items []modelcatalogsettings.AccountModel, resolve
 	return out
 }
 
-func lookupSettingEnabled(index map[string]bool, resolver accountrefmap.Resolver, ref, modelID string) (bool, bool) {
+func lookupSettingEnabled(index map[string]bool, resolver accountrefs.Resolver, ref, modelID string) (bool, bool) {
 	lowerID := strings.ToLower(strings.TrimSpace(modelID))
 	if lowerID == "" {
 		return false, false
@@ -839,7 +846,7 @@ func lookupSettingEnabled(index map[string]bool, resolver accountrefmap.Resolver
 	return false, false
 }
 
-func mapAccountRefKey(rawRef string, providerByRef map[string]string, resolver accountrefmap.Resolver) string {
+func mapAccountRefKey(rawRef string, providerByRef map[string]string, resolver accountrefs.Resolver) string {
 	trimmed := strings.TrimSpace(rawRef)
 	if trimmed == "" {
 		return ""

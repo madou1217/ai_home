@@ -16,9 +16,10 @@ fi
 cd "$(dirname "$0")/../web"
 
 # 检查是否已安装依赖
+# web/ 使用 pnpm（内容寻址 store，跨 worktree 不重复占空间）；npm run build 仍可直接用。
 if [ ! -d "node_modules" ]; then
     echo "📦 安装依赖..."
-    npm install
+    pnpm install
 fi
 
 # 清理旧的构建产物

@@ -33,7 +33,7 @@
     "postinstall": "node scripts/postinstall.js",
     "codex:sessions:align": "node scripts/align-codex-session-providers.js",
     "ui:delegate": "node scripts/ai-ui-delegate.js",
-    "web:install": "cd web && npm install",
+    "web:install": "cd web && pnpm install",
     "web:build": "cd web && npm run build",
     "web:dev": "cd web && npm run dev",
     "web:terminal-bench": "node scripts/web-terminal-resize-benchmark.js",

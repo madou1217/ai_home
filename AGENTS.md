@@ -58,6 +58,17 @@
 - **scoped commit；遇到推送网络问题，使用 AWS server 作为临时代理完成推送。** 本地提交不依赖网络，不因网络失败积压已验证的源码。优先复用项目代理池里高级设置已启用的 AWS 受管出口：通过 `GET /v1/management/proxy-candidates` 选择当前可用的 AWS `ssh:<connectionId>`，以 `POST /v1/management/proxy-leases` 取得本次任务租约；仅为本次 Git 进程配置代理，执行 `git push origin main`，核验远端 main 包含预期提交，并在结束/取消时 `DELETE /v1/management/proxy-leases/{id}`。远程管理连接使用现有 authenticated Upgrade/本机任务入口，不能把服务端 localhost 当作客户端地址。凭据不得进入命令参数、URL 日志或提交；不改全局 Git/SSH/系统代理及代理池全局选中节点，不另起常驻远端代理。
 - **`git push` 在本仓库不属高风险操作**（用户 2026-10-15 明确）：本地提交可以直接 `git push origin main`，不必先征求确认（并发会话的本地提交会一并推上去，这是共享 main 的正常流程）。仍必须先确认的是**破坏性历史操作**（`git reset --hard`、丢弃提交的 rebase、删除 worktree/branch）——见上一条。
 
+## Working Copy & Evidence Discipline
+
+禁止 worktree/分支不够——**整树副本同样是禁止的隔离手段**。2026-11-20 排查本机 `~/.ai_home/run/`（当时 106G、59 个目录）发现：没有任何产品代码创建它们，全部是会话为了"在干净树上验证构建"手工 `git archive | tar -x` / `rsync` 出来的整棵源码树，再因为"证据要留在 run/"而长期不删。单会话最多在 `run/usage-perf-takeover-20261120/` 里堆了约 20 份 `source-exact-*` 副本。
+
+- **禁止把整棵源码树复制/解包到任何持久位置**（`~/.ai_home`、仓库目录、`run/` 下都算）。包括 `git archive`、`rsync`、`cp -a`、`git clone`→拷贝。`git worktree`/分支复用上面的禁令。
+- **需要"干净树"验证构建时**：在系统临时目录建一次性树（`mktemp -d`），于同一会话内构建完成后立即删除；不要把临时树搬进 `run/` 当证据。
+- **证明"某提交能否独立构建"**：记录 `git rev-parse <commit>`、`git archive <commit> | sha256sum` 的归档摘要、构建命令、exit code 与产物 `sha256`。归档摘要已经唯一确定字节，**不需要**再留一份解压树来"证明"。
+- **证据目录只放不可再生的东西**：清单、日志、截图、哈希、验收结论、外部抓取。禁止放源码树、`node_modules`、`web/dist`、发行包解压目录。构建产物只保留产物本身与 `BUILD_INFO`，不保留来源树。
+- **产品自身的目录不在此禁令内**：`run/auth-projections`（账号投影）、`run/chat-workspaces`（网页会话工作目录，`chatruntime/runtime_target.go`）、`run/remote-workspaces`、`run/provider-session-state`、`run/releases` 等是运行时数据，不得当成"垃圾副本"删除；清理只能针对缓存与旧包。
+- **清理既有残留**：删除 `run/` 下整树副本前，先确认没有进程持有（`lsof`/`/proc/*/cwd`）、且不属于活跃线程；活跃线程的证据目录保留并转交该 owner。
+
 ## Commit & Pull Request Guidelines
 - Follow conventional-style messages seen in history: `feat(...)`, `fix(...)`, `refactor(...)`.
 - Keep commits focused (one logical change per commit).

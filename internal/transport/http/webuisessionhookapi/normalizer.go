@@ -30,7 +30,7 @@ var eventTypeByName = map[string]string{
 	"AfterModel":                   "session:turn-updated",
 	"PreInvocation":                "session:turn-updated",
 	"PostInvocation":               "session:turn-updated",
-	"AppServerThreadStatusChanged": "session:turn-updated",
+	"AppServerThreadStatusChanged": "session:updated",
 	"Notification":                 "session:notification",
 	"MessageDisplay":               "session:turn-updated",
 	"SubagentStart":                "session:turn-updated",
@@ -264,6 +264,32 @@ func ResolveHookEventType(eventName, provider string, payload map[string]any) st
 	}
 	if statuslineEvents[normalizedName] || hasKey(payload, "statusline") || hasKey(payload, "status_line") {
 		return "statusline-updated"
+	}
+	if normalizedName == "appserverthreadstatuschanged" {
+		status := strings.ToLower(strings.TrimSpace(firstText(
+			anyText(payload["status"]),
+			anyText(payload["status_type"]),
+			anyText(payload["statusType"]),
+		)))
+		if status == "" {
+			if rawStatus, ok := payload["status"].(map[string]any); ok {
+				status = strings.ToLower(strings.TrimSpace(firstText(
+					anyText(rawStatus["type"]),
+					anyText(rawStatus["status"]),
+				)))
+			}
+		}
+		switch status {
+		case "idle", "notloaded", "not_loaded":
+			// 线程空闲不是回合更新；必须显式收敛，否则挂着的 app-server 会把
+			// working 永久留在状态文件里。
+			return "session:turn-completed"
+		case "systemerror", "system_error":
+			return "session:turn-failed"
+		default:
+			// active 只说明线程被加载/附着，不能据此开始回合；turn/started 才是唯一开始信号。
+			return "session:updated"
+		}
 	}
 	if provider == "agy" && eventName == "Stop" {
 		if anyText(payload["error"]) != "" || strings.EqualFold(anyText(payload["terminationReason"]), "error") {

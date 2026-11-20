@@ -10,6 +10,46 @@ var (
 	ErrManagedArgumentConflict = errors.New("Provider 参数试图覆盖 AIH 账号或路由边界")
 )
 
+// managedArgumentCheck 校验一个参数，返回需要额外跳过的参数个数。
+//
+// 例如 codex 的 `-c <key=value>` 会消费下一个参数；跳过的值不再做 NUL 检查，
+// 与既有行为保持一致。
+type managedArgumentCheck func(index int, arguments []string) (int, error)
+
+// managedArgumentChecks 声明每个 Provider 的受管参数边界。
+//
+// 未登记的 Provider 明确不支持；没有可覆盖账号边界的官方参数的 Provider 使用
+// allowManagedArgument，账号隔离由各自的投影环境变量保证：
+//
+//	codebuddy 家族  HOME / CODEBUDDY_CONFIG_DIR 投影
+//	gemini        GEMINI_CLI_HOME 投影
+//	agy           伪 HOME（$HOME/.gemini/antigravity-cli）投影
+//	grok          GROK_HOME 投影
+//	cline         CLINE_DIR / CLINE_DATA_DIR 投影
+//	kimi          KIMI_CODE_HOME 投影
+//	zcode         HOME / ZCODE_DATA_BASE_DIR 投影
+//	qoder 两站    启动参数 --config-dir 指向投影根（providercli 注入）
+//	kiro          KIRO_TEST_DB_PATH 指向投影凭据库
+//	opencode      XDG_DATA_HOME / bridge 与 OPENCODE_API_KEY
+var managedArgumentChecks = map[string]managedArgumentCheck{
+	"codex":       checkCodexManagedArgument,
+	"claude":      checkClaudeManagedArgument,
+	"codebuddy":   allowManagedArgument,
+	"codebuddycn": allowManagedArgument,
+	"workbuddy":   allowManagedArgument,
+	"workbuddycn": allowManagedArgument,
+	"gemini":      allowManagedArgument,
+	"agy":         allowManagedArgument,
+	"grok":        allowManagedArgument,
+	"cline":       allowManagedArgument,
+	"kimi":        allowManagedArgument,
+	"zcode":       allowManagedArgument,
+	"qoder":       allowManagedArgument,
+	"qodercn":     allowManagedArgument,
+	"kiro":        allowManagedArgument,
+	"opencode":    allowManagedArgument,
+}
+
 // validateManagedArguments 拒绝会绕过所选账号、Gateway 或共享状态的官方参数。
 func validateManagedArguments(providerID string, arguments []string) error {
 	for index := 0; index < len(arguments); index++ {
@@ -17,59 +57,55 @@ func validateManagedArguments(providerID string, arguments []string) error {
 		if strings.ContainsRune(argument, '\x00') {
 			return ErrInvalidRunRequest
 		}
-		switch providerID {
-		case "codex":
-			switch {
-			case argument == "--oss" ||
-				argument == "--remote" ||
-				strings.HasPrefix(argument, "--remote=") ||
-				argument == "--remote-auth-token-env" ||
-				strings.HasPrefix(argument, "--remote-auth-token-env=") ||
-				argument == "--local-provider" ||
-				strings.HasPrefix(argument, "--local-provider="):
-				return ErrManagedArgumentConflict
-			case argument == "-c" || argument == "--config":
-				if index+1 >= len(arguments) || protectedCodexConfig(arguments[index+1]) {
-					return ErrManagedArgumentConflict
-				}
-				index++
-			case strings.HasPrefix(argument, "--config="):
-				if protectedCodexConfig(strings.TrimPrefix(argument, "--config=")) {
-					return ErrManagedArgumentConflict
-				}
-			}
-		case "claude":
-			if argument == "--bare" {
-				return ErrManagedArgumentConflict
-			}
-		case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-			// CodeBuddy 家族没有能覆盖账号的官方参数：账号边界由投影后的
-			// HOME / CODEBUDDY_CONFIG_DIR 决定，参数原样交给官方 CLI。
-		case "gemini":
-			// Gemini 的账号边界由 GEMINI_CLI_HOME 投影决定；官方参数里没有能
-			// 改写凭据目录的开关，原样交给 CLI。
-		case "agy":
-			// Antigravity 的账号边界由伪 HOME 投影决定（$HOME/.gemini/antigravity-cli），
-			// 官方参数没有能覆盖它的开关。
-		case "grok":
-			// Grok 的账号边界由 GROK_HOME 投影决定，官方参数没有能覆盖它的开关。
-		case "cline":
-			// Cline 的账号边界由 CLINE_DIR/CLINE_DATA_DIR 投影决定。
-		case "kimi":
-			// Kimi 的账号边界由 KIMI_CODE_HOME 投影决定。
-		case "zcode":
-			// ZCode 的账号边界由 HOME/ZCODE_DATA_BASE_DIR 投影决定。
-		case "qoder", "qodercn":
-			// Qoder 的账号边界由启动参数 --config-dir 指向投影根决定（providercli 注入）。
-		case "kiro":
-			// Kiro 的账号边界由 KIRO_TEST_DB_PATH 指向投影凭据库决定。
-		case "opencode":
-			// OpenCode 的账号边界由 XDG_DATA_HOME/bridge 与 OPENCODE_API_KEY 决定。
-		default:
+		check, found := managedArgumentChecks[providerID]
+		if !found {
 			return ErrUnsupportedRuntime
 		}
+		advance, err := check(index, arguments)
+		if err != nil {
+			return err
+		}
+		index += advance
 	}
 	return nil
+}
+
+// allowManagedArgument 表示该 Provider 没有能覆盖账号边界的官方参数。
+func allowManagedArgument(int, []string) (int, error) {
+	return 0, nil
+}
+
+// checkCodexManagedArgument 拒绝 codex 的远程/本地上游开关与受保护的 -c 配置。
+func checkCodexManagedArgument(index int, arguments []string) (int, error) {
+	argument := arguments[index]
+	switch {
+	case argument == "--oss" ||
+		argument == "--remote" ||
+		strings.HasPrefix(argument, "--remote=") ||
+		argument == "--remote-auth-token-env" ||
+		strings.HasPrefix(argument, "--remote-auth-token-env=") ||
+		argument == "--local-provider" ||
+		strings.HasPrefix(argument, "--local-provider="):
+		return 0, ErrManagedArgumentConflict
+	case argument == "-c" || argument == "--config":
+		if index+1 >= len(arguments) || protectedCodexConfig(arguments[index+1]) {
+			return 0, ErrManagedArgumentConflict
+		}
+		return 1, nil
+	case strings.HasPrefix(argument, "--config="):
+		if protectedCodexConfig(strings.TrimPrefix(argument, "--config=")) {
+			return 0, ErrManagedArgumentConflict
+		}
+	}
+	return 0, nil
+}
+
+// checkClaudeManagedArgument 拒绝 claude 绕过登录态的 --bare。
+func checkClaudeManagedArgument(index int, arguments []string) (int, error) {
+	if arguments[index] == "--bare" {
+		return 0, ErrManagedArgumentConflict
+	}
+	return 0, nil
 }
 
 // protectedCodexConfig 只保护账号和上游选择，模型、sandbox 等官方参数仍可使用。

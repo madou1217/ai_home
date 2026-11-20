@@ -9,9 +9,10 @@ package webuiauth
 
 import (
 	"crypto/subtle"
-	"net"
 	"net/http"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 // Via* 常量标识请求通过鉴权门的具体路径。
@@ -157,19 +158,7 @@ func bearerCredential(request *http.Request) string {
 
 // isLoopbackPeer 按 TCP 对端地址判定；缺地址（进程内调用）视为非回环。
 func isLoopbackPeer(request *http.Request) bool {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(request.RemoteAddr))
-	if err != nil {
-		host = strings.Trim(strings.TrimSpace(request.RemoteAddr), "[]")
-	}
-	if zoneIndex := strings.IndexByte(host, '%'); zoneIndex >= 0 {
-		host = host[:zoneIndex]
-	}
-	host = strings.TrimPrefix(strings.ToLower(host), "::ffff:")
-	if host == "::1" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackPeerAddress(request.RemoteAddr)
 }
 
 // isLoopbackHostName 判定 Host 头是不是本机名字（含端口写法）。

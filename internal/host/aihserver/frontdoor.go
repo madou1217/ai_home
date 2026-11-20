@@ -2,11 +2,11 @@ package aihserver
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/transport/http/frontdoorapi"
 )
 
@@ -39,10 +39,5 @@ func newFrontDoorHandler(target string) (http.Handler, error) {
 
 // isLoopbackFrontDoorHost 判定回环主机名，与 Node 监督器的 loopback 判定同源。
 func isLoopbackFrontDoorHost(host string) bool {
-	trimmed := strings.TrimSpace(host)
-	if trimmed == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(trimmed)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackHostValue(host)
 }

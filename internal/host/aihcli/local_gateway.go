@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -121,9 +120,5 @@ func ReadLocalGatewayDefaults(
 
 // isLoopbackHost 判断主机名是否为本机回环。
 func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackHostValue(host)
 }

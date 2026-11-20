@@ -384,11 +384,7 @@ func resolveAIHomeDir(runtime commandRuntime) (string, error) {
 
 // isLoopbackHost 拒绝 wildcard、LAN 和无法在本地确定的主机名。
 func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackHostValue(host)
 }
 
 // envValue 返回去除首尾空白的环境变量或默认值。

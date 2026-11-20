@@ -21,6 +21,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 // ErrInvalidTarget 表示前置门目标地址不是合法的 loopback HTTP 端点。
@@ -176,17 +178,7 @@ func extractPeerHost(remoteAddr string) string {
 }
 
 func isLoopbackPeer(remoteAddr string) bool {
-	host := extractPeerHost(remoteAddr)
-	if host == "" {
-		return false
-	}
-	lower := strings.ToLower(host)
-	lower = strings.TrimPrefix(lower, "::ffff:")
-	if lower == "::1" {
-		return true
-	}
-	ip := net.ParseIP(lower)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackPeerAddress(remoteAddr)
 }
 
 // Target 返回归一化后的目标地址，供状态接口展示。

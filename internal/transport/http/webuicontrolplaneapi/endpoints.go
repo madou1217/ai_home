@@ -227,15 +227,7 @@ func normalizeHost(value string) string {
 }
 
 func isLoopbackHost(value string) bool {
-	host := normalizeHost(value)
-	if host == "" {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackHostValue(value)
 }
 
 func isWildcardHost(value string) bool {

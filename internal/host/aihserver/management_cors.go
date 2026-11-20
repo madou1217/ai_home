@@ -1,10 +1,11 @@
 package aihserver
 
 import (
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const managementPathPrefix = "/v1/management"
@@ -86,12 +87,7 @@ func isLoopbackBrowserOrigin(origin string) bool {
 		parsed.Fragment != "" {
 		return false
 	}
-	host := parsed.Hostname()
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return serverconfig.IsLoopbackHostValue(parsed.Hostname())
 }
 
 // validManagementPreflight 只接受 Web 传输实际使用的方法和请求头。

@@ -36,6 +36,9 @@ type Options struct {
 	ReleaseMaxAge          time.Duration
 	BackupKeep             int
 	TrashMaxAge            time.Duration
+	TempRoots              []string
+	TempPrefix             string
+	TempMaxAge             time.Duration
 }
 
 // DefaultOptions 是生产默认值：偏激进，但所有删除都要求"空闲时间"证据。
@@ -49,7 +52,17 @@ func DefaultOptions() Options {
 		ReleaseMaxAge:          30 * 24 * time.Hour,
 		BackupKeep:             2,
 		TrashMaxAge:            7 * 24 * time.Hour,
+		TempRoots:              defaultTempRoots(),
+		TempPrefix:             "aih-",
+		TempMaxAge:             24 * time.Hour,
 	}
+}
+
+func defaultTempRoots() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return []string{"/tmp"}
 }
 
 // Entry 是一条回收/跳过的记录。
@@ -176,7 +189,11 @@ func Run(aiHomeDir string, opts Options) (Report, error) {
 	// 8) 构件库回收站：宽限期后真正删除。
 	report.removeAgedEntries(filepath.Join(home, "artifact-store", "trash"), "trash", opts.TrashMaxAge, opts, held, heldKnown)
 
-	// 9) 不可变证据/发布产物：内容相同的文件合并成硬链接（同卷、只读语义）。
+	// 9) 会话/构建留在系统临时目录的 aih-* 目录（并行会话常见）：只清理 24h 以上、
+	//    无人引用、且没有 retention.json 的目录。Windows 暂不处理（在用判定不可靠）。
+	report.removeTempDirs(opts, held, heldKnown)
+
+	// 10) 不可变证据/发布产物：内容相同的文件合并成硬链接（同卷、只读语义）。
 	//    一周最多跑一次；"能公用的坚决不复制"。
 	if dedupeDue(home, 7*24*time.Hour) {
 		dedupeReport := Dedupe([]string{
@@ -190,6 +207,36 @@ func Run(aiHomeDir string, opts Options) (Report, error) {
 	}
 
 	return report, nil
+}
+
+func (report *Report) removeTempDirs(opts Options, held map[string]bool, heldKnown bool) {
+	if opts.TempMaxAge <= 0 || strings.TrimSpace(opts.TempPrefix) == "" {
+		return
+	}
+	for _, root := range opts.TempRoots {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), opts.TempPrefix) {
+				continue
+			}
+			candidate := filepath.Join(root, entry.Name())
+			if _, err := os.Stat(filepath.Join(candidate, "retention.json")); err == nil {
+				continue
+			}
+			age := maxAgeHours(candidate)
+			if age < opts.TempMaxAge.Hours() {
+				continue
+			}
+			if heldKnown && pathHeld(held, candidate) {
+				report.Entries = append(report.Entries, entryFor(candidate, "temp-scratch", "in-use", 0, "kept"))
+				continue
+			}
+			report.removeOrMark(candidate, "temp-scratch", "idle-temp", age, opts, report)
+		}
+	}
 }
 
 func dedupeDue(home string, interval time.Duration) bool {
@@ -454,7 +501,7 @@ func snapshotHeldPaths() (map[string]bool, bool) {
 		for _, line := range strings.Split(string(output), "\n") {
 			for _, token := range strings.Fields(line) {
 				if strings.HasPrefix(token, "/") && len(token) > 1 {
-					held[strings.Trim(token, "\"'")] = true
+					addHeldPath(held, strings.Trim(token, "\"'"))
 				}
 			}
 		}
@@ -463,18 +510,37 @@ func snapshotHeldPaths() (map[string]bool, bool) {
 		known = true
 		for _, line := range strings.Split(string(output), "\n") {
 			if strings.HasPrefix(line, "n/") {
-				held[strings.TrimSpace(line[1:])] = true
+				addHeldPath(held, strings.TrimSpace(line[1:]))
 			}
 		}
 	}
 	return held, known
 }
 
+// addHeldPath 同时记录原始路径和解析后的真实路径：macOS 的 /tmp 是 /private/tmp
+// 的软链，lsof 给解析后的路径、ps 可能给原始路径，只存一种会漏判"在用"。
+func addHeldPath(held map[string]bool, path string) {
+	path = filepath.Clean(path)
+	if path == "" {
+		return
+	}
+	held[path] = true
+	if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != path {
+		held[resolved] = true
+	}
+}
+
 func pathHeld(held map[string]bool, candidate string) bool {
 	clean := filepath.Clean(candidate)
+	resolved := clean
+	if value, err := filepath.EvalSymlinks(clean); err == nil {
+		resolved = value
+	}
 	for value := range held {
-		if value == clean || strings.HasPrefix(value, clean+string(filepath.Separator)) {
-			return true
+		for _, target := range []string{clean, resolved} {
+			if value == target || strings.HasPrefix(value, target+string(filepath.Separator)) {
+				return true
+			}
 		}
 	}
 	return false

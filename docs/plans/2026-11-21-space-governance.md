@@ -25,6 +25,7 @@
 | `run/releases/*` | 旧发布 | 30 天 |
 | `run/recovery-backups/*` | 旧备份 | 最近 2 个 |
 | `artifact-store/trash/*` | 构件库回收站 | 7 天 |
+| `/tmp/aih-*` | 会话/构建临时目录（无 `retention.json`） | 空闲 24 小时；有进程 cwd/argv 引用则跳过 |
 | `retained-evidence` + `run/releases` | 内容相同的大文件（>1MB、24h 未改） | 合并成硬链接，每周一次 |
 
 产品持久目录（`auth-projections`、`chat-workspaces`、`provider-session-state`、`harness`、

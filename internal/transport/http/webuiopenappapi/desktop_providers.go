@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
 	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
@@ -149,39 +150,62 @@ func (p *desktopPrepContext) decorateBaseEnv() {
 		p.setEnv("AIH_HOME_DIR", p.aiHomeDir)
 	}
 
-	switch strings.ToLower(strings.TrimSpace(p.req.Provider)) {
-	case "codex":
-		p.decorateCodexBaseEnv()
-	case "agy":
-		p.decorateAgyBaseEnv()
-	case "zcode":
-		p.decorateZcodeBaseEnv()
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	providerID := strings.ToLower(strings.TrimSpace(p.req.Provider))
+	if decorator, found := baseEnvDecorators[providerID]; found {
+		decorator(p)
+		return
+	}
+	// CodeBuddy 家族的成员集合由 providerstorage 的家族布局声明，避免在
+	// transport 里再抄一份四个 Provider 的名单。
+	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		p.decorateCodebuddyFamilyBaseEnv()
-	case "kimi":
-		p.setEnv("KIMI_CODE_HOME", filepath.Join(p.profileDir, ".kimi-code"))
-		if p.hostHomeDir != "" {
-			p.setEnv("HOME", p.hostHomeDir)
-			p.setEnv("USERPROFILE", p.hostHomeDir)
-			p.applySharedCacheEnv()
-		}
-	case "claude":
-		configRoot := p.hostHomeDir
-		if configRoot == "" {
-			configRoot = p.profileDir
-		}
-		p.setEnv("CLAUDE_CONFIG_DIR", filepath.Join(configRoot, ".claude"))
-		p.setEnv("HOME", p.profileDir)
-		p.setEnv("USERPROFILE", p.profileDir)
-		p.applySharedCacheEnv()
-	default:
-		p.setEnv("HOME", p.profileDir)
-		p.setEnv("USERPROFILE", p.profileDir)
-		p.setEnv("XDG_CONFIG_HOME", p.profileDir)
-		p.setEnv("XDG_DATA_HOME", filepath.Join(p.profileDir, ".local", "share"))
-		p.setEnv("XDG_STATE_HOME", filepath.Join(p.profileDir, ".local", "state"))
+		return
+	}
+	p.decorateIsolatedBaseEnv()
+}
+
+// baseEnvDecorators 按 Provider 分派桌面启动的基础环境装饰。
+//
+// 表里没有的 Provider 走隔离默认分支（HOME/XDG 全部指向账号 profile）。
+// 新增 Provider 需要专门的环境语义时，在这里登记一个装饰方法即可。
+var baseEnvDecorators = map[string]func(*desktopPrepContext){
+	"codex":  (*desktopPrepContext).decorateCodexBaseEnv,
+	"agy":    (*desktopPrepContext).decorateAgyBaseEnv,
+	"zcode":  (*desktopPrepContext).decorateZcodeBaseEnv,
+	"kimi":   (*desktopPrepContext).decorateKimiBaseEnv,
+	"claude": (*desktopPrepContext).decorateClaudeBaseEnv,
+}
+
+// decorateKimiBaseEnv：Kimi 桌面端共享宿主 HOME，但配置根固定在账号 profile。
+func (p *desktopPrepContext) decorateKimiBaseEnv() {
+	p.setEnv("KIMI_CODE_HOME", filepath.Join(p.profileDir, ".kimi-code"))
+	if p.hostHomeDir != "" {
+		p.setEnv("HOME", p.hostHomeDir)
+		p.setEnv("USERPROFILE", p.hostHomeDir)
 		p.applySharedCacheEnv()
 	}
+}
+
+// decorateClaudeBaseEnv：Claude 桌面端配置根跟随宿主 HOME，进程 HOME 仍隔离。
+func (p *desktopPrepContext) decorateClaudeBaseEnv() {
+	configRoot := p.hostHomeDir
+	if configRoot == "" {
+		configRoot = p.profileDir
+	}
+	p.setEnv("CLAUDE_CONFIG_DIR", filepath.Join(configRoot, ".claude"))
+	p.setEnv("HOME", p.profileDir)
+	p.setEnv("USERPROFILE", p.profileDir)
+	p.applySharedCacheEnv()
+}
+
+// decorateIsolatedBaseEnv 是通用 Electron 应用的默认隔离：全部用户目录指向 profile。
+func (p *desktopPrepContext) decorateIsolatedBaseEnv() {
+	p.setEnv("HOME", p.profileDir)
+	p.setEnv("USERPROFILE", p.profileDir)
+	p.setEnv("XDG_CONFIG_HOME", p.profileDir)
+	p.setEnv("XDG_DATA_HOME", filepath.Join(p.profileDir, ".local", "share"))
+	p.setEnv("XDG_STATE_HOME", filepath.Join(p.profileDir, ".local", "state"))
+	p.applySharedCacheEnv()
 }
 
 func (p *desktopPrepContext) applySharedCacheEnv() {

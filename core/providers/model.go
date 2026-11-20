@@ -121,6 +121,9 @@ type Definition struct {
 	// Credentials 是凭据相关的静态事实（厂商标识与各类凭据的环境变量名），
 	// 让调用方查表而不是按 provider 名写分支。未声明的字段表示该 Provider 没有这类凭据。
 	Credentials *CredentialFacts `json:"credentials,omitempty"`
+	// Upstream 是该 Provider 的官方上游事实（主机清单与默认推理基址），
+	// 供出口裁决、中继通道与额度探测查表，不再由调用方按 Provider 名分支。
+	Upstream *Upstream `json:"upstream,omitempty"`
 	// RelayHosts 声明**各宿主**能否承接该 Provider 的推理，key 为宿主名（"node" / "go"）。
 	//
 	// 为什么需要它：Provider 有没有 HTTP 推理通道（账号侧事实）与「哪个宿主能服务它」
@@ -201,6 +204,18 @@ func (definition Definition) CredentialFacts() CredentialFacts {
 		return CredentialFacts{}
 	}
 	return *definition.Credentials
+}
+
+// Upstream 是 Provider 的官方上游事实。
+type Upstream struct {
+	// OfficialHosts 是官方 API 主机（不含 scheme 与路径）。
+	OfficialHosts []string `json:"officialHosts,omitempty"`
+	// DefaultBaseURLs 是按凭据形态给出的官方默认推理基址，key 取值：
+	//   "api_key" —— API Key / 静态凭据账号；
+	//   "oauth"   —— OAuth 账号；
+	//   "default" —— 不区分凭据形态。
+	// 未声明表示该 Provider 没有静态默认值，必须由账号自身 baseUrl 或全局覆盖提供。
+	DefaultBaseURLs map[string]string `json:"defaultBaseUrls,omitempty"`
 }
 
 // ClientSupport 是 Provider 面向用户的客户端形态合同。

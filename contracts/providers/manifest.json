@@ -230,6 +230,11 @@
           "OPENAI_BASE_URL"
         ]
       },
+      "upstream": {
+        "officialHosts": [
+          "api.openai.com"
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -420,6 +425,11 @@
         "baseUrlEnv": [
           "GEMINI_BASE_URL",
           "GOOGLE_BASE_URL"
+        ]
+      },
+      "upstream": {
+        "officialHosts": [
+          "generativelanguage.googleapis.com"
         ]
       },
       "relayHosts": {
@@ -667,6 +677,11 @@
           "ANTHROPIC_BASE_URL"
         ]
       },
+      "upstream": {
+        "officialHosts": [
+          "api.anthropic.com"
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -869,6 +884,12 @@
       },
       "credentials": {
         "vendorId": "antigravity"
+      },
+      "upstream": {
+        "officialHosts": [
+          "daily-cloudcode-pa.googleapis.com",
+          "cloudcode-pa.googleapis.com"
+        ]
       },
       "relayHosts": {
         "go": {
@@ -1090,6 +1111,11 @@
         ],
         "cliRequiresAuthFile": true
       },
+      "upstream": {
+        "officialHosts": [
+          "opencode.ai"
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -1281,6 +1307,14 @@
           "XAI_BASE_URL"
         ],
         "cliRequiresAuthFile": true
+      },
+      "upstream": {
+        "officialHosts": [
+          "api.x.ai"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://api.x.ai/v1"
+        }
       },
       "relayHosts": {
         "go": {
@@ -1828,6 +1862,17 @@
           "KIMI_BASE_URL"
         ]
       },
+      "upstream": {
+        "officialHosts": [
+          "api.kimi.com",
+          "api.moonshot.cn",
+          "api.moonshot.ai"
+        ],
+        "defaultBaseUrls": {
+          "api_key": "https://api.moonshot.cn/v1",
+          "oauth": "https://api.kimi.com/coding/v1"
+        }
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -2009,6 +2054,14 @@
       },
       "credentials": {
         "vendorId": "kiro"
+      },
+      "upstream": {
+        "officialHosts": [
+          "q.us-east-1.amazonaws.com"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://q.us-east-1.amazonaws.com"
+        }
       },
       "relayHosts": {
         "go": {
@@ -2198,6 +2251,16 @@
         "baseUrlEnv": [
           "ZCODE_BASE_URL"
         ]
+      },
+      "upstream": {
+        "officialHosts": [
+          "open.bigmodel.cn",
+          "api.z.ai",
+          "zcode.z.ai"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://open.bigmodel.cn/api/anthropic"
+        }
       },
       "relayHosts": {
         "go": {
@@ -2407,6 +2470,14 @@
         "baseUrlEnv": [
           "CODEBUDDY_BASE_URL"
         ]
+      },
+      "upstream": {
+        "officialHosts": [
+          "codebuddy.ai"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://www.codebuddy.ai"
+        }
       },
       "relayHosts": {
         "go": {
@@ -2626,6 +2697,14 @@
           "CODEBUDDY_BASE_URL"
         ]
       },
+      "upstream": {
+        "officialHosts": [
+          "copilot.tencent.com"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://copilot.tencent.com"
+        }
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -2824,6 +2903,14 @@
         "baseUrlEnv": [
           "CODEBUDDY_BASE_URL"
         ]
+      },
+      "upstream": {
+        "officialHosts": [
+          "workbuddy.ai"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://www.workbuddy.ai"
+        }
       },
       "relayHosts": {
         "go": {
@@ -3024,6 +3111,14 @@
           "CODEBUDDY_BASE_URL"
         ]
       },
+      "upstream": {
+        "officialHosts": [
+          "copilot.tencent.com"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://copilot.tencent.com"
+        }
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -3178,6 +3273,14 @@
           "CLINE_API_BASE_URL"
         ],
         "cliRequiresAuthFile": true
+      },
+      "upstream": {
+        "officialHosts": [
+          "api.cline.bot"
+        ],
+        "defaultBaseUrls": {
+          "default": "https://api.cline.bot/api/v1"
+        }
       },
       "relayHosts": {
         "go": {

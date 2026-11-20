@@ -76,6 +76,7 @@ func hookFeatureFlag(enabled bool) *bool {
 func builtinCodex() Definition {
 	return Definition{
 		ID:           "codex",
+		Upstream:     &Upstream{OfficialHosts: []string{"api.openai.com"}},
 		Presentation: withAPIHost(presentation("codex", "ChatGPT", "GPT", "◎", "green"), "api.openai.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
@@ -144,6 +145,7 @@ func builtinCodex() Definition {
 func builtinGemini() Definition {
 	return Definition{
 		ID:           "gemini",
+		Upstream:     &Upstream{OfficialHosts: []string{"generativelanguage.googleapis.com"}},
 		Presentation: withAPIHost(presentation("gemini", "Gemini", "GM", "✦", "blue"), "generativelanguage.googleapis.com"),
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
@@ -192,6 +194,7 @@ func builtinClaude() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:           "claude",
+		Upstream:     &Upstream{OfficialHosts: []string{"api.anthropic.com"}},
 		Presentation: withAPIHost(presentation("claude", "Claude", "CL", "◇", "orange"), "api.anthropic.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
@@ -256,6 +259,7 @@ func builtinClaude() Definition {
 func builtinAntigravity() Definition {
 	return Definition{
 		ID:           "agy",
+		Upstream:     &Upstream{OfficialHosts: []string{"daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"}},
 		Presentation: withAPIHost(presentation("agy", "Antigravity", "AGY", "▲", "purple"), "daily-cloudcode-pa.googleapis.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
@@ -312,6 +316,7 @@ func builtinAntigravity() Definition {
 func builtinOpenCode() Definition {
 	return Definition{
 		ID:             "opencode",
+		Upstream:       &Upstream{OfficialHosts: []string{"opencode.ai"}},
 		Presentation:   withAPIHost(presentation("opencode", "OpenCode", "OC", "⌘", "default"), "opencode.ai"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
@@ -367,6 +372,7 @@ func builtinOpenCode() Definition {
 func builtinGrok() Definition {
 	return Definition{
 		ID:           "grok",
+		Upstream:     &Upstream{OfficialHosts: []string{"api.x.ai"}, DefaultBaseURLs: map[string]string{"default": GrokAPIBaseURL}},
 		Presentation: withAPIHost(presentation("grok", "Grok", "GK", "⚡", "cyan"), "api.x.ai"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
@@ -543,6 +549,7 @@ func builtinQoderCN() Definition {
 func builtinKimi() Definition {
 	return Definition{
 		ID:           "kimi",
+		Upstream:     &Upstream{OfficialHosts: []string{"api.kimi.com", "api.moonshot.cn", "api.moonshot.ai"}, DefaultBaseURLs: map[string]string{"api_key": KimiMoonshotBaseURL, "oauth": KimiCodeBaseURL}},
 		Presentation: withAPIHost(presentation("kimi", "Kimi", "KM", "☾", "geekblue"), "api.moonshot.cn"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
@@ -581,6 +588,7 @@ func builtinKimi() Definition {
 func builtinKiro() Definition {
 	return Definition{
 		ID:           "kiro",
+		Upstream:     &Upstream{OfficialHosts: []string{"q.us-east-1.amazonaws.com"}, DefaultBaseURLs: map[string]string{"default": KiroBaseURL}},
 		Presentation: withAPIHost(presentation("kiro", "Kiro", "KR", "⬡", "volcano"), "kiro.dev"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
@@ -638,6 +646,7 @@ func builtinZcode() Definition {
 	return Definition{
 		ID:             "zcode",
 		NativeBoundary: nativeZcode(),
+		Upstream:       &Upstream{OfficialHosts: []string{"open.bigmodel.cn", "api.z.ai", "zcode.z.ai"}, DefaultBaseURLs: map[string]string{"default": ZCodeBaseURL}},
 		Presentation:   withAPIHost(presentation("zcode", "ZCode", "ZC", "◈", "geekblue"), "z.ai"),
 		Gateway:        GatewayActive,
 		// cli=true：ZCode CLI（0.17.0，随 Desktop 分发的 glm/zcode.cjs）已接入 aih 的
@@ -728,6 +737,7 @@ func builtinCodebuddy() Definition {
 		ID:             "codebuddy",
 		NativeBoundary: nativeCodebuddyCLI(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
+		Upstream:       &Upstream{OfficialHosts: []string{"codebuddy.ai"}, DefaultBaseURLs: map[string]string{"default": CodeBuddyBaseURL}},
 		Presentation:   withAPIHost(presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"), "codebuddy.ai"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
@@ -847,6 +857,7 @@ func builtinCodebuddyCN() Definition {
 		ID:             "codebuddycn",
 		NativeBoundary: nativeCodebuddyCNCLI(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
+		Upstream:       &Upstream{OfficialHosts: []string{"copilot.tencent.com"}, DefaultBaseURLs: map[string]string{"default": TencentCopilotBaseURL}},
 		Presentation:   withAPIHost(presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"), "copilot.tencent.com"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
@@ -941,6 +952,7 @@ func builtinWorkbuddy() Definition {
 		ID:             "workbuddy",
 		NativeBoundary: nativeWorkbuddy(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
+		Upstream:       &Upstream{OfficialHosts: []string{"workbuddy.ai"}, DefaultBaseURLs: map[string]string{"default": WorkBuddyBaseURL}},
 		Presentation:   withAPIHost(presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"), "workbuddy.cn"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
@@ -1047,6 +1059,7 @@ func builtinWorkbuddyCN() Definition {
 		// and storage scope remain on this Definition/CLI descriptor.
 		NativeBoundary: nativeWorkbuddy(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
+		Upstream:       &Upstream{OfficialHosts: []string{"copilot.tencent.com"}, DefaultBaseURLs: map[string]string{"default": TencentCopilotBaseURL}},
 		Presentation:   withAPIHost(presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"), "copilot.tencent.com"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
@@ -1132,6 +1145,7 @@ func builtinWorkbuddyCN() Definition {
 func builtinCline() Definition {
 	return Definition{
 		ID:             "cline",
+		Upstream:       &Upstream{OfficialHosts: []string{"api.cline.bot"}, DefaultBaseURLs: map[string]string{"default": ClineBaseURL}},
 		Presentation:   withAPIHost(presentation("cline", "Cline", "CLN", "⟡", "magenta"), "cline.bot"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, false),

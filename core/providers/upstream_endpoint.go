@@ -4,25 +4,17 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 )
 
-// Official endpoint facts are shared by egress and canonical account routing.
-var officialUpstreamHosts = map[string][]string{
-	"codex":       {"api.openai.com"},
-	"claude":      {"api.anthropic.com"},
-	"gemini":      {"generativelanguage.googleapis.com"},
-	"agy":         {"daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"},
-	"opencode":    {"opencode.ai"},
-	"grok":        {"api.x.ai"},
-	"kiro":        {"q.us-east-1.amazonaws.com"},
-	"cline":       {"api.cline.bot"},
-	"zcode":       {"open.bigmodel.cn", "api.z.ai", "zcode.z.ai"},
-	"kimi":        {"api.kimi.com", "api.moonshot.cn", "api.moonshot.ai"},
-	"codebuddy":   {"codebuddy.ai"},
-	"workbuddy":   {"workbuddy.ai"},
-	"codebuddycn": {"copilot.tencent.com"},
-	"workbuddycn": {"copilot.tencent.com"},
-}
+// builtinCatalog 只构造一次：上游事实由 Provider 合同声明。
+var builtinCatalog = sync.OnceValue(func() *Catalog {
+	catalog, err := NewCatalog(BuiltinManifest())
+	if err != nil {
+		return nil
+	}
+	return catalog
+})
 
 // 官方默认推理基址：同一 Provider 的所有消费方（出口裁决、中转通道、额度探测、
 // 原生凭据刷新）都从这里取值，避免同一端点在各适配器里各写一份字符串。
@@ -58,29 +50,21 @@ const (
 // Moonshot 公开 API，OAuth 账号走 Kimi Code。第二个返回值表示该 Provider 是否
 // 声明了默认基址——未声明时必须回落到账号自带 baseUrl 或全局覆盖，不能猜。
 func DefaultUpstreamBaseURL(providerID string, apiKeyMode bool) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(providerID)) {
-	case "grok":
-		return GrokAPIBaseURL, true
-	case "kimi":
-		if apiKeyMode {
-			return KimiMoonshotBaseURL, true
-		}
-		return KimiCodeBaseURL, true
-	case "kiro":
-		return KiroBaseURL, true
-	case "zcode":
-		return ZCodeBaseURL, true
-	case "cline":
-		return ClineBaseURL, true
-	case "codebuddy":
-		return CodeBuddyBaseURL, true
-	case "workbuddy":
-		return WorkBuddyBaseURL, true
-	case "codebuddycn", "workbuddycn":
-		return TencentCopilotBaseURL, true
-	default:
+	facts, found := UpstreamFacts(providerID)
+	if !found || len(facts.DefaultBaseURLs) == 0 {
 		return "", false
 	}
+	mode := "oauth"
+	if apiKeyMode {
+		mode = "api_key"
+	}
+	if value := strings.TrimSpace(facts.DefaultBaseURLs[mode]); value != "" {
+		return value, true
+	}
+	if value := strings.TrimSpace(facts.DefaultBaseURLs["default"]); value != "" {
+		return value, true
+	}
+	return "", false
 }
 
 var schemePrefixPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
@@ -102,9 +86,34 @@ func ReadUpstreamHost(baseURL string) string {
 	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 }
 
+// UpstreamFacts 返回 Provider 声明的官方上游事实（防御性副本）。
+func UpstreamFacts(providerID string) (Upstream, bool) {
+	catalog := builtinCatalog()
+	if catalog == nil {
+		return Upstream{}, false
+	}
+	definition, found := catalog.Get(providerID)
+	if !found || definition.Upstream == nil {
+		return Upstream{}, false
+	}
+	facts := *definition.Upstream
+	facts.OfficialHosts = append([]string(nil), definition.Upstream.OfficialHosts...)
+	if definition.Upstream.DefaultBaseURLs != nil {
+		facts.DefaultBaseURLs = make(map[string]string, len(definition.Upstream.DefaultBaseURLs))
+		for key, value := range definition.Upstream.DefaultBaseURLs {
+			facts.DefaultBaseURLs[key] = value
+		}
+	}
+	return facts, true
+}
+
 // ListOfficialUpstreamHosts 返回某 provider 的官方主机清单。
 func ListOfficialUpstreamHosts(provider string) []string {
-	return append([]string(nil), officialUpstreamHosts[strings.ToLower(strings.TrimSpace(provider))]...)
+	facts, found := UpstreamFacts(provider)
+	if !found {
+		return nil
+	}
+	return facts.OfficialHosts
 }
 
 // IsOfficialUpstreamHost 判断主机名是否命中官方主机或其子域。

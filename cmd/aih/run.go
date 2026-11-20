@@ -278,6 +278,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "gateway-auth" {
 		return runCodexGatewayAuth(ctx, arguments[2:], runtime)
 	}
+	// aih codex takeover <thread-id> [--force]：结束卡住的旧进程，让 resume 能接管。
+	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "takeover" {
+		return runCodexTakeover(arguments[2:], runtime)
+	}
 	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "effort" {
 		return runCodexEffort(arguments[2:], runtime)
 	}

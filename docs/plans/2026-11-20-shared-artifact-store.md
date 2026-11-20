@@ -185,6 +185,8 @@ GC(mode):
 已落地（Node 启动路径，先解决实际占用）：
 
 - `lib/runtime/version-artifacts.js`：版本构件事实层（哪些路径算版本、版本排序、解冻/可删目录）。
+  新增 harness/CLI 只加一行：当前覆盖 codebuddy、claude、codebuddy-cn、workbuddy 自带的
+  Node/Python 运行时、agent-browser 的 `chrome-<版本>` 浏览器包（版本匹配支持 4 段号）。
 - `lib/runtime/projection-artifacts.js`：启动前统一准备（宿主缓存链接 + 版本树共享 + 节流回收），
   能力探测按卷缓存，策略 reflink → hardlink → symlink/junction，幂等（指纹一致不重铺）。
 - `lib/runtime/artifact-gc.js`：旧版本 / 过期日志 / 库内无引用版本树回收，先 rename 进 trash，

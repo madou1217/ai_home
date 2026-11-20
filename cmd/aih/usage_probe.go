@@ -114,17 +114,15 @@ func writeUsageProbePayload(runtime commandRuntime, payload usageProbePayload) {
 	_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 }
 
+// usageProbeHints 是没有快照时的可操作提示；未登记 Provider 不提示。
+var usageProbeHints = map[string]string{
+	"codex":  "Run `aih codex <id>` once in this sandbox, then retry.",
+	"claude": "Ensure this account is logged in with OAuth (not API key), then retry.",
+	"agy":    "Ensure this AGY account has a valid Antigravity OAuth access token, then retry.",
+}
+
 func usageProbeNoSnapshotHint(provider string) string {
-	switch provider {
-	case "codex":
-		return "Run `aih codex <id>` once in this sandbox, then retry."
-	case "claude":
-		return "Ensure this account is logged in with OAuth (not API key), then retry."
-	case "agy":
-		return "Ensure this AGY account has a valid Antigravity OAuth access token, then retry."
-	default:
-		return ""
-	}
+	return usageProbeHints[strings.ToLower(strings.TrimSpace(provider))]
 }
 
 func formatUsageProbeLines(snapshot usagecore.Snapshot) []string {

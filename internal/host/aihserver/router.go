@@ -61,6 +61,9 @@ type systemStatusResponse struct {
 	InferenceCatalogStale bool           `json:"inference_catalog_stale,omitempty"`
 	ModelCount            int            `json:"model_count,omitempty"`
 	RouteCount            int            `json:"route_count,omitempty"`
+	// ActiveInference 是当前仍在生成回答的请求数。重启前用它判断是否会
+	// 截断正在运行的 Codex/Claude 会话。
+	ActiveInference int `json:"active_inference,omitempty"`
 }
 
 // catalogReadiness 是 Host 探针读取的低敏原子目录状态。
@@ -69,6 +72,8 @@ type catalogReadiness struct {
 	stale      bool
 	modelCount int
 	routeCount int
+	// activeInference 是当前仍在生成回答的请求数。
+	activeInference int
 	// accounts 是按 Provider 分组的启用账号数量，已由 Composition Root 补齐全部 Provider。
 	accounts map[string]int
 }
@@ -371,6 +376,7 @@ func handleReadiness(
 		InferenceCatalogStale: status.stale,
 		ModelCount:            status.modelCount,
 		RouteCount:            status.routeCount,
+		ActiveInference:       status.activeInference,
 	})
 }
 

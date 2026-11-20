@@ -3,6 +3,7 @@ package webuiserverrestartapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"math"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
+	"github.com/madou1217/ai_home/internal/runtime/serverprobe"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -100,6 +102,14 @@ func (r *NativeRestarter) Restart(ctx context.Context, job RestartJob) (RestartO
 	}
 
 	if r.usePlatformRestart {
+		// 与 CLI restart 同一道保护：有活跃推理时明确拒绝，不用固定
+		// 收尾窗口把正在生成的 Codex/Claude 会话强行截断。
+		if active := r.activeInference(ctx); active > 0 {
+			return RestartOutcome{}, fmt.Errorf(
+				"server_restart_busy: %d active inference stream(s); retry when idle",
+				active,
+			)
+		}
 		if outcome, handled, err := r.restartPlatform(ctx, job); handled {
 			return outcome, err
 		}
@@ -173,6 +183,23 @@ func buildRestartEnv(base []string) []string {
 		env = append(env, item)
 	}
 	return append(env, restartContextEnv+"="+restartContextValue)
+}
+
+// activeInference 读取当前服务端公开的活跃推理数；配置/探针不可用时返回 0，
+// 不阻断旧版本或未受管开发态的原重启路径。
+func (r *NativeRestarter) activeInference(ctx context.Context) int {
+	if r == nil {
+		return 0
+	}
+	config, err := readPublicServerConfig(ctx, r.aiHomeDir)
+	if err != nil {
+		return 0
+	}
+	port := defaultServerPort
+	if value, ok := config["port"].(float64); ok && value > 0 && value <= 65535 {
+		port = int(value)
+	}
+	return serverprobe.ActiveInference(ctx, port)
 }
 
 func readPublicServerConfig(ctx context.Context, aiHomeDir string) (map[string]any, error) {

@@ -103,8 +103,11 @@ func newServer(
 	handler http.Handler,
 	resources []io.Closer,
 	options Options,
+	streams *streamShutdown,
 ) *Server {
-	streams := newStreamShutdown()
+	if streams == nil {
+		streams = newStreamShutdown()
+	}
 	return &Server{
 		httpServer: &http.Server{
 			Handler:           withAccessLog(streams.wrap(handler), options.ErrorLog),

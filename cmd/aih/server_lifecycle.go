@@ -15,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
+	"github.com/madou1217/ai_home/internal/runtime/serverprobe"
 )
 
 // runServerLifecycle owns the common server lifecycle commands. Advanced
@@ -80,6 +81,16 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server stopped")
 	case "restart":
+		// 先礼后兵：正在生成的 Codex/Claude 会话不能在重启瞬间被截断。
+		// 发现活跃推理时明确拒绝，而不是依赖固定收尾窗口把它强行结束。
+		// 调用方可以等会话结束再重试；这比静默切流可诊断，也避免 KeepAlive
+		// 和 launchd 的停止超时形成二次竞争。
+		if active := serverprobe.ActiveInference(ctx, port); active > 0 {
+			return true, fmt.Errorf(
+				"server has %d active inference stream(s); refusing restart to avoid interrupting them; retry when idle",
+				active,
+			)
+		}
 		status, installErr := autostart.Install(ctx, options)
 		if installErr != nil {
 			return true, installErr

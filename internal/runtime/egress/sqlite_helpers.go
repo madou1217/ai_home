@@ -135,40 +135,7 @@ func readKVPrefix(ctx context.Context, aiHomeDir string, prefix string) (map[str
 	}
 	defer func() { _ = db.Close() }()
 
-	if prefix == "" {
-		rows, queryErr := db.QueryContext(ctx, "SELECT key, value FROM app_kv ORDER BY key")
-		if queryErr != nil {
-			if strings.Contains(strings.ToLower(queryErr.Error()), "no such table") {
-				return result, nil
-			}
-			return result, queryErr
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var k, v string
-			if scanErr := rows.Scan(&k, &v); scanErr == nil {
-				result[k] = v
-			}
-		}
-		return result, rows.Err()
-	}
-
-	upper := prefix[:len(prefix)-1] + string(prefix[len(prefix)-1]+1)
-	rows, queryErr := db.QueryContext(ctx, "SELECT key, value FROM app_kv WHERE key >= ? AND key < ? ORDER BY key", prefix, upper)
-	if queryErr != nil {
-		if strings.Contains(strings.ToLower(queryErr.Error()), "no such table") {
-			return result, nil
-		}
-		return result, queryErr
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var k, v string
-		if scanErr := rows.Scan(&k, &v); scanErr == nil {
-			result[k] = v
-		}
-	}
-	return result, rows.Err()
+	return appstate.ReadRawKVPrefix(ctx, db, prefix)
 }
 
 // ReadServerConfigEgress 读取 app_kv 中的 config:server 出口相关字段。

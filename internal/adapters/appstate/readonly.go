@@ -64,6 +64,7 @@ func OpenReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
 // （另开会破坏事务快照，也会绕过连接池上限）。
 type Queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // ReadRawKV 使用调用方已有的连接或事务读取 app_kv 原文。
@@ -91,6 +92,43 @@ func ReadRawKV(ctx context.Context, queryer Queryer, key string) (string, bool, 
 		return "", false, err
 	}
 	return value, true, nil
+}
+
+// ReadRawKVPrefix 使用调用方已有的连接读取前缀匹配的全部记录；prefix 为空表示整表。
+//
+// 表缺失按空结果处理：这些调用方在「从未写入」与「表尚未创建」之间不做区分。
+func ReadRawKVPrefix(
+	ctx context.Context,
+	queryer Queryer,
+	prefix string,
+) (map[string]string, error) {
+	result := make(map[string]string)
+	if queryer == nil {
+		return result, nil
+	}
+	query := "SELECT key, value FROM app_kv ORDER BY key"
+	arguments := []any(nil)
+	if prefix != "" {
+		upper := prefix[:len(prefix)-1] + string(prefix[len(prefix)-1]+1)
+		query = "SELECT key, value FROM app_kv WHERE key >= ? AND key < ? ORDER BY key"
+		arguments = []any{prefix, upper}
+	}
+	rows, err := queryer.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return result, nil
+		}
+		return result, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return result, err
+		}
+		result[key] = value
+	}
+	return result, rows.Err()
 }
 
 // ReadKV 读取 app_kv 的一行。表/行不存在返回 found=false，不视为错误。

@@ -29,6 +29,14 @@ This repair covers the Image Studio edit path for `codex:gpt-image-2` when the u
 - All seven enabled Codex accounts on the AWS proxy were probed individually with `X-Account-Ref`; each returned 200. Accounts that had been marked `credential_rejected` were recovered by the token refresh daemon.
 - Failed Studio revisions now record the attempted account; a safety-rejected retry recorded `acct_c016fd7eee0f64163068`.
 
+## Credential self-heal
+
+The image executor already carries the per-attempt `CredentialObservation` into `ObservedAttemptRecorder.RecordFailureWithReceipt`. For a non-static account whose 401 is classified as `FailureCredentialRejected` with account scope and `RecoveryCredentialsUpdated`, the recorder calls `BeginObservedCredentialRejection` and `TryScheduleCredentialRejection`; the token refresh daemon then force-refreshes that credential.
+
+Static api_key credentials are deliberately excluded: they have no refresh token, so the image path records `static_credential_rejected` and relies on cooldown/failover instead of pretending a refresh is possible.
+
+AWS evidence from the same incident: the token refresh daemon reported `credentialRejections.accepted=16` and `completed=16`, and the five OAuth accounts that had recorded `credential_rejected` were later probed individually with `X-Account-Ref` and all returned 200. The five-attempt image budget remains as a fallback for static-key/proxy races and for the window before a forced refresh lands.
+
 ## Deployment
 
 - Local server: build stamp `source_sha c80d4648`, binary `08cacffb...`, `/readyz` 200.

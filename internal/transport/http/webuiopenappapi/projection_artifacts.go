@@ -257,6 +257,16 @@ func (*osSymlinkLinker) EnsureSymlink(target, linkPath string) error {
 	return os.Symlink(target, linkPath)
 }
 
+// desktopAuthFieldBuilder 在通用凭据字段之上补充 Provider 专属的投影字段。
+type desktopAuthFieldBuilder func(out map[string]any, snapshot AccountSnapshot)
+
+// desktopAuthFieldBuilders 按 Provider 声明投影字段增强；未登记的 Provider
+// 只写通用字段。
+var desktopAuthFieldBuilders = map[string]desktopAuthFieldBuilder{
+	"agy":  buildAgyDesktopAuthFields,
+	"kimi": buildKimiDesktopAuthFields,
+}
+
 func resolveDesktopAuthFields(provider string, snapshot AccountSnapshot) map[string]any {
 	out := make(map[string]any)
 	if len(snapshot.NativeAuthJSON) > 0 {
@@ -267,40 +277,49 @@ func resolveDesktopAuthFields(provider string, snapshot AccountSnapshot) map[str
 			}
 		}
 	}
-	switch provider {
-	case "agy":
-		if auth, ok := snapshot.Credential.(*agy.OAuthAuth); ok && auth != nil {
-			tokenObj := map[string]any{
-				"accessToken":  auth.AccessToken(),
-				"refreshToken": auth.RefreshToken(),
-				"expiresAt":    auth.ExpiresAtMS(),
-				"tokenType":    firstNonEmptyString(auth.TokenType(), "Bearer"),
-				"email":        auth.Email(),
-			}
-			if auth.IDToken() != "" {
-				tokenObj["idToken"] = auth.IDToken()
-			}
-			out["oauthToken"] = tokenObj
-			out["desktopOauthToken"] = tokenObj
-			if auth.Email() != "" {
-				out["email"] = auth.Email()
-			}
-		} else if tok, ok := out["oauthToken"]; ok && !isZeroField(tok) {
-			out["desktopOauthToken"] = tok
+	if build, found := desktopAuthFieldBuilders[provider]; found {
+		build(out, snapshot)
+	}
+	return out
+}
+
+// buildAgyDesktopAuthFields 把 OAuth 凭据写成桌面端读取的 oauthToken 结构。
+func buildAgyDesktopAuthFields(out map[string]any, snapshot AccountSnapshot) {
+	if auth, ok := snapshot.Credential.(*agy.OAuthAuth); ok && auth != nil {
+		tokenObj := map[string]any{
+			"accessToken":  auth.AccessToken(),
+			"refreshToken": auth.RefreshToken(),
+			"expiresAt":    auth.ExpiresAtMS(),
+			"tokenType":    firstNonEmptyString(auth.TokenType(), "Bearer"),
+			"email":        auth.Email(),
 		}
-	case "kimi":
-		if creds := buildKimiProjectionCredentials(out); creds != nil {
-			out["credentials"] = creds
+		if auth.IDToken() != "" {
+			tokenObj["idToken"] = auth.IDToken()
 		}
-		if strings.TrimSpace(stringField(out, "deviceId", "device_id")) == "" {
-			if credsMap, ok := out["credentials"].(map[string]any); ok {
-				if derived := deriveKimiDeviceID(credsMap); derived != "" {
-					out["deviceId"] = derived
-				}
+		out["oauthToken"] = tokenObj
+		out["desktopOauthToken"] = tokenObj
+		if auth.Email() != "" {
+			out["email"] = auth.Email()
+		}
+		return
+	}
+	if tok, ok := out["oauthToken"]; ok && !isZeroField(tok) {
+		out["desktopOauthToken"] = tok
+	}
+}
+
+// buildKimiDesktopAuthFields 归一 Kimi 的 credentials 并派生缺失的 deviceId。
+func buildKimiDesktopAuthFields(out map[string]any, _ AccountSnapshot) {
+	if creds := buildKimiProjectionCredentials(out); creds != nil {
+		out["credentials"] = creds
+	}
+	if strings.TrimSpace(stringField(out, "deviceId", "device_id")) == "" {
+		if credsMap, ok := out["credentials"].(map[string]any); ok {
+			if derived := deriveKimiDeviceID(credsMap); derived != "" {
+				out["deviceId"] = derived
 			}
 		}
 	}
-	return out
 }
 
 func buildKimiProjectionCredentials(raw map[string]any) map[string]any {

@@ -875,11 +875,13 @@ func (s *Store) CompactStoredTimelineHistory(ctx context.Context) (HistoryCompac
 			return err
 		}
 		encoded, _ := json.Marshal(stats)
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-		`, TimelineHistoryCompactionMarker, string(encoded), s.clock())
-		return err
+		return appstate.WriteRawKV(
+			ctx,
+			tx,
+			TimelineHistoryCompactionMarker,
+			string(encoded),
+			s.clock(),
+		)
 	}); err != nil {
 		return stats, err
 	}

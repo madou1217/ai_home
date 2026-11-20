@@ -13,6 +13,46 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Execer 是 *sql.DB、*sql.Conn 与 *sql.Tx 共有的写入能力。
+type Execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// WriteRawKV 用调用方已有的连接或事务 upsert 一行 app_kv。
+//
+// 与 ReadRawKV 配对：写入语义（冲突更新与 updated_at）只在这里定义，
+// 持有自有事务的调用方不需要再抄一遍 upsert 语句。
+func WriteRawKV(
+	ctx context.Context,
+	execer Execer,
+	key string,
+	value string,
+	updatedAt int64,
+) error {
+	if execer == nil || strings.TrimSpace(key) == "" {
+		return nil
+	}
+	_, err := execer.ExecContext(ctx,
+		"INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+		key, value, updatedAt)
+	return err
+}
+
+// DeleteRawKV 用调用方已有的连接或事务删除一行 app_kv。
+//
+// 返回是否真的删除了记录，供需要区分「删掉了」与「本来就不存在」的调用方使用。
+func DeleteRawKV(ctx context.Context, execer Execer, key string) (bool, error) {
+	if execer == nil || strings.TrimSpace(key) == "" {
+		return false, nil
+	}
+	result, err := execer.ExecContext(ctx, "DELETE FROM app_kv WHERE key = ?", key)
+	if err != nil {
+		return false, err
+	}
+	changes, err := result.RowsAffected()
+	return changes > 0, err
+}
+
 // WriteKV 以单事务 upsert 一行 app_kv。写入口应尽量收敛：只有明确迁移到 Go 的
 // 设置键才走这里，Node 仍在写的键不要双写。
 func WriteKV(ctx context.Context, databasePath string, key string, value string, updatedAt int64) error {
@@ -24,10 +64,7 @@ func WriteKV(ctx context.Context, databasePath string, key string, value string,
 	if _, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)"); err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx,
-		"INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-		key, value, updatedAt)
-	return err
+	return WriteRawKV(ctx, db, key, value, updatedAt)
 }
 
 // DeleteKV 删除一行 app_kv；键不存在视为成功。
@@ -40,7 +77,7 @@ func DeleteKV(ctx context.Context, databasePath string, key string) error {
 	if _, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)"); err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, "DELETE FROM app_kv WHERE key = ?", key)
+	_, err = DeleteRawKV(ctx, db, key)
 	return err
 }
 

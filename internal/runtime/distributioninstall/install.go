@@ -446,8 +446,7 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 	}
 	m["goCoreEnabled"] = true
 	out, _ := json.Marshal(m)
-	_, err = db.ExecContext(ctx, `INSERT INTO app_kv(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, appstate.KeyServerConfig, string(out), time.Now().UnixMilli())
-	if err != nil {
+	if err := appstate.WriteRawKV(ctx, db, appstate.KeyServerConfig, string(out), time.Now().UnixMilli()); err != nil {
 		return err
 	}
 	_, err = db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")

@@ -185,18 +185,14 @@ func (store Store) ClearProviderProfile(ctx context.Context, provider string) (b
 		return false, err
 	}
 	defer func() { _ = db.Close() }()
-	result, err := db.ExecContext(ctx, "DELETE FROM app_kv WHERE key = ?", key)
+	deleted, err := appstate.DeleteRawKV(ctx, db, key)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
 			return false, nil
 		}
 		return false, err
 	}
-	changes, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return changes > 0, nil
+	return deleted, nil
 }
 
 func (store Store) requireDatabase() error {

@@ -4,10 +4,14 @@ import { collectAllSessionHistoryMessages } from './session-history-window.js';
 import { SessionRequestCoordinator } from './session-request-coordinator.js';
 import { openSharedWebUiEventSource } from './shared-watch';
 import {
+  fetchAuthorizedWebUiResource,
   guardedWebUiEventSource,
   isSameServerOrigin,
+  isTransportTargetStillValid,
   resolveActiveServer,
-  resolveWebUiManagementKey
+  resolveActiveTransportTarget,
+  resolveWebUiManagementKey,
+  type WebUiTransportTarget
 } from './webui-auth-transport';
 export {
   fetchAuthorizedWebUiResource,
@@ -114,6 +118,8 @@ import type {
   AccountEgressResponse,
   AccountWindowActivationSettingInput,
   AccountWindowActivationResponse,
+  AccountUpstream429RetryOverride,
+  AccountUpstream429RetryResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -245,6 +251,86 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export interface Upstream429RequestOptions {
+  signal?: AbortSignal;
+  /** Bound transport target captured before send; request aborts pre-send if target drifted. */
+  boundTarget?: WebUiTransportTarget;
+  /** Optional caller-supplied live scope verification run synchronously immediately before send. */
+  verifyScope?: () => boolean;
+}
+
+async function requestBoundWebUiJson<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  body: unknown,
+  options: Upstream429RequestOptions
+): Promise<T> {
+  const boundTarget = options.boundTarget;
+  const assertStillCurrent = () => {
+    if (options.signal?.aborted) {
+      const abortError = new Error('canceled');
+      (abortError as { code?: string }).code = 'ERR_CANCELED';
+      throw abortError;
+    }
+    if (boundTarget) {
+      const active = resolveActiveTransportTarget();
+      if (
+        !isTransportTargetStillValid(boundTarget)
+        || active.scopeKey !== boundTarget.scopeKey
+      ) {
+        const scopeError = new Error('target_scope_changed');
+        (scopeError as { code?: string }).code = 'ERR_TARGET_SCOPE_CHANGED';
+        throw scopeError;
+      }
+    }
+    if (options.verifyScope && !options.verifyScope()) {
+      const scopeError = new Error('target_scope_changed');
+      (scopeError as { code?: string }).code = 'ERR_TARGET_SCOPE_CHANGED';
+      throw scopeError;
+    }
+  };
+
+  assertStillCurrent();
+  const init: RequestInit = {
+    method,
+    signal: options.signal,
+    ...(body !== undefined
+      ? {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }
+      : {})
+  };
+  const response = await fetchAuthorizedWebUiResource(`/v0${path}`, init, boundTarget);
+  assertStillCurrent();
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+  assertStillCurrent();
+  if (!response.ok) {
+    if (
+      [401, 403, 503].includes(response.status)
+      && WEBUI_AUTH_ERROR_CODES.has(webUiAuthErrorCode(data))
+    ) {
+      redirectToWebUiGate();
+    }
+    const err = new Error(
+      String((data as { message?: unknown; error?: unknown } | null)?.message || `HTTP ${response.status}`)
+    ) as Error & { response?: { status: number; data: unknown } };
+    err.response = { status: response.status, data };
+    throw err;
+  }
+  if (!data || typeof data !== 'object') {
+    const err = new Error('invalid_json_response') as Error & { response?: { status: number; data: unknown } };
+    err.response = { status: response.status, data };
+    throw err;
+  }
+  return data as T;
+}
 
 export function isSessionRequestCancelled(error: unknown) {
   if (axios.isCancel(error)) return true;
@@ -812,6 +898,33 @@ export const accountsAPI = {
       buildAccountAliasPoolPath(provider, accountRef),
       setting
     );
+    return response.data;
+  },
+
+  getAccountUpstream429Retry: async (
+    provider: string,
+    accountRef: string,
+    options?: Upstream429RequestOptions
+  ): Promise<AccountUpstream429RetryResponse> => {
+    const path = `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/upstream-429-retry`;
+    if (options?.boundTarget) {
+      return requestBoundWebUiJson<AccountUpstream429RetryResponse>('GET', path, undefined, options);
+    }
+    const response = await api.get<AccountUpstream429RetryResponse>(path, { signal: options?.signal });
+    return response.data;
+  },
+
+  saveAccountUpstream429Retry: async (
+    provider: string,
+    accountRef: string,
+    override: Pick<AccountUpstream429RetryOverride, 'mode' | 'backoffSeconds'>,
+    options?: Upstream429RequestOptions
+  ): Promise<AccountUpstream429RetryResponse> => {
+    const path = `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/upstream-429-retry`;
+    if (options?.boundTarget) {
+      return requestBoundWebUiJson<AccountUpstream429RetryResponse>('POST', path, override, options);
+    }
+    const response = await api.post<AccountUpstream429RetryResponse>(path, override, { signal: options?.signal });
     return response.data;
   },
 
@@ -1512,13 +1625,41 @@ export const configAPI = {
     return response.data;
   },
 
-  getServer: async (): Promise<ServerConfig> => {
-    const response = await api.get<{ ok: boolean; config: ServerConfig }>('/webui/server-config');
+  getServer: async (options?: Upstream429RequestOptions): Promise<ServerConfig> => {
+    if (options?.boundTarget) {
+      const data = await requestBoundWebUiJson<{ ok?: boolean; config?: ServerConfig }>(
+        'GET',
+        '/webui/server-config',
+        undefined,
+        options
+      );
+      if (data.ok !== true || !data.config || typeof data.config !== 'object') {
+        throw new Error('invalid_server_config_response');
+      }
+      return data.config;
+    }
+    const response = await api.get<{ ok: boolean; config: ServerConfig }>('/webui/server-config', {
+      signal: options?.signal
+    });
     return response.data.config;
   },
 
-  updateServer: async (config: Partial<ServerConfig>) => {
-    const response = await api.post<{ ok: boolean; config: ServerConfig }>('/webui/server-config', { config });
+  updateServer: async (config: Partial<ServerConfig>, options?: Upstream429RequestOptions) => {
+    if (options?.boundTarget) {
+      const data = await requestBoundWebUiJson<{ ok?: boolean; config?: ServerConfig }>(
+        'POST',
+        '/webui/server-config',
+        { config },
+        options
+      );
+      if (data.ok !== true || !data.config || typeof data.config !== 'object') {
+        throw new Error('invalid_server_config_response');
+      }
+      return data.config;
+    }
+    const response = await api.post<{ ok: boolean; config: ServerConfig }>('/webui/server-config', { config }, {
+      signal: options?.signal
+    });
     return response.data.config;
   },
 

@@ -1,6 +1,7 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
 import LargePasteSettingCard from '@/features/chat-runtime/LargePasteSettingCard';
+import Upstream429RetrySettingCard from '@/features/settings/Upstream429RetrySettingCard';
 import CaptureSettingsCard from '@/features/capture/CaptureSettingsCard';
 import InlineNote from '@/components/ui/InlineNote';
 import '@/components/settings/settings-shared.css';
@@ -528,6 +529,8 @@ const Settings = ({ section }: SettingsProps) => {
   // 账号调度与服务配置：本地 Server 的运行参数，同一页签内并排展示。
   const serviceSettingsContent = (
     <div className="settings-grid">
+      <Upstream429RetrySettingCard />
+
       <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>

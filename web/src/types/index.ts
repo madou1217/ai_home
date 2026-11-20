@@ -1188,6 +1188,38 @@ export interface ClaudePreflightConfig {
   detail: string;
 }
 
+export interface Upstream429RetryGlobalConfig {
+  enabled: boolean;
+  backoffSeconds: number[];
+}
+
+export type AccountUpstream429RetryMode = 'inherit' | 'enabled' | 'disabled';
+
+export interface AccountUpstream429RetryOverride {
+  mode: AccountUpstream429RetryMode;
+  backoffSeconds?: number[];
+  updatedAt?: number;
+}
+
+export type Upstream429RetryPolicySource =
+  | 'global'
+  | 'account_disabled'
+  | 'account_custom';
+
+export interface AccountUpstream429RetryEffective {
+  enabled: boolean;
+  backoffSeconds: number[];
+  source: Upstream429RetryPolicySource;
+}
+
+export interface AccountUpstream429RetryResponse {
+  ok: boolean;
+  accountRef: string;
+  override: AccountUpstream429RetryOverride;
+  global: Upstream429RetryGlobalConfig;
+  effective: AccountUpstream429RetryEffective;
+}
+
 export interface ServerConfig {
   host: string;
   port: number;
@@ -1196,6 +1228,7 @@ export interface ServerConfig {
   apiKeyConfigured?: boolean;
   managementKeyConfigured?: boolean;
   openNetwork: boolean;
+  upstream429Retry?: Upstream429RetryGlobalConfig;
 }
 
 export interface ControlPlaneDescriptor {

@@ -7,12 +7,15 @@ import { AccountEgressModal } from './ZcodeEgressModal';
 import { AccountWindowActivationModal } from './AccountWindowActivationModal';
 import { AccountAliasPoolModal } from './AccountAliasPoolModal';
 import { AccountModelContextModal } from './AccountModelContextModal';
+import { AccountUpstream429RetryModal } from './AccountUpstream429RetryModal';
 import './account-overlays.css';
 
 interface AccountRuntimeSettingsModalProps {
   account: Account | null;
   /** 该账号当前可服务的模型 id（来自账号模型目录），供上下文窗口面板使用。 */
   models?: readonly string[];
+  /** 仅桌面端账号页显式开启 429 重试 Tab，保持移动端界面范围不变。 */
+  showUpstream429Retry?: boolean;
   onClose: () => void;
 }
 
@@ -24,6 +27,7 @@ interface AccountRuntimeSettingsModalProps {
 export function AccountRuntimeSettingsModal({
   account,
   models = [],
+  showUpstream429Retry = false,
   onClose
 }: AccountRuntimeSettingsModalProps) {
   const open = Boolean(account);
@@ -47,7 +51,12 @@ export function AccountRuntimeSettingsModal({
       key: 'context',
       label: '上下文窗口',
       children: <AccountModelContextModal account={account} models={models} onClose={onClose} embedded />
-    }
+    },
+    ...(showUpstream429Retry ? [{
+      key: 'upstream429',
+      label: '429 重试',
+      children: <AccountUpstream429RetryModal account={account} onClose={onClose} embedded />
+    }] : [])
   ];
   return (
     <Modal

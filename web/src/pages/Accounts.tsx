@@ -1375,6 +1375,7 @@ export default function Accounts() {
       <AccountRuntimeSettingsModal
         account={runtimeSettingsAccount}
         models={runtimeSettingsAccount ? getAccountModelProbe(runtimeSettingsAccount, modelCatalog).models : []}
+        showUpstream429Retry
         onClose={() => {
           setRuntimeSettingsAccount(null);
           void egressSummary.reload();

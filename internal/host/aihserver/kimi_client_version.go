@@ -14,7 +14,8 @@ import (
 // 之间永久漂移——实测本机 CLI 已是 2.2.0，差 6 个大版本。
 //
 // Go 侧只做**本地探测**一档：远端 npm 查询需要网络与缓存，Node 侧已经做了（并且是
-// 投影的发起方）。Go 拿不到本地 CLI 时用兜底常量——比引入一条独立的网络路径更稳。
+// 投影的发起方）。Go 拿不到本地 CLI 时**返回空串**（不再有兜底常量）：调用方据此
+// 不下发 X-Msh-Version / User-Agent，绝不自报一个写死或猜出来的版本。
 
 // kimiClientVersionCacheTTL 是本地版本的缓存时长（CLI 会自动更新）。
 const kimiClientVersionCacheTTL = time.Hour

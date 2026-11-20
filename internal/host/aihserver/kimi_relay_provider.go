@@ -113,8 +113,8 @@ func (kimiRelayTransportPolicy) SupportsCredential(credential accountapp.Credent
 // newKimiRelayProvider 构造 kimi 的通道级 Provider。
 //
 // 版本与运行机器信息是**服务级**的（同一进程内所有账号一致）：版本由
-// kimiClientVersion 动态解析（本地 CLI → 远端 npm → 兜底），机器信息只在账号选择
-// host-derived 策略时才用得上。
+// kimiClientVersion 探测本机 CLI 得到，探测不到时为空串（不下发版本头，无兜底常量）；
+// 机器信息只在账号选择 host-derived 策略时才用得上。
 func newKimiRelayProvider(version string) *kimiRelayProvider {
 	return &kimiRelayProvider{
 		version: version,

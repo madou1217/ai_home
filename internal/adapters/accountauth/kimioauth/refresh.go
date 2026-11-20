@@ -91,6 +91,8 @@ func New(client HTTPClient, options Options) (*Provider, error) {
 // newProvider 允许包内测试替换端点；生产构造器不暴露端点覆盖能力。
 func newProvider(client HTTPClient, endpoint string, options Options) (*Provider, error) {
 	// 版本只来自真实观测；为空时不下发版本头，不自报写死的版本。
+	// 因此空版本是**合法**输入（探测不到 CLI 的正常情况），只有非空值才做 Header
+	// 注入安全检查——把空值判成依赖无效会让整个服务在没装 kimi CLI 时启动失败。
 	version := strings.TrimSpace(options.ClientVersion)
 	parsed, err := url.Parse(endpoint)
 	if client == nil ||
@@ -98,7 +100,7 @@ func newProvider(client HTTPClient, endpoint string, options Options) (*Provider
 		parsed.Scheme == "" ||
 		parsed.Host == "" ||
 		parsed.User != nil ||
-		!validHeaderValue(version) {
+		(version != "" && !validHeaderValue(version)) {
 		return nil, accountcredentials.ErrInvalidDependencies
 	}
 	return &Provider{

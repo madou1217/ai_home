@@ -579,8 +579,10 @@ func TestProviderIdentityAndConstructor(t *testing.T) {
 	if provider.tokenEndpoint != defaultTokenEndpoint || provider.version != "9.9.9" {
 		t.Fatalf("provider = %#v", provider)
 	}
+	// 版本只来自真实观测：不传版本时构造成功、版本为空（调用方据此不下发版本头），
+	// 不再回退任何写死的默认版本。
 	fallback, err := New(http.DefaultClient, Options{})
-	if err != nil || fallback.version != defaultClientVersion {
-		t.Fatalf("default version = %q, error = %v", fallback.version, err)
+	if err != nil || fallback.version != "" {
+		t.Fatalf("empty version = %q, error = %v", fallback.version, err)
 	}
 }

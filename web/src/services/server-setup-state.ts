@@ -1,6 +1,7 @@
 import type { ControlPlaneProfile } from '@/types';
 import {
   isAutoCurrentControlPlaneProfile,
+  isControlPlaneManagementKeyConfigured,
   normalizeControlPlaneEndpoint
 } from './control-plane-profiles';
 import { resolveStoredActiveControlPlaneProfile } from './control-plane-selection';
@@ -57,4 +58,16 @@ export function resolveServerSetupFormDefaults(input: {
     endpoint: '',
     name: 'AIH Server'
   };
+}
+
+/** 401 清空旧 Key 后，若带 gate=1 或引导明确报 unauthorized，自动打开当前 profile 的授权弹窗。 */
+export function resolveAutoAuthorizeDialog(input: {
+  activeProfile: ControlPlaneProfile | null;
+  gateRequested: boolean;
+  bootstrapIssue: 'unauthorized' | null;
+}): ServerSetupDialogState | null {
+  if (!input.activeProfile) return null;
+  if (!input.gateRequested && input.bootstrapIssue !== 'unauthorized') return null;
+  if (input.bootstrapIssue !== 'unauthorized' && isControlPlaneManagementKeyConfigured(input.activeProfile)) return null;
+  return { mode: 'authorize', profileId: input.activeProfile.id };
 }

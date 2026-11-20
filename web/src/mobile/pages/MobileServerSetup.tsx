@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Button, Form, Input } from 'antd';
 import {
   CheckCircleOutlined,
@@ -38,6 +38,7 @@ import { isControlPlaneManagementKeyConfigured, isControlPlaneProfileReady } fro
 import { getBrowserControlEndpoint } from '@/services/control-plane-endpoints';
 import {
   CLOSED_SERVER_SETUP_DIALOG,
+  resolveAutoAuthorizeDialog,
   resolveRequiredServerSetupDialog,
   resolveServerSetupFormDefaults,
   type ServerSetupDialogState
@@ -110,6 +111,19 @@ export default function MobileServerSetup(_props: MobilePageProps) {
     () => resolveRequiredServerSetupDialog(profiles, activeProfileId) || CLOSED_SERVER_SETUP_DIALOG
   );
   const [detailId, setDetailId] = useState('');
+  const location = useLocation();
+  const autoAuthorizeOpened = useRef(false);
+  useEffect(() => {
+    if (autoAuthorizeOpened.current) return;
+    const dialog = resolveAutoAuthorizeDialog({
+      activeProfile,
+      gateRequested: new URLSearchParams(location.search).get('gate') === '1',
+      bootstrapIssue: setup.bootstrapIssue
+    });
+    if (!dialog) return;
+    autoAuthorizeOpened.current = true;
+    setSetupDialog(dialog);
+  }, [activeProfile, setup.bootstrapIssue, location.search]);
 
   const requiredDialog = resolveRequiredServerSetupDialog(profiles, activeProfileId);
   const effectiveDialog = setupDialog.mode === 'closed' && requiredDialog ? requiredDialog : setupDialog;

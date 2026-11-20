@@ -469,16 +469,17 @@ func (s *UsageStore) loadPricingSnapshot(ctx context.Context, conn *sql.Conn) (p
 	}, nil
 }
 
-func readActivePricingSourceConn(ctx context.Context, db *sql.DB, conn *sql.Conn) string {
-	const q = `SELECT value FROM app_kv WHERE key = ?`
-	var raw string
-	var err error
+// queryConn 优先使用调用方事务连接，没有时才用连接池。
+func queryConn(db *sql.DB, conn *sql.Conn) appstate.Queryer {
 	if conn != nil {
-		err = conn.QueryRowContext(ctx, q, pricingActiveCatalogKVKey).Scan(&raw)
-	} else {
-		err = db.QueryRowContext(ctx, q, pricingActiveCatalogKVKey).Scan(&raw)
+		return conn
 	}
-	if err != nil || strings.TrimSpace(raw) == "" {
+	return db
+}
+
+func readActivePricingSourceConn(ctx context.Context, db *sql.DB, conn *sql.Conn) string {
+	raw, found, err := appstate.ReadRawKV(ctx, queryConn(db, conn), pricingActiveCatalogKVKey)
+	if err != nil || !found || strings.TrimSpace(raw) == "" {
 		return ""
 	}
 	var payload struct {
@@ -585,16 +586,9 @@ func parsePricingTiersJSON(raw string) []usagepricing.Tier {
 }
 
 func readCustomPricingIndex(ctx context.Context, db *sql.DB, conn *sql.Conn, dbPath string) map[string]modelcatalogsettings.CustomPricing {
-	var raw string
-	var err error
-	const q = `SELECT value FROM app_kv WHERE key = ?`
-	if conn != nil {
-		err = conn.QueryRowContext(ctx, q, modelcatalogsettings.DatabaseKey).Scan(&raw)
-	} else {
-		err = db.QueryRowContext(ctx, q, modelcatalogsettings.DatabaseKey).Scan(&raw)
-	}
+	raw, found, err := appstate.ReadRawKV(ctx, queryConn(db, conn), modelcatalogsettings.DatabaseKey)
 	var settings modelcatalogsettings.Settings
-	if err == nil && strings.TrimSpace(raw) != "" {
+	if err == nil && found && strings.TrimSpace(raw) != "" {
 		settings = modelcatalogsettings.Normalize(raw)
 	} else if dbPath != "" {
 		loaded, loadErr := modelcatalogsettings.Load(ctx, dbPath)

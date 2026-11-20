@@ -12,6 +12,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/madou1217/ai_home/internal/adapters/accountmaintenance"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/pluginstatestore"
 	"github.com/madou1217/ai_home/internal/pluginerr"
 )
@@ -241,18 +242,12 @@ func (reader *SQLiteControlStateReader) ReadRawControlState(ctx context.Context)
 		return nil, nil
 	}
 
-	var encoded string
-	err = conn.QueryRowContext(
-		ctx,
-		"SELECT value FROM app_kv WHERE key = ?",
-		pluginstatestore.ControlStateKey,
-	).Scan(&encoded)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return nil, nil
-	case err != nil:
+	encoded, found, err := appstate.ReadRawKV(ctx, conn, pluginstatestore.ControlStateKey)
+	if err != nil {
 		return nil, pluginerr.New(CodeStateUnavailable, err.Error())
-	default:
-		return []byte(encoded), nil
 	}
+	if !found {
+		return nil, nil
+	}
+	return []byte(encoded), nil
 }

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 const (
@@ -814,16 +816,14 @@ func (s *Store) CompactStoredTimelineHistory(ctx context.Context) (HistoryCompac
 	stats := HistoryCompactionStats{}
 	done := false
 	err := s.db.withRead(ctx, func(db *sql.DB) error {
-		var marker string
-		err := db.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, TimelineHistoryCompactionMarker).Scan(&marker)
-		if err == nil {
+		_, found, err := appstate.ReadRawKV(ctx, db, TimelineHistoryCompactionMarker)
+		if err != nil {
+			return err
+		}
+		if found {
 			done = true
-			return nil
 		}
-		if err == sql.ErrNoRows || strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return nil
-		}
-		return err
+		return nil
 	})
 	if err != nil {
 		return stats, err

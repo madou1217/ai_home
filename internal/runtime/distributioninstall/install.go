@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 	"github.com/madou1217/ai_home/internal/runtime/distributiondata"
 	_ "modernc.org/sqlite"
@@ -408,7 +409,7 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 	}
 	defer db.Close()
 	var raw string
-	err = db.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key='config:server'`).Scan(&raw)
+	err = db.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, appstate.KeyServerConfig).Scan(&raw)
 	m := map[string]any{}
 	if err == nil && json.Unmarshal([]byte(raw), &m) != nil {
 		return errors.New("已有服务配置损坏，未覆盖")
@@ -445,7 +446,7 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 	}
 	m["goCoreEnabled"] = true
 	out, _ := json.Marshal(m)
-	_, err = db.ExecContext(ctx, `INSERT INTO app_kv(key,value,updated_at) VALUES('config:server',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, string(out), time.Now().UnixMilli())
+	_, err = db.ExecContext(ctx, `INSERT INTO app_kv(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, appstate.KeyServerConfig, string(out), time.Now().UnixMilli())
 	if err != nil {
 		return err
 	}

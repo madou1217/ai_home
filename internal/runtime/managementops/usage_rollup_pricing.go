@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"strings"
@@ -14,15 +14,11 @@ import (
 // readActivePricingSourceStrictConn 在当前连接/事务快照内严格读取 active:model_usage_pricing。
 // 仅对键缺失或表缺失返回空源，其余数据库/上下文错误显式上抛，不走 TTL 缓存也不另开连接。
 func readActivePricingSourceStrictConn(ctx context.Context, conn *sql.Conn) (string, error) {
-	var raw string
-	err := conn.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, pricingActiveCatalogKVKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) || isSQLiteMissingTable(err) {
-		return "", nil
-	}
+	raw, found, err := appstate.ReadRawKV(ctx, conn, pricingActiveCatalogKVKey)
 	if err != nil {
 		return "", fmt.Errorf("读取当前定价源配置失败: %w", err)
 	}
-	if strings.TrimSpace(raw) == "" {
+	if !found || strings.TrimSpace(raw) == "" {
 		return "", nil
 	}
 	var payload struct {
@@ -38,15 +34,11 @@ func readActivePricingSourceStrictConn(ctx context.Context, conn *sql.Conn) (str
 // 不回退到 modelcatalogsettings.Load 另开连接，避免打破快照一致性与 4 连接池死锁；
 // 真正的数据库或上下文错误显式返回，防止将损坏/失败读取静默当作无自定义定价持久化。
 func readCustomPricingIndexStrictConn(ctx context.Context, conn *sql.Conn) (map[string]modelcatalogsettings.CustomPricing, error) {
-	var raw string
-	err := conn.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, modelcatalogsettings.DatabaseKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) || isSQLiteMissingTable(err) {
-		return map[string]modelcatalogsettings.CustomPricing{}, nil
-	}
+	raw, found, err := appstate.ReadRawKV(ctx, conn, modelcatalogsettings.DatabaseKey)
 	if err != nil {
 		return nil, fmt.Errorf("读取自定义模型定价配置失败: %w", err)
 	}
-	if strings.TrimSpace(raw) == "" {
+	if !found || strings.TrimSpace(raw) == "" {
 		return map[string]modelcatalogsettings.CustomPricing{}, nil
 	}
 	settings := modelcatalogsettings.Normalize(raw)

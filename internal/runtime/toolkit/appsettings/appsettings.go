@@ -87,12 +87,9 @@ func (source *Source) Read(ctx context.Context, provider string) Settings {
 	}
 	defer func() { _ = db.Close() }()
 
-	var value string
-	err = db.QueryRowContext(ctx,
-		`SELECT value FROM app_kv WHERE key = ?`, Key,
-	).Scan(&value)
-	if err != nil {
-		// 表不存在（sql.ErrNoRows / no such table）与从未保存过设置同义。
+	value, found, err := appstate.ReadRawKV(ctx, db, Key)
+	if err != nil || !found {
+		// 表不存在或键缺失，都与从未保存过设置同义。
 		return fallback
 	}
 	return Parse(value, normalized, fallback)

@@ -58,6 +58,41 @@ func OpenReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
 	return openAndPing(ctx, databasePath, true)
 }
 
+// Queryer 是 *sql.DB、*sql.Conn 与 *sql.Tx 共有的单行查询能力。
+//
+// 它让持有自有连接或事务的调用方复用同一条 KV 读取口径，而不必另开连接
+// （另开会破坏事务快照，也会绕过连接池上限）。
+type Queryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// ReadRawKV 使用调用方已有的连接或事务读取 app_kv 原文。
+//
+// 表缺失或键缺失都返回 found=false（与「从未写入」同义）；其他错误原样返回，
+// 由调用方按自己的语义包装。runtimes 因此不再各自知道表名和缺表处理规则。
+func ReadRawKV(ctx context.Context, queryer Queryer, key string) (string, bool, error) {
+	normalizedKey := strings.TrimSpace(key)
+	if normalizedKey == "" || queryer == nil {
+		return "", false, nil
+	}
+	var value string
+	err := queryer.QueryRowContext(
+		ctx,
+		`SELECT value FROM app_kv WHERE key = ?`,
+		normalizedKey,
+	).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return value, true, nil
+}
+
 // ReadKV 读取 app_kv 的一行。表/行不存在返回 found=false，不视为错误。
 func ReadKV(ctx context.Context, databasePath string, key string) (string, bool, error) {
 	normalizedKey := strings.TrimSpace(key)
@@ -72,18 +107,11 @@ func ReadKV(ctx context.Context, databasePath string, key string) (string, bool,
 		return "", false, nil
 	}
 	defer func() { _ = db.Close() }()
-	var value string
-	err = db.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, normalizedKey).Scan(&value)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
+	value, found, err := ReadRawKV(ctx, db, normalizedKey)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return "", false, nil
-		}
 		return "", false, fmt.Errorf("读取 app_kv 失败: %w", err)
 	}
-	return value, true, nil
+	return value, found, nil
 }
 
 // LookupAccountProvider 从 account_refs 读取账号归属。

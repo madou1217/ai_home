@@ -177,6 +177,17 @@ type CredentialFacts struct {
 	CLIRequiresAuthFile bool `json:"cliRequiresAuthFile,omitempty"`
 }
 
+// CredentialFacts 返回该 Provider 声明的凭据事实；未声明时返回零值。
+//
+// 消费方一律通过本方法读取，避免每处各自判空指针，或在缺少声明时把
+// 「合同没有这类凭据」与「合同声明了但值为空」混为一谈。
+func (definition Definition) CredentialFacts() CredentialFacts {
+	if definition.Credentials == nil {
+		return CredentialFacts{}
+	}
+	return *definition.Credentials
+}
+
 // ClientSupport 是 Provider 面向用户的客户端形态合同。
 //
 // CLIConfig/DesktopClient 保存发现、隔离和运行时细节；Clients 只表达产品

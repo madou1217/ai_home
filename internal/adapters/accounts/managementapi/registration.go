@@ -59,17 +59,11 @@ func (client *Client) CreateStaticAccount(
 	return snapshot, nil
 }
 
-// isValidForProvider 只接受当前产品明确支持的 Provider 与静态凭据组合。
+// isValidForProvider 按账号 HTTP 契约校验 Provider 与凭据类型的组合。
+//
+// 可接受的组合只在契约里声明一次，客户端不再复制服务端的 Provider 名单：
+// 新增 Provider 时改契约即可，不需要同时修改 CLI、客户端和服务端三处分支。
 func (input StaticCredentialInput) isValidForProvider(providerID string) bool {
-	if !input.isValid() {
-		return false
-	}
-	switch providerID {
-	case "codex":
-		return input.Kind == "api_key"
-	case "claude":
-		return input.Kind == "api_key" || input.Kind == "auth_token"
-	default:
-		return false
-	}
+	return input.isValid() &&
+		accountcontract.SupportsStaticCredential(providerID, accountcontract.StaticCredentialKind(input.Kind))
 }

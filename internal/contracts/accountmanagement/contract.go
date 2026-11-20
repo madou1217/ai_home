@@ -1,4 +1,5 @@
-// Package accountmanagement 定义账号管理客户端与服务端共享的稳定 HTTP 路径。
+// Package accountmanagement 定义账号管理客户端与服务端共享的稳定 HTTP 契约：
+// 资源路径，以及静态凭据资源接受的 Provider 与凭据类型。
 package accountmanagement
 
 const (

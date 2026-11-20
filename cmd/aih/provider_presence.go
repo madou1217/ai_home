@@ -1,10 +1,19 @@
 package main
 
 import (
-	"strings"
-
 	"github.com/madou1217/ai_home/core/providers"
 )
+
+// providerDefinition 返回规范 Provider 的合同定义（大小写不敏感、去除首尾空白）。
+//
+// CLI 只装配内置合同：动态 Provider 由 Server 在运行时注册，本进程无法得知。
+func providerDefinition(providerID string) (providers.Definition, bool) {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return providers.Definition{}, false
+	}
+	return catalog.Get(providerID)
+}
 
 // isKnownProvider 报告 providerID 是否为 Provider 合同里的规范 Provider。
 //
@@ -16,14 +25,6 @@ import (
 // 注意与 isCLIProvider 的区别：后者回答「本 CLI 是否提供该 Provider 的原生客户端
 // 命令」，是更窄的问题，不能拿来当「Provider 是否存在」用。
 func isKnownProvider(providerID string) bool {
-	normalized := strings.TrimSpace(providerID)
-	if normalized == "" {
-		return false
-	}
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		return false
-	}
-	_, found := catalog.CanonicalID(normalized)
+	_, found := providerDefinition(providerID)
 	return found
 }

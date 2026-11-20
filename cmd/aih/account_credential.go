@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
@@ -65,72 +64,6 @@ func runAccountCredentialUpdate(
 	return nil
 }
 
-// staticCredentialFromEnvironment 为账号新增和轮换统一解析官方静态凭据变量。
-func staticCredentialFromEnvironment(
-	providerID string,
-	lookupEnv func(string) (string, bool),
-) (managementapi.StaticCredentialInput, error) {
-	switch providerID {
-	case "codex":
-		apiKey, found := nonEmptyEnvironment(lookupEnv, "OPENAI_API_KEY")
-		if !found {
-			return managementapi.StaticCredentialInput{}, fmt.Errorf(
-				"%w: Codex 静态凭据需要 OPENAI_API_KEY",
-				errInvalidCommand,
-			)
-		}
-		baseURL, _ := lookupEnv("OPENAI_BASE_URL")
-		return managementapi.StaticCredentialInput{
-			Kind:    "api_key",
-			APIKey:  apiKey,
-			BaseURL: baseURL,
-		}, nil
-	case "claude":
-		apiKey, hasAPIKey := nonEmptyEnvironment(lookupEnv, "ANTHROPIC_API_KEY")
-		authToken, hasAuthToken := nonEmptyEnvironment(lookupEnv, "ANTHROPIC_AUTH_TOKEN")
-		if hasAPIKey && hasAuthToken {
-			return managementapi.StaticCredentialInput{}, fmt.Errorf(
-				"%w: ANTHROPIC_API_KEY 与 ANTHROPIC_AUTH_TOKEN 不能同时提供",
-				errInvalidCommand,
-			)
-		}
-		if !hasAPIKey && !hasAuthToken {
-			return managementapi.StaticCredentialInput{}, fmt.Errorf(
-				"%w: Claude 静态凭据需要 ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN",
-				errInvalidCommand,
-			)
-		}
-		baseURL, _ := lookupEnv("ANTHROPIC_BASE_URL")
-		if hasAPIKey {
-			return managementapi.StaticCredentialInput{
-				Kind:    "api_key",
-				APIKey:  apiKey,
-				BaseURL: baseURL,
-			}, nil
-		}
-		return managementapi.StaticCredentialInput{
-			Kind:      "auth_token",
-			AuthToken: authToken,
-			BaseURL:   baseURL,
-		}, nil
-	default:
-		return managementapi.StaticCredentialInput{}, fmt.Errorf(
-			"%w: Provider %s 不支持静态凭据更新",
-			errInvalidCommand,
-			providerID,
-		)
-	}
-}
-
-// nonEmptyEnvironment 区分未提供与有效非空环境变量，不修改敏感原值。
-func nonEmptyEnvironment(
-	lookupEnv func(string) (string, bool),
-	name string,
-) (string, bool) {
-	value, found := lookupEnv(name)
-	return value, found && strings.TrimSpace(value) != ""
-}
-
 // writeAccountCredentialResult 只输出凭据类型和 Server 提交后的公开身份。
 func writeAccountCredentialResult(
 	output io.Writer,
@@ -155,9 +88,7 @@ func writeAccountCredentialUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  Server 提交新凭据后异步刷新模型，并清理旧 usage、runtime 与 cooldown 派生状态。")
 	_, _ = fmt.Fprintln(output, "  OAuth 账号不支持本命令，必须使用 Provider 重新授权流程。终端不会输出凭据正文。")
 	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintln(output, "Provider 官方环境变量:")
-	_, _ = fmt.Fprintln(output, "  codex:  OPENAI_API_KEY，OPENAI_BASE_URL（可选）")
-	_, _ = fmt.Fprintln(output, "  claude: ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN（二选一），ANTHROPIC_BASE_URL（可选）")
+	writeStaticCredentialEnvironmentHelp(output)
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "API:")
 	_, _ = fmt.Fprintln(output, "  PUT /v1/management/accounts/{account_ref}/credential")

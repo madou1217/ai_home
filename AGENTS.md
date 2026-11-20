@@ -39,8 +39,7 @@
 
 ## Git Worktree & Branch Safety
 - **Only `main` may be kept long-term.** Do not keep feature branches around: once work lands on `main`, delete the temporary branch. Never leave commits that exist only on a side branch or a detached HEAD.
-- Do not create git worktrees or git branches unless the user explicitly approves that operation for the current task.
-- Do not use worktree or branch creation as the default isolation strategy for agent work.
+- **Worktrees are the preferred isolation mechanism**（用户 2026-11-20 明确，替代原先的禁用声明）：需要在不含其他会话未提交改动的树上构建/验收时，用 `git worktree add` —— 它共享对象库，不复制字节。把它建在系统临时目录，任务结束后按下面第 44–47 行核对后清理。不要退回"整棵树复制/解包"的老办法（见 Working Copy & Evidence Discipline）。
 - If a worktree is used, it must not be released (removed/pruned) until all of its commits have been merged into the main project's `main`. Verify with `git cherry main <worktree-head>` (or `git log main..<head>`) that nothing remains before releasing it.
 - Resolve integration inside the worktree first: rebase/merge `main` into the worktree branch and resolve conflicts there, run tests there, so landing on `main` in the primary workspace is a clean fast-forward (or trivial merge) with minimal conflict probability.
 - Before merging or cherry-picking from an existing worktree or branch, inspect its status, commit divergence, and diff scope; report the proposed source and affected files first.
@@ -60,9 +59,9 @@
 
 ## Working Copy & Evidence Discipline
 
-禁止 worktree/分支不够——**整树副本同样是禁止的隔离手段**。2026-11-20 排查本机 `~/.ai_home/run/`（当时 106G、59 个目录）发现：没有任何产品代码创建它们，全部是会话为了"在干净树上验证构建"手工 `git archive | tar -x` / `rsync` 出来的整棵源码树，再因为"证据要留在 run/"而长期不删。单会话最多在 `run/usage-perf-takeover-20261120/` 里堆了约 20 份 `source-exact-*` 副本。
+**整树副本是禁止的隔离手段**（worktree 现在是推荐手段，见上）。2026-11-20 排查本机 `~/.ai_home/run/`（当时 106G、59 个目录）发现：没有任何产品代码创建它们，全部是会话为了"在干净树上验证构建"手工 `git archive | tar -x` / `rsync` 出来的整棵源码树，再因为"证据要留在 run/"而长期不删。单会话最多在 `run/usage-perf-takeover-20261120/` 里堆了约 20 份 `source-exact-*` 副本。
 
-- **禁止把整棵源码树复制/解包到任何持久位置**（`~/.ai_home`、仓库目录、`run/` 下都算）。包括 `git archive`、`rsync`、`cp -a`、`git clone`→拷贝。`git worktree`/分支复用上面的禁令。
+- **禁止把整棵源码树复制/解包到任何持久位置**（`~/.ai_home`、仓库目录、`run/` 下都算）。包括 `git archive`、`rsync`、`cp -a`、`git clone`→拷贝。需要隔离工作区时用 `git worktree`（共享对象库、不复制字节，见上面的 Worktree 规则）。
 - **需要"干净树"验证构建时**：在系统临时目录建一次性树（`mktemp -d`），于同一会话内构建完成后立即删除；不要把临时树搬进 `run/` 当证据。
 - **证明"某提交能否独立构建"**：记录 `git rev-parse <commit>`、`git archive <commit> | sha256sum` 的归档摘要、构建命令、exit code 与产物 `sha256`。归档摘要已经唯一确定字节，**不需要**再留一份解压树来"证明"。
 - **证据目录只放不可再生的东西**：清单、日志、截图、哈希、验收结论、外部抓取。禁止放源码树、`node_modules`、`web/dist`、发行包解压目录。构建产物只保留产物本身与 `BUILD_INFO`，不保留来源树。

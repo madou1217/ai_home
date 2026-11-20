@@ -177,10 +177,16 @@ async function stopServer(child) {
   if (!child || child.exitCode !== null) return;
   // aih launcher 会 exec/派生 aih-server，只给直接子进程发信号会留下孤儿服务端
   //（它还握着解包目录）。因此冒烟用独立进程组，整组发信号。
+  if (process.platform === 'win32') {
+    // Windows 没有进程组：SFX → aih-go → aih-server 是三层，必须按树杀，
+    // 否则会留下孤儿服务端继续占着解包目录。
+    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    await waitForExit(child, 10000);
+    return;
+  }
   const signal = (name) => {
     try {
-      if (process.platform === 'win32') child.kill(name);
-      else process.kill(-child.pid, name);
+      process.kill(-child.pid, name);
     } catch (_error) { /* 进程组已消失 */ }
   };
   signal('SIGTERM');

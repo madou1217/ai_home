@@ -165,7 +165,7 @@ func Execute(
 		}
 		attempted = append(attempted, next.AccountRef)
 		strategy := registry.Resolve(provider, next)
-		result, generateErr := strategy.Generate(ctx, Input{
+		attemptInput := Input{
 			Mode:              request.Mode,
 			Model:             request.Model,
 			Prompt:            request.Prompt,
@@ -183,7 +183,14 @@ func Execute(
 			JSONOnly:          request.JSONOnly,
 			Account:           next,
 			HTTP:              options.HTTP,
-		})
+		}
+		// 输入侧归一化：入口接受 png/jpeg/webp/gif，上游只收它声明的格式；
+		// 差异在这里转码吸收，Provider 策略永远只面对自己声明支持的字节。
+		normalizedInput, normalizeErr := NormalizeInputs(attemptInput, strategy.Capabilities(request.Model))
+		if normalizeErr != nil {
+			return Execution{}, normalizeErr
+		}
+		result, generateErr := strategy.Generate(ctx, normalizedInput)
 		if generateErr == nil {
 			// 统一格式交付：策略只产原生字节，客户端要的格式在这里转码完成。
 			// 转码失败沿用与上游失败相同的换号/重试判定（400 能力类失败不换号）。

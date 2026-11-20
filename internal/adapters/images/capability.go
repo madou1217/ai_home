@@ -23,10 +23,11 @@ const (
 	FormatPNG  Format = "png"
 	FormatJPEG Format = "jpeg"
 	FormatWebP Format = "webp"
+	FormatGIF  Format = "gif"
 )
 
 // decodableFormats 是网关能够解码的格式：只有能解码的源格式才谈得上转码。
-var decodableFormats = []Format{FormatPNG, FormatJPEG, FormatWebP}
+var decodableFormats = []Format{FormatPNG, FormatJPEG, FormatWebP, FormatGIF}
 
 // encodableFormats 是网关能够产出的格式，与「请求 output_format 的合法值」一致。
 var encodableFormats = []Format{FormatPNG, FormatJPEG, FormatWebP}
@@ -46,8 +47,10 @@ type Capability struct {
 	MaxInputImages int `json:"maxInputImages"`
 	// MaxOutputImages 是单次请求可生成的数量上限；0 表示上游未声明上限。
 	MaxOutputImages int `json:"maxOutputImages"`
-	// InputFormats 是参考图可接受的格式（网关当前按原字节转发，因此等于上游可解码格式）。
+	// InputFormats 是入口可接受的参考图格式：网关会把它们转换成上游声明的格式。
 	InputFormats []string `json:"inputFormats"`
+	// NativeInputFormats 是上游原生接受的参考图格式（差异在这里被吸收）。
+	NativeInputFormats []string `json:"nativeInputFormats"`
 	// InputEncodings 是参考图的传入方式：b64（多部分/JSON 内嵌）与 url。
 	InputEncodings []string `json:"inputEncodings"`
 	// NativeOutputFormats 是上游原生可产出的格式。
@@ -86,10 +89,11 @@ func effectiveCapabilityFrom(native Capabilities, modelID string, provider strin
 			}
 			return 1
 		}(),
-		InputFormats:      formatStrings(decodableFormats),
-		InputEncodings:    []string{"b64", "url"},
-		OutputCompression: native.OutputCompression,
-		Background:        native.Background,
+		InputFormats:       formatStrings(decodableFormats),
+		NativeInputFormats: formatStrings(AcceptedInputFormats(native)),
+		InputEncodings:     []string{"b64", "url"},
+		OutputCompression:  native.OutputCompression,
+		Background:         native.Background,
 	}
 	if capability.MaxInputImages < 1 {
 		capability.MaxInputImages = 1

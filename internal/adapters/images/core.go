@@ -184,6 +184,9 @@ type Capabilities struct {
 	DefaultOutputFormat string
 	OutputCompression   bool
 	Moderation          bool
+	// InputFormats 是上游可接受的参考图格式（png/jpeg/webp）；为空时按 png+jpeg。
+	// 入口接受任何可解码格式，差异由 NormalizeInputs 在编排层吸收。
+	InputFormats []string
 }
 
 // imagePromptLimitsByModel 是「模型自身的 prompt 硬上限」，与 Provider 无关。
@@ -316,6 +319,8 @@ var nativeCapabilities = map[string]Capabilities{
 		OutputFormat:      true,
 		OutputCompression: true,
 		Moderation:        true,
+		// OpenAI 兼容的 images/edits 接受 png / jpeg / webp 作为参考图。
+		InputFormats: []string{"png", "jpeg", "webp"},
 	},
 }
 

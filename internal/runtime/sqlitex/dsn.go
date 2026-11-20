@@ -44,9 +44,15 @@ func ReadOnlyDSNWithBusyTimeout(databasePath string, busyTimeoutMS int) string {
 }
 
 // WritableDSN 返回读写库的 DSN：默认忙等 + 较大的页缓存。
+//
+// _txlock=immediate 是并发正确性的一部分，不是性能选项：WAL 下 deferred
+// 事务「先读后写」在另一写者提交后升级会拿到 SQLITE_BUSY_SNAPSHOT，而
+// busy_timeout 不会重试它（表现为立刻 database is locked）。IMMEDIATE 在
+// BEGIN 时就排队拿写锁；只读事务由 sql.TxOptions.ReadOnly 保持 deferred。
 func WritableDSN(databasePath string) string {
 	fileURL := sqlitefile.URL(filepath.Clean(databasePath))
 	query := fileURL.Query()
+	query.Set("_txlock", "immediate")
 	query.Add("_pragma", "busy_timeout("+itoa(DefaultBusyTimeoutMS)+")")
 	query.Add("_pragma", "cache_size(-"+itoa(writableCacheKiB)+")")
 	query.Add("_pragma", "journal_mode(WAL)")

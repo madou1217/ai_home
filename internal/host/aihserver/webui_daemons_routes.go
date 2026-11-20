@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
+	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -675,7 +675,9 @@ type sqliteZcodeOwnerStore struct {
 }
 
 func openSQLiteZcodeOwnerStore(ctx context.Context, dbPath string) (*sqliteZcodeOwnerStore, error) {
-	db, err := sql.Open("sqlite", sqlitefile.URL(dbPath).String())
+	// 与其它业务库写者共用同一套 DSN 契约（WAL + busy_timeout + BEGIN IMMEDIATE）：
+	// 这里的对账事务是「先读后写」，deferred 升级会在并发下直接拿到 SQLITE_BUSY。
+	db, err := sql.Open("sqlite", sqlitex.WritableDSN(dbPath))
 	if err != nil {
 		return nil, err
 	}

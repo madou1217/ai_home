@@ -216,6 +216,9 @@ func NewUsageStore(ctx context.Context, dbPath string, providerIDs []string, now
 	fileURL := sqlitefile.URL(cleaned)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
+	// runImmediateTx 的语义靠这条 DSN 落地：deferred BEGIN 在并发下会拿到
+	// SQLITE_BUSY_SNAPSHOT（busy_timeout 不重试），必须真的 BEGIN IMMEDIATE。
+	query.Set("_txlock", "immediate")
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "journal_mode(WAL)")
 	// Usage scans repeatedly revisit wide-row pages; configure each pooled

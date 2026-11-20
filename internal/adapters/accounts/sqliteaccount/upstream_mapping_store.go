@@ -53,7 +53,7 @@ func (repository *UpstreamErrorMappingRepository) List(ctx context.Context) ([]m
 	if !repository.available(ctx) {
 		return nil, mappingapp.ErrServiceUnavailable
 	}
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
+	transaction, err := repository.store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("开始映射组读取事务失败: %w", err)
 	}
@@ -76,7 +76,7 @@ func (repository *UpstreamErrorMappingRepository) Get(
 	if !repository.available(ctx) {
 		return mappingcore.Group{}, mappingapp.ErrServiceUnavailable
 	}
-	transaction, err := repository.store.db.BeginTx(ctx, nil)
+	transaction, err := repository.store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return mappingcore.Group{}, fmt.Errorf("开始映射组读取事务失败: %w", err)
 	}

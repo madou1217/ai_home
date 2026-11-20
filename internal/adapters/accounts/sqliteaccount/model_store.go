@@ -37,7 +37,9 @@ func (store *Store) ListAllAccountModels(ctx context.Context) (accountapp.Accoun
 	}
 	// 指纹与 data 必须来自同一个读快照：否则并发写入会让 Node 拿到「新 generation +
 	// 旧目录」，条件刷新会一直误判为没有变化。
-	transaction, err := store.db.BeginTx(ctx, nil)
+	// 显式 ReadOnly：DSN 已启用 _txlock=immediate，只读事务必须声明只读，
+	// 否则会白白抢占写锁。
+	transaction, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return accountapp.AccountModelCatalog{}, fmt.Errorf("开始账号模型读取事务失败: %w", err)
 	}

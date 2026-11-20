@@ -170,6 +170,12 @@ func buildDatabaseDSN(databasePath string) string {
 	// 覆盖索引扫描 36ms、日汇总 <0.2ms，16/32/64MB 都没有更快；池上限 4 条连接，
 	// 所以取 8MB（最坏 32MB），把省下的内存留给进程其它部分。
 	query.Add("_pragma", "cache_size(-8192)")
+	// WAL 下 deferred 事务「先读后写」会在并发写者提交后升级失败，返回
+	// SQLITE_BUSY_SNAPSHOT；busy_timeout 对这类错误**不重试**，5 秒窗口形同虚设
+	// （真机日志里高频的 database is locked 正是它）。统一 BEGIN IMMEDIATE：
+	// 事务一开始就排进写锁队列，由 busy_timeout 正常等待。
+	// 只读事务不受影响：驱动按 sql.TxOptions.ReadOnly 选择普通 BEGIN。
+	query.Add("_txlock", "immediate")
 	fileURL.RawQuery = query.Encode()
 	return fileURL.String()
 }

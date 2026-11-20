@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 )
 
@@ -95,7 +96,14 @@ func dryRunDatabase(ctx context.Context, source string) (string, func(), error) 
 	path := temp.Name()
 	_ = temp.Close()
 	_ = os.Remove(path)
-	db, err := sql.Open("sqlite", source)
+	// VACUUM INTO 要拿读锁；服务端在写时裸 DSN（busy_timeout=0）会立刻失败。
+	// 用带忙等的只读 file URI 打开，让 CLI 在并发写期间正常等待。
+	fileURL := sqlitefile.URL(source)
+	query := fileURL.Query()
+	query.Set("mode", "ro")
+	query.Add("_pragma", "busy_timeout(5000)")
+	fileURL.RawQuery = query.Encode()
+	db, err := sql.Open("sqlite", fileURL.String())
 	if err != nil {
 		return "", func() {}, err
 	}

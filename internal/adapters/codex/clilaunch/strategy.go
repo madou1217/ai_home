@@ -18,7 +18,7 @@ const (
 	// codex-session-provider-alignment 会把任何不等于该规范键的 `aih_*` 当作旧形态
 	// 重写，而线程 rollout 里记录的 provider 名若在 config.toml 查不到，Codex 桌面端
 	// 会拒绝恢复该线程。Go 曾用 `aih_account`，会被当成旧 provider 改写。
-	apiProviderKey   = "aih_server"
+	apiProviderKey   = ManagedProviderKey
 	apiProviderLabel = "AIH Server"
 )
 

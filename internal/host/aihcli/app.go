@@ -321,10 +321,17 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if gatewayAccounts == nil {
 		gatewayAccounts = store
 	}
+	hostHomeDir := strings.TrimSpace(options.HostHomeDir)
+	if hostHomeDir == "" {
+		hostHomeDir = resolveHostHomeDir()
+	}
 	gatewayPlanner, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
 		Accounts: gatewayAccounts,
 		Strategies: []providerlaunch.GatewayStrategy{
-			codexcli.NewGatewayStrategy(),
+			codexcli.NewGatewayStrategy(codexManagedProviderAuth{
+				hostHomeDir: hostHomeDir,
+				lookupEnv:   os.LookupEnv,
+			}),
 			claudecli.NewGatewayStrategy(),
 		},
 	})
@@ -344,10 +351,6 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建账号投影执行器失败", err)
 		}
-	}
-	hostHomeDir := strings.TrimSpace(options.HostHomeDir)
-	if hostHomeDir == "" {
-		hostHomeDir = resolveHostHomeDir()
 	}
 	runner, err := providercli.NewRunner(providercli.Options{
 		Credentials:     credentials,

@@ -19,11 +19,16 @@ const (
 var _ providerlaunch.GatewayStrategy = (*GatewayStrategy)(nil)
 
 // GatewayStrategy 使用 Responses model_provider 把官方 Codex CLI 指向 AIH Server。
-type GatewayStrategy struct{}
+type GatewayStrategy struct {
+	// auth 报告生效配置如何提供受管 Provider 的客户端密钥（见 managed_provider.go）。
+	auth ManagedProviderAuthSource
+}
 
-// NewGatewayStrategy 创建无状态 Codex Gateway Strategy。
-func NewGatewayStrategy() *GatewayStrategy {
-	return &GatewayStrategy{}
+// NewGatewayStrategy 创建 Codex Gateway Strategy。
+//
+// auth 由组合根按生效的 CODEX_HOME/config.toml 实现；传 nil 视同裸配置（env_key）。
+func NewGatewayStrategy(auth ManagedProviderAuthSource) *GatewayStrategy {
+	return &GatewayStrategy{auth: auth}
 }
 
 // ProviderID 返回 Codex Provider 标识。
@@ -32,7 +37,7 @@ func (*GatewayStrategy) ProviderID() string {
 }
 
 // Build 只消费 Server Endpoint 和可选 AccountRef，不接收任何上游账号凭据。
-func (*GatewayStrategy) Build(
+func (strategy *GatewayStrategy) Build(
 	target providerlaunch.GatewayTarget,
 ) (providerlaunch.GatewayStrategyResult, error) {
 	if !target.IsValid() {
@@ -50,15 +55,14 @@ func (*GatewayStrategy) Build(
 			unset = append(unset, name)
 		}
 	}
-	arguments := []string{
-		"-c", fmt.Sprintf("model_provider=%s", apiProviderKey),
-		"-c", fmt.Sprintf("model_providers.%s.name=%q", apiProviderKey, apiProviderLabel),
-		"-c", fmt.Sprintf("model_providers.%s.base_url=%s", apiProviderKey, endpoint.BaseURL()+"/v1"),
-		"-c", fmt.Sprintf("model_providers.%s.wire_api=responses", apiProviderKey),
-		"-c", fmt.Sprintf("model_providers.%s.env_key=%s", apiProviderKey, gatewayClientKeyEnv),
+	auth := managedProviderAuthOf(strategy.auth)
+	arguments := []string{"-c", fmt.Sprintf("model_provider=%s", apiProviderKey)}
+	arguments = append(arguments,
+		managedProviderArguments(endpoint.BaseURL()+"/v1", auth)...)
+	arguments = append(arguments,
 		"-c", fmt.Sprintf("model_providers.%s.request_max_retries=0", apiProviderKey),
 		"-c", fmt.Sprintf("model_providers.%s.stream_max_retries=0", apiProviderKey),
-	}
+	)
 	if accountRef, pinned := target.PinnedAccount(); pinned {
 		// AccountRef 是公开稳定哈希，不是凭据。与 Node buildCodexProviderArgs
 		// 一致直接进入受管 header，避免 env_http_headers 再造一套变量语义。

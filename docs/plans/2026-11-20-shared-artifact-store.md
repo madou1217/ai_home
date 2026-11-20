@@ -150,18 +150,25 @@ GC(mode):
 
 ## 5. `node_modules` 与构建缓存
 
-结论：**pnpm 解决"依赖重复"，但不解决"生成物缓存重复"**，两者分开处理。
+结论（2026-11-20 已落地）：**pnpm 解决"依赖重复"，共享 webpack 缓存解决"生成物重复"**，两者分开处理。
 
-1. **依赖**：`web/` 迁到 pnpm（内容寻址 store + 隔离 `node_modules` 链接）。
-   - store 放 `shared-cache/pnpm-store`，全局一份；
-   - `node-pty` 等原生依赖需要显式 `allowBuilds`（仓库里已有 `pnpm-workspace.yaml` 草稿）；
-   - 风险：umi/max 的 webpack 插件对软链包可能需要 `public-hoist-pattern`；需实测整包构建。
+1. **依赖（web/ 已迁 pnpm 10.11）**：内容寻址 store 在宿主全局一份（本机 `~/Library/pnpm/store`），
+   `node_modules` 里的真实文件是指向 store 的硬链接——同一依赖在所有 worktree/项目之间只占一份字节，
+   新 worktree 安装只建链接。
+   - pnpm 的严格布局会暴露"直接 import 传递依赖"：迁移时必须把 `highlight.js`、
+     `@shikijs/langs`、`@shikijs/themes` 补进 `dependencies`（已补）。
+   - 原生构建脚本用 `pnpm.onlyBuiltDependencies` 白名单（esbuild / @swc/core / core-js / unix-dgram），
+     其余默认不执行。
+   - 根目录 `package.json` 仍由 npm 管理（发行打包走 `npm ci`），本次只迁 `web/`；
+     CI 的 `web-build` 改用 corepack + `pnpm install --frozen-lockfile`。
 2. **webpack 持久缓存**：pnpm **不会**去重 `node_modules/.cache`。
-   改为显式配置：
-   `cache: { type: 'filesystem', cacheDirectory: <AIH_HOME>/shared-cache/webpack/<projectHash>/<configHash> }`
-   每个项目/配置一份，GC 保留最近 2 份。这样同一项目在任意工作树构建都复用缓存，
-   不再每次都重建 3.23G 的 `.pack`。
-3. **其他语言包管理器**统一走环境变量重定向（最稳，应用感知不到）：
+   已改为显式配置 `cacheDirectory = <hostHome>/.ai_home/shared-cache/webpack/<projectKey>/`：
+   - `projectKey` 用 git common-dir 计算 → 同一仓库的所有 worktree 共用一份（单份约 680M，旧布局
+     累积到 2.9G）；
+   - 构建排队锁与直接构建的互斥锁也放在该目录，跨 worktree 串行，避免并发写坏缓存；
+   - 30 天未构建的项目缓存在下次构建时自动回收。
+3. **其他语言包管理器**统一走环境变量重定向（Node 与 Go 共用同一份清单：`buildSharedCacheEnv` /
+   `internal/runtime/sharedcache`）：
 
 | 语言 | 变量 |
 |---|---|
@@ -184,13 +191,18 @@ GC(mode):
   7 天宽限；在用判定 `ps` + `lsof`，探测失败按在用处理。
 - 接线：`pty-runtime-spawn`（CLI）、`account-app-launcher`（桌面）、
   `native-session-launch-preparation` 的 `shared-artifacts` 步骤。
+- `web/`：pnpm 10（store 全局一份）+ webpack 缓存移到 `shared-cache/webpack/<projectKey>`，
+  `node_modules` 4.1G → 1.3G（其中真实字节都是 store 硬链接），本地缓存目录已删除；
+  构建锁跨 worktree 串行。
+- Go 启动链：`internal/runtime/sharedcache` 统一工具链缓存环境变量，桌面启动与原生 CLI 登录共用。
 - 实测：33 个账号 `Library/Caches` 全部指向宿主；CLI 版本树按版本共享；auth-projections
   10G → 7.2G，artifact-store 2.1G（含各版本唯一副本）。
 
 待落地：
 
 - Go 侧 `artifactstore/artifactapi`（单一执行点 + ledger + 租约），Node 改为客户端。
-- `web/` pnpm + 共享 webpack 缓存（见 §5）。
+- Go 桌面 provisioner 目前**保留**投影里已存在的真实缓存目录（数据安全优先），
+  桌面-only 账号的缓存要靠下一次 CLI 启动或后续 Go GC 回收。
 - Windows junction / Linux reflink 分支的真机验证。
 
 ## 7. 落地顺序（每阶段都能独立回滚）

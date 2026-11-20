@@ -24,14 +24,17 @@ jobs:
         with:
           node-version: 22
 
+      - name: Enable pnpm
+        run: corepack enable
+
       - name: Install web dependencies
         working-directory: web
-        run: npm install
+        run: pnpm install
 
       - name: Lint web
         working-directory: web
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Build web
         working-directory: web
-        run: npm run build
+        run: pnpm run build

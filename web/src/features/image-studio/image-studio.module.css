@@ -361,9 +361,12 @@
 .canvasStage {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
-  place-content: center;
+  place-items: center;
   padding: var(--hos-space-3);
   background: var(--studio-graphite);
 }
@@ -427,20 +430,68 @@
 }
 
 .canvasImageWrap {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  place-content: center;
+  position: absolute;
+  inset: var(--hos-space-3);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
   animation: imageReveal var(--motion-slower) var(--ease-standard) both;
 }
 
 .canvasImageWrap img {
   display: block;
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
+  min-width: 0;
+  min-height: 0;
   border-radius: var(--hos-radius-xs);
   object-fit: contain;
   box-shadow: var(--elevation-2);
+}
+
+.canvasPreviewButton {
+  position: absolute;
+  z-index: 2;
+  top: var(--hos-space-1-5);
+  right: var(--hos-space-1-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--c-neutral-950) 76%, transparent);
+  color: var(--hos-white);
+  font-size: var(--text-base);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.canvasStage:hover .canvasPreviewButton,
+.canvasStage:focus-within .canvasPreviewButton,
+.canvasPreviewButton:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.canvasPreviewButton:hover,
+.canvasPreviewButton:focus-visible {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--c-neutral-950) 88%, transparent);
+  color: var(--color-accent);
+  outline: none;
 }
 
 .canvasFooter {
@@ -582,8 +633,6 @@
   border-radius: var(--hos-radius-sm);
   background: var(--color-surface-raised);
   color: var(--color-text);
-  text-align: left;
-  cursor: pointer;
   transition: border-color var(--motion-fast) var(--ease-standard);
 }
 
@@ -594,6 +643,22 @@
 .revisionCardSelected {
   border-color: var(--studio-accent);
   box-shadow: 0 0 0 1px var(--studio-accent);
+}
+
+.revisionThumbSlot {
+  position: relative;
+  width: 76px;
+  height: 92px;
+}
+
+.revisionThumbSelect {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .revisionNumber {
@@ -607,6 +672,7 @@
   color: var(--hos-white);
   font-family: var(--font-mono);
   font-size: var(--hos-text-micro);
+  pointer-events: none;
 }
 
 .revisionThumb {
@@ -626,6 +692,112 @@
   object-fit: cover;
 }
 
+.revisionPreviewButton {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 65%, transparent);
+  background: color-mix(in srgb, var(--c-neutral-950) 78%, transparent);
+  color: var(--hos-white);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.revisionThumbSlot:hover .revisionPreviewButton,
+.revisionThumbSlot:focus-within .revisionPreviewButton,
+.revisionPreviewButton:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.revisionPreviewButton:hover,
+.revisionPreviewButton:focus-visible {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--c-neutral-950) 88%, transparent);
+  color: var(--color-accent);
+  outline: none;
+}
+
+.revisionBody {
+  display: flex;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.revisionBody:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.revisionDeleteWrap {
+  position: absolute;
+  z-index: 3;
+  top: var(--hos-space-1-5);
+  right: var(--hos-space-1-5);
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+.revisionCard:hover .revisionDeleteWrap,
+.revisionCard:focus-within .revisionDeleteWrap {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.revisionDeleteButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.revisionDeleteButton:hover:not(:disabled),
+.revisionDeleteButton:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-danger) 60%, var(--color-border));
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  outline: none;
+}
+
+.revisionDeleteButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .revisionInfo {
   display: flex;
   min-width: 0;
@@ -642,7 +814,10 @@
   text-transform: uppercase;
 }
 
-.revisionMode { color: var(--color-muted); }
+.revisionMode {
+  padding-right: 26px;
+  color: var(--color-muted);
+}
 
 .revisionPrompt {
   display: -webkit-box;
@@ -1025,6 +1200,10 @@
   .workspaceMain {
     min-height: 680px;
   }
+
+  .canvasStage {
+    min-height: 320px;
+  }
 }
 
 @media (max-width: 780px) {
@@ -1096,7 +1275,11 @@
   }
 
   .sessionItem,
-  .revisionCard {
+  .revisionCard,
+  .canvasPreviewButton,
+  .revisionPreviewButton,
+  .revisionDeleteWrap,
+  .revisionDeleteButton {
     transition: none;
   }
 }

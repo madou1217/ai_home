@@ -2320,6 +2320,13 @@ export const imageStudioAPI = {
     return response.data;
   },
 
+  deleteRevision: async (sessionId: string, revisionId: string): Promise<ImageStudioSessionResponse> => {
+    const response = await api.delete<ImageStudioSessionResponse>(
+      `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/revisions/${encodeURIComponent(revisionId)}`
+    );
+    return response.data;
+  },
+
   run: async (sessionId: string, input: ImageStudioRunInput): Promise<ImageStudioRunResponse> => {
     const response = await api.post<ImageStudioRunResponse>(
       `/webui/studio/image/sessions/${encodeURIComponent(sessionId)}/runs`,

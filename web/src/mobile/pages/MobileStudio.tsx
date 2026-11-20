@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Input, Spin } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -9,7 +9,8 @@ import {
   ReloadOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
-import { imageStudioAssetKey } from '@/features/image-studio/image-studio-utils';
+import ImageStudioPreviewModal, { type ImageStudioPreviewItem } from '@/features/image-studio/image-studio-preview-modal';
+import { imageStudioAssetKey, mapAssetsById } from '@/features/image-studio/image-studio-utils';
 import MobileBoot from '@/mobile/MobileBoot';
 import {
   DetailSheet,
@@ -21,7 +22,7 @@ import {
   MonoList,
   SwipeRow,
 } from '@/mobile/ui';
-import type { ImageStudioSessionSummary } from '@/types';
+import type { ImageStudioAsset, ImageStudioRevision, ImageStudioSessionSummary } from '@/types';
 import type { MobilePageProps } from '../mobile-routes';
 import StudioCanvas from './studio/StudioCanvas';
 import StudioComposer from './studio/StudioComposer';
@@ -105,7 +106,38 @@ function SessionView({ studio }: { studio: MobileImageStudio }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
-  const { session } = studio;
+  const [previewTarget, setPreviewTarget] = useState<{
+    revisionId: string;
+    assetId: string;
+    frameLabel: string;
+  } | null>(null);
+  const { session, assetUrls } = studio;
+  const sessionAssets = useMemo(() => mapAssetsById(session), [session]);
+  const resolvedPreview = useMemo<ImageStudioPreviewItem | null>(() => {
+    if (!session || !previewTarget) return null;
+    const targetRevision = session.revisions.find((item) => item.id === previewTarget.revisionId);
+    const targetAsset = sessionAssets.get(previewTarget.assetId);
+    const imageUrl = targetAsset ? assetUrls[imageStudioAssetKey(session.id, targetAsset.id)] || '' : '';
+    if (!targetRevision || !targetAsset || !imageUrl) return null;
+    return {
+      revision: targetRevision,
+      asset: targetAsset,
+      frameLabel: previewTarget.frameLabel,
+      imageUrl,
+    };
+  }, [assetUrls, previewTarget, session, sessionAssets]);
+
+  const handleOpenPreview = (
+    targetRevision: ImageStudioRevision,
+    targetAsset: ImageStudioAsset,
+    frameLabel: string,
+  ) => {
+    setPreviewTarget({
+      revisionId: targetRevision.id,
+      assetId: targetAsset.id,
+      frameLabel,
+    });
+  };
 
   useEffect(() => {
     document.body.dataset.mobileImmersive = '1';
@@ -138,8 +170,12 @@ function SessionView({ studio }: { studio: MobileImageStudio }) {
       <div className={styles.scroll} ref={scrollRef}>
         {session ? (
           <>
-            <StudioCanvas studio={studio} />
-            <StudioRevisionGallery studio={studio} onSelected={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
+            <StudioCanvas studio={studio} onPreview={handleOpenPreview} />
+            <StudioRevisionGallery
+              studio={studio}
+              onSelected={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+              onPreview={handleOpenPreview}
+            />
           </>
         ) : (
           <MobileBoot label="LOADING SESSION" />
@@ -186,6 +222,12 @@ function SessionView({ studio }: { studio: MobileImageStudio }) {
           </div>
         </div>
       </DetailSheet>
+
+      <ImageStudioPreviewModal
+        preview={resolvedPreview}
+        onClose={() => setPreviewTarget(null)}
+        onDownload={studio.download}
+      />
     </div>
   );
 }

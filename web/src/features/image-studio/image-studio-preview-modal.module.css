@@ -1,0 +1,80 @@
+/* 全图预览弹窗（桌面与移动端共用）：明确界定画布尺寸并保持 object-fit: contain，避免任意宽高比被裁切。 */
+
+.previewContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-2-5, 10px);
+  min-width: 0;
+}
+
+.previewStage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 72vh;
+  height: 72dvh;
+  min-height: 240px;
+  padding: var(--hos-space-2, 8px);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+
+.previewImage {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.previewMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-3, 12px);
+  min-width: 0;
+}
+
+.previewText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--hos-space-1, 4px);
+  min-width: 0;
+}
+
+.previewSpecs {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro, 11px);
+  letter-spacing: var(--tracking-wide, 0.04em);
+  text-transform: uppercase;
+}
+
+.previewPrompt {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-muted-strong);
+  font-family: var(--font-prose);
+  font-size: var(--text-xs, 12px);
+  line-height: var(--leading-snug, 1.45);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (max-width: 780px) {
+  .previewStage {
+    height: 66vh;
+    height: 66dvh;
+  }
+
+  .previewMeta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

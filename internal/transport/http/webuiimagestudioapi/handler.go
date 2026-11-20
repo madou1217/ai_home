@@ -6,6 +6,7 @@
 //	GET    /v1/management/webui/studio/image/sessions/{sessionId}
 //	PATCH  /v1/management/webui/studio/image/sessions/{sessionId}
 //	DELETE /v1/management/webui/studio/image/sessions/{sessionId}
+//	DELETE /v1/management/webui/studio/image/sessions/{sessionId}/revisions/{revisionId}
 //	POST   /v1/management/webui/studio/image/sessions/{sessionId}/runs
 //	GET    /v1/management/webui/studio/image/sessions/{sessionId}/assets/{assetId}
 //
@@ -111,6 +112,8 @@ func (h *Handler) serveSessionSubroute(w http.ResponseWriter, r *http.Request, r
 		h.handleDeleteSession(w, r, sessionID)
 	case len(parts) == 2 && parts[1] == "runs" && r.Method == http.MethodPost:
 		h.handleExecuteRun(w, r, sessionID)
+	case len(parts) == 3 && parts[1] == "revisions" && parts[2] != "" && r.Method == http.MethodDelete:
+		h.handleDeleteRevision(w, r, sessionID, parts[2])
 	case len(parts) == 3 && parts[1] == "assets" && parts[2] != "" && r.Method == http.MethodGet:
 		h.handleReadAsset(w, r, sessionID, parts[2])
 	default:
@@ -214,6 +217,18 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request, se
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":               true,
 		"deletedSessionId": deleted.ID,
+	})
+}
+
+func (h *Handler) handleDeleteRevision(w http.ResponseWriter, r *http.Request, sessionID string, revisionID string) {
+	session, err := h.service.DeleteRevision(r.Context(), sessionID, revisionID)
+	if err != nil {
+		writeFromStudioErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"session": session,
 	})
 }
 

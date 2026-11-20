@@ -3,6 +3,7 @@ import {
   CopyOutlined,
   DownloadOutlined,
   EditOutlined,
+  EyeOutlined,
   LoadingOutlined,
   PictureOutlined,
   RedoOutlined,
@@ -11,7 +12,12 @@ import { Button, Tooltip } from 'antd';
 import type { ImageStudioAsset, ImageStudioRevision, ImageStudioSession } from '@/types';
 import HudCube from '@/components/hud/HudCube';
 import { useSwitchFade } from '@/hooks/use-switch-fade';
-import { formatAssetSize, imageStudioAssetKey, mapAssetsById } from './image-studio-utils';
+import {
+  formatAssetSize,
+  formatRevisionFrameLabel,
+  imageStudioAssetKey,
+  mapAssetsById,
+} from './image-studio-utils';
 import styles from './image-studio.module.css';
 
 interface ImageStudioCanvasProps {
@@ -21,6 +27,7 @@ interface ImageStudioCanvasProps {
   assetUrls: Record<string, string>;
   running: boolean;
   onSelectAsset: (assetId: string) => void;
+  onPreview: (revision: ImageStudioRevision, asset: ImageStudioAsset, frameLabel: string) => void;
   onContinueEdit: (revision: ImageStudioRevision, asset: ImageStudioAsset) => void;
   onReuseRevision: (revision: ImageStudioRevision) => void;
   onDownload: (revision: ImageStudioRevision, asset: ImageStudioAsset) => void;
@@ -34,6 +41,7 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
   assetUrls,
   running,
   onSelectAsset,
+  onPreview,
   onContinueEdit,
   onReuseRevision,
   onDownload,
@@ -47,6 +55,10 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
     ? assetUrls[imageStudioAssetKey(session.id, selectedAsset.id)]
     : '';
   const revisedPrompt = String(selectedAsset?.revisedPrompt || '').trim();
+  const revisionIndex = session && revision
+    ? session.revisions.findIndex((item) => item.id === revision.id)
+    : -1;
+  const frameLabel = revisionIndex >= 0 ? formatRevisionFrameLabel(revisionIndex) : '当前画布';
 
   // 选另一帧/另一个产物时只是换 <img src>（同一节点），挂载动画不会重播；
   // 用切换淡入表达「换了一张」，不重挂 img（避免已缓存的图重新加载）。
@@ -93,6 +105,21 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
         ) : selectedUrl ? (
           <div className={styles.canvasImageWrap}>
             <img src={selectedUrl} alt={revision.prompt || 'AI 生成图像'} />
+            {selectedAsset && (
+              <Tooltip title={`预览 ${frameLabel} 全图`}>
+                <button
+                  type="button"
+                  className={styles.canvasPreviewButton}
+                  aria-label={`预览 ${frameLabel} 全图`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPreview(revision, selectedAsset, frameLabel);
+                  }}
+                >
+                  <EyeOutlined />
+                </button>
+              </Tooltip>
+            )}
           </div>
         ) : (
           <div className={styles.canvasEmpty}>

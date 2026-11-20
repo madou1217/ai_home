@@ -23,6 +23,7 @@ import {
   imageStudioAssetKey,
   makeRevisionDownloadName,
   mapAssetsById,
+  resolveNextRevisionIdAfterDelete,
   resolveSelectedAsset,
   resolveSelectedRevision,
   selectInitialImageStudioModel,
@@ -113,6 +114,7 @@ export function useMobileImageStudio() {
   const [switchingSession, setSwitchingSession] = useState(false);
   const [refreshingList, setRefreshingList] = useState(false);
   const [running, setRunning] = useState(false);
+  const [deletingRevisionId, setDeletingRevisionId] = useState('');
 
   const setSelectionFromSession = useCallback((
     nextSession: ImageStudioSession,
@@ -637,6 +639,67 @@ export function useMobileImageStudio() {
     });
   };
 
+  const handleDeleteRevision = async (
+    targetSessionId: string,
+    targetRevision: ImageStudioRevision,
+    frameLabel: string,
+  ) => {
+    const previousRevisions = session?.id === targetSessionId ? session.revisions : [];
+    const currentSelectedId = selectedRevision?.id || selectedRevisionId;
+    setDeletingRevisionId(targetRevision.id);
+    try {
+      const response = await imageStudioAPI.deleteRevision(targetSessionId, targetRevision.id);
+      if (activeSessionIdRef.current === targetSessionId) {
+        const nextRevisionId = resolveNextRevisionIdAfterDelete(
+          previousRevisions,
+          response.session.revisions,
+          targetRevision.id,
+          currentSelectedId,
+        );
+        const keepingSelection = Boolean(nextRevisionId && nextRevisionId === currentSelectedId);
+        setSelectionFromSession(
+          response.session,
+          nextRevisionId,
+          keepingSelection ? selectedAssetId : '',
+        );
+        const survivingAssetIds = new Set(response.session.assets.map((asset) => asset.id));
+        const survivingRevisionIds = new Set(response.session.revisions.map((item) => item.id));
+        setSourceSelections((current) => current.filter((source) => (
+          !source.assetId || survivingAssetIds.has(source.assetId)
+        )));
+        setMaskAssetId((current) => (current && !survivingAssetIds.has(current) ? '' : current));
+        setParentRevisionId((current) => (current && !survivingRevisionIds.has(current) ? '' : current));
+      }
+      await refreshSessionList();
+      message.success(`已删除 ${frameLabel}`);
+    } catch (error) {
+      message.error(`删除修订失败：${errorMessage(error)}`);
+    } finally {
+      setDeletingRevisionId((current) => (current === targetRevision.id ? '' : current));
+    }
+  };
+
+  const confirmDeleteRevision = (targetRevision: ImageStudioRevision, frameLabel: string) => {
+    if (!session) return;
+    if (targetRevision.status === 'running') {
+      message.warning(`${frameLabel} 正在处理中，暂不可删除`);
+      return;
+    }
+    const targetSessionId = session.id;
+    const trimmedPrompt = targetRevision.prompt.trim();
+    const promptSnippet = trimmedPrompt.slice(0, 60);
+    Modal.confirm({
+      title: `删除修订 ${frameLabel}`,
+      content: promptSnippet
+        ? `将永久删除 ${frameLabel}（“${promptSnippet}${trimmedPrompt.length > 60 ? '…' : ''}”）及其独占图片资产，被其他修订共享的参考资产会保留。`
+        : `将永久删除 ${frameLabel} 及其独占图片资产，被其他修订共享的参考资产会保留。`,
+      okText: '删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: () => handleDeleteRevision(targetSessionId, targetRevision, frameLabel),
+    });
+  };
+
   const selectRevision = (revision: ImageStudioRevision) => {
     setSelectedRevisionId(revision.id);
     setSelectedAssetId(getRevisionPreviewAssetId(revision));
@@ -680,6 +743,7 @@ export function useMobileImageStudio() {
     switchingSession,
     refreshingList,
     running,
+    deletingRevisionId,
     sessionHasRunningRevision,
     openSession,
     closeSession,
@@ -697,6 +761,7 @@ export function useMobileImageStudio() {
     copyPrompt,
     renameSession,
     confirmDeleteSession,
+    confirmDeleteRevision,
     selectRevision,
     setSelectedAssetId,
   };

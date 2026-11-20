@@ -2,17 +2,28 @@ import {
   CopyOutlined,
   DownloadOutlined,
   EditOutlined,
+  EyeOutlined,
   LoadingOutlined,
   PictureOutlined,
   RedoOutlined,
 } from '@ant-design/icons';
-import { formatAssetSize, imageStudioAssetKey, mapAssetsById } from '@/features/image-studio/image-studio-utils';
-import type { ImageStudioAsset } from '@/types';
+import {
+  formatAssetSize,
+  formatRevisionFrameLabel,
+  imageStudioAssetKey,
+  mapAssetsById,
+} from '@/features/image-studio/image-studio-utils';
+import type { ImageStudioAsset, ImageStudioRevision } from '@/types';
 import type { MobileImageStudio } from './use-mobile-image-studio';
 import styles from '../MobileStudio.module.css';
 
+interface StudioCanvasProps {
+  studio: MobileImageStudio;
+  onPreview: (revision: ImageStudioRevision, asset: ImageStudioAsset, frameLabel: string) => void;
+}
+
 /** 主画布：所选修订的所选输出 + 状态（生成中 / 失败 / 载入中 / 空会话）+ 提示词与画布操作。 */
-export default function StudioCanvas({ studio }: { studio: MobileImageStudio }) {
+export default function StudioCanvas({ studio, onPreview }: StudioCanvasProps) {
   const { session, selectedRevision: revision, selectedAsset, assetUrls, running } = studio;
   const assets = mapAssetsById(session);
   const outputAssets = (revision?.outputAssetIds || [])
@@ -20,6 +31,10 @@ export default function StudioCanvas({ studio }: { studio: MobileImageStudio }) 
     .filter((asset): asset is ImageStudioAsset => Boolean(asset));
   const selectedUrl = session && selectedAsset ? assetUrls[imageStudioAssetKey(session.id, selectedAsset.id)] : '';
   const revisedPrompt = String(selectedAsset?.revisedPrompt || '').trim();
+  const revisionIndex = session && revision
+    ? session.revisions.findIndex((item) => item.id === revision.id)
+    : -1;
+  const frameLabel = revisionIndex >= 0 ? formatRevisionFrameLabel(revisionIndex) : '当前画布';
 
   return (
     <section className={styles.canvas} aria-label="影像画布">
@@ -54,7 +69,23 @@ export default function StudioCanvas({ studio }: { studio: MobileImageStudio }) 
             <p>{revision.error?.message || '请检查模型可用状态或调整参数后重试。'}</p>
           </div>
         ) : selectedUrl ? (
-          <img className={styles.stageImage} src={selectedUrl} alt={revision.prompt || 'AI 生成图像'} />
+          <>
+            <img className={styles.stageImage} src={selectedUrl} alt={revision.prompt || 'AI 生成图像'} />
+            {selectedAsset ? (
+              <button
+                type="button"
+                className={styles.stagePreviewButton}
+                aria-label={`预览 ${frameLabel} 全图`}
+                title={`预览 ${frameLabel} 全图`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPreview(revision, selectedAsset, frameLabel);
+                }}
+              >
+                <EyeOutlined />
+              </button>
+            ) : null}
+          </>
         ) : (
           <div className={styles.stageEmpty}>
             <LoadingOutlined className={styles.stageMark} spin={revision.status === 'running'} />

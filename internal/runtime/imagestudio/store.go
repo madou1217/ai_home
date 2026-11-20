@@ -485,6 +485,128 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) (Session, e
 	return deleted, err
 }
 
+// DeleteRevision 删除指定会话内的单条修订记录及其仅被该修订独占的图片资产；
+// 若会话不存在返回 404 image_session_not_found，修订不存在返回 404 image_revision_not_found，
+// 会话存在任意 running 修订（含目标本身）返回 409 image_session_running。
+func (s *Store) DeleteRevision(ctx context.Context, sessionID string, revisionID string) (Session, error) {
+	var updated Session
+	err := s.withSerializedTx(ctx, true, func(tx *sql.Tx) error {
+		session, readErr := readSessionTx(ctx, tx, sessionID)
+		if readErr != nil {
+			return readErr
+		}
+		revIdx, findErr := findRevisionIndex(session, revisionID)
+		if findErr != nil {
+			return findErr
+		}
+		for _, rev := range session.Revisions {
+			if rev.Status == "running" {
+				return NewError(409, "image_session_running", "image session has a running revision")
+			}
+		}
+
+		target := session.Revisions[revIdx]
+		targetID := target.ID
+		targetParentID := target.ParentRevisionID
+
+		remainingRevs := make([]Revision, 0, len(session.Revisions)-1)
+		remainingRevIDs := make(map[string]struct{}, len(session.Revisions)-1)
+		for i, rev := range session.Revisions {
+			if i == revIdx {
+				continue
+			}
+			if rev.ParentRevisionID == targetID {
+				if targetParentID != rev.ID {
+					rev.ParentRevisionID = targetParentID
+				} else {
+					rev.ParentRevisionID = ""
+				}
+			}
+			remainingRevs = append(remainingRevs, rev)
+			remainingRevIDs[rev.ID] = struct{}{}
+		}
+
+		referencedByRemaining := collectReferencedAssetIDs(remainingRevs)
+		referencedByTarget := collectReferencedAssetIDs([]Revision{target})
+
+		remainingAssets := make([]Asset, 0, len(session.Assets))
+		deleteAssetIDs := make([]string, 0)
+		for _, asset := range session.Assets {
+			if _, shared := referencedByRemaining[asset.ID]; shared {
+				remainingAssets = append(remainingAssets, asset)
+				continue
+			}
+			ownedByTarget := asset.RevisionID == targetID
+			_, usedByTarget := referencedByTarget[asset.ID]
+			_, ownerStillExists := remainingRevIDs[asset.RevisionID]
+			if ownedByTarget || (usedByTarget && !ownerStillExists) {
+				deleteAssetIDs = append(deleteAssetIDs, asset.ID)
+				continue
+			}
+			remainingAssets = append(remainingAssets, asset)
+		}
+
+		for _, assetID := range deleteAssetIDs {
+			if _, execErr := tx.ExecContext(
+				ctx,
+				"DELETE FROM image_studio_assets WHERE asset_id = ? AND session_id = ?",
+				assetID, session.ID,
+			); execErr != nil {
+				return execErr
+			}
+		}
+
+		session.Revisions = remainingRevs
+		session.Assets = remainingAssets
+		session.ActiveRevisionID = nextActiveRevisionID(session.ActiveRevisionID, targetID, revIdx, remainingRevs)
+		session.UpdatedAt = s.nowMS()
+		hydrateSessionURLs(&session)
+		if updateErr := updateSessionTx(ctx, tx, session); updateErr != nil {
+			return updateErr
+		}
+		updated = session
+		return nil
+	})
+	return updated, err
+}
+
+func collectReferencedAssetIDs(revisions []Revision) map[string]struct{} {
+	refs := make(map[string]struct{})
+	for _, rev := range revisions {
+		for _, aid := range rev.SourceAssetIDs {
+			if trimmed := strings.TrimSpace(aid); trimmed != "" {
+				refs[trimmed] = struct{}{}
+			}
+		}
+		if trimmed := strings.TrimSpace(rev.MaskAssetID); trimmed != "" {
+			refs[trimmed] = struct{}{}
+		}
+		for _, aid := range rev.OutputAssetIDs {
+			if trimmed := strings.TrimSpace(aid); trimmed != "" {
+				refs[trimmed] = struct{}{}
+			}
+		}
+	}
+	return refs
+}
+
+func nextActiveRevisionID(currentActiveID string, deletedID string, deletedIdx int, remaining []Revision) string {
+	if len(remaining) == 0 {
+		return ""
+	}
+	if currentActiveID != "" && currentActiveID != deletedID {
+		for _, rev := range remaining {
+			if rev.ID == currentActiveID {
+				return currentActiveID
+			}
+		}
+	}
+	if deletedIdx > 0 && deletedIdx-1 < len(remaining) {
+		return remaining[deletedIdx-1].ID
+	}
+	return remaining[0].ID
+}
+
 // BeginRevision 写入 source/mask 资产并创建状态为 running 的新修订记录。
 func (s *Store) BeginRevision(ctx context.Context, sessionID string, input BeginRevisionInput) (Session, Revision, error) {
 	var outSession Session

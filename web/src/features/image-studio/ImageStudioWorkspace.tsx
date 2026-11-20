@@ -31,6 +31,7 @@ import ImageStudioComposer, {
 } from './ImageStudioComposer';
 import ImageStudioRevisionStrip from './ImageStudioRevisionStrip';
 import ImageStudioSessionRail from './ImageStudioSessionRail';
+import ImageStudioPreviewModal, { type ImageStudioPreviewItem } from './image-studio-preview-modal';
 import { useImageStudioAssetUrls, type ImageStudioAssetRequest } from './use-image-studio-assets';
 import {
   buildImageStudioRevisionDraft,
@@ -42,6 +43,7 @@ import {
   imageStudioAssetKey,
   makeRevisionDownloadName,
   mapAssetsById,
+  resolveNextRevisionIdAfterDelete,
   resolveSelectedAsset,
   resolveSelectedRevision,
   selectInitialImageStudioModel,
@@ -119,6 +121,12 @@ const ImageStudioWorkspace: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [switchingSession, setSwitchingSession] = useState(false);
   const [running, setRunning] = useState(false);
+  const [deletingRevisionId, setDeletingRevisionId] = useState('');
+  const [previewTarget, setPreviewTarget] = useState<{
+    revisionId: string;
+    assetId: string;
+    frameLabel: string;
+  } | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const sessionHeaderRef = useRef<HTMLDivElement | null>(null);
@@ -349,6 +357,20 @@ const ImageStudioWorkspace: React.FC = () => {
     return [...requests.values()];
   }, [maskAssetId, selectedRevision, session, sessionAssets, sessions, sourceSelections]);
   const assetUrls = useImageStudioAssetUrls(assetRequests);
+
+  const resolvedPreview = useMemo<ImageStudioPreviewItem | null>(() => {
+    if (!session || !previewTarget) return null;
+    const targetRevision = session.revisions.find((item) => item.id === previewTarget.revisionId);
+    const targetAsset = sessionAssets.get(previewTarget.assetId);
+    const imageUrl = targetAsset ? assetUrls[imageStudioAssetKey(session.id, targetAsset.id)] || '' : '';
+    if (!targetRevision || !targetAsset || !imageUrl) return null;
+    return {
+      revision: targetRevision,
+      asset: targetAsset,
+      frameLabel: previewTarget.frameLabel,
+      imageUrl,
+    };
+  }, [assetUrls, previewTarget, session, sessionAssets]);
 
   const sourceLimit = getImageStudioSourceLimit(selectedModel);
   const sourcePreviews = useMemo<ImageStudioSourcePreview[]>(() => sourceSelections.map((source) => {
@@ -668,6 +690,80 @@ const ImageStudioWorkspace: React.FC = () => {
     });
   };
 
+  const handleOpenPreview = (
+    targetRevision: ImageStudioRevision,
+    targetAsset: ImageStudioAsset,
+    frameLabel: string,
+  ) => {
+    setPreviewTarget({
+      revisionId: targetRevision.id,
+      assetId: targetAsset.id,
+      frameLabel,
+    });
+  };
+
+  const handleDeleteRevision = async (
+    targetSessionId: string,
+    targetRevision: ImageStudioRevision,
+    frameLabel: string,
+  ) => {
+    const previousRevisions = session?.id === targetSessionId ? session.revisions : [];
+    const currentSelectedId = selectedRevision?.id || selectedRevisionId;
+    setDeletingRevisionId(targetRevision.id);
+    try {
+      const response = await imageStudioAPI.deleteRevision(targetSessionId, targetRevision.id);
+      if (activeSessionIdRef.current === targetSessionId) {
+        const nextRevisionId = resolveNextRevisionIdAfterDelete(
+          previousRevisions,
+          response.session.revisions,
+          targetRevision.id,
+          currentSelectedId,
+        );
+        const keepingSelection = Boolean(nextRevisionId && nextRevisionId === currentSelectedId);
+        setSelectionFromSession(
+          response.session,
+          nextRevisionId,
+          keepingSelection ? selectedAssetId : '',
+        );
+        const survivingAssetIds = new Set(response.session.assets.map((asset) => asset.id));
+        const survivingRevisionIds = new Set(response.session.revisions.map((item) => item.id));
+        setSourceSelections((current) => current.filter((source) => (
+          !source.assetId || survivingAssetIds.has(source.assetId)
+        )));
+        setMaskAssetId((current) => (current && !survivingAssetIds.has(current) ? '' : current));
+        setParentRevisionId((current) => (current && !survivingRevisionIds.has(current) ? '' : current));
+        setPreviewTarget((current) => (current?.revisionId === targetRevision.id ? null : current));
+      }
+      await refreshSessionList();
+      message.success(`已删除 ${frameLabel}`);
+    } catch (error) {
+      message.error(`删除修订失败：${errorMessage(error)}`);
+    } finally {
+      setDeletingRevisionId((current) => (current === targetRevision.id ? '' : current));
+    }
+  };
+
+  const confirmDeleteRevision = (targetRevision: ImageStudioRevision, frameLabel: string) => {
+    if (!session) return;
+    if (targetRevision.status === 'running') {
+      message.warning(`${frameLabel} 正在处理中，暂不可删除`);
+      return;
+    }
+    const targetSessionId = session.id;
+    const trimmedPrompt = targetRevision.prompt.trim();
+    const promptSnippet = trimmedPrompt.slice(0, 60);
+    Modal.confirm({
+      title: `删除修订 ${frameLabel}`,
+      content: promptSnippet
+        ? `将永久删除 ${frameLabel}（“${promptSnippet}${trimmedPrompt.length > 60 ? '…' : ''}”）及其独占图片资产，被其他修订共享的参考资产会保留。`
+        : `将永久删除 ${frameLabel} 及其独占图片资产，被其他修订共享的参考资产会保留。`,
+      okText: '删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: () => handleDeleteRevision(targetSessionId, targetRevision, frameLabel),
+    });
+  };
+
   const sessionHasRunningRevision = Boolean(
     running || session?.revisions.some((revision) => revision.status === 'running'),
   );
@@ -768,6 +864,7 @@ const ImageStudioWorkspace: React.FC = () => {
                   direction: resolveOrderedDirection(assetOrder, selectedAssetId, nextAssetId)
                 });
               }}
+              onPreview={handleOpenPreview}
               onContinueEdit={handleContinueEdit}
               onReuseRevision={handleReuseRevision}
               onDownload={handleDownload}
@@ -776,6 +873,7 @@ const ImageStudioWorkspace: React.FC = () => {
             <ImageStudioRevisionStrip
               session={session}
               selectedRevisionId={selectedRevision?.id || ''}
+              deletingRevisionId={deletingRevisionId}
               assetUrls={assetUrls}
               onSelect={(revision) => {
                 const revisionOrder = (session?.revisions || []).map((item) => item.id);
@@ -791,6 +889,8 @@ const ImageStudioWorkspace: React.FC = () => {
                     : 'neutral'
                 });
               }}
+              onPreview={handleOpenPreview}
+              onDelete={confirmDeleteRevision}
             />
           </main>
 
@@ -844,6 +944,12 @@ const ImageStudioWorkspace: React.FC = () => {
       >
         <Input value={renameValue} maxLength={120} onChange={(event) => setRenameValue(event.target.value)} autoFocus />
       </Modal>
+
+      <ImageStudioPreviewModal
+        preview={resolvedPreview}
+        onClose={() => setPreviewTarget(null)}
+        onDownload={handleDownload}
+      />
     </PageContainer>
   );
 };

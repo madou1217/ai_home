@@ -266,6 +266,7 @@ func BuildWebUITranslationStudioRoutesWithOptions(
 		{Pattern: "GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}", Handler: studioHandler},
 		{Pattern: "PATCH " + webuiimagestudioapi.Path + "/sessions/{sessionId}", Handler: studioHandler},
 		{Pattern: "DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}", Handler: studioHandler},
+		{Pattern: "DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}/revisions/{revisionId}", Handler: studioHandler},
 		{Pattern: "POST " + webuiimagestudioapi.Path + "/sessions/{sessionId}/runs", Handler: studioHandler},
 		{Pattern: "GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}/assets/{assetId}", Handler: studioHandler},
 		// 浏览器数据面：同一处理器同时挂 /v0/webui/studio/image/*，

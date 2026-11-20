@@ -202,6 +202,31 @@ export function getRevisionPreviewAssetId(revision: ImageStudioRevision | null |
   return revision?.outputAssetIds?.[0] || revision?.sourceAssetIds?.[0] || '';
 }
 
+export function formatRevisionFrameLabel(index: number) {
+  return `R${String(Math.max(1, index + 1)).padStart(2, '0')}`;
+}
+
+export function resolveNextRevisionIdAfterDelete(
+  previousRevisions: ImageStudioRevision[],
+  nextRevisions: ImageStudioRevision[],
+  deletedRevisionId: string,
+  currentSelectedRevisionId: string,
+) {
+  if (nextRevisions.length === 0) return '';
+  if (
+    currentSelectedRevisionId
+    && currentSelectedRevisionId !== deletedRevisionId
+    && nextRevisions.some((revision) => revision.id === currentSelectedRevisionId)
+  ) {
+    return currentSelectedRevisionId;
+  }
+  const deletedIndex = previousRevisions.findIndex((revision) => revision.id === deletedRevisionId);
+  if (deletedIndex > 0) {
+    return nextRevisions[Math.min(deletedIndex - 1, nextRevisions.length - 1)]?.id || '';
+  }
+  return nextRevisions[0]?.id || '';
+}
+
 export function getLatestRevisionId(session: ImageStudioSession | null | undefined) {
   const revisions = session?.revisions || [];
   const activeRevisionId = String(session?.activeRevisionId || '').trim();

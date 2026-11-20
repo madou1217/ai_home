@@ -139,6 +139,14 @@ func (svc *Service) ListModels(ctx context.Context, providerFilter string) ([]Mo
 	return models, ResolveDefaultModelKey(models), nil
 }
 
+// DeleteRevision 删除指定会话内的单条修订及其独占图片资产，返回更新后的完整会话快照。
+func (svc *Service) DeleteRevision(ctx context.Context, sessionID string, revisionID string) (Session, error) {
+	if svc == nil || svc.store == nil {
+		return Session{}, NewError(503, "image_studio_store_unavailable", "image Studio store is not configured")
+	}
+	return svc.store.DeleteRevision(ctx, sessionID, revisionID)
+}
+
 // ExecuteRun 校验参数、创建 running 修订、调用上游策略、持久化输出图片并更新账号统计。
 func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunRequest) (RunResult, error) {
 	models, _, err := svc.ListModels(ctx, "")

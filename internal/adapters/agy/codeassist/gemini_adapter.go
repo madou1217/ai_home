@@ -292,7 +292,7 @@ func firstString(values ...any) string {
 func normalizeGeminiAPIBase(baseURL string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
-		base = "https://generativelanguage.googleapis.com/v1beta"
+		base = gemini.DefaultAPIKeyBaseURL
 	}
 	if !strings.HasSuffix(base, "/v1beta") && !strings.HasSuffix(base, "/v1") {
 		base += "/v1beta"

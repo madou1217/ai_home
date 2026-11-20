@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	claudeOAuthUpstream = "https://api.anthropic.com"
+	claudeOAuthUpstream = claude.DefaultAPIBaseURL
 	claudeOAuthBeta     = "oauth-2025-04-20"
 )
 

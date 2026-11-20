@@ -30,7 +30,8 @@ function buildGoCLIPlan(options = {}) {
     repositoryRoot,
     output,
     temporaryOutput,
-    args: ['build', '-trimpath', '-o', temporaryOutput, './cmd/aih'],
+    // 与 aih-server 一致：发布用二进制一律 strip（-s -w）。
+    args: ['build', '-trimpath', '-ldflags', '-s -w', '-o', temporaryOutput, './cmd/aih'],
     env: { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' }
   };
 }

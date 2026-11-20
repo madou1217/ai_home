@@ -9,6 +9,7 @@
  *   node scripts/package/smoke.js --artifact dist/release/aih-1.0.0-darwin-arm64.tar.gz
  */
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const net = require('node:net');
@@ -68,9 +69,14 @@ function extractTarGz(archive, destination) {
 
 /** 返回 { command, args, env, cleanup }，其中 command 是可直接执行的 aih 启动器。 */
 function prepareApp(artifact, sandbox) {
+  // Go Server 要求显式管理密钥/客户端密钥（空 home 没有持久化配置），
+  // 这里给每次冒烟用的临时值，不触及任何真实凭据。
+  const token = crypto.randomBytes(16).toString('hex');
   const env = {
     HOME: path.join(sandbox, 'home'),
     AIH_HOME_DIR: path.join(sandbox, 'ai-home'),
+    AIH_SERVER_MANAGEMENT_KEY: 'smoke-mgmt-' + token,
+    AIH_SERVER_API_KEY: 'smoke-client-' + token,
     PATH: '/usr/bin:/bin',
     TERM: 'dumb'
   };
@@ -121,7 +127,10 @@ function runHelp(app) {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`aih help exited with ${result.status}: ${result.stderr}`);
   const output = `${result.stdout || ''}${result.stderr || ''}`;
-  if (!/AI Home/.test(output)) throw new Error('aih help did not print the AI Home banner');
+  // 顶层 help 现在是 Go CLI 的用法表，不再打印 "AI Home" 标语；旧包仍是标语。
+  if (!/用法:/.test(output) && !/AI Home/.test(output)) {
+    throw new Error('aih help printed neither the usage table nor the AI Home banner');
+  }
   return output;
 }
 
@@ -152,14 +161,48 @@ function assertBundledAssets(html, port) {
 }
 
 async function waitForExit(child, timeoutMs = 10000) {
-  if (child.exitCode !== null) return;
-  await new Promise((resolve) => {
-    const timer = setTimeout(resolve, timeoutMs);
+  if (child.exitCode !== null) return true;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
     child.once('exit', () => {
       clearTimeout(timer);
-      resolve();
+      resolve(true);
     });
   });
+}
+
+// aih-server 的优雅关闭最长 10s（在跑的推理要收尾），冒烟必须先等它，必要时补
+// SIGKILL，否则解包目录仍被写，rmSync 会撞 ENOTEMPTY。
+async function stopServer(child) {
+  if (!child || child.exitCode !== null) return;
+  // aih launcher 会 exec/派生 aih-server，只给直接子进程发信号会留下孤儿服务端
+  //（它还握着解包目录）。因此冒烟用独立进程组，整组发信号。
+  const signal = (name) => {
+    try {
+      if (process.platform === 'win32') child.kill(name);
+      else process.kill(-child.pid, name);
+    } catch (_error) { /* 进程组已消失 */ }
+  };
+  signal('SIGTERM');
+  if (await waitForExit(child, 14000)) return;
+  signal('SIGKILL');
+  await waitForExit(child, 5000);
+}
+
+// 清理失败不能把冒烟判成失败：删不掉时重试，再退化成一次系统 rm。
+function removeSandbox(dir) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+      return;
+    } catch (_error) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+    }
+  }
+  const result = process.platform === 'win32'
+    ? spawnSync('cmd', ['/c', 'rmdir', '/s', '/q', dir])
+    : spawnSync('rm', ['-rf', dir]);
+  if (result.status !== 0) console.warn(`[smoke] warn: sandbox not removed: ${dir}`);
 }
 
 async function smoke(options) {
@@ -183,7 +226,8 @@ async function smoke(options) {
     logStream = fs.createWriteStream(logFile);
     server = spawn(app.command, [...app.args, 'server', 'serve', '--port', String(port)], {
       env: app.env,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32'
     });
     server.stdout.pipe(logStream);
     server.stderr.pipe(logStream);
@@ -194,15 +238,19 @@ async function smoke(options) {
     console.log(`[smoke] WebUI served from bundle (${assets.length} assets, port ${port})`);
 
     const log = fs.readFileSync(logFile, 'utf8');
-    if (!/server serve started/.test(log)) throw new Error('server did not report a successful start');
+    // 旧包（Node CLI）打印 "server serve started"；Go CLI 直接透传 aih-server 的
+    // "listening on http://..."。
+    if (!/server serve started/.test(log) && !/aih-server listening on http:\/\//.test(log)) {
+      throw new Error('server did not report a successful start');
+    }
     console.log('[smoke] gateway started with the packaged runtime');
   } finally {
-    if (server && server.exitCode === null) {
-      server.kill('SIGTERM');
-      await waitForExit(server);
+    await stopServer(server);
+    if (logStream) {
+      // 先等日志流真正关闭，否则流句柄会在 rm 之后把 server.log 又写回来。
+      await new Promise((resolve) => logStream.end(resolve));
     }
-    if (logStream) logStream.end();
-    if (!options.keep) fs.rmSync(sandbox, { recursive: true, force: true });
+    if (!options.keep) removeSandbox(sandbox);
     else console.log(`[smoke] kept sandbox: ${sandbox}`);
   }
 }

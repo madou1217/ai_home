@@ -41,7 +41,9 @@ function buildGoServerPlan(options = {}) {
     output,
     temporaryOutput,
     target: `${platform}-${arch}`,
-    args: ['build', '-trimpath', '-o', temporaryOutput, './cmd/aih-server'],
+    // -s -w 去掉符号表与 DWARF：分发包小 ~19MiB（压缩后），panic 栈和 pprof
+    // 仍可用（pclntab 保留）。发布流水线同样走这里，勿在别处另起一套 flag。
+    args: ['build', '-trimpath', '-ldflags', '-s -w', '-o', temporaryOutput, './cmd/aih-server'],
     env: { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' }
   };
 }

@@ -193,10 +193,7 @@ func (h *Handler) serveHTTPStream(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if err != nil && !errors.Is(err, context.Canceled) {
-				code := "browser_surface_unavailable"
-				if errors.Is(err, accountbrowserview.ErrBusy) {
-					code = "browser_surface_already_controlled"
-				}
+				code := accountbrowserview.PublicErrorCode(err)
 				_ = write(accountbrowserview.Event{Type: "error", Error: code})
 			}
 			return

@@ -67,7 +67,7 @@ func (h *Handler) serveWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer cancelErr()
 	_ = transport.writeEvent(errCtx, accountbrowserview.Event{
 		Type:  "error",
-		Error: "browser_surface_unavailable",
+		Error: accountbrowserview.PublicErrorCode(serveErr),
 	})
 	closeCode := websocket.StatusInternalError
 	if errors.Is(serveErr, errInvalidCommand) {

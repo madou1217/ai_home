@@ -11,25 +11,25 @@ func (s *Service) sessionDir() (string, error) {
 	// User data belongs only to this task service, never an ordinary Edge profile.
 	root, err := os.OpenRoot(s.home)
 	if err != nil {
-		return "", errors.New("browser_storage_unavailable")
+		return "", surfaceFailure("browser_storage_unavailable")
 	}
 	defer func() { _ = root.Close() }()
 	for index, part := range []string{"run", "account-browser", "live-host"} {
 		if err := root.Mkdir(part, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-			return "", errors.New("browser_storage_unavailable")
+			return "", surfaceFailure("browser_storage_unavailable")
 		}
 		info, err := root.Lstat(part)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || (index > 0 && info.Mode().Perm()&0o077 != 0) {
-			return "", errors.New("browser_storage_unsafe")
+			return "", surfaceFailure("browser_storage_unsafe")
 		}
 		next, err := root.OpenRoot(part)
 		if err != nil {
-			return "", errors.New("browser_storage_unsafe")
+			return "", surfaceFailure("browser_storage_unsafe")
 		}
 		opened, err := next.Stat(".")
 		if err != nil || !os.SameFile(info, opened) {
 			_ = next.Close()
-			return "", errors.New("browser_storage_unsafe")
+			return "", surfaceFailure("browser_storage_unsafe")
 		}
 		_ = root.Close()
 		root = next

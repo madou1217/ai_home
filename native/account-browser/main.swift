@@ -17,6 +17,7 @@ do {input=try BrowserInput(pid:pid)} catch {emit(["type":"error","error":"browse
 let capture=BrowserCapture(pid:pid,input:input,emit:emit)
 Task { @MainActor in
   do {try await capture.start()} catch {
+    input.gate.stop();input.enabled=false
     emit(["type":"error","error":(error as? SurfaceFailure)?.code ?? "browser_capture_unavailable"])
     output.flush();exit(5)
   }
@@ -38,7 +39,14 @@ DispatchQueue.global(qos:.userInitiated).async {
     DispatchQueue.main.async {
       defer {pending.signal()}
       if isStopped(){return}
-      do {try input.apply(command)} catch {emit(["type":"error","error":(error as? SurfaceFailure)?.code ?? "browser_input_unavailable"])}
+      do {try input.apply(command)} catch {
+        let code=(error as? SurfaceFailure)?.code ?? "browser_input_unavailable"
+        if code != "browser_frame_stale" {stopImmediately();input.enabled=false}
+        emit(["type":"error","error":code])
+        if code != "browser_frame_stale" {
+          Task {await capture.stop();output.flush();exit(6)}
+        }
+      }
     }
   }
   stopImmediately()

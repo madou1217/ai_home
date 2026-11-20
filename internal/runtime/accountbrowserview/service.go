@@ -1,20 +1,16 @@
 package accountbrowserview
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowserhost"
 )
 
-var errPermission = errors.New("browser_system_permission_required")
+var errPermission = surfaceFailure("browser_system_permission_required")
 
 type Service struct {
 	home    string
@@ -85,7 +81,7 @@ func (s *Service) Serve(ctx context.Context, t Transport) (resultErr error) {
 	binary, cleanup, err := buildHelper(ctx)
 	if err != nil {
 		_ = t.Send(ctx, Event{Type: "error", Error: "browser_native_build_unavailable"})
-		return errors.New("browser_native_build_unavailable")
+		return surfaceFailure("browser_native_build_unavailable")
 	}
 	defer cleanup()
 	if err = preflight(ctx, binary); err != nil {
@@ -107,7 +103,7 @@ func (s *Service) Serve(ctx context.Context, t Transport) (resultErr error) {
 			s.mu.Lock()
 			s.blocked = true
 			s.pending = host
-			resultErr = errors.New("browser_cleanup_required")
+			resultErr = surfaceFailure("browser_cleanup_required")
 			s.mu.Unlock()
 			_ = t.Send(ctx, Event{Type: "error", Error: "browser_cleanup_required"})
 		}
@@ -119,108 +115,5 @@ func (s *Service) Serve(ctx context.Context, t Transport) (resultErr error) {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	command := exec.CommandContext(ctx, binary, strconv.Itoa(status.PID))
-	output, err := command.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	input, err := command.StdinPipe()
-	if err != nil {
-		return err
-	}
-	if err = command.Start(); err != nil {
-		return errors.New("browser_native_helper_unavailable")
-	}
-	done := make(chan struct{})
-	go func() { _ = command.Wait(); close(done) }()
-	defer func() {
-		_ = input.Close()
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			_ = command.Process.Kill()
-			<-done
-		}
-	}()
-	frames := make(chan Event, 1)
-	events := make(chan Event, 4)
-	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		scan := bufio.NewScanner(output)
-		scan.Buffer(make([]byte, 65536), 2*1024*1024)
-		for scan.Scan() {
-			e, decodeErr := decodeEvent(scan.Bytes())
-			if decodeErr != nil {
-				continue
-			}
-			if e.Type != "frame" && e.Type != "ready" && e.Type != "error" {
-				continue
-			}
-			if e.Type == "frame" {
-				select {
-				case frames <- e:
-				default:
-					select {
-					case <-frames:
-					default:
-					}
-					select {
-					case frames <- e:
-					default:
-					}
-				}
-			} else {
-				select {
-				case events <- e:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-	errCh := make(chan error, 2)
-	go func() {
-		for {
-			var e Event
-			select {
-			case <-ctx.Done():
-				return
-			case <-readDone:
-				errCh <- errors.New("browser_native_helper_stopped")
-				return
-			case e = <-events:
-			case e = <-frames:
-			}
-			if err := t.Send(ctx, e); err != nil {
-				errCh <- err
-				return
-			}
-		}
-	}()
-	go func() {
-		enc := json.NewEncoder(input)
-		for {
-			var c Command
-			select {
-			case <-ctx.Done():
-				return
-			case c = <-commands:
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if err := enc.Encode(c); err != nil {
-				errCh <- err
-				return
-			}
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err = <-errCh:
-		return err
-	}
+	return serveNative(ctx, binary, status.PID, commands, t)
 }

@@ -5,23 +5,12 @@ import { resolveActiveTransportTarget, subscribeTransportTargetChange } from '@/
 import { connectBrowserSurface, readBrowserCapabilities, type BrowserCapabilities, type BrowserSurfaceEvent } from './browser-view-client';
 import BrowserTextComposer from './BrowserTextComposer';
 import { useBrowserViewInput } from './browser-view-input';
+import { browserViewErrorMessage } from './browser-view-errors';
 import styles from './browser-view.module.css';
 
 const defaultUrl = 'https://www.google.com';
 const frameExpiry = 2500;
-const errors: Record<string, string> = {
-  browser_system_permission_required: '执行 Server 缺少录屏或事件发送权限；本功能不会自动申请或修改系统权限。',
-  browser_native_build_unavailable: '执行 Server 的原生窗口桥不可用，请检查该 Server 的构建环境。',
-  browser_surface_already_controlled: '已有窗口正在控制这个浏览器，请先关闭原连接。',
-  browser_frame_stale: '画面已过期，输入已暂停。',
-  browser_multiple_windows_not_supported: '检测到多个任务窗口，目前仅允许一个窗口。',
-  browser_cleanup_required: '执行 Server 的浏览器清理尚未完成，请先检查原生进程。',
-  browser_host_platform_unavailable: '执行 Server 的平台尚无可用的浏览器适配器。',
-  browser_host_os_version_unavailable: '无法读取执行 Server 的系统版本，浏览器能力不可用。',
-  browser_host_requires_macos14: '执行 Server 的浏览器适配器要求 macOS 14 或以上版本。',
-  browser_home_requires_absolute_path: '执行 Server 的任务资料目录配置不满足要求。',
-  browser_control_backpressure: '控制链路繁忙，已安全断开。请手动重新连接；未确认操作不会自动重试。',
-};
+const staleFrameMessage = browserViewErrorMessage('browser_frame_stale');
 type Connection = ReturnType<typeof connectBrowserSurface>;
 type Target = ReturnType<typeof resolveActiveTransportTarget>;
 type Phase = 'disconnected' | 'connecting' | 'starting' | 'ready' | 'failed';
@@ -63,6 +52,7 @@ export default function BrowserView() {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const pendingFrameRef = useRef<PendingFrame | null>(null);
   const confirmationRef = useRef<ReturnType<typeof Modal.confirm> | null>(null);
+  const retryCapabilitiesRef = useRef<(() => void) | null>(null);
 
   const send = useCallback((command: Record<string, unknown>) => {
     const snapshot = capabilityRef.current;
@@ -126,35 +116,48 @@ export default function BrowserView() {
   useEffect(() => {
     let requestGeneration = 0;
     let controller: AbortController | null = null;
-    const refresh = () => {
+    let pending = false;
+    const refresh = (selected: Target, invalidateSession: boolean) => {
       const request = ++requestGeneration;
       controller?.abort();
       controller = new AbortController();
       const signal = controller.signal;
-      resetSession();
-      const selected = resolveActiveTransportTarget();
+      if (invalidateSession) resetSession();
+      pending = true;
       capabilityRef.current = null;
       setTarget(selected);
       setCapabilities(null);
       setCapabilityError('');
       setCapabilityLoading(true);
       const current = () => request === requestGeneration && !signal.aborted && targetMatches(selected);
+      retryCapabilitiesRef.current = () => {
+        // A retry reads this same target only. Never stop/start a live browser to refresh metadata.
+        if (pending || !current() || connectionRef.current || confirmationRef.current
+          || (phaseRef.current !== 'disconnected' && phaseRef.current !== 'failed')) return;
+        refresh(selected, false);
+      };
       void readBrowserCapabilities(signal).then((value) => {
         if (!current()) return;
         capabilityRef.current = { target: selected, value };
         setCapabilities(value);
       }).catch((failure: unknown) => {
         if (!current()) return;
-        setCapabilityError(failure instanceof Error ? failure.message : '无法读取执行 Server 的浏览器能力');
-      }).finally(() => { if (current()) setCapabilityLoading(false); });
+        setCapabilityError(browserViewErrorMessage(failure, 'capability'));
+      }).finally(() => {
+        if (!current()) return;
+        pending = false;
+        setCapabilityLoading(false);
+      });
     };
     // Profile edits (including a same-ID endpoint/credential change) also invalidate the session.
-    const unsubscribe = subscribeTransportTargetChange(refresh);
-    refresh();
+    const refreshTarget = () => refresh(resolveActiveTransportTarget(), true);
+    const unsubscribe = subscribeTransportTargetChange(refreshTarget);
+    refreshTarget();
     return () => {
       unsubscribe();
       requestGeneration += 1;
       controller?.abort();
+      retryCapabilitiesRef.current = null;
       capabilityRef.current = null;
       resetSession('disconnected', false);
     };
@@ -212,7 +215,7 @@ export default function BrowserView() {
           lastFrameRef.current = frame.receivedAt;
           lastRenderedFrameRef.current = frame.event.frame || 0;
           setFrameFresh(true);
-          setError((previous) => previous === errors.browser_frame_stale ? '' : previous);
+          setError((previous) => previous === staleFrameMessage ? '' : previous);
         } catch (_) {
           setError('浏览器画面无法绘制，正在等待下一帧。');
         } finally { finished(); }
@@ -234,11 +237,11 @@ export default function BrowserView() {
       if (event.type === 'starting') changePhase('starting');
       if (event.type === 'ready') changePhase('ready');
       if (event.type === 'error') {
-        if (event.error !== 'browser_frame_stale') { fail(errors[event.error || ''] || event.error || '浏览器连接不可用'); return; }
+        if (event.error !== 'browser_frame_stale') { fail(browserViewErrorMessage(event.error)); return; }
         lastFrameRef.current = 0;
         setFrameFresh(false);
         resetInput();
-        setError(errors.browser_frame_stale);
+        setError(staleFrameMessage);
       }
       if (event.type !== 'frame' || !event.data || !Number.isSafeInteger(event.frame) || (event.frame || 0) <= lastRenderedFrameRef.current) return;
       const frame = { event, receivedAt: Date.now() };
@@ -255,7 +258,7 @@ export default function BrowserView() {
       if (!current()) { connection.close(); return; }
       connectionRef.current = connection;
       if (waitingForStart) sendStart();
-    } catch (failure) { fail(failure instanceof Error ? failure.message : '浏览器连接失败'); }
+    } catch (failure) { fail(browserViewErrorMessage(failure)); }
   };
 
   const start = () => {
@@ -278,11 +281,11 @@ export default function BrowserView() {
   const navigate = () => {
     try {
       const parsed = new URL(url.includes('://') ? url : `https://${url}`);
-      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('仅支持 HTTP / HTTPS 地址');
+      if (!['http:', 'https:'].includes(parsed.protocol)) { setError('仅支持 HTTP / HTTPS 地址'); return; }
       if (!send({ type: 'navigate', url: parsed.href })) return;
       setUrl(parsed.href);
       setError('');
-    } catch (failure) { setError(failure instanceof Error ? failure.message : '网址无效'); }
+    } catch (_) { setError('网址无效，请输入 HTTP / HTTPS 地址。'); }
   };
 
   const active = state === 'ready';
@@ -291,7 +294,7 @@ export default function BrowserView() {
   const textEnabled = interactive && capabilities?.text !== false;
   const canStart = !capabilityLoading && capabilities?.supported === true && capabilities.transports?.includes('http-stream-v1') === true;
   const unavailable = capabilityError || (capabilities && !capabilities.supported
-    ? errors[capabilities.reason || ''] || capabilities.reason || '执行 Server 未提供可用的浏览器适配器。'
+    ? browserViewErrorMessage(capabilities.reason, 'capability')
     : capabilities && !capabilities.transports?.includes('http-stream-v1') ? '执行 Server 未提供 http-stream-v1，无法从此 WebUI 连接。' : '');
 
   return <section className={styles.root} aria-label="所选 Server 的任务浏览器">
@@ -316,6 +319,9 @@ export default function BrowserView() {
         {capabilities?.browser ? <span>{capabilities.browser.vendor} / {capabilities.browser.channel}</span> : null}
         <span>单任务窗口</span>
         {capabilityLoading ? <span>正在读取 Server 能力…</span> : null}
+        <Button size="small" type="text" icon={<ReloadOutlined />} loading={capabilityLoading}
+          disabled={!idle || capabilityLoading} title="仅重新读取当前 Server 的能力，不启动或重启浏览器"
+          onClick={() => retryCapabilitiesRef.current?.()}>重新读取能力</Button>
         {active && !frameFresh ? <span>等待新画面，输入已暂停</span> : null}
       </div>
       {unavailable || error ? <Typography.Text type="danger" role="status">{unavailable || error}</Typography.Text> : null}

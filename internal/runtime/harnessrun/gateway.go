@@ -12,11 +12,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
-const (
-	defaultServerHost = "127.0.0.1"
-	defaultServerPort = 9527
-	catalogTimeout    = 15 * time.Second
-)
+const catalogTimeout = 15 * time.Second
 
 // gatewayConnection 与 Node lib/server/codex-gateway-connection.js 的连接契约一致：
 // URL、网关认证和账号绑定必须来自同一份配置。

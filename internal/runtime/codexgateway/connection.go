@@ -49,12 +49,8 @@ func Read(ctx context.Context, aiHomeDir string, lookupEnv func(string) (string,
 	if found && json.Unmarshal([]byte(raw), &config) != nil {
 		return Connection{}, fmt.Errorf("codex_gateway_config_invalid")
 	}
-	host := strings.Trim(strings.TrimSpace(config.Host), "[]")
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	// 端口归一与 URL 拼接只在 application/serverconfig 定义一次；`::` 的回环判定是本包
-	// 特有口径（Node 的 loopbackOnly 分支），保留在上面的主机判断里。
+	host := serverconfig.NormalizeLoopbackHost(strings.Trim(strings.TrimSpace(config.Host), "[]"))
+	// 端口归一与 URL 拼接只在 application/serverconfig 定义一次。
 	port := serverconfig.NormalizePort(config.Port)
 	key := strings.TrimSpace(config.APIKey)
 	if lookupEnv != nil {

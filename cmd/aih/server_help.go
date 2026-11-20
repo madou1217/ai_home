@@ -26,8 +26,8 @@ const serverUsageText = `
   aih server serve [--port <n>]
 
 \x1b[33mNotes:\x1b[0m
-  - Default listen: http://127.0.0.1:9527
-  - OpenAI-compatible endpoint: http://127.0.0.1:9527/v1
+  - Default listen: {{default-base-url}}
+  - OpenAI-compatible endpoint: {{default-base-url}}/v1
   - Server runs provider-specific adapters (codex/gemini/claude/agy/opencode) with dedicated base URLs.
   - Default provider mode is auto (routes by model hint: gpt/o* -> codex, gemini* -> gemini, claude* -> claude, agy*/antigravity* -> agy, opencode-go/* -> opencode).
   - Default strategy is random (Node: remaining usage weighted by active requests and recent starts; Go: remaining usage).
@@ -49,8 +49,14 @@ const serverUsageText = `
   management APIs: /v0/management/status, /v0/management/metrics, /v0/management/accounts, /v0/management/models, /v0/management/reload
 `
 
+// defaultBaseURLToken 在帮助文本里占位默认服务地址；实际值由共享监听契约派生，
+// 避免默认端口改动后帮助文本撒谎。
+const defaultBaseURLToken = "{{default-base-url}}"
+
 func showServerUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprint(runtime.stdout, strings.ReplaceAll(serverUsageText, `\x1b`, "\x1b")+"\n")
+	text := strings.ReplaceAll(serverUsageText, `\x1b`, "\x1b")
+	text = strings.ReplaceAll(text, defaultBaseURLToken, defaultGatewayBaseURL)
+	_, _ = fmt.Fprint(runtime.stdout, text+"\n")
 }
 
 func runServerFallback(arguments []string, runtime commandRuntime) (bool, error) {

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
@@ -33,7 +34,6 @@ const (
 	maxDetectorArtifactBytes = 1024 * 1024
 	overviewQueryPageLimit   = 200
 	loginShellTimeout        = 3 * time.Second
-	defaultDetectServerPort  = 9527
 )
 
 var (
@@ -1064,15 +1064,15 @@ type hostSelfWriteGuard struct {
 func (detector *NativeDetector) newSelfWriteGuard(aiHomeDir string) *hostSelfWriteGuard {
 	port := detector.options.ServerPort
 	var secrets []string
-	if port <= 0 {
-		port = defaultDetectServerPort
+	if !serverconfig.IsValidPort(port) {
+		port = serverconfig.DefaultPort
 	}
 	// 读取 server.json（若存在）中的端口与密钥签名，避免把 aih 写入宿主的代理配置误判为本机独立账号。
 	serverJSONPath := filepath.Join(aiHomeDir, "server.json")
 	if raw, err := os.ReadFile(serverJSONPath); err == nil {
 		var cfg map[string]any
 		if json.Unmarshal(raw, &cfg) == nil {
-			if p, ok := asInt(cfg["port"]); ok && p > 0 {
+			if p, ok := asInt(cfg["port"]); ok && serverconfig.IsValidPort(p) {
 				port = p
 			}
 			for _, key := range []string{"apiKey", "clientKey", "managementKey"} {

@@ -63,6 +63,19 @@ func NormalizeHost(value string) string {
 	return host
 }
 
+// NormalizeLoopbackHost 在 NormalizeHost 之上，把 IPv6 任意地址 "::" 也当作
+// "监听全部网卡"回落回环——对应 Node normalizeServerHost(value, { loopbackOnly: true })。
+//
+// 只应在"客户端要连回本机"的场景使用（构造发往自身的 URL）；服务端真正决定
+// 绑定哪个网卡时用 NormalizeHost，否则会把有意监听全部网卡的用户配成只听回环。
+func NormalizeLoopbackHost(value string) string {
+	host := NormalizeHost(value)
+	if host == "::" {
+		return DefaultHost
+	}
+	return host
+}
+
 // FormatHost 返回可直接放进 URL 的主机部分：归一后再给 IPv6 字面量加方括号。
 //
 // 与 Node formatUrlHost 一致：`::1` → `[::1]`，已带括号的不重复包。

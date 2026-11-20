@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/providersessionhook"
@@ -21,7 +21,6 @@ const (
 	agyManagedHookName        = "aih-session-sync"
 	openCodePluginMarker      = "aih-session-hook"
 	defaultHookTimeoutSeconds = 10
-	defaultServerPort         = 9527
 	codexSwitchVersion        = "0.114.0"
 )
 
@@ -376,20 +375,14 @@ func resolveDefaultServerRootURL(ctx context.Context, opts Options) string {
 	}
 	if port <= 0 {
 		if pEnv := envLookup(resolveEnvMap(opts), "AIH_SERVER_PORT"); pEnv != "" {
-			if n, err := strconv.Atoi(pEnv); err == nil && n > 0 && n <= 65535 {
+			if n, err := strconv.Atoi(pEnv); err == nil && serverconfig.IsValidPort(n) {
 				port = n
 			}
 		}
 	}
-	if port <= 0 {
-		port = defaultServerPort
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
-		host = "127.0.0.1"
-	} else if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
-		host = "[" + host + "]"
-	}
-	return fmt.Sprintf("http://%s:%d", host, port)
+	// 主机/端口归一与 URL 拼接只在 application/serverconfig 定义一次；
+	// 这里的 "::" 也要回落回环，因为它是"连回本机"而不是"绑定网卡"。
+	return serverconfig.BaseURL(serverconfig.NormalizeLoopbackHost(strings.Trim(host, "[]")), port, "")
 }
 
 func resolveReceiverBaseURL(ctx context.Context, opts Options) string {

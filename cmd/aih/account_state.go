@@ -123,7 +123,7 @@ func writeAccountStateUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  provider:id 由目标 Server 解析，不使用本地数据库猜测远程账号身份。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
+	_, _ = fmt.Fprintf(output, "  AIH_SERVER_BASE_URL（默认 %s）\n", defaultGatewayBaseURL)
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填）")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "API:")

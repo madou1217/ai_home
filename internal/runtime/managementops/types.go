@@ -8,13 +8,15 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
-	// DefaultServerHost 与 Node lib/server/server-defaults.js 保持一致。
-	DefaultServerHost = "127.0.0.1"
-	// DefaultServerPort 与 Node lib/server/server-defaults.js 保持一致。
-	DefaultServerPort = 9527
+	// DefaultServerHost / DefaultServerPort 与 Node lib/server/server-defaults.js 一致；
+	// 数值只有 application/serverconfig 一处定义。
+	DefaultServerHost = serverconfig.DefaultHost
+	DefaultServerPort = serverconfig.DefaultPort
 	// DefaultUsageThresholdPct 是未配置 config:usage 时的默认额度阈值。
 	DefaultUsageThresholdPct = 95
 	// DefaultModelsCacheTTL 是 /models 的默认缓存窗口。

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -12,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/application/providerruntime"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -116,8 +116,8 @@ func terminalSessionPort(raw json.RawMessage) int {
 		text = strings.TrimSpace(quoted)
 	}
 	value, err := strconv.ParseFloat(text, 64)
-	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value != math.Trunc(value) || value < 1 || value > 65535 {
-		return 9527
+	if err != nil || !serverconfig.IsValidPort(value) {
+		return serverconfig.DefaultPort
 	}
 	return int(value)
 }

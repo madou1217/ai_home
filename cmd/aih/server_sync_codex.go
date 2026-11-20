@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -131,7 +132,7 @@ func runServerSyncCodex(ctx context.Context, arguments []string, runtime command
 
 func parseServerSyncOptions(args []string, runtime commandRuntime) (serverSyncOptions, error) {
 	options := serverSyncOptions{
-		managementURL: "http://127.0.0.1:9527/v0/management",
+		managementURL: serverconfig.BaseURL(serverconfig.DefaultHost, serverconfig.DefaultPort, "/v0/management"),
 		key:           strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY")),
 		parallel:      8,
 		namePrefix:    "aih-codex-",

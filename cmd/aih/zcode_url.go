@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -89,10 +90,7 @@ func deliverZcodeAuthJob(ctx context.Context, runtime commandRuntime, raw string
 	if err != nil {
 		return "server_unavailable", err
 	}
-	port := config.Port
-	if port <= 0 || port > 65535 {
-		port = 9527
-	}
+	port := serverconfig.NormalizePort(config.Port)
 	payload, err := json.Marshal(map[string]string{"url": raw, "state": state})
 	if err != nil {
 		return "server_unavailable", err

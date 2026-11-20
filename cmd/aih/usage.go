@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -67,10 +68,7 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	if err != nil {
 		return true, err
 	}
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v0/management", config.Port)
-	if config.Port <= 0 || config.Port > 65535 {
-		baseURL = "http://127.0.0.1:9527/v0/management"
-	}
+	baseURL := serverconfig.BaseURL(serverconfig.DefaultHost, config.Port, "/v0/management")
 	path := "/usage/stats"
 	switch options.command {
 	case "models", "cost-by-model", "by-model":

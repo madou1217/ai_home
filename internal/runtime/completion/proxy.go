@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -98,7 +99,7 @@ func isSafeProxyLabel(value string) bool {
 func readProxyManagementConfig(environment Environment, aiHome string) (proxyManagementConfig, bool) {
 	baseEnv := strings.TrimSpace(environment.env("AIH_SERVER_BASE_URL"))
 	keyEnv := strings.TrimSpace(environment.env("AIH_SERVER_MANAGEMENT_KEY"))
-	port := 9527
+	port := serverconfig.DefaultPort
 	configKey := ""
 	if baseEnv == "" || keyEnv == "" {
 		if path, err := appstate.DatabasePath(aiHome); err == nil {
@@ -111,7 +112,9 @@ func readProxyManagementConfig(environment Environment, aiHome string) (proxyMan
 					ManagementKey string      `json:"managementKey"`
 				}
 				if json.Unmarshal([]byte(raw), &document) == nil {
-					if numeric, err := document.Port.Int64(); err == nil && numeric > 0 {
+					// 端口是否可用由共享契约判定（1..65535 整数），不再只比 > 0；
+					// 越界值若被当成有效端口，管理面请求会静默打到错误端口。
+					if numeric, err := document.Port.Int64(); err == nil && serverconfig.IsValidPort(numeric) {
 						port = int(numeric)
 					}
 					configKey = strings.TrimSpace(document.ManagementKey)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/launchselection"
 )
@@ -105,7 +106,7 @@ func resolveServerBaseURL() string {
 	if value := strings.TrimSpace(os.Getenv("AIH_SERVER_BASE_URL")); value != "" {
 		return value
 	}
-	return "http://127.0.0.1:9527"
+	return serverconfig.BaseURL(serverconfig.DefaultHost, serverconfig.DefaultPort, "")
 }
 
 // resolveManagementKey 先看环境变量，再读 aih.db 的 config:server（与 Node 入口同源）。

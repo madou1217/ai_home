@@ -25,11 +25,13 @@ const (
 	managedHookMarker = providersessionhook.Marker
 	// defaultHookTimeoutSeconds 与 Node 的 DEFAULT_HOOK_TIMEOUT_SECONDS 一致。
 	defaultHookTimeoutSeconds = 10
-	// defaultReceiverURL 与 Node 的 DEFAULT_RECEIVER_URL 一致。
-	defaultReceiverURL = providersessionhook.DefaultReceiverURL
 	// agyManagedHookName 与 Node 的 AGY_MANAGED_HOOK_NAME 一致。
 	agyManagedHookName = "aih-session-sync"
 )
+
+// defaultReceiverURL 与 Node 的 DEFAULT_RECEIVER_URL 一致；值来自共享监听契约，
+// 因此是变量而不是常量（常量无法调用 serverconfig.BaseURL）。
+var defaultReceiverURL = providersessionhook.DefaultReceiverURL
 
 // hookProfile 是写文件所需的一份 Provider Hook 档案。
 type hookProfile struct {

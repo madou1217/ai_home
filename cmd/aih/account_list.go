@@ -118,7 +118,7 @@ func writeAccountListUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "行为:")
 	_, _ = fmt.Fprintln(output, "  通过 AIH_SERVER_BASE_URL 使用 AccountRef keyset 分页；不做 OFFSET 全表扫描。")
 	_, _ = fmt.Fprintln(output, "  只读取目标 Server 的账号基础信息、认证类型和公开资料，不读取或输出凭据正文、usage、模型或运行态。")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL 默认 http://127.0.0.1:9527；AIH_SERVER_MANAGEMENT_KEY 必填。")
+	_, _ = fmt.Fprintf(output, "  AIH_SERVER_BASE_URL 默认 %s；AIH_SERVER_MANAGEMENT_KEY 必填。\n", defaultGatewayBaseURL)
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account list")

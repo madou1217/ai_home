@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
 	"github.com/madou1217/ai_home/internal/adapters/plugintrust"
 	"github.com/madou1217/ai_home/internal/pluginerr"
@@ -645,19 +645,11 @@ func pluginServerConnection(ctx context.Context, home string) (string, string, e
 			key = strings.TrimSpace(config.ManagementKey)
 		}
 		if baseURL == "" {
-			host := strings.TrimSpace(config.Host)
-			if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
-				host = "127.0.0.1"
-			}
-			port := config.Port
-			if port == 0 {
-				port = 9527
-			}
-			baseURL = "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+			baseURL = serverconfig.BaseURL(serverconfig.NormalizeLoopbackHost(strings.Trim(strings.TrimSpace(config.Host), "[]")), config.Port, "")
 		}
 	}
 	if baseURL == "" {
-		baseURL = "http://127.0.0.1:9527"
+		baseURL = serverconfig.BaseURL(serverconfig.DefaultHost, serverconfig.DefaultPort, "")
 	}
 	return baseURL, key, nil
 }

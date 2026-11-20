@@ -106,11 +106,11 @@ func writeAccountImportUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  其他 Provider: 显式 {native_auth_json: ...} 文件，按真实 Provider 策略验证，不扫描宿主目录。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（账号写入目标 Go Server，默认 http://127.0.0.1:9527）")
+	_, _ = fmt.Fprintf(output, "  AIH_SERVER_BASE_URL（账号写入目标 Go Server，默认 %s）\n", defaultGatewayBaseURL)
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填）")
 	_, _ = fmt.Fprintln(output, "  CLAUDE_CONFIG_DIR / CODEX_HOME（官方 CLI 自己的配置目录）")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account import claude")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL=http://127.0.0.1:9527 aih account import claude")
+	_, _ = fmt.Fprintf(output, "  AIH_SERVER_BASE_URL=%s aih account import claude\n", defaultGatewayBaseURL)
 }

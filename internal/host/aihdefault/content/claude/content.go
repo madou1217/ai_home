@@ -23,8 +23,9 @@ import (
 
 const (
 	// DefaultHost / DefaultPort / DefaultClientKey 与 Node server-defaults 一致。
-	DefaultHost      = "127.0.0.1"
-	DefaultPort      = 9527
+	// 主机与端口的默认值只有 application/serverconfig 一处定义，这里只是别名。
+	DefaultHost      = serverconfig.DefaultHost
+	DefaultPort      = serverconfig.DefaultPort
 	DefaultClientKey = "dummy"
 
 	// APIKeyEnv 是网关档位的客户端密钥槽，TokenEnv 是写进 settings.json 的槽。
@@ -205,24 +206,6 @@ func NormalizeBaseURL(baseURL string) string {
 // ValidAccountRef 与 Node isAccountRef 一致：acct_ + 20 位小写十六进制。
 func ValidAccountRef(accountRef string) bool {
 	return accountRefPattern.MatchString(strings.TrimSpace(accountRef))
-}
-
-func normalizePort(port int) int {
-	if port > 0 && port <= 65535 {
-		return port
-	}
-	return DefaultPort
-}
-
-func formatHost(host string) string {
-	normalized := strings.TrimSpace(host)
-	if normalized == "" || normalized == "0.0.0.0" {
-		return DefaultHost
-	}
-	if strings.Contains(normalized, ":") && !strings.HasPrefix(normalized, "[") {
-		return "[" + normalized + "]"
-	}
-	return normalized
 }
 
 // mergeCustomHeaders 让钉选行归 AIH 管：先去掉旧的钉选行，再按本次投影加回；

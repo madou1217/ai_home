@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 	"github.com/madou1217/ai_home/internal/runtime/distributiondata"
 	_ "modernc.org/sqlite"
@@ -437,10 +438,10 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 		}
 	}
 	if m["port"] == nil {
-		m["port"] = 9527
+		m["port"] = serverconfig.DefaultPort
 	}
 	if m["host"] == nil {
-		m["host"] = "127.0.0.1"
+		m["host"] = serverconfig.DefaultHost
 	}
 	m["goCoreEnabled"] = true
 	out, _ := json.Marshal(m)

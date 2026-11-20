@@ -35,9 +35,6 @@ const (
 	GatewayProviderNPM = "@ai-sdk/openai-compatible"
 	// DefaultAPIKey 是本地网关不校验鉴权时的占位值：opencode 要求该字段非空。
 	DefaultAPIKey = "dummy"
-
-	defaultHost = "127.0.0.1"
-	defaultPort = 9527
 )
 
 // 与 Node throw new Error(...) 的 message 保持一致，便于上层按串映射提示。

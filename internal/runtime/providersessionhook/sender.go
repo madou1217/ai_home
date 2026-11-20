@@ -23,13 +23,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
 	// Marker 是托管 hook 的唯一识别标记（与 Node/安装器同值）。
 	Marker = "--aih-provider-session-hook"
-	// DefaultReceiverURL 与 Node 的 DEFAULT_RECEIVER_URL 一致。
-	DefaultReceiverURL = "http://127.0.0.1:9527/v0/webui/session-events/provider-hook"
+	// ReceiverPath 是 hook 事件接收端在本机服务上的固定路径。
+	ReceiverPath = "/v0/webui/session-events/provider-hook"
 	// SessionIntentEnv 携带 correlation 字段。
 	SessionIntentEnv = "AIH_SESSION_INTENT"
 	// AccountRefEnv 携带当前账号引用。
@@ -39,6 +41,10 @@ const (
 	minTimeout     = 100 * time.Millisecond
 	maxBodyBytes   = 256 * 1024
 )
+
+// DefaultReceiverURL 与 Node 的 DEFAULT_RECEIVER_URL 一致，但主机与端口来自
+// application/serverconfig 的共享监听契约，避免默认端口在这里再写一份。
+var DefaultReceiverURL = serverconfig.BaseURL(serverconfig.DefaultHost, serverconfig.DefaultPort, ReceiverPath)
 
 var accountRefPattern = regexp.MustCompile("^acct_[a-f0-9]{20}$")
 

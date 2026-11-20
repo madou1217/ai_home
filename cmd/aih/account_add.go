@@ -60,7 +60,7 @@ func writeAccountAddUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  claude: ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN（二选一），ANTHROPIC_BASE_URL（可选）")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "Server 环境变量:")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
+	_, _ = fmt.Fprintf(output, "  AIH_SERVER_BASE_URL（默认 %s）\n", defaultGatewayBaseURL)
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填）")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "API:")

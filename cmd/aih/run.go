@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/core/harnesses"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
@@ -22,9 +23,11 @@ import (
 )
 
 const (
-	defaultGatewayBaseURL = "http://127.0.0.1:9527"
 	managementHTTPTimeout = 10 * time.Second
 )
+
+// defaultGatewayBaseURL 的主机与端口来自 application/serverconfig 的共享监听契约。
+var defaultGatewayBaseURL = serverconfig.BaseURL(serverconfig.DefaultHost, serverconfig.DefaultPort, "")
 
 var errInvalidCommand = errors.New("aih 命令无效")
 
@@ -571,7 +574,7 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
 	_, _ = fmt.Fprintln(output, "  AIH_HOME_DIR")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
+	_, _ = fmt.Fprintf(output, "  AIH_SERVER_BASE_URL（默认 %s）\n", defaultGatewayBaseURL)
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_API_KEY（仅 Gateway 模式必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号管理和固定 Relay 数字别名解析必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_CODEX_BINARY / AIH_CLAUDE_BINARY（可选官方 CLI 路径）")

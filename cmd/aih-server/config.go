@@ -14,13 +14,15 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 )
 
 const (
-	defaultServerHost                  = "127.0.0.1"
-	defaultServerPort                  = 9527
+	// 监听默认值只有 application/serverconfig 一处定义。
+	defaultServerHost                  = serverconfig.DefaultHost
+	defaultServerPort                  = serverconfig.DefaultPort
 	defaultCodexHookSelfHealIntervalMs = 15000
 )
 

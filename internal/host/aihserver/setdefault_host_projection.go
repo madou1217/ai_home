@@ -80,7 +80,7 @@ type hostProjectionServerConfig struct {
 }
 
 func readHostProjectionServerConfig(aiHomeDir string) hostProjectionServerConfig {
-	config := hostProjectionServerConfig{Host: "127.0.0.1", Port: 9527}
+	config := hostProjectionServerConfig{Host: serverconfig.DefaultHost, Port: serverconfig.DefaultPort}
 	databasePath, err := appstate.DatabasePath(aiHomeDir)
 	if err != nil {
 		return config

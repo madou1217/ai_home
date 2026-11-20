@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
 )
@@ -111,26 +112,26 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 
 func resolveServerPort(ctx context.Context, home string, runtime commandRuntime) int {
 	if value := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_SERVER_PORT")); value != "" {
-		if port, err := strconv.Atoi(value); err == nil && port > 0 && port <= 65535 {
+		if port, err := strconv.Atoi(value); err == nil && serverconfig.IsValidPort(port) {
 			return port
 		}
 	}
 	path, err := appstate.DatabasePath(home)
 	if err != nil {
-		return 9527
+		return serverconfig.DefaultPort
 	}
 	raw, found, err := appstate.ReadKV(ctx, path, "config:server")
 	if err != nil || !found {
-		return 9527
+		return serverconfig.DefaultPort
 	}
 	var config map[string]any
 	if json.Unmarshal([]byte(raw), &config) != nil {
-		return 9527
+		return serverconfig.DefaultPort
 	}
-	if number, ok := config["port"].(float64); ok && number > 0 && number <= 65535 {
+	if number, ok := config["port"].(float64); ok && serverconfig.IsValidPort(number) {
 		return int(number)
 	}
-	return 9527
+	return serverconfig.DefaultPort
 }
 
 // serverReadyTimeout 覆盖本地服务完整装配（数据面 + 后台 worker）的耗时。

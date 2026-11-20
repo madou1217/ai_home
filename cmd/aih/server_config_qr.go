@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -89,17 +90,8 @@ func resolveQRAdvertisedEndpoint(config webuiserverconfigapi.ConfigView) string 
 			host = lan
 		}
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	port := config.Port
-	if port <= 0 || port > 65535 {
-		port = 9527
-	}
-	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
-		host = "[" + host + "]"
-	}
-	return fmt.Sprintf("http://%s:%d", host, port)
+	port := serverconfig.NormalizePort(config.Port)
+	return serverconfig.BaseURL(serverconfig.NormalizeLoopbackHost(host), port, "")
 }
 
 func firstLANIPv4() string {

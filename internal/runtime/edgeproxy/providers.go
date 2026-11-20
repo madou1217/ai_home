@@ -6,11 +6,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
 	// DefaultAIHPort 是未指定端口时默认使用的 AIH 本机监听端口。
-	DefaultAIHPort = 9527
+	// 数值只有 application/serverconfig 一处定义。
+	DefaultAIHPort = serverconfig.DefaultPort
 	// DefaultTLSTerminatorPort 是 nginx split 模式下本地终结 TLS 的回环端口。
 	DefaultTLSTerminatorPort = 8443
 

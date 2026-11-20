@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -53,10 +54,11 @@ func withClaudeGatewayConfig(ctx context.Context, command commandRuntime) (comma
 		}
 		return command, fmt.Errorf("Claude Gateway 本地 Server 配置无效")
 	}
+	// 端口缺省用共享契约的默认值，但越界仍按本命令的语义报错（不静默回落）。
 	if config.Port == 0 {
-		config.Port = 9527
+		config.Port = serverconfig.DefaultPort
 	}
-	if config.Port < 1 || config.Port > 65535 {
+	if !serverconfig.IsValidPort(config.Port) {
 		if hasEndpoint {
 			return command, nil
 		}

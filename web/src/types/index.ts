@@ -863,6 +863,8 @@ export interface WebUiModelsResponse {
   accountProbeStatus?: Record<string, AccountProbeStatus>;
   /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
   labels?: Record<string, Record<string, string>>;
+  /** accountRef -> modelId -> 上游声明的上下文窗口；与 Node 快照同形。 */
+  contextLimits?: Record<string, Record<string, number>>;
   metadata?: Record<string, ModelMetadata>;
 }
 
@@ -1023,6 +1025,8 @@ export interface WebUiOpenAIModelsResponse {
   managedData?: ManagedOpenAIModelItem[];
   metadata?: Record<string, ModelMetadata>;
   labels?: Record<string, Record<string, string>>;
+  /** accountRef -> modelId -> 上游声明的上下文窗口；与 Node 快照同形。 */
+  contextLimits?: Record<string, Record<string, number>>;
   accounts?: WebUiOpenAIModelAccount[];
   byProvider: Record<string, string[]>;
   byAccountRef: Record<string, string[]>;

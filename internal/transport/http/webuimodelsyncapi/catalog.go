@@ -87,24 +87,27 @@ type ProbeStatus struct {
 
 // CatalogResponse 对齐 WebUI /v0/webui/openai-models 的完整响应形状。
 type CatalogResponse struct {
-	OK                 bool                         `json:"ok"`
-	Endpoint           string                       `json:"endpoint"`
-	Cached             bool                         `json:"cached"`
-	UpdatedAt          int64                        `json:"updatedAt"`
-	Source             string                       `json:"source"`
-	Sources            int                          `json:"sources"`
-	ScannedAccounts    int                          `json:"scannedAccounts"`
-	FirstError         string                       `json:"firstError"`
-	AccountScope       *AccountScope                `json:"accountScope"`
-	Data               []OpenAIModelItem            `json:"data"`
-	ManagedData        []ManagedModelItem           `json:"managedData"`
-	Metadata           map[string]any               `json:"metadata"`
-	Labels             map[string]map[string]string `json:"labels"`
-	Accounts           []AccountSummary             `json:"accounts"`
-	ByProvider         map[string][]string          `json:"byProvider"`
-	ByAccountRef       map[string][]string          `json:"byAccountRef"`
-	ErrorsByAccountRef map[string]string            `json:"errorsByAccountRef"`
-	AccountProbedAt    map[string]int64             `json:"accountProbedAt"`
+	OK              bool                         `json:"ok"`
+	Endpoint        string                       `json:"endpoint"`
+	Cached          bool                         `json:"cached"`
+	UpdatedAt       int64                        `json:"updatedAt"`
+	Source          string                       `json:"source"`
+	Sources         int                          `json:"sources"`
+	ScannedAccounts int                          `json:"scannedAccounts"`
+	FirstError      string                       `json:"firstError"`
+	AccountScope    *AccountScope                `json:"accountScope"`
+	Data            []OpenAIModelItem            `json:"data"`
+	ManagedData     []ManagedModelItem           `json:"managedData"`
+	Metadata        map[string]any               `json:"metadata"`
+	Labels          map[string]map[string]string `json:"labels"`
+	// ContextLimits 是 accountRef -> modelID -> 上游声明的上下文窗口；
+	// 与 Node 的 cache:webui-models-snapshot.json 保持同一形状。
+	ContextLimits      map[string]map[string]int `json:"contextLimits"`
+	Accounts           []AccountSummary          `json:"accounts"`
+	ByProvider         map[string][]string       `json:"byProvider"`
+	ByAccountRef       map[string][]string       `json:"byAccountRef"`
+	ErrorsByAccountRef map[string]string         `json:"errorsByAccountRef"`
+	AccountProbedAt    map[string]int64          `json:"accountProbedAt"`
 	// AccountProbeStatus 是状态与退避的唯一读模型；accountProbedAt/errorsByAccountRef
 	// 继续保留以兼容旧客户端。
 	AccountProbeStatus map[string]ProbeStatus `json:"accountProbeStatus"`
@@ -143,6 +146,10 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 	labels := snapshot.Labels
 	if labels == nil {
 		labels = map[string]map[string]string{}
+	}
+	contextLimits := snapshot.ContextLimits
+	if contextLimits == nil {
+		contextLimits = map[string]map[string]int{}
 	}
 	refTable := handler.loadRefTableBestEffort(ctx)
 	aliases := handler.loadAliasesBestEffort(ctx)
@@ -476,6 +483,7 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		ManagedData:        managedData,
 		Metadata:           metadataMap,
 		Labels:             labels,
+		ContextLimits:      contextLimits,
 		Accounts:           accountSummaries,
 		ByProvider:         byProvider,
 		ByAccountRef:       byAccountRef,

@@ -15,11 +15,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
-	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
-	_ "modernc.org/sqlite"
 )
+
+// serverConfigKey 是服务端配置在 aih.db KV 里的键（与 Node 同键）。
+const serverConfigKey = "config:server"
 
 type config struct {
 	Port          int    `json:"port"`
@@ -30,45 +33,37 @@ type config struct {
 }
 
 func readConfig(home string) config {
-	c := config{Port: 9527, Host: "127.0.0.1"}
+	c := config{Port: serverconfig.DefaultPort, Host: serverconfig.DefaultHost}
 	database := businessdb.Path(home)
 	if _, err := os.Stat(database); err != nil {
 		c.readError = fmt.Errorf("installation_config_unavailable: stat canonical database: %w", err)
 		return c
 	}
-	u := sqlitefile.URL(database)
-	query := u.Query()
-	query.Set("mode", "ro")
-	u.RawQuery = query.Encode()
-	db, err := sql.Open("sqlite", u.String())
-	if err != nil {
-		c.readError = fmt.Errorf("installation_config_unavailable: open canonical database: %w", err)
-		return c
-	}
-	var raw string
-	err = db.QueryRow(`SELECT value FROM app_kv WHERE key='config:server'`).Scan(&raw)
-	err = errors.Join(err, db.Close())
-	candidate := c
-	if err == nil {
-		if json.Unmarshal([]byte(raw), &candidate) != nil {
-			err = errors.New("installation_config_invalid")
-		}
-	}
-	if err == nil && strings.TrimSpace(candidate.ManagementKey) == "" {
-		err = errors.New("management_key_missing")
-	}
-	if err == nil && (candidate.Port < 1 || candidate.Port > 65535) {
-		err = errors.New("installation_config_port_invalid")
-	}
+	raw, found, err := appstate.ReadKV(context.Background(), database, serverConfigKey)
 	if err != nil {
 		c.readError = fmt.Errorf("installation_config_unavailable: read canonical server configuration: %w", err)
 		return c
 	}
-	c = candidate
-	if c.Port < 1 || c.Port > 65535 {
-		c.Port = 9527
+	if !found {
+		// 键缺失与读库失败对安装健康检查是同一件事：没有可用的服务配置。
+		c.readError = fmt.Errorf("installation_config_unavailable: read canonical server configuration: %w", sql.ErrNoRows)
+		return c
 	}
-	return c
+	candidate := c
+	if json.Unmarshal([]byte(raw), &candidate) != nil {
+		c.readError = fmt.Errorf("installation_config_unavailable: read canonical server configuration: %w", errors.New("installation_config_invalid"))
+		return c
+	}
+	if strings.TrimSpace(candidate.ManagementKey) == "" {
+		c.readError = fmt.Errorf("installation_config_unavailable: read canonical server configuration: %w", errors.New("management_key_missing"))
+		return c
+	}
+	if !serverconfig.IsValidPort(candidate.Port) {
+		c.readError = fmt.Errorf("installation_config_unavailable: read canonical server configuration: %w", errors.New("installation_config_port_invalid"))
+		return c
+	}
+	candidate.Port = serverconfig.NormalizePort(candidate.Port)
+	return candidate
 }
 
 func listenerPresent(port int) bool {

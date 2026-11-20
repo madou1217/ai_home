@@ -36,15 +36,19 @@ type Dependencies struct {
 	BindHost string
 	// ListenPort 返回服务实际监听端口（可选），供无显式端口的场景拼装局域网候选地址。
 	ListenPort func() int
+	// ManagementKey 返回服务端当前生效的 Management Key；用于覆盖本机 profile
+	// 里可能过期的密钥快照，避免轮换后浏览器继续拿旧 Key 打 401。
+	ManagementKey func() string
 }
 
 // Handler 处理控制面 profiles/endpoints，并持有可与 RemoteProxy 共享的内存缓存。
 type Handler struct {
-	authorizer Authorizer
-	aiHomeDir  string
-	bindHost   string
-	listenPort func() int
-	cache      *profileCache
+	authorizer    Authorizer
+	aiHomeDir     string
+	bindHost      string
+	listenPort    func() int
+	managementKey func() string
+	cache         *profileCache
 }
 
 // NewHandler 创建默认失败关闭的 Handler。
@@ -54,11 +58,12 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		aiHomeDir:  home,
-		bindHost:   strings.TrimSpace(dependencies.BindHost),
-		listenPort: dependencies.ListenPort,
-		cache:      newProfileCache(home),
+		authorizer:    dependencies.Authorizer,
+		aiHomeDir:     home,
+		bindHost:      strings.TrimSpace(dependencies.BindHost),
+		listenPort:    dependencies.ListenPort,
+		managementKey: dependencies.ManagementKey,
+		cache:         newProfileCache(home),
 	}, nil
 }
 
@@ -111,6 +116,7 @@ func (handler *Handler) handleProfiles(response http.ResponseWriter, request *ht
 			writeError(response, http.StatusInternalServerError, "control_plane_profile_read_failed", "")
 			return
 		}
+		handler.overlayLocalManagementKey(store, request.Host)
 		writeJSON(response, http.StatusOK, map[string]any{
 			"ok": true, "profiles": store["profiles"], "activeProfileId": store["activeProfileId"],
 		})
@@ -226,4 +232,41 @@ func writeJSON(response http.ResponseWriter, status int, payload any) {
 
 func writeError(response http.ResponseWriter, status int, code string, message string) {
 	writeJSON(response, status, errorView{OK: false, Error: code, Message: message})
+}
+
+// overlayLocalManagementKey 用服务端当前 Key 替换本机 profile 的旧快照。
+//
+// profile store 只在用户连接时写入 managementKey；服务端轮换 Key 后，旧值会
+// 一直留在 store 里，浏览器同步 profile 时又会拿回旧 Key。这里仅覆盖 loopback
+// 或与当前请求同 host 的 profile，远端 profile 的凭据不受影响。
+func (handler *Handler) overlayLocalManagementKey(store map[string]any, requestHost string) {
+	if handler == nil || handler.managementKey == nil {
+		return
+	}
+	key := strings.TrimSpace(handler.managementKey())
+	if key == "" {
+		return
+	}
+	profiles, _ := store["profiles"].([]map[string]any)
+	for _, profile := range profiles {
+		if profile == nil {
+			continue
+		}
+		if !isLocalProfileEndpoint(text(profile["endpoint"], 0), requestHost) {
+			continue
+		}
+		profile["managementKey"] = key
+	}
+}
+
+func isLocalProfileEndpoint(endpoint string, requestHost string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	return strings.EqualFold(parsed.Host, strings.TrimSpace(requestHost))
 }

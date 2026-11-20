@@ -5,6 +5,7 @@ import { SessionRequestCoordinator } from './session-request-coordinator.js';
 import { openSharedWebUiEventSource } from './shared-watch';
 import {
   guardedWebUiEventSource,
+  isSameServerOrigin,
   resolveActiveServer,
   resolveWebUiManagementKey
 } from './webui-auth-transport';
@@ -150,10 +151,61 @@ const api = axios.create({
   timeout: 30000
 });
 
+const WEBUI_AUTH_ERROR_CODES = new Set([
+  'webui_unauthorized',
+  'unauthorized',
+  'management_key_not_configured'
+]);
+const CONTROL_PLANE_PROFILES_STORAGE_KEY = 'aih:control-plane-profiles:v1';
+const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
+
+function webUiAuthErrorCode(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const raw = (data as { error?: unknown }).error;
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw === 'object' && typeof (raw as { code?: unknown }).code === 'string') {
+    return String((raw as { code: string }).code);
+  }
+  return '';
+}
+
+/** 失效的 Key 不能留在 profile 里，否则 setup 页会继续显示“已配置”。 */
+function clearStaleWebUiManagementKey() {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(CONTROL_PLANE_PROFILES_STORAGE_KEY);
+    if (!raw) return;
+    const profiles = JSON.parse(raw);
+    if (!Array.isArray(profiles)) return;
+    const activeId = String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '');
+    let changed = false;
+    for (const profile of profiles) {
+      if (!profile || typeof profile !== 'object') continue;
+      const isActive = Boolean(activeId) && profile.id === activeId;
+      const sameOrigin = Boolean(profile.endpoint)
+        && isSameServerOrigin(String(profile.endpoint), window.location.origin);
+      if (!isActive && !sameOrigin) continue;
+      if (profile.managementKey || profile.managementKeyConfigured) {
+        profile.managementKey = '';
+        profile.managementKeyConfigured = false;
+        profile.authorizationState = 'discovered-pending-auth';
+        profile.state = 'offline';
+        changed = true;
+      }
+    }
+    if (changed) {
+      window.localStorage.setItem(CONTROL_PLANE_PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+    }
+  } catch (_error) {
+    // Storage 不可用时保持原状，由 gate 页面处理。
+  }
+}
+
 function redirectToWebUiGate() {
   try {
     if (typeof window === 'undefined') return;
     if ((window.location.pathname || '').includes('/server-setup')) return;
+    clearStaleWebUiManagementKey();
     window.location.href = buildAppHref('/server-setup', 'gate=1');
   } catch (_error) { /* ignore */ }
 }
@@ -185,8 +237,9 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     // R2 鉴权门：缺少或无效 Management Key → 引导去 Server 设置页。
     const response = error.response;
-    if ([401, 503].includes(Number(response?.status))
-      && (response?.data as { error?: unknown } | undefined)?.error === 'webui_unauthorized') {
+    const status = Number(response?.status);
+    if ([401, 403, 503].includes(status)
+      && WEBUI_AUTH_ERROR_CODES.has(webUiAuthErrorCode(response?.data))) {
       redirectToWebUiGate();
     }
     return Promise.reject(error);

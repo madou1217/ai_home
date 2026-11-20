@@ -392,6 +392,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	controlPlane, err := webuicontrolplaneapi.NewHandler(webuicontrolplaneapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir,
+		ManagementKey: dependencies.ManagementKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建控制面接口失败: %w", err)

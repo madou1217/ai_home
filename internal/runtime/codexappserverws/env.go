@@ -27,7 +27,7 @@ const (
 	defaultServerHost      = serverconfig.DefaultHost
 	defaultServerPort      = serverconfig.DefaultPort
 	defaultServerAPIKey    = "dummy"
-	defaultCodexAPIBaseURL = "https://api.openai.com/v1"
+	defaultCodexAPIBaseURL = codex.DefaultAPIBaseURL
 
 	providerDefaultCodexKey = appstate.KeyCodexProviderDefault
 	accountDefaultCodexKey  = appstate.KeyCodexAccountDefault

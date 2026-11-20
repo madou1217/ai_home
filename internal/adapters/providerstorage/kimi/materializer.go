@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 )
 
@@ -28,13 +29,14 @@ const (
 	configFile      = ".kimi-code/config.toml"
 )
 
-// defaultConfig 与 Node kimi-config 的 DEFAULT_KIMI_CONFIG 逐字一致。
+// defaultConfig 与 Node kimi-config 的 DEFAULT_KIMI_CONFIG 等价；base_url 取自
+// Provider 合同，端点变更不需要再改模板。
 const defaultConfig = `default_model = "kimi-code/kimi-for-coding"
 
 [providers."managed:kimi-code"]
 type = "kimi"
 api_key = ""
-base_url = "https://api.kimi.com/coding/v1"
+base_url = "` + providers.KimiCodeBaseURL + `"
 
 [providers."managed:kimi-code".oauth]
 storage = "file"

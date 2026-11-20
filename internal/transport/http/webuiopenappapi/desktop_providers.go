@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	defaultOpenAIBaseURL = "https://api.openai.com/v1"
+	defaultOpenAIBaseURL = codex.DefaultAPIBaseURL
 
 	kimiTokenOrigin     = "https://www.kimi.com"
 	kimiEncryptionTag   = "safeStorage.v1"

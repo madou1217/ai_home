@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	officialBaseURL = "https://api.anthropic.com"
+	officialBaseURL = claudeauth.DefaultAPIBaseURL
 	usagePath       = "/api/oauth/usage"
 	profilePath     = "/api/oauth/profile"
 	sourceID        = "claude_oauth_usage"

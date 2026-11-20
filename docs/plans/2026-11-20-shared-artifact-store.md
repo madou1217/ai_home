@@ -249,7 +249,26 @@ GC(mode):
 缓存类挂"宿主缓存链接"；应用内容逐文件相同挂"内容硬链接"；桌面 profile 缓存只能走
 `desktop-shared-caches`，不得直接把整个 `electron-user-data` 共享（里面有 Cookies/WebStorage）。
 
-## 9. 明确不做
+## 9. 跨平台验证状态（2026-11-21）
+
+| 平台 / 文件系统 | 验证方式 | 结果 |
+|---|---|---|
+| macOS APFS | 真机，N=5 对照 | reflink；5 份 186M 树 → 1 份；二次启动全 unchanged |
+| Linux ext4 | 本机 colima VM + Docker volume（非 AWS） | 硬链接回退路径；3 个账号 + 库同一 inode（nlink 4），5MB 树总占用 5MB |
+| Linux btrfs/XFS | 未测（本机无该文件系统） | 代码走 `cp --reflink=always`，探测失败自动退硬链接 |
+| Windows NTFS | 仅交叉编译（spacegc / aihserver） | 未做运行时验证；策略为文件硬链接（目录真实、文件共享 inode），失败时逐文件退回复制 |
+
+Linux 实测发现并修复了两个只在非 APFS 上暴露的问题：
+
+1. `cpSync` 会保留库内 0555 目录权限，随后 `unlink+link` 因 EACCES 静默失败 → 改为直接
+   `linkTree`（自建目录 + `linkSync`），不再依赖目录可写；
+2. 内容指纹包含权限位，而库内树被冻结成 0555、安装器刚写的是 0755 → 每个账号都触发一次
+   "库内刷新"，把先前账号的链接孤立；指纹改为只算路径+大小。
+
+Windows 已知边界：Go `spacegc` 的 `ps/lsof` 在用判定不可用，只按空闲时长删除；NTFS 硬链接
+跨卷会失败（逐文件退回复制）。这两点需要在真机上补验证。
+
+## 10. 明确不做
 
 - 不共享任何凭据、会话库、`config`、`state`（账号私有，必须留在投影里）。
 - 不对会话库做自动删除或压缩（只提供只读统计）。

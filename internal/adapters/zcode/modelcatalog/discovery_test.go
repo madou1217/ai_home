@@ -42,7 +42,7 @@ func testZcodeSource(t *testing.T, handler func(path string, request *http.Reque
 		_, _ = response.Write([]byte(payload))
 	}))
 	t.Cleanup(server.Close)
-	source, err := New(server.Client())
+	source, err := NewWithAppVersion(server.Client(), "9.9.9")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 )
 
 func testAccountRef(t *testing.T) accountcore.AccountRef {
@@ -62,8 +63,13 @@ func TestFetchUsageAggregatesPackagesAndKeepsDetails(t *testing.T) {
 		t.Fatalf("FetchUsageWithDocument() error = %v", err)
 	}
 	if seen.Header.Get("Authorization") != "Bearer access-token" || seen.Header.Get("X-User-Id") != "u1" ||
-		seen.Header.Get("X-Domain") != "www.codebuddy.ai" || seen.Header.Get("User-Agent") != probeUserAgent {
+		seen.Header.Get("X-Domain") != "www.codebuddy.ai" {
 		t.Fatalf("headers = %#v", seen.Header)
+	}
+	// 官方 UA 只在真实观测到版本时下发；没有版本时不能自报固定 UA。
+	if expectedUA := cliversion.UserAgent(cliversion.Current()); expectedUA != "" &&
+		seen.Header.Get("User-Agent") != expectedUA {
+		t.Fatalf("user-agent = %q, want %q", seen.Header.Get("User-Agent"), expectedUA)
 	}
 	// 付费包 TCACA_code_002_ → "Pro" → pro。
 	if snapshot.PlanType() != "pro" {

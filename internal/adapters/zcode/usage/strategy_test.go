@@ -51,7 +51,7 @@ func TestFetchUsageMapsBalances(t *testing.T) {
 		}}`))
 	}))
 	defer server.Close()
-	strategy, err := New(server.Client())
+	strategy, err := NewWithAppVersion(server.Client(), "9.9.9")
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

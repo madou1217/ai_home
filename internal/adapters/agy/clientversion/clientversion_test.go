@@ -34,9 +34,10 @@ func TestDetectFromFallsBackToPlist(t *testing.T) {
 	}
 }
 
-func TestDetectFromFallsBackToDefault(t *testing.T) {
-	if got := DetectFrom("clientVersion=not-a-version", filepath.Join(t.TempDir(), "missing.plist")); got != Default {
-		t.Fatalf("DetectFrom() = %q, want default %q", got, Default)
+func TestDetectFromReturnsEmptyWhenUnknown(t *testing.T) {
+	// 观测不到版本时不能自报写死版本，调用方据此不下发版本头。
+	if got := DetectFrom("clientVersion=not-a-version", filepath.Join(t.TempDir(), "missing.plist")); got != "" {
+		t.Fatalf("DetectFrom() = %q, want empty", got)
 	}
 }
 

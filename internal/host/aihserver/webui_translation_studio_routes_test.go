@@ -82,6 +82,7 @@ func TestBuildWebUITranslationStudioRoutes(t *testing.T) {
 			"GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}",
 			"PATCH " + webuiimagestudioapi.Path + "/sessions/{sessionId}",
 			"DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}",
+			"DELETE " + webuiimagestudioapi.Path + "/sessions/{sessionId}/revisions/{revisionId}",
 			"POST " + webuiimagestudioapi.Path + "/sessions/{sessionId}/runs",
 			"GET " + webuiimagestudioapi.Path + "/sessions/{sessionId}/assets/{assetId}",
 			// 浏览器数据面：Image Studio 由 Go 直接应答；翻译页只挂已实现子路径，

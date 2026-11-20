@@ -530,6 +530,12 @@ func passthroughRequestFields(input Input) map[string]any {
 	for _, key := range passthroughForwardOmittedFields {
 		delete(document, key)
 	}
+	// 原始请求体同样不能把默认的 moderation=auto 透传下去：部分兼容端点
+	// 会因显式参数切到原生 OAuth 生图路径（AWS proxy 实测 401）。
+	if value, ok := document["moderation"].(string); ok &&
+		strings.EqualFold(strings.TrimSpace(value), "auto") {
+		delete(document, "moderation")
+	}
 	document["model"] = input.Model
 	if input.Mode == imagegeneration.ModeEdit {
 		for key := range passthroughFileFields {

@@ -14,7 +14,6 @@ package sessionchat
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -256,196 +255,23 @@ func BuildStartCommand(provider string, options StartOptions) (Command, error) {
 		return Command{}, NewCodeError("empty_prompt", "")
 	}
 
-	switch normalized {
-	case "gemini":
-		if interactive {
-			args := make([]string, 0, 6)
-			if options.SessionID != "" {
-				args = append(args, "--session-id", normalizeString(options.SessionID))
-			}
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, "--prompt-interactive", prompt)
-			}
-			if model != "" {
-				args = append(args, "--model", model)
-			}
-			return Command{CommandName: "gemini", Args: args}, nil
-		}
-		args := []string{"--prompt-interactive", prompt}
-		if options.SessionID != "" {
-			args = append([]string{"--session-id", normalizeString(options.SessionID)}, args...)
-		}
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		return Command{CommandName: "gemini", Args: args}, nil
-
-	case "codex":
-		if interactive {
-			args := make([]string, 0, 8)
-			if model != "" {
-				args = append(args, "-m", model)
-			}
-			for _, imagePath := range imagePaths {
-				args = append(args, "-i", imagePath)
-			}
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: "codex", Args: args}, nil
-		}
-		args := append([]string(nil), codexHeadlessExecArgs...)
-		if model != "" {
-			args = append(args, "-m", model)
-		}
-		for _, imagePath := range imagePaths {
-			args = append(args, "-i", imagePath)
-		}
-		if options.ProjectPath != "" {
-			args = append(args, "-C", normalizeString(options.ProjectPath))
-		}
-		args = append(args, prompt)
-		return Command{CommandName: "codex", Args: args}, nil
-
-	case "claude":
-		if interactive {
-			args := make([]string, 0, 6)
-			if model != "" {
-				args = append(args, "--model", model)
-			}
-			if options.SessionID != "" {
-				args = append(args, "--session-id", normalizeString(options.SessionID))
-			}
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: "claude", Args: args}, nil
-		}
-		args := make([]string, 0, 12)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		args = PushClaudeHeadlessStreamArgs(args)
-		if options.SessionID != "" {
-			args = append(args, "--session-id", normalizeString(options.SessionID))
-		}
-		if ClaudeUsesStreamJSONInput("claude", interactive, options.Platform) {
-			// 图片与 prompt 经 stdin 的 stream-json 消息送达，不再做位置参数。
-			args = append(args, "--input-format", "stream-json")
-		} else {
-			args = append(args, prompt)
-		}
-		return Command{CommandName: "claude", Args: args}, nil
-
-	case "qoder", "qodercn":
-		args := make([]string, 0, 10)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		if interactive {
-			if options.SessionID != "" {
-				args = append(args, "--session-id", normalizeString(options.SessionID))
-			}
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: normalized, Args: args}, nil
-		}
-		args = append(args, "--print", "--output-format", "stream-json", "--include-partial-messages")
-		if options.SessionID != "" {
-			args = append(args, "--session-id", normalizeString(options.SessionID))
-		}
-		args = append(args, prompt)
-		return Command{CommandName: normalized, Args: args}, nil
-
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		// 新建会话用预生成的 uuid 固定 --session-id，便于随后按文件定位并续聊。
-		args := make([]string, 0, 8)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		if interactive {
-			if options.SessionID != "" {
-				args = append(args, "--session-id", normalizeString(options.SessionID))
-			}
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: normalized, Args: args}, nil
-		}
-		args = append(args, "--print", "--output-format", "stream-json")
-		if options.SessionID != "" {
-			args = append(args, "--session-id", normalizeString(options.SessionID))
-		}
-		args = append(args, prompt)
-		return Command{CommandName: normalized, Args: args}, nil
-
-	case "agy":
-		if model != "" && IsImageGenerationModel(model) {
-			return Command{}, NewCodeError("agy_image_model_unsupported",
-				fmt.Sprintf("agy CLI does not support image generation model %s", model))
-		}
-		// agy 不接受预先指定 conversation id（自动生成）：新会话只走 headless --print。
-		args := []string{"--print", prompt, "--output-format", "stream-json", "--dangerously-skip-permissions"}
-		if model != "" {
-			cliModel := ResolveAgyCliModelName(model)
-			if cliModel == "" {
-				return Command{}, NewCodeError("agy_model_unsupported", "Selected AGY model has no supported CLI mapping")
-			}
-			args = append(args, "--model", cliModel)
-		}
-		return Command{CommandName: "agy", Args: args}, nil
-
-	case "opencode":
-		layout := options.Layout
-		if layout.ID == "" {
-			layout = OpenCodeLayoutV2
-		}
-		if interactive {
-			args := make([]string, 0, 8)
-			if model != "" {
-				args = append(args, "--model", model)
-			}
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, "--prompt", prompt)
-			}
-			args = append(args, OpenCodeRunStandaloneArgs(layout)...)
-			return Command{CommandName: "opencode", Args: args}, nil
-		}
-		args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		args = append(args, OpenCodeRunDirectoryArgs(layout, options.ProjectPath)...)
-		args = append(args, OpenCodeRunStandaloneArgs(layout)...)
-		args = append(args, prompt)
-		return Command{CommandName: "opencode", Args: args}, nil
-
-	case "cline":
-		// cline 没有 --print：位置参数即一次性 prompt；--json 后 stdout 是 NDJSON。
-		args := make([]string, 0, 4)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		if interactive {
-			args = append(args, "-i")
-			return Command{CommandName: "cline", Args: args}, nil
-		}
-		args = append(args, "--json", prompt)
-		return Command{CommandName: "cline", Args: args}, nil
-
-	case "grok":
-		args := []string{"--single", prompt, "--output-format", "streaming-json"}
-		if options.SessionID != "" {
-			args = append(args, "--session-id", normalizeString(options.SessionID))
-		}
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		return Command{CommandName: "grok", Args: args}, nil
+	builder, found := startCommandBuilders[normalized]
+	if !found {
+		return Command{}, NewCodeError("native_session_start_unsupported", "")
 	}
-
-	return Command{}, NewCodeError("native_session_start_unsupported", "")
+	return builder(startCommandParams{
+		commandParams: commandParams{
+			Provider:    normalized,
+			Prompt:      prompt,
+			Model:       model,
+			ImagePaths:  imagePaths,
+			Interactive: interactive,
+		},
+		SessionID:   options.SessionID,
+		ProjectPath: options.ProjectPath,
+		Platform:    options.Platform,
+		Layout:      options.Layout,
+	})
 }
 
 // BuildResumeCommand 把「续接已有会话」翻译成 CLI 命令（含 session 续接参数）。
@@ -467,182 +293,25 @@ func BuildResumeCommand(provider string, options ResumeOptions) (Command, error)
 		return Command{}, NewCodeError("empty_prompt", "")
 	}
 
-	switch normalized {
-	case "gemini":
-		// gemini 的 --resume 按 cwd→projectHash 发现会话，对 WebUI 不可靠；
-		// 优先 --session-file 直接按绝对路径加载，解析不到时回退 --resume。
-		resumeArgs := []string{"--resume", sessionID}
-		if options.GeminiSessionFile != "" {
-			resumeArgs = []string{"--session-file", options.GeminiSessionFile}
-		}
-		if interactive {
-			args := append([]string(nil), resumeArgs...)
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, "--prompt-interactive", prompt)
-			}
-			if model != "" {
-				args = append(args, "--model", model)
-			}
-			return Command{CommandName: "gemini", Args: args}, nil
-		}
-		args := append([]string(nil), resumeArgs...)
-		args = append(args, "--prompt-interactive", prompt)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		return Command{CommandName: "gemini", Args: args}, nil
-
-	case "codex":
-		if interactive {
-			args := []string{"resume"}
-			if model != "" {
-				args = append(args, "-m", model)
-			}
-			for _, imagePath := range imagePaths {
-				args = append(args, "-i", imagePath)
-			}
-			args = append(args, sessionID)
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: "codex", Args: args}, nil
-		}
-		args := append([]string(nil), codexHeadlessExecArgs...)
-		args = append(args, "resume")
-		if model != "" {
-			args = append(args, "-m", model)
-		}
-		for _, imagePath := range imagePaths {
-			args = append(args, "-i", imagePath)
-		}
-		args = append(args, sessionID, prompt)
-		return Command{CommandName: "codex", Args: args}, nil
-
-	case "claude":
-		if interactive {
-			args := make([]string, 0, 6)
-			if model != "" {
-				args = append(args, "--model", model)
-			}
-			args = append(args, "--resume", sessionID)
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: "claude", Args: args}, nil
-		}
-		args := make([]string, 0, 12)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		args = PushClaudeHeadlessStreamArgs(args)
-		if ClaudeUsesStreamJSONInput("claude", interactive, options.Platform) {
-			args = append(args, "--input-format", "stream-json", "--resume", sessionID)
-		} else {
-			args = append(args, "--resume", sessionID, prompt)
-		}
-		return Command{CommandName: "claude", Args: args}, nil
-
-	case "qoder", "qodercn":
-		args := make([]string, 0, 10)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		if interactive {
-			args = append(args, "--resume", sessionID)
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: normalized, Args: args}, nil
-		}
-		args = append(args, "--print", "--output-format", "stream-json", "--include-partial-messages", "--resume", sessionID, prompt)
-		return Command{CommandName: normalized, Args: args}, nil
-
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		// IDE 会话（ide-* 项目或 index.json）用独立存储，CLI 续不了，必须回到官方桌面端。
-		if strings.HasPrefix(options.ProjectDirName, "ide-") ||
-			(options.SessionPath != "" && filepath.Base(options.SessionPath) == "index.json") {
-			return Command{}, NewCodeError("native_session_resume_unsupported",
-				"CodeBuddy IDE 会话使用独立存储，请在官方 Desktop 中续聊；WebUI 已同步其历史与用量。")
-		}
-		args := make([]string, 0, 10)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		if interactive {
-			args = append(args, "--resume", sessionID)
-			if strings.TrimSpace(prompt) != "" {
-				args = append(args, prompt)
-			}
-			return Command{CommandName: normalized, Args: args}, nil
-		}
-		args = append(args, "--print", "--output-format", "stream-json", "--resume", sessionID, prompt)
-		return Command{CommandName: normalized, Args: args}, nil
-
-	case "grok":
-		args := []string{"--single", prompt, "--output-format", "streaming-json", "--resume", sessionID}
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		return Command{CommandName: "grok", Args: args}, nil
-
-	case "agy":
-		if model != "" && IsImageGenerationModel(model) {
-			return Command{}, NewCodeError("agy_image_model_unsupported",
-				fmt.Sprintf("agy CLI does not support image generation model %s", model))
-		}
-		if strings.TrimSpace(prompt) == "" {
-			return Command{}, NewCodeError("agy_headless_prompt_required", "AGY native resume requires a headless prompt")
-		}
-		args := []string{"--conversation", sessionID, "--print", prompt, "--output-format", "stream-json", "--dangerously-skip-permissions"}
-		if model != "" {
-			cliModel := ResolveAgyCliModelName(model)
-			if cliModel == "" {
-				return Command{}, NewCodeError("agy_model_unsupported", "Selected AGY model has no supported CLI mapping")
-			}
-			args = append(args, "--model", cliModel)
-		}
-		return Command{CommandName: "agy", Args: args}, nil
-
-	case "opencode":
-		layout := options.Layout
-		if layout.ID == "" {
-			layout = OpenCodeLayoutV2
-		}
-		if interactive {
-			args := make([]string, 0, 6)
-			if model != "" {
-				args = append(args, "--model", model)
-			}
-			args = append(args, "--session", sessionID)
-			args = append(args, OpenCodeRunStandaloneArgs(layout)...)
-			return Command{CommandName: "opencode", Args: args}, nil
-		}
-		args := []string{"run", "--format", "json", "--dangerously-skip-permissions", "--session", sessionID}
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		args = append(args, OpenCodeRunStandaloneArgs(layout)...)
-		if strings.TrimSpace(prompt) != "" {
-			args = append(args, prompt)
-		}
-		return Command{CommandName: "opencode", Args: args}, nil
-
-	case "cline":
-		// cline --id <id> 续接必须 TTY：交互式加 -i；非交互形态保留 --json（CLI 自行报错）。
-		args := make([]string, 0, 6)
-		if model != "" {
-			args = append(args, "--model", model)
-		}
-		args = append(args, "--id", sessionID)
-		if interactive {
-			args = append(args, "-i")
-			return Command{CommandName: "cline", Args: args}, nil
-		}
-		args = append(args, "--json", prompt)
-		return Command{CommandName: "cline", Args: args}, nil
+	builder, found := resumeCommandBuilders[normalized]
+	if !found {
+		return Command{}, NewCodeError("native_session_resume_unsupported", "")
 	}
-
-	return Command{}, NewCodeError("native_session_resume_unsupported", "")
+	return builder(resumeCommandParams{
+		commandParams: commandParams{
+			Provider:    normalized,
+			Prompt:      prompt,
+			Model:       model,
+			ImagePaths:  imagePaths,
+			Interactive: interactive,
+		},
+		SessionID:         sessionID,
+		GeminiSessionFile: options.GeminiSessionFile,
+		ProjectDirName:    options.ProjectDirName,
+		SessionPath:       options.SessionPath,
+		Platform:          options.Platform,
+		Layout:            options.Layout,
+	})
 }
 
 // ShellSingleQuote 是 POSIX 单引号转义：把值包进单引号并转义内部的单引号。

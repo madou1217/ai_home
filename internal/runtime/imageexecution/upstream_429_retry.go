@@ -351,7 +351,14 @@ func (executor *Executor) classifyAttemptFailure(
 								Header:     imageErr.UpstreamHeader,
 								Body:       io.NopCloser(bytes.NewReader(body)),
 							}
-							return codexfailure.ObserveHTTP(observed, observedAt)
+							classification, err := codexfailure.ObserveHTTP(observed, observedAt)
+							if err != nil {
+								return classification, err
+							}
+							return reclassifyCodexOAuthImageForbidden(
+								imageErr.ObservedHTTPStatus,
+								classification,
+							)
 						}
 						// 内置 codexfailure.ObserveHTTP 内部按 64KB 截断解码；超过 64KB 时直接解析
 						// 完整已有界正文，防止尾部硬配额/账单字段被丢弃并误判为瞬态 429。
@@ -364,7 +371,13 @@ func (executor *Executor) classifyAttemptFailure(
 						if !decodedOK {
 							evidenceComplete = false
 						}
-						return classified, err
+						if err != nil {
+							return classified, err
+						}
+						return reclassifyCodexOAuthImageForbidden(
+							imageErr.ObservedHTTPStatus,
+							classified,
+						)
 					}
 					return sharedfailure.ObserveHTTP(
 						imageErr.ObservedHTTPStatus,
@@ -404,6 +417,27 @@ func (executor *Executor) classifyAttemptFailure(
 	}
 	failure, err := attemptfailure.NewClassified(runtimecore.FailureUpstreamUnavailable)
 	return failure, false, err
+}
+
+// reclassifyCodexOAuthImageForbidden 把 Codex OAuth 在图片端点的通用 403 收敛为
+// 账号-模型级权限阻塞，而不是共享分类器的账号级凭据拒绝。
+//
+// 2026-11-20 真实账号验证：token_revoked 的账号文本和图片都返回 401，必须账号级阻塞；
+// 另一些账号文本仍可用，只有 /codex/images/* 返回 403 {"detail":"Forbidden"}。共享的
+// codexfailure 把这类通用 403 归为 credential_rejected，若直接落库会让账号连文本一起
+// 被移出池。401 与其他更具体的 403 分类（边缘拦截、账单、额度等）不在这里改写。
+func reclassifyCodexOAuthImageForbidden(
+	statusCode int,
+	classification sharedfailure.Classification,
+) (sharedfailure.Classification, error) {
+	if statusCode != http.StatusForbidden ||
+		classification.Kind() != runtimecore.FailureCredentialRejected {
+		return classification, nil
+	}
+	return sharedfailure.NewBlockingClassification(
+		runtimecore.FailurePermissionDenied,
+		runtimecore.BlockScopeAccountModel,
+	)
 }
 
 func looksLikeJSONObject(body []byte) bool {

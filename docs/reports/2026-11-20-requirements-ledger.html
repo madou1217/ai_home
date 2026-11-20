@@ -195,7 +195,8 @@
         <tr><td>/v1/models 对外只列可见可用，WebUI 全量</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">模型同步与 WebUI 目录分层；可见性由能力/账号决定</td></tr>
         <tr><td>模型→账号倒排索引，1w 账号秒查</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">account_models 索引与批量读取接口</td></tr>
         <tr><td>账号新增/导入/开关/失效事件化 + 多监听</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">lifecycle listeners（model-discovery-accounts 等）</td></tr>
-        <tr><td>"模型待探测"长期占用不合理</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">分级扫描 + 目录缓存；失败账号仍显示待探测</td></tr>
+        <tr><td>"模型待探测"长期占用不合理</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">3b5491c：状态/退避单一声明 + 到期重试 worker；失败下发 retrying/failed、原因与 nextAttemptAt，凭据失配时兜底写失败事实；WebUI 行内展示重试中/失败原因/下次重试，未配置账号显示「未配置」</td></tr>
+        <tr><td>/v1/models 模型目录缓存陈旧</td><td class="meta">11-21</td><td><span class="chip s-done">已完成</span></td><td class="ev">3b5491c：账号/凭据/资料/模型/探测/别名事实 + 模型设置文档签名作为失效键；显式刷新与人工模型变更立即作废，3s/5min TTL 保留</td></tr>
         <tr><td>模型扫描分级随机间隔，禁止全员同扫</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">模型重扫 worker 带初始延迟与间隔</td></tr>
         <tr><td>provider 声明 provider_model_prefix</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">未见对应实现证据</td></tr>
         <tr><td>/v1/models ContextWindows 基于原生二进制指纹</td><td class="meta">11-17</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">本窗口无直接证据</td></tr>

@@ -131,6 +131,10 @@ func ReadRecent(ctx context.Context, path string, sizeHint int64, options Option
 	if native, err := isPaginated(file); err != nil {
 		return ReadResult{}, err
 	} else if native {
+		// 分页历史：消息在 .codex/thread_history_1.sqlite，rollout 只剩元数据。
+		if result, nativeErr := readPaginatedTurns(ctx, path, options); nativeErr == nil {
+			return result, nil
+		}
 		return ReadResult{Eligible: false, Reason: "native_paginated_history", Turns: []*Turn{}}, nil
 	}
 	if sizeHint > 0 && sizeHint < size {
@@ -146,6 +150,9 @@ func ReadRecent(ctx context.Context, path string, sizeHint int64, options Option
 		parser, err := parseWindow(ctx, file, start, size, options)
 		scanned += window
 		if errors.Is(err, ErrNativeHistoryRequired) {
+			if result, nativeErr := readPaginatedTurns(ctx, path, options); nativeErr == nil {
+				return result, nil
+			}
 			return ReadResult{Eligible: false, Reason: "native_item_history", Turns: []*Turn{}}, nil
 		}
 		if err != nil {

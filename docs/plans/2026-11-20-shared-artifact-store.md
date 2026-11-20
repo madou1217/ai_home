@@ -239,6 +239,11 @@ GC(mode):
 | 桌面 Chromium 缓存 | `Cache/Code Cache/GPUCache/DawnCache` 按 provider 共享 | Go `ensureDesktopSharedCaches`（`webuiopenappapi`） |
 | ZCode 影子 App | 同一 fingerprint 只保留一份，跨卷时退回普通复制 | `webuiopenappapi/desktop_zcode.go`（`cp -c -R`） |
 | 空间治理 | 过期临时目录/源码副本/快照回收 + 证据硬链接去重 | `internal/runtime/spacegc` |
+| 旧版整目录链接 | buddy 家族把 `.local/share` / `.workbuddy-ai` 整体链到宿主 runtime home（历史遗留，仍生效） | 投影内符号链接 |
+
+发现"整目录已经链到投影外"（`realpath(artifact.path)` 不在投影根下）时，启动准备只报告
+`shared-external`，不再逐账号重铺：否则会对同一份共享路径反复 atomicReplace，制造 inode 抖动和
+`.old` 残留。
 
 新增共享需求时的判定顺序：先看能否挂到"投影构件库"（版本化、不可变 → reflink/硬链接/软链）；
 缓存类挂"宿主缓存链接"；应用内容逐文件相同挂"内容硬链接"；桌面 profile 缓存只能走

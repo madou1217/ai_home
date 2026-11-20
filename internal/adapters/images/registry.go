@@ -12,7 +12,11 @@ import (
 // 与 image-generation-executor.js 的账号尝试循环。
 
 // maxAttempts 是一次请求最多尝试的账号数。
-const maxAttempts = 3
+//
+// 账号池里可能同时有多把 OAuth 会话被上游失效（token refresh 后仍可能再次
+// 被拒），只试 3 个会在健康账号排在后面时误判整池不可用；401/403 的尝试
+// 很快，放宽到 5 个仍可在超时预算内覆盖常见坏号比例。
+const maxAttempts = 5
 
 // AccountSource 按公平轮转顺序提供候选账号。
 //

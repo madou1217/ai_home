@@ -15,10 +15,10 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelsettingssync"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 // Separate ownership from the remaining credential sync writer's state. Node

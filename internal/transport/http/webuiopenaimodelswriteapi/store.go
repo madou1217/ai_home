@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 // ErrStoreUnavailable 表示数据源没有可用的数据库路径。

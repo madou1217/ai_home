@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	agymodelnames "github.com/madou1217/ai_home/internal/adapters/agy/modelnames"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 const (

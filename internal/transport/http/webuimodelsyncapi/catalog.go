@@ -8,11 +8,11 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/modelprobes"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 )
 

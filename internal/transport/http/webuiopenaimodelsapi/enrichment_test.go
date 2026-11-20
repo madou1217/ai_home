@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 

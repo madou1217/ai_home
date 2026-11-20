@@ -54,11 +54,11 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 		"version": 1.0,
 		"accountModels": []any{
 			map[string]any{
-				"id": "claude-sonnet-4", "provider": "claude", "accountRef": testRefA,
+				"id": "claude-sonnet-4", "provider": "claude", "accountRef": "acct_11111111111111111111",
 				"manual": true, "description": " 主力 ",
 				"customPricing": map[string]any{"input": 3.0},
 			},
-			map[string]any{"id": "gpt-5", "provider": "codex", "accountRef": testRefA, "enabled": false},
+			map[string]any{"id": "gpt-5", "provider": "codex", "accountRef": "acct_11111111111111111111", "enabled": false},
 			map[string]any{"id": "ghost", "accountRef": "acct_zzz"},
 		},
 		"models": []any{map[string]any{"id": "legacy-model", "provider": "zcode"}},
@@ -117,7 +117,7 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 func TestLoadNormalizesLegacyDocument(t *testing.T) {
 	ctx := context.Background()
 	databasePath := tempDatabasePath(t)
-	raw := `{"version":5,"accountModels":[{"id":"m1","accountRef":"acct_bad"},{"id":"m2","provider":"unknown","accountRef":"` + testRefA + `"}],"models":[{"id":"legacy","provider":"claude","enabled":false}],"updatedAt":123}`
+	raw := `{"version":5,"accountModels":[{"id":"m1","accountRef":"acct_bad"},{"id":"m2","provider":"unknown","accountRef":"` + "acct_11111111111111111111" + `"}],"models":[{"id":"legacy","provider":"claude","enabled":false}],"updatedAt":123}`
 	if err := appstate.WriteKV(ctx, databasePath, DatabaseKey, raw, 123); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

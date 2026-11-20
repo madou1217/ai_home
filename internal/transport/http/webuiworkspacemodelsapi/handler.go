@@ -17,12 +17,12 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/modelprobes"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 const (

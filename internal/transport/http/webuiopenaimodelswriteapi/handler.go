@@ -28,9 +28,9 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 const (

@@ -25,9 +25,9 @@ import (
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/accountscheduling"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 )
 

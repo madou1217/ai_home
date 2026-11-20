@@ -8,8 +8,8 @@ import (
 	pricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 // 本文件是本包的「可选事实源」层：把 modelcatalogsettings / 快照端口 /

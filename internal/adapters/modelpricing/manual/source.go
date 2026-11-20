@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/contracts/modelpricing"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 const sourceID = "manual:model-catalog-settings"

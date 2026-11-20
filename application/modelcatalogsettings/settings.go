@@ -95,6 +95,14 @@ func Normalize(document any) Settings {
 	return normalizeAt(document, time.Now().UnixMilli())
 }
 
+// NormalizeAt 以调用方给定的时刻归一文档。
+//
+// 存储层需要在一次写入里复用同一个时间戳（updatedAt 与记录时间必须同源），因此
+// 归一化必须能把时刻作为参数，而不是各自读时钟。
+func NormalizeAt(document any, nowMS int64) Settings {
+	return normalizeAt(document, nowMS)
+}
+
 func normalizeAt(document any, nowMS int64) Settings {
 	source := documentFields(document)
 	accountModelsByKey := make(map[string]AccountModel)

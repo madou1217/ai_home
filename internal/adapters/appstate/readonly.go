@@ -123,10 +123,9 @@ func ReadRawKVStrict(
 	return value, true, nil
 }
 
-// ReadRawKVPrefix 使用调用方已有的连接读取前缀匹配的全部记录；prefix 为空表示整表。
-//
-// 表缺失按空结果处理：这些调用方在「从未写入」与「表尚未创建」之间不做区分。
-func ReadRawKVPrefix(
+// ReadRawKVPrefixStrict 使用调用方已有的连接读取前缀匹配的全部记录；
+// prefix 为空表示整表。app_kv 表缺失按错误返回。
+func ReadRawKVPrefixStrict(
 	ctx context.Context,
 	queryer Queryer,
 	prefix string,
@@ -144,20 +143,42 @@ func ReadRawKVPrefix(
 	}
 	rows, err := queryer.QueryContext(ctx, query, arguments...)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return result, nil
-		}
 		return result, err
 	}
-	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var key, value string
-		if err := rows.Scan(&key, &value); err != nil {
-			return result, err
+		if scanErr := rows.Scan(&key, &value); scanErr != nil {
+			_ = rows.Close()
+			return result, scanErr
 		}
 		result[key] = value
 	}
-	return result, rows.Err()
+	if rowsErr := rows.Err(); rowsErr != nil {
+		_ = rows.Close()
+		return result, rowsErr
+	}
+	if closeErr := rows.Close(); closeErr != nil {
+		return result, closeErr
+	}
+	return result, nil
+}
+
+// ReadRawKVPrefix 使用调用方已有的连接读取前缀匹配的全部记录；prefix 为空表示整表。
+//
+// 表缺失按空结果处理：这些调用方在「从未写入」与「表尚未创建」之间不做区分。
+func ReadRawKVPrefix(
+	ctx context.Context,
+	queryer Queryer,
+	prefix string,
+) (map[string]string, error) {
+	result, err := ReadRawKVPrefixStrict(ctx, queryer, prefix)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return map[string]string{}, nil
+		}
+		return result, err
+	}
+	return result, nil
 }
 
 // ReadKV 读取 app_kv 的一行。表/行不存在返回 found=false，不视为错误。

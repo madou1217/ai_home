@@ -448,13 +448,9 @@ func (store *Store) loadLocked(ctx context.Context) (*policySnapshot, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(
-		ctx,
-		`SELECT key, value FROM app_kv WHERE key = ? OR key LIKE ? ORDER BY key`,
-		ServerConfigKey,
-		AccountOverrideKeyPrefix+"%",
-	)
-	if err != nil {
+	// 缺表语义集中在一处：首次加载按空策略初始化；已持久化加载过再缺表说明数据被
+	// 外部删除，必须显式报错，不能静默当成「从未写入」。
+	failure := func(err error) (*policySnapshot, error) {
 		if isMissingTableError(err) && !store.hasDurableLoad {
 			fpAfter := statDBFingerprint(store.dbPath)
 			snap := &policySnapshot{
@@ -473,21 +469,20 @@ func (store *Store) loadLocked(ctx context.Context) (*policySnapshot, error) {
 		}
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+
+	configRaw, configFound, err := appstate.ReadRawKVStrict(ctx, tx, ServerConfigKey)
+	if err != nil {
+		return failure(err)
+	}
+	overrideRows, err := appstate.ReadRawKVPrefixStrict(ctx, tx, AccountOverrideKeyPrefix)
+	if err != nil {
+		return failure(err)
+	}
 
 	global := corepolicy.DefaultGlobalPolicy()
-	overrides := map[string]corepolicy.AccountOverride{}
-	for rows.Next() {
-		var key, raw string
-		if scanErr := rows.Scan(&key, &raw); scanErr != nil {
-			store.invalidateFingerprintTrustLocked()
-			return nil, scanErr
-		}
-		if key == ServerConfigKey {
-			trimmed := strings.TrimSpace(raw)
-			if trimmed == "" {
-				continue
-			}
+	if configFound {
+		trimmed := strings.TrimSpace(configRaw)
+		if trimmed != "" {
 			var decoded any
 			if unmarshalErr := json.Unmarshal([]byte(trimmed), &decoded); unmarshalErr != nil {
 				store.invalidateFingerprintTrustLocked()
@@ -501,25 +496,17 @@ func (store *Store) loadLocked(ctx context.Context) (*policySnapshot, error) {
 			if rawRetry, exists := parsed["upstream429Retry"]; exists {
 				global = corepolicy.SanitizeGlobalRaw(rawRetry)
 			}
+		}
+	}
+	overrides := map[string]corepolicy.AccountOverride{}
+	for key, rawValue := range overrideRows {
+		ref := strings.TrimSpace(strings.TrimPrefix(key, AccountOverrideKeyPrefix))
+		if ref == "" {
 			continue
 		}
-		if strings.HasPrefix(key, AccountOverrideKeyPrefix) {
-			ref := strings.TrimSpace(strings.TrimPrefix(key, AccountOverrideKeyPrefix))
-			if ref == "" {
-				continue
-			}
-			if override, active := corepolicy.SanitizeAccountOverrideJSON(raw); active {
-				overrides[ref] = override
-			}
+		if override, active := corepolicy.SanitizeAccountOverrideJSON(rawValue); active {
+			overrides[ref] = override
 		}
-	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		store.invalidateFingerprintTrustLocked()
-		return nil, rowsErr
-	}
-	if closeErr := rows.Close(); closeErr != nil {
-		store.invalidateFingerprintTrustLocked()
-		return nil, closeErr
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
 		store.invalidateFingerprintTrustLocked()

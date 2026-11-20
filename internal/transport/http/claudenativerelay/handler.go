@@ -26,6 +26,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
@@ -104,6 +105,10 @@ type Dependencies struct {
 	// Upstream 把凭据投影成原生 Messages 上游（官方 OAuth 或厂商兼容端点）。
 	// 为空时使用默认链，保持既有装配可用。
 	Upstream transportpolicy.MessagesUpstream
+	// ClientVersions 提供跨协议补齐官方身份时自报的 Claude Code 版本。
+	//
+	// 为空时不下发版本头：写死版本会随官方 CLI 升级而过时，反而暴露成非官方客户端。
+	ClientVersions clientversion.Source
 }
 
 // Handler 编排可信账号绑定、原始请求透传和响应流回写。
@@ -120,6 +125,8 @@ type Handler struct {
 	rules              configured.Rules
 	disconnects        func(StreamDisconnect)
 	upstream           transportpolicy.MessagesUpstream
+	// clientVersions 提供补齐官方身份时自报的版本；为空表示不下发版本头。
+	clientVersions clientversion.Source
 }
 
 // NewHandler 创建默认失败关闭的 Claude Native Relay。
@@ -156,6 +163,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		rules:              dependencies.Rules,
 		disconnects:        dependencies.StreamDisconnects,
 		upstream:           upstream,
+		clientVersions:     dependencies.ClientVersions,
 	}, nil
 }
 

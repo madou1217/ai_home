@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 )
 
 // Anthropic 依据客户端身份判定订阅额度是否可用。真实 Claude Code 自己带着这份
@@ -20,10 +22,8 @@ const (
 	officialSystemIdentity = "You are Claude Code, Anthropic's official CLI for Claude."
 	// systemField 是 Messages 请求体里承载系统提示的字段名。
 	systemField = "system"
-	// officialClientUserAgent 是官方 CLI 自报的客户端身份。
-	//
-	// 与 Header/beta 合同一并对齐本机正式 Claude Code 2.1.229。
-	officialClientUserAgent = "claude-cli/2.1.229 (external, sdk-cli)"
+	// 这里**没有**写死的 User-Agent 常量：版本由 claudeidentity 从真实本机 CLI
+	// 探测得到；探测不到就不下发该 Header，绝不自报一个过期的官方版本。
 	// officialClientBeta 是官方 CLI 每次请求声明的 Claude Code beta。
 	officialClientBeta = "claude-code-20250219"
 	// officialAnthropicVersion 是 Messages 公共 API 的稳定版本。
@@ -35,12 +35,15 @@ const (
 // 补 system 身份还不够：订阅额度判定同时看外层标识。本函数只会处理已被
 // Handler 判定为非原生的客户端，因此统一投影已验证的官方身份；真实 Claude
 // Code 请求在调用点旁路本函数，继续保持自己的版本和 Header。
-func applyOfficialClientHeaders(header http.Header) {
+func applyOfficialClientHeaders(header http.Header, version string) {
 	if header == nil {
 		return
 	}
 	header.Set("anthropic-version", officialAnthropicVersion)
-	header.Set("User-Agent", officialClientUserAgent)
+	// 版本只来自真实观测；为空时不写 UA（保留客户端自己的 Header）。
+	if userAgent := claudeidentity.UserAgent(version); userAgent != "" {
+		header.Set("User-Agent", userAgent)
+	}
 	header.Set("x-app", "cli")
 	header.Set("anthropic-dangerous-direct-browser-access", "true")
 	if containsHeaderToken(header.Values("anthropic-beta"), officialClientBeta) {
@@ -133,4 +136,13 @@ func ensureOfficialIdentityBody(body []byte) []byte {
 // bodyUnchanged 报告改写是否发生，供调用方判断能否保持透传承诺。
 func bodyUnchanged(original, candidate []byte) bool {
 	return bytes.Equal(original, candidate)
+}
+
+// clientVersion 返回跨协议补齐官方身份时应自报的版本；未注入来源时为空
+// （调用方据此不下发 UA，而不是填一个写死的版本）。
+func (handler *Handler) clientVersion() string {
+	if handler == nil || handler.clientVersions == nil {
+		return ""
+	}
+	return handler.clientVersions.Current()
 }

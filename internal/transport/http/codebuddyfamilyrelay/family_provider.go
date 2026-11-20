@@ -11,6 +11,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 )
 
 const (
@@ -137,12 +138,15 @@ func IdentityHeaders(provider string, uid string) map[string]string {
 		ProductHeader:        "SaaS",
 		IDETypeHeader:        "CLI",
 		IDENameHeader:        "CLI",
-		IDEVersionHeader:     CLIVersion(),
 		AgentPurposeHeader:   "conversation",
 		AgentIntentHeader:    "craft",
 		AgentTypeHeader:      "main",
 		PrivateDataHeader:    "false",
 		CodebuddyRequestHead: "1",
+	}
+	// 版本只下发真实观测值：拿不到就不发，绝不用写死的常量冒充官方客户端。
+	if version := cliversion.Current(); version != "" {
+		headers[IDEVersionHeader] = version
 	}
 	if domain := domainByProvider[normalizeProvider(provider)]; domain != "" {
 		headers[DomainHeader] = domain

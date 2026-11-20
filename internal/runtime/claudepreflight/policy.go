@@ -135,7 +135,8 @@ func Probe(ctx context.Context, client *http.Client, timeout time.Duration) Resu
 				outcomes[index] = host + ": 请求无效"
 				return
 			}
-			request.Header.Set("User-Agent", "aih-claude-preflight")
+			// 不注入任何自定义 UA：这是纯连通性探测，冒充官方客户端或自报
+			// 「aih-…」标识都会在官方端点留下可区分的非官方指纹。
 			response, err := client.Do(request)
 			if err != nil {
 				outcomes[index] = host + ": " + compactError(err)

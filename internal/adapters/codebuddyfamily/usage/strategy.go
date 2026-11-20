@@ -4,7 +4,7 @@
 //
 //	POST {发行版域名}/billing/meter/get-user-resource-summary  body {}
 //	Authorization: Bearer <Keycloak accessToken>、X-User-Id: <uid>、
-//	X-Domain: <auth.domain>、User-Agent: CodeBuddy/1.0 (ai-home)
+//	X-Domain: <auth.domain>、User-Agent: 本机实测得到的官方 CLI UA
 //	→ { code, data:{ Packages:[{ PackageCode, CycleTotalCapacity, CycleRemainCapacity,
 //	     CycleUsedCapacity, CapacityUnit }], TotalCredits, SubscriptionPackageCode, IsPaidUser } }
 //
@@ -30,13 +30,13 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 )
 
 const (
 	resourceSummaryPath = "/billing/meter/get-user-resource-summary"
 	sourceID            = "codebuddy_billing_resource_summary_api"
 	documentKind        = "codebuddy_credit_balance"
-	probeUserAgent      = "CodeBuddy/1.0 (ai-home)"
 	maxResponseBytes    = 1 << 20
 	requestTimeout      = 10 * time.Second
 	schemaVersion       = 2
@@ -244,7 +244,10 @@ func (strategy *Strategy) fetch(ctx context.Context, auth familyCredential) ([]b
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+auth.accessToken)
 	request.Header.Set("X-User-Id", auth.uid)
-	request.Header.Set("User-Agent", probeUserAgent)
+	// 只用真实观测到的官方 UA：拿不到就不发，绝不带 aih 自有标识去敲官方端点。
+	if userAgent := cliversion.UserAgent(cliversion.Current()); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 	if auth.domain != "" {
 		request.Header.Set("X-Domain", auth.domain)
 	}

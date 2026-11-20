@@ -58,7 +58,8 @@ var _ usageapp.ProviderStrategy = (*Strategy)(nil)
 
 // New 创建不依赖 Claude Native Relay 的额度 Strategy。
 func New(client HTTPClient) (*Strategy, error) {
-	return NewWithClientVersion(client, clientversion.Static(claudeidentity.Floor))
+	// 默认不带版本来源：Current 为空时不下发 UA，绝不自报写死的版本。
+	return NewWithClientVersion(client, clientversion.Static(""))
 }
 
 // NewWithClientVersion 创建按版本来源自报 Claude Code 客户端身份的额度 Strategy。
@@ -223,7 +224,9 @@ func newGET(
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Anthropic-Beta", oauthBeta)
-	request.Header.Set("User-Agent", claudeidentity.UserAgent(clientVersion))
+	if userAgent := claudeidentity.UserAgent(clientVersion); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 	return request, nil
 }
 

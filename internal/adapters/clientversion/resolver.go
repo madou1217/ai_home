@@ -61,10 +61,20 @@ type Resolver struct {
 }
 
 // NewResolver 创建解析器，并读取已持久化的学习版本。
+//
+// Floor 可留空：没有编译期下限时，Current 在观测不到任何版本时返回空串，
+// 由调用方决定「不下发版本头」或显式报错——绝不自报一个写死的假版本。
 func NewResolver(options ResolverOptions) (*Resolver, error) {
-	floor, ok := Parse(options.Floor)
-	if options.Provider == "" || !ok || floor.String() != options.Floor {
+	if options.Provider == "" {
 		return nil, ErrInvalidResolver
+	}
+	var floor Version
+	if options.Floor != "" {
+		parsed, ok := Parse(options.Floor)
+		if !ok || parsed.String() != options.Floor {
+			return nil, ErrInvalidResolver
+		}
+		floor = parsed
 	}
 	resolver := &Resolver{
 		provider:      options.Provider,

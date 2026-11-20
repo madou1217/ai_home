@@ -127,7 +127,7 @@ func (handler *Handler) attemptRelay(
 	if err == nil && target.OfficialClient && !hasNativeClaudeHeaders(request.Header) {
 		// 非原生客户端打官方端点：正文身份已在入口补齐，外层标识在此补齐，
 		// 两者缺一都会被上游按非订阅调用拒绝。厂商兼容端点不套官方合同。
-		applyOfficialClientHeaders(upstream.Header)
+		applyOfficialClientHeaders(upstream.Header, handler.clientVersion())
 	}
 	if err != nil {
 		// 请求本身无法构造，换号不会改变结果。

@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 )
 
@@ -158,7 +159,10 @@ func (source *ModelCatalogSource) fetchConfig(
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/json, text/plain, */*")
-	request.Header.Set("User-Agent", codebuddyfamilyrelay.UserAgentFor(codebuddyfamilyrelay.CLIVersion()))
+	// 只下发真实观测到的官方 UA；拿不到版本就不发，不伪造客户端身份。
+	if userAgent := cliversion.UserAgent(cliversion.Current()); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 	request.Header.Set("Origin", source.baseURL)
 	request.Header.Set("Referer", source.baseURL+"/")
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")

@@ -15,7 +15,6 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
-	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
@@ -65,7 +64,7 @@ func NewAdapter(
 	return newAdapter(
 		client,
 		clock,
-		clientversion.Static(claudeidentity.Floor),
+		clientversion.Static(""),
 		decodeErrorObservers...,
 	)
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 	familyfailure "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
@@ -120,7 +121,11 @@ func (provider Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, e
 // 身份才带）。此前本端补发它们，反而是一处与官方不符的差异。
 func (provider Provider) DecorateUpstream(request *http.Request, accessToken string) {
 	provider.BaseProvider.DecorateUpstream(request, accessToken)
-	request.Header.Set("User-Agent", UserAgentFor(CLIVersion()))
+	// UA 与 X-IDE-Version 同源，且只下发真实观测到的版本；拿不到版本就不发，
+	// 不伪造官方客户端身份。
+	if userAgent := cliversion.UserAgent(cliversion.Current()); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")
 	for name, value := range IdentityHeaders(provider.providerID, provider.userID) {
 		request.Header.Set(name, value)

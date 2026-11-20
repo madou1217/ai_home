@@ -41,7 +41,10 @@ func applyClaudeCodeIdentity(header http.Header, oauth bool, version string) {
 	if header == nil || !oauth {
 		return
 	}
-	header.Set("User-Agent", claudeidentity.UserAgent(version))
+	// 版本来自真实观测；为空时不写 UA，避免自报一个写死的身份。
+	if userAgent := claudeidentity.UserAgent(version); userAgent != "" {
+		header.Set("User-Agent", userAgent)
+	}
 	header.Set(clientAppHeader, clientAppValue)
 	header.Set(clientDirectAccessHeader, clientDirectAccessValue)
 }

@@ -20,7 +20,6 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
-	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
@@ -169,7 +168,8 @@ func newInferenceComposition(
 	codexAdapter.ObserveRejections(dependencies.codexRejections)
 	codexAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
 	codexAdapter.ObserveEffortLadders(dependencies.effortLadders)
-	var claudeVersions clientversion.Source = clientversion.Static(claudeidentity.Floor)
+	// 没有编译期兜底版本：未注入解析器时 Current 返回空串，适配器不下发版本头。
+	var claudeVersions clientversion.Source = clientversion.Static("")
 	if dependencies.claudeVersions != nil {
 		claudeVersions = dependencies.claudeVersions
 	}

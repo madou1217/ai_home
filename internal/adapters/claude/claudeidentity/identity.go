@@ -18,11 +18,9 @@ import (
 const (
 	// Provider 是版本学习存储中的键。
 	Provider = "claude"
-	// Floor 是编译期兜底下限：显式配置、本机 CLI 探测、真实客户端学习都拿不到版本时，
-	// 用这个值自报身份。它表达的是「已知可用的最低身份」，不是编码器形状的版本锁。
-	//
-	// 2.1.229 是本机 Claude Code 可执行版本与回环抓包合同验证过的身份（见 messages 包）。
-	Floor = "2.1.229"
+	// 这里**没有**编译期兜底版本：版本只来自显式配置、本机 CLI 探测或真实客户端
+	// 学习。写死的兜底会随官方 CLI 升级而过时，成为上游眼里可区分的「非官方客户端」；
+	// 取不到版本时调用方不下发版本头，而不是自报一个假版本。
 	// Product 是官方 CLI User-Agent 里的产品名。
 	Product = "claude-cli"
 	// SDKMarker 是官方 CLI 在 User-Agent 末尾自报的运行形态。
@@ -39,18 +37,20 @@ const (
 var productPrefixes = []string{Product + "/", "claude-code/"}
 
 // UserAgent 返回网关模拟 Claude Code 客户端时的 User-Agent。
+//
+// 版本为空时返回空串：调用方据此**不下发**该 Header，而不是填一个写死的版本。
 func UserAgent(version string) string {
-	if version == "" {
-		version = Floor
+	value := strings.TrimSpace(version)
+	if value == "" {
+		return ""
 	}
-	return Product + "/" + version + SDKMarker
+	return Product + "/" + value + SDKMarker
 }
 
 // NewResolver 创建 Claude 客户端版本解析器；learned / probeCache 为 nil 时只在内存中生效。
 func NewResolver(learned *clientversion.LearnedStore, probeCache *clientversion.ProbeCache) (*clientversion.Resolver, error) {
 	return clientversion.NewResolver(clientversion.ResolverOptions{
 		Provider:      Provider,
-		Floor:         Floor,
 		Configured:    os.Getenv(ConfiguredVersionEnv),
 		ProbeCommands: probeCommands(),
 		ProbeInterval: probeInterval,

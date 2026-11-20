@@ -9,13 +9,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 )
 
 const (
-	workbuddyDefaultTimeout      = 15 * time.Second
-	workbuddyCheckinStatusPath   = "/v2/billing/meter/checkin-activity-status"
-	workbuddyDailyCheckinPath    = "/v2/billing/meter/daily-checkin"
-	codebuddyProbeUserAgent      = "CodeBuddy/1.0 (ai-home)"
+	workbuddyDefaultTimeout    = 15 * time.Second
+	workbuddyCheckinStatusPath = "/v2/billing/meter/checkin-activity-status"
+	workbuddyDailyCheckinPath  = "/v2/billing/meter/daily-checkin"
 )
 
 type checkinBizStatus struct {
@@ -83,7 +84,10 @@ func buildWorkbuddyCheckinHeaders(credential *CodebuddySharedCredential, record 
 		"Authorization": "Bearer " + strings.TrimSpace(credential.AccessToken),
 		"Content-Type":  "application/json",
 		"X-User-Id":     strings.TrimSpace(credential.UID),
-		"User-Agent":    codebuddyProbeUserAgent,
+	}
+	// 只用真实观测到的官方 UA：拿不到就不发，绝不带 aih 自有标识去敲官方端点。
+	if userAgent := cliversion.UserAgent(cliversion.Current()); userAgent != "" {
+		headers["User-Agent"] = userAgent
 	}
 	if dom := strings.TrimSpace(credential.Domain); dom != "" {
 		headers["X-Domain"] = dom

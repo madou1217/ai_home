@@ -17,7 +17,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
-	"github.com/madou1217/ai_home/internal/adapters/claude/claudeidentity"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
@@ -86,7 +85,7 @@ func buildCodexUsage(context usageProviderContext) ([]usageapp.ProviderStrategy,
 func buildClaudeUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
 	source := context.claudeVersions
 	if source == nil {
-		source = clientversion.Static(claudeidentity.Floor)
+		source = clientversion.Static("")
 	}
 	strategy, err := claudeusage.NewWithClientVersion(context.client, source)
 	if err != nil {

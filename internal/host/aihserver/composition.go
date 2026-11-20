@@ -1796,6 +1796,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Rules:              upstreamRuleEvaluator,
 			StreamDisconnects:  newRelayDisconnectObserver(errorLog),
 			Upstream:           messagesUpstream,
+			ClientVersions:     claudeVersions,
 		},
 	)
 	if err != nil {

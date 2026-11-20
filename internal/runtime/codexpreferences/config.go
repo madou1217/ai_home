@@ -55,6 +55,27 @@ func ReplaceDocument(home, expected, next string) error {
 	return err
 }
 
+// UpdateDocument applies one pure, idempotent transform under the shared host
+// lock and publishes the result atomically only when it differs. The existing
+// config file, its symlink target and permission bits are preserved: this port
+// never creates a host configuration. A transform that returns the input
+// unchanged leaves the file and its metadata untouched.
+func UpdateDocument(home string, transform func(current string) (string, error)) error {
+	if transform == nil {
+		return fmt.Errorf("codex_config_transform_missing")
+	}
+	target, err := resolveTarget(home)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(target)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("Codex 配置不存在或不是普通文件，未修改")
+	}
+	_, err = updateDocument(home, transform)
+	return err
+}
+
 func updateDocument(home string, transform func(string) (string, error)) (Snapshot, error) {
 	target, release, err := AcquireHostLock(home)
 	if err != nil {

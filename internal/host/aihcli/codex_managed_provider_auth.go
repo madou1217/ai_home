@@ -8,10 +8,9 @@ package aihcli
 
 import (
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
+	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
 
@@ -34,19 +33,13 @@ func (source codexManagedProviderAuth) ManagedProviderAuth() clilaunch.ManagedPr
 // configPath 返回子进程实际读取的 config.toml。
 //
 // 显式 CODEX_HOME 优先（子进程环境完整继承），否则 <hostHome>/.codex。
+// 该解析与启动时的受管认证命令自愈共享同一入口，避免两处对「生效配置」判断漂移。
 func (source codexManagedProviderAuth) configPath() string {
 	lookup := source.lookupEnv
 	if lookup == nil {
 		lookup = os.LookupEnv
 	}
-	if home, ok := lookup("CODEX_HOME"); ok && strings.TrimSpace(home) != "" {
-		return filepath.Join(strings.TrimSpace(home), "config.toml")
-	}
-	hostHome := strings.TrimSpace(source.hostHomeDir)
-	if hostHome == "" {
-		return ""
-	}
-	return filepath.Join(hostHome, ".codex", "config.toml")
+	return codexhostauth.ConfigPath(source.hostHomeDir, lookup)
 }
 
 // codexConfigDeclaresAuthCommand 判断配置是否声明了受管 Provider 的 auth 命令。

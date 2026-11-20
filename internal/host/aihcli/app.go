@@ -42,6 +42,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
+	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/permissionlaunch"
@@ -129,9 +130,13 @@ type App struct {
 	planner           launchPlanner
 	runner            launchRunner
 	permissionOptions permissionlaunch.Options
-	resources         []io.Closer
-	closeOnce         sync.Once
-	closeErr          error
+	// hostHomeDir 与 lookupEnv 定位子进程实际读取的宿主 Codex 配置。
+	hostHomeDir string
+	lookupEnv   func(string) (string, bool)
+	stderr      io.Writer
+	resources   []io.Closer
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 // New 装配 Provider Catalog、aih.db、OAuth 刷新、双模式 Strategy 和官方 CLI Runtime。
@@ -346,6 +351,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return nil, err
 		}
+		app.hostHomeDir = hostHomeDir
+		app.lookupEnv = os.LookupEnv
+		app.stderr = options.Stderr
 		app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir, HostHomeDir: hostHomeDir, GOOS: runtime.GOOS}
 		return app, nil
 	}
@@ -355,6 +363,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 	}
 	app.aiHomeDir = options.AIHomeDir
 	app.accountStore = store
+	app.hostHomeDir = hostHomeDir
+	app.lookupEnv = os.LookupEnv
+	app.stderr = options.Stderr
 	app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir, HostHomeDir: hostHomeDir, GOOS: runtime.GOOS}
 	return app, nil
 }
@@ -475,6 +486,14 @@ func (app *App) Run(
 	if !supportedNativeCLIProvider(providerID) {
 		return fmt.Errorf("%w: 当前只支持 codex / claude / gemini / CodeBuddy 家族", ErrInvalidRunRequest)
 	}
+	// 启动 Codex 前先确认宿主受管 Provider 的认证命令仍然可执行。升级或仓库
+	// 搬家会删掉配置里的绝对路径，裸 codex 只会报内部模糊错误；这里在唯一的
+	// 启动组合入口完成自愈（幂等、宿主锁内原子写，无密钥）。
+	if providerID == "codex" {
+		if err := app.ensureHostAuthCommand(); err != nil {
+			return err
+		}
+	}
 	intent, err := providerlaunch.ParseLaunchIntent(app.catalog, providerID, arguments)
 	if err != nil {
 		return fmt.Errorf("解析 Provider CLI 命令失败: %w", err)
@@ -519,6 +538,25 @@ func (app *App) Run(
 	}
 	if err := app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{ExtraEnv: permission.Env}); err != nil {
 		return fmt.Errorf("执行 Provider CLI 失败: %w", err)
+	}
+	return nil
+}
+
+// ensureHostAuthCommand 是受管 Codex 认证命令自愈的唯一启动入口。
+//
+// 事实来源是子进程实际读取的 config.toml；失效时把 command 重指向当前 CLI，
+// args 与其它内容保持不变。无法安全自愈时返回可操作的错误，避免 codex 的模糊报错。
+func (app *App) ensureHostAuthCommand() error {
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("codex_host_auth_cli_unavailable: 无法解析当前 aih 可执行文件: %w", err)
+	}
+	result, err := codexhostauth.Ensure(codexhostauth.ConfigPath(app.hostHomeDir, app.lookupEnv), executable)
+	if err != nil {
+		return fmt.Errorf("受管 Codex Provider 配置不可用: %w", err)
+	}
+	if result.Changed && app.stderr != nil {
+		_, _ = fmt.Fprintf(app.stderr, "[aih] 受管 Codex 认证命令已失效（%s），已更新为 %s。\n", result.PreviousCommand, result.Command)
 	}
 	return nil
 }

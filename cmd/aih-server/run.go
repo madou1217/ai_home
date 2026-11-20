@@ -66,6 +66,8 @@ func run(
 	if err := distributioninstall.AwaitActivation(ctx, config.aiHomeDir, config.listenAddress(), runtime.listen, runtime.stderr); err != nil {
 		return err
 	}
+	// 宿主受管 Codex 配置是常驻启动路径的共享事实；在装配网关前统一自愈一次。
+	healHostCodexAuthCommand(runtime)
 	managementKey := config.managementKey
 	clientKey := config.clientKey
 	traceRemoteControl := config.codexHooks.traceRemoteControl

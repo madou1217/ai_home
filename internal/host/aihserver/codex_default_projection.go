@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/host/codexdefault"
+	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
 )
 
 type codexDefaultProjection struct{ aiHome, hostHome string }
@@ -44,16 +43,7 @@ func hostDefaultAuthCommand() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := "aih-go"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	target := filepath.Join(filepath.Dir(binary), name)
-	info, err := os.Stat(target)
-	if err != nil || !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode()&0o111 == 0) {
-		return "", fmt.Errorf("codex_host_auth_cli_unavailable")
-	}
-	return target, nil
+	return codexhostauth.SiblingCLI(binary)
 }
 
 func (projection codexDefaultProjection) RevokeIfSelected(ctx context.Context, ref accountcore.AccountRef) (bool, error) {

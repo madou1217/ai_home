@@ -194,6 +194,7 @@ type UsageStore struct {
 	pricingCache *pricingCacheEntry
 
 	projCache *usageProjectionCache
+	backfill  rollupBackfillCoordinator
 }
 
 // NewUsageStore 打开（必要时初始化）app-state.db 中的用量表并返回 UsageStore。
@@ -292,7 +293,11 @@ func newUsageStoreInternal(
 
 // Close 释放由 NewUsageStore 打开的数据库连接。
 func (s *UsageStore) Close() error {
-	if s == nil || !s.ownsDB || s.db == nil {
+	if s == nil {
+		return nil
+	}
+	s.stopRollupBackground()
+	if !s.ownsDB || s.db == nil {
 		return nil
 	}
 	return s.db.Close()

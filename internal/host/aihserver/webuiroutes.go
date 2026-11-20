@@ -1207,8 +1207,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	routes = append(routes, schedulerRoutes...)
 	managementOpsRoutes, err := buildWebUIManagementOpsRoutesWithPorts(dependencies, webuiManagementOpsPorts{
-		Metrics:   newManagementMetricsPort(dependencies.MetricsRecorder),
-		StartedAt: dependencies.StartedAt,
+		Metrics:          newManagementMetricsPort(dependencies.MetricsRecorder),
+		StartedAt:        dependencies.StartedAt,
+		WarmUsageRollups: true,
 	})
 	if err != nil {
 		return nil, err

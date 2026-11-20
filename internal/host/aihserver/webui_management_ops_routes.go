@@ -34,6 +34,9 @@ type webuiManagementOpsPorts struct {
 	Strategy               string
 	Now                    func() time.Time
 	StartedAt              time.Time
+	// WarmUsageRollups 由服务端组合根置位：启动后台历史汇总回填，使长窗看板不再每次重扫原始记录。
+	// 测试默认关闭，避免后台写任务干扰夹具生命周期。
+	WarmUsageRollups bool
 }
 
 type modelCatalogRefresherAdapter struct {
@@ -137,6 +140,9 @@ func buildWebUIManagementOpsRoutesWithPorts(
 				return nil, fmt.Errorf("打开管理用量数据库失败: %w", err)
 			}
 			usageStore = opened
+		}
+		if ports.WarmUsageRollups && usageStore != nil {
+			usageStore.StartRollupBackfill(context.Background())
 		}
 
 		modelCatalog := ports.ModelCatalog

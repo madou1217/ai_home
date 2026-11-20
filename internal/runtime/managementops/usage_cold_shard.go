@@ -139,12 +139,14 @@ func (s *UsageStore) computeColdShards(
 		if shErr != nil {
 			return nil, false, shErr
 		}
+		s.scheduleRollupMaterialization(firstFull, lastFullEnd)
 		return []UsageDashboardShard{sh}, true, nil
 	}
 	outShards, err := buildColdShardsParallel(ctx, cohort, normShards, overallTrendOriginMS, overallTrendBucketMS, win, globalLctx, policy)
 	if err != nil {
 		return nil, false, err
 	}
+	s.scheduleRollupMaterialization(firstFull, lastFullEnd)
 	return outShards, true, nil
 }
 

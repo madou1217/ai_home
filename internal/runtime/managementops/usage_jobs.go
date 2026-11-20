@@ -608,6 +608,17 @@ func (m *UsageJobManager) runDashboardQueryJob(jobCtx context.Context, jobID str
 	}
 	var prebuilt *UsageProjectionContext
 	if !coldReady {
+		// 长窗已被持久 rollup 覆盖时，整窗一次聚合比分片逐片建立快照更快，
+		// 且结果就是同步查询的规范结果；分片渐进只对真正需要冷扫描的窗口有价值。
+		if normQ.ToMS-normQ.FromMS >= coldDashboardMinSpanMS-1 {
+			payload, dashErr := store.QueryDashboard(jobCtx, normQ)
+			if dashErr != nil {
+				m.finishDashboardQueryFailed(jobCtx, jobID, dashErr)
+				return
+			}
+			m.finishDashboardQueryPayload(jobCtx, jobID, normQ, payload, 1)
+			return
+		}
 		prebuilt, err = store.PrepareDashboardProjection(jobCtx, normQ)
 		if err != nil {
 			m.finishDashboardQueryFailed(jobCtx, jobID, err)
@@ -694,26 +705,38 @@ func (m *UsageJobManager) runDashboardQueryJob(jobCtx context.Context, jobID str
 	if jobCtx.Err() != nil {
 		return
 	}
-	finalDash := acc.snapshot()
+	m.finishDashboardQueryPayload(jobCtx, jobID, normQ, acc.snapshot(), totalShards)
+}
+
+// finishDashboardQueryPayload 是 job 成功收尾的单一出口：写入最终快照、统计与缓存，
+// 并广播终态。单趟聚合与分片合并共用它，避免两套收尾语义漂移。
+func (m *UsageJobManager) finishDashboardQueryPayload(
+	jobCtx context.Context,
+	jobID string,
+	normQ UsageQuery,
+	payload UsageDashboardPayload,
+	totalShards int,
+) {
+	if jobCtx.Err() != nil {
+		return
+	}
 	m.queryMu.Lock()
-	entry = m.queryJobs[jobID]
+	entry := m.queryJobs[jobID]
 	if entry == nil || entry.job.Status == "cancelled" {
 		m.queryMu.Unlock()
 		return
 	}
 	entry.job.Status = "succeeded"
-	if entry.job.CompletedShards < totalShards {
-		entry.job.CompletedShards = totalShards
-	}
+	entry.job.CompletedShards = totalShards
 	entry.job.TotalShards = totalShards
-	entry.job.Dashboard = &finalDash
+	entry.job.Dashboard = &payload
 	entry.job.FinishedAt = m.service.now().UnixMilli()
 	startRev, hasStartRev := entry.startRev, entry.hasStartRev
-	snap = cloneDashboardQueryJob(entry.job)
+	snap := cloneDashboardQueryJob(entry.job)
 	m.trimQueryJobsLocked()
 	m.queryMu.Unlock()
 
-	m.storeDashboardCache(startRev, hasStartRev, normQ, finalDash, totalShards)
+	m.storeDashboardCache(startRev, hasStartRev, normQ, payload, totalShards)
 	m.broadcastDashboardQueryJob(snap)
 }
 

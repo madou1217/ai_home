@@ -1,8 +1,11 @@
 // Package modelsnapshot 定义 WebUI 模型快照元数据的只读合同。
 //
-// 快照由宿主写入 app-state，记录账号探测结果、展示名、上下文窗口与错误等
-// 低敏元数据；本包只描述归一后的读模型与聚合口径，不读取任何具体存储。
-// 具体来源（app-state、远程目录或插件）由适配器实现 modelsnapshot.Reader。
+// 快照是宿主写入 app-state 的投影：目录与探测事实的源头是 Go 的 account_models /
+// account_model_probes，宿主只是把它们连同上游展示信息一起写回这个文档。因此
+// Summary 里的探测聚合都能由 aih.db 直接得到；本包仍然需要，是因为 labels
+// （上游显示名）与 contextLimits（上下文窗口）Go 目前不落库——Go 的目录发现契约只
+// 返回模型 ID。本包只描述归一后的读模型与聚合口径，不读取任何具体存储；具体来源
+// （app-state、远程目录或插件）由适配器实现 modelsnapshot.Reader。
 package modelsnapshot
 
 import (

@@ -1,8 +1,14 @@
 // Package webuimodelssnapshot 提供 WebUI 模型目录快照的只读 Go 视图。
 //
-// 快照由 Node 侧写入 app-state 的 KV（cache:webui-models-snapshot.json），是
-// WebUI 模型管理页与模型选择器的展示证据，不是 Go 的可路由模型表。本包只读、
-// 只做归一：不写库、不探测上游、不参与推理路由。
+// 快照由宿主写入 app-state 的 KV（cache:webui-models-snapshot.json）：目录与探测事实
+// 本身来自 Go（aih.db 的 account_models / account_model_probes），宿主只是把它们投影
+// 回这个文档。因此这一份不是独立真值源——探测聚合（source/sources/scannedAccounts/
+// firstError/accountProbedAt/errorsByAccountRef）都能由 aih.db 直接派生，本包存在的
+// 原因是还有两项事实 Go 目前不落库：上游显示名（labels）与上下文窗口（contextLimits）。
+// Go 的目录发现契约只有模型 ID（DiscoverModels 返回 []string），要收回这两项得先扩展
+// 跨层发现契约，在那之前只能读宿主投影。
+//
+// 本包只读、只做归一：不写库、不探测上游、不参与推理路由。
 //
 // 归一遵循「坏数据降级为空」：字段类型不符、条目为空、单个模型值非法，都只丢弃
 // 对应内容，不影响同一快照的其它字段；只有数据库层失败才向上返回错误。

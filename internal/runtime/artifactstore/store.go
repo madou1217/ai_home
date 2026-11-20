@@ -119,7 +119,11 @@ func share(request Request, artifact Artifact) (VersionResult, error) {
 	if entry, ok := ledger.Entries[ledgerKey(artifact.CLI, artifact.Version)]; ok && entry.StoreKey == key {
 		if identity, err := fileIdentity(artifact.Path); err == nil &&
 			identity.Dev == string(entry.Dev) && identity.Ino == string(entry.Ino) {
-			return VersionResult{CLI: artifact.CLI, Version: artifact.Version, Action: "unchanged", Strategy: strategyName(request.StoreRoot, platform), StorePath: storePath}, nil
+			// inode 会被文件系统复用：安装器删掉再装回同一路径时可能拿到同一个 inode。
+			// 必须是"我们冻结的树"才算 unchanged；可写副本一律重新核对/共享。
+			if info, statErr := os.Lstat(artifact.Path); statErr == nil && frozenRoot(info) {
+				return VersionResult{CLI: artifact.CLI, Version: artifact.Version, Action: "unchanged", Strategy: strategyName(request.StoreRoot, platform), StorePath: storePath}, nil
+			}
 		}
 	}
 

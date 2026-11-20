@@ -8,6 +8,8 @@
   reflink 探测、库内不可变树、原子替换、按内容刷新、账本写入、投影外共享识别。
 - **账本互操作**：仍写 `artifact-store/ledger/<sha256(abs path)[:16]>.json`，`dev/ino`
   用字符串（Windows 64 位 File ID 不丢精度）；Node/Go 可互读，迁移期间两边都认。
+  inode 会被文件系统复用，所以"账本命中"还必须满足**投影仍是冻结的 0555 树**；
+  可写副本（安装器重装）一律重新核对内容/重新共享。
 
 ## 切换与回退
 
@@ -24,9 +26,10 @@
   模拟重装后重新硬链接，无 `.old` 残留。
 - macOS 内容变更：安装器换成 25MB 新副本后，Go 刷新库内树（25MB）并重新 reflink，
   共享树里的程序输出新版本号。
+- Linux ext4：Go 服务 3 账号 + 库同一 inode（nlink=4、只读 444），二次 unchanged；
+  模拟重装（inode 被复用）仍返回 hardlinked，说明冻结态守卫生效。
 
 ## 尚未迁移
 
 - 版本发现、缓存链接（`shared-host-caches`）、旧版本回收（`pruneVersions`）仍在 Node；
   `space-gc` 与 Go 账本已独立。后续可把回收也收进 Go，Node 只保留策略输入。
-- Linux/Windows 的 Go 二进制已交叉编译；Linux 运行时尚未单独跑 Go 服务（Node 后端已实测）。

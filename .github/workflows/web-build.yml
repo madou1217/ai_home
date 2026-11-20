@@ -1,9 +1,6 @@
 name: web-build
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 concurrency:

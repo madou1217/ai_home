@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: go-core-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

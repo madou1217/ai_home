@@ -213,7 +213,7 @@
         <tr><td>17MB 请求被 16MiB 上限拒绝（HTTP/WS/Node）</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">peer 恢复广播记录「16MiB 已修」；未见独立提交（跨端修复）</td></tr>
         <tr><td>可"成功也慢"的本地延迟要查清</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">Native timing：账号 2ms、上游头 3944ms、本地首写 +6ms；本地非瓶颈，耗时在上游响应头；见 docs/product-integrity/local-responses-latency-2026-11-20.md</td></tr>
         <tr><td>gpt-6.1-sol 不支持 reasoning none</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">effort 对齐与 service tier 保留多次提交</td></tr>
-        <tr><td>invalid_request_body 反复出现</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">缓存 exact5 提交 64d5a297；后续仍偶发</td></tr>
+        <tr><td>invalid_request_body 反复出现</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">965af763 / 852b833b 修 tool_reference object/array 与二进制工具结果；两种形状探针均 200；2026-11-20 12:07 后无新 decode rejected（该条为旧构建）；其余模式 11-19 后未再出现</td></tr>
         <tr><td>localhost 与 127.0.0.1 行为不一致</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">实测差异为浏览器 localStorage 分源；用户表示不重要</td></tr>
       </tbody>
     </table></div>

@@ -125,6 +125,12 @@ func buildOAuth(auth *codex.OAuthAuth) (providerlaunch.StrategyResult, error) {
 }
 
 // buildAPIKey 通过临时 model_provider 参数绑定账号 endpoint，避免修改共享 config.toml。
+// buildAPIKey 用 env_key 绑定账号 endpoint，并把进程放进账号投影。
+//
+// 投影是必需的，而不是锦上添花：宿主 config.toml 的受管块声明了 [.auth] 命令表
+// （aih codex default 写入），与 -c env_key 在 codex ≥0.149 互斥。账号投影根只带
+// 共享链接、不带配置（config.toml 是私有 artifact，不从宿主复制），因此 env_key
+// 在这里是唯一且合法的凭据来源；会话/SQLite 仍链接回宿主 .codex，历史线程共享。
 func buildAPIKey(auth *codex.APIKeyAuth) (providerlaunch.StrategyResult, error) {
 	environment, err := providerlaunch.NewEnvironmentPatch(
 		map[string]string{"OPENAI_API_KEY": auth.APIKey()},
@@ -140,13 +146,16 @@ func buildAPIKey(auth *codex.APIKeyAuth) (providerlaunch.StrategyResult, error) 
 	if err != nil {
 		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: API Key 摘要无效", ErrBuildLaunchContext)
 	}
-	arguments := []string{
-		"-c", "model_provider=" + apiProviderKey,
-		"-c", fmt.Sprintf("model_providers.%s.name=%q", apiProviderKey, apiProviderLabel),
-		"-c", fmt.Sprintf("model_providers.%s.base_url=%s", apiProviderKey, auth.BaseURL()),
-		"-c", fmt.Sprintf("model_providers.%s.wire_api=responses", apiProviderKey),
-		"-c", fmt.Sprintf("model_providers.%s.env_key=OPENAI_API_KEY", apiProviderKey),
+	projection, err := providerlaunch.NewProjectionDirective(
+		codex.ProviderID,
+		providerlaunch.ProjectionModeConfigDir,
+	)
+	if err != nil {
+		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: API Key 投影指令无效", ErrBuildLaunchContext)
 	}
+	arguments := []string{"-c", "model_provider=" + apiProviderKey}
+	arguments = append(arguments,
+		managedProviderArguments(auth.BaseURL(), ManagedProviderAuthEnvKey)...)
 	return providerlaunch.NewStrategyResult(providerlaunch.StrategyResultInput{
 		ProviderID:                codex.ProviderID,
 		Binary:                    binaryName,
@@ -154,6 +163,7 @@ func buildAPIKey(auth *codex.APIKeyAuth) (providerlaunch.StrategyResult, error) 
 		ArgumentsAfterSubcommands: configScopedSubcommands,
 		Environment:               environment,
 		Runtime:                   providerlaunch.NewDirectProcessRuntime(),
+		Projection:                projection,
 		Credential:                descriptor,
 	})
 }

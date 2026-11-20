@@ -36,6 +36,12 @@ func (Materializer) Materialize(
 	if request.ProviderID != "codex" || root == "" {
 		return nil, accountprojection.ErrInvalidProjectionRequest
 	}
+	// API Key 账号不落 auth.json：key 只经启动环境（env_key）传递。投影根对它们的
+	// 唯一作用，是提供一份**不含 [.auth] 命令表**的 CODEX_HOME —— 宿主配置里的
+	// auth 命令表与 -c env_key 在 codex ≥0.149 互斥（并存整份配置拒绝加载）。
+	if apiKey, ok := request.Credential.(*codex.APIKeyAuth); ok && apiKey != nil {
+		return nil, nil
+	}
 	auth, ok := request.Credential.(*codex.OAuthAuth)
 	if !ok || auth == nil {
 		return nil, ErrUnsupportedCredential
@@ -87,6 +93,11 @@ func (Materializer) Capture(
 ) (accountapp.Credential, bool, error) {
 	if request.ProviderID != "codex" || root == "" {
 		return nil, false, accountprojection.ErrInvalidProjectionRequest
+	}
+	// API Key 账号在磁盘上没有可续期的凭据；即使投影里残留 auth.json 也不能回写，
+	// 否则会把别的身份（例如宿主 OAuth 登录）覆盖进这个账号。
+	if apiKey, ok := request.Credential.(*codex.APIKeyAuth); ok && apiKey != nil {
+		return nil, false, nil
 	}
 	path := filepath.Join(root, ".codex", "auth.json")
 	data, err := os.ReadFile(path)

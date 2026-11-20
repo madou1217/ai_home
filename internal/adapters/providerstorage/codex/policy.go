@@ -2,7 +2,9 @@
 //
 // 策略对齐 Node lib/runtime/provider-storage-policy.js 的 codex 条目：
 //   - OAuth 账号隔离 CODEX_HOME（.codex/auth.json），会话/SQLite 仍指向宿主 .codex；
-//   - API Key 账号不在这里投影（沿用 providerlaunch 的启动参数路径）。
+//   - API Key 账号同样隔离 CODEX_HOME，但投影里**没有 auth.json、也没有配置的
+//     [.auth] 命令表**（config.toml 属私有 artifact，不从宿主复制）：启动参数用
+//     env_key 传账号 key，而宿主配置的 auth 命令表与 env_key 互斥（codex ≥0.149）。
 package codexstorage
 
 import "github.com/madou1217/ai_home/application/accountprojection"

@@ -62,6 +62,11 @@ func (shutdown *streamShutdown) wrap(next http.Handler) http.Handler {
 			cancel:         cancel,
 			request:        request.WithContext(ctx),
 		}
+		// 推理请求在还没写出第一帧（上游 prefill）时也必须算"在跑"：
+		// 否则重启只等住已经出字的流，正在等待首个 token 的请求会被直接切断。
+		if inferenceStreamPath(request) {
+			writer.registration = shutdown.register(cancel, true)
+		}
 		defer func() {
 			writer.release()
 			cancel()

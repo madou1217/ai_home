@@ -167,7 +167,15 @@ func resolveServerPort(ctx context.Context, home string, runtime commandRuntime)
 }
 
 // serverReadyTimeout 覆盖本地服务完整装配（数据面 + 后台 worker）的耗时。
-const serverReadyTimeout = 90 * time.Second
+// serverReadyTimeout 覆盖本地服务完整装配的耗时。Windows 上首次启动要建库、
+// 跑扫描，实测超过 90s 才把 ready 置真；预算太短会把“重启成功但还在预热”
+// 误报成失败（2026-11-21 真机：restart 90s 超时，紧接着 readyz 已 200）。
+var serverReadyTimeout = func() time.Duration {
+	if goruntime.GOOS == "windows" {
+		return 240 * time.Second
+	}
+	return 90 * time.Second
+}()
 
 func waitServerReady(ctx context.Context, port int, timeout time.Duration) bool {
 	_, ready := waitServerReadyOwned(ctx, port, "", 0, timeout, nil)

@@ -27,6 +27,7 @@ const (
 // Server 持有 HTTP、后台 worker 和唯一账号数据库生命周期。
 type Server struct {
 	httpServer         *http.Server
+	streams            *streamShutdown
 	resources          []io.Closer
 	desktopTranslation *desktoptranslation.Service
 	closeOnce          sync.Once
@@ -51,6 +52,10 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	if server == nil || server.httpServer == nil {
 		return ErrInvalidOptions
 	}
+	// SSE handlers can stay blocked until the next event/heartbeat. Cancel
+	// only those request contexts before asking net/http to drain; ordinary
+	// in-flight HTTP requests continue to finish within the shutdown budget.
+	server.streams.cancelAll()
 	return server.httpServer.Shutdown(ctx)
 }
 
@@ -63,6 +68,7 @@ func (server *Server) Close() error {
 		return nil
 	}
 	server.closeOnce.Do(func() {
+		server.streams.cancelAll()
 		if server.httpServer != nil {
 			if err := server.httpServer.Close(); err != nil {
 				server.closeErr = err
@@ -89,9 +95,10 @@ func newServer(
 	resources []io.Closer,
 	options Options,
 ) *Server {
+	streams := newStreamShutdown()
 	return &Server{
 		httpServer: &http.Server{
-			Handler:           withAccessLog(handler, options.ErrorLog),
+			Handler:           withAccessLog(streams.wrap(handler), options.ErrorLog),
 			ReadHeaderTimeout: readHeaderTimeout,
 			ReadTimeout:       readTimeout,
 			WriteTimeout:      writeTimeout,
@@ -99,6 +106,7 @@ func newServer(
 			MaxHeaderBytes:    maxHeaderBytes,
 			ErrorLog:          options.ErrorLog,
 		},
+		streams:   streams,
 		resources: append([]io.Closer(nil), resources...),
 	}
 }

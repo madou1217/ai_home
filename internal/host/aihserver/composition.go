@@ -217,8 +217,6 @@ type serverHandlers struct {
 	plugins pluginHandlers
 	// shutdown 是优雅退出端点；为空表示嵌入方没有提供退出回调，该端点不挂载。
 	shutdown http.Handler
-	// drain 是重启前的推理入口闸门，只挂在本机监听器上。
-	drain http.Handler
 	// modelAliases 接收 Node 推送的模型别名投影（/v1/management/model-aliases）。
 	modelAliases http.Handler
 	// modelAliasesWebUI 提供别名 CRUD 的 WebUI 契约（/v1/management/webui/model-aliases）。
@@ -463,14 +461,12 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	handlers.webUI = webUI
 	handlers.remoteWebUI = remoteWebUI
 	handlers.frontDoor = frontDoor
-	handlers.drain = newDrainHandler(streams, options.ManagementKey)
 	catalogStatus := handlers.catalogStatus
 	handlers.catalogStatus = func() catalogReadiness {
 		status := catalogReadiness{}
 		if catalogStatus != nil {
 			status = catalogStatus()
 		}
-		status.activeInference = streams.inferenceCount()
 		return status
 	}
 	webuiAccountsAuthorizer, err := accountsapi.NewBearerAuthorizer(options.ManagementKey)

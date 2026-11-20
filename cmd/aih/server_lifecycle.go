@@ -16,7 +16,6 @@ import (
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
-	"github.com/madou1217/ai_home/internal/runtime/serverprobe"
 )
 
 // runServerLifecycle owns the common server lifecycle commands. Advanced
@@ -43,30 +42,24 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 	if action != "start" && action != "stop" && action != "restart" && action != "status" {
 		return false, nil
 	}
-	// 重启/停止默认强制：立即换进程，不等在跑的会话（脚本/自动化要的就是这个）。
-	// 只有显式 --graceful 才切 drain、等存量推理流清零（类似 nginx 的平滑重启）。
-	graceful := false
-	for _, argument := range arguments[2:] {
-		switch {
-		case argument == "--graceful" && (action == "restart" || action == "stop"):
-			graceful = true
-		case argument == "--force" && (action == "restart" || action == "stop"):
-			graceful = false
+	// 重启/停止只有强制一种语义：立即结束旧进程再拉起。
+	//
+	// 平滑模式（无论是切服务端 drain 还是只读等 active_inference）已移除：
+	// 等待/排空期间服务端要么对全部新推理返回 503，要么让重启无限期后延，
+	// 客户端和 WebUI 都无法区分“在重启”与“服务坏了”（2026-11-21 实测回归）。
+	// 不接受任何选项，避免调用方以为还有别的模式。
+	for range arguments[2:] {
+		var message string
+		switch action {
+		case "start":
+			message = "server start does not accept serve options; update server config first"
+		case "stop", "restart":
+			message = "server " + action + " 不接受选项：只支持强制重启/停止（立即结束进程）"
 		default:
-			var message string
-			switch action {
-			case "start":
-				message = "server start does not accept serve options; update server config first"
-			case "stop":
-				message = "server stop 只接受 --graceful / --force"
-			case "restart":
-				message = "server restart 只接受 --graceful / --force"
-			default:
-				message = "server status does not accept serve options"
-			}
-			_, _ = fmt.Fprintf(runtime.stderr, "\x1b[31m[aih] %s\x1b[0m\n", message)
-			return true, cliExitCode{code: 1}
+			message = "server status does not accept serve options"
 		}
+		_, _ = fmt.Fprintf(runtime.stderr, "\x1b[31m[aih] %s\x1b[0m\n", message)
+		return true, cliExitCode{code: 1}
 	}
 	options, err := resolveAutostartOptions(runtime)
 	if err != nil {
@@ -87,50 +80,26 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 		}
 		_, _ = fmt.Fprintf(runtime.stdout, "[aih] server started (port=%d)\n", port)
 	case "stop":
-		if graceful {
-			if err := drainBeforeStop(ctx, port, options, runtime); err != nil {
-				return true, err
-			}
-			if goruntime.GOOS == "windows" {
-				if err := requestServerShutdown(ctx, port, resolveManagementKey(options.Home)); err == nil {
-					_ = waitServerStopped(ctx, port, gracefulStopTimeout)
-				}
-			}
-		}
-		if err := autostart.Stop(ctx, options); err != nil {
+		if goruntime.GOOS == "windows" {
+			windowsStopService(ctx, options)
+		} else if err := autostart.Stop(ctx, options); err != nil {
 			return true, err
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server stopped")
 	case "restart":
-		// 默认强制重启：立即换进程，不等在跑的会话（脚本/自动化要的就是这个）。
-		// --graceful 才切 drain、等存量推理流清零后再换。
-		managementKey := resolveManagementKey(options.Home)
-		if graceful {
-			if err := drainBeforeStop(ctx, port, options, runtime); err != nil {
-				return true, err
-			}
-		}
+		// 强制：立即换掉旧进程，不等里面在跑的会话。
 		var status autostart.Status
 		var installErr error
-		if goruntime.GOOS == "windows" && graceful {
-			// Windows 没有信号：用管理端点请进程自己退出（走收尾窗口），再拉起任务。
-			if err := requestServerShutdown(ctx, port, managementKey); err != nil {
-				return true, err
+		if goruntime.GOOS == "windows" {
+			windowsStopService(ctx, options)
+			installErr = autostart.Start(ctx, options)
+			if installErr == nil {
+				status, _ = autostart.StatusFor(ctx, options)
 			}
-			if !waitServerStopped(ctx, port, gracefulStopTimeout) {
-				return true, fmt.Errorf("server did not stop within %s after graceful shutdown request", gracefulStopTimeout)
-			}
-			if startErr := autostart.Start(ctx, options); startErr != nil {
-				return true, startErr
-			}
-			status, _ = autostart.StatusFor(ctx, options)
 		} else {
-			status, installErr = autostart.Restart(ctx, options, !graceful)
+			status, installErr = autostart.Restart(ctx, options)
 		}
 		if installErr != nil {
-			if graceful {
-				_ = serverprobe.CancelDrain(ctx, port, managementKey)
-			}
 			return true, installErr
 		}
 		// 作业注册成功不代表已经能服务：启动装配还需要时间，调用方紧接着发请求
@@ -195,47 +164,6 @@ func resolveServerPort(ctx context.Context, home string, runtime commandRuntime)
 		return int(number)
 	}
 	return serverconfig.DefaultPort
-}
-
-// gracefulDrainWait 是 --graceful 模式等存量推理流清零的上限；超时则报错，
-// 让调用方明确选择 --force，而不是无限期卡住。
-const gracefulDrainWait = 300 * time.Second
-
-// gracefulStopTimeout 是请求服务端优雅退出后等进程消失的上限。
-const gracefulStopTimeout = 60 * time.Second
-
-// drainBeforeStop 让服务端先停止接收新推理，等存量流跑完。默认（强制）不走这里。
-func drainBeforeStop(ctx context.Context, port int, options autostart.Options, runtime commandRuntime) error {
-	managementKey := resolveManagementKey(options.Home)
-	active, drainErr := serverprobe.BeginDrain(ctx, port, managementKey)
-	drained := drainErr == nil
-	if drainErr != nil {
-		// 旧服务端没有 drain 端点：退回只读计数，至少别在活跃时盲切。
-		active = serverprobe.ActiveInference(ctx, port)
-	}
-	if active <= 0 {
-		return nil
-	}
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] waiting for %d active inference stream(s) (max %s; use --force to skip)\n", active, gracefulDrainWait)
-	deadline := time.Now().Add(gracefulDrainWait)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			if drained {
-				_ = serverprobe.CancelDrain(ctx, port, managementKey)
-			}
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-		active = serverprobe.ActiveInference(ctx, port)
-		if active <= 0 {
-			return nil
-		}
-	}
-	if drained {
-		_ = serverprobe.CancelDrain(ctx, port, managementKey)
-	}
-	return fmt.Errorf("still %d active inference stream(s) after %s; retry later or run without --graceful to restart immediately", active, gracefulDrainWait)
 }
 
 // serverReadyTimeout 覆盖本地服务完整装配（数据面 + 后台 worker）的耗时。

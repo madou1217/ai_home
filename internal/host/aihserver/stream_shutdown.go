@@ -16,11 +16,12 @@ import (
 // contexts lets shutdown finish without waiting for the next heartbeat or for
 // the upstream stream to end.
 type streamShutdown struct {
-	mu              sync.Mutex
-	closed          bool
-	draining        bool
-	drainGeneration uint64
-	drainTimer      *time.Timer
+	mu sync.Mutex
+	// closed 表示进程正在关闭：之后登记的流立即取消。
+	closed bool
+	// admissionClosed 表示不再接受新的推理请求。只在进程自身关闭时置位；
+	// 重启不再使用排空准入（见 autostart.Restart 的强制重启语义）。
+	admissionClosed bool
 	streams         map[*streamRegistration]struct{}
 }
 
@@ -58,10 +59,9 @@ func (shutdown *streamShutdown) wrap(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		// Drain gate: once a restart has reserved the process, new inference
-		// requests must not enter and extend the drain window. They get a
-		// stable retryable error instead of being started and then cut.
-		if shutdown.isDraining() && inferenceStreamPath(request) {
+		// 进程关闭后不再接受新推理：已经进入关闭路径的进程不能因为新请求
+		// 又延长收尾窗口。重启本身是强制的，不会经过这里。
+		if shutdown.admissionClosedFor(request) {
 			response.Header().Set("Content-Type", "application/json; charset=utf-8")
 			response.Header().Set("Retry-After", "1")
 			response.WriteHeader(http.StatusServiceUnavailable)
@@ -188,73 +188,25 @@ func (shutdown *streamShutdown) inferenceCount() int {
 	return count
 }
 
-// beginDrain closes the inference admission gate and returns the number of
-// streams already running. Existing streams keep running; new inference
-// requests are rejected until cancelDrain or process shutdown.
-//
-// A non-positive ttl keeps the gate until explicitly cancelled; positive ttl
-// protects against a caller dying between begin and restart.
-func (shutdown *streamShutdown) beginDrain(ttl time.Duration) int {
-	if shutdown == nil {
-		return 0
-	}
-	shutdown.mu.Lock()
-	defer shutdown.mu.Unlock()
-	shutdown.draining = true
-	shutdown.drainGeneration++
-	generation := shutdown.drainGeneration
-	if shutdown.drainTimer != nil {
-		shutdown.drainTimer.Stop()
-		shutdown.drainTimer = nil
-	}
-	if ttl > 0 {
-		shutdown.drainTimer = time.AfterFunc(ttl, func() {
-			shutdown.cancelDrainGeneration(generation)
-		})
-	}
-	count := 0
-	for registration := range shutdown.streams {
-		if registration.inference {
-			count++
-		}
-	}
-	return count
-}
-
-// cancelDrain reopens admission after a failed or abandoned restart.
-func (shutdown *streamShutdown) cancelDrain() {
+// closeAdmission 关闭推理入口：已进入关闭路径的进程不再接受新推理。
+// 已登记的流不受影响，由调用方按自己的收尾预算等待或取消。
+func (shutdown *streamShutdown) closeAdmission() {
 	if shutdown == nil {
 		return
 	}
 	shutdown.mu.Lock()
-	shutdown.cancelDrainLocked()
+	shutdown.admissionClosed = true
 	shutdown.mu.Unlock()
 }
 
-func (shutdown *streamShutdown) cancelDrainLocked() {
-	shutdown.draining = false
-	shutdown.drainGeneration++
-	if shutdown.drainTimer != nil {
-		shutdown.drainTimer.Stop()
-		shutdown.drainTimer = nil
-	}
-}
-
-func (shutdown *streamShutdown) cancelDrainGeneration(generation uint64) {
-	shutdown.mu.Lock()
-	if generation == shutdown.drainGeneration {
-		shutdown.cancelDrainLocked()
-	}
-	shutdown.mu.Unlock()
-}
-
-func (shutdown *streamShutdown) isDraining() bool {
+// admissionClosedFor 判断该请求是否应被准入闸门拒绝。
+func (shutdown *streamShutdown) admissionClosedFor(request *http.Request) bool {
 	if shutdown == nil {
 		return false
 	}
 	shutdown.mu.Lock()
 	defer shutdown.mu.Unlock()
-	return shutdown.draining
+	return shutdown.admissionClosed && inferenceStreamPath(request)
 }
 
 type streamResponseWriter struct {

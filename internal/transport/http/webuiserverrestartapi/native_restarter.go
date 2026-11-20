@@ -3,7 +3,6 @@ package webuiserverrestartapi
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"math"
 	"os"
@@ -14,7 +13,6 @@ import (
 
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
-	"github.com/madou1217/ai_home/internal/runtime/serverprobe"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -101,51 +99,22 @@ func (r *NativeRestarter) Restart(ctx context.Context, job RestartJob) (RestartO
 		}
 	}
 
-	drainKey := ""
-	drainPort := 0
-	drainOn := false
-	cancelDrain := func() {
-		if drainOn {
-			_ = serverprobe.CancelDrain(ctx, drainPort, drainKey)
-			drainOn = false
-		}
-	}
-
 	if r.usePlatformRestart {
-		// 与 CLI restart 同一道保护：先关闭新推理入口，再检查存量流。
-		// 有活跃流时明确拒绝；这样不会在检查与 SIGTERM 之间再插入新流。
-		drainKey = r.managementKey(ctx)
-		drainPort = r.serverPort(ctx)
-		active, drainErr := serverprobe.BeginDrain(ctx, drainPort, drainKey)
-		drainOn = drainErr == nil
-		if !drainOn {
-			// 兼容旧服务端：至少用只读计数拒绝已知活跃流。
-			active = serverprobe.ActiveInference(ctx, drainPort)
-		}
-		if active > 0 {
-			cancelDrain()
-			return RestartOutcome{}, fmt.Errorf(
-				"server_restart_busy: %d active inference stream(s); retry when idle",
-				active,
-			)
-		}
+		// 重启只有强制一种：平台服务管理器直接换进程。不再先关闭推理入口——
+		// 排空期间 /readyz 仍返回就绪、WebUI 仍显示运行中，而所有新推理都会
+		// 拿到 503，客户端无法区分“正在重启”和“服务坏了”（2026-11-21 回归）。
 		if outcome, handled, err := r.restartPlatform(ctx, job); handled {
-			if err != nil {
-				cancelDrain()
-			}
 			return outcome, err
 		}
 	}
 
 	commandName, commandArgs, err := r.resolveCommand()
 	if err != nil {
-		cancelDrain()
 		return RestartOutcome{}, err
 	}
 
 	appliedConfig, err := readPublicServerConfig(ctx, r.aiHomeDir)
 	if err != nil {
-		cancelDrain()
 		return RestartOutcome{}, err
 	}
 
@@ -153,7 +122,6 @@ func (r *NativeRestarter) Restart(ctx context.Context, job RestartJob) (RestartO
 	// 若绑定上下文会把刚拉起的独立重启进程直接杀死。
 	cmd := r.commandFactory(commandName, commandArgs...)
 	if cmd == nil {
-		cancelDrain()
 		return RestartOutcome{}, ErrRestartUnavailable
 	}
 	cmd.Stdin = nil
@@ -163,7 +131,6 @@ func (r *NativeRestarter) Restart(ctx context.Context, job RestartJob) (RestartO
 	configureDetachedCmd(cmd)
 
 	if err := cmd.Start(); err != nil {
-		cancelDrain()
 		return RestartOutcome{}, err
 	}
 	pid := 0
@@ -192,7 +159,7 @@ func detectServiceRestartCommand(label string) (string, []string, error) {
 	if !autostart.ServiceJobLoaded(context.Background(), label) {
 		return "", nil, ErrRestartUnavailable
 	}
-	name, args, err := autostart.GracefulRestartCommand(label)
+	name, args, err := autostart.ServiceRestartCommand(label)
 	if err != nil {
 		return "", nil, ErrRestartUnavailable
 	}
@@ -209,34 +176,6 @@ func buildRestartEnv(base []string) []string {
 		env = append(env, item)
 	}
 	return append(env, restartContextEnv+"="+restartContextValue)
-}
-
-// activeInference 读取当前服务端公开的活跃推理数；配置/探针不可用时返回 0，
-// 不阻断旧版本或未受管开发态的原重启路径。
-func (r *NativeRestarter) activeInference(ctx context.Context) int {
-	if r == nil {
-		return 0
-	}
-	return serverprobe.ActiveInference(ctx, r.serverPort(ctx))
-}
-
-func (r *NativeRestarter) serverPort(ctx context.Context) int {
-	config, err := readPublicServerConfig(ctx, r.aiHomeDir)
-	if err != nil {
-		return defaultServerPort
-	}
-	if value, ok := config["port"].(float64); ok && value > 0 && value <= 65535 {
-		return int(value)
-	}
-	return defaultServerPort
-}
-
-func (r *NativeRestarter) managementKey(ctx context.Context) string {
-	config, err := webuiserverconfigapi.ReadFullConfig(ctx, r.aiHomeDir)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(config.ManagementKey)
 }
 
 func readPublicServerConfig(ctx context.Context, aiHomeDir string) (map[string]any, error) {

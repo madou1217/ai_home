@@ -82,39 +82,6 @@ func Start(ctx context.Context, options Options) error {
 	}
 }
 
-// GracefulRestartCommand 返回"先礼后兵"的重启命令：macOS 先给受管进程
-// SIGTERM，等它把在跑的回答收尾，再 kickstart 拉起；只有超时没退才 -k 强杀。
-// kickstart -k 用的是 SIGKILL，会直接截断推理流——那正是会话莫名结束的来源。
-func GracefulRestartCommand(label string) (string, []string, error) {
-	label = strings.TrimSpace(label)
-	if label == "" {
-		return "", nil, ErrServiceLabelRequired
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		target := launchdDomain() + "/" + label
-		script := strings.Join([]string{
-			"target='" + target + "'",
-			"pids=$(/bin/launchctl print \"$target\" 2>/dev/null | /usr/bin/sed -n 's/^[[:space:]]*pid = \\([0-9][0-9]*\\)$/\\1/p')",
-			"if [ -n \"$pids\" ]; then /bin/kill -TERM $pids 2>/dev/null || true; fi",
-			"i=0",
-			"while [ $i -lt 400 ]; do",
-			"  alive=0",
-			"  for p in $pids; do /bin/kill -0 \"$p\" 2>/dev/null && alive=1; done",
-			"  [ \"$alive\" -eq 0 ] && break",
-			"  /bin/sleep 0.1",
-			"  i=$((i+1))",
-			"done",
-			"/bin/launchctl kickstart \"$target\" 2>/dev/null || /bin/launchctl kickstart -k \"$target\"",
-		}, "\n")
-		return "/bin/sh", []string{"-c", script}, nil
-	case "linux":
-		return "systemctl", []string{"--user", "restart", label + ".service"}, nil
-	default:
-		return "", nil, ErrUnsupportedPlatform
-	}
-}
-
 // ServiceJobLoaded 判断 label 是否已在服务管理器注册。平台差异收敛在这里，
 // 调用方（CLI 重启、WebUI 重启按钮）不需要各自 switch。
 func ServiceJobLoaded(ctx context.Context, label string) bool {
@@ -411,8 +378,10 @@ func installLaunchd(ctx context.Context, options Options, force bool) (Status, e
 	// ExitTimeOut 继续存活最长 12s；这期间 `bootstrap` 一律返回
 	// "Bootstrap failed: 5: Input/output error"，重试再多也只能等。
 	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, desired) {
-		if ServiceJobLoaded(ctx, options.Label) {
-			if status, ok := kickstartLaunchd(ctx, target, options, force); ok {
+		// 只有强制重启才在作业内直接换进程；普通安装（force=false）保持
+		// 原有的 bootout/bootstrap 流程，避免 install 顺手 SIGKILL 运行中的服务。
+		if force && ServiceJobLoaded(ctx, options.Label) {
+			if status, ok := kickstartLaunchd(ctx, target, options); ok {
 				status.Strategy = "in_place"
 				return status, nil
 			}
@@ -487,50 +456,47 @@ func installLaunchd(ctx context.Context, options Options, force bool) (Status, e
 // kickstartLaunchd 在已注册的 launchd 作业内原子重启进程。返回 ok=false 时由
 // 调用方退回完整的 bootout → 等旧进程退出 → bootstrap 流程（例如作业已进入
 // 异常状态、或 kickstart 被系统拒绝）。
-// Restart 在同一作业内重启服务。
+// Restart 在同一作业内强制重启服务。
 //
-// force=true（默认语义）：立即结束旧进程，不等在跑的请求——重启快，但会截断
-// 正在生成的会话；force=false：先 SIGTERM、等进程按自己的收尾窗口退出，再拉起。
-func Restart(ctx context.Context, options Options, force bool) (Status, error) {
+// 重启只有一种语义：立即结束旧进程再拉起。不存在“先关准入、等存量请求收尾”
+// 的中间状态——那种状态会让服务端在 /readyz 仍返回就绪的同时对全部新推理
+// 回 503，客户端无法区分“在重启”和“服务坏了”（2026-11-21 实测回归）。
+// 进程自身的关闭路径仍按它自己的预算收尾，但重启动作不再等待它。
+func Restart(ctx context.Context, options Options) (Status, error) {
 	options, err := normalize(options)
 	if err != nil {
 		return Status{}, err
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return restartLaunchd(ctx, options, force)
+		return restartLaunchd(ctx, options)
 	case "linux":
-		return restartSystemd(ctx, options, force)
+		return restartSystemd(ctx, options)
 	case "windows":
-		if !force {
-			return Status{}, ErrUnsupportedPlatform
-		}
 		return restartWindows(ctx, options)
 	default:
 		return Status{}, ErrUnsupportedPlatform
 	}
 }
 
-func restartLaunchd(ctx context.Context, options Options, force bool) (Status, error) {
+func restartLaunchd(ctx context.Context, options Options) (Status, error) {
 	target := launchdDomain() + "/" + options.Label
 	// 重启不比对 plist：plist 里带有调用方 PATH 等环境差异，逐次比较会把每次
 	// restart 都降级成 bootout+bootstrap（慢且多一个未注册窗口）。真正的重新
 	// 安装由 install/start 负责；restart 只在同一作业内换进程。
 	if ServiceJobLoaded(ctx, options.Label) {
-		if status, ok := kickstartLaunchd(ctx, target, options, force); ok {
+		if status, ok := kickstartLaunchd(ctx, target, options); ok {
 			status.Strategy = "in_place"
 			return status, nil
 		}
 	}
-	return InstallWithMode(ctx, options, force)
+	return InstallWithMode(ctx, options, true)
 }
 
-func restartSystemd(ctx context.Context, options Options, force bool) (Status, error) {
+func restartSystemd(ctx context.Context, options Options) (Status, error) {
 	unit := options.Label + ".service"
-	if force {
-		// 强制：直接 SIGKILL，不等服务端的收尾窗口。
-		_, _ = run(ctx, "systemctl", "--user", "kill", "--signal=SIGKILL", unit)
-	}
+	// 强制：直接 SIGKILL，不等服务端的收尾窗口。
+	_, _ = run(ctx, "systemctl", "--user", "kill", "--signal=SIGKILL", unit)
 	if _, err := run(ctx, "systemctl", "--user", "restart", unit); err != nil {
 		return Status{}, err
 	}
@@ -551,22 +517,14 @@ func restartWindows(ctx context.Context, options Options) (Status, error) {
 	return statusWindows(options)
 }
 
-// kickstartLaunchd 重启已注册作业。force=true 直接 kickstart -k（SIGKILL），
-// force=false 先 SIGTERM 等旧进程收尾。
-func kickstartLaunchd(ctx context.Context, target string, options Options, force bool) (Status, bool) {
+// kickstartLaunchd 强制重启已注册作业：kickstart -k 直接 SIGKILL 旧进程后
+// 在同一作业内拉起，不等待服务端收尾，也不存在排空窗口。
+func kickstartLaunchd(ctx context.Context, target string, options Options) (Status, bool) {
 	name, args, err := ServiceRestartCommand(options.Label)
 	if err != nil {
 		return Status{}, false
 	}
 	before := launchdPIDs(context.Background(), target)
-	// 平滑重启：先 SIGTERM，等进程按收尾窗口把在跑的回答写完，再拉起。
-	// 强制重启（默认）跳过这一步——kickstart -k 会立刻 SIGKILL。
-	if !force && len(before) > 0 {
-		for _, pid := range before {
-			_, _ = run(ctx, "kill", "-TERM", strconv.Itoa(pid))
-		}
-		waitProcessExit(before, launchdShutdownWait)
-	}
 	if _, err := run(ctx, name, args...); err != nil {
 		return Status{}, false
 	}

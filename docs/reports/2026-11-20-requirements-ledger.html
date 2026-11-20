@@ -171,7 +171,7 @@
         <tr><td>迁移不得以"更安全"为由删功能或返回 unavailable</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">迁移文档记录能力边界，不再以缩窄代替终态</td></tr>
         <tr><td>agy OAuth 回调 502 / 账号未添加 / 邮箱缺失</td><td class="meta">11-11</td><td><span class="chip s-partial">部分</span></td><td class="ev">AWS 复验 11-20：8 个 agy 账号邮箱·资料·凭据齐全；作业创建 200；回调错误分类正确（400 invalid_callback / state_mismatch）；换码确实到达 Google（假 code → 400 invalid_grant，原因已入日志）；usage refresh 实测成功（plan=ultra）。缺口：成功入库仍需一次真实 Google 授权，未端到端复验</td></tr>
         <tr><td>service_tier 档位不得丢失</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">codex effort/service tier 对齐有多次提交；Messages 链路仍有 unsupported 字段</td></tr>
-        <tr><td>取消 Node-only / Go-only 概念，Go 为超集</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">文档与注释已清理；功能超集仍差 labels/contextLimits 等</td></tr>
+        <tr><td>取消 Node-only / Go-only 概念，Go 为超集</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">文档与注释已清理；WebUI catalog 的 labels/contextLimits 响应字段已补齐（contextLimits a09f7173；数据仍读 host snapshot）；其余 Node 兼容别名/宿主能力继续逐项核对</td></tr>
         <tr><td>Claude 高级设置丢失要全量扫描</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">高级设置页迁入 toolkit 并字段级对拍；按 peer 要求冻结构建</td></tr>
         <tr><td>迁移不得宣称已完成</td><td class="meta">11-18</td><td><span class="chip s-rule">约束</span></td><td class="ev">已体现在迁移账本口径中</td></tr>
         <tr><td>未提交的 composition/pricingcatalog 收尾</td><td class="meta">11-20</td><td><span class="chip s-open">未完成</span></td><td class="ev">另一会话持有，工作区未提交</td></tr>

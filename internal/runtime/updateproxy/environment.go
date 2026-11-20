@@ -1,4 +1,12 @@
 // Package updateproxy scopes an explicit download proxy to one update process.
+//
+// 代理分层（不要把这些层混成一套配置）：
+//  1. 服务端 HTTP 出口：internal/runtime/outboundproxy，读 config:server.proxyUrl，
+//     供 AIH 自身的 HTTP 客户端轮询使用。
+//  2. 安装/更新出口：本包只负责把一次任务的代理 URL 编码成 curl/npm/原生安装器
+//     都能识别的环境变量；选择器解析分别由 CLI 的管理面 lease 与 Server 的
+//     sshproxy.LeaseManager 完成。
+//  3. 系统/宿主代理：toolkit/network 只做诊断展示，不参与这里的任务出口。
 package updateproxy
 
 import (

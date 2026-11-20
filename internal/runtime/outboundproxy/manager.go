@@ -85,6 +85,10 @@ func (entry *proxyEntry) markFailure(err error) {
 		entry.lastError = err.Error()
 	}
 	entry.mu.Unlock()
+	if err != nil {
+		// 只打印无凭据的地址；故障转移与冷却行为需要可观测。
+		log.Printf("outbound proxy %s failed, cooling down for %s: %v", entry.address, DefaultFailureCooldown, err)
+	}
 }
 
 func (entry *proxyEntry) markSuccess() {
@@ -304,10 +308,23 @@ func isProxyConnectFailure(err error) bool {
 	if err == nil {
 		return false
 	}
+	// 调用方取消不是代理故障，不能因此冷却健康代理。
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "proxyconnect") ||
-		strings.Contains(message, "socks connect") ||
-		strings.Contains(message, "proxy connect")
+	markers := []string{
+		"proxyconnect", "socks connect", "proxy connect",
+		// HTTP CONNECT 阶段被对端关闭时，net/http 只返回 EOF，没有 proxyconnect 前缀。
+		"unexpected eof", "eof",
+		"connection reset by peer", "broken pipe", "connection refused", "i/o timeout",
+	}
+	for _, marker := range markers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 type parsedProxy struct {

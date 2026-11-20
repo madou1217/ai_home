@@ -229,6 +229,12 @@ func Parse(body []byte, pathname string, options Options) (Request, error) {
 	if err != nil {
 		return Request{}, err
 	}
+	// moderation=auto 是接口默认值。显式保留它会让部分上游路径把它当成
+	// 独立能力开关（AWS proxy 实测：显式 auto 会被路由到 403，省略则正常），
+	// 因此在解析层归一成缺省，后续能力闸门和策略都不再看到这个参数。
+	if strings.EqualFold(strings.TrimSpace(moderation), "auto") {
+		moderation = ""
+	}
 
 	var outputCompression *int
 	if raw, found := document["output_compression"]; found && !isJSONNull(raw) {

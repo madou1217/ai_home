@@ -43,14 +43,17 @@ type Dependencies struct {
 	Authorizer Authorizer
 	// MaxBodyBytes 是单请求允许读取的最大字节数。
 	MaxBodyBytes int64
+	// ModelPrefixResolver 解析 Provider 声明的模型命名空间前缀；为空时不改写。
+	ModelPrefixResolver inferenceapi.ModelPrefixResolver
 }
 
 // Handler 负责鉴权、请求解码、Canonical 执行和 Chat Completions 输出渲染。
 type Handler struct {
-	adapter      clientprotocol.Adapter
-	executor     inferencegateway.Executor
-	authorizer   Authorizer
-	maxBodyBytes int64
+	adapter             clientprotocol.Adapter
+	executor            inferencegateway.Executor
+	authorizer          Authorizer
+	maxBodyBytes        int64
+	modelPrefixResolver inferenceapi.ModelPrefixResolver
 }
 
 // NewHandler 解析一次协议注册并创建默认失败关闭的 Chat Completions Handler。
@@ -72,10 +75,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		adapter:      adapter,
-		executor:     dependencies.Executor,
-		authorizer:   dependencies.Authorizer,
-		maxBodyBytes: maxBodyBytes,
+		adapter:             adapter,
+		executor:            dependencies.Executor,
+		authorizer:          dependencies.Authorizer,
+		maxBodyBytes:        maxBodyBytes,
+		modelPrefixResolver: dependencies.ModelPrefixResolver,
 	}, nil
 }
 
@@ -164,6 +168,7 @@ func (handler *Handler) ServeHTTP(
 	}
 	canonicalRequest = inferenceapi.ApplyModelNamespace(request.Header.Get(inferenceapi.ModelNamespaceHeader), canonicalRequest)
 	canonicalRequest = inferenceapi.ApplySessionModelAlias(request.Header.Get("X-Aih-Model-Alias"), canonicalRequest)
+	canonicalRequest = inferenceapi.ApplyProviderModelPrefix(handler.modelPrefixResolver, canonicalRequest)
 	if canonicalRequest.Stream() {
 		handler.executeStream(
 			response,

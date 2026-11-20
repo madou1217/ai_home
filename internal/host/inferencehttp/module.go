@@ -4,6 +4,7 @@ package inferencehttp
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -40,6 +41,17 @@ type Dependencies struct {
 	ResponsesDecodeErrorObserver func(error)
 	// MaxBodyBytes 为零时由各协议 Handler 使用安全默认值。
 	MaxBodyBytes int64
+	// ProviderModelPrefixes 是 Provider 显式声明的模型命名空间前缀到 Provider ID 的映射。
+	// 只有声明过的前缀会在 Canonical 路由前被还原成裸模型并锁定 Provider。
+	ProviderModelPrefixes map[string]string
+}
+
+// modelPrefixResolver 用组合层声明的前缀表实现 inferenceapi.ModelPrefixResolver。
+type modelPrefixResolver map[string]string
+
+func (resolver modelPrefixResolver) ResolveModelPrefix(prefix string) (string, bool) {
+	provider, ok := resolver[strings.ToLower(strings.TrimSpace(prefix))]
+	return provider, ok
 }
 
 // Module 是推理 HTTP 组合模块暴露的入口集合。
@@ -75,6 +87,7 @@ func New(dependencies Dependencies) (Module, error) {
 			Authorizer:          dependencies.Authorizer,
 			MaxBodyBytes:        dependencies.MaxBodyBytes,
 			DecodeErrorObserver: dependencies.ResponsesDecodeErrorObserver,
+			ModelPrefixResolver: modelPrefixResolver(dependencies.ProviderModelPrefixes),
 		},
 	)
 	if err != nil {
@@ -82,10 +95,11 @@ func New(dependencies Dependencies) (Module, error) {
 	}
 	chat, err := openaichatcompletionsapi.NewHandler(
 		openaichatcompletionsapi.Dependencies{
-			Protocols:    protocols,
-			Executor:     dependencies.Executor,
-			Authorizer:   dependencies.Authorizer,
-			MaxBodyBytes: dependencies.MaxBodyBytes,
+			Protocols:           protocols,
+			Executor:            dependencies.Executor,
+			Authorizer:          dependencies.Authorizer,
+			MaxBodyBytes:        dependencies.MaxBodyBytes,
+			ModelPrefixResolver: modelPrefixResolver(dependencies.ProviderModelPrefixes),
 		},
 	)
 	if err != nil {
@@ -98,16 +112,18 @@ func New(dependencies Dependencies) (Module, error) {
 			Authorizer:          dependencies.Authorizer,
 			DecodeErrorObserver: dependencies.MessagesDecodeErrorObserver,
 			MaxBodyBytes:        dependencies.MaxBodyBytes,
+			ModelPrefixResolver: modelPrefixResolver(dependencies.ProviderModelPrefixes),
 		},
 	)
 	if err != nil {
 		return Module{}, ErrInvalidDependencies
 	}
 	geminiHandler, err := geminiapi.NewHandler(geminiapi.Dependencies{
-		Adapter:      geminiAdapter,
-		Executor:     dependencies.Executor,
-		Authorizer:   dependencies.Authorizer,
-		MaxBodyBytes: dependencies.MaxBodyBytes,
+		Adapter:             geminiAdapter,
+		Executor:            dependencies.Executor,
+		Authorizer:          dependencies.Authorizer,
+		MaxBodyBytes:        dependencies.MaxBodyBytes,
+		ModelPrefixResolver: modelPrefixResolver(dependencies.ProviderModelPrefixes),
 	})
 	if err != nil {
 		return Module{}, ErrInvalidDependencies

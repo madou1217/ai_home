@@ -45,6 +45,8 @@ type Dependencies struct {
 	MaxBodyBytes int64
 	// DecodeErrorObserver 接收不含字段值的 Decoder 诊断；为空时不记录。
 	DecodeErrorObserver func(error)
+	// ModelPrefixResolver 解析 Provider 声明的模型命名空间前缀；为空时不改写。
+	ModelPrefixResolver inferenceapi.ModelPrefixResolver
 }
 
 // Handler 负责鉴权、请求解码、Canonical 执行和 Responses 输出渲染。
@@ -54,6 +56,7 @@ type Handler struct {
 	authorizer          Authorizer
 	maxBodyBytes        int64
 	decodeErrorObserver func(error)
+	modelPrefixResolver inferenceapi.ModelPrefixResolver
 }
 
 // NewHandler 解析一次协议注册并创建默认失败关闭的 Responses Handler。
@@ -80,6 +83,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		authorizer:          dependencies.Authorizer,
 		maxBodyBytes:        maxBodyBytes,
 		decodeErrorObserver: dependencies.DecodeErrorObserver,
+		modelPrefixResolver: dependencies.ModelPrefixResolver,
 	}, nil
 }
 
@@ -181,6 +185,7 @@ func (handler *Handler) ServeHTTP(
 	}
 	canonicalRequest = inferenceapi.ApplyModelNamespace(request.Header.Get(inferenceapi.ModelNamespaceHeader), canonicalRequest)
 	canonicalRequest = inferenceapi.ApplySessionModelAlias(request.Header.Get("X-Aih-Model-Alias"), canonicalRequest)
+	canonicalRequest = inferenceapi.ApplyProviderModelPrefix(handler.modelPrefixResolver, canonicalRequest)
 	if timing != nil {
 		timing.markModel(canonicalRequest.Model(), canonicalRequest.Stream())
 	}

@@ -112,6 +112,7 @@ func (provider *Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, 
 	if provider == nil || !provider.resolved {
 		return relaycore.RewriteResult{}, relaycore.ErrUnsupportedCredential
 	}
+	body = stripDeclaredModelPrefix(body)
 	return relaycore.RewriteResult{
 		Body: ApplyHarness(body, HarnessInput{
 			Blocks:      provider.host.HarnessBlocks,

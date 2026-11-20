@@ -37,32 +37,50 @@ type transportDecl struct {
 // defaultTransport 是未声明 Provider 的缺省：交互式 PTY + argv prompt。
 var defaultTransport = Transport{Mode: ModePTYTranscript, PromptDelivery: PromptDeliveryArgv}
 
-// transportByProvider 与 lib/server/native-session-chat-transport.js 的
-// TRANSPORT_BY_PROVIDER 同序；AGY 采用已核实支持 stream-json 的 headless 协议。
-var transportByProvider = map[string]transportDecl{
-	"claude":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
-	"codex":    {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
-	"opencode": {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
-	// qoder 的会话 JSONL 不写 token 用量，唯一可信来源是 stream-json 的 result.usage。
-	"qoder":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, streamUsage: true},
-	"qodercn": {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, streamUsage: true},
-	"grok":    {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
-	"zcode":   {mode: ModeDesktopSession, promptDelivery: PromptDeliveryArgv},
-	// cline 续聊走 ACP：TUI 敲入在进程启动期会被吞（2026-10-16 实测）。
-	"cline": {mode: ModeHeadlessStream, resumeMode: ModeACPSession, promptDelivery: PromptDeliveryArgv},
-	// AGY 新建和精确续聊都使用 --print --output-format stream-json；不冒充 PTY transcript。
-	"agy":         {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true},
-	"codebuddy":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
-	"codebuddycn": {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
-	"workbuddy":   {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
-	"workbuddycn": {mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv},
+// nativeChatTransportDecl 按 Node 的 TRANSPORT_BY_PROVIDER 声明顺序登记一个
+// Provider 的会话传输方式。顺序本身是合同的一部分（TmuxRunProviders 依赖它），
+// 因此用有序表声明，再由它派生查询表与顺序表，避免两份名单漂移。
+type nativeChatTransportDecl struct {
+	ProviderID string
+	transportDecl
 }
 
-// transportProviderOrder 是声明顺序，供 TmuxRunProviders 保持与 Node 一致的顺序。
-var transportProviderOrder = []string{
-	"claude", "codex", "opencode", "qoder", "qodercn", "grok", "zcode",
-	"cline", "agy", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn",
+var nativeChatTransportDecls = []nativeChatTransportDecl{
+	{ProviderID: "claude", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true}},
+	{ProviderID: "codex", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true}},
+	{ProviderID: "opencode", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true}},
+	// qoder 的会话 JSONL 不写 token 用量，唯一可信来源是 stream-json 的 result.usage。
+	{ProviderID: "qoder", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, streamUsage: true}},
+	{ProviderID: "qodercn", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, streamUsage: true}},
+	{ProviderID: "grok", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv}},
+	{ProviderID: "zcode", transportDecl: transportDecl{mode: ModeDesktopSession, promptDelivery: PromptDeliveryArgv}},
+	// cline 续聊走 ACP：TUI 敲入在进程启动期会被吞（2026-10-16 实测）。
+	{ProviderID: "cline", transportDecl: transportDecl{mode: ModeHeadlessStream, resumeMode: ModeACPSession, promptDelivery: PromptDeliveryArgv}},
+	// AGY 新建和精确续聊都使用 --print --output-format stream-json；不冒充 PTY transcript。
+	{ProviderID: "agy", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv, tmuxRun: true}},
+	{ProviderID: "codebuddy", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv}},
+	{ProviderID: "codebuddycn", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv}},
+	{ProviderID: "workbuddy", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv}},
+	{ProviderID: "workbuddycn", transportDecl: transportDecl{mode: ModeHeadlessStream, promptDelivery: PromptDeliveryArgv}},
 }
+
+// transportByProvider 由有序表派生，与 Node 的 TRANSPORT_BY_PROVIDER 同序。
+var transportByProvider = func() map[string]transportDecl {
+	indexed := make(map[string]transportDecl, len(nativeChatTransportDecls))
+	for _, entry := range nativeChatTransportDecls {
+		indexed[entry.ProviderID] = entry.transportDecl
+	}
+	return indexed
+}()
+
+// transportProviderOrder 由有序表派生，供 TmuxRunProviders 保持与 Node 一致的顺序。
+var transportProviderOrder = func() []string {
+	order := make([]string, 0, len(nativeChatTransportDecls))
+	for _, entry := range nativeChatTransportDecls {
+		order = append(order, entry.ProviderID)
+	}
+	return order
+}()
 
 // ResolveNativeChatTransport 解析某 Provider（可选续聊轮）的传输方式。
 func ResolveNativeChatTransport(provider string, isResume bool) Transport {

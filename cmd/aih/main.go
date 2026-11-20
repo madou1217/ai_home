@@ -62,6 +62,14 @@ func isCompletionEntry(arguments []string) bool {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
+	// Node 启动链的构件库私有管道：必须在任何数据库/账号解析之前分流。
+	if handled, err := runArtifactEnsure(context.Background(), args, runtime); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
 	// summary/usage/export/import/ls/resume 与 server 系列命令在 Go 处理；其余顶层命令仍交回 Node。
 	if handled, err := runSummaryAlias(context.Background(), args, runtime); handled {
 		if err != nil {

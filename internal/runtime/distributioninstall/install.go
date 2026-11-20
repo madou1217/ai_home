@@ -408,14 +408,13 @@ func bootstrapConfig(ctx context.Context, prepared, oldHome string) error {
 		return err
 	}
 	defer db.Close()
-	var raw string
-	err = db.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, appstate.KeyServerConfig).Scan(&raw)
-	m := map[string]any{}
-	if err == nil && json.Unmarshal([]byte(raw), &m) != nil {
-		return errors.New("已有服务配置损坏，未覆盖")
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	raw, found, err := appstate.ReadRawKVStrict(ctx, db, appstate.KeyServerConfig)
+	if err != nil {
 		return err
+	}
+	m := map[string]any{}
+	if found && json.Unmarshal([]byte(raw), &m) != nil {
+		return errors.New("已有服务配置损坏，未覆盖")
 	}
 	if len(m) == 0 {
 		if legacy, e := os.ReadFile(filepath.Join(oldHome, "server-config.json")); e == nil {

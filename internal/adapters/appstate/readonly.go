@@ -94,6 +94,35 @@ func ReadRawKV(ctx context.Context, queryer Queryer, key string) (string, bool, 
 	return value, true, nil
 }
 
+// ReadRawKVStrict 与 ReadRawKV 相同，但只把「键不存在」当 found=false；
+// app_kv 表缺失按错误返回。
+//
+// 用于「表必须已经存在」的场景：例如已持久化加载过的存储再次读取时缺表，
+// 说明数据被外部删除或损坏，不能静默当成「从未写入」。
+func ReadRawKVStrict(
+	ctx context.Context,
+	queryer Queryer,
+	key string,
+) (string, bool, error) {
+	normalizedKey := strings.TrimSpace(key)
+	if normalizedKey == "" || queryer == nil {
+		return "", false, nil
+	}
+	var value string
+	err := queryer.QueryRowContext(
+		ctx,
+		`SELECT value FROM app_kv WHERE key = ?`,
+		normalizedKey,
+	).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
 // ReadRawKVPrefix 使用调用方已有的连接读取前缀匹配的全部记录；prefix 为空表示整表。
 //
 // 表缺失按空结果处理：这些调用方在「从未写入」与「表尚未创建」之间不做区分。

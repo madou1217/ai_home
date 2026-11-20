@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -315,36 +314,32 @@ func (store *Store) RekeyAccountOverride(
 	prevKey := AccountOverrideKeyPrefix + prevRef
 	nextKey := AccountOverrideKeyPrefix + nextRef
 
-	var prevRaw string
-	err = tx.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = ?`, prevKey).Scan(&prevRaw)
-	if errors.Is(err, sql.ErrNoRows) || (isMissingTableError(err) && !store.hasDurableLoad) {
-		return nil
-	}
+	prevRaw, prevFound, err := appstate.ReadRawKVStrict(ctx, tx, prevKey)
 	if err != nil {
+		if isMissingTableError(err) && !store.hasDurableLoad {
+			return nil
+		}
 		if isMissingTableError(err) {
 			store.invalidateFingerprintTrustLocked()
 		}
 		return err
 	}
+	if !prevFound {
+		return nil
+	}
 
-	var destSentinel int
-	destErr := tx.QueryRowContext(ctx, `SELECT 1 FROM app_kv WHERE key = ?`, nextKey).Scan(&destSentinel)
-	destExists := destErr == nil
-	if destErr != nil && !errors.Is(destErr, sql.ErrNoRows) {
-		return destErr
+	_, destExists, err := appstate.ReadRawKVStrict(ctx, tx, nextKey)
+	if err != nil {
+		return err
 	}
 	if !destExists {
-		if _, err := tx.ExecContext(
-			ctx,
-			`INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, ?)`,
-			nextKey,
-			prevRaw,
-			store.now().UnixMilli(),
+		if err := appstate.WriteRawKV(
+			ctx, tx, nextKey, prevRaw, store.now().UnixMilli(),
 		); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM app_kv WHERE key = ?`, prevKey); err != nil {
+	if _, err := appstate.DeleteRawKV(ctx, tx, prevKey); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

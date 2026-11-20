@@ -28,18 +28,25 @@ The same request body was sent to the local gateway and directly to the AWS prox
 
 The local response carries the proxy's headers (`Server: cloudflare`, `X-Aih-Server-Provider: codex`, `X-Codex-*`), so the upstream request itself is healthy. Warm local TTFB is roughly 2.1s above the direct proxy path on average, with runs varying between parity and +3.1s. The first request after a server restart was materially colder.
 
-## Working hypothesis
+## Native timing evidence
 
-The account used for this path is an `api_key` account whose base URL is the AWS aih proxy. The native Codex Responses HTTP fast path opens only for a resolved native Codex protocol route; an api_key upstream falls back to the canonical OpenAI Responses handler. The canonical path decodes and renders the stream and does not apply the native path's 1s pre-header probe/early delivery. The 1s probe itself is not enough to explain the full local delta; the remaining variance needs server-side timing.
+Request-level timing was added behind `X-Aih-Timing: 1` to both the native Codex Responses handler and the canonical Responses handler. A local request produced:
+
+```
+responses native timing model=gpt-6.1-sol stream=true
+account=acct_c016fd7eee0f64163068 total_ms=4002 account_ms=2
+upstream_ms=3944 probe_ms=3950 committed_ms=3950 first_write_ms=3950
+```
+
+The request used the **native** handler. Account selection took 2 ms, the upstream response headers arrived at 3944 ms, the probe completed 6 ms later, and the first client write happened immediately. The local handler overhead is therefore on the order of tens of milliseconds, not seconds.
+
+## Corrected conclusion
+
+The local gateway is not the slow component for this request. The measured TTFB is dominated by the upstream/proxy response-header latency. The earlier 2–4 s local-vs-direct delta was upstream/network variance and cold-start effects, not a canonical-path buffering problem. The working hypothesis that api_key requests necessarily fall back to the canonical handler is not supported by this request; the native fast path was used.
 
 ## Next step
 
-Before changing behavior, add request-scoped timing at the local Responses handler boundaries (account selection, upstream request start, upstream first header, first decoded event, first client flush). Then choose one of:
-
-1. A generic raw-stream passthrough for same-protocol OpenAI Responses requests to OpenAI-compatible api_key upstreams, preserving the existing pre-commit failover rules.
-2. Reduce canonical pre-commit buffering so the first upstream event is written without waiting for a later canonical event.
-
-Both options change the commit/failover boundary and need explicit acceptance; neither should be inferred from the proxy's 2.8–3.5s header latency alone.
+No local Responses refactor is justified by this evidence. If the latency target still needs improvement, profile the proxy/upstream response-header path (or the network hop to it). Keep the opt-in `X-Aih-Timing` instrumentation for future comparisons; it is inert unless the header is present.
 
 ## Environment note
 

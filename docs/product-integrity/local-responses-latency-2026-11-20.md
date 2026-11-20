@@ -40,13 +40,31 @@ upstream_ms=3944 probe_ms=3950 committed_ms=3950 first_write_ms=3950
 
 The request used the **native** handler. Account selection took 2 ms, the upstream response headers arrived at 3944 ms, the probe completed 6 ms later, and the first client write happened immediately. The local handler overhead is therefore on the order of tens of milliseconds, not seconds.
 
-## Corrected conclusion
+## AWS proxy timing
 
-The local gateway is not the slow component for this request. The measured TTFB is dominated by the upstream/proxy response-header latency. The earlier 2–4 s local-vs-direct delta was upstream/network variance and cold-start effects, not a canonical-path buffering problem. The working hypothesis that api_key requests necessarily fall back to the canonical handler is not supported by this request; the native fast path was used.
+The same `X-Aih-Timing` header was used against the AWS proxy's own loopback endpoint:
+
+```
+total_ms=1165 account_ms=11 upstream_ms=582 probe_ms=1092 committed_ms=1093 first_write_ms=1093
+total_ms=1613 account_ms=0  upstream_ms=1012 probe_ms=1574 committed_ms=1574 first_write_ms=1574
+```
+
+The proxy reaches its upstream response headers in 0.58–1.01s. The 1s probe then waits for the first body event and commits at 1.09–1.57s. Account selection is effectively zero.
+
+## End-to-end breakdown
+
+For the local request with TTFB ≈3.9s:
+
+- account selection: ~2 ms;
+- local handler/probe/first write: ~50 ms;
+- AWS proxy upstream header + probe: 1.1–1.6s;
+- Mac → AWS/Cloudflare hop: roughly 2.3s by subtraction.
+
+The local gateway is therefore not the slow component. The remaining cost is the network hop plus the proxy's upstream header/probe window. The probe is deliberate: shortening it would reduce TTFB but commit to an account before an upstream error frame can be observed, weakening pre-commit failover.
 
 ## Next step
 
-No local Responses refactor is justified by this evidence. If the latency target still needs improvement, profile the proxy/upstream response-header path (or the network hop to it). Keep the opt-in `X-Aih-Timing` instrumentation for future comparisons; it is inert unless the header is present.
+No local Responses refactor is justified by this evidence. If the latency target still needs improvement, the remaining levers are the network path to the proxy and the 1s probe trade-off, both separate design decisions. Keep the opt-in `X-Aih-Timing` instrumentation for future comparisons; it is inert unless the header is present.
 
 ## Environment note
 

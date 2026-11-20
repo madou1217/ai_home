@@ -177,6 +177,21 @@ type CredentialFacts struct {
 	CLIRequiresAuthFile bool `json:"cliRequiresAuthFile,omitempty"`
 }
 
+// PreferredOAuthAuthMode 返回该 Provider 声明的首个 OAuth 认证方式。
+//
+// AuthOptions 的顺序就是产品默认顺序：codex 同时支持浏览器授权与设备码，默认取
+// 浏览器授权；opencode / kiro 只声明设备码。没有 OAuth 形态时返回空串，
+// 调用方不得自行猜测。
+func (definition Definition) PreferredOAuthAuthMode() AuthMode {
+	for _, option := range definition.AuthOptions {
+		switch option.Value {
+		case AuthModeOAuthBrowser, AuthModeOAuthDevice, AuthModeOAuthRefreshToken:
+			return option.Value
+		}
+	}
+	return ""
+}
+
 // CredentialFacts 返回该 Provider 声明的凭据事实；未声明时返回零值。
 //
 // 消费方一律通过本方法读取，避免每处各自判空指针，或在缺少声明时把

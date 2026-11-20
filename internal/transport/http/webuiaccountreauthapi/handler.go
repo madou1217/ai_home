@@ -23,6 +23,7 @@ import (
 	accountauth "github.com/madou1217/ai_home/application/accountauth"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
@@ -843,13 +844,28 @@ func pollIntervalForMode(authMode string) int {
 	return 1000
 }
 
-func inferAuthMode(provider string) string {
-	switch provider {
-	case "codex", "claude", "gemini", "agy", "zcode", "grok", "qoder", "qodercn", "kimi", "cline",
-		"codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		return "oauth-browser"
-	case "opencode", "kiro":
-		return "oauth-device"
+// builtinProviderCatalog 只构造一次：认证方式的默认档来自 Provider 合同。
+var builtinProviderCatalog = sync.OnceValue(func() *providers.Catalog {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return nil
 	}
-	return ""
+	return catalog
+})
+
+// inferAuthMode 返回 Provider 合同声明的默认 OAuth 认证方式。
+//
+// 以前这里按 Provider 名硬编码两份名单，与 `AuthOptions` 是同一事实的两份拷贝：
+// 新增 Provider 时漏改任一处，重新认证就会拿错模式。现在顺序也由合同决定
+// （浏览器授权优先于设备码），没有 OAuth 形态时返回空串。
+func inferAuthMode(provider string) string {
+	catalog := builtinProviderCatalog()
+	if catalog == nil {
+		return ""
+	}
+	definition, found := catalog.Get(provider)
+	if !found {
+		return ""
+	}
+	return string(definition.PreferredOAuthAuthMode())
 }

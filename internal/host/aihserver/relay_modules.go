@@ -2,7 +2,6 @@ package aihserver
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/madou1217/ai_home/application/accountrouting"
 	"github.com/madou1217/ai_home/core/providers"
@@ -40,10 +39,6 @@ type relayModuleSpec struct {
 	ID     string
 	Label  string
 	Policy accountrouting.CredentialTransportPolicy
-	// ModelPrefixes 是该 Provider 显式声明的模型命名空间前缀（如 zcode/、zai/）。
-	// 只有声明过的前缀才会在账号征召前剥离并锁定本 Provider；未声明的 Provider
-	// 保持逐字节不变的旧行为。
-	ModelPrefixes []string
 	// Provider 为 nil 表示该 Provider 复用另一个模块的变体（qodercn 与 qoder 共用一个）。
 	Provider func(relayBuildContext) relaycore.Provider
 }
@@ -97,9 +92,8 @@ func relayModuleSpecs() []relayModuleSpec {
 			Policy: qoderRelayTransportPolicy{},
 		},
 		{
-			ID:            zcoderelay.ProviderID,
-			Label:         "zcode",
-			ModelPrefixes: []string{"zcode", "zai"},
+			ID:    zcoderelay.ProviderID,
+			Label: "zcode",
 			// 请求体需要官方 harness；宿主事实读不到时 fail-soft（与 Node 一致）。
 			Policy: zcodeRelayTransportPolicy{},
 			Provider: func(ctx relayBuildContext) relaycore.Provider {
@@ -113,21 +107,6 @@ func relayModuleSpecs() []relayModuleSpec {
 			Provider: func(relayBuildContext) relaycore.Provider { return kirorelay.NewProvider() },
 		},
 	}
-}
-
-// relayModelPrefixes 返回所有透传 Provider 显式声明的模型命名空间前缀。
-// 只有声明过的前缀会在 Canonical 路由前改写；未声明的 Provider 行为不变。
-func relayModelPrefixes() map[string]string {
-	out := make(map[string]string)
-	for _, spec := range relayModuleSpecs() {
-		for _, prefix := range spec.ModelPrefixes {
-			key := strings.ToLower(strings.TrimSpace(prefix))
-			if key != "" {
-				out[key] = spec.ID
-			}
-		}
-	}
-	return out
 }
 
 // relayProviderIDs 是「由透传通道直接服务」的 Provider 集合。
@@ -155,7 +134,6 @@ func buildRelayModules(ctx relayBuildContext) ([]relayModule, error) {
 			ctx.Catalog,
 			ctx.Recruiter,
 			spec.Policy,
-			spec.ModelPrefixes,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("创建 %s 透传账号来源失败: %w", spec.Label, err)

@@ -298,7 +298,6 @@ func newInferenceComposition(
 		Clock:                        dependencies.clock,
 		MessagesDecodeErrorObserver:  dependencies.decodeErrors,
 		ResponsesDecodeErrorObserver: dependencies.responsesDecodeErrors,
-		ProviderModelPrefixes:        relayModelPrefixes(),
 	})
 	if err != nil {
 		return nil, err

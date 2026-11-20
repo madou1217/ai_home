@@ -25,11 +25,10 @@ var ErrInvalidProviderRelayAccountSource = errors.New("透传账号来源依赖�
 // 语义完全相同——复用 Canonical 验证过的公平轮转、运行态熔断、凭据可用性判定，
 // 只是「问几支」不同。
 type providerRelayAccountSource struct {
-	providerID    string
-	catalog       *providers.Catalog
-	recruiter     *accountrouting.Recruiter
-	transport     accountrouting.CredentialTransportPolicy
-	modelPrefixes []string
+	providerID string
+	catalog    *providers.Catalog
+	recruiter  *accountrouting.Recruiter
+	transport  accountrouting.CredentialTransportPolicy
 }
 
 // 编译期确认适配器满足 relaycore 的账号来源与 429 重征召端口。
@@ -44,37 +43,16 @@ func newProviderRelayAccountSource(
 	catalog *providers.Catalog,
 	recruiter *accountrouting.Recruiter,
 	transport accountrouting.CredentialTransportPolicy,
-	modelPrefixes []string,
 ) (*providerRelayAccountSource, error) {
 	if providerID == "" || catalog == nil || recruiter == nil || transport == nil {
 		return nil, ErrInvalidProviderRelayAccountSource
 	}
 	return &providerRelayAccountSource{
-		providerID:    providerID,
-		catalog:       catalog,
-		recruiter:     recruiter,
-		transport:     transport,
-		modelPrefixes: append([]string(nil), modelPrefixes...),
+		providerID: providerID,
+		catalog:    catalog,
+		recruiter:  recruiter,
+		transport:  transport,
 	}, nil
-}
-
-// effectiveModel 只剥离本 Provider 显式声明的前缀（如 zcode/glm-5.3），
-// 未声明前缀的通道逐字节保持原模型 ID。剥离后仍由 accountrouting 的正常
-// 准入门禁决定账号，不做跨 Provider 猜测。
-func (source *providerRelayAccountSource) effectiveModel(modelID runtimecore.ModelID) string {
-	raw := modelID.String()
-	for _, prefix := range source.modelPrefixes {
-		trimmed := strings.ToLower(strings.TrimSpace(prefix))
-		if trimmed == "" {
-			continue
-		}
-		if len(raw) > len(trimmed)+1 && strings.EqualFold(raw[:len(trimmed)], trimmed) && raw[len(trimmed)] == '/' {
-			if rest := strings.TrimSpace(raw[len(trimmed)+1:]); rest != "" {
-				return rest
-			}
-		}
-	}
-	return raw
 }
 
 // Accounts 为指定模型创建一个征召会话。
@@ -91,7 +69,7 @@ func (source *providerRelayAccountSource) Accounts(
 	request, err := accountrouting.NewRequest(
 		source.catalog,
 		source.providerID,
-		source.effectiveModel(modelID),
+		modelID.String(),
 	)
 	if err != nil {
 		// Provider 不在目录里属装配错误：返回空游标让调用方交还 Canonical，
@@ -124,7 +102,7 @@ func (source *providerRelayAccountSource) ReacquireFor429Retry(
 	request, err := accountrouting.NewPinnedRequest(
 		source.catalog,
 		source.providerID,
-		source.effectiveModel(modelID),
+		modelID.String(),
 		target,
 	)
 	if err != nil {

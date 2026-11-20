@@ -7,11 +7,11 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 )
 
 // AccountOverviewLister 提供本地账号概览只读端口。
@@ -39,6 +39,14 @@ type EligibilityChecker interface {
 	CheckEligibility(ctx context.Context, route runtimecore.ModelRoute) (runtimecore.Eligibility, error)
 }
 
+// ModelSettingsReader 提供 WebUI 持久化的模型启停设置只读端口。
+//
+// 文档存在 aih.db 的 KV 里，但存储形状由适配器掌握；本层只依赖读取语义，
+// 不感知数据库路径、键名或文档版本。
+type ModelSettingsReader interface {
+	ReadSettings(ctx context.Context) (modelcatalogsettings.Settings, error)
+}
+
 // CatalogDependencies 聚合构建翻译模型目录所需的全部只读依赖。
 type CatalogDependencies struct {
 	Accounts      AccountOverviewLister
@@ -48,7 +56,7 @@ type CatalogDependencies struct {
 	Runtime       EligibilityChecker
 	Providers     *providers.Catalog
 	Modalities    modelmetadata.Reader
-	DatabasePath  string
+	Settings      ModelSettingsReader
 }
 
 // ModelEntry 描述翻译可选模型目录中的一条模型项。
@@ -170,15 +178,15 @@ type accountSettingsIndex struct {
 	legacyDisabled  map[string]bool
 }
 
-func buildSettingsIndex(ctx context.Context, dbPath string) accountSettingsIndex {
+func buildSettingsIndex(ctx context.Context, reader ModelSettingsReader) accountSettingsIndex {
 	idx := accountSettingsIndex{
 		accountDisabled: map[string]bool{},
 		legacyDisabled:  map[string]bool{},
 	}
-	if strings.TrimSpace(dbPath) == "" {
+	if reader == nil {
 		return idx
 	}
-	loaded, err := modelcatalogsettings.Load(ctx, dbPath)
+	loaded, err := reader.ReadSettings(ctx)
 	if err != nil {
 		return idx
 	}
@@ -219,7 +227,7 @@ func BuildTranslationModelCatalog(
 			exclusions = loaded
 		}
 	}
-	settingsIdx := buildSettingsIndex(ctx, deps.DatabasePath)
+	settingsIdx := buildSettingsIndex(ctx, deps.Settings)
 
 	enabledAccounts := make(map[string]accountapp.AccountOverview)
 	accountsByProvider := make(map[string][]accountcore.AccountRef)

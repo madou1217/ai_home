@@ -36,6 +36,7 @@ import (
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/imagestudio"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
@@ -111,10 +112,10 @@ func buildTranslationCatalogDependencies(
 		translationExclusions = dependencies.Store
 	}
 	translationRuntime, _ := dependencies.AccountRuntime.(translation.EligibilityChecker)
-	var dbPath string
+	var settingsReader translation.ModelSettingsReader
 	if aiHomeDir != "" {
 		if resolved, err := appstate.DatabasePath(aiHomeDir); err == nil {
-			dbPath = resolved
+			settingsReader = modelcatalogsettings.Reader{DatabasePath: resolved}
 		}
 	}
 	return translation.CatalogDependencies{
@@ -125,7 +126,7 @@ func buildTranslationCatalogDependencies(
 		Runtime:       translationRuntime,
 		Providers:     dependencies.Catalog,
 		Modalities:    dependencies.ModelModalities,
-		DatabasePath:  dbPath,
+		Settings:      settingsReader,
 	}
 }
 
@@ -375,9 +376,16 @@ func WarmTranslationModelCatalog(
 	aiHomeDir := resolveTranslationStudioAIHomeDir(dependencies)
 	catalogDeps := buildTranslationCatalogDependencies(dependencies, aiHomeDir)
 
+	var dbPath string
+	if aiHomeDir != "" {
+		if resolved, pathErr := appstate.DatabasePath(aiHomeDir); pathErr == nil {
+			dbPath = resolved
+		}
+	}
+
 	var savedSettings *translation.Settings
-	if catalogDeps.DatabasePath != "" {
-		if loaded, err := translation.ReadSettings(ctx, catalogDeps.DatabasePath); err == nil {
+	if dbPath != "" {
+		if loaded, err := translation.ReadSettings(ctx, dbPath); err == nil {
 			savedSettings = loaded
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
 )
 
@@ -87,8 +88,10 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 		}
 	}
 	catalogDeps := deps.Catalog
-	if catalogDeps.DatabasePath == "" {
-		catalogDeps.DatabasePath = dbPath
+	// 模型启停设置由运行时通过端口读取；仅当调用方只提供数据库路径时才在这里补默认读取器。
+	// 组合根始终显式注入 Settings，这条回退只服务于只传 path 的调用方。
+	if catalogDeps.Settings == nil && dbPath != "" {
+		catalogDeps.Settings = modelcatalogsettings.Reader{DatabasePath: dbPath}
 	}
 	nowFn := deps.Now
 	if nowFn == nil {

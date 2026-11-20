@@ -2,7 +2,6 @@ package translation
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -110,7 +109,10 @@ func TestBuildTranslationModelCatalogAndResolution(t *testing.T) {
 		UpstreamAvailable: true,
 		ManualPolicy:      policyAuto,
 		UpdatedAt:         now,
-	}); if err != nil { t.Fatalf("NewAccountModel m1: %v", err) }
+	})
+	if err != nil {
+		t.Fatalf("NewAccountModel m1: %v", err)
+	}
 	// 纯图像生成模型应被翻译目录过滤
 	mImg, err := accountapp.NewAccountModel(accountapp.AccountModelInput{
 		AccountRef:        accPrimary.Ref(),
@@ -150,9 +152,8 @@ func TestBuildTranslationModelCatalogAndResolution(t *testing.T) {
 		Runtime: stubEligibility{blocked: map[string]bool{
 			accPrimary.Ref().String() + "|kimi-k2-thinking": true,
 		}},
-		Providers:    cat,
-		Modalities:   modalities,
-		DatabasePath: filepath.Join(t.TempDir(), "app-state.db"),
+		Providers:  cat,
+		Modalities: modalities,
 	}
 
 	res, err := BuildTranslationModelCatalog(ctx, deps, &Settings{Model: "kimi-k2", Provider: "kimi"})

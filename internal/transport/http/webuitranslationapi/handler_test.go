@@ -104,7 +104,6 @@ func newTestCatalogDeps(t *testing.T, dbPath string) translation.CatalogDependen
 		Runtime:      stubElig{},
 		Providers:    cat,
 		Modalities:   modalities,
-		DatabasePath: dbPath,
 	}
 }
 

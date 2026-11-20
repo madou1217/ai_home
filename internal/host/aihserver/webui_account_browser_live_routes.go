@@ -20,5 +20,7 @@ func buildWebUIAccountBrowserLiveRoutes(deps webuiRouteDependencies) ([]webuiRou
 	return []webuiRoute{
 		{Pattern: "GET " + webuiaccountbrowserliveapi.BasePath, Handler: handler},
 		{Pattern: "GET " + webuiaccountbrowserliveapi.BasePath + "/capabilities", Handler: handler},
+		{Pattern: "POST " + webuiaccountbrowserliveapi.BasePath + "/stream", Handler: handler},
+		{Pattern: "POST " + webuiaccountbrowserliveapi.BasePath + "/command", Handler: handler},
 	}, nil
 }

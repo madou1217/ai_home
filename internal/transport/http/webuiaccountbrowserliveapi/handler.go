@@ -1,5 +1,5 @@
-// Package webuiaccountbrowserliveapi exposes the loopback-only HTTP capability
-// probe and first-frame authenticated WebSocket transport for the interactive
+// Package webuiaccountbrowserliveapi exposes authenticated server-routed HTTP
+// streams and a legacy loopback first-frame-auth WebSocket for the interactive
 // account browser surface. It owns transport security and wire framing only;
 // browser lifecycle, runtime selection, and UI integration live elsewhere.
 package webuiaccountbrowserliveapi
@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowserview"
 )
@@ -63,15 +64,8 @@ type Dependencies struct {
 type Handler struct {
 	authorizer Authorizer
 	runtime    Runtime
-}
-
-type capabilitiesResponse struct {
-	OK                      bool   `json:"ok"`
-	Supported               bool   `json:"supported"`
-	Electron                bool   `json:"electron"`
-	Scope                   string `json:"scope"`
-	RequiresUserStart       bool   `json:"requiresUserStart"`
-	MayActivateNativeWindow bool   `json:"mayActivateNativeWindow"`
+	streamMu   sync.Mutex
+	stream     *httpSession
 }
 
 // NewHandler validates dependencies and returns a fail-closed Handler.
@@ -85,26 +79,25 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}, nil
 }
 
-// ServeHTTP enforces loopback-only peer addressing, GET-only method checks,
-// and exact path routing for capabilities and WebSocket upgrade.
+// ServeHTTP keeps the old WS loopback policy. New HTTP requests use explicit
+// bearer authorization and the existing authenticated control-plane proxy.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.authorizer == nil || h.runtime == nil {
 		writeError(w, http.StatusServiceUnavailable, "browser_surface_unavailable")
 		return
 	}
-	if !isLoopbackRemoteAddr(r.RemoteAddr) {
-		writeError(w, http.StatusForbidden, "loopback_required")
-		return
-	}
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
-		return
-	}
-	switch r.URL.Path {
-	case capabilitiesPath:
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == capabilitiesPath:
 		h.serveCapabilities(w, r)
-	case BasePath:
+	case r.Method == http.MethodPost && r.URL.Path == BasePath+"/stream":
+		h.serveHTTPStream(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == BasePath+"/command":
+		h.serveHTTPCommand(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == BasePath:
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			writeError(w, http.StatusForbidden, "loopback_required")
+			return
+		}
 		h.serveWebSocket(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "not_found")
@@ -112,19 +105,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveCapabilities(w http.ResponseWriter, r *http.Request) {
-	if !h.authorizer.Authorized(r) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+	if !h.authorizeHTTP(w, r) {
 		return
 	}
-	writeJSON(w, http.StatusOK, capabilitiesResponse{
-		OK:                      true,
-		Supported:               h.runtime.Supported(),
-		Electron:                false,
-		Scope:                   "single-task-window",
-		RequiresUserStart:       true,
-		MayActivateNativeWindow: true,
-	})
+	caps := accountbrowserview.Capabilities{Supported: h.runtime.Supported()}
+	if provider, ok := h.runtime.(interface {
+		Capabilities(context.Context) accountbrowserview.Capabilities
+	}); ok {
+		caps = provider.Capabilities(r.Context())
+	}
+	writeJSON(w, http.StatusOK, struct {
+		accountbrowserview.Capabilities
+		OK         bool     `json:"ok"`
+		Electron   bool     `json:"electron"`
+		Scope      string   `json:"scope"`
+		Transports []string `json:"transports"`
+	}{caps, true, false, "single-task-window", []string{"http-stream-v1"}})
 }
 
 func isLoopbackRemoteAddr(remoteAddr string) bool {

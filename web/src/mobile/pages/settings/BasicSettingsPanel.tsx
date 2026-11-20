@@ -137,6 +137,11 @@ export default function BasicSettingsPanel() {
     }
   };
 
+  const handleClearProxy = async () => {
+    serverForm.setFieldValue("proxyUrl", "");
+    await handleSaveServer();
+  };
+
   // 触屏上误触会直接断开当前连接：重启前走 HUD 确认框
   const handleRestart = async () => {
     const ok = await confirmAction({
@@ -330,6 +335,9 @@ export default function BasicSettingsPanel() {
             <Form.Item name="managementKey" label="Management Key" help="用于访问 Server 管理接口的客户端密钥。留空保留当前配置。">
               <Input.Password autoComplete="new-password" placeholder="输入新的 Management Key" />
             </Form.Item>
+            <Form.Item name="proxyUrl" label="上游代理池" help="逗号或换行分隔；保存后立即生效，留空直连。">
+              <Input.TextArea rows={3} placeholder="socks5://127.0.0.1:1080, http://user:pass@host:8080" />
+            </Form.Item>
           </Form>
           <div className={styles.actions}>
             <HudIconButton
@@ -339,6 +347,14 @@ export default function BasicSettingsPanel() {
               loading={restarting}
               disabled={loading}
               onClick={handleRestart}
+            />
+            <HudIconButton
+              icon={<UndoOutlined />}
+              label="清除代理"
+              showLabel
+              loading={serverSaving}
+              disabled={loading}
+              onClick={handleClearProxy}
             />
             <HudIconButton
               icon={<SaveOutlined />}

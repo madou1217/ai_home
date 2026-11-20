@@ -17,7 +17,7 @@ import (
 )
 
 func showServerConfigUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>|--clear-proxy-url] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
+	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
 	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90m      \x1b[0m `aih server config list` 列出全部可设置参数、默认值与含义（`-l` / `--list` / `ls` 等价）。")
 }
 
@@ -295,6 +295,9 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 		}
 		index++
 		value := args[index]
+		if key == "proxyUrl" && strings.TrimSpace(value) == "" {
+			return errors.New("--proxy-url requires a non-empty value; run: aih server config unset proxy-url")
+		}
 		if key == "modelCacheSync" && value != "scheduler" && value != "go-batch" {
 			return errors.New("Invalid --model-cache-sync value: 只接受 scheduler 或 go-batch")
 		}
@@ -438,7 +441,6 @@ func clearConfigKey(name string) (string, bool) {
 		"egress-evidence-ttl-ms": "egressEvidenceTtlMs", "relay-udp-advertise-host": "relayUdpAdvertiseHost",
 		"relay-udp-advertise-port": "relayUdpAdvertisePort", "relay-listen-host": "relayListenHost",
 		"go-core-routes": "goCoreRoutes", "upstream-error-rules": "upstreamErrorRuleProviders",
-		"proxy-url": "proxyUrl",
 	}
 	key, ok := mapping[name]
 	return key, ok
@@ -448,8 +450,6 @@ func clearConfigValue(key string) any {
 	switch key {
 	case "goCoreRoutes", "upstreamErrorRuleProviders":
 		return []string{}
-	case "proxyUrl":
-		return ""
 	default:
 		return 0
 	}

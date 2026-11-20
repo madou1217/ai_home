@@ -19,7 +19,7 @@ const serverUsageText = `
   aih server ls [--json]
   aih server use <id|name|url>
   aih server remove <id|name|url>
-  aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>] [--proxy-url <a,b,c>|--clear-proxy-url] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only]
+  aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>] [--proxy-url <a,b,c>] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only]
   aih server autostart <install|uninstall|status>
   aih daemon <start|restart|stop|status|autostart>
   aih server serve

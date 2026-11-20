@@ -266,6 +266,8 @@ var nativeModelSpecs = map[string][]modelSpec{
 			// 质量档位的事实源是 size_quality.go 的声明表；这里只是把模型支持的
 			// 档位投影给能力接口（capability.go 读 QualityOptions），不再单独维护。
 			QualityOptions: qualityValuesForProvider("codex"),
+			// 显式尺寸同样受支持，取值白名单在声明表的 codex 行。
+			SupportsSize: true,
 		},
 	},
 	"agy": {

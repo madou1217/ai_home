@@ -54,6 +54,16 @@ var commonImageSizes = []string{
 	"1056x1408",
 }
 
+// openAIImageSizes 是 OpenAI gpt-image 系列实际接受的显式尺寸。
+//
+// 把 agy 的宽高比预设（1792x1024 等）一起递给 OpenAI 只会换来上游 400：
+// 「网关接受但上游不认」正是尺寸映射不闭环的典型缺口，必须在声明表就分开。
+var openAIImageSizes = []string{
+	"1024x1024",
+	"1536x1024",
+	"1024x1536",
+}
+
 // commonImageQualities 是客户端共用的质量词汇；auto 由入口按「未指定」处理，
 // 不进入白名单。
 var commonImageQualities = []string{"low", "medium", "high"}
@@ -78,8 +88,8 @@ var sizeQualityByProvider = map[string]sizeQualityMapping{
 		// agy 不接受质量控制，由 Capabilities.Quality=false 在校验中直接拒绝。
 	},
 	"codex": {
-		// Codex Images API 与 OpenAI 同词汇：客户端尺寸/质量原样传给上游。
-		Sizes:     identitySizeMappings(commonImageSizes),
+		// Codex Images API 只接受 OpenAI 自己的尺寸集合（原样传给上游）。
+		Sizes:     identitySizeMappings(openAIImageSizes),
 		Qualities: identityQualityMappings(commonImageQualities),
 	},
 	"passthrough": {
@@ -89,12 +99,6 @@ var sizeQualityByProvider = map[string]sizeQualityMapping{
 		Qualities: identityQualityMappings(commonImageQualities),
 	},
 }
-
-// imageSizeAspectRatios 是 agy 映射的 map 投影。
-//
-// capability.go 的 imageSizeList 以它为显式尺寸清单来源；保留这个符号是为了让能力
-// 投影与校验读同一份表，而不是各自维护一份尺寸列表。
-var imageSizeAspectRatios = sizeMapFrom(sizeQualityByProvider["agy"].Sizes)
 
 // sizeQualityMappingForProvider 返回规范 Provider 键对应的声明。
 func sizeQualityMappingForProvider(provider string) (sizeQualityMapping, bool) {
@@ -211,13 +215,4 @@ func identityQualityMappings(qualities []string) []qualityMapping {
 		mappings = append(mappings, qualityMapping{Client: quality, Native: quality})
 	}
 	return mappings
-}
-
-// sizeMapFrom 把有序映射投影成 map（供只读查找/枚举的旧接口使用）。
-func sizeMapFrom(mappings []sizeMapping) map[string]string {
-	out := make(map[string]string, len(mappings))
-	for _, entry := range mappings {
-		out[entry.Client] = entry.Native
-	}
-	return out
 }

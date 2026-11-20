@@ -10,7 +10,6 @@ package images
 //     编码解码），得到「客户端实际可以用什么」，并通过 JSON 对外透传。
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
@@ -81,10 +80,13 @@ type Capability struct {
 	OutputCompression bool `json:"outputCompression"`
 	// Background 表示支持背景控制（如 transparent）。
 	Background bool `json:"background"`
-	// Sizes 是显式尺寸白名单；为空表示只接受 auto。
-	Sizes []string `json:"sizes,omitempty"`
-	// Qualities 是质量档位白名单。
-	Qualities []string `json:"qualities,omitempty"`
+	// Sizes 是显式尺寸白名单：
+	//   null（省略）表示上游裁决、网关不设上限；
+	//   []（空数组）表示该模型只接受 auto/默认尺寸；
+	//   非空即白名单本身。
+	Sizes []string `json:"sizes"`
+	// Qualities 语义同 Sizes：null=上游裁决，[]=不支持质量控制，非空=白名单。
+	Qualities []string `json:"qualities"`
 }
 
 // EffectiveCapability 把策略的原生声明投影成客户端合同。
@@ -94,7 +96,8 @@ type Capability struct {
 // 拒绝」的抽象位置，Provider 实现不需要各自处理。
 func EffectiveCapability(strategy Strategy, modelID string) Capability {
 	native := strategy.Capabilities(modelID)
-	return effectiveCapabilityFrom(native, modelID, strategy.Provider(), strategy.Kind())
+	mapping, hasMapping := sizeQualityMappingForStrategy(strategy)
+	return effectiveCapabilityFrom(native, modelID, strategy.Provider(), strategy.Kind(), mapping, hasMapping)
 }
 
 // effectiveCapabilityFrom 把策略的原生声明投影成客户端合同。
@@ -102,7 +105,14 @@ func EffectiveCapability(strategy Strategy, modelID string) Capability {
 // kind 是策略能力族（native / passthrough / unsupported）：透传族的响应是上游原始
 // 响应体，网关无法把多份原始体合并成一份合法响应，因此透传族不具备「串行模拟多图」
 // 这项网关能力，即使它声明了单图。
-func effectiveCapabilityFrom(native Capabilities, modelID string, provider string, kind string) Capability {
+func effectiveCapabilityFrom(
+	native Capabilities,
+	modelID string,
+	provider string,
+	kind string,
+	mapping sizeQualityMapping,
+	hasMapping bool,
+) Capability {
 	// 模拟多图是网关能力，不是上游能力：原生单图（且真能出图）的策略才有它。
 	emulated := !native.Multiple &&
 		(native.Generation || native.Edit) &&
@@ -140,16 +150,37 @@ func effectiveCapabilityFrom(native Capabilities, modelID string, provider strin
 		capability.OutputFormats = formatStrings(unionFormats(nativeFormats, encodableFormats))
 	}
 
-	if spec, found := resolveModelSpec(provider, modelID); found {
+	spec, hasSpec := resolveModelSpec(provider, modelID)
+	if hasSpec {
 		capability.Qualities = append([]string(nil), spec.QualityOptions...)
 		// 模型级声明比 Provider 级更精确：图片模型的参考图上限常常按模型不同
 		// （gemini-3.1-flash-image 支持 14 张），有效能力必须采用模型自己的值。
 		if spec.HasMaxInputImages && spec.MaxInputImages > 0 {
 			capability.MaxInputImages = spec.MaxInputImages
 		}
-		if spec.SupportsSize {
-			capability.Sizes = imageSizeList()
-		}
+	}
+	// 尺寸/质量与校验读同一张声明表，保证「广告的」就是「接受的」：
+	//   - 模型没声明支持该控制项 → 空数组（客户端理解为只接受 auto/默认）；
+	//   - 策略有白名单 → 白名单本身；
+	//   - 策略无白名单（上游裁决，passthrough）→ nil（JSON 省略，表示未声明上限）。
+	sizeSupported := native.Size && (!hasSpec || spec.SupportsSize)
+	switch {
+	case !sizeSupported:
+		capability.Sizes = []string{}
+	case hasMapping:
+		capability.Sizes = mapping.sizeValues()
+	default:
+		capability.Sizes = nil
+	}
+	switch {
+	case !native.Quality:
+		// 不支持质量控制：空数组（客户端理解为只接受默认/auto）。
+		capability.Qualities = []string{}
+	case hasMapping && len(mapping.Qualities) > 0:
+		capability.Qualities = mapping.qualityValues()
+	default:
+		// 有质量控制能力但网关不设白名单：上游裁决。
+		capability.Qualities = nil
 	}
 	return capability
 }
@@ -235,16 +266,6 @@ func nativeSupportsOutputFormat(native Capabilities, format string) bool {
 		}
 	}
 	return false
-}
-
-// imageSizeList 返回网关能映射到上游的显式尺寸白名单（见 imageSizeAspectRatios）。
-func imageSizeList() []string {
-	sizes := make([]string, 0, len(imageSizeAspectRatios))
-	for size := range imageSizeAspectRatios {
-		sizes = append(sizes, size)
-	}
-	sort.Strings(sizes)
-	return sizes
 }
 
 // ImageModels 供能力查询接口使用：列出该策略声明的模型与有效能力。

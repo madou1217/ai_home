@@ -366,7 +366,7 @@
         <tr><td>图像库 SQLITE_BUSY</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">46a0459c 写者预留</td></tr>
         <tr><td>PNG 编码预算</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">dea7669f 每次写入强制预算</td></tr>
         <tr><td>gpt-image-2 needs Respan credits 要查明</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">AWS 真机：有 entitlement 的账号生成成功（3/3，约 9s/张）；无 entitlement 账号被可用性过滤为 503 no_available_account，不再暴露上游 credits 文本</td></tr>
-        <tr><td>图片能力对外透传 + 格式转码</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">能力合同上移到抽象层（文生图/图生图、输入输出格式、数量上限、尺寸、质量）；新增 GET /v1/images/models 直接列出每个模型可交付格式；非原生格式（webp 等）改用 png/jpeg 转码，真实 AWS 产物已验证 png→webp/jpeg；未知厂商先走通用 passthrough</td></tr>
+        <tr><td>图片能力对外透传 + 双向格式归一</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">能力合同上移到抽象层（文生图/图生图、输入/输出格式、数量上限、尺寸、质量）；GET /v1/images/models 对外透传；入口接受 png/jpeg/webp/gif，按 Provider 声明转码（输出 webp、输入 webp→png/gif→png 均已真机验证）；未知厂商先走通用 passthrough；已部署 AWS 并重启验证（agy output_format=webp 返回真实 WEBP 853KB）；gpt-image-2 当前受 codex 账号 upstream token 失效影响，待重新授权后复验</td></tr>
       </tbody>
     </table></div>
   </section>

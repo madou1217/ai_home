@@ -23,19 +23,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/spacegc"
 )
 
 // Request 是 Node 传入的一次投影准备请求。
 type Request struct {
-	Provider        string     `json:"provider"`
-	ProjectionRoot  string     `json:"projectionRoot"`
-	StoreRoot       string     `json:"storeRoot"`
-	ProjectionsRoot string     `json:"projectionsRoot"`
-	Platform        string     `json:"platform"`
-	Artifacts       []Artifact `json:"artifacts"`
+	Provider        string        `json:"provider"`
+	ProjectionRoot  string        `json:"projectionRoot"`
+	StoreRoot       string        `json:"storeRoot"`
+	ProjectionsRoot string        `json:"projectionsRoot"`
+	Platform        string        `json:"platform"`
+	Artifacts       []Artifact    `json:"artifacts"`
+	Prune           *PruneOptions `json:"prune,omitempty"`
+}
+
+// PruneOptions 控制旧版本回收；由 Node 传入保留策略，Go 执行。
+type PruneOptions struct {
+	KeepVersions int    `json:"keepVersions"`
+	TrashDir     string `json:"trashDir"`
+	GraceDays    int    `json:"graceDays"`
 }
 
 // Artifact 是一个待共享的版本构件。
@@ -58,7 +69,16 @@ type VersionResult struct {
 type Response struct {
 	OK       bool            `json:"ok"`
 	Versions []VersionResult `json:"versions"`
+	Pruned   []PrunedVersion `json:"pruned,omitempty"`
+	Emptied  int             `json:"emptied,omitempty"`
 	Errors   []string        `json:"errors"`
+}
+
+// PrunedVersion 是被移入回收站的旧版本。
+type PrunedVersion struct {
+	Path      string `json:"path"`
+	Reason    string `json:"reason"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 var reflinkCache sync.Map // platform+"\x00"+dir -> bool
@@ -104,6 +124,9 @@ func Ensure(request Request) Response {
 			continue
 		}
 		response.Versions = append(response.Versions, result)
+	}
+	if request.Prune != nil {
+		pruneVersions(request, &response)
 	}
 	return response
 }
@@ -650,4 +673,151 @@ func fileIdentity(path string) (fileIdentityValue, error) {
 		return fileIdentityValue{}, err
 	}
 	return fileIdentityValue{Dev: dev, Ino: ino}, nil
+}
+
+// pruneVersions 是 Go 侧的旧版本回收：Node 传保留策略，Go 负责在用判定、移入回收站和清空。
+func pruneVersions(request Request, response *Response) {
+	options := request.Prune
+	if options == nil {
+		return
+	}
+	keep := options.KeepVersions
+	if keep < 0 {
+		keep = 0
+	}
+	projectionReal, _ := filepath.EvalSymlinks(request.ProjectionRoot)
+	groups := map[string][]Artifact{}
+	seen := map[string]bool{}
+	for _, artifact := range request.Artifacts {
+		realPath, err := filepath.EvalSymlinks(artifact.Path)
+		if err != nil {
+			continue
+		}
+		if projectionReal != "" && !strings.HasPrefix(realPath, projectionReal+string(filepath.Separator)) {
+			// 父目录已是共享软链：这份内容不属于本账号，不能回收。
+			continue
+		}
+		if seen[artifact.Path] {
+			continue
+		}
+		seen[artifact.Path] = true
+		groups[artifact.CLI] = append(groups[artifact.CLI], artifact)
+	}
+	// 在用判定失败时保守跳过，避免删除正在运行的版本。
+	held, heldKnown := spacegc.HeldPaths()
+	if heldKnown {
+		for cli, artifacts := range groups {
+			sort.SliceStable(artifacts, func(i, j int) bool {
+				return compareVersions(artifacts[i].Version, artifacts[j].Version) < 0
+			})
+			stale := len(artifacts) - keep
+			if stale <= 0 {
+				continue
+			}
+			for _, artifact := range artifacts[:stale] {
+				if spacegc.PathHeld(held, artifact.Path) {
+					continue
+				}
+				size := treeSize(artifact.Path)
+				if err := moveToTrash(artifact.Path, options.TrashDir); err != nil {
+					response.Errors = append(response.Errors, fmt.Sprintf("trash %s: %v", artifact.Path, err))
+					response.OK = false
+					continue
+				}
+				response.Pruned = append(response.Pruned, PrunedVersion{Path: artifact.Path, Reason: "old-version", SizeBytes: size})
+			}
+			_ = cli
+		}
+	}
+	if strings.TrimSpace(options.TrashDir) != "" {
+		response.Emptied += emptyTrash(options.TrashDir, options.GraceDays)
+	}
+}
+
+func moveToTrash(target, trashDir string) error {
+	thawDirs(target)
+	_ = os.Chmod(filepath.Dir(target), 0o755)
+	root := strings.TrimSpace(trashDir)
+	if root == "" {
+		return os.RemoveAll(target)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	stamp := strings.NewReplacer(":", "-", ".", "-").Replace(time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+	destination := filepath.Join(root, fmt.Sprintf("%s-%s-%d", stamp, filepath.Base(target), os.Getpid()))
+	return os.Rename(target, destination)
+}
+
+func emptyTrash(trashDir string, graceDays int) int {
+	if graceDays < 0 {
+		return 0
+	}
+	cutoff := time.Now().Add(-time.Duration(graceDays) * 24 * time.Hour)
+	entries, err := os.ReadDir(trashDir)
+	if err != nil {
+		return 0
+	}
+	removed := 0
+	for _, entry := range entries {
+		target := filepath.Join(trashDir, entry.Name())
+		info, err := entry.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		thawDirs(target)
+		if err := os.RemoveAll(target); err == nil {
+			removed++
+		}
+	}
+	return removed
+}
+
+func compareVersions(left, right string) int {
+	a := versionParts(left)
+	b := versionParts(right)
+	length := len(a)
+	if len(b) > length {
+		length = len(b)
+	}
+	for index := 0; index < length; index++ {
+		av, bv := 0, 0
+		if index < len(a) {
+			av = a[index]
+		}
+		if index < len(b) {
+			bv = b[index]
+		}
+		if av != bv {
+			return av - bv
+		}
+	}
+	return 0
+}
+
+func versionParts(version string) []int {
+	parts := strings.FieldsFunc(version, func(r rune) bool { return r == '.' || r == '-' })
+	result := make([]int, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			value = 0
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func treeSize(root string) int64 {
+	var total int64
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		if info, err := entry.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }

@@ -29,7 +29,16 @@
 - Linux ext4：Go 服务 3 账号 + 库同一 inode（nlink=4、只读 444），二次 unchanged；
   模拟重装（inode 被复用）仍返回 hardlinked，说明冻结态守卫生效。
 
+## 旧版本回收（2026-11-21 已迁移）
+
+- Node 只传保留策略（`keepVersions`、`trashDir`、`graceDays`）；Go 在 ensure 之后完成：
+  按 CLI 分组/版本排序、在用判定（`spacegc.HeldPaths`）、只回收投影内路径（父目录是共享软链的
+  外部版本不动）、移入回收站、按宽限期清空。
+- Node 在 Go 成功处理后不再重复 `pruneVersions`；`pruneLogs`/库存树 GC 仍由 Node 执行。
+- 实测：3 个版本的投影在 Go 后端下保留 2 个、最旧版本进 trash；把 trash 变旧后再跑一次，
+  Go 清空 2 个条目。`AIH_ARTIFACT_BACKEND=node` 的本地回退也验证通过。
+
 ## 尚未迁移
 
-- 版本发现、缓存链接（`shared-host-caches`）、旧版本回收（`pruneVersions`）仍在 Node；
-  `space-gc` 与 Go 账本已独立。后续可把回收也收进 Go，Node 只保留策略输入。
+- 版本发现、缓存链接（`shared-host-caches`）、日志回收与库存树 GC 仍在 Node；
+  Node 只保留策略输入，文件系统动作逐步收口到 Go。

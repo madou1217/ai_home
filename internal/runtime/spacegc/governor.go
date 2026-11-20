@@ -239,6 +239,12 @@ func (report *Report) removeTempDirs(opts Options, held map[string]bool, heldKno
 	}
 }
 
+// HeldPaths 暴露"当前进程在用路径"快照给同进程内的其它巡检器（如 artifactstore 的旧版本回收）。
+func HeldPaths() (map[string]bool, bool) { return snapshotHeldPaths() }
+
+// PathHeld 报告候选路径是否被在用快照覆盖（含 /tmp ↔ /private/tmp 软链解析）。
+func PathHeld(held map[string]bool, candidate string) bool { return pathHeld(held, candidate) }
+
 func dedupeDue(home string, interval time.Duration) bool {
 	info, err := os.Stat(filepath.Join(home, "diagnostics", "space-gc", ".last-dedupe"))
 	if err != nil {

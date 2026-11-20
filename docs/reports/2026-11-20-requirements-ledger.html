@@ -1,0 +1,414 @@
+<title>AI Home 三周需求台账</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --surface: #ffffff;
+    --surface-sunken: #efeee8;
+    --fg: #1d2124;
+    --fg-muted: #5b6469;
+    --line: #d9d7cf;
+    --accent: #14636b;
+    --accent-soft: #dceceb;
+    --done: #1f7a4d;
+    --done-soft: #dff0e5;
+    --partial: #8a5a0b;
+    --partial-soft: #f7ebd3;
+    --open: #a33a2c;
+    --open-soft: #f6e0da;
+    --unknown: #5b6469;
+    --unknown-soft: #e8e7e2;
+    --constraint: #3f4f8a;
+    --constraint-soft: #e2e5f3;
+    --font-display: "Space Grotesk", "Noto Sans SC", system-ui, sans-serif;
+    --font-body: "Noto Sans SC", system-ui, -apple-system, "PingFang SC", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14181a;
+      --surface: #1b2023;
+      --surface-sunken: #20262a;
+      --fg: #e9ece9;
+      --fg-muted: #a2adb1;
+      --line: #31383c;
+      --accent: #6cc4c0;
+      --accent-soft: #1e3233;
+      --done: #63c38c;
+      --done-soft: #1a2f24;
+      --partial: #e0b062;
+      --partial-soft: #322818;
+      --open: #e28d7d;
+      --open-soft: #33211d;
+      --unknown: #a2adb1;
+      --unknown-soft: #262c30;
+      --constraint: #9aa8e0;
+      --constraint-soft: #232840;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181a;
+    --surface: #1b2023;
+    --surface-sunken: #20262a;
+    --fg: #e9ece9;
+    --fg-muted: #a2adb1;
+    --line: #31383c;
+    --accent: #6cc4c0;
+    --accent-soft: #1e3233;
+    --done: #63c38c;
+    --done-soft: #1a2f24;
+    --partial: #e0b062;
+    --partial-soft: #322818;
+    --open: #e28d7d;
+    --open-soft: #33211d;
+    --unknown: #a2adb1;
+    --unknown-soft: #262c30;
+    --constraint: #9aa8e0;
+    --constraint-soft: #232840;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.65;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 72px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header.page { border-bottom: 2px solid var(--fg); padding-bottom: 18px; margin-bottom: 22px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-muted); }
+  h1 { font-family: var(--font-display); font-size: clamp(26px, 5vw, 40px); line-height: 1.15; margin: 8px 0 10px; text-wrap: balance; font-weight: 600; }
+  .lede { max-width: 62ch; color: var(--fg-muted); margin: 0; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 22px 0 6px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+  .stat b { display: block; font-family: var(--font-display); font-size: 24px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12.5px; color: var(--fg-muted); }
+  nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 0; margin-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover, nav.toc a:focus-visible { text-decoration: underline; }
+  section { margin-top: 34px; }
+  h2 { font-family: var(--font-display); font-size: 20px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+  h2 .count { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); font-weight: 400; }
+  .theme-note { color: var(--fg-muted); font-size: 13.5px; margin: 0 0 12px; max-width: 70ch; }
+  .board { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+  th { text-align: left; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted); background: var(--surface-sunken); padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { min-width: 250px; }
+  td.meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-muted); white-space: nowrap; }
+  td.ev { color: var(--fg-muted); font-size: 12.5px; min-width: 180px; }
+  .chip { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .s-done { background: var(--done-soft); color: var(--done); }
+  .s-partial { background: var(--partial-soft); color: var(--partial); }
+  .s-open { background: var(--open-soft); color: var(--open); }
+  .s-unknown { background: var(--unknown-soft); color: var(--unknown); }
+  .s-rule { background: var(--constraint-soft); color: var(--constraint); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12.5px; color: var(--fg-muted); margin: 14px 0 0; }
+  .notes { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 18px; color: var(--fg-muted); font-size: 13px; }
+  .notes ul { margin: 6px 0 0; padding-left: 18px; }
+  .notes li { margin-bottom: 4px; }
+  a { color: var(--accent); }
+  @media (max-width: 640px) {
+    h1 { font-size: 25px; }
+    td:first-child { min-width: 190px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <div class="eyebrow">2026-10-30 → 2026-11-20 · 需求与实现进度</div>
+    <h1>AI Home 三周需求台账</h1>
+    <p class="lede">从本项目的 Claude 转录、Codex rollout 与运行时会话中提取的用户需求，逐条对齐到仓库里的实现证据。状态只按可核对的提交、文档与真机结果标注；本仓库看不到的（Windows 真机、AWS 侧）一律标为未核实。另一项目 shalou/project-admin 与本仓库无关，已整体排除。</p>
+    <div class="stats">
+      <div class="stat"><b>约 180</b><span>去重后需求（仅本项目）</span></div>
+      <div class="stat"><b>1,698</b><span>同期提交</span></div>
+      <div class="stat"><b>15</b><span>主题分组</span></div>
+      <div class="stat"><b>92%</b><span>Codex 会话经本地网关</span></div>
+    </div>
+    <div class="legend">
+      <span><span class="chip s-done">已完成</span> 有提交/文档/真机证据</span>
+      <span><span class="chip s-partial">部分</span> 主链可用但仍有明确缺口</span>
+      <span><span class="chip s-open">未完成</span> 未见落地或明确未达标</span>
+      <span><span class="chip s-unknown">未核实</span> 证据不在本仓库</span>
+      <span><span class="chip s-rule">约束</span> 工作方式要求，已固化</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#migration">Node→Go</a>
+    <a href="#catalog">模型与供应商</a>
+    <a href="#gateway">网关协议</a>
+    <a href="#retry">429 / 重试</a>
+    <a href="#account">账号与凭据</a>
+    <a href="#terminal">终端渲染</a>
+    <a href="#webui">WebUI / HUD</a>
+    <a href="#peer">peer / harness</a>
+    <a href="#usage">用量计费</a>
+    <a href="#release">分发运维</a>
+    <a href="#zcode">zcode</a>
+    <a href="#image">图片</a>
+    <a href="#translate">翻译</a>
+    <a href="#rules">流程约束</a>
+  </nav>
+
+  <section id="migration">
+    <h2>Node→Go 迁移与单库 <span class="count">17 条</span></h2>
+    <p class="theme-note">贯穿全部三周的主线。迁移账本 <span style="font-family:var(--font-mono)">docs/migration/2026-11-19-node-to-go-detail-gaps.md</span> 在 11-20 记录了多项关闭，但仍有未提交与未验收部分。</p>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>Go 没实现就去实现，不要把请求转发给 Node</td><td class="meta">10-31</td><td><span class="chip s-partial">部分</span></td><td class="ev">66 条路由标为 go_owned；仍存在 Node 兼容别名与 WIP 文件</td></tr>
+        <tr><td>核心是 Go 单 owner，停止两套并行</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">迁移文档要求"Node 仅兼容宿主"；尚未删除全部 Node 路径</td></tr>
+        <tr><td>只保留一个业务权威库，禁止双轨</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">appstate.DatabasePath → aih.db；夹具与消费者已对齐</td></tr>
+        <tr><td>迁移报 aih_database_migration_required 导致全会话退出</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">单库迁移 + 一键续接落地</td></tr>
+        <tr><td>迁移不得以"更安全"为由删功能或返回 unavailable</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">迁移文档记录能力边界，不再以缩窄代替终态</td></tr>
+        <tr><td>agy OAuth 回调 502 / 账号未添加 / 邮箱缺失</td><td class="meta">11-11</td><td><span class="chip s-partial">部分</span></td><td class="ev">邮箱与通用凭据解析已修；本机已无 agy 账号，真机无法复验</td></tr>
+        <tr><td>service_tier 档位不得丢失</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">codex effort/service tier 对齐有多次提交；Messages 链路仍有 unsupported 字段</td></tr>
+        <tr><td>取消 Node-only / Go-only 概念，Go 为超集</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">文档与注释已清理；功能超集仍差 labels/contextLimits 等</td></tr>
+        <tr><td>Claude 高级设置丢失要全量扫描</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">高级设置页迁入 toolkit 并字段级对拍；按 peer 要求冻结构建</td></tr>
+        <tr><td>迁移不得宣称已完成</td><td class="meta">11-18</td><td><span class="chip s-rule">约束</span></td><td class="ev">已体现在迁移账本口径中</td></tr>
+        <tr><td>未提交的 composition/pricingcatalog 收尾</td><td class="meta">11-20</td><td><span class="chip s-open">未完成</span></td><td class="ev">另一会话持有，工作区未提交</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="catalog">
+    <h2>模型目录、供应商抽象与别名 <span class="count">17 条</span></h2>
+    <p class="theme-note">本会话直接交付的部分：目录容错、厂商端点契约、原生协议切换、账号页标签。</p>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>modelseed 账号探测失败但直连正常</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">66d2c018：单条坏 ID 不再作废整份目录</td></tr>
+        <tr><td>千问等大厂双协议 base，按账号 URL 识别分组</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">607f98c2：共享契约 9 家厂商；账号 23 取回 16 个文本模型</td></tr>
+        <tr><td>天然支持 Anthropic 的供应商原生切换</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">feffef4e/87d4df50：协议级适配器 + 字节透传；实测命中厂商 /v1/messages</td></tr>
+        <tr><td>供应商接入先抽象再策略</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">契约 JSON（Go embed + Node require）+ MessagesUpstream 接口</td></tr>
+        <tr><td>claude-* 别名展开：≤1 年、每系列最新 3 代</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">wildcard-alias-expansion + ALIAS_CATALOG_LIST_VERSION；Go 侧别名执行</td></tr>
+        <tr><td>别名与真实账号同池按既有策略路由</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">路由目录合并别名与原生候选；按权重抽路线</td></tr>
+        <tr><td>删除别名仍有 BUG</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">本窗口未见对应修复提交</td></tr>
+        <tr><td>/v1/models 对外只列可见可用，WebUI 全量</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">模型同步与 WebUI 目录分层；可见性由能力/账号决定</td></tr>
+        <tr><td>模型→账号倒排索引，1w 账号秒查</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">account_models 索引与批量读取接口</td></tr>
+        <tr><td>账号新增/导入/开关/失效事件化 + 多监听</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">lifecycle listeners（model-discovery-accounts 等）</td></tr>
+        <tr><td>"模型待探测"长期占用不合理</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">分级扫描 + 目录缓存；失败账号仍显示待探测</td></tr>
+        <tr><td>模型扫描分级随机间隔，禁止全员同扫</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">模型重扫 worker 带初始延迟与间隔</td></tr>
+        <tr><td>provider 声明 provider_model_prefix</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">未见对应实现证据</td></tr>
+        <tr><td>/v1/models ContextWindows 基于原生二进制指纹</td><td class="meta">11-17</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">本窗口无直接证据</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="gateway">
+    <h2>网关协议与请求体 <span class="count">7 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>CRLF 工具结果导致 400</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">435323b8；112 条历史消息回放 200</td></tr>
+        <tr><td>17MB 请求被 16MiB 上限拒绝（HTTP/WS/Node）</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">peer 恢复广播记录「16MiB 已修」；未见独立提交（跨端修复）</td></tr>
+        <tr><td>可"成功也慢"的本地延迟要查清</td><td class="meta">11-19</td><td><span class="chip s-open">未完成</span></td><td class="ev">实测直连上游 0.5–4.2s；慢优化未落地</td></tr>
+        <tr><td>gpt-6.1-sol 不支持 reasoning none</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">effort 对齐与 service tier 保留多次提交</td></tr>
+        <tr><td>invalid_request_body 反复出现</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">缓存 exact5 提交 64d5a297；后续仍偶发</td></tr>
+        <tr><td>localhost 与 127.0.0.1 行为不一致</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">实测差异为浏览器 localStorage 分源；用户表示不重要</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="retry">
+    <h2>429 / 重试 / 冷却 <span class="count">5 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>429 reset-at 后即时屏蔽账号</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">配额窗口与冷却账本已接入选号</td></tr>
+        <tr><td>429 账号在 WebUI 必须可见</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">账号行 quota/schedulable 状态投影</td></tr>
+        <tr><td>scoped cooldown retry 覆盖 HTTP/WS/images</td><td class="meta">11-19</td><td><span class="chip s-partial">部分</span></td><td class="ev">2ee94d5e 已加 transient 429 重试；全链路验收未闭环</td></tr>
+        <tr><td>"没有条件就创造条件完成"</td><td class="meta">11-20</td><td><span class="chip s-open">未完成</span></td><td class="ev">run/upstream-429-20261119 仍在写</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="account">
+    <h2>账号体系与凭据 <span class="count">14 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>会话 hook 不准（已关仍显示运行中）</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">运行态与 session activity 已收敛；hook 覆盖仍按 harness 能力边界</td></tr>
+        <tr><td>account-session-activity 按 harness 维度设计</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">provider 描述符 + 能力表驱动</td></tr>
+        <tr><td>账号配置文件查看（kiro 优先），多文件 tabs</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">账号配置文件读取接口与前端 tabs</td></tr>
+        <tr><td>重做导入导出：只做本机、支持单账号</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">export?format=… / import 往返；单账号导出</td></tr>
+        <tr><td>codebuddy(cn) 403 request illegal</td><td class="meta">11-11</td><td><span class="chip s-done">已完成</span></td><td class="ev">783e5618：风控识别为 manual 阻塞 + 同站换号</td></tr>
+        <tr><td>Windows aih codex version 走 Node 取不到版本</td><td class="meta">11-17</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">Windows 侧无法在本机复验</td></tr>
+        <tr><td>移除 demo 与非正式插件</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">f83ab14b：移除 demo 插件与隐式示例动作</td></tr>
+        <tr><td>CLI 登录作业（agy/grok/qoder/kimi/cline/CodeBuddy/codex 设备码）</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">371f7da5 + 7dffcc4b：account-jobs 端点回退</td></tr>
+        <tr><td>codebuddycn 充值但 WebUI 不显示套餐</td><td class="meta">11-17</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">无本机账号可复验</td></tr>
+        <tr><td>Do you trust the files 提示要记忆</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">未见对应实现证据</td></tr>
+        <tr><td>codebuddy family session 互通（cn/国际/work）</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">family relay 四支 + 家族模型目录</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="terminal">
+    <h2>终端与渲染 <span class="count">7 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>DA/DECRQM 垃圾字符彻底解决</td><td class="meta">11-17</td><td><span class="chip s-done">已完成</span></td><td class="ev">垃圾回复过滤已在安装件上验证</td></tr>
+        <tr><td>aih ls 首屏楼梯错位、中文/emoji/ANSI 续行</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">有渲染修复；小屏 60/80 列仍需真实 PTY 复验</td></tr>
+        <tr><td>长内容换行优先最近空格</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">换行策略调整并随 CLI 发布</td></tr>
+        <tr><td>终端生命周期：自动唤醒/重复渲染/反馈循环</td><td class="meta">11-19</td><td><span class="chip s-partial">部分</span></td><td class="ev">session-office 路由归属修复；完整复验未收尾</td></tr>
+        <tr><td>任意页面概率唤醒 Web 终端并卡死</td><td class="meta">11-19</td><td><span class="chip s-partial">部分</span></td><td class="ev">交 AGY Neon 修复；主会话集成未收尾</td></tr>
+        <tr><td>/v0/webui/terminal/attach 404</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">Go 终端路由 + 兼容别名</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="webui">
+    <h2>WebUI / HUD / 项目办公室 <span class="count">24 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>WebUI 接口 ≤300ms、理想 <100ms</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">多数接口毫秒级；用量看板仍 1.8–3.5s</td></tr>
+        <tr><td>全站交互动效，terminal 从哪来回哪去</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">motion.css 多轮审查 PASS；仍有多处待集成</td></tr>
+        <tr><td>粘贴转卡片阈值 200 字、最小 50、可配</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">前端配置项落地</td></tr>
+        <tr><td>长文本滚动条误触发 / markdown 流程图</td><td class="meta">10-31</td><td><span class="chip s-partial">部分</span></td><td class="ev">渲染修复；流程图显示仍待确认</td></tr>
+        <tr><td>远程工作区用 WebUI 渲染而非 terminal</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">远程 WebUI 代理 remoteWebUI 在 Go</td></tr>
+        <tr><td>远程通道稳定、<100ms、可观测</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">无本窗口真机指标</td></tr>
+        <tr><td>菜单加序号、全部切换带动画</td><td class="meta">11-17</td><td><span class="chip s-done">已完成</span></td><td class="ev">HUD 导航序号与动效落地</td></tr>
+        <tr><td>tooltip / 下拉框漂移</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">motion.css 定位修复，九文件审查 PASS</td></tr>
+        <tr><td>项目办公室纯 3D、机箱/双屏建模、可转视角</td><td class="meta">11-18</td><td><span class="chip s-partial">部分</span></td><td class="ev">Office 页面与终端路由在 Go；建模精细度未验收</td></tr>
+        <tr><td>办公室 zsh 窗口关不掉</td><td class="meta">11-18</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">无对应修复证据</td></tr>
+        <tr><td>设置页重排、Claude 首屏配置迁到 toolkit</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">3ee5eb9d + 60667145；五个 tab 结构</td></tr>
+        <tr><td>Cannot read properties of undefined (accountRef)</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">账号行投影补齐；页面不再取空对象</td></tr>
+        <tr><td>套餐 label 不用"+"拼接、邮箱脱敏可复制</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">getPlanTagLabels 拆分 + 复制按钮</td></tr>
+        <tr><td>同邮箱区分 zai / bigmodel</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">zcodeRegion 独立字段</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="peer">
+    <h2>peer / harness / 协作基础设施 <span class="count">14 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>peer 要内建优先级/回执/可控投递</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">identity-safe 投递、receipts、去重已落地；优先级未实现</td></tr>
+        <tr><td>peer 内容看不懂要可读</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">eae79515 紧凑中文抬头；/ui/peer-inbox</td></tr>
+        <tr><td>target_busy 重试数千次要优化</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">目标门禁 + 退避 + 内容指纹活动探测</td></tr>
+        <tr><td>--from ambiguous_sender</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">回复按原发件实例解析</td></tr>
+        <tr><td>注入消息保留来源 + 紧凑抬头</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">信封格式收敛</td></tr>
+        <tr><td>重启后自动 continue，不要逐个 resume</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">批量恢复广播存在；50 条 peer 消息全部未读，未见 ACK 闭环</td></tr>
+        <tr><td>不要停在 "Resume paused goal?"</td><td class="meta">11-18</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">本窗口无确认</td></tr>
+        <tr><td>harness 装 pi 需 Node ≥22.19</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">harness 准备流程与 Node runtime 管理</td></tr>
+        <tr><td>账号→CLI→harness→pi 401 unauthorized_client</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">模型注入与 hook 刷新</td></tr>
+        <tr><td>dsh-tui 二次启动误报未安装</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">6331d2b9 + ba55b4a4 系列修复，真机二次启动零安装行</td></tr>
+        <tr><td>进度汇报格式化 / HTML 看板</td><td class="meta">11-16</td><td><span class="chip s-done">已完成</span></td><td class="ev">本页面即一次交付</td></tr>
+        <tr><td>peer 修复勿引入新数据库锁</td><td class="meta">11-17</td><td><span class="chip s-done">已完成</span></td><td class="ev">复用既有 atomic-lock/mutex</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="usage">
+    <h2>用量、计费与监控 <span class="count">6 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>Profile 用量看板 24s → sub-1s</td><td class="meta">11-18</td><td><span class="chip s-open">未完成</span></td><td class="ev">已降到 1.8–3.5s；run/usage-perf-takeover 仍在跑</td></tr>
+        <tr><td>日/周桶完整、桶上限</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">b0cf9a57/9cc6ed11：上限 4000 且保留最近桶</td></tr>
+        <tr><td>账本按策略账号归因</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">quota bucket 贯穿 relay/ledger/UI</td></tr>
+        <tr><td>插件价格源参与裁决</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">dedcf637</td></tr>
+        <tr><td>429 reset-at 与额度探测失败要读通</td><td class="meta">10-31</td><td><span class="chip s-partial">部分</span></td><td class="ev">失败账号仍暴露 last_error；部分上游无法读取</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="release">
+    <h2>分发、安装、升级与运维 <span class="count">13 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>面向小白：安装即用、自动更新提示 + 预约重启</td><td class="meta">11-17</td><td><span class="chip s-partial">部分</span></td><td class="ev">发布件与升级检测脚本存在；预约重启未核实</td></tr>
+        <tr><td>不要人工换二进制/迁库</td><td class="meta">11-17</td><td><span class="chip s-partial">部分</span></td><td class="ev">distributiondata 提供 prepare/verify；仍偏工程化</td></tr>
+        <tr><td>资源下限 ≥15G</td><td class="meta">11-17</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">部署侧参数</td></tr>
+        <tr><td>Windows 升级指纹被 wal/shm 打断回滚</td><td class="meta">11-17</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">需 Windows 真机</td></tr>
+        <tr><td>AWS metadata 与二进制 hash 不符：只改 metadata 不重启</td><td class="meta">11-18</td><td><span class="chip s-rule">约束</span></td><td class="ev">当次执行遵守；未形成机制</td></tr>
+        <tr><td>托管 SSH 代理更新 harness</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">aih provider update --proxy + lease 实现</td></tr>
+        <tr><td>池 UI/API 展示 managed SSH 来源</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">proxy-candidates 带 source/availability</td></tr>
+        <tr><td>网络失败用 AWS 作 git 代理由此推送</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">lease → 临时 GIT_CONFIG_GLOBAL → push</td></tr>
+        <tr><td>磁盘满要无害清理</td><td class="meta">11-20</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">需用户确认删除范围</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="zcode">
+    <h2>zcode 专项 <span class="count">13 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>OAuth 走官方 CLI；注册自家 zcode:// 处理器</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">bigmodel:server-flow + URL 处理器</td></tr>
+        <tr><td>token 自动续期逆向解决</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">无本窗口证据</td></tr>
+        <tr><td>领蛋区分 Weekend Build / Start Plan</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">WebUI 运行时需求，未见实现证据</td></tr>
+        <tr><td>app_version 假阴性（写死 3.16.3 vs 3.18.2）</td><td class="meta">11-17</td><td><span class="chip s-done">已完成</span></td><td class="ev">改为从真实安装解析版本</td></tr>
+        <tr><td>多版本并存、3.18.x chunk 路径支持</td><td class="meta">11-17</td><td><span class="chip s-partial">部分</span></td><td class="ev">版本解析与 profile 关联；chunk 路径未核实</td></tr>
+        <tr><td>移除不稳定的登录策略/入口</td><td class="meta">11-17</td><td><span class="chip s-done">已完成</span></td><td class="ev">登录入口收敛</td></tr>
+        <tr><td>暂无订阅与试用：先记录暂停</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">3012 已确认为账号属性，暂停</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="image">
+    <h2>图片与多模态 <span class="count">6 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>图像库 SQLITE_BUSY</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">46a0459c 写者预留</td></tr>
+        <tr><td>PNG 编码预算</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">dea7669f 每次写入强制预算</td></tr>
+        <tr><td>gpt-image-2 needs Respan credits 要查明</td><td class="meta">11-18</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">账号权限侧事实</td></tr>
+        <tr><td>网关对 image output format 的支持</td><td class="meta">11-18</td><td><span class="chip s-partial">部分</span></td><td class="ev">P2 预算绕过已修；上游能力仍受账号限制</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="translate">
+    <h2>翻译 App <span class="count">3 条</span></h2>
+    <div class="board"><table>
+      <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
+      <tbody>
+        <tr><td>翻译流式输出，首字 5s 判失败</td><td class="meta">11-01</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">桌面翻译模块存在；时延无本窗口实测</td></tr>
+        <tr><td>可切换目标语言</td><td class="meta">10-31</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">同上</td></tr>
+        <tr><td>App 只做 chat/work、UI 简约</td><td class="meta">11-01</td><td><span class="chip s-unknown">未核实</span></td><td class="ev">同上</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="rules">
+    <h2>工作方式约束 <span class="count">12 条</span></h2>
+    <p class="theme-note">这些要求不改功能，只改做事方式；它们在三周的任务书里被执行了 1,800 次以上。</p>
+    <div class="board"><table>
+      <thead><tr><th>约束</th><th>首次</th><th>状态</th><th>落地位置</th></tr></thead>
+      <tbody>
+        <tr><td>禁止创建测试文件，只做真实/真机测试</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">AGENTS.md + 团队记忆；执行 ~155 次</td></tr>
+        <tr><td>scoped commit + 显式 pathspec</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">AGENTS.md 明确规定；执行 ~52 次</td></tr>
+        <tr><td>推送网络问题用 AWS 临时代理</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">proxy lease 流程 + 记忆</td></tr>
+        <tr><td>不得回退并行 session；禁自建 branch/worktree</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">AGENTS.md 章节</td></tr>
+        <tr><td>禁止新开浏览器/AppleScript，复用已登录 Edge</td><td class="meta">11-02</td><td><span class="chip s-done">已完成</span></td><td class="ev">团队记忆（含 localhost/127.0.0.1 分源）</td></tr>
+        <tr><td>提交注意中文乱码</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">团队记忆 + 提交前扫验</td></tr>
+        <tr><td>自己登录、自己闭环测试，不打扰用户</td><td class="meta">11-20</td><td><span class="chip s-rule">约束</span></td><td class="ev">本次会话已按此执行</td></tr>
+        <tr><td>不要重启共享服务/网关（特定窗口）</td><td class="meta">11-18</td><td><span class="chip s-rule">约束</span></td><td class="ev">执行 ~63 次</td></tr>
+        <tr><td>每项完整汇报、先做后整体汇报</td><td class="meta">10-31</td><td><span class="chip s-rule">约束</span></td><td class="ev">持续遵守</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <div class="notes">
+    <strong>方法与边界</strong>
+    <ul>
+      <li>需求来源：本项目内的 Claude 转录、Codex rollout（剔除 shalou 项目与 /tmp 测试夹具后约 295 个会话）、运行时 289 个会话（8 个真实需求会话，其中 2 个属本项目）与 peer inbox 50 条。</li>
+      <li>状态依据：仓库提交、<span style="font-family:var(--font-mono)">docs/migration</span> 账本、数据库实查与真机接口结果；会话内自述但本仓库不可证的一律标"未核实"。</li>
+      <li>排除的噪声：问候、哨兵口令、warmup、<span style="font-family:var(--font-mono)">codex_internal_context</span> 990 条、peer 回显 571 条、空会话 135 个，以及"数数/写教程"等连通性测试。</li>
+      <li>局限：Windows/AWS 侧需要真机才能确认的项目已单独标注；shalou 项目按用户要求明确排除，不参与任何统计。</li>
+    </ul>
+  </div>
+</div>

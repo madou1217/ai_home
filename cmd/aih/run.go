@@ -85,6 +85,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	providerID := arguments[0]
+	// 发行包的 install.sh / deploy-server 都以 `aih install` 作为唯一安装入口。
+	if providerID == "install" {
+		return runInstallCommand(ctx, arguments[1:], runtime)
+	}
 	if providerID == "__complete" {
 		return runCompleteEntry(arguments[1:], runtime)
 	}

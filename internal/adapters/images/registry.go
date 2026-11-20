@@ -34,17 +34,25 @@ type Registry struct {
 	codex       CodexStrategy
 	agy         AgyStrategy
 	passthrough PassthroughStrategy
+	// native 是「有专用图片策略」的 Provider 表：解析与能力判定读同一张表，
+	// 新增 Provider 只登记一次，不会出现「能解析但报无策略」或反过来。
+	native map[string]Strategy
 }
 
 // NewRegistry 创建图片策略注册表。
 //
 // fetcher 用于取回上游自己的图片链接（同源回取）；为 nil 时只保留上游链接。
 func NewRegistry(codexBaseURL string, agyEndpoint string, fetcher ImageFetcher) Registry {
-	return Registry{
+	registry := Registry{
 		codex:       NewCodexStrategy(codexBaseURL),
 		agy:         AgyStrategy{Endpoint: agyEndpoint},
 		passthrough: PassthroughStrategy{Fetcher: fetcher},
 	}
+	registry.native = map[string]Strategy{
+		"codex": registry.codex,
+		"agy":   registry.agy,
+	}
+	return registry
 }
 
 // Resolve 返回服务该 (Provider, 账号) 的策略。
@@ -55,25 +63,31 @@ func (registry Registry) Resolve(provider string, account Account) Strategy {
 	if account.APIKeyMode {
 		return registry.passthrough
 	}
-	switch normalizeProvider(provider) {
-	case "codex":
-		if !account.APIKeyMode && account.AccessToken != "" {
-			return registry.codex
+	if strategy, found := registry.nativeStrategies()[normalizeProvider(provider)]; found {
+		if account.AccessToken != "" {
+			return strategy
 		}
 		return registry.passthrough
-	case "agy":
-		if !account.APIKeyMode && account.AccessToken != "" {
-			return registry.agy
-		}
+	}
+	// 通用策略优先：任何厂商只要账号带 OpenAI 兼容 base URL 与密钥，就先按
+	// /v1/images/{generations|edits} 试通（grok、阿里等新接入无需先写专用策略）；
+	// 跑不通再补 Provider 专用实现。
+	if strings.TrimSpace(account.BaseURL) != "" && strings.TrimSpace(account.APIKey) != "" {
 		return registry.passthrough
-	default:
-		// 通用策略优先：任何厂商只要账号带 OpenAI 兼容 base URL 与密钥，就先按
-		// /v1/images/{generations|edits} 试通（grok、阿里等新接入无需先写专用策略）；
-		// 跑不通再补 Provider 专用实现。
-		if strings.TrimSpace(account.BaseURL) != "" && strings.TrimSpace(account.APIKey) != "" {
-			return registry.passthrough
-		}
-		return NewUnsupportedStrategy(provider)
+	}
+	return NewUnsupportedStrategy(provider)
+}
+
+// nativeStrategies 返回有专用策略的 Provider 表。
+//
+// NewRegistry 会预先建表；零值 Registry 回落到默认两条，保持既有解析语义。
+func (registry Registry) nativeStrategies() map[string]Strategy {
+	if registry.native != nil {
+		return registry.native
+	}
+	return map[string]Strategy{
+		"codex": registry.codex,
+		"agy":   registry.agy,
 	}
 }
 
@@ -502,11 +516,8 @@ func retryable(err error) bool {
 // 它只用来把「能力缺失」与「暂时没有账号」分开：前者是 400，后者是 503。api-key 账号走
 // passthrough，不依赖这里的原生策略，因此不进这张表。
 func (registry Registry) HasProviderStrategy(provider string) bool {
-	switch normalizeProvider(provider) {
-	case "codex", "agy":
-		return true
-	}
-	return false
+	_, found := registry.nativeStrategies()[normalizeProvider(provider)]
+	return found
 }
 
 // ProviderFromRequest 返回请求显式声明的 Provider。

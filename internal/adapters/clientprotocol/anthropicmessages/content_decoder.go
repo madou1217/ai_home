@@ -401,7 +401,13 @@ func decodeToolResultPayload(
 
 	var blocks []json.RawMessage
 	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return nil, invalidField(field)
+		// inline-tools beta 允许 tool_result.content 直接是单个内容块对象，
+		// 客户端（Claude Code 2.1.326）对 tool_reference 就使用这种形状。
+		var single json.RawMessage
+		if objectErr := json.Unmarshal(raw, &single); objectErr != nil {
+			return nil, invalidField(field)
+		}
+		blocks = []json.RawMessage{raw}
 	}
 	contents := make([]inference.Content, 0, len(blocks))
 	for index, block := range blocks {
@@ -419,6 +425,10 @@ func decodeToolResultPayload(
 			decoded, err = decodeImageContent(block, blockField)
 		case "document":
 			decoded, err = decodeDocumentContent(block, blockField)
+		case "tool_reference":
+			// 延迟加载工具的引用只是客户端提示，Canonical 没有对应语义；
+			// 它已经落进会话历史，拒收会让该会话之后每一轮都 400，直接跳过。
+			continue
 		default:
 			return nil, unsupportedField(decodediag.Discriminator(blockField+".type", header.Type))
 		}

@@ -5,7 +5,9 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const lockPath = path.join(root, '.aih-web-build.lock');
+// 锁放到共享缓存旁边：不同 worktree 构建同一个项目时串行，避免并发写同一份 webpack 缓存。
+const { buildQueueLockPath, pruneWebpackCaches } = require('./shared-cache.cjs');
+const lockPath = buildQueueLockPath(root);
 const pollMs = 250;
 const maxWaitMs = 30 * 60 * 1000;
 
@@ -34,6 +36,7 @@ function isProcessAlive(pid) {
 }
 
 async function acquireLock() {
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
   const startedAt = Date.now();
   while (true) {
     try {
@@ -81,6 +84,8 @@ function run(command, args, env = process.env) {
 async function main() {
   await acquireLock();
   try {
+    // 共享缓存只增不减会重新变成垃圾场：每次构建顺手清掉长期没动的项目缓存。
+    pruneWebpackCaches();
     // 内层交给 build.cjs：低内存主机上的堆自适应（--max-old-space-size / 低内存时
     // COMPRESS=none）与「Umi 构建结束后回收空闲子进程」都在那里实现；外层保留本文件的
     // **等待式**串行锁（并发构建排队而不是直接失败）与 SW 缓存戳。

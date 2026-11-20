@@ -85,7 +85,9 @@ function effectiveHeapMiB(env, memoryBytes) {
 }
 
 function acquireBuildLock() {
-  const lockDir = path.resolve('node_modules/.cache/aih-web-build.lock');
+  // 与 build-locked 的排队锁分开：这是"直接跑 build.cjs"时的 fail-fast 互斥锁。
+  const { buildMutexLockDir } = require('./shared-cache.cjs');
+  const lockDir = buildMutexLockDir(path.resolve(__dirname, '..'));
   fs.mkdirSync(path.dirname(lockDir), { recursive: true });
   try {
     fs.mkdirSync(lockDir);

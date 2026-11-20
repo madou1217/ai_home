@@ -3,6 +3,11 @@ import MonacoEditorWebpackPlugin from "monaco-editor-webpack-plugin";
 import path from "node:path";
 import routes from "./routes";
 
+// 构建缓存按"项目"共享（跨 worktree 一份），不再写进每个 node_modules/.cache。
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { webpackCacheDir } = require("../scripts/shared-cache.cjs");
+const webpackCacheDirectory = webpackCacheDir(path.resolve(__dirname, ".."));
+
 const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
 const goAccountsPreviewManagementKey = process.env.AIH_GO_ACCOUNTS_PREVIEW_MANAGEMENT_KEY;
 const publicPath = "/ui/";
@@ -133,7 +138,7 @@ export default defineConfig({
     // loop reuse the expensive Monaco/Ant Design compilation work.
     memo.set('cache', {
       type: 'filesystem',
-      cacheDirectory: path.resolve(process.cwd(), 'node_modules/.cache/aih-webpack'),
+      cacheDirectory: webpackCacheDirectory,
       compression: false,
       idleTimeout: 0,
       idleTimeoutForInitialStore: 0,
@@ -181,9 +186,9 @@ export default defineConfig({
   // keeps the same split points but lets the browser load styles when their
   // route chunk is actually mounted.
   routeLoader: { moduleType: "cjs" },
-  // Keep webpack's persistent cache in a stable, project-local location. Umi
+  // Keep webpack's persistent cache in the shared per-project location. Umi
   // maps this directory to its bundler-webpack cache before chainWebpack runs.
-  cacheDirectoryPath: path.resolve(process.cwd(), "node_modules/.cache/aih-webpack"),
+  cacheDirectoryPath: webpackCacheDirectory,
   favicons: [`${publicPath}ai-home-logo.png`],
   // 首帧前写入主题，避免深色 HUD 默认主题出现浅色闪屏。键名与 src/services/theme-persistence.ts 一致。
   headScripts: [

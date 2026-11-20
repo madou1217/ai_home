@@ -33,21 +33,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	agycli "github.com/madou1217/ai_home/internal/adapters/agy/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
-	clinecli "github.com/madou1217/ai_home/internal/adapters/cline/clilaunch"
 	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
-	geminicli "github.com/madou1217/ai_home/internal/adapters/gemini/clilaunch"
-	grokcli "github.com/madou1217/ai_home/internal/adapters/grok/clilaunch"
-	kimicli "github.com/madou1217/ai_home/internal/adapters/kimi/clilaunch"
-	kirocli "github.com/madou1217/ai_home/internal/adapters/kiro/clilaunch"
-	opencodecli "github.com/madou1217/ai_home/internal/adapters/opencode/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
-	qodercli "github.com/madou1217/ai_home/internal/adapters/qoder/clilaunch"
-	zcodecli "github.com/madou1217/ai_home/internal/adapters/zcode/clilaunch"
 	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
@@ -244,14 +235,6 @@ func New(ctx context.Context, options Options) (*App, error) {
 		if err != nil {
 			return fail("创建 Qoder CN 静态凭据策略失败", err)
 		}
-		qoderStrategy, err := qodercli.NewStrategy("qoder")
-		if err != nil {
-			return fail("创建 Qoder CLI 策略失败", err)
-		}
-		qodercnStrategy, err := qodercli.NewStrategy("qodercn")
-		if err != nil {
-			return fail("创建 Qoder CN CLI 策略失败", err)
-		}
 		refreshStrategies := []accountcredentials.RefreshStrategy{
 			codexOAuth,
 			claudeOAuth,
@@ -266,19 +249,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 			qoderRefresh,
 			qodercnRefresh,
 		}
-		launchStrategies := []providerlaunch.Strategy{
-			codexcli.NewStrategy(),
-			claudecli.NewStrategy(),
-			geminicli.NewStrategy(),
-			agycli.NewStrategy(),
-			grokcli.NewStrategy(),
-			clinecli.NewStrategy(),
-			kimicli.NewStrategy(),
-			zcodecli.NewStrategy(),
-			opencodecli.NewStrategy(),
-			kirocli.NewStrategy(),
-			qoderStrategy,
-			qodercnStrategy,
+		launchStrategies, err := newNativeLaunchStrategies()
+		if err != nil {
+			return fail("创建 Native Direct 策略失败", err)
 		}
 		// CodeBuddy 家族 Go 侧只消费 Node 已写入的凭据；Token 刷新仍由 Node 宿主完成。
 		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
@@ -548,16 +521,6 @@ func (app *App) Run(
 		return fmt.Errorf("执行 Provider CLI 失败: %w", err)
 	}
 	return nil
-}
-
-// supportedNativeCLIProvider 与本组合根实际注册的 Native Direct Strategy 保持一致。
-func supportedNativeCLIProvider(providerID string) bool {
-	switch providerID {
-	case "codex", "claude", "gemini", "agy", "grok", "cline", "kimi", "kiro", "opencode", "zcode", "qoder", "qodercn", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		return true
-	default:
-		return false
-	}
 }
 
 // SupportsNativeCLI 报告一个 Provider 是否已由本组合根承接原生启动。

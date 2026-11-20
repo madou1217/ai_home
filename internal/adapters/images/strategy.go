@@ -570,7 +570,10 @@ func passthroughFields(input Input) map[string]any {
 	if input.OutputCompression != nil {
 		fields["output_compression"] = *input.OutputCompression
 	}
-	if input.Moderation != "" {
+	// moderation=auto 是接口默认值；显式透传会让部分兼容端点切到原生 OAuth
+	// 生图路径（AWS proxy 实测：auto → 401 invalidated oauth token，省略则正常）。
+	// 只有低敏等非默认值才需要真正下发给上游。
+	if input.Moderation != "" && !strings.EqualFold(strings.TrimSpace(input.Moderation), "auto") {
 		fields["moderation"] = input.Moderation
 	}
 	return fields

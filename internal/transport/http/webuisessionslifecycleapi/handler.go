@@ -113,6 +113,7 @@ type Handler struct {
 	hostHomeDir string
 	providerIDs []string
 	codex       CodexDialer
+	strategies  map[string]lifecycleStrategy
 
 	capMu       sync.Mutex
 	capProbeMu  sync.Mutex
@@ -130,12 +131,18 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{
+	handler := &Handler{
 		authorizer:  dependencies.Authorizer,
 		hostHomeDir: hostHomeDir,
 		providerIDs: providerIDs,
 		codex:       dependencies.Codex,
-	}, nil
+	}
+	handler.strategies = map[string]lifecycleStrategy{
+		providerCodex:  codexLifecycle{handler: handler},
+		providerClaude: legacyFileLifecycle{provider: providerClaude, archive: handler.archiveClaudeFile, restore: handler.restoreClaudeFile},
+		providerGemini: legacyFileLifecycle{provider: providerGemini, archive: handler.archiveGeminiFile, restore: handler.restoreGeminiFile},
+	}
+	return handler, nil
 }
 
 // resolveProviderIDs 归一 Provider 列表：显式列表优先，否则读 Provider 目录。

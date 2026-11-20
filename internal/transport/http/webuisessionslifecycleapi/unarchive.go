@@ -5,11 +5,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 const (
-	codeLegacyArchiveNotFound       = "legacy_archive_not_found"
+	codeLegacyArchiveNotFound        = "legacy_archive_not_found"
 	codeLegacyArchiveRestoreConflict = "legacy_archive_restore_conflict"
 	codeSessionUnarchiveUnsupported  = "session_unarchive_unsupported"
 	codeCodexUnarchiveFailed         = "codex_unarchive_failed"
@@ -37,55 +36,7 @@ func (handler *Handler) serveUnarchive(response http.ResponseWriter, request *ht
 }
 
 func (handler *Handler) unarchive(ctx context.Context, provider, sessionID, origin string) (archiveResult, error) {
-	useLegacy := strings.EqualFold(strings.TrimSpace(origin), originLegacy)
-	if useLegacy || provider == providerClaude || provider == providerGemini {
-		return handler.unarchiveLegacy(provider, sessionID)
-	}
-	if provider == providerCodex {
-		if err := handler.unarchiveCodexThread(ctx, sessionID); err != nil {
-			return archiveResult{}, err
-		}
-		return archiveResult{
-			Provider:        providerCodex,
-			SessionID:       sessionID,
-			NativeSessionID: sessionID,
-			Origin:          originNative,
-		}, nil
-	}
-	return archiveResult{}, &lifecycleError{
-		status:  http.StatusUnprocessableEntity,
-		code:    codeSessionUnarchiveUnsupported,
-		message: provider + " 不支持原生恢复",
-	}
-}
-
-func (handler *Handler) unarchiveLegacy(provider, sessionID string) (archiveResult, error) {
-	switch provider {
-	case providerClaude:
-		if err := handler.restoreClaudeFile(sessionID); err != nil {
-			return archiveResult{}, err
-		}
-		return archiveResult{
-			Provider:  providerClaude,
-			SessionID: sessionID,
-			Origin:    originLegacy,
-		}, nil
-	case providerGemini:
-		if err := handler.restoreGeminiFile(sessionID); err != nil {
-			return archiveResult{}, err
-		}
-		return archiveResult{
-			Provider:  providerGemini,
-			SessionID: sessionID,
-			Origin:    originLegacy,
-		}, nil
-	default:
-		return archiveResult{}, &lifecycleError{
-			status:  http.StatusUnprocessableEntity,
-			code:    codeSessionUnarchiveUnsupported,
-			message: provider + " 不支持原生恢复",
-		}
-	}
+	return handler.lifecycleStrategyFor(provider).Unarchive(ctx, sessionID, origin)
 }
 
 func (handler *Handler) restoreClaudeFile(sessionID string) error {

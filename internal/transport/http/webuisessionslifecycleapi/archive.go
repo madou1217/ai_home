@@ -40,29 +40,7 @@ type archiveResult struct {
 // Codex 走 app-server 的 thread/archive；其余 Provider 没有归档事实源，
 // 返回 422 而不是假装成功。
 func (handler *Handler) archive(ctx context.Context, provider, sessionID string) (archiveResult, error) {
-	switch provider {
-	case providerClaude:
-		if err := handler.archiveClaudeFile(sessionID); err != nil {
-			return archiveResult{}, err
-		}
-		return archiveResult{Provider: provider, SessionID: sessionID, NativeSessionID: sessionID, Origin: originLegacy}, nil
-	case providerGemini:
-		if err := handler.archiveGeminiFile(sessionID); err != nil {
-			return archiveResult{}, err
-		}
-		return archiveResult{Provider: provider, SessionID: sessionID, NativeSessionID: sessionID, Origin: originLegacy}, nil
-	case providerCodex:
-		if err := handler.archiveCodexThread(ctx, sessionID); err != nil {
-			return archiveResult{}, err
-		}
-		return archiveResult{Provider: provider, SessionID: sessionID, NativeSessionID: sessionID, Origin: originNative}, nil
-	default:
-		return archiveResult{}, &lifecycleError{
-			status:  422,
-			code:    codeSessionArchiveUnsupported,
-			message: provider + " 不支持原生归档",
-		}
-	}
+	return handler.lifecycleStrategyFor(provider).Archive(ctx, sessionID)
 }
 
 // archiveCodexThread 通过 app-server 归档线程。

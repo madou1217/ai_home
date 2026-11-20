@@ -36,15 +36,8 @@ const (
 func (handler *Handler) capabilities(ctx context.Context) map[string]providerCapability {
 	result := make(map[string]providerCapability, len(handler.providerIDs))
 	for _, provider := range handler.providerIDs {
-		switch provider {
-		case providerCodex:
-			result[provider] = handler.codexCapability(ctx)
-		case providerClaude, providerGemini:
-			// 会话文件归档由本包实现：三个动作都作用在 Provider 自己的会话目录上。
-			result[provider] = fileArchiveCapability(provider)
-		default:
-			result[provider] = unsupportedCapability(provider)
-		}
+		// 能力声明与归档/恢复动作共用同一个策略对象，避免两处各自判断支持范围。
+		result[provider] = handler.lifecycleStrategyFor(provider).Capability(ctx)
 	}
 	return result
 }

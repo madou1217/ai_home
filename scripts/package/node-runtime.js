@@ -47,19 +47,27 @@ function run(command, args, options = {}) {
 
 async function fetchWithRetry(url, options = {}) {
   const retries = Number(options.retries) || 4;
+  // 这个超时只负责“拿到响应头”，拿到后必须清掉：AbortSignal.timeout 的计时器
+  // 会一直跟到响应体，40MiB 的 Node 包在慢链路上读正文超时就整包失败
+  //（真机见过 "operation was aborted due to timeout" 把整个发版构建打断）。
   const timeoutMs = Number(options.timeoutMs) || 120000;
   let lastError = null;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs);
     try {
       const response = await fetch(url, {
         redirect: 'follow',
-        signal: AbortSignal.timeout(timeoutMs)
+        signal: controller.signal
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response;
     } catch (error) {
       lastError = error;
       if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * attempt, 5000)));
+    } finally {
+      // 拿到响应头就撤掉计时器：正文读取因此不会被这个超时掐断。
+      clearTimeout(timer);
     }
   }
   throw new Error(`download failed: ${url}: ${lastError && lastError.message}`);

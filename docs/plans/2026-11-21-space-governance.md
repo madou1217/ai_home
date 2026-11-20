@@ -8,8 +8,9 @@
 
 - 实现：`internal/runtime/spacegc`（规则、探测、去重），
   `internal/host/aihserver/space_gc_daemon.go`（调度）。
-- 调度：服务启动 5 分钟后首跑，之后每 6 小时一次；结果写
-  `<aiHome>/diagnostics/space-gc/last.json`，并打一行 `[space-gc]` 日志。
+- 调度：服务启动 60 秒后尝试首跑；以 `last.json` 的 mtime 做 6 小时节流——频繁重启
+  （开发/并行会话常见）不会重复扫描，也不会像 5 分钟延迟那样永远被重启打断。
+  结果写 `<aiHome>/diagnostics/space-gc/last.json`，并打一行 `[space-gc]` 日志。
 - 所有删除都先检查：目录/文件是否被进程 argv 或 cwd 引用（探测失败时只处理 7 天以上条目）。
 
 ## 2. 规则

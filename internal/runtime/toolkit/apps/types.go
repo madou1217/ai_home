@@ -63,6 +63,10 @@ type Options struct {
 	// NPMRegistry 返回当前 npm registry（工具箱镜像设置）；nil 或空串用官方源。
 	NPMRegistry func() string
 
+	// ProxyResolver 把安装/更新代理选择器解析为任务期本地 HTTP 代理。
+	// 为空时作业只接受 HTTP(S) URL；命名节点由调用方在进入作业前解析。
+	ProxyResolver InstallProxyResolver
+
 	// SenderExecPath 覆盖原生 Hook 发送器；为空时定位当前、同目录或 PATH 上的 aih-server。
 	SenderExecPath string
 	// SenderScriptPath 仅保留旧调用方源码兼容；Hook 不再执行 Node 脚本。
@@ -309,7 +313,24 @@ type InstallInput struct {
 	Kind          string `json:"kind"`
 	Action        string `json:"action"`
 	InstalledPath string `json:"installedPath,omitempty"`
+	// Proxy 是本次安装/更新的代理选择器：候选名称、稳定 ID、ssh:conn_...、
+	// pool、auto 或 HTTP(S) URL。空值表示继承当前环境。
+	Proxy string `json:"proxy,omitempty"`
+
+	// 以下字段由作业管理器解析后填充，不参与 JSON。
+	ProxyURL  string `json:"-"`
+	ProxyName string `json:"-"`
 }
+
+// InstallProxyLease 是安装/更新作业期可用的本机 HTTP 代理。
+type InstallProxyLease struct {
+	URL     string
+	Name    string
+	Release func()
+}
+
+// InstallProxyResolver 把代理选择器解析成任务期代理；Release 必须可重复调用。
+type InstallProxyResolver func(ctx context.Context, selector string) (InstallProxyLease, error)
 
 // InstallTarget 是归一化后的安装目标。
 type InstallTarget struct {
@@ -341,7 +362,9 @@ type PlanResponse struct {
 	Key      string          `json:"key,omitempty"`
 	Label    string          `json:"label,omitempty"`
 	Plans    []LifecyclePlan `json:"plans,omitempty"`
+	Proxy    string          `json:"proxy,omitempty"`
 	Error    string          `json:"error,omitempty"`
+	Message  string          `json:"message,omitempty"`
 }
 
 // AttemptView 记录单步生命周期执行结果。
@@ -377,6 +400,7 @@ type JobView struct {
 	Status     string         `json:"status"`
 	Phase      string         `json:"phase"`
 	Progress   JobProgress    `json:"progress"`
+	Proxy      string         `json:"proxy,omitempty"`
 	Attempts   []AttemptView  `json:"attempts"`
 	Result     *JobResultView `json:"result"`
 	Error      string         `json:"error"`
@@ -392,6 +416,7 @@ type JobStartResult struct {
 	AlreadyRunning bool     `json:"alreadyRunning,omitempty"`
 	Job            *JobView `json:"job,omitempty"`
 	Error          string   `json:"error,omitempty"`
+	Message        string   `json:"message,omitempty"`
 }
 
 // JobCancelResult 是取消安装作业的返回值。

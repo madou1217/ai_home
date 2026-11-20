@@ -10,7 +10,7 @@ import type {
   WebUiTask
 } from '@/types';
 import { getAppUpdateActionPresentation } from '@/features/app-install/app-install-presentation';
-import AppActionConfirmContent from './AppActionConfirmContent';
+import AppActionConfirmContent, { type AppActionProxyOption } from './AppActionConfirmContent';
 import { LIFECYCLE_ACTION_LABELS } from './lifecycle-presentation';
 import { toolkitRequestError as requestError } from './request-error';
 
@@ -30,6 +30,12 @@ function lifecycleKind(app: ManagedAppItem): 'cli' | 'desktop' {
 
 const actionLabel = (action: AppAction) => LIFECYCLE_ACTION_LABELS[action];
 const actionKey = (app: ManagedAppItem, action: string) => `${app.id}:${action}`;
+
+/** 候选来源只影响展示文案；选择器值始终是管理面稳定 ID。 */
+function proxyOptionLabel(candidate: { name: string; source: string; available: boolean }) {
+  const source = candidate.source === 'ssh' ? 'SSH' : candidate.source === 'pool' ? '代理池' : candidate.source;
+  return candidate.name + ' · ' + source + (candidate.available ? '' : '（不可用）');
+}
 
 /**
  * 应用管理的数据层（桌面面板与移动端共用）：应用清单 + 账号 + 运行中实例轮询、
@@ -141,9 +147,9 @@ export function useManagedApps() {
           : (activeTaskFor(app)?.action as AppAction | undefined)
   );
 
-  const submitAppAction = async (app: ManagedAppItem, action: AppAction, key: string) => {
+  const submitAppAction = async (app: ManagedAppItem, action: AppAction, key: string, proxy = '') => {
     try {
-      const response = await toolkitAPI.executeAppAction(app.id, action, lifecycleKind(app));
+      const response = await toolkitAPI.executeAppAction(app.id, action, lifecycleKind(app), proxy);
       if (!response.ok || !response.job) {
         throw new Error(response.error || '应用任务未创建');
       }
@@ -182,8 +188,12 @@ export function useManagedApps() {
         return;
       }
       const key = actionKey(app, 'update');
-      const plan = await toolkitAPI.planAppAction(app.id, 'update', lifecycleKind(app));
-      if (!plan.ok) throw new Error(plan.error || '无法生成更新计划');
+      const [plan, proxyOptions] = await Promise.all([
+        toolkitAPI.planAppAction(app.id, 'update', lifecycleKind(app)),
+        loadProxyOptions()
+      ]);
+      if (!plan.ok) throw new Error(plan.message || plan.error || '无法生成更新计划');
+      const proxyChoice = { value: '' };
       Modal.confirm({
         title: presentation.title,
         content: (
@@ -191,11 +201,16 @@ export function useManagedApps() {
             summary={presentation.summary}
             plans={plan.plans || []}
             metadata={presentation.metadata}
+            proxy={{
+              options: proxyOptions,
+              value: '',
+              onChange: (value) => { proxyChoice.value = value; }
+            }}
           />
         ),
         okText: '确认更新',
         cancelText: '稍后',
-        onOk: () => { void submitAppAction(app, 'update', key); }
+        onOk: () => { void submitAppAction(app, 'update', key, proxyChoice.value); }
       });
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, `${app.name} 更新准备失败`));
@@ -208,25 +223,48 @@ export function useManagedApps() {
     }
   };
 
+  const loadProxyOptions = useCallback(async (): Promise<AppActionProxyOption[]> => {
+    try {
+      const candidates = await toolkitAPI.listProxyCandidates();
+      return candidates.map((candidate) => ({
+        value: candidate.id,
+        label: proxyOptionLabel(candidate),
+        disabled: !candidate.available
+      }));
+    } catch (_error) {
+      // 候选读取失败不阻断安装：至少保留继承环境与自定义 URL。
+      return [];
+    }
+  }, []);
+
   const runAppAction = async (app: ManagedAppItem, action: AppAction) => {
     const key = actionKey(app, action);
     if (activeTaskFor(app) || pendingActions[key]) return;
     setPendingActions((current) => ({ ...current, [key]: { phase: 'planning' } }));
     try {
-      const plan = await toolkitAPI.planAppAction(app.id, action, lifecycleKind(app));
-      if (!plan.ok) throw new Error(plan.error || '无法生成应用操作计划');
+      const [plan, proxyOptions] = await Promise.all([
+        toolkitAPI.planAppAction(app.id, action, lifecycleKind(app)),
+        loadProxyOptions()
+      ]);
+      if (!plan.ok) throw new Error(plan.message || plan.error || '无法生成应用操作计划');
+      const proxyChoice = { value: '' };
       Modal.confirm({
         title: `${actionLabel(action)} ${app.name}`,
         content: (
           <AppActionConfirmContent
             summary={`确认后将创建 ${app.name}${actionLabel(action)}任务，进度显示在后台任务队列。`}
             plans={plan.plans || []}
+            proxy={action === 'uninstall' ? undefined : {
+              options: proxyOptions,
+              value: '',
+              onChange: (value) => { proxyChoice.value = value; }
+            }}
           />
         ),
         okText: '确认执行',
         cancelText: '取消',
         okButtonProps: action === 'uninstall' ? { danger: true } : undefined,
-        onOk: () => { void submitAppAction(app, action, key); },
+        onOk: () => { void submitAppAction(app, action, key, proxyChoice.value); },
         onCancel: () => setPendingActions((current) => {
           const next = { ...current };
           delete next[key];

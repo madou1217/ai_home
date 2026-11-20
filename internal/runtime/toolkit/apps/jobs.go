@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
+	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
 const (
@@ -22,6 +24,8 @@ const (
 
 type appJobEntry struct {
 	job JobView
+	// release 保留任务期代理租约；作业进入终态或取消后立即释放。
+	release func()
 }
 
 // JobManager 管理 CLI / Desktop / IDE 的安装、更新与卸载异步作业及 SSE 订阅。
@@ -240,6 +244,19 @@ func (m *JobManager) Plan(input InstallInput) PlanResponse {
 	if !m.CanInstall(input) {
 		return PlanResponse{OK: false, Error: target.Action + "_not_supported"}
 	}
+	proxySelector := strings.TrimSpace(input.Proxy)
+	if proxySelector != "" {
+		if !strings.Contains(proxySelector, "://") {
+			if m.baseOpts.ProxyResolver == nil {
+				return PlanResponse{
+					OK: false, Error: "proxy_selector_unsupported",
+					Message: "当前 Server 不支持命名代理选择器；请改用 HTTP(S) 代理 URL 或直连。",
+				}
+			}
+		} else if _, err := updateproxy.Environment(nil, proxySelector); err != nil {
+			return PlanResponse{OK: false, Error: "invalid_proxy", Message: err.Error()}
+		}
+	}
 	opts := m.effectiveOpts(input)
 	var installedPath string
 	var installedRecord *DesktopRecord
@@ -273,12 +290,12 @@ func (m *JobManager) Plan(input InstallInput) PlanResponse {
 		Key:      target.Key,
 		Label:    target.Provider + " " + lifecycleActionLabel(target.Action),
 		Plans:    plans,
+		Proxy:    proxySelector,
 	}
 }
 
 // Start 创建并异步执行一条应用安装/更新/卸载作业，同目标并发请求幂等复用活跃作业。
 func (m *JobManager) Start(ctx context.Context, input InstallInput) JobStartResult {
-	_ = ctx
 	if input.Action == " " || normalizeLifecycleAction(input.Action, input.Action != "") == "" {
 		return JobStartResult{OK: false, Error: "invalid_lifecycle_action"}
 	}
@@ -297,12 +314,24 @@ func (m *JobManager) Start(ctx context.Context, input InstallInput) JobStartResu
 		return JobStartResult{OK: false, Error: target.Action + "_not_supported"}
 	}
 
+	// 代理租约可能涉及 SSH / 代理内核，必须在作业锁之外获取；否则一次失败的
+	// 选择器会把整个 JobManager 卡在 m.mu 上。
+	proxyURL, proxyName, proxyRelease, proxyErrCode, proxyErrMessage := m.resolveInstallProxy(ctx, input.Proxy)
+	if proxyErrCode != "" {
+		return JobStartResult{OK: false, Error: proxyErrCode, Message: proxyErrMessage}
+	}
+	input.ProxyURL = proxyURL
+	input.ProxyName = proxyName
+
 	m.mu.Lock()
 	m.pruneLocked()
 	if activeID := m.activeByTarget[target.Key]; activeID != "" {
 		if entry := m.jobs[activeID]; entry != nil && !isJobTerminalStatus(entry.job.Status) {
 			snap := cloneAppJobView(entry.job)
 			m.mu.Unlock()
+			if proxyRelease != nil {
+				proxyRelease()
+			}
 			return JobStartResult{OK: true, Accepted: true, AlreadyRunning: true, Job: &snap}
 		}
 		delete(m.activeByTarget, target.Key)
@@ -328,11 +357,12 @@ func (m *JobManager) Start(ctx context.Context, input InstallInput) JobStartResu
 			Percent: 0,
 			Label:   "等待安装任务开始",
 		},
+		Proxy:     installProxyLabel(input),
 		Attempts:  []AttemptView{},
 		CreatedAt: nowMs,
 		UpdatedAt: nowMs,
 	}
-	m.jobs[id] = &appJobEntry{job: job}
+	m.jobs[id] = &appJobEntry{job: job, release: proxyRelease}
 	m.activeByTarget[target.Key] = id
 	snap := cloneAppJobView(job)
 	m.mu.Unlock()
@@ -396,10 +426,15 @@ func (m *JobManager) Cancel(jobID string) JobCancelResult {
 	entry.job.Error = "安装任务已取消。"
 	entry.job.UpdatedAt = nowMs
 	entry.job.FinishedAt = &nowMs
+	release := entry.release
+	entry.release = nil
 	delete(m.activeByTarget, entry.job.Kind+":"+entry.job.Provider)
 	snap := cloneAppJobView(entry.job)
 	m.mu.Unlock()
 
+	if release != nil {
+		release()
+	}
 	m.notify(snap)
 	return JobCancelResult{OK: true, Job: &snap}
 }
@@ -450,6 +485,7 @@ func (m *JobManager) SubscribeAll() (<-chan JobEvent, func()) {
 }
 
 func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallInput) {
+	defer m.releaseJobProxy(jobID)
 	ctx := context.Background()
 	m.mu.Lock()
 	entry := m.jobs[jobID]
@@ -473,6 +509,15 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 	defer func() {
 		m.finalizeJob(jobID, target, succeeded, finalResult, finalErr)
 	}()
+
+	if input.ProxyURL != "" {
+		proxyEnv, proxyErr := updateproxy.Environment(opts.Env, input.ProxyURL)
+		if proxyErr != nil {
+			finalErr = "invalid_proxy: " + proxyErr.Error()
+			return
+		}
+		opts.Env = proxyEnv
+	}
 
 	spec := getInstaller(target.Provider)
 	if spec == nil {
@@ -521,6 +566,16 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 			finalErr = "应用生命周期配置异常，请刷新资源清单后重试。"
 		}
 		return
+	}
+	// 与 CLI 的 --proxy 契约一致：Windows 官方安装器无法保证全部下载走代理时
+	// 直接失败，不能把「设置了代理」静默变成直连。
+	if input.Proxy != "" && target.Kind == "cli" && resolvePlatform(opts) == platformWindows {
+		for _, plan := range plans {
+			if !isNPMCommand(plan.Command) {
+				finalErr = "此 Windows 官方安装器不能保证所有下载使用代理；请使用支持代理的官方原生命令，不会修改系统代理或回落直连"
+				return
+			}
+		}
 	}
 
 	var errs []string
@@ -741,6 +796,72 @@ func (m *JobManager) verifyDesktopWithRetry(ctx context.Context, provider string
 		}
 	}
 	return rec
+}
+
+// resolveInstallProxy 把选择器换成任务期 HTTP(S) 代理。
+//
+// 分类边界：含 "://" 的输入是调用方给出的 URL；其余值必须由 ProxyResolver
+// 在本机换取租约（CLI 用管理面 lease，WebUI 作业用进程内 LeaseManager）。
+func (m *JobManager) resolveInstallProxy(ctx context.Context, selector string) (string, string, func(), string, string) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return "", "", nil, "", ""
+	}
+	proxyURL := selector
+	name := ""
+	var release func()
+	if !strings.Contains(selector, "://") {
+		if m.baseOpts.ProxyResolver == nil {
+			return "", "", nil, "proxy_selector_unsupported",
+				"当前 Server 不支持命名代理选择器；请改用 HTTP(S) 代理 URL 或直连。"
+		}
+		lease, err := m.baseOpts.ProxyResolver(ctx, selector)
+		if err != nil {
+			return "", "", nil, "proxy_unavailable", err.Error()
+		}
+		proxyURL, name, release = lease.URL, lease.Name, lease.Release
+	}
+	if _, err := updateproxy.Environment(nil, proxyURL); err != nil {
+		if release != nil {
+			release()
+		}
+		return "", "", nil, "invalid_proxy", err.Error()
+	}
+	return proxyURL, name, release, "", ""
+}
+
+func (m *JobManager) releaseJobProxy(jobID string) {
+	m.mu.Lock()
+	entry := m.jobs[jobID]
+	var release func()
+	if entry != nil {
+		release = entry.release
+		entry.release = nil
+	}
+	m.mu.Unlock()
+	if release != nil {
+		release()
+	}
+}
+
+// installProxyLabel 只用于展示：命名代理显示名称，URL 去掉凭据。
+func installProxyLabel(input InstallInput) string {
+	if strings.TrimSpace(input.ProxyName) != "" {
+		return input.ProxyName
+	}
+	raw := strings.TrimSpace(input.Proxy)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return "自定义代理"
+	}
+	parsed.User = nil
+	return parsed.String()
 }
 
 func (m *JobManager) finalizeJob(jobID string, target *InstallTarget, succeeded bool, result *JobResultView, errMsg string) {

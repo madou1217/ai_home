@@ -2831,6 +2831,14 @@ export const sshHostsAPI = {
   }
 };
 
+export interface ToolkitProxyCandidate {
+  id: string;
+  name: string;
+  source: string;
+  available: boolean;
+  error?: string;
+}
+
 export const toolkitAPI = {
   getAihPlugins: async (): Promise<import('@/types').AihPluginReport> => {
     const response = await api.get<import('@/types').AihPluginReport>('/plugins');
@@ -2877,6 +2885,10 @@ export const toolkitAPI = {
       { timeout: 120000, validateStatus: (status) => status === 200 || status === 409 || status === 422 }
     );
     return response.data;
+  },
+  listProxyCandidates: async (): Promise<ToolkitProxyCandidate[]> => {
+    const response = await api.get<{ ok: boolean; candidates?: ToolkitProxyCandidate[] }>('/webui/proxy-candidates');
+    return Array.isArray(response.data.candidates) ? response.data.candidates : [];
   },
   listApps: async (): Promise<ManagedAppsResponse> => {
     const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
@@ -2944,15 +2956,15 @@ export const toolkitAPI = {
     );
     return response.data.job;
   },
-  planAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide'): Promise<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; error?: string }> => {
-    const response = await api.post<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; error?: string }>(
-      '/webui/toolkit/apps/plan', { appId, action, kind }
+  planAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide', proxy?: string): Promise<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; proxy?: string; error?: string; message?: string }> => {
+    const response = await api.post<{ ok: boolean; action?: string; label?: string; plans?: Array<{ id: string; label: string; command: string; args: string[] }>; proxy?: string; error?: string; message?: string }>(
+      '/webui/toolkit/apps/plan', { appId, action, kind, ...(proxy ? { proxy } : {}) }
     );
     return response.data;
   },
-  executeAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide'): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string }> => {
-    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string }>(
-      '/webui/toolkit/apps/install', { appId, action, kind }
+  executeAppAction: async (appId: string, action: 'install' | 'update' | 'uninstall', kind?: 'cli' | 'desktop' | 'ide', proxy?: string): Promise<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string; message?: string }> => {
+    const response = await api.post<{ ok: boolean; accepted?: boolean; alreadyRunning?: boolean; job?: AppInstallJob; error?: string; message?: string }>(
+      '/webui/toolkit/apps/install', { appId, action, kind, ...(proxy ? { proxy } : {}) }
     );
     return response.data;
   },

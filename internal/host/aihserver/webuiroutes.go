@@ -169,6 +169,8 @@ type webuiRouteDependencies struct {
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel。
 	ReverseTunnels *sshtunnel.Supervisor
 	SSHProxies     *sshproxy.Supervisor
+	// ProxyRuntime 为工具箱安装/更新提供任务期代理租约；与 CLI 的命名代理选择器同源。
+	ProxyRuntime *sshproxy.LeaseManager
 	// AccountDeletion 是账号删除用例（WebUI 的 DELETE 承接者）。
 	AccountDeletion webuiaccountdeleteapi.AccountDeletion
 	// AccountHostGrant 回收停用账号在宿主上的直连授权（当前只有 codex）。
@@ -219,6 +221,7 @@ type webuiRouteDependencies struct {
 func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error) {
 	authorizer := dependencies.Authorizer
 	proxyRuntime := sshproxy.NewLeaseManager(dependencies.SSHProxies, dependencies.AIHomeDir, dependencies.EgressManager)
+	dependencies.ProxyRuntime = proxyRuntime
 	proxyAPI := &proxyleaseapi.Handler{Authorizer: authorizer, Runtime: proxyRuntime}
 
 	toolSettingsSource, err := webuitoolsettingsapi.OpenSettingsSource(dependencies.AIHomeDir)

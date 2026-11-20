@@ -37,12 +37,12 @@ const (
 	ConnectivityPath = "/v1/management/webui/toolkit/connectivity"
 
 	// 受管网络工具与服务控制路由。
-	ToolsPath               = "/v1/management/webui/toolkit/tools"
-	ToolsPlanPath           = "/v1/management/webui/toolkit/tools/plan"
-	ToolsExecutePath        = "/v1/management/webui/toolkit/tools/execute"
-	ToolsJobsPath           = "/v1/management/webui/toolkit/tools/jobs"
-	ToolsJobsWatchPath      = "/v1/management/webui/toolkit/tools/jobs-watch"
-	ToolsSubtreePath        = "/v1/management/webui/toolkit/tools/{rest...}"
+	ToolsPath          = "/v1/management/webui/toolkit/tools"
+	ToolsPlanPath      = "/v1/management/webui/toolkit/tools/plan"
+	ToolsExecutePath   = "/v1/management/webui/toolkit/tools/execute"
+	ToolsJobsPath      = "/v1/management/webui/toolkit/tools/jobs"
+	ToolsJobsWatchPath = "/v1/management/webui/toolkit/tools/jobs-watch"
+	ToolsSubtreePath   = "/v1/management/webui/toolkit/tools/{rest...}"
 
 	// 客户端终端路由。
 	TerminalsRootPath      = "/v1/management/webui/terminals"
@@ -117,6 +117,9 @@ type Dependencies struct {
 	ToolsBaseOpts  *tools.Options
 	TerminalsOpts  *terminals.Options
 	AppsBaseOpts   *apps.Options
+	// InstallProxyResolver 把安装代理选择器解析为 Server 端任务期租约。
+	// 为空时作业只接受 HTTP(S) URL。
+	InstallProxyResolver apps.InstallProxyResolver
 }
 
 type toolsListCache struct {
@@ -296,6 +299,7 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 	if deps.AppsBaseOpts != nil {
 		appsOpts = *deps.AppsBaseOpts
 	}
+	appsOpts.ProxyResolver = deps.InstallProxyResolver
 	appsMgr := deps.AppsManager
 	if appsMgr == nil {
 		appsMgr = apps.NewManager()

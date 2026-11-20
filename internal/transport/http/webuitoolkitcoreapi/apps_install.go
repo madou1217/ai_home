@@ -326,6 +326,7 @@ type installActionDTO struct {
 	Kind          string  `json:"kind"`
 	Action        *string `json:"action"`
 	InstalledPath string  `json:"installedPath"`
+	Proxy         string  `json:"proxy"`
 }
 
 func (dto installActionDTO) toInstallInput(requireApp bool) (apps.InstallInput, string) {
@@ -354,6 +355,7 @@ func (dto installActionDTO) toInstallInput(requireApp bool) (apps.InstallInput, 
 		Kind:          dto.Kind,
 		Action:        action,
 		InstalledPath: dto.InstalledPath,
+		Proxy:         strings.TrimSpace(dto.Proxy),
 	}, ""
 }
 
@@ -378,7 +380,11 @@ func (h *Handler) handleAppsInstall(w http.ResponseWriter, r *http.Request) {
 		if errOut == "" {
 			errOut = "app_install_unavailable"
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errOut})
+		body := map[string]any{"ok": false, "error": errOut}
+		if started.Message != "" {
+			body["message"] = started.Message
+		}
+		writeJSON(w, http.StatusBadRequest, body)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, started)

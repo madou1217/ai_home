@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitcoreapi"
 )
@@ -30,6 +31,27 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 	// 工具箱的 app-open 与账号页共用同一个 Go 原生启动器，不经过 Node。
 	var appLauncher webuiopenappapi.Launcher = newWebUIOpenAppLauncher(dependencies)
 
+	// 安装/更新代理复用管理面同一套候选：CLI 通过 HTTP 管理 API 取租约，
+	// WebUI 作业在本进程取租约，二者最终都落到 updateproxy.Environment。
+	var installProxyResolver apps.InstallProxyResolver
+	if dependencies.ProxyRuntime != nil {
+		proxyRuntime := dependencies.ProxyRuntime
+		installProxyResolver = func(ctx context.Context, selector string) (apps.InstallProxyLease, error) {
+			view, err := proxyRuntime.Acquire(ctx, selector)
+			if err != nil {
+				return apps.InstallProxyLease{}, err
+			}
+			id := view.ID
+			return apps.InstallProxyLease{
+				URL:  view.ProxyURL,
+				Name: view.Name,
+				Release: func() {
+					proxyRuntime.Release(id)
+				},
+			}, nil
+		}
+	}
+
 	handler, err := webuitoolkitcoreapi.NewHandler(webuitoolkitcoreapi.Dependencies{
 		Authorizer:             dependencies.Authorizer,
 		AIHomeDir:              dependencies.AIHomeDir,
@@ -37,6 +59,7 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		Catalog:                dependencies.Catalog,
 		DefaultAccountResolver: defaultAccountResolver,
 		AppLauncher:            appLauncher,
+		InstallProxyResolver:   installProxyResolver,
 	})
 	if err != nil {
 		return nil, err

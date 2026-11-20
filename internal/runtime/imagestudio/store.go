@@ -816,6 +816,7 @@ func (s *Store) FailRevision(
 	ctx context.Context,
 	sessionID string,
 	revisionID string,
+	accountRef string,
 	cause error,
 ) (Session, Revision, error) {
 	var outSession Session
@@ -833,6 +834,9 @@ func (s *Store) FailRevision(
 			return NewError(409, "image_revision_not_running", "image revision is already settled")
 		}
 		completedAt := s.nowMS()
+		if normalizedRef := normalizeText(accountRef, 120); normalizedRef != "" {
+			session.Revisions[revIdx].AccountRef = normalizedRef
+		}
 		errCode := "image_generation_failed"
 		errMsg := "image generation failed"
 		errStatus := 500

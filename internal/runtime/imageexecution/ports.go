@@ -78,8 +78,10 @@ type RetryMetadata struct {
 
 // Result 保存一次图片执行结果、真实凭据观察与 HTTP 无关的 429 诊断元数据。
 type Result struct {
-	Execution   images.Execution
-	Observation accountcredentials.CredentialObservation
-	HasObserved bool
-	Retry       RetryMetadata
+	Execution images.Execution
+	// AttemptAccountRef 是最后一次实际尝试的账号；失败时也保留，供调用方落库诊断。
+	AttemptAccountRef string
+	Observation       accountcredentials.CredentialObservation
+	HasObserved       bool
+	Retry             RetryMetadata
 }

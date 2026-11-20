@@ -126,6 +126,7 @@ func (executor *Executor) Execute(
 	var (
 		lastInitialFailure    inferencegateway.AttemptFailure
 		hasLastInitialFailure bool
+		attemptAccountRef     string
 	)
 
 	execCtx := images.ContextWithSubmissionAccepted(ctx, func() {
@@ -149,6 +150,7 @@ func (executor *Executor) Execute(
 			stateMu.Lock()
 			if ref := strings.TrimSpace(account.AccountRef); ref != "" {
 				dispatched[ref] = struct{}{}
+				attemptAccountRef = ref
 			}
 			lastInitialFailure = failure
 			hasLastInitialFailure = hasFailure
@@ -172,10 +174,11 @@ func (executor *Executor) Execute(
 			obs, hasObs = session.ObservationFor(execution.Account.AccountRef)
 		}
 		return Result{
-			Execution:   execution,
-			Observation: obs,
-			HasObserved: hasObs && obs.IsValid(),
-			Retry:       buildRetryMetadata(reqState, false, executor.now()),
+			Execution:         execution,
+			AttemptAccountRef: execution.Account.AccountRef,
+			Observation:       obs,
+			HasObserved:       hasObs && obs.IsValid(),
+			Retry:             buildRetryMetadata(reqState, false, executor.now()),
 		}, nil
 	}
 
@@ -186,7 +189,8 @@ func (executor *Executor) Execute(
 			reqState.ClearExplicitRetryAfter()
 		}
 		return Result{
-			Retry: buildRetryMetadata(reqState, isRaw429Error(executeErr), executor.now()),
+			AttemptAccountRef: attemptAccountRef,
+			Retry:             buildRetryMetadata(reqState, isRaw429Error(executeErr), executor.now()),
 		}, executeErr
 	}
 
@@ -227,17 +231,19 @@ func (executor *Executor) Execute(
 			if submissionAccepted.Load() {
 				reqState.ClearExplicitRetryAfter()
 				return Result{
-					Retry: buildRetryMetadata(reqState, false, executor.now()),
+					AttemptAccountRef: attemptAccountRef,
+					Retry:             buildRetryMetadata(reqState, false, executor.now()),
 				}, finalErr
 			}
 			if !poolOutcome.trulyExhausted || poolOutcome.capHit || poolOutcome.terminalStop {
 				return Result{
-					Retry: buildRetryMetadata(reqState, isRaw429Error(finalErr), executor.now()),
+					AttemptAccountRef: attemptAccountRef,
+					Retry:             buildRetryMetadata(reqState, isRaw429Error(finalErr), executor.now()),
 				}, finalErr
 			}
 		}
 
-		return executor.runImage429RetryLoop(
+		loopResult, loopErr := executor.runImage429RetryLoop(
 			ctx,
 			execCtx,
 			reqState,
@@ -249,10 +255,15 @@ func (executor *Executor) Execute(
 			&submissionAccepted,
 			finalErr,
 		)
+		if loopResult.AttemptAccountRef == "" {
+			loopResult.AttemptAccountRef = attemptAccountRef
+		}
+		return loopResult, loopErr
 	}
 
 	return Result{
-		Retry: buildRetryMetadata(reqState, isRaw429Error(executeErr), executor.now()),
+		AttemptAccountRef: attemptAccountRef,
+		Retry:             buildRetryMetadata(reqState, isRaw429Error(executeErr), executor.now()),
 	}, executeErr
 }
 

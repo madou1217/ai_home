@@ -353,11 +353,11 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 	revisionID := startedRev.ID
 	var execution images.Execution
 	hasExecution := false
-	failAndRecord := func(cause error) error {
+	failAndRecord := func(cause error, accountRef string) error {
 		mapped := mapExecutionError(cause)
 		if revisionID != "" {
 			fCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
-			_, _, _ = svc.store.FailRevision(fCtx, sessionID, revisionID, mapped)
+			_, _, _ = svc.store.FailRevision(fCtx, sessionID, revisionID, accountRef, mapped)
 			cancel()
 		}
 		if hasExecution && svc.outcomes != nil {
@@ -376,16 +376,18 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		usedSharedExecutor = true
 		execResult, err = svc.execution.Execute(ctx, selected.Provider, parsedReq)
 		if err != nil {
-			return RunResult{}, failAndRecord(err)
+			return RunResult{}, failAndRecord(err, execResult.AttemptAccountRef)
 		}
 		execution = execResult.Execution
 	} else {
 		if svc.accounts == nil {
-			return RunResult{}, failAndRecord(NewError(503, "no_available_account", "image account source is not configured"))
+			return RunResult{}, failAndRecord(NewError(503, "no_available_account", "image account source is not configured"), "")
 		}
+		attemptedAccountRef := ""
 		execOpts := images.ExecuteOptions{HTTP: svc.httpDoer}
 		if svc.outcomes != nil {
 			execOpts.AttemptFailure = func(account images.Account, model string, attemptErr error) {
+				attemptedAccountRef = account.AccountRef
 				rCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), studioRecordTimeout)
 				defer cancel()
 				svc.outcomes.RecordImageFailure(rCtx, account.AccountRef, model, attemptErr)
@@ -393,7 +395,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		}
 		execution, err = images.Execute(ctx, svc.registry, svc.accounts, selected.Provider, parsedReq, execOpts)
 		if err != nil {
-			return RunResult{}, failAndRecord(err)
+			return RunResult{}, failAndRecord(err, attemptedAccountRef)
 		}
 	}
 	hasExecution = true
@@ -402,7 +404,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 
 	materialized, err := MaterializeOutputs(ctx, execution, svc.fetcher, defaultRemoteFetchTimeout)
 	if err != nil {
-		return RunResult{}, failAndRecord(err)
+		return RunResult{}, failAndRecord(err, execution.Account.AccountRef)
 	}
 
 	completedSession, _, err := svc.store.CompleteRevision(
@@ -413,7 +415,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 		materialized,
 	)
 	if err != nil {
-		return RunResult{}, failAndRecord(err)
+		return RunResult{}, failAndRecord(err, execution.Account.AccountRef)
 	}
 	revisionID = ""
 

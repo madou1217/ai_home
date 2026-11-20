@@ -29,6 +29,10 @@ var (
 // ProviderModelDiscoverer 是一个 Provider 的远端模型目录写侧适配器。
 //
 // 该端口只允许账号管理用例调用，不能注入 Recruiter 或本地 /v1/models。
+//
+// 它刻意只返回模型 ID：上游目录（OpenAI /models、Code Assist 等）通常只给 ID，
+// 展示标签与上下文窗口来自模型元数据目录。不要为元数据扩展本端口——那会把宿主
+// 快照的职责搬进每个适配器，却拿不到上游并不提供的数据。
 type ProviderModelDiscoverer interface {
 	// ProviderID 返回该策略唯一支持的规范 Provider。
 	ProviderID() string

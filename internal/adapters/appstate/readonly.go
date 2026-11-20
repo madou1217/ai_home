@@ -62,6 +62,10 @@ func OpenReadOnly(ctx context.Context, databasePath string) (*sql.DB, error) {
 //
 // 它让持有自有连接或事务的调用方复用同一条 KV 读取口径，而不必另开连接
 // （另开会破坏事务快照，也会绕过连接池上限）。
+//
+// 这是刻意保留的 SQL 微适配器，而不是文档级 KV 端口：upstreamretry 的快照加载、
+// managementops 的聚合读取、chatruntime 的压缩都必须在自己的事务/连接内读同一份
+// 快照，文档级端口只能另开连接，会引入跨连接可见性差异。
 type Queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)

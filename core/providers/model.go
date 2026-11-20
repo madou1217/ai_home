@@ -292,11 +292,16 @@ type HeadlessConfig struct {
 
 // DesktopClient 描述可选桌面客户端的跨平台启动信息。
 type DesktopClient struct {
-	ReloadsHostAuth *bool            `json:"reloadsHostAuth,omitempty"`
-	UserDataEnvKey  string           `json:"userDataEnvKey,omitempty"`
-	MacOS           *DesktopPlatform `json:"macos,omitempty"`
-	Windows         *DesktopPlatform `json:"windows,omitempty"`
-	Linux           *DesktopPlatform `json:"linux,omitempty"`
+	ReloadsHostAuth *bool  `json:"reloadsHostAuth,omitempty"`
+	UserDataEnvKey  string `json:"userDataEnvKey,omitempty"`
+	// Key 是 AIH 桌面应用目录里的稳定标识；为空表示该客户端不进入
+	// `aih desktop` 的管理集合（仍可作为原生启动器的落点信息）。
+	Key string `json:"key,omitempty"`
+	// ShadowDirName 是需要影子副本时的目录名（位于 run/ 下）；空表示不做影子。
+	ShadowDirName string           `json:"shadowDirName,omitempty"`
+	MacOS         *DesktopPlatform `json:"macos,omitempty"`
+	Windows       *DesktopPlatform `json:"windows,omitempty"`
+	Linux         *DesktopPlatform `json:"linux,omitempty"`
 }
 
 // DesktopPlatform 描述单个平台上的桌面客户端候选路径和进程名。
@@ -306,7 +311,12 @@ type DesktopPlatform struct {
 	ExecNames    []string `json:"execNames"`
 	PathIncludes []string `json:"pathIncludes,omitempty"`
 	BundleID     string   `json:"bundleId,omitempty"`
-	InstallPaths []string `json:"installPaths,omitempty"`
+	// BundleNames 是 macOS 上的 .app 文件名（按查找优先级）。
+	BundleNames []string `json:"bundleNames,omitempty"`
+	// LegacyBundleIDs 是旧版本使用过的 bundle id；仅用于显示回落，
+	// 实际 id 优先从 Info.plist 读取。
+	LegacyBundleIDs []string `json:"legacyBundleIds,omitempty"`
+	InstallPaths    []string `json:"installPaths,omitempty"`
 	// DisplayNames 是 Windows 卸载注册表里的产品名（用于安装后探测，不猜安装目录）。
 	DisplayNames []string `json:"displayNames,omitempty"`
 }

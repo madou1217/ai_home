@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 // desktopAppEntry 是桌面端 canonical 应用目录；一个 bundle 可以服务多个 Provider。
@@ -22,20 +24,60 @@ type desktopAppEntry struct {
 	ShadowDirName string
 }
 
-var desktopApps = []desktopAppEntry{
-	{Key: "zcode", Providers: []string{"zcode"}, BundleNames: []string{"ZCode.app", "ZCode Desktop.app"}, BundleIDs: []string{"dev.zcode.app"}, ShadowDirName: "zcode-shadow"},
-	// 国际站与国内站是两个独立 App（2026-11-21 取证：官方 cask 分别为
-	// codebuddy / codebuddy-cn，bundle id 也不同）。
-	{Key: "codebuddy", Providers: []string{"codebuddy"}, BundleNames: []string{"CodeBuddy.app"}, BundleIDs: []string{"com.tencent.codebuddy"}},
-	{Key: "codebuddy-cn", Providers: []string{"codebuddycn"}, BundleNames: []string{"CodeBuddy CN.app"}, BundleIDs: []string{"com.tencent.codebuddycn"}},
-	{Key: "workbuddy", Providers: []string{"workbuddy"}, BundleNames: []string{"WorkBuddy AI.app"}, BundleIDs: []string{"com.workbuddy.workbuddy-ai"}},
-	{Key: "workbuddy-cn", Providers: []string{"workbuddycn"}, BundleNames: []string{"WorkBuddy.app"}, BundleIDs: []string{"com.tencent.workbuddy.mac"}},
-	{Key: "claude", Providers: []string{"claude"}, BundleNames: []string{"Claude.app"}, BundleIDs: []string{"com.anthropic.claudefordesktop"}},
-	{Key: "codex", Providers: []string{"codex"}, BundleNames: []string{"ChatGPT.app"}, BundleIDs: []string{"com.openai.codex"}},
-	// Kiro 桌面端现为 Kiro.app / dev.kiro.desktop；Kiro CLI.app 是旧版随 CLI
-	// 分发的 GUI 外壳（官方 CLI 安装包只含 kiro-cli 二进制，2026-11-21 实装确认），
-	// 仍保留为旧安装的回落落点。
-	{Key: "kiro", Providers: []string{"kiro"}, BundleNames: []string{"Kiro.app", "Kiro CLI.app"}, BundleIDs: []string{"dev.kiro.desktop", "com.amazon.codewhisperer"}},
+// desktopApps 由 Provider 合同派生：只有声明了 DesktopClient.Key 的客户端进入
+// AIH 桌面管理集合；bundle 名称、bundle id、影子目录都从 manifest 读取，
+// CLI 不再维护第二份桌面应用表。
+var desktopApps = buildDesktopApps()
+
+func buildDesktopApps() []desktopAppEntry {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return nil
+	}
+	entries := make([]desktopAppEntry, 0, 8)
+	for _, definition := range catalog.List() {
+		if definition.CLI == nil || definition.CLI.DesktopClient == nil {
+			continue
+		}
+		client := definition.CLI.DesktopClient
+		key := strings.TrimSpace(client.Key)
+		if key == "" || client.MacOS == nil {
+			continue
+		}
+		platform := client.MacOS
+		names := append([]string(nil), platform.BundleNames...)
+		if len(names) == 0 {
+			// 合同未显式声明 .app 文件名时，从安装路径推导；只取唯一 basename。
+			seen := map[string]struct{}{}
+			for _, installPath := range platform.InstallPaths {
+				name := filepath.Base(strings.TrimSpace(installPath))
+				if name == "" || name == "." || name == string(filepath.Separator) {
+					continue
+				}
+				if _, duplicated := seen[name]; duplicated {
+					continue
+				}
+				seen[name] = struct{}{}
+				names = append(names, name)
+			}
+		}
+		ids := make([]string, 0, 1+len(platform.LegacyBundleIDs))
+		if platform.BundleID != "" {
+			ids = append(ids, platform.BundleID)
+		}
+		ids = append(ids, platform.LegacyBundleIDs...)
+		entries = append(entries, desktopAppEntry{
+			Key:           key,
+			Providers:     []string{definition.ID},
+			BundleNames:   names,
+			BundleIDs:     ids,
+			ShadowDirName: strings.TrimSpace(client.ShadowDirName),
+		})
+	}
+	sort.SliceStable(entries, func(left, right int) bool {
+		return entries[left].Key < entries[right].Key
+	})
+	return entries
 }
 
 type desktopStatusApp struct {

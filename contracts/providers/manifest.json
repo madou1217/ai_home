@@ -87,6 +87,7 @@
         ],
         "desktopClient": {
           "userDataEnvKey": "CODEX_ELECTRON_USER_DATA_PATH",
+          "key": "codex",
           "macos": {
             "clientName": "ChatGPT",
             "execNames": [
@@ -98,6 +99,10 @@
               "/Codex.app/Contents/MacOS/"
             ],
             "bundleId": "com.openai.codex",
+            "bundleNames": [
+              "ChatGPT.app",
+              "Codex.app"
+            ],
             "installPaths": [
               "/Applications/ChatGPT.app",
               "{hostHomeDir}/Applications/ChatGPT.app",
@@ -513,6 +518,7 @@
         "desktopClient": {
           "reloadsHostAuth": false,
           "userDataEnvKey": "CLAUDE_USER_DATA_DIR",
+          "key": "claude",
           "macos": {
             "clientName": "Claude",
             "execNames": [
@@ -522,6 +528,9 @@
               "/Claude.app/Contents/MacOS/"
             ],
             "bundleId": "com.anthropic.claudefordesktop",
+            "bundleNames": [
+              "Claude.app"
+            ],
             "installPaths": [
               "/Applications/Claude.app",
               "{hostHomeDir}/Applications/Claude.app"
@@ -1894,6 +1903,7 @@
           "KIRO_API_KEY"
         ],
         "desktopClient": {
+          "key": "kiro",
           "macos": {
             "clientName": "Kiro",
             "execNames": [
@@ -1905,6 +1915,13 @@
               "/Kiro CLI.app/Contents/MacOS/"
             ],
             "bundleId": "dev.kiro.desktop",
+            "bundleNames": [
+              "Kiro.app",
+              "Kiro CLI.app"
+            ],
+            "legacyBundleIds": [
+              "com.amazon.codewhisperer"
+            ],
             "installPaths": [
               "/Applications/Kiro.app",
               "{hostHomeDir}/Applications/Kiro.app",
@@ -2067,6 +2084,8 @@
           "ZCODE_DATA_BASE_DIR"
         ],
         "desktopClient": {
+          "key": "zcode",
+          "shadowDirName": "zcode-shadow",
           "macos": {
             "clientName": "ZCode",
             "execNames": [
@@ -2076,6 +2095,10 @@
               "/ZCode.app/Contents/MacOS/"
             ],
             "bundleId": "dev.zcode.app",
+            "bundleNames": [
+              "ZCode.app",
+              "ZCode Desktop.app"
+            ],
             "installPaths": [
               "/Applications/ZCode.app",
               "{hostHomeDir}/Applications/ZCode.app"
@@ -2251,6 +2274,7 @@
         ],
         "desktopClient": {
           "reloadsHostAuth": false,
+          "key": "codebuddy",
           "macos": {
             "clientName": "CodeBuddy",
             "execNames": [
@@ -2260,6 +2284,9 @@
               "/CodeBuddy.app/Contents/MacOS/"
             ],
             "bundleId": "com.tencent.codebuddy",
+            "bundleNames": [
+              "CodeBuddy.app"
+            ],
             "installPaths": [
               "/Applications/CodeBuddy.app",
               "{hostHomeDir}/Applications/CodeBuddy.app"
@@ -2457,6 +2484,7 @@
         ],
         "desktopClient": {
           "reloadsHostAuth": false,
+          "key": "codebuddy-cn",
           "macos": {
             "clientName": "CodeBuddy CN",
             "execNames": [
@@ -2466,6 +2494,9 @@
               "/CodeBuddy CN.app/Contents/MacOS/"
             ],
             "bundleId": "com.tencent.codebuddycn",
+            "bundleNames": [
+              "CodeBuddy CN.app"
+            ],
             "installPaths": [
               "/Applications/CodeBuddy CN.app",
               "{hostHomeDir}/Applications/CodeBuddy CN.app"
@@ -2671,6 +2702,7 @@
         "desktopClient": {
           "reloadsHostAuth": false,
           "userDataEnvKey": "WORKBUDDY_USER_DATA_DIR",
+          "key": "workbuddy",
           "macos": {
             "clientName": "WorkBuddy AI",
             "execNames": [
@@ -2680,6 +2712,9 @@
               "/WorkBuddy AI.app/Contents/MacOS/"
             ],
             "bundleId": "com.workbuddy.workbuddy-ai",
+            "bundleNames": [
+              "WorkBuddy AI.app"
+            ],
             "installPaths": [
               "/Applications/WorkBuddy AI.app",
               "{hostHomeDir}/Applications/WorkBuddy AI.app"
@@ -2866,6 +2901,7 @@
         "desktopClient": {
           "reloadsHostAuth": false,
           "userDataEnvKey": "WORKBUDDY_USER_DATA_DIR",
+          "key": "workbuddy-cn",
           "macos": {
             "clientName": "WorkBuddy",
             "execNames": [
@@ -2875,6 +2911,9 @@
               "/WorkBuddy.app/Contents/MacOS/"
             ],
             "bundleId": "com.tencent.workbuddy.mac",
+            "bundleNames": [
+              "WorkBuddy.app"
+            ],
             "installPaths": [
               "/Applications/WorkBuddy.app",
               "{hostHomeDir}/Applications/WorkBuddy.app"

@@ -113,12 +113,14 @@ func builtinCodex() Definition {
 			EnvKeys:     []string{"OPENAI_API_KEY", "OPENAI_BASE_URL"},
 			Headless:    &HeadlessConfig{TriggerSubcommands: []string{"exec"}},
 			DesktopClient: &DesktopClient{
+				Key:            "codex",
 				UserDataEnvKey: "CODEX_ELECTRON_USER_DATA_PATH",
 				MacOS: &DesktopPlatform{
 					ClientName:   "ChatGPT",
 					ExecNames:    []string{"ChatGPT", "Codex"},
 					PathIncludes: []string{"/ChatGPT.app/Contents/MacOS/", "/Codex.app/Contents/MacOS/"},
 					BundleID:     "com.openai.codex",
+					BundleNames:  []string{"ChatGPT.app", "Codex.app"},
 					InstallPaths: []string{
 						"/Applications/ChatGPT.app",
 						"{hostHomeDir}/Applications/ChatGPT.app",
@@ -227,12 +229,14 @@ func builtinClaude() Definition {
 				StdinFlags:   []string{"--input-format=stream-json"},
 			},
 			DesktopClient: &DesktopClient{
+				Key:             "claude",
 				ReloadsHostAuth: &reloadsHostAuth,
 				UserDataEnvKey:  "CLAUDE_USER_DATA_DIR",
 				MacOS: &DesktopPlatform{
 					ClientName:   "Claude",
 					ExecNames:    []string{"Claude"},
 					BundleID:     "com.anthropic.claudefordesktop",
+					BundleNames:  []string{"Claude.app"},
 					PathIncludes: []string{"/Claude.app/Contents/MacOS/"},
 					InstallPaths: []string{"/Applications/Claude.app", "{hostHomeDir}/Applications/Claude.app"},
 				},
@@ -609,7 +613,7 @@ func builtinKiro() Definition {
 			// Kiro 桌面端现为 Kiro.app（bundle id dev.kiro.desktop，2026-11-21
 			// 实装确认）。旧版随 CLI 分发的 Kiro CLI.app 只是历史落点：官方
 			// kiro-cli 安装包现在只含二进制，仍保留为旧安装的回落。
-			DesktopClient: describeDesktopClient(desktopClient(
+			DesktopClient: withDesktopCatalog(describeDesktopClient(desktopClient(
 				"Kiro",
 				[]string{"Kiro", "kiro_cli_desktop"},
 				[]string{"/Kiro.app/Contents/MacOS/", "/Kiro CLI.app/Contents/MacOS/"},
@@ -618,6 +622,10 @@ func builtinKiro() Definition {
 				[]string{"Kiro.exe"},
 				[]string{"kiro", "Kiro"},
 			), "dev.kiro.desktop", []string{"Kiro"}),
+				"kiro", "",
+				[]string{"Kiro.app", "Kiro CLI.app"},
+				[]string{"com.amazon.codewhisperer"},
+			),
 		},
 		NativeBoundary: nativeKiro(),
 	}
@@ -661,7 +669,7 @@ func builtinZcode() Definition {
 			EnvKeys:    []string{"ZCODE_API_KEY", "ZCODE_BASE_URL", "ZCODE_DATA_BASE_DIR"},
 			// 非交互入口：`-p/--prompt`（ZCode 0.17.0 实测）。
 			Headless: &HeadlessConfig{TriggerFlags: []string{"-p", "--prompt"}},
-			DesktopClient: describeDesktopClient(desktopClient(
+			DesktopClient: withDesktopCatalog(describeDesktopClient(desktopClient(
 				"ZCode",
 				[]string{"ZCode"},
 				[]string{"/ZCode.app/Contents/MacOS/"},
@@ -670,6 +678,10 @@ func builtinZcode() Definition {
 				[]string{"ZCode.exe"},
 				[]string{"zcode"},
 			), "dev.zcode.app", nil),
+				"zcode", "zcode-shadow",
+				[]string{"ZCode.app", "ZCode Desktop.app"},
+				nil,
+			),
 		},
 	}
 }
@@ -792,11 +804,13 @@ func builtinCodebuddy() Definition {
 			// 同族的 CodeBuddy CN / WorkBuddy 也都是 `Electron`。
 			DesktopClient: &DesktopClient{
 				// 凭据不通用：桌面端只做账号隔离，不做 host auth 投影（独立登录）。
+				Key:             "codebuddy",
 				ReloadsHostAuth: &reloadsHostAuth,
 				MacOS: &DesktopPlatform{
 					ClientName:   "CodeBuddy",
 					ExecNames:    []string{"Electron"},
 					BundleID:     "com.tencent.codebuddy",
+					BundleNames:  []string{"CodeBuddy.app"},
 					PathIncludes: []string{"/CodeBuddy.app/Contents/MacOS/"},
 					InstallPaths: []string{
 						"/Applications/CodeBuddy.app",
@@ -886,11 +900,13 @@ func builtinCodebuddyCN() Definition {
 			// （安装器里留了 hint），声明了就会出现"无法管理的应用"，违反
 			// test/toolkit-app-lifecycle-matrix.test.js 的不变量。
 			DesktopClient: &DesktopClient{
+				Key:             "codebuddy-cn",
 				ReloadsHostAuth: &reloadsHostAuth,
 				MacOS: &DesktopPlatform{
 					ClientName:   "CodeBuddy CN",
 					ExecNames:    []string{"Electron"},
 					BundleID:     "com.tencent.codebuddycn",
+					BundleNames:  []string{"CodeBuddy CN.app"},
 					PathIncludes: []string{"/CodeBuddy CN.app/Contents/MacOS/"},
 					InstallPaths: []string{
 						"/Applications/CodeBuddy CN.app",
@@ -988,6 +1004,7 @@ func builtinWorkbuddy() Definition {
 			},
 			DesktopClient: &DesktopClient{
 				// 共享 .info 的宿主凭据导入尚未接通；连接器 credentials 不属于主站登录态。
+				Key:             "workbuddy",
 				ReloadsHostAuth: &reloadsHostAuth,
 				// 实测进程 env 中的真实键：WorkBuddy 用它解析 userData 根。
 				// 把它指向账号隔离目录 = 每个账号一份独立登录态（独立扫码）。
@@ -996,6 +1013,7 @@ func builtinWorkbuddy() Definition {
 					ClientName:   "WorkBuddy AI",
 					ExecNames:    []string{"Electron"},
 					BundleID:     "com.workbuddy.workbuddy-ai",
+					BundleNames:  []string{"WorkBuddy AI.app"},
 					PathIncludes: []string{"/WorkBuddy AI.app/Contents/MacOS/"},
 					InstallPaths: []string{
 						"/Applications/WorkBuddy AI.app",
@@ -1080,12 +1098,14 @@ func builtinWorkbuddyCN() Definition {
 				"CODEBUDDY_AUTH_TOKEN",
 			},
 			DesktopClient: &DesktopClient{
+				Key:             "workbuddy-cn",
 				ReloadsHostAuth: &reloadsHostAuth,
 				UserDataEnvKey:  "WORKBUDDY_USER_DATA_DIR",
 				MacOS: &DesktopPlatform{
 					ClientName:   "WorkBuddy",
 					ExecNames:    []string{"Electron"},
 					BundleID:     "com.tencent.workbuddy.mac",
+					BundleNames:  []string{"WorkBuddy.app"},
 					PathIncludes: []string{"/WorkBuddy.app/Contents/MacOS/"},
 					InstallPaths: []string{
 						"/Applications/WorkBuddy.app",
@@ -1252,6 +1272,30 @@ func describeDesktopClient(client *DesktopClient, macBundleID string, windowsDis
 	}
 	if client.Windows != nil && len(windowsDisplayNames) > 0 {
 		client.Windows.DisplayNames = windowsDisplayNames
+	}
+	return client
+}
+
+// withDesktopCatalog 声明 AIH 桌面目录所需的展示事实。
+//
+// 只有声明了 Key 的桌面客户端才进入 `aih desktop` 的管理集合；其余客户端
+// （agy / opencode / qoder / kimi 等）仍可被原生启动器使用，但不由桌面目录管理。
+// BundleNames 是 .app 文件名（按优先级），LegacyBundleIDs 只用于显示回落。
+func withDesktopCatalog(
+	client *DesktopClient,
+	key string,
+	shadowDirName string,
+	bundleNames []string,
+	legacyBundleIDs []string,
+) *DesktopClient {
+	if client == nil {
+		return nil
+	}
+	client.Key = key
+	client.ShadowDirName = shadowDirName
+	if client.MacOS != nil {
+		client.MacOS.BundleNames = bundleNames
+		client.MacOS.LegacyBundleIDs = legacyBundleIDs
 	}
 	return client
 }

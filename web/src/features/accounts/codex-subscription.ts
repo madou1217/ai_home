@@ -53,6 +53,14 @@ function formatDateTime(ms: number) {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function elapsedCalendarDays(fromMs: number, toMs: number) {
+  const from = new Date(fromMs);
+  const to = new Date(toMs);
+  const fromDay = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const toDay = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.max(0, Math.round((toDay - fromDay) / 86_400_000));
+}
+
 export interface CodexSubscriptionView {
   /** 行内短文案 */
   label: string;
@@ -70,9 +78,9 @@ export function describeCodexSubscription(subscription: CodexSubscription): Code
     case 'renewed': {
       const at = formatDateTime(subscription.planConfirmedAtMs);
       return {
-        label: `订阅有效 ${formatDate(subscription.planConfirmedAtMs)}`,
-        tooltip: `原到期日 ${until}；${at} 查询额度时仍是 ${plan}，订阅有效。每次刷新额度都会重新确认。`,
-        tone: 'success',
+        label: `订阅至 ${until}`,
+        tooltip: `已过期 ${elapsedCalendarDays(subscription.validUntilMs, Date.now())} 天。原到期日 ${until}；${at} 查询额度时仍是 ${plan}，订阅有效。每次刷新额度都会重新确认。`,
+        tone: 'danger',
         needsConfirmation: false
       };
     }

@@ -133,12 +133,7 @@ func (s *UsageStore) computeColdShards(
 	if err != nil || !ok {
 		return nil, false, err
 	}
-	globalLctx := buildLiveCanonicalContext(&UsageProjectionContext{
-		ForkDescriptors:      win.forks,
-		Attributions:         win.fullQueryAttrs,
-		RecordHighWaterID:    -1,
-		PromptHighWaterRowID: -1,
-	})
+	globalLctx := win.readyLiveContext
 	if len(normShards) == 1 {
 		sh, shErr := buildColdDashboardShardConn(ctx, baseSlot.conn, normShards[0], overallTrendOriginMS, overallTrendBucketMS, win, globalLctx, policy)
 		if shErr != nil {
@@ -231,21 +226,17 @@ func (s *UsageStore) resolveColdWindowAttributionsConn(
 		return coldComputedWindow{}, false, err
 	}
 	attrFrom, attrTo := queryAttributionBounds(q)
-	rollupAttrs, ok := collectValidatedColdRollupAttrs(byHour, sortedHours, res.plan.rollupRanges, attrFrom, attrTo)
+	lctx, ok := collectColdLiveContext(byHour, sortedHours, res.plan.rollupRanges, attrFrom, attrTo, res.liveAttrs, forksByHash)
 	if !ok {
 		return coldComputedWindow{}, false, nil
 	}
-	fullAttrs, disjointOK := mergeDisjointAttributions(rollupAttrs, res.liveAttrs)
-	if !disjointOK {
-		return coldComputedWindow{}, false, nil
-	}
 	return coldComputedWindow{
-		byHour:         byHour,
-		sortedHours:    sortedHours,
-		rollupRanges:   res.plan.rollupRanges,
-		liveRanges:     res.plan.liveRanges,
-		fullQueryAttrs: fullAttrs,
-		forks:          append([]forkDescriptor(nil), forks...),
+		byHour:           byHour,
+		sortedHours:      sortedHours,
+		rollupRanges:     res.plan.rollupRanges,
+		liveRanges:       res.plan.liveRanges,
+		readyLiveContext: lctx,
+		forks:            append([]forkDescriptor(nil), forks...),
 	}, true, nil
 }
 

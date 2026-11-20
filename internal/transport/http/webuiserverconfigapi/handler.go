@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"math"
 	"net/http"
 	"strconv"
@@ -24,8 +25,9 @@ const (
 	// Path 是 server 配置的只读管理契约。
 	Path = "/v1/management/webui/server-config"
 
-	defaultServerHost = "127.0.0.1"
-	defaultServerPort = 9527
+	// 监听主机与端口的归一规则只在 application/serverconfig 定义一次。
+	defaultServerHost = serverconfig.DefaultHost
+	defaultServerPort = serverconfig.DefaultPort
 
 	defaultModelsProbeAccounts = 2
 	defaultWindowIntervalMs    = 3600000 // 1h
@@ -260,11 +262,7 @@ func sanitizeServerConfig(input map[string]any) ConfigView {
 }
 
 func normalizeServerPort(value any) int {
-	port := jsNumber(value)
-	if !math.IsNaN(port) && port > 0 && port <= 65535 && port == math.Trunc(port) {
-		return int(port)
-	}
-	return defaultServerPort
+	return serverconfig.NormalizePort(value)
 }
 
 func normalizeLargePasteChars(value any) int {

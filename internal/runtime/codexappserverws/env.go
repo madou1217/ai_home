@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	defaultServerHost      = "127.0.0.1"
-	defaultServerPort      = 9527
+	// 监听主机与端口的归一规则只在 application/serverconfig 定义一次。
+	defaultServerHost      = serverconfig.DefaultHost
+	defaultServerPort      = serverconfig.DefaultPort
 	defaultServerAPIKey    = "dummy"
 	defaultCodexAPIBaseURL = "https://api.openai.com/v1"
 
@@ -276,26 +277,7 @@ func buildServerBaseURL(rawHost string, rawPort any) string {
 }
 
 func normalizeServerPort(raw any) int {
-	switch v := raw.(type) {
-	case float64:
-		n := int(v)
-		if float64(n) == v && n >= 1 && n <= 65535 {
-			return n
-		}
-	case int:
-		if v >= 1 && v <= 65535 {
-			return v
-		}
-	case int64:
-		if v >= 1 && v <= 65535 {
-			return int(v)
-		}
-	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 1 && n <= 65535 {
-			return n
-		}
-	}
-	return defaultServerPort
+	return serverconfig.NormalizePort(raw)
 }
 
 func readAppStateCodexCredential(ctx context.Context, dbPath string, accountRef string) (apiKey string, baseURL string, found bool, err error) {

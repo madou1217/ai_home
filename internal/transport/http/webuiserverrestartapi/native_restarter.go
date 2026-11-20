@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"math"
 	"os"
 	"os/exec"
@@ -12,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
 const (
@@ -25,8 +26,9 @@ const (
 	restartContextEnv   = "AIH_SERVER_RESTART"
 	restartContextValue = "mode=background"
 
-	defaultServerHost = "127.0.0.1"
-	defaultServerPort = 9527
+	// 监听主机与端口的归一规则只在 application/serverconfig 定义一次。
+	defaultServerHost = serverconfig.DefaultHost
+	defaultServerPort = serverconfig.DefaultPort
 
 	defaultModelsProbeAccounts = 2
 	defaultWindowIntervalMs    = 3600000 // 1h
@@ -318,11 +320,7 @@ func sanitizeServerConfigView(input map[string]any) webuiserverconfigapi.ConfigV
 }
 
 func normalizeServerPort(value any) int {
-	port := jsNumber(value)
-	if !math.IsNaN(port) && port > 0 && port <= 65535 && port == math.Trunc(port) {
-		return int(port)
-	}
-	return defaultServerPort
+	return serverconfig.NormalizePort(value)
 }
 
 func normalizeLargePasteChars(value any) int {

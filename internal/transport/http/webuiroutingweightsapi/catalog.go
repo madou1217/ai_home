@@ -185,11 +185,12 @@ func buildAccountModelInventory(catalog accountapp.AccountModelCatalog, hasCatal
 		}
 		effective := make([]string, 0, len(set.Models))
 		for _, item := range set.Models {
-			policy := item.ManualPolicy()
-			if policy == accountapp.ModelPolicyForceDisable {
-				continue
+			// 有效集判定与 WebUI 可选集同源，只在 application 层定义一次。
+			selection := accountapp.ModelSelection{
+				UpstreamAvailable: item.UpstreamAvailable(),
+				ManualPolicy:      item.ManualPolicy(),
 			}
-			if item.UpstreamAvailable() || policy == accountapp.ModelPolicyForceEnable {
+			if selection.Selectable() {
 				effective = append(effective, item.ModelID().String())
 			}
 		}

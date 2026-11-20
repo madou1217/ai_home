@@ -167,6 +167,34 @@ func (policy ModelManualPolicy) IsValid() bool {
 	}
 }
 
+// ModelSelection 是「一个账号模型能否进入可选集」的全部输入。
+//
+// WebUI 的可选集、路由权重诊断的有效集都按同一套规则判断，此前各自在传输层推导，
+// 口径一改就要同步多处。规则只在这里定义一次，调用方只负责把事实映射进来。
+type ModelSelection struct {
+	// UpstreamAvailable 表示最近一次上游发现声明了该模型。
+	UpstreamAvailable bool
+	// ManualPolicy 是人工覆盖策略。
+	ManualPolicy ModelManualPolicy
+	// SettingEnabled 是设置文档里该 (账号, 模型) 的显式开关；nil 表示没有记录。
+	SettingEnabled *bool
+}
+
+// Selectable 报告该模型是否进入可选集。
+//
+// 1) force_disable 必排除；
+// 2) 设置文档显式 Enabled=false 必排除；
+// 3) 其余情况下，上游声明可用或人工 force_enable 才进入。
+func (selection ModelSelection) Selectable() bool {
+	if selection.ManualPolicy == ModelPolicyForceDisable {
+		return false
+	}
+	if selection.SettingEnabled != nil && !*selection.SettingEnabled {
+		return false
+	}
+	return selection.UpstreamAvailable || selection.ManualPolicy == ModelPolicyForceEnable
+}
+
 // AccountModelInput 是恢复或创建账号模型关系所需的完整字段。
 type AccountModelInput struct {
 	// AccountRef 是模型关系所属的稳定账号身份。

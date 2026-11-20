@@ -366,17 +366,16 @@ func buildResponse(
 			if m.UpstreamAvailable() {
 				addProviderModel(provider, id)
 			}
-			// 决定进入可选列表的规则：
-			// 1) manualPolicy == force_disable 必排除；
-			// 2) 若 app-state setting 显式 Enabled=false 则排除；
-			// 3) 否则 UpstreamAvailable 或 force_enable 均进入可选集。
-			if m.ManualPolicy() == accountapp.ModelPolicyForceDisable {
-				continue
+			// 可选集判定只在 application 层定义一次。
+			selection := accountapp.ModelSelection{
+				UpstreamAvailable: m.UpstreamAvailable(),
+				ManualPolicy:      m.ManualPolicy(),
 			}
-			if setting, hasSetting := findAccountSetting(settingByKey, resolver, ref, id); hasSetting && !setting.Enabled {
-				continue
+			if setting, hasSetting := findAccountSetting(settingByKey, resolver, ref, id); hasSetting {
+				enabled := setting.Enabled
+				selection.SettingEnabled = &enabled
 			}
-			if m.UpstreamAvailable() || m.ManualPolicy() == accountapp.ModelPolicyForceEnable {
+			if selection.Selectable() {
 				selectableByAccountRef[ref] = appendDistinct(selectableByAccountRef[ref], id)
 				addProviderModel(provider, id)
 			}

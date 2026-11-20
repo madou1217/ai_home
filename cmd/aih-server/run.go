@@ -189,10 +189,18 @@ func serveUntilCanceled(
 				shutdownErr,
 			)
 		}
-		if errors.Is(serveErr, http.ErrServerClosed) {
-			return nil
+		// Serve 在主动关停时可能返回 ErrServerClosed，也可能因为监听器/请求
+		// 被关闭而返回 context deadline/canceled；这些都不是启动失败，更不能
+		// 变成非零退出码让 KeepAlive 复活旧实例。真实崩溃在 ctx 取消前的
+		// select 分支已经返回，不会走到这里。
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			_, _ = fmt.Fprintf(
+				stderr,
+				"aih-server 关闭期间 Serve 返回错误（按正常退出处理）: %v\n",
+				serveErr,
+			)
 		}
-		return serveErr
+		return nil
 	}
 }
 

@@ -27,12 +27,13 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
 	providerID = "zcode"
-	balanceURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance"
-	previewURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/preview"
+	balanceURL = providers.ZCodeSiteBaseURL + "/api/v1/zcode-plan/billing/balance"
+	previewURL = providers.ZCodeSiteBaseURL + "/api/v1/zcode-plan/billing/preview"
 	// paas 目录：登录态账号的 z.ai access token 仍可列出通用模型（Node 的同款兜底）。
 	paasModelsURL    = "https://api.z.ai/api/coding/paas/v4/models"
 	maxResponseBytes = 1 << 20
@@ -174,7 +175,7 @@ func (source *Source) headers(identitySeed string, token string) map[string]stri
 	headers := map[string]string{
 		"Authorization":     "Bearer " + token,
 		"Accept":            "application/json",
-		"HTTP-Referer":      "https://zcode.z.ai",
+		"HTTP-Referer":      providers.ZCodeSiteBaseURL,
 		"X-Title":           "Z Code@electron",
 		"X-Platform":        source.platform,
 		"X-Release-Channel": "stable",

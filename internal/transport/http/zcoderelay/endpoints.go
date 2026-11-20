@@ -3,6 +3,8 @@ package zcoderelay
 import (
 	"errors"
 	"strings"
+
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 // 推理端点（2026-10-27 真机纠偏后的官方形态）：
@@ -20,11 +22,11 @@ const (
 	Path = "/v1/messages"
 
 	// PlanJWTBaseURL 服务 start-plan 家族，只认长期 jwt。
-	PlanJWTBaseURL = "https://zcode.z.ai/api/v1/zcode-plan/anthropic"
+	PlanJWTBaseURL = providers.ZCodeSiteBaseURL + "/api/v1/zcode-plan/anthropic"
 	// UltraZAIBaseURL 服务 zai 区域的 coding plan。
-	UltraZAIBaseURL = "https://zcode.z.ai/api/v1/ultra-zai/anthropic"
+	UltraZAIBaseURL = providers.ZCodeSiteBaseURL + "/api/v1/ultra-zai/anthropic"
 	// UltraBigmodelBaseURL 服务 bigmodel 区域的 coding plan。
-	UltraBigmodelBaseURL = "https://zcode.z.ai/api/v1/ultra/anthropic"
+	UltraBigmodelBaseURL = providers.ZCodeSiteBaseURL + "/api/v1/ultra/anthropic"
 )
 
 // ErrMissingCredential 表示端点需要的凭据缺失。

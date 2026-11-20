@@ -34,12 +34,13 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/core/providers"
 	zcodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/zcode/modelcatalog"
 )
 
 const (
 	providerID       = "zcode"
-	balanceURL       = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance"
+	balanceURL       = providers.ZCodeSiteBaseURL + "/api/v1/zcode-plan/billing/balance"
 	sourceID         = "zcode_plan_balance_api"
 	documentKind     = "zcode_plan_balance"
 	maxResponseBytes = 1 << 20

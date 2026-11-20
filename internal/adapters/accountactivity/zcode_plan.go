@@ -12,18 +12,20 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
-	zcodeDefaultBaseURL       = "https://zcode.z.ai"
-	zcodePlanPreviewPath      = "/api/v1/zcode-plan/billing/preview"
-	zcodeMarketingTouchPath   = "/api/v1/marketing/touch"
-	zcodePlanBalancePath      = "/api/v1/zcode-plan/billing/balance"
-	zcodePlanClaimPath        = "/api/v1/zcode-plan/billing/claim"
-	zcodeClientConfigsPath    = "/api/v1/client/configs"
-	zcodeDefaultTimeout       = 20 * time.Second
-	zcodeCaptchaFailedCode    = 3007
-	zcodeTargetNotFoundCode   = 1001
+	zcodeDefaultBaseURL     = providers.ZCodeSiteBaseURL
+	zcodePlanPreviewPath    = "/api/v1/zcode-plan/billing/preview"
+	zcodeMarketingTouchPath = "/api/v1/marketing/touch"
+	zcodePlanBalancePath    = "/api/v1/zcode-plan/billing/balance"
+	zcodePlanClaimPath      = "/api/v1/zcode-plan/billing/claim"
+	zcodeClientConfigsPath  = "/api/v1/client/configs"
+	zcodeDefaultTimeout     = 20 * time.Second
+	zcodeCaptchaFailedCode  = 3007
+	zcodeTargetNotFoundCode = 1001
 )
 
 var zcodeAlreadyClaimedRegex = regexp.MustCompile(`(?i)已领取|already\s*claimed`)

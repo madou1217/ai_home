@@ -38,8 +38,10 @@ const (
 	KimiMoonshotBaseURL = "https://api.moonshot.cn/v1"
 	// KiroBaseURL 是 Kiro 的官方推理端点。
 	KiroBaseURL = "https://q.us-east-1.amazonaws.com"
-	// ZCodeBaseURL 是 ZCode 的 Anthropic 兼容端点。
+	// ZCodeBaseURL 是 ZCode 的 Anthropic 兼容端点（bigmodel 区域）。
 	ZCodeBaseURL = "https://open.bigmodel.cn/api/anthropic"
+	// ZCodeSiteBaseURL 是 ZCode 站点根：Relay 的 zcode-plan/ultra 端点与计费端点都挂在下面。
+	ZCodeSiteBaseURL = "https://zcode.z.ai"
 	// ClineBaseURL 是 Cline REST 面（Cline Pass 与 API Key 共用）。
 	ClineBaseURL = "https://api.cline.bot/api/v1"
 	// CodeBuddyBaseURL 是 CodeBuddy 国际站推理端点。

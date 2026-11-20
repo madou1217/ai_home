@@ -59,5 +59,7 @@ export async function flushTerminalInput(
 
 /** xterm replies must remain live while a terminal is a read-only preview. */
 export function isTerminalProtocolReply(data: string): boolean {
+  // Control characters are the xterm protocol payload here, not user text.
+  // eslint-disable-next-line no-control-regex
   return /^(?:\x1b\[[0-9;?=>]*[cRnIOt]|\x1b\[[0-9;?]*\$y|\x1b(?:P|\])[^\x1b\x07]*(?:\x07|\x1b\\))+$/.test(data);
 }

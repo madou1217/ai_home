@@ -2,9 +2,9 @@ name: web-build
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 concurrency:
   group: web-build-${{ github.workflow }}-${{ github.ref }}

@@ -31,46 +31,37 @@ func (s *UsageStore) scanRollupHourRangeConn(
 	if s == nil || conn == nil {
 		return rollupScanResult{}, ErrUsageUnavailable
 	}
-
-	var (
-		snapRev             int64
-		snapForkRev         int64
-		snapPricingRev      int64
-		forkDigest          int64
-		customPricingDigest int64
-		byHour              = make(map[int64]*rollupHourBuild)
-		unclosedHours       map[int64]bool
-	)
-
 	capReport, err := inspectRollupCapabilitiesQueryer(ctx, conn)
 	if err != nil {
 		return rollupScanResult{}, err
 	}
-	if !capReport.allReady {
-		return rollupScanResult{}, errRollupCapabilitiesNotReady
-	}
-	meta := capReport.meta
-	snapRev = meta.changeRev
-	snapForkRev = meta.forkRev
-	snapPricingRev = meta.pricingRev
-
-	forks, fDigest, err := s.getCachedForkDescriptorsConn(ctx, conn, snapForkRev)
+	inputs, err := s.prepareRollupScanInputsConn(ctx, conn, capReport, pricingCache)
 	if err != nil {
 		return rollupScanResult{}, err
 	}
-	forkDigest = fDigest
-	forksByHash := make(map[string]forkDescriptor, len(forks))
-	for _, f := range forks {
-		forksByHash[f.SourceHash] = f
+	return s.scanRollupHourRangeWithInputsConn(ctx, conn, startHour, endHour, targetHours, inputs)
+}
+
+func (s *UsageStore) scanRollupHourRangeWithInputsConn(
+	ctx context.Context,
+	conn *sql.Conn,
+	startHour, endHour int64,
+	targetHours map[int64]bool,
+	inputs rollupScanInputs,
+) (rollupScanResult, error) {
+	if endHour <= startHour {
+		return rollupScanResult{byHour: make(map[int64]*rollupHourBuild)}, nil
+	}
+	if s == nil || conn == nil {
+		return rollupScanResult{}, ErrUsageUnavailable
 	}
 
-	// Reuse only within this serial sync, after same-snapshot capability
-	// and both persistent DATA pricing revisions have been verified.
-	pricingSnap, digest, err := pricingCache.loadConn(ctx, s, conn, capReport)
-	if err != nil {
-		return rollupScanResult{}, err
-	}
-	customPricingDigest = digest
+	var (
+		byHour        = make(map[int64]*rollupHourBuild)
+		unclosedHours map[int64]bool
+	)
+	forksByHash := inputs.forksByHash
+	pricingSnap := inputs.pricingSnap
 
 	endInclusive := endHour - 1
 	padFrom := maxInt64(0, startHour-scannerAfterProxyWindowMS)
@@ -264,11 +255,11 @@ func (s *UsageStore) scanRollupHourRangeConn(
 	_ = pRows.Close()
 
 	return rollupScanResult{
-		snapRev:             snapRev,
-		snapForkRev:         snapForkRev,
-		snapPricingRev:      snapPricingRev,
-		forkDigest:          forkDigest,
-		customPricingDigest: customPricingDigest,
+		snapRev:             inputs.snapRev,
+		snapForkRev:         inputs.snapForkRev,
+		snapPricingRev:      inputs.snapPricingRev,
+		forkDigest:          inputs.forkDigest,
+		customPricingDigest: inputs.customPricingDigest,
 		byHour:              byHour,
 		unclosedHours:       unclosedHours,
 	}, nil

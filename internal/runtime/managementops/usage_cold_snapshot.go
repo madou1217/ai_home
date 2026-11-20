@@ -394,11 +394,27 @@ func (s *UsageStore) scanColdChunksParallel(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			var (
+				inputs      rollupScanInputs
+				inputsReady bool
+			)
 			for sp := range tasks {
 				if workerCtx.Err() != nil {
 					return
 				}
-				res, err := s.scanRollupHourRangeConn(workerCtx, slot.conn, sp.StartHour, sp.EndHour, nil, &slot.pricingCache)
+				var (
+					res rollupScanResult
+					err error
+				)
+				if !inputsReady {
+					inputs, err = s.prepareRollupScanInputsConn(workerCtx, slot.conn, slot.capReport, &slot.pricingCache)
+					if err == nil {
+						inputsReady = true
+					}
+				}
+				if err == nil {
+					res, err = s.scanRollupHourRangeWithInputsConn(workerCtx, slot.conn, sp.StartHour, sp.EndHour, nil, inputs)
+				}
 				if err != nil {
 					if errors.Is(err, errRollupCapabilitiesNotReady) {
 						outMu.Lock()

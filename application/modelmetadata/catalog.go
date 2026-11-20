@@ -19,3 +19,9 @@ type Catalog interface {
 	// SourceID 返回该元数据来源的稳定标识，供接口展示来源而不是写死实现名。
 	SourceID() string
 }
+
+// DisplayNameLookup 按精确 Provider + 模型返回元数据目录声明的显示名。
+// 它是可选能力：目录没有显示名时返回未命中，调用方回退到其他来源或模型 ID。
+type DisplayNameLookup interface {
+	LookupDisplayName(providerID string, modelID string) (string, bool)
+}

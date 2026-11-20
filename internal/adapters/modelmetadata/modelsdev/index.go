@@ -30,6 +30,7 @@ type snapshotRecord struct {
 	Input   []string `json:"input"`
 	Output  []string `json:"output"`
 	Efforts []string `json:"efforts,omitempty"`
+	Name    string   `json:"name,omitempty"`
 	Context int      `json:"context,omitempty"`
 }
 
@@ -38,6 +39,7 @@ type Index struct {
 	models    map[string]modelmetadata.Modalities
 	efforts   map[string][]inference.ReasoningEffort
 	contexts  map[string]int
+	names     map[string]string
 	overrides atomic.Pointer[modalityOverrideSnapshot]
 }
 
@@ -57,6 +59,7 @@ func New() (*Index, error) {
 	models := make(map[string]modelmetadata.Modalities, len(records))
 	efforts := make(map[string][]inference.ReasoningEffort, len(records))
 	contexts := make(map[string]int, len(records))
+	names := make(map[string]string, len(records))
 	for modelID, record := range records {
 		if strings.TrimSpace(modelID) == "" || modelID != strings.TrimSpace(modelID) {
 			return nil, ErrInvalidSnapshot
@@ -76,8 +79,11 @@ func New() (*Index, error) {
 		if record.Context > 0 {
 			contexts[modelID] = record.Context
 		}
+		if name := strings.TrimSpace(record.Name); name != "" {
+			names[modelID] = name
+		}
 	}
-	index := &Index{models: models, efforts: efforts, contexts: contexts}
+	index := &Index{models: models, efforts: efforts, contexts: contexts, names: names}
 	index.overrides.Store(&modalityOverrideSnapshot{
 		byProvider: map[string]map[string]modelmetadata.Modalities{},
 	})
@@ -85,6 +91,7 @@ func New() (*Index, error) {
 }
 
 var _ modelmetadata.ModelDescriptorRegistrar = (*Index)(nil)
+var _ modelmetadata.DisplayNameLookup = (*Index)(nil)
 
 // SourceID 返回内置快照的稳定来源标识。
 func (index *Index) SourceID() string { return "models.dev" }
@@ -192,6 +199,29 @@ func (index *Index) LookupContextWindow(providerID string, modelID string) (int,
 		}
 	}
 	return 0, false
+}
+
+// LookupDisplayName 按与模态/上下文相同的模型身份口径返回 models.dev 显示名。
+func (index *Index) LookupDisplayName(providerID string, modelID string) (string, bool) {
+	if index == nil || index.names == nil {
+		return "", false
+	}
+	id := strings.TrimSpace(modelID)
+	if id == "" {
+		return "", false
+	}
+	stripped := stripKnownModelPrefix(id)
+	for _, namespace := range providerNamespacesFor(providerID, id, stripped) {
+		if name, found := index.names[namespace+"/"+stripped]; found {
+			return name, true
+		}
+	}
+	for _, key := range baseModelCandidates(id, stripped) {
+		if name, found := index.names[key]; found {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 func (index *Index) lookupRuntimeOverride(providerID, modelID string) (modelmetadata.Modalities, bool) {

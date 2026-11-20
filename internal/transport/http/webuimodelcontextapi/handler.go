@@ -3,8 +3,8 @@
 // 解析优先级与 Node model-context-overrides 一致：
 //
 //	手动覆盖（app-state config:model-context-overrides）
-//	> 上游探测（app-state cache:webui-models-snapshot.json 的 contextLimits）
-//	> 模型元数据插件目录（由组合层注入的实现提供）
+//	> 模型元数据插件目录（由组合层注入的 Go 实现提供）
+//	> 上游探测快照（app-state cache:webui-models-snapshot.json 的 contextLimits）
 //	> unknown。
 //
 // GET 还会返回同 provider 下的同类型账号（供前端提示「是否一并设置」）。
@@ -219,10 +219,10 @@ func (handler *Handler) resolveModel(provider string, accountRef string, modelID
 	tokens, source := 0, "unknown"
 	if override > 0 {
 		tokens, source = override, "override"
-	} else if probedValue := probed[accountRef][modelID]; probedValue > 0 {
-		tokens, source = probedValue, "probed"
 	} else if catalogValue, ok := handler.metadata.LookupContextWindow(provider, modelID); ok && catalogValue > 0 {
 		tokens, source = catalogValue, "catalog"
+	} else if probedValue := probed[accountRef][modelID]; probedValue > 0 {
+		tokens, source = probedValue, "probed"
 	}
 	return ModelView{Model: modelID, Tokens: tokens, Source: source, Override: override}
 }

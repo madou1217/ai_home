@@ -30,6 +30,8 @@ type snapshotRecord struct {
 	Input   []string `json:"input"`
 	Output  []string `json:"output"`
 	Efforts []string `json:"efforts,omitempty"`
+	// Name 是 models.dev 声明的显示名；空表示目录没有声明。
+	Name string `json:"name,omitempty"`
 	// Context 是上游声明的输入上下文窗口（models.dev limit.input，缺失时回落到
 	// limit.context）；0 表示目录没有声明，不要与「声明为 0」混为一谈。
 	Context int `json:"context,omitempty"`
@@ -63,6 +65,7 @@ type catalogSource struct {
 
 type catalogModel struct {
 	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
 	Modalities       snapshotRecord         `json:"modalities"`
 	ReasoningOptions []catalogReasoningItem `json:"reasoning_options"`
 	Limit            *catalogLimit          `json:"limit"`
@@ -217,6 +220,7 @@ func appendModels(
 			Input:   append([]string(nil), model.Modalities.Input...),
 			Output:  append([]string(nil), model.Modalities.Output...),
 			Efforts: efforts,
+			Name:    strings.TrimSpace(model.Name),
 			Context: contextWindow,
 		}
 	}

@@ -469,6 +469,10 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		sourceLabel = "empty"
 	}
 
+	// labels/contextLimits 优先来自 Go 的 modelmetadata 目录（models.dev），
+	// host snapshot 只补目录没有声明的 provider/model。
+	labels, contextLimits = handler.mergeMetadataFacts(labels, contextLimits, accountSummaries, byAccountRef)
+
 	return CatalogResponse{
 		OK:                 true,
 		Endpoint:           "/v1/models",
@@ -493,6 +497,67 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		SettingsUpdatedAt:  settings.UpdatedAtMS,
 		CatalogGeneration:  catalog.Generation,
 	}, nil
+}
+
+// mergeMetadataFacts 用 modelmetadata 目录补全 labels（provider/model 显示名）和
+// contextLimits（accountRef/model 上下文窗口）。传入的 snapshot 值作为兜底，
+// 目录命中时覆盖；目录未命中时保留原值。
+func (handler *Handler) mergeMetadataFacts(
+	labels map[string]map[string]string,
+	contextLimits map[string]map[string]int,
+	accounts []AccountSummary,
+	byAccountRef map[string][]string,
+) (map[string]map[string]string, map[string]map[string]int) {
+	if handler == nil || handler.modalities == nil {
+		return labels, contextLimits
+	}
+	nameLookup, _ := handler.modalities.(modelmetadata.DisplayNameLookup)
+	windows := make(map[string]int)
+	windowLooked := make(map[string]struct{})
+	for _, account := range accounts {
+		ref := strings.TrimSpace(account.AccountRef)
+		provider := strings.TrimSpace(account.Provider)
+		if ref == "" || provider == "" {
+			continue
+		}
+		for _, rawModel := range byAccountRef[ref] {
+			model := strings.TrimSpace(rawModel)
+			if model == "" {
+				continue
+			}
+			key := provider + "\x00" + model
+			if _, seen := windowLooked[key]; !seen {
+				windowLooked[key] = struct{}{}
+				if window, found := handler.modalities.LookupContextWindow(provider, model); found && window > 0 {
+					windows[key] = window
+				}
+			}
+			if window, found := windows[key]; found {
+				if contextLimits == nil {
+					contextLimits = make(map[string]map[string]int)
+				}
+				if contextLimits[ref] == nil {
+					contextLimits[ref] = make(map[string]int)
+				}
+				contextLimits[ref][model] = window
+			}
+			if nameLookup != nil {
+				name, found := nameLookup.LookupDisplayName(provider, model)
+				name = strings.TrimSpace(name)
+				if !found || name == "" {
+					continue
+				}
+				if labels == nil {
+					labels = make(map[string]map[string]string)
+				}
+				if labels[provider] == nil {
+					labels[provider] = make(map[string]string)
+				}
+				labels[provider][model] = name
+			}
+		}
+	}
+	return labels, contextLimits
 }
 
 func listAllAccountOverviews(ctx context.Context, store Store) ([]accountapp.AccountOverview, error) {

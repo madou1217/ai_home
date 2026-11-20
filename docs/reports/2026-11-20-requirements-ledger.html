@@ -169,7 +169,7 @@
         <tr><td>只保留一个业务权威库，禁止双轨</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">appstate.DatabasePath → aih.db；夹具与消费者已对齐</td></tr>
         <tr><td>迁移报 aih_database_migration_required 导致全会话退出</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">单库迁移 + 一键续接落地</td></tr>
         <tr><td>迁移不得以"更安全"为由删功能或返回 unavailable</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">迁移文档记录能力边界，不再以缩窄代替终态</td></tr>
-        <tr><td>agy OAuth 回调 502 / 账号未添加 / 邮箱缺失</td><td class="meta">11-11</td><td><span class="chip s-partial">部分</span></td><td class="ev">邮箱与通用凭据解析已修；本机已无 agy 账号，真机无法复验</td></tr>
+        <tr><td>agy OAuth 回调 502 / 账号未添加 / 邮箱缺失</td><td class="meta">11-11</td><td><span class="chip s-partial">部分</span></td><td class="ev">AWS 复验 11-20：8 个 agy 账号邮箱·资料·凭据齐全；作业创建 200；回调错误分类正确（400 invalid_callback / state_mismatch）；换码确实到达 Google（假 code → 400 invalid_grant，原因已入日志）；usage refresh 实测成功（plan=ultra）。缺口：成功入库仍需一次真实 Google 授权，未端到端复验</td></tr>
         <tr><td>service_tier 档位不得丢失</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">codex effort/service tier 对齐有多次提交；Messages 链路仍有 unsupported 字段</td></tr>
         <tr><td>取消 Node-only / Go-only 概念，Go 为超集</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">文档与注释已清理；功能超集仍差 labels/contextLimits 等</td></tr>
         <tr><td>Claude 高级设置丢失要全量扫描</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">高级设置页迁入 toolkit 并字段级对拍；按 peer 要求冻结构建</td></tr>
@@ -408,6 +408,7 @@
       <li>需求来源：本项目内的 Claude 转录、Codex rollout（剔除 shalou 项目与 /tmp 测试夹具后约 295 个会话）、运行时 289 个会话（8 个真实需求会话，其中 2 个属本项目）与 peer inbox 50 条。</li>
       <li>状态依据：仓库提交、<span style="font-family:var(--font-mono)">docs/migration</span> 账本、数据库实查与真机接口结果；会话内自述但本仓库不可证的一律标"未核实"。</li>
       <li>排除的噪声：问候、哨兵口令、warmup、<span style="font-family:var(--font-mono)">codex_internal_context</span> 990 条、peer 回显 571 条、空会话 135 个，以及"数数/写教程"等连通性测试。</li>
+      <li><strong>agy OAuth 复验（2026-11-20，AWS）</strong>：本机无 agy 账号，改在 AWS（包 1.0.6，Go 源 <span style="font-family:var(--font-mono)">7c62362d</span>）直连 <span style="font-family:var(--font-mono)">127.0.0.1:9527</span> 复验：① 8 个 agy 账号在 <span style="font-family:var(--font-mono)">/v1/management/accounts</span> 均返回 email、has_profile=true、has_credential=true；② <span style="font-family:var(--font-mono)">POST account-add</span> 返回 200 + authorizationUrl（oauth-browser / auth_url_ready，无 502）；③ 回调错误分类：格式错误 400 invalid_callback、state 不符 400 state_mismatch；④ 用有效 state + 伪造 code 触发真实换码，Google 返回 400 invalid_grant，服务端日志保留"agy 换码被 Google 拒绝：status=400 code=invalid_grant"，证明出口可达且失败原因可观测（非代理 502）；⑤ <span style="font-family:var(--font-mono)">POST /accounts/{ref}/usage/refresh</span> 实测成功（plan_type=ultra，captured_at 为当前时间），说明真实凭据的刷新链路可用。未执行：真实 Google 授权（须人工在浏览器同意），故"成功回调 → 新账号入库 + 邮箱"仍按部分标注。</li>
       <li>局限：Windows/AWS 侧需要真机才能确认的项目已单独标注；shalou 项目按用户要求明确排除，不参与任何统计。</li>
     </ul>
   </div>

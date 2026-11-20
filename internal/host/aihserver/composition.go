@@ -2122,6 +2122,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "POST " + sessionReclaimPath, Handler: sessionReclaimHandler{authorizer: authorizer, aiHomeDir: aiHomeDir}})
 	// 后台巡检：按四重证据回收长时间无人使用的持久会话。
 	sessionReclaimDaemon{aiHomeDir: aiHomeDir}.Start(ctx)
+	spaceGCDaemon{aiHomeDir: aiHomeDir}.Start(ctx)
 	updateRoutes, updateCloser, updateErr := buildDistributionUpdate(ctx, webuiDeps)
 	if updateErr != nil {
 		log.Printf("AIH 更新检测不可用: %v", updateErr)

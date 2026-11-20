@@ -17,6 +17,7 @@ import {
   ExpandOutlined,
   EyeInvisibleOutlined,
   FolderOutlined,
+  GlobalOutlined,
   LoadingOutlined,
   MailOutlined,
   MinusOutlined,
@@ -31,6 +32,7 @@ import {
 import { Tooltip } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
+import { buildServerScopedAppHref } from '@/services/app-navigation';
 import OfficeComputerSettings, { type ComputerSettingsTab } from './OfficeComputerSettings';
 import OfficeMailbox from './OfficeMailbox';
 import {
@@ -1874,6 +1876,21 @@ export function SessionDesktop({
                 <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
               ) : null}
             </button>
+
+            {resolvedServerId.trim() ? (
+              <a
+                className="session-desktop-dock-pill"
+                style={{ textDecoration: 'none' }}
+                href={buildServerScopedAppHref('/browser', resolvedServerId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="在新标签页打开所选 Server 的任务浏览器"
+                title="在新标签页打开任务浏览器；需手动启动，尚未绑定账号"
+              >
+                <GlobalOutlined />
+                <span>任务浏览器</span>
+              </a>
+            ) : null}
 
             <button
               type="button"

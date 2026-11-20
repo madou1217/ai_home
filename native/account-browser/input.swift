@@ -27,6 +27,7 @@ final class BrowserInput {
   let pid: pid_t
   private let identity: TaskBrowserIdentity
   private let parent: pid_t
+  private let mouse = TaskWindowMouseEvents()
   var frame: CGRect = .zero
   var windowID: CGWindowID = 0
   var lastFrame = Date.distantPast
@@ -115,21 +116,13 @@ final class BrowserInput {
       }
     case "pointer":
       guard let x = command["x"] as? Double, let y = command["y"] as? Double, x.isFinite, y.isFinite, (0...1).contains(x), (0...1).contains(y) else { throw SurfaceFailure("invalid_browser_pointer") }
-      let point = CGPoint(x: frame.minX + min(x * frame.width,frame.width-1), y: frame.minY + min(y * frame.height,frame.height-1))
-      let right = (command["button"] as? Int ?? 0) == 2
-      for down in [true,false] {
-        let type: CGEventType = right ? (down ? .rightMouseDown : .rightMouseUp) : (down ? .leftMouseDown : .leftMouseUp)
-        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: right ? .right : .left) else { continue }
-        event.setIntegerValueField(.mouseEventClickState, value: 1)
-        event.postToPid(pid)
-      }
+      let point = CGPoint(x: min(x * frame.width, frame.width - 1), y: min(y * frame.height, frame.height - 1))
+      try mouse.click(pid: pid, window: windowID, point: point, right: (command["button"] as? Int ?? 0) == 2)
     case "scroll":
       let dx = command["deltaX"] as? Double ?? 0
       let dy = command["deltaY"] as? Double ?? 0
       guard dx.isFinite, dy.isFinite, abs(dx) <= 2000, abs(dy) <= 2000 else { throw SurfaceFailure("invalid_browser_scroll") }
-      guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: -Int32(dy), wheel2: -Int32(dx), wheel3: 0) else { throw SurfaceFailure("browser_event_unavailable") }
-      event.location = CGPoint(x:frame.midX, y:frame.midY)
-      event.postToPid(pid)
+      try mouse.scroll(pid: pid, window: windowID, point: CGPoint(x: frame.width / 2, y: frame.height / 2), dx: dx, dy: dy)
     default: throw SurfaceFailure("unsupported_browser_command")
     }
   }

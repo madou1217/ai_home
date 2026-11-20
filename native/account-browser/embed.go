@@ -4,5 +4,5 @@ package accountbrowsernative
 
 import "embed"
 
-//go:embed main.swift capture.swift input.swift output.swift identity.swift
+//go:embed main.swift capture.swift input.swift output.swift identity.swift mouse-events.swift
 var Sources embed.FS

@@ -226,7 +226,7 @@
       <tbody>
         <tr><td>429 reset-at 后即时屏蔽账号</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">配额窗口与冷却账本已接入选号</td></tr>
         <tr><td>429 账号在 WebUI 必须可见</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">账号行 quota/schedulable 状态投影</td></tr>
-        <tr><td>scoped cooldown retry 覆盖 HTTP/WS/images</td><td class="meta">11-19</td><td><span class="chip s-partial">部分</span></td><td class="ev">2ee94d5e 已加 transient 429 重试；全链路验收未闭环</td></tr>
+        <tr><td>scoped cooldown retry 覆盖 HTTP/WS/images</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">2ee94d5e / 1042ee27 / 3452356b；HTTP relay/core、Codex WS 握手、images/Studio 均已接线；images/Studio 受控真实 429 验收（30.005s）见 docs/gateway-upstream-429-retry.md；relaycore 测试通过；未做付费生产 429 实验</td></tr>
         <tr><td>"没有条件就创造条件完成"</td><td class="meta">11-20</td><td><span class="chip s-open">未完成</span></td><td class="ev">run/upstream-429-20261119 仍在写</td></tr>
       </tbody>
     </table></div>

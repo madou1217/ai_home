@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -27,6 +28,34 @@ type Importer struct {
 
 func New(importer DomainImporter, static StaticCredentialFactory, native NativeDecoder) *Importer {
 	return &Importer{importer: importer, staticCredentials: static, native: native}
+}
+
+// builtinCatalog 只构造一次：凭据环境变量名来自 Provider 合同。
+var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return nil
+	}
+	return catalog
+})
+
+// providerDefinition 返回规范 Provider 的合同定义。
+func providerDefinition(providerID string) (providers.Definition, bool) {
+	catalog := builtinCatalog()
+	if catalog == nil {
+		return providers.Definition{}, false
+	}
+	return catalog.Get(providerID)
+}
+
+// firstEnvironmentValue 按合同声明顺序返回第一个非空环境变量。
+func firstEnvironmentValue(env map[string]string, names []string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(env[name]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type AihAccountsImportResult struct {
@@ -154,25 +183,27 @@ func (handler *Importer) DecodeEntry(
 	if len(env) == 0 {
 		return nil, nil, nil
 	}
+	definition, _ := providerDefinition(provider)
+	facts := definition.CredentialFacts()
 	switch provider {
 	case "codex":
-		apiKey := strings.TrimSpace(env["OPENAI_API_KEY"])
+		apiKey := firstEnvironmentValue(env, facts.APIKeyEnv)
 		if apiKey == "" {
 			return nil, nil, nil
 		}
 		credential, err := handler.staticCredentials.BuildStatic(
-			provider, "api_key", apiKey, "", strings.TrimSpace(env["OPENAI_BASE_URL"]),
+			provider, "api_key", apiKey, "", firstEnvironmentValue(env, facts.BaseURLEnv),
 		)
 		return credential, nil, err
 	case "claude":
-		baseURL := strings.TrimSpace(env["ANTHROPIC_BASE_URL"])
-		if token := strings.TrimSpace(env["ANTHROPIC_AUTH_TOKEN"]); token != "" {
+		baseURL := firstEnvironmentValue(env, facts.BaseURLEnv)
+		if token := firstEnvironmentValue(env, facts.AuthTokenEnv); token != "" {
 			credential, err := handler.staticCredentials.BuildStatic(
 				provider, "auth_token", "", token, baseURL,
 			)
 			return credential, nil, err
 		}
-		apiKey := strings.TrimSpace(env["ANTHROPIC_API_KEY"])
+		apiKey := firstEnvironmentValue(env, facts.APIKeyEnv)
 		if apiKey == "" {
 			return nil, nil, nil
 		}
@@ -185,10 +216,9 @@ func (handler *Importer) DecodeEntry(
 		if projectID == "" && strings.TrimSpace(env["VERTEX_AI_PLACEHOLDER"]) == "" {
 			return decodeGenericStatic(provider, env)
 		}
-		apiKey := strings.TrimSpace(env["GEMINI_API_KEY"])
-		if apiKey == "" {
-			apiKey = strings.TrimSpace(env["GOOGLE_API_KEY"])
-		}
+		// Vertex 占位凭据只认 GEMINI_BASE_URL（GOOGLE_BASE_URL 属于 API Key 模式），
+		// 因此这里显式取值，不回落到合同列表。
+		apiKey := firstEnvironmentValue(env, facts.APIKeyEnv)
 		credential, err := handler.staticCredentials.BuildVertex(
 			provider,
 			projectID,
@@ -220,27 +250,13 @@ func importReason(err error) string {
 }
 
 func decodeGenericStatic(provider string, env map[string]string) (accountapp.Credential, accountapp.PublicProfile, error) {
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		return nil, nil, err
-	}
-	def, found := catalog.Get(provider)
-	if !found || def.Credentials == nil {
+	definition, found := providerDefinition(provider)
+	if !found || definition.Credentials == nil {
 		return nil, nil, nil
 	}
-	key, base := "", ""
-	for _, name := range def.Credentials.APIKeyEnv {
-		if strings.TrimSpace(env[name]) != "" {
-			key = env[name]
-			break
-		}
-	}
-	for _, name := range def.Credentials.BaseURLEnv {
-		if strings.TrimSpace(env[name]) != "" {
-			base = env[name]
-			break
-		}
-	}
+	facts := definition.CredentialFacts()
+	key := firstEnvironmentValue(env, facts.APIKeyEnv)
+	base := firstEnvironmentValue(env, facts.BaseURLEnv)
 	if key == "" {
 		return nil, nil, nil
 	}

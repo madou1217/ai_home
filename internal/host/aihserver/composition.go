@@ -32,7 +32,6 @@ import (
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
-	"github.com/madou1217/ai_home/application/modelprobes"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
@@ -2286,13 +2285,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建账号模型目录重扫用例失败: %w", err)
 	}
-	// 失败探测的到期重试：退避节奏由 application/modelprobes 声明，执行仍复用
-	// 同一个 ModelRefreshCoordinator，不引入第二套刷新状态机。
-	probeRetry, err := modelprobes.NewProbeRetry(store, modelRefresh, time.Now)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建账号模型探测到期重试用例失败: %w", err)
-	}
 	routeMissRefresh, err := accountapp.NewRouteMissModelRefresh(
 		accountapp.RouteMissModelRefreshOptions{
 			Sweeper:      modelSweep,
@@ -2433,19 +2425,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
-	modelProbeRetryWorker, err := startModelProbeRetryWorker(
-		ctx,
-		probeRetry,
-		errorLog,
-	)
-	if err != nil {
-		_ = modelSweepWorker.Close()
-		_ = initialModelRecoveryWorker.Close()
-		_ = webSocketHandler.Close()
-		_ = routeMissRefresh.Close()
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("启动账号模型探测到期重试 worker 失败: %w", err)
-	}
 	return serverHandlers{
 		plugins:               pluginBundle.Handlers,
 		accounts:              accountsHandler,
@@ -2502,7 +2481,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		closers := []io.Closer{
 			sessionEventBusCloser{bus: sessionEventBus},
 			modelSweepWorker,
-			modelProbeRetryWorker,
 			initialModelRecoveryWorker,
 			webSocketHandler,
 			routeMissRefresh,

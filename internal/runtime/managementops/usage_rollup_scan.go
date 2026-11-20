@@ -39,7 +39,7 @@ func (s *UsageStore) scanRollupHourRangeConn(
 	if err != nil {
 		return rollupScanResult{}, err
 	}
-	return s.scanRollupHourRangeWithInputsConn(ctx, conn, startHour, endHour, targetHours, inputs)
+	return s.scanRollupHourRangeWithInputsConn(ctx, conn, startHour, endHour, targetHours, inputs, nil)
 }
 
 func (s *UsageStore) scanRollupHourRangeWithInputsConn(
@@ -48,6 +48,7 @@ func (s *UsageStore) scanRollupHourRangeWithInputsConn(
 	startHour, endHour int64,
 	targetHours map[int64]bool,
 	inputs rollupScanInputs,
+	scratch *rollupScanScratch,
 ) (rollupScanResult, error) {
 	if endHour <= startHour {
 		return rollupScanResult{byHour: make(map[int64]*rollupHourBuild)}, nil
@@ -122,6 +123,14 @@ func (s *UsageStore) scanRollupHourRangeWithInputsConn(
 	} else {
 		// 含本地扫描行：单趟扫描 [padFrom, padTo]，并对触及目标小时的候选分量做完整边界闭合。
 		var proxies, scanners, targetRows []observationRow
+		if scratch != nil {
+			proxies, scanners, targetRows = scratch.proxies[:0], scratch.scanners[:0], scratch.targetRows[:0]
+			defer func() {
+				scratch.proxies = retainScanRows(proxies)
+				scratch.scanners = retainScanRows(scanners)
+				scratch.targetRows = retainScanRows(targetRows)
+			}()
+		}
 		qErr, readErr := streamObservationRows(ctx, conn, `
 			SELECT id, event_key, provider, account_ref, session_id, source_kind, model,
 				input_tokens, output_tokens, cache_read_input_tokens,

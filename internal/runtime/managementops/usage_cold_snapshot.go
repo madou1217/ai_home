@@ -397,6 +397,7 @@ func (s *UsageStore) scanColdChunksParallel(
 			var (
 				inputs      rollupScanInputs
 				inputsReady bool
+				scratch     rollupScanScratch
 			)
 			for sp := range tasks {
 				if workerCtx.Err() != nil {
@@ -413,7 +414,7 @@ func (s *UsageStore) scanColdChunksParallel(
 					}
 				}
 				if err == nil {
-					res, err = s.scanRollupHourRangeWithInputsConn(workerCtx, slot.conn, sp.StartHour, sp.EndHour, nil, inputs)
+					res, err = s.scanRollupHourRangeWithInputsConn(workerCtx, slot.conn, sp.StartHour, sp.EndHour, nil, inputs, &scratch)
 				}
 				if err != nil {
 					if errors.Is(err, errRollupCapabilitiesNotReady) {

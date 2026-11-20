@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 const documentKind = "codex_oauth_status"
 
 // newUsageDocument 只投影已校验的同一份事实，不二次采集、不读取旧展示缓存。
-func newUsageDocument(snapshot usagecore.Snapshot) (usagecore.Document, error) {
+func newUsageDocument(snapshot usagecore.Snapshot, profile codexauth.Profile, planConfirmed bool) (usagecore.Document, error) {
 	entries := make([]map[string]any, 0, len(snapshot.Entries()))
 	for _, entry := range snapshot.Entries() {
 		var percent any
@@ -52,6 +53,16 @@ func newUsageDocument(snapshot usagecore.Snapshot) (usagecore.Document, error) {
 	if value := snapshot.MinRemaining(); value.Known {
 		remaining = float64(value.BasisPoints) / 100
 	}
+	account := map[string]any{"planType": snapshot.PlanType()}
+	if profile.SubscriptionActiveUntilMS > 0 {
+		account["subscriptionActiveUntilMs"] = profile.SubscriptionActiveUntilMS
+	}
+	if profile.SubscriptionLastCheckedMS > 0 {
+		account["subscriptionLastCheckedMs"] = profile.SubscriptionLastCheckedMS
+	}
+	if planConfirmed {
+		account["planConfirmedAtMs"] = snapshot.CapturedAt().UnixMilli()
+	}
 	payload, err := json.Marshal(map[string]any{
 		"schemaVersion": 2,
 		"kind":          documentKind,
@@ -60,13 +71,13 @@ func newUsageDocument(snapshot usagecore.Snapshot) (usagecore.Document, error) {
 		"capturedAt":    snapshot.CapturedAt().UnixMilli(),
 		"entryShape":    "window",
 		"remainingPct":  remaining,
-		"account":       map[string]any{"planType": snapshot.PlanType()},
+		"account":       account,
 		"entries":       entries,
 		"provenance": map[string]any{
 			"schemaVersion": 1,
 			"id":            snapshot.Source(),
 			"kind":          "provider",
-			"url":           usageEndpoint,
+			"url":           usageEndpoint(),
 			"capturedAt":    snapshot.CapturedAt().UnixMilli(),
 		},
 	})

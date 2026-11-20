@@ -26,6 +26,10 @@ type Profile struct {
 	Plan Plan
 	// IsFedRAMP 表示工作区是否属于 FedRAMP 环境。
 	IsFedRAMP bool
+	// SubscriptionActiveUntilMS 是签发时的订阅到期快照，零表示未知，不能用于鉴权。
+	SubscriptionActiveUntilMS int64
+	// SubscriptionLastCheckedMS 是上游核对该订阅快照的时间，零表示未知。
+	SubscriptionLastCheckedMS int64
 }
 
 type codexIDTokenClaims struct {
@@ -37,11 +41,13 @@ type codexIDTokenClaims struct {
 
 // codexAuthClaims 是 OpenAI 私有 auth 命名空间中当前需要的公开资料。
 type codexAuthClaims struct {
-	ChatGPTUserID    string
-	UserID           string
-	ChatGPTAccountID string
-	ChatGPTPlanType  string
-	AccountIsFedRAMP bool
+	ChatGPTUserID             string
+	UserID                    string
+	ChatGPTAccountID          string
+	ChatGPTPlanType           string
+	AccountIsFedRAMP          bool
+	SubscriptionActiveUntilMS int64
+	SubscriptionLastCheckedMS int64
 }
 
 // codexProfileClaims 是 OpenAI 私有 profile 命名空间中当前需要的公开资料。
@@ -73,11 +79,13 @@ func parseIDTokenProfile(idToken string) (Profile, error) {
 	}
 
 	return Profile{
-		UserID:    userID,
-		AccountID: accountID,
-		Email:     firstNonEmpty(claims.Email, claims.Profile.Email),
-		Plan:      ParsePlan(claims.Auth.ChatGPTPlanType),
-		IsFedRAMP: claims.Auth.AccountIsFedRAMP,
+		UserID:                    userID,
+		AccountID:                 accountID,
+		Email:                     firstNonEmpty(claims.Email, claims.Profile.Email),
+		Plan:                      ParsePlan(claims.Auth.ChatGPTPlanType),
+		IsFedRAMP:                 claims.Auth.AccountIsFedRAMP,
+		SubscriptionActiveUntilMS: claims.Auth.SubscriptionActiveUntilMS,
+		SubscriptionLastCheckedMS: claims.Auth.SubscriptionLastCheckedMS,
 	}, nil
 }
 
@@ -160,6 +168,12 @@ func decodeCodexAuthClaims(raw []byte, claims *codexAuthClaims) error {
 			decoded, err := decodeOptionalStringClaim(value)
 			claims.ChatGPTPlanType = decoded
 			return err
+		case "chatgpt_subscription_active_until":
+			claims.SubscriptionActiveUntilMS = subscriptionClaimTimeMS(value)
+			return nil
+		case "chatgpt_subscription_last_checked":
+			claims.SubscriptionLastCheckedMS = subscriptionClaimTimeMS(value)
+			return nil
 		case "chatgpt_account_is_fedramp":
 			decoded, err := decodeRequiredBoolClaim(value)
 			claims.AccountIsFedRAMP = decoded

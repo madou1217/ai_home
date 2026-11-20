@@ -140,11 +140,16 @@ func (strategy *Strategy) FetchUsageWithDocument(
 			ErrInvalidResponse,
 		)
 	}
+	livePlan := payload.planType()
+	plan := livePlan
+	if plan == "" {
+		plan = snapshotPlanType(auth.PlanType())
+	}
 	snapshot, err := usagecore.NewSnapshot(usagecore.SnapshotInput{
 		AccountRef: accountRef,
 		ProviderID: codexauth.ProviderID,
 		Source:     sourceID,
-		PlanType:   snapshotPlanType(auth.PlanType()),
+		PlanType:   plan,
 		CapturedAt: capturedAt,
 		Entries:    entries,
 	})
@@ -154,7 +159,7 @@ func (strategy *Strategy) FetchUsageWithDocument(
 			ErrInvalidResponse,
 		)
 	}
-	document, err := newUsageDocument(snapshot)
+	document, err := newUsageDocument(snapshot, auth.Profile(), livePlan != "")
 	if err != nil {
 		return usagecore.Snapshot{}, nil, errors.Join(usageapp.ErrRefreshFailed, err)
 	}
@@ -211,10 +216,26 @@ func newRequest(
 
 // usagePayload 同时接受 wham snake_case 和 app-server camelCase 事实。
 type usagePayload struct {
+	PlanType            string                       `json:"plan_type"`
+	PlanTypeCamel       string                       `json:"planType"`
 	RateLimit           *directRateLimit             `json:"rate_limit"`
 	LegacyRateLimits    *legacyRateLimits            `json:"rate_limits"`
 	RateLimits          *rateLimitSnapshot           `json:"rateLimits"`
 	RateLimitsByLimitID map[string]rateLimitSnapshot `json:"rateLimitsByLimitId"`
+}
+
+// planType 只采信额度响应的实时套餐；Token 里的旧套餐不能伪装成续费确认。
+func (payload usagePayload) planType() string {
+	candidates := []string{payload.PlanType, payload.PlanTypeCamel}
+	if payload.RateLimits != nil {
+		candidates = append(candidates, payload.RateLimits.PlanType)
+	}
+	for _, candidate := range candidates {
+		if plan := snapshotPlanType(candidate); plan != "" {
+			return plan
+		}
+	}
+	return ""
 }
 
 type directRateLimit struct {
@@ -242,6 +263,7 @@ type legacyWindow struct {
 }
 
 type rateLimitSnapshot struct {
+	PlanType             string          `json:"planType"`
 	LimitID              *string         `json:"limitId"`
 	LimitName            *string         `json:"limitName"`
 	Primary              *officialWindow `json:"primary"`

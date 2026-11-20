@@ -26,7 +26,7 @@ func buildHelper(ctx context.Context) (string, func(), error) {
 	if runtime.GOARCH == "amd64" {
 		args[3] = "x86_64-apple-macosx14.0"
 	}
-	for _, name := range []string{"input.swift", "capture.swift", "output.swift", "main.swift"} {
+	for _, name := range []string{"identity.swift", "input.swift", "capture.swift", "output.swift", "main.swift"} {
 		raw, e := native.Sources.ReadFile(name)
 		if e != nil {
 			cleanup()

@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Darwin
 import Foundation
 
 struct SurfaceFailure: Error {
@@ -24,7 +25,8 @@ final class InputGate {
 final class BrowserInput {
   let gate=InputGate()
   let pid: pid_t
-  private let birth: String
+  private let identity: TaskBrowserIdentity
+  private let parent: pid_t
   var frame: CGRect = .zero
   var windowID: CGWindowID = 0
   var lastFrame = Date.distantPast
@@ -33,19 +35,21 @@ final class BrowserInput {
   var enabled = false
 
   init(pid: pid_t) throws {
-    guard pid > 1, let app = NSRunningApplication(processIdentifier: pid), app.bundleIdentifier == "com.microsoft.edgemac", let date = app.launchDate else { throw SurfaceFailure("browser_identity_unavailable") }
+    let parent = getppid()
+    identity = try TaskBrowserIdentity.read(pid, parent: parent)
+    self.parent = parent
     self.pid = pid
-    birth = String(date.timeIntervalSince1970)
   }
 
   func verifyWindow() throws {
-    guard CGPreflightPostEventAccess(), let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated, let date = app.launchDate, String(date.timeIntervalSince1970) == birth else { throw SurfaceFailure("browser_input_permission_or_identity_lost") }
+    guard CGPreflightPostEventAccess(), (try? TaskBrowserIdentity.read(pid, parent: parent)) == identity else { throw SurfaceFailure("browser_input_permission_or_identity_lost") }
     guard enabled, windowID != 0, Date().timeIntervalSince(lastFrame) < 3 else { throw SurfaceFailure("browser_frame_stale") }
-    guard let rows = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String:Any]], let row = rows.first, (row[kCGWindowOwnerPID as String] as? Int) == Int(pid), let bounds = row[kCGWindowBounds as String] as? [String:Any], let actual = CGRect(dictionaryRepresentation: bounds as CFDictionary), actual.width > 0, actual.height > 0 else { throw SurfaceFailure("browser_window_unavailable") }
+    guard let rows = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String:Any]], let row = rows.first, (row[kCGWindowOwnerPID as String] as? Int) == Int(pid), (row[kCGWindowIsOnscreen as String] as? Bool) == true, let bounds = row[kCGWindowBounds as String] as? [String:Any], let actual = CGRect(dictionaryRepresentation: bounds as CFDictionary), actual.width > 0, actual.height > 0 else { throw SurfaceFailure("browser_window_unavailable") }
     guard abs(actual.width-frame.width)<2, abs(actual.height-frame.height)<2 else { throw SurfaceFailure("browser_window_resized_reconnect") }
     guard let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String:Any]] else { throw SurfaceFailure("browser_window_unavailable") }
     let count=windows.filter { row in
       guard (row[kCGWindowOwnerPID as String] as? Int)==Int(pid), (row[kCGWindowLayer as String] as? Int)==0,
+        (row[kCGWindowIsOnscreen as String] as? Bool)==true,
         let box=row[kCGWindowBounds as String] as? [String:Any], let rect=CGRect(dictionaryRepresentation:box as CFDictionary) else {return false}
       return rect.width>=100 && rect.height>=80
     }.count

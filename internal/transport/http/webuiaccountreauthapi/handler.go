@@ -784,53 +784,71 @@ func normalizeKiroReauthLoginProvider(raw string) string {
 	}
 }
 
+// reauthHintExtractor 从账号原生凭据里解析重新认证所需的策略提示。
+type reauthHintExtractor func(payload []byte) (authStrategy string, loginProvider string)
+
+// reauthHintExtractors 按 Provider 登记凭据解析器；未登记即无提示。
+var reauthHintExtractors = map[string]reauthHintExtractor{
+	"zcode": inferZcodeReauthHints,
+	"kiro":  inferKiroReauthHints,
+}
+
 func inferCredentialReauthHints(provider string, payload []byte) (authStrategy string, loginProvider string) {
 	if len(payload) == 0 {
 		return "", ""
 	}
-	switch provider {
-	case "zcode":
-		var doc struct {
-			Credentials map[string]any `json:"credentials"`
+	extract, found := reauthHintExtractors[strings.ToLower(strings.TrimSpace(provider))]
+	if !found {
+		return "", ""
+	}
+	return extract(payload)
+}
+
+func inferZcodeReauthHints(payload []byte) (string, string) {
+	var doc struct {
+		Credentials map[string]any `json:"credentials"`
+	}
+	if json.Unmarshal(payload, &doc) != nil || doc.Credentials == nil {
+		return "", ""
+	}
+	active, _ := doc.Credentials["oauth:active_provider"].(string)
+	switch strings.ToLower(strings.TrimSpace(active)) {
+	case "bigmodel":
+		return "bigmodel:custom-scheme", ""
+	case "zai", "zcode":
+		return "zai:custom-scheme", ""
+	default:
+		return "", ""
+	}
+}
+
+func inferKiroReauthHints(payload []byte) (string, string) {
+	var doc struct {
+		SQLite struct {
+			Slots map[string]string `json:"slots"`
+		} `json:"sqlite"`
+	}
+	if json.Unmarshal(payload, &doc) != nil || doc.SQLite.Slots == nil {
+		return "", ""
+	}
+	if metaRaw := strings.TrimSpace(doc.SQLite.Slots["aih:kiro:auth-meta"]); metaRaw != "" {
+		var meta struct {
+			AuthKind string `json:"authKind"`
+			Provider string `json:"provider"`
 		}
-		if json.Unmarshal(payload, &doc) == nil && doc.Credentials != nil {
-			if active, _ := doc.Credentials["oauth:active_provider"].(string); active != "" {
-				switch strings.ToLower(strings.TrimSpace(active)) {
-				case "bigmodel":
-					return "bigmodel:custom-scheme", ""
-				case "zai", "zcode":
-					return "zai:custom-scheme", ""
-				}
+		if json.Unmarshal([]byte(metaRaw), &meta) == nil {
+			if lp := normalizeKiroReauthLoginProvider(meta.Provider); lp != "" {
+				return "social-oauth-device", lp
 			}
 		}
-	case "kiro":
-		var doc struct {
-			SQLite struct {
-				Slots map[string]string `json:"slots"`
-			} `json:"sqlite"`
+	}
+	if socialRaw := strings.TrimSpace(doc.SQLite.Slots["kirocli:social:token"]); socialRaw != "" {
+		var social struct {
+			Provider string `json:"provider"`
 		}
-		if json.Unmarshal(payload, &doc) != nil || doc.SQLite.Slots == nil {
-			return "", ""
-		}
-		if metaRaw := strings.TrimSpace(doc.SQLite.Slots["aih:kiro:auth-meta"]); metaRaw != "" {
-			var meta struct {
-				AuthKind string `json:"authKind"`
-				Provider string `json:"provider"`
-			}
-			if json.Unmarshal([]byte(metaRaw), &meta) == nil {
-				if lp := normalizeKiroReauthLoginProvider(meta.Provider); lp != "" {
-					return "social-oauth-device", lp
-				}
-			}
-		}
-		if socialRaw := strings.TrimSpace(doc.SQLite.Slots["kirocli:social:token"]); socialRaw != "" {
-			var social struct {
-				Provider string `json:"provider"`
-			}
-			if json.Unmarshal([]byte(socialRaw), &social) == nil {
-				if lp := normalizeKiroReauthLoginProvider(social.Provider); lp != "" {
-					return "social-oauth-device", lp
-				}
+		if json.Unmarshal([]byte(socialRaw), &social) == nil {
+			if lp := normalizeKiroReauthLoginProvider(social.Provider); lp != "" {
+				return "social-oauth-device", lp
 			}
 		}
 	}

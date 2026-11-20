@@ -113,6 +113,10 @@ EnsureVersion(provider, cli, ver, src):
 ```
 
 - 树不可变：安装后 `0555`/`0444`，升级只新增树，不原地改。
+- **幂等必须靠账本，不能靠元数据**：reflink 克隆和普通复制在文件系统里都是"独立 inode +
+  同样的只读位"，只看"目录只读 + 内容指纹相同"会把一份真实副本误判成已共享（实测 5 个账号
+  仍占 5 份字节）。因此 `artifact-store/ledger/<hash(projectionPath)>.json` 记录每个
+  `(cli,version)` 安装后的 `dev+ino`；inode 对不上（安装器重装/换目录）就重新铺。
 - 运行中的进程：`atomicSwap` 使旧 inode 仍被打开的文件引用，不会崩溃；旧树由租约保护。
 - 回滚：把 `src` 从符号链接替换回真实目录（从 `trees/key` 复制/克隆）。
 
@@ -199,6 +203,10 @@ GC(mode):
 - Go 启动链：`internal/runtime/sharedcache` 统一工具链缓存环境变量，桌面启动与原生 CLI 登录共用。
 - 实测：33 个账号 `Library/Caches` 全部指向宿主；CLI 版本树按版本共享；auth-projections
   10G → 7.2G，artifact-store 2.1G（含各版本唯一副本）。
+- **共享有效性复核（2026-11-21）**：改用 inode 账本后对 31 个账号重铺，追回 **702MB**
+  此前被误判为 "unchanged" 的真实副本；N=5 对照实验（codebuddy 186M 树、claude 323M 单文件、
+  codex 运行时 233M）每多一个账号的边际磁盘 ≈ 0，5 个账号合计 ≈ 1 份；把某个账号的版本换成
+  新副本后下次启动会重新 reflink（严格性守卫）。
 
 待落地：
 
@@ -221,7 +229,22 @@ GC(mode):
 回滚开关：`artifact-policy.json` 的 `mode: observe` 立即停止建链与 GC；
 版本符号链接可从 `trees/` 还原为真实目录；trash 保留 7 天可反悔。
 
-## 8. 明确不做
+## 8. 已有共享机制清单（新需求必须先复用，禁止再起第五套）
+
+| 机制 | 负责什么 | 实现位置 |
+|---|---|---|
+| 投影构件库（本方案） | CLI 版本树、workbuddy 运行时、agent-browser 浏览器包、codex 桌面运行时（`generation-*`） | `lib/runtime/projection-artifacts.js` / `version-artifacts.js` |
+| 宿主缓存链接 | 环境变量覆盖不到的固定缓存（`Library/Caches/*`、`.npm`、`go` 等） | `lib/runtime/shared-host-caches.js` + Go `accountprojection` |
+| 应用内容逐文件硬链接 | 投影里与宿主同版本解压内容（kimi daimon bundle 等） | `lib/runtime/shared-host-dedupe.js` |
+| 桌面 Chromium 缓存 | `Cache/Code Cache/GPUCache/DawnCache` 按 provider 共享 | Go `ensureDesktopSharedCaches`（`webuiopenappapi`） |
+| ZCode 影子 App | 同一 fingerprint 只保留一份，跨卷时退回普通复制 | `webuiopenappapi/desktop_zcode.go`（`cp -c -R`） |
+| 空间治理 | 过期临时目录/源码副本/快照回收 + 证据硬链接去重 | `internal/runtime/spacegc` |
+
+新增共享需求时的判定顺序：先看能否挂到"投影构件库"（版本化、不可变 → reflink/硬链接/软链）；
+缓存类挂"宿主缓存链接"；应用内容逐文件相同挂"内容硬链接"；桌面 profile 缓存只能走
+`desktop-shared-caches`，不得直接把整个 `electron-user-data` 共享（里面有 Cookies/WebStorage）。
+
+## 9. 明确不做
 
 - 不共享任何凭据、会话库、`config`、`state`（账号私有，必须留在投影里）。
 - 不对会话库做自动删除或压缩（只提供只读统计）。

@@ -88,7 +88,7 @@ var protectedRunDirs = map[string]bool{
 	"completion": true, "shell": true, "terminal-icons": true, "webui-runs": true,
 	"verification": true, "virtual-browser": true, "zcode-captcha-profile": true,
 	"zcode-shadow": true, "chat-harness": true, "claude-launch-settings": true,
-	"playwright-live-profile": true, "cache": true,
+	"playwright-live-profile": true, "cache": true, "desktop-shared-caches": true,
 }
 
 // 新增产品目录时：要么加进上面的精确名单，要么加到这里的前缀名单。

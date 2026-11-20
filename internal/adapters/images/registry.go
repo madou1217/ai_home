@@ -484,7 +484,10 @@ func retryable(err error) bool {
 		"upstream_response_too_large":
 		return true
 	}
-	if generationErr.StatusCode == 429 || generationErr.StatusCode >= 500 {
+	// 401/403 是账号级凭据拒绝：必须换号，不能把同一次请求重打在同一把凭据上。
+	// 编排层用 attempted 排除已试账号，因此这里返回 true 只会跳到下一个候选。
+	if generationErr.StatusCode == 401 || generationErr.StatusCode == 403 ||
+		generationErr.StatusCode == 429 || generationErr.StatusCode >= 500 {
 		return true
 	}
 	return false

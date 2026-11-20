@@ -11,6 +11,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 )
 
@@ -52,13 +53,15 @@ const (
 // 宁可少一组可选头，也不自报别人的运行时版本。
 
 // domainByProvider 是官方 `X-Domain` 的取值：**站点根域名**（不是 origin，不带协议与端口）。
-// 与 inferenceBaseURLs 同源，只差一个「取 hostname」。
-var domainByProvider = map[string]string{
-	"codebuddy":   "www.codebuddy.ai",
-	"workbuddy":   "www.workbuddy.ai",
-	"codebuddycn": "copilot.tencent.com",
-	"workbuddycn": "copilot.tencent.com",
-}
+//
+// 由 inferenceBaseURLs 派生：两者本来就只差一个 hostname，单独维护只会漂移。
+var domainByProvider = func() map[string]string {
+	domains := make(map[string]string, len(inferenceBaseURLs))
+	for provider, baseURL := range inferenceBaseURLs {
+		domains[provider] = providers.ReadUpstreamHost(baseURL)
+	}
+	return domains
+}()
 
 // ConversationHeaders 返回渠道校验必需的会话 ID 家族。
 //
@@ -177,10 +180,10 @@ var FamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbud
 // 国际站两支各用自己站点域名。与 Node 侧 CODEBUDDY_FAMILY_INFERENCE_BASE_URLS 同源，
 // 但刻意与计费端点分开声明——计费端点变化与推理端点变化是两件独立的事。
 var inferenceBaseURLs = map[string]string{
-	"codebuddy":   "https://www.codebuddy.ai",
-	"workbuddy":   "https://www.workbuddy.ai",
-	"codebuddycn": "https://copilot.tencent.com",
-	"workbuddycn": "https://copilot.tencent.com",
+	"codebuddy":   providers.CodeBuddyBaseURL,
+	"workbuddy":   providers.WorkBuddyBaseURL,
+	"codebuddycn": providers.TencentCopilotBaseURL,
+	"workbuddycn": providers.TencentCopilotBaseURL,
 }
 
 // IsFamilyProvider 判断 Provider 是否属于家族（大小写与空白归一）。

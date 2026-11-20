@@ -35,6 +35,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
@@ -48,7 +49,7 @@ const (
 	documentKind = "cline_pass_usage"
 	// defaultAPIBase 是 Cline 账号面（推理面同域）的默认根；与
 	// clinerelay.DefaultBaseURL / Node CLINE_DEFAULT_BASE_URL 一致。
-	defaultAPIBase    = "https://api.cline.bot/api/v1"
+	defaultAPIBase    = providers.ClineBaseURL
 	usageLimitsPath   = "/users/me/plan/usage-limits"
 	planPath          = "/users/me/plan"
 	accessTokenPrefix = "workos:"

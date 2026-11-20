@@ -178,30 +178,16 @@ func ResolveProviderUpstreamBaseURL(overrides ServerUpstreamOverrides, provider 
 			fromAccount = ""
 		}
 		return strings.TrimRight(firstNonEmpty(fromAccount, overrides.CodexBaseURL), "/")
-	case "grok":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://api.x.ai/v1"), "/")
-	case "kimi":
-		if fromAccount != "" {
-			return strings.TrimRight(fromAccount, "/")
-		}
-		if account.APIKeyMode || account.AuthType == "api-key" {
-			return "https://api.moonshot.cn/v1"
-		}
-		return "https://api.kimi.com/coding/v1"
-	case "kiro":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://q.us-east-1.amazonaws.com"), "/")
-	case "zcode":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://open.bigmodel.cn/api/anthropic"), "/")
-	case "cline":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://api.cline.bot/api/v1"), "/")
-	case "codebuddy":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://www.codebuddy.ai"), "/")
-	case "workbuddy":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://www.workbuddy.ai"), "/")
-	case "codebuddycn", "workbuddycn":
-		return strings.TrimRight(firstNonEmpty(fromAccount, "https://copilot.tencent.com"), "/")
 	default:
-		return ""
+		// 其余 Provider 的默认端点由 Provider 合同声明（含 Kimi 按凭据形态分流），
+		// 这里只负责「账号自带 baseUrl 优先」。未声明默认值的 Provider 返回空，
+		// 与旧行为一致：由账号覆盖或上游默认逻辑处理。
+		apiKeyMode := account.APIKeyMode || account.AuthType == "api-key"
+		defaultBaseURL, configured := providers.DefaultUpstreamBaseURL(p, apiKeyMode)
+		if !configured {
+			return ""
+		}
+		return strings.TrimRight(firstNonEmpty(fromAccount, defaultBaseURL), "/")
 	}
 }
 

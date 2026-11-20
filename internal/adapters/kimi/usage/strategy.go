@@ -42,12 +42,13 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
 	providerID = "kimi"
 	// defaultBaseURL 与 Node lib/account/kimi-endpoints.js 的 KIMI_CODE_BASE_URL 同值。
-	defaultBaseURL = "https://api.kimi.com/coding/v1"
+	defaultBaseURL = providers.KimiCodeBaseURL
 	// sourceID / documentKind 与 Node 的 USAGE_SOURCE_KIMI / USAGE_SNAPSHOT_KINDS.kimi 同值：
 	// 账号可信度校验与 WebUI 渲染器都按这两个字面量匹配，不能各自起名。
 	sourceID     = "kimi_oauth_usages_api"

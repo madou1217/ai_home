@@ -26,6 +26,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
@@ -36,8 +37,8 @@ const ProviderID = "kimi"
 //
 // 与 Node 侧 lib/account/kimi-endpoints.js 同源（那里也按 apiKeyMode 分流）。
 const (
-	KimiCodeBaseURL = "https://api.kimi.com/coding/v1"
-	KimiAPIBaseURL  = "https://api.moonshot.cn/v1"
+	KimiCodeBaseURL = providers.KimiCodeBaseURL
+	KimiAPIBaseURL  = providers.KimiMoonshotBaseURL
 )
 
 // ChatCompletionsPath 是上游的 chat completions 路径（标准 OpenAI 形态）。

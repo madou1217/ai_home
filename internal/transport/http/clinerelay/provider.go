@@ -23,6 +23,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
@@ -30,7 +31,7 @@ import (
 const ProviderID = "cline"
 
 // DefaultBaseURL 是 Cline REST 面（Cline Pass 订阅与 API Key 共用同一端点）。
-const DefaultBaseURL = "https://api.cline.bot/api/v1"
+const DefaultBaseURL = providers.ClineBaseURL
 
 // ChatCompletionsPath 是上游的 chat completions 路径（标准 OpenAI 形态，无需抬升）。
 const ChatCompletionsPath = "/chat/completions"

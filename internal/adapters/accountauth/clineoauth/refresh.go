@@ -33,6 +33,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthutil"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/tokenrefresh"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
@@ -41,7 +42,7 @@ import (
 const (
 	providerID = "cline"
 	// defaultBaseURL 是 Cline REST 面的默认根（与 Node CLINE_DEFAULT_BASE_URL 同值）。
-	defaultBaseURL = "https://api.cline.bot/api/v1"
+	defaultBaseURL = providers.ClineBaseURL
 	// refreshPath 是刷新端点相对推理 base 的路径。
 	refreshPath = "/auth/refresh"
 	// primarySlot / passSlot 是 cline 自己的两个凭据槽位（顺序即同有效期时的优先顺序）。

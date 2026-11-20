@@ -19,14 +19,15 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
 // ProviderID 是本通道服务的 Provider。
 const ProviderID = "grok"
 
-// DefaultBaseURL 是 xAI 的官方 API 端点。
-const DefaultBaseURL = "https://api.x.ai/v1"
+// DefaultBaseURL 是 xAI 的官方 API 端点（事实由 Provider 合同声明）。
+const DefaultBaseURL = providers.GrokAPIBaseURL
 
 // ChatCompletionsPath 是上游的 chat completions 路径（标准 OpenAI 形态）。
 const ChatCompletionsPath = "/chat/completions"

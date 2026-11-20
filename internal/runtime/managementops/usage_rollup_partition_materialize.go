@@ -103,7 +103,7 @@ func groupMaterializeComponents(
 //   - 若分量距 verifyFrom/verifyTo 不足 5 分钟（外部仍可能存在连通候选边），按步长增量拉取外部观测行
 //     并复检，直至全部目标分量严格证明与外部断开（或触达 rollupMaterializeMaxExpandMS 上限）；
 //   - 对触达上限仍未闭合的分量，将其触及的目标小时记入 unclosedHours（绝不截断落盘或标记 clean coverage），
-//     仅对已严格闭合的分量调用基线 matchObservationCandidates 求解。
+//     仅对已严格闭合的分量直接调用基线 matchObservationComponent 求解并按 sortMatchCandidates 排序。
 func (s *UsageStore) closeMaterializeAttributionsConn(
 	ctx context.Context,
 	conn *sql.Conn,
@@ -245,7 +245,7 @@ func (s *UsageStore) closeMaterializeAttributionsConn(
 			continue
 		}
 
-		var closedCandidates []matchCandidate
+		var matches []matchCandidate
 		for _, cm := range comps {
 			if !cm.touchesTarget {
 				continue
@@ -268,11 +268,13 @@ func (s *UsageStore) closeMaterializeAttributionsConn(
 				}
 				continue
 			}
-			closedCandidates = append(closedCandidates, cm.edges...)
+			matches = append(matches, matchObservationComponent(cm.edges)...)
 		}
 
-		if len(closedCandidates) > 0 {
-			matches := matchObservationCandidates(closedCandidates)
+		if len(matches) > 0 {
+			if len(matches) > 1 {
+				sortMatchCandidates(matches)
+			}
 			attrs = materializeAttributionMatches(matches, scannerByID, proxyByID, pricingSnap, s.attribution)
 		}
 		return attrs, candCrossLeft, candCrossRight, unclosedHours, nil

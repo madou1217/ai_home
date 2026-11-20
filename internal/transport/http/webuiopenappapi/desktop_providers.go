@@ -315,110 +315,127 @@ func (p *desktopPrepContext) decorateCodebuddyFamilyBaseEnv() {
 }
 
 func (p *desktopPrepContext) prepareSession() *Result {
-	if !strings.EqualFold(p.req.Provider, "kimi") {
+	hook := desktopProviderHook(p.req.Provider)
+	if hook.prepareSession == nil {
 		return nil
 	}
-	return p.prepareKimiSession()
+	return hook.prepareSession(p)
 }
 
 func (p *desktopPrepContext) prepareProfile() *Result {
-	switch strings.ToLower(strings.TrimSpace(p.req.Provider)) {
-	case "codex":
-		return p.prepareCodexProfile()
-	case "claude":
-		return p.prepareClaudeProfile()
-	case "zcode":
-		repairZcodeProjectionLinks(p.profileDir)
-		if p.platformKey == "darwin" && p.egressPrepared {
-			if errCode, err := applyZcodeNativeProxySettings(p.profileDir, p.egress, p.rollback); errCode != "" {
-				reason := ""
-				if err != nil {
-					reason = err.Error()
-				}
-				return &Result{
-					OK:      false,
-					Error:   errCode,
-					Reason:  reason,
-					Message: launchErrorMessage(errCode),
-				}
-			}
-		}
+	hook := desktopProviderHook(p.req.Provider)
+	if hook.prepareProfile == nil {
 		return nil
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		return p.prepareCodebuddyKeychain()
-	default:
+	}
+	return hook.prepareProfile(p)
+}
+
+// prepareZcodeProfile 修复投影链接，并在 darwin 上写入原生代理设置。
+func (p *desktopPrepContext) prepareZcodeProfile() *Result {
+	repairZcodeProjectionLinks(p.profileDir)
+	if p.platformKey != "darwin" || !p.egressPrepared {
 		return nil
+	}
+	errCode, err := applyZcodeNativeProxySettings(p.profileDir, p.egress, p.rollback)
+	if errCode == "" {
+		return nil
+	}
+	reason := ""
+	if err != nil {
+		reason = err.Error()
+	}
+	return &Result{
+		OK:      false,
+		Error:   errCode,
+		Reason:  reason,
+		Message: launchErrorMessage(errCode),
 	}
 }
 
 func (p *desktopPrepContext) prepareResolvedLaunch() *Result {
-	switch strings.ToLower(strings.TrimSpace(p.req.Provider)) {
-	case "zcode":
-		// 先把悬空的投影链接修成本地路径，再改凭据；否则 host 的
-		// storage preparation 会因 tasks-index.sqlite 或 agent launcher
-		// 缺失而启动失败。
-		repairZcodeProjectionRuntimeLayout(p.profileDir)
-		repairZcodeProjectionDataLayout(p.profileDir)
-		repairZcodeProjectionCredentialProfile(p.profileDir, p.hostHomeDir, p.baseEnv)
-		if p.platformKey == "darwin" {
-			shadowBundle, shadowExec, errCode, err := prepareZcodeShadowApp(
-				p.ctx,
-				p.aiHomeDir,
-				p.repoRoot,
-				p.resolved.BundlePath,
-				p.resolved.ExecutablePath,
-				p.deps.Runner,
-			)
-			if errCode != "" {
-				reason := ""
-				if err != nil {
-					reason = err.Error()
-				}
-				return &Result{
-					OK:      false,
-					Error:   errCode,
-					Reason:  reason,
-					Message: launchErrorMessage(errCode),
-				}
-			}
-			if shadowBundle != "" {
-				p.resolved.BundlePath = shadowBundle
-			}
-			if shadowExec != "" {
-				p.resolved.ExecutablePath = shadowExec
-			}
-			p.decorateZcodeResolvedEnv()
+	hook := desktopProviderHook(p.req.Provider)
+	if hook.prepareResolvedLaunch == nil {
+		return nil
+	}
+	return hook.prepareResolvedLaunch(p)
+}
+
+// prepareZcodeResolvedLaunch 修复投影运行时/数据/凭据布局，并在 darwin 上准备影子 App。
+func (p *desktopPrepContext) prepareZcodeResolvedLaunch() *Result {
+	// 先把悬空的投影链接修成本地路径，再改凭据；否则 host 的
+	// storage preparation 会因 tasks-index.sqlite 或 agent launcher
+	// 缺失而启动失败。
+	repairZcodeProjectionRuntimeLayout(p.profileDir)
+	repairZcodeProjectionDataLayout(p.profileDir)
+	repairZcodeProjectionCredentialProfile(p.profileDir, p.hostHomeDir, p.baseEnv)
+	if p.platformKey != "darwin" {
+		return nil
+	}
+	shadowBundle, shadowExec, errCode, err := prepareZcodeShadowApp(
+		p.ctx,
+		p.aiHomeDir,
+		p.repoRoot,
+		p.resolved.BundlePath,
+		p.resolved.ExecutablePath,
+		p.deps.Runner,
+	)
+	if errCode != "" {
+		reason := ""
+		if err != nil {
+			reason = err.Error()
 		}
-	case "codebuddy", "codebuddycn":
-		extDir, errCode, err := p.prepareCodebuddyIdeBridge()
-		if errCode != "" {
-			reason := ""
-			if err != nil {
-				reason = err.Error()
-			}
-			return &Result{
-				OK:      false,
-				Error:   errCode,
-				Reason:  reason,
-				Message: launchErrorMessage(errCode),
-			}
-		}
-		if extDir != "" {
-			p.extraArgs = append(p.extraArgs, "--extensions-dir="+extDir)
-		}
-	case "kiro":
-		if p.isKiroNativeGUI() {
-			if err := prepareKiroRuntimeHome(p.profileDir, p.hostHomeDir, p.platformKey); err != nil {
-				return &Result{
-					OK:      false,
-					Error:   "kiro_desktop_profile_unavailable",
-					Reason:  err.Error(),
-					Message: launchErrorMessage("kiro_desktop_profile_unavailable"),
-				}
-			}
-			p.decorateKiroNativeEnv()
+		return &Result{
+			OK:      false,
+			Error:   errCode,
+			Reason:  reason,
+			Message: launchErrorMessage(errCode),
 		}
 	}
+	if shadowBundle != "" {
+		p.resolved.BundlePath = shadowBundle
+	}
+	if shadowExec != "" {
+		p.resolved.ExecutablePath = shadowExec
+	}
+	p.decorateZcodeResolvedEnv()
+	return nil
+}
+
+// prepareCodebuddyResolvedLaunch 挂载 IDE 扩展桥接目录。
+func (p *desktopPrepContext) prepareCodebuddyResolvedLaunch() *Result {
+	extDir, errCode, err := p.prepareCodebuddyIdeBridge()
+	if errCode != "" {
+		reason := ""
+		if err != nil {
+			reason = err.Error()
+		}
+		return &Result{
+			OK:      false,
+			Error:   errCode,
+			Reason:  reason,
+			Message: launchErrorMessage(errCode),
+		}
+	}
+	if extDir != "" {
+		p.extraArgs = append(p.extraArgs, "--extensions-dir="+extDir)
+	}
+	return nil
+}
+
+// prepareKiroResolvedLaunch 只对旧版原生 GUI（kiro_cli_desktop）准备独立运行时 HOME。
+func (p *desktopPrepContext) prepareKiroResolvedLaunch() *Result {
+	if !p.isKiroNativeGUI() {
+		return nil
+	}
+	if err := prepareKiroRuntimeHome(p.profileDir, p.hostHomeDir, p.platformKey); err != nil {
+		return &Result{
+			OK:      false,
+			Error:   "kiro_desktop_profile_unavailable",
+			Reason:  err.Error(),
+			Message: launchErrorMessage("kiro_desktop_profile_unavailable"),
+		}
+	}
+	p.decorateKiroNativeEnv()
 	return nil
 }
 
@@ -541,17 +558,11 @@ func afterCloseDesktopProvider(
 	profileDir string,
 	now time.Time,
 ) {
-	switch strings.ToLower(strings.TrimSpace(req.Provider)) {
-	case "codex":
-		if deps.CodexHooks != nil {
-			res := deps.CodexHooks.ClearDesktopAccountRef(req.AccountRef)
-			if res.OK && res.Changed {
-				_ = deps.CodexHooks.RestartRunningAppServers()
-			}
-		}
-	case "zcode":
-		captureZcodeAuthOnClose(ctx, deps.Accounts, profileDir, snapshot, now)
+	hook := desktopProviderHook(req.Provider)
+	if hook.afterClose == nil {
+		return
 	}
+	hook.afterClose(ctx, deps, req, snapshot, profileDir, now)
 }
 
 // --- Codex Desktop API-Key Profile ---
@@ -1088,6 +1099,12 @@ func decryptChromiumV10(aesKey, raw []byte) string {
 
 // --- CodeBuddy Family Keychain / Bridge / Shared Data Roots ---
 
+// codebuddyRegionBySite 是国内站桌面端的默认站点环境。
+var codebuddyRegionBySite = map[string]string{
+	"codebuddycn": "internal",
+	"workbuddycn": "internal",
+}
+
 func resolveCodebuddyInternetEnvironment(provider string, snapshot AccountSnapshot) string {
 	if len(snapshot.NativeAuthJSON) > 0 {
 		var root map[string]any
@@ -1102,12 +1119,7 @@ func resolveCodebuddyInternetEnvironment(provider string, snapshot AccountSnapsh
 			}
 		}
 	}
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "codebuddycn", "workbuddycn":
-		return "internal"
-	default:
-		return ""
-	}
+	return codebuddyRegionBySite[normalizeDesktopProvider(provider)]
 }
 
 func (p *desktopPrepContext) prepareCodebuddyKeychain() *Result {

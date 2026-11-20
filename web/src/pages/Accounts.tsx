@@ -77,6 +77,7 @@ import {
 import {
   getAccountModelProbe,
   getAccountRef,
+  getModelProbeStatusDetail,
   getModelProbeTagColor,
   getModelProbeTagLabel,
   getModelRefreshAccountRef
@@ -873,7 +874,14 @@ export default function Accounts() {
         const requiresReauth = requiresAccountReauth(record);
         const probe = getAccountModelProbe(record, modelCatalog);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
-        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing, record.provider, record.status);
+        const tagLabel = getModelProbeTagLabel(
+          probe,
+          modelRefreshing,
+          record.provider,
+          record.status,
+          record.configured
+        );
+        const tagDetail = getModelProbeStatusDetail(probe);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="accounts-model-probe">
             <span
@@ -895,10 +903,12 @@ export default function Accounts() {
               onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
               onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
             >
-              <Badge
-                status={getModelProbeTagColor(probe, modelRefreshing) as any}
-                text={tagLabel}
-              />
+              <Tooltip title={tagDetail || undefined}>
+                <Badge
+                  status={getModelProbeTagColor(probe, modelRefreshing) as any}
+                  text={tagLabel}
+                />
+              </Tooltip>
             </span>
           </div>
         );

@@ -2,9 +2,7 @@ package aihserver
 
 import (
 	"context"
-	"errors"
 	"log"
-	"sync"
 	"time"
 )
 
@@ -24,12 +22,8 @@ type modelRefreshSweeper interface {
 	Sweep(ctx context.Context) error
 }
 
-// modelRefreshSweepWorker 持有周期重扫的取消和等待生命周期。
-type modelRefreshSweepWorker struct {
-	cancel    context.CancelFunc
-	done      chan struct{}
-	closeOnce sync.Once
-}
+// modelRefreshSweepWorker 是目录重扫 worker 的生命周期句柄。
+type modelRefreshSweepWorker = periodicWorker
 
 // startModelRefreshSweepWorker 延迟后按固定周期重扫；每轮只入队，不等待上游发现。
 func startModelRefreshSweepWorker(
@@ -39,44 +33,16 @@ func startModelRefreshSweepWorker(
 	interval time.Duration,
 	errorLog *log.Logger,
 ) (*modelRefreshSweepWorker, error) {
-	if parent == nil || sweeper == nil || initialDelay <= 0 || interval <= 0 {
-		return nil, ErrInvalidOptions
+	if parent == nil || sweeper == nil {
+		return nil, errInvalidPeriodicWorker
 	}
-	ctx, cancel := context.WithCancel(parent)
-	worker := &modelRefreshSweepWorker{
-		cancel: cancel,
-		done:   make(chan struct{}),
-	}
-	go func() {
-		defer close(worker.done)
-		timer := time.NewTimer(initialDelay)
-		defer timer.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-			}
-			sweepCtx, sweepCancel := context.WithTimeout(ctx, modelRefreshSweepTimeout)
-			err := sweeper.Sweep(sweepCtx)
-			sweepCancel()
-			if err != nil && !errors.Is(err, context.Canceled) && errorLog != nil {
-				errorLog.Printf("账号模型目录周期重扫失败: %v", err)
-			}
-			timer.Reset(interval)
-		}
-	}()
-	return worker, nil
-}
-
-// Close 取消周期重扫并等待退出，调用方随后才能关闭协调器和 Store。
-func (worker *modelRefreshSweepWorker) Close() error {
-	if worker == nil {
-		return nil
-	}
-	worker.closeOnce.Do(func() {
-		worker.cancel()
-		<-worker.done
-	})
-	return nil
+	return startPeriodicWorker(
+		parent,
+		initialDelay,
+		interval,
+		modelRefreshSweepTimeout,
+		"账号模型目录周期重扫",
+		sweeper.Sweep,
+		errorLog,
+	)
 }

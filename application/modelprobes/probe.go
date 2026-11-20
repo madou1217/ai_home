@@ -29,6 +29,8 @@ type Probe struct {
 	ProviderID string
 	// Discovered 是上游声明可用的模型 ID，按事实表顺序去重；排序由调用方决定。
 	Discovered []string
+	// ErrorCode 是这次探测的稳定失败分类；成功或从未探测时为空。
+	ErrorCode string
 	// ErrorText 是这次探测的错误文本：优先 message，缺失时回落到 code。
 	ErrorText string
 	// ProbedAt 是最近一次探测时刻；从未探测为零值。
@@ -37,11 +39,43 @@ type Probe struct {
 	//
 	// 目录非空不等于成功：失败会保留旧模型，所以以错误文本与 LastSource=error 为准。
 	Succeeded bool
+	// Status 是这条事实对外表达的状态；派生规则只在本包内计算。
+	Status State
+	// Retryable 表示这次失败是否会自动重新探测。
+	Retryable bool
+	// NextAttemptAt 是按声明式退避计算出的最早自动重试时刻；不可重试时为零值。
+	NextAttemptAt time.Time
 }
 
 // Probed 报告这个快照是否发生过探测尝试。
 func (probe Probe) Probed() bool {
 	return !probe.ProbedAt.IsZero()
+}
+
+// Failed 报告最近一次探测是否以失败结束。
+func (probe Probe) Failed() bool {
+	return probe.Probed() && !probe.Succeeded
+}
+
+// applyStatus 把探测事实映射成唯一的状态与退避结论。
+func (probe *Probe) applyStatus() {
+	switch {
+	case !probe.Probed():
+		probe.Status = StatePending
+		probe.Retryable = false
+		probe.NextAttemptAt = time.Time{}
+	case probe.Succeeded:
+		probe.Status = StateOK
+		probe.Retryable = false
+		probe.NextAttemptAt = time.Time{}
+	default:
+		policy := RetryPolicyFor(probe.ErrorCode)
+		probe.Status = policy.State
+		probe.Retryable = policy.Retryable
+		if policy.Retryable && policy.RetryAfter > 0 {
+			probe.NextAttemptAt = probe.ProbedAt.Add(policy.RetryAfter)
+		}
+	}
 }
 
 // FromSets 归一账号模型事实表的每个 (账号, Provider) 快照。
@@ -54,9 +88,11 @@ func FromSets(sets []accountapp.AccountModelSet) []Probe {
 			AccountRef: set.AccountRef.String(),
 			ProviderID: set.ProviderID,
 			ProbedAt:   set.LastAttemptAt,
+			ErrorCode:  strings.TrimSpace(set.LastErrorCode),
 			ErrorText:  ErrorText(set.LastErrorCode, set.LastErrorMessage),
 		}
 		probe.Succeeded = probe.ErrorText == "" && strings.TrimSpace(set.LastSource) != "error"
+		probe.applyStatus()
 		seen := make(map[string]struct{}, len(set.Models))
 		for _, model := range set.Models {
 			if !model.UpstreamAvailable() {

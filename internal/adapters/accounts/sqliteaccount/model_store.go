@@ -234,7 +234,7 @@ func (store *Store) RecordModelProbe(
 	if !record.CredentialUpdatedAt.IsZero() {
 		credentialVersion = record.CredentialUpdatedAt.UnixMilli()
 	}
-	_, err := store.db.ExecContext(
+	result, err := store.db.ExecContext(
 		ctx,
 		statement,
 		record.AccountRef.String(),
@@ -250,6 +250,31 @@ func (store *Store) RecordModelProbe(
 	)
 	if err != nil {
 		return fmt.Errorf("写入账号模型探测事实失败: %w", err)
+	}
+	if record.Succeeded {
+		return nil
+	}
+	affected, affectedErr := result.RowsAffected()
+	if affectedErr == nil && affected > 0 {
+		return nil
+	}
+	// 凭据在读取与写入之间被轮换时，成功事实必须被 CAS 拒绝，否则旧凭据的结果
+	// 会覆盖新快照。但失败事实不能因此消失：账号会永远停在「待探测」。这里退一步
+	// 去掉凭据版本校验重写一次，并且只允许更新已有的失败行——既补上可观测性，又
+	// 不会用旧凭据的失败覆盖新凭据的成功。
+	if _, retryErr := store.db.ExecContext(
+		ctx,
+		recordModelProbeFailureWithoutCredentialSQL,
+		record.AccountRef.String(),
+		record.AttemptedAt.UnixMilli(),
+		record.ErrorCode,
+		record.ErrorMessage,
+		record.Source,
+		record.ModelCount,
+		record.UpdatedAt.UnixMilli(),
+		record.AccountRef.String(),
+	); retryErr != nil {
+		return fmt.Errorf("写入账号模型探测失败事实失败: %w", retryErr)
 	}
 	return nil
 }
@@ -298,7 +323,30 @@ const recordModelProbeFailureSQL = `
 		last_error_code = excluded.last_error_code,
 		last_error_message = excluded.last_error_message,
 		last_source = excluded.last_source,
-		updated_at_ms = excluded.updated_at_ms`
+		updated_at_ms = excluded.updated_at_ms
+	WHERE excluded.last_attempt_at_ms >= account_model_probes.last_attempt_at_ms`
+
+// recordModelProbeFailureWithoutCredentialSQL 是凭据版本失配时的失败事实兜底。
+//
+// 只允许写入/更新失败行，绝不覆盖成功快照：这解决「换凭据后旧请求的失败因 CAS
+// 被丢弃 → 页面永远待探测」，同时保留「旧凭据不能覆盖新凭据成功结果」的边界。
+const recordModelProbeFailureWithoutCredentialSQL = `
+	INSERT INTO account_model_probes (
+		account_ref, provider_id, last_attempt_at_ms, last_error_code,
+		last_error_message, last_source, last_model_count, updated_at_ms
+	)
+	SELECT ?, a.provider_id, ?, ?, ?, ?, ?, ?
+	FROM accounts AS a
+	WHERE a.account_ref = ?
+	ON CONFLICT (account_ref) DO UPDATE SET
+		provider_id = excluded.provider_id,
+		last_attempt_at_ms = excluded.last_attempt_at_ms,
+		last_error_code = excluded.last_error_code,
+		last_error_message = excluded.last_error_message,
+		last_source = excluded.last_source,
+		updated_at_ms = excluded.updated_at_ms
+	WHERE account_model_probes.last_source = 'error'
+	  AND excluded.last_attempt_at_ms >= account_model_probes.last_attempt_at_ms`
 
 // ListAccountModels 返回按模型 ID 排序的完整自动发现与人工覆盖关系。
 func (store *Store) ListAccountModels(

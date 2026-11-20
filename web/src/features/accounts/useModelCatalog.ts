@@ -56,6 +56,7 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
           byAccountRef: {},
           errorsByAccountRef: {},
           accountProbedAt: {},
+          accountProbeStatus: {},
           labels: {}
         };
 
@@ -63,6 +64,7 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
         const nextByAccountRef = { ...baseCatalog.byAccountRef };
         const nextErrorsByAccountRef = { ...baseCatalog.errorsByAccountRef };
         const nextAccountProbedAt = { ...(baseCatalog.accountProbedAt || {}) };
+        const nextAccountProbeStatus = { ...(baseCatalog.accountProbeStatus || {}) };
         const nextLabels = { ...baseCatalog.labels };
 
         if (mappedCatalog) {
@@ -88,6 +90,9 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
           Object.entries(mappedCatalog.accountProbedAt || {}).forEach(([ref, at]) => {
             if (Number(at) > 0) nextAccountProbedAt[ref] = Number(at);
           });
+          Object.entries(mappedCatalog.accountProbeStatus || {}).forEach(([ref, status]) => {
+            if (status) nextAccountProbeStatus[ref] = status;
+          });
           if (mappedCatalog.labels) {
             Object.entries(mappedCatalog.labels).forEach(([provider, labels]) => {
               nextLabels[provider] = {
@@ -99,14 +104,22 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
         }
 
         if (accountRef) {
+          const probedAt = Number(job.finishedAt || 0) || Date.now();
           if (job.status === 'failed') {
             nextErrorsByAccountRef[accountRef] = job.error || '探测失败';
             delete nextByAccountRef[accountRef];
-            nextAccountProbedAt[accountRef] = Number(job.finishedAt || 0) || Date.now();
+            nextAccountProbedAt[accountRef] = probedAt;
+            nextAccountProbeStatus[accountRef] = {
+              state: 'failed',
+              error: job.error || '探测失败',
+              retryable: true,
+              probedAt
+            };
           } else if (job.status === 'succeeded') {
             delete nextErrorsByAccountRef[accountRef];
             // 成功但目录为空也要记时刻，否则这个账号永远停在「待探测」。
-            nextAccountProbedAt[accountRef] = Number(job.finishedAt || 0) || Date.now();
+            nextAccountProbedAt[accountRef] = probedAt;
+            nextAccountProbeStatus[accountRef] = { state: 'ok', probedAt };
           }
         }
 
@@ -123,6 +136,7 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
           byAccountRef: nextByAccountRef,
           errorsByAccountRef: nextErrorsByAccountRef,
           accountProbedAt: nextAccountProbedAt,
+          accountProbeStatus: nextAccountProbeStatus,
           labels: nextLabels
         };
       });

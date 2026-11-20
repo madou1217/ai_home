@@ -96,6 +96,15 @@ type Store interface {
 	ListModelAliases(ctx context.Context) ([]modelalias.Record, int64, error)
 }
 
+// CatalogRevisionSource 是目录缓存的失效键来源（可选端口）。
+//
+// 签名必须覆盖所有会改变目录的账号侧写入：账号/凭据/资料/UI 地址、模型关系、
+// 探测事实与别名。这里用可选接口而不是扩宽 Store：测试夹具不必伪造与缓存无关的
+// 事实，生产装配的 sqliteaccount.Store 直接满足。
+type CatalogRevisionSource interface {
+	CatalogRevision(ctx context.Context) (string, error)
+}
+
 // PricingConfigStore 读写 aih.db app_kv 中的价格插件配置。
 type PricingConfigStore interface {
 	LoadRawConfig(ctx context.Context, key string) ([]byte, error)
@@ -186,9 +195,11 @@ const catalogResponseTTL = 3 * time.Second
 const catalogStaleTTL = 5 * time.Minute
 
 type catalogCacheEntry struct {
-	at   time.Time
-	body []byte
-	etag string
+	at time.Time
+	// revision 是构建这份目录时的账号侧事实签名。为空表示失效键不可用，退化为纯 TTL。
+	revision string
+	body     []byte
+	etag     string
 }
 
 // ModelCatalogJob 对齐 WebUiOpenAIModelsJob 契约。
@@ -396,9 +407,15 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 	}
 
 	key := scopedRef
+	// 失效键先于缓存命中计算：账号换端点、换凭据或模型事实变化后，旧字节即使还在
+	// stale 窗口内也不能再下发，否则 WebUI 会继续展示上一个账号/厂商的目录。
+	revision := handler.catalogRevision(ctx)
 	handler.catalogMu.Lock()
 	entry, cached := handler.catalogCache[key]
 	handler.catalogMu.Unlock()
+	if cached && revision != "" && entry.revision != revision {
+		cached = false
+	}
 	if cached {
 		age := time.Since(entry.at)
 		if age < catalogResponseTTL {
@@ -435,9 +452,40 @@ func (handler *Handler) handleGetCatalog(response http.ResponseWriter, request *
 			break
 		}
 	}
-	handler.catalogCache[key] = catalogCacheEntry{at: time.Now(), body: body, etag: etag}
+	handler.catalogCache[key] = catalogCacheEntry{at: time.Now(), revision: revision, body: body, etag: etag}
 	handler.catalogMu.Unlock()
 	handler.writeCatalogBody(response, request, body, etag)
+}
+
+// catalogRevision 返回当前账号侧事实签名；不可用或读取失败时返回空串，
+// 调用方退化为纯 TTL 缓存，不会因为旁路查询失败把目录打成 500。
+func (handler *Handler) catalogRevision(ctx context.Context) string {
+	parts := make([]string, 0, 2)
+	if source, ok := handler.store.(CatalogRevisionSource); ok {
+		if revision, err := source.CatalogRevision(ctx); err == nil {
+			if revision = strings.TrimSpace(revision); revision != "" {
+				parts = append(parts, revision)
+			}
+		}
+	}
+	// 模型设置文档存在 app_kv：显式刷新之外，其它写入方（导入、运维脚本）修改
+	// 手工模型时也必须让缓存失效，否则会继续读到旧目录。
+	if handler.settings != nil {
+		if settings, err := handler.settings.Load(ctx); err == nil {
+			parts = append(parts, fmt.Sprintf("settings:%d", settings.UpdatedAtMS))
+		}
+	}
+	return strings.Join(parts, "|")
+}
+
+// invalidateCatalogCache 丢弃全部已编码目录，让下一次读取重建。
+//
+// 显式刷新与人工模型变更走这里：它们可能不改变数据库签名（例如刷新失败只写探测
+// 事实之外的状态），或者调用方已经拿到了新目录，继续复用旧字节没有意义。
+func (handler *Handler) invalidateCatalogCache() {
+	handler.catalogMu.Lock()
+	handler.catalogCache = make(map[string]catalogCacheEntry)
+	handler.catalogMu.Unlock()
 }
 
 // refreshCatalog 在后台重建目录；同一 key 只允许一个刷新在途，避免并发放大。
@@ -461,6 +509,9 @@ func (handler *Handler) refreshCatalog(key, scopedRef string) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		// 先记签名再构建：构建期间的并发写入必须让下一次请求再次重建，
+		// 而不是把「新签名 + 旧构建」的组合缓存下来。
+		revision := handler.catalogRevision(ctx)
 		catalog, err := handler.buildCatalog(ctx, scopedRef)
 		if err != nil {
 			return
@@ -475,7 +526,12 @@ func (handler *Handler) refreshCatalog(key, scopedRef string) {
 		if handler.catalogCache == nil {
 			handler.catalogCache = make(map[string]catalogCacheEntry)
 		}
-		handler.catalogCache[key] = catalogCacheEntry{at: time.Now(), body: body, etag: etag}
+		handler.catalogCache[key] = catalogCacheEntry{
+			at:       time.Now(),
+			revision: revision,
+			body:     body,
+			etag:     etag,
+		}
 		handler.catalogMu.Unlock()
 	}()
 }
@@ -610,6 +666,7 @@ func (handler *Handler) handleCreateManual(response http.ResponseWriter, request
 		return
 	}
 
+	handler.invalidateCatalogCache()
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":                true,
 		"model":             findSavedAccountModel(savedSettings, accountRef.String(), modelID, savedRecord),
@@ -751,6 +808,7 @@ func (handler *Handler) handlePatchModel(response http.ResponseWriter, request *
 		}
 	}
 
+	handler.invalidateCatalogCache()
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":                true,
 		"model":             findSavedAccountModel(savedSettings, accountRef.String(), modelID, savedRecord),
@@ -795,6 +853,7 @@ func (handler *Handler) handleCatalogDelete(response http.ResponseWriter, reques
 		}
 	}
 
+	handler.invalidateCatalogCache()
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":                true,
 		"settingsUpdatedAt": savedSettings.UpdatedAtMS,
@@ -970,6 +1029,9 @@ func (handler *Handler) runRefreshJob(jobID string, scopedRef accountcore.Accoun
 	handler.jobsMu.Unlock()
 
 	if hasState {
+		// 显式刷新是用户的「现在就要新目录」意图：作业结果已经构建好，旧缓存
+		// 即使还在 TTL/stale 窗口内也必须作废。
+		handler.invalidateCatalogCache()
 		handler.broadcastJob(final)
 		handler.persistJobHistory(final)
 	}

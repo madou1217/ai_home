@@ -66,6 +66,25 @@ type AccountScope struct {
 	AccountRef string `json:"accountRef"`
 }
 
+// ProbeStatus 是一个账号最近一次模型探测的状态声明。
+//
+// 状态与退避节奏全部来自 application/modelprobes（单一声明点）；这里只负责
+// 把它透出给 WebUI，前端不再用「有没有错误/时间戳」自行推导状态。
+type ProbeStatus struct {
+	// State 取 pending / ok / retrying / failed。
+	State string `json:"state"`
+	// ErrorCode 是稳定的失败分类；成功时为空。
+	ErrorCode string `json:"errorCode,omitempty"`
+	// Error 是失败原因文案。
+	Error string `json:"error,omitempty"`
+	// Retryable 表示会自动重新探测。
+	Retryable bool `json:"retryable"`
+	// ProbedAt 是最近一次探测时刻（毫秒）。
+	ProbedAt int64 `json:"probedAt"`
+	// NextAttemptAt 是按退避计算的最早自动重试时刻（毫秒）；不可重试时省略。
+	NextAttemptAt int64 `json:"nextAttemptAt,omitempty"`
+}
+
 // CatalogResponse 对齐 WebUI /v0/webui/openai-models 的完整响应形状。
 type CatalogResponse struct {
 	OK                 bool                         `json:"ok"`
@@ -86,8 +105,11 @@ type CatalogResponse struct {
 	ByAccountRef       map[string][]string          `json:"byAccountRef"`
 	ErrorsByAccountRef map[string]string            `json:"errorsByAccountRef"`
 	AccountProbedAt    map[string]int64             `json:"accountProbedAt"`
-	SettingsUpdatedAt  int64                        `json:"settingsUpdatedAt"`
-	CatalogGeneration  int64                        `json:"catalogGeneration"`
+	// AccountProbeStatus 是状态与退避的唯一读模型；accountProbedAt/errorsByAccountRef
+	// 继续保留以兼容旧客户端。
+	AccountProbeStatus map[string]ProbeStatus `json:"accountProbeStatus"`
+	SettingsUpdatedAt  int64                  `json:"settingsUpdatedAt"`
+	CatalogGeneration  int64                  `json:"catalogGeneration"`
 }
 
 type catalogModelEntry struct {
@@ -163,6 +185,25 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 	}
 
 	probes := modelprobes.FromSets(catalog.Sets)
+	// 探测状态先于 Provider 目录过滤构建：即使某个 Provider 不在目录能力表里，
+	// 账号页也需要知道「探过、失败还是从未探测」，否则失败账号会退回「待探测」。
+	accountProbeStatus := make(map[string]ProbeStatus, len(probes))
+	for _, probe := range probes {
+		if !probe.Probed() {
+			continue
+		}
+		status := ProbeStatus{
+			State:     string(probe.Status),
+			ErrorCode: probe.ErrorCode,
+			Error:     probe.ErrorText,
+			Retryable: probe.Retryable,
+			ProbedAt:  probe.ProbedAt.UnixMilli(),
+		}
+		if !probe.NextAttemptAt.IsZero() {
+			status.NextAttemptAt = probe.NextAttemptAt.UnixMilli()
+		}
+		accountProbeStatus[probe.AccountRef] = status
+	}
 	for index, set := range catalog.Sets {
 		ref := set.AccountRef.String()
 		if !providerSet[set.ProviderID] {
@@ -440,6 +481,7 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		ByAccountRef:       byAccountRef,
 		ErrorsByAccountRef: errorsByAccountRef,
 		AccountProbedAt:    accountProbedAt,
+		AccountProbeStatus: accountProbeStatus,
 		SettingsUpdatedAt:  settings.UpdatedAtMS,
 		CatalogGeneration:  catalog.Generation,
 	}, nil

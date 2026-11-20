@@ -823,6 +823,23 @@ export interface CodexResetOperationResponse {
   reconciliationRequired: boolean;
 }
 
+/**
+ * 账号模型探测状态（服务端唯一声明）。
+ *
+ * state 与退避节奏来自 Go 的 application/modelprobes；前端只消费结论，不再用
+ * 「有没有错误 / 时间戳是否存在」重新推导状态。
+ */
+export interface AccountProbeStatus {
+  state: 'pending' | 'ok' | 'retrying' | 'failed';
+  errorCode?: string;
+  error?: string;
+  retryable?: boolean;
+  /** 最近一次探测时刻（毫秒）。 */
+  probedAt: number;
+  /** 按退避计算的最早自动重试时刻（毫秒）；不可重试时省略。 */
+  nextAttemptAt?: number;
+}
+
 export interface WebUiModelsResponse {
   ok: boolean;
   cached: boolean;
@@ -842,6 +859,8 @@ export interface WebUiModelsResponse {
    * 「探测过、没有模型」与「从未探测」——后者才该显示「待探测」。
    */
   accountProbedAt?: Record<string, number>;
+  /** accountRef -> 探测状态与失败/重试时间；新服务端总会下发。 */
+  accountProbeStatus?: Record<string, AccountProbeStatus>;
   /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
   labels?: Record<string, Record<string, string>>;
   metadata?: Record<string, ModelMetadata>;
@@ -1010,6 +1029,8 @@ export interface WebUiOpenAIModelsResponse {
   errorsByAccountRef: Record<string, string>;
   /** accountRef -> 上次探测时刻；语义同 WebUiModelsResponse.accountProbedAt。 */
   accountProbedAt?: Record<string, number>;
+  /** accountRef -> 探测状态；语义同 WebUiModelsResponse.accountProbeStatus。 */
+  accountProbeStatus?: Record<string, AccountProbeStatus>;
   settingsUpdatedAt?: number;
 }
 

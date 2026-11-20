@@ -133,6 +133,11 @@ const nodeRoutes = [
     hideInMenu: true,
   },
   {
+    path: "/browser",
+    component: "./AccountBrowser",
+    hideInMenu: true,
+  },
+  {
     path: "*",
     redirect: "/dashboard",
   }

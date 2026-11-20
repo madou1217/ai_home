@@ -15,6 +15,9 @@ var (
 // not an account profile directory or the user's everyday browser data.
 type Options struct {
 	SessionDir string
+	// Interactive opens one ordinary about:blank window. Call only after an
+	// explicit user action: the OS/browser can bring it to the foreground.
+	Interactive bool
 }
 
 // BrowserIdentity describes the verified installed application, not a page,

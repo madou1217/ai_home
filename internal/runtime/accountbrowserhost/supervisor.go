@@ -10,12 +10,13 @@ import (
 // Supervisor owns a single dedicated stable browser process. It is not wired
 // to account Open or exposed through HTTP before frame/input support exists.
 type Supervisor struct {
-	dir      string
-	gate     chan struct{}
-	mu       sync.Mutex
-	status   Status
-	current  *hostProcess
-	stranded *hostStorage
+	dir         string
+	interactive bool
+	gate        chan struct{}
+	mu          sync.Mutex
+	status      Status
+	current     *hostProcess
+	stranded    *hostStorage
 }
 
 type hostProcess struct {
@@ -34,7 +35,7 @@ func New(options Options) (*Supervisor, error) {
 	if err := validateSessionDir(options.SessionDir); err != nil {
 		return nil, err
 	}
-	return &Supervisor{dir: options.SessionDir, gate: make(chan struct{}, 1), status: Status{State: "stopped"}}, nil
+	return &Supervisor{dir: options.SessionDir, interactive: options.Interactive, gate: make(chan struct{}, 1), status: Status{State: "stopped"}}, nil
 }
 
 func (s *Supervisor) enter(ctx context.Context) error {
@@ -116,8 +117,13 @@ func (s *Supervisor) Start(ctx context.Context) (Status, error) {
 		s.state("failed", 0, installed.identity)
 		return s.Status(), err
 	}
-	command := exec.Command(installed.executable,
-		"--user-data-dir="+dataDir, "--no-startup-window", "--no-first-run", "--no-default-browser-check")
+	args := []string{"--user-data-dir=" + dataDir, "--no-first-run", "--no-default-browser-check"}
+	if s.interactive {
+		args = append(args, "--new-window", "--window-size=1200,900", "about:blank")
+	} else {
+		args = append(args, "--no-startup-window")
+	}
+	command := exec.Command(installed.executable, args...)
 	prepareCommand(command)
 	if err := ctx.Err(); err != nil {
 		cleanup := storage.release(true)

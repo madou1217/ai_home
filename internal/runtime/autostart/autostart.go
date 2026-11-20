@@ -60,6 +60,28 @@ func ServiceRestartCommand(label string) (string, []string, error) {
 	}
 }
 
+// Start 在受管服务已安装但进程未运行时把它拉起来（重启的后半段）。
+// 与 Install 分开：Install 会重建 plist/unit，Start 只负责启动。
+func Start(ctx context.Context, options Options) error {
+	options, err := normalize(options)
+	if err != nil {
+		return err
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		_, err := run(ctx, "launchctl", "kickstart", launchdDomain()+"/"+options.Label)
+		return err
+	case "linux":
+		_, err := run(ctx, "systemctl", "--user", "start", options.Label+".service")
+		return err
+	case "windows":
+		_, err := run(ctx, "schtasks", "/Run", "/TN", options.Label)
+		return err
+	default:
+		return ErrUnsupportedPlatform
+	}
+}
+
 // GracefulRestartCommand 返回"先礼后兵"的重启命令：macOS 先给受管进程
 // SIGTERM，等它把在跑的回答收尾，再 kickstart 拉起；只有超时没退才 -k 强杀。
 // kickstart -k 用的是 SIGKILL，会直接截断推理流——那正是会话莫名结束的来源。
@@ -188,13 +210,18 @@ func serviceArgs(options Options) []string {
 }
 
 func Install(ctx context.Context, options Options) (Status, error) {
+	return InstallWithMode(ctx, options, false)
+}
+
+// InstallWithMode 在安装/补装时区分强制与平滑：force=true 直接结束旧进程。
+func InstallWithMode(ctx context.Context, options Options, force bool) (Status, error) {
 	options, err := normalize(options)
 	if err != nil {
 		return Status{}, err
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return installLaunchd(ctx, options)
+		return installLaunchd(ctx, options, force)
 	case "linux":
 		return installSystemd(ctx, options)
 	case "windows":
@@ -373,7 +400,7 @@ func buildPlist(options Options) []byte {
 	return []byte(strings.Join(lines, string(rune(10))))
 }
 
-func installLaunchd(ctx context.Context, options Options) (Status, error) {
+func installLaunchd(ctx context.Context, options Options, force bool) (Status, error) {
 	path := plistPath(options)
 	domain := launchdDomain()
 	target := domain + "/" + options.Label
@@ -385,13 +412,19 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 	// "Bootstrap failed: 5: Input/output error"，重试再多也只能等。
 	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, desired) {
 		if ServiceJobLoaded(ctx, options.Label) {
-			if status, ok := kickstartLaunchd(ctx, target, options); ok {
+			if status, ok := kickstartLaunchd(ctx, target, options, force); ok {
 				status.Strategy = "in_place"
 				return status, nil
 			}
 		}
 	}
 	previous := launchdPIDs(ctx, target)
+	if force {
+		// 强制：先 SIGKILL，避免 bootout 之后还要等收尾窗口。
+		for _, pid := range previous {
+			_, _ = run(ctx, "kill", "-KILL", strconv.Itoa(pid))
+		}
+	}
 	_, _ = run(ctx, "launchctl", "bootout", target)
 	// bootout 只把作业从 launchd 注销，旧进程仍可能在优雅关闭（最长 10s）。
 	// 只要旧进程还活着，launchctl bootstrap 就一律返回 Input/output error，
@@ -402,7 +435,9 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	waitProcessExit(previous, launchdShutdownWait)
+	if !force {
+		waitProcessExit(previous, launchdShutdownWait)
+	}
 	if err := atomicWrite(path, buildPlist(options), 0600); err != nil {
 		return Status{}, err
 	}
@@ -452,16 +487,80 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 // kickstartLaunchd 在已注册的 launchd 作业内原子重启进程。返回 ok=false 时由
 // 调用方退回完整的 bootout → 等旧进程退出 → bootstrap 流程（例如作业已进入
 // 异常状态、或 kickstart 被系统拒绝）。
-func kickstartLaunchd(ctx context.Context, target string, options Options) (Status, bool) {
+// Restart 在同一作业内重启服务。
+//
+// force=true（默认语义）：立即结束旧进程，不等在跑的请求——重启快，但会截断
+// 正在生成的会话；force=false：先 SIGTERM、等进程按自己的收尾窗口退出，再拉起。
+func Restart(ctx context.Context, options Options, force bool) (Status, error) {
+	options, err := normalize(options)
+	if err != nil {
+		return Status{}, err
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return restartLaunchd(ctx, options, force)
+	case "linux":
+		return restartSystemd(ctx, options, force)
+	case "windows":
+		if !force {
+			return Status{}, ErrUnsupportedPlatform
+		}
+		return restartWindows(ctx, options)
+	default:
+		return Status{}, ErrUnsupportedPlatform
+	}
+}
+
+func restartLaunchd(ctx context.Context, options Options, force bool) (Status, error) {
+	target := launchdDomain() + "/" + options.Label
+	if current, err := os.ReadFile(plistPath(options)); err == nil &&
+		bytes.Equal(current, buildPlist(options)) &&
+		ServiceJobLoaded(ctx, options.Label) {
+		if status, ok := kickstartLaunchd(ctx, target, options, force); ok {
+			status.Strategy = "in_place"
+			return status, nil
+		}
+	}
+	return InstallWithMode(ctx, options, force)
+}
+
+func restartSystemd(ctx context.Context, options Options, force bool) (Status, error) {
+	unit := options.Label + ".service"
+	if force {
+		// 强制：直接 SIGKILL，不等服务端的收尾窗口。
+		_, _ = run(ctx, "systemctl", "--user", "kill", "--signal=SIGKILL", unit)
+	}
+	if _, err := run(ctx, "systemctl", "--user", "restart", unit); err != nil {
+		return Status{}, err
+	}
+	status, err := statusSystemd(ctx, options)
+	if err != nil {
+		return Status{}, err
+	}
+	return status, nil
+}
+
+func restartWindows(ctx context.Context, options Options) (Status, error) {
+	_, _ = run(ctx, "schtasks", "/End", "/TN", options.Label)
+	// /End 对控制台程序是 TerminateProcess，返回即进程已消失；留一点窗口给句柄释放。
+	time.Sleep(500 * time.Millisecond)
+	if _, err := run(ctx, "schtasks", "/Run", "/TN", options.Label); err != nil {
+		return Status{}, err
+	}
+	return statusWindows(options)
+}
+
+// kickstartLaunchd 重启已注册作业。force=true 直接 kickstart -k（SIGKILL），
+// force=false 先 SIGTERM 等旧进程收尾。
+func kickstartLaunchd(ctx context.Context, target string, options Options, force bool) (Status, bool) {
 	name, args, err := ServiceRestartCommand(options.Label)
 	if err != nil {
 		return Status{}, false
 	}
 	before := launchdPIDs(context.Background(), target)
-	// kickstart -k 是 SIGKILL：推理流会被瞬间掐断，客户端当成会话异常结束
-	//（真机 2026-11-20 23:14 的 codex 会话就是这样没的）。这里改成先 SIGTERM、
-	// 等进程按自己的收尾窗口退出，再 plain kickstart 拉起；只有它赖着不走才强杀。
-	if len(before) > 0 {
+	// 平滑重启：先 SIGTERM，等进程按收尾窗口把在跑的回答写完，再拉起。
+	// 强制重启（默认）跳过这一步——kickstart -k 会立刻 SIGKILL。
+	if !force && len(before) > 0 {
 		for _, pid := range before {
 			_, _ = run(ctx, "kill", "-TERM", strconv.Itoa(pid))
 		}

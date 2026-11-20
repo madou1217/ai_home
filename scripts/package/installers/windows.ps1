@@ -83,7 +83,8 @@ try {
   foreach ($item in Get-ChildItem -LiteralPath $source -Force) {
     Copy-Item -LiteralPath $item.FullName -Destination $stage -Recurse -Force
   }
-  foreach ($required in @('aih.exe', 'bin\ai-home.js', 'runtime\node.exe', 'BUILD_INFO.json')) {
+  # CLI 入口是 Go 原生实现；bin\native\<target>\aih-go.exe 由下面的完整性循环校验。
+  foreach ($required in @('aih.exe', 'runtime\node.exe', 'BUILD_INFO.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $stage $required) -PathType Leaf)) { throw "Incomplete staged bundle: $required" }
   }
   $build = Get-Content -LiteralPath (Join-Path $stage 'BUILD_INFO.json') -Encoding UTF8 -Raw | ConvertFrom-Json

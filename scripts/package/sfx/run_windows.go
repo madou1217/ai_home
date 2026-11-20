@@ -23,9 +23,9 @@ func prepareConsole() {
 }
 
 func launch(dest string) error {
-	node := filepath.Join(dest, "runtime", "node.exe")
-	entry := filepath.Join(dest, "bin", "ai-home.js")
-	command := exec.Command(node, append([]string{entry}, os.Args[1:]...)...)
+	// CLI 入口是 Go 原生实现（Node 只留给 codex hooks / DSH 等外部运行时）。
+	cli := filepath.Join(dest, "bin", "native", bundleTarget, "aih-go.exe")
+	command := exec.Command(cli, os.Args[1:]...)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

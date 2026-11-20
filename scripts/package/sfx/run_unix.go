@@ -11,8 +11,11 @@ import (
 func prepareConsole() {}
 
 func launch(dest string) error {
-	node := filepath.Join(dest, "runtime", "bin", "node")
-	entry := filepath.Join(dest, "bin", "ai-home.js")
-	args := append([]string{node, entry}, os.Args[1:]...)
-	return syscall.Exec(node, args, packageEnv(dest))
+	// CLI 入口是 Go 原生实现（Node 只留给 codex hooks / DSH 等外部运行时）。
+	cli := filepath.Join(dest, "bin", "native", bundleTarget, "aih-go")
+	if _, err := os.Stat(cli); err != nil {
+		return err
+	}
+	args := append([]string{cli}, os.Args[1:]...)
+	return syscall.Exec(cli, args, packageEnv(dest))
 }

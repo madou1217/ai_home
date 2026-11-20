@@ -105,7 +105,11 @@ func markerMatches(dest string) bool {
 	if found.Version != bundleVersion || found.Target != bundleTarget || found.SHA256 != payloadSHA {
 		return false
 	}
-	_, err = os.Stat(filepath.Join(dest, "bin", "ai-home.js"))
+	cliName := "aih-go"
+	if strings.HasPrefix(bundleTarget, "win32-") {
+		cliName += ".exe"
+	}
+	_, err = os.Stat(filepath.Join(dest, "bin", "native", bundleTarget, cliName))
 	return err == nil
 }
 

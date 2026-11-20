@@ -2,8 +2,8 @@
 
 package main
 
-// Windows 便携版目录内的 aih.exe 启动器：不再解包，直接使用同目录的 runtime/。
-// 单独做成 exe 是因为 Windows 的 .cmd 在 Node 里 spawn 需要 shell，
+// Windows 便携版目录内的 aih.exe 启动器：不再解包，直接使用同目录的 Go CLI。
+// 单独做成 exe 是因为 Windows 的 .cmd 在内部 spawn 时需要 shell，
 // 用它当 AIH_EXECUTABLE 会让 resume / 会话恢复这类内部调用变得脆弱。
 
 import (
@@ -62,16 +62,14 @@ func main() {
 		}
 	}
 
-	node := filepath.Join(directory, "runtime", "node.exe")
-	entry := filepath.Join(directory, "bin", "ai-home.js")
-	if _, err := os.Stat(node); err != nil {
-		fail(fmt.Errorf("运行时缺失：%s", node))
-	}
-	if _, err := os.Stat(entry); err != nil {
-		fail(fmt.Errorf("入口缺失：%s", entry))
+	// CLI 直接运行 Go 实现；Node 运行时只留给 codex hooks / DSH 等外部运行时，
+	// 不再作为 CLI 入口。
+	cli := filepath.Join(directory, "bin", "native", "win32-"+mapArch(), "aih-go.exe")
+	if _, err := os.Stat(cli); err != nil {
+		fail(fmt.Errorf("入口缺失：%s", cli))
 	}
 
-	command := exec.Command(node, append([]string{entry}, os.Args[1:]...)...)
+	command := exec.Command(cli, os.Args[1:]...)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

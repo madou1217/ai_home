@@ -42,8 +42,13 @@ func ReadBuild(root string) (Build, error) {
 	if err != nil || hash != b.GoCore.SHA256 {
 		return b, errors.New("安装包完整性校验失败，请重新下载")
 	}
-	for _, name := range []string{"bin/ai-home.js", "web/dist/index.html"} {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(name))); err != nil {
+	// 运行资源校验以 Go CLI 为准：安装包的 aih 入口不再经由 Node 旧入口。
+	cli := filepath.Join(filepath.Dir(filepath.FromSlash(b.GoCore.Binary)), "aih-go")
+	if runtime.GOOS == "windows" {
+		cli += ".exe"
+	}
+	for _, name := range []string{cli, "web/dist/index.html"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
 			return b, errors.New("安装包缺少运行资源")
 		}
 	}

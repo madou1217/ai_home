@@ -156,7 +156,7 @@ func execute(args []string, runtime commandRuntime) int {
 		}
 		return 0
 	}
-	// autostart 安装已迁到 Go，先于 Node 兜底处理，避免安装路径依赖 ai-home.js。
+	// autostart 安装已迁到 Go，注册在通用 server 兜底之前。
 	if handled, err := runServerAutostart(context.Background(), args, runtime); handled {
 		if err != nil {
 			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)

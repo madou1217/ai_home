@@ -32,20 +32,18 @@ while [ -h "$SELF" ]; do
 done
 DIR=$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd -P)
 
-NODE="$DIR/runtime/bin/node"
-if [ ! -x "$NODE" ]; then
-  echo "[aih] 运行时缺失：$NODE（请重新解压完整安装包）" >&2
-  exit 1
+# CLI 入口是 Go 原生实现；Node 运行时只留给 codex hooks / DSH 等外部运行时，
+# 缺失时 CLI 仍可用，因此这里不再硬失败。
+if [ -d "$DIR/runtime/bin" ]; then
+  PATH="$DIR/runtime/bin:$PATH"
+  export PATH
 fi
-
-PATH="$DIR/runtime/bin:$PATH"
-export PATH
 AIH_PACKAGED=1
 AIH_EXECUTABLE="$DIR/aih"
 AIH_PACKAGE_ROOT="$DIR"
 export AIH_PACKAGED AIH_EXECUTABLE AIH_PACKAGE_ROOT
 
-exec "$NODE" "$DIR/bin/ai-home.js" "$@"
+exec "$DIR/bin/aih" "$@"
 `;
 
 // Platform effects stay in focused adapters, not in the bundle composition.

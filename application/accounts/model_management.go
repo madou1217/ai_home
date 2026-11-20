@@ -51,14 +51,37 @@ type FallbackModelDiscoverer interface {
 	DiscoverModels(ctx context.Context, credential Credential, descriptor PluginProviderDescriptor) ([]string, error)
 }
 
+// pluginModelsHandlerGeneric 是插件宿主已实现通用模型探测的 handler 标识。
+const pluginModelsHandlerGeneric = "generic-models-probe"
+
 // ModelDiscovery 按 Provider 选择唯一模型发现策略。
 type ModelDiscovery struct {
 	catalog    *providers.Catalog
 	strategies map[string]ProviderModelDiscoverer
 
-	pluginMu        sync.RWMutex
-	pluginProviders map[string]PluginProviderDescriptor
-	pluginFallback  FallbackModelDiscoverer
+	pluginMu         sync.RWMutex
+	pluginProviders  map[string]PluginProviderDescriptor
+	pluginStrategies map[string]ProviderModelDiscoverer
+}
+
+// pluginModelDiscoverer 把「插件描述符 + 宿主通用探测」适配为同一发现接口。
+//
+// 这样插件 Provider 与内置 Provider 走同一条发现路径：同样的错误包装与结果规范化，
+// 不再在 DiscoverModels 里维护第二条分支。
+type pluginModelDiscoverer struct {
+	descriptor PluginProviderDescriptor
+	fallback   FallbackModelDiscoverer
+}
+
+func (discoverer pluginModelDiscoverer) ProviderID() string {
+	return discoverer.descriptor.ProviderID
+}
+
+func (discoverer pluginModelDiscoverer) DiscoverModels(
+	ctx context.Context,
+	credential Credential,
+) ([]string, error) {
+	return discoverer.fallback.DiscoverModels(ctx, credential, discoverer.descriptor)
 }
 
 // NewModelDiscovery 创建不允许重复 Provider 策略的发现注册表。
@@ -82,7 +105,12 @@ func NewModelDiscovery(
 		}
 		indexed[providerID] = strategy
 	}
-	return &ModelDiscovery{catalog: catalog, strategies: indexed, pluginProviders: map[string]PluginProviderDescriptor{}}, nil
+	return &ModelDiscovery{
+		catalog:          catalog,
+		strategies:       indexed,
+		pluginProviders:  map[string]PluginProviderDescriptor{},
+		pluginStrategies: map[string]ProviderModelDiscoverer{},
+	}, nil
 }
 
 // SetPluginProviders 用插件宿主当前接受的描述符整体替换插件 Provider 集合。
@@ -105,9 +133,19 @@ func (discovery *ModelDiscovery) SetPluginProviders(
 		descriptor.ProviderID = providerID
 		indexed[providerID] = descriptor
 	}
+	// 策略按「最终生效的描述符」生成：同一 Provider 重复声明时语义与
+	// pluginProviders 一致（后声明覆盖前声明），不会留下已被覆盖的探测策略。
+	strategies := make(map[string]ProviderModelDiscoverer, len(indexed))
+	if fallback != nil {
+		for providerID, descriptor := range indexed {
+			if strings.TrimSpace(descriptor.ModelsHandler) == pluginModelsHandlerGeneric {
+				strategies[providerID] = pluginModelDiscoverer{descriptor: descriptor, fallback: fallback}
+			}
+		}
+	}
 	discovery.pluginMu.Lock()
 	discovery.pluginProviders = indexed
-	discovery.pluginFallback = fallback
+	discovery.pluginStrategies = strategies
 	discovery.pluginMu.Unlock()
 }
 
@@ -141,7 +179,7 @@ func (discovery *ModelDiscovery) PluginProviderIDs() []string {
 	defer discovery.pluginMu.RUnlock()
 	ids := make([]string, 0, len(discovery.pluginProviders))
 	for providerID, descriptor := range discovery.pluginProviders {
-		if strings.TrimSpace(descriptor.ModelsHandler) == "generic-models-probe" {
+		if strings.TrimSpace(descriptor.ModelsHandler) == pluginModelsHandlerGeneric {
 			ids = append(ids, providerID)
 		}
 	}
@@ -163,25 +201,22 @@ func (discovery *ModelDiscovery) DiscoverModels(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	var strategy ProviderModelDiscoverer
 	providerID, builtin := discovery.catalog.CanonicalID(credential.ProviderID())
 	if builtin && providerID == credential.ProviderID() {
-		if strategy := discovery.strategies[providerID]; strategy != nil {
-			values, err := strategy.DiscoverModels(ctx, credential)
-			if err != nil {
-				return nil, fmt.Errorf("%w: %w", ErrModelDiscoveryFailed, err)
-			}
-			return NormalizeDiscoveredModels(values)
-		}
+		strategy = discovery.strategies[providerID]
 	}
-	// 插件 Provider 不在静态合同中：描述符声明 handler，宿主实现探测。
-	discovery.pluginMu.RLock()
-	descriptor, plugin := discovery.pluginProviders[credential.ProviderID()]
-	fallback := discovery.pluginFallback
-	discovery.pluginMu.RUnlock()
-	if !plugin || fallback == nil || strings.TrimSpace(descriptor.ModelsHandler) != "generic-models-probe" {
+	if strategy == nil {
+		// 插件 Provider 不在静态合同中：SetPluginProviders 已把声明了通用探测
+		// handler 的描述符适配成同一种策略。
+		discovery.pluginMu.RLock()
+		strategy = discovery.pluginStrategies[credential.ProviderID()]
+		discovery.pluginMu.RUnlock()
+	}
+	if strategy == nil {
 		return nil, ErrModelDiscoveryUnsupported
 	}
-	values, err := fallback.DiscoverModels(ctx, credential, descriptor)
+	values, err := strategy.DiscoverModels(ctx, credential)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrModelDiscoveryFailed, err)
 	}

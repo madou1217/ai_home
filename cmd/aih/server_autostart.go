@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,16 +96,25 @@ func resolveAutostartOptions(runtime commandRuntime) (autostart.Options, error) 
 		hostHome = userHome
 	}
 	receiptExecutable, receiptRoot := readInstallReceipt(home)
+	// 仓库根目录的 aih-server 只是构建产物，不是 canonical 运行入口。
+	// 优先选择 bin/native/<goos>-<goarch>/aih-server；若只能选到没有
+	// build stamp 的 sibling，而同树里有已校验的 canonical 构建，则改用它。
+	packagedBinary := packagedServerSibling("aih-server")
+	siblingBinary := executableSibling("aih-server")
 	serverBinary := firstExisting(
 		strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_SERVER_BINARY")),
 		receiptExecutable,
-		executableSibling("aih-server"),
-		packagedServerSibling("aih-server"),
+		packagedBinary,
+		siblingBinary,
 	)
 	if serverBinary == "" {
 		if resolved, lookupErr := exec.LookPath("aih-server"); lookupErr == nil {
 			serverBinary = resolved
 		}
+	}
+	if serverBinary == siblingBinary && packagedBinary != "" && packagedBinary != siblingBinary &&
+		serverBinaryStamped(packagedBinary) && !serverBinaryStamped(siblingBinary) {
+		serverBinary = packagedBinary
 	}
 	if serverBinary == "" {
 		return autostart.Options{}, errors.New("autostart_server_binary_not_found")
@@ -200,6 +212,38 @@ func executableSibling(name string) string {
 		return candidate
 	}
 	return ""
+}
+
+// serverBinaryStamped 校验二进制与同目录 build stamp 的 sha256 是否一致。
+// 只用于 autostart 选择运行入口，不参与其他构建流程。
+func serverBinaryStamped(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	raw, err := os.ReadFile(path + ".build.json")
+	if err != nil || len(raw) > 64*1024 {
+		return false
+	}
+	var stamp struct {
+		BinarySHA256 string `json:"binary_sha256"`
+	}
+	if json.Unmarshal(raw, &stamp) != nil {
+		return false
+	}
+	expected := strings.ToLower(strings.TrimSpace(stamp.BinarySHA256))
+	if expected == "" {
+		return false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return false
+	}
+	return hex.EncodeToString(hash.Sum(nil)) == expected
 }
 
 func firstExisting(candidates ...string) string {

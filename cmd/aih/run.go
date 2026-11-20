@@ -103,6 +103,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__background" {
 		return runBackgroundSupervisorCommand(arguments[1:], runtime)
 	}
+	// 模型查看先于任何原生启动分流，不能把 models 当作原生提示词。
+	if handled, err := runModelsCommand(ctx, arguments, runtime); handled {
+		return err
+	}
 	// 外部 harness（pi / dsh / dsh-tui）是 `aih <id>` 的一等命令，先于 Provider
 	// 合同分流：它们没有上游协议，不能按未知 Provider 处理。Go 直接启动，不再
 	// 转交 Node 旧入口（旧委派会让 aih 在子 shell 里短路成「启动请求无效」）。
@@ -550,6 +554,10 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> relay [account_id] [provider_args...] # Gateway 同 Provider 固定账号")
 	_, _ = fmt.Fprintln(output, "  aih <client> relay <provider> <account_id> [provider_args...] # Gateway 跨 Provider 固定账号")
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> <account_id> [provider_args...]       # Native Direct")
+	_, _ = fmt.Fprintln(output, "  aih <provider> models [accountID|accountRef] [--json]    # 只读目标 Server 模型目录")
+	_, _ = fmt.Fprintln(output, "  aih <harness> models [accountRef] [--json]              # 只读 harness 可选模型")
+	_, _ = fmt.Fprintln(output, "  aih provider models <provider> [accountID|accountRef] [--json]")
+	_, _ = fmt.Fprintln(output, "  aih harness <id> models [--provider <p>] [--account <n|ref>] [--json]")
 	_, _ = fmt.Fprintln(output, "  "+accountUsageLine())
 	_, _ = fmt.Fprintln(output, "  aih plugin <command> [options]                         # 插件打包、信任根与启停")
 	_, _ = fmt.Fprintln(output)
@@ -573,6 +581,7 @@ func writeUsage(output io.Writer) {
 func writeProviderUsage(output io.Writer, providerID string) {
 	if providerID == "claude" {
 		_, _ = fmt.Fprintln(output, "AIH Claude 用法:")
+		_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih claude [claude_args...]                    # Gateway 账号池")
 		_, _ = fmt.Fprintln(output, "  aih claude relay <account_id> [claude_args...] # Gateway 固定账号")
 		_, _ = fmt.Fprintln(output, "  aih claude <account_id> [claude_args...]       # Native Direct")
@@ -602,6 +611,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 
 	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)
+		_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> [原生参数...]              # 指定账号启动（伪 HOME 投影）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" resume [<id>] [原生参数...]      # 续接（无 id = 最近一段）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" sessions [<id>] [--all-projects]   # 列出受管持久会话")
@@ -624,6 +634,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 	}
 
 	_, _ = fmt.Fprintln(output, "AIH Codex 用法:")
+	_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
 	_, _ = fmt.Fprintln(output, "  aih codex [codex_args...]                            # Gateway 账号池")
 	_, _ = fmt.Fprintln(output, "  aih codex relay <account_id> [codex_args...]         # Gateway 固定账号")
 	_, _ = fmt.Fprintln(output, "  aih codex relay <provider> <account_id> [codex_args...] # Gateway 跨 Provider 固定账号")

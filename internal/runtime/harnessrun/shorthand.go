@@ -215,6 +215,7 @@ func formatShorthandUsage(harness harnesses.Harness) string {
 		fmt.Sprintf("%s (%s) 通过 AIH Gateway 使用账号模型：", harness.Label, harness.ID),
 		"",
 		fmt.Sprintf("  aih %s [<accountRef>] [--model <model>] [-- <原生参数…>]", harness.ID),
+		fmt.Sprintf("  aih %s models [accountRef] [--json]  只读目标 Server 模型目录，不启动", harness.ID),
 		"",
 	}
 	hasResumeVerb := harness.Sessions != nil && harness.Sessions.Resume != nil

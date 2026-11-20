@@ -19,8 +19,9 @@ import (
 // nativeresources.Report 已经是这两者的唯一事实来源，因此不再保留两套探测。
 // `ls` 仍与账号列表分开：它回答「有哪些 Provider、各多少账号、有没有原生 CLI」。
 
-const providerCommandUsage = `Usage: aih provider <capabilities|doctor|ls> [--json]
+const providerCommandUsage = `Usage: aih provider <capabilities|doctor|ls|models> [--json]
 
+  models <provider> [accountID|accountRef] [--json]  Read cached Server models
   capabilities [--json]  Show every provider resource boundary and imported-host gap
   doctor [--json]        Add local runtime availability and managed-resource state
   ls [pattern...]        List providers with account counts and CLI availability

@@ -20,6 +20,8 @@ const helpText = `aih harness — 用某个 Provider 的某个账号跑外部 ha
 用法：
   aih harness                                   列出可用的 harness
   aih harness <id> [选项] [-- 原生参数...]        启动
+  aih harness <id> models [--provider <p>] [--account <n|ref>] [--json]
+  aih <harness> models [accountRef] [--json]       只读缓存模型目录，不启动
 
 选项：
   --provider <p>    身份 Provider（codex / claude / codebuddycn …）

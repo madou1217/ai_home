@@ -68,7 +68,10 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 		if _, err := autostart.Install(ctx, options); err != nil {
 			return true, err
 		}
-		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server started")
+		if !waitServerReady(ctx, port, serverReadyTimeout) {
+			return true, fmt.Errorf("server started but /readyz did not answer on port %d within %s", port, serverReadyTimeout)
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "[aih] server started (port=%d)\n", port)
 	case "stop":
 		if err := autostart.Stop(ctx, options); err != nil {
 			return true, err
@@ -78,7 +81,12 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 		if _, err := autostart.Install(ctx, options); err != nil {
 			return true, err
 		}
-		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server restarted")
+		// 作业注册成功不代表已经能服务：启动装配还需要时间，调用方紧接着发请求
+		// 会拿到 connection refused。这里等到 /readyz 真正通过再报成功。
+		if !waitServerReady(ctx, port, serverReadyTimeout) {
+			return true, fmt.Errorf("server restarted but /readyz did not answer on port %d within %s", port, serverReadyTimeout)
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "[aih] server restarted (port=%d)\n", port)
 	case "status":
 		status, _ := autostart.StatusFor(ctx, options)
 		ready := serverReady(ctx, port)
@@ -123,6 +131,26 @@ func resolveServerPort(ctx context.Context, home string, runtime commandRuntime)
 		return int(number)
 	}
 	return 9527
+}
+
+// serverReadyTimeout 覆盖本地服务完整装配（数据面 + 后台 worker）的耗时。
+const serverReadyTimeout = 90 * time.Second
+
+func waitServerReady(ctx context.Context, port int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if serverReady(ctx, port) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 func serverReady(ctx context.Context, port int) bool {

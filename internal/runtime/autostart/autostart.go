@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,11 @@ import (
 const (
 	DefaultLabel   = "com.meadeo.ai_home"
 	commandTimeout = 30 * time.Second
+	// launchdShutdownWait 覆盖 plist 里的 ExitTimeOut（12s）加余量：旧进程还在
+	// 退出时 launchd 会拒绝注册同名作业（Bootstrap failed: 5: Input/output error）。
+	launchdShutdownWait = 15 * time.Second
+	// launchdBootstrapWindow 是 bootstrap 的重试窗口，给 launchd 回收旧作业留时间。
+	launchdBootstrapWindow = 20 * time.Second
 )
 
 var ErrUnsupportedPlatform = errors.New("autostart_platform_unsupported")
@@ -121,13 +127,16 @@ func Stop(ctx context.Context, options Options) error {
 	switch runtime.GOOS {
 	case "darwin":
 		target := launchdDomain() + "/" + options.Label
+		previous := launchdPIDs(ctx, target)
 		_, _ = run(ctx, "launchctl", "bootout", target)
 		for attempt := 0; attempt < 50; attempt++ {
 			if _, err := run(ctx, "launchctl", "print", target); err != nil {
+				waitProcessExit(previous, launchdShutdownWait)
 				return nil
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
+		waitProcessExit(previous, launchdShutdownWait)
 		return nil
 	case "linux":
 		_, err := run(ctx, "systemctl", "--user", "stop", options.Label+".service")
@@ -281,25 +290,31 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 	path := plistPath(options)
 	domain := launchdDomain()
 	target := domain + "/" + options.Label
+	previous := launchdPIDs(ctx, target)
 	_, _ = run(ctx, "launchctl", "bootout", target)
-	// bootout returns before launchd has always forgotten the old job. A short
-	// fixed delay plus polling avoids the common Input/output error race.
-	time.Sleep(2 * time.Second)
+	// bootout 只把作业从 launchd 注销，旧进程仍可能在优雅关闭（最长 10s）。
+	// 只要旧进程还活着，launchctl bootstrap 就一律返回 Input/output error，
+	// 重试再多也没用，所以先等进程真正退出。
 	for attempt := 0; attempt < 50; attempt++ {
 		if _, err := run(ctx, "launchctl", "print", target); err != nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	waitProcessExit(previous, launchdShutdownWait)
 	if err := atomicWrite(path, buildPlist(options), 0600); err != nil {
 		return Status{}, err
 	}
 	var bootstrapErr error
-	for attempt := 0; attempt < 6; attempt++ {
+	deadline := time.Now().Add(launchdBootstrapWindow)
+	for {
 		if _, bootstrapErr = run(ctx, "launchctl", "bootstrap", domain, path); bootstrapErr == nil {
 			break
 		}
-		time.Sleep(300 * time.Millisecond)
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 	if bootstrapErr != nil {
 		// launchctl load is the legacy fallback for older launchd versions.
@@ -333,6 +348,43 @@ func uninstallLaunchd(ctx context.Context, options Options) error {
 		return err
 	}
 	return nil
+}
+
+// launchdPIDs 读取 launchctl print 里的 pid，用于在重启前等待旧进程退出。
+func launchdPIDs(ctx context.Context, target string) []int {
+	raw, err := run(ctx, "launchctl", "print", target)
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, line := range strings.Split(string(raw), string(rune(10))) {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "pid = ") {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "pid = ")))
+		if err == nil && pid > 0 {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// waitProcessExit 阻塞到给定进程全部消失或超时。launchd 的 bootstrap 在旧进程
+// 存活期间必定失败，这里是重启可靠性的关键等待。
+func waitProcessExit(pids []int, timeout time.Duration) {
+	for _, pid := range pids {
+		if pid <= 0 {
+			continue
+		}
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if _, err := run(context.Background(), "kill", "-0", strconv.Itoa(pid)); err != nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 func statusLaunchd(ctx context.Context, options Options) (Status, error) {

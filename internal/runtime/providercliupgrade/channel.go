@@ -70,16 +70,19 @@ func ResolveChannelCapabilities(channel string, provider string) ChannelCapabili
 	return base
 }
 
+// vendorPinnedVerbs 是支持钉版本官方命令的 Provider 子命令。
+var vendorPinnedVerbs = map[string]string{
+	"claude":   "install",
+	"opencode": "upgrade",
+}
+
 // VendorPinnedArgs 返回支持钉版本官方命令的 provider 参数模板。
 func VendorPinnedArgs(provider string, version string) ([]string, bool) {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "claude":
-		return []string{"install", version}, true
-	case "opencode":
-		return []string{"upgrade", version}, true
-	default:
+	verb, found := vendorPinnedVerbs[strings.ToLower(strings.TrimSpace(provider))]
+	if !found {
 		return nil, false
 	}
+	return []string{verb, version}, true
 }
 
 // RequiresQuiescence 判断升级前是否必须等待 provider 空闲（无活跃会话/app-server）。

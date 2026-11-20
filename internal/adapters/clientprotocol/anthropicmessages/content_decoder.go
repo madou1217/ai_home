@@ -394,7 +394,9 @@ func decodeToolResultPayload(
 		}
 		content, err := newTextContent(text, field)
 		if err != nil {
-			return nil, err
+			// 工具输出可能夹带二进制或控制字符（例如把 PNG 当文本返回）；
+			// 这种结果无法用 Canonical 文本表达，按空结果继续，避免整段历史永久 400。
+			return nil, nil
 		}
 		return []inference.Content{content}, nil
 	}

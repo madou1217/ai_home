@@ -262,7 +262,7 @@ func openCLITerminal(
 				if resolveErr != nil {
 					return Result{OK: false, Error: "aih_cli_unavailable", Message: resolveErr.Error()}
 				}
-			} else if webUICLIIsGoOwned(req, harness) {
+			} else if webUICLIIsGoOwned(deps, req, harness) {
 				var failure *Result
 				launchArgs, termEnv, failure = prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
 				if failure != nil {
@@ -340,7 +340,7 @@ func openCLITerminal(
 				parts = append(parts, quoteShellToken(arg, platformKey))
 			}
 			command = strings.Join(parts, " ")
-		} else if webUICLIIsGoOwned(req, harness) {
+		} else if webUICLIIsGoOwned(deps, req, harness) {
 			args, nativeEnv, failure := prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
 			if failure != nil {
 				return *failure

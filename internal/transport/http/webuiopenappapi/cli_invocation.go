@@ -30,7 +30,7 @@ func prepareGoCLIInvocation(ctx context.Context, deps NativeLauncherDependencies
 		}
 	}
 	definition, known := catalog.Get(harness)
-	if !known || !definition.Clients.CLI || !webUICLIIsGoOwned(req, harness) {
+	if !known || !definition.Clients.CLI || !webUICLIIsGoOwned(deps, req, harness) {
 		// 分流应在调用之前完成；这里仅防止内部调用绕过能力边界。
 		return failure("aih_cli_contract_unavailable", "启动请求不属于当前 Go CLI 能力范围")
 	}

@@ -183,11 +183,17 @@ type NativeLauncherDependencies struct {
 	InstallChecker      InstallAvailableChecker
 	KimiSessions        KimiSessionPort
 	DesktopAppFinder    DesktopAppFinder
-	CLIBinaryFinder     CLIBinaryFinder
-	Now                 func() time.Time
-	Sleep               func(context.Context, time.Duration) error
-	Environ             func() []string
-	Warn                func(string)
+	// CLIBinaryFinder 定位 Provider 官方 CLI 可执行文件。
+	CLIBinaryFinder CLIBinaryFinder
+	// NativeCLIProvider 报告某 Provider 的原生 CLI 是否已由 Go 组合根承接。
+	//
+	// 这是一个组合根事实（哪些启动策略真被注册），只能由宿主注入：
+	// 为零时回退到 Provider 合同声明的 CLI 客户端，那只是能力的必要非充分条件。
+	NativeCLIProvider func(providerID string) bool
+	Now               func() time.Time
+	Sleep             func(context.Context, time.Duration) error
+	Environ           func() []string
+	Warn              func(string)
 }
 
 type sqliteAccountAdapter struct {

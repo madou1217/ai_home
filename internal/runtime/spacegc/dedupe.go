@@ -81,9 +81,14 @@ func Dedupe(roots []string, opts DedupeOptions) DedupeReport {
 			}
 			report.Groups++
 			keep := paths[0]
+			keepInfo, keepErr := os.Stat(keep)
 			for _, duplicate := range paths[1:] {
 				info, err := os.Stat(duplicate)
 				if err != nil {
+					continue
+				}
+				// 已经是同一个 inode：上一轮已经合并过，不重复计数/不重复删建。
+				if keepErr == nil && os.SameFile(keepInfo, info) {
 					continue
 				}
 				if opts.DryRun {

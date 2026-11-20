@@ -27,6 +27,7 @@ type responseStream struct {
 	response          http.ResponseWriter
 	stream            *inferenceapi.SSEStream
 	renderer          clientprotocol.StreamRenderer
+	timing            *requestTiming
 	lastSequence      uint64
 	observed          bool
 	renderErr         error
@@ -40,16 +41,19 @@ func newResponseStream(
 	response http.ResponseWriter,
 	stream *inferenceapi.SSEStream,
 	renderer clientprotocol.StreamRenderer,
+	timing *requestTiming,
 ) *responseStream {
 	return &responseStream{
 		response: response,
 		stream:   stream,
 		renderer: renderer,
+		timing:   timing,
 	}
 }
 
 // Accept 渲染一个 Canonical 事件并同步传播客户端写入背压。
 func (stream *responseStream) Accept(event inference.StreamEvent) error {
+	stream.timing.markEvent()
 	if failed, ok := event.(inference.ResponseFailedEvent); ok &&
 		!stream.observed &&
 		!stream.stream.Committed() {

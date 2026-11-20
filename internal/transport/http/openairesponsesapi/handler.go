@@ -132,6 +132,15 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	var timing *requestTiming
+	if request.Header.Get("X-Aih-Timing") == "1" {
+		timing = newRequestTiming("", false)
+		response = &timingWriter{ResponseWriter: response, timing: timing}
+		defer func() {
+			timing.log(response.Header().Get("X-Aih-Server-Account-Ref"))
+		}()
+	}
+
 	ctx, err := inferenceapi.ContextWithPinnedAccount(request)
 	if err != nil {
 		writeAPIError(
@@ -172,12 +181,16 @@ func (handler *Handler) ServeHTTP(
 	}
 	canonicalRequest = inferenceapi.ApplyModelNamespace(request.Header.Get(inferenceapi.ModelNamespaceHeader), canonicalRequest)
 	canonicalRequest = inferenceapi.ApplySessionModelAlias(request.Header.Get("X-Aih-Model-Alias"), canonicalRequest)
+	if timing != nil {
+		timing.markModel(canonicalRequest.Model(), canonicalRequest.Stream())
+	}
 	if canonicalRequest.Stream() {
 		handler.executeStream(
 			response,
 			request,
 			canonicalRequest,
 			exchange.NewStreamRenderer(),
+			timing,
 		)
 		return
 	}
@@ -186,6 +199,7 @@ func (handler *Handler) ServeHTTP(
 		request,
 		canonicalRequest,
 		exchange.NewResponseAggregator(),
+		timing,
 	)
 }
 
@@ -195,13 +209,16 @@ func (handler *Handler) executeNonStream(
 	request *http.Request,
 	canonicalRequest inference.Request,
 	aggregator clientprotocol.ResponseAggregator,
+	timing *requestTiming,
 ) {
 	sink := inferenceapi.NewNonStreamSink(aggregator)
+	timing.markExecutorStart()
 	executionErr := handler.executor.Execute(
 		request.Context(),
 		canonicalRequest,
 		sink.Accept,
 	)
+	timing.markExecutorDone()
 	failure, failed := sink.Failure()
 	switch {
 	case sink.Err() != nil:
@@ -238,6 +255,7 @@ func (handler *Handler) executeStream(
 	request *http.Request,
 	canonicalRequest inference.Request,
 	renderer clientprotocol.StreamRenderer,
+	timing *requestTiming,
 ) {
 	stream, err := inferenceapi.NewSSEStream(response)
 	if err != nil {
@@ -250,12 +268,14 @@ func (handler *Handler) executeStream(
 		)
 		return
 	}
-	execution := newResponseStream(response, stream, renderer)
+	execution := newResponseStream(response, stream, renderer, timing)
+	timing.markExecutorStart()
 	executionErr := handler.executor.Execute(
 		request.Context(),
 		canonicalRequest,
 		execution.Accept,
 	)
+	timing.markExecutorDone()
 	if execution.WriteFailed() {
 		return
 	}

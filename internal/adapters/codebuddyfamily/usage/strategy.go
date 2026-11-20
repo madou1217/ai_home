@@ -30,6 +30,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/cliversion"
 )
 
@@ -48,12 +49,12 @@ var (
 	ErrInvalidResponse       = errors.New("CodeBuddy 额度响应无效")
 )
 
-// familyEndpoints 是四个发行版的账单域名。
+// familyEndpoints 是四个发行版的账单域名，取值来自 Provider 合同的默认推理端点。
 var familyEndpoints = map[string]string{
-	"codebuddy":   "https://www.codebuddy.ai",
-	"workbuddy":   "https://www.workbuddy.ai",
-	"codebuddycn": "https://copilot.tencent.com",
-	"workbuddycn": "https://copilot.tencent.com",
+	"codebuddy":   providers.CodeBuddyBaseURL,
+	"workbuddy":   providers.WorkBuddyBaseURL,
+	"codebuddycn": providers.TencentCopilotBaseURL,
+	"workbuddycn": providers.TencentCopilotBaseURL,
 }
 
 // commodityLabels 把 PackageCode 前缀映射成稳定桶名。

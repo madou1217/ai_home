@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/qodercred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -347,10 +348,10 @@ type CodebuddySharedCredential struct {
 
 var (
 	codebuddyBillingEndpoints = map[string]string{
-		"codebuddy":   "https://www.codebuddy.ai",
-		"workbuddy":   "https://www.workbuddy.ai",
-		"codebuddycn": "https://copilot.tencent.com",
-		"workbuddycn": "https://copilot.tencent.com",
+		"codebuddy":   providers.CodeBuddyBaseURL,
+		"workbuddy":   providers.WorkBuddyBaseURL,
+		"codebuddycn": providers.TencentCopilotBaseURL,
+		"workbuddycn": providers.TencentCopilotBaseURL,
 	}
 	codebuddyFamilyIssuers = map[string][]string{
 		"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},

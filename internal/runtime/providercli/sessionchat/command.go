@@ -141,7 +141,7 @@ var OpenCodeLayoutV2 = OpenCodeLayout{ID: "v2", StandaloneFlag: "--standalone", 
 var OpenCodeLayoutV1 = OpenCodeLayout{ID: "v1", DirectoryFlag: "--dir"}
 
 // ResolveOpenCodeLayout 解析布局：环境变量钉选优先，否则回落最新布局（v2）。
-// 真实探测（opencode run --help）留在 Node：它需要读盘与 spawn，不属于纯构造。
+// 布局是启动参数合同的静态事实；运行期不 spawn 探测，环境声明是唯一覆盖入口。
 func ResolveOpenCodeLayout(envValue string) OpenCodeLayout {
 	forced := strings.ToLower(ReadOpencodeContextField(envValue, "runLayout"))
 	switch forced {

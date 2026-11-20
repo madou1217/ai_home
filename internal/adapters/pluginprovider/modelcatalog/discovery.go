@@ -1,8 +1,8 @@
 // Package modelcatalog 执行插件 Provider 声明为 generic-models-probe 的目录探测。
 //
 // 插件描述符只提供数据（base URL / 认证形态来自账号凭据）；真正出网的是宿主侧
-// 通用 OpenAI 兼容 /models 探测。没有这个实现，插件 Provider 的模型目录就只能
-// 留在 Node 缓存里。
+// 通用 OpenAI 兼容 /models 探测。只有 Go 未注册该 handler 的插件策略才回退
+// 插件运行时的本地目录。
 package modelcatalog
 
 import (

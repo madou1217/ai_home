@@ -18,8 +18,8 @@ import (
 //   - 只有 owner（写文件的 server）与 core（内核进程）都存活、且地址是回环 http 时才采用，
 //     否则按未就绪 fail-closed —— 不猜固定端口，也不回落到全局代理。
 //
-// Go 进程里没有池内核（池仍由宿主 Node 运行时持有），所以这里只读运行文件；
-// 保存时的连通性探测与节点轮换留在 Node 的 probePoolEgressWithRotation。
+// Go 进程里没有池内核（池内核由宿主运行时持有），所以这里只读运行文件；
+// 保存时的连通性探测与节点轮换由 Go 的 internal/runtime/egress 负责。
 
 const (
 	poolStateFileVersion = 1

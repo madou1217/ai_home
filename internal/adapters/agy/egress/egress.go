@@ -17,8 +17,8 @@
 //
 // 与 Node 的故意差异（均有理由）：
 //   - 不复用 15s 的探测结果缓存：Go 只在 OAuth 刷新时解析（小时级），不是每请求热路径；
-//   - pool 保存时的连通性探测与节点轮换（probePoolEgressWithRotation）仍由持有内核的
-//     Node 池运行时负责；Go 进程里没有池内核，读取路径只能按运行文件 fail-closed；
+//   - pool 保存时的连通性探测与节点轮换由 Go 的 internal/runtime/egress 负责；
+//     池内核由宿主运行时持有，读取路径仍按运行文件 fail-closed；
 //   - 系统代理的 bypassList 不参与出口解析，因此这里不解析（Node 也只用于诊断展示）。
 package egress
 

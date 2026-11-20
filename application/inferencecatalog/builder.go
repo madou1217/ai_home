@@ -227,8 +227,8 @@ func countDisplayOnlyModels(
 	return displayOnly
 }
 
-// WithAliasStore 让 Builder 在编译目录时并入 Node 的模型别名投影；store 可为 nil，
-// 表示 Go 不做别名改写（命中别名的请求继续由 Node 承接）。
+// WithAliasStore 让 Builder 在编译目录时并入 Go 的模型别名投影；store 可为 nil，
+// 表示本次目录编译不做别名改写。
 func (builder *Builder) WithAliasStore(store *modelalias.Store) *Builder {
 	if builder != nil {
 		builder.aliases = store

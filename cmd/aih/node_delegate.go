@@ -84,7 +84,7 @@ func providerActionOwnedByGo(verb string) bool {
 	case "ls", "list", "export", "import", "version", "home", "sessions",
 		"policy", "terminal-icon", "terminal-icons", "usage", "stats", "--usage", "login",
 		"delete", "deleteall", "delete-all", "set-default", "unset-default",
-		"set-mobile", "unset-mobile", "auto-switch", "detect":
+		"set-mobile", "unset-mobile", "gateway-auth", "effort", "auto-switch", "detect":
 		return true
 	default:
 		return false

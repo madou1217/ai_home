@@ -411,7 +411,7 @@ func buildColdDashboardShardConn(ctx context.Context, conn *sql.Conn, sq UsageQu
 func feedColdHourIntoAcc(acc *usagePanelAccumulator, h int64, hb *rollupHourBuild, policy coldPanelPolicy, includeTrend bool) {
 	if policy.needStats || policy.needModels || policy.needModelOptions || includeTrend {
 		for mk, mAgg := range hb.models {
-			acc.addRollupModelRow(
+			acc.addRollupModelRowSum(
 				h, mk.provider, mk.model, mk.accountRef, mAgg.calls,
 				mAgg.inputTokens, mAgg.outputTokens, mAgg.cacheReadInputTokens,
 				mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens,
@@ -425,7 +425,7 @@ func feedColdHourIntoAcc(acc *usagePanelAccumulator, h int64, hb *rollupHourBuil
 				(acc.opts.model != "" && sk.model != acc.opts.model) {
 				continue
 			}
-			acc.addSessionAggregate(
+			acc.addSessionAggregateSum(
 				sk.provider, sk.sessionID, sk.accountRef, sAgg.calls,
 				sAgg.inputTokens, sAgg.outputTokens, sAgg.cacheReadInputTokens,
 				sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens,

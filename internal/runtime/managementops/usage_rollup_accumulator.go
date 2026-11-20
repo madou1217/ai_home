@@ -34,26 +34,29 @@ type panelModelAcc struct {
 	cacheCreationInputTokens int64
 	reasoningOutputTokens    int64
 	totalTokens              int64
-	costUSD                  float64
+	costUSD                  usageCostSum
 	unattributedCalls        int
 	accountRefs              map[string]struct{}
 }
 
 type panelSessionAcc struct {
 	part         UsageSessionPart
+	costUSD      usageCostSum
 	hasTimestamp bool
 	accountRefs  map[string]struct{}
 }
 
 type usagePanelAccumulator struct {
-	opts         usagePanelOptions
-	stats        UsageStatsSummary
-	sessionKeys  map[string]struct{}
-	models       map[string]*panelModelAcc
-	modelOptions map[string]*panelModelAcc
-	sessions     map[string]*panelSessionAcc
-	promptCounts map[string]int
-	trendByStart map[int64]*UsageTrendPoint
+	opts             usagePanelOptions
+	stats            UsageStatsSummary
+	statsCostUSD     usageCostSum
+	sessionKeys      map[string]struct{}
+	models           map[string]*panelModelAcc
+	modelOptions     map[string]*panelModelAcc
+	sessions         map[string]*panelSessionAcc
+	promptCounts     map[string]int
+	trendByStart     map[int64]*UsageTrendPoint
+	trendCostByStart map[int64]usageCostSum
 }
 
 func newUsagePanelAccumulator(opts usagePanelOptions) *usagePanelAccumulator {
@@ -75,6 +78,7 @@ func newUsagePanelAccumulator(opts usagePanelOptions) *usagePanelAccumulator {
 	}
 	if opts.needTrend {
 		acc.trendByStart = make(map[int64]*UsageTrendPoint)
+		acc.trendCostByStart = make(map[int64]usageCostSum)
 	}
 	return acc
 }
@@ -84,7 +88,7 @@ func addToPanelModelMap(
 	provider, model, accountRef string,
 	calls int,
 	input, output, cacheRead, cacheCreate, reasoning, total int64,
-	costUSD float64,
+	costSum usageCostSum,
 ) {
 	key := provider + "\x00" + model
 	item := dst[key]
@@ -103,7 +107,7 @@ func addToPanelModelMap(
 	item.cacheCreationInputTokens += cacheCreate
 	item.reasoningOutputTokens += reasoning
 	item.totalTokens += total
-	item.costUSD += costUSD
+	item.costUSD.addSum(costSum)
 	if accountRef == "" {
 		item.unattributedCalls += calls
 	} else if trimmed := strings.TrimSpace(accountRef); isValidAccountRef(trimmed) {
@@ -116,6 +120,15 @@ func (a *usagePanelAccumulator) addTrendBucket(
 	calls int,
 	input, output, cacheRead, cacheCreate, reasoning, total int64,
 	costUSD float64,
+) {
+	a.addTrendBucketSum(tsMS, calls, input, output, cacheRead, cacheCreate, reasoning, total, usageCostSum{sum: costUSD})
+}
+
+func (a *usagePanelAccumulator) addTrendBucketSum(
+	tsMS int64,
+	calls int,
+	input, output, cacheRead, cacheCreate, reasoning, total int64,
+	costSum usageCostSum,
 ) {
 	if !a.opts.needTrend || a.opts.trendOriginMS <= 0 || a.opts.trendBucketMS <= 0 {
 		return
@@ -134,7 +147,10 @@ func (a *usagePanelAccumulator) addTrendBucket(
 	pt.CacheCreationInputTokens += cacheCreate
 	pt.ReasoningOutputTokens += reasoning
 	pt.TotalTokens += total
-	pt.CostUSD += costUSD
+	tc := a.trendCostByStart[start]
+	tc.addSum(costSum)
+	a.trendCostByStart[start] = tc
+	pt.CostUSD = tc.value()
 }
 
 func (a *usagePanelAccumulator) addCanonicalRow(
@@ -147,10 +163,11 @@ func (a *usagePanelAccumulator) addCanonicalRow(
 	if a.opts.provider != "" && provider != a.opts.provider {
 		return
 	}
+	costSum := usageCostSum{sum: costUSD}
 	if a.opts.needModelOptions {
 		addToPanelModelMap(
 			a.modelOptions, provider, model, accountRef, 1,
-			input, output, cacheRead, cacheCreate, reasoning, total, costUSD,
+			input, output, cacheRead, cacheCreate, reasoning, total, costSum,
 		)
 	}
 	if a.opts.model != "" && model != a.opts.model {
@@ -164,7 +181,7 @@ func (a *usagePanelAccumulator) addCanonicalRow(
 		a.stats.CacheCreationInputTokens += cacheCreate
 		a.stats.ReasoningOutputTokens += reasoning
 		a.stats.TotalTokens += total
-		a.stats.TotalCostUSD += costUSD
+		a.statsCostUSD.add(costUSD)
 		if !a.opts.needSessions && sessionID != "" {
 			a.sessionKeys[provider+"\x00"+sessionID] = struct{}{}
 		}
@@ -172,18 +189,18 @@ func (a *usagePanelAccumulator) addCanonicalRow(
 	if a.opts.needModels {
 		addToPanelModelMap(
 			a.models, provider, model, accountRef, 1,
-			input, output, cacheRead, cacheCreate, reasoning, total, costUSD,
+			input, output, cacheRead, cacheCreate, reasoning, total, costSum,
 		)
 	}
 	if a.opts.needSessions && sessionID != "" {
-		a.addSessionAggregate(
+		a.addSessionAggregateSum(
 			provider, sessionID, accountRef, 1,
-			input, output, cacheRead, cacheCreate, reasoning, total, costUSD,
+			input, output, cacheRead, cacheCreate, reasoning, total, costSum,
 			tsMS, tsMS, project, cwd, gitBranch,
 		)
 	}
 	if includeTrend && a.opts.needTrend {
-		a.addTrendBucket(tsMS, 1, input, output, cacheRead, cacheCreate, reasoning, total, costUSD)
+		a.addTrendBucketSum(tsMS, 1, input, output, cacheRead, cacheCreate, reasoning, total, costSum)
 	}
 }
 
@@ -195,13 +212,28 @@ func (a *usagePanelAccumulator) addRollupModelRow(
 	costUSD float64,
 	includeTrend bool,
 ) {
+	a.addRollupModelRowSum(
+		hourMS, provider, model, accountRef, calls,
+		input, output, cacheRead, cacheCreate, reasoning, total,
+		usageCostSum{sum: costUSD}, includeTrend,
+	)
+}
+
+func (a *usagePanelAccumulator) addRollupModelRowSum(
+	hourMS int64,
+	provider, model, accountRef string,
+	calls int,
+	input, output, cacheRead, cacheCreate, reasoning, total int64,
+	costSum usageCostSum,
+	includeTrend bool,
+) {
 	if a.opts.provider != "" && provider != a.opts.provider {
 		return
 	}
 	if a.opts.needModelOptions {
 		addToPanelModelMap(
 			a.modelOptions, provider, model, accountRef, calls,
-			input, output, cacheRead, cacheCreate, reasoning, total, costUSD,
+			input, output, cacheRead, cacheCreate, reasoning, total, costSum,
 		)
 	}
 	if a.opts.model != "" && model != a.opts.model {
@@ -215,16 +247,16 @@ func (a *usagePanelAccumulator) addRollupModelRow(
 		a.stats.CacheCreationInputTokens += cacheCreate
 		a.stats.ReasoningOutputTokens += reasoning
 		a.stats.TotalTokens += total
-		a.stats.TotalCostUSD += costUSD
+		a.statsCostUSD.addSum(costSum)
 	}
 	if a.opts.needModels {
 		addToPanelModelMap(
 			a.models, provider, model, accountRef, calls,
-			input, output, cacheRead, cacheCreate, reasoning, total, costUSD,
+			input, output, cacheRead, cacheCreate, reasoning, total, costSum,
 		)
 	}
 	if includeTrend && a.opts.needTrend {
-		a.addTrendBucket(hourMS, calls, input, output, cacheRead, cacheCreate, reasoning, total, costUSD)
+		a.addTrendBucketSum(hourMS, calls, input, output, cacheRead, cacheCreate, reasoning, total, costSum)
 	}
 }
 
@@ -233,6 +265,21 @@ func (a *usagePanelAccumulator) addSessionAggregate(
 	calls int,
 	input, output, cacheRead, cacheCreate, reasoning, total int64,
 	costUSD float64,
+	minTS, maxTS int64,
+	maxProject, maxCWD, maxGitBranch string,
+) {
+	a.addSessionAggregateSum(
+		provider, sessionID, accountRef, calls,
+		input, output, cacheRead, cacheCreate, reasoning, total,
+		usageCostSum{sum: costUSD}, minTS, maxTS, maxProject, maxCWD, maxGitBranch,
+	)
+}
+
+func (a *usagePanelAccumulator) addSessionAggregateSum(
+	provider, sessionID, accountRef string,
+	calls int,
+	input, output, cacheRead, cacheCreate, reasoning, total int64,
+	costSum usageCostSum,
 	minTS, maxTS int64,
 	maxProject, maxCWD, maxGitBranch string,
 ) {
@@ -262,7 +309,7 @@ func (a *usagePanelAccumulator) addSessionAggregate(
 	p.CacheCreationInputTokens += cacheCreate
 	p.ReasoningOutputTokens += reasoning
 	p.TotalTokens += total
-	p.CostUSD += costUSD
+	sa.costUSD.addSum(costSum)
 	if !sa.hasTimestamp {
 		sa.hasTimestamp = true
 		p.UsageStartedAtMS = minTS

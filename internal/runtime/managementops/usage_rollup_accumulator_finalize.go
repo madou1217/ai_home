@@ -15,7 +15,7 @@ func (a *usagePanelAccumulator) finalizeStats() UsageStatsSummary {
 	} else {
 		out.TotalSessions = len(a.sessionKeys)
 	}
-	out.TotalCostUSD = NormalizeUsageCostUSD(out.TotalCostUSD)
+	out.TotalCostUSD = NormalizeUsageCostUSD(a.statsCostUSD.value())
 	return out
 }
 
@@ -40,7 +40,7 @@ func finalizePanelModelMap(src map[string]*panelModelAcc, includeRefs bool) []Us
 			CacheCreationInputTokens: m.cacheCreationInputTokens,
 			ReasoningOutputTokens:    m.reasoningOutputTokens,
 			TotalTokens:              m.totalTokens,
-			CostUSD:                  NormalizeUsageCostUSD(m.costUSD),
+			CostUSD:                  NormalizeUsageCostUSD(m.costUSD.value()),
 			AccountCount:             len(m.accountRefs),
 			UnattributedCalls:        m.unattributedCalls,
 			CacheHitRate:             CalculateCacheHitRate(m.inputTokens, m.cacheReadInputTokens, m.cacheCreationInputTokens),
@@ -74,7 +74,7 @@ func (a *usagePanelAccumulator) finalizeSessionParts(
 	parts := make([]UsageSessionPart, 0, len(a.sessions))
 	for key, sa := range a.sessions {
 		p := sa.part
-		p.CostUSD = NormalizeUsageCostUSD(p.CostUSD)
+		p.CostUSD = NormalizeUsageCostUSD(sa.costUSD.value())
 		if len(sa.accountRefs) > 0 {
 			p.AccountRefs = make([]string, 0, len(sa.accountRefs))
 			for ref := range sa.accountRefs {
@@ -123,7 +123,7 @@ func (a *usagePanelAccumulator) finalizeTrend() UsageTrend {
 	for _, start := range starts {
 		if pt, ok := a.trendByStart[start]; ok {
 			out := *pt
-			out.CostUSD = NormalizeUsageCostUSD(out.CostUSD)
+			out.CostUSD = NormalizeUsageCostUSD(a.trendCostByStart[start].value())
 			out.CacheHitRate = CalculateCacheHitRate(out.InputTokens, out.CacheReadInputTokens, out.CacheCreationInputTokens)
 			points = append(points, out)
 		} else {

@@ -36,7 +36,7 @@ type rollupModelAgg struct {
 	cacheCreationInputTokens int64
 	reasoningOutputTokens    int64
 	totalTokens              int64
-	costUSD                  float64
+	costUSD                  usageCostSum
 }
 
 type rollupSessionKey struct {
@@ -54,7 +54,7 @@ type rollupSessionAgg struct {
 	cacheCreationInputTokens int64
 	reasoningOutputTokens    int64
 	totalTokens              int64
-	costUSD                  float64
+	costUSD                  usageCostSum
 	hasTimestamp             bool
 	minTimestampMS           int64
 	maxTimestampMS           int64
@@ -156,7 +156,7 @@ func accumulateCanonicalRowIntoHour(
 	mAgg.cacheCreationInputTokens += r.CacheCreationInputTokens
 	mAgg.reasoningOutputTokens += r.ReasoningOutputTokens
 	mAgg.totalTokens += r.TotalTokens
-	mAgg.costUSD += costUSD
+	mAgg.costUSD.add(costUSD)
 
 	if sessID != "" {
 		sk := rollupSessionKey{provider: r.Provider, sessionID: sessID, model: model, accountRef: acctRef}
@@ -172,7 +172,7 @@ func accumulateCanonicalRowIntoHour(
 		sAgg.cacheCreationInputTokens += r.CacheCreationInputTokens
 		sAgg.reasoningOutputTokens += r.ReasoningOutputTokens
 		sAgg.totalTokens += r.TotalTokens
-		sAgg.costUSD += costUSD
+		sAgg.costUSD.add(costUSD)
 		if !sAgg.hasTimestamp {
 			sAgg.hasTimestamp = true
 			sAgg.minTimestampMS = r.TimestampMS

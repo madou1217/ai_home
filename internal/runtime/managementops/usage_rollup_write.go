@@ -192,7 +192,7 @@ func writeRollupBuildsTx(
 			modelBatch.args = append(modelBatch.args,
 				h, mk.provider, mk.model, mk.accountRef,
 				mAgg.calls, mAgg.inputTokens, mAgg.outputTokens, mAgg.cacheReadInputTokens,
-				mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens, mAgg.totalTokens, mAgg.costUSD,
+				mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens, mAgg.totalTokens, mAgg.costUSD.value(),
 			)
 			if err := modelBatch.flushIfFull(ctx); err != nil {
 				return err
@@ -204,7 +204,7 @@ func writeRollupBuildsTx(
 			sessBatch.args = append(sessBatch.args,
 				h, sk.provider, sk.sessionID, sk.model, sk.accountRef,
 				sAgg.calls, sAgg.inputTokens, sAgg.outputTokens, sAgg.cacheReadInputTokens,
-				sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens, sAgg.totalTokens, sAgg.costUSD,
+				sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens, sAgg.totalTokens, sAgg.costUSD.value(),
 				sAgg.minTimestampMS, sAgg.maxTimestampMS, sAgg.maxProject, sAgg.maxCWD, sAgg.maxGitBranch,
 			)
 			if err := sessBatch.flushIfFull(ctx); err != nil {

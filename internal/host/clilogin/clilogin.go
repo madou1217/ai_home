@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
+
 	"github.com/madou1217/ai_home/application/providerruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -263,12 +265,9 @@ func agyLayout(catalog *providers.Catalog, hostHomeDir, runtimeDir string) (stri
 	env["container"] = "docker"
 	env["WSL_DISTRO_NAME"] = "Ubuntu"
 	// 可再生工具链缓存留在宿主，避免每个登录作业都复制一份多 GB 缓存。
-	if strings.TrimSpace(hostHomeDir) != "" {
-		env["CARGO_HOME"] = filepath.Join(hostHomeDir, ".cargo")
-		env["GOPATH"] = filepath.Join(hostHomeDir, "go")
-		env["GOMODCACHE"] = filepath.Join(hostHomeDir, "go", "pkg", "mod")
-		env["GOCACHE"] = filepath.Join(hostHomeDir, ".cache", "go-build")
-		env["npm_config_cache"] = filepath.Join(hostHomeDir, ".npm")
+	// 清单与桌面启动链同源（sharedcache），新增包管理器只改一处。
+	for key, value := range sharedcache.Env(hostHomeDir, runtime.GOOS) {
+		env[key] = value
 	}
 	return configDir, env, nil
 }

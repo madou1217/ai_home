@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
+	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 )
@@ -186,12 +188,11 @@ func (p *desktopPrepContext) applySharedCacheEnv() {
 	if strings.TrimSpace(p.hostHomeDir) == "" {
 		return
 	}
+	// 桌面 App 的 XDG 分支沿用既有口径：缓存放宿主 .cache（不是账号投影）。
 	p.setEnv("XDG_CACHE_HOME", filepath.Join(p.hostHomeDir, ".cache"))
-	p.setEnv("CARGO_HOME", filepath.Join(p.hostHomeDir, ".cargo"))
-	p.setEnv("GOPATH", filepath.Join(p.hostHomeDir, "go"))
-	p.setEnv("GOMODCACHE", filepath.Join(p.hostHomeDir, "go", "pkg", "mod"))
-	p.setEnv("GOCACHE", filepath.Join(p.hostHomeDir, ".cache", "go-build"))
-	p.setEnv("npm_config_cache", filepath.Join(p.hostHomeDir, ".npm"))
+	for key, value := range sharedcache.Env(p.hostHomeDir, runtime.GOOS) {
+		p.setEnv(key, value)
+	}
 }
 
 func (p *desktopPrepContext) decorateCodexBaseEnv() {

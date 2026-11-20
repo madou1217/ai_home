@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	// coldDashboardMinSpanMS 仅对 >=30 天（含全历史 FromMS=0）且尚无完整有效汇总的冷看板启用无写请求内计算，
-	// 保持 today/7d 走原有快路径。
-	coldDashboardMinSpanMS int64 = 30 * 24 * rollupHourMS
+	// coldDashboardMinSpanMS 以 28 天为准入下界，覆盖不足 30×24h 的近 30 个自然日窗口；
+	// 含首尾毫秒的窗口在调用处减 1ms 比较，today/7d 仍走原有快路径，后续安全检查保持不变。
+	coldDashboardMinSpanMS int64 = 28 * 24 * rollupHourMS
 	coldSnapshotMaxWorkers int   = 8
 	sqliteInterruptCode    int   = 9
 )

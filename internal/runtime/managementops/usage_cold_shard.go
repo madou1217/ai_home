@@ -35,7 +35,7 @@ var coldDashboardJobPolicy = coldPanelPolicy{
 	applySessionLimit: false,
 }
 
-// tryComputeColdDashboardShards 面向首次无汇总覆盖的长窗（>=30d，含 FromMS=0）渐进看板作业：
+// tryComputeColdDashboardShards 面向首次无汇总覆盖的长窗（>=28d，含首尾毫秒及 FromMS=0）渐进看板作业：
 // 在请求私有的 3 连接同版本只读 WAL 快照队列上，复用 scanRollupHourRangeConn 并行计算小时聚合，
 // 通过虚拟计划边界闭合求得整窗精确归因，再在同一快照队列上产出与原有分片器完全一致的 []UsageDashboardShard；
 // 返回前关闭并回收全部快照与连接（零持久化写、零共享缓存、零跨调用租约）。

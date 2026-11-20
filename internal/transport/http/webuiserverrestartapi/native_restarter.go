@@ -3,17 +3,16 @@ package webuiserverrestartapi
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"math"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
+	"github.com/madou1217/ai_home/internal/runtime/autostart"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -152,32 +151,16 @@ func detectServiceRestartCommand(label string) (string, []string, error) {
 	if label == "" {
 		return "", nil, ErrRestartUnavailable
 	}
-	switch runtime.GOOS {
-	case "darwin":
-		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
-		if !serviceExists("launchctl", "print", target) {
-			return "", nil, ErrRestartUnavailable
-		}
-		return "launchctl", []string{"kickstart", "-k", target}, nil
-	case "linux":
-		unit := label + ".service"
-		if !serviceExists("systemctl", "--user", "cat", unit) {
-			return "", nil, ErrRestartUnavailable
-		}
-		return "systemctl", []string{"--user", "restart", unit}, nil
-	default:
+	// 平台事实只在那里推导一次；这里只判断当前部署是否真的受服务管理器托管，
+	// 未托管（开发态前台运行）时明确返回 ErrRestartUnavailable，由 Handler 回 503。
+	if !autostart.ServiceJobLoaded(context.Background(), label) {
 		return "", nil, ErrRestartUnavailable
 	}
-}
-
-// serviceExists 探测服务管理器里是否存在目标；探测失败按「不存在」处理。
-func serviceExists(name string, args ...string) bool {
-	if strings.TrimSpace(name) == "" {
-		return false
+	name, args, err := autostart.ServiceRestartCommand(label)
+	if err != nil {
+		return "", nil, ErrRestartUnavailable
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), serviceProbeTimeout)
-	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Run() == nil
+	return name, args, nil
 }
 
 func buildRestartEnv(base []string) []string {

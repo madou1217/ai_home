@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,15 +80,28 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server stopped")
 	case "restart":
-		if _, err := autostart.Install(ctx, options); err != nil {
-			return true, err
+		status, installErr := autostart.Install(ctx, options)
+		if installErr != nil {
+			return true, installErr
 		}
 		// 作业注册成功不代表已经能服务：启动装配还需要时间，调用方紧接着发请求
-		// 会拿到 connection refused。这里等到 /readyz 真正通过再报成功。
-		if !waitServerReady(ctx, port, serverReadyTimeout) {
+		// 会拿到 connection refused。这里等到 /readyz 真正通过再报成功，并且要求
+		// 应答的进程就是刚拉起的那个 pid —— 否则端口被另一个（手工启动的）
+		// aih-server 占着时，会把"旧进程还在应答"误报成重启成功。
+		expectedPID := status.PID
+		if expectedPID <= 0 {
+			if latest, statusErr := autostart.StatusFor(ctx, options); statusErr == nil {
+				expectedPID = latest.PID
+			}
+		}
+		observedPID, ready := waitServerReadyOwned(ctx, port, options.Home, expectedPID, serverReadyTimeout, runtime.stdout)
+		if !ready {
+			if expectedPID > 0 && observedPID > 0 && observedPID != expectedPID {
+				return true, fmt.Errorf("server restarted but port %d is answered by pid %d, not the supervised pid %d; another aih-server holds the port", port, observedPID, expectedPID)
+			}
 			return true, fmt.Errorf("server restarted but /readyz did not answer on port %d within %s", port, serverReadyTimeout)
 		}
-		_, _ = fmt.Fprintf(runtime.stdout, "[aih] server restarted (port=%d)\n", port)
+		_, _ = fmt.Fprintf(runtime.stdout, "[aih] server restarted (port=%d, pid=%d, strategy=%s)\n", port, observedPID, status.Strategy)
 	case "status":
 		status, _ := autostart.StatusFor(ctx, options)
 		ready := serverReady(ctx, port)
@@ -138,17 +152,46 @@ func resolveServerPort(ctx context.Context, home string, runtime commandRuntime)
 const serverReadyTimeout = 90 * time.Second
 
 func waitServerReady(ctx context.Context, port int, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
+	_, ready := waitServerReadyOwned(ctx, port, "", 0, timeout, nil)
+	return ready
+}
+
+// waitServerReadyOwned 等 /readyz 通过，并在已知受管 pid 时要求应答者就是那个
+// 进程。返回实际观察到的 pid（可能为 0）。wantPID<=0 时退化为纯就绪探测。
+// out 非空时，等待超过几秒会打印一行进度，避免"看起来卡住"。
+func waitServerReadyOwned(
+	ctx context.Context,
+	port int,
+	home string,
+	wantPID int,
+	timeout time.Duration,
+	out io.Writer,
+) (int, bool) {
+	start := time.Now()
+	deadline := start.Add(timeout)
+	announced := false
+	observed := 0
 	for {
-		if serverReady(ctx, port) {
-			return true
+		ready := serverReady(ctx, port)
+		if ready {
+			observed = 0
+			if home != "" {
+				observed = serverPID(home)
+			}
+			if wantPID <= 0 || observed == wantPID {
+				return observed, true
+			}
+		}
+		if !announced && out != nil && time.Since(start) > 3*time.Second {
+			announced = true
+			_, _ = fmt.Fprintf(out, "[aih] waiting for /readyz on port %d...\n", port)
 		}
 		if time.Now().After(deadline) {
-			return false
+			return observed, false
 		}
 		select {
 		case <-ctx.Done():
-			return false
+			return observed, false
 		case <-time.After(500 * time.Millisecond):
 		}
 	}

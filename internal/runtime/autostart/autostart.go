@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -32,6 +33,51 @@ const (
 )
 
 var ErrUnsupportedPlatform = errors.New("autostart_platform_unsupported")
+
+// ErrServiceLabelRequired 表示调用方没给出服务 label，无法定位受管作业。
+var ErrServiceLabelRequired = errors.New("autostart_label_required")
+
+// ServiceRestartCommand 是"在受管服务内重启进程"的唯一实现点，避免平台事实
+// 在多个包里各推导一遍。
+//
+//   - macOS：`launchctl kickstart -k <target>`。它在**同一作业内**原子替换进程，
+//     不存在先注销再注册的窗口。作为对比，`launchctl bootout` 是异步的（实测 9ms
+//     返回），旧进程仍按 ExitTimeOut 存活最长 12s，这期间 `bootstrap` 必定返回
+//     "Bootstrap failed: 5: Input/output error"。
+//   - Linux：`systemctl --user restart <unit>`，本身就在同一 unit 内重启。
+func ServiceRestartCommand(label string) (string, []string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "", nil, ErrServiceLabelRequired
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return "launchctl", []string{"kickstart", "-k", launchdDomain() + "/" + label}, nil
+	case "linux":
+		return "systemctl", []string{"--user", "restart", label + ".service"}, nil
+	default:
+		return "", nil, ErrUnsupportedPlatform
+	}
+}
+
+// ServiceJobLoaded 判断 label 是否已在服务管理器注册。平台差异收敛在这里，
+// 调用方（CLI 重启、WebUI 重启按钮）不需要各自 switch。
+func ServiceJobLoaded(ctx context.Context, label string) bool {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return false
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		_, err := run(ctx, "launchctl", "print", launchdDomain()+"/"+label)
+		return err == nil
+	case "linux":
+		_, err := run(ctx, "systemctl", "--user", "cat", label+".service")
+		return err == nil
+	default:
+		return false
+	}
+}
 
 type Options struct {
 	Label        string
@@ -48,6 +94,12 @@ type Status struct {
 	Loaded    bool   `json:"loaded"`
 	File      string `json:"file,omitempty"`
 	Label     string `json:"label"`
+	// PID 是服务管理器当前托管的进程号；0 表示拿不到（例如未运行）。
+	// 调用方用它校验"端口上应答的进程"就是本次拉起的那个，避免假成功。
+	PID int `json:"pid,omitempty"`
+	// Strategy 记录本次安装实际走的路径，便于排查"重启为什么慢/为什么卡"：
+	// in_place = 同一作业内重启进程；reinstall = 注销后重新注册。
+	Strategy string `json:"strategy,omitempty"`
 }
 
 func normalize(options Options) (Options, error) {
@@ -290,6 +342,20 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 	path := plistPath(options)
 	domain := launchdDomain()
 	target := domain + "/" + options.Label
+	desired := buildPlist(options)
+	// 作业已注册且 plist 未变时，重启只是在**同一作业内换进程**：
+	// `launchctl kickstart -k` 原子替换，没有未注册窗口。
+	// 真机实测（2026-11-20）：`launchctl bootout` 9ms 就返回，而旧进程会按
+	// ExitTimeOut 继续存活最长 12s；这期间 `bootstrap` 一律返回
+	// "Bootstrap failed: 5: Input/output error"，重试再多也只能等。
+	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, desired) {
+		if ServiceJobLoaded(ctx, options.Label) {
+			if status, ok := kickstartLaunchd(ctx, target, options); ok {
+				status.Strategy = "in_place"
+				return status, nil
+			}
+		}
+	}
 	previous := launchdPIDs(ctx, target)
 	_, _ = run(ctx, "launchctl", "bootout", target)
 	// bootout 只把作业从 launchd 注销，旧进程仍可能在优雅关闭（最长 10s）。
@@ -323,23 +389,74 @@ func installLaunchd(ctx context.Context, options Options) (Status, error) {
 		}
 	}
 	time.Sleep(time.Second)
-	if _, err := run(ctx, "launchctl", "print", target); err != nil {
-		return Status{}, fmt.Errorf("launchctl bootstrap: %w", bootstrapErr)
-	}
-	_, _ = run(ctx, "launchctl", "kickstart", "-k", target)
+	// bootstrap 成功后 RunAtLoad 已经拉起进程，这里**不能再 kickstart -k**：
+	// 那会把刚起来的实例再杀一次，重启凭空多出一个"关停→启动"窗口（旧进程退出
+	// 期间的上游请求会直接失联）。只有作业在、进程却没起来时才补一次启动。
 	for attempt := 0; attempt < 20; attempt++ {
+		raw, err := run(ctx, "launchctl", "print", target)
+		if err != nil {
+			_, _ = run(ctx, "launchctl", "bootstrap", domain, path)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if len(parseLaunchdPIDs(raw)) == 0 {
+			_, _ = run(ctx, "launchctl", "kickstart", target)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		time.Sleep(time.Second)
+		if status, statusErr := statusLaunchd(ctx, options); statusErr == nil && status.Loaded && status.PID > 0 {
+			status.Strategy = "reinstall"
+			return status, nil
+		}
 		time.Sleep(500 * time.Millisecond)
-		if _, err := run(ctx, "launchctl", "print", target); err == nil {
-			// A delayed bootout can remove a just-bootstrapped job; confirm the
-			// label survives one more tick before reporting success.
-			time.Sleep(time.Second)
-			if _, confirmErr := run(ctx, "launchctl", "print", target); confirmErr == nil {
-				return StatusFor(ctx, options)
+	}
+	return Status{}, fmt.Errorf("launchctl job did not stay loaded: %v", bootstrapErr)
+}
+
+// kickstartLaunchd 在已注册的 launchd 作业内原子重启进程。返回 ok=false 时由
+// 调用方退回完整的 bootout → 等旧进程退出 → bootstrap 流程（例如作业已进入
+// 异常状态、或 kickstart 被系统拒绝）。
+func kickstartLaunchd(ctx context.Context, target string, options Options) (Status, bool) {
+	name, args, err := ServiceRestartCommand(options.Label)
+	if err != nil {
+		return Status{}, false
+	}
+	before := launchdPIDs(context.Background(), target)
+	if _, err := run(ctx, name, args...); err != nil {
+		return Status{}, false
+	}
+	// kickstart 返回不代表新进程已在服务：等到作业报出与旧进程不同的 pid，
+	// 否则"作业还在、进程没换"会被当成重启成功。
+	deadline := time.Now().Add(launchdBootstrapWindow)
+	for time.Now().Before(deadline) {
+		if pid := firstPIDNotIn(launchdPIDs(context.Background(), target), before); pid > 0 {
+			status, err := statusLaunchd(ctx, options)
+			if err != nil {
+				return Status{}, false
+			}
+			status.PID = pid
+			return status, true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return Status{}, false
+}
+
+func firstPIDNotIn(pids []int, previous []int) int {
+	for _, pid := range pids {
+		found := false
+		for _, old := range previous {
+			if pid == old {
+				found = true
+				break
 			}
 		}
-		_, _ = run(ctx, "launchctl", "bootstrap", domain, path)
+		if !found {
+			return pid
+		}
 	}
-	return Status{}, errors.New("launchctl job did not stay loaded")
+	return 0
 }
 
 func uninstallLaunchd(ctx context.Context, options Options) error {
@@ -356,6 +473,10 @@ func launchdPIDs(ctx context.Context, target string) []int {
 	if err != nil {
 		return nil
 	}
+	return parseLaunchdPIDs(raw)
+}
+
+func parseLaunchdPIDs(raw []byte) []int {
 	var pids []int
 	for _, line := range strings.Split(string(raw), string(rune(10))) {
 		line = strings.TrimSpace(line)
@@ -371,20 +492,27 @@ func launchdPIDs(ctx context.Context, target string) []int {
 }
 
 // waitProcessExit 阻塞到给定进程全部消失或超时。launchd 的 bootstrap 在旧进程
-// 存活期间必定失败，这里是重启可靠性的关键等待。
+// 存活期间必定失败，这里是重启可靠性的关键等待。多个 pid 共享同一个截止时间，
+// 避免逐个 pid 各自计时而把最长等待放大成 N 倍。
 func waitProcessExit(pids []int, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
 	for _, pid := range pids {
 		if pid <= 0 {
 			continue
 		}
-		deadline := time.Now().Add(timeout)
-		for time.Now().Before(deadline) {
-			if _, err := run(context.Background(), "kill", "-0", strconv.Itoa(pid)); err != nil {
-				break
-			}
+		for processAlive(pid) && time.Now().Before(deadline) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+}
+
+// processAlive 用信号 0 探测进程是否存在，避免每 100ms 起一个 kill 子进程。
+func processAlive(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return process.Signal(syscall.Signal(0)) == nil
 }
 
 func statusLaunchd(ctx context.Context, options Options) (Status, error) {
@@ -393,8 +521,12 @@ func statusLaunchd(ctx context.Context, options Options) (Status, error) {
 	if _, err := os.Stat(path); err == nil {
 		status.Installed = true
 	}
-	if _, err := run(ctx, "launchctl", "print", launchdDomain()+"/"+options.Label); err == nil {
+	target := launchdDomain() + "/" + options.Label
+	if raw, err := run(ctx, "launchctl", "print", target); err == nil {
 		status.Loaded = true
+		if pids := parseLaunchdPIDs(raw); len(pids) > 0 {
+			status.PID = pids[0]
+		}
 	}
 	return status, nil
 }
@@ -592,8 +724,14 @@ func statusSystemd(ctx context.Context, options Options) (Status, error) {
 	if _, err := os.Stat(path); err == nil {
 		status.Installed = true
 	}
-	if _, err := run(ctx, "systemctl", "--user", "is-active", options.Label+".service"); err == nil {
+	service := options.Label + ".service"
+	if _, err := run(ctx, "systemctl", "--user", "is-active", service); err == nil {
 		status.Loaded = true
+	}
+	if raw, err := run(ctx, "systemctl", "--user", "show", "-p", "MainPID", "--value", service); err == nil {
+		if pid, convErr := strconv.Atoi(strings.TrimSpace(string(raw))); convErr == nil && pid > 0 {
+			status.PID = pid
+		}
 	}
 	return status, nil
 }

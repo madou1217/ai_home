@@ -150,7 +150,7 @@ func run(
 		"aih-server listening on http://%s\n",
 		listener.Addr().String(),
 	)
-	return serveUntilCanceled(ctx, server, listener)
+	return serveUntilCanceled(ctx, server, listener, runtime.stderr)
 }
 
 // serveUntilCanceled 协调 HTTP Serve 和有界优雅关闭。
@@ -158,6 +158,7 @@ func serveUntilCanceled(
 	ctx context.Context,
 	server *aihserver.Server,
 	listener net.Listener,
+	stderr io.Writer,
 ) error {
 	serveErrors := make(chan error, 1)
 	go func() {
@@ -174,7 +175,24 @@ func serveUntilCanceled(
 		defer cancel()
 		shutdownErr := server.Shutdown(shutdownCtx)
 		serveErr := <-serveErrors
-		return errors.Join(shutdownErr, serveErr)
+		// 收到信号后的主动关停属于**正常退出**：必须返回 nil（退出码 0）。
+		// 真机实测（2026-11-20）：plist 里 KeepAlive 是 {SuccessfulExit: false}，
+		// 非零退出会被 launchd 在 ThrottleInterval(5s) 后重新拉起 —— 于是
+		// "手工 kill 旧进程给新二进制腾端口" 会立刻把旧进程复活，重启随即撞上
+		// "旧进程仍占用作业" 的 bootstrap 失败。连接没在限期内排空只是关闭期噪声，
+		// 记录一行即可，不能升级成失败退出码。
+		if shutdownErr != nil {
+			_, _ = fmt.Fprintf(
+				stderr,
+				"aih-server 关闭未在 %s 内完成（按正常退出处理）: %v\n",
+				shutdownTimeout,
+				shutdownErr,
+			)
+		}
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			return nil
+		}
+		return serveErr
 	}
 }
 

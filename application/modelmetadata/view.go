@@ -128,24 +128,19 @@ func resolveOwnerFromModel(modelID string) string {
 // 只登记有稳定厂商对应的 Provider：聚合 Provider（agy / qoder / kiro / codebuddy /
 // workbuddy …）承载多家模型，映射到任何单一厂商都是猜错，留给 OwnerFallback。
 func resolveOwnerFromProvider(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "claude":
-		return OwnerAnthropic
-	case "gemini":
-		return OwnerGoogle
-	case "codex":
-		return OwnerOpenAI
-	case "opencode":
-		return OwnerOpenCode
-	case "kimi":
-		return OwnerMoonshot
-	case "zcode":
-		return OwnerZhipu
-	case "cline":
-		return OwnerCline
-	default:
-		return ""
-	}
+	return ownerByProvider[strings.ToLower(strings.TrimSpace(provider))]
+}
+
+// ownerByProvider 只登记有稳定厂商对应的 Provider；聚合 Provider
+// （agy / qoder / kiro / codebuddy / workbuddy 等）刻意不在此表里。
+var ownerByProvider = map[string]string{
+	"claude":   OwnerAnthropic,
+	"gemini":   OwnerGoogle,
+	"codex":    OwnerOpenAI,
+	"opencode": OwnerOpenCode,
+	"kimi":     OwnerMoonshot,
+	"zcode":    OwnerZhipu,
+	"cline":    OwnerCline,
 }
 
 // ResolveOpenAIProviderFromModel 把 OpenAI 风格模型条目映射到 AIH Provider。

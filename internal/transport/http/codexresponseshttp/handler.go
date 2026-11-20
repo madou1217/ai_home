@@ -125,6 +125,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "invalid_account_ref")
 		return
 	}
+	var timing *nativeTiming
+	if request.Header.Get("X-Aih-Timing") == "1" {
+		timing = newNativeTiming()
+		response = &nativeTimingWriter{ResponseWriter: response, timing: timing}
+		defer timing.log()
+	}
 	payload, metadata, err := readRequest(response, request)
 	if errors.Is(err, inferenceapi.ErrRequestBodyTimeout) {
 		// An interrupted upload is not a decoder gap. Replaying an incomplete
@@ -147,6 +153,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	// 原样透传前先剥掉上游解析不了的引用（item id 前缀、store:false 的断点、
 	// 换号后无法解密的 reasoning）。见 sanitizeNativePayload 的说明。
+	timing.markModel(metadata.Model, metadata.Stream)
 	payload = codexwire.SanitizeRequestPayload(payload)
 	payload = effortalign.AlignResponsesPayload(payload, inference.ProviderCodex, metadata.Model, handler.Ladders)
 	// gateway.attempt 由 Canonical Coordinator 执行；native 快路径没有该中间件时，
@@ -217,6 +224,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			if err != nil || !found || ctx.Err() != nil {
 				break
 			}
+			timing.markAccount(string(selection.AccountRef))
 			route, err := runtimecore.NewModelRoute(selection.AccountRef, metadata.Model)
 			if err != nil || selection.Credential == nil || selection.Credential.ProviderID() != "codex" || !selection.Observation.IsValid() || selection.Observation.AccountRef() != selection.AccountRef || selection.Observation.ProviderID() != "codex" {
 				break
@@ -235,6 +243,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			}
 			contacted = true
 			// 传输失败且上游一个字节都没返回时，先在同一账号上有界重试，再考虑换号。
+			timing.markUpstreamStart()
 			upstream, transportFailure, attemptStarted := handler.nativeRoundTrip(ctx, selection, payload, request, trail, &transportBudget)
 			if upstream == nil {
 				if request.Context().Err() != nil {
@@ -245,6 +254,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				}
 				continue
 			}
+			timing.markUpstreamHeader()
 			if last != nil {
 				_ = last.Body.Close()
 				last = nil
@@ -255,6 +265,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 					probeWindow = nativeProbeWindow
 				}
 				probed := handler.probeResponse(upstream, metadata.Stream, string(selection.AccountRef), probeWindow)
+				timing.markProbeDone()
 				failure := probed.failure
 				if request.Context().Err() != nil {
 					_ = upstream.Body.Close()
@@ -289,6 +300,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 					writeResponseHeaders(response, upstream, selection.AccountRef, metadata.Stream)
 					flushResponse(response)
 				}
+				timing.markCommitted()
 				handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream, probed.committed, trail)
 				_ = upstream.Body.Close()
 				return

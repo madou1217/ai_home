@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
@@ -34,8 +36,9 @@ const (
 	// MaxContextSize 与 Node 写入的上下文窗口一致。
 	MaxContextSize = 262144
 
-	defaultHost = "127.0.0.1"
-	defaultPort = 9527
+	// 监听主机与端口的默认值只在 application/serverconfig 定义一次。
+	defaultHost = serverconfig.DefaultHost
+	defaultPort = serverconfig.DefaultPort
 )
 
 // 与 Node throw new Error(...) 的 message 保持一致，便于上层按串映射。
@@ -63,19 +66,8 @@ var defaultModelLine = regexp.MustCompile("(?m)^default_model\\s*=.*$")
 
 // BaseURL 返回 AIH Server 的 OpenAI 兼容基址（buildAihServerBaseUrl）。
 func BaseURL(server ServerConfig) string {
-	host := strings.TrimSpace(server.Host)
-	if host == "" || host == "0.0.0.0" {
-		host = defaultHost
-	}
-	// formatUrlHost：IPv6 需要方括号，已带括号的不重复包。
-	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
-		host = "[" + host + "]"
-	}
-	port := server.Port
-	if port <= 0 || port > 65535 {
-		port = defaultPort
-	}
-	return fmt.Sprintf("http://%s:%d/v1", host, port)
+	// 主机/端口的归一与 IPv6 方括号规则只在 application/serverconfig 定义一次。
+	return serverconfig.BaseURL(server.Host, server.Port, "/v1")
 }
 
 // BuildGatewayContent 把 BuildGatewayConfig 适配成 BuildContent。

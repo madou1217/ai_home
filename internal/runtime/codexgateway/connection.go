@@ -6,11 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/url"
-	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -55,10 +53,9 @@ func Read(ctx context.Context, aiHomeDir string, lookupEnv func(string) (string,
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	port := config.Port
-	if port < 1 || port > 65535 {
-		port = 9527
-	}
+	// 端口归一与 URL 拼接只在 application/serverconfig 定义一次；`::` 的回环判定是本包
+	// 特有口径（Node 的 loopbackOnly 分支），保留在上面的主机判断里。
+	port := serverconfig.NormalizePort(config.Port)
 	key := strings.TrimSpace(config.APIKey)
 	if lookupEnv != nil {
 		for _, name := range []string{"AIH_GATEWAY_API_KEY", "AIH_SERVER_API_KEY"} {
@@ -74,6 +71,6 @@ func Read(ctx context.Context, aiHomeDir string, lookupEnv func(string) (string,
 	if strings.ContainsAny(key, "\r\n\x00") {
 		return Connection{}, fmt.Errorf("codex_gateway_key_invalid")
 	}
-	endpoint := (&url.URL{Scheme: "http", Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: "/v1"}).String()
+	endpoint := serverconfig.BaseURL(host, port, "/v1")
 	return Connection{BaseURL: endpoint, apiKey: key}, nil
 }

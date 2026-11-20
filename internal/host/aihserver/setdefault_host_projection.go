@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
@@ -134,11 +135,6 @@ func readHostProjectionModels(aiHomeDir string) []string {
 }
 
 func hostWithPort(host string, port int) string {
-	if host == "" || host == "0.0.0.0" {
-		host = "127.0.0.1"
-	}
-	if port <= 0 || port > 65535 {
-		port = 9527
-	}
-	return host + ":" + strconv.Itoa(port)
+	// 主机与端口的归一规则只在 application/serverconfig 定义一次。
+	return serverconfig.NormalizeHost(host) + ":" + strconv.Itoa(serverconfig.NormalizePort(port))
 }

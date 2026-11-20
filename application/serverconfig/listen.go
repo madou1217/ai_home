@@ -63,6 +63,26 @@ func NormalizeHost(value string) string {
 	return host
 }
 
+// FormatHost 返回可直接放进 URL 的主机部分：归一后再给 IPv6 字面量加方括号。
+//
+// 与 Node formatUrlHost 一致：`::1` → `[::1]`，已带括号的不重复包。
+func FormatHost(value string) string {
+	host := NormalizeHost(value)
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		return "[" + host + "]"
+	}
+	return host
+}
+
+// BaseURL 返回指向本机 AIH 服务的 http 地址（例如 http://127.0.0.1:9527/v1）。
+//
+// path 为空时返回根地址（不带结尾斜杠），否则原样追加。主机与端口按本包规则归一，
+// 因此调用方不需要自己再判一次边界——这正是此前五处 URL 构造各写一遍的规则。
+func BaseURL(host string, port int, path string) string {
+	base := "http://" + FormatHost(host) + ":" + strconv.Itoa(NormalizePort(port))
+	return base + path
+}
+
 func isValidPort(port float64) bool {
 	return !math.IsNaN(port) && port > 0 && port <= 65535 && port == math.Trunc(port)
 }

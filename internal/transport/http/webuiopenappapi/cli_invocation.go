@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
@@ -87,10 +88,8 @@ func populateGoCLIGatewayEnvironment(ctx context.Context, aiHomeDir string, envi
 		setEnvKey(values, name, value)
 	}
 	if get("AIH_SERVER_BASE_URL") == "" {
-		port := stored.Port
-		if port <= 0 || port > 65535 {
-			port = 9527
-		}
+		// 端口归一规则只在 application/serverconfig 定义一次。
+		port := serverconfig.NormalizePort(stored.Port)
 		set("AIH_SERVER_BASE_URL", "http://"+net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	}
 	if get("AIH_SERVER_API_KEY") == "" && strings.TrimSpace(stored.APIKey) != "" {

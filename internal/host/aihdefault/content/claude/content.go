@@ -16,8 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
@@ -68,7 +69,8 @@ type ServerConfig struct {
 
 // RootURL 是网关根地址（不带 /v1）：Anthropic SDK 会自行追加 /v1/messages。
 func (config ServerConfig) RootURL() string {
-	return "http://" + formatHost(config.Host) + ":" + strconv.Itoa(normalizePort(config.Port))
+	// 主机/端口归一只在 application/serverconfig 定义一次（RootURL 不带 /v1）。
+	return serverconfig.BaseURL(config.Host, config.Port, "")
 }
 
 // BaseURL 是带 /v1 的地址，供需要版本段的调用方使用。

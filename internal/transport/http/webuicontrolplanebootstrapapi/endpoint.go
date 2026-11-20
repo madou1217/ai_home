@@ -6,11 +6,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
-	// defaultManagementPort 是 Node 在拿不到监听端口时的兜底端口（server 默认 9527）。
-	defaultManagementPort = 9527
+	// defaultManagementPort 是 Node 在拿不到监听端口时的兜底端口；值只在
+	// application/serverconfig 定义一次。
+	defaultManagementPort = serverconfig.DefaultPort
 	// maxEndpointHints 限制端点提示条数：引导响应只用来让页面快速连上，不做穷举。
 	maxEndpointHints = 8
 )

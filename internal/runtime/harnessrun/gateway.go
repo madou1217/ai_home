@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -48,20 +49,10 @@ func readGatewayConnection(
 }
 
 // buildServerBaseURL 复刻 Node server-defaults 的 buildServerUrl(config, '/v1')。
+//
+// 归一规则（主机回落、IPv6 方括号、端口越界回落）只在 application/serverconfig 定义一次。
 func buildServerBaseURL(host string, port int) string {
-	normalizedHost := strings.TrimSpace(host)
-	if normalizedHost == "" || normalizedHost == "0.0.0.0" {
-		normalizedHost = defaultServerHost
-	}
-	// 普通主机名/IPv4 原样使用；IPv6 必须加方括号。
-	if strings.Contains(normalizedHost, ":") && !strings.HasPrefix(normalizedHost, "[") {
-		normalizedHost = "[" + normalizedHost + "]"
-	}
-	normalizedPort := port
-	if normalizedPort <= 0 || normalizedPort > 65535 {
-		normalizedPort = defaultServerPort
-	}
-	return fmt.Sprintf("http://%s:%d/v1", normalizedHost, normalizedPort)
+	return serverconfig.BaseURL(host, port, "/v1")
 }
 
 func firstEnvValue(lookupEnv func(string) (string, bool), keys ...string) string {

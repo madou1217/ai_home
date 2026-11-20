@@ -7,9 +7,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
-const defaultEndpointPort = 9527
+// 默认端口只在 application/serverconfig 定义一次。
+const defaultEndpointPort = serverconfig.DefaultPort
 
 type endpointHint struct {
 	Endpoint    string `json:"endpoint"`

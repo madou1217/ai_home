@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 )
 
 const (
@@ -83,7 +85,8 @@ func openCodeReceiverURL(context installContext) string {
 	if explicit := strings.TrimSpace(context.receiverURL); explicit != "" {
 		return explicit
 	}
-	port := parseIntDefault(os.Getenv("AIH_SERVER_PORT"), 9527)
+	// 端口归一规则只在 application/serverconfig 定义一次。
+	port := serverconfig.NormalizePort(os.Getenv("AIH_SERVER_PORT"))
 	return fmt.Sprintf("http://127.0.0.1:%d/v0/webui/session-events/provider-hook", port)
 }
 

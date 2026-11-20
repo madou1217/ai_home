@@ -23,9 +23,10 @@ type tokenPairKey struct {
 }
 
 type rollupModelKey struct {
-	provider   string
-	model      string
-	accountRef string
+	provider        string
+	model           string
+	accountRef      string
+	accountProvider string
 }
 
 type rollupModelAgg struct {
@@ -40,10 +41,11 @@ type rollupModelAgg struct {
 }
 
 type rollupSessionKey struct {
-	provider   string
-	sessionID  string
-	model      string
-	accountRef string
+	provider        string
+	sessionID       string
+	model           string
+	accountRef      string
+	accountProvider string
 }
 
 type rollupSessionAgg struct {
@@ -123,11 +125,14 @@ func accumulateCanonicalRowIntoHour(
 	}
 
 	acctRef := r.AccountRef
+	acctProv := r.Provider
 	if strings.TrimSpace(acctRef) == "" {
 		if attr != nil {
 			acctRef = attr.AccountRef
+			acctProv = attr.AccountProvider
 		} else {
 			acctRef = ""
+			acctProv = ""
 		}
 	}
 	model := r.Model
@@ -143,7 +148,7 @@ func accumulateCanonicalRowIntoHour(
 		costUSD = attr.CostUSD
 	}
 
-	mk := rollupModelKey{provider: r.Provider, model: model, accountRef: acctRef}
+	mk := rollupModelKey{provider: r.Provider, model: model, accountRef: acctRef, accountProvider: acctProv}
 	mAgg := hb.models[mk]
 	if mAgg == nil {
 		mAgg = &rollupModelAgg{}
@@ -159,7 +164,7 @@ func accumulateCanonicalRowIntoHour(
 	mAgg.costUSD.add(costUSD)
 
 	if sessID != "" {
-		sk := rollupSessionKey{provider: r.Provider, sessionID: sessID, model: model, accountRef: acctRef}
+		sk := rollupSessionKey{provider: r.Provider, sessionID: sessID, model: model, accountRef: acctRef, accountProvider: acctProv}
 		sAgg := hb.sessions[sk]
 		if sAgg == nil {
 			sAgg = &rollupSessionAgg{}

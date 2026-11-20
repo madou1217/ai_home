@@ -8,7 +8,7 @@ import (
 
 const (
 	// 各表满批行数均严格压在 SQLite 999 绑定变量上限以内：
-	// hours: 64*12=768, model: 64*12=768, session: 48*18=864, prompt: 128*4=512, attr: 64*10=640。
+	// hours: 64*12=768, model: 64*13=832, session: 48*19=912, prompt: 128*4=512, attr: 64*10=640。
 	rollupWriteHourBatchRows    = 64
 	rollupWriteModelBatchRows   = 64
 	rollupWriteSessionBatchRows = 48
@@ -21,15 +21,15 @@ const (
 	rollupInsertHoursTuple = "(?,?,?,?,?,?,?,?,?,?,?,?)"
 
 	rollupInsertModelPrefix = `INSERT INTO model_usage_rollup_hourly_model (` +
-		`hour_ms,provider,model,account_ref,calls,input_tokens,output_tokens,` +
+		`hour_ms,provider,model,account_ref,account_provider,calls,input_tokens,output_tokens,` +
 		`cache_read_input_tokens,cache_creation_input_tokens,reasoning_output_tokens,total_tokens,cost_usd) VALUES `
-	rollupInsertModelTuple = "(?,?,?,?,?,?,?,?,?,?,?,?)"
+	rollupInsertModelTuple = "(?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
 	rollupInsertSessionPrefix = `INSERT INTO model_usage_rollup_hourly_session (` +
-		`hour_ms,provider,session_id,model,account_ref,calls,input_tokens,output_tokens,` +
+		`hour_ms,provider,session_id,model,account_ref,account_provider,calls,input_tokens,output_tokens,` +
 		`cache_read_input_tokens,cache_creation_input_tokens,reasoning_output_tokens,total_tokens,cost_usd,` +
 		`min_timestamp_ms,max_timestamp_ms,max_project,max_cwd,max_git_branch) VALUES `
-	rollupInsertSessionTuple = "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+	rollupInsertSessionTuple = "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
 	rollupInsertPromptPrefix = `INSERT INTO model_usage_rollup_hourly_prompt (hour_ms,provider,session_id,prompt_count) VALUES `
 	rollupInsertPromptTuple  = "(?,?,?,?)"
@@ -152,8 +152,8 @@ func writeRollupBuildsTx(
 
 	batches := [5]txBatchInserter{
 		newTxBatchInserter(tx, rollupInsertHoursPrefix, rollupInsertHoursTuple, 12, rollupWriteHourBatchRows),
-		newTxBatchInserter(tx, rollupInsertModelPrefix, rollupInsertModelTuple, 12, rollupWriteModelBatchRows),
-		newTxBatchInserter(tx, rollupInsertSessionPrefix, rollupInsertSessionTuple, 18, rollupWriteSessionBatchRows),
+		newTxBatchInserter(tx, rollupInsertModelPrefix, rollupInsertModelTuple, 13, rollupWriteModelBatchRows),
+		newTxBatchInserter(tx, rollupInsertSessionPrefix, rollupInsertSessionTuple, 19, rollupWriteSessionBatchRows),
 		newTxBatchInserter(tx, rollupInsertPromptPrefix, rollupInsertPromptTuple, 4, rollupWritePromptBatchRows),
 		newTxBatchInserter(tx, rollupInsertAttrPrefix, rollupInsertAttrTuple, 10, rollupWriteAttrBatchRows),
 	}
@@ -190,7 +190,7 @@ func writeRollupBuildsTx(
 		for mk, mAgg := range hb.models {
 			modelBatch.prepareRow()
 			modelBatch.args = append(modelBatch.args,
-				h, mk.provider, mk.model, mk.accountRef,
+				h, mk.provider, mk.model, mk.accountRef, mk.accountProvider,
 				mAgg.calls, mAgg.inputTokens, mAgg.outputTokens, mAgg.cacheReadInputTokens,
 				mAgg.cacheCreationInputTokens, mAgg.reasoningOutputTokens, mAgg.totalTokens, mAgg.costUSD.value(),
 			)
@@ -202,7 +202,7 @@ func writeRollupBuildsTx(
 		for sk, sAgg := range hb.sessions {
 			sessBatch.prepareRow()
 			sessBatch.args = append(sessBatch.args,
-				h, sk.provider, sk.sessionID, sk.model, sk.accountRef,
+				h, sk.provider, sk.sessionID, sk.model, sk.accountRef, sk.accountProvider,
 				sAgg.calls, sAgg.inputTokens, sAgg.outputTokens, sAgg.cacheReadInputTokens,
 				sAgg.cacheCreationInputTokens, sAgg.reasoningOutputTokens, sAgg.totalTokens, sAgg.costUSD.value(),
 				sAgg.minTimestampMS, sAgg.maxTimestampMS, sAgg.maxProject, sAgg.maxCWD, sAgg.maxGitBranch,

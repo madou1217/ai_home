@@ -67,7 +67,7 @@ var requiredRollupTables = []rollupTableSpec{
 	{
 		name: "model_usage_rollup_hourly_model",
 		columns: []string{
-			"hour_ms", "provider", "model", "account_ref",
+			"hour_ms", "provider", "model", "account_ref", "account_provider",
 			"calls", "input_tokens", "output_tokens", "cache_read_input_tokens",
 			"cache_creation_input_tokens", "reasoning_output_tokens", "total_tokens", "cost_usd",
 		},
@@ -76,6 +76,7 @@ var requiredRollupTables = []rollupTableSpec{
 			provider TEXT NOT NULL,
 			model TEXT NOT NULL,
 			account_ref TEXT NOT NULL,
+			account_provider TEXT NOT NULL DEFAULT '',
 			calls INTEGER NOT NULL DEFAULT 0,
 			input_tokens INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -84,13 +85,13 @@ var requiredRollupTables = []rollupTableSpec{
 			reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
 			total_tokens INTEGER NOT NULL DEFAULT 0,
 			cost_usd REAL NOT NULL DEFAULT 0,
-			PRIMARY KEY (hour_ms, provider, model, account_ref)
+			PRIMARY KEY (hour_ms, provider, model, account_ref, account_provider)
 		) WITHOUT ROWID`,
 	},
 	{
 		name: "model_usage_rollup_hourly_session",
 		columns: []string{
-			"hour_ms", "provider", "session_id", "model", "account_ref",
+			"hour_ms", "provider", "session_id", "model", "account_ref", "account_provider",
 			"calls", "input_tokens", "output_tokens", "cache_read_input_tokens",
 			"cache_creation_input_tokens", "reasoning_output_tokens", "total_tokens", "cost_usd",
 			"min_timestamp_ms", "max_timestamp_ms", "max_project", "max_cwd", "max_git_branch",
@@ -101,6 +102,7 @@ var requiredRollupTables = []rollupTableSpec{
 			session_id TEXT NOT NULL,
 			model TEXT NOT NULL,
 			account_ref TEXT NOT NULL,
+			account_provider TEXT NOT NULL DEFAULT '',
 			calls INTEGER NOT NULL DEFAULT 0,
 			input_tokens INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -114,7 +116,7 @@ var requiredRollupTables = []rollupTableSpec{
 			max_project TEXT NOT NULL DEFAULT '',
 			max_cwd TEXT NOT NULL DEFAULT '',
 			max_git_branch TEXT NOT NULL DEFAULT '',
-			PRIMARY KEY (hour_ms, provider, session_id, model, account_ref)
+			PRIMARY KEY (hour_ms, provider, session_id, model, account_ref, account_provider)
 		) WITHOUT ROWID`,
 	},
 	{

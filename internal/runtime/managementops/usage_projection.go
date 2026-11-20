@@ -833,6 +833,12 @@ func cleanupProjectionConn(conn *sql.Conn) {
 }
 
 func buildCanonicalProjectionCTE() string {
+	return buildCanonicalProjectionCTEWithScope("")
+}
+
+// buildCanonicalProjectionCTEWithScope 在 usage_source 上追加作用域超集过滤（如 model/session），
+// 只缩小扫描范围；精确性仍由 canonical_usage 上的范围过滤保证。
+func buildCanonicalProjectionCTEWithScope(scopeClause string) string {
 	usageOffsetText := "substr(r.event_key, 29, length(r.event_key) - 34)"
 	promptOffsetText := "substr(p.event_key, 29, length(p.event_key) - 35)"
 	return fmt.Sprintf(`
@@ -873,6 +879,7 @@ func buildCanonicalProjectionCTE() string {
 			WHERE r.timestamp_ms BETWEEN ? AND ?
 				AND r.id <= ?
 				AND NOT (r.provider IN ('codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn') AND r.source_kind = 'native_session_done')
+				%s
 		),
 		canonical_usage AS (
 			SELECT
@@ -970,12 +977,19 @@ func buildCanonicalProjectionCTE() string {
 			)
 		)`,
 		usageOffsetText, usageOffsetText, usageOffsetText, usageOffsetText, usageOffsetText,
+		scopeClause,
 		legacyUnknownModel,
 		promptOffsetText, promptOffsetText, promptOffsetText, promptOffsetText, promptOffsetText,
 	)
 }
 
 func projectionBaseArgs(q UsageQuery, pCtx *UsageProjectionContext) []any {
+	return projectionBaseArgsWithScope(q, pCtx, nil)
+}
+
+// projectionBaseArgsWithScope 保持 CTE 占位符顺序：
+// usage_source(From,To,RecordHW,scope...) -> prompt_source(From,To,PromptHW)。
+func projectionBaseArgsWithScope(q UsageQuery, pCtx *UsageProjectionContext, scopeArgs []any) []any {
 	rHW := int64(math.MaxInt64)
 	pHW := int64(math.MaxInt64)
 	if pCtx != nil {
@@ -986,7 +1000,11 @@ func projectionBaseArgs(q UsageQuery, pCtx *UsageProjectionContext) []any {
 			pHW = pCtx.PromptHighWaterRowID
 		}
 	}
-	return []any{q.FromMS, q.ToMS, rHW, q.FromMS, q.ToMS, pHW}
+	args := make([]any, 0, 6+len(scopeArgs))
+	args = append(args, q.FromMS, q.ToMS, rHW)
+	args = append(args, scopeArgs...)
+	args = append(args, q.FromMS, q.ToMS, pHW)
+	return args
 }
 
 func buildProjectedWhereClause(q UsageQuery, alias string, includeModel, includeSession bool) (string, []any) {
@@ -1216,186 +1234,6 @@ func (s *UsageStore) QueryDashboardShard(
 	}
 	q := normalizeUsageQueryBounds(shardQuery)
 	return s.queryDashboardShardWithRollup(ctx, q, overallTrendBucketMS, overallTrendOriginMS, prebuilt)
-}
-
-// QueryBreakdown 查询按账号与模型交叉拆解的聚合详情。
-func (s *UsageStore) QueryBreakdown(ctx context.Context, query UsageQuery) (UsageBreakdownResult, error) {
-	if s == nil || s.db == nil {
-		return UsageBreakdownResult{}, ErrUsageUnavailable
-	}
-	q := normalizeUsageQueryBounds(query)
-	conn, cte, pCtx, err := s.openPreparedProjection(ctx, q, nil)
-	if err != nil {
-		return UsageBreakdownResult{}, err
-	}
-	defer func() {
-		cleanupProjectionConn(conn)
-		_ = conn.Close()
-	}()
-
-	uWhere, uArgs := buildProjectedWhereClause(q, "u", true, true)
-	args := append(projectionBaseArgs(q, pCtx), uArgs...)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		WITH %s
-		SELECT
-			u.account_provider, u.account_ref, u.provider, u.model,
-			COUNT(*) AS calls,
-			COALESCE(SUM(u.input_tokens), 0),
-			COALESCE(SUM(u.output_tokens), 0),
-			COALESCE(SUM(u.cache_read_input_tokens), 0),
-			COALESCE(SUM(u.cache_creation_input_tokens), 0),
-			COALESCE(SUM(u.reasoning_output_tokens), 0),
-			COALESCE(SUM(u.total_tokens), 0),
-			COALESCE(SUM(u.cost_usd), 0)
-		FROM canonical_usage u
-		WHERE %s
-		GROUP BY u.account_provider, u.account_ref, u.provider, u.model`, cte, uWhere), args...)
-	if err != nil {
-		return UsageBreakdownResult{}, fmt.Errorf("查询账号用量拆解失败: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	accountsMap := make(map[string]*UsageBreakdownAccount)
-	for rows.Next() {
-		var (
-			acctProv, acctRef, prov, model          string
-			calls                                   int
-			inTok, outTok, cr, cc, reason, totalTok int64
-			costUSD                                 float64
-		)
-		if scanErr := rows.Scan(
-			&acctProv, &acctRef, &prov, &model,
-			&calls, &inTok, &outTok, &cr, &cc, &reason, &totalTok, &costUSD,
-		); scanErr != nil {
-			return UsageBreakdownResult{}, scanErr
-		}
-		ref := strings.TrimSpace(acctRef)
-		key := ref
-		if key == "" {
-			key = "__unattributed__"
-		}
-		acc, exists := accountsMap[key]
-		if !exists {
-			effProv := ""
-			if ref != "" {
-				effProv = strings.TrimSpace(acctProv)
-			}
-			acc = &UsageBreakdownAccount{
-				AccountRef:      ref,
-				AccountProvider: effProv,
-				Models:          make([]UsageModelItem, 0),
-			}
-			accountsMap[key] = acc
-		} else if acc.AccountProvider != "" && strings.TrimSpace(acctProv) != "" && acc.AccountProvider != strings.TrimSpace(acctProv) {
-			acc.AccountProvider = ""
-		}
-
-		mItem := UsageModelItem{
-			Provider:                 prov,
-			Model:                    model,
-			Calls:                    calls,
-			InputTokens:              inTok,
-			OutputTokens:             outTok,
-			CacheReadInputTokens:     cr,
-			CacheCreationInputTokens: cc,
-			ReasoningOutputTokens:    reason,
-			TotalTokens:              totalTok,
-			CostUSD:                  NormalizeUsageCostUSD(costUSD),
-			CacheHitRate:             CalculateCacheHitRate(inTok, cr, cc),
-		}
-		acc.Models = append(acc.Models, mItem)
-		acc.Calls += calls
-		acc.InputTokens += inTok
-		acc.OutputTokens += outTok
-		acc.CacheReadInputTokens += cr
-		acc.CacheCreationInputTokens += cc
-		acc.ReasoningOutputTokens += reason
-		acc.TotalTokens += totalTok
-		acc.CostUSD += mItem.CostUSD
-	}
-	if err := rows.Err(); err != nil {
-		return UsageBreakdownResult{}, err
-	}
-
-	var summary UsageBreakdownSummary
-	type modelAgg struct {
-		item        UsageModelItem
-		accountRefs map[string]struct{}
-	}
-	modelsMap := make(map[string]*modelAgg)
-	accounts := make([]UsageBreakdownAccount, 0, len(accountsMap))
-
-	for _, acc := range accountsMap {
-		acc.ModelCount = len(acc.Models)
-		acc.CostUSD = NormalizeUsageCostUSD(acc.CostUSD)
-		acc.CacheHitRate = CalculateCacheHitRate(acc.InputTokens, acc.CacheReadInputTokens, acc.CacheCreationInputTokens)
-		sortUsageModels(acc.Models)
-		accounts = append(accounts, *acc)
-
-		if acc.AccountRef != "" {
-			summary.AccountCount++
-		} else {
-			summary.UnattributedCalls += acc.Calls
-		}
-		summary.Calls += acc.Calls
-		summary.InputTokens += acc.InputTokens
-		summary.OutputTokens += acc.OutputTokens
-		summary.CacheReadInputTokens += acc.CacheReadInputTokens
-		summary.CacheCreationInputTokens += acc.CacheCreationInputTokens
-		summary.ReasoningOutputTokens += acc.ReasoningOutputTokens
-		summary.TotalTokens += acc.TotalTokens
-		summary.CostUSD += acc.CostUSD
-
-		for _, m := range acc.Models {
-			mk := m.Provider + "\x00" + m.Model
-			agg, ok := modelsMap[mk]
-			if !ok {
-				agg = &modelAgg{
-					item:        UsageModelItem{Provider: m.Provider, Model: m.Model},
-					accountRefs: make(map[string]struct{}),
-				}
-				modelsMap[mk] = agg
-			}
-			agg.item.Calls += m.Calls
-			agg.item.InputTokens += m.InputTokens
-			agg.item.OutputTokens += m.OutputTokens
-			agg.item.CacheReadInputTokens += m.CacheReadInputTokens
-			agg.item.CacheCreationInputTokens += m.CacheCreationInputTokens
-			agg.item.ReasoningOutputTokens += m.ReasoningOutputTokens
-			agg.item.TotalTokens += m.TotalTokens
-			agg.item.CostUSD += m.CostUSD
-			if acc.AccountRef != "" {
-				agg.accountRefs[acc.AccountRef] = struct{}{}
-			} else {
-				agg.item.UnattributedCalls += m.Calls
-			}
-		}
-	}
-
-	sort.Slice(accounts, func(i, j int) bool {
-		return compareUsageCostDesc(
-			accounts[i].CostUSD, accounts[i].TotalTokens, accounts[i].Calls, accounts[i].AccountRef,
-			accounts[j].CostUSD, accounts[j].TotalTokens, accounts[j].Calls, accounts[j].AccountRef,
-		)
-	})
-
-	models := make([]UsageModelItem, 0, len(modelsMap))
-	for _, agg := range modelsMap {
-		item := agg.item
-		item.CostUSD = NormalizeUsageCostUSD(item.CostUSD)
-		item.AccountCount = len(agg.accountRefs)
-		item.CacheHitRate = CalculateCacheHitRate(item.InputTokens, item.CacheReadInputTokens, item.CacheCreationInputTokens)
-		models = append(models, item)
-	}
-	sortUsageModels(models)
-
-	summary.CostUSD = NormalizeUsageCostUSD(summary.CostUSD)
-	summary.CacheHitRate = CalculateCacheHitRate(summary.InputTokens, summary.CacheReadInputTokens, summary.CacheCreationInputTokens)
-	return UsageBreakdownResult{
-		Summary:  summary,
-		Accounts: accounts,
-		Models:   models,
-	}, nil
 }
 
 // QuerySessionDetail 查询单个会话内各模型的消耗明细。

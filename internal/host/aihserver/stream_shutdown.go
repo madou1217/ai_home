@@ -102,10 +102,13 @@ type streamResponseWriter struct {
 	shutdown     *streamShutdown
 	cancel       context.CancelFunc
 	request      *http.Request
+	mu           sync.Mutex
 	registration *streamRegistration
 }
 
 func (writer *streamResponseWriter) markStream() {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
 	if writer.registration != nil {
 		return
 	}
@@ -145,6 +148,9 @@ func (writer *streamResponseWriter) release() {
 	if writer == nil {
 		return
 	}
-	writer.shutdown.release(writer.registration)
+	writer.mu.Lock()
+	registration := writer.registration
 	writer.registration = nil
+	writer.mu.Unlock()
+	writer.shutdown.release(registration)
 }

@@ -12,6 +12,47 @@ import (
 
 const maxCodexResolveEntries = 20000
 
+// sessionPathQuery 是一次会话文件定位的规范化输入。
+type sessionPathQuery struct {
+	HostHome       string
+	AIHomeDir      string
+	Provider       string
+	SessionID      string
+	ProjectDirName string
+}
+
+// sessionPathResolver 定位一个 Provider 的会话存储文件；找不到返回空串。
+type sessionPathResolver func(sessionPathQuery) string
+
+// sessionPathResolvers 按 Provider 登记文件定位器。
+//
+// 各 CLI 的会话布局是协议事实，保持在本包；这里只把 Provider→定位器的分派
+// 收进注册表。CodeBuddy 家族成员来自 sessionscan 的家族布局，不在这里另抄名单。
+var sessionPathResolvers = buildSessionPathResolvers()
+
+func buildSessionPathResolvers() map[string]sessionPathResolver {
+	indexed := map[string]sessionPathResolver{
+		"claude":   resolveClaudeQuery,
+		"codex":    resolveCodexQuery,
+		"gemini":   resolveGeminiQuery,
+		"opencode": resolveOpenCodeQuery,
+		"cline":    resolveClineQuery,
+		"qoder":    resolveQoderQuery,
+		"qodercn":  resolveQoderQuery,
+		// 这些载体的定位逻辑已经在 sessionread 中实现（账号投影、SQLite、chat JSON）；
+		// 订阅只需要同一个文件游标，直接复用，避免两套路径规则漂移。
+		"agy":   resolveViaSessionRead,
+		"grok":  resolveViaSessionRead,
+		"kiro":  resolveViaSessionRead,
+		"zcode": resolveViaSessionRead,
+		"chat":  resolveViaSessionRead,
+	}
+	for _, provider := range codebuddy.Providers() {
+		indexed[provider] = resolveCodebuddyQuery
+	}
+	return indexed
+}
+
 // ResolveSessionFilePath 定位指定会话的宿主存储文件路径，用于 fsnotify 文件变更订阅。
 // 返回空串或不存在的文件时调用方继续依赖显式 hook 事件，不阻断订阅。
 func ResolveSessionFilePath(hostHomeDir, aiHomeDir, provider, sessionID, projectDirName string) string {
@@ -26,33 +67,17 @@ func ResolveSessionFilePath(hostHomeDir, aiHomeDir, provider, sessionID, project
 		return ""
 	}
 
-	if isCodebuddyFamily(normalizedProvider) {
-		return resolveCodebuddySessionPath(hostHome, normalizedProvider, cleanSessionID, cleanProjectDirName)
-	}
-
-	switch normalizedProvider {
-	case "claude":
-		return resolveClaudeSessionPath(hostHome, cleanSessionID, cleanProjectDirName)
-	case "codex":
-		return resolveCodexSessionPath(hostHome, cleanSessionID)
-	case "gemini":
-		return resolveGeminiSessionPath(hostHome, cleanSessionID, cleanProjectDirName)
-	case "opencode":
-		return resolveOpenCodePath(hostHome)
-	case "cline":
-		return resolveClineSessionPath(hostHome, aiHomeDir, cleanSessionID)
-	case "qoder", "qodercn":
-		return resolveQoderSessionPath(hostHome, normalizedProvider, cleanSessionID, cleanProjectDirName)
-	case "agy", "grok", "kiro", "zcode", "chat":
-		// 这些载体的定位逻辑已经在 sessionread 中实现（账号投影、SQLite、chat JSON）；
-		// 订阅只需要同一个文件游标，直接复用，避免两套路径规则漂移。
-		return sessionread.ResolveSessionFilePath(context.Background(), sessionread.Options{
-			HostHomeDir: hostHome,
-			AIHomeDir:   aiHomeDir,
-		}, normalizedProvider, cleanSessionID, cleanProjectDirName)
-	default:
+	resolver, found := sessionPathResolvers[normalizedProvider]
+	if !found {
 		return ""
 	}
+	return resolver(sessionPathQuery{
+		HostHome:       hostHome,
+		AIHomeDir:      aiHomeDir,
+		Provider:       normalizedProvider,
+		SessionID:      cleanSessionID,
+		ProjectDirName: cleanProjectDirName,
+	})
 }
 
 func isSafePathSegment(value string) bool {
@@ -65,13 +90,39 @@ func isSafePathSegment(value string) bool {
 	return filepath.Base(value) == value
 }
 
-func isCodebuddyFamily(provider string) bool {
-	for _, member := range codebuddy.Providers() {
-		if provider == member {
-			return true
-		}
-	}
-	return false
+func resolveClaudeQuery(query sessionPathQuery) string {
+	return resolveClaudeSessionPath(query.HostHome, query.SessionID, query.ProjectDirName)
+}
+
+func resolveCodexQuery(query sessionPathQuery) string {
+	return resolveCodexSessionPath(query.HostHome, query.SessionID)
+}
+
+func resolveGeminiQuery(query sessionPathQuery) string {
+	return resolveGeminiSessionPath(query.HostHome, query.SessionID, query.ProjectDirName)
+}
+
+func resolveOpenCodeQuery(query sessionPathQuery) string {
+	return resolveOpenCodePath(query.HostHome)
+}
+
+func resolveClineQuery(query sessionPathQuery) string {
+	return resolveClineSessionPath(query.HostHome, query.AIHomeDir, query.SessionID)
+}
+
+func resolveQoderQuery(query sessionPathQuery) string {
+	return resolveQoderSessionPath(query.HostHome, query.Provider, query.SessionID, query.ProjectDirName)
+}
+
+func resolveCodebuddyQuery(query sessionPathQuery) string {
+	return resolveCodebuddySessionPath(query.HostHome, query.Provider, query.SessionID, query.ProjectDirName)
+}
+
+func resolveViaSessionRead(query sessionPathQuery) string {
+	return sessionread.ResolveSessionFilePath(context.Background(), sessionread.Options{
+		HostHomeDir: query.HostHome,
+		AIHomeDir:   query.AIHomeDir,
+	}, query.Provider, query.SessionID, query.ProjectDirName)
 }
 
 func resolveClaudeSessionPath(hostHome, sessionID, projectDirName string) string {

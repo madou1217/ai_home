@@ -391,9 +391,8 @@ func ShouldUseTmuxNativeRun(provider string, options MultiplexerOptions) bool {
 	if strings.ToLower(normalizeString(options.MultiplexerEnv)) == "off" {
 		return false
 	}
-	switch NormalizeProvider(provider) {
-	case "claude", "codex", "opencode", "agy":
-	default:
+	// tmux 能力由传输声明表定义（UsesTmuxRun），这里不再维护第二份名单。
+	if !UsesTmuxRun(provider) {
 		return false
 	}
 	if options.InteractiveCLI {

@@ -16,9 +16,23 @@ const (
 	// coldDashboardMinSpanMS 仅对 >=30 天（含全历史 FromMS=0）且尚无完整有效汇总的冷看板启用无写请求内计算，
 	// 保持 today/7d 走原有快路径。
 	coldDashboardMinSpanMS int64 = 30 * 24 * rollupHourMS
-	coldSnapshotWorkers    int   = 3
+	coldSnapshotMaxWorkers int   = 8
 	sqliteInterruptCode    int   = 9
 )
+
+func coldCohortWorkerCount(db *sql.DB) int {
+	if db == nil {
+		return 0
+	}
+	maxOpen := db.Stats().MaxOpenConnections
+	if maxOpen <= 0 {
+		return coldSnapshotMaxWorkers
+	}
+	if maxOpen <= 1 {
+		return 0
+	}
+	return min(coldSnapshotMaxWorkers, maxOpen-1)
+}
 
 var (
 	errColdInternalFallback = errors.New("cold_internal_fallback")
@@ -156,14 +170,20 @@ func isColdDashboardTrendSupported(firstFull, lastFullEnd, originMS, bucketMS in
 }
 
 // openColdSnapshotCohort 在不持连接也不持准入信号量前提下先完成轻量能力自检/修复（绝不触发 rollup 持久化写），
-// 随后按固定锁序 coldPoolSem(s.db) -> coord.sem(s) 取得可取消准入（等待期间零连接占用，杜绝 2+2 连接池死锁），
-// 再串行签出 3 条只读连接并分别钉住 WAL 快照，校验完整 UsageProjectionRevision（含 GlobalRev 与 SessionsRev）
+// 随后按固定锁序 coldPoolSem(s.db) -> coord.sem(s) 取得可取消准入（等待期间零连接占用，始终为池预留至少 1 条连接），
+// 再串行签出 min(8, maxOpen-1)（无上限池取 8）条只读连接并分别钉住 WAL 快照，校验完整 UsageProjectionRevision（含 GlobalRev 与 SessionsRev）
 // 及 rollupCapabilityReport.meta 完全一致。任何失败或取消路径均通过 cohort.close 按“先关快照与连接、再精确释放一次信号量”回收。
 func (s *UsageStore) openColdSnapshotCohort(ctx context.Context) (*coldSnapshotCohort, bool, error) {
+	if s == nil || s.db == nil {
+		return nil, false, ErrUsageUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	if maxOpen := s.db.Stats().MaxOpenConnections; maxOpen > 0 && maxOpen <= coldSnapshotWorkers {
+	if coldCohortWorkerCount(s.db) <= 0 {
 		return nil, false, nil
 	}
 	s.ensureProjectionRevisionSchemaOnce(ctx)
@@ -188,13 +208,19 @@ func (s *UsageStore) openColdSnapshotCohort(ctx context.Context) (*coldSnapshotC
 		releasePool()
 		return nil, false, err
 	}
+	workerCount := coldCohortWorkerCount(s.db)
+	if workerCount <= 0 {
+		coord.releaseSync()
+		releasePool()
+		return nil, false, nil
+	}
 	var releaseCoordOnce sync.Once
 	cohort := &coldSnapshotCohort{
-		slots:        make([]*coldCohortSlot, 0, coldSnapshotWorkers),
+		slots:        make([]*coldCohortSlot, 0, workerCount),
 		releaseCoord: func() { releaseCoordOnce.Do(coord.releaseSync) },
 		releasePool:  releasePool,
 	}
-	for i := 0; i < coldSnapshotWorkers; i++ {
+	for i := 0; i < workerCount; i++ {
 		if err := ctx.Err(); err != nil {
 			cohort.close()
 			return nil, false, err
@@ -328,7 +354,7 @@ func probeColdActiveBoundsConn(
 	return minTS, maxTS, true, hasScanner, nil
 }
 
-// scanColdChunksParallel 使用同版本队列的 3 条只读连接并行调用 scanRollupHourRangeConn，
+// scanColdChunksParallel 使用同版本队列的只读连接并行调用 scanRollupHourRangeConn，
 // 在返回前强制 join 全部 worker；使用 WithCancelCause 显式区分内部回退取消、兄弟错误取消与独立 SQL 错误：
 // 优先尊重父 ctx 取消，保留真实独立 SQL 错误，对 unclosedHours / capability-not-ready 及其引发的兄弟内部取消返回 (nil, false, nil)。
 func (s *UsageStore) scanColdChunksParallel(

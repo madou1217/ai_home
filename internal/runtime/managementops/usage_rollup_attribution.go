@@ -124,13 +124,27 @@ func materializeAttributionMatches(
 	if len(matches) == 0 {
 		return nil
 	}
+	type modelKey struct{ scannerProvider, proxyProvider, proxyModel, scannerModel string }
+	type pricingKey struct{ model, provider, accountRef string }
+	models := make(map[modelKey]string)
+	prices := make(map[pricingKey]*usagepricing.Record)
 	attrs := make([]usageAttribution, 0, len(matches))
 	for _, m := range matches {
 		sc := scannerByID[m.ScannerID]
 		px := proxyByID[m.ProxyID]
-		model := attrIdx.FormatAttributedModel(sc.Provider, px.Provider, firstNonEmpty(px.Model, sc.Model))
+		mk := modelKey{sc.Provider, px.Provider, px.Model, sc.Model}
+		model, exists := models[mk]
+		if !exists {
+			model = attrIdx.FormatAttributedModel(sc.Provider, px.Provider, firstNonEmpty(px.Model, sc.Model))
+			models[mk] = model
+		}
 		accountRef := strings.TrimSpace(px.AccountRef)
-		pRec := pricingSnap.resolve(attrIdx, model, sc.Provider, accountRef)
+		pk := pricingKey{model, sc.Provider, accountRef}
+		pRec, exists := prices[pk]
+		if !exists {
+			pRec = pricingSnap.resolve(attrIdx, model, sc.Provider, accountRef)
+			prices[pk] = pRec
+		}
 		crossProvider := strings.ToLower(strings.TrimSpace(sc.Provider)) != strings.ToLower(strings.TrimSpace(px.Provider))
 		costUSD := 0.0
 		if pRec != nil {

@@ -31,6 +31,7 @@ const (
 	pricingActiveCatalogKVKey  = "active:model_usage_pricing"
 	nativeOutcomeRetentionMS   = 91 * 24 * 60 * 60 * 1000
 	pricingPerMillion          = 1_000_000.0
+	usageStoreOwnedMaxConns    = 9
 )
 
 var (
@@ -225,8 +226,8 @@ func NewUsageStore(ctx context.Context, dbPath string, providerIDs []string, now
 	if err != nil {
 		return nil, fmt.Errorf("打开用量数据库失败: %w", err)
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(usageStoreOwnedMaxConns)
+	db.SetMaxIdleConns(usageStoreOwnedMaxConns)
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -277,6 +278,9 @@ func newUsageStoreInternal(
 		projCache:   newUsageProjectionCache(defaultProjectionCacheCapacity),
 	}
 	if err := store.ensureSchema(ctx); err != nil {
+		return nil, err
+	}
+	if _, err := store.ensureReadIndex(ctx); err != nil {
 		return nil, err
 	}
 	store.initProjectionRevisionSchema(ctx)

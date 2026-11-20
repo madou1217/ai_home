@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
 	metadatamodelsdev "github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
@@ -41,7 +42,6 @@ const (
 var (
 	bracketSuffixPattern = regexp.MustCompile(`(?i)\[[^\]]+\]$`)
 	dateTagPattern       = regexp.MustCompile(`:\d{4}$`)
-	versionDotPattern    = regexp.MustCompile(`(\d)\.(\d)`)
 	datedSnapshotPattern = regexp.MustCompile(`-\d{8}$`)
 	patternOpenAIModel   = regexp.MustCompile(`(?i)^(gpt-|o\d|chatgpt-|text-embedding-)`)
 	patternClaudeModel   = regexp.MustCompile(`(?i)^claude-`)
@@ -781,7 +781,8 @@ func modelIDVariants(modelID string) []string {
 			variants = append(variants, candidate)
 		}
 	}
-	if norm := versionDotPattern.ReplaceAllString(stripped, "$1-$2"); norm != stripped {
+	// 版本分隔符归一化与目录收窄、模态索引共用同一份规则。
+	if norm := modelmetadata.NormalizeVersionSeparators(stripped); norm != stripped {
 		add(norm)
 	}
 	if noBracket := bracketSuffixPattern.ReplaceAllString(stripped, ""); noBracket != stripped {

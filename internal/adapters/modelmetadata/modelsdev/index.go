@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"sync/atomic"
-	"unicode"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
@@ -451,26 +450,10 @@ func visionFamilyLookupKeys(modelID string) []string {
 	return []string{trimmed, normalized}
 }
 
-// normalizeVersionSeparators 把「数字.数字」里的点换成横线，与 Node 的
-// normalizeModelVersionSeparators 一致。
-//
-// 手写扫描而不是正则：Go 的 RE2 不支持 Node 版本里用到的 `(?=...)` 前瞻。
+// normalizeVersionSeparators 把「数字.数字」里的点换成横线；规则只在
+// application/modelmetadata 定义一次（与目录收窄、计价快照共用）。
 func normalizeVersionSeparators(modelID string) string {
-	runes := []rune(modelID)
-	changed := false
-	for index := 1; index < len(runes)-1; index++ {
-		if runes[index] != '.' {
-			continue
-		}
-		if unicode.IsDigit(runes[index-1]) && unicode.IsDigit(runes[index+1]) {
-			runes[index] = '-'
-			changed = true
-		}
-	}
-	if !changed {
-		return modelID
-	}
-	return string(runes)
+	return modelmetadata.NormalizeVersionSeparators(modelID)
 }
 
 // providerNamespacesFor 返回该 Provider 与模型组合的候选 models.dev 命名空间（按序）。

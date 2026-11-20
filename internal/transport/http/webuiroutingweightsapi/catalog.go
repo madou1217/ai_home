@@ -1,7 +1,6 @@
 package webuiroutingweightsapi
 
 import (
-	"regexp"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -15,10 +14,6 @@ const (
 	catalogStatusFiltered   = "filtered"
 	catalogStatusUnchecked  = "unchecked"
 	reasonModelNotInCatalog = "model_not_in_catalog"
-)
-
-var (
-	modelVersionSeparatorPattern = regexp.MustCompile(`(\d)\.(\d)`)
 )
 
 type catalogNarrowingResult struct {
@@ -248,44 +243,9 @@ func catalogHasModel(models []string, target string) bool {
 	return false
 }
 
-// modelIdsMatch 与 Node lib/server/model-id.js 保持同一语义：精确小写或版本号分隔符（4.6 ↔ 4-6）匹配。
+// modelIdsMatch 与 Node lib/server/model-id.js 同语义：只在 application/modelmetadata 定义一次。
 func modelIdsMatch(left, right string) bool {
-	leftKeys := modelLookupKeys(left)
-	if len(leftKeys) == 0 {
-		return false
-	}
-	rightKeys := modelLookupKeys(right)
-	for _, leftKey := range leftKeys {
-		for _, rightKey := range rightKeys {
-			if leftKey == rightKey {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func modelLookupKeys(raw string) []string {
-	exact := strings.ToLower(strings.TrimSpace(raw))
-	if exact == "" {
-		return nil
-	}
-	normalized := normalizeModelVersionSeparators(exact)
-	if normalized == exact || normalized == "" {
-		return []string{exact}
-	}
-	return []string{exact, normalized}
-}
-
-func normalizeModelVersionSeparators(value string) string {
-	current := strings.TrimSpace(value)
-	for {
-		next := modelVersionSeparatorPattern.ReplaceAllString(current, "${1}-${2}")
-		if next == current {
-			return next
-		}
-		current = next
-	}
+	return modelmetadata.MatchModelIDs(left, right)
 }
 
 // imageModelBelongsToProvider 与 Node imageModelBelongsToProvider 一致。

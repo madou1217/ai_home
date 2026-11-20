@@ -27,14 +27,14 @@ func runAccountDefault(
 	}
 	switch arguments[0] {
 	case "show":
-		if len(arguments) != 2 || !isCLIProvider(arguments[1]) {
+		if len(arguments) != 2 || !isKnownProvider(arguments[1]) {
 			return invalidAccountDefaultCommand(runtime.stderr)
 		}
 		return runAccountDefaultShow(ctx, arguments[1], runtime)
 	case "set":
 		return runAccountDefaultSetCommand(ctx, arguments[1:], runtime)
 	case "clear":
-		if len(arguments) != 2 || !isCLIProvider(arguments[1]) {
+		if len(arguments) != 2 || !isKnownProvider(arguments[1]) {
 			return invalidAccountDefaultCommand(runtime.stderr)
 		}
 		return runAccountDefaultClear(ctx, arguments[1], runtime)
@@ -49,7 +49,7 @@ func runAccountDefaultSetCommand(
 	arguments []string,
 	runtime commandRuntime,
 ) error {
-	if len(arguments) != 2 || !isCLIProvider(arguments[0]) {
+	if len(arguments) != 2 || !isKnownProvider(arguments[0]) {
 		return invalidAccountDefaultCommand(runtime.stderr)
 	}
 	target, err := aihaccount.ParseAccountTarget(arguments[1])
@@ -138,9 +138,9 @@ func invalidAccountDefaultCommand(output io.Writer) error {
 // writeAccountDefaultUsage 说明默认关系不参与 Gateway 公平征召。
 func writeAccountDefaultUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
-	_, _ = fmt.Fprintln(output, "  aih account default show <codex|claude>")
-	_, _ = fmt.Fprintln(output, "  aih account default set <codex|claude> <account_ref|provider:id>")
-	_, _ = fmt.Fprintln(output, "  aih account default clear <codex|claude>")
+	_, _ = fmt.Fprintln(output, "  aih account default show <provider>")
+	_, _ = fmt.Fprintln(output, "  aih account default set <provider> <account_ref|provider:id>")
+	_, _ = fmt.Fprintln(output, "  aih account default clear <provider>")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
 	_, _ = fmt.Fprintln(output, "  管理 Provider 默认启动账号，只影响未显式指定账号的启动选择。")

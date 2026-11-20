@@ -61,7 +61,7 @@ func runAccount(
 			arguments[2] != "--from-env" {
 			writeAccountAddUsage(runtime.stderr)
 			return fmt.Errorf(
-				"%w: add 需要 <codex|claude> --from-env",
+				"%w: add 需要 <provider> --from-env（仅 codex/claude 及 codebuddy 家族）",
 				errInvalidCommand,
 			)
 		}
@@ -76,7 +76,7 @@ func runAccount(
 		}
 		if len(arguments) != 2 || !isCLIProvider(arguments[1]) {
 			writeAccountImportUsage(runtime.stderr)
-			return fmt.Errorf("%w: import 需要一个 Provider（codex 或 claude）", errInvalidCommand)
+			return fmt.Errorf("%w: import 需要一个 Provider（仅 codex/claude 及 codebuddy 家族）", errInvalidCommand)
 		}
 		return runAccountImport(ctx, arguments[1], runtime)
 	case "list":
@@ -154,7 +154,7 @@ func runAccount(
 // writeAccountUsage 说明当前已实现的账号管理命令。
 func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
-	_, _ = fmt.Fprintln(output, "  aih account add <codex|claude> --from-env             # 从环境变量添加静态账号")
+	_, _ = fmt.Fprintln(output, "  aih account add <provider> --from-env                 # 从环境变量添加静态账号")
 	_, _ = fmt.Fprintln(output, "  aih account list [--limit N] [--after account_ref] # 分页列出公开账号信息")
 	_, _ = fmt.Fprintln(output, "  aih account show <account_ref|provider:id>          # 查看一个公开账号详情")
 	_, _ = fmt.Fprintln(output, "  aih account enable <account_ref|provider:id>        # 启用账号并加入 Server 路由")
@@ -168,7 +168,7 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account models set-policy <target> <model> <policy> # 设置人工模型策略")
 	_, _ = fmt.Fprintln(output, "  aih account usage show <account_ref|provider:id>     # 查看最近额度快照")
 	_, _ = fmt.Fprintln(output, "  aih account usage refresh <account_ref|provider:id>  # 真实刷新账号额度")
-	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>   # 导入该 Provider 官方 CLI 当前登录态")
+	_, _ = fmt.Fprintln(output, "  aih account import <provider>       # 导入该 Provider 官方 CLI 当前登录态")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "查看子命令说明:")
 	_, _ = fmt.Fprintln(output, "  aih account add --help")

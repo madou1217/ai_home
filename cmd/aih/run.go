@@ -544,7 +544,13 @@ func isRootHelp(argument string) bool {
 	return argument == "-h" || argument == "--help"
 }
 
-// isCLIProvider 与当前 Go CLI 实际开放的官方客户端保持一致。
+// isCLIProvider 报告本 CLI 是否为该 Provider 提供「官方客户端命令」。
+//
+// 这是一个比「Provider 是否存在」更窄的问题：它同时要求该 Provider 有原生客户端
+// 启动路径与可打印的用法/帮助文本，因此只列 codex / claude / codebuddy 家族。
+// 判断「Provider 是否存在、服务端是否认识」请用 isKnownProvider（按 Provider
+// 合同 Catalog 判定），不要把本函数当存在性检查用——那样会让服务端支持的
+// Provider（如 gemini）在 CLI 侧被先一步判成非法。
 func isCLIProvider(providerID string) bool {
 	return providerID == "codex" || providerID == "claude" ||
 		codebuddyfamilystorage.IsFamilyProvider(providerID)

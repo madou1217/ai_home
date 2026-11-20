@@ -420,6 +420,8 @@ func isRegisteredProvider(providerID string) bool {
 // runProviderLaunch composes the same native/relay execution path for both the
 // explicit escape and normal parsed commands; it never dispatches management verbs.
 func runProviderLaunch(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	// 环境变量缺失时回落到本地 config:server（显式值永远优先；远端不继承本机密钥）。
+	runtime = withLocalGatewayDefaults(ctx, runtime)
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
 	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_API_KEY", "")
 	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")

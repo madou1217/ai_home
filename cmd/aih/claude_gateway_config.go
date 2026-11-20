@@ -2,83 +2,32 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net"
-	"net/url"
-	"strconv"
 
-	"github.com/madou1217/ai_home/application/serverconfig"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/host/aihcli"
 )
 
-// withClaudeGatewayConfig replaces the legacy Node bootstrap with a read-only
-// local config lookup. An explicit remote endpoint never inherits local keys.
+// withClaudeGatewayConfig 为 Claude 启动注入本地网关配置。
+//
+// 与 Provider 启动共用同一份兜底事实（aihcli.ReadLocalGatewayDefaults）：显式远端
+// 地址不继承本机密钥；回环但端口不一致也不继承。这里是 Claude 侧的**显式**入口，
+// 因此本地配置损坏时它仍然报错（Provider 启动路径则是尽力兜底，不阻断本地模式）。
 func withClaudeGatewayConfig(ctx context.Context, command commandRuntime) (commandRuntime, error) {
-	explicit, hasEndpoint := command.lookupEnv("AIH_SERVER_BASE_URL")
-	var endpoint *url.URL
-	if hasEndpoint {
-		parsed, err := url.Parse(explicit)
-		if err != nil || parsed.Scheme != "http" || parsed.User != nil ||
-			parsed.RawQuery != "" || parsed.Fragment != "" ||
-			(parsed.Path != "" && parsed.Path != "/") {
-			return command, nil
-		}
-		host := parsed.Hostname()
-		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			return command, nil
-		}
-		endpoint = parsed
-	}
+	explicitBaseURL, _ := command.lookupEnv("AIH_SERVER_BASE_URL")
 	home, err := resolveAIHomeDir(command)
 	if err != nil {
 		return command, err
 	}
-	path, err := appstate.DatabasePath(home)
-	if err != nil {
-		return command, err
+	defaults, ok, readErr := aihcli.ReadLocalGatewayDefaults(ctx, home, explicitBaseURL)
+	if readErr != nil {
+		return command, readErr
 	}
-	raw, found, err := appstate.ReadKV(ctx, path, appstate.KeyServerConfig)
-	if err != nil || !found {
+	if !ok {
 		return command, nil
 	}
-	var config struct {
-		Port          int    `json:"port"`
-		APIKey        string `json:"apiKey"`
-		ManagementKey string `json:"managementKey"`
-	}
-	if json.Unmarshal([]byte(raw), &config) != nil {
-		if hasEndpoint {
-			return command, nil
-		}
-		return command, fmt.Errorf("Claude Gateway 本地 Server 配置无效")
-	}
-	// 端口缺省用共享契约的默认值，但越界仍按本命令的语义报错（不静默回落）。
-	if config.Port == 0 {
-		config.Port = serverconfig.DefaultPort
-	}
-	if !serverconfig.IsValidPort(config.Port) {
-		if hasEndpoint {
-			return command, nil
-		}
-		return command, fmt.Errorf("Claude Gateway 本地端口无效")
-	}
-	base := "http://127.0.0.1:" + strconv.Itoa(config.Port)
-	if hasEndpoint {
-		port := endpoint.Port()
-		if port == "" {
-			port = "80"
-		}
-		if port != strconv.Itoa(config.Port) {
-			return command, nil
-		}
-		base = explicit
-	}
 	values := map[string]string{
-		"AIH_SERVER_BASE_URL":       base,
-		"AIH_SERVER_API_KEY":        config.APIKey,
-		"AIH_SERVER_MANAGEMENT_KEY": config.ManagementKey,
+		"AIH_SERVER_BASE_URL":       defaults.BaseURL,
+		"AIH_SERVER_API_KEY":        defaults.ClientKey,
+		"AIH_SERVER_MANAGEMENT_KEY": defaults.ManagementKey,
 	}
 	original := command.lookupEnv
 	command.lookupEnv = func(key string) (string, bool) {

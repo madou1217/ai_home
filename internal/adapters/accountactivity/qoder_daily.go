@@ -28,17 +28,11 @@ var (
 		"qoder":   "https://openapi.qoder.sh",
 		"qodercn": "https://openapi.qoder.com.cn",
 	}
-	qoderCLIVersions = map[string]string{
-		"qoder":   "1.1.73",
-		"qodercn": "1.1.72",
-	}
 )
 
 func buildQoderCampaignHeaders(provider string, record AccountRecord, identity *QoderDeviceIdentity, hostname string) map[string]string {
-	version := qoderCLIVersions[provider]
-	if version == "" {
-		version = "1.1.73"
-	}
+	// 版本只能来自真实观测（调用方解析后经 record 提供）；拿不到就不下发。
+	version := strings.TrimSpace(textOf(record.NativeAuth["clientVersion"]))
 	arch := runtime.GOARCH
 	if arch == "amd64" {
 		arch = "x64"
@@ -48,11 +42,9 @@ func buildQoderCampaignHeaders(provider string, record AccountRecord, identity *
 		plat = "win32"
 	}
 	machineID := textOf(record.NativeAuth["machineId"])
-	return map[string]string{
+	headers := map[string]string{
 		"Accept":               "application/json",
-		"User-Agent":           "Qoder/" + version,
 		"Cosy-ClientType":      "10",
-		"Cosy-Version":         version,
 		"Cosy-MachineOS":       arch + "_" + plat,
 		"Cosy-MachineHostname": strings.TrimSpace(hostname),
 		"Cosy-MachineId":       machineID,
@@ -60,6 +52,12 @@ func buildQoderCampaignHeaders(provider string, record AccountRecord, identity *
 		"Cosy-MachineCode":     identity.MachineCode,
 		"Cosy-MachineType":     identity.MachineType,
 	}
+	// 版本头只在真实观测到版本时下发。
+	if version != "" {
+		headers["User-Agent"] = "Qoder/" + version
+		headers["Cosy-Version"] = version
+	}
+	return headers
 }
 
 func summarizeQoderCampaign(raw map[string]any) map[string]any {

@@ -144,7 +144,10 @@ func (provider *Provider) DecorateUpstream(request *http.Request, accessToken st
 	request.Header.Set("x-amz-target", Operation)
 	// Coral 按 User-Agent 里的 Kiro 版本判定客户端代际：不带版本一律 403
 	// （Go 默认 UA）或 400 UnsupportedClientVersionException（aws-sdk-js 但无版本）。
-	request.Header.Set("User-Agent", clientidentity.UserAgent)
+	// 版本来自本机真实 CLI；拿不到就不下发该头，不自报写死的版本。
+	if userAgent := clientidentity.UserAgent(); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 }
 
 // ErrInvalidRequest 表示客户端请求体无法编码成 conversationState。

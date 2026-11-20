@@ -49,10 +49,9 @@ const (
 	requestTimeout = 15 * time.Second
 	// maxUnixSeconds 是 time.Unix 能稳定表示的上界，避免 expires_in 溢出。
 	maxUnixSeconds = 253_402_300_799
-	// defaultClientVersion 与 Node DEFAULT_KIMI_CODE_VERSION 同值；真实版本由组合根注入。
-	defaultClientVersion = "0.36.0"
-	kimiCodePlatform     = "kimi_code_cli"
-	userAgentProduct     = "kimi-code-cli"
+	// 这里**没有**兜底版本：真实版本由组合根注入，取不到时不下发版本头。
+	kimiCodePlatform = "kimi_code_cli"
+	userAgentProduct = "kimi-code-cli"
 )
 
 var (
@@ -91,10 +90,8 @@ func New(client HTTPClient, options Options) (*Provider, error) {
 
 // newProvider 允许包内测试替换端点；生产构造器不暴露端点覆盖能力。
 func newProvider(client HTTPClient, endpoint string, options Options) (*Provider, error) {
+	// 版本只来自真实观测；为空时不下发版本头，不自报写死的版本。
 	version := strings.TrimSpace(options.ClientVersion)
-	if version == "" {
-		version = defaultClientVersion
-	}
 	parsed, err := url.Parse(endpoint)
 	if client == nil ||
 		err != nil ||
@@ -298,9 +295,11 @@ func (provider *Provider) setClientHeaders(
 	document map[string]any,
 	section map[string]any,
 ) {
-	headers.Set("User-Agent", userAgentProduct+"/"+provider.version)
+	if provider.version != "" {
+		headers.Set("User-Agent", userAgentProduct+"/"+provider.version)
+		headers.Set("X-Msh-Version", provider.version)
+	}
 	headers.Set("X-Msh-Platform", kimiCodePlatform)
-	headers.Set("X-Msh-Version", provider.version)
 	deviceID := firstNonEmpty(
 		firstText(section, "device_id", "deviceId"),
 		firstText(document, "deviceId", "device_id"),

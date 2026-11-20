@@ -181,7 +181,10 @@ func (source *Source) requestRaw(
 	request.Header.Set("x-amz-target", target)
 	// 模型发现同样受客户端代际门控：不带 Kiro 版本的请求会被 CodeWhisperer
 	// 以 403 拒绝，表现为「目录刷新失败」而聊天同时不可用。
-	request.Header.Set("User-Agent", clientidentity.UserAgent)
+	// 版本来自本机真实 CLI；拿不到就不下发该头，不自报写死的版本。
+	if userAgent := clientidentity.UserAgent(); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 	response, err := source.client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("kiro 模型清单请求失败: %w", err)

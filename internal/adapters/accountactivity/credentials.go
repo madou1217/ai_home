@@ -640,8 +640,6 @@ func shouldAdoptCodebuddyCred(current, next inspectedCodebuddyCred, nowMS int64)
 // --- ZCode 凭据与客户端元数据 ---
 
 const (
-	// DefaultZcodeAppVersion 是找不到安装版/缓存时的兜底版本种子。
-	DefaultZcodeAppVersion  = "3.16.3"
 	zcodeInstallPageURL     = "https://zcode.z.ai/en/docs/install"
 	zcodeVersionCacheTTLMS  = int64(6 * 60 * 60 * 1000)
 	zcodeReleasePathPattern = `/zcode/electron/releases/(\d+\.\d+\.\d+)/`
@@ -888,10 +886,8 @@ func resolveZcodeAppVersionSync(aiHomeDir, hostHomeDir string) string {
 		return v
 	}
 	ver, _ := readCachedZcodeAppVersion(aiHomeDir)
-	if ver != "" {
-		return ver
-	}
-	return DefaultZcodeAppVersion
+	// 读不到就返回空串：调用方不下发版本信息，而不是自报一个写死的种子版本。
+	return ver
 }
 
 func readCachedZcodeAppVersion(aiHomeDir string) (string, int64) {

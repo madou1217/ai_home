@@ -272,7 +272,7 @@
     <div class="board"><table>
       <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
       <tbody>
-        <tr><td>WebUI 接口 ≤300ms、理想 <100ms</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">11-21：用量看板 31d 48–103ms、6mo 87–125ms、/usage/requests 5–7ms（rollup 化，ea86d310/135b4ff6）；/usage/breakdown 仍 360ms–2.2s，待接 rollup</td></tr>
+        <tr><td>WebUI 接口 ≤300ms、理想 <100ms</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">11-21：用量看板 31d 48–103ms、6mo 87–125ms、/usage/requests 5–7ms；/usage/breakdown 已接 rollup（f2712868）：session 31d 21ms / 6mo 133ms 冷→29ms 热，model 25–38ms；2702 calls、2 账号（1822/880）与旧结果一致</td></tr>
         <tr><td>全站交互动效，terminal 从哪来回哪去</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">motion.css 多轮审查 PASS；仍有多处待集成</td></tr>
         <tr><td>粘贴转卡片阈值 200 字、最小 50、可配</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">前端配置项落地</td></tr>
         <tr><td>长文本滚动条误触发 / markdown 流程图</td><td class="meta">10-31</td><td><span class="chip s-partial">部分</span></td><td class="ev">渲染修复；流程图显示仍待确认</td></tr>

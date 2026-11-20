@@ -305,7 +305,9 @@ func applyGeminiAPIKeyHeaders(request *http.Request, apiKey string, model string
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
 	request.Header.Set("Accept-Encoding", "identity")
-	request.Header.Set("User-Agent", geminiUserAgent(model))
+	if userAgent := geminiUserAgent(model); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 }
 
 // encodeGeminiRequest 生成 Gemini CLI 的 Code Assist envelope。
@@ -494,6 +496,11 @@ func applyGeminiHeaders(request *http.Request, accessToken string, model string)
 }
 
 func geminiUserAgent(model string) string {
+	version := geminiclientversion.Detect()
+	if version == "" {
+		// 没有观测到本机 CLI 版本：不下发 UA，而不是自报写死的版本。
+		return ""
+	}
 	modelID := strings.TrimSpace(model)
 	if modelID == "" {
 		modelID = "unknown"
@@ -506,7 +513,7 @@ func geminiUserAgent(model string) string {
 	if arch == "amd64" {
 		arch = "x64"
 	}
-	return "GeminiCLI-cli-command/" + geminiclientversion.Detect() + "/" + modelID +
+	return "GeminiCLI-cli-command/" + version + "/" + modelID +
 		" (" + platform + "; " + arch + "; terminal)"
 }
 

@@ -421,10 +421,12 @@ func (strategy *Strategy) post(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
-	version := clientversion.Detect()
-	request.Header.Set("User-Agent", "antigravity/"+version+" darwin/arm64")
-	request.Header.Set("x-client-name", "antigravity")
-	request.Header.Set("x-client-version", version)
+	// 版本只能来自真实观测：拿不到就不下发客户端身份头。
+	if version := clientversion.Detect(); version != "" {
+		request.Header.Set("User-Agent", "antigravity/"+version+" darwin/arm64")
+		request.Header.Set("x-client-name", "antigravity")
+		request.Header.Set("x-client-version", version)
+	}
 	request.Header.Set("x-vscode-sessionid", clientSessionID)
 	response, err := client.Do(request)
 	if err != nil {

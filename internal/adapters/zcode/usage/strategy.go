@@ -62,16 +62,30 @@ type HTTPClient interface {
 type Strategy struct {
 	client     HTTPClient
 	balanceURL string
+	// appVersion 是宿主解析到的真实 ZCode 版本；为空表示未观测到，不下发版本信息。
+	appVersion string
 }
 
 var _ usageapp.ProviderStrategy = (*Strategy)(nil)
 
-// New 创建生产端点上的额度策略。
+// New 创建生产端点上的额度策略（不带客户端版本）。
 func New(client HTTPClient) (*Strategy, error) {
+	return NewWithAppVersion(client, "")
+}
+
+// NewWithAppVersion 用宿主解析到的真实 ZCode 版本创建额度策略。
+//
+// 版本为空时不下发 app_version 与 X-ZCode-App-Version：自报写死的版本会被
+// 上游当成过期客户端，也可能触发版本门槛的假阴性。
+func NewWithAppVersion(client HTTPClient, appVersion string) (*Strategy, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Strategy{client: client, balanceURL: balanceURL}, nil
+	return &Strategy{
+		client:     client,
+		balanceURL: balanceURL,
+		appVersion: strings.TrimSpace(appVersion),
+	}, nil
 }
 
 // ProviderID 返回 zcode。
@@ -163,7 +177,9 @@ func (strategy *Strategy) fetch(ctx context.Context, identitySeed string, token 
 		return nil, ErrInvalidResponse
 	}
 	query := parsedEndpoint.Query()
-	query.Set("app_version", zcodemodelcatalog.SeedAppVersion)
+	if strategy.appVersion != "" {
+		query.Set("app_version", strategy.appVersion)
+	}
 	parsedEndpoint.RawQuery = query.Encode()
 	endpoint = parsedEndpoint.String()
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)

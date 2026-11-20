@@ -72,7 +72,7 @@ var _ relaycore.Provider = Provider{}
 
 // ProviderOptions 是构造 kimi Provider 的可注入项。
 type ProviderOptions struct {
-	// Version 是自报的客户端版本；为空时用 FallbackVersion。
+	// Version 是自报的客户端版本；为空时不下发版本头（不自报写死的兜底版本）。
 	Version string
 	// AccountRef 是本次请求服务的账号（设备指纹的派生输入）。
 	AccountRef string
@@ -86,15 +86,10 @@ type ProviderOptions struct {
 	IsAPIKey bool
 }
 
-// FallbackVersion 是版本解析全失败时的兜底值（与 Node 侧常量一致）。
-const FallbackVersion = "0.36.0"
-
 // NewProvider 构造 kimi 透传 Provider。
 func NewProvider(options ProviderOptions) Provider {
+	// 版本只来自真实观测；为空时不下发版本头，不自报写死的版本。
 	version := strings.TrimSpace(options.Version)
-	if version == "" {
-		version = FallbackVersion
-	}
 	base := KimiAPIBaseURL
 	if !options.IsAPIKey {
 		base = KimiCodeBaseURL
@@ -178,9 +173,11 @@ func accessTokenFromPayload(payload []byte) (string, bool) {
 // 先调基类拿通用头（Content-Type / Accept / Authorization），再追加 kimi 特有的。
 func (provider Provider) DecorateUpstream(request *http.Request, accessToken string) {
 	provider.BaseProvider.DecorateUpstream(request, accessToken)
-	request.Header.Set("User-Agent", kimiUserAgentPrefix+"/"+provider.version)
+	if provider.version != "" {
+		request.Header.Set("User-Agent", kimiUserAgentPrefix+"/"+provider.version)
+		request.Header.Set("X-Msh-Version", provider.version)
+	}
 	request.Header.Set("X-Msh-Platform", kimiCodePlatform)
-	request.Header.Set("X-Msh-Version", provider.version)
 
 	headers := kimiidentity.ResolveDeviceHeaders(
 		provider.accountRef,

@@ -30,7 +30,12 @@ const (
 // 只有 `antigravity/cli/<ver> (aidev_client; ...)` 才返回 Antigravity 的完整
 // 目录（Ultra 账号 29 个模型，含 gemini-4 argon/carbon 的 low/medium/high）。
 func antigravityUserAgent() string {
-	return "antigravity/cli/" + clientversion.Detect() +
+	version := clientversion.Detect()
+	if version == "" {
+		// 没有观测到本机客户端版本：不下发 UA / x-client-version。
+		return ""
+	}
+	return "antigravity/cli/" + version +
 		" (aidev_client; os_type=darwin; arch=arm64; cl=" + antigravityClientBuild +
 		"; auth_method=consumer)"
 }
@@ -123,10 +128,12 @@ func applyTokenHeaders(request *http.Request, accessToken string, claudeModel bo
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
-	version := clientversion.Detect()
-	request.Header.Set("User-Agent", antigravityUserAgent())
-	request.Header.Set("x-client-name", "antigravity")
-	request.Header.Set("x-client-version", version)
+	// 版本只能来自真实观测：拿不到就不下发客户端身份头。
+	if userAgent := antigravityUserAgent(); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+		request.Header.Set("x-client-name", "antigravity")
+		request.Header.Set("x-client-version", clientversion.Detect())
+	}
 	request.Header.Set("x-vscode-sessionid", clientSessionID)
 	if claudeModel {
 		request.Header.Set("anthropic-beta", "claude-code-20250219")

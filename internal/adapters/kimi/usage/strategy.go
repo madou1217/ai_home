@@ -70,11 +70,10 @@ const (
 	// requestTimeout 对齐 Node DEFAULT_PROBE_TIMEOUT_MS（8s）。
 	requestTimeout = 8 * time.Second
 
-	// clientVersionFallback 是兜底自报版本，与 Node DEFAULT_KIMI_CODE_VERSION 同值。
-	// 真实版本由组合根按本机 CLI 解析后通过 Options 注入。
-	clientVersionFallback = "0.36.0"
-	kimiCodePlatform      = "kimi_code_cli"
-	userAgentProduct      = "kimi-code-cli"
+	// 这里**没有**兜底自报版本：版本由组合根按本机 CLI 解析后通过 Options 注入，
+	// 取不到时不下发版本头，而不是自报一个写死的版本。
+	kimiCodePlatform = "kimi_code_cli"
+	userAgentProduct = "kimi-code-cli"
 )
 
 var (
@@ -131,9 +130,6 @@ func New(client HTTPClient, options Options) (*Strategy, error) {
 		return nil, ErrInvalidDependencies
 	}
 	version := strings.TrimSpace(options.ClientVersion)
-	if version == "" {
-		version = clientVersionFallback
-	}
 	return &Strategy{
 		client:  client,
 		baseURL: baseURL,
@@ -326,9 +322,12 @@ func (strategy *Strategy) requestHeaders(
 	headers := http.Header{}
 	headers.Set("Accept", "application/json")
 	headers.Set("Authorization", "Bearer "+material.accessToken)
-	headers.Set("User-Agent", userAgentProduct+"/"+strategy.version)
+	// 版本只能来自真实观测：拿不到就不下发版本头。
+	if strategy.version != "" {
+		headers.Set("User-Agent", userAgentProduct+"/"+strategy.version)
+		headers.Set("X-Msh-Version", strategy.version)
+	}
 	headers.Set("X-Msh-Platform", kimiCodePlatform)
-	headers.Set("X-Msh-Version", strategy.version)
 	device := kimiidentity.ResolveDeviceHeaders(
 		accountRef.String(),
 		material.profile,

@@ -34,9 +34,7 @@ const (
 	balanceURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/balance"
 	previewURL = "https://zcode.z.ai/api/v1/zcode-plan/billing/preview"
 	// paas 目录：登录态账号的 z.ai access token 仍可列出通用模型（Node 的同款兜底）。
-	paasModelsURL = "https://api.z.ai/api/coding/paas/v4/models"
-	// SeedAppVersion 是 zcode 客户端元数据里的兜底版本号（与桌面端种子一致）。
-	SeedAppVersion   = "3.16.3"
+	paasModelsURL    = "https://api.z.ai/api/coding/paas/v4/models"
 	maxResponseBytes = 1 << 20
 	requestTimeout   = 10 * time.Second
 )
@@ -66,7 +64,7 @@ var _ accountapp.ProviderModelDiscoverer = (*Source)(nil)
 
 // New 创建生产端点上的目录源。
 func New(client HTTPClient) (*Source, error) {
-	return NewWithAppVersion(client, SeedAppVersion)
+	return NewWithAppVersion(client, "")
 }
 
 // NewWithAppVersion 用宿主解析出的真实 ZCode 版本创建目录源。
@@ -77,10 +75,8 @@ func NewWithAppVersion(client HTTPClient, version string) (*Source, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
 	}
+	// 版本只来自宿主解析到的真实值；为空时不下发版本头，不自报写死的种子版本。
 	appVersion := strings.TrimSpace(version)
-	if appVersion == "" {
-		appVersion = SeedAppVersion
-	}
 	return &Source{
 		client:        client,
 		balanceURL:    balanceURL,
@@ -168,34 +164,38 @@ func (source *Source) paasModels(ctx context.Context, token string) ([]string, e
 // ClientHeaders 返回 zcode 计费/目录接口共用的客户端元数据头。
 // 额度与模型目录必须发同一套头，否则会被判 400 code=3001。
 func ClientHeaders(identitySeed string, token string) map[string]string {
-	return (&Source{appVersion: SeedAppVersion, platform: runtime.GOOS + "-" + runtime.GOARCH}).headers(identitySeed, token)
+	return (&Source{platform: runtime.GOOS + "-" + runtime.GOARCH}).headers(identitySeed, token)
 }
 
 // JWTFromPayload 读取凭据里的长期 zcodeJwtToken。
 func JWTFromPayload(payload []byte) (string, error) { return zcodeJWT(payload) }
 
 func (source *Source) headers(identitySeed string, token string) map[string]string {
-	return map[string]string{
-		"Authorization":       "Bearer " + token,
-		"Accept":              "application/json",
-		"User-Agent":          "ZCode/" + source.appVersion,
-		"HTTP-Referer":        "https://zcode.z.ai",
-		"X-Title":             "Z Code@electron",
-		"X-Platform":          source.platform,
-		"X-Release-Channel":   "stable",
-		"X-Client-Language":   "en-US",
-		"X-Client-Timezone":   "UTC",
-		"X-Os-Category":       osCategory(),
-		"X-ZCode-App-Version": source.appVersion,
-		"X-Device-Mid":        deviceMid(identitySeed),
+	headers := map[string]string{
+		"Authorization":     "Bearer " + token,
+		"Accept":            "application/json",
+		"HTTP-Referer":      "https://zcode.z.ai",
+		"X-Title":           "Z Code@electron",
+		"X-Platform":        source.platform,
+		"X-Release-Channel": "stable",
+		"X-Client-Language": "en-US",
+		"X-Client-Timezone": "UTC",
+		"X-Os-Category":     osCategory(),
+		"X-Device-Mid":      deviceMid(identitySeed),
 	}
+	// 版本只能来自真实观测：拿不到就不下发版本头。
+	if source.appVersion != "" {
+		headers["User-Agent"] = "ZCode/" + source.appVersion
+		headers["X-ZCode-App-Version"] = source.appVersion
+	}
+	return headers
 }
 
 func (source *Source) balanceModels(
 	ctx context.Context,
 	headers map[string]string,
 ) ([]string, error) {
-	endpoint := appendQuery(source.balanceURL, "app_version", source.appVersion)
+	endpoint := source.withVersion(source.balanceURL)
 	payload, err := source.get(ctx, endpoint, headers)
 	if err != nil {
 		return nil, err
@@ -242,7 +242,7 @@ func (source *Source) previewModels(
 	ctx context.Context,
 	headers map[string]string,
 ) ([]string, error) {
-	endpoint := appendQuery(source.previewURL, "app_version", source.appVersion)
+	endpoint := source.withVersion(source.previewURL)
 	endpoint = appendQuery(endpoint, "platform", source.platform)
 	payload, err := source.get(ctx, endpoint, headers)
 	if err != nil {
@@ -390,6 +390,14 @@ func routable(modelID string) bool {
 		strings.HasPrefix(value, "glm") ||
 		strings.HasPrefix(value, "codegeex") ||
 		strings.HasPrefix(value, "zcode")
+}
+
+// withVersion 在端点后追加真实 app_version；未观测到版本时不加该参数。
+func (source *Source) withVersion(endpoint string) string {
+	if source.appVersion == "" {
+		return endpoint
+	}
+	return appendQuery(endpoint, "app_version", source.appVersion)
 }
 
 func appendQuery(endpoint string, key string, value string) string {

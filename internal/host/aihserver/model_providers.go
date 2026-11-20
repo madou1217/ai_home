@@ -164,26 +164,28 @@ func buildZcodeModelProvider(context modelProviderContext) ([]accountapp.Provide
 	return []accountapp.ProviderModelDiscoverer{source}, nil
 }
 
-// resolveZcodeAppVersion 读取宿主维护的版本缓存；缺失时回落到种子版本。
-// 缓存由账号活动/凭据链路按安装版 → 在线安装页刷新，目录源只读同一份事实。
+// resolveZcodeAppVersion 读取宿主维护的版本缓存。
+//
+// 缓存由账号活动/凭据链路按安装版 → 在线安装页刷新，目录源只读同一份事实；
+// 读不到时返回空串，调用方不下发版本信息，而不是自报一个写死的种子版本。
 func resolveZcodeAppVersion(aiHomeDir string) string {
 	root := strings.TrimSpace(aiHomeDir)
 	if root == "" {
-		return zcodemodelcatalog.SeedAppVersion
+		return ""
 	}
 	payload, err := os.ReadFile(filepath.Join(root, "run", "zcode-app-version.json"))
 	if err != nil {
-		return zcodemodelcatalog.SeedAppVersion
+		return ""
 	}
 	var cached struct {
 		Version string `json:"version"`
 	}
 	if json.Unmarshal(payload, &cached) != nil {
-		return zcodemodelcatalog.SeedAppVersion
+		return ""
 	}
 	version := strings.TrimSpace(cached.Version)
 	if version == "" {
-		return zcodemodelcatalog.SeedAppVersion
+		return ""
 	}
 	return version
 }

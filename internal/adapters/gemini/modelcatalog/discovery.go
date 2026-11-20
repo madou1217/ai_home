@@ -23,6 +23,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/gemini"
+	geminiclientversion "github.com/madou1217/ai_home/internal/adapters/gemini/clientversion"
 )
 
 const (
@@ -316,7 +317,9 @@ func (source *Source) postGemini(
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", geminiCatalogUserAgent())
+	if userAgent := geminiCatalogUserAgent(); userAgent != "" {
+		request.Header.Set("User-Agent", userAgent)
+	}
 	response, err := source.client.Do(request)
 	if err != nil {
 		return nil, err
@@ -344,7 +347,12 @@ func geminiCatalogUserAgent() string {
 	if arch == "amd64" {
 		arch = "x64"
 	}
-	return "GeminiCLI-cli-command/0.42.0/unknown (" + platform + "; " + arch + "; terminal)"
+	version := geminiclientversion.Detect()
+	if version == "" {
+		// 没有观测到本机 CLI 版本：不下发 UA，而不是自报写死的版本。
+		return ""
+	}
+	return "GeminiCLI-cli-command/" + version + "/unknown (" + platform + "; " + arch + "; terminal)"
 }
 
 func geminiObject(value any) map[string]any {

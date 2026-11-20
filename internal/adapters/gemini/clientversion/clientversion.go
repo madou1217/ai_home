@@ -20,9 +20,6 @@ import (
 const (
 	// envVar 是显式锁定版本（人工回退/紧急修复）的入口。
 	envVar = "AIH_GEMINI_CLIENT_VERSION"
-	// Default 只在「没有本机 CLI、也没有缓存」时兜底，与 Node
-	// DEFAULT_GEMINI_CODE_ASSIST_CLIENT_VERSION 同值。
-	Default = "0.42.0"
 	// refreshInterval 是本机 CLI 的重新探测间隔：CLI 会自动升级。
 	refreshInterval = 6 * time.Hour
 	// probeTimeout 限制单次 `gemini --version`。
@@ -45,16 +42,14 @@ func Detect() string {
 		if value == "" {
 			value = readCachedVersion()
 		}
-		if value == "" {
-			value = Default
-		}
 		current.Store(value)
 		go refreshLoop()
 	})
-	if value, ok := current.Load().(string); ok && value != "" {
+	if value, ok := current.Load().(string); ok {
 		return value
 	}
-	return Default
+	// 观测不到版本时返回空串：调用方不下发版本头，而不是自报写死的版本。
+	return ""
 }
 
 // DetectFrom 是纯函数版本：只读取显式配置与本机 CLI，便于验证。

@@ -129,7 +129,7 @@ func buildAgyUsage(providerContext usageProviderContext) ([]usageapp.ProviderStr
 }
 
 func buildZcodeUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
-	strategy, err := zcodeusage.New(context.client)
+	strategy, err := zcodeusage.NewWithAppVersion(context.client, resolveZcodeAppVersion(context.aiHomeDir))
 	if err != nil {
 		return nil, err
 	}

@@ -16,9 +16,6 @@ import (
 // Go 侧只做**本地探测**一档：远端 npm 查询需要网络与缓存，Node 侧已经做了（并且是
 // 投影的发起方）。Go 拿不到本地 CLI 时用兜底常量——比引入一条独立的网络路径更稳。
 
-// kimiClientVersionFallback 是本地探测失败时的兜底（与 Node 侧常量一致）。
-const kimiClientVersionFallback = "0.36.0"
-
 // kimiClientVersionCacheTTL 是本地版本的缓存时长（CLI 会自动更新）。
 const kimiClientVersionCacheTTL = time.Hour
 
@@ -41,16 +38,13 @@ func kimiClientVersion() string {
 
 // detectKimiClientVersion 跑一次 `kimi --version` 并解析。
 //
-// 失败（没装、超时、输出认不出）返回兜底常量：「这台机器没装 CLI」是正常情况。
+// 失败（没装、超时、输出认不出）返回空串：调用方据此不下发版本头，
+// 而不是自报一个写死的版本。
 func detectKimiClientVersion() string {
 	command := "kimi"
 	output, err := exec.Command(command, "--version").Output()
 	if err != nil {
-		return kimiClientVersionFallback
+		return ""
 	}
-	match := kimiVersionPattern.FindString(string(output))
-	if match == "" {
-		return kimiClientVersionFallback
-	}
-	return match
+	return kimiVersionPattern.FindString(string(output))
 }

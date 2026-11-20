@@ -20,10 +20,6 @@ import (
 	"time"
 )
 
-// Default 只在「本机没有安装、缓存为空、远程也读不到」时兜底。
-// 正常路径是远程下载页的最新版本（refreshRemote 异步刷新）。
-const Default = "2.6.0"
-
 const (
 	usageEnv       = "AIH_AGY_USAGE"
 	appInfoPlist   = "/Applications/Antigravity.app/Contents/Info.plist"
@@ -44,24 +40,19 @@ func Detect() string {
 		if value == "" {
 			value = readCachedVersion()
 		}
-		if value == "" {
-			value = Default
-		}
 		current.Store(value)
 		go refreshRemote()
 	})
-	if value, ok := current.Load().(string); ok && value != "" {
+	// 观测不到版本时返回空串：调用方不下发版本头，而不是自报写死的版本。
+	if value, ok := current.Load().(string); ok {
 		return value
 	}
-	return Default
+	return ""
 }
 
 // DetectFrom 是纯函数版本，便于测试注入环境值与 plist 路径。
 func DetectFrom(usageValue string, plistPath string) string {
-	if value := detectFrom(usageValue, plistPath); value != "" {
-		return value
-	}
-	return Default
+	return detectFrom(usageValue, plistPath)
 }
 
 func detectLocal() string {

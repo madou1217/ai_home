@@ -286,7 +286,19 @@ func (handler *Handler) ServeHTTP(
 		renderErr   error
 		contentType = "application/json; charset=utf-8"
 	)
+	// 解析层把缺省 response_format 也归一成 b64_json，渲染层需要知道客户端是否真的声明过：
+	// 只有显式 b64_json 才把上游链接取回成内联字节，默认路径保持改造前行为。
+	renderOptions := images.RenderOptions{
+		ResponseFormat:         images.ResponseFormat(parsed.ResponseFormat),
+		ExplicitResponseFormat: explicitB64JSON(body),
+		BlobBaseURL:            blobBaseURL(request, handler.blobBaseURL),
+		Blobs:                  handler.blobs,
+		Fetcher:                handler.fetcher,
+		Context:                request.Context(),
+	}
 	if parsed.Stream {
+		// 流式事件结构上只承载 b64_json（url + stream 在解析层已被拒），入口已有
+		// inlineStreamImages 补齐链接字节，这里的 response_format 归一不介入。
 		// 客户端要流式：完成结果按 OpenAI Images 流式协议发 SSE（见 images.RenderStream）。
 		// 事件只能带 b64_json，上游只给链接时在这里补齐字节；失败仍在写头之前。
 		streamImages, inlineErr := handler.inlineStreamImages(request.Context(), execution.Result.Images)
@@ -306,25 +318,13 @@ func (handler *Handler) ServeHTTP(
 		contentType = "text/event-stream; charset=utf-8"
 	} else if len(execution.Result.PassthroughBody) > 0 {
 		// 透传口径直接回上游原体：created / usage / model 与额外字段不在网关这一跳被重新编码掉。
-		payload, renderErr = images.RenderPassthrough(execution.Result, images.RenderOptions{
-			ResponseFormat: images.ResponseFormat(parsed.ResponseFormat),
-			BlobBaseURL:    blobBaseURL(request, handler.blobBaseURL),
-			Blobs:          handler.blobs,
-		})
+		payload, renderErr = images.RenderPassthrough(execution.Result, renderOptions)
 	} else {
-		payload, renderErr = images.Render(execution.Result.Images, images.RenderOptions{
-			ResponseFormat: images.ResponseFormat(parsed.ResponseFormat),
-			BlobBaseURL:    blobBaseURL(request, handler.blobBaseURL),
-			Blobs:          handler.blobs,
-		})
+		payload, renderErr = images.Render(execution.Result.Images, renderOptions)
 	}
 	if renderErr != nil {
 		applyImage429Headers(response.Header(), clearRetryAfterMeta(execResult.Retry))
-		writeError(response, &images.Error{
-			StatusCode: http.StatusBadGateway,
-			Code:       "invalid_image_output",
-			Detail:     "Image response is not renderable",
-		})
+		writeError(response, asRenderError(renderErr))
 		return
 	}
 	if parsed.Stream {
@@ -571,6 +571,41 @@ func asImageError(err error) *images.Error {
 		Code:       "upstream_failed",
 		Detail:     "Image generation failed",
 	}
+}
+
+// asRenderError 保留渲染阶段的具体错误码（取回/落仓失败），其余仍按无法渲染处理。
+func asRenderError(err error) *images.Error {
+	if renderErr, ok := images.AsError(err); ok {
+		return renderErr
+	}
+	return &images.Error{
+		StatusCode: http.StatusBadGateway,
+		Code:       "invalid_image_output",
+		Detail:     "Image response is not renderable",
+	}
+}
+
+// explicitB64JSON 判断客户端是否显式要求 response_format=b64_json。
+//
+// 解析层把缺省值也归一成 b64_json，渲染层无法区分「客户端要 b64」与「客户端没声明」。
+// 只有显式声明才把上游链接取回成内联字节；默认路径必须与改造前完全一致。
+func explicitB64JSON(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(body, &document); err != nil {
+		return false
+	}
+	raw, found := document["response_format"]
+	if !found {
+		return false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(value), string(imagegeneration.ResponseFormatB64JSON))
 }
 
 // openAIErrorEnvelope 是 OpenAI 图片接口的错误响应体。

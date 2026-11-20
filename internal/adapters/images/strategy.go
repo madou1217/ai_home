@@ -243,19 +243,6 @@ func (strategy AgyStrategy) SupportsModel(modelID string) bool {
 	return false
 }
 
-// imageSizeAspectRatios 把 OpenAI 尺寸映射到 Gemini 的原生宽高比。
-//
-// 只做映射，不做缩放：像素尺寸保持上游原生。
-var imageSizeAspectRatios = map[string]string{
-	"1024x1024": "1:1",
-	"1536x1024": "3:2",
-	"1024x1536": "2:3",
-	"1792x1024": "16:9",
-	"1024x1792": "9:16",
-	"1408x1056": "4:3",
-	"1056x1408": "3:4",
-}
-
 // Generate 通过 Code Assist generateContent 生成图片。
 func (strategy AgyStrategy) Generate(
 	ctx context.Context,
@@ -333,17 +320,20 @@ func (strategy AgyStrategy) Generate(
 }
 
 // buildGeminiImageConfig 把 OpenAI 尺寸映射为 Gemini imageConfig。
+//
+// 映射本身由 size_quality.go 的声明表提供：这里只读取 agy 行，不再维护尺寸表。
 func buildGeminiImageConfig(size string) (map[string]any, *Error) {
 	if size == "" || size == "auto" {
 		return nil, nil
 	}
-	aspectRatio, found := imageSizeAspectRatios[size]
+	aspectRatio, found := nativeSizeForProvider("agy", size)
 	if !found {
+		mapping, _ := sizeQualityMappingForProvider("agy")
 		return nil, newError(
 			400,
 			"unsupported_image_size",
-			"gemini image size must be auto or one of 1024x1024, 1536x1024, "+
-				"1024x1536, 1792x1024, 1024x1792, 1408x1056, 1056x1408",
+			"gemini image size must be auto or one of "+
+				strings.Join(mapping.sizeValues(), ", "),
 		)
 	}
 	return map[string]any{"aspectRatio": aspectRatio, "imageSize": "1K"}, nil

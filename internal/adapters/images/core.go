@@ -261,9 +261,11 @@ func NativeImageModelRequiresDiscovery(providerID string, modelID string) bool {
 var nativeModelSpecs = map[string][]modelSpec{
 	"codex": {
 		{
-			ID:             "gpt-image-2",
-			Label:          "GPT Image 2",
-			QualityOptions: []string{"low", "medium", "high"},
+			ID:    "gpt-image-2",
+			Label: "GPT Image 2",
+			// 质量档位的事实源是 size_quality.go 的声明表；这里只是把模型支持的
+			// 档位投影给能力接口（capability.go 读 QualityOptions），不再单独维护。
+			QualityOptions: qualityValuesForProvider("codex"),
 		},
 	},
 	"agy": {
@@ -345,18 +347,17 @@ func NativeCapabilities(provider string, modelID string) (Capabilities, bool) {
 }
 
 // NativeQualityOptions 返回指定 Provider 与模型的可用质量档位。
+//
+// 质量词汇的事实源是 size_quality.go 的声明表：模型声明更精确时优先用模型自己的
+// 档位，否则回落到 Provider 级白名单（passthrough 即此路径）。未知 Provider 返回 nil。
 func NativeQualityOptions(provider string, modelID string) []string {
 	normalized := normalizeProvider(provider)
-	if normalized == "passthrough" {
-		return []string{"low", "medium", "high"}
+	if spec, found := resolveModelSpec(normalized, modelID); found && len(spec.QualityOptions) > 0 {
+		options := make([]string, len(spec.QualityOptions))
+		copy(options, spec.QualityOptions)
+		return options
 	}
-	spec, found := resolveModelSpec(normalized, modelID)
-	if !found || len(spec.QualityOptions) == 0 {
-		return nil
-	}
-	options := make([]string, len(spec.QualityOptions))
-	copy(options, spec.QualityOptions)
-	return options
+	return qualityValuesForProvider(normalized)
 }
 
 // NativeImageModels 返回指定 Provider 声明的原生图片模型 ID。
@@ -461,38 +462,54 @@ func CheckCapabilities(
 			fmt.Sprintf("%s does not support image masks", providerName),
 		)
 	}
-	if request.N > 1 && !capabilities.Multiple {
-		return newError(
-			400,
-			"unsupported_image_count",
-			fmt.Sprintf("%s does not support multiple image outputs", providerName),
-		)
+	// 输出数量：原生多图、网关模拟（有上限）、透传族不可合并三种情况由同一判定负责，
+	// 校验层不再自己复制规则。
+	if countErr := OutputCountError(strategy, providerName, request); countErr != nil {
+		return countErr
 	}
-	if request.Size != "" && request.Size != "auto" && !capabilities.Size {
-		return newError(
-			400,
-			"unsupported_image_size",
-			fmt.Sprintf("%s does not support explicit image sizes", providerName),
-		)
-	}
-	if request.Quality != "" && request.Quality != "auto" && !capabilities.Quality {
-		return newError(
-			400,
-			"unsupported_image_quality",
-			fmt.Sprintf("%s does not support image quality controls", providerName),
-		)
+	// size/quality 的取值校验读 size_quality.go 的声明表：抽象层拥有客户端词汇，
+	// Provider 行声明接受哪些取值以及映射成什么原生值。能力开关（capabilities）
+	// 仍先判定「这个 Provider/模型是否支持该控制项」，表再判定「这个具体取值是否合法」。
+	if request.Size != "" && request.Size != "auto" {
+		if !capabilities.Size {
+			return newError(
+				400,
+				"unsupported_image_size",
+				fmt.Sprintf("%s does not support explicit image sizes", providerName),
+			)
+		}
+		if mapping, found := sizeQualityMappingForStrategy(strategy); found &&
+			!mapping.supportsSize(request.Size) {
+			return newError(
+				400,
+				"unsupported_image_size",
+				fmt.Sprintf(
+					"%s supports image sizes: auto, %s",
+					providerName,
+					strings.Join(mapping.sizeValues(), ", "),
+				),
+			)
+		}
 	}
 	if request.Quality != "" && request.Quality != "auto" {
-		options := NativeQualityOptions(providerName, request.Model)
-		if len(options) > 0 && !containsString(options, request.Quality) {
+		if !capabilities.Quality {
+			return newError(
+				400,
+				"unsupported_image_quality",
+				fmt.Sprintf("%s does not support image quality controls", providerName),
+			)
+		}
+		if mapping, found := sizeQualityMappingForStrategy(strategy); found &&
+			!mapping.supportsQuality(request.Quality) {
 			return newError(
 				400,
 				"unsupported_image_quality_value",
 				fmt.Sprintf(
-					"%s does not support image quality %s for model %s",
+					"%s does not support image quality %s for model %s; supported: %s",
 					providerName,
 					request.Quality,
 					request.Model,
+					strings.Join(mapping.qualityValues(), ", "),
 				),
 			)
 		}

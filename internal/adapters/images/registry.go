@@ -2,6 +2,7 @@ package images
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
@@ -117,6 +118,9 @@ type AttemptFailureObserver func(account Account, model string, err error)
 // 与 Node 的 executeImageGeneration 对齐：先按模型支持与能力闸门过滤候选，再按顺序
 // 尝试；只有可重试的失败才换号，能力类失败（400）直接返回，避免把客户端的错误参数
 // 变成对多个账号的无效轰炸。
+//
+// N>1 且策略原生单图时，闸门按原生能力（n=1）放行，实际输出由 EmulateMultiple 串行
+// 模拟；转码在合并之后一次性完成，客户端拿到的始终是请求格式的全量图片。
 func Execute(
 	ctx context.Context,
 	registry Registry,
@@ -190,9 +194,10 @@ func Execute(
 		if normalizeErr != nil {
 			return Execution{}, normalizeErr
 		}
-		result, generateErr := strategy.Generate(ctx, normalizedInput)
+		result, generateErr := EmulateMultiple(ctx, strategy, normalizedInput, request.N)
 		if generateErr == nil {
-			// 统一格式交付：策略只产原生字节，客户端要的格式在这里转码完成。
+			// 统一格式交付：策略只产原生字节（N>1 被模拟时是多次调用合并后的全部图片），
+			// 客户端要的格式在这里**一次性**转码，转码器必须看到所有图片。
 			// 转码失败沿用与上游失败相同的换号/重试判定（400 能力类失败不换号）。
 			transcoded, transcodeErr := TranscodeResult(result, request.OutputFormat, strategy.Capabilities(request.Model))
 			if transcodeErr == nil {
@@ -221,6 +226,139 @@ func Execute(
 		"no_available_account",
 		"no healthy "+provider+" account can serve model "+request.Model,
 	)
+}
+
+// EmulateMultiple 产出请求要求的 n 张图片，并在网关侧吸收「上游一次只能出一张」的差异。
+//
+// 分工：
+//   - 策略原生支持多图（Capabilities.Multiple）时一次调用把 n 交给上游；
+//   - 原生单图时按 n 次串行 Generate（每次 n=1）模拟，并按调用顺序拼接 Images。
+//
+// 上限：模拟是有界的（maxEmulatedOutputImages）。每次模拟都是一次真实上游调用与一份
+// 额度，无界的 n 会把一个客户端请求放大成 n 次消耗；超过上限直接 400。
+//
+// 失败语义是「全有或全无」：任何一次模拟调用失败都中止整条请求并返回该错误，此前已产出
+// 的图片全部丢弃，不返回部分结果。部分成功会让客户端拿到数量不足、却已经花掉额度的响应，
+// 调用方也无从判断该不该重试。
+//
+// 透传策略把上游原始响应体放在 PassthroughBody 里：多份原始体无法合并成一份合法响应，
+// 因此单图策略 + n>1 遇到原始体时显式 400，而不是悄悄丢掉原始体、退回重新编码后的等价
+// 结果。透传族在生成前就能判定（见 effectiveCapabilityFrom），先拒绝以免白花一次上游调用；
+// 循环里再按实际结果兜底，覆盖任何非透传族却返回原始体的策略。
+func EmulateMultiple(ctx context.Context, strategy Strategy, input Input, n int) (Result, error) {
+	if n < 1 {
+		n = 1
+	}
+	capabilities := strategy.Capabilities(input.Model)
+	if capabilities.Multiple {
+		// 原生多图：N 原样交给上游，网关不拆分也不设模拟上限。
+		return strategy.Generate(ctx, input)
+	}
+	if n == 1 {
+		single := input
+		single.N = 1
+		return strategy.Generate(ctx, single)
+	}
+	if n > maxEmulatedOutputImages {
+		return Result{}, newError(
+			400,
+			"unsupported_image_count",
+			fmt.Sprintf(
+				"%s generates one image per request; the gateway emulates at most %d image outputs (requested n=%d)",
+				strategy.Provider(),
+				maxEmulatedOutputImages,
+				n,
+			),
+		)
+	}
+	if strategy.Kind() == "passthrough" {
+		return Result{}, rawBodyEmulationError(n)
+	}
+	merged := Result{}
+	for index := 0; index < n; index++ {
+		attempt := input
+		attempt.N = 1
+		result, err := strategy.Generate(ctx, attempt)
+		if err != nil {
+			// 已产出的图片随本次错误一并丢弃：不做部分成功（见函数注释）。
+			return Result{}, err
+		}
+		if len(result.PassthroughBody) > 0 {
+			return Result{}, rawBodyEmulationError(n)
+		}
+		// 用量不做跨调用累加：不同上游的 usage 字段形状不同，猜测相加会伪造数字。
+		// 保留第一次非空声明，作为「这次请求确实消耗了额度」的证据。
+		if len(merged.Usage) == 0 {
+			merged.Usage = result.Usage
+		}
+		merged.Images = append(merged.Images, result.Images...)
+	}
+	return merged, nil
+}
+
+// rawBodyEmulationError 是「原始响应体无法合并」的显式拒绝。
+func rawBodyEmulationError(n int) *Error {
+	return newError(
+		400,
+		"unsupported_image_count",
+		fmt.Sprintf(
+			"this account returns the upstream raw response body, which cannot be merged across the %d emulated calls required for n=%d",
+			n,
+			n,
+		),
+	)
+}
+
+// OutputCountError 判定请求的输出数量能否被服务；nil 表示可以。
+//
+// 这是「一个 Provider 一次能出几张图」的唯一判定：原生多图直接放行；单图策略在
+// 模拟上限内放行；透传族（原始响应体无法合并）与超上限显式 400。校验层与其它
+// 候选判定（例如 429 换号重试池）都调用它，避免各自复制一份规则。
+func OutputCountError(
+	strategy Strategy,
+	provider string,
+	request imagegeneration.Request,
+) *Error {
+	if request.N <= 1 {
+		return nil
+	}
+	providerName := strings.TrimSpace(provider)
+	if providerName == "" {
+		providerName = strategy.Provider()
+	}
+	if strategy.Capabilities(request.Model).Multiple {
+		return nil
+	}
+	if strategy.Kind() == "passthrough" {
+		return rawBodyEmulationError(request.N)
+	}
+	if request.N > maxEmulatedOutputImages {
+		return newError(
+			400,
+			"unsupported_image_count",
+			fmt.Sprintf(
+				"%s generates one image per request; the gateway emulates at most %d image outputs (requested n=%d)",
+				providerName,
+				maxEmulatedOutputImages,
+				request.N,
+			),
+		)
+	}
+	return nil
+}
+
+// outputCountGate 返回能力闸门应当看到的请求。
+//
+// 闸门（CheckCapabilities）校验的是策略的**原生**能力；串行模拟（EmulateMultiple）是
+// 编排层的网关能力，不在闸门的判据里。原生单图策略因此以 n=1 过闸，N 是否超出模拟上限、
+// 以及多份原始响应体能否合并，统一由 EmulateMultiple 裁决。
+func outputCountGate(strategy Strategy, request imagegeneration.Request) imagegeneration.Request {
+	if request.N <= 1 || strategy.Capabilities(request.Model).Multiple {
+		return request
+	}
+	gated := request
+	gated.N = 1
+	return gated
 }
 
 // filterEligible 返回通过模型支持与能力闸门的候选。
@@ -257,7 +395,7 @@ func candidateEligible(
 	if !strategy.SupportsModel(request.Model) {
 		return false
 	}
-	return CheckCapabilities(strategy, provider, request) == nil
+	return CheckCapabilities(strategy, provider, outputCountGate(strategy, request)) == nil
 }
 
 // firstEligible 返回尚未尝试过的第一个合格候选。
@@ -300,7 +438,7 @@ func noEligibleAccountError(
 		if !strategy.SupportsModel(request.Model) {
 			continue
 		}
-		if capabilityErr := CheckCapabilities(strategy, provider, request); capabilityErr != nil {
+		if capabilityErr := CheckCapabilities(strategy, provider, outputCountGate(strategy, request)); capabilityErr != nil {
 			return capabilityErr
 		}
 	}

@@ -32,6 +32,13 @@ var decodableFormats = []Format{FormatPNG, FormatJPEG, FormatWebP, FormatGIF}
 // encodableFormats 是网关能够产出的格式，与「请求 output_format 的合法值」一致。
 var encodableFormats = []Format{FormatPNG, FormatJPEG, FormatWebP}
 
+// maxEmulatedOutputImages 是网关串行模拟「一次出多张」时的输出上限。
+//
+// 原生多图的策略把 N 直接交给上游（客户端解析上限见 imagegeneration.MaxOutputCount），
+// 不受这个值约束；只有原生单图策略被网关模拟时才需要有界：每次模拟都是一次真实上游
+// 调用与一份额度，无界的 N 会把一个客户端请求放大成 N 次消耗。
+const maxEmulatedOutputImages = 4
+
 // Capability 是客户端可见的图片能力合同。
 //
 // 字段刻意平铺且带 JSON 标签：WebUI、管理诊断与外部接入读同一份事实，不需要各自
@@ -45,8 +52,16 @@ type Capability struct {
 	Mask bool `json:"mask"`
 	// MaxInputImages 是单次请求可带的参考图上限（至少 1）。
 	MaxInputImages int `json:"maxInputImages"`
-	// MaxOutputImages 是单次请求可生成的数量上限；0 表示上游未声明上限。
+	// MaxOutputImages 是客户端单次请求可以要的图片数量上限；0 表示上游未声明上限。
+	//
+	// 它是「客户端实际可请求的 N」，不是上游原生能力：原生单图策略被网关串行模拟时
+	// （见 MultipleEmulated），这里给的是网关模拟上限 maxEmulatedOutputImages。
 	MaxOutputImages int `json:"maxOutputImages"`
+	// MultipleEmulated 表示上游一次只产出一张，但网关会用串行多次调用模拟多图输出。
+	//
+	// 为 true 时 MaxOutputImages 是网关模拟上限而非上游原生能力；客户端不需要区分
+	// 「原生多图」与「模拟多图」，只需要按 MaxOutputImages 传 N。
+	MultipleEmulated bool `json:"multipleEmulated"`
 	// InputFormats 是入口可接受的参考图格式：网关会把它们转换成上游声明的格式。
 	InputFormats []string `json:"inputFormats"`
 	// NativeInputFormats 是上游原生接受的参考图格式（差异在这里被吸收）。
@@ -57,6 +72,11 @@ type Capability struct {
 	NativeOutputFormats []string `json:"nativeOutputFormats"`
 	// OutputFormats 是网关可交付给客户端的格式：原生格式 ∪ 可转码格式。
 	OutputFormats []string `json:"outputFormats"`
+	// ResponseFormats 是网关保证交付的响应形态：无论上游只给 b64 还是只给 url，
+	// 网关都会按客户端要求双向归一（见 render.go 的 RenderOptions.ExplicitResponseFormat）。
+	ResponseFormats []string `json:"responseFormats"`
+	// NativeResponseFormat 表示上游自身是否支持选择响应形态（仅作诊断）。
+	NativeResponseFormat bool `json:"nativeResponseFormat"`
 	// OutputCompression 表示支持有损格式的质量参数。
 	OutputCompression bool `json:"outputCompression"`
 	// Background 表示支持背景控制（如 transparent）。
@@ -74,26 +94,41 @@ type Capability struct {
 // 拒绝」的抽象位置，Provider 实现不需要各自处理。
 func EffectiveCapability(strategy Strategy, modelID string) Capability {
 	native := strategy.Capabilities(modelID)
-	return effectiveCapabilityFrom(native, modelID, strategy.Provider())
+	return effectiveCapabilityFrom(native, modelID, strategy.Provider(), strategy.Kind())
 }
 
-func effectiveCapabilityFrom(native Capabilities, modelID string, provider string) Capability {
+// effectiveCapabilityFrom 把策略的原生声明投影成客户端合同。
+//
+// kind 是策略能力族（native / passthrough / unsupported）：透传族的响应是上游原始
+// 响应体，网关无法把多份原始体合并成一份合法响应，因此透传族不具备「串行模拟多图」
+// 这项网关能力，即使它声明了单图。
+func effectiveCapabilityFrom(native Capabilities, modelID string, provider string, kind string) Capability {
+	// 模拟多图是网关能力，不是上游能力：原生单图（且真能出图）的策略才有它。
+	emulated := !native.Multiple &&
+		(native.Generation || native.Edit) &&
+		kind != "passthrough"
 	capability := Capability{
-		TextToImage:    native.Generation,
-		ImageToImage:   native.Edit,
-		Mask:           native.Mask,
-		MaxInputImages: native.MaxInputImages,
-		MaxOutputImages: func() int {
-			if native.Multiple {
-				return 0
-			}
-			return 1
-		}(),
-		InputFormats:       formatStrings(decodableFormats),
-		NativeInputFormats: formatStrings(AcceptedInputFormats(native)),
-		InputEncodings:     []string{"b64", "url"},
-		OutputCompression:  native.OutputCompression,
-		Background:         native.Background,
+		TextToImage:          native.Generation,
+		ImageToImage:         native.Edit,
+		Mask:                 native.Mask,
+		MaxInputImages:       native.MaxInputImages,
+		MaxOutputImages:      1,
+		MultipleEmulated:     emulated,
+		InputFormats:         formatStrings(decodableFormats),
+		NativeInputFormats:   formatStrings(AcceptedInputFormats(native)),
+		InputEncodings:       []string{"b64", "url"},
+		OutputCompression:    native.OutputCompression,
+		Background:           native.Background,
+		ResponseFormats:      []string{"b64_json", "url"},
+		NativeResponseFormat: native.ResponseFormat,
+	}
+	switch {
+	case native.Multiple:
+		// 原生多图：N 由上游裁决，网关不设上限（0 表示未声明）。
+		capability.MaxOutputImages = 0
+	case emulated:
+		// 客户端能请求到的 N 是网关模拟上限，而不是上游原生的一次一张。
+		capability.MaxOutputImages = maxEmulatedOutputImages
 	}
 	if capability.MaxInputImages < 1 {
 		capability.MaxInputImages = 1

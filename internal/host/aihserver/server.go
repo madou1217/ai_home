@@ -60,6 +60,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	// 分两类处理：WebUI watch 之类的 SSE 立刻取消（它们永不自然结束）；
 	// 正在生成回答的推理流先给收尾窗口，别把会话从中途截断——截断在
 	// codex/claude 侧就是"会话莫名结束"。超时仍未完成才强制取消。
+	server.streams.beginDrain(0)
 	server.streams.cancelNonInference()
 	drainCtx, cancel := context.WithTimeout(ctx, inferenceDrainWindow)
 	server.streams.waitInferenceIdle(drainCtx)

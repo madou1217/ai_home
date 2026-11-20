@@ -16,9 +16,12 @@ import (
 // contexts lets shutdown finish without waiting for the next heartbeat or for
 // the upstream stream to end.
 type streamShutdown struct {
-	mu      sync.Mutex
-	closed  bool
-	streams map[*streamRegistration]struct{}
+	mu              sync.Mutex
+	closed          bool
+	draining        bool
+	drainGeneration uint64
+	drainTimer      *time.Timer
+	streams         map[*streamRegistration]struct{}
 }
 
 type streamRegistration struct {
@@ -55,6 +58,16 @@ func (shutdown *streamShutdown) wrap(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		// Drain gate: once a restart has reserved the process, new inference
+		// requests must not enter and extend the drain window. They get a
+		// stable retryable error instead of being started and then cut.
+		if shutdown.isDraining() && inferenceStreamPath(request) {
+			response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			response.Header().Set("Retry-After", "1")
+			response.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = response.Write([]byte(`{"ok":false,"error":"server_restarting","message":"server restart in progress; retry when idle"}`))
+			return
+		}
 		ctx, cancel := context.WithCancel(request.Context())
 		writer := &streamResponseWriter{
 			ResponseWriter: response,
@@ -173,6 +186,75 @@ func (shutdown *streamShutdown) inferenceCount() int {
 		}
 	}
 	return count
+}
+
+// beginDrain closes the inference admission gate and returns the number of
+// streams already running. Existing streams keep running; new inference
+// requests are rejected until cancelDrain or process shutdown.
+//
+// A non-positive ttl keeps the gate until explicitly cancelled; positive ttl
+// protects against a caller dying between begin and restart.
+func (shutdown *streamShutdown) beginDrain(ttl time.Duration) int {
+	if shutdown == nil {
+		return 0
+	}
+	shutdown.mu.Lock()
+	defer shutdown.mu.Unlock()
+	shutdown.draining = true
+	shutdown.drainGeneration++
+	generation := shutdown.drainGeneration
+	if shutdown.drainTimer != nil {
+		shutdown.drainTimer.Stop()
+		shutdown.drainTimer = nil
+	}
+	if ttl > 0 {
+		shutdown.drainTimer = time.AfterFunc(ttl, func() {
+			shutdown.cancelDrainGeneration(generation)
+		})
+	}
+	count := 0
+	for registration := range shutdown.streams {
+		if registration.inference {
+			count++
+		}
+	}
+	return count
+}
+
+// cancelDrain reopens admission after a failed or abandoned restart.
+func (shutdown *streamShutdown) cancelDrain() {
+	if shutdown == nil {
+		return
+	}
+	shutdown.mu.Lock()
+	shutdown.cancelDrainLocked()
+	shutdown.mu.Unlock()
+}
+
+func (shutdown *streamShutdown) cancelDrainLocked() {
+	shutdown.draining = false
+	shutdown.drainGeneration++
+	if shutdown.drainTimer != nil {
+		shutdown.drainTimer.Stop()
+		shutdown.drainTimer = nil
+	}
+}
+
+func (shutdown *streamShutdown) cancelDrainGeneration(generation uint64) {
+	shutdown.mu.Lock()
+	if generation == shutdown.drainGeneration {
+		shutdown.cancelDrainLocked()
+	}
+	shutdown.mu.Unlock()
+}
+
+func (shutdown *streamShutdown) isDraining() bool {
+	if shutdown == nil {
+		return false
+	}
+	shutdown.mu.Lock()
+	defer shutdown.mu.Unlock()
+	return shutdown.draining
 }
 
 type streamResponseWriter struct {

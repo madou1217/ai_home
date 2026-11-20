@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/serverprobe"
 	"github.com/madou1217/ai_home/internal/runtime/sessionmodelalias"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -227,6 +228,11 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// Windows 上 SIGTERM 实际是 TerminateProcess，进程内的关闭路径不会执行。
 	if handlers.shutdown != nil {
 		mux.Handle(shutdownapi.Path, handlers.shutdown)
+	}
+	// 重启前关闭新推理入口；只接受本机回环或 Management Key，避免远程把
+	// 服务打进 drain 后不恢复。
+	if handlers.drain != nil {
+		mux.Handle(serverprobe.DrainPath, handlers.drain)
 	}
 	// 模型别名投影：Node 在启动与别名变更后推送，Go 只读并编译进路由目录。
 	if handlers.modelAliases != nil {

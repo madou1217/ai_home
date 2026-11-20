@@ -429,24 +429,13 @@ func matchesVisionFamily(modelID string) bool {
 	return false
 }
 
-// imageGenerationPattern 是「产出图片」的模型名形态，逐字对应 Node 的 IMAGE_MODEL_PATTERN
-// （lib/server/code-assist-image-generation.js）：`-image` 家族、nano-banana 别名、
-// flash-image。它刻意不匹配「能看图但只输出文本」的模型。
-var imageGenerationPattern = regexp.MustCompile(
-	`(?:^|[-_/])image(?:$|[-_])|nano-?banana|flash-image`,
-)
-
 // matchesImageGenerationFamily 判断模型名是否属于图像生成家族。
 //
-// 与视觉家族判定不同，这里**不做**版本分隔符归一化：Node 的 isImageGenerationModel 直接
-// 用小写原名匹配，而归一化只服务于视觉家族那张表。两边必须保持这个差别，否则同一模型会在
-// 两端得到不同的 image_out 判定。
+// 规则只在 application/modelmetadata 定义一次（与 CLI 侧拒绝生图共用），这里不做
+// 版本分隔符归一化：Node 的 isImageGenerationModel 直接用小写原名匹配，而归一化只服务于
+// 视觉家族那张表。两边必须保持这个差别，否则同一模型会在两端得到不同的 image_out 判定。
 func matchesImageGenerationFamily(modelID string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(modelID))
-	if normalized == "" {
-		return false
-	}
-	return imageGenerationPattern.MatchString(normalized)
+	return modelmetadata.MatchesImageGenerationName(modelID)
 }
 
 // visionFamilyLookupKeys 返回家族匹配用的模型 ID 变体。

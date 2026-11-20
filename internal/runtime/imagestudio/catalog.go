@@ -2,7 +2,6 @@ package imagestudio
 
 import (
 	"context"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -115,29 +114,13 @@ var (
 			{ID: "grok-imagine-image", Label: "Grok Imagine Image", Priority: 70},
 		},
 	}
-
-	reGrokImageModel   = regexp.MustCompile(`(?i)^grok-(?:imagine-)?image(?:[-._].+)?$`)
-	reGeminiImageModel = regexp.MustCompile(`(?i)^(?:google/)?gemini[-_/].*image(?:[-._].*)?$`)
-	reNanoBananaModel  = regexp.MustCompile(`(?i)nano-?banana`)
 )
 
 // ImageModelBelongsToProvider 判断原生发现模型是否归属当前 OAuth Provider（与 Node 同步）。
+//
+// 厂商形态（正则与枚举）只在 application/modelmetadata 定义一次，本函数仅做兼容包装。
 func ImageModelBelongsToProvider(provider string, modelID string) bool {
-	normProv := strings.ToLower(strings.TrimSpace(provider))
-	normModel := strings.ToLower(strings.TrimSpace(modelID))
-	if normModel == "" {
-		return false
-	}
-	switch normProv {
-	case "codex":
-		return normModel == "gpt-image-2"
-	case "grok":
-		return reGrokImageModel.MatchString(normModel)
-	case "agy", "gemini":
-		return reGeminiImageModel.MatchString(normModel) || reNanoBananaModel.MatchString(normModel)
-	default:
-		return false
-	}
+	return modelmetadata.ProviderOwnsImageModel(provider, modelID)
 }
 
 func modelGeneratesImages(modalities modelmetadata.Reader, providerID string, modelID string) bool {
@@ -151,12 +134,8 @@ func modelGeneratesImages(modalities modelmetadata.Reader, providerID string, mo
 			return false
 		}
 	}
-	lower := strings.ToLower(strings.TrimSpace(modelID))
-	return strings.Contains(lower, "gpt-image") ||
-		strings.Contains(lower, "dall-e") ||
-		strings.Contains(lower, "grok-imagine") ||
-		strings.HasSuffix(lower, "-image") ||
-		strings.Contains(lower, "-image-")
+	// 模态元数据不可用时的兜底启发式，与 translation 共用同一份判定。
+	return modelmetadata.InfersImageOutput(modelID)
 }
 
 func toCatalogCaps(caps images.Capabilities) CatalogCapabilities {

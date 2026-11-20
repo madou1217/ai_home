@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/usagewindow"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -82,6 +83,8 @@ func buildWebUIRoutingWeightsRoutes(dependencies webuiRouteDependencies) ([]webu
 		Activity:    newRoutingWeightsActivitySource(dependencies.AccountActivity, dependencies.AIHomeDir),
 		Scheduling:  newSchedulingEvaluator(),
 		Strategy:    string(strategy),
+		// 厂商额度窗口策略由组合根显式选定，传输层不认识任何厂商快照字段。
+		WindowGate: usagewindow.DefaultRegistry(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建路由权重诊断接口失败: %w", err)

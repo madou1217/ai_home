@@ -26,6 +26,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/accountscheduling"
 	"github.com/madou1217/ai_home/application/modelcatalogsettings"
+	"github.com/madou1217/ai_home/application/usagewindow"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
@@ -44,8 +45,6 @@ const (
 	maxSelectionRemainingPct = 100.0
 	// defaultRateWindowMS 与 Node ACCOUNT_SELECTION_RATE_WINDOW_MS（10s）一致。
 	defaultRateWindowMS = int64(10_000)
-	// agyMaxSnapshotAgeMS 与 Node MODEL_WINDOW_MAX_SNAPSHOT_AGE_MS（10 分钟）一致。
-	agyMaxSnapshotAgeMS = int64(10 * 60 * 1000)
 )
 
 // ErrInvalidDependencies 表示路由权重接口缺少必要的鉴权或账号池端口。
@@ -116,6 +115,11 @@ type ActivitySource interface {
 	SelectionLoad(provider, accountRef, model string) sessionactivity.SelectionLoad
 }
 
+// WindowGate 判定某 (Provider, 账号快照, 模型) 的厂商额度窗口是否已耗尽。
+//
+// 快照形状与厂商字段由 application/usagewindow 的 Provider 策略掌握，本层不做厂商分支。
+type WindowGate = usagewindow.Gate
+
 // Dependencies 汇总路由权重诊断接口的依赖端口。
 type Dependencies struct {
 	Authorizer  Authorizer
@@ -127,6 +131,8 @@ type Dependencies struct {
 	States      AccountStateSource
 	UsageGate   UsageGate
 	Activity    ActivitySource
+	// WindowGate 是厂商额度窗口门禁；为空时用 application/usagewindow 的默认注册表。
+	WindowGate WindowGate
 	// Scheduling 是账号/Provider 调度策略；为空时用通用默认策略。
 	Scheduling *accountscheduling.Evaluator
 	// Strategy 为当前选号策略（random / round-robin）；为空时取随机策略。
@@ -184,6 +190,7 @@ type Handler struct {
 	states      AccountStateSource
 	usageGate   UsageGate
 	activity    ActivitySource
+	windowGate  WindowGate
 	scheduling  *accountscheduling.Evaluator
 	strategy    string
 	now         func() time.Time
@@ -214,6 +221,10 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 			accountscheduling.NewDefaultPolicy("").WithClock(nowFn),
 		))
 	}
+	windowGate := dependencies.WindowGate
+	if windowGate == nil {
+		windowGate = usagewindow.DefaultRegistry()
+	}
 	return &Handler{
 		authorizer:  dependencies.Authorizer,
 		pool:        dependencies.Pool,
@@ -224,6 +235,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		states:      dependencies.States,
 		usageGate:   dependencies.UsageGate,
 		activity:    dependencies.Activity,
+		windowGate:  windowGate,
 		scheduling:  scheduling,
 		strategy:    string(parsedStrategy),
 		now:         nowFn,
@@ -294,7 +306,7 @@ func (handler *Handler) evaluateWeights(
 
 	catalog, hasCatalog := handler.loadCatalogBestEffort(ctx)
 	settings, hasSettings := handler.loadSettingsBestEffort(ctx)
-	narrowing := narrowCatalog(pool, provider, model, catalog, hasCatalog, settings, hasSettings, nowMS)
+	narrowing := narrowCatalog(pool, provider, model, catalog, hasCatalog, settings, hasSettings, handler.windowGate, nowMS)
 
 	statesByRef := handler.loadAccountStatesBestEffort(ctx)
 	runtimeByRef := handler.loadRuntimeViews()

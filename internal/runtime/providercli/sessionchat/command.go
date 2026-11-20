@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/providerruntime"
 	"github.com/madou1217/ai_home/internal/adapters/agy/modelnames"
 )
@@ -118,12 +119,11 @@ func ResolveAgyCliModelName(model string) string {
 	return modelnames.Resolve(normalizeString(model))
 }
 
-// imageGenerationModelPattern 匹配生图模型（gemini image / nano banana / flash-image）。
-var imageGenerationModelPattern = regexp.MustCompile("(?i)(^|[-_/])image($|[-_])|nano-?banana|flash-image")
-
 // IsImageGenerationModel 判断模型是否生图模型（agy CLI 不支持，提前拒绝）。
+//
+// 规则与 Node isImageGenerationModel 逐字对应，只在 application/modelmetadata 定义一次。
 func IsImageGenerationModel(model string) bool {
-	return imageGenerationModelPattern.MatchString(strings.ToLower(normalizeString(model)))
+	return modelmetadata.MatchesImageGenerationName(normalizeString(model))
 }
 
 // OpenCodeLayout 是 opencode 命令行布局，字段与 lib/runtime/opencode-run-layouts.js 对齐。

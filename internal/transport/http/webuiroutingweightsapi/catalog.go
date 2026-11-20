@@ -6,7 +6,8 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelcatalogsettings"
-	agymodelnames "github.com/madou1217/ai_home/internal/adapters/agy/modelnames"
+	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/usagewindow"
 )
 
 const (
@@ -18,9 +19,6 @@ const (
 
 var (
 	modelVersionSeparatorPattern = regexp.MustCompile(`(\d)\.(\d)`)
-	grokImageModelPattern        = regexp.MustCompile(`^grok-(?:imagine-)?image(?:[-._].+)?$`)
-	geminiImageModelPattern      = regexp.MustCompile(`^(?:google/)?gemini[-_/].*image(?:[-._].*)?$`)
-	nanoBananaModelPattern       = regexp.MustCompile(`nano-?banana`)
 )
 
 type catalogNarrowingResult struct {
@@ -62,6 +60,7 @@ func narrowCatalog(
 	hasCatalog bool,
 	settings modelcatalogsettings.Settings,
 	hasSettings bool,
+	windowGate usagewindow.Gate,
 	nowMS int64,
 ) catalogNarrowingResult {
 	excluded := make(map[string]string)
@@ -131,14 +130,15 @@ func narrowCatalog(
 		}
 	}
 
-	// 4. agy 模型级额度窗口门禁（applyModelWindowGate）。
-	if provider == "agy" {
+	// 4. 厂商额度窗口门禁（applyModelWindowGate）：策略由 Provider 注册表提供，
+	//    本层只问结果，不认识任何厂商快照字段。
+	if windowGate != nil {
 		for _, account := range pool {
 			ref := strings.TrimSpace(account.AccountRef)
 			if excluded[ref] != "" {
 				continue
 			}
-			if agyModelWindowExhausted(account.UsageSnapshot, model, nowMS) {
+			if windowGate.Exhausted(provider, account.UsageSnapshot, model, nowMS) {
 				excluded[ref] = reasonModelNotInCatalog
 				status = catalogStatusFiltered
 			}
@@ -289,111 +289,8 @@ func normalizeModelVersionSeparators(value string) string {
 }
 
 // imageModelBelongsToProvider 与 Node imageModelBelongsToProvider 一致。
+//
+// 厂商形态事实只在 application/modelmetadata 定义一次，本层不做 provider 分支。
 func imageModelBelongsToProvider(provider, model string) bool {
-	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
-	normalizedModel := strings.ToLower(strings.TrimSpace(model))
-	if normalizedModel == "" {
-		return false
-	}
-	switch normalizedProvider {
-	case "codex":
-		return normalizedModel == "gpt-image-2"
-	case "grok":
-		return grokImageModelPattern.MatchString(normalizedModel)
-	case "agy", "gemini":
-		return geminiImageModelPattern.MatchString(normalizedModel) || nanoBananaModelPattern.MatchString(normalizedModel)
-	default:
-		return false
-	}
-}
-
-// agyModelWindowExhausted 与 Node lib/server/model-window-gates.js 一致：
-// 快照需在 10 分钟新鲜度内；条目 remainingPct <= 0 且重置时间未到视为窗口耗尽。
-func agyModelWindowExhausted(snapshot map[string]any, model string, nowMS int64) bool {
-	if len(snapshot) == 0 {
-		return false
-	}
-	capturedAt := int64(numberFromAny(snapshot["capturedAt"]))
-	if capturedAt <= 0 || (nowMS-capturedAt) > agyMaxSnapshotAgeMS {
-		return false
-	}
-	entry := findSnapshotModelEntry(snapshot, model)
-	if entry == nil {
-		return false
-	}
-	remaining, ok := optionalNumberFromAny(entry["remainingPct"])
-	if !ok || remaining > 0 {
-		return false
-	}
-	resetAtMS := int64(numberFromAny(entry["resetAtMs"]))
-	if resetAtMS > 0 && resetAtMS <= nowMS {
-		return false
-	}
-	return true
-}
-
-func findSnapshotModelEntry(snapshot map[string]any, model string) map[string]any {
-	wanted := strings.TrimSpace(model)
-	wantedCLI := agymodelnames.Resolve(wanted)
-	switch rawModels := snapshot["models"].(type) {
-	case []map[string]any:
-		for _, entry := range rawModels {
-			if snapshotModelEntryMatches(entry, wanted, wantedCLI) {
-				return entry
-			}
-		}
-	case []any:
-		for _, item := range rawModels {
-			entry, ok := item.(map[string]any)
-			if ok && snapshotModelEntryMatches(entry, wanted, wantedCLI) {
-				return entry
-			}
-		}
-	}
-	return nil
-}
-
-func snapshotModelEntryMatches(entry map[string]any, wanted, wantedCLI string) bool {
-	if entry == nil {
-		return false
-	}
-	id, _ := entry["model"].(string)
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return false
-	}
-	if id == wanted {
-		return true
-	}
-	return wantedCLI != "" && agymodelnames.Resolve(id) == wantedCLI
-}
-
-func optionalNumberFromAny(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case float32:
-		return float64(typed), true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	case jsonNumber:
-		parsed, err := typed.Float64()
-		return parsed, err == nil
-	default:
-		return 0, false
-	}
-}
-
-type jsonNumber interface {
-	Float64() (float64, error)
-}
-
-func numberFromAny(value any) float64 {
-	number, ok := optionalNumberFromAny(value)
-	if !ok {
-		return 0
-	}
-	return number
+	return modelmetadata.ProviderOwnsImageModel(provider, model)
 }

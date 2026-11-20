@@ -161,12 +161,8 @@ func modelGeneratesImages(modalities modelmetadata.Reader, providerID string, mo
 			return false
 		}
 	}
-	lower := strings.ToLower(strings.TrimSpace(modelID))
-	return strings.Contains(lower, "gpt-image") ||
-		strings.Contains(lower, "dall-e") ||
-		strings.Contains(lower, "grok-imagine") ||
-		strings.HasSuffix(lower, "-image") ||
-		strings.Contains(lower, "-image-")
+	// 模态元数据不可用时的兜底启发式，与 imagestudio 共用同一份判定。
+	return modelmetadata.InfersImageOutput(modelID)
 }
 
 type accountSettingsIndex struct {

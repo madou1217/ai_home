@@ -328,7 +328,8 @@ func (strategy AgyStrategy) Generate(
 	if parseErr != nil {
 		return Result{}, parseErr
 	}
-	return encodeNativeImageOutput(result, input.OutputFormat)
+	// 格式转码由编排层统一完成（TranscodeResult）：策略只负责拿到上游原生字节。
+	return result, nil
 }
 
 // buildGeminiImageConfig 把 OpenAI 尺寸映射为 Gemini imageConfig。

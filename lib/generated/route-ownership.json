@@ -341,6 +341,20 @@
       ]
     },
     {
+      "id": "gateway.images.models",
+      "production_owner": "go",
+      "migration_state": "go_owned",
+      "go_routes": [
+        {
+          "transport": "http",
+          "methods": [
+            "GET"
+          ],
+          "path": "/v1/images/models"
+        }
+      ]
+    },
+    {
       "id": "gateway.vision.blobs",
       "production_owner": "go",
       "migration_state": "go_owned",

@@ -500,18 +500,14 @@ func CheckCapabilities(
 			fmt.Sprintf("%s does not support image background controls", providerName),
 		)
 	}
-	if request.OutputFormat != "" && !capabilities.OutputFormat &&
-		request.OutputFormat != capabilities.DefaultOutputFormat {
-		return newError(
-			400,
-			"unsupported_image_output_format",
-			fmt.Sprintf("%s does not support image output format controls", providerName),
-		)
-	}
-	if request.OutputFormat != "" && len(capabilities.OutputFormats) > 0 &&
-		!containsString(capabilities.OutputFormats, request.OutputFormat) {
-		return newError(400, "unsupported_image_output_format",
-			fmt.Sprintf("%s supports image output formats: %s", providerName, strings.Join(capabilities.OutputFormats, ", ")))
+	// 格式校验读**有效能力**：上游不支持时网关仍可转码（见 TranscodeResult），
+	// 因此只有「原生与转码都做不到」才拒绝，并把可用格式一并告知客户端。
+	if request.OutputFormat != "" {
+		effective := EffectiveCapability(strategy, request.Model)
+		if !effective.supportsOutputFormat(request.OutputFormat) {
+			return newError(400, "unsupported_image_output_format",
+				fmt.Sprintf("%s supports image output formats: %s", providerName, strings.Join(effective.OutputFormats, ", ")))
+		}
 	}
 	if request.OutputCompression != nil && !capabilities.OutputCompression {
 		return newError(

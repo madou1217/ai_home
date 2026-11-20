@@ -366,7 +366,7 @@
         <tr><td>图像库 SQLITE_BUSY</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">46a0459c 写者预留</td></tr>
         <tr><td>PNG 编码预算</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">dea7669f 每次写入强制预算</td></tr>
         <tr><td>gpt-image-2 needs Respan credits 要查明</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">AWS 真机：有 entitlement 的账号生成成功（3/3，约 9s/张）；无 entitlement 账号被可用性过滤为 503 no_available_account，不再暴露上游 credits 文本</td></tr>
-        <tr><td>网关对 image output format 的支持</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">AWS 真机：agy 声明 png/jpeg 并转码（均 200，webp 明确 400）；gpt-image-2 仅默认 png，jpeg/webp 返回明确不支持（设计如此）</td></tr>
+        <tr><td>图片能力对外透传 + 格式转码</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">能力合同上移到抽象层（文生图/图生图、输入输出格式、数量上限、尺寸、质量）；新增 GET /v1/images/models 直接列出每个模型可交付格式；非原生格式（webp 等）改用 png/jpeg 转码，真实 AWS 产物已验证 png→webp/jpeg；未知厂商先走通用 passthrough</td></tr>
       </tbody>
     </table></div>
   </section>

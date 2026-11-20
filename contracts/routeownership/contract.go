@@ -173,6 +173,14 @@ func Current() Manifest {
 				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/images/edits")},
 			},
 			{
+				// 图片能力目录：只存在于 Go（Node 没有等价端点），客户端据此直接得知
+				// 每个模型可交付的输入/输出格式与数量上限，而不是靠试错发现。
+				ID:              "gateway.images.models",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes:        []Route{httpRoute([]string{"GET"}, "/v1/images/models")},
+			},
+			{
 				ID:              "gateway.vision.blobs",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

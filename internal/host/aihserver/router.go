@@ -209,6 +209,8 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// /v1/images/*：图片生成与编辑，与其它 /v1 路由共用客户端密钥闸门。
 	mux.Handle(imagesapi.GenerationsPath, handlers.images)
 	mux.Handle(imagesapi.EditsPath, handlers.images)
+	// 图片能力目录：与生图入口共用鉴权与 Handler，客户端可直接查询可交付格式。
+	mux.Handle(imagesapi.ModelsPath, handlers.images)
 	mux.Handle(clientpropsapi.Path, handlers.clientProps)
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)

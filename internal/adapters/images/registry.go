@@ -52,12 +52,34 @@ func (registry Registry) Resolve(provider string, account Account) Strategy {
 	}
 	switch normalizeProvider(provider) {
 	case "codex":
-		return registry.codex
+		if !account.APIKeyMode && account.AccessToken != "" {
+			return registry.codex
+		}
+		return registry.passthrough
 	case "agy":
-		return registry.agy
+		if !account.APIKeyMode && account.AccessToken != "" {
+			return registry.agy
+		}
+		return registry.passthrough
 	default:
+		// 通用策略优先：任何厂商只要账号带 OpenAI 兼容 base URL 与密钥，就先按
+		// /v1/images/{generations|edits} 试通（grok、阿里等新接入无需先写专用策略）；
+		// 跑不通再补 Provider 专用实现。
+		if strings.TrimSpace(account.BaseURL) != "" && strings.TrimSpace(account.APIKey) != "" {
+			return registry.passthrough
+		}
 		return NewUnsupportedStrategy(provider)
 	}
+}
+
+// CapabilityCatalog 返回已声明模型的客户端能力事实。
+//
+// 未知厂商走通用透传，其模型集合由上游决定，因此不在静态目录里伪造条目；
+// 客户端对它们应直接请求，由上游给出权威答案。
+func (registry Registry) CapabilityCatalog() []ModelCapability {
+	out := ImageModels(registry.codex)
+	out = append(out, ImageModels(registry.agy)...)
+	return out
 }
 
 // Execution 是一次成功的图片执行。
@@ -163,12 +185,18 @@ func Execute(
 			HTTP:              options.HTTP,
 		})
 		if generateErr == nil {
-			return Execution{
-				Provider: provider,
-				Account:  next,
-				Result:   result,
-				Strategy: strategy,
-			}, nil
+			// 统一格式交付：策略只产原生字节，客户端要的格式在这里转码完成。
+			// 转码失败沿用与上游失败相同的换号/重试判定（400 能力类失败不换号）。
+			transcoded, transcodeErr := TranscodeResult(result, request.OutputFormat, strategy.Capabilities(request.Model))
+			if transcodeErr == nil {
+				return Execution{
+					Provider: provider,
+					Account:  next,
+					Result:   transcoded,
+					Strategy: strategy,
+				}, nil
+			}
+			generateErr = transcodeErr
 		}
 		lastErr = generateErr
 		if options.AttemptFailure != nil {

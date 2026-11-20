@@ -28,6 +28,9 @@ const (
 	GenerationsPath = "/v1/images/generations"
 	// EditsPath 是图片编辑入口。
 	EditsPath = "/v1/images/edits"
+	// ModelsPath 是图片能力目录：把每个模型的可交付能力（文生图/图生图、输入输出格式、
+	// 数量上限、尺寸与质量档位）直接透传给客户端，客户端不再靠试探性 400 发现能力。
+	ModelsPath = "/v1/images/models"
 
 	// DefaultMaxBodyBytes 覆盖多图编辑，同时保持明确内存上限。
 	DefaultMaxBodyBytes int64 = 32 * 1024 * 1024
@@ -97,6 +100,7 @@ type Dependencies struct {
 
 // Handler 负责入口校验、请求归一、编排调用与响应渲染。
 type Handler struct {
+	registry     images.Registry
 	executor     *imageexecution.Executor
 	providers    ProviderResolver
 	authorizer   Authorizer
@@ -148,6 +152,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		RecordTimeout:          recordTimeout,
 	})
 	return &Handler{
+		registry:     dependencies.Registry,
 		executor:     executor,
 		providers:    dependencies.Providers,
 		authorizer:   dependencies.Authorizer,
@@ -177,6 +182,18 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	path := request.URL.Path
+	if path == ModelsPath {
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeError(response, &images.Error{StatusCode: http.StatusMethodNotAllowed, Code: "method_not_allowed", Detail: "Method not allowed"})
+			return
+		}
+		writeJSONResponse(response, map[string]any{
+			"object": "list",
+			"data":   handler.registry.CapabilityCatalog(),
+		})
+		return
+	}
 	if path != GenerationsPath && path != EditsPath {
 		writeError(response, &images.Error{
 			StatusCode: http.StatusNotFound,
@@ -566,6 +583,20 @@ type openAIErrorDetail struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 	Code    string `json:"code"`
+}
+
+// writeJSONResponse 写入禁止缓存的 JSON 成功响应。
+func writeJSONResponse(response http.ResponseWriter, value any) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		http.Error(response, "internal error", http.StatusInternalServerError)
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(http.StatusOK)
+	_, _ = response.Write(encoded)
 }
 
 // writeError 写入禁止缓存的 OpenAI 风格错误。

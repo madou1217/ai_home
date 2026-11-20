@@ -101,13 +101,12 @@ func applyAuthenticationHeaders(
 		return ErrInvalidInvocation
 	}
 	request.Header.Set("Authorization", "Bearer "+auth.token)
-	version := auth.clientVersion
-	if version == "" {
-		version = codexidentity.Floor
+	// 版本只能来自真实观测；拿不到就不下发身份头，绝不自报写死的版本。
+	if version := strings.TrimSpace(auth.clientVersion); version != "" {
+		request.Header.Set("Originator", codexidentity.Originator)
+		request.Header.Set("User-Agent", codexidentity.UserAgent(version))
+		request.Header.Set("Version", version)
 	}
-	request.Header.Set("Originator", codexidentity.Originator)
-	request.Header.Set("User-Agent", codexidentity.UserAgent(version))
-	request.Header.Set("Version", version)
 	if auth.accountID != "" {
 		request.Header.Set("ChatGPT-Account-ID", auth.accountID)
 	}

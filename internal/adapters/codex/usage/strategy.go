@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -50,7 +51,7 @@ var _ usageapp.ProviderSnapshotStrategy = (*Strategy)(nil)
 
 // New 创建不启动 stdio worker 的 Codex 额度 Strategy。
 func New(client HTTPClient) (*Strategy, error) {
-	return NewWithClientVersion(client, clientversion.Static(codexidentity.Floor))
+	return NewWithClientVersion(client, clientversion.Static(""))
 }
 
 // NewWithClientVersion 创建按版本来源自报 Codex 客户端版本的额度 Strategy。
@@ -193,12 +194,12 @@ func newRequest(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+auth.AccessToken())
-	if version == "" {
-		version = codexidentity.Floor
+	// 版本只能来自真实观测；拿不到就不下发身份头，绝不自报写死的版本。
+	if version = strings.TrimSpace(version); version != "" {
+		request.Header.Set("Originator", codexidentity.Originator)
+		request.Header.Set("User-Agent", codexidentity.UserAgent(version))
+		request.Header.Set("Version", version)
 	}
-	request.Header.Set("Originator", codexidentity.Originator)
-	request.Header.Set("User-Agent", codexidentity.UserAgent(version))
-	request.Header.Set("Version", version)
 	if accountID := auth.UpstreamAccountID(); accountID != "" {
 		request.Header.Set("ChatGPT-Account-ID", accountID)
 	}

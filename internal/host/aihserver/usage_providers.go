@@ -21,7 +21,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	clineusage "github.com/madou1217/ai_home/internal/adapters/cline/usage"
 	codebuddyfamilyusage "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/usage"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexusage "github.com/madou1217/ai_home/internal/adapters/codex/usage"
 	geminiusage "github.com/madou1217/ai_home/internal/adapters/gemini/usage"
 	grokusage "github.com/madou1217/ai_home/internal/adapters/grok/usage"
@@ -73,7 +72,7 @@ func usageProviderModules() []usageProviderModule {
 func buildCodexUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
 	source := context.codexVersions
 	if source == nil {
-		source = clientversion.Static(codexidentity.Floor)
+		source = clientversion.Static("")
 	}
 	strategy, err := codexusage.NewWithClientVersion(context.client, source)
 	if err != nil {

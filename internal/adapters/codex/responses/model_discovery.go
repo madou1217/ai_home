@@ -6,7 +6,6 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 // ModelCatalogSource 是 Codex 账号管理写路径使用的远端目录适配器。
@@ -20,7 +19,7 @@ var _ accountapp.ProviderModelDiscoverer = (*ModelCatalogSource)(nil)
 
 // NewModelCatalogSource 创建只供账号管理写路径调用的 Codex 模型发现适配器。
 func NewModelCatalogSource(client HTTPClient) (*ModelCatalogSource, error) {
-	return NewModelCatalogSourceWithClientVersion(client, clientversion.Static(codexidentity.Floor))
+	return NewModelCatalogSourceWithClientVersion(client, clientversion.Static(""))
 }
 
 // NewModelCatalogSourceWithClientVersion 创建按版本来源请求目录的发现适配器。

@@ -75,7 +75,7 @@ type Dialer struct {
 
 // NewDialer 创建默认失败关闭的 Codex Responses WebSocket Dialer。
 func NewDialer(client *http.Client) (*Dialer, error) {
-	return NewDialerWithClientVersion(client, clientversion.Static(codexidentity.Floor))
+	return NewDialerWithClientVersion(client, clientversion.Static(""))
 }
 
 // NewDialerWithClientVersion 创建兜底身份按版本来源自报的 Dialer。
@@ -237,12 +237,12 @@ func projectHandshakeHeaders(source http.Header, fallbackVersion string) http.He
 			destination[name] = values
 		}
 	} else {
-		if fallbackVersion == "" {
-			fallbackVersion = codexidentity.Floor
+		// 版本只能来自真实观测；拿不到就不下发身份头，绝不自报写死的版本。
+		if version := strings.TrimSpace(fallbackVersion); version != "" {
+			destination.Set("Originator", codexidentity.Originator)
+			destination.Set("User-Agent", codexidentity.UserAgent(version))
+			destination.Set("Version", version)
 		}
-		destination.Set("Originator", codexidentity.Originator)
-		destination.Set("User-Agent", codexidentity.UserAgent(fallbackVersion))
-		destination.Set("Version", fallbackVersion)
 	}
 	// 递增而不是写死 1：对端据此判断这条链还能不能再往下转（见 MaxRelayHops）。
 	destination.Set(HopHeader, strconv.Itoa(RelayHop(source)+1))

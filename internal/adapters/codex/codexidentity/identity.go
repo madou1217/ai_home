@@ -18,15 +18,9 @@ import (
 const (
 	// Provider 是版本学习存储中的键。
 	Provider = "codex"
-	// Floor 是编译期兜底下限：显式配置、本机 CLI 探测、真实客户端学习都拿不到版本时，
-	// 网关用这个值自报身份。请求形状由 Adapter 按模型选择（Responses Lite / freeform
-	// 工具见 requestProfileForModel），与身份版本解耦，所以这里表达的是「已知可用的
-	// 最低身份」，不是编码器形状的版本锁。
-	//
-	// 0.167.2 是 2026-11-13 线上真实流量验证过的版本（Node 路径按该版本服务
-	// gpt-6.1-*）；0.158.0 是编码器形状的实测基线，记录在 responses 包的注释里。
-	// 不再用 0.158.0 兜底：它低于 gpt-6.1 的目录门槛（实测 <0.159 必回 400）。
-	Floor = "0.167.2"
+	// 这里**没有**编译期兜底版本：版本只来自显式配置、本机 CLI 探测或真实客户端
+	// 学习。写死的兜底会随官方 CLI 升级而过时（早于目录门槛还会被上游 400 拒绝），
+	// 取不到版本时调用方不下发身份头，而不是自报一个假版本。
 	// Originator 是网关自报的调用来源；与官方 Codex HTTP Client 默认值一致，只替换版本。
 	Originator = "codex_cli_rs"
 	// ConfiguredVersionEnv 允许人工锁定版本（与 Node 宿主同名）。
@@ -40,17 +34,17 @@ var codexOriginatorPattern = regexp.MustCompile(`^codex_[a-z0-9_]{1,48}$`)
 
 // UserAgent 返回网关模拟 Codex 客户端时的 User-Agent。
 func UserAgent(version string) string {
-	if version == "" {
-		version = Floor
+	value := strings.TrimSpace(version)
+	if value == "" {
+		return ""
 	}
-	return Originator + "/" + version
+	return Originator + "/" + value
 }
 
 // NewResolver 创建 Codex 客户端版本解析器；learned / probeCache 为 nil 时只在内存中生效。
 func NewResolver(learned *clientversion.LearnedStore, probeCache *clientversion.ProbeCache) (*clientversion.Resolver, error) {
 	return clientversion.NewResolver(clientversion.ResolverOptions{
 		Provider:      Provider,
-		Floor:         Floor,
 		Configured:    os.Getenv(ConfiguredVersionEnv),
 		ProbeCommands: probeCommands(),
 		ProbeInterval: probeInterval,

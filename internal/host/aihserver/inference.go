@@ -22,7 +22,6 @@ import (
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
@@ -157,7 +156,8 @@ func newInferenceComposition(
 	if dependencies.accountEgress != nil {
 		client = newEgressAwareInferenceClient(client)
 	}
-	var codexVersions clientversion.Source = clientversion.Static(codexidentity.Floor)
+	// 没有编译期兜底版本：未注入解析器时 Current 为空，适配器不下发身份头。
+	var codexVersions clientversion.Source = clientversion.Static("")
 	if dependencies.codexVersions != nil {
 		codexVersions = dependencies.codexVersions
 	}

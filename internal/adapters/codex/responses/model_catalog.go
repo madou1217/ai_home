@@ -16,7 +16,6 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 const (
@@ -183,12 +182,11 @@ func modelsEndpoint(auth authProjection) (string, error) {
 	if auth.kind == codexauth.AuthKindOAuth {
 		query := parsed.Query()
 		// OAuth 目录按 client_version 过滤模型：写死旧版本会让新模型（gpt-6-*）永远不可见。
-		version := auth.clientVersion
-		if version == "" {
-			version = codexidentity.Floor
+		// 只按真实观测到的版本过滤；拿不到就不带该参数，而不是用一个过期版本。
+		if version := strings.TrimSpace(auth.clientVersion); version != "" {
+			query.Set("client_version", version)
+			parsed.RawQuery = query.Encode()
 		}
-		query.Set("client_version", version)
-		parsed.RawQuery = query.Encode()
 	}
 	return parsed.String(), nil
 }

@@ -17,7 +17,6 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -54,7 +53,7 @@ var _ inferencegateway.UpstreamAdapter = (*Adapter)(nil)
 
 // NewAdapter 创建显式注入 HTTP Client 和时钟的 Adapter。
 func NewAdapter(client HTTPClient, clock Clock) (*Adapter, error) {
-	return NewAdapterWithClientVersion(client, clock, clientversion.Static(codexidentity.Floor))
+	return NewAdapterWithClientVersion(client, clock, clientversion.Static(""))
 }
 
 // NewAdapterWithClientVersion 创建按版本来源自报 Codex 客户端版本的 Adapter。

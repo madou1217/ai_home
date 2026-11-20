@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/madou1217/ai_home/core/accounts/codex"
 )
 
 // codexUsageProbeEnv 是 Codex 额度探针的运维上下文，与 Node 的
@@ -14,8 +16,8 @@ const codexUsageProbeEnv = "AIH_CODEX_USAGE_PROBE"
 const (
 	// defaultUsagePath 是官方 rate-limit 端点路径。
 	defaultUsagePath = "/wham/usage"
-	// chatGPTBackendBaseURL 是 /wham/* 系列路径挂载的根。
-	chatGPTBackendBaseURL = "https://chatgpt.com/backend-api"
+	// chatGPTBackendBaseURL 是 /wham/* 系列路径挂载的根（与 Codex OAuth 基址同源）。
+	chatGPTBackendBaseURL = codex.ChatGPTBackendBaseURL
 )
 
 // probeField 读取探针上下文里的一个字段；缺失返回空串。

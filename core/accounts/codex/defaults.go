@@ -2,11 +2,15 @@ package codex
 
 import "sync"
 
+// ChatGPTBackendBaseURL 是 ChatGPT 后端根；/wham/* 额度端点与 Codex OAuth
+// 推理面都挂在它下面，只是前缀不同。
+const ChatGPTBackendBaseURL = "https://chatgpt.com/backend-api"
+
 // DefaultOAuthBaseURL 是 Codex OAuth 账号未配置过程级兜底时使用的官方地址。
 //
 // 与 API Key 的 DefaultAPIBaseURL 刻意分开：OAuth 的推理面挂在 chatgpt.com
 // 的 backend-api/codex 前缀下，而 API Key 走 api.openai.com/v1。
-const DefaultOAuthBaseURL = "https://chatgpt.com/backend-api/codex"
+const DefaultOAuthBaseURL = ChatGPTBackendBaseURL + "/codex"
 
 var (
 	defaultBaseURLMu      sync.RWMutex

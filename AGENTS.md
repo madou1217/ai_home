@@ -48,6 +48,10 @@
   - Background: on 2026-08-14 a session aborted a conflicting rebase and then ran `reset --hard origin/main`, silently dropping 13 local commits (~17k insertions, including the full kimi integration) plus leaving a 3k-line stash. Recovery cost far exceeded the merge it was trying to avoid.
 - When multiple agent sessions share this repository, each session must assume another session may hold unpushed commits; check `git reflog` for recent `reset`/`rebase` operations before rewriting history, and never reset past commits you did not create.
 - **提交时必须带 pathspec（本仓库实测教训，2026-10-16）**：并行会话经常把文件留在**暂存区**，`git commit` 会把它们一并带走（表现为提交里混入不相干的文件、提交信息对不上）。因此一律用 `git commit -m <msg> -- <显式路径...>`（或先 `git add -- <路径>` 后 `git commit -- <路径>`），**禁止裸 `git commit` / `git add -A`**。已经混入的提交不要用 rebase/reset 去"修正"（那是破坏性历史操作，见上），在当次汇报里如实说明即可。
+
+- **共享工作区必须安装提交守卫（2026-11-21）**：索引可能被其他会话写成旧树，此时暂存区相对 HEAD 是一批反向 diff，裸 `git commit` 会直接回退最近的开发（实测一次 140 文件、-6111 行）。版本库提供 `scripts/git-hooks/pre-commit`：当提交会删除「最近 100 个提交里改过的文件」或涉及超过 120 个文件时中止提交。安装（每个 clone 一次）：
+  `cp scripts/git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`
+  确属真实删除/大改时用 `AIH_ALLOW_RECENT_DELETE=1` 或 `AIH_ALLOW_BULK_COMMIT=1` 显式放行。发现暂存区异常时先 `git diff --cached --stat` 核对，必要时 `git reset`（mixed，只重置索引，不动工作区）后按 pathspec 重新暂存。
 - **提交前后必须核对暂存区内容（2026-10-23 两次事故）**：`git diff --cached --stat` 是提交前的**强制步骤**——文件数与行数要对得上这次改的范围，对不上就停下查，不要提交。两次事故都不是裸 commit：
   - 用 `GIT_INDEX_FILE` 临时索引准备提交后，又跑了一次**不带临时索引**的 `git commit --amend`（改提交信息）；amend 重新读取了主索引，于是把并行会话暂存的反向 diff 提交并推送了出去（37 个文件被回退，自己的改动反而没进去）。
   - 并行会话的 `git add -A` 把工作区里**过时的旧文件**一起暂存，提交时把另一条工作线整个 revert 掉（48 个文件、-2093 行）。

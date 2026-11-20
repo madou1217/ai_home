@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# AIH 共享工作区提交守卫。
+#
+# 背景：多个会话共享同一工作树。某个会话如果在一份「指向旧树的索引」上直接
+# `git commit`，暂存区相对 HEAD 的反向 diff 就会被当成真实改动提交，直接回退
+# 最近的开发（实测出现过一次 140 个文件、-6111 行的提交）。
+#
+# 本钩子不自动修复索引，只在两种高危形态上中止提交，并打印可疑路径，由提交者
+# 确认后显式放行：
+#
+#   1. 提交会删除「最近 100 个提交里改动过」的文件；
+#   2. 单次提交涉及超过 120 个文件。
+#
+# 放行方式：
+#   AIH_ALLOW_RECENT_DELETE=1 git commit ...
+#   AIH_ALLOW_BULK_COMMIT=1  git commit ...
+#
+# 安装：
+#   cp scripts/git-hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+
+set -u
+
+status=0
+
+# 1. 最近提交里改过的文件被成批删除
+if [ -z "${AIH_ALLOW_RECENT_DELETE:-}" ]; then
+  deleted=$(git diff --cached --name-only --diff-filter=D 2>/dev/null || true)
+  if [ -n "$deleted" ]; then
+    recent=$(git log -100 --name-only --pretty=format: 2>/dev/null | sed '/^$/d' | sort -u)
+    hits=0
+    sample=""
+    for path in $deleted; do
+      if printf '%s\n' "$recent" | grep -Fxq -- "$path"; then
+        hits=$((hits + 1))
+        if [ "$hits" -le 8 ]; then
+          sample="$sample
+  $path"
+        fi
+      fi
+    done
+    if [ "$hits" -gt 0 ]; then
+      status=1
+      printf '\n[pre-commit] 拒绝提交：这次提交会删除 %d 个最近 100 个提交里改动过的文件。\n' "$hits" >&2
+      printf '可疑路径（最多 8 条）：%s\n' "$sample" >&2
+      printf '这通常意味着暂存区来自旧索引（反向 diff），而不是真实的删除。\n' >&2
+      printf '请先核对 git diff --cached，确认真实删除后用 AIH_ALLOW_RECENT_DELETE=1 重试。\n\n' >&2
+    fi
+  fi
+fi
+
+# 2. 超大提交
+if [ -z "${AIH_ALLOW_BULK_COMMIT:-}" ]; then
+  changed=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${changed:-0}" -gt 120 ]; then
+    status=1
+    printf '\n[pre-commit] 拒绝提交：本次提交涉及 %s 个文件（上限 120）。\n' "$changed" >&2
+    printf '共享工作区里的大提交很容易把其他会话的暂存内容带走。\n' >&2
+    printf '请拆成 scoped commit；确认无误后用 AIH_ALLOW_BULK_COMMIT=1 重试。\n\n' >&2
+  fi
+fi
+
+exit "$status"

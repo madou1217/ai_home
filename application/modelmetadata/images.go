@@ -23,6 +23,9 @@ var (
 //
 // 只登记有实测证据的厂商形态：codex 只暴露专用 Images 模型的 gpt-image-2，
 // grok 走 grok-imagine-image 系列，agy/gemini 走 Gemini 原生 image 与 nano-banana。
+//
+// 这些归属是「厂商实际暴露了哪些模型族」的实测结论，无法从 manifest 的 Provider
+// 声明推导；新增厂商或模型族必须先取证再登记，不要为了统一而改成合同字段或通配规则。
 func ProviderOwnsImageModel(providerID, modelID string) bool {
 	provider := strings.ToLower(strings.TrimSpace(providerID))
 	model := strings.ToLower(strings.TrimSpace(modelID))

@@ -447,6 +447,14 @@ func (handler *Handler) handleJob(response http.ResponseWriter, request *http.Re
 // agy 只有显式选择 native-cli 才走 CLI（默认是 Go 直连 Google OAuth）；
 // qoder/grok/kimi/cline/CodeBuddy 家族的浏览器登录本来就是官方 CLI 流程，
 // 由 aihloginjob 统一承载，不再要求 Node 本地作业。
+// shouldUseCLILogin 判断该 Provider 的注册是否走 CLI 登录作业。
+//
+// 这里的名单是**产品允许列表**：只有已接入 loginJobs 的 Provider 才能走原生 CLI
+// 登录。loginJobs 提供 Supports 时以它的探测为准；未提供时名单内按支持处理
+// （保持旧行为）。codex 的 oauth-device 是设备码特例，单独判断。
+//
+// 它不是 manifest 能声明的事实——同一 Provider 在不同部署里可能没有 loginJobs——
+// 所以不要改成合同字段或通用注册表。
 func (handler *Handler) shouldUseCLILogin(provider, authMode, strategy string) bool {
 	if handler.loginJobs == nil {
 		return false

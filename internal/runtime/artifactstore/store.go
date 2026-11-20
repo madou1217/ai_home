@@ -44,9 +44,12 @@ type Request struct {
 
 // PruneOptions 控制旧版本回收；由 Node 传入保留策略，Go 执行。
 type PruneOptions struct {
-	KeepVersions int    `json:"keepVersions"`
-	TrashDir     string `json:"trashDir"`
-	GraceDays    int    `json:"graceDays"`
+	KeepVersions  int      `json:"keepVersions"`
+	TrashDir      string   `json:"trashDir"`
+	GraceDays     int      `json:"graceDays"`
+	LogMaxAgeDays int      `json:"logMaxAgeDays"`
+	LogDirNames   []string `json:"logDirNames"`
+	LogParents    []string `json:"logParents"`
 }
 
 // Artifact 是一个待共享的版本构件。
@@ -729,9 +732,85 @@ func pruneVersions(request Request, response *Response) {
 			_ = cli
 		}
 	}
+	pruneLogs(request, response)
 	if strings.TrimSpace(options.TrashDir) != "" {
 		response.Emptied += emptyTrash(options.TrashDir, options.GraceDays)
 	}
+}
+
+// pruneLogs 对齐 Node：只扫 projection/<parent>/<traces|logs> 的直接子项；
+// 修改时间与访问时间取较新者；目录内任何子文件较新都保留整个目录。
+func pruneLogs(request Request, response *Response) {
+	options := request.Prune
+	if options == nil || options.LogMaxAgeDays <= 0 || strings.TrimSpace(request.ProjectionRoot) == "" {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(options.LogMaxAgeDays) * 24 * time.Hour)
+	parents := options.LogParents
+	if len(parents) == 0 {
+		parents = []string{".codebuddy-cn", ".codebuddy", ".workbuddy-ai", ".workbuddy", ".qoder", ".qoder-cn"}
+	}
+	names := options.LogDirNames
+	if len(names) == 0 {
+		names = []string{"traces", "logs"}
+	}
+	for _, parent := range parents {
+		for _, name := range names {
+			directory := filepath.Join(request.ProjectionRoot, parent, name)
+			entries, err := os.ReadDir(directory)
+			if err != nil {
+				continue
+			}
+			for _, entry := range entries {
+				target := filepath.Join(directory, entry.Name())
+				info, err := entry.Info()
+				if err != nil {
+					continue
+				}
+				if !lastActivity(info).Before(cutoff) {
+					continue
+				}
+				if entry.IsDir() && directoryRecentlyWritten(target, cutoff) {
+					continue
+				}
+				size := treeSize(target)
+				if err := moveToTrash(target, options.TrashDir); err != nil {
+					response.Errors = append(response.Errors, fmt.Sprintf("trash %s: %v", target, err))
+					response.OK = false
+					continue
+				}
+				response.Pruned = append(response.Pruned, PrunedVersion{Path: target, Reason: "stale-" + name, SizeBytes: size})
+			}
+		}
+	}
+}
+
+func directoryRecentlyWritten(directory string, cutoff time.Time) bool {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return true
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if !lastActivity(info).Before(cutoff) {
+			return true
+		}
+		if entry.IsDir() && directoryRecentlyWritten(filepath.Join(directory, entry.Name()), cutoff) {
+			return true
+		}
+	}
+	return false
+}
+
+func lastActivity(info os.FileInfo) time.Time {
+	last := info.ModTime()
+	if accessed := accessTime(info); accessed.After(last) {
+		last = accessed
+	}
+	return last
 }
 
 func moveToTrash(target, trashDir string) error {
@@ -744,9 +823,16 @@ func moveToTrash(target, trashDir string) error {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
-	stamp := strings.NewReplacer(":", "-", ".", "-").Replace(time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+	now := time.Now()
+	stamp := strings.NewReplacer(":", "-", ".", "-").Replace(now.UTC().Format("2006-01-02T15:04:05.000Z"))
 	destination := filepath.Join(root, fmt.Sprintf("%s-%s-%d", stamp, filepath.Base(target), os.Getpid()))
-	return os.Rename(target, destination)
+	if err := os.Rename(target, destination); err != nil {
+		return err
+	}
+	// 回收站宽限期从"移入时间"算，不能沿用源目录的旧 mtime；否则旧日志/旧版本
+	// 会在同一次 GC 里被立刻清掉，宽限期形同虚设。
+	_ = os.Chtimes(destination, now, now)
+	return nil
 }
 
 func emptyTrash(trashDir string, graceDays int) int {

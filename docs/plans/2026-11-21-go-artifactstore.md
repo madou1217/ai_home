@@ -38,7 +38,14 @@
 - 实测：3 个版本的投影在 Go 后端下保留 2 个、最旧版本进 trash；把 trash 变旧后再跑一次，
   Go 清空 2 个条目。`AIH_ARTIFACT_BACKEND=node` 的本地回退也验证通过。
 
+## 日志回收（2026-11-21 已迁移）
+
+- Go 扫描 `projection/<parent>/<traces|logs>` 的直接子项，修改时间与访问时间取较新者；
+  目录内任何子文件较新整目录保留；过期项移入同一个 trash。
+- 回收站宽限期改为从**移入时间**起算（rename 会保留源目录旧 mtime，Node/Go 都修了），
+  否则旧日志/旧版本会在同一次 GC 中被立即清掉。
+
 ## 尚未迁移
 
-- 版本发现、缓存链接（`shared-host-caches`）、日志回收与库存树 GC 仍在 Node；
+- 版本发现、缓存链接（`shared-host-caches`）与库存树 GC 仍在 Node；
   Node 只保留策略输入，文件系统动作逐步收口到 Go。

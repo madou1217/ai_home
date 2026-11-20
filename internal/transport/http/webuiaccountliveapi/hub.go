@@ -793,7 +793,7 @@ func (hub *Hub) usageThresholdPct(ctx context.Context) int {
 	if err != nil {
 		return 95
 	}
-	raw, found, err := appstate.ReadKV(ctx, dbPath, "config:usage")
+	raw, found, err := appstate.ReadKV(ctx, dbPath, appstate.KeyUsageConfig)
 	if err != nil || !found || strings.TrimSpace(raw) == "" {
 		return 95
 	}

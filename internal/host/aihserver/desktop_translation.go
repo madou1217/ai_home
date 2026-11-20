@@ -33,7 +33,7 @@ func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, cha
 		LargePasteChars: func() int {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			raw, found, err := appstate.ReadKV(ctx, database, "config:server")
+			raw, found, err := appstate.ReadKV(ctx, database, appstate.KeyServerConfig)
 			if err != nil || !found {
 				return 200
 			}

@@ -29,9 +29,9 @@ const (
 	defaultServerAPIKey    = "dummy"
 	defaultCodexAPIBaseURL = "https://api.openai.com/v1"
 
-	providerDefaultCodexKey = "provider:default:codex"
-	accountDefaultCodexKey  = "account:default:codex"
-	serverConfigKey         = "config:server"
+	providerDefaultCodexKey = appstate.KeyCodexProviderDefault
+	accountDefaultCodexKey  = appstate.KeyCodexAccountDefault
+	serverConfigKey         = appstate.KeyServerConfig
 	codexProviderID         = "codex"
 )
 

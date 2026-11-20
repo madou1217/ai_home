@@ -26,7 +26,7 @@ import (
 
 const (
 	// ServerConfigKey is the shared app_kv key for server settings.
-	ServerConfigKey = "config:server"
+	ServerConfigKey = appstate.KeyServerConfig
 	// AccountOverrideKeyPrefix is the app_kv prefix for per-account 429 retry overrides.
 	AccountOverrideKeyPrefix = "account:upstream-429-retry:"
 	// defaultRefreshInterval bounds external CLI/Node write visibility even when

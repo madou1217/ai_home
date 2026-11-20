@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	serverConfigKey = "config:server"
+	serverConfigKey = appstate.KeyServerConfig
 	goAccountsDB    = "aih.db"
 )
 

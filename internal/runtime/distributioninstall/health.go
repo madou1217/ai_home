@@ -22,7 +22,7 @@ import (
 )
 
 // serverConfigKey 是服务端配置在 aih.db KV 里的键（与 Node 同键）。
-const serverConfigKey = "config:server"
+const serverConfigKey = appstate.KeyServerConfig
 
 type config struct {
 	Port          int    `json:"port"`

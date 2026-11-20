@@ -6,7 +6,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
-const serverConfigKey = "config:server"
+const serverConfigKey = appstate.KeyServerConfig
 
 // Source 只读 app-state.db 的 server 配置。
 type Source struct {

@@ -23,7 +23,7 @@ const (
 	// usageThresholdReadTimeout 限制门禁读配置的最长阻塞；失败沿用上一份值。
 	usageThresholdReadTimeout = 2 * time.Second
 	// usageConfigKey 是 Node 的 config:usage 键（lib/usage/config-store.js）。
-	usageConfigKey = "config:usage"
+	usageConfigKey = appstate.KeyUsageConfig
 )
 
 // usageSchedulingGate 把额度服务暴露成征召器的请求前门禁。

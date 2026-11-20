@@ -104,7 +104,7 @@ func readProxyManagementConfig(environment Environment, aiHome string) (proxyMan
 	if baseEnv == "" || keyEnv == "" {
 		if path, err := appstate.DatabasePath(aiHome); err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), completionDBTimeout)
-			raw, found, readErr := appstate.ReadKV(ctx, path, "config:server")
+			raw, found, readErr := appstate.ReadKV(ctx, path, appstate.KeyServerConfig)
 			cancel()
 			if readErr == nil && found && strings.TrimSpace(raw) != "" {
 				var document struct {

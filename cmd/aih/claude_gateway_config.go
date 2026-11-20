@@ -39,7 +39,7 @@ func withClaudeGatewayConfig(ctx context.Context, command commandRuntime) (comma
 	if err != nil {
 		return command, err
 	}
-	raw, found, err := appstate.ReadKV(ctx, path, "config:server")
+	raw, found, err := appstate.ReadKV(ctx, path, appstate.KeyServerConfig)
 	if err != nil || !found {
 		return command, nil
 	}

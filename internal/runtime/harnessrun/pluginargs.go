@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/nativeresources"
 )
 
 // 外部宿主（pi / deepseek）的插件承载能力。
@@ -31,7 +32,7 @@ var hostPluginCapabilities = map[string]hostPluginCapability{
 	"deepseek": {LaunchArgument: "--patch", LaunchFromInstall: true, Adapter: "cordis-patch"},
 }
 
-const managedStateKVKey = "native-resources.managed.v1"
+const managedStateKVKey = nativeresources.ManagedStoreKVKey
 
 var (
 	errHostPluginProjectionModified = errors.New("native_plugin_runtime_projection_modified")

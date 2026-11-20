@@ -37,7 +37,7 @@ func Read(ctx context.Context, aiHomeDir string, lookupEnv func(string) (string,
 	if err != nil {
 		return Connection{}, err
 	}
-	raw, found, err := appstate.ReadKV(ctx, databasePath, "config:server")
+	raw, found, err := appstate.ReadKV(ctx, databasePath, appstate.KeyServerConfig)
 	if err != nil {
 		return Connection{}, fmt.Errorf("codex_gateway_config_read_failed")
 	}

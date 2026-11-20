@@ -48,7 +48,7 @@ func runTerminalSessionsEntry(ctx context.Context, args []string, command comman
 	// key, leave missing/unreadable optional configuration to the original env.
 	database, pathErr := appstate.DatabasePath(absolute)
 	if pathErr == nil {
-		raw, found, readErr := appstate.ReadKV(ctx, database, "config:server")
+		raw, found, readErr := appstate.ReadKV(ctx, database, appstate.KeyServerConfig)
 		if readErr == nil && found {
 			var config struct {
 				ManagementKey string          `json:"managementKey"`

@@ -341,7 +341,7 @@ func readPersistedServerConfig(aiHomeDir string) persistedServerConfig {
 	if err != nil {
 		return persistedServerConfig{}
 	}
-	raw, found, err := appstate.ReadKV(context.Background(), databasePath, "config:server")
+	raw, found, err := appstate.ReadKV(context.Background(), databasePath, appstate.KeyServerConfig)
 	if err != nil || !found {
 		return persistedServerConfig{}
 	}

@@ -921,7 +921,7 @@ func (s *ManagementService) UsageConfigThresholdPct(ctx context.Context) int {
 	if err != nil {
 		return DefaultUsageThresholdPct
 	}
-	raw, found, err := appstate.ReadKV(ctx, dbPath, "config:usage")
+	raw, found, err := appstate.ReadKV(ctx, dbPath, appstate.KeyUsageConfig)
 	if err != nil || !found || strings.TrimSpace(raw) == "" {
 		return DefaultUsageThresholdPct
 	}

@@ -10,12 +10,13 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
 	modelCandidateLimit      = 200
 	modelAliasCandidateLimit = 800
-	modelsSnapshotKey        = "cache:webui-models-snapshot.json"
+	modelsSnapshotKey        = webuimodelssnapshot.CacheKey
 )
 
 type modelAliasRow struct {

@@ -7,7 +7,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
-const usageConfigKey = "config:usage"
+const usageConfigKey = appstate.KeyUsageConfig
 
 // Source 只读 app-state.db 的用量配置。
 type Source struct {

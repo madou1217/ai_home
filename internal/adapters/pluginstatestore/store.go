@@ -21,6 +21,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/madou1217/ai_home/application/plugincontrol"
+	"github.com/madou1217/ai_home/application/pluginruntime"
 	"github.com/madou1217/ai_home/internal/adapters/accountmaintenance"
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/pluginerr"
@@ -28,7 +29,7 @@ import (
 
 const (
 	// ControlStateKey 是 Node 插件控制面在 app_kv 里的键。
-	ControlStateKey = "plugins.control.v1"
+	ControlStateKey = pluginruntime.ControlStateKey
 	// DatabaseFileName 是 Node app-state-store 的数据库文件名。
 	DatabaseFileName = "aih.db"
 	// maxStateBytes 与 application/pluginruntime.MaxControlStateBytes 一致。

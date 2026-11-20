@@ -27,6 +27,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"io"
 	"net/http"
 	"strings"
@@ -51,7 +52,7 @@ const (
 	generatedKeyBytes = 32
 
 	// serverConfigKey 是 Node app-state 里 server 配置的唯一持久化键。
-	serverConfigKey = "config:server"
+	serverConfigKey = appstate.KeyServerConfig
 
 	managementKeyField = "managementKey"
 )

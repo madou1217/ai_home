@@ -17,7 +17,9 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
-const managedStoreKVKey = "native-resources.managed.v1"
+// ManagedStoreKVKey 是托管资源（plugin / skill / mcp）状态在 app_kv 里的键。
+// 由本包拥有：其它读同一槽状态的包一律引用这里，不再各写一份字面量。
+const ManagedStoreKVKey = "native-resources.managed.v1"
 
 // DomainError 描述原生资源管理领域错误，供 HTTP 层映射准确状态码。
 type DomainError struct {
@@ -126,7 +128,7 @@ func (s *managedStore) get(ctx context.Context) (ManagedState, error) {
 	if err != nil {
 		return emptyManagedState(), err
 	}
-	raw, found, err := appstate.ReadKV(ctx, dbPath, managedStoreKVKey)
+	raw, found, err := appstate.ReadKV(ctx, dbPath, ManagedStoreKVKey)
 	if err != nil {
 		return emptyManagedState(), err
 	}
@@ -139,7 +141,7 @@ func (s *managedStore) update(ctx context.Context, mutate func(state *ManagedSta
 		return nil, err
 	}
 	var result any
-	err = appstate.UpdateKV(ctx, dbPath, managedStoreKVKey, func(current string, found bool) (string, error) {
+	err = appstate.UpdateKV(ctx, dbPath, ManagedStoreKVKey, func(current string, found bool) (string, error) {
 		st, err := decodeManagedState(current, found)
 		if err != nil {
 			return "", err

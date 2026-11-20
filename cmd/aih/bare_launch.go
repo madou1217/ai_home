@@ -123,7 +123,7 @@ func resolveManagementKey(aiHomeDir string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	raw, found, err := appstate.ReadKV(ctx, databasePath, "config:server")
+	raw, found, err := appstate.ReadKV(ctx, databasePath, appstate.KeyServerConfig)
 	if err != nil || !found {
 		return ""
 	}

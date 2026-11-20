@@ -120,7 +120,7 @@ func resolveServerPort(ctx context.Context, home string, runtime commandRuntime)
 	if err != nil {
 		return serverconfig.DefaultPort
 	}
-	raw, found, err := appstate.ReadKV(ctx, path, "config:server")
+	raw, found, err := appstate.ReadKV(ctx, path, appstate.KeyServerConfig)
 	if err != nil || !found {
 		return serverconfig.DefaultPort
 	}

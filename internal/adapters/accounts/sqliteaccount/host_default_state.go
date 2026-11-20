@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 // HostDefaultState is a versioned recovery preimage. Account selection is read
@@ -33,7 +34,7 @@ func hostStateAt(ctx context.Context, connection *sql.Conn) (HostDefaultState, e
 	for _, item := range []struct {
 		key   string
 		value *string
-	}{{"provider:default:codex", &out.Profile}, {"owner:default:codex", &out.Owner}, {"account:default:codex", &out.Legacy}} {
+	}{{appstate.KeyCodexProviderDefault, &out.Profile}, {"owner:default:codex", &out.Owner}, {appstate.KeyCodexAccountDefault, &out.Legacy}} {
 		var raw string
 		err := connection.QueryRowContext(ctx, "SELECT value FROM main.app_kv WHERE key=?", item.key).Scan(&raw)
 		if errors.Is(err, sql.ErrNoRows) {

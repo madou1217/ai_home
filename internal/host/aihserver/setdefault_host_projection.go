@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/serverconfig"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/claude"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/kimi"
@@ -85,7 +86,7 @@ func readHostProjectionServerConfig(aiHomeDir string) hostProjectionServerConfig
 	if err != nil {
 		return config
 	}
-	raw, found, err := appstate.ReadKV(context.Background(), databasePath, "config:server")
+	raw, found, err := appstate.ReadKV(context.Background(), databasePath, appstate.KeyServerConfig)
 	if err != nil || !found {
 		return config
 	}
@@ -109,7 +110,7 @@ func readHostProjectionModels(aiHomeDir string) []string {
 	if err != nil {
 		return nil
 	}
-	raw, found, err := appstate.ReadKV(context.Background(), databasePath, "cache:webui-models-snapshot.json")
+	raw, found, err := appstate.ReadKV(context.Background(), databasePath, webuimodelssnapshot.CacheKey)
 	if err != nil || !found || raw == "" {
 		return nil
 	}

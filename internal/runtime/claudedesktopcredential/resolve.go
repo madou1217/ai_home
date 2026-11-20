@@ -47,7 +47,7 @@ func Resolve(ctx context.Context, aiHomeDir string) (Credential, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		return failure("desktop_credential_store_unavailable")
 	}
-	raw, found, err := appstate.ReadKV(ctx, database, "config:server")
+	raw, found, err := appstate.ReadKV(ctx, database, appstate.KeyServerConfig)
 	if err != nil {
 		return failure("desktop_credential_store_unavailable")
 	}

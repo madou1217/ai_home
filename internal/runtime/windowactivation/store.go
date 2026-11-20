@@ -16,7 +16,7 @@ const (
 	// StateKeyPrefix 是账号窗口账本与最近探测状态的 app_kv 键前缀。
 	StateKeyPrefix = "account:window-activation-state:"
 	// ServerConfigKVKey 是 `aih server config set` 写入的服务器全局配置键。
-	ServerConfigKVKey = "config:server"
+	ServerConfigKVKey = appstate.KeyServerConfig
 
 	// DefaultIntervalMs 默认兜底探测间隔（1 小时）。
 	DefaultIntervalMs int64 = 60 * 60 * 1000

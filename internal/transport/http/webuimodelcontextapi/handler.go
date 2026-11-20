@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
@@ -33,7 +34,7 @@ const (
 	Path = "/v1/management/webui/accounts"
 
 	overrideKey = "config:model-context-overrides"
-	snapshotKey = "cache:webui-models-snapshot.json"
+	snapshotKey = webuimodelssnapshot.CacheKey
 
 	minContextTokens = 1024
 	maxContextTokens = 2000000

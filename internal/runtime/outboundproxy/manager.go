@@ -413,7 +413,7 @@ func Watch(ctx context.Context, manager *Manager, aiHomeDir string, initialRaw s
 			return
 		case <-ticker.C:
 		}
-		raw, found, readErr := appstate.ReadKV(ctx, databasePath, "config:server")
+		raw, found, readErr := appstate.ReadKV(ctx, databasePath, appstate.KeyServerConfig)
 		if readErr != nil || !found {
 			continue
 		}

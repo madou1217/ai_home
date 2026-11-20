@@ -383,7 +383,7 @@ func (handler *Handler) resolveStatusExtras(ctx context.Context) StatusExtras {
 	}
 	if extras.Strategy == "round-robin" && handler.aiHomeDir != "" {
 		if dbPath, err := appstate.DatabasePath(handler.aiHomeDir); err == nil {
-			if raw, found, readErr := appstate.ReadKV(ctx, dbPath, "config:server"); readErr == nil && found {
+			if raw, found, readErr := appstate.ReadKV(ctx, dbPath, appstate.KeyServerConfig); readErr == nil && found {
 				var cfg struct {
 					Strategy string `json:"strategy"`
 				}

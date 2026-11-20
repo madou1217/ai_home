@@ -198,7 +198,7 @@ func upstreamDefaultsFromEnvAndConfig() upstreamdefaults.Defaults {
 		GeminiBaseURL string `json:"geminiBaseUrl"`
 	}{}
 	if databasePath, err := appstate.DatabasePath(home); err == nil {
-		if raw, found, readErr := appstate.ReadKV(context.Background(), databasePath, "config:server"); readErr == nil && found {
+		if raw, found, readErr := appstate.ReadKV(context.Background(), databasePath, appstate.KeyServerConfig); readErr == nil && found {
 			_ = json.Unmarshal([]byte(raw), &stored)
 		}
 	}

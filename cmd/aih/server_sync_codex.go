@@ -210,7 +210,7 @@ func readServerConfigForSync(ctx context.Context, home string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	raw, found, err := appstate.ReadKV(ctx, path, "config:server")
+	raw, found, err := appstate.ReadKV(ctx, path, appstate.KeyServerConfig)
 	if err != nil || !found {
 		return "", err
 	}

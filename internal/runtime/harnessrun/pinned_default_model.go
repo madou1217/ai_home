@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
-	harnessModelsSnapshotKey  = "cache:webui-models-snapshot.json"
-	harnessCatalogSettingsKey = "model-catalog-settings"
+	harnessModelsSnapshotKey  = webuimodelssnapshot.CacheKey
+	harnessCatalogSettingsKey = modelcatalogsettings.DatabaseKey
 )
 
 // resolvePinnedHarnessDefaultModel 复刻 Node pinned-default-model.js：

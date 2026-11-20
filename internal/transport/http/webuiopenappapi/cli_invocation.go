@@ -76,7 +76,7 @@ func populateGoCLIGatewayEnvironment(ctx context.Context, aiHomeDir string, envi
 		ManagementKey string `json:"managementKey"`
 	}
 	if path, err := appstate.DatabasePath(aiHomeDir); err == nil {
-		if raw, found, readErr := appstate.ReadKV(ctx, path, "config:server"); readErr == nil && found {
+		if raw, found, readErr := appstate.ReadKV(ctx, path, appstate.KeyServerConfig); readErr == nil && found {
 			_ = json.Unmarshal([]byte(raw), &stored)
 		}
 	}

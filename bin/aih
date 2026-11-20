@@ -1,6 +1,6 @@
 #!/bin/sh
 # aih 入口：直接 exec 原生 Go CLI，不经过 Node。
-# 原生二进制缺失时 Claude 明确失败；其它旧命令暂保留 Node 兼容入口。
+# 原生二进制缺失时明确失败：CLI 不再回落到旧 Node 入口（2026-11-20 用户要求）。
 set -e
 
 target=$0
@@ -30,8 +30,5 @@ if [ -x "$native" ]; then
   exec "$native" "$@"
 fi
 
-if [ "${1:-}" = claude ] || [ "${1:-}" = peer ]; then
-  printf '%s\n' '[aih] Go CLI 未构建；请运行 npm run go:build。Claude / peer 不会回落到 Node。' >&2
-  exit 126
-fi
-exec node "$dir/ai-home.js" "$@"
+printf '%s\n' "[aih] 找不到原生 Go CLI（$native）；请运行 npm run go:build 后重试。" >&2
+exit 126

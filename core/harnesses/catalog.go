@@ -5,11 +5,28 @@
 // （POST .../open-app）必须能回答它们的可用性、二进制名与跨 Provider 能力。
 // 注册表是唯一真值源：新增 harness 只在这里加一条，派发层不出现名字比较。
 //
-// 与 Node lib/harness/catalog.js 的关系：本包只承载启动/探测需要的公开字段；
-// 投影适配器、原生会话命令等仍归 Node（它们依赖各 harness 的私有约定）。
+// 与 Node lib/harness/catalog.js 的关系：本包承载启动、探测与统一会话命令所需的
+// 公开事实；投影适配器在 internal/runtime/harnessrun，Go 启动路径不再依赖 Node。
 package harnesses
 
 import "strings"
+
+// SessionVerb 描述统一动词（resume / fork）翻译成的原生参数形态。
+// 有会话身份时拼 IDArgs + <id>，没有身份时拼 LatestArgs（未声明则明确拒绝）。
+type SessionVerb struct {
+	IDArgs     []string
+	LatestArgs []string
+}
+
+// Sessions 是 harness 的原生会话边界（事实来源与 Node 描述符同一份）。
+//
+// Resume / Fork 为 nil 可能是「尚未声明」（Sessions 本身为 nil）或「已核实没有
+// 原生入口」（Sessions 存在但动词为 nil）；后者必须通过 Note 说明原因。
+type Sessions struct {
+	Resume *SessionVerb
+	Fork   *SessionVerb
+	Note   string
+}
 
 // Harness 是外部 harness 的公开描述。
 type Harness struct {
@@ -31,6 +48,8 @@ type Harness struct {
 	SupportsModelSelection bool
 	// Description 是界面提示文案。
 	Description string
+	// Sessions 是统一动词 resume/fork 的原生形态；nil 表示尚未声明（aih 不猜参数）。
+	Sessions *Sessions
 }
 
 // builtin 与 Node 的 EXTERNAL_HARNESSES 保持同 ID / 同二进制名。
@@ -48,6 +67,12 @@ var builtin = []Harness{
 		SupportsAccountPin:     true,
 		SupportsModelSelection: true,
 		Description:            "轻量终端 Agent harness，支持自定义 OpenAI 兼容 provider",
+		// pi 1.4.0 `pi --help` 实测：--continue/-c 续接最近一段，
+		// --session <path|id> 精确续接，--fork <path|id> 分叉（必须带身份）。
+		Sessions: &Sessions{
+			Resume: &SessionVerb{IDArgs: []string{"--session"}, LatestArgs: []string{"--continue"}},
+			Fork:   &SessionVerb{IDArgs: []string{"--fork"}},
+		},
 	},
 	{
 		ID:                     "dsh",
@@ -59,6 +84,11 @@ var builtin = []Harness{
 		SupportsAccountPin:     true,
 		SupportsModelSelection: true,
 		Description:            "DeepSeek 官方开源 Agent Harness（web profile）",
+		// dsh 0.2.1-rc.5 真机核实：aih 启动的 aih profile 是 web app，
+		// 会话在 Web UI 内切换；CLI 只有 headless profile 的 --session-id。
+		Sessions: &Sessions{
+			Note: "dsh 0.2.1-rc.5 的 CLI 只在 headless profile 有 --session-id；aih 启动的 aih profile 是 web app（会话在 Web UI 内切换），没有 CLI 级续接/分叉旗标",
+		},
 	},
 	{
 		ID:                     "dsh-tui",

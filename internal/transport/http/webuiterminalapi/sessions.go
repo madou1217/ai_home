@@ -765,7 +765,8 @@ func repositoryRootFromExecutable() string {
 	}
 	directory := filepath.Dir(executable)
 	for depth := 0; depth < 4; depth++ {
-		if info, err := os.Stat(filepath.Join(directory, "bin", "ai-home.js")); err == nil && !info.IsDir() {
+		// bin/aih 是当前入口（纯 Go）；bin/ai-home.js 只作为旧布局的兼容标记。
+		if isRepositoryRoot(directory) {
 			return directory
 		}
 		parent := filepath.Dir(directory)
@@ -775,4 +776,13 @@ func repositoryRootFromExecutable() string {
 		directory = parent
 	}
 	return ""
+}
+
+func isRepositoryRoot(directory string) bool {
+	for _, marker := range []string{filepath.Join("bin", "aih"), filepath.Join("bin", "ai-home.js")} {
+		if info, err := os.Stat(filepath.Join(directory, marker)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
 }

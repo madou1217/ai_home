@@ -253,7 +253,16 @@ func openCLITerminal(
 		launchFile := cliPath
 		var launchArgs []string
 		if hasAccount {
-			if webUICLIIsGoOwned(req, harness) {
+			if externalID, isExternal := externalHarnessID(harness); isExternal {
+				// 外部 harness 现在由 Go 简写承接（aih <harness> <acct_ref> --model），
+				// 不再拉起 Node 旧入口。
+				launchArgs = externalHarnessLaunchArgs(externalID, req.AccountRef, modelName)
+				var resolveErr error
+				launchFile, resolveErr = resolveGoCLIExecutable(deps, environ)
+				if resolveErr != nil {
+					return Result{OK: false, Error: "aih_cli_unavailable", Message: resolveErr.Error()}
+				}
+			} else if webUICLIIsGoOwned(req, harness) {
 				var failure *Result
 				launchArgs, termEnv, failure = prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
 				if failure != nil {
@@ -265,16 +274,11 @@ func openCLITerminal(
 					return Result{OK: false, Error: "aih_cli_unavailable", Message: resolveErr.Error()}
 				}
 			} else {
-				// 明确保留未迁域，不是 Go 错误回退：旧 Node 支持更广的身份
-				// Provider 与 external harness，必须保留其 accountRef 启动合同。
-				launchFile = findNodeExecutable(environ, platformKey)
-				cliEntry := "bin/ai-home.js"
-				if strings.TrimSpace(deps.RepoRoot) != "" {
-					cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
-				}
-				launchArgs = []string{cliEntry, harness, targetID}
-				if modelName != "" {
-					launchArgs = append(launchArgs, "--model", modelName)
+				// 旧 Node 启动面已删除：未迁移组合显式失败，不再静默换一套运行时。
+				return Result{
+					OK:      false,
+					Error:   "aih_cli_unsupported",
+					Message: "该 Provider 组合尚未由 Go CLI 承接",
 				}
 			}
 		} else {
@@ -322,39 +326,65 @@ func openCLITerminal(
 	}
 
 	// Native uses the same capability ownership boundary as WebUI. The lifecycle
-	// wrapper owns tmux, titles and cleanup; unsupported/unmigrated combinations
-	// keep the existing Node path rather than losing features.
+	// wrapper owns tmux, titles and cleanup; every supported combination now runs
+	// the Go CLI — 旧的 Node 启动面已删除，未迁移组合明确失败而不是换运行时。
 	var command string
-	if hasAccount && webUICLIIsGoOwned(req, harness) {
-		args, nativeEnv, failure := prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
-		if failure != nil {
-			return *failure
+	if hasAccount {
+		if externalID, isExternal := externalHarnessID(harness); isExternal {
+			binary, err := resolveGoCLIExecutable(deps, environ)
+			if err != nil {
+				return Result{OK: false, Error: "aih_cli_unavailable", Message: err.Error()}
+			}
+			parts := []string{quoteShellToken(binary, platformKey)}
+			for _, arg := range externalHarnessLaunchArgs(externalID, req.AccountRef, modelName) {
+				parts = append(parts, quoteShellToken(arg, platformKey))
+			}
+			command = strings.Join(parts, " ")
+		} else if webUICLIIsGoOwned(req, harness) {
+			args, nativeEnv, failure := prepareGoCLIInvocation(ctx, deps, req, snapshot, harness, modelName, hostHomeDir, termEnv)
+			if failure != nil {
+				return *failure
+			}
+			binary, err := resolveGoCLIExecutable(deps, environ)
+			if err != nil {
+				return Result{OK: false, Error: "aih_cli_unavailable", Message: err.Error()}
+			}
+			cwd := workdir
+			if cwd == "" {
+				cwd, _ = os.Getwd()
+			}
+			lifecycleArgs := nativeterminal.Arguments(deps.AIHomeDir, nativeterminal.Spec{
+				Provider: harness, IdentityProvider: req.Provider, AccountRef: req.AccountRef,
+				CLIAccountID: snapshot.CLIAccountID, CWD: cwd, Model: modelName, Args: args,
+			})
+			parts := []string{quoteShellToken(binary, platformKey)}
+			for _, arg := range lifecycleArgs {
+				parts = append(parts, quoteShellToken(arg, platformKey))
+			}
+			command = strings.Join(parts, " ")
+			termEnv = nativeEnv
+		} else {
+			return Result{
+				OK:      false,
+				Error:   "aih_cli_unsupported",
+				Message: "该 Provider 组合尚未由 Go CLI 承接",
+			}
 		}
-		binary, err := resolveGoCLIExecutable(deps, environ)
-		if err != nil {
-			return Result{OK: false, Error: "aih_cli_unavailable", Message: err.Error()}
-		}
-		cwd := workdir
-		if cwd == "" {
-			cwd, _ = os.Getwd()
-		}
-		lifecycleArgs := nativeterminal.Arguments(deps.AIHomeDir, nativeterminal.Spec{
-			Provider: harness, IdentityProvider: req.Provider, AccountRef: req.AccountRef,
-			CLIAccountID: snapshot.CLIAccountID, CWD: cwd, Model: modelName, Args: args,
-		})
-		parts := []string{quoteShellToken(binary, platformKey)}
-		for _, arg := range lifecycleArgs {
-			parts = append(parts, quoteShellToken(arg, platformKey))
-		}
-		command = strings.Join(parts, " ")
-		termEnv = nativeEnv
 	} else {
-		nodeExe := findNodeExecutable(environ, platformKey)
-		cliEntry := "bin/ai-home.js"
-		if strings.TrimSpace(deps.RepoRoot) != "" {
-			cliEntry = filepath.Join(deps.RepoRoot, "bin", "ai-home.js")
+		command = quoteShellToken(cliPath, platformKey)
+		parts := []string{"AIH_ACCOUNT_APP=1"}
+		if strings.TrimSpace(deps.AIHomeDir) != "" {
+			parts = append(parts, "AIH_HOME_DIR="+quoteShellToken(strings.TrimSpace(deps.AIHomeDir), platformKey))
 		}
-		command = buildNativeCLICommand(nodeExe, cliEntry, harness, targetID, modelName, cliPath, workdir, req.AccountRef, deps.AIHomeDir, hasAccount, platformKey)
+		command = strings.Join(parts, " ") + " " + command
+		if strings.TrimSpace(workdir) != "" {
+			quotedDir := quoteShellToken(workdir, platformKey)
+			if platformKey == "windows" {
+				command = "cd /d " + quotedDir + " && " + command
+			} else {
+				command = "cd " + quotedDir + " && " + command
+			}
+		}
 	}
 
 	spec := terminals.ResolveClientTerminalLaunch(terminalID, command, title, terminals.Options{
@@ -543,66 +573,6 @@ func buildCLIEnv(environ []string, aiHomeDir, provider, accountRef string, egres
 	}
 	sort.Strings(env)
 	return env
-}
-
-func buildNativeCLICommand(
-	nodeExe string,
-	cliEntry string,
-	harness string,
-	targetID string,
-	modelName string,
-	cliPath string,
-	workdir string,
-	accountRef string,
-	aiHomeDir string,
-	hasAccount bool,
-	platformKey string,
-) string {
-	var coreCmd string
-	if hasAccount {
-		coreCmd = fmt.Sprintf(`%s %s %s %s`,
-			quoteShellToken(nodeExe, platformKey),
-			quoteShellToken(cliEntry, platformKey),
-			harness,
-			targetID,
-		)
-		if modelName != "" {
-			coreCmd += " --model " + quoteShellToken(modelName, platformKey)
-		}
-	} else {
-		coreCmd = quoteShellToken(cliPath, platformKey)
-	}
-
-	var cmd string
-	if platformKey == "windows" {
-		parts := []string{`set "AIH_ACCOUNT_APP=1"`}
-		if ref := strings.TrimSpace(accountRef); ref != "" {
-			parts = append(parts, fmt.Sprintf(`set "AIH_PROVIDER_ACCOUNT_REF=%s"`, ref))
-		}
-		if strings.TrimSpace(aiHomeDir) != "" {
-			parts = append(parts, fmt.Sprintf(`set "AIH_HOME_DIR=%s"`, strings.TrimSpace(aiHomeDir)))
-		}
-		cmd = strings.Join(parts, " && ") + " && " + coreCmd
-	} else {
-		parts := []string{"AIH_ACCOUNT_APP=1"}
-		if ref := strings.TrimSpace(accountRef); ref != "" {
-			parts = append(parts, "AIH_PROVIDER_ACCOUNT_REF="+quoteShellToken(ref, platformKey))
-		}
-		if strings.TrimSpace(aiHomeDir) != "" {
-			parts = append(parts, "AIH_HOME_DIR="+quoteShellToken(strings.TrimSpace(aiHomeDir), platformKey))
-		}
-		cmd = strings.Join(parts, " ") + " " + coreCmd
-	}
-
-	if strings.TrimSpace(workdir) != "" {
-		quotedDir := quoteShellToken(workdir, platformKey)
-		if platformKey == "windows" {
-			cmd = "cd /d " + quotedDir + " && " + cmd
-		} else {
-			cmd = "cd " + quotedDir + " && " + cmd
-		}
-	}
-	return cmd
 }
 
 func quoteShellToken(val, platformKey string) string {

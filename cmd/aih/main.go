@@ -40,11 +40,6 @@ func main() {
 	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {
 		os.Exit(execute(rewritten, defaultCommandRuntime()))
 	}
-	// 交给 Node 入口的动词必须在构造 runtime 之前分流：
-	// runtime 会持有账号写入租约等进程级资源，先构造再 exec 会让 Node 侧阻塞。
-	if delegateToNode(os.Args[1:]) {
-		os.Exit(0)
-	}
 	os.Exit(execute(os.Args[1:], defaultCommandRuntime()))
 }
 

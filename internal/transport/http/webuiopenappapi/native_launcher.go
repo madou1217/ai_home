@@ -298,8 +298,11 @@ func discoverRepositoryRoot() string {
 			if cur == "" || cur == "." || cur == filepath.Dir(cur) {
 				break
 			}
-			if info, err := os.Stat(filepath.Join(cur, "bin", "ai-home.js")); err == nil && !info.IsDir() {
-				return cur
+			// bin/aih 是当前入口（纯 Go）；bin/ai-home.js 兼容旧布局。
+			for _, marker := range []string{filepath.Join("bin", "aih"), filepath.Join("bin", "ai-home.js")} {
+				if info, err := os.Stat(filepath.Join(cur, marker)); err == nil && !info.IsDir() {
+					return cur
+				}
 			}
 			cur = filepath.Dir(cur)
 		}

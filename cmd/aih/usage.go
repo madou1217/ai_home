@@ -37,6 +37,15 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 		writeNativeUsageHelp(runtime.stdout)
 		return true, nil
 	}
+	// `aih usage <数字>`：数字是 CLI 账号编号，旧入口按唯一 Provider 改写成
+	// `<provider> usage <数字>`。归属不唯一时明确拒绝，不猜 Provider。
+	if len(arguments) >= 2 && isNumericToken(arguments[1]) {
+		provider, resolved := resolveUniqueProviderForCLIAccountID(ctx, arguments[1], runtime)
+		if !resolved {
+			return true, fmt.Errorf("账号 %s 的 Provider 归属不唯一或不存在", strings.TrimSpace(arguments[1]))
+		}
+		return true, runProviderUsage(ctx, provider, arguments[1:], runtime)
+	}
 	options, err := parseUsageOptions(arguments[1:])
 	if err != nil {
 		return true, err

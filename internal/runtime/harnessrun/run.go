@@ -27,11 +27,8 @@ type Runtime struct {
 	WorkDir     func() (string, error)
 }
 
-// Run 执行一次 `aih harness`，返回进程退出码。
-//
-// 所有用户可见错误都在这里写到 stderr（与 Node 的消息逐字一致），
-// 因此 cmd/aih 只需把非零码转成静默退出。
-func Run(arguments []string, rt Runtime) int {
+// normalizeRuntime 补齐未注入的端口：调用方只关心自己要替换的那几项。
+func normalizeRuntime(rt Runtime) Runtime {
 	if rt.LookupEnv == nil {
 		rt.LookupEnv = os.LookupEnv
 	}
@@ -50,6 +47,15 @@ func Run(arguments []string, rt Runtime) int {
 	if rt.WorkDir == nil {
 		rt.WorkDir = os.Getwd
 	}
+	return rt
+}
+
+// Run 执行一次 `aih harness`，返回进程退出码。
+//
+// 所有用户可见错误都在这里写到 stderr（与 Node 的消息逐字一致），
+// 因此 cmd/aih 只需把非零码转成静默退出。
+func Run(arguments []string, rt Runtime) int {
+	rt = normalizeRuntime(rt)
 
 	views := harnessViews()
 	parsed := parseHarnessArgs(arguments)
@@ -66,7 +72,10 @@ func Run(arguments []string, rt Runtime) int {
 		_, _ = fmt.Fprintf(rt.Stderr, "[aih] 未知 harness：%s\n%s\n", parsed.HarnessID, formatHarnessList(views))
 		return 1
 	}
-	if parsed.Provider == "" {
+	// `aih harness <id>` 的合同要求显式 --provider：数字账号只在某个 Provider 内
+	// 唯一，没有 Provider 无法解释。accountRef（acct_…）自带归属，可以省略。
+	// 两者都缺省时是账号池模式（Node 简写 aih <harness> 的语义），由网关池承接。
+	if parsed.Provider == "" && parsed.Account != "" && !isAccountRef(parsed.Account) {
 		_, _ = fmt.Fprintln(rt.Stderr, "[aih] 需要 --provider <p>（这个 harness 要用哪个 Provider 的账号跑）")
 		return 1
 	}
@@ -78,16 +87,31 @@ func Run(arguments []string, rt Runtime) int {
 	}
 	aiHomeDir := resolveAIHomeDir(rt)
 	hostHomeDir := resolveHostHomeDir(rt)
-	selection, selectionError := selectAccount(
-		context.Background(), aiHomeDir, catalog, parsed.Provider, parsed.Account,
-	)
-	if selectionError != "" {
-		hint := ""
-		if selectionError == "account_not_found" {
-			hint = fmt.Sprintf("（%s 下没有可用账号；先 aih %s login）", parsed.Provider, parsed.Provider)
+	selection := accountSelection{}
+	if parsed.Provider != "" || parsed.Account != "" {
+		var selectionError string
+		selection, selectionError = selectAccount(
+			context.Background(), aiHomeDir, catalog, parsed.Provider, parsed.Account,
+		)
+		if selectionError != "" {
+			hint := ""
+			if selectionError == "account_not_found" {
+				hint = fmt.Sprintf("（%s 下没有可用账号；先 aih %s login）", parsed.Provider, parsed.Provider)
+			}
+			_, _ = fmt.Fprintf(rt.Stderr, "[aih] 选账号失败：%s%s\n", selectionError, hint)
+			return 1
 		}
-		_, _ = fmt.Fprintf(rt.Stderr, "[aih] 选账号失败：%s%s\n", selectionError, hint)
-		return 1
+	}
+	// accountRef 钉选时归属以账号事实为准；Provider 只用于展示与模型过滤。
+	// 池模式（两者都缺省）下 effectiveProvider 保持空串：网关按账号池承接，
+	// 展示层再回落成 "pool"，不把展示词写进启动合同。
+	effectiveProvider := parsed.Provider
+	if effectiveProvider == "" {
+		effectiveProvider = selection.Provider
+	}
+	providerLabel := effectiveProvider
+	if providerLabel == "" {
+		providerLabel = "pool"
 	}
 
 	// `--model-alias`：harness 的模型在启动时定死，因此等价于直接按目标模型启动。
@@ -114,7 +138,7 @@ func Run(arguments []string, rt Runtime) int {
 		OK:           true,
 		Harness:      harness.ID,
 		Label:        harness.Label,
-		Provider:     parsed.Provider,
+		Provider:     providerLabel,
 		AccountRef:   selection.AccountRef,
 		CLIAccountID: selection.CLIAccountID,
 		Model:        launchModel,
@@ -135,7 +159,7 @@ func Run(arguments []string, rt Runtime) int {
 	_, _ = fmt.Fprintf(
 		rt.Stdout,
 		"\x1b[36m[aih]\x1b[0m harness %s ← %s%s (%s…)\n",
-		harness.ID, parsed.Provider, accountLabel, accountRefPrefix(selection.AccountRef),
+		harness.ID, providerLabel, accountLabel, accountRefPrefix(selection.AccountRef),
 	)
 
 	gateway, gatewayErr := readGatewayConnection(context.Background(), aiHomeDir, rt.LookupEnv, selection.AccountRef)
@@ -165,7 +189,7 @@ func Run(arguments []string, rt Runtime) int {
 
 	prepared, prepareErr := prepareHarness(prepareInput{
 		HarnessID:      harness.ID,
-		Provider:       parsed.Provider,
+		Provider:       effectiveProvider,
 		AccountRef:     selection.AccountRef,
 		RequestedModel: launchModel,
 		NativeArgs:     parsed.NativeArgs,

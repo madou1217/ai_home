@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
+	"github.com/madou1217/ai_home/core/harnesses"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
@@ -102,6 +103,20 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__background" {
 		return runBackgroundSupervisorCommand(arguments[1:], runtime)
 	}
+	// 外部 harness（pi / dsh / dsh-tui）是 `aih <id>` 的一等命令，先于 Provider
+	// 合同分流：它们没有上游协议，不能按未知 Provider 处理。Go 直接启动，不再
+	// 转交 Node 旧入口（旧委派会让 aih 在子 shell 里短路成「启动请求无效」）。
+	if harness, external := harnesses.Get(providerID); external {
+		return runHarnessShorthand(harness.ID, arguments, runtime)
+	}
+	// `aih <数字> …`：数字是 CLI 账号编号，只有恰好一个 Provider 拥有时才可解释。
+	// 多个 Provider 都存在同一编号时明确报未知命令，不猜归属。
+	if isNumericToken(providerID) {
+		if provider, resolved := resolveUniqueProviderForCLIAccountID(ctx, providerID, runtime); resolved {
+			return runProviderLaunch(ctx, provider, arguments, runtime)
+		}
+		return runUnknownRootCommand(providerID, runtime)
+	}
 	if providerID == "plugin" {
 		return runPlugin(ctx, arguments[1:], runtime)
 	}
@@ -145,10 +160,20 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "native" && len(arguments) >= 2 && arguments[1] == "plugin" {
 		return runNativePlugin(ctx, arguments[2:], runtime)
 	}
+	if providerID == "native" {
+		_, _ = fmt.Fprintln(runtime.stderr, "[aih] Usage: aih native plugin ...")
+		return cliExitCode{code: 1}
+	}
+	if providerID == "provider" {
+		return runProviderCommand(ctx, arguments, runtime)
+	}
+	if providerID == "zcode-url" {
+		return runZcodeURL(ctx, arguments, runtime)
+	}
 	if providerID == "update" {
 		return runUpdate(ctx, arguments[1:], runtime)
 	}
-	if providerID == "backup" && len(arguments) >= 2 && backupConfigCommands[strings.ToLower(strings.TrimSpace(arguments[1]))] {
+	if providerID == "backup" {
 		return runBackup(ctx, arguments[1:], runtime)
 	}
 	if providerID == "peer" {
@@ -367,7 +392,22 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 			}
 		}
 	}
+	// 未知根命令不再回落 Node 入口：给出同一条黄色提示与根用法，退出码 2，
+	// 与 shell 拼写纠正集成保持同一契约。
+	if !isRegisteredProvider(providerID) {
+		return runUnknownRootCommand(providerID, runtime)
+	}
 	return runProviderLaunch(ctx, providerID, arguments[1:], runtime)
+}
+
+// isRegisteredProvider 判断根命令位是否是 Provider 合同里的名字。
+func isRegisteredProvider(providerID string) bool {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return false
+	}
+	_, found := catalog.Get(strings.ToLower(strings.TrimSpace(providerID)))
+	return found
 }
 
 // runProviderLaunch composes the same native/relay execution path for both the

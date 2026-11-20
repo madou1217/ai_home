@@ -27,11 +27,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 const (
@@ -40,9 +43,10 @@ const (
 	//	POST /v1/management/webui/server-config/management-key/rotate
 	Path = "/v1/management/webui/server-config/management-key/rotate"
 
-	// 与 Node MIN_MANAGEMENT_KEY_LENGTH / MAX_MANAGEMENT_KEY_LENGTH 对齐。
-	minManagementKeyLength = 32
-	maxManagementKeyLength = 8192
+	// 与 Node MIN_MANAGEMENT_KEY_LENGTH / MAX_MANAGEMENT_KEY_LENGTH 对齐；
+	// 数值由 serverconfig 统一声明，本包只保留本地别名供既有调用与测试使用。
+	minManagementKeyLength = serverconfig.ManagementKeyMinLength
+	maxManagementKeyLength = serverconfig.ManagementKeyMaxLength
 
 	// maxRequestBytes 与 Node readRequestBody({maxBytes: 16 * 1024}) 对齐。
 	maxRequestBytes = 16 * 1024
@@ -264,11 +268,15 @@ func (handler *Handler) resolveReplacement(payload map[string]any) (string, bool
 
 // validateReplacement 复刻 Node normalizeReplacementManagementKey。
 func validateReplacement(key string) *rotationFailure {
-	if len(key) < minManagementKeyLength || len(key) > maxManagementKeyLength || strings.ContainsAny(key, "\r\n\x00") {
+	if !serverconfig.HasValidManagementKeyLength(key) || strings.ContainsAny(key, "\r\n\x00") {
 		return &rotationFailure{
 			http.StatusBadRequest,
 			"invalid_management_key",
-			"Management Key 必须为 32-8192 个字符，且不能包含换行。",
+			fmt.Sprintf(
+				"Management Key 必须为 %d-%d 个字符，且不能包含换行。",
+				serverconfig.ManagementKeyMinLength,
+				serverconfig.ManagementKeyMaxLength,
+			),
 		}
 	}
 	return nil

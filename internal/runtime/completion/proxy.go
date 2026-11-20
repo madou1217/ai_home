@@ -130,7 +130,7 @@ func readProxyManagementConfig(environment Environment, aiHome string) (proxyMan
 	if managementKey == "" && baseEnv == "" {
 		managementKey = configKey
 	}
-	if len(managementKey) < 32 || len(managementKey) > 8192 {
+	if !serverconfig.HasValidManagementKeyLength(managementKey) {
 		return proxyManagementConfig{}, false
 	}
 	for _, char := range managementKey {

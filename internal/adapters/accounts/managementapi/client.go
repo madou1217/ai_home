@@ -13,15 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 )
 
-const (
-	minManagementKeyLength = 32
-	maxManagementKeyLength = 8192
-	maxResponseBytes       = 1024 * 1024
-)
+const maxResponseBytes = 1024 * 1024
 
 var (
 	// ErrInvalidConfig 表示 Server 根地址、Management Key 或 HTTP 端口无效。
@@ -430,7 +427,7 @@ func normalizeBaseURL(value string) (string, error) {
 
 // validManagementKey 复核 Bearer Header 的长度、空白和控制字符约束。
 func validManagementKey(value string) bool {
-	if len(value) < minManagementKeyLength || len(value) > maxManagementKeyLength {
+	if !serverconfig.HasValidManagementKeyLength(value) {
 		return false
 	}
 	for _, character := range value {

@@ -18,6 +18,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelprobes"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
@@ -334,7 +335,8 @@ func buildResponse(
 	successfulSources := 0
 	firstError := ""
 
-	for _, set := range catalog.Sets {
+	probes := modelprobes.FromSets(catalog.Sets)
+	for index, set := range catalog.Sets {
 		ref := set.AccountRef.String()
 		if scopeGoRef != "" && ref != scopeGoRef {
 			continue
@@ -343,30 +345,25 @@ func buildResponse(
 		if provider == "" {
 			provider = providerByRef[ref]
 		}
-		probeError := strings.TrimSpace(set.LastErrorMessage)
-		if probeError == "" {
-			probeError = strings.TrimSpace(set.LastErrorCode)
-		}
-		if !set.LastAttemptAt.IsZero() {
+		probe := probes[index]
+		if probe.Probed() {
 			scannedAccounts++
-			accountProbedAt[ref] = set.LastAttemptAt.UnixMilli()
-			// 目录非空不等于本次探测成功：失败会保留旧模型，必须检查失败事实。
-			if probeError == "" && strings.TrimSpace(set.LastSource) != "error" {
-				successfulProbeAt[ref] = set.LastAttemptAt.UnixMilli()
+			accountProbedAt[ref] = probe.ProbedAt.UnixMilli()
+			// 目录非空不等于本次探测成功：失败会保留旧模型，必须看探测事实。
+			if probe.Succeeded {
+				successfulProbeAt[ref] = probe.ProbedAt.UnixMilli()
 			}
 		}
-		if probeError != "" {
-			errorsByAccountRef[ref] = probeError
+		if probe.ErrorText != "" {
+			errorsByAccountRef[ref] = probe.ErrorText
 			if firstError == "" {
-				firstError = probeError
+				firstError = probe.ErrorText
 			}
 		}
 
-		discovered := make([]string, 0, len(set.Models))
 		for _, m := range set.Models {
 			id := m.ModelID().String()
 			if m.UpstreamAvailable() {
-				discovered = appendDistinct(discovered, id)
 				addProviderModel(provider, id)
 			}
 			// 决定进入可选列表的规则：
@@ -384,8 +381,8 @@ func buildResponse(
 				addProviderModel(provider, id)
 			}
 		}
-		if len(discovered) > 0 {
-			byAccountRef[ref] = discovered
+		if len(probe.Discovered) > 0 {
+			byAccountRef[ref] = append([]string(nil), probe.Discovered...)
 			successfulSources++
 		}
 	}

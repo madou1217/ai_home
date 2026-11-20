@@ -9,6 +9,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelprobes"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
@@ -161,7 +162,8 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		catalogEntries = append(catalogEntries, entry)
 	}
 
-	for _, set := range catalog.Sets {
+	probes := modelprobes.FromSets(catalog.Sets)
+	for index, set := range catalog.Sets {
 		ref := set.AccountRef.String()
 		if !providerSet[set.ProviderID] {
 			continue
@@ -169,18 +171,15 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 		if scopedAccountRef != "" && ref != scopedAccountRef {
 			continue
 		}
-		scannedAccounts++
+		probe := probes[index]
+		// scannedAccounts 只数真正发生过探测尝试的条目：从未探测的账号（例如只有
+		// 人工登记模型）没有「扫描过」的事实，计进来会让计数名不副实。
+		if probe.Probed() {
+			scannedAccounts++
+		}
 
-		discoveredIDs := make([]string, 0, len(set.Models))
-		seenDiscovered := make(map[string]struct{}, len(set.Models))
 		for _, model := range set.Models {
 			modelID := model.ModelID().String()
-			if model.UpstreamAvailable() {
-				if _, dup := seenDiscovered[modelID]; !dup {
-					seenDiscovered[modelID] = struct{}{}
-					discoveredIDs = append(discoveredIDs, modelID)
-				}
-			}
 
 			setting := lookupAccountModelSetting(settingsLookup, ref, modelID)
 			isManual := (setting != nil && setting.Manual) || (!model.UpstreamAvailable() && model.ManualPolicy() == accountapp.ModelPolicyForceEnable)
@@ -209,20 +208,21 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 			})
 		}
 
+		discoveredIDs := append([]string(nil), probe.Discovered...)
 		sort.Strings(discoveredIDs)
 		if len(discoveredIDs) > 0 {
 			sources++
 			byAccountRef[ref] = discoveredIDs
-		} else if !set.LastAttemptAt.IsZero() && strings.TrimSpace(set.LastErrorMessage) == "" && strings.TrimSpace(set.LastErrorCode) == "" {
+		} else if probe.Probed() && probe.ErrorText == "" {
 			byAccountRef[ref] = []string{}
 		}
-		if !set.LastAttemptAt.IsZero() {
-			accountProbedAt[ref] = set.LastAttemptAt.UnixMilli()
+		if probe.Probed() {
+			accountProbedAt[ref] = probe.ProbedAt.UnixMilli()
 		}
-		if errText := formatProbeError(set.LastErrorCode, set.LastErrorMessage); errText != "" {
-			errorsByAccountRef[ref] = errText
+		if probe.ErrorText != "" {
+			errorsByAccountRef[ref] = probe.ErrorText
 			if globalFirstError == "" {
-				globalFirstError = errText
+				globalFirstError = probe.ErrorText
 			}
 		}
 	}
@@ -753,15 +753,6 @@ func entrySourcePriority(source string) int {
 	default:
 		return 0
 	}
-}
-
-func formatProbeError(code, message string) string {
-	msg := strings.TrimSpace(message)
-	c := strings.TrimSpace(code)
-	if msg != "" {
-		return msg
-	}
-	return c
 }
 
 func normalizeAuthType(raw string) string {

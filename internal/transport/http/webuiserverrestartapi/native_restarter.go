@@ -156,7 +156,7 @@ func detectServiceRestartCommand(label string) (string, []string, error) {
 	if !autostart.ServiceJobLoaded(context.Background(), label) {
 		return "", nil, ErrRestartUnavailable
 	}
-	name, args, err := autostart.ServiceRestartCommand(label)
+	name, args, err := autostart.GracefulRestartCommand(label)
 	if err != nil {
 		return "", nil, ErrRestartUnavailable
 	}

@@ -25,6 +25,11 @@ const (
 )
 
 // Server 持有 HTTP、后台 worker 和唯一账号数据库生命周期。
+// inferenceDrainWindow 是退出前留给"正在生成的回答"的收尾时间。它必须小于
+// 服务管理器给的停止超时（plist ExitTimeOut / systemd TimeoutStopSec），
+// 否则还没收完就会被 SIGKILL。
+const inferenceDrainWindow = 30 * time.Second
+
 type Server struct {
 	httpServer         *http.Server
 	streams            *streamShutdown
@@ -52,9 +57,13 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	if server == nil || server.httpServer == nil {
 		return ErrInvalidOptions
 	}
-	// SSE handlers can stay blocked until the next event/heartbeat. Cancel
-	// only those request contexts before asking net/http to drain; ordinary
-	// in-flight HTTP requests continue to finish within the shutdown budget.
+	// 分两类处理：WebUI watch 之类的 SSE 立刻取消（它们永不自然结束）；
+	// 正在生成回答的推理流先给收尾窗口，别把会话从中途截断——截断在
+	// codex/claude 侧就是"会话莫名结束"。超时仍未完成才强制取消。
+	server.streams.cancelNonInference()
+	drainCtx, cancel := context.WithTimeout(ctx, inferenceDrainWindow)
+	server.streams.waitInferenceIdle(drainCtx)
+	cancel()
 	server.streams.cancelAll()
 	return server.httpServer.Shutdown(ctx)
 }

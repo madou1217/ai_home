@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // streamShutdown only cancels handlers that have actually started an SSE
@@ -21,7 +22,26 @@ type streamShutdown struct {
 }
 
 type streamRegistration struct {
-	cancel context.CancelFunc
+	cancel    context.CancelFunc
+	inference bool
+}
+
+// inferenceStreamPath 判断是不是"正在生成回答"的推理流。这类流被中途掐断，
+// 客户端（codex/claude）会当成会话异常结束；其余 SSE（WebUI watch 等）可以直接取消。
+func inferenceStreamPath(request *http.Request) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+	path := request.URL.Path
+	switch {
+	case path == "/v1/responses", strings.HasPrefix(path, "/v1/responses/"):
+		return true
+	case path == "/v1/messages", strings.HasPrefix(path, "/v1/messages/"):
+		return true
+	case path == "/v1/chat/completions":
+		return true
+	}
+	return false
 }
 
 func newStreamShutdown() *streamShutdown {
@@ -50,11 +70,11 @@ func (shutdown *streamShutdown) wrap(next http.Handler) http.Handler {
 	})
 }
 
-func (shutdown *streamShutdown) register(cancel context.CancelFunc) *streamRegistration {
+func (shutdown *streamShutdown) register(cancel context.CancelFunc, inference bool) *streamRegistration {
 	if shutdown == nil {
 		return nil
 	}
-	registration := &streamRegistration{cancel: cancel}
+	registration := &streamRegistration{cancel: cancel, inference: inference}
 	shutdown.mu.Lock()
 	if shutdown.closed {
 		shutdown.mu.Unlock()
@@ -97,6 +117,59 @@ func (shutdown *streamShutdown) cancelAll() {
 	}
 }
 
+// cancelNonInference 立即取消非推理流（WebUI watch 等），推理流留给收尾窗口。
+func (shutdown *streamShutdown) cancelNonInference() {
+	if shutdown == nil {
+		return
+	}
+	shutdown.mu.Lock()
+	registrations := make([]*streamRegistration, 0, len(shutdown.streams))
+	for registration := range shutdown.streams {
+		if !registration.inference {
+			registrations = append(registrations, registration)
+		}
+	}
+	shutdown.mu.Unlock()
+	for _, registration := range registrations {
+		registration.cancel()
+	}
+}
+
+// waitInferenceIdle 等到没有正在生成的推理流，或上下文到期。轮询间隔取 100ms：
+// 这里只在进程退出路径上跑一次，不需要更细。
+func (shutdown *streamShutdown) waitInferenceIdle(ctx context.Context) {
+	if shutdown == nil {
+		return
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if shutdown.inferenceCount() == 0 {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (shutdown *streamShutdown) inferenceCount() int {
+	if shutdown == nil {
+		return 0
+	}
+	shutdown.mu.Lock()
+	defer shutdown.mu.Unlock()
+	count := 0
+	for registration := range shutdown.streams {
+		if registration.inference {
+			count++
+		}
+	}
+	return count
+}
+
 type streamResponseWriter struct {
 	http.ResponseWriter
 	shutdown     *streamShutdown
@@ -116,7 +189,7 @@ func (writer *streamResponseWriter) markStream() {
 	if !strings.Contains(contentType, "text/event-stream") {
 		return
 	}
-	writer.registration = writer.shutdown.register(writer.cancel)
+	writer.registration = writer.shutdown.register(writer.cancel, inferenceStreamPath(writer.request))
 }
 
 func (writer *streamResponseWriter) WriteHeader(status int) {

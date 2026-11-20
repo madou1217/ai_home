@@ -20,7 +20,8 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
 )
 
-const shutdownTimeout = 10 * time.Second
+// shutdownTimeout 覆盖推理流收尾窗口（30s）+ HTTP 优雅关闭预算。
+const shutdownTimeout = 45 * time.Second
 
 // commandRuntime 集中注入操作系统边界，便于无全局状态测试。
 type commandRuntime struct {

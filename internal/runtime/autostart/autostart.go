@@ -27,7 +27,7 @@ const (
 	commandTimeout = 30 * time.Second
 	// launchdShutdownWait 覆盖 plist 里的 ExitTimeOut（12s）加余量：旧进程还在
 	// 退出时 launchd 会拒绝注册同名作业（Bootstrap failed: 5: Input/output error）。
-	launchdShutdownWait = 15 * time.Second
+	launchdShutdownWait = 40 * time.Second
 	// launchdBootstrapWindow 是 bootstrap 的重试窗口，给 launchd 回收旧作业留时间。
 	launchdBootstrapWindow = 20 * time.Second
 )
@@ -53,6 +53,39 @@ func ServiceRestartCommand(label string) (string, []string, error) {
 	switch runtime.GOOS {
 	case "darwin":
 		return "launchctl", []string{"kickstart", "-k", launchdDomain() + "/" + label}, nil
+	case "linux":
+		return "systemctl", []string{"--user", "restart", label + ".service"}, nil
+	default:
+		return "", nil, ErrUnsupportedPlatform
+	}
+}
+
+// GracefulRestartCommand 返回"先礼后兵"的重启命令：macOS 先给受管进程
+// SIGTERM，等它把在跑的回答收尾，再 kickstart 拉起；只有超时没退才 -k 强杀。
+// kickstart -k 用的是 SIGKILL，会直接截断推理流——那正是会话莫名结束的来源。
+func GracefulRestartCommand(label string) (string, []string, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "", nil, ErrServiceLabelRequired
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		target := launchdDomain() + "/" + label
+		script := strings.Join([]string{
+			"target='" + target + "'",
+			"pids=$(/bin/launchctl print \"$target\" 2>/dev/null | /usr/bin/sed -n 's/^[[:space:]]*pid = \\([0-9][0-9]*\\)$/\\1/p')",
+			"if [ -n \"$pids\" ]; then /bin/kill -TERM $pids 2>/dev/null || true; fi",
+			"i=0",
+			"while [ $i -lt 400 ]; do",
+			"  alive=0",
+			"  for p in $pids; do /bin/kill -0 \"$p\" 2>/dev/null && alive=1; done",
+			"  [ \"$alive\" -eq 0 ] && break",
+			"  /bin/sleep 0.1",
+			"  i=$((i+1))",
+			"done",
+			"/bin/launchctl kickstart \"$target\" 2>/dev/null || /bin/launchctl kickstart -k \"$target\"",
+		}, "\n")
+		return "/bin/sh", []string{"-c", script}, nil
 	case "linux":
 		return "systemctl", []string{"--user", "restart", label + ".service"}, nil
 	default:
@@ -313,7 +346,9 @@ func buildPlist(options Options) []byte {
 		"      <false/>",
 		"    </dict>",
 		"    <key>ExitTimeOut</key>",
-		"    <integer>12</integer>",
+		// 服务端退出前会等正在生成的回答收尾（最多 30s），这里必须给足，
+		// 否则 launchd 会在推理流没写完时 SIGKILL，客户端表现为会话中断。
+		"    <integer>45</integer>",
 		"    <key>ProcessType</key>",
 		"    <string>Standard</string>",
 		"    <key>ThrottleInterval</key>",
@@ -423,6 +458,15 @@ func kickstartLaunchd(ctx context.Context, target string, options Options) (Stat
 		return Status{}, false
 	}
 	before := launchdPIDs(context.Background(), target)
+	// kickstart -k 是 SIGKILL：推理流会被瞬间掐断，客户端当成会话异常结束
+	//（真机 2026-11-20 23:14 的 codex 会话就是这样没的）。这里改成先 SIGTERM、
+	// 等进程按自己的收尾窗口退出，再 plain kickstart 拉起；只有它赖着不走才强杀。
+	if len(before) > 0 {
+		for _, pid := range before {
+			_, _ = run(ctx, "kill", "-TERM", strconv.Itoa(pid))
+		}
+		waitProcessExit(before, launchdShutdownWait)
+	}
 	if _, err := run(ctx, name, args...); err != nil {
 		return Status{}, false
 	}
@@ -562,7 +606,7 @@ func buildUnit(options Options) []byte {
 		"WorkingDirectory=" + filepath.Dir(options.ServerBinary),
 		"Restart=always",
 		"RestartSec=5",
-		"TimeoutStopSec=12",
+		"TimeoutStopSec=45",
 		"Environment=" + systemdQuote("HOME="+options.HostHome),
 		"Environment=" + systemdQuote("AIH_HOME_DIR="+options.Home),
 		"Environment=" + systemdQuote("PATH="+os.Getenv("PATH")),

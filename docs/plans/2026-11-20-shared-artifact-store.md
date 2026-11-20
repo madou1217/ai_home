@@ -255,7 +255,8 @@ GC(mode):
 |---|---|---|
 | macOS APFS | 真机，N=5 对照 | reflink；5 份 186M 树 → 1 份；二次启动全 unchanged |
 | Linux ext4 | 本机 colima VM + Docker volume（非 AWS） | 硬链接回退路径；3 个账号 + 库同一 inode（nlink 4），5MB 树总占用 5MB |
-| Linux btrfs/XFS | 未测（本机无该文件系统） | 代码走 `cp --reflink=always`，探测失败自动退硬链接 |
+| Linux btrfs | 本机 colima VM + 1G loopback btrfs（非 AWS） | reflink 分支命中：5 份 20MB（源+库+3 账号）逻辑 100MiB，`btrfs filesystem du` Exclusive 仅 **20MiB**；二次启动全 unchanged |
+| Linux XFS | 未测 | 与 btrfs 同走 `cp --reflink=always`，探测失败退硬链接 |
 | Windows NTFS | 仅交叉编译（spacegc / aihserver） | 未做运行时验证；策略为文件硬链接（目录真实、文件共享 inode），失败时逐文件退回复制 |
 
 Linux 实测发现并修复了两个只在非 APFS 上暴露的问题：

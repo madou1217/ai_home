@@ -216,7 +216,10 @@ async function smoke(options) {
   if (!artifact) throw new Error('no release artifact found; build one first or pass --artifact');
   if (!fs.existsSync(artifact)) throw new Error(`artifact does not exist: ${artifact}`);
 
-  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-smoke-'));
+  // macOS 的 /var 是 /private/var 的符号链接，而账号库启动会拒绝带符号链接的
+  // watch 根（model_settings_watch_symlink_root）。冒烟用真实路径建沙箱，
+  // 否则在本机跑必然失败。
+  const sandbox = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'aih-smoke-'));
   const app = prepareApp(artifact, sandbox);
   let server = null;
   let logStream = null;

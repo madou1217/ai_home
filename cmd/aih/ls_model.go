@@ -191,42 +191,61 @@ func lsPlan(
 	if planType == "" || planType == "free" || planType == "unknown" || planType == "oauth" {
 		return planType, ""
 	}
-	label := ""
 	if facts.RateLimitTier == "" {
 		facts.RateLimitTier = doc.Account.RateLimitTier
 	}
-	switch strings.ToLower(account.Provider) {
-	case "codex":
-		label = map[string]string{
-			"go": "Go", "plus": "Plus", "pro": "Pro",
-			"prolite": "Pro Lite", "pro_lite": "Pro Lite",
-			"team": "Team", "self_serve_business_usage_based": "Business",
-			"business": "Business", "enterprise_cbp_usage_based": "Enterprise",
-			"enterprise": "Enterprise", "hc": "Enterprise",
-			"edu": "Edu", "education": "Edu",
-		}[planType]
-	case "claude":
-		if planType == "max" {
-			tier := normalizeLSToken(facts.RateLimitTier)
-			label = map[string]string{
-				"default_claude_max_5x": "Max 5x", "claude_max_5x": "Max 5x", "max_5x": "Max 5x",
-				"default_claude_max_20x": "Max 20x", "claude_max_20x": "Max 20x", "max_20x": "Max 20x",
-			}[tier]
-			if label == "" {
-				label = "Max"
-			}
-		} else {
-			label = map[string]string{
-				"pro": "Pro", "team": "Team", "business": "Business", "enterprise": "Enterprise",
-			}[planType]
-		}
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		label = map[string]string{
-			"pro": "Pro", "pro_plus": "Pro Plus", "youth": "Youth",
-			"advanced": "Advanced", "flagship": "Flagship",
-		}[planType]
+	label := ""
+	if labeler, found := lsPlanLabelers[strings.ToLower(account.Provider)]; found {
+		label = labeler(planType, facts)
 	}
 	return planType, label
+}
+
+// lsPlanLabeler 把套餐 token 映射成该 Provider 的展示标签。
+type lsPlanLabeler func(planType string, facts lsIdentityFacts) string
+
+var lsPlanLabelers = map[string]lsPlanLabeler{
+	"codex":       codexPlanLabel,
+	"claude":      claudePlanLabel,
+	"codebuddy":   familyPlanLabel,
+	"codebuddycn": familyPlanLabel,
+	"workbuddy":   familyPlanLabel,
+	"workbuddycn": familyPlanLabel,
+}
+
+func codexPlanLabel(planType string, _ lsIdentityFacts) string {
+	return map[string]string{
+		"go": "Go", "plus": "Plus", "pro": "Pro",
+		"prolite": "Pro Lite", "pro_lite": "Pro Lite",
+		"team": "Team", "self_serve_business_usage_based": "Business",
+		"business": "Business", "enterprise_cbp_usage_based": "Enterprise",
+		"enterprise": "Enterprise", "hc": "Enterprise",
+		"edu": "Edu", "education": "Edu",
+	}[planType]
+}
+
+func claudePlanLabel(planType string, facts lsIdentityFacts) string {
+	if planType == "max" {
+		tier := normalizeLSToken(facts.RateLimitTier)
+		label := map[string]string{
+			"default_claude_max_5x": "Max 5x", "claude_max_5x": "Max 5x", "max_5x": "Max 5x",
+			"default_claude_max_20x": "Max 20x", "claude_max_20x": "Max 20x", "max_20x": "Max 20x",
+		}[tier]
+		if label == "" {
+			label = "Max"
+		}
+		return label
+	}
+	return map[string]string{
+		"pro": "Pro", "team": "Team", "business": "Business", "enterprise": "Enterprise",
+	}[planType]
+}
+
+func familyPlanLabel(planType string, _ lsIdentityFacts) string {
+	return map[string]string{
+		"pro": "Pro", "pro_plus": "Pro Plus", "youth": "Youth",
+		"advanced": "Advanced", "flagship": "Flagship",
+	}[planType]
 }
 
 func normalizeLSToken(value string) string {
@@ -1010,6 +1029,12 @@ func maskLSSecret(value string) string {
 	return "Configured"
 }
 
+// lsDefaultIdentityVariants 是没有邮箱/昵称时的身份兜底标签。
+var lsDefaultIdentityVariants = map[string]string{
+	"opencode": "OpenCode API",
+	"zcode":    "ZCode OAuth",
+}
+
 func buildLSIdentityVariants(account accountlistread.Account, facts lsIdentityFacts, apiKeyMode bool) []string {
 	variants := make([]string, 0, 4)
 	seen := make(map[string]bool)
@@ -1097,11 +1122,8 @@ func buildLSIdentityVariants(account accountlistread.Account, facts lsIdentityFa
 		push(name)
 	}
 	if len(variants) == 0 {
-		switch strings.ToLower(account.Provider) {
-		case "opencode":
-			push("OpenCode API")
-		case "zcode":
-			push("ZCode OAuth")
+		if fallback, found := lsDefaultIdentityVariants[strings.ToLower(account.Provider)]; found {
+			push(fallback)
 		}
 	}
 	return variants

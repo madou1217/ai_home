@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 )
 
 // ReadConfig returns the public view without secrets.
@@ -47,6 +49,9 @@ func ApplyConfigPatch(ctx context.Context, aiHomeDir string, patch map[string]an
 			return "", retryErr
 		}
 		merged := mergeServerConfigPatch(base, patch)
+		if err := outboundproxy.Validate(jsString(merged["proxyUrl"])); err != nil {
+			return "", err
+		}
 		saved = sanitizeServerConfig(merged)
 		if hasRetryPatch {
 			saved.Upstream429Retry = validatedRetry

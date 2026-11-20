@@ -38,6 +38,7 @@ type commandConfig struct {
 	aiHomeDir     string
 	managementKey string
 	clientKey     string
+	proxyURL      string
 	// delegateCredentialRefresh 由 AIH_SERVER_CREDENTIAL_REFRESH=delegated 打开：
 	// Node 宿主监督 Go 时独占 OAuth 刷新，避免两个刷新者竞争会轮换的 Refresh Token。
 	delegateCredentialRefresh bool
@@ -220,6 +221,7 @@ func loadCommandConfig(
 		aiHomeDir:                  aiHomeDir,
 		managementKey:              managementKey,
 		clientKey:                  clientKey,
+		proxyURL:                   persisted.ProxyURL,
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
@@ -324,6 +326,7 @@ type persistedServerConfig struct {
 	Port          int
 	ManagementKey string
 	APIKey        string
+	ProxyURL      string
 }
 
 // readPersistedServerConfig 从 app-state.db 的 config:server 读取权威启动配置。
@@ -345,6 +348,7 @@ func readPersistedServerConfig(aiHomeDir string) persistedServerConfig {
 		Port          int    `json:"port"`
 		ManagementKey string `json:"managementKey"`
 		APIKey        string `json:"apiKey"`
+		ProxyURL      string
 	}
 	if json.Unmarshal([]byte(raw), &stored) != nil {
 		return persistedServerConfig{}
@@ -354,6 +358,7 @@ func readPersistedServerConfig(aiHomeDir string) persistedServerConfig {
 		Port:          stored.Port,
 		ManagementKey: strings.TrimSpace(stored.ManagementKey),
 		APIKey:        strings.TrimSpace(stored.APIKey),
+		ProxyURL:      strings.TrimSpace(stored.ProxyURL),
 	}
 }
 

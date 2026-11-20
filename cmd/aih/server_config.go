@@ -17,7 +17,7 @@ import (
 )
 
 func showServerConfigUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>|--generate-management-key] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
+	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>|--clear-proxy-url] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
 	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90m      \x1b[0m `aih server config list` 列出全部可设置参数、默认值与含义（`-l` / `--list` / `ls` 等价）。")
 }
 
@@ -42,7 +42,7 @@ func runServerConfig(ctx context.Context, arguments []string, runtime commandRun
 		rest = rest[1:]
 	}
 	switch action {
-	case "show", "get", "set", "list", "ls", "-l":
+	case "show", "get", "set", "unset", "list", "ls", "-l":
 		if action == "ls" || action == "-l" {
 			action = "list"
 		}
@@ -64,6 +64,8 @@ func runServerConfig(ctx context.Context, arguments []string, runtime commandRun
 		return true, getServerConfig(ctx, home, rest[0], rest[1:], runtime)
 	case "set":
 		return true, setServerConfig(ctx, home, rest, runtime)
+	case "unset":
+		return true, unsetServerConfig(ctx, home, rest, runtime)
 	case "list":
 		return true, listServerConfig(ctx, home, rest, runtime)
 	}
@@ -171,6 +173,27 @@ func getServerConfig(ctx context.Context, home string, key string, args []string
 
 func listServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
 	return showServerConfig(ctx, home, args, runtime)
+}
+
+func unsetServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
+	if len(args) == 0 {
+		return errors.New("server config unset requires a key, e.g. proxy-url")
+	}
+	patch := map[string]any{}
+	for _, raw := range args {
+		key := normalizeConfigKey(raw)
+		switch key {
+		case "proxyUrl":
+			patch["proxyUrl"] = ""
+		default:
+			return fmt.Errorf("server config unset does not support: %s", raw)
+		}
+	}
+	if _, err := webuiserverconfigapi.ApplyConfigPatch(ctx, home, patch); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(runtime.stdout, "[aih] proxy pool cleared; takes effect without restarting the server.")
+	return nil
 }
 
 func setServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
@@ -296,7 +319,7 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 	if serverConfigPatchRequiresRestart(patch, clearManagementKey) {
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; run aih server restart to apply it.")
 	} else {
-		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; upstream 429 retry changes take effect automatically without restarting the server.")
+		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; proxy pool and upstream 429 retry changes take effect automatically without restarting the server.")
 	}
 	return nil
 }
@@ -348,7 +371,7 @@ func serverConfigPatchRequiresRestart(patch map[string]any, clearManagementKey b
 		return true
 	}
 	for key := range patch {
-		if key != "upstream429Retry" {
+		if key != "upstream429Retry" && key != "proxyUrl" {
 			return true
 		}
 	}
@@ -415,6 +438,7 @@ func clearConfigKey(name string) (string, bool) {
 		"egress-evidence-ttl-ms": "egressEvidenceTtlMs", "relay-udp-advertise-host": "relayUdpAdvertiseHost",
 		"relay-udp-advertise-port": "relayUdpAdvertisePort", "relay-listen-host": "relayListenHost",
 		"go-core-routes": "goCoreRoutes", "upstream-error-rules": "upstreamErrorRuleProviders",
+		"proxy-url": "proxyUrl",
 	}
 	key, ok := mapping[name]
 	return key, ok
@@ -424,6 +448,8 @@ func clearConfigValue(key string) any {
 	switch key {
 	case "goCoreRoutes", "upstreamErrorRuleProviders":
 		return []string{}
+	case "proxyUrl":
+		return ""
 	default:
 		return 0
 	}

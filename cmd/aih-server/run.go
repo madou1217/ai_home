@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	goruntime "runtime"
 	"time"
@@ -15,6 +16,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
 )
 
@@ -70,9 +72,17 @@ func run(
 	remoteControlProxy := config.codexHooks.remoteControlProxy
 	// 出站语义统一在进程入口装一次：环境代理不可达时改直连（显式代理仍失败关闭）。
 	aihserver.InstallOutboundFallback()
+	proxyPool := outboundproxy.NewManager()
+	if proxyErr := proxyPool.Update(config.proxyURL); proxyErr != nil {
+		log.Printf("outbound proxy pool ignored: %v", proxyErr)
+	}
+	http.DefaultTransport = proxyPool
+	defer func() { _ = proxyPool.Close() }()
+	go outboundproxy.Watch(ctx, proxyPool, config.aiHomeDir, config.proxyURL, 0)
 	desktopOwner, _ := runtime.lookupEnv("AIH_DESKTOP_TRANSLATION_OWNER")
 	server, err := aihserver.New(ctx, aihserver.Options{
 		AIHomeDir:                  config.aiHomeDir,
+		ProxyPool:                  proxyPool,
 		NodeBaseURL:                config.nodeBaseURL,
 		SelfBaseURL:                config.selfBaseURL(),
 		FrontDoorBaseURL:           config.frontDoorBaseURL(),

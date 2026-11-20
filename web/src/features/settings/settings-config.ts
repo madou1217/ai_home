@@ -25,7 +25,8 @@ export const SERVER_FORM_DEFAULTS: ServerConfig = {
   port: 9527,
   apiKey: '',
   managementKey: '',
-  openNetwork: false
+  openNetwork: false,
+  proxyUrl: ''
 };
 
 export const USAGE_FIELD_RULES: Record<keyof UsageFormValues, Rule[]> = {
@@ -92,13 +93,15 @@ export function toUsageConfig(values: UsageFormValues): UsageConfig {
 export function buildServerConfigPatch(values: Partial<ServerConfig>): { patch: Partial<ServerConfig>; managementKey: string } {
   const apiKey = String(values.apiKey || '').trim();
   const managementKey = String(values.managementKey || '').trim();
+  const hasProxyUrl = Object.prototype.hasOwnProperty.call(values, 'proxyUrl');
   return {
     managementKey,
     patch: {
       host: values.openNetwork ? '0.0.0.0' : (values.host || '127.0.0.1'),
       port: Number(values.port || 9527),
       openNetwork: Boolean(values.openNetwork),
-      ...(apiKey ? { apiKey } : {})
+      ...(apiKey ? { apiKey } : {}),
+      ...(hasProxyUrl ? { proxyUrl: String(values.proxyUrl || '').trim() } : {})
     }
   };
 }

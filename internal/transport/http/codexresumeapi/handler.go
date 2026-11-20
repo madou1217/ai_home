@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 )
 
 const maxFrameBytes = 16 * 1024 * 1024
@@ -52,7 +53,12 @@ func New(options Options) (*Handler, error) {
 	if options.Context == nil {
 		options.Context = context.Background()
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	var transport *http.Transport
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = base.Clone()
+	} else {
+		transport = outboundproxy.BaseTransport()
+	}
 	transport.Proxy = func(request *http.Request) (*url.URL, error) {
 		if request.URL.Scheme == "http" {
 			return nil, nil

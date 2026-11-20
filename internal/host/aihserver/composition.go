@@ -93,6 +93,7 @@ import (
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
@@ -414,6 +415,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		Catalog:                    catalog,
 		Store:                      store,
 		AIHomeDir:                  options.AIHomeDir,
+		ProxyPool:                  options.ProxyPool,
 		NodeBaseURL:                options.NodeBaseURL,
 		SelfBaseURL:                options.SelfBaseURL,
 		DesktopManagedByHost:       options.DesktopManagedByHost,
@@ -504,6 +506,8 @@ type handlerDependencies struct {
 	Store   *sqliteaccount.Store
 	// AIHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
 	AIHomeDir string
+	// ProxyPool 是进程级上游代理池，WebUI 保存后热更新。
+	ProxyPool *outboundproxy.Manager
 	// NodeBaseURL 是 Node 回环地址；插件实例启停回调 Node 内部协议时需要。
 	NodeBaseURL string
 	// SelfBaseURL 是本进程回环地址；内部回调不该绕道 Node。
@@ -2074,6 +2078,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		NodeBaseURL:            nodeBaseURL,
 		SelfBaseURL:            selfBaseURL,
 		ManagementKey:          managementKey,
+		ProxyPool:              dependencies.ProxyPool,
 		RequestShutdown:        requestShutdown,
 		TerminalHandler:        webUITerminalHandler,
 		SubAggregator:          subAggSvc,

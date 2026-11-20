@@ -45,11 +45,11 @@ type HTTPDoer interface {
 }
 
 func defaultHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = http.ProxyFromEnvironment
+	// DefaultTransport is the process proxy-pool RoundTripper after server boot.
+	// Do not type-assert it to *http.Transport.
 	return &http.Client{
 		Timeout:   180 * time.Second,
-		Transport: transport,
+		Transport: http.DefaultTransport,
 	}
 }
 

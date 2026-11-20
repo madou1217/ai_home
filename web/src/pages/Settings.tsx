@@ -315,6 +315,15 @@ const Settings = ({ section }: SettingsProps) => {
     }
   };
 
+  const handleClearProxy = async () => {
+    try {
+      const values = await serverForm.validateFields();
+      await handleSaveServer({ ...values, proxyUrl: '' });
+    } catch (_error) {
+      // 表单校验会自行提示
+    }
+  };
+
   const openAddControlPlaneModal = () => {
     setAuthorizingControlPlaneId('');
     controlPlaneForm.setFieldsValue({
@@ -656,10 +665,24 @@ const Settings = ({ section }: SettingsProps) => {
             <Input.Password autoComplete="new-password" placeholder="输入新的 Management Key" />
           </Form.Item>
 
+          <Form.Item
+            name="proxyUrl"
+            label="上游代理池"
+            help="逗号或换行分隔；按顺序轮询，连接失败自动切换下一个；保存后立即生效，无需重启。留空表示直连。"
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder="socks5://127.0.0.1:1080, http://user:pass@host:8080"
+            />
+          </Form.Item>
+
           <Form.Item>
             <Space className="settings-actions">
               <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={serverSaving}>
                 保存服务配置
+              </Button>
+              <Button onClick={handleClearProxy} loading={serverSaving}>
+                清除代理
               </Button>
               <Button icon={<ReloadOutlined />} onClick={handleRestartServer} loading={restarting}>
                 一键重启服务

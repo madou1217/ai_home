@@ -1228,6 +1228,9 @@ export interface ServerConfig {
   apiKeyConfigured?: boolean;
   managementKeyConfigured?: boolean;
   openNetwork: boolean;
+  /** 逗号或换行分隔的上游代理池；空串表示直连。 */
+  proxyUrl?: string;
+  noProxy?: string;
   upstream429Retry?: Upstream429RetryGlobalConfig;
 }
 

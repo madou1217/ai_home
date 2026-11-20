@@ -32,6 +32,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -178,6 +179,8 @@ type webuiRouteDependencies struct {
 	SelfBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
 	ManagementKey func() string
+	// ProxyPool 是进程级上游代理池，server-config 保存后立即热更新。
+	ProxyPool *outboundproxy.Manager
 	// RequestShutdown is the host graceful-exit port shared by both restart entry points.
 	RequestShutdown func()
 	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。
@@ -344,6 +347,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Authorizer: authorizer,
 		Store:      serverConfigSource,
 		OnSaved: func(saved webuiserverconfigapi.ConfigView) {
+			if dependencies.ProxyPool != nil {
+				_ = dependencies.ProxyPool.Update(saved.ProxyURL)
+			}
 			if dependencies.Upstream429RetryStore != nil {
 				dependencies.Upstream429RetryStore.UpdateGlobal(saved.Upstream429Retry)
 			}

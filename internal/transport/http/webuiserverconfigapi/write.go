@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
+
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
 
@@ -45,6 +47,9 @@ func (handler *Handler) writeConfig(response http.ResponseWriter, request *http.
 			return "", retryErr
 		}
 		merged := mergeServerConfigPatch(base, patch)
+		if err := outboundproxy.Validate(jsString(merged["proxyUrl"])); err != nil {
+			return "", err
+		}
 		saved = sanitizeServerConfig(merged)
 		if hasRetryPatch {
 			saved.Upstream429Retry = validatedRetry

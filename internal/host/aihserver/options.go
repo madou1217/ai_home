@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 )
 
 // InferenceHTTPClient 是 Codex/Claude 上游 Adapter 共用的最小传输端口。
@@ -46,6 +47,8 @@ var (
 type Options struct {
 	// AIHomeDir 是唯一业务数据库 aih.db 所在的数据根目录。
 	AIHomeDir string
+	// ProxyPool 是进程级上游代理池；配置热更新与请求轮询都由它负责。
+	ProxyPool *outboundproxy.Manager
 	// ManagementKey 返回当前生效的 Server Management Key。
 	ManagementKey func() string
 	// ClientKey 返回标准推理和模型目录使用的 Client Key。

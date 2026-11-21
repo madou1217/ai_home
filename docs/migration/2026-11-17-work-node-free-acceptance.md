@@ -272,7 +272,7 @@ native build与focused vet通过；Linux/Windows x64交叉编译exit0，仅编�
 2. `cmd/aih/run.go`：仅private命令早期分派3行，避开R5相邻Desktop语义，没有改普通launch／默认账号／账号写者。
 3. `internal/runtime/codexhooks/wrapper.go`：仅CLI marker＋RouteDefaultCLIThroughGo的POSIX app-server分支，按 GoBinaryPath（显式配置或 aih-server 同目录 aih-go）定位绝对 Go 路径，不再解析 Node helper 脚本；能力检查后，由Go输出精确 `disabled-v1` 或 `enabled-compat-v1`。**enabled 在任何 native 执行前明确选择兼容模式（由 Go 代理执行，不再启动 Node）**；disabled复读state、canonical resolver、host admission后以 `syscall.Exec` 原样替换官方CLI，原stdin/out/err、EOF、退出／信号不经过另一套pipe／handshake／RPC消费者。任何缺 Go、坏 state、目标／admission／native 失败均直接失败关闭，不再回退 Node。
 
-state复读只是时间点校验，**不是与原writer原子互斥**；私有命令仅为可信安装wrapper的固定state path，不把绝对basename检查说成通用权限端口。capability是版本标记不是构件签名；canonical resolver保留用户显式binary选择，第三方JS CLI本身可能用Node，不能对任意override承诺zeroNode。原内部PASSTHROUGH分支、默认／resume／Desktop／VSCode／Windows生成逻辑未扩。
+state复读只是时间点校验，**不是与原writer原子互斥**；私有命令仅为可信安装wrapper的固定state path，不把绝对basename检查说成通用权限端口。capability是版本标记不是构件签名；canonical resolver 保留用户显式 binary 选择；第三方 JS CLI 自身的宿主运行时依赖不在本验收范围，本结论不对任意 override 承诺零 Node 依赖。原内部PASSTHROUGH分支、默认／resume／Desktop／VSCode／Windows生成逻辑未扩。
 
 固定 `631276ee5` archive（SHA256 `7adcf3b0…`）＋仅本人3path构建。独立审查发现case collision：旧候选 `enabled:true, Enabled:false` 被Go whole-struct解码错选disabled，已通过真实product private command复现后修复，只从精确字段解码并拒大小写别名；新实测exit1/stdout空。Hubble／Mendel对最终源码SHA **`3c6db1b6… / 0b21c93b… / ed618012…`** 复审no-blocking。
 

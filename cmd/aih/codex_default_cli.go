@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexappconfig"
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
+	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 )
 
 // runCodexDefaultCLI 接管非交互 codex 子命令：默认账号环境、配置自愈、
@@ -83,6 +84,24 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	}
 	if !hasStartupPolicyArg(forwardArgs) {
 		forwardArgs = append(codexappconfig.BuildStartupPolicyArgs(), forwardArgs...)
+	}
+	if codexexecintent.IsExecResume(forwardArgs) {
+		prepared, release, prepErr := codexexecintent.Prepare(ctx, "codex", upstream, forwardArgs, spawnEnv)
+		if prepErr != nil {
+			release()
+			return prepErr
+		}
+		command := exec.CommandContext(ctx, upstream, prepared...)
+		command.Env = spawnEnv
+		command.Stdin = runtime.stdin
+		command.Stdout = runtime.stdout
+		command.Stderr = runtime.stderr
+		runErr := command.Run()
+		release()
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return runErr
 	}
 	if interactive && !localAppServerDisabled(envMap, forwardArgs) {
 		proxy, proxyErr := startLocalAppServer(ctx, upstream, forwardArgs, spawnEnv, runtime.stderr)

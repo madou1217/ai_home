@@ -2,6 +2,7 @@ package codexexecintent
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -19,6 +20,17 @@ var valueFlags = map[string]bool{"-c": true, "--config": true, "--enable": true,
 
 // parse recognizes only exec/e resume, never a prompt merely containing resume.
 // The literal -- ends option recognition, including any apparent -c afterwards.
+// IsExecResume reports whether args launch a native exec-resume. It uses the
+// same strict parser as Prepare, so a prompt containing "resume" never matches.
+func IsExecResume(args []string) bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	_, matched, err := parse(args, cwd)
+	return err == nil && matched
+}
+
 func parse(args []string, cwd string) (invocation, bool, error) {
 	out := invocation{args: append([]string(nil), args...), resumeAt: -1, identityAt: -1, cwd: cwd, appArgs: []string{"app-server", "--listen", "stdio://"}}
 	stage := 0

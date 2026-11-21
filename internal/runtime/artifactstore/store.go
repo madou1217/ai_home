@@ -45,6 +45,7 @@ type Request struct {
 	Dedupe          []DedupeEntry         `json:"dedupe,omitempty"`
 	StoreLinks      []StoreLinkEntry      `json:"storeLinks,omitempty"`
 	StoreLinkPrunes []StoreLinkPruneEntry `json:"storeLinkPrunes,omitempty"`
+	SkillLinks      []SkillLinkEntry      `json:"skillLinks,omitempty"`
 	Prune           *PruneOptions         `json:"prune,omitempty"`
 }
 
@@ -146,6 +147,7 @@ type Response struct {
 	Dedupe          *DedupeResult          `json:"dedupe,omitempty"`
 	StoreLinks      []StoreLinkResult      `json:"storeLinks,omitempty"`
 	StoreLinkPrunes []StoreLinkPruneResult `json:"storeLinkPrunes,omitempty"`
+	SkillLinks      []SkillLinkResult      `json:"skillLinks,omitempty"`
 	Errors          []string               `json:"errors"`
 }
 
@@ -174,6 +176,9 @@ func Ensure(request Request) Response {
 	}
 	if len(request.StoreLinkPrunes) > 0 {
 		response.StoreLinkPrunes = applyStoreLinkPrunes(request)
+	}
+	if len(request.SkillLinks) > 0 {
+		response.SkillLinks = applySkillLinks(request)
 	}
 	if len(request.DataRoots) > 0 {
 		response.DataRoots = linkDataRoots(request)

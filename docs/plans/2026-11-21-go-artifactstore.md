@@ -98,6 +98,21 @@
 - 平台判定修正：请求里是 Node 的 `win32`，旧代码只比 `"windows"`，导致 Windows 上
   所有目录链接退化成需要特权的 `os.Symlink`、reflink 探测还会去调用不存在的 `cp`。
 
+## 技能视图（2026-11-21 已迁移）
+
+- `codebuddy-skills-links` 保留策略（共享库里哪些技能、账号禁用/启用集合），文件系统动作交给 Go：
+  - 账号目录里逐技能建链接（Windows 优先 junction）、清掉禁用/失效的链接；
+  - 账号自己的真实目录不动，记 `unresolved`；
+  - 旧布局（账号 skills 目录本身是整目录链接）先摘链接再重建。
+- **投影外跳过**：如果账号 skills 目录的真实路径落在投影之外（workbuddy 的 `.workbuddy-ai`
+  整体链到宿主 runtime home），那份技能本来就是全机唯一一份；"按账号启用"只会改写共享目录、
+  影响所有账号。此时返回 `skipped: ["shared-external"]` 且不做任何增删。
+- 实测：macOS 与 Windows 上 Node/Go 结果一致（含禁用/启用、失效链接、旧整目录布局）；
+  真实账号 20 个稳定、2 个 workbuddy 账号正确跳过；Windows junction 标签 `0xA0000003`。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
+- 仍在本地的零散链接动作：`kiro-runtime-home`、`native-cli-resolver`（shim 硬链）、
+  `codebuddy-family-session-store`、`codebuddy-shared-config`、`opencode-strategy`；
+  均为 provider 级单文件/单目录链接，迁移时需要逐个确认语义（尤其 config 文件的写入穿透）。

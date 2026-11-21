@@ -24,6 +24,11 @@ func NewCatalog(manifest Manifest) (*Catalog, error) {
 		return nil, err
 	}
 	definitions := cloneDefinitions(manifest.Providers)
+	for _, definition := range definitions {
+		if err := validateModelPrefix(definition); err != nil {
+			return nil, err
+		}
+	}
 	byID := make(map[string]int, len(definitions))
 	for index, definition := range definitions {
 		byID[definition.ID] = index
@@ -176,6 +181,11 @@ func cloneDefinition(source Definition) Definition {
 		native.Permissions.Flags = append([]string(nil), source.NativeBoundary.Permissions.Flags...)
 		native.Permissions.Modes = append([]string(nil), source.NativeBoundary.Permissions.Modes...)
 		target.NativeBoundary = &native
+	}
+	if source.ModelPrefix != nil {
+		prefix := *source.ModelPrefix
+		prefix.Aliases = append([]string(nil), source.ModelPrefix.Aliases...)
+		target.ModelPrefix = &prefix
 	}
 	return target
 }

@@ -1885,6 +1885,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Provider: relaycore.NewProviderChain(familyMembers...),
 			Path:     codebuddyfamilyrelay.Path,
 			Aliases:  newChatAliasResolver(inference.modelAliases, dependencies.Store),
+			// 别名拥有最高解释权；未命中别名时才解析 Provider 显式声明的
+			// `provider/model` 前缀，并把 Provider 钉死（与 Node 前门同一顺序）。
+			ModelPrefixes: newRelayModelPrefixResolver(catalog, dependencies.Store),
 			Accounts: relaycore.NewAccountSourceChain(
 				append(append(relayModuleAccounts(relayModules), familyRelayAccounts), pluginAccounts)...,
 			),

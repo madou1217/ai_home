@@ -666,6 +666,9 @@ func builtinZcode() Definition {
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
+		// 目录登记裸 id（glm-5.3），客户端会用 `zcode/glm-5.3` / `zai/glm-5.3`
+		// 这种显式归属写法；声明后入口把它还原成裸 id 并钉死本 Provider。
+		ModelPrefix: &ModelPrefix{Supported: true, Aliases: []string{"zai"}},
 		AuthOptions: []AuthOption{
 			// 两个**正交维度**，策略名是 `<区域>:<流程>`：
 			//   区域：zai（国际站 chat.z.ai）/ bigmodel（国内站 bigmodel.cn）——

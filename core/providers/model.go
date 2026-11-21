@@ -142,6 +142,20 @@ type Definition struct {
 	// 未声明的宿主 = 该宿主不能服务（保守侧）；声明 supported=false 时 Reason 必填，
 	// 让「为什么不能」可读，而不是留下一个没人知道原因的缺席。
 	RelayHosts map[string]RelayHost `json:"relayHosts,omitempty"`
+	// ModelPrefix 声明客户端用 `provider/model` 命名空间写法时是否解析该前缀。
+	// 未声明 = 不解析，请求按原模型字面量路由（行为不变）。
+	ModelPrefix *ModelPrefix `json:"modelPrefix,omitempty"`
+}
+
+// ModelPrefix 是 Provider 对 `provider/model` 命名空间前缀的声明。
+//
+// 只有显式声明 supported=true 的 Provider 才会在入口把前缀还原成裸模型并把
+// Provider 钉死；未声明的 Provider 逐字节保持原行为。Aliases 是同一 Provider 的
+// 历史/上游别名（例如 zcode 的 zai），Provider ID 本身总是隐含可用。
+type ModelPrefix struct {
+	Supported bool     `json:"supported"`
+	Reason    string   `json:"reason,omitempty"`
+	Aliases   []string `json:"aliases,omitempty"`
 }
 
 // RelayHost 描述某个宿主对该 Provider 推理的承接能力。

@@ -41,6 +41,12 @@ type AliasResolver interface {
 	ResolveRelayModel(ctx context.Context, model string) (string, bool)
 }
 
+// ModelPrefixResolver 在别名未命中时把 `provider/model` 还原成裸模型，
+// 并声明应钉死的 Provider。完整 id 优先、歧义与显式 Provider 冲突由实现负责。
+type ModelPrefixResolver interface {
+	ResolveModelPrefix(ctx context.Context, model string) (bare string, provider string, ok bool)
+}
+
 // AccountSource 按模型产出候选账号（透传同样需要多账号故障转移）。
 type AccountSource interface {
 	Accounts(ctx context.Context, modelID runtimecore.ModelID) (AccountCursor, error)
@@ -87,6 +93,8 @@ type Dependencies struct {
 	Path string
 	// Aliases 可选：在账号征召前解析 relay 别名目标。
 	Aliases AliasResolver
+	// ModelPrefixes 可选：别名未命中时解析 Provider 显式声明的模型命名空间前缀。
+	ModelPrefixes ModelPrefixResolver
 	// Accounts 按调度顺序提供账号；为空表示只服务钉选调用方。
 	Accounts AccountSource
 	// Fallback 承接透传服务不了的请求，通常是 Canonical 推理入口。
@@ -121,6 +129,7 @@ type Handler struct {
 	provider            Provider
 	path                string
 	aliases             AliasResolver
+	modelPrefixes       ModelPrefixResolver
 	accounts            AccountSource
 	fallback            http.Handler
 	credentials         CredentialResolver
@@ -163,6 +172,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		provider:            dependencies.Provider,
 		path:                strings.TrimSpace(dependencies.Path),
 		aliases:             dependencies.Aliases,
+		modelPrefixes:       dependencies.ModelPrefixes,
 		accounts:            dependencies.Accounts,
 		fallback:            dependencies.Fallback,
 		credentials:         dependencies.Credentials,
@@ -246,6 +256,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.delegate(response, request, body)
 		return
 	}
+	aliasMatched := false
 	if handler.aliases != nil {
 		if target, matched := handler.aliases.ResolveRelayModel(request.Context(), modelID.String()); matched && target != "" {
 			rewritten, rewrittenOK := RewriteRawModel(body, target)
@@ -258,6 +269,30 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			modelID = targetID
 			request.Body = io.NopCloser(bytes.NewReader(body))
 			request.ContentLength = int64(len(body))
+			aliasMatched = true
+		}
+	}
+	// 别名是用户显式配的名字，拥有最高解释权；只有未命中别名时才解析
+	// Provider 显式声明的命名空间前缀（与 Node 前门同一顺序）。解析后把
+	// Provider 钉进上下文，账号来源链只询问该 Provider，避免裸 id 漂到别家池子。
+	if !aliasMatched && handler.modelPrefixes != nil {
+		explicitProvider := inferenceapi.ProviderHint(request)
+		bare, provider, matched := handler.modelPrefixes.ResolveModelPrefix(request.Context(), modelID.String())
+		// 客户端显式选了别的 Provider 时不替它改主意：前缀冲突按原样进入
+		// 后续路由并如实失败，而不是悄悄改派到前缀声明的 Provider。
+		compatible := explicitProvider == "" ||
+			strings.EqualFold(explicitProvider, "auto") ||
+			strings.EqualFold(explicitProvider, provider)
+		if matched && bare != "" && provider != "" && compatible {
+			rewritten, rewrittenOK := RewriteRawModel(body, bare)
+			bareID, idErr := runtimecore.NewModelID(bare)
+			if rewrittenOK && idErr == nil {
+				body = rewritten
+				modelID = bareID
+				request.Body = io.NopCloser(bytes.NewReader(body))
+				request.ContentLength = int64(len(body))
+				request = request.WithContext(WithProviderPin(request.Context(), provider))
+			}
 		}
 	}
 	source := handler.resolveAccountSource(request)

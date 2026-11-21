@@ -2,11 +2,32 @@ package relaycore
 
 import (
 	"context"
+	"strings"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
+
+// providerScopedSource 标记只服务一个 Provider 的账号来源。
+//
+// 多 Provider 来源（家族/插件链）不实现它：它们服务多个 Provider，无法用
+// 单个 ID 表达；Provider 钉选时整条来源跳过，避免钉选被稀释。
+type providerScopedSource interface {
+	ProviderID() string
+}
+
+// accountSourceMatchesPin 判断来源是否属于钉选 Provider。
+func accountSourceMatchesPin(source AccountSource, pin string) bool {
+	if pin == "" {
+		return true
+	}
+	scoped, ok := source.(providerScopedSource)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(scoped.ProviderID()), pin)
+}
 
 // AccountSourceChain 把多个账号来源串成**一个**来源，按顺序依次询问。
 //
@@ -50,7 +71,11 @@ func (chain *AccountSourceChain) ReacquireFor429Retry(
 	if chain == nil || !target.IsValid() {
 		return "", false, false, nil
 	}
+	pin, pinned := ProviderPin(ctx)
 	for _, source := range chain.sources {
+		if pinned && !accountSourceMatchesPin(source, pin) {
+			continue
+		}
 		reacquirer, ok := source.(RateLimitReacquirer)
 		if !ok {
 			continue
@@ -87,8 +112,12 @@ func (chain *AccountSourceChain) Accounts(
 	if chain == nil {
 		return &exhaustedAccountCursor{}, nil
 	}
+	pin, pinned := ProviderPin(ctx)
 	cursors := make([]AccountCursor, 0, len(chain.sources))
 	for _, source := range chain.sources {
+		if pinned && !accountSourceMatchesPin(source, pin) {
+			continue
+		}
 		cursor, err := source.Accounts(ctx, modelID)
 		if err != nil || cursor == nil {
 			continue

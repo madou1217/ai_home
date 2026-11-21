@@ -55,6 +55,14 @@ func newProviderRelayAccountSource(
 	}, nil
 }
 
+// ProviderID 返回该来源唯一服务的 Provider；账号来源链据此执行 Provider 钉选。
+func (source *providerRelayAccountSource) ProviderID() string {
+	if source == nil {
+		return ""
+	}
+	return source.providerID
+}
+
 // Accounts 为指定模型创建一个征召会话。
 //
 // 模型没有候选时返回的游标会立即耗尽（Next 返回 false），调用方据此把请求交回

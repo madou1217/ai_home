@@ -37,9 +37,9 @@ func Policy() accountprojection.Policy {
 		},
 		PrivateArtifacts: []accountprojection.PathSpec{
 			{Path: []string{"electron-user-data"}},
-			{Path: []string{".kimi-code", "config.toml"}},
-			{Path: []string{".kimi-code", "credentials"}},
-			{Path: []string{".kimi-code", "session_index.jsonl"}},
+			{Path: providerroot.NativePath(ProviderID, "config.toml")},
+			{Path: providerroot.NativePath(ProviderID, "credentials")},
+			{Path: providerroot.NativePath(ProviderID, "session_index.jsonl")},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
 			{From: append([]string{}, root...), To: append([]string{}, root...)},

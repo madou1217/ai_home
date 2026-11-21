@@ -36,7 +36,7 @@ func Policy() accountprojection.Policy {
 		PrivateArtifacts: []accountprojection.PathSpec{
 			{Path: []string{"electron-user-data"}},
 			{Path: []string{".local", "share", "aih-opencode-runtime", "opencode", "auth.json"}},
-			{Path: []string{".config", "opencode", "auth.json"}},
+			{Path: providerroot.ConfigPath(ProviderID, "auth.json")},
 			{Path: []string{"Library", "Keychains"}},
 		},
 		SharedHostCaches: []accountprojection.SharedLink{

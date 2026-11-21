@@ -31,8 +31,8 @@ func Policy() accountprojection.Policy {
 		},
 		PrivateArtifacts: []accountprojection.PathSpec{
 			{Path: []string{"electron-user-data"}},
-			{Path: []string{".cline", "data", "settings"}},
-			{Path: []string{".cline", "data", "secrets.json"}},
+			{Path: providerroot.NativePath(ProviderID, "data", "settings")},
+			{Path: providerroot.NativePath(ProviderID, "data", "secrets.json")},
 			{Path: []string{"Library", "Keychains"}},
 		},
 		Env: []accountprojection.EnvBinding{

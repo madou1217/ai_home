@@ -28,7 +28,7 @@ func Policy() accountprojection.Policy {
 			},
 		},
 		PrivateArtifacts: []accountprojection.PathSpec{
-			{Path: []string{".codex", "config.toml"}},
+			{Path: providerroot.NativePath("codex", "config.toml")},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
 			{From: append([]string{}, root...), To: append([]string{}, root...)},

@@ -43,8 +43,6 @@ type codexHooksDaemonOptions struct {
 	PathEnv                      string
 	TempDir                      string
 	GoBinaryPath                 string
-	NodeExecPath                 string
-	HelperScriptPath             string
 	ProviderHookReceiverURL      string
 	CLISelfHealInterval          time.Duration
 	DesktopSelfHealInterval      time.Duration
@@ -158,8 +156,6 @@ func buildCodexHooksDaemonOptions(
 		EnableCLIHook:            cfg.EnableCLIHook,
 		EnableNotificationBridge: true,
 		GoBinaryPath:             resolveCodexGoBinaryPath(cfg.GoBinaryPath, cfg.EntryFilePath),
-		NodeExecPath:             resolveCodexNodeExecPath(cfg.NodeExecPath),
-		HelperScriptPath:         resolveCodexHelperScriptPath(cfg.HelperScriptPath, cfg.EntryFilePath),
 		ProviderHookReceiverURL:  receiverURL,
 		CLISelfHealInterval:      clampSelfHealInterval(cfg.CLISelfHealInterval),
 		DesktopSelfHealInterval:  clampSelfHealInterval(cfg.DesktopSelfHealInterval),
@@ -328,8 +324,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			PathEnv:            opts.PathEnv,
 			TempDir:            opts.TempDir,
 			GoBinaryPath:       opts.GoBinaryPath,
-			NodeExecPath:       opts.NodeExecPath,
-			HelperScriptPath:   opts.HelperScriptPath,
 			ResolveCodexBinary: opts.ResolveCodexBinary,
 		})
 		runtime.cli = cliSvc
@@ -373,7 +367,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 		desktopSvc := codexhooks.NewDesktopHookService(codexhooks.DesktopHookOptions{
 			AIHomeDir:               aiHomeDir,
 			HostHomeDir:             hostHomeDir,
-			NodeExecPath:            opts.NodeExecPath,
 			GoBinaryPath:            opts.GoBinaryPath,
 			ProviderHookReceiverURL: opts.ProviderHookReceiverURL,
 			RuntimeLayouts:          opts.DesktopRuntimeLayouts,
@@ -447,7 +440,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 		vscodeSvc := codexhooks.NewVscodeHookService(codexhooks.VscodeHookOptions{
 			AIHomeDir:        aiHomeDir,
 			HostHomeDir:      hostHomeDir,
-			NodeExecPath:     opts.NodeExecPath,
 			GoBinaryPath:     opts.GoBinaryPath,
 			ExtensionRoots:   opts.ExtensionRoots,
 			VSCodeExtensions: opts.VSCodeExtensions,

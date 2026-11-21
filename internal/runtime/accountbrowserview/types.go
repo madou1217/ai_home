@@ -9,7 +9,7 @@ import (
 )
 
 var ErrBusy = errors.New("browser_surface_already_controlled")
-var ErrUnsupported = errors.New("browser_surface_requires_macos14")
+var ErrUnsupported = errors.New("browser_surface_platform_unsupported")
 
 type Options struct{ AIHomeDir string }
 type Command struct {

@@ -1,5 +1,7 @@
 package deletionprojection
 
+import "github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+
 // providerProjectionSpec 描述一个 Provider 在删除准备阶段需要的全部投影知识。
 //
 // 为什么必须是表驱动：每个 Provider 的凭据文件、私有目录和宿主资源落点都不同。
@@ -111,14 +113,14 @@ var projectionSpecs = map[string]providerProjectionSpec{
 			projectionKindAccount: {
 				privateArtifacts: codexAccountPrivatePaths(),
 				resourceMappings: []projectionResourceMapping{
-					{from: []string{".codex"}, to: []string{".codex"}},
+					{from: providerroot.ConfigRoot("codex"), to: providerroot.ConfigRoot("codex")},
 				},
 			},
 			projectionKindCodexDesktop: {
 				privateArtifacts: codexDesktopPrivatePaths(),
 				resourceMappings: []projectionResourceMapping{
 					// Desktop 投影根本身就是 CODEX_HOME；未命中私有路径的条目都回到宿主 .codex。
-					{to: []string{".codex"}},
+					{to: providerroot.ConfigRoot("codex")},
 				},
 			},
 		},
@@ -128,7 +130,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 		credential: credentialSpec{
 			mode: credentialCodexOAuth,
 			artifacts: []credentialArtifact{
-				{rootKind: projectionKindAccount, segments: []string{".codex", "auth.json"}},
+				{rootKind: projectionKindAccount, segments: providerroot.ConfigPath("codex", "auth.json")},
 				{rootKind: projectionKindCodexDesktop, segments: []string{"auth.json"}},
 			},
 		},
@@ -138,14 +140,14 @@ var projectionSpecs = map[string]providerProjectionSpec{
 			projectionKindAccount: {
 				privateArtifacts: claudeAccountPrivatePaths(),
 				resourceMappings: []projectionResourceMapping{
-					{from: []string{".claude"}, to: []string{".claude"}},
+					{from: providerroot.ConfigRoot("claude"), to: providerroot.ConfigRoot("claude")},
 				},
 			},
 		},
 		credential: credentialSpec{
 			mode: credentialClaudeOAuth,
 			artifacts: []credentialArtifact{
-				{rootKind: projectionKindAccount, segments: []string{".claude", ".credentials.json"}},
+				{rootKind: projectionKindAccount, segments: providerroot.ConfigPath("claude", ".credentials.json")},
 			},
 		},
 	},
@@ -166,7 +168,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 				// 链接，其余条目属于这份一次性投影。删除时只能整体随投影丢弃，
 				// 绝不能迁回宿主，否则会改到 agy 也在读写的文件。
 				privateArtifacts: []privateProjectionPath{
-					{segments: []string{".gemini"}, subtree: true},
+					{segments: providerroot.ConfigRoot("gemini"), subtree: true},
 					{segments: []string{"Library", "Keychains"}, subtree: true},
 				},
 				// 无 resourceMappings：gemini 的投影只删不迁。
@@ -175,8 +177,8 @@ var projectionSpecs = map[string]providerProjectionSpec{
 		credential: credentialSpec{
 			mode: credentialNativeGeneration,
 			artifacts: []credentialArtifact{
-				{rootKind: projectionKindAccount, field: "oauthCreds", segments: []string{".gemini", "oauth_creds.json"}},
-				{rootKind: projectionKindAccount, field: "googleAccounts", segments: []string{".gemini", "google_accounts.json"}, optional: true},
+				{rootKind: projectionKindAccount, field: "oauthCreds", segments: providerroot.ConfigPath("gemini", "oauth_creds.json")},
+				{rootKind: projectionKindAccount, field: "googleAccounts", segments: providerroot.ConfigPath("gemini", "google_accounts.json"), optional: true},
 			},
 		},
 	},
@@ -186,7 +188,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 				// grok 的投影同样只删不迁：宿主 ~/.grok 是官方 CLI 的原生库，
 				// 删除账号投影不应改写其中任何文件。
 				privateArtifacts: []privateProjectionPath{
-					{segments: []string{".grok"}, subtree: true},
+					{segments: providerroot.ConfigRoot("grok"), subtree: true},
 					{segments: []string{"Library", "Keychains"}, subtree: true},
 				},
 			},
@@ -194,7 +196,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 		credential: credentialSpec{
 			mode: credentialNativeGeneration,
 			artifacts: []credentialArtifact{
-				{rootKind: projectionKindAccount, field: "auth", segments: []string{".grok", "auth.json"}},
+				{rootKind: projectionKindAccount, field: "auth", segments: providerroot.ConfigPath("grok", "auth.json")},
 			},
 		},
 	},
@@ -208,7 +210,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 				// 多落点必须显式列出：providers.json 是跨 Provider 的整库，secrets.json 又是
 				// CLI 自己的 API Key 仓，漏掉任何一个都会在投影里留下残留凭据。
 				privateArtifacts: []privateProjectionPath{
-					{segments: []string{".cline"}, subtree: true},
+					{segments: providerroot.ConfigRoot("cline"), subtree: true},
 					{segments: []string{"Library", "Keychains"}, subtree: true},
 					{segments: []string{"electron-user-data"}, subtree: true},
 				},
@@ -221,7 +223,7 @@ var projectionSpecs = map[string]providerProjectionSpec{
 				{
 					rootKind:  projectionKindAccount,
 					field:     "auth",
-					segments:  []string{".cline", "data", "settings", "providers.json"},
+					segments:  providerroot.ConfigPath("cline", "data", "settings", "providers.json"),
 					normalize: normalizeClineProviders,
 				},
 			},
@@ -254,13 +256,13 @@ var projectionSpecs = map[string]providerProjectionSpec{
 				{
 					rootKind: projectionKindAccount,
 					field:    "auth",
-					segments: []string{".config", "opencode", "auth.json"},
+					segments: providerroot.ConfigPath("opencode", "auth.json"),
 					optional: true,
 				},
 				{
 					rootKind: projectionKindAccount,
 					field:    "auth",
-					segments: []string{".local", "share", "opencode", "auth.json"},
+					segments: providerroot.NativePath("opencode", "auth.json"),
 				},
 			},
 		},

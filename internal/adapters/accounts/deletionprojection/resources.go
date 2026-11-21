@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 type projectionEntryKind uint8
@@ -181,9 +182,9 @@ func classifyPrivatePath(
 
 func codexAccountPrivatePaths() []privateProjectionPath {
 	return []privateProjectionPath{
-		{segments: []string{".codex", "auth.json"}, backups: true},
-		{segments: []string{".codex", "config.toml"}, backups: true},
-		{segments: []string{".codex", "tmp"}, subtree: true},
+		{segments: providerroot.ConfigPath("codex", "auth.json"), backups: true},
+		{segments: providerroot.ConfigPath("codex", "config.toml"), backups: true},
+		{segments: append(providerroot.ConfigRoot("codex"), "tmp"), subtree: true},
 		{segments: []string{"Library", "Keychains"}, subtree: true},
 	}
 }
@@ -198,7 +199,7 @@ func codexDesktopPrivatePaths() []privateProjectionPath {
 
 func claudeAccountPrivatePaths() []privateProjectionPath {
 	return []privateProjectionPath{
-		{segments: []string{".claude", ".credentials.json"}, backups: true},
+		{segments: providerroot.ConfigPath("claude", ".credentials.json"), backups: true},
 		{segments: []string{"Library", "Keychains"}, subtree: true},
 	}
 }

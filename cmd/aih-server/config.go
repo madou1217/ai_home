@@ -274,7 +274,7 @@ func ensureDefaultServerKeys(aiHomeDir, managementKey, clientKey string) (string
 			if existing, ok := payload["managementKey"].(string); ok && strings.TrimSpace(existing) != "" {
 				managementKey = strings.TrimSpace(existing)
 			} else {
-				value, keyErr := newServerKey()
+				value, keyErr := newServerKey("mk-")
 				if keyErr != nil {
 					return "", keyErr
 				}
@@ -288,7 +288,7 @@ func ensureDefaultServerKeys(aiHomeDir, managementKey, clientKey string) (string
 			if existing, ok := payload["apiKey"].(string); ok && strings.TrimSpace(existing) != "" {
 				clientKey = strings.TrimSpace(existing)
 			} else {
-				value, keyErr := newServerKey()
+				value, keyErr := newServerKey("sk-")
 				if keyErr != nil {
 					return "", keyErr
 				}
@@ -314,12 +314,13 @@ func ensureDefaultServerKeys(aiHomeDir, managementKey, clientKey string) (string
 }
 
 // newServerKey 生成 48 位十六进制密钥（24 字节随机数），满足服务端 key 约束。
-func newServerKey() (string, error) {
+// newServerKey 生成带类型前缀的默认密钥；默认生成绝不覆盖已有值（见 ensureDefaultServerKeys）。
+func newServerKey(prefix string) (string, error) {
 	buffer := make([]byte, 24)
 	if _, err := rand.Read(buffer); err != nil {
 		return "", fmt.Errorf("生成默认服务密钥失败: %w", err)
 	}
-	return hex.EncodeToString(buffer), nil
+	return prefix + hex.EncodeToString(buffer), nil
 }
 
 // envOptionalPath 校验可选路径环境变量：未设置或空串按缺省处理，

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +19,7 @@ import (
 )
 
 func showServerConfigUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--client-key <key>] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>] [--clear-management-key --confirm-clear-management-key] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
+	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--api-key <key>|--generate-api-key] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
 	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90m      \x1b[0m `aih server config list` 列出全部可设置参数、默认值与含义（`-l` / `--list` / `ls` 等价）。")
 }
 
@@ -56,6 +58,11 @@ func runServerConfig(ctx context.Context, arguments []string, runtime commandRun
 	}
 	switch action {
 	case "show":
+		// 用户直觉是 `server config --api-key <k>` 直接生效；显式带设置类 flag 时
+		// 走 set，而不是只读展示后静默忽略（2026-11-21 真机：flag 无任何效果）。
+		if containsConfigMutationFlag(rest) {
+			return true, setServerConfig(ctx, home, rest, runtime)
+		}
 		return true, showServerConfig(ctx, home, rest, runtime)
 	case "get":
 		if len(rest) == 0 {
@@ -198,8 +205,7 @@ func unsetServerConfig(ctx context.Context, home string, args []string, runtime 
 
 func setServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
 	patch := map[string]any{}
-	clearManagementKey := false
-	confirmClearManagementKey := false
+	generated := map[string]string{}
 	for index := 0; index < len(args); index++ {
 		flag := args[index]
 		if flag == "--json" || flag == "--one-line" || flag == "--verbose" || flag == "--show-secrets" {
@@ -208,20 +214,22 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 		if flag == "--qr" || flag == "--qr-url" || strings.HasPrefix(flag, "--qr-url=") {
 			return errors.New("--qr 只能用于 show/get，不能和设置项一起使用")
 		}
-		if flag == "--clear-management-key" {
-			clearManagementKey = true
-			continue
-		}
-		if flag == "--confirm-clear-management-key" {
-			confirmClearManagementKey = true
-			continue
-		}
 		if flag == "--generate-management-key" {
 			key, err := generateManagementKey()
 			if err != nil {
 				return err
 			}
 			patch["managementKey"] = key
+			generated["managementKey"] = key
+			continue
+		}
+		if flag == "--generate-api-key" {
+			key, err := generateAPIKey()
+			if err != nil {
+				return err
+			}
+			patch["apiKey"] = key
+			generated["apiKey"] = key
 			continue
 		}
 		if flag == "--open-network" {
@@ -303,23 +311,21 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 		}
 		patch[key] = value
 	}
-	if clearManagementKey && !confirmClearManagementKey {
-		return errors.New("--clear-management-key requires --confirm-clear-management-key")
-	}
-	if len(patch) == 0 && !clearManagementKey {
+	if len(patch) == 0 {
 		return errors.New("server config set requires at least one option")
 	}
-	if len(patch) > 0 {
-		if _, err := webuiserverconfigapi.ApplyConfigPatch(ctx, home, patch); err != nil {
-			return err
+	if err := validateServerKeyPatch(patch); err != nil {
+		return err
+	}
+	if _, err := webuiserverconfigapi.ApplyConfigPatch(ctx, home, patch); err != nil {
+		return err
+	}
+	for _, name := range []string{"apiKey", "managementKey"} {
+		if value, ok := generated[name]; ok {
+			_, _ = fmt.Fprintf(runtime.stdout, "[aih] generated %s: %s\n", name, value)
 		}
 	}
-	if clearManagementKey {
-		if err := webuiserverconfigapi.ClearManagementKey(ctx, home); err != nil {
-			return err
-		}
-	}
-	if serverConfigPatchRequiresRestart(patch, clearManagementKey) {
+	if serverConfigPatchRequiresRestart(patch) {
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; run aih server restart to apply it.")
 	} else {
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; proxy pool and upstream 429 retry changes take effect automatically without restarting the server.")
@@ -369,8 +375,8 @@ func isASCIIUnsignedDigits(text string) bool {
 	return true
 }
 
-func serverConfigPatchRequiresRestart(patch map[string]any, clearManagementKey bool) bool {
-	if clearManagementKey {
+func serverConfigPatchRequiresRestart(patch map[string]any) bool {
+	if false {
 		return true
 	}
 	for key := range patch {
@@ -419,7 +425,7 @@ func parseDisplayFlags(args []string) configDisplayFlags {
 
 func configFlagKey(flag string) (string, bool) {
 	keys := map[string]string{
-		"--host": "host", "--port": "port", "--client-key": "apiKey",
+		"--host": "host", "--port": "port", "--api-key": "apiKey", "--client-key": "apiKey",
 		"--management-key": "managementKey", "--proxy-url": "proxyUrl",
 		"--no-proxy": "noProxy", "--models-probe-accounts": "modelsProbeAccounts",
 		"--model-cache-sync":                      "modelCacheSync",
@@ -508,10 +514,59 @@ func formatConfigValue(value any) string {
 	}
 }
 
+
+// displayOnlyConfigFlags 只影响输出，不改变配置。
+var displayOnlyConfigFlags = map[string]bool{
+	"--show-secrets": true, "--json": true, "--one-line": true, "--verbose": true, "--qr": true,
+}
+
+// containsConfigMutationFlag 判断参数里是否带有设置/生成类 flag。
+func containsConfigMutationFlag(args []string) bool {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if displayOnlyConfigFlags[arg] || arg == "--qr-url" || strings.HasPrefix(arg, "--qr-url=") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// validateServerKeyPatch 在落盘前校验人工提供的 key，避免写进去却无法使用。
+func validateServerKeyPatch(patch map[string]any) error {
+	if raw, ok := patch["apiKey"]; ok {
+		key, _ := raw.(string)
+		if !validServerKeyValue(key) {
+			return errors.New("--api-key 必须是 32–8192 个字符且不含空白或控制字符")
+		}
+	}
+	if raw, ok := patch["managementKey"]; ok {
+		key, _ := raw.(string)
+		if !validServerKeyValue(key) {
+			return errors.New("--management-key 必须是 32–8192 个字符且不含空白或控制字符")
+		}
+	}
+	return nil
+}
+
+func validServerKeyValue(value string) bool {
+	if !serverconfig.HasValidManagementKeyLength(value) {
+		return false
+	}
+	for _, character := range value {
+		if character <= ' ' || character == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 func generateManagementKey() (string, error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(raw), nil
+	return "mk-" + hex.EncodeToString(raw), nil
 }

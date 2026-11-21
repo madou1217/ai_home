@@ -511,7 +511,7 @@ func writeControlError(response http.ResponseWriter, err error) {
 	case plugincontrol.CodeVersionConflict, plugincontrol.CodeInUse, plugincontrol.CodeRevisionConflict,
 		plugincontrol.CodePublishBusy, plugincontrol.CodeTicketUnknown, plugincontrol.CodeTicketExpired:
 		status = http.StatusConflict
-	case "account_maintenance_busy", "account_maintenance_in_progress",
+	case "account_maintenance_busy",
 		plugincontrol.CodeStateUnavailable, plugincontrol.CodeRuntimeUnavailable,
 		"plugin_runtime_inactive":
 		status = http.StatusServiceUnavailable

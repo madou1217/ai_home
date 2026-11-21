@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -166,24 +165,5 @@ func TestCorruptStateFailsClosed(t *testing.T) {
 	coded, ok := pluginerr.From(err)
 	if !ok || coded.Code != plugincontrol.CodeStateInvalid {
 		t.Fatalf("损坏状态必须 fail closed: %v", err)
-	}
-}
-
-func TestMaintenanceGateBlocksStateWrite(t *testing.T) {
-	store, home := newTestStore(t)
-	gate := filepath.Join(home, "run", "maintenance", "oauth-rekey.lock")
-	if err := os.MkdirAll(filepath.Dir(gate), 0o700); err != nil {
-		t.Fatalf("创建闸门失败: %v", err)
-	}
-	if err := os.WriteFile(gate, []byte("x"), 0o600); err != nil {
-		t.Fatalf("写入闸门失败: %v", err)
-	}
-	_, err := store.Update(context.Background(), func(*plugincontrol.State) error { return nil }, nil)
-	coded, ok := pluginerr.From(err)
-	if !ok || coded.Code != "account_maintenance_in_progress" {
-		t.Fatalf("维护闸门未阻止写入: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(home, DatabaseFileName)); !os.IsNotExist(err) {
-		t.Fatalf("维护期间不应创建 app-state.db: %v", err)
 	}
 }

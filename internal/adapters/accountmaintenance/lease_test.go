@@ -90,22 +90,6 @@ func TestExclusiveMaintenanceFailsClosed(t *testing.T) {
 	}
 }
 
-func TestMaintenanceGateBlocksAcquire(t *testing.T) {
-	home := t.TempDir()
-	gate := filepath.Join(home, "run", "maintenance", gateName)
-	if err := os.MkdirAll(filepath.Dir(gate), 0o700); err != nil {
-		t.Fatalf("创建闸门目录失败: %v", err)
-	}
-	if err := os.WriteFile(gate, []byte("maintenance"), 0o600); err != nil {
-		t.Fatalf("创建闸门文件失败: %v", err)
-	}
-	_, err := Acquire(context.Background(), home)
-	coded, ok := pluginerr.From(err)
-	if !ok || coded.Code != CodeInProgress {
-		t.Fatalf("错误码 = %v, want %s", err, CodeInProgress)
-	}
-}
-
 func TestRejectsSymlinkedMaintenanceDirectory(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()

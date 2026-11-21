@@ -22,10 +22,9 @@ import (
 	"github.com/madou1217/ai_home/internal/pluginerr"
 )
 
-// 与 Node account-maintenance-gate.js / account-maintenance-lock.js 的错误码一致。
+// 与 Node account-maintenance-lock.js 的错误码一致。
 const (
 	CodeBusy          = "account_maintenance_busy"
-	CodeInProgress    = "account_maintenance_in_progress"
 	CodeUnavailable   = "account_maintenance_unavailable"
 	CodePathEscape    = "maintenance_lock_path_escape"
 	CodeFileInvalid   = "maintenance_lock_file_invalid"
@@ -38,7 +37,6 @@ const (
 	leaseFileMode  = 0o600
 	directoryMode  = 0o700
 	databaseName   = "access.sqlite"
-	gateName       = "oauth-rekey.lock"
 )
 
 // Lease 是一次读租约；Close 释放 SQLite SHARED 锁。
@@ -65,8 +63,8 @@ func (lease *Lease) Close() {
 
 // Acquire 获取维护读租约。
 //
-// 顺序与 Node 一致：先看 oauth-rekey.lock 闸门，再初始化/校验协调库，最后
-// BEGIN + 校验 lease 行。任何 SQLite busy 都收敛成 account_maintenance_busy。
+// 顺序与 Node 一致：初始化/校验协调库，再 BEGIN + 校验 lease 行。
+// 任何 SQLite busy 都收敛成 account_maintenance_busy。
 func Acquire(ctx context.Context, aiHomeDir string) (*Lease, error) {
 	root := strings.TrimSpace(aiHomeDir)
 	if root == "" {
@@ -94,12 +92,6 @@ func Acquire(ctx context.Context, aiHomeDir string) (*Lease, error) {
 	}
 	if canonical != realRoot && !strings.HasPrefix(canonical, realRoot+string(filepath.Separator)) {
 		return nil, pluginerr.New(CodePathEscape, "")
-	}
-	gate := filepath.Join(canonical, gateName)
-	if _, err := os.Lstat(gate); err == nil {
-		return nil, pluginerr.New(CodeInProgress, "")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, pluginerr.New(CodeUnavailable, "")
 	}
 	file := filepath.Join(canonical, databaseName)
 	for _, candidate := range []string{file, file + "-journal", file + "-wal", file + "-shm"} {

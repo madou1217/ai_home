@@ -193,7 +193,6 @@ func TestErrorStatusMapping(t *testing.T) {
 		{plugincontrol.CodeInUse, http.StatusConflict},
 		{plugincontrol.CodeRevisionConflict, http.StatusConflict},
 		{"account_maintenance_busy", http.StatusServiceUnavailable},
-		{"account_maintenance_in_progress", http.StatusServiceUnavailable},
 		{plugincontrol.CodeStateUnavailable, http.StatusServiceUnavailable},
 		{plugincontrol.CodeStateInvalid, http.StatusBadRequest},
 	}

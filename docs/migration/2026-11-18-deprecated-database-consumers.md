@@ -106,7 +106,7 @@ lib/cli/services/usage/snapshot.js
 lib/cli/services/usage/usage-snapshot-codex.js
 scripts/prune-usage.js
 scripts/backfill-usage-ledger.js
-scripts/rekey-static-account-refs.js
+scripts/rekey-static-account-refs.js（2026-11-21 已删除）
 scripts/verify-aws-agy-migration/main.go
 scripts/compare-model-aliases.js
 scripts/compare-webui-accounts.js

@@ -207,7 +207,7 @@ func failure(result Result, err error) Result {
 		result.Reason = "desktop_cache_cancelled"
 	} else if coded, ok := pluginerr.From(err); ok {
 		switch coded.Code {
-		case accountmaintenance.CodeBusy, accountmaintenance.CodeInProgress:
+		case accountmaintenance.CodeBusy:
 			result.Reason = coded.Code
 		}
 	} else if strings.Contains(strings.ToLower(err.Error()), "locked") || strings.Contains(strings.ToLower(err.Error()), "busy") {
@@ -234,7 +234,7 @@ func inspectPaths(root string) (map[string]os.FileInfo, error) {
 	}
 	state := map[string]os.FileInfo{}
 	directories := map[string]bool{".": true, "run": true, "run/maintenance": true}
-	names := []string{".", "run", "run/maintenance", "run/maintenance/oauth-rekey.lock"}
+	names := []string{".", "run", "run/maintenance"}
 	for _, base := range []string{"aih.db", "run/maintenance/access.sqlite"} {
 		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
 			names = append(names, base+suffix)

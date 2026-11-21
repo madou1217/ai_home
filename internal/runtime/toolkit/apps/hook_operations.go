@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
@@ -41,7 +42,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 	if profile.featureFlag {
 		// Validate Codex preferences before touching the separate hooks JSON file.
 		home := ResolveHostHome(opts)
-		doc, err := codexpreferences.Read(filepath.Join(home, ".codex"))
+		doc, err := codexpreferences.Read(filepath.Join(home, providerroot.ConfigDir("codex")))
 		if err != nil {
 			outcome.Error = err.Error()
 			return outcome

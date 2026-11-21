@@ -225,10 +225,10 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 		Provider: "grok",
 		CLI: &cliDescriptor{
 			BinaryNames:      []string{"grok"},
-			CleanupHomeTrees: []string{".grok/bin", ".grok/downloads"},
+			CleanupHomeTrees: []string{strings.Join([]string{providerroot.ConfigDir("grok"), "bin"}, "/"), strings.Join([]string{providerroot.ConfigDir("grok"), "downloads"}, "/")},
 			CollectPathEntries: func(opts Options) []string {
 				if home := ResolveHostHome(opts); home != "" {
-					return []string{joinPlatformPath(resolvePlatform(opts), home, ".grok", "bin")}
+					return []string{joinPlatformPath(resolvePlatform(opts), home, providerroot.ConfigDir("grok"), "bin")}
 				}
 				return nil
 			},
@@ -375,7 +375,7 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 			BinaryNames:      []string{"kimi"},
 			CleanupHomeFiles: []string{".local/bin/kimi"},
 			CollectPathEntries: func(opts Options) []string {
-				return collectCommonPOSIXAndBinDirs(opts, ".local/bin", ".kimi-code/bin", ".bun/bin")
+				return collectCommonPOSIXAndBinDirs(opts, ".local/bin", strings.Join([]string{providerroot.ConfigDir("kimi"), "bin"}, "/"), ".bun/bin")
 			},
 			ResolveInstallPlans: func(opts Options) []LifecyclePlan {
 				p := resolvePlatform(opts)

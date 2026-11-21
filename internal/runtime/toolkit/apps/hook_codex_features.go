@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
@@ -17,7 +18,7 @@ import (
 
 func diagnoseCodexFeatures(ctx context.Context, opts Options) CodexFeaturesView {
 	home := ResolveHostHome(opts)
-	cfgPath := joinPlatformPath(resolvePlatform(opts), home, ".codex", "config.toml")
+	cfgPath := joinPlatformPath(resolvePlatform(opts), home, providerroot.ConfigDir("codex"), "config.toml")
 	var raw []byte
 	readErr := codexpreferences.CheckHostReady(filepath.Dir(cfgPath))
 	if readErr == nil {

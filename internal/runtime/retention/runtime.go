@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // DefaultRetentionDays 是运行期沙箱目录（login / chat-harness / verification）的默认保留天数。
@@ -178,7 +180,7 @@ func resolveAbsPath(p string) string {
 }
 
 func hasPrivateThreadStore(dirPath string) bool {
-	storePath := filepath.Join(dirPath, ".codex", "thread_history_1.sqlite")
+	storePath := filepath.Join(dirPath, providerroot.ConfigDir("codex"), "thread_history_1.sqlite")
 	info, err := os.Lstat(storePath)
 	if err != nil {
 		return false

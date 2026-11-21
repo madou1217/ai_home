@@ -51,18 +51,45 @@ func buildHelper(ctx context.Context) (string, func(), error) {
 }
 
 func preflight(ctx context.Context, binary string) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	raw, err := exec.CommandContext(ctx, binary, "--preflight").Output()
+	readStatus := func() (bool, error) {
+		raw, err := exec.CommandContext(ctx, binary, "--preflight").Output()
+		if err != nil {
+			return false, err
+		}
+		var status struct {
+			Screen bool `json:"screenCapture"`
+			Input  bool `json:"eventPosting"`
+		}
+		if json.Unmarshal(raw, &status) != nil {
+			return false, errPermission
+		}
+		return status.Screen && status.Input, nil
+	}
+	ready, err := readStatus()
 	if err != nil {
 		return err
 	}
-	var status struct {
-		Screen bool `json:"screenCapture"`
-		Input  bool `json:"eventPosting"`
+	if ready {
+		return nil
 	}
-	if json.Unmarshal(raw, &status) != nil || !status.Screen || !status.Input {
+	// Permission requests are made only after the user has explicitly pressed
+	// Start in the WebUI. The native OS owns the dialog; no UI automation occurs.
+	if err := exec.CommandContext(ctx, binary, "--request-permissions").Run(); err != nil {
 		return errPermission
 	}
-	return nil
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		ready, statusErr := readStatus()
+		if statusErr == nil && ready {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errPermission
+		case <-ticker.C:
+		}
+	}
 }

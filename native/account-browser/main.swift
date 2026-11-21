@@ -6,6 +6,14 @@ let output=SurfaceOutput()
 func emit(_ value:[String:Any]) {output.send(value)}
 
 NSApplication.shared.setActivationPolicy(.prohibited)
+if CommandLine.arguments.contains("--request-permissions") {
+  // This command is reached only after an explicit WebUI start confirmation.
+  // The OS owns the permission UI; AI Home never clicks or scripts it.
+  _ = CGRequestScreenCaptureAccess()
+  _ = CGRequestPostEventAccess()
+  let data=try! JSONSerialization.data(withJSONObject:["type":"permission-request","screenCapture":CGPreflightScreenCaptureAccess(),"eventPosting":CGPreflightPostEventAccess()],options:.sortedKeys)
+  FileHandle.standardOutput.write(data);FileHandle.standardOutput.write(Data([10]));exit(0)
+}
 if CommandLine.arguments.contains("--preflight") {
   let data=try! JSONSerialization.data(withJSONObject:["type":"preflight","screenCapture":CGPreflightScreenCaptureAccess(),"eventPosting":CGPreflightPostEventAccess()],options:.sortedKeys)
   FileHandle.standardOutput.write(data);FileHandle.standardOutput.write(Data([10]));exit(0)

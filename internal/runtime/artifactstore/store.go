@@ -46,6 +46,7 @@ type Request struct {
 	StoreLinks      []StoreLinkEntry      `json:"storeLinks,omitempty"`
 	StoreLinkPrunes []StoreLinkPruneEntry `json:"storeLinkPrunes,omitempty"`
 	SkillLinks      []SkillLinkEntry      `json:"skillLinks,omitempty"`
+	RuntimeHomes    []RuntimeHomeEntry    `json:"runtimeHomes,omitempty"`
 	Prune           *PruneOptions         `json:"prune,omitempty"`
 }
 
@@ -148,6 +149,7 @@ type Response struct {
 	StoreLinks      []StoreLinkResult      `json:"storeLinks,omitempty"`
 	StoreLinkPrunes []StoreLinkPruneResult `json:"storeLinkPrunes,omitempty"`
 	SkillLinks      []SkillLinkResult      `json:"skillLinks,omitempty"`
+	RuntimeHomes    []RuntimeHomeResult    `json:"runtimeHomes,omitempty"`
 	Errors          []string               `json:"errors"`
 }
 
@@ -179,6 +181,9 @@ func Ensure(request Request) Response {
 	}
 	if len(request.SkillLinks) > 0 {
 		response.SkillLinks = applySkillLinks(request)
+	}
+	if len(request.RuntimeHomes) > 0 {
+		response.RuntimeHomes = applyRuntimeHomes(request)
 	}
 	if len(request.DataRoots) > 0 {
 		response.DataRoots = linkDataRoots(request)

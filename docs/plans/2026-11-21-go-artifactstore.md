@@ -162,9 +162,20 @@ CI 由 `.github/workflows/go-tests.yml` 承担：在 `windows-latest` 上跑
    `linkTree` / `copyTree` / 去重遍历都改用"能 readlink 出目标即算链接"的判据，
    否则会跳过链接或把它当普通文件打开。
 
+## kiro 私有 runtime 目录（2026-11-21 已迁移）
+
+- `kiro-runtime-home` 的目录私有性校验（必须是真实目录、0700）、旧版"宿主链接"摘除、
+  原生库相对文件链接，交给 Go 的 `runtimeHomes` 执行点；Node 只声明目录清单与链接目标。
+- 错误码保持原样（`kiro_runtime_home_not_isolated` / `kiro_runtime_directory_not_private` /
+  `kiro_native_database_path_conflict`），Node 侧抛出的 `Error.message` 与旧实现一致。
+- 实测（合成用例，macOS 全部 5 例 + win32 分支）：Node/Go 的 summary、错误码、目录权限、
+  链接相对路径逐项一致；本机没有 kiro 账号，未做真实账号回归。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
-- 仍在本地的零散链接动作：`kiro-runtime-home`、`native-cli-resolver`（shim 硬链）、
-  `codebuddy-family-session-store`、`codebuddy-shared-config`、`opencode-strategy`；
-  均为 provider 级单文件/单目录链接，迁移时需要逐个确认语义（尤其 config 文件的写入穿透）。
+- 仍在本地的零散动作：`native-cli-resolver`（Windows shim 硬链）、
+  `codebuddy-family-session-store`、`codebuddy-shared-config`、`opencode-strategy`。
+  这几项都带 provider 专属的"搬迁/合并"语义（rename 并集、JSON 合并、孤儿配置回收），
+  不是单纯建链：迁移时必须先拆"决策"与"文件操作"，否则容易在多账号并发下动到别人
+  正在写的目录。建议各自单独切片，并配真机并发验证。

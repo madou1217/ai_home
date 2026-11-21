@@ -13,15 +13,13 @@ on:
     branches:
       - main
     paths:
-      - 'internal/runtime/artifactstore/**'
-      - 'internal/runtime/spacegc/**'
+      - '**/*.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/go-tests-windows.yml'
   pull_request:
     paths:
-      - 'internal/runtime/artifactstore/**'
-      - 'internal/runtime/spacegc/**'
+      - '**/*.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/go-tests-windows.yml'

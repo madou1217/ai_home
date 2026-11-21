@@ -72,7 +72,7 @@ func identifyProcess(pid int) (processIdentity, error) {
 	}
 	started, err := processStarted(pid)
 	if err != nil {
-		return processIdentity{}, ErrRecoveryRequired
+		return processIdentity{}, err
 	}
 	return processIdentity{pid: pid, started: started}, nil
 }
@@ -98,10 +98,13 @@ func (p processIdentity) signal(force bool) error {
 func (p processIdentity) empty() (bool, error) {
 	current, err := identifyProcess(p.pid)
 	if err != nil {
-		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) || errors.Is(err, windows.ERROR_INVALID_HANDLE) {
 			return true, nil
 		}
-		return false, ErrRecoveryRequired
+		if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			return false, ErrRecoveryRequired
+		}
+		return false, err
 	}
 	return current != p, nil
 }

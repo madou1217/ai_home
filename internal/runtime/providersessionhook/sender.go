@@ -56,6 +56,8 @@ var (
 		"invocationNum", "executionNum", "stepIdx", "timestamp", "at",
 		"eventName", "hookEventName", "hook_event_name", "event", "source",
 	}
+	// safeBooleanFields 是 Provider hook 里需要原样转发的布尔判定；不含任何内容字段。
+	safeBooleanFields   = []string{"fullyIdle", "continuationActive"}
 	safePathArrayFields = []string{"workspacePaths", "workspace_paths"}
 	safeQuestionFields  = []string{"question", "prompt", "text", "interrupted", "requiresAnswer", "questionCleared", "question_cleared"}
 	safeWaitingFields   = []string{"notification_type", "notificationType", "message", "title", "tool_name", "toolName"}
@@ -190,8 +192,10 @@ func sanitizePayload(source map[string]any) map[string]any {
 	for _, field := range safeScalarFields {
 		copySafeScalar(source, payload, field)
 	}
-	if value, ok := source["fullyIdle"].(bool); ok {
-		payload["fullyIdle"] = value
+	for _, field := range safeBooleanFields {
+		if value, ok := source[field].(bool); ok {
+			payload[field] = value
+		}
 	}
 	for _, field := range safePathArrayFields {
 		raw, ok := source[field].([]any)

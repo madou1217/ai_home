@@ -305,7 +305,10 @@ func ResolveHookEventType(eventName, provider string, payload map[string]any) st
 		if anyText(payload["error"]) != "" || strings.EqualFold(anyText(payload["terminationReason"]), "error") {
 			return "session:turn-failed"
 		}
-		if val, ok := payload["fullyIdle"].(bool); ok && !val {
+		// AGY 1.5.6 的 Stop 契约：Stop 在执行循环终止时触发；fullyIdle 只表示
+		// 后台任务是否全部结束，false 不代表还有回合在跑。continuationActive 才
+		// 表示本回合被 Stop hook 要求继续工作（executionNum > 0）。
+		if val, ok := payload["continuationActive"].(bool); ok && val {
 			return "session:turn-updated"
 		}
 		return "session:turn-completed"

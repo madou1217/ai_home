@@ -51,7 +51,7 @@ function createDeps(aiHomeDir) {
       spawnSync() { return { status: 1, stdout: '', stderr: '' }; },
       resolveCliPath: () => '',
       logFile: path.join(aiHomeDir, 'logs', 'server.log'),
-      entryFilePath: path.join(process.cwd(), 'bin', 'ai-home.js'),
+      entryFilePath: path.join(process.cwd(), 'bin', 'aih'),
       nodeExecPath: process.execPath,
       getToolConfigDir: profileDir,
       getProfileDir: profileDir,

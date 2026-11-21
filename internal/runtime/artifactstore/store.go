@@ -186,7 +186,7 @@ func Ensure(request Request) Response {
 	if len(request.Caches) > 0 {
 		response.Caches = linkCaches(request)
 	}
-	projectionReal, _ := filepath.EvalSymlinks(projectionRoot)
+	projectionReal := resolveRealPath(projectionRoot)
 	seen := make(map[string]bool)
 	for _, artifact := range request.Artifacts {
 		artifact.CLI = strings.TrimSpace(artifact.CLI)
@@ -194,10 +194,7 @@ func Ensure(request Request) Response {
 		if artifact.CLI == "" || artifact.Version == "" || strings.TrimSpace(artifact.Path) == "" {
 			continue
 		}
-		realPath, err := filepath.EvalSymlinks(artifact.Path)
-		if err != nil {
-			realPath = artifact.Path
-		}
+		realPath := resolveRealPath(artifact.Path)
 		if projectionReal != "" && filepath.Clean(realPath) != filepath.Clean(artifact.Path) &&
 			!strings.HasPrefix(realPath, projectionReal+string(filepath.Separator)) {
 			response.Versions = append(response.Versions, VersionResult{
@@ -365,12 +362,17 @@ func linkTree(source, target string) error {
 	for _, entry := range entries {
 		from := filepath.Join(source, entry.Name())
 		to := filepath.Join(target, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
 		switch {
 		case entry.IsDir():
 			if err := linkTree(from, to); err != nil {
 				return err
 			}
-		case entry.Type()&os.ModeSymlink != 0:
+		case isLinkEntry(info, from):
+			// junction 在 Go 里可能报 ModeIrregular，不能只认 ModeSymlink。
 			link, err := os.Readlink(from)
 			if err != nil {
 				return err
@@ -378,7 +380,7 @@ func linkTree(source, target string) error {
 			if err := os.Symlink(link, to); err != nil {
 				return err
 			}
-		case entry.Type().IsRegular():
+		case info.Mode().IsRegular():
 			if err := os.Link(from, to); err != nil {
 				return err
 			}
@@ -432,6 +434,13 @@ func copyTree(source, target string) error {
 	if err != nil {
 		return err
 	}
+	if isLinkEntry(info, source) {
+		link, err := os.Readlink(source)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(link, target)
+	}
 	if info.IsDir() {
 		if err := os.MkdirAll(target, 0o755); err != nil {
 			return err
@@ -446,13 +455,6 @@ func copyTree(source, target string) error {
 			}
 		}
 		return os.Chmod(target, info.Mode().Perm())
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		link, err := os.Readlink(source)
-		if err != nil {
-			return err
-		}
-		return os.Symlink(link, target)
 	}
 	in, err := os.Open(source)
 	if err != nil {
@@ -789,14 +791,11 @@ func pruneVersions(request Request, response *Response) {
 	if keep < 0 {
 		keep = 0
 	}
-	projectionReal, _ := filepath.EvalSymlinks(request.ProjectionRoot)
+	projectionReal := resolveRealPath(request.ProjectionRoot)
 	groups := map[string][]Artifact{}
 	seen := map[string]bool{}
 	for _, artifact := range request.Artifacts {
-		realPath, err := filepath.EvalSymlinks(artifact.Path)
-		if err != nil {
-			continue
-		}
+		realPath := resolveRealPath(artifact.Path)
 		if projectionReal != "" && !strings.HasPrefix(realPath, projectionReal+string(filepath.Separator)) {
 			// 父目录已是共享软链：这份内容不属于本账号，不能回收。
 			continue
@@ -1094,8 +1093,8 @@ func appendCacheOutcome(result *CacheResult, outcome, relative string) {
 }
 
 func linkOneCache(projectionPath, hostTarget, platform string) (string, error) {
-	projectionReal, _ := filepath.EvalSymlinks(projectionPath)
-	hostReal, _ := filepath.EvalSymlinks(hostTarget)
+	projectionReal := resolveRealPath(projectionPath)
+	hostReal := resolveRealPath(hostTarget)
 	if projectionReal != "" && projectionReal == hostReal {
 		return "unchanged", nil
 	}

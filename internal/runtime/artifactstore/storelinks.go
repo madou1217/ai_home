@@ -237,7 +237,6 @@ func (context *storeLinkContext) ensureDirLink(segments []string) {
 func (context *storeLinkContext) ensureFileLink(segments []string, dangling bool) {
 	source := filepath.Join(context.entry.ProjectionRoot, filepath.Join(segments...))
 	target := filepath.Join(context.entry.SharedRoot, filepath.Join(segments...))
-	// 兜底：声明乱序时，祖先已经链到共享根就说明这一段天然共享，不再重复处理。
 	if coveredBySharedAncestor(source, context.entry.SharedRoot) {
 		return
 	}
@@ -419,6 +418,41 @@ func isLinkEntry(info os.FileInfo, path string) bool {
 		return true
 	}
 	return false
+}
+
+// resolveRealPath 解析链接链（POSIX 符号链接 + Windows junction）。
+//
+// filepath.EvalSymlinks 在 Windows 上不解析挂载点重解析（junction），而共享目录恰好
+// 用 junction；不自己走一遍 readlink，就会把"已链到投影外"的目录当成普通目录。
+func resolveRealPath(target string) string {
+	clean := filepath.Clean(target)
+	for depth := 0; depth < 32; depth++ {
+		// 先让标准库解析父目录链（POSIX 全解析；Windows 只解析符号链接）。
+		if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+			clean = resolved
+		}
+		info, err := os.Lstat(clean)
+		if err != nil {
+			parent := filepath.Dir(clean)
+			if parent == clean {
+				return clean
+			}
+			return filepath.Join(resolveRealPath(parent), filepath.Base(clean))
+		}
+		// EvalSymlinks 在 Windows 不解析 junction，叶子节点自己再走一段 readlink。
+		if !isLinkEntry(info, clean) {
+			return clean
+		}
+		link, err := os.Readlink(clean)
+		if err != nil {
+			return clean
+		}
+		if !filepath.IsAbs(link) {
+			link = filepath.Join(filepath.Dir(clean), link)
+		}
+		clean = filepath.Clean(link)
+	}
+	return clean
 }
 
 func lstatOrNil(target string) (os.FileInfo, error) {

@@ -187,16 +187,8 @@ func outsideProjection(projectionRoot, target string) bool {
 	if root == "" {
 		return false
 	}
-	rootReal, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return false
-	}
-	resolved := filepath.Clean(target)
-	if real, err := filepath.EvalSymlinks(target); err == nil {
-		resolved = real
-	} else if parentReal, err := filepath.EvalSymlinks(filepath.Dir(target)); err == nil {
-		resolved = filepath.Join(parentReal, filepath.Base(target))
-	}
+	rootReal := resolveRealPath(root)
+	resolved := resolveRealPath(target)
 	rootClean := filepath.Clean(rootReal)
 	targetClean := filepath.Clean(resolved)
 	if targetClean == rootClean {

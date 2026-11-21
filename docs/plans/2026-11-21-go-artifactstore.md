@@ -129,6 +129,30 @@
 结论：junction 对"共享目录只读 + 账号侧可删"的用法是安全的；唯一限制是不能用一次
 rename 覆盖它，现有安装/回收流程都是"先摘旧、再建新"。
 
+### 自动化契约测试
+
+`internal/runtime/artifactstore/junction_windows_test.go`（`//go:build windows`）把这套语义
+固化成真实文件系统测试（不 mock），覆盖：创建/穿透读写、`RemoveAll` 链接与父目录不伤目标、
+rename 语义（含"不能覆盖 junction"）、悬挂链接、技能链接、数据根链接、缓存链接复用。
+
+在 macOS 上交叉编译后到 Windows 主机执行：
+
+```bash
+GOOS=windows GOARCH=amd64 go test -c -o /tmp/artifactstore.test.exe ./internal/runtime/artifactstore
+# 复制到 Windows 后：
+artifactstore.test.exe -test.v
+```
+
+### 两个容易踩的 Go 语义（测试逼出来的）
+
+1. **`filepath.EvalSymlinks` 不解析 junction**（Windows 挂载点），只解析符号链接。
+   共享目录一律用 junction，所以凡是要判断"是否已链到投影外"的地方必须用
+   `resolveRealPath`：先 `EvalSymlinks` 解析父目录链，再沿 `readlink` 跟叶子 junction。
+   之前用标准库判断 workbuddy 共享目录会漏判，把宿主的共享 skills 当成了账号目录。
+2. **junction 的 `Lstat` 可能报 `ModeIrregular` 而不是 `ModeSymlink`**，所以
+   `linkTree` / `copyTree` / 去重遍历都改用"能 readlink 出目标即算链接"的判据，
+   否则会跳过链接或把它当普通文件打开。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。

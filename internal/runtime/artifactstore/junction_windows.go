@@ -5,6 +5,7 @@ package artifactstore
 import (
 	"encoding/binary"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
@@ -30,6 +31,9 @@ const (
 //   - os.Rename(目录, 已存在的 junction 路径) 会 "Access is denied"——不能原子替换
 //     一个 junction，调用方必须先把它移走再换（artifactstore 的安装流程就是这样）。
 func createJunction(target, link string) error {
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		return err
+	}
 	if err := os.Mkdir(link, 0o755); err != nil {
 		return err
 	}

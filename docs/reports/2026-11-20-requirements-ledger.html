@@ -164,8 +164,8 @@
     <div class="board"><table>
       <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
       <tbody>
-        <tr><td>Go 没实现就去实现，不要把请求转发给 Node</td><td class="meta">10-31</td><td><span class="chip s-partial">部分</span></td><td class="ev">66 条路由标为 go_owned；仍存在 Node 兼容别名与 WIP 文件</td></tr>
-        <tr><td>核心是 Go 单 owner，停止两套并行</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">迁移文档要求"Node 仅兼容宿主"；尚未删除全部 Node 路径</td></tr>
+        <tr><td>Go 没实现就去实现，不要把请求转发给 Node</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">2026-11-21 审计：Node 网关无入口/无进程、9527 仅 Go；旧 /v0 路径实测 200 由 Go 承接；数据面 Node 14 条、Go 缺失 0；详见 docs/product-integrity/node-alias-audit-2026-11-21.md。遗留约 1.8 万行不可达 Node 网关代码，建议单独删除切片</td></tr>
+        <tr><td>核心是 Go 单 owner，停止两套并行</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">同一审计：launchd、bin/aih 均为 Go 单入口；无 Node 网关监听；Node 只保留宿主/插件 helper。WIP 网关文件不可达，待删除</td></tr>
         <tr><td>只保留一个业务权威库，禁止双轨</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">appstate.DatabasePath → aih.db；夹具与消费者已对齐</td></tr>
         <tr><td>迁移报 aih_database_migration_required 导致全会话退出</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">单库迁移 + 一键续接落地</td></tr>
         <tr><td>迁移不得以"更安全"为由删功能或返回 unavailable</td><td class="meta">11-14</td><td><span class="chip s-done">已完成</span></td><td class="ev">迁移文档记录能力边界，不再以缩窄代替终态</td></tr>

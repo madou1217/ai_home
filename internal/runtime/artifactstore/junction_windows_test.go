@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 )
@@ -62,9 +61,26 @@ func assertJunction(t *testing.T, path, target string) {
 		t.Fatalf("%s 穿透后不是目录（err=%v）", path, err)
 	}
 	// 生产代码用自己的解析器（filepath.EvalSymlinks 在 Windows 不解析 junction）。
-	if resolved := resolveRealPath(path); !strings.EqualFold(filepath.Clean(resolved), filepath.Clean(target)) {
-		t.Fatalf("%s 解析到 %s，期望 %s", path, resolved, target)
+	resolved := resolveRealPath(path)
+	// 必须比较"是不是同一个目录"，不能比路径字符串：GitHub runner 的 %TEMP% 是 8.3
+	// 短名（RUNNER~1），解析后变成长名（runneradmin），字符串必然不相等。
+	if !samePathIdentity(resolved, target) {
+		t.Fatalf("%s 解析到 %s，期望 %s（不是同一目录）", path, resolved, target)
 	}
+}
+
+// samePathIdentity 用 os.SameFile 判断两个路径是否指向同一个文件/目录。
+// 8.3 短名与长名、大小写差异都不会影响判断。
+func samePathIdentity(left, right string) bool {
+	leftInfo, err := os.Stat(left)
+	if err != nil {
+		return false
+	}
+	rightInfo, err := os.Stat(right)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(leftInfo, rightInfo)
 }
 
 func writeFile(t *testing.T, path, content string) {

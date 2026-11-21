@@ -25,12 +25,12 @@ func Policy() accountprojection.Policy {
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "credentials",
-				Path:   []string{".kimi-code", "credentials", "kimi-code.json"},
+				Path:   providerroot.NativePath(ProviderID, "credentials", "kimi-code.json"),
 				Format: accountprojection.FormatJSON,
 			},
 			{
 				Field:    "deviceId",
-				Path:     []string{".kimi-code", "device_id"},
+				Path:     providerroot.NativePath(ProviderID, "device_id"),
 				Format:   accountprojection.FormatText,
 				Optional: true,
 			},

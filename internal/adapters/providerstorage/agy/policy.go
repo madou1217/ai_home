@@ -37,12 +37,12 @@ func Policy() accountprojection.Policy {
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "oauthToken",
-				Path:   []string{".gemini", "antigravity-cli", "antigravity-oauth-token"},
+				Path:   providerroot.NativePath(ProviderID, "antigravity-oauth-token"),
 				Format: accountprojection.FormatJSON,
 			},
 			{
 				Field:    "email",
-				Path:     []string{".gemini", "antigravity-cli", "email.cache"},
+				Path:     providerroot.NativePath(ProviderID, "email.cache"),
 				Format:   accountprojection.FormatText,
 				Optional: true,
 			},

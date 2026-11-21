@@ -26,12 +26,12 @@ func Policy() accountprojection.Policy {
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "oauthCreds",
-				Path:   []string{".gemini", "oauth_creds.json"},
+				Path:   providerroot.NativePath(ProviderID, "oauth_creds.json"),
 				Format: accountprojection.FormatJSON,
 			},
 			{
 				Field:    "googleAccounts",
-				Path:     []string{".gemini", "google_accounts.json"},
+				Path:     providerroot.NativePath(ProviderID, "google_accounts.json"),
 				Format:   accountprojection.FormatJSON,
 				Optional: true,
 			},

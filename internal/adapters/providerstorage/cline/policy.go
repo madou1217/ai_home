@@ -25,7 +25,7 @@ func Policy() accountprojection.Policy {
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "auth",
-				Path:   []string{".cline", "data", "settings", "providers.json"},
+				Path:   providerroot.NativePath(ProviderID, "data", "settings", "providers.json"),
 				Format: accountprojection.FormatJSON,
 			},
 		},

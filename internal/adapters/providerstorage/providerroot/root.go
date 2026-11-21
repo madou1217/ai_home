@@ -31,6 +31,11 @@ func NativeRoot(providerID string) []string {
 	return definition.EffectiveNativeRoot()
 }
 
+// NativePath 返回 <NativeRoot>/<suffix...>。
+func NativePath(providerID string, suffix ...string) []string {
+	return append(NativeRoot(providerID), suffix...)
+}
+
 // RuntimeHome 返回 <NativeRoot>/.aih-runtime-home。
 func RuntimeHome(providerID string) []string {
 	return append(NativeRoot(providerID), RuntimeHomeDir)

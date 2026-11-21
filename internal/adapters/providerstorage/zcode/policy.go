@@ -26,13 +26,13 @@ func Policy() accountprojection.Policy {
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:     "credentials",
-				Path:      []string{".zcode", "v2", "credentials.json"},
+				Path:      providerroot.NativePath(ProviderID, "v2", "credentials.json"),
 				Format:    accountprojection.FormatJSON,
 				LiveStore: true,
 			},
 			{
 				Field:    "config",
-				Path:     []string{".zcode", "v2", "config.json"},
+				Path:     providerroot.NativePath(ProviderID, "v2", "config.json"),
 				Format:   accountprojection.FormatJSON,
 				Optional: true,
 			},

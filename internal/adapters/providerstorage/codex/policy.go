@@ -23,7 +23,7 @@ func Policy() accountprojection.Policy {
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "auth",
-				Path:   []string{".codex", "auth.json"},
+				Path:   providerroot.NativePath("codex", "auth.json"),
 				Format: accountprojection.FormatJSON,
 			},
 		},

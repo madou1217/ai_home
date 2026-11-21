@@ -3,9 +3,9 @@ package webuiserverconfigapi
 import (
 	"encoding/json"
 	"net/http"
-	"reflect"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
@@ -128,14 +128,5 @@ func publicServerConfig(config ConfigView) ConfigView {
 
 // serverConfigKeys 从 ConfigView 的 json tag 派生，新增字段不会漏。
 func serverConfigKeys() []string {
-	configType := reflect.TypeOf(ConfigView{})
-	keys := make([]string, 0, configType.NumField())
-	for index := 0; index < configType.NumField(); index++ {
-		tag := configType.Field(index).Tag.Get("json")
-		name := strings.Split(tag, ",")[0]
-		if name != "" && name != "-" {
-			keys = append(keys, name)
-		}
-	}
-	return keys
+	return serverconfig.Keys()
 }

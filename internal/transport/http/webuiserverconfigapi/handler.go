@@ -177,88 +177,56 @@ func sanitizeFullServerConfigFromJSON(raw string, found bool) (ConfigView, error
 	return sanitizeServerConfig(input), nil
 }
 
-// sanitizeServerConfig 复刻 Node sanitizeServerConfig + toPublicServerConfig。
+// sanitizeServerConfig 使用 application/serverconfig 的共享 schema 归一化。
+// 字段默认值、范围、枚举与「历史字段」判定都只在那里定义，WebUI 与 CLI 不再各存一份。
 func sanitizeServerConfig(input map[string]any) ConfigView {
-	requestedHost := defaultServerHost
-	if value, ok := input["host"]; ok && value != nil {
-		requestedHost = strings.TrimSpace(jsString(value))
-	}
-	host := defaultServerHost
-	if requestedHost != "" && requestedHost != "0.0.0.0" {
-		host = requestedHost
-	}
-	openNetwork := jsBool(input["openNetwork"]) || requestedHost == "0.0.0.0"
+	return configViewFromValues(serverconfig.Sanitize(input))
+}
 
-	apiKey := strings.TrimSpace(jsString(valueOrNil(input["apiKey"])))
-	managementKey := strings.TrimSpace(jsString(valueOrNil(input["managementKey"])))
-	if openNetwork {
-		host = "0.0.0.0"
-	}
+// SanitizeView 供重启接口等复用同一套归一化，避免再造一份 sanitize 副本。
+func SanitizeView(input map[string]any) ConfigView {
+	return configViewFromValues(serverconfig.Sanitize(input))
+}
 
-	minInterval := math.Max(
-		minWindowIntervalMs,
-		numberOr(input["windowActivationMinIntervalMs"], defaultWindowIntervalMs),
-	)
-	defaultInterval := math.Max(
-		minInterval,
-		numberOr(input["windowActivationDefaultIntervalMs"], defaultWindowIntervalMs),
-	)
+func configViewFromValues(values map[string]any) ConfigView {
+	view := ConfigView{
+		Host:                              jsString(values["host"]),
+		Port:                              int(numberOr(values["port"], float64(serverconfig.DefaultPort))),
+		APIKey:                            jsString(values["apiKey"]),
+		ManagementKey:                     jsString(values["managementKey"]),
+		OpenNetwork:                       values["openNetwork"] == true,
+		ProxyURL:                          jsString(values["proxyUrl"]),
+		NoProxy:                           jsString(values["noProxy"]),
+		ModelsProbeAccounts:               numberOr(values["modelsProbeAccounts"], 2),
+		ModelCacheSync:                    jsString(values["modelCacheSync"]),
+		WindowActivation:                  values["windowActivation"] == true,
+		WindowActivationDefaultIntervalMs: numberOr(values["windowActivationDefaultIntervalMs"], float64(3600000)),
+		WindowActivationMinIntervalMs:     numberOr(values["windowActivationMinIntervalMs"], float64(3600000)),
+		GoCoreEnabled:                     values["goCoreEnabled"] == true,
+		GoCoreRoutes:                      stringList(values["goCoreRoutes"]),
+		UpstreamErrorRuleProviders:        stringList(values["upstreamErrorRuleProviders"]),
+		RelayUDP:                          jsString(values["relayUdp"]),
+		RelayUDPAdvertiseHost:             jsString(values["relayUdpAdvertiseHost"]),
+		RelayUDPAdvertisePort:             numberOr(values["relayUdpAdvertisePort"], 0),
+		RelayPortMode:                     jsString(values["relayPortMode"]),
+		RelayListenHost:                   jsString(values["relayListenHost"]),
+		MaxAttempts:                       numberOr(values["maxAttempts"], 0),
+		EgressEvidenceTTLMs:               numberOr(values["egressEvidenceTtlMs"], 0),
+		LargePasteChars:                   int(numberOr(values["largePasteChars"], 0)),
+	}
+	if retry, ok := values["upstream429Retry"].(corepolicy.GlobalPolicy); ok {
+		view.Upstream429Retry = retry
+	} else {
+		view.Upstream429Retry = corepolicy.SanitizeGlobalRaw(values["upstream429Retry"])
+	}
+	return view
+}
 
-	relayUDPRaw := "default"
-	if value, ok := input["relayUdp"]; ok && value != nil {
-		relayUDPRaw = strings.ToLower(strings.TrimSpace(jsString(value)))
+func stringList(value any) []string {
+	if items, ok := value.([]string); ok {
+		return items
 	}
-	relayUDP := "default"
-	if relayUDPRaw == "on" || relayUDPRaw == "off" {
-		relayUDP = relayUDPRaw
-	}
-
-	relayPortModeRaw := "default"
-	if value, ok := input["relayPortMode"]; ok && value != nil {
-		relayPortModeRaw = strings.ToLower(strings.TrimSpace(jsString(value)))
-	}
-	relayPortMode := "default"
-	if relayPortModeRaw == "server" || relayPortModeRaw == "dedicated" {
-		relayPortMode = relayPortModeRaw
-	}
-
-	egressTTL := math.Round(numberOr(input["egressEvidenceTtlMs"], 0))
-	if egressTTL < minEgressEvidenceTTLMs {
-		egressTTL = 0
-	} else if egressTTL > maxEgressEvidenceTTLMs {
-		egressTTL = maxEgressEvidenceTTLMs
-	}
-
-	config := ConfigView{
-		Host:                              host,
-		Port:                              normalizeServerPort(input["port"]),
-		APIKey:                            apiKey,
-		ManagementKey:                     managementKey,
-		OpenNetwork:                       openNetwork,
-		ProxyURL:                          strings.TrimSpace(jsString(valueOrNil(input["proxyUrl"]))),
-		NoProxy:                           strings.TrimSpace(jsString(valueOrNil(input["noProxy"]))),
-		ModelsProbeAccounts:               clampNumber(input["modelsProbeAccounts"], 1, 8, defaultModelsProbeAccounts),
-		ModelCacheSync:                    "go-batch",
-		WindowActivation:                  input["windowActivation"] == true,
-		WindowActivationDefaultIntervalMs: defaultInterval,
-		WindowActivationMinIntervalMs:     minInterval,
-		GoCoreEnabled:                     input["goCoreEnabled"] == true,
-		GoCoreRoutes:                      normalizeStringList(input["goCoreRoutes"], false),
-		UpstreamErrorRuleProviders:        normalizeStringList(input["upstreamErrorRuleProviders"], true),
-		RelayUDP:                          relayUDP,
-		RelayUDPAdvertiseHost:             strings.TrimSpace(jsString(valueOrNil(input["relayUdpAdvertiseHost"]))),
-		RelayUDPAdvertisePort:             clampNumber(input["relayUdpAdvertisePort"], 0, 65535, 0),
-		RelayPortMode:                     relayPortMode,
-		RelayListenHost:                   strings.TrimSpace(jsString(valueOrNil(input["relayListenHost"]))),
-		MaxAttempts:                       clampNumber(input["maxAttempts"], 0, 32, 0),
-		EgressEvidenceTTLMs:               egressTTL,
-		LargePasteChars:                   normalizeLargePasteChars(input["largePasteChars"]),
-		Upstream429Retry:                  corepolicy.SanitizeGlobalRaw(input["upstream429Retry"]),
-	}
-	if value, ok := input["modelCacheSync"]; ok && value == "scheduler" {
-		config.ModelCacheSync = "scheduler"
-	}
-	return config
+	return nil
 }
 
 func normalizeServerPort(value any) int {

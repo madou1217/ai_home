@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
@@ -221,87 +220,15 @@ func sanitizePublicServerConfigFromJSON(raw string, found bool) (map[string]any,
 }
 
 func sanitizeServerConfigView(input map[string]any) webuiserverconfigapi.ConfigView {
-	requestedHost := defaultServerHost
-	if value, ok := input["host"]; ok && value != nil {
-		requestedHost = strings.TrimSpace(jsString(value))
+	view := webuiserverconfigapi.SanitizeView(input)
+	if strings.TrimSpace(view.APIKey) != "" {
+		view.APIKeyConfigured = true
 	}
-	host := defaultServerHost
-	if requestedHost != "" && requestedHost != "0.0.0.0" {
-		host = requestedHost
+	if strings.TrimSpace(view.ManagementKey) != "" {
+		view.ManagementKeyConfigured = true
 	}
-	openNetwork := jsBool(input["openNetwork"]) || requestedHost == "0.0.0.0"
-
-	apiKey := strings.TrimSpace(jsString(valueOrNil(input["apiKey"])))
-	managementKey := strings.TrimSpace(jsString(valueOrNil(input["managementKey"])))
-	if openNetwork {
-		host = "0.0.0.0"
-	}
-
-	minInterval := math.Max(
-		minWindowIntervalMs,
-		numberOr(input["windowActivationMinIntervalMs"], defaultWindowIntervalMs),
-	)
-	defaultInterval := math.Max(
-		minInterval,
-		numberOr(input["windowActivationDefaultIntervalMs"], defaultWindowIntervalMs),
-	)
-
-	relayUDPRaw := "default"
-	if value, ok := input["relayUdp"]; ok && value != nil {
-		relayUDPRaw = strings.ToLower(strings.TrimSpace(jsString(value)))
-	}
-	relayUDP := "default"
-	if relayUDPRaw == "on" || relayUDPRaw == "off" {
-		relayUDP = relayUDPRaw
-	}
-
-	relayPortModeRaw := "default"
-	if value, ok := input["relayPortMode"]; ok && value != nil {
-		relayPortModeRaw = strings.ToLower(strings.TrimSpace(jsString(value)))
-	}
-	relayPortMode := "default"
-	if relayPortModeRaw == "server" || relayPortModeRaw == "dedicated" {
-		relayPortMode = relayPortModeRaw
-	}
-
-	egressTTL := math.Round(numberOr(input["egressEvidenceTtlMs"], 0))
-	if egressTTL < minEgressEvidenceTTLMs {
-		egressTTL = 0
-	} else if egressTTL > maxEgressEvidenceTTLMs {
-		egressTTL = maxEgressEvidenceTTLMs
-	}
-
-	view := webuiserverconfigapi.ConfigView{
-		Host:                              host,
-		Port:                              normalizeServerPort(input["port"]),
-		APIKey:                            "",
-		ManagementKey:                     "",
-		OpenNetwork:                       openNetwork,
-		ProxyURL:                          strings.TrimSpace(jsString(valueOrNil(input["proxyUrl"]))),
-		NoProxy:                           strings.TrimSpace(jsString(valueOrNil(input["noProxy"]))),
-		ModelsProbeAccounts:               clampNumber(input["modelsProbeAccounts"], 1, 8, defaultModelsProbeAccounts),
-		ModelCacheSync:                    "go-batch",
-		WindowActivation:                  input["windowActivation"] == true,
-		WindowActivationDefaultIntervalMs: defaultInterval,
-		WindowActivationMinIntervalMs:     minInterval,
-		GoCoreEnabled:                     input["goCoreEnabled"] == true,
-		GoCoreRoutes:                      normalizeStringList(input["goCoreRoutes"], false),
-		UpstreamErrorRuleProviders:        normalizeStringList(input["upstreamErrorRuleProviders"], true),
-		RelayUDP:                          relayUDP,
-		RelayUDPAdvertiseHost:             strings.TrimSpace(jsString(valueOrNil(input["relayUdpAdvertiseHost"]))),
-		RelayUDPAdvertisePort:             clampNumber(input["relayUdpAdvertisePort"], 0, 65535, 0),
-		RelayPortMode:                     relayPortMode,
-		RelayListenHost:                   strings.TrimSpace(jsString(valueOrNil(input["relayListenHost"]))),
-		MaxAttempts:                       clampNumber(input["maxAttempts"], 0, 32, 0),
-		EgressEvidenceTTLMs:               egressTTL,
-		LargePasteChars:                   normalizeLargePasteChars(input["largePasteChars"]),
-		Upstream429Retry:                  corepolicy.SanitizeGlobalRaw(input["upstream429Retry"]),
-		APIKeyConfigured:                  apiKey != "",
-		ManagementKeyConfigured:           managementKey != "",
-	}
-	if value, ok := input["modelCacheSync"]; ok && value == "scheduler" {
-		view.ModelCacheSync = "scheduler"
-	}
+	view.APIKey = ""
+	view.ManagementKey = ""
 	return view
 }
 

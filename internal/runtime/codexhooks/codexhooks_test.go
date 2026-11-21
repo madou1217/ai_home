@@ -70,18 +70,10 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 		t.Fatal("CMD wrapper 应使用 CRLF 行尾")
 	}
 
-	// 验证 Windows .cmd hook 绕过直连 Node 启动解析（含别名链）。
+	// 验证 Windows .cmd hook 绕过 .cmd 直连 Go CLI 启动解析（含别名链）。
 	winDir := t.TempDir()
-	nodeFake := filepath.Join(winDir, "node.exe")
-	proxyFake := filepath.Join(winDir, "proxy.js")
 	stateFake := filepath.Join(winDir, "state.json")
 	upstreamFake := filepath.Join(winDir, "codex.aih-original.cmd")
-	if err := os.WriteFile(nodeFake, []byte("node"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(proxyFake, []byte("// proxy"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	canonicalCmd := filepath.Join(winDir, "canonical.cmd")
 	aliasCmd := filepath.Join(winDir, "codex.cmd")
 	canonicalBody := BuildCLIWrapperScriptForTarget(canonicalCmd, WrapperOptions{
@@ -95,7 +87,7 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows"); launch != nil {
-		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应再回落 Node: %+v", launch)
+		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应解析出启动目标: %+v", launch)
 	}
 	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows"); appServer != nil {
 		t.Fatalf("app-server 子命令应返回 nil 维持直通, 实际 %+v", appServer)

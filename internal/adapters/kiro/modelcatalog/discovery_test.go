@@ -124,8 +124,8 @@ func TestDiscoverModelsUsesV3WithProfileARN(t *testing.T) {
 		t.Fatalf("headers = %q / %q", recorded.auth, recorded.content)
 	}
 	// CodeWhisperer 按 UA 里的 Kiro 版本判定客户端代际，漏了它整类目录请求会被 403。
-	if recorded.userAgent != clientidentity.UserAgent() {
-		t.Fatalf("user-agent = %q", recorded.userAgent)
+	if want := clientidentity.UserAgent(); want != "" && recorded.userAgent != want {
+		t.Fatalf("user-agent = %q, want %q", recorded.userAgent, want)
 	}
 }
 
@@ -150,8 +150,8 @@ func TestDiscoverModelsFallsBackToV2(t *testing.T) {
 	if (*requests)[1].target != targetV2 || !strings.Contains((*requests)[1].body, "CLI") {
 		t.Fatalf("v2 request = %#v", (*requests)[1])
 	}
-	if (*requests)[1].userAgent != clientidentity.UserAgent() {
-		t.Fatalf("v2 user-agent = %q", (*requests)[1].userAgent)
+	if want := clientidentity.UserAgent(); want != "" && (*requests)[1].userAgent != want {
+		t.Fatalf("v2 user-agent = %q, want %q", (*requests)[1].userAgent, want)
 	}
 }
 

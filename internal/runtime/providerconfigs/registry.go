@@ -38,6 +38,8 @@ const (
 	KeySettingText KeySettingKind = "text"
 	// KeySettingBoolean 是开关。
 	KeySettingBoolean KeySettingKind = "boolean"
+	// KeySettingNumber 是数值（token 数、百分比或比例）。
+	KeySettingNumber KeySettingKind = "number"
 	// KeySettingModel 的候选来自该 Provider 的模型目录。
 	KeySettingModel KeySettingKind = "model"
 	// KeySettingReasoningEffort 的候选来自 DependsOn 所指模型声明的推理档位。
@@ -62,6 +64,12 @@ type KeySetting struct {
 	Help        string `json:"help,omitempty"`
 	// DependsOn 是 reasoning-effort 依赖的模型键路径；空表示同文件的 model。
 	DependsOn string `json:"dependsOn,omitempty"`
+	// Min、Max、Step 只对 number 生效，用于输入约束与服务端校验。
+	Min  float64 `json:"min,omitempty"`
+	Max  float64 `json:"max,omitempty"`
+	Step float64 `json:"step,omitempty"`
+	// Default 是官方默认值的展示语义（不写入文件）；空表示没有可展示默认。
+	Default string `json:"default,omitempty"`
 }
 
 // FileDefinition 声明某 Provider 允许 WebUI 管理的配置文件元数据。
@@ -143,6 +151,55 @@ var builtinFileDefinitions = []FileDefinition{
 				Choices: []string{"fast", "default"},
 				Help:    "fast 映射为请求的 priority 档；default 表示不启用。",
 			},
+			{
+				Path:  "model_context_window",
+				Label: "上下文窗口",
+				Kind:  KeySettingNumber,
+				Min:   1024,
+				Max:   100000000,
+				Step:  1024,
+				Help:  "覆盖当前模型的上下文 token 数；留空使用模型目录声明的窗口。",
+			},
+			{
+				Path:  "model_auto_compact_token_limit",
+				Label: "自动压缩阈值",
+				Kind:  KeySettingNumber,
+				Min:   1000,
+				Max:   100000000,
+				Step:  1000,
+				Help:  "上下文达到该 token 数时触发历史压缩；留空使用模型默认，清除即删除覆盖值。",
+			},
+			{
+				Path:    "model_auto_compact_token_limit_scope",
+				Label:   "压缩阈值口径",
+				Kind:    KeySettingText,
+				Choices: []string{"total", "body_after_prefix"},
+				Default: "total",
+				Help:    "total（默认）按完整上下文计数；body_after_prefix 只算携带压缩前缀之后的增量。",
+			},
+			{
+				Path:  "model_post_turn_compact_threshold_percent",
+				Label: "回合后压缩百分比",
+				Kind:  KeySettingNumber,
+				Min:   1,
+				Max:   100,
+				Step:  1,
+				Help:  "Codex 0.170 新增（0.163 字段说明未收录）：回合结束后按上下文占用百分比触发压缩。",
+			},
+			{
+				Path:    "model_verbosity",
+				Label:   "输出详略",
+				Kind:    KeySettingText,
+				Choices: []string{"low", "medium", "high"},
+				Help:    "Responses API 的 verbosity 覆盖；留空使用模型/预设默认。",
+			},
+			{
+				Path:    "model_reasoning_summary",
+				Label:   "推理摘要",
+				Kind:    KeySettingText,
+				Choices: []string{"auto", "concise", "detailed", "none"},
+				Help:    "推理摘要的详细程度；none 表示不生成摘要。",
+			},
 		},
 	},
 	{
@@ -186,6 +243,29 @@ var builtinFileDefinitions = []FileDefinition{
 				Kind:  KeySettingModel,
 				Help:  "新会话的默认模型；留空时使用账号默认。",
 			},
+			{
+				Path:    "autoCompactEnabled",
+				Label:   "自动压缩",
+				Kind:    KeySettingBoolean,
+				Default: "true",
+				Help:    "上下文接近上限时自动压缩对话（官方默认 true）。",
+			},
+			{
+				Path:  "autoCompactWindow",
+				Label: "压缩触发窗口",
+				Kind:  KeySettingNumber,
+				Min:   100000,
+				Max:   1000000,
+				Step:  1000,
+				Help:  "上下文达到该 token 数后压缩；留空由 Claude Code 按模型选择窗口（官方范围 100000–1000000）。",
+			},
+			{
+				Path:    "idleCompaction",
+				Label:   "空闲压缩",
+				Kind:    KeySettingBoolean,
+				Default: "true",
+				Help:    "会话空闲时是否允许压缩长对话（官方默认 true）。",
+			},
 		},
 	},
 	{
@@ -220,6 +300,15 @@ var builtinFileDefinitions = []FileDefinition{
 				Kind:        KeySettingModel,
 				Placeholder: "留空使用 CLI 默认",
 				Help:        "写入 model.name；候选来自 Gemini 模型目录。",
+			},
+			{
+				Path:  "model.compressionThreshold",
+				Label: "上下文压缩阈值",
+				Kind:  KeySettingNumber,
+				Min:   0.05,
+				Max:   0.95,
+				Step:  0.05,
+				Help:  "上下文占用比例达到该值时触发压缩（官方示例 0.2、0.3）。",
 			},
 		},
 	},

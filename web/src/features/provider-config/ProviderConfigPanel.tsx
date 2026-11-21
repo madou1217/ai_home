@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Drawer, Grid, Input, Modal, Spin, Tag, Tooltip, message } from 'antd';
+import { Drawer, Grid, Input, Modal, Segmented, Spin, Tag, Tooltip, message } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -110,6 +110,10 @@ export default function ProviderConfigPanel({
   const [viewportHeight, setViewportHeight] = useState(
     typeof window === 'undefined' ? 900 : window.innerHeight
   );
+  // 可视化 / 源码：两个面板都保持挂载，切换不丢编辑器里的草稿。
+  const [keyMode, setKeyMode] = useState<'visual' | 'source'>('source');
+  const [hasKeySettings, setHasKeySettings] = useState(false);
+  const keyModeTouchedRef = useRef(false);
 
   const dirty = content !== loadedContent;
   const dirtyRef = useRef(dirty);
@@ -235,6 +239,17 @@ export default function ProviderConfigPanel({
   );
 
   const file = detail?.file || provider?.files.find((item) => item.id === activeFileId) || null;
+
+  useEffect(() => {
+    keyModeTouchedRef.current = false;
+    setHasKeySettings(false);
+    setKeyMode('source');
+  }, [activeFileId, activeProvider]);
+
+  const handleKeySettingsAvailability = useCallback((available: boolean) => {
+    setHasKeySettings(available);
+    if (available && !keyModeTouchedRef.current) setKeyMode('visual');
+  }, []);
 
   const outline = useMemo(
     () => buildProviderConfigOutline(content, detail?.file.format || file?.format || 'text'),
@@ -604,37 +619,61 @@ export default function ProviderConfigPanel({
                         >
                           导出
                         </Button>
-                        <Button
-                          size="small"
-                          type="primary"
-                          icon={<SaveOutlined />}
-                          loading={saving}
-                          disabled={!dirty || validation !== null && !validation.valid}
-                          onClick={() => void save()}
-                        >
-                          保存
-                        </Button>
+                        {keyMode === 'source' && (
+                          <Button
+                            size="small"
+                            type="primary"
+                            icon={<SaveOutlined />}
+                            loading={saving}
+                            disabled={!dirty || (validation !== null && !validation.valid)}
+                            onClick={() => void save()}
+                          >
+                            保存
+                          </Button>
+                        )}
                       </div>
                     </div>
 
-                    <ProviderKeySettings
-                      provider={provider.id}
-                      fileId={detail.file.id}
-                      revision={detail.revision}
-                      disabled={dirty || !detail.file.writable}
-                      disabledReason={
-                        dirty
-                          ? '编辑器还有未保存修改，请先保存或放弃后再改关键设置。'
-                          : !detail.file.writable
-                            ? '当前用户没有写入权限。'
-                            : ''
-                      }
-                      onSaved={() => {
-                        setReloadToken((value) => value + 1);
-                        void loadProviders({ keepSelection: true }).catch(() => {});
-                      }}
-                    />
+                    {hasKeySettings && (
+                      <div className="pc-view-mode">
+                        <Segmented
+                          size="small"
+                          value={keyMode}
+                          options={[
+                            { label: '可视化', value: 'visual' },
+                            { label: '源码', value: 'source' }
+                          ]}
+                          onChange={(value) => {
+                            keyModeTouchedRef.current = true;
+                            setKeyMode(value as 'visual' | 'source');
+                          }}
+                        />
+                        <span>可视化覆盖常用项；完整配置请在源码模式编辑。</span>
+                      </div>
+                    )}
 
+                    <div hidden={keyMode !== 'visual'}>
+                      <ProviderKeySettings
+                        provider={provider.id}
+                        fileId={detail.file.id}
+                        revision={detail.revision}
+                        disabled={dirty || !detail.file.writable}
+                        disabledReason={
+                          dirty
+                            ? '编辑器还有未保存修改，请先保存或放弃后再改关键设置。'
+                            : !detail.file.writable
+                              ? '当前用户没有写入权限。'
+                              : ''
+                        }
+                        onSaved={() => {
+                          setReloadToken((value) => value + 1);
+                          void loadProviders({ keepSelection: true }).catch(() => {});
+                        }}
+                        onAvailability={handleKeySettingsAvailability}
+                      />
+                    </div>
+
+                    <div hidden={keyMode !== 'source'}>
                     {detail.schemaVersion?.mismatch && (
                       <div className="pc-inline-note" data-tone="warning">
                         <WarningOutlined />
@@ -685,6 +724,7 @@ export default function ProviderConfigPanel({
                         </a>
                       )}
                     </footer>
+                    </div>
                   </>
                   )
                 ) : null}

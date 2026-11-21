@@ -28,6 +28,10 @@ type KeySettingValue struct {
 	Placeholder string   `json:"placeholder,omitempty"`
 	Help        string   `json:"help,omitempty"`
 	DependsOn   string   `json:"dependsOn,omitempty"`
+	Min         float64  `json:"min,omitempty"`
+	Max         float64  `json:"max,omitempty"`
+	Step        float64  `json:"step,omitempty"`
+	Default     string   `json:"default,omitempty"`
 }
 
 // KeySettingsResponse 对应 GET .../key-settings 响应。
@@ -76,6 +80,10 @@ func (s *Service) ReadKeySettings(ctx context.Context, provider, fileID, modelOv
 			Placeholder: setting.Placeholder,
 			Help:        setting.Help,
 			DependsOn:   setting.DependsOn,
+			Min:         setting.Min,
+			Max:         setting.Max,
+			Step:        setting.Step,
+			Default:     setting.Default,
 		}
 		view.Choices = s.resolveKeySettingChoices(ctx, rf.Definition.Provider, setting, values, modelOverride)
 		response.Settings = append(response.Settings, view)
@@ -176,20 +184,11 @@ func readKeyValue(content, format, path string) string {
 	segments := strings.Split(path, ".")
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "toml":
-		if len(segments) != 1 {
+		statement, found := findTOMLSetting(content, segments)
+		if !found {
 			return ""
 		}
-		statements, err := ScanTOMLStatements(content)
-		if err != nil {
-			return ""
-		}
-		for _, statement := range statements {
-			if !statement.Table && len(statement.TablePath) == 0 &&
-				len(statement.Keys) == 1 && statement.Keys[0] == path {
-				return tomlScalarString(statement.Value)
-			}
-		}
-		return ""
+		return tomlScalarString(statement.Value)
 	case "json", "jsonc":
 		start, end, found := findJSONValueSpan(content, segments)
 		if !found {
@@ -221,17 +220,26 @@ func PatchKeyValues(content, format string, settings []KeySetting, values map[st
 	for _, path := range paths {
 		setting := declared[path]
 		value := strings.TrimSpace(values[path])
-		if value == "" {
-			return "", fmt.Errorf("关键设置 %s 不能为空", path)
-		}
 		var err error
-		switch normalizedFormat {
-		case "toml":
-			patched, err = patchTOMLValue(patched, setting, value)
-		case "json", "jsonc":
-			patched, err = patchJSONValue(patched, setting, value)
-		default:
-			err = fmt.Errorf("配置格式 %s 暂不支持关键设置编辑", format)
+		if value == "" {
+			// 空值 = 清除覆盖，恢复文件/模型的默认行为。
+			switch normalizedFormat {
+			case "toml":
+				patched, err = removeTOMLValue(patched, setting.Path)
+			case "json", "jsonc":
+				patched, err = removeJSONValue(patched, setting.Path)
+			default:
+				err = fmt.Errorf("配置格式 %s 暂不支持关键设置编辑", format)
+			}
+		} else {
+			switch normalizedFormat {
+			case "toml":
+				patched, err = patchTOMLValue(patched, setting, value)
+			case "json", "jsonc":
+				patched, err = patchJSONValue(patched, setting, value)
+			default:
+				err = fmt.Errorf("配置格式 %s 暂不支持关键设置编辑", format)
+			}
 		}
 		if err != nil {
 			return "", err
@@ -267,11 +275,9 @@ func jsonSpanString(raw string) string {
 	return trimmed
 }
 
-// patchTOMLValue 只重写根级标量值，保留注释、表结构与行尾。
+// patchTOMLValue 重写标量值（支持根级点号键与 [table] 成员），保留注释与结构。
 func patchTOMLValue(content string, setting KeySetting, value string) (string, error) {
-	if strings.Contains(setting.Path, ".") {
-		return "", fmt.Errorf("TOML 关键设置暂不支持嵌套键 %s", setting.Path)
-	}
+	segments := strings.Split(setting.Path, ".")
 	encoded, err := encodeKeyValue(setting, value)
 	if err != nil {
 		return "", err
@@ -281,17 +287,90 @@ func patchTOMLValue(content string, setting KeySetting, value string) (string, e
 		return "", err
 	}
 	for _, statement := range statements {
-		if !statement.Table && len(statement.TablePath) == 0 &&
-			len(statement.Keys) == 1 && statement.Keys[0] == setting.Path {
+		if tomlStatementMatches(statement, segments) {
 			return content[:statement.ValueStart] + encoded + content[statement.ValueEnd:], nil
 		}
 	}
-	// 根级键必须出现在任何表之前；插到文档最前面最稳妥。
-	return setting.Path + " = " + encoded + "\n" + content, nil
+	return insertTOMLSetting(content, segments, encoded), nil
+}
+
+// findTOMLSetting 匹配两种写法：[table] 成员与根级点号键。
+func findTOMLSetting(content string, segments []string) (TOMLStatement, bool) {
+	statements, err := ScanTOMLStatements(content)
+	if err != nil {
+		return TOMLStatement{}, false
+	}
+	for _, statement := range statements {
+		if tomlStatementMatches(statement, segments) {
+			return statement, true
+		}
+	}
+	return TOMLStatement{}, false
+}
+
+func tomlStatementMatches(statement TOMLStatement, segments []string) bool {
+	if statement.Table || len(segments) == 0 {
+		return false
+	}
+	if len(statement.TablePath) == 0 && len(statement.Keys) == len(segments) {
+		return equalStringSlices(statement.Keys, segments)
+	}
+	if len(segments) > 1 && len(statement.Keys) == 1 &&
+		equalStringSlices(statement.TablePath, segments[:len(segments)-1]) {
+		return statement.Keys[0] == segments[len(segments)-1]
+	}
+	return false
+}
+
+func equalStringSlices(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+// insertTOMLSetting 优先写进已存在的父表；没有父表时在文末新建。
+func insertTOMLSetting(content string, segments []string, encoded string) string {
+	if len(segments) == 1 {
+		return segments[0] + " = " + encoded + "\n" + content
+	}
+	statements, err := ScanTOMLStatements(content)
+	if err == nil {
+		prefix := segments[:len(segments)-1]
+		lastKey := segments[len(segments)-1]
+		for _, statement := range statements {
+			if statement.Table && equalStringSlices(statement.Keys, prefix) {
+				// 表成员插在表头之后，位于下一张表之前。
+				insertAt := statement.End
+				return content[:insertAt] + lastKey + " = " + encoded + "\n" + content[insertAt:]
+			}
+		}
+		// 根级点号键写法可读且不会与后续表冲突。
+		for _, statement := range statements {
+			if statement.Table {
+				continue
+			}
+			if len(statement.Keys) > 0 && statement.Keys[0] == prefix[0] {
+				return strings.Join(segments, ".") + " = " + encoded + "\n" + content
+			}
+		}
+	}
+	separator := ""
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		separator = "\n"
+	}
+	table := "[" + strings.Join(segments[:len(segments)-1], ".") + "]"
+	return content + separator + "\n" + table + "\n" + segments[len(segments)-1] + " = " + encoded + "\n"
 }
 
 func encodeKeyValue(setting KeySetting, value string) (string, error) {
-	if setting.Kind == KeySettingBoolean {
+	switch setting.Kind {
+	case KeySettingBoolean:
 		switch strings.ToLower(value) {
 		case "true":
 			return "true", nil
@@ -300,8 +379,26 @@ func encodeKeyValue(setting KeySetting, value string) (string, error) {
 		default:
 			return "", fmt.Errorf("关键设置 %s 必须是 true/false", setting.Path)
 		}
+	case KeySettingNumber:
+		return encodeNumber(setting, value)
+	default:
+		return strconv.Quote(value), nil
 	}
-	return strconv.Quote(value), nil
+}
+
+// encodeNumber 校验数值范围并按 JSON/TOML 共用的裸数字形式输出。
+func encodeNumber(setting KeySetting, value string) (string, error) {
+	number, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return "", fmt.Errorf("关键设置 %s 必须是数字", setting.Path)
+	}
+	if setting.Min != 0 && number < setting.Min {
+		return "", fmt.Errorf("关键设置 %s 不能小于 %s", setting.Path, strconv.FormatFloat(setting.Min, 'f', -1, 64))
+	}
+	if setting.Max != 0 && number > setting.Max {
+		return "", fmt.Errorf("关键设置 %s 不能大于 %s", setting.Path, strconv.FormatFloat(setting.Max, 'f', -1, 64))
+	}
+	return strconv.FormatFloat(number, 'f', -1, 64), nil
 }
 
 // findJSONValueSpan 返回点号路径对应值在原文中的字节区间，支持 JSONC 注释。
@@ -367,7 +464,8 @@ func patchJSONValue(content string, setting KeySetting, value string) (string, e
 }
 
 func encodeJSONKeyValue(setting KeySetting, value string) (string, error) {
-	if setting.Kind == KeySettingBoolean {
+	switch setting.Kind {
+	case KeySettingBoolean:
 		switch strings.ToLower(value) {
 		case "true":
 			return "true", nil
@@ -376,12 +474,15 @@ func encodeJSONKeyValue(setting KeySetting, value string) (string, error) {
 		default:
 			return "", fmt.Errorf("关键设置 %s 必须是 true/false", setting.Path)
 		}
+	case KeySettingNumber:
+		return encodeNumber(setting, value)
+	default:
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return "", fmt.Errorf("关键设置 %s 取值无效", setting.Path)
+		}
+		return string(raw), nil
 	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return "", fmt.Errorf("关键设置 %s 取值无效", setting.Path)
-	}
-	return string(raw), nil
 }
 
 func insertJSONValue(content string, path []string, encoded string) (string, error) {
@@ -514,5 +615,92 @@ func skipJSONValue(content string, start int) (int, bool) {
 			index++
 		}
 		return index, true
+	}
+}
+
+// removeTOMLValue 删除根级键所在的整行（含行尾），用于清除覆盖恢复默认。
+func removeTOMLValue(content, path string) (string, error) {
+	segments := strings.Split(path, ".")
+	statement, found := findTOMLSetting(content, segments)
+	if !found {
+		return content, nil
+	}
+	// statement.End 由 expectLineEndOrComment 给出，已包含行尾（含 \r\n）；
+	// 不能再向后找换行，否则会连同下一行一起删掉。
+	return content[:statement.Start] + content[statement.End:], nil
+}
+
+// jsonMemberSpan 是 JSON 成员在原文中的区间；commaStart 是它前面的逗号（-1 表示首成员）。
+type jsonMemberSpan struct {
+	keyStart   int
+	valueEnd   int
+	commaStart int
+}
+
+// removeJSONValue 删除点号路径对应的成员，保留其余内容与注释。
+func removeJSONValue(content, path string) (string, error) {
+	segments := strings.Split(path, ".")
+	span, found := findJSONMember(content, segments)
+	if !found {
+		return content, nil
+	}
+	if span.commaStart >= 0 {
+		return content[:span.commaStart] + content[span.valueEnd:], nil
+	}
+	end := span.valueEnd
+	if next := skipJSONCWhitespaceAndComments(content, end); next < len(content) && content[next] == ',' {
+		end = next + 1
+	}
+	return content[:span.keyStart] + content[end:], nil
+}
+
+func findJSONMember(content string, path []string) (jsonMemberSpan, bool) {
+	if len(path) == 0 {
+		return jsonMemberSpan{}, false
+	}
+	start := skipJSONCWhitespaceAndComments(content, 0)
+	if start >= len(content) || content[start] != '{' {
+		return jsonMemberSpan{}, false
+	}
+	return findJSONMemberInObject(content, start, path)
+}
+
+func findJSONMemberInObject(content string, objectStart int, path []string) (jsonMemberSpan, bool) {
+	index := objectStart + 1
+	commaStart := -1
+	for {
+		index = skipJSONCWhitespaceAndComments(content, index)
+		if index >= len(content) || content[index] == '}' {
+			return jsonMemberSpan{}, false
+		}
+		if content[index] == ',' {
+			commaStart = index
+			index++
+			continue
+		}
+		keyStart := index
+		key, next, ok := scanJSONString(content, index)
+		if !ok {
+			return jsonMemberSpan{}, false
+		}
+		index = skipJSONCWhitespaceAndComments(content, next)
+		if index >= len(content) || content[index] != ':' {
+			return jsonMemberSpan{}, false
+		}
+		valueStart := skipJSONCWhitespaceAndComments(content, index+1)
+		valueEnd, ok := skipJSONValue(content, valueStart)
+		if !ok {
+			return jsonMemberSpan{}, false
+		}
+		if key == path[0] {
+			if len(path) == 1 {
+				return jsonMemberSpan{keyStart: keyStart, valueEnd: valueEnd, commaStart: commaStart}, true
+			}
+			if valueStart < len(content) && content[valueStart] == '{' {
+				return findJSONMemberInObject(content, valueStart, path[1:])
+			}
+			return jsonMemberSpan{}, false
+		}
+		index = valueEnd
 	}
 }

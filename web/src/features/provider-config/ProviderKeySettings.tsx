@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AutoComplete, Input, Select, Switch, message } from 'antd';
+import { AutoComplete, Input, InputNumber, Select, Switch, message } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
@@ -16,11 +16,14 @@ export interface ProviderKeySettingsProps {
   disabledReason?: string;
   /** 保存成功后由父面板重新读取文件，让编辑器与关键设置保持同一份内容。 */
   onSaved: (revision: string) => void;
+  /** 是否声明了关键设置：父面板据此决定是否显示「可视化 / 源码」切换。 */
+  onAvailability?: (available: boolean) => void;
 }
 
 interface SettingsState {
   loaded: ProviderConfigKeySettingsResponse | null;
   values: Record<string, string>;
+  initialValues: Record<string, string>;
 }
 
 function describeError(error: unknown): string {
@@ -33,9 +36,11 @@ function isConflict(error: unknown): boolean {
 }
 
 function defaultValues(settings: ProviderConfigKeySetting[]): Record<string, string> {
+  // 保留文件里的真实值（未设置就是空串）；布尔项的官方默认只在展示层回退，
+  // 未改动的字段不会被保存写回。
   const values: Record<string, string> = {};
   for (const setting of settings) {
-    values[setting.path] = setting.kind === 'boolean' ? String(setting.value || 'false') : String(setting.value || '');
+    values[setting.path] = String(setting.value || '');
   }
   return values;
 }
@@ -53,9 +58,10 @@ export default function ProviderKeySettings({
   revision,
   disabled = false,
   disabledReason = '',
-  onSaved
+  onSaved,
+  onAvailability
 }: ProviderKeySettingsProps) {
-  const [state, setState] = useState<SettingsState>({ loaded: null, values: {} });
+  const [state, setState] = useState<SettingsState>({ loaded: null, values: {}, initialValues: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
@@ -63,9 +69,11 @@ export default function ProviderKeySettings({
   const requestRef = useRef(0);
 
   const applyLoaded = useCallback((loaded: ProviderConfigKeySettingsResponse, keepValues: boolean) => {
+    const next = defaultValues(loaded.settings);
     setState((current) => ({
       loaded,
-      values: keepValues ? { ...defaultValues(loaded.settings), ...current.values } : defaultValues(loaded.settings)
+      initialValues: next,
+      values: keepValues ? { ...next, ...current.values } : next
     }));
   }, []);
 
@@ -81,7 +89,7 @@ export default function ProviderKeySettings({
       })
       .catch((error) => {
         if (!active || requestID !== requestRef.current) return;
-        setState({ loaded: null, values: {} });
+        setState({ loaded: null, values: {}, initialValues: {} });
         setStatusTone('error');
         setStatus(describeError(error));
       })
@@ -95,6 +103,10 @@ export default function ProviderKeySettings({
 
   const settings = state.loaded?.settings || [];
   const modelSetting = useMemo(() => settings.find((item) => item.kind === 'model'), [settings]);
+
+  useEffect(() => {
+    onAvailability?.(settings.length > 0);
+  }, [onAvailability, settings.length]);
 
   const setValue = useCallback((path: string, value: string) => {
     setState((current) => ({ ...current, values: { ...current.values, [path]: value } }));
@@ -127,17 +139,16 @@ export default function ProviderKeySettings({
   }, [fileId, provider]);
 
   const save = async () => {
+    // 只提交与读取值不同的字段；空值表示删除该键、恢复默认。
     const values: Record<string, string> = {};
     for (const setting of settings) {
       const value = String(state.values[setting.path] ?? '').trim();
-      if (setting.kind === 'boolean') {
-        values[setting.path] = value || 'false';
-        continue;
-      }
-      if (value) values[setting.path] = value;
+      const initial = String(state.initialValues[setting.path] ?? '').trim();
+      if (value === initial) continue;
+      values[setting.path] = setting.kind === 'boolean' ? value || 'false' : value;
     }
     if (!Object.keys(values).length) {
-      message.warning('没有可保存的关键设置');
+      message.info('关键设置没有变化');
       return;
     }
     setSaving(true);
@@ -164,24 +175,36 @@ export default function ProviderKeySettings({
   }
   if (!settings.length) return null;
 
-  const saveDisabled = disabled || loading || saving || !Object.values(state.values).some((value) => String(value).trim());
+  const saveDisabled = disabled || loading || saving;
 
   return (
     <section className="pc-key-settings" aria-label="关键设置">
       <div className="pc-key-settings-head">
         <div>
           <strong>关键设置</strong>
-          <span>直接写入当前配置文件；保存使用同一份校验与版本历史。</span>
+          <span>直接写入当前配置文件；保存使用同一份校验与版本历史。留空表示删除该键、恢复默认。</span>
         </div>
       </div>
       <div className="pc-key-settings-grid">
         {settings.map((setting) => {
-          const value = String(state.values[setting.path] ?? '');
+          const rawValue = String(state.values[setting.path] ?? '');
+          const value = rawValue !== '' ? rawValue : String(setting.default || '');
           const id = `pc-key-${setting.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
           return (
             <div className="pc-key-field" key={setting.path}>
               <label htmlFor={id}>{setting.label}</label>
-              {setting.kind === 'model' ? (
+              {setting.kind === 'number' ? (
+                <InputNumber
+                  id={id}
+                  value={value === '' ? null : Number(value)}
+                  min={setting.min || undefined}
+                  max={setting.max || undefined}
+                  step={setting.step || undefined}
+                  placeholder={setting.placeholder || '留空使用默认'}
+                  onChange={(next) => setValue(setting.path, next === null || next === undefined ? '' : String(next))}
+                  style={{ width: '100%' }}
+                />
+              ) : setting.kind === 'model' ? (
                 <AutoComplete
                   id={id}
                   value={value}

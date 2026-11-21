@@ -2789,12 +2789,16 @@ export interface ProviderConfigValidationResponse {
 export interface ProviderConfigKeySetting {
   path: string;
   label: string;
-  kind: 'text' | 'boolean' | 'model' | 'reasoning-effort';
+  kind: 'text' | 'boolean' | 'number' | 'model' | 'reasoning-effort';
   value: string;
   choices?: string[];
   placeholder?: string;
   help?: string;
   dependsOn?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  default?: string;
 }
 
 export interface ProviderConfigKeySettingsResponse {

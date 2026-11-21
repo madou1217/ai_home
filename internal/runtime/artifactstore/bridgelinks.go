@@ -35,9 +35,17 @@ type BridgeLinkResult struct {
 
 const bridgeLinkErrorCode = "opencode_shared_bridge_failed"
 
+// BridgeAuthLink 是 opencode 的 auth bridge：桥梁数据目录里的 auth.json 必须指向
+// 账号私有那份（文件链接），而不是宿主共享的 auth.json。
+type BridgeAuthLink struct {
+	LinkPath   string `json:"linkPath"`
+	TargetPath string `json:"targetPath"`
+}
+
 type BridgeLinks struct {
-	EnsureDirs []string     `json:"ensureDirs,omitempty"`
-	Links      []BridgeLink `json:"links"`
+	EnsureDirs []string        `json:"ensureDirs,omitempty"`
+	Links      []BridgeLink    `json:"links"`
+	AuthLink   *BridgeAuthLink `json:"authLink,omitempty"`
 }
 
 func applyBridgeLinks(input BridgeLinks, platform string) BridgeLinkResult {
@@ -49,6 +57,16 @@ func applyBridgeLinks(input BridgeLinks, platform string) BridgeLinkResult {
 		}
 		if err := os.MkdirAll(trimmed, 0o755); err != nil {
 			result.Error = &BridgeLinkError{Code: errnoName(err), LinkPath: trimmed}
+			return result
+		}
+	}
+	if input.AuthLink != nil {
+		if err := applyBridgeAuthLink(*input.AuthLink); err != nil {
+			result.Error = &BridgeLinkError{
+				Code:       "opencode_auth_bridge_failed",
+				LinkPath:   strings.TrimSpace(input.AuthLink.LinkPath),
+				TargetPath: strings.TrimSpace(input.AuthLink.TargetPath),
+			}
 			return result
 		}
 	}
@@ -134,6 +152,23 @@ func bridgeLinkCanonical(linkPath, targetPath string) bool {
 		link = filepath.Join(filepath.Dir(linkPath), link)
 	}
 	return filepath.Clean(link) == filepath.Clean(targetPath)
+}
+
+// applyBridgeAuthLink 与 Node 的 ensureAuthBridge 同口径：先递归删掉旧路径（可能是
+// 旧链接或残留），再建 file 链接；目标允许暂不存在（账号首次登录时 auth.json 还没写出）。
+func applyBridgeAuthLink(auth BridgeAuthLink) error {
+	linkPath := strings.TrimSpace(auth.LinkPath)
+	targetPath := strings.TrimSpace(auth.TargetPath)
+	if linkPath == "" || targetPath == "" {
+		return nil
+	}
+	if bridgeLinkCanonical(linkPath, targetPath) {
+		return nil
+	}
+	if err := os.RemoveAll(linkPath); err != nil {
+		return err
+	}
+	return os.Symlink(targetPath, linkPath)
 }
 
 func createBridgeLink(targetPath, linkPath string, isDir bool, platform string) error {

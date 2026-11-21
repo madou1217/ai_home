@@ -2,7 +2,7 @@
 
 > **状态（2026-11-21）**：迁移完成。执行点 `aih-go __artifacts-ensure`，Node 客户端
 > `lib/runtime/artifact-service-client.js`；**唯一权威的剩余项清单见文末“遗留项清单”**
-> （三处 Node 链接动作确认沿用现状，其余差异都属策略层）。
+> （仅剩 rekey 运维脚本的链接动作未迁，其余差异都属策略层）。
 
 ## 分层
 
@@ -246,11 +246,14 @@ source 为链接或不存在时整个投影跳过（避免顺着根链接把数�
 和 `familyLinks` 的三处关键差异：会替换错误链接、允许悬挂文件链接、成功计数叫
 `migrated`。因此**不复用** familyLinks，单独做 primitive。
 
-### auth bridge
+### auth bridge（2026-11-21 已迁到执行点）
 
 `<bridge>/auth.json` → `<account>/.local/share/opencode/auth.json`（file 软链）。
-建链前先递归删除旧路径（`rmSync recursive`）；失败抛 `opencode_auth_bridge_failed`。
-删除用 `RemoveAll` 已实测不跟随 junction。
+建链前递归删除旧路径；失败抛 `opencode_auth_bridge_failed`（`RemoveAll` 已实测不跟随 junction）。
+
+它作为 `bridgeLinks.authLink` 和共享条目建链**同批**下发：`prepare` 先确保账号目录存在
+（否则它不会进入投影根枚举），再声明 auth 链接；`reconcileSharedData` 被 `session-store`
+直接调用时不带这个字段，两条调用路径的语义保持不变。
 
 ### 策略留在 Node
 
@@ -273,8 +276,9 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 失败返回 `{code, linkPath, targetPath}`，Node 原样还原成 `opencode_shared_bridge_failed`
 或目录创建的 errno 错误。
 
-**auth bridge 仍留在 Node**（10 行）：它只被 `prepare` 调用，而 `reconcileSharedData`
-也被 `session-store` 直接调用、不应顺带建 auth 链；拆开可保持两条调用路径语义不变。
+**auth bridge 也在这一个请求里**（`authLink` 字段）：`prepare` 传声明，
+`reconcileSharedData` 的其它调用方不传，两条路径语义不变；本地回退仍是
+`applyAuthLinkLocally`（`rmSync` + file 软链）。
 
 ### 验证结果
 
@@ -327,16 +331,38 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 - 真实 codex 账号（已收敛）：两后端均为 `{migrated:0, linked:66}`，0 变更。
 - 一轮对账的进程调用数从 16 降到 1；执行点不可用时逐条回退。
 
+## 旧版 Library 链接（2026-11-21 已迁移）
+
+旧版本把宿主的整个 `Library/Preferences` 链进每个账号投影；新版要求先把它复制成账号
+私有快照（`<runtimeHome>/Library/Preferences`），再把投影改成指向这份快照。`Keychains`
+不复制，只摘掉旧链接。
+
+- Node 只判定"是不是 aih 建的旧链接"（读 readlink 比较宿主旧路径）、伪 HOME 下是否
+  报 unresolved；两条声明合成一个请求。
+- Go（`legacyLibraryLinks`）执行：复制快照（已存在条目**不覆盖**、符号链接按链接复制）、
+  摘链、建链；`detach` 只摘链。复制语义与 `fse.copySync({overwrite:false,
+  errorOnExist:false, dereference:false})` 对齐。
+- 本地回退保留同样的复制+换链实现（注入 fs 替身/执行点不可用时）。
+
+实测：
+
+- 合成 fixture（Preferences 快照 + Keychains detach）：node/go 的 summary 与完整目录快照
+  逐字一致；二次运行 `migrated=0`。
+- 指向别处（非宿主旧路径）的链接：两后端都只报 `Library/Preferences` unresolved，不动文件。
+- 真实 opencode 账号 `prepare`：两种后端都无任何变更（快照 before/after 相同）。
+
 ## 遗留项清单（2026-11-21 复核）
 
 **已迁移模块的本地实现全部保留为 fallback**（执行点不可用/注入 fs 替身时使用），不是死代码；
-每个导出的函数仍有真实调用方。仍在 Node 的链接动作只剩三处，均已确认**沿用现状**：
+每个导出的函数仍有真实调用方。仍在 Node 的链接动作只剩一处：
 
 | 位置 | 动作 | 结论与理由（2026-11-21 复核） |
 |---|---|---|
-| `cli/services/account/rekey-journal.js` | rekey 的 `atomicWrite` / 链接交换 / rename / 恢复 | **不迁**。① 它是运维脚本 `scripts/oauth-identity-maintenance.js`（plan/apply/recover/rollback）里的 Saga 步骤，每一步之后都要写 journal checkpoint，恢复靠比对 before/after 状态；拆成第二个进程只多出超时、二进制缺失、版本不匹配三种失败面。② 只操作 file 符号链接与普通文件，没有 junction/共享目录/跨账号投影语义；Windows 在规划阶段就被 `rekey_metadata_platform_unsupported` 拒绝（POSIX-only）。③ `atomicWrite` 还要保 xattr/ACL 并回读核对 metadata，和链接原语不是一类动作。 |
-| `cli/services/session-store.js` `migrateLegacyHostLibraryAlias` | 旧版"宿主 `Library/Preferences` 整目录链接"的一次性迁移：复制宿主快照 → 摘链 → 建链 | **不迁**。换链之前必须先在 Node 侧复制快照（数据语义），只剩末尾 unlink+link 是平台动作；首跑之后恒为 no-op。并入执行点要新增"先复制再换链"的复合语义，收益低于风险。 |
-| `cli/services/ai-cli/launch-profile/opencode-strategy.js` auth bridge | `<bridge>/auth.json` → 账号私有 `auth.json` 的 file 链接 | **不迁**（见上文"auth bridge 仍留在 Node"：只被 `prepare` 调用，`reconcileSharedData` 不应顺带建这条链）。 |
+| `cli/services/account/rekey-journal.js` | rekey 的 `atomicWrite` / 链接交换 / rename / 恢复 | **暂不迁**。① 它是运维脚本 `scripts/oauth-identity-maintenance.js`（plan/apply/recover/rollback）里的 Saga 步骤，每一步之后都要写 journal checkpoint，恢复靠比对 before/after 状态；拆成第二个进程只多出超时、二进制缺失、版本不匹配三种失败面。② 只操作 file 符号链接与普通文件，没有 junction/共享目录/跨账号投影语义；Windows 在规划阶段就被 `rekey_metadata_platform_unsupported` 拒绝（POSIX-only）。③ `atomicWrite` 还要保 xattr/ACL 并回读核对 metadata，和链接原语不是一类动作。 |
+
+**rekey 是可转换的**，但意味着把整套工具（19 个模块约 2.1k 行：inventory / plan /
+SQLite 事务 / metadata 摘要 / 恢复矩阵）迁成一个 Go 命令，而不是搬 147 行 journal；
+这属于独立项目，不在本次 artifactstore 迁移范围内。
 
 会话条目的**内容合并**（`mergeEntryIntoStore` 的 rename 并集、同内容文件丢弃）也仍在 Node：
 那是数据归属决策而非链接动作，执行点只负责"接回宿主存储"的最后一步。

@@ -218,9 +218,9 @@ provider 私有名、投影根清单）并通过 `lib/runtime/artifact-service-c
 家族条目、Windows shim 硬链、opencode 三投影桥、CLI 共享配置、工具配置条目链接。
 做法与逐项实测见 [`2026-11-21-go-artifactstore.md`](2026-11-21-go-artifactstore.md)。
 
-仍未迁移、已确认**沿用现状**的 Node 链接动作有三处（rekey 事务的临时链接、
-旧版 `Library/Preferences` 整目录迁移、opencode auth bridge），理由见该文
-“遗留项清单”；会话条目的内容合并仍属 Node 的数据归属决策。
+仍未迁移的 Node 链接动作只剩 rekey 事务的临时链接（运维脚本的 Saga，理由见该文
+“遗留项清单”）；旧版 `Library/Preferences` 整目录迁移与 opencode auth bridge 已迁入
+执行点。会话条目的内容合并仍属 Node 的数据归属决策。
 
 仍保留的行为（设计选择，不是缺口）：
 

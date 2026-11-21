@@ -35,26 +35,27 @@ import (
 
 // Request 是 Node 传入的一次投影准备请求。
 type Request struct {
-	Provider          string                `json:"provider"`
-	ProjectionRoot    string                `json:"projectionRoot"`
-	StoreRoot         string                `json:"storeRoot"`
-	ProjectionsRoot   string                `json:"projectionsRoot"`
-	Platform          string                `json:"platform"`
-	HostHomeDir       string                `json:"hostHomeDir,omitempty"`
-	Artifacts         []Artifact            `json:"artifacts"`
-	Caches            []CacheEntry          `json:"caches,omitempty"`
-	DataRoots         []DataRootEntry       `json:"dataRoots,omitempty"`
-	Dedupe            []DedupeEntry         `json:"dedupe,omitempty"`
-	StoreLinks        []StoreLinkEntry      `json:"storeLinks,omitempty"`
-	StoreLinkPrunes   []StoreLinkPruneEntry `json:"storeLinkPrunes,omitempty"`
-	SkillLinks        []SkillLinkEntry      `json:"skillLinks,omitempty"`
-	RuntimeHomes      []RuntimeHomeEntry    `json:"runtimeHomes,omitempty"`
-	FamilyLinks       []FamilyLink          `json:"familyLinks,omitempty"`
-	HardlinkRepairs   []HardlinkRepair      `json:"hardlinkRepairs,omitempty"`
-	BridgeLinks       *BridgeLinks          `json:"bridgeLinks,omitempty"`
-	FileLinks         []FileLink            `json:"fileLinks,omitempty"`
-	SessionEntryLinks []SessionEntryLink    `json:"sessionEntryLinks,omitempty"`
-	Prune             *PruneOptions         `json:"prune,omitempty"`
+	Provider           string                `json:"provider"`
+	ProjectionRoot     string                `json:"projectionRoot"`
+	StoreRoot          string                `json:"storeRoot"`
+	ProjectionsRoot    string                `json:"projectionsRoot"`
+	Platform           string                `json:"platform"`
+	HostHomeDir        string                `json:"hostHomeDir,omitempty"`
+	Artifacts          []Artifact            `json:"artifacts"`
+	Caches             []CacheEntry          `json:"caches,omitempty"`
+	DataRoots          []DataRootEntry       `json:"dataRoots,omitempty"`
+	Dedupe             []DedupeEntry         `json:"dedupe,omitempty"`
+	StoreLinks         []StoreLinkEntry      `json:"storeLinks,omitempty"`
+	StoreLinkPrunes    []StoreLinkPruneEntry `json:"storeLinkPrunes,omitempty"`
+	SkillLinks         []SkillLinkEntry      `json:"skillLinks,omitempty"`
+	RuntimeHomes       []RuntimeHomeEntry    `json:"runtimeHomes,omitempty"`
+	FamilyLinks        []FamilyLink          `json:"familyLinks,omitempty"`
+	HardlinkRepairs    []HardlinkRepair      `json:"hardlinkRepairs,omitempty"`
+	BridgeLinks        *BridgeLinks          `json:"bridgeLinks,omitempty"`
+	FileLinks          []FileLink            `json:"fileLinks,omitempty"`
+	SessionEntryLinks  []SessionEntryLink    `json:"sessionEntryLinks,omitempty"`
+	LegacyLibraryLinks []LegacyLibraryLink   `json:"legacyLibraryLinks,omitempty"`
+	Prune              *PruneOptions         `json:"prune,omitempty"`
 }
 
 // DataRootEntry 是桌面 App 数据根（会话/数据库）声明：投影里应是指向宿主同一份的链接。
@@ -145,24 +146,25 @@ type VersionResult struct {
 
 // Response 是 CLI 输出。
 type Response struct {
-	OK                bool                     `json:"ok"`
-	Versions          []VersionResult          `json:"versions"`
-	Pruned            []PrunedVersion          `json:"pruned,omitempty"`
-	StorePruned       []PrunedVersion          `json:"storePruned,omitempty"`
-	Emptied           int                      `json:"emptied,omitempty"`
-	Caches            *CacheResult             `json:"caches,omitempty"`
-	DataRoots         *DataRootResult          `json:"dataRoots,omitempty"`
-	Dedupe            *DedupeResult            `json:"dedupe,omitempty"`
-	StoreLinks        []StoreLinkResult        `json:"storeLinks,omitempty"`
-	StoreLinkPrunes   []StoreLinkPruneResult   `json:"storeLinkPrunes,omitempty"`
-	SkillLinks        []SkillLinkResult        `json:"skillLinks,omitempty"`
-	RuntimeHomes      []RuntimeHomeResult      `json:"runtimeHomes,omitempty"`
-	FamilyLinks       *FamilyLinkResult        `json:"familyLinks,omitempty"`
-	HardlinkRepairs   []HardlinkRepairResult   `json:"hardlinkRepairs,omitempty"`
-	BridgeLinks       *BridgeLinkResult        `json:"bridgeLinks,omitempty"`
-	FileLinks         *FileLinkResult          `json:"fileLinks,omitempty"`
-	SessionEntryLinks []SessionEntryLinkResult `json:"sessionEntryLinks,omitempty"`
-	Errors            []string                 `json:"errors"`
+	OK                 bool                      `json:"ok"`
+	Versions           []VersionResult           `json:"versions"`
+	Pruned             []PrunedVersion           `json:"pruned,omitempty"`
+	StorePruned        []PrunedVersion           `json:"storePruned,omitempty"`
+	Emptied            int                       `json:"emptied,omitempty"`
+	Caches             *CacheResult              `json:"caches,omitempty"`
+	DataRoots          *DataRootResult           `json:"dataRoots,omitempty"`
+	Dedupe             *DedupeResult             `json:"dedupe,omitempty"`
+	StoreLinks         []StoreLinkResult         `json:"storeLinks,omitempty"`
+	StoreLinkPrunes    []StoreLinkPruneResult    `json:"storeLinkPrunes,omitempty"`
+	SkillLinks         []SkillLinkResult         `json:"skillLinks,omitempty"`
+	RuntimeHomes       []RuntimeHomeResult       `json:"runtimeHomes,omitempty"`
+	FamilyLinks        *FamilyLinkResult         `json:"familyLinks,omitempty"`
+	HardlinkRepairs    []HardlinkRepairResult    `json:"hardlinkRepairs,omitempty"`
+	BridgeLinks        *BridgeLinkResult         `json:"bridgeLinks,omitempty"`
+	FileLinks          *FileLinkResult           `json:"fileLinks,omitempty"`
+	SessionEntryLinks  []SessionEntryLinkResult  `json:"sessionEntryLinks,omitempty"`
+	LegacyLibraryLinks []LegacyLibraryLinkResult `json:"legacyLibraryLinks,omitempty"`
+	Errors             []string                  `json:"errors"`
 }
 
 // PrunedVersion 是被移入回收站的旧版本。
@@ -210,6 +212,9 @@ func Ensure(request Request) Response {
 	}
 	if len(request.SessionEntryLinks) > 0 {
 		response.SessionEntryLinks = applySessionEntryLinks(request)
+	}
+	if len(request.LegacyLibraryLinks) > 0 {
+		response.LegacyLibraryLinks = applyLegacyLibraryLinks(request)
 	}
 	if request.BridgeLinks != nil {
 		applied := applyBridgeLinks(*request.BridgeLinks, request.Platform)

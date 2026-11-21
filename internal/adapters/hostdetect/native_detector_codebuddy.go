@@ -21,6 +21,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"golang.org/x/crypto/pbkdf2"
 	_ "modernc.org/sqlite"
 )
@@ -55,13 +56,6 @@ var (
 		"CodeBuddy CN": true,
 		"WorkBuddy":    true,
 		"WorkBuddy AI": true,
-	}
-	codebuddyIssuers = map[string][]string{
-		"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},
-		"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy"},
-		"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-		"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-		"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn", "workbuddycn"},
 	}
 )
 
@@ -739,7 +733,7 @@ func inspectCodebuddyCredential(value map[string]any, provider string, nowMS int
 		return codebuddyInspection{reason: "unrecognized_credential_realm"}
 	}
 	issuer := firstString(access, "iss")
-	providersForIssuer := codebuddyIssuers[issuer]
+	providersForIssuer := providers.ProvidersForCodeBuddyIssuer(issuer)
 	if len(providersForIssuer) == 0 {
 		return codebuddyInspection{reason: "unrecognized_credential_realm"}
 	}

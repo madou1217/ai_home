@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
@@ -56,14 +57,6 @@ var (
 		"workbuddy":   {".workbuddy-ai", ".codebuddy"},
 		"codebuddycn": {".codebuddy-cn", ".workbuddy"},
 		"workbuddycn": {".workbuddy", ".codebuddy-cn"},
-	}
-
-	codebuddyIssuers = map[string][]string{
-		"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},
-		"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy"},
-		"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-		"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-		"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn", "workbuddycn"},
 	}
 
 	resetAtPattern       = regexp.MustCompile(`(?i)reset(?:s)?\s+at\s+(\d{4})-(\d{2})-(\d{2})[ t](\d{2}):(\d{2})(?::(\d{2}))?\s*(?:(?:utc|gmt)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?|utc|gmt|z)?`)
@@ -657,8 +650,8 @@ func inspectCodebuddyCredentialPayload(raw []byte, expectedProvider string) (uid
 		return "", "", false
 	}
 	iss, _ := claims["iss"].(string)
-	allowedProviders, exists := codebuddyIssuers[iss]
-	if !exists {
+	allowedProviders := providers.ProvidersForCodeBuddyIssuer(iss)
+	if len(allowedProviders) == 0 {
 		return "", "", false
 	}
 	if expectedProvider != "" {

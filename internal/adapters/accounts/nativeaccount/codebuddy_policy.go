@@ -2,15 +2,8 @@ package nativeaccount
 
 import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 )
-
-var codebuddyIssuers = map[string]map[string]bool{
-	"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy": true},
-	"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy": true},
-	"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn": true, "workbuddycn": true},
-	"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn": true, "workbuddycn": true},
-	"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn": true, "workbuddycn": true},
-}
 
 func codebuddyIdentity(providerID string, native map[string]any) (accountcore.NativeIdentity, error) {
 	value := object(native["credentials"])
@@ -36,7 +29,7 @@ func codebuddyIdentity(providerID string, native map[string]any) (accountcore.Na
 	refreshSubject := firstText(refresh, "sub")
 	uid := firstText(account, "uid")
 	domain := firstText(auth, "domain")
-	if !codebuddyIssuers[issuer][providerID] || accessSubject == "" || uid == "" ||
+	if !providers.IsCodeBuddyIssuerForProvider(issuer, providerID) || accessSubject == "" || uid == "" ||
 		accessSubject != uid || refreshSubject != uid || firstText(refresh, "iss") != issuer || domain == "" ||
 		domain != issuerDomain(issuer) {
 		return accountcore.NativeIdentity{}, ErrInvalidNativeArtifacts

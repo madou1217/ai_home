@@ -353,13 +353,6 @@ var (
 		"codebuddycn": providers.TencentCopilotBaseURL,
 		"workbuddycn": providers.TencentCopilotBaseURL,
 	}
-	codebuddyFamilyIssuers = map[string][]string{
-		"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},
-		"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy"},
-		"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-		"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-		"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn", "workbuddycn"},
-	}
 	codebuddyAuthFileNames = map[string]string{
 		"codebuddy":   "Tencent-Cloud.coding-copilot.info",
 		"codebuddycn": "workbuddy-desktop.info",
@@ -560,13 +553,13 @@ func inspectCodebuddyCred(cred map[string]any, expectedProvider string, nowMS in
 		return inspectedCodebuddyCred{}
 	}
 	issuer := textOf(claims["iss"])
-	providers := codebuddyFamilyIssuers[issuer]
-	if len(providers) == 0 {
+	allowedProviders := providers.ProvidersForCodeBuddyIssuer(issuer)
+	if len(allowedProviders) == 0 {
 		return inspectedCodebuddyCred{}
 	}
 	if expectedProvider != "" {
 		matched := false
-		for _, p := range providers {
+		for _, p := range allowedProviders {
 			if p == expectedProvider {
 				matched = true
 				break

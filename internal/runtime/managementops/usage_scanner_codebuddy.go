@@ -16,6 +16,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
@@ -59,14 +60,6 @@ var codebuddySessionRootsByProvider = map[string][]string{
 	"workbuddy":   {".workbuddy-ai", ".codebuddy"},
 	"codebuddycn": {".codebuddy-cn", ".workbuddy"},
 	"workbuddycn": {".workbuddy", ".codebuddy-cn"},
-}
-
-var codebuddyIssuers = map[string][]string{
-	"https://www.codebuddy.ai/auth/realms/copilot":    {"codebuddy"},
-	"https://www.workbuddy.ai/auth/realms/copilot":    {"workbuddy"},
-	"https://www.workbuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-	"https://www.codebuddy.cn/auth/realms/copilot":    {"codebuddycn", "workbuddycn"},
-	"https://copilot.tencent.com/auth/realms/copilot": {"codebuddycn", "workbuddycn"},
 }
 
 type codebuddyUsageFile struct {
@@ -236,8 +229,8 @@ func inspectCodebuddyCredentialPayload(raw []byte, expectedProvider string) (uid
 		return "", "", false
 	}
 	iss := strVal(accessClaims, "iss")
-	allowedProviders, exists := codebuddyIssuers[iss]
-	if !exists {
+	allowedProviders := providers.ProvidersForCodeBuddyIssuer(iss)
+	if len(allowedProviders) == 0 {
 		return "", "", false
 	}
 	if expectedProvider != "" {

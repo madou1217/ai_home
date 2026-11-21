@@ -20,12 +20,16 @@ var (
 	codebuddyIdeHex32Re       = regexp.MustCompile(`^[a-f0-9]{32}$`)
 	codebuddyUIDRe            = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	codebuddyUserQueryRe      = regexp.MustCompile(`(?is)<user_query>\s*([\s\S]*?)\s*</user_query>`)
-	codebuddyAllowedIssuers   = map[string]string{
-		"https://www.codebuddy.ai/auth/realms/copilot":  "codebuddy",
-		"https://www.workbuddy.ai/auth/realms/copilot":  "codebuddy",
+	// codebuddySessionSiteByIssuer 是「issuer → 会话存储站点」的口径，用于选择
+	// 会话目录，不是身份归属：国际站 WorkBuddy 与 copilot.tencent.com 在存储侧
+	// 归到 codebuddy。身份归属见 core/providers 的 ProvidersForCodeBuddyIssuer，
+	// 不要用那张表替换这里，否则会改变会话目录选择。
+	codebuddySessionSiteByIssuer = map[string]string{
+		"https://www.codebuddy.ai/auth/realms/copilot":    "codebuddy",
+		"https://www.workbuddy.ai/auth/realms/copilot":    "codebuddy",
 		"https://copilot.tencent.com/auth/realms/copilot": "codebuddy",
-		"https://www.codebuddy.cn/auth/realms/copilot":  "codebuddycn",
-		"https://www.workbuddy.cn/auth/realms/copilot":  "codebuddycn",
+		"https://www.codebuddy.cn/auth/realms/copilot":    "codebuddycn",
+		"https://www.workbuddy.cn/auth/realms/copilot":    "codebuddycn",
 	}
 )
 
@@ -354,7 +358,7 @@ func inspectCodebuddyAuthUID(nativeAuthJSON, expectedProvider string) string {
 	if json.Unmarshal(payloadBytes, &claims) != nil {
 		return ""
 	}
-	realmProvider, ok := codebuddyAllowedIssuers[strings.TrimSpace(claims.Iss)]
+	realmProvider, ok := codebuddySessionSiteByIssuer[strings.TrimSpace(claims.Iss)]
 	if !ok || realmProvider != expectedProvider {
 		return ""
 	}
@@ -999,5 +1003,6 @@ func collectCodebuddyToolResult(output any) string {
 }
 
 type cbCtxBudget struct{ ctx context.Context }
-func (b cbCtxBudget) Take() bool { return b.ctx == nil || b.ctx.Err() == nil }
+
+func (b cbCtxBudget) Take() bool      { return b.ctx == nil || b.ctx.Err() == nil }
 func (b cbCtxBudget) OutOfTime() bool { return b.ctx != nil && b.ctx.Err() != nil }

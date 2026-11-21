@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -90,7 +91,7 @@ func applyZcodeNativeProxySettings(
 	if profileRoot == "" {
 		return "zcode_native_proxy_settings_failed", errors.New("profile_dir_empty")
 	}
-	settingsPath := filepath.Join(profileRoot, ".zcode", "v2", "setting.json")
+	settingsPath := filepath.Join(profileRoot, providerroot.ConfigDir("zcode"), "v2", "setting.json")
 	markerPath := filepath.Join(profileRoot, zcodeManagedProxyMarkerFile)
 	if rollback != nil {
 		rollback.snapshot(settingsPath, markerPath)
@@ -831,7 +832,7 @@ func jsonContainsString(value any, target string) bool {
 // repairZcodeProjectionLinks 清理旧版在 <profileDir>/.zcode 下留下的悬空符号链接，
 // 防止 ZCode backup 目录 mkdir 因 dangling symlink 报 ENOENT 而启动失败。
 func repairZcodeProjectionLinks(profileDir string) {
-	zcodeRoot := filepath.Join(strings.TrimSpace(profileDir), ".zcode")
+	zcodeRoot := filepath.Join(strings.TrimSpace(profileDir), providerroot.ConfigDir("zcode"))
 	entries, err := os.ReadDir(zcodeRoot)
 	if err != nil {
 		return
@@ -914,7 +915,7 @@ func repairZcodeProjectionDataLayout(profileDir string) {
 	if profileDir == "" {
 		return
 	}
-	root := filepath.Join(profileDir, ".zcode", "v2")
+	root := filepath.Join(profileDir, providerroot.ConfigDir("zcode"), "v2")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return
 	}
@@ -937,7 +938,7 @@ func repairZcodeProjectionDataLayout(profileDir string) {
 }
 
 func repairZcodeProjectionCredentialProfile(profileDir string, hostHomeDir string, environ []string) {
-	credPath := filepath.Join(strings.TrimSpace(profileDir), ".zcode", "v2", "credentials.json")
+	credPath := filepath.Join(strings.TrimSpace(profileDir), providerroot.ConfigDir("zcode"), "v2", "credentials.json")
 	raw, err := os.ReadFile(credPath)
 	if err != nil {
 		return

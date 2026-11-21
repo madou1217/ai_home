@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
@@ -348,7 +349,7 @@ func snapshotDesktopRollbackPaths(rb *fileRollback, provider, profileDir string)
 		}
 	}
 	if strings.EqualFold(provider, "codex") {
-		rb.snapshot(filepath.Join(profileDir, ".codex", "config.toml"))
+		rb.snapshot(filepath.Join(profileDir, providerroot.ConfigDir("codex"), "config.toml"))
 	}
 }
 

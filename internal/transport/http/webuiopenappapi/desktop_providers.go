@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
 	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
@@ -178,7 +179,7 @@ var baseEnvDecorators = map[string]func(*desktopPrepContext){
 
 // decorateKimiBaseEnv：Kimi 桌面端共享宿主 HOME，但配置根固定在账号 profile。
 func (p *desktopPrepContext) decorateKimiBaseEnv() {
-	p.setEnv("KIMI_CODE_HOME", filepath.Join(p.profileDir, ".kimi-code"))
+	p.setEnv("KIMI_CODE_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("kimi")))
 	if p.hostHomeDir != "" {
 		p.setEnv("HOME", p.hostHomeDir)
 		p.setEnv("USERPROFILE", p.hostHomeDir)
@@ -192,7 +193,7 @@ func (p *desktopPrepContext) decorateClaudeBaseEnv() {
 	if configRoot == "" {
 		configRoot = p.profileDir
 	}
-	p.setEnv("CLAUDE_CONFIG_DIR", filepath.Join(configRoot, ".claude"))
+	p.setEnv("CLAUDE_CONFIG_DIR", filepath.Join(configRoot, providerroot.ConfigDir("claude")))
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
 	p.applySharedCacheEnv()
@@ -227,13 +228,13 @@ func (p *desktopPrepContext) decorateCodexBaseEnv() {
 	}
 	p.setEnv("CODEX_ELECTRON_USER_DATA_PATH", p.userDataDir)
 	if _, _, isAPIKey := extractCodexAPIKey(p.snapshot); isAPIKey {
-		p.setEnv("CODEX_HOME", filepath.Join(p.profileDir, ".codex"))
+		p.setEnv("CODEX_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("codex")))
 	} else {
 		p.setEnv("HOME", p.profileDir)
 		p.setEnv("USERPROFILE", p.profileDir)
-		p.setEnv("CODEX_HOME", filepath.Join(p.profileDir, ".codex"))
+		p.setEnv("CODEX_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("codex")))
 		if p.hostHomeDir != "" {
-			p.setEnv("CODEX_SQLITE_HOME", filepath.Join(p.hostHomeDir, ".codex"))
+			p.setEnv("CODEX_SQLITE_HOME", filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex")))
 		}
 		p.applySharedCacheEnv()
 	}
@@ -255,7 +256,7 @@ func (p *desktopPrepContext) decorateAgyBaseEnv() {
 	p.setEnv("XDG_DATA_HOME", filepath.Join(runtimeHome, "xdg", "data"))
 	p.setEnv("XDG_STATE_HOME", filepath.Join(runtimeHome, "xdg", "state"))
 	p.setEnv("XDG_CACHE_HOME", filepath.Join(runtimeHome, "xdg", "cache"))
-	p.setEnv("GEMINI_CLI_SYSTEM_SETTINGS_PATH", filepath.Join(runtimeHome, ".gemini", "settings.json"))
+	p.setEnv("GEMINI_CLI_SYSTEM_SETTINGS_PATH", filepath.Join(runtimeHome, providerroot.ConfigDir("gemini"), "settings.json"))
 	if p.platformKey == "windows" {
 		p.setEnv("APPDATA", filepath.Join(runtimeHome, "AppData", "Roaming"))
 		p.setEnv("LOCALAPPDATA", filepath.Join(runtimeHome, "AppData", "Local"))
@@ -271,7 +272,7 @@ func (p *desktopPrepContext) decorateAgyBaseEnv() {
 
 func (p *desktopPrepContext) decorateZcodeBaseEnv() {
 	p.setEnv("ZCODE_DATA_BASE_DIR", p.profileDir)
-	p.setEnv("ZCODE_HOME", filepath.Join(p.profileDir, ".zcode"))
+	p.setEnv("ZCODE_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("zcode")))
 	p.setEnv("ZCODE_CREDENTIAL_SECRET", resolveZcodeSecretForHost(p.hostHomeDir, p.baseEnv))
 	// 只改 HOME；Windows 上改 USERPROFILE 会导致 ZCode 主进程静默卡死。
 	p.setEnv("HOME", p.profileDir)
@@ -291,7 +292,7 @@ func (p *desktopPrepContext) decorateCodebuddyFamilyBaseEnv() {
 	provider := strings.ToLower(strings.TrimSpace(p.req.Provider))
 	dirName, ok := codebuddyfamilystorage.ConfigDir(provider)
 	if !ok {
-		dirName = ".codebuddy"
+		dirName = providerroot.ConfigDir("codebuddy")
 	}
 	configDir := filepath.Join(p.profileDir, dirName)
 	p.setEnv("CODEBUDDY_CONFIG_DIR", configDir)
@@ -473,9 +474,9 @@ func (p *desktopPrepContext) decorateKiroNativeEnv() {
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
 	if p.hostHomeDir != "" {
-		p.setEnv("KIRO_HOME", filepath.Join(p.hostHomeDir, ".kiro"))
+		p.setEnv("KIRO_HOME", filepath.Join(p.hostHomeDir, providerroot.ConfigDir("kiro")))
 	} else {
-		p.setEnv("KIRO_HOME", filepath.Join(p.profileDir, ".kiro"))
+		p.setEnv("KIRO_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("kiro")))
 	}
 	p.setEnv("KIRO_TEST_DB_PATH", filepath.Join(p.profileDir, "data.sqlite3"))
 	p.setEnv("TMPDIR", filepath.Join(p.profileDir, "tmp")+string(filepath.Separator))
@@ -596,7 +597,7 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 	if !isAPIKey {
 		return nil
 	}
-	codexHome := filepath.Join(p.profileDir, ".codex")
+	codexHome := filepath.Join(p.profileDir, providerroot.ConfigDir("codex"))
 	authPath := filepath.Join(codexHome, "auth.json")
 	configPath := filepath.Join(codexHome, "config.toml")
 	p.rollback.snapshot(authPath, configPath)
@@ -626,13 +627,13 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 
 	var hostConfig string
 	if p.hostHomeDir != "" {
-		if raw, err := os.ReadFile(filepath.Join(p.hostHomeDir, ".codex", "config.toml")); err == nil {
+		if raw, err := os.ReadFile(filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")); err == nil {
 			hostConfig = string(raw)
 		}
 	}
 	sqliteHome := ""
 	if p.hostHomeDir != "" {
-		sqliteHome = filepath.Join(p.hostHomeDir, ".codex")
+		sqliteHome = filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"))
 	}
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = defaultOpenAIBaseURL
@@ -1480,15 +1481,15 @@ func sharedDataRootsForProvider(provider, platformKey string) []sharedDataRootSp
 		return codebuddyRoots("CodeBuddy CN")
 	case "workbuddy":
 		return []sharedDataRootSpec{
-			{projection: []string{".workbuddy-ai"}, host: []string{".workbuddy-ai"}},
-			{projection: []string{".workbuddy"}, host: []string{".workbuddy"}},
+			{projection: providerroot.ConfigRoot("workbuddy"), host: providerroot.ConfigRoot("workbuddy")},
+			{projection: providerroot.ConfigRoot("workbuddycn"), host: providerroot.ConfigRoot("workbuddycn")},
 			{projection: []string{".sheetagent"}, host: []string{".sheetagent"}},
 			{projection: []string{"WorkBuddy AI"}, host: []string{"WorkBuddy AI"}},
 			{projection: []string{"Library", "Application Support", "WorkBuddy AI"}, host: []string{"Library", "Application Support", "WorkBuddy AI"}},
 		}
 	case "workbuddycn":
 		return []sharedDataRootSpec{
-			{projection: []string{".workbuddy"}, host: []string{".workbuddy"}},
+			{projection: providerroot.ConfigRoot("workbuddycn"), host: providerroot.ConfigRoot("workbuddycn")},
 			{projection: []string{".sheetagent"}, host: []string{".sheetagent"}},
 			{projection: []string{"WorkBuddy"}, host: []string{"WorkBuddy"}},
 			{projection: []string{"Library", "Application Support", "WorkBuddy"}, host: []string{"Library", "Application Support", "WorkBuddy"}},

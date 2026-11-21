@@ -18,6 +18,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
@@ -425,7 +426,7 @@ func captureZcodeAuthOnClose(
 	if accounts == nil || strings.TrimSpace(profileDir) == "" || len(snapshot.NativeAuthJSON) == 0 {
 		return
 	}
-	credPath := filepath.Join(profileDir, ".zcode", "v2", "credentials.json")
+	credPath := filepath.Join(profileDir, providerroot.ConfigDir("zcode"), "v2", "credentials.json")
 	credBytes, err := os.ReadFile(credPath)
 	if err != nil {
 		return
@@ -448,7 +449,7 @@ func captureZcodeAuthOnClose(
 	}
 	next["credentials"] = decryptedCreds
 
-	cfgPath := filepath.Join(profileDir, ".zcode", "v2", "config.json")
+	cfgPath := filepath.Join(profileDir, providerroot.ConfigDir("zcode"), "v2", "config.json")
 	if cfgBytes, cfgErr := os.ReadFile(cfgPath); cfgErr == nil {
 		var diskCfg map[string]any
 		if json.Unmarshal(cfgBytes, &diskCfg) == nil && len(diskCfg) > 0 {

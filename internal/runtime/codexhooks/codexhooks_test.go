@@ -100,10 +100,10 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	if err := os.WriteFile(aliasCmd, []byte(BuildAliasWrapperScript(aliasCmd, canonicalCmd)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows", nodeFake); launch != nil {
+	if launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows"); launch != nil {
 		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应再回落 Node: %+v", launch)
 	}
-	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows", nodeFake); appServer != nil {
+	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows"); appServer != nil {
 		t.Fatalf("app-server 子命令应返回 nil 维持直通, 实际 %+v", appServer)
 	}
 }

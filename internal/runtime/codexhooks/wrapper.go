@@ -618,7 +618,7 @@ func ReadCmdSetVariable(body string, name string) string {
 }
 
 // ResolveWindowsCodexHookLaunch 在 Windows 下解析 CLI hook，绕过 .cmd 直接拉起 Node 助手。
-func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string, fallbackNodeExec string) *WindowsHookLaunch {
+func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string) *WindowsHookLaunch {
 	if NormalizePlatform(platform) != "windows" {
 		return nil
 	}
@@ -658,7 +658,6 @@ func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string
 			return nil
 		}
 		// resume / default CLI 都已迁到 Go；旧 wrapper 缺少 AIH_GO_CLI 时不再回落 Node。
-		_ = fallbackNodeExec
 		goBinary := strings.TrimSpace(ReadCmdSetVariable(body, "AIH_GO_CLI"))
 		if goBinary == "" || !fileExists(goBinary) {
 			return nil

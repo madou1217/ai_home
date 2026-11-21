@@ -42,6 +42,7 @@ type codexHooksDaemonOptions struct {
 	VSCodeExtensions             string
 	PathEnv                      string
 	TempDir                      string
+	GoBinaryPath                 string
 	NodeExecPath                 string
 	HelperScriptPath             string
 	ProviderHookReceiverURL      string
@@ -156,6 +157,7 @@ func buildCodexHooksDaemonOptions(
 		EnableVscodeHook:         enableVscode,
 		EnableCLIHook:            cfg.EnableCLIHook,
 		EnableNotificationBridge: true,
+		GoBinaryPath:             resolveCodexGoBinaryPath(cfg.GoBinaryPath, cfg.EntryFilePath),
 		NodeExecPath:             resolveCodexNodeExecPath(cfg.NodeExecPath),
 		HelperScriptPath:         resolveCodexHelperScriptPath(cfg.HelperScriptPath, cfg.EntryFilePath),
 		ProviderHookReceiverURL:  receiverURL,
@@ -172,6 +174,38 @@ func buildCodexHooksDaemonOptions(
 		LogInfo:                      logInfo,
 		LogWarn:                      logWarn,
 	}
+}
+
+// resolveCodexGoBinaryPath 解析 wrapper 唯一允许执行的 Go CLI。
+// 优先显式配置，其次与 aih-server 同目录的 aih-go，最后是仓库 bin/native 布局。
+func resolveCodexGoBinaryPath(explicit string, entryFilePath string) string {
+	if trimmed := strings.TrimSpace(explicit); trimmed != "" {
+		return trimmed
+	}
+	name := "aih-go"
+	if goruntime.GOOS == "windows" {
+		name += ".exe"
+	}
+	arch := goruntime.GOARCH
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	var candidates []string
+	if exe, err := os.Executable(); err == nil && strings.TrimSpace(exe) != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), name))
+	}
+	if entry := strings.TrimSpace(entryFilePath); entry != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(entry), "bin", "native", goruntime.GOOS+"-"+arch, name))
+	}
+	if wd, err := os.Getwd(); err == nil && strings.TrimSpace(wd) != "" {
+		candidates = append(candidates, filepath.Join(wd, "bin", "native", goruntime.GOOS+"-"+arch, name))
+	}
+	for _, candidate := range candidates {
+		if isRegularNonDirFile(candidate) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func resolveCodexNodeExecPath(explicit string) string {
@@ -293,6 +327,7 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			HostHomeDir:        hostHomeDir,
 			PathEnv:            opts.PathEnv,
 			TempDir:            opts.TempDir,
+			GoBinaryPath:       opts.GoBinaryPath,
 			NodeExecPath:       opts.NodeExecPath,
 			HelperScriptPath:   opts.HelperScriptPath,
 			ResolveCodexBinary: opts.ResolveCodexBinary,

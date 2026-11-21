@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 )
 
@@ -24,18 +25,30 @@ var (
 )
 
 func resolveCodebuddyConfigDirNames(provider string) []string {
-	switch NormalizeProvider(provider) {
-	case "codebuddy":
-		return []string{".codebuddy", ".workbuddy-ai", ".codebuddy-cn", ".workbuddy"}
-	case "workbuddy":
-		return []string{".workbuddy-ai", ".codebuddy", ".workbuddy", ".codebuddy-cn"}
-	case "codebuddycn":
-		return []string{".codebuddy-cn", ".workbuddy", ".codebuddy", ".workbuddy-ai"}
-	case "workbuddycn":
-		return []string{".workbuddy", ".codebuddy-cn", ".workbuddy-ai", ".codebuddy"}
-	default:
+	normalized := NormalizeProvider(provider)
+	ownDir, ok := codebuddyfamilystorage.ConfigDir(normalized)
+	if !ok {
 		return nil
 	}
+	dirNames := make([]string, 0, 4)
+	seen := make(map[string]bool, 4)
+	add := func(dirName string) {
+		if dirName == "" || seen[dirName] {
+			return
+		}
+		seen[dirName] = true
+		dirNames = append(dirNames, dirName)
+	}
+	// 顺序与 Node resolveCodebuddyProjectsRoots 一致：
+	// 自己的配置根 → 本地区另一支 → 家族规范顺序的其余成员。
+	add(ownDir)
+	for _, dirName := range codebuddyfamilystorage.SessionRoots(normalized) {
+		add(dirName)
+	}
+	for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
+		add(dirName)
+	}
+	return dirNames
 }
 
 func resolveCodebuddyProjectsRoots(hostHome, provider string) []string {

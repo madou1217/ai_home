@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -49,6 +51,8 @@ type commandConfig struct {
 	upstreamErrorRuleProviders []string
 	// webDir 是 Web UI 构建产物目录；为空表示不由 Go 托管 /ui。
 	webDir string
+	// generatedServerKeys 表示本次启动自举了默认密钥（仅用于打印一次性提示）。
+	generatedServerKeys bool
 	// nodeBaseURL 是 Node 宿主的回环管理地址（监督器注入）。
 	// 为空时没有可回退的宿主。
 	nodeBaseURL string
@@ -184,6 +188,14 @@ func loadCommandConfig(
 			clientKey = persisted.APIKey
 		}
 	}
+	// 环境变量和持久化配置都没有密钥时自举一对并写回 config:server。
+	// Node 宿主过去用 generateBootKey() 兜底；Go 接管后必须自己完成同样的事，
+	// 否则全新数据根第一次启动直接报 key 缺失（2026-11-21 新 AWS 主机实测）。
+	var generatedServerKeys bool
+	managementKey, clientKey, generatedServerKeys, err = ensureDefaultServerKeys(aiHomeDir, managementKey, clientKey)
+	if err != nil {
+		return commandConfig{}, err
+	}
 	if err := aihserver.ValidateServerKeys(managementKey, clientKey); err != nil {
 		return commandConfig{}, err
 	}
@@ -223,6 +235,7 @@ func loadCommandConfig(
 		aiHomeDir:                  aiHomeDir,
 		managementKey:              managementKey,
 		clientKey:                  clientKey,
+		generatedServerKeys:        generatedServerKeys,
 		proxyURL:                   persisted.ProxyURL,
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
@@ -233,6 +246,80 @@ func loadCommandConfig(
 		entryFilePath:              entryFilePath,
 		codexHooks:                 hooksCfg,
 	}, nil
+}
+
+// ensureDefaultServerKeys 在环境与持久化配置都没有密钥时生成一对并写回 config:server。
+//
+// 写回后每次启动稳定复用同一对密钥，客户端不会因为重启而失效；并发的第二个启动
+// 进程若已写入，则以配置里的值为准，不覆盖。返回的 generated 只在本次真的新建
+// 密钥时为 true，用于打印一次性提示（不打印密钥本身）。
+func ensureDefaultServerKeys(aiHomeDir, managementKey, clientKey string) (string, string, bool, error) {
+	if strings.TrimSpace(managementKey) != "" && strings.TrimSpace(clientKey) != "" {
+		return managementKey, clientKey, false, nil
+	}
+	store, err := appstate.OpenServerConfigStore(aiHomeDir)
+	if err != nil {
+		return "", "", false, err
+	}
+	generated := false
+	err = store.UpdateServerConfig(context.Background(), func(current string, found bool) (string, error) {
+		payload := map[string]any{}
+		if found && strings.TrimSpace(current) != "" {
+			if json.Unmarshal([]byte(current), &payload) != nil {
+				payload = map[string]any{}
+			}
+		}
+		changed := false
+		if strings.TrimSpace(managementKey) == "" {
+			if existing, ok := payload["managementKey"].(string); ok && strings.TrimSpace(existing) != "" {
+				managementKey = strings.TrimSpace(existing)
+			} else {
+				value, keyErr := newServerKey()
+				if keyErr != nil {
+					return "", keyErr
+				}
+				managementKey = value
+				payload["managementKey"] = value
+				changed = true
+				generated = true
+			}
+		}
+		if strings.TrimSpace(clientKey) == "" {
+			if existing, ok := payload["apiKey"].(string); ok && strings.TrimSpace(existing) != "" {
+				clientKey = strings.TrimSpace(existing)
+			} else {
+				value, keyErr := newServerKey()
+				if keyErr != nil {
+					return "", keyErr
+				}
+				clientKey = value
+				payload["apiKey"] = value
+				changed = true
+				generated = true
+			}
+		}
+		if !changed {
+			return current, nil
+		}
+		encoded, encodeErr := json.Marshal(payload)
+		if encodeErr != nil {
+			return "", encodeErr
+		}
+		return string(encoded), nil
+	})
+	if err != nil {
+		return "", "", false, err
+	}
+	return managementKey, clientKey, generated, nil
+}
+
+// newServerKey 生成 48 位十六进制密钥（24 字节随机数），满足服务端 key 约束。
+func newServerKey() (string, error) {
+	buffer := make([]byte, 24)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", fmt.Errorf("生成默认服务密钥失败: %w", err)
+	}
+	return hex.EncodeToString(buffer), nil
 }
 
 // envOptionalPath 校验可选路径环境变量：未设置或空串按缺省处理，

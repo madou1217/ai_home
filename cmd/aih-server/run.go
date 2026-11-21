@@ -64,6 +64,9 @@ func run(
 	if err != nil {
 		return err
 	}
+	if config.generatedServerKeys {
+		_, _ = fmt.Fprintln(runtime.stderr, "[aih-server] 已生成默认管理/客户端密钥并写入 config:server；用 aih server config show --show-secrets 查看")
+	}
 	if err := distributioninstall.AwaitActivation(ctx, config.aiHomeDir, config.listenAddress(), runtime.listen, runtime.stderr); err != nil {
 		return err
 	}

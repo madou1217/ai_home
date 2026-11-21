@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
@@ -70,17 +71,26 @@ var attachmentContentTypes = map[string]string{
 }
 
 // privateDirSequences 匹配私密目录片段序列，防止访问目录内部文件（不仅限目录本身）。
-var privateDirSequences = [][]string{
-	{"electron-user-data"},
-	{".auth"},
-	{".kimi-code", "credentials"},
-	{".cline", "data", "settings"},
-	{"library", "keychains"},
-	{".codebuddy", "sessions"},
-	{".codebuddy-cn", "sessions"},
-	{"codebuddyextension", "cache"},
-	{"codebuddyextension", "logs"},
-	{".codebuddy", "diagnostics"},
+//
+// CodeBuddy 家族的 <configDir>/sessions 由存储布局适配器生成：此前只硬编码了
+// .codebuddy / .codebuddy-cn 两支，WorkBuddy 两支的会话文件可经宿主原生根直接读取。
+var privateDirSequences = buildPrivateDirSequences()
+
+func buildPrivateDirSequences() [][]string {
+	sequences := [][]string{
+		{"electron-user-data"},
+		{".auth"},
+		{".kimi-code", "credentials"},
+		{".cline", "data", "settings"},
+		{"library", "keychains"},
+		{"codebuddyextension", "cache"},
+		{"codebuddyextension", "logs"},
+		{".codebuddy", "diagnostics"},
+	}
+	for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
+		sequences = append(sequences, []string{dirName, "sessions"})
+	}
+	return sequences
 }
 
 // NewHandler 创建聊天附件读取 Handler。

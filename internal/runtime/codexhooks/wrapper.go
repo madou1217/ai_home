@@ -649,48 +649,29 @@ func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string
 		if !strings.Contains(body, WrapperMarkerCLI) {
 			return nil
 		}
-		helper := ReadCmdSetVariable(body, "HELPER")
 		upstream := ReadCmdSetVariable(body, WrapperUpstreamVar)
 		stateFile := ReadCmdSetVariable(body, "STATE_FILE")
-		if helper == "" || upstream == "" || stateFile == "" || !fileExists(helper) {
-			return nil
-		}
-		configuredNode := ReadCmdSetVariable(body, "NODE_BIN")
-		nodeBin := strings.TrimSpace(fallbackNodeExec)
-		if configuredNode != "" && fileExists(configuredNode) {
-			nodeBin = configuredNode
-		}
-		if nodeBin == "" {
+		if upstream == "" || stateFile == "" {
 			return nil
 		}
 		subcommand := strings.ToLower(FindCodexSubcommand(args))
 		if subcommand == "app-server" {
 			return nil
 		}
-		// resume / default CLI 已迁到 Go；旧 wrapper 没有 AIH_GO_CLI 或二进制缺失时保留 Node 兼容。
+		// resume / default CLI 都已迁到 Go；旧 wrapper 缺少 AIH_GO_CLI 时不再回落 Node。
+		_ = fallbackNodeExec
 		goBinary := strings.TrimSpace(ReadCmdSetVariable(body, "AIH_GO_CLI"))
-		if goBinary != "" && fileExists(goBinary) {
-			command := "__codex-default-cli"
-			if subcommand == "resume" {
-				command = "__codex-cli-resume"
-			}
-			goArgs := make([]string, 0, 6+len(args))
-			goArgs = append(goArgs, command, "--upstream", upstream, "--state-file", stateFile, "--")
-			goArgs = append(goArgs, args...)
-			return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
+		if goBinary == "" || !fileExists(goBinary) {
+			return nil
 		}
-		mode := "--run-cli-default"
+		command := "__codex-default-cli"
 		if subcommand == "resume" {
-			mode = "--run-cli-resume"
+			command = "__codex-cli-resume"
 		}
-		launchArgs := make([]string, 0, 7+len(args))
-		launchArgs = append(launchArgs, helper, mode, "--upstream", upstream, "--state-file", stateFile, "--")
-		launchArgs = append(launchArgs, args...)
-		return &WindowsHookLaunch{
-			Command:  nodeBin,
-			Args:     launchArgs,
-			HookPath: hookPath,
-		}
+		goArgs := make([]string, 0, 6+len(args))
+		goArgs = append(goArgs, command, "--upstream", upstream, "--state-file", stateFile, "--")
+		goArgs = append(goArgs, args...)
+		return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
 	}
 	return nil
 }

@@ -96,15 +96,8 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	if err := os.WriteFile(aliasCmd, []byte(BuildAliasWrapperScript(aliasCmd, canonicalCmd)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows", nodeFake)
-	if launch == nil {
-		t.Fatal("期望解析到 WindowsHookLaunch，实际为 nil")
-	}
-	if launch.Command != nodeFake || launch.HookPath != canonicalCmd {
-		t.Fatalf("WindowsHookLaunch 意外: %+v", launch)
-	}
-	if len(launch.Args) < 2 || launch.Args[1] != "--run-cli-resume" {
-		t.Fatalf("WindowsHookLaunch 参数模式错误: %+v", launch.Args)
+	if launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows", nodeFake); launch != nil {
+		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应再回落 Node: %+v", launch)
 	}
 	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows", nodeFake); appServer != nil {
 		t.Fatalf("app-server 子命令应返回 nil 维持直通, 实际 %+v", appServer)

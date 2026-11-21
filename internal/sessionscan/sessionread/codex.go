@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"io"
 	"math"
 	"os"
@@ -22,13 +23,13 @@ import (
 const codexMaxFunctionArgChars = 500
 
 var (
-	codexStateDBPattern       = regexp.MustCompile(`^state_(\d+)\.sqlite$`)
-	codexMobilePreambleRegex  = regexp.MustCompile(`^\[Attachments sent from mobile\](?:\s*-\s*[^\r\n]+)*\s*`)
-	codexImagePlaceholderRe   = regexp.MustCompile(`^<image[^>]*>\s*</image>$`)
-	codexAttachedImagePathRe  = regexp.MustCompile(`(?i)\[Image:\s*([^\]]+)\]`)
-	codexChunkIDLineRegex     = regexp.MustCompile(`^Chunk ID:\s*`)
-	codexOutputLineRegex      = regexp.MustCompile(`^Output:\s*(.*)$`)
-	codexConfigProjectHeader  = regexp.MustCompile(`^\[projects\."([^"]+)"\]`)
+	codexStateDBPattern      = regexp.MustCompile(`^state_(\d+)\.sqlite$`)
+	codexMobilePreambleRegex = regexp.MustCompile(`^\[Attachments sent from mobile\](?:\s*-\s*[^\r\n]+)*\s*`)
+	codexImagePlaceholderRe  = regexp.MustCompile(`^<image[^>]*>\s*</image>$`)
+	codexAttachedImagePathRe = regexp.MustCompile(`(?i)\[Image:\s*([^\]]+)\]`)
+	codexChunkIDLineRegex    = regexp.MustCompile(`^Chunk ID:\s*`)
+	codexOutputLineRegex     = regexp.MustCompile(`^Output:\s*(.*)$`)
+	codexConfigProjectHeader = regexp.MustCompile(`^\[projects\."([^"]+)"\]`)
 )
 
 // ListCodexStateDBPaths 发现 ~/.codex 及 ~/.codex/sqlite 下的 state_<N>.sqlite 并按版本降序返回。
@@ -81,7 +82,7 @@ func ResolveCodexSessionPath(ctx context.Context, hostHome, sessionID string) st
 	if home == "" || !IsSafePathSegment(sid) {
 		return ""
 	}
-	codexDir := filepath.Join(home, ".codex")
+	codexDir := filepath.Join(home, providerroot.ConfigDir("codex"))
 	for _, stateDBPath := range ListCodexStateDBPaths(codexDir) {
 		if resolved := resolveCodexPathFromStateDB(ctx, codexDir, stateDBPath, sid); resolved != "" {
 			return resolved
@@ -476,7 +477,7 @@ func ReadCodexMessagesSnapshot(ctx context.Context, hostHome, sessionID string) 
 		return nil, 0, false, nil
 	}
 
-	codexDir := filepath.Join(strings.TrimSpace(hostHome), ".codex")
+	codexDir := filepath.Join(strings.TrimSpace(hostHome), providerroot.ConfigDir("codex"))
 	resolver := newCodexSubagentResolver(readCodexChildThreadDescriptors(ctx, codexDir, sessionID))
 
 	var messages []codexMsgEntry
@@ -1183,7 +1184,7 @@ func CollectCodexWorkspaceRoots(hostHome string) []string {
 	if home == "" {
 		return nil
 	}
-	raw, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	raw, err := os.ReadFile(filepath.Join(home, providerroot.ConfigDir("codex"), "config.toml"))
 	if err != nil {
 		return nil
 	}
@@ -1235,7 +1236,6 @@ func IsCodexTopLevelInteractiveThread(sessionID, cwd, source, threadSource, pare
 	return true
 }
 
-
 // ReadCodexExcludedThreadIDs 从 ~/.codex/state_*.sqlite 提取已归档或非顶层交互线程（如子代理）ID 集合。
 func ReadCodexExcludedThreadIDs(ctx context.Context, hostHome string) map[string]bool {
 	excluded := make(map[string]bool)
@@ -1243,7 +1243,7 @@ func ReadCodexExcludedThreadIDs(ctx context.Context, hostHome string) map[string
 	if home == "" {
 		return excluded
 	}
-	codexDir := filepath.Join(home, ".codex")
+	codexDir := filepath.Join(home, providerroot.ConfigDir("codex"))
 	dbPaths := ListCodexStateDBPaths(codexDir)
 	if len(dbPaths) == 0 {
 		return excluded

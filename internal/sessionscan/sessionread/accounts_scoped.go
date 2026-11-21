@@ -337,12 +337,12 @@ func resolveGrokSessionsRoots(opts Options) []string {
 	for _, ref := range ListProviderAccountRefs(opts, "grok") {
 		rt := ResolveAccountRuntimeDir(aiHome, "grok", ref)
 		if rt != "" {
-			addRoot(filepath.Join(rt, ".grok", "sessions"))
+			addRoot(filepath.Join(rt, providerroot.ConfigDir("grok"), "sessions"))
 			addRoot(filepath.Join(rt, "sessions"))
 		}
 	}
 	if hostHome != "" {
-		addRoot(filepath.Join(hostHome, ".grok", "sessions"))
+		addRoot(filepath.Join(hostHome, providerroot.ConfigDir("grok"), "sessions"))
 	}
 	return roots
 }
@@ -675,7 +675,7 @@ func ListKiroProjects(ctx context.Context, opts Options) []Project {
 			_ = db.Close()
 		}
 
-		cliRoot := filepath.Join(filepath.Dir(dbPath), ".kiro", "sessions", "cli")
+		cliRoot := filepath.Join(filepath.Dir(dbPath), providerroot.ConfigDir("kiro"), "sessions", "cli")
 		if entries, err := os.ReadDir(cliRoot); err == nil {
 			for _, entry := range entries {
 				name := entry.Name()
@@ -730,7 +730,7 @@ func ListKiroProjects(ctx context.Context, opts Options) []Project {
 
 	hostHome := strings.TrimSpace(opts.HostHomeDir)
 	if hostHome != "" && strings.TrimSpace(opts.AccountRef) == "" {
-		hostRoot := filepath.Join(hostHome, ".kiro", "sessions")
+		hostRoot := filepath.Join(hostHome, providerroot.ConfigDir("kiro"), "sessions")
 		if groups, err := os.ReadDir(hostRoot); err == nil {
 			for _, g := range groups {
 				if !g.IsDir() || !kiroHostGroupHexRe.MatchString(g.Name()) {
@@ -856,8 +856,8 @@ func ResolveKiroSessionPath(ctx context.Context, opts Options, sessionID string)
 		return ""
 	}
 	for _, dbPath := range resolveKiroDBPaths(opts) {
-		cliTrans := filepath.Join(filepath.Dir(dbPath), ".kiro", "sessions", "cli", sid+".jsonl")
-		cliMeta := filepath.Join(filepath.Dir(dbPath), ".kiro", "sessions", "cli", sid+".json")
+		cliTrans := filepath.Join(filepath.Dir(dbPath), providerroot.ConfigDir("kiro"), "sessions", "cli", sid+".jsonl")
+		cliMeta := filepath.Join(filepath.Dir(dbPath), providerroot.ConfigDir("kiro"), "sessions", "cli", sid+".json")
 		if kiroUUIDPattern.MatchString(sid) && fileExistsRegular(cliTrans) && fileExistsRegular(cliMeta) {
 			return cliTrans
 		}
@@ -873,7 +873,7 @@ func ResolveKiroSessionPath(ctx context.Context, opts Options, sessionID string)
 		}
 	}
 	if hostHome := strings.TrimSpace(opts.HostHomeDir); hostHome != "" {
-		hostRoot := filepath.Join(hostHome, ".kiro", "sessions")
+		hostRoot := filepath.Join(hostHome, providerroot.ConfigDir("kiro"), "sessions")
 		if groups, err := os.ReadDir(hostRoot); err == nil {
 			for _, g := range groups {
 				if !g.IsDir() || !kiroHostGroupHexRe.MatchString(g.Name()) {
@@ -916,7 +916,7 @@ func readKiroCliJsonlMessages(dbPath, sid string) ([]Message, int64, bool, error
 	if !kiroUUIDPattern.MatchString(sid) {
 		return nil, 0, false, nil
 	}
-	root := filepath.Join(filepath.Dir(dbPath), ".kiro", "sessions", "cli")
+	root := filepath.Join(filepath.Dir(dbPath), providerroot.ConfigDir("kiro"), "sessions", "cli")
 	metaPath := filepath.Join(root, sid+".json")
 	transPath := filepath.Join(root, sid+".jsonl")
 	if !fileExistsRegular(metaPath) || !fileExistsRegular(transPath) {
@@ -1068,7 +1068,7 @@ func ReadKiroSessionModel(ctx context.Context, opts Options, sessionID string) s
 	}
 	for _, dbPath := range resolveKiroDBPaths(opts) {
 		if kiroUUIDPattern.MatchString(sid) {
-			metaPath := filepath.Join(filepath.Dir(dbPath), ".kiro", "sessions", "cli", sid+".json")
+			metaPath := filepath.Join(filepath.Dir(dbPath), providerroot.ConfigDir("kiro"), "sessions", "cli", sid+".json")
 			if raw, err := os.ReadFile(metaPath); err == nil {
 				var meta struct {
 					SessionID    string `json:"session_id"`
@@ -1145,11 +1145,11 @@ func resolveClineDataDirs(opts Options) []string {
 	}
 	for _, ref := range ListProviderAccountRefs(opts, "cline") {
 		if rt := ResolveAccountRuntimeDir(aiHome, "cline", ref); rt != "" {
-			addDir(filepath.Join(rt, ".cline", "data"))
+			addDir(filepath.Join(rt, providerroot.ConfigDir("cline"), "data"))
 		}
 	}
 	if hostHome != "" {
-		addDir(filepath.Join(hostHome, ".cline", "data"))
+		addDir(filepath.Join(hostHome, providerroot.ConfigDir("cline"), "data"))
 	}
 	return dirs
 }
@@ -1425,8 +1425,8 @@ func resolveZCodeDBPaths(hostHome string) (cliDBPath, tasksDBPath string) {
 	if home == "" {
 		return "", ""
 	}
-	return filepath.Join(home, ".zcode", "cli", "db", "db.sqlite"),
-		filepath.Join(home, ".zcode", "v2", "tasks-index.sqlite")
+	return filepath.Join(home, providerroot.ConfigDir("zcode"), "cli", "db", "db.sqlite"),
+		filepath.Join(home, providerroot.ConfigDir("zcode"), "v2", "tasks-index.sqlite")
 }
 
 // ListZCodeProjects 合并 ~/.zcode/cli/db/db.sqlite 与 ~/.zcode/v2/tasks-index.sqlite。

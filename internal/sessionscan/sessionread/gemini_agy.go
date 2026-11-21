@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 )
 
@@ -28,7 +29,7 @@ func ReadGeminiProjectNameMappings(hostHome string) map[string]string {
 	if home == "" {
 		return nil
 	}
-	raw, err := os.ReadFile(filepath.Join(home, ".gemini", "projects.json"))
+	raw, err := os.ReadFile(filepath.Join(home, providerroot.ConfigDir("gemini"), "projects.json"))
 	if err != nil {
 		return nil
 	}
@@ -107,7 +108,7 @@ func ResolveGeminiSessionPath(hostHome, sessionID, projectDirName string) string
 	if home == "" || !IsSafePathSegment(sid) {
 		return ""
 	}
-	tmpDir := filepath.Join(home, ".gemini", "tmp")
+	tmpDir := filepath.Join(home, providerroot.ConfigDir("gemini"), "tmp")
 	if !dirExists(tmpDir) {
 		return ""
 	}
@@ -376,7 +377,7 @@ func ListAgyProjects(hostHome string) []Project {
 	if home == "" {
 		return []Project{}
 	}
-	indexPath := filepath.Join(home, ".gemini", "antigravity-cli", "aih-session-projects.json")
+	indexPath := filepath.Join(home, providerroot.ConfigDir("agy"), "antigravity-cli", "aih-session-projects.json")
 	raw, err := os.ReadFile(indexPath)
 	if err != nil {
 		return []Project{}
@@ -457,8 +458,8 @@ func ResolveAgySessionPath(hostHome, sessionID string) string {
 		return ""
 	}
 	roots := []string{
-		filepath.Join(home, ".gemini", "antigravity-cli", "brain"),
-		filepath.Join(home, ".gemini", "antigravity", "brain"),
+		filepath.Join(home, filepath.Join(providerroot.NativeRoot("agy")...), "brain"),
+		filepath.Join(home, providerroot.ConfigDir("agy"), "antigravity", "brain"),
 	}
 	for _, root := range roots {
 		candidate := filepath.Join(root, sid, ".system_generated", "logs", "transcript.jsonl")

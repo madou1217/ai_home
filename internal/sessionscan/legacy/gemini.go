@@ -2,6 +2,7 @@ package legacy
 
 import (
 	"encoding/json"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,7 +25,7 @@ var (
 
 // ReadGeminiProjects 扫描 <hostHome>/.gemini/tmp 下的全部项目。
 func ReadGeminiProjects(hostHome string) []Project {
-	geminiDir := filepath.Join(hostHome, ".gemini")
+	geminiDir := filepath.Join(hostHome, providerroot.ConfigDir("gemini"))
 	tmpRoot := filepath.Join(geminiDir, "tmp")
 	pathMap := buildGeminiProjectPathMap(geminiDir)
 	projects := make([]Project, 0)
@@ -38,7 +39,7 @@ func ReadGeminiProjects(hostHome string) []Project {
 
 // ReadGeminiProject 读取单个 .gemini/tmp/<name> 项目。
 func ReadGeminiProject(hostHome, projectName string) (Project, bool) {
-	geminiDir := filepath.Join(hostHome, ".gemini")
+	geminiDir := filepath.Join(hostHome, providerroot.ConfigDir("gemini"))
 	return readGeminiProject(projectName, buildGeminiProjectPathMap(geminiDir), geminiDir)
 }
 

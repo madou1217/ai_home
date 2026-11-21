@@ -3,6 +3,7 @@ package legacy
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ type claudeHistoryEntry struct {
 // ReadClaudeProjects 扫描 <hostHome>/.claude/projects 下的全部项目。
 // knownPaths 用于把 sanitized 目录名反解成真实路径（Codex/Gemini 已知 cwd）。
 func ReadClaudeProjects(hostHome string, knownPaths []string) []Project {
-	projectsRoot := filepath.Join(hostHome, ".claude", "projects")
+	projectsRoot := filepath.Join(hostHome, providerroot.ConfigDir("claude"), "projects")
 	history := readClaudeHistory(hostHome)
 	projects := make([]Project, 0)
 	for _, name := range directoryNames(projectsRoot) {
@@ -56,7 +57,7 @@ func readClaudeProject(hostHome, projectDirName string, knownPaths []string, his
 	if projectDirName == "" {
 		return Project{}, false
 	}
-	projectDir := filepath.Join(hostHome, ".claude", "projects", projectDirName)
+	projectDir := filepath.Join(hostHome, providerroot.ConfigDir("claude"), "projects", projectDirName)
 	if !isDirectory(projectDir) {
 		return Project{}, false
 	}
@@ -159,7 +160,7 @@ func skipClaudeTitle(text string) bool {
 
 func readClaudeHistory(hostHome string) map[string]claudeHistoryEntry {
 	entries := make(map[string]claudeHistoryEntry)
-	content, err := os.ReadFile(filepath.Join(hostHome, ".claude", "history.jsonl"))
+	content, err := os.ReadFile(filepath.Join(hostHome, providerroot.ConfigDir("claude"), "history.jsonl"))
 	if err != nil {
 		return entries
 	}

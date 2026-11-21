@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 )
 
@@ -92,7 +93,7 @@ func ResolveClaudeSessionPath(hostHome, sessionID, projectDirName string) string
 	if home == "" || !IsSafePathSegment(sid) {
 		return ""
 	}
-	projectsDir := filepath.Join(home, ".claude", "projects")
+	projectsDir := filepath.Join(home, providerroot.ConfigDir("claude"), "projects")
 	if dirName := strings.TrimSpace(projectDirName); dirName != "" {
 		if !IsSafePathSegment(dirName) {
 			return ""

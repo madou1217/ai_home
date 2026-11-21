@@ -3,6 +3,7 @@ package sessionread
 import (
 	"context"
 	"database/sql"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,7 +29,7 @@ func ListCodexStateSessions(ctx context.Context, hostHome string) []CodexStateSe
 	if home == "" {
 		return nil
 	}
-	codexDir := filepath.Join(home, ".codex")
+	codexDir := filepath.Join(home, providerroot.ConfigDir("codex"))
 	paths := ListCodexStateDBPaths(codexDir)
 	if len(paths) == 0 {
 		return nil

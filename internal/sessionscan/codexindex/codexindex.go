@@ -8,6 +8,7 @@ package codexindex
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"io"
 	"os"
 	"path/filepath"
@@ -51,8 +52,8 @@ func List(hostHomeDir string) []Session {
 		return nil
 	}
 	roots := []string{
-		filepath.Join(home, ".codex", "sessions"),
-		filepath.Join(home, ".codex", "archived_sessions"),
+		filepath.Join(home, providerroot.ConfigDir("codex"), "sessions"),
+		filepath.Join(home, providerroot.ConfigDir("codex"), "archived_sessions"),
 	}
 	sessions := make([]Session, 0)
 	for _, root := range roots {

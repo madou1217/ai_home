@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/serverconfig"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 	"github.com/madou1217/ai_home/internal/host/aihdefault/content/claude"
@@ -27,7 +28,7 @@ func buildSetDefaultHostProjection(aiHomeDir, hostHomeDir string) webuisetdefaul
 	targets := map[string]webuisetdefaultapi.HostFileTarget{}
 
 	claudeTarget := webuisetdefaultapi.HostFileTarget{
-		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".claude"), FileName: "settings.json", Ownership: aihdefault.OwnershipClaudeEnv},
+		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, providerroot.ConfigDir("claude")), FileName: "settings.json", Ownership: aihdefault.OwnershipClaudeEnv},
 	}
 	claudeTarget.BuildAccount = func(ref accountcore.AccountRef) aihdefault.BuildContent {
 		return func(current string, _ bool) (string, error) {
@@ -63,7 +64,7 @@ func buildSetDefaultHostProjection(aiHomeDir, hostHomeDir string) webuisetdefaul
 	targets["opencode"] = opencodeTarget
 
 	kimiTarget := webuisetdefaultapi.HostFileTarget{
-		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, ".kimi-code"), FileName: "config.toml", Ownership: aihdefault.OwnershipFile},
+		Target: aihdefault.Target{Directory: filepath.Join(hostHomeDir, providerroot.ConfigDir("kimi")), FileName: "config.toml", Ownership: aihdefault.OwnershipFile},
 	}
 	kimiBuild := kimi.BuildGatewayContent(kimi.ServerConfig{Host: config.Host, Port: config.Port, APIKey: config.APIKey, ClientKey: config.ClientKey})
 	kimiTarget.BuildGateway = kimiBuild

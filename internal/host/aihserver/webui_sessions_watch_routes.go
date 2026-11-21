@@ -14,6 +14,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/codex/appserver"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
@@ -237,7 +238,7 @@ func buildCodexLifecycleDialer(hostHomeDir string) webuisessionslifecycleapi.Cod
 		if err != nil {
 			return nil, err
 		}
-		codexHome := filepath.Join(cleanHome, ".codex")
+		codexHome := filepath.Join(cleanHome, providerroot.ConfigDir("codex"))
 		if mkErr := os.MkdirAll(codexHome, 0o755); mkErr != nil {
 			return nil, mkErr
 		}

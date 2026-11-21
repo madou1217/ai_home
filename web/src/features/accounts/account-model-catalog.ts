@@ -98,10 +98,9 @@ export function getModelProbeStatusDetail(probe: ReturnType<typeof getAccountMod
   } else if (!probe.probed) {
     parts.push('尚未探测');
   }
-  if (probe.error) {
-    parts.push(`原因：${probe.error}`);
-  } else if (probe.status?.errorCode) {
-    parts.push(`原因：${probe.status.errorCode}`);
+  const reason = formatModelProbeReason(probe.error, probe.status?.errorCode);
+  if (reason) {
+    parts.push(`原因：${reason}`);
   }
   const probedAt = formatProbeTime(probe.probedAt);
   if (probedAt) parts.push(`上次探测 ${probedAt}`);
@@ -110,19 +109,62 @@ export function getModelProbeStatusDetail(probe: ReturnType<typeof getAccountMod
   return parts.join(' · ');
 }
 
-export function formatModelProbeErrorLabel(error: string) {
+export function formatModelProbeReason(error: string, errorCode?: string) {
   const normalized = String(error || '').trim();
-  if (!normalized) return '探测失败';
+  const code = String(errorCode || '').trim();
+  if (!normalized && !code) return '';
+  const lower = normalized.toLowerCase();
+  const status = (normalized.match(/status=(\d{3})/i) || [])[1] || '';
+  if (status === '401' || status === '403' || lower.includes('认证被拒绝') || code === 'authentication_rejected') {
+    return '账号认证被拒绝，请重新登录或更新凭据';
+  }
+  if (status === '429' || lower.includes('rate limit') || lower.includes('限流')) {
+    return '上游限流，后台会自动重试';
+  }
+  if (status === '404') {
+    return '上游没有模型目录接口（HTTP 404）';
+  }
+  if (/^5\d{2}$/.test(status)) {
+    return `上游暂时不可用（HTTP ${status}）`;
+  }
+  if (lower.includes('凭据形态不支持') || code === 'discovery_unsupported') {
+    return '该账号形态不支持自动发现模型';
+  }
+  if (lower.includes('timeout') || lower.includes('und_err') || lower.includes('econn')) {
+    return '网络超时或连接失败';
+  }
+  if (code === 'invalid_catalog' || lower.includes('无法解析')) {
+    return '上游返回的模型目录无法解析';
+  }
+  if (code === 'account_not_found') {
+    return '账号已不存在';
+  }
+  const cleaned = normalized.replace(/^账号模型发现失败[:：]\s*/, '').trim();
+  if (cleaned) {
+    return cleaned.length > 90 ? `${cleaned.slice(0, 90)}…` : cleaned;
+  }
+  return code || '探测失败';
+}
+
+export function formatModelProbeErrorLabel(error: string, errorCode?: string) {
+  const normalized = String(error || '').trim();
+  const code = String(errorCode || '').trim();
+  if (!normalized && !code) return '探测失败';
   if (normalized.includes('zcode_jwt_missing_relogin') || normalized.includes('zcode_oauth_access_token_missing')) {
     return '需重新登录';
   }
   if (normalized.includes('zcode_balance_parameter_error')) {
     return '参数错误';
   }
-  const httpMatch = normalized.match(/HTTP\s+(\d{3})/i);
-  if (httpMatch) return `${httpMatch[1]} 失败`;
+  const status = (normalized.match(/status=(\d{3})/i) || [])[1] || '';
+  const lower = normalized.toLowerCase();
+  if (status === '401' || status === '403' || code === 'authentication_rejected') return '需重新登录';
+  if (status === '429' || lower.includes('rate limit') || normalized.includes('429') || lower.includes('限流')) return '限流';
+  if (status === '404') return '无目录接口';
+  if (/^5\d{2}$/.test(status)) return '上游异常';
   if (normalized.includes('PERMISSION_DENIED')) return '权限拒绝';
-  if (normalized.includes('UND_ERR')) return '网络失败';
+  if (normalized.includes('UND_ERR') || normalized.toLowerCase().includes('timeout')) return '网络失败';
+  if (normalized.includes('凭据形态不支持') || code === 'discovery_unsupported') return '不支持发现';
   return '探测失败';
 }
 
@@ -153,8 +195,8 @@ export function getModelProbeTagLabel(
   if (String(accountStatus || '').trim().toLowerCase() === 'down') return '已关闭';
   // 失败状态优先于原始错误文案：服务端已经把它归类为「会自动重试」或「需要人工处理」。
   if (probe.status?.state === 'retrying') return '重试中';
-  if (probe.status?.state === 'failed') return formatModelProbeErrorLabel(probe.error);
-  if (probe.error) return formatModelProbeErrorLabel(probe.error);
+  if (probe.status?.state === 'failed') return formatModelProbeErrorLabel(probe.error, probe.status?.errorCode);
+  if (probe.error) return formatModelProbeErrorLabel(probe.error, probe.status?.errorCode);
   // 已经探测过（含「成功但目录为空」）：模型很少随账号变化，不该长期挂「待探测」。
   if (probe.probed) return '未发现模型';
   // 没有凭据的账号不会被自动探测；「未配置」比「待探测」更准确，也不会给出无法兑现的承诺。

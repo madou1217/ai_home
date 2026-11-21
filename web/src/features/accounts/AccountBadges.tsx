@@ -9,7 +9,7 @@ import {
   requiresAccountReauth
 } from './account-state.ts';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
-import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
+import { formatRuntimeReset } from '@/components/runtime/RuntimeStatusTag';
 import { getAccountIdentityLabel, getAccountSecondaryIdentity } from '@/utils/account-labels';
 import {
   getFamilyLabel,
@@ -109,11 +109,11 @@ export function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' |
   const meta = getRuntimeStatusMeta(record);
   const normalizedReason = String(reason || '').trim();
   const formattedReason = formatAccountIssueReason(normalizedReason);
-  const normalizedUntil = Number(until || 0);
+  const resetLabel = formatRuntimeReset(record.runtimeStatus, until);
 
   const badge = <Badge status={meta.status} text={meta.label} />;
 
-  if (!normalizedReason && !normalizedUntil) {
+  if (!normalizedReason && !resetLabel) {
     return badge;
   }
 
@@ -123,7 +123,7 @@ export function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' |
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 360 }}>
           <div>{meta.label}</div>
           {normalizedReason ? <div>错误信息: {formattedReason}</div> : null}
-          {normalizedUntil ? <div>恢复时间: {formatRuntimeUntil(normalizedUntil)}</div> : null}
+          {resetLabel ? <div>恢复时间: {resetLabel}</div> : null}
         </div>
       )}
     >
@@ -236,9 +236,9 @@ export function getAccountStatusDetailLines(record: Account): string[] {
   const state = getAccountDisplayState(record);
   if (state === 'runtime_blocked') {
     const reason = String(record.runtimeReason || '').trim();
-    const until = Number(record.runtimeUntil || 0);
     if (reason) lines.push(`错误信息: ${formatAccountIssueReason(reason)}`);
-    if (until) lines.push(`恢复时间: ${formatRuntimeUntil(until)}`);
+    const resetLabel = formatRuntimeReset(record.runtimeStatus, record.runtimeUntil);
+    if (resetLabel) lines.push(`恢复时间: ${resetLabel}`);
   } else if (state === 'policy_blocked') {
     const reason = formatSchedulableReason(record.schedulableReason);
     if (reason) lines.push(reason);

@@ -1,5 +1,8 @@
 import { Tag, Tooltip } from 'antd';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
+import { formatRuntimeReset } from './runtime-reset';
+
+export { formatRuntimeReset, formatRuntimeUntil } from './runtime-reset';
 
 // 颜色只表达语义（web/DESIGN.md §0.2）：antd 的状态预设 success / warning / error / default
 // 由 AntdThemeProvider 的 token 驱动，深浅主题自动翻转；不再使用彩虹色预设。
@@ -36,18 +39,6 @@ export const getRuntimeStatusMeta = (status?: string) => {
   };
 };
 
-export const formatRuntimeUntil = (value?: number) => {
-  const ts = Number(value || 0);
-  if (!ts) return '-';
-  if (ts <= Date.now()) return '已恢复';
-  return new Date(ts).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
-};
 
 interface RuntimeStatusTagProps {
   status?: string;
@@ -60,14 +51,14 @@ const RuntimeStatusTag = ({ status, fallback, reason, until }: RuntimeStatusTagP
   const meta = getRuntimeStatusMeta(status);
   const normalizedReason = String(reason || '').trim();
   const formattedReason = formatAccountIssueReason(normalizedReason);
-  const normalizedUntil = Number(until || 0);
+  const resetLabel = formatRuntimeReset(status, until);
   const tag = (
     <Tag color={meta.color} className="runtime-status-tag">
       <span className={RUNTIME_STATUS_LED[meta.color] || 'hud-led'} aria-hidden="true" />
       {fallback || meta.label}
     </Tag>
   );
-  if (!normalizedReason && !normalizedUntil) {
+  if (!normalizedReason && !resetLabel) {
     return tag;
   }
   return (
@@ -76,7 +67,7 @@ const RuntimeStatusTag = ({ status, fallback, reason, until }: RuntimeStatusTagP
         <div className="runtime-status-tip">
           <div>{fallback || meta.label}</div>
           {normalizedReason ? <div>错误信息: {formattedReason}</div> : null}
-          {normalizedUntil ? <div>恢复时间: {formatRuntimeUntil(normalizedUntil)}</div> : null}
+          {resetLabel ? <div>恢复时间: {resetLabel}</div> : null}
         </div>
       )}
     >

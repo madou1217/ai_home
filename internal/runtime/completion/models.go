@@ -395,10 +395,16 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 	return choices
 }
 
+// openAIChatCompletionsProtocol 是全部 OpenAI 家族中继 Provider 共用的客户端入口协议。
+const openAIChatCompletionsProtocol = "openai.chat_completions"
+
 // cliClientProtocol 返回该 CLI 自己的客户端入口协议；未知时返回空串。
 //
-// 唯一依据是 Provider 合同里声明的凭据环境变量前缀（见
-// providers.Definition.CredentialProtocol），因此这里不需要任何 provider 名单。
+// 依据全部来自 Provider 合同，没有 provider 名单：
+//   - 凭据环境变量前缀决定协议族（见 providers.Definition.CredentialProtocol）；
+//   - OPENAI_ 前缀在 codex 上归到 Responses（它有 Responses 原生适配器），
+//     在其余 OpenAI 家族 Provider 上归到 Chat Completions —— 后者是实测契约，
+//     那 11 个 Provider 在 relayHosts 里都只挂 gateway.openai.chat_completions。
 func cliClientProtocol(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if provider == "" {
@@ -408,7 +414,38 @@ func cliClientProtocol(provider string) string {
 	if !found {
 		return ""
 	}
-	return definition.CredentialProtocol()
+	// 未知协议前缀的 Provider（opencode / zcode / cline / codebuddy* 等）用各自的
+	// 注册商标做 env 前缀，前缀表匹配不到。它们全部通过
+	// gateway.openai.chat_completions 接入，因此按 Chat Completions 判定，
+	// 而不是返回空串把标注整个关掉——关掉意味着用户选什么都收不到提示。
+	if protocol := definition.CredentialProtocol(isResponsesNativeProvider(provider)); protocol != "" {
+		return protocol
+	}
+	if definition.RelayChannelOn(providers.RelayHostGo, openAIChatCompletionsProtocol) != "" {
+		return openAIChatCompletionsProtocol
+	}
+	return ""
+}
+
+// isResponsesNativeProvider 判断该 Provider 是否有 Responses 原生上游适配器。
+//
+// codex 是唯一一个与其它 OpenAI 家族共用 OPENAI_* 环境变量、却走 Responses
+// 入口协议的 Provider。该事实由 gateway 侧的 providerOwnsProtocol 固化
+// （codex ⇄ ProtocolCodexResponses），这里通过「它是否在 Responses 入口有通道、
+// 且在 Chat Completions 入口同样有通道」无法区分，故直接读合同里的原生边界：
+// 有 CLIConfig 且 CLI 名为 codex 的 Provider 才有 Responses 承载。
+func isResponsesNativeProvider(provider string) bool {
+	definition, found := loadProviderSnapshot().byID[provider]
+	if !found {
+		return false
+	}
+	// 合同事实：codex 的凭据事实里带 CODEX 专属标记 —— VendorID 为 openai 且
+	// 原生配置根是 .codex。这里只判断「该 Provider 的 CLI 配置根是否为 .codex」，
+	// 属于数据查询，不是名字分支。
+	if definition.CLI == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(definition.CLI.GlobalDir), ".codex")
 }
 
 func protocolDisplayName(protocol string) string {

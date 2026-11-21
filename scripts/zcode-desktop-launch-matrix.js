@@ -28,12 +28,13 @@ const SETTLE_MS = Number(process.env.AIH_OPEN_SETTLE_MS || 12_000);
 function readManagementKey() {
   const fromEnv = String(process.env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
   if (fromEnv) return fromEnv;
-  const raw = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'ai-home.js'), 'server', 'config', '--show-secrets', '--json'], {
+  const raw = execFileSync(path.join(ROOT, 'bin', 'aih'), ['server', 'config', 'show', '--show-secrets', '--json'], {
     encoding: 'utf8',
     env: process.env
   });
   const parsed = JSON.parse(raw);
-  return String((parsed.config && parsed.config.managementKey) || '').trim();
+  const config = parsed.config || parsed;
+  return String((config && config.managementKey) || '').trim();
 }
 
 async function api(key, pathname, init = {}) {

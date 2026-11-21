@@ -73,7 +73,7 @@ const realHome = (() => {
   try { return os.userInfo().homedir; } catch (_error) { return os.homedir(); }
 })();
 
-const child = pty.spawn(process.execPath, [path.join(REPO, 'bin/ai-home.js'), provider, fromId], {
+const child = pty.spawn(path.join(REPO, 'bin/aih'), [provider, fromId], {
   name: 'xterm-256color',
   cols: 120,
   rows: 40,

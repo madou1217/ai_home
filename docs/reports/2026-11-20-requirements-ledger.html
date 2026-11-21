@@ -237,7 +237,7 @@
     <div class="board"><table>
       <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
       <tbody>
-        <tr><td>会话 hook 不准（已关仍显示运行中）</td><td class="meta">10-30</td><td><span class="chip s-partial">部分</span></td><td class="ev">运行态与 session activity 已收敛；hook 覆盖仍按 harness 能力边界</td></tr>
+        <tr><td>会话 hook 不准（已关仍显示运行中）</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">Codex idle/active、Claude idle_prompt、AGY Stop、tmux pane 误判已修；OpenCode v2 成功/中断、Gemini/Grok 失联兜底实测；丢失终止事件 10 分钟退出运行、账号活动 120 秒 TTL；见 docs/product-integrity/session-status-hooks-2026-11-21.md（OpenCode v1 未验）</td></tr>
         <tr><td>account-session-activity 按 harness 维度设计</td><td class="meta">10-30</td><td><span class="chip s-done">已完成</span></td><td class="ev">provider 描述符 + 能力表驱动</td></tr>
         <tr><td>账号配置文件查看（kiro 优先），多文件 tabs</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">账号配置文件读取接口与前端 tabs</td></tr>
         <tr><td>重做导入导出：只做本机、支持单账号</td><td class="meta">10-31</td><td><span class="chip s-done">已完成</span></td><td class="ev">export?format=… / import 往返；单账号导出</td></tr>

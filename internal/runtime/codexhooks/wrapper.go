@@ -252,6 +252,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"NODE_BIN=" + ShellQuote(options.NodeExecPath),
 		"HELPER=" + ShellQuote(options.HelperScriptPath),
 		"STATE_FILE=" + ShellQuote(options.StateFilePath),
+		"AIH_GO_CLI=" + ShellQuote(wrapperGoBinary(options.HelperScriptPath)),
 	}
 	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理。
 	// run-cli-default / resume 仍由 Node helper 负责。

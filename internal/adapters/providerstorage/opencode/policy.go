@@ -21,10 +21,11 @@ var bridgeProjection = []string{".local", "share", "aih-opencode-runtime", "open
 
 // Policy 返回 OpenCode 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot(ProviderID)
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
-		NativeRoot:      []string{".local", "share", "opencode"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: providerroot.RuntimeHome(ProviderID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -43,7 +44,7 @@ func Policy() accountprojection.Policy {
 			{
 				// 目录级共享：宿主每个子项链进 bridge，凭据文件排除在外。
 				Projection: bridgeProjection,
-				Host:       []string{".local", "share", "opencode"},
+				Host:       append([]string{}, root...),
 				Exclude:    storagepolicy.PrivateEntryNames(ProviderID),
 			},
 		},

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 )
@@ -136,7 +137,7 @@ func (scan *scanner) collectProjects() []rawProject {
 // 与 Node collectKnownProjectPaths 同口径：Gemini 的 trustedFolders.json 与
 // history/<name>/.project_root。Codex 的 config.toml 工作区根不在本切片内。
 func (scan *scanner) knownProjectPaths() []string {
-	geminiDir := filepath.Join(scan.hostHome, ".gemini")
+	geminiDir := filepath.Join(scan.hostHome, providerroot.ConfigDir("gemini"))
 	paths := make([]string, 0, 16)
 	seen := make(map[string]bool, 16)
 	add := func(value string) {
@@ -172,7 +173,7 @@ func (scan *scanner) knownProjectPaths() []string {
 
 // claudeProjects 扫描 <hostHome>/.claude/projects 下的一级目录。
 func (scan *scanner) claudeProjects(knownPaths []string) []rawProject {
-	root := filepath.Join(scan.hostHome, ".claude", "projects")
+	root := filepath.Join(scan.hostHome, providerroot.ConfigDir("claude"), "projects")
 	names := scan.subdirectories(root)
 	projects := make([]rawProject, 0, len(names))
 	for _, name := range names {
@@ -193,7 +194,7 @@ func (scan *scanner) claudeProjects(knownPaths []string) []rawProject {
 
 // geminiProjects 扫描 <hostHome>/.gemini/tmp 下的一级项目目录。
 func (scan *scanner) geminiProjects() []rawProject {
-	root := filepath.Join(scan.hostHome, ".gemini", "tmp")
+	root := filepath.Join(scan.hostHome, providerroot.ConfigDir("gemini"), "tmp")
 	names := scan.subdirectories(root)
 	projects := make([]rawProject, 0, len(names))
 	for _, name := range names {
@@ -219,7 +220,7 @@ func (scan *scanner) geminiProjects() []rawProject {
 // 只服务于没有 state 库的旧版 Codex。库里的会话行才是完整索引，rollout 文件可能
 // 已被清理，标题也可能只写在库里。
 func (scan *scanner) codexProjects() []rawProject {
-	codexDir := filepath.Join(scan.hostHome, ".codex")
+	codexDir := filepath.Join(scan.hostHome, providerroot.ConfigDir("codex"))
 	threadNames := scan.readCodexThreadNames(filepath.Join(codexDir, "session_index.jsonl"))
 
 	sessionsByCwd := make(map[string][]rawSession, 16)

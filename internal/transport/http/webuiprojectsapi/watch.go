@@ -15,6 +15,7 @@ import (
 	"time"
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -705,13 +706,13 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 	hostHome := handler.hostHomeDir
 	add(projectWatchKindProjects, hostHome)
 
-	claudeDir := filepath.Join(hostHome, ".claude")
+	claudeDir := filepath.Join(hostHome, providerroot.ConfigDir("claude"))
 	add(projectWatchKindProjects, claudeDir)
 	add(projectWatchKindProjects, filepath.Join(claudeDir, "history.jsonl"))
 	claudeProjects := filepath.Join(claudeDir, "projects")
 	addTree(projectWatchKindProjects, claudeProjects, 1)
 
-	codexDir := filepath.Join(hostHome, ".codex")
+	codexDir := filepath.Join(hostHome, providerroot.ConfigDir("codex"))
 	add(projectWatchKindProjects, codexDir)
 	add(projectWatchKindProjects, filepath.Join(codexDir, "config.toml"))
 	add(projectWatchKindProjects, filepath.Join(codexDir, ".codex-global-state.json"))
@@ -721,7 +722,7 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 	addGlob(filepath.Join(codexDir, "state_*.sqlite"))
 	addGlob(filepath.Join(codexDir, "sqlite", "state_*.sqlite"))
 
-	geminiDir := filepath.Join(hostHome, ".gemini")
+	geminiDir := filepath.Join(hostHome, providerroot.ConfigDir("gemini"))
 	add(projectWatchKindProjects, geminiDir)
 	add(projectWatchKindProjects, filepath.Join(geminiDir, "trustedFolders.json"))
 	add(projectWatchKindProjects, filepath.Join(geminiDir, "projects.json"))
@@ -732,7 +733,7 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 	add(projectWatchKindProjects, opencodeDir)
 	addDatabase(filepath.Join(opencodeDir, "opencode.db"))
 
-	clineDir := filepath.Join(hostHome, ".cline")
+	clineDir := filepath.Join(hostHome, providerroot.ConfigDir("cline"))
 	add(projectWatchKindProjects, clineDir)
 	add(projectWatchKindProjects, filepath.Join(clineDir, "data"))
 	add(projectWatchKindProjects, filepath.Join(clineDir, "data", "db"))
@@ -755,7 +756,7 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 				if !entry.IsDir() {
 					continue
 				}
-				dataDir := filepath.Join(clineRoot, entry.Name(), ".cline", "data")
+				dataDir := filepath.Join(clineRoot, entry.Name(), providerroot.ConfigDir("cline"), "data")
 				add(projectWatchKindProjects, dataDir)
 				add(projectWatchKindProjects, filepath.Join(dataDir, "db"))
 				addDatabase(filepath.Join(dataDir, "db", "sessions.db"))

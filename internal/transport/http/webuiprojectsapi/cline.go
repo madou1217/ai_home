@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -118,7 +119,7 @@ func (scan *scanner) readClineRecords() []clineRecord {
 	if len(records) > 0 {
 		return records
 	}
-	return readClineRecordsFromJSON(filepath.Join(scan.hostHome, ".cline", "data", "sessions"))
+	return readClineRecordsFromJSON(filepath.Join(scan.hostHome, providerroot.ConfigDir("cline"), "data", "sessions"))
 }
 
 // clineDatabasePaths 返回宿主与全部账号投影的 sessions.db（宿主在前）。
@@ -134,12 +135,12 @@ func (scan *scanner) clineDatabasePaths() []string {
 	}
 
 	if scan.hostHome != "" {
-		add(filepath.Join(scan.hostHome, ".cline", "data"))
+		add(filepath.Join(scan.hostHome, providerroot.ConfigDir("cline"), "data"))
 	}
 	if scan.aiHome != "" {
 		providerRoot := filepath.Join(scan.aiHome, "run", "auth-projections", "cline")
 		for _, ref := range scan.subdirectories(providerRoot) {
-			add(filepath.Join(providerRoot, ref, ".cline", "data"))
+			add(filepath.Join(providerRoot, ref, providerroot.ConfigDir("cline"), "data"))
 		}
 	}
 

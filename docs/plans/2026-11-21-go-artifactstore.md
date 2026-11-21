@@ -351,6 +351,16 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 - 指向别处（非宿主旧路径）的链接：两后端都只报 `Library/Preferences` unresolved，不动文件。
 - 真实 opencode 账号 `prepare`：两种后端都无任何变更（快照 before/after 相同）。
 
+## 会话条目内容合并（2026-11-22 已迁移）
+
+`mergeEntryIntoStore` 的机械部分交给 `sessionEntryMerges`：整条目 move、递归目录合并、
+同内容文件丢弃、悬挂链接丢弃、空壳替换、空目录收尾；跨设备 rename（EXDEV）不复制，
+留给上层 unresolved。provider 专有的 JSON 合并（codex global state / session index、
+history.jsonl、家族共享配置）仍在 Node，属于数据归属决策。
+
+实测：node/go 两种后端下 summary 与完整目录快照逐字一致；二次运行 `migrated=0`；
+真实 codex 账号两后端均 `{migrated:0, linked:66}`。
+
 ## 遗留项清单（2026-11-21 复核）
 
 **无遗留项。** 已迁移模块的本地实现全部保留为 fallback（执行点不可用/注入 fs 替身时使用），
@@ -361,8 +371,8 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 - opencode auth bridge → `bridgeLinks.authLink`（和共享条目同批下发）；
 - 旧版 `Library/Preferences` 整目录迁移 → `legacyLibraryLinks`。
 
-会话条目的**内容合并**（`mergeEntryIntoStore` 的 rename 并集、同内容文件丢弃）仍由 Node
-承担：那是数据归属决策而非链接动作，执行点只负责"接回宿主存储"的最后一步。
+会话条目的 **provider 专有 JSON 合并**仍在 Node（数据归属决策）；目录/文件机械合并
+已由执行点承担。
 
 策略层（不迁）：版本发现与排序、provider 私有名、三个投影根与 known 清单、模型/env/网关配置。
 

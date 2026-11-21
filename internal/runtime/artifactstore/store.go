@@ -54,6 +54,7 @@ type Request struct {
 	BridgeLinks        *BridgeLinks          `json:"bridgeLinks,omitempty"`
 	FileLinks          []FileLink            `json:"fileLinks,omitempty"`
 	SessionEntryLinks  []SessionEntryLink    `json:"sessionEntryLinks,omitempty"`
+	SessionEntryMerges []SessionEntryMerge   `json:"sessionEntryMerges,omitempty"`
 	LegacyLibraryLinks []LegacyLibraryLink   `json:"legacyLibraryLinks,omitempty"`
 	Prune              *PruneOptions         `json:"prune,omitempty"`
 }
@@ -163,6 +164,7 @@ type Response struct {
 	BridgeLinks        *BridgeLinkResult         `json:"bridgeLinks,omitempty"`
 	FileLinks          *FileLinkResult           `json:"fileLinks,omitempty"`
 	SessionEntryLinks  []SessionEntryLinkResult  `json:"sessionEntryLinks,omitempty"`
+	SessionEntryMerges []SessionEntryMergeResult `json:"sessionEntryMerges,omitempty"`
 	LegacyLibraryLinks []LegacyLibraryLinkResult `json:"legacyLibraryLinks,omitempty"`
 	Errors             []string                  `json:"errors"`
 }
@@ -212,6 +214,9 @@ func Ensure(request Request) Response {
 	}
 	if len(request.SessionEntryLinks) > 0 {
 		response.SessionEntryLinks = applySessionEntryLinks(request)
+	}
+	if len(request.SessionEntryMerges) > 0 {
+		response.SessionEntryMerges = applySessionEntryMerges(request)
 	}
 	if len(request.LegacyLibraryLinks) > 0 {
 		response.LegacyLibraryLinks = applyLegacyLibraryLinks(request)

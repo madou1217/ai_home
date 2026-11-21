@@ -49,6 +49,7 @@ wrapper 全部可用。Node 只在这四类位置上继续存在：
 | DSH harness | `internal/runtime/harnessrun/run.go`（`resolveNodeExecutable`） | 只有 DSH 家族需要 Node；`pi` 由 PATH 直接解析 |
 | Provider CLI 版本探测 | `internal/runtime/providercliupgrade/probe.go` | 官方 CLI 的 JS 入口/shim 用 node 执行 |
 | npm 安装/升级 | `internal/runtime/providercliupgrade/npm_command.go` | npm 本身是 Node 程序 |
+| SSH / 远端 toolkit 命令 | `internal/transport/http/webuisshapi/terminal.go`、`internal/runtime/toolkit/apps/codex_npm_command.go` | 远端 npm/Node 命令使用目标环境 Node |
 | WorkBuddy 凭据解码 | `internal/adapters/hostdetect/native_detector_codebuddy.go` | 用厂商 Electron（`ELECTRON_RUN_AS_NODE=1`）执行 `scripts/aih-workbuddy-credential-codec.cjs`，因为解密依赖 Electron safeStorage |
 | 桌面端拉起 Provider CLI | `internal/transport/http/webuiopenappapi/desktop_providers.go` | 目标 CLI（claude/codex/opencode）自身的 Node 入口 |
 

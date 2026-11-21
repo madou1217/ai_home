@@ -1,17 +1,19 @@
-name: go-tests-windows
+name: go-tests
 
-# Windows 专属的 Go 测试。
+# Go 的多平台验证。
 #
-# 为什么单独一个工作流：`internal/runtime/artifactstore/junction_windows_test.go`
-# 带 `//go:build windows`，在 macOS/Linux 上会被整文件排除（`go test` 只报
-# `no test files`），所以普通 CI 绿了并不代表 junction 语义被覆盖。
-# 这里在真正的 Windows runner 上跑同一份测试，固定住"共享目录只读、账号侧可删"
-# 依赖的删除/重命名语义。
-
-# 刻意不使用 workflow 级 paths/paths-ignore 过滤：
-# 被路径过滤跳过的 run 会让 required status check 永远停在 "Pending"，把不相关的 PR
-# 卡死（GitHub 文档明确写了这一点）。改为 job 内检测改动、按需跳过重步骤，
-# 这样无论改动是什么，这个 check 都会给出结论。
+# 两个 job 分工：
+#   - windows：`internal/runtime/artifactstore/junction_windows_test.go` 带
+#     `//go:build windows`，在 macOS/Linux 上整文件被排除（`go test` 只报
+#     `no test files`），必须由真正的 Windows runner 跑，才能固定住"共享目录只读、
+#     账号侧可删"依赖的 junction 删除/重命名语义。
+#   - linux：补上非 Windows 侧的 vet + 编译，防止 `//go:build !windows` 分支漂移
+#     或包里只有某个平台能编。Linux 也是发行目标之一，但只在打 tag 时才构建。
+#
+# 刻意不使用 workflow 级 paths/paths-ignore 过滤：被路径过滤跳过的 run 会让
+# required status check 永远停在 "Pending"，把不相关的 PR 卡死（GitHub 文档明确写了
+# 这一点）。改为 job 内检测改动、按需跳过重步骤，这样无论改动是什么，这个 check
+# 都会给出结论。
 on:
   push:
     branches:
@@ -20,14 +22,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: go-tests-windows-${{ github.workflow }}-${{ github.ref }}
+  group: go-tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  windows:
     name: windows junction + artifact store
     runs-on: windows-latest
     timeout-minutes: 15
@@ -73,7 +75,7 @@ jobs:
           if ($base -and $base -notmatch '^0+$') {
             $files = @(git diff --name-only $base $head 2>$null)
             if ($LASTEXITCODE -eq 0) {
-              $pattern = '^(internal|application|core|contracts|cmd|assets|native)/|\.go$|^go\.(mod|sum)$|^\.github/workflows/go-tests-windows\.yml$'
+              $pattern = '^(internal|application|core|contracts|cmd|assets|native)/|\.go$|^go\.(mod|sum)$|^\.github/workflows/go-tests\.yml$'
               $hit = @($files | Where-Object { $_ -match $pattern })
               if ($hit.Count -eq 0) {
                 $go = 'false'
@@ -104,3 +106,38 @@ jobs:
       - name: No Go changes
         if: steps.scope.outputs.go != 'true'
         run: Write-Output 'no Go-related changes; Windows checks skipped'
+
+  # 非 Windows 侧不设门：冷启动约 1 分钟，且能第一时间暴露"只有 Linux 才编不过"
+  # 的改动（例如新代码用了 darwin 专属 syscall 却漏了 build tag）。
+  linux:
+    name: linux build + vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: '0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          go version
+          go env GOOS GOARCH
+
+      - name: Vet
+        run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/...
+
+      - name: Test
+        run: go test -count=1 -timeout 5m ./internal/runtime/artifactstore/...
+
+      - name: Build CLI and server
+        run: |
+          go build -trimpath -o "$RUNNER_TEMP/aih" ./cmd/aih
+          go build -trimpath -o "$RUNNER_TEMP/aih-server" ./internal/host/aihserver

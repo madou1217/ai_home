@@ -143,7 +143,7 @@ GOOS=windows GOARCH=amd64 go test -c -o /tmp/artifactstore.test.exe ./internal/r
 artifactstore.test.exe -test.v
 ```
 
-CI 由 `.github/workflows/go-tests-windows.yml` 承担：在 `windows-latest` 上跑
+CI 由 `.github/workflows/go-tests.yml` 承担：在 `windows-latest` 上跑
 `go vet`（artifactstore + spacegc）、`go test ./internal/runtime/artifactstore/...`，
 再编译 `cmd/aih` 与 `internal/host/aihserver`，确保"测试过"的产品入口在 Windows 上也能编过。
 

@@ -147,6 +147,11 @@ CI 由 `.github/workflows/go-tests-windows.yml` 承担：在 `windows-latest` �
 `go vet`（artifactstore + spacegc）、`go test ./internal/runtime/artifactstore/...`，
 再编译 `cmd/aih` 与 `internal/host/aihserver`，确保"测试过"的产品入口在 Windows 上也能编过。
 
+工作流**不做 workflow 级 `paths`/`paths-ignore` 过滤**：GitHub 文档明确写了，被路径过滤
+跳过的 run 会让 required status check 一直停在 `Pending`，把不相关的 PR 卡死。改为 job 内
+"改动范围门"（`git diff base..head` + 路径正则）：不相关时只跑一个几秒的 gate 步骤并成功，
+相关时再跑 vet/test/build。判定拿不到 base（新建分支、force push）时按"跑全量"处理。
+
 ### 两个容易踩的 Go 语义（测试逼出来的）
 
 1. **`filepath.EvalSymlinks` 不解析 junction**（Windows 挂载点），只解析符号链接。

@@ -8,42 +8,15 @@ name: go-tests-windows
 # 这里在真正的 Windows runner 上跑同一份测试，固定住"共享目录只读、账号侧可删"
 # 依赖的删除/重命名语义。
 
+# 刻意不使用 workflow 级 paths/paths-ignore 过滤：
+# 被路径过滤跳过的 run 会让 required status check 永远停在 "Pending"，把不相关的 PR
+# 卡死（GitHub 文档明确写了这一点）。改为 job 内检测改动、按需跳过重步骤，
+# 这样无论改动是什么，这个 check 都会给出结论。
 on:
   push:
     branches:
       - main
-    paths:
-      # 编译入口（cmd/aih、internal/host/aihserver）会传递依赖这些根：
-      #   - contracts/* 内嵌 json/sh/ps1；
-      #   - assets/ 内嵌 provider 图标 png；
-      #   - native/account-browser 内嵌 swift 源文件。
-      # 只盯 *.go 会漏掉"删了个内嵌资源 → Windows 编不过"的改动。
-      - 'internal/**'
-      - 'application/**'
-      - 'core/**'
-      - 'contracts/**'
-      - 'cmd/**'
-      - 'assets/**'
-      - 'native/**'
-      # scripts/ 里也有 Go（打包工具），以及将来可能出现的根目录 .go。
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/go-tests-windows.yml'
   pull_request:
-    paths:
-      - 'internal/**'
-      - 'application/**'
-      - 'core/**'
-      - 'contracts/**'
-      - 'cmd/**'
-      - 'assets/**'
-      - 'native/**'
-      # scripts/ 里也有 Go（打包工具），以及将来可能出现的根目录 .go。
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/go-tests-windows.yml'
   workflow_dispatch:
 
 concurrency:
@@ -64,6 +37,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 需要完整历史做 base..head 的 diff（仓库 pack 约 45MB，代价可接受）。
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -76,15 +52,55 @@ jobs:
           go version
           go env GOOS GOARCH
 
+      # 只判断"这次改动是否需要 Windows 的 Go 验证"，重步骤据此跳过。
+      # 判定失败/没有 base（新建分支、force push）时默认跑全量（安全方向）。
+      #
+      # 脚本正文保持纯 ASCII：Windows PowerShell 5.1 会把无 BOM 的 UTF-8 当 ANSI 读，
+      # 中文注释可能破坏行结构（实测导致 pattern 变空、所有改动都被判为 Go 改动）。
+      #
+      # 匹配的根：编译入口（cmd/aih、internal/host/aihserver）传递依赖
+      # internal、application、core、contracts（内嵌 json/sh/ps1）、cmd、
+      # assets（内嵌 png）、native（内嵌 swift）；另有任意 *.go、go.mod/go.sum
+      # 以及本工作流文件。
+      - name: Detect Go-related changes
+        id: scope
+        shell: pwsh
+        run: |
+          $base = '${{ github.event.pull_request.base.sha }}'
+          if (-not $base) { $base = '${{ github.event.before }}' }
+          $head = '${{ github.sha }}'
+          $go = 'true'
+          if ($base -and $base -notmatch '^0+$') {
+            $files = @(git diff --name-only $base $head 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+              $pattern = '^(internal|application|core|contracts|cmd|assets|native)/|\.go$|^go\.(mod|sum)$|^\.github/workflows/go-tests-windows\.yml$'
+              $hit = @($files | Where-Object { $_ -match $pattern })
+              if ($hit.Count -eq 0) {
+                $go = 'false'
+              } else {
+                $hit | Select-Object -First 20 | ForEach-Object { Write-Output ("changed: " + $_) }
+              }
+            }
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value ("go=" + $go) -Encoding ascii
+          Write-Output ("windows go checks needed: " + $go)
+
       - name: Vet
+        if: steps.scope.outputs.go == 'true'
         run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/...
 
       - name: Test junction semantics
+        if: steps.scope.outputs.go == 'true'
         run: go test -count=1 -v -timeout 5m ./internal/runtime/artifactstore/...
 
       # 生产二进制也要在 Windows 上编译通过：artifactstore/spacegc 被 server 引用，
       # 只测包不编译入口会漏掉"测试过、产品编不过"的情况。
       - name: Build CLI and server for windows
+        if: steps.scope.outputs.go == 'true'
         run: |
           go build -trimpath -o "$env:RUNNER_TEMP\aih.exe" ./cmd/aih
           go build -trimpath -o "$env:RUNNER_TEMP\aih-server.exe" ./internal/host/aihserver
+
+      - name: No Go changes
+        if: steps.scope.outputs.go != 'true'
+        run: Write-Output 'no Go-related changes; Windows checks skipped'

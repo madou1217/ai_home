@@ -9,7 +9,7 @@ import {
   requiresAccountReauth
 } from './account-state.ts';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
-import { formatRuntimeReset } from '@/components/runtime/RuntimeStatusTag';
+import { formatRuntimeReset, formatRuntimeUntil, getAccountResetAt } from '@/components/runtime/runtime-reset';
 import { getAccountIdentityLabel, getAccountSecondaryIdentity } from '@/utils/account-labels';
 import {
   getFamilyLabel,
@@ -239,6 +239,11 @@ export function getAccountStatusDetailLines(record: Account): string[] {
     if (reason) lines.push(`错误信息: ${formatAccountIssueReason(reason)}`);
     const resetLabel = formatRuntimeReset(record.runtimeStatus, record.runtimeUntil);
     if (resetLabel) lines.push(`恢复时间: ${resetLabel}`);
+  } else if (state === 'exhausted') {
+    const reason = formatQuotaReason(record.quotaReason);
+    if (reason) lines.push(`原因: ${reason}`);
+    const resetAt = getAccountResetAt(record);
+    lines.push(`恢复时间: ${resetAt ? formatRuntimeUntil(resetAt) : '上游未提供，额度刷新恢复后自动解除'}`);
   } else if (state === 'policy_blocked') {
     const reason = formatSchedulableReason(record.schedulableReason);
     if (reason) lines.push(reason);
@@ -263,11 +268,23 @@ export function renderAccountDisplayBadge(record: Account) {
     return renderPolicyBlockedBadge(record) || <Badge status="warning" text="已停池" />;
   }
   if (state === 'exhausted') {
+    const reason = formatQuotaReason(record.quotaReason);
+    const resetAt = getAccountResetAt(record);
+    const resetLabel = resetAt ? formatRuntimeUntil(resetAt) : '上游未提供，额度刷新恢复后自动解除';
     return (
-      <Badge
-        status="error"
-        text="已耗尽"
-      />
+      <Tooltip
+        title={(
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 360 }}>
+            <div>额度已耗尽</div>
+            {reason ? <div>原因: {reason}</div> : null}
+            <div>恢复时间: {resetLabel}</div>
+          </div>
+        )}
+      >
+        <span>
+          <Badge status="error" text="已耗尽" />
+        </span>
+      </Tooltip>
     );
   }
   const runtimeModelLines = getRuntimeModelLines(record);

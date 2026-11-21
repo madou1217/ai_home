@@ -30,3 +30,29 @@ export const formatRuntimeReset = (status?: string, until?: number) => {
   if (RESET_EXPECTED_STATUSES.has(key)) return '上游未提供，后台会自动重试';
   return '';
 };
+
+// 额度快照里的恢复时间按条目声明；取所有未来时间里最早的一个。
+// snapshot 的 kind 联合很多，这里只做结构化读取，不让调用方依赖某个 shape。
+export const getUsageSnapshotResetAt = (snapshot?: unknown) => {
+  if (!snapshot || typeof snapshot !== 'object') return 0;
+  const entries = (snapshot as { entries?: unknown }).entries;
+  if (!Array.isArray(entries)) return 0;
+  const now = Date.now();
+  let earliest = 0;
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const ts = Number((entry as { resetAtMs?: unknown }).resetAtMs || 0);
+    if (ts > now && (!earliest || ts < earliest)) earliest = ts;
+  }
+  return earliest;
+};
+
+// 账号恢复时间优先用实时运行态，其次用最近额度快照。
+export const getAccountResetAt = (record: {
+  runtimeUntil?: number | null;
+  usageSnapshot?: unknown;
+}) => {
+  const runtimeUntil = Number(record.runtimeUntil || 0);
+  if (runtimeUntil > Date.now()) return runtimeUntil;
+  return getUsageSnapshotResetAt(record.usageSnapshot);
+};

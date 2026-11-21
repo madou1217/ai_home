@@ -108,10 +108,20 @@ func buildLSRows(
 	return filterLSRows(rows, query)
 }
 
+// lsProviderIDsWithCounts 决定哪些 Provider 分组要渲染。
+//
+// 显式 --scope 指定的 Provider 即使在库里一个账号都没有也要出现（渲染成 "(Empty)"）：
+// 用户点名要看 kimi，答案是"这个 Provider 存在、但没有账号"，而不是
+// "No profiles found."——后者看起来像选择器没匹配上，正是最容易被误判成 BUG 的形态。
 func lsProviderIDsWithCounts(order []string, counts map[string]int, scope map[string]bool) []string {
 	set := make(map[string]bool)
 	for provider, count := range counts {
 		if count > 0 {
+			set[provider] = true
+		}
+	}
+	for provider := range scope {
+		if provider != "" {
 			set[provider] = true
 		}
 	}

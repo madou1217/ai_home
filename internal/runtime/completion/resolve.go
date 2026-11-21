@@ -329,7 +329,13 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 			Current:      current,
 			Mode:         mode,
 		}) {
-			target.add(model.Value, model.Description, groupModel, "")
+			group := groupModel
+			if strings.TrimSpace(model.Group) != "" {
+				group = model.Group
+			}
+			// 模型名里带 `/`（如 cline-pass/xxx）时同时按「包含」匹配，
+			// 否则敲了命名空间前缀就再也补不出后面的模型。
+			target.add(model.Value, model.Description, group, model.Value)
 		}
 		return target.items
 	}

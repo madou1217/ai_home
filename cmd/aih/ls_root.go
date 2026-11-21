@@ -20,23 +20,38 @@ func runRootLS(ctx context.Context, arguments []string, runtime commandRuntime) 
 		writeLSHelp(runtime.stdout, paletteFor(runtime.stdout), "aih ls")
 		return true, nil
 	}
-	providersForScope := append([]string(nil), parsed.Scope...)
-	explicit := len(parsed.Scope) > 0
-	if parsed.FilterID == 0 && len(parsed.Positional) > 0 {
-		matched, matchErr := matchLSProviders(parsed.Positional, lsProviderNames())
-		if matchErr != nil {
-			return true, matchErr
-		}
-		providersForScope = append(providersForScope, matched...)
-		explicit = true
+	providersForScope, explicit, resolveErr := resolveLSProviders(parsed)
+	if resolveErr != nil {
+		return true, resolveErr
 	}
-	providersForScope = dedupeLSProviders(providersForScope)
 	return true, runLSList(ctx, runtime, lsOptions{
 		Providers:        providersForScope,
 		FilterID:         parsed.FilterID,
 		ProviderExplicit: explicit,
 		JSON:             parsed.JSON,
 	})
+}
+
+// resolveLSProviders 是 --scope / 位置 provider 位的唯一解析入口：
+// 两者都交给同一个选择器解析器（精确名 → 子串 → 通配符），解析不到就是错误。
+// 直接把 --scope 原文塞进过滤集合会让 "odebudd" 这种子串选择器匹配不到任何
+// 已注册 Provider，最后显示成 "No profiles found."——那是最难查的一种失败。
+func resolveLSProviders(parsed lsArguments) ([]string, bool, error) {
+	patterns := make([]string, 0, len(parsed.Scope)+len(parsed.Positional))
+	patterns = append(patterns, parsed.Scope...)
+	explicit := len(parsed.Scope) > 0
+	if parsed.FilterID == 0 && len(parsed.Positional) > 0 {
+		patterns = append(patterns, parsed.Positional...)
+		explicit = true
+	}
+	if len(patterns) == 0 {
+		return nil, explicit, nil
+	}
+	matched, err := matchLSProviders(patterns, lsProviderNames())
+	if err != nil {
+		return nil, explicit, err
+	}
+	return dedupeLSProviders(matched), true, nil
 }
 
 func dedupeLSProviders(values []string) []string {

@@ -18,10 +18,12 @@ type modelRequest struct {
 	Mode         string
 }
 
-// modelChoice 是一条模型/别名候选。
+// modelChoice 是一条模型/别名候选。Group 决定协议里的分组列：
+// zsh 按组名分节显示，组的出现顺序就是优先级顺序。
 type modelChoice struct {
 	Value       string
 	Description string
+	Group       string
 }
 
 // sessionChoice 是一条 provider 会话候选（updatedAt 保持字符串以对齐 Node 缓存）。

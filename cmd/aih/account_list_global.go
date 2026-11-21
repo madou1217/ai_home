@@ -9,6 +9,8 @@ import (
 
 // runGlobalAccountList 实现 aih ls [id] [--scope <provider...>]。
 // 数据来自本机 aih.db 的只读投影，不依赖运行中的 Server。
+// Provider 解析与 runRootLS 共用 resolveLSProviders：同一个选择器语义，
+// 同一个"匹配不到就报错"的约定。
 func runGlobalAccountList(ctx context.Context, arguments []string, runtime commandRuntime) error {
 	parsed, err := parseLSArguments(arguments)
 	if err != nil {
@@ -18,14 +20,16 @@ func runGlobalAccountList(ctx context.Context, arguments []string, runtime comma
 		writeGlobalAccountListUsage(runtime.stdout)
 		return nil
 	}
-	var providers []string
-	if len(parsed.Scope) > 0 {
-		providers, err = matchLSProviders(parsed.Scope, lsProviderNames())
-		if err != nil {
-			return err
-		}
+	providers, explicit, err := resolveLSProviders(parsed)
+	if err != nil {
+		return err
 	}
-	return runLSList(ctx, runtime, lsOptions{Providers: providers, FilterID: parsed.FilterID})
+	return runLSList(ctx, runtime, lsOptions{
+		Providers:        providers,
+		FilterID:         parsed.FilterID,
+		ProviderExplicit: explicit,
+		JSON:             parsed.JSON,
+	})
 }
 
 func writeGlobalAccountListUsage(output io.Writer) {

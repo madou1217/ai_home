@@ -181,7 +181,24 @@ func readGatewayModelIDs(aiHome string, keys []string) []string {
 	return nil
 }
 
+// 模型候选的分组名：zsh 按组分节显示，组顺序即优先级顺序。
+// 用户已经指定账号时，那个账号自己的模型必须排在最前，且永远不会被截断。
+const (
+	modelGroupAccount  = "本账号模型"
+	modelGroupProvider = "同 provider 模型"
+	modelGroupPool     = "网关池模型"
+	modelGroupAlias    = "别名"
+)
+
 // listModelCandidates 生成 --model / --model-alias 的取值候选。
+//
+// 优先级是分层的，不是一条流水线：
+//  1. 指定了账号 → 该账号在 account_models 里的模型（唯一确定「这个账号真能用」的证据）；
+//  2. 没指定账号，或该账号没有行 → 同 provider 其它账号的模型；
+//  3. 最后才是网关池投影（整个 server 的模型，可能与该账号/协议不匹配）。
+//
+// 每一层单独限额，所以池子再大也不会把前面几层挤掉；同名值保留第一次出现，
+// 于是「本账号模型」天然覆盖后面同名的池子条目。
 func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 	aiHome = strings.TrimSpace(aiHome)
 	if aiHome == "" {
@@ -194,23 +211,18 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 	provider := strings.ToLower(strings.TrimSpace(request.Provider))
 	accountRef := strings.TrimSpace(request.AccountRef)
 	accountToken := strings.TrimSpace(request.AccountToken)
-	seen := make(map[string]struct{}, 64)
-	choices := make([]modelChoice, 0, 64)
-	push := func(value, description string) {
-		text := strings.TrimSpace(value)
-		if text == "" {
-			return
-		}
-		if _, exists := seen[text]; exists {
-			return
-		}
-		seen[text] = struct{}{}
-		choices = append(choices, modelChoice{Value: text, Description: description})
+	limit := modelCandidateLimit
+	if mode == "alias" {
+		limit = modelAliasCandidateLimit
 	}
+
+	layers := make([]modelLayer, 0, 4)
+	seen := make(map[string]struct{}, 64)
 
 	// 先别名：--model-alias 的第一意图是「挑一个别名」。
 	if mode == "alias" {
 		aliases := readModelAliases(aiHome)
+		aliasLayer := modelLayer{group: modelGroupAlias, description: "别名", limit: limit}
 		for _, alias := range aliases {
 			if alias.Alias == "" || !alias.Enabled {
 				continue
@@ -218,66 +230,148 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 			if provider != "" && alias.Provider != "" && alias.Provider != "all" && alias.Provider != provider {
 				continue
 			}
-			target := alias.Target
-			if target == "" {
-				target = "?"
-			}
-			push(alias.Alias, "别名 → "+target)
+			aliasLayer.values = append(aliasLayer.values, aliasChoice(alias))
 		}
 		for _, alias := range aliases {
 			if alias.Target == "" || !alias.Enabled {
 				continue
 			}
-			push(alias.Target, "别名目标")
+			aliasLayer.values = append(aliasLayer.values, modelChoice{Value: alias.Target, Description: "别名目标"})
 		}
+		layers = append(layers, aliasLayer)
 	}
 
 	// 命名空间写法：kiro.glm-5 / kiro.2.glm-5。
 	if mode == "alias" && wantsScopedAliasTargets(request.Current) {
-		for _, choice := range listScopedAliasCandidates(aiHome) {
-			push(choice.Value, choice.Description)
-		}
+		layers = append(layers, modelLayer{
+			group:       modelGroupAlias,
+			description: "钉 Provider / 账号的别名目标",
+			limit:       limit,
+			values:      listScopedAliasCandidates(aiHome),
+		})
 	}
 
-	scopedKeys := []string{accountRef, accountToken}
-	scopedProjection := readGatewayModelIDs(aiHome, scopedKeys)
-	projected := scopedProjection
-	projectedScope := "本账号"
-	if len(projected) == 0 {
-		projected = readGatewayModelIDs(aiHome, []string{"pool"})
-		projectedScope = "网关池"
+	// 账号自身模型：先读库里的账号行，读不到再看该账号的网关投影。
+	accountChoices := accountScopedModelChoices(aiHome, provider, accountRef)
+	if len(accountChoices) == 0 {
+		accountChoices = plainModelChoices(readGatewayModelIDs(aiHome, []string{accountRef, accountToken}), modelGroupAccount)
 	}
-	for _, id := range projected {
-		push(id, projectedScope+"模型")
+	if len(accountChoices) > 0 {
+		layers = append(layers, modelLayer{
+			group:       modelGroupAccount,
+			description: "该账号已发现/已启用的模型",
+			limit:       limit,
+			values:      accountChoices,
+		})
 	}
 
+	// 同 provider 的其它账号模型：只有本账号没有行时才作为主层，否则作为补充。
 	rows := readAccountModelRows(aiHome, provider)
-	if len(rows) > 0 {
-		scoped := make([]accountModelRow, 0, len(rows))
-		if accountRef != "" {
-			for _, row := range rows {
-				if row.AccountRef == accountRef {
-					scoped = append(scoped, row)
-				}
-			}
-		}
-		pool := rows
-		scopeLabel := "同 provider 模型"
-		if len(scoped) > 0 {
-			pool = scoped
-			scopeLabel = "本账号模型"
-		}
-		for _, row := range pool {
-			push(row.ModelID, scopeLabel)
-		}
+	siblingChoices := providerSiblingModelChoices(rows, accountRef)
+	if len(siblingChoices) > 0 {
+		layers = append(layers, modelLayer{
+			group:       modelGroupProvider,
+			description: "同 provider 其它账号的模型",
+			limit:       limit,
+			values:      siblingChoices,
+		})
 	}
 
-	limit := modelCandidateLimit
-	if mode == "alias" {
-		limit = modelAliasCandidateLimit
+	// 网关池：整台 server 的模型投影，永远排在最后。
+	poolChoices := plainModelChoices(readGatewayModelIDs(aiHome, []string{"pool"}), modelGroupPool)
+	if len(poolChoices) > 0 {
+		layers = append(layers, modelLayer{
+			group:       modelGroupPool,
+			description: "网关池模型（未按账号校验）",
+			limit:       limit,
+			values:      poolChoices,
+		})
 	}
-	if len(choices) > limit {
-		choices = choices[:limit]
+
+	// 每层各自限额后再合并；层内的第一次出现优先，因此靠前的层覆盖同名值。
+	choices := make([]modelChoice, 0, 64)
+	for _, layer := range layers {
+		added := 0
+		for _, choice := range layer.values {
+			if choice.Value == "" {
+				continue
+			}
+			if _, exists := seen[choice.Value]; exists {
+				continue
+			}
+			if added >= layer.limit {
+				break
+			}
+			seen[choice.Value] = struct{}{}
+			description := strings.TrimSpace(choice.Description)
+			if description == "" {
+				description = layer.description
+			}
+			choices = append(choices, modelChoice{
+				Value:       choice.Value,
+				Description: description,
+				Group:       layer.group,
+			})
+			added++
+		}
+	}
+	return choices
+}
+
+// modelLayer 是一层候选及其独立限额。
+type modelLayer struct {
+	group       string
+	description string
+	limit       int
+	values      []modelChoice
+}
+
+func aliasChoice(alias modelAliasRow) modelChoice {
+	target := alias.Target
+	if target == "" {
+		target = "?"
+	}
+	return modelChoice{Value: alias.Alias, Description: "别名 → " + target}
+}
+
+// accountScopedModelChoices 取该账号自己的模型行（没有指定账号时为空）。
+func accountScopedModelChoices(aiHome, provider, accountRef string) []modelChoice {
+	if accountRef == "" {
+		return nil
+	}
+	choices := make([]modelChoice, 0, 32)
+	for _, row := range readAccountModelRows(aiHome, provider) {
+		if row.AccountRef != accountRef {
+			continue
+		}
+		choices = append(choices, modelChoice{Value: row.ModelID})
+	}
+	return choices
+}
+
+// providerSiblingModelChoices 取同 provider 下其它账号的模型（去掉本账号已有的）。
+func providerSiblingModelChoices(rows []accountModelRow, accountRef string) []modelChoice {
+	choices := make([]modelChoice, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if accountRef != "" && row.AccountRef == accountRef {
+			continue
+		}
+		if _, exists := seen[row.ModelID]; exists {
+			continue
+		}
+		seen[row.ModelID] = struct{}{}
+		choices = append(choices, modelChoice{Value: row.ModelID})
+	}
+	return choices
+}
+
+func plainModelChoices(values []string, group string) []modelChoice {
+	choices := make([]modelChoice, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			choices = append(choices, modelChoice{Value: trimmed, Group: group})
+		}
 	}
 	return choices
 }

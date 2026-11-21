@@ -30,6 +30,8 @@ const (
 	UpstreamItemPath = UpstreamsPath + "/{id}"
 	// UpstreamProbePath 是立即探测上游节点可用性的 POST 路径模板。
 	UpstreamProbePath = UpstreamsPath + "/{id}/probe"
+	// UpstreamProbeAccountPath 是按账号当前生效出口探测上游的 POST 路径模板。
+	UpstreamProbeAccountPath = UpstreamsPath + "/{id}/probe-account"
 	// UpstreamEvidenceResetPath 是清空上游实测证据的 POST 路径模板。
 	UpstreamEvidenceResetPath = UpstreamsPath + "/{id}/evidence/reset"
 
@@ -60,6 +62,7 @@ type UpstreamsManager interface {
 	UpdateUpstreamPolicy(ctx context.Context, upstreamID string, patch runtimeegress.UpstreamPolicyPatch) (runtimeegress.UpstreamPolicy, error)
 	ResetUpstreamEvidence(ctx context.Context, upstreamID string, exitKeys []string) (int, int, string)
 	StartUpstreamProbe(ctx context.Context, upstreamID string, requestedNodes []string) (runtimeegress.UpstreamProbeHTTPResult, int)
+	ProbeUpstreamAccount(ctx context.Context, upstreamID string, accountRef string) (runtimeegress.AccountUpstreamProbeResult, int)
 	ValidateAccountPath(ctx context.Context, provider string, accountRef string) (*runtimeegress.AccountRecord, int, string)
 	GetAccountEgressRuntime(ctx context.Context, account runtimeegress.AccountRecord) map[string]any
 	PutAccountEgressAssignment(ctx context.Context, account runtimeegress.AccountRecord, rawBody map[string]any) (map[string]any, int, string)
@@ -223,6 +226,29 @@ func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter,
 			return
 		}
 		result, status := handler.manager.StartUpstreamProbe(request.Context(), id, body.Nodes)
+		writeJSON(responseWriter, status, result)
+
+	case strings.HasSuffix(rest, "/probe-account"):
+		if !requireMethod(responseWriter, request, http.MethodPost) {
+			return
+		}
+		rawID := strings.TrimSuffix(rest, "/probe-account")
+		if strings.Contains(rawID, "/") {
+			writeError(responseWriter, http.StatusNotFound, "not_found", "未找到路由")
+			return
+		}
+		id, ok := unescapeSegment(rawID)
+		if !ok {
+			writeError(responseWriter, http.StatusNotFound, "upstream_not_found", "未找到上游")
+			return
+		}
+		var body struct {
+			AccountRef string `json:"accountRef"`
+		}
+		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
+			return
+		}
+		result, status := handler.manager.ProbeUpstreamAccount(request.Context(), id, body.AccountRef)
 		writeJSON(responseWriter, status, result)
 
 	case strings.HasSuffix(rest, "/evidence/reset"):

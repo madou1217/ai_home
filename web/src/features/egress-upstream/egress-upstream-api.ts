@@ -1,5 +1,5 @@
 import api from '@/services/api';
-import type { EgressActionResult, EgressRule, EgressUpstreamView } from './types';
+import type { EgressAccountProbeResult, EgressActionResult, EgressRule, EgressUpstreamView } from './types';
 
 const BASE = '/webui/egress-upstreams';
 
@@ -26,6 +26,10 @@ export const egressUpstreamAPI = {
   },
   probe(id: string, nodes?: string[]) {
     return call('post', `${itemPath(id)}/probe`, nodes && nodes.length ? { nodes } : {});
+  },
+  /** 按账号当前生效出口（出口池车道 / 代理地址 / 系统代理 / 直连）真实探测一次上游。 */
+  async probeAccount(id: string, accountRef: string): Promise<EgressAccountProbeResult> {
+    return (await call('post', `${itemPath(id)}/probe-account`, { accountRef })) as EgressAccountProbeResult;
   },
   resetEvidence(id: string, exitKeys?: string[]) {
     return call('post', `${itemPath(id)}/evidence/reset`, exitKeys && exitKeys.length ? { exitKeys } : {});

@@ -19,6 +19,7 @@ import type {
   ToolPermissionSettings
 } from '@/types';
 import ProviderConfigPanel from '@/features/provider-config/ProviderConfigPanel';
+import ProviderNetworkSettings from '@/features/provider-config/ProviderNetworkSettings';
 import { supportsClaudePreflight } from '@/components/toolkit/managed-app-capabilities';
 import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
 import ClaudePreflightSettings from './ClaudePreflightSettings';
@@ -103,12 +104,15 @@ export default function AppAdvancedSettingsModal({
       items.push({ key: 'config', label: '配置文件' });
       items.push({ key: 'inspector', label: '参数解读' });
     }
+    // 网络对所有 agent/harness 都可用：官方账号需要验证网络或设置代理，
+    // 默认出口跟随 OAuth 授权网络，账号可独立覆盖。
+    items.push({ key: 'network', label: '网络' });
     return items;
   }, [showConfigTab, showPermissionTab, showPreflightTab]);
 
   useEffect(() => {
     if (!open) return;
-    setActiveTab(showPermissionTab ? 'permission' : (showConfigTab ? 'config' : 'inspector'));
+    setActiveTab(showPermissionTab ? 'permission' : (showConfigTab ? 'config' : 'network'));
   }, [open, provider, showConfigTab, showPermissionTab]);
 
   useEffect(() => {
@@ -535,6 +539,10 @@ export default function AppAdvancedSettingsModal({
           ) : activeTab === 'inspector' && showConfigTab ? (
             <div className="aas-config-pane">
               <ProviderConfigPanel providerId={provider} embedded view="reference" />
+            </div>
+          ) : activeTab === 'network' ? (
+            <div className="aas-config-pane">
+              <ProviderNetworkSettings provider={provider} />
             </div>
           ) : null}
           </div>

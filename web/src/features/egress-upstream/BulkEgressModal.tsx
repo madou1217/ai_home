@@ -7,6 +7,8 @@ import type { AccountEgressMode } from '@/types';
 
 interface BulkEgressModalProps {
   open: boolean;
+  /** 覆盖弹窗标题；单账号设置时传「设置出口 · 账号名」。 */
+  title?: string;
   upstream: EgressUpstream | null;
   groups: EgressCatalogGroup[];
   poolReady: boolean;
@@ -19,7 +21,7 @@ interface BulkEgressModalProps {
 const DEFAULT_SELECTION: PoolSelection = { scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'sticky' };
 
 /** 同上游批量设置出口：一次选好，逐个账号保存（每个账号仍是独立绑定，之后可单独改）。 */
-export default function BulkEgressModal({ open, upstream, groups, poolReady, targets, onClose, onProbe, probing }: BulkEgressModalProps) {
+export default function BulkEgressModal({ open, title, upstream, groups, poolReady, targets, onClose, onProbe, probing }: BulkEgressModalProps) {
   const [mode, setMode] = useState<AccountEgressMode>('pool');
   const [proxyUrl, setProxyUrl] = useState('');
   const [selection, setSelection] = useState<PoolSelection>(DEFAULT_SELECTION);
@@ -55,7 +57,7 @@ export default function BulkEgressModal({ open, upstream, groups, poolReady, tar
   return (
     <Modal
       open={open}
-      title={`批量设置出口 · ${targets.length} 个账号`}
+      title={title || `批量设置出口 · ${targets.length} 个账号`}
       width={720}
       okText="全部应用"
       confirmLoading={saving}

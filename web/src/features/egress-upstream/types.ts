@@ -161,3 +161,13 @@ export interface EgressActionResult {
   removed?: number;
   results?: EgressProbeResult[];
 }
+
+/** 按账号当前生效出口探测上游的结果（POST /egress-upstreams/{id}/probe-account）。 */
+export interface EgressAccountProbeResult extends EgressActionResult {
+  status?: 'reachable' | 'blocked' | 'skipped';
+  exit?: 'pool' | 'proxy' | 'system' | 'direct';
+  proxyUrl?: string;
+  node?: string;
+  reason?: string;
+  geo?: EgressGeo | null;
+}

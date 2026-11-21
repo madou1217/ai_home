@@ -132,25 +132,9 @@ func knownLegacyNodeGateway(current, desired map[string]any) bool {
 	if filepath.Join(root, "bin", "native", platform+"-"+arch, name) != native {
 		return false
 	}
+	// 旧版 helper 脚本已随 Node 清理删除；升级识别只依赖配置里的稳定路径形状，
+	// 不再要求旧脚本仍然存在。Node 可执行文件本身仍要校验，避免把伪造路径当旧配置。
 	script := filepath.Join(root, "bin", "claude-desktop-credential.js")
-	realScript, err := filepath.EvalSymlinks(script)
-	if err != nil || realScript != script {
-		return false
-	}
-	fileOptions := regularnativefile.Options{MaxBytes: 128 * 1024}
-	file, err := regularnativefile.Open(realScript, fileOptions)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	initial, err := file.Stat()
-	if err != nil {
-		return false
-	}
-	scriptBytes, err := io.ReadAll(io.LimitReader(file, 128*1024+1))
-	if err != nil || regularnativefile.Verify(file, initial, fileOptions) != nil || fingerprint(scriptBytes) != "bf8ad861b454653473bc625121ce1e411994cfa3c709cd4af5fd8346486dc0c9" {
-		return false
-	}
 	oldArgs, ok := current["inferenceCredentialHelperArgs"].([]any)
 	if !ok || len(oldArgs) != 3 || oldArgs[0] != script || oldArgs[1] != "--ai-home-dir" || oldArgs[2] != aiHome {
 		return false

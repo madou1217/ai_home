@@ -190,7 +190,6 @@ function main() {
   const rootDir = path.resolve(__dirname, '..');
   fixStalePreCommitHook(rootDir);
   ensureExecutable(path.join(rootDir, 'bin', 'aih'));
-  ensureExecutable(path.join(rootDir, 'bin', 'claude-desktop-credential.js'));
 
   if (process.platform === 'darwin') {
     const helpers = [

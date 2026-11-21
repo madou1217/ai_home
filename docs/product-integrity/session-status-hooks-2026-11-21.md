@@ -13,7 +13,7 @@ This audit covers the session running indicator used by the WebUI project/workbe
 | gemini | hook | `SessionStart`, `BeforeAgent`, `AfterAgent`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
 | agy | hook | `PreInvocation`, `PostInvocation`, `Stop` | Fixed in this audit: `Stop` completes the turn; `continuationActive=true` keeps it working; `fullyIdle` only reports background tasks |
 | grok | hook | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
-| opencode | plugin bridge | v2 `session.execution.started` / terminal events; v1 `session.idle` / message events | Plugin dedupes per session; needs real v1/v2 acceptance |
+| opencode | plugin bridge | v2 `session.execution.started` / terminal events; v1 `session.idle` / message events | v2 verified on 2.3.2 with real sessions (completed and SIGINT-interrupted): one `UserPromptSubmit` + one `Stop`, no duplicates. v1 path still needs a 1.x CLI |
 | qoder / qodercn | polling | CLI session store/probes | No per-session hook and no store-backed turn probe: unknown unless traffic says otherwise. tmux pane activity is no longer turn evidence |
 | kiro | polling | `messages.jsonl` / session store probes | Store records can prove activity/end; tmux pane activity is no longer turn evidence |
 | codebuddy family | polling | native JSONL / session activity probes | No per-session hook and no store-backed turn probe: unknown. tmux pane activity is no longer turn evidence |
@@ -158,12 +158,48 @@ After the verification the temporary tmux server was killed. `runtimeSessions` s
 
 Commit: `f8adec80 fix(session): stop treating tmux pane activity as a running turn`.
 
+## OpenCode v2 real acceptance
+
+The installed CLI is `opencode 2.3.2`. Its managed plugin was refreshed from the Go template (the previous file predated the ownership hash header), then a real non-interactive session was run:
+
+```
+opencode run --model opencode/flint-40b-free --auto --format json "Reply with exactly OK."
+```
+
+The model replied `OK`. The receiver stored exactly two hook events for the session:
+
+```
+opencode:<session>:UserPromptSubmit:<at1>
+opencode:<session>:Stop:<at2>
+```
+
+`at2 - at1 = 1827 ms`, matching the run duration. The resulting state file was:
+
+```
+turnState = completed
+lastEvent = turn-completed
+source    = official-hook
+question  = null
+```
+
+This proves the v2 `setup` subscription delivered both the start and terminal signals, and that the plugin's "v2 active disables v1 registration" guard produced no duplicate events. The test state file was removed afterwards.
+
+An interrupted turn was also exercised. A longer prompt was started and the CLI received SIGINT after 8 seconds:
+
+```
+timeout -s INT 8 opencode run --model opencode/flint-40b-free --auto --format json "Write a detailed 600-word essay about the ocean."
+```
+
+The same session recorded `UserPromptSubmit` then `Stop` (8.889 s apart), ending `completed`. This confirms the `session.execution.interrupted` branch reaches the same terminal `Stop` path as `succeeded`.
+
+The v1 (`server()` + `session.idle`) path is not exercised: it requires an OpenCode 1.x CLI, which is not installed and was not downgraded on this host. A real upstream `session.execution.failed` turn was also not produced; it shares the terminal branch above.
+
 ## Optimization plan
 
 1. **Codex**: keep the app-server as the authoritative source; never derive a turn from thread attachment. Retain `turn/started` / `turn/completed` as the only turn boundaries.
 2. **Claude**: done — `idle_prompt` no longer opens a question and completes the turn. Remaining optional work: if the UI wants a "needs attention" hint for idle sessions, expose it as a separate flag instead of reusing `waiting`/running.
 3. **AGY**: done — `Stop` completes the turn; `continuationActive=true` is the only Stop payload treated as working.
 4. **Gemini / Grok**: hooks are already turn-scoped; add a bounded stale-working fallback per provider if a terminal hook is lost.
-5. **OpenCode**: run a real v2 and v1 session; confirm the plugin's started/terminal pairs cover interrupted/failed turns.
+5. **OpenCode**: v2 verified with real 2.3.2 sessions, including an interrupted turn (start + terminal, no duplicates). Remaining: v1 on a 1.x CLI, and a real failed turn.
 6. **Polling providers (qoder, kiro, codebuddy family)**: done — tmux pane activity was removed as turn evidence. Only store-backed probes can produce a turn; everything else stays unknown.
 7. **Unavailable providers (kimi, zcode, cline)**: show "unknown/unavailable"; an attached launcher must never imply a running turn.

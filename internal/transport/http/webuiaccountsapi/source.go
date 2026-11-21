@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 
@@ -80,6 +81,9 @@ const (
 	tableModels      = "account_models"
 	tableRules       = "account_upstream_error_rule"
 	tableRuleGroups  = "account_upstream_error_group"
+	// tableModelCooldowns 是调度器持久化的模型级冷却账本；旧入口与 live 行
+	// 都必须投影它，否则同一份账号在不同接口里会给出不同的模型可用性。
+	tableModelCooldowns = "account_runtime_state"
 )
 
 // trackedTables 是读模型关心的全部表：accounts 缺失时整页为空，
@@ -182,6 +186,9 @@ func (source *SQLiteSource) ListAccountRows(ctx context.Context, query Query) (R
 	}
 	if len(result.Rows) > 0 && (available[tableRules] || available[tableRuleGroups]) {
 		source.attachRuleRows(ctx, available, result.Rows)
+	}
+	if len(result.Rows) > 0 && available[tableModelCooldowns] {
+		source.attachModelCooldowns(ctx, result.Rows)
 	}
 	return result, nil
 }
@@ -372,6 +379,64 @@ func optionalColumn(available map[string]bool, table, expression, fallback strin
 		return expression
 	}
 	return fallback
+}
+
+// attachModelCooldowns 把调度器的持久化模型冷却合并进账号行。
+//
+// 读模型本身不判断"429 该不该屏蔽"；这里只投影仍在生效的 cooldown。
+// 查不到账本时保持行原样，避免因为一张可选表把整页变成 500。
+func (source *SQLiteSource) attachModelCooldowns(ctx context.Context, accountRows []Row) {
+	byRef := make(map[string]*Row, len(accountRows))
+	refs := make([]any, 0, len(accountRows))
+	for index := range accountRows {
+		ref := strings.TrimSpace(accountRows[index].AccountRef)
+		if ref == "" {
+			continue
+		}
+		if _, duplicate := byRef[ref]; duplicate {
+			continue
+		}
+		byRef[ref] = &accountRows[index]
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(refs)), ",")
+	arguments := make([]any, 0, len(refs)+1)
+	arguments = append(arguments, time.Now().UnixMilli())
+	arguments = append(arguments, refs...)
+	statement := `SELECT account_ref, model_id,
+	       COALESCE(NULLIF(cooldown_kind, ''), streak_kind),
+	       cooldown_until_ms
+	  FROM account_runtime_state
+	 WHERE cooldown_until_ms > ? AND account_ref IN (` + placeholders + `)
+	 ORDER BY account_ref, model_id`
+	resultRows, err := source.db.QueryContext(ctx, statement, arguments...)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = resultRows.Close()
+	}()
+	for resultRows.Next() {
+		var ref, modelID, cooldownKind string
+		var cooldownUntilMS int64
+		if err := resultRows.Scan(&ref, &modelID, &cooldownKind, &cooldownUntilMS); err != nil {
+			return
+		}
+		row := byRef[strings.TrimSpace(ref)]
+		modelID = strings.TrimSpace(modelID)
+		if row == nil || modelID == "" {
+			continue
+		}
+		row.RuntimeModels = append(row.RuntimeModels, map[string]any{
+			"model":         modelID,
+			"blocks":        []any{},
+			"cooldownKind":  strings.TrimSpace(cooldownKind),
+			"cooldownUntil": cooldownUntilMS,
+		})
+	}
 }
 
 func scanAccountFact(rows *sql.Rows) (accountFact, error) {

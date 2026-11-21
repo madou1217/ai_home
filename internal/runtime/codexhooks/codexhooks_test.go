@@ -73,13 +73,13 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	// 验证 Windows .cmd hook 绕过直连 Node 启动解析（含别名链）。
 	winDir := t.TempDir()
 	nodeFake := filepath.Join(winDir, "node.exe")
-	helperFake := filepath.Join(winDir, "proxy.js")
+	proxyFake := filepath.Join(winDir, "proxy.js")
 	stateFake := filepath.Join(winDir, "state.json")
 	upstreamFake := filepath.Join(winDir, "codex.aih-original.cmd")
 	if err := os.WriteFile(nodeFake, []byte("node"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(helperFake, []byte("// proxy"), 0o644); err != nil {
+	if err := os.WriteFile(proxyFake, []byte("// proxy"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	canonicalCmd := filepath.Join(winDir, "canonical.cmd")

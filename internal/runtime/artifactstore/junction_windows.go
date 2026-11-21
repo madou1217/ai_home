@@ -21,6 +21,14 @@ const (
 
 // createJunction 在 link 上创建指向 target 的目录 junction。
 // link 必须不存在（或为空目录，由本函数创建）。
+//
+// 实测（Windows 11 NTFS）：
+//   - 读/写/列目录都穿透到 target；target 的改动立刻可见；
+//   - os.RemoveAll / Node fs.rmSync(recursive) 只删链接本身，target 内容完好
+//     （删父目录也不会递归进链接）；
+//   - os.Rename(junction, 新名) 保留挂载点，target 不受影响；
+//   - os.Rename(目录, 已存在的 junction 路径) 会 "Access is denied"——不能原子替换
+//     一个 junction，调用方必须先把它移走再换（artifactstore 的安装流程就是这样）。
 func createJunction(target, link string) error {
 	if err := os.Mkdir(link, 0o755); err != nil {
 		return err

@@ -110,6 +110,25 @@
 - 实测：macOS 与 Windows 上 Node/Go 结果一致（含禁用/启用、失效链接、旧整目录布局）；
   真实账号 20 个稳定、2 个 workbuddy 账号正确跳过；Windows junction 标签 `0xA0000003`。
 
+## Windows junction 行为验证（2026-11-21 真机）
+
+| 行为 | 结果 |
+|---|---|
+| 创建 | `FSCTL_SET_REPARSE_POINT`，标签 `0xA0000003`；不依赖 `mklink`/管理员 |
+| `Lstat` / `Stat` | `ModeSymlink`（IsDir=false）/ `Stat` 认目录；`DirEntry.Type()` 也是 `L` |
+| `EvalSymlinks` | 解析到 target |
+| 读/写/列目录 | 全部穿透到 target，写入立刻在 target 可见 |
+| `RemoveAll(链接)` | 只删链接，target 内容完好 |
+| `RemoveAll(父目录)` | 不递归进链接，target 完好 |
+| `RemoveAll(悬挂链接)` | 只删链接 |
+| `Rename(链接, 新名)` | 仍是 junction，target 不受影响 |
+| `Rename(目录, 已存在的 junction)` | **"Access is denied"**：不能原子替换 junction；安装流程必须先移走旧条目 |
+| Node `fs.rmSync(recursive)` | 只删链接，target 完好 |
+| 缓存链接复用 | 投影侧已是 junction 时判 `unchanged`，不会被替换 |
+
+结论：junction 对"共享目录只读 + 账号侧可删"的用法是安全的；唯一限制是不能用一次
+rename 覆盖它，现有安装/回收流程都是"先摘旧、再建新"。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。

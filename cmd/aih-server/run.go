@@ -111,7 +111,6 @@ func run(
 			TraceRemoteControl:           &traceRemoteControl,
 			RemoteControlProxy:           &remoteControlProxy,
 			RestartAppServerOnHookChange: config.codexHooks.restartAppServerOnHookChange,
-			NodeExecPath:                 config.nodeExecPath,
 			EntryFilePath:                config.entryFilePath,
 		},
 		ErrorLog: log.New(

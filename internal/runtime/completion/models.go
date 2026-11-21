@@ -14,9 +14,21 @@ import (
 )
 
 const (
-	modelCandidateLimit      = 200
+	// modelCandidateLimit 是**空前缀**时的显示预算（每层）。
+	//
+	// 它只是「别把整张表一次倒出来」的上限，不是真实性上限：任何已经敲下的前缀
+	// 都绕过它（见 listModelCandidates 的 query 分支），所以这个数字永远不会让
+	// 某个真实模型变得不可补全。
+	//
+	// 但它必须**足够大**：网关池当前 231 个模型，早期取值 200 会静默藏掉 31 个，
+	// 用户不敲字直接按 TAB 时看到的就是残缺表。取 800 覆盖现有全部来源的总量。
+	modelCandidateLimit      = 800
 	modelAliasCandidateLimit = 800
-	modelsSnapshotKey        = webuimodelssnapshot.CacheKey
+	// modelMatchCeiling 是「用户已经敲了前缀」时的绝对上限。
+	// 前缀匹配不做逐层截断（否则池尾模型永远补不出来），但仍要防住单字符
+	// 前缀把整张表倒出来的病态情形。取值远高于任何真实层容量，正常查询碰不到。
+	modelMatchCeiling = 2000
+	modelsSnapshotKey = webuimodelssnapshot.CacheKey
 )
 
 type modelAliasRow struct {
@@ -289,6 +301,13 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 	}
 
 	// 每层各自限额后再合并；层内的第一次出现优先，因此靠前的层覆盖同名值。
+	//
+	// 关键顺序：**先按用户已输入的前缀过滤，再限额**。
+	// 反过来（先截断再交给 collector 过滤）会让池尾的模型永远补不出来——
+	// 候选在生成阶段就被砍掉了，用户敲什么前缀都救不回来。实测网关池 231 个
+	// 模型里有 18 个（opencode/qwen3.8-max、primary-model 等）从未出现在候选里。
+	// 限额的目的只是「空前缀时别把整张表倒出来」，不该影响任何已经敲下的查询。
+	query := strings.TrimSpace(request.Current)
 	choices := make([]modelChoice, 0, 64)
 	for _, layer := range layers {
 		added := 0
@@ -299,7 +318,13 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 			if _, exists := seen[choice.Value]; exists {
 				continue
 			}
-			if added >= layer.limit {
+			// 空前缀：限额生效（保持 TAB 输出可控）。
+			// 有前缀：只保留命中项，且不因限额丢弃——用户已经缩小范围了。
+			if query != "" {
+				if !modelMatchesQuery(choice.Value, query) {
+					continue
+				}
+			} else if added >= layer.limit {
 				break
 			}
 			seen[choice.Value] = struct{}{}
@@ -315,7 +340,22 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 			added++
 		}
 	}
+	if len(choices) > modelMatchCeiling {
+		choices = choices[:modelMatchCeiling]
+	}
 	return choices
+}
+
+// modelMatchesQuery 与 collector.add 的匹配语义保持一致（前缀或包含，大小写不敏感），
+// 否则这里留下的候选会在下游被再过滤一次，等于限额又提前生效了一回。
+func modelMatchesQuery(value, query string) bool {
+	if query == "" {
+		return true
+	}
+	if strings.HasPrefix(value, query) || strings.HasPrefix(strings.ToLower(value), strings.ToLower(query)) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(value), strings.ToLower(query))
 }
 
 // modelLayer 是一层候选及其独立限额。

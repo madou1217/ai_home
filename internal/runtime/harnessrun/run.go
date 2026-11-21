@@ -213,6 +213,7 @@ func Run(arguments []string, rt Runtime) int {
 	exitCode, message, spawnOK := spawnPrepared(prepared, rt, workDir, baseEnv)
 	if !spawnOK {
 		harnessStartupFailed(rt, message)
+		harnessRecoveryHint(rt, message)
 		return 1
 	}
 	return exitCode
@@ -301,6 +302,20 @@ func accountRefPrefix(accountRef string) string {
 
 func harnessStartupFailed(rt Runtime, message string) {
 	_, _ = fmt.Fprintf(rt.Stderr, "[aih] harness 启动失败：%s\n", message)
+}
+
+// harnessRecoveryHint 在 harness 可执行文件缺失/不可执行时补充下一步，
+// 不再只把 spawn ENOENT/EACCES 丢给用户。
+func harnessRecoveryHint(rt Runtime, message string) {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	switch {
+	case lower == "external_harness_binary_missing",
+		strings.Contains(lower, "enoent"),
+		strings.Contains(lower, "executable file not found"):
+		_, _ = fmt.Fprintln(rt.Stderr, "[aih] 未找到 harness 需要的可执行文件：请先安装对应官方 CLI 并确保它在 PATH 中；aih harness 可查看当前可用的 harness。")
+	case strings.Contains(lower, "eacces"):
+		_, _ = fmt.Fprintln(rt.Stderr, "[aih] harness 可执行文件没有执行权限：请修复文件权限后重试。")
+	}
 }
 
 // rootRouterFailed 复刻 Node 顶层 catch 的用户可见错误行。

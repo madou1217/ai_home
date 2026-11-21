@@ -7,9 +7,11 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/edgeproxy"
 	"github.com/madou1217/ai_home/internal/runtime/nativeresources"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
+	"github.com/madou1217/ai_home/internal/runtime/providersettings"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitextapi"
 )
@@ -51,6 +53,9 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 			ladders: dependencies.ModelModalities,
 			aliases: dependencies.ModelAliasDisplay,
 		})
+	if databasePath, dbErr := appstate.DatabasePath(aiHome); dbErr == nil {
+		providerConfigSvc.WithAccountSettings(providersettings.NewStore(databasePath))
+	}
 
 	var nativeResourceSvc *nativeresources.Service
 	if aiHome != "" && hostHome != "" {

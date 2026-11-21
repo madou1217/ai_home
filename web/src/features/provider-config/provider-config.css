@@ -1307,3 +1307,44 @@
 .pc-key-help {
   overflow-wrap: anywhere;
 }
+
+/* 关键设置：公共 / 账号级覆盖切换。 */
+.pc-key-settings-head {
+  flex-wrap: wrap;
+}
+
+.pc-key-scope {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.pc-key-account-select {
+  min-width: 180px;
+  max-width: 280px;
+}
+
+.pc-key-scope-tag {
+  margin-inline-start: var(--space-3);
+  font-size: var(--text-2xs);
+}
+
+.pc-key-inherit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+}
+
+.pc-key-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-size: var(--text-2xs);
+  text-decoration: underline;
+  cursor: pointer;
+}

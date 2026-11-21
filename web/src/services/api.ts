@@ -104,6 +104,7 @@ import type {
   ProviderConfigHistoryEntryResponse,
   ProviderConfigHistoryResponse,
   ProviderConfigKeySettingsResponse,
+  ProviderConfigAccountKeySettingsSaveResponse,
   ProviderConfigListResponse,
   ProviderConfigSaveResponse,
   ProviderConfigValidationResponse,
@@ -3202,11 +3203,27 @@ export const providerConfigAPI = {
   keySettings: async (
     provider: string,
     fileId: string,
-    model?: string
+    options: { model?: string; accountRef?: string } = {}
   ): Promise<ProviderConfigKeySettingsResponse> => {
+    const params: Record<string, string> = {};
+    if (options.model) params.model = options.model;
+    if (options.accountRef) params.accountRef = options.accountRef;
     const response = await api.get<ProviderConfigKeySettingsResponse>(
       `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/key-settings`,
-      { params: model ? { model } : undefined }
+      { params: Object.keys(params).length ? params : undefined }
+    );
+    return response.data;
+  },
+  saveAccountKeySettings: async (
+    provider: string,
+    fileId: string,
+    accountRef: string,
+    values: Record<string, string>
+  ): Promise<ProviderConfigAccountKeySettingsSaveResponse> => {
+    const response = await api.patch<ProviderConfigAccountKeySettingsSaveResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/key-settings`,
+      { values },
+      { params: { accountRef } }
     );
     return response.data;
   },

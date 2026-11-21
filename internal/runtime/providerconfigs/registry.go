@@ -881,3 +881,29 @@ func describeDefinition(catalog *providers.Catalog, def FileDefinition, hostHome
 		},
 	}
 }
+
+// KeySettingsForProvider 返回 Provider 主配置文件声明的关键设置（副本）。
+// 启动注入层用它把账号覆盖编码成 Provider 原生参数。
+func KeySettingsForProvider(providerID string) ([]KeySetting, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(providerID))
+	for _, definition := range builtinFileDefinitions {
+		if definition.Provider != normalized || len(definition.KeySettings) == 0 {
+			continue
+		}
+		return append([]KeySetting(nil), definition.KeySettings...), true
+	}
+	return nil, false
+}
+
+// AccountLaunchInjectionSupported 报告 Provider 是否已接入账号级启动注入。
+//
+// 配置层对所有声明了 KeySettings 的 Provider 都可用；这里只描述官方 CLI
+// 的启动注入能力。未接入的 Provider 仍可保存覆盖，但启动时保持公共配置。
+func AccountLaunchInjectionSupported(providerID string) bool {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "codex", "claude":
+		return true
+	default:
+		return false
+	}
+}

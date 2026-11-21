@@ -2810,6 +2810,22 @@ export interface ProviderConfigKeySettingsResponse {
   revision: string;
   writable: boolean;
   settings: ProviderConfigKeySetting[];
+  /** public = 公共配置；account = 账号覆盖视图（值为公共值 + 账号覆盖的合成结果）。 */
+  scope: 'public' | 'account';
+  accountRef?: string;
+  publicValues?: Record<string, string>;
+  overrides?: Record<string, string>;
+  accountLaunchSupported?: boolean;
+}
+
+export interface ProviderConfigAccountKeySettingsSaveResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  accountRef: string;
+  changed: boolean;
+  revision: string;
+  overrides: Record<string, string>;
 }
 
 export interface ProviderConfigSaveResponse {

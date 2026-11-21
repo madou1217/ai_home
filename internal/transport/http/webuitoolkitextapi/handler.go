@@ -121,6 +121,8 @@ type ProviderConfigsService interface {
 	SaveFile(ctx context.Context, provider, fileID, content string, opts providerconfigs.SaveOptions) (*providerconfigs.SaveResponse, error)
 	ReadKeySettings(ctx context.Context, provider, fileID, modelOverride string) (*providerconfigs.KeySettingsResponse, error)
 	SaveKeySettings(ctx context.Context, provider, fileID string, values map[string]string, expectedRevision string) (*providerconfigs.SaveResponse, error)
+	ReadAccountKeySettings(ctx context.Context, provider, fileID, modelOverride, accountRef string) (*providerconfigs.KeySettingsResponse, error)
+	SaveAccountKeySettings(ctx context.Context, provider, fileID, accountRef string, values map[string]string) (*providerconfigs.AccountKeySettingsSaveResponse, error)
 	ValidateFile(provider, fileID, content string) (*providerconfigs.ValidateResponse, error)
 	ListHistory(provider, fileID string) (*providerconfigs.HistoryListResponse, error)
 	ReadHistoryEntry(provider, fileID, entryID string) (*providerconfigs.HistoryEntryResponse, error)

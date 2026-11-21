@@ -92,6 +92,12 @@ func (h *Handler) serveProviderConfigs(w http.ResponseWriter, r *http.Request, p
 			resp, err := h.providerConfigs.ValidateFile(provider, fileID, content)
 			h.writeProviderConfigResult(w, resp, err)
 		case action == "key-settings" && r.Method == http.MethodGet:
+			accountRef := strings.TrimSpace(r.URL.Query().Get("accountRef"))
+			if accountRef != "" {
+				resp, err := h.providerConfigs.ReadAccountKeySettings(r.Context(), provider, fileID, r.URL.Query().Get("model"), accountRef)
+				h.writeProviderConfigResult(w, resp, err)
+				return
+			}
 			resp, err := h.providerConfigs.ReadKeySettings(r.Context(), provider, fileID, r.URL.Query().Get("model"))
 			h.writeProviderConfigResult(w, resp, err)
 		case action == "key-settings" && (r.Method == http.MethodPatch || r.Method == http.MethodPut):
@@ -112,6 +118,12 @@ func (h *Handler) serveProviderConfigs(w http.ResponseWriter, r *http.Request, p
 					return
 				}
 				values[path] = text
+			}
+			accountRef := strings.TrimSpace(r.URL.Query().Get("accountRef"))
+			if accountRef != "" {
+				resp, err := h.providerConfigs.SaveAccountKeySettings(r.Context(), provider, fileID, accountRef, values)
+				h.writeProviderConfigResult(w, resp, err)
+				return
 			}
 			revision, _ := body["revision"].(string)
 			resp, err := h.providerConfigs.SaveKeySettings(r.Context(), provider, fileID, values, revision)

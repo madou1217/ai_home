@@ -98,6 +98,8 @@ type Runner struct {
 	// extraEnv 是本次启动的额外环境（如权限合同的 CODEBUDDY_IS_SANDBOX）。
 	// 由 RunWithOptions 通过浅拷贝注入，避免并发启动互相污染。
 	extraEnv map[string]string
+	// extraArgs 是本次启动的账号级覆盖参数（如 codex -c / claude --settings）。
+	extraArgs []string
 }
 
 // NewRunner 创建只依赖标准库操作系统边界的生产 Runtime。
@@ -140,6 +142,8 @@ func NewRunner(options Options) (*Runner, error) {
 type RunOptions struct {
 	// ExtraEnv 叠加在 Strategy/投影环境之后；只作用于本次子进程。
 	ExtraEnv map[string]string
+	// ExtraArguments 是账号级覆盖参数；按子命令规则插在用户参数之前。
+	ExtraArguments []string
 }
 
 // Run 执行一次官方 CLI；不附加额外环境。
@@ -161,7 +165,7 @@ func (runner *Runner) RunWithOptions(
 	if runner == nil {
 		return ErrInvalidRunRequest
 	}
-	if len(options.ExtraEnv) == 0 {
+	if len(options.ExtraEnv) == 0 && len(options.ExtraArguments) == 0 {
 		return runner.run(ctx, plan, arguments)
 	}
 	clone := *runner
@@ -169,6 +173,7 @@ func (runner *Runner) RunWithOptions(
 	for name, value := range options.ExtraEnv {
 		clone.extraEnv[name] = value
 	}
+	clone.extraArgs = append([]string(nil), options.ExtraArguments...)
 	return clone.run(ctx, plan, arguments)
 }
 
@@ -193,7 +198,7 @@ func (runner *Runner) run(
 		if err := validateManagedArguments(spec.ClientProviderID(), arguments); err != nil {
 			return err
 		}
-		resolved, err := spec.ResolveArguments(arguments)
+		resolved, err := spec.ResolveArgumentsWithOverrides(arguments, runner.extraArgs)
 		if err != nil {
 			return err
 		}
@@ -215,7 +220,7 @@ func (runner *Runner) run(
 		if err := validateManagedArguments(spec.ProviderID(), arguments); err != nil {
 			return err
 		}
-		resolved, err := spec.ResolveArguments(arguments)
+		resolved, err := spec.ResolveArgumentsWithOverrides(arguments, runner.extraArgs)
 		if err != nil {
 			return err
 		}

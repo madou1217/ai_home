@@ -7,6 +7,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/providersettings"
 )
 
 // ChoiceResolver 把模型目录事实翻译成关键设置的可选值。
@@ -48,6 +51,26 @@ type KeySettingsResponse struct {
 	Revision string            `json:"revision"`
 	Writable bool              `json:"writable"`
 	Settings []KeySettingValue `json:"settings"`
+	// Scope 是 public（公共配置文件）或 account（账号级覆盖视图）。
+	Scope string `json:"scope"`
+	// AccountRef 只在账号视图出现。
+	AccountRef string `json:"accountRef,omitempty"`
+	// PublicValues 是账号视图中每项的公共值；Overrides 是账号显式覆盖的键。
+	PublicValues map[string]string `json:"publicValues,omitempty"`
+	Overrides    map[string]string `json:"overrides,omitempty"`
+	// AccountLaunchSupported 表示该 Provider 的账号覆盖会在启动时注入。
+	AccountLaunchSupported bool `json:"accountLaunchSupported,omitempty"`
+}
+
+// AccountKeySettingsSaveResponse 是账号级覆盖保存结果。
+type AccountKeySettingsSaveResponse struct {
+	OK         bool              `json:"ok"`
+	Provider   string            `json:"provider"`
+	FileID     string            `json:"fileId"`
+	AccountRef string            `json:"accountRef"`
+	Changed    bool              `json:"changed"`
+	Revision   string            `json:"revision"`
+	Overrides  map[string]string `json:"overrides"`
 }
 
 // ReadKeySettings 读取配置文件里的关键设置，并按目录事实补齐候选值。
@@ -65,6 +88,7 @@ func (s *Service) ReadKeySettings(ctx context.Context, provider, fileID, modelOv
 		FileID:   rf.Definition.ID,
 		Format:   rf.Public.Format,
 		Writable: rf.Writable,
+		Scope:    "public",
 	}
 	if len(rf.Definition.KeySettings) == 0 {
 		return response, nil
@@ -94,6 +118,206 @@ func (s *Service) ReadKeySettings(ctx context.Context, provider, fileID, modelOv
 		response.Settings = append(response.Settings, view)
 	}
 	return response, nil
+}
+
+// ReadAccountKeySettings 返回账号视图：公共值 + 账号覆盖 + 合成后的有效值。
+func (s *Service) ReadAccountKeySettings(
+	ctx context.Context,
+	provider, fileID, modelOverride, accountRef string,
+) (*KeySettingsResponse, error) {
+	if s.accountSettings == nil {
+		return nil, &ConfigError{Code: "provider_config_account_settings_unavailable", Message: "账号级 Provider 设置存储不可用"}
+	}
+	rf, err := s.resolveFile(provider, fileID)
+	if err != nil {
+		return nil, err
+	}
+	normalizedProvider := strings.ToLower(strings.TrimSpace(rf.Definition.Provider))
+	if err := s.assertAccountProvider(ctx, normalizedProvider, accountRef); err != nil {
+		return nil, err
+	}
+	response := &KeySettingsResponse{
+		OK:                     true,
+		Provider:               rf.Definition.Provider,
+		FileID:                 rf.Definition.ID,
+		Format:                 rf.Public.Format,
+		Writable:               true,
+		Scope:                  "account",
+		AccountRef:             strings.TrimSpace(accountRef),
+		Overrides:              map[string]string{},
+		AccountLaunchSupported: AccountLaunchInjectionSupported(normalizedProvider),
+	}
+	if len(rf.Definition.KeySettings) == 0 {
+		return response, nil
+	}
+	content, revision, _, _, err := readTargetContent(rf)
+	if err != nil {
+		return nil, err
+	}
+	response.Revision = revision
+	publicValues := ReadKeyValues(content, rf.Public.Format, rf.Definition.KeySettings)
+	declared := make(map[string]struct{}, len(rf.Definition.KeySettings))
+	for _, setting := range rf.Definition.KeySettings {
+		declared[setting.Path] = struct{}{}
+	}
+	document, err := s.accountSettings.Read(ctx, accountRef)
+	if err != nil {
+		return nil, err
+	}
+	overrides := map[string]string{}
+	if document.Provider == normalizedProvider {
+		for path, value := range document.Values {
+			if _, ok := declared[path]; ok && strings.TrimSpace(value) != "" {
+				overrides[path] = strings.TrimSpace(value)
+			}
+		}
+	}
+	effective := providersettings.Effective(publicValues, overrides)
+	response.PublicValues = publicValues
+	response.Overrides = overrides
+	for _, setting := range rf.Definition.KeySettings {
+		view := KeySettingValue{
+			Path:        setting.Path,
+			Label:       setting.Label,
+			Kind:        string(setting.Kind),
+			Value:       effective[setting.Path],
+			Choices:     append([]string(nil), setting.Choices...),
+			Placeholder: setting.Placeholder,
+			Help:        setting.Help,
+			DependsOn:   setting.DependsOn,
+			Min:         setting.Min,
+			Max:         setting.Max,
+			Step:        setting.Step,
+			Default:     setting.Default,
+		}
+		view.Choices, view.UnavailableChoices = s.resolveKeySettingChoices(ctx, normalizedProvider, setting, effective, modelOverride)
+		response.Settings = append(response.Settings, view)
+	}
+	return response, nil
+}
+
+// SaveAccountKeySettings 只保存账号级覆盖；空值表示移除覆盖、恢复公共值。
+func (s *Service) SaveAccountKeySettings(
+	ctx context.Context,
+	provider, fileID, accountRef string,
+	values map[string]string,
+) (*AccountKeySettingsSaveResponse, error) {
+	if s.accountSettings == nil {
+		return nil, &ConfigError{Code: "provider_config_account_settings_unavailable", Message: "账号级 Provider 设置存储不可用"}
+	}
+	rf, err := s.resolveFile(provider, fileID)
+	if err != nil {
+		return nil, err
+	}
+	normalizedProvider := strings.ToLower(strings.TrimSpace(rf.Definition.Provider))
+	ref := strings.TrimSpace(accountRef)
+	if err := s.assertAccountProvider(ctx, normalizedProvider, ref); err != nil {
+		return nil, err
+	}
+	if len(rf.Definition.KeySettings) == 0 {
+		return nil, &ConfigError{Code: "provider_config_key_settings_unsupported", Message: "该配置文件没有可编辑的关键设置"}
+	}
+	declared := make(map[string]KeySetting, len(rf.Definition.KeySettings))
+	for _, setting := range rf.Definition.KeySettings {
+		declared[setting.Path] = setting
+	}
+	current, err := s.accountSettings.Read(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	beforeValues := providersettings.Values{}
+	if current.Provider == normalizedProvider {
+		for path, value := range current.Values {
+			if _, ok := declared[path]; ok {
+				beforeValues[path] = value
+			}
+		}
+	}
+	next := providersettings.Values{}
+	for path, value := range beforeValues {
+		next[path] = value
+	}
+	for path, value := range values {
+		setting, ok := declared[path]
+		if !ok {
+			return nil, &ConfigError{Code: "provider_config_key_setting_unknown", Message: "未声明的关键设置: " + path}
+		}
+		text := strings.TrimSpace(value)
+		if text == "" {
+			delete(next, path)
+			continue
+		}
+		if err := validateKeySettingValue(setting, text); err != nil {
+			return nil, &ConfigError{Code: "provider_config_key_setting_invalid", Message: err.Error()}
+		}
+		next[path] = text
+	}
+	before, err := json.Marshal(beforeValues)
+	if err != nil {
+		return nil, err
+	}
+	document, err := s.accountSettings.Write(ctx, ref, normalizedProvider, next)
+	if err != nil {
+		return nil, err
+	}
+	after, err := json.Marshal(document.Values)
+	if err != nil {
+		return nil, err
+	}
+	return &AccountKeySettingsSaveResponse{
+		OK:         true,
+		Provider:   rf.Definition.Provider,
+		FileID:     rf.Definition.ID,
+		AccountRef: ref,
+		Changed:    string(before) != string(after),
+		Revision:   hashSHA256(string(after)),
+		Overrides:  document.Values,
+	}, nil
+}
+
+// assertAccountProvider 校验账号存在且属于该 Provider。
+func (s *Service) assertAccountProvider(ctx context.Context, provider, accountRef string) error {
+	ref := strings.TrimSpace(accountRef)
+	if ref == "" {
+		return &ConfigError{Code: "provider_config_account_required", Message: "缺少账号引用"}
+	}
+	if strings.TrimSpace(s.aiHomeDir) == "" {
+		return &ConfigError{Code: "provider_config_account_settings_unavailable", Message: "账号级 Provider 设置存储不可用"}
+	}
+	databasePath, err := appstate.DatabasePath(s.aiHomeDir)
+	if err != nil {
+		return &ConfigError{Code: "provider_config_account_settings_unavailable", Message: "账号级 Provider 设置存储不可用"}
+	}
+	storedProvider, found, err := appstate.LookupAccountProvider(ctx, databasePath, ref)
+	if err != nil {
+		return &ConfigError{Code: "provider_config_account_lookup_failed", Message: "查询账号失败"}
+	}
+	if !found {
+		return &ConfigError{Code: "provider_config_account_not_found", Message: "未找到该账号"}
+	}
+	if strings.ToLower(strings.TrimSpace(storedProvider)) != provider {
+		return &ConfigError{Code: "provider_config_account_provider_mismatch", Message: "账号不属于该 Provider"}
+	}
+	return nil
+}
+
+// validateKeySettingValue 在写入账号覆盖前按声明校验取值类型与范围。
+func validateKeySettingValue(setting KeySetting, value string) error {
+	if strings.ContainsAny(value, "\r\n\x00") || len(value) > 4096 {
+		return fmt.Errorf("关键设置 %s 取值无效", setting.Path)
+	}
+	switch setting.Kind {
+	case KeySettingBoolean:
+		lower := strings.ToLower(value)
+		if lower != "true" && lower != "false" {
+			return fmt.Errorf("关键设置 %s 必须是 true/false", setting.Path)
+		}
+	case KeySettingNumber:
+		if _, err := encodeNumber(setting, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SaveKeySettings 只更新声明过的关键键，保存仍走同一份 revision/校验/历史路径。

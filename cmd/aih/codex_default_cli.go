@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexappconfig"
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
+	"github.com/madou1217/ai_home/internal/runtime/codexstatepage"
 )
 
 // runCodexDefaultCLI 接管非交互 codex 子命令：默认账号环境、配置自愈、
@@ -74,6 +76,7 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	if _, healErr := codexappconfig.HealConfigFile(configPath, codexappconfig.HealOptions{}); healErr != nil {
 		return healErr
 	}
+	repairProjectedRollouts(ctx, codexHome)
 
 	if !codexappconfig.HasCodexModelProviderArg(forwardArgs) {
 		apiKey := strings.TrimSpace(spawnMap["OPENAI_API_KEY"])
@@ -151,6 +154,22 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		os.Exit(exitErr.ExitCode())
 	}
 	return err
+}
+
+// repairProjectedRollouts 复刻 Node 启动前的最佳努力修复：把指向已删除投影目录的
+// rollout_path 改回共享会话存储。失败不影响启动。
+func repairProjectedRollouts(ctx context.Context, codexHome string) {
+	root := strings.TrimSpace(codexHome)
+	if root == "" {
+		return
+	}
+	request, err := json.Marshal(map[string]any{
+		"version": 1, "op": "projected-rollout-repair", "codexHome": root, "threadId": "", "limit": 500,
+	})
+	if err != nil {
+		return
+	}
+	_, _ = codexstatepage.RepairProjectedRollouts(ctx, request)
 }
 
 func environmentSliceMap(entries []string) map[string]string {

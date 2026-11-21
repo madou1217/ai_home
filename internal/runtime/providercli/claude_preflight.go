@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func (runner *Runner) applyClaudePreflight() {
 	if home == "" {
 		return
 	}
-	if err := ensureClaudeOnboarding(filepath.Join(home, ".claude")); err != nil {
+	if err := ensureClaudeOnboarding(filepath.Join(home, providerroot.ConfigDir("claude"))); err != nil {
 		_, _ = fmt.Fprintf(runner.stderr, "aih: 跳过 Claude 首屏检查失败: %v\n", err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	"github.com/madou1217/ai_home/application/providerruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // applyEnvironment 把不可变补丁应用到父进程环境，并消除重复变量。
@@ -82,7 +83,7 @@ func applyProviderConfigRoot(providerID string, hostHomeDir string, environment 
 	if home == "" {
 		return environment
 	}
-	return setEnvironmentValue(environment, claudeConfigDirEnv, filepath.Join(home, ".claude"))
+	return setEnvironmentValue(environment, claudeConfigDirEnv, filepath.Join(home, providerroot.ConfigDir("claude")))
 }
 
 // setEnvironmentValue 覆盖 Runtime 动态分配的 Socket 等非持久配置。

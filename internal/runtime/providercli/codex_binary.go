@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 )
 
@@ -152,7 +153,7 @@ func (resolver binaryResolver) codexCandidatePaths(hostHomeDir string) []string 
 		}
 		dirs = append(dirs,
 			filepath.Join(home, ".local", "bin"),
-			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin"),
+			filepath.Join(home, providerroot.ConfigDir("codex"), "packages", "standalone", "current", "bin"),
 		)
 		if runtime.GOOS == "windows" {
 			localAppData, _ := resolver.lookupEnv("LOCALAPPDATA")

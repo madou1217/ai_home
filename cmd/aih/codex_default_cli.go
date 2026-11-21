@@ -19,9 +19,12 @@ import (
 // local app-server 路径。
 func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRuntime) error {
 	upstream := ""
+	interactive := false
 	separator := -1
 	for index := 0; index < len(args); index++ {
 		switch {
+		case args[index] == "--interactive":
+			interactive = true
 		case args[index] == "--":
 			separator = index
 			index = len(args)
@@ -79,6 +82,24 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	}
 	if !hasStartupPolicyArg(forwardArgs) {
 		forwardArgs = append(codexappconfig.BuildStartupPolicyArgs(), forwardArgs...)
+	}
+	if interactive && !localAppServerDisabled(envMap, forwardArgs) {
+		proxy, proxyErr := startLocalAppServer(ctx, upstream, forwardArgs, spawnEnv, runtime.stderr)
+		if proxyErr != nil {
+			return proxyErr
+		}
+		launchArgs := append([]string{"--remote", proxy.RemoteURL, "--remote-auth-token-env", localRemoteTokenEnv}, forwardArgs...)
+		command := exec.CommandContext(ctx, upstream, launchArgs...)
+		command.Env = append(append([]string{}, spawnEnv...), localRemoteTokenEnv+"="+proxy.Token)
+		command.Stdin = runtime.stdin
+		command.Stdout = runtime.stdout
+		command.Stderr = runtime.stderr
+		runErr := command.Run()
+		proxy.Close()
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return runErr
 	}
 	commandArgs := append([]string{upstream}, forwardArgs...)
 	if goruntime.GOOS != "windows" {

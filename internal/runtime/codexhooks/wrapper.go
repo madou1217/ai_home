@@ -377,6 +377,9 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 	}
 	if options.RouteDefaultCLIThroughHelper {
 		lines = append(lines,
+			`if [ -z "$AIH_SUBCOMMAND" ] && [ -t 0 ]; then`,
+			`  exec "$AIH_GO_CLI" __codex-default-cli --interactive --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
+			"fi",
 			`if [ -n "$AIH_SUBCOMMAND" ] && [ "$AIH_SUBCOMMAND" != "resume" ] && [ "$AIH_SUBCOMMAND" != "app-server" ]; then`,
 			`  exec "$AIH_GO_CLI" __codex-default-cli --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
 			"fi",

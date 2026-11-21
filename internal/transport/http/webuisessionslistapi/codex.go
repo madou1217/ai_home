@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
@@ -35,7 +36,7 @@ var codexSessionIDPattern = regexp.MustCompile(`([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[
 // 本切片只读 rollout JSONL 的 session_meta。state DB 里存在、而磁盘上已没有
 // rollout 文件的会话不会出现。
 func (scan *scanner) codexProjects() []projectView {
-	codexDir := filepath.Join(scan.hostHome, ".codex")
+	codexDir := filepath.Join(scan.hostHome, providerroot.ConfigDir("codex"))
 	files := scan.codexSessionFiles(filepath.Join(codexDir, "sessions"))
 	threadNames := scan.readCodexThreadNames(filepath.Join(codexDir, "session_index.jsonl"))
 

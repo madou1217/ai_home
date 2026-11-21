@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -205,7 +206,7 @@ func (reader *FileReader) resolveSessionFile(request PreviewRequest) (string, er
 	}
 
 	if provider == "claude" {
-		return resolveProjectTranscript(filepath.Join(home, ".claude", "projects"), sessionID, projectDirName)
+		return resolveProjectTranscript(filepath.Join(home, providerroot.ConfigDir("claude"), "projects"), sessionID, projectDirName)
 	}
 	if roots := codebuddyfamilystorage.SessionRoots(provider); len(roots) > 0 {
 		for _, dirName := range roots {
@@ -292,7 +293,7 @@ func (reader *FileReader) lookupCodexIndex(sessionID string, force bool) (string
 
 func (reader *FileReader) buildCodexIndex() map[string]string {
 	index := make(map[string]string)
-	root := filepath.Join(reader.hostHome(), ".codex", "sessions")
+	root := filepath.Join(reader.hostHome(), providerroot.ConfigDir("codex"), "sessions")
 	count := 0
 	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {

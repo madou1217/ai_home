@@ -2,6 +2,7 @@ package webuiprojectswriteapi
 
 import (
 	"context"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,7 @@ func ensureCodexHooksEnabled(ctx context.Context, hostHomeDir string) {
 	if strings.TrimSpace(hostHomeDir) == "" {
 		return
 	}
-	configPath := filepath.Join(hostHomeDir, ".codex", "config.toml")
+	configPath := filepath.Join(hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")
 	rawBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		return
@@ -32,7 +33,7 @@ func ensureCodexProjectRegistered(hostHomeDir, projectPath string) {
 	if strings.TrimSpace(hostHomeDir) == "" || strings.TrimSpace(projectPath) == "" {
 		return
 	}
-	configPath := filepath.Join(hostHomeDir, ".codex", "config.toml")
+	configPath := filepath.Join(hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")
 	var text string
 	if rawBytes, err := os.ReadFile(configPath); err == nil {
 		text = string(rawBytes)
@@ -48,7 +49,7 @@ func removeCodexProjectRegistration(hostHomeDir, projectPath string) {
 	if strings.TrimSpace(hostHomeDir) == "" || strings.TrimSpace(projectPath) == "" {
 		return
 	}
-	configPath := filepath.Join(hostHomeDir, ".codex", "config.toml")
+	configPath := filepath.Join(hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")
 	rawBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		return

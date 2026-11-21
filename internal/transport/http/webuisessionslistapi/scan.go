@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/legacy"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
@@ -178,7 +179,7 @@ func safeChild(root, name string) bool {
 // 本函数只负责预算、超时与符号链接逃逸防护。预算与超时按项目粒度生效：
 // 单个项目内部由 legacy 一次读完（与 webuiprojectsapi 同口径）。
 func (scan *scanner) claudeProjects(knownPaths []string) []projectView {
-	root := filepath.Join(scan.hostHome, ".claude", "projects")
+	root := filepath.Join(scan.hostHome, providerroot.ConfigDir("claude"), "projects")
 	names := scan.subdirectories(root)
 	projects := make([]projectView, 0, len(names))
 	for _, name := range names {
@@ -206,7 +207,7 @@ func (scan *scanner) claudeProjects(knownPaths []string) []projectView {
 // 这里不消费扫描预算：它只是几条路径线索，真正的会话目录扫描由 claudeProjects
 // 计数，避免 Gemini 历史目录很多时把 Claude 的预算吃光。
 func (scan *scanner) knownProjectPaths() []string {
-	geminiDir := filepath.Join(scan.hostHome, ".gemini")
+	geminiDir := filepath.Join(scan.hostHome, providerroot.ConfigDir("gemini"))
 	paths := make([]string, 0, 16)
 	seen := make(map[string]bool, 16)
 	add := func(value string) {

@@ -2,6 +2,7 @@ package webuisessionslifecycleapi
 
 import (
 	"context"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,7 +41,7 @@ func (handler *Handler) unarchive(ctx context.Context, provider, sessionID, orig
 }
 
 func (handler *Handler) restoreClaudeFile(sessionID string) error {
-	projectsRoot := filepath.Join(handler.hostHomeDir, ".claude", "projects")
+	projectsRoot := filepath.Join(handler.hostHomeDir, providerroot.ConfigDir("claude"), "projects")
 	for _, projectDirName := range safeDirectoryNames(projectsRoot) {
 		projectRoot := filepath.Join(projectsRoot, projectDirName)
 		archivedRoot := filepath.Join(projectRoot, archiveDirName)
@@ -59,7 +60,7 @@ func (handler *Handler) restoreClaudeFile(sessionID string) error {
 }
 
 func (handler *Handler) restoreGeminiFile(sessionID string) error {
-	projectsRoot := filepath.Join(handler.hostHomeDir, ".gemini", "tmp")
+	projectsRoot := filepath.Join(handler.hostHomeDir, providerroot.ConfigDir("gemini"), "tmp")
 	for _, projectDirName := range safeDirectoryNames(projectsRoot) {
 		chatsRoot := filepath.Join(projectsRoot, projectDirName, "chats")
 		archivedRoot := filepath.Join(chatsRoot, archiveDirName)

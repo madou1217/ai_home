@@ -12,6 +12,7 @@ package webuiarchivedsessionsapi
 
 import (
 	"encoding/json"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"path/filepath"
 	"sort"
@@ -84,7 +85,7 @@ func sortEntries(entries []Entry) {
 }
 
 func scanClaudeArchives(hostHomeDir string) []Entry {
-	projectsRoot := filepath.Join(hostHomeDir, ".claude", "projects")
+	projectsRoot := filepath.Join(hostHomeDir, providerroot.ConfigDir("claude"), "projects")
 	entries := make([]Entry, 0)
 	for _, projectDirName := range safeDirectoryNames(projectsRoot) {
 		archivedRoot := filepath.Join(projectsRoot, projectDirName, ".archived")
@@ -107,7 +108,7 @@ func scanClaudeArchives(hostHomeDir string) []Entry {
 }
 
 func scanGeminiArchives(hostHomeDir string) []Entry {
-	projectsRoot := filepath.Join(hostHomeDir, ".gemini", "tmp")
+	projectsRoot := filepath.Join(hostHomeDir, providerroot.ConfigDir("gemini"), "tmp")
 	entries := make([]Entry, 0)
 	for _, projectDirName := range safeDirectoryNames(projectsRoot) {
 		archivedRoot := filepath.Join(projectsRoot, projectDirName, "chats", ".archived")

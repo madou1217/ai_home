@@ -21,6 +21,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
@@ -30,11 +31,13 @@ const (
 	// MinCodebuddyLimitInterval 是扫描周期下限。
 	MinCodebuddyLimitInterval = 15 * time.Second
 
-	codebuddySharedLogDirName     = ".codebuddy"
 	codebuddySharedLogDays        = 2
 	codebuddyWriteTimeToleranceMS = 5000
 	codebuddyLogCacheLimit        = 8
 )
+
+// codebuddySharedLogDirName 是家族共享日志的规范配置根（.codebuddy）。
+var codebuddySharedLogDirName = providerroot.ConfigDir("codebuddy")
 
 var (
 	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()

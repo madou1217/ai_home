@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
@@ -322,7 +323,7 @@ func cachedClineSessionIndex(ctx *ProbeContext) []clineSessionRecord {
 		}
 	}
 	var records []clineSessionRecord
-	root := filepath.Join(ctx.HostHomeDir, ".cline", "data", "sessions")
+	root := filepath.Join(ctx.HostHomeDir, providerroot.ConfigDir("cline"), "data", "sessions")
 	entries, err := os.ReadDir(root)
 	if err == nil {
 		names := make([]string, 0, len(entries))

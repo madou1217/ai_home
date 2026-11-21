@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	_ "modernc.org/sqlite"
 )
 
@@ -384,7 +385,7 @@ func DiscoverClineSessionFiles(hostHomeDir string) []string {
 	if home == "" {
 		return nil
 	}
-	root := filepath.Join(home, ".cline", "data", "sessions")
+	root := filepath.Join(home, providerroot.ConfigDir("cline"), "data", "sessions")
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -415,7 +416,7 @@ func DiscoverKiroSessionFiles(hostHomeDir string) []string {
 	if home == "" {
 		return nil
 	}
-	root := filepath.Join(home, ".kiro", "sessions")
+	root := filepath.Join(home, providerroot.ConfigDir("kiro"), "sessions")
 	groups, err := os.ReadDir(root)
 	if err != nil {
 		return nil

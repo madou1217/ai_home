@@ -107,10 +107,13 @@ func codebuddyPrivateDesktopState() []Artifact {
 	}
 }
 
-func codebuddyFamilyPrivate(nativeRoot string) []Artifact {
+func codebuddyFamilyPrivate(nativeRoot []string) []Artifact {
 	items := codebuddyPrivateDesktopState()
-	if nativeRoot != "" {
-		items = append(items, private(nativeRoot, ".mcp.json"), private(nativeRoot, "sessions"))
+	if len(nativeRoot) > 0 {
+		items = append(items,
+			private(append(append([]string{}, nativeRoot...), ".mcp.json")...),
+			private(append(append([]string{}, nativeRoot...), "sessions")...),
+		)
 	}
 	return append(items, private("Library", "Keychains"))
 }
@@ -128,7 +131,7 @@ var policies = map[string]Policy{
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
-			private(".codex", "config.toml"),
+			private(nativePath("codex", "config.toml")...),
 			private("Library", "Keychains"),
 		},
 		AttachmentSubdir: []string{".tmp", "model", "images"},
@@ -174,7 +177,7 @@ var policies = map[string]Policy{
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(".local", "share", "aih-opencode-runtime", "opencode", "auth.json"),
-			private(".config", "opencode", "auth.json"),
+			private(configPath("opencode", "auth.json")...),
 			private("Library", "Keychains"),
 		},
 		AttachmentSubdir: attachments,
@@ -197,9 +200,9 @@ var policies = map[string]Policy{
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
-			private(".kimi-code", "config.toml"),
-			private(".kimi-code", "credentials"),
-			private(".kimi-code", "session_index.jsonl"),
+			private(nativePath("kimi", "config.toml")...),
+			private(nativePath("kimi", "credentials")...),
+			private(nativePath("kimi", "session_index.jsonl")...),
 		},
 		AttachmentSubdir: attachments,
 	},
@@ -234,8 +237,8 @@ var policies = map[string]Policy{
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
-			private(".cline", "data", "settings"),
-			private(".cline", "data", "secrets.json"),
+			private(nativePath("cline", "data", "settings")...),
+			private(nativePath("cline", "data", "secrets.json")...),
 			private("Library", "Keychains"),
 		},
 	},
@@ -272,7 +275,7 @@ var policies = map[string]Policy{
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("Tencent-Cloud.coding-copilot.info")...),
 		},
-		PrivateArtifacts: codebuddyFamilyPrivate(".codebuddy"),
+		PrivateArtifacts: codebuddyFamilyPrivate(nativePath("codebuddy")),
 		AttachmentSubdir: attachments,
 	},
 	"codebuddycn": {
@@ -280,7 +283,7 @@ var policies = map[string]Policy{
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop.info")...),
 		},
-		PrivateArtifacts: codebuddyFamilyPrivate(".codebuddy-cn"),
+		PrivateArtifacts: codebuddyFamilyPrivate(nativePath("codebuddycn")),
 		AttachmentSubdir: attachments,
 	},
 	"workbuddy": {
@@ -288,7 +291,7 @@ var policies = map[string]Policy{
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop-ai.info")...),
 		},
-		PrivateArtifacts: codebuddyFamilyPrivate(""),
+		PrivateArtifacts: codebuddyFamilyPrivate(nil),
 		AttachmentSubdir: attachments,
 	},
 	"workbuddycn": {
@@ -296,7 +299,7 @@ var policies = map[string]Policy{
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop.info")...),
 		},
-		PrivateArtifacts: codebuddyFamilyPrivate(""),
+		PrivateArtifacts: codebuddyFamilyPrivate(nil),
 		AttachmentSubdir: attachments,
 	},
 }

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
@@ -65,24 +66,30 @@ var (
 		"qodercn": {
 			{from: nil, to: nil},
 		},
-		"codebuddy": {
-			{from: []string{".codebuddy"}, to: []string{".codebuddy"}},
-			{from: []string{"CodeBuddy", "Claw"}, to: []string{"CodeBuddy", "Claw"}},
-		},
-		"codebuddycn": {
-			{from: []string{".codebuddy-cn"}, to: []string{".codebuddy-cn"}},
-			{from: []string{"CodeBuddy CN", "Claw"}, to: []string{"CodeBuddy CN", "Claw"}},
-		},
-		"workbuddy": {
-			{from: []string{".workbuddy-ai"}, to: []string{".workbuddy-ai"}},
-			{from: []string{"WorkBuddy AI", "Claw"}, to: []string{"WorkBuddy AI", "Claw"}},
-		},
-		"workbuddycn": {
-			{from: []string{".workbuddy"}, to: []string{".workbuddy"}},
-			{from: []string{"WorkBuddy", "Claw"}, to: []string{"WorkBuddy", "Claw"}},
-		},
 	}
 )
+
+// init 用 Provider 合同补齐 CodeBuddy 家族的投影映射：配置根来自 CLI.GlobalDir，
+// IDE 数据目录来自 Storage.IDEDataName。旧版在 map 里手写四支目录与产品名，
+// 新增成员必须记得改两处。
+func init() {
+	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
+		configDir, ok := codebuddyfamilystorage.ConfigDir(providerID)
+		if !ok {
+			continue
+		}
+		mappings := []projectionMapping{
+			{from: []string{configDir}, to: []string{configDir}},
+		}
+		if ideDataName := codebuddyfamilystorage.IDEDataName(providerID); ideDataName != "" {
+			mappings = append(mappings, projectionMapping{
+				from: []string{ideDataName, "Claw"},
+				to:   []string{ideDataName, "Claw"},
+			})
+		}
+		providerCustomMappings[providerID] = mappings
+	}
+}
 
 // NormalizeMessageModel 归一化模型字段，剥离空白与 <synthetic> 占位符。
 func NormalizeMessageModel(value string) string {

@@ -277,6 +277,15 @@ func DefaultAuthFile(providerID string) string {
 	return facts.DefaultAuthFile
 }
 
+// IDEDataName 返回该 Provider 的 IDE 数据目录名（由 Definition.Storage 声明）。
+func IDEDataName(providerID string) string {
+	_, facts, ok := storageFactsFor(providerID)
+	if !ok {
+		return ""
+	}
+	return facts.IDEDataName
+}
+
 // AuthDirSegments 返回伪 HOME 下共享 auth 目录的相对路径段。
 func AuthDirSegments(goos string) []string {
 	return authDirSegments(goos)

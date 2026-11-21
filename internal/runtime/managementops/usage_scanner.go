@@ -25,6 +25,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
@@ -2264,9 +2265,9 @@ type qoderFile struct {
 }
 
 func scanQoderProvider(ctx context.Context, store *UsageStore, hostHomeDir, aiHomeDir, provider string) providerScanCounters {
-	dotDir := ".qoder"
-	if provider == "qodercn" {
-		dotDir = ".qoder-cn"
+	dotDir := providerroot.ConfigDir(provider)
+	if dotDir == "" {
+		return providerScanCounters{}
 	}
 	targets := []qoderTarget{{
 		Provider:     provider,

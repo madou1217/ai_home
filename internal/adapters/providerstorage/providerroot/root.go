@@ -49,6 +49,11 @@ func ConfigRoot(providerID string) []string {
 	return strings.Split(dir, "/")
 }
 
+// ConfigDir 返回 CLI.GlobalDir 的斜杠拼接形式。
+func ConfigDir(providerID string) string {
+	return strings.Join(ConfigRoot(providerID), "/")
+}
+
 // ConfigPath 返回 <CLI.GlobalDir>/<suffix...>，用于配置根下的私有文件。
 func ConfigPath(providerID string, suffix ...string) []string {
 	return append(ConfigRoot(providerID), suffix...)

@@ -2,6 +2,7 @@ package apps
 
 import (
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"sort"
 	"strings"
 )
@@ -587,9 +588,9 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 			Pkg:              "@qoder-ai/qodercli",
 			BinaryNames:      []string{"qodercli"},
 			CleanupHomeFiles: []string{".local/bin/qodercli"},
-			CleanupHomeTrees: []string{".qoder/bin/qodercli"},
+			CleanupHomeTrees: []string{strings.Join([]string{providerroot.ConfigDir("qoder"), "bin", "qodercli"}, "/")},
 			CollectPathEntries: func(opts Options) []string {
-				return collectQoderPathEntries(opts, ".qoder", "qodercli", "Qoder")
+				return collectQoderPathEntries(opts, providerroot.ConfigDir("qoder"), "qodercli", "Qoder")
 			},
 			ResolveInstallPlans: func(opts Options) []LifecyclePlan {
 				p := resolvePlatform(opts)
@@ -653,9 +654,9 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 		CLI: &cliDescriptor{
 			BinaryNames:      []string{"qoderclicn"},
 			CleanupHomeFiles: []string{".local/bin/qoderclicn"},
-			CleanupHomeTrees: []string{".qoder-cn/bin/qoderclicn"},
+			CleanupHomeTrees: []string{strings.Join([]string{providerroot.ConfigDir("qodercn"), "bin", "qoderclicn"}, "/")},
 			CollectPathEntries: func(opts Options) []string {
-				return collectQoderPathEntries(opts, ".qoder-cn", "qoderclicn", "QoderCN")
+				return collectQoderPathEntries(opts, providerroot.ConfigDir("qodercn"), "qoderclicn", "QoderCN")
 			},
 			ResolveInstallPlans: func(opts Options) []LifecyclePlan {
 				if resolvePlatform(opts) == platformWindows {

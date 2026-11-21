@@ -31,6 +31,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/qodercred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // AccountRecord 表示合并 aih.db 与 app-state.db 后的单账号凭据视图。
@@ -251,15 +252,10 @@ type QoderDeviceIdentity struct {
 	Source       string
 }
 
-var qoderUMIDCacheDirs = map[string]string{
-	"qoder":   ".qoder",
-	"qodercn": ".qoder-cn",
-}
-
 // ReadQoderDeviceIdentity 依次检查账号沙箱与宿主 CLI 的 umid-cache.json。
 func ReadQoderDeviceIdentity(aiHomeDir, hostHomeDir, provider, accountRef string) *QoderDeviceIdentity {
 	normalized := strings.ToLower(strings.TrimSpace(provider))
-	cacheDir := qoderUMIDCacheDirs[normalized]
+	cacheDir := providerroot.ConfigDir(normalized)
 	runtimeDir := ResolveAccountRuntimeDir(aiHomeDir, normalized, accountRef)
 	hostDir := resolveHostHomeDir(hostHomeDir)
 

@@ -28,6 +28,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/qodercred"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/adapters/qoder/modelcatalog"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
@@ -61,8 +62,8 @@ var inferenceBases = map[string]string{
 
 // clientDirs 是各区域的客户端家目录（端点缓存放在 <home>/<dir>/.cache）。
 var clientDirs = map[string]string{
-	QoderProviderID:   ".qoder",
-	QoderCNProviderID: ".qoder-cn",
+	QoderProviderID:   providerroot.ConfigDir(QoderProviderID),
+	QoderCNProviderID: providerroot.ConfigDir(QoderCNProviderID),
 }
 
 // readUMID 读取客户端缓存的真实设备令牌。

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,10 +24,7 @@ var (
 // ==================== Qoder / QoderCN ====================
 
 func resolveQoderConfigDir(provider string) string {
-	if NormalizeProvider(provider) == "qodercn" {
-		return ".qoder-cn"
-	}
-	return ".qoder"
+	return providerroot.ConfigDir(NormalizeProvider(provider))
 }
 
 func resolveQoderProjectsRoots(opts Options, provider string) []string {

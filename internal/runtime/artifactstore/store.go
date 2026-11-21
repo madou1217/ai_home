@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/spacegc"
 )
 
@@ -854,7 +855,7 @@ func pruneLogs(request Request, response *Response) {
 	cutoff := time.Now().Add(-time.Duration(options.LogMaxAgeDays) * 24 * time.Hour)
 	parents := options.LogParents
 	if len(parents) == 0 {
-		parents = []string{".codebuddy-cn", ".codebuddy", ".workbuddy-ai", ".workbuddy", ".qoder", ".qoder-cn"}
+		parents = []string{".codebuddy-cn", ".codebuddy", ".workbuddy-ai", ".workbuddy", providerroot.ConfigDir("qoder"), providerroot.ConfigDir("qodercn")}
 	}
 	names := options.LogDirNames
 	if len(names) == 0 {

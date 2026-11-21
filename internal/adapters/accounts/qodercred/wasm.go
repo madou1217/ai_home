@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"path/filepath"
 	"sort"
@@ -87,10 +88,12 @@ func candidateBinaries(provider string, options Options) []string {
 		return nil
 	}
 	normalized := normalizeProvider(provider)
-	globalDir := ".qoder"
+	globalDir := providerroot.ConfigDir(normalized)
+	if globalDir == "" {
+		return nil
+	}
 	binaryName := "qodercli"
 	if normalized == "qodercn" {
-		globalDir = ".qoder-cn"
 		binaryName = "qoderclicn"
 	}
 	versionsRoot := filepath.Join(home, globalDir, "bin", binaryName)

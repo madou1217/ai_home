@@ -21,6 +21,7 @@ type httpSession struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	token      string
+	scope      Scope
 	commands   chan accountbrowserview.Command
 	frames     chan accountbrowserview.Event
 	events     chan accountbrowserview.Event
@@ -90,10 +91,15 @@ func (h *Handler) serveHTTPStream(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeHTTP(w, r) {
 		return
 	}
-	var body struct{}
+	var body ScopeRequest
 	raw, err := readCommandBody(w, r)
 	if err != nil || decodeStrictSingleJSON(raw, &body) != nil {
 		writeError(w, http.StatusBadRequest, "invalid_browser_stream_request")
+		return
+	}
+	scope, err := resolveScope(r.Context(), h.scopeResolver, body)
+	if err != nil {
+		writeScopeError(w, err)
 		return
 	}
 	supported := h.runtime.Supported()
@@ -128,7 +134,7 @@ func (h *Handler) serveHTTPStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())
-	session := &httpSession{ctx: ctx, cancel: cancel, token: hex.EncodeToString(tokenBytes), commands: make(chan accountbrowserview.Command, 8), frames: make(chan accountbrowserview.Event, 1), events: make(chan accountbrowserview.Event, 8)}
+	session := &httpSession{ctx: ctx, cancel: cancel, token: hex.EncodeToString(tokenBytes), scope: scope, commands: make(chan accountbrowserview.Command, 8), frames: make(chan accountbrowserview.Event, 1), events: make(chan accountbrowserview.Event, 8)}
 	h.streamMu.Lock()
 	if h.stream != nil {
 		h.streamMu.Unlock()
@@ -143,7 +149,18 @@ func (h *Handler) serveHTTPStream(w http.ResponseWriter, r *http.Request) {
 	defer session.startTimer.Stop()
 	done := make(chan error, 1)
 	go func() {
-		err := h.runtime.Serve(ctx, session)
+		var serveErr error
+		if scope.Kind == ScopeAccount {
+			scoped, ok := h.runtime.(ScopedRuntime)
+			if !ok {
+				serveErr = ErrScopeUnavailable
+			} else {
+				serveErr = scoped.ServeScoped(ctx, session, scope.DataDir)
+			}
+		} else {
+			serveErr = h.runtime.Serve(ctx, session)
+		}
+		err := serveErr
 		session.commandMu.Lock()
 		session.ended = true
 		session.commandMu.Unlock()

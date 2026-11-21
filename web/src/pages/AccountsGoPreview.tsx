@@ -9,7 +9,7 @@ import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Space,
   Tag,
@@ -614,6 +614,7 @@ export default function Accounts() {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const location = useLocation();
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [hydratingDetails, setHydratingDetails] = useState(false);
   const [removingAccountRefs, setRemovingAccountRefs] = useState<Record<string, boolean>>({});
@@ -1771,14 +1772,28 @@ export default function Accounts() {
               />
             </Tooltip>
             {options.openable ? (
-              <Tooltip title="在新标签页打开">
+              <Tooltip title="在内置浏览器打开">
                 <Button
                   type="text"
                   size="small"
                   icon={<GlobalOutlined />}
-                  href={text}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  onClick={() => {
+                    const jobId = String(addJob?.id || '').trim();
+                    if (!jobId || !text) return;
+                    try {
+                      window.sessionStorage.setItem(`aih:account-browser:oauth:${jobId}`, text);
+                      const query = new URLSearchParams({ authJob: jobId });
+                      const provider = String(addJob?.provider || '').trim();
+                      const accountRef = String(addJob?.accountRef || '').trim();
+                      if (provider && accountRef) {
+                        query.set('provider', provider);
+                        query.set('accountRef', accountRef);
+                      }
+                      navigate(`/browser?${query.toString()}`);
+                    } catch (_error) {
+                      message.error('无法打开内置浏览器');
+                    }
+                  }}
                 />
               </Tooltip>
             ) : null}

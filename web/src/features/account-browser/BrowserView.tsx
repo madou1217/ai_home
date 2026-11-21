@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Input, Modal, Tag, Typography } from 'antd';
 import { ArrowLeftOutlined, ArrowRightOutlined, DesktopOutlined, FormOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import { resolveActiveTransportTarget, subscribeTransportTargetChange } from '@/services/webui-auth-transport';
-import { connectBrowserSurface, readBrowserCapabilities, type BrowserCapabilities, type BrowserSurfaceEvent } from './browser-view-client';
+import { connectBrowserSurface, readBrowserCapabilities, type BrowserCapabilities, type BrowserSurfaceEvent, type BrowserSurfaceScope } from './browser-view-client';
 import BrowserTextComposer from './BrowserTextComposer';
 import { useBrowserViewInput } from './browser-view-input';
 import { browserViewErrorMessage } from './browser-view-errors';
@@ -18,9 +18,22 @@ type CapabilitySnapshot = { target: Target; value: BrowserCapabilities };
 type PendingFrame = { event: BrowserSurfaceEvent; receivedAt: number };
 const phases: Record<Phase, string> = { disconnected: '未连接', connecting: '连接中', starting: '正在启动', ready: '画面已连接', failed: '未就绪' };
 
-function targetMatches(target: Target) {
+export interface BrowserViewProps {
+  /** Bind the viewer to its owner; an empty or different Server fails closed. */
+  requiredServerId?: string;
+  embedded?: boolean;
+  /** Hidden desktop windows retain their connection, but cannot send input. */
+  active?: boolean;
+  /** Optional server-validated account scope; absent keeps the studio task scope. */
+  scope?: BrowserSurfaceScope;
+  initialUrl?: string;
+}
+
+function targetMatches(target: Target, requiredServerId?: string) {
   const current = resolveActiveTransportTarget();
-  return current.scopeKey === target.scopeKey && current.serverId === target.serverId
+  const serverMatches = requiredServerId === undefined
+    || (requiredServerId.length > 0 && requiredServerId === (current.serverId || 'local'));
+  return serverMatches && current.scopeKey === target.scopeKey && current.serverId === target.serverId
     && current.isRemote === target.isRemote && current.targetOrigin === target.targetOrigin;
 }
 
@@ -31,10 +44,17 @@ function hostLabel(capabilities: BrowserCapabilities | null) {
   return [os, capabilities.hostArch].filter(Boolean).join(' / ');
 }
 
-export default function BrowserView() {
+export default function BrowserView({ requiredServerId, embedded = false, active: visible = true, scope, initialUrl }: BrowserViewProps) {
+  const boundServerId = requiredServerId?.trim();
+  const requestedScopeKey = scope?.scope === 'account'
+    ? `account:${scope.provider || ''}:${scope.accountRef || ''}`
+    : 'task';
+  const ownerRef = useRef({ serverId: boundServerId, active: visible });
+  ownerRef.current = { serverId: boundServerId, active: visible };
+  const targetIsCurrent = useCallback((selected: Target) => targetMatches(selected, ownerRef.current.serverId), []);
   const [state, setState] = useState<Phase>('disconnected');
   const [error, setError] = useState('');
-  const [url, setUrl] = useState(defaultUrl);
+  const [url, setUrl] = useState(initialUrl || defaultUrl);
   const [target, setTarget] = useState(resolveActiveTransportTarget);
   const [capabilities, setCapabilities] = useState<BrowserCapabilities | null>(null);
   const [capabilityLoading, setCapabilityLoading] = useState(true);
@@ -57,7 +77,7 @@ export default function BrowserView() {
   const send = useCallback((command: Record<string, unknown>) => {
     const snapshot = capabilityRef.current;
     // Obsolete handlers must not put an error into a newly selected Server's UI.
-    if (!snapshot || !targetMatches(snapshot.target)) return false;
+    if (!ownerRef.current.active || !snapshot || !targetIsCurrent(snapshot.target)) return false;
     if (phaseRef.current !== 'ready' || !lastFrameRef.current
       || Date.now() - lastFrameRef.current > frameExpiry || !lastRenderedFrameRef.current) {
       setError('画面尚未就绪或已过期，操作未发送。');
@@ -74,12 +94,12 @@ export default function BrowserView() {
     // A synchronous fail-closed callback already shows its more specific error.
     if (!accepted && generation === generationRef.current) setError('操作未发送（连接未就绪或队列已满），请稍后手动重试。');
     return accepted;
-  }, []);
+  }, [targetIsCurrent]);
 
   const input = useBrowserViewInput(canvasRef, send, {
-    pointer: capabilities?.pointer !== false,
-    scroll: capabilities?.scroll !== false,
-    text: capabilities?.text !== false,
+    pointer: visible && capabilities?.pointer !== false,
+    scroll: visible && capabilities?.scroll !== false,
+    text: visible && capabilities?.text !== false,
   });
   const resetInput = input.reset;
 
@@ -109,11 +129,11 @@ export default function BrowserView() {
       setFrameFresh(false);
       setComposerOpen(false); // Unmounting also discards the draft and active composition.
       setError('');
-      setUrl(defaultUrl);
+      setUrl(initialUrl || defaultUrl);
     }
-  }, [resetInput]);
+  }, [initialUrl, resetInput]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let requestGeneration = 0;
     let controller: AbortController | null = null;
     let pending = false;
@@ -123,13 +143,20 @@ export default function BrowserView() {
       controller = new AbortController();
       const signal = controller.signal;
       if (invalidateSession) resetSession();
-      pending = true;
+      pending = false;
       capabilityRef.current = null;
       setTarget(selected);
       setCapabilities(null);
       setCapabilityError('');
+      if (!targetIsCurrent(selected)) {
+        retryCapabilitiesRef.current = null;
+        setCapabilityLoading(false);
+        setCapabilityError('浏览器所属 Server 与当前连接不一致，未连接或启动其他 Server。');
+        return;
+      }
+      pending = true;
       setCapabilityLoading(true);
-      const current = () => request === requestGeneration && !signal.aborted && targetMatches(selected);
+      const current = () => request === requestGeneration && !signal.aborted && targetIsCurrent(selected);
       retryCapabilitiesRef.current = () => {
         // A retry reads this same target only. Never stop/start a live browser to refresh metadata.
         if (pending || !current() || connectionRef.current || confirmationRef.current
@@ -161,7 +188,18 @@ export default function BrowserView() {
       capabilityRef.current = null;
       resetSession('disconnected', false);
     };
-  }, [resetSession]);
+  }, [boundServerId, initialUrl, requestedScopeKey, resetSession, targetIsCurrent]);
+
+  useLayoutEffect(() => {
+    if (visible) return;
+    confirmationRef.current?.destroy();
+    confirmationRef.current = null;
+    resetInput();
+    lastFrameRef.current = 0;
+    setFrameFresh(false);
+    setComposerOpen(false);
+    canvasRef.current?.blur();
+  }, [visible, resetInput]);
 
   useEffect(() => {
     if (state !== 'ready') return;
@@ -174,10 +212,11 @@ export default function BrowserView() {
   }, [state, resetInput]);
 
   const startConnection = (snapshot: CapabilitySnapshot) => {
-    if (capabilityRef.current !== snapshot || !targetMatches(snapshot.target)) return;
+    if (!ownerRef.current.active || capabilityRef.current !== snapshot || !targetIsCurrent(snapshot.target)) return;
     resetSession();
     const generation = generationRef.current;
-    const current = () => generation === generationRef.current && capabilityRef.current === snapshot && targetMatches(snapshot.target);
+    let initialNavigationSent = false;
+    const current = () => generation === generationRef.current && capabilityRef.current === snapshot && targetIsCurrent(snapshot.target);
     const fail = (message: string) => {
       if (!current()) return;
       resetSession('failed');
@@ -187,7 +226,7 @@ export default function BrowserView() {
     changePhase('connecting');
 
     const renderFrame = (frame: PendingFrame) => {
-      if (!current() || Date.now() - frame.receivedAt > frameExpiry || (frame.event.frame || 0) <= lastRenderedFrameRef.current) return;
+      if (!current() || !ownerRef.current.active || Date.now() - frame.receivedAt > frameExpiry || (frame.event.frame || 0) <= lastRenderedFrameRef.current) return;
       imageBusyRef.current = true;
       const image = new Image();
       imageRef.current = image;
@@ -205,6 +244,7 @@ export default function BrowserView() {
       image.onload = () => {
         if (!current() || imageRef.current !== image) return;
         try {
+          if (!ownerRef.current.active) return;
           const canvas = canvasRef.current;
           if (!canvas || !image.naturalWidth || !image.naturalHeight || Date.now() - frame.receivedAt > frameExpiry) return;
           const context = canvas.getContext('2d');
@@ -216,6 +256,18 @@ export default function BrowserView() {
           lastRenderedFrameRef.current = frame.event.frame || 0;
           setFrameFresh(true);
           setError((previous) => previous === staleFrameMessage ? '' : previous);
+          if (!initialNavigationSent && initialUrl) {
+            try {
+              const parsed = new URL(initialUrl);
+              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                initialNavigationSent = send({ type: 'navigate', url: parsed.href });
+              } else {
+                initialNavigationSent = true;
+              }
+            } catch (_) {
+              initialNavigationSent = true;
+            }
+          }
         } catch (_) {
           setError('浏览器画面无法绘制，正在等待下一帧。');
         } finally { finished(); }
@@ -243,7 +295,7 @@ export default function BrowserView() {
         resetInput();
         setError(staleFrameMessage);
       }
-      if (event.type !== 'frame' || !event.data || !Number.isSafeInteger(event.frame) || (event.frame || 0) <= lastRenderedFrameRef.current) return;
+      if (!ownerRef.current.active || event.type !== 'frame' || !event.data || !Number.isSafeInteger(event.frame) || (event.frame || 0) <= lastRenderedFrameRef.current) return;
       const frame = { event, receivedAt: Date.now() };
       if (imageBusyRef.current) {
         if (!pendingFrameRef.current || (event.frame || 0) > (pendingFrameRef.current.event.frame || 0)) pendingFrameRef.current = frame;
@@ -254,7 +306,7 @@ export default function BrowserView() {
         if (!current()) return;
         resetSession();
         setError('与执行 Server 的连接已断开，请手动重新启动。');
-      });
+      }, scope);
       if (!current()) { connection.close(); return; }
       connectionRef.current = connection;
       if (waitingForStart) sendStart();
@@ -263,9 +315,9 @@ export default function BrowserView() {
 
   const start = () => {
     const snapshot = capabilityRef.current;
-    if (!snapshot?.value.supported || !snapshot.value.transports?.includes('http-stream-v1') || !targetMatches(snapshot.target) || confirmationRef.current) return;
+    if (!ownerRef.current.active || !snapshot?.value.supported || !snapshot.value.transports?.includes('http-stream-v1') || !targetIsCurrent(snapshot.target) || confirmationRef.current) return;
     confirmationRef.current = Modal.confirm({
-      title: '在当前选中的执行 Server 启动浏览器？',
+      title: embedded ? '在这台虚拟电脑所属 Server 启动浏览器？' : '在当前选中的执行 Server 启动浏览器？',
       content: `执行 Server：${snapshot.target.serverId || '当前 Server'}（${hostLabel(snapshot.value)}）。启动和操作可能激活该 Server 的原生浏览器窗口，而不是手机或查看设备上的浏览器。使用独立任务资料，不读取日常浏览器资料。`,
       okText: '在此 Server 启动',
       cancelText: '取消',
@@ -289,15 +341,22 @@ export default function BrowserView() {
   };
 
   const active = state === 'ready';
-  const interactive = active && frameFresh;
+  const interactive = visible && active && frameFresh && targetIsCurrent(target);
   const idle = state === 'disconnected' || state === 'failed';
   const textEnabled = interactive && capabilities?.text !== false;
-  const canStart = !capabilityLoading && capabilities?.supported === true && capabilities.transports?.includes('http-stream-v1') === true;
+  const requestedScopeSupported = scope?.scope !== 'account'
+    || capabilities?.scopes?.includes('account') === true;
+  const canStart = visible && targetIsCurrent(target) && !capabilityLoading
+    && capabilities?.supported === true
+    && capabilities.transports?.includes('http-stream-v1') === true
+    && requestedScopeSupported;
   const unavailable = capabilityError || (capabilities && !capabilities.supported
     ? browserViewErrorMessage(capabilities.reason, 'capability')
-    : capabilities && !capabilities.transports?.includes('http-stream-v1') ? '执行 Server 未提供 http-stream-v1，无法从此 WebUI 连接。' : '');
+    : capabilities && scope?.scope === 'account' && !requestedScopeSupported
+      ? '当前 Server 未提供账号级持久浏览器资料，未回退到任务资料。'
+      : capabilities && !capabilities.transports?.includes('http-stream-v1') ? '执行 Server 未提供 http-stream-v1，无法从此 WebUI 连接。' : '');
 
-  return <section className={styles.root} aria-label="所选 Server 的任务浏览器">
+  return <section className={`${styles.root}${embedded ? ` ${styles.embedded}` : ''}`} aria-label={embedded ? '虚拟电脑内部浏览器' : '所选 Server 的任务浏览器'}>
     <div className={styles.toolbar}>
       <div className={styles.navigation}>
         <Button aria-label="后退" icon={<ArrowLeftOutlined />} disabled={!textEnabled} onClick={() => send({ type: 'key', key: 'back' })} />
@@ -315,9 +374,9 @@ export default function BrowserView() {
     <div className={styles.status} aria-live="polite">
       <div className={styles.statusMetadata}>
         <Tag>{phases[state]}</Tag>
-        <span>执行 Server：{target.serverId || '当前 Server'} · {hostLabel(capabilities)}</span>
+        <span>执行 Server：{boundServerId || target.serverId || '当前 Server'} · {hostLabel(capabilities)}</span>
         {capabilities?.browser ? <span>{capabilities.browser.vendor} / {capabilities.browser.channel}</span> : null}
-        <span>单任务窗口</span>
+        <span>{scope?.scope === 'account' ? `账号浏览器 · ${scope.provider || ''} · ${scope.accountRef || ''}` : '任务浏览器'}</span>
         {capabilityLoading ? <span>正在读取 Server 能力…</span> : null}
         <Button size="small" type="text" icon={<ReloadOutlined />} loading={capabilityLoading}
           disabled={!idle || capabilityLoading} title="仅重新读取当前 Server 的能力，不启动或重启浏览器"
@@ -329,10 +388,10 @@ export default function BrowserView() {
     <div className={styles.surface} aria-busy={state === 'connecting' || state === 'starting'}>
       {idle ? <div className={styles.empty}>
         <DesktopOutlined style={{ fontSize: 30 }} />
-        <span>浏览器运行在上方所选执行 Server，手机和桌面浏览器仅查看、发送操作。</span>
+        <span>{embedded ? '网页在这台虚拟电脑所属 Server 执行，画面和操作留在当前窗口。' : '浏览器运行在上方所选执行 Server，手机和桌面浏览器仅查看、发送操作。'}</span>
         <Button type="primary" icon={<DesktopOutlined />} disabled={!canStart} onClick={start}>在此 Server 启动浏览器</Button>
         <span>不支持的 Server 不会回退到本机；权限在启动时检查，不会自动申请。</span>
-        <span>断开不代表原生进程已退出。此入口尚未关联 OAuth 账号，代理未接入。</span>
+        <span>{scope?.scope === 'account' ? '账号资料由 Server 持久保存；关闭窗口不会删除 Cookie 或站点数据。' : '任务资料不会自动转移到账号资料；代理绑定与跨平台宿主仍在后续阶段。'}</span>
       </div> : !active ? <span className={styles.hint}>{phases[state]}，正在等待执行 Server 的画面…</span> : null}
       <canvas ref={canvasRef} className={styles.canvas} tabIndex={interactive ? 0 : -1}
         aria-label="实时浏览器画面；单指轻点或滑动滚动，中文和软键盘请使用文字输入"

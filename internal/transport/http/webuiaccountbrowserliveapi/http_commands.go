@@ -1,7 +1,9 @@
 package webuiaccountbrowserliveapi
 
 import (
+	"context"
 	"crypto/subtle"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -84,5 +86,48 @@ func (session *httpSession) enqueue(command accountbrowserview.Command) (int, st
 	default:
 		session.cancel()
 		return http.StatusTooManyRequests, "browser_control_backpressure"
+	}
+}
+
+func resolveScope(ctx context.Context, resolver ScopeResolver, request ScopeRequest) (Scope, error) {
+	request.Scope = strings.TrimSpace(request.Scope)
+	request.Provider = strings.TrimSpace(request.Provider)
+	request.AccountRef = strings.TrimSpace(request.AccountRef)
+	if request.Scope == "" {
+		request.Scope = ScopeTask
+	}
+	switch request.Scope {
+	case ScopeTask:
+		if request.Provider != "" || request.AccountRef != "" {
+			return Scope{}, ErrInvalidScope
+		}
+		return Scope{Kind: ScopeTask}, nil
+	case ScopeAccount:
+		if request.Provider == "" || request.AccountRef == "" || resolver == nil {
+			return Scope{}, ErrAccountScopeRequired
+		}
+		resolved, err := resolver.Resolve(ctx, request)
+		if err != nil {
+			return Scope{}, err
+		}
+		if resolved.Kind != ScopeAccount || strings.TrimSpace(resolved.DataDir) == "" {
+			return Scope{}, ErrScopeUnavailable
+		}
+		return resolved, nil
+	default:
+		return Scope{}, ErrInvalidScope
+	}
+}
+
+func writeScopeError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidScope):
+		writeError(w, http.StatusBadRequest, "invalid_browser_scope")
+	case errors.Is(err, ErrAccountScopeRequired):
+		writeError(w, http.StatusBadRequest, "browser_account_scope_required")
+	case errors.Is(err, ErrScopeUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "browser_account_scope_unavailable")
+	default:
+		writeError(w, http.StatusNotFound, "browser_account_not_found")
 	}
 }

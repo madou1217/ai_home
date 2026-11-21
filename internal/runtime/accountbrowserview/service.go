@@ -26,6 +26,20 @@ func (s *Service) Supported() bool { return s != nil && platformSupported() && f
 // Serve owns one controller and never accepts a client-supplied native PID.
 // The explicit start command is the user consent boundary for foreground UI.
 func (s *Service) Serve(ctx context.Context, t Transport) (resultErr error) {
+	return s.serve(ctx, t, "")
+}
+
+// ServeScoped uses a server-validated durable account profile directory. The
+// directory is never accepted from the browser client and is not exposed over
+// HTTP. An empty directory keeps the project-studio task scope.
+func (s *Service) ServeScoped(ctx context.Context, t Transport, dataDir string) (resultErr error) {
+	if dataDir == "" {
+		return surfaceFailure("browser_storage_unavailable")
+	}
+	return s.serve(ctx, t, dataDir)
+}
+
+func (s *Service) serve(ctx context.Context, t Transport, dataDir string) (resultErr error) {
 	if !s.Supported() {
 		return ErrUnsupported
 	}
@@ -88,9 +102,12 @@ func (s *Service) Serve(ctx context.Context, t Transport) (resultErr error) {
 		_ = t.Send(ctx, Event{Type: "error", Error: "browser_system_permission_required"})
 		return errPermission
 	}
-	dir, err := s.sessionDir()
-	if err != nil {
-		return err
+	dir := dataDir
+	if dir == "" {
+		dir, err = s.sessionDir()
+		if err != nil {
+			return err
+		}
 	}
 	host, err := accountbrowserhost.New(accountbrowserhost.Options{SessionDir: dir, Interactive: true})
 	if err != nil {

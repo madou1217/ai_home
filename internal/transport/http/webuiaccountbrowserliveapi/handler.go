@@ -47,25 +47,65 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+const (
+	ScopeTask    = "task"
+	ScopeAccount = "account"
+)
+
+var (
+	ErrInvalidScope         = errors.New("invalid browser scope")
+	ErrScopeUnavailable     = errors.New("browser scope unavailable")
+	ErrAccountScopeRequired = errors.New("account browser scope requires a durable profile")
+)
+
+// ScopeRequest is the only scope data accepted from the WebUI. It contains
+// stable account identifiers, never a filesystem path or a native process id.
+type ScopeRequest struct {
+	Scope      string `json:"scope,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	AccountRef string `json:"accountRef,omitempty"`
+}
+
+// Scope is server-owned runtime selection. DataDir never enters an HTTP
+// response and must only be returned by a server-side ScopeResolver.
+type Scope struct {
+	Kind    string
+	DataDir string
+}
+
+// ScopeResolver validates an account identity and returns its private profile
+// directory. Implementations must fail closed and must not trust a client path.
+type ScopeResolver interface {
+	Resolve(context.Context, ScopeRequest) (Scope, error)
+}
+
 // Runtime is the transport-facing port implemented by the browser view runtime.
 type Runtime interface {
 	Supported() bool
 	Serve(ctx context.Context, transport accountbrowserview.Transport) error
 }
 
+// ScopedRuntime is optional to preserve task-scope compatibility for hosts that
+// have not yet implemented durable account partitions.
+type ScopedRuntime interface {
+	ServeScoped(ctx context.Context, transport accountbrowserview.Transport, dataDir string) error
+}
+
 // Dependencies configures a live account browser HTTP/WebSocket Handler.
 type Dependencies struct {
-	Authorizer Authorizer
-	Runtime    Runtime
+	Authorizer    Authorizer
+	Runtime       Runtime
+	ScopeResolver ScopeResolver
 }
 
 // Handler serves capability discovery and the authenticated loopback WebSocket
 // channel for a single task-scoped interactive browser surface.
 type Handler struct {
-	authorizer Authorizer
-	runtime    Runtime
-	streamMu   sync.Mutex
-	stream     *httpSession
+	authorizer    Authorizer
+	runtime       Runtime
+	scopeResolver ScopeResolver
+	streamMu      sync.Mutex
+	stream        *httpSession
 }
 
 // NewHandler validates dependencies and returns a fail-closed Handler.
@@ -74,8 +114,9 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		runtime:    dependencies.Runtime,
+		authorizer:    dependencies.Authorizer,
+		runtime:       dependencies.Runtime,
+		scopeResolver: dependencies.ScopeResolver,
 	}, nil
 }
 
@@ -114,13 +155,20 @@ func (h *Handler) serveCapabilities(w http.ResponseWriter, r *http.Request) {
 	}); ok {
 		caps = provider.Capabilities(r.Context())
 	}
+	scopes := []string{ScopeTask}
+	if h.scopeResolver != nil {
+		if _, ok := h.runtime.(ScopedRuntime); ok {
+			scopes = append(scopes, ScopeAccount)
+		}
+	}
 	writeJSON(w, http.StatusOK, struct {
 		accountbrowserview.Capabilities
 		OK         bool     `json:"ok"`
 		Electron   bool     `json:"electron"`
 		Scope      string   `json:"scope"`
+		Scopes     []string `json:"scopes"`
 		Transports []string `json:"transports"`
-	}{caps, true, false, "single-task-window", []string{"http-stream-v1"}})
+	}{caps, true, false, "server-bound", scopes, []string{"http-stream-v1"}})
 }
 
 func isLoopbackRemoteAddr(remoteAddr string) bool {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { writeClipboardText } from '@/utils/clipboard';
 import { Button, Card, Collapse, Input, Modal, Space, Tooltip, Typography, message } from 'antd';
 import { CopyOutlined, GlobalOutlined } from '@ant-design/icons';
@@ -246,9 +247,28 @@ export function AuthProgressModal({
   onStartSocialDevice
 }: AuthProgressModalProps) {
   // 服务端中介流程（zcode server-flow）：没有本机回调，界面只展示授权链接并等待上游轮询结果。
+  const navigate = useNavigate();
   const sessionFlow = Boolean(
     addJob?.sessionFlow || /:server-flow$/.test(String(addJob?.authStrategy || ''))
   );
+  const openEmbeddedBrowser = (value: string) => {
+    const text = String(value || '').trim();
+    const jobId = String(addJob?.id || '').trim();
+    if (!text || !jobId) return;
+    try {
+      window.sessionStorage.setItem(`aih:account-browser:oauth:${jobId}`, text);
+      const query = new URLSearchParams({ authJob: jobId });
+      const provider = String(addJob?.provider || '').trim();
+      const accountRef = String(addJob?.accountRef || '').trim();
+      if (provider && accountRef) {
+        query.set('provider', provider);
+        query.set('accountRef', accountRef);
+      }
+      navigate(`/browser?${query.toString()}`);
+    } catch (_error) {
+      message.error('无法打开内置浏览器');
+    }
+  };
 
   // 弹窗自己推进作业状态：父层 SSE/轮询任一失效时，进度仍能从 running 走到终态。
   // 只在弹窗打开且作业仍在运行时查询，终态/关闭立即停止。
@@ -332,14 +352,12 @@ export function AuthProgressModal({
               />
             </Tooltip>
             {options.openable ? (
-              <Tooltip title="在新标签页打开">
+              <Tooltip title="在内置浏览器打开">
                 <Button
                   type="text"
                   size="small"
                   icon={<GlobalOutlined />}
-                  href={text}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  onClick={() => openEmbeddedBrowser(text)}
                 />
               </Tooltip>
             ) : null}

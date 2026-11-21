@@ -32,7 +32,7 @@ import {
 import { Tooltip } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
-import { buildServerScopedAppHref } from '@/services/app-navigation';
+import OfficeBrowserWindow from './OfficeBrowserWindow';
 import OfficeComputerSettings, { type ComputerSettingsTab } from './OfficeComputerSettings';
 import OfficeMailbox from './OfficeMailbox';
 import {
@@ -226,6 +226,7 @@ export function SessionDesktop({
   const [dualSpanFull, setDualSpanFull] = useState<boolean>(false);
   const [standbyMailOpen, setStandbyMailOpen] = useState<boolean>(false);
   const [portalOrigin, setPortalOrigin] = useState<DesktopOriginRect | null>(null);
+  const [browserWindow, setBrowserWindow] = useState<{ identity: string; minimized: boolean } | null>(null);
 
   const shellRef = useRef<HTMLDivElement | null>(null);
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +293,16 @@ export function SessionDesktop({
     terminalHostRef,
     onRefreshAll,
   });
+
+  const browserAllowed = Boolean(open && isPoweredOn && sessionScopeAdmitted
+    && resolvedServerId.trim() && resolvedSessionKey && !isTerminating);
+  const browserWindowOpen = browserAllowed && browserWindow?.identity === desktopIdentity;
+  const browserWindowVisible = browserWindowOpen && !browserWindow?.minimized;
+
+  useEffect(() => {
+    // Render guards unmount the old viewer immediately; never restore it on another identity or after power-off.
+    setBrowserWindow((current) => browserAllowed && current?.identity === desktopIdentity ? current : null);
+  }, [browserAllowed, desktopIdentity]);
 
   // Subscribe coworker pills to power preference updates across the room.
   const storeRevision = useOfficeComputerStoreRevision();
@@ -1839,6 +1850,14 @@ export function SessionDesktop({
               </aside>
             ) : null}
           </div>
+          {browserWindowVisible ? (
+            <OfficeBrowserWindow
+              key={desktopIdentity}
+              requiredServerId={resolvedServerId}
+              onMinimize={() => setBrowserWindow((current) => current ? { ...current, minimized: true } : null)}
+              onClose={() => setBrowserWindow(null)}
+            />
+          ) : null}
         </main>
 
         {/* Bottom Desktop Dock / Taskbar */}
@@ -1877,20 +1896,26 @@ export function SessionDesktop({
               ) : null}
             </button>
 
-            {resolvedServerId.trim() ? (
-              <a
-                className="session-desktop-dock-pill"
-                style={{ textDecoration: 'none' }}
-                href={buildServerScopedAppHref('/browser', resolvedServerId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="在新标签页打开所选 Server 的任务浏览器"
-                title="在新标签页打开任务浏览器；需手动启动，尚未绑定账号"
-              >
-                <GlobalOutlined />
-                <span>任务浏览器</span>
-              </a>
-            ) : null}
+            <button
+              type="button"
+              className="session-desktop-dock-pill"
+              disabled={!browserAllowed}
+              data-active={browserWindowVisible ? 'true' : undefined}
+              data-minimized={browserWindowOpen && !browserWindowVisible ? 'true' : undefined}
+              aria-label="在虚拟电脑内部打开或恢复任务浏览器窗口"
+              aria-expanded={browserWindowVisible}
+              title={!browserAllowed
+                ? '任务浏览器需要已开机的虚拟电脑及明确的 Server 和会话身份'
+                : browserWindowVisible
+                  ? '最小化任务浏览器并释放控制连接（后台会话不变）'
+                  : '在虚拟电脑内部打开任务浏览器；需手动启动，尚未绑定账号'}
+              onClick={() => setBrowserWindow((current) => current?.identity === desktopIdentity
+                ? { ...current, minimized: !current.minimized }
+                : { identity: desktopIdentity, minimized: false })}
+            >
+              <GlobalOutlined />
+              <span>任务浏览器</span>
+            </button>
 
             <button
               type="button"

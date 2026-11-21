@@ -18,6 +18,8 @@ export interface BrowserSurfaceEvent {
 
 export interface BrowserCapabilities {
   supported: boolean;
+  scope?: string;
+  scopes?: string[];
   hostOS?: string;
   hostArch?: string;
   reason?: string;
@@ -55,9 +57,16 @@ export async function readBrowserCapabilities(signal?: AbortSignal): Promise<Bro
   return caps;
 }
 
+export type BrowserSurfaceScope = {
+  scope?: 'task' | 'account';
+  provider?: string;
+  accountRef?: string;
+};
+
 export function connectBrowserSurface(
   onEvent: (event: BrowserSurfaceEvent) => void,
   onClose: () => void,
+  requestedScope: BrowserSurfaceScope = {},
 ) {
   const target = resolveActiveTransportTarget();
   const controller = new AbortController();
@@ -152,8 +161,11 @@ export function connectBrowserSurface(
     refreshIdle();
     try {
       if (!isCurrent(target)) { close(); return; }
+      const scopeBody: BrowserSurfaceScope = requestedScope.scope === 'account'
+        ? { scope: 'account', provider: requestedScope.provider, accountRef: requestedScope.accountRef }
+        : { scope: 'task' };
       const response = await fetchAuthorizedWebUiResource(`${basePath}/stream`, {
-        method: 'POST', body: '{}',
+        method: 'POST', body: JSON.stringify(scopeBody),
         headers: { 'content-type': 'application/json' },
         cache: 'no-store', signal: controller.signal,
       }, target);

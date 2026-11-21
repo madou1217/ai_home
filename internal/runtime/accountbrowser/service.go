@@ -58,6 +58,13 @@ func (s *Service) Ensure(ctx context.Context, identity Identity) (Profile, bool,
 	return profile, created, err
 }
 
+// EnsureDataDir ensures the durable profile and returns its private data
+// directory for an attached runtime. The path stays inside the runtime
+// boundary and is never serialized into an HTTP response.
+func (s *Service) EnsureDataDir(ctx context.Context, identity Identity) (Profile, string, bool, error) {
+	return s.ensureWithDataDir(ctx, identity)
+}
+
 func (s *Service) ensureWithDataDir(ctx context.Context, identity Identity) (Profile, string, bool, error) {
 	if s == nil || s.store == nil {
 		return Profile{}, "", false, fmt.Errorf("service is not initialized: %w", ErrUnsafePath)

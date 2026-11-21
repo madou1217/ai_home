@@ -356,13 +356,10 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 **无遗留项。** 已迁移模块的本地实现全部保留为 fallback（执行点不可用/注入 fs 替身时使用），
 不是死代码；每个导出的函数仍有真实调用方。
 
-2026-11-21 复核后，原先列在这里的三处 Node 链接动作已全部处理：
+2026-11-21 复核后，原先列在这里的 Node 链接动作已全部处理：
 
 - opencode auth bridge → `bridgeLinks.authLink`（和共享条目同批下发）；
-- 旧版 `Library/Preferences` 整目录迁移 → `legacyLibraryLinks`；
-- rekey 离线工具（含 `rekey-journal` 的临时链接）**已整体删除**：accountRef 规则不再变化，
-  该工具只是一次性历史迁移；同时删除了仅为它存在的 `account-maintenance-gate` /
-  `account-maintenance-retention`。Go 的在线 `ReKeyAccount`（刷新时身份变化）保留。
+- 旧版 `Library/Preferences` 整目录迁移 → `legacyLibraryLinks`。
 
 会话条目的**内容合并**（`mergeEntryIntoStore` 的 rename 并集、同内容文件丢弃）仍由 Node
 承担：那是数据归属决策而非链接动作，执行点只负责"接回宿主存储"的最后一步。

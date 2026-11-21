@@ -218,9 +218,7 @@ provider 私有名、投影根清单）并通过 `lib/runtime/artifact-service-c
 家族条目、Windows shim 硬链、opencode 三投影桥、CLI 共享配置、工具配置条目链接。
 做法与逐项实测见 [`2026-11-21-go-artifactstore.md`](2026-11-21-go-artifactstore.md)。
 
-Node 链接动作已全部迁入执行点；离线 rekey 工具（含临时链接）已于 2026-11-21 整体删除
-（accountRef 规则不再变化），Go 在线 `ReKeyAccount` 保留。会话条目的内容合并仍属
-Node 的数据归属决策。
+Node 链接动作已全部迁入执行点；会话条目的内容合并仍属 Node 的数据归属决策。
 
 仍保留的行为（设计选择，不是缺口）：
 

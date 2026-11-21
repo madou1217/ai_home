@@ -52,6 +52,7 @@ type Request struct {
 	FamilyLinks     []FamilyLink          `json:"familyLinks,omitempty"`
 	HardlinkRepairs []HardlinkRepair      `json:"hardlinkRepairs,omitempty"`
 	BridgeLinks     *BridgeLinks          `json:"bridgeLinks,omitempty"`
+	FileLinks       []FileLink            `json:"fileLinks,omitempty"`
 	Prune           *PruneOptions         `json:"prune,omitempty"`
 }
 
@@ -158,6 +159,7 @@ type Response struct {
 	FamilyLinks     *FamilyLinkResult      `json:"familyLinks,omitempty"`
 	HardlinkRepairs []HardlinkRepairResult `json:"hardlinkRepairs,omitempty"`
 	BridgeLinks     *BridgeLinkResult      `json:"bridgeLinks,omitempty"`
+	FileLinks       *FileLinkResult        `json:"fileLinks,omitempty"`
 	Errors          []string               `json:"errors"`
 }
 
@@ -199,6 +201,10 @@ func Ensure(request Request) Response {
 	}
 	if len(request.HardlinkRepairs) > 0 {
 		response.HardlinkRepairs = applyHardlinkRepairs(request)
+	}
+	if len(request.FileLinks) > 0 {
+		applied := applyFileLinks(request)
+		response.FileLinks = &applied
 	}
 	if request.BridgeLinks != nil {
 		applied := applyBridgeLinks(*request.BridgeLinks, request.Platform)

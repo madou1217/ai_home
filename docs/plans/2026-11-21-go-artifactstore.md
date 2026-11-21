@@ -285,6 +285,22 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
      与旧实现一致）。
 3. Windows 分支沿用同一 `createBridgeLink`：目录走 junction、文件走 symlink。
 
+## CLI 共享配置链接（2026-11-21 已迁移）
+
+`linkSharedConfigForProjection`（登录/首启）拆成两段：
+
+- Node：判断是否 CLI 配置根、把真实配置文件**合并**进规范存储（会写文件，属业务逻辑）、
+  合并后删掉旧文件；
+- Go（`fileLinks`）：对 `settings.json` / `statusline-command.sh` / `argv.json`
+  建 file 软链；目标不存在则跳过（不建悬挂），位置已存在则跳过，失败静默（best-effort）。
+
+实测：
+
+- 合成 fixture（合并 + 缺失 + 已链接）：Node 与 Go 的 `{linked, merged}`、二次运行、目录快照一致；
+- 真实 19 个 buddy 配置根：第一次（node）为每个账号补建了缺失的 3 条配置链接（模块本来的
+  自愈行为，等同登录时执行），规范存储里三个文件的 mtime 未变（没有内容合并）；之后
+  node/go 两次运行结果完全一致。
+
 ## 遗留项清单（2026-11-21 复核）
 
 **已迁移模块的本地实现全部保留为 fallback**（执行点不可用/注入 fs 替身时使用），不是死代码；
@@ -292,7 +308,6 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 
 | 位置 | 动作 | 为什么不迁（或待迁） |
 |---|---|---|
-| `codebuddy-shared-config.linkSharedConfigForProjection` | 为 CLI 共享配置（settings.json / statusline / argv.json / plugins）建 **file 软链** | 可与合并共用一次 `fileLinks` 迁移；合并本身会写文件，属于业务逻辑 |
 | `cli/services/session-store.js` | 工具配置目录与会话条目的建链/修复（约 2000 行的一部分） | 与 kimi 旧布局迁移、视图索引重建耦合，需单独切片 |
 | `cli/services/account/rekey-journal.js` | rekey 事务的临时链接（`before/after` 交换） | 与 journal 写盘成对出现，强事务语义，迁移收益低、风险高 |
 

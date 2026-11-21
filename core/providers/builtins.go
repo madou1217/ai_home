@@ -266,6 +266,7 @@ func builtinAntigravity() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "antigravity"},
+		Storage:      &StorageFacts{NativeRoot: &[]string{".gemini", "antigravity-cli"}},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOptionWithStrategy(AuthModeOAuthBrowser, "aih-google-oauth", "Antigravity 直连 Google 登录", "由 AI Home 直接完成 Google OAuth，不需要安装 Antigravity CLI。"),
@@ -323,6 +324,7 @@ func builtinOpenCode() Definition {
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
+		Storage:        &StorageFacts{NativeRoot: &[]string{".local", "share", "opencode"}},
 		NativeBoundary: nativeOpenCode(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
@@ -420,6 +422,8 @@ func builtinQoder() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
+		// qoder 只做账号投影，没有独立原生数据根。
+		Storage:      &StorageFacts{NativeRoot: &[]string{}},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		// usage_scan：扫描本地会话历史（projects/<project>/<session>.jsonl）建立会话/prompt
 		// 索引，并在 assistant 记录带 usage 时统计 token。**2026-10-15 在 Windows 真机核实：
@@ -491,6 +495,8 @@ func builtinQoderCN() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
+		// qodercn 只做账号投影，没有独立原生数据根。
+		Storage:      &StorageFacts{NativeRoot: &[]string{}},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},

@@ -3,6 +3,8 @@
 // 该包只保存稳定身份、声明式能力和跨语言生成所需的数据，不能依赖 Server、Web 或具体 I/O 实现。
 package providers
 
+import "strings"
+
 // SchemaVersion 是 Provider 跨语言合同的当前版本。
 //
 // 2: Definition 新增 family/site，Client 投影同步暴露，用于把国内站/国际站
@@ -214,12 +216,35 @@ func (definition Definition) CredentialFacts() CredentialFacts {
 
 // StorageFacts 是 Provider 自己的本地存储布局事实。
 type StorageFacts struct {
+	// NativeRoot 是存储策略使用的主数据根（HOME 相对段）。
+	// nil 表示使用 CLI.GlobalDir；显式空切片表示该 Provider 没有原生数据根
+	// （qoder 只做账号投影）。需要与配置根区分时显式声明（opencode 的配置根是
+	// .config/opencode，原生数据根是 .local/share/opencode）。
+	NativeRoot *[]string `json:"nativeRoot,omitempty"`
 	// DefaultAuthFile 是该 Provider 在共享 auth 目录下的默认凭据文件名。
 	DefaultAuthFile string `json:"defaultAuthFile,omitempty"`
 	// IDEDataName 是 electron userData / Application Support 下的产品目录名。
 	IDEDataName string `json:"ideDataName,omitempty"`
 	// SessionRoots 是同一物理会话存储在家族内的候选根（HOME 相对，按优先级）。
 	SessionRoots []string `json:"sessionRoots,omitempty"`
+}
+
+// EffectiveNativeRoot 返回存储策略使用的主数据根。
+//
+// 默认取 CLI.GlobalDir；Storage.NativeRoot 显式声明时优先（包括显式空切片）。
+func (definition Definition) EffectiveNativeRoot() []string {
+	if definition.Storage != nil && definition.Storage.NativeRoot != nil {
+		// 显式空切片要保持非 nil：调用方用 len 判断，不看 nil 语义。
+		return append([]string{}, (*definition.Storage.NativeRoot)...)
+	}
+	if definition.CLI == nil {
+		return nil
+	}
+	dir := strings.TrimSpace(definition.CLI.GlobalDir)
+	if dir == "" {
+		return nil
+	}
+	return strings.Split(dir, "/")
 }
 
 // Upstream 是 Provider 的官方上游事实。

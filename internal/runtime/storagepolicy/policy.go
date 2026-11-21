@@ -93,7 +93,6 @@ var providerOrder = []string{
 
 var policies = map[string]Policy{
 	"codex": {
-		NativeRoot:      []string{".codex"},
 		RuntimeHomeRoot: []string{".codex", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("auth", "json", false, ".codex", "auth.json"),
@@ -106,7 +105,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: []string{".tmp", "model", "images"},
 	},
 	"claude": {
-		NativeRoot:      []string{".claude"},
 		RuntimeHomeRoot: []string{".claude", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, ".claude", ".credentials.json"),
@@ -118,7 +116,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"gemini": {
-		NativeRoot:      []string{".gemini"},
 		RuntimeHomeRoot: []string{".gemini", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("oauthCreds", "json", false, ".gemini", "oauth_creds.json"),
@@ -130,7 +127,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"agy": {
-		NativeRoot:      []string{".gemini", "antigravity-cli"},
 		RuntimeHomeRoot: []string{".gemini", "antigravity-cli", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("oauthToken", "json", false, ".gemini", "antigravity-cli", "antigravity-oauth-token"),
@@ -146,7 +142,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"opencode": {
-		NativeRoot:      []string{".local", "share", "opencode"},
 		RuntimeHomeRoot: []string{".local", "share", "opencode", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("auth", "json", false, ".local", "share", "opencode", "auth.json"),
@@ -160,7 +155,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"grok": {
-		NativeRoot:       []string{".grok"},
 		HostAuthRoot:     emptySegments,
 		RuntimeHomeRoot:  []string{".grok", RuntimeHomeDir},
 		AttachmentSubdir: attachments,
@@ -172,7 +166,6 @@ var policies = map[string]Policy{
 		},
 	},
 	"kimi": {
-		NativeRoot:      []string{".kimi-code"},
 		HostAuthRoot:    emptySegments,
 		RuntimeHomeRoot: []string{".kimi-code", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -188,7 +181,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"zcode": {
-		NativeRoot:      []string{".zcode"},
 		HostAuthRoot:    emptySegments,
 		RuntimeHomeRoot: []string{".zcode", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -202,7 +194,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"kiro": {
-		NativeRoot:   []string{".kiro"},
 		HostAuthRoot: []string{".local", "share", "kiro-cli"},
 		AuthArtifacts: []Artifact{
 			credential("database", "binary-base64", false, "data.sqlite3"),
@@ -214,7 +205,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"cline": {
-		NativeRoot:       []string{".cline"},
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
 		AuthArtifacts: []Artifact{
@@ -228,7 +218,6 @@ var policies = map[string]Policy{
 		},
 	},
 	"qoder": {
-		NativeRoot:      emptySegments,
 		HostAuthRoot:    []string{".qoder"},
 		RuntimeHomeRoot: []string{RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -244,7 +233,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"qodercn": {
-		NativeRoot:      emptySegments,
 		HostAuthRoot:    []string{".qoder-cn"},
 		RuntimeHomeRoot: []string{RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -260,7 +248,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"codebuddy": {
-		NativeRoot:      []string{".codebuddy"},
 		HostAuthRoot:    emptySegments,
 		RuntimeHomeRoot: []string{".codebuddy", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -270,7 +257,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"codebuddycn": {
-		NativeRoot:      []string{".codebuddy-cn"},
 		HostAuthRoot:    emptySegments,
 		RuntimeHomeRoot: []string{".codebuddy-cn", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -280,7 +266,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"workbuddy": {
-		NativeRoot:      []string{".workbuddy-ai"},
 		HostAuthRoot:    emptySegments,
 		RuntimeHomeRoot: []string{".workbuddy-ai", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -290,7 +275,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"workbuddycn": {
-		NativeRoot:      []string{".workbuddy"},
 		HostAuthRoot:    emptySegments,
 		RuntimeHomeRoot: []string{".workbuddy", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
@@ -299,6 +283,23 @@ var policies = map[string]Policy{
 		PrivateArtifacts: codebuddyFamilyPrivate(""),
 		AttachmentSubdir: attachments,
 	},
+}
+
+// init 用 Provider 合同填充主数据根：CLI.GlobalDir 是默认值，
+// Storage.NativeRoot 只声明真正不同的特例（agy / opencode / qoder）。
+func init() {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		panic("storagepolicy: Provider 合同无效: " + err.Error())
+	}
+	for providerID, policy := range policies {
+		definition, found := catalog.Get(providerID)
+		if !found {
+			continue
+		}
+		policy.NativeRoot = definition.EffectiveNativeRoot()
+		policies[providerID] = policy
+	}
 }
 
 // Normalize lowercases and trims a provider name, returning "" when the

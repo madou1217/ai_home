@@ -120,8 +120,8 @@ func IsAuthArtifactPath(filePath string) bool {
 	if len(parts) == 0 {
 		return false
 	}
-	for _, provider := range providerOrder {
-		for _, artifact := range policies[provider].AuthArtifacts {
+	for _, policy := range providerPolicies() {
+		for _, artifact := range policy.AuthArtifacts {
 			if matchesSuffix(parts, normalizeSegments(artifact.Path)) {
 				return true
 			}
@@ -141,8 +141,8 @@ func IsPrivateArtifactPath(filePath string) bool {
 	if IsAuthArtifactPath(filePath) {
 		return true
 	}
-	for _, provider := range providerOrder {
-		for _, artifact := range policies[provider].PrivateArtifacts {
+	for _, policy := range providerPolicies() {
+		for _, artifact := range policy.PrivateArtifacts {
 			if matchesSuffix(parts, normalizeSegments(artifact.Path)) {
 				return true
 			}

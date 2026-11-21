@@ -508,6 +508,7 @@ func builtinGrok() Definition {
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
@@ -552,7 +553,8 @@ func builtinQoder() Definition {
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
 		// qoder 只做账号投影，没有独立原生数据根。
 		Storage: &StorageFacts{
-			NativeRoot: &[]string{},
+			NativeRoot:   &[]string{},
+			HostAuthRoot: &[]string{".qoder"},
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseHome, Path: ".auth/user", Format: "text"},
 				{Field: "machineId", Base: ArtifactBaseHome, Path: ".auth/machine_id", Format: "text", Optional: true},
@@ -638,7 +640,8 @@ func builtinQoderCN() Definition {
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
 		// qodercn 只做账号投影，没有独立原生数据根。
 		Storage: &StorageFacts{
-			NativeRoot: &[]string{},
+			NativeRoot:   &[]string{},
+			HostAuthRoot: &[]string{".qoder-cn"},
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseHome, Path: ".auth/user", Format: "text"},
 				{Field: "machineId", Base: ArtifactBaseHome, Path: ".auth/machine_id", Format: "text", Optional: true},
@@ -728,6 +731,7 @@ func builtinKimi() Definition {
 				{Base: ArtifactBaseNative, Path: "session_index.jsonl"},
 			},
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
@@ -854,6 +858,7 @@ func builtinZcode() Definition {
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
@@ -952,6 +957,7 @@ func builtinCodebuddy() Definition {
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 			DefaultAuthFile:  "Tencent-Cloud.coding-copilot.info",
 			IDEDataName:      "CodeBuddy",
 			SessionRoots:     []string{".codebuddy", ".workbuddy-ai"},
@@ -1082,6 +1088,7 @@ func builtinCodebuddyCN() Definition {
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 			DefaultAuthFile:  "workbuddy-desktop.info",
 			IDEDataName:      "CodeBuddy CN",
 			SessionRoots:     []string{".codebuddy-cn", ".workbuddy"},
@@ -1191,6 +1198,7 @@ func builtinWorkbuddy() Definition {
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(false),
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 			DefaultAuthFile:  "workbuddy-desktop-ai.info",
 			IDEDataName:      "WorkBuddy AI",
 			SessionRoots:     []string{".workbuddy-ai", ".codebuddy"},
@@ -1305,6 +1313,7 @@ func builtinWorkbuddyCN() Definition {
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(false),
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 			DefaultAuthFile:  "workbuddy-desktop.info",
 			IDEDataName:      "WorkBuddy",
 			SessionRoots:     []string{".workbuddy", ".codebuddy-cn"},
@@ -1407,6 +1416,7 @@ func builtinCline() Definition {
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 			AttachmentSubdir: defaultAttachmentSubdir(),
+			HostAuthRoot:     &[]string{},
 		},
 		NativeBoundary: nativeCline(),
 		// cline 走 relaycore 的同协议透传通道（internal/transport/http/clinerelay）：

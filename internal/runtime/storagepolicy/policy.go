@@ -17,7 +17,6 @@ import (
 	"sync"
 
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // RuntimeHomeDir is the per-provider runtime directory name appended to
@@ -48,10 +47,6 @@ type Policy struct {
 // FamilyProviders is the CodeBuddy family membership list (single source of
 // truth: core/providers CodeBuddyFamilyProviders).
 var FamilyProviders = providers.CodeBuddyFamilyProviders()
-
-var (
-	emptySegments = []string{}
-)
 
 // expandAuthArtifacts 把合同声明的相对路径展开为策略使用的 HOME 相对段。
 // Base=native 追加 NativeRoot，config 追加 CLI.GlobalDir；home/hostAuth 保持原样
@@ -117,83 +112,56 @@ var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
 	return catalog
 })
 
-var providerOrder = []string{
-	"codex", "claude", "gemini", "agy", "opencode", "grok", "kimi", "zcode",
-	"kiro", "cline", "qoder", "qodercn", "codebuddy", "codebuddycn",
-	"workbuddy", "workbuddycn",
-}
-
-var policies = map[string]Policy{
-	"codex":    {},
-	"claude":   {},
-	"gemini":   {},
-	"agy":      {},
-	"opencode": {},
-	"grok": {
-		HostAuthRoot: emptySegments,
-	},
-	"kimi": {
-		HostAuthRoot: emptySegments,
-	},
-	"zcode": {
-		HostAuthRoot: emptySegments,
-	},
-	"kiro": {},
-	"cline": {
-		HostAuthRoot: emptySegments,
-	},
-	"qoder": {
-		HostAuthRoot: providerroot.ConfigRoot("qoder"),
-	},
-	"qodercn": {
-		HostAuthRoot: providerroot.ConfigRoot("qodercn"),
-	},
-	"codebuddy": {
-		HostAuthRoot: emptySegments,
-	},
-	"codebuddycn": {
-		HostAuthRoot: emptySegments,
-	},
-	"workbuddy": {
-		HostAuthRoot: emptySegments,
-	},
-	"workbuddycn": {
-		HostAuthRoot: emptySegments,
-	},
-}
-
-// init 用 Provider 合同填充主数据根：CLI.GlobalDir 是默认值，
-// Storage.NativeRoot 只声明真正不同的特例（agy / opencode / qoder）。
-func init() {
-	catalog := builtinCatalog()
-	for providerID, policy := range policies {
-		definition, found := catalog.Get(providerID)
-		if !found {
+// providerPolicies 只构造一次：每个 Provider 的策略完全由其合同定义导出，
+// 不再维护 Provider→策略的中央表。
+var providerPolicies = sync.OnceValue(func() map[string]Policy {
+	definitions := builtinCatalog().List()
+	out := make(map[string]Policy, len(definitions))
+	for _, definition := range definitions {
+		name := normalizeName(definition.ID)
+		if name == "" {
 			continue
 		}
-		policy.NativeRoot = definition.EffectiveNativeRoot()
-		policy.AuthArtifacts = expandAuthArtifacts(definition)
-		policy.PrivateArtifacts = expandPrivateArtifacts(definition)
-		if definition.Storage != nil {
-			policy.AttachmentSubdir = append([]string{}, definition.Storage.AttachmentSubdir...)
+		out[name] = policyFromDefinition(definition)
+	}
+	return out
+})
+
+var providerOrder = sync.OnceValue(func() []string {
+	definitions := builtinCatalog().List()
+	names := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		if name := normalizeName(definition.ID); name != "" {
+			names = append(names, name)
 		}
-		if definition.Storage != nil && definition.Storage.HostAuthRoot != nil {
+	}
+	return names
+})
+
+func policyFromDefinition(definition providers.Definition) Policy {
+	policy := Policy{
+		NativeRoot:       definition.EffectiveNativeRoot(),
+		AuthArtifacts:    expandAuthArtifacts(definition),
+		PrivateArtifacts: expandPrivateArtifacts(definition),
+	}
+	if definition.Storage != nil {
+		policy.AttachmentSubdir = append([]string{}, definition.Storage.AttachmentSubdir...)
+		if definition.Storage.HostAuthRoot != nil {
 			policy.HostAuthRoot = append([]string{}, (*definition.Storage.HostAuthRoot)...)
 		}
-		if definition.Storage != nil && definition.Storage.NoRuntimeHome {
-			policy.RuntimeHomeRoot = nil
-		} else {
-			policy.RuntimeHomeRoot = append(append([]string{}, policy.NativeRoot...), RuntimeHomeDir)
+		if definition.Storage.NoRuntimeHome {
+			return policy
 		}
-		policies[providerID] = policy
 	}
+	policy.RuntimeHomeRoot = append(append([]string{}, policy.NativeRoot...), RuntimeHomeDir)
+	return policy
 }
 
 // Normalize lowercases and trims a provider name, returning "" when the
 // provider has no storage policy.
 func Normalize(provider string) string {
 	name := normalizeName(provider)
-	if _, ok := policies[name]; !ok {
+	if _, ok := providerPolicies()[name]; !ok {
 		return ""
 	}
 	return name
@@ -205,12 +173,12 @@ func Get(provider string) *Policy {
 	if name == "" {
 		return nil
 	}
-	policy := policies[name]
+	policy := providerPolicies()[name]
 	return &policy
 }
 
 // Names returns the ported provider names in declaration order.
-func Names() []string { return append([]string{}, providerOrder...) }
+func Names() []string { return append([]string{}, providerOrder()...) }
 
 // PrivateEntryNames returns the first-level entry names under the provider's
 // native root that hold credentials or account-private state. Duplicates and

@@ -1578,7 +1578,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -1814,6 +1815,9 @@
             "base": "home",
             "path": "Library/Keychains"
           }
+        ],
+        "hostAuthRoot": [
+          ".qoder"
         ]
       },
       "relayHosts": {
@@ -2055,6 +2059,9 @@
             "base": "home",
             "path": "Library/Keychains"
           }
+        ],
+        "hostAuthRoot": [
+          ".qoder-cn"
         ]
       },
       "relayHosts": {
@@ -2263,7 +2270,8 @@
             "base": "native",
             "path": "session_index.jsonl"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -2715,7 +2723,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -2997,7 +3006,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -3282,7 +3292,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -3540,7 +3551,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -3798,7 +3810,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {
@@ -3995,7 +4008,8 @@
             "base": "home",
             "path": "Library/Keychains"
           }
-        ]
+        ],
+        "hostAuthRoot": []
       },
       "relayHosts": {
         "go": {

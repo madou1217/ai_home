@@ -254,8 +254,8 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"STATE_FILE=" + ShellQuote(options.StateFilePath),
 		"AIH_GO_CLI=" + ShellQuote(wrapperGoBinary(options.HelperScriptPath)),
 	}
-	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理。
-	// run-cli-default / resume 仍由 Node helper 负责。
+	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理；
+	// resume 已切到 __codex-cli-resume；run-cli-default 仍由 Node helper 负责。
 	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
 		goBinary := ""
 		if filepath.IsAbs(options.HelperScriptPath) {
@@ -311,7 +311,11 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"  esac",
 		"done",
 		`if [ "$AIH_SUBCOMMAND" = "resume" ]; then`,
-		`  exec "$NODE_BIN" "$HELPER" --run-cli-resume --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
+		`  if [ ! -x "$AIH_GO_CLI" ]; then`,
+		`    printf '%s\\n' '[aih] codex_cli_resume_go_missing_or_outdated; no Node fallback.' >&2`,
+		"    exit 1",
+		"  fi",
+		`  exec "$AIH_GO_CLI" __codex-cli-resume --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
 		"fi",
 		fmt.Sprintf(`if [ "$AIH_SUBCOMMAND" = "app-server" ] && [ "${%s:-}" = "1" ]; then`, CodexAppServerPassthroughEnv),
 		fmt.Sprintf("  unset %s", CodexAppServerPassthroughEnv),
@@ -424,11 +428,15 @@ func BuildWindowsPowerShellWrapperScript(options WrapperOptions) string {
 		"  break",
 		"}",
 		`if ($subcommand -eq "resume") {`,
-		`  $proxyArgs = @($helper, "--run-cli-resume", "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
+		"  if (-not (Test-Path -LiteralPath $aihGo -PathType Leaf)) {",
+		`    [Console]::Error.WriteLine('[aih] codex_cli_resume_go_missing_or_outdated; no Node fallback.')`,
+		"    exit 1",
+		"  }",
+		`  $proxyArgs = @("__codex-cli-resume", "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
 		"  if ($MyInvocation.ExpectingInput) {",
-		"    $input | & $nodeBin @proxyArgs",
+		"    $input | & $aihGo @proxyArgs",
 		"  } else {",
-		"    & $nodeBin @proxyArgs",
+		"    & $aihGo @proxyArgs",
 		"  }",
 		"  exit $LASTEXITCODE",
 		"}",
@@ -499,7 +507,7 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		"goto :AIH_SCAN_NEXT",
 		":AIH_DISPATCH",
 		`if /I "%AIH_SUBCOMMAND%"=="resume" (`,
-		`  "%NODE_BIN%" "%HELPER%" --run-cli-resume --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
+		`  "%AIH_GO_CLI%" __codex-cli-resume --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
 		"  exit /b %ERRORLEVEL%",
 		")",
 		`if /I "%AIH_SUBCOMMAND%"=="app-server" (`,

@@ -57,7 +57,7 @@
 | W1 | 进行中 | none后续帧、真实tier回传、managed/raw exec resume已修；Mac标准CLI和Windows/Linux真实矩阵通过，metadata版本/完整取消与账号切换矩阵仍缺 |
 | W2 | 进行中 | Mac隔离生命周期及三平台配置/crash恢复有证据；标准CLI已发布，完整三平台托管服务/安装升级矩阵仍缺，禁止共享重启 |
 | W3 | 进行中 | 默认事务/公开入口/exec intent Go归属已提交；Desktop effect、mobile全命令/TAB/OAuth与完整App状态验收仍缺 |
-| W4 | 进行中 | API-key真实刷新/去重/保旧目录、模型写busy/cancel已闭环；真实OAuth轮换/re-key、其他writer及版本贯通UI仍缺 |
+| W4 | 进行中 | API-key真实刷新/去重/保旧目录、模型写busy/cancel已闭环；真实OAuth轮换、其他writer及版本贯通UI仍缺 |
 | W5 | 进行中 | 管理auth/assets/watch及RPC有分项证据；现有Edge缺受支持连接，真实完整页面旅程未验收 |
 | W6 | 进行中 | 其它owner已交付部分native/backup/hooks/包装；仍需逐域子计划/遗留退出/全平台安装服务与最终发布闭环 |
 

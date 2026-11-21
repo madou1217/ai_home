@@ -723,8 +723,8 @@ func (coordinator *Coordinator) executeRouteRound(
 		recruited, err := session.Next(ctx)
 		if errors.Is(err, accountcredentials.ErrCredentialIdentityChanged) && !refreshedCandidateSnapshot && attempted == 0 && !request.IncludeEncryptedReasoning() {
 			if _, pinned := PinnedAccount(ctx); !pinned {
-				// No upstream attempt or output has occurred. Reload once after an
-				// authorized re-key; never reuse a mismatched candidate/binding.
+				// No upstream attempt or output has occurred. Reload once after the
+				// account reference changed; never reuse a mismatched candidate/binding.
 				refreshedCandidateSnapshot = true
 				session, err = coordinator.beginRecruitment(ctx, request, route, upstream)
 				if err == nil {

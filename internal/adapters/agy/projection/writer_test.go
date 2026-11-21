@@ -301,9 +301,9 @@ func TestWriteRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// re-key 场景：Google 侧改了邮箱，刷新回来的凭据是另一个邮箱，投影里的
+// 邮箱变化场景：Google 侧改了邮箱，刷新回来的凭据是另一个邮箱，投影里的
 // 邮箱缓存、账号列表与 id_token_email 都必须跟着变。
-func TestWriteFollowsEmailRekey(t *testing.T) {
+func TestWriteFollowsEmailChange(t *testing.T) {
 	aiHomeDir := t.TempDir()
 	accountRef := "acct_0123456789abcdef0123"
 	runtimeDir := runtimeDirFor(aiHomeDir, accountRef)

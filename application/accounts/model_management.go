@@ -420,13 +420,13 @@ func (management *ModelManagement) RefreshAccountModelSnapshot(
 		}
 		credentialSnapshot = refreshed
 	}
-	// 刷新可能把账号迁移到新的稳定身份（re-key）：后续的模型、探测事实必须落在
-	// 新 AccountRef 上，否则会写回已删除的旧账号。
+	// 后续的模型、探测事实必须落在刷新后快照的 AccountRef 上，避免写回已被
+	// 替换的旧账号。
 	if credentialSnapshot.AccountRef() != accountRef {
 		accountRef = credentialSnapshot.AccountRef()
 	}
 	discovered, credentialSnapshot, err := management.discoverWithCredentialRecovery(ctx, credentialSnapshot)
-	// 恢复也可能 re-key；目录 CAS 与探测事实必须使用恢复后的身份和代次。
+	// 恢复后的快照也可能属于新引用；目录 CAS 与探测事实必须使用恢复后的身份和代次。
 	if credentialSnapshot.IsValid() {
 		accountRef = credentialSnapshot.AccountRef()
 	}

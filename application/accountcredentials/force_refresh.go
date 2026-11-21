@@ -8,7 +8,7 @@ import (
 
 // ForceRefreshCredentialBindingIfCurrent 仅在被上游拒绝的凭据仍为当前代次时强制刷新。
 // 已安装的新版本直接复用；与预刷新及原 force 入口共用同一 flight 和 CAS 链路。
-// 若其他刷新已完成 re-key 并删除旧引用，读取仍返回存储错误，不猜测新账号身份。
+// 若其他刷新已替换账号引用并删除旧数据，读取仍返回存储错误，不猜测新账号身份。
 func (resolver *Resolver) ForceRefreshCredentialBindingIfCurrent(
 	ctx context.Context,
 	rejected accountapp.CredentialSnapshot,

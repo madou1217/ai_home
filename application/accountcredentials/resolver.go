@@ -41,9 +41,10 @@ var (
 	ErrInvalidRefreshResult = errors.New("账号 OAuth 刷新结果无效")
 	// ErrCredentialNotRefreshable 表示静态凭据或长效 Token 没有官方刷新协议。
 	ErrCredentialNotRefreshable = errors.New("账号凭据不可刷新")
-	// ErrCredentialIdentityChanged means an authorized refresh committed a re-key.
-	// Consumers holding an old routing snapshot must reacquire it, not use the
-	// new binding under the old identity or relax account matching.
+	// ErrCredentialIdentityChanged means a concurrent refresh replaced the
+	// account reference. Consumers holding an old routing snapshot must
+	// reacquire it, not use the new binding under the old identity or relax
+	// account matching.
 	ErrCredentialIdentityChanged = errors.New("账号凭据身份已迁移，需要重新读取候选")
 )
 
@@ -514,7 +515,7 @@ func (resolver *Resolver) refreshCurrent(
 	return resolver.refreshSnapshot(ctx, snapshot, strategy)
 }
 
-// refreshSnapshot 复用已在共享飞行内校验的快照执行刷新及 CAS / re-key。
+// refreshSnapshot 复用已在共享飞行内校验的快照执行刷新及 CAS。
 // 此处不能重新读凭据，否则会越过代次检查并刷新刚被其他调用方替换的新版本。
 func (resolver *Resolver) refreshSnapshot(
 	ctx context.Context,

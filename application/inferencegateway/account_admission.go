@@ -123,8 +123,8 @@ func (coordinator *Coordinator) acquireAttemptSlots(ctx context.Context, invocat
 }
 
 // refreshAdmittedInvocation repeats the existing eligibility/credential policy
-// after waiting. A previous attempt may have throttled, disabled or re-keyed
-// this account while the invocation was queued.
+// after waiting. A previous attempt may have throttled, disabled or replaced
+// this account's credential while the invocation was queued.
 func (coordinator *Coordinator) refreshAdmittedInvocation(ctx context.Context, invocation Invocation, upstream UpstreamAdapter) (Invocation, error) {
 	if invocation.Route().ProviderID() != inference.ProviderClaude {
 		return invocation, nil

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
 
@@ -32,7 +33,7 @@ func codexHome(env []string) (string, error) {
 		if h == "" {
 			return "", fmt.Errorf("codex_exec_home_unavailable")
 		}
-		h = filepath.Join(h, ".codex")
+		h = filepath.Join(h, providerroot.ConfigDir("codex"))
 	}
 	return filepath.Abs(h)
 }

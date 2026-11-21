@@ -73,6 +73,7 @@ function ColumnToolbar<K extends string>({ panes, active, onSelect, ariaLabel, a
 export default function WorkbenchColumns({
   chromeActive = true,
   projectPath,
+  workspace,
   chat,
   sessions = [],
   selectedSession = null,
@@ -388,7 +389,11 @@ export default function WorkbenchColumns({
             ) : null}
             {browserMounted ? (
               <div {...paneProps(rightPane === 'browser')}>
-                <BrowserPanel />
+                <BrowserPanel
+                  requiredServerId={workspace?.serverId}
+                  embedded
+                  active={rightPane === 'browser'}
+                />
               </div>
             ) : null}
           </div>

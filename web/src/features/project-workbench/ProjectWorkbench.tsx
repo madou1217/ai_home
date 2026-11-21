@@ -34,7 +34,7 @@ interface Props {
 function createTab(kind: WorkbenchPanelKind): WorkbenchTab {
   const base = { id: nextTabId(kind), kind, label: PANEL_LABELS[kind], closable: kind !== 'chat' } as const;
   if (kind === 'chat') return { ...base, kind, closable: false };
-  if (kind === 'browser') return { ...base, kind, url: 'http://127.0.0.1:9527' };
+  if (kind === 'browser') return { ...base, kind, url: 'https://www.google.com' };
   if (kind === 'files') return { ...base, kind };
   if (kind === 'terminal') return { ...base, kind };
   return { ...base, kind: 'review' };

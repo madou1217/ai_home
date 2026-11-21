@@ -407,8 +407,8 @@ func (service *Service) refreshCurrent(
 		if !refreshed.IsValid() {
 			return ReadResult{}, ErrInvalidSnapshot
 		}
-		// 刷新可能把账号迁移到新的稳定身份：额度快照必须写到新引用，
-		// 否则会撞上已删除的旧账号。
+		// 刷新后的快照可能属于另一个账号引用：额度快照必须写到快照的
+		// AccountRef，避免撞上已被替换的旧账号。
 		if refreshed.AccountRef() != accountRef {
 			accountRef = refreshed.AccountRef()
 		}

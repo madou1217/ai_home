@@ -7,7 +7,10 @@
 //   - 不共享宿主条目：凭据库与 secrets.json 都是账号私有。
 package clinestorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 Cline 的规范 Provider ID。
 const ProviderID = "cline"
@@ -18,7 +21,7 @@ func Policy() accountprojection.Policy {
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      []string{".cline"},
-		RuntimeHomeRoot: []string{".cline", ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(ProviderID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "auth",

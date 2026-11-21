@@ -22,7 +22,7 @@ func Policy() accountprojection.Policy {
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeFakeHome,
 		NativeRoot:      root,
-		RuntimeHomeRoot: []string{".zcode", ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(ProviderID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:     "credentials",

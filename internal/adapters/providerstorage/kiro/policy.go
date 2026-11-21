@@ -4,7 +4,10 @@
 // （KIRO_TEST_DB_PATH 指向账号目录里的 data.sqlite3）。投影根因此只承载一份数据库。
 package kirostorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 Kiro 的规范 Provider ID。
 const ProviderID = "kiro"
@@ -15,7 +18,7 @@ func Policy() accountprojection.Policy {
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      []string{},
-		RuntimeHomeRoot: []string{".aih-runtime-home"},
+		RuntimeHomeRoot: []string{providerroot.RuntimeHomeDir},
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "database",

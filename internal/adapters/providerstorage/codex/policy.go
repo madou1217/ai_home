@@ -19,7 +19,7 @@ func Policy() accountprojection.Policy {
 		Provider:        "codex",
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      root,
-		RuntimeHomeRoot: []string{".codex", ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome("codex"),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "auth",

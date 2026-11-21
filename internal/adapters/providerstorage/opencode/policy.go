@@ -9,6 +9,7 @@ package opencodestorage
 
 import (
 	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
@@ -24,7 +25,7 @@ func Policy() accountprojection.Policy {
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      []string{".local", "share", "opencode"},
-		RuntimeHomeRoot: []string{".local", "share", "opencode", ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(ProviderID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "auth",

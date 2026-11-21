@@ -22,7 +22,7 @@ func Policy() accountprojection.Policy {
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      root,
-		RuntimeHomeRoot: []string{".gemini", ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(ProviderID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "oauthCreds",

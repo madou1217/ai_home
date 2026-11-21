@@ -19,6 +19,9 @@ var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
 	return catalog
 })
 
+// RuntimeHomeDir 是账号投影下的运行态目录名。
+const RuntimeHomeDir = ".aih-runtime-home"
+
 // NativeRoot 返回 Provider 的生效原生根（HOME 相对段）。
 func NativeRoot(providerID string) []string {
 	definition, found := builtinCatalog().Get(strings.ToLower(strings.TrimSpace(providerID)))
@@ -26,4 +29,9 @@ func NativeRoot(providerID string) []string {
 		return nil
 	}
 	return definition.EffectiveNativeRoot()
+}
+
+// RuntimeHome 返回 <NativeRoot>/.aih-runtime-home。
+func RuntimeHome(providerID string) []string {
+	return append(NativeRoot(providerID), RuntimeHomeDir)
 }

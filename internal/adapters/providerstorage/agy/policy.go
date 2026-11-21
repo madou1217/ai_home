@@ -17,8 +17,7 @@ const ProviderID = "agy"
 
 // runtimeHomeTarget 返回「宿主运行 home 下再加一段路径」的映射目标。
 func runtimeHomeTarget(segments ...string) []string {
-	root := append(append([]string{}, providerroot.NativeRoot(ProviderID)...), ".aih-runtime-home")
-	return append(root, segments...)
+	return append(providerroot.RuntimeHome(ProviderID), segments...)
 }
 
 // sharedNames 是与会话/知识相关的共享条目（与 Node 的 sharedEntries 同序）。

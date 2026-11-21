@@ -4,7 +4,10 @@
 // 凭据落在 <投影>/.auth/user（Opaque blob）与 .auth/machine_id，缓存落在 .cache。
 package qoderstorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderIDs 是共用同一套投影布局的两个 Provider。
 var ProviderIDs = []string{"qoder", "qodercn"}
@@ -20,7 +23,7 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 		Provider:        providerID,
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      []string{},
-		RuntimeHomeRoot: []string{".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(providerID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "credentials",

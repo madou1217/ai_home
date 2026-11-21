@@ -15,6 +15,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountprojection"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // builtinCatalog 只构造一次：家族存储事实由各 Provider 的 Definition 自己声明，
@@ -123,7 +124,7 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 		Provider:        id,
 		Mode:            accountprojection.ModeFakeHome,
 		NativeRoot:      []string{configDir},
-		RuntimeHomeRoot: []string{configDir, ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(id),
 		AuthArtifacts: []accountprojection.Artifact{{
 			Field:     "credentials",
 			Base:      accountprojection.ArtifactBaseHome,

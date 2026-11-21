@@ -21,7 +21,7 @@ func Policy() accountprojection.Policy {
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
 		NativeRoot:      root,
-		RuntimeHomeRoot: []string{".kimi-code", ".aih-runtime-home"},
+		RuntimeHomeRoot: providerroot.RuntimeHome(ProviderID),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
 				Field:  "credentials",

@@ -44,6 +44,8 @@ export interface PeerMessageRecord {
   purpose?: string;
   action?: string;
   replyPolicy?: PeerReplyPolicy;
+  /** -1 低 / 0 普通 / 1 高；旧记录缺省为 0。 */
+  priority?: number;
   autoDeliverUntil?: number;
   expiresAt?: number;
   canceledAt?: number;

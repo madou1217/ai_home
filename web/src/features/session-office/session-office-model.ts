@@ -203,6 +203,7 @@ export function normalizePeerMessageRecord(raw: unknown): PeerMessageRecord | nu
   const waitingReason = readOptionalTrimmedString(record.waitingReason);
   const busySince = readOptionalPositiveTimestamp(record.busySince);
   const probeCount = readOptionalNonNegativeInt(record.probeCount);
+  const priority = Number(record.priority) || 0;
 
   return {
     id,
@@ -234,6 +235,7 @@ export function normalizePeerMessageRecord(raw: unknown): PeerMessageRecord | nu
     ...(waitingReason ? { waitingReason } : {}),
     ...(busySince !== undefined ? { busySince } : {}),
     ...(probeCount !== undefined ? { probeCount } : {}),
+    ...(priority ? { priority } : {}),
   };
 }
 

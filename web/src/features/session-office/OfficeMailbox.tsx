@@ -423,6 +423,16 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
             <span>回复要求：{presentation.replyPolicyLabel}</span>
           </span>
 
+          {Number(messageItem.raw.priority || 0) > 0 ? (
+            <span className="office-mailbox-state-pill office-mailbox-state-pill--warning">
+              <span>加急</span>
+            </span>
+          ) : Number(messageItem.raw.priority || 0) < 0 ? (
+            <span className="office-mailbox-state-pill office-mailbox-state-pill--neutral">
+              <span>低优先级</span>
+            </span>
+          ) : null}
+
           {messageItem.isCrossProject ? (
             <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
               <SwapOutlined aria-hidden="true" />
@@ -1689,6 +1699,16 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
                       {presentation.legacyCategory ? (
                         <span className="office-mailbox-micro-badge">
                           系统归类
+                        </span>
+                      ) : null}
+
+                      {Number(item.raw.priority || 0) > 0 ? (
+                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--warn">
+                          加急
+                        </span>
+                      ) : Number(item.raw.priority || 0) < 0 ? (
+                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--muted">
+                          低优先级
                         </span>
                       ) : null}
 

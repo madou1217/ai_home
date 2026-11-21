@@ -104,7 +104,7 @@ func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (
 	if id == "" {
 		id = NewMessageID()
 	}
-	if !recordIDPattern.MatchString(id) || !validSender(input.From) || !validParty(input.To) || (input.AutoDeliverUntil != nil && *input.AutoDeliverUntil < 0) || input.ExpiresAt < 0 {
+	if !recordIDPattern.MatchString(id) || !validSender(input.From) || !validParty(input.To) || (input.AutoDeliverUntil != nil && *input.AutoDeliverUntil < 0) || input.ExpiresAt < 0 || input.Priority < PriorityLow || input.Priority > PriorityHigh {
 		return nil, ErrInvalidRecord
 	}
 	if _, _, err := s.findExactLocked(id); !errors.Is(err, ErrMessageNotFound) {
@@ -119,7 +119,7 @@ func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (
 		return nil, ErrInvalidRecord
 	}
 	rec := Record{
-		V: RecordVersion, ID: id, From: normalizeRecordParty(input.From), To: normalizeRecordParty(input.To),
+		V: RecordVersion, ID: id, Priority: input.Priority, From: normalizeRecordParty(input.From), To: normalizeRecordParty(input.To),
 		ReplyTo: NormalizeID(input.ReplyTo), Body: input.Body, CreatedAt: s.now().UnixMilli(), State: "pending", Attempts: []AttemptRecord{},
 		NoEnvelope: input.NoEnvelope, FromMode: input.FromMode, Subject: input.Subject, Summary: input.Summary, Purpose: input.Purpose, Action: input.Action, ReplyPolicy: input.ReplyPolicy,
 		ExpiresAt: input.ExpiresAt, Supersedes: NormalizeID(input.Supersedes),

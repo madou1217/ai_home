@@ -36,12 +36,14 @@ type Party struct {
 
 // Message 是 WebUI 收件箱单条消息的只读投影。
 type Message struct {
-	NativeStatus      string `json:"nativeStatus,omitempty"`
-	Subject           string `json:"subject,omitempty"`
-	Summary           string `json:"summary,omitempty"`
-	Purpose           string `json:"purpose,omitempty"`
-	Action            string `json:"action,omitempty"`
-	ReplyPolicy       string `json:"replyPolicy,omitempty"`
+	NativeStatus string `json:"nativeStatus,omitempty"`
+	Subject      string `json:"subject,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	Purpose      string `json:"purpose,omitempty"`
+	Action       string `json:"action,omitempty"`
+	ReplyPolicy  string `json:"replyPolicy,omitempty"`
+	// Priority 是 -1/0/1 的发送优先级；旧记录缺省为 0。
+	Priority          int    `json:"priority,omitempty"`
 	AutoDeliverUntil  int64  `json:"autoDeliverUntil"`
 	ExpiresAt         int64  `json:"expiresAt,omitempty"`
 	CanceledAt        int64  `json:"canceledAt,omitempty"`
@@ -293,6 +295,7 @@ func readDirectory(directory string, dirName string) []Message {
 		msg.ReceiptError = rec.ReceiptError
 		msg.NativeStatus = rec.NativeStatus
 		msg.Subject, msg.Summary, msg.Purpose, msg.Action, msg.ReplyPolicy = rec.Subject, rec.Summary, rec.Purpose, rec.Action, rec.ReplyPolicy
+		msg.Priority = rec.Priority
 		msg.AutoDeliverUntil, msg.ExpiresAt, msg.CanceledAt, msg.Supersedes = rec.AutoDeliverUntil, rec.ExpiresAt, rec.CanceledAt, rec.Supersedes
 		msg.NotificationState, msg.WaitingReason, msg.BusySince, msg.ProbeCount = rec.NotificationState, rec.WaitingReason, rec.BusySince, rec.ProbeCount
 		msg.NextAttemptAt, msg.FailureResetAt, msg.TargetKey = rec.NextAttemptAt, rec.FailureResetAt, TargetKey(rec.To)

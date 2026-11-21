@@ -11,6 +11,19 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 )
 
+func peerPriority(value string) (int, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "normal":
+		return peer.PriorityNormal, nil
+	case "high", "urgent":
+		return peer.PriorityHigh, nil
+	case "low":
+		return peer.PriorityLow, nil
+	default:
+		return 0, fmt.Errorf("--priority 需为 high、normal 或 low")
+	}
+}
+
 func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, store *peer.DispatchStore, targets []peer.Target, self peer.RecordParty, delivery peer.DeliveryOptions, output func(any) error) error {
 	if len(args.positionals) < 2 {
 		return fmt.Errorf("用法：aih peer %s <会话或消息ID> \"内容\"", args.verb)
@@ -84,7 +97,11 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 		zero := int64(0)
 		until = &zero
 	}
-	input := peer.CreateMessageInput{From: from, To: target.RecordParty, Body: body, ReplyTo: replyTo, Subject: args.values["subject"], Summary: args.values["summary"], Purpose: args.values["purpose"], Action: args.values["action"], ReplyPolicy: policy, AutoDeliverUntil: until, Supersedes: args.values["supersedes"]}
+	priority, err := peerPriority(args.values["priority"])
+	if err != nil {
+		return err
+	}
+	input := peer.CreateMessageInput{From: from, To: target.RecordParty, Body: body, ReplyTo: replyTo, Subject: args.values["subject"], Summary: args.values["summary"], Purpose: args.values["purpose"], Action: args.values["action"], ReplyPolicy: policy, Priority: priority, AutoDeliverUntil: until, Supersedes: args.values["supersedes"]}
 	if expires != nil {
 		input.ExpiresAt = *expires
 	}

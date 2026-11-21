@@ -74,44 +74,55 @@ type AttemptRecord struct {
 }
 
 // Record 对应 <aiHome>/run/peer/{pending,inflight,archive}/pm-<hex>.json 的完整结构。
+const (
+	// PriorityLow 让同目标的消息排到普通消息之后。
+	PriorityLow = -1
+	// PriorityNormal 是历史记录与默认发送的优先级。
+	PriorityNormal = 0
+	// PriorityHigh 让同目标的消息优先于普通消息投递。
+	PriorityHigh = 1
+)
+
 type Record struct {
 	SupersededBy        string `json:"supersededBy,omitempty"`
 	SupersedesAppliedAt int64  `json:"supersedesAppliedAt,omitempty"`
 	FailureResetAt      int64  `json:"failureResetAt,omitempty"`
 	autoDeliverUntilSet bool
-	NoEnvelope          bool            `json:"noEnvelope,omitempty"`
-	NativeStatus        string          `json:"nativeStatus,omitempty"`
-	FromMode            string          `json:"fromMode,omitempty"`
-	Subject             string          `json:"subject,omitempty"`
-	Summary             string          `json:"summary,omitempty"`
-	Purpose             string          `json:"purpose,omitempty"`
-	Action              string          `json:"action,omitempty"`
-	ReplyPolicy         string          `json:"replyPolicy,omitempty"`
-	AutoDeliverUntil    int64           `json:"autoDeliverUntil"`
-	ExpiresAt           int64           `json:"expiresAt,omitempty"`
-	CanceledAt          int64           `json:"canceledAt,omitempty"`
-	Supersedes          string          `json:"supersedes,omitempty"`
-	NotificationState   string          `json:"notificationState,omitempty"`
-	WaitingReason       string          `json:"waitingReason,omitempty"`
-	BusySince           int64           `json:"busySince,omitempty"`
-	ProbeCount          int             `json:"probeCount,omitempty"`
-	V                   int             `json:"v"`
-	ID                  string          `json:"id"`
-	From                RecordParty     `json:"from"`
-	To                  RecordParty     `json:"to"`
-	ReplyTo             string          `json:"replyTo"`
-	Body                string          `json:"body"`
-	CreatedAt           int64           `json:"createdAt"`
-	State               string          `json:"state"`
-	Attempts            []AttemptRecord `json:"attempts"`
-	AttemptCount        int             `json:"attemptCount"`
-	NextAttemptAt       int64           `json:"nextAttemptAt"`
-	DeliveredAt         int64           `json:"deliveredAt"`
-	ReadAt              int64           `json:"readAt"`
-	ChannelMessageID    string          `json:"channelMessageId"`
-	Error               string          `json:"error,omitempty"`
-	Claim               *ClaimLease     `json:"claim,omitempty"`
-	ReceiptError        string          `json:"receiptError,omitempty"`
+	NoEnvelope          bool   `json:"noEnvelope,omitempty"`
+	NativeStatus        string `json:"nativeStatus,omitempty"`
+	FromMode            string `json:"fromMode,omitempty"`
+	Subject             string `json:"subject,omitempty"`
+	Summary             string `json:"summary,omitempty"`
+	Purpose             string `json:"purpose,omitempty"`
+	Action              string `json:"action,omitempty"`
+	ReplyPolicy         string `json:"replyPolicy,omitempty"`
+	AutoDeliverUntil    int64  `json:"autoDeliverUntil"`
+	ExpiresAt           int64  `json:"expiresAt,omitempty"`
+	CanceledAt          int64  `json:"canceledAt,omitempty"`
+	Supersedes          string `json:"supersedes,omitempty"`
+	NotificationState   string `json:"notificationState,omitempty"`
+	WaitingReason       string `json:"waitingReason,omitempty"`
+	BusySince           int64  `json:"busySince,omitempty"`
+	ProbeCount          int    `json:"probeCount,omitempty"`
+	V                   int    `json:"v"`
+	ID                  string `json:"id"`
+	// Priority 是 -1/0/1 的发送优先级；旧记录缺省为 0。
+	Priority         int             `json:"priority,omitempty"`
+	From             RecordParty     `json:"from"`
+	To               RecordParty     `json:"to"`
+	ReplyTo          string          `json:"replyTo"`
+	Body             string          `json:"body"`
+	CreatedAt        int64           `json:"createdAt"`
+	State            string          `json:"state"`
+	Attempts         []AttemptRecord `json:"attempts"`
+	AttemptCount     int             `json:"attemptCount"`
+	NextAttemptAt    int64           `json:"nextAttemptAt"`
+	DeliveredAt      int64           `json:"deliveredAt"`
+	ReadAt           int64           `json:"readAt"`
+	ChannelMessageID string          `json:"channelMessageId"`
+	Error            string          `json:"error,omitempty"`
+	Claim            *ClaimLease     `json:"claim,omitempty"`
+	ReceiptError     string          `json:"receiptError,omitempty"`
 }
 
 // CreateMessageInput 定义写入 pending 收件箱的新消息参数。
@@ -127,6 +138,7 @@ type CreateMessageInput struct {
 	ExpiresAt        int64
 	Supersedes       string
 	ID               string
+	Priority         int
 	From             RecordParty
 	To               RecordParty
 	ReplyTo          string
@@ -490,6 +502,9 @@ func (s *DispatchStore) ListPending() ([]Record, error) {
 		records = append(records, *rec)
 	}
 	sort.SliceStable(records, func(i, j int) bool {
+		if records[i].Priority != records[j].Priority {
+			return records[i].Priority > records[j].Priority
+		}
 		if records[i].CreatedAt != records[j].CreatedAt {
 			return records[i].CreatedAt < records[j].CreatedAt
 		}

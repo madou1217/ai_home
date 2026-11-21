@@ -17,7 +17,7 @@ type peerArguments struct {
 func parsePeerArguments(args []string) (peerArguments, error) {
 	result := peerArguments{verb: "list", values: map[string]string{}, flags: map[string]bool{}}
 	boolean := map[string]bool{"json": true, "self": true, "unread": true, "dry-run": true, "no-envelope": true, "reset-attempts": true, "ack": true, "help": true}
-	values := map[string]bool{"target": true, "provider": true, "channel": true, "mode": true, "from": true, "reply-to": true, "limit": true, "wait": true, "state": true, "subject": true, "summary": true, "purpose": true, "action": true, "reply-policy": true, "auto-deliver-until": true, "expires-at": true, "deadline": true, "supersedes": true}
+	values := map[string]bool{"target": true, "provider": true, "channel": true, "mode": true, "from": true, "reply-to": true, "limit": true, "wait": true, "state": true, "subject": true, "summary": true, "purpose": true, "action": true, "reply-policy": true, "priority": true, "auto-deliver-until": true, "expires-at": true, "deadline": true, "supersedes": true}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		result.verb = args[0]
 		args = args[1:]
@@ -94,6 +94,7 @@ const peerHelp = `aih peer — 给会话发消息，查看自己的收件箱（G
   aih peer flush                     补投就绪消息
 
   --subject "主题" --purpose "缘由" --action "待办"
+  --priority high|normal|low      高优先级在同目标消息中先投递
   --reply-policy required|optional|none
   --reply-policy none 仅存收件箱，不打断对方。
   --json 可查看详细状态；已发送不代表对方已读。

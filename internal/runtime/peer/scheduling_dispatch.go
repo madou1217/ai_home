@@ -102,8 +102,13 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 		candidates = append(candidates, candidate{rec, gate.LastProbeAt})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
+		// 公平轮转优先：lastProbeAt 更早的目标先探测；同一起跑线再按发送
+		// 优先级排序，避免高优先级消息把低优先级目标永久饿死。
 		if candidates[i].lastProbeAt != candidates[j].lastProbeAt {
 			return candidates[i].lastProbeAt < candidates[j].lastProbeAt
+		}
+		if candidates[i].rec.Priority != candidates[j].rec.Priority {
+			return candidates[i].rec.Priority > candidates[j].rec.Priority
 		}
 		if candidates[i].rec.CreatedAt != candidates[j].rec.CreatedAt {
 			return candidates[i].rec.CreatedAt < candidates[j].rec.CreatedAt

@@ -81,3 +81,17 @@ Go 只负责写文件/拼命令，JS 在第三方进程里运行，因此必须�
 `scripts/web-terminal-resize-benchmark.js` 以 `path.join(__dirname,'fixtures',...)`
 引用，属活文件）。`go build ./...` 在 TEMP worktree 的 HEAD 上通过；
 `pluginhost`、`codexhooks` 测试通过。
+
+### 无 Node 真机启动（2026-11-22）
+
+在 `git worktree`（HEAD）构建 `cmd/aih-server`，用 `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin`
+（该 PATH 下 `command -v node` 为空，本机 node 只在 `/opt/homebrew/bin`）和全新的
+`/private/tmp` 数据根启动：
+
+- `GET /readyz` → `200`，`{"ok":true,"service":"aih-server","ready":false,…}`（无账号，符合预期）；
+- `GET /ui/` → `200`，返回真实 `index.html`；
+- 日志 `aih-server listening on http://127.0.0.1:19527`；
+- 服务进程没有任何子进程（`pgrep -P` 为空），即启动路径没有拉起 Node。
+
+数据根必须放在非符号链接目录：`mktemp -d` 落在 `/var/folders/...` 时，
+`model_settings_watch_symlink_root` 会让账号库打开失败（`/var` 是 `/private/var` 的链接）。

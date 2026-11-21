@@ -218,6 +218,8 @@ func builtinClaude() Definition {
 			},
 			// Notification (permission_prompt / idle_prompt / elicitation_dialog) and
 			// PermissionRequest feed the terminal title's "waiting for you" frame.
+			// Session state treats only permission/input notifications as questions;
+			// idle_prompt means the turn is over and the CLI awaits the next prompt.
 			Events: []string{"SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd"},
 		},
 		CLI: &CLIConfig{

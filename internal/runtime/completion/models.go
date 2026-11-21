@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
@@ -29,6 +30,10 @@ const (
 	// 前缀把整张表倒出来的病态情形。取值远高于任何真实层容量，正常查询碰不到。
 	modelMatchCeiling = 2000
 	modelsSnapshotKey = webuimodelssnapshot.CacheKey
+	// gatewayModelsSnapshotKey 是服务端网关模型快照（含 modelAccounts：
+	// 模型 → 参与路由的账号）。它是「哪些模型真的能路由」的另一处事实源，
+	// 与 account_models 并用。
+	gatewayModelsSnapshotKey = "cache:gateway-models-snapshot.json"
 )
 
 type modelAliasRow struct {
@@ -300,6 +305,38 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 		})
 	}
 
+	// 客户端协议兼容标注。
+	//
+	// 用户在这里是给某个 CLI 选模型：`aih claude 22 --model X` 会用 Claude Code
+	// 启动，客户端入口协议是 Anthropic Messages。模型能否被服务，取决于**它的
+	// Provider 在这门协议下有没有通道**，而不是模型自己的名字。
+	//
+	// 依据全部来自合同查表：
+	//   - CLI → 客户端协议：Definition.CredentialProtocol()（claude 读写 ANTHROPIC_*）
+	//   - Provider → 该协议通道：Definition.RelayChannelOn(go, protocol)
+	//     （RelayHost.Entries 只挂 gateway.openai.chat_completions 的家族透传，
+	//      在 /v1/messages 上就是不可用——这正是「协议不兼容」）
+	//
+	// 只标注**不兼容**的一侧：可用的占绝大多数，逐行加提示会把真正的风险信号
+	// 淹没；而不可用恰恰是用户点了会白跑一次请求的那些。
+	if protocol := cliClientProtocol(provider); protocol != "" {
+		blockedByModel := modelsWithoutProtocolChannel(aiHome, protocol)
+		for layerIndex := range layers {
+			for valueIndex := range layers[layerIndex].values {
+				choice := &layers[layerIndex].values[valueIndex]
+				if !blockedByModel[choice.Value] {
+					continue
+				}
+				note := "⚠ 无 " + protocolDisplayName(protocol) + " 通道"
+				if strings.TrimSpace(choice.Description) == "" {
+					choice.Description = note
+				} else {
+					choice.Description = note + " · " + choice.Description
+				}
+			}
+		}
+	}
+
 	// 每层各自限额后再合并；层内的第一次出现优先，因此靠前的层覆盖同名值。
 	//
 	// 关键顺序：**先按用户已输入的前缀过滤，再限额**。
@@ -344,6 +381,196 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 		choices = choices[:modelMatchCeiling]
 	}
 	return choices
+}
+
+// cliClientProtocol 返回该 CLI 自己的客户端入口协议；未知时返回空串。
+//
+// 唯一依据是 Provider 合同里声明的凭据环境变量前缀（见
+// providers.Definition.CredentialProtocol），因此这里不需要任何 provider 名单。
+func cliClientProtocol(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		return ""
+	}
+	definition, found := loadProviderSnapshot().byID[provider]
+	if !found {
+		return ""
+	}
+	return definition.CredentialProtocol()
+}
+
+func protocolDisplayName(protocol string) string {
+	switch protocol {
+	case "anthropic.messages":
+		return "Anthropic 格式"
+	case "openai.responses":
+		return "OpenAI Responses 格式"
+	case "openai.chat_completions":
+		return "OpenAI Chat 格式"
+	case "gemini.generate_content":
+		return "Gemini 格式"
+	}
+	return protocol
+}
+
+// modelsWithoutProtocolChannel 返回「没有任何 Provider 能在该客户端协议下服务」的模型集合。
+//
+// 判定走 provider 合同（RelayChannelOn），归属取**两个来源的并集**：
+//
+//  1. account_models（探测结果 + 人工策略）——账号自己声明它能用哪些模型；
+//  2. 网关快照的 modelAccounts——服务端实际纳入路由的模型→账号映射。
+//
+// 为什么必须并集：两者会不一致。实测 `balanced-model` 在 account_models 里只挂在
+// codebuddy（在 /v1/messages 上不可用），但服务端路由同时把它挂在 claude/codex 上。
+// 只看表会误报「不可用」，而那是一个真能用的模型。并集只会让「可用」更容易成立，
+// 与「未知不警告」的原则一致：宁可不提示，也不要把能用的模型标成坏的。
+//
+// 完全没有任何归属证据的模型不标注——未知不等于不可用。
+func modelsWithoutProtocolChannel(aiHome, protocol string) map[string]bool {
+	owners := make(map[string]map[string]bool, 256)
+	addOwner := func(model, provider string) {
+		model = strings.TrimSpace(model)
+		provider = strings.ToLower(strings.TrimSpace(provider))
+		if model == "" || provider == "" {
+			return
+		}
+		if owners[model] == nil {
+			owners[model] = make(map[string]bool, 2)
+		}
+		owners[model][provider] = true
+	}
+	withReadDB(aiHome, func(database *sql.DB) {
+		result, err := database.Query(`
+			SELECT DISTINCT m.model_id AS model_id, a.provider_id AS provider_id
+			  FROM account_models m
+			  JOIN accounts a ON a.account_ref = m.account_ref
+			 WHERE a.enabled = 1
+			   AND (m.manual_policy = 'force_enable'
+			        OR (m.manual_policy = 'inherit' AND m.upstream_available = 1))`)
+		if err != nil {
+			return
+		}
+		defer func() { _ = result.Close() }()
+		for result.Next() {
+			var modelID, providerID string
+			if scanErr := result.Scan(&modelID, &providerID); scanErr != nil {
+				continue
+			}
+			addOwner(modelID, providerID)
+		}
+	})
+	// 服务端路由映射：模型 → 账号 → Provider。
+	for model, providers := range readGatewayModelProviderOwners(aiHome) {
+		for provider := range providers {
+			addOwner(model, provider)
+		}
+	}
+	snapshot := loadProviderSnapshot()
+	blocked := make(map[string]bool, 64)
+	for model, providers := range owners {
+		if len(providers) == 0 {
+			continue
+		}
+		if !anyProviderHasChannel(snapshot, providers, protocol) {
+			blocked[model] = true
+		}
+	}
+	return blocked
+}
+
+// readGatewayModelProviderOwners 读网关快照的 modelAccounts，把「模型 → 账号」还原成
+// 「模型 → Provider」。快照缺失或损坏时返回空表（调用方按并集继续用账号表判定）。
+func readGatewayModelProviderOwners(aiHome string) map[string]map[string]bool {
+	result := make(map[string]map[string]bool, 256)
+	path, err := appstate.DatabasePath(aiHome)
+	if err != nil {
+		return result
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), completionDBTimeout)
+	defer cancel()
+	raw, found, err := appstate.ReadKV(ctx, path, gatewayModelsSnapshotKey)
+	if err != nil || !found || strings.TrimSpace(raw) == "" {
+		return result
+	}
+	var document struct {
+		ModelAccounts map[string][]string `json:"modelAccounts"`
+	}
+	if json.Unmarshal([]byte(raw), &document) != nil || len(document.ModelAccounts) == 0 {
+		return result
+	}
+	refProvider := make(map[string]string, 128)
+	refs := make([]string, 0, 128)
+	for _, accounts := range document.ModelAccounts {
+		refs = append(refs, accounts...)
+	}
+	refProvider = readAccountProviders(aiHome, refs)
+	for model, accounts := range document.ModelAccounts {
+		for _, account := range accounts {
+			provider := refProvider[strings.TrimSpace(account)]
+			if provider == "" {
+				continue
+			}
+			if result[model] == nil {
+				result[model] = make(map[string]bool, 2)
+			}
+			result[model][provider] = true
+		}
+	}
+	return result
+}
+
+// readAccountProviders 批量解析 accountRef → provider_id。
+func readAccountProviders(aiHome string, refs []string) map[string]string {
+	result := make(map[string]string, len(refs))
+	if len(refs) == 0 {
+		return result
+	}
+	withReadDB(aiHome, func(database *sql.DB) {
+		unique := make([]any, 0, len(refs))
+		seen := make(map[string]bool, len(refs))
+		for _, ref := range refs {
+			ref = strings.TrimSpace(ref)
+			if ref == "" || seen[ref] {
+				continue
+			}
+			seen[ref] = true
+			unique = append(unique, ref)
+		}
+		if len(unique) == 0 {
+			return
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(unique)), ",")
+		rows, err := database.Query(
+			`SELECT account_ref, provider_id FROM accounts WHERE account_ref IN (`+placeholders+`)`,
+			unique...,
+		)
+		if err != nil {
+			return
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var ref, provider string
+			if scanErr := rows.Scan(&ref, &provider); scanErr != nil {
+				continue
+			}
+			result[strings.TrimSpace(ref)] = strings.ToLower(strings.TrimSpace(provider))
+		}
+	})
+	return result
+}
+
+func anyProviderHasChannel(snapshot providerSnapshot, owners map[string]bool, protocol string) bool {
+	for provider := range owners {
+		definition, found := snapshot.byID[provider]
+		if !found {
+			// 未知 Provider 没有合同依据，不能据此判定不可用。
+			return true
+		}
+		if definition.RelayChannelOn(providers.RelayHostGo, protocol) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // modelMatchesQuery 与 collector.add 的匹配语义保持一致（前缀或包含，大小写不敏感），

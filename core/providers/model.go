@@ -228,6 +228,46 @@ func (definition Definition) CredentialFacts() CredentialFacts {
 	return *definition.Credentials
 }
 
+// ProtocolEnvPrefixes 是「客户端环境变量前缀 → 客户端入口协议」的对照表。
+//
+// 这是数据，不是 provider 分支：一个 CLI 用哪门协议，取决于它读写哪组
+// 环境变量（claude 读写 ANTHROPIC_*，codex 读写 OPENAI_*）。新增双协议 CLI
+// 时只加一行，不改变任何调用方。
+var ProtocolEnvPrefixes = []struct {
+	Prefix   string
+	Protocol string
+}{
+	{Prefix: "ANTHROPIC_", Protocol: "anthropic.messages"},
+	{Prefix: "OPENAI_", Protocol: "openai.responses"},
+	{Prefix: "GEMINI_", Protocol: "gemini.generate_content"},
+	{Prefix: "GOOGLE_", Protocol: "gemini.generate_content"},
+}
+
+// CredentialProtocol 返回该 Provider 自己使用的**客户端入口协议**。
+//
+// 依据是合同里声明的凭据环境变量前缀：谁读 ANTHROPIC_* 谁就按 Anthropic
+// Messages 收发，谁读 OPENAI_* 谁就按 OpenAI 协议收发。没有可识别前缀时返回
+// 空串——调用方必须把空串当作「未知」，不得退化成猜测。
+func (definition Definition) CredentialProtocol() string {
+	facts := definition.CredentialFacts()
+	candidates := make([]string, 0, len(facts.BaseURLEnv)+len(facts.AuthTokenEnv)+len(facts.APIKeyEnv))
+	candidates = append(candidates, facts.BaseURLEnv...)
+	candidates = append(candidates, facts.AuthTokenEnv...)
+	candidates = append(candidates, facts.APIKeyEnv...)
+	for _, env := range candidates {
+		name := strings.ToUpper(strings.TrimSpace(env))
+		if name == "" {
+			continue
+		}
+		for _, mapping := range ProtocolEnvPrefixes {
+			if strings.HasPrefix(name, mapping.Prefix) {
+				return mapping.Protocol
+			}
+		}
+	}
+	return ""
+}
+
 // RelayChannelOn 返回指定宿主在该客户端协议下的承接通道；空串表示不可服务。
 //
 // 这是「某个 Provider 能不能服务某门客户端协议」的唯一判定入口，调用方不得

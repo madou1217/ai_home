@@ -128,7 +128,7 @@ func resolveViaSessionRead(query sessionPathQuery) string {
 }
 
 func resolveClaudeSessionPath(hostHome, sessionID, projectDirName string) string {
-	projectsRoot := filepath.Join(hostHome, ".claude", "projects")
+	projectsRoot := filepath.Join(hostHome, providerroot.ConfigDir("claude"), "projects")
 	if projectDirName != "" {
 		candidate := filepath.Join(projectsRoot, projectDirName, sessionID+".jsonl")
 		if isRegularFile(candidate) {
@@ -202,8 +202,8 @@ func resolveCodebuddySessionPath(hostHome, provider, sessionID, projectDirName s
 
 func resolveCodexSessionPath(hostHome, sessionID string) string {
 	roots := []string{
-		filepath.Join(hostHome, ".codex", "sessions"),
-		filepath.Join(hostHome, ".codex", "archived_sessions"),
+		filepath.Join(hostHome, providerroot.ConfigDir("codex"), "sessions"),
+		filepath.Join(hostHome, providerroot.ConfigDir("codex"), "archived_sessions"),
 	}
 	count := 0
 	for _, root := range roots {
@@ -234,7 +234,7 @@ func resolveCodexSessionPath(hostHome, sessionID string) string {
 }
 
 func resolveGeminiSessionPath(hostHome, sessionID, projectDirName string) string {
-	tmpRoot := filepath.Join(hostHome, ".gemini", "tmp")
+	tmpRoot := filepath.Join(hostHome, providerroot.ConfigDir("gemini"), "tmp")
 	searchProject := func(dirName string) string {
 		chatsDir := filepath.Join(tmpRoot, dirName, "chats")
 		direct := filepath.Join(chatsDir, sessionID+".json")
@@ -274,11 +274,12 @@ func resolveGeminiSessionPath(hostHome, sessionID, projectDirName string) string
 }
 
 func resolveOpenCodePath(hostHome string) string {
-	wal := filepath.Join(hostHome, ".local", "share", "opencode", "opencode.db-wal")
+	root := filepath.Join(append([]string{hostHome}, providerroot.NativeRoot("opencode")...)...)
+	wal := filepath.Join(root, "opencode.db-wal")
 	if isRegularFile(wal) {
 		return wal
 	}
-	db := filepath.Join(hostHome, ".local", "share", "opencode", "opencode.db")
+	db := filepath.Join(root, "opencode.db")
 	if isRegularFile(db) {
 		return db
 	}
@@ -287,8 +288,8 @@ func resolveOpenCodePath(hostHome string) string {
 
 func resolveClineSessionPath(hostHome, aiHomeDir, sessionID string) string {
 	candidates := []string{
-		filepath.Join(hostHome, ".cline", "data", "tasks", sessionID, "api_conversation_history.json"),
-		filepath.Join(hostHome, ".cline", "data", "tasks", sessionID, "ui_messages.json"),
+		filepath.Join(hostHome, providerroot.ConfigDir("cline"), "data", "tasks", sessionID, "api_conversation_history.json"),
+		filepath.Join(hostHome, providerroot.ConfigDir("cline"), "data", "tasks", sessionID, "ui_messages.json"),
 	}
 	for _, candidate := range candidates {
 		if isRegularFile(candidate) {
@@ -303,7 +304,7 @@ func resolveClineSessionPath(hostHome, aiHomeDir, sessionID string) string {
 				if !entry.IsDir() || !isSafePathSegment(entry.Name()) {
 					continue
 				}
-				candidate := filepath.Join(projRoot, entry.Name(), ".cline", "data", "tasks", sessionID, "api_conversation_history.json")
+				candidate := filepath.Join(projRoot, entry.Name(), providerroot.ConfigDir("cline"), "data", "tasks", sessionID, "api_conversation_history.json")
 				if isRegularFile(candidate) {
 					return candidate
 				}

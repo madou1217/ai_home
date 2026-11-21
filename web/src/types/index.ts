@@ -2800,6 +2800,7 @@ export interface ProviderConfigKeySetting {
   max?: number;
   step?: number;
   default?: string;
+  launchSupported?: boolean;
 }
 
 export interface ProviderConfigKeySettingsResponse {

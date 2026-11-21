@@ -895,13 +895,28 @@ func KeySettingsForProvider(providerID string) ([]KeySetting, bool) {
 	return nil, false
 }
 
+// KeySettingLaunchSupported 报告单个关键项是否能随账号覆盖注入启动。
+//
+// 配置层对所有声明项都可用；这里描述官方 CLI 的实际覆盖机制。
+func KeySettingLaunchSupported(providerID string, setting KeySetting) bool {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "codex", "claude", "opencode", "agy", "grok":
+		return true
+	case "gemini":
+		// Gemini 只允许 root 所有的系统设置文件；用户目录的覆盖文件会被跳过。
+		return setting.Path != "model.compressionThreshold"
+	default:
+		return false
+	}
+}
+
 // AccountLaunchInjectionSupported 报告 Provider 是否已接入账号级启动注入。
 //
 // 配置层对所有声明了 KeySettings 的 Provider 都可用；这里只描述官方 CLI
 // 的启动注入能力。未接入的 Provider 仍可保存覆盖，但启动时保持公共配置。
 func AccountLaunchInjectionSupported(providerID string) bool {
 	switch strings.ToLower(strings.TrimSpace(providerID)) {
-	case "codex", "claude", "opencode":
+	case "codex", "claude", "opencode", "agy", "grok", "gemini":
 		return true
 	default:
 		return false

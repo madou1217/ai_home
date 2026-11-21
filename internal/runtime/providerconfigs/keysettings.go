@@ -40,6 +40,8 @@ type KeySettingValue struct {
 	Max                float64  `json:"max,omitempty"`
 	Step               float64  `json:"step,omitempty"`
 	Default            string   `json:"default,omitempty"`
+	// LaunchSupported 表示该项的账号覆盖会随启动注入；false 表示仅保存。
+	LaunchSupported bool `json:"launchSupported"`
 }
 
 // KeySettingsResponse 对应 GET .../key-settings 响应。
@@ -101,18 +103,19 @@ func (s *Service) ReadKeySettings(ctx context.Context, provider, fileID, modelOv
 	values := ReadKeyValues(content, rf.Public.Format, rf.Definition.KeySettings)
 	for _, setting := range rf.Definition.KeySettings {
 		view := KeySettingValue{
-			Path:        setting.Path,
-			Label:       setting.Label,
-			Kind:        string(setting.Kind),
-			Value:       values[setting.Path],
-			Choices:     append([]string(nil), setting.Choices...),
-			Placeholder: setting.Placeholder,
-			Help:        setting.Help,
-			DependsOn:   setting.DependsOn,
-			Min:         setting.Min,
-			Max:         setting.Max,
-			Step:        setting.Step,
-			Default:     setting.Default,
+			Path:            setting.Path,
+			Label:           setting.Label,
+			Kind:            string(setting.Kind),
+			Value:           values[setting.Path],
+			Choices:         append([]string(nil), setting.Choices...),
+			Placeholder:     setting.Placeholder,
+			Help:            setting.Help,
+			DependsOn:       setting.DependsOn,
+			Min:             setting.Min,
+			Max:             setting.Max,
+			Step:            setting.Step,
+			Default:         setting.Default,
+			LaunchSupported: KeySettingLaunchSupported(rf.Definition.Provider, setting),
 		}
 		view.Choices, view.UnavailableChoices = s.resolveKeySettingChoices(ctx, rf.Definition.Provider, setting, values, modelOverride)
 		response.Settings = append(response.Settings, view)
@@ -177,18 +180,19 @@ func (s *Service) ReadAccountKeySettings(
 	response.Overrides = overrides
 	for _, setting := range rf.Definition.KeySettings {
 		view := KeySettingValue{
-			Path:        setting.Path,
-			Label:       setting.Label,
-			Kind:        string(setting.Kind),
-			Value:       effective[setting.Path],
-			Choices:     append([]string(nil), setting.Choices...),
-			Placeholder: setting.Placeholder,
-			Help:        setting.Help,
-			DependsOn:   setting.DependsOn,
-			Min:         setting.Min,
-			Max:         setting.Max,
-			Step:        setting.Step,
-			Default:     setting.Default,
+			Path:            setting.Path,
+			Label:           setting.Label,
+			Kind:            string(setting.Kind),
+			Value:           effective[setting.Path],
+			Choices:         append([]string(nil), setting.Choices...),
+			Placeholder:     setting.Placeholder,
+			Help:            setting.Help,
+			DependsOn:       setting.DependsOn,
+			Min:             setting.Min,
+			Max:             setting.Max,
+			Step:            setting.Step,
+			Default:         setting.Default,
+			LaunchSupported: KeySettingLaunchSupported(rf.Definition.Provider, setting),
 		}
 		view.Choices, view.UnavailableChoices = s.resolveKeySettingChoices(ctx, normalizedProvider, setting, effective, modelOverride)
 		response.Settings = append(response.Settings, view)

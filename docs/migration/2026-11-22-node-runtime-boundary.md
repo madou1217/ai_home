@@ -105,3 +105,13 @@ Go 只负责写文件/拼命令，JS 在第三方进程里运行，因此必须�
 
 数据根必须放在非符号链接目录：`mktemp -d` 落在 `/var/folders/...` 时，
 `model_settings_watch_symlink_root` 会让账号库打开失败（`/var` 是 `/private/var` 的链接）。
+### 保留项完整性核对（2026-11-22）
+
+从四类根做 require 闭包，`lib/**` 176 个 JS 文件全部覆盖，未覆盖 0：
+
+- 开发脚本入口（`scripts/**` + `bin/aih-translation.js`）闭包覆盖 152；
+- Node 插件宿主（`lib/plugins/**`）闭包覆盖 11；
+- 注入第三方进程的 JS 资产（zcode / codebuddy-ide / native-session-bridge / 指定 server 文件）闭包覆盖 69；
+- Go 源码引用的外部 JS（npm / Electron / 探针等）闭包覆盖 3。
+
+计数按各自根分别统计、彼此有重叠；并集正好 176。没有游离在四类边界之外的 Node 文件。

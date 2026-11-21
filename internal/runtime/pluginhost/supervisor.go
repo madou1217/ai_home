@@ -238,9 +238,25 @@ func NewSupervisor(options SupervisorOptions) (*Supervisor, error) {
 func resolveHostScripts(repoRoot, entryPath, hooksPath string) (string, string) {
 	entry := strings.TrimSpace(entryPath)
 	hooks := strings.TrimSpace(hooksPath)
-	searchRoots := make([]string, 0, 4)
+	searchRoots := make([]string, 0, 8)
 	if strings.TrimSpace(repoRoot) != "" {
 		searchRoots = append(searchRoots, strings.TrimSpace(repoRoot))
+	}
+	// 打包安装时服务进程的 cwd 是用户目录：安装器给出的 AIH_PACKAGE_ROOT /
+	// AIH_SERVER_ENTRY_FILE 才是权威的安装根，不能只靠 cwd 祖先推导。
+	if root := strings.TrimSpace(os.Getenv("AIH_PACKAGE_ROOT")); root != "" {
+		searchRoots = append(searchRoots, root)
+	}
+	if entryFile := strings.TrimSpace(os.Getenv("AIH_SERVER_ENTRY_FILE")); entryFile != "" {
+		dir := filepath.Dir(entryFile)
+		for level := 0; level < 3 && dir != ""; level++ {
+			searchRoots = append(searchRoots, dir)
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		searchRoots = append(searchRoots, cwd)
@@ -253,6 +269,7 @@ func resolveHostScripts(repoRoot, entryPath, hooksPath string) (string, string) 
 			cur = parent
 		}
 	}
+	searchRoots = dedupePaths(searchRoots)
 	if entry == "" {
 		for _, base := range searchRoots {
 			candidate := filepath.Join(base, "lib", "plugins", "host", "host-entry.mjs")
@@ -279,6 +296,24 @@ func resolveHostScripts(repoRoot, entryPath, hooksPath string) (string, string) 
 		}
 	}
 	return entry, hooks
+}
+
+// dedupePaths 保持首次出现顺序去重，避免同一祖先被重复探测。
+func dedupePaths(paths []string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, item := range paths {
+		cleaned := filepath.Clean(strings.TrimSpace(item))
+		if cleaned == "" || cleaned == "." {
+			continue
+		}
+		if _, exists := seen[cleaned]; exists {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		out = append(out, cleaned)
+	}
+	return out
 }
 
 func (s *Supervisor) SocketPath() string { return s.socketPath }

@@ -214,7 +214,9 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 				p := resolvePlatform(opts)
 				plans := []LifecyclePlan{buildNpmPlan("@google/gemini-cli", opts)}
 				if p == platformMacOS {
-					plans = append(plans, buildCaskPlan("gemini-cli", "Homebrew 安装 Gemini CLI"))
+					// gemini-cli 在 Homebrew 是 formula，不是 cask；cask 计划会直接
+					// 报 “No Cask with this name exists”。
+					plans = append(plans, buildBrewFormulaPlan("gemini-cli", "Homebrew 安装 Gemini CLI"))
 				}
 				return filterValidPlans(plans)
 			},

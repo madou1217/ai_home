@@ -624,6 +624,11 @@ func (app *App) Run(
 			accountOverrides.Args = removeLaunchArgument(accountOverrides.Args, "--standalone")
 		}
 	}
+	for _, warning := range accountOverrides.Warnings {
+		if app.stderr != nil && strings.TrimSpace(warning) != "" {
+			_, _ = fmt.Fprintln(app.stderr, "[aih] "+warning)
+		}
+	}
 	if overrideWarning != "" && app.stderr != nil {
 		_, _ = fmt.Fprintln(app.stderr, overrideWarning)
 	}

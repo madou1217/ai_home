@@ -323,11 +323,18 @@ export default function ProviderKeySettings({
               <label htmlFor={id}>
                 {setting.label}
                 {accountScope ? (
-                  hasOverride ? (
-                    <Tag bordered={false} color="blue" className="pc-key-scope-tag">自定义</Tag>
-                  ) : (
-                    <Tag bordered={false} className="pc-key-scope-tag">继承</Tag>
-                  )
+                  <span className="pc-key-scope-tags">
+                    {hasOverride ? (
+                      <Tag bordered={false} color="blue" className="pc-key-scope-tag">自定义</Tag>
+                    ) : (
+                      <Tag bordered={false} className="pc-key-scope-tag">继承</Tag>
+                    )}
+                    {setting.launchSupported === false ? (
+                      <Tooltip title="该键的账号覆盖会保存，但官方 CLI 没有可用的账号级启动注入；本次启动仍使用公共值。">
+                        <Tag bordered={false} color="orange" className="pc-key-scope-tag">仅保存</Tag>
+                      </Tooltip>
+                    ) : null}
+                  </span>
                 ) : null}
               </label>
               {setting.kind === 'number' ? (

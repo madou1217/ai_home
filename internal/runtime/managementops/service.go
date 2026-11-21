@@ -188,6 +188,14 @@ func (s *ManagementService) UsageJobs() *UsageJobManager {
 	return s.usageJobs
 }
 
+// UsageReader 返回管理面与 CLI 共用的用量读服务；用量库缺失时返回 nil。
+func (s *ManagementService) UsageReader() *UsageReader {
+	if s == nil || s.usageStore == nil {
+		return nil
+	}
+	return NewUsageReader(s.usageStore, s.UsageJobs(), s.SupportsUsageScan)
+}
+
 // AIHomeDir 返回当前配置的数据根目录。
 func (s *ManagementService) AIHomeDir() string {
 	if s == nil {

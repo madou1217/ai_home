@@ -5,15 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/madou1217/ai_home/application/serverconfig"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
+	"github.com/madou1217/ai_home/internal/runtime/managementops"
 )
 
 type usageOptions struct {
@@ -64,67 +60,83 @@ func runUsage(ctx context.Context, arguments []string, runtime commandRuntime) (
 	default:
 		return true, fmt.Errorf("未知 usage 命令: %s", options.command)
 	}
-	config, err := webuiserverconfigapi.ReadFullConfig(ctx, home)
+	if (options.command == "session" || options.command == "session-detail") && options.sessionID == "" {
+		return true, errors.New("session-detail 需要 --session-id")
+	}
+	query, err := managementops.ParseUsageQuery(
+		options.from, options.to, options.provider, options.model, options.sessionID,
+		options.limit, options.scan, time.Now(),
+	)
+	if err != nil {
+		return true, fmt.Errorf("用量查询条件无效: %w", err)
+	}
+	// 本机读取：会话文件与用量投影都在 aih.db，不经过管理面 HTTP，不依赖 Management Key。
+	reader, closeReader, err := openLocalUsageReader(ctx, home, runtime)
 	if err != nil {
 		return true, err
 	}
-	baseURL := serverconfig.BaseURL(serverconfig.DefaultHost, config.Port, "/v0/management")
-	path := "/usage/stats"
+	defer closeReader()
+	usage, err := reader.Prepare(ctx, query)
+	if err != nil {
+		return true, err
+	}
+	rng := managementops.UsageRange{From: query.From, To: query.To}
 	switch options.command {
-	case "models", "cost-by-model", "by-model":
-		path = "/usage/models"
-	case "sessions":
-		path = "/usage/sessions"
-	case "session", "session-detail":
-		path = "/usage/session-detail"
-		if options.sessionID == "" {
-			return true, errors.New("session-detail 需要 --session-id")
-		}
-	}
-	query := url.Values{}
-	if options.provider != "" {
-		query.Set("provider", options.provider)
-	}
-	if options.model != "" {
-		query.Set("model", options.model)
-	}
-	if options.sessionID != "" {
-		query.Set("session_id", options.sessionID)
-	}
-	if options.from != "" {
-		query.Set("from", options.from)
-	}
-	if options.to != "" {
-		query.Set("to", options.to)
-	}
-	if options.limit > 0 {
-		query.Set("limit", strconv.Itoa(options.limit))
-	}
-	query.Set("scan", strconv.FormatBool(options.scan))
-	response, err := fetchUsage(ctx, baseURL+path+"?"+query.Encode(), config.ManagementKey)
-	if err != nil {
-		return true, err
-	}
-	if options.json {
-		response["command"] = normalizeUsageCommand(options.command)
-		encoded, err := json.MarshalIndent(response, "", "  ")
+	case "stats", "summary":
+		stats, err := usage.Stats(ctx, query)
 		if err != nil {
 			return true, err
 		}
-		_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
-		return true, nil
-	}
-	switch options.command {
-	case "stats", "summary":
-		printUsageStats(runtime, response)
+		if options.json {
+			return true, writeUsageJSON(runtime, "stats", rng, map[string]any{"stats": stats})
+		}
+		printUsageStats(runtime, rng, stats)
 	case "models", "cost-by-model", "by-model":
-		printUsageModels(runtime, response)
+		models, err := usage.Models(ctx, query)
+		if err != nil {
+			return true, err
+		}
+		if options.json {
+			return true, writeUsageJSON(runtime, "models", rng, map[string]any{"models": models})
+		}
+		printUsageModels(runtime, rng, models)
 	case "sessions":
-		printUsageSessions(runtime, response)
+		sessions, err := usage.Sessions(ctx, query)
+		if err != nil {
+			return true, err
+		}
+		if options.json {
+			return true, writeUsageJSON(runtime, "sessions", rng, map[string]any{"sessions": sessions})
+		}
+		printUsageSessions(runtime, rng, sessions)
 	case "session", "session-detail":
-		printUsageSessionDetail(runtime, response, options.sessionID)
+		detail, err := usage.SessionDetail(ctx, query)
+		if err != nil {
+			return true, err
+		}
+		if options.json {
+			return true, writeUsageJSON(runtime, "session-detail", rng, map[string]any{"session": detail})
+		}
+		printUsageSessionDetail(runtime, query.SessionID, detail)
 	}
 	return true, nil
+}
+
+func writeUsageJSON(
+	runtime commandRuntime,
+	command string,
+	usageRange managementops.UsageRange,
+	payload map[string]any,
+) error {
+	payload["ok"] = true
+	payload["command"] = command
+	payload["range"] = usageRange
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
+	return nil
 }
 
 func parseUsageOptions(args []string) (usageOptions, error) {
@@ -204,129 +216,82 @@ func usageFlagValue(args []string, index int, flag string) (string, int, error) 
 	return strings.TrimSpace(args[index+1]), index + 1, nil
 }
 
-func normalizeUsageCommand(command string) string {
-	switch command {
-	case "summary":
-		return "stats"
-	case "cost-by-model", "by-model":
-		return "models"
-	case "session":
-		return "session-detail"
-	default:
-		return command
-	}
-}
-
-func fetchUsage(ctx context.Context, endpoint, managementKey string) (map[string]any, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	if managementKey != "" {
-		request.Header.Set("Authorization", "Bearer "+managementKey)
-	}
-	client := &http.Client{Timeout: 90 * time.Second}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(response.Body, 8*1024*1024))
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("usage HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var payload map[string]any
-	if json.Unmarshal(raw, &payload) != nil {
-		return nil, errors.New("usage response is not valid JSON")
-	}
-	return payload, nil
-}
-
-func printUsageStats(runtime commandRuntime, payload map[string]any) {
-	stats, _ := payload["stats"].(map[string]any)
-	from, to := usageRange(payload)
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量统计 %s ~ %s\n", from, to)
-	_, _ = fmt.Fprintf(runtime.stdout, "  调用: %v\n", intValue(stats["totalCalls"]))
-	_, _ = fmt.Fprintf(runtime.stdout, "  会话: %v\n", intValue(stats["totalSessions"]))
-	_, _ = fmt.Fprintf(runtime.stdout, "  Prompt: %v\n", intValue(stats["totalPrompts"]))
+func printUsageStats(
+	runtime commandRuntime,
+	usageRange managementops.UsageRange,
+	stats managementops.UsageStatsSummary,
+) {
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量统计 %s ~ %s\n", usageRange.From, usageRange.To)
+	_, _ = fmt.Fprintf(runtime.stdout, "  调用: %d\n", stats.TotalCalls)
+	_, _ = fmt.Fprintf(runtime.stdout, "  会话: %d\n", stats.TotalSessions)
+	_, _ = fmt.Fprintf(runtime.stdout, "  Prompt: %d\n", stats.TotalPrompts)
 	_, _ = fmt.Fprintf(runtime.stdout, "  Tokens: %s (input %s, output %s, cache %s, reasoning %s)\n",
-		formatTokenCount(intValue(stats["totalTokens"])),
-		formatTokenCount(intValue(stats["inputTokens"])),
-		formatTokenCount(intValue(stats["outputTokens"])),
-		formatTokenCount(intValue(stats["cacheReadInputTokens"])+intValue(stats["cacheCreationInputTokens"])),
-		formatTokenCount(intValue(stats["reasoningOutputTokens"])))
-	_, _ = fmt.Fprintf(runtime.stdout, "  估算成本: %s\n", formatUsageCost(floatValue(stats["totalCostUsd"])))
+		formatTokenCount(stats.TotalTokens),
+		formatTokenCount(stats.InputTokens),
+		formatTokenCount(stats.OutputTokens),
+		formatTokenCount(stats.CacheReadInputTokens+stats.CacheCreationInputTokens),
+		formatTokenCount(stats.ReasoningOutputTokens))
+	_, _ = fmt.Fprintf(runtime.stdout, "  估算成本: %s\n", formatUsageCost(stats.TotalCostUSD))
 }
 
-func printUsageModels(runtime commandRuntime, payload map[string]any) {
-	from, to := usageRange(payload)
-	models, _ := payload["models"].([]any)
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量按模型 %s ~ %s\n", from, to)
+func printUsageModels(
+	runtime commandRuntime,
+	usageRange managementops.UsageRange,
+	models []managementops.UsageModelItem,
+) {
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量按模型 %s ~ %s\n", usageRange.From, usageRange.To)
 	if len(models) == 0 {
 		_, _ = fmt.Fprintln(runtime.stdout, "  无记录")
 		return
 	}
 	_, _ = fmt.Fprintln(runtime.stdout, "provider  model  calls  tokens  cost")
-	for _, item := range models {
-		row, _ := item.(map[string]any)
-		_, _ = fmt.Fprintf(runtime.stdout, "%v  %v  %v  %s  %s\n",
-			row["provider"], row["model"], intValue(row["calls"]),
-			formatTokenCount(intValue(row["totalTokens"])), formatUsageCost(floatValue(row["costUsd"])))
+	for _, row := range models {
+		_, _ = fmt.Fprintf(runtime.stdout, "%s  %s  %d  %s  %s\n",
+			row.Provider, row.Model, row.Calls,
+			formatTokenCount(row.TotalTokens), formatUsageCost(row.CostUSD))
 	}
 }
 
-func printUsageSessions(runtime commandRuntime, payload map[string]any) {
-	from, to := usageRange(payload)
-	sessions, _ := payload["sessions"].([]any)
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量按会话 %s ~ %s\n", from, to)
+func printUsageSessions(
+	runtime commandRuntime,
+	usageRange managementops.UsageRange,
+	sessions []managementops.UsageSessionItem,
+) {
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 模型用量按会话 %s ~ %s\n", usageRange.From, usageRange.To)
 	if len(sessions) == 0 {
 		_, _ = fmt.Fprintln(runtime.stdout, "  无记录")
 		return
 	}
 	_, _ = fmt.Fprintln(runtime.stdout, "provider  session  project  calls  tokens  cost")
-	for _, item := range sessions {
-		row, _ := item.(map[string]any)
-		sessionID := fmt.Sprint(row["sessionId"])
+	for _, row := range sessions {
+		sessionID := row.SessionID
 		if len(sessionID) > 18 {
 			sessionID = sessionID[:18]
 		}
-		_, _ = fmt.Fprintf(runtime.stdout, "%v  %s  %v  %v  %s  %s\n",
-			row["provider"], sessionID, row["project"], intValue(row["calls"]),
-			formatTokenCount(intValue(row["totalTokens"])), formatUsageCost(floatValue(row["costUsd"])))
+		_, _ = fmt.Fprintf(runtime.stdout, "%s  %s  %s  %d  %s  %s\n",
+			row.Provider, sessionID, row.Project, row.Calls,
+			formatTokenCount(row.TotalTokens), formatUsageCost(row.CostUSD))
 	}
 }
 
-func printUsageSessionDetail(runtime commandRuntime, payload map[string]any, sessionID string) {
-	session, _ := payload["session"].([]any)
+func printUsageSessionDetail(
+	runtime commandRuntime,
+	sessionID string,
+	detail []managementops.UsageSessionModelDetail,
+) {
 	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 会话模型明细 %s\n", sessionID)
-	if len(session) == 0 {
+	if len(detail) == 0 {
 		_, _ = fmt.Fprintln(runtime.stdout, "  无记录")
 		return
 	}
 	_, _ = fmt.Fprintln(runtime.stdout, "provider  model  calls  input  output  cache  cost")
-	for _, item := range session {
-		row, _ := item.(map[string]any)
-		_, _ = fmt.Fprintf(runtime.stdout, "%v  %v  %v  %s  %s  %s  %s\n",
-			row["provider"], row["model"], intValue(row["calls"]),
-			formatTokenCount(intValue(row["inputTokens"])), formatTokenCount(intValue(row["outputTokens"])),
-			formatTokenCount(intValue(row["cacheReadInputTokens"])+intValue(row["cacheCreationInputTokens"])),
-			formatUsageCost(floatValue(row["costUsd"])))
+	for _, row := range detail {
+		_, _ = fmt.Fprintf(runtime.stdout, "%s  %s  %d  %s  %s  %s  %s\n",
+			row.Provider, row.Model, row.Calls,
+			formatTokenCount(row.InputTokens), formatTokenCount(row.OutputTokens),
+			formatTokenCount(row.CacheReadInputTokens+row.CacheCreationInputTokens),
+			formatUsageCost(row.CostUSD))
 	}
-}
-
-func usageRange(payload map[string]any) (string, string) {
-	rng, _ := payload["range"].(map[string]any)
-	return fmt.Sprint(rng["from"]), fmt.Sprint(rng["to"])
-}
-
-func intValue(value any) int64 {
-	number, _ := value.(float64)
-	return int64(number)
-}
-
-func floatValue(value any) float64 {
-	number, _ := value.(float64)
-	return number
 }
 
 func formatTokenCount(value int64) string {

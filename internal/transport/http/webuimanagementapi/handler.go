@@ -486,8 +486,8 @@ func (h *Handler) handleUsageRead(response http.ResponseWriter, request *http.Re
 		return
 	}
 	store := h.service.UsageStore()
-	jobs := h.service.UsageJobs()
-	if store == nil || jobs == nil {
+	reader := h.service.UsageReader()
+	if store == nil || reader == nil {
 		writeError(response, http.StatusServiceUnavailable, "model_usage_unavailable", "")
 		return
 	}
@@ -495,17 +495,16 @@ func (h *Handler) handleUsageRead(response http.ResponseWriter, request *http.Re
 	if !ok {
 		return
 	}
-	if query.Scan && (query.Provider == "" || h.service.SupportsUsageScan(query.Provider)) {
-		if _, err := jobs.ScanSync(request.Context(), query.Provider); err != nil {
-			writeServiceError(response, err, "model_usage_failed")
-			return
-		}
+	usage, err := reader.Prepare(request.Context(), query)
+	if err != nil {
+		writeServiceError(response, err, "model_usage_failed")
+		return
 	}
 
 	rng := managementops.UsageRange{From: query.From, To: query.To}
 	switch request.URL.Path {
 	case UsagePath, UsageStatsPath:
-		stats, err := store.QueryStats(request.Context(), query)
+		stats, err := usage.Stats(request.Context(), query)
 		if err != nil {
 			writeServiceError(response, err, "model_usage_failed")
 			return
@@ -527,14 +526,14 @@ func (h *Handler) handleUsageRead(response http.ResponseWriter, request *http.Re
 			"trend":        dashboard.Trend,
 		})
 	case UsageModelsPath:
-		models, err := store.QueryCostByModel(request.Context(), query)
+		models, err := usage.Models(request.Context(), query)
 		if err != nil {
 			writeServiceError(response, err, "model_usage_failed")
 			return
 		}
 		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "range": rng, "models": models})
 	case UsageSessionsPath:
-		sessions, err := store.QuerySessions(request.Context(), query)
+		sessions, err := usage.Sessions(request.Context(), query)
 		if err != nil {
 			writeServiceError(response, err, "model_usage_failed")
 			return
@@ -570,11 +569,7 @@ func (h *Handler) handleUsageRead(response http.ResponseWriter, request *http.Re
 			"models":   breakdown.Models,
 		})
 	case UsageSessionDetailPath:
-		if query.SessionID == "" {
-			writeError(response, http.StatusBadRequest, "session_id_required", "")
-			return
-		}
-		detail, err := store.QuerySessionDetail(request.Context(), query)
+		detail, err := usage.SessionDetail(request.Context(), query)
 		if err != nil {
 			writeServiceError(response, err, "model_usage_failed")
 			return

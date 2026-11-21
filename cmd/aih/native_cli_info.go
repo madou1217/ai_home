@@ -95,6 +95,6 @@ func writeNativeUsageHelp(output io.Writer) {
   --limit <数量>  --no-scan  --json
   --dry-run  --reindex-codex-forks
 
-查询由 Go Server 处理；scan 与 recalculate-costs 在本机 Go 执行。
+查询、scan 与 recalculate-costs 都在本机 Go 进程内读取 aih.db 与会话文件，不依赖运行中的 Server 或 Management Key。
 --dry-run 与 --reindex-codex-forks 用于本机扫描操作。`)
 }

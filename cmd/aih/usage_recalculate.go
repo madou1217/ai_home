@@ -20,13 +20,7 @@ func runUsageRecalculateCosts(ctx context.Context, home string, options usageOpt
 	if err != nil {
 		return err
 	}
-	ids := make([]string, 0)
-	for _, item := range catalog.List() {
-		if item.ID != "" {
-			ids = append(ids, item.ID)
-		}
-	}
-	store, err := managementops.NewUsageStore(ctx, dbPath, ids, time.Now)
+	store, err := managementops.NewUsageStore(ctx, dbPath, usageCatalogProviderIDs(catalog), time.Now)
 	if err != nil {
 		return err
 	}

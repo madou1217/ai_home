@@ -490,6 +490,10 @@ func normalizeVersionSeparators(modelID string) string {
 //
 // 只登记「查得到才有意义」的候选：聚合 Provider 的模型 ID 来自多个厂商，因此候选是
 // 一组命名空间而不是一个；没有稳定候选的 Provider 返回空，交给基座回退按模型 ID 推断。
+//
+// 与 modelpricing 的 inferModelsDevProviderIDs 有意不同：那边服务计价，额外覆盖
+// cline、CodeBuddy 家族的 coding-plan 别名与 kimi/GLM late rules；这里只服务展示。
+// 不要直接合并，除非先做全量模型对拍。
 func providerNamespacesFor(
 	providerID string,
 	modelID string,

@@ -873,6 +873,12 @@ func inferBaseModelIDs(modelID string) []string {
 	return candidates
 }
 
+// inferModelsDevProviderIDs 返回计价快照匹配用的 models.dev 命名空间候选。
+//
+// 与 modelmetadata 的 providerNamespacesFor 有意不同：这里服务计价，额外覆盖
+// cline、CodeBuddy 家族的 coding-plan 别名，并对 kimi/GLM 应用 late rules；
+// 那边只服务展示目录。不要为了「统一」直接合并——合并会改变计价候选集，
+// 必须先做全量模型对拍。
 func inferModelsDevProviderIDs(aihProvider, modelID string) []string {
 	provider := strings.ToLower(strings.TrimSpace(aihProvider))
 	id := strings.TrimSpace(modelID)

@@ -149,7 +149,7 @@ function linkTarget(dir, rootDir, binary) {
 }
 
 // relinkAihEntry 把全局 aih 入口指向 Go CLI：启动会话不再经过 Node 外壳。
-// 只改指向本包的符号链接；任一步失败都保留原链接（Node 入口仍可用）。
+// 只改指向本包的符号链接；任一步失败都保留原链接。
 function relinkAihEntry(rootDir, options = {}) {
   const log = options.log || console;
   if (process.platform === 'win32') return { action: 'skipped_windows', count: 0 };
@@ -189,7 +189,7 @@ function relinkAihEntry(rootDir, options = {}) {
 function main() {
   const rootDir = path.resolve(__dirname, '..');
   fixStalePreCommitHook(rootDir);
-  ensureExecutable(path.join(rootDir, 'bin', 'ai-home.js'));
+  ensureExecutable(path.join(rootDir, 'bin', 'aih'));
   ensureExecutable(path.join(rootDir, 'bin', 'claude-desktop-credential.js'));
 
   if (process.platform === 'darwin') {

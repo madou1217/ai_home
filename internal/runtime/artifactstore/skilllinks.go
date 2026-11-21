@@ -41,6 +41,16 @@ func applySkillLink(entry SkillLinkEntry, platform string) SkillLinkResult {
 	if storeDir == "" || accountDir == "" {
 		return result
 	}
+	// 旧布局：账号 skills 目录本身是指向共享库的整目录链接。先摘链接（只删链接
+	// 本身，实体不动）再重建逐技能视图。这一步要在“投影外跳过”之前做：旧链接
+	// 的目标就在共享库里，按路径判定必然算投影外。
+	if info, err := lstatOrNil(accountDir); err == nil && info != nil &&
+		isLinkEntry(info, accountDir) && linkPointsTo(accountDir, storeDir) {
+		if err := os.Remove(accountDir); err != nil {
+			return result
+		}
+		result.Removed++
+	}
 	// 账号目录如果已经落在投影外（例如 workbuddy 的 `.workbuddy-ai` 整体链到宿主
 	// runtime home），那份 skills 本来就是全机唯一一份；再"按账号启用"只会改写共享
 	// 目录、影响所有账号。直接跳过，绝不在投影外做增删。
@@ -48,7 +58,7 @@ func applySkillLink(entry SkillLinkEntry, platform string) SkillLinkResult {
 		result.Skipped = append(result.Skipped, "shared-external")
 		return result
 	}
-	// 账号目录不能是"整目录链接"（旧布局）：摘掉链接本身即可，实体在共享库里不会丢。
+	// 投影内的其它整目录链接：同样只摘链接本身，随后按技能重建。
 	if info, err := lstatOrNil(accountDir); err == nil && info != nil && isLinkEntry(info, accountDir) {
 		if err := os.Remove(accountDir); err != nil {
 			return result
@@ -133,7 +143,7 @@ func applySkillLink(entry SkillLinkEntry, platform string) SkillLinkResult {
 		}
 		if info != nil {
 			if isLinkEntry(info, linkPath) && linkPointsTo(linkPath, target) {
-				result.Kept++
+				// 步骤 1 已经统计过这条正确链接，这里不重复计数。
 				continue
 			}
 			if !isLinkEntry(info, linkPath) {

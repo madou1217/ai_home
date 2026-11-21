@@ -68,6 +68,9 @@ func applyStoreLink(entry StoreLinkEntry, platform string) StoreLinkResult {
 		result.Skipped = "shared-root-inside-projection"
 		return result
 	}
+	// 父目录整体链到共享根后，子条目再处理只会穿过链接看到共享侧实体
+	//（空目录会被当残留删掉，随后 symlink 撞 EEXIST）。先把冗余的子声明收敛掉。
+	entry = normalizeStoreLinkEntry(entry)
 	context := storeLinkContext{entry: entry, platform: platform, result: &result}
 	for _, segments := range entry.DirEntries {
 		context.run(segments, context.ensureDirLink)
@@ -80,6 +83,99 @@ func applyStoreLink(entry StoreLinkEntry, platform string) StoreLinkResult {
 	}
 	result.Unresolved = uniqueStrings(result.Unresolved)
 	return result
+}
+
+// normalizeStoreLinkEntry 去掉被祖先目录条目覆盖的子条目：父目录一旦整体链到
+// 共享根，子路径天然共享，再声明一次是冗余的（且会误判共享侧实体为投影残留）。
+func normalizeStoreLinkEntry(entry StoreLinkEntry) StoreLinkEntry {
+	entry.DirEntries = dropCoveredSegments(entry.DirEntries, nil)
+	entry.FileEntries = dropCoveredSegments(entry.FileEntries, entry.DirEntries)
+	entry.SidecarEntries = dropCoveredSegments(entry.SidecarEntries, entry.DirEntries)
+	return entry
+}
+
+// dropCoveredSegments 按段数从短到长保留条目，已被 parents 或更短条目覆盖的直接丢弃。
+func dropCoveredSegments(entries [][]string, parents [][]string) [][]string {
+	if len(entries) == 0 {
+		return entries
+	}
+	covered := make([][]string, 0, len(parents)+len(entries))
+	for _, parent := range parents {
+		if cleaned := cleanStoreSegments(parent); len(cleaned) > 0 {
+			covered = append(covered, cleaned)
+		}
+	}
+	sorted := make([][]string, 0, len(entries))
+	for _, segments := range entries {
+		if cleaned := cleanStoreSegments(segments); len(cleaned) > 0 {
+			sorted = append(sorted, cleaned)
+		}
+	}
+	sort.SliceStable(sorted, func(left, right int) bool { return len(sorted[left]) < len(sorted[right]) })
+	result := make([][]string, 0, len(sorted))
+	for _, segments := range sorted {
+		if coveredBySegments(segments, covered) {
+			continue
+		}
+		covered = append(covered, segments)
+		result = append(result, segments)
+	}
+	return result
+}
+
+func cleanStoreSegments(segments []string) []string {
+	cleaned := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		if segment == "" {
+			continue
+		}
+		cleaned = append(cleaned, segment)
+	}
+	return cleaned
+}
+
+func coveredBySegments(segments []string, covered [][]string) bool {
+	for _, candidate := range covered {
+		if len(candidate) > len(segments) {
+			continue
+		}
+		match := true
+		for index := range candidate {
+			if candidate[index] != segments[index] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// coveredBySharedAncestor 判断 source 的某个祖先是否已经是指向共享根的链接。
+// 归一化后这种声明本不该存在；这里再兜一层，兼容乱序或外部拼装的请求。
+func coveredBySharedAncestor(source, sharedRoot string) bool {
+	if normalizeCompare(sharedRoot) == "" {
+		return false
+	}
+	for dir := filepath.Dir(source); ; {
+		if info, err := lstatOrNil(dir); err == nil && info != nil && isLinkEntry(info, dir) {
+			if target, err := os.Readlink(dir); err == nil {
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(filepath.Dir(dir), target)
+				}
+				if insidePath(target, sharedRoot) {
+					return true
+				}
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
 }
 
 type storeLinkContext struct {
@@ -101,6 +197,10 @@ func (context *storeLinkContext) run(segments []string, fn func([]string)) {
 func (context *storeLinkContext) ensureDirLink(segments []string) {
 	source := filepath.Join(context.entry.ProjectionRoot, filepath.Join(segments...))
 	target := filepath.Join(context.entry.SharedRoot, filepath.Join(segments...))
+	// 兜底：声明乱序时，祖先已经链到共享根就说明这一段天然共享，不再重复处理。
+	if coveredBySharedAncestor(source, context.entry.SharedRoot) {
+		return
+	}
 	info, err := lstatOrNil(source)
 	if err != nil {
 		context.result.Errors = append(context.result.Errors, strings.Join(segments, "/")+":"+errnoName(err))
@@ -137,6 +237,10 @@ func (context *storeLinkContext) ensureDirLink(segments []string) {
 func (context *storeLinkContext) ensureFileLink(segments []string, dangling bool) {
 	source := filepath.Join(context.entry.ProjectionRoot, filepath.Join(segments...))
 	target := filepath.Join(context.entry.SharedRoot, filepath.Join(segments...))
+	// 兜底：声明乱序时，祖先已经链到共享根就说明这一段天然共享，不再重复处理。
+	if coveredBySharedAncestor(source, context.entry.SharedRoot) {
+		return
+	}
 	info, err := lstatOrNil(source)
 	if err != nil {
 		context.addError(segments, err)

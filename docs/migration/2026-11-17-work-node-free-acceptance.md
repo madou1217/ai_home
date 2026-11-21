@@ -270,7 +270,7 @@ native build与focused vet通过；Linux/Windows x64交叉编译exit0，仅编�
 
 1. 新 `cmd/aih/codex_app_server.go`：聚焦私有 `__codex-cli-app-server` adapter，复用 `codexhooks.CLIHookState` v1，不新建业务状态来源。64KiB有界、普通文件／非末级symlink、inode／mtime前后核对、重复字段及 `version/enabled` 大小写别名拒绝。缺文件按原约定disabled；空／坏JSON／缺bool／null／错误类型／非v1／不可读／非regular均**失败关闭**，不沿用旧Node“坏state当disabled”的宽松行为。
 2. `cmd/aih/run.go`：仅private命令早期分派3行，避开R5相邻Desktop语义，没有改普通launch／默认账号／账号写者。
-3. `internal/runtime/codexhooks/wrapper.go`：仅CLI marker＋RouteDefaultCLIThroughGo的POSIX app-server分支，固定安装HelperScriptPath推导绝对Go路径；能力检查后，由Go输出精确 `disabled-v1` 或 `enabled-compat-v1`。**enabled在任何native执行前明确选择旧Node兼容**；disabled复读state、canonical resolver、host admission后以 `syscall.Exec` 原样替换官方CLI，原stdin/out/err、EOF、退出／信号不经过另一套pipe／handshake／RPC消费者。任何缺Go、坏state、目标／admission／native失败均不获得回Node的资格。
+3. `internal/runtime/codexhooks/wrapper.go`：仅CLI marker＋RouteDefaultCLIThroughGo的POSIX app-server分支，按 GoBinaryPath（显式配置或 aih-server 同目录 aih-go）定位绝对 Go 路径，不再解析 Node helper 脚本；能力检查后，由Go输出精确 `disabled-v1` 或 `enabled-compat-v1`。**enabled在任何native执行前明确选择旧Node兼容**；disabled复读state、canonical resolver、host admission后以 `syscall.Exec` 原样替换官方CLI，原stdin/out/err、EOF、退出／信号不经过另一套pipe／handshake／RPC消费者。任何缺Go、坏state、目标／admission／native失败均不获得回Node的资格。
 
 state复读只是时间点校验，**不是与原writer原子互斥**；私有命令仅为可信安装wrapper的固定state path，不把绝对basename检查说成通用权限端口。capability是版本标记不是构件签名；canonical resolver保留用户显式binary选择，第三方JS CLI本身可能用Node，不能对任意override承诺zeroNode。原内部PASSTHROUGH分支、默认／resume／Desktop／VSCode／Windows生成逻辑未扩。
 

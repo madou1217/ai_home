@@ -65,6 +65,28 @@ func ResolveProviderCLIPath(provider string, opts Options) string {
 	}
 	binaryNames = uniqueStrings(binaryNames)
 
+	// macOS 上的 Kiro bundle 同目录下同时有 kiro-cli 与 kiro-cli-chat 时优先选用 kiro-cli-chat。
+	orderedNames := binaryNames
+	if norm == "kiro" && resolvePlatform(opts) == platformMacOS {
+		orderedNames = uniqueStrings(append([]string{"kiro-cli-chat"}, binaryNames...))
+	}
+	return resolveExecutableInCLIDirs(norm, orderedNames, spec, opts)
+}
+
+// ResolveBinaryPath 用与工具箱相同的安装器目录与 PATH 顺序解析指定可执行文件。
+// 供启动路径复用同一份「官方 CLI 装在哪里」的事实，避免安装成功却因 PATH
+// 不含 ~/.local/bin 而启动失败；空字符串表示未找到。
+func ResolveBinaryPath(provider, binary string, opts Options) string {
+	norm := strings.ToLower(strings.TrimSpace(provider))
+	name := strings.TrimSpace(binary)
+	if norm == "" || name == "" {
+		return ""
+	}
+	return resolveExecutableInCLIDirs(norm, []string{name}, getInstaller(norm), opts)
+}
+
+// resolveExecutableInCLIDirs 在安装器优先目录、PATH 与常见安装目录中按顺序查找。
+func resolveExecutableInCLIDirs(provider string, orderedNames []string, spec *providerInstallerSpec, opts Options) string {
 	p := resolvePlatform(opts)
 	var candidateDirs []string
 	if spec != nil && spec.CLI != nil && spec.CLI.CollectPathEntries != nil {
@@ -91,28 +113,22 @@ func ResolveProviderCLIPath(provider string, opts Options) string {
 	}
 	candidateDirs = uniqueStrings(candidateDirs)
 
-	// macOS 上的 Kiro bundle 同目录下同时有 kiro-cli 与 kiro-cli-chat 时优先选用 kiro-cli-chat。
-	orderedNames := binaryNames
-	if norm == "kiro" && p == platformMacOS {
-		orderedNames = uniqueStrings(append([]string{"kiro-cli-chat"}, binaryNames...))
-	}
-
 	for _, dir := range candidateDirs {
 		if path := findExecutableInDir(p, dir, orderedNames); path != "" {
-			return preferKiroChatSibling(p, norm, path)
+			return preferKiroChatSibling(p, provider, path)
 		}
 	}
 
 	if opts.LookPath != nil {
 		for _, name := range orderedNames {
 			if found, err := opts.LookPath(name); err == nil && strings.TrimSpace(found) != "" {
-				return preferKiroChatSibling(p, norm, strings.TrimSpace(found))
+				return preferKiroChatSibling(p, provider, strings.TrimSpace(found))
 			}
 		}
 	} else {
 		for _, name := range orderedNames {
 			if found, err := exec.LookPath(name); err == nil && strings.TrimSpace(found) != "" {
-				return preferKiroChatSibling(p, norm, strings.TrimSpace(found))
+				return preferKiroChatSibling(p, provider, strings.TrimSpace(found))
 			}
 		}
 	}

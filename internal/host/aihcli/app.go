@@ -132,6 +132,11 @@ type App struct {
 	planner           launchPlanner
 	runner            launchRunner
 	permissionOptions permissionlaunch.Options
+	// cliLifecycle 提供官方 CLI 的安装/更新事实；缺失时保留原失败语义。
+	cliLifecycle providerCLILifecycle
+	// stdin/stdout 只用于缺失 CLI 时的交互式安装确认。
+	stdin       io.Reader
+	interactive bool
 	// hostHomeDir 与 lookupEnv 定位子进程实际读取的宿主 Codex 配置。
 	hostHomeDir string
 	lookupEnv   func(string) (string, bool)
@@ -362,6 +367,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 			return fail("创建账号投影执行器失败", err)
 		}
 	}
+	// 官方 CLI 的安装位置、安装计划与版本源统一由工具箱回答；Runner 用同一
+	// 份事实解析可执行文件，安装成功即能被下一次启动发现（例如 ~/.local/bin）。
+	cliLifecycle := newAppsCLILifecycle(options.AIHomeDir, hostHomeDir)
 	runner, err := providercli.NewRunner(providercli.Options{
 		Credentials:     credentials,
 		Stdin:           options.Stdin,
@@ -373,11 +381,13 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Projection:      provisioner,
 		HostHomeDir:     hostHomeDir,
 		PrepareNative:   codexexecintent.Prepare,
+		DiscoverBinary:  cliLifecycle.Resolve,
 		ClaudePreflight: options.ClaudePreflight,
 	})
 	if err != nil {
 		return fail("创建 Provider CLI Runtime 失败", err)
 	}
+	interactive := isInteractiveTTY(options.Stdin, options.Stdout)
 	if store == nil {
 		app, err := newApp(catalog, planner, runner)
 		if err != nil {
@@ -386,6 +396,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 		app.hostHomeDir = hostHomeDir
 		app.lookupEnv = os.LookupEnv
 		app.stderr = options.Stderr
+		app.cliLifecycle = cliLifecycle
+		app.stdin = options.Stdin
+		app.interactive = interactive
 		app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir, HostHomeDir: hostHomeDir, GOOS: runtime.GOOS}
 		return app, nil
 	}
@@ -398,6 +411,9 @@ func New(ctx context.Context, options Options) (*App, error) {
 	app.hostHomeDir = hostHomeDir
 	app.lookupEnv = os.LookupEnv
 	app.stderr = options.Stderr
+	app.cliLifecycle = cliLifecycle
+	app.stdin = options.Stdin
+	app.interactive = interactive
 	app.permissionOptions = permissionlaunch.Options{Catalog: catalog, AIHomeDir: options.AIHomeDir, HostHomeDir: hostHomeDir, GOOS: runtime.GOOS}
 	return app, nil
 }
@@ -568,8 +584,32 @@ func (app *App) Run(
 	if permission.Applied {
 		launchArguments = permission.Args
 	}
-	if err := app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{ExtraEnv: permission.Env}); err != nil {
-		return fmt.Errorf("执行 Provider CLI 失败: %w", err)
+	planCLITarget, hasCLITarget := providerCLIPlanTargetFromPlan(plan)
+	// 版本提示只读本地缓存（零延迟），并在 TUI 运行期间后台刷新缓存；
+	// 不阻断启动，也绝不把版本检查变成启动前置条件。
+	if hasCLITarget && app.providerCLIRemediationEligible(planCLITarget.ProviderID) {
+		if notice := app.providerCLIUpdateNotice(planCLITarget.ProviderID); notice != "" {
+			_, _ = fmt.Fprintln(app.stderr, notice)
+		}
+		app.refreshProviderCLIVersion(planCLITarget.ProviderID)
+	}
+	runProvider := func() error {
+		return app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{ExtraEnv: permission.Env})
+	}
+	runErr := runProvider()
+	// 官方 CLI 缺失时不要只把 exec 错误抛给用户：说明原因、给出安装器，
+	// 交互式终端直接询问 [Y/n]，安装成功后用同一份计划重试一次。
+	if runErr != nil && hasCLITarget && errors.Is(runErr, providercli.ErrProviderBinaryNotFound) {
+		installed, remediationErr := app.remediateProviderCLI(ctx, planCLITarget)
+		if remediationErr != nil {
+			return remediationErr
+		}
+		if installed {
+			runErr = runProvider()
+		}
+	}
+	if runErr != nil {
+		return fmt.Errorf("执行 Provider CLI 失败: %w", runErr)
 	}
 	return nil
 }

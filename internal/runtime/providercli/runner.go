@@ -67,6 +67,9 @@ type Options struct {
 	// PrepareNative applies provider launch intent after the final argv/env resolve.
 	// Its release is held through foreground exit; nil preserves existing behavior.
 	PrepareNative func(context.Context, string, string, []string, []string) ([]string, func(), error)
+	// DiscoverBinary 用安装器认可的位置补充非 Codex CLI 的 PATH 解析；
+	// 由组合根提供（工具箱目录事实），为空时保持纯 PATH 行为。
+	DiscoverBinary func(providerID, binary string) string
 	// ClaudePreflight 是 Claude 首屏检查决策；零值表示保留官方行为且不告警。
 	ClaudePreflight ClaudePreflight
 }
@@ -107,6 +110,8 @@ func NewRunner(options Options) (*Runner, error) {
 	if platform == "" {
 		platform = runtime.GOOS
 	}
+	resolver := defaultBinaryResolver()
+	resolver.discover = options.DiscoverBinary
 	return &Runner{
 		credentials:     options.Credentials,
 		stdin:           options.Stdin,
@@ -119,7 +124,7 @@ func NewRunner(options Options) (*Runner, error) {
 		hostHomeDir:     options.HostHomeDir,
 		platform:        platform,
 		environ:         os.Environ,
-		binaries:        defaultBinaryResolver(),
+		binaries:        resolver,
 		processes:       execProcessFactory{},
 		prepareNative:   options.PrepareNative,
 		claudePreflight: options.ClaudePreflight,
@@ -246,7 +251,7 @@ func (runner *Runner) runNativeDirect(
 	spec providerlaunch.LaunchSpec,
 	arguments []string,
 ) error {
-	launch, err := ResolveLaunchBinary(spec.ProviderID(), spec.Binary(), runner.hostHomeDir, runner.platform)
+	launch, err := resolveLaunchBinary(spec.ProviderID(), spec.Binary(), runner.hostHomeDir, runner.platform, runner.binaries.Resolve)
 	if err != nil {
 		return err
 	}

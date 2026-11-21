@@ -35,6 +35,13 @@ var workbuddyApps = map[string]workbuddyApp{
 	"workbuddycn": {appName: "WorkBuddy.app", authID: "workbuddy-desktop", label: "WorkBuddy"},
 }
 
+// UsesDesktopBundledRuntime 报告 Provider 的原生运行时是否只随桌面 App 分发。
+// 这类运行时不能由独立 CLI 安装计划替代。
+func UsesDesktopBundledRuntime(providerID string) bool {
+	_, found := workbuddyApps[strings.ToLower(strings.TrimSpace(providerID))]
+	return found
+}
+
 // ApplyLaunchEnv 把启动命令的固定环境覆盖进 K=V 列表。
 func ApplyLaunchEnv(environment []string, extra map[string]string) []string {
 	if len(extra) == 0 {
@@ -60,11 +67,23 @@ func ApplyLaunchEnv(environment []string, extra map[string]string) []string {
 // ResolveLaunchBinary 解析 Provider 的原生启动命令。WorkBuddy 两支必须使用桌面
 // App 内嵌 runtime，其余 Provider 维持 PATH 解析。
 func ResolveLaunchBinary(providerID string, binary string, hostHomeDir string, goos string) (LaunchBinary, error) {
+	return resolveLaunchBinary(providerID, binary, hostHomeDir, goos, ResolveBinary)
+}
+
+// resolveLaunchBinary 把二进制解析策略留给调用方：Runner 会传入带安装器目录
+// 发现的解析器，纯 PATH 调用方继续使用 ResolveBinary。
+func resolveLaunchBinary(
+	providerID string,
+	binary string,
+	hostHomeDir string,
+	goos string,
+	resolve func(providerID, binary string) (string, error),
+) (LaunchBinary, error) {
 	normalized := strings.ToLower(strings.TrimSpace(providerID))
 	if spec, ok := workbuddyApps[normalized]; ok {
 		return resolveWorkbuddyLaunch(spec, hostHomeDir, goos)
 	}
-	path, err := ResolveBinary(providerID, binary)
+	path, err := resolve(providerID, binary)
 	if err != nil {
 		return LaunchBinary{}, err
 	}

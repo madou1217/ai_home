@@ -26,6 +26,7 @@ import (
 	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 )
 
 // ansiEscape 清除官方 CLI 版本输出里的颜色序列（与 Node 侧一致）。
@@ -59,6 +60,41 @@ func providerBinaryName(providerID string) string {
 	return definition.ID
 }
 
+// resolveProviderCLIForInfo 用与启动路径相同的安装目录事实解析官方 CLI。
+// Codex 的受管运行时始终由 providercli 判定，其余 Provider 先查安装器目录
+// （例如 agy 的 ~/.local/bin），再回落 PATH。
+func resolveProviderCLIForInfo(
+	providerID string,
+	binaryName string,
+	runtime commandRuntime,
+) (string, error) {
+	if strings.EqualFold(strings.TrimSpace(providerID), "codex") {
+		return providercli.ResolveBinary(providerID, binaryName)
+	}
+	hostHome := lookupOrDefault(runtime.lookupEnv, "AIH_HOST_HOME", "")
+	if hostHome == "" {
+		if home, err := runtime.userHomeDir(); err == nil {
+			hostHome = home
+		}
+	}
+	aiHome, _ := resolveAIHomeDir(runtime)
+	environment := make(map[string]string)
+	for _, entry := range os.Environ() {
+		name, value, found := strings.Cut(entry, "=")
+		if found && name != "" {
+			environment[name] = value
+		}
+	}
+	if path := apps.ResolveBinaryPath(providerID, binaryName, apps.Options{
+		AIHomeDir:   aiHome,
+		HostHomeDir: hostHome,
+		Env:         environment,
+	}); path != "" {
+		return path, nil
+	}
+	return providercli.ResolveBinary(providerID, binaryName)
+}
+
 // runProviderVersion 直接问原生 CLI（不猜版本），输出首行有效版本与二进制路径。
 func runProviderVersion(
 	ctx context.Context,
@@ -76,15 +112,16 @@ func runProviderVersion(
 	if binaryName == "" {
 		return fmt.Errorf("%w: %s 没有已知的官方 CLI", errInvalidCommand, providerID)
 	}
-	path, err := providercli.ResolveBinary(providerID, binaryName)
+	path, err := resolveProviderCLIForInfo(providerID, binaryName, runtime)
 	if err != nil {
 		_, _ = fmt.Fprintf(
 			runtime.stderr,
-			"Native CLI '%s' (%s) not found.\n",
+			"[aih] 未找到 %s 官方 CLI（%s）：当前 PATH 与常见安装目录中都没有它。\n",
 			providerID,
 			binaryName,
 		)
-		return err
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 安装：aih %s install；或直接运行 aih %s，按提示一键安装。\n", providerID, providerID)
+		return cliExitCode{code: 1}
 	}
 	output := ""
 	command := exec.CommandContext(ctx, path, "--version")

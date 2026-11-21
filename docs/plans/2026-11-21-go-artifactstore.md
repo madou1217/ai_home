@@ -59,6 +59,24 @@
   跳过引用/在用条目，移入 trash 并删除 fingerprint。
 - 实测：3 棵未引用树保留 2 棵，最旧进 trash；引用 key 后不再回收。
 
+## 数据根链接与应用内容去重（2026-11-21 已迁移）
+
+- Node 仍声明策略（`sharedHostDataRoots` / `sharedHostDedupe`），Go 执行：
+  - 数据根：投影空目录 + 宿主已有 → 建链（Windows 目录用 junction）；投影有真实数据 →
+    整体移给宿主再建链（`adopted`）；两边都有真实数据 → `unresolved`（调用方拒绝启动）；
+    两边都没有 → `skipped`，不在宿主凭空建目录。
+  - 去重：版本戳一致时遍历两侧同版本文件，大小+内容一致才以"临时硬链接 + rename"替换；
+    已同 inode 计入 `alreadyShared`；版本戳不同整目录跳过。
+- Node 侧统一入口 `prepareProjectionLinks`（桌面启动、CLI 会话存储两条链共用），返回
+  `backend: 'go' | 'node' | 'none'`（`none` = 该 provider 没有声明）。
+- 实测：
+  - macOS 合成用例与 Node 实现逐项一致（adopted/linked/unchanged/unresolved/skipped、
+    文件型数据根、空目录、二次幂等）。
+  - Windows NTFS：junction、adopted、unresolved 冲突保留、去重同 File ID、二次 unchanged。
+  - 真实 31 账号：0 unresolved / 0 failed / 0 变更 / 0 磁盘增长。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
+- `shared-store-linker`（zcode/cline 会话存储逐条链接、含 provider adopt 钩子）仍在 Node；
+  这是下一块可迁移的执行点，但 adopt 钩子是 provider 逻辑，需要按"Node 给动作、Go 做文件操作"拆分。

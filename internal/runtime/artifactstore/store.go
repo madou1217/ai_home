@@ -33,15 +33,49 @@ import (
 
 // Request 是 Node 传入的一次投影准备请求。
 type Request struct {
-	Provider        string        `json:"provider"`
-	ProjectionRoot  string        `json:"projectionRoot"`
-	StoreRoot       string        `json:"storeRoot"`
-	ProjectionsRoot string        `json:"projectionsRoot"`
-	Platform        string        `json:"platform"`
-	HostHomeDir     string        `json:"hostHomeDir,omitempty"`
-	Artifacts       []Artifact    `json:"artifacts"`
-	Caches          []CacheEntry  `json:"caches,omitempty"`
-	Prune           *PruneOptions `json:"prune,omitempty"`
+	Provider        string          `json:"provider"`
+	ProjectionRoot  string          `json:"projectionRoot"`
+	StoreRoot       string          `json:"storeRoot"`
+	ProjectionsRoot string          `json:"projectionsRoot"`
+	Platform        string          `json:"platform"`
+	HostHomeDir     string          `json:"hostHomeDir,omitempty"`
+	Artifacts       []Artifact      `json:"artifacts"`
+	Caches          []CacheEntry    `json:"caches,omitempty"`
+	DataRoots       []DataRootEntry `json:"dataRoots,omitempty"`
+	Dedupe          []DedupeEntry   `json:"dedupe,omitempty"`
+	Prune           *PruneOptions   `json:"prune,omitempty"`
+}
+
+// DataRootEntry 是桌面 App 数据根（会话/数据库）声明：投影里应是指向宿主同一份的链接。
+type DataRootEntry struct {
+	Projection []string `json:"projection"`
+	Host       []string `json:"host"`
+}
+
+// DedupeEntry 是"应用解压内容与宿主同版本"的逐文件硬链接去重声明。
+type DedupeEntry struct {
+	Projection []string `json:"projection"`
+	Host       []string `json:"host"`
+	StampFile  string   `json:"stampFile"`
+}
+
+// DataRootResult 汇总数据根链接结果；unresolved 表示两边都有真实数据，必须拒绝启动。
+type DataRootResult struct {
+	Linked     []string       `json:"linked,omitempty"`
+	Adopted    []string       `json:"adopted,omitempty"`
+	Unchanged  []string       `json:"unchanged,omitempty"`
+	Unresolved []string       `json:"unresolved,omitempty"`
+	Skipped    []string       `json:"skipped,omitempty"`
+	Failed     []CacheFailure `json:"failed,omitempty"`
+}
+
+// DedupeResult 汇总逐文件去重统计。
+type DedupeResult struct {
+	Linked        int      `json:"linked"`
+	AlreadyShared int      `json:"alreadyShared"`
+	Failed        int      `json:"failed"`
+	Bytes         int64    `json:"bytes"`
+	Skipped       []string `json:"skipped,omitempty"`
 }
 
 // CacheEntry 是 Node 按 provider 策略算出的宿主共享缓存声明。
@@ -106,6 +140,8 @@ type Response struct {
 	StorePruned []PrunedVersion `json:"storePruned,omitempty"`
 	Emptied     int             `json:"emptied,omitempty"`
 	Caches      *CacheResult    `json:"caches,omitempty"`
+	DataRoots   *DataRootResult `json:"dataRoots,omitempty"`
+	Dedupe      *DedupeResult   `json:"dedupe,omitempty"`
 	Errors      []string        `json:"errors"`
 }
 
@@ -127,6 +163,9 @@ func Ensure(request Request) Response {
 		response.OK = false
 		response.Errors = append(response.Errors, "projectionRoot/storeRoot required")
 		return response
+	}
+	if len(request.DataRoots) > 0 {
+		response.DataRoots = linkDataRoots(request)
 	}
 	if len(request.Caches) > 0 {
 		response.Caches = linkCaches(request)
@@ -162,6 +201,10 @@ func Ensure(request Request) Response {
 			continue
 		}
 		response.Versions = append(response.Versions, result)
+	}
+	// 去重放在构件铺好之后：需要应用目录已经就位，且不干扰版本树的 inode 账本。
+	if len(request.Dedupe) > 0 {
+		response.Dedupe = dedupeSharedHostFiles(request)
 	}
 	if request.Prune != nil {
 		pruneVersions(request, &response)

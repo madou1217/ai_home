@@ -1,5 +1,11 @@
 name: web-build
 
+# 前端 lint + 构建。
+#
+# 触发保持 push/PR（不做 workflow 级 paths 过滤，避免 required check 卡 Pending）；
+# 是否真的跑重步骤由 job 内改动门决定：只有 web/ 或依赖清单变化才安装依赖、lint、build，
+# 否则只跑一个几秒的 gate 步骤并成功。
+
 on:
   push:
     branches:
@@ -23,23 +29,54 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 需要历史做 base..head 的 diff。
+          fetch-depth: 0
+
+      # 仓库每次 push 都跑一遍前端构建会白烧 3-5 分钟 runner。
+      # 判定失败/没有 base 时按"要跑"处理（安全方向）。
+      - name: Detect web changes
+        id: scope
+        run: |
+          base='${{ github.event.pull_request.base.sha }}'
+          if [ -z "$base" ]; then base='${{ github.event.before }}'; fi
+          head='${{ github.sha }}'
+          web=true
+          if [ -n "$base" ] && ! printf '%s' "$base" | grep -Eq '^0+$'; then
+            if files=$(git diff --name-only "$base" "$head" 2>/dev/null); then
+              if ! printf '%s\n' "$files" | grep -Eq '^(web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)'; then
+                web=false
+              fi
+            fi
+          fi
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "web checks needed: $web"
 
       - name: Setup Node.js
+        if: steps.scope.outputs.web == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Enable pnpm
+        if: steps.scope.outputs.web == 'true'
         run: corepack enable
 
       - name: Install web dependencies
+        if: steps.scope.outputs.web == 'true'
         working-directory: web
         run: pnpm install
 
       - name: Lint web
+        if: steps.scope.outputs.web == 'true'
         working-directory: web
         run: pnpm run lint
 
       - name: Build web
+        if: steps.scope.outputs.web == 'true'
         working-directory: web
         run: pnpm run build
+
+      - name: No web changes
+        if: steps.scope.outputs.web != 'true'
+        run: echo 'no web-related changes; web lint/build skipped'

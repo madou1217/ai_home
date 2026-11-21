@@ -14,10 +14,11 @@ const ProviderID = "kiro"
 
 // Policy 返回 Kiro 的投影策略。
 func Policy() accountprojection.Policy {
+	// NativeRoot 留空：Kiro 跑真实 HOME，账号投影只承载 data.sqlite3；
+	// 宿主原生根 .kiro 由 storagepolicy 管理，不是这里的投影根。
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
-		NativeRoot:      []string{},
 		RuntimeHomeRoot: []string{providerroot.RuntimeHomeDir},
 		AuthArtifacts: []accountprojection.Artifact{
 			{

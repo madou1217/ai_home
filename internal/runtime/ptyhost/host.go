@@ -141,8 +141,10 @@ func Run(ctx context.Context, config Config) (int, error) {
 		if inputPumpCanStop(config.Stdin) {
 			<-inputDone
 		}
-		// Restore termios before writing the provider-mode reset sequence; the
-		// sequence itself must reach the caller's normal shell terminal state.
+		// Keep raw mode while draining asynchronous terminal replies; otherwise
+		// a late CSI response can be echoed visibly before it is flushed.
+		// Restore the caller's terminal modes first so the cleanup bytes are
+		// emitted under the same normal output contract as the shell.
 		restoreTerminal()
 		// The child may have enabled mouse reporting, bracketed paste, an
 		// alternate screen or synchronized updates. Restore the caller's

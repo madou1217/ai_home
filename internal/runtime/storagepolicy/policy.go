@@ -13,6 +13,8 @@ package storagepolicy
 
 import (
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -56,6 +58,34 @@ func credential(field, format string, optional bool, path ...string) Artifact {
 	return Artifact{Field: field, Path: path, Format: format, Optional: optional}
 }
 
+// builtinCatalog 只构造一次：AuthArtifacts 的根相对路径由 Provider 合同展开。
+var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		panic("storagepolicy: Provider 合同无效: " + err.Error())
+	}
+	return catalog
+})
+
+// nativePath 返回 <该 Provider 的 NativeRoot>/<suffix...>，根事实来自合同。
+func nativePath(providerID string, suffix ...string) []string {
+	definition, found := builtinCatalog().Get(providerID)
+	if !found {
+		panic("storagepolicy: 未知 Provider " + providerID)
+	}
+	return append(definition.EffectiveNativeRoot(), suffix...)
+}
+
+// configPath 返回 <该 Provider 的 CLI.GlobalDir>/<suffix...>。
+// 用于不使用 NativeRoot、但仍在配置根下的凭据（例如 agy 的共享 token）。
+func configPath(providerID string, suffix ...string) []string {
+	definition, found := builtinCatalog().Get(providerID)
+	if !found || definition.CLI == nil {
+		panic("storagepolicy: 未知 Provider 或缺少 CLI 配置 " + providerID)
+	}
+	return append(strings.Split(strings.TrimSpace(definition.CLI.GlobalDir), "/"), suffix...)
+}
+
 func private(path ...string) Artifact { return Artifact{Path: path} }
 
 func sharedAuthPath(name string) []string {
@@ -94,7 +124,7 @@ var providerOrder = []string{
 var policies = map[string]Policy{
 	"codex": {
 		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, ".codex", "auth.json"),
+			credential("auth", "json", false, nativePath("codex", "auth.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -105,7 +135,7 @@ var policies = map[string]Policy{
 	},
 	"claude": {
 		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, ".claude", ".credentials.json"),
+			credential("credentials", "json", false, nativePath("claude", ".credentials.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -115,8 +145,8 @@ var policies = map[string]Policy{
 	},
 	"gemini": {
 		AuthArtifacts: []Artifact{
-			credential("oauthCreds", "json", false, ".gemini", "oauth_creds.json"),
-			credential("googleAccounts", "json", true, ".gemini", "google_accounts.json"),
+			credential("oauthCreds", "json", false, nativePath("gemini", "oauth_creds.json")...),
+			credential("googleAccounts", "json", true, nativePath("gemini", "google_accounts.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("Library", "Keychains"),
@@ -125,11 +155,11 @@ var policies = map[string]Policy{
 	},
 	"agy": {
 		AuthArtifacts: []Artifact{
-			credential("oauthToken", "json", false, ".gemini", "antigravity-cli", "antigravity-oauth-token"),
-			credential("desktopOauthToken", "json", true, ".gemini", "jetski-standalone-oauth-token"),
-			credential("email", "text", true, ".gemini", "antigravity-cli", "email.cache"),
-			credential("oauthCreds", "json", true, ".gemini", "oauth_creds.json"),
-			credential("googleAccounts", "json", true, ".gemini", "google_accounts.json"),
+			credential("oauthToken", "json", false, nativePath("agy", "antigravity-oauth-token")...),
+			credential("desktopOauthToken", "json", true, configPath("agy", "jetski-standalone-oauth-token")...),
+			credential("email", "text", true, nativePath("agy", "email.cache")...),
+			credential("oauthCreds", "json", true, configPath("agy", "oauth_creds.json")...),
+			credential("googleAccounts", "json", true, configPath("agy", "google_accounts.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -139,7 +169,7 @@ var policies = map[string]Policy{
 	},
 	"opencode": {
 		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, ".local", "share", "opencode", "auth.json"),
+			credential("auth", "json", false, nativePath("opencode", "auth.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -153,7 +183,7 @@ var policies = map[string]Policy{
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
 		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, ".grok", "auth.json"),
+			credential("auth", "json", false, nativePath("grok", "auth.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("Library", "Keychains"),
@@ -162,8 +192,8 @@ var policies = map[string]Policy{
 	"kimi": {
 		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, ".kimi-code", "credentials", "kimi-code.json"),
-			credential("deviceId", "text", true, ".kimi-code", "device_id"),
+			credential("credentials", "json", false, nativePath("kimi", "credentials", "kimi-code.json")...),
+			credential("deviceId", "text", true, nativePath("kimi", "device_id")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -176,8 +206,8 @@ var policies = map[string]Policy{
 	"zcode": {
 		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, ".zcode", "v2", "credentials.json"),
-			credential("config", "json", true, ".zcode", "v2", "config.json"),
+			credential("credentials", "json", false, nativePath("zcode", "v2", "credentials.json")...),
+			credential("config", "json", true, nativePath("zcode", "v2", "config.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -200,7 +230,7 @@ var policies = map[string]Policy{
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
 		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, ".cline", "data", "settings", "providers.json"),
+			credential("auth", "json", false, nativePath("cline", "data", "settings", "providers.json")...),
 		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
@@ -274,10 +304,7 @@ var policies = map[string]Policy{
 // init 用 Provider 合同填充主数据根：CLI.GlobalDir 是默认值，
 // Storage.NativeRoot 只声明真正不同的特例（agy / opencode / qoder）。
 func init() {
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		panic("storagepolicy: Provider 合同无效: " + err.Error())
-	}
+	catalog := builtinCatalog()
 	for providerID, policy := range policies {
 		definition, found := catalog.Get(providerID)
 		if !found {

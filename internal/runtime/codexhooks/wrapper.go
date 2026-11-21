@@ -255,7 +255,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"AIH_GO_CLI=" + ShellQuote(wrapperGoBinary(options.HelperScriptPath)),
 	}
 	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理；
-	// resume 已切到 __codex-cli-resume；run-cli-default 仍由 Node helper 负责。
+	// resume 已切到 __codex-cli-resume；run-cli-default 也已切到 __codex-default-cli。
 	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
 		goBinary := ""
 		if filepath.IsAbs(options.HelperScriptPath) {
@@ -389,7 +389,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 			`  exec "$AIH_GO_CLI" __codex-default-cli --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
 			"fi",
 		)
-		lines = append(lines, `exec "$NODE_BIN" "$HELPER" --run-cli-default --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`)
+		lines = append(lines, `exec "$AIH_GO_CLI" __codex-default-cli --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`)
 	} else {
 		lines = append(lines, `exec "$UPSTREAM" "$@"`)
 	}
@@ -458,11 +458,11 @@ func BuildWindowsPowerShellWrapperScript(options WrapperOptions) string {
 		"}",
 		"  exit $LASTEXITCODE",
 		"}",
-		`  $proxyArgs = @($helper, "--run-cli-default", "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
+		`  $proxyArgs = @("__codex-default-cli", "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
 		"if ($MyInvocation.ExpectingInput) {",
-		"  $input | & $nodeBin @proxyArgs",
+		"  $input | & $aihGo @proxyArgs",
 		"} else {",
-		"  & $nodeBin @proxyArgs",
+		"  & $aihGo @proxyArgs",
 		"}",
 		"exit $LASTEXITCODE",
 		"",
@@ -523,7 +523,7 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		`  "%AIH_GO_CLI%" __codex-app-server-stdio --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
 		"  exit /b %ERRORLEVEL%",
 		")",
-		`"%NODE_BIN%" "%HELPER%" --run-cli-default --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
+		`"%AIH_GO_CLI%" __codex-default-cli --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
 		"exit /b %ERRORLEVEL%",
 		"",
 	)
@@ -667,14 +667,17 @@ func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string
 		if subcommand == "app-server" {
 			return nil
 		}
-		// resume 已迁到 Go；旧 wrapper 没有 AIH_GO_CLI 或二进制缺失时保留 Node 兼容。
-		if subcommand == "resume" {
-			if goBinary := strings.TrimSpace(ReadCmdSetVariable(body, "AIH_GO_CLI")); goBinary != "" && fileExists(goBinary) {
-				goArgs := make([]string, 0, 6+len(args))
-				goArgs = append(goArgs, "__codex-cli-resume", "--upstream", upstream, "--state-file", stateFile, "--")
-				goArgs = append(goArgs, args...)
-				return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
+		// resume / default CLI 已迁到 Go；旧 wrapper 没有 AIH_GO_CLI 或二进制缺失时保留 Node 兼容。
+		goBinary := strings.TrimSpace(ReadCmdSetVariable(body, "AIH_GO_CLI"))
+		if goBinary != "" && fileExists(goBinary) {
+			command := "__codex-default-cli"
+			if subcommand == "resume" {
+				command = "__codex-cli-resume"
 			}
+			goArgs := make([]string, 0, 6+len(args))
+			goArgs = append(goArgs, command, "--upstream", upstream, "--state-file", stateFile, "--")
+			goArgs = append(goArgs, args...)
+			return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
 		}
 		mode := "--run-cli-default"
 		if subcommand == "resume" {

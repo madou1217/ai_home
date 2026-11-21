@@ -1,0 +1,71 @@
+name: go-tests-windows
+
+# Windows 专属的 Go 测试。
+#
+# 为什么单独一个工作流：`internal/runtime/artifactstore/junction_windows_test.go`
+# 带 `//go:build windows`，在 macOS/Linux 上会被整文件排除（`go test` 只报
+# `no test files`），所以普通 CI 绿了并不代表 junction 语义被覆盖。
+# 这里在真正的 Windows runner 上跑同一份测试，固定住"共享目录只读、账号侧可删"
+# 依赖的删除/重命名语义。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'internal/runtime/artifactstore/**'
+      - 'internal/runtime/spacegc/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/go-tests-windows.yml'
+  pull_request:
+    paths:
+      - 'internal/runtime/artifactstore/**'
+      - 'internal/runtime/spacegc/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/go-tests-windows.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: go-tests-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: windows junction + artifact store
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: '0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          go version
+          go env GOOS GOARCH
+
+      - name: Vet
+        run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/...
+
+      - name: Test junction semantics
+        run: go test -count=1 -v -timeout 5m ./internal/runtime/artifactstore/...
+
+      # 生产二进制也要在 Windows 上编译通过：artifactstore/spacegc 被 server 引用，
+      # 只测包不编译入口会漏掉"测试过、产品编不过"的情况。
+      - name: Build CLI and server for windows
+        run: |
+          go build -trimpath -o "$env:RUNNER_TEMP\aih.exe" ./cmd/aih
+          go build -trimpath -o "$env:RUNNER_TEMP\aih-server.exe" ./internal/host/aihserver

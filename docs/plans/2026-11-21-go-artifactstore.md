@@ -143,6 +143,10 @@ GOOS=windows GOARCH=amd64 go test -c -o /tmp/artifactstore.test.exe ./internal/r
 artifactstore.test.exe -test.v
 ```
 
+CI 由 `.github/workflows/go-tests-windows.yml` 承担：在 `windows-latest` 上跑
+`go vet`（artifactstore + spacegc）、`go test ./internal/runtime/artifactstore/...`，
+再编译 `cmd/aih` 与 `internal/host/aihserver`，确保"测试过"的产品入口在 Windows 上也能编过。
+
 ### 两个容易踩的 Go 语义（测试逼出来的）
 
 1. **`filepath.EvalSymlinks` 不解析 junction**（Windows 挂载点），只解析符号链接。

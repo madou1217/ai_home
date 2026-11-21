@@ -127,11 +127,9 @@ type CodexHooksOptions struct {
 	RemoteControlProxy *bool
 	// RestartAppServerOnHookChange 控制 trace 或 helper 变化时是否自动重启运行中的 desktop app-server。
 	RestartAppServerOnHookChange bool
-	// NodeExecPath、EntryFilePath 与 HelperScriptPath 用于包装脚本；留空时由运行时自动解析。
-	GoBinaryPath     string
-	NodeExecPath     string
-	EntryFilePath    string
-	HelperScriptPath string
+	// GoBinaryPath 与 EntryFilePath 用于包装脚本；留空时由运行时自动解析。
+	GoBinaryPath  string
+	EntryFilePath string
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

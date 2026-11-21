@@ -26,7 +26,8 @@ type Overrides struct {
 
 // Build 按 Provider 的 CLI 能力生成账号覆盖注入。
 //
-// 目前接入：codex（-c 覆盖任意 config 键）、claude（--settings 叠加 JSON）。
+// 目前接入：codex（-c 覆盖任意 config 键）、claude（--settings 叠加 JSON）、
+// opencode（OPENCODE_CONFIG 指向覆盖文件，已用 opencode debug config 验证）。
 // 其余 Provider 返回 Unsupported，由调用方记录可见提示，不阻断启动。
 func Build(providerID, accountRef string, values map[string]string, aiHomeDir string) (Overrides, error) {
 	normalizedProvider := strings.ToLower(strings.TrimSpace(providerID))
@@ -55,6 +56,8 @@ func Build(providerID, accountRef string, values map[string]string, aiHomeDir st
 		return buildCodex(filtered, declared)
 	case "claude":
 		return buildClaude(filtered, declared, accountRef, aiHomeDir)
+	case "opencode":
+		return buildOpencode(filtered, declared, accountRef, aiHomeDir)
 	default:
 		return Overrides{Unsupported: true}, nil
 	}
@@ -131,6 +134,80 @@ func buildClaude(
 	}
 	cleanup = false
 	return Overrides{Args: []string{"--settings", target}}, nil
+}
+
+// buildOpencode 用 OPENCODE_CONFIG 指向账号覆盖文件；OpenCode 会把它作为
+// 一个配置源叠加在全局配置之上（`opencode debug config` 已验证）。
+func buildOpencode(
+	values map[string]string,
+	declared map[string]providerconfigs.KeySetting,
+	accountRef, aiHomeDir string,
+) (Overrides, error) {
+	settings := map[string]any{}
+	for path, value := range values {
+		setting := declared[path]
+		typed, err := typedValue(setting, value)
+		if err != nil {
+			return Overrides{}, err
+		}
+		if err := setNested(settings, path, typed); err != nil {
+			return Overrides{}, err
+		}
+	}
+	home := strings.TrimSpace(aiHomeDir)
+	ref := strings.TrimSpace(accountRef)
+	if home == "" || ref == "" {
+		return Overrides{Unsupported: true}, nil
+	}
+	target, err := writeJsonOverlay(home, "opencode", ref, "opencode.json", settings)
+	if err != nil {
+		return Overrides{}, err
+	}
+	// 共享后台 server 不会重新读取客户端 env；账号覆盖必须让本次进程使用
+	// 私有 server（已用 `opencode --standalone debug config` 验证配置源生效）。
+	return Overrides{
+		Args: []string{"--standalone"},
+		Env:  map[string]string{"OPENCODE_CONFIG": target},
+	}, nil
+}
+
+// writeJsonOverlay 原子写入账号级覆盖文件（0600）。
+func writeJsonOverlay(home, provider, accountRef, filename string, settings map[string]any) (string, error) {
+	directory := filepath.Join(home, "run", "account-settings", provider, accountRef)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", fmt.Errorf("账号级设置目录不可用: %w", err)
+	}
+	raw, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(directory, filename)
+	temporary, err := os.CreateTemp(directory, ".settings-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(temporary.Name())
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return "", err
+	}
+	if _, err := temporary.Write(append(raw, '\n')); err != nil {
+		_ = temporary.Close()
+		return "", err
+	}
+	if err := temporary.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(temporary.Name(), target); err != nil {
+		return "", err
+	}
+	cleanup = false
+	return target, nil
 }
 
 func sortedPaths(values map[string]string) []string {

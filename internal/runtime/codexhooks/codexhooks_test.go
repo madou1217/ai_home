@@ -25,12 +25,10 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	}
 
 	opts := WrapperOptions{
-		GoBinaryPath:                 "/opt/aih/proxy's-go",
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             "/opt/aih/proxy's.js",
-		UpstreamBinaryPath:           "/usr/local/bin/codex.aih-original",
-		StateFilePath:                "/tmp/ai_home/run/codex/cli-hook-state.json",
-		RouteDefaultCLIThroughHelper: true,
+		GoBinaryPath:             "/opt/aih/proxy's-go",
+		UpstreamBinaryPath:       "/usr/local/bin/codex.aih-original",
+		StateFilePath:            "/tmp/ai_home/run/codex/cli-hook-state.json",
+		RouteDefaultCLIThroughGo: true,
 	}
 
 	posix := BuildCLIWrapperScript(opts)
@@ -58,8 +56,6 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	}
 
 	cmdOpts := WrapperOptions{
-		NodeExecPath:       `C:\Program Files\nodejs\node.exe`,
-		HelperScriptPath:   `C:\aih\helper.js`,
 		UpstreamBinaryPath: `C:\npm\codex.aih-original.cmd`,
 		StateFilePath:      `C:\ai_home\run\codex\cli-hook-state.json`,
 	}
@@ -74,23 +70,13 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 		t.Fatal("CMD wrapper 应使用 CRLF 行尾")
 	}
 
-	// 验证 Windows .cmd hook 绕过直连 Node 启动解析（含别名链）。
+	// 验证 Windows .cmd hook 绕过 .cmd 直连 Go CLI 启动解析（含别名链）。
 	winDir := t.TempDir()
-	nodeFake := filepath.Join(winDir, "node.exe")
-	helperFake := filepath.Join(winDir, "proxy.js")
 	stateFake := filepath.Join(winDir, "state.json")
 	upstreamFake := filepath.Join(winDir, "codex.aih-original.cmd")
-	if err := os.WriteFile(nodeFake, []byte("node"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(helperFake, []byte("// proxy"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	canonicalCmd := filepath.Join(winDir, "canonical.cmd")
 	aliasCmd := filepath.Join(winDir, "codex.cmd")
 	canonicalBody := BuildCLIWrapperScriptForTarget(canonicalCmd, WrapperOptions{
-		NodeExecPath:       nodeFake,
-		HelperScriptPath:   helperFake,
 		UpstreamBinaryPath: upstreamFake,
 		StateFilePath:      stateFake,
 	})
@@ -101,7 +87,7 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows"); launch != nil {
-		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应再回落 Node: %+v", launch)
+		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应解析出启动目标: %+v", launch)
 	}
 	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows"); appServer != nil {
 		t.Fatalf("app-server 子命令应返回 nil 维持直通, 实际 %+v", appServer)
@@ -122,8 +108,6 @@ func TestExternalLauncherAndLaunchEnv(t *testing.T) {
 	}
 
 	wrapper := BuildCodexAppServerWrapperScript(WrapperMarkerDesktop, WrapperOptions{
-		NodeExecPath:       "/usr/bin/node",
-		HelperScriptPath:   "/opt/helper.js",
 		UpstreamBinaryPath: upstream,
 		StateFilePath:      filepath.Join(aiHome, "run", "codex", "desktop-hook-state.json"),
 	})
@@ -162,8 +146,8 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 	root := t.TempDir()
 	aiHome := filepath.Join(root, "ai_home")
 	hostHome := filepath.Join(root, "host_home")
-	helper := filepath.Join(root, "helper.js")
-	if err := os.WriteFile(helper, []byte("// helper v1"), 0o644); err != nil {
+	goBinary := filepath.Join(root, "goBinary.js")
+	if err := os.WriteFile(goBinary, []byte("// goBinary v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -172,8 +156,7 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		AIHomeDir:      aiHome,
 		HostHomeDir:    hostHome,
 		Platform:       "darwin",
-		NodeExecPath:   "/usr/local/bin/node",
-		GoBinaryPath:   helper,
+		GoBinaryPath:   goBinary,
 		ProcessHomeDir: hostHome,
 		OSUserHomeDir:  "/Users/real-someone-else",
 	})
@@ -200,8 +183,7 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		AIHomeDir:               aiHome,
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
-		NodeExecPath:            "/usr/local/bin/node",
-		GoBinaryPath:            helper,
+		GoBinaryPath:            goBinary,
 		ProviderHookReceiverURL: "http://127.0.0.1:4312/v0/webui/session-events/provider-hook",
 		SelfPID:                 999,
 		ReadCodexVersion: func(_ string) string {
@@ -307,8 +289,7 @@ func TestVscodeHookServiceLifecycle(t *testing.T) {
 		AIHomeDir:    aiHome,
 		HostHomeDir:  hostHome,
 		Platform:     "darwin",
-		NodeExecPath: "/usr/local/bin/node",
-		GoBinaryPath: "/opt/helper.js",
+		GoBinaryPath: "/opt/goBinary.js",
 		SelfPID:      888,
 		ListProcesses: func() ([]ProcessInfo, error) {
 			return []ProcessInfo{
@@ -376,15 +357,13 @@ func TestCLIHookServiceBackupAliasAndCache(t *testing.T) {
 	now := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
 	var fullCalls int
 	svc := NewCLIHookService(CLIHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		Arch:             "arm64",
-		PathEnv:          canonicalDir + string(os.PathListSeparator) + staleDir,
-		TempDir:          root,
-		NodeExecPath:     "/usr/local/bin/node",
-		HelperScriptPath: "/opt/helper.js",
-		Now:              func() time.Time { return now },
+		AIHomeDir:   aiHome,
+		HostHomeDir: hostHome,
+		Platform:    "darwin",
+		Arch:        "arm64",
+		PathEnv:     canonicalDir + string(os.PathListSeparator) + staleDir,
+		TempDir:     root,
+		Now:         func() time.Time { return now },
 		ResolveCodexBinary: func(loginShellFallback bool) string {
 			if loginShellFallback {
 				fullCalls++
@@ -726,8 +705,8 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 	root := t.TempDir()
 	aiHome := filepath.Join(root, "ai_home")
 	hostHome := filepath.Join(root, "host_home")
-	helper := filepath.Join(root, "helper.js")
-	if err := os.WriteFile(helper, []byte("// helper\n"), 0o644); err != nil {
+	goBinary := filepath.Join(root, "goBinary.js")
+	if err := os.WriteFile(goBinary, []byte("// goBinary\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bundlePath := filepath.Join(hostHome, "Applications", "Codex.app")
@@ -751,8 +730,7 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 		AIHomeDir:               aiHome,
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
-		NodeExecPath:            "/usr/local/bin/node",
-		GoBinaryPath:            helper,
+		GoBinaryPath:            goBinary,
 		RuntimeLayouts:          layouts,
 		AllowSystemApplications: &allowSys,
 		ReadBundleMetadata: func(string) BundleMetadata {

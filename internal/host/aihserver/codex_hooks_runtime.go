@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
@@ -43,8 +42,6 @@ type codexHooksDaemonOptions struct {
 	PathEnv                      string
 	TempDir                      string
 	GoBinaryPath                 string
-	NodeExecPath                 string
-	HelperScriptPath             string
 	ProviderHookReceiverURL      string
 	CLISelfHealInterval          time.Duration
 	DesktopSelfHealInterval      time.Duration
@@ -83,8 +80,6 @@ type codexHooksRuntime struct {
 	logInfo                      func(string)
 	logWarn                      func(string)
 }
-
-const codexHelperScriptRelPath = "lib/server/codex-app-server-stdio-proxy.js"
 
 // buildCodexHooksDaemonOptions 根据 Go Server 启动配置装配完整的 Codex Hook 守护参数。
 // Desktop 开启时联动启用 VSCode 扩展 Hook（除非 EnableVscodeHook 显式设为 false），
@@ -158,8 +153,6 @@ func buildCodexHooksDaemonOptions(
 		EnableCLIHook:            cfg.EnableCLIHook,
 		EnableNotificationBridge: true,
 		GoBinaryPath:             resolveCodexGoBinaryPath(cfg.GoBinaryPath, cfg.EntryFilePath),
-		NodeExecPath:             resolveCodexNodeExecPath(cfg.NodeExecPath),
-		HelperScriptPath:         resolveCodexHelperScriptPath(cfg.HelperScriptPath, cfg.EntryFilePath),
 		ProviderHookReceiverURL:  receiverURL,
 		CLISelfHealInterval:      clampSelfHealInterval(cfg.CLISelfHealInterval),
 		DesktopSelfHealInterval:  clampSelfHealInterval(cfg.DesktopSelfHealInterval),
@@ -201,70 +194,6 @@ func resolveCodexGoBinaryPath(explicit string, entryFilePath string) string {
 		candidates = append(candidates, filepath.Join(wd, "bin", "native", goruntime.GOOS+"-"+arch, name))
 	}
 	for _, candidate := range candidates {
-		if isRegularNonDirFile(candidate) {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func resolveCodexNodeExecPath(explicit string) string {
-	if trimmed := strings.TrimSpace(explicit); trimmed != "" {
-		return trimmed
-	}
-	if envNode := strings.TrimSpace(os.Getenv("AIH_SERVER_NODE_EXEC")); envNode != "" {
-		return envNode
-	}
-	if found, err := exec.LookPath("node"); err == nil && strings.TrimSpace(found) != "" {
-		return strings.TrimSpace(found)
-	}
-	if goruntime.GOOS != "windows" {
-		for _, candidate := range []string{"/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"} {
-			if isRegularNonDirFile(candidate) {
-				return candidate
-			}
-		}
-	}
-	return ""
-}
-
-func resolveCodexHelperScriptPath(explicitHelper string, entryFilePath string) string {
-	if trimmed := strings.TrimSpace(explicitHelper); trimmed != "" {
-		return trimmed
-	}
-	relHelper := filepath.FromSlash(codexHelperScriptRelPath)
-	var roots []string
-	addAncestors := func(start string, levels int) {
-		curr := strings.TrimSpace(start)
-		for i := 0; i <= levels && curr != ""; i++ {
-			roots = append(roots, curr)
-			parent := filepath.Dir(curr)
-			if parent == curr {
-				break
-			}
-			curr = parent
-		}
-	}
-	entry := strings.TrimSpace(entryFilePath)
-	if entry == "" {
-		entry = strings.TrimSpace(os.Getenv("AIH_SERVER_ENTRY_FILE"))
-	}
-	if entry != "" {
-		addAncestors(filepath.Dir(entry), 2)
-	}
-	if exe, err := os.Executable(); err == nil && strings.TrimSpace(exe) != "" {
-		addAncestors(filepath.Dir(exe), 4)
-	}
-	if wd, err := os.Getwd(); err == nil && strings.TrimSpace(wd) != "" {
-		addAncestors(wd, 4)
-	}
-	seen := make(map[string]struct{}, len(roots))
-	for _, root := range roots {
-		if _, ok := seen[root]; ok {
-			continue
-		}
-		seen[root] = struct{}{}
-		candidate := filepath.Join(root, relHelper)
 		if isRegularNonDirFile(candidate) {
 			return candidate
 		}
@@ -328,8 +257,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			PathEnv:            opts.PathEnv,
 			TempDir:            opts.TempDir,
 			GoBinaryPath:       opts.GoBinaryPath,
-			NodeExecPath:       opts.NodeExecPath,
-			HelperScriptPath:   opts.HelperScriptPath,
 			ResolveCodexBinary: opts.ResolveCodexBinary,
 		})
 		runtime.cli = cliSvc
@@ -373,7 +300,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 		desktopSvc := codexhooks.NewDesktopHookService(codexhooks.DesktopHookOptions{
 			AIHomeDir:               aiHomeDir,
 			HostHomeDir:             hostHomeDir,
-			NodeExecPath:            opts.NodeExecPath,
 			GoBinaryPath:            opts.GoBinaryPath,
 			ProviderHookReceiverURL: opts.ProviderHookReceiverURL,
 			RuntimeLayouts:          opts.DesktopRuntimeLayouts,
@@ -447,7 +373,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 		vscodeSvc := codexhooks.NewVscodeHookService(codexhooks.VscodeHookOptions{
 			AIHomeDir:        aiHomeDir,
 			HostHomeDir:      hostHomeDir,
-			NodeExecPath:     opts.NodeExecPath,
 			GoBinaryPath:     opts.GoBinaryPath,
 			ExtensionRoots:   opts.ExtensionRoots,
 			VSCodeExtensions: opts.VSCodeExtensions,

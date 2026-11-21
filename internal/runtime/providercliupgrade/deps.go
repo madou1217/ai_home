@@ -70,7 +70,6 @@ type RealDepsOptions struct {
 	BaseEnv               map[string]string
 	NodeExecutable        string
 	PowerShellExecutable  string
-	HelperScriptPath      string
 	OverrideNpmGlobalRoot string
 	VersionProbeTimeout   time.Duration
 	CodexVerifyTimeout    time.Duration
@@ -133,11 +132,9 @@ func NewRealDeps(opts RealDepsOptions) *RealDeps {
 	}
 	if d.reinstallHook == nil && d.aiHomeDir != "" {
 		svc := codexhooks.NewCLIHookService(codexhooks.CLIHookOptions{
-			AIHomeDir:        d.aiHomeDir,
-			HostHomeDir:      d.hostHomeDir,
-			Platform:         goos,
-			NodeExecPath:     d.nodeExec,
-			HelperScriptPath: strings.TrimSpace(opts.HelperScriptPath),
+			AIHomeDir:   d.aiHomeDir,
+			HostHomeDir: d.hostHomeDir,
+			Platform:    goos,
 		})
 		if svc.ReadState().Enabled {
 			d.reinstallHook = func(_ context.Context) error {

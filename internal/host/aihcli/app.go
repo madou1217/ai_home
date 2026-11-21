@@ -599,9 +599,6 @@ func (app *App) Run(
 		return fmt.Errorf("规划 Provider CLI 启动失败: %w", err)
 	}
 	accountOverrides, overrideWarning := app.resolveAccountLaunchOverrides(ctx, plan)
-	if overrideWarning != "" && app.stderr != nil {
-		_, _ = fmt.Fprintln(app.stderr, overrideWarning)
-	}
 	if native, ok := plan.Native(); ok && app.accountStore != nil {
 		lease, admitErr := accountadmission.Launch(app.aiHomeDir, native.ProviderID(), native.AccountRef().String())
 		if admitErr != nil {
@@ -617,6 +614,18 @@ func (app *App) Run(
 	launchArguments := intent.Arguments()
 	if permission.Applied {
 		launchArguments = permission.Args
+	}
+	if len(accountOverrides.Args) > 0 || len(accountOverrides.Env) > 0 {
+		// 用户显式接远端 server 时，账号覆盖无法保证生效；直接跳过并提示。
+		if containsLaunchArgument(launchArguments, "--server") {
+			accountOverrides = launchsettings.Overrides{}
+			overrideWarning = "[aih] 显式 --server 启动不注入账号级 Provider 设置；本次使用远端 server 配置。"
+		} else if containsLaunchArgument(launchArguments, "--standalone") {
+			accountOverrides.Args = removeLaunchArgument(accountOverrides.Args, "--standalone")
+		}
+	}
+	if overrideWarning != "" && app.stderr != nil {
+		_, _ = fmt.Fprintln(app.stderr, overrideWarning)
 	}
 	planCLITarget, hasCLITarget := providerCLIPlanTargetFromPlan(plan)
 	// 版本提示只读本地缓存（零延迟），并在 TUI 运行期间后台刷新缓存；
@@ -689,6 +698,30 @@ func (app *App) resolveAccountLaunchOverrides(
 		return overrides, fmt.Sprintf("[aih] %s 的账号级设置已保存，但该 CLI 暂未接入启动注入；本次使用公共配置。", provider)
 	}
 	return overrides, ""
+}
+
+// containsLaunchArgument 判断 argv 是否包含精确参数。
+func containsLaunchArgument(arguments []string, target string) bool {
+	for _, argument := range arguments {
+		if argument == target {
+			return true
+		}
+	}
+	return false
+}
+
+// removeLaunchArgument 删除所有精确匹配的参数。
+func removeLaunchArgument(arguments []string, target string) []string {
+	if len(arguments) == 0 {
+		return arguments
+	}
+	filtered := make([]string, 0, len(arguments))
+	for _, argument := range arguments {
+		if argument != target {
+			filtered = append(filtered, argument)
+		}
+	}
+	return filtered
 }
 
 // launchAccountIdentity 返回本次启动绑定的 Provider 与账号；账号池模式返回 false。

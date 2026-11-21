@@ -49,7 +49,6 @@ type VscodeHookOptions struct {
 	AIHomeDir        string
 	HostHomeDir      string
 	Platform         string
-	NodeExecPath     string
 	GoBinaryPath     string
 	ExtensionRoots   []string
 	VSCodeExtensions string
@@ -63,7 +62,6 @@ type VscodeHookService struct {
 	aiHomeDir       string
 	hostHomeDir     string
 	platform        string
-	nodeExecPath    string
 	goBinaryPath    string
 	stateFilePath   string
 	extensionRoots  []string
@@ -88,7 +86,6 @@ func NewVscodeHookService(opts VscodeHookOptions) *VscodeHookService {
 		aiHomeDir:       aiHome,
 		hostHomeDir:     strings.TrimSpace(opts.HostHomeDir),
 		platform:        NormalizePlatform(opts.Platform),
-		nodeExecPath:    strings.TrimSpace(opts.NodeExecPath),
 		goBinaryPath:    strings.TrimSpace(opts.GoBinaryPath),
 		stateFilePath:   stateFilePath,
 		extensionRoots:  opts.ExtensionRoots,
@@ -189,7 +186,6 @@ func (svc *VscodeHookService) ResolvePaths() []VscodeTarget {
 // BuildWrapperScript 生成 VSCode 扩展使用的 POSIX app-server 包装脚本文本。
 func (svc *VscodeHookService) BuildWrapperScript(upstreamBinaryPath string) string {
 	return BuildCodexAppServerWrapperScript(WrapperMarkerVscode, WrapperOptions{
-		NodeExecPath:       svc.nodeExecPath,
 		GoBinaryPath:       svc.goBinaryPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
 		StateFilePath:      svc.stateFilePath,

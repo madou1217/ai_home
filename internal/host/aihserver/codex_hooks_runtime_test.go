@@ -249,21 +249,14 @@ func TestCodexHooksRuntimeLifecycleAndProxies(t *testing.T) {
 func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 	t.Parallel()
 
-	t.Run("默认值、receiver URL 派生与 EntryFilePath 解析 HelperScript", func(t *testing.T) {
+	t.Run("默认值、receiver URL 派生与 EntryFilePath 解析", func(t *testing.T) {
 		t.Parallel()
 		repoDir := t.TempDir()
 		entryPath := filepath.Join(repoDir, "bin", "ai-home.js")
-		helperPath := filepath.Join(repoDir, "lib", "server", "codex-app-server-stdio-proxy.js")
 		if err := os.MkdirAll(filepath.Dir(entryPath), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
-			t.Fatal(err)
-		}
 		if err := os.WriteFile(entryPath, []byte("// entry"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(helperPath, []byte("// helper"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -276,7 +269,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 				CodexHooks: CodexHooksOptions{
 					EnableCLIHook:     true,
 					EnableDesktopHook: true,
-					NodeExecPath:      "/custom/bin/node",
 					EntryFilePath:     entryPath,
 				},
 			},
@@ -295,9 +287,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 		wantReceiver := "http://127.0.0.1:9527/v0/webui/session-events/provider-hook"
 		if opts.ProviderHookReceiverURL != wantReceiver {
 			t.Fatalf("ProviderHookReceiverURL = %q, want %q", opts.ProviderHookReceiverURL, wantReceiver)
-		}
-		if opts.NodeExecPath != "/custom/bin/node" || opts.HelperScriptPath != helperPath {
-			t.Fatalf("NodeExecPath=%q HelperScriptPath=%q, want helper=%q", opts.NodeExecPath, opts.HelperScriptPath, helperPath)
 		}
 		if opts.TraceConfig == nil || !opts.TraceConfig.TraceRemoteControl || !opts.TraceConfig.RemoteControlProxy || opts.TraceConfig.TraceResponses {
 			t.Fatalf("默认 TraceConfig 不符预期: %+v", opts.TraceConfig)
@@ -327,7 +316,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 					TraceRemoteControl:           &disableFalse,
 					RemoteControlProxy:           &disableFalse,
 					RestartAppServerOnHookChange: true,
-					HelperScriptPath:             "/opt/helper.js",
 				},
 			},
 			"",
@@ -364,8 +352,8 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 	root := t.TempDir()
 	aiHome := filepath.Join(root, "ai_home")
 	hostHome := filepath.Join(root, "host_home")
-	helper := filepath.Join(root, "helper.js")
-	if err := os.WriteFile(helper, []byte("// helper v1\n"), 0o644); err != nil {
+	goBinary := filepath.Join(root, "goBinary.js")
+	if err := os.WriteFile(goBinary, []byte("// goBinary v1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bundlePath := filepath.Join(hostHome, "Applications", "Codex.app")
@@ -428,8 +416,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableVscodeHook:             false,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             helper,
 		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      10 * time.Second,
 		RestartAppServerOnHookChange: false,
@@ -475,8 +461,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableDesktopHook:            true,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             helper,
 		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      10 * time.Second,
 		RestartAppServerOnHookChange: false,
@@ -523,8 +507,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableDesktopHook:            true,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             helper,
 		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      1 * time.Second,
 		RestartAppServerOnHookChange: true,

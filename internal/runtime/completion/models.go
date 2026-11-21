@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -156,42 +154,46 @@ func readAccountModelRows(aiHome, provider string) []accountModelRow {
 	return rows
 }
 
-// readGatewayModelIDs 读取网关模型投影 run/harness/pi/<key>/models.json。
-func readGatewayModelIDs(aiHome string, keys []string) []string {
-	for _, key := range keys {
-		if key == "" {
-			continue
-		}
-		file := filepath.Join(aiHome, "run", "harness", "pi", key, "models.json")
-		raw, err := os.ReadFile(file)
+// readAccountModelIDs 读取整台 server 的有效模型（跨全部 Provider，按模型去重）。
+//
+// 这是「网关池」的唯一事实源：account_models 是服务端每次探测后落盘的结果，
+// 也是 /v1/management/webui/openai-models/catalog 的派生来源。
+//
+// 曾经这里读 run/harness/pi/pool/models.json ——那是一个 **11-17 的历史投影文件**，
+// 早已无人写入，却仍在被当作「网关池」使用。实测它比 account_models 落后 8 天：
+// 里面有 12 个模型在真值目录中已不存在（幽灵），同时漏掉 83 个真实可用的模型
+// （含账号自己发现的 deepseek-v4-1-flash 等）。补全候选因此既多给又少给。
+// 现在只信 account_models，过期缓存文件不再参与候选生成。
+func readAccountModelIDs(aiHome string) []string {
+	ids := make([]string, 0, 256)
+	seen := make(map[string]bool, 256)
+	withReadDB(aiHome, func(database *sql.DB) {
+		result, err := database.Query(`
+			SELECT DISTINCT m.model_id AS model_id
+			  FROM account_models m
+			  JOIN accounts a ON a.account_ref = m.account_ref
+			 WHERE a.enabled = 1
+			   AND (m.manual_policy = 'force_enable'
+			        OR (m.manual_policy = 'inherit' AND m.upstream_available = 1))
+			 ORDER BY m.model_id`)
 		if err != nil {
-			continue
+			return
 		}
-		var document struct {
-			Providers map[string]struct {
-				Models []struct {
-					ID string `json:"id"`
-				} `json:"models"`
-			} `json:"providers"`
-		}
-		if json.Unmarshal(raw, &document) != nil {
-			continue
-		}
-		profile, found := document.Providers["aih"]
-		if !found || len(profile.Models) == 0 {
-			continue
-		}
-		ids := make([]string, 0, len(profile.Models))
-		for _, model := range profile.Models {
-			if id := strings.TrimSpace(model.ID); id != "" {
-				ids = append(ids, id)
+		defer func() { _ = result.Close() }()
+		for result.Next() {
+			var modelID string
+			if scanErr := result.Scan(&modelID); scanErr != nil {
+				continue
 			}
+			model := strings.TrimSpace(modelID)
+			if model == "" || seen[model] {
+				continue
+			}
+			seen[model] = true
+			ids = append(ids, model)
 		}
-		if len(ids) > 0 {
-			return ids
-		}
-	}
-	return nil
+	})
+	return ids
 }
 
 // 模型候选的分组名：zsh 按组分节显示，组顺序即优先级顺序。
@@ -223,7 +225,6 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 	}
 	provider := strings.ToLower(strings.TrimSpace(request.Provider))
 	accountRef := strings.TrimSpace(request.AccountRef)
-	accountToken := strings.TrimSpace(request.AccountToken)
 	limit := modelCandidateLimit
 	if mode == "alias" {
 		limit = modelAliasCandidateLimit
@@ -264,11 +265,8 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 		})
 	}
 
-	// 账号自身模型：先读库里的账号行，读不到再看该账号的网关投影。
+	// 账号自身模型：读该账号在 account_models 里的有效行。
 	accountChoices := accountScopedModelChoices(aiHome, provider, accountRef)
-	if len(accountChoices) == 0 {
-		accountChoices = plainModelChoices(readGatewayModelIDs(aiHome, []string{accountRef, accountToken}), modelGroupAccount)
-	}
 	if len(accountChoices) > 0 {
 		layers = append(layers, modelLayer{
 			group:       modelGroupAccount,
@@ -290,8 +288,8 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 		})
 	}
 
-	// 网关池：整台 server 的模型投影，永远排在最后。
-	poolChoices := plainModelChoices(readGatewayModelIDs(aiHome, []string{"pool"}), modelGroupPool)
+	// 网关池：整台 server 的有效模型（account_models 全量去重），永远排在最后。
+	poolChoices := plainModelChoices(readAccountModelIDs(aiHome), modelGroupPool)
 	if len(poolChoices) > 0 {
 		layers = append(layers, modelLayer{
 			group:       modelGroupPool,

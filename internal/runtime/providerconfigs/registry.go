@@ -901,7 +901,7 @@ func KeySettingsForProvider(providerID string) ([]KeySetting, bool) {
 // 的启动注入能力。未接入的 Provider 仍可保存覆盖，但启动时保持公共配置。
 func AccountLaunchInjectionSupported(providerID string) bool {
 	switch strings.ToLower(strings.TrimSpace(providerID)) {
-	case "codex", "claude":
+	case "codex", "claude", "opencode":
 		return true
 	default:
 		return false

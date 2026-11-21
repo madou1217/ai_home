@@ -14,6 +14,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 )
 
@@ -225,7 +226,7 @@ func collectPathDirs(hostHome string, env map[string]string) []string {
 		add(filepath.Join(hostHome, ".local", "bin"))
 		add(filepath.Join(hostHome, ".npm-global", "bin"))
 		add(filepath.Join(hostHome, ".cargo", "bin"))
-		add(filepath.Join(hostHome, ".opencode", "bin"))
+		add(filepath.Join(hostHome, providerroot.InstallDir("opencode"), "bin"))
 	}
 	add("/opt/homebrew/bin")
 	add("/usr/local/bin")

@@ -47,7 +47,7 @@ func CollectVendorSelfUpdateRootCandidates(hostHomeDir string) []string {
 	return []string{
 		filepath.Join(home, ".local", "share", "claude"),
 		filepath.Join(home, providerroot.ConfigDir("claude"), "local"),
-		filepath.Join(home, ".opencode"),
+		filepath.Join(home, providerroot.InstallDir("opencode")),
 	}
 }
 

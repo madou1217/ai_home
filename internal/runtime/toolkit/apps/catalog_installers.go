@@ -309,11 +309,12 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 			Pkg:               "@opencode/cli",
 			BinaryNames:       []string{"opencode"},
 			LegacyNpmPackages: []string{"opencode-ai"},
-			CleanupHomeFiles:  []string{".opencode/bin/opencode"},
+			CleanupHomeFiles:  []string{strings.Join(providerroot.InstallPath("opencode", "bin", "opencode"), "/")},
 			CollectPathEntries: func(opts Options) []string {
 				if home := ResolveHostHome(opts); home != "" {
 					p := resolvePlatform(opts)
-					return []string{joinPlatformPath(p, home, ".opencode", "bin"), joinPlatformPath(p, home, ".local", "bin")}
+					installParts := append(append([]string{home}, providerroot.InstallRoot("opencode")...), "bin")
+					return []string{joinPlatformPath(p, installParts...), joinPlatformPath(p, home, ".local", "bin")}
 				}
 				return nil
 			},

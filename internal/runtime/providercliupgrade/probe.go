@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const defaultVersionProbeTimeout = 8 * time.Second
@@ -44,7 +46,7 @@ func ResolveCommandPath(binaryName string, hostHomeDir string, goos string, extr
 	if home := strings.TrimSpace(hostHomeDir); home != "" {
 		candidateDirs = append(candidateDirs,
 			filepath.Join(home, ".local", "bin"),
-			filepath.Join(home, ".opencode", "bin"),
+			filepath.Join(home, providerroot.InstallDir("opencode"), "bin"),
 		)
 	}
 	if !isWindowsOS(goos) {

@@ -59,6 +59,26 @@ func ConfigPath(providerID string, suffix ...string) []string {
 	return append(ConfigRoot(providerID), suffix...)
 }
 
+// InstallRoot 返回 Provider 官方安装器的独立安装根（HOME 相对段）。
+// 未声明时返回 nil：二进制由 PATH / 包管理器管理，没有独立安装根。
+func InstallRoot(providerID string) []string {
+	definition, found := builtinCatalog().Get(strings.ToLower(strings.TrimSpace(providerID)))
+	if !found || definition.CLI == nil || definition.CLI.InstallRoot == nil {
+		return nil
+	}
+	return append([]string{}, (*definition.CLI.InstallRoot)...)
+}
+
+// InstallPath 返回 <InstallRoot>/<suffix...>；未声明时返回 nil。
+func InstallPath(providerID string, suffix ...string) []string {
+	return append(InstallRoot(providerID), suffix...)
+}
+
+// InstallDir 返回 InstallRoot 的斜杠拼接；未声明时返回空串。
+func InstallDir(providerID string) string {
+	return strings.Join(InstallRoot(providerID), "/")
+}
+
 // RuntimeHome 返回 <NativeRoot>/.aih-runtime-home。
 func RuntimeHome(providerID string) []string {
 	return append(NativeRoot(providerID), RuntimeHomeDir)

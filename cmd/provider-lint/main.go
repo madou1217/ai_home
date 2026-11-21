@@ -141,6 +141,9 @@ func protectedRoots() ([]string, error) {
 	for _, definition := range catalog.List() {
 		if definition.CLI != nil {
 			addRoot(definition.CLI.GlobalDir)
+			if definition.CLI.InstallRoot != nil {
+				addRoot(strings.Join(*definition.CLI.InstallRoot, "/"))
+			}
 		}
 		addRoot(strings.Join(definition.EffectiveNativeRoot(), "/"))
 		if definition.Storage == nil {

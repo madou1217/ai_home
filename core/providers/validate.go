@@ -141,6 +141,13 @@ func validateDefinition(definition Definition) error {
 		if definition.CLI.Order < 1 {
 			return errors.New("cli.order 必须为正整数")
 		}
+		if definition.CLI.InstallRoot != nil {
+			for _, segment := range *definition.CLI.InstallRoot {
+				if !isSafeRelativeSegment(segment) {
+					return fmt.Errorf("cli.installRoot 必须是安全的 HOME 相对段: %q", segment)
+				}
+			}
+		}
 	}
 	if err := validateStorageFacts(definition); err != nil {
 		return err

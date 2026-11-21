@@ -1038,6 +1038,9 @@
           "login"
         ],
         "pkg": "@opencode/cli",
+        "installRoot": [
+          ".opencode"
+        ],
         "envKeys": [
           "OPENCODE_API_KEY",
           "OPENCODE_BASE_URL"

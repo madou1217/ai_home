@@ -349,18 +349,22 @@ type CLIConfig struct {
 	// （例如 Codex CLI 的 Provider 展示名是 ChatGPT，但 CLI 本身叫 Codex）。
 	DisplayName string `json:"displayName,omitempty"`
 
-	GlobalDir              string          `json:"globalDir"`
-	ConfigSubDir           string          `json:"configSubDir,omitempty"`
-	ConfigFile             string          `json:"configFile,omitempty"`
-	ConfigAtProjectionRoot bool            `json:"configAtProjectionRoot,omitempty"`
-	LoginArgs              []string        `json:"loginArgs"`
-	BinaryName             string          `json:"binaryName,omitempty"`
-	Package                string          `json:"pkg"`
-	ConfigDirFlag          string          `json:"configDirFlag,omitempty"`
-	InstallRegion          string          `json:"installRegion,omitempty"`
-	EnvKeys                []string        `json:"envKeys"`
-	DesktopClient          *DesktopClient  `json:"desktopClient,omitempty"`
-	Headless               *HeadlessConfig `json:"headless,omitempty"`
+	GlobalDir              string   `json:"globalDir"`
+	ConfigSubDir           string   `json:"configSubDir,omitempty"`
+	ConfigFile             string   `json:"configFile,omitempty"`
+	ConfigAtProjectionRoot bool     `json:"configAtProjectionRoot,omitempty"`
+	LoginArgs              []string `json:"loginArgs"`
+	BinaryName             string   `json:"binaryName,omitempty"`
+	Package                string   `json:"pkg"`
+	ConfigDirFlag          string   `json:"configDirFlag,omitempty"`
+	InstallRegion          string   `json:"installRegion,omitempty"`
+	// InstallRoot 是官方安装器放置二进制的 HOME 相对根（可多段）。
+	// 未声明表示二进制由 PATH / 包管理器管理，没有独立安装根；
+	// opencode 的安装器写到 ~/.opencode/bin，与配置根 .config/opencode 不同。
+	InstallRoot   *[]string       `json:"installRoot,omitempty"`
+	EnvKeys       []string        `json:"envKeys"`
+	DesktopClient *DesktopClient  `json:"desktopClient,omitempty"`
+	Headless      *HeadlessConfig `json:"headless,omitempty"`
 }
 
 // HeadlessConfig 描述该原生 CLI 的非交互（一次性打印后退出）调用形态。

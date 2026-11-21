@@ -1,0 +1,33 @@
+name: provider-contract
+
+# Provider 合同是跨语言数据源：新增或修改 Provider 时，ValidateManifest 与
+# 生成文件（manifest.json / TS/JS 投影）必须同步。这里在每次 push/PR 自动跑
+# --check，漏声明 StorageFacts、能力字段或忘记重新生成投影都会失败。
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: provider-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check provider manifest and generated projections
+        run: go run ./cmd/provider-manifest --check

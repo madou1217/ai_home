@@ -5,28 +5,67 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
-// providerConfigChoices 把模型快照与推理档位目录接成关键设置的候选来源。
+// providerConfigChoices 把账号模型、别名与 Provider 合同的官方模型清单
+// 接成关键设置的候选来源。
 type providerConfigChoices struct {
 	models  modelsnapshot.Reader
 	ladders modelmetadata.ReasoningLadderReader
+	aliases modelalias.DisplayReader
 }
 
-// ModelIDs 返回宿主快照里该 Provider 的模型 ID（按名称排序）。
+func normalizeChoiceProvider(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
+}
+
+// ModelIDs 返回该 Provider 当前真实可路由的模型：账号目录 + 已编译别名。
 func (choices providerConfigChoices) ModelIDs(ctx context.Context, provider string) []string {
-	if choices.models == nil {
-		return nil
+	normalized := normalizeChoiceProvider(provider)
+	seen := map[string]struct{}{}
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			seen[id] = struct{}{}
+		}
 	}
-	snapshot, err := choices.models.Read(ctx)
-	if err != nil || snapshot == nil {
-		return nil
+	if choices.models != nil {
+		if snapshot, err := choices.models.Read(ctx); err == nil && snapshot != nil {
+			for _, id := range snapshot.ByProvider[normalized] {
+				add(id)
+			}
+		}
 	}
-	ids := append([]string(nil), snapshot.ByProvider[strings.ToLower(strings.TrimSpace(provider))]...)
+	// ListDisplayModels 只包含已通过目录编译的别名：它们能解析到账号，属于可用。
+	if choices.aliases != nil {
+		for _, model := range choices.aliases.ListDisplayModels() {
+			if normalizeChoiceProvider(model.Provider) == normalized {
+				add(model.Alias)
+			}
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
 	sort.Strings(ids)
 	return ids
+}
+
+// CatalogModelIDs 返回 Provider 合同声明的官方 CLI 支持模型。
+//
+// 这些模型可能当前没有账号（例如 Claude 账号只接了 DeepSeek），但仍是
+// 合法的配置取值；WebUI 会把它们与可用模型合并并标记“无账号”。
+func (choices providerConfigChoices) CatalogModelIDs(_ context.Context, provider string) []string {
+	catalog, found := providers.OfficialModels(provider)
+	if !found {
+		return nil
+	}
+	return catalog.Models
 }
 
 // ReasoningEfforts 返回该模型目录声明的推理强度档位。
@@ -35,7 +74,7 @@ func (choices providerConfigChoices) ReasoningEfforts(provider string, model str
 		return nil
 	}
 	ladder, found := choices.ladders.LookupReasoningEfforts(
-		strings.ToLower(strings.TrimSpace(provider)),
+		normalizeChoiceProvider(provider),
 		strings.TrimSpace(model),
 	)
 	if !found || len(ladder) == 0 {

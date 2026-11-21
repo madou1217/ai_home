@@ -1280,3 +1280,30 @@
   color: var(--color-muted);
   font-size: var(--text-2xs);
 }
+
+/* 模型候选：官方目录里有但当前没有账号的模型用标签区分。 */
+.pc-key-model-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.pc-key-model-option .ant-tag {
+  margin-inline-end: 0;
+  font-size: var(--text-2xs);
+}
+
+/* 开关在纵向表单里不能被拉伸成整行。 */
+.pc-key-field > .ant-switch {
+  align-self: flex-start;
+}
+
+.pc-key-field > .ant-select,
+.pc-key-field > .ant-input-number,
+.pc-key-field > .ant-input {
+  width: 100%;
+}
+
+.pc-key-help {
+  overflow-wrap: anywhere;
+}

@@ -135,7 +135,7 @@ var builtinFileDefinitions = []FileDefinition{
 				Path:  "model",
 				Label: "默认模型",
 				Kind:  KeySettingModel,
-				Help:  "新会话的默认模型；候选来自该 Provider 的模型目录，也可直接输入模型 ID。",
+				Help:  "新会话的默认模型；候选合并官方清单与账号目录，暂无账号的模型会标记，仍可保存。",
 			},
 			{
 				Path:      "model_reasoning_effort",
@@ -241,7 +241,7 @@ var builtinFileDefinitions = []FileDefinition{
 				Path:  "model",
 				Label: "默认模型",
 				Kind:  KeySettingModel,
-				Help:  "新会话的默认模型；留空时使用账号默认。",
+				Help:  "新会话的默认模型；候选合并官方清单与账号目录，暂无账号的模型会标记；留空使用账号默认。",
 			},
 			{
 				Path:    "autoCompactEnabled",

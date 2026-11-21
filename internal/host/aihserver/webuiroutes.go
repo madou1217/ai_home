@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"log"
@@ -126,12 +127,14 @@ type webuiRoute struct {
 // 这里刻意只收「跨切片共享」的依赖：新增一个 WebUI 能力时，在 buildWebUIRoutes
 // 里加一个 constructor + 路由条目即可，composition/router 不再逐切片增长。
 type webuiRouteDependencies struct {
-	DesktopSettingsChanged     func()
-	Authorizer                 interface{ Authorized(*http.Request) bool }
-	AIHomeDir                  string
-	Catalog                    *providers.Catalog
-	ModelModalities            modelmetadata.Catalog
-	ModelAliasExpander         modelmetadata.AliasExpander
+	DesktopSettingsChanged func()
+	Authorizer             interface{ Authorized(*http.Request) bool }
+	AIHomeDir              string
+	Catalog                *providers.Catalog
+	ModelModalities        modelmetadata.Catalog
+	ModelAliasExpander     modelmetadata.AliasExpander
+	// ModelAliasDisplay 提供已发布的具体别名，作为关键设置的模型候选。
+	ModelAliasDisplay          modelalias.DisplayReader
 	ModelSnapshot              modelsnapshot.Reader
 	MetadataResolver           modelpricing.Resolver
 	EgressManager              *runtimeegress.Manager

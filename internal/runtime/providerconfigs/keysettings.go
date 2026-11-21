@@ -14,24 +14,29 @@ import (
 // 实现由组合根注入：WebUI 服务持有模型快照与推理档位目录，配置服务本身
 // 不直连账号库或探测上游。
 type ChoiceResolver interface {
+	// ModelIDs 返回当前账号目录里可用的模型（真实可路由）。
 	ModelIDs(ctx context.Context, provider string) []string
+	// CatalogModelIDs 返回 Provider 官方/别名目录里的模型；其中可能没有账号。
+	CatalogModelIDs(ctx context.Context, provider string) []string
 	ReasoningEfforts(provider string, model string) []string
 }
 
 // KeySettingValue 是单个关键设置的读取结果。
 type KeySettingValue struct {
-	Path        string   `json:"path"`
-	Label       string   `json:"label"`
-	Kind        string   `json:"kind"`
-	Value       string   `json:"value"`
-	Choices     []string `json:"choices,omitempty"`
-	Placeholder string   `json:"placeholder,omitempty"`
-	Help        string   `json:"help,omitempty"`
-	DependsOn   string   `json:"dependsOn,omitempty"`
-	Min         float64  `json:"min,omitempty"`
-	Max         float64  `json:"max,omitempty"`
-	Step        float64  `json:"step,omitempty"`
-	Default     string   `json:"default,omitempty"`
+	Path    string   `json:"path"`
+	Label   string   `json:"label"`
+	Kind    string   `json:"kind"`
+	Value   string   `json:"value"`
+	Choices []string `json:"choices,omitempty"`
+	// UnavailableChoices 是官方目录里有、但当前账号目录里没有的模型（UI 标记“无账号”）。
+	UnavailableChoices []string `json:"unavailableChoices,omitempty"`
+	Placeholder        string   `json:"placeholder,omitempty"`
+	Help               string   `json:"help,omitempty"`
+	DependsOn          string   `json:"dependsOn,omitempty"`
+	Min                float64  `json:"min,omitempty"`
+	Max                float64  `json:"max,omitempty"`
+	Step               float64  `json:"step,omitempty"`
+	Default            string   `json:"default,omitempty"`
 }
 
 // KeySettingsResponse 对应 GET .../key-settings 响应。
@@ -85,7 +90,7 @@ func (s *Service) ReadKeySettings(ctx context.Context, provider, fileID, modelOv
 			Step:        setting.Step,
 			Default:     setting.Default,
 		}
-		view.Choices = s.resolveKeySettingChoices(ctx, rf.Definition.Provider, setting, values, modelOverride)
+		view.Choices, view.UnavailableChoices = s.resolveKeySettingChoices(ctx, rf.Definition.Provider, setting, values, modelOverride)
 		response.Settings = append(response.Settings, view)
 	}
 	return response, nil
@@ -143,16 +148,27 @@ func (s *Service) resolveKeySettingChoices(
 	setting KeySetting,
 	values map[string]string,
 	modelOverride string,
-) []string {
+) (choices []string, unavailable []string) {
 	switch setting.Kind {
 	case KeySettingModel:
 		if s.choices == nil {
-			return nil
+			return nil, nil
 		}
-		return s.choices.ModelIDs(ctx, provider)
+		available := s.choices.ModelIDs(ctx, provider)
+		catalog := s.choices.CatalogModelIDs(ctx, provider)
+		availableSet := make(map[string]struct{}, len(available))
+		for _, id := range available {
+			availableSet[id] = struct{}{}
+		}
+		for _, id := range catalog {
+			if _, ok := availableSet[id]; !ok {
+				unavailable = append(unavailable, id)
+			}
+		}
+		return available, unavailable
 	case KeySettingReasoningEffort:
 		if s.choices == nil {
-			return nil
+			return nil, nil
 		}
 		model := strings.TrimSpace(modelOverride)
 		if model == "" {
@@ -163,11 +179,11 @@ func (s *Service) resolveKeySettingChoices(
 			model = strings.TrimSpace(values[dependsOn])
 		}
 		if model == "" {
-			return nil
+			return nil, nil
 		}
-		return s.choices.ReasoningEfforts(provider, model)
+		return s.choices.ReasoningEfforts(provider, model), nil
 	default:
-		return append([]string(nil), setting.Choices...)
+		return append([]string(nil), setting.Choices...), nil
 	}
 }
 

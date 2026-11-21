@@ -2015,6 +2015,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Catalog:               catalog,
 		ModelModalities:       modelModalities,
 		ModelAliasExpander:    modelAliasExpander,
+		ModelAliasDisplay:     inference.models,
 		ModelSnapshot:         modelSnapshot,
 		MetadataResolver:      pricingResolver,
 		EgressManager:         egressManager,

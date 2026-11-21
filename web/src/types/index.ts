@@ -2792,6 +2792,7 @@ export interface ProviderConfigKeySetting {
   kind: 'text' | 'boolean' | 'number' | 'model' | 'reasoning-effort';
   value: string;
   choices?: string[];
+  unavailableChoices?: string[];
   placeholder?: string;
   help?: string;
   dependsOn?: string;

@@ -49,6 +49,7 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		WithChoices(providerConfigChoices{
 			models:  dependencies.ModelSnapshot,
 			ladders: dependencies.ModelModalities,
+			aliases: dependencies.ModelAliasDisplay,
 		})
 
 	var nativeResourceSvc *nativeresources.Service

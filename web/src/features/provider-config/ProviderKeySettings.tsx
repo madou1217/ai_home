@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AutoComplete, Input, InputNumber, Select, Switch, message } from 'antd';
+import { AutoComplete, Input, InputNumber, Select, Switch, Tag, message } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
@@ -208,7 +208,18 @@ export default function ProviderKeySettings({
                 <AutoComplete
                   id={id}
                   value={value}
-                  options={(setting.choices || []).map((choice) => ({ value: choice, label: choice }))}
+                  options={[
+                    ...(setting.choices || []).map((choice) => ({ value: choice, label: choice })),
+                    ...(setting.unavailableChoices || []).map((choice) => ({
+                      value: choice,
+                      label: (
+                        <span className="pc-key-model-option">
+                          {choice}
+                          <Tag bordered={false} color="default">无账号</Tag>
+                        </span>
+                      )
+                    }))
+                  ]}
                   placeholder={setting.placeholder || '模型 ID'}
                   allowClear
                   filterOption={(input, option) =>

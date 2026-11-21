@@ -136,7 +136,7 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			// 账号私有：桌面端加密/连接器状态、Keychain、诊断缓存与系统加密引用。
 			// 与 Node CODEBUDDY_PRIVATE_DESKTOP_STATE 同口径。
 			{Path: []string{"electron-user-data"}},
-			{Path: []string{".codebuddy", "diagnostics"}},
+			{Path: providerroot.ConfigPath("codebuddy", "diagnostics")},
 			{Path: []string{"Library", "Preferences", "com.apple.security.plist"}},
 			{Path: []string{".workbuddy-key-fallback"}},
 			{Path: []string{"Library", "Application Support", "CodeBuddyExtension", "Cache"}},

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/configedit"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 )
@@ -400,7 +401,7 @@ func userCandidateDirs(o Options) []string {
 	}
 	return []string{
 		filepath.Join(home, ".local", "bin"),
-		filepath.Join(home, ".codex", "packages", "standalone", "current", "bin"),
+		filepath.Join(home, providerroot.ConfigDir("codex"), "packages", "standalone", "current", "bin"),
 		filepath.Join(home, ".npm-global", "bin"),
 		filepath.Join(home, ".volta", "bin"),
 		filepath.Join(home, ".local", "share", "pnpm"),

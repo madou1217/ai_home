@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -77,7 +78,7 @@ func probeCommands() []string {
 	if home != "" {
 		commands = append(commands,
 			filepath.Join(home, ".local", "bin", "codex"),
-			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin", "codex"),
+			filepath.Join(home, providerroot.ConfigDir("codex"), "packages", "standalone", "current", "bin", "codex"),
 			filepath.Join(home, ".npm-global", "bin", "codex"),
 			filepath.Join(home, ".volta", "bin", "codex"),
 			filepath.Join(home, ".local", "share", "pnpm", "codex"),

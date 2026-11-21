@@ -100,7 +100,7 @@ func sharedAuthPath(name string) []string {
 func codebuddyPrivateDesktopState() []Artifact {
 	return []Artifact{
 		private("electron-user-data"),
-		private(".codebuddy", "diagnostics"),
+		private(providerroot.ConfigPath("codebuddy", "diagnostics")...),
 		private("Library", "Preferences", "com.apple.security.plist"),
 		private(".workbuddy-key-fallback"),
 		private("Library", "Application Support", "CodeBuddyExtension", "Cache"),

@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -91,7 +93,7 @@ func probeCommands() []string {
 	if home != "" {
 		commands = append(commands,
 			filepath.Join(home, ".local", "bin", "kiro-cli"),
-			filepath.Join(home, ".kiro", "bin", "kiro-cli"),
+			filepath.Join(home, providerroot.ConfigDir("kiro"), "bin", "kiro-cli"),
 		)
 	}
 	return commands

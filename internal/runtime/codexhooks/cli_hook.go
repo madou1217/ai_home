@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 )
 
@@ -210,7 +211,7 @@ func (svc *CLIHookService) userCandidateDirs() []string {
 	if home != "" {
 		dirs = append(dirs,
 			filepath.Join(home, ".local", "bin"),
-			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin"),
+			filepath.Join(home, providerroot.ConfigDir("codex"), "packages", "standalone", "current", "bin"),
 			filepath.Join(home, ".npm-global", "bin"),
 			filepath.Join(home, ".volta", "bin"),
 			filepath.Join(home, ".local", "share", "pnpm"),
@@ -512,7 +513,7 @@ func (svc *CLIHookService) resolveStandaloneTarget(startPath string) string {
 	if hostHome == "" || svc.platform == "windows" {
 		return ""
 	}
-	candidate := filepath.Join(hostHome, ".codex", "packages", "standalone", "current", "bin", "codex")
+	candidate := filepath.Join(hostHome, providerroot.ConfigDir("codex"), "packages", "standalone", "current", "bin", "codex")
 	if svc.isTemporaryPath(startPath) && !svc.isTemporaryPath(candidate) {
 		return ""
 	}

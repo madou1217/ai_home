@@ -32,10 +32,10 @@ const pluginUsage = `Usage: aih plugin <command> [options]
   trusted                          列出本机信任的发布公钥
   install <file.aih-plugin> [--require-signed]   安装插件包（校验摘要/签名后接受）
   list                             已安装插件、实例与运行状态
-  enable <pluginId> [--instance <id>] [--version <v>] [--config-json <json>] [--accept-permissions]
+  enable <pluginId> [--instance <id>] [--version <v>] [--config-json <json>|@file|-] [--accept-permissions]
   disable <instanceId> [--remove]  停用实例（--remove 同时删除实例配置）
   uninstall <pluginId> [--version <v>]
-  call <contributionId> [--value-json <json>]   调试调用一个贡献项
+  call <contributionId> [--value-json <json>|@file|-]   调试调用一个贡献项（@file/stdin 避免 shell 吞引号）
   doctor                           检查制品、签名、权限、审计与运行时
 
   通用选项：--json  以 JSON 输出；--expected-revision <n>  并发保护`
@@ -158,6 +158,11 @@ func pluginArgumentRequired(message string) error {
 
 func pluginOption(args []string, name string) string {
 	for index, item := range args {
+		// 同时接受 `--name value` 与 `--name=value`：Windows 的 shell 习惯后者，
+		// 少一层参数切分就少一次引号被吞的机会。
+		if strings.HasPrefix(item, name+"=") {
+			return strings.TrimSpace(strings.TrimPrefix(item, name+"="))
+		}
 		if item == name && index+1 < len(args) {
 			return strings.TrimSpace(args[index+1])
 		}
@@ -192,16 +197,64 @@ func pluginHasFlag(args []string, name string) bool {
 	return false
 }
 
-func pluginJSONOption(args []string, name string) (any, error) {
+// maxPluginJSONInputBytes 限制 @文件 / stdin 形式的 JSON 输入，避免误读巨型文件。
+const maxPluginJSONInputBytes = 1 << 20
+
+// pluginJSONOption 解析 JSON 选项，三种取值形式：
+//   - 内联 JSON：`--value-json '{"a":1}'`
+//   - `@<路径>`：从文件读取（Windows PowerShell 会吞掉内联 JSON 的引号，这是可靠写法）
+//   - `-`：从 stdin 读取
+func pluginJSONOption(args []string, name string, stdin io.Reader) (any, error) {
 	value := pluginOption(args, name)
 	if value == "" {
 		return nil, nil
 	}
+	raw, err := pluginJSONInput(value, stdin)
+	if err != nil {
+		return nil, err
+	}
 	var parsed any
-	if err := json.Unmarshal([]byte(value), &parsed); err != nil {
-		return nil, pluginerr.New("plugin_json_invalid", name+" 不是合法 JSON")
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, pluginerr.New("plugin_json_invalid",
+			name+" 不是合法 JSON（Windows PowerShell 5 会吞掉内联 JSON 的引号，改用 "+name+" @文件 或 "+name+" - 从 stdin 读）")
 	}
 	return parsed, nil
+}
+
+func pluginJSONInput(value string, stdin io.Reader) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "-" {
+		if stdin == nil {
+			return "", pluginerr.New("plugin_json_input_unreadable", "当前命令没有可读的标准输入")
+		}
+		data, err := io.ReadAll(io.LimitReader(stdin, maxPluginJSONInputBytes+1))
+		if err != nil {
+			return "", pluginerr.New("plugin_json_input_unreadable", "无法读取标准输入")
+		}
+		if len(data) > maxPluginJSONInputBytes {
+			return "", pluginerr.New("plugin_json_input_too_large", "标准输入的 JSON 超过 1MiB")
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+	if strings.HasPrefix(trimmed, "@") {
+		path := strings.TrimSpace(strings.TrimPrefix(trimmed, "@"))
+		if path == "" {
+			return "", pluginerr.New("plugin_json_input_unreadable", "@ 后必须给出 JSON 文件路径")
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil || info.IsDir() {
+			return "", pluginerr.New("plugin_json_input_unreadable", "无法读取 JSON 文件："+path)
+		}
+		if info.Size() > maxPluginJSONInputBytes {
+			return "", pluginerr.New("plugin_json_input_too_large", "JSON 文件超过 1MiB："+path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", pluginerr.New("plugin_json_input_unreadable", "无法读取 JSON 文件："+path)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+	return trimmed, nil
 }
 
 // pluginNodeVersion 返回本机 Node 运行时版本，供 engines.node 判定使用。
@@ -500,7 +553,7 @@ func pluginEnable(ctx context.Context, args []string, runtime commandRuntime) (m
 	if instanceID == "" {
 		instanceID = pluginID
 	}
-	configuration, err := pluginJSONOption(args, "--config-json")
+	configuration, err := pluginJSONOption(args, "--config-json", runtime.stdin)
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +604,7 @@ func pluginCall(ctx context.Context, args []string, runtime commandRuntime) (map
 	if contributionID == "" {
 		return nil, pluginArgumentRequired("call 需要 contributionId（aih plugin call <contributionId>）")
 	}
-	value, err := pluginJSONOption(args, "--value-json")
+	value, err := pluginJSONOption(args, "--value-json", runtime.stdin)
 	if err != nil {
 		return nil, err
 	}

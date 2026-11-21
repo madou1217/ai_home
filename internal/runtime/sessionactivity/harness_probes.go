@@ -64,10 +64,13 @@ type HarnessProbe struct {
 
 // BuiltinHarnessProbes 返回内建探针清单（按 Priority 降序、ID 升序）。
 func BuiltinHarnessProbes() []HarnessProbe {
+	// 只登记有会话存储证据的探针。终端 pane 的红屏刷新（时钟、状态栏、
+	// spinner）会让 tmux 的 window_activity 永远很新；把它当成回合活动会把
+	// 「挂着的 aih <provider>」误判为运行中。没有存储证据的 Provider 应保持
+	// unknown，而不是用终端存活冒充运行。
 	probes := []HarnessProbe{
 		clineSessionStoreProbe(),
 		kiroSessionStoreProbe(),
-		tmuxPaneProbe(),
 	}
 	sort.Slice(probes, func(i, j int) bool {
 		if probes[i].Priority != probes[j].Priority {
@@ -140,50 +143,6 @@ func CombineTurnSignals(signals []TurnSignal) CombinedTurnDecision {
 		return CombinedTurnDecision{Action: "idle", Source: bestIdleSource}
 	}
 	return CombinedTurnDecision{Action: "none"}
-}
-
-func tmuxPaneProbe() HarnessProbe {
-	return HarnessProbe{
-		ID:       "tmux-pane",
-		Label:    "持久终端 pane 活动",
-		Priority: 0,
-		Claims:   func(string) bool { return true },
-		Probe: func(ctx *ProbeContext) *TurnSignal {
-			if ctx == nil || len(ctx.Sessions) == 0 {
-				return nil
-			}
-			var maxAct int64
-			for _, s := range ctx.Sessions {
-				if s.LastActivityAtMS > maxAct {
-					maxAct = s.LastActivityAtMS
-				}
-			}
-			if maxAct <= 0 {
-				return nil
-			}
-			active := ctx.NowMS-maxAct <= ctx.TurnActiveWindowMS
-			authority := AuthorityTurn
-			if strings.ToLower(strings.TrimSpace(ctx.TurnMode)) == "hook" {
-				authority = AuthorityPositive
-			}
-			state := TurnUnknown
-			if active {
-				state = TurnActive
-			} else if authority == AuthorityTurn {
-				state = TurnIdle
-			}
-			if state == TurnUnknown {
-				return nil
-			}
-			return &TurnSignal{
-				State:          state,
-				Authority:      authority,
-				Decisive:       false,
-				LastActivityAt: maxAct,
-				Source:         "tmux-pane",
-			}
-		},
-	}
 }
 
 type clineSessionRecord struct {

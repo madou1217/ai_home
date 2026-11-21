@@ -1,6 +1,6 @@
 // Package accountmaintenance 实现 Node account-maintenance-lock.js 的 Go 等价物。
 //
-// 账号维护（OAuth rekey）与普通读写共享 run/maintenance/access.sqlite 的
+// 账号维护与普通读写共享 run/maintenance/access.sqlite 的
 // OS 级 SQLite 文件锁：普通参与者持有 SHARED，维护 / 恢复持有 EXCLUSIVE。
 // Go 的插件写入必须先在读租约下进入，再做 app-state.db 事务；维护期间写入
 // fail closed，而不是在维护进程脚下改同一份数据。

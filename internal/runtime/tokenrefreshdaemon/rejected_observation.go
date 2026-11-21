@@ -173,7 +173,7 @@ func (d *Daemon) refreshRejectedObservation(ctx context.Context, observation acc
 	if !binding.IsValid() || binding.AccountRef() != observation.AccountRef() || binding.ProviderID() != observation.ProviderID() {
 		return "binding_changed_or_invalid"
 	}
-	// Binding 不含代次；必须重读同身份严格更新的非静态快照，不能猜 rekey 身份。
+	// Binding 不含代次；必须重读同身份严格更新的非静态快照，不能猜迁移后的引用。
 	updated, err := d.refresher.InspectRefreshCandidate(ctx, observation.AccountRef())
 	if err != nil {
 		return rejectedReadResult(ctx)

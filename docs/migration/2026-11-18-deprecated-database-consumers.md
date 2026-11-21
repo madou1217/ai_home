@@ -59,12 +59,12 @@ FD 数量随订阅变化，此数值只记录本次采样。
 
 ## 修改范围
 
-共修改 40 个源码/脚本文件，另新增本报告；没有新增测试用例。
+共修改 39 个源码/脚本文件，另新增本报告；没有新增测试用例。
 
 | 类别 | 已完成的迁移 |
 | --- | --- |
 | Node 业务读取 | 4 个 Go account reader、runtime reader、账号模型补全统一走 getBusinessDatabasePath；迁移门禁失败明确向上传递 |
-| 运维脚本 | prune、backfill、static-account rekey、AWS AGY verifier 默认读唯一 aih.db；显式离线源保持只读 |
+| 运维脚本 | prune、backfill、static-account ref 迁移、AWS AGY verifier 默认读唯一 aih.db；显式离线源保持只读 |
 | 对账脚本 | model aliases、WebUI accounts、account rows、usage ledgers、token usage、quota stats 默认读 aih.db |
 | 聊天诊断 | 5 个 browser 诊断入口、chat-e2e-turn、gateway-account-auth-smoke、real-codex-smoke 及 web e2e metrics 去掉旧库路径 |
 | 统一根目录 | JS 默认路径调用 resolveAiHomeDir，覆盖 AIH_HOME_DIR / AI_HOME / AIH_HOST_HOME；显式离线参数仍优先 |
@@ -72,7 +72,7 @@ FD 数量随订阅变化，此数值只记录本次采样。
 | 显示来源 | Node 账号/状态/用量/5 类 token refresh 与 Go AGY metadata、账号凭据配置详情显示 aih.db |
 | 安装器 | canonical 存在或路径异常时不再回退 app-state.db / server-config.json；坏配置、缺密钥、坏链接、非法端口明确失败；8 个使用点先处理配置错误再探测/停止/验证服务 |
 
-rekey 不再用两个连接同时操作同一文件；Go 凭据用 canonical 表，Node 兼容凭据用
+账号 ref 迁移不再用两个连接同时操作同一文件；Go 凭据用 canonical 表，Node 兼容凭据用
 compat_account_credentials。引用更新、同步 links 与外键检查在同一事务完成，只备份实际
 修改的 canonical 数据库。修复 backfill 的离线旧 links 可能覆盖有效 canonical ref 的问题：
 先保留已存在原 ref，再使用 canonical links，最后仅接受仍存在的离线源映射候选。
@@ -102,7 +102,6 @@ lib/cli/services/usage/snapshot.js
 lib/cli/services/usage/usage-snapshot-codex.js
 scripts/prune-usage.js
 scripts/backfill-usage-ledger.js
-scripts/rekey-static-account-refs.js
 scripts/verify-aws-agy-migration/main.go
 scripts/compare-model-aliases.js
 scripts/compare-webui-accounts.js
@@ -132,7 +131,7 @@ web/scripts/e2e-chat-metrics.cjs
 - `distributioninstall` 的数据备份、发布和健康检查只认 `aih.db`；已删除 legacy idle 探测。
 - `lib/server/business-database.js` 只返回 `aih.db`，不再读旧库回执。
 
-仍保留的只有历史注释、错误文案、测试夹具和离线对账/backfill/rekey 工具中操作者显式传入的历史材料路径；它们不参与默认业务开库。
+仍保留的只有历史注释、错误文案、测试夹具和离线对账/backfill 工具中操作者显式传入的历史材料路径；它们不参与默认业务开库。
 provider 原生 Kiro / OpenCode / CodeBuddy / WorkBuddy / ZCode / Codex state/history/log/goals
 数据库与 run/maintenance/access.sqlite 的文件锁协调数据不属于 AIH 业务数据库迁移。
 
@@ -143,7 +142,7 @@ provider 原生 Kiro / OpenCode / CodeBuddy / WorkBuddy / ZCode / Codex state/hi
 | 1 | db_core_paths | 核验中央路径与 seal gate；真实临时 SQLite 四状态通过，无需改中央模块 |
 | 2 | db_go_audit | Go 路径审计，修复 2 处来源标签 |
 | 3 | db_node_consumers | 修复 Node reader / completion 门禁 |
-| 4 | db_scripts_operations | 维护/rekey/backfill/AWS verifier 迁移；真实临时库写入验证 |
+| 4 | db_scripts_operations | 维护/ref 迁移/backfill/AWS verifier 迁移；真实临时库写入验证 |
 | 5 | db_compare_scripts | 五个对账入口默认路径迁移与只读验证 |
 | 6 | db_source_labels | 修复 10 个 Node 文件的旧库来源标签 |
 | 7 | db_chat_scripts | 八个聊天相关脚本与共享只读 helper |
@@ -157,8 +156,8 @@ provider 原生 Kiro / OpenCode / CodeBuddy / WorkBuddy / ZCode / Codex state/hi
 
 - 最终 `go build -mod=readonly ./...` 通过。
 - Go authmeta / accountconfigapi / distributioninstall / AWS verifier 的 `go vet` 通过。
-- 32 个修改后的 JS/CJS `node --check` 全通过，40 文件限定 `git diff --check` 通过。
-- 真实临时 SQLite：门禁四状态；reader 正常与拒绝读取；rekey、裁剪、回填实际执行；
+- 31 个修改后的 JS/CJS `node --check` 全通过，40 文件限定 `git diff --check` 通过。
+- 真实临时 SQLite：门禁四状态；reader 正常与拒绝读取；ref 迁移、裁剪、回填实际执行；
   FK 违规 0 / integrity_check=ok / 不生成旧库 / 只备份 canonical 一份。
 - 十个脚本的 --help 在未迁移临时目录中退出 0，没有开库；15 组 home 解析场景通过。
 - 使用 Go overlay 调用实际生产 Busy，真实临时 SQLite 与私有 HTTP 验证 canonical

@@ -32,7 +32,6 @@ Retry applies **only** when all conditions hold:
     - `"disabled"`: forces retry disabled regardless of global setting.
   - Precedence: **Account > Global**.
   - Account saves merge owned fields transactionally (`BEGIN IMMEDIATE`) so stored unknown keys survive `enabled`/`disabled` updates while client payloads reject unknown keys.
-  - Account rekey migrates `account:upstream-429-retry:<old>` -> `<new>` inside a single `BEGIN IMMEDIATE` transaction; if the destination key already exists, the existing destination override is preserved and the orphaned source key is deleted.
 - **Cross-writer coherence & error semantics**:
   - Snapshots load `config:server` and all `account:upstream-429-retry:*` rows together in a single SQLite read transaction (`ReadOnly: true`). Fast-path stat fingerprint caching is trusted only when `fpBefore == fpAfter` and within the bounded `500ms` full-reload window (no `MAX(updated_at)/COUNT(*)` shortcut).
   - Missing database or missing `app_kv` table initializes defaults **only** during genuine initial fresh-home bootstrap before any durable DB/table load has succeeded (`!hasDurableLoad`); once any durable load succeeds, a subsequent missing DB or missing `app_kv` table is treated as a storage read failure (no DB creation on read, `GET` returns HTTP `500` and UI disables Save, runtime preserves the last-known-good snapshot with `fingerprintTrusted = false` and never overwrites an explicit `false`/`disabled` with default `true`). Unreadable/corrupt storage or canceled contexts always propagate real errors.

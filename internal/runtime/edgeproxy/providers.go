@@ -29,7 +29,7 @@ var (
 	reProxiesHeader = regexp.MustCompile(`^\s*\[\[proxies\]\]\s*$`)
 	reFrpMarker     = regexp.MustCompile(`^\s*#\s*aih-managed:`)
 	reAnySection    = regexp.MustCompile(`^\s*\[`)
-	reKeyVal        = regexp.MustCompile(`^\s*([A-Za-z0-9_.]+)\s*=\s*(.+?)\s*$`)
+	keyValueLine    = regexp.MustCompile(`^\s*([A-Za-z0-9_.]+)\s*=\s*(.+?)\s*$`)
 	reConfPath      = regexp.MustCompile(`--conf-path=([^\s]+)`)
 	reNginxVersion  = regexp.MustCompile(`nginx/([0-9.]+)`)
 	reSafeDomain    = regexp.MustCompile(`[^A-Za-z0-9.-]`)
@@ -147,7 +147,7 @@ func parseFrpBlocks(text string) []frpBlock {
 			current = nil
 			continue
 		}
-		if m := reKeyVal.FindStringSubmatch(line); m != nil {
+		if m := keyValueLine.FindStringSubmatch(line); m != nil {
 			val := strings.TrimPrefix(m[2], "\"")
 			val = strings.TrimSuffix(val, "\"")
 			current.fields[m[1]] = val

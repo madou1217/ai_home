@@ -99,7 +99,7 @@ type Registry struct {
 	embedded              EmbeddedInvoker
 	embeddedContributions map[string]bool
 	generations           map[int64]Projection
-	// accountRefs 把 Go 账号引用翻译成 Node 的账号引用（同步 rekey / 身份合并后两边可能不同），
+	// accountRefs 把 Go 账号引用翻译成 Node 的账号引用（历史账号同步后两边可能不同），
 	// 让观察事件里的 accountRef 与 Node 路径一致。只含两边不同的条目。
 	accountRefs map[string]string
 }

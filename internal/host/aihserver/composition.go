@@ -930,55 +930,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 					cancel()
 				}
 			},
-			// 身份变化会把账号迁到新 AccountRef；运行投影目录也必须跟着改名，
-			// 否则新引用启动时没有历史工作区，旧目录还会一直留着旧令牌。
-			OnAccountReKeyed: func(
-				previous accountcore.AccountRef,
-				current accountcore.AccountRef,
-				providerID string,
-			) {
-				if err := renameAuthProjectionDir(
-					aiHomeDir,
-					providerID,
-					previous,
-					current,
-				); err != nil {
-					log.Printf(
-						"账号投影目录改名失败: provider=%s from=%s to=%s err=%v",
-						providerID,
-						previous,
-						current,
-						err,
-					)
-				}
-				// 出口绑定也按 AccountRef 命名，必须跟着账号走，否则迁移后
-				// 新引用静默回到默认出口。
-				if err := moveAccountEgressBinding(
-					aiHomeDir,
-					previous,
-					current,
-				); err != nil {
-					log.Printf(
-						"账号出口绑定迁移失败: from=%s to=%s err=%v",
-						previous,
-						current,
-						err,
-					)
-				}
-				if err := moveAccountUpstream429Override(
-					upstream429Store,
-					previous,
-					current,
-				); err != nil {
-					log.Printf(
-						"账号 429 重试策略迁移失败: from=%s to=%s err=%v",
-						previous,
-						current,
-						err,
-					)
-				}
-			},
-			ReKeyStore: store,
 		},
 	)
 	if err != nil {

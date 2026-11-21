@@ -113,8 +113,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 // accountView 与 Node 启停响应里的 account 同形；只保留账号页合并需要的字段。
 //
 // 刻意不返回 displayName / updatedAt：它们不是启停事实，回空值会把前端已有的
-// 展示字段覆盖掉。accountRef 使用调用方路径里的引用，Node 侧 rekey 后仍能按
-// 自己的键合并。
+// 展示字段覆盖掉。accountRef 使用调用方路径里的引用，前端按自己的键合并。
 type accountView struct {
 	AccountRef string `json:"accountRef"`
 	Provider   string `json:"provider"`

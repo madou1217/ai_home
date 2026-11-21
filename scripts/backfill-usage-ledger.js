@@ -80,7 +80,7 @@ async function main() {
       ? goDb : new DatabaseSync(sourcePath, { readOnly: true });
     const key = options.dryRun ? '' : process.env.AIH_SERVER_MANAGEMENT_KEY || readManagementKey(goDb);
     if (!key && !options.dryRun) throw new Error('缺少管理密钥');
-    // 只导「Go 里还存在的账号」：账本有账号外键，已删除/已 rekey 的账号历史无法落库。
+    // 只导「Go 里还存在的账号」：账本有账号外键，已删除/引用已变更的账号历史无法落库。
     // 额度统计页是按账号看数据，这些历史本来就不会出现在页面上。
     const accounts = new Set(goDb.prepare('select account_ref from accounts').all().map((row) => String(row.account_ref)));
     // Canonical accounts and sync links are authoritative; offline links are compatibility hints.

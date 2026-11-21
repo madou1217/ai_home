@@ -70,21 +70,38 @@ func SanitizeRequestPayload(payload []byte) []byte {
 	return encoded
 }
 
+// droppedInputItemTypes 是上游 Responses 不认识的 Codex 客户端辅助项：工具发现、
+// 本地 shell、web 搜索。它们只是历史轨迹，真正的工具定义会随 tools 重新声明；
+// 原样透传会让上游 400 invalid_request（2026-11-21 真机 resume）。
+var droppedInputItemTypes = map[string]bool{
+	"tool_search_call":        true,
+	"tool_search_output":      true,
+	"local_shell_call":        true,
+	"local_shell_call_output": true,
+	"web_search_call":         true,
+}
+
 func sanitizeInput(raw json.RawMessage, storeDisabled bool) (json.RawMessage, bool) {
 	var items []json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return raw, false
 	}
 	changed := false
-	for index, item := range items {
+	kept := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(item, &fields); err != nil {
+			kept = append(kept, item)
 			continue
 		}
 		itemChanged := false
 		var itemType string
 		if value, found := fields["type"]; found {
 			_ = json.Unmarshal(value, &itemType)
+		}
+		if droppedInputItemTypes[strings.TrimSpace(itemType)] {
+			changed = true
+			continue
 		}
 		expectedPrefix := itemIDPrefixByType[strings.TrimSpace(itemType)]
 		if value, found := fields["id"]; found {
@@ -104,19 +121,21 @@ func sanitizeInput(raw json.RawMessage, storeDisabled bool) (json.RawMessage, bo
 			}
 		}
 		if !itemChanged {
+			kept = append(kept, item)
 			continue
 		}
 		encoded, err := json.Marshal(fields)
 		if err != nil {
+			kept = append(kept, item)
 			continue
 		}
-		items[index] = encoded
+		kept = append(kept, encoded)
 		changed = true
 	}
 	if !changed {
 		return raw, false
 	}
-	encoded, err := json.Marshal(items)
+	encoded, err := json.Marshal(kept)
 	if err != nil {
 		return raw, false
 	}

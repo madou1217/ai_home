@@ -65,6 +65,15 @@ func decodeStringInput(raw json.RawMessage) (decodedInput, error) {
 }
 
 // appendItem 根据输入项 type 选择单一 Decoder 并记录工具配对证据。
+// skippedInputItemTypes 是“只存在于 Codex 历史、不会影响下一轮生成”的辅助项。
+var skippedInputItemTypes = map[string]bool{
+	"tool_search_call":        true,
+	"tool_search_output":      true,
+	"local_shell_call":        true,
+	"local_shell_call_output": true,
+	"web_search_call":         true,
+}
+
 func (output *decodedInput) appendItem(raw json.RawMessage, field string) error {
 	header, err := decodeHeader[inputItemHeaderDTO](raw, field)
 	if err != nil {
@@ -125,6 +134,12 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 		}
 		output.toolResults = append(output.toolResults, callID)
 		output.messages = append(output.messages, message)
+		return nil
+	case skippedInputItemTypes[header.Type]:
+		// Codex 客户端的历史辅助项（工具发现 / 本地 shell / web 搜索）。它们没有
+		// Canonical 对应物，也不参与后续生成：真正的工具定义随 tools、
+		// additional_tools 重新声明。resume 时这些项会回到 input 里，严格拒绝会
+		// 让整个会话 400 invalid_request（2026-11-21 真机：input[147]）。
 		return nil
 	default:
 		return invalidField(decodediag.Discriminator(field+".type", header.Type))

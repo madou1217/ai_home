@@ -125,10 +125,10 @@ var CodexDesktopLayouts = []DesktopLayout{
 
 // WrapperOptions 定义生成 app-server / CLI 包装脚本所需的路径与行为选项。
 type WrapperOptions struct {
-	GoBinaryPath                 string
-	UpstreamBinaryPath           string
-	StateFilePath                string
-	RouteDefaultCLIThroughHelper bool
+	GoBinaryPath             string
+	UpstreamBinaryPath       string
+	StateFilePath            string
+	RouteDefaultCLIThroughGo bool
 }
 
 // goBinary 返回 wrapper 唯一允许执行的 Go CLI 路径。
@@ -262,7 +262,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 	}
 	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理；
 	// resume 已切到 __codex-cli-resume；run-cli-default 也已切到 __codex-default-cli。
-	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
+	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughGo {
 		goBinary := strings.TrimSpace(options.GoBinaryPath)
 		lines = append(lines,
 			`if [ "$#" -eq 1 ] && { [ "$1" = "--version" ] || [ "$1" = "-V" ]; }; then`,
@@ -321,7 +321,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		`  exec "$UPSTREAM" "$@"`,
 		"fi",
 	)
-	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
+	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughGo {
 		goBinary := strings.TrimSpace(options.GoBinaryPath)
 		lines = append(lines,
 			`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
@@ -365,7 +365,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 			"fi",
 		)
 	}
-	if options.RouteDefaultCLIThroughHelper {
+	if options.RouteDefaultCLIThroughGo {
 		lines = append(lines,
 			`if [ -z "$AIH_SUBCOMMAND" ] && [ -t 0 ]; then`,
 			`  exec "$AIH_GO_CLI" __codex-default-cli --interactive --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
@@ -508,7 +508,7 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 
 // BuildCLIWrapperScript 构建 POSIX CLI 包装脚本。
 func BuildCLIWrapperScript(options WrapperOptions) string {
-	options.RouteDefaultCLIThroughHelper = true
+	options.RouteDefaultCLIThroughGo = true
 	return BuildCodexAppServerWrapperScript(WrapperMarkerCLI, options)
 }
 

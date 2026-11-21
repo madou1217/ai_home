@@ -25,10 +25,10 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	}
 
 	opts := WrapperOptions{
-		GoBinaryPath:                 "/opt/aih/proxy's-go",
-		UpstreamBinaryPath:           "/usr/local/bin/codex.aih-original",
-		StateFilePath:                "/tmp/ai_home/run/codex/cli-hook-state.json",
-		RouteDefaultCLIThroughHelper: true,
+		GoBinaryPath:             "/opt/aih/proxy's-go",
+		UpstreamBinaryPath:       "/usr/local/bin/codex.aih-original",
+		StateFilePath:            "/tmp/ai_home/run/codex/cli-hook-state.json",
+		RouteDefaultCLIThroughGo: true,
 	}
 
 	posix := BuildCLIWrapperScript(opts)

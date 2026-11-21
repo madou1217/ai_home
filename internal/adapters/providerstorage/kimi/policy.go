@@ -6,17 +6,21 @@
 // （CLI 用字符串前缀匹配自己的 KIMI_CODE_HOME，共享索引会显示别人的会话）。
 package kimistorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 Kimi 的规范 Provider ID。
 const ProviderID = "kimi"
 
 // Policy 返回 Kimi 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot(ProviderID)
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
-		NativeRoot:      []string{".kimi-code"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: []string{".kimi-code", ".aih-runtime-home"},
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -38,7 +42,7 @@ func Policy() accountprojection.Policy {
 			{Path: []string{".kimi-code", "session_index.jsonl"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{".kimi-code"}, To: []string{".kimi-code"}},
+			{From: append([]string{}, root...), To: append([]string{}, root...)},
 		},
 		SharedEntries: []string{
 			"sessions", "cache", "logs", "user-history", "updates",

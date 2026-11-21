@@ -7,17 +7,18 @@
 //   - 会话与知识类条目（brain/conversations/...）仍与宿主共享，凭据文件保持私有。
 package agystorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 Antigravity 的规范 Provider ID。
 const ProviderID = "agy"
 
-// runtimeHomeSegments 是宿主上的 Provider 运行 home（XDG/设置指针的落点）。
-var runtimeHomeSegments = []string{".gemini", "antigravity-cli", ".aih-runtime-home"}
-
 // runtimeHomeTarget 返回「宿主运行 home 下再加一段路径」的映射目标。
 func runtimeHomeTarget(segments ...string) []string {
-	return append(append([]string{}, runtimeHomeSegments...), segments...)
+	root := append(append([]string{}, providerroot.NativeRoot(ProviderID)...), ".aih-runtime-home")
+	return append(root, segments...)
 }
 
 // sharedNames 是与会话/知识相关的共享条目（与 Node 的 sharedEntries 同序）。
@@ -28,10 +29,11 @@ var sharedNames = []string{
 
 // Policy 返回 Antigravity 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot(ProviderID)
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeFakeHome,
-		NativeRoot:      []string{".gemini", "antigravity-cli"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: runtimeHomeTarget(),
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -55,7 +57,7 @@ func Policy() accountprojection.Policy {
 		// Node 还给 Library/.local/.cache/.config 建了同样的映射；这些在账号沙箱里
 		// 首次启动会自然生成，不需要为了共享把宿主目录整个链进来。
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{".gemini", "antigravity-cli"}, To: []string{".gemini", "antigravity-cli"}},
+			{From: append([]string{}, root...), To: append([]string{}, root...)},
 			{From: []string{}, To: runtimeHomeTarget("home")},
 		},
 		SharedEntries:         append([]string{}, sharedNames...),

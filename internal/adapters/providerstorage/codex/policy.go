@@ -7,14 +7,18 @@
 //     env_key 传账号 key，而宿主配置的 auth 命令表与 env_key 互斥（codex ≥0.149）。
 package codexstorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // Policy 返回 Codex 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot("codex")
 	return accountprojection.Policy{
 		Provider:        "codex",
 		Mode:            accountprojection.ModeConfigDir,
-		NativeRoot:      []string{".codex"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: []string{".codex", ".aih-runtime-home"},
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -27,7 +31,7 @@ func Policy() accountprojection.Policy {
 			{Path: []string{".codex", "config.toml"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{".codex"}, To: []string{".codex"}},
+			{From: append([]string{}, root...), To: append([]string{}, root...)},
 		},
 		SharedEntries: []string{
 			"sessions",

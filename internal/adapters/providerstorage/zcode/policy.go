@@ -7,17 +7,21 @@
 //   - cli/ 与 workspace/ 会话状态与宿主共享。
 package zcodestorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 ZCode 的规范 Provider ID。
 const ProviderID = "zcode"
 
 // Policy 返回 ZCode 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot(ProviderID)
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeFakeHome,
-		NativeRoot:      []string{".zcode"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: []string{".zcode", ".aih-runtime-home"},
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -38,7 +42,7 @@ func Policy() accountprojection.Policy {
 			{Path: []string{"Library", "Keychains"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{".zcode"}, To: []string{".zcode"}},
+			{From: append([]string{}, root...), To: append([]string{}, root...)},
 		},
 		SharedEntries:         []string{"cli", "workspace"},
 		PrecreatedDirectories: []string{"cli", "workspace"},

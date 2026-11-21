@@ -6,17 +6,21 @@
 //   - auth.json 由账号凭据物化；sessions/cache/log 与宿主共享。
 package grokstorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 Grok 的规范 Provider ID。
 const ProviderID = "grok"
 
 // Policy 返回 Grok 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot(ProviderID)
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
-		NativeRoot:      []string{".grok"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: []string{".grok", ".aih-runtime-home"},
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -29,7 +33,7 @@ func Policy() accountprojection.Policy {
 			{Path: []string{"Library", "Keychains"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{".grok"}, To: []string{".grok"}},
+			{From: append([]string{}, root...), To: append([]string{}, root...)},
 		},
 		SharedEntries:         []string{"sessions", "cache", "log"},
 		SessionEntries:        []string{"sessions"},

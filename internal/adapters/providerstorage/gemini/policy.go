@@ -7,17 +7,21 @@
 //   - history / projects.json / tmp 与会话只链接宿主，保持会话共享。
 package geministorage
 
-import "github.com/madou1217/ai_home/application/accountprojection"
+import (
+	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+)
 
 // ProviderID 是 Gemini 的规范 Provider ID。
 const ProviderID = "gemini"
 
 // Policy 返回 Gemini 的投影策略。
 func Policy() accountprojection.Policy {
+	root := providerroot.NativeRoot(ProviderID)
 	return accountprojection.Policy{
 		Provider:        ProviderID,
 		Mode:            accountprojection.ModeConfigDir,
-		NativeRoot:      []string{".gemini"},
+		NativeRoot:      root,
 		RuntimeHomeRoot: []string{".gemini", ".aih-runtime-home"},
 		AuthArtifacts: []accountprojection.Artifact{
 			{
@@ -36,7 +40,7 @@ func Policy() accountprojection.Policy {
 			{Path: []string{"Library", "Keychains"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{".gemini"}, To: []string{".gemini"}},
+			{From: append([]string{}, root...), To: append([]string{}, root...)},
 		},
 		SharedEntries:         []string{"history", "projects.json", "tmp"},
 		SessionEntries:        []string{"history", "tmp"},

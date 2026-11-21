@@ -1,0 +1,29 @@
+// Package providerroot 提供存储适配器共享的原生根解析。
+//
+// 目录事实来自 Provider 合同（Definition.EffectiveNativeRoot），适配器不再
+// 各自手写 .codex / .gemini 等配置根。
+package providerroot
+
+import (
+	"strings"
+	"sync"
+
+	"github.com/madou1217/ai_home/core/providers"
+)
+
+var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		panic("providerroot: Provider 合同无效: " + err.Error())
+	}
+	return catalog
+})
+
+// NativeRoot 返回 Provider 的生效原生根（HOME 相对段）。
+func NativeRoot(providerID string) []string {
+	definition, found := builtinCatalog().Get(strings.ToLower(strings.TrimSpace(providerID)))
+	if !found {
+		return nil
+	}
+	return definition.EffectiveNativeRoot()
+}

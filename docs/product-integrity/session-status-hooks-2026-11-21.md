@@ -14,12 +14,12 @@ This audit covers the session running indicator used by the WebUI project/workbe
 | agy | hook | `PreInvocation`, `PostInvocation`, `Stop` | Fixed in this audit: `Stop` completes the turn; `continuationActive=true` keeps it working; `fullyIdle` only reports background tasks |
 | grok | hook | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
 | opencode | plugin bridge | v2 `session.execution.started` / terminal events; v1 `session.idle` / message events | Plugin dedupes per session; needs real v1/v2 acceptance |
-| qoder / qodercn | polling | CLI session store/probes | No per-session hook; account activity only. UI should not equate runtime with running |
-| kiro | polling | `messages.jsonl` / session store probes | Decisive session records can clear; active-turn probes need acceptance |
-| codebuddy family | polling | native JSONL / session activity probes | No per-session hook; account activity only |
+| qoder / qodercn | polling | CLI session store/probes | No per-session hook and no store-backed turn probe: unknown unless traffic says otherwise. tmux pane activity is no longer turn evidence |
+| kiro | polling | `messages.jsonl` / session store probes | Store records can prove activity/end; tmux pane activity is no longer turn evidence |
+| codebuddy family | polling | native JSONL / session activity probes | No per-session hook and no store-backed turn probe: unknown. tmux pane activity is no longer turn evidence |
 | kimi | unavailable | none | Must show unknown/unavailable, never running from an attached process |
 | zcode | unavailable | none | Must show unknown/unavailable, never running from an attached process |
-| cline | unavailable | none | Must show unknown/unavailable, never running from an attached process |
+| cline | polling | session store (`started_at` / `ended_at` / `status` / pid) | Decisive terminal records can clear; unknown when no store record |
 
 ## Confirmed Codex bug
 
@@ -134,6 +134,30 @@ The `continuationActive=true` row also proves the sender forwards the flag; with
 
 Commit: `c8798c4c fix(session): treat AGY Stop as completion unless continuing`.
 
+## Confirmed tmux false-positive (polling providers)
+
+`BuiltinHarnessProbes` registered a `tmux-pane` probe for every harness. It used tmux's `window_activity` / `session_activity` as "last turn activity" and, for non-hook providers, gave it `AuthorityTurn`. Those timestamps advance on any pane output, including a TUI clock, statusline refresh, spinner or prompting redraw. An unattached, long-idle `aih <provider>` terminal therefore looked like a running turn on every poll, and `MarkSessionTurn` kept `sessionTurnActive` true.
+
+### Real reproduction and fix verification
+
+A real tmux server was started on an existing enabled codebuddycn account's socket, with a registry entry and a 1s redraw loop. It was never attached.
+
+| Phase | inFlight | sessionTurnActive | runtimeSessions | runtimeAttached |
+| --- | ---: | --- | ---: | ---: |
+| before fix | 1 | true | 1 | 0 |
+| after fix | 0 | false | 1 | 0 |
+
+After the verification the temporary tmux server was killed. `runtimeSessions` still reports the open terminal; it just no longer claims a running turn.
+
+### Fix
+
+- Removed `tmux-pane` from `BuiltinHarnessProbes`.
+- Turn signals now come only from store-backed probes (`cline-session-store`, `kiro-session-store`) or from provider hooks.
+- Providers without store evidence stay unknown: no `sessionTurnActive`, no inflated `inFlight`.
+- Terminal presence continues to be reported separately through `runtimeSessions` / `runtimeAttached`.
+
+Commit: `f8adec80 fix(session): stop treating tmux pane activity as a running turn`.
+
 ## Optimization plan
 
 1. **Codex**: keep the app-server as the authoritative source; never derive a turn from thread attachment. Retain `turn/started` / `turn/completed` as the only turn boundaries.
@@ -141,5 +165,5 @@ Commit: `c8798c4c fix(session): treat AGY Stop as completion unless continuing`.
 3. **AGY**: done — `Stop` completes the turn; `continuationActive=true` is the only Stop payload treated as working.
 4. **Gemini / Grok**: hooks are already turn-scoped; add a bounded stale-working fallback per provider if a terminal hook is lost.
 5. **OpenCode**: run a real v2 and v1 session; confirm the plugin's started/terminal pairs cover interrupted/failed turns.
-6. **Polling providers (qoder, kiro, codebuddy family)**: do not promote tmux attachment, cursor blink, or a live `aih` process to `sessionTurnActive`. Use only decisive session-store records; otherwise show "estimated/unknown" rather than running.
+6. **Polling providers (qoder, kiro, codebuddy family)**: done — tmux pane activity was removed as turn evidence. Only store-backed probes can produce a turn; everything else stays unknown.
 7. **Unavailable providers (kimi, zcode, cline)**: show "unknown/unavailable"; an attached launcher must never imply a running turn.

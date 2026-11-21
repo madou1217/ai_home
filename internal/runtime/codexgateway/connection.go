@@ -6,11 +6,40 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/aihhome"
 )
+
+// serverConfig 只保留网关连接需要的字段。
+type serverConfig struct {
+	Host   string `json:"host"`
+	Port   int    `json:"port"`
+	APIKey string `json:"apiKey"`
+}
+
+// readServerConfig 读取指定 AIH 数据根的 config:server；缺失时 found=false。
+func readServerConfig(ctx context.Context, aiHomeDir string) (serverConfig, bool, error) {
+	databasePath, err := appstate.DatabasePath(aiHomeDir)
+	if err != nil {
+		return serverConfig{}, false, err
+	}
+	raw, found, err := appstate.ReadKV(ctx, databasePath, appstate.KeyServerConfig)
+	if err != nil {
+		return serverConfig{}, false, fmt.Errorf("codex_gateway_config_read_failed")
+	}
+	if !found {
+		return serverConfig{}, false, nil
+	}
+	var config serverConfig
+	if json.Unmarshal([]byte(raw), &config) != nil {
+		return serverConfig{}, false, fmt.Errorf("codex_gateway_config_invalid")
+	}
+	return config, true, nil
+}
 
 // Connection intentionally redacts its credential when formatted.
 type Connection struct {
@@ -33,26 +62,14 @@ func Read(ctx context.Context, aiHomeDir string, lookupEnv func(string) (string,
 	if ctx == nil || strings.TrimSpace(aiHomeDir) == "" {
 		return Connection{}, fmt.Errorf("codex_gateway_home_required")
 	}
-	databasePath, err := appstate.DatabasePath(aiHomeDir)
+	config, found, err := readServerConfig(ctx, aiHomeDir)
 	if err != nil {
 		return Connection{}, err
 	}
-	raw, found, err := appstate.ReadKV(ctx, databasePath, appstate.KeyServerConfig)
-	if err != nil {
-		return Connection{}, fmt.Errorf("codex_gateway_config_read_failed")
+	key := ""
+	if found {
+		key = strings.TrimSpace(config.APIKey)
 	}
-	var config struct {
-		Host   string `json:"host"`
-		Port   int    `json:"port"`
-		APIKey string `json:"apiKey"`
-	}
-	if found && json.Unmarshal([]byte(raw), &config) != nil {
-		return Connection{}, fmt.Errorf("codex_gateway_config_invalid")
-	}
-	host := serverconfig.NormalizeLoopbackHost(strings.Trim(strings.TrimSpace(config.Host), "[]"))
-	// 端口归一与 URL 拼接只在 application/serverconfig 定义一次。
-	port := serverconfig.NormalizePort(config.Port)
-	key := strings.TrimSpace(config.APIKey)
 	if lookupEnv != nil {
 		for _, name := range []string{"AIH_GATEWAY_API_KEY", "AIH_SERVER_API_KEY"} {
 			if key == "" {
@@ -61,9 +78,23 @@ func Read(ctx context.Context, aiHomeDir string, lookupEnv func(string) (string,
 			}
 		}
 	}
+	// 账号投影的数据根没有网关配置时回退宿主；与 CLI 的 withLocalGatewayDefaults
+	// 使用同一条 aihhome 规则，保证 `aih codex` 启动与 Codex 认证命令取到同一连接。
+	if key == "" {
+		if hostAIHome := aihhome.ProjectedHostAIHome(aiHomeDir); hostAIHome != "" &&
+			filepath.Clean(hostAIHome) != filepath.Clean(aiHomeDir) {
+			if hostConfig, hostFound, hostErr := readServerConfig(ctx, hostAIHome); hostErr == nil && hostFound {
+				config = hostConfig
+				key = strings.TrimSpace(config.APIKey)
+			}
+		}
+	}
 	if key == "" {
 		key = "dummy"
 	}
+	host := serverconfig.NormalizeLoopbackHost(strings.Trim(strings.TrimSpace(config.Host), "[]"))
+	// 端口归一与 URL 拼接只在 application/serverconfig 定义一次。
+	port := serverconfig.NormalizePort(config.Port)
 	if strings.ContainsAny(key, "\r\n\x00") {
 		return Connection{}, fmt.Errorf("codex_gateway_key_invalid")
 	}

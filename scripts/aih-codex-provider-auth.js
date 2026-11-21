@@ -3,7 +3,8 @@
 
 // codex model_providers.<id>.auth 命令表的取 key 入口：向 stdout 输出恰好一个
 // bearer token，供 codex 按需调用（refresh_interval_ms 控制缓存）。
-// --gateway --ai-home <dir>：只从指定 AIH 配置读取网关 key，忽略继承环境。
+// --gateway --ai-home <dir>：只从指定 AIH 配置读取网关 key，忽略继承环境；
+// 该目录是账号投影数据根且没有网关配置时，按 CLI 同一规则回退宿主 .ai_home。
 // 旧配置不带参数时保留兼容取值顺序：
 // 1) 环境变量 OPENAI_API_KEY 已注入（网关 client key / 调用方显式指定）→ 直通；
 // 2) AIH_PROVIDER_ACCOUNT_REF（aih 启动链注入的选中账号）→ 该账号的 key；
@@ -13,7 +14,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolveHostHomeDir } = require('../lib/runtime/host-home');
+const {
+  looksProjectedHome,
+  resolveHostHomeDir,
+  resolveUnprojectedHostHomeDir
+} = require('../lib/runtime/host-home');
 const { readAccountCredentialRecord } = require('../lib/server/account-credential-store');
 const { readDefaultAccountRef } = require('../lib/account/default-account-store');
 const { readCodexGatewayConnection } = require('../lib/server/codex-gateway-connection');
@@ -23,6 +28,23 @@ function fail(message) {
   process.exit(1);
 }
 
+function gatewayApiKeyFor(aiHomeDir) {
+  const connection = readCodexGatewayConnection(fs, aiHomeDir);
+  return connection && connection.apiKey ? String(connection.apiKey).trim() : '';
+}
+
+// 投影 HOME 的 .ai_home 只带运行态数据，网关配置和账号库都在宿主；与
+// cmd/aih/gateway_defaults.go 的 ProjectedHostAIHome 使用同一条回退规则。
+function resolveGatewayApiKey(configuredHome) {
+  const direct = gatewayApiKeyFor(configuredHome);
+  if (direct) return direct;
+  if (!looksProjectedHome(configuredHome)) return '';
+  const hostHome = resolveUnprojectedHostHomeDir({ env: process.env, platform: process.platform });
+  const hostAIHome = hostHome ? path.join(hostHome, '.ai_home') : '';
+  if (!hostAIHome || path.resolve(hostAIHome) === path.resolve(configuredHome)) return '';
+  return gatewayApiKeyFor(hostAIHome);
+}
+
 const envKey = String(process.env.OPENAI_API_KEY || '').trim();
 // 受管宿主 provider 明确绑定网关：不能让 App 继承的上游/旧网关 key 覆盖配置。
 // ai-home 路径由生成器显式传入，投影 HOME 不参与重新定位。
@@ -30,7 +52,9 @@ if (process.argv.includes('--gateway')) {
   const index = process.argv.indexOf('--ai-home');
   const configuredHome = index >= 0 ? String(process.argv[index + 1] || '').trim() : '';
   if (!configuredHome) fail('gateway authentication requires --ai-home');
-  process.stdout.write(readCodexGatewayConnection(fs, configuredHome).apiKey);
+  const apiKey = resolveGatewayApiKey(configuredHome);
+  if (!apiKey) fail(`gateway key unavailable for ${configuredHome}`);
+  process.stdout.write(apiKey);
   return;
 }
 function auditLog(tier, detail) {

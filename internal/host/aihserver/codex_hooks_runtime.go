@@ -374,7 +374,7 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			AIHomeDir:               aiHomeDir,
 			HostHomeDir:             hostHomeDir,
 			NodeExecPath:            opts.NodeExecPath,
-			HelperScriptPath:        opts.HelperScriptPath,
+			GoBinaryPath:            opts.GoBinaryPath,
 			ProviderHookReceiverURL: opts.ProviderHookReceiverURL,
 			RuntimeLayouts:          opts.DesktopRuntimeLayouts,
 			AllowSystemApplications: opts.AllowSystemApplications,
@@ -448,7 +448,7 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			AIHomeDir:        aiHomeDir,
 			HostHomeDir:      hostHomeDir,
 			NodeExecPath:     opts.NodeExecPath,
-			HelperScriptPath: opts.HelperScriptPath,
+			GoBinaryPath:     opts.GoBinaryPath,
 			ExtensionRoots:   opts.ExtensionRoots,
 			VSCodeExtensions: opts.VSCodeExtensions,
 			ListProcesses:    opts.ListProcesses,
@@ -602,7 +602,7 @@ func (r *codexHooksRuntime) applyDesktopTraceAndRestart(result codexhooks.Deskto
 		traceResult := r.desktop.UpdateTraceConfig(*r.traceConfig)
 		traceChanged = traceResult.Changed
 	}
-	if (traceChanged || result.HelperScriptChanged || result.RestartRequired) &&
+	if (traceChanged || result.GoBinaryChanged || result.RestartRequired) &&
 		(result.RestartRequired || r.restartAppServerOnHookChange) {
 		restartResult := r.desktop.RestartRunningAppServers()
 		if restartResult.Count > 0 {
@@ -610,7 +610,7 @@ func (r *codexHooksRuntime) applyDesktopTraceAndRestart(result codexhooks.Deskto
 		}
 		return
 	}
-	if startup && (traceChanged || result.HelperScriptChanged) && !r.restartAppServerOnHookChange {
+	if startup && (traceChanged || result.GoBinaryChanged) && !r.restartAppServerOnHookChange {
 		r.emitInfo("[aih:codex-hook] desktop app-server reload disabled by hook change policy")
 	}
 }

@@ -50,7 +50,7 @@ type VscodeHookOptions struct {
 	HostHomeDir      string
 	Platform         string
 	NodeExecPath     string
-	HelperScriptPath string
+	GoBinaryPath     string
 	ExtensionRoots   []string
 	VSCodeExtensions string
 	SelfPID          int
@@ -60,17 +60,17 @@ type VscodeHookOptions struct {
 
 // VscodeHookService 管理 macOS 下 VSCode / VSCode Insiders ChatGPT 扩展内置 codex 包装器。
 type VscodeHookService struct {
-	aiHomeDir        string
-	hostHomeDir      string
-	platform         string
-	nodeExecPath     string
-	helperScriptPath string
-	stateFilePath    string
-	extensionRoots   []string
-	vscodeExtEnv     string
-	selfPID          int
-	listProcessesFn  func() ([]ProcessInfo, error)
-	killProcessFn    func(pid int) error
+	aiHomeDir       string
+	hostHomeDir     string
+	platform        string
+	nodeExecPath    string
+	goBinaryPath    string
+	stateFilePath   string
+	extensionRoots  []string
+	vscodeExtEnv    string
+	selfPID         int
+	listProcessesFn func() ([]ProcessInfo, error)
+	killProcessFn   func(pid int) error
 }
 
 // NewVscodeHookService 创建 VSCode 扩展 hook 管理服务。
@@ -85,17 +85,17 @@ func NewVscodeHookService(opts VscodeHookOptions) *VscodeHookService {
 		selfPID = os.Getpid()
 	}
 	return &VscodeHookService{
-		aiHomeDir:        aiHome,
-		hostHomeDir:      strings.TrimSpace(opts.HostHomeDir),
-		platform:         NormalizePlatform(opts.Platform),
-		nodeExecPath:     strings.TrimSpace(opts.NodeExecPath),
-		helperScriptPath: strings.TrimSpace(opts.HelperScriptPath),
-		stateFilePath:    stateFilePath,
-		extensionRoots:   opts.ExtensionRoots,
-		vscodeExtEnv:     strings.TrimSpace(opts.VSCodeExtensions),
-		selfPID:          selfPID,
-		listProcessesFn:  opts.ListProcesses,
-		killProcessFn:    opts.KillProcess,
+		aiHomeDir:       aiHome,
+		hostHomeDir:     strings.TrimSpace(opts.HostHomeDir),
+		platform:        NormalizePlatform(opts.Platform),
+		nodeExecPath:    strings.TrimSpace(opts.NodeExecPath),
+		goBinaryPath:    strings.TrimSpace(opts.GoBinaryPath),
+		stateFilePath:   stateFilePath,
+		extensionRoots:  opts.ExtensionRoots,
+		vscodeExtEnv:    strings.TrimSpace(opts.VSCodeExtensions),
+		selfPID:         selfPID,
+		listProcessesFn: opts.ListProcesses,
+		killProcessFn:   opts.KillProcess,
 	}
 }
 
@@ -190,7 +190,7 @@ func (svc *VscodeHookService) ResolvePaths() []VscodeTarget {
 func (svc *VscodeHookService) BuildWrapperScript(upstreamBinaryPath string) string {
 	return BuildCodexAppServerWrapperScript(WrapperMarkerVscode, WrapperOptions{
 		NodeExecPath:       svc.nodeExecPath,
-		HelperScriptPath:   svc.helperScriptPath,
+		GoBinaryPath:       svc.goBinaryPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
 		StateFilePath:      svc.stateFilePath,
 	})

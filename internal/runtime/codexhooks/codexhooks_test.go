@@ -169,13 +169,13 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 
 	// 验证在隔离测试目录下即使宿主机 /Applications 存在也不会越界扫描系统目录。
 	isoSvc := NewDesktopHookService(DesktopHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		NodeExecPath:     "/usr/local/bin/node",
-		HelperScriptPath: helper,
-		ProcessHomeDir:   hostHome,
-		OSUserHomeDir:    "/Users/real-someone-else",
+		AIHomeDir:      aiHome,
+		HostHomeDir:    hostHome,
+		Platform:       "darwin",
+		NodeExecPath:   "/usr/local/bin/node",
+		GoBinaryPath:   helper,
+		ProcessHomeDir: hostHome,
+		OSUserHomeDir:  "/Users/real-someone-else",
 	})
 	if paths := isoSvc.ResolvePaths(); paths.BundlePath != "" || paths.Reason != "codex_app_not_found" {
 		t.Fatalf("隔离宿主目录不得扫描真实 /Applications, 实际 paths=%+v", paths)
@@ -201,7 +201,7 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
 		NodeExecPath:            "/usr/local/bin/node",
-		HelperScriptPath:        helper,
+		GoBinaryPath:            helper,
 		ProviderHookReceiverURL: "http://127.0.0.1:4312/v0/webui/session-events/provider-hook",
 		SelfPID:                 999,
 		ReadCodexVersion: func(_ string) string {
@@ -304,12 +304,12 @@ func TestVscodeHookServiceLifecycle(t *testing.T) {
 
 	var killed []int
 	svc := NewVscodeHookService(VscodeHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		NodeExecPath:     "/usr/local/bin/node",
-		HelperScriptPath: "/opt/helper.js",
-		SelfPID:          888,
+		AIHomeDir:    aiHome,
+		HostHomeDir:  hostHome,
+		Platform:     "darwin",
+		NodeExecPath: "/usr/local/bin/node",
+		GoBinaryPath: "/opt/helper.js",
+		SelfPID:      888,
 		ListProcesses: func() ([]ProcessInfo, error) {
 			return []ProcessInfo{
 				{PID: 51, Command: extBin + " app-server --analytics-default-enabled"},
@@ -752,7 +752,7 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
 		NodeExecPath:            "/usr/local/bin/node",
-		HelperScriptPath:        helper,
+		GoBinaryPath:            helper,
 		RuntimeLayouts:          layouts,
 		AllowSystemApplications: &allowSys,
 		ReadBundleMetadata: func(string) BundleMetadata {

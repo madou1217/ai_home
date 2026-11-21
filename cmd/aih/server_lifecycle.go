@@ -132,6 +132,7 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 			// 这时 Start 报 already running 不代表失败，以就绪 + pid 变化为准。
 			if startErr := autostart.Start(ctx, options); startErr == nil {
 				status, _ = autostart.StatusFor(ctx, options)
+				status.Strategy = "graceful"
 			}
 		} else if goruntime.GOOS == "windows" {
 			windowsStopService(ctx, options)
@@ -311,9 +312,9 @@ func requestServerShutdown(ctx context.Context, port int, managementKey string) 
 	return nil
 }
 
-// serverReadyTimeout 覆盖本地服务完整装配的耗时。Windows 上首次启动要建库、
-// 跑扫描，实测超过 90s 才把 ready 置真；预算太短会把“重启成功但还在预热”
-// 误报成失败（2026-11-21 真机：restart 90s 超时，紧接着 readyz 已 200）。
+// serverReadyTimeout 覆盖本地服务从拉起到开始监听 /readyz 的耗时。
+// Windows 首次启动要建库、跑扫描，可能明显慢于 macOS/Linux，预算放宽到 240s；
+// 其余平台 90s 足够（就绪判定只看进程是否应答，不等账号/目录预热）。
 var serverReadyTimeout = func() time.Duration {
 	if goruntime.GOOS == "windows" {
 		return 240 * time.Second
@@ -385,8 +386,14 @@ func serverReady(ctx context.Context, port int) bool {
 	if json.NewDecoder(response.Body).Decode(&payload) != nil {
 		return false
 	}
-	ready, _ := payload["ready"].(bool)
-	return ready
+	// 只看"进程在服务"，不看 ready：/readyz 的 ready 语义是"至少一个 Provider
+	// 有启用账号"，空 home（全新安装、还没导入账号）永远 ready=false。把它当成
+	// 启动失败会让 start/restart 在服务明明已经监听的情况下空等超时（真机：
+	// 全新 home 上 start 报 90s 超时，紧接着 /readyz 已是 200）。
+	if ok, _ := payload["ok"].(bool); !ok {
+		return false
+	}
+	return true
 }
 
 func serverPID(home string) int {

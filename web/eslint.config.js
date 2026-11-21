@@ -27,6 +27,15 @@ export default [
   },
   {
     files: ['scripts/**/*.{js,cjs,mjs}'],
+    // ESLint 9 默认 caughtErrors: 'all'，会把 `catch (_error)` 判成未使用；
+    // 与 ts 配置同一口径，允许下划线前缀表示"刻意忽略"。
+    rules: {
+      'no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }]
+    },
     languageOptions: {
       globals: {
         __dirname: 'readonly',

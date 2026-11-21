@@ -190,7 +190,7 @@ An interrupted turn was also exercised. A longer prompt was started and the CLI 
 timeout -s INT 8 opencode run --model opencode/flint-40b-free --auto --format json "Write a detailed 600-word essay about the ocean."
 ```
 
-The same session recorded `UserPromptSubmit` then `Stop` (8.889 s apart), ending `completed`. This confirms the `session.execution.interrupted` branch reaches the same terminal `Stop` path as `succeeded`.
+The same session recorded `UserPromptSubmit` then `Stop` (7.889 s apart), ending `completed`. This confirms the `session.execution.interrupted` branch reaches the same terminal `Stop` path as `succeeded`.
 
 The v1 (`server()` + `session.idle`) path is not exercised: it requires an OpenCode 1.x CLI, which is not installed and was not downgraded on this host. A real upstream `session.execution.failed` turn was also not produced; it shares the terminal branch above.
 

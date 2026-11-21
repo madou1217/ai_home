@@ -173,7 +173,7 @@ func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot
 func packageEnvironment(o Options) []string {
 	root := o.PackageRoot
 	nodeDir := filepath.Dir(bundleNode(root))
-	override := map[string]string{"AIH_HOME_DIR": o.Home, "AIH_HOST_HOME": o.HostHome, "AIH_PACKAGED": "1", "AIH_PACKAGE_ROOT": root, "AIH_EXECUTABLE": o.Launcher, "AIH_SERVER_NODE_EXEC": bundleNode(root), "AIH_SERVER_ENTRY_FILE": filepath.Join(root, "bin", "ai-home.js"), "PATH": nodeDir + string(os.PathListSeparator) + os.Getenv("PATH")}
+	override := map[string]string{"AIH_HOME_DIR": o.Home, "AIH_HOST_HOME": o.HostHome, "AIH_PACKAGED": "1", "AIH_PACKAGE_ROOT": root, "AIH_EXECUTABLE": o.Launcher, "AIH_SERVER_NODE_EXEC": bundleNode(root), "AIH_SERVER_ENTRY_FILE": filepath.Join(root, "bin", "aih"), "PATH": nodeDir + string(os.PathListSeparator) + os.Getenv("PATH")}
 	env := []string{}
 	for _, item := range os.Environ() {
 		name, _, ok := strings.Cut(item, "=")

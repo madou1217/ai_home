@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -206,7 +207,7 @@ func (reader *FileReader) resolveSessionFile(request PreviewRequest) (string, er
 	if provider == "claude" {
 		return resolveProjectTranscript(filepath.Join(home, ".claude", "projects"), sessionID, projectDirName)
 	}
-	if roots := codebuddyProjectsRoots(provider); len(roots) > 0 {
+	if roots := codebuddyfamilystorage.SessionRoots(provider); len(roots) > 0 {
 		for _, dirName := range roots {
 			filePath, err := resolveProjectTranscript(filepath.Join(home, dirName, "projects"), sessionID, projectDirName)
 			if err == nil {
@@ -541,24 +542,6 @@ func (reader *FileReader) clock() time.Time {
 		return reader.now()
 	}
 	return time.Now()
-}
-
-// codebuddyProjectsRoots 返回该 Provider 在宿主 HOME 下的候选配置根目录名。
-//
-// 同一地区的 CLI 与桌面端共用一份物理会话存储（软链接），按顺序取第一个命中的。
-func codebuddyProjectsRoots(provider string) []string {
-	switch provider {
-	case "codebuddy":
-		return []string{".codebuddy", ".workbuddy-ai"}
-	case "workbuddy":
-		return []string{".workbuddy-ai", ".codebuddy"}
-	case "codebuddycn":
-		return []string{".codebuddy-cn", ".workbuddy"}
-	case "workbuddycn":
-		return []string{".workbuddy", ".codebuddy-cn"}
-	default:
-		return nil
-	}
 }
 
 // isSafePathSegment 拒绝空串、分隔符与上跳，保证拼进路径的值只有一段。

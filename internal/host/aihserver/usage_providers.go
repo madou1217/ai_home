@@ -14,6 +14,7 @@ import (
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
@@ -189,7 +190,7 @@ func buildQoderUsage(context usageProviderContext) ([]usageapp.ProviderStrategy,
 
 func buildCodebuddyFamilyUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, error) {
 	strategies := make([]usageapp.ProviderStrategy, 0, 4)
-	for _, providerID := range []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"} {
+	for _, providerID := range providers.CodeBuddyFamilyProviders() {
 		strategy, err := codebuddyfamilyusage.New(context.client, providerID)
 		if err != nil {
 			return nil, err

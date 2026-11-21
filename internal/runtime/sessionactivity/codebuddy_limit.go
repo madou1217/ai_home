@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	codebuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
 
 	codebuddyConfigDirByProvider = map[string]string{
 		"codebuddy":   ".codebuddy",

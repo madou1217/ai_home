@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
@@ -38,7 +39,7 @@ var (
 		"workbuddy":   ".workbuddy-ai",
 		"workbuddycn": ".workbuddy",
 	}
-	codebuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
 	zcodeDatabaseFiles       = map[string]struct{}{
 		"db.sqlite":     {},
 		"db.sqlite-wal": {},

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
@@ -40,9 +42,9 @@ const (
 // Providers 是 CodeBuddy 家族的成员名单，顺序与 Node FAMILY_PROVIDERS 一致。
 //
 // 顺序只影响候选目录的读取优先级；家族成员共用同一份物理会话存储，
-// 读取时会按真实路径去重。
+// 读取时会按真实路径去重。成员事实由 core/providers 持有。
 func Providers() []string {
-	return []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+	return providers.CodeBuddyFamilyProviders()
 }
 
 // Budget 控制一次扫描的条目预算与时限。

@@ -172,9 +172,9 @@ func newConversationID(now time.Time) string {
 // 透传只承诺承载「家族官方端点 + 原生凭据」这一种形态。
 var ErrUnsupportedCredential = errors.New("家族透传凭据不受支持")
 
-// FamilyProviders 是家族四支，与 Node 侧 codebuddy-family-layouts 的
-// FAMILY_PROVIDERS 同集合（守卫测试会盯住两侧一致）。
-var FamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+// FamilyProviders 是家族四支，成员事实来自 core/providers
+// （与 Node 侧 codebuddy-family-layouts 的 FAMILY_PROVIDERS 同集合）。
+var FamilyProviders = providers.CodeBuddyFamilyProviders()
 
 // inferenceBaseURLs 是发行版级推理 endpoint：国内站两支共用 copilot.tencent.com，
 // 国际站两支各用自己站点域名。与 Node 侧 CODEBUDDY_FAMILY_INFERENCE_BASE_URLS 同源，

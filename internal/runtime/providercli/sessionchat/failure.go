@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/madou1217/ai_home/core/providers"
+
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
 
@@ -34,8 +36,8 @@ type failureRule struct {
 	blockerRecheck string
 }
 
-// codebuddyFamilyProviders 与 Node CODEBUDDY_FAMILY_PROVIDERS 同值。
-var codebuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+// codebuddyFamilyProviders 与 Node CODEBUDDY_FAMILY_PROVIDERS 同值（成员事实在合同）。
+var codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
 
 // providerFailureRules 与 Node PROVIDER_FAILURE_RULES 同序同值。
 var providerFailureRules = []failureRule{

@@ -11,7 +11,11 @@
 // the real host home and for an isolated account home.
 package storagepolicy
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"github.com/madou1217/ai_home/core/providers"
+)
 
 // RuntimeHomeDir is the per-provider runtime directory name appended to
 // RuntimeHomeRoot.
@@ -39,8 +43,8 @@ type Policy struct {
 }
 
 // FamilyProviders is the CodeBuddy family membership list (single source of
-// truth in lib/runtime/codebuddy-family-layouts.js).
-var FamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+// truth: core/providers CodeBuddyFamilyProviders).
+var FamilyProviders = providers.CodeBuddyFamilyProviders()
 
 var (
 	emptySegments = []string{}

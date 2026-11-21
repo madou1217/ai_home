@@ -18,6 +18,7 @@ import (
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/businessdb"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
@@ -41,13 +42,14 @@ var (
 	codebuddyIdeEventKeyRe     = regexp.MustCompile(`^codebuddy:ide-request:[a-f0-9]{16}:[a-f0-9]{16}:usage$`)
 	kimiFileEventKeyRe         = regexp.MustCompile(`^kimi:file:([0-9a-f]{16}):[0-9]+:(usage|prompt)$`)
 	zcodeUsageIDRe             = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$`)
-	codebuddyFamilyProviders   = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
-	codebuddyFamilyProviderSet = map[string]struct{}{
-		"codebuddy":   {},
-		"codebuddycn": {},
-		"workbuddy":   {},
-		"workbuddycn": {},
-	}
+	codebuddyFamilyProviders   = providers.CodeBuddyFamilyProviders()
+	codebuddyFamilyProviderSet = func() map[string]struct{} {
+		set := make(map[string]struct{}, len(codebuddyFamilyProviders))
+		for _, provider := range codebuddyFamilyProviders {
+			set[provider] = struct{}{}
+		}
+		return set
+	}()
 )
 
 // UsageRecordInput 表示待入库的一条模型用量记录。

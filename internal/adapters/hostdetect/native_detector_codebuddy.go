@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	codebuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
 	codebuddyAuthFileNames   = map[string]string{
 		"codebuddy":   "Tencent-Cloud.coding-copilot.info",
 		"codebuddycn": "workbuddy-desktop.info",
@@ -839,12 +839,7 @@ func userDataParentSegments(platform string) []string {
 }
 
 func isCodebuddyFamilyProvider(provider string) bool {
-	for _, item := range codebuddyFamilyProviders {
-		if item == provider {
-			return true
-		}
-	}
-	return false
+	return providers.IsCodeBuddyFamilyProvider(provider)
 }
 
 func containsString(items []string, target string) bool {

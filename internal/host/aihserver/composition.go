@@ -492,6 +492,13 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	projectionTransferred = true
 	leaseTransferred = true
 	rootHandler := withManagementBrowserAccess(handlers.metrics.Middleware(newRouter(handlers)))
+	// CodeBuddy 网关档的 models.json 投影：账号/模型写请求后防抖刷新，
+	// 启动后先做一次初始刷新，周期对账兜底漏事件。
+	if codeBuddyModels := newCodeBuddyModelsProjection(options); codeBuddyModels != nil {
+		codeBuddyModels.Start(ctx)
+		resources = append(resources, codeBuddyModels)
+		rootHandler = withCodeBuddyModelsTrigger(rootHandler, codeBuddyModels.Trigger)
+	}
 	deferredGateway.set(rootHandler)
 	resources = append(resources, startServerWarmups(ctx, rootHandler, handlers.warmupDeps, options.ManagementKey))
 	server := newServer(rootHandler, resources, options, streams)

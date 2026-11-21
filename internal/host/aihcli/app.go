@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
+	"github.com/madou1217/ai_home/internal/runtime/codebuddymodels"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -303,15 +305,45 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if hostHomeDir == "" {
 		hostHomeDir = resolveHostHomeDir()
 	}
-	gatewayPlanner, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
-		Accounts: gatewayAccounts,
-		Strategies: []providerlaunch.GatewayStrategy{
-			codexcli.NewGatewayStrategy(codexManagedProviderAuth{
-				hostHomeDir: hostHomeDir,
-				lookupEnv:   os.LookupEnv,
-			}),
-			claudecli.NewGatewayStrategy(),
+	// CodeBuddy 家族没有 OpenAI 兼容的 base URL 入口，网关档靠独立的 models.json
+	// 投影：文件只放在 run/codebuddy-gateway，绝不写宿主共享的 ~/.codebuddy/models.json，
+	// 否则家族账号投影会把网关模型链进每个账号沙箱，绕开 `aih codebuddy <id>` 的钉选。
+	codebuddyRoot := ""
+	if strings.TrimSpace(options.AIHomeDir) != "" {
+		codebuddyRoot = filepath.Join(options.AIHomeDir, "run", "codebuddy-gateway")
+	}
+	codebuddyProjection := codebuddymodels.New(codebuddymodels.Options{
+		RootDir: codebuddyRoot,
+		Logf: func(format string, args ...any) {
+			if options.Stderr != nil {
+				_, _ = fmt.Fprintf(options.Stderr, "[aih:codebuddy-models] "+format+"\n", args...)
+			}
 		},
+	})
+	gatewayStrategies := []providerlaunch.GatewayStrategy{
+		codexcli.NewGatewayStrategy(codexManagedProviderAuth{
+			hostHomeDir: hostHomeDir,
+			lookupEnv:   os.LookupEnv,
+		}),
+		claudecli.NewGatewayStrategy(),
+	}
+	if options.AIHomeDir != "" {
+		for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
+			strategy, strategyErr := codebuddyfamilycli.NewGatewayStrategy(
+				providerID,
+				codebuddyfamilystorage.SiteInternal(providerID),
+				codebuddyProjection.RootDir(),
+				codebuddyProjection,
+			)
+			if strategyErr != nil {
+				return fail("创建 CodeBuddy 家族网关策略失败", strategyErr)
+			}
+			gatewayStrategies = append(gatewayStrategies, strategy)
+		}
+	}
+	gatewayPlanner, err := providerlaunch.NewGatewayPlanner(providerlaunch.GatewayDependencies{
+		Accounts:   gatewayAccounts,
+		Strategies: gatewayStrategies,
 	})
 	if err != nil {
 		return fail("创建 Gateway Relay 规划器失败", err)
@@ -570,8 +602,14 @@ func SupportsNativeCLI(providerID string) bool {
 }
 
 // supportedGatewayCLIProvider 与本组合根实际注册的 Gateway Strategy 保持一致。
+//
+// CodeBuddy 家族只支持显式 `aih codebuddy relay`：裸 `aih codebuddy` 仍由
+// bare_launch 选一个健康账号走 Native Direct，不能因为这里放开就改变默认语义。
 func supportedGatewayCLIProvider(providerID string) bool {
-	return providerID == "codex" || providerID == "claude"
+	if providerID == "codex" || providerID == "claude" {
+		return true
+	}
+	return codebuddyfamilystorage.IsFamilyProvider(providerID)
 }
 
 // Close 逆序释放单库等组合资源；重复调用保持幂等。

@@ -3,7 +3,6 @@ package webuiserverconfigapi
 import (
 	"context"
 	"encoding/json"
-	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 )
@@ -66,28 +65,6 @@ func ApplyConfigPatch(ctx context.Context, aiHomeDir string, patch map[string]an
 		return string(encoded), nil
 	})
 	return saved, err
-}
-
-// ClearManagementKey removes the stored management key without touching other fields.
-func ClearManagementKey(ctx context.Context, aiHomeDir string) error {
-	source, err := OpenSource(aiHomeDir)
-	if err != nil {
-		return err
-	}
-	return source.UpdateServerConfig(ctx, func(current string, found bool) (string, error) {
-		values := map[string]any{}
-		if found && strings.TrimSpace(current) != "" {
-			if err := json.Unmarshal([]byte(current), &values); err != nil {
-				return "", err
-			}
-		}
-		delete(values, "managementKey")
-		encoded, err := json.Marshal(values)
-		if err != nil {
-			return "", err
-		}
-		return string(encoded), nil
-	})
 }
 
 // PublicConfig strips secrets and sets the configured flags for display.

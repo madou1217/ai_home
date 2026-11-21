@@ -10,7 +10,7 @@ This audit covers the session running indicator used by the WebUI project/workbe
 | --- | --- | --- | --- |
 | codex | hook + app-server proxy | `json_hooks` events; app-server `turn/started`, `turn/completed`, `thread/status/changed`, `thread/closed` | Fixed in this audit: idle/notLoaded clears; active no longer starts a turn |
 | claude | hook | `SessionStart`, `UserPromptSubmit`, `PermissionRequest`, `Notification`, `Stop`, `StopFailure`, `SessionEnd` | Fixed in this audit: `idle_prompt` completes the turn; `permission_prompt` still opens a question |
-| gemini | hook | `SessionStart`, `BeforeAgent`, `AfterAgent`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
+| gemini | hook | `SessionStart`, `BeforeAgent`, `AfterAgent`, `SessionEnd` | Turn-scoped; a lost `AfterAgent` is bounded by the 10-minute watch stale window and the 120-second account turn TTL (verified) |
 | agy | hook | `PreInvocation`, `PostInvocation`, `Stop` | Fixed in this audit: `Stop` completes the turn; `continuationActive=true` keeps it working; `fullyIdle` only reports background tasks |
 | grok | hook | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
 | opencode | plugin bridge | v2 `session.execution.started` / terminal events; v1 `session.idle` / message events | v2 verified on 2.3.2 with real sessions (completed and SIGINT-interrupted): one `UserPromptSubmit` + one `Stop`, no duplicates. v1 path still needs a 1.x CLI |
@@ -194,12 +194,40 @@ The same session recorded `UserPromptSubmit` then `Stop` (7.889 s apart), ending
 
 The v1 (`server()` + `session.idle`) path is not exercised: it requires an OpenCode 1.x CLI, which is not installed and was not downgraded on this host. A real upstream `session.execution.failed` turn was also not produced; it shares the terminal branch above.
 
+## Gemini lost-terminal-hook fallback
+
+No code change was needed: two existing bounds already cover a missing `AfterAgent`.
+
+### Project running status
+
+`readProjectRuntimeState` ignores `working`/`waiting` entries whose `lastEventAt` is older than `watchRuntimeStaleAfter` (10 minutes). Real Gemini payloads were posted through the Go sender and read back from the projects watch SSE:
+
+| Step | State file | Runtime frame |
+| --- | --- | --- |
+| fresh `BeforeAgent` | `working`, current | contains `gemini:<session>:gemini-fallback-test` |
+| `AfterAgent` | `completed` | key removed |
+| `BeforeAgent` backdated 11 minutes | `working`, `lastEventAt` 669 s old | not present |
+| fresh anchor `BeforeAgent` while the stale entry exists | `working`, current | contains the anchor; the stale key is absent |
+
+The last row is the decisive check: the runtime frame was non-empty, so the stale key was filtered rather than omitted because the frame was empty.
+
+### Account activity
+
+The hook side effects use `MarkSessionTurn` with `DefaultSessionTurnTTL = 120s`:
+
+- `BeforeAgent` with an account ref: `inFlight=1`, `sessionTurnActive=true`
+- after 125 seconds without a terminal event: `inFlight=0`, `sessionTurnActive=false`
+
+### Caveat
+
+The persisted state file itself stays `working` until another event arrives; only the watch read path applies the 10-minute stale filter. No other API reads `run/provider-session-state`, so this does not leak into the UI.
+
 ## Optimization plan
 
 1. **Codex**: keep the app-server as the authoritative source; never derive a turn from thread attachment. Retain `turn/started` / `turn/completed` as the only turn boundaries.
 2. **Claude**: done — `idle_prompt` no longer opens a question and completes the turn. Remaining optional work: if the UI wants a "needs attention" hint for idle sessions, expose it as a separate flag instead of reusing `waiting`/running.
 3. **AGY**: done — `Stop` completes the turn; `continuationActive=true` is the only Stop payload treated as working.
-4. **Gemini / Grok**: hooks are already turn-scoped; add a bounded stale-working fallback per provider if a terminal hook is lost.
+4. **Gemini / Grok**: Gemini verified — a lost `AfterAgent` clears from running status after 10 minutes and from account activity after 120 seconds. Grok shares the same hook shape but was not separately exercised. No code change.
 5. **OpenCode**: v2 verified with real 2.3.2 sessions, including an interrupted turn (start + terminal, no duplicates). Remaining: v1 on a 1.x CLI, and a real failed turn.
 6. **Polling providers (qoder, kiro, codebuddy family)**: done — tmux pane activity was removed as turn evidence. Only store-backed probes can produce a turn; everything else stays unknown.
 7. **Unavailable providers (kimi, zcode, cline)**: show "unknown/unavailable"; an attached launcher must never imply a running turn.

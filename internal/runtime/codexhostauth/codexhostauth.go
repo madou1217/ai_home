@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	codexconfig "github.com/madou1217/ai_home/internal/host/aihdefault/content/codex"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 )
@@ -39,7 +40,7 @@ func ConfigPath(hostHomeDir string, lookupEnv func(string) (string, bool)) strin
 	if hostHome == "" {
 		return ""
 	}
-	return absolute(filepath.Join(hostHome, ".codex", "config.toml"))
+	return absolute(filepath.Join(hostHome, providerroot.ConfigDir("codex"), "config.toml"))
 }
 
 // SiblingCLI returns the CLI executable able to serve `codex gateway-auth` that

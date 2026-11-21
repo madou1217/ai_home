@@ -11,9 +11,30 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/host/aihcli"
 )
+
+// hostHomeFromProjection 从 <hostHome>/.ai_home/run/auth-projections/... 反推宿主 home。
+func hostHomeFromProjection(aiHomeDir string) string {
+	marker := string(filepath.Separator) + filepath.Join("run", "auth-projections") + string(filepath.Separator)
+	index := strings.Index(aiHomeDir, marker)
+	if index <= 0 {
+		return ""
+	}
+	root := aiHomeDir[:index]
+	if filepath.Base(root) != ".ai_home" {
+		return ""
+	}
+	host := filepath.Dir(root)
+	if info, err := os.Stat(filepath.Join(host, ".ai_home", "aih.db")); err == nil && !info.IsDir() {
+		return host
+	}
+	return ""
+}
 
 // localGatewayEnvKeys 是可从本地配置兜底的环境变量。
 var localGatewayEnvKeys = []string{
@@ -33,6 +54,12 @@ func withLocalGatewayDefaults(
 	}
 	explicitBaseURL, _ := command.lookupEnv("AIH_SERVER_BASE_URL")
 	defaults, ok, err := aihcli.ReadLocalGatewayDefaults(ctx, aiHomeDir, explicitBaseURL)
+	if err == nil && !ok {
+		// 账号投影的 HOME 里 .ai_home/aih.db 没有 gateway 配置；回退到宿主 .ai_home。
+		if hostHome := hostHomeFromProjection(aiHomeDir); hostHome != "" {
+			defaults, ok, err = aihcli.ReadLocalGatewayDefaults(ctx, filepath.Join(hostHome, ".ai_home"), explicitBaseURL)
+		}
+	}
 	if err != nil || !ok {
 		return command
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -441,17 +442,12 @@ func cliClientProtocol(provider string) string {
 // 且在 Chat Completions 入口同样有通道」无法区分，故直接读合同里的原生边界：
 // 有 CLIConfig 且 CLI 名为 codex 的 Provider 才有 Responses 承载。
 func isResponsesNativeProvider(provider string) bool {
-	definition, found := loadProviderSnapshot().byID[provider]
-	if !found {
-		return false
-	}
-	// 合同事实：codex 的凭据事实里带 CODEX 专属标记 —— VendorID 为 openai 且
-	// 原生配置根是 .codex。这里只判断「该 Provider 的 CLI 配置根是否为 .codex」，
-	// 属于数据查询，不是名字分支。
-	if definition.CLI == nil {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(definition.CLI.GlobalDir), ".codex")
+	// 合同事实：codex 的原生配置根由 providerroot 解析；通过同一合同根
+	// 与 codex 的根比较，不在运行代码中重复写入配置目录字面量。
+	return strings.EqualFold(
+		providerroot.ConfigDir(provider),
+		providerroot.ConfigDir("codex"),
+	)
 }
 
 // modelsWithoutProtocolChannel 返回「没有任何 Provider 能在该客户端协议下服务」的模型集合。

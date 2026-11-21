@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -56,7 +55,7 @@ func linkDataRoot(projectionRoot, hostHomeDir string, entry DataRootEntry, platf
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	if info != nil && info.Mode()&os.ModeSymlink != 0 {
+	if isLinkEntry(info, projectionPath) {
 		target, err := os.Readlink(projectionPath)
 		if err != nil {
 			return "", err
@@ -130,9 +129,9 @@ func linkDataRoot(projectionRoot, hostHomeDir string, entry DataRootEntry, platf
 }
 
 func createDataRootLink(target, link string, isDir bool, platform string) error {
-	if platform == "windows" && isDir {
+	if isWindowsPlatform(platform) && isDir {
 		// 目录用 junction：与 Node 的 symlinkSync(..., 'junction') 等价，且不需要额外权限。
-		if err := exec.Command("cmd", "/c", "mklink", "/J", link, target).Run(); err == nil {
+		if err := createJunction(target, link); err == nil {
 			return nil
 		}
 	}

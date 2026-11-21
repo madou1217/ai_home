@@ -75,8 +75,29 @@
   - Windows NTFS：junction、adopted、unresolved 冲突保留、去重同 File ID、二次 unchanged。
   - 真实 31 账号：0 unresolved / 0 failed / 0 变更 / 0 磁盘增长。
 
+## 共享会话存储（2026-11-21 已迁移）
+
+- `shared-store-linker` 保留 provider 策略与 `adopt` 钩子（cline 的 SQLite 合并是 provider 逻辑），
+  建链/丢弃真实残留/悬挂链接清理交给 Go：
+  - 目录 → junction（Windows）或符号链接；文件 → 文件符号链接；
+  - `-wal`/`-shm` 保持悬挂（SQLite 通过链接创建共享目标）；
+  - 空目录可安全替换；有内容的真实数据只有 `discardRealEntries` 才丢，否则 `unresolved`；
+  - `prune` 只删「指向共享根且目标已消失」的一级链接。
+- 注入 `fs`/`path`（测试替身）时仍走本地实现；生产默认走 Go，失败自动回退。
+- 实测：macOS 与 Windows 上 Node/Go 两侧 summary 逐项一致；adopt 返回 `ok:false` 时
+  `deferred` 且整体不建链（fail-closed）；真实 zcode/cline 账号悬挂链接清理 0 错误。
+
+## Windows junction 与平台标识（2026-11-21 修复）
+
+- 用 `FSCTL_SET_REPARSE_POINT` 直接建挂载点重解析，不再依赖 `mklink /J`（外部进程、PATH
+  依赖）或 `os.Symlink`（需要开发者模式/管理员）。重解析缓冲按挂载点格式构造（没有
+  `Flags` 字段），标签 `0xA0000003`。
+- junction 在 Go 里可能报 `ModeIrregular`（不是 `ModeSymlink`），链接判定统一改为
+  "能 `readlink` 出目标即算链接"，否则悬挂 junction 会被当成真实数据（`discardReal` 会
+  误删、`prune` 会漏删）。
+- 平台判定修正：请求里是 Node 的 `win32`，旧代码只比 `"windows"`，导致 Windows 上
+  所有目录链接退化成需要特权的 `os.Symlink`、reflink 探测还会去调用不存在的 `cp`。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
-- `shared-store-linker`（zcode/cline 会话存储逐条链接、含 provider adopt 钩子）仍在 Node；
-  这是下一块可迁移的执行点，但 adopt 钩子是 provider 逻辑，需要按"Node 给动作、Go 做文件操作"拆分。

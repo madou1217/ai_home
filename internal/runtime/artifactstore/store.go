@@ -33,17 +33,19 @@ import (
 
 // Request 是 Node 传入的一次投影准备请求。
 type Request struct {
-	Provider        string          `json:"provider"`
-	ProjectionRoot  string          `json:"projectionRoot"`
-	StoreRoot       string          `json:"storeRoot"`
-	ProjectionsRoot string          `json:"projectionsRoot"`
-	Platform        string          `json:"platform"`
-	HostHomeDir     string          `json:"hostHomeDir,omitempty"`
-	Artifacts       []Artifact      `json:"artifacts"`
-	Caches          []CacheEntry    `json:"caches,omitempty"`
-	DataRoots       []DataRootEntry `json:"dataRoots,omitempty"`
-	Dedupe          []DedupeEntry   `json:"dedupe,omitempty"`
-	Prune           *PruneOptions   `json:"prune,omitempty"`
+	Provider        string                `json:"provider"`
+	ProjectionRoot  string                `json:"projectionRoot"`
+	StoreRoot       string                `json:"storeRoot"`
+	ProjectionsRoot string                `json:"projectionsRoot"`
+	Platform        string                `json:"platform"`
+	HostHomeDir     string                `json:"hostHomeDir,omitempty"`
+	Artifacts       []Artifact            `json:"artifacts"`
+	Caches          []CacheEntry          `json:"caches,omitempty"`
+	DataRoots       []DataRootEntry       `json:"dataRoots,omitempty"`
+	Dedupe          []DedupeEntry         `json:"dedupe,omitempty"`
+	StoreLinks      []StoreLinkEntry      `json:"storeLinks,omitempty"`
+	StoreLinkPrunes []StoreLinkPruneEntry `json:"storeLinkPrunes,omitempty"`
+	Prune           *PruneOptions         `json:"prune,omitempty"`
 }
 
 // DataRootEntry 是桌面 App 数据根（会话/数据库）声明：投影里应是指向宿主同一份的链接。
@@ -134,15 +136,17 @@ type VersionResult struct {
 
 // Response 是 CLI 输出。
 type Response struct {
-	OK          bool            `json:"ok"`
-	Versions    []VersionResult `json:"versions"`
-	Pruned      []PrunedVersion `json:"pruned,omitempty"`
-	StorePruned []PrunedVersion `json:"storePruned,omitempty"`
-	Emptied     int             `json:"emptied,omitempty"`
-	Caches      *CacheResult    `json:"caches,omitempty"`
-	DataRoots   *DataRootResult `json:"dataRoots,omitempty"`
-	Dedupe      *DedupeResult   `json:"dedupe,omitempty"`
-	Errors      []string        `json:"errors"`
+	OK              bool                   `json:"ok"`
+	Versions        []VersionResult        `json:"versions"`
+	Pruned          []PrunedVersion        `json:"pruned,omitempty"`
+	StorePruned     []PrunedVersion        `json:"storePruned,omitempty"`
+	Emptied         int                    `json:"emptied,omitempty"`
+	Caches          *CacheResult           `json:"caches,omitempty"`
+	DataRoots       *DataRootResult        `json:"dataRoots,omitempty"`
+	Dedupe          *DedupeResult          `json:"dedupe,omitempty"`
+	StoreLinks      []StoreLinkResult      `json:"storeLinks,omitempty"`
+	StoreLinkPrunes []StoreLinkPruneResult `json:"storeLinkPrunes,omitempty"`
+	Errors          []string               `json:"errors"`
 }
 
 // PrunedVersion 是被移入回收站的旧版本。
@@ -163,6 +167,13 @@ func Ensure(request Request) Response {
 		response.OK = false
 		response.Errors = append(response.Errors, "projectionRoot/storeRoot required")
 		return response
+	}
+	// 共享会话存储的建链/悬挂链接清理（adopt 的 provider 逻辑已在 Node 侧跑完）。
+	if len(request.StoreLinks) > 0 {
+		response.StoreLinks = applyStoreLinks(request)
+	}
+	if len(request.StoreLinkPrunes) > 0 {
+		response.StoreLinkPrunes = applyStoreLinkPrunes(request)
 	}
 	if len(request.DataRoots) > 0 {
 		response.DataRoots = linkDataRoots(request)
@@ -470,7 +481,7 @@ func strategyName(storeRoot, platform string) string {
 }
 
 func supportsReflink(directory, platform string) bool {
-	if platform == "windows" {
+	if isWindowsPlatform(platform) {
 		return false
 	}
 	key := platform + "\x00" + directory
@@ -626,6 +637,13 @@ func normalizePlatform(value string) string {
 		return "darwin"
 	}
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// isWindowsPlatform 同时接受 Node 的 "win32" 和内部可读的 "windows"：
+// 以前只比 "windows"，于是 win32 请求永远走不到 junction 分支，退化成需要特权的
+// os.Symlink（普通用户直接 EPERM），reflink 探测也会去调用不存在的 cp。
+func isWindowsPlatform(platform string) bool {
+	return platform == "win32" || platform == "windows"
 }
 
 func pathExists(path string) bool {
@@ -1080,7 +1098,7 @@ func linkOneCache(projectionPath, hostTarget, platform string) (string, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	if info != nil && info.Mode()&os.ModeSymlink != 0 {
+	if isLinkEntry(info, projectionPath) {
 		if link, err := os.Readlink(projectionPath); err == nil {
 			target := link
 			if !filepath.IsAbs(target) {
@@ -1091,7 +1109,7 @@ func linkOneCache(projectionPath, hostTarget, platform string) (string, error) {
 			}
 		}
 	}
-	realCopy := info != nil && info.Mode()&os.ModeSymlink == 0
+	realCopy := info != nil && !isLinkEntry(info, projectionPath)
 	outcome := "linked"
 	if !pathExists(hostTarget) {
 		if !realCopy {
@@ -1131,10 +1149,10 @@ func linkOneCache(projectionPath, hostTarget, platform string) (string, error) {
 }
 
 func createDirectoryLink(target, link, platform string) error {
-	if platform == "windows" {
+	if isWindowsPlatform(platform) {
 		// Node 用 junction；Go 的 os.Symlink 在 Windows 需要额外权限，这里沿用 mklink /J。
 		if info, err := os.Stat(target); err == nil && info.IsDir() {
-			if err := exec.Command("cmd", "/c", "mklink", "/J", link, target).Run(); err == nil {
+			if err := createJunction(target, link); err == nil {
 				return nil
 			}
 		}

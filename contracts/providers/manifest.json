@@ -2296,6 +2296,12 @@
           "supported": true,
           "channel": "relay"
         }
+      },
+      "modelPrefix": {
+        "supported": true,
+        "aliases": [
+          "zai"
+        ]
       }
     },
     {

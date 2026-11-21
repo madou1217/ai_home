@@ -208,8 +208,74 @@ CI 由 `.github/workflows/go-tests.yml` 承担：在 `windows-latest` 上跑
 - 调用方检查响应里是否真的有对应结果字段，字段缺失（`ok:false`）就回退本地实现，
   不再"发出去就当做过"。
 
+## opencode-strategy 语义拆解（下一步）
+
+真实投影盘点（`run/auth-projections/opencode/<acct>`）与代码一致：
+
+- `.local/share/opencode`：`auth.json` 是**真实文件**（私有），其余条目全是软链；
+- `.config/opencode`：所有条目软链到宿主同名目录；
+- `.local/share/aih-opencode-runtime/opencode`：`auth.json` 指向账号那份（auth bridge），
+  其余条目软链到宿主共享数据。
+
+### 三个投影根
+
+| 名称 | source（沙箱） | target（宿主） | linkKnown |
+|---|---|---|---|
+| bridge-data | `<sandbox>/.local/share/aih-opencode-runtime/opencode` | `<host>/.local/share/opencode` | 是 |
+| account-data | `<sandbox>/.local/share/opencode` | 同上 | 是 |
+| config | `<sandbox>/.config/opencode` | `<host>/.config/opencode` | 否 |
+
+source 为链接或不存在时整个投影跳过（避免顺着根链接把数据反迁回去）。
+
+### `ensureSharedEntryLink` 状态机（与 familyLinks 不同）
+
+| 现状 | 行为 | 计数 |
+|---|---|---|
+| 已是指向目标的链接 | 不动 | — |
+| 链接指向别处 | **unlink + 重建** | `migrated` |
+| 空目录 | rmdir + 重建 | `migrated` |
+| 真实内容 | 原样不动 | `unresolved` |
+| 缺失 + kind=dir | 先 `mkdir` 目标再建链 | `linked` |
+| 缺失 + kind=file | **允许悬挂链接**（不检查目标） | `linked` |
+| 建链失败 | 抛 `opencode_shared_bridge_failed` | — |
+
+和 `familyLinks` 的三处关键差异：会替换错误链接、允许悬挂文件链接、成功计数叫
+`migrated`。因此**不复用** familyLinks，单独做 primitive。
+
+### auth bridge
+
+`<bridge>/auth.json` → `<account>/.local/share/opencode/auth.json`（file 软链）。
+建链前先递归删除旧路径（`rmSync recursive`）；失败抛 `opencode_auth_bridge_failed`。
+删除用 `RemoveAll` 已实测不跟随 junction。
+
+### 策略留在 Node
+
+- 私有名：`auth.json` 及 `auth.json.*`（`isProviderPrivateEntryName('opencode', …)`）；
+- 三个根映射、`linkKnown` 标志、known dirs/files 清单；
+- 显式 server profile 直接跳过（不建 bridge）；
+- 网关覆盖、模型列表、env 清理、权限参数等均与文件系统无关。
+
+### 迁移拆分建议
+
+Go 新增 `bridgeLinks`：
+
+```json
+{ "links": [{"linkPath":"…","targetPath":"…","kind":"dir|file","label":"account-data/bin"}],
+  "authBridges": [{"linkPath":"…","targetPath":"…"}] }
+```
+
+Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 后 target，再 known 列表），
+Go 负责"canonical 判定 / prepare / mkdir / symlink|junction / auth bridge"和错误码。
+
+### 验证计划
+
+1. 合成 fixture：三个投影根各放"正确链接 / 错误链接 / 空目录 / 真实内容 / 缺失"五种状态，
+   Node 与 Go 的 `{migrated, linked, unresolved}` 与最终目录快照逐项对比；
+2. auth bridge：`auth.json` 缺失、已是正确链接、是真实文件三种情况；
+3. 真实 3 个 opencode 账号：只读盘点（已完成）→ 实现后跑一次，期望全部 `migrated=0`；
+4. Windows：目录链走 junction，文件链走 symlink（与现实现一致）。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
-- 仍在本地的零散动作：`codebuddy-shared-config`（纯 JSON 合并，无文件系统动作）、
-  `opencode-strategy`（带 auth bridge 与私有条目规则，需先拆语义）。
+- `codebuddy-shared-config`：纯 JSON 合并，没有文件系统动作，不需要迁移。

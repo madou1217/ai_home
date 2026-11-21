@@ -66,6 +66,11 @@ func relayHostsGoRelay(entries ...string) map[string]RelayHost {
 	}
 }
 
+// codebuddySharedAuthPath 返回 CodeBuddy 家族共用的宿主登录态文件（HOME 相对）。
+func codebuddySharedAuthPath(name string) string {
+	return "Library/Application Support/CodeBuddyExtension/Data/Public/auth/" + name
+}
+
 // hookFeatureFlag 返回特性开关的地址：false 与 nil 是两种不同事实
 // （合同声明「不需要」/ 合同没有声明），不能用同一个零值表示。
 func hookFeatureFlag(enabled bool) *bool {
@@ -81,10 +86,15 @@ func builtinCodex() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "openai", APIKeyEnv: []string{"OPENAI_API_KEY"}, BaseURLEnv: []string{"OPENAI_BASE_URL"}},
-		Storage: &StorageFacts{ConfigDenyPaths: []ConfigDenyFacts{
-			{Path: ".codex/config.toml"},
-			{Path: ".codex/hooks.json"},
-		}},
+		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
+			},
+			ConfigDenyPaths: []ConfigDenyFacts{
+				{Path: ".codex/config.toml"},
+				{Path: ".codex/hooks.json"},
+			},
+		},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ChatGPT / OpenAI 登录", "打开授权链接，授权后把回调地址提交给 WebUI。"),
@@ -154,10 +164,16 @@ func builtinGemini() Definition {
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
-		Storage: &StorageFacts{ConfigDenyPaths: []ConfigDenyFacts{
-			{Path: ".gemini/settings.json"},
-			{Path: ".gemini/.gemini/settings.json"},
-		}},
+		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "oauthCreds", Base: ArtifactBaseNative, Path: "oauth_creds.json", Format: "json"},
+				{Field: "googleAccounts", Base: ArtifactBaseNative, Path: "google_accounts.json", Format: "json", Optional: true},
+			},
+			ConfigDenyPaths: []ConfigDenyFacts{
+				{Path: ".gemini/settings.json"},
+				{Path: ".gemini/.gemini/settings.json"},
+			},
+		},
 		// Gemini CLI 的 Code Assist 推理已由 Go 承接（gemini.code_assist），
 		// Node 只保留 CLI/桌面宿主能力。
 		RelayHosts:   relayHostsCanonical(),
@@ -207,15 +223,20 @@ func builtinClaude() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "anthropic", APIKeyEnv: []string{"ANTHROPIC_API_KEY"}, AuthTokenEnv: []string{"ANTHROPIC_AUTH_TOKEN"}, BaseURLEnv: []string{"ANTHROPIC_BASE_URL"}},
-		Storage: &StorageFacts{ConfigDenyPaths: []ConfigDenyFacts{
-			{Path: ".claude/settings.json"},
-			{Path: ".claude/settings.local.json"},
-			{Path: ".claude/remote-settings.json"},
-			{Path: ".claude/.mcp.json"},
-			{Path: ".claude/.claude.json"},
-			{Path: ".mcp.json"},
-			{Path: ".claude.json"},
-		}},
+		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseNative, Path: ".credentials.json", Format: "json"},
+			},
+			ConfigDenyPaths: []ConfigDenyFacts{
+				{Path: ".claude/settings.json"},
+				{Path: ".claude/settings.local.json"},
+				{Path: ".claude/remote-settings.json"},
+				{Path: ".claude/.mcp.json"},
+				{Path: ".claude/.claude.json"},
+				{Path: ".mcp.json"},
+				{Path: ".claude.json"},
+			},
+		},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Claude 登录", "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"),
@@ -285,6 +306,13 @@ func builtinAntigravity() Definition {
 		Credentials:  &CredentialFacts{VendorID: "antigravity"},
 		Storage: &StorageFacts{
 			NativeRoot: &[]string{".gemini", "antigravity-cli"},
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "oauthToken", Base: ArtifactBaseNative, Path: "antigravity-oauth-token", Format: "json"},
+				{Field: "desktopOauthToken", Base: ArtifactBaseConfig, Path: "jetski-standalone-oauth-token", Format: "json", Optional: true},
+				{Field: "email", Base: ArtifactBaseNative, Path: "email.cache", Format: "text", Optional: true},
+				{Field: "oauthCreds", Base: ArtifactBaseConfig, Path: "oauth_creds.json", Format: "json", Optional: true},
+				{Field: "googleAccounts", Base: ArtifactBaseConfig, Path: "google_accounts.json", Format: "json", Optional: true},
+			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".gemini/config", Recursive: true},
 				{Path: ".gemini/antigravity-cli/settings.json"},
@@ -352,6 +380,9 @@ func builtinOpenCode() Definition {
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
 		Storage: &StorageFacts{
 			NativeRoot: &[]string{".local", "share", "opencode"},
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
+			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".config/opencode", Recursive: true},
 			},
@@ -414,6 +445,9 @@ func builtinGrok() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
+		Storage: &StorageFacts{AuthArtifacts: []AuthArtifactFacts{
+			{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
+		}},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
@@ -456,7 +490,14 @@ func builtinQoder() Definition {
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
 		// qoder 只做账号投影，没有独立原生数据根。
-		Storage:    &StorageFacts{NativeRoot: &[]string{}},
+		Storage: &StorageFacts{
+			NativeRoot: &[]string{},
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseHome, Path: ".auth/user", Format: "text"},
+				{Field: "machineId", Base: ArtifactBaseHome, Path: ".auth/machine_id", Format: "text", Optional: true},
+				{Field: "dnsCache", Base: ArtifactBaseHome, Path: ".cache/dns-cache.json", Format: "json", Optional: true},
+			},
+		},
 		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
 		// usage_scan：扫描本地会话历史（projects/<project>/<session>.jsonl）建立会话/prompt
 		// 索引，并在 assistant 记录带 usage 时统计 token。**2026-10-15 在 Windows 真机核实：
@@ -529,7 +570,14 @@ func builtinQoderCN() Definition {
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
 		// qodercn 只做账号投影，没有独立原生数据根。
-		Storage:    &StorageFacts{NativeRoot: &[]string{}},
+		Storage: &StorageFacts{
+			NativeRoot: &[]string{},
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseHome, Path: ".auth/user", Format: "text"},
+				{Field: "machineId", Base: ArtifactBaseHome, Path: ".auth/machine_id", Format: "text", Optional: true},
+				{Field: "dnsCache", Base: ArtifactBaseHome, Path: ".cache/dns-cache.json", Format: "json", Optional: true},
+			},
+		},
 		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
 		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
@@ -595,6 +643,10 @@ func builtinKimi() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
+		Storage: &StorageFacts{AuthArtifacts: []AuthArtifactFacts{
+			{Field: "credentials", Base: ArtifactBaseNative, Path: "credentials/kimi-code.json", Format: "json"},
+			{Field: "deviceId", Base: ArtifactBaseNative, Path: "device_id", Format: "text", Optional: true},
+		}},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
 		AuthOptions: []AuthOption{
@@ -639,6 +691,10 @@ func builtinKiro() Definition {
 			NoRuntimeHome: true,
 			// kiro-cli 把 SSO/会话数据放在宿主共享的 ~/.local/share/kiro-cli。
 			HostAuthRoot: &[]string{".local", "share", "kiro-cli"},
+			// data.sqlite3 相对 HostAuthRoot，消费方按两者拼接读取。
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "database", Base: ArtifactBaseHostAuth, Path: "data.sqlite3", Format: "binary-base64"},
+			},
 		},
 		// kiro 推理只有 Go 一个实现：Node 侧从来没有过（CodeWhisperer 实现已删除），
 		// 这里也就不存在 node 宿主这一项。不要为了「兜底」再把它补回来。
@@ -699,8 +755,12 @@ func builtinZcode() Definition {
 		// cli=true：ZCode CLI（0.17.0，随 Desktop 分发的 glm/zcode.cjs）已接入 aih 的
 		// 启动/会话/非交互链路；此前声明为 false，于是 `aih zcode` 是「未识别的命令」，
 		// 只能开 Desktop。
-		Clients:      clientSupport(true, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
+		Clients:     clientSupport(true, true),
+		Credentials: &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
+		Storage: &StorageFacts{AuthArtifacts: []AuthArtifactFacts{
+			{Field: "credentials", Base: ArtifactBaseNative, Path: "v2/credentials.json", Format: "json"},
+			{Field: "config", Base: ArtifactBaseNative, Path: "v2/config.json", Format: "json", Optional: true},
+		}},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		// 目录登记裸 id（glm-5.3），客户端会用 `zcode/glm-5.3` / `zai/glm-5.3`
@@ -793,6 +853,9 @@ func builtinCodebuddy() Definition {
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("Tencent-Cloud.coding-copilot.info"), Format: "json"},
+			},
 			DefaultAuthFile: "Tencent-Cloud.coding-copilot.info",
 			IDEDataName:     "CodeBuddy",
 			SessionRoots:    []string{".codebuddy", ".workbuddy-ai"},
@@ -918,6 +981,9 @@ func builtinCodebuddyCN() Definition {
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
+			},
 			DefaultAuthFile: "workbuddy-desktop.info",
 			IDEDataName:     "CodeBuddy CN",
 			SessionRoots:    []string{".codebuddy-cn", ".workbuddy"},
@@ -1022,6 +1088,9 @@ func builtinWorkbuddy() Definition {
 		// —— 2026-10-29 真机：applyCredentialPatch 只对契约声明过的键写入）。
 		Credentials: &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop-ai.info"), Format: "json"},
+			},
 			DefaultAuthFile: "workbuddy-desktop-ai.info",
 			IDEDataName:     "WorkBuddy AI",
 			SessionRoots:    []string{".workbuddy-ai", ".codebuddy"},
@@ -1131,6 +1200,9 @@ func builtinWorkbuddyCN() Definition {
 		// 与 workbuddy 同源：Base URL 覆盖与 codebuddy 家族一致（见上面那条说明）。
 		Credentials: &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
+			},
 			DefaultAuthFile: "workbuddy-desktop.info",
 			IDEDataName:     "WorkBuddy",
 			SessionRoots:    []string{".workbuddy", ".codebuddy-cn"},
@@ -1221,7 +1293,12 @@ func builtinCline() Definition {
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
 		// cline 的运行时状态直接写在 ~/.cline，不使用 .aih-runtime-home。
-		Storage:        &StorageFacts{NoRuntimeHome: true},
+		Storage: &StorageFacts{
+			NoRuntimeHome: true,
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "auth", Base: ArtifactBaseNative, Path: "data/settings/providers.json", Format: "json"},
+			},
+		},
 		NativeBoundary: nativeCline(),
 		// cline 走 relaycore 的同协议透传通道（internal/transport/http/clinerelay）：
 		// 上游就是标准 OpenAI 兼容端点（POST {base}/chat/completions + Bearer workos:<JWT>），

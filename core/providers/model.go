@@ -244,12 +244,33 @@ type StorageFacts struct {
 	// NoRuntimeHome 表示该 Provider 不使用 <nativeRoot>/.aih-runtime-home。
 	// 默认 false；kiro / cline 显式声明 true。
 	NoRuntimeHome bool `json:"noRuntimeHome,omitempty"`
+	// AuthArtifacts 是本 Provider 的凭据文件声明。Path 相对 Base：
+	// native = EffectiveNativeRoot，config = CLI.GlobalDir，hostAuth = HostAuthRoot，
+	// home（默认）就是 HOME 本身。消费方按展开后的 HOME 相对路径读取。
+	AuthArtifacts []AuthArtifactFacts `json:"authArtifacts,omitempty"`
 	// HostAuthRoot 是宿主上共享认证/运行数据的根（HOME 相对段）。
 	// nil 表示未声明；显式空切片表示根就是 HOME 本身。
 	HostAuthRoot *[]string `json:"hostAuthRoot,omitempty"`
 	// ConfigDenyPaths 是本 Provider 声明必须拒绝读取的配置位置（HOME 相对）。
 	// 文件同时拒绝 "<name>.<suffix>" 备份变体；Recursive 表示整目录拒绝。
 	ConfigDenyPaths []ConfigDenyFacts `json:"configDenyPaths,omitempty"`
+}
+
+// Artifact Base 取值：凭据路径相对于哪个已声明的根。
+const (
+	ArtifactBaseHome     = "home"
+	ArtifactBaseNative   = "native"
+	ArtifactBaseConfig   = "config"
+	ArtifactBaseHostAuth = "hostAuth"
+)
+
+// AuthArtifactFacts 是一个 Provider 凭据文件的声明。
+type AuthArtifactFacts struct {
+	Field    string `json:"field"`
+	Base     string `json:"base,omitempty"`
+	Path     string `json:"path"`
+	Format   string `json:"format,omitempty"`
+	Optional bool   `json:"optional,omitempty"`
 }
 
 // ConfigDenyFacts 是一条敏感的 Provider 配置位置。

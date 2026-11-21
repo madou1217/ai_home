@@ -51,12 +51,46 @@ var FamilyProviders = providers.CodeBuddyFamilyProviders()
 
 var (
 	emptySegments = []string{}
-	codebuddyAuth = []string{"Library", "Application Support", "CodeBuddyExtension", "Data", "Public", "auth"}
 	attachments   = []string{"tmp", "model", "images"}
 )
 
-func credential(field, format string, optional bool, path ...string) Artifact {
-	return Artifact{Field: field, Path: path, Format: format, Optional: optional}
+// expandAuthArtifacts 把合同声明的相对路径展开为策略使用的 HOME 相对段。
+// Base=native 追加 NativeRoot，config 追加 CLI.GlobalDir；home/hostAuth 保持原样
+// （hostAuth 由消费方再与 HostAuthRoot 组合）。
+func expandAuthArtifacts(definition providers.Definition) []Artifact {
+	if definition.Storage == nil || len(definition.Storage.AuthArtifacts) == 0 {
+		return nil
+	}
+	out := make([]Artifact, 0, len(definition.Storage.AuthArtifacts))
+	for _, declared := range definition.Storage.AuthArtifacts {
+		path := splitContractPath(declared.Path)
+		switch declared.Base {
+		case providers.ArtifactBaseNative:
+			path = append(definition.EffectiveNativeRoot(), path...)
+		case providers.ArtifactBaseConfig:
+			if definition.CLI != nil {
+				path = append(strings.Split(strings.TrimSpace(definition.CLI.GlobalDir), "/"), path...)
+			}
+		}
+		out = append(out, Artifact{
+			Field:    declared.Field,
+			Path:     path,
+			Format:   declared.Format,
+			Optional: declared.Optional,
+		})
+	}
+	return out
+}
+
+func splitContractPath(value string) []string {
+	parts := strings.Split(strings.TrimSpace(value), "/")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // builtinCatalog 只构造一次：AuthArtifacts 的根相对路径由 Provider 合同展开。
@@ -88,12 +122,6 @@ func configPath(providerID string, suffix ...string) []string {
 }
 
 func private(path ...string) Artifact { return Artifact{Path: path} }
-
-func sharedAuthPath(name string) []string {
-	out := make([]string, 0, len(codebuddyAuth)+1)
-	out = append(out, codebuddyAuth...)
-	return append(out, name)
-}
 
 // codebuddyPrivateDesktopState is the private state shared by every CodeBuddy
 // family member. It is HOME-relative, not native-root-relative.
@@ -127,9 +155,6 @@ var providerOrder = []string{
 
 var policies = map[string]Policy{
 	"codex": {
-		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, nativePath("codex", "auth.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(nativePath("codex", "config.toml")...),
@@ -138,9 +163,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: []string{".tmp", "model", "images"},
 	},
 	"claude": {
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, nativePath("claude", ".credentials.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private("Library", "Keychains"),
@@ -148,23 +170,12 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"gemini": {
-		AuthArtifacts: []Artifact{
-			credential("oauthCreds", "json", false, nativePath("gemini", "oauth_creds.json")...),
-			credential("googleAccounts", "json", true, nativePath("gemini", "google_accounts.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("Library", "Keychains"),
 		},
 		AttachmentSubdir: attachments,
 	},
 	"agy": {
-		AuthArtifacts: []Artifact{
-			credential("oauthToken", "json", false, nativePath("agy", "antigravity-oauth-token")...),
-			credential("desktopOauthToken", "json", true, configPath("agy", "jetski-standalone-oauth-token")...),
-			credential("email", "text", true, nativePath("agy", "email.cache")...),
-			credential("oauthCreds", "json", true, configPath("agy", "oauth_creds.json")...),
-			credential("googleAccounts", "json", true, configPath("agy", "google_accounts.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private("Library", "Keychains"),
@@ -172,9 +183,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"opencode": {
-		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, nativePath("opencode", "auth.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(".local", "share", "aih-opencode-runtime", "opencode", "auth.json"),
@@ -186,19 +194,12 @@ var policies = map[string]Policy{
 	"grok": {
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
-		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, nativePath("grok", "auth.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("Library", "Keychains"),
 		},
 	},
 	"kimi": {
 		HostAuthRoot: emptySegments,
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, nativePath("kimi", "credentials", "kimi-code.json")...),
-			credential("deviceId", "text", true, nativePath("kimi", "device_id")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(nativePath("kimi", "config.toml")...),
@@ -209,10 +210,6 @@ var policies = map[string]Policy{
 	},
 	"zcode": {
 		HostAuthRoot: emptySegments,
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, nativePath("zcode", "v2", "credentials.json")...),
-			credential("config", "json", true, nativePath("zcode", "v2", "config.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private("Library", "Keychains"),
@@ -220,9 +217,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"kiro": {
-		AuthArtifacts: []Artifact{
-			credential("database", "binary-base64", false, "data.sqlite3"),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(".aih-kiro-auth-binding"),
@@ -232,9 +226,6 @@ var policies = map[string]Policy{
 	"cline": {
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
-		AuthArtifacts: []Artifact{
-			credential("auth", "json", false, nativePath("cline", "data", "settings", "providers.json")...),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(nativePath("cline", "data", "settings")...),
@@ -244,11 +235,6 @@ var policies = map[string]Policy{
 	},
 	"qoder": {
 		HostAuthRoot: providerroot.ConfigRoot("qoder"),
-		AuthArtifacts: []Artifact{
-			credential("credentials", "text", false, ".auth", "user"),
-			credential("machineId", "text", true, ".auth", "machine_id"),
-			credential("dnsCache", "json", true, ".cache", "dns-cache.json"),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(".auth"),
@@ -258,11 +244,6 @@ var policies = map[string]Policy{
 	},
 	"qodercn": {
 		HostAuthRoot: providerroot.ConfigRoot("qodercn"),
-		AuthArtifacts: []Artifact{
-			credential("credentials", "text", false, ".auth", "user"),
-			credential("machineId", "text", true, ".auth", "machine_id"),
-			credential("dnsCache", "json", true, ".cache", "dns-cache.json"),
-		},
 		PrivateArtifacts: []Artifact{
 			private("electron-user-data"),
 			private(".auth"),
@@ -271,34 +252,22 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"codebuddy": {
-		HostAuthRoot: emptySegments,
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, sharedAuthPath("Tencent-Cloud.coding-copilot.info")...),
-		},
+		HostAuthRoot:     emptySegments,
 		PrivateArtifacts: codebuddyFamilyPrivate(nativePath("codebuddy")),
 		AttachmentSubdir: attachments,
 	},
 	"codebuddycn": {
-		HostAuthRoot: emptySegments,
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop.info")...),
-		},
+		HostAuthRoot:     emptySegments,
 		PrivateArtifacts: codebuddyFamilyPrivate(nativePath("codebuddycn")),
 		AttachmentSubdir: attachments,
 	},
 	"workbuddy": {
-		HostAuthRoot: emptySegments,
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop-ai.info")...),
-		},
+		HostAuthRoot:     emptySegments,
 		PrivateArtifacts: codebuddyFamilyPrivate(nil),
 		AttachmentSubdir: attachments,
 	},
 	"workbuddycn": {
-		HostAuthRoot: emptySegments,
-		AuthArtifacts: []Artifact{
-			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop.info")...),
-		},
+		HostAuthRoot:     emptySegments,
 		PrivateArtifacts: codebuddyFamilyPrivate(nil),
 		AttachmentSubdir: attachments,
 	},
@@ -314,6 +283,7 @@ func init() {
 			continue
 		}
 		policy.NativeRoot = definition.EffectiveNativeRoot()
+		policy.AuthArtifacts = expandAuthArtifacts(definition)
 		if definition.Storage != nil && definition.Storage.HostAuthRoot != nil {
 			policy.HostAuthRoot = append([]string{}, (*definition.Storage.HostAuthRoot)...)
 		}

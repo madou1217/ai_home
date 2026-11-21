@@ -192,6 +192,25 @@ func validateStorageFacts(definition Definition) error {
 				}
 			}
 		}
+		authFields := map[string]struct{}{}
+		for _, artifact := range facts.AuthArtifacts {
+			field := strings.TrimSpace(artifact.Field)
+			if field == "" {
+				return errors.New("storage.authArtifacts.field 不能为空")
+			}
+			if _, duplicated := authFields[field]; duplicated {
+				return fmt.Errorf("storage.authArtifacts.field 重复: %q", field)
+			}
+			authFields[field] = struct{}{}
+			switch artifact.Base {
+			case "", ArtifactBaseHome, ArtifactBaseNative, ArtifactBaseConfig, ArtifactBaseHostAuth:
+			default:
+				return fmt.Errorf("storage.authArtifacts.base 取值无效: %q", artifact.Base)
+			}
+			if !isSafeRelativePath(artifact.Path) {
+				return fmt.Errorf("storage.authArtifacts.path 必须是安全的相对路径: %q", artifact.Path)
+			}
+		}
 		for _, location := range facts.ConfigDenyPaths {
 			if !isSafeRelativePath(location.Path) {
 				return fmt.Errorf("storage.configDenyPaths 必须是安全的 HOME 相对路径: %q", location.Path)

@@ -236,6 +236,14 @@
         ]
       },
       "storage": {
+        "authArtifacts": [
+          {
+            "field": "auth",
+            "base": "native",
+            "path": "auth.json",
+            "format": "json"
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".codex/config.toml"
@@ -443,6 +451,21 @@
         ]
       },
       "storage": {
+        "authArtifacts": [
+          {
+            "field": "oauthCreds",
+            "base": "native",
+            "path": "oauth_creds.json",
+            "format": "json"
+          },
+          {
+            "field": "googleAccounts",
+            "base": "native",
+            "path": "google_accounts.json",
+            "format": "json",
+            "optional": true
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".gemini/settings.json"
@@ -703,6 +726,14 @@
         ]
       },
       "storage": {
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "native",
+            "path": ".credentials.json",
+            "format": "json"
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".claude/settings.json"
@@ -940,6 +971,42 @@
         "nativeRoot": [
           ".gemini",
           "antigravity-cli"
+        ],
+        "authArtifacts": [
+          {
+            "field": "oauthToken",
+            "base": "native",
+            "path": "antigravity-oauth-token",
+            "format": "json"
+          },
+          {
+            "field": "desktopOauthToken",
+            "base": "config",
+            "path": "jetski-standalone-oauth-token",
+            "format": "json",
+            "optional": true
+          },
+          {
+            "field": "email",
+            "base": "native",
+            "path": "email.cache",
+            "format": "text",
+            "optional": true
+          },
+          {
+            "field": "oauthCreds",
+            "base": "config",
+            "path": "oauth_creds.json",
+            "format": "json",
+            "optional": true
+          },
+          {
+            "field": "googleAccounts",
+            "base": "config",
+            "path": "google_accounts.json",
+            "format": "json",
+            "optional": true
+          }
         ],
         "configDenyPaths": [
           {
@@ -1194,6 +1261,14 @@
           "share",
           "opencode"
         ],
+        "authArtifacts": [
+          {
+            "field": "auth",
+            "base": "native",
+            "path": "auth.json",
+            "format": "json"
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".config/opencode",
@@ -1401,6 +1476,16 @@
           "default": "https://api.x.ai/v1"
         }
       },
+      "storage": {
+        "authArtifacts": [
+          {
+            "field": "auth",
+            "base": "native",
+            "path": "auth.json",
+            "format": "json"
+          }
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -1594,7 +1679,29 @@
         ]
       },
       "storage": {
-        "nativeRoot": []
+        "nativeRoot": [],
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "home",
+            "path": ".auth/user",
+            "format": "text"
+          },
+          {
+            "field": "machineId",
+            "base": "home",
+            "path": ".auth/machine_id",
+            "format": "text",
+            "optional": true
+          },
+          {
+            "field": "dnsCache",
+            "base": "home",
+            "path": ".cache/dns-cache.json",
+            "format": "json",
+            "optional": true
+          }
+        ]
       },
       "relayHosts": {
         "go": {
@@ -1794,7 +1901,29 @@
         ]
       },
       "storage": {
-        "nativeRoot": []
+        "nativeRoot": [],
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "home",
+            "path": ".auth/user",
+            "format": "text"
+          },
+          {
+            "field": "machineId",
+            "base": "home",
+            "path": ".auth/machine_id",
+            "format": "text",
+            "optional": true
+          },
+          {
+            "field": "dnsCache",
+            "base": "home",
+            "path": ".cache/dns-cache.json",
+            "format": "json",
+            "optional": true
+          }
+        ]
       },
       "relayHosts": {
         "go": {
@@ -1963,6 +2092,23 @@
           "api_key": "https://api.moonshot.cn/v1",
           "oauth": "https://api.kimi.com/coding/v1"
         }
+      },
+      "storage": {
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "native",
+            "path": "credentials/kimi-code.json",
+            "format": "json"
+          },
+          {
+            "field": "deviceId",
+            "base": "native",
+            "path": "device_id",
+            "format": "text",
+            "optional": true
+          }
+        ]
       },
       "relayHosts": {
         "go": {
@@ -2156,6 +2302,14 @@
       },
       "storage": {
         "noRuntimeHome": true,
+        "authArtifacts": [
+          {
+            "field": "database",
+            "base": "hostAuth",
+            "path": "data.sqlite3",
+            "format": "binary-base64"
+          }
+        ],
         "hostAuthRoot": [
           ".local",
           "share",
@@ -2360,6 +2514,23 @@
         "defaultBaseUrls": {
           "default": "https://open.bigmodel.cn/api/anthropic"
         }
+      },
+      "storage": {
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "native",
+            "path": "v2/credentials.json",
+            "format": "json"
+          },
+          {
+            "field": "config",
+            "base": "native",
+            "path": "v2/config.json",
+            "format": "json",
+            "optional": true
+          }
+        ]
       },
       "relayHosts": {
         "go": {
@@ -2590,6 +2761,14 @@
         "sessionRoots": [
           ".codebuddy",
           ".workbuddy-ai"
+        ],
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info",
+            "format": "json"
+          }
         ]
       },
       "relayHosts": {
@@ -2824,6 +3003,14 @@
         "sessionRoots": [
           ".codebuddy-cn",
           ".workbuddy"
+        ],
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
+            "format": "json"
+          }
         ]
       },
       "relayHosts": {
@@ -3039,6 +3226,14 @@
         "sessionRoots": [
           ".workbuddy-ai",
           ".codebuddy"
+        ],
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop-ai.info",
+            "format": "json"
+          }
         ]
       },
       "relayHosts": {
@@ -3254,6 +3449,14 @@
         "sessionRoots": [
           ".workbuddy",
           ".codebuddy-cn"
+        ],
+        "authArtifacts": [
+          {
+            "field": "credentials",
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
+            "format": "json"
+          }
         ]
       },
       "relayHosts": {
@@ -3420,7 +3623,15 @@
         }
       },
       "storage": {
-        "noRuntimeHome": true
+        "noRuntimeHome": true,
+        "authArtifacts": [
+          {
+            "field": "auth",
+            "base": "native",
+            "path": "data/settings/providers.json",
+            "format": "json"
+          }
+        ]
       },
       "relayHosts": {
         "go": {

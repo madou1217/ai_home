@@ -326,11 +326,13 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 ## 遗留项清单（2026-11-21 复核）
 
 **已迁移模块的本地实现全部保留为 fallback**（执行点不可用/注入 fs 替身时使用），不是死代码；
-每个导出的函数仍有真实调用方。除此之外，仍在 Node 的文件系统动作只剩一处：
+每个导出的函数仍有真实调用方。仍在 Node 的链接动作只剩三处，均已确认**沿用现状**：
 
-| 位置 | 动作 | 为什么不迁（或待迁） |
+| 位置 | 动作 | 结论与理由（2026-11-21 复核） |
 |---|---|---|
-| `cli/services/account/rekey-journal.js` | rekey 事务的临时链接（`before/after` 交换） | 与 journal 写盘成对出现，强事务语义，迁移收益低、风险高 |
+| `cli/services/account/rekey-journal.js` | rekey 的 `atomicWrite` / 链接交换 / rename / 恢复 | **不迁**。① 它是运维脚本 `scripts/oauth-identity-maintenance.js`（plan/apply/recover/rollback）里的 Saga 步骤，每一步之后都要写 journal checkpoint，恢复靠比对 before/after 状态；拆成第二个进程只多出超时、二进制缺失、版本不匹配三种失败面。② 只操作 file 符号链接与普通文件，没有 junction/共享目录/跨账号投影语义；Windows 在规划阶段就被 `rekey_metadata_platform_unsupported` 拒绝（POSIX-only）。③ `atomicWrite` 还要保 xattr/ACL 并回读核对 metadata，和链接原语不是一类动作。 |
+| `cli/services/session-store.js` `migrateLegacyHostLibraryAlias` | 旧版"宿主 `Library/Preferences` 整目录链接"的一次性迁移：复制宿主快照 → 摘链 → 建链 | **不迁**。换链之前必须先在 Node 侧复制快照（数据语义），只剩末尾 unlink+link 是平台动作；首跑之后恒为 no-op。并入执行点要新增"先复制再换链"的复合语义，收益低于风险。 |
+| `cli/services/ai-cli/launch-profile/opencode-strategy.js` auth bridge | `<bridge>/auth.json` → 账号私有 `auth.json` 的 file 链接 | **不迁**（见上文"auth bridge 仍留在 Node"：只被 `prepare` 调用，`reconcileSharedData` 不应顺带建这条链）。 |
 
 会话条目的**内容合并**（`mergeEntryIntoStore` 的 rename 并集、同内容文件丢弃）也仍在 Node：
 那是数据归属决策而非链接动作，执行点只负责"接回宿主存储"的最后一步。

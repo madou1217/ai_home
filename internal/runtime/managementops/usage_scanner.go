@@ -145,7 +145,7 @@ func ScanModelUsageSources(ctx context.Context, opts ScanUsageOptions) (UsageSca
 	rawProviders := make(map[string]providerScanCounters)
 
 	if targetProviders["codex"] {
-		codexRoot := filepath.Join(hostHomeDir, ".codex", "sessions")
+		codexRoot := filepath.Join(hostHomeDir, providerroot.ConfigDir("codex"), "sessions")
 		ownership := loadCodexSessionOwnershipIndex(aiHomeDir)
 		files := listFilesRecursive(codexRoot, func(_ string, name string) bool {
 			return strings.HasSuffix(name, ".jsonl")
@@ -160,7 +160,7 @@ func ScanModelUsageSources(ctx context.Context, opts ScanUsageOptions) (UsageSca
 	}
 
 	if targetProviders["claude"] {
-		claudeRoot := filepath.Join(hostHomeDir, ".claude", "projects")
+		claudeRoot := filepath.Join(hostHomeDir, providerroot.ConfigDir("claude"), "projects")
 		files := listFilesRecursive(claudeRoot, func(_ string, name string) bool {
 			return strings.HasSuffix(name, ".jsonl")
 		})
@@ -170,7 +170,7 @@ func ScanModelUsageSources(ctx context.Context, opts ScanUsageOptions) (UsageSca
 	}
 
 	if targetProviders["gemini"] {
-		geminiDir := filepath.Join(hostHomeDir, ".gemini")
+		geminiDir := filepath.Join(hostHomeDir, providerroot.ConfigDir("gemini"))
 		geminiRoot := filepath.Join(geminiDir, "tmp")
 		chatsMarker := string(filepath.Separator) + "chats" + string(filepath.Separator)
 		files := listFilesRecursive(geminiRoot, func(full, name string) bool {
@@ -2084,7 +2084,7 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 // ---------- Cline scanner ----------
 
 func discoverClineUsageFiles(hostHomeDir string) []string {
-	root := filepath.Join(hostHomeDir, ".cline", "data", "sessions")
+	root := filepath.Join(hostHomeDir, providerroot.ConfigDir("cline"), "data", "sessions")
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -2774,7 +2774,7 @@ type kimiSessionOwnershipIndex struct {
 func scanKimiProvider(ctx context.Context, store *UsageStore, hostHomeDir, aiHomeDir string) providerScanCounters {
 	targets := []kimiTarget{{
 		AccountRef:   "",
-		SessionsRoot: filepath.Join(hostHomeDir, ".kimi-code", "sessions"),
+		SessionsRoot: filepath.Join(hostHomeDir, providerroot.ConfigDir("kimi"), "sessions"),
 	}}
 	discErrors := 0
 	if aiHomeDir != "" {
@@ -2788,7 +2788,7 @@ func scanKimiProvider(ctx context.Context, store *UsageStore, hostHomeDir, aiHom
 					if entry.IsDir() && isAccountRefFormat(entry.Name()) {
 						targets = append(targets, kimiTarget{
 							AccountRef:   entry.Name(),
-							SessionsRoot: filepath.Join(projRoot, entry.Name(), ".kimi-code", "sessions"),
+							SessionsRoot: filepath.Join(projRoot, entry.Name(), providerroot.ConfigDir("kimi"), "sessions"),
 						})
 					}
 				}
@@ -2951,7 +2951,7 @@ func readKimiSessionOwnershipIndex(hostHomeDir, aiHomeDir, physicalHostRoot stri
 		}
 	}
 
-	hostKimi := filepath.Join(hostHomeDir, ".kimi-code")
+	hostKimi := filepath.Join(hostHomeDir, providerroot.ConfigDir("kimi"))
 	loadIndexFile(resolvePhysicalPath(hostKimi), filepath.Join(hostKimi, "session_index.jsonl"), "")
 	if aiHomeDir != "" {
 		for _, tgt := range trustedTargets {
@@ -3249,7 +3249,7 @@ func discoverOpenCodeUsageFiles(hostHomeDir, aiHomeDir string) []string {
 		seen[real] = struct{}{}
 		files = append(files, cand)
 	}
-	addCandidate(filepath.Join(hostHomeDir, ".local", "share", "opencode", "opencode.db"))
+	addCandidate(filepath.Join(append([]string{hostHomeDir}, append(providerroot.NativeRoot("opencode"), "opencode.db")...)...))
 	if aiHomeDir != "" {
 		projRoot := filepath.Join(aiHomeDir, "run", "auth-projections", "opencode")
 		for _, f := range listFilesRecursive(projRoot, func(_ string, name string) bool {
@@ -3631,7 +3631,7 @@ func scanZcodeProvider(ctx context.Context, opts ScanUsageOptions, hostHomeDir, 
 		}
 	}
 
-	dbPath := filepath.Join(hostHomeDir, ".zcode", "cli", "db", "db.sqlite")
+	dbPath := filepath.Join(hostHomeDir, providerroot.ConfigDir("zcode"), "cli", "db", "db.sqlite")
 	if !pathExists(dbPath) {
 		return providerScanCounters{Records: reconciled}
 	}
@@ -4041,7 +4041,7 @@ func firstPosInt64(a, b int64) int64 {
 // ---------- Kiro scanner ----------
 
 func discoverKiroSessionFiles(hostHomeDir string) []string {
-	root := filepath.Join(strings.TrimSpace(hostHomeDir), ".kiro", "sessions")
+	root := filepath.Join(strings.TrimSpace(hostHomeDir), providerroot.ConfigDir("kiro"), "sessions")
 	groups, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -4263,8 +4263,8 @@ func discoverGrokUsageFiles(hostHomeDir, aiHomeDir, sessionID string) []string {
 		return nil
 	}
 	roots := []string{
-		filepath.Join(hostHomeDir, ".grok", "sessions"),
-		filepath.Join(hostHomeDir, ".grok", ".aih-runtime-home", "sessions"),
+		filepath.Join(hostHomeDir, providerroot.ConfigDir("grok"), "sessions"),
+		filepath.Join(hostHomeDir, providerroot.ConfigDir("grok"), providerroot.RuntimeHomeDir, "sessions"),
 	}
 	if aiHomeDir != "" {
 		projRoot := filepath.Join(aiHomeDir, "run", "auth-projections", "grok")
@@ -4274,7 +4274,7 @@ func discoverGrokUsageFiles(hostHomeDir, aiHomeDir, sessionID string) []string {
 					continue
 				}
 				roots = append(roots,
-					filepath.Join(projRoot, entry.Name(), ".grok", "sessions"),
+					filepath.Join(projRoot, entry.Name(), providerroot.ConfigDir("grok"), "sessions"),
 					filepath.Join(projRoot, entry.Name(), "sessions"),
 				)
 			}
@@ -4332,7 +4332,7 @@ func accountRefFromGrokProjectionPath(aiHomeDir, candidate string) string {
 		return ""
 	}
 	parts := strings.Split(rel, string(filepath.Separator))
-	if len(parts) >= 2 && isAccountRefFormat(parts[0]) && (parts[1] == ".grok" || parts[1] == "sessions") {
+	if len(parts) >= 2 && isAccountRefFormat(parts[0]) && (parts[1] == providerroot.ConfigDir("grok") || parts[1] == "sessions") {
 		return parts[0]
 	}
 	return ""

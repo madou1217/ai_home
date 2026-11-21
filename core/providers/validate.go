@@ -211,6 +211,21 @@ func validateStorageFacts(definition Definition) error {
 				return fmt.Errorf("storage.authArtifacts.path 必须是安全的相对路径: %q", artifact.Path)
 			}
 		}
+		privatePaths := map[string]struct{}{}
+		for _, artifact := range facts.PrivateArtifacts {
+			switch artifact.Base {
+			case "", ArtifactBaseHome, ArtifactBaseNative, ArtifactBaseConfig, ArtifactBaseHostAuth:
+			default:
+				return fmt.Errorf("storage.privateArtifacts.base 取值无效: %q", artifact.Base)
+			}
+			if !isSafeRelativePath(artifact.Path) {
+				return fmt.Errorf("storage.privateArtifacts.path 必须是安全的相对路径: %q", artifact.Path)
+			}
+			if _, duplicated := privatePaths[artifact.Path]; duplicated {
+				return fmt.Errorf("storage.privateArtifacts.path 重复: %q", artifact.Path)
+			}
+			privatePaths[artifact.Path] = struct{}{}
+		}
 		for _, location := range facts.ConfigDenyPaths {
 			if !isSafeRelativePath(location.Path) {
 				return fmt.Errorf("storage.configDenyPaths 必须是安全的 HOME 相对路径: %q", location.Path)

@@ -63,23 +63,39 @@ func expandAuthArtifacts(definition providers.Definition) []Artifact {
 	}
 	out := make([]Artifact, 0, len(definition.Storage.AuthArtifacts))
 	for _, declared := range definition.Storage.AuthArtifacts {
-		path := splitContractPath(declared.Path)
-		switch declared.Base {
-		case providers.ArtifactBaseNative:
-			path = append(definition.EffectiveNativeRoot(), path...)
-		case providers.ArtifactBaseConfig:
-			if definition.CLI != nil {
-				path = append(strings.Split(strings.TrimSpace(definition.CLI.GlobalDir), "/"), path...)
-			}
-		}
 		out = append(out, Artifact{
 			Field:    declared.Field,
-			Path:     path,
+			Path:     expandContractPath(definition, declared.Base, declared.Path),
 			Format:   declared.Format,
 			Optional: declared.Optional,
 		})
 	}
 	return out
+}
+
+// expandPrivateArtifacts 把合同声明的私有状态路径展开为 HOME 相对段。
+func expandPrivateArtifacts(definition providers.Definition) []Artifact {
+	if definition.Storage == nil || len(definition.Storage.PrivateArtifacts) == 0 {
+		return nil
+	}
+	out := make([]Artifact, 0, len(definition.Storage.PrivateArtifacts))
+	for _, declared := range definition.Storage.PrivateArtifacts {
+		out = append(out, Artifact{Path: expandContractPath(definition, declared.Base, declared.Path)})
+	}
+	return out
+}
+
+func expandContractPath(definition providers.Definition, base, value string) []string {
+	path := splitContractPath(value)
+	switch base {
+	case providers.ArtifactBaseNative:
+		return append(definition.EffectiveNativeRoot(), path...)
+	case providers.ArtifactBaseConfig:
+		if definition.CLI != nil {
+			return append(strings.Split(strings.TrimSpace(definition.CLI.GlobalDir), "/"), path...)
+		}
+	}
+	return path
 }
 
 func splitContractPath(value string) []string {
@@ -102,51 +118,6 @@ var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
 	return catalog
 })
 
-// nativePath 返回 <该 Provider 的 NativeRoot>/<suffix...>，根事实来自合同。
-func nativePath(providerID string, suffix ...string) []string {
-	definition, found := builtinCatalog().Get(providerID)
-	if !found {
-		panic("storagepolicy: 未知 Provider " + providerID)
-	}
-	return append(definition.EffectiveNativeRoot(), suffix...)
-}
-
-// configPath 返回 <该 Provider 的 CLI.GlobalDir>/<suffix...>。
-// 用于不使用 NativeRoot、但仍在配置根下的凭据（例如 agy 的共享 token）。
-func configPath(providerID string, suffix ...string) []string {
-	definition, found := builtinCatalog().Get(providerID)
-	if !found || definition.CLI == nil {
-		panic("storagepolicy: 未知 Provider 或缺少 CLI 配置 " + providerID)
-	}
-	return append(strings.Split(strings.TrimSpace(definition.CLI.GlobalDir), "/"), suffix...)
-}
-
-func private(path ...string) Artifact { return Artifact{Path: path} }
-
-// codebuddyPrivateDesktopState is the private state shared by every CodeBuddy
-// family member. It is HOME-relative, not native-root-relative.
-func codebuddyPrivateDesktopState() []Artifact {
-	return []Artifact{
-		private("electron-user-data"),
-		private(providerroot.ConfigPath("codebuddy", "diagnostics")...),
-		private("Library", "Preferences", "com.apple.security.plist"),
-		private(".workbuddy-key-fallback"),
-		private("Library", "Application Support", "CodeBuddyExtension", "Cache"),
-		private("Library", "Application Support", "CodeBuddyExtension", "Logs"),
-	}
-}
-
-func codebuddyFamilyPrivate(nativeRoot []string) []Artifact {
-	items := codebuddyPrivateDesktopState()
-	if len(nativeRoot) > 0 {
-		items = append(items,
-			private(append(append([]string{}, nativeRoot...), ".mcp.json")...),
-			private(append(append([]string{}, nativeRoot...), "sessions")...),
-		)
-	}
-	return append(items, private("Library", "Keychains"))
-}
-
 var providerOrder = []string{
 	"codex", "claude", "gemini", "agy", "opencode", "grok", "kimi", "zcode",
 	"kiro", "cline", "qoder", "qodercn", "codebuddy", "codebuddycn",
@@ -155,120 +126,61 @@ var providerOrder = []string{
 
 var policies = map[string]Policy{
 	"codex": {
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(nativePath("codex", "config.toml")...),
-			private("Library", "Keychains"),
-		},
 		AttachmentSubdir: []string{".tmp", "model", "images"},
 	},
 	"claude": {
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private("Library", "Keychains"),
-		},
 		AttachmentSubdir: attachments,
 	},
 	"gemini": {
-		PrivateArtifacts: []Artifact{
-			private("Library", "Keychains"),
-		},
 		AttachmentSubdir: attachments,
 	},
 	"agy": {
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private("Library", "Keychains"),
-		},
 		AttachmentSubdir: attachments,
 	},
 	"opencode": {
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(".local", "share", "aih-opencode-runtime", "opencode", "auth.json"),
-			private(configPath("opencode", "auth.json")...),
-			private("Library", "Keychains"),
-		},
 		AttachmentSubdir: attachments,
 	},
 	"grok": {
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
-		PrivateArtifacts: []Artifact{
-			private("Library", "Keychains"),
-		},
 	},
 	"kimi": {
-		HostAuthRoot: emptySegments,
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(nativePath("kimi", "config.toml")...),
-			private(nativePath("kimi", "credentials")...),
-			private(nativePath("kimi", "session_index.jsonl")...),
-		},
+		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
 	},
 	"zcode": {
-		HostAuthRoot: emptySegments,
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private("Library", "Keychains"),
-		},
+		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
 	},
 	"kiro": {
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(".aih-kiro-auth-binding"),
-		},
 		AttachmentSubdir: attachments,
 	},
 	"cline": {
 		HostAuthRoot:     emptySegments,
 		AttachmentSubdir: attachments,
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(nativePath("cline", "data", "settings")...),
-			private(nativePath("cline", "data", "secrets.json")...),
-			private("Library", "Keychains"),
-		},
 	},
 	"qoder": {
-		HostAuthRoot: providerroot.ConfigRoot("qoder"),
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(".auth"),
-			private("Library", "Keychains"),
-		},
+		HostAuthRoot:     providerroot.ConfigRoot("qoder"),
 		AttachmentSubdir: attachments,
 	},
 	"qodercn": {
-		HostAuthRoot: providerroot.ConfigRoot("qodercn"),
-		PrivateArtifacts: []Artifact{
-			private("electron-user-data"),
-			private(".auth"),
-			private("Library", "Keychains"),
-		},
+		HostAuthRoot:     providerroot.ConfigRoot("qodercn"),
 		AttachmentSubdir: attachments,
 	},
 	"codebuddy": {
 		HostAuthRoot:     emptySegments,
-		PrivateArtifacts: codebuddyFamilyPrivate(nativePath("codebuddy")),
 		AttachmentSubdir: attachments,
 	},
 	"codebuddycn": {
 		HostAuthRoot:     emptySegments,
-		PrivateArtifacts: codebuddyFamilyPrivate(nativePath("codebuddycn")),
 		AttachmentSubdir: attachments,
 	},
 	"workbuddy": {
 		HostAuthRoot:     emptySegments,
-		PrivateArtifacts: codebuddyFamilyPrivate(nil),
 		AttachmentSubdir: attachments,
 	},
 	"workbuddycn": {
 		HostAuthRoot:     emptySegments,
-		PrivateArtifacts: codebuddyFamilyPrivate(nil),
 		AttachmentSubdir: attachments,
 	},
 }
@@ -284,6 +196,7 @@ func init() {
 		}
 		policy.NativeRoot = definition.EffectiveNativeRoot()
 		policy.AuthArtifacts = expandAuthArtifacts(definition)
+		policy.PrivateArtifacts = expandPrivateArtifacts(definition)
 		if definition.Storage != nil && definition.Storage.HostAuthRoot != nil {
 			policy.HostAuthRoot = append([]string{}, (*definition.Storage.HostAuthRoot)...)
 		}

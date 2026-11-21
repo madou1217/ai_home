@@ -66,6 +66,31 @@ func relayHostsGoRelay(entries ...string) map[string]RelayHost {
 	}
 }
 
+// codebuddyPrivateDesktopStateFacts 是家族共用的桌面私有状态（HOME 相对）。
+func codebuddyPrivateDesktopStateFacts() []PrivateArtifactFacts {
+	return []PrivateArtifactFacts{
+		{Base: ArtifactBaseHome, Path: "electron-user-data"},
+		{Base: ArtifactBaseHome, Path: ".codebuddy/diagnostics"},
+		{Base: ArtifactBaseHome, Path: "Library/Preferences/com.apple.security.plist"},
+		{Base: ArtifactBaseHome, Path: ".workbuddy-key-fallback"},
+		{Base: ArtifactBaseHome, Path: "Library/Application Support/CodeBuddyExtension/Cache"},
+		{Base: ArtifactBaseHome, Path: "Library/Application Support/CodeBuddyExtension/Logs"},
+	}
+}
+
+// codebuddyFamilyPrivateFacts 在共享桌面状态后追加原生根条目与 Keychain。
+// withNative 只对 codebuddy / codebuddycn 为 true（与既有策略逐条一致）。
+func codebuddyFamilyPrivateFacts(withNative bool) []PrivateArtifactFacts {
+	items := codebuddyPrivateDesktopStateFacts()
+	if withNative {
+		items = append(items,
+			PrivateArtifactFacts{Base: ArtifactBaseNative, Path: ".mcp.json"},
+			PrivateArtifactFacts{Base: ArtifactBaseNative, Path: "sessions"},
+		)
+	}
+	return append(items, PrivateArtifactFacts{Base: ArtifactBaseHome, Path: "Library/Keychains"})
+}
+
 // codebuddySharedAuthPath 返回 CodeBuddy 家族共用的宿主登录态文件（HOME 相对）。
 func codebuddySharedAuthPath(name string) string {
 	return "Library/Application Support/CodeBuddyExtension/Data/Public/auth/" + name
@@ -89,6 +114,11 @@ func builtinCodex() Definition {
 		Storage: &StorageFacts{
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseNative, Path: "config.toml"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".codex/config.toml"},
@@ -169,6 +199,9 @@ func builtinGemini() Definition {
 				{Field: "oauthCreds", Base: ArtifactBaseNative, Path: "oauth_creds.json", Format: "json"},
 				{Field: "googleAccounts", Base: ArtifactBaseNative, Path: "google_accounts.json", Format: "json", Optional: true},
 			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
+			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".gemini/settings.json"},
 				{Path: ".gemini/.gemini/settings.json"},
@@ -226,6 +259,10 @@ func builtinClaude() Definition {
 		Storage: &StorageFacts{
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseNative, Path: ".credentials.json", Format: "json"},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".claude/settings.json"},
@@ -313,6 +350,10 @@ func builtinAntigravity() Definition {
 				{Field: "oauthCreds", Base: ArtifactBaseConfig, Path: "oauth_creds.json", Format: "json", Optional: true},
 				{Field: "googleAccounts", Base: ArtifactBaseConfig, Path: "google_accounts.json", Format: "json", Optional: true},
 			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
+			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".gemini/config", Recursive: true},
 				{Path: ".gemini/antigravity-cli/settings.json"},
@@ -383,6 +424,12 @@ func builtinOpenCode() Definition {
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
 			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: ".local/share/aih-opencode-runtime/opencode/auth.json"},
+				{Base: ArtifactBaseConfig, Path: "auth.json"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
+			},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".config/opencode", Recursive: true},
 			},
@@ -445,9 +492,14 @@ func builtinGrok() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
-		Storage: &StorageFacts{AuthArtifacts: []AuthArtifactFacts{
-			{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
-		}},
+		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "auth", Base: ArtifactBaseNative, Path: "auth.json", Format: "json"},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
+			},
+		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
@@ -496,6 +548,11 @@ func builtinQoder() Definition {
 				{Field: "credentials", Base: ArtifactBaseHome, Path: ".auth/user", Format: "text"},
 				{Field: "machineId", Base: ArtifactBaseHome, Path: ".auth/machine_id", Format: "text", Optional: true},
 				{Field: "dnsCache", Base: ArtifactBaseHome, Path: ".cache/dns-cache.json", Format: "json", Optional: true},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: ".auth"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 		},
 		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
@@ -577,6 +634,11 @@ func builtinQoderCN() Definition {
 				{Field: "machineId", Base: ArtifactBaseHome, Path: ".auth/machine_id", Format: "text", Optional: true},
 				{Field: "dnsCache", Base: ArtifactBaseHome, Path: ".cache/dns-cache.json", Format: "json", Optional: true},
 			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: ".auth"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
+			},
 		},
 		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
 		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
@@ -643,10 +705,18 @@ func builtinKimi() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
-		Storage: &StorageFacts{AuthArtifacts: []AuthArtifactFacts{
-			{Field: "credentials", Base: ArtifactBaseNative, Path: "credentials/kimi-code.json", Format: "json"},
-			{Field: "deviceId", Base: ArtifactBaseNative, Path: "device_id", Format: "text", Optional: true},
-		}},
+		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseNative, Path: "credentials/kimi-code.json", Format: "json"},
+				{Field: "deviceId", Base: ArtifactBaseNative, Path: "device_id", Format: "text", Optional: true},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseNative, Path: "config.toml"},
+				{Base: ArtifactBaseNative, Path: "credentials"},
+				{Base: ArtifactBaseNative, Path: "session_index.jsonl"},
+			},
+		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
 		AuthOptions: []AuthOption{
@@ -694,6 +764,10 @@ func builtinKiro() Definition {
 			// data.sqlite3 相对 HostAuthRoot，消费方按两者拼接读取。
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "database", Base: ArtifactBaseHostAuth, Path: "data.sqlite3", Format: "binary-base64"},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: ".aih-kiro-auth-binding"},
 			},
 		},
 		// kiro 推理只有 Go 一个实现：Node 侧从来没有过（CodeWhisperer 实现已删除），
@@ -757,10 +831,16 @@ func builtinZcode() Definition {
 		// 只能开 Desktop。
 		Clients:     clientSupport(true, true),
 		Credentials: &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
-		Storage: &StorageFacts{AuthArtifacts: []AuthArtifactFacts{
-			{Field: "credentials", Base: ArtifactBaseNative, Path: "v2/credentials.json", Format: "json"},
-			{Field: "config", Base: ArtifactBaseNative, Path: "v2/config.json", Format: "json", Optional: true},
-		}},
+		Storage: &StorageFacts{
+			AuthArtifacts: []AuthArtifactFacts{
+				{Field: "credentials", Base: ArtifactBaseNative, Path: "v2/credentials.json", Format: "json"},
+				{Field: "config", Base: ArtifactBaseNative, Path: "v2/config.json", Format: "json", Optional: true},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
+			},
+		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		// 目录登记裸 id（glm-5.3），客户端会用 `zcode/glm-5.3` / `zai/glm-5.3`
@@ -856,9 +936,10 @@ func builtinCodebuddy() Definition {
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("Tencent-Cloud.coding-copilot.info"), Format: "json"},
 			},
-			DefaultAuthFile: "Tencent-Cloud.coding-copilot.info",
-			IDEDataName:     "CodeBuddy",
-			SessionRoots:    []string{".codebuddy", ".workbuddy-ai"},
+			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
+			DefaultAuthFile:  "Tencent-Cloud.coding-copilot.info",
+			IDEDataName:      "CodeBuddy",
+			SessionRoots:     []string{".codebuddy", ".workbuddy-ai"},
 		},
 		// session_history：会话读取适配器已落地
 		// （lib/sessions/session-reader-codebuddy.js）。**刻意不声明 account_session_store**：
@@ -984,9 +1065,10 @@ func builtinCodebuddyCN() Definition {
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
 			},
-			DefaultAuthFile: "workbuddy-desktop.info",
-			IDEDataName:     "CodeBuddy CN",
-			SessionRoots:    []string{".codebuddy-cn", ".workbuddy"},
+			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
+			DefaultAuthFile:  "workbuddy-desktop.info",
+			IDEDataName:      "CodeBuddy CN",
+			SessionRoots:     []string{".codebuddy-cn", ".workbuddy"},
 		},
 		// 与 codebuddy 同口径：会话历史已接入，账号隔离存储不声明（读的是宿主地区目录）。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
@@ -1091,9 +1173,10 @@ func builtinWorkbuddy() Definition {
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop-ai.info"), Format: "json"},
 			},
-			DefaultAuthFile: "workbuddy-desktop-ai.info",
-			IDEDataName:     "WorkBuddy AI",
-			SessionRoots:    []string{".workbuddy-ai", ".codebuddy"},
+			PrivateArtifacts: codebuddyFamilyPrivateFacts(false),
+			DefaultAuthFile:  "workbuddy-desktop-ai.info",
+			IDEDataName:      "WorkBuddy AI",
+			SessionRoots:     []string{".workbuddy-ai", ".codebuddy"},
 		},
 		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
 		// 写的是同一份地区会话存储，读取时两个数据根合并成一个项目列表。
@@ -1203,9 +1286,10 @@ func builtinWorkbuddyCN() Definition {
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
 			},
-			DefaultAuthFile: "workbuddy-desktop.info",
-			IDEDataName:     "WorkBuddy",
-			SessionRoots:    []string{".workbuddy", ".codebuddy-cn"},
+			PrivateArtifacts: codebuddyFamilyPrivateFacts(false),
+			DefaultAuthFile:  "workbuddy-desktop.info",
+			IDEDataName:      "WorkBuddy",
+			SessionRoots:     []string{".workbuddy", ".codebuddy-cn"},
 		},
 		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
@@ -1297,6 +1381,12 @@ func builtinCline() Definition {
 			NoRuntimeHome: true,
 			AuthArtifacts: []AuthArtifactFacts{
 				{Field: "auth", Base: ArtifactBaseNative, Path: "data/settings/providers.json", Format: "json"},
+			},
+			PrivateArtifacts: []PrivateArtifactFacts{
+				{Base: ArtifactBaseHome, Path: "electron-user-data"},
+				{Base: ArtifactBaseNative, Path: "data/settings"},
+				{Base: ArtifactBaseNative, Path: "data/secrets.json"},
+				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
 		},
 		NativeBoundary: nativeCline(),

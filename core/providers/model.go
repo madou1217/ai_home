@@ -248,6 +248,9 @@ type StorageFacts struct {
 	// native = EffectiveNativeRoot，config = CLI.GlobalDir，hostAuth = HostAuthRoot，
 	// home（默认）就是 HOME 本身。消费方按展开后的 HOME 相对路径读取。
 	AuthArtifacts []AuthArtifactFacts `json:"authArtifacts,omitempty"`
+	// PrivateArtifacts 是账号私有状态路径（凭据目录、会话、桌面缓存等）。
+	// Base 语义与 AuthArtifacts 相同。
+	PrivateArtifacts []PrivateArtifactFacts `json:"privateArtifacts,omitempty"`
 	// HostAuthRoot 是宿主上共享认证/运行数据的根（HOME 相对段）。
 	// nil 表示未声明；显式空切片表示根就是 HOME 本身。
 	HostAuthRoot *[]string `json:"hostAuthRoot,omitempty"`
@@ -271,6 +274,12 @@ type AuthArtifactFacts struct {
 	Path     string `json:"path"`
 	Format   string `json:"format,omitempty"`
 	Optional bool   `json:"optional,omitempty"`
+}
+
+// PrivateArtifactFacts 是一个账号私有状态的声明（Base 语义同 AuthArtifactFacts）。
+type PrivateArtifactFacts struct {
+	Base string `json:"base,omitempty"`
+	Path string `json:"path"`
 }
 
 // ConfigDenyFacts 是一条敏感的 Provider 配置位置。

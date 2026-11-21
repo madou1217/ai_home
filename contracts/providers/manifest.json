@@ -244,6 +244,20 @@
             "format": "json"
           }
         ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "native",
+            "path": "config.toml"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".codex/config.toml"
@@ -464,6 +478,12 @@
             "path": "google_accounts.json",
             "format": "json",
             "optional": true
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ],
         "configDenyPaths": [
@@ -732,6 +752,16 @@
             "base": "native",
             "path": ".credentials.json",
             "format": "json"
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ],
         "configDenyPaths": [
@@ -1008,6 +1038,16 @@
             "optional": true
           }
         ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".gemini/config",
@@ -1269,6 +1309,24 @@
             "format": "json"
           }
         ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".local/share/aih-opencode-runtime/opencode/auth.json"
+          },
+          {
+            "base": "config",
+            "path": "auth.json"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
+          }
+        ],
         "configDenyPaths": [
           {
             "path": ".config/opencode",
@@ -1483,6 +1541,12 @@
             "base": "native",
             "path": "auth.json",
             "format": "json"
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ]
       },
@@ -1700,6 +1764,20 @@
             "path": ".cache/dns-cache.json",
             "format": "json",
             "optional": true
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".auth"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ]
       },
@@ -1923,6 +2001,20 @@
             "format": "json",
             "optional": true
           }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".auth"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
+          }
         ]
       },
       "relayHosts": {
@@ -2107,6 +2199,24 @@
             "path": "device_id",
             "format": "text",
             "optional": true
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "native",
+            "path": "config.toml"
+          },
+          {
+            "base": "native",
+            "path": "credentials"
+          },
+          {
+            "base": "native",
+            "path": "session_index.jsonl"
           }
         ]
       },
@@ -2308,6 +2418,16 @@
             "base": "hostAuth",
             "path": "data.sqlite3",
             "format": "binary-base64"
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".aih-kiro-auth-binding"
           }
         ],
         "hostAuthRoot": [
@@ -2529,6 +2649,16 @@
             "path": "v2/config.json",
             "format": "json",
             "optional": true
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ]
       },
@@ -2768,6 +2898,44 @@
             "base": "home",
             "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info",
             "format": "json"
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".codebuddy/diagnostics"
+          },
+          {
+            "base": "home",
+            "path": "Library/Preferences/com.apple.security.plist"
+          },
+          {
+            "base": "home",
+            "path": ".workbuddy-key-fallback"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Cache"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Logs"
+          },
+          {
+            "base": "native",
+            "path": ".mcp.json"
+          },
+          {
+            "base": "native",
+            "path": "sessions"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ]
       },
@@ -3011,6 +3179,44 @@
             "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
             "format": "json"
           }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".codebuddy/diagnostics"
+          },
+          {
+            "base": "home",
+            "path": "Library/Preferences/com.apple.security.plist"
+          },
+          {
+            "base": "home",
+            "path": ".workbuddy-key-fallback"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Cache"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Logs"
+          },
+          {
+            "base": "native",
+            "path": ".mcp.json"
+          },
+          {
+            "base": "native",
+            "path": "sessions"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
+          }
         ]
       },
       "relayHosts": {
@@ -3233,6 +3439,36 @@
             "base": "home",
             "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop-ai.info",
             "format": "json"
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".codebuddy/diagnostics"
+          },
+          {
+            "base": "home",
+            "path": "Library/Preferences/com.apple.security.plist"
+          },
+          {
+            "base": "home",
+            "path": ".workbuddy-key-fallback"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Cache"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Logs"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ]
       },
@@ -3457,6 +3693,36 @@
             "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
             "format": "json"
           }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "home",
+            "path": ".codebuddy/diagnostics"
+          },
+          {
+            "base": "home",
+            "path": "Library/Preferences/com.apple.security.plist"
+          },
+          {
+            "base": "home",
+            "path": ".workbuddy-key-fallback"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Cache"
+          },
+          {
+            "base": "home",
+            "path": "Library/Application Support/CodeBuddyExtension/Logs"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
+          }
         ]
       },
       "relayHosts": {
@@ -3630,6 +3896,24 @@
             "base": "native",
             "path": "data/settings/providers.json",
             "format": "json"
+          }
+        ],
+        "privateArtifacts": [
+          {
+            "base": "home",
+            "path": "electron-user-data"
+          },
+          {
+            "base": "native",
+            "path": "data/settings"
+          },
+          {
+            "base": "native",
+            "path": "data/secrets.json"
+          },
+          {
+            "base": "home",
+            "path": "Library/Keychains"
           }
         ]
       },

@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 
-	"github.com/madou1217/ai_home/application/serverconfig"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -188,13 +188,11 @@ func unsetServerConfig(ctx context.Context, home string, args []string, runtime 
 	}
 	patch := map[string]any{}
 	for _, raw := range args {
-		key := normalizeConfigKey(raw)
-		switch key {
-		case "proxyUrl":
-			patch["proxyUrl"] = ""
-		default:
+		option, ok := configOptionForUnset(raw)
+		if !ok {
 			return fmt.Errorf("server config unset does not support: %s", raw)
 		}
+		setConfigPath(patch, option.Path, option.UnsetValue)
 	}
 	if _, err := webuiserverconfigapi.ApplyConfigPatch(ctx, home, patch); err != nil {
 		return err
@@ -204,115 +202,9 @@ func unsetServerConfig(ctx context.Context, home string, args []string, runtime 
 }
 
 func setServerConfig(ctx context.Context, home string, args []string, runtime commandRuntime) error {
-	patch := map[string]any{}
-	generated := map[string]string{}
-	for index := 0; index < len(args); index++ {
-		flag := args[index]
-		if flag == "--json" || flag == "--one-line" || flag == "--verbose" || flag == "--show-secrets" {
-			continue
-		}
-		if flag == "--qr" || flag == "--qr-url" || strings.HasPrefix(flag, "--qr-url=") {
-			return errors.New("--qr 只能用于 show/get，不能和设置项一起使用")
-		}
-		if flag == "--generate-management-key" {
-			key, err := generateManagementKey()
-			if err != nil {
-				return err
-			}
-			patch["managementKey"] = key
-			generated["managementKey"] = key
-			continue
-		}
-		if flag == "--generate-api-key" {
-			key, err := generateAPIKey()
-			if err != nil {
-				return err
-			}
-			patch["apiKey"] = key
-			generated["apiKey"] = key
-			continue
-		}
-		if flag == "--open-network" {
-			patch["openNetwork"] = true
-			continue
-		}
-		if flag == "--local-only" {
-			patch["openNetwork"] = false
-			continue
-		}
-		if flag == "--window-activation" {
-			patch["windowActivation"] = true
-			continue
-		}
-		if flag == "--no-window-activation" {
-			patch["windowActivation"] = false
-			continue
-		}
-		if flag == "--go-core" {
-			patch["goCoreEnabled"] = true
-			continue
-		}
-		if flag == "--no-go-core" {
-			patch["goCoreEnabled"] = false
-			continue
-		}
-		if flag == "--upstream-429-retry" {
-			setUpstream429RetryField(patch, "enabled", true)
-			continue
-		}
-		if flag == "--no-upstream-429-retry" {
-			setUpstream429RetryField(patch, "enabled", false)
-			continue
-		}
-		if flag == "--clear-upstream-429-retry-backoff" {
-			setUpstream429RetryField(patch, "backoffSeconds", corepolicy.DefaultBackoffSeconds())
-			continue
-		}
-		if flag == "--upstream-429-retry-backoff" || strings.HasPrefix(flag, "--upstream-429-retry-backoff=") {
-			var rawBackoff string
-			if strings.HasPrefix(flag, "--upstream-429-retry-backoff=") {
-				rawBackoff = strings.TrimPrefix(flag, "--upstream-429-retry-backoff=")
-			} else {
-				if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
-					return errors.New("--upstream-429-retry-backoff requires a value")
-				}
-				index++
-				rawBackoff = args[index]
-			}
-			steps, err := parseUpstream429BackoffCSV(rawBackoff, "--upstream-429-retry-backoff")
-			if err != nil {
-				return err
-			}
-			setUpstream429RetryField(patch, "backoffSeconds", steps)
-			continue
-		}
-		if strings.HasPrefix(flag, "--clear-") {
-			key, ok := clearConfigKey(strings.TrimPrefix(flag, "--clear-"))
-			if !ok {
-				return fmt.Errorf("unknown server config option: %s", flag)
-			}
-			patch[key] = clearConfigValue(key)
-			continue
-		}
-		key, ok := configFlagKey(flag)
-		if !ok {
-			return fmt.Errorf("unknown server config option: %s", flag)
-		}
-		if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
-			return fmt.Errorf("%s requires a value", flag)
-		}
-		index++
-		value := args[index]
-		if key == "proxyUrl" && strings.TrimSpace(value) == "" {
-			return errors.New("--proxy-url requires a non-empty value; run: aih server config unset proxy-url")
-		}
-		if key == "modelCacheSync" && value != "scheduler" && value != "go-batch" {
-			return errors.New("Invalid --model-cache-sync value: 只接受 scheduler 或 go-batch")
-		}
-		patch[key] = value
-	}
-	if len(patch) == 0 {
-		return errors.New("server config set requires at least one option")
+	patch, generated, err := parseConfigSetArgs(args)
+	if err != nil {
+		return err
 	}
 	if err := validateServerKeyPatch(patch); err != nil {
 		return err
@@ -331,15 +223,6 @@ func setServerConfig(ctx context.Context, home string, args []string, runtime co
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] server config saved; proxy pool and upstream 429 retry changes take effect automatically without restarting the server.")
 	}
 	return nil
-}
-
-func setUpstream429RetryField(patch map[string]any, field string, value any) {
-	nested, ok := patch["upstream429Retry"].(map[string]any)
-	if !ok || nested == nil {
-		nested = map[string]any{}
-		patch["upstream429Retry"] = nested
-	}
-	nested[field] = value
 }
 
 func parseUpstream429BackoffCSV(raw string, flagName string) ([]int, error) {
@@ -376,11 +259,9 @@ func isASCIIUnsignedDigits(text string) bool {
 }
 
 func serverConfigPatchRequiresRestart(patch map[string]any) bool {
-	if false {
-		return true
-	}
+	hotReload := hotReloadTopLevelKeys()
 	for key := range patch {
-		if key != "upstream429Retry" && key != "proxyUrl" {
+		if !hotReload[key] {
 			return true
 		}
 	}
@@ -421,44 +302,6 @@ func parseDisplayFlags(args []string) configDisplayFlags {
 		}
 	}
 	return flags
-}
-
-func configFlagKey(flag string) (string, bool) {
-	keys := map[string]string{
-		"--host": "host", "--port": "port", "--api-key": "apiKey", "--client-key": "apiKey",
-		"--management-key": "managementKey", "--proxy-url": "proxyUrl",
-		"--no-proxy": "noProxy", "--models-probe-accounts": "modelsProbeAccounts",
-		"--model-cache-sync":                      "modelCacheSync",
-		"--window-activation-default-interval-ms": "windowActivationDefaultIntervalMs",
-		"--window-activation-min-interval-ms":     "windowActivationMinIntervalMs",
-		"--go-core-routes":                        "goCoreRoutes", "--upstream-error-rules": "upstreamErrorRuleProviders",
-		"--relay-udp": "relayUdp", "--relay-udp-advertise-host": "relayUdpAdvertiseHost",
-		"--relay-udp-advertise-port": "relayUdpAdvertisePort", "--relay-port-mode": "relayPortMode",
-		"--relay-listen-host": "relayListenHost", "--max-attempts": "maxAttempts",
-		"--egress-evidence-ttl-ms": "egressEvidenceTtlMs", "--large-paste-chars": "largePasteChars",
-	}
-	key, ok := keys[flag]
-	return key, ok
-}
-
-func clearConfigKey(name string) (string, bool) {
-	mapping := map[string]string{
-		"max-attempts": "maxAttempts", "large-paste-chars": "largePasteChars",
-		"egress-evidence-ttl-ms": "egressEvidenceTtlMs", "relay-udp-advertise-host": "relayUdpAdvertiseHost",
-		"relay-udp-advertise-port": "relayUdpAdvertisePort", "relay-listen-host": "relayListenHost",
-		"go-core-routes": "goCoreRoutes", "upstream-error-rules": "upstreamErrorRuleProviders",
-	}
-	key, ok := mapping[name]
-	return key, ok
-}
-
-func clearConfigValue(key string) any {
-	switch key {
-	case "goCoreRoutes", "upstreamErrorRuleProviders":
-		return []string{}
-	default:
-		return 0
-	}
 }
 
 func configToValues(config webuiserverconfigapi.ConfigView) map[string]any {
@@ -513,7 +356,6 @@ func formatConfigValue(value any) string {
 		return string(encoded)
 	}
 }
-
 
 // displayOnlyConfigFlags 只影响输出，不改变配置。
 var displayOnlyConfigFlags = map[string]bool{

@@ -78,6 +78,11 @@ func runCodexCLIResume(ctx context.Context, args []string, runtime commandRuntim
 		return healErr
 	}
 	if localAppServerDisabled(spawnMap, forward) || hasExplicitRemoteArg(forward) || hasHelpArg(forward) {
+		if !hasExplicitRemoteArg(forward) && !hasHelpArg(forward) {
+			if handled, remoteErr := tryRemoteResume(ctx, upstream, forward, spawnEnv, spawnMap, aiHome, runtime); handled {
+				return remoteErr
+			}
+		}
 		return execCodexUpstream(ctx, upstream, forward, spawnEnv, runtime)
 	}
 

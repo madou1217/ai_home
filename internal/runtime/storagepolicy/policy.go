@@ -93,7 +93,6 @@ var providerOrder = []string{
 
 var policies = map[string]Policy{
 	"codex": {
-		RuntimeHomeRoot: []string{".codex", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("auth", "json", false, ".codex", "auth.json"),
 		},
@@ -105,7 +104,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: []string{".tmp", "model", "images"},
 	},
 	"claude": {
-		RuntimeHomeRoot: []string{".claude", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, ".claude", ".credentials.json"),
 		},
@@ -116,7 +114,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"gemini": {
-		RuntimeHomeRoot: []string{".gemini", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("oauthCreds", "json", false, ".gemini", "oauth_creds.json"),
 			credential("googleAccounts", "json", true, ".gemini", "google_accounts.json"),
@@ -127,7 +124,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"agy": {
-		RuntimeHomeRoot: []string{".gemini", "antigravity-cli", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("oauthToken", "json", false, ".gemini", "antigravity-cli", "antigravity-oauth-token"),
 			credential("desktopOauthToken", "json", true, ".gemini", "jetski-standalone-oauth-token"),
@@ -142,7 +138,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"opencode": {
-		RuntimeHomeRoot: []string{".local", "share", "opencode", RuntimeHomeDir},
 		AuthArtifacts: []Artifact{
 			credential("auth", "json", false, ".local", "share", "opencode", "auth.json"),
 		},
@@ -156,7 +151,6 @@ var policies = map[string]Policy{
 	},
 	"grok": {
 		HostAuthRoot:     emptySegments,
-		RuntimeHomeRoot:  []string{".grok", RuntimeHomeDir},
 		AttachmentSubdir: attachments,
 		AuthArtifacts: []Artifact{
 			credential("auth", "json", false, ".grok", "auth.json"),
@@ -166,8 +160,7 @@ var policies = map[string]Policy{
 		},
 	},
 	"kimi": {
-		HostAuthRoot:    emptySegments,
-		RuntimeHomeRoot: []string{".kimi-code", RuntimeHomeDir},
+		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, ".kimi-code", "credentials", "kimi-code.json"),
 			credential("deviceId", "text", true, ".kimi-code", "device_id"),
@@ -181,8 +174,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"zcode": {
-		HostAuthRoot:    emptySegments,
-		RuntimeHomeRoot: []string{".zcode", RuntimeHomeDir},
+		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, ".zcode", "v2", "credentials.json"),
 			credential("config", "json", true, ".zcode", "v2", "config.json"),
@@ -218,8 +210,7 @@ var policies = map[string]Policy{
 		},
 	},
 	"qoder": {
-		HostAuthRoot:    []string{".qoder"},
-		RuntimeHomeRoot: []string{RuntimeHomeDir},
+		HostAuthRoot: []string{".qoder"},
 		AuthArtifacts: []Artifact{
 			credential("credentials", "text", false, ".auth", "user"),
 			credential("machineId", "text", true, ".auth", "machine_id"),
@@ -233,8 +224,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"qodercn": {
-		HostAuthRoot:    []string{".qoder-cn"},
-		RuntimeHomeRoot: []string{RuntimeHomeDir},
+		HostAuthRoot: []string{".qoder-cn"},
 		AuthArtifacts: []Artifact{
 			credential("credentials", "text", false, ".auth", "user"),
 			credential("machineId", "text", true, ".auth", "machine_id"),
@@ -248,8 +238,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"codebuddy": {
-		HostAuthRoot:    emptySegments,
-		RuntimeHomeRoot: []string{".codebuddy", RuntimeHomeDir},
+		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("Tencent-Cloud.coding-copilot.info")...),
 		},
@@ -257,8 +246,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"codebuddycn": {
-		HostAuthRoot:    emptySegments,
-		RuntimeHomeRoot: []string{".codebuddy-cn", RuntimeHomeDir},
+		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop.info")...),
 		},
@@ -266,8 +254,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"workbuddy": {
-		HostAuthRoot:    emptySegments,
-		RuntimeHomeRoot: []string{".workbuddy-ai", RuntimeHomeDir},
+		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop-ai.info")...),
 		},
@@ -275,8 +262,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"workbuddycn": {
-		HostAuthRoot:    emptySegments,
-		RuntimeHomeRoot: []string{".workbuddy", RuntimeHomeDir},
+		HostAuthRoot: emptySegments,
 		AuthArtifacts: []Artifact{
 			credential("credentials", "json", false, sharedAuthPath("workbuddy-desktop.info")...),
 		},
@@ -298,6 +284,11 @@ func init() {
 			continue
 		}
 		policy.NativeRoot = definition.EffectiveNativeRoot()
+		if definition.Storage != nil && definition.Storage.NoRuntimeHome {
+			policy.RuntimeHomeRoot = nil
+		} else {
+			policy.RuntimeHomeRoot = append(append([]string{}, policy.NativeRoot...), RuntimeHomeDir)
+		}
 		policies[providerID] = policy
 	}
 }

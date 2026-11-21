@@ -227,6 +227,9 @@ type StorageFacts struct {
 	IDEDataName string `json:"ideDataName,omitempty"`
 	// SessionRoots 是同一物理会话存储在家族内的候选根（HOME 相对，按优先级）。
 	SessionRoots []string `json:"sessionRoots,omitempty"`
+	// NoRuntimeHome 表示该 Provider 不使用 <nativeRoot>/.aih-runtime-home。
+	// 默认 false；kiro / cline 显式声明 true。
+	NoRuntimeHome bool `json:"noRuntimeHome,omitempty"`
 }
 
 // EffectiveNativeRoot 返回存储策略使用的主数据根。

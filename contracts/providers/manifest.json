@@ -2082,6 +2082,9 @@
           "default": "https://q.us-east-1.amazonaws.com"
         }
       },
+      "storage": {
+        "noRuntimeHome": true
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -3332,6 +3335,9 @@
         "defaultBaseUrls": {
           "default": "https://api.cline.bot/api/v1"
         }
+      },
+      "storage": {
+        "noRuntimeHome": true
       },
       "relayHosts": {
         "go": {

@@ -3,6 +3,7 @@ package codex
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
@@ -23,11 +24,24 @@ func RootString(current, key string) string {
 	return ""
 }
 
+// PreferenceKeys 是 AIH 允许写入的 Codex 启动偏好键。
+var PreferenceKeys = []string{"model", "model_reasoning_effort", "service_tier"}
+
 // PatchPreference replaces only the parsed value span, preserving comments,
 // quoted key spelling, unrelated arrays/strings, tables and original line endings.
 func PatchPreference(current, key, value string) (string, error) {
-	if key != "service_tier" && key != "model_reasoning_effort" {
+	supported := false
+	for _, candidate := range PreferenceKeys {
+		if key == candidate {
+			supported = true
+			break
+		}
+	}
+	if !supported {
 		return "", fmt.Errorf("unsupported Codex preference %s", key)
+	}
+	if strings.ContainsAny(value, "\r\n\x00") || (key == "model" && strings.TrimSpace(value) == "") {
+		return "", fmt.Errorf("invalid Codex preference value")
 	}
 	statements, err := providerconfigs.ScanTOMLStatements(current)
 	if err != nil {

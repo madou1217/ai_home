@@ -40,6 +40,7 @@ import (
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
 	"github.com/madou1217/ai_home/internal/runtime/codebuddymodels"
@@ -75,6 +76,9 @@ type Options struct {
 	ProviderHTTPClient *http.Client
 	// HostHomeDir 覆盖账号投影的宿主家目录；为空时从进程环境解析。
 	HostHomeDir string
+	// CodexHomeDir 是 Gateway 启动共享的 Codex 配置根（宿主 ~/.codex）；
+	// 为空时回退 <HostHomeDir>/.codex。投影 HOME 不保存用户偏好。
+	CodexHomeDir string
 	// ClaudePreflight 是 Claude 首屏检查决策；由命令入口按 app-state 解析。
 	ClaudePreflight providercli.ClaudePreflight
 }
@@ -139,11 +143,13 @@ type App struct {
 	interactive bool
 	// hostHomeDir 与 lookupEnv 定位子进程实际读取的宿主 Codex 配置。
 	hostHomeDir string
-	lookupEnv   func(string) (string, bool)
-	stderr      io.Writer
-	resources   []io.Closer
-	closeOnce   sync.Once
-	closeErr    error
+	// codexHomeDir 是 Gateway 启动共享的 Codex 配置根。
+	codexHomeDir string
+	lookupEnv    func(string) (string, bool)
+	stderr       io.Writer
+	resources    []io.Closer
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // New 装配 Provider Catalog、aih.db、OAuth 刷新、双模式 Strategy 和官方 CLI Runtime。
@@ -310,6 +316,10 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if hostHomeDir == "" {
 		hostHomeDir = resolveHostHomeDir()
 	}
+	codexHomeDir := strings.TrimSpace(options.CodexHomeDir)
+	if codexHomeDir == "" {
+		codexHomeDir = filepath.Join(hostHomeDir, providerroot.ConfigDir("codex"))
+	}
 	// CodeBuddy 家族没有 OpenAI 兼容的 base URL 入口，网关档靠独立的 models.json
 	// 投影：文件只放在 run/codebuddy-gateway，绝不写宿主共享的 ~/.codebuddy/models.json，
 	// 否则家族账号投影会把网关模型链进每个账号沙箱，绕开 `aih codebuddy <id>` 的钉选。
@@ -327,8 +337,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 	})
 	gatewayStrategies := []providerlaunch.GatewayStrategy{
 		codexcli.NewGatewayStrategy(codexManagedProviderAuth{
-			hostHomeDir: hostHomeDir,
-			lookupEnv:   os.LookupEnv,
+			codexHomeDir: codexHomeDir,
+			lookupEnv:    os.LookupEnv,
 		}),
 		claudecli.NewGatewayStrategy(),
 	}
@@ -380,6 +390,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		PTYStarter:      pty.NewStarter(),
 		Projection:      provisioner,
 		HostHomeDir:     hostHomeDir,
+		CodexHomeDir:    codexHomeDir,
 		PrepareNative:   codexexecintent.Prepare,
 		DiscoverBinary:  cliLifecycle.Resolve,
 		ClaudePreflight: options.ClaudePreflight,
@@ -394,6 +405,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 			return nil, err
 		}
 		app.hostHomeDir = hostHomeDir
+		app.codexHomeDir = codexHomeDir
 		app.lookupEnv = os.LookupEnv
 		app.stderr = options.Stderr
 		app.cliLifecycle = cliLifecycle
@@ -409,6 +421,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 	app.aiHomeDir = options.AIHomeDir
 	app.accountStore = store
 	app.hostHomeDir = hostHomeDir
+	app.codexHomeDir = codexHomeDir
 	app.lookupEnv = os.LookupEnv
 	app.stderr = options.Stderr
 	app.cliLifecycle = cliLifecycle
@@ -623,7 +636,7 @@ func (app *App) ensureHostAuthCommand() error {
 	if err != nil {
 		return fmt.Errorf("codex_host_auth_cli_unavailable: 无法解析当前 aih 可执行文件: %w", err)
 	}
-	result, err := codexhostauth.Ensure(codexhostauth.ConfigPath(app.hostHomeDir, app.lookupEnv), executable)
+	result, err := codexhostauth.Ensure(codexConfigPath(app.codexHomeDir, app.lookupEnv), executable)
 	if err != nil {
 		return fmt.Errorf("受管 Codex Provider 配置不可用: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	codexconfig "github.com/madou1217/ai_home/internal/host/aihdefault/content/codex"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
@@ -15,6 +16,7 @@ import (
 // Snapshot contains only the non-secret preferences shown by the CLI.
 type Snapshot struct {
 	Path   string
+	Model  string
 	Effort string
 	Tier   string
 }
@@ -41,6 +43,27 @@ func Read(home string) (Snapshot, error) {
 // The native config's symlink, unrelated text and existing permission bits are preserved.
 func Update(home, key, value string) (Snapshot, error) {
 	return updateDocument(home, func(current string) (string, error) { return codexconfig.PatchPreference(current, key, value) })
+}
+
+// UpdateValues applies several Codex preferences in one locked publication, so a
+// WebUI save cannot leave model and effort from different revisions on disk.
+func UpdateValues(home string, values map[string]string) (Snapshot, error) {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return updateDocument(home, func(current string) (string, error) {
+		next := current
+		for _, key := range keys {
+			patched, err := codexconfig.PatchPreference(next, key, values[key])
+			if err != nil {
+				return "", err
+			}
+			next = patched
+		}
+		return next, nil
+	})
 }
 
 // ReplaceDocument is the cooperating Node config-healer publication port. The
@@ -213,7 +236,13 @@ func validate(content string) error {
 }
 
 func snapshot(target string, content []byte) Snapshot {
-	return Snapshot{Path: target, Effort: codexconfig.RootString(string(content), "model_reasoning_effort"), Tier: codexconfig.RootString(string(content), "service_tier")}
+	text := string(content)
+	return Snapshot{
+		Path:   target,
+		Model:  codexconfig.RootString(text, "model"),
+		Effort: codexconfig.RootString(text, "model_reasoning_effort"),
+		Tier:   codexconfig.RootString(text, "service_tier"),
+	}
 }
 
 // AcquireHostLock shares the preference writer's lock with host default changes.

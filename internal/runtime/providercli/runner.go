@@ -62,6 +62,9 @@ type Options struct {
 	Projection appprojection.Provisioner
 	// HostHomeDir 是投影共享链接指向的宿主家目录；为空时投影失败关闭。
 	HostHomeDir string
+	// CodexHomeDir 是 Gateway 启动共享的 Codex 配置根（宿主 ~/.codex）；
+	// 为空时不改写 CODEX_HOME。
+	CodexHomeDir string
 	// Platform 覆盖链接/路径的平台语义；为空按 runtime.GOOS。
 	Platform string
 	// PrepareNative applies provider launch intent after the final argv/env resolve.
@@ -85,6 +88,7 @@ type Runner struct {
 	ptyStarter      pty.Starter
 	projection      appprojection.Provisioner
 	hostHomeDir     string
+	codexHomeDir    string
 	platform        string
 	environ         func() []string
 	binaries        binaryResolver
@@ -122,6 +126,7 @@ func NewRunner(options Options) (*Runner, error) {
 		ptyStarter:      options.PTYStarter,
 		projection:      options.Projection,
 		hostHomeDir:     options.HostHomeDir,
+		codexHomeDir:    options.CodexHomeDir,
 		platform:        platform,
 		environ:         os.Environ,
 		binaries:        resolver,
@@ -241,7 +246,9 @@ func (runner *Runner) runDirect(
 	if err != nil {
 		return err
 	}
-	return runner.runPreparedProviderProcess(ctx, providerID, path, arguments, applyEnvironment(runner.environ(), environment))
+	resolvedEnvironment := applyEnvironment(runner.environ(), environment)
+	resolvedEnvironment = applySharedCodexConfigRoot(providerID, runner.codexHomeDir, resolvedEnvironment)
+	return runner.runPreparedProviderProcess(ctx, providerID, path, arguments, resolvedEnvironment)
 }
 
 // runNativeDirect 执行 Native Direct：需要凭据文件投影时先物化账号沙箱，

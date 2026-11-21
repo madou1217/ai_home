@@ -86,6 +86,28 @@ func applyProviderConfigRoot(providerID string, hostHomeDir string, environment 
 	return setEnvironmentValue(environment, claudeConfigDirEnv, filepath.Join(home, providerroot.ConfigDir("claude")))
 }
 
+// codexHomeEnv 是 Codex 的配置根变量。
+const codexHomeEnv = "CODEX_HOME"
+
+// applySharedCodexConfigRoot 让 Gateway 启动共享用户真正的宿主 CODEX_HOME。
+//
+// 投影 HOME 只服务被投影的 Provider 账号；用户默认模型、effort、历史与信任
+// 都属于宿主。显式 CODEX_HOME 永远优先；账号级投影在 Native Direct 路径
+// 自行设置 CODEX_HOME，不经过本函数。
+func applySharedCodexConfigRoot(providerID, codexHomeDir string, environment []string) []string {
+	if !strings.EqualFold(strings.TrimSpace(providerID), "codex") {
+		return environment
+	}
+	target := strings.TrimSpace(codexHomeDir)
+	if target == "" {
+		return environment
+	}
+	if explicit, _ := environmentValue(environment, codexHomeEnv); strings.TrimSpace(explicit) != "" {
+		return environment
+	}
+	return setEnvironmentValue(environment, codexHomeEnv, target)
+}
+
 // setEnvironmentValue 覆盖 Runtime 动态分配的 Socket 等非持久配置。
 func setEnvironmentValue(environment []string, name string, value string) []string {
 	patch, _ := providerlaunch.NewEnvironmentPatch(map[string]string{name: value}, nil)

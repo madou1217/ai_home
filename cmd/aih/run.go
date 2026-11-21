@@ -291,6 +291,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "effort" {
 		return runCodexEffort(arguments[2:], runtime)
 	}
+	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "model" {
+		return runCodexModel(arguments[2:], runtime)
+	}
 	// aih codex policy [show|set <sandbox>]：app-state 的 policy:exec。
 	if len(arguments) >= 2 && arguments[1] == "policy" {
 		return runProviderPolicy(ctx, providerID, arguments[2:], runtime)
@@ -485,6 +488,8 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 		Stdout:          runtime.stdout,
 		Stderr:          runtime.stderr,
 		ClaudePreflight: claudePreflight,
+		// Codex 偏好属于宿主用户：投影 HOME 下也读写宿主 ~/.codex。
+		CodexHomeDir: sharedCodexHomeDir(runtime),
 	})
 	if err != nil {
 		return fmt.Errorf("初始化 Go CLI 失败: %w", err)

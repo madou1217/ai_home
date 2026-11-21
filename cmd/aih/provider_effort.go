@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
-	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 )
 
@@ -52,24 +50,14 @@ func runCodexEffort(arguments []string, runtime commandRuntime) error {
 	if len(arguments) > 2 || (len(arguments) > 1 && arguments[0] != "fast") {
 		return fmt.Errorf("%w: %s", errInvalidCommand, usage)
 	}
-	home := lookupOrDefault(runtime.lookupEnv, "CODEX_HOME", "")
-	if home == "" {
-		host := lookupOrDefault(runtime.lookupEnv, "AIH_HOST_HOME", "")
-		if host == "" {
-			var err error
-			host, err = runtime.userHomeDir()
-			if err != nil {
-				return err
-			}
-		}
-		home = filepath.Join(host, providerroot.ConfigDir("codex"))
-	}
+	home, err := codexPreferencesHome(runtime)
 	var prefs codexpreferences.Snapshot
-	var err error
-	if key == "" {
-		prefs, err = codexpreferences.Read(home)
-	} else {
-		prefs, err = codexpreferences.Update(home, key, value)
+	if err == nil {
+		if key == "" {
+			prefs, err = codexpreferences.Read(home)
+		} else {
+			prefs, err = codexpreferences.Update(home, key, value)
+		}
 	}
 	if err != nil {
 		return err
@@ -77,6 +65,6 @@ func runCodexEffort(arguments []string, runtime commandRuntime) error {
 	if key != "" {
 		fmt.Fprintln(runtime.stdout, "已保存 Codex 配置；新启动的会话生效，实际可用性取决于模型和账号。")
 	}
-	fmt.Fprintf(runtime.stdout, "model_reasoning_effort: %s\nservice_tier: %s\nconfig: %s\n", prefs.Effort, prefs.Tier, prefs.Path)
+	printCodexPreferences(runtime, prefs)
 	return nil
 }

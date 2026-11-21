@@ -3238,4 +3238,38 @@ export const providerConfigAPI = {
   }
 };
 
+// ProviderDefaultsResponse 是 Provider CLI 启动默认值（当前支持 codex）。
+export interface ProviderDefaultsResponse {
+  ok: boolean;
+  provider: string;
+  supported: boolean;
+  model: string;
+  reasoningEffort: string;
+  serviceTier: string;
+  configPath: string;
+  reasoningEfforts: string[];
+  models: string[];
+  reasoningEffortsByModel: Record<string, string[]>;
+}
+
+export interface ProviderDefaultsPatch {
+  provider?: string;
+  model?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+}
+
+export const providerDefaultsAPI = {
+  get: async (provider = 'codex'): Promise<ProviderDefaultsResponse> => {
+    const response = await api.get<ProviderDefaultsResponse>('/webui/provider-defaults', {
+      params: { provider }
+    });
+    return response.data;
+  },
+  update: async (payload: ProviderDefaultsPatch): Promise<ProviderDefaultsResponse> => {
+    const response = await api.patch<ProviderDefaultsResponse>('/webui/provider-defaults', payload);
+    return response.data;
+  }
+};
+
 export default api;

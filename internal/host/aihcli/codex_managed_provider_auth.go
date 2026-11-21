@@ -8,17 +8,18 @@ package aihcli
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
-	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
 
-// codexManagedProviderAuth 读取宿主 Codex 配置声明的凭据机制。
+// codexManagedProviderAuth 读取 Gateway 启动实际使用的 Codex 配置声明的凭据机制。
 type codexManagedProviderAuth struct {
-	// hostHomeDir 是启动子进程使用的主目录（CODEX_HOME 未显式指定时的配置根）。
-	hostHomeDir string
-	// lookupEnv 读取显式 CODEX_HOME；为空时读取进程环境。
+	// codexHomeDir 是 Gateway 启动的共享 Codex 配置根（宿主 ~/.codex）。
+	codexHomeDir string
+	// lookupEnv 读取显式 CODEX_HOME；nil 表示只按 codexHomeDir 解析。
 	lookupEnv func(string) (string, bool)
 }
 
@@ -32,14 +33,23 @@ func (source codexManagedProviderAuth) ManagedProviderAuth() clilaunch.ManagedPr
 
 // configPath 返回子进程实际读取的 config.toml。
 //
-// 显式 CODEX_HOME 优先（子进程环境完整继承），否则 <hostHome>/.codex。
+// 显式 CODEX_HOME 优先（子进程环境完整继承），否则 <codexHomeDir>/config.toml。
 // 该解析与启动时的受管认证命令自愈共享同一入口，避免两处对「生效配置」判断漂移。
 func (source codexManagedProviderAuth) configPath() string {
-	lookup := source.lookupEnv
-	if lookup == nil {
-		lookup = os.LookupEnv
+	return codexConfigPath(source.codexHomeDir, source.lookupEnv)
+}
+
+// codexConfigPath 是「子进程实际读取的 Codex 配置」的唯一推导。
+func codexConfigPath(codexHomeDir string, lookupEnv func(string) (string, bool)) string {
+	if lookupEnv != nil {
+		if home, ok := lookupEnv("CODEX_HOME"); ok && strings.TrimSpace(home) != "" {
+			return filepath.Join(strings.TrimSpace(home), "config.toml")
+		}
 	}
-	return codexhostauth.ConfigPath(source.hostHomeDir, lookup)
+	if strings.TrimSpace(codexHomeDir) == "" {
+		return ""
+	}
+	return filepath.Join(codexHomeDir, "config.toml")
 }
 
 // codexConfigDeclaresAuthCommand 判断配置是否声明了受管 Provider 的 auth 命令。

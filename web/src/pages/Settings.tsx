@@ -3,6 +3,7 @@ import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsG
 import LargePasteSettingCard from '@/features/chat-runtime/LargePasteSettingCard';
 import Upstream429RetrySettingCard from '@/features/settings/Upstream429RetrySettingCard';
 import CaptureSettingsCard from '@/features/capture/CaptureSettingsCard';
+import ProviderDefaultsPanel from '@/features/provider-defaults/ProviderDefaultsPanel';
 import InlineNote from '@/components/ui/InlineNote';
 import '@/components/settings/settings-shared.css';
 import '@/components/ui/kpi-strip.css';
@@ -105,7 +106,7 @@ const renderControlEndpointHints = (
   );
 };
 
-export type SettingsSectionKey = 'basic' | 'capture' | 'service' | 'aliases' | 'upstream-errors' | 'control-planes' | 'ssh-hosts';
+export type SettingsSectionKey = 'basic' | 'capture' | 'service' | 'launch-defaults' | 'aliases' | 'upstream-errors' | 'control-planes' | 'ssh-hosts';
 
 interface SettingsProps {
   section?: SettingsSectionKey;
@@ -144,6 +145,12 @@ const SETTINGS_PAGE_META = {
     eyebrow: '配置',
     description: '管理账号调度与本地服务监听参数。'
   },
+  'launch-defaults': {
+    code: 'CONFIG',
+    title: '启动默认',
+    eyebrow: '配置',
+    description: '管理 Provider CLI 的默认模型与推理强度。'
+  },
   aliases: {
     code: 'CONFIG',
     title: '模型别名',
@@ -174,7 +181,7 @@ const getInitialSettingsTab = () => {
   if (typeof window === 'undefined') return 'basic';
   const params = new URLSearchParams(window.location.search);
   const tab = String(params.get('tab') || '').trim();
-  return ['capture', 'service', 'aliases', 'upstream-errors', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
+  return ['capture', 'service', 'launch-defaults', 'aliases', 'upstream-errors', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
 };
 
 const formatActiveControlPlaneLabel = (profile: ControlPlaneProfile | null) => {
@@ -890,6 +897,11 @@ const Settings = ({ section }: SettingsProps) => {
       key: 'service',
       label: '服务与调度',
       children: serviceSettingsContent,
+    },
+    {
+      key: 'launch-defaults',
+      label: '启动默认',
+      children: <ProviderDefaultsPanel />,
     },
     {
       key: 'aliases',

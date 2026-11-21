@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	codexconfig "github.com/madou1217/ai_home/internal/host/aihdefault/content/codex"
 	"github.com/madou1217/ai_home/internal/runtime/codexgateway"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
@@ -113,7 +114,7 @@ func Apply(ctx context.Context, options Options) (Result, error) {
 	}
 	clear(key)
 
-	home := filepath.Join(options.HostHomeDir, ".codex")
+	home := filepath.Join(options.HostHomeDir, providerroot.ConfigDir("codex"))
 	configPath, release, err := codexpreferences.AcquireHostLock(home)
 	if err != nil {
 		return result, err

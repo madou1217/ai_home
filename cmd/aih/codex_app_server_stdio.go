@@ -19,7 +19,7 @@ import (
 
 const codexAppServerStdioCapability = "aih-codex-app-server-stdio-v1"
 
-// runCodexAppServerStdio 是 Node codex-app-server-stdio-proxy 的 Go 入口：
+// runCodexAppServerStdio 是 Codex app-server 的 Go stdio 入口：
 // 先自愈/合并配置，再把 stdin/stdout 的 JSON-RPC 帧经共享 bridge 转发给 codex。
 func runCodexAppServerStdio(ctx context.Context, args []string, runtime commandRuntime) error {
 	if len(args) == 1 && args[0] == "--capabilities" {

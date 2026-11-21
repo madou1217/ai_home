@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"io"
 	"os"
 	"os/exec"
@@ -54,7 +55,7 @@ func VerifyCodexAppServerBoot(ctx context.Context, opts CodexVerifyOptions) Veri
 	}
 	defer func() { _ = os.RemoveAll(sandboxHome) }()
 
-	codexHome := filepath.Join(sandboxHome, ".codex")
+	codexHome := filepath.Join(sandboxHome, providerroot.ConfigDir("codex"))
 	if err := os.MkdirAll(codexHome, 0o755); err != nil {
 		return Verification{Verdict: VerdictInconclusive, Detail: "sandbox_failed:" + err.Error()}
 	}

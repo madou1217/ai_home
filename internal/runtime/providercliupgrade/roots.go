@@ -2,6 +2,7 @@ package providercliupgrade
 
 import (
 	"context"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +30,7 @@ type InstallRoots struct {
 func CollectStandaloneRootCandidates(hostHomeDir string, localAppData string) []string {
 	var out []string
 	if home := strings.TrimSpace(hostHomeDir); home != "" {
-		out = append(out, filepath.Join(home, ".codex", "packages", "standalone"))
+		out = append(out, filepath.Join(home, providerroot.ConfigDir("codex"), "packages", "standalone"))
 	}
 	if appData := strings.TrimSpace(localAppData); appData != "" {
 		out = append(out, filepath.Join(appData, "codex", "packages", "standalone"))
@@ -45,7 +46,7 @@ func CollectVendorSelfUpdateRootCandidates(hostHomeDir string) []string {
 	}
 	return []string{
 		filepath.Join(home, ".local", "share", "claude"),
-		filepath.Join(home, ".claude", "local"),
+		filepath.Join(home, providerroot.ConfigDir("claude"), "local"),
 		filepath.Join(home, ".opencode"),
 	}
 }

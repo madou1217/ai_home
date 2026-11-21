@@ -451,6 +451,12 @@ func (handler *Handler) delegate(response http.ResponseWriter, request *http.Req
 		request.Body = io.NopCloser(bytes.NewReader(body))
 		request.ContentLength = int64(len(body))
 	}
+	// 前缀解析已经钉死 Provider 时，交还 Canonical 必须保留这个钉选：
+	// 否则裸模型会重新进入全局池，静默漂到别家 Provider——那正是
+	// `provider/model` 写法要防止的事（与 Node 前门 withExplicitProvider 同义）。
+	if pin, ok := ProviderPin(request.Context()); ok {
+		request.Header.Set(inferenceapi.ProviderHeader, pin)
+	}
 	handler.fallback.ServeHTTP(response, request)
 }
 

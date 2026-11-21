@@ -253,8 +253,8 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"HELPER=" + ShellQuote(options.HelperScriptPath),
 		"STATE_FILE=" + ShellQuote(options.StateFilePath),
 	}
-	// Only the CLI-owned POSIX wrapper's exact native version diagnostic bypasses
-	// Node. Default/TUI, resume, app-server and Desktop/VSCode remain unchanged.
+	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理。
+	// run-cli-default / resume 仍由 Node helper 负责。
 	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
 		goBinary := ""
 		if filepath.IsAbs(options.HelperScriptPath) {
@@ -342,7 +342,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 			"  fi",
 			`  case "$AIH_GO_HOOK_MODE" in`,
 			"    enabled-compat-v1)",
-			`      exec "$NODE_BIN" "$HELPER" --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
+			`      exec "$AIH_GO_CLI" __codex-app-server-stdio --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
 			"      ;;",
 			"    disabled-v1)",
 			`      export AIH_CODEX_DISCOVERED_BINARY="${AIH_CODEX_DISCOVERED_BINARY:-$UPSTREAM}"`,
@@ -356,9 +356,22 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 			"fi",
 		)
 	} else {
+		goBinary := ""
+		if filepath.IsAbs(options.HelperScriptPath) {
+			arch := runtime.GOARCH
+			if arch == "amd64" {
+				arch = "x64"
+			}
+			goBinary = filepath.Join(filepath.Dir(options.HelperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, "aih-go")
+		}
 		lines = append(lines,
 			`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
-			`  exec "$NODE_BIN" "$HELPER" --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
+			"  AIH_GO_CLI="+ShellQuote(goBinary),
+			`  if [ ! -x "$AIH_GO_CLI" ]; then`,
+			`    printf '%s\n' '[aih] codex_app_server_go_missing; no Node fallback.' >&2`,
+			"    exit 1",
+			"  fi",
+			`  exec "$AIH_GO_CLI" __codex-app-server-stdio --upstream "$UPSTREAM" --state-file "$STATE_FILE" -- "$@"`,
 			"fi",
 		)
 	}
@@ -387,6 +400,7 @@ func BuildWindowsPowerShellWrapperScript(options WrapperOptions) string {
 		"  if ($nodeCommand) { $nodeBin = $nodeCommand.Source }",
 		"}",
 		"$helper = " + PowerShellSingleQuote(options.HelperScriptPath),
+		"$aihGo = " + PowerShellSingleQuote(wrapperGoBinary(options.HelperScriptPath)),
 		"$stateFile = " + PowerShellSingleQuote(options.StateFilePath),
 		"$forwardArgs = @($args)",
 		"$valueOptions = @(" + strings.Join(quotedOpts, ", ") + ")",
@@ -415,12 +429,16 @@ func BuildWindowsPowerShellWrapperScript(options WrapperOptions) string {
 		"    & $upstream @forwardArgs",
 		"    exit $LASTEXITCODE",
 		"  }",
-		`  $proxyArgs = @($helper, "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
-		"  if ($MyInvocation.ExpectingInput) {",
-		"    $input | & $nodeBin @proxyArgs",
-		"  } else {",
-		"    & $nodeBin @proxyArgs",
+		`  if (-not (Test-Path -LiteralPath $aihGo -PathType Leaf)) {`,
+		`    [Console]::Error.WriteLine("[aih] codex_app_server_go_missing; no Node fallback.")`,
+		"    exit 1",
 		"  }",
+		`  $proxyArgs = @("__codex-app-server-stdio", "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
+		"  if ($MyInvocation.ExpectingInput) {",
+		"    $input | & $aihGo @proxyArgs",
+		"} else {",
+		"  & $aihGo @proxyArgs",
+		"}",
 		"  exit $LASTEXITCODE",
 		"}",
 		`  $proxyArgs = @($helper, "--run-cli-default", "--upstream", $upstream, "--state-file", $stateFile, "--") + $forwardArgs`,
@@ -445,6 +463,7 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		fmt.Sprintf(`set "NODE_BIN=%s"`, CmdSetValue(options.NodeExecPath)),
 		`if not exist "%NODE_BIN%" for %%I in (node.exe) do if not "%%~$PATH:I"=="" set "NODE_BIN=%%~$PATH:I"`,
 		fmt.Sprintf(`set "HELPER=%s"`, CmdSetValue(options.HelperScriptPath)),
+		fmt.Sprintf(`set "AIH_GO_CLI=%s"`, CmdSetValue(wrapperGoBinary(options.HelperScriptPath))),
 		fmt.Sprintf(`set "STATE_FILE=%s"`, CmdSetValue(options.StateFilePath)),
 		"call :AIH_FIND_SUBCOMMAND %*",
 		"goto :AIH_DISPATCH",
@@ -480,7 +499,11 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		`    call "%UPSTREAM%" %*`,
 		"    exit /b %ERRORLEVEL%",
 		"  )",
-		`  "%NODE_BIN%" "%HELPER%" --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
+		`  if not exist "%AIH_GO_CLI%" (`,
+		`    echo [aih] codex_app_server_go_missing; no Node fallback. 1>&2`,
+		"    exit /b 1",
+		"  )",
+		`  "%AIH_GO_CLI%" __codex-app-server-stdio --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
 		"  exit /b %ERRORLEVEL%",
 		")",
 		`"%NODE_BIN%" "%HELPER%" --run-cli-default --upstream "%UPSTREAM%" --state-file "%STATE_FILE%" -- %*`,
@@ -488,6 +511,21 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		"",
 	)
 	return strings.Join(lines, "\r\n")
+}
+
+func wrapperGoBinary(helperScriptPath string) string {
+	if !filepath.IsAbs(helperScriptPath) {
+		return ""
+	}
+	arch := runtime.GOARCH
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	name := "aih-go"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(filepath.Dir(helperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, name)
 }
 
 // BuildCLIWrapperScript 构建 POSIX CLI 包装脚本。

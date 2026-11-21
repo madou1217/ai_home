@@ -14,6 +14,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -23,10 +24,11 @@ var (
 	ErrIdentityMismatch = errors.New("kimi projection identity mismatch")
 )
 
-const (
-	credentialsFile = ".kimi-code/credentials/kimi-code.json"
-	deviceFile      = ".kimi-code/device_id"
-	configFile      = ".kimi-code/config.toml"
+// 文件位置由 Provider 合同的 NativeRoot 展开；这里只声明相对文件名。
+var (
+	credentialsFile = strings.Join(providerroot.NativePath(ProviderID, "credentials", "kimi-code.json"), "/")
+	deviceFile      = strings.Join(providerroot.NativePath(ProviderID, "device_id"), "/")
+	configFile      = strings.Join(providerroot.NativePath(ProviderID, "config.toml"), "/")
 )
 
 // defaultConfig 与 Node kimi-config 的 DEFAULT_KIMI_CONFIG 等价；base_url 取自

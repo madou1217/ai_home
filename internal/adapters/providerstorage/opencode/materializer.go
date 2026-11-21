@@ -13,6 +13,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -22,10 +23,10 @@ var (
 	ErrIdentityMismatch = errors.New("opencode projection identity mismatch")
 )
 
-const (
-	accountAuthFile = ".local/share/opencode/auth.json"
-	bridgeAuthFile  = ".local/share/aih-opencode-runtime/opencode/auth.json"
-)
+// accountAuthFile 的根来自 Provider 合同；bridge 是 aih 自己的中间目录，保持字面量。
+var accountAuthFile = strings.Join(providerroot.NativePath(ProviderID, "auth.json"), "/")
+
+const bridgeAuthFile = ".local/share/aih-opencode-runtime/opencode/auth.json"
 
 // Materializer 物化 auth.json 并把它桥接进 XDG bridge。
 type Materializer struct{}

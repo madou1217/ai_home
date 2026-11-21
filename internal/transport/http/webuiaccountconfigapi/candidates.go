@@ -47,7 +47,7 @@ func credentialRelativePaths(provider string) []string {
 			hiddenDir+"/antigravity-cli/email.cache",
 		)
 	case "opencode":
-		paths = append(paths, ".local/share/opencode/auth.json")
+		paths = append(paths, strings.Join(providerroot.NativePath("opencode", "auth.json"), "/"))
 	case "kiro":
 		paths = append(paths, "data.sqlite3")
 	case "kimi":

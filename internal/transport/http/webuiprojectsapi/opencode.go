@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
-const (
-	opencodeProvider = "opencode"
-	// opencodeDatabaseRelativePath 是宿主共享的 opencode 会话库。
-	opencodeDatabaseRelativePath = ".local/share/opencode/opencode.db"
-)
+const opencodeProvider = "opencode"
+
+// opencodeDatabaseRelativePath 是宿主共享的 opencode 会话库，根来自 Provider 合同。
+var opencodeDatabaseRelativePath = strings.Join(providerroot.NativePath(opencodeProvider, "opencode.db"), "/")
 
 // opencodeSessionLayouts 是两代会话表；新代在前，同 id 并列时保持先扫入的布局。
 // 两代可同时存在且各有可能独有的行，必须都扫再按 id 合并（见

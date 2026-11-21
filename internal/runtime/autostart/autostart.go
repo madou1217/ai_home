@@ -199,6 +199,12 @@ func InstallWithMode(ctx context.Context, options Options, force bool) (Status, 
 }
 
 func Stop(ctx context.Context, options Options) error {
+	return StopWithMode(ctx, options, false)
+}
+
+// StopWithMode 停止受管服务。force=true 在注销作业后立刻 SIGKILL 残留进程，
+// 不等服务端收尾（默认 stop 的语义）；force=false 让进程按自己的收尾预算退出。
+func StopWithMode(ctx context.Context, options Options, force bool) error {
 	options, err := normalize(options)
 	if err != nil {
 		return err
@@ -207,18 +213,29 @@ func Stop(ctx context.Context, options Options) error {
 	case "darwin":
 		target := launchdDomain() + "/" + options.Label
 		previous := launchdPIDs(ctx, target)
+		// 先注销作业再杀进程：反过来的话 KeepAlive 会立刻把进程拉回来。
 		_, _ = run(ctx, "launchctl", "bootout", target)
 		for attempt := 0; attempt < 50; attempt++ {
 			if _, err := run(ctx, "launchctl", "print", target); err != nil {
-				waitProcessExit(previous, launchdShutdownWait)
-				return nil
+				break
 			}
 			time.Sleep(100 * time.Millisecond)
+		}
+		if force {
+			for _, pid := range previous {
+				_, _ = run(ctx, "kill", "-KILL", strconv.Itoa(pid))
+			}
+			return nil
 		}
 		waitProcessExit(previous, launchdShutdownWait)
 		return nil
 	case "linux":
-		_, err := run(ctx, "systemctl", "--user", "stop", options.Label+".service")
+		unit := options.Label + ".service"
+		if force {
+			// systemctl stop 会先 SIGTERM 再等 TimeoutStopSec，强制模式直接 SIGKILL。
+			_, _ = run(ctx, "systemctl", "--user", "kill", "--signal=SIGKILL", unit)
+		}
+		_, err := run(ctx, "systemctl", "--user", "stop", unit)
 		return err
 	case "windows":
 		_, _ = run(ctx, "schtasks", "/End", "/TN", options.Label)

@@ -114,7 +114,7 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 		}
 		if goruntime.GOOS == "windows" {
 			windowsStopService(ctx, options)
-		} else if err := autostart.Stop(ctx, options); err != nil {
+		} else if err := autostart.StopWithMode(ctx, options, true); err != nil {
 			return true, err
 		}
 		_, _ = fmt.Fprintf(runtime.stdout, "[aih] server stopped (mode=%s)\n", modeLabel(graceful))

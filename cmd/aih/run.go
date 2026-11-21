@@ -446,13 +446,11 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 		}
 	}
 	needsNativeStore := commandNeedsNativeStore(providerID, arguments)
-	var err error
-	var aiHomeDir string
-	if needsNativeStore {
-		aiHomeDir, err = resolveAIHomeDir(runtime)
-		if err != nil {
-			return err
-		}
+	// 网关档也需要数据根：CodeBuddy 家族的 models.json 投影落在
+	// <aiHome>/run/codebuddy-gateway，不能等 Native Direct 分支才解析。
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil {
+		return err
 	}
 	var claudePreflight providercli.ClaudePreflight
 	if providerID == "claude" && aiHomeDir != "" {
@@ -631,7 +629,10 @@ func writeProviderUsage(output io.Writer, providerID string) {
 	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
 		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)
 		_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" [原生参数...]                 # 自动择号启动（Native Direct）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> [原生参数...]              # 指定账号启动（伪 HOME 投影）")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" relay [原生参数...]              # AIH Server 网关档（models.json 注入）")
+		_, _ = fmt.Fprintln(output, "  aih "+providerID+" relay [<provider>] <id> ...      # 网关档固定账号 / 跨 Provider")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" resume [<id>] [原生参数...]      # 续接（无 id = 最近一段）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" sessions [<id>] [--all-projects]   # 列出受管持久会话")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" sessions --history [--limit N]   # 列出宿主会话历史")
@@ -648,6 +649,9 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output)
 		_, _ = fmt.Fprintln(output, "说明:")
 		_, _ = fmt.Fprintln(output, "  家族四支共用 codebuddy 二进制；账号边界由投影后的 HOME / CODEBUDDY_CONFIG_DIR 决定。")
+		_, _ = fmt.Fprintln(output, "  裸 `aih "+providerID+"` 未指定账号时按健康度自动选一个账号（Native Direct）。")
+		_, _ = fmt.Fprintln(output, "  `relay` 是独立的网关档：不注入任何 CodeBuddy 账号凭据，模型目录来自 AIH Server 的")
+		_, _ = fmt.Fprintln(output, "  models.json 投影（<aiHome>/run/codebuddy-gateway），与账号档互不影响。")
 		_, _ = fmt.Fprintln(output, "  会话/配置根通过共享链接回到宿主；fork 没有原生入口，aih 不猜参数。")
 		return
 	}

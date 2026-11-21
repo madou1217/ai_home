@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
@@ -151,18 +152,26 @@ func resolveClaudeSessionPath(hostHome, sessionID, projectDirName string) string
 }
 
 func resolveCodebuddySessionPath(hostHome, provider, sessionID, projectDirName string) string {
-	configDirs := map[string]string{
-		"codebuddy":   ".codebuddy",
-		"codebuddycn": ".codebuddycn",
-		"workbuddy":   ".workbuddy",
-		"workbuddycn": ".workbuddycn",
+	// 目录事实由 Provider 合同提供：自己的配置根 → 本地区另一支 → 家族其余成员。
+	// 旧实现手写了不存在的 .codebuddycn / .workbuddycn，导致国内站与 WorkBuddy
+	// 的会话事件完全定位不到（2026-11-22 真机对照）。
+	candidates := make([]string, 0, 4)
+	seen := make(map[string]bool, 4)
+	addDir := func(dirName string) {
+		if dirName == "" || seen[dirName] {
+			return
+		}
+		seen[dirName] = true
+		candidates = append(candidates, dirName)
 	}
-	candidates := make([]string, 0, 2)
-	if dir, ok := configDirs[provider]; ok {
-		candidates = append(candidates, dir)
+	if dirName, ok := codebuddyfamilystorage.ConfigDir(provider); ok {
+		addDir(dirName)
 	}
-	if dir := ".codebuddy"; dir != configDirs[provider] {
-		candidates = append(candidates, dir)
+	for _, dirName := range codebuddyfamilystorage.SessionRoots(provider) {
+		addDir(dirName)
+	}
+	for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
+		addDir(dirName)
 	}
 	for _, configDir := range candidates {
 		projectsRoot := filepath.Join(hostHome, configDir, "projects")

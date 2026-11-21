@@ -25,6 +25,7 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	}
 
 	opts := WrapperOptions{
+		GoBinaryPath:                 "/opt/aih/proxy's-go",
 		NodeExecPath:                 "/usr/local/bin/node",
 		HelperScriptPath:             "/opt/aih/proxy's.js",
 		UpstreamBinaryPath:           "/usr/local/bin/codex.aih-original",
@@ -39,8 +40,11 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	if !strings.Contains(posix, CodexAppServerPassthroughEnv) {
 		t.Fatalf("POSIX wrapper 缺少直通环境变量:\n%s", posix)
 	}
-	if !strings.Contains(posix, `HELPER='/opt/aih/proxy'\''s.js'`) {
+	if !strings.Contains(posix, `AIH_GO_CLI='/opt/aih/proxy'\''s-go'`) {
 		t.Fatalf("POSIX wrapper 单引号转义异常:\n%s", posix)
+	}
+	if strings.Contains(posix, "NODE_BIN=") || strings.Contains(posix, "HELPER=") {
+		t.Fatalf("POSIX wrapper 不应再声明 Node 变量:\n%s", posix)
 	}
 	// 包含在路径注释里的同名子串绝不能误判为 wrapper 标记行。
 	pnpmComment := "#!/bin/sh\n# cmd-shim-target=/tmp/aih-codex-cli-hook/codex.js\nexec node \"$@\"\n"

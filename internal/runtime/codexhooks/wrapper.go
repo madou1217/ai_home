@@ -125,11 +125,21 @@ var CodexDesktopLayouts = []DesktopLayout{
 
 // WrapperOptions 定义生成 app-server / CLI 包装脚本所需的路径与行为选项。
 type WrapperOptions struct {
+	GoBinaryPath                 string
 	NodeExecPath                 string
 	HelperScriptPath             string
 	UpstreamBinaryPath           string
 	StateFilePath                string
 	RouteDefaultCLIThroughHelper bool
+}
+
+// goBinary 返回 wrapper 唯一允许执行的 Go CLI 路径。
+// 未显式注入时沿旧锚点推导；wrapper 不再执行 Node 助手。
+func (options WrapperOptions) goBinary() string {
+	if path := strings.TrimSpace(options.GoBinaryPath); filepath.IsAbs(path) {
+		return path
+	}
+	return wrapperGoBinary(options.HelperScriptPath)
 }
 
 // WindowsHookLaunch 描述绕过 .cmd 直接拉起 Node 包装脚本的启动参数。
@@ -249,10 +259,8 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"#!/bin/sh",
 		"# " + marker,
 		"UPSTREAM=" + ShellQuote(options.UpstreamBinaryPath),
-		"NODE_BIN=" + ShellQuote(options.NodeExecPath),
-		"HELPER=" + ShellQuote(options.HelperScriptPath),
 		"STATE_FILE=" + ShellQuote(options.StateFilePath),
-		"AIH_GO_CLI=" + ShellQuote(wrapperGoBinary(options.HelperScriptPath)),
+		"AIH_GO_CLI=" + ShellQuote(options.goBinary()),
 	}
 	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理；
 	// resume 已切到 __codex-cli-resume；run-cli-default 也已切到 __codex-default-cli。
@@ -407,13 +415,7 @@ func BuildWindowsPowerShellWrapperScript(options WrapperOptions) string {
 		"#!/usr/bin/env pwsh",
 		"# " + WrapperMarkerCLI,
 		"$upstream = " + PowerShellSingleQuote(options.UpstreamBinaryPath),
-		"$nodeBin = " + PowerShellSingleQuote(options.NodeExecPath),
-		"if (-not (Test-Path -LiteralPath $nodeBin -PathType Leaf)) {",
-		"  $nodeCommand = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1",
-		"  if ($nodeCommand) { $nodeBin = $nodeCommand.Source }",
-		"}",
-		"$helper = " + PowerShellSingleQuote(options.HelperScriptPath),
-		"$aihGo = " + PowerShellSingleQuote(wrapperGoBinary(options.HelperScriptPath)),
+		"$aihGo = " + PowerShellSingleQuote(options.goBinary()),
 		"$stateFile = " + PowerShellSingleQuote(options.StateFilePath),
 		"$forwardArgs = @($args)",
 		"$valueOptions = @(" + strings.Join(quotedOpts, ", ") + ")",
@@ -477,10 +479,7 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		"REM " + WrapperMarkerCLI,
 		"setlocal",
 		fmt.Sprintf(`set "%s=%s"`, WrapperUpstreamVar, CmdSetValue(options.UpstreamBinaryPath)),
-		fmt.Sprintf(`set "NODE_BIN=%s"`, CmdSetValue(options.NodeExecPath)),
-		`if not exist "%NODE_BIN%" for %%I in (node.exe) do if not "%%~$PATH:I"=="" set "NODE_BIN=%%~$PATH:I"`,
-		fmt.Sprintf(`set "HELPER=%s"`, CmdSetValue(options.HelperScriptPath)),
-		fmt.Sprintf(`set "AIH_GO_CLI=%s"`, CmdSetValue(wrapperGoBinary(options.HelperScriptPath))),
+		fmt.Sprintf(`set "AIH_GO_CLI=%s"`, CmdSetValue(options.goBinary())),
 		fmt.Sprintf(`set "STATE_FILE=%s"`, CmdSetValue(options.StateFilePath)),
 		"call :AIH_FIND_SUBCOMMAND %*",
 		"goto :AIH_DISPATCH",

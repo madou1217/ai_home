@@ -295,7 +295,7 @@
     <div class="board"><table>
       <thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 遗留</th></tr></thead>
       <tbody>
-        <tr><td>peer 要内建优先级/回执/可控投递</td><td class="meta">11-20</td><td><span class="chip s-partial">部分</span></td><td class="ev">identity-safe 投递、receipts、去重已落地；优先级未实现</td></tr>
+        <tr><td>peer 要内建优先级/回执/可控投递</td><td class="meta">11-20</td><td><span class="chip s-done">已完成</span></td><td class="ev">d5ff428d：aih peer send --priority high|normal|low；ListPending 同目标高优先，FlushPending 公平轮转优先、同一起跑线按优先级；inbox 显示加急/低优先级；store 实测 high/high2/normal/low，真实 inbox 两档标签可见；旧记录默认 normal</td></tr>
         <tr><td>peer 内容看不懂要可读</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">eae79515 紧凑中文抬头；/ui/peer-inbox</td></tr>
         <tr><td>target_busy 重试数千次要优化</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">目标门禁 + 退避 + 内容指纹活动探测</td></tr>
         <tr><td>--from ambiguous_sender</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">回复按原发件实例解析</td></tr>

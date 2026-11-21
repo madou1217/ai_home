@@ -276,7 +276,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 				CodexHooks: CodexHooksOptions{
 					EnableCLIHook:     true,
 					EnableDesktopHook: true,
-					NodeExecPath:      "/custom/bin/node",
 					EntryFilePath:     entryPath,
 				},
 			},
@@ -295,9 +294,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 		wantReceiver := "http://127.0.0.1:9527/v0/webui/session-events/provider-hook"
 		if opts.ProviderHookReceiverURL != wantReceiver {
 			t.Fatalf("ProviderHookReceiverURL = %q, want %q", opts.ProviderHookReceiverURL, wantReceiver)
-		}
-		if opts.NodeExecPath != "/custom/bin/node" || opts.HelperScriptPath != helperPath {
-			t.Fatalf("NodeExecPath=%q HelperScriptPath=%q, want helper=%q", opts.NodeExecPath, opts.HelperScriptPath, helperPath)
 		}
 		if opts.TraceConfig == nil || !opts.TraceConfig.TraceRemoteControl || !opts.TraceConfig.RemoteControlProxy || opts.TraceConfig.TraceResponses {
 			t.Fatalf("默认 TraceConfig 不符预期: %+v", opts.TraceConfig)
@@ -327,7 +323,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 					TraceRemoteControl:           &disableFalse,
 					RemoteControlProxy:           &disableFalse,
 					RestartAppServerOnHookChange: true,
-					HelperScriptPath:             "/opt/helper.js",
 				},
 			},
 			"",
@@ -428,8 +423,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableVscodeHook:             false,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             helper,
 		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      10 * time.Second,
 		RestartAppServerOnHookChange: false,
@@ -475,8 +468,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableDesktopHook:            true,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             helper,
 		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      10 * time.Second,
 		RestartAppServerOnHookChange: false,
@@ -523,8 +514,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableDesktopHook:            true,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             helper,
 		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      1 * time.Second,
 		RestartAppServerOnHookChange: true,

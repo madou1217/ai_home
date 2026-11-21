@@ -597,14 +597,15 @@ func (c *ProviderRefreshCoordinator) executeEntry(ctx context.Context, key strin
 }
 
 func (c *ProviderRefreshCoordinator) runPortScan(ctx context.Context, port ProviderRefreshPort, req SessionScanRequest) (int, error) {
-	switch req.Provider {
-	case "grok":
-		return port.ScanGrokSessionUsage(ctx, req.SessionID)
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	if providers.IsCodeBuddyFamilyProvider(req.Provider) {
 		if req.SessionID == "native-billing" || req.SessionID == "" {
 			return port.ScanProviderNativeUsage(ctx, req.Provider)
 		}
 		return port.ScanCodebuddySessionUsage(ctx, req.Provider, req.SessionID)
+	}
+	switch req.Provider {
+	case "grok":
+		return port.ScanGrokSessionUsage(ctx, req.SessionID)
 	case "zcode":
 		return port.ScanProviderNativeUsage(ctx, "zcode")
 	default:

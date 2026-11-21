@@ -10,12 +10,18 @@ import (
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 // nativeGenerations reads only credential-origin time facts. A request timestamp,
 // file mtime, Kiro observation timestamp or changed bytes is not renewal evidence.
 // Missing facts permit first enrollment but prohibit an ambiguous replacement.
 func nativeGenerations(provider string, native map[string]any) []accountcore.NativeGeneration {
+	// 家族四支共用同一份凭据结构，成员事实由合同持有。
+	if providers.IsCodeBuddyFamilyProvider(provider) {
+		auth := object(object(native["credentials"])["auth"])
+		return jwtGeneration("codebuddy.access.iat", firstText(auth, "accessToken", "access_token"))
+	}
 	switch provider {
 	case "gemini":
 		return expiryGeneration("google.expiry_date", object(native["oauthCreds"])["expiry_date"])
@@ -46,9 +52,6 @@ func nativeGenerations(provider string, native map[string]any) []accountcore.Nat
 	case "qoder", "qodercn":
 		payload := object(native["userInfo"])
 		return jwtGeneration("qoder.access.iat", firstText(payload, "security_oauth_token", "access_token", "accessToken", "token"))
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
-		auth := object(object(native["credentials"])["auth"])
-		return jwtGeneration("codebuddy.access.iat", firstText(auth, "accessToken", "access_token"))
 	case "kimi":
 		auth := object(native["credentials"])
 		if auth == nil {

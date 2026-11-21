@@ -15,6 +15,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/core/providers"
 	metadatamodelsdev "github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
@@ -902,42 +903,44 @@ func inferModelsDevProviderIDs(aihProvider, modelID string) []string {
 	if strings.HasPrefix(id, "opencode/") {
 		add("opencode")
 	}
-	switch provider {
-	case "codex":
-		add("openai", "github-copilot")
-	case "claude":
-		add("anthropic")
-	case "gemini":
-		add("google", "google-vertex")
-	case "opencode":
-		add("opencode-go", "opencode")
-	case "cline":
-		add("cline-pass")
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	if providers.IsCodeBuddyFamilyProvider(provider) {
 		if patternCBDeepSeek.MatchString(stripped) {
 			add("opencode-go")
 		}
 		if patternCBHY4Preview.MatchString(stripped) {
 			add("tencent-token-plan")
 		}
-	case "agy":
-		if patternClaudeModel.MatchString(stripped) {
-			add("anthropic", "github-copilot", "google-vertex")
-		}
-		if patternGeminiModel.MatchString(stripped) {
-			add("google", "github-copilot", "google-vertex")
-		}
-		if patternOpenAIModel.MatchString(stripped) {
+	} else {
+		switch provider {
+		case "codex":
 			add("openai", "github-copilot")
+		case "claude":
+			add("anthropic")
+		case "gemini":
+			add("google", "google-vertex")
+		case "opencode":
+			add("opencode-go", "opencode")
+		case "cline":
+			add("cline-pass")
+		case "agy":
+			if patternClaudeModel.MatchString(stripped) {
+				add("anthropic", "github-copilot", "google-vertex")
+			}
+			if patternGeminiModel.MatchString(stripped) {
+				add("google", "github-copilot", "google-vertex")
+			}
+			if patternOpenAIModel.MatchString(stripped) {
+				add("openai", "github-copilot")
+			}
+			if patternGrokModel.MatchString(stripped) {
+				add("xai")
+			}
+			add("github-copilot")
+		case "grok":
+			add("xai", "github-copilot")
+		case "kimi":
+			add("kimi-code-plan-global", "kimi-code-plan-cn", "moonshotai-cn", "moonshotai", "kimi-for-coding")
 		}
-		if patternGrokModel.MatchString(stripped) {
-			add("xai")
-		}
-		add("github-copilot")
-	case "grok":
-		add("xai", "github-copilot")
-	case "kimi":
-		add("kimi-code-plan-global", "kimi-code-plan-cn", "moonshotai-cn", "moonshotai", "kimi-for-coding")
 	}
 
 	if provider == "zcode" {

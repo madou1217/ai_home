@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"runtime"
 
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/providercli/sessionchat"
 )
@@ -17,12 +18,12 @@ func validWorkCommand(provider, command, binary string) bool {
 		return false
 	}
 	expected := provider
-	switch provider {
-	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	switch {
+	case providers.IsCodeBuddyFamilyProvider(provider):
 		expected = "codebuddy"
-	case "qoder":
+	case provider == "qoder":
 		expected = "qodercli"
-	case "qodercn":
+	case provider == "qodercn":
 		expected = "qoderclicn"
 	}
 	return binary == expected

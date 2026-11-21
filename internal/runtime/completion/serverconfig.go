@@ -1,6 +1,10 @@
 package completion
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/madou1217/ai_home/application/serverconfig"
+)
 
 // serverConfigField 是 `aih server config set` 的 Go 侧旗标描述符。
 //
@@ -15,36 +19,38 @@ type serverConfigField struct {
 	Values []string
 }
 
-var serverConfigFields = []serverConfigField{
-	{Flag: "--host", Summary: "监听地址"},
-	{Flag: "--port", Summary: "监听端口"},
-	{Flag: "--open-network", Summary: "是否对外监听（等价于把 host 设为 0.0.0.0）", Boolean: true},
-	{Flag: "--local-only", Summary: "是否对外监听（等价于把 host 设为 0.0.0.0）", Boolean: true},
-	{Flag: "--proxy-url", Summary: "上游请求走的 HTTP(S) 代理"},
-	{Flag: "--no-proxy", Summary: "不走代理的主机列表（逗号分隔，支持 * 通配与域名后缀）"},
-	{Flag: "--api-key", Summary: "客户端（codex/claude 等）调用 /v1 与 /v1beta 的 Bearer key"},
-	{Flag: "--management-key", Summary: "管理面（/v0/webui、/v0/management、远程重启、中转服务）所需的 key"},
-	{Flag: "--models-probe-accounts", Summary: "每次模型目录刷新时并发探测的账号数"},
-	{Flag: "--model-cache-sync", Summary: "WebUI 模型缓存的刷新方式：go-batch = 批量读 Go 的 account-models（默认；启动后一次、每 6 小时一次、别名保存/候选读取前超过 30 秒补一次）；scheduler = legacy，枚举值仅用于配置回退，旧逐账号调度器已退役（不做定时轮询，只按需标记 stale）", Values: []string{"scheduler", "go-batch"}},
-	{Flag: "--window-activation", Summary: "窗口激活的全局闸门（还要在账号页逐账号打开）", Boolean: true},
-	{Flag: "--no-window-activation", Summary: "窗口激活的全局闸门（还要在账号页逐账号打开）", Boolean: true},
-	{Flag: "--window-activation-default-interval-ms", Summary: "观察不到窗口时的兜底探测间隔（≥ 1 分钟）"},
-	{Flag: "--window-activation-min-interval-ms", Summary: "探测间隔下限"},
-	{Flag: "--go-core", Summary: "是否由 Go Core 承接数据面", Boolean: true},
-	{Flag: "--no-go-core", Summary: "是否由 Go Core 承接数据面", Boolean: true},
-	{Flag: "--go-core-routes", Summary: "由 Go 承接的 route-ownership 条目 ID（逗号分隔）"},
-	{Flag: "--upstream-error-rules", Summary: "哪些 Provider 的账号自定义上游错误规则交给 Go 执行（小写、逗号分隔）"},
-	{Flag: "--relay-udp", Summary: "中转 UDP：on = 在同一个端口号的 UDP 侧承接 SOCKS5 UDP ASSOCIATE（QUIC/HTTP3 可用），off = 只放行 TCP，default = 跟随环境变量/默认开", Values: []string{"default", "on", "off"}},
-	{Flag: "--relay-udp-advertise-host", Summary: "播报给客户端的 UDP 入口主机（NAT / frp / 公网映射时填外部地址）"},
-	{Flag: "--relay-udp-advertise-port", Summary: "播报给客户端的 UDP 端口（外部端口与本地不同时用）"},
-	{Flag: "--relay-port-mode", Summary: "中转端口布局：server = 跟随 AIH 端口做首字节分流（默认，不开新端口，反代需四层透传），dedicated = 每节点一个端口（23100+，需在防火墙/安全组放行）", Values: []string{"default", "server", "dedicated"}},
-	{Flag: "--relay-listen-host", Summary: "中转入口绑定的网卡"},
-	{Flag: "--egress-evidence-ttl-ms", Summary: "出口节点对上游的实测结论（例如某节点访问 api.anthropic.com 被拒）的有效期，到期后后台自动重测"},
-	{Flag: "--max-attempts", Summary: "单次请求最多尝试几个账号（同名别名回落也计入）"},
-	{Flag: "--large-paste-chars", Summary: "WebUI 会话框粘贴多少字以上自动转成文本附件（显示预览与路径引用，不塞进输入框）"},
-	{Flag: "--upstream-429-retry", Summary: "上游真实 HTTP 429 有界退避重试配置（默认启用，队列 [30] 秒）"},
-	{Flag: "--no-upstream-429-retry", Summary: "上游真实 HTTP 429 有界退避重试配置（默认启用，队列 [30] 秒）"},
-	{Flag: "--upstream-429-retry-backoff", Summary: "上游真实 HTTP 429 有界退避重试配置（默认启用，队列 [30] 秒）"},
+var serverConfigFields = buildServerConfigFields()
+
+// buildServerConfigFields 从 application/serverconfig 的共享 schema 生成，
+// 不再维护第二份旗标/枚举清单。
+func buildServerConfigFields() []serverConfigField {
+	fields := make([]serverConfigField, 0, len(serverconfig.Fields)+6)
+	for _, field := range serverconfig.Fields {
+		if field.LegacyReason != "" {
+			continue
+		}
+		switch field.Key {
+		case "openNetwork", "windowActivation", "goCoreEnabled":
+			fields = append(fields,
+				serverConfigField{Flag: field.Flag, Summary: field.Summary, Boolean: true},
+				serverConfigField{Flag: field.NegativeFlag, Summary: field.Summary, Boolean: true})
+		case "apiKey", "managementKey":
+			fields = append(fields,
+				serverConfigField{Flag: field.Flag, Summary: field.Summary},
+				serverConfigField{Flag: field.GenerateFlag, Summary: "生成并保存新的 " + field.Summary, Boolean: true})
+		case "upstream429Retry":
+			fields = append(fields,
+				serverConfigField{Flag: "--upstream-429-retry", Summary: field.Summary, Boolean: true},
+				serverConfigField{Flag: "--no-upstream-429-retry", Summary: field.Summary, Boolean: true},
+				serverConfigField{Flag: "--upstream-429-retry-backoff", Summary: "退避队列（秒，逗号分隔）"})
+		default:
+			fields = append(fields, serverConfigField{
+				Flag: field.Flag, Summary: field.Summary, Values: field.Choices,
+				Boolean: field.Type == serverconfig.TypeBool,
+			})
+		}
+	}
+	return fields
 }
 
 func findServerConfigField(flag string) (serverConfigField, bool) {

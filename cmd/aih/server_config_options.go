@@ -5,25 +5,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
 
-// 这个文件把 server config 的每个可设置项收敛成一张声明表。
-//
-// 之前每个新选项要在五处同步修改：长 usage 字符串、setServerConfig 的 if 链、
-// configFlagKey、clearConfigKey/clearConfigValue、serverConfigPatchRequiresRestart。
-// 多处并行修改同一文件时极易互相覆盖（2026-11-21 起 server_config.go 被反复重写）。
-// 现在新增选项只写一条 configOption：flag、JSON 路径、取值方式、是否热更新、
-// 是否可清除，都在同一处。
+// CLI 只描述“怎么写 flag、开关怎么配对、密钥怎么生成”；字段的 JSON 键、默认值、
+// 枚举、范围、热更新与历史标记全部来自 application/serverconfig.Schema。
+// 这样 WebUI 配置接口与 CLI 不会各自演化出两份 schema。
 
 type optionAction int
 
 const (
-	// optionValue 消费一个值并写入 Path。
 	optionValue optionAction = iota
-	// optionFixed 不消费值，写入固定值（布尔开关、重置默认）。
 	optionFixed
-	// optionGenerate 不消费值，调用 Generate 生成密钥。
 	optionGenerate
 )
 
@@ -36,75 +30,122 @@ const (
 )
 
 type configOption struct {
-	Flag      string
-	Aliases   []string
-	Path      []string // config:server 的 JSON 路径，支持一层嵌套
-	Action    optionAction
-	Kind      optionValueKind
-	Choices   []string
-	Fixed     any
-	Generate  func() (string, error)
-	Secret    bool
-	HotReload bool
-	// Clearable 表示支持 --clear-<flag>（把字段重置为 ClearValue）。
-	Clearable  bool
-	ClearValue any
-	// UnsetSupported 表示 aih server config unset 接受该字段。
-	UnsetSupported bool
-	UnsetValue     any
+	Flag         string
+	Aliases      []string
+	Key          string
+	Path         []string
+	Action       optionAction
+	Kind         optionValueKind
+	Choices      []string
+	Fixed        any
+	Generate     func() (string, error)
+	Clearable    bool
+	ClearValue   any
+	HotReload    bool
+	Unset        bool
+	UnsetValue   any
+	LegacyReason string
+	Summary      string
+	Group        string
+	ValueHint    string
 }
 
-var configOptions = []configOption{
-	// 监听与密钥
-	{Flag: "--host", Path: []string{"host"}, Action: optionValue},
-	{Flag: "--port", Path: []string{"port"}, Action: optionValue},
-	{Flag: "--api-key", Path: []string{"apiKey"}, Action: optionValue, Secret: true},
-	{Flag: "--management-key", Path: []string{"managementKey"}, Action: optionValue, Secret: true},
-	{Flag: "--generate-api-key", Path: []string{"apiKey"}, Action: optionGenerate, Generate: generateAPIKey, Secret: true},
-	{Flag: "--generate-management-key", Path: []string{"managementKey"}, Action: optionGenerate, Generate: generateManagementKey, Secret: true},
-
-	// 网络与代理
-	{Flag: "--open-network", Path: []string{"openNetwork"}, Action: optionFixed, Fixed: true},
-	{Flag: "--local-only", Path: []string{"openNetwork"}, Action: optionFixed, Fixed: false},
-	{Flag: "--proxy-url", Path: []string{"proxyUrl"}, Action: optionValue, HotReload: true, UnsetSupported: true, UnsetValue: ""},
-	{Flag: "--no-proxy", Path: []string{"noProxy"}, Action: optionValue},
-	{Flag: "--models-probe-accounts", Path: []string{"modelsProbeAccounts"}, Action: optionValue},
-	{Flag: "--model-cache-sync", Path: []string{"modelCacheSync"}, Action: optionValue, Kind: valueEnum, Choices: []string{"scheduler", "go-batch"}},
-
-	// 窗口与 Go Core
-	{Flag: "--window-activation", Path: []string{"windowActivation"}, Action: optionFixed, Fixed: true},
-	{Flag: "--no-window-activation", Path: []string{"windowActivation"}, Action: optionFixed, Fixed: false},
-	{Flag: "--window-activation-default-interval-ms", Path: []string{"windowActivationDefaultIntervalMs"}, Action: optionValue},
-	{Flag: "--window-activation-min-interval-ms", Path: []string{"windowActivationMinIntervalMs"}, Action: optionValue},
-	{Flag: "--go-core", Path: []string{"goCoreEnabled"}, Action: optionFixed, Fixed: true},
-	{Flag: "--no-go-core", Path: []string{"goCoreEnabled"}, Action: optionFixed, Fixed: false},
-	{Flag: "--go-core-routes", Path: []string{"goCoreRoutes"}, Action: optionValue, Clearable: true, ClearValue: []string{}},
-
-	// 上游错误规则与 429 重试
-	{Flag: "--upstream-error-rules", Path: []string{"upstreamErrorRuleProviders"}, Action: optionValue, Clearable: true, ClearValue: []string{}},
-	{Flag: "--upstream-429-retry", Path: []string{"upstream429Retry", "enabled"}, Action: optionFixed, Fixed: true, HotReload: true},
-	{Flag: "--no-upstream-429-retry", Path: []string{"upstream429Retry", "enabled"}, Action: optionFixed, Fixed: false, HotReload: true},
-	{Flag: "--upstream-429-retry-backoff", Path: []string{"upstream429Retry", "backoffSeconds"}, Action: optionValue, Kind: valueBackoffList, HotReload: true},
-	{Flag: "--clear-upstream-429-retry-backoff", Path: []string{"upstream429Retry", "backoffSeconds"}, Action: optionFixed, Fixed: corepolicy.DefaultBackoffSeconds(), HotReload: true},
-
-	// 中继
-	{Flag: "--relay-udp", Path: []string{"relayUdp"}, Action: optionValue},
-	{Flag: "--relay-udp-advertise-host", Path: []string{"relayUdpAdvertiseHost"}, Action: optionValue, Clearable: true, ClearValue: 0},
-	{Flag: "--relay-udp-advertise-port", Path: []string{"relayUdpAdvertisePort"}, Action: optionValue, Clearable: true, ClearValue: 0},
-	{Flag: "--relay-port-mode", Path: []string{"relayPortMode"}, Action: optionValue},
-	{Flag: "--relay-listen-host", Path: []string{"relayListenHost"}, Action: optionValue, Clearable: true, ClearValue: 0},
-
-	// 限制与诊断
-	{Flag: "--max-attempts", Path: []string{"maxAttempts"}, Action: optionValue, Clearable: true, ClearValue: 0},
-	{Flag: "--large-paste-chars", Path: []string{"largePasteChars"}, Action: optionValue, Clearable: true, ClearValue: 0},
-	{Flag: "--egress-evidence-ttl-ms", Path: []string{"egressEvidenceTtlMs"}, Action: optionValue, Clearable: true, ClearValue: 0},
-}
-
-// configOptionIndex 在进程启动时建一次，避免每次解析都重新分配映射。
+var configOptions = buildConfigOptions()
 var configOptionIndex = buildConfigOptionIndex()
 
+func buildConfigOptions() []configOption {
+	options := make([]configOption, 0, len(serverconfig.Fields)+12)
+	for _, field := range serverconfig.Fields {
+		base := configOption{
+			Key: field.Key, Path: []string{field.Key}, Group: groupOr(field.Group),
+			HotReload: field.HotReload, LegacyReason: field.LegacyReason,
+			Summary: field.Summary, ValueHint: valueHint(field),
+		}
+		switch field.Key {
+		case "openNetwork", "windowActivation", "goCoreEnabled":
+			// 一对互斥开关，不消费值。
+			options = append(options,
+				fixedOption(base, field.Flag, true),
+				fixedOption(base, field.NegativeFlag, false))
+		case "apiKey", "managementKey":
+			options = append(options,
+				valueOption(base, field.Flag, field),
+				configOption{Key: field.Key, Path: []string{field.Key}, Group: base.Group, Action: optionGenerate,
+					Generate: keyGenerator(field.Key), Flag: field.GenerateFlag,
+					LegacyReason: field.LegacyReason, Summary: field.Summary})
+		case "upstream429Retry":
+			options = append(options,
+				fixedOption(nested(base, "enabled", true), "--upstream-429-retry", true),
+				fixedOption(nested(base, "enabled", false), "--no-upstream-429-retry", false),
+				configOption{Key: field.Key, Path: []string{field.Key, "backoffSeconds"}, Group: base.Group,
+					Action: optionValue, Kind: valueBackoffList, Flag: "--upstream-429-retry-backoff",
+					ValueHint: "<sec,...>", HotReload: true, LegacyReason: field.LegacyReason,
+					Summary: field.Summary},
+				configOption{Key: field.Key, Path: []string{field.Key, "backoffSeconds"}, Group: base.Group,
+					Action: optionFixed, Fixed: corepolicy.DefaultBackoffSeconds(),
+					Flag: "--clear-upstream-429-retry-backoff", Clearable: false,
+					HotReload: true, LegacyReason: field.LegacyReason, Summary: field.Summary},
+			)
+		case "upstreamErrorRuleProviders":
+			opt := valueOption(base, field.Flag, field)
+			opt.Clearable, opt.ClearValue = true, field.ClearValue
+			options = append(options, opt)
+		default:
+			opt := valueOption(base, field.Flag, field)
+			if field.ClearValue != nil {
+				opt.Clearable, opt.ClearValue = true, field.ClearValue
+			}
+			if field.Key == "proxyUrl" {
+				opt.Unset, opt.UnsetValue = true, ""
+			}
+			options = append(options, opt)
+		}
+	}
+	return options
+}
+
+func groupOr(group string) string {
+	if group == "" {
+		return "其他"
+	}
+	return group
+}
+
+func valueOption(base configOption, flag string, field serverconfig.Field) configOption {
+	option := base
+	option.Flag = flag
+	option.Action = optionValue
+	if field.Type == serverconfig.TypeEnum {
+		option.Kind = valueEnum
+		option.Choices = field.Choices
+	}
+	return option
+}
+
+func fixedOption(base configOption, flag string, value any) configOption {
+	option := base
+	option.Flag = flag
+	option.Action = optionFixed
+	option.Fixed = value
+	return option
+}
+
+func nested(base configOption, child string, value any) configOption {
+	option := base
+	option.Path = []string{base.Key, child}
+	option.Fixed = value
+	return option
+}
+
+func keyGenerator(key string) func() (string, error) {
+	if key == "managementKey" {
+		return generateManagementKey
+	}
+	return generateAPIKey
+}
+
 func buildConfigOptionIndex() map[string]*configOption {
-	index := make(map[string]*configOption, len(configOptions)*2+8)
+	index := make(map[string]*configOption, len(configOptions)+4)
 	for position := range configOptions {
 		option := &configOptions[position]
 		index[option.Flag] = option
@@ -118,8 +159,6 @@ func buildConfigOptionIndex() map[string]*configOption {
 	return index
 }
 
-// parseConfigSetArgs 把 set 参数解析成 config:server patch 与本次生成的密钥。
-// 不再有逐 flag 的 if 链：行为由 configOption.Action/Kind 决定。
 func parseConfigSetArgs(args []string) (map[string]any, map[string]string, error) {
 	patch := map[string]any{}
 	generated := map[string]string{}
@@ -146,7 +185,7 @@ func parseConfigSetArgs(args []string) (map[string]any, map[string]string, error
 				return nil, nil, generateErr
 			}
 			setConfigPath(patch, option.Path, key)
-			generated[option.Path[0]] = key
+			generated[option.Key] = key
 		case optionFixed:
 			setConfigPath(patch, option.Path, option.Fixed)
 		case optionValue:
@@ -170,13 +209,10 @@ func parseConfigSetArgs(args []string) (map[string]any, map[string]string, error
 	return patch, generated, nil
 }
 
-// matchConfigOption 解析 --flag 或 --flag=value；未知 flag 保持原有错误文案。
 func matchConfigOption(arg string) (*configOption, string, bool, error) {
 	if option, found := configOptionIndex[arg]; found {
 		return option, "", false, nil
 	}
-	// 只有 backoff 列表沿用 --flag=value 写法；其余 flag 带等号仍按未知选项处理，
-	// 与重构前保持一致。
 	if cut := strings.Index(arg, "="); cut > 0 {
 		if option, found := configOptionIndex[arg[:cut]]; found && option.Kind == valueBackoffList {
 			return option, arg[cut+1:], true, nil
@@ -197,7 +233,7 @@ func normalizeOptionValue(option *configOption, raw string, flag string) (any, e
 	case valueBackoffList:
 		return parseUpstream429BackoffCSV(raw, flag)
 	default:
-		if option.Path[0] == "proxyUrl" && strings.TrimSpace(raw) == "" {
+		if option.Key == "proxyUrl" && strings.TrimSpace(raw) == "" {
 			return nil, errors.New("--proxy-url requires a non-empty value; run: aih server config unset proxy-url")
 		}
 		return raw, nil
@@ -209,37 +245,127 @@ func setConfigPath(patch map[string]any, path []string, value any) {
 		patch[path[0]] = value
 		return
 	}
-	nested, _ := patch[path[0]].(map[string]any)
-	if nested == nil {
-		nested = map[string]any{}
-		patch[path[0]] = nested
+	node, _ := patch[path[0]].(map[string]any)
+	if node == nil {
+		node = map[string]any{}
+		patch[path[0]] = node
 	}
-	nested[path[1]] = value
+	node[path[1]] = value
 }
 
-// hotReloadTopLevelKeys 是 patch 顶层键里无需重启即可生效的集合。
 func hotReloadTopLevelKeys() map[string]bool {
 	hot := map[string]bool{}
 	for position := range configOptions {
-		option := &configOptions[position]
-		if option.HotReload {
-			hot[option.Path[0]] = true
+		if configOptions[position].HotReload {
+			hot[configOptions[position].Key] = true
 		}
 	}
 	return hot
 }
 
-// configOptionForUnset 让 unset 与 set 共用同一张表，避免又一份 key 映射。
 func configOptionForUnset(raw string) (*configOption, bool) {
 	normalized := normalizeConfigKey(raw)
 	for position := range configOptions {
 		option := &configOptions[position]
-		if !option.UnsetSupported {
+		if !option.Unset {
 			continue
 		}
-		if normalizeConfigKey(option.Path[0]) == normalized || strings.TrimPrefix(option.Flag, "--") == strings.TrimPrefix(raw, "--") {
+		if normalizeConfigKey(option.Key) == normalized || strings.TrimPrefix(option.Flag, "--") == strings.TrimPrefix(raw, "--") {
 			return option, true
 		}
 	}
 	return nil, false
+}
+
+// serverConfigHelpLines 从共享 schema 生成 help：新增字段只改 schema，不再手工同步
+// 那条几百字符的 usage 字符串。
+func serverConfigHelpLines() []string {
+	lines := []string{
+		"Usage:",
+		"  aih server config show [--show-secrets] [--json] [--one-line] [--qr [--qr-url <url>]] [<filter>]",
+		"  aih server config get <key> [--show-secrets] [--json]",
+		"  aih server config set <option>...   # 不带 set 也可：aih server config --api-key <key>",
+		"  aih server config unset proxy-url",
+		"  aih server config list",
+		"",
+		"Options（由 config schema 生成；历史字段不在此列）:",
+	}
+	groups := make([]string, 0, 6)
+	seen := map[string]bool{}
+	for _, field := range serverconfig.Fields {
+		if field.LegacyReason != "" || seen[field.Group] {
+			continue
+		}
+		seen[field.Group] = true
+		groups = append(groups, field.Group)
+	}
+	for _, group := range groups {
+		lines = append(lines, "", group+":")
+		for _, field := range serverconfig.Fields {
+			if field.LegacyReason != "" || field.Group != group {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("  %-58s %s", helpFlagText(field), field.Summary))
+		}
+	}
+	legacy := make([]string, 0)
+	for _, field := range serverconfig.Fields {
+		if field.LegacyReason == "" {
+			continue
+		}
+		legacy = append(legacy, fmt.Sprintf("  %-28s %s", field.Key, field.LegacyReason))
+	}
+	if len(legacy) > 0 {
+		lines = append(lines, "", "历史字段（已无运行时读方，仅兼容旧配置；可读但不在补全中出现）:")
+		lines = append(lines, legacy...)
+	}
+	lines = append(lines, "", "清除单项默认值：--clear-<option>（例如 --clear-max-attempts）。")
+	return lines
+}
+
+func helpFlagText(field serverconfig.Field) string {
+	if field.Key == "upstream429Retry" {
+		return "--upstream-429-retry | --no-upstream-429-retry / --upstream-429-retry-backoff <sec,...>"
+	}
+	if field.NegativeFlag != "" {
+		return field.Flag + " | " + field.NegativeFlag
+	}
+	if field.GenerateFlag != "" {
+		return field.Flag + " <key> | " + field.GenerateFlag
+	}
+	hint := valueHint(field)
+	if hint == "" {
+		return field.Flag
+	}
+	if strings.HasPrefix(hint, "|") {
+		return field.Flag + " " + strings.TrimPrefix(hint, "|")
+	}
+	return field.Flag + " " + hint
+}
+
+func valueHint(field serverconfig.Field) string {
+	switch field.Type {
+	case serverconfig.TypeIP:
+		return "<ip>"
+	case serverconfig.TypePort:
+		return "<1..65535>"
+	case serverconfig.TypeURL:
+		return "<url>"
+	case serverconfig.TypeHosts:
+		return "<hosts>"
+	case serverconfig.TypeInt:
+		return "<n>"
+	case serverconfig.TypeDuration:
+		return "<ms>"
+	case serverconfig.TypeBool:
+		return ""
+	case serverconfig.TypeEnum:
+		return "|" + strings.Join(field.Choices, "|")
+	case serverconfig.TypeCSV:
+		return "<a,b>"
+	case serverconfig.TypeSecret:
+		return "<key>"
+	default:
+		return "<value>"
+	}
 }

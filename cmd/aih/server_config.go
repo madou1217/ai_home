@@ -19,8 +19,9 @@ import (
 )
 
 func showServerConfigUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90mUsage:\x1b[0m aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--api-key <key>|--generate-api-key] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>] [--open-network|--local-only] [--window-activation|--no-window-activation] [--window-activation-default-interval-ms <ms>] [--window-activation-min-interval-ms <ms>] [--go-core|--no-go-core] [--go-core-routes <entry-ids>|--clear-go-core-routes] [--upstream-error-rules <providers>|--clear-upstream-error-rules] [--upstream-429-retry|--no-upstream-429-retry] [--upstream-429-retry-backoff <sec,...>|--clear-upstream-429-retry-backoff] [--relay-udp on|off|default] [--relay-udp-advertise-host <host>|--clear-relay-udp-advertise-host] [--relay-udp-advertise-port <port>|--clear-relay-udp-advertise-port] [--max-attempts <1..32>|--clear-max-attempts] [--large-paste-chars <50..100000>|--clear-large-paste-chars] [--egress-evidence-ttl-ms <ms>|--clear-egress-evidence-ttl-ms] [--relay-port-mode server|dedicated|default] [--relay-listen-host <host>|--clear-relay-listen-host]")
-	_, _ = fmt.Fprintln(runtime.stdout, "\x1b[90m      \x1b[0m `aih server config list` 列出全部可设置参数、默认值与含义（`-l` / `--list` / `ls` 等价）。")
+	for _, line := range serverConfigHelpLines() {
+		_, _ = fmt.Fprintln(runtime.stdout, line)
+	}
 }
 
 func runServerConfig(ctx context.Context, arguments []string, runtime commandRuntime) (bool, error) {
@@ -136,7 +137,11 @@ func showServerConfig(ctx context.Context, home string, args []string, runtime c
 		if filter != "" && !strings.Contains(strings.ToLower(key), strings.ToLower(filter)) {
 			continue
 		}
-		_, _ = fmt.Fprintf(runtime.stdout, "  %s: %s\n", key, formatConfigValue(values[key]))
+		suffix := ""
+		if field := serverconfig.FieldByKey(key); field != nil && field.LegacyReason != "" {
+			suffix = " [legacy]" // 已无运行时读方，仅兼容旧配置
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "  %s: %s%s\n", key, formatConfigValue(values[key]), suffix)
 	}
 	return nil
 }

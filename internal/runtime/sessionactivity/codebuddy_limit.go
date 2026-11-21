@@ -20,6 +20,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
@@ -37,27 +38,6 @@ const (
 
 var (
 	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
-
-	codebuddyConfigDirByProvider = map[string]string{
-		"codebuddy":   ".codebuddy",
-		"codebuddycn": ".codebuddy-cn",
-		"workbuddy":   ".workbuddy-ai",
-		"workbuddycn": ".workbuddy",
-	}
-
-	codebuddyProviderByConfigDir = map[string]string{
-		".codebuddy":    "codebuddy",
-		".codebuddy-cn": "codebuddycn",
-		".workbuddy-ai": "workbuddy",
-		".workbuddy":    "workbuddycn",
-	}
-
-	codebuddySessionRootsByProvider = map[string][]string{
-		"codebuddy":   {".codebuddy", ".workbuddy-ai"},
-		"workbuddy":   {".workbuddy-ai", ".codebuddy"},
-		"codebuddycn": {".codebuddy-cn", ".workbuddy"},
-		"workbuddycn": {".workbuddy", ".codebuddy-cn"},
-	}
 
 	resetAtPattern       = regexp.MustCompile(`(?i)reset(?:s)?\s+at\s+(\d{4})-(\d{2})-(\d{2})[ t](\d{2}):(\d{2})(?::(\d{2}))?\s*(?:(?:utc|gmt)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?|utc|gmt|z)?`)
 	resetAtZhPattern     = regexp.MustCompile(`(?i)(\d{4})-(\d{2})-(\d{2})[ t](\d{2}):(\d{2})(?::(\d{2}))?\s*(?:(?:utc|gmt)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?|utc|gmt|z)?\s*(?:重置|恢复|解禁|到期)`)
@@ -303,10 +283,10 @@ func DiscoverCodebuddyUsageFiles(hostHomeDir string, providers []string, session
 	}
 	roots := make(map[string]rootEntry)
 	for _, prov := range providers {
-		for _, dir := range codebuddySessionRootsByProvider[strings.ToLower(strings.TrimSpace(prov))] {
+		for _, dir := range codebuddyfamilystorage.SessionRoots(prov) {
 			root := filepath.Join(host, dir, "projects")
 			phys := resolvePhysicalPathStr(root)
-			ownerProv := codebuddyProviderByConfigDir[dir]
+			ownerProv, _ := codebuddyfamilystorage.ProviderForConfigDir(dir)
 			if ownerProv == "" {
 				ownerProv = prov
 			}
@@ -437,7 +417,7 @@ func FindRequestModelInCliLogs(
 ) string {
 	prov := strings.ToLower(strings.TrimSpace(provider))
 	reqID := strings.TrimSpace(requestID)
-	cfgDir, ok := codebuddyConfigDirByProvider[prov]
+	cfgDir, ok := codebuddyfamilystorage.ConfigDir(prov)
 	if !ok || reqID == "" || !codebuddyReqIDRe.MatchString(reqID) {
 		return ""
 	}
@@ -780,7 +760,7 @@ func discoverCodebuddyLogs(aiHomeDir, hostHomeDir string, accounts []CodebuddyAc
 				return actual == expected
 			}
 			for _, acct := range accounts {
-				cfgDir := codebuddyConfigDirByProvider[acct.Provider]
+				cfgDir, _ := codebuddyfamilystorage.ConfigDir(acct.Provider)
 				if cfgDir == "" {
 					continue
 				}
@@ -1083,7 +1063,7 @@ func NewCodebuddyOwnershipResolver(
 	for _, acct := range accountList {
 		prov := strings.ToLower(strings.TrimSpace(acct.Provider))
 		ref := strings.TrimSpace(acct.AccountRef)
-		if _, ok := codebuddyConfigDirByProvider[prov]; !ok || !IsAccountRef(ref) {
+		if _, ok := codebuddyfamilystorage.ConfigDir(prov); !ok || !IsAccountRef(ref) {
 			continue
 		}
 		r.accounts[ref] = prov
@@ -1104,7 +1084,7 @@ func NewCodebuddyOwnershipResolver(
 		sid := strings.TrimSpace(entry.NativeSessionID)
 		prov := strings.ToLower(strings.TrimSpace(entry.Provider))
 		ref := strings.TrimSpace(entry.AccountRef)
-		if _, ok := codebuddyConfigDirByProvider[prov]; !ok || sid == "" || !IsAccountRef(ref) {
+		if _, ok := codebuddyfamilystorage.ConfigDir(prov); !ok || sid == "" || !IsAccountRef(ref) {
 			continue
 		}
 		set, exists := r.registryOwners[sid]

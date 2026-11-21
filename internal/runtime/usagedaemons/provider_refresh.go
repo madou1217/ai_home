@@ -12,6 +12,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/madou1217/ai_home/core/providers"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
 const (
@@ -33,12 +34,6 @@ var (
 	grokSessionIDPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 	codebuddySessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
-	codebuddyConfigDirByProvider = map[string]string{
-		"codebuddy":   ".codebuddy",
-		"codebuddycn": ".codebuddy-cn",
-		"workbuddy":   ".workbuddy-ai",
-		"workbuddycn": ".workbuddy",
-	}
 	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
 	zcodeDatabaseFiles       = map[string]struct{}{
 		"db.sqlite":     {},
@@ -83,17 +78,17 @@ type ProviderRefreshOptions struct {
 
 // ProviderRefreshState 暴露三家 provider 用量刷新协调器的运行状态与统计计数。
 type ProviderRefreshState struct {
-	Running         bool   `json:"running"`
-	Enabled         bool   `json:"enabled"`
-	PortAvailable   bool   `json:"portAvailable"`
-	PendingEntries  int    `json:"pendingEntries"`
-	WatchedPaths    int    `json:"watchedPaths"`
-	EventsReceived  int64  `json:"eventsReceived"`
-	ScansExecuted   int64  `json:"scansExecuted"`
-	BackpressureHits int64 `json:"backpressureHits"`
-	LastRunAt       int64  `json:"lastRunAt"`
-	LastProvider    string `json:"lastProvider,omitempty"`
-	LastError       string `json:"lastError,omitempty"`
+	Running          bool   `json:"running"`
+	Enabled          bool   `json:"enabled"`
+	PortAvailable    bool   `json:"portAvailable"`
+	PendingEntries   int    `json:"pendingEntries"`
+	WatchedPaths     int    `json:"watchedPaths"`
+	EventsReceived   int64  `json:"eventsReceived"`
+	ScansExecuted    int64  `json:"scansExecuted"`
+	BackpressureHits int64  `json:"backpressureHits"`
+	LastRunAt        int64  `json:"lastRunAt"`
+	LastProvider     string `json:"lastProvider,omitempty"`
+	LastError        string `json:"lastError,omitempty"`
 }
 
 // IsGrokSessionID 检查会话 ID 是否合法。
@@ -108,8 +103,7 @@ func IsCodebuddySessionID(sessionID string) bool {
 
 // IsCodebuddyFamilyProvider 判断 provider 是否属于 CodeBuddy 共享账单家族。
 func IsCodebuddyFamilyProvider(provider string) bool {
-	_, ok := codebuddyConfigDirByProvider[strings.ToLower(strings.TrimSpace(provider))]
-	return ok
+	return providers.IsCodeBuddyFamilyProvider(provider)
 }
 
 // SameCodebuddyRegion 判断两个 CodeBuddy 家族成员是否共享同一区域账单（国内 cn / 国际站）。
@@ -343,7 +337,7 @@ func (c *ProviderRefreshCoordinator) collectWatchPaths() []string {
 
 	if c.hostHomeDir != "" {
 		// CodeBuddy/WorkBuddy 会话目录及其一级子项目目录
-		for _, dirName := range codebuddyConfigDirByProvider {
+		for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
 			projRoot := filepath.Join(c.hostHomeDir, dirName, "projects")
 			push(projRoot)
 			if entries, err := os.ReadDir(projRoot); err == nil {
@@ -391,7 +385,11 @@ func (c *ProviderRefreshCoordinator) handleFSEvent(ev fsnotify.Event) {
 		return
 	}
 	slashed := filepath.ToSlash(path)
-	for prov, dirName := range codebuddyConfigDirByProvider {
+	for _, prov := range providers.CodeBuddyFamilyProviders() {
+		dirName, ok := codebuddyfamilystorage.ConfigDir(prov)
+		if !ok {
+			continue
+		}
 		marker := "/" + dirName + "/projects"
 		if !strings.Contains(slashed, marker) {
 			continue

@@ -61,8 +61,60 @@ func ProviderIDs() []string {
 
 // IsFamilyProvider 判断 Provider 是否属于 CodeBuddy 家族。
 func IsFamilyProvider(providerID string) bool {
-	_, ok := layouts[strings.ToLower(strings.TrimSpace(providerID))]
+	_, ok := layouts[normalizeProviderID(providerID)]
 	return ok
+}
+
+// ConfigDir 返回家族成员的 HOME 相对配置目录；未知 Provider 返回 false。
+//
+// 这是 .codebuddy / .codebuddy-cn / .workbuddy-ai / .workbuddy 的唯一映射源，
+// 会话扫描、用量账本与桌面投影都从这里取，避免各自维护一份。
+func ConfigDir(providerID string) (string, bool) {
+	layout, ok := layouts[normalizeProviderID(providerID)]
+	if !ok {
+		return "", false
+	}
+	return layout.configDir, true
+}
+
+// ConfigDirs 返回家族配置目录的规范顺序（与 Node familyConfigDirs 一致）。
+func ConfigDirs() []string {
+	dirs := make([]string, 0, len(layouts))
+	for _, providerID := range ProviderIDs() {
+		if layout, ok := layouts[providerID]; ok {
+			dirs = append(dirs, layout.configDir)
+		}
+	}
+	return dirs
+}
+
+// ProviderForConfigDir 返回配置目录所属的 Provider；未知目录返回 false。
+func ProviderForConfigDir(dirName string) (string, bool) {
+	normalized := strings.TrimSpace(dirName)
+	for providerID, layout := range layouts {
+		if layout.configDir == normalized {
+			return providerID, true
+		}
+	}
+	return "", false
+}
+
+// SessionRoots 返回该 Provider 的会话根候选（HOME 相对，按优先级）。
+func SessionRoots(providerID string) []string {
+	roots := sessionRoots[normalizeProviderID(providerID)]
+	return append([]string(nil), roots...)
+}
+
+// sessionRoots 是同一物理会话存储在家族内的候选根：先本 Provider，再跨产品。
+var sessionRoots = map[string][]string{
+	providerCodebuddy:   {".codebuddy", ".workbuddy-ai"},
+	providerWorkbuddy:   {".workbuddy-ai", ".codebuddy"},
+	providerCodebuddyCN: {".codebuddy-cn", ".workbuddy"},
+	providerWorkbuddyCN: {".workbuddy", ".codebuddy-cn"},
+}
+
+func normalizeProviderID(providerID string) string {
+	return strings.ToLower(strings.TrimSpace(providerID))
 }
 
 // Policy 返回指定家族 Provider 的投影策略；未知 Provider 返回 false。

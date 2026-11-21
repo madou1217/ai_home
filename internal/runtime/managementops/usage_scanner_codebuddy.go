@@ -18,6 +18,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
@@ -40,27 +41,6 @@ var (
 	cbLogUserIDRe         = regexp.MustCompile(`"userId"\s*:\s*"([A-Za-z0-9_-]+)"|userId[=:\s]+([A-Za-z0-9_-]+)`)
 	cbLogAddHistRe        = regexp.MustCompile(`\[addHistory\].*?(?:messageId|msgId)[=:\s"]+([A-Za-z0-9_-]+)`)
 )
-
-var codebuddyConfigDirByProvider = map[string]string{
-	"codebuddy":   ".codebuddy",
-	"codebuddycn": ".codebuddy-cn",
-	"workbuddy":   ".workbuddy-ai",
-	"workbuddycn": ".workbuddy",
-}
-
-var codebuddyProviderByConfigDir = map[string]string{
-	".codebuddy":    "codebuddy",
-	".codebuddy-cn": "codebuddycn",
-	".workbuddy-ai": "workbuddy",
-	".workbuddy":    "workbuddycn",
-}
-
-var codebuddySessionRootsByProvider = map[string][]string{
-	"codebuddy":   {".codebuddy", ".workbuddy-ai"},
-	"workbuddy":   {".workbuddy-ai", ".codebuddy"},
-	"codebuddycn": {".codebuddy-cn", ".workbuddy"},
-	"workbuddycn": {".workbuddy", ".codebuddy-cn"},
-}
 
 type codebuddyUsageFile struct {
 	FilePath       string
@@ -198,8 +178,7 @@ func loadCodebuddyIdentities(ctx context.Context, acctStore *sqliteaccount.Store
 }
 
 func isCodebuddyFamilyProvider(provider string) bool {
-	p := strings.ToLower(strings.TrimSpace(provider))
-	_, ok := codebuddyConfigDirByProvider[p]
+	_, ok := codebuddyfamilystorage.ConfigDir(provider)
 	return ok
 }
 
@@ -297,10 +276,10 @@ func discoverCodebuddyUsageFiles(hostHomeDir string, providers []string, session
 	nativeHome := resolvePhysicalPath(hostHomeDir)
 
 	for _, prov := range providers {
-		for _, dir := range codebuddySessionRootsByProvider[prov] {
+		for _, dir := range codebuddyfamilystorage.SessionRoots(prov) {
 			root := filepath.Join(hostHomeDir, dir, "projects")
 			phys := resolvePhysicalPath(root)
-			ownerProv := codebuddyProviderByConfigDir[dir]
+			ownerProv, _ := codebuddyfamilystorage.ProviderForConfigDir(dir)
 			if existing, ok := roots[phys]; !ok || phys == filepath.Join(nativeHome, dir, "projects") {
 				if ownerProv == "" {
 					ownerProv = prov
@@ -432,7 +411,7 @@ func buildCodebuddyOwnership(
 		now.Add(-24 * time.Hour).Format("2006-01-02"),
 	}
 	seenLogFiles := make(map[string]struct{})
-	for _, cfgDir := range []string{".codebuddy", ".codebuddy-cn", ".workbuddy-ai", ".workbuddy"} {
+	for _, cfgDir := range codebuddyfamilystorage.ConfigDirs() {
 		for _, day := range dayDirs {
 			logDir := filepath.Join(hostHomeDir, cfgDir, "logs", day)
 			entries, err := os.ReadDir(logDir)

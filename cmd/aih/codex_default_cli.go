@@ -86,9 +86,9 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		forwardArgs = append(codexappconfig.BuildStartupPolicyArgs(), forwardArgs...)
 	}
 	if codexexecintent.IsExecResume(forwardArgs) {
-		prepared, release, prepErr := codexexecintent.Prepare(ctx, "codex", upstream, forwardArgs, spawnEnv)
+		prepared, lease, prepErr := codexexecintent.Prepare(ctx, "codex", upstream, forwardArgs, spawnEnv)
 		if prepErr != nil {
-			release()
+			lease.Release()
 			return prepErr
 		}
 		command := exec.CommandContext(ctx, upstream, prepared...)
@@ -96,8 +96,24 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		command.Stdin = runtime.stdin
 		command.Stdout = runtime.stdout
 		command.Stderr = runtime.stderr
-		runErr := command.Run()
-		release()
+		if err := command.Start(); err != nil {
+			lease.Release()
+			return err
+		}
+		if lease != nil && lease.Lost != nil {
+			go func() {
+				select {
+				case <-lease.Lost:
+					_, _ = runtime.stderr.Write([]byte("[aih] codex_exec_intent_lease_lost\n"))
+					if command.Process != nil {
+						_ = command.Process.Kill()
+					}
+				case <-ctx.Done():
+				}
+			}()
+		}
+		runErr := command.Wait()
+		lease.Release()
 		if exitErr, ok := runErr.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}

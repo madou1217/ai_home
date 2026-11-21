@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
 
@@ -585,7 +586,7 @@ func (a directoryPluginAdapter) target(ctx pluginAdapterContext, id, _ string) (
 }
 
 func (directoryPluginAdapter) validate(_ PluginPackage) error { return nil }
-func (directoryPluginAdapter) hasReplace() bool             { return false }
+func (directoryPluginAdapter) hasReplace() bool               { return false }
 func (directoryPluginAdapter) replace(_ pluginAdapterContext, _ PluginPackage, _ *ManagedRecord, _ *ManagedRecord) (map[string]any, error) {
 	return nil, nil
 }
@@ -656,7 +657,7 @@ func (opencodePluginAdapter) target(ctx pluginAdapterContext, id, _ string) (str
 }
 
 func (opencodePluginAdapter) validate(_ PluginPackage) error { return nil }
-func (opencodePluginAdapter) hasReplace() bool             { return false }
+func (opencodePluginAdapter) hasReplace() bool               { return false }
 func (opencodePluginAdapter) replace(_ pluginAdapterContext, _ PluginPackage, _ *ManagedRecord, _ *ManagedRecord) (map[string]any, error) {
 	return nil, nil
 }
@@ -859,7 +860,7 @@ func cordisPatchStatus(rec *ManagedRecord) string {
 }
 
 func (cordisPatchAdapter) validate(_ PluginPackage) error { return nil }
-func (cordisPatchAdapter) hasReplace() bool             { return false }
+func (cordisPatchAdapter) hasReplace() bool               { return false }
 
 func (cordisPatchAdapter) install(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord, prev *ManagedRecord) (map[string]any, error) {
 	file := cordisPatchFilePath(ctx, pkg.ID)
@@ -1573,7 +1574,7 @@ func (codexMarketplaceAdapter) runCommand(ctx pluginAdapterContext, args []strin
 	env := copyEnvMap(ctx.env)
 	env["HOME"] = ctx.hostHomeDir
 	env["USERPROFILE"] = ctx.hostHomeDir
-	env["CODEX_HOME"] = filepath.Join(ctx.hostHomeDir, ".codex")
+	env["CODEX_HOME"] = filepath.Join(ctx.hostHomeDir, providerroot.ConfigDir("codex"))
 	res := ctx.runner.Run(context.Background(), ctx.binary, args, ctx.hostHomeDir, env, 30*time.Second)
 	if res.ExitCode != 0 {
 		return nil, fail("native_plugin_command_failed")
@@ -1625,17 +1626,17 @@ func (codexMarketplaceAdapter) target(ctx pluginAdapterContext, id, version stri
 	if v == "" {
 		v = "current"
 	}
-	return filepath.Join(ctx.hostHomeDir, ".codex", "plugins", "cache", codexMarketplaceName, id, v), nil
+	return filepath.Join(ctx.hostHomeDir, providerroot.ConfigDir("codex"), "plugins", "cache", codexMarketplaceName, id, v), nil
 }
 
 func (codexMarketplaceAdapter) validate(_ PluginPackage) error { return nil }
-func (codexMarketplaceAdapter) hasReplace() bool             { return false }
+func (codexMarketplaceAdapter) hasReplace() bool               { return false }
 func (codexMarketplaceAdapter) replace(_ pluginAdapterContext, _ PluginPackage, _ *ManagedRecord, _ *ManagedRecord) (map[string]any, error) {
 	return nil, nil
 }
 
 func (a codexMarketplaceAdapter) install(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord, prev *ManagedRecord) (map[string]any, error) {
-	if err := os.MkdirAll(filepath.Join(ctx.hostHomeDir, ".codex"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(ctx.hostHomeDir, providerroot.ConfigDir("codex")), 0o700); err != nil {
 		return nil, err
 	}
 	marketRoot := filepath.Join(ctx.aiHomeDir, "managed-resources", "native-plugin-marketplaces", pkg.ID)

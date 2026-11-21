@@ -38,18 +38,48 @@ type Request struct {
 	StoreRoot       string        `json:"storeRoot"`
 	ProjectionsRoot string        `json:"projectionsRoot"`
 	Platform        string        `json:"platform"`
+	HostHomeDir     string        `json:"hostHomeDir,omitempty"`
 	Artifacts       []Artifact    `json:"artifacts"`
+	Caches          []CacheEntry  `json:"caches,omitempty"`
 	Prune           *PruneOptions `json:"prune,omitempty"`
+}
+
+// CacheEntry 是 Node 按 provider 策略算出的宿主共享缓存声明。
+type CacheEntry struct {
+	Projection    []string `json:"projection"`
+	Host          []string `json:"host"`
+	ProjectionDir bool     `json:"projectionDir,omitempty"`
+	Exclude       []string `json:"exclude,omitempty"`
+}
+
+// CacheResult 汇总缓存链接结果（路径为投影内相对路径）。
+type CacheResult struct {
+	Linked   []string       `json:"linked,omitempty"`
+	Replaced []string       `json:"replaced,omitempty"`
+	Adopted  []string       `json:"adopted,omitempty"`
+	Failed   []CacheFailure `json:"failed,omitempty"`
+}
+
+type CacheFailure struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
 }
 
 // PruneOptions 控制旧版本回收；由 Node 传入保留策略，Go 执行。
 type PruneOptions struct {
-	KeepVersions  int      `json:"keepVersions"`
-	TrashDir      string   `json:"trashDir"`
-	GraceDays     int      `json:"graceDays"`
-	LogMaxAgeDays int      `json:"logMaxAgeDays"`
-	LogDirNames   []string `json:"logDirNames"`
-	LogParents    []string `json:"logParents"`
+	KeepVersions  int             `json:"keepVersions"`
+	TrashDir      string          `json:"trashDir"`
+	GraceDays     int             `json:"graceDays"`
+	LogMaxAgeDays int             `json:"logMaxAgeDays"`
+	LogDirNames   []string        `json:"logDirNames"`
+	LogParents    []string        `json:"logParents"`
+	StoreGC       *StoreGCOptions `json:"storeGc,omitempty"`
+}
+
+// StoreGCOptions 是库内版本树回收：Node 传仍被投影引用的 key 集合。
+type StoreGCOptions struct {
+	KeepVersions   int      `json:"keepVersions"`
+	ReferencedKeys []string `json:"referencedKeys"`
 }
 
 // Artifact 是一个待共享的版本构件。
@@ -70,11 +100,13 @@ type VersionResult struct {
 
 // Response 是 CLI 输出。
 type Response struct {
-	OK       bool            `json:"ok"`
-	Versions []VersionResult `json:"versions"`
-	Pruned   []PrunedVersion `json:"pruned,omitempty"`
-	Emptied  int             `json:"emptied,omitempty"`
-	Errors   []string        `json:"errors"`
+	OK          bool            `json:"ok"`
+	Versions    []VersionResult `json:"versions"`
+	Pruned      []PrunedVersion `json:"pruned,omitempty"`
+	StorePruned []PrunedVersion `json:"storePruned,omitempty"`
+	Emptied     int             `json:"emptied,omitempty"`
+	Caches      *CacheResult    `json:"caches,omitempty"`
+	Errors      []string        `json:"errors"`
 }
 
 // PrunedVersion 是被移入回收站的旧版本。
@@ -91,10 +123,13 @@ func Ensure(request Request) Response {
 	response := Response{OK: true}
 	projectionRoot := strings.TrimSpace(request.ProjectionRoot)
 	storeRoot := strings.TrimSpace(request.StoreRoot)
-	if projectionRoot == "" || storeRoot == "" {
+	if projectionRoot == "" || (len(request.Artifacts) > 0 && storeRoot == "") {
 		response.OK = false
 		response.Errors = append(response.Errors, "projectionRoot/storeRoot required")
 		return response
+	}
+	if len(request.Caches) > 0 {
+		response.Caches = linkCaches(request)
 	}
 	projectionReal, _ := filepath.EvalSymlinks(projectionRoot)
 	seen := make(map[string]bool)
@@ -733,6 +768,7 @@ func pruneVersions(request Request, response *Response) {
 		}
 	}
 	pruneLogs(request, response)
+	pruneStoreTrees(request, response)
 	if strings.TrimSpace(options.TrashDir) != "" {
 		response.Emptied += emptyTrash(options.TrashDir, options.GraceDays)
 	}
@@ -906,4 +942,253 @@ func treeSize(root string) int64 {
 		return nil
 	})
 	return total
+}
+func linkCaches(request Request) *CacheResult {
+	result := &CacheResult{}
+	projectionRoot := strings.TrimSpace(request.ProjectionRoot)
+	hostHomeDir := strings.TrimSpace(request.HostHomeDir)
+	if projectionRoot == "" || hostHomeDir == "" || sameAbsolutePath(projectionRoot, hostHomeDir) {
+		return result
+	}
+	entries := make([]CacheEntry, 0, len(request.Caches))
+	for _, entry := range request.Caches {
+		if !entry.ProjectionDir {
+			entries = append(entries, entry)
+		}
+	}
+	for _, entry := range request.Caches {
+		if entry.ProjectionDir {
+			entries = append(entries, entry)
+		}
+	}
+	for _, entry := range entries {
+		if entry.ProjectionDir {
+			linkDirectoryEntry(request, entry, result)
+			continue
+		}
+		relative := filepath.Join(entry.Projection...)
+		projectionPath := filepath.Join(projectionRoot, filepath.Join(entry.Projection...))
+		hostTarget := filepath.Join(hostHomeDir, filepath.Join(entry.Host...))
+		outcome, err := linkOneCache(projectionPath, hostTarget, request.Platform)
+		if err != nil {
+			result.Failed = append(result.Failed, CacheFailure{Path: relative, Error: err.Error()})
+			continue
+		}
+		appendCacheOutcome(result, outcome, relative)
+	}
+	return result
+}
+
+func linkDirectoryEntry(request Request, entry CacheEntry, result *CacheResult) {
+	projectionRoot := strings.TrimSpace(request.ProjectionRoot)
+	hostHomeDir := strings.TrimSpace(request.HostHomeDir)
+	relativeDir := filepath.Join(entry.Projection...)
+	projectionDir := filepath.Join(projectionRoot, relativeDir)
+	hostDir := filepath.Join(hostHomeDir, filepath.Join(entry.Host...))
+	excluded := make(map[string]bool, len(entry.Exclude))
+	for _, name := range entry.Exclude {
+		excluded[name] = true
+	}
+	names := make(map[string]bool)
+	for _, dir := range []string{projectionDir, hostDir} {
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, child := range entries {
+				names[child.Name()] = true
+			}
+		}
+	}
+	list := make([]string, 0, len(names))
+	for name := range names {
+		if name == "" || strings.HasPrefix(name, ".prepare-") || excluded[name] {
+			continue
+		}
+		list = append(list, name)
+	}
+	sort.Strings(list)
+	for _, name := range list {
+		relative := filepath.Join(relativeDir, name)
+		outcome, err := linkOneCache(filepath.Join(projectionDir, name), filepath.Join(hostDir, name), request.Platform)
+		if err != nil {
+			result.Failed = append(result.Failed, CacheFailure{Path: relative, Error: err.Error()})
+			continue
+		}
+		appendCacheOutcome(result, outcome, relative)
+	}
+}
+
+func appendCacheOutcome(result *CacheResult, outcome, relative string) {
+	switch outcome {
+	case "linked":
+		result.Linked = append(result.Linked, relative)
+	case "replaced":
+		result.Replaced = append(result.Replaced, relative)
+	case "adopted":
+		result.Adopted = append(result.Adopted, relative)
+	}
+}
+
+func linkOneCache(projectionPath, hostTarget, platform string) (string, error) {
+	projectionReal, _ := filepath.EvalSymlinks(projectionPath)
+	hostReal, _ := filepath.EvalSymlinks(hostTarget)
+	if projectionReal != "" && projectionReal == hostReal {
+		return "unchanged", nil
+	}
+	info, err := os.Lstat(projectionPath)
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	if info != nil && info.Mode()&os.ModeSymlink != 0 {
+		if link, err := os.Readlink(projectionPath); err == nil {
+			target := link
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(projectionPath), target)
+			}
+			if sameAbsolutePath(target, hostTarget) {
+				return "unchanged", nil
+			}
+		}
+	}
+	realCopy := info != nil && info.Mode()&os.ModeSymlink == 0
+	outcome := "linked"
+	if !pathExists(hostTarget) {
+		if !realCopy {
+			return "skipped", nil
+		}
+		if err := os.MkdirAll(filepath.Dir(hostTarget), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.Rename(projectionPath, hostTarget); err != nil {
+			return "", err
+		}
+		outcome = "adopted"
+		info = nil
+	} else if realCopy {
+		thawAll(projectionPath)
+		if err := os.RemoveAll(projectionPath); err != nil {
+			return "", err
+		}
+		outcome = "replaced"
+		info = nil
+	} else if info != nil {
+		if err := os.Remove(projectionPath); err != nil {
+			return "", err
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(projectionPath), 0o755); err != nil {
+		return "", err
+	}
+	target, err := filepath.Abs(hostTarget)
+	if err != nil {
+		return "", err
+	}
+	if err := createDirectoryLink(target, projectionPath, platform); err != nil {
+		return "", err
+	}
+	return outcome, nil
+}
+
+func createDirectoryLink(target, link, platform string) error {
+	if platform == "windows" {
+		// Node 用 junction；Go 的 os.Symlink 在 Windows 需要额外权限，这里沿用 mklink /J。
+		if info, err := os.Stat(target); err == nil && info.IsDir() {
+			if err := exec.Command("cmd", "/c", "mklink", "/J", link, target).Run(); err == nil {
+				return nil
+			}
+		}
+	}
+	return os.Symlink(target, link)
+}
+
+func thawAll(root string) {
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			_ = os.Chmod(path, 0o755)
+		} else if info.Mode().IsRegular() {
+			mode := os.FileMode(0o644)
+			if info.Mode()&0o111 != 0 {
+				mode = 0o755
+			}
+			_ = os.Chmod(path, mode)
+		}
+		return nil
+	})
+}
+
+func sameAbsolutePath(left, right string) bool {
+	absoluteLeft, errLeft := filepath.Abs(left)
+	absoluteRight, errRight := filepath.Abs(right)
+	return errLeft == nil && errRight == nil && filepath.Clean(absoluteLeft) == filepath.Clean(absoluteRight)
+}
+func pruneStoreTrees(request Request, response *Response) {
+	options := request.Prune
+	if options == nil || options.StoreGC == nil || strings.TrimSpace(request.StoreRoot) == "" {
+		return
+	}
+	treesDir := filepath.Join(request.StoreRoot, "trees")
+	entries, err := os.ReadDir(treesDir)
+	if err != nil {
+		return
+	}
+	keep := options.StoreGC.KeepVersions
+	if keep < 0 {
+		keep = 0
+	}
+	referenced := make(map[string]bool, len(options.StoreGC.ReferencedKeys))
+	for _, key := range options.StoreGC.ReferencedKeys {
+		referenced[key] = true
+	}
+	groups := map[string][]struct {
+		key  string
+		path string
+		ver  string
+	}{}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		parts := strings.Split(entry.Name(), "__")
+		if len(parts) != 4 {
+			continue
+		}
+		groupKey := parts[0] + "__" + parts[1] + "__" + parts[3]
+		groups[groupKey] = append(groups[groupKey], struct {
+			key  string
+			path string
+			ver  string
+		}{key: entry.Name(), path: filepath.Join(treesDir, entry.Name()), ver: parts[2]})
+	}
+	held, heldKnown := spacegc.HeldPaths()
+	for _, artifacts := range groups {
+		sort.SliceStable(artifacts, func(i, j int) bool {
+			return compareVersions(artifacts[i].ver, artifacts[j].ver) < 0
+		})
+		stale := len(artifacts) - keep
+		if stale <= 0 {
+			continue
+		}
+		for _, artifact := range artifacts[:stale] {
+			if referenced[artifact.key] {
+				continue
+			}
+			if heldKnown && spacegc.PathHeld(held, artifact.path) {
+				continue
+			}
+			size := treeSize(artifact.path)
+			if err := moveToTrash(artifact.path, options.TrashDir); err != nil {
+				response.Errors = append(response.Errors, fmt.Sprintf("trash %s: %v", artifact.path, err))
+				response.OK = false
+				continue
+			}
+			_ = os.Remove(artifact.path + ".fingerprint.json")
+			_ = os.Remove(filepath.Join(treesDir, "."+filepath.Base(artifact.path)+".fingerprint.json"))
+			response.StorePruned = append(response.StorePruned, PrunedVersion{Path: artifact.path, Reason: "stale-store-tree", SizeBytes: size})
+		}
+	}
 }

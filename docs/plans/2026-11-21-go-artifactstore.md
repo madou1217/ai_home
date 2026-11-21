@@ -45,7 +45,20 @@
 - 回收站宽限期改为从**移入时间**起算（rename 会保留源目录旧 mtime，Node/Go 都修了），
   否则旧日志/旧版本会在同一次 GC 中被立即清掉。
 
+## 缓存链接（2026-11-21 已迁移）
+
+- Node 仍负责 `getProviderSharedHostCaches` 策略（哪些路径、exclude）；Go 执行
+  `linkOne`：已链接 unchanged、投影真实副本 replaced、宿主缺失 adopted、缺失 skipped，
+  Windows 用 junction，其余用 symlink。
+- 真实账号复扫与 Node 结果一致（0 linked/replaced/adopted/failed）；合成用例验证
+  replaced/adopted/skipped 与二次 unchanged。
+
+## 库存树 GC（2026-11-21 已迁移）
+
+- Node 传入仍被投影引用的版本 key；Go 按 provider/cli/platform 分组、保留最新 N、
+  跳过引用/在用条目，移入 trash 并删除 fingerprint。
+- 实测：3 棵未引用树保留 2 棵，最旧进 trash；引用 key 后不再回收。
+
 ## 尚未迁移
 
-- 版本发现、缓存链接（`shared-host-caches`）与库存树 GC 仍在 Node；
-  Node 只保留策略输入，文件系统动作逐步收口到 Go。
+- 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。

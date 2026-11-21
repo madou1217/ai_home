@@ -208,7 +208,7 @@ CI 由 `.github/workflows/go-tests.yml` 承担：在 `windows-latest` 上跑
 - 调用方检查响应里是否真的有对应结果字段，字段缺失（`ok:false`）就回退本地实现，
   不再"发出去就当做过"。
 
-## opencode-strategy 语义拆解（下一步）
+## opencode 共享桥（2026-11-21 已迁移）
 
 真实投影盘点（`run/auth-projections/opencode/<acct>`）与代码一致：
 
@@ -285,7 +285,18 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
      与旧实现一致）。
 3. Windows 分支沿用同一 `createBridgeLink`：目录走 junction、文件走 symlink。
 
-## 尚未迁移
+## 遗留项清单（2026-11-21 复核）
 
-- 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
-- `codebuddy-shared-config`：纯 JSON 合并，没有文件系统动作，不需要迁移。
+**已迁移模块的本地实现全部保留为 fallback**（执行点不可用/注入 fs 替身时使用），不是死代码；
+每个导出的函数仍有真实调用方。除此之外，仍在 Node 的文件系统动作只剩三处：
+
+| 位置 | 动作 | 为什么不迁（或待迁） |
+|---|---|---|
+| `codebuddy-shared-config.linkSharedConfigForProjection` | 为 CLI 共享配置（settings.json / statusline / argv.json / plugins）建 **file 软链** | 可与合并共用一次 `fileLinks` 迁移；合并本身会写文件，属于业务逻辑 |
+| `cli/services/session-store.js` | 工具配置目录与会话条目的建链/修复（约 2000 行的一部分） | 与 kimi 旧布局迁移、视图索引重建耦合，需单独切片 |
+| `cli/services/account/rekey-journal.js` | rekey 事务的临时链接（`before/after` 交换） | 与 journal 写盘成对出现，强事务语义，迁移收益低、风险高 |
+
+策略层（不迁）：版本发现与排序、provider 私有名、三个投影根与 known 清单、模型/env/网关配置。
+
+**之前文档里"codebuddy-shared-config 纯 JSON 合并、无文件系统动作"的说法是错的**：
+它既会写文件（合并结果），也会建 file 软链（`linkSharedConfigForProjection`）。

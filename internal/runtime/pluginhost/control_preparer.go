@@ -196,6 +196,11 @@ func (p *ControlPreparer) Discard(ctx context.Context, ticket string, reason str
 
 // Doctor 执行控制面与运行时的健康诊断（清单、制品、入口文件、权限、依赖图、运行时状态）。
 func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
+	// 宿主事实只在真正需要时探测：服务启动路径不为诊断去拉起 node。
+	nodeVersion := strings.TrimSpace(p.nodeVersion)
+	if nodeVersion == "" {
+		nodeVersion = ResolveNodeVersion(os.LookupEnv)
+	}
 	report := DoctorReport{
 		OK:           true,
 		Issues:       []DoctorIssue{},
@@ -237,7 +242,7 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 			summary.Permissions = manifest["permissions"]
 			if _, vErr := pluginartifact.ValidateManifest(manifest, pluginartifact.ManifestOptions{
 				HostVersion: p.hostVersion,
-				NodeVersion: p.nodeVersion,
+				NodeVersion: nodeVersion,
 			}); vErr != nil {
 				report.Issues = append(report.Issues, DoctorIssue{
 					Code:     firstNonEmpty(errorCode(vErr), CodeManifestInvalid),

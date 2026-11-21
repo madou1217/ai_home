@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -209,15 +208,9 @@ func pluginJSONOption(args []string, name string) (any, error) {
 //
 // Plugin Host 的 Node 后端就是本机 Node；CLI 不猜版本，取不到时让清单校验
 // 对 engines.node 约束 fail closed（与安装路径同口径）。
+// pluginNodeVersion 复用插件宿主的唯一版本事实来源（AIH_NODE_VERSION → node --version）。
 func pluginNodeVersion() string {
-	if value := strings.TrimSpace(os.Getenv("AIH_NODE_VERSION")); value != "" {
-		return strings.TrimPrefix(value, "v")
-	}
-	output, err := exec.Command("node", "--version").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimPrefix(strings.TrimSpace(string(output)), "v")
+	return pluginhost.ResolveNodeVersion(os.LookupEnv)
 }
 
 func pluginValidate(ctx context.Context, args []string, runtime commandRuntime) (map[string]any, error) {

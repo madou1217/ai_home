@@ -1,15 +1,11 @@
 package completion
 
 import (
-	"context"
 	"database/sql"
-	"encoding/json"
 	"sort"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
@@ -19,15 +15,14 @@ const (
 	// 都绕过它（见 listModelCandidates 的 query 分支），所以这个数字永远不会让
 	// 某个真实模型变得不可补全。
 	//
-	// 但它必须**足够大**：网关池当前 231 个模型，早期取值 200 会静默藏掉 31 个，
-	// 用户不敲字直接按 TAB 时看到的就是残缺表。取 800 覆盖现有全部来源的总量。
+	// 但它必须**足够大**：account_models 现有 270+ 个有效模型，早期取值 200 会
+	// 静默藏掉几十个，用户不敲字直接按 TAB 时看到的就是残缺表。
 	modelCandidateLimit      = 800
 	modelAliasCandidateLimit = 800
 	// modelMatchCeiling 是「用户已经敲了前缀」时的绝对上限。
 	// 前缀匹配不做逐层截断（否则池尾模型永远补不出来），但仍要防住单字符
 	// 前缀把整张表倒出来的病态情形。取值远高于任何真实层容量，正常查询碰不到。
 	modelMatchCeiling = 2000
-	modelsSnapshotKey = webuimodelssnapshot.CacheKey
 )
 
 type modelAliasRow struct {
@@ -43,7 +38,7 @@ type accountModelRow struct {
 	ModelID    string
 }
 
-// modelSnapshot 是 `app_kv` 里缓存的模型目录投影。
+// modelSnapshot 是「Provider / 账号 → 可用模型」的只读投影。
 type modelSnapshot struct {
 	byProvider map[string][]string
 	byAccount  map[string][]string
@@ -83,39 +78,62 @@ func readModelAliases(aiHome string) []modelAliasRow {
 	return rows
 }
 
-// readModelSnapshot 读取服务端探测快照；同时兼容 Node 的 byAccount 与 Go 的 byAccountRef。
+// readModelSnapshot 构造「Provider / 账号 → 可用模型」投影，来源是 account_models。
+//
+// 曾经这里读 app_kv 的 cache:webui-models-snapshot.json。那是一个 **Node 时代遗留的
+// 缓存键**：Go 侧只有 reader、没有任何 writer（内 adapters/webuimodelssnapshot 只提供
+// 读取），因此它永远停在最后一次 Node 运行的时间。实测本机那份是 11-19，而
+// account_models 是 11-21，差异不是「轻微过期」而是完全不同的事实：
+// codex 快照 237 / 真值 61，claude 快照 2 / 真值 35。
+//
+// 后果是作用域别名候选（`aih claude 22 --model-alias claude.`）几乎为空。
+// account_models 是服务端模型目录自己的派生来源，本地即可读，因此直接用它。
 func readModelSnapshot(aiHome string) *modelSnapshot {
-	path, err := appstate.DatabasePath(aiHome)
-	if err != nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), completionDBTimeout)
-	defer cancel()
-	raw, found, err := appstate.ReadKV(ctx, path, modelsSnapshotKey)
-	if err != nil || !found || strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	var document struct {
-		ByProvider   map[string][]string `json:"byProvider"`
-		ByAccount    map[string][]string `json:"byAccount"`
-		ByAccountRef map[string][]string `json:"byAccountRef"`
-	}
-	if err := json.Unmarshal([]byte(raw), &document); err != nil {
-		return nil
-	}
-	byProvider := document.ByProvider
-	if byProvider == nil {
-		byProvider = map[string][]string{}
-	}
-	byAccount := make(map[string][]string, len(document.ByAccount)+len(document.ByAccountRef))
-	for key, value := range document.ByAccount {
-		byAccount[key] = value
-	}
-	for key, value := range document.ByAccountRef {
-		if _, exists := byAccount[key]; !exists {
-			byAccount[key] = value
+	byProvider := make(map[string][]string, 16)
+	byAccount := make(map[string][]string, 64)
+	withReadDB(aiHome, func(database *sql.DB) {
+		result, err := database.Query(`
+			SELECT a.provider_id AS provider_id,
+			       m.account_ref AS account_ref,
+			       m.model_id    AS model_id
+			  FROM account_models m
+			  JOIN accounts a ON a.account_ref = m.account_ref
+			 WHERE a.enabled = 1
+			   AND (m.manual_policy = 'force_enable'
+			        OR (m.manual_policy = 'inherit' AND m.upstream_available = 1))
+			 ORDER BY a.provider_id, m.model_id`)
+		if err != nil {
+			return
 		}
-	}
+		defer func() { _ = result.Close() }()
+		seenProvider := make(map[string]bool, 256)
+		seenAccount := make(map[string]bool, 256)
+		for result.Next() {
+			var providerID, accountRef, modelID string
+			if scanErr := result.Scan(&providerID, &accountRef, &modelID); scanErr != nil {
+				continue
+			}
+			provider := strings.ToLower(strings.TrimSpace(providerID))
+			account := strings.TrimSpace(accountRef)
+			model := strings.TrimSpace(modelID)
+			if provider == "" || model == "" {
+				continue
+			}
+			providerKey := provider + "\x00" + model
+			if !seenProvider[providerKey] {
+				seenProvider[providerKey] = true
+				byProvider[provider] = append(byProvider[provider], model)
+			}
+			if account == "" {
+				continue
+			}
+			accountKey := account + "\x00" + model
+			if !seenAccount[accountKey] {
+				seenAccount[accountKey] = true
+				byAccount[account] = append(byAccount[account], model)
+			}
+		}
+	})
 	return &modelSnapshot{byProvider: byProvider, byAccount: byAccount}
 }
 

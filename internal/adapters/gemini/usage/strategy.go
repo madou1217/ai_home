@@ -1,7 +1,7 @@
 // Package usage 把 Gemini Code Assist 的配额桶转换为额度快照与展示文档。
 //
 // 协议事实（与 Node lib/cli/services/usage/snapshot.js 的 refreshGeminiUsageSnapshot
-// 同口径，额度 capability 见 lib/providers/defs/gemini.js）：
+// 同口径，额度 capability 见 Go 合同 core/providers/builtins.go）：
 //
 //	POST {base}:retrieveUserQuota
 //	  Authorization: Bearer <oauthCreds.access_token>、Content-Type: application/json

@@ -10,7 +10,7 @@ import (
 
 // HookAdapterID 是 Hook 写入格式适配器的标识。
 //
-// 取值与 Node 描述符（lib/providers/contract.js HOOK_ADAPTER_IDS）逐字一致：
+// 取值是稳定的宿主共享契约（Node 宿主与 Go 共用同一批 id）：
 // 适配器只决定「怎么把事件写成目标文件的形状」，格式实现不在合同里。
 type HookAdapterID string
 
@@ -41,8 +41,8 @@ const (
 // DeriveHookProfile 只做复制，不为零值补默认值。
 //
 // 零值 / nil 表示**合同没有声明**这项事实，不是「默认秒 / 不需要 matcher /
-// 不需要开关」。内置合同里的数据逐字转录自 Node 描述符（lib/providers/defs）
-// 与其合同默认值：gemini 显式 ms，其余 provider 显式声明「秒」；codex 显式给
+// 不需要开关」。内置合同的取值沿用历史 Node 描述符（已删除）的实测结论与
+// 其合同默认值：gemini 显式 ms，其余 provider 显式声明「秒」；codex 显式给
 // SessionStart matcher 与特性开关，其余 provider 显式声明不需要开关。
 type HookFormat struct {
 	// Target 是相对宿主 home 的路径段（例：[".codex", "hooks.json"]）。

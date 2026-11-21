@@ -73,10 +73,10 @@ type sourceDescriptor struct {
 
 // declaredSources 是与 Node 描述符逐条对齐的特殊来源。
 //
-// 来源（Node 侧唯一事实）：
-//   - lib/providers/defs/kiro.js：IDE 登录态 + 三条远程来源；
-//   - lib/providers/defs/cline.js：宿主登录态扫描；
-//   - lib/providers/defs/_shared/codebuddy-family.js：家族共享凭据扫描。
+// 来源（历史 Node 描述符，已删除；当前以 Go 合同与下列声明为准）：
+//   - kiro：IDE 登录态 + 三条远程来源；
+//   - cline：宿主登录态扫描；
+//   - CodeBuddy 家族：共享凭据扫描。
 //
 // 未列在这里的 Provider 走 hostLocalSources 的默认注入（Node 的
 // withDefaultHostAuthSources），所以新增 Provider 不需要改这张表。

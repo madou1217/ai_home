@@ -7,7 +7,7 @@
 // 此前只认 direct/proxy，pool/tun 直接报「需要宿主代理」；本包补齐同一套解析：
 //
 //   - url：校验并归一化绑定里的代理地址（scheme 白名单 http/https/socks5/socks5h，
-//     agy 的 provider 描述符没有收窄 egress.proxySchemes，见 lib/providers/defs/agy.js）；
+//     agy 的历史 Node 描述符没有收窄 egress.proxySchemes，因此按全集放行）；
 //   - system：读 macOS 系统代理（scutil --proxy，未启用时回退 networksetup 按网络服务读，
 //     与 lib/cli/services/toolkit/system-proxy-plugins/macos.js 同判据）；
 //   - tun：探测外部 TUN（ifconfig / netstat / ps，与 detectTun 同判据），生效时客户端直连；

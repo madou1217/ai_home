@@ -2,7 +2,7 @@ package webuitoolsettingsapi
 
 import "strings"
 
-// Node 权限目录的分组中文名（lib/providers/permission-flag-catalog.js 的 GROUPS）。
+// Node 权限目录的分组中文名（lib/runtime/permission-flag-catalog.js 的 GROUPS）。
 // 用结构体而不是 map：JSON 键顺序稳定，且缺组时不会悄悄少一个键。
 type catalogGroups struct {
 	Sandbox  string `json:"sandbox"`

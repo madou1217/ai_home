@@ -145,7 +145,7 @@ func TestDeriveHookProfilePopulatesTargets(t *testing.T) {
 	}
 }
 
-// hookFormatFacts 是 Node 描述符（lib/providers/defs + contract.js 归一规则）
+// hookFormatFacts 是历史 Node 描述符（已删除）的归一规则
 // 转录来的黄金样本：
 //   - gemini 显式 timeoutUnit='ms'，其余 provider 按合同默认值为 'seconds'；
 //   - 只有 codex 声明 SessionStart matcher 与 featureFlag=true；

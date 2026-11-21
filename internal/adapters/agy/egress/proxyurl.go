@@ -11,8 +11,8 @@ import (
 // normalizeProxyUrl()：允许 scheme://host:port 与 host:port 简写，不允许凭据、
 // 路径、查询串。错误码沿用 Node 原文（WebUI 文案表按它映射）。
 
-// allowedProxySchemes 对应 ALLOWED_PROXY_SCHEMES。agy 的 provider 描述符没有
-// egress.proxySchemes（lib/providers/defs/agy.js），因此按全集放行：
+// allowedProxySchemes 对应 ALLOWED_PROXY_SCHEMES。agy 的历史 Node 描述符没有
+// 收窄 egress.proxySchemes，因此按全集放行：
 // Go http.Transport 原生支持 socks5/socks5h，网关侧不再是「静默直连」。
 var allowedProxySchemes = map[string]struct{}{
 	"http":    {},
@@ -22,7 +22,7 @@ var allowedProxySchemes = map[string]struct{}{
 }
 
 // nativeProxyOnlySchemes 是原生代理字段只认 HTTP(S) 的消费方能力集合。
-// 对应 Node lib/providers/defs/zcode.js 与 opencode.js 的 egress.proxySchemes。
+// 对应历史 Node 描述符里 zcode/opencode 收窄后的 egress.proxySchemes。
 var nativeProxyOnlySchemes = map[string]struct{}{
 	"http":  {},
 	"https": {},

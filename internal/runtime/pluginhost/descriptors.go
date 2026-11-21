@@ -83,7 +83,7 @@ type DescriptorCollectResult struct {
 type HandlerResolver func(handlerID string) bool
 
 // ValidateProviderDescriptor 校验单个外部插件 Provider 描述符的基本契约与结构边界，
-// 语义与 lib/providers/contract.js 对齐。
+// 语义与历史 Node 描述符合同（已删除）对齐。
 func ValidateProviderDescriptor(raw map[string]any) (map[string]any, error) {
 	if raw == nil {
 		return nil, pluginerr.New(CodeDescriptorInvalid, "")

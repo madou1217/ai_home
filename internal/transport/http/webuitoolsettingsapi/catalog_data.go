@@ -1,11 +1,11 @@
 package webuitoolsettingsapi
 
-// 本文件是 Node lib/providers/permission-flag-catalog.js 的数据移植。
+// 本文件是 Node lib/runtime/permission-flag-catalog.js 的数据移植。
 //
 // 只移植「GET 响应里会出现的」字段：旗标、取值枚举、说明、示例、互斥/覆盖关系与
 // 子命令限制。permissionIntent 与 blockedInSubcommands 只影响 Node 侧启动注入，
 // 不出现在响应里，因此不复制，避免两处副本各自失效。
-// 取值仍以 Node 文件为源头逐项搬过来；CLI 升级后按 docs/providers/agent-cli-usage.md
+// 取值仍以该 Node 文件为源头逐项搬过来；CLI 升级后按 docs/providers/agent-cli-usage.md
 // 核对，两边要一起改。
 
 var permissionCatalogSpecs = map[string]catalogSpec{

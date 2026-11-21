@@ -2,10 +2,9 @@ package accountactivity
 
 // 账号活动的动作目录（Go 侧的声明数据）。
 //
-// 为什么 Go 要自带一份声明：这五条路由的**参数校验与选项解析**必须在 Go 完成
-// （Node 只做执行），而校验需要「这个动作有哪些参数、哪些取值合法」。Node 的
-// Provider 描述符（lib/providers/defs/*.js）仍是账号页 activityActions 的来源；
-// 这里按同一份声明镜像，两者都必须改的动作只有一个：新增/修改活动动作。
+// 这份声明是账号页 activityActions 的唯一来源：动作的参数校验与选项解析都在
+// Go 完成。历史上 Node 描述符还有一份镜像，Node 描述符删除后不再需要同步；
+// 新增/修改活动动作只需要改这里。
 //
 // 目录本身不是 Provider 白名单：查询按 Provider 取动作清单，未声明的 Provider
 // 得到空清单，调用方据此返回 Node 同款的 activity_unsupported / activity_action_unknown。

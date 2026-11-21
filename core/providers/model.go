@@ -172,7 +172,7 @@ type RelayHost struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// Relay 通道名。与 Node 侧 lib/providers/contract.js 的取值逐字一致。
+// Relay 通道名。Node 宿主与 Go 共用同一批稳定取值。
 const (
 	// RelayChannelCanonical 表示宿主有该 Provider 的完整上游适配器。
 	RelayChannelCanonical = "canonical"
@@ -226,6 +226,37 @@ func (definition Definition) CredentialFacts() CredentialFacts {
 		return CredentialFacts{}
 	}
 	return *definition.Credentials
+}
+
+// RelayChannelOn 返回指定宿主在该客户端协议下的承接通道；空串表示不可服务。
+//
+// 这是「某个 Provider 能不能服务某门客户端协议」的唯一判定入口，调用方不得
+// 自行按 Provider 名或 Provider→协议表推导：
+//
+//   - 宿主未声明或 Supported=false → 不可服务；
+//   - RelayHost.Entries 非空且不含 `gateway.<protocol>` → 该协议入口没挂载，
+//     例如家族透传只挂在 gateway.openai.chat_completions 时，在 /v1/messages
+//     （Anthropic Messages）上不可用；
+//   - Entries 为空表示全部推理入口，与 RelayHost 的合同注释一致。
+//
+// 之所以必须集中在合同里：客户端协议是入口维度，Provider 归属是账号维度，
+// 两者不是一回事（codex 账号也能按厂商契约走 Anthropic 兼容端点）。任何
+// `switch providerID` 形式的推断都会漏掉这类双协议账号。
+func (definition Definition) RelayChannelOn(host string, protocol string) string {
+	if definition.RelayHosts == nil {
+		return ""
+	}
+	relayHost, found := definition.RelayHosts[host]
+	if !found || !relayHost.Supported {
+		return ""
+	}
+	if relayHost.Channel != RelayChannelCanonical && relayHost.Channel != RelayChannelRelay {
+		return ""
+	}
+	if len(relayHost.Entries) != 0 && !containsString(relayHost.Entries, "gateway."+protocol) {
+		return ""
+	}
+	return relayHost.Channel
 }
 
 // StorageFacts 是 Provider 自己的本地存储布局事实。

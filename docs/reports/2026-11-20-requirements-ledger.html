@@ -261,7 +261,7 @@
         <tr><td>aih ls 首屏楼梯错位、中文/emoji/ANSI 续行</td><td class="meta">11-15</td><td><span class="chip s-partial">部分</span></td><td class="ev">真实 PTY 40/60/80 列复验：无超宽（最大 40/59/78）、续行统一 4 空格、emoji/CJK 字素未拆；3a9fb067 增加硬折行孤儿标点保护，收尾括号不再独占一行。剩余：内容超过终端高度时首屏落在列表尾部（无应用内滚动），是否改为视口滚动待产品决定</td></tr>
         <tr><td>长内容换行优先最近空格</td><td class="meta">11-15</td><td><span class="chip s-done">已完成</span></td><td class="ev">换行策略调整并随 CLI 发布</td></tr>
         <tr><td>终端生命周期：自动唤醒/重复渲染/反馈循环</td><td class="meta">11-19</td><td><span class="chip s-partial">部分</span></td><td class="ev">session-office 路由归属修复；完整复验未收尾</td></tr>
-        <tr><td>任意页面概率唤醒 Web 终端并卡死</td><td class="meta">11-19</td><td><span class="chip s-partial">部分</span></td><td class="ev">交 AGY Neon 修复；主会话集成未收尾</td></tr>
+        <tr><td>任意页面概率唤醒 Web 终端并卡死</td><td class="meta">11-19</td><td><span class="chip s-done">已完成</span></td><td class="ev">66e98484 隔离 watch scope；真实浏览器审计 dashboard/accounts/usage/models/settings 各 5s：0 个 terminal/attach/WS 请求、console 无错误，前后 terminal sessions 0→0；peer-inbox/office 仅 GET /v0/webui/terminal/sessions（办公上下文，无 attach）</td></tr>
         <tr><td>/v0/webui/terminal/attach 404</td><td class="meta">11-18</td><td><span class="chip s-done">已完成</span></td><td class="ev">Go 终端路由 + 兼容别名</td></tr>
       </tbody>
     </table></div>

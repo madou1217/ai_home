@@ -11,7 +11,9 @@ wrapper 全部可用。Node 只在这四类位置上继续存在：
 3. **注入到第三方桌面/IDE 进程里的 JS 资产**（ZCode、CodeBuddy IDE 桥）；
 4. **仓库开发脚本**（`scripts/**`、打包/发布工具），不进入产品运行路径。
 
-代码贡献方向：新增运行期行为一律写 Go；只有上述四类位置可以带 Node。
+**这四类都是「必须 Node」，不作为消除目标**（用户 2026-11-22 明确：必须 Node 的不强求）。
+判定标准只有一条：Node 是否只出现在 **AIH 自己的服务端运行路径** 之外——是则保留，
+否则应迁 Go。今后不再出现「为了彻底去 Node 而重写插件运行时 / 注入脚本 / 第三方 CLI」的提案。
 
 ## 本轮删除
 
@@ -29,7 +31,7 @@ wrapper 全部可用。Node 只在这四类位置上继续存在：
 
 ## 保留清单与调用点
 
-### 1. node 插件宿主
+### 1. node 插件宿主（必须 Node，不强求消除）
 
 - Go 启动点：`internal/runtime/pluginhost/supervisor.go`（`exec.Command(node, host-entry.mjs …)`，
   入口发现见 `resolveHostScripts`）。
@@ -37,9 +39,10 @@ wrapper 全部可用。Node 只在这四类位置上继续存在：
   `lib/plugins/transport/{rpc-server,frame}.js`、`lib/plugins/sdk/*`。
 - 为什么不能删：node 插件本身就是 Cordis 模块，必须在 Node 里 `require`/`import` 后运行；
   Go 侧 `ProcessHost` 只覆盖 `runtime: process`（语言无关行协议），见 `docs/plugins/process-runtime.md`。
+  除非放弃 node 插件这个产品能力，否则 Node 常驻在此。
 - 它是懒启动：没有 node 插件时 `HybridHost.Start` 只启动 process 后端，不会拉起 Node。
 
-### 2. 外部/第三方程序
+### 2. 外部/第三方程序（不是我们的代码，不强求）
 
 | 位置 | 调用点 | 说明 |
 |---|---|---|
@@ -49,7 +52,7 @@ wrapper 全部可用。Node 只在这四类位置上继续存在：
 | WorkBuddy 凭据解码 | `internal/adapters/hostdetect/native_detector_codebuddy.go` | 用厂商 Electron（`ELECTRON_RUN_AS_NODE=1`）执行 `scripts/aih-workbuddy-credential-codec.cjs`，因为解密依赖 Electron safeStorage |
 | 桌面端拉起 Provider CLI | `internal/transport/http/webuiopenappapi/desktop_providers.go` | 目标 CLI（claude/codex/opencode）自身的 Node 入口 |
 
-### 3. 注入到第三方进程的 JS 资产
+### 3. 注入到第三方进程的 JS 资产（目标进程只认 JS，不强求）
 
 Go 只负责写文件/拼命令，JS 在第三方进程里运行，因此必须是 JS：
 
@@ -61,10 +64,16 @@ Go 只负责写文件/拼命令，JS 在第三方进程里运行，因此必须�
 - `lib/server/{account-credential-store,business-database,app-state-store,zcode-harness-store,zcode-region}.js`
   等经上面这些入口间接需要的模块
 
-### 4. 开发脚本
+### 4. 开发脚本（不进产品运行路径，不强求）
 
 `scripts/**` 与 `lib/**` 中被脚本 require 的模块（打包、发布、对比、迁移工具）。
 这些不进入产品运行路径，Node 是它们的执行环境。
+
+### 判定与新增规则
+
+- 只有 Node 出现在 **AIH 自己会执行的服务端代码路径** 时才算问题；上表四类不算。
+- 新增运行期行为写 Go；要新增上面任何一类的 Node 依赖，先说明为什么目标进程/工具只能跑 JS。
+- 清理只按「真实可达性」删除死文件，不能以「去 Node」为由改写必须 Node 的部分。
 
 ## 复核方法
 

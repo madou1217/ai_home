@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // ErrUnsupportedProvider 表示该 Provider 的宿主同步还没迁到 Go。
@@ -85,12 +86,12 @@ func writeHost(providerID string, payload []byte, hostHomeDir string) (Result, e
 		if err := json.Unmarshal(payload, &document); err != nil || len(document.OAuthCreds) == 0 {
 			return Result{}, ErrMissingCredential
 		}
-		files := []string{filepath.Join(hostHomeDir, ".gemini", "oauth_creds.json")}
+		files := []string{filepath.Join(hostHomeDir, providerroot.ConfigDir("gemini"), "oauth_creds.json")}
 		if err := writeFileAtomic(files[0], document.OAuthCreds); err != nil {
 			return Result{}, err
 		}
 		if len(document.GoogleAccounts) > 0 {
-			path := filepath.Join(hostHomeDir, ".gemini", "google_accounts.json")
+			path := filepath.Join(hostHomeDir, providerroot.ConfigDir("gemini"), "google_accounts.json")
 			if err := writeFileAtomic(path, document.GoogleAccounts); err != nil {
 				return Result{}, err
 			}
@@ -109,11 +110,11 @@ func writeHost(providerID string, payload []byte, hostHomeDir string) (Result, e
 		if err := agyprojection.WriteGlobalAuth(hostHomeDir, auth); err != nil {
 			return Result{}, err
 		}
-		return Result{Files: []string{filepath.Join(hostHomeDir, ".gemini", "antigravity-cli", "antigravity-oauth-token")}}, nil
+		return Result{Files: []string{filepath.Join(hostHomeDir, filepath.Join(providerroot.NativeRoot("agy")...), "antigravity-oauth-token")}}, nil
 	case "grok":
-		return writeJSONField(providerID, payload, "auth", filepath.Join(hostHomeDir, ".grok", "auth.json"))
+		return writeJSONField(providerID, payload, "auth", filepath.Join(hostHomeDir, providerroot.ConfigDir("grok"), "auth.json"))
 	case "opencode":
-		return writeJSONField(providerID, payload, "auth", filepath.Join(hostHomeDir, ".local", "share", "opencode", "auth.json"))
+		return writeJSONField(providerID, payload, "auth", filepath.Join(hostHomeDir, filepath.Join(providerroot.NativeRoot("opencode")...), "auth.json"))
 	case "qoder", "qodercn":
 		var document struct {
 			Credentials string `json:"credentials"`
@@ -122,7 +123,7 @@ func writeHost(providerID string, payload []byte, hostHomeDir string) (Result, e
 		if err := json.Unmarshal(payload, &document); err != nil || strings.TrimSpace(document.Credentials) == "" {
 			return Result{}, ErrMissingCredential
 		}
-		root := filepath.Join(hostHomeDir, "."+providerID, ".auth")
+		root := filepath.Join(hostHomeDir, providerroot.ConfigDir(providerID), ".auth")
 		files := []string{filepath.Join(root, "user")}
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return Result{}, err

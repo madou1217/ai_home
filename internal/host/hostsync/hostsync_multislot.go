@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // syncClineHost 把账号的 cline 槽位合并进宿主 providers.json。
@@ -29,7 +30,7 @@ func syncClineHost(payload []byte, hostHomeDir string) (Result, error) {
 	if accountProviders == nil {
 		return Result{}, ErrMissingCredential
 	}
-	target := filepath.Join(hostHomeDir, ".cline", "data", "settings", "providers.json")
+	target := filepath.Join(hostHomeDir, providerroot.ConfigDir("cline"), "data", "settings", "providers.json")
 	host := map[string]any{}
 	if raw, err := os.ReadFile(target); err == nil && json.Valid(raw) {
 		if json.Unmarshal(raw, &host) != nil {
@@ -104,7 +105,7 @@ func syncZcodeHost(payload []byte, hostHomeDir string) (Result, error) {
 		}
 		credentials[key] = value
 	}
-	root := filepath.Join(hostHomeDir, ".zcode", "v2")
+	root := filepath.Join(hostHomeDir, providerroot.ConfigDir("zcode"), "v2")
 	credentialsPath := filepath.Join(root, "credentials.json")
 	encoded, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {

@@ -246,15 +246,6 @@ source 为链接或不存在时整个投影跳过（避免顺着根链接把数�
 和 `familyLinks` 的三处关键差异：会替换错误链接、允许悬挂文件链接、成功计数叫
 `migrated`。因此**不复用** familyLinks，单独做 primitive。
 
-### auth bridge（2026-11-21 已迁到执行点）
-
-`<bridge>/auth.json` → `<account>/.local/share/opencode/auth.json`（file 软链）。
-建链前递归删除旧路径；失败抛 `opencode_auth_bridge_failed`（`RemoveAll` 已实测不跟随 junction）。
-
-它作为 `bridgeLinks.authLink` 和共享条目建链**同批**下发：`prepare` 先确保账号目录存在
-（否则它不会进入投影根枚举），再声明 auth 链接；`reconcileSharedData` 被 `session-store`
-直接调用时不带这个字段，两条调用路径的语义保持不变。
-
 ### 策略留在 Node
 
 - 私有名：`auth.json` 及 `auth.json.*`（`isProviderPrivateEntryName('opencode', …)`）；
@@ -275,10 +266,6 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 列表），Go 负责"canonical 判定 / prepare（摘链接或空目录）/ mkdir / symlink|junction"，
 失败返回 `{code, linkPath, targetPath}`，Node 原样还原成 `opencode_shared_bridge_failed`
 或目录创建的 errno 错误。
-
-**auth bridge 也在这一个请求里**（`authLink` 字段）：`prepare` 传声明，
-`reconcileSharedData` 的其它调用方不传，两条路径语义不变；本地回退仍是
-`applyAuthLinkLocally`（`rmSync` + file 软链）。
 
 ### 验证结果
 
@@ -309,70 +296,10 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
   自愈行为，等同登录时执行），规范存储里三个文件的 mtime 未变（没有内容合并）；之后
   node/go 两次运行结果完全一致。
 
-## 工具配置条目链接（2026-11-21 已迁移）
-
-`session-store` 的条目建链拆成两段：
-
-- **Node 保留数据语义**：非会话条目的真实内容仍由 `mergeEntryIntoStore` 合并/搬移；
-  会话目录绝不迁移的判定（空目录可替换、有真实内容 fail-closed）、伪 HOME 别名、
-  预建目录、哪些条目算会话存储，都在 Node 侧算成布尔位。
-- **Go（`sessionEntryLinks`）执行文件系统动作**：摘掉指向别处的链接（Windows 上可能是
-  junction，Node 的 `unlink` 对目录链接不可靠）、替换空目录、补目标目录、建 junction/软链
-  （Windows 文件先试符号链接、无权限退回硬链接，与旧实现同口径）。
-- 一次目录对账把条目攒成**一个**请求（`executeSessionEntryLinks`），首次开号不会逐条起
-  进程；已链接条目在 Node 侧早退，稳定账号完全不调用执行点。
-- 执行点在调度失败/响应字段缺失/注入 fs 替身时回退本地决策表，两端结果字段一致。
-
-实测：
-
-- 合成 fixture（空会话目录、真实会话文件、真实非会话内容、指向别处的链接、缺失条目、
-  预建目录）在 node/go 两种后端下 summary 与完整目录快照逐字一致（含 walk 的
-  `unresolved` 集合）；二次运行 `migrated=0`。
-- 真实 codex 账号（已收敛）：两后端均为 `{migrated:0, linked:66}`，0 变更。
-- 一轮对账的进程调用数从 16 降到 1；执行点不可用时逐条回退。
-
-## 旧版 Library 链接（2026-11-21 已迁移）
-
-旧版本把宿主的整个 `Library/Preferences` 链进每个账号投影；新版要求先把它复制成账号
-私有快照（`<runtimeHome>/Library/Preferences`），再把投影改成指向这份快照。`Keychains`
-不复制，只摘掉旧链接。
-
-- Node 只判定"是不是 aih 建的旧链接"（读 readlink 比较宿主旧路径）、伪 HOME 下是否
-  报 unresolved；两条声明合成一个请求。
-- Go（`legacyLibraryLinks`）执行：复制快照（已存在条目**不覆盖**、符号链接按链接复制）、
-  摘链、建链；`detach` 只摘链。复制语义与 `fse.copySync({overwrite:false,
-  errorOnExist:false, dereference:false})` 对齐。
-- 本地回退保留同样的复制+换链实现（注入 fs 替身/执行点不可用时）。
-
-实测：
-
-- 合成 fixture（Preferences 快照 + Keychains detach）：node/go 的 summary 与完整目录快照
-  逐字一致；二次运行 `migrated=0`。
-- 指向别处（非宿主旧路径）的链接：两后端都只报 `Library/Preferences` unresolved，不动文件。
-- 真实 opencode 账号 `prepare`：两种后端都无任何变更（快照 before/after 相同）。
-
-## 会话条目内容合并（2026-11-22 已迁移）
-
-`mergeEntryIntoStore` 的机械部分交给 `sessionEntryMerges`：整条目 move、递归目录合并、
-同内容文件丢弃、悬挂链接丢弃、空壳替换、空目录收尾；跨设备 rename（EXDEV）不复制，
-留给上层 unresolved。provider 专有的 JSON 合并（codex global state / session index、
-history.jsonl、家族共享配置）仍在 Node，属于数据归属决策。
-
-实测：node/go 两种后端下 summary 与完整目录快照逐字一致；二次运行 `migrated=0`；
-真实 codex 账号两后端均 `{migrated:0, linked:66}`。
-
 ## 遗留项清单（2026-11-21 复核）
 
 **无遗留项。** 已迁移模块的本地实现全部保留为 fallback（执行点不可用/注入 fs 替身时使用），
 不是死代码；每个导出的函数仍有真实调用方。
-
-2026-11-21 复核后，原先列在这里的 Node 链接动作已全部处理：
-
-- opencode auth bridge → `bridgeLinks.authLink`（和共享条目同批下发）；
-- 旧版 `Library/Preferences` 整目录迁移 → `legacyLibraryLinks`。
-
-会话条目的 **provider 专有 JSON 合并**仍在 Node（数据归属决策）；目录/文件机械合并
-已由执行点承担。
 
 策略层（不迁）：版本发现与排序、provider 私有名、三个投影根与 known 清单、模型/env/网关配置。
 

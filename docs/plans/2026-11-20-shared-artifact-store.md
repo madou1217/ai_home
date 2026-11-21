@@ -17,9 +17,8 @@
 | 构建缓存每份一份 | 单棵副本树 `web/node_modules` 4.6G，其中 3.23G 是 webpack `.pack` | 每个副本各自 `npm ci` + webpack，缓存落在项目内 |
 | 旧版本永不删除 | 每个账号保留全部历史版本 | `providercliupgrade` 只缓存发布时间表，不回收已装版本 |
 
-关键分叉：**Go 的升级路径**（`internal/runtime/providercliupgrade`）与**Node 的启动路径**
-（`lib/server/account-app-launcher.js`、`lib/cli/services/session-store.js`）各做各的，
-后者里还留着"共享缓存交给桌面启动"的注释，导致 CLI-only 账号永远是各存一份。
+关键分叉：**Go 的升级路径**（`internal/runtime/providercliupgrade`）与旧的 **Node 启动路径**
+各做各的，后者里还留着"共享缓存交给桌面启动"的注释，导致 CLI-only 账号永远是各存一份。
 
 ## 2. 架构：一个服务，所有启动路径都是客户端
 

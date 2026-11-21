@@ -13,13 +13,34 @@ on:
     branches:
       - main
     paths:
-      - '**/*.go'
+      # 编译入口（cmd/aih、internal/host/aihserver）会传递依赖这些根：
+      #   - contracts/* 内嵌 json/sh/ps1；
+      #   - assets/ 内嵌 provider 图标 png；
+      #   - native/account-browser 内嵌 swift 源文件。
+      # 只盯 *.go 会漏掉"删了个内嵌资源 → Windows 编不过"的改动。
+      - 'internal/**'
+      - 'application/**'
+      - 'core/**'
+      - 'contracts/**'
+      - 'cmd/**'
+      - 'assets/**'
+      - 'native/**'
+      # scripts/ 里也有 Go（打包工具），以及将来可能出现的根目录 .go。
+      - '**.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/go-tests-windows.yml'
   pull_request:
     paths:
-      - '**/*.go'
+      - 'internal/**'
+      - 'application/**'
+      - 'core/**'
+      - 'contracts/**'
+      - 'cmd/**'
+      - 'assets/**'
+      - 'native/**'
+      # scripts/ 里也有 Go（打包工具），以及将来可能出现的根目录 .go。
+      - '**.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/go-tests-windows.yml'

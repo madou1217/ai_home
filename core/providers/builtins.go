@@ -635,7 +635,11 @@ func builtinKiro() Definition {
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
 		// kiro 的运行时状态直接写在 ~/.kiro，不使用 .aih-runtime-home。
-		Storage: &StorageFacts{NoRuntimeHome: true},
+		Storage: &StorageFacts{
+			NoRuntimeHome: true,
+			// kiro-cli 把 SSO/会话数据放在宿主共享的 ~/.local/share/kiro-cli。
+			HostAuthRoot: &[]string{".local", "share", "kiro-cli"},
+		},
 		// kiro 推理只有 Go 一个实现：Node 侧从来没有过（CodeWhisperer 实现已删除），
 		// 这里也就不存在 node 宿主这一项。不要为了「兜底」再把它补回来。
 		RelayHosts: map[string]RelayHost{

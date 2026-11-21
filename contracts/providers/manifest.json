@@ -2155,7 +2155,12 @@
         }
       },
       "storage": {
-        "noRuntimeHome": true
+        "noRuntimeHome": true,
+        "hostAuthRoot": [
+          ".local",
+          "share",
+          "kiro-cli"
+        ]
       },
       "relayHosts": {
         "go": {

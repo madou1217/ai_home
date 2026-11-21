@@ -59,6 +59,16 @@ func ConfigPath(providerID string, suffix ...string) []string {
 	return append(ConfigRoot(providerID), suffix...)
 }
 
+// HostAuthRoot 返回宿主共享认证/运行数据的根（HOME 相对段）。
+// 未声明返回 nil；显式空切片表示根就是 HOME 本身。
+func HostAuthRoot(providerID string) []string {
+	definition, found := builtinCatalog().Get(strings.ToLower(strings.TrimSpace(providerID)))
+	if !found || definition.Storage == nil || definition.Storage.HostAuthRoot == nil {
+		return nil
+	}
+	return append([]string{}, (*definition.Storage.HostAuthRoot)...)
+}
+
 // InstallRoot 返回 Provider 官方安装器的独立安装根（HOME 相对段）。
 // 未声明时返回 nil：二进制由 PATH / 包管理器管理，没有独立安装根。
 func InstallRoot(providerID string) []string {

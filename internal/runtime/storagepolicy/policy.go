@@ -220,7 +220,6 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"kiro": {
-		HostAuthRoot: []string{".local", "share", "kiro-cli"},
 		AuthArtifacts: []Artifact{
 			credential("database", "binary-base64", false, "data.sqlite3"),
 		},
@@ -315,6 +314,9 @@ func init() {
 			continue
 		}
 		policy.NativeRoot = definition.EffectiveNativeRoot()
+		if definition.Storage != nil && definition.Storage.HostAuthRoot != nil {
+			policy.HostAuthRoot = append([]string{}, (*definition.Storage.HostAuthRoot)...)
+		}
 		if definition.Storage != nil && definition.Storage.NoRuntimeHome {
 			policy.RuntimeHomeRoot = nil
 		} else {

@@ -1394,7 +1394,7 @@ func prepareKiroRuntimeHome(profileDir, hostHomeDir, platformKey string) error {
 	case "darwin":
 		appSegments = []string{"Library", "Application Support", "kiro-cli"}
 	case "linux":
-		appSegments = []string{".local", "share", "kiro-cli"}
+		appSegments = providerroot.HostAuthRoot("kiro")
 	}
 	ensureAccountRel := func(rel []string) error {
 		full := filepath.Join(append([]string{profileDir}, rel...)...)

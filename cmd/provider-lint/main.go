@@ -152,6 +152,9 @@ func protectedRoots() ([]string, error) {
 		for _, sessionRoot := range definition.Storage.SessionRoots {
 			addRoot(sessionRoot)
 		}
+		if definition.Storage.HostAuthRoot != nil {
+			addRoot(strings.Join(*definition.Storage.HostAuthRoot, "/"))
+		}
 	}
 	roots := make([]string, 0, len(seen))
 	for root := range seen {

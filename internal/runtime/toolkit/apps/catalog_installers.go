@@ -442,7 +442,7 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 		CLI: &cliDescriptor{
 			BinaryNames:      []string{"kiro-cli", "kiro-cli-chat"},
 			CleanupHomeFiles: []string{".local/bin/kiro-cli", ".local/bin/kiro-cli-chat"},
-			CleanupHomeTrees: []string{".local/share/kiro-cli"},
+			CleanupHomeTrees: []string{strings.Join(providerroot.HostAuthRoot("kiro"), "/")},
 			CollectPathEntries: func(opts Options) []string {
 				p := resolvePlatform(opts)
 				home := ResolveHostHome(opts)

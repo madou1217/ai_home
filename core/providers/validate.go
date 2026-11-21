@@ -185,6 +185,13 @@ func validateStorageFacts(definition Definition) error {
 				return fmt.Errorf("storage.sessionRoots 必须是单段 HOME 相对目录: %q", root)
 			}
 		}
+		if facts.HostAuthRoot != nil {
+			for _, segment := range *facts.HostAuthRoot {
+				if !isSafeRelativeSegment(segment) {
+					return fmt.Errorf("storage.hostAuthRoot 必须是安全的 HOME 相对段: %q", segment)
+				}
+			}
+		}
 		for _, location := range facts.ConfigDenyPaths {
 			if !isSafeRelativePath(location.Path) {
 				return fmt.Errorf("storage.configDenyPaths 必须是安全的 HOME 相对路径: %q", location.Path)

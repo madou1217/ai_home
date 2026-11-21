@@ -317,19 +317,25 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 		})
 	}
 
-	// 客户端协议兼容标注。
+	// 可用性标注。
 	//
 	// 用户在这里是给某个 CLI 选模型：`aih claude 22 --model X` 会用 Claude Code
 	// 启动，客户端入口协议是 Anthropic Messages。模型能否被服务，取决于**它的
 	// Provider 在这门协议下有没有通道**，而不是模型自己的名字。
 	//
 	// 依据全部来自合同查表：
-	//   - CLI → 客户端协议：Definition.CredentialProtocol()（claude 读写 ANTHROPIC_*）
+	//   - CLI → 客户端协议：Definition.CredentialProtocol()
 	//   - Provider → 该协议通道：Definition.RelayChannelOn(go, protocol)
 	//     （RelayHost.Entries 只挂 gateway.openai.chat_completions 的家族透传，
-	//      在 /v1/messages 上就是不可用——这正是「协议不兼容」）
+	//      在 /v1/messages 上就没有通道）
 	//
-	// 只标注**不兼容**的一侧：可用的占绝大多数，逐行加提示会把真正的风险信号
+	// 措辞刻意只说「当前入口不可用」，不写「协议不兼容」：实测抽样发现失败原因
+	// 至少有三类——协议入口没挂载、透传凭据不是原生登录态
+	// （unsupported_relay_credential）、上游本身不可用（inference_unavailable）。
+	// 这三类在补全阶段都能确定「选了会失败」，但**无法在这里区分具体是哪一类**。
+	// 把原因写死成协议问题会误导用户去改协议，所以只陈述可确证的事实。
+	//
+	// 只标注**不可用**的一侧：可用的占绝大多数，逐行加提示会把真正的风险信号
 	// 淹没；而不可用恰恰是用户点了会白跑一次请求的那些。
 	if protocol := cliClientProtocol(provider); protocol != "" {
 		blockedByModel := modelsWithoutProtocolChannel(aiHome, protocol)
@@ -339,7 +345,7 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 				if !blockedByModel[choice.Value] {
 					continue
 				}
-				note := "⚠ 协议不兼容：" + protocolDisplayName(protocol)
+				note := "⚠ 当前入口不可用"
 				if strings.TrimSpace(choice.Description) == "" {
 					choice.Description = note
 				} else {
@@ -446,20 +452,6 @@ func isResponsesNativeProvider(provider string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(definition.CLI.GlobalDir), ".codex")
-}
-
-func protocolDisplayName(protocol string) string {
-	switch protocol {
-	case "anthropic.messages":
-		return "Anthropic 格式"
-	case "openai.responses":
-		return "OpenAI Responses 格式"
-	case "openai.chat_completions":
-		return "OpenAI Chat 格式"
-	case "gemini.generate_content":
-		return "Gemini 格式"
-	}
-	return protocol
 }
 
 // modelsWithoutProtocolChannel 返回「没有任何 Provider 能在该客户端协议下服务」的模型集合。

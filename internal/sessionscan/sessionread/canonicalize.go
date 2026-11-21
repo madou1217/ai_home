@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
@@ -22,73 +23,75 @@ var (
 		{"profiles"},
 	}
 
-	providerCustomMappings = map[string][]projectionMapping{
-		"agy": {
-			{from: []string{".gemini", "antigravity-cli"}, to: []string{".gemini", "antigravity-cli"}},
-			{from: []string{".gemini", "config"}, to: []string{".gemini", "config"}},
-			{from: []string{".gemini", "GEMINI.md"}, to: []string{".gemini", "GEMINI.md"}},
-			{from: []string{".gemini"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, ".gemini"}},
-			{from: []string{"Library"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "Library"}},
-			{from: []string{".local", "share"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "xdg", "data"}},
-			{from: []string{".local", "state"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "xdg", "state"}},
-			{from: []string{".cache"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "xdg", "cache"}},
-			{from: []string{".config"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "xdg", "config"}},
-			{from: []string{"AppData", "Roaming"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "AppData", "Roaming"}},
-			{from: []string{"AppData", "Local"}, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "AppData", "Local"}},
-			{from: nil, to: []string{".gemini", "antigravity-cli", storagepolicy.RuntimeHomeDir, "home"}},
-		},
-		"opencode": {
-			{from: []string{".local", "share", "aih-opencode-runtime", "opencode"}, to: []string{".local", "share", "opencode"}},
-			{from: []string{".local", "share", "opencode"}, to: []string{".local", "share", "opencode"}},
-			{from: []string{".config", "opencode"}, to: []string{".config", "opencode"}},
-		},
-		"codex": {
-			{from: []string{".codex"}, to: []string{".codex"}},
-		},
-		"claude": {
-			{from: []string{".claude"}, to: []string{".claude"}},
-		},
-		"gemini": {
-			{from: []string{".gemini"}, to: []string{".gemini"}},
-		},
-		"grok": {
-			{from: []string{".grok"}, to: []string{".grok"}},
-		},
-		"kimi": {
-			{from: []string{".kimi-code"}, to: []string{".kimi-code"}},
-		},
-		"zcode": {
-			{from: []string{".zcode"}, to: []string{".zcode"}},
-		},
-		"qoder": {
-			{from: nil, to: nil},
-		},
-		"qodercn": {
-			{from: nil, to: nil},
-		},
-	}
+	providerCustomMappings = buildProviderCustomMappings()
 )
 
-// init 用 Provider 合同补齐 CodeBuddy 家族的投影映射：配置根来自 CLI.GlobalDir，
-// IDE 数据目录来自 Storage.IDEDataName。旧版在 map 里手写四支目录与产品名，
-// 新增成员必须记得改两处。
-func init() {
+// buildProviderCustomMappings 从 Provider 合同构造投影路径映射。
+//
+// 配置根来自 CLI.GlobalDir / EffectiveNativeRoot；只有真正不属于 Provider
+// 配置根的主机路径（Library、.local/share 等）仍写在本函数里。
+func buildProviderCustomMappings() map[string][]projectionMapping {
+	mappings := make(map[string][]projectionMapping, 12)
+
+	for _, providerID := range []string{"codex", "claude", "gemini", "grok", "kimi", "zcode"} {
+		root := providerroot.ConfigRoot(providerID)
+		mappings[providerID] = []projectionMapping{
+			{from: copySegments(root), to: copySegments(root)},
+		}
+	}
+
+	opencodeNative := providerroot.NativeRoot("opencode")
+	opencodeConfig := providerroot.ConfigRoot("opencode")
+	mappings["opencode"] = []projectionMapping{
+		{from: []string{".local", "share", "aih-opencode-runtime", "opencode"}, to: copySegments(opencodeNative)},
+		{from: copySegments(opencodeNative), to: copySegments(opencodeNative)},
+		{from: copySegments(opencodeConfig), to: copySegments(opencodeConfig)},
+	}
+
+	agyNative := providerroot.NativeRoot("agy")
+	agyConfig := providerroot.ConfigRoot("agy")
+	agyRuntime := providerroot.RuntimeHome("agy")
+	mappings["agy"] = []projectionMapping{
+		{from: copySegments(agyNative), to: copySegments(agyNative)},
+		{from: appendSegments(agyConfig, "config"), to: appendSegments(agyConfig, "config")},
+		{from: appendSegments(agyConfig, "GEMINI.md"), to: appendSegments(agyConfig, "GEMINI.md")},
+		{from: copySegments(agyConfig), to: appendSegments(agyRuntime, agyConfig...)},
+		{from: []string{"Library"}, to: appendSegments(agyRuntime, "Library")},
+		{from: []string{".local", "share"}, to: appendSegments(agyRuntime, "xdg", "data")},
+		{from: []string{".local", "state"}, to: appendSegments(agyRuntime, "xdg", "state")},
+		{from: []string{".cache"}, to: appendSegments(agyRuntime, "xdg", "cache")},
+		{from: []string{".config"}, to: appendSegments(agyRuntime, "xdg", "config")},
+		{from: []string{"AppData", "Roaming"}, to: appendSegments(agyRuntime, "AppData", "Roaming")},
+		{from: []string{"AppData", "Local"}, to: appendSegments(agyRuntime, "AppData", "Local")},
+		{from: nil, to: appendSegments(agyRuntime, "home")},
+	}
+
+	mappings["qoder"] = []projectionMapping{{from: nil, to: nil}}
+	mappings["qodercn"] = []projectionMapping{{from: nil, to: nil}}
+
 	for _, providerID := range codebuddyfamilystorage.ProviderIDs() {
 		configDir, ok := codebuddyfamilystorage.ConfigDir(providerID)
 		if !ok {
 			continue
 		}
-		mappings := []projectionMapping{
-			{from: []string{configDir}, to: []string{configDir}},
-		}
+		entries := []projectionMapping{{from: []string{configDir}, to: []string{configDir}}}
 		if ideDataName := codebuddyfamilystorage.IDEDataName(providerID); ideDataName != "" {
-			mappings = append(mappings, projectionMapping{
+			entries = append(entries, projectionMapping{
 				from: []string{ideDataName, "Claw"},
 				to:   []string{ideDataName, "Claw"},
 			})
 		}
-		providerCustomMappings[providerID] = mappings
+		mappings[providerID] = entries
 	}
+	return mappings
+}
+
+func copySegments(segments []string) []string {
+	return append([]string(nil), segments...)
+}
+
+func appendSegments(prefix []string, suffix ...string) []string {
+	return append(copySegments(prefix), suffix...)
 }
 
 // NormalizeMessageModel 归一化模型字段，剥离空白与 <synthetic> 占位符。

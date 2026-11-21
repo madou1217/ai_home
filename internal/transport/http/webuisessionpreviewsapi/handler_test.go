@@ -232,9 +232,9 @@ func TestPartialFailureKeepsBatch(t *testing.T) {
 		results: map[string]Preview{"claude/ok": {Model: "m", Preview: "p"}},
 		errs: map[string]error{
 			"unknown/unsupported": ErrUnsupportedProvider,
-			"claude/missing":       ErrSessionNotFound,
-			"claude/traversal":     ErrInvalidSessionRef,
-			"claude/broken":        ErrReadFailed,
+			"claude/missing":      ErrSessionNotFound,
+			"claude/traversal":    ErrInvalidSessionRef,
+			"claude/broken":       ErrReadFailed,
 		},
 	}
 	handler := newTestHandler(t, Dependencies{Authorizer: stubAuthorizer(true), Reader: reader})

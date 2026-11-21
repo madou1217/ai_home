@@ -493,7 +493,6 @@ func TestScanTimeoutReturnsPartial(t *testing.T) {
 	}
 }
 
-
 func TestAllAdditionalProvidersListHandler(t *testing.T) {
 	hostHome := t.TempDir()
 	aiHome := filepath.Join(hostHome, ".ai_home")

@@ -73,7 +73,7 @@ func TestAppStateProjectsOverlayRemoteAndHidden(t *testing.T) {
 	}
 
 	handler, err := NewHandler(Dependencies{
-		Authorizer: staticAuthorizer{allow: true},
+		Authorizer:  staticAuthorizer{allow: true},
 		HostHomeDir: hostHome,
 		AiHomeDir:   aiHome,
 	})

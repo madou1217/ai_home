@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 )
 
@@ -61,7 +62,7 @@ func runCodexEffort(arguments []string, runtime commandRuntime) error {
 				return err
 			}
 		}
-		home = filepath.Join(host, ".codex")
+		home = filepath.Join(host, providerroot.ConfigDir("codex"))
 	}
 	var prefs codexpreferences.Snapshot
 	var err error

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +28,7 @@ func runCodexTakeover(arguments []string, runtime commandRuntime) error {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return errors.New("codex_takeover_home_unavailable")
 	}
-	lockPath := filepath.Join(home, ".codex", "thread-writer-locks", threadID+".lock")
+	lockPath := filepath.Join(home, providerroot.ConfigDir("codex"), "thread-writer-locks", threadID+".lock")
 	if _, statErr := os.Stat(lockPath); statErr != nil {
 		_, _ = fmt.Fprintf(runtime.stdout, "thread %s 没有锁文件：会话空闲，可直接 resume\n", threadID)
 		return nil

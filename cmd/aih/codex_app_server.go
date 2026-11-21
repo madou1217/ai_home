@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -79,7 +80,7 @@ func runCodexCLIAppServer(ctx context.Context, args []string, runtime commandRun
 			host = strings.TrimSpace(os.Getenv("USERPROFILE"))
 		}
 		if host != "" {
-			home = filepath.Join(host, ".codex")
+			home = filepath.Join(host, providerroot.ConfigDir("codex"))
 		}
 	}
 	if err = codexpreferences.CheckHostReady(home); err != nil {

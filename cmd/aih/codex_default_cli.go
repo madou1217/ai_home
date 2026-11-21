@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexappconfig"
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
 )
@@ -66,7 +67,7 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	spawnMap := environmentSliceMap(spawnEnv)
 	codexHome := strings.TrimSpace(spawnMap["CODEX_HOME"])
 	if codexHome == "" {
-		codexHome = filepath.Join(hostHome, ".codex")
+		codexHome = filepath.Join(hostHome, providerroot.ConfigDir("codex"))
 	}
 	configPath := filepath.Join(codexHome, "config.toml")
 	if _, healErr := codexappconfig.HealConfigFile(configPath, codexappconfig.HealOptions{}); healErr != nil {

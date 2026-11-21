@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexappconfig"
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
@@ -69,7 +70,7 @@ func runCodexAppServerStdio(ctx context.Context, args []string, runtime commandR
 		if home == "" {
 			home = strings.TrimSpace(os.Getenv("USERPROFILE"))
 		}
-		codexHome = filepath.Join(home, ".codex")
+		codexHome = filepath.Join(home, providerroot.ConfigDir("codex"))
 	}
 	configPath := filepath.Join(codexHome, "config.toml")
 	envMap := envSliceMap(os.Environ())

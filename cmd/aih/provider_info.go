@@ -22,6 +22,7 @@ import (
 	kimistorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kimi"
 	kirostorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/kiro"
 	opencodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/opencode"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	qoderstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/qoder"
 	zcodestorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/zcode"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
@@ -188,7 +189,7 @@ func runCodexRawVersion(ctx context.Context, arguments []string, runtime command
 			host = strings.TrimSpace(os.Getenv("USERPROFILE"))
 		}
 		if host != "" {
-			home = filepath.Join(host, ".codex")
+			home = filepath.Join(host, providerroot.ConfigDir("codex"))
 		}
 	}
 	if err = codexpreferences.CheckHostReady(home); err != nil {

@@ -46,8 +46,8 @@ func Policy() accountprojection.Policy {
 		SessionEntries:        []string{"history", "tmp"},
 		PrecreatedDirectories: []string{"history", "tmp"},
 		Env: []accountprojection.EnvBinding{
-			{Key: "GEMINI_CLI_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".gemini"}},
-			{Key: "GEMINI_CLI_SYSTEM_SETTINGS_PATH", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".gemini", "settings.json"}},
+			{Key: "GEMINI_CLI_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot(ProviderID)},
+			{Key: "GEMINI_CLI_SYSTEM_SETTINGS_PATH", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativePath(ProviderID, "settings.json")},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}

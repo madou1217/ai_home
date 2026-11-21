@@ -39,7 +39,7 @@ func Policy() accountprojection.Policy {
 		SessionEntries:        []string{"sessions"},
 		PrecreatedDirectories: []string{"sessions", "cache", "log"},
 		Env: []accountprojection.EnvBinding{
-			{Key: "GROK_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".grok"}},
+			{Key: "GROK_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot(ProviderID)},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}

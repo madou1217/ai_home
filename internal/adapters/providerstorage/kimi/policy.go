@@ -55,7 +55,7 @@ func Policy() accountprojection.Policy {
 			"workspace-trust", "bin", "telemetry",
 		},
 		Env: []accountprojection.EnvBinding{
-			{Key: "KIMI_CODE_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".kimi-code"}},
+			{Key: "KIMI_CODE_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot(ProviderID)},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}

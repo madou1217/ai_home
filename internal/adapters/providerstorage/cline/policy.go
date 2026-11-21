@@ -36,8 +36,8 @@ func Policy() accountprojection.Policy {
 			{Path: []string{"Library", "Keychains"}},
 		},
 		Env: []accountprojection.EnvBinding{
-			{Key: "CLINE_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".cline"}},
-			{Key: "CLINE_DATA_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".cline", "data"}},
+			{Key: "CLINE_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot(ProviderID)},
+			{Key: "CLINE_DATA_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativePath(ProviderID, "data")},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}

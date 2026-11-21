@@ -78,7 +78,7 @@ func Policy() accountprojection.Policy {
 			"tmp",
 		},
 		Env: []accountprojection.EnvBinding{
-			{Key: "CODEX_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{".codex"}},
+			{Key: "CODEX_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot("codex")},
 			{Key: "CODEX_SQLITE_HOME", Base: accountprojection.EnvBaseHostNativeRoot},
 		},
 		AttachmentSubdir: []string{".tmp", "model", "images"},

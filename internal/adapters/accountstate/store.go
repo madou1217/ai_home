@@ -4,10 +4,10 @@
 // 读取的 account_state，供账号状态/更新响应使用。此前 Go 没有这个写入口，
 // internal/transport/http/webuiaccountstatusapi 只能返回 partial。
 //
-// 表结构归 Node 所有（lib/account/state-index.js）。本包不做兼容性迁移：
-// Open/OpenDatabase 用 exact-schema 校验（列顺序 + 主键），不匹配立即返回
-// ErrSchemaInvalid；建表只发生在显式调用 EnsureSchema 时。两个进程因此不会
-// 各自演化出不同的列。
+// 表结构沿用 Node 合同（lib/account/state-index.js）。Open/OpenDatabase 用
+// exact-schema 校验（列顺序 + 主键），不匹配立即返回 ErrSchemaInvalid；
+// OpenOrCreate 只在表缺失时按同一 DDL 自举（Go 已是唯一写入方，Node 不再建表），
+// 已有表的列漂移仍会失败，不做静默迁移。
 //
 // 刻意不写 runtime_state：Go 的运行态文档在 aih.db 的 account_runtime_states，
 // Node 的 runtime_state 只是迁移期兜底；Go 一并写会制造两份互相覆盖的真值。
@@ -129,6 +129,19 @@ ON CONFLICT(account_ref) DO UPDATE SET
 //
 // 数据库不存在时返回 ErrDatabaseMissing，绝不代 Node 创建空库。
 func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
+	return open(ctx, aiHomeDir, false)
+}
+
+// OpenOrCreate 在表缺失时按 Node 合同创建 account_state 与索引，其余与 Open 相同。
+//
+// Go 接管全部账号写入后，Node 不再负责建表；全新数据根第一次启动必须能自举。
+// 只有校验返回 ErrSchemaInvalid 时才尝试 EnsureSchema，重试仍失败则返回原始校验
+// 错误：列顺序之类的真实漂移不会被 CREATE IF NOT EXISTS 掩盖。
+func OpenOrCreate(ctx context.Context, aiHomeDir string) (*Store, error) {
+	return open(ctx, aiHomeDir, true)
+}
+
+func open(ctx context.Context, aiHomeDir string, create bool) (*Store, error) {
 	path, err := appstate.DatabasePath(aiHomeDir)
 	if err != nil {
 		return nil, err
@@ -144,11 +157,19 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 		return nil, fmt.Errorf("打开 app-state.db 失败: %w", err)
 	}
 	store := &Store{db: db, ownsDB: true, now: time.Now}
-	if err := store.validateSchema(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
+	validationErr := store.validateSchema(ctx)
+	if validationErr == nil {
+		return store, nil
 	}
-	return store, nil
+	if create && errors.Is(validationErr, ErrSchemaInvalid) {
+		if ensureErr := EnsureSchema(ctx, db); ensureErr == nil {
+			if retryErr := store.validateSchema(ctx); retryErr == nil {
+				return store, nil
+			}
+		}
+	}
+	_ = db.Close()
+	return nil, validationErr
 }
 
 // OpenDatabase 复用调用方的数据库句柄，只校验结构，不接管关闭。

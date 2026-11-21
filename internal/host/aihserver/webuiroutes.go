@@ -565,11 +565,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 写入接口失败: %w", err)
 	}
-	// account_state 是 Node WebUI 读取的展示投影。启停真值已经由 Go 承担，投影也
-	// 必须由 Go 同步写回，否则 Node 侧不再写之后账号页会一直显示旧状态。
-	// 打不开投影库时保持 nil：Go 真值仍可写，handler 不会伪造投影成功。
+	// account_state 是 WebUI 读取的展示投影。启停真值已经由 Go 承担，投影也
+	// 必须由 Go 同步写回，否则账号页会一直显示旧状态。
+	// 全新数据根没有这张 Node 时代的表：OpenOrCreate 按同一 DDL 自举，避免
+	// 首次启动就打不开投影（2026-11-21 新主机实测日志）。
 	var accountStatusProjection webuiaccountstatusapi.AccountStateProjection
-	if projection, projectionErr := accountstate.Open(context.Background(), dependencies.AIHomeDir); projectionErr == nil {
+	if projection, projectionErr := accountstate.OpenOrCreate(context.Background(), dependencies.AIHomeDir); projectionErr == nil {
 		accountStatusProjection = projection
 	} else {
 		log.Printf("账号启停投影不可用: %v", projectionErr)

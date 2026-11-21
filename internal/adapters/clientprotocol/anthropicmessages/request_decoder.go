@@ -108,6 +108,7 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 		TopP:                   wireRequest.TopP,
 		TopK:                   wireRequest.TopK,
 		UserID:                 userID,
+		ServiceTier:            wireRequest.ServiceTier,
 		PromptCacheBreakpoints: cacheBreakpoints,
 		StopSequences:          wireRequest.StopSequences,
 	})
@@ -127,8 +128,6 @@ func validateRootFields(wireRequest requestDTO) error {
 		return invalidField("temperature")
 	case wireRequest.TopK != nil && *wireRequest.TopK == 0:
 		return invalidField("top_k")
-	case wireRequest.ServiceTier != nil:
-		return unsupportedField("service_tier")
 	case hasJSONValue(wireRequest.Container):
 		return unsupportedField("container")
 	case hasJSONValue(wireRequest.InferenceGeo):

@@ -180,6 +180,10 @@ func (encoder *requestEncoder) encode() (requestDTO, error) {
 	if rootCache != nil && rootCache.Scope != "" {
 		encoder.addBeta(betaPromptCachingScope)
 	}
+	var serviceTier *string
+	if tier, found := encoder.request.ServiceTier(); found {
+		serviceTier = &tier
+	}
 	return requestDTO{
 		Model:             encoder.effectiveModel,
 		MaxTokens:         encoder.maxTokens,
@@ -188,6 +192,7 @@ func (encoder *requestEncoder) encode() (requestDTO, error) {
 		Stream:            true,
 		Temperature:       optionalFloat(encoder.request.Temperature()),
 		TopP:              optionalFloat(encoder.request.TopP()),
+		ServiceTier:       serviceTier,
 		TopK:              optionalUint64(encoder.request.TopK()),
 		StopSequences:     encoder.request.StopSequences(),
 		Tools:             tools,

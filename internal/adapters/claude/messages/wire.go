@@ -4,13 +4,15 @@ import "encoding/json"
 
 // requestDTO 只描述 Anthropic Messages create 请求线协议。
 type requestDTO struct {
-	Model             string                `json:"model"`
-	MaxTokens         uint64                `json:"max_tokens"`
-	Messages          []messageDTO          `json:"messages"`
-	System            []contentDTO          `json:"system,omitempty"`
-	Stream            bool                  `json:"stream"`
-	Temperature       *float64              `json:"temperature,omitempty"`
-	TopP              *float64              `json:"top_p,omitempty"`
+	Model       string       `json:"model"`
+	MaxTokens   uint64       `json:"max_tokens"`
+	Messages    []messageDTO `json:"messages"`
+	System      []contentDTO `json:"system,omitempty"`
+	Stream      bool         `json:"stream"`
+	Temperature *float64     `json:"temperature,omitempty"`
+	TopP        *float64     `json:"top_p,omitempty"`
+	// ServiceTier 是客户端显式声明的服务层级，原样交给支持该字段的上游。
+	ServiceTier       *string               `json:"service_tier,omitempty"`
 	TopK              *uint64               `json:"top_k,omitempty"`
 	StopSequences     []string              `json:"stop_sequences,omitempty"`
 	Tools             []json.RawMessage     `json:"tools,omitempty"`

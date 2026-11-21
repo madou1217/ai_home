@@ -206,8 +206,6 @@ func validateSupportedRootFields(wireRequest requestDTO) error {
 		return unsupportedField("logit_bias")
 	case wireRequest.Seed != nil:
 		return unsupportedField("seed")
-	case wireRequest.ServiceTier != nil:
-		return unsupportedField("service_tier")
 	case hasJSONValue(wireRequest.Metadata):
 		return unsupportedField("metadata")
 	case hasJSONValue(wireRequest.WebSearchOptions):

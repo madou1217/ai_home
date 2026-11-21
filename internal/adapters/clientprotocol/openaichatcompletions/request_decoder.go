@@ -65,6 +65,7 @@ func (RequestDecoder) Decode(body []byte) (inference.Request, error) {
 		Temperature:          wireRequest.Temperature,
 		TopP:                 wireRequest.TopP,
 		UserID:               wireRequest.User,
+		ServiceTier:          wireRequest.ServiceTier,
 		StopSequences:        stopSequences,
 		Store:                wireRequest.Store,
 	})

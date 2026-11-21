@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // runCodexTakeover 处理 `aih codex takeover <thread-id> [--force]`。
@@ -24,7 +25,7 @@ func runCodexTakeover(arguments []string, runtime commandRuntime) error {
 	if err != nil {
 		return err
 	}
-	home, err := runtime.userHomeDir()
+	home, err := resolveCodexHostHome(runtime)
 	if err != nil || strings.TrimSpace(home) == "" {
 		return errors.New("codex_takeover_home_unavailable")
 	}
@@ -45,20 +46,88 @@ func runCodexTakeover(arguments []string, runtime commandRuntime) error {
 		return fmt.Errorf("thread %s 仍被 %d 个进程持有；确认要结束它们以接管，请加 --force", threadID, len(holders))
 	}
 	for _, pid := range holders {
-		_ = exec.Command("kill", "-TERM", strconv.Itoa(pid)).Run()
+		if processIsCurrentOrAncestor(pid) {
+			return fmt.Errorf("thread %s 由当前 Codex 会话（pid=%d）持有；为避免结束当前会话，不能从其子进程自动接管", threadID, pid)
+		}
+		if !isCodexProcess(pid) {
+			return fmt.Errorf("thread %s 的持有者 pid=%d 不是可确认的 Codex/aih 进程，拒绝结束", threadID, pid)
+		}
+	}
+	for _, pid := range holders {
+		// A Codex process can leave the wrapper/supervisor alive while its
+		// process group still owns the lock. Signal the group first; fall back
+		// to the exact holder when the group is unavailable.
+		if !signalProcessGroup(pid, "TERM") {
+			_ = exec.Command("kill", "-TERM", strconv.Itoa(pid)).Run()
+		}
 	}
 	if waitLockReleased(lockPath, 10*time.Second) {
 		_, _ = fmt.Fprintf(runtime.stdout, "[aih] 已释放 thread %s 的写锁\n", threadID)
 		return nil
 	}
 	for _, pid := range lockHolderPIDs(lockPath) {
-		_ = exec.Command("kill", "-KILL", strconv.Itoa(pid)).Run()
+		if !signalProcessGroup(pid, "KILL") {
+			_ = exec.Command("kill", "-KILL", strconv.Itoa(pid)).Run()
+		}
 	}
 	if waitLockReleased(lockPath, 5*time.Second) {
 		_, _ = fmt.Fprintf(runtime.stdout, "[aih] 已强制释放 thread %s 的写锁\n", threadID)
 		return nil
 	}
 	return fmt.Errorf("thread %s 的写锁仍被占用；请手动检查持有者", threadID)
+}
+
+func signalProcessGroup(pid int, signal string) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := exec.Command("kill", "-"+signal, "-"+strconv.Itoa(pid)).Run()
+	return err == nil
+}
+
+func isCodexProcess(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	output, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false
+	}
+	command := strings.TrimSpace(string(output))
+	first := command
+	if fields := strings.Fields(command); len(fields) > 0 {
+		first = fields[0]
+	}
+	name := strings.ToLower(filepath.Base(strings.Trim(first, "\"'")))
+	return name == "aih" || strings.HasPrefix(name, "aih-") || name == "codex" || strings.HasPrefix(name, "codex.")
+}
+
+func processIsCurrentOrAncestor(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	current := os.Getpid()
+	seen := make(map[int]bool)
+	for current > 1 && !seen[current] {
+		if pid == current {
+			return true
+		}
+		seen[current] = true
+		parent, err := processParentPID(current)
+		if err != nil || parent <= 0 {
+			return false
+		}
+		current = parent
+	}
+	return false
+}
+
+func processParentPID(pid int) (int, error) {
+	output, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(output)))
 }
 
 func parseCodexTakeoverArgs(arguments []string) (string, bool, error) {
@@ -79,8 +148,8 @@ func parseCodexTakeoverArgs(arguments []string) (string, bool, error) {
 	if threadID == "" {
 		return "", false, errors.New("用法: aih codex takeover <thread-id> [--force]")
 	}
-	// 只接受 codex 的 thread 形态，避免把任意路径拼进锁目录。
-	if len(threadID) != 36 || strings.Count(threadID, "-") != 4 {
+	// 只接受 UUID 形态，避免把任意路径拼进锁目录。
+	if !isCodexThreadID(threadID) {
 		return "", false, fmt.Errorf("thread id 格式不正确: %s", threadID)
 	}
 	return threadID, force, nil
@@ -120,4 +189,62 @@ func processSummary(pid int) string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func codexResumeThreadID(arguments []string) (string, bool) {
+	index := -1
+	if len(arguments) >= 2 && arguments[1] == "resume" {
+		index = 1
+	} else if len(arguments) >= 3 && !strings.HasPrefix(arguments[1], "-") && arguments[2] == "resume" {
+		index = 2
+	}
+	if index < 0 || index+1 >= len(arguments) {
+		return "", false
+	}
+	candidate := strings.TrimSpace(arguments[index+1])
+	if !isCodexThreadID(candidate) {
+		return "", false
+	}
+	return candidate, true
+}
+
+func isCodexThreadID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, char := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func resolveCodexHostHome(runtime commandRuntime) (string, error) {
+	if runtime.lookupEnv != nil {
+		if home := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_HOST_HOME")); home != "" {
+			return home, nil
+		}
+	}
+	if runtime.userHomeDir == nil {
+		return "", errors.New("codex_takeover_home_unavailable")
+	}
+	return runtime.userHomeDir()
+}
+
+func takeoverCodexThreadIfNeeded(threadID string, runtime commandRuntime) error {
+	home, err := resolveCodexHostHome(runtime)
+	if err != nil || strings.TrimSpace(home) == "" {
+		return errors.New("codex_takeover_home_unavailable")
+	}
+	lockPath := filepath.Join(home, providerroot.ConfigDir("codex"), "thread-writer-locks", threadID+".lock")
+	if len(lockHolderPIDs(lockPath)) == 0 {
+		return nil
+	}
+	// Resume is an explicit request to own this exact thread. Release only
+	// verified holders; never delete a lock file or kill an unrelated process.
+	return runCodexTakeover([]string{threadID, "--force"}, runtime)
 }

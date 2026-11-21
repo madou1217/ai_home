@@ -33,6 +33,9 @@ func runGlobalSessionTarget(
 		}
 		return fmt.Errorf("%w: 会话名不唯一", errInvalidCommand)
 	}
+	if matched.NativeOnly {
+		return launchNativeSession(ctx, *matched, runtime)
+	}
 	if !matched.Live {
 		return fmt.Errorf(
 			"%w: 会话 %s 已结束；用 aih %s resume %s 续接",
@@ -46,6 +49,28 @@ func runGlobalSessionTarget(
 		return fmt.Errorf("%w: 进入会话需要真实终端", errInvalidCommand)
 	}
 	return attachPersistentSession(ctx, *matched, runtime)
+}
+
+// launchNativeSession 进入没有 tmux pane 的原生 Provider 会话。
+func launchNativeSession(ctx context.Context, row persistent.SessionRow, runtime commandRuntime) error {
+	provider := strings.TrimSpace(row.Provider)
+	threadID := strings.TrimSpace(row.NativeID)
+	if provider == "" || threadID == "" {
+		return fmt.Errorf("%w: 原生会话身份缺失", errInvalidCommand)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	command := exec.CommandContext(ctx, executable, provider, "resume", threadID)
+	command.Stdin = runtime.stdin
+	command.Stdout = runtime.stdout
+	command.Stderr = runtime.stderr
+	command.Env = os.Environ()
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("进入原生会话 %s 失败: %w", threadID, err)
+	}
+	return nil
 }
 
 // attachPersistentSession 用 tmux attach-session 接回已存在的持久会话；父进程

@@ -78,7 +78,9 @@ func Run(ctx context.Context, config Config) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer restore()
+	var restoreOnce sync.Once
+	restoreTerminal := func() { restoreOnce.Do(restore) }
+	defer restoreTerminal()
 
 	size := initialSize(config)
 	session, err := config.Starter.Start(ctx, pty.Spec{
@@ -93,6 +95,8 @@ func Run(ctx context.Context, config Config) (int, error) {
 	}
 
 	done := make(chan struct{})
+	inputDone := make(chan struct{})
+	inputStop := make(chan struct{})
 
 	// context 取消时主动杀子进程：只 Close PTY 主端不保证 TUI 退出。
 	go func() {
@@ -128,13 +132,29 @@ func Run(ctx context.Context, config Config) (int, error) {
 		close(done)
 		stopResize()
 		resizeWG.Wait()
+		close(inputStop)
 		_ = session.Close()
+		// The input pump uses a cancellable fd poll for real terminal/file
+		// descriptors, so it cannot continue consuming the caller's shell input
+		// after the child exits. Generic readers have no portable cancellation
+		// contract and are intentionally not awaited here.
+		if inputPumpCanStop(config.Stdin) {
+			<-inputDone
+		}
+		// Restore termios before writing the provider-mode reset sequence; the
+		// sequence itself must reach the caller's normal shell terminal state.
+		restoreTerminal()
+		// The child may have enabled mouse reporting, bracketed paste, an
+		// alternate screen or synchronized updates. Restore the caller's
+		// terminal before the outer shell receives the prompt again.
+		cleanupTerminal(config.Stdin, config.Stdout)
 	}()
 
 	// 输入原样透传。raw mode 已关闭行缓冲，括号粘贴/方向键由 TUI 自己解释；
 	// 这里不做分帧，避免把跨 chunk 的转义序列改写成另一种字节流。
 	go func() {
-		_, _ = io.Copy(session, config.Stdin)
+		defer close(inputDone)
+		copyInputUntilStopped(session, config.Stdin, inputStop)
 	}()
 
 	_, outputErr := io.Copy(config.Stdout, session)

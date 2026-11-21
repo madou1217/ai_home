@@ -47,7 +47,9 @@ type SessionRow struct {
 	StartPath    string
 	Title        string
 	// NativeID 是该会话对应的 Provider 原生会话 id（能直接 resume）；未知为空。
-	NativeID         string
+	NativeID string
+	// NativeOnly 表示这条记录来自 Provider 原生会话库，没有可 attach 的 tmux pane。
+	NativeOnly       bool
 	WindowName       string
 	Command          string
 	PanePID          int

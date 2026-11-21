@@ -288,10 +288,6 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "gateway-auth" {
 		return runCodexGatewayAuth(ctx, arguments[2:], runtime)
 	}
-	// aih codex takeover <thread-id> [--force]：结束卡住的旧进程，让 resume 能接管。
-	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "takeover" {
-		return runCodexTakeover(arguments[2:], runtime)
-	}
 	if providerID == "codex" && len(arguments) >= 2 && arguments[1] == "effort" {
 		return runCodexEffort(arguments[2:], runtime)
 	}
@@ -377,6 +373,15 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	}
 	if len(arguments) >= 2 && arguments[1] == "sessions" {
 		return runProviderSessionsList(ctx, providerID, arguments[2:], runtime)
+	}
+	// Codex resume may target a thread whose prior process still owns the
+	// global writer lock. Resolve the exact thread before native argv rewrite.
+	if providerID == "codex" && len(arguments) >= 2 {
+		if threadID, ok := codexResumeThreadID(arguments); ok {
+			if err := takeoverCodexThreadIfNeeded(threadID, runtime); err != nil {
+				return err
+			}
+		}
 	}
 	if providerID == "help" {
 		if len(arguments) == 2 && isCLIProvider(arguments[1]) {

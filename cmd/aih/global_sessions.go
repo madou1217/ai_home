@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+	"github.com/madou1217/ai_home/internal/runtime/persistent"
+	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
 // globalSessionDetailTokens 与 Node GLOBAL_SESSION_DETAIL_TOKENS 一致：
@@ -75,8 +79,83 @@ func collectGlobalRows(ctx context.Context, runtime commandRuntime, allProjects 
 	// 与 Node 共用标题缓存：先用未过期缓存补标题/原生会话 id，再把本次结果写回。
 	now := time.Now()
 	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
+	appendNativeCodexRows(ctx, runtime, &rows)
 	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
 	return scopeGlobalSessionRows(rows, allProjects...)
+}
+
+// appendNativeCodexRows 把 Go 原生 Codex 进程对应的 state.sqlite 会话投影到 ss。
+// 原生 Go 启动不创建 tmux pane；如果这里只看 TmuxSessionStore，aih ss 会错误地
+// 显示为空，即使 Codex thread 和写锁都还活着。该投影只保存标题/路径/原生 id，
+// 不复制消息正文；NativeOnly 让进入动作走 `aih codex resume <thread>`。
+func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]persistent.SessionRow) {
+	if rows == nil {
+		return
+	}
+	hostHome := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_HOST_HOME"))
+	if hostHome == "" {
+		hostHome, _ = runtime.userHomeDir()
+	}
+	if hostHome == "" {
+		return
+	}
+	known := make(map[string]bool)
+	for _, row := range *rows {
+		if row.Provider == "codex" && strings.TrimSpace(row.NativeID) != "" {
+			known[strings.TrimSpace(row.NativeID)] = true
+		}
+	}
+	for _, session := range sessionread.ListCodexStateSessions(ctx, hostHome) {
+		id := strings.TrimSpace(session.ID)
+		// ss is a live/persistent-session view, not a second Codex history
+		// command. State rows without a held writer lock are historical rows.
+		if id == "" || !isCodexThreadID(id) || known[id] || strings.TrimSpace(session.CWD) == "" {
+			continue
+		}
+		locked := codexThreadLockHeld(hostHome, id)
+		if !locked {
+			continue
+		}
+		updated := session.UpdatedAtMS
+		if updated == 0 {
+			updated = time.Now().UnixMilli()
+		}
+		*rows = append(*rows, persistent.SessionRow{
+			Provider:         "codex",
+			RuntimeScope:     "native",
+			Socket:           "",
+			Name:             "codex-" + id[:8],
+			Path:             session.CWD,
+			StartPath:        session.CWD,
+			Title:            compactGlobalSessionTitle(session.Title),
+			NativeID:         id,
+			Live:             locked,
+			CreatedAtMS:      updated,
+			LastActivityAtMS: updated,
+			LastActiveAtMS:   updated,
+			NativeOnly:       true,
+		})
+		known[id] = true
+	}
+}
+
+const maxGlobalSessionTitleRunes = 96
+
+func compactGlobalSessionTitle(value string) string {
+	compact := strings.TrimSpace(strings.Join(strings.Fields(value), " "))
+	runes := []rune(compact)
+	if len(runes) <= maxGlobalSessionTitleRunes {
+		return compact
+	}
+	return string(runes[:maxGlobalSessionTitleRunes-1]) + "…"
+}
+
+func codexThreadLockHeld(hostHome, threadID string) bool {
+	lock := filepath.Join(hostHome, providerroot.ConfigDir("codex"), "thread-writer-locks", threadID+".lock")
+	if _, err := os.Stat(lock); err != nil {
+		return false
+	}
+	return len(lockHolderPIDs(lock)) > 0
 }
 
 func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) ([]persistent.SessionRow, error) {
@@ -198,6 +277,11 @@ func globalSessionTitle(row persistent.SessionRow) string {
 }
 
 func globalSessionID(row persistent.SessionRow) string {
+	if row.NativeOnly {
+		if native := strings.TrimSpace(row.NativeID); native != "" {
+			return native
+		}
+	}
 	if name := strings.TrimSpace(row.Name); name != "" {
 		return name
 	}

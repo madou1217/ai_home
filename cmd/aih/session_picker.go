@@ -211,6 +211,9 @@ func runSessionPicker(
 			}
 			restore()
 			_, _ = io.WriteString(runtime.stdout, "\x1b[?25h\x1b[2J\x1b[H")
+			if row.NativeOnly {
+				return launchNativeSession(ctx, *row, runtime)
+			}
 			return attachPersistentSession(ctx, *row, runtime)
 		case pickerCopyID:
 			row := state.current()

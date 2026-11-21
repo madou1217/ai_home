@@ -62,6 +62,15 @@ func isCompletionEntry(arguments []string) bool {
 // NotifyContext 只负责取消；单独留一份信号通道，保证 Ctrl+C/SIGTERM 的退出码
 // 不被 context.Canceled 吞成 0/1。
 func execute(args []string, runtime commandRuntime) int {
+	// Codex takeover is a read/terminate management action. Handle it before
+	// resume and provider launch dispatch so it cannot be parsed as prompt text.
+	if len(args) >= 2 && args[0] == "codex" && args[1] == "takeover" {
+		if err := runCodexTakeover(args[2:], runtime); err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
 	// Node 启动链的构件库私有管道：必须在任何数据库/账号解析之前分流。
 	if handled, err := runArtifactEnsure(context.Background(), args, runtime); handled {
 		if err != nil {

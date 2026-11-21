@@ -58,6 +58,7 @@ func collectGlobalLabels(
 // pickerStore 把 TmuxSessionStore 适配成选择器的读写端口。
 type pickerStore struct {
 	store       *persistent.TmuxSessionStore
+	runtime     commandRuntime
 	allProjects bool
 }
 
@@ -66,12 +67,17 @@ func (source pickerStore) Rows(ctx context.Context) ([]persistent.SessionRow, er
 	if err != nil {
 		return nil, err
 	}
-	// 选择器重载（关闭会话后）也补一次缓存标题，避免掉回 pane 名。
+	// 选择器重载（关闭会话后）也补一次缓存标题，避免掉回 pane 名；原生
+	// Codex 没有 tmux pane，必须和 --list 共享同一投影，否则交互 ss 仍显示为空。
 	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(source.store.AIHomeDir, time.Now()))
+	appendNativeCodexRows(ctx, source.runtime, &rows)
 	return scopeGlobalSessionRows(rows, source.allProjects)
 }
 
 func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) error {
+	if row.NativeOnly {
+		return fmt.Errorf("原生 Codex 会话不能从 aih ss 关闭；退出该 Codex 进程后再刷新")
+	}
 	return source.store.CloseSession(ctx, row)
 }
 
@@ -90,6 +96,7 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 			return fmt.Errorf("读取持久会话失败: %w", err)
 		}
 		resolveSessionTitles(ctx, runtime, rows)
+		appendNativeCodexRows(ctx, runtime, &rows)
 		_ = persistent.WriteSessionCache(store.AIHomeDir, rows, time.Now())
 	} else {
 		// 默认走与 --list 相同的采集+缓存补全，picker 里的 c/y 才有原生会话 id。
@@ -107,5 +114,9 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 		writeGlobalSessionGroups(runtime.stdout, rows, labels)
 		return nil
 	}
-	return runSessionPicker(ctx, runtime, pickerStore{store: store, allProjects: len(allProjects) > 0 && allProjects[0]}, labels)
+	return runSessionPicker(ctx, runtime, pickerStore{
+		store:       store,
+		runtime:     runtime,
+		allProjects: len(allProjects) > 0 && allProjects[0],
+	}, labels)
 }

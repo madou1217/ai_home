@@ -30,10 +30,6 @@ const (
 	// 前缀把整张表倒出来的病态情形。取值远高于任何真实层容量，正常查询碰不到。
 	modelMatchCeiling = 2000
 	modelsSnapshotKey = webuimodelssnapshot.CacheKey
-	// gatewayModelsSnapshotKey 是服务端网关模型快照（含 modelAccounts：
-	// 模型 → 参与路由的账号）。它是「哪些模型真的能路由」的另一处事实源，
-	// 与 account_models 并用。
-	gatewayModelsSnapshotKey = "cache:gateway-models-snapshot.json"
 )
 
 type modelAliasRow struct {
@@ -327,7 +323,7 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 				if !blockedByModel[choice.Value] {
 					continue
 				}
-				note := "⚠ 无 " + protocolDisplayName(protocol) + " 通道"
+				note := "⚠ 协议不兼容：" + protocolDisplayName(protocol)
 				if strings.TrimSpace(choice.Description) == "" {
 					choice.Description = note
 				} else {
@@ -415,17 +411,16 @@ func protocolDisplayName(protocol string) string {
 
 // modelsWithoutProtocolChannel 返回「没有任何 Provider 能在该客户端协议下服务」的模型集合。
 //
-// 判定走 provider 合同（RelayChannelOn），归属取**两个来源的并集**：
+// 归属只用**一个**来源：account_models 里有效的行（探测结果 + 人工策略）。
 //
-//  1. account_models（探测结果 + 人工策略）——账号自己声明它能用哪些模型；
-//  2. 网关快照的 modelAccounts——服务端实际纳入路由的模型→账号映射。
+// 为什么不用网关快照的 modelAccounts：那份映射是「路由候选」，不等于「这个模型真
+// 能被这门协议服务」。实测 `balanced-model` / `opencode/qwen3.8-max` 在 modelAccounts
+// 里同时挂在 claude、codex 名下，但服务端 /v0/webui/models 的 selectableByAccountRef
+// 表明它们只对 codebuddy、opencode 账号可选——在 /v1/messages 上根本选不到。
+// 用并集会把这些真的不可用的模型洗白成可用（实测标记从 158 掉到 5，全是漏报），
+// 那比多标几个更糟：用户点下去才发现不能用。
 //
-// 为什么必须并集：两者会不一致。实测 `balanced-model` 在 account_models 里只挂在
-// codebuddy（在 /v1/messages 上不可用），但服务端路由同时把它挂在 claude/codex 上。
-// 只看表会误报「不可用」，而那是一个真能用的模型。并集只会让「可用」更容易成立，
-// 与「未知不警告」的原则一致：宁可不提示，也不要把能用的模型标成坏的。
-//
-// 完全没有任何归属证据的模型不标注——未知不等于不可用。
+// 完全没有任何归属证据的模型不标注——未知不等于不可用，凭空警告同样不可接受。
 func modelsWithoutProtocolChannel(aiHome, protocol string) map[string]bool {
 	owners := make(map[string]map[string]bool, 256)
 	addOwner := func(model, provider string) {
@@ -459,12 +454,6 @@ func modelsWithoutProtocolChannel(aiHome, protocol string) map[string]bool {
 			addOwner(modelID, providerID)
 		}
 	})
-	// 服务端路由映射：模型 → 账号 → Provider。
-	for model, providers := range readGatewayModelProviderOwners(aiHome) {
-		for provider := range providers {
-			addOwner(model, provider)
-		}
-	}
 	snapshot := loadProviderSnapshot()
 	blocked := make(map[string]bool, 64)
 	for model, providers := range owners {
@@ -476,87 +465,6 @@ func modelsWithoutProtocolChannel(aiHome, protocol string) map[string]bool {
 		}
 	}
 	return blocked
-}
-
-// readGatewayModelProviderOwners 读网关快照的 modelAccounts，把「模型 → 账号」还原成
-// 「模型 → Provider」。快照缺失或损坏时返回空表（调用方按并集继续用账号表判定）。
-func readGatewayModelProviderOwners(aiHome string) map[string]map[string]bool {
-	result := make(map[string]map[string]bool, 256)
-	path, err := appstate.DatabasePath(aiHome)
-	if err != nil {
-		return result
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), completionDBTimeout)
-	defer cancel()
-	raw, found, err := appstate.ReadKV(ctx, path, gatewayModelsSnapshotKey)
-	if err != nil || !found || strings.TrimSpace(raw) == "" {
-		return result
-	}
-	var document struct {
-		ModelAccounts map[string][]string `json:"modelAccounts"`
-	}
-	if json.Unmarshal([]byte(raw), &document) != nil || len(document.ModelAccounts) == 0 {
-		return result
-	}
-	refProvider := make(map[string]string, 128)
-	refs := make([]string, 0, 128)
-	for _, accounts := range document.ModelAccounts {
-		refs = append(refs, accounts...)
-	}
-	refProvider = readAccountProviders(aiHome, refs)
-	for model, accounts := range document.ModelAccounts {
-		for _, account := range accounts {
-			provider := refProvider[strings.TrimSpace(account)]
-			if provider == "" {
-				continue
-			}
-			if result[model] == nil {
-				result[model] = make(map[string]bool, 2)
-			}
-			result[model][provider] = true
-		}
-	}
-	return result
-}
-
-// readAccountProviders 批量解析 accountRef → provider_id。
-func readAccountProviders(aiHome string, refs []string) map[string]string {
-	result := make(map[string]string, len(refs))
-	if len(refs) == 0 {
-		return result
-	}
-	withReadDB(aiHome, func(database *sql.DB) {
-		unique := make([]any, 0, len(refs))
-		seen := make(map[string]bool, len(refs))
-		for _, ref := range refs {
-			ref = strings.TrimSpace(ref)
-			if ref == "" || seen[ref] {
-				continue
-			}
-			seen[ref] = true
-			unique = append(unique, ref)
-		}
-		if len(unique) == 0 {
-			return
-		}
-		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(unique)), ",")
-		rows, err := database.Query(
-			`SELECT account_ref, provider_id FROM accounts WHERE account_ref IN (`+placeholders+`)`,
-			unique...,
-		)
-		if err != nil {
-			return
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var ref, provider string
-			if scanErr := rows.Scan(&ref, &provider); scanErr != nil {
-				continue
-			}
-			result[strings.TrimSpace(ref)] = strings.ToLower(strings.TrimSpace(provider))
-		}
-	})
-	return result
 }
 
 func anyProviderHasChannel(snapshot providerSnapshot, owners map[string]bool, protocol string) bool {

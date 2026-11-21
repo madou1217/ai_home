@@ -110,11 +110,14 @@ func (spec LaunchSpec) ArgumentsAfterSubcommands() []string {
 
 // ResolveArguments 合并用户命令参数并保持 Provider 所需的精确插入位置。
 func (spec LaunchSpec) ResolveArguments(arguments []string) ([]string, error) {
-	return mergeArguments(
-		spec.arguments,
-		spec.argumentsAfterSubcommands,
-		arguments,
-	)
+	return spec.ResolveArgumentsWithOverrides(arguments, nil)
+}
+
+// ResolveArgumentsWithOverrides 在账号级覆盖参数之后合并用户参数：
+// 覆盖是默认值，用户显式参数仍然排在后面并优先。
+func (spec LaunchSpec) ResolveArgumentsWithOverrides(arguments, overrides []string) ([]string, error) {
+	strategyArguments := append(append([]string(nil), spec.arguments...), overrides...)
+	return mergeArguments(strategyArguments, spec.argumentsAfterSubcommands, arguments)
 }
 
 // Environment 返回环境补丁的深副本。

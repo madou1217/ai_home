@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -13,6 +14,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/codexappconfig"
 	"github.com/madou1217/ai_home/internal/runtime/codexappserverws"
+	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
+	"github.com/madou1217/ai_home/internal/runtime/codexstatepage"
 )
 
 // runCodexDefaultCLI 接管非交互 codex 子命令：默认账号环境、配置自愈、
@@ -73,6 +76,7 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	if _, healErr := codexappconfig.HealConfigFile(configPath, codexappconfig.HealOptions{}); healErr != nil {
 		return healErr
 	}
+	repairProjectedRollouts(ctx, codexHome)
 
 	if !codexappconfig.HasCodexModelProviderArg(forwardArgs) {
 		apiKey := strings.TrimSpace(spawnMap["OPENAI_API_KEY"])
@@ -83,6 +87,40 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	}
 	if !hasStartupPolicyArg(forwardArgs) {
 		forwardArgs = append(codexappconfig.BuildStartupPolicyArgs(), forwardArgs...)
+	}
+	if codexexecintent.IsExecResume(forwardArgs) {
+		prepared, lease, prepErr := codexexecintent.Prepare(ctx, "codex", upstream, forwardArgs, spawnEnv)
+		if prepErr != nil {
+			lease.Release()
+			return prepErr
+		}
+		command := exec.CommandContext(ctx, upstream, prepared...)
+		command.Env = spawnEnv
+		command.Stdin = runtime.stdin
+		command.Stdout = runtime.stdout
+		command.Stderr = runtime.stderr
+		if err := command.Start(); err != nil {
+			lease.Release()
+			return err
+		}
+		if lease != nil && lease.Lost != nil {
+			go func() {
+				select {
+				case <-lease.Lost:
+					_, _ = runtime.stderr.Write([]byte("[aih] codex_exec_intent_lease_lost\n"))
+					if command.Process != nil {
+						_ = command.Process.Kill()
+					}
+				case <-ctx.Done():
+				}
+			}()
+		}
+		runErr := command.Wait()
+		lease.Release()
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return runErr
 	}
 	if interactive && !localAppServerDisabled(envMap, forwardArgs) {
 		proxy, proxyErr := startLocalAppServer(ctx, upstream, forwardArgs, spawnEnv, runtime.stderr)
@@ -116,6 +154,22 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		os.Exit(exitErr.ExitCode())
 	}
 	return err
+}
+
+// repairProjectedRollouts 复刻 Node 启动前的最佳努力修复：把指向已删除投影目录的
+// rollout_path 改回共享会话存储。失败不影响启动。
+func repairProjectedRollouts(ctx context.Context, codexHome string) {
+	root := strings.TrimSpace(codexHome)
+	if root == "" {
+		return
+	}
+	request, err := json.Marshal(map[string]any{
+		"version": 1, "op": "projected-rollout-repair", "codexHome": root, "threadId": "", "limit": 500,
+	})
+	if err != nil {
+		return
+	}
+	_, _ = codexstatepage.RepairProjectedRollouts(ctx, request)
 }
 
 func environmentSliceMap(entries []string) map[string]string {

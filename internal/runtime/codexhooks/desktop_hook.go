@@ -51,9 +51,9 @@ type DesktopHookState struct {
 	TargetBinaryPath        string           `json:"targetBinaryPath,omitempty"`
 	UpstreamBinaryPath      string           `json:"upstreamBinaryPath,omitempty"`
 	HookStrategy            string           `json:"hookStrategy,omitempty"`
-	HelperScriptPath        string           `json:"helperScriptPath,omitempty"`
-	HelperScriptMtimeMs     int64            `json:"helperScriptMtimeMs,omitempty"`
-	HelperRevision          string           `json:"helperRevision,omitempty"`
+	GoBinaryPath            string           `json:"goBinaryPath,omitempty"`
+	GoBinaryMtimeMs         int64            `json:"goBinaryMtimeMs,omitempty"`
+	GoBinaryRevision        string           `json:"helperRevision,omitempty"`
 	AppVersion              string           `json:"appVersion,omitempty"`
 	AppBuildVersion         string           `json:"appBuildVersion,omitempty"`
 	CodexVersion            string           `json:"codexVersion,omitempty"`
@@ -80,23 +80,23 @@ type DesktopTraceConfig struct {
 
 // DesktopHookResult 描述 Desktop Hook 激活、校验与停用结果。
 type DesktopHookResult struct {
-	OK                  bool     `json:"ok"`
-	Supported           bool     `json:"supported"`
-	Enabled             bool     `json:"enabled"`
-	Installed           bool     `json:"installed,omitempty"`
-	Updated             bool     `json:"updated,omitempty"`
-	Healthy             bool     `json:"healthy,omitempty"`
-	Repaired            bool     `json:"repaired,omitempty"`
-	HelperScriptChanged bool     `json:"helperScriptChanged,omitempty"`
-	RestartRequired     bool     `json:"restartRequired,omitempty"`
-	Retryable           *bool    `json:"retryable,omitempty"`
-	Reason              string   `json:"reason,omitempty"`
-	ErrorCode           string   `json:"errorCode,omitempty"`
-	BundlePath          string   `json:"bundlePath,omitempty"`
-	TargetBinaryPath    string   `json:"targetBinaryPath,omitempty"`
-	UpstreamBinaryPath  string   `json:"upstreamBinaryPath,omitempty"`
-	DriftReasons        []string `json:"driftReasons,omitempty"`
-	StateFilePath       string   `json:"stateFilePath,omitempty"`
+	OK                 bool     `json:"ok"`
+	Supported          bool     `json:"supported"`
+	Enabled            bool     `json:"enabled"`
+	Installed          bool     `json:"installed,omitempty"`
+	Updated            bool     `json:"updated,omitempty"`
+	Healthy            bool     `json:"healthy,omitempty"`
+	Repaired           bool     `json:"repaired,omitempty"`
+	GoBinaryChanged    bool     `json:"helperScriptChanged,omitempty"`
+	RestartRequired    bool     `json:"restartRequired,omitempty"`
+	Retryable          *bool    `json:"retryable,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
+	ErrorCode          string   `json:"errorCode,omitempty"`
+	BundlePath         string   `json:"bundlePath,omitempty"`
+	TargetBinaryPath   string   `json:"targetBinaryPath,omitempty"`
+	UpstreamBinaryPath string   `json:"upstreamBinaryPath,omitempty"`
+	DriftReasons       []string `json:"driftReasons,omitempty"`
+	StateFilePath      string   `json:"stateFilePath,omitempty"`
 }
 
 // DesktopTraceResult 描述 trace 配置更新结果。
@@ -139,7 +139,7 @@ type DesktopHookOptions struct {
 	HostHomeDir             string
 	Platform                string
 	NodeExecPath            string
-	HelperScriptPath        string
+	GoBinaryPath            string
 	ProviderHookReceiverURL string
 	RuntimeLayouts          []DesktopLayout
 	AllowSystemApplications *bool
@@ -159,7 +159,7 @@ type DesktopHookService struct {
 	hostHomeDir             string
 	platform                string
 	nodeExecPath            string
-	helperScriptPath        string
+	goBinaryPath            string
 	providerHookReceiverURL string
 	stateFilePath           string
 	runtimeLayouts          []DesktopLayout
@@ -196,7 +196,7 @@ func NewDesktopHookService(opts DesktopHookOptions) *DesktopHookService {
 		hostHomeDir:             strings.TrimSpace(opts.HostHomeDir),
 		platform:                NormalizePlatform(opts.Platform),
 		nodeExecPath:            strings.TrimSpace(opts.NodeExecPath),
-		helperScriptPath:        strings.TrimSpace(opts.HelperScriptPath),
+		goBinaryPath:            strings.TrimSpace(opts.GoBinaryPath),
 		providerHookReceiverURL: strings.TrimSpace(opts.ProviderHookReceiverURL),
 		stateFilePath:           stateFilePath,
 		runtimeLayouts:          opts.RuntimeLayouts,
@@ -221,7 +221,7 @@ func (svc *DesktopHookService) StateFilePath() string {
 func (svc *DesktopHookService) BuildWrapperScript(upstreamBinaryPath string) string {
 	return BuildCodexAppServerWrapperScript(WrapperMarkerDesktop, WrapperOptions{
 		NodeExecPath:       svc.nodeExecPath,
-		HelperScriptPath:   svc.helperScriptPath,
+		GoBinaryPath:       svc.goBinaryPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
 		StateFilePath:      svc.stateFilePath,
 	})
@@ -447,7 +447,7 @@ type expectedDesktopHookState struct {
 	AppBuildVersion     string
 	CodexVersion        string
 	WrapperRevision     string
-	HelperRevision      string
+	GoBinaryRevision    string
 	UpstreamFingerprint *FileFingerprint
 }
 
@@ -460,7 +460,7 @@ func (svc *DesktopHookService) buildExpectedState(paths DesktopHookPaths, previo
 		AppBuildVersion:     strings.TrimSpace(meta.AppBuildVersion),
 		CodexVersion:        svc.readCodexVersion(paths.UpstreamBinaryPath, previous, fp),
 		WrapperRevision:     sha256Hex([]byte(wrapper)),
-		HelperRevision:      fileRevision(svc.helperScriptPath),
+		GoBinaryRevision:    fileRevision(svc.goBinaryPath),
 		UpstreamFingerprint: fp,
 	}, wrapper
 }
@@ -514,7 +514,7 @@ func (svc *DesktopHookService) CollectDriftReasons(paths DesktopHookPaths, previ
 	if strings.TrimSpace(previous.WrapperRevision) != expected.WrapperRevision {
 		add("wrapper_revision")
 	}
-	if strings.TrimSpace(previous.HelperRevision) != expected.HelperRevision {
+	if strings.TrimSpace(previous.GoBinaryRevision) != expected.GoBinaryRevision {
 		add("helper_revision")
 	}
 	if !sameFingerprint(previous.UpstreamFingerprint, expected.UpstreamFingerprint) {
@@ -565,7 +565,7 @@ func marshalJSONField(v any) json.RawMessage {
 	return data
 }
 
-func helperMtimeMs(path string) int64 {
+func goBinaryMtimeMs(path string) int64 {
 	if strings.TrimSpace(path) == "" {
 		return 0
 	}
@@ -613,17 +613,17 @@ func (svc *DesktopHookService) writeStateLocked(patch desktopStateWritePatch) bo
 	rawMap["targetBinaryPath"] = marshalJSONField(strings.TrimSpace(patch.paths.TargetBinaryPath))
 	rawMap["upstreamBinaryPath"] = marshalJSONField(strings.TrimSpace(patch.paths.UpstreamBinaryPath))
 	rawMap["hookStrategy"] = marshalJSONField(hookStrategy)
-	rawMap["helperScriptPath"] = marshalJSONField(svc.helperScriptPath)
-	rawMap["helperScriptMtimeMs"] = marshalJSONField(helperMtimeMs(svc.helperScriptPath))
+	rawMap["goBinaryPath"] = marshalJSONField(svc.goBinaryPath)
+	rawMap["goBinaryMtimeMs"] = marshalJSONField(goBinaryMtimeMs(svc.goBinaryPath))
 
-	helperRev := previous.HelperRevision
+	helperRev := previous.GoBinaryRevision
 	appVer := previous.AppVersion
 	appBuildVer := previous.AppBuildVersion
 	codexVer := previous.CodexVersion
 	wrapperRev := previous.WrapperRevision
 	upstreamFP := previous.UpstreamFingerprint
 	if patch.expected != nil {
-		helperRev = patch.expected.HelperRevision
+		helperRev = patch.expected.GoBinaryRevision
 		appVer = patch.expected.AppVersion
 		appBuildVer = patch.expected.AppBuildVersion
 		codexVer = patch.expected.CodexVersion
@@ -936,10 +936,10 @@ func (svc *DesktopHookService) Activate() (DesktopHookResult, error) {
 		return installRes, nil
 	}
 
-	nextMtime := helperMtimeMs(svc.helperScriptPath)
-	helperChanged := strings.TrimSpace(previous.HelperScriptPath) != strings.TrimSpace(svc.helperScriptPath) ||
-		previous.HelperScriptMtimeMs != nextMtime ||
-		strings.TrimSpace(previous.HelperRevision) != expected.HelperRevision
+	nextMtime := goBinaryMtimeMs(svc.goBinaryPath)
+	helperChanged := strings.TrimSpace(previous.GoBinaryPath) != strings.TrimSpace(svc.goBinaryPath) ||
+		previous.GoBinaryMtimeMs != nextMtime ||
+		strings.TrimSpace(previous.GoBinaryRevision) != expected.GoBinaryRevision
 
 	// 首次安装会在 installWrapper 中生成 .aih-original 上游快照，需在安装后重算期望指纹，
 	// 避免随后自愈或二次激活误报 upstream_fingerprint 漂移。
@@ -954,18 +954,18 @@ func (svc *DesktopHookService) Activate() (DesktopHookResult, error) {
 	svc.mu.Unlock()
 
 	return DesktopHookResult{
-		OK:                  true,
-		Supported:           true,
-		Enabled:             true,
-		Installed:           installRes.Installed,
-		Updated:             installRes.Updated,
-		HelperScriptChanged: helperChanged,
-		DriftReasons:        driftReasons,
-		RestartRequired:     len(driftReasons) > 0,
-		BundlePath:          paths.BundlePath,
-		TargetBinaryPath:    paths.TargetBinaryPath,
-		UpstreamBinaryPath:  paths.UpstreamBinaryPath,
-		StateFilePath:       svc.stateFilePath,
+		OK:                 true,
+		Supported:          true,
+		Enabled:            true,
+		Installed:          installRes.Installed,
+		Updated:            installRes.Updated,
+		GoBinaryChanged:    helperChanged,
+		DriftReasons:       driftReasons,
+		RestartRequired:    len(driftReasons) > 0,
+		BundlePath:         paths.BundlePath,
+		TargetBinaryPath:   paths.TargetBinaryPath,
+		UpstreamBinaryPath: paths.UpstreamBinaryPath,
+		StateFilePath:      svc.stateFilePath,
 	}, nil
 }
 
@@ -1037,9 +1037,9 @@ func (svc *DesktopHookService) UpdateTraceConfig(cfg DesktopTraceConfig) Desktop
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 	previous := svc.readStateLocked()
-	nextHelperRev := fileRevision(svc.helperScriptPath)
+	nextHelperRev := fileRevision(svc.goBinaryPath)
 	if nextHelperRev == "" {
-		nextHelperRev = previous.HelperRevision
+		nextHelperRev = previous.GoBinaryRevision
 	}
 
 	changed := strings.TrimSpace(previous.TraceFile) != nextTraceFile ||
@@ -1047,9 +1047,9 @@ func (svc *DesktopHookService) UpdateTraceConfig(cfg DesktopTraceConfig) Desktop
 		previous.TraceRemoteControl != cfg.TraceRemoteControl ||
 		previous.RemoteControlProxy != cfg.RemoteControlProxy ||
 		strings.TrimSpace(previous.ProviderHookReceiverURL) != svc.providerHookReceiverURL ||
-		strings.TrimSpace(previous.HelperScriptPath) != svc.helperScriptPath ||
-		previous.HelperScriptMtimeMs != helperMtimeMs(svc.helperScriptPath) ||
-		strings.TrimSpace(previous.HelperRevision) != nextHelperRev
+		strings.TrimSpace(previous.GoBinaryPath) != svc.goBinaryPath ||
+		previous.GoBinaryMtimeMs != goBinaryMtimeMs(svc.goBinaryPath) ||
+		strings.TrimSpace(previous.GoBinaryRevision) != nextHelperRev
 
 	usePaths := paths
 	if usePaths.BundlePath == "" {
@@ -1065,7 +1065,7 @@ func (svc *DesktopHookService) UpdateTraceConfig(cfg DesktopTraceConfig) Desktop
 		AppBuildVersion:     previous.AppBuildVersion,
 		CodexVersion:        previous.CodexVersion,
 		WrapperRevision:     previous.WrapperRevision,
-		HelperRevision:      nextHelperRev,
+		GoBinaryRevision:    nextHelperRev,
 		UpstreamFingerprint: previous.UpstreamFingerprint,
 	}
 	svc.writeStateLocked(desktopStateWritePatch{
@@ -1205,8 +1205,8 @@ func (svc *DesktopHookService) ListRunningAppServerProcesses() []ProcessInfo {
 			continue
 		}
 		cmd := proc.Command
-		matchHelper := svc.helperScriptPath != "" &&
-			strings.Contains(cmd, svc.helperScriptPath) &&
+		matchHelper := svc.goBinaryPath != "" &&
+			strings.Contains(cmd, svc.goBinaryPath) &&
 			strings.Contains(cmd, svc.stateFilePath) &&
 			strings.Contains(cmd, "app-server")
 		matchTarget := target != "" &&

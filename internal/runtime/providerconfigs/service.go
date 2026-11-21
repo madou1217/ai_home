@@ -15,6 +15,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
+	"github.com/madou1217/ai_home/internal/runtime/providersettings"
 )
 
 // ConfigError 表示 Provider 配置工作台业务领域错误，HTTP 层据此映射状态码。
@@ -34,8 +35,14 @@ func (e *ConfigError) HTTPStatus() int {
 	case "provider_config_key_settings_unsupported",
 		"provider_config_key_settings_required",
 		"provider_config_key_setting_unknown",
-		"provider_config_key_setting_invalid":
+		"provider_config_key_setting_invalid",
+		"provider_config_account_required",
+		"provider_config_account_provider_mismatch":
 		return 400
+	case "provider_config_account_not_found":
+		return 404
+	case "provider_config_account_settings_unavailable":
+		return 503
 	case "provider_config_conflict":
 		return 409
 	case "provider_config_validation_failed":
@@ -169,6 +176,8 @@ type Service struct {
 	cliRunner   CLIRunner
 	// choices 是关键设置的候选来源；为空时只看静态 Choices。
 	choices ChoiceResolver
+	// accountSettings 是账号级关键设置覆盖存储；为空时账号视图不可用。
+	accountSettings *providersettings.Store
 
 	cliMu    sync.Mutex
 	cliCache map[string]cachedVersion
@@ -195,6 +204,14 @@ func NewService(catalog *providers.Catalog, hostHomeDir, aiHomeDir string) *Serv
 func (s *Service) WithCLIRunner(runner CLIRunner) *Service {
 	if runner != nil {
 		s.cliRunner = runner
+	}
+	return s
+}
+
+// WithAccountSettings 注入账号级关键设置的覆盖存储。
+func (s *Service) WithAccountSettings(store *providersettings.Store) *Service {
+	if store != nil {
+		s.accountSettings = store
 	}
 	return s
 }

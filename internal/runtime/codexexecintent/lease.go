@@ -6,13 +6,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 )
+
+// Lease is the OS-owned lock retained until the foreground native process exits.
+// Lost closes when the lock file is replaced or removed by another process.
+type Lease struct {
+	release func()
+	Lost    <-chan struct{}
+}
+
+// Release drops the lock. Safe to call more than once.
+func (lease *Lease) Release() {
+	if lease != nil && lease.release != nil {
+		lease.release()
+	}
+}
 
 // The inode is never deleted: replacing it would let two processes lock distinct
 // files for the same thread. It is not a vendor DB/rollout mutation.
-func acquire(home, id string) (func(), error) {
-	// Account projections may have different CODEX_HOME directories pointing
-	// at one native session store. Lock beside the canonical shared store.
+func acquire(home, id string) (*Lease, error) {
 	root := home
 	if resolved, err := filepath.EvalSymlinks(filepath.Join(home, "sessions")); err == nil {
 		root = filepath.Dir(resolved)
@@ -46,5 +60,31 @@ func acquire(home, id string) (func(), error) {
 		f.Close()
 		return nil, fmt.Errorf("codex_exec_thread_busy")
 	}
-	return func() { unlock(f); _ = f.Close() }, nil
+	lost := make(chan struct{})
+	stop := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				current, statErr := os.Lstat(p)
+				if statErr != nil || !current.Mode().IsRegular() || !os.SameFile(current, opened) {
+					close(lost)
+					return
+				}
+			}
+		}
+	}()
+	release := func() {
+		once.Do(func() {
+			close(stop)
+			unlock(f)
+			_ = f.Close()
+		})
+	}
+	return &Lease{release: release, Lost: lost}, nil
 }

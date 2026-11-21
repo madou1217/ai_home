@@ -125,11 +125,21 @@ var CodexDesktopLayouts = []DesktopLayout{
 
 // WrapperOptions 定义生成 app-server / CLI 包装脚本所需的路径与行为选项。
 type WrapperOptions struct {
+	GoBinaryPath                 string
 	NodeExecPath                 string
 	HelperScriptPath             string
 	UpstreamBinaryPath           string
 	StateFilePath                string
 	RouteDefaultCLIThroughHelper bool
+}
+
+// goBinary 返回 wrapper 唯一允许执行的 Go CLI 路径。
+// 未显式注入时沿旧锚点推导；wrapper 不再执行 Node 助手。
+func (options WrapperOptions) goBinary() string {
+	if path := strings.TrimSpace(options.GoBinaryPath); filepath.IsAbs(path) {
+		return path
+	}
+	return wrapperGoBinary(options.HelperScriptPath)
 }
 
 // WindowsHookLaunch 描述绕过 .cmd 直接拉起 Node 包装脚本的启动参数。
@@ -249,10 +259,8 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"#!/bin/sh",
 		"# " + marker,
 		"UPSTREAM=" + ShellQuote(options.UpstreamBinaryPath),
-		"NODE_BIN=" + ShellQuote(options.NodeExecPath),
-		"HELPER=" + ShellQuote(options.HelperScriptPath),
 		"STATE_FILE=" + ShellQuote(options.StateFilePath),
-		"AIH_GO_CLI=" + ShellQuote(wrapperGoBinary(options.HelperScriptPath)),
+		"AIH_GO_CLI=" + ShellQuote(options.goBinary()),
 	}
 	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理；
 	// resume 已切到 __codex-cli-resume；run-cli-default 也已切到 __codex-default-cli。
@@ -407,13 +415,7 @@ func BuildWindowsPowerShellWrapperScript(options WrapperOptions) string {
 		"#!/usr/bin/env pwsh",
 		"# " + WrapperMarkerCLI,
 		"$upstream = " + PowerShellSingleQuote(options.UpstreamBinaryPath),
-		"$nodeBin = " + PowerShellSingleQuote(options.NodeExecPath),
-		"if (-not (Test-Path -LiteralPath $nodeBin -PathType Leaf)) {",
-		"  $nodeCommand = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1",
-		"  if ($nodeCommand) { $nodeBin = $nodeCommand.Source }",
-		"}",
-		"$helper = " + PowerShellSingleQuote(options.HelperScriptPath),
-		"$aihGo = " + PowerShellSingleQuote(wrapperGoBinary(options.HelperScriptPath)),
+		"$aihGo = " + PowerShellSingleQuote(options.goBinary()),
 		"$stateFile = " + PowerShellSingleQuote(options.StateFilePath),
 		"$forwardArgs = @($args)",
 		"$valueOptions = @(" + strings.Join(quotedOpts, ", ") + ")",
@@ -477,10 +479,7 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		"REM " + WrapperMarkerCLI,
 		"setlocal",
 		fmt.Sprintf(`set "%s=%s"`, WrapperUpstreamVar, CmdSetValue(options.UpstreamBinaryPath)),
-		fmt.Sprintf(`set "NODE_BIN=%s"`, CmdSetValue(options.NodeExecPath)),
-		`if not exist "%NODE_BIN%" for %%I in (node.exe) do if not "%%~$PATH:I"=="" set "NODE_BIN=%%~$PATH:I"`,
-		fmt.Sprintf(`set "HELPER=%s"`, CmdSetValue(options.HelperScriptPath)),
-		fmt.Sprintf(`set "AIH_GO_CLI=%s"`, CmdSetValue(wrapperGoBinary(options.HelperScriptPath))),
+		fmt.Sprintf(`set "AIH_GO_CLI=%s"`, CmdSetValue(options.goBinary())),
 		fmt.Sprintf(`set "STATE_FILE=%s"`, CmdSetValue(options.StateFilePath)),
 		"call :AIH_FIND_SUBCOMMAND %*",
 		"goto :AIH_DISPATCH",
@@ -619,7 +618,7 @@ func ReadCmdSetVariable(body string, name string) string {
 }
 
 // ResolveWindowsCodexHookLaunch 在 Windows 下解析 CLI hook，绕过 .cmd 直接拉起 Node 助手。
-func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string, fallbackNodeExec string) *WindowsHookLaunch {
+func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string) *WindowsHookLaunch {
 	if NormalizePlatform(platform) != "windows" {
 		return nil
 	}
@@ -649,48 +648,28 @@ func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string
 		if !strings.Contains(body, WrapperMarkerCLI) {
 			return nil
 		}
-		helper := ReadCmdSetVariable(body, "HELPER")
 		upstream := ReadCmdSetVariable(body, WrapperUpstreamVar)
 		stateFile := ReadCmdSetVariable(body, "STATE_FILE")
-		if helper == "" || upstream == "" || stateFile == "" || !fileExists(helper) {
-			return nil
-		}
-		configuredNode := ReadCmdSetVariable(body, "NODE_BIN")
-		nodeBin := strings.TrimSpace(fallbackNodeExec)
-		if configuredNode != "" && fileExists(configuredNode) {
-			nodeBin = configuredNode
-		}
-		if nodeBin == "" {
+		if upstream == "" || stateFile == "" {
 			return nil
 		}
 		subcommand := strings.ToLower(FindCodexSubcommand(args))
 		if subcommand == "app-server" {
 			return nil
 		}
-		// resume / default CLI 已迁到 Go；旧 wrapper 没有 AIH_GO_CLI 或二进制缺失时保留 Node 兼容。
+		// resume / default CLI 都已迁到 Go；旧 wrapper 缺少 AIH_GO_CLI 时不再回落 Node。
 		goBinary := strings.TrimSpace(ReadCmdSetVariable(body, "AIH_GO_CLI"))
-		if goBinary != "" && fileExists(goBinary) {
-			command := "__codex-default-cli"
-			if subcommand == "resume" {
-				command = "__codex-cli-resume"
-			}
-			goArgs := make([]string, 0, 6+len(args))
-			goArgs = append(goArgs, command, "--upstream", upstream, "--state-file", stateFile, "--")
-			goArgs = append(goArgs, args...)
-			return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
+		if goBinary == "" || !fileExists(goBinary) {
+			return nil
 		}
-		mode := "--run-cli-default"
+		command := "__codex-default-cli"
 		if subcommand == "resume" {
-			mode = "--run-cli-resume"
+			command = "__codex-cli-resume"
 		}
-		launchArgs := make([]string, 0, 7+len(args))
-		launchArgs = append(launchArgs, helper, mode, "--upstream", upstream, "--state-file", stateFile, "--")
-		launchArgs = append(launchArgs, args...)
-		return &WindowsHookLaunch{
-			Command:  nodeBin,
-			Args:     launchArgs,
-			HookPath: hookPath,
-		}
+		goArgs := make([]string, 0, 6+len(args))
+		goArgs = append(goArgs, command, "--upstream", upstream, "--state-file", stateFile, "--")
+		goArgs = append(goArgs, args...)
+		return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
 	}
 	return nil
 }

@@ -75,6 +75,7 @@ type CLIHookOptions struct {
 	Arch             string
 	PathEnv          string
 	TempDir          string
+	GoBinaryPath     string
 	NodeExecPath     string
 	HelperScriptPath string
 	BackgroundTTL    time.Duration
@@ -96,6 +97,7 @@ type CLIHookService struct {
 	arch             string
 	pathEnv          string
 	tempDir          string
+	goBinaryPath     string
 	nodeExecPath     string
 	helperScriptPath string
 	stateFilePath    string
@@ -129,6 +131,7 @@ func NewCLIHookService(opts CLIHookOptions) *CLIHookService {
 		arch:             NormalizeArch(opts.Arch),
 		pathEnv:          opts.PathEnv,
 		tempDir:          strings.TrimSpace(opts.TempDir),
+		goBinaryPath:     strings.TrimSpace(opts.GoBinaryPath),
 		nodeExecPath:     strings.TrimSpace(opts.NodeExecPath),
 		helperScriptPath: strings.TrimSpace(opts.HelperScriptPath),
 		stateFilePath:    stateFilePath,
@@ -312,6 +315,7 @@ func (svc *CLIHookService) isTemporaryPath(filePath string) bool {
 // BuildWrapperScript 生成默认 POSIX CLI 包装脚本。
 func (svc *CLIHookService) BuildWrapperScript(upstreamBinaryPath string) string {
 	return BuildCLIWrapperScript(WrapperOptions{
+		GoBinaryPath:       svc.goBinaryPath,
 		NodeExecPath:       svc.nodeExecPath,
 		HelperScriptPath:   svc.helperScriptPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
@@ -322,6 +326,7 @@ func (svc *CLIHookService) BuildWrapperScript(upstreamBinaryPath string) string 
 // BuildWrapperScriptForTarget 按目标扩展名（POSIX / .ps1 / .cmd）生成包装脚本。
 func (svc *CLIHookService) BuildWrapperScriptForTarget(targetBinaryPath string, upstreamBinaryPath string) string {
 	return BuildCLIWrapperScriptForTarget(targetBinaryPath, WrapperOptions{
+		GoBinaryPath:       svc.goBinaryPath,
 		NodeExecPath:       svc.nodeExecPath,
 		HelperScriptPath:   svc.helperScriptPath,
 		UpstreamBinaryPath: upstreamBinaryPath,

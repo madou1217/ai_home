@@ -7,7 +7,7 @@ import {
   readManagementKeyQrFile,
   type ServerCredentialsQr
 } from '@/services/management-key-qr-reader';
-import { normalizeEndpoint } from '../../../../lib/protocol/server-credentials-qr';
+import { normalizeEndpoint } from '@/services/server-credentials-qr';
 import styles from './ManagementKeyQrScanner.module.css';
 
 interface Props {

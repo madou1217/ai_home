@@ -46,7 +46,9 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codebuddymodels"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
+	"github.com/madou1217/ai_home/internal/runtime/launchsettings"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/providersettings"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/permissionlaunch"
 )
@@ -79,6 +81,8 @@ type Options struct {
 	// CodexHomeDir 是 Gateway 启动共享的 Codex 配置根（宿主 ~/.codex）；
 	// 为空时回退 <HostHomeDir>/.codex。投影 HOME 不保存用户偏好。
 	CodexHomeDir string
+	// AccountSettings 是账号级 Provider 设置覆盖存储；为空时按 AIHomeDir 自动装配。
+	AccountSettings *providersettings.Store
 	// ClaudePreflight 是 Claude 首屏检查决策；由命令入口按 app-state 解析。
 	ClaudePreflight providercli.ClaudePreflight
 }
@@ -145,11 +149,13 @@ type App struct {
 	hostHomeDir string
 	// codexHomeDir 是 Gateway 启动共享的 Codex 配置根。
 	codexHomeDir string
-	lookupEnv    func(string) (string, bool)
-	stderr       io.Writer
-	resources    []io.Closer
-	closeOnce    sync.Once
-	closeErr     error
+	// accountSettings 是账号级关键设置覆盖。
+	accountSettings *providersettings.Store
+	lookupEnv       func(string) (string, bool)
+	stderr          io.Writer
+	resources       []io.Closer
+	closeOnce       sync.Once
+	closeErr        error
 }
 
 // New 装配 Provider Catalog、aih.db、OAuth 刷新、双模式 Strategy 和官方 CLI Runtime。
@@ -320,6 +326,12 @@ func New(ctx context.Context, options Options) (*App, error) {
 	if codexHomeDir == "" {
 		codexHomeDir = filepath.Join(hostHomeDir, providerroot.ConfigDir("codex"))
 	}
+	accountSettings := options.AccountSettings
+	if accountSettings == nil && strings.TrimSpace(options.AIHomeDir) != "" {
+		if databasePath, dbErr := appstate.DatabasePath(options.AIHomeDir); dbErr == nil {
+			accountSettings = providersettings.NewStore(databasePath)
+		}
+	}
 	// CodeBuddy 家族没有 OpenAI 兼容的 base URL 入口，网关档靠独立的 models.json
 	// 投影：文件只放在 run/codebuddy-gateway，绝不写宿主共享的 ~/.codebuddy/models.json，
 	// 否则家族账号投影会把网关模型链进每个账号沙箱，绕开 `aih codebuddy <id>` 的钉选。
@@ -381,17 +393,20 @@ func New(ctx context.Context, options Options) (*App, error) {
 	// 份事实解析可执行文件，安装成功即能被下一次启动发现（例如 ~/.local/bin）。
 	cliLifecycle := newAppsCLILifecycle(options.AIHomeDir, hostHomeDir)
 	runner, err := providercli.NewRunner(providercli.Options{
-		Credentials:     credentials,
-		Stdin:           options.Stdin,
-		Stdout:          options.Stdout,
-		Stderr:          options.Stderr,
-		HTTPClient:      options.ProviderHTTPClient,
-		Interactive:     isInteractiveTTY(options.Stdin, options.Stdout),
-		PTYStarter:      pty.NewStarter(),
-		Projection:      provisioner,
-		HostHomeDir:     hostHomeDir,
-		CodexHomeDir:    codexHomeDir,
-		PrepareNative:   codexexecintent.Prepare,
+		Credentials:  credentials,
+		Stdin:        options.Stdin,
+		Stdout:       options.Stdout,
+		Stderr:       options.Stderr,
+		HTTPClient:   options.ProviderHTTPClient,
+		Interactive:  isInteractiveTTY(options.Stdin, options.Stdout),
+		PTYStarter:   pty.NewStarter(),
+		Projection:   provisioner,
+		HostHomeDir:  hostHomeDir,
+		CodexHomeDir: codexHomeDir,
+		PrepareNative: func(ctx context.Context, providerID, command string, args, env []string) ([]string, func(), error) {
+			prepared, lease, err := codexexecintent.Prepare(ctx, providerID, command, args, env)
+			return prepared, func() { lease.Release() }, err
+		},
 		DiscoverBinary:  cliLifecycle.Resolve,
 		ClaudePreflight: options.ClaudePreflight,
 	})
@@ -406,6 +421,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 		}
 		app.hostHomeDir = hostHomeDir
 		app.codexHomeDir = codexHomeDir
+		app.accountSettings = accountSettings
 		app.lookupEnv = os.LookupEnv
 		app.stderr = options.Stderr
 		app.cliLifecycle = cliLifecycle
@@ -422,6 +438,7 @@ func New(ctx context.Context, options Options) (*App, error) {
 	app.accountStore = store
 	app.hostHomeDir = hostHomeDir
 	app.codexHomeDir = codexHomeDir
+	app.accountSettings = accountSettings
 	app.lookupEnv = os.LookupEnv
 	app.stderr = options.Stderr
 	app.cliLifecycle = cliLifecycle
@@ -581,6 +598,10 @@ func (app *App) Run(
 	if err != nil {
 		return fmt.Errorf("规划 Provider CLI 启动失败: %w", err)
 	}
+	accountOverrides, overrideWarning := app.resolveAccountLaunchOverrides(ctx, plan)
+	if overrideWarning != "" && app.stderr != nil {
+		_, _ = fmt.Fprintln(app.stderr, overrideWarning)
+	}
 	if native, ok := plan.Native(); ok && app.accountStore != nil {
 		lease, admitErr := accountadmission.Launch(app.aiHomeDir, native.ProviderID(), native.AccountRef().String())
 		if admitErr != nil {
@@ -606,8 +627,22 @@ func (app *App) Run(
 		}
 		app.refreshProviderCLIVersion(planCLITarget.ProviderID)
 	}
+	extraEnv := permission.Env
+	if len(accountOverrides.Env) > 0 {
+		merged := make(map[string]string, len(permission.Env)+len(accountOverrides.Env))
+		for name, value := range permission.Env {
+			merged[name] = value
+		}
+		for name, value := range accountOverrides.Env {
+			merged[name] = value
+		}
+		extraEnv = merged
+	}
 	runProvider := func() error {
-		return app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{ExtraEnv: permission.Env})
+		return app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{
+			ExtraEnv:       extraEnv,
+			ExtraArguments: accountOverrides.Args,
+		})
 	}
 	runErr := runProvider()
 	// 官方 CLI 缺失时不要只把 exec 错误抛给用户：说明原因、给出安装器，
@@ -625,6 +660,49 @@ func (app *App) Run(
 		return fmt.Errorf("执行 Provider CLI 失败: %w", runErr)
 	}
 	return nil
+}
+
+// resolveAccountLaunchOverrides 读取绑定账号的覆盖并翻译成 CLI 原生注入。
+func (app *App) resolveAccountLaunchOverrides(
+	ctx context.Context,
+	plan providerlaunch.LaunchPlan,
+) (launchsettings.Overrides, string) {
+	if app == nil || app.accountSettings == nil {
+		return launchsettings.Overrides{}, ""
+	}
+	provider, accountRef, ok := launchAccountIdentity(plan)
+	if !ok {
+		return launchsettings.Overrides{}, ""
+	}
+	document, err := app.accountSettings.Read(ctx, accountRef)
+	if err != nil {
+		return launchsettings.Overrides{}, fmt.Sprintf("[aih] 读取账号级 Provider 设置失败，本次使用公共配置: %v", err)
+	}
+	if document.Provider != provider || len(document.Values) == 0 {
+		return launchsettings.Overrides{}, ""
+	}
+	overrides, err := launchsettings.Build(provider, accountRef, document.Values, app.aiHomeDir)
+	if err != nil {
+		return launchsettings.Overrides{}, fmt.Sprintf("[aih] 账号级 Provider 设置无法注入，本次使用公共配置: %v", err)
+	}
+	if overrides.Unsupported {
+		return overrides, fmt.Sprintf("[aih] %s 的账号级设置已保存，但该 CLI 暂未接入启动注入；本次使用公共配置。", provider)
+	}
+	return overrides, ""
+}
+
+// launchAccountIdentity 返回本次启动绑定的 Provider 与账号；账号池模式返回 false。
+func launchAccountIdentity(plan providerlaunch.LaunchPlan) (string, string, bool) {
+	if gateway, ok := plan.Gateway(); ok {
+		if accountRef, pinned := gateway.PinnedAccount(); pinned {
+			return strings.ToLower(strings.TrimSpace(gateway.ClientProviderID())), accountRef.String(), true
+		}
+		return "", "", false
+	}
+	if native, ok := plan.Native(); ok {
+		return strings.ToLower(strings.TrimSpace(native.ProviderID())), native.AccountRef().String(), true
+	}
+	return "", "", false
 }
 
 // ensureHostAuthCommand 是受管 Codex 认证命令自愈的唯一启动入口。

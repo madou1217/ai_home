@@ -25,6 +25,7 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	}
 
 	opts := WrapperOptions{
+		GoBinaryPath:                 "/opt/aih/proxy's-go",
 		NodeExecPath:                 "/usr/local/bin/node",
 		HelperScriptPath:             "/opt/aih/proxy's.js",
 		UpstreamBinaryPath:           "/usr/local/bin/codex.aih-original",
@@ -39,8 +40,11 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	if !strings.Contains(posix, CodexAppServerPassthroughEnv) {
 		t.Fatalf("POSIX wrapper 缺少直通环境变量:\n%s", posix)
 	}
-	if !strings.Contains(posix, `HELPER='/opt/aih/proxy'\''s.js'`) {
+	if !strings.Contains(posix, `AIH_GO_CLI='/opt/aih/proxy'\''s-go'`) {
 		t.Fatalf("POSIX wrapper 单引号转义异常:\n%s", posix)
+	}
+	if strings.Contains(posix, "NODE_BIN=") || strings.Contains(posix, "HELPER=") {
+		t.Fatalf("POSIX wrapper 不应再声明 Node 变量:\n%s", posix)
 	}
 	// 包含在路径注释里的同名子串绝不能误判为 wrapper 标记行。
 	pnpmComment := "#!/bin/sh\n# cmd-shim-target=/tmp/aih-codex-cli-hook/codex.js\nexec node \"$@\"\n"
@@ -96,17 +100,10 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	if err := os.WriteFile(aliasCmd, []byte(BuildAliasWrapperScript(aliasCmd, canonicalCmd)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows", nodeFake)
-	if launch == nil {
-		t.Fatal("期望解析到 WindowsHookLaunch，实际为 nil")
+	if launch := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"-m", "o3", "resume", "t-1"}, "windows"); launch != nil {
+		t.Fatalf("旧 wrapper 缺少 AIH_GO_CLI 时不应再回落 Node: %+v", launch)
 	}
-	if launch.Command != nodeFake || launch.HookPath != canonicalCmd {
-		t.Fatalf("WindowsHookLaunch 意外: %+v", launch)
-	}
-	if len(launch.Args) < 2 || launch.Args[1] != "--run-cli-resume" {
-		t.Fatalf("WindowsHookLaunch 参数模式错误: %+v", launch.Args)
-	}
-	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows", nodeFake); appServer != nil {
+	if appServer := ResolveWindowsCodexHookLaunch(aliasCmd, []string{"app-server"}, "windows"); appServer != nil {
 		t.Fatalf("app-server 子命令应返回 nil 维持直通, 实际 %+v", appServer)
 	}
 }
@@ -172,13 +169,13 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 
 	// 验证在隔离测试目录下即使宿主机 /Applications 存在也不会越界扫描系统目录。
 	isoSvc := NewDesktopHookService(DesktopHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		NodeExecPath:     "/usr/local/bin/node",
-		HelperScriptPath: helper,
-		ProcessHomeDir:   hostHome,
-		OSUserHomeDir:    "/Users/real-someone-else",
+		AIHomeDir:      aiHome,
+		HostHomeDir:    hostHome,
+		Platform:       "darwin",
+		NodeExecPath:   "/usr/local/bin/node",
+		GoBinaryPath:   helper,
+		ProcessHomeDir: hostHome,
+		OSUserHomeDir:  "/Users/real-someone-else",
 	})
 	if paths := isoSvc.ResolvePaths(); paths.BundlePath != "" || paths.Reason != "codex_app_not_found" {
 		t.Fatalf("隔离宿主目录不得扫描真实 /Applications, 实际 paths=%+v", paths)
@@ -204,7 +201,7 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
 		NodeExecPath:            "/usr/local/bin/node",
-		HelperScriptPath:        helper,
+		GoBinaryPath:            helper,
 		ProviderHookReceiverURL: "http://127.0.0.1:4312/v0/webui/session-events/provider-hook",
 		SelfPID:                 999,
 		ReadCodexVersion: func(_ string) string {
@@ -307,12 +304,12 @@ func TestVscodeHookServiceLifecycle(t *testing.T) {
 
 	var killed []int
 	svc := NewVscodeHookService(VscodeHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		NodeExecPath:     "/usr/local/bin/node",
-		HelperScriptPath: "/opt/helper.js",
-		SelfPID:          888,
+		AIHomeDir:    aiHome,
+		HostHomeDir:  hostHome,
+		Platform:     "darwin",
+		NodeExecPath: "/usr/local/bin/node",
+		GoBinaryPath: "/opt/helper.js",
+		SelfPID:      888,
 		ListProcesses: func() ([]ProcessInfo, error) {
 			return []ProcessInfo{
 				{PID: 51, Command: extBin + " app-server --analytics-default-enabled"},
@@ -755,7 +752,7 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
 		NodeExecPath:            "/usr/local/bin/node",
-		HelperScriptPath:        helper,
+		GoBinaryPath:            helper,
 		RuntimeLayouts:          layouts,
 		AllowSystemApplications: &allowSys,
 		ReadBundleMetadata: func(string) BundleMetadata {

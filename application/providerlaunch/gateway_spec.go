@@ -191,7 +191,13 @@ func (spec GatewayLaunchSpec) Binary() string {
 
 // ResolveArguments 把临时 Gateway 参数插入官方子命令要求的位置。
 func (spec GatewayLaunchSpec) ResolveArguments(arguments []string) ([]string, error) {
-	return mergeArguments(spec.arguments, spec.argumentsAfterSubcommands, arguments)
+	return spec.ResolveArgumentsWithOverrides(arguments, nil)
+}
+
+// ResolveArgumentsWithOverrides 追加账号级覆盖参数，保留子命令插入规则。
+func (spec GatewayLaunchSpec) ResolveArgumentsWithOverrides(arguments, overrides []string) ([]string, error) {
+	strategyArguments := append(append([]string(nil), spec.arguments...), overrides...)
+	return mergeArguments(strategyArguments, spec.argumentsAfterSubcommands, arguments)
 }
 
 // Environment 返回只作用于当前官方 CLI 进程的环境补丁。

@@ -49,12 +49,23 @@ data-plane comparable node 14, missing in Go 0
 
 ## 仍存活的 Node 宿主能力
 
-这些不是 HTTP 网关，属于合同允许的宿主/插件能力：
+这些不是 HTTP 网关，属于合同允许的宿主/插件/工具运行时，均由 Go 侧显式调用：
 
-- `lib/server/codex-app-server-stdio-proxy.js`（当前有真实进程，stdio 代理）
-- `lib/plugins/transport/rpc-server.js`（插件 Unix socket RPC）
-- `lib/server/codex-remote-control-proxy.js` / `oauth-loopback-callback.js`（按宿主调用启动）
-- `lib/server/*` 中被 Go 宿主或脚本直接 require 的纯 helper
+| 能力 | 入口 | 合同/证据 |
+| --- | --- | --- |
+| Codex app-server stdio 代理 | `lib/server/codex-app-server-stdio-proxy.js` | `internal/host/aihserver/codex_hooks_runtime.go` 启动；运行态有真实进程 |
+| 插件 JS 运行时 | 插件清单 `entry` + `runtime` | `internal/runtime/pluginhost/spec.go` 默认 `node`，`hybrid_host.go` 明确 node/process 双 runtime |
+| Provider 桌面运行时 | Provider 合同声明的 `desktop-node` handler | `internal/runtime/nativeresources/runtime.go`，按 Provider 合同解析 |
+| WorkBuddy 内置 CLI | App 包内 `cli/bin/codebuddy` JS | `internal/runtime/providercli/workbuddy_runtime.go`，用宿主 node 执行 |
+| DSH harness 入口 | DSH JS entry | `internal/runtime/harnessrun/dsh_entry.go`，`AIH_SERVER_NODE_EXEC` 或 PATH node |
+| 桌面 App 打开 | 解析 node 可执行文件 | `internal/transport/http/webuiopenappapi/desktop_providers.go` |
+| Codex `routeOwner` 兼容值 | 旧值 `node` | `internal/runtime/codexclistartup/startup.go` 统一改写为 `go`；Go 是唯一推理承接方 |
+
+运行态复核（2026-11-21）：
+
+- 9527 只有 Go `aih-server` 监听；
+- 项目内唯一 Node 进程是 codex app-server stdio 代理；
+- 没有 Node 进程监听 HTTP 端口或承接 `/v0`、`/v1` 路由。
 
 ## 已执行删除（2026-11-21）
 

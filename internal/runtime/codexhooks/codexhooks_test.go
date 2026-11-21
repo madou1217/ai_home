@@ -154,8 +154,8 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 	root := t.TempDir()
 	aiHome := filepath.Join(root, "ai_home")
 	hostHome := filepath.Join(root, "host_home")
-	helper := filepath.Join(root, "helper.js")
-	if err := os.WriteFile(helper, []byte("// helper v1"), 0o644); err != nil {
+	goBinary := filepath.Join(root, "goBinary.js")
+	if err := os.WriteFile(goBinary, []byte("// goBinary v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,7 +164,7 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		AIHomeDir:      aiHome,
 		HostHomeDir:    hostHome,
 		Platform:       "darwin",
-		GoBinaryPath:   helper,
+		GoBinaryPath:   goBinary,
 		ProcessHomeDir: hostHome,
 		OSUserHomeDir:  "/Users/real-someone-else",
 	})
@@ -191,7 +191,7 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		AIHomeDir:               aiHome,
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
-		GoBinaryPath:            helper,
+		GoBinaryPath:            goBinary,
 		ProviderHookReceiverURL: "http://127.0.0.1:4312/v0/webui/session-events/provider-hook",
 		SelfPID:                 999,
 		ReadCodexVersion: func(_ string) string {
@@ -297,7 +297,7 @@ func TestVscodeHookServiceLifecycle(t *testing.T) {
 		AIHomeDir:    aiHome,
 		HostHomeDir:  hostHome,
 		Platform:     "darwin",
-		GoBinaryPath: "/opt/helper.js",
+		GoBinaryPath: "/opt/goBinary.js",
 		SelfPID:      888,
 		ListProcesses: func() ([]ProcessInfo, error) {
 			return []ProcessInfo{
@@ -713,8 +713,8 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 	root := t.TempDir()
 	aiHome := filepath.Join(root, "ai_home")
 	hostHome := filepath.Join(root, "host_home")
-	helper := filepath.Join(root, "helper.js")
-	if err := os.WriteFile(helper, []byte("// helper\n"), 0o644); err != nil {
+	goBinary := filepath.Join(root, "goBinary.js")
+	if err := os.WriteFile(goBinary, []byte("// goBinary\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bundlePath := filepath.Join(hostHome, "Applications", "Codex.app")
@@ -738,7 +738,7 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 		AIHomeDir:               aiHome,
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
-		GoBinaryPath:            helper,
+		GoBinaryPath:            goBinary,
 		RuntimeLayouts:          layouts,
 		AllowSystemApplications: &allowSys,
 		ReadBundleMetadata: func(string) BundleMetadata {

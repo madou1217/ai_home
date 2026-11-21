@@ -352,8 +352,8 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 	root := t.TempDir()
 	aiHome := filepath.Join(root, "ai_home")
 	hostHome := filepath.Join(root, "host_home")
-	helper := filepath.Join(root, "helper.js")
-	if err := os.WriteFile(helper, []byte("// helper v1\n"), 0o644); err != nil {
+	goBinary := filepath.Join(root, "goBinary.js")
+	if err := os.WriteFile(goBinary, []byte("// goBinary v1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bundlePath := filepath.Join(hostHome, "Applications", "Codex.app")

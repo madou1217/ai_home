@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // RuntimeHomeDir is the per-provider runtime directory name appended to
@@ -243,7 +244,7 @@ var policies = map[string]Policy{
 		},
 	},
 	"qoder": {
-		HostAuthRoot: []string{".qoder"},
+		HostAuthRoot: providerroot.ConfigRoot("qoder"),
 		AuthArtifacts: []Artifact{
 			credential("credentials", "text", false, ".auth", "user"),
 			credential("machineId", "text", true, ".auth", "machine_id"),
@@ -257,7 +258,7 @@ var policies = map[string]Policy{
 		AttachmentSubdir: attachments,
 	},
 	"qodercn": {
-		HostAuthRoot: []string{".qoder-cn"},
+		HostAuthRoot: providerroot.ConfigRoot("qodercn"),
 		AuthArtifacts: []Artifact{
 			credential("credentials", "text", false, ".auth", "user"),
 			credential("machineId", "text", true, ".auth", "machine_id"),

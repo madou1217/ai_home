@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // 这里放「单文件凭据」Provider 的登录适配：CLI 在一次性运行目录里完成 OAuth 后
@@ -24,11 +25,11 @@ func grokLoginLayout(_ *providers.Catalog, hostHomeDir, runtimeDir string) (stri
 	env := baseEnvironment(hostHomeDir)
 	env["HOME"] = runtimeDir
 	env["USERPROFILE"] = runtimeDir
-	env["GROK_HOME"] = filepath.Join(runtimeDir, ".grok")
+	env["GROK_HOME"] = filepath.Join(runtimeDir, providerroot.ConfigDir("grok"))
 	for _, key := range []string{"XAI_API_KEY", "XAI_BASE_URL"} {
 		delete(env, key)
 	}
-	return filepath.Join(runtimeDir, ".grok"), env, nil
+	return filepath.Join(runtimeDir, providerroot.ConfigDir("grok")), env, nil
 }
 
 // openCodeLoginLayout：只隔离 XDG 数据/配置根，HOME 保持宿主（与 launch 策略一致）。

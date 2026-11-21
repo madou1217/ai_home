@@ -30,6 +30,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/host/credentialregister"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -251,7 +252,7 @@ func agyLayout(catalog *providers.Catalog, hostHomeDir, runtimeDir string) (stri
 		env["XDG_DATA_HOME"] = filepath.Join(runtimeHome, "xdg", "data")
 		env["XDG_STATE_HOME"] = filepath.Join(runtimeHome, "xdg", "state")
 		env["XDG_CACHE_HOME"] = filepath.Join(runtimeHome, "xdg", "cache")
-		env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = filepath.Join(runtimeHome, ".gemini", "settings.json")
+		env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = filepath.Join(runtimeHome, providerroot.ConfigDir("gemini"), "settings.json")
 		if runtime.GOOS == "windows" {
 			env["APPDATA"] = filepath.Join(runtimeHome, "AppData", "Roaming")
 			env["LOCALAPPDATA"] = filepath.Join(runtimeHome, "AppData", "Local")

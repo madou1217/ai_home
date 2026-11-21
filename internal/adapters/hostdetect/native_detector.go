@@ -27,6 +27,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeartifact"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
@@ -541,7 +542,7 @@ func (s *detectSession) adoptNewOrNewer(
 }
 
 func (s *detectSession) detectCline() bool {
-	providersFile := filepath.Join(s.hostHomeDir, ".cline", "data", "settings", "providers.json")
+	providersFile := filepath.Join(s.hostHomeDir, providerroot.ConfigDir("cline"), "data", "settings", "providers.json")
 	raw, reason, present := readGuardedRegularFile(providersFile, s.guard)
 	if !present {
 		return true
@@ -765,7 +766,7 @@ func (s *detectSession) detectHostAPIKeys() bool {
 }
 
 func (s *detectSession) scanCodexHostAPIKey() {
-	filePath := filepath.Join(s.hostHomeDir, ".codex", "auth.json")
+	filePath := filepath.Join(s.hostHomeDir, providerroot.ConfigDir("codex"), "auth.json")
 	raw, reason, present := readGuardedRegularFile(filePath, s.guard)
 	if !present {
 		return
@@ -804,7 +805,7 @@ func (s *detectSession) scanCodexHostAPIKey() {
 }
 
 func (s *detectSession) scanClaudeHostAPIKey() {
-	filePath := filepath.Join(s.hostHomeDir, ".claude", "settings.json")
+	filePath := filepath.Join(s.hostHomeDir, providerroot.ConfigDir("claude"), "settings.json")
 	raw, reason, present := readGuardedRegularFile(filePath, s.guard)
 	if !present {
 		return
@@ -858,7 +859,7 @@ func (s *detectSession) scanClaudeHostAPIKey() {
 }
 
 func (s *detectSession) scanGeminiHostAPIKey() {
-	filePath := filepath.Join(s.hostHomeDir, ".gemini", ".env")
+	filePath := filepath.Join(s.hostHomeDir, providerroot.ConfigDir("gemini"), ".env")
 	raw, reason, present := readGuardedRegularFile(filePath, s.guard)
 	if !present {
 		return

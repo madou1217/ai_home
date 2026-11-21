@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 func init() {
@@ -28,7 +29,7 @@ func init() {
 // codexLoginLayout 把 CODEX_HOME 指向一次性运行目录，避免写宿主真实登录态。
 func codexLoginLayout(_ *providers.Catalog, hostHomeDir, runtimeDir string) (string, map[string]string, error) {
 	env := baseEnvironment(hostHomeDir)
-	configDir := filepath.Join(runtimeDir, ".codex")
+	configDir := filepath.Join(runtimeDir, providerroot.ConfigDir("codex"))
 	env["HOME"] = runtimeDir
 	env["USERPROFILE"] = runtimeDir
 	env["CODEX_HOME"] = configDir

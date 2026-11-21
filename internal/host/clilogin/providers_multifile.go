@@ -8,6 +8,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // cline / kimi 的登录产物是多文件（整库或 credentials+device_id），但仍能在
@@ -21,7 +22,7 @@ func init() {
 // clineLoginLayout：CLINE_DIR/CLINE_DATA_DIR 指向一次性目录，HOME 保持宿主。
 func clineLoginLayout(_ *providers.Catalog, hostHomeDir, runtimeDir string) (string, map[string]string, error) {
 	env := baseEnvironment(hostHomeDir)
-	root := filepath.Join(runtimeDir, ".cline")
+	root := filepath.Join(runtimeDir, providerroot.ConfigDir("cline"))
 	env["CLINE_DIR"] = root
 	env["CLINE_DATA_DIR"] = filepath.Join(root, "data")
 	for _, key := range []string{"CLINE_API_KEY", "CLINE_API_BASE_URL"} {
@@ -50,7 +51,7 @@ func clineLoginCredential(configDir string) ([]byte, error) {
 // kimiLoginLayout：KIMI_CODE_HOME 指向一次性目录，HOME 保持宿主。
 func kimiLoginLayout(_ *providers.Catalog, hostHomeDir, runtimeDir string) (string, map[string]string, error) {
 	env := baseEnvironment(hostHomeDir)
-	root := filepath.Join(runtimeDir, ".kimi-code")
+	root := filepath.Join(runtimeDir, providerroot.ConfigDir("kimi"))
 	env["KIMI_CODE_HOME"] = root
 	for _, key := range []string{"MOONSHOT_API_KEY", "KIMI_API_KEY", "KIMI_BASE_URL", "KIMI_CODE_CUSTOM_HEADERS"} {
 		delete(env, key)

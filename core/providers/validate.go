@@ -180,6 +180,11 @@ func validateStorageFacts(definition Definition) error {
 		if facts.IDEDataName != "" && !isSafeRelativeSegment(facts.IDEDataName) {
 			return fmt.Errorf("storage.ideDataName 必须是单段目录名: %q", facts.IDEDataName)
 		}
+		for _, segment := range facts.AttachmentSubdir {
+			if !isSafeRelativeSegment(segment) {
+				return fmt.Errorf("storage.attachmentSubdir 必须是安全目录段: %q", segment)
+			}
+		}
 		for _, root := range facts.SessionRoots {
 			if !isSafeRelativeSegment(root) {
 				return fmt.Errorf("storage.sessionRoots 必须是单段 HOME 相对目录: %q", root)

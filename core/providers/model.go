@@ -239,6 +239,8 @@ type StorageFacts struct {
 	DefaultAuthFile string `json:"defaultAuthFile,omitempty"`
 	// IDEDataName 是 electron userData / Application Support 下的产品目录名。
 	IDEDataName string `json:"ideDataName,omitempty"`
+	// AttachmentSubdir 是原生数据根下存放会话附件的子目录。
+	AttachmentSubdir []string `json:"attachmentSubdir,omitempty"`
 	// SessionRoots 是同一物理会话存储在家族内的候选根（HOME 相对，按优先级）。
 	SessionRoots []string `json:"sessionRoots,omitempty"`
 	// NoRuntimeHome 表示该 Provider 不使用 <nativeRoot>/.aih-runtime-home。

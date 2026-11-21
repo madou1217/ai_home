@@ -66,6 +66,9 @@ func relayHostsGoRelay(entries ...string) map[string]RelayHost {
 	}
 }
 
+// defaultAttachmentSubdir 是多数 CLI 共用的附件子目录布局。
+func defaultAttachmentSubdir() []string { return []string{"tmp", "model", "images"} }
+
 // codebuddyPrivateDesktopStateFacts 是家族共用的桌面私有状态（HOME 相对）。
 func codebuddyPrivateDesktopStateFacts() []PrivateArtifactFacts {
 	return []PrivateArtifactFacts{
@@ -120,6 +123,7 @@ func builtinCodex() Definition {
 				{Base: ArtifactBaseNative, Path: "config.toml"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: []string{".tmp", "model", "images"},
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".codex/config.toml"},
 				{Path: ".codex/hooks.json"},
@@ -202,6 +206,7 @@ func builtinGemini() Definition {
 			PrivateArtifacts: []PrivateArtifactFacts{
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".gemini/settings.json"},
 				{Path: ".gemini/.gemini/settings.json"},
@@ -264,6 +269,7 @@ func builtinClaude() Definition {
 				{Base: ArtifactBaseHome, Path: "electron-user-data"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".claude/settings.json"},
 				{Path: ".claude/settings.local.json"},
@@ -354,6 +360,7 @@ func builtinAntigravity() Definition {
 				{Base: ArtifactBaseHome, Path: "electron-user-data"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".gemini/config", Recursive: true},
 				{Path: ".gemini/antigravity-cli/settings.json"},
@@ -430,6 +437,7 @@ func builtinOpenCode() Definition {
 				{Base: ArtifactBaseConfig, Path: "auth.json"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			ConfigDenyPaths: []ConfigDenyFacts{
 				{Path: ".config/opencode", Recursive: true},
 			},
@@ -499,6 +507,7 @@ func builtinGrok() Definition {
 			PrivateArtifacts: []PrivateArtifactFacts{
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
@@ -554,6 +563,7 @@ func builtinQoder() Definition {
 				{Base: ArtifactBaseHome, Path: ".auth"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
 		// usage_scan：扫描本地会话历史（projects/<project>/<session>.jsonl）建立会话/prompt
@@ -639,6 +649,7 @@ func builtinQoderCN() Definition {
 				{Base: ArtifactBaseHome, Path: ".auth"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
 		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
@@ -716,6 +727,7 @@ func builtinKimi() Definition {
 				{Base: ArtifactBaseNative, Path: "credentials"},
 				{Base: ArtifactBaseNative, Path: "session_index.jsonl"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
@@ -769,6 +781,7 @@ func builtinKiro() Definition {
 				{Base: ArtifactBaseHome, Path: "electron-user-data"},
 				{Base: ArtifactBaseHome, Path: ".aih-kiro-auth-binding"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		// kiro 推理只有 Go 一个实现：Node 侧从来没有过（CodeWhisperer 实现已删除），
 		// 这里也就不存在 node 宿主这一项。不要为了「兜底」再把它补回来。
@@ -840,6 +853,7 @@ func builtinZcode() Definition {
 				{Base: ArtifactBaseHome, Path: "electron-user-data"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
@@ -937,6 +951,7 @@ func builtinCodebuddy() Definition {
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("Tencent-Cloud.coding-copilot.info"), Format: "json"},
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			DefaultAuthFile:  "Tencent-Cloud.coding-copilot.info",
 			IDEDataName:      "CodeBuddy",
 			SessionRoots:     []string{".codebuddy", ".workbuddy-ai"},
@@ -1066,6 +1081,7 @@ func builtinCodebuddyCN() Definition {
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			DefaultAuthFile:  "workbuddy-desktop.info",
 			IDEDataName:      "CodeBuddy CN",
 			SessionRoots:     []string{".codebuddy-cn", ".workbuddy"},
@@ -1174,6 +1190,7 @@ func builtinWorkbuddy() Definition {
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop-ai.info"), Format: "json"},
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(false),
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			DefaultAuthFile:  "workbuddy-desktop-ai.info",
 			IDEDataName:      "WorkBuddy AI",
 			SessionRoots:     []string{".workbuddy-ai", ".codebuddy"},
@@ -1287,6 +1304,7 @@ func builtinWorkbuddyCN() Definition {
 				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(false),
+			AttachmentSubdir: defaultAttachmentSubdir(),
 			DefaultAuthFile:  "workbuddy-desktop.info",
 			IDEDataName:      "WorkBuddy",
 			SessionRoots:     []string{".workbuddy", ".codebuddy-cn"},
@@ -1388,6 +1406,7 @@ func builtinCline() Definition {
 				{Base: ArtifactBaseNative, Path: "data/secrets.json"},
 				{Base: ArtifactBaseHome, Path: "Library/Keychains"},
 			},
+			AttachmentSubdir: defaultAttachmentSubdir(),
 		},
 		NativeBoundary: nativeCline(),
 		// cline 走 relaycore 的同协议透传通道（internal/transport/http/clinerelay）：

@@ -236,6 +236,11 @@
         ]
       },
       "storage": {
+        "attachmentSubdir": [
+          ".tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "auth",
@@ -465,6 +470,11 @@
         ]
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "oauthCreds",
@@ -746,6 +756,11 @@
         ]
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "credentials",
@@ -1001,6 +1016,11 @@
         "nativeRoot": [
           ".gemini",
           "antigravity-cli"
+        ],
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
         ],
         "authArtifacts": [
           {
@@ -1301,6 +1321,11 @@
           "share",
           "opencode"
         ],
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "auth",
@@ -1535,6 +1560,11 @@
         }
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "auth",
@@ -1744,6 +1774,11 @@
       },
       "storage": {
         "nativeRoot": [],
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "credentials",
@@ -1980,6 +2015,11 @@
       },
       "storage": {
         "nativeRoot": [],
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "credentials",
@@ -2186,6 +2226,11 @@
         }
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "credentials",
@@ -2411,6 +2456,11 @@
         }
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "noRuntimeHome": true,
         "authArtifacts": [
           {
@@ -2636,6 +2686,11 @@
         }
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "authArtifacts": [
           {
             "field": "credentials",
@@ -2888,6 +2943,11 @@
       "storage": {
         "defaultAuthFile": "Tencent-Cloud.coding-copilot.info",
         "ideDataName": "CodeBuddy",
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "sessionRoots": [
           ".codebuddy",
           ".workbuddy-ai"
@@ -3168,6 +3228,11 @@
       "storage": {
         "defaultAuthFile": "workbuddy-desktop.info",
         "ideDataName": "CodeBuddy CN",
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "sessionRoots": [
           ".codebuddy-cn",
           ".workbuddy"
@@ -3429,6 +3494,11 @@
       "storage": {
         "defaultAuthFile": "workbuddy-desktop-ai.info",
         "ideDataName": "WorkBuddy AI",
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "sessionRoots": [
           ".workbuddy-ai",
           ".codebuddy"
@@ -3682,6 +3752,11 @@
       "storage": {
         "defaultAuthFile": "workbuddy-desktop.info",
         "ideDataName": "WorkBuddy",
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "sessionRoots": [
           ".workbuddy",
           ".codebuddy-cn"
@@ -3889,6 +3964,11 @@
         }
       },
       "storage": {
+        "attachmentSubdir": [
+          "tmp",
+          "model",
+          "images"
+        ],
         "noRuntimeHome": true,
         "authArtifacts": [
           {

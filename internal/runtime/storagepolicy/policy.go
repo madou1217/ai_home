@@ -51,7 +51,6 @@ var FamilyProviders = providers.CodeBuddyFamilyProviders()
 
 var (
 	emptySegments = []string{}
-	attachments   = []string{"tmp", "model", "images"}
 )
 
 // expandAuthArtifacts 把合同声明的相对路径展开为策略使用的 HOME 相对段。
@@ -125,63 +124,41 @@ var providerOrder = []string{
 }
 
 var policies = map[string]Policy{
-	"codex": {
-		AttachmentSubdir: []string{".tmp", "model", "images"},
-	},
-	"claude": {
-		AttachmentSubdir: attachments,
-	},
-	"gemini": {
-		AttachmentSubdir: attachments,
-	},
-	"agy": {
-		AttachmentSubdir: attachments,
-	},
-	"opencode": {
-		AttachmentSubdir: attachments,
-	},
+	"codex":    {},
+	"claude":   {},
+	"gemini":   {},
+	"agy":      {},
+	"opencode": {},
 	"grok": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 	"kimi": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 	"zcode": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
-	"kiro": {
-		AttachmentSubdir: attachments,
-	},
+	"kiro": {},
 	"cline": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 	"qoder": {
-		HostAuthRoot:     providerroot.ConfigRoot("qoder"),
-		AttachmentSubdir: attachments,
+		HostAuthRoot: providerroot.ConfigRoot("qoder"),
 	},
 	"qodercn": {
-		HostAuthRoot:     providerroot.ConfigRoot("qodercn"),
-		AttachmentSubdir: attachments,
+		HostAuthRoot: providerroot.ConfigRoot("qodercn"),
 	},
 	"codebuddy": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 	"codebuddycn": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 	"workbuddy": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 	"workbuddycn": {
-		HostAuthRoot:     emptySegments,
-		AttachmentSubdir: attachments,
+		HostAuthRoot: emptySegments,
 	},
 }
 
@@ -197,6 +174,9 @@ func init() {
 		policy.NativeRoot = definition.EffectiveNativeRoot()
 		policy.AuthArtifacts = expandAuthArtifacts(definition)
 		policy.PrivateArtifacts = expandPrivateArtifacts(definition)
+		if definition.Storage != nil {
+			policy.AttachmentSubdir = append([]string{}, definition.Storage.AttachmentSubdir...)
+		}
 		if definition.Storage != nil && definition.Storage.HostAuthRoot != nil {
 			policy.HostAuthRoot = append([]string{}, (*definition.Storage.HostAuthRoot)...)
 		}

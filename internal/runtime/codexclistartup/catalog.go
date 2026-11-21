@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const maxFile = 8 << 20
@@ -45,7 +47,7 @@ func projectCatalog(ctx context.Context, r request) ([]string, error) {
 			base = r.env.userProfile
 		}
 		if base = trim(base); base != "" {
-			home = filepath.Join(base, ".codex")
+			home = filepath.Join(base, providerroot.ConfigDir("codex"))
 		}
 	}
 	if home == "" {

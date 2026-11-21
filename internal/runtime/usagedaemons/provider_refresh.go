@@ -13,6 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/madou1217/ai_home/core/providers"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -349,7 +350,7 @@ func (c *ProviderRefreshCoordinator) collectWatchPaths() []string {
 			}
 		}
 		// ZCode SQLite DB 及 WAL/SHM 文件
-		zcodeDBRoot := filepath.Join(c.hostHomeDir, ".zcode", "cli", "db")
+		zcodeDBRoot := filepath.Join(c.hostHomeDir, providerroot.ConfigDir("zcode"), "cli", "db")
 		push(zcodeDBRoot)
 		for name := range zcodeDatabaseFiles {
 			push(filepath.Join(zcodeDBRoot, name))

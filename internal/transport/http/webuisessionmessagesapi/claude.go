@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -34,7 +36,7 @@ type claudeRecord struct {
 }
 
 func claudeSessionPath(hostHome, projectDirName, sessionID string) string {
-	return filepath.Join(hostHome, ".claude", "projects", strings.TrimSpace(projectDirName), strings.TrimSpace(sessionID)+".jsonl")
+	return filepath.Join(hostHome, providerroot.ConfigDir("claude"), "projects", strings.TrimSpace(projectDirName), strings.TrimSpace(sessionID)+".jsonl")
 }
 
 func claudeSessionCursor(hostHome, projectDirName, sessionID string) int64 {

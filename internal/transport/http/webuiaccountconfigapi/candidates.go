@@ -4,12 +4,17 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // extraProjectionFiles 是各 provider 在投影目录里额外值得展示的原生文件，
 // 与 Node account-config-view.js 的 EXTRA_PROJECTION_FILES 一致。
 var extraProjectionFiles = map[string][]string{
-	"kiro": {".kiro/settings/cli.json", ".aih-kiro-auth-binding", "data.sqlite3"},
+	"kiro": append(
+		[]string{strings.Join(providerroot.ConfigPath("kiro", "settings", "cli.json"), "/")},
+		".aih-kiro-auth-binding",
+		"data.sqlite3",
+	),
 }
 
 // credentialRelativePaths 与 Node credential-layout.js 的 collectCredentialRelativePaths 一致。
@@ -20,7 +25,9 @@ func credentialRelativePaths(provider string) []string {
 	}
 	hiddenDir := "." + normalized
 	if normalized == "agy" {
-		hiddenDir = ".gemini"
+		if root := providerroot.ConfigRoot(normalized); len(root) > 0 {
+			hiddenDir = strings.Join(root, "/")
+		}
 	}
 	paths := []string{
 		hiddenDir + "/auth.json",
@@ -44,15 +51,20 @@ func credentialRelativePaths(provider string) []string {
 	case "kiro":
 		paths = append(paths, "data.sqlite3")
 	case "kimi":
-		paths = append(paths, ".kimi-code/credentials/kimi-code.json", "credentials/kimi-code.json")
+		paths = append(paths, strings.Join(providerroot.ConfigPath("kimi", "credentials", "kimi-code.json"), "/"), "credentials/kimi-code.json")
 	case "qoder":
 		paths = append(paths, "qoder-cli-credentials.json", ".keychain-salt")
 	case "qodercn":
 		paths = append(paths, "qoder-cli-cn-credentials.json", ".keychain-salt")
 	case "zcode":
-		paths = append(paths, ".zcode/v2/credentials.json", ".zcode/v2/config.json", "v2/credentials.json", "v2/config.json")
+		paths = append(paths,
+			strings.Join(providerroot.ConfigPath("zcode", "v2", "credentials.json"), "/"),
+			strings.Join(providerroot.ConfigPath("zcode", "v2", "config.json"), "/"),
+			"v2/credentials.json",
+			"v2/config.json",
+		)
 	case "cline":
-		paths = append(paths, ".cline/data/settings/providers.json", "data/settings/providers.json")
+		paths = append(paths, strings.Join(providerroot.ConfigPath("cline", "data", "settings", "providers.json"), "/"), "data/settings/providers.json")
 	}
 	return paths
 }

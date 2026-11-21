@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/codex/appserver"
 	codexstorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codex"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -77,7 +78,7 @@ func (t *StdioTransport) resolveOAuthIdentity(ctx context.Context, accountRef st
 		return expectedOAuthIdentity{}, nil, newCodedError("codex_account_identity_unavailable", "Codex OAuth 账号缺少邮箱身份", http.StatusConflict)
 	}
 	runtimeDir := filepath.Join(strings.TrimSpace(t.AIHomeDir), "run", "auth-projections", "codex", ref.String())
-	codexHome := filepath.Join(runtimeDir, ".codex")
+	codexHome := filepath.Join(runtimeDir, providerroot.ConfigDir("codex"))
 	return expectedOAuthIdentity{
 		expectedEmail:     email,
 		expectedCodexHome: codexHome,
@@ -272,9 +273,9 @@ func normalizeRealPath(p string) string {
 
 func buildCodexResetEnv(hostHome string, codexHome string) []string {
 	overrides := map[string]string{
-		"CODEX_HOME":                   codexHome,
-		"CODEX_SQLITE_HOME":            codexHome,
-		codexAppServerPassthroughEnv:   "1",
+		"CODEX_HOME":                 codexHome,
+		"CODEX_SQLITE_HOME":          codexHome,
+		codexAppServerPassthroughEnv: "1",
 	}
 	if hostHome != "" {
 		overrides["HOME"] = hostHome

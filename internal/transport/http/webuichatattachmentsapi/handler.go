@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
@@ -80,12 +81,12 @@ func buildPrivateDirSequences() [][]string {
 	sequences := [][]string{
 		{"electron-user-data"},
 		{".auth"},
-		{".kimi-code", "credentials"},
-		{".cline", "data", "settings"},
+		providerroot.ConfigPath("kimi", "credentials"),
+		providerroot.ConfigPath("cline", "data", "settings"),
 		{"library", "keychains"},
 		{"codebuddyextension", "cache"},
 		{"codebuddyextension", "logs"},
-		{".codebuddy", "diagnostics"},
+		providerroot.ConfigPath("codebuddy", "diagnostics"),
 	}
 	for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
 		sequences = append(sequences, []string{dirName, "sessions"})

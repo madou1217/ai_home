@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -247,7 +249,7 @@ func setCodexFeatureFlag(configText string, flagName string) string {
 
 // installCodexHooksFeature 读取/改写 config.toml；dryRun 只返回将发生的变更。
 func installCodexHooksFeature(context installContext, dryRun bool) codexFeaturesView {
-	configPath := filepath.Join(context.hostHomeDir, ".codex", "config.toml")
+	configPath := filepath.Join(context.hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")
 	before := readTextFile(configPath)
 	codexVersion := strings.TrimSpace(context.codexVersion)
 	if codexVersion == "" {

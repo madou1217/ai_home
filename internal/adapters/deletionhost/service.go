@@ -28,6 +28,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 )
 
@@ -301,7 +302,7 @@ func (service *Service) detectCodexGrant(
 	if service.hostHomeDir == "" {
 		return detection
 	}
-	configPath := filepath.Join(service.hostHomeDir, ".codex", "config.toml")
+	configPath := filepath.Join(service.hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")
 	detection.configPath = configPath
 	document, err := os.ReadFile(configPath)
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/providerruntime"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"github.com/madou1217/ai_home/internal/runtime/jsondocument"
 )
@@ -92,7 +93,7 @@ func projectedRepairHostAuthority(home string) (projectedRepairAuthority, error)
 	if !filepath.IsAbs(host) || strings.ContainsAny(host, "\\\x00") {
 		return projectedRepairAuthority{}, errProjectedRepairUnavailable
 	}
-	root, err := projectedRepairCapture(filepath.Join(host, ".codex"), true)
+	root, err := projectedRepairCapture(filepath.Join(host, providerroot.ConfigDir("codex")), true)
 	if err != nil {
 		return projectedRepairAuthority{}, err
 	}

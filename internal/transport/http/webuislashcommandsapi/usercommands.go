@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // 各 provider 的规范 id（与 core/providers 合同、Node provider-catalog 一致）。
@@ -46,7 +48,7 @@ func (handler *Handler) claudeCommandsDir() string {
 	if configDir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); configDir != "" {
 		return filepath.Join(configDir, "commands")
 	}
-	return filepath.Join(handler.hostHomeDir, ".claude", "commands")
+	return filepath.Join(handler.hostHomeDir, providerroot.ConfigDir("claude"), "commands")
 }
 
 // scanUserCommands 扫描命令目录，把 **/*.md 翻译成 /<目录>:<文件名>。

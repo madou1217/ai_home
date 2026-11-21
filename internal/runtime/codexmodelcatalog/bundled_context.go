@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 )
 
@@ -122,7 +123,7 @@ func readBundledContextWindows(parent context.Context, binary string) (map[strin
 		return nil, err
 	}
 	defer os.RemoveAll(home)
-	codexHome := filepath.Join(home, ".codex")
+	codexHome := filepath.Join(home, providerroot.ConfigDir("codex"))
 	if err := os.Mkdir(codexHome, 0700); err != nil {
 		return nil, err
 	}

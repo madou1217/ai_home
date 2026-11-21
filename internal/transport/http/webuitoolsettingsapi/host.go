@@ -39,7 +39,7 @@ var hostPermissionProfiles = map[string]hostProfile{
 	"agy": {
 		FileID:   "settings",
 		Format:   "json",
-		Location: hostLocation{Kind: "home", Parts: []string{".gemini", "antigravity-cli", "settings.json"}},
+		Location: hostLocation{Kind: "provider-root", Parts: []string{"settings.json"}},
 		Patch:    map[string]string{"toolPermission": "always-proceed"},
 	},
 }

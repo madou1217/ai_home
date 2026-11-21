@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
 const (
@@ -79,7 +80,10 @@ func detectInstalled() string {
 	}
 	roots := []string{
 		filepath.Join(home, ".local", "share", "codebuddy", "versions"),
-		filepath.Join(home, ".codebuddy-cn", "versions"),
+	}
+	// 国内站 CLI 的版本目录在它自己的配置根下；目录事实由 Provider 合同提供。
+	if configDir, ok := codebuddyfamilystorage.ConfigDir("codebuddycn"); ok {
+		roots = append(roots, filepath.Join(home, configDir, "versions"))
 	}
 	var best clientversion.Version
 	for _, root := range roots {

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
@@ -313,7 +314,7 @@ func ListClaudeConfigDirs(hostHomeDir, aiHomeDir string, getenv func(string) str
 		host = ResolveUnprojectedHostHomeDir(getenv)
 	}
 	if host != "" {
-		push(filepath.Join(host, ".claude"))
+		push(filepath.Join(host, providerroot.ConfigDir("claude")))
 	}
 	aiHome := ResolvePeerAIHomeDir(aiHomeDir, host, getenv)
 	if aiHome != "" {
@@ -327,7 +328,7 @@ func ListClaudeConfigDirs(hostHomeDir, aiHomeDir string, getenv func(string) str
 				if !entry.IsDir() {
 					continue
 				}
-				push(filepath.Join(claudeRoot, entry.Name(), ".claude"))
+				push(filepath.Join(claudeRoot, entry.Name(), providerroot.ConfigDir("claude")))
 			}
 		}
 	}

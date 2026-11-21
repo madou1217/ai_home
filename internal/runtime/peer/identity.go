@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,7 +121,7 @@ func SenderPermissionClass(ctx context.Context, host string, self RecordParty) s
 			if thread != "" && filepath.Base(thread) == thread {
 				root := parentEnv["CODEX_HOME"]
 				if root == "" {
-					root = filepath.Join(parentEnv["HOME"], ".codex")
+					root = filepath.Join(parentEnv["HOME"], providerroot.ConfigDir("codex"))
 				}
 				paths, _ := filepath.Glob(filepath.Join(root, "sessions", "*", "*", "*", "*"+thread+"*.jsonl"))
 				if len(paths) == 1 {
@@ -221,7 +222,7 @@ func trustedCodexThread(ctx context.Context, parents []processIdentity, self Rec
 		}
 		root := env["CODEX_HOME"]
 		if root == "" {
-			root = filepath.Join(env["HOME"], ".codex")
+			root = filepath.Join(env["HOME"], providerroot.ConfigDir("codex"))
 		}
 		paths, _ := filepath.Glob(filepath.Join(root, "sessions", "*", "*", "*", "*"+thread+"*.jsonl"))
 		if len(paths) != 1 {

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
@@ -47,7 +48,7 @@ func (e Env) MemoryRoot() string {
 	if hostHome == "" {
 		return ""
 	}
-	return filepath.Join(hostHome, ".codex", "memories")
+	return filepath.Join(hostHome, providerroot.ConfigDir("codex"), "memories")
 }
 
 // Target 是已通过字面检查与凭证检查的读取目标。

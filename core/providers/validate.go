@@ -156,21 +156,32 @@ func validateDefinition(definition Definition) error {
 func validateStorageFacts(definition Definition) error {
 	facts := definition.Storage
 	isFamily := definition.Family == "codebuddy" || definition.Family == "workbuddy"
-	if facts == nil {
-		if isFamily {
-			return errors.New("CodeBuddy 家族 Provider 必须声明 storage 布局事实")
+	if isFamily && facts == nil {
+		return errors.New("CodeBuddy 家族 Provider 必须声明 storage 布局事实")
+	}
+	if facts != nil {
+		if facts.NativeRoot != nil {
+			for _, segment := range *facts.NativeRoot {
+				if !isSafeRelativeSegment(segment) {
+					return fmt.Errorf("storage.nativeRoot 必须是安全的 HOME 相对段: %q", segment)
+				}
+			}
 		}
-		return nil
+		if facts.DefaultAuthFile != "" && !isSafeRelativeSegment(facts.DefaultAuthFile) {
+			return fmt.Errorf("storage.defaultAuthFile 必须是单段文件名: %q", facts.DefaultAuthFile)
+		}
+		if facts.IDEDataName != "" && !isSafeRelativeSegment(facts.IDEDataName) {
+			return fmt.Errorf("storage.ideDataName 必须是单段目录名: %q", facts.IDEDataName)
+		}
+		for _, root := range facts.SessionRoots {
+			if !isSafeRelativeSegment(root) {
+				return fmt.Errorf("storage.sessionRoots 必须是单段 HOME 相对目录: %q", root)
+			}
+		}
 	}
-	if facts.DefaultAuthFile != "" && !isSafeRelativeSegment(facts.DefaultAuthFile) {
-		return fmt.Errorf("storage.defaultAuthFile 必须是单段文件名: %q", facts.DefaultAuthFile)
-	}
-	if facts.IDEDataName != "" && !isSafeRelativeSegment(facts.IDEDataName) {
-		return fmt.Errorf("storage.ideDataName 必须是单段目录名: %q", facts.IDEDataName)
-	}
-	for _, root := range facts.SessionRoots {
-		if !isSafeRelativeSegment(root) {
-			return fmt.Errorf("storage.sessionRoots 必须是单段 HOME 相对目录: %q", root)
+	for _, segment := range definition.EffectiveNativeRoot() {
+		if !isSafeRelativeSegment(segment) {
+			return fmt.Errorf("生效的 nativeRoot 必须是安全的 HOME 相对段: %q", segment)
 		}
 	}
 	if !isFamily {

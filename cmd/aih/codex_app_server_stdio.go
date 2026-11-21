@@ -77,8 +77,22 @@ func runCodexAppServerStdio(ctx context.Context, args []string, runtime commandR
 	baseURL := strings.TrimSpace(envMap["OPENAI_BASE_URL"])
 	spawnEnv := append([]string{}, os.Environ()...)
 
+	var remoteProxy *remoteControlProxy
+	if strings.TrimSpace(stateFile) != "" && desktopRemoteControlEnabled(stateFile) {
+		proxy, proxyErr := startRemoteControlProxy(ctx, stateFile)
+		if proxyErr != nil {
+			return proxyErr
+		}
+		remoteProxy = proxy
+		defer remoteProxy.Close()
+	}
+	chatGPTBaseURL := ""
+	if remoteProxy != nil {
+		chatGPTBaseURL = remoteProxy.BaseURL
+	}
+
 	initialAccountRef := ""
-	if identity, runtimeHome := resolveDesktopRuntime(stateFile, codexHome, apiKey, baseURL, envMap); identity != nil {
+	if identity, runtimeHome := resolveDesktopRuntime(stateFile, codexHome, apiKey, baseURL, chatGPTBaseURL, envMap); identity != nil {
 		initialAccountRef = identity.AccountRef
 		configPath = filepath.Join(runtimeHome, "config.toml")
 		spawnEnv = replaceEnv(spawnEnv, "CODEX_HOME", runtimeHome)
@@ -181,7 +195,7 @@ func resolveAIHomePath(envMap map[string]string) string {
 	return aiHome
 }
 
-func resolveDesktopRuntime(stateFile, hostCodexHome, gatewayBaseURL, gatewayAPIKey string, envMap map[string]string) (*codexappconfig.DesktopIdentity, string) {
+func resolveDesktopRuntime(stateFile, hostCodexHome, gatewayBaseURL, gatewayAPIKey, chatGPTBaseURL string, envMap map[string]string) (*codexappconfig.DesktopIdentity, string) {
 	aiHome := resolveAIHomePath(envMap)
 	desktopRef := ""
 	if stateFile != "" {
@@ -210,6 +224,7 @@ func resolveDesktopRuntime(stateFile, hostCodexHome, gatewayBaseURL, gatewayAPIK
 		ExecutionAccountRef: identity.AccountRef,
 		GatewayBaseURL:      gatewayBaseURL,
 		GatewayAPIKey:       gatewayAPIKey,
+		ChatGPTBaseURL:      chatGPTBaseURL,
 		SupportsWebsockets:  gatewayBaseURL != "",
 	})
 	if err != nil {

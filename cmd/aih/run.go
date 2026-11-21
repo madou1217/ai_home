@@ -206,6 +206,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__codex-app-server-stdio" {
 		return runCodexAppServerStdio(ctx, arguments[1:], runtime)
 	}
+	if providerID == "__codex-default-cli" {
+		return runCodexDefaultCLI(ctx, arguments[1:], runtime)
+	}
 	if providerID == "__claude-desktop-credential" {
 		return runClaudeDesktopCredential(ctx, arguments[1:], runtime)
 	}

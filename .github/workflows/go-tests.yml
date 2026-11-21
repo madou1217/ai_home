@@ -21,9 +21,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# main 上不取消进行中的运行：仓库推送很密，取消风暴会让每个提交都拿不到结论。
+# PR 仍取消旧运行（push 到同一分支时以最新一次为准）。
 concurrency:
   group: go-tests-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

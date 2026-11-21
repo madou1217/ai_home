@@ -6,9 +6,10 @@ on:
       - main
   pull_request:
 
+# main 上排队跑完，不因后续推送取消；PR 仍以最新一次为准。
 concurrency:
   group: web-build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

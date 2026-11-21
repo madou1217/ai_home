@@ -588,7 +588,7 @@ func (app *App) Run(
 	// 版本提示只读本地缓存（零延迟），并在 TUI 运行期间后台刷新缓存；
 	// 不阻断启动，也绝不把版本检查变成启动前置条件。
 	if hasCLITarget && app.providerCLIRemediationEligible(planCLITarget.ProviderID) {
-		if notice := app.providerCLIUpdateNotice(planCLITarget.ProviderID); notice != "" {
+		if notice := app.providerCLIUpdateNotice(ctx, planCLITarget.ProviderID); notice != "" {
 			_, _ = fmt.Fprintln(app.stderr, notice)
 		}
 		app.refreshProviderCLIVersion(planCLITarget.ProviderID)

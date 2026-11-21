@@ -107,6 +107,11 @@ func CachedCLIUpdateStatus(provider string, opts Options) (CLIUpdateStatus, bool
 	if !found || latestEntry.Version == "" {
 		return CLIUpdateStatus{}, false
 	}
+	// 过期缓存不再用来提示：后台刷新失败时不能反复展示旧版本。
+	age := time.Duration(nowUnix(opts)-latestEntry.CheckedAt) * time.Second
+	if age >= cliLatestVersionTTL {
+		return CLIUpdateStatus{}, false
+	}
 	latest, valid := NormalizeVersionString(latestEntry.Version)
 	if !valid {
 		return CLIUpdateStatus{}, false

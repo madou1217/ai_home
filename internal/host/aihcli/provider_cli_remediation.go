@@ -18,6 +18,17 @@ import (
 // providerCLIUpdateRefreshTimeout 是后台版本刷新（不阻断启动）的硬上限。
 const providerCLIUpdateRefreshTimeout = 20 * time.Second
 
+// providerCLIUpdateFirstCheckTimeout 是首次（无缓存）版本检查的硬上限：
+// 这一处是唯一可能等待官方版本源的启动路径，缓存建立后不再阻塞。
+const providerCLIUpdateFirstCheckTimeout = 4 * time.Second
+
+// providerCLIVersionInfo 是可比较的 CLI 版本事实。
+type providerCLIVersionInfo struct {
+	Current         string
+	Latest          string
+	UpdateAvailable bool
+}
+
 // providerCLILifecycle 是组合根对工具箱 CLI 安装/版本能力的窄端口。
 // 「官方 CLI 装在哪里、怎么装、有没有新版本」只由工具箱回答，Host 不复制这些事实。
 type providerCLILifecycle interface {
@@ -29,8 +40,10 @@ type providerCLILifecycle interface {
 	InstallPlanLabel(providerID string) string
 	// Install 运行官方安装器，返回验证过的可执行路径。
 	Install(ctx context.Context, providerID string, progress func(string)) (string, error)
-	// CachedUpdateStatus 只用本地缓存给出当前/最新版本，零网络开销。
-	CachedUpdateStatus(providerID string) (current, latest string, ok bool)
+	// CachedUpdateStatus 只读本地版本缓存；ok=false 表示缓存缺失或已过期。
+	CachedUpdateStatus(providerID string) (providerCLIVersionInfo, bool)
+	// CheckUpdate 有界查询版本事实；调用方负责超时。
+	CheckUpdate(ctx context.Context, providerID string) (providerCLIVersionInfo, bool)
 	// RefreshUpdateStatus 在后台刷新版本缓存（不输出、不阻断启动）。
 	RefreshUpdateStatus(ctx context.Context, providerID string)
 }
@@ -110,12 +123,26 @@ func (lifecycle appsCLILifecycle) Install(
 	return result.CLIPath, nil
 }
 
-func (lifecycle appsCLILifecycle) CachedUpdateStatus(providerID string) (string, string, bool) {
-	status, ok := apps.CachedCLIUpdateStatus(providerID, lifecycle.options)
-	if !ok || !status.UpdateAvailable {
-		return "", "", false
+func (lifecycle appsCLILifecycle) CachedUpdateStatus(providerID string) (providerCLIVersionInfo, bool) {
+	return cliLifecycleVersionInfo(apps.CachedCLIUpdateStatus(providerID, lifecycle.options))
+}
+
+func (lifecycle appsCLILifecycle) CheckUpdate(
+	ctx context.Context,
+	providerID string,
+) (providerCLIVersionInfo, bool) {
+	return cliLifecycleVersionInfo(apps.CheckCLIUpdate(ctx, providerID, lifecycle.options))
+}
+
+func cliLifecycleVersionInfo(status apps.CLIUpdateStatus, ok bool) (providerCLIVersionInfo, bool) {
+	if !ok {
+		return providerCLIVersionInfo{}, false
 	}
-	return status.CurrentVersion, status.LatestVersion, true
+	return providerCLIVersionInfo{
+		Current:         status.CurrentVersion,
+		Latest:          status.LatestVersion,
+		UpdateAvailable: status.UpdateAvailable,
+	}, true
 }
 
 func (lifecycle appsCLILifecycle) RefreshUpdateStatus(ctx context.Context, providerID string) {
@@ -156,21 +183,27 @@ func (app *App) providerCLILabel(providerID string) string {
 }
 
 // providerCLIUpdateNotice 在交互式启动前给出可操作的新版本提示。
-// 只读本地版本缓存，零网络等待；启动永远继续，用户决定是否 update。
-func (app *App) providerCLIUpdateNotice(providerID string) string {
+// 有新鲜缓存时零网络等待；没有缓存时只做一次有界查询（首次启动），
+// 之后由后台刷新维持。启动永远继续，用户决定是否 update。
+func (app *App) providerCLIUpdateNotice(ctx context.Context, providerID string) string {
 	if app == nil || app.cliLifecycle == nil || !app.interactive || app.stderr == nil {
 		return ""
 	}
-	current, latest, ok := app.cliLifecycle.CachedUpdateStatus(providerID)
-	if !ok || current == "" || latest == "" {
+	info, ok := app.cliLifecycle.CachedUpdateStatus(providerID)
+	if !ok && app.cliLifecycle != nil && ctx != nil {
+		checkCtx, cancel := context.WithTimeout(ctx, providerCLIUpdateFirstCheckTimeout)
+		info, ok = app.cliLifecycle.CheckUpdate(checkCtx, providerID)
+		cancel()
+	}
+	if !ok || !info.UpdateAvailable || info.Current == "" || info.Latest == "" {
 		return ""
 	}
 	normalized := strings.ToLower(strings.TrimSpace(providerID))
 	return fmt.Sprintf(
 		"[aih] %s CLI 有新版本可用：%s → %s；更新后重试：aih %s update",
 		app.providerCLILabel(normalized),
-		current,
-		latest,
+		info.Current,
+		info.Latest,
 		normalized,
 	)
 }

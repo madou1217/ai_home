@@ -124,6 +124,12 @@ type Definition struct {
 	// Upstream 是该 Provider 的官方上游事实（主机清单与默认推理基址），
 	// 供出口裁决、中继通道与额度探测查表，不再由调用方按 Provider 名分支。
 	Upstream *Upstream `json:"upstream,omitempty"`
+	// Storage 是该 Provider 自己的本地存储布局事实。
+	//
+	// 配置根不在这里重复声明：CLI.GlobalDir 是唯一来源。Storage 只承载无法从
+	// 其他合同字段推导、且各 Provider 取值不同的布局事实（凭据文件名、IDE 数据
+	// 目录名、家族会话根）。消费方必须查合同，不得再维护 Provider→目录的中央表。
+	Storage *StorageFacts `json:"storage,omitempty"`
 	// RelayHosts 声明**各宿主**能否承接该 Provider 的推理，key 为宿主名（"node" / "go"）。
 	//
 	// 为什么需要它：Provider 有没有 HTTP 推理通道（账号侧事实）与「哪个宿主能服务它」
@@ -204,6 +210,16 @@ func (definition Definition) CredentialFacts() CredentialFacts {
 		return CredentialFacts{}
 	}
 	return *definition.Credentials
+}
+
+// StorageFacts 是 Provider 自己的本地存储布局事实。
+type StorageFacts struct {
+	// DefaultAuthFile 是该 Provider 在共享 auth 目录下的默认凭据文件名。
+	DefaultAuthFile string `json:"defaultAuthFile,omitempty"`
+	// IDEDataName 是 electron userData / Application Support 下的产品目录名。
+	IDEDataName string `json:"ideDataName,omitempty"`
+	// SessionRoots 是同一物理会话存储在家族内的候选根（HOME 相对，按优先级）。
+	SessionRoots []string `json:"sessionRoots,omitempty"`
 }
 
 // Upstream 是 Provider 的官方上游事实。

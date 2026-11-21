@@ -11,78 +11,76 @@ package codebuddyfamilystorage
 import (
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/madou1217/ai_home/application/accountprojection"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
-const (
-	providerCodebuddy   = "codebuddy"
-	providerCodebuddyCN = "codebuddycn"
-	providerWorkbuddy   = "workbuddy"
-	providerWorkbuddyCN = "workbuddycn"
-)
+// builtinCatalog 只构造一次：家族存储事实由各 Provider 的 Definition 自己声明，
+// 本适配器只负责把合同翻译成投影策略，不再维护 Provider→目录的中央表。
+var builtinCatalog = sync.OnceValue(func() *providers.Catalog {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return nil
+	}
+	return catalog
+})
 
-type providerLayout struct {
-	configDir       string
-	defaultAuthFile string
-	siteInternal    bool
-	ideDataName     string
+func definitionFor(providerID string) (providers.Definition, bool) {
+	catalog := builtinCatalog()
+	if catalog == nil {
+		return providers.Definition{}, false
+	}
+	definition, found := catalog.Get(normalizeProviderID(providerID))
+	if !found || !providers.IsCodeBuddyFamilyProvider(definition.ID) {
+		return providers.Definition{}, false
+	}
+	return definition, true
 }
 
-var layouts = map[string]providerLayout{
-	providerCodebuddy: {
-		configDir:       ".codebuddy",
-		defaultAuthFile: "Tencent-Cloud.coding-copilot.info",
-		ideDataName:     "CodeBuddy",
-	},
-	providerCodebuddyCN: {
-		configDir:       ".codebuddy-cn",
-		defaultAuthFile: "workbuddy-desktop.info",
-		siteInternal:    true,
-		ideDataName:     "CodeBuddy CN",
-	},
-	providerWorkbuddy: {
-		configDir:       ".workbuddy-ai",
-		defaultAuthFile: "workbuddy-desktop-ai.info",
-		ideDataName:     "WorkBuddy AI",
-	},
-	providerWorkbuddyCN: {
-		configDir:       ".workbuddy",
-		defaultAuthFile: "workbuddy-desktop.info",
-		siteInternal:    true,
-		ideDataName:     "WorkBuddy",
-	},
+func storageFactsFor(providerID string) (providers.Definition, providers.StorageFacts, bool) {
+	definition, ok := definitionFor(providerID)
+	if !ok || definition.CLI == nil || definition.Storage == nil {
+		return providers.Definition{}, providers.StorageFacts{}, false
+	}
+	if strings.TrimSpace(definition.CLI.GlobalDir) == "" {
+		return providers.Definition{}, providers.StorageFacts{}, false
+	}
+	return definition, *definition.Storage, true
 }
 
-// ProviderIDs 返回家族四支的规范 Provider ID。
+// ProviderIDs 返回家族四支的规范 Provider ID（成员事实在 core/providers）。
 func ProviderIDs() []string {
-	return []string{providerCodebuddy, providerCodebuddyCN, providerWorkbuddy, providerWorkbuddyCN}
+	return providers.CodeBuddyFamilyProviders()
 }
 
 // IsFamilyProvider 判断 Provider 是否属于 CodeBuddy 家族。
 func IsFamilyProvider(providerID string) bool {
-	_, ok := layouts[normalizeProviderID(providerID)]
-	return ok
+	return providers.IsCodeBuddyFamilyProvider(providerID)
 }
 
-// ConfigDir 返回家族成员的 HOME 相对配置目录；未知 Provider 返回 false。
+// ConfigDir 返回家族成员的 HOME 相对配置目录。
 //
-// 这是 .codebuddy / .codebuddy-cn / .workbuddy-ai / .workbuddy 的唯一映射源，
-// 会话扫描、用量账本与桌面投影都从这里取，避免各自维护一份。
+// 取值来自每个 Provider 自己的 CLI.GlobalDir；本包不再维护 Provider→目录表。
 func ConfigDir(providerID string) (string, bool) {
-	layout, ok := layouts[normalizeProviderID(providerID)]
-	if !ok {
+	definition, ok := definitionFor(providerID)
+	if !ok || definition.CLI == nil {
 		return "", false
 	}
-	return layout.configDir, true
+	dirName := strings.TrimSpace(definition.CLI.GlobalDir)
+	if dirName == "" {
+		return "", false
+	}
+	return dirName, true
 }
 
 // ConfigDirs 返回家族配置目录的规范顺序（与 Node familyConfigDirs 一致）。
 func ConfigDirs() []string {
-	dirs := make([]string, 0, len(layouts))
+	dirs := make([]string, 0, 4)
 	for _, providerID := range ProviderIDs() {
-		if layout, ok := layouts[providerID]; ok {
-			dirs = append(dirs, layout.configDir)
+		if dirName, ok := ConfigDir(providerID); ok {
+			dirs = append(dirs, dirName)
 		}
 	}
 	return dirs
@@ -91,8 +89,8 @@ func ConfigDirs() []string {
 // ProviderForConfigDir 返回配置目录所属的 Provider；未知目录返回 false。
 func ProviderForConfigDir(dirName string) (string, bool) {
 	normalized := strings.TrimSpace(dirName)
-	for providerID, layout := range layouts {
-		if layout.configDir == normalized {
+	for _, providerID := range ProviderIDs() {
+		if current, ok := ConfigDir(providerID); ok && current == normalized {
 			return providerID, true
 		}
 	}
@@ -101,16 +99,11 @@ func ProviderForConfigDir(dirName string) (string, bool) {
 
 // SessionRoots 返回该 Provider 的会话根候选（HOME 相对，按优先级）。
 func SessionRoots(providerID string) []string {
-	roots := sessionRoots[normalizeProviderID(providerID)]
-	return append([]string(nil), roots...)
-}
-
-// sessionRoots 是同一物理会话存储在家族内的候选根：先本 Provider，再跨产品。
-var sessionRoots = map[string][]string{
-	providerCodebuddy:   {".codebuddy", ".workbuddy-ai"},
-	providerWorkbuddy:   {".workbuddy-ai", ".codebuddy"},
-	providerCodebuddyCN: {".codebuddy-cn", ".workbuddy"},
-	providerWorkbuddyCN: {".workbuddy", ".codebuddy-cn"},
+	_, facts, ok := storageFactsFor(providerID)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), facts.SessionRoots...)
 }
 
 func normalizeProviderID(providerID string) string {
@@ -119,17 +112,18 @@ func normalizeProviderID(providerID string) string {
 
 // Policy 返回指定家族 Provider 的投影策略；未知 Provider 返回 false。
 func Policy(providerID string) (accountprojection.Policy, bool) {
-	id := strings.ToLower(strings.TrimSpace(providerID))
-	layout, ok := layouts[id]
+	definition, facts, ok := storageFactsFor(providerID)
 	if !ok {
 		return accountprojection.Policy{}, false
 	}
-	authPath := append(authDirSegments(runtime.GOOS), layout.defaultAuthFile)
+	id := definition.ID
+	configDir := strings.TrimSpace(definition.CLI.GlobalDir)
+	authPath := append(authDirSegments(runtime.GOOS), facts.DefaultAuthFile)
 	return accountprojection.Policy{
 		Provider:        id,
 		Mode:            accountprojection.ModeFakeHome,
-		NativeRoot:      []string{layout.configDir},
-		RuntimeHomeRoot: []string{layout.configDir, ".aih-runtime-home"},
+		NativeRoot:      []string{configDir},
+		RuntimeHomeRoot: []string{configDir, ".aih-runtime-home"},
 		AuthArtifacts: []accountprojection.Artifact{{
 			Field:     "credentials",
 			Base:      accountprojection.ArtifactBaseHome,
@@ -146,15 +140,15 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			{Path: []string{".workbuddy-key-fallback"}},
 			{Path: []string{"Library", "Application Support", "CodeBuddyExtension", "Cache"}},
 			{Path: []string{"Library", "Application Support", "CodeBuddyExtension", "Logs"}},
-			{Path: []string{layout.configDir, ".mcp.json"}},
-			{Path: []string{layout.configDir, "sessions"}},
+			{Path: []string{configDir, ".mcp.json"}},
+			{Path: []string{configDir, "sessions"}},
 			{Path: []string{"Library", "Keychains"}},
 		},
 		ProjectionRoots: []accountprojection.Mapping{
-			{From: []string{layout.configDir}, To: []string{layout.configDir}},
-			{From: []string{layout.ideDataName, "Claw"}, To: []string{layout.ideDataName, "Claw"}},
+			{From: []string{configDir}, To: []string{configDir}},
+			{From: []string{facts.IDEDataName, "Claw"}, To: []string{facts.IDEDataName, "Claw"}},
 		},
-		SharedEntries:  familySharedEntries(id),
+		SharedEntries:  familySharedEntries(definition),
 		SessionEntries: []string{"projects"},
 		// 与 Node HOST_TOOLCHAIN_CACHES 逐项对齐：工具链缓存与账号无关，必须链接回
 		// 宿主，否则每个账号各存一份（历史上 zcode 单账号堆到 4GB）。
@@ -201,12 +195,12 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 		SharedHostDataRoots: []accountprojection.SharedLink{
 			{
 				Projection: []string{"electron-user-data", "User", "globalStorage", "tencent-cloud.coding-copilot"},
-				Host:       []string{"Library", "Application Support", layout.ideDataName, "User", "globalStorage", "tencent-cloud.coding-copilot"},
+				Host:       []string{"Library", "Application Support", facts.IDEDataName, "User", "globalStorage", "tencent-cloud.coding-copilot"},
 				Platforms:  []string{"darwin"},
 			},
 			{
 				Projection: []string{"electron-user-data", "codebuddy-sessions.vscdb"},
-				Host:       []string{"Library", "Application Support", layout.ideDataName, "codebuddy-sessions.vscdb"},
+				Host:       []string{"Library", "Application Support", facts.IDEDataName, "codebuddy-sessions.vscdb"},
 				Platforms:  []string{"darwin"},
 			},
 		},
@@ -219,7 +213,7 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			"projects",
 			"skills",
 		},
-		Env:              familyEnvironment(id, layout.configDir),
+		Env:              familyEnvironment(definition, configDir),
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}, true
 }
@@ -230,7 +224,7 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 // WorkBuddy 桌面根的 settings.json 是 App 自己的 30KB 配置（sandbox/claw/office），
 // 与 CLI settings 不是同一个 schema。混在一起会把桌面配置归一成几百字节的 CLI 小
 // JSON，与 Node codebuddy-shared-config 的 sharedEntriesForConfigDir 同口径。
-func familySharedEntries(providerID string) []string {
+func familySharedEntries(definition providers.Definition) []string {
 	entries := []string{
 		"projects",
 		"skills",
@@ -244,7 +238,7 @@ func familySharedEntries(providerID string) []string {
 		"shell-snapshots",
 		"blobs",
 	}
-	if providerID == providerCodebuddy || providerID == providerCodebuddyCN {
+	if definition.Family == "codebuddy" {
 		entries = append(entries, "settings.json", "statusline-command.sh", "argv.json", "plugins")
 	}
 	return entries
@@ -253,12 +247,12 @@ func familySharedEntries(providerID string) []string {
 // familyEnvironment 生成伪 HOME 的环境绑定。WorkBuddy 两支额外需要
 // WORKBUDDY_CONFIG_DIR（Node codebuddy-strategy 的同一口径）：只设 CODEBUDDY_CONFIG_DIR
 // 会让桌面端和 CLI 读到不同配置根。
-func familyEnvironment(providerID string, configDir string) []accountprojection.EnvBinding {
+func familyEnvironment(definition providers.Definition, configDir string) []accountprojection.EnvBinding {
 	bindings := []accountprojection.EnvBinding{
 		{Key: "HOME", Base: accountprojection.EnvBaseProjectionRoot},
 		{Key: "CODEBUDDY_CONFIG_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: []string{configDir}},
 	}
-	if strings.HasPrefix(providerID, "workbuddy") {
+	if definition.Family == "workbuddy" {
 		bindings = append(bindings, accountprojection.EnvBinding{
 			Key:  "WORKBUDDY_CONFIG_DIR",
 			Base: accountprojection.EnvBaseProjectionRoot,
@@ -268,14 +262,19 @@ func familyEnvironment(providerID string, configDir string) []accountprojection.
 	return bindings
 }
 
-// SiteInternal 返回该 Provider 是否固定使用国内站。
+// SiteInternal 返回该 Provider 是否固定使用国内站（站点事实在 Definition.Site）。
 func SiteInternal(providerID string) bool {
-	return layouts[strings.ToLower(strings.TrimSpace(providerID))].siteInternal
+	definition, ok := definitionFor(providerID)
+	return ok && definition.Site == providers.SiteCN
 }
 
-// DefaultAuthFile 返回该 Provider 默认的 .info 文件名。
+// DefaultAuthFile 返回该 Provider 默认的 .info 文件名（由 Definition.Storage 声明）。
 func DefaultAuthFile(providerID string) string {
-	return layouts[strings.ToLower(strings.TrimSpace(providerID))].defaultAuthFile
+	_, facts, ok := storageFactsFor(providerID)
+	if !ok {
+		return ""
+	}
+	return facts.DefaultAuthFile
 }
 
 // AuthDirSegments 返回伪 HOME 下共享 auth 目录的相对路径段。

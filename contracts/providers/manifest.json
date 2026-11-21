@@ -2479,6 +2479,14 @@
           "default": "https://www.codebuddy.ai"
         }
       },
+      "storage": {
+        "defaultAuthFile": "Tencent-Cloud.coding-copilot.info",
+        "ideDataName": "CodeBuddy",
+        "sessionRoots": [
+          ".codebuddy",
+          ".workbuddy-ai"
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -2705,6 +2713,14 @@
           "default": "https://copilot.tencent.com"
         }
       },
+      "storage": {
+        "defaultAuthFile": "workbuddy-desktop.info",
+        "ideDataName": "CodeBuddy CN",
+        "sessionRoots": [
+          ".codebuddy-cn",
+          ".workbuddy"
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -2912,6 +2928,14 @@
           "default": "https://www.workbuddy.ai"
         }
       },
+      "storage": {
+        "defaultAuthFile": "workbuddy-desktop-ai.info",
+        "ideDataName": "WorkBuddy AI",
+        "sessionRoots": [
+          ".workbuddy-ai",
+          ".codebuddy"
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -3118,6 +3142,14 @@
         "defaultBaseUrls": {
           "default": "https://copilot.tencent.com"
         }
+      },
+      "storage": {
+        "defaultAuthFile": "workbuddy-desktop.info",
+        "ideDataName": "WorkBuddy",
+        "sessionRoots": [
+          ".workbuddy",
+          ".codebuddy-cn"
+        ]
       },
       "relayHosts": {
         "go": {

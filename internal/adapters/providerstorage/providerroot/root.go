@@ -36,8 +36,8 @@ func NativePath(providerID string, suffix ...string) []string {
 	return append(NativeRoot(providerID), suffix...)
 }
 
-// ConfigPath 返回 <CLI.GlobalDir>/<suffix...>，用于配置根下的私有文件。
-func ConfigPath(providerID string, suffix ...string) []string {
+// ConfigRoot 返回 CLI.GlobalDir 的 HOME 相对段。
+func ConfigRoot(providerID string) []string {
 	definition, found := builtinCatalog().Get(strings.ToLower(strings.TrimSpace(providerID)))
 	if !found || definition.CLI == nil {
 		return nil
@@ -46,7 +46,12 @@ func ConfigPath(providerID string, suffix ...string) []string {
 	if dir == "" {
 		return nil
 	}
-	return append(strings.Split(dir, "/"), suffix...)
+	return strings.Split(dir, "/")
+}
+
+// ConfigPath 返回 <CLI.GlobalDir>/<suffix...>，用于配置根下的私有文件。
+func ConfigPath(providerID string, suffix ...string) []string {
+	return append(ConfigRoot(providerID), suffix...)
 }
 
 // RuntimeHome 返回 <NativeRoot>/.aih-runtime-home。

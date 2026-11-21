@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
@@ -313,9 +314,9 @@ func resolveClineSessionPath(hostHome, aiHomeDir, sessionID string) string {
 }
 
 func resolveQoderSessionPath(hostHome, provider, sessionID, projectDirName string) string {
-	dirName := ".qoder"
-	if provider == "qodercn" {
-		dirName = ".qodercn"
+	dirName := filepath.Join(providerroot.ConfigRoot(provider)...)
+	if dirName == "" {
+		return ""
 	}
 	projectsRoot := filepath.Join(hostHome, dirName, "projects")
 	if projectDirName != "" {

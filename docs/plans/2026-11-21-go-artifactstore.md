@@ -255,25 +255,35 @@ source 为链接或不存在时整个投影跳过（避免顺着根链接把数�
 - 显式 server profile 直接跳过（不建 bridge）；
 - 网关覆盖、模型列表、env 清理、权限参数等均与文件系统无关。
 
-### 迁移拆分建议
+### 已迁移（`bridgeLinks`）
 
-Go 新增 `bridgeLinks`：
+Go 侧接收一次批量声明：
 
 ```json
-{ "links": [{"linkPath":"…","targetPath":"…","kind":"dir|file","label":"account-data/bin"}],
-  "authBridges": [{"linkPath":"…","targetPath":"…"}] }
+{ "ensureDirs": ["…/host/.local/share/opencode"],
+  "links": [{"linkPath":"…","targetPath":"…","kind":"dir|file","label":"account-data/bin"}] }
 ```
 
-Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 后 target，再 known 列表），
-Go 负责"canonical 判定 / prepare / mkdir / symlink|junction / auth bridge"和错误码。
+Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、再 target 条目、最后 known
+列表），Go 负责"canonical 判定 / prepare（摘链接或空目录）/ mkdir / symlink|junction"，
+失败返回 `{code, linkPath, targetPath}`，Node 原样还原成 `opencode_shared_bridge_failed`
+或目录创建的 errno 错误。
 
-### 验证计划
+**auth bridge 仍留在 Node**（10 行）：它只被 `prepare` 调用，而 `reconcileSharedData`
+也被 `session-store` 直接调用、不应顺带建 auth 链；拆开可保持两条调用路径语义不变。
 
-1. 合成 fixture：三个投影根各放"正确链接 / 错误链接 / 空目录 / 真实内容 / 缺失"五种状态，
-   Node 与 Go 的 `{migrated, linked, unresolved}` 与最终目录快照逐项对比；
-2. auth bridge：`auth.json` 缺失、已是正确链接、是真实文件三种情况；
-3. 真实 3 个 opencode 账号：只读盘点（已完成）→ 实现后跑一次，期望全部 `migrated=0`；
-4. Windows：目录链走 junction，文件链走 symlink（与现实现一致）。
+### 验证结果
+
+1. 合成 fixture（三个投影根，含正确链接 / 错误链接 / 空目录 / 真实内容 / 缺失 / 私有
+   `auth.json`）：Node 与 Go 的 `{migrated:2, linked:19, unresolved:[bridge-data/real,
+   config/local.json]}` 与两端目录快照逐字一致，二次运行幂等。
+2. 真实 3 个 opencode 账号：
+   - 第一次 node 模式跑完，`acct_84c6…` 的 bridge 里补建了 4 条缺失链接（bin/repos/
+     snapshot/storage）——这是模块本来的自愈行为；
+   - 之后 node 与 go 两种模式对三个账号的结果**逐字段一致**（`migrated/linked` 均为 0，
+     `unresolved` 只含该账号里真实存在的 `log`/`shell`/`opencode.db*`，且三遍枚举导致重复，
+     与旧实现一致）。
+3. Windows 分支沿用同一 `createBridgeLink`：目录走 junction、文件走 symlink。
 
 ## 尚未迁移
 

@@ -51,6 +51,7 @@ type Request struct {
 	RuntimeHomes    []RuntimeHomeEntry    `json:"runtimeHomes,omitempty"`
 	FamilyLinks     []FamilyLink          `json:"familyLinks,omitempty"`
 	HardlinkRepairs []HardlinkRepair      `json:"hardlinkRepairs,omitempty"`
+	BridgeLinks     *BridgeLinks          `json:"bridgeLinks,omitempty"`
 	Prune           *PruneOptions         `json:"prune,omitempty"`
 }
 
@@ -156,6 +157,7 @@ type Response struct {
 	RuntimeHomes    []RuntimeHomeResult    `json:"runtimeHomes,omitempty"`
 	FamilyLinks     *FamilyLinkResult      `json:"familyLinks,omitempty"`
 	HardlinkRepairs []HardlinkRepairResult `json:"hardlinkRepairs,omitempty"`
+	BridgeLinks     *BridgeLinkResult      `json:"bridgeLinks,omitempty"`
 	Errors          []string               `json:"errors"`
 }
 
@@ -197,6 +199,10 @@ func Ensure(request Request) Response {
 	}
 	if len(request.HardlinkRepairs) > 0 {
 		response.HardlinkRepairs = applyHardlinkRepairs(request)
+	}
+	if request.BridgeLinks != nil {
+		applied := applyBridgeLinks(*request.BridgeLinks, request.Platform)
+		response.BridgeLinks = &applied
 	}
 	if len(request.DataRoots) > 0 {
 		response.DataRoots = linkDataRoots(request)

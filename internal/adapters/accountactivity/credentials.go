@@ -720,7 +720,7 @@ func ReadZcodeLiveOAuthCredential(aiHomeDir, accountRef string, record AccountRe
 	if runtimeDir == "" {
 		return fallback
 	}
-	credPath := filepath.Join(runtimeDir, ".zcode", "v2", "credentials.json")
+	credPath := filepath.Join(runtimeDir, providerroot.ConfigDir("zcode"), "v2", "credentials.json")
 	stat, err := os.Stat(credPath)
 	if err != nil || !stat.Mode().IsRegular() {
 		return fallback
@@ -947,7 +947,7 @@ func readZcodeDeviceMid(aiHomeDir, accountRef string) string {
 	if runtimeDir == "" {
 		return ""
 	}
-	raw, err := os.ReadFile(filepath.Join(runtimeDir, ".zcode", "v2", "telemetry-state.json"))
+	raw, err := os.ReadFile(filepath.Join(runtimeDir, providerroot.ConfigDir("zcode"), "v2", "telemetry-state.json"))
 	if err != nil {
 		return ""
 	}

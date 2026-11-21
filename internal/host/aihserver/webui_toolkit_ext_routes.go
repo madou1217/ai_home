@@ -45,7 +45,11 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 	}
 
 	edgeSvc := edgeproxy.NewService()
-	providerConfigSvc := providerconfigs.NewService(catalog, hostHome, aiHome)
+	providerConfigSvc := providerconfigs.NewService(catalog, hostHome, aiHome).
+		WithChoices(providerConfigChoices{
+			models:  dependencies.ModelSnapshot,
+			ladders: dependencies.ModelModalities,
+		})
 
 	var nativeResourceSvc *nativeresources.Service
 	if aiHome != "" && hostHome != "" {
@@ -88,6 +92,8 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		{Pattern: "GET " + webuitoolkitextapi.ProviderConfigsPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitextapi.ProviderConfigFilePath, Handler: handler},
 		{Pattern: "PUT " + webuitoolkitextapi.ProviderConfigFilePath, Handler: handler},
+		{Pattern: "GET " + webuitoolkitextapi.ProviderConfigKeySettingsPath, Handler: handler},
+		{Pattern: "PATCH " + webuitoolkitextapi.ProviderConfigKeySettingsPath, Handler: handler},
 		{Pattern: "POST " + webuitoolkitextapi.ProviderConfigValidatePath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitextapi.ProviderConfigHistoryPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitextapi.ProviderConfigHistoryEntryPath, Handler: handler},

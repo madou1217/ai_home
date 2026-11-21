@@ -91,6 +91,31 @@ func (h *Handler) serveProviderConfigs(w http.ResponseWriter, r *http.Request, p
 			}
 			resp, err := h.providerConfigs.ValidateFile(provider, fileID, content)
 			h.writeProviderConfigResult(w, resp, err)
+		case action == "key-settings" && r.Method == http.MethodGet:
+			resp, err := h.providerConfigs.ReadKeySettings(r.Context(), provider, fileID, r.URL.Query().Get("model"))
+			h.writeProviderConfigResult(w, resp, err)
+		case action == "key-settings" && (r.Method == http.MethodPatch || r.Method == http.MethodPut):
+			body, err := readProviderConfigBody(w, r)
+			if err != nil {
+				return
+			}
+			rawValues, ok := body["values"].(map[string]any)
+			if !ok || len(rawValues) == 0 {
+				writeError(w, http.StatusBadRequest, "values_required", "必须提供关键设置取值")
+				return
+			}
+			values := make(map[string]string, len(rawValues))
+			for path, raw := range rawValues {
+				text, ok := raw.(string)
+				if !ok {
+					writeError(w, http.StatusBadRequest, "invalid_value_type", "关键设置取值必须是字符串")
+					return
+				}
+				values[path] = text
+			}
+			revision, _ := body["revision"].(string)
+			resp, err := h.providerConfigs.SaveKeySettings(r.Context(), provider, fileID, values, revision)
+			h.writeProviderConfigResult(w, resp, err)
 		case action == "export" && r.Method == http.MethodGet:
 			mode := strings.TrimSpace(r.URL.Query().Get("mode"))
 			if mode == "" {

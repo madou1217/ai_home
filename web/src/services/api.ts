@@ -103,6 +103,7 @@ import type {
   ProviderConfigExportResponse,
   ProviderConfigHistoryEntryResponse,
   ProviderConfigHistoryResponse,
+  ProviderConfigKeySettingsResponse,
   ProviderConfigListResponse,
   ProviderConfigSaveResponse,
   ProviderConfigValidationResponse,
@@ -3198,6 +3199,28 @@ export const providerConfigAPI = {
     );
     return response.data;
   },
+  keySettings: async (
+    provider: string,
+    fileId: string,
+    model?: string
+  ): Promise<ProviderConfigKeySettingsResponse> => {
+    const response = await api.get<ProviderConfigKeySettingsResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/key-settings`,
+      { params: model ? { model } : undefined }
+    );
+    return response.data;
+  },
+  saveKeySettings: async (
+    provider: string,
+    fileId: string,
+    payload: { values: Record<string, string>; revision?: string }
+  ): Promise<ProviderConfigSaveResponse> => {
+    const response = await api.patch<ProviderConfigSaveResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/key-settings`,
+      payload
+    );
+    return response.data;
+  },
   history: async (provider: string, fileId: string): Promise<ProviderConfigHistoryResponse> => {
     const response = await api.get<ProviderConfigHistoryResponse>(
       `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history`
@@ -3234,40 +3257,6 @@ export const providerConfigAPI = {
       `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/export`,
       { params: { mode } }
     );
-    return response.data;
-  }
-};
-
-// ProviderDefaultsResponse 是 Provider CLI 启动默认值（当前支持 codex）。
-export interface ProviderDefaultsResponse {
-  ok: boolean;
-  provider: string;
-  supported: boolean;
-  model: string;
-  reasoningEffort: string;
-  serviceTier: string;
-  configPath: string;
-  reasoningEfforts: string[];
-  models: string[];
-  reasoningEffortsByModel: Record<string, string[]>;
-}
-
-export interface ProviderDefaultsPatch {
-  provider?: string;
-  model?: string;
-  reasoningEffort?: string;
-  serviceTier?: string;
-}
-
-export const providerDefaultsAPI = {
-  get: async (provider = 'codex'): Promise<ProviderDefaultsResponse> => {
-    const response = await api.get<ProviderDefaultsResponse>('/webui/provider-defaults', {
-      params: { provider }
-    });
-    return response.data;
-  },
-  update: async (payload: ProviderDefaultsPatch): Promise<ProviderDefaultsResponse> => {
-    const response = await api.patch<ProviderDefaultsResponse>('/webui/provider-defaults', payload);
     return response.data;
   }
 };

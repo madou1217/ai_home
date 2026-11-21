@@ -37,8 +37,8 @@ func TestBuildWebUIToolkitExtRoutesAndServeMuxMount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("装配 Toolkit 扩展路由失败: %v", err)
 	}
-	if len(routes) != 38 {
-		t.Fatalf("预期 38 条路由，实际 %d", len(routes))
+	if len(routes) != 40 {
+		t.Fatalf("预期 40 条路由，实际 %d", len(routes))
 	}
 
 	mux := http.NewServeMux()

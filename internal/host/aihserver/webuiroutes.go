@@ -84,7 +84,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiprojectsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderauthsourcesapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderdefaultsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
@@ -608,15 +607,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建模型设置写入接口失败: %w", err)
 	}
-	providerDefaults, err := webuiproviderdefaultsapi.NewHandler(webuiproviderdefaultsapi.Dependencies{
-		Authorizer:  authorizer,
-		HostHomeDir: dependencies.HostHomeDir,
-		Reasoning:   dependencies.ModelModalities,
-		Models:      dependencies.ModelSnapshot,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 Provider 启动默认值接口失败: %w", err)
-	}
 	routingAdapters, err := webuiroutingrulesapi.OpenAdapters(context.Background(), dependencies.AIHomeDir, dependencies.Store)
 	if err != nil {
 		return nil, fmt.Errorf("创建调度规则写入适配器失败: %w", err)
@@ -919,9 +909,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuimodelsapi.Path, Handler: modelsRead},
 		{Pattern: "PUT " + webuimodelsettingsapi.Path, Handler: modelsSettings},
 		{Pattern: "POST " + webuimodelsettingsapi.Path, Handler: modelsSettings},
-		{Pattern: "GET " + webuiproviderdefaultsapi.Path, Handler: providerDefaults},
-		{Pattern: "PATCH " + webuiproviderdefaultsapi.Path, Handler: providerDefaults},
-		{Pattern: "PUT " + webuiproviderdefaultsapi.Path, Handler: providerDefaults},
 		{Pattern: "GET " + webuiopenaimodelsapi.Path, Handler: openaiModelsRead},
 		// 浏览器数据面（/v0/webui/openai-models*）由 buildWebUIModelsRulesRoutes
 		// 逐条接到完整模型目录处理器；这里保留只读管理契约，避免方法落到错处理器。

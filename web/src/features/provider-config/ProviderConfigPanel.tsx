@@ -29,6 +29,7 @@ import ProviderConfigExportModal from './ProviderConfigExportModal';
 import ProviderConfigFieldInspector from './ProviderConfigFieldInspector';
 import ProviderConfigFieldReference from './ProviderConfigFieldReference';
 import ProviderConfigHistoryDrawer from './ProviderConfigHistoryDrawer';
+import ProviderKeySettings from './ProviderKeySettings';
 import {
   applyProviderConfigOption,
   buildProviderConfigOutline,
@@ -615,6 +616,24 @@ export default function ProviderConfigPanel({
                         </Button>
                       </div>
                     </div>
+
+                    <ProviderKeySettings
+                      provider={provider.id}
+                      fileId={detail.file.id}
+                      revision={detail.revision}
+                      disabled={dirty || !detail.file.writable}
+                      disabledReason={
+                        dirty
+                          ? '编辑器还有未保存修改，请先保存或放弃后再改关键设置。'
+                          : !detail.file.writable
+                            ? '当前用户没有写入权限。'
+                            : ''
+                      }
+                      onSaved={() => {
+                        setReloadToken((value) => value + 1);
+                        void loadProviders({ keepSelection: true }).catch(() => {});
+                      }}
+                    />
 
                     {detail.schemaVersion?.mismatch && (
                       <div className="pc-inline-note" data-tone="warning">

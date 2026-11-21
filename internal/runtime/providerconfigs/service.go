@@ -31,6 +31,11 @@ func (e *ConfigError) HTTPStatus() int {
 	switch e.Code {
 	case "provider_config_unknown_file", "provider_config_not_found", "provider_config_history_entry_not_found":
 		return 404
+	case "provider_config_key_settings_unsupported",
+		"provider_config_key_settings_required",
+		"provider_config_key_setting_unknown",
+		"provider_config_key_setting_invalid":
+		return 400
 	case "provider_config_conflict":
 		return 409
 	case "provider_config_validation_failed":
@@ -162,6 +167,8 @@ type Service struct {
 	aiHomeDir   string
 	env         map[string]string
 	cliRunner   CLIRunner
+	// choices 是关键设置的候选来源；为空时只看静态 Choices。
+	choices ChoiceResolver
 
 	cliMu    sync.Mutex
 	cliCache map[string]cachedVersion
@@ -188,6 +195,14 @@ func NewService(catalog *providers.Catalog, hostHomeDir, aiHomeDir string) *Serv
 func (s *Service) WithCLIRunner(runner CLIRunner) *Service {
 	if runner != nil {
 		s.cliRunner = runner
+	}
+	return s
+}
+
+// WithChoices 注入关键设置的候选来源（模型目录与推理档位）。
+func (s *Service) WithChoices(resolver ChoiceResolver) *Service {
+	if resolver != nil {
+		s.choices = resolver
 	}
 	return s
 }

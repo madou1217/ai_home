@@ -30,6 +30,40 @@ type FileLocation struct {
 	Parts    []string
 }
 
+// KeySettingKind 决定关键设置在 WebUI 的控件语义。
+type KeySettingKind string
+
+const (
+	// KeySettingText 是自由文本；Choices 非空时作为建议候选。
+	KeySettingText KeySettingKind = "text"
+	// KeySettingBoolean 是开关。
+	KeySettingBoolean KeySettingKind = "boolean"
+	// KeySettingModel 的候选来自该 Provider 的模型目录。
+	KeySettingModel KeySettingKind = "model"
+	// KeySettingReasoningEffort 的候选来自 DependsOn 所指模型声明的推理档位。
+	KeySettingReasoningEffort KeySettingKind = "reasoning-effort"
+)
+
+// KeySetting 把配置文件里的一个关键键声明成可视化设置。
+//
+// 声明与文件定义放在一起：WebUI 只展示 Provider 合同声明过的键，
+// 保存仍走同一条校验/原子写入/版本历史路径，避免出现第二份事实源。
+type KeySetting struct {
+	// Path 是配置文件内的键路径（JSON 用点号分隔；TOML 目前仅根级标量）。
+	Path string `json:"path"`
+	// Label 是 WebUI 显示的字段名。
+	Label string `json:"label"`
+	// Kind 决定控件与候选来源。
+	Kind KeySettingKind `json:"kind"`
+	// Choices 是静态候选（text / boolean 之外的可选集合）。
+	Choices []string `json:"choices,omitempty"`
+	// Placeholder 与 Help 是输入提示与字段说明。
+	Placeholder string `json:"placeholder,omitempty"`
+	Help        string `json:"help,omitempty"`
+	// DependsOn 是 reasoning-effort 依赖的模型键路径；空表示同文件的 model。
+	DependsOn string `json:"dependsOn,omitempty"`
+}
+
 // FileDefinition 声明某 Provider 允许 WebUI 管理的配置文件元数据。
 type FileDefinition struct {
 	Provider     string
@@ -44,6 +78,8 @@ type FileDefinition struct {
 	Description  string
 	DocsURL      string
 	Synthetic    bool
+	// KeySettings 是这份配置里值得可视化的关键项；空表示不提供结构化编辑。
+	KeySettings []KeySetting
 }
 
 // PublicFile 是对外暴露的配置元数据视图（路径只含 ~ 前缀，不泄宿主绝对根目录）。
@@ -86,6 +122,28 @@ var builtinFileDefinitions = []FileDefinition{
 		Editable:    true,
 		Description: "Codex CLI 主配置：模型、审批策略、沙箱、MCP、profiles 与通知。",
 		DocsURL:     "https://developers.openai.com/codex/config-reference",
+		KeySettings: []KeySetting{
+			{
+				Path:  "model",
+				Label: "默认模型",
+				Kind:  KeySettingModel,
+				Help:  "新会话的默认模型；候选来自该 Provider 的模型目录，也可直接输入模型 ID。",
+			},
+			{
+				Path:      "model_reasoning_effort",
+				Label:     "推理强度",
+				Kind:      KeySettingReasoningEffort,
+				DependsOn: "model",
+				Help:      "档位由所选模型的目录声明；实际可用性取决于模型和账号。",
+			},
+			{
+				Path:    "service_tier",
+				Label:   "服务档",
+				Kind:    KeySettingText,
+				Choices: []string{"fast", "default"},
+				Help:    "fast 映射为请求的 priority 档；default 表示不启用。",
+			},
+		},
 	},
 	{
 		Provider:    "codex",
@@ -121,6 +179,14 @@ var builtinFileDefinitions = []FileDefinition{
 		Editable:    true,
 		Description: "Claude Code 用户设置：模型、权限、Hook、状态栏与环境变量。",
 		DocsURL:     "https://code.claude.com/docs/en/settings",
+		KeySettings: []KeySetting{
+			{
+				Path:  "model",
+				Label: "默认模型",
+				Kind:  KeySettingModel,
+				Help:  "新会话的默认模型；留空时使用账号默认。",
+			},
+		},
 	},
 	{
 		Provider:     "claude",
@@ -147,6 +213,15 @@ var builtinFileDefinitions = []FileDefinition{
 		Editable:    true,
 		Description: "Gemini CLI 设置：UI、模型、工具、上下文、MCP 与安全策略。",
 		DocsURL:     "https://geminicli.com/docs/cli/settings/",
+		KeySettings: []KeySetting{
+			{
+				Path:        "model.name",
+				Label:       "默认模型",
+				Kind:        KeySettingModel,
+				Placeholder: "留空使用 CLI 默认",
+				Help:        "写入 model.name；候选来自 Gemini 模型目录。",
+			},
+		},
 	},
 	{
 		Provider:    "gemini",
@@ -182,6 +257,14 @@ var builtinFileDefinitions = []FileDefinition{
 		Editable:    true,
 		Description: "Antigravity CLI 设置：模型、状态栏、工具权限与受信任工作区。",
 		DocsURL:     "https://antigravity.google/docs/cli",
+		KeySettings: []KeySetting{
+			{
+				Path:  "model",
+				Label: "默认模型",
+				Kind:  KeySettingModel,
+				Help:  "新会话的默认模型；候选来自 Antigravity 模型目录。",
+			},
+		},
 	},
 	{
 		Provider:    "agy",
@@ -206,6 +289,15 @@ var builtinFileDefinitions = []FileDefinition{
 		Editable:     true,
 		Description:  "OpenCode 主配置：默认模型、Provider、Agent、权限、MCP、LSP 与格式化。",
 		DocsURL:      "https://opencode.ai/docs/config/",
+		KeySettings: []KeySetting{
+			{
+				Path:        "model",
+				Label:       "默认模型",
+				Kind:        KeySettingModel,
+				Placeholder: "provider/model",
+				Help:        "OpenCode 使用 provider/model 形式；候选来自 OpenCode 模型目录。",
+			},
+		},
 	},
 	{
 		Provider:    "opencode",
@@ -231,6 +323,21 @@ var builtinFileDefinitions = []FileDefinition{
 		Editable:    true,
 		Description: "Grok Build 主配置：模型、Agent、沙箱、MCP、权限与终端行为。",
 		DocsURL:     "",
+		KeySettings: []KeySetting{
+			{
+				Path:  "models.default",
+				Label: "默认模型",
+				Kind:  KeySettingModel,
+				Help:  "新会话的默认模型；候选来自 Grok 模型目录。",
+			},
+			{
+				Path:      "models.default_reasoning_effort",
+				Label:     "推理强度",
+				Kind:      KeySettingReasoningEffort,
+				DependsOn: "models.default",
+				Help:      "档位由所选模型的目录声明。",
+			},
+		},
 	},
 	{
 		Provider:    "grok",

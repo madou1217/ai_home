@@ -34,6 +34,8 @@ const (
 	ProviderConfigFilePath = ProviderConfigsPath + "/{provider}/{fileId}"
 	// ProviderConfigValidatePath 是配置文本语法校验的 ServeMux 路径模式。
 	ProviderConfigValidatePath = ProviderConfigFilePath + "/validate"
+	// ProviderConfigKeySettingsPath 是配置文件关键设置读写的 ServeMux 路径模式。
+	ProviderConfigKeySettingsPath = ProviderConfigFilePath + "/key-settings"
 	// ProviderConfigHistoryPath 是配置文件版本历史列表的 ServeMux 路径模式。
 	ProviderConfigHistoryPath = ProviderConfigFilePath + "/history"
 	// ProviderConfigHistoryEntryPath 是读取单条版本历史的 ServeMux 路径模式。
@@ -117,6 +119,8 @@ type ProviderConfigsService interface {
 	ListProviders(ctx context.Context, includeCLIVersions bool) providerconfigs.ListResponse
 	ReadFile(ctx context.Context, provider, fileID string) (*providerconfigs.ReadResponse, error)
 	SaveFile(ctx context.Context, provider, fileID, content string, opts providerconfigs.SaveOptions) (*providerconfigs.SaveResponse, error)
+	ReadKeySettings(ctx context.Context, provider, fileID, modelOverride string) (*providerconfigs.KeySettingsResponse, error)
+	SaveKeySettings(ctx context.Context, provider, fileID string, values map[string]string, expectedRevision string) (*providerconfigs.SaveResponse, error)
 	ValidateFile(provider, fileID, content string) (*providerconfigs.ValidateResponse, error)
 	ListHistory(provider, fileID string) (*providerconfigs.HistoryListResponse, error)
 	ReadHistoryEntry(provider, fileID, entryID string) (*providerconfigs.HistoryEntryResponse, error)

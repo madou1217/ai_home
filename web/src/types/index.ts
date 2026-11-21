@@ -2786,6 +2786,27 @@ export interface ProviderConfigValidationResponse {
   skipped?: boolean;
 }
 
+export interface ProviderConfigKeySetting {
+  path: string;
+  label: string;
+  kind: 'text' | 'boolean' | 'model' | 'reasoning-effort';
+  value: string;
+  choices?: string[];
+  placeholder?: string;
+  help?: string;
+  dependsOn?: string;
+}
+
+export interface ProviderConfigKeySettingsResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  format: string;
+  revision: string;
+  writable: boolean;
+  settings: ProviderConfigKeySetting[];
+}
+
 export interface ProviderConfigSaveResponse {
   ok: boolean;
   provider: string;

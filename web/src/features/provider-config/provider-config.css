@@ -1193,3 +1193,76 @@
     width: 100%;
   }
 }
+
+/* ---------------- 关键设置（配置文件同源可视化） ---------------- */
+/* 只把声明过的键做成紧凑表单；状态用文案 + 图标，不用大块提示容器。 */
+.pc-key-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: 0 var(--space-10) var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-soft) 55%, transparent);
+}
+
+.pc-key-settings--loading {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+}
+
+.pc-key-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.pc-key-settings-head strong {
+  color: var(--color-heading);
+  font-size: var(--text-sm);
+}
+
+.pc-key-settings-head span {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+}
+
+.pc-key-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-6) var(--space-8);
+}
+
+.pc-key-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pc-key-field label {
+  color: var(--color-muted-strong);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+}
+
+.pc-key-help {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+}
+
+.pc-key-settings-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.pc-key-hint {
+  color: var(--color-muted-strong);
+  font-size: var(--text-2xs);
+}

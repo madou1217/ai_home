@@ -22,13 +22,15 @@ type Overrides struct {
 	Env  map[string]string
 	// Unsupported 表示该 Provider 暂未接入账号级启动注入（值仍已保存）。
 	Unsupported bool
+	// Warnings 是本次注入的可见提示（如个别键无法注入）。
+	Warnings []string
 }
 
 // Build 按 Provider 的 CLI 能力生成账号覆盖注入。
 //
-// 目前接入：codex（-c 覆盖任意 config 键）、claude（--settings 叠加 JSON）、
-// opencode（OPENCODE_CONFIG 指向覆盖文件，已用 opencode debug config 验证）。
-// 其余 Provider 返回 Unsupported，由调用方记录可见提示，不阻断启动。
+// 目前接入：codex（-c）、claude（--settings）、opencode（OPENCODE_CONFIG + --standalone）、
+// agy（--settings 内联 JSON，已用 agy 校验确认）、grok（--model/--effort）、
+// gemini（--model；compressionThreshold 因系统设置文件要求 root 所有而仅保存）。
 func Build(providerID, accountRef string, values map[string]string, aiHomeDir string) (Overrides, error) {
 	normalizedProvider := strings.ToLower(strings.TrimSpace(providerID))
 	definitions, found := providerconfigs.KeySettingsForProvider(normalizedProvider)
@@ -58,6 +60,12 @@ func Build(providerID, accountRef string, values map[string]string, aiHomeDir st
 		return buildClaude(filtered, declared, accountRef, aiHomeDir)
 	case "opencode":
 		return buildOpencode(filtered, declared, accountRef, aiHomeDir)
+	case "agy":
+		return buildAgy(filtered, declared)
+	case "grok":
+		return buildGrok(filtered)
+	case "gemini":
+		return buildGemini(filtered)
 	default:
 		return Overrides{Unsupported: true}, nil
 	}
@@ -134,6 +142,56 @@ func buildClaude(
 	}
 	cleanup = false
 	return Overrides{Args: []string{"--settings", target}}, nil
+}
+
+// buildAgy 用 --settings 内联 JSON 覆盖本次会话（agy 帮助明确该值只用于当前会话）。
+func buildAgy(values map[string]string, declared map[string]providerconfigs.KeySetting) (Overrides, error) {
+	settings := map[string]any{}
+	for path, value := range values {
+		typed, err := typedValue(declared[path], value)
+		if err != nil {
+			return Overrides{}, err
+		}
+		if err := setNested(settings, path, typed); err != nil {
+			return Overrides{}, err
+		}
+	}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return Overrides{}, err
+	}
+	return Overrides{Args: []string{"--settings", string(raw)}}, nil
+}
+
+// buildGrok 把声明路径映射到官方 -m/--effort 参数。
+func buildGrok(values map[string]string) (Overrides, error) {
+	args := make([]string, 0, len(values)*2)
+	for _, path := range sortedPaths(values) {
+		value := values[path]
+		switch path {
+		case "models.default":
+			args = append(args, "--model", value)
+		case "models.default_reasoning_effort":
+			args = append(args, "--effort", value)
+		default:
+			continue
+		}
+	}
+	return Overrides{Args: args}, nil
+}
+
+// buildGemini 只用官方 --model；compressionThreshold 只能保存在公共/账号配置里，
+// 因为 Gemini 要求系统设置文件由 root 所有，用户目录的覆盖文件会被跳过。
+func buildGemini(values map[string]string) (Overrides, error) {
+	args := make([]string, 0, 2)
+	warnings := make([]string, 0)
+	if model, ok := values["model.name"]; ok && strings.TrimSpace(model) != "" {
+		args = append(args, "--model", strings.TrimSpace(model))
+	}
+	if _, ok := values["model.compressionThreshold"]; ok {
+		warnings = append(warnings, "Gemini 的 model.compressionThreshold 无法在账号级启动注入（系统设置文件要求 root 所有），本次仅使用账号目录中的公共值。")
+	}
+	return Overrides{Args: args, Warnings: warnings}, nil
 }
 
 // buildOpencode 用 OPENCODE_CONFIG 指向账号覆盖文件；OpenCode 会把它作为

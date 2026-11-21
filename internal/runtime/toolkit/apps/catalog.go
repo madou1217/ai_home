@@ -254,7 +254,9 @@ func buildNpmPlan(pkg string, opts Options) LifecyclePlan {
 		return LifecyclePlan{}
 	}
 	cmd, uc := npmCommand(opts)
-	args := append([]string{"install", "-g", norm}, npmNetworkFlags(uc, opts)...)
+	// 包已存在但 bin 链接缺失（此前的半途安装/其它 Node 前缀）时，普通
+	// install 会直接成功但不修复 bin；工具链安装必须声明式可修复。
+	args := append([]string{"install", "-g", "--force", norm}, npmNetworkFlags(uc, opts)...)
 	if norm == "@openai/codex" {
 		args = append(args, "--prefix", codexInstallPrefix(opts))
 	}

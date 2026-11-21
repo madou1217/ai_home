@@ -11,7 +11,7 @@ This audit covers the session running indicator used by the WebUI project/workbe
 | codex | hook + app-server proxy | `json_hooks` events; app-server `turn/started`, `turn/completed`, `thread/status/changed`, `thread/closed` | Fixed in this audit: idle/notLoaded clears; active no longer starts a turn |
 | claude | hook | `SessionStart`, `UserPromptSubmit`, `PermissionRequest`, `Notification`, `Stop`, `StopFailure`, `SessionEnd` | Fixed in this audit: `idle_prompt` completes the turn; `permission_prompt` still opens a question |
 | gemini | hook | `SessionStart`, `BeforeAgent`, `AfterAgent`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
-| agy | hook | `PreInvocation`, `PostInvocation`, `Stop` | `Stop` with `fullyIdle=false` still maps to working; verify whether that means a live subagent |
+| agy | hook | `PreInvocation`, `PostInvocation`, `Stop` | Fixed in this audit: `Stop` completes the turn; `continuationActive=true` keeps it working; `fullyIdle` only reports background tasks |
 | grok | hook | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd` | Turn-scoped; accurate when hooks fire |
 | opencode | plugin bridge | v2 `session.execution.started` / terminal events; v1 `session.idle` / message events | Plugin dedupes per session; needs real v1/v2 acceptance |
 | qoder / qodercn | polling | CLI session store/probes | No per-session hook; account activity only. UI should not equate runtime with running |
@@ -86,11 +86,59 @@ The test session state file was removed afterwards.
 
 Commit: `7fc288a7 fix(session): treat Claude idle_prompt as turn completion`.
 
+## Confirmed AGY bug
+
+AGY 1.5.6's own hook documentation (embedded in the installed `agy` binary) defines the `Stop` contract as:
+
+```json
+{
+  "executionNum": 1,
+  "terminationReason": "NO_TOOL_CALL",
+  "error": "",
+  "fullyIdle": true,        // true if all background tasks are done
+  "continuationActive": true // true after a Stop hook kept the agent going this turn
+}
+```
+
+`Stop` fires "when the execution loop terminates". Therefore:
+
+- `fullyIdle=false` means background tasks are still running, **not** that a turn is running.
+- `continuationActive=true` means a Stop hook asked the agent to continue in this turn, which is the only Stop payload that represents live work.
+- Only a `decision: "continue"` output re-enters the loop.
+
+The previous mapping treated `fullyIdle=false` as `session:turn-updated`, so every normal AGY stop with pending background tasks left the session `working` forever.
+
+### Fix
+
+- The provider hook sender now forwards `continuationActive` alongside `fullyIdle` (both are plain booleans, no content fields).
+- AGY `Stop` maps to:
+  - `ERROR` / non-empty error → `session:turn-failed`
+  - `continuationActive=true` → `session:turn-updated`
+  - otherwise → `session:turn-completed`, regardless of `fullyIdle`
+
+### Real verification
+
+The Go sender (`aih-server __provider-hook`) posted real payloads to the local receiver:
+
+| Event | Payload | Result |
+| --- | --- | --- |
+| `PreInvocation` | invocation 1 | `working` |
+| `Stop` | `fullyIdle=false`, `continuationActive=false` | `completed` |
+| `PreInvocation` | invocation 1 | `working` |
+| `Stop` | `fullyIdle=true`, `continuationActive=false` | `completed` |
+| `PreInvocation` | invocation 1 | `working` |
+| `Stop` | `fullyIdle=false`, `continuationActive=true` | `working` |
+| `Stop` | `terminationReason=ERROR`, `error=boom` | `failed` |
+
+The `continuationActive=true` row also proves the sender forwards the flag; without it the receiver would have produced `completed`.
+
+Commit: `c8798c4c fix(session): treat AGY Stop as completion unless continuing`.
+
 ## Optimization plan
 
 1. **Codex**: keep the app-server as the authoritative source; never derive a turn from thread attachment. Retain `turn/started` / `turn/completed` as the only turn boundaries.
 2. **Claude**: done — `idle_prompt` no longer opens a question and completes the turn. Remaining optional work: if the UI wants a "needs attention" hint for idle sessions, expose it as a separate flag instead of reusing `waiting`/running.
-3. **AGY**: verify `Stop` with `fullyIdle=false`; if false means "no active subagent", map it to completed rather than working.
+3. **AGY**: done — `Stop` completes the turn; `continuationActive=true` is the only Stop payload treated as working.
 4. **Gemini / Grok**: hooks are already turn-scoped; add a bounded stale-working fallback per provider if a terminal hook is lost.
 5. **OpenCode**: run a real v2 and v1 session; confirm the plugin's started/terminal pairs cover interrupted/failed turns.
 6. **Polling providers (qoder, kiro, codebuddy family)**: do not promote tmux attachment, cursor blink, or a live `aih` process to `sessionTurnActive`. Use only decisive session-store records; otherwise show "estimated/unknown" rather than running.

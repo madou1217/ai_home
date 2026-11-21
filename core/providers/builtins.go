@@ -81,6 +81,10 @@ func builtinCodex() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "openai", APIKeyEnv: []string{"OPENAI_API_KEY"}, BaseURLEnv: []string{"OPENAI_BASE_URL"}},
+		Storage: &StorageFacts{ConfigDenyPaths: []ConfigDenyFacts{
+			{Path: ".codex/config.toml"},
+			{Path: ".codex/hooks.json"},
+		}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ChatGPT / OpenAI 登录", "打开授权链接，授权后把回调地址提交给 WebUI。"),
@@ -150,6 +154,10 @@ func builtinGemini() Definition {
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
+		Storage: &StorageFacts{ConfigDenyPaths: []ConfigDenyFacts{
+			{Path: ".gemini/settings.json"},
+			{Path: ".gemini/.gemini/settings.json"},
+		}},
 		// Gemini CLI 的 Code Assist 推理已由 Go 承接（gemini.code_assist），
 		// Node 只保留 CLI/桌面宿主能力。
 		RelayHosts:   relayHostsCanonical(),
@@ -199,6 +207,15 @@ func builtinClaude() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "anthropic", APIKeyEnv: []string{"ANTHROPIC_API_KEY"}, AuthTokenEnv: []string{"ANTHROPIC_AUTH_TOKEN"}, BaseURLEnv: []string{"ANTHROPIC_BASE_URL"}},
+		Storage: &StorageFacts{ConfigDenyPaths: []ConfigDenyFacts{
+			{Path: ".claude/settings.json"},
+			{Path: ".claude/settings.local.json"},
+			{Path: ".claude/remote-settings.json"},
+			{Path: ".claude/.mcp.json"},
+			{Path: ".claude/.claude.json"},
+			{Path: ".mcp.json"},
+			{Path: ".claude.json"},
+		}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Claude 登录", "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"),
@@ -266,7 +283,16 @@ func builtinAntigravity() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "antigravity"},
-		Storage:      &StorageFacts{NativeRoot: &[]string{".gemini", "antigravity-cli"}},
+		Storage: &StorageFacts{
+			NativeRoot: &[]string{".gemini", "antigravity-cli"},
+			ConfigDenyPaths: []ConfigDenyFacts{
+				{Path: ".gemini/config", Recursive: true},
+				{Path: ".gemini/antigravity-cli/settings.json"},
+				{Path: ".gemini/antigravity-cli/settings.local.json"},
+				{Path: ".gemini/antigravity-cli/keybindings.json"},
+				{Path: ".gemini/antigravity-cli/mcp_config.json"},
+			},
+		},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOptionWithStrategy(AuthModeOAuthBrowser, "aih-google-oauth", "Antigravity 直连 Google 登录", "由 AI Home 直接完成 Google OAuth，不需要安装 Antigravity CLI。"),
@@ -318,13 +344,18 @@ func builtinAntigravity() Definition {
 // - 环境变量：OPENCODE_API_KEY 与 OPENCODE_BASE_URL。
 func builtinOpenCode() Definition {
 	return Definition{
-		ID:             "opencode",
-		Upstream:       &Upstream{OfficialHosts: []string{"opencode.ai"}},
-		Presentation:   withAPIHost(presentation("opencode", "OpenCode", "OC", "⌘", "default"), "opencode.ai"),
-		Gateway:        GatewayActive,
-		Clients:        clientSupport(true, true),
-		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
-		Storage:        &StorageFacts{NativeRoot: &[]string{".local", "share", "opencode"}},
+		ID:           "opencode",
+		Upstream:     &Upstream{OfficialHosts: []string{"opencode.ai"}},
+		Presentation: withAPIHost(presentation("opencode", "OpenCode", "OC", "⌘", "default"), "opencode.ai"),
+		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
+		Storage: &StorageFacts{
+			NativeRoot: &[]string{".local", "share", "opencode"},
+			ConfigDenyPaths: []ConfigDenyFacts{
+				{Path: ".config/opencode", Recursive: true},
+			},
+		},
 		NativeBoundary: nativeOpenCode(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},

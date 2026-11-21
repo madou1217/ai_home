@@ -3,6 +3,8 @@ package sessionevents
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/storagepolicy"
 )
 
 // CanonicalizePath 将受管账号投影路径改写为对应的宿主原生路径，避免把内部投影根目录暴露给浏览器；
@@ -53,22 +55,48 @@ func splitNonEmpty(value, sep string) []string {
 	return out
 }
 
+// privateTails 是各 Provider 声明的凭据与私密状态路径（已小写）。
+//
+// 根事实来自 Provider 合同（经 storagepolicy 展开 NativeRoot/GlobalDir），
+// 新增 Provider 只要声明 AuthArtifacts / PrivateArtifacts 就自动生效。
+var privateTails = buildPrivateTails()
+
+func buildPrivateTails() []string {
+	tails := []string{}
+	seen := map[string]struct{}{}
+	for _, provider := range storagepolicy.Names() {
+		policy := storagepolicy.Get(provider)
+		if policy == nil {
+			continue
+		}
+		artifacts := make([]storagepolicy.Artifact, 0, len(policy.AuthArtifacts)+len(policy.PrivateArtifacts))
+		artifacts = append(artifacts, policy.AuthArtifacts...)
+		artifacts = append(artifacts, policy.PrivateArtifacts...)
+		for _, artifact := range artifacts {
+			joined := strings.ToLower(strings.Join(artifact.Path, "/"))
+			if joined == "" {
+				continue
+			}
+			if _, exists := seen[joined]; exists {
+				continue
+			}
+			seen[joined] = struct{}{}
+			tails = append(tails, joined)
+		}
+	}
+	return tails
+}
+
 // isPrivateTail 过滤账号私密凭据文件，绝不将其误映射为宿主路径。
+// 目录条目同时拒绝其下所有文件；文件条目同时拒绝 "<name>.<suffix>" 备份变体。
 func isPrivateTail(tail []string) bool {
 	joined := strings.ToLower(strings.Join(tail, "/"))
-	switch {
-	case joined == ".claude/.credentials.json",
-		strings.HasPrefix(joined, ".claude/.credentials.json."),
-		joined == ".codex/auth.json",
-		strings.HasPrefix(joined, ".codex/auth.json."),
-		joined == ".gemini/oauth_creds.json",
-		strings.HasPrefix(joined, ".gemini/oauth_creds.json."),
-		joined == "electron-user-data",
-		strings.HasPrefix(joined, "electron-user-data/"),
-		joined == ".codebuddy/diagnostics",
-		strings.HasPrefix(joined, ".codebuddy/diagnostics/"):
-		return true
-	default:
-		return false
+	for _, expected := range privateTails {
+		if joined == expected ||
+			strings.HasPrefix(joined, expected+".") ||
+			strings.HasPrefix(joined, expected+"/") {
+			return true
+		}
 	}
+	return false
 }

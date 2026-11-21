@@ -244,6 +244,18 @@ type StorageFacts struct {
 	// NoRuntimeHome 表示该 Provider 不使用 <nativeRoot>/.aih-runtime-home。
 	// 默认 false；kiro / cline 显式声明 true。
 	NoRuntimeHome bool `json:"noRuntimeHome,omitempty"`
+	// ConfigDenyPaths 是本 Provider 声明必须拒绝读取的配置位置（HOME 相对）。
+	// 文件同时拒绝 "<name>.<suffix>" 备份变体；Recursive 表示整目录拒绝。
+	ConfigDenyPaths []ConfigDenyFacts `json:"configDenyPaths,omitempty"`
+}
+
+// ConfigDenyFacts 是一条敏感的 Provider 配置位置。
+//
+// 目录（Recursive）拒绝其下所有文件；文件拒绝自身及同名备份变体。
+// WebUI 文件 API 的 deny 名单只能从这里汇总，不再维护 Provider→路径的中央表。
+type ConfigDenyFacts struct {
+	Path      string `json:"path"`
+	Recursive bool   `json:"recursive,omitempty"`
 }
 
 // EffectiveNativeRoot 返回存储策略使用的主数据根。

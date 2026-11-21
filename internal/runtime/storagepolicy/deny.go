@@ -160,24 +160,30 @@ type configLocation struct {
 	variants  bool
 }
 
-var configurationLocations = []configLocation{
-	{path: []string{".config", "opencode"}, recursive: true},
-	{path: []string{".gemini", "config"}, recursive: true},
-	{path: []string{".codex", "config.toml"}, variants: true},
-	{path: []string{".codex", "hooks.json"}, variants: true},
-	{path: []string{".claude", "settings.json"}, variants: true},
-	{path: []string{".claude", "settings.local.json"}, variants: true},
-	{path: []string{".claude", "remote-settings.json"}, variants: true},
-	{path: []string{".claude", ".mcp.json"}, variants: true},
-	{path: []string{".claude", ".claude.json"}, variants: true},
-	{path: []string{".mcp.json"}, variants: true},
-	{path: []string{".claude.json"}, variants: true},
-	{path: []string{".gemini", "settings.json"}, variants: true},
-	{path: []string{".gemini", ".gemini", "settings.json"}, variants: true},
-	{path: []string{".gemini", "antigravity-cli", "settings.json"}, variants: true},
-	{path: []string{".gemini", "antigravity-cli", "settings.local.json"}, variants: true},
-	{path: []string{".gemini", "antigravity-cli", "keybindings.json"}, variants: true},
-	{path: []string{".gemini", "antigravity-cli", "mcp_config.json"}, variants: true},
+// configurationLocations 由 Provider 合同里的 storage.configDenyPaths 汇总。
+// deny.go 不再维护 Provider→目录的中央表：新增 Provider 只要在合同里声明
+// 敏感配置位置，就自动进入 WebUI 文件 API 的拒绝名单。
+var configurationLocations = buildConfigurationLocations()
+
+func buildConfigurationLocations() []configLocation {
+	locations := []configLocation{}
+	for _, definition := range builtinCatalog().List() {
+		if definition.Storage == nil {
+			continue
+		}
+		for _, declared := range definition.Storage.ConfigDenyPaths {
+			path := splitPathParts(declared.Path)
+			if len(path) == 0 {
+				continue
+			}
+			locations = append(locations, configLocation{
+				path:      path,
+				recursive: declared.Recursive,
+				variants:  !declared.Recursive,
+			})
+		}
+	}
+	return locations
 }
 
 // PathWithinRoot reports whether target is root itself or lives below it.

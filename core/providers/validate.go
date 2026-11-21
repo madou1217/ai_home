@@ -178,6 +178,11 @@ func validateStorageFacts(definition Definition) error {
 				return fmt.Errorf("storage.sessionRoots 必须是单段 HOME 相对目录: %q", root)
 			}
 		}
+		for _, location := range facts.ConfigDenyPaths {
+			if !isSafeRelativePath(location.Path) {
+				return fmt.Errorf("storage.configDenyPaths 必须是安全的 HOME 相对路径: %q", location.Path)
+			}
+		}
 	}
 	for _, segment := range definition.EffectiveNativeRoot() {
 		if !isSafeRelativeSegment(segment) {
@@ -211,6 +216,21 @@ func isSafeRelativeSegment(value string) bool {
 		return false
 	}
 	return !strings.ContainsAny(trimmed, "/\\\\")
+}
+
+// isSafeRelativePath 校验斜杠分隔的 HOME 相对路径：每段都必须是安全单段，
+// 且不接受绝对路径、空段与反斜杠。
+func isSafeRelativePath(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.HasPrefix(trimmed, "/") || strings.Contains(trimmed, "\\") {
+		return false
+	}
+	for _, segment := range strings.Split(trimmed, "/") {
+		if !isSafeRelativeSegment(segment) {
+			return false
+		}
+	}
+	return true
 }
 
 // validateCredentialFacts 校验凭据事实：厂商标识小写，环境变量名合法且同一列表内不重复。

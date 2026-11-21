@@ -235,6 +235,16 @@
           "api.openai.com"
         ]
       },
+      "storage": {
+        "configDenyPaths": [
+          {
+            "path": ".codex/config.toml"
+          },
+          {
+            "path": ".codex/hooks.json"
+          }
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -430,6 +440,16 @@
       "upstream": {
         "officialHosts": [
           "generativelanguage.googleapis.com"
+        ]
+      },
+      "storage": {
+        "configDenyPaths": [
+          {
+            "path": ".gemini/settings.json"
+          },
+          {
+            "path": ".gemini/.gemini/settings.json"
+          }
         ]
       },
       "relayHosts": {
@@ -682,6 +702,31 @@
           "api.anthropic.com"
         ]
       },
+      "storage": {
+        "configDenyPaths": [
+          {
+            "path": ".claude/settings.json"
+          },
+          {
+            "path": ".claude/settings.local.json"
+          },
+          {
+            "path": ".claude/remote-settings.json"
+          },
+          {
+            "path": ".claude/.mcp.json"
+          },
+          {
+            "path": ".claude/.claude.json"
+          },
+          {
+            "path": ".mcp.json"
+          },
+          {
+            "path": ".claude.json"
+          }
+        ]
+      },
       "relayHosts": {
         "go": {
           "supported": true,
@@ -895,6 +940,24 @@
         "nativeRoot": [
           ".gemini",
           "antigravity-cli"
+        ],
+        "configDenyPaths": [
+          {
+            "path": ".gemini/config",
+            "recursive": true
+          },
+          {
+            "path": ".gemini/antigravity-cli/settings.json"
+          },
+          {
+            "path": ".gemini/antigravity-cli/settings.local.json"
+          },
+          {
+            "path": ".gemini/antigravity-cli/keybindings.json"
+          },
+          {
+            "path": ".gemini/antigravity-cli/mcp_config.json"
+          }
         ]
       },
       "relayHosts": {
@@ -1127,6 +1190,12 @@
           ".local",
           "share",
           "opencode"
+        ],
+        "configDenyPaths": [
+          {
+            "path": ".config/opencode",
+            "recursive": true
+          }
         ]
       },
       "relayHosts": {

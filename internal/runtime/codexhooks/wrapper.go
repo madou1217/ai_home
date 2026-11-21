@@ -126,8 +126,6 @@ var CodexDesktopLayouts = []DesktopLayout{
 // WrapperOptions 定义生成 app-server / CLI 包装脚本所需的路径与行为选项。
 type WrapperOptions struct {
 	GoBinaryPath                 string
-	NodeExecPath                 string
-	HelperScriptPath             string
 	UpstreamBinaryPath           string
 	StateFilePath                string
 	RouteDefaultCLIThroughHelper bool
@@ -139,7 +137,7 @@ func (options WrapperOptions) goBinary() string {
 	if path := strings.TrimSpace(options.GoBinaryPath); filepath.IsAbs(path) {
 		return path
 	}
-	return wrapperGoBinary(options.HelperScriptPath)
+	return ""
 }
 
 // WindowsHookLaunch 描述绕过 .cmd 直接拉起 Node 包装脚本的启动参数。
@@ -265,14 +263,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 	// CLI 的 --version 走 Go 的原生版本诊断；app-server 已切到 Go stdio 代理；
 	// resume 已切到 __codex-cli-resume；run-cli-default 也已切到 __codex-default-cli。
 	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
-		goBinary := ""
-		if filepath.IsAbs(options.HelperScriptPath) {
-			arch := runtime.GOARCH
-			if arch == "amd64" {
-				arch = "x64"
-			}
-			goBinary = filepath.Join(filepath.Dir(options.HelperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, "aih-go")
-		}
+		goBinary := strings.TrimSpace(options.GoBinaryPath)
 		lines = append(lines,
 			`if [ "$#" -eq 1 ] && { [ "$1" = "--version" ] || [ "$1" = "-V" ]; }; then`,
 			"  AIH_GO_CLI="+ShellQuote(goBinary),
@@ -331,14 +322,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 		"fi",
 	)
 	if marker == WrapperMarkerCLI && options.RouteDefaultCLIThroughHelper {
-		goBinary := ""
-		if filepath.IsAbs(options.HelperScriptPath) {
-			arch := runtime.GOARCH
-			if arch == "amd64" {
-				arch = "x64"
-			}
-			goBinary = filepath.Join(filepath.Dir(options.HelperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, "aih-go")
-		}
+		goBinary := strings.TrimSpace(options.GoBinaryPath)
 		lines = append(lines,
 			`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
 			"  AIH_GO_CLI="+ShellQuote(goBinary),
@@ -369,14 +353,7 @@ func BuildCodexAppServerWrapperScript(marker string, options WrapperOptions) str
 			"fi",
 		)
 	} else {
-		goBinary := ""
-		if filepath.IsAbs(options.HelperScriptPath) {
-			arch := runtime.GOARCH
-			if arch == "amd64" {
-				arch = "x64"
-			}
-			goBinary = filepath.Join(filepath.Dir(options.HelperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, "aih-go")
-		}
+		goBinary := strings.TrimSpace(options.GoBinaryPath)
 		lines = append(lines,
 			`if [ "$AIH_SUBCOMMAND" = "app-server" ]; then`,
 			"  AIH_GO_CLI="+ShellQuote(goBinary),
@@ -527,21 +504,6 @@ func BuildWindowsCmdWrapperScript(options WrapperOptions) string {
 		"",
 	)
 	return strings.Join(lines, "\r\n")
-}
-
-func wrapperGoBinary(helperScriptPath string) string {
-	if !filepath.IsAbs(helperScriptPath) {
-		return ""
-	}
-	arch := runtime.GOARCH
-	if arch == "amd64" {
-		arch = "x64"
-	}
-	name := "aih-go"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	return filepath.Join(filepath.Dir(helperScriptPath), "..", "..", "bin", "native", runtime.GOOS+"-"+arch, name)
 }
 
 // BuildCLIWrapperScript 构建 POSIX CLI 包装脚本。

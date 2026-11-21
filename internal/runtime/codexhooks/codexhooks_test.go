@@ -26,8 +26,6 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 
 	opts := WrapperOptions{
 		GoBinaryPath:                 "/opt/aih/proxy's-go",
-		NodeExecPath:                 "/usr/local/bin/node",
-		HelperScriptPath:             "/opt/aih/proxy's.js",
 		UpstreamBinaryPath:           "/usr/local/bin/codex.aih-original",
 		StateFilePath:                "/tmp/ai_home/run/codex/cli-hook-state.json",
 		RouteDefaultCLIThroughHelper: true,
@@ -58,8 +56,6 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	}
 
 	cmdOpts := WrapperOptions{
-		NodeExecPath:       `C:\Program Files\nodejs\node.exe`,
-		HelperScriptPath:   `C:\aih\helper.js`,
 		UpstreamBinaryPath: `C:\npm\codex.aih-original.cmd`,
 		StateFilePath:      `C:\ai_home\run\codex\cli-hook-state.json`,
 	}
@@ -89,8 +85,6 @@ func TestWrapperBuildersAndSubcommandParsing(t *testing.T) {
 	canonicalCmd := filepath.Join(winDir, "canonical.cmd")
 	aliasCmd := filepath.Join(winDir, "codex.cmd")
 	canonicalBody := BuildCLIWrapperScriptForTarget(canonicalCmd, WrapperOptions{
-		NodeExecPath:       nodeFake,
-		HelperScriptPath:   helperFake,
 		UpstreamBinaryPath: upstreamFake,
 		StateFilePath:      stateFake,
 	})
@@ -122,8 +116,6 @@ func TestExternalLauncherAndLaunchEnv(t *testing.T) {
 	}
 
 	wrapper := BuildCodexAppServerWrapperScript(WrapperMarkerDesktop, WrapperOptions{
-		NodeExecPath:       "/usr/bin/node",
-		HelperScriptPath:   "/opt/helper.js",
 		UpstreamBinaryPath: upstream,
 		StateFilePath:      filepath.Join(aiHome, "run", "codex", "desktop-hook-state.json"),
 	})
@@ -172,7 +164,6 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		AIHomeDir:      aiHome,
 		HostHomeDir:    hostHome,
 		Platform:       "darwin",
-		NodeExecPath:   "/usr/local/bin/node",
 		GoBinaryPath:   helper,
 		ProcessHomeDir: hostHome,
 		OSUserHomeDir:  "/Users/real-someone-else",
@@ -200,7 +191,6 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		AIHomeDir:               aiHome,
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
-		NodeExecPath:            "/usr/local/bin/node",
 		GoBinaryPath:            helper,
 		ProviderHookReceiverURL: "http://127.0.0.1:4312/v0/webui/session-events/provider-hook",
 		SelfPID:                 999,
@@ -307,7 +297,6 @@ func TestVscodeHookServiceLifecycle(t *testing.T) {
 		AIHomeDir:    aiHome,
 		HostHomeDir:  hostHome,
 		Platform:     "darwin",
-		NodeExecPath: "/usr/local/bin/node",
 		GoBinaryPath: "/opt/helper.js",
 		SelfPID:      888,
 		ListProcesses: func() ([]ProcessInfo, error) {
@@ -376,15 +365,13 @@ func TestCLIHookServiceBackupAliasAndCache(t *testing.T) {
 	now := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
 	var fullCalls int
 	svc := NewCLIHookService(CLIHookOptions{
-		AIHomeDir:        aiHome,
-		HostHomeDir:      hostHome,
-		Platform:         "darwin",
-		Arch:             "arm64",
-		PathEnv:          canonicalDir + string(os.PathListSeparator) + staleDir,
-		TempDir:          root,
-		NodeExecPath:     "/usr/local/bin/node",
-		HelperScriptPath: "/opt/helper.js",
-		Now:              func() time.Time { return now },
+		AIHomeDir:   aiHome,
+		HostHomeDir: hostHome,
+		Platform:    "darwin",
+		Arch:        "arm64",
+		PathEnv:     canonicalDir + string(os.PathListSeparator) + staleDir,
+		TempDir:     root,
+		Now:         func() time.Time { return now },
 		ResolveCodexBinary: func(loginShellFallback bool) string {
 			if loginShellFallback {
 				fullCalls++
@@ -751,7 +738,6 @@ func TestDesktopHookFreshInstallLeavesNoUpstreamFingerprintDrift(t *testing.T) {
 		AIHomeDir:               aiHome,
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
-		NodeExecPath:            "/usr/local/bin/node",
 		GoBinaryPath:            helper,
 		RuntimeLayouts:          layouts,
 		AllowSystemApplications: &allowSys,

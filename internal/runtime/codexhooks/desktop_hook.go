@@ -138,7 +138,6 @@ type DesktopHookOptions struct {
 	AIHomeDir               string
 	HostHomeDir             string
 	Platform                string
-	NodeExecPath            string
 	GoBinaryPath            string
 	ProviderHookReceiverURL string
 	RuntimeLayouts          []DesktopLayout
@@ -158,7 +157,6 @@ type DesktopHookService struct {
 	aiHomeDir               string
 	hostHomeDir             string
 	platform                string
-	nodeExecPath            string
 	goBinaryPath            string
 	providerHookReceiverURL string
 	stateFilePath           string
@@ -195,7 +193,6 @@ func NewDesktopHookService(opts DesktopHookOptions) *DesktopHookService {
 		aiHomeDir:               aiHome,
 		hostHomeDir:             strings.TrimSpace(opts.HostHomeDir),
 		platform:                NormalizePlatform(opts.Platform),
-		nodeExecPath:            strings.TrimSpace(opts.NodeExecPath),
 		goBinaryPath:            strings.TrimSpace(opts.GoBinaryPath),
 		providerHookReceiverURL: strings.TrimSpace(opts.ProviderHookReceiverURL),
 		stateFilePath:           stateFilePath,
@@ -220,7 +217,6 @@ func (svc *DesktopHookService) StateFilePath() string {
 // BuildWrapperScript 生成桌面端使用的 POSIX app-server 包装脚本文本。
 func (svc *DesktopHookService) BuildWrapperScript(upstreamBinaryPath string) string {
 	return BuildCodexAppServerWrapperScript(WrapperMarkerDesktop, WrapperOptions{
-		NodeExecPath:       svc.nodeExecPath,
 		GoBinaryPath:       svc.goBinaryPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
 		StateFilePath:      svc.stateFilePath,

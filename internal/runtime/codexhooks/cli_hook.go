@@ -69,17 +69,15 @@ type CLIHookEnsureOptions struct {
 
 // CLIHookOptions 配置 CLIHookService。
 type CLIHookOptions struct {
-	AIHomeDir        string
-	HostHomeDir      string
-	Platform         string
-	Arch             string
-	PathEnv          string
-	TempDir          string
-	GoBinaryPath     string
-	NodeExecPath     string
-	HelperScriptPath string
-	BackgroundTTL    time.Duration
-	Now              func() time.Time
+	AIHomeDir     string
+	HostHomeDir   string
+	Platform      string
+	Arch          string
+	PathEnv       string
+	TempDir       string
+	GoBinaryPath  string
+	BackgroundTTL time.Duration
+	Now           func() time.Time
 	// ResolveCodexBinary 允许注入 `codex` 二进制查找逻辑；background=false 允许登录 shell 回落。
 	ResolveCodexBinary func(loginShellFallback bool) string
 }
@@ -91,19 +89,17 @@ type cliFullResolutionMemo struct {
 
 // CLIHookService 管理 Codex CLI 的包装器安装、.aih-original 备份与 PATH 别名转发。
 type CLIHookService struct {
-	aiHomeDir        string
-	hostHomeDir      string
-	platform         string
-	arch             string
-	pathEnv          string
-	tempDir          string
-	goBinaryPath     string
-	nodeExecPath     string
-	helperScriptPath string
-	stateFilePath    string
-	backgroundTTL    time.Duration
-	now              func() time.Time
-	resolveBinaryFn  func(loginShellFallback bool) string
+	aiHomeDir       string
+	hostHomeDir     string
+	platform        string
+	arch            string
+	pathEnv         string
+	tempDir         string
+	goBinaryPath    string
+	stateFilePath   string
+	backgroundTTL   time.Duration
+	now             func() time.Time
+	resolveBinaryFn func(loginShellFallback bool) string
 
 	mu                 sync.Mutex
 	lastFullResolution *cliFullResolutionMemo
@@ -125,19 +121,17 @@ func NewCLIHookService(opts CLIHookOptions) *CLIHookService {
 		nowFn = time.Now
 	}
 	svc := &CLIHookService{
-		aiHomeDir:        aiHome,
-		hostHomeDir:      strings.TrimSpace(opts.HostHomeDir),
-		platform:         NormalizePlatform(opts.Platform),
-		arch:             NormalizeArch(opts.Arch),
-		pathEnv:          opts.PathEnv,
-		tempDir:          strings.TrimSpace(opts.TempDir),
-		goBinaryPath:     strings.TrimSpace(opts.GoBinaryPath),
-		nodeExecPath:     strings.TrimSpace(opts.NodeExecPath),
-		helperScriptPath: strings.TrimSpace(opts.HelperScriptPath),
-		stateFilePath:    stateFilePath,
-		backgroundTTL:    ttl,
-		now:              nowFn,
-		resolveBinaryFn:  opts.ResolveCodexBinary,
+		aiHomeDir:       aiHome,
+		hostHomeDir:     strings.TrimSpace(opts.HostHomeDir),
+		platform:        NormalizePlatform(opts.Platform),
+		arch:            NormalizeArch(opts.Arch),
+		pathEnv:         opts.PathEnv,
+		tempDir:         strings.TrimSpace(opts.TempDir),
+		goBinaryPath:    strings.TrimSpace(opts.GoBinaryPath),
+		stateFilePath:   stateFilePath,
+		backgroundTTL:   ttl,
+		now:             nowFn,
+		resolveBinaryFn: opts.ResolveCodexBinary,
 	}
 	if svc.resolveBinaryFn == nil {
 		svc.resolveBinaryFn = svc.defaultResolveCodexBinary
@@ -316,8 +310,6 @@ func (svc *CLIHookService) isTemporaryPath(filePath string) bool {
 func (svc *CLIHookService) BuildWrapperScript(upstreamBinaryPath string) string {
 	return BuildCLIWrapperScript(WrapperOptions{
 		GoBinaryPath:       svc.goBinaryPath,
-		NodeExecPath:       svc.nodeExecPath,
-		HelperScriptPath:   svc.helperScriptPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
 		StateFilePath:      svc.stateFilePath,
 	})
@@ -327,8 +319,6 @@ func (svc *CLIHookService) BuildWrapperScript(upstreamBinaryPath string) string 
 func (svc *CLIHookService) BuildWrapperScriptForTarget(targetBinaryPath string, upstreamBinaryPath string) string {
 	return BuildCLIWrapperScriptForTarget(targetBinaryPath, WrapperOptions{
 		GoBinaryPath:       svc.goBinaryPath,
-		NodeExecPath:       svc.nodeExecPath,
-		HelperScriptPath:   svc.helperScriptPath,
 		UpstreamBinaryPath: upstreamBinaryPath,
 		StateFilePath:      svc.stateFilePath,
 	})

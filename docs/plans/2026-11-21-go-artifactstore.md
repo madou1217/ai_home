@@ -1,5 +1,9 @@
 # Go artifactstore：版本构件的单一执行点（2026-11-21）
 
+> **状态（2026-11-21）**：迁移完成。执行点 `aih-go __artifacts-ensure`，Node 客户端
+> `lib/runtime/artifact-service-client.js`；**唯一权威的剩余项清单见文末“遗留项清单”**
+> （三处 Node 链接动作确认沿用现状，其余差异都属策略层）。
+
 ## 分层
 
 - **Node（策略层）**：只负责发现"哪些路径算版本构件"（`listVersionArtifacts`）以及缓存链接；

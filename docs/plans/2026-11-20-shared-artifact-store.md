@@ -186,7 +186,7 @@ GC(mode):
 
 ## 6. 实施状态（2026-11-20）
 
-已落地（Node 启动路径，先解决实际占用）：
+已落地（最初在 Node 启动路径实现；这些模块现在只负责策略与回退，实际文件系统动作已交给 Go 执行点）：
 
 - `lib/runtime/version-artifacts.js`：版本构件事实层（哪些路径算版本、版本排序、解冻/可删目录）。
   新增 harness/CLI 只加一行：当前覆盖 codebuddy、claude、codebuddy-cn、workbuddy 自带的
@@ -208,12 +208,25 @@ GC(mode):
   codex 运行时 233M）每多一个账号的边际磁盘 ≈ 0，5 个账号合计 ≈ 1 份；把某个账号的版本换成
   新副本后下次启动会重新 reflink（严格性守卫）。
 
-待落地：
+### 剩余项（2026-11-21 复核）
 
-- Go 侧 `artifactstore/artifactapi`（单一执行点 + ledger + 租约），Node 改为客户端。
-- Go 桌面 provisioner 目前**保留**投影里已存在的真实缓存目录（数据安全优先），
-  桌面-only 账号的缓存要靠下一次 CLI 启动或后续 Go GC 回收。
-- Windows junction / Linux reflink 分支的真机验证。
+**代码迁移已完成**：Go 单一执行点 `internal/runtime/artifactstore` 通过
+`aih-go __artifacts-ensure` 承接全部文件系统动作；Node 只保留策略（哪些路径算构件、
+provider 私有名、投影根清单）并通过 `lib/runtime/artifact-service-client.js` 调用。
+已迁入执行点的能力：版本树共享与旧版本回收、库存树 GC、日志回收、宿主缓存链接、
+数据根链接与内容去重、共享会话存储、技能视图、kiro 私有 runtime home、CodeBuddy
+家族条目、Windows shim 硬链、opencode 三投影桥、CLI 共享配置、工具配置条目链接。
+做法与逐项实测见 [`2026-11-21-go-artifactstore.md`](2026-11-21-go-artifactstore.md)。
+
+仍未迁移、已确认**沿用现状**的 Node 链接动作有三处（rekey 事务的临时链接、
+旧版 `Library/Preferences` 整目录迁移、opencode auth bridge），理由见该文
+“遗留项清单”；会话条目的内容合并仍属 Node 的数据归属决策。
+
+仍保留的行为（设计选择，不是缺口）：
+
+- Go 桌面 provisioner 的 `ensureSymlinkIfAbsent` 不替换投影里已存在的真实缓存目录
+  （数据安全优先），桌面-only 账号的缓存要等下一次 CLI 启动或后续 GC 回收。
+- Windows junction 与 Linux reflink 分支已真机验证（见 §9），不再列为待落地。
 
 ## 7. 落地顺序（每阶段都能独立回滚）
 

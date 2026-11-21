@@ -288,15 +288,9 @@ func (p *desktopPrepContext) decorateCodebuddyFamilyBaseEnv() {
 	p.setEnv("XDG_STATE_HOME", filepath.Join(p.profileDir, ".local", "state"))
 	p.applySharedCacheEnv()
 
-	configDirNames := map[string]string{
-		"codebuddy":   ".codebuddy",
-		"codebuddycn": ".codebuddy-cn",
-		"workbuddy":   ".workbuddy-ai",
-		"workbuddycn": ".workbuddy",
-	}
 	provider := strings.ToLower(strings.TrimSpace(p.req.Provider))
-	dirName := configDirNames[provider]
-	if dirName == "" {
+	dirName, ok := codebuddyfamilystorage.ConfigDir(provider)
+	if !ok {
 		dirName = ".codebuddy"
 	}
 	configDir := filepath.Join(p.profileDir, dirName)

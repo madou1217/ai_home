@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/core/providers"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
 const (
@@ -73,25 +74,6 @@ type Project struct {
 	Provider string
 	Sessions []Session
 }
-
-// configDirByProvider 是每个成员的配置根（= 存储策略的 nativeRoot）。
-var configDirByProvider = map[string]string{
-	"codebuddy":   ".codebuddy",
-	"codebuddycn": ".codebuddy-cn",
-	"workbuddy":   ".workbuddy-ai",
-	"workbuddycn": ".workbuddy",
-}
-
-// regionRootsByProvider 是同一地区共享会话历史的两个原生数据根。
-var regionRootsByProvider = map[string][]string{
-	"codebuddy":   {".codebuddy", ".workbuddy-ai"},
-	"workbuddy":   {".workbuddy-ai", ".codebuddy"},
-	"codebuddycn": {".codebuddy-cn", ".workbuddy"},
-	"workbuddycn": {".workbuddy", ".codebuddy-cn"},
-}
-
-// familyConfigDirs 是家族全部配置根；规范存储 .codebuddy 排在最前。
-var familyConfigDirs = []string{".codebuddy", ".codebuddy-cn", ".workbuddy-ai", ".workbuddy"}
 
 // timestampedProjectDir 匹配 WorkBuddy 无项目任务使用的日期目录名。
 var timestampedProjectDir = regexp.MustCompile("^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}$")
@@ -201,11 +183,13 @@ func projectsRoots(hostHome, provider string) []string {
 		seenDir[dirName] = true
 		dirNames = append(dirNames, dirName)
 	}
-	addDir(configDirByProvider[provider])
-	for _, dirName := range regionRootsByProvider[provider] {
+	if dirName, ok := codebuddyfamilystorage.ConfigDir(provider); ok {
 		addDir(dirName)
 	}
-	for _, dirName := range familyConfigDirs {
+	for _, dirName := range codebuddyfamilystorage.SessionRoots(provider) {
+		addDir(dirName)
+	}
+	for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
 		addDir(dirName)
 	}
 

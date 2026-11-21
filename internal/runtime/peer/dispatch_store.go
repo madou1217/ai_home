@@ -73,7 +73,7 @@ type AttemptRecord struct {
 	Error   string `json:"error"`
 }
 
-// Record 对应 <aiHome>/run/peer/{pending,inflight,archive}/pm-<hex>.json 的完整结构。
+// 发送优先级只影响同目标消息的投递顺序，不改变公平轮转。
 const (
 	// PriorityLow 让同目标的消息排到普通消息之后。
 	PriorityLow = -1
@@ -83,46 +83,47 @@ const (
 	PriorityHigh = 1
 )
 
+// Record 对应 <aiHome>/run/peer/{pending,inflight,archive}/pm-<hex>.json 的完整结构。
 type Record struct {
 	SupersededBy        string `json:"supersededBy,omitempty"`
 	SupersedesAppliedAt int64  `json:"supersedesAppliedAt,omitempty"`
 	FailureResetAt      int64  `json:"failureResetAt,omitempty"`
 	autoDeliverUntilSet bool
-	NoEnvelope          bool   `json:"noEnvelope,omitempty"`
-	NativeStatus        string `json:"nativeStatus,omitempty"`
-	FromMode            string `json:"fromMode,omitempty"`
-	Subject             string `json:"subject,omitempty"`
-	Summary             string `json:"summary,omitempty"`
-	Purpose             string `json:"purpose,omitempty"`
-	Action              string `json:"action,omitempty"`
-	ReplyPolicy         string `json:"replyPolicy,omitempty"`
-	AutoDeliverUntil    int64  `json:"autoDeliverUntil"`
-	ExpiresAt           int64  `json:"expiresAt,omitempty"`
-	CanceledAt          int64  `json:"canceledAt,omitempty"`
-	Supersedes          string `json:"supersedes,omitempty"`
-	NotificationState   string `json:"notificationState,omitempty"`
-	WaitingReason       string `json:"waitingReason,omitempty"`
-	BusySince           int64  `json:"busySince,omitempty"`
-	ProbeCount          int    `json:"probeCount,omitempty"`
-	V                   int    `json:"v"`
-	ID                  string `json:"id"`
+	NoEnvelope          bool            `json:"noEnvelope,omitempty"`
+	NativeStatus        string          `json:"nativeStatus,omitempty"`
+	FromMode            string          `json:"fromMode,omitempty"`
+	Subject             string          `json:"subject,omitempty"`
+	Summary             string          `json:"summary,omitempty"`
+	Purpose             string          `json:"purpose,omitempty"`
+	Action              string          `json:"action,omitempty"`
+	ReplyPolicy         string          `json:"replyPolicy,omitempty"`
+	AutoDeliverUntil    int64           `json:"autoDeliverUntil"`
+	ExpiresAt           int64           `json:"expiresAt,omitempty"`
+	CanceledAt          int64           `json:"canceledAt,omitempty"`
+	Supersedes          string          `json:"supersedes,omitempty"`
+	NotificationState   string          `json:"notificationState,omitempty"`
+	WaitingReason       string          `json:"waitingReason,omitempty"`
+	BusySince           int64           `json:"busySince,omitempty"`
+	ProbeCount          int             `json:"probeCount,omitempty"`
+	V                   int             `json:"v"`
+	ID                  string          `json:"id"`
+	From                RecordParty     `json:"from"`
+	To                  RecordParty     `json:"to"`
+	ReplyTo             string          `json:"replyTo"`
+	Body                string          `json:"body"`
+	CreatedAt           int64           `json:"createdAt"`
+	State               string          `json:"state"`
+	Attempts            []AttemptRecord `json:"attempts"`
+	AttemptCount        int             `json:"attemptCount"`
+	NextAttemptAt       int64           `json:"nextAttemptAt"`
+	DeliveredAt         int64           `json:"deliveredAt"`
+	ReadAt              int64           `json:"readAt"`
+	ChannelMessageID    string          `json:"channelMessageId"`
+	Error               string          `json:"error,omitempty"`
+	Claim               *ClaimLease     `json:"claim,omitempty"`
+	ReceiptError        string          `json:"receiptError,omitempty"`
 	// Priority 是 -1/0/1 的发送优先级；旧记录缺省为 0。
-	Priority         int             `json:"priority,omitempty"`
-	From             RecordParty     `json:"from"`
-	To               RecordParty     `json:"to"`
-	ReplyTo          string          `json:"replyTo"`
-	Body             string          `json:"body"`
-	CreatedAt        int64           `json:"createdAt"`
-	State            string          `json:"state"`
-	Attempts         []AttemptRecord `json:"attempts"`
-	AttemptCount     int             `json:"attemptCount"`
-	NextAttemptAt    int64           `json:"nextAttemptAt"`
-	DeliveredAt      int64           `json:"deliveredAt"`
-	ReadAt           int64           `json:"readAt"`
-	ChannelMessageID string          `json:"channelMessageId"`
-	Error            string          `json:"error,omitempty"`
-	Claim            *ClaimLease     `json:"claim,omitempty"`
-	ReceiptError     string          `json:"receiptError,omitempty"`
+	Priority int `json:"priority,omitempty"`
 }
 
 // CreateMessageInput 定义写入 pending 收件箱的新消息参数。

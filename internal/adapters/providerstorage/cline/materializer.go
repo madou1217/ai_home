@@ -7,11 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -21,7 +23,8 @@ var (
 	ErrIdentityMismatch = errors.New("cline projection identity mismatch")
 )
 
-const providersFile = ".cline/data/settings/providers.json"
+// providersFile 的根来自 Provider 合同；这里只声明原生根下的相对路径。
+var providersFile = strings.Join(providerroot.NativePath(ProviderID, "data", "settings", "providers.json"), "/")
 
 // Materializer 把 Cline 凭据写成 CLI 读取的 providers.json，并读取续期结果。
 type Materializer struct{}

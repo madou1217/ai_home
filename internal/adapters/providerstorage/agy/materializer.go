@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -23,9 +24,10 @@ var (
 	ErrIdentityMismatch = errors.New("agy projection identity mismatch")
 )
 
-const (
-	tokenFile      = ".gemini/antigravity-cli/antigravity-oauth-token"
-	emailCacheFile = ".gemini/antigravity-cli/email.cache"
+// 文件位置由 Provider 合同展开；这里只保留文件名。
+var (
+	tokenFile      = strings.Join(providerroot.NativePath(ProviderID, "antigravity-oauth-token"), "/")
+	emailCacheFile = strings.Join(providerroot.NativePath(ProviderID, "email.cache"), "/")
 )
 
 // Materializer 把 Antigravity OAuth 凭据写成 CLI 读取的五份投影文件。

@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // 自愈结果状态，取值与 Node healAgySettingsModel 的返回值一致。
@@ -43,9 +45,9 @@ const (
 // backupSuffix 是首次自愈前保存原文件的备份后缀（Node 同款）。
 const backupSuffix = ".aih-model-heal.bak"
 
-// DefaultSettingsRelative 是 settings.json 相对 HOME/投影根的路径
-// （对应 Node DEFAULT_SETTINGS_RELATIVE）。
-var DefaultSettingsRelative = []string{".gemini", "antigravity-cli", "settings.json"}
+// DefaultSettingsRelative 是 settings.json 相对 HOME/投影根的路径。
+// 根事实来自 Provider 合同的 NativeRoot，适配器不重复写目录。
+var DefaultSettingsRelative = providerroot.NativePath("agy", "settings.json")
 
 // Result 对应 Node healAgySettingsModel 的返回对象：status 必填，
 // from/to 只在 ok/healed 时有意义，reason 只在 skipped/failed 时有意义。

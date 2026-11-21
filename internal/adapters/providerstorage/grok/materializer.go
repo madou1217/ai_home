@@ -7,11 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -21,7 +23,8 @@ var (
 	ErrIdentityMismatch = errors.New("grok projection identity mismatch")
 )
 
-const authFile = ".grok/auth.json"
+// authFile 的根来自 Provider 合同；这里只声明凭据文件名。
+var authFile = strings.Join(providerroot.NativePath(ProviderID, "auth.json"), "/")
 
 // Materializer 把 Grok 原生凭据写成 CLI 读取的 auth.json，并读取续期结果。
 type Materializer struct{}

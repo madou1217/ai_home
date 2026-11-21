@@ -27,18 +27,23 @@ import (
 
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/internal/adapters/agy/authmeta"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // ErrInvalidInput 表示缺少数据根、账号引用或凭据。
 var ErrInvalidInput = errors.New("agy 投影参数无效")
 
-const (
-	antigravityTokenFile = ".gemini/antigravity-cli/antigravity-oauth-token"
-	desktopTokenFile     = ".gemini/jetski-standalone-oauth-token"
-	emailCacheFile       = ".gemini/antigravity-cli/email.cache"
-	oauthCredsFile       = ".gemini/oauth_creds.json"
-	googleAccountsFile   = ".gemini/google_accounts.json"
+// 投影文件位置由 Provider 合同展开：CLI 根来自 NativeRoot，桌面端共享的
+// standalone/oauth 文件落在配置根。适配器只声明文件名。
+var (
+	antigravityTokenFile = strings.Join(providerroot.NativePath("agy", "antigravity-oauth-token"), "/")
+	desktopTokenFile     = strings.Join(providerroot.ConfigPath("agy", "jetski-standalone-oauth-token"), "/")
+	emailCacheFile       = strings.Join(providerroot.NativePath("agy", "email.cache"), "/")
+	oauthCredsFile       = strings.Join(providerroot.ConfigPath("agy", "oauth_creds.json"), "/")
+	googleAccountsFile   = strings.Join(providerroot.ConfigPath("agy", "google_accounts.json"), "/")
+)
 
+const (
 	projectionFileMode os.FileMode = 0o600
 	projectionDirMode  os.FileMode = 0o700
 
@@ -133,7 +138,7 @@ func WriteGlobalAuth(hostHomeDir string, auth *agy.OAuthAuth) error {
 	if strings.TrimSpace(hostHomeDir) == "" || auth == nil {
 		return ErrInvalidInput
 	}
-	directory := filepath.Join(hostHomeDir, ".gemini", "antigravity-cli")
+	directory := filepath.Join(append([]string{hostHomeDir}, providerroot.NativeRoot("agy")...)...)
 	tokenPath := filepath.Join(directory, "antigravity-oauth-token")
 	document, err := readJSONObject(tokenPath)
 	if err != nil {

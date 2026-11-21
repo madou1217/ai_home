@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/claude/nativeauth"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 // maxArtifactFileBytes 限制单个官方 artifact 文件大小，避免读入异常文件耗尽内存。
@@ -317,7 +318,8 @@ func identityValuesMatch(expected string, candidates ...string) bool {
 
 // readCodex 组装官方 auth.json 单文件 envelope。
 // zcodeCredentialsRelative 是 ZCode 官方客户端的登录态文件（相对宿主 HOME）。
-const zcodeCredentialsRelative = ".zcode/v2/credentials.json"
+// 根事实来自 Provider 合同，这里只声明 v2/ 下的文件名。
+var zcodeCredentialsRelative = strings.Join(providerroot.ConfigPath("zcode", "v2", "credentials.json"), "/")
 
 // readZcode 读取官方 ZCode 登录态，组装成 decodeExtended 约定的 envelope。
 //
@@ -380,7 +382,7 @@ func (reader *Reader) claudeConfigDir() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return filepath.Join(home, ".claude"), false, nil
+	return filepath.Join(home, providerroot.ConfigDir("claude")), false, nil
 }
 
 // readClaudeGlobalConfig 兼容官方两种放置方式：配置目录内优先，其次用户主目录。
@@ -416,7 +418,7 @@ func (reader *Reader) codexHomeDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".codex"), nil
+	return filepath.Join(home, providerroot.ConfigDir("codex")), nil
 }
 
 // homeDir 拒绝空主目录，避免把相对路径当成官方位置。

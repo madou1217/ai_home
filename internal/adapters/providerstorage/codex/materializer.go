@@ -11,6 +11,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/codex/authfile"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -46,7 +47,7 @@ func (Materializer) Materialize(
 	if !ok || auth == nil {
 		return nil, ErrUnsupportedCredential
 	}
-	path := filepath.Join(root, ".codex", "auth.json")
+	path := filepath.Join(root, providerroot.ConfigDir("codex"), "auth.json")
 	// Codex 会原地续期 auth.json。磁盘那份比账号快照新，说明上一次 Capture 没跑成
 	// （进程被强杀、回写失败）：这时绝不能用旧快照覆盖，否则轮换过的 refresh_token
 	// 直接失效。保持磁盘内容，退出后由 Capture 追平账号库。
@@ -99,7 +100,7 @@ func (Materializer) Capture(
 	if apiKey, ok := request.Credential.(*codex.APIKeyAuth); ok && apiKey != nil {
 		return nil, false, nil
 	}
-	path := filepath.Join(root, ".codex", "auth.json")
+	path := filepath.Join(root, providerroot.ConfigDir("codex"), "auth.json")
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, false, nil

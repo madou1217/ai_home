@@ -71,7 +71,7 @@ func Policy() accountprojection.Policy {
 			{Key: "XDG_DATA_HOME", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget("xdg", "data")},
 			{Key: "XDG_STATE_HOME", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget("xdg", "state")},
 			{Key: "XDG_CACHE_HOME", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget("xdg", "cache")},
-			{Key: "GEMINI_CLI_SYSTEM_SETTINGS_PATH", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget(".gemini", "settings.json")},
+			{Key: "GEMINI_CLI_SYSTEM_SETTINGS_PATH", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget(providerroot.ConfigPath(ProviderID, "settings.json")...)},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}

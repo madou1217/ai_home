@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -24,8 +25,10 @@ var (
 const (
 	oauthCredsFile     = "oauth_creds.json"
 	googleAccountsFile = "google_accounts.json"
-	nativeRootDir      = ".gemini"
 )
+
+// nativeRootDir 由 Provider 合同的配置根给出，不再手写 .gemini。
+var nativeRootDir = providerroot.ConfigDir(ProviderID)
 
 // Materializer 把 Gemini 原生凭据写成官方 CLI 读取的两份文件，并读取续期结果。
 type Materializer struct{}

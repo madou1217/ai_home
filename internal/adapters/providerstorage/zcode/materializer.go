@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 var (
@@ -23,9 +25,10 @@ var (
 	ErrIdentityMismatch = errors.New("zcode projection identity mismatch")
 )
 
-const (
-	credentialsFile = ".zcode/v2/credentials.json"
-	configFile      = ".zcode/v2/config.json"
+// 文件位置由 Provider 合同的配置根展开；这里只声明 v2/ 下的文件名。
+var (
+	credentialsFile = strings.Join(providerroot.ConfigPath(ProviderID, "v2", "credentials.json"), "/")
+	configFile      = strings.Join(providerroot.ConfigPath(ProviderID, "v2", "config.json"), "/")
 )
 
 // Materializer 把 ZCode 凭据写成 CLI 读取的 credentials.json/config.json。

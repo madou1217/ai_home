@@ -207,10 +207,8 @@ func validateStorageFacts(definition Definition) error {
 				return fmt.Errorf("storage.authArtifacts.field 重复: %q", field)
 			}
 			authFields[field] = struct{}{}
-			switch artifact.Base {
-			case "", ArtifactBaseHome, ArtifactBaseNative, ArtifactBaseConfig, ArtifactBaseHostAuth:
-			default:
-				return fmt.Errorf("storage.authArtifacts.base 取值无效: %q", artifact.Base)
+			if err := validateArtifactBase(definition, artifact.Base); err != nil {
+				return fmt.Errorf("storage.authArtifacts %q: %w", field, err)
 			}
 			if !isSafeRelativePath(artifact.Path) {
 				return fmt.Errorf("storage.authArtifacts.path 必须是安全的相对路径: %q", artifact.Path)
@@ -218,10 +216,8 @@ func validateStorageFacts(definition Definition) error {
 		}
 		privatePaths := map[string]struct{}{}
 		for _, artifact := range facts.PrivateArtifacts {
-			switch artifact.Base {
-			case "", ArtifactBaseHome, ArtifactBaseNative, ArtifactBaseConfig, ArtifactBaseHostAuth:
-			default:
-				return fmt.Errorf("storage.privateArtifacts.base 取值无效: %q", artifact.Base)
+			if err := validateArtifactBase(definition, artifact.Base); err != nil {
+				return fmt.Errorf("storage.privateArtifacts %q: %w", artifact.Path, err)
 			}
 			if !isSafeRelativePath(artifact.Path) {
 				return fmt.Errorf("storage.privateArtifacts.path 必须是安全的相对路径: %q", artifact.Path)
@@ -259,6 +255,30 @@ func validateStorageFacts(definition Definition) error {
 	}
 	if strings.TrimSpace(facts.SessionRoots[0]) != strings.TrimSpace(definition.CLI.GlobalDir) {
 		return fmt.Errorf("storage.sessionRoots 首项必须等于 cli.globalDir（%s）", definition.CLI.GlobalDir)
+	}
+	return nil
+}
+
+// validateArtifactBase 要求 artifact 的 Base 指向已声明的根，避免展开成
+// 意外路径（例如 base=native 但 Provider 根本没有原生根）。
+func validateArtifactBase(definition Definition, base string) error {
+	switch base {
+	case "", ArtifactBaseHome:
+		return nil
+	case ArtifactBaseNative:
+		if len(definition.EffectiveNativeRoot()) == 0 {
+			return errors.New("base=native 需要先声明原生根")
+		}
+	case ArtifactBaseConfig:
+		if definition.CLI == nil || strings.TrimSpace(definition.CLI.GlobalDir) == "" {
+			return errors.New("base=config 需要先声明 cli.globalDir")
+		}
+	case ArtifactBaseHostAuth:
+		if definition.Storage == nil || definition.Storage.HostAuthRoot == nil {
+			return errors.New("base=hostAuth 需要先声明 storage.hostAuthRoot")
+		}
+	default:
+		return fmt.Errorf("base 取值无效: %q", base)
 	}
 	return nil
 }

@@ -118,38 +118,38 @@ type RunResult struct {
 
 // SchedulerOptions 配置 Provider CLI 自动升级周期调度器。
 type SchedulerOptions struct {
-	AIHomeDir    string
-	Catalog      *providers.Catalog
-	Providers    []string
-	CycleDeps    *CycleDeps
-	ClearVerify  ClearBrokenVerifier
-	RealDeps     *RealDeps
-	GoOS         string
-	BaseEnv      map[string]string
-	Config       SchedulerConfig
-	RunCycleFn   func(ctx context.Context, provider string, ledger Ledger, deps CycleDeps, cfg CycleConfig) CycleOutcome
-	ReadLedgerFn func(aiHomeDir string) Ledger
+	AIHomeDir     string
+	Catalog       *providers.Catalog
+	Providers     []string
+	CycleDeps     *CycleDeps
+	ClearVerify   ClearBrokenVerifier
+	RealDeps      *RealDeps
+	GoOS          string
+	BaseEnv       map[string]string
+	Config        SchedulerConfig
+	RunCycleFn    func(ctx context.Context, provider string, ledger Ledger, deps CycleDeps, cfg CycleConfig) CycleOutcome
+	ReadLedgerFn  func(aiHomeDir string) Ledger
 	WriteLedgerFn func(aiHomeDir string, ledger Ledger) error
-	Now          func() int64
-	LogInfo      func(msg string)
-	LogWarn      func(msg string)
+	Now           func() int64
+	LogInfo       func(msg string)
+	LogWarn       func(msg string)
 }
 
 // Scheduler 驱动各候选 provider 的串行升级周期与互斥 clear-broken 入口。
 type Scheduler struct {
-	aiHomeDir    string
-	catalog      *providers.Catalog
-	providers    []string
-	cycleDeps    *CycleDeps
-	clearVerify  ClearBrokenVerifier
-	goos         string
-	baseEnv      map[string]string
-	runCycleFn   func(ctx context.Context, provider string, ledger Ledger, deps CycleDeps, cfg CycleConfig) CycleOutcome
-	readLedgerFn func(aiHomeDir string) Ledger
+	aiHomeDir     string
+	catalog       *providers.Catalog
+	providers     []string
+	cycleDeps     *CycleDeps
+	clearVerify   ClearBrokenVerifier
+	goos          string
+	baseEnv       map[string]string
+	runCycleFn    func(ctx context.Context, provider string, ledger Ledger, deps CycleDeps, cfg CycleConfig) CycleOutcome
+	readLedgerFn  func(aiHomeDir string) Ledger
 	writeLedgerFn func(aiHomeDir string, ledger Ledger) error
-	now          func() int64
-	logInfo      func(msg string)
-	logWarn      func(msg string)
+	now           func() int64
+	logInfo       func(msg string)
+	logWarn       func(msg string)
 
 	mu               sync.Mutex
 	config           normalizedSchedulerConfig

@@ -16,10 +16,10 @@ const (
 )
 
 var (
-	tomlHeaderRe       = regexp.MustCompile(`^\[([^\[\]]+)\]$`)
-	tomlKeyValueRe     = regexp.MustCompile(`^([A-Za-z0-9_.-]+)\s*=\s*(.+)$`)
-	multilineDoubleRe  = regexp.MustCompile(`"""`)
-	multilineSingleRe  = regexp.MustCompile(`'''`)
+	tomlHeaderRe      = regexp.MustCompile(`^\[([^\[\]]+)\]$`)
+	tomlKeyValueRe    = regexp.MustCompile(`^([A-Za-z0-9_.-]+)\s*=\s*(.+)$`)
+	multilineDoubleRe = regexp.MustCompile(`"""`)
+	multilineSingleRe = regexp.MustCompile(`'''`)
 )
 
 // HealCodexSandboxConfig 在沙箱 CODEX_HOME/config.toml 中写入或修复受管 model_providers.aih_server 段。

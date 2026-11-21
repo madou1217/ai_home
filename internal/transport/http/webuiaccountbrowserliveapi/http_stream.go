@@ -151,8 +151,14 @@ func (h *Handler) serveHTTPStream(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		var serveErr error
 		if scope.Kind == ScopeAccount {
-			scoped, ok := h.runtime.(ScopedRuntime)
-			if !ok {
+			if scope.ProxyURL != "" || scope.ProxyRequired {
+				proxyScoped, ok := h.runtime.(ProxyScopedRuntime)
+				if !ok {
+					serveErr = ErrScopeUnavailable
+				} else {
+					serveErr = proxyScoped.ServeScopedWithOptions(ctx, session, accountbrowserview.ScopedOptions{DataDir: scope.DataDir, ProxyURL: scope.ProxyURL})
+				}
+			} else if scoped, ok := h.runtime.(ScopedRuntime); !ok {
 				serveErr = ErrScopeUnavailable
 			} else {
 				serveErr = scoped.ServeScoped(ctx, session, scope.DataDir)

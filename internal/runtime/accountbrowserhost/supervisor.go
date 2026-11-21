@@ -12,6 +12,7 @@ import (
 type Supervisor struct {
 	dir         string
 	interactive bool
+	proxyURL    string
 	gate        chan struct{}
 	mu          sync.Mutex
 	status      Status
@@ -35,7 +36,11 @@ func New(options Options) (*Supervisor, error) {
 	if err := validateSessionDir(options.SessionDir); err != nil {
 		return nil, err
 	}
-	return &Supervisor{dir: options.SessionDir, interactive: options.Interactive, gate: make(chan struct{}, 1), status: Status{State: "stopped"}}, nil
+	proxyURL, err := NormalizeProxyURL(options.ProxyURL)
+	if err != nil {
+		return nil, err
+	}
+	return &Supervisor{dir: options.SessionDir, interactive: options.Interactive, proxyURL: proxyURL, gate: make(chan struct{}, 1), status: Status{State: "stopped"}}, nil
 }
 
 func (s *Supervisor) enter(ctx context.Context) error {
@@ -118,6 +123,11 @@ func (s *Supervisor) Start(ctx context.Context) (Status, error) {
 		return s.Status(), err
 	}
 	args := []string{"--user-data-dir=" + dataDir, "--no-first-run", "--no-default-browser-check"}
+	if s.proxyURL != "" {
+		// A required account egress must not be bypassed by QUIC or non-proxied
+		// WebRTC UDP. These are ordinary network-policy flags, not debug/stealth.
+		args = append(args, "--proxy-server="+s.proxyURL, "--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
+	}
 	if s.interactive {
 		args = append(args, "--new-window", "--window-size=1200,900", "about:blank")
 	} else {

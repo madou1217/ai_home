@@ -12,6 +12,11 @@ import (
 
 var errPermission = surfaceFailure("browser_system_permission_required")
 
+type ScopedOptions struct {
+	DataDir  string
+	ProxyURL string
+}
+
 type Service struct {
 	home    string
 	mu      sync.Mutex
@@ -26,20 +31,24 @@ func (s *Service) Supported() bool { return s != nil && platformSupported() && f
 // Serve owns one controller and never accepts a client-supplied native PID.
 // The explicit start command is the user consent boundary for foreground UI.
 func (s *Service) Serve(ctx context.Context, t Transport) (resultErr error) {
-	return s.serve(ctx, t, "")
+	return s.serve(ctx, t, "", "")
 }
 
 // ServeScoped uses a server-validated durable account profile directory. The
 // directory is never accepted from the browser client and is not exposed over
 // HTTP. An empty directory keeps the project-studio task scope.
 func (s *Service) ServeScoped(ctx context.Context, t Transport, dataDir string) (resultErr error) {
-	if dataDir == "" {
-		return surfaceFailure("browser_storage_unavailable")
-	}
-	return s.serve(ctx, t, dataDir)
+	return s.ServeScopedWithOptions(ctx, t, ScopedOptions{DataDir: dataDir})
 }
 
-func (s *Service) serve(ctx context.Context, t Transport, dataDir string) (resultErr error) {
+func (s *Service) ServeScopedWithOptions(ctx context.Context, t Transport, options ScopedOptions) (resultErr error) {
+	if options.DataDir == "" {
+		return surfaceFailure("browser_storage_unavailable")
+	}
+	return s.serve(ctx, t, options.DataDir, options.ProxyURL)
+}
+
+func (s *Service) serve(ctx context.Context, t Transport, dataDir string, proxyURL string) (resultErr error) {
 	if !s.Supported() {
 		return ErrUnsupported
 	}
@@ -109,7 +118,7 @@ func (s *Service) serve(ctx context.Context, t Transport, dataDir string) (resul
 			return err
 		}
 	}
-	host, err := accountbrowserhost.New(accountbrowserhost.Options{SessionDir: dir, Interactive: true})
+	host, err := accountbrowserhost.New(accountbrowserhost.Options{SessionDir: dir, Interactive: true, ProxyURL: proxyURL})
 	if err != nil {
 		return err
 	}

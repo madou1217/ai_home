@@ -69,8 +69,10 @@ type ScopeRequest struct {
 // Scope is server-owned runtime selection. DataDir never enters an HTTP
 // response and must only be returned by a server-side ScopeResolver.
 type Scope struct {
-	Kind    string
-	DataDir string
+	Kind          string
+	DataDir       string
+	ProxyURL      string
+	ProxyRequired bool
 }
 
 // ScopeResolver validates an account identity and returns its private profile
@@ -89,6 +91,10 @@ type Runtime interface {
 // have not yet implemented durable account partitions.
 type ScopedRuntime interface {
 	ServeScoped(ctx context.Context, transport accountbrowserview.Transport, dataDir string) error
+}
+
+type ProxyScopedRuntime interface {
+	ServeScopedWithOptions(ctx context.Context, transport accountbrowserview.Transport, options accountbrowserview.ScopedOptions) error
 }
 
 // Dependencies configures a live account browser HTTP/WebSocket Handler.

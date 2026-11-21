@@ -5,6 +5,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowser"
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowserview"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountbrowserapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountbrowserliveapi"
 )
@@ -12,6 +13,7 @@ import (
 type accountBrowserLiveScopeResolver struct {
 	authority webuiaccountbrowserapi.Authority
 	runtime   *accountbrowser.Service
+	egress    *runtimeegress.Manager
 }
 
 func (r accountBrowserLiveScopeResolver) Resolve(ctx context.Context, request webuiaccountbrowserliveapi.ScopeRequest) (webuiaccountbrowserliveapi.Scope, error) {
@@ -26,7 +28,25 @@ func (r accountBrowserLiveScopeResolver) Resolve(ctx context.Context, request we
 	if err != nil {
 		return webuiaccountbrowserliveapi.Scope{}, err
 	}
-	return webuiaccountbrowserliveapi.Scope{Kind: webuiaccountbrowserliveapi.ScopeAccount, DataDir: dataDir}, nil
+	scope := webuiaccountbrowserliveapi.Scope{Kind: webuiaccountbrowserliveapi.ScopeAccount, DataDir: dataDir}
+	if r.egress == nil {
+		return scope, nil
+	}
+	resolved, resolveErr := r.egress.ResolveAccountEgress(ctx, runtimeegress.ResolveAccountEgressOptions{
+		Provider: request.Provider, AccountRef: request.AccountRef, SkipProbe: false,
+	})
+	if resolveErr != nil {
+		return webuiaccountbrowserliveapi.Scope{}, resolveErr
+	}
+	if !resolved.Bound || resolved.Direct {
+		return scope, nil
+	}
+	scope.ProxyRequired = true
+	if !resolved.OK || resolved.ProxyServer == "" {
+		return webuiaccountbrowserliveapi.Scope{}, webuiaccountbrowserliveapi.ErrScopeUnavailable
+	}
+	scope.ProxyURL = resolved.ProxyServer
+	return scope, nil
 }
 
 // Live surfaces keep task scope for the studio, while account scope is selected
@@ -49,7 +69,7 @@ func buildWebUIAccountBrowserLiveRoutes(deps webuiRouteDependencies) ([]webuiRou
 				return webuiaccountbrowserapi.ReadServerID(ctx, deps.AIHomeDir)
 			},
 		}
-		scopeResolver = accountBrowserLiveScopeResolver{authority: authority, runtime: profileRuntime}
+		scopeResolver = accountBrowserLiveScopeResolver{authority: authority, runtime: profileRuntime, egress: deps.EgressManager}
 	}
 	handler, err := webuiaccountbrowserliveapi.NewHandler(webuiaccountbrowserliveapi.Dependencies{
 		Authorizer:    deps.Authorizer,

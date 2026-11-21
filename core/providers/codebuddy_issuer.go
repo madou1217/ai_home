@@ -5,11 +5,8 @@ import "strings"
 // CodeBuddy 家族的身份域事实。
 //
 // 同一个 issuer 可能服务多个发行版：国内站 CodeBuddy CN / WorkBuddy CN 共用腾讯
-// Copilot realm。这里是身份归属的唯一来源。
-//
-// 注意：`sessionscan/sessionread` 还有一套「issuer → 会话存储站点」的口径，
-// 与身份归属不同（例如 copilot.tencent.com 在存储侧归到 codebuddy）。那套口径
-// 服务于会话目录选择，不能拿这里的结果替换，见其代码注释。
+// Copilot realm。这里是身份归属的唯一来源；会话侧（sessionread）的凭据归属校验
+// 也查这张表，避免出现「单值映射把 copilot.tencent.com 记成国际站」这类漂移。
 var codeBuddyFamilyIssuers = []struct {
 	url       string
 	providers []string

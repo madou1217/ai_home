@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/sessionscan/codebuddy"
 )
 
@@ -20,17 +21,6 @@ var (
 	codebuddyIdeHex32Re       = regexp.MustCompile(`^[a-f0-9]{32}$`)
 	codebuddyUIDRe            = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	codebuddyUserQueryRe      = regexp.MustCompile(`(?is)<user_query>\s*([\s\S]*?)\s*</user_query>`)
-	// codebuddySessionSiteByIssuer 是「issuer → 会话存储站点」的口径，用于选择
-	// 会话目录，不是身份归属：国际站 WorkBuddy 与 copilot.tencent.com 在存储侧
-	// 归到 codebuddy。身份归属见 core/providers 的 ProvidersForCodeBuddyIssuer，
-	// 不要用那张表替换这里，否则会改变会话目录选择。
-	codebuddySessionSiteByIssuer = map[string]string{
-		"https://www.codebuddy.ai/auth/realms/copilot":    "codebuddy",
-		"https://www.workbuddy.ai/auth/realms/copilot":    "codebuddy",
-		"https://copilot.tencent.com/auth/realms/copilot": "codebuddy",
-		"https://www.codebuddy.cn/auth/realms/copilot":    "codebuddycn",
-		"https://www.workbuddy.cn/auth/realms/copilot":    "codebuddycn",
-	}
 )
 
 func resolveCodebuddyConfigDirNames(provider string) []string {
@@ -358,8 +348,11 @@ func inspectCodebuddyAuthUID(nativeAuthJSON, expectedProvider string) string {
 	if json.Unmarshal(payloadBytes, &claims) != nil {
 		return ""
 	}
-	realmProvider, ok := codebuddySessionSiteByIssuer[strings.TrimSpace(claims.Iss)]
-	if !ok || realmProvider != expectedProvider {
+	// issuer 归属由 core/providers 的家族事实判定：同一 realm（codebuddy.cn /
+	// workbuddy.cn / copilot.tencent.com）服务国内站两支，单个字符串装不下；
+	// 此前这里维护的单值映射把 copilot.tencent.com 记成国际站 codebuddy，
+	// 导致国内站账号的 IDE 历史整段读不到（2026-11-22 复现）。
+	if !providers.IsCodeBuddyIssuerForProvider(claims.Iss, expectedProvider) {
 		return ""
 	}
 	if strings.TrimSpace(claims.Sub) != uid {

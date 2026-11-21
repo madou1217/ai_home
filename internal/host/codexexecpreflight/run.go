@@ -86,7 +86,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer release.Release()
 	if err := json.NewEncoder(stdout).Encode(map[string]any{"ok": true, "args": prepared}); err != nil {
 		return err
 	}

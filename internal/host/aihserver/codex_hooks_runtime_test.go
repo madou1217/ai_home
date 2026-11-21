@@ -249,21 +249,14 @@ func TestCodexHooksRuntimeLifecycleAndProxies(t *testing.T) {
 func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 	t.Parallel()
 
-	t.Run("默认值、receiver URL 派生与 EntryFilePath 解析 HelperScript", func(t *testing.T) {
+	t.Run("默认值、receiver URL 派生与 EntryFilePath 解析", func(t *testing.T) {
 		t.Parallel()
 		repoDir := t.TempDir()
 		entryPath := filepath.Join(repoDir, "bin", "ai-home.js")
-		helperPath := filepath.Join(repoDir, "lib", "server", "codex-app-server-stdio-proxy.js")
 		if err := os.MkdirAll(filepath.Dir(entryPath), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
-			t.Fatal(err)
-		}
 		if err := os.WriteFile(entryPath, []byte("// entry"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(helperPath, []byte("// helper"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 

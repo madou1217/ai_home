@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 )
 
 const (
@@ -737,7 +739,7 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 	addTree(projectWatchKindProjects, filepath.Join(clineDir, "data", "sessions"), 1)
 	addDatabase(filepath.Join(clineDir, "data", "db", "sessions.db"))
 
-	for _, dirName := range []string{".codebuddy", ".codebuddy-cn", ".workbuddy-ai", ".workbuddy"} {
+	for _, dirName := range codebuddyfamilystorage.ConfigDirs() {
 		configDir := filepath.Join(hostHome, dirName)
 		add(projectWatchKindProjects, configDir)
 		addTree(projectWatchKindProjects, filepath.Join(configDir, "projects"), 1)

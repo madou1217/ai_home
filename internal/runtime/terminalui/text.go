@@ -179,6 +179,8 @@ func Wrap(value string, width, indent int) ([]Line, error) {
 		// hard-wrap at grapheme boundaries. No input characters are discarded.
 		if end < len(cells) && boundary > start {
 			end = boundary
+		} else if end < len(cells) {
+			end = avoidOrphanPunctuation(cells, start, end, width, indent)
 		}
 		var line strings.Builder
 		line.WriteString(strings.Repeat(" ", padding))
@@ -216,6 +218,61 @@ func Wrap(value string, width, indent int) ([]Line, error) {
 		return []Line{{}}, nil
 	}
 	return lines, nil
+}
+
+// closingPunctuation 是折行时不应独占一行的收尾符号。
+var closingPunctuation = map[rune]bool{
+	']': true, ')': true, '}': true, '>': true,
+	',': true, '.': true, ';': true, ':': true,
+	'!': true, '?': true, '%': true, '…': true,
+	'、': true, '，': true, '。': true, '；': true, '：': true,
+	'！': true, '？': true, '）': true, '】': true, '》': true,
+	'」': true, '』': true, '”': true, '’': true,
+}
+
+// avoidOrphanPunctuation 在硬折行后若剩余内容只剩收尾符号，把当前行的
+// 最后一个可见字素移到下一行，避免出现只有 "]"/"）" 的一行。只影响超长
+// token 的硬折行；正常按空白折行不受影响。
+func avoidOrphanPunctuation(cells []Cell, start, end, width, indent int) int {
+	if end <= start || end >= len(cells) {
+		return end
+	}
+	tokenEnd := end
+	for tokenEnd < len(cells) {
+		if strings.HasSuffix(Plain(cells[tokenEnd].Text), " ") {
+			break
+		}
+		tokenEnd++
+	}
+	if tokenEnd == end {
+		return end
+	}
+	for index := end; index < tokenEnd; index++ {
+		text := strings.TrimSpace(Plain(cells[index].Text))
+		if text == "" {
+			continue
+		}
+		for _, character := range text {
+			if !closingPunctuation[character] {
+				return end
+			}
+		}
+	}
+	last := end - 1
+	for last > start && cells[last].Width == 0 {
+		last--
+	}
+	if last <= start || strings.TrimSpace(Plain(cells[last].Text)) == "" {
+		return end
+	}
+	nextWidth := indent
+	for index := last; index < tokenEnd; index++ {
+		nextWidth += cells[index].Width
+		if nextWidth > width {
+			return end
+		}
+	}
+	return last
 }
 
 // ReplaceCells preserves styles and column positions while an animation passes

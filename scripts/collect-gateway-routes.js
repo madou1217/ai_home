@@ -24,13 +24,17 @@ const nodePath = require('node:path');
 
 const REPO_ROOT = nodePath.resolve(__dirname, '..');
 
-const NODE_HTTP_FILES = [
+// Node 网关已于 2026-11-21 删除；扫描器保留 Go 路由盘点，Node 侧显式返回空，
+// 不再靠硬编码列表制造“仍有一套 Node 路由”的假象。
+const NODE_GATEWAY_ENTRY = nodePath.join(REPO_ROOT, 'lib/server/server.js');
+const NODE_GATEWAY_PRESENT = nodeFs.existsSync(NODE_GATEWAY_ENTRY);
+const NODE_HTTP_FILES = NODE_GATEWAY_PRESENT ? [
   'lib/server/v1-router.js',
   'lib/server/web-ui-router.js',
   'lib/server/management-router.js',
   'lib/server/server.js',
   ...listFiles('lib/server', (name) => /^webui-.*-routes\.js$/.test(name)),
-];
+] : [];
 
 const GO_ROUTER_FILE = 'internal/host/aihserver/router.go';
 const GO_SCAN_DIRS = [
@@ -633,6 +637,7 @@ function addKnownNodeWebSocketRoutes(routes) {
 }
 
 function collectNodeRoutes() {
+  if (!NODE_GATEWAY_PRESENT) return [];
   const routes = [];
   for (const file of [...new Set(NODE_HTTP_FILES)]) scanNodeFile(file, routes);
   collectNodeProtocolRoutes(routes);

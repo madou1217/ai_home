@@ -22,13 +22,15 @@ type Route struct {
 	Role      string   `json:"role,omitempty"`
 }
 
-// Entry 描述一个路由条目的归属与两端实现。
+// Entry 描述一个路由条目的归属与 Go 实现。
 type Entry struct {
 	ID              string  `json:"id"`
 	ProductionOwner string  `json:"production_owner"`
 	MigrationState  string  `json:"migration_state"`
 	GoRoutes        []Route `json:"go_routes,omitempty"`
-	NodeRoutes      []Route `json:"node_routes,omitempty"`
+	// NodeRoutes 是历史字段：Node 网关已于 2026-11-21 删除，当前恒为空，
+	// 仅为已有投影 schema 与旧读取方保留。
+	NodeRoutes []Route `json:"node_routes,omitempty"`
 }
 
 // Manifest 是 Node 与 Go 共用的路由归属投影。
@@ -48,9 +50,9 @@ func websocketRoute(path string) Route {
 
 // Current 返回当前路由归属表。
 //
-// 当前 Go-first 公开端口由 Go 处理健康检查与已迁路由。Node 私有端口仍处理
-// 自己的进程健康，不将它转发回 Go。条目仅声明列出的端点，不能作为整个功能
-// 完成率；仅标记已接线的精确叶子。两个旧 preview 汇总保留历史语义。
+// Node 网关已于 2026-11-21 删除，公开端口只有 Go。条目仅声明列出的端点，
+// 不能作为整个功能完成率；仅标记已接线的精确叶子。两个旧 preview 汇总保留
+// 历史语义。
 func Current() Manifest {
 	return Manifest{
 		SchemaVersion: SchemaVersion,
@@ -61,21 +63,18 @@ func Current() Manifest {
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{{Transport: "http", Methods: []string{"GET", "HEAD"}, Path: "/healthz", Role: "Go-first public process health"}},
-				NodeRoutes:      []Route{{Transport: "http", Methods: []string{"GET"}, Path: "/healthz", Role: "Node private or legacy host health; never forwarded"}},
 			},
 			{
 				ID:              "gateway.readiness",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{{Transport: "http", Methods: []string{"GET", "HEAD"}, Path: "/readyz", Role: "Go-first public process health"}},
-				NodeRoutes:      []Route{{Transport: "http", Methods: []string{"GET"}, Path: "/readyz", Role: "Node private or legacy host health; never forwarded"}},
 			},
 			{
 				ID:              "gateway.models.list",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"GET", "HEAD"}, "/v1/models")},
-				NodeRoutes:      []Route{httpRoute([]string{"GET"}, "/v1/models")},
 			},
 			{
 				ID:              "gateway.models.detail",
@@ -85,52 +84,42 @@ func Current() Manifest {
 					Transport: "http", Methods: []string{"GET", "HEAD"}, Path: "/v1/models/{id}",
 					Pattern: "^/v1/models/([^/]+)$",
 				}},
-				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"GET"}, Path: "/v1/models/{id}",
-					Pattern: "^/v1/models/([^/]+)$",
-				}},
 			},
 			{
 				ID:              "gateway.props",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"GET"}, "/v1/props")},
-				NodeRoutes:      []Route{httpRoute([]string{"GET"}, "/v1/props")},
 			},
 			{
 				ID:              "gateway.openai.responses",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/responses")},
-				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/responses")},
 			},
 			{
 				ID:              "gateway.openai.responses.websocket",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{websocketRoute("/v1/responses")},
-				NodeRoutes:      []Route{websocketRoute("/v1/responses")},
 			},
 			{
 				ID:              "gateway.openai.chat_completions",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/chat/completions")},
-				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/chat/completions")},
 			},
 			{
 				ID:              "gateway.anthropic.messages",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/messages")},
-				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/messages")},
 			},
 			{
 				ID:              "gateway.anthropic.count_tokens",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/messages/count_tokens")},
-				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/messages/count_tokens")},
 			},
 			{
 				ID:              "gateway.gemini.generate_content",
@@ -139,10 +128,6 @@ func Current() Manifest {
 				GoRoutes: []Route{{
 					Transport: "http", Methods: []string{"POST"}, Path: "/v1{beta?}/models/{model}:generateContent",
 					Pattern: "^/v1(?:beta)?/models/([^/:]+):generateContent$",
-				}},
-				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"POST"}, Path: "/v1{beta?}/models/{model}:generateContent",
-					Pattern: "^/v1(?:beta)?/models/[^/]*:generateContent$",
 				}},
 			},
 			{
@@ -153,24 +138,18 @@ func Current() Manifest {
 					Transport: "http", Methods: []string{"POST"}, Path: "/v1{beta?}/models/{model}:streamGenerateContent",
 					Pattern: "^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$",
 				}},
-				NodeRoutes: []Route{{
-					Transport: "http", Methods: []string{"POST"}, Path: "/v1{beta?}/models/{model}:streamGenerateContent",
-					Pattern: "^/v1(?:beta)?/models/[^/]*:streamGenerateContent$",
-				}},
 			},
 			{
 				ID:              "gateway.images.generations",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/images/generations")},
-				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/images/generations")},
 			},
 			{
 				ID:              "gateway.images.edits",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/images/edits")},
-				NodeRoutes:      []Route{httpRoute([]string{"POST"}, "/v1/images/edits")},
 			},
 			{
 				// 图片能力目录：只存在于 Go（Node 没有等价端点），客户端据此直接得知
@@ -185,9 +164,6 @@ func Current() Manifest {
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{{
-					Transport: "http", Methods: []string{"GET"}, Path: "/v1/blobs/{id}", Pattern: "/v1/blobs/*",
-				}},
-				NodeRoutes: []Route{{
 					Transport: "http", Methods: []string{"GET"}, Path: "/v1/blobs/{id}", Pattern: "/v1/blobs/*",
 				}},
 			},
@@ -250,13 +226,6 @@ func Current() Manifest {
 					httpRoute([]string{"POST"}, "/v0/webui/studio/image/sessions/{sessionId}/runs"),
 					httpRoute([]string{"GET"}, "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"),
 				},
-				NodeRoutes: []Route{
-					httpRoute([]string{"GET"}, "/v0/webui/studio/image/models"),
-					httpRoute([]string{"GET", "POST"}, "/v0/webui/studio/image/sessions"),
-					httpRoute([]string{"DELETE", "GET", "PATCH"}, "/v0/webui/studio/image/sessions/{sessionId}"),
-					httpRoute([]string{"POST"}, "/v0/webui/studio/image/sessions/{sessionId}/runs"),
-					httpRoute([]string{"GET"}, "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"),
-				},
 			},
 			{
 				// AI 翻译页：浏览器数据面已由 Go 的同一处理器接住（前缀重写）。
@@ -280,10 +249,6 @@ func Current() Manifest {
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
-					httpRoute([]string{"GET", "POST"}, "/v0/webui/translation/system"),
-					httpRoute([]string{"POST"}, "/v0/webui/translation/focus"),
-				},
-				NodeRoutes: []Route{
 					httpRoute([]string{"GET", "POST"}, "/v0/webui/translation/system"),
 					httpRoute([]string{"POST"}, "/v0/webui/translation/focus"),
 				},
@@ -728,10 +693,6 @@ func Current() Manifest {
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
 				GoRoutes: []Route{
-					websocketRoute("/v0/codex/app-server"),
-					{Transport: "websocket", Methods: []string{"GET"}, Path: "/", Upgrade: true, Role: "legacy app-server compatibility"},
-				},
-				NodeRoutes: []Route{
 					websocketRoute("/v0/codex/app-server"),
 					{Transport: "websocket", Methods: []string{"GET"}, Path: "/", Upgrade: true, Role: "legacy app-server compatibility"},
 				},

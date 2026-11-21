@@ -56,8 +56,24 @@ data-plane comparable node 14, missing in Go 0
 - `lib/server/codex-remote-control-proxy.js` / `oauth-loopback-callback.js`（按宿主调用启动）
 - `lib/server/*` 中被 Go 宿主或脚本直接 require 的纯 helper
 
-## 建议
+## 已执行删除（2026-11-21）
 
-1. 单独一个删除切片：移除 Node 网关入口与路由文件（上面 7 类），保留宿主 helper；删除前先跑一遍 `collect-gateway-routes` 与真实 `/v0` 探针，确认没有脚本依赖。
-2. 修复或移除 `package.json` 的 `main: index.js`（文件不存在），避免安装器误判 Node 入口仍存在。
-3. 在路由扫描器里把 `/v0/webui` 别名纳入显式清单，避免下次审计只看到 14 条数据面候选。
+- 删除 62 个文件：5 个网关入口/router、54 个 `webui-*-routes.js`、`lib/cli/app.js`，以及依赖网关启动的 `scripts/e2e-account-runtime-smoke.js`、`scripts/go-core-benchmark.js`；
+- `package.json` 移除不存在的 `main: index.js` 与 `accounts:e2e`；
+- `source-fingerprint.js` 移除已删文件；
+- `collect-gateway-routes` 在网关缺失时显式返回 Node 0 路由，不再靠硬编码列表制造幽灵路由；
+- `contracts/routeownership` 清空 `NodeRoutes` 并重新生成投影，`node_routes=0`。
+
+验证：
+
+```
+gateway routes: node 0, go 71, missing 0
+route-ownership --check: pass
+product-inventory: exit 0
+package.json: no main / no accounts:e2e
+```
+
+## 后续
+
+1. `lib/cli` 仍有大量已无入口的 Node 命令/服务模块；它们不拥有 HTTP 路由，可另做一次死代码切片。
+2. 路由扫描器目前只比较 `/v1` 数据面；若需要继续审计 `/v0/webui` 别名，应补显式别名清单，而不是恢复 Node 路由扫描。

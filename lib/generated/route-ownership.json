@@ -16,16 +16,6 @@
           "path": "/healthz",
           "role": "Go-first public process health"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/healthz",
-          "role": "Node private or legacy host health; never forwarded"
-        }
       ]
     },
     {
@@ -42,16 +32,6 @@
           "path": "/readyz",
           "role": "Go-first public process health"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/readyz",
-          "role": "Node private or legacy host health; never forwarded"
-        }
       ]
     },
     {
@@ -64,15 +44,6 @@
           "methods": [
             "GET",
             "HEAD"
-          ],
-          "path": "/v1/models"
-        }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
           ],
           "path": "/v1/models"
         }
@@ -92,16 +63,6 @@
           "path": "/v1/models/{id}",
           "pattern": "^/v1/models/([^/]+)$"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v1/models/{id}",
-          "pattern": "^/v1/models/([^/]+)$"
-        }
       ]
     },
     {
@@ -116,15 +77,6 @@
           ],
           "path": "/v1/props"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v1/props"
-        }
       ]
     },
     {
@@ -132,15 +84,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/responses"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "http",
           "methods": [
@@ -163,16 +106,6 @@
           "path": "/v1/responses",
           "upgrade": true
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "websocket",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v1/responses",
-          "upgrade": true
-        }
       ]
     },
     {
@@ -180,15 +113,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/chat/completions"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "http",
           "methods": [
@@ -210,15 +134,6 @@
           ],
           "path": "/v1/messages"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/messages"
-        }
       ]
     },
     {
@@ -226,15 +141,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/messages/count_tokens"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "http",
           "methods": [
@@ -257,16 +163,6 @@
           "path": "/v1{beta?}/models/{model}:generateContent",
           "pattern": "^/v1(?:beta)?/models/([^/:]+):generateContent$"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1{beta?}/models/{model}:generateContent",
-          "pattern": "^/v1(?:beta)?/models/[^/]*:generateContent$"
-        }
       ]
     },
     {
@@ -282,16 +178,6 @@
           "path": "/v1{beta?}/models/{model}:streamGenerateContent",
           "pattern": "^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1{beta?}/models/{model}:streamGenerateContent",
-          "pattern": "^/v1(?:beta)?/models/[^/]*:streamGenerateContent$"
-        }
       ]
     },
     {
@@ -306,15 +192,6 @@
           ],
           "path": "/v1/images/generations"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/images/generations"
-        }
       ]
     },
     {
@@ -322,15 +199,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v1/images/edits"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "http",
           "methods": [
@@ -359,16 +227,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v1/blobs/{id}",
-          "pattern": "/v1/blobs/*"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "http",
           "methods": [
@@ -514,46 +372,6 @@
           ],
           "path": "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"
         }
-      ],
-      "node_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v0/webui/studio/image/models"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "GET",
-            "POST"
-          ],
-          "path": "/v0/webui/studio/image/sessions"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "DELETE",
-            "GET",
-            "PATCH"
-          ],
-          "path": "/v0/webui/studio/image/sessions/{sessionId}"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v0/webui/studio/image/sessions/{sessionId}/runs"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v0/webui/studio/image/sessions/{sessionId}/assets/{assetId}"
-        }
       ]
     },
     {
@@ -624,23 +442,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "http",
-          "methods": [
-            "GET",
-            "POST"
-          ],
-          "path": "/v0/webui/translation/system"
-        },
-        {
-          "transport": "http",
-          "methods": [
-            "POST"
-          ],
-          "path": "/v0/webui/translation/focus"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "http",
           "methods": [
@@ -1647,25 +1448,6 @@
       "production_owner": "go",
       "migration_state": "go_owned",
       "go_routes": [
-        {
-          "transport": "websocket",
-          "methods": [
-            "GET"
-          ],
-          "path": "/v0/codex/app-server",
-          "upgrade": true
-        },
-        {
-          "transport": "websocket",
-          "methods": [
-            "GET"
-          ],
-          "path": "/",
-          "upgrade": true,
-          "role": "legacy app-server compatibility"
-        }
-      ],
-      "node_routes": [
         {
           "transport": "websocket",
           "methods": [

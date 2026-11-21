@@ -189,9 +189,27 @@ CI 由 `.github/workflows/go-tests.yml` 承担：在 `windows-latest` 上跑
 - 未在真实 `~/.codebuddy*` 上跑：该函数会执行 rename 并集，属于"启动时"行为，
   不适合在会话中额外触发；等下次真实启动再观察一次即可。
 
+## Windows CLI shim 硬链（2026-11-21 已迁移）
+
+- `repairUnversionedShim` 的判断与文件操作（同文件则不动、否则删 shim 再硬链）
+  交给 Go 的 `hardlinkRepairs`；版本发现与排序（`resolveVersionedWindowsExecutable`）
+  仍留在 Node（策略层）。
+- 真机 Windows 验证：版本选择、硬链同 File ID、二次调用不重建（birthtime 不变）、
+  旧链重指、删除 shim 不影响目标、0 字节/非 exe 候选被忽略；执行点不可用时自动回退
+  到本地实现（用错误架构的二进制验证过）。
+
+### 委派请求必须带 `projectionRoot`
+
+`__artifacts-ensure` 把 `projectionRoot` 当作请求锚点，缺失时整包直接返回
+`ok:false`（不抛错）。最初 native-cli / kiro 的委派都没带这个字段，表现为"服务调用
+成功但什么都没做"。现在：
+
+- 所有委派都传 `projectionRoot`（hardlink 用 shim 所在目录、kiro 用 sandboxDir）；
+- 调用方检查响应里是否真的有对应结果字段，字段缺失（`ok:false`）就回退本地实现，
+  不再"发出去就当做过"。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
-- 仍在本地的零散动作：`native-cli-resolver`（Windows shim 硬链）、
-  `codebuddy-shared-config`（纯 JSON 合并，无文件系统动作）、`opencode-strategy`
-  （带 auth bridge 与私有条目规则，需先拆语义）。
+- 仍在本地的零散动作：`codebuddy-shared-config`（纯 JSON 合并，无文件系统动作）、
+  `opencode-strategy`（带 auth bridge 与私有条目规则，需先拆语义）。

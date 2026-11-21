@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	tmuxSocketPrefix       = "aih"
-	tmuxListSeparator      = "\x1f"
-	defaultTmuxCmdTimeout  = 1200 * time.Millisecond
+	tmuxSocketPrefix      = "aih"
+	tmuxListSeparator     = "\x1f"
+	defaultTmuxCmdTimeout = 1200 * time.Millisecond
 )
 
 var (
@@ -71,12 +71,12 @@ type TmuxRunner interface {
 
 // OSTmuxRunner 使用宿主机实际 tmux 二进制执行持久会话查询。
 type OSTmuxRunner struct {
-	Platform  string
-	LookPath  func(file string) (string, error)
-	Getenv    func(key string) string
-	UID       func() int
-	Stat      func(path string) (os.FileInfo, error)
-	ExecCmd   func(ctx context.Context, command string, args ...string) (string, error)
+	Platform   string
+	LookPath   func(file string) (string, error)
+	Getenv     func(key string) string
+	UID        func() int
+	Stat       func(path string) (os.FileInfo, error)
+	ExecCmd    func(ctx context.Context, command string, args ...string) (string, error)
 	CmdTimeout time.Duration
 }
 

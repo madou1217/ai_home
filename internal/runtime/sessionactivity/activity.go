@@ -1,14 +1,14 @@
 // Package sessionactivity 提供账号实时活动状态机、持久 CLI 会话与原生终态/限流轮询。
 //
 // 本包对应并完整接管原 Node 运行时中的四项后台职责：
-//   1. AccountActivity：内存态 per-(provider, accountRef) in-flight/rate/turn/runtime 计数，
-//      以及每 1s 原子落盘到 <AIHomeDir>/run/account-activity.json 并触发变化回调；
-//   2. SessionActivityPoller：轮询受管持久会话（tmux pane + Cline/Kiro 会话存储探针），
-//      区分「终端打开（runtimeActive）」与「回合运行（sessionTurnActive）」，停用账号跳过；
-//   3. Cline / Kiro NativeSessionOutcomePoller：提取原生 CLI 终态与 usage_summary 结果，
-//      以 app-state.db KV 游标幂等去重后记入账号结果统计；
-//   4. CodebuddySessionLimitObserver：扫描 CodeBuddy 家族原生 JSONL 中的 429 reset at /
-//      Credits exhausted 报错，解析模型与归属并通知运行态限流冷却。
+//  1. AccountActivity：内存态 per-(provider, accountRef) in-flight/rate/turn/runtime 计数，
+//     以及每 1s 原子落盘到 <AIHomeDir>/run/account-activity.json 并触发变化回调；
+//  2. SessionActivityPoller：轮询受管持久会话（tmux pane + Cline/Kiro 会话存储探针），
+//     区分「终端打开（runtimeActive）」与「回合运行（sessionTurnActive）」，停用账号跳过；
+//  3. Cline / Kiro NativeSessionOutcomePoller：提取原生 CLI 终态与 usage_summary 结果，
+//     以 app-state.db KV 游标幂等去重后记入账号结果统计；
+//  4. CodebuddySessionLimitObserver：扫描 CodeBuddy 家族原生 JSONL 中的 429 reset at /
+//     Credits exhausted 报错，解析模型与归属并通知运行态限流冷却。
 package sessionactivity
 
 import (

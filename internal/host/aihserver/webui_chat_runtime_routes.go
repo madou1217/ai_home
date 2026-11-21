@@ -14,7 +14,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/transport/http/inprocesshttp"
@@ -69,13 +68,14 @@ func BuildWebUIChatRuntimeService(
 		}
 	}
 	var modelSettings chatruntime.ModelSettingsSource
-	var modelSnapshot chatruntime.ModelSnapshotSource
 	if dbPath != "" {
 		modelSettings = modelcatalogsettings.Reader{DatabasePath: dbPath}
-		if reader, readerErr := webuimodelssnapshot.NewReaderAt(dbPath); readerErr == nil {
-			modelSnapshot = reader
-		}
 	}
+	// 不注入 ModelSnapshotSource：那读的是 app_kv 的
+	// cache:webui-models-snapshot.json，Node 时代遗留、Go 侧没有 writer，
+	// 实测停更在 11-19。它在 ModelCatalogResolver 里只作「fallback / supplement」，
+	// 而 account_models 已经覆盖了同一批数据（且更新到 11-21）；注入过期快照
+	// 只会把已下线模型重新补回目录。端口保持空值即「无补充」，行为上是关闭。
 	var accountRefs chatruntime.AccountRefTableSource
 	if aiHomeDir != "" {
 		accountRefs = accountrefmap.Dir{AIHomeDir: aiHomeDir}
@@ -96,7 +96,6 @@ func BuildWebUIChatRuntimeService(
 		ProviderCatalog:        opts.Catalog,
 		MetadataIndex:          opts.ModelModalities,
 		ModelSettings:          modelSettings,
-		ModelSnapshot:          modelSnapshot,
 		AccountRefs:            accountRefs,
 		ChatStreamer:           opts.ChatStreamer,
 		WorkspaceCheckpoints:   checkpoints,

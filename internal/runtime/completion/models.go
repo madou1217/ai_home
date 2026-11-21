@@ -410,8 +410,15 @@ const openAIChatCompletionsProtocol = "openai.chat_completions"
 // 依据全部来自 Provider 合同，没有 provider 名单：
 //   - 凭据环境变量前缀决定协议族（见 providers.Definition.CredentialProtocol）；
 //   - OPENAI_ 前缀在 codex 上归到 Responses（它有 Responses 原生适配器），
-//     在其余 OpenAI 家族 Provider 上归到 Chat Completions —— 后者是实测契约，
-//     那 11 个 Provider 在 relayHosts 里都只挂 gateway.openai.chat_completions。
+//     在其余 OpenAI 家族 Provider 上归到 Chat Completions。
+//
+// 前缀认不出来时的回退只看**显式挂载**：必须 RelayHost.Entries 里点名
+// gateway.openai.chat_completions 才算「这个 CLI 走 Chat Completions」。
+// 不能用 RelayChannelOn 的返回值判断——canonical 通道的 entries 为空表示
+// 「任何入口都能转发它」，那是**网关的转发能力**，不是 CLI 自己的协议。
+// 实测反例：agy 是 canonical/entries 为空，腾讯系家族是 relay/entries 点名
+// chat_completions；若按前者当 Chat Completions，agy（Gemini CLI 体系，
+// 合同没声明 GEMINI_* 凭据前缀）会被误判并给它加上毫无根据的警告。
 func cliClientProtocol(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if provider == "" {
@@ -421,33 +428,63 @@ func cliClientProtocol(provider string) string {
 	if !found {
 		return ""
 	}
-	// 未知协议前缀的 Provider（opencode / zcode / cline / codebuddy* 等）用各自的
-	// 注册商标做 env 前缀，前缀表匹配不到。它们全部通过
-	// gateway.openai.chat_completions 接入，因此按 Chat Completions 判定，
-	// 而不是返回空串把标注整个关掉——关掉意味着用户选什么都收不到提示。
 	if protocol := definition.CredentialProtocol(isResponsesNativeProvider(provider)); protocol != "" {
 		return protocol
 	}
-	if definition.RelayChannelOn(providers.RelayHostGo, openAIChatCompletionsProtocol) != "" {
+	if declaresEntry(definition, openAIChatCompletionsProtocol) {
 		return openAIChatCompletionsProtocol
 	}
 	return ""
+}
+
+// declaresEntry 判断 Provider 是否在 relayHosts 里**显式点名**了该网关入口。
+//
+// 与 RelayChannelOn 的区别是故意不把空 entries 当作「全部入口」：这里的语义是
+// 「这个 CLI 自己按哪门协议收发」，只有明确挂载的才算数。
+func declaresEntry(definition providers.Definition, protocol string) bool {
+	host, found := definition.RelayHosts[providers.RelayHostGo]
+	if !found || !host.Supported {
+		return false
+	}
+	return containsEntry(host.Entries, "gateway."+protocol)
+}
+
+func containsEntry(entries []string, wanted string) bool {
+	for _, entry := range entries {
+		if strings.TrimSpace(entry) == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 // isResponsesNativeProvider 判断该 Provider 是否有 Responses 原生上游适配器。
 //
 // codex 是唯一一个与其它 OpenAI 家族共用 OPENAI_* 环境变量、却走 Responses
 // 入口协议的 Provider。该事实由 gateway 侧的 providerOwnsProtocol 固化
-// （codex ⇄ ProtocolCodexResponses），这里通过「它是否在 Responses 入口有通道、
-// 且在 Chat Completions 入口同样有通道」无法区分，故直接读合同里的原生边界：
-// 有 CLIConfig 且 CLI 名为 codex 的 Provider 才有 Responses 承载。
+// （codex ⇄ ProtocolCodexResponses），所以这里只需认出「是不是 codex 那一条
+// 合同」，不去按名字写分支。
+//
+// 判据用合同声明的原生配置根（providerroot），不写字面量。注意不能只比较
+// ConfigDir 是否相等：没有 CLI 声明或未注册的 Provider 都返回空串，会互相
+// 「相等」；而合同里 agy 与 gemini 的 GlobalDir 同为 .gemini。因此要求两边
+// 都非空，并且只承认与 codex 完全一致的那一条。
 func isResponsesNativeProvider(provider string) bool {
-	// 合同事实：codex 的原生配置根由 providerroot 解析；通过同一合同根
-	// 与 codex 的根比较，不在运行代码中重复写入配置目录字面量。
-	return strings.EqualFold(
-		providerroot.ConfigDir(provider),
-		providerroot.ConfigDir("codex"),
-	)
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		return false
+	}
+	wanted := providerroot.ConfigDir("codex")
+	if wanted == "" {
+		// 合同缺失时保守返回 false：宁可把 codex 按 Chat Completions 判定，
+		// 也不要把任意 Provider 误判成 Responses 原生。
+		return false
+	}
+	actual := providerroot.ConfigDir(provider)
+	if actual == "" {
+		return false
+	}
+	return strings.EqualFold(actual, wanted)
 }
 
 // modelsWithoutProtocolChannel 返回「没有任何 Provider 能在该客户端协议下服务」的模型集合。

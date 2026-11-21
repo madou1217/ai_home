@@ -24,7 +24,6 @@ import (
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
@@ -34,7 +33,6 @@ const (
 	Path = "/v1/management/webui/accounts"
 
 	overrideKey = "config:model-context-overrides"
-	snapshotKey = webuimodelssnapshot.CacheKey
 
 	minContextTokens = 1024
 	maxContextTokens = 2000000
@@ -182,10 +180,10 @@ func (handler *Handler) readModelContext(ctx context.Context, provider string, a
 	if err != nil {
 		return responseView{}, &apiError{status: 500, code: "model_context_read_failed", message: err.Error()}
 	}
-	probed, err := readProbedLimits(ctx, databasePath)
-	if err != nil {
-		return responseView{}, &apiError{status: 500, code: "model_context_read_failed", message: err.Error()}
-	}
+	// 曾经的「probed」一级读的是 app_kv 的 cache:webui-models-snapshot.json。
+	// 那是 Node 时代遗留的缓存键：Go 侧只有 reader 没有 writer，且实测其中
+	// contextLimits 恒为空对象（0 个账号、0 条模型），因此这一级永远取不到值。
+	// 上下文窗口现在由 override 与 models.dev 目录两级的顺序决定。
 
 	accountOverrides := overrides[accountRef]
 	models := splitModels(requested)
@@ -197,7 +195,7 @@ func (handler *Handler) readModelContext(ctx context.Context, provider string, a
 	}
 	rows := make([]ModelView, 0, len(models))
 	for _, modelID := range models {
-		rows = append(rows, handler.resolveModel(provider, accountRef, modelID, overrides, probed))
+		rows = append(rows, handler.resolveModel(provider, accountRef, modelID, overrides))
 	}
 
 	siblings, credentialType := handler.sameTypeAccounts(ctx, databasePath, provider, accountRef)
@@ -214,15 +212,13 @@ func (handler *Handler) readModelContext(ctx context.Context, provider string, a
 }
 
 // resolveModel 复刻 Node resolveContextWindow：覆盖 > 探测 > 目录 > unknown。
-func (handler *Handler) resolveModel(provider string, accountRef string, modelID string, overrides map[string]map[string]int, probed map[string]map[string]int) ModelView {
+func (handler *Handler) resolveModel(provider string, accountRef string, modelID string, overrides map[string]map[string]int) ModelView {
 	override := overrides[accountRef][modelID]
 	tokens, source := 0, "unknown"
 	if override > 0 {
 		tokens, source = override, "override"
 	} else if catalogValue, ok := handler.metadata.LookupContextWindow(provider, modelID); ok && catalogValue > 0 {
 		tokens, source = catalogValue, "catalog"
-	} else if probedValue := probed[accountRef][modelID]; probedValue > 0 {
-		tokens, source = probedValue, "probed"
 	}
 	return ModelView{Model: modelID, Tokens: tokens, Source: source, Override: override}
 }
@@ -372,38 +368,6 @@ func readOverrides(ctx context.Context, databasePath string) (map[string]map[str
 		}
 		normalized := map[string]int{}
 		for modelID, value := range models {
-			id := strings.TrimSpace(modelID)
-			tokens := normalizeTokens(value)
-			if id != "" && tokens > 0 {
-				normalized[id] = tokens
-			}
-		}
-		if len(normalized) > 0 {
-			result[ref] = normalized
-		}
-	}
-	return result, nil
-}
-
-func readProbedLimits(ctx context.Context, databasePath string) (map[string]map[string]int, error) {
-	raw, found, err := appstate.ReadKV(ctx, databasePath, snapshotKey)
-	if err != nil || !found || strings.TrimSpace(raw) == "" {
-		return map[string]map[string]int{}, err
-	}
-	var snapshot struct {
-		ContextLimits map[string]map[string]any `json:"contextLimits"`
-	}
-	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
-		return map[string]map[string]int{}, nil
-	}
-	result := map[string]map[string]int{}
-	for accountRef, byModel := range snapshot.ContextLimits {
-		ref := strings.TrimSpace(accountRef)
-		if ref == "" || byModel == nil {
-			continue
-		}
-		normalized := map[string]int{}
-		for modelID, value := range byModel {
 			id := strings.TrimSpace(modelID)
 			tokens := normalizeTokens(value)
 			if id != "" && tokens > 0 {

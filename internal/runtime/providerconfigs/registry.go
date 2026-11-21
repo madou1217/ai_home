@@ -351,7 +351,7 @@ var builtinFileDefinitions = []FileDefinition{
 				Path:  "model",
 				Label: "默认模型",
 				Kind:  KeySettingModel,
-				Help:  "新会话的默认模型；候选来自 Antigravity 模型目录。",
+				Help:  "agy 只接受显示名（例如 Gemini 3.8 Flash (High)）；候选取自 Antigravity 模型名表，内部 id 会自动翻译。",
 			},
 		},
 	},

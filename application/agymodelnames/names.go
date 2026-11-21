@@ -30,6 +30,20 @@ var aliases = []alias{
 	{"gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"},
 }
 
+// namesOnly 是 CLI 已确认接受、但本仓库还没有内部 id 映射的显示名。
+//
+// 来源是本机 antigravity-cli 的设置变更记录与运行日志（2026-11-11/12）：
+// 用户在这些会话里切换到过这些模型，设置文件也保存过 Claude Opus 5.5 (High)。
+// 它们只作为配置候选项使用，不参与 id 反查；拿到新版本 CLI 的 `agy models`
+// 输出后应把它们补成完整的 id↔显示名映射。
+var namesOnly = []string{
+	"Gemini 4 Carbon (High)",
+	"Gemini 4 Carbon (Medium)",
+	"Gemini 4 Argon (High)",
+	"Gemini 4 Argon (Medium)",
+	"Claude Opus 5.5 (High)",
+}
+
 var nameByID = func() map[string]string {
 	names := make(map[string]string, len(aliases))
 	for _, item := range aliases {
@@ -38,16 +52,22 @@ var nameByID = func() map[string]string {
 	return names
 }()
 
-// names 是按声明顺序去重的显示名列表（对应 Node CLI_NAMES）。
+// names 是按声明顺序去重的显示名列表（对应 Node CLI_NAMES，再追加 namesOnly）。
 var names = func() []string {
-	list := make([]string, 0, len(aliases))
-	seen := make(map[string]bool, len(aliases))
-	for _, item := range aliases {
-		if seen[item.Name] {
-			continue
+	list := make([]string, 0, len(aliases)+len(namesOnly))
+	seen := make(map[string]bool, len(aliases)+len(namesOnly))
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
 		}
-		seen[item.Name] = true
-		list = append(list, item.Name)
+		seen[name] = true
+		list = append(list, name)
+	}
+	for _, item := range aliases {
+		add(item.Name)
+	}
+	for _, name := range namesOnly {
+		add(name)
 	}
 	return list
 }()

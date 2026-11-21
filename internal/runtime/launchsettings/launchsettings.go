@@ -43,8 +43,13 @@ func Build(providerID, accountRef string, values map[string]string, aiHomeDir st
 	}
 	filtered := make(map[string]string, len(values))
 	for path, value := range values {
-		if _, ok := declared[path]; ok && strings.TrimSpace(value) != "" {
-			filtered[path] = strings.TrimSpace(value)
+		if _, ok := declared[path]; ok {
+			// 历史覆盖可能停留在内部 id；注入前统一翻译成 CLI 接受的值
+			// （agy 只认显示名）。空值仍视为未覆盖。
+			normalized := providerconfigs.NormalizeKeySettingValue(normalizedProvider, path, value)
+			if normalized != "" {
+				filtered[path] = normalized
+			}
 		}
 	}
 	if len(filtered) == 0 {

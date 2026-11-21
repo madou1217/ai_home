@@ -101,6 +101,7 @@ func (s *Service) ReadKeySettings(ctx context.Context, provider, fileID, modelOv
 	}
 	response.Revision = revision
 	values := ReadKeyValues(content, rf.Public.Format, rf.Definition.KeySettings)
+	normalizeKeyValues(rf.Definition.Provider, rf.Definition.KeySettings, values)
 	for _, setting := range rf.Definition.KeySettings {
 		view := KeySettingValue{
 			Path:            setting.Path,
@@ -159,6 +160,7 @@ func (s *Service) ReadAccountKeySettings(
 	}
 	response.Revision = revision
 	publicValues := ReadKeyValues(content, rf.Public.Format, rf.Definition.KeySettings)
+	normalizeKeyValues(normalizedProvider, rf.Definition.KeySettings, publicValues)
 	declared := make(map[string]struct{}, len(rf.Definition.KeySettings))
 	for _, setting := range rf.Definition.KeySettings {
 		declared[setting.Path] = struct{}{}
@@ -171,7 +173,7 @@ func (s *Service) ReadAccountKeySettings(
 	if document.Provider == normalizedProvider {
 		for path, value := range document.Values {
 			if _, ok := declared[path]; ok && strings.TrimSpace(value) != "" {
-				overrides[path] = strings.TrimSpace(value)
+				overrides[path] = NormalizeKeySettingValue(normalizedProvider, path, value)
 			}
 		}
 	}
@@ -246,7 +248,7 @@ func (s *Service) SaveAccountKeySettings(
 		if !ok {
 			return nil, &ConfigError{Code: "provider_config_key_setting_unknown", Message: "未声明的关键设置: " + path}
 		}
-		text := strings.TrimSpace(value)
+		text := NormalizeKeySettingValue(normalizedProvider, path, value)
 		if text == "" {
 			delete(next, path)
 			continue
@@ -360,7 +362,11 @@ func (s *Service) SaveKeySettings(
 	if expected := strings.TrimSpace(expectedRevision); expected != "" && expected != revision {
 		return nil, &ConfigError{Code: "provider_config_conflict", Message: "配置文件在编辑期间已被其他进程修改，请重新读取后再保存"}
 	}
-	patched, err := PatchKeyValues(content, rf.Public.Format, rf.Definition.KeySettings, values)
+	normalized := make(map[string]string, len(values))
+	for path, value := range values {
+		normalized[path] = NormalizeKeySettingValue(rf.Definition.Provider, path, value)
+	}
+	patched, err := PatchKeyValues(content, rf.Public.Format, rf.Definition.KeySettings, normalized)
 	if err != nil {
 		return nil, &ConfigError{Code: "provider_config_key_setting_invalid", Message: err.Error()}
 	}

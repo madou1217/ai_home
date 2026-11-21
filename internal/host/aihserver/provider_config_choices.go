@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/agymodelnames"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/providers"
@@ -60,7 +61,33 @@ func (choices providerConfigChoices) ModelIDs(ctx context.Context, provider stri
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return ids
+	return displayModelChoices(normalized, ids)
+}
+
+// displayModelChoices 把内部模型 id 投影成 Provider CLI 真正接受的配置值。
+//
+// agy 的 settings.json/model 只认显示名（内部 id 会报 not recognized as a known
+// model），所以候选也必须是显示名：tiered 与 medium 共用 "Gemini 3.8 Flash
+// (Medium)"，投影后按去重处理；目录表里没有的 id 不会成为合法候选。
+func displayModelChoices(provider string, ids []string) []string {
+	if provider != "agy" {
+		return ids
+	}
+	seen := make(map[string]struct{}, len(ids))
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		name := agymodelnames.Resolve(id)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // readProviderRoutableModels 读取该 Provider 下所有启用账号的有效模型。
@@ -112,11 +139,16 @@ func readProviderRoutableModels(ctx context.Context, aiHomeDir, provider string)
 // 这些模型可能当前没有账号（例如 Claude 账号只接了 DeepSeek），但仍是
 // 合法的配置取值；WebUI 会把它们与可用模型合并并标记“无账号”。
 func (choices providerConfigChoices) CatalogModelIDs(_ context.Context, provider string) []string {
-	catalog, found := providers.OfficialModels(provider)
+	normalized := normalizeChoiceProvider(provider)
+	// agy 的官方可选值就是 CLI 显示名表本身，不来自聚合目录。
+	if normalized == "agy" {
+		return agymodelnames.List()
+	}
+	catalog, found := providers.OfficialModels(normalized)
 	if !found {
 		return nil
 	}
-	return catalog.Models
+	return displayModelChoices(normalized, catalog.Models)
 }
 
 // ReasoningEfforts 返回该模型目录声明的推理强度档位。

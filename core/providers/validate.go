@@ -49,6 +49,41 @@ func ValidateManifest(manifest Manifest) error {
 	if _, exists := seen[manifest.Fallback.ID]; !exists {
 		return fmt.Errorf("provider fallback 指向未知 id: %s", manifest.Fallback.ID)
 	}
+	if err := validateCodeBuddyFamilyStorage(manifest); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateCodeBuddyFamilyStorage 校验家族配置目录唯一，且会话根指向已知成员目录。
+func validateCodeBuddyFamilyStorage(manifest Manifest) error {
+	familyDirs := map[string]string{}
+	family := make([]Definition, 0, 4)
+	for _, definition := range manifest.Providers {
+		if definition.Family != "codebuddy" && definition.Family != "workbuddy" {
+			continue
+		}
+		family = append(family, definition)
+		if definition.CLI == nil || definition.Storage == nil {
+			continue
+		}
+		dirName := strings.TrimSpace(definition.CLI.GlobalDir)
+		if owner, exists := familyDirs[dirName]; exists {
+			return fmt.Errorf("CodeBuddy 家族配置目录 %q 同时属于 %s 与 %s", dirName, owner, definition.ID)
+		}
+		familyDirs[dirName] = definition.ID
+	}
+	for _, definition := range family {
+		if definition.Storage == nil {
+			continue
+		}
+		for _, root := range definition.Storage.SessionRoots {
+			normalized := strings.TrimSpace(root)
+			if _, exists := familyDirs[normalized]; !exists {
+				return fmt.Errorf("Provider %s 的 storage.sessionRoots 包含未知配置目录 %q", definition.ID, normalized)
+			}
+		}
+	}
 	return nil
 }
 
@@ -107,7 +142,64 @@ func validateDefinition(definition Definition) error {
 			return errors.New("cli.order 必须为正整数")
 		}
 	}
+	if err := validateStorageFacts(definition); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateStorageFacts 校验 Provider 自己声明的本地存储布局事实。
+//
+// CodeBuddy 家族（Family=codebuddy/workbuddy）必须完整声明：配置根来自
+// cli.globalDir，其余事实来自 storage。新 Provider 加入家族时如果漏声明，
+// 合同校验直接失败，不会在运行时静默退化成「没有存储策略」。
+func validateStorageFacts(definition Definition) error {
+	facts := definition.Storage
+	isFamily := definition.Family == "codebuddy" || definition.Family == "workbuddy"
+	if facts == nil {
+		if isFamily {
+			return errors.New("CodeBuddy 家族 Provider 必须声明 storage 布局事实")
+		}
+		return nil
+	}
+	if facts.DefaultAuthFile != "" && !isSafeRelativeSegment(facts.DefaultAuthFile) {
+		return fmt.Errorf("storage.defaultAuthFile 必须是单段文件名: %q", facts.DefaultAuthFile)
+	}
+	if facts.IDEDataName != "" && !isSafeRelativeSegment(facts.IDEDataName) {
+		return fmt.Errorf("storage.ideDataName 必须是单段目录名: %q", facts.IDEDataName)
+	}
+	for _, root := range facts.SessionRoots {
+		if !isSafeRelativeSegment(root) {
+			return fmt.Errorf("storage.sessionRoots 必须是单段 HOME 相对目录: %q", root)
+		}
+	}
+	if !isFamily {
+		return nil
+	}
+	if definition.CLI == nil || strings.TrimSpace(definition.CLI.GlobalDir) == "" {
+		return errors.New("CodeBuddy 家族 Provider 必须声明 cli.globalDir")
+	}
+	if strings.TrimSpace(facts.DefaultAuthFile) == "" {
+		return errors.New("CodeBuddy 家族 Provider 必须声明 storage.defaultAuthFile")
+	}
+	if strings.TrimSpace(facts.IDEDataName) == "" {
+		return errors.New("CodeBuddy 家族 Provider 必须声明 storage.ideDataName")
+	}
+	if len(facts.SessionRoots) == 0 {
+		return errors.New("CodeBuddy 家族 Provider 必须声明 storage.sessionRoots")
+	}
+	if strings.TrimSpace(facts.SessionRoots[0]) != strings.TrimSpace(definition.CLI.GlobalDir) {
+		return fmt.Errorf("storage.sessionRoots 首项必须等于 cli.globalDir（%s）", definition.CLI.GlobalDir)
+	}
+	return nil
+}
+
+func isSafeRelativeSegment(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "." || trimmed == ".." {
+		return false
+	}
+	return !strings.ContainsAny(trimmed, "/\\\\")
 }
 
 // validateCredentialFacts 校验凭据事实：厂商标识小写，环境变量名合法且同一列表内不重复。
@@ -166,12 +258,12 @@ func validateCapabilities(capabilities []Capability) error {
 // validateRelayHosts 校验「各宿主能否服务该 Provider 推理」的声明。
 //
 // 不变量（对应 docs/plans/2026-10-17-inference-capability-registry.md §3.4）：
-//   * 宿主名只能是 node / go —— 拼错会让声明静默失效，等于回到了「没声明」；
-//   * supported=false 时 reason 必填 —— 禁止沉默缺失。cline 此前不在任何名单里、
+//   - 宿主名只能是 node / go —— 拼错会让声明静默失效，等于回到了「没声明」；
+//   - supported=false 时 reason 必填 —— 禁止沉默缺失。cline 此前不在任何名单里、
 //     没人知道为什么，正是这条要消灭的形态；
-//   * supported=true 时 channel 必填且取值合法 —— 「能服务」必须说清用哪条通道，
+//   - supported=true 时 channel 必填且取值合法 —— 「能服务」必须说清用哪条通道，
 //     否则转发判定无从决定请求该怎么走；
-//   * entries 只在 channel=relay 时有意义（canonical 覆盖全部推理入口）。
+//   - entries 只在 channel=relay 时有意义（canonical 覆盖全部推理入口）。
 func validateRelayHosts(hosts map[string]RelayHost) error {
 	if len(hosts) == 0 {
 		return nil

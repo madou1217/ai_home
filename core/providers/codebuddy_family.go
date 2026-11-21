@@ -1,23 +1,34 @@
 package providers
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
-// codeBuddyFamilyProviders 是 CodeBuddy 家族四支的规范顺序：
-// 国际站与国内站 × CodeBuddy / WorkBuddy。
+// builtinFamilyProviderIDs 从内置 Manifest 的 Family 派生 CodeBuddy 存储家族成员。
 //
-// 顺序沿用 Node FAMILY_PROVIDERS：只影响候选目录的读取优先级，
-// 四支共用同一份物理会话存储，读取时按真实路径去重。
-var codeBuddyFamilyProviders = []string{"codebuddy", "codebuddycn", "workbuddy", "workbuddycn"}
+// 不再维护固定的四支名单：新 Provider 只要在自己的 Definition 里声明
+// Family = "codebuddy" / "workbuddy"，就会自动加入家族；是否真正可用由
+// ValidateManifest 的 StorageFacts 校验把关。
+var builtinFamilyProviderIDs = sync.OnceValue(func() []string {
+	ids := make([]string, 0, 4)
+	for _, definition := range BuiltinManifest().Providers {
+		if definition.Family == "codebuddy" || definition.Family == "workbuddy" {
+			ids = append(ids, definition.ID)
+		}
+	}
+	return ids
+})
 
-// CodeBuddyFamilyProviders 返回家族四支的副本，调用方可安全修改。
+// CodeBuddyFamilyProviders 返回家族成员的副本，顺序沿用 Manifest 声明顺序。
 func CodeBuddyFamilyProviders() []string {
-	return append([]string(nil), codeBuddyFamilyProviders...)
+	return append([]string(nil), builtinFamilyProviderIDs()...)
 }
 
-// IsCodeBuddyFamilyProvider 判断 Provider 是否属于 CodeBuddy 家族。
+// IsCodeBuddyFamilyProvider 判断 Provider 是否属于 CodeBuddy 存储家族。
 func IsCodeBuddyFamilyProvider(providerID string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(providerID))
-	for _, provider := range codeBuddyFamilyProviders {
+	for _, provider := range builtinFamilyProviderIDs() {
 		if provider == normalized {
 			return true
 		}

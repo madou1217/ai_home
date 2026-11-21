@@ -77,7 +77,9 @@ func runCodexAppServerStdio(ctx context.Context, args []string, runtime commandR
 	baseURL := strings.TrimSpace(envMap["OPENAI_BASE_URL"])
 	spawnEnv := append([]string{}, os.Environ()...)
 
+	initialAccountRef := ""
 	if identity, runtimeHome := resolveDesktopRuntime(stateFile, codexHome, apiKey, baseURL, envMap); identity != nil {
+		initialAccountRef = identity.AccountRef
 		configPath = filepath.Join(runtimeHome, "config.toml")
 		spawnEnv = replaceEnv(spawnEnv, "CODEX_HOME", runtimeHome)
 		spawnEnv = replaceEnv(spawnEnv, "CODEX_SQLITE_HOME", codexHome)
@@ -106,9 +108,15 @@ func runCodexAppServerStdio(ctx context.Context, args []string, runtime commandR
 	if err != nil {
 		return err
 	}
+	store, _ := codexappconfig.OpenAccountStore(resolveAIHomePath(envMap))
+	upstreamStdin := &lockedWriteCloser{writer: process.Stdin(), closer: process.Stdin()}
+	controller := startDesktopAccountSync(stateFile, store, initialAccountRef, func(payload []byte) error {
+		_, writeErr := upstreamStdin.Write(payload)
+		return writeErr
+	})
 	session := &codexappserverws.StdioBridgeSession{
-		Stdin:  process.Stdin(),
-		Stdout: process.Stdout(),
+		Stdin:  upstreamStdin,
+		Stdout: filterUpstreamResponses(process.Stdout(), controller),
 		Stderr: process.Stderr(),
 		Wait: func() error {
 			<-process.Done()
@@ -163,13 +171,18 @@ func printlnLine(writer io.Writer, value string) (int, error) {
 	return io.WriteString(writer, value+"\n")
 }
 
-func resolveDesktopRuntime(stateFile, hostCodexHome, gatewayBaseURL, gatewayAPIKey string, envMap map[string]string) (*codexappconfig.DesktopIdentity, string) {
+func resolveAIHomePath(envMap map[string]string) string {
 	aiHome := strings.TrimSpace(envMap["AIH_HOME_DIR"])
 	if aiHome == "" {
 		if home := strings.TrimSpace(envMap["HOME"]); home != "" {
 			aiHome = filepath.Join(home, ".ai_home")
 		}
 	}
+	return aiHome
+}
+
+func resolveDesktopRuntime(stateFile, hostCodexHome, gatewayBaseURL, gatewayAPIKey string, envMap map[string]string) (*codexappconfig.DesktopIdentity, string) {
+	aiHome := resolveAIHomePath(envMap)
 	desktopRef := ""
 	if stateFile != "" {
 		if raw, err := os.ReadFile(stateFile); err == nil {

@@ -74,7 +74,11 @@ FD 数量随订阅变化，此数值只记录本次采样。
 
 rekey 不再用两个连接同时操作同一文件；Go 凭据用 canonical 表，Node 兼容凭据用
 compat_account_credentials。引用更新、同步 links 与外键检查在同一事务完成，只备份实际
-修改的 canonical 数据库。修复 backfill 的离线旧 links 可能覆盖有效 canonical ref 的问题：
+修改的 canonical 数据库。
+
+> 这些一次性 rekey 工具（`scripts/oauth-identity-maintenance.js`、`scripts/codex-identity-rekey.js`、
+> `scripts/oauth-identity-rekey.js`、`scripts/rekey-static-account-refs.js` 及
+> `lib/cli/services/account/` 下的 rekey 模块）已于 2026-11-21 整体删除；本文保留当时的历史记录。修复 backfill 的离线旧 links 可能覆盖有效 canonical ref 的问题：
 先保留已存在原 ref，再使用 canonical links，最后仅接受仍存在的离线源映射候选。
 
 ### 完整文件清单

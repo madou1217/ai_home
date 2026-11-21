@@ -2,7 +2,7 @@
 
 > **状态（2026-11-21）**：迁移完成。执行点 `aih-go __artifacts-ensure`，Node 客户端
 > `lib/runtime/artifact-service-client.js`；**唯一权威的剩余项清单见文末“遗留项清单”**
-> （仅剩 rekey 运维脚本的链接动作未迁，其余差异都属策略层）。
+> （Node 侧已无链接动作未迁，其余差异都属策略层）。
 
 ## 分层
 
@@ -353,19 +353,19 @@ Node 负责 readdir + 私有过滤 + 三个根的编排（先 source 条目、�
 
 ## 遗留项清单（2026-11-21 复核）
 
-**已迁移模块的本地实现全部保留为 fallback**（执行点不可用/注入 fs 替身时使用），不是死代码；
-每个导出的函数仍有真实调用方。仍在 Node 的链接动作只剩一处：
+**无遗留项。** 已迁移模块的本地实现全部保留为 fallback（执行点不可用/注入 fs 替身时使用），
+不是死代码；每个导出的函数仍有真实调用方。
 
-| 位置 | 动作 | 结论与理由（2026-11-21 复核） |
-|---|---|---|
-| `cli/services/account/rekey-journal.js` | rekey 的 `atomicWrite` / 链接交换 / rename / 恢复 | **暂不迁**。① 它是运维脚本 `scripts/oauth-identity-maintenance.js`（plan/apply/recover/rollback）里的 Saga 步骤，每一步之后都要写 journal checkpoint，恢复靠比对 before/after 状态；拆成第二个进程只多出超时、二进制缺失、版本不匹配三种失败面。② 只操作 file 符号链接与普通文件，没有 junction/共享目录/跨账号投影语义；Windows 在规划阶段就被 `rekey_metadata_platform_unsupported` 拒绝（POSIX-only）。③ `atomicWrite` 还要保 xattr/ACL 并回读核对 metadata，和链接原语不是一类动作。 |
+2026-11-21 复核后，原先列在这里的三处 Node 链接动作已全部处理：
 
-**rekey 是可转换的**，但意味着把整套工具（19 个模块约 2.1k 行：inventory / plan /
-SQLite 事务 / metadata 摘要 / 恢复矩阵）迁成一个 Go 命令，而不是搬 147 行 journal；
-这属于独立项目，不在本次 artifactstore 迁移范围内。
+- opencode auth bridge → `bridgeLinks.authLink`（和共享条目同批下发）；
+- 旧版 `Library/Preferences` 整目录迁移 → `legacyLibraryLinks`；
+- rekey 离线工具（含 `rekey-journal` 的临时链接）**已整体删除**：accountRef 规则不再变化，
+  该工具只是一次性历史迁移；同时删除了仅为它存在的 `account-maintenance-gate` /
+  `account-maintenance-retention`。Go 的在线 `ReKeyAccount`（刷新时身份变化）保留。
 
-会话条目的**内容合并**（`mergeEntryIntoStore` 的 rename 并集、同内容文件丢弃）也仍在 Node：
-那是数据归属决策而非链接动作，执行点只负责"接回宿主存储"的最后一步。
+会话条目的**内容合并**（`mergeEntryIntoStore` 的 rename 并集、同内容文件丢弃）仍由 Node
+承担：那是数据归属决策而非链接动作，执行点只负责"接回宿主存储"的最后一步。
 
 策略层（不迁）：版本发现与排序、provider 私有名、三个投影根与 known 清单、模型/env/网关配置。
 

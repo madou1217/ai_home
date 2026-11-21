@@ -17,6 +17,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
@@ -70,10 +71,10 @@ func BuildSpawnEnv(ctx context.Context, opts SpawnEnvOptions) ([]string, error) 
 
 	checkHome := envMap["CODEX_HOME"]
 	if opts.HostHomeDir != "" {
-		checkHome = filepath.Join(opts.HostHomeDir, ".codex")
+		checkHome = filepath.Join(opts.HostHomeDir, providerroot.ConfigDir("codex"))
 	}
 	if checkHome == "" && envMap["HOME"] != "" {
-		checkHome = filepath.Join(envMap["HOME"], ".codex")
+		checkHome = filepath.Join(envMap["HOME"], providerroot.ConfigDir("codex"))
 	}
 	if err := codexpreferences.CheckHostReady(checkHome); err != nil {
 		return nil, err
@@ -85,7 +86,7 @@ func BuildSpawnEnv(ctx context.Context, opts SpawnEnvOptions) ([]string, error) 
 
 	homeDir := strings.TrimSpace(opts.HostHomeDir)
 	if homeDir != "" {
-		codexHome := filepath.Join(homeDir, ".codex")
+		codexHome := filepath.Join(homeDir, providerroot.ConfigDir("codex"))
 		envMap["HOME"] = homeDir
 		envMap["USERPROFILE"] = homeDir
 		envMap["CODEX_HOME"] = codexHome

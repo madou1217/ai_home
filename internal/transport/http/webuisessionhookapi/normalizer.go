@@ -85,9 +85,15 @@ var interruptedEvents = map[string]bool{
 var waitingNotificationTypes = map[string]bool{
 	"permission_prompt":        true,
 	"worker_permission_prompt": true,
-	"idle_prompt":              true,
 	"agent_needs_input":        true,
 	"elicitation_dialog":       true,
+}
+
+// idleNotificationTypes 是「CLI 已空闲、等待用户下一次输入」的通知，不是提问。
+// Claude Code 的 idle_prompt 在回合结束后 60s 触发，把它当成 question-opened
+// 会让挂着 aih claude 的空闲会话永久显示运行中（waiting 也计入运行）。
+var idleNotificationTypes = map[string]bool{
+	"idle_prompt": true,
 }
 
 var resolvedNotificationTypes = map[string]bool{
@@ -241,7 +247,11 @@ func ResolveHookEventType(eventName, provider string, payload map[string]any) st
 		return "question-cleared"
 	}
 	if normalizedName == "notification" {
-		kind := strings.ToLower(firstText(anyText(payload["notification_type"]), anyText(payload["notificationType"])))
+		kind := resolveNotificationKind(payload)
+		if idleNotificationTypes[kind] {
+			// 空闲通知是「回合已结束、等待下一次输入」的观察，不是提问。
+			return "session:turn-completed"
+		}
 		if waitingNotificationTypes[kind] {
 			return "question-opened"
 		}
@@ -398,6 +408,11 @@ func resolveTurnID(payload map[string]any) string {
 	)
 }
 
+// resolveNotificationKind 返回小写的 notification_type；缺失时为空。
+func resolveNotificationKind(payload map[string]any) string {
+	return strings.ToLower(firstText(anyText(payload["notification_type"]), anyText(payload["notificationType"])))
+}
+
 func normalizeEventPayload(eventName string, payload map[string]any) map[string]any {
 	normalizedName := normalizeHookEventKey(eventName)
 	result := make(map[string]any)
@@ -407,7 +422,9 @@ func normalizeEventPayload(eventName string, payload map[string]any) map[string]
 		permDesc = describePermissionRequest(payload)
 	}
 	var notifMsg string
+	idleNotification := false
 	if normalizedName == "notification" {
+		idleNotification = idleNotificationTypes[resolveNotificationKind(payload)]
 		notifMsg = firstText(anyText(payload["message"]), anyText(payload["title"]))
 	}
 	question := boundedText(firstText(
@@ -417,7 +434,9 @@ func normalizeEventPayload(eventName string, payload map[string]any) map[string]
 		anyText(payload["prompt"]),
 		anyText(payload["text"]),
 	), 4096)
-	if questionOpenEvents[normalizedName] || question != "" {
+	// idle_prompt 的 message（"Claude is waiting for your input"）是空闲说明，
+	// 不是待回答的问题；带上 question 会被 UI 渲染成提问。
+	if !idleNotification && (questionOpenEvents[normalizedName] || question != "") {
 		if question != "" {
 			result["question"] = question
 		}
@@ -435,7 +454,7 @@ func normalizeEventPayload(eventName string, payload map[string]any) map[string]
 			result["options"] = opts
 		}
 	}
-	if normalizedName == "notification" && anyText(result["question"]) != "" {
+	if normalizedName == "notification" && !idleNotification && anyText(result["question"]) != "" {
 		result["notice"] = true
 	}
 	reason := boundedText(firstText(

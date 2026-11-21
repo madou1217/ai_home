@@ -38,7 +38,7 @@ func TestNormalizeProviderHookEventVariants(t *testing.T) {
 			wantQ:     "Bash: ls -la",
 		},
 		{
-			name:     "Claude Notification waiting vs info",
+			name:     "Claude Notification idle_prompt 收敛为完成",
 			provider: "claude",
 			payload: map[string]any{
 				"hook_event_name":   "Notification",
@@ -46,10 +46,9 @@ func TestNormalizeProviderHookEventVariants(t *testing.T) {
 				"notification_type": "idle_prompt",
 				"message":           "Waiting for input",
 			},
-			wantType:  "question-opened",
-			wantPhase: "turn-updated",
+			wantType:  "session:turn-completed",
+			wantPhase: "turn-completed",
 			wantSess:  "c-2",
-			wantQ:     "Waiting for input",
 		},
 		{
 			name:     "Claude Notification 普通信息",

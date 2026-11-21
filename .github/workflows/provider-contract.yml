@@ -11,9 +11,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 与其它工作流同一口径：main 上排队跑完，PR 才取消旧运行。
 concurrency:
   group: provider-contract-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

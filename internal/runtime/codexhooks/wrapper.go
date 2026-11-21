@@ -667,6 +667,15 @@ func ResolveWindowsCodexHookLaunch(cliBin string, args []string, platform string
 		if subcommand == "app-server" {
 			return nil
 		}
+		// resume 已迁到 Go；旧 wrapper 没有 AIH_GO_CLI 或二进制缺失时保留 Node 兼容。
+		if subcommand == "resume" {
+			if goBinary := strings.TrimSpace(ReadCmdSetVariable(body, "AIH_GO_CLI")); goBinary != "" && fileExists(goBinary) {
+				goArgs := make([]string, 0, 6+len(args))
+				goArgs = append(goArgs, "__codex-cli-resume", "--upstream", upstream, "--state-file", stateFile, "--")
+				goArgs = append(goArgs, args...)
+				return &WindowsHookLaunch{Command: goBinary, Args: goArgs, HookPath: hookPath}
+			}
+		}
 		mode := "--run-cli-default"
 		if subcommand == "resume" {
 			mode = "--run-cli-resume"

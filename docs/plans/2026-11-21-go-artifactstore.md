@@ -171,11 +171,27 @@ CI 由 `.github/workflows/go-tests.yml` 承担：在 `windows-latest` 上跑
 - 实测（合成用例，macOS 全部 5 例 + win32 分支）：Node/Go 的 summary、错误码、目录权限、
   链接相对路径逐项一致；本机没有 kiro 账号，未做真实账号回归。
 
+## CodeBuddy 家族共享条目（2026-11-21 部分迁移）
+
+`codebuddy-family-session-store` 按"是否需要搬迁"拆分：
+
+- **Node 仍负责**：提示历史合并、会话产物目录的 rename 并集、CLI 共享配置合并、
+  空 skills 目录里的迁移标记回收、孤儿配置回填、信任目录/桌面 settings 同步。
+  这些会动到用户数据，且要求独占语义，不适合放进通用执行点。
+- **Go 负责**（`familyLinks`）：已正确链接（unchanged）、链接指向别处（unresolved）、
+  缺失但规范存储有实物（建链）、空目录（删空壳 + 补目标目录 + 建链）、
+  空 `models.json` 外壳（换链）、真实内容（unresolved）。建链仍是
+  "同目录临时链接 + rename"。
+- Node 逐条分类后把"纯建链"条目一次性批量交给 Go；服务不可用或响应异常时原地回退本地实现。
+- 实测（合成用例，Node/Go 对比）：5 类分支 + 采纳路径（history / file-history union）
+  的 summary 集合与最终目录快照一致，二次运行幂等。唯一的差异是 `linked` 数组顺序
+  （Node 接管项在前、Go 纯建链项在后），仅影响诊断输出。
+- 未在真实 `~/.codebuddy*` 上跑：该函数会执行 rename 并集，属于"启动时"行为，
+  不适合在会话中额外触发；等下次真实启动再观察一次即可。
+
 ## 尚未迁移
 
 - 版本发现与缓存策略仍在 Node（这是策略层，不是文件系统执行点）。
 - 仍在本地的零散动作：`native-cli-resolver`（Windows shim 硬链）、
-  `codebuddy-family-session-store`、`codebuddy-shared-config`、`opencode-strategy`。
-  这几项都带 provider 专属的"搬迁/合并"语义（rename 并集、JSON 合并、孤儿配置回收），
-  不是单纯建链：迁移时必须先拆"决策"与"文件操作"，否则容易在多账号并发下动到别人
-  正在写的目录。建议各自单独切片，并配真机并发验证。
+  `codebuddy-shared-config`（纯 JSON 合并，无文件系统动作）、`opencode-strategy`
+  （带 auth bridge 与私有条目规则，需先拆语义）。

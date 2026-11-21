@@ -49,9 +49,9 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 	edgeSvc := edgeproxy.NewService()
 	providerConfigSvc := providerconfigs.NewService(catalog, hostHome, aiHome).
 		WithChoices(providerConfigChoices{
-			models:  dependencies.ModelSnapshot,
-			ladders: dependencies.ModelModalities,
-			aliases: dependencies.ModelAliasDisplay,
+			aiHomeDir: aiHome,
+			ladders:   dependencies.ModelModalities,
+			aliases:   dependencies.ModelAliasDisplay,
 		})
 	if databasePath, dbErr := appstate.DatabasePath(aiHome); dbErr == nil {
 		providerConfigSvc.WithAccountSettings(providersettings.NewStore(databasePath))

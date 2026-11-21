@@ -19,6 +19,16 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/autostart"
 )
 
+// 本文件由单一 owner 维护（2026-11-21 用户裁定），改动前先在 aih peer 上确认；
+// 不要单方面删除 --graceful：它是用户要求的第二种模式，不是历史包袱。
+//
+// 生命周期语义：
+//   - 默认 / --force：强制，立即换进程，不等在跑的会话；
+//   - --graceful：进程级平滑——SIGTERM（Windows 走 /v0/management/shutdown），
+//     等进程按自己的收尾预算退出后再拉起；
+//   - 不引入服务端 drain 闸门（排空期 readyz 200 / 新推理 503，客户端分不清
+//     “在重启”和“服务坏了”，2026-11-21 实测回归）。
+//
 // runServerLifecycle owns the common server lifecycle commands. Advanced
 // serve/config variants still delegate to the legacy CLI until each command has
 // a Go implementation.
@@ -136,9 +146,7 @@ func runServerLifecycle(ctx context.Context, arguments []string, runtime command
 			return true, installErr
 		}
 		// 作业注册成功不代表已经能服务：启动装配还需要时间，调用方紧接着发请求
-		// 会拿到 connection refused。这里等到 /readyz 真正通过再报成功，并且要求
-		// 应答的进程就是刚拉起的那个 pid —— 否则端口被另一个（手工启动的）
-		// aih-server 占着时，会把"旧进程还在应答"误报成重启成功。
+		// 会拿到 connection refused。这里等到 /readyz 真正通过再报成功。
 		// 不要求“应答者等于 launchd 报的那个 pid”：kickstart -k 之后 launchd 可能
 		// 先起一个抢不到端口的实例、再重试一个，严格比对会把自己重试出来的新实例
 		// 判成“别人占端口”。只要求：ready 为真，且应答的 pid 不是重启前那个。

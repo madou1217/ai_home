@@ -1,7 +1,7 @@
 import {
   parseManagementKeyQrPayload,
   type ServerCredentialsQr
-} from '../../../lib/protocol/server-credentials-qr';
+} from './server-credentials-qr';
 
 export type { ServerCredentialsQr };
 

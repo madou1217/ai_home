@@ -48,25 +48,45 @@ func (authorizer *Authorizer) Authorized(request *http.Request) bool {
 	) == 1
 }
 
-// clientKeyFromRequest 拒绝重复、同时出现或包含空白的密钥头。
+// clientKeyFromRequest 接受多种传递方式，但要求它们携带**完全相同**的密钥。
 //
 // x-goog-api-key 是 Gemini / Vertex 客户端（gemini CLI 的 vertex-ai 认证）的密钥头，
-// 与 x-api-key 同等对待；三种传递方式恰好出现一种才算有效。
+// 与 x-api-key 同等对待。
+//
+// 为什么不再要求「恰好出现一种」：CodeBuddy 的自定义模型会把同一个 apiKey 同时写进
+// `Authorization: Bearer` 与 `X-API-Key`（2026-11-21 实测 2.185.0）。两个头值一致时
+// 不存在歧义，按冲突拒绝会把合法客户端挡在 401；只有值不一致（真正的身份歧义）才拒绝。
+// 重复头同样按「值必须全部一致」处理。
 func clientKeyFromRequest(request *http.Request) (string, bool) {
 	authorization := request.Header.Values("Authorization")
 	apiKeys := append(
 		append([]string{}, request.Header.Values("x-api-key")...),
 		request.Header.Values("x-goog-api-key")...,
 	)
-	if len(authorization) == 1 && len(apiKeys) == 0 {
-		return parseBearerToken(authorization[0])
+	candidates := make([]string, 0, len(authorization)+len(apiKeys))
+	for _, header := range authorization {
+		token, ok := parseBearerToken(header)
+		if !ok {
+			return "", false
+		}
+		candidates = append(candidates, token)
 	}
-	if len(authorization) == 0 && len(apiKeys) == 1 {
-		value := apiKeys[0]
-		return value, value != "" &&
-			!strings.ContainsAny(value, " \t\r\n")
+	for _, value := range apiKeys {
+		if value == "" || strings.ContainsAny(value, " \t\r\n") {
+			return "", false
+		}
+		candidates = append(candidates, value)
 	}
-	return "", false
+	if len(candidates) == 0 {
+		return "", false
+	}
+	key := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate != key {
+			return "", false
+		}
+	}
+	return key, true
 }
 
 // parseBearerToken 只接受单个不含空白的 Bearer Token。

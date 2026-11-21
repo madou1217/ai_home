@@ -22,7 +22,7 @@ var serverConfigFields = []serverConfigField{
 	{Flag: "--local-only", Summary: "是否对外监听（等价于把 host 设为 0.0.0.0）", Boolean: true},
 	{Flag: "--proxy-url", Summary: "上游请求走的 HTTP(S) 代理"},
 	{Flag: "--no-proxy", Summary: "不走代理的主机列表（逗号分隔，支持 * 通配与域名后缀）"},
-	{Flag: "--client-key", Summary: "客户端调用 /v1 与 /v1beta 所需的 key（Authorization: Bearer）"},
+	{Flag: "--api-key", Summary: "客户端（codex/claude 等）调用 /v1 与 /v1beta 的 Bearer key"},
 	{Flag: "--management-key", Summary: "管理面（/v0/webui、/v0/management、远程重启、中转服务）所需的 key"},
 	{Flag: "--models-probe-accounts", Summary: "每次模型目录刷新时并发探测的账号数"},
 	{Flag: "--model-cache-sync", Summary: "WebUI 模型缓存的刷新方式：go-batch = 批量读 Go 的 account-models（默认；启动后一次、每 6 小时一次、别名保存/候选读取前超过 30 秒补一次）；scheduler = legacy，枚举值仅用于配置回退，旧逐账号调度器已退役（不做定时轮询，只按需标记 stale）", Values: []string{"scheduler", "go-batch"}},

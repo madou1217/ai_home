@@ -43,7 +43,7 @@ const serverUsageText = `
   aih server config list [--json] [--one-line] [<filter>]
   aih server config set --open-network --api-key <key> --management-key <key>
   aih server config unset proxy-url
-  aih server serve [--host <ip>] [--port <n>] [--backend codex-adapter] [--provider codex|gemini|claude|agy|opencode|auto] [--codex-base-url <url>] [--codex-client-version <version>] [--gemini-base-url <url>] [--claude-base-url <url>] [--agy-base-url <url>] [--codex-models <csv>] [--proxy-url <url>] [--no-proxy <hosts>] [--strategy round-robin|random] [--codex-max-concurrency <n>] [--gemini-max-concurrency <n>] [--claude-max-concurrency <n>] [--agy-max-concurrency <n>] [--opencode-max-concurrency <n>] [--queue-limit <n>] [--session-affinity-ttl-ms <ms>] [--session-affinity-max <n>] [--client-key <key>] [--management-key <key>] [--cooldown-ms <ms>] [--max-attempts <n>] [--upstream-timeout-ms <ms>]
+  aih server serve [--host <ip>] [--port <n>] [--web-dir <dir>]   # 密钥等配置用 aih server config set
   aih server env [--base-url <url>] [--api-key <key>]
   aih server sync-codex [--management-url <url>] [--key <management-key>] [--parallel <1-32>] [--limit <n>] [--dry-run]
   management APIs: /v0/management/status, /v0/management/metrics, /v0/management/accounts, /v0/management/models, /v0/management/reload

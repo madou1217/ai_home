@@ -58,7 +58,7 @@ var configOptions = []configOption{
 	// 监听与密钥
 	{Flag: "--host", Path: []string{"host"}, Action: optionValue},
 	{Flag: "--port", Path: []string{"port"}, Action: optionValue},
-	{Flag: "--api-key", Aliases: []string{"--client-key"}, Path: []string{"apiKey"}, Action: optionValue, Secret: true},
+	{Flag: "--api-key", Path: []string{"apiKey"}, Action: optionValue, Secret: true},
 	{Flag: "--management-key", Path: []string{"managementKey"}, Action: optionValue, Secret: true},
 	{Flag: "--generate-api-key", Path: []string{"apiKey"}, Action: optionGenerate, Generate: generateAPIKey, Secret: true},
 	{Flag: "--generate-management-key", Path: []string{"managementKey"}, Action: optionGenerate, Generate: generateManagementKey, Secret: true},

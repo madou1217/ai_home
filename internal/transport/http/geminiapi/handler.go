@@ -143,7 +143,7 @@ func (handler *Handler) ServeHTTP(
 		handler.authorizer == nil ||
 		!handler.authorizer.Authorized(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeError(response, http.StatusUnauthorized, "UNAUTHENTICATED", "Invalid client key")
+		writeError(response, http.StatusUnauthorized, "UNAUTHENTICATED", "Invalid API key")
 		return
 	}
 	target, ok := ParseTarget(request.URL.Path)

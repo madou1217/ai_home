@@ -38,9 +38,9 @@ var (
 	// ErrInvalidManagementKey 表示 Management Key 不满足安全合同。
 	ErrInvalidManagementKey = errors.New("management key 必须为 1-8192 个非空白且非控制字符")
 	// ErrInvalidClientKey 表示 Client Key 不满足安全合同。
-	ErrInvalidClientKey = errors.New("client key 必须为 1-8192 个非空白且非控制字符")
+	ErrInvalidClientKey = errors.New("API key 必须为 1-8192 个非空白且非控制字符")
 	// ErrServerKeyCollision 表示管理权限和标准客户端权限没有使用独立密钥。
-	ErrServerKeyCollision = errors.New("management key 与 client key 必须不同")
+	ErrServerKeyCollision = errors.New("management key 与 API key 必须不同")
 )
 
 // Options 是创建 Go Server Host 所需的最小依赖。

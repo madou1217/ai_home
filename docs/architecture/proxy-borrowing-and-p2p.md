@@ -25,11 +25,15 @@ Mac aih proxy serve --ssh <connectionId>
   -> ssrdog 节点
 ```
 
-`aih proxy serve` 只做两件事：
+`aih proxy serve` 做三件事：
 
 - 通过管理面申请一个租约；
-- 在当前主机建立 `127.0.0.1` 的认证 HTTP 入口；
-- `--ssh <connectionId>` 可使用本机已保存的 SSH 连接自动建立本地转发，无需手工 `ssh -L`。
+- 在当前主机建立 `127.0.0.1` 的认证 HTTP 与 SOCKS5 入口；
+- `--ssh <connectionId>` 使用本机已保存的 SSH 连接自动建立本地转发，无需手工 `ssh -L`。
+
+`--system` 会额外启动一个仅 loopback 的匿名 HTTP 入口供操作系统系统代理使用：
+系统代理无法可靠保存每个应用的凭据，因此这个入口跳过客户端认证，但上游仍使用
+租约令牌认证。该入口只在显式 `--system` 时创建，退出时恢复原系统代理。
 
 它不会自动改系统代理，也不把管理密钥写进代理 URL。输出中的 URL 含租约令牌，终端可见，但不得写入日志或提交。
 
@@ -43,7 +47,7 @@ Mac aih proxy serve --ssh <connectionId>
 
 | 传输 | 适用 | 状态 |
 | --- | --- | --- |
-| SSH 本地转发 | Mac 能 SSH 到 Windows/Linux；最稳定 | 已用 Windows 真机验证 |
+| SSH 本地转发 | Mac 能 SSH 到 Windows/Linux；最稳定 | 已实现 `--ssh` 自动转发并真机验证 |
 | SSH 反向隧道 + 公网中继 | 双方都在 NAT 后，但有一台可达中继 | 已有 `sshtunnel` / reverse tunnel 组件，可复用 |
 | Tailscale | 需要设备间 mesh、DERP 回退 | 通过 `network.connector@1` 外部插件；未安装/未验证 |
 | WireGuard | 固定节点、可接受手工 peer 配置 | 通过外部插件；未验证 |
@@ -74,8 +78,9 @@ Mac aih proxy serve --ssh <connectionId>
 
 ## 6. 后续实现顺序
 
-1. `aih proxy serve`（已实现并真机验证）；
+1. `aih proxy serve` HTTP + SOCKS5（已实现并真机验证）；
 2. `--ssh <connectionId>` 自动 SSH 本地转发（已实现并真机验证）；
+3. `--system` 系统代理写入/恢复（macOS 真机验证；Windows/Linux 使用系统无认证入口）；
 3. `network.connector` 插件宿主与实装（Tailscale/WireGuard）；
 4. 连接器证据采集与 UI 状态（direct/relay/unknown 分开）；
 5. 只有插件给出可复核 path 证据后，才启用“直连 P2P”文案。

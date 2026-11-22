@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/madou1217/ai_home/internal/transport/http/websameorigin"
 )
 
 const (
@@ -80,63 +81,12 @@ func closeWatchWSConnection(conn *websocket.Conn, transport net.Conn, code webso
 	_ = conn.Close(code, reason)
 }
 
-// isSameOriginWatchWSRequest enforces exact same-origin WebSocket handshakes
-// (actual request TLS scheme + hostname + effective port) for browser clients
-// while permitting non-browser clients without an Origin header (which remain
-// strictly gated by first-frame Bearer authorization). Never trusts arbitrary
-// Forwarded / X-Forwarded-Proto headers.
+// isSameOriginWatchWSRequest 判定浏览器 WS 握手是否同源。
+//
+// scheme 由共享判定从「TLS 状态或可信本地反代的 X-Forwarded-Proto」推导，
+// 避免 Cloudflare 终止 TLS 时把 https origin 误判成跨源。
 func isSameOriginWatchWSRequest(request *http.Request) bool {
-	if request == nil {
-		return false
-	}
-	origin := strings.TrimSpace(request.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
-		return false
-	}
-	expectedScheme := "http"
-	if request.TLS != nil {
-		expectedScheme = "https"
-	}
-	if !strings.EqualFold(parsed.Scheme, expectedScheme) {
-		return false
-	}
-	originHost, originPort, ok := splitNormalizedHostPort(parsed.Host, expectedScheme)
-	if !ok {
-		return false
-	}
-	reqHost, reqPort, ok := splitNormalizedHostPort(request.Host, expectedScheme)
-	if !ok {
-		return false
-	}
-	return originHost == reqHost && originPort == reqPort
-}
-
-func splitNormalizedHostPort(rawHost, scheme string) (string, string, bool) {
-	trimmed := strings.TrimSpace(rawHost)
-	if trimmed == "" || strings.HasSuffix(trimmed, ":") {
-		return "", "", false
-	}
-	parsed, err := url.Parse(scheme + "://" + trimmed)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", "", false
-	}
-	hostname := strings.ToLower(parsed.Hostname())
-	if hostname == "" {
-		return "", "", false
-	}
-	port := parsed.Port()
-	if port == "" {
-		if scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-	return hostname, port, true
+	return websameorigin.Matches(request, true)
 }
 
 func hasRemoteServerTarget(request *http.Request) bool {

@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/madou1217/ai_home/internal/transport/http/websameorigin"
 )
 
 const (
@@ -51,63 +51,12 @@ type muxWSFirstFrameResult struct {
 	err     error
 }
 
-// isSameOriginMuxWSRequest enforces exact same-origin WebSocket handshakes
-// (actual request TLS scheme + hostname + effective port) for browser clients
-// while permitting non-browser clients without an Origin header (which remain
-// strictly gated by first-frame Bearer authorization). Never trusts arbitrary
-// Forwarded / X-Forwarded-Proto headers.
+// isSameOriginMuxWSRequest 判定终端 mux 的浏览器 WS 握手是否同源。
+//
+// 与 watch WS 共用同一套 scheme 推导：Cloudflare 等本地反代终止 TLS 时，
+// 采信回环来源的 X-Forwarded-Proto，而不是实际明文连接。
 func isSameOriginMuxWSRequest(request *http.Request) bool {
-	if request == nil {
-		return false
-	}
-	origin := strings.TrimSpace(request.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
-		return false
-	}
-	expectedScheme := "http"
-	if request.TLS != nil {
-		expectedScheme = "https"
-	}
-	if !strings.EqualFold(parsed.Scheme, expectedScheme) {
-		return false
-	}
-	originHost, originPort, ok := splitNormalizedHostPort(parsed.Host, expectedScheme)
-	if !ok {
-		return false
-	}
-	reqHost, reqPort, ok := splitNormalizedHostPort(request.Host, expectedScheme)
-	if !ok {
-		return false
-	}
-	return originHost == reqHost && originPort == reqPort
-}
-
-func splitNormalizedHostPort(rawHost, scheme string) (string, string, bool) {
-	trimmed := strings.TrimSpace(rawHost)
-	if trimmed == "" || strings.HasSuffix(trimmed, ":") {
-		return "", "", false
-	}
-	parsed, err := url.Parse(scheme + "://" + trimmed)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", "", false
-	}
-	hostname := strings.ToLower(parsed.Hostname())
-	if hostname == "" {
-		return "", "", false
-	}
-	port := parsed.Port()
-	if port == "" {
-		if scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
-		}
-	}
-	return hostname, port, true
+	return websameorigin.Matches(request, true)
 }
 
 func isValidMuxWSID(muxID string) bool {

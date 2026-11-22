@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
+	"github.com/madou1217/ai_home/internal/transport/http/websameorigin"
 )
 
 const (
@@ -40,22 +40,8 @@ func isWebSocketWatchRequest(request *http.Request) bool {
 }
 
 func isSameOriginWSRequest(request *http.Request) bool {
-	if request == nil {
-		return false
-	}
-	origin := strings.TrimSpace(request.Header.Get("Origin"))
-	if origin == "" {
-		// 非浏览器客户端（例如 CLI 或进程内诊断）不附带 Origin，后续仍受首帧管理密钥强约束。
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
-		return false
-	}
-	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
-		return false
-	}
-	return strings.EqualFold(parsed.Host, strings.TrimSpace(request.Host))
+	// 与 watch WS / 终端 mux 共用同一套同源判定，避免三处 scheme 规则漂移。
+	return websameorigin.Matches(request, true)
 }
 
 func (handler *Handler) serveWebSocket(response http.ResponseWriter, request *http.Request) {

@@ -761,12 +761,30 @@ export const accountsAPI = {
     return response.data;
   },
 
+  // 刷新是异步作业：202 只代表已入队，完成事件走 watch 流。请求本身必须有界，
+  // 否则 watch 断连或连接被占满时界面会一直停在 pending。
   refresh: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
-    const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh`);
+    const response = await api.post<AccountRefreshUsageResponse>(
+      `/webui/accounts/${provider}/${accountRef}/refresh`,
+      undefined,
+      { timeout: 30_000 }
+    );
     return response.data;
   },
   refreshUsage: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
-    const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh-usage`);
+    const response = await api.post<AccountRefreshUsageResponse>(
+      `/webui/accounts/${provider}/${accountRef}/refresh-usage`,
+      undefined,
+      { timeout: 30_000 }
+    );
+    return response.data;
+  },
+  /** 读取一次刷新作业快照；watch 不可用时由界面轮询兜底。 */
+  getRefreshJob: async (jobId: string): Promise<{ ok: boolean; job: AccountRefreshJob }> => {
+    const response = await api.get<{ ok: boolean; job: AccountRefreshJob }>(
+      `/webui/accounts/refresh-jobs/${encodeURIComponent(jobId)}`,
+      { timeout: 15_000 }
+    );
     return response.data;
   },
 

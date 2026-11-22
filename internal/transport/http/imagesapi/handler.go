@@ -73,6 +73,9 @@ type Dependencies struct {
 	Providers ProviderResolver
 	// HTTP 是执行上游调用的客户端；为 nil 时使用 http.DefaultClient。
 	HTTP images.HTTPDoer
+	// AccountEgress 可选：按候选账号返回该账号的出站客户端。
+	// 返回 nil,nil 表示未绑定出口；返回错误则本次账号尝试失败并换号。
+	AccountEgress func(ctx context.Context, account images.Account) (images.HTTPDoer, error)
 	// Authorizer 在读取请求体前校验客户端凭据。
 	Authorizer Authorizer
 	// Blobs 在 response_format=url 时接收生成的图片。
@@ -142,6 +145,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		Registry:               dependencies.Registry,
 		Accounts:               dependencies.Accounts,
 		HTTP:                   dependencies.HTTP,
+		AccountEgress:          dependencies.AccountEgress,
 		Upstream429Retries:     dependencies.Upstream429Retries,
 		Attempts:               dependencies.Attempts,
 		CredentialObservations: dependencies.CredentialObservations,

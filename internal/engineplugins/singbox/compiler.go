@@ -1,5 +1,3 @@
-//go:build !no_builtin_renderers
-
 // Package singbox 是 sing-box 的 egress.engine 插件编译器。
 //
 // 它只负责描述能力、定位内核、把节点/规则/DNS 编译成配置与启动参数；
@@ -17,7 +15,8 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/application/egressengine"
-	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
+	"github.com/madou1217/ai_home/internal/runtime/proxycompile"
+	"github.com/madou1217/ai_home/internal/runtime/proxykit"
 )
 
 const (
@@ -45,13 +44,13 @@ func Descriptor() egressengine.Descriptor {
 
 // Resolve 定位 sing-box 并统计可编译节点。
 func Resolve(request egressengine.ResolveRequest) (egressengine.ResolveResult, error) {
-	kernel := subaggregator.ResolvePoolKernel(engineID, request.AIHomeDir, request.Platform)
+	kernel := proxykit.ResolvePoolKernel(engineID, request.AIHomeDir, request.Platform)
 	if kernel == nil {
 		return egressengine.ResolveResult{}, errors.New("sing_box_binary_not_found")
 	}
 	usable := 0
 	for _, node := range request.Nodes {
-		compiled, err := subaggregator.CompileSingBoxOutbound(toSubaggregatorNode(node), "probe", kernel.Version, false)
+		compiled, err := proxycompile.CompileSingBoxOutbound(toCompilerNode(node), "probe", kernel.Version, false)
 		if err == nil && !compiled.IsEndpoint {
 			usable++
 		}
@@ -82,7 +81,7 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 	nodeTags := make([]egressengine.NodeTag, 0, len(request.Nodes))
 	for index, node := range request.Nodes {
 		tag := fmt.Sprintf("node-%d", index)
-		compiled, err := subaggregator.CompileSingBoxOutbound(toSubaggregatorNode(node), tag, request.Version, false)
+		compiled, err := proxycompile.CompileSingBoxOutbound(toCompilerNode(node), tag, request.Version, false)
 		if err != nil || compiled.IsEndpoint {
 			continue
 		}
@@ -230,8 +229,8 @@ func loopbackBind(address string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func toSubaggregatorNode(node egressengine.Node) subaggregator.ProxyNode {
-	out := make(subaggregator.ProxyNode, len(node.Options)+6)
+func toCompilerNode(node egressengine.Node) proxycompile.ProxyNode {
+	out := make(proxycompile.ProxyNode, len(node.Options)+6)
 	for key, value := range node.Options {
 		out[key] = value
 	}
@@ -326,7 +325,7 @@ func identity(protocol, server string, port int) string {
 	return fmt.Sprintf("%s|%s|%d", p, s, port)
 }
 
-func yamlMapToMap(m *subaggregator.YAMLMap) map[string]any {
+func yamlMapToMap(m *proxykit.YAMLMap) map[string]any {
 	if m == nil {
 		return map[string]any{}
 	}
@@ -339,9 +338,9 @@ func yamlMapToMap(m *subaggregator.YAMLMap) map[string]any {
 
 func convertYAMLValue(value any) any {
 	switch typed := value.(type) {
-	case *subaggregator.YAMLMap:
+	case *proxykit.YAMLMap:
 		return yamlMapToMap(typed)
-	case subaggregator.YAMLMap:
+	case proxykit.YAMLMap:
 		return yamlMapToMap(&typed)
 	case []any:
 		out := make([]any, len(typed))

@@ -1,5 +1,3 @@
-//go:build !no_builtin_renderers
-
 // Command aih-engine-mihomo 是 egress.engine 进程插件：mihomo。
 //
 // 协议：行分隔 JSON-RPC（describe/resolve/compile/shutdown）；只编译配置与启动

@@ -1,5 +1,3 @@
-//go:build !no_builtin_renderers
-
 // Package mihomo 是 mihomo 的 egress.engine 插件编译器。
 //
 // 只负责定位内核、编译配置/启动参数；进程/控制面/健康/回收由宿主负责。
@@ -19,7 +17,8 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/egressengine"
-	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
+	"github.com/madou1217/ai_home/internal/runtime/proxycompile"
+	"github.com/madou1217/ai_home/internal/runtime/proxykit"
 )
 
 const (
@@ -72,7 +71,7 @@ func Resolve(request egressengine.ResolveRequest) (egressengine.ResolveResult, e
 	_ = source
 	usable := 0
 	for _, node := range request.Nodes {
-		if _, err := subaggregator.CompileMihomoProxy(toSubaggregatorNode(node), "probe", "mihomo"); err == nil {
+		if _, err := proxycompile.CompileMihomoProxy(toCompilerNode(node), "probe", "mihomo"); err == nil {
 			usable++
 		}
 	}
@@ -102,7 +101,7 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 	nodeTags := make([]egressengine.NodeTag, 0, len(request.Nodes))
 	for index, node := range request.Nodes {
 		tag := fmt.Sprintf("node-%d", index)
-		compiled, err := subaggregator.CompileMihomoProxy(toSubaggregatorNode(node), tag, "mihomo")
+		compiled, err := proxycompile.CompileMihomoProxy(toCompilerNode(node), tag, "mihomo")
 		if err != nil || compiled == nil {
 			continue
 		}
@@ -216,8 +215,8 @@ func applyLease(config map[string]any, lease *egressengine.Lease) {
 	config["profile"] = map[string]any{"store-selected": false, "store-fake-ip": false}
 }
 
-func toSubaggregatorNode(node egressengine.Node) subaggregator.ProxyNode {
-	out := make(subaggregator.ProxyNode, len(node.Options)+6)
+func toCompilerNode(node egressengine.Node) proxycompile.ProxyNode {
+	out := make(proxycompile.ProxyNode, len(node.Options)+6)
 	for key, value := range node.Options {
 		out[key] = value
 	}
@@ -338,7 +337,7 @@ func identity(protocol, server string, port int) string {
 	return fmt.Sprintf("%s|%s|%d", p, s, port)
 }
 
-func yamlMapToMap(m *subaggregator.YAMLMap) map[string]any {
+func yamlMapToMap(m *proxykit.YAMLMap) map[string]any {
 	if m == nil {
 		return map[string]any{}
 	}
@@ -351,9 +350,9 @@ func yamlMapToMap(m *subaggregator.YAMLMap) map[string]any {
 
 func convertValue(value any) any {
 	switch typed := value.(type) {
-	case *subaggregator.YAMLMap:
+	case *proxykit.YAMLMap:
 		return yamlMapToMap(typed)
-	case subaggregator.YAMLMap:
+	case proxykit.YAMLMap:
 		return yamlMapToMap(&typed)
 	case []any:
 		out := make([]any, len(typed))

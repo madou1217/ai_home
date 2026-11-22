@@ -762,25 +762,6 @@ func BuildImportLinks(origin, token, profileName string) (ImportLinksResult, boo
 	}, true
 }
 
-type RelayEndpoint struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	UDP      bool
-}
-
-var (
-	multiSpacePattern = regexp.MustCompile(`\s+`)
-	surgeNameBadChars = strings.NewReplacer(",", " ", "=", " ")
-)
-
-func SanitizeSurgeName(name string) string {
-	cleaned := surgeNameBadChars.Replace(name)
-	cleaned = multiSpacePattern.ReplaceAllString(cleaned, " ")
-	return strings.TrimSpace(cleaned)
-}
-
 var targetAliases = map[string]string{
 	"clash":         "mihomo",
 	"clash-meta":    "mihomo",

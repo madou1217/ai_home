@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/application/profilerender"
+	"github.com/madou1217/ai_home/internal/runtime/proxykit"
 )
 
 type Renderer struct {
@@ -1272,7 +1273,7 @@ func newJSONRenderer() Renderer {
 		},
 		CompileNode: func(entry PlannedNode, _ string, _ RenderContext) (any, error) {
 			proto := NormalizeProtocolAlias(entry.Node.Str("protocol"))
-			meta, ok := protocolRegistry[proto]
+			fields, ok := proxykit.ProtocolFields(proto)
 			if !ok {
 				if proto == "" {
 					proto = "empty"
@@ -1285,7 +1286,7 @@ func newJSONRenderer() Renderer {
 			m.Set("protocol", proto)
 			m.Set("server", entry.Node.Str("server"))
 			m.Set("port", port)
-			for _, field := range meta.Fields {
+			for _, field := range fields {
 				val, exists := entry.Node[field]
 				if !exists || val == nil {
 					continue

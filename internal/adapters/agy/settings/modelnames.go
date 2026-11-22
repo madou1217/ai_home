@@ -10,12 +10,13 @@ func ResolveModelName(value string) string {
 	return modelnames.Resolve(value)
 }
 
-// ListModelNames 返回全部合法显示名（按声明顺序）。
+// ListModelNames 返回 settings 自愈可闭环使用的显示名（按声明顺序）。
+// Provider 配置目录需要全部 CLI 候选时，应直接使用 modelnames.List。
 func ListModelNames() []string {
-	return modelnames.List()
+	return modelnames.ListMapped()
 }
 
-// DefaultModelName 返回自愈使用的缺省显示名（列表第一项）。
+// DefaultModelName 返回 settings 自愈使用的首个已映射显示名。
 func DefaultModelName() string {
-	return modelnames.Default()
+	return modelnames.DefaultMapped()
 }

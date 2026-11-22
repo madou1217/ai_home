@@ -90,14 +90,43 @@ func Resolve(value string) string {
 }
 
 // List 返回全部合法显示名（按声明顺序）的副本。
+//
+// 这里包含 CLI 已确认接受、但当前尚未建立内部 id 映射的 namesOnly；
+// Provider 配置目录需要展示这些真实可接受的值。
 func List() []string {
 	return append([]string(nil), names...)
 }
 
-// Default 返回自愈使用的缺省显示名（列表第一项，Node listAgyCliModelNames()[0]）。
+// ListMapped 返回已有内部 id 映射的显示名。
+//
+// 旧的设置自愈接口只应从可做 id↔显示名闭环的集合中选默认值；
+// namesOnly 可以作为人工配置候选，但不能成为没有内部 id 反查的自愈默认值。
+func ListMapped() []string {
+	list := make([]string, 0, len(aliases))
+	seen := make(map[string]struct{}, len(aliases))
+	for _, item := range aliases {
+		if _, exists := seen[item.Name]; exists {
+			continue
+		}
+		seen[item.Name] = struct{}{}
+		list = append(list, item.Name)
+	}
+	return list
+}
+
+// Default 返回 Provider 配置目录使用的首个合法显示名。
 func Default() string {
 	if len(names) == 0 {
 		return ""
 	}
 	return names[0]
+}
+
+// DefaultMapped 返回设置自愈使用的首个已映射显示名。
+func DefaultMapped() string {
+	mapped := ListMapped()
+	if len(mapped) == 0 {
+		return ""
+	}
+	return mapped[0]
 }

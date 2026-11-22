@@ -3434,6 +3434,69 @@ export interface AihPluginDoctorReport extends AihPluginReport {
   capabilities?: Record<string, number>;
 }
 
+export type NetworkConnectorConnectivityMode =
+  | 'direct-p2p'
+  | 'peer-relay'
+  | 'derp-relay'
+  | 'outbound-tunnel'
+  | 'wireguard-tunnel'
+  | 'unavailable'
+  | 'unknown';
+
+export type NetworkConnectorInputKind = 'none' | 'custom' | 'secret';
+
+export interface NetworkConnectorOperation {
+  id: string;
+  label?: string;
+  inputKind?: NetworkConnectorInputKind;
+  confirmation?: string;
+}
+
+export interface NetworkConnectorDescriptor {
+  id: string;
+  name: string;
+  description?: string;
+  transport?: string;
+  operations: NetworkConnectorOperation[];
+  config?: { schema?: Record<string, unknown>; secretFields?: string[] };
+  connectivityModes?: NetworkConnectorConnectivityMode[];
+  instanceId: string;
+  contributionId: string;
+  generation: number;
+}
+
+export interface NetworkConnectorStatus {
+  installed: boolean;
+  enabled: boolean;
+  running: boolean;
+  state?: string;
+  version?: string;
+  message?: string;
+  connectivity?: {
+    mode: NetworkConnectorConnectivityMode;
+    confidence?: string;
+    observedAt?: string;
+    peerId?: string;
+    latencyMs?: number;
+    evidence?: { source?: string; path?: string; transport?: string };
+  };
+}
+
+export interface NetworkConnectorView {
+  connector: NetworkConnectorDescriptor;
+  status?: NetworkConnectorStatus;
+  error?: string;
+}
+
+export interface NetworkConnectorOperationResult {
+  connectorId: string;
+  action: string;
+  ok: boolean;
+  changed?: boolean;
+  message?: string;
+  status?: NetworkConnectorStatus;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;

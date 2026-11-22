@@ -26,6 +26,7 @@ import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
 import GeoResourcePanel from '@/features/geo-resource/GeoResourcePanel';
 import NativeResourcesPanel from '@/components/toolkit/NativeResourcesPanel';
 import AihPluginPanel from '@/components/toolkit/AihPluginPanel';
+import NetworkConnectorPanel from '@/components/toolkit/NetworkConnectorPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
 import { isSameCommittedIntent, resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
@@ -97,7 +98,7 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'network-access',
       label: '接入与隧道',
-      description: 'FRP 接入配置',
+      description: 'FRP 接入；网格、隧道与 P2P 由仓外插件提供',
       icon: <ApiOutlined />
     },
     {
@@ -164,7 +165,12 @@ function renderPanel(panelId: string) {
     case 'mirrors':
       return <MirrorManagerPanel />;
     case 'network-access':
-      return <ManagedToolsPanel category="network-access" />;
+      return (
+        <>
+          <ManagedToolsPanel category="network-access" />
+          <NetworkConnectorPanel />
+        </>
+      );
     case 'subscription-aggregator':
       return <SubscriptionAggregatorPanel />;
     case 'egress-pool':

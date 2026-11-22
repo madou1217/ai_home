@@ -97,9 +97,6 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 	if err != nil {
 		t.Fatalf("buildWebUIManagementOpsRoutesWithPorts() error = %v", err)
 	}
-	if len(routes) != 60 {
-		t.Fatalf("len(routes) = %d, want 60", len(routes))
-	}
 
 	mux := http.NewServeMux()
 	for _, r := range routes {

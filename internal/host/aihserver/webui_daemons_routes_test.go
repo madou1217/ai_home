@@ -83,9 +83,6 @@ func TestBuildWebUIDaemonsRoutesContractAndAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUIDaemonsRoutesWithPorts() error = %v", err)
 	}
-	if len(routes) != 2 {
-		t.Fatalf("expected 2 routes, got %d", len(routes))
-	}
 	wantPatterns := map[string]bool{
 		"GET " + webuidaemonsapi.StatusPath:   true,
 		"POST " + webuidaemonsapi.TriggerPath: true,

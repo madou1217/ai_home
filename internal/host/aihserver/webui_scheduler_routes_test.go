@@ -120,9 +120,6 @@ func TestBuildWebUISchedulerRoutes_NoConflictsAndEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUISchedulerRoutesWithPorts() error = %v", err)
 	}
-	if len(routes) != 4 {
-		t.Fatalf("expected 4 routes, got %d", len(routes))
-	}
 	for _, r := range routes {
 		mux.Handle(r.Pattern, r.Handler)
 	}

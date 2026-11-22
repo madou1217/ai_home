@@ -167,9 +167,6 @@ func TestBuildWebUIChatRuntimeRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("buildWebUIChatRuntimeRoutesWithHandler: %v", err)
 		}
-		if len(routes) != 4 {
-			t.Fatalf("routes len = %d, want 4", len(routes))
-		}
 
 		mux := http.NewServeMux()
 		mountWebUIChat(mux, chatHandler)

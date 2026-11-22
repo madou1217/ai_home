@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Dropdown, Input, Popconfirm, Tooltip } from 'antd';
+import { Button, Input, Popconfirm, Popover, Select, Tooltip } from 'antd';
 import {
   CodeOutlined,
   CopyOutlined,
@@ -13,7 +13,8 @@ import {
   ReloadOutlined,
   RightOutlined
 } from '@ant-design/icons';
-import { workspaceConnectorsAPI } from '@/services/api';
+import { remoteTargetsAPI, workspaceConnectorsAPI } from '@/services/api';
+import type { RemoteAccountFact, RemoteModelFact, RemoteTargetInventory } from '@/features/remote-targets/remote-targets-model';
 import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
 import type {
   WorkspaceConnector,
@@ -48,6 +49,21 @@ function formatSize(value?: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function accountOptionLabel(account: RemoteAccountFact): string {
+  const alias = account.cliAccountId ? `#${account.cliAccountId}` : account.accountRef.slice(-6);
+  return `${alias} · ${account.effectiveModels} models`;
+}
+
+function modelOptionLabel(model: RemoteModelFact): string {
+  return model.cliModelName && model.cliModelName !== model.catalogModelId
+    ? `${model.catalogModelId} · CLI ${model.cliModelName}`
+    : model.catalogModelId;
+}
+
+function modelOptionValue(model: RemoteModelFact): string {
+  return model.cliModelName || model.catalogModelId;
+}
+
 function entryIcon(entry: WorkspaceDirectoryEntry) {
   if (entry.type === 'dir') return <FolderOutlined />;
   if (entry.type === 'symlink') return <LinkOutlined />;
@@ -70,6 +86,13 @@ export default function WorkspaceConnectorPanel() {
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [entriesTruncated, setEntriesTruncated] = useState(false);
   const [agentOpening, setAgentOpening] = useState('');
+  const [pickerWorkspace, setPickerWorkspace] = useState<WorkspaceConnector | null>(null);
+  const [pickerAgent, setPickerAgent] = useState<'codex' | 'claude'>('codex');
+  const [pickerAccount, setPickerAccount] = useState('');
+  const [pickerModel, setPickerModel] = useState('');
+  const [pickerError, setPickerError] = useState('');
+  const [catalog, setCatalog] = useState<RemoteTargetInventory | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,11 +155,11 @@ export default function WorkspaceConnectorPanel() {
     }
   };
 
-  const openAgent = async (workspace: WorkspaceConnector, agent: 'codex' | 'claude') => {
+  const openAgent = async (workspace: WorkspaceConnector, agent: 'codex' | 'claude', account: string, model: string) => {
     setAgentOpening(workspace.id);
     setError('');
     try {
-      const result = await workspaceConnectorsAPI.openAgentTerminal(workspace.id, agent);
+      const result = await workspaceConnectorsAPI.openAgentTerminal(workspace.id, agent, { account, model });
       if (!result.ok || !result.sessionKey) {
         setError('打开 AI 终端失败');
         return;
@@ -156,6 +179,33 @@ export default function WorkspaceConnectorPanel() {
     }
   };
 
+  const applyPickerDefaults = useCallback((inventory: RemoteTargetInventory | null, agent: 'codex' | 'claude') => {
+    const accounts = (inventory?.accounts || []).filter((item) => item.provider === agent && item.enabled);
+    const account = accounts.find((item) => item.effectiveModels > 0) || accounts[0];
+    setPickerAccount(account ? (account.cliAccountId || account.accountRef) : '');
+    const models = (inventory?.models || []).filter(
+      (item) => item.provider === agent && item.accountRef === account?.accountRef && item.effective
+    );
+    const preferred = models.find((item) => item.catalogModelId === 'gpt-5.6-luna') || models[0];
+    setPickerModel(preferred ? (preferred.cliModelName || preferred.catalogModelId) : '');
+  }, []);
+
+  const openPicker = useCallback(async (workspace: WorkspaceConnector) => {
+    setPickerWorkspace(workspace);
+    setPickerError('');
+    if (catalog) { applyPickerDefaults(catalog, pickerAgent); return; }
+    setCatalogLoading(true);
+    try {
+      const response = await remoteTargetsAPI.list();
+      setCatalog(response.inventory);
+      applyPickerDefaults(response.inventory, pickerAgent);
+    } catch (catalogError) {
+      setPickerError(errorMessage(catalogError));
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [applyPickerDefaults, catalog, pickerAgent]);
+
   const revoke = async (workspaceId: string) => {
     setError('');
     try {
@@ -170,6 +220,12 @@ export default function WorkspaceConnectorPanel() {
       setError(errorMessage(revokeError));
     }
   };
+
+  const pickerAccounts = (catalog?.accounts || []).filter((item) => item.provider === pickerAgent && item.enabled);
+  const pickerAccountFact = pickerAccounts.find((item) => (item.cliAccountId || item.accountRef) === pickerAccount);
+  const pickerModels = (catalog?.models || []).filter(
+    (item) => item.provider === pickerAgent && item.accountRef === pickerAccountFact?.accountRef && item.effective
+  );
 
   return (
     <section className="ws-connector" aria-label="本地工作区 Connector">
@@ -289,26 +345,83 @@ export default function WorkspaceConnectorPanel() {
                       }}
                     />
                   </Tooltip>
-                  <Dropdown
-                    trigger={['click']}
-                    menu={{
-                      items: [
-                        { key: 'codex', label: 'Codex 终端' },
-                        { key: 'claude', label: 'Claude 终端' }
-                      ],
-                      onClick: ({ key }) => void openAgent(workspace, key === 'claude' ? 'claude' : 'codex')
+                  <Popover
+                    trigger="click"
+                    open={pickerWorkspace?.id === workspace.id}
+                    onOpenChange={(open) => {
+                      if (open) {
+                        void openPicker(workspace);
+                      } else {
+                        setPickerWorkspace(null);
+                      }
                     }}
+                    content={(
+                      <div className="ws-connector-picker">
+                        <span className="ws-connector-picker-label">Agent</span>
+                        <Select
+                          size="small"
+                          value={pickerAgent}
+                          options={[{ value: 'codex', label: 'Codex' }, { value: 'claude', label: 'Claude' }]}
+                          onChange={(value: 'codex' | 'claude') => {
+                            setPickerAgent(value);
+                            applyPickerDefaults(catalog, value);
+                          }}
+                        />
+                        <span className="ws-connector-picker-label">账号</span>
+                        <Select
+                          size="small"
+                          value={pickerAccount || undefined}
+                          loading={catalogLoading}
+                          placeholder="选择账号"
+                          options={pickerAccounts.map((account) => ({
+                            value: account.cliAccountId || account.accountRef,
+                            label: accountOptionLabel(account)
+                          }))}
+                          onChange={(value: string) => {
+                            setPickerAccount(value);
+                            const fact = pickerAccounts.find((item) => (item.cliAccountId || item.accountRef) === value);
+                            const models = (catalog?.models || []).filter(
+                              (item) => item.provider === pickerAgent && item.accountRef === fact?.accountRef && item.effective
+                            );
+                            const preferred = models.find((item) => item.catalogModelId === 'gpt-5.6-luna') || models[0];
+                            setPickerModel(preferred ? modelOptionValue(preferred) : '');
+                          }}
+                        />
+                        <span className="ws-connector-picker-label">模型</span>
+                        <Select
+                          size="small"
+                          value={pickerModel || undefined}
+                          placeholder="选择模型"
+                          options={pickerModels.map((model) => ({
+                            value: modelOptionValue(model),
+                            label: modelOptionLabel(model)
+                          }))}
+                          onChange={setPickerModel}
+                        />
+                        {pickerError ? <span className="ws-connector-picker-error">{pickerError}</span> : null}
+                        <Button
+                          type="primary"
+                          size="small"
+                          block
+                          disabled={!pickerAccount || !pickerModel}
+                          loading={agentOpening === workspace.id}
+                          onClick={() => void openAgent(workspace, pickerAgent, pickerAccount, pickerModel)}
+                        >
+                          打开终端
+                        </Button>
+                      </div>
+                    )}
                   >
                     <Button
                       type="text"
                       size="small"
                       icon={<CodeOutlined />}
                       aria-label="打开 AI 终端"
-                      title="用 Codex/Claude 打开（工具经 Workspace Connector）"
+                      title="选择账号和模型后打开 Codex/Claude（工具经 Workspace Connector）"
                       loading={agentOpening === workspace.id}
                       disabled={workspace.state !== 'online'}
                     />
-                  </Dropdown>
+                  </Popover>
                   <Popconfirm
                     title="撤销这个本地工作区？"
                     description="撤销后远程执行不能再用这个目录，需重新登记。"

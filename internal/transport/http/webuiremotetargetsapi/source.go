@@ -118,6 +118,7 @@ func (source FactsSource) Read(ctx context.Context) (remoteexecution.Facts, erro
 		account := overview.Account()
 		facts.Accounts = append(facts.Accounts, remoteexecution.AccountFact{
 			AccountRef:        accountRef,
+			CLIAccountID:      account.CLIAccountID().String(),
 			Provider:          set.ProviderID,
 			Enabled:           account.Enabled(),
 			CredentialKnown:   overview.HasCredential(),

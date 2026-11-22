@@ -89,6 +89,9 @@ type RunnerFact struct {
 // AccountFact contains only non-secret account identity and model evidence.
 type AccountFact struct {
 	AccountRef        string `json:"accountRef"`
+	// CLIAccountID is the provider-local numeric alias accepted by aih's
+	// account launch path. It is not a credential.
+	CLIAccountID      string `json:"cliAccountId,omitempty"`
 	Provider          string `json:"provider"`
 	Enabled           bool   `json:"enabled"`
 	CredentialKnown   bool   `json:"credentialKnown"`

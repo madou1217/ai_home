@@ -28,6 +28,7 @@ export interface RemoteRunnerFact {
 
 export interface RemoteAccountFact {
   accountRef: string;
+  cliAccountId?: string;
   provider: string;
   enabled: boolean;
   credentialKnown: boolean;

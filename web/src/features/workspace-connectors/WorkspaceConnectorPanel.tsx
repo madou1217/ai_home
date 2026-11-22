@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Input, Popconfirm, Tooltip } from 'antd';
+import { Button, Dropdown, Input, Popconfirm, Tooltip } from 'antd';
 import {
   CodeOutlined,
   CopyOutlined,
@@ -14,6 +14,7 @@ import {
   RightOutlined
 } from '@ant-design/icons';
 import { workspaceConnectorsAPI } from '@/services/api';
+import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
 import type {
   WorkspaceConnector,
   WorkspaceConnectorEnrollment,
@@ -54,6 +55,7 @@ function entryIcon(entry: WorkspaceDirectoryEntry) {
 }
 
 export default function WorkspaceConnectorPanel() {
+  const manager = useWebTerminalManager();
   const [workspaces, setWorkspaces] = useState<WorkspaceConnector[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -67,6 +69,7 @@ export default function WorkspaceConnectorPanel() {
   const [entries, setEntries] = useState<WorkspaceDirectoryEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [entriesTruncated, setEntriesTruncated] = useState(false);
+  const [agentOpening, setAgentOpening] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +132,30 @@ export default function WorkspaceConnectorPanel() {
     }
   };
 
+  const openAgent = async (workspace: WorkspaceConnector, agent: 'codex' | 'claude') => {
+    setAgentOpening(workspace.id);
+    setError('');
+    try {
+      const result = await workspaceConnectorsAPI.openAgentTerminal(workspace.id, agent);
+      if (!result.ok || !result.sessionKey) {
+        setError('打开 AI 终端失败');
+        return;
+      }
+      manager.openTab({
+        sessionKey: result.sessionKey,
+        serverId: manager.serverId,
+        label: result.label || `${workspace.label} · ${agent}`,
+        cwd: result.rootLabel || workspace.rootLabel || '',
+        kind: 'shell'
+      });
+      if (manager.minimized) manager.setMinimized(false);
+    } catch (agentError) {
+      setError(errorMessage(agentError));
+    } finally {
+      setAgentOpening('');
+    }
+  };
+
   const revoke = async (workspaceId: string) => {
     setError('');
     try {
@@ -176,7 +203,7 @@ export default function WorkspaceConnectorPanel() {
       </div>
 
       <p className="ws-connector-note">
-        目录在本机，模型和 Agent 在 Server；Connector 不持有 Provider 凭据。
+        目录在本机，模型和 Agent 在 Server；Connector 不持有 Provider 凭据。Codex/Claude 的 AI 终端经 Connector 调用工具；AGY 仍是 PTY-only。
       </p>
 
       {enrollOpen ? (
@@ -262,6 +289,26 @@ export default function WorkspaceConnectorPanel() {
                       }}
                     />
                   </Tooltip>
+                  <Dropdown
+                    trigger={['click']}
+                    menu={{
+                      items: [
+                        { key: 'codex', label: 'Codex 终端' },
+                        { key: 'claude', label: 'Claude 终端' }
+                      ],
+                      onClick: ({ key }) => void openAgent(workspace, key === 'claude' ? 'claude' : 'codex')
+                    }}
+                  >
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CodeOutlined />}
+                      aria-label="打开 AI 终端"
+                      title="用 Codex/Claude 打开（工具经 Workspace Connector）"
+                      loading={agentOpening === workspace.id}
+                      disabled={workspace.state !== 'online'}
+                    />
+                  </Dropdown>
                   <Popconfirm
                     title="撤销这个本地工作区？"
                     description="撤销后远程执行不能再用这个目录，需重新登记。"

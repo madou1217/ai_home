@@ -30,6 +30,9 @@ type remoteToolsLaunchContext struct {
 	WorkspaceID string `json:"workspaceId"`
 	ToolsURL    string `json:"toolsUrl"`
 	Token       string `json:"token"`
+	// Tools overrides tools/list for channel-specific capability sets. The
+	// connector launch uses this to omit run_command until jobs are supported.
+	Tools []any `json:"tools,omitempty"`
 }
 
 // RunRemoteToolsMCP 在 stdin/stdout 上服务 MCP 协议，直到 stdin 关闭。
@@ -102,6 +105,9 @@ func handleRemoteToolsMessage(message map[string]any, launch remoteToolsLaunchCo
 	case "ping":
 		return remoteToolsReply(id, map[string]any{})
 	case "tools/list":
+		if len(launch.Tools) > 0 {
+			return remoteToolsReply(id, map[string]any{"tools": launch.Tools})
+		}
 		return remoteToolsReply(id, map[string]any{"tools": RemoteToolDefinitions()})
 	case "tools/call":
 		name, _ := params["name"].(string)

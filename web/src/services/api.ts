@@ -159,6 +159,7 @@ import type {
   RemoteTargetResolutionResponse
 } from '@/features/remote-targets/remote-targets-model';
 import type {
+  WorkspaceAgentTerminalResponse,
   WorkspaceConnectorEnrollmentResponse,
   WorkspaceConnectorListResponse,
   WorkspaceDirectoryResponse
@@ -2826,6 +2827,17 @@ export const workspaceConnectorsAPI = {
     const response = await api.get<WorkspaceDirectoryResponse>(
       `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/entries`,
       { params: path ? { path } : {} }
+    );
+    return response.data;
+  },
+  openAgentTerminal: async (
+    workspaceId: string,
+    agent: 'codex' | 'claude',
+    options: { fresh?: boolean; cols?: number; rows?: number } = {}
+  ): Promise<WorkspaceAgentTerminalResponse> => {
+    const response = await api.post<WorkspaceAgentTerminalResponse>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/agent-terminal`,
+      { agent, ...options }
     );
     return response.data;
   }

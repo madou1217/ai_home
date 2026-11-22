@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/remoteconnector"
@@ -24,6 +25,7 @@ const (
 	defaultSearchDepth = 8
 	maxSearchDepth     = 16
 	maxSearchVisited   = 20000
+	maxSearchFileBytes = 1 << 20
 )
 
 type filesystem struct {
@@ -265,8 +267,23 @@ func (fs *filesystem) search(ctx context.Context, request remoteconnector.Search
 		return remoteconnector.SearchResult{}, err
 	}
 	query := strings.TrimSpace(request.Query)
-	if query == "" || len(query) > 128 {
-		return remoteconnector.SearchResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidQuery, "search query must be between 1 and 128 bytes")
+	if query == "" || len(query) > 256 {
+		return remoteconnector.SearchResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidQuery, "search query must be between 1 and 256 bytes")
+	}
+	mode := strings.ToLower(strings.TrimSpace(request.Mode))
+	if mode == "" {
+		mode = remoteconnector.SearchModePath
+	}
+	if mode != remoteconnector.SearchModePath && mode != remoteconnector.SearchModeContent {
+		return remoteconnector.SearchResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidQuery, "search mode must be path or content")
+	}
+	var contentPattern *regexp.Regexp
+	if mode == remoteconnector.SearchModeContent {
+		compiled, compileErr := regexp.Compile(query)
+		if compileErr != nil {
+			return remoteconnector.SearchResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidQuery, "content search query is not a valid regular expression")
+		}
+		contentPattern = compiled
 	}
 	start, err := fs.sandbox.resolve(request.Path, false)
 	if err != nil {
@@ -336,17 +353,38 @@ func (fs *filesystem) search(ctx context.Context, request remoteconnector.Search
 			return filepath.SkipAll
 		}
 		display := filepath.ToSlash(relative)
-		if !strings.Contains(strings.ToLower(display), needle) {
+		if mode == remoteconnector.SearchModePath {
+			if !strings.Contains(strings.ToLower(display), needle) {
+				return nil
+			}
+			match := remoteconnector.SearchMatch{Path: display, Type: "file"}
+			if info, infoErr := entry.Info(); infoErr == nil {
+				match.Size = info.Size()
+			}
+			result.Matches = append(result.Matches, match)
 			return nil
 		}
-		match := remoteconnector.SearchMatch{Path: display, Type: "file"}
-		if info, infoErr := entry.Info(); infoErr == nil {
-			match.Size = info.Size()
-			if info.IsDir() {
-				match.Type = "dir"
+		fileInfo, infoErr := entry.Info()
+		if infoErr != nil || !fileInfo.Mode().IsRegular() || fileInfo.Size() <= 0 || fileInfo.Size() > maxSearchFileBytes {
+			return nil
+		}
+		content, readErr := readBounded(path, maxSearchFileBytes)
+		if readErr != nil || strings.Contains(string(content), "\x00") {
+			return nil
+		}
+		for lineIndex, line := range strings.Split(string(content), "\n") {
+			if !contentPattern.MatchString(line) {
+				continue
+			}
+			result.Matches = append(result.Matches, remoteconnector.SearchMatch{
+				Path: display, Type: "file", Size: fileInfo.Size(),
+				Line: lineIndex + 1, Text: truncateSearchLine(line),
+			})
+			if len(result.Matches) >= limit {
+				result.Truncated = true
+				return filepath.SkipAll
 			}
 		}
-		result.Matches = append(result.Matches, match)
 		return nil
 	})
 	if walkErr != nil {
@@ -356,6 +394,14 @@ func (fs *filesystem) search(ctx context.Context, request remoteconnector.Search
 		return remoteconnector.SearchResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidPath, "search could not complete")
 	}
 	return result, nil
+}
+
+func truncateSearchLine(line string) string {
+	line = strings.TrimSpace(line)
+	if len(line) > 512 {
+		return line[:512]
+	}
+	return line
 }
 
 func decodePayload(raw json.RawMessage, target any) error {

@@ -27,9 +27,11 @@ const (
 	WorkspacePath   = remoteconnector.WorkspacePath
 	EntriesPath     = remoteconnector.EntriesPath
 	RPCPath         = remoteconnector.RPCPath
+	ToolPath        = remoteconnector.ToolPath
 
 	maxEnrollmentBodyBytes = 16 * 1024
 	maxRPCBodyBytes        = 8 * 1024 * 1024
+	maxToolBodyBytes       = 1024 * 1024
 	maxEntriesLimit        = 1000
 )
 
@@ -111,6 +113,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	if request.URL != nil && request.URL.Path == ConnectPath {
 		handler.serveConnect(response, request)
+		return
+	}
+	if strings.HasSuffix(request.URL.Path, "/tools") {
+		handler.serveTool(response, request)
 		return
 	}
 	if handler.authorizer == nil || !handler.authorizer.Authorized(request) {
@@ -265,6 +271,56 @@ func (handler *Handler) serveEntries(response http.ResponseWriter, request *http
 		return
 	}
 	writeJSON(response, http.StatusOK, entriesResponse{OK: true, WorkspaceID: workspaceID, Directory: directory})
+}
+
+type toolCallRequest struct {
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
+}
+
+// serveTool is authenticated by a workspace-scoped tool token, never by the
+// management key or the connector session token. It returns the MCP tools/call
+// shape unchanged so the stdio bridge can forward it.
+func (handler *Handler) serveTool(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		methodNotAllowed(response, http.MethodPost)
+		return
+	}
+	workspaceID := strings.TrimSpace(request.PathValue("workspaceId"))
+	if workspaceID == "" {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeWorkspaceNotFound, "workspace id is required")
+		return
+	}
+	token := strings.TrimSpace(request.Header.Get(remoteconnector.ToolTokenHeader))
+	if token == "" {
+		writeError(response, http.StatusUnauthorized, remoteconnector.CodeInvalidToken, "tool token is required")
+		return
+	}
+	workspace, err := handler.store.AuthenticateToolToken(request.Context(), workspaceID, token)
+	if err != nil {
+		writeProtocolError(response, err)
+		return
+	}
+	if workspace.ID != workspaceID {
+		writeError(response, http.StatusUnauthorized, remoteconnector.CodeInvalidToken, "tool token does not match the workspace")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, maxToolBodyBytes+1))
+	if err != nil {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeInvalidPayload, "cannot read tool call")
+		return
+	}
+	if len(body) > maxToolBodyBytes {
+		writeError(response, http.StatusRequestEntityTooLarge, remoteconnector.CodeInvalidPayload, "tool call is too large")
+		return
+	}
+	var input toolCallRequest
+	if err := json.Unmarshal(body, &input); err != nil || strings.TrimSpace(input.Name) == "" {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeInvalidPayload, "tool call must include a name")
+		return
+	}
+	result := workspaceconnector.CallTool(request.Context(), handler.hub, workspaceID, input.Name, input.Arguments)
+	writeJSON(response, http.StatusOK, result)
 }
 
 type rpcRequest struct {

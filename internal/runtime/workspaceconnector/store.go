@@ -31,8 +31,11 @@ const (
 
 	DefaultEnrollmentTTL = 10 * time.Minute
 	MaxEnrollmentTTL     = time.Hour
+	DefaultToolTokenTTL  = 12 * time.Hour
+	MaxToolTokenTTL      = 7 * 24 * time.Hour
 	maxEnrollments       = 64
 	maxWorkspaces        = 64
+	maxToolTokens        = 64
 	enrollmentRetention  = 24 * time.Hour
 	touchPersistInterval = 20 * time.Second
 
@@ -99,10 +102,21 @@ type workspaceRecord struct {
 	RevokedAt    int64                        `json:"revokedAt,omitempty"`
 }
 
+// toolTokenRecord is a workspace-scoped capability for a provider tool bridge.
+// Only the digest is persisted; the plaintext token lives in the launch context
+// file consumed by the provider child process.
+type toolTokenRecord struct {
+	TokenHash   string `json:"tokenHash"`
+	WorkspaceID string `json:"workspaceId"`
+	CreatedAt   int64  `json:"createdAt"`
+	ExpiresAt   int64  `json:"expiresAt"`
+}
+
 type persistedState struct {
 	Version     int                `json:"version"`
 	Enrollments []enrollmentRecord `json:"enrollments"`
 	Workspaces  []workspaceRecord  `json:"workspaces"`
+	ToolTokens  []toolTokenRecord  `json:"toolTokens,omitempty"`
 }
 
 func NewStore(databasePath string) (*Store, error) {
@@ -222,6 +236,99 @@ func (store *Store) ClaimEnrollment(ctx context.Context, code string, hello remo
 		return Workspace{}, "", err
 	}
 	return claimed, token, nil
+}
+
+// IssueToolToken creates a workspace-scoped token for a provider tool bridge.
+// It cannot authenticate a connector WebSocket and is cleared on revocation.
+func (store *Store) IssueToolToken(ctx context.Context, workspaceID string, ttl time.Duration) (string, int64, error) {
+	if store == nil {
+		return "", 0, errors.New("workspace connector store is nil")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return "", 0, remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceNotFound, "workspace is required")
+	}
+	if ttl <= 0 {
+		ttl = DefaultToolTokenTTL
+	}
+	if ttl > MaxToolTokenTTL {
+		ttl = MaxToolTokenTTL
+	}
+	token, err := randomToken()
+	if err != nil {
+		return "", 0, err
+	}
+	now := store.now()
+	expiresAt := now.Add(ttl).UnixMilli()
+	err = store.update(ctx, now, func(state *persistedState) error {
+		found := false
+		for _, workspace := range state.Workspaces {
+			if workspace.ID == workspaceID {
+				if workspace.RevokedAt > 0 {
+					return remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceRevoked, "workspace enrollment was revoked")
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceNotFound, "workspace is not enrolled")
+		}
+		state.ToolTokens = append(state.ToolTokens, toolTokenRecord{
+			TokenHash: hashToken(token), WorkspaceID: workspaceID,
+			CreatedAt: now.UnixMilli(), ExpiresAt: expiresAt,
+		})
+		if len(state.ToolTokens) > maxToolTokens {
+			state.ToolTokens = state.ToolTokens[len(state.ToolTokens)-maxToolTokens:]
+		}
+		return nil
+	})
+	if err != nil {
+		return "", 0, err
+	}
+	return token, expiresAt, nil
+}
+
+// AuthenticateToolToken validates a provider tool bridge token for a workspace.
+// It never upgrades the token into connector-session or management rights.
+func (store *Store) AuthenticateToolToken(ctx context.Context, workspaceID, token string) (Workspace, error) {
+	if store == nil {
+		return Workspace{}, errors.New("workspace connector store is nil")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	tokenHash := hashToken(strings.TrimSpace(token))
+	if workspaceID == "" || tokenHash == "" {
+		return Workspace{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidToken, "tool token is missing")
+	}
+	state, err := store.load(ctx)
+	if err != nil {
+		return Workspace{}, err
+	}
+	now := store.now().UnixMilli()
+	authorized := false
+	for _, record := range state.ToolTokens {
+		if record.WorkspaceID != workspaceID || !equalHash(record.TokenHash, tokenHash) {
+			continue
+		}
+		if record.ExpiresAt > 0 && record.ExpiresAt <= now {
+			return Workspace{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidToken, "tool token has expired")
+		}
+		authorized = true
+		break
+	}
+	if !authorized {
+		return Workspace{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidToken, "tool token is invalid")
+	}
+	for _, record := range state.Workspaces {
+		if record.ID != workspaceID {
+			continue
+		}
+		if record.RevokedAt > 0 {
+			return Workspace{}, remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceRevoked, "workspace enrollment was revoked")
+		}
+		return workspaceView(record), nil
+	}
+	return Workspace{}, remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceNotFound, "workspace is not enrolled")
 }
 
 // Authenticate validates a reconnect token for one workspace.
@@ -349,6 +456,13 @@ func (store *Store) Revoke(ctx context.Context, workspaceID string) error {
 			}
 			state.Workspaces[index].TokenHash = ""
 			state.Workspaces[index].LastSeenAt = now.UnixMilli()
+			keptTokens := make([]toolTokenRecord, 0, len(state.ToolTokens))
+			for _, token := range state.ToolTokens {
+				if token.WorkspaceID != workspaceID {
+					keptTokens = append(keptTokens, token)
+				}
+			}
+			state.ToolTokens = keptTokens
 			return nil
 		}
 		return remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceNotFound, "workspace is not enrolled")
@@ -401,6 +515,9 @@ func (state *persistedState) normalize(now time.Time) {
 	if state.Workspaces == nil {
 		state.Workspaces = []workspaceRecord{}
 	}
+	if state.ToolTokens == nil {
+		state.ToolTokens = []toolTokenRecord{}
+	}
 	for index := range state.Enrollments {
 		state.Enrollments[index].Capabilities = remoteconnector.NormalizeCapabilities(state.Enrollments[index].Capabilities)
 	}
@@ -421,6 +538,17 @@ func (state *persistedState) prune(now time.Time) {
 		keptEnrollments = append(keptEnrollments, enrollment)
 	}
 	state.Enrollments = keptEnrollments
+	keptTokens := make([]toolTokenRecord, 0, len(state.ToolTokens))
+	for _, token := range state.ToolTokens {
+		if token.ExpiresAt > 0 && token.ExpiresAt <= now.UnixMilli() {
+			continue
+		}
+		keptTokens = append(keptTokens, token)
+	}
+	state.ToolTokens = keptTokens
+	if len(state.ToolTokens) > maxToolTokens {
+		state.ToolTokens = state.ToolTokens[len(state.ToolTokens)-maxToolTokens:]
+	}
 }
 
 func workspaceView(record workspaceRecord) Workspace {

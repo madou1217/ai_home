@@ -32,10 +32,6 @@ const remoteAgentInstructions = "你在一个「远程工作区」里工作：�
 
 // buildRemoteAgentLaunch 返回 provider 可执行文件和参数。
 func buildRemoteAgentLaunch(aiHomeDir, workspaceID, agent string) (string, []string, []string, error) {
-	providerPath, err := exec.LookPath(agent)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("找不到 %s CLI: %w", agent, err)
-	}
 	executable, err := os.Executable()
 	if err != nil || strings.TrimSpace(executable) == "" {
 		return "", nil, nil, errors.New("aih-server executable unavailable")
@@ -58,6 +54,64 @@ func buildRemoteAgentLaunch(aiHomeDir, workspaceID, agent string) (string, []str
 		"env":     map[string]string{"AIH_LAUNCH_CONTEXT": contextPath},
 	}
 	env := []string{"AIH_HOME_DIR=" + aiHomeDir}
+	return buildProviderMCPLaunch(agent, mcpServer, env, remoteAgentInstructions)
+}
+
+const connectorAgentInstructions = "你在一个「本地工作区」里工作：项目文件在用户本机，通过 Workspace Connector 访问；模型和你在 AIH Server 上。" +
+	"只能用 aih_remote 提供的工具（read_file / write_file / edit_file / list_directory / search）读写文件；路径一律相对工作区根目录。" +
+	"修改文件前先 read_file，写回时带上它返回的 version。本机当前目录是一个空的占位目录，不要在本机查找项目文件。" +
+	"当前通道不支持 run_command，请用文件工具完成任务。"
+
+// buildConnectorAgentLaunch builds a provider launch whose MCP bridge forwards
+// tool calls to the Server tool endpoint instead of opening SSH. The provider
+// still runs on the AIH Server; only the workspace files are local.
+func buildConnectorAgentLaunch(
+	aiHomeDir, workspaceID, agent, toolsURL, toolToken string,
+	tools []map[string]any,
+) (string, []string, []string, error) {
+	switch agent {
+	case "codex", "claude":
+	case "agy":
+		return "", nil, nil, ErrAGYRemoteUnsupported
+	default:
+		return "", nil, nil, fmt.Errorf("远程工作区不支持 %s", agent)
+	}
+	if strings.TrimSpace(toolsURL) == "" || strings.TrimSpace(toolToken) == "" {
+		return "", nil, nil, errors.New("connector tool endpoint is not configured")
+	}
+	executable, err := os.Executable()
+	if err != nil || strings.TrimSpace(executable) == "" {
+		return "", nil, nil, errors.New("aih-server executable unavailable")
+	}
+	contextDir := filepath.Join(aiHomeDir, "run", "launch-context")
+	if err := os.MkdirAll(contextDir, 0o700); err != nil {
+		return "", nil, nil, err
+	}
+	contextPath := filepath.Join(contextDir, "connector-tools-"+randomHex(6)+".json")
+	raw, _ := json.Marshal(map[string]any{
+		"toolsUrl": toolsURL,
+		"token":    toolToken,
+		"tools":    tools,
+	})
+	if err := os.WriteFile(contextPath, raw, 0o600); err != nil {
+		return "", nil, nil, err
+	}
+	mcpServer := map[string]any{
+		"command": executable,
+		"args":    []string{"__mcp-remote-tools"},
+		"env":     map[string]string{"AIH_LAUNCH_CONTEXT": contextPath},
+	}
+	env := []string{"AIH_HOME_DIR=" + aiHomeDir}
+	return buildProviderMCPLaunch(agent, mcpServer, env, connectorAgentInstructions)
+}
+
+var ErrAGYRemoteUnsupported = errors.New("agy_remote_workspace_unsupported")
+
+func buildProviderMCPLaunch(agent string, mcpServer map[string]any, env []string, instructions string) (string, []string, []string, error) {
+	providerPath, err := exec.LookPath(agent)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("找不到 %s CLI: %w", agent, err)
+	}
 	switch agent {
 	case "claude":
 		configRaw, _ := json.Marshal(map[string]any{
@@ -66,7 +120,7 @@ func buildRemoteAgentLaunch(aiHomeDir, workspaceID, agent string) (string, []str
 		args := []string{
 			"--mcp-config", string(configRaw),
 			"--disallowedTools", strings.Join(remoteAgentLocalTools, ","),
-			"--append-system-prompt", remoteAgentInstructions,
+			"--append-system-prompt", instructions,
 		}
 		return providerPath, args, env, nil
 	case "codex":
@@ -74,7 +128,7 @@ func buildRemoteAgentLaunch(aiHomeDir, workspaceID, agent string) (string, []str
 			"features.shell_tool":                                     false,
 			"features.unified_exec":                                   false,
 			"project_doc_max_bytes":                                   0,
-			"developer_instructions":                                  remoteAgentInstructions,
+			"developer_instructions":                                  instructions,
 			"mcp_servers." + remoteAgentMCPName + ".command":          mcpServer["command"],
 			"mcp_servers." + remoteAgentMCPName + ".args":             mcpServer["args"],
 			"mcp_servers." + remoteAgentMCPName + ".env":              mcpServer["env"],

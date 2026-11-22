@@ -65,6 +65,19 @@ export interface WorkspaceDirectoryResponse {
   directory: WorkspaceDirectoryResult;
 }
 
+export interface WorkspaceAgentTerminalResponse {
+  ok: boolean;
+  sessionKey: string;
+  termId?: string;
+  reused?: boolean;
+  durable?: boolean;
+  workspaceId: string;
+  agent: string;
+  label: string;
+  rootLabel?: string;
+  toolExpiresAt?: number;
+}
+
 export function connectorStateLabel(state: WorkspaceConnectorState): string {
   switch (state) {
     case 'online': return '在线';

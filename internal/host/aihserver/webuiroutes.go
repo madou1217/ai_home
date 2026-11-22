@@ -29,6 +29,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
+	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/remoteexecution"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
@@ -397,6 +398,22 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建工作区 Connector 接口失败: %w", err)
+	}
+	var connectorLauncher webuisshapi.TerminalLauncher
+	if dependencies.TerminalHandler != nil {
+		connectorLauncher = webuiTerminalLauncherAdapter{handler: dependencies.TerminalHandler}
+	}
+	connectorAgentTerminal, err := webuisshapi.NewConnectorAgentTerminalHandler(webuisshapi.ConnectorAgentTerminalDependencies{
+		Authorizer:     authorizer,
+		Workspaces:     workspaceStore,
+		Online:         workspaceHub.Online,
+		IssueToolToken: workspaceStore.IssueToolToken,
+		AIHomeDir:      dependencies.AIHomeDir,
+		SelfBaseURL:    dependencies.SelfBaseURL,
+		Launcher:       connectorLauncher,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建工作区 Connector Agent 入口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -1009,6 +1026,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "DELETE " + webuiworkspaceconnectorapi.WorkspacePath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.EntriesPath, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.RPCPath, Handler: workspaceConnectors},
+		{Pattern: "POST " + webuiworkspaceconnectorapi.ToolPath, Handler: workspaceConnectors, SkipPublicAlias: true},
+		{Pattern: "POST " + remoteconnector.AgentTerminalPath, Handler: connectorAgentTerminal},
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},
 		{Pattern: "POST " + proxyleaseapi.LeasesPath, Handler: proxyAPI},
 		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},

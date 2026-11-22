@@ -208,9 +208,17 @@ type ListDirectoryResult struct {
 	Truncated bool             `json:"truncated,omitempty"`
 }
 
+const (
+	SearchModePath    = "path"
+	SearchModeContent = "content"
+)
+
 type SearchRequest struct {
-	Path       string `json:"path,omitempty"`
-	Query      string `json:"query"`
+	Path  string `json:"path,omitempty"`
+	Query string `json:"query"`
+	// Mode defaults to path. Content mode scans bounded text files with the
+	// query as a Go regular expression.
+	Mode       string `json:"mode,omitempty"`
 	MaxResults int    `json:"maxResults,omitempty"`
 	MaxDepth   int    `json:"maxDepth,omitempty"`
 }
@@ -219,6 +227,8 @@ type SearchMatch struct {
 	Path string `json:"path"`
 	Type string `json:"type"`
 	Size int64  `json:"size,omitempty"`
+	Line int    `json:"line,omitempty"`
+	Text string `json:"text,omitempty"`
 }
 
 type SearchResult struct {

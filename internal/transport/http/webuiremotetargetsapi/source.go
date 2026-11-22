@@ -156,16 +156,23 @@ func runnerFacts(catalog *providers.Catalog) []remoteexecution.RunnerFact {
 		if definition.NativeBoundary != nil && len(definition.NativeBoundary.Sessions.Flags) > 0 {
 			capabilities = append(capabilities, "session")
 		}
+		supportsRemoteTools := definition.ID == "codex" || definition.ID == "claude"
+		reason := "remote tool channel is available through the Workspace Connector"
+		if supportsRemoteTools {
+			capabilities = append(capabilities, "remote-tools")
+		} else {
+			reason = "agent has no structured tool channel; remote tools stay unsupported"
+		}
 		result = append(result, remoteexecution.RunnerFact{
 			ID:                  definition.ID,
 			Provider:            definition.ID,
 			Kind:                "native-cli",
 			Status:              "declared",
 			SupportsHeadless:    true,
-			SupportsRemoteTools: false,
+			SupportsRemoteTools: supportsRemoteTools,
 			SupportsApproval:    false,
 			Capabilities:        capabilities,
-			Reason:              "remote tool channel is not yet connected to the native runner",
+			Reason:              reason,
 		})
 	}
 	return result

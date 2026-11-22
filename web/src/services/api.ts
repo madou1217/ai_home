@@ -150,7 +150,10 @@ import type {
   ScheduledTaskSchedulePreview,
   ScheduledTaskRecordsPage,
   ScheduledTasksResponse,
-  Session
+  Session,
+  FailureSemanticPolicy,
+  FailureSemanticSignal,
+  FailureProvenanceEntry
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 import type {
@@ -3351,3 +3354,39 @@ export const providerConfigAPI = {
 };
 
 export default api;
+
+export interface FailureSemanticsOverrides {
+  policies?: Record<string, { threshold?: number; failure_window_ms?: number; default_cooldown_ms?: number }>;
+  signals?: FailureSemanticSignal[];
+  disable?: string[];
+}
+
+export interface FailureSemanticsResponse {
+  ok: boolean;
+  policies: FailureSemanticPolicy[];
+  signals: FailureSemanticSignal[];
+  overrides?: FailureSemanticsOverrides;
+  version?: number;
+}
+
+/** 失败语义与最近命中：只读视图读取 Go 的契约快照与进程内环形缓冲。 */
+export const failureSemanticsAPI = {
+  get: async (provider?: string): Promise<FailureSemanticsResponse> => {
+    const response = await api.get<FailureSemanticsResponse>('/webui/upstream-failure-semantics', {
+      params: provider ? { provider } : undefined
+    });
+    return response.data;
+  },
+  hits: async (params?: {
+    limit?: number;
+    provider?: string;
+    account_ref?: string;
+    semantic?: string;
+  }): Promise<{ entries: FailureProvenanceEntry[]; dropped: number }> => {
+    const response = await api.get<{ ok: boolean; entries: FailureProvenanceEntry[]; dropped: number }>(
+      '/webui/failure-provenance',
+      { params }
+    );
+    return { entries: response.data.entries || [], dropped: response.data.dropped || 0 };
+  }
+};

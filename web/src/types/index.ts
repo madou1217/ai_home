@@ -1257,6 +1257,57 @@ export interface ServerConfig {
   proxyUrl?: string;
   noProxy?: string;
   upstream429Retry?: Upstream429RetryGlobalConfig;
+  /** 失败语义全局覆盖；空对象表示使用内置契约（形状见 FailureSemanticsOverrides）。 */
+  upstreamFailurePolicy?: object;
+}
+
+/** 失败语义策略行（内置契约或合并覆盖后的生效值）。 */
+export interface FailureSemanticPolicy {
+  kind: string;
+  action: string;
+  threshold?: number;
+  failure_window_ms?: number;
+  default_cooldown_ms?: number;
+  block_scopes?: string[];
+  default_block_scope?: string;
+  recovery?: string;
+}
+
+/** 失败语义信号行：证据 → 语义。 */
+export interface FailureSemanticSignal {
+  id: string;
+  provider: string;
+  priority?: number;
+  statuses?: number[];
+  status_min?: number;
+  status_max?: number;
+  error_type?: string;
+  error_code?: string;
+  error_type_or_code?: string[];
+  retry_after_over_ms?: number;
+  require_conditions?: string[];
+  semantic: string;
+  block_scope?: string;
+  source?: string;
+  shadowed?: boolean;
+  enabled?: boolean;
+}
+
+/** 最近一次失败命中的记录。 */
+export interface FailureProvenanceEntry {
+  atMs: number;
+  provider: string;
+  accountRef: string;
+  model: string;
+  source: string;
+  signalId: string;
+  httpStatus?: number;
+  errorType?: string;
+  errorCode?: string;
+  semantic: string;
+  action: string;
+  recorded: boolean;
+  cooldownUntilMs?: number;
 }
 
 export interface ControlPlaneDescriptor {

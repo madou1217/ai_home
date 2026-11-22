@@ -47,6 +47,7 @@ import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import ModelAliases from './ModelAliases';
 import UpstreamErrorMappings from './UpstreamErrorMappings';
 import SshHostsPanel from './SshHostsPanel';
+import FailureSemantics from './FailureSemantics';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
@@ -105,7 +106,7 @@ const renderControlEndpointHints = (
   );
 };
 
-export type SettingsSectionKey = 'basic' | 'capture' | 'service' | 'aliases' | 'upstream-errors' | 'control-planes' | 'ssh-hosts';
+export type SettingsSectionKey = 'basic' | 'capture' | 'service' | 'aliases' | 'upstream-errors' | 'failure-semantics' | 'control-planes' | 'ssh-hosts';
 
 interface SettingsProps {
   section?: SettingsSectionKey;
@@ -156,6 +157,12 @@ const SETTINGS_PAGE_META = {
     eyebrow: '配置',
     description: '将 Provider 的错误响应转换为标准账号运行状态。'
   },
+  'failure-semantics': {
+    code: 'ROUTE',
+    title: '失败语义',
+    eyebrow: '配置',
+    description: '状态码与错误码到失败语义、冷却策略及最近命中的可视化。'
+  },
   'control-planes': {
     code: 'SERVER',
     title: 'Server 管理',
@@ -174,7 +181,7 @@ const getInitialSettingsTab = () => {
   if (typeof window === 'undefined') return 'basic';
   const params = new URLSearchParams(window.location.search);
   const tab = String(params.get('tab') || '').trim();
-  return ['capture', 'service', 'aliases', 'upstream-errors', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
+  return ['capture', 'service', 'aliases', 'upstream-errors', 'failure-semantics', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
 };
 
 const formatActiveControlPlaneLabel = (profile: ControlPlaneProfile | null) => {
@@ -902,6 +909,11 @@ const Settings = ({ section }: SettingsProps) => {
       label: '上游异常映射',
       children: upstreamErrorMappingsContent,
       actions: extraActions,
+    },
+    {
+      key: 'failure-semantics',
+      label: '失败语义',
+      children: <FailureSemantics />,
     },
     {
       key: 'control-planes',

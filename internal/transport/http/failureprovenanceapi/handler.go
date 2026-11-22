@@ -106,6 +106,7 @@ func (handler *Handler) ServeSemantics(response http.ResponseWriter, request *ht
 		"policies":      document.Policies,
 		"signals":       signals,
 		"ruleKinds":     document.RuleKinds,
+		"overrides":     failurecontract.Overrides(),
 		"version":       failurecontract.Version(),
 	})
 }

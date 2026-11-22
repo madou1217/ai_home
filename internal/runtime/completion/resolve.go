@@ -340,6 +340,10 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 		return target.items
 	}
 
+	if head == "remote" {
+		return resolveRemoteCompletion(target, context, prior, current)
+	}
+
 	if isProviderName(head) {
 		return resolveProviderCompletion(target, context, prior, head, current)
 	}

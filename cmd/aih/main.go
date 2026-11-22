@@ -122,6 +122,17 @@ func execute(args []string, runtime commandRuntime) int {
 		}
 		return 0
 	}
+	if handled, err := runRemoteCommand(context.Background(), args, runtime); handled {
+		if err != nil {
+			var silent silentExit
+			if errors.As(err, &silent) {
+				return silent.ExitCode()
+			}
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
 	// server sync-codex、serve、env、profiles、config 与生命周期在 Go 处理；其余 server 子命令仍交回 Node。
 	if handled, err := runServerSyncCodex(context.Background(), args, runtime); handled {
 		if err != nil {

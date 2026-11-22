@@ -206,3 +206,76 @@ func isAllDigits(value string) bool {
 	}
 	return true
 }
+
+func resolveRemoteCompletion(target *collector, context *resolverContext, prior []string, current string) []Candidate {
+	if context.remoteTargetLister == nil {
+		return target.items
+	}
+	if len(prior) == 1 {
+		target.add("target", "解析远程执行目标", groupSubcommand, "")
+		return target.items
+	}
+	if prior[1] != "target" {
+		return target.items
+	}
+	if len(prior) == 2 {
+		for _, action := range []namedSummary{
+			{Name: "ls", Summary: "列出远程目标候选"},
+			{Name: "resolve", Summary: "解析一个远程目标"},
+			{Name: "doctor", Summary: "预检远程目标能力"},
+		} {
+			target.add(action.Name, action.Summary, groupSubcommand, "")
+		}
+		return target.items
+	}
+	action := prior[2]
+	if action != "ls" && action != "list" && action != "resolve" && action != "doctor" && action != "preflight" {
+		return target.items
+	}
+	if action != "ls" && action != "list" && len(prior) == 3 {
+		for _, flag := range []string{"--server", "--server-id", "--workspace", "--connection", "--harness", "--provider", "--account", "--model", "--json"} {
+			target.add(flag, describeFlag(flag), groupFlag, "")
+		}
+		return target.items
+	}
+	last := prior[len(prior)-1]
+	if last == "--server" {
+		for _, profile := range listCompletionServerProfiles(context, current) {
+			target.add(profile.Value, profile.Description, groupOther, profile.Description)
+		}
+		return target.items
+	}
+	if last == "--server-id" || last == "--workspace" || last == "--connection" || last == "--harness" || last == "--provider" || last == "--account" || last == "--model" {
+		request := remoteTargetRequest{Action: "list", Server: remoteOptionValue(prior, "--server"), ServerID: remoteOptionValue(prior, "--server-id"), Workspace: remoteOptionValue(prior, "--workspace"), Connection: remoteOptionValue(prior, "--connection"), Harness: remoteOptionValue(prior, "--harness"), Provider: remoteOptionValue(prior, "--provider"), Account: remoteOptionValue(prior, "--account"), Model: remoteOptionValue(prior, "--model"), Field: strings.TrimPrefix(last, "--"), Current: current}
+		for _, choice := range context.remoteTargetLister(request) {
+			group := choice.Group
+			if group == "" {
+				group = groupOther
+			}
+			target.add(choice.Value, choice.Description, group, choice.Description)
+		}
+		return target.items
+	}
+	for _, flag := range []string{"--server", "--server-id", "--workspace", "--connection", "--harness", "--provider", "--account", "--model", "--json"} {
+		target.add(flag, describeFlag(flag), groupFlag, "")
+	}
+	return target.items
+}
+
+func remoteOptionValue(prior []string, flag string) string {
+	for index := len(prior) - 1; index >= 0; index-- {
+		if prior[index] == flag && index+1 < len(prior) {
+			return strings.TrimSpace(prior[index+1])
+		}
+	}
+	return ""
+}
+
+func listCompletionServerProfiles(context *resolverContext, current string) []remoteTargetChoice {
+	// Server profile values are intentionally resolved by the remote lister only;
+	// a nil result is the observable fail-closed state when no remote catalog is available.
+	if context.remoteTargetLister == nil {
+		return nil
+	}
+	return context.remoteTargetLister(remoteTargetRequest{Action: "profiles", Current: current})
+}

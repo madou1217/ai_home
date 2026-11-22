@@ -75,6 +75,17 @@ var coreCommands = []commandSpec{
 	},
 }
 
+var remoteCommands = []commandSpec{
+	{
+		Name:    "remote",
+		Summary: "远程执行目标、Server/Workspace/Harness/Model 选择与预检",
+		Subcommands: []namedSummary{
+			{Name: "target", Summary: "解析远程执行目标"},
+		},
+		Flags: []string{"--json", "--help"},
+	},
+}
+
 var serverNodeCommands = []commandSpec{
 	{
 		Name:    "server",
@@ -305,8 +316,9 @@ var toolCommands = []commandSpec{
 var topLevelCommands = buildTopLevelCommands()
 
 func buildTopLevelCommands() []commandSpec {
-	result := make([]commandSpec, 0, len(coreCommands)+len(serverNodeCommands)+len(toolCommands))
+	result := make([]commandSpec, 0, len(coreCommands)+len(remoteCommands)+len(serverNodeCommands)+len(toolCommands))
 	result = append(result, coreCommands...)
+	result = append(result, remoteCommands...)
 	result = append(result, serverNodeCommands...)
 	result = append(result, toolCommands...)
 	return result

@@ -395,6 +395,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		modelLister: func(request modelRequest) []modelChoice {
 			return listModelCandidates(aiHome, request)
 		},
+		remoteTargetLister: func(request remoteTargetRequest) []remoteTargetChoice {
+			return listRemoteTargetCandidates(aiHome, request)
+		},
 		aihServerProfileID: aihServerProfileID,
 		now:                environment.now(),
 	}

@@ -79,8 +79,31 @@ type resolverContext struct {
 	peerLister         func(current string) []peerChoice
 	peerMessageLister  func(current string) []peerChoice
 	modelLister        func(request modelRequest) []modelChoice
+	remoteTargetLister func(request remoteTargetRequest) []remoteTargetChoice
 	aihServerProfileID string
 	now                time.Time
+}
+
+// remoteTargetRequest describes one progressive remote target lookup.
+type remoteTargetRequest struct {
+	Action     string
+	Server     string
+	ServerID   string
+	Field      string
+	Workspace  string
+	Connection string
+	Harness    string
+	Provider   string
+	Account    string
+	Model      string
+	Current    string
+}
+
+// remoteTargetChoice is a sanitized remote candidate used only for completion.
+type remoteTargetChoice struct {
+	Value       string
+	Description string
+	Group       string
 }
 
 // aihServerProfileID 是内置网关档的稳定标识。

@@ -3,6 +3,7 @@ package egress
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
@@ -63,6 +64,12 @@ func launchPoolStrategy(ctx context.Context, aiHomeDir, provider, accountRef str
 	ref := strings.TrimSpace(accountRef)
 	_ = provider
 	state, reason := ReadLivePoolState(aiHomeDir, nil)
+	if state != nil && ref != "" && bindingUsesSessionLanes(binding) {
+		// session 策略：CLI 进程各自领一条会话车道，避免多个终端共用同一出口。
+		if alloc := AcquireSessionLane(aiHomeDir, ref, state.SessionLanes[ref], os.Getpid(), nil, 0); alloc != nil && alloc.URL != "" {
+			return LaunchEgress{Bound: true, Mode: agyegress.ModePool, ProxyURL: alloc.URL}, nil
+		}
+	}
 	laneURL := ""
 	if state != nil && ref != "" {
 		laneURL = strings.TrimSpace(state.Lanes[ref])

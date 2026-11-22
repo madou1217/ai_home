@@ -376,6 +376,16 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 
 // resolvePoolTarget 解析出口池绑定：mihomo 车道优先，没有内核/车道时回落
 // HTTP/SOCKS/SSH 直连节点池；两类都失败才 fail-closed。
+// bindingUsesSessionLanes 判断出口池绑定是否声明了 session 策略。
+//
+// session 车道由池运行时按账号写进 state.SessionLanes；解析侧必须从绑定
+// 自己识别策略，不能再要求调用方额外传 Session=true，否则该策略永远不生效。
+func bindingUsesSessionLanes(binding *agyegress.Binding) bool {
+	return binding != nil &&
+		binding.Mode == agyegress.ModePool &&
+		strings.EqualFold(strings.TrimSpace(binding.PoolStrategy), "session")
+}
+
 func (m *Manager) resolvePoolTarget(ctx context.Context, binding *agyegress.Binding, opts ResolveAccountEgressOptions) EgressResolveResult {
 	platform := firstNonEmpty(opts.Platform, m.platform)
 	// pool 模式优先走 mihomo 车道；没有可用内核/车道时回落到 HTTP/SOCKS/SSH
@@ -581,6 +591,9 @@ func (m *Manager) ResolveAccountEgress(ctx context.Context, opts ResolveAccountE
 	}
 	if binding == nil {
 		return EgressResolveResult{OK: true, Bound: false}, nil
+	}
+	if bindingUsesSessionLanes(binding) {
+		opts.Session = true
 	}
 
 	resolved := m.resolveEgressTarget(ctx, binding, opts)
@@ -799,7 +812,7 @@ func (m *Manager) GetAccountEgressRuntimeStatus(ctx context.Context, opts Runtim
 		target := m.resolveEgressTarget(ctx, binding, ResolveAccountEgressOptions{
 			Provider:   provider,
 			AccountRef: ref,
-			Session:    opts.Session,
+			Session:    opts.Session || bindingUsesSessionLanes(binding),
 			Platform:   opts.Platform,
 		})
 		if target.OK {

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountegress"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -98,6 +99,8 @@ type Dependencies struct {
 	Strategies []RefreshStrategy
 	// Clock 提供过期判断和凭据版本时间。
 	Clock accountapp.Clock
+	// Egress 可选：刷新前解析账号出口并写进请求 Context。
+	Egress accountegress.Resolver
 	// RefreshDelegated 表示另一个进程（Node 宿主）是唯一刷新者：本解析器从不调用
 	// 官方刷新协议，只使用由宿主同步进来的当前凭据。两个刷新者竞争同一个会轮换的
 	// Refresh Token 时，后到者会让先到者的 Token 失效，所以只能有一个刷新者。
@@ -155,6 +158,7 @@ type Resolver struct {
 	store                 accountapp.CredentialVersionStore
 	strategies            map[string]RefreshStrategy
 	clock                 accountapp.Clock
+	egress                accountegress.Resolver
 	flights               refreshFlightGroup
 	refreshSuppressMu     sync.Mutex
 	refreshSuppress       map[string]refreshSuppression
@@ -202,6 +206,7 @@ func NewResolver(dependencies Dependencies) (*Resolver, error) {
 		store:                 dependencies.Store,
 		strategies:            strategies,
 		clock:                 dependencies.Clock,
+		egress:                dependencies.Egress,
 		refreshDelegated:      dependencies.RefreshDelegated,
 		ownsRefresh:           dependencies.OwnsRefresh,
 		onCredentialRefreshed: dependencies.OnCredentialRefreshed,
@@ -528,6 +533,21 @@ func (resolver *Resolver) refreshSnapshot(
 		return credentialResolution{}, err
 	}
 	refreshedAt := nextCredentialVersion(now, snapshot.UpdatedAt())
+	// 刷新与普通上游调用共用同一份账号出口：绑定存在时按账号选代理，
+	// 解析失败 fail-closed，未绑定时保持默认网络。
+	if resolver.egress != nil {
+		decision, egressErr := resolver.egress.ResolveAccountEgress(
+			ctx,
+			string(snapshot.ProviderID()),
+			accountRef.String(),
+		)
+		if egressErr != nil {
+			return credentialResolution{}, egressErr
+		}
+		if decision.Bound {
+			ctx = accountegress.WithDecision(ctx, decision)
+		}
+	}
 	var credential accountapp.Credential
 	if aware, ok := strategy.(AccountAwareRefreshStrategy); ok {
 		credential, err = aware.RefreshWithAccount(

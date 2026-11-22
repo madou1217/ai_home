@@ -80,6 +80,9 @@ func isManagedValueFlag(flag string, prior []string) bool {
 	if head == "shell" && flag == "--shell" {
 		return true
 	}
+	if head == "workspace" && flag == "--server" {
+		return true
+	}
 	if head == "peer" {
 		switch flag {
 		case "--channel", "--target", "--reply-to", "--state", "--mode":
@@ -342,6 +345,10 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 
 	if head == "remote" {
 		return resolveRemoteCompletion(target, context, prior, current)
+	}
+
+	if head == "workspace" {
+		return resolveWorkspaceCompletion(target, context, prior, current)
 	}
 
 	if isProviderName(head) {

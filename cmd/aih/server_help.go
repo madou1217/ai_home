@@ -18,6 +18,7 @@ const serverUsageText = `
   aih server add [name] --url <server-url> --management-key <key>
   aih server ls [--json]
   aih remote target ls|resolve|doctor [selectors]  # 远端执行目标与预检
+  aih workspace connect|ls|enroll|revoke          # 本地工作区 Connector（只暴露显式目录，无模型）
   aih server use <id|name|url>
   aih server remove <id|name|url>
   aih server config [show|get|set|unset|list] [--show-secrets] [--qr [--qr-url <server-url>]] [--json] [--one-line] [--verbose] [<filter>] [--host <ip>] [--port <n>] [--api-key <key>|--generate-api-key] [--management-key <key>|--generate-management-key] [--proxy-url <a,b,c>] [--open-network|--local-only]

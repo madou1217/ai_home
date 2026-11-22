@@ -84,6 +84,17 @@ var remoteCommands = []commandSpec{
 		},
 		Flags: []string{"--json", "--help"},
 	},
+	{
+		Name:    "workspace",
+		Summary: "本地工作区 Connector：只暴露显式目录，不启动模型",
+		Subcommands: []namedSummary{
+			{Name: "connect", Summary: "连接本地目录并从远程 Server 观测"},
+			{Name: "ls", Summary: "列出已登记的工作区"},
+			{Name: "enroll", Summary: "生成一次性 enrollment code"},
+			{Name: "revoke", Summary: "撤销工作区登记"},
+		},
+		Flags: []string{"--server", "--root", "--label", "--code", "--json", "--help"},
+	},
 }
 
 var serverNodeCommands = []commandSpec{

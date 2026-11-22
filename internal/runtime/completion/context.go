@@ -80,6 +80,7 @@ type resolverContext struct {
 	peerMessageLister  func(current string) []peerChoice
 	modelLister        func(request modelRequest) []modelChoice
 	remoteTargetLister func(request remoteTargetRequest) []remoteTargetChoice
+	workspaceLister    func(request workspaceRequest) []remoteTargetChoice
 	aihServerProfileID string
 	now                time.Time
 }

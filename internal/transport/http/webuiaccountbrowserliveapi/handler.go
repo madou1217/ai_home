@@ -237,6 +237,9 @@ func validateCommand(cmd accountbrowserview.Command) bool {
 	if len(cmd.URL) > maxCommandURLBytes || strings.ContainsAny(cmd.URL, "\r\n\x00") {
 		return false
 	}
+	if cmd.Type == "navigate" && accountbrowserview.ValidateNavigateTarget(cmd.URL) != nil {
+		return false
+	}
 	if len(cmd.Text) > maxCommandTextBytes || strings.ContainsRune(cmd.Text, 0) {
 		return false
 	}

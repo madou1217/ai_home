@@ -82,9 +82,13 @@
   为 `hasCookie=False`，F 的 Cookies 库也没有 `localtest.me` 行；E 重开
   `/whoami` 为 `hasCookie=True`。两个账号的 `BAIDUID` creation/value 不同，
   Profile 目录与 Cookies 数据库互相独立。
-- 安全观察：`navigate` 的 loopback 判定只看主机字符串；`localtest.me` 这类解析到
-  127.0.0.1 的公网域名可以通过校验并访问本机端口（本次正是借它做隔离测试）。
-  这属于 SSRF 边界缺口，建议后续在命令路径解析并拒绝 loopback/private 结果。
+- loopback 缺口已修复（commit `ea3f89bf`）：`navigate` 现在拒绝 loopback 别名域名
+  （localtest.me/lvh.me 等）、内嵌 IP 服务（nip.io/sslip.io/xip.io）以及解析到非公网
+  地址的主机；fake-IP 代理的 198.18.0.0/15 结果不用于判定目的地。实测
+  `localtest.me`、`127.0.0.1`、`127-0-0-1.nip.io` 均返回 400，`example.com` 仍
+  返回 202 并产生帧，会话在命令被拒后继续可用。
+  残留风险：页面内部 302 跳转到 loopback、以及 fake-IP 环境下自定义域名（DNS 被
+  代理接管）仍可能绕过，需要网络层出口策略兜底。
 - 真实边界：
   - 需要第三方凭据/二次验证的 OAuth 登录流程没有执行，不能声称某个真实账号
     已完成登录。

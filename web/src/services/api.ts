@@ -158,6 +158,11 @@ import type {
   RemoteTargetQuery,
   RemoteTargetResolutionResponse
 } from '@/features/remote-targets/remote-targets-model';
+import type {
+  WorkspaceConnectorEnrollmentResponse,
+  WorkspaceConnectorListResponse,
+  WorkspaceDirectoryResponse
+} from '@/features/workspace-connectors/workspace-connectors-model';
 
 const api = axios.create({
   baseURL: '/v0',
@@ -2801,6 +2806,27 @@ export const remoteTargetsAPI = {
   preflight: async (query: RemoteTargetQuery = {}): Promise<RemoteTargetResolutionResponse> => {
     const { signal, ...params } = query;
     const response = await api.get<RemoteTargetResolutionResponse>('/webui/remote-targets/preflight', { params, signal });
+    return response.data;
+  }
+};
+
+export const workspaceConnectorsAPI = {
+  list: async (): Promise<WorkspaceConnectorListResponse> => {
+    const response = await api.get<WorkspaceConnectorListResponse>('/webui/workspace-connectors');
+    return response.data;
+  },
+  enroll: async (label: string): Promise<WorkspaceConnectorEnrollmentResponse> => {
+    const response = await api.post<WorkspaceConnectorEnrollmentResponse>('/webui/workspace-connectors/enrollments', { label });
+    return response.data;
+  },
+  revoke: async (workspaceId: string): Promise<void> => {
+    await api.delete(`/webui/workspace-connectors/${encodeURIComponent(workspaceId)}`);
+  },
+  entries: async (workspaceId: string, path = ''): Promise<WorkspaceDirectoryResponse> => {
+    const response = await api.get<WorkspaceDirectoryResponse>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/entries`,
+      { params: path ? { path } : {} }
+    );
     return response.data;
   }
 };

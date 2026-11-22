@@ -108,3 +108,21 @@
 - [ ] Verify that no target resolution silently falls back to local Provider/Harness or shadow execution.
 - [ ] Report the boundary: this slice resolves and diagnoses targets; it does not claim successful AWS AGY inference/tool loop until a real AWS target is configured and exercised.
 - [ ] Inspect staged diff and commit stats after every scoped commit; do not amend or reset shared history.
+
+## 执行状态（2026-11-22 续作）
+
+Task 1–4 已实现、构建并通过真实 CLI/HTTP/WebUI 构建检查：
+
+- `internal/remoteexecution` 目标解析、preflight、connector transport；
+- `webuiremotetargetsapi` 只读目标 API；
+- `aih remote target ls|resolve|doctor` 与补全；
+- `RemoteTargetPanel` 目标概览；
+- 追加 Phase 1：Workspace Connector enrollment/store、WebSocket、受限文件 RPC、
+  `aih workspace connect|ls|enroll|revoke`、WebUI 本地工作区面板。
+
+Task 5 的 CLI/HTTP/runtime 真实验收已完成，证据见
+`docs/remote/2026-11-22-workspace-connector.md`。未在本轮执行的部分：
+
+- WebUI 目标/Connector 面板的真实浏览器视觉检查（仅完成 `npm run build`）；
+- AWS 服务器 + AGY + `gemini-4-neon-xhigh` 的真实 Agent 工具循环（属于 Provider
+  Adapter 阶段；当前 preflight 明确保持 `remote_tools_unsupported`）。

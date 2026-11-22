@@ -238,6 +238,7 @@ sed -n '210,216p' internal/transport/http/webuiopenappapi/cli_launcher.go
 | R3 裸 resolver 兜底丢 ssh | 已修复 | `c3dc4d27 refactor(egress): centralize account resolver construction`：唯一构造入口 + 失败关闭 |
 | R13 Claude Native Relay 不接出口 | 已修复 | `1e0fb182 feat(relay): honor account egress bindings`；`relaycore`（codebuddy 家族/插件 Provider 透传）同步接入共享 `relayegress` 端口 |
 | R5 池账号不在计划时借用全局出口 | 已修复 | `103f6453 fix(egress): fail closed when an account has no pool lane`：无车道返回空，展示同样不借用 GLOBAL |
-| R4/R6/R7/R8/R9/R10/R11/R12/R14 | 未修复 | 仍按正文；R8（Image Studio）与 R4（session 车道）优先 |
+| R8 Image Studio 出图不带账号出口 | 已修复 | `91bd5e58 feat(images): honor account egress for image generation`：images API、共享执行器与 Studio 回退路径都按候选账号取客户端 |
+| R4/R6/R7/R9/R10/R11/R12/R14 | 未修复 | 仍按正文；R4（session 车道）优先 |
 
 新增回归守卫：`npm run egress:check`（`cmd/egress-guard`）禁止 `internal/runtime/egress` 之外自行构造 `agyegress.NewResolver/Options`。

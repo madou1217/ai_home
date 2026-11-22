@@ -2,6 +2,7 @@ package egress
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,7 +19,6 @@ type NonPoolExit struct {
 	Mode     string
 	ProxyURL string
 	Direct   bool
-	System   bool
 }
 
 // ResolveNonPoolExit 把 direct/system/tun/url/ssh 绑定解析成统一出口。
@@ -41,7 +41,30 @@ func ResolveNonPoolExit(
 	case agyegress.ModeDirect, agyegress.ModeTUN:
 		return NonPoolExit{Bound: true, Mode: mode, Direct: true}, nil
 	case agyegress.ModeSystem:
-		return NonPoolExit{Bound: true, Mode: mode, System: true}, nil
+		// CLI 启动与 Manager 走同一份系统代理探测：没有可用系统代理时必须
+		// 失败关闭，不能静默直连；探测到的地址会写进子进程代理环境。
+		raw, _ := json.Marshal(map[string]any{"mode": mode})
+		resolver := NewAccountResolverWithOptions(aiHomeDir, agyegress.Options{
+			ReadBinding: func(context.Context, string) (string, bool, error) {
+				return string(raw), true, nil
+			},
+		})
+		decision, err := resolver.Resolve(ctx, syntheticDetectAcctRef)
+		if err != nil {
+			var egressErr *agyegress.Error
+			if errors.As(err, &egressErr) {
+				return NonPoolExit{}, fmt.Errorf("%s: %s", egressErr.Code, egressErr.Reason)
+			}
+			return NonPoolExit{}, fmt.Errorf("system_proxy_unavailable: %w", err)
+		}
+		proxyURL := strings.TrimSpace(decision.Target.ProxyURL)
+		if proxyURL == "" {
+			return NonPoolExit{}, errors.New("system_proxy_unavailable")
+		}
+		if issue := agyegress.ProxyURLIssueForProvider(proxyURL, provider); issue != "" {
+			return NonPoolExit{}, errors.New(issue)
+		}
+		return NonPoolExit{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
 	case agyegress.ModeURL:
 		proxyURL := strings.TrimSpace(binding.ProxyURL)
 		if proxyURL == "" {
@@ -70,8 +93,6 @@ func (result NonPoolExit) Env() (set map[string]string, unset []string) {
 	switch result.Mode {
 	case agyegress.ModeDirect, agyegress.ModeTUN:
 		return nil, append([]string(nil), proxyEnvNames...)
-	case agyegress.ModeSystem:
-		return nil, nil
 	default:
 		if strings.TrimSpace(result.ProxyURL) == "" {
 			return nil, nil

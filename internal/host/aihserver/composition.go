@@ -628,6 +628,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var windowScheduler *windowactivation.Scheduler
 	var pluginBundle *localPluginRuntimeBundle
 	var egressManager *runtimeegress.Manager
+	// 刷新/额度/Relay/图片共用同一份账号出口解析与连接池；Manager 在组合根
+	// 后段创建，这里用延迟取值。
+	egressClients := newAccountEgressClients(func() *runtimeegress.Manager {
+		return egressManager
+	}, 0)
 	var chatRuntimeService *chatruntime.Service
 	var chatPrewarmCloser io.Closer
 	var watchWSCloser io.Closer
@@ -702,6 +707,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		&http.Client{
 			Timeout:       modelCatalogHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
+			// 刷新与普通上游调用共用账号出口；Context 无决策时保持默认网络。
+			Transport: &egressContextTransport{
+				base:    http.DefaultTransport,
+				clients: egressClients,
+			},
 		},
 		time.Now,
 	)
@@ -717,6 +727,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	oauthClient := &http.Client{
 		Timeout:       oauthHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
+		// 各 Provider 的 OAuth 刷新共用这个客户端；按请求 Context 里的
+		// 账号出口决策选择代理，未绑定时沿用默认网络。
+		Transport: &egressContextTransport{
+			base:    http.DefaultTransport,
+			clients: egressClients,
+		},
 	}
 	// kimi access_token 只有 15 分钟，刷新走 auth.kimi.com 的 form 合同（与 CLI 一致）。
 	kimiProvider, err := kimioauth.New(oauthClient, kimioauth.Options{ClientVersion: kimiClientVersion()})
@@ -880,6 +896,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 				clineStrategy,
 			),
 			Clock:            time.Now,
+			Egress:           managerAccountEgress{clients: egressClients},
 			RefreshDelegated: delegateCredentialRefresh,
 			OwnsRefresh:      ownsCredentialRefresh,
 			// agy 的 CLI 读运行投影而不是账本：Node 在刷新成功后会把新 token
@@ -1023,7 +1040,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			credentials:    credentials,
 			models:         store,
 			runtime:        accountRuntime,
-			httpClient:     usageClient,
+			httpClient:     newEgressContextClient(usageClient, egressClients),
+			egress:         managerAccountEgress{clients: egressClients},
 			clock:          time.Now,
 			codexVersions:  codexVersions,
 			claudeVersions: claudeVersions,
@@ -2018,6 +2036,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if nativeWorkErr != nil {
 		return serverHandlers{}, nil, fmt.Errorf("装配 WORK 原生启动边界失败: %w", nativeWorkErr)
 	}
+	imageEgress := newImageAccountEgress(func() *runtimeegress.Manager {
+		return egressManager
+	})
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:         authorizer,
 		AIHomeDir:          aiHomeDir,
@@ -2034,6 +2055,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			ReverseTunnels:        sshTunnelSupervisor,
 		},
 		ImageExecutionDependencies: imageexecution.Dependencies{
+			AccountEgress:          imageEgress.HTTPForAccount,
 			Upstream429Retries:     upstream429Controller,
 			Attempts:               accountRuntime,
 			CredentialObservations: credentials,
@@ -2345,6 +2367,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			models:  inference.models,
 		},
 		HTTP:                   http.DefaultClient,
+		AccountEgress:          imageEgress.HTTPForAccount,
 		Authorizer:             clientAuthorizer,
 		Blobs:                  images.BlobStoreAdapter{Store: imageBlobs},
 		Usage:                  imageUsage,

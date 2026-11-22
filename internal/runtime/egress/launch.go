@@ -56,7 +56,7 @@ func ResolveAccountLaunchEgress(
 
 // Env 把出口翻译成前台 CLI 的环境变更。
 //
-// system 保留宿主代理；direct/tun 清除代理变量；url/pool 覆盖为出口代理。
+// system 使用探测到的系统代理；direct/tun 清除代理变量；url/pool 覆盖为出口代理。
 // 与 WebUI 启动器的 applyAccountEgressProxyEnv 保持同一语义。
 func (result LaunchEgress) Env() (set map[string]string, unset []string) {
 	if !result.Bound {
@@ -65,8 +65,6 @@ func (result LaunchEgress) Env() (set map[string]string, unset []string) {
 	switch result.Mode {
 	case agyegress.ModeDirect, agyegress.ModeTUN:
 		return nil, append([]string(nil), proxyEnvNames...)
-	case agyegress.ModeSystem:
-		return nil, nil
 	default:
 		if strings.TrimSpace(result.ProxyURL) == "" {
 			return nil, nil

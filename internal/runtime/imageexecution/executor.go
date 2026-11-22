@@ -21,10 +21,13 @@ const defaultRecordTimeout = 5 * time.Second
 
 // Dependencies 声明共享图片执行器所需的稳定依赖；429 重试与观察端口均可选。
 type Dependencies struct {
-	Surface                string
-	Registry               images.Registry
-	Accounts               images.AccountSource
-	HTTP                   images.HTTPDoer
+	Surface  string
+	Registry images.Registry
+	Accounts images.AccountSource
+	HTTP     images.HTTPDoer
+	// AccountEgress 可选：按候选账号返回该账号的出站客户端。
+	// 返回 nil,nil 表示未绑定出口；返回错误则本次账号尝试失败并换号。
+	AccountEgress          func(ctx context.Context, account images.Account) (images.HTTPDoer, error)
 	Upstream429Retries     *upstreamretry.Controller
 	Attempts               inferencegateway.AttemptRecorder
 	CredentialObservations inferencegateway.CredentialObservationVerifier
@@ -42,6 +45,7 @@ type Executor struct {
 	registry           images.Registry
 	accounts           images.AccountSource
 	http               images.HTTPDoer
+	accountEgress      func(ctx context.Context, account images.Account) (images.HTTPDoer, error)
 	upstream429Retries *upstreamretry.Controller
 	observedAttempts   *inferencegateway.ObservedAttemptRecorder
 	rules              configured.Rules
@@ -80,6 +84,7 @@ func NewExecutor(dependencies Dependencies) *Executor {
 		registry:           dependencies.Registry,
 		accounts:           dependencies.Accounts,
 		http:               dependencies.HTTP,
+		accountEgress:      dependencies.AccountEgress,
 		upstream429Retries: dependencies.Upstream429Retries,
 		observedAttempts:   observedAttempts,
 		rules:              dependencies.Rules,
@@ -134,7 +139,8 @@ func (executor *Executor) Execute(
 	})
 
 	executeOptions := images.ExecuteOptions{
-		HTTP: executor.http,
+		HTTP:           executor.http,
+		HTTPForAccount: executor.accountEgress,
 		AttemptFailure: func(account images.Account, model string, attemptErr error) {
 			failure, hasFailure := executor.observeInitialAttemptFailure(
 				ctx,

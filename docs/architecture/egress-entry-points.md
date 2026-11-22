@@ -238,6 +238,14 @@ sed -n '210,216p' internal/transport/http/webuiopenappapi/cli_launcher.go
 | R3 裸 resolver 兜底丢 ssh | 已修复 | `c3dc4d27 refactor(egress): centralize account resolver construction`：唯一构造入口 + 失败关闭 |
 | R13 Claude Native Relay 不接出口 | 已修复 | `1e0fb182 feat(relay): honor account egress bindings`；`relaycore`（codebuddy 家族/插件 Provider 透传）同步接入共享 `relayegress` 端口 |
 | R5 池账号不在计划时借用全局出口 | 已修复 | `103f6453 fix(egress): fail closed when an account has no pool lane`：无车道返回空，展示同样不借用 GLOBAL |
-| R4/R6/R7/R8/R9/R10/R11/R12/R14 | 未修复 | 仍按正文；R8（Image Studio）与 R4（session 车道）优先 |
+| R8 Image Studio 出图不带账号出口 | 已修复 | `91bd5e58 feat(images): honor account egress for image generation`：images API、共享执行器与 Studio 回退路径都按候选账号取客户端 |
+| R4 session 车道请求期不可达 | 已修复 | `d85d4ad6 fix(egress): honor session pool lanes from binding`：解析从绑定识别 session 策略，CLI 启动按进程领会话车道 |
+| R7 CLI 的 system 绑定零校验 | 已修复 | `2ef2d2c2 fix(egress): validate system proxy for CLI launch`：无系统代理 fail-closed，探测地址写入 CLI 代理环境 |
+| R9 非 agy 绑定不参与刷新/额度 | 已修复 | `a0409868 feat(egress): apply account egress to refresh and usage`：应用层 Decision + Context 端口，OAuth/kiro/额度共用上下文感知客户端 |
+| R6 probe 与真实流量出口不一致 | 已修复 | `297baa7e fix(egress): probe through the same exit as real traffic`：system 用探测到的系统代理，direct/tun 不再被 server proxy 顶替 |
+| R10 管理面新建第二个 Manager | 已修复 | `f146fa2e fix(egress): refuse a second manager in management routes`：缺装配直接报错，路由测试注入真实 Manager |
+| R11 未绑定账号的 env 代理回退 | 保持现状 | 这是进程默认网络的既有语义；账号绑定存在时始终 fail-closed，不属于漏接 |
+| R12 空 scope 归一化为 all | 保持现状 | 与 Node `parsePoolSelection` 保持一致：空 groups/nodes 表示不筛选；WebUI 用显式 `kind=all` 表达全部节点，避免再新增歧义写法 |
+| R14 nil 端口静默放行 | 已由装配断言覆盖 | `f146fa2e` 让管理面缺 Manager 时直接失败；launcher 内部的 nil 检查保留给测试/嵌入宿主，生产组合根恒注入 |
 
 新增回归守卫：`npm run egress:check`（`cmd/egress-guard`）禁止 `internal/runtime/egress` 之外自行构造 `agyegress.NewResolver/Options`。

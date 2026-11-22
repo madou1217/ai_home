@@ -117,6 +117,11 @@ type Execution struct {
 type ExecuteOptions struct {
 	// HTTP 是执行上游调用的客户端。
 	HTTP HTTPDoer
+	// HTTPForAccount 可选：按候选账号返回该账号的出站客户端。
+	//
+	// 返回 nil,nil 表示账号未绑定出口，继续用 HTTP；返回错误表示该账号的
+	// 出口不可用，本次尝试记失败并换下一个候选，绝不回落到默认网络。
+	HTTPForAccount func(ctx context.Context, account Account) (HTTPDoer, error)
 	// AttemptFailure 在每次换号前报告「这次是哪把凭据失败了」；为 nil 时不观察。
 	AttemptFailure AttemptFailureObserver
 }
@@ -186,6 +191,19 @@ func Execute(
 			break
 		}
 		attempted = append(attempted, next.AccountRef)
+		httpDoer := options.HTTP
+		if options.HTTPForAccount != nil {
+			resolvedHTTP, resolveErr := options.HTTPForAccount(ctx, next)
+			if resolveErr != nil {
+				// 出口不可用不是账号本身失败：不报告 AttemptFailure，
+				// 避免把账号推进冷却。换下一个候选，全部失败时归还该错误。
+				lastErr = resolveErr
+				continue
+			}
+			if resolvedHTTP != nil {
+				httpDoer = resolvedHTTP
+			}
+		}
 		strategy := registry.Resolve(provider, next)
 		attemptInput := Input{
 			Mode:              request.Mode,
@@ -204,7 +222,7 @@ func Execute(
 			Raw:               request.Raw,
 			JSONOnly:          request.JSONOnly,
 			Account:           next,
-			HTTP:              options.HTTP,
+			HTTP:              httpDoer,
 		}
 		// 输入侧归一化：入口接受 png/jpeg/webp/gif，上游只收它声明的格式；
 		// 差异在这里转码吸收，Provider 策略永远只面对自己声明支持的字节。

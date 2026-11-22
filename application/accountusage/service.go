@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountegress"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -202,7 +203,9 @@ type Dependencies struct {
 	Strategies  []ProviderStrategy
 	// Refresher 可选：为需要刷新 OAuth 凭据的 Provider 在探测前续期。
 	Refresher CredentialRefresher
-	Clock     Clock
+	// Egress 可选：探测前解析账号出口并写进请求 Context。
+	Egress accountegress.Resolver
+	Clock  Clock
 }
 
 // ReadResult 是管理 API 读取的当前快照和陈旧状态。
@@ -242,6 +245,7 @@ type Service struct {
 	runtime     RuntimeProjection
 	strategies  map[string]ProviderStrategy
 	refresher   CredentialRefresher
+	egress      accountegress.Resolver
 	clock       Clock
 	flights     refreshFlightGroup
 }
@@ -279,6 +283,7 @@ func NewService(dependencies Dependencies) (*Service, error) {
 		models:      dependencies.Models,
 		runtime:     dependencies.Runtime,
 		strategies:  strategies,
+		egress:      dependencies.Egress,
 		clock:       dependencies.Clock,
 		flights: refreshFlightGroup{
 			active:      make(map[accountcore.AccountRef]*refreshCall),
@@ -422,6 +427,21 @@ func (service *Service) refreshCurrent(
 	strategy := service.strategies[providerID]
 	if strategy == nil {
 		return ReadResult{}, ErrUsageUnsupported
+	}
+	// 额度探测与普通上游调用共用同一份账号出口：绑定存在时按账号选代理，
+	// 解析失败 fail-closed，未绑定时保持默认网络。
+	if service.egress != nil {
+		decision, egressErr := service.egress.ResolveAccountEgress(
+			ctx,
+			string(providerID),
+			accountRef.String(),
+		)
+		if egressErr != nil {
+			return ReadResult{}, egressErr
+		}
+		if decision.Bound {
+			ctx = accountegress.WithDecision(ctx, decision)
+		}
 	}
 	capturedAt, err := service.currentTime()
 	if err != nil {

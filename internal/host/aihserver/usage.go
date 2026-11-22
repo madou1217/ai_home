@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountegress"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -47,6 +48,8 @@ type usageCompositionDependencies struct {
 	claudeVersions clientversion.Source
 	// aiHomeDir 是账号级出口绑定（app-state.db / 池运行文件）的数据根。
 	aiHomeDir string
+	// egress 可选：把账号出口决策写进额度探测的请求 Context。
+	egress accountegress.Resolver
 }
 
 // newUsageComposition 创建双 Provider Strategy、服务和周期刷新协调器。
@@ -97,6 +100,7 @@ func newUsageComposition(
 		Runtime:    dependencies.runtime,
 		Strategies: strategies,
 		Refresher:  kiroRefresher,
+		Egress:     dependencies.egress,
 		Clock:      dependencies.clock,
 	})
 	if err != nil {

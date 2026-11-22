@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiegresspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiegressupstreamsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuigeoresourcesapi"
@@ -27,6 +28,12 @@ func TestBuildWebUIEgressGeoRoutesMuxAndDispatch(t *testing.T) {
 		Authorizer:  testEgressAuthorizer{},
 		AIHomeDir:   dir,
 		HostHomeDir: hostDir,
+		webuiEgressDependencies: webuiEgressDependencies{
+			EgressManager: runtimeegress.NewManager(runtimeegress.ManagerOptions{
+				AIHomeDir: dir,
+				HomeDir:   hostDir,
+			}),
+		},
 	})
 	if err != nil {
 		t.Fatalf("buildWebUIEgressGeoRoutes error = %v", err)

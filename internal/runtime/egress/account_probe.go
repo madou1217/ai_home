@@ -155,10 +155,15 @@ func (m *Manager) probeDirectAccountUpstream(
 			bindURL = true
 			proxyURL = resolved.ProxyURL
 		case agyegress.ModeSystem:
+			// system 绑定必须使用实际探测到的系统代理，不能换成 server proxy；
+			// Launch 与 Manager 走同一份探测，无可用代理时上面已报错。
 			exit = "system"
+			bindURL = true
+			proxyURL = resolved.ProxyURL
 		default:
-			// direct / tun：TUN 由系统透明接管，服务端自身仍是直连出口。
+			// direct / tun：TUN 由系统透明接管；显式直连不能被 server proxy 顶替。
 			exit = "direct"
+			bindURL = true
 		}
 	}
 	if !bindURL {

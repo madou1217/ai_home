@@ -75,24 +75,27 @@ type ServiceDependencies struct {
 	Accounts  images.AccountSource
 	Execution *imageexecution.Executor
 	HTTP      images.HTTPDoer
-	Fetcher   images.ImageFetcher
-	Usage     imagesapi.UsageRecorder
-	Outcomes  imagesapi.ImageOutcomes
-	Now       func() time.Time
+	// AccountEgress 可选：没有共享执行器时，仍按账号切换出站客户端。
+	AccountEgress func(ctx context.Context, account images.Account) (images.HTTPDoer, error)
+	Fetcher       images.ImageFetcher
+	Usage         imagesapi.UsageRecorder
+	Outcomes      imagesapi.ImageOutcomes
+	Now           func() time.Time
 }
 
 // Service 编排工作台模型目录、会话仓储与上游生图/编辑运行。
 type Service struct {
-	store     *Store
-	catalog   CatalogDependencies
-	registry  images.Registry
-	accounts  images.AccountSource
-	execution *imageexecution.Executor
-	httpDoer  images.HTTPDoer
-	fetcher   images.ImageFetcher
-	usage     imagesapi.UsageRecorder
-	outcomes  imagesapi.ImageOutcomes
-	now       func() time.Time
+	store         *Store
+	catalog       CatalogDependencies
+	registry      images.Registry
+	accounts      images.AccountSource
+	execution     *imageexecution.Executor
+	httpDoer      images.HTTPDoer
+	accountEgress func(ctx context.Context, account images.Account) (images.HTTPDoer, error)
+	fetcher       images.ImageFetcher
+	usage         imagesapi.UsageRecorder
+	outcomes      imagesapi.ImageOutcomes
+	now           func() time.Time
 }
 
 // NewService 构造线程安全的 Image Studio 领域服务。
@@ -109,16 +112,17 @@ func NewService(deps ServiceDependencies) (*Service, error) {
 		fetcher = images.NewFetcher(deps.HTTP)
 	}
 	return &Service{
-		store:     deps.Store,
-		catalog:   deps.Catalog,
-		registry:  deps.Registry,
-		accounts:  deps.Accounts,
-		execution: deps.Execution,
-		httpDoer:  deps.HTTP,
-		fetcher:   fetcher,
-		usage:     deps.Usage,
-		outcomes:  deps.Outcomes,
-		now:       nowFn,
+		store:         deps.Store,
+		catalog:       deps.Catalog,
+		registry:      deps.Registry,
+		accounts:      deps.Accounts,
+		execution:     deps.Execution,
+		httpDoer:      deps.HTTP,
+		accountEgress: deps.AccountEgress,
+		fetcher:       fetcher,
+		usage:         deps.Usage,
+		outcomes:      deps.Outcomes,
+		now:           nowFn,
 	}, nil
 }
 
@@ -384,7 +388,7 @@ func (svc *Service) ExecuteRun(ctx context.Context, sessionID string, req RunReq
 			return RunResult{}, failAndRecord(NewError(503, "no_available_account", "image account source is not configured"), "")
 		}
 		attemptedAccountRef := ""
-		execOpts := images.ExecuteOptions{HTTP: svc.httpDoer}
+		execOpts := images.ExecuteOptions{HTTP: svc.httpDoer, HTTPForAccount: svc.accountEgress}
 		if svc.outcomes != nil {
 			execOpts.AttemptFailure = func(account images.Account, model string, attemptErr error) {
 				attemptedAccountRef = account.AccountRef

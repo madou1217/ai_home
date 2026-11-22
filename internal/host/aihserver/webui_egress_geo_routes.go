@@ -3,7 +3,6 @@ package aihserver
 import (
 	"fmt"
 
-	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	runtimegeo "github.com/madou1217/ai_home/internal/runtime/geo"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiegresspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiegressupstreamsapi"
@@ -31,10 +30,9 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 
 	egressManager := dependencies.EgressManager
 	if egressManager == nil {
-		egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
-			AIHomeDir: dependencies.AIHomeDir,
-			HomeDir:   dependencies.HostHomeDir,
-		})
+		// 管理面不能静默新建第二个池实例：它没有 Catalog/EnginePlugins，也未 Start，
+		// 语义与主实例不同。缺装配时直接失败，由组合根修复。
+		return nil, fmt.Errorf("出口管理器未装配，拒绝创建第二个池实例")
 	}
 
 	poolHandler, err := webuiegresspoolapi.NewHandler(webuiegresspoolapi.Dependencies{

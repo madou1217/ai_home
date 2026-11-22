@@ -1,3 +1,5 @@
+//go:build !no_builtin_renderers
+
 package webuitoolkitextapi
 
 import (

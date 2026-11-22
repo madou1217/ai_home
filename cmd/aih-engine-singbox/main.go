@@ -1,3 +1,5 @@
+//go:build !no_builtin_renderers
+
 // Command aih-engine-singbox 是 egress.engine 进程插件示例：sing-box。
 //
 // 协议：行分隔 JSON-RPC（describe/resolve/compile/shutdown）；只编译配置与启动

@@ -148,8 +148,6 @@ type RelayKernelSpec struct {
 	ParseVersion            func(string) string
 	CheckArgs               func(configFile, runDir string) []string
 	RunArgs                 func(configFile, runDir string) []string
-	CanCompileNode          func(node ProxyNode, version string) bool
-	CompileText             func(nodes []ProxyNode, opts RelayCompileOptions) RelayCompiledOutput
 }
 
 // RelayCompileOptions 控制中转配置编译参数。
@@ -452,335 +450,7 @@ func pruneRelayChainFailures(byID map[string]ProxyNode, compiled map[string]bool
 	}
 }
 
-func mihomoRelayProxyName(nodeID string) string {
-	return mihomoRelayProxyPrefix + safeProxyNameRegex.ReplaceAllString(nodeID, "_")
-}
-
-func singBoxRelayInboundTag(nodeID string) string  { return relayInboundPrefix + nodeID }
-func singBoxRelayOutboundTag(nodeID string) string { return relayOutboundPrefix + nodeID }
-
 // CompileSingBoxRelayConfig 生成 sing-box 本机中转边车 JSON 配置与端口表。
-func CompileSingBoxRelayConfig(nodes []ProxyNode, opts RelayCompileOptions) RelayCompiledOutput {
-	listenHost := opts.ListenHost
-	if listenHost == "" {
-		listenHost = RelayDefaultListenHost
-	}
-	advertiseHost := opts.AdvertiseHost
-	if advertiseHost == "" {
-		advertiseHost = listenHost
-	}
-	maxPorts := opts.MaxPorts
-	if maxPorts <= 0 {
-		maxPorts = RelayDefaultMaxPorts
-	}
-	basePort := opts.BasePort
-	if basePort <= 0 {
-		basePort = SingBoxRelayBasePort
-	}
-	batch := planRelayBatch(nodes, opts.OnlyIDs, maxPorts)
-	sort.Slice(batch.wanted, func(i, j int) bool {
-		return batch.wanted[i].Str("id") < batch.wanted[j].Str("id")
-	})
-
-	endpoints := make(map[string]RelayEndpoint, len(batch.wanted))
-	orderedIDs := make([]string, 0, len(batch.wanted))
-	for idx, n := range batch.wanted {
-		id := n.Str("id")
-		orderedIDs = append(orderedIDs, id)
-		p := basePort + idx
-		if opts.AssignPort != nil {
-			p = opts.AssignPort(id, idx)
-		}
-		endpoints[id] = RelayEndpoint{
-			Host: advertiseHost,
-			Port: p,
-			UDP:  SupportsUDPRelay(n),
-		}
-	}
-
-	seenOutID := map[string]bool{}
-	var outboundIDs []string
-	for _, id := range orderedIDs {
-		if _, ok := batch.byID[id]; ok && !seenOutID[id] {
-			seenOutID[id] = true
-			outboundIDs = append(outboundIDs, id)
-		}
-	}
-	for id := range batch.upstreamIDs {
-		if _, ok := batch.byID[id]; ok && !seenOutID[id] {
-			seenOutID[id] = true
-			outboundIDs = append(outboundIDs, id)
-		}
-	}
-	sort.Strings(outboundIDs[len(orderedIDs):])
-
-	compiled := make(map[string]SingBoxCompiled, len(outboundIDs))
-	compiledFlags := make(map[string]bool, len(outboundIDs))
-	failed := make(map[string]string)
-	for _, id := range outboundIDs {
-		res, err := CompileSingBoxOutbound(batch.byID[id], singBoxRelayOutboundTag(id), opts.Version, opts.OfficialApp)
-		if err != nil {
-			failed[id] = errorCodeOf(err)
-			continue
-		}
-		compiled[id] = res
-		compiledFlags[id] = true
-	}
-	skipped := append([]RelaySkippedItem(nil), batch.skipped...)
-	pruneRelayChainFailures(batch.byID, compiledFlags, endpoints, failed, &skipped)
-
-	inbounds := make([]*YAMLMap, 0, len(endpoints))
-	rules := make([]*YAMLMap, 0, len(endpoints))
-	for _, id := range orderedIDs {
-		ep, ok := endpoints[id]
-		if !ok {
-			continue
-		}
-		inb := &YAMLMap{}
-		inb.Set("type", "mixed")
-		inb.Set("tag", singBoxRelayInboundTag(id))
-		inb.Set("listen", listenHost)
-		inb.Set("listen_port", ep.Port)
-		if opts.Auth != nil && opts.Auth.Username != "" {
-			u := &YAMLMap{}
-			u.Set("username", opts.Auth.Username)
-			u.Set("password", opts.Auth.Password)
-			inb.Set("users", []*YAMLMap{u})
-		}
-		inbounds = append(inbounds, inb)
-
-		rule := &YAMLMap{}
-		rule.Set("inbound", []string{singBoxRelayInboundTag(id)})
-		rule.Set("outbound", singBoxRelayOutboundTag(id))
-		rules = append(rules, rule)
-	}
-
-	var outbounds []*YAMLMap
-	var endpointsSection []*YAMLMap
-	for _, id := range outboundIDs {
-		if !compiledFlags[id] {
-			continue
-		}
-		c := compiled[id]
-		if up := chainRefOfNode(batch.byID[id]); up != "" && compiledFlags[up] {
-			c.Item.Set("detour", singBoxRelayOutboundTag(up))
-		}
-		if c.IsEndpoint {
-			endpointsSection = append(endpointsSection, c.Item)
-		} else {
-			outbounds = append(outbounds, c.Item)
-		}
-		outbounds = append(outbounds, c.Extras...)
-	}
-	directOut := &YAMLMap{}
-	directOut.Set("type", "direct")
-	directOut.Set("tag", relayDirectTag)
-	outbounds = append(outbounds, directOut)
-
-	logMap := &YAMLMap{}
-	logMap.Set("level", "warn")
-	logMap.Set("timestamp", true)
-	if opts.LogPath != "" {
-		logMap.Set("output", opts.LogPath)
-	}
-
-	routeMap := &YAMLMap{}
-	routeMap.Set("rules", rules)
-	routeMap.Set("final", relayDirectTag)
-
-	cfg := &YAMLMap{}
-	cfg.Set("log", logMap)
-	cfg.Set("inbounds", inbounds)
-	cfg.Set("outbounds", outbounds)
-	if len(endpointsSection) > 0 {
-		cfg.Set("endpoints", endpointsSection)
-	}
-	cfg.Set("route", routeMap)
-
-	text := string(yamlMapToOrderedJSON(cfg, "")) + "\n"
-	return RelayCompiledOutput{Text: text, Endpoints: endpoints, Skipped: skipped}
-}
-
-// CompileMihomoRelayConfigText 生成 mihomo 本机中转边车 YAML 配置与端口表。
-func CompileMihomoRelayConfigText(nodes []ProxyNode, opts RelayCompileOptions) RelayCompiledOutput {
-	listenHost := opts.ListenHost
-	if listenHost == "" {
-		listenHost = RelayDefaultListenHost
-	}
-	advertiseHost := opts.AdvertiseHost
-	if advertiseHost == "" {
-		advertiseHost = listenHost
-	}
-	maxPorts := opts.MaxPorts
-	if maxPorts <= 0 {
-		maxPorts = RelayDefaultMaxPorts
-	}
-	basePort := opts.BasePort
-	if basePort <= 0 {
-		basePort = MihomoRelayBasePort
-	}
-	batch := planRelayBatch(nodes, opts.OnlyIDs, maxPorts)
-	sort.Slice(batch.wanted, func(i, j int) bool {
-		return batch.wanted[i].Str("id") < batch.wanted[j].Str("id")
-	})
-
-	endpoints := make(map[string]RelayEndpoint, len(batch.wanted))
-	orderedIDs := make([]string, 0, len(batch.wanted))
-	for idx, n := range batch.wanted {
-		id := n.Str("id")
-		orderedIDs = append(orderedIDs, id)
-		p := basePort + idx
-		if opts.AssignPort != nil {
-			p = opts.AssignPort(id, idx)
-		}
-		endpoints[id] = RelayEndpoint{
-			Host: advertiseHost,
-			Port: p,
-			UDP:  SupportsUDPRelay(n),
-		}
-	}
-
-	seenOutID := map[string]bool{}
-	var outboundIDs []string
-	for _, id := range orderedIDs {
-		if _, ok := batch.byID[id]; ok && !seenOutID[id] {
-			seenOutID[id] = true
-			outboundIDs = append(outboundIDs, id)
-		}
-	}
-	for id := range batch.upstreamIDs {
-		if _, ok := batch.byID[id]; ok && !seenOutID[id] {
-			seenOutID[id] = true
-			outboundIDs = append(outboundIDs, id)
-		}
-	}
-
-	compiled := make(map[string]*YAMLMap, len(outboundIDs))
-	compiledFlags := make(map[string]bool, len(outboundIDs))
-	failed := make(map[string]string)
-	for _, id := range outboundIDs {
-		m, err := CompileMihomoProxy(batch.byID[id], mihomoRelayProxyName(id), "mihomo")
-		if err != nil {
-			failed[id] = errorCodeOf(err)
-			continue
-		}
-		compiled[id] = m
-		compiledFlags[id] = true
-	}
-	skipped := append([]RelaySkippedItem(nil), batch.skipped...)
-	pruneRelayChainFailures(batch.byID, compiledFlags, endpoints, failed, &skipped)
-
-	proxies := make([]*YAMLMap, 0, len(compiled))
-	for _, id := range outboundIDs {
-		if !compiledFlags[id] {
-			continue
-		}
-		m := compiled[id]
-		if up := chainRefOfNode(batch.byID[id]); up != "" && compiledFlags[up] {
-			m.Set("dialer-proxy", mihomoRelayProxyName(up))
-		}
-		proxies = append(proxies, m)
-	}
-
-	listeners := make([]*YAMLMap, 0, len(endpoints))
-	for _, id := range orderedIDs {
-		ep, ok := endpoints[id]
-		if !ok {
-			continue
-		}
-		l := &YAMLMap{}
-		l.Set("name", singBoxRelayInboundTag(id))
-		l.Set("type", "mixed")
-		l.Set("listen", listenHost)
-		l.Set("port", ep.Port)
-		l.Set("proxy", mihomoRelayProxyName(id))
-		if opts.Auth != nil && opts.Auth.Username != "" {
-			u := &YAMLMap{}
-			u.Set("username", opts.Auth.Username)
-			u.Set("password", opts.Auth.Password)
-			l.Set("users", []*YAMLMap{u})
-		}
-		listeners = append(listeners, l)
-	}
-
-	cfg := &YAMLMap{}
-	cfg.Set("log-level", "warning")
-	cfg.Set("mode", "global")
-	cfg.Set("proxies", proxies)
-	cfg.Set("listeners", listeners)
-
-	return RelayCompiledOutput{
-		Text:      EmitYAML(cfg) + "\n",
-		Endpoints: endpoints,
-		Skipped:   skipped,
-	}
-}
-
-var (
-	singBoxKernelSpec = RelayKernelSpec{
-		ID:                      "sing-box",
-		Label:                   "sing-box",
-		EnvField:                "singBoxBin",
-		ConfigFileName:          "sing-box.json",
-		BasePort:                SingBoxRelayBasePort,
-		MaxPorts:                RelayDefaultMaxPorts,
-		VersionArgs:             []string{"version"},
-		BuildDependentProtocols: []string{"naive"},
-		ParseVersion: func(stdout string) string {
-			m := singBoxVerOutRegex.FindStringSubmatch(stdout)
-			if len(m) >= 2 {
-				return m[1]
-			}
-			return ""
-		},
-		CheckArgs: func(configFile, _ string) []string {
-			return []string{"check", "-c", configFile}
-		},
-		RunArgs: func(configFile, _ string) []string {
-			return []string{"run", "-c", configFile}
-		},
-		CanCompileNode: func(node ProxyNode, version string) bool {
-			_, err := CompileSingBoxOutbound(node, "relay-probe", version, true)
-			return err == nil
-		},
-		CompileText: func(nodes []ProxyNode, opts RelayCompileOptions) RelayCompiledOutput {
-			return CompileSingBoxRelayConfig(nodes, opts)
-		},
-	}
-
-	mihomoKernelSpec = RelayKernelSpec{
-		ID:                      "mihomo",
-		Label:                   "mihomo",
-		EnvField:                "mihomoBin",
-		Aliases:                 []string{"verge-mihomo-alpha", "clash-meta", "clash.meta"},
-		ConfigFileName:          "mihomo.yaml",
-		BasePort:                MihomoRelayBasePort,
-		MaxPorts:                RelayDefaultMaxPorts,
-		VersionArgs:             []string{"-v"},
-		BuildDependentProtocols: []string{},
-		ParseVersion: func(stdout string) string {
-			m := mihomoVerOutRegex.FindStringSubmatch(stdout)
-			if len(m) >= 2 {
-				return m[1]
-			}
-			return ""
-		},
-		CheckArgs: func(configFile, runDir string) []string {
-			return []string{"-t", "-d", runDir, "-f", configFile}
-		},
-		RunArgs: func(configFile, runDir string) []string {
-			return []string{"-d", runDir, "-f", configFile}
-		},
-		CanCompileNode: func(node ProxyNode, _ string) bool {
-			_, err := CompileMihomoProxy(node, "relay-probe", "mihomo")
-			return err == nil
-		},
-		CompileText: func(nodes []ProxyNode, opts RelayCompileOptions) RelayCompiledOutput {
-			return CompileMihomoRelayConfigText(nodes, opts)
-		},
-	}
-)
-
 // PoolKernel 描述出口池可用的代理内核（sing-box / mihomo）。
 type PoolKernel struct {
 	ID      string
@@ -883,6 +553,7 @@ type sidecarRunningState struct {
 // KernelSidecar 管理单个中转内核的子进程生命周期、配置校验与端口映射。
 type KernelSidecar struct {
 	kernel     RelayKernelSpec
+	compiler   RelayCompiler
 	aiHomeDir  string
 	runDir     string
 	env        map[string]string
@@ -901,9 +572,10 @@ type KernelSidecar struct {
 	lastEnsure RelayEnsureResult
 }
 
-func newKernelSidecar(kernel RelayKernelSpec, aiHomeDir, runDir string, env map[string]string) *KernelSidecar {
+func newKernelSidecar(kernel RelayKernelSpec, compiler RelayCompiler, aiHomeDir, runDir string, env map[string]string) *KernelSidecar {
 	return &KernelSidecar{
 		kernel:     kernel,
+		compiler:   compiler,
 		aiHomeDir:  aiHomeDir,
 		runDir:     runDir,
 		env:        env,
@@ -1143,6 +815,9 @@ func (s *KernelSidecar) waitSidecarReady(ctx context.Context, cmd *exec.Cmd, exi
 
 // Ensure 确保边车按指定节点列表运行，并在配置变更时原子重启。
 func (s *KernelSidecar) Ensure(ctx context.Context, nodes []ProxyNode, onlyIDs map[string]bool, remote bool, auth *RelayCredentials) RelayEnsureResult {
+	if s.compiler == nil {
+		return RelayEnsureResult{OK: false, Error: "relay_compiler_unavailable", Endpoints: map[string]RelayEndpoint{}}
+	}
 	for {
 		s.mu.Lock()
 		bin := s.resolveBinaryLocked()
@@ -1176,7 +851,9 @@ func (s *KernelSidecar) Ensure(ctx context.Context, nodes []ProxyNode, onlyIDs m
 			return RelayEnsureResult{OK: true, Endpoints: map[string]RelayEndpoint{}}
 		}
 
-		shape := s.kernel.CompileText(wanted, RelayCompileOptions{
+		shape, compileErr := s.compiler.CompileRelay(ctx, RelayCompileRequest{
+			Kernel:      s.kernel.ID,
+			Nodes:       wanted,
 			ListenHost:  listenHost,
 			Auth:        activeAuth,
 			MaxPorts:    s.kernel.MaxPorts,
@@ -1184,8 +861,11 @@ func (s *KernelSidecar) Ensure(ctx context.Context, nodes []ProxyNode, onlyIDs m
 			BasePort:    s.kernel.BasePort,
 			Version:     bin.Version,
 			OfficialApp: true,
-			AssignPort:  func(string, int) int { return 0 },
 		})
+		if compileErr != nil {
+			s.mu.Unlock()
+			return RelayEnsureResult{OK: false, Error: "relay_compile_failed", Detail: compileErr.Error(), Endpoints: map[string]RelayEndpoint{}}
+		}
 		if len(shape.Endpoints) == 0 {
 			s.mu.Unlock()
 			return RelayEnsureResult{OK: true, Endpoints: map[string]RelayEndpoint{}, Skipped: shape.Skipped}
@@ -1227,12 +907,17 @@ func (s *KernelSidecar) Ensure(ctx context.Context, nodes []ProxyNode, onlyIDs m
 }
 
 func (s *KernelSidecar) restart(ctx context.Context, bin ResolvedKernelBinary, wanted []ProxyNode, key, listenHost string, auth *RelayCredentials, onlyIDs map[string]bool, remembered map[string]int) RelayEnsureResult {
+	if s.compiler == nil {
+		return RelayEnsureResult{OK: false, Error: "relay_compiler_unavailable", Endpoints: map[string]RelayEndpoint{}}
+	}
 	s.Stop()
 	nodes := wanted
 	var droppedSkipped []RelaySkippedItem
 
 	for round := 0; round < 2; round++ {
-		shape := s.kernel.CompileText(nodes, RelayCompileOptions{
+		shape, compileErr := s.compiler.CompileRelay(ctx, RelayCompileRequest{
+			Kernel:      s.kernel.ID,
+			Nodes:       nodes,
 			ListenHost:  listenHost,
 			Auth:        auth,
 			MaxPorts:    s.kernel.MaxPorts,
@@ -1240,8 +925,10 @@ func (s *KernelSidecar) restart(ctx context.Context, bin ResolvedKernelBinary, w
 			BasePort:    s.kernel.BasePort,
 			Version:     bin.Version,
 			OfficialApp: true,
-			AssignPort:  func(string, int) int { return 0 },
 		})
+		if compileErr != nil {
+			return RelayEnsureResult{OK: false, Error: "relay_compile_failed", Detail: compileErr.Error(), Endpoints: map[string]RelayEndpoint{}, Skipped: droppedSkipped}
+		}
 		if len(shape.Endpoints) == 0 {
 			return RelayEnsureResult{OK: true, Endpoints: map[string]RelayEndpoint{}, Skipped: append(droppedSkipped, shape.Skipped...)}
 		}
@@ -1264,7 +951,9 @@ func (s *KernelSidecar) restart(ctx context.Context, bin ResolvedKernelBinary, w
 		configFile := filepath.Join(s.runDir, s.kernel.ConfigFileName)
 		logFile := filepath.Join(s.runDir, s.kernel.ID+".log")
 
-		compiled := s.kernel.CompileText(nodes, RelayCompileOptions{
+		compiled, compileErr := s.compiler.CompileRelay(ctx, RelayCompileRequest{
+			Kernel:      s.kernel.ID,
+			Nodes:       nodes,
 			ListenHost:  listenHost,
 			Auth:        auth,
 			MaxPorts:    s.kernel.MaxPorts,
@@ -1273,10 +962,11 @@ func (s *KernelSidecar) restart(ctx context.Context, bin ResolvedKernelBinary, w
 			Version:     bin.Version,
 			OfficialApp: true,
 			LogPath:     logFile,
-			AssignPort: func(nodeID string, _ int) int {
-				return portByNode[nodeID]
-			},
+			PortByNode:  portByNode,
 		})
+		if compileErr != nil {
+			return RelayEnsureResult{OK: false, Error: "relay_compile_failed", Detail: compileErr.Error(), Endpoints: map[string]RelayEndpoint{}, Skipped: droppedSkipped}
+		}
 		if len(compiled.Endpoints) == 0 {
 			return RelayEnsureResult{OK: true, Endpoints: map[string]RelayEndpoint{}, Skipped: append(droppedSkipped, compiled.Skipped...)}
 		}
@@ -1389,6 +1079,7 @@ func (s *KernelSidecar) restart(ctx context.Context, bin ResolvedKernelBinary, w
 
 // LocalRelay 管理 sing-box 与 mihomo 双内核边车并统一暴露本地中转能力。
 type LocalRelay struct {
+	compiler    RelayCompiler
 	aiHomeDir   string
 	runDir      string
 	env         map[string]string
@@ -1402,14 +1093,15 @@ type LocalRelay struct {
 }
 
 // NewLocalRelay 构造本机中转控制器（构造时不拉起任何子进程）。
-func NewLocalRelay(aiHomeDir string, env map[string]string) *LocalRelay {
+func NewLocalRelay(aiHomeDir string, env map[string]string, compiler RelayCompiler) *LocalRelay {
 	runDir := filepath.Join(aiHomeDir, "run", "subscription-relay")
 	specs := []RelayKernelSpec{singBoxKernelSpec, mihomoKernelSpec}
 	sidecars := make(map[string]*KernelSidecar, len(specs))
 	for _, spec := range specs {
-		sidecars[spec.ID] = newKernelSidecar(spec, aiHomeDir, filepath.Join(runDir, spec.ID), env)
+		sidecars[spec.ID] = newKernelSidecar(spec, compiler, aiHomeDir, filepath.Join(runDir, spec.ID), env)
 	}
 	return &LocalRelay{
+		compiler:    compiler,
 		aiHomeDir:   aiHomeDir,
 		runDir:      runDir,
 		env:         env,
@@ -1543,7 +1235,7 @@ func (r *LocalRelay) Availability() RelayAvailability {
 	}
 }
 
-func (r *LocalRelay) splitNodesByKernel(nodes []ProxyNode) []struct {
+func (r *LocalRelay) splitNodesByKernel(ctx context.Context, nodes []ProxyNode) []struct {
 	spec  RelayKernelSpec
 	nodes []ProxyNode
 } {
@@ -1589,7 +1281,7 @@ func (r *LocalRelay) splitNodesByKernel(nodes []ProxyNode) []struct {
 			}
 			okAll := true
 			for _, m := range members {
-				if !spec.CanCompileNode(m, ver) {
+				if r.compiler == nil || !r.compiler.SupportsRelayNode(ctx, spec.ID, m, ver) {
 					okAll = false
 					break
 				}
@@ -1640,7 +1332,10 @@ func (r *LocalRelay) Ensure(ctx context.Context, nodes []ProxyNode, onlyIDs map[
 			auth = &creds
 		}
 	}
-	groups := r.splitNodesByKernel(nodes)
+	if r.compiler == nil {
+		return RelayEnsureResult{OK: false, Error: "relay_compiler_unavailable", Endpoints: map[string]RelayEndpoint{}}
+	}
+	groups := r.splitNodesByKernel(ctx, nodes)
 	if len(groups) == 0 {
 		return RelayEnsureResult{OK: true, Endpoints: map[string]RelayEndpoint{}}
 	}
@@ -1693,3 +1388,54 @@ func (r *LocalRelay) Stop() {
 	}
 	wg.Wait()
 }
+
+var (
+	singBoxKernelSpec = RelayKernelSpec{
+		ID:                      "sing-box",
+		Label:                   "sing-box",
+		EnvField:                "singBoxBin",
+		ConfigFileName:          "sing-box.json",
+		BasePort:                SingBoxRelayBasePort,
+		MaxPorts:                RelayDefaultMaxPorts,
+		VersionArgs:             []string{"version"},
+		BuildDependentProtocols: []string{"naive"},
+		ParseVersion: func(stdout string) string {
+			m := singBoxVerOutRegex.FindStringSubmatch(stdout)
+			if len(m) >= 2 {
+				return m[1]
+			}
+			return ""
+		},
+		CheckArgs: func(configFile, _ string) []string {
+			return []string{"check", "-c", configFile}
+		},
+		RunArgs: func(configFile, _ string) []string {
+			return []string{"run", "-c", configFile}
+		},
+	}
+
+	mihomoKernelSpec = RelayKernelSpec{
+		ID:                      "mihomo",
+		Label:                   "mihomo",
+		EnvField:                "mihomoBin",
+		Aliases:                 []string{"verge-mihomo-alpha", "clash-meta", "clash.meta"},
+		ConfigFileName:          "mihomo.yaml",
+		BasePort:                MihomoRelayBasePort,
+		MaxPorts:                RelayDefaultMaxPorts,
+		VersionArgs:             []string{"-v"},
+		BuildDependentProtocols: []string{},
+		ParseVersion: func(stdout string) string {
+			m := mihomoVerOutRegex.FindStringSubmatch(stdout)
+			if len(m) >= 2 {
+				return m[1]
+			}
+			return ""
+		},
+		CheckArgs: func(configFile, runDir string) []string {
+			return []string{"-t", "-d", runDir, "-f", configFile}
+		},
+		RunArgs: func(configFile, runDir string) []string {
+			return []string{"-d", runDir, "-f", configFile}
+		},
+	}
+)

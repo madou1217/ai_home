@@ -1,3 +1,5 @@
+//go:build !no_builtin_renderers
+
 // Package mihomo 是 mihomo 的 egress.engine 插件编译器。
 //
 // 只负责定位内核、编译配置/启动参数；进程/控制面/健康/回收由宿主负责。

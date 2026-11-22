@@ -1,3 +1,5 @@
+//go:build !no_builtin_renderers
+
 // Package singbox 是 sing-box 的 egress.engine 插件编译器。
 //
 // 它只负责描述能力、定位内核、把节点/规则/DNS 编译成配置与启动参数；

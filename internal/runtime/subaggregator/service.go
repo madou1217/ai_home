@@ -164,6 +164,10 @@ type ServiceOptions struct {
 	HostHomeDir  string
 	Platform     string
 	Env          map[string]string
+	// Rendering 是订阅渲染引擎；RelayCompiler 是中转配置编译引擎。
+	// 生产组合根通常给两者注入同一个进程插件目录。
+	Rendering     RenderingEngine
+	RelayCompiler RelayCompiler
 }
 
 type inFlightSyncCall struct {
@@ -179,6 +183,8 @@ type Service struct {
 	probe              *NodeProbe
 	latency            *NodeLatencyMeter
 	localClients       *LocalClientDetector
+	rendering          RenderingEngine
+	relayCompiler      RelayCompiler
 	relay              *LocalRelay
 	syncRunner         *SourceSyncRunner
 	now                func() time.Time
@@ -236,7 +242,17 @@ func NewService(aiHomeDir string, opts ServiceOptions) *Service {
 		localClients = NewLocalClientDetector()
 	}
 	store := NewStore(aiHomeDir)
-	relay := NewLocalRelay(store.AIHomeDir(), env)
+	rendering := opts.Rendering
+	if rendering == nil {
+		rendering = defaultRenderingEngine()
+	}
+	relayCompiler := opts.RelayCompiler
+	if relayCompiler == nil {
+		if compiler, ok := rendering.(RelayCompiler); ok {
+			relayCompiler = compiler
+		}
+	}
+	relay := NewLocalRelay(store.AIHomeDir(), env, relayCompiler)
 
 	svc := &Service{
 		store:              store,
@@ -245,6 +261,8 @@ func NewService(aiHomeDir string, opts ServiceOptions) *Service {
 		probe:              probe,
 		latency:            latency,
 		localClients:       localClients,
+		rendering:          rendering,
+		relayCompiler:      relayCompiler,
 		relay:              relay,
 		now:                nowFn,
 		refreshConcurrency: defaultRefreshConcurrency,
@@ -1412,7 +1430,15 @@ func (s *Service) ParseNodes(content string) (map[string]any, error) {
 	}, nil
 }
 
-func effectiveCoreProtocols(renderer Renderer, client DetectedClient) []string {
+// renderingEngine 返回可用的渲染引擎；生产构建未装插件时失败关闭。
+func (s *Service) renderingEngine() (RenderingEngine, error) {
+	if s == nil || s.rendering == nil {
+		return nil, errInvalid("aggregator_renderer_unavailable")
+	}
+	return s.rendering, nil
+}
+
+func effectiveCoreProtocols(renderer RendererInfo, client DetectedClient) []string {
 	if !renderer.Capabilities.RelayFallback {
 		return nil
 	}
@@ -1429,7 +1455,7 @@ type relayPlan struct {
 	hasCandidates  bool
 }
 
-func (s *Service) buildRelayPlan(profile AggregatorProfile, renderer Renderer, subs []Subscription, rawNodes []ProxyNode, requested bool, remoteAddr, origin string, client DetectedClient) relayPlan {
+func (s *Service) buildRelayPlan(ctx context.Context, profile AggregatorProfile, renderer RendererInfo, subs []Subscription, rawNodes []ProxyNode, requested bool, remoteAddr, origin string, client DetectedClient) relayPlan {
 	remote := !IsLoopbackRemoteAddress(remoteAddr)
 	serverMode := s.relay.ServerPortMode()
 	portModeStr := "dedicated"
@@ -1477,15 +1503,24 @@ func (s *Service) buildRelayPlan(profile AggregatorProfile, renderer Renderer, s
 
 	sel := SelectAggregatedNodes(profile, subs, rawNodes)
 	chains := resolveProxyChains(sel.Entries)
+	ordered := orderEntriesByChain(sel.Entries, chains.Targets)
+	checks := make([]PlannedNode, 0, len(ordered))
+	for _, idx := range ordered {
+		checks = append(checks, sel.Entries[idx])
+	}
+	supported, supportErr := s.rendering.Supports(ctx, renderer.ID, checks)
+	if supportErr != nil || len(supported) != len(checks) {
+		status.Error = "relay_renderer_unavailable"
+		return relayPlan{status: status}
+	}
 	var nodes []ProxyNode
 	wanted := map[string]bool{}
 	seen := map[int]bool{}
 
-	for _, idx := range orderEntriesByChain(sel.Entries, chains.Targets) {
+	for pos, idx := range ordered {
 		e := sel.Entries[idx]
-		_, probeErr := renderer.CompileNode(e, "", RenderContext{})
 		proto := NormalizeProtocolAlias(e.Node.Str("protocol"))
-		unsupported := probeErr != nil || (len(coreSet) > 0 && !coreSet[proto])
+		unsupported := !supported[pos] || (len(coreSet) > 0 && !coreSet[proto])
 		upIdx, hasUp := chains.Targets[idx]
 		if !unsupported && !(hasUp && seen[upIdx]) {
 			continue
@@ -1658,7 +1693,11 @@ func (s *Service) StartRelay(ctx context.Context, profileID, target, clientID, r
 	if fmtTarget == "" {
 		fmtTarget = "mihomo"
 	}
-	renderer, ok := GetRenderer(fmtTarget)
+	engine, err := s.renderingEngine()
+	if err != nil {
+		return RelayRenderStatus{}, err
+	}
+	renderer, ok := engine.Lookup(fmtTarget)
 	if !ok {
 		return RelayRenderStatus{}, errInvalid("unsupported_aggregator_format")
 	}
@@ -1666,7 +1705,7 @@ func (s *Service) StartRelay(ctx context.Context, profileID, target, clientID, r
 	if err != nil {
 		return RelayRenderStatus{}, err
 	}
-	plan := s.buildRelayPlan(*profile, renderer, pool.Subscriptions, pool.Nodes, true, remoteAddr, origin, client)
+	plan := s.buildRelayPlan(ctx, *profile, renderer, pool.Subscriptions, pool.Nodes, true, remoteAddr, origin, client)
 	if !plan.hasCandidates {
 		return plan.status, nil
 	}
@@ -1711,7 +1750,11 @@ func (s *Service) Preview(profileID, target string, req PreviewRequest) (Preview
 	if fmtTarget == "" {
 		fmtTarget = "mihomo"
 	}
-	renderer, ok := GetRenderer(fmtTarget)
+	engine, err := s.renderingEngine()
+	if err != nil {
+		return PreviewResult{}, err
+	}
+	renderer, ok := engine.Lookup(fmtTarget)
 	if !ok {
 		return PreviewResult{}, errInvalid("unsupported_aggregator_format")
 	}
@@ -1719,14 +1762,17 @@ func (s *Service) Preview(profileID, target string, req PreviewRequest) (Preview
 	if err != nil {
 		return PreviewResult{}, err
 	}
-	plan := s.buildRelayPlan(*profile, renderer, pool.Subscriptions, pool.Nodes, req.Relay, req.RemoteAddress, req.Origin, client)
+	plan := s.buildRelayPlan(context.Background(), *profile, renderer, pool.Subscriptions, pool.Nodes, req.Relay, req.RemoteAddress, req.Origin, client)
 	relayCtx := s.relaySnapshot(plan)
 	view := NormalizeView(req.View)
 	if view == "" && hasClient {
 		view = client.View
 	}
 	renderCtx := BuildRenderContext(req.Origin, profile.Token, renderer.ID, *profile, client, view, relayCtx)
-	rendered := RenderWithPlan(*profile, renderer, pool.Subscriptions, pool.Nodes, renderCtx)
+	rendered, err := engine.Render(context.Background(), renderer.ID, *profile, pool.Subscriptions, pool.Nodes, renderCtx)
+	if err != nil {
+		return PreviewResult{}, errInvalid("aggregator_render_failed")
+	}
 
 	var clientRef *ClientRefView
 	if hasClient {
@@ -1792,7 +1838,11 @@ func (s *Service) ServeSubscription(ctx context.Context, token string, req Serve
 	if fmtTarget == "" {
 		fmtTarget = client.Target
 	}
-	renderer, ok := GetRenderer(fmtTarget)
+	engine, err := s.renderingEngine()
+	if err != nil {
+		return ServeResponse{}, err
+	}
+	renderer, ok := engine.Lookup(fmtTarget)
 	if !ok {
 		return ServeResponse{}, errInvalid("unsupported_aggregator_format")
 	}
@@ -1815,7 +1865,7 @@ func (s *Service) ServeSubscription(ctx context.Context, token string, req Serve
 	} else {
 		relayRequested = canAdvertise
 	}
-	plan := s.buildRelayPlan(*profile, renderer, pool.Subscriptions, pool.Nodes, relayRequested, req.RemoteAddress, req.Origin, client)
+	plan := s.buildRelayPlan(ctx, *profile, renderer, pool.Subscriptions, pool.Nodes, relayRequested, req.RemoteAddress, req.Origin, client)
 	var relayCtx *RelayContext
 	if plan.hasCandidates && plan.status.Requested && plan.status.Available {
 		relayCtx = s.ensureRelay(ctx, plan)
@@ -1828,7 +1878,10 @@ func (s *Service) ServeSubscription(ctx context.Context, token string, req Serve
 		view = client.View
 	}
 	renderCtx := BuildRenderContext(req.Origin, token, renderer.ID, *profile, client, view, relayCtx)
-	rendered := RenderWithPlan(*profile, renderer, pool.Subscriptions, pool.Nodes, renderCtx)
+	rendered, err := engine.Render(ctx, renderer.ID, *profile, pool.Subscriptions, pool.Nodes, renderCtx)
+	if err != nil {
+		return ServeResponse{}, errInvalid("aggregator_render_failed")
+	}
 
 	relayNodes := 0
 	relayErr := ""
@@ -1907,7 +1960,11 @@ func (s *Service) ServeRuleSet(ctx context.Context, token, tag, target string) (
 	if profile == nil {
 		return ServeResponse{}, errInvalid("aggregator_subscription_not_found")
 	}
-	renderer, ok := GetRenderer(target)
+	engine, err := s.renderingEngine()
+	if err != nil {
+		return ServeResponse{}, err
+	}
+	renderer, ok := engine.Lookup(target)
 	if !ok || renderer.Capabilities.RuleSetFormat == "" {
 		return ServeResponse{}, errInvalid("unsupported_aggregator_format")
 	}

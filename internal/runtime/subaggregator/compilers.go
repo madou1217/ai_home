@@ -1,3 +1,5 @@
+//go:build !no_builtin_renderers
+
 package subaggregator
 
 import (
@@ -19,8 +21,6 @@ const (
 
 var (
 	surgeSpecialValuePattern = regexp.MustCompile(`[,=]|^\s|\s$`)
-	multiSpacePattern        = regexp.MustCompile(`\s+`)
-	surgeNameBadChars        = strings.NewReplacer(",", " ", "=", " ")
 	versionPattern           = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.(\d+))?`)
 	unsafePluginKeySet       = map[string]bool{"__proto__": true, "prototype": true, "constructor": true}
 	safeYAMLPluginKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -90,11 +90,6 @@ func formatServerHost(host string) string {
 }
 
 // SanitizeSurgeName 清洗 Surge 系节点/组名中的逗号与等号。
-func SanitizeSurgeName(name string) string {
-	cleaned := surgeNameBadChars.Replace(name)
-	cleaned = multiSpacePattern.ReplaceAllString(cleaned, " ")
-	return strings.TrimSpace(cleaned)
-}
 
 type surgeVal struct {
 	Text   string
@@ -2594,13 +2589,6 @@ func CompileEgernProxy(node ProxyNode, name string) (*YAMLMap, error) {
 }
 
 // RelayEndpoint 表示边车提供的本机 socks5 入口信息。
-type RelayEndpoint struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	UDP      bool
-}
 
 func compileRelayMihomoEntry(name string, ep RelayEndpoint) *YAMLMap {
 	host := ep.Host

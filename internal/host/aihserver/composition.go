@@ -100,6 +100,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
+	"github.com/madou1217/ai_home/internal/runtime/renderplugin"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
@@ -1609,8 +1610,13 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	var subAggSvc *subaggregator.Service
 	if subAggAIHome != "" {
+		renderCatalog := renderplugin.Load(subAggAIHome)
+		if !renderCatalog.Available() && errorLog != nil {
+			errorLog.Printf("订阅渲染插件不可用：未发现 aih-render-* 或 plugins/renderers manifest")
+		}
 		subAggSvc = subaggregator.NewService(subAggAIHome, subaggregator.ServiceOptions{
 			HostHomeDir: strings.TrimSpace(dependencies.HostHomeDir),
+			Rendering:   renderCatalog,
 		})
 	}
 	subAggregatorPublicHandler, err := newPublicSubaggregatorHandlerWithService(subAggSvc)

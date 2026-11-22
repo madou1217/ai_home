@@ -36,3 +36,11 @@ AWS: codex-cli 0.171.0; systemd active; aih-server sha256=3d91b252...
 - 本次验证的是 Codex CLI 的真实 MCP 工具循环；AGY 仍无结构化工具通道。
 - run_command、持久 job、审批协议仍未开放。
 - AWS 主机新增 Node/npm、Codex CLI 和 /usr/local/bin 链接；aih-server 已备份为 aih-server.prev-*，systemd 单元已重启。
+
+## 账号与模型选择器（2026-11-22）
+
+WebUI 本地工作区行的 AI 终端改为 Popover 选择器：先选 Agent（Codex/Claude），再选账号
+（显示 CLI 账号别名与可用模型数），最后选模型（显示 catalog 名与 CLI 名）。账号/模型列表
+来自现有 remote-targets inventory；AccountFact 新增 cliAccountId 非敏感字段，供 aih codex
+的账号启动使用。默认优先选择 gpt-5.6-luna（free 模型），选择后再调用 agent-terminal。
+

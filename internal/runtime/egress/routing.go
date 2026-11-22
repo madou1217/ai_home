@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 )
 
 const (
@@ -224,6 +226,50 @@ func (m *Manager) SaveRoutingPolicy(ctx context.Context, policy RoutingPolicy, r
 		return normalized, fmt.Errorf("pool_restart_failed: %s", result.Error)
 	}
 	return normalized, nil
+}
+
+// RoutingTestResult 描述一次规则测试的命中结果。
+type RoutingTestResult struct {
+	Target  string `json:"target"`
+	Kind    string `json:"kind"`
+	Matched bool   `json:"matched"`
+	RuleID  string `json:"ruleId,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Action  string `json:"action"` // proxy/direct/reject；未命中为 proxy
+}
+
+// MatchTarget 按顺序评估域名/IP 目标；未命中时落到出口池（proxy）。
+func (policy RoutingPolicy) MatchTarget(input string) (RoutingTestResult, error) {
+	target, err := subaggregator.ParseRouteTarget(input)
+	if err != nil {
+		return RoutingTestResult{}, errors.New("routing_target_invalid")
+	}
+	result := RoutingTestResult{Target: target.Value, Kind: target.Kind, Action: "proxy"}
+	addr, _ := netip.ParseAddr(target.Value)
+	for _, rule := range policy.Rules {
+		matched := false
+		switch rule.Type {
+		case "domain":
+			matched = target.Kind == "domain" && target.Value == rule.Value
+		case "domain-suffix":
+			matched = target.Kind == "domain" && (target.Value == rule.Value || strings.HasSuffix(target.Value, "."+rule.Value))
+		case "domain-keyword":
+			matched = target.Kind == "domain" && strings.Contains(target.Value, rule.Value)
+		case "ip-cidr":
+			prefix, parseErr := netip.ParsePrefix(rule.Value)
+			matched = parseErr == nil && addr.IsValid() && prefix.Contains(addr)
+		}
+		if matched {
+			result.Matched = true
+			result.RuleID = rule.ID
+			result.Type = rule.Type
+			result.Value = rule.Value
+			result.Action = rule.Action
+			return result, nil
+		}
+	}
+	return result, nil
 }
 
 // MihomoRoutingRules 生成 mihomo/clash 规则行（含最后 MATCH）。

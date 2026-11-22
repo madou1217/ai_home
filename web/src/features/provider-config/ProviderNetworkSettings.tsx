@@ -24,6 +24,7 @@ import type {
   EgressRoutingPolicy,
   EgressRoutingRuleType,
   EgressRoutingAction,
+  EgressRoutingTestResult,
   EgressStrategyStatus,
   EgressUpstream,
   EgressUpstreamView
@@ -86,10 +87,24 @@ const PROCESS_LABELS: Record<string, string> = {
   'aih-core': 'AIH 出口池内核'
 };
 
+const POOL_PHASE_LABELS: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' | 'processing' }> = {
+  stopped: { label: '未运行', color: 'default' },
+  starting: { label: '启动中', color: 'processing' },
+  ready: { label: '就绪', color: 'success' },
+  degraded: { label: '降级', color: 'warning' },
+  failed: { label: '失败', color: 'error' }
+};
+
 const CORE_SOURCE_LABELS: Record<string, string> = {
   managed: '托管内核',
   path: 'PATH 内核',
   client: '客户端自带内核'
+};
+
+const ROUTING_ACTION_LABELS: Record<string, string> = {
+  proxy: '出口池',
+  direct: '直连',
+  reject: '拒绝'
 };
 
 const STRATEGY_LAYER_LABELS: Record<string, string> = {
@@ -131,6 +146,9 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
   const [routing, setRouting] = useState<EgressRoutingPolicy | null>(null);
   const [routingRestart, setRoutingRestart] = useState(true);
   const [routingSaving, setRoutingSaving] = useState(false);
+  const [routingTestTarget, setRoutingTestTarget] = useState('');
+  const [routingTestResult, setRoutingTestResult] = useState<EgressRoutingTestResult | null>(null);
+  const [routingTesting, setRoutingTesting] = useState(false);
   const [routingStatus, setRoutingStatus] = useState('');
   const [routingStatusTone, setRoutingStatusTone] = useState<'info' | 'success' | 'error'>('info');
   const [sshNames, setSshNames] = useState<Record<string, string>>({});
@@ -339,6 +357,19 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
   const updateRoutingDNS = useCallback((patch: Partial<EgressRoutingPolicy['dns']>) => {
     setRouting((current) => current ? { ...current, dns: { ...current.dns, ...patch } } : current);
   }, []);
+
+  const testRouting = async () => {
+    if (!routingTestTarget.trim()) return;
+    setRoutingTesting(true);
+    try {
+      setRoutingTestResult(await egressUpstreamAPI.testRouting(routingTestTarget.trim()));
+    } catch (error) {
+      message.error(describeError(error));
+      setRoutingTestResult(null);
+    } finally {
+      setRoutingTesting(false);
+    }
+  };
 
   const saveRouting = async () => {
     if (!routing) return;
@@ -674,6 +705,24 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
           <div className="pn-routing-actions">
             <Button size="small" icon={<PlusOutlined />} onClick={addRoutingRule}>添加规则</Button>
           </div>
+          <div className="pn-route-test">
+            <span className="pn-layer-name">测试</span>
+            <Input
+              size="small"
+              value={routingTestTarget}
+              placeholder="api.example.com / 10.0.0.0/8"
+              onChange={(event) => setRoutingTestTarget(event.target.value)}
+              onPressEnter={() => void testRouting()}
+            />
+            <Button size="small" loading={routingTesting} onClick={() => void testRouting()}>测试已保存规则</Button>
+            {routingTestResult ? (
+              <Tag bordered={false} color={routingTestResult.matched ? (routingTestResult.action === 'reject' ? 'error' : routingTestResult.action === 'direct' ? 'default' : 'success') : 'success'}>
+                {routingTestResult.matched
+                  ? `${ROUTING_ACTION_LABELS[routingTestResult.action] || routingTestResult.action} · ${routingTestResult.type} ${routingTestResult.value}`
+                  : '未命中 · 出口池'}
+              </Tag>
+            ) : null}
+          </div>
           <div className="pn-dns-row">
             <span className="pn-layer-name">DNS</span>
             <Select
@@ -726,11 +775,15 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
         <section className="pn-diagnostics" aria-label="代理冲突检测">
           <div className="pn-upstream-head">
             <strong>冲突检测</strong>
-            <Tag bordered={false} color={diagnostics.pool.running ? 'success' : 'default'}>
-              {diagnostics.pool.running ? 'AIH 出口池运行中' : 'AIH 出口池未运行'}
-            </Tag>
+            {(() => {
+              const phase = POOL_PHASE_LABELS[diagnostics.pool.phase || ''] || POOL_PHASE_LABELS.stopped;
+              return <Tag bordered={false} color={phase.color}>{phase.label}</Tag>;
+            })()}
             {diagnostics.pool.mixedPort ? (
               <span className="pn-muted">端口 {diagnostics.pool.mixedPort}/{diagnostics.pool.controllerPort}</span>
+            ) : null}
+            {typeof diagnostics.pool.freshHealthy === 'number' ? (
+              <span className="pn-muted">新鲜健康 {diagnostics.pool.freshHealthy} 个</span>
             ) : null}
             {diagnostics.pool.corePid ? (
               <span className="pn-muted">

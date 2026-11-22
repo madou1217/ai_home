@@ -127,7 +127,16 @@ func (m *Manager) probeDirectAccountUpstream(
 	proxyURL := ""
 	bindURL := false
 	if hasBinding {
-		resolved, exitErr := ResolveNonPoolExit(ctx, m.aiHomeDir, upstream.Provider, &binding)
+		runtime, ok := strategyRuntimeFor(binding.Mode)
+		if !ok {
+			return AccountUpstreamProbeResult{
+				OK:     false,
+				Status: "skipped",
+				Reason: "unknown_egress_mode",
+				Exit:   strings.ToLower(strings.TrimSpace(binding.Mode)),
+			}
+		}
+		resolved, exitErr := runtime.Launch(ctx, m.aiHomeDir, upstream.Provider, "", &binding)
 		if exitErr != nil {
 			return AccountUpstreamProbeResult{
 				OK:     false,

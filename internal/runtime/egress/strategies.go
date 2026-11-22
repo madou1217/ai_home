@@ -95,20 +95,24 @@ func (m *Manager) fillStrategyAvailability(ctx context.Context, status *Strategy
 			status.Reason = "没有已启用的 SSH 代理主机；请先在 SSH 主机设置里启用“作为代理”"
 		}
 	case agyegress.ModePool:
-		if m.IsPoolReady() {
-			kind := "mihomo"
-			version := ""
-			if state, _ := ReadPoolStateFile(m.aiHomeDir); state != nil {
-				if state.CoreKind != "" {
-					kind = state.CoreKind
-				}
-				version = state.CoreVersion
-			}
+		lifecycle := m.PoolLifecycle(ctx)
+		if lifecycle.Ready {
+			kind := firstNonEmpty(lifecycle.CoreKind, "mihomo")
 			status.Status = "ready"
-			status.Reason = kind + " 出口池已运行"
-			if version != "" {
-				status.Reason += "（" + version + "）"
+			if lifecycle.Phase == PoolPhaseDegraded {
+				status.Status = "degraded"
+				status.Reason = kind + " 出口池已运行，但没有新鲜健康节点（仍在轮换/探测）"
+			} else {
+				status.Reason = kind + " 出口池已运行"
 			}
+			if lifecycle.CoreVersion != "" {
+				status.Reason += "（" + lifecycle.CoreVersion + "）"
+			}
+			return
+		}
+		if lifecycle.Phase == PoolPhaseStarting {
+			status.Status = "degraded"
+			status.Reason = "出口池启动中"
 			return
 		}
 		if labels := poolKernelLabels(m.aiHomeDir, m.platform); len(labels) > 0 {

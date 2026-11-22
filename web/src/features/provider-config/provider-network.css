@@ -358,3 +358,14 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+.pn-route-test {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pn-route-test .ant-input {
+  max-width: 320px;
+}

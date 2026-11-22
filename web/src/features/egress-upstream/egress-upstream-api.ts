@@ -6,6 +6,7 @@ import type {
   EgressRule,
   EgressRoutingPolicy,
   EgressRoutingResponse,
+  EgressRoutingTestResult,
   EgressStrategyStatus,
   EgressUpstreamView
 } from './types';
@@ -58,6 +59,10 @@ export const egressUpstreamAPI = {
   async saveRouting(policy: EgressRoutingPolicy, restart: boolean): Promise<EgressRoutingResponse> {
     const response = await api.put<EgressRoutingResponse>(`${BASE}/routing`, { policy, restart });
     return response.data;
+  },
+  async testRouting(target: string): Promise<EgressRoutingTestResult> {
+    const response = await api.post<{ ok: boolean; result: EgressRoutingTestResult }>(`${BASE}/routing/test`, { target });
+    return response.data.result;
   },
   /** 服务端策略目录 + 当前可用性。 */
   async strategies(): Promise<EgressStrategyStatus[]> {

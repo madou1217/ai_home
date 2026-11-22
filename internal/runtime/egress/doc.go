@@ -29,12 +29,15 @@
 //   - 初始/失效车道用 PickBest：新鲜成功 > 未探测 > 陈旧成功 > 新鲜失败；
 //     轮换用 PickNext 保证确定性顺序。陈旧成功不能当可靠事实。
 //   - 死节点不是控制面问题：它们是探测/冷却输入，不应改变账号绑定或架构。
+//   - 池生命周期显式化为 stopped/starting/ready/degraded/failed；ready 只有在
+//     控制器可用且至少一个节点有新鲜成功探测时才成立（见 lifecycle.go）。
 //
 // # 扩展点
 //
 //   - 新策略：在 adapters/agy/egress/strategies.go 加一条 StrategyDefinition，
-//     在解析/启动/探测/呈现路径补对应分支，前端 AccountEgressMode union 加值；
-//     弹窗和策略面板会自动渲染（输入类型 none/proxy_url/ssh_connection/pool_scope）。
+//     在 strategy_registry.go 注册 Resolve/Launch/Display 三个入口（池模式单列），
+//     前端 AccountEgressMode union 加值；弹窗和策略面板会自动渲染
+//     （输入类型 none/proxy_url/ssh_connection/pool_scope）。
 //   - 新内核：实现 PoolCore 的 BuildConfig/CheckConfig/RunArgs/GlobalGroup/
 //     ConfigFileName，并让 ReadPoolRuntimeConfig 能解析其配置；控制面必须兼容
 //     Clash API（/version、/proxies、PUT /proxies/{group}、/delay）。

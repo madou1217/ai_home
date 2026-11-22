@@ -216,6 +216,16 @@ export interface EgressRoutingPolicy {
   updatedAt?: number;
 }
 
+export interface EgressRoutingTestResult {
+  target: string;
+  kind: 'domain' | 'ip' | string;
+  matched: boolean;
+  ruleId?: string;
+  type?: string;
+  value?: string;
+  action: 'proxy' | 'direct' | 'reject' | string;
+}
+
 export interface EgressRoutingResponse {
   ok: boolean;
   policy: EgressRoutingPolicy;
@@ -250,6 +260,9 @@ export interface EgressDiagnostics {
     corePid: number;
     coreKind?: string;
     coreVersion?: string;
+    phase?: string;
+    phaseReason?: string;
+    freshHealthy?: number;
     coreSource: 'managed' | 'path' | 'client' | '';
     coreVerified: boolean;
     coreCommand: string;

@@ -150,7 +150,7 @@ func (h *Handler) serveHTTPStream(w http.ResponseWriter, r *http.Request) {
 	done := make(chan error, 1)
 	go func() {
 		var serveErr error
-		if scope.Kind == ScopeAccount {
+		if scope.Kind == ScopeAccount || scope.Kind == ScopeJob {
 			if scope.ProxyURL != "" || scope.ProxyRequired {
 				proxyScoped, ok := h.runtime.(ProxyScopedRuntime)
 				if !ok {

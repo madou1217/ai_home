@@ -56,6 +56,7 @@ type Service struct {
 	generateID    IDGenerator
 	jobStore      JobStore
 	aliasPool     AliasPoolWriter
+	profileBinder func(ctx context.Context, providerID, accountRef, jobID string) error
 	onJobSnapshot func(Job)
 	settings      serviceSettings
 }
@@ -114,6 +115,7 @@ func newService(
 		generateID:    dependencies.GenerateID,
 		jobStore:      dependencies.JobStore,
 		aliasPool:     dependencies.AliasPool,
+		profileBinder: dependencies.ProfileBinder,
 		onJobSnapshot: dependencies.OnJobSnapshot,
 		settings:      settings,
 	}, nil
@@ -563,6 +565,12 @@ func (service *Service) finishClaimWithClaims(
 	)
 	if err != nil {
 		return service.failJob(claimed.jobID, accountWriteFailureCode(err)), err
+	}
+	// 新建账号的 OAuth 浏览器资料绑定到账号；失败不影响登录结果。
+	if claimed.purpose == PurposeRegister && service.profileBinder != nil {
+		if bindErr := service.profileBinder(ctx, claimed.providerID, account.Ref().String(), claimed.jobID); bindErr != nil {
+			log.Printf("accountauth: 绑定浏览器资料失败 job=%s: %v", claimed.jobID, bindErr)
+		}
 	}
 	// 新账号的别名选号偏好只有显式 false 才需要落库；失败只记日志，
 	// 账号已经注册成功，不能因为偏好写入把登录结果改成失败。

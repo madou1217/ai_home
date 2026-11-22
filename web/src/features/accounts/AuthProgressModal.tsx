@@ -263,6 +263,10 @@ export function AuthProgressModal({
       if (provider && accountRef) {
         query.set('provider', provider);
         query.set('accountRef', accountRef);
+      } else {
+        // New OAuth accounts have no accountRef until the callback creates them.
+        // Use a per-job profile instead of the shared task surface.
+        query.set('scope', 'job');
       }
       navigate(`/browser?${query.toString()}`);
     } catch (_error) {

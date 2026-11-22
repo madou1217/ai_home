@@ -48,7 +48,9 @@ export default function BrowserView({ requiredServerId, embedded = false, active
   const boundServerId = requiredServerId?.trim();
   const requestedScopeKey = scope?.scope === 'account'
     ? `account:${scope.provider || ''}:${scope.accountRef || ''}`
-    : 'task';
+    : scope?.scope === 'job'
+      ? `job:${scope.authJob || ''}`
+      : 'task';
   const ownerRef = useRef({ serverId: boundServerId, active: visible });
   ownerRef.current = { serverId: boundServerId, active: visible };
   const targetIsCurrent = useCallback((selected: Target) => targetMatches(selected, ownerRef.current.serverId), []);
@@ -344,8 +346,8 @@ export default function BrowserView({ requiredServerId, embedded = false, active
   const interactive = visible && active && frameFresh && targetIsCurrent(target);
   const idle = state === 'disconnected' || state === 'failed';
   const textEnabled = interactive && capabilities?.text !== false;
-  const requestedScopeSupported = scope?.scope !== 'account'
-    || capabilities?.scopes?.includes('account') === true;
+  const requestedScopeSupported = (scope?.scope !== 'account' && scope?.scope !== 'job')
+    || capabilities?.scopes?.includes(scope.scope) === true;
   const canStart = visible && targetIsCurrent(target) && !capabilityLoading
     && capabilities?.supported === true
     && capabilities.transports?.includes('http-stream-v1') === true
@@ -376,7 +378,9 @@ export default function BrowserView({ requiredServerId, embedded = false, active
         <Tag>{phases[state]}</Tag>
         <span>执行 Server：{boundServerId || target.serverId || '当前 Server'} · {hostLabel(capabilities)}</span>
         {capabilities?.browser ? <span>{capabilities.browser.vendor} / {capabilities.browser.channel}</span> : null}
-        <span>{scope?.scope === 'account' ? `账号浏览器 · ${scope.provider || ''} · ${scope.accountRef || ''}` : '任务浏览器'}</span>
+        <span>{scope?.scope === 'account'
+          ? `账号浏览器 · ${scope.provider || ''} · ${scope.accountRef || ''}`
+          : scope?.scope === 'job' ? '授权浏览器 · 登录完成后归属该账号' : '任务浏览器'}</span>
         {capabilityLoading ? <span>正在读取 Server 能力…</span> : null}
         <Button size="small" type="text" icon={<ReloadOutlined />} loading={capabilityLoading}
           disabled={!idle || capabilityLoading} title="仅重新读取当前 Server 的能力，不启动或重启浏览器"
@@ -391,7 +395,11 @@ export default function BrowserView({ requiredServerId, embedded = false, active
         <span>{embedded ? '网页在这台虚拟电脑所属 Server 执行，画面和操作留在当前窗口。' : '浏览器运行在上方所选执行 Server，手机和桌面浏览器仅查看、发送操作。'}</span>
         <Button type="primary" icon={<DesktopOutlined />} disabled={!canStart} onClick={start}>在此 Server 启动浏览器</Button>
         <span>不支持的 Server 不会回退到本机；权限在启动时检查，不会自动申请。</span>
-        <span>{scope?.scope === 'account' ? '账号资料由 Server 持久保存；关闭窗口不会删除 Cookie 或站点数据。' : '任务资料不会自动转移到账号资料；代理绑定与跨平台宿主仍在后续阶段。'}</span>
+        <span>{scope?.scope === 'account'
+          ? '账号资料由 Server 持久保存；关闭窗口不会删除 Cookie 或站点数据。'
+          : scope?.scope === 'job'
+            ? '授权资料按本次登录任务隔离；登录完成后会绑定到新建账号。'
+            : '任务资料不会自动转移到账号资料；代理绑定与跨平台宿主仍在后续阶段。'}</span>
       </div> : !active ? <span className={styles.hint}>{phases[state]}，正在等待执行 Server 的画面…</span> : null}
       <canvas ref={canvasRef} className={styles.canvas} tabIndex={interactive ? 0 : -1}
         aria-label="实时浏览器画面；单指轻点或滑动滚动，中文和软键盘请使用文字输入"

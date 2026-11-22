@@ -429,6 +429,8 @@ type Dependencies struct {
 	JobStore JobStore
 	// AliasPool 是新增账号的别名选号偏好写入端口；为 nil 时不写偏好。
 	AliasPool AliasPoolWriter
+	// ProfileBinder 把新账号 OAuth 登录所用的浏览器资料绑定到账号；为 nil 时跳过。
+	ProfileBinder func(ctx context.Context, providerID, accountRef, jobID string) error
 	// OnJobSnapshot 在每次状态迁移后收到最新 Job；供账号实时流广播 auth-job。
 	OnJobSnapshot func(Job)
 }

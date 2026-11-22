@@ -93,6 +93,7 @@ func resolveScope(ctx context.Context, resolver ScopeResolver, request ScopeRequ
 	request.Scope = strings.TrimSpace(request.Scope)
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.AccountRef = strings.TrimSpace(request.AccountRef)
+	request.AuthJob = strings.TrimSpace(request.AuthJob)
 	if request.Scope == "" {
 		request.Scope = ScopeTask
 	}
@@ -102,6 +103,18 @@ func resolveScope(ctx context.Context, resolver ScopeResolver, request ScopeRequ
 			return Scope{}, ErrInvalidScope
 		}
 		return Scope{Kind: ScopeTask}, nil
+	case ScopeJob:
+		if request.AuthJob == "" || request.Provider != "" || request.AccountRef != "" || resolver == nil {
+			return Scope{}, ErrInvalidScope
+		}
+		resolved, err := resolver.Resolve(ctx, request)
+		if err != nil {
+			return Scope{}, err
+		}
+		if resolved.Kind != ScopeJob || strings.TrimSpace(resolved.DataDir) == "" {
+			return Scope{}, ErrScopeUnavailable
+		}
+		return resolved, nil
 	case ScopeAccount:
 		if request.Provider == "" || request.AccountRef == "" || resolver == nil {
 			return Scope{}, ErrAccountScopeRequired

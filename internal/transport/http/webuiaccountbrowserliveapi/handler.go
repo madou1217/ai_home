@@ -50,6 +50,9 @@ type Authorizer interface {
 const (
 	ScopeTask    = "task"
 	ScopeAccount = "account"
+	// ScopeJob is a per-job OAuth browser profile. It exists because a new
+	// account has no accountRef until the OAuth callback creates it.
+	ScopeJob = "job"
 )
 
 var (
@@ -64,6 +67,7 @@ type ScopeRequest struct {
 	Scope      string `json:"scope,omitempty"`
 	Provider   string `json:"provider,omitempty"`
 	AccountRef string `json:"accountRef,omitempty"`
+	AuthJob    string `json:"authJob,omitempty"`
 }
 
 // Scope is server-owned runtime selection. DataDir never enters an HTTP
@@ -165,6 +169,9 @@ func (h *Handler) serveCapabilities(w http.ResponseWriter, r *http.Request) {
 	if h.scopeResolver != nil {
 		if _, ok := h.runtime.(ScopedRuntime); ok {
 			scopes = append(scopes, ScopeAccount)
+		}
+		if _, ok := h.scopeResolver.(interface{ SupportsJobScope() bool }); ok {
+			scopes = append(scopes, ScopeJob)
 		}
 	}
 	writeJSON(w, http.StatusOK, struct {

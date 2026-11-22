@@ -58,9 +58,10 @@ export async function readBrowserCapabilities(signal?: AbortSignal): Promise<Bro
 }
 
 export type BrowserSurfaceScope = {
-  scope?: 'task' | 'account';
+  scope?: 'task' | 'account' | 'job';
   provider?: string;
   accountRef?: string;
+  authJob?: string;
 };
 
 export function connectBrowserSurface(
@@ -163,7 +164,9 @@ export function connectBrowserSurface(
       if (!isCurrent(target)) { close(); return; }
       const scopeBody: BrowserSurfaceScope = requestedScope.scope === 'account'
         ? { scope: 'account', provider: requestedScope.provider, accountRef: requestedScope.accountRef }
-        : { scope: 'task' };
+        : requestedScope.scope === 'job'
+          ? { scope: 'job', authJob: requestedScope.authJob }
+          : { scope: 'task' };
       const response = await fetchAuthorizedWebUiResource(`${basePath}/stream`, {
         method: 'POST', body: JSON.stringify(scopeBody),
         headers: { 'content-type': 'application/json' },

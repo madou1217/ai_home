@@ -37,6 +37,31 @@ AWS: codex-cli 0.171.0; systemd active; aih-server sha256=3d91b252...
 - run_command、持久 job、审批协议仍未开放。
 - AWS 主机新增 Node/npm、Codex CLI 和 /usr/local/bin 链接；aih-server 已备份为 aih-server.prev-*，systemd 单元已重启。
 
+## run_command 真机闭环（2026-11-23）
+
+环境：同一 AWS Server（新 aih-server，sha256 `72f6047f229791a4c9ccb172f1ced5c18880db2bd88d902115e65aa604d2c61d`）；
+本地 Connector 以默认命令模式连接新 workspace `wc-575c11e4cf521bfd34`，root
+`/private/tmp/aih-real-project`。
+
+流程：`agent-terminal`（`agent=codex`、`account=10`、`model=gpt-5.6-luna`）→ Codex 调用
+`aih_remote.run_command` → Server tool endpoint → Connector 在本机执行
+`printf 'aws-codex-ok' > RUN_CMD.txt && cat RUN_CMD.txt`。
+
+证据：
+
+- Codex 终端：`Calling aih_remote.run_command`、`duration: 17ms`、`stdout: aws-codex-ok`、
+  `done · Worked for 6s`；
+- 本机 `RUN_CMD.txt` 实际写入，内容 `aws-codex-ok`（12 字节，2026-11-23 00:12）。
+
+边界与排障：
+
+- 首次启动报 `account projection conflict: session entry session_index.jsonl has no host
+  target`：账号投影里有 Codex 写入的 `session_index.jsonl`，宿主 `~/.codex` 没有对应文件。
+  把投影文件复制到宿主同名路径后投影按既有规则归一；这是数据面状态修复，不是代码改动。
+- Web Terminal 提交用户输入时 `protocol` 必须是 `false`（或不传）；`protocol=true` 是 xterm
+  协议回复通道，回车不会提交。
+- 本次新 workspace 与临时 profile 仅用于验收，验收后已撤销并清理。
+
 ## 账号与模型选择器（2026-11-22）
 
 WebUI 本地工作区行的 AI 终端改为 Popover 选择器：先选 Agent（Codex/Claude），再选账号

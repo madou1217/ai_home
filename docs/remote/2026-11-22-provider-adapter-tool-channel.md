@@ -1,7 +1,8 @@
 # Provider Adapter 工具通道：Codex / Claude -> Workspace Connector
 
 日期：2026-11-22（Asia/Shanghai）
-状态：工具通道已实现并完成真实 MCP/HTTP 验收；真实模型账号下的 Agent 工具循环尚未验收。
+状态：工具通道与 `run_command` 已实现；完成真实 MCP/HTTP 验收，以及真实 Codex free 账号下的
+`run_command` 闭环验收。
 
 ## 1. 链路
 
@@ -55,8 +56,12 @@ Provider 进程仍在 AIH Server；本地 Connector 不持有 Provider 凭据。
 6. 断开后以 `--no-command` 重连：`workspace ls` 的 live `runCommand=false`，
    工具列表只剩 5 个文件工具，直接调用返回 `capability_not_allowed`。
 
-未验证/未完成：用真实 Codex/Claude 账号和模型完成一次“对话 -> `run_command` -> 本地
-命令输出回到对话”的闭环；这一步需要可用的 Provider 账号与模型，不能用 MCP 直连结果替代。
+真实模型闭环（2026-11-23）：AWS Server 上的 Codex（free 账号 10，`gpt-5.6-luna`）通过
+`aih_remote.run_command` 在本地工作区执行命令，终端显示 `Calling aih_remote.run_command`、
+`duration: 17ms`、`stdout: aws-codex-ok`，本机 `RUN_CMD.txt` 实际写入 `aws-codex-ok`。
+证据与边界见 `docs/remote/2026-11-22-codex-free-live-verification.md`。
+
+未完成：Claude 的真实模型闭环；持久 job 与审批协议。
 
 ## 4. 新增入口
 

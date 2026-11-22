@@ -172,6 +172,26 @@ export interface EgressAccountProbeResult extends EgressActionResult {
   geo?: EgressGeo | null;
 }
 
+/** 出口策略目录（GET /egress-upstreams/strategies，服务端唯一声明）。 */
+export type EgressStrategyLayer = 'application' | 'system' | 'network';
+export type EgressStrategyInput = 'none' | 'proxy_url' | 'ssh_connection' | 'pool_scope';
+
+export interface EgressStrategyStatus {
+  id: string;
+  label: string;
+  description: string;
+  layer: EgressStrategyLayer | string;
+  input: EgressStrategyInput | string;
+  requiresMihomo: boolean;
+  requiresSsh: boolean;
+  supportsLaunch: boolean;
+  supportsProbe: boolean;
+  available: boolean;
+  status: 'ready' | 'degraded' | 'unavailable' | string;
+  reason?: string;
+  boundAccounts: number;
+}
+
 /** 代理层冲突诊断（GET /egress-upstreams/diagnostics，只读）。 */
 export interface EgressProxyProcess {
   pid: number;

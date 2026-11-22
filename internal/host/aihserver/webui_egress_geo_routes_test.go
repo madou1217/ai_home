@@ -31,8 +31,8 @@ func TestBuildWebUIEgressGeoRoutesMuxAndDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUIEgressGeoRoutes error = %v", err)
 	}
-	if len(routes) != 29 {
-		t.Fatalf("路由数 = %d，期望 29（含 diagnostics）", len(routes))
+	if len(routes) != 30 {
+		t.Fatalf("路由数 = %d，期望 30（含 diagnostics/strategies）", len(routes))
 	}
 
 	mux := http.NewServeMux()

@@ -1,5 +1,12 @@
 import api from '@/services/api';
-import type { EgressAccountProbeResult, EgressActionResult, EgressDiagnostics, EgressRule, EgressUpstreamView } from './types';
+import type {
+  EgressAccountProbeResult,
+  EgressActionResult,
+  EgressDiagnostics,
+  EgressRule,
+  EgressStrategyStatus,
+  EgressUpstreamView
+} from './types';
 
 const BASE = '/webui/egress-upstreams';
 
@@ -40,5 +47,10 @@ export const egressUpstreamAPI = {
   /** 只读冲突诊断：池端口/进程身份、外部代理内核、端口占用。 */
   async diagnostics(): Promise<EgressDiagnostics> {
     return (await api.get<EgressDiagnostics>(`${BASE}/diagnostics`)).data;
+  },
+  /** 服务端策略目录 + 当前可用性。 */
+  async strategies(): Promise<EgressStrategyStatus[]> {
+    const response = await api.get<{ ok: boolean; strategies?: EgressStrategyStatus[] }>(`${BASE}/strategies`);
+    return Array.isArray(response.data.strategies) ? response.data.strategies : [];
   }
 };

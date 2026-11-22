@@ -80,6 +80,11 @@ type DiagnosticsManager interface {
 	Diagnostics(ctx context.Context) runtimeegress.EgressDiagnostics
 }
 
+// StrategyCatalogManager 是可选的出口策略目录能力（只读）。
+type StrategyCatalogManager interface {
+	StrategyCatalog(ctx context.Context) []runtimeegress.StrategyStatus
+}
+
 // Dependencies 注入鉴权策略、上游管理器及测试时钟/心跳配置。
 type Dependencies struct {
 	Authorizer        Authorizer
@@ -217,6 +222,20 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter, request *http.Request, escapedPath string) {
 	rest := strings.TrimPrefix(escapedPath, UpstreamsPath+"/")
 	switch {
+	case rest == "strategies":
+		if !requireMethod(responseWriter, request, http.MethodGet) {
+			return
+		}
+		manager, ok := handler.manager.(StrategyCatalogManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "strategies_unavailable"})
+			return
+		}
+		writeJSON(responseWriter, http.StatusOK, map[string]any{
+			"ok":         true,
+			"strategies": manager.StrategyCatalog(request.Context()),
+		})
+
 	case rest == "diagnostics":
 		if !requireMethod(responseWriter, request, http.MethodGet) {
 			return

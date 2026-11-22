@@ -27,15 +27,7 @@ var retiredBindingModes = map[string]struct{}{
 	"group": {},
 }
 
-// knownBindingModes 与 Node EGRESS_MODES 一致（pool 已重新启用，不属于 retired）。
-var knownBindingModes = map[string]struct{}{
-	ModeDirect: {},
-	ModeSystem: {},
-	ModeTUN:    {},
-	ModeURL:    {},
-	ModePool:   {},
-	ModeSSH:    {},
-}
+// knownBindingModes 由 strategies.go 的策略目录派生（避免与 UI 清单漂移）。
 
 // poolBindingStrategies 与 Node POOL_STRATEGIES 一致。
 var poolBindingStrategies = map[string]struct{}{

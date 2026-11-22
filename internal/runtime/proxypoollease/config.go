@@ -95,7 +95,7 @@ func loopbackNode(node egress.ProxyNode) bool {
 	}
 	host := strings.Trim(strings.TrimSpace(node.Server), "[]")
 	if ip := net.ParseIP(host); ip != nil {
-		return true
+		return ip.IsLoopback()
 	}
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	return host == "localhost" || strings.HasSuffix(host, ".localhost")

@@ -10,7 +10,9 @@ const { verifyBuildStamp, readPackageVersion, computeRouteManifestHash } = requi
 // bundle that silently turns missing compilation into a disabled feature.
 function copyNativeComponents(repositoryRoot, bundleRoot, target) {
   const key = targetKey(target);
-  const names = ['aih-server', 'aih-go'].map((name) => isWindows(target) ? `${name}.exe` : name);
+  const suffix = isWindows(target) ? '.exe' : '';
+  const engineNames = ['aih-engine-mihomo', 'aih-engine-singbox'];
+  const names = ['aih-server', 'aih-go', ...engineNames].map((name) => name + suffix);
   const sourceDir = path.join(repositoryRoot, 'bin', 'native', key);
   const files = names.map((name) => {
     const file = path.join(sourceDir, name);
@@ -35,7 +37,11 @@ function copyNativeComponents(repositoryRoot, bundleRoot, target) {
   return {
     binary: `bin/native/${key}/${names[0]}`,
     sha256: files[0].sha256,
-    cli: { binary: `bin/native/${key}/${names[1]}`, sha256: files[1].sha256 }
+    cli: { binary: `bin/native/${key}/${names[1]}`, sha256: files[1].sha256 },
+    engines: files.slice(2).map((file) => ({
+      binary: `bin/native/${key}/${file.name}`,
+      sha256: file.sha256
+    }))
   };
 }
 

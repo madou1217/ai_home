@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -71,60 +72,115 @@ type Client struct {
 }
 
 // Load 扫描插件目录并启动可用插件；单个插件失败只跳过，不影响其它插件。
+//
+// 去重键是插件自报的 descriptor.id，而不是文件名或 manifest.id：
+// 同一个插件可能有多种命名（sing-box / singbox），按文件名去重会让一份
+// 陈旧副本抢先占位。发现顺序固定为「随主体分发的目录 -> manifest -> aiHome」，
+// 打包自带的插件始终优先于运行时目录里的历史副本。
 func Load(aiHomeDir string) []*Client {
 	root := strings.TrimSpace(aiHomeDir)
 	if root == "" {
 		return nil
 	}
-	clients := make([]*Client, 0, 2)
+	clients := make([]*Client, 0, 3)
 	seen := map[string]struct{}{}
-	dir := filepath.Join(root, manifestDirName)
-	if entries, err := os.ReadDir(dir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
-				continue
-			}
-			raw, readErr := os.ReadFile(filepath.Join(dir, entry.Name()))
-			if readErr != nil {
-				continue
-			}
-			var manifest Manifest
-			if json.Unmarshal(raw, &manifest) != nil || strings.TrimSpace(manifest.ID) == "" {
-				continue
-			}
-			if strings.TrimSpace(manifest.Command) == "" {
-				manifest.Command = filepath.Join(root, "bin", "aih-engine-"+manifest.ID)
-			} else if !filepath.IsAbs(manifest.Command) {
-				manifest.Command = filepath.Join(dir, manifest.Command)
-			}
-			client, startErr := NewClient(manifest)
-			if startErr != nil {
-				continue
-			}
-			seen[strings.ToLower(manifest.ID)] = struct{}{}
-			clients = append(clients, client)
+	start := func(manifest Manifest) {
+		client, err := NewClient(manifest)
+		if err != nil {
+			return
 		}
+		id := strings.ToLower(strings.TrimSpace(client.Descriptor().ID))
+		if id == "" {
+			_ = client.Close()
+			return
+		}
+		if _, exists := seen[id]; exists {
+			_ = client.Close()
+			return
+		}
+		seen[id] = struct{}{}
+		clients = append(clients, client)
 	}
-	// 无 manifest 时也接受 <aiHome>/bin/aih-engine-*：插件二进制放进去即可被发现。
-	binDir := filepath.Join(root, "bin")
-	if entries, err := os.ReadDir(binDir); err == nil {
+
+	// 先扫描与主体同目录/运行目录的 aih-engine-*。
+	for _, binDir := range engineSearchDirs(root) {
+		entries, err := os.ReadDir(binDir)
+		if err != nil {
+			continue
+		}
 		for _, entry := range entries {
 			if entry.IsDir() || !strings.HasPrefix(strings.ToLower(entry.Name()), "aih-engine-") {
 				continue
 			}
 			id := strings.TrimPrefix(strings.ToLower(entry.Name()), "aih-engine-")
-			if _, exists := seen[id]; exists {
-				continue
+			if strings.HasSuffix(id, ".exe") {
+				id = strings.TrimSuffix(id, ".exe")
 			}
-			client, startErr := NewClient(Manifest{ID: id, Command: filepath.Join(binDir, entry.Name())})
-			if startErr != nil {
-				continue
-			}
-			seen[id] = struct{}{}
-			clients = append(clients, client)
+			start(Manifest{ID: id, Command: filepath.Join(binDir, entry.Name())})
 		}
 	}
+
+	// manifest 只补位：随包插件已经注册的 ID 不再被外部声明覆盖。
+	manifestDir := filepath.Join(root, manifestDirName)
+	entries, err := os.ReadDir(manifestDir)
+	if err != nil {
+		return clients
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+			continue
+		}
+		raw, readErr := os.ReadFile(filepath.Join(manifestDir, entry.Name()))
+		if readErr != nil {
+			continue
+		}
+		var manifest Manifest
+		if json.Unmarshal(raw, &manifest) != nil || strings.TrimSpace(manifest.ID) == "" {
+			continue
+		}
+		if strings.TrimSpace(manifest.Command) == "" {
+			manifest.Command = filepath.Join(root, "bin", "aih-engine-"+manifest.ID)
+		} else if !filepath.IsAbs(manifest.Command) {
+			manifest.Command = filepath.Join(manifestDir, manifest.Command)
+		}
+		start(manifest)
+	}
 	return clients
+}
+
+// SearchDirs 返回插件二进制的搜索目录（按优先级去重），供诊断视图与测试注入。
+func SearchDirs(aiHomeDir string) []string { return engineSearchDirs(aiHomeDir) }
+
+// engineSearchDirs 返回插件二进制的搜索目录，按优先级去重。
+//
+// 主体可执行文件目录排在最前：打包后插件与 aih-server 放在一起，
+// 不依赖运行时数据目录是否被手工填充。
+func engineSearchDirs(aiHomeDir string) []string {
+	dirs := make([]string, 0, 4)
+	if exe, err := os.Executable(); err == nil {
+		if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil {
+			exe = resolved
+		}
+		dirs = append(dirs, filepath.Dir(exe))
+	}
+	if root := strings.TrimSpace(aiHomeDir); root != "" {
+		dirs = append(dirs, filepath.Join(root, "bin"))
+		dirs = append(dirs, filepath.Join(root, "bin", "native", runtime.GOOS+"-"+runtime.GOARCH))
+	}
+	seen := map[string]struct{}{}
+	out := dirs[:0]
+	for _, dir := range dirs {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[abs]; exists {
+			continue
+		}
+		seen[abs] = struct{}{}
+		out = append(out, abs)
+	}
+	return out
 }
 
 // NewClient 启动插件并读取 describe 描述符。
@@ -162,6 +218,13 @@ func NewClient(manifest Manifest) (*Client, error) {
 	if strings.ToLower(strings.TrimSpace(descriptor.Controller)) != "clash-api" {
 		_ = client.Close()
 		return nil, errors.New("engine_plugin_controller_unsupported")
+	}
+	if strings.TrimSpace(descriptor.ID) == "" {
+		_ = client.Close()
+		return nil, errors.New("engine_plugin_id_required")
+	}
+	if manifest.Priority != 0 {
+		descriptor.Priority = manifest.Priority
 	}
 	client.descriptor = descriptor
 	return client, nil

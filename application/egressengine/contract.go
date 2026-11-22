@@ -1,11 +1,19 @@
 // Package egressengine 定义出口内核插件契约。
 //
 // 主体（egress 包）只依赖这里的接口与 JSON 结构，不 import mihomo/sing-box
-// 的配置编译器。内置适配器与外部进程插件实现同一份 Engine 接口；进程插件
-// 通过 pluginhost 的 egress.engine 能力交换 CompileRequest/LaunchSpec。
+// 的配置编译器。生产构建（-tags no_builtin_engines）只有进程插件实现；
+// 插件通过行分隔 JSON-RPC 交换 CompileRequest/LaunchSpec，宿主负责进程、
+// 控制面、健康与回收。
 package egressengine
 
 import "context"
+
+const (
+	// CapabilityPool 表示插件支持多节点出口池配置。
+	CapabilityPool = "pool"
+	// CapabilityLease 表示插件支持单节点租约配置。
+	CapabilityLease = "lease"
+)
 
 // Node 是插件编译配置所需的节点事实。
 //
@@ -64,8 +72,17 @@ type CompileRequest struct {
 	InterfaceName  string `json:"interfaceName,omitempty"`
 	Rules          []Rule `json:"rules,omitempty"`
 	DNS            DNS    `json:"dns"`
+	// Lease 非空表示这是单节点租约配置：只监听回环，入口必须独立认证。
+	// 插件应把鉴权放进监听器自身，而不是依赖控制面的选路。
+	Lease *Lease `json:"lease,omitempty"`
 	// Version 是插件自报的内核版本（可为空；插件可自行探测）。
 	Version string `json:"version,omitempty"`
+}
+
+// Lease 描述一次单节点租约的入口约束。
+type Lease struct {
+	BindAddress string   `json:"bindAddress,omitempty"`
+	IngressAuth []string `json:"ingressAuth,omitempty"` // user:password
 }
 
 // NodeTag 把运行时标签与稳定节点身份绑定；主体据此建立健康/车道索引。
@@ -96,12 +113,15 @@ type LaunchSpec struct {
 
 // Descriptor 是插件自报的静态能力。
 type Descriptor struct {
-	ID         string   `json:"id"`
-	Label      string   `json:"label"`
-	Version    string   `json:"version,omitempty"`
-	Protocols  []string `json:"protocols,omitempty"`
-	Priority   int      `json:"priority,omitempty"`
-	Controller string   `json:"controller"` // clash-api
+	ID        string   `json:"id"`
+	Label     string   `json:"label"`
+	Version   string   `json:"version,omitempty"`
+	Protocols []string `json:"protocols,omitempty"`
+	// Capabilities 声明插件支持的配置形态：pool（多节点池）、lease（单节点租约）。
+	// 空列表按 pool 处理，避免旧插件意外承接租约。
+	Capabilities []string `json:"capabilities,omitempty"`
+	Priority     int      `json:"priority,omitempty"`
+	Controller   string   `json:"controller"` // clash-api
 }
 
 // Engine 是内核插件的最小契约。

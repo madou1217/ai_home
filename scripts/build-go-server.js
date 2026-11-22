@@ -19,6 +19,9 @@ const {
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..');
 
+// egress.engine 进程插件与 aih-server 同目录分发；主体只按 ID 发现，不编译内核。
+const ENGINE_PLUGIN_NAMES = Object.freeze(['aih-engine-mihomo', 'aih-engine-singbox']);
+
 // Node 的 process.platform/arch 与 GOOS/GOARCH 命名不同，只映射受支持组合。
 const GOOS_BY_PLATFORM = Object.freeze({ darwin: 'darwin', linux: 'linux', win32: 'windows' });
 const GOARCH_BY_ARCH = Object.freeze({ x64: 'amd64', arm64: 'arm64' });
@@ -34,17 +37,28 @@ function buildGoServerPlan(options = {}) {
     throw new Error(`unsupported Go Core target: ${platform}-${arch}`);
   }
   const output = resolveGoServerBinary({ repositoryRoot, platform, arch });
+  const suffix = platform === 'win32' ? '.exe' : '';
   // 先编译到同目录临时文件再原子改名：正在运行的 Go Core 仍持有旧文件，
   // 直接覆写可执行文件在 macOS 上会让运行中的进程被系统杀掉。
-  const temporaryOutput = `${output}.build-${process.pid}${platform === 'win32' ? '.exe' : ''}`;
+  const temporaryOutput = `${output}.build-${process.pid}${suffix}`;
+  const baseArgs = ['build', '-trimpath', '-ldflags', '-s -w'];
+  const env = { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' };
+  const outputDir = path.dirname(output);
   return {
     output,
     temporaryOutput,
     target: `${platform}-${arch}`,
+    // 生产主体不带内置内核编译器：只发现同目录/aiHome 下的进程插件。
     // -s -w 去掉符号表与 DWARF：分发包小 ~19MiB（压缩后），panic 栈和 pprof
     // 仍可用（pclntab 保留）。发布流水线同样走这里，勿在别处另起一套 flag。
-    args: ['build', '-trimpath', '-ldflags', '-s -w', '-o', temporaryOutput, './cmd/aih-server'],
-    env: { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' }
+    args: [...baseArgs, '-tags', 'no_builtin_engines', '-o', temporaryOutput, './cmd/aih-server'],
+    plugins: ENGINE_PLUGIN_NAMES.map((name) => ({
+      name,
+      output: path.join(outputDir, name + suffix),
+      temporaryOutput: path.join(outputDir, `${name}.build-${process.pid}${suffix}`),
+      args: [...baseArgs, '-o', path.join(outputDir, `${name}.build-${process.pid}${suffix}`), `./cmd/${name}`]
+    })),
+    env
   };
 }
 
@@ -55,23 +69,26 @@ function buildGoServerPlan(options = {}) {
 function buildGoServer(options = {}) {
   const repositoryRoot = options.repositoryRoot || REPOSITORY_ROOT;
   const plan = buildGoServerPlan({ ...options, repositoryRoot });
-  const result = spawnSync('go', plan.args, {
-    cwd: repositoryRoot,
-    env: plan.env,
-    stdio: options.stdio || 'inherit'
-  });
-  if (result.error || result.status !== 0) {
-    fs.rmSync(plan.temporaryOutput, { force: true });
+  const runGoBuild = (args) => {
+    const result = spawnSync('go', args, {
+      cwd: repositoryRoot,
+      env: plan.env,
+      stdio: options.stdio || 'inherit'
+    });
     if (result.error) throw result.error;
-    throw new Error(`go build exited with ${result.status}`);
-  }
+    if (result.status !== 0) throw new Error(`go build exited with ${result.status}`);
+  };
+  const temporaryOutputs = [plan.temporaryOutput, ...plan.plugins.map((plugin) => plugin.temporaryOutput)];
   try {
+    runGoBuild(plan.args);
+    for (const plugin of plan.plugins) runGoBuild(plugin.args);
     // Publish the CLI from the same source before the server. Database readiness
     // is capability-based; paired artifacts keep native commands in sync.
     buildGoCLI({ ...options, repositoryRoot });
+    for (const plugin of plan.plugins) fs.renameSync(plugin.temporaryOutput, plugin.output);
     fs.renameSync(plan.temporaryOutput, plan.output);
   } catch (error) {
-    fs.rmSync(plan.temporaryOutput, { force: true });
+    for (const temporary of temporaryOutputs) fs.rmSync(temporary, { force: true });
     throw error;
   }
   return {

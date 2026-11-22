@@ -46,6 +46,14 @@ type lease struct {
 	closing  bool
 }
 
+// engineProvider 只在池管理器真实存在时暴露插件集合，避免 typed-nil 进入接口。
+func (m *LeaseManager) engineProvider() proxypoollease.EngineProvider {
+	if m == nil || m.pool == nil {
+		return nil
+	}
+	return m.pool
+}
+
 func NewLeaseManager(ssh *Supervisor, home string, pool *egress.Manager) *LeaseManager {
 	root, cancel := context.WithCancel(context.Background())
 	manager := &LeaseManager{ssh: ssh, home: home, pool: pool, leases: map[string]*lease{}, root: root, cancel: cancel, pending: map[uint64]context.CancelFunc{}}
@@ -64,7 +72,7 @@ func (m *LeaseManager) Candidates() []Candidate {
 		if node.Raw["managedBy"] == "sshproxy" {
 			continue
 		}
-		available := node.Protocol == "http" || node.Protocol == "https" || node.Protocol == "socks5" || node.Protocol == "socks5h" || proxypoollease.Available(m.home)
+		available := node.Protocol == "http" || node.Protocol == "https" || node.Protocol == "socks5" || node.Protocol == "socks5h" || proxypoollease.Available(m.engineProvider())
 		item := Candidate{ID: node.ID, Name: node.Name, Source: "pool", Available: available}
 		if !available {
 			item.Error = "此协议需要已安装的代理内核"
@@ -123,7 +131,7 @@ func (m *LeaseManager) dialer(ctx context.Context, selector string) (managedprox
 		for _, node := range nodes {
 			if node.ID == selected {
 				if node.Protocol != "http" && node.Protocol != "https" && node.Protocol != "socks5" && node.Protocol != "socks5h" {
-					runtime, err := proxypoollease.Start(ctx, m.home, node)
+					runtime, err := proxypoollease.Start(ctx, m.home, node, m.engineProvider())
 					if err != nil {
 						return nil, "", func() {}, fmt.Errorf("所选代理内核启动失败")
 					}

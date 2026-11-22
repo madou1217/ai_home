@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,7 +51,7 @@ func Descriptor() egressengine.Descriptor {
 	return egressengine.Descriptor{
 		ID:           engineID,
 		Label:        "mihomo",
-		Capabilities: []string{"pool", "lease"},
+		Capabilities: []string{egressengine.CapabilityPool, egressengine.CapabilityLease},
 		Controller:   "clash-api",
 		Protocols: []string{
 			"shadowsocks", "shadowsocksr", "vmess", "vless", "trojan",
@@ -87,8 +88,13 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 	if request.MixedPort <= 0 || request.ControllerPort <= 0 || strings.TrimSpace(request.Secret) == "" {
 		return egressengine.LaunchSpec{}, errors.New("mihomo_compile_ports_required")
 	}
-	if request.Lease != nil && (request.ProbePort > 0 || len(request.LanePorts) > 0) {
-		return egressengine.LaunchSpec{}, errors.New("mihomo_lease_pool_ports_forbidden")
+	if request.Lease != nil {
+		if request.ProbePort > 0 || len(request.LanePorts) > 0 {
+			return egressengine.LaunchSpec{}, errors.New("mihomo_lease_pool_ports_forbidden")
+		}
+		if !loopbackBind(request.Lease.BindAddress) {
+			return egressengine.LaunchSpec{}, errors.New("mihomo_lease_bind_must_be_loopback")
+		}
 	}
 	proxies := make([]any, 0, len(request.Nodes))
 	nodeTags := make([]egressengine.NodeTag, 0, len(request.Nodes))
@@ -183,6 +189,16 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 }
 
 // applyLease 把单节点租约的入口约束写进配置：绑回环、入口独立认证、不持久化选择。
+// loopbackBind 只允许回环监听，空值表示沿用内核默认（allow-lan=false）。
+func loopbackBind(address string) bool {
+	address = strings.TrimSpace(address)
+	if address == "" || strings.EqualFold(address, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(address, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
 func applyLease(config map[string]any, lease *egressengine.Lease) {
 	if lease == nil {
 		return

@@ -60,7 +60,7 @@ func (m *Manager) sortedEnginePlugins() []egressengine.Engine {
 // engineSupports 判断插件是否声明了某种配置形态；空能力列表按 pool 兼容。
 func engineSupports(descriptor egressengine.Descriptor, capability string) bool {
 	if len(descriptor.Capabilities) == 0 {
-		return capability == "pool"
+		return capability == egressengine.CapabilityPool
 	}
 	for _, item := range descriptor.Capabilities {
 		if strings.EqualFold(strings.TrimSpace(item), capability) {
@@ -80,7 +80,7 @@ func (m *Manager) LeaseEngine(ctx context.Context, node ProxyNode) (egressengine
 	}
 	engineNodes := toEngineNodes([]ProxyNode{node})
 	for _, engine := range m.sortedEnginePlugins() {
-		if !engineSupports(engine.Descriptor(), "lease") {
+		if !engineSupports(engine.Descriptor(), egressengine.CapabilityLease) {
 			continue
 		}
 		result, err := engine.Resolve(ctx, egressengine.ResolveRequest{
@@ -102,7 +102,7 @@ func (m *Manager) HasLeaseEngine() bool {
 		return false
 	}
 	for _, engine := range m.enginePlugins {
-		if engineSupports(engine.Descriptor(), "lease") {
+		if engineSupports(engine.Descriptor(), egressengine.CapabilityLease) {
 			return true
 		}
 	}

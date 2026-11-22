@@ -8,6 +8,13 @@ package egressengine
 
 import "context"
 
+const (
+	// CapabilityPool 表示插件支持多节点出口池配置。
+	CapabilityPool = "pool"
+	// CapabilityLease 表示插件支持单节点租约配置。
+	CapabilityLease = "lease"
+)
+
 // Node 是插件编译配置所需的节点事实。
 //
 // Options 保留协议私有字段（密码、UUID、传输、TLS 等）；插件不得把 Options

@@ -383,8 +383,8 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 		}
 		normPlat := normalizePlatformLabel(platform)
 		coreUsable := false
-		if normPlat == "" || normPlat == "macos" {
-			if core, coreErr := ResolveMihomoCorePath(CoreResolverOptions{AIHomeDir: m.aiHomeDir, Platform: m.platform}); coreErr == nil && core != nil {
+		if nodes, nodesErr := ReadProxyPoolNodes(m.aiHomeDir); nodesErr == nil {
+			if core, coreErr := ResolvePoolCore(nodes, m.aiHomeDir, m.platform); coreErr == nil && core != nil && core.UsableNodes > 0 {
 				coreUsable = true
 			}
 		}

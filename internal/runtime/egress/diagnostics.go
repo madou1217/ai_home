@@ -36,6 +36,8 @@ type EgressPoolDiagnostics struct {
 	LanePorts      []int  `json:"lanePorts"`
 	OwnerPID       int    `json:"ownerPid"`
 	CorePID        int    `json:"corePid"`
+	CoreKind       string `json:"coreKind,omitempty"`
+	CoreVersion    string `json:"coreVersion,omitempty"`
 	CoreSource     string `json:"coreSource"`
 	CoreVerified   bool   `json:"coreVerified"`
 	CoreCommand    string `json:"coreCommand"`
@@ -143,6 +145,8 @@ func (m *Manager) poolDiagnostics(ctx context.Context) EgressPoolDiagnostics {
 	pool.Running = true
 	pool.OwnerPID = state.OwnerPID
 	pool.CorePID = state.CorePID
+	pool.CoreKind = state.CoreKind
+	pool.CoreVersion = state.CoreVersion
 	if pool.ControllerPort == 0 {
 		pool.ControllerPort = state.ControllerPort
 	}
@@ -158,7 +162,8 @@ func classifyCoreSource(command string) string {
 	switch {
 	case lower == "":
 		return ""
-	case strings.Contains(lower, "/.ai_home/tools/") || strings.Contains(lower, "\\ai_home\\tools\\"):
+	case strings.Contains(lower, "/.ai_home/tools/") || strings.Contains(lower, "/.ai_home/bin/") ||
+		strings.Contains(lower, "\\ai_home\\tools\\") || strings.Contains(lower, "\\ai_home\\bin\\"):
 		return "managed"
 	case strings.Contains(lower, "/applications/") || strings.Contains(lower, "program files"):
 		return "client"
@@ -172,7 +177,7 @@ func looksLikeAIHPoolCore(command string) bool {
 	if lower == "" || !strings.Contains(lower, "egress-pool") {
 		return false
 	}
-	return strings.Contains(lower, "mihomo") || strings.Contains(lower, "clash") || strings.Contains(lower, "verge-mihomo")
+	return strings.Contains(lower, "mihomo") || strings.Contains(lower, "clash") || strings.Contains(lower, "verge-mihomo") || strings.Contains(lower, "sing-box") || strings.Contains(lower, "singbox")
 }
 
 type coreIdentityEntry struct {
@@ -273,7 +278,7 @@ func relevantProxyProcesses(ctx context.Context) []EgressProcess {
 func classifyProxyProcess(command string) string {
 	lower := strings.ToLower(strings.TrimSpace(command))
 	switch {
-	case strings.Contains(lower, "egress-pool") && (strings.Contains(lower, "mihomo") || strings.Contains(lower, "clash")):
+	case strings.Contains(lower, "egress-pool") && (strings.Contains(lower, "mihomo") || strings.Contains(lower, "clash") || strings.Contains(lower, "sing-box") || strings.Contains(lower, "singbox")):
 		return "aih-core"
 	case strings.Contains(lower, "clash verge") || strings.Contains(lower, "clash-verge") || strings.Contains(lower, "verge-mihomo"):
 		return "clash-verge"

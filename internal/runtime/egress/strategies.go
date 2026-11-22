@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"runtime"
 	"strconv"
 	"strings"
 
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
+	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 )
 
 // StrategyStatus 是策略目录 + 当前运行时可满足能力的合并视图。
@@ -96,26 +96,34 @@ func (m *Manager) fillStrategyAvailability(ctx context.Context, status *Strategy
 		}
 	case agyegress.ModePool:
 		if m.IsPoolReady() {
+			kind := "mihomo"
+			version := ""
+			if state, _ := ReadPoolStateFile(m.aiHomeDir); state != nil {
+				if state.CoreKind != "" {
+					kind = state.CoreKind
+				}
+				version = state.CoreVersion
+			}
 			status.Status = "ready"
-			status.Reason = "mihomo 出口池已运行"
+			status.Reason = kind + " 出口池已运行"
+			if version != "" {
+				status.Reason += "（" + version + "）"
+			}
 			return
 		}
-		isMacOS := normalizePlatformLabel(firstNonEmpty(m.platform, runtime.GOOS)) == "macos"
-		if isMacOS {
-			if core, err := ResolveMihomoCorePath(CoreResolverOptions{AIHomeDir: m.aiHomeDir, Platform: m.platform}); err == nil && core != nil {
-				status.Status = "degraded"
-				status.Reason = "已找到 mihomo 内核（" + core.Source + "），池尚未启动"
-				return
-			}
+		if labels := poolKernelLabels(m.aiHomeDir, m.platform); len(labels) > 0 {
+			status.Status = "degraded"
+			status.Reason = "已找到代理内核：" + strings.Join(labels, "、") + "；池尚未启动"
+			return
 		}
 		if count := EndpointPoolNodeCount(m.aiHomeDir); count > 0 {
 			status.Status = "ready"
-			status.Reason = "未安装 mihomo；使用 " + strconv.Itoa(count) + " 个 HTTP/SOCKS/SSH 直连节点池"
+			status.Reason = "无可用内核；使用 " + strconv.Itoa(count) + " 个 HTTP/SOCKS/SSH 直连节点池"
 			return
 		}
 		status.Status = "unavailable"
 		status.Available = false
-		status.Reason = "没有可用的 mihomo 内核或直连节点（HTTP/SOCKS/SSH）；可改用 SSH 出口"
+		status.Reason = "没有可用的代理内核（mihomo/sing-box）或直连节点（HTTP/SOCKS/SSH）；可改用 SSH 出口"
 	case agyegress.ModeSystem, agyegress.ModeTUN:
 		decision, err := m.resolveSyntheticStrategy(ctx, status.ID)
 		if err != nil {
@@ -174,6 +182,22 @@ func strategyErrorReason(err error) string {
 		return egressErr.Code
 	}
 	return err.Error()
+}
+
+func poolKernelLabels(aiHomeDir, platform string) []string {
+	labels := make([]string, 0, 2)
+	if kernel := subaggregator.ResolvePoolKernel("sing-box", aiHomeDir, platform); kernel != nil {
+		label := kernel.ID
+		if kernel.Version != "" {
+			label += " " + kernel.Version
+		}
+		labels = append(labels, label)
+	}
+	// mihomo 沿用自己的 tools/客户端/PATH 解析约定。
+	if resolved, err := ResolveMihomoCorePath(CoreResolverOptions{AIHomeDir: aiHomeDir, Platform: platform}); err == nil && resolved != nil {
+		labels = append(labels, "mihomo")
+	}
+	return labels
 }
 
 func (m *Manager) managedSSHOutletCount() (int, error) {

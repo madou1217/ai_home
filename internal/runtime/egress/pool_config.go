@@ -133,6 +133,8 @@ type PoolConfigInput struct {
 	InterfacesFunc func() ([]NetInterfaceEntry, error)
 	ProbePort      int
 	LanePorts      []int
+	// SingBoxVersion 仅 sing-box 配置使用；空串时跳过版本相关的协议。
+	SingBoxVersion string
 }
 
 // CompiledPoolConfig 包含编译后的 mihomo 配置结构、JSON/YAML 文本与节点映射。

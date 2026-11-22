@@ -547,6 +547,7 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
             {diagnostics.pool.corePid ? (
               <span className="pn-muted">
                 core pid {diagnostics.pool.corePid}{diagnostics.pool.coreVerified ? ' · 已验证' : ' · 身份未知'}
+                {diagnostics.pool.coreKind ? ` · ${diagnostics.pool.coreKind}${diagnostics.pool.coreVersion ? ' ' + diagnostics.pool.coreVersion : ''}` : ''}
                 {diagnostics.pool.coreSource ? ` · ${CORE_SOURCE_LABELS[diagnostics.pool.coreSource] || diagnostics.pool.coreSource}` : ''}
               </span>
             ) : null}

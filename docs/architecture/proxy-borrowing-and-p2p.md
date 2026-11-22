@@ -17,8 +17,8 @@
 已验证路径：
 
 ```text
-Mac aih proxy serve
-  -> SSH -L 28528:127.0.0.1:28527 Windows
+Mac aih proxy serve --ssh <connectionId>
+  -> SSH direct-tcpip -> Windows loopback AIH
   -> Windows AIH /v1/management/proxy-leases
   -> /connect HTTP Upgrade (aih-proxy)
   -> Windows lease 的 loopback mihomo / sing-box
@@ -28,7 +28,8 @@ Mac aih proxy serve
 `aih proxy serve` 只做两件事：
 
 - 通过管理面申请一个租约；
-- 在当前主机建立 `127.0.0.1` 的认证 HTTP 入口。
+- 在当前主机建立 `127.0.0.1` 的认证 HTTP 入口；
+- `--ssh <connectionId>` 可使用本机已保存的 SSH 连接自动建立本地转发，无需手工 `ssh -L`。
 
 它不会自动改系统代理，也不把管理密钥写进代理 URL。输出中的 URL 含租约令牌，终端可见，但不得写入日志或提交。
 
@@ -73,8 +74,8 @@ Mac aih proxy serve
 
 ## 6. 后续实现顺序
 
-1. `aih proxy serve`（本次已实现）；
-2. `--ssh <connectionId>`：用现有 SSH 运行时自动建本地转发，不再要求手工 `ssh -L`；
+1. `aih proxy serve`（已实现并真机验证）；
+2. `--ssh <connectionId>` 自动 SSH 本地转发（已实现并真机验证）；
 3. `network.connector` 插件宿主与实装（Tailscale/WireGuard）；
 4. 连接器证据采集与 UI 状态（direct/relay/unknown 分开）；
 5. 只有插件给出可复核 path 证据后，才启用“直连 P2P”文案。

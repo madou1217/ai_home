@@ -67,6 +67,24 @@ internal static class Program
             stop.Cancel();
             capture.Stop();
             try { captureTask.Wait(TimeSpan.FromSeconds(2)); } catch { }
+            // Close through the real window so Chromium runs its own shutdown
+            // and commits cookies/local storage. A job termination skips that
+            // commit and the next visit looks logged out.
+            Native.CloseWindow(hwnd);
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(pid);
+                    if (process.HasExited) break;
+                }
+                catch
+                {
+                    break;
+                }
+                Thread.Sleep(100);
+            }
         }
         return 0;
     }
@@ -356,6 +374,9 @@ internal static class Program
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+        private const uint WM_CLOSE = 0x0010;
+        public static bool CloseWindow(IntPtr hwnd) => hwnd != IntPtr.Zero && PostMessage(hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
         [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
         [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint sourceThreadId, uint targetThreadId, bool attach);

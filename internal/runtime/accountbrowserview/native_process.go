@@ -11,6 +11,7 @@ import (
 
 const nativeDrainTimeout = 2 * time.Second
 const nativeMaxEventBytes = 2 * 1024 * 1024
+const nativeShutdownTimeout = 12 * time.Second
 
 // serveNative owns its stdout pipe instead of using Cmd.StdoutPipe: concurrent
 // Wait closes StdoutPipe before a slow reader can consume the final error. It
@@ -18,7 +19,9 @@ const nativeMaxEventBytes = 2 * 1024 * 1024
 func serveNative(ctx context.Context, binary string, pid int, started uint64, commands <-chan Command, transport Transport) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	command := exec.CommandContext(ctx, binary, nativeArgs(pid, started)...)
+	// Not CommandContext: cancellation must first close the helper's stdin so it
+	// can close the browser window and let Chromium flush profile data.
+	command := exec.Command(binary, nativeArgs(pid, started)...)
 	prepareBrowserCommand(command)
 	output, writer, err := os.Pipe()
 	if err != nil {
@@ -79,9 +82,16 @@ func serveNative(ctx context.Context, binary string, pid int, started uint64, co
 	defer func() {
 		cancel()
 		_ = input.Close()
+		select {
+		case <-processDone:
+		case <-time.After(nativeShutdownTimeout):
+			if command.Process != nil {
+				_ = command.Process.Kill()
+			}
+			<-processDone
+		}
 		// Closing the positively owned read end also releases a blocked scanner.
 		_ = output.Close()
-		<-processDone
 		<-readerDone
 		<-inputDone
 	}()

@@ -27,7 +27,8 @@ const EXIT_LABELS: Record<string, string> = {
   pool: '出口池',
   proxy: '代理地址',
   system: '系统代理',
-  direct: '直连'
+  direct: '直连',
+  ssh: 'SSH 出口'
 };
 
 /** 探测结果里的出口形态（账号设置或服务端默认网络）。 */

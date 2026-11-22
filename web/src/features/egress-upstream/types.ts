@@ -165,9 +165,110 @@ export interface EgressActionResult {
 /** 按账号当前生效出口探测上游的结果（POST /egress-upstreams/{id}/probe-account）。 */
 export interface EgressAccountProbeResult extends EgressActionResult {
   status?: 'reachable' | 'blocked' | 'skipped';
-  exit?: 'pool' | 'proxy' | 'system' | 'direct';
+  exit?: 'pool' | 'proxy' | 'system' | 'direct' | 'ssh';
   proxyUrl?: string;
   node?: string;
   reason?: string;
   geo?: EgressGeo | null;
+}
+
+/** 出口策略目录（GET /egress-upstreams/strategies，服务端唯一声明）。 */
+export type EgressStrategyLayer = 'application' | 'system' | 'network';
+export type EgressStrategyInput = 'none' | 'proxy_url' | 'ssh_connection' | 'pool_scope';
+
+export interface EgressStrategyStatus {
+  id: string;
+  label: string;
+  description: string;
+  layer: EgressStrategyLayer | string;
+  input: EgressStrategyInput | string;
+  requiresMihomo: boolean;
+  requiresSsh: boolean;
+  supportsLaunch: boolean;
+  supportsProbe: boolean;
+  available: boolean;
+  status: 'ready' | 'degraded' | 'unavailable' | string;
+  reason?: string;
+  boundAccounts: number;
+}
+
+/** 出口池路由规则与 DNS 策略（GET/PUT /egress-upstreams/routing）。 */
+export type EgressRoutingRuleType = 'domain' | 'domain-suffix' | 'domain-keyword' | 'ip-cidr';
+export type EgressRoutingAction = 'proxy' | 'direct' | 'reject';
+
+export interface EgressRoutingRule {
+  id: string;
+  type: EgressRoutingRuleType;
+  value: string;
+  action: EgressRoutingAction;
+  note?: string;
+}
+
+export interface EgressRoutingDNS {
+  mode: 'default' | 'doh' | 'plain';
+  servers: string[];
+  route: 'proxy' | 'direct';
+}
+
+export interface EgressRoutingPolicy {
+  rules: EgressRoutingRule[];
+  dns: EgressRoutingDNS;
+  updatedAt?: number;
+}
+
+export interface EgressRoutingTestResult {
+  target: string;
+  kind: 'domain' | 'ip' | string;
+  matched: boolean;
+  ruleId?: string;
+  type?: string;
+  value?: string;
+  action: 'proxy' | 'direct' | 'reject' | string;
+}
+
+export interface EgressRoutingResponse {
+  ok: boolean;
+  policy: EgressRoutingPolicy;
+  applied?: boolean;
+  error?: string;
+}
+
+/** 代理层冲突诊断（GET /egress-upstreams/diagnostics，只读）。 */
+export interface EgressProxyProcess {
+  pid: number;
+  command: string;
+  kind: 'aih-core' | 'clash-verge' | 'mihomo' | 'sing-box' | string;
+}
+
+export interface EgressPortOwner {
+  port: number;
+  pid: number;
+  command: string;
+  aih: boolean;
+}
+
+export interface EgressDiagnostics {
+  ok: boolean;
+  platform: string;
+  pool: {
+    running: boolean;
+    mixedPort: number;
+    controllerPort: number;
+    probePort: number;
+    lanePorts: number[];
+    ownerPid: number;
+    corePid: number;
+    coreKind?: string;
+    coreVersion?: string;
+    phase?: string;
+    phaseReason?: string;
+    freshHealthy?: number;
+    coreSource: 'managed' | 'path' | 'client' | '';
+    coreVerified: boolean;
+    coreCommand: string;
+  };
+  processes: EgressProxyProcess[];
+  portOwners: EgressPortOwner[];
+  conflicts: string[];
+  notes: string[];
 }

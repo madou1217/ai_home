@@ -16,8 +16,9 @@ type processIdentity struct {
 	born unix.Timeval
 }
 
-func platformSupported() bool      { return true }
-func prepareCommand(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
+func platformSupported() bool                   { return true }
+func processStartMarker(processIdentity) uint64 { return 0 }
+func prepareCommand(cmd *exec.Cmd)              { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 
 func identifyProcess(pid int) (processIdentity, error) {
 	if pid <= 1 {

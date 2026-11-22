@@ -781,6 +781,50 @@ var (
 	}
 )
 
+// PoolKernel 描述出口池可用的代理内核（sing-box / mihomo）。
+type PoolKernel struct {
+	ID      string
+	Path    string
+	Source  string
+	Version string
+}
+
+// ResolvePoolKernel 定位并读取指定内核的版本；找不到返回 nil。
+func ResolvePoolKernel(id, aiHomeDir, platform string) *PoolKernel {
+	var spec RelayKernelSpec
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "sing-box":
+		spec = singBoxKernelSpec
+	case "mihomo":
+		spec = mihomoKernelSpec
+	default:
+		return nil
+	}
+	binary := ResolveKernelBinary(spec, nil, aiHomeDir, platform)
+	if binary == nil {
+		return nil
+	}
+	return &PoolKernel{
+		ID:      spec.ID,
+		Path:    binary.Path,
+		Source:  binary.Source,
+		Version: readKernelVersion(spec, binary.Path),
+	}
+}
+
+func readKernelVersion(spec RelayKernelSpec, path string) string {
+	if len(spec.VersionArgs) == 0 || spec.ParseVersion == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, path, spec.VersionArgs...).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return spec.ParseVersion(string(output))
+}
+
 // RelayKernelStatus 描述单个中转内核在系统中的状态。
 type RelayKernelStatus struct {
 	ID           string `json:"id"`

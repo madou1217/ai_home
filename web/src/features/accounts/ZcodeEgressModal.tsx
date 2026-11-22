@@ -152,6 +152,12 @@ export function AccountEgressModal({ account, onClose, embedded = false }: Accou
         （该客户端原生设置里由 AIH 写入的托管代理会被清除）。与「未绑定出口」的区别是它会覆盖全局代理；
         本机已开启的系统代理或 TUN 属于系统级网络，AIH 不改写它们。
       </>
+    ),
+    ssh: (
+      <>
+        使用 AIH 管理的 SSH 环回隧道（例如 AWS 服务器）作为出口，不需要安装 mihomo。
+        隧道由 SSH 主机里的「作为代理」开关维护；连接或令牌未就绪时启动会失败关闭。
+      </>
     )
   };
 

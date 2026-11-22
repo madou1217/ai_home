@@ -74,20 +74,30 @@ jobs:
           if (-not $base) { $base = '${{ github.event.before }}' }
           $head = '${{ github.sha }}'
           $go = 'true'
+          $browser = 'true'
           if ($base -and $base -notmatch '^0+$') {
             $files = @(git diff --name-only $base $head 2>$null)
             if ($LASTEXITCODE -eq 0) {
               $pattern = '^(internal|application|core|contracts|cmd|assets|native)/|\.go$|^go\.(mod|sum)$|^\.github/workflows/go-tests\.yml$'
               $hit = @($files | Where-Object { $_ -match $pattern })
+              $browserPattern = '^(internal/runtime/accountbrowser(host|view)(/|$)|native/account-browser/)'
+              $browserHit = @($files | Where-Object { $_ -match $browserPattern })
               if ($hit.Count -eq 0) {
                 $go = 'false'
               } else {
                 $hit | Select-Object -First 20 | ForEach-Object { Write-Output ("changed: " + $_) }
               }
+              if ($browserHit.Count -eq 0) {
+                $browser = 'false'
+              } else {
+                $browserHit | Select-Object -First 20 | ForEach-Object { Write-Output ("browser changed: " + $_) }
+              }
             }
           }
           Add-Content -Path $env:GITHUB_OUTPUT -Value ("go=" + $go) -Encoding ascii
+          Add-Content -Path $env:GITHUB_OUTPUT -Value ("browser=" + $browser) -Encoding ascii
           Write-Output ("windows go checks needed: " + $go)
+          Write-Output ("windows browser helper checks needed: " + $browser)
 
       - name: Vet
         if: steps.scope.outputs.go == 'true'
@@ -104,6 +114,44 @@ jobs:
         run: |
           go build -trimpath -o "$env:RUNNER_TEMP\aih.exe" ./cmd/aih
           go build -trimpath -o "$env:RUNNER_TEMP\aih-server.exe" ./internal/host/aihserver
+
+      - name: Setup .NET for browser helper
+        if: steps.scope.outputs.browser == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # This builds the native surface helper and checks its explicit preflight
+      # protocol. It does not claim that a hosted runner has validated Edge
+      # startup, window capture, input, OAuth, or profile persistence.
+      - name: Build and preflight Windows browser surface helper
+        if: steps.scope.outputs.browser == 'true'
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'aih-browser-surface'
+          dotnet publish native/account-browser/windows/BrowserSurface.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            --output $output
+          if ($LASTEXITCODE -ne 0) {
+            throw 'dotnet publish failed'
+          }
+          $binary = Join-Path $output 'BrowserSurface.exe'
+          if (-not (Test-Path -Path $binary -PathType Leaf)) {
+            throw "published helper missing: $binary"
+          }
+          $raw = & $binary --preflight
+          if ($LASTEXITCODE -ne 0) {
+            throw 'browser helper preflight exited unsuccessfully'
+          }
+          $status = $raw | ConvertFrom-Json
+          if ($status.type -ne 'preflight' -or -not $status.screenCapture -or -not $status.eventPosting) {
+            throw "unexpected browser helper preflight: $raw"
+          }
+          Write-Output ("browser helper preflight: " + $raw)
 
       - name: No Go changes
         if: steps.scope.outputs.go != 'true'

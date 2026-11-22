@@ -2,7 +2,6 @@ package egress
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -31,6 +30,7 @@ var proxyEnvNames = []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}
 func ResolveAccountLaunchEgress(
 	ctx context.Context,
 	aiHomeDir string,
+	provider string,
 	accountRef string,
 ) (LaunchEgress, error) {
 	ref := strings.TrimSpace(accountRef)
@@ -47,32 +47,11 @@ func ResolveAccountLaunchEgress(
 	if binding.Retired {
 		return LaunchEgress{}, fmt.Errorf("egress_binding_retired: %s", strings.TrimSpace(binding.Mode))
 	}
-	mode := strings.ToLower(strings.TrimSpace(binding.Mode))
-	switch mode {
-	case agyegress.ModeDirect, agyegress.ModeTUN, agyegress.ModeSystem:
-		return LaunchEgress{Bound: true, Mode: mode}, nil
-	case agyegress.ModeURL:
-		proxyURL := strings.TrimSpace(binding.ProxyURL)
-		if proxyURL == "" {
-			return LaunchEgress{}, errors.New("egress_proxy_missing")
-		}
-		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
-	case agyegress.ModePool:
-		state, reason := ReadLivePoolState(aiHomeDir, nil)
-		if state == nil {
-			if reason == "" {
-				reason = "egress_pool_not_running"
-			}
-			return LaunchEgress{}, errors.New(reason)
-		}
-		laneURL := strings.TrimSpace(state.Lanes[ref])
-		if laneURL == "" {
-			return LaunchEgress{}, errors.New("egress_pool_lane_not_ready")
-		}
-		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: laneURL}, nil
-	default:
-		return LaunchEgress{}, fmt.Errorf("egress_mode_unsupported: %s", mode)
+	runtime, ok := strategyRuntimeFor(binding.Mode)
+	if !ok {
+		return LaunchEgress{}, fmt.Errorf("egress_mode_unsupported: %s", strings.TrimSpace(binding.Mode))
 	}
+	return runtime.Launch(ctx, aiHomeDir, provider, ref, &binding)
 }
 
 // Env 把出口翻译成前台 CLI 的环境变更。

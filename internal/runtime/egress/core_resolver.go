@@ -64,7 +64,11 @@ func isValidCoreFile(statFn func(string) (os.FileInfo, error), filePath string) 
 }
 
 // ResolveMihomoCorePath 按优先级定位 mihomo 内核，AIH 不自行下载二进制。
-// 优先级：<aiHomeDir>/tools/mihomo -> 已装代理客户端内置内核 -> PATH。
+// 优先级：<aiHomeDir>/tools/mihomo -> PATH -> 已装代理客户端内置内核。
+//
+// 客户端内置内核放在最后：同一二进制可能被 Clash Verge 等客户端当作自己的
+// 实例管理，AIH 再启动一个会放大进程/端口冲突。优先使用托管内核或 PATH，
+// 只有当用户没有别的内核时才借用客户端内核。
 func ResolveMihomoCorePath(opts CoreResolverOptions) (*CoreResolution, error) {
 	statFn := opts.StatFunc
 	if statFn == nil {
@@ -83,16 +87,6 @@ func ResolveMihomoCorePath(opts CoreResolverOptions) (*CoreResolution, error) {
 		}
 	}
 
-	bundled := MacOSClientBundledPaths
-	if strings.HasPrefix(strings.ToLower(platform), "win") {
-		bundled = WindowsClientBundledPaths
-	}
-	for _, candidate := range bundled {
-		if isValidCoreFile(statFn, candidate) {
-			return &CoreResolution{Path: candidate, Source: "client"}, nil
-		}
-	}
-
 	pathEnv := opts.PathEnv
 	if !opts.PathSet {
 		pathEnv = os.Getenv("PATH")
@@ -108,6 +102,16 @@ func ResolveMihomoCorePath(opts CoreResolverOptions) (*CoreResolution, error) {
 			if isValidCoreFile(statFn, candidate) {
 				return &CoreResolution{Path: candidate, Source: "path"}, nil
 			}
+		}
+	}
+
+	bundled := MacOSClientBundledPaths
+	if strings.HasPrefix(strings.ToLower(platform), "win") {
+		bundled = WindowsClientBundledPaths
+	}
+	for _, candidate := range bundled {
+		if isValidCoreFile(statFn, candidate) {
+			return &CoreResolution{Path: candidate, Source: "client"}, nil
 		}
 	}
 

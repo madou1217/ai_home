@@ -739,7 +739,7 @@ func (app *App) resolveLaunchEgress(
 	if accountRef == "" {
 		return providercli.RunOptions{}, nil
 	}
-	egress, err := runtimeegress.ResolveAccountLaunchEgress(ctx, app.aiHomeDir, accountRef)
+	egress, err := runtimeegress.ResolveAccountLaunchEgress(ctx, app.aiHomeDir, providerID, accountRef)
 	if err != nil {
 		return providercli.RunOptions{}, fmt.Errorf(
 			"账号出口不可用（%s / %s）: %w；请在 Toolkit 的网络设置里检查该账号出口，或恢复默认网络",

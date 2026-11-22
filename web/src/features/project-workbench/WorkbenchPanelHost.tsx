@@ -14,7 +14,7 @@ interface Props {
 }
 
 // 终端不在这里渲染：Work 的终端统一由全局 Web Terminal 浮窗承载。
-export default function WorkbenchPanelHost({ state, projectPath, mobile }: Props) {
+export default function WorkbenchPanelHost({ state, projectPath, workspace, mobile }: Props) {
   const toolTabs = state.tabs.filter((tab) => tab.kind !== 'chat');
   if (toolTabs.length === 0) return <Empty description="请从上方添加项目工具" />;
 
@@ -29,7 +29,14 @@ export default function WorkbenchPanelHost({ state, projectPath, mobile }: Props
             aria-hidden={!active}
             {...(!active ? { inert: '' } : {})}
           >
-            {tab.kind === 'browser' ? <BrowserPanel initialUrl={tab.url} /> : null}
+            {tab.kind === 'browser' ? (
+              <BrowserPanel
+                initialUrl={tab.url}
+                requiredServerId={workspace?.serverId}
+                embedded
+                active={active}
+              />
+            ) : null}
             {tab.kind === 'files' && projectPath ? <FilesPanel projectPath={projectPath} mobile={mobile} /> : null}
             {tab.kind === 'review' && projectPath ? <ReviewPanel projectPath={projectPath} mobile={mobile} /> : null}
           </div>

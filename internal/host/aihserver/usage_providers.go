@@ -28,6 +28,7 @@ import (
 	kimiusage "github.com/madou1217/ai_home/internal/adapters/kimi/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
 	qoderusage "github.com/madou1217/ai_home/internal/adapters/qoder/usage"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	zcodeusage "github.com/madou1217/ai_home/internal/adapters/zcode/usage"
 )
 
@@ -105,7 +106,12 @@ func buildKiroUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, 
 func buildAgyUsage(providerContext usageProviderContext) ([]usageapp.ProviderStrategy, error) {
 	// 额度采集与刷新共用同一份账号出口绑定：有绑定时走对应代理/直连，
 	// 解析失败 fail-closed，不能静默走进程默认网络。
-	egressResolver := agyegress.NewResolver(agyegress.Options{AIHomeDir: providerContext.aiHomeDir})
+	egressResolver := agyegress.NewResolver(agyegress.Options{
+		AIHomeDir: providerContext.aiHomeDir,
+		ResolveManagedSSH: func(reference string) (string, error) {
+			return runtimeegress.ManagedSSHProxyURL(providerContext.aiHomeDir, reference)
+		},
+	})
 	strategy, err := agyusage.NewWithEgress(
 		providerContext.client,
 		func(ctx context.Context, accountRef accountcore.AccountRef) (agyusage.HTTPClient, error) {

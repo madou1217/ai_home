@@ -78,6 +78,12 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 
 		// 上游地区策略、网络位置刷新、上游探测、SSE 监听及账号级出口池分配
 		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsPath, Handler: upstreamsHandler},
+		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsPath + "/diagnostics", Handler: upstreamsHandler},
+		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsPath + "/strategies", Handler: upstreamsHandler},
+		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsPath + "/routing", Handler: upstreamsHandler},
+		{Pattern: "PUT " + webuiegressupstreamsapi.UpstreamsPath + "/routing", Handler: upstreamsHandler},
+		{Pattern: "POST " + webuiegressupstreamsapi.UpstreamsPath + "/routing", Handler: upstreamsHandler},
+		{Pattern: "POST " + webuiegressupstreamsapi.UpstreamsPath + "/routing/test", Handler: upstreamsHandler},
 		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsWatchPath, Handler: upstreamsHandler},
 		{Pattern: "POST " + webuiegressupstreamsapi.NetworkRefreshPath, Handler: upstreamsHandler},
 		{Pattern: "PUT " + webuiegressupstreamsapi.UpstreamItemPath, Handler: upstreamsHandler},
@@ -89,6 +95,5 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		// 浏览器数据面：账号出口池运行时/分配（路径少一级 egress 段）。
 		{Pattern: "GET /v0/webui/accounts/{provider}/{accountRef}/egress-runtime", Handler: webuipublicalias.Rewrite("/v0/webui/accounts", "/v1/management/webui/egress/accounts", upstreamsHandler)},
 		{Pattern: "PUT /v0/webui/accounts/{provider}/{accountRef}/egress-assignment", Handler: webuipublicalias.Rewrite("/v0/webui/accounts", "/v1/management/webui/egress/accounts", upstreamsHandler)},
-
 	}, nil
 }

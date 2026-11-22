@@ -28,6 +28,7 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/egressengine"
 	inferencegateway "github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
@@ -90,6 +91,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/engineplugin"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
@@ -731,7 +733,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 刷新后必须沿用同一绑定：url/system/tun/pool/direct 先由 egress 解析成
 	// 具体出站目标（fail-closed），再交给刷新策略；未绑定时保持进程默认。
 	// 绑定只存在于 Node 台账账号；无台账投影账号通常没有绑定，行为与默认一致。
-	agyEgress := agyegress.NewResolver(agyegress.Options{AIHomeDir: aiHomeDir})
+	agyEgress := agyegress.NewResolver(agyegress.Options{
+		AIHomeDir: aiHomeDir,
+		ResolveManagedSSH: func(reference string) (string, error) {
+			return runtimeegress.ManagedSSHProxyURL(aiHomeDir, reference)
+		},
+	})
 	agyEgressResolver := func(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
@@ -1897,10 +1904,16 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return store.ContractQuoteSource()
 		})
 	}
+	enginePlugins := make([]egressengine.Engine, 0)
+	for _, client := range engineplugin.Load(aiHomeDir) {
+		enginePlugins = append(enginePlugins, client)
+	}
 	egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
-		AIHomeDir: aiHomeDir,
-		HomeDir:   dependencies.HostHomeDir,
-		Catalog:   catalog,
+		AIHomeDir:             aiHomeDir,
+		HomeDir:               dependencies.HostHomeDir,
+		Catalog:               catalog,
+		EnginePlugins:         enginePlugins,
+		DisableBuiltinEngines: true,
 	})
 	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
 		errorLog.Printf("出口池后台守护启动降级: %v", err)

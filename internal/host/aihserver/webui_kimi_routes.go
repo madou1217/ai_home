@@ -11,6 +11,7 @@ import (
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/planstats"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountkimiapi"
 )
 
@@ -31,7 +32,12 @@ func buildWebUIKimiRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, er
 		return nil, err
 	}
 
-	egressResolver := agyegress.NewResolver(agyegress.Options{AIHomeDir: dependencies.AIHomeDir})
+	egressResolver := agyegress.NewResolver(agyegress.Options{
+		AIHomeDir: dependencies.AIHomeDir,
+		ResolveManagedSSH: func(reference string) (string, error) {
+			return runtimeegress.ManagedSSHProxyURL(dependencies.AIHomeDir, reference)
+		},
+	})
 	resolveEgressClient := func(
 		ctx context.Context,
 		accountRef string,

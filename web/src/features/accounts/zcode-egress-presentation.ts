@@ -10,7 +10,8 @@ export const ACCOUNT_EGRESS_SOURCE_LABELS: Record<AccountEgressMode, string> = {
   system: '系统代理',
   tun: '外部 TUN',
   pool: 'AIH 出口池',
-  direct: '直连'
+  direct: '直连',
+  ssh: 'SSH 出口'
 };
 
 const EGRESS_ERROR_LABELS: Record<string, string> = {

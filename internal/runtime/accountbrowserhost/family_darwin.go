@@ -3,6 +3,7 @@
 package accountbrowserhost
 
 import (
+	"os/exec"
 	"sync"
 	"time"
 
@@ -20,6 +21,21 @@ type processFamily struct {
 	uncertain bool
 	stop      chan struct{}
 	done      chan struct{}
+}
+
+func (p *hostProcess) canReleaseWithoutFamily() bool { return false }
+
+func (p *hostProcess) recoverFamily() error {
+	if p == nil || p.family != nil || p.cmd == nil || p.cmd.Process == nil {
+		return ErrRecoveryRequired
+	}
+	identity, err := identifyProcess(p.cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+	p.identity = identity
+	p.family = trackFamily(identity)
+	return nil
 }
 
 func trackFamily(root processIdentity) *processFamily {
@@ -40,6 +56,9 @@ func trackFamily(root processIdentity) *processFamily {
 	}()
 	return f
 }
+
+func (*processFamily) attach(*exec.Cmd) error { return nil }
+func (*processFamily) resume(*exec.Cmd) error { return nil }
 
 func (f *processFamily) scan() {
 	f.mu.Lock()
@@ -70,6 +89,8 @@ func (f *processFamily) scan() {
 		}
 	}
 }
+
+func (*processFamily) terminate() error { return ErrRecoveryRequired }
 
 func (f *processFamily) empty() (bool, error) {
 	f.scan()

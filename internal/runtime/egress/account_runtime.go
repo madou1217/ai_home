@@ -19,11 +19,11 @@ import (
 
 const (
 	// DefaultMaxProbeHops 与 Node egress-pool-egress-probe.js DEFAULT_MAX_PROBE_HOPS 对齐。
-	DefaultMaxProbeHops     = 4
-	minProxyProbeTimeout    = 250 * time.Millisecond
-	maxProxyProbeTimeout    = 15 * time.Second
-	defaultProxyProbeDur    = 5 * time.Second
-	syntheticDetectAcctRef  = accountcore.AccountRef("acct_00000000000000000000")
+	DefaultMaxProbeHops    = 4
+	minProxyProbeTimeout   = 250 * time.Millisecond
+	maxProxyProbeTimeout   = 15 * time.Second
+	defaultProxyProbeDur   = 5 * time.Second
+	syntheticDetectAcctRef = accountcore.AccountRef("acct_00000000000000000000")
 )
 
 // ProxyProbeResult 描述单次中性 204 出口连通性探测结果。
@@ -367,34 +367,78 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 			Reason: binding.Mode,
 		}
 	}
-	platform := firstNonEmpty(opts.Platform, m.platform)
-	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
+	runtime, ok := strategyRuntimeFor(binding.Mode)
+	if !ok {
+		return EgressResolveResult{OK: false, Bound: true, Error: "unknown_egress_mode", Reason: binding.Mode}
+	}
+	return runtime.Resolve(m, ctx, binding, opts)
+}
 
-	// pool 模式走 Manager 本进程运行时与车道规划；direct/url/system/tun 复用 internal/adapters/agy/egress。
+// resolvePoolTarget 解析出口池绑定：mihomo 车道优先，没有内核/车道时回落
+// HTTP/SOCKS/SSH 直连节点池；两类都失败才 fail-closed。
+func (m *Manager) resolvePoolTarget(ctx context.Context, binding *agyegress.Binding, opts ResolveAccountEgressOptions) EgressResolveResult {
+	platform := firstNonEmpty(opts.Platform, m.platform)
+	// pool 模式优先走 mihomo 车道；没有可用内核/车道时回落到 HTTP/SOCKS/SSH
+	// 直连节点池（不启动任何内核）。两类出口都失败才 fail-closed。
 	if binding.Mode == agyegress.ModePool {
-		if normPlat := normalizePlatformLabel(platform); normPlat != "" && normPlat != "macos" {
-			return EgressResolveResult{OK: false, Bound: true, Error: agyegress.ErrorNotSupported, Platform: normPlat}
+		if proxyURL := m.CurrentAccountProxyURL(ctx, opts.AccountRef, opts.Session); proxyURL != "" {
+			return EgressResolveResult{
+				OK:          true,
+				Bound:       true,
+				Source:      agyegress.ModePool,
+				ProxyServer: proxyURL,
+			}
 		}
-		proxyURL := m.CurrentAccountProxyURL(ctx, opts.AccountRef, opts.Session)
-		if proxyURL == "" {
+		normPlat := normalizePlatformLabel(platform)
+		coreUsable := false
+		if nodes, nodesErr := ReadProxyPoolNodes(m.aiHomeDir); nodesErr == nil {
+			if core, coreErr := m.resolvePoolCore(ctx, nodes); coreErr == nil && core != nil && core.UsableNodes > 0 {
+				coreUsable = true
+			}
+		}
+		if coreUsable {
 			if !opts.NoAutoStart {
 				_ = m.EnsurePoolStarted(ctx)
 			}
-			return EgressResolveResult{
-				OK:     false,
-				Bound:  true,
-				Error:  agyegress.ErrorPoolNotReady,
-				Reason: m.DescribePoolUnavailable(ctx, opts.AccountRef),
+			if proxyURL := m.CurrentAccountProxyURL(ctx, opts.AccountRef, opts.Session); proxyURL != "" {
+				return EgressResolveResult{
+					OK:          true,
+					Bound:       true,
+					Source:      agyegress.ModePool,
+					ProxyServer: proxyURL,
+				}
 			}
 		}
+		endpoint, endpointErr := SelectEndpointPoolProxy(ctx, m.aiHomeDir, opts.AccountRef, binding)
+		if endpointErr == nil && endpoint != nil {
+			return EgressResolveResult{
+				OK:          true,
+				Bound:       true,
+				Source:      agyegress.ModePool,
+				ProxyServer: endpoint.ProxyURL,
+			}
+		}
+		if normPlat != "" && normPlat != "macos" {
+			return EgressResolveResult{OK: false, Bound: true, Error: agyegress.ErrorNotSupported, Platform: normPlat}
+		}
+		reason := m.DescribePoolUnavailable(ctx, opts.AccountRef)
+		if endpointErr != nil {
+			reason += "；直连节点池: " + endpointErr.Error()
+		}
 		return EgressResolveResult{
-			OK:          true,
-			Bound:       true,
-			Source:      agyegress.ModePool,
-			ProxyServer: proxyURL,
+			OK:     false,
+			Bound:  true,
+			Error:  agyegress.ErrorPoolNotReady,
+			Reason: reason,
 		}
 	}
+	return EgressResolveResult{OK: false, Bound: true, Error: agyegress.ErrorPoolNotReady, Reason: "egress_pool_unavailable"}
+}
 
+// resolveNonPoolTarget 解析 direct/system/tun/url/ssh 绑定。
+func (m *Manager) resolveNonPoolTarget(ctx context.Context, binding *agyegress.Binding, opts ResolveAccountEgressOptions) EgressResolveResult {
+	platform := firstNonEmpty(opts.Platform, m.platform)
+	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
 	if binding.Mode == agyegress.ModeURL {
 		if issue := agyegress.ProxyURLIssueForProvider(binding.ProxyURL, provider); issue != "" {
 			return EgressResolveResult{
@@ -405,6 +449,26 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 		}
 	}
 
+	// SSH 出口使用 AIH 自己管理的环回隧道，不经过 mihomo；引用非法或隧道
+	// 未就绪时必须失败关闭。
+	if binding.Mode == agyegress.ModeSSH {
+		proxyURL, err := ManagedSSHProxyURL(m.aiHomeDir, binding.ProxyURL)
+		if err != nil {
+			return EgressResolveResult{
+				OK:     false,
+				Bound:  true,
+				Error:  "ssh_proxy_unavailable",
+				Reason: err.Error(),
+			}
+		}
+		return EgressResolveResult{
+			OK:          true,
+			Bound:       true,
+			Source:      agyegress.ModeSSH,
+			ProxyServer: proxyURL,
+		}
+	}
+
 	// 通过合成 Reader 复用 agy/egress 的平台判定、地址归一化、scutil/networksetup 系统代理探测与 utun 探测。
 	rawMap := map[string]any{"mode": binding.Mode}
 	if binding.ProxyURL != "" {
@@ -412,8 +476,8 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 	}
 	rawBytes, _ := json.Marshal(rawMap)
 	resolver := agyegress.NewResolver(agyegress.Options{
-		AIHomeDir: m.aiHomeDir,
-		Platform:  platform,
+		AIHomeDir:         m.aiHomeDir,
+		Platform:          platform,
 		DetectSystemProxy: m.systemProxyDetector,
 		DetectTUN:         m.tunDetector,
 		PidAlive:          m.pidAlive,

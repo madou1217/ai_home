@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -16,10 +15,10 @@ const nativeMaxEventBytes = 2 * 1024 * 1024
 // serveNative owns its stdout pipe instead of using Cmd.StdoutPipe: concurrent
 // Wait closes StdoutPipe before a slow reader can consume the final error. It
 // joins all producers before returning so no old input/output outlives cleanup.
-func serveNative(ctx context.Context, binary string, pid int, commands <-chan Command, transport Transport) error {
+func serveNative(ctx context.Context, binary string, pid int, started uint64, commands <-chan Command, transport Transport) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	command := exec.CommandContext(ctx, binary, strconv.Itoa(pid))
+	command := exec.CommandContext(ctx, binary, nativeArgs(pid, started)...)
 	output, writer, err := os.Pipe()
 	if err != nil {
 		return surfaceFailure("browser_native_helper_unavailable")

@@ -141,6 +141,13 @@ export function describeAccountEgress(account: EgressUpstreamAccount) {
   if (!account.egress) return { tone: 'default' as const, label: '未设置', detail: '使用默认网络' };
   if (account.egress.mode === 'pool') {
     if (account.lane && account.lane.blocked) return { tone: 'error' as const, label: '出口池无可用节点', detail: account.lane.blocked };
+    if (account.network) {
+      return {
+        tone: 'success' as const,
+        label: '出口池 · 直连节点',
+        detail: account.network.geoText || 'HTTP/SOCKS/SSH 直连节点'
+      };
+    }
     const strategy = account.egress.strategy === 'sticky' ? '独占' : account.egress.strategy === 'session' ? '会话独占' : '共享';
     return {
       tone: 'success' as const,
@@ -148,8 +155,8 @@ export function describeAccountEgress(account: EgressUpstreamAccount) {
       detail: account.lane ? `${account.lane.activeLabel || account.lane.activeNode || '选择中'} · 可用 ${account.lane.allowedCount}/${account.lane.scopeCount}` : ''
     };
   }
-  const labels: Record<string, string> = { url: '代理地址', system: '系统代理', tun: '外部 TUN' };
-  return { tone: 'success' as const, label: labels[account.egress.mode] || account.egress.mode, detail: account.network?.geoText || '' };
+  const labels: Record<string, string> = { url: '代理地址', system: '系统代理', tun: '外部 TUN', ssh: 'SSH 出口' };
+  return { tone: 'success' as const, label: labels[account.egress.mode] || account.egress.mode, detail: account.network?.geoText || account.egress.proxyUrl || '' };
 }
 
 export type BulkQuickSelect = 'unbound' | 'denied' | 'none';

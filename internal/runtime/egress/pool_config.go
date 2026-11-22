@@ -133,6 +133,10 @@ type PoolConfigInput struct {
 	InterfacesFunc func() ([]NetInterfaceEntry, error)
 	ProbePort      int
 	LanePorts      []int
+	// SingBoxVersion 仅 sing-box 配置使用；空串时跳过版本相关的协议。
+	SingBoxVersion string
+	// Routing 是用户可视化的出口池规则与 DNS；零值保持内核默认。
+	Routing RoutingPolicy
 }
 
 // CompiledPoolConfig 包含编译后的 mihomo 配置结构、JSON/YAML 文本与节点映射。
@@ -170,8 +174,11 @@ func BuildEgressPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) {
 	nodeNames := make([]string, 0, len(input.Nodes))
 	nodeEntries := make([]RuntimeNodeEntry, 0, len(input.Nodes))
 
-	for _, node := range input.Nodes {
-		name := fmt.Sprintf("node-%d", len(compiledMaps))
+	// 节点标签按输入位置固定，不按“已编译数量”递增：不同内核可能跳过不同
+	// 协议，按编译数量编号会让同一个逻辑节点在切换内核后变成 node-3→node-5，
+	// 健康/车道/证据全部错位。跳过节点只留空洞，不重排已有标签。
+	for index, node := range input.Nodes {
+		name := fmt.Sprintf("node-%d", index)
 		compiled, err := subaggregator.CompileMihomoProxy(node.ToSubaggregatorNode(), name, "mihomo")
 		if err != nil || compiled == nil {
 			continue
@@ -184,7 +191,7 @@ func BuildEgressPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) {
 		nodeNames = append(nodeNames, name)
 		nodeEntries = append(nodeEntries, runtimeEntryFromProxy(name, node, true))
 	}
-	if len(compiledMaps) == 0 {
+	if len(nodeNames) == 0 {
 		return nil, errors.New("egress_pool_no_usable_nodes")
 	}
 
@@ -243,18 +250,32 @@ func BuildEgressPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) {
 		"default-nameserver":      append([]string(nil), DOHBootstrap...),
 		"proxy-server-nameserver": append([]string(nil), DNSServers...),
 	}
+	if customDNS := input.Routing.MihomoNameservers(); len(customDNS) > 0 {
+		dnsSection["nameserver"] = append([]string(nil), customDNS...)
+		if input.Routing.DNS.Mode == "plain" {
+			dnsSection["proxy-server-nameserver"] = append([]string(nil), customDNS...)
+		} else {
+			dnsSection["proxy-server-nameserver"] = append([]string(nil), DOHBootstrap...)
+		}
+	}
 
+	mode := "global"
+	rules := []string{"MATCH,GLOBAL"}
+	if len(input.Routing.Rules) > 0 {
+		mode = "rule"
+		rules = input.Routing.MihomoRoutingRules()
+	}
 	configMap := map[string]any{
 		"mixed-port":          input.MixedPort,
 		"external-controller": fmt.Sprintf("%s:%d", PoolControllerHost, input.ControllerPort),
 		"secret":              secret,
 		"allow-lan":           false,
-		"mode":                "global",
+		"mode":                mode,
 		"log-level":           "warning",
 		"dns":                 dnsSection,
 		"proxies":             proxyObjects,
 		"proxy-groups":        groups,
-		"rules":               []string{"MATCH,GLOBAL"},
+		"rules":               rules,
 	}
 	if len(listeners) > 0 {
 		configMap["listeners"] = listeners

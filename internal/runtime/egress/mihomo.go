@@ -37,6 +37,9 @@ type PoolStateFile struct {
 	ControllerPort int                 `json:"controllerPort"`
 	Secret         string              `json:"secret"`
 	StartedAt      int64               `json:"startedAt"`
+	CoreKind       string              `json:"coreKind,omitempty"`
+	CoreVersion    string              `json:"coreVersion,omitempty"`
+	GlobalGroup    string              `json:"globalGroup,omitempty"`
 	Lanes          map[string]string   `json:"lanes"`
 	SessionLanes   map[string][]string `json:"sessionLanes"`
 }
@@ -136,6 +139,9 @@ func ReadPoolStateFile(aiHomeDir string) (*PoolStateFile, error) {
 		ControllerPort: int(int64Field(doc["controllerPort"])),
 		Secret:         stringField(doc["secret"]),
 		StartedAt:      int64Field(doc["startedAt"]),
+		CoreKind:       strings.TrimSpace(stringField(doc["coreKind"])),
+		CoreVersion:    strings.TrimSpace(stringField(doc["coreVersion"])),
+		GlobalGroup:    strings.TrimSpace(stringField(doc["globalGroup"])),
 		Lanes:          lanes,
 		SessionLanes:   sessionLanes,
 	}, nil
@@ -175,13 +181,34 @@ func ReadLivePoolState(aiHomeDir string, pidAlive func(int) bool) (*PoolStateFil
 	return state, ""
 }
 
-// ReadPoolRuntimeConfig 解析 <aiHomeDir>/run/egress-pool/config.json（若存在）。
+// ReadPoolRuntimeConfig 解析当前池配置（mihomo config.json 或 sing-box.json）。
 func ReadPoolRuntimeConfig(aiHomeDir string) (*PoolRuntimeConfig, bool) {
 	trimmed := strings.TrimSpace(aiHomeDir)
 	if trimmed == "" {
 		return nil, false
 	}
-	raw, err := os.ReadFile(filepath.Join(trimmed, "run", "egress-pool", "config.json"))
+	// 先按 state.json 的 coreKind 读对应的配置文件，避免旧内核的
+	// config.json / sing-box.json 残留导致节点名与车道映射错位。
+	if state, err := ReadPoolStateFile(trimmed); err == nil && state != nil {
+		switch strings.ToLower(strings.TrimSpace(state.CoreKind)) {
+		case "sing-box":
+			if cfg, ok := readSingBoxPoolRuntimeConfig(trimmed); ok {
+				return cfg, true
+			}
+		case "mihomo", "":
+			if cfg, ok := readMihomoPoolRuntimeConfig(trimmed); ok {
+				return cfg, true
+			}
+		}
+	}
+	if cfg, ok := readMihomoPoolRuntimeConfig(trimmed); ok {
+		return cfg, true
+	}
+	return readSingBoxPoolRuntimeConfig(trimmed)
+}
+
+func readMihomoPoolRuntimeConfig(aiHomeDir string) (*PoolRuntimeConfig, bool) {
+	raw, err := os.ReadFile(filepath.Join(aiHomeDir, "run", "egress-pool", "config.json"))
 	if err != nil {
 		return nil, false
 	}
@@ -200,11 +227,7 @@ func ReadPoolRuntimeConfig(aiHomeDir string) (*PoolRuntimeConfig, bool) {
 		Secret:    strings.TrimSpace(doc.Secret),
 		LanePorts: make(map[int]int),
 	}
-	if _, portStr, ok := strings.Cut(doc.ExternalController, ":"); ok {
-		if p, err := strconv.Atoi(strings.TrimSpace(portStr)); err == nil && p > 0 {
-			cfg.ControllerPort = p
-		}
-	}
+	cfg.ControllerPort = parseControllerPort(doc.ExternalController)
 	for _, item := range doc.Proxies {
 		var m map[string]any
 		if err := json.Unmarshal(item, &m); err != nil || m == nil {
@@ -233,6 +256,89 @@ func ReadPoolRuntimeConfig(aiHomeDir string) (*PoolRuntimeConfig, bool) {
 		}
 	}
 	return cfg, true
+}
+
+func readSingBoxPoolRuntimeConfig(aiHomeDir string) (*PoolRuntimeConfig, bool) {
+	raw, err := os.ReadFile(filepath.Join(aiHomeDir, "run", "egress-pool", "sing-box.json"))
+	if err != nil {
+		return nil, false
+	}
+	var doc struct {
+		Inbounds []struct {
+			Type       string `json:"type"`
+			Tag        string `json:"tag"`
+			ListenPort int    `json:"listen_port"`
+		} `json:"inbounds"`
+		Outbounds []struct {
+			Type       string `json:"type"`
+			Tag        string `json:"tag"`
+			Server     string `json:"server"`
+			ServerPort int    `json:"server_port"`
+		} `json:"outbounds"`
+		Experimental struct {
+			ClashAPI struct {
+				ExternalController string `json:"external_controller"`
+				Secret             string `json:"secret"`
+			} `json:"clash_api"`
+		} `json:"experimental"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, false
+	}
+	cfg := &PoolRuntimeConfig{
+		Secret:    strings.TrimSpace(doc.Experimental.ClashAPI.Secret),
+		LanePorts: make(map[int]int),
+	}
+	cfg.ControllerPort = parseControllerPort(doc.Experimental.ClashAPI.ExternalController)
+	for _, inbound := range doc.Inbounds {
+		if inbound.ListenPort <= 0 {
+			continue
+		}
+		switch {
+		case inbound.Tag == "aih-mixed" || (inbound.Tag == "" && inbound.Type == "mixed" && cfg.MixedPort == 0):
+			cfg.MixedPort = inbound.ListenPort
+		case inbound.Tag == "aih-probe":
+			cfg.ProbePort = inbound.ListenPort
+		case strings.HasPrefix(inbound.Tag, "aih-lane-"):
+			if idx, err := strconv.Atoi(strings.TrimPrefix(inbound.Tag, "aih-lane-")); err == nil && idx >= 0 {
+				cfg.LanePorts[idx] = inbound.ListenPort
+			}
+		}
+	}
+	for _, outbound := range doc.Outbounds {
+		if !strings.HasPrefix(outbound.Tag, "node-") || outbound.Server == "" {
+			continue
+		}
+		cfg.Proxies = append(cfg.Proxies, PoolConfigProxy{
+			Name:     outbound.Tag,
+			Type:     NormalizeProtocol(outbound.Type),
+			Protocol: NormalizeProtocol(outbound.Type),
+			Server:   outbound.Server,
+			Port:     outbound.ServerPort,
+		})
+	}
+	return cfg, true
+}
+
+func poolGlobalGroup(state *PoolStateFile) string {
+	if state != nil {
+		if group := strings.TrimSpace(state.GlobalGroup); group != "" {
+			return group
+		}
+	}
+	return mihomoGlobalGroup
+}
+
+func parseControllerPort(address string) int {
+	_, portText, ok := strings.Cut(strings.TrimSpace(address), ":")
+	if !ok {
+		return 0
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(portText))
+	if err != nil || port <= 0 {
+		return 0
+	}
+	return port
 }
 
 func parsePIDAny(value any) int {

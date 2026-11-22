@@ -106,10 +106,12 @@ type ToolProxiesReport struct {
 
 // ProxyStatusResponse 是 GET /v1/management/webui/toolkit/proxy 的响应体。
 type ProxyStatusResponse struct {
-	OK          bool                `json:"ok"`
-	Gateway     GatewayProxyReport  `json:"gateway"`
-	Env         EnvProxyReport      `json:"env"`
-	System      SystemProxyReport   `json:"system"`
+	OK     bool               `json:"ok"`
+	Gateway GatewayProxyReport `json:"gateway"`
+	Env     EnvProxyReport     `json:"env"`
+	System  SystemProxyReport  `json:"system"`
+	// Layer 是网络层综合判定（TUN / 系统代理 / 实际路由），与 system 共用同一份探测缓存。
+	Layer       NetworkLayerReport  `json:"layer"`
 	ToolTargets []ToolTargetSummary `json:"toolTargets"`
 	Tools       ToolProxiesReport   `json:"tools"`
 	Stale       bool                `json:"stale,omitempty"`
@@ -315,11 +317,31 @@ func (manager *Manager) buildProxyStatus(ctx context.Context) ProxyStatusRespons
 	}()
 	group.Wait()
 
+	// 网络层判定复用刚探测到的系统代理，只补一次 TUN 探测，避免同一请求里
+	// 重复跑 networksetup/scutil。
+	tun := manager.DetectTun(ctx)
+	effectiveRoute := "direct-unknown"
+	switch {
+	case tun.State == "active":
+		effectiveRoute = "tun"
+	case systemReport.Enabled:
+		effectiveRoute = "system-proxy"
+	case tun.State == "unknown":
+		effectiveRoute = "unknown"
+	}
+
 	return ProxyStatusResponse{
 		OK:      true,
 		Gateway: gatewayReport,
 		Env:     envReport,
 		System:  systemReport,
+		Layer: NetworkLayerReport{
+			Platform:            manager.goos,
+			SystemProxy:         systemReport,
+			Tun:                 tun,
+			EffectiveRoute:      effectiveRoute,
+			EffectiveRouteKnown: effectiveRoute != "direct-unknown" && effectiveRoute != "unknown",
+		},
 		ToolTargets: []ToolTargetSummary{
 			{ID: "git", Name: "Git", ScopeLabel: "全局 http.proxy / https.proxy"},
 			{ID: "npm", Name: "npm", ScopeLabel: "用户级 proxy / https-proxy"},

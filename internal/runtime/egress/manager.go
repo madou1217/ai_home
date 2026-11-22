@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/egressengine"
 	"github.com/madou1217/ai_home/core/providers"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 )
@@ -79,6 +80,11 @@ type ManagerOptions struct {
 	Catalog             *providers.Catalog
 	LocalGeoHTTPClient  *http.Client
 	Logger              func(string)
+	// EnginePlugins 是已启动的 egress.engine 进程插件。
+	EnginePlugins []egressengine.Engine
+	// DisableBuiltinEngines 为 true 时不再回落到主体内置的过渡内核实现；
+	// 生产组合根应开启，测试可保留回退。
+	DisableBuiltinEngines bool
 }
 
 // LaneView 描述一条活跃车道的展示状态。
@@ -188,18 +194,20 @@ type Manager struct {
 	geoCache    *NetworkGeoCache
 	supervisor  *PoolSupervisor
 
-	platform            string
-	ownerPID            int
-	systemProxyDetector func(context.Context) (agyegress.SystemProxyStatus, error)
-	tunDetector         func(context.Context) (agyegress.TUNStatus, error)
-	proxyProbeFunc      func(ctx context.Context, proxyURL string) ProxyProbeResult
-	desktopBridge       DesktopClientBridge
-	catalog             *providers.Catalog
-	localGeoHTTPClient  *http.Client
-	planInterval        time.Duration
-	geoPerTick          int
-	probesPerTick       int
-	logger              func(string)
+	platform              string
+	ownerPID              int
+	systemProxyDetector   func(context.Context) (agyegress.SystemProxyStatus, error)
+	tunDetector           func(context.Context) (agyegress.TUNStatus, error)
+	proxyProbeFunc        func(ctx context.Context, proxyURL string) ProxyProbeResult
+	desktopBridge         DesktopClientBridge
+	enginePlugins         []egressengine.Engine
+	disableBuiltinEngines bool
+	catalog               *providers.Catalog
+	localGeoHTTPClient    *http.Client
+	planInterval          time.Duration
+	geoPerTick            int
+	probesPerTick         int
+	logger                func(string)
 
 	watchMu  sync.Mutex
 	watchers map[chan WatchEvent]struct{}
@@ -281,35 +289,37 @@ func NewManager(opts ManagerOptions) *Manager {
 	}
 
 	m := &Manager{
-		aiHomeDir:            aiHome,
-		homeDir:              home,
-		now:                  nowFn,
-		httpClient:           opts.HTTPClient,
-		probeURL:             probeURL,
-		probeTimeoutMS:       probeTimeoutMS,
-		upstreamProbeTimeout: upTimeout,
-		nodeGeoTTLMS:         geoTTL,
-		disableAutoDirectGeo: opts.DisableAutoDirectGeo,
-		health:               LoadNodeHealthLedger(aiHome, nowMS),
-		entities:             entityStore,
-		assignments:          assignmentSvc,
-		evidence:             evidenceStore,
-		geoCache:             geoCache,
-		platform:             strings.TrimSpace(opts.Platform),
-		ownerPID:             ownerPID,
-		systemProxyDetector:  opts.SystemProxyDetector,
-		tunDetector:          opts.TUNDetector,
-		proxyProbeFunc:       opts.ProxyProbeFunc,
-		desktopBridge:        opts.DesktopBridge,
-		catalog:              opts.Catalog,
-		localGeoHTTPClient:   opts.LocalGeoHTTPClient,
-		planInterval:         planInterval,
-		geoPerTick:           geoPerTick,
-		probesPerTick:        probesPerTick,
-		logger:               logger,
-		watchers:             make(map[chan WatchEvent]struct{}),
-		accountMutMap:        make(map[string]*sync.Mutex),
-		desktopOpMap:         make(map[string]*sync.Mutex),
+		aiHomeDir:             aiHome,
+		homeDir:               home,
+		now:                   nowFn,
+		httpClient:            opts.HTTPClient,
+		probeURL:              probeURL,
+		probeTimeoutMS:        probeTimeoutMS,
+		upstreamProbeTimeout:  upTimeout,
+		nodeGeoTTLMS:          geoTTL,
+		disableAutoDirectGeo:  opts.DisableAutoDirectGeo,
+		health:                LoadNodeHealthLedger(aiHome, nowMS),
+		entities:              entityStore,
+		assignments:           assignmentSvc,
+		evidence:              evidenceStore,
+		geoCache:              geoCache,
+		platform:              strings.TrimSpace(opts.Platform),
+		ownerPID:              ownerPID,
+		systemProxyDetector:   opts.SystemProxyDetector,
+		tunDetector:           opts.TUNDetector,
+		proxyProbeFunc:        opts.ProxyProbeFunc,
+		desktopBridge:         opts.DesktopBridge,
+		enginePlugins:         append([]egressengine.Engine(nil), opts.EnginePlugins...),
+		disableBuiltinEngines: opts.DisableBuiltinEngines,
+		catalog:               opts.Catalog,
+		localGeoHTTPClient:    opts.LocalGeoHTTPClient,
+		planInterval:          planInterval,
+		geoPerTick:            geoPerTick,
+		probesPerTick:         probesPerTick,
+		logger:                logger,
+		watchers:              make(map[chan WatchEvent]struct{}),
+		accountMutMap:         make(map[string]*sync.Mutex),
+		desktopOpMap:          make(map[string]*sync.Mutex),
 	}
 
 	m.supervisor = newPoolSupervisor(m, opts)
@@ -505,7 +515,7 @@ func (m *Manager) loadRuntimeSnapshot(ctx context.Context) (*runtimeSnapshot, er
 		ctrl := NewControllerClient(state.ControllerPort, state.Secret, m.httpClient)
 		if proxies, err := ctrl.GetProxies(ctx); err == nil {
 			snap.proxies = proxies
-			if g, ok := proxies["GLOBAL"]; ok {
+			if g, ok := proxies[poolGlobalGroup(state)]; ok {
 				snap.activeNode = strings.TrimSpace(g.Now)
 			}
 		}
@@ -903,6 +913,7 @@ func (m *Manager) ProbePoolNodes(ctx context.Context, nodeName string) PoolActio
 // SelectPoolNode 切换 GLOBAL 组到指定节点。
 func (m *Manager) SelectPoolNode(ctx context.Context, nodeName string) PoolActionResult {
 	target := strings.TrimSpace(nodeName)
+	state, _ := ReadLivePoolState(m.aiHomeDir, m.pidAlive)
 	ctrl, _, err := m.resolveProbeEndpoint(ctx)
 	if err != nil {
 		return PoolActionResult{OK: false, Error: "egress_pool_not_ready"}
@@ -915,9 +926,9 @@ func (m *Manager) SelectPoolNode(ctx context.Context, nodeName string) PoolActio
 	}
 	previous := ""
 	if proxies, err := ctrl.GetProxies(ctx); err == nil {
-		previous = strings.TrimSpace(proxies["GLOBAL"].Now)
+		previous = strings.TrimSpace(proxies[poolGlobalGroup(state)].Now)
 	}
-	if err := ctrl.SelectProxy(ctx, "GLOBAL", target); err != nil {
+	if err := ctrl.SelectProxy(ctx, poolGlobalGroup(state), target); err != nil {
 		return PoolActionResult{OK: false, Error: "egress_pool_select_failed"}
 	}
 	if previous != target {
@@ -1156,7 +1167,10 @@ func (m *Manager) ReconcileLanes(ctx context.Context) error {
 			chosen = currentActive
 		} else {
 			avoidSet := selectedByAvoid[spec.AvoidGroup]
-			picked := m.health.PickNext(-1, allowedSet, avoidSet, &policy, atMS)
+			picked := m.health.PickBest(allowedSet, &policy, atMS)
+			if picked < 0 {
+				picked = m.health.PickNext(-1, allowedSet, avoidSet, &policy, atMS)
+			}
 			if picked >= 0 {
 				nodes := m.health.Nodes()
 				if picked < len(nodes) {

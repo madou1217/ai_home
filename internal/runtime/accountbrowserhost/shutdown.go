@@ -28,12 +28,26 @@ func (s *Supervisor) Shutdown(ctx context.Context) error {
 	}
 	status := s.Status()
 	s.state("stopping", status.PID, status.Browser)
+	if p.family == nil {
+		if p.canReleaseWithoutFamily() {
+			return s.cleanupUncontained(ctx, p, status.Browser, "stopped")
+		}
+		if err := p.recoverFamily(); err != nil {
+			s.state("failed", status.PID, status.Browser)
+			return ErrRecoveryRequired
+		}
+	}
 	select {
 	case <-p.done:
 	default:
 		if err := p.identity.signal(false); err != nil {
-			s.state("failed", status.PID, status.Browser)
-			return err
+			// On Windows the positively owned Job Object remains authoritative
+			// even if the root PID has already exited or been reused. Terminate
+			// that object instead of releasing a live child process's profile.
+			if p.family == nil || p.family.terminate() != nil {
+				s.state("failed", status.PID, status.Browser)
+				return err
+			}
 		}
 	}
 	grace := time.NewTimer(3 * time.Second)
@@ -44,8 +58,10 @@ func (s *Supervisor) Shutdown(ctx context.Context) error {
 	case <-p.done:
 	case <-grace.C:
 		if err := p.identity.signal(true); err != nil {
-			s.state("failed", status.PID, status.Browser)
-			return err
+			if p.family == nil || p.family.terminate() != nil {
+				s.state("failed", status.PID, status.Browser)
+				return err
+			}
 		}
 		select {
 		case <-p.done:
@@ -76,6 +92,13 @@ func (s *Supervisor) Shutdown(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
+			// The Edge root may have exited while renderer/GPU descendants remain.
+			// A positively owned Windows Job Object can terminate that family
+			// without relying on a reused PID; other platforms fail closed.
+			if p.family.terminate() == nil {
+				deadline.Reset(3 * time.Second)
+				continue
+			}
 			s.state("failed", status.PID, status.Browser)
 			return ErrRecoveryRequired
 		case <-ticker.C:

@@ -2306,7 +2306,7 @@ export interface AccountAppLaunchResponse {
   egressWarning?: string;
 }
 
-export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool' | 'direct';
+export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool' | 'direct' | 'ssh';
 /** 已下线的历史出口模式（节点 / 分组）：只读展示，提示改绑。 */
 export type RetiredAccountEgressMode = 'node' | 'group';
 
@@ -3303,6 +3303,21 @@ export interface ProxyStatusResponse {
     noProxy: string;
   };
   system?: SystemProxyInfo;
+  /** 网络层综合判定：TUN / 系统代理 / 实际生效路由。 */
+  layer?: {
+    platform: string;
+    systemProxy: SystemProxyInfo;
+    tun: {
+      state: string;
+      owner?: string | null;
+      interfaceDetected: boolean;
+      routeDetected: boolean;
+      evidence: string[];
+    };
+    effectiveRoute: string;
+    effectiveRouteKnown: boolean;
+    stale?: boolean;
+  };
   /** 代理目标插件清单（Git、npm…），顺序即界面顺序。 */
   toolTargets?: ProxyToolTarget[];
   tools: Record<string, ToolProxyInfo | undefined>;

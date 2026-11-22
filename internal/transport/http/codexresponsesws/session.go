@@ -36,8 +36,14 @@ type managedSession struct {
 
 func newManagedSession(
 	client responseswebsocket.Connection,
+	base context.Context,
 ) *managedSession {
-	ctx, cancel := context.WithCancel(context.Background())
+	// 保留已鉴权请求上下文里的身份/统计作用域，但不继承它的取消信号：
+	// hijack 后的连接生命周期由会话自己管理。
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithCancel(context.WithoutCancel(base))
 	return &managedSession{
 		ctx:    ctx,
 		cancel: cancel,

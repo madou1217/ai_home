@@ -13,6 +13,8 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/accountusagefeed"
+	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
@@ -173,6 +175,8 @@ type serverHandlers struct {
 	remoteWebUI *remoteWebUIProxy
 	// frontDoor 是已退役前置门的历史字段，仅供对照测试；生产路由不再使用。
 	frontDoor http.Handler
+	// clientIdentity 给携带客户端 Key 的请求注入调用方身份与请求统计作用域。
+	clientIdentity func(http.Handler) http.Handler
 	// webUITerminal 是 WebUI 底部终端的会话与 SSE 入口（挂管理前缀，Node 反代）。
 	webUITerminal http.Handler
 	// webuiAccounts 是账号页读模型（camelCase，字段与 Node 行同名）。
@@ -842,7 +846,22 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		shutdownHandler = shutdown
 	}
-	clientAuthorizer, err := clientauth.NewAuthorizer(clientKey)
+	clientKeyService, err := clientkeysapp.NewService(store, clientKey, time.Now)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建客户端 API Key 服务失败: %w", err)
+	}
+	clientKeyStats, err := clientkeystats.NewTracker(clientkeystats.Options{Store: store, Clock: time.Now})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建客户端 Key 统计器失败: %w", err)
+	}
+	clientkeystats.Install(clientKeyStats)
+	go clientKeyService.Start(ctx)
+	go clientKeyStats.Start(ctx)
+	clientAuthorizer, err := clientauth.NewAuthorizer(
+		clientKey,
+		clientauth.WithManagedKeys(clientKeyService),
+		clientauth.WithStatsTracker(clientKeyStats),
+	)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
 	}
@@ -1968,6 +1987,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		codexResponsesWS:      webSocketHandler,
 		codexResponsesHTTP:    codexHTTPHandler,
 		observeCodexClient:    observeCodexClientVersion(codexVersions, clientAuthorizer),
+		clientIdentity:        clientAuthorizer.Middleware,
 		webUIChat:             webUIChatHandler,
 		webUITerminal:         webUITerminalHandler,
 		accountOutcomes:       accountOutcomesHandler,

@@ -158,6 +158,34 @@ var requiredTableColumns = map[string][]string{
 	"session_index_state": {
 		"provider", "account_ref", "scanned_at_ms", "truncated",
 	},
+	"client_api_keys": {
+		"key_id", "name", "key_hash", "key_prefix", "enabled",
+		"created_at_ms", "updated_at_ms", "last_used_at_ms", "revoked_at_ms",
+		"allowed_providers_json", "allowed_models_json",
+		"max_concurrency", "rpm_limit", "tpm_limit", "daily_token_limit", "notes",
+	},
+	"account_concurrency_limits": {
+		"account_ref", "model_id", "max_concurrency", "rpm_limit", "tpm_limit",
+		"updated_at_ms",
+	},
+	"client_key_request_minute": {
+		"minute_ms", "key_id", "surface", "requests", "aborted_requests",
+	},
+	"client_key_request_hour": {
+		"hour_ms", "key_id", "surface", "requests", "aborted_requests",
+	},
+	"client_key_attempt_minute": {
+		"minute_ms", "key_id", "provider_id", "model_id", "account_ref",
+		"attempts", "successes", "failures", "aborted",
+		"input_tokens", "output_tokens", "cached_input_tokens",
+		"cache_write_input_tokens", "reasoning_tokens", "total_tokens",
+	},
+	"client_key_attempt_hour": {
+		"hour_ms", "key_id", "provider_id", "model_id", "account_ref",
+		"attempts", "successes", "failures", "aborted",
+		"input_tokens", "output_tokens", "cached_input_tokens",
+		"cache_write_input_tokens", "reasoning_tokens", "total_tokens",
+	},
 }
 
 var requiredIndexNames = []string{
@@ -171,6 +199,16 @@ var requiredIndexNames = []string{
 	"idx_usage_ledger_account_time",
 	"idx_usage_ledger_source_key",
 	"idx_usage_ledger_quota_bucket_cover",
+	"idx_client_api_keys_hash",
+	"idx_client_api_keys_state",
+	"idx_client_key_request_minute_key",
+	"idx_client_key_request_hour_key",
+	"idx_client_key_attempt_minute_key",
+	"idx_client_key_attempt_minute_account",
+	"idx_client_key_attempt_minute_model",
+	"idx_client_key_attempt_hour_key",
+	"idx_client_key_attempt_hour_account",
+	"idx_client_key_attempt_hour_model",
 	"idx_account_tombstones_ref",
 	"idx_account_tombstones_key",
 	"idx_account_usage_snapshots_provider",

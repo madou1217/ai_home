@@ -9,6 +9,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -970,6 +971,16 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 		return outcome, err
 	}
 	defer release()
+	attemptScope := clientkeystats.AttemptBegin(
+		ctx,
+		invocation.Account().ProviderID(),
+		invocation.Account().Ref().String(),
+		invocation.Route().EffectiveModel(),
+	)
+	defer func() {
+		aborted := ctx.Err() != nil || stream.Err() != nil
+		attemptScope.Finish(aborted)
+	}()
 	invocation, err = coordinator.refreshAdmittedInvocationForAttempt(ctx, invocation, upstream)
 	if err != nil {
 		return outcome, err

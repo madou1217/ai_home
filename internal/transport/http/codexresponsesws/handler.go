@@ -219,7 +219,7 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	client.SetReadLimit(MaxMessageBytes)
-	session := newManagedSession(client)
+	session := newManagedSession(client, request.Context())
 	if !handler.sessions.Add(session) {
 		_ = client.Close(websocket.StatusServiceRestart, "server closing")
 		return

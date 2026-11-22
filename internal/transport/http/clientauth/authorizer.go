@@ -7,6 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/clientkeystats"
+	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 )
 
 var (
@@ -17,35 +20,86 @@ var (
 // KeyProvider 返回当前生效的标准客户端密钥。
 type KeyProvider func() string
 
+// ManagedKeys 是托管 Key 服务的最小端口（application/clientkeys.Service 实现）。
+type ManagedKeys interface {
+	Authenticate(raw string) (coreclientkeys.Identity, bool)
+}
+
 // Authorizer 同时支持 OpenAI Bearer、Anthropic x-api-key 与 Gemini x-goog-api-key 传递方式。
 type Authorizer struct {
-	key KeyProvider
+	key     KeyProvider
+	managed ManagedKeys
+	tracker *clientkeystats.Tracker
+}
+
+// Option 是鉴权器可选能力。
+type Option func(*Authorizer)
+
+// WithManagedKeys 接入多把托管客户端 Key。
+func WithManagedKeys(managed ManagedKeys) Option {
+	return func(authorizer *Authorizer) { authorizer.managed = managed }
+}
+
+// WithStatsTracker 接入请求统计。
+func WithStatsTracker(tracker *clientkeystats.Tracker) Option {
+	return func(authorizer *Authorizer) { authorizer.tracker = tracker }
 }
 
 // NewAuthorizer 创建不会长期复制明文客户端密钥的鉴权器。
-func NewAuthorizer(key KeyProvider) (*Authorizer, error) {
+func NewAuthorizer(key KeyProvider, options ...Option) (*Authorizer, error) {
 	if key == nil {
 		return nil, ErrInvalidAuthorizer
 	}
-	return &Authorizer{key: key}, nil
+	authorizer := &Authorizer{key: key}
+	for _, option := range options {
+		if option != nil {
+			option(authorizer)
+		}
+	}
+	return authorizer, nil
 }
 
-// Authorized 只接受一种无歧义传递方式，并使用常量时间摘要比较。
-func (authorizer *Authorizer) Authorized(request *http.Request) bool {
+// Authenticate 校验请求并返回调用方身份。
+//
+// 接入托管 Key 后，总 key 与托管 Key 都由 ManagedKeys 判定；否则退回单 key 比较。
+func (authorizer *Authorizer) Authenticate(request *http.Request) (coreclientkeys.Identity, bool) {
 	if authorizer == nil || authorizer.key == nil || request == nil {
-		return false
+		return coreclientkeys.Identity{}, false
 	}
 	provided, found := clientKeyFromRequest(request)
-	expected := authorizer.key()
-	if !found || expected == "" {
-		return false
+	if !found {
+		return coreclientkeys.Identity{}, false
+	}
+	if authorizer.managed != nil {
+		return authorizer.managed.Authenticate(provided)
+	}
+	expected := strings.TrimSpace(authorizer.key())
+	if expected == "" || strings.TrimSpace(provided) == "" {
+		return coreclientkeys.Identity{}, false
 	}
 	expectedDigest := sha256.Sum256([]byte(expected))
 	providedDigest := sha256.Sum256([]byte(provided))
-	return subtle.ConstantTimeCompare(
-		expectedDigest[:],
-		providedDigest[:],
-	) == 1
+	if subtle.ConstantTimeCompare(expectedDigest[:], providedDigest[:]) != 1 {
+		return coreclientkeys.Identity{}, false
+	}
+	return coreclientkeys.MasterIdentity(), true
+}
+
+// BeginRequest 创建请求统计作用域；未接入统计时返回 nil。
+func (authorizer *Authorizer) BeginRequest(
+	identity coreclientkeys.Identity,
+	surface string,
+) *clientkeystats.RequestScope {
+	if authorizer == nil || authorizer.tracker == nil {
+		return nil
+	}
+	return authorizer.tracker.BeginRequest(identity, surface)
+}
+
+// Authorized 保留布尔兼容入口。
+func (authorizer *Authorizer) Authorized(request *http.Request) bool {
+	_, ok := authorizer.Authenticate(request)
+	return ok
 }
 
 // clientKeyFromRequest 接受多种传递方式，但要求它们携带**完全相同**的密钥。

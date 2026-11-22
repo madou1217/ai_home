@@ -622,3 +622,121 @@ CREATE TABLE IF NOT EXISTS session_index_state (
     CHECK (truncated IN (0, 1)),
   PRIMARY KEY (provider, account_ref)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS client_api_keys (
+  key_id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  key_hash BLOB NOT NULL,
+  key_prefix TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1
+    CHECK (enabled IN (0, 1)),
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  last_used_at_ms INTEGER NOT NULL DEFAULT 0,
+  revoked_at_ms INTEGER NOT NULL DEFAULT 0,
+  allowed_providers_json TEXT NOT NULL DEFAULT '[]',
+  allowed_models_json TEXT NOT NULL DEFAULT '[]',
+  max_concurrency INTEGER NOT NULL DEFAULT 0
+    CHECK (max_concurrency >= 0),
+  rpm_limit INTEGER NOT NULL DEFAULT 0
+    CHECK (rpm_limit >= 0),
+  tpm_limit INTEGER NOT NULL DEFAULT 0
+    CHECK (tpm_limit >= 0),
+  daily_token_limit INTEGER NOT NULL DEFAULT 0
+    CHECK (daily_token_limit >= 0),
+  notes TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS account_concurrency_limits (
+  account_ref TEXT NOT NULL,
+  model_id TEXT NOT NULL DEFAULT '',
+  max_concurrency INTEGER NOT NULL DEFAULT 0
+    CHECK (max_concurrency >= 0),
+  rpm_limit INTEGER NOT NULL DEFAULT 0
+    CHECK (rpm_limit >= 0),
+  tpm_limit INTEGER NOT NULL DEFAULT 0
+    CHECK (tpm_limit >= 0),
+  updated_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (account_ref, model_id),
+  FOREIGN KEY (account_ref) REFERENCES accounts(account_ref) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS client_key_request_minute (
+  minute_ms INTEGER NOT NULL,
+  key_id TEXT NOT NULL,
+  surface TEXT NOT NULL DEFAULT '',
+  requests INTEGER NOT NULL DEFAULT 0
+    CHECK (requests >= 0),
+  aborted_requests INTEGER NOT NULL DEFAULT 0
+    CHECK (aborted_requests >= 0),
+  PRIMARY KEY (minute_ms, key_id, surface)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS client_key_request_hour (
+  hour_ms INTEGER NOT NULL,
+  key_id TEXT NOT NULL,
+  surface TEXT NOT NULL DEFAULT '',
+  requests INTEGER NOT NULL DEFAULT 0
+    CHECK (requests >= 0),
+  aborted_requests INTEGER NOT NULL DEFAULT 0
+    CHECK (aborted_requests >= 0),
+  PRIMARY KEY (hour_ms, key_id, surface)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS client_key_attempt_minute (
+  minute_ms INTEGER NOT NULL,
+  key_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL DEFAULT '',
+  model_id TEXT NOT NULL DEFAULT '',
+  account_ref TEXT NOT NULL DEFAULT '',
+  attempts INTEGER NOT NULL DEFAULT 0
+    CHECK (attempts >= 0),
+  successes INTEGER NOT NULL DEFAULT 0
+    CHECK (successes >= 0),
+  failures INTEGER NOT NULL DEFAULT 0
+    CHECK (failures >= 0),
+  aborted INTEGER NOT NULL DEFAULT 0
+    CHECK (aborted >= 0),
+  input_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (input_tokens >= 0),
+  output_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (output_tokens >= 0),
+  cached_input_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (cached_input_tokens >= 0),
+  cache_write_input_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (cache_write_input_tokens >= 0),
+  reasoning_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (reasoning_tokens >= 0),
+  total_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (total_tokens >= 0),
+  PRIMARY KEY (minute_ms, key_id, provider_id, model_id, account_ref)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS client_key_attempt_hour (
+  hour_ms INTEGER NOT NULL,
+  key_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL DEFAULT '',
+  model_id TEXT NOT NULL DEFAULT '',
+  account_ref TEXT NOT NULL DEFAULT '',
+  attempts INTEGER NOT NULL DEFAULT 0
+    CHECK (attempts >= 0),
+  successes INTEGER NOT NULL DEFAULT 0
+    CHECK (successes >= 0),
+  failures INTEGER NOT NULL DEFAULT 0
+    CHECK (failures >= 0),
+  aborted INTEGER NOT NULL DEFAULT 0
+    CHECK (aborted >= 0),
+  input_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (input_tokens >= 0),
+  output_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (output_tokens >= 0),
+  cached_input_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (cached_input_tokens >= 0),
+  cache_write_input_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (cache_write_input_tokens >= 0),
+  reasoning_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (reasoning_tokens >= 0),
+  total_tokens INTEGER NOT NULL DEFAULT 0
+    CHECK (total_tokens >= 0),
+  PRIMARY KEY (hour_ms, key_id, provider_id, model_id, account_ref)
+) STRICT, WITHOUT ROWID;

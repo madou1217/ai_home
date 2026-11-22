@@ -120,3 +120,24 @@ BEGIN SELECT RAISE(ABORT, 'host_default_write_requires_projection'); END;
 CREATE TRIGGER IF NOT EXISTS release_deleted_default_owner AFTER DELETE ON accounts
 BEGIN UPDATE account_default_ownership SET expected_ref = NULL
   WHERE expected_ref = OLD.account_ref; END;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_client_api_keys_hash
+  ON client_api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_client_api_keys_state
+  ON client_api_keys(revoked_at_ms, enabled);
+CREATE INDEX IF NOT EXISTS idx_client_key_request_minute_key
+  ON client_key_request_minute(key_id, minute_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_request_hour_key
+  ON client_key_request_hour(key_id, hour_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_attempt_minute_key
+  ON client_key_attempt_minute(key_id, minute_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_attempt_minute_account
+  ON client_key_attempt_minute(account_ref, minute_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_attempt_minute_model
+  ON client_key_attempt_minute(provider_id, model_id, minute_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_attempt_hour_key
+  ON client_key_attempt_hour(key_id, hour_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_attempt_hour_account
+  ON client_key_attempt_hour(account_ref, hour_ms);
+CREATE INDEX IF NOT EXISTS idx_client_key_attempt_hour_model
+  ON client_key_attempt_hour(provider_id, model_id, hour_ms);

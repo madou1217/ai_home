@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountoutcomes"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	"github.com/madou1217/ai_home/application/accountusagefeed"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -42,6 +43,21 @@ type outcomeRecordingRuntime struct {
 	credentialRejectionRefresh *credentialRejectionRefresh
 	// tokenEvents 把 Go 结算的 token 用量注入账号实时流（晚绑定，可为空）。
 	tokenEvents *tokenEventBus
+}
+
+// statsProvider 返回账号所属 Provider，供客户端 Key 统计使用；读取失败时留空。
+func (runtime outcomeRecordingRuntime) statsProvider(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) string {
+	if runtime.accounts == nil {
+		return ""
+	}
+	account, err := runtime.accounts.GetByRef(ctx, accountRef)
+	if err != nil || !account.IsValid() {
+		return ""
+	}
+	return account.ProviderID()
 }
 
 // restoreSchedulingRuntime 是内层运行态的可选能力：人工清空账号阻塞。
@@ -76,7 +92,10 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 ) error {
 	err := runtime.serverAccountRuntime.RecordSuccess(ctx, route, success)
 	runtime.outcomes.Record(route.AccountRef(), accountoutcomes.OutcomeSuccess)
+	statsProvider := runtime.statsProvider(ctx, route.AccountRef())
+	clientkeystats.RecordAttempt(ctx, statsProvider, route.AccountRef().String(), route.ModelID().String(), clientkeystats.OutcomeSuccess)
 	if usage, ok := success.Usage(); ok {
+		clientkeystats.RecordUsage(ctx, statsProvider, route.AccountRef().String(), route.ModelID().String(), usage)
 		if runtime.UsageProjectionMode() == "" {
 			runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
 		}
@@ -112,6 +131,7 @@ func (runtime outcomeRecordingRuntime) RecordAttemptUsage(
 		return nil
 	}
 	at := time.Now()
+	clientkeystats.RecordUsage(ctx, runtime.statsProvider(ctx, route.AccountRef()), route.AccountRef().String(), route.ModelID().String(), usage)
 	if runtime.UsageProjectionMode() == "" {
 		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), at, usage)
 	}
@@ -151,6 +171,7 @@ func (runtime outcomeRecordingRuntime) RecordFailure(
 	err := runtime.serverAccountRuntime.RecordFailure(ctx, route, failure)
 	runtime.outcomes.Record(route.AccountRef(), string(failure.RuntimeKind()))
 	runtime.quotaRefresh.observe(route.AccountRef(), failure.RuntimeKind())
+	clientkeystats.RecordAttempt(ctx, runtime.statsProvider(ctx, route.AccountRef()), route.AccountRef().String(), route.ModelID().String(), clientkeystats.OutcomeFailure)
 	return err
 }
 
@@ -173,6 +194,7 @@ func (runtime outcomeRecordingRuntime) RecordFailureWithReceipt(
 	}
 	runtime.outcomes.Record(route.AccountRef(), string(failure.RuntimeKind()))
 	runtime.quotaRefresh.observe(route.AccountRef(), failure.RuntimeKind())
+	clientkeystats.RecordAttempt(ctx, runtime.statsProvider(ctx, route.AccountRef()), route.AccountRef().String(), route.ModelID().String(), clientkeystats.OutcomeFailure)
 	if err != nil {
 		return runtimecore.CooldownReceipt{}, err
 	}
@@ -196,6 +218,7 @@ func (runtime outcomeRecordingRuntime) RecordImageUsage(
 	if err != nil || !usage.IsValid() || usage.TotalTokens() == 0 {
 		return
 	}
+	clientkeystats.RecordUsage(ctx, runtime.statsProvider(ctx, ref), ref.String(), model, usage)
 	if runtime.UsageProjectionMode() == "" {
 		runtime.usage.Append(ref, model, at, usage)
 	}

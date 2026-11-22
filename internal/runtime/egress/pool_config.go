@@ -174,8 +174,11 @@ func BuildEgressPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) {
 	nodeNames := make([]string, 0, len(input.Nodes))
 	nodeEntries := make([]RuntimeNodeEntry, 0, len(input.Nodes))
 
-	for _, node := range input.Nodes {
-		name := fmt.Sprintf("node-%d", len(compiledMaps))
+	// 节点标签按输入位置固定，不按“已编译数量”递增：不同内核可能跳过不同
+	// 协议，按编译数量编号会让同一个逻辑节点在切换内核后变成 node-3→node-5，
+	// 健康/车道/证据全部错位。跳过节点只留空洞，不重排已有标签。
+	for index, node := range input.Nodes {
+		name := fmt.Sprintf("node-%d", index)
 		compiled, err := subaggregator.CompileMihomoProxy(node.ToSubaggregatorNode(), name, "mihomo")
 		if err != nil || compiled == nil {
 			continue
@@ -188,7 +191,7 @@ func BuildEgressPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) {
 		nodeNames = append(nodeNames, name)
 		nodeEntries = append(nodeEntries, runtimeEntryFromProxy(name, node, true))
 	}
-	if len(compiledMaps) == 0 {
+	if len(nodeNames) == 0 {
 		return nil, errors.New("egress_pool_no_usable_nodes")
 	}
 

@@ -129,7 +129,7 @@ func (config Config) defaultIdentityMethods() []ssh.AuthMethod {
 	if err != nil {
 		return nil
 	}
-	methods := make([]ssh.AuthMethod, 0, 3)
+	signers := make([]ssh.Signer, 0, 3)
 	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
 		resolved, err := sshhost.ResolveIdentityFilePath("~/.ssh/"+name, sshhost.IdentityOptions{HomeDir: home})
 		if err != nil {
@@ -143,9 +143,12 @@ func (config Config) defaultIdentityMethods() []ssh.AuthMethod {
 		if err != nil {
 			continue
 		}
-		methods = append(methods, ssh.PublicKeys(signer))
+		signers = append(signers, signer)
 	}
-	return methods
+	if len(signers) == 0 {
+		return nil
+	}
+	return []ssh.AuthMethod{ssh.PublicKeys(signers...)}
 }
 
 // agentMethod 连接 SSH_AUTH_SOCK；返回的 closer 由 Client 统一关闭。

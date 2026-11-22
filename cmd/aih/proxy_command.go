@@ -29,26 +29,32 @@ func runProxyCommand(ctx context.Context, arguments []string, runtime commandRun
 }
 
 func writeProxyCommandUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID] [--server URL] [--json]")
+	_, _ = fmt.Fprintln(runtime.stdout, "用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID] [--server URL | --ssh <connectionId>] [--json]")
 	_, _ = fmt.Fprintln(runtime.stdout, "")
 	_, _ = fmt.Fprintln(runtime.stdout, "通过远端 AIH Server 的代理租约，在当前主机建立 127.0.0.1 HTTP 代理入口。")
 	_, _ = fmt.Fprintln(runtime.stdout, "需要 AIH_SERVER_MANAGEMENT_KEY；--server 未指定时使用 AIH_SERVER_BASE_URL。")
-	_, _ = fmt.Fprintln(runtime.stdout, "Server 只监听 loopback 时，可先用 SSH 本地转发把远端管理面带到这里。")
+	_, _ = fmt.Fprintln(runtime.stdout, "--ssh 使用本机已保存的 SSH 连接自动建立本地转发；--server 则直接连接可达的管理面。")
 	_, _ = fmt.Fprintln(runtime.stdout, "命令持续运行，Ctrl+C 释放租约；不会自动修改系统代理。")
 }
 
 type proxyServeOptions struct {
-	selector string
-	server   string
-	json     bool
+	selector  string
+	server    string
+	ssh       string
+	sshRemote string
+	listen    string
+	json      bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto"}
+	options := proxyServeOptions{selector: "auto", sshRemote: "127.0.0.1:9527", listen: "127.0.0.1:0"}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
 	flags.StringVar(&options.server, "server", "", "远端 AIH Server 管理面地址；缺省读取 AIH_SERVER_BASE_URL")
+	flags.StringVar(&options.ssh, "ssh", "", "用已保存的 SSH 连接建立本地转发（连接 ID）")
+	flags.StringVar(&options.sshRemote, "ssh-remote-address", "127.0.0.1:9527", "SSH 远端 AIH 管理面 loopback 地址")
+	flags.StringVar(&options.listen, "listen", "127.0.0.1:0", "SSH 本地转发监听地址（仅 loopback）")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
 	if err := flags.Parse(args); err != nil {
 		return options, err
@@ -58,14 +64,23 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	}
 	options.selector = strings.TrimSpace(options.selector)
 	options.server = strings.TrimSpace(options.server)
+	options.ssh = strings.TrimSpace(options.ssh)
+	options.sshRemote = strings.TrimSpace(options.sshRemote)
+	options.listen = strings.TrimSpace(options.listen)
 	if options.selector == "" || strings.ContainsAny(options.selector, "\r\n\x00") {
 		return options, errors.New("--selector 无效")
+	}
+	if options.server != "" && options.ssh != "" {
+		return options, errors.New("--server 与 --ssh 只能选择一个")
 	}
 	if options.server != "" {
 		parsed, err := url.Parse(options.server)
 		if err != nil || parsed == nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 			return options, errors.New("--server 必须是有效的 HTTP(S) 管理面地址")
 		}
+	}
+	if options.ssh == "" && (options.sshRemote != "127.0.0.1:9527" || options.listen != "127.0.0.1:0") {
+		return options, errors.New("--ssh-remote-address/--listen 需要配合 --ssh 使用")
 	}
 	return options, nil
 }
@@ -83,8 +98,16 @@ func runProxyServe(parent context.Context, args []string, runtime commandRuntime
 	}
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if options.server != "" {
+	if options.server != "" || options.ssh != "" {
 		base := options.server
+		if options.ssh != "" {
+			forward, forwardErr := openSSHLocalForward(ctx, runtime, options.ssh, options.listen, options.sshRemote)
+			if forwardErr != nil {
+				return forwardErr
+			}
+			defer func() { _ = forward.Close() }()
+			base = forward.URL()
+		}
 		original := runtime.lookupEnv
 		runtime.lookupEnv = func(key string) (string, bool) {
 			if key == "AIH_SERVER_BASE_URL" {

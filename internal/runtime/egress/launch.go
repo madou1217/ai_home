@@ -65,17 +65,25 @@ func ResolveAccountLaunchEgress(
 		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
 	case agyegress.ModePool:
 		state, reason := ReadLivePoolState(aiHomeDir, nil)
+		laneURL := ""
+		if state != nil {
+			laneURL = strings.TrimSpace(state.Lanes[ref])
+		}
+		if laneURL != "" {
+			return LaunchEgress{Bound: true, Mode: mode, ProxyURL: laneURL}, nil
+		}
+		// 没有 mihomo 车道时回落到 HTTP/SOCKS/SSH 直连节点池；两类都不可用
+		// 才失败关闭。
+		if endpoint, endpointErr := SelectEndpointPoolProxy(ctx, aiHomeDir, ref, &binding); endpointErr == nil && endpoint != nil {
+			return LaunchEgress{Bound: true, Mode: mode, ProxyURL: endpoint.ProxyURL}, nil
+		}
 		if state == nil {
 			if reason == "" {
 				reason = "egress_pool_not_running"
 			}
 			return LaunchEgress{}, errors.New(reason)
 		}
-		laneURL := strings.TrimSpace(state.Lanes[ref])
-		if laneURL == "" {
-			return LaunchEgress{}, errors.New("egress_pool_lane_not_ready")
-		}
-		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: laneURL}, nil
+		return LaunchEgress{}, errors.New("egress_pool_lane_not_ready")
 	default:
 		return LaunchEgress{}, fmt.Errorf("egress_mode_unsupported: %s", mode)
 	}

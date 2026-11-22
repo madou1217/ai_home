@@ -75,11 +75,10 @@ var strategyDefinitions = []StrategyDefinition{
 	},
 	{
 		ID:             ModePool,
-		Label:          "AIH 出口池（mihomo）",
-		Description:    "用订阅节点组成出口池并按车道自动轮换；需要本机 mihomo 内核。",
+		Label:          "AIH 出口池",
+		Description:    "用订阅节点组成出口池；有 mihomo 时走车道并支持全部协议，没有内核时自动使用 HTTP/SOCKS/SSH 直连节点（sticky/shared；session 近似 sticky）。",
 		Layer:          StrategyLayerApplication,
 		Input:          StrategyInputPoolScope,
-		RequiresMihomo: true,
 		SupportsLaunch: true,
 		SupportsProbe:  true,
 	},

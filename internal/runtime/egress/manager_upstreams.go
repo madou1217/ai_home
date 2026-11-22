@@ -276,6 +276,11 @@ func (m *Manager) BuildUpstreamsView(ctx context.Context, accountRefFilter strin
 
 	laneByAccount := make(map[string]LaneView)
 	for _, lv := range snap.lanes {
+		// 池未运行时也会返回“规划车道”（proxyUrl 为空）；它没有数据面，
+		// 不能当成账号正在使用的出口，否则页面会把计划节点误显示为生效节点。
+		if strings.TrimSpace(lv.ProxyURL) == "" {
+			continue
+		}
 		for _, ref := range lv.Accounts {
 			if _, exists := laneByAccount[ref]; !exists {
 				laneByAccount[ref] = lv
@@ -419,6 +424,14 @@ func (m *Manager) BuildUpstreamsView(ctx context.Context, accountRefFilter strin
 
 			var netView *UpstreamAccountNetworkView
 			exitKind, proxyURL, include := networkExitFor(bindingPtr, upstream, srvCfg, m.aiHomeDir)
+			// 没有 mihomo 车道时，展示 HTTP/SOCKS/SSH 直连池选出的节点；
+			// 这样账号行不会误显示“出口池无可用节点”。
+			if bindingPtr != nil && bindingPtr.Mode == agyegress.ModePool && (laneView == nil || laneView.ActiveNode == "") {
+				if endpoint, endpointErr := SelectEndpointPoolProxyStable(ctx, m.aiHomeDir, ref, bindingPtr); endpointErr == nil && endpoint != nil {
+					laneView = nil
+					exitKind, proxyURL, include = agyegress.ModePool, endpoint.ProxyURL, true
+				}
+			}
 			if include && exitKind != "system" {
 				geoEntry := m.geoCache.PeekExitGeo(proxyURL)
 				netVerdict := EvaluateNetworkExit(dc, geoEntry, nowMS)

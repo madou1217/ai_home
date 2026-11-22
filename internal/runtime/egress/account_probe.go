@@ -57,20 +57,28 @@ func (m *Manager) ProbeUpstreamAccount(
 		return AccountUpstreamProbeResult{OK: false, Status: "skipped", Reason: "egress_binding_read_failed"}, http.StatusConflict
 	}
 	if hasBinding && !binding.Retired && strings.EqualFold(strings.TrimSpace(binding.Mode), agyegress.ModePool) {
-		return m.probePoolAccountUpstream(ctx, upstream, ref), http.StatusOK
+		return m.probePoolAccountUpstream(ctx, upstream, ref, binding), http.StatusOK
 	}
 	return m.probeDirectAccountUpstream(ctx, upstream, binding, hasBinding), http.StatusOK
 }
 
-// probePoolAccountUpstream 用出口池车道当前节点探测；没有车道时明确跳过。
+// probePoolAccountUpstream 优先用 mihomo 车道节点；没有车道时回落到 HTTP/SOCKS/
+// SSH 直连节点池，仍不可用才明确跳过。
 func (m *Manager) probePoolAccountUpstream(
 	ctx context.Context,
 	upstream *UpstreamInfo,
 	accountRef string,
+	binding agyegress.Binding,
 ) AccountUpstreamProbeResult {
+	fallback := func(reason string) AccountUpstreamProbeResult {
+		if endpoint, endpointErr := SelectEndpointPoolProxy(ctx, m.aiHomeDir, accountRef, &binding); endpointErr == nil && endpoint != nil {
+			return m.probeViaProxy(ctx, upstream, endpoint.ProxyURL, "pool", endpoint.NodeName)
+		}
+		return AccountUpstreamProbeResult{OK: false, Status: "skipped", Reason: reason, Exit: "pool"}
+	}
 	snap, err := m.loadRuntimeSnapshot(ctx)
 	if err != nil || snap == nil || !snap.ready {
-		return AccountUpstreamProbeResult{OK: false, Status: "skipped", Reason: "egress_pool_not_ready", Exit: "pool"}
+		return fallback("egress_pool_not_ready")
 	}
 	node := ""
 	blocked := ""
@@ -92,7 +100,7 @@ func (m *Manager) probePoolAccountUpstream(
 		if reason == "" {
 			reason = "egress_pool_lane_not_ready"
 		}
-		return AccountUpstreamProbeResult{OK: false, Status: "skipped", Reason: reason, Exit: "pool"}
+		return fallback(reason)
 	}
 	geo, _ := m.LookupNodeGeo(ctx, node, false)
 	result := m.ProbeUpstreamViaNode(ctx, upstream, node)
@@ -153,6 +161,17 @@ func (m *Manager) probeDirectAccountUpstream(
 		}
 	}
 
+	return m.probeViaProxy(ctx, upstream, proxyURL, exit, "")
+}
+
+// probeViaProxy 用指定代理（空串=直连）请求一次上游探测 URL 并写入实测。
+func (m *Manager) probeViaProxy(
+	ctx context.Context,
+	upstream *UpstreamInfo,
+	proxyURL string,
+	exit string,
+	node string,
+) AccountUpstreamProbeResult {
 	targetURL := ProbeURLFor(upstream)
 	if targetURL == "" {
 		return AccountUpstreamProbeResult{OK: false, Status: "skipped", Reason: "probe_url_invalid", Exit: exit}
@@ -178,6 +197,7 @@ func (m *Manager) probeDirectAccountUpstream(
 		Status:   status,
 		Reason:   reason,
 		Exit:     exit,
+		Node:     node,
 		ProxyURL: RedactProxyURL(proxyURL),
 	}
 	if status == "reachable" {

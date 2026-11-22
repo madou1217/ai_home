@@ -95,25 +95,27 @@ func (m *Manager) fillStrategyAvailability(ctx context.Context, status *Strategy
 			status.Reason = "没有已启用的 SSH 代理主机；请先在 SSH 主机设置里启用“作为代理”"
 		}
 	case agyegress.ModePool:
-		if normalizePlatformLabel(firstNonEmpty(m.platform, runtime.GOOS)) != "macos" {
-			status.Status = "unavailable"
-			status.Available = false
-			status.Reason = "出口池当前只支持 macOS"
-			return
-		}
 		if m.IsPoolReady() {
 			status.Status = "ready"
-			status.Reason = "出口池已运行"
+			status.Reason = "mihomo 出口池已运行"
 			return
 		}
-		if core, err := ResolveMihomoCorePath(CoreResolverOptions{AIHomeDir: m.aiHomeDir, Platform: m.platform}); err == nil && core != nil {
-			status.Status = "degraded"
-			status.Reason = "已找到 mihomo 内核（" + core.Source + "），池尚未启动"
+		isMacOS := normalizePlatformLabel(firstNonEmpty(m.platform, runtime.GOOS)) == "macos"
+		if isMacOS {
+			if core, err := ResolveMihomoCorePath(CoreResolverOptions{AIHomeDir: m.aiHomeDir, Platform: m.platform}); err == nil && core != nil {
+				status.Status = "degraded"
+				status.Reason = "已找到 mihomo 内核（" + core.Source + "），池尚未启动"
+				return
+			}
+		}
+		if count := EndpointPoolNodeCount(m.aiHomeDir); count > 0 {
+			status.Status = "ready"
+			status.Reason = "未安装 mihomo；使用 " + strconv.Itoa(count) + " 个 HTTP/SOCKS/SSH 直连节点池"
 			return
 		}
 		status.Status = "unavailable"
 		status.Available = false
-		status.Reason = "未安装 mihomo 内核；可改用 SSH 出口，或把 mihomo 放到 ~/.ai_home/tools/mihomo"
+		status.Reason = "没有可用的 mihomo 内核或直连节点（HTTP/SOCKS/SSH）；可改用 SSH 出口"
 	case agyegress.ModeSystem, agyegress.ModeTUN:
 		decision, err := m.resolveSyntheticStrategy(ctx, status.ID)
 		if err != nil {

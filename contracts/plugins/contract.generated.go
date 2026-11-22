@@ -101,6 +101,7 @@ var Capabilities = []Capability{
 	{ID: "tool", Version: 1, Mode: "terminal"},
 	{ID: "approval", Version: 1, Mode: "serial"},
 	{ID: "ui", Version: 1, Mode: "terminal"},
+	{ID: "network.connector", Version: 1, Mode: "collect"},
 	{ID: "provider", Version: 1, Mode: "terminal"},
 	{ID: "upstream", Version: 1, Mode: "terminal"},
 }

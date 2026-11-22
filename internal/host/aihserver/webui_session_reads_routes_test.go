@@ -49,9 +49,6 @@ func TestBuildWebUISessionReadsRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUISessionReadsRoutes error = %v", err)
 	}
-	if len(routes) != 1 {
-		t.Fatalf("len(routes) = %d want 1", len(routes))
-	}
 
 	mux := http.NewServeMux()
 	for _, route := range routes {

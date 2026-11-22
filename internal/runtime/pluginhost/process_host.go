@@ -28,7 +28,8 @@ import (
 type ProcessHost struct {
 	onLog  func(string)
 	mu     sync.Mutex
-	procs  map[string]*processPlugin // instanceId -> process
+	procs  map[string]*processPlugin // instanceId -> active process
+	all    map[*processPlugin]struct{}
 	routes map[string]*processPlugin // contributionId -> process
 }
 
@@ -79,18 +80,24 @@ func (buffer *tailBuffer) String() string {
 }
 
 func NewProcessHost(onLog func(string)) *ProcessHost {
-	return &ProcessHost{onLog: onLog, procs: map[string]*processPlugin{}, routes: map[string]*processPlugin{}}
+	return &ProcessHost{
+		onLog:  onLog,
+		procs:  map[string]*processPlugin{},
+		all:    map[*processPlugin]struct{}{},
+		routes: map[string]*processPlugin{},
+	}
 }
 
 func (host *ProcessHost) Start(context.Context) error { return nil }
 
 func (host *ProcessHost) Stop(ctx context.Context) error {
 	host.mu.Lock()
-	procs := make([]*processPlugin, 0, len(host.procs))
-	for _, proc := range host.procs {
+	procs := make([]*processPlugin, 0, len(host.all))
+	for proc := range host.all {
 		procs = append(procs, proc)
 	}
 	host.procs = map[string]*processPlugin{}
+	host.all = map[*processPlugin]struct{}{}
 	host.routes = map[string]*processPlugin{}
 	host.mu.Unlock()
 	for _, proc := range procs {
@@ -119,6 +126,7 @@ func (host *ProcessHost) Prepare(ctx context.Context, generation int64, plugins 
 			host.routes[contributionID] = proc
 		}
 		host.procs[spec.InstanceID] = proc
+		host.all[proc] = struct{}{}
 		result.Contributions = append(result.Contributions, contributions...)
 		result.ProcessContributions = append(result.ProcessContributions, contributions...)
 	}
@@ -216,7 +224,29 @@ func (host *ProcessHost) InvokeReverse(ctx context.Context, generation int64, co
 }
 
 func (host *ProcessHost) Dispose(ctx context.Context, generation int64) (HostDisposeResult, error) {
-	_ = host.Stop(ctx)
+	host.mu.Lock()
+	stopped := make([]*processPlugin, 0)
+	for proc := range host.all {
+		if generation > 0 && proc.generation != generation {
+			continue
+		}
+		delete(host.all, proc)
+		for instanceID, active := range host.procs {
+			if active == proc {
+				delete(host.procs, instanceID)
+			}
+		}
+		for contributionID, routed := range host.routes {
+			if routed == proc {
+				delete(host.routes, contributionID)
+			}
+		}
+		stopped = append(stopped, proc)
+	}
+	host.mu.Unlock()
+	for _, proc := range stopped {
+		proc.stop(ctx)
+	}
 	return HostDisposeResult{Generation: generation, State: "disposed"}, nil
 }
 
@@ -224,7 +254,7 @@ func (host *ProcessHost) Status(context.Context) (HostStatusResult, error) {
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	result := HostStatusResult{Generations: []int64{}}
-	for _, proc := range host.procs {
+	for proc := range host.all {
 		result.Generations = append(result.Generations, proc.generation)
 	}
 	return result, nil

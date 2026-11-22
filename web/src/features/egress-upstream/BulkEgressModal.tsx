@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Form, Input, Modal, Radio, Select, Tag, Typography, message } from 'antd';
+import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
 import PoolScopePicker, { type PoolSelection } from './PoolScopePicker';
 import { applyEgressToAccounts, type BulkEgressTarget } from './bulk-egress';
 import { egressUpstreamAPI } from './egress-upstream-api';
@@ -15,7 +17,7 @@ interface BulkEgressModalProps {
   initialMode?: AccountEgressMode;
   initialProxyUrl?: string;
   initialSshId?: string;
-  /** 服务端策略目录；缺省时弹窗自己读取，仍失败则用离线兜底。 */
+  /** 服务端策略目录；缺省时弹窗自己读取，读不到就显示不可用并允许重试。 */
   strategies?: EgressStrategyStatus[];
   upstream: EgressUpstream | null;
   groups: EgressCatalogGroup[];
@@ -27,16 +29,6 @@ interface BulkEgressModalProps {
 }
 
 const DEFAULT_SELECTION: PoolSelection = { scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'sticky' };
-
-/** 离线兜底：服务端策略目录不可用时仍能完成基本设置；新增策略以服务端为准。 */
-const FALLBACK_STRATEGIES: EgressStrategyStatus[] = [
-  { id: 'direct', label: '直连', description: '', layer: 'application', input: 'none', requiresMihomo: false, requiresSsh: false, supportsLaunch: true, supportsProbe: true, available: true, status: 'ready', boundAccounts: 0 },
-  { id: 'system', label: '系统代理', description: '', layer: 'system', input: 'none', requiresMihomo: false, requiresSsh: false, supportsLaunch: true, supportsProbe: true, available: true, status: 'ready', boundAccounts: 0 },
-  { id: 'url', label: '代理地址', description: '', layer: 'application', input: 'proxy_url', requiresMihomo: false, requiresSsh: false, supportsLaunch: true, supportsProbe: true, available: true, status: 'ready', boundAccounts: 0 },
-  { id: 'ssh', label: 'SSH 出口（AWS 等）', description: '', layer: 'application', input: 'ssh_connection', requiresMihomo: false, requiresSsh: true, supportsLaunch: true, supportsProbe: true, available: true, status: 'ready', boundAccounts: 0 },
-  { id: 'pool', label: 'AIH 出口池（mihomo）', description: '', layer: 'application', input: 'pool_scope', requiresMihomo: true, requiresSsh: false, supportsLaunch: true, supportsProbe: true, available: true, status: 'ready', boundAccounts: 0 },
-  { id: 'tun', label: '外部 TUN', description: '', layer: 'network', input: 'none', requiresMihomo: false, requiresSsh: false, supportsLaunch: true, supportsProbe: true, available: true, status: 'ready', boundAccounts: 0 }
-];
 
 /** 同上游批量设置出口：一次选好，逐个账号保存（每个账号仍是独立绑定，之后可单独改）。 */
 export default function BulkEgressModal({
@@ -62,6 +54,8 @@ export default function BulkEgressModal({
   const [sshCandidates, setSshCandidates] = useState<ToolkitProxyCandidate[]>([]);
   const [sshLoading, setSshLoading] = useState(false);
   const [fetchedCatalog, setFetchedCatalog] = useState<EgressStrategyStatus[]>([]);
+  const [catalogFailed, setCatalogFailed] = useState(false);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -71,18 +65,35 @@ export default function BulkEgressModal({
     setSshId(initialSshId || '');
   }, [initialMode, initialProxyUrl, initialSshId, open]);
 
-  // 调用方没有传目录时自己读取；失败才退回离线兜底，保证弹窗始终可用。
+  // 服务端目录是唯一声明源：调用方没传时自己读取；失败或为空就保持空目录，
+  // 由界面提示不可用并提供重试，不拼本地兜底清单。
+  const providedCount = strategies?.length || 0;
   useEffect(() => {
-    if (!open || (strategies && strategies.length) || fetchedCatalog.length) return;
+    if (!open || providedCount || fetchedCatalog.length) return;
+    let cancelled = false;
+    setCatalogFailed(false);
     egressUpstreamAPI.strategies()
-      .then((items) => setFetchedCatalog(items.length ? items : FALLBACK_STRATEGIES))
-      .catch(() => setFetchedCatalog(FALLBACK_STRATEGIES));
-  }, [fetchedCatalog.length, open, strategies]);
+      .then((items) => {
+        if (cancelled) return;
+        setFetchedCatalog(items);
+        setCatalogFailed(items.length === 0);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCatalogFailed(true);
+      });
+    return () => { cancelled = true; };
+  }, [catalogAttempt, fetchedCatalog.length, open, providedCount]);
 
-  const catalog = useMemo(
-    () => (strategies && strategies.length ? strategies : (fetchedCatalog.length ? fetchedCatalog : FALLBACK_STRATEGIES)),
-    [fetchedCatalog, strategies]
-  );
+  const catalog = strategies && strategies.length ? strategies : fetchedCatalog;
+  // 目录到达后，若预选模式不在服务端声明里（旧绑定/已下线策略），落到目录首项，
+  // 避免提交一个服务端不认识的 mode；目录加载过程中不动已有选择。
+  useEffect(() => {
+    if (!catalog.length) return;
+    if (catalog.some((item) => item.id === mode)) return;
+    setMode(catalog[0].id as AccountEgressMode);
+  }, [catalog, mode]);
+
   const activeStrategy = catalog.find((item) => item.id === mode) || catalog[0];
   const activeInput = activeStrategy?.input || 'none';
 
@@ -98,7 +109,11 @@ export default function BulkEgressModal({
   }, [activeInput, open, sshCandidates.length, sshLoading]);
 
   const submit = async () => {
-    if (activeStrategy?.status === 'unavailable') {
+    if (!activeStrategy) {
+      message.warning('出口策略目录不可用，暂时无法保存');
+      return;
+    }
+    if (activeStrategy.status === 'unavailable') {
       message.warning(activeStrategy.reason || '该出口策略当前不可用');
       return;
     }
@@ -134,6 +149,7 @@ export default function BulkEgressModal({
       width={720}
       okText="全部应用"
       confirmLoading={saving}
+      okButtonProps={{ disabled: catalog.length === 0 }}
       onOk={() => void submit()}
       onCancel={() => onClose(false)}
       destroyOnHidden
@@ -143,23 +159,34 @@ export default function BulkEgressModal({
       </Typography.Paragraph>
       <Form layout="vertical">
         <Form.Item label="出口来源">
-          <Radio.Group
-            value={mode}
-            onChange={(event) => setMode(event.target.value as AccountEgressMode)}
-            optionType="button"
-            buttonStyle="solid"
-            options={catalog.map((item) => ({
-              value: item.id,
-              label: (
-                <span>
-                  {item.label}
-                  {item.status === 'unavailable' ? (
-                    <Tag bordered={false} color="default" className="egress-strategy-status">当前不可用</Tag>
-                  ) : null}
-                </span>
-              )
-            }))}
-          />
+          {catalog.length ? (
+            <Radio.Group
+              value={mode}
+              onChange={(event) => setMode(event.target.value as AccountEgressMode)}
+              optionType="button"
+              buttonStyle="solid"
+              options={catalog.map((item) => ({
+                value: item.id,
+                label: (
+                  <span>
+                    {item.label}
+                    {item.status === 'unavailable' ? (
+                      <Tag bordered={false} color="default" className="egress-strategy-status">当前不可用</Tag>
+                    ) : null}
+                  </span>
+                )
+              }))}
+            />
+          ) : catalogFailed ? (
+            <InlineNote
+              tone="warning"
+              action={<Button size="small" type="link" onClick={() => setCatalogAttempt((value) => value + 1)}>重试</Button>}
+            >
+              策略目录不可用，暂时无法设置出口
+            </InlineNote>
+          ) : (
+            <InlineNote tone="info">正在读取出口策略…</InlineNote>
+          )}
         </Form.Item>
         {activeStrategy?.description ? (
           <Typography.Paragraph type="secondary" className="egress-strategy-hint">

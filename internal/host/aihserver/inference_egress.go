@@ -16,7 +16,9 @@ import (
 
 // inferenceEgressResolver 把账号出口绑定投影到 Canonical 上游调用。
 type inferenceEgressResolver struct {
-	manager *runtimeegress.Manager
+	// manager 延迟取值：推理组合在出口管理器创建之前装配，直接持有值会把
+	// nil Manager 固化进解析器，所有账号绑定都会被当成未绑定。
+	manager func() *runtimeegress.Manager
 }
 
 func (resolver inferenceEgressResolver) ResolveAccountProxy(
@@ -27,7 +29,11 @@ func (resolver inferenceEgressResolver) ResolveAccountProxy(
 	if resolver.manager == nil || strings.TrimSpace(accountRef) == "" {
 		return "", false, nil
 	}
-	result, err := resolver.manager.ResolveAccountEgress(ctx, runtimeegress.ResolveAccountEgressOptions{
+	manager := resolver.manager()
+	if manager == nil {
+		return "", false, nil
+	}
+	result, err := manager.ResolveAccountEgress(ctx, runtimeegress.ResolveAccountEgressOptions{
 		Provider:   strings.ToLower(string(provider)),
 		AccountRef: strings.TrimSpace(accountRef),
 		SkipProbe:  true,
@@ -92,8 +98,10 @@ func (client *egressAwareInferenceClient) clientFor(proxyURL string) InferenceHT
 	}
 	transport := newUpstreamTransport()
 	transport.Proxy = http.ProxyURL(parsed)
+	// 账号出口是显式选择：代理不可达必须失败关闭，不能沿用环境代理的
+	// 「连不上就直连」回退，否则请求会静默换出口 IP。与 newOAuthEgressClient 一致。
 	wrapped := &http.Client{
-		Transport:     wrapOutboundTransport(transport),
+		Transport:     transport,
 		Timeout:       inferenceHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
 	}

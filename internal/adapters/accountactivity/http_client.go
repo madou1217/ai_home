@@ -41,6 +41,10 @@ type ClaimHTTPResponse struct {
 }
 
 // ResolveClaimHTTPClient 按账号出口绑定构造 HTTPDoer；失败返回 `account_egress_unavailable:<reason>`。
+//
+// resolver 必须由组合根显式注入（生产入口已接好 managed SSH）；这里不再按
+// aiHomeDir 自行构造裸 resolver，否则 ssh 出口会静默退化成
+// ssh_proxy_resolver_missing。aiHomeDir 仅为兼容既有调用方保留在签名中。
 func ResolveClaimHTTPClient(
 	ctx context.Context,
 	aiHomeDir string,
@@ -61,29 +65,27 @@ func ResolveClaimHTTPClient(
 		return client, ""
 	}
 
-	if resolver == nil && strings.TrimSpace(aiHomeDir) != "" {
-		resolver = agyegress.NewResolver(agyegress.Options{AIHomeDir: aiHomeDir})
+	if resolver == nil {
+		return nil, "account_egress_unavailable:resolver_missing"
 	}
-	if resolver != nil {
-		ref, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
-		if parseErr != nil {
-			return nil, "account_egress_unavailable:invalid_account_ref"
+	ref, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
+	if parseErr != nil {
+		return nil, "account_egress_unavailable:invalid_account_ref"
+	}
+	decision, err := resolver.Resolve(ctx, ref)
+	if err != nil {
+		return nil, "account_egress_unavailable:" + formatEgressResolveError(err)
+	}
+	if decision.Bound {
+		proxyURL := ""
+		if !decision.Target.Direct {
+			proxyURL = strings.TrimSpace(decision.Target.ProxyURL)
 		}
-		decision, err := resolver.Resolve(ctx, ref)
-		if err != nil {
-			return nil, "account_egress_unavailable:" + formatEgressResolveError(err)
+		client, buildErr := buildClaimHTTPClient(proxyURL, true, timeout)
+		if buildErr != nil {
+			return nil, "account_egress_unavailable:" + errorMessageOrUnknown(buildErr)
 		}
-		if decision.Bound {
-			proxyURL := ""
-			if !decision.Target.Direct {
-				proxyURL = strings.TrimSpace(decision.Target.ProxyURL)
-			}
-			client, buildErr := buildClaimHTTPClient(proxyURL, true, timeout)
-			if buildErr != nil {
-				return nil, "account_egress_unavailable:" + errorMessageOrUnknown(buildErr)
-			}
-			return client, ""
-		}
+		return client, ""
 	}
 
 	// 未绑定账号出口：按服务端代理环境变量（AIH_SERVER_PROXY_URL → HTTPS_PROXY/HTTP_PROXY）。

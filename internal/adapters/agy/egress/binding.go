@@ -34,6 +34,7 @@ var knownBindingModes = map[string]struct{}{
 	ModeTUN:    {},
 	ModeURL:    {},
 	ModePool:   {},
+	ModeSSH:    {},
 }
 
 // poolBindingStrategies 与 Node POOL_STRATEGIES 一致。
@@ -176,6 +177,9 @@ func parseBindingObject(object map[string]any) (Binding, error) {
 		mode = ModeURL
 	}
 	if mode == ModeURL && proxyURL == "" {
+		return Binding{}, errInvalidBindingRecord
+	}
+	if mode == ModeSSH && !strings.HasPrefix(proxyURL, "ssh:") {
 		return Binding{}, errInvalidBindingRecord
 	}
 	binding := Binding{

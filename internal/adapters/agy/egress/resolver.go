@@ -33,6 +33,9 @@ type Options struct {
 	DetectTUN TUNDetector
 	// PidAlive 判断池运行文件里的 owner/core 进程是否存活；为空时用 signal 0。
 	PidAlive func(pid int) bool
+	// ResolveManagedSSH 把 ssh:<connectionId> 解析成本机已认证的环回代理 URL。
+	// 为空时 ssh 模式按 unknown_egress_mode 失败（调用方应注入运行时实现）。
+	ResolveManagedSSH func(reference string) (string, error)
 	// Platform 覆盖平台判定（默认 runtime.GOOS），测试非 macOS 分支用。
 	Platform string
 }
@@ -48,6 +51,7 @@ type Resolver struct {
 	detectTUN         TUNDetector
 	pidAlive          func(pid int) bool
 	platform          string
+	resolveManagedSSH func(reference string) (string, error)
 }
 
 // NewResolver 创建解析器；AIHomeDir 为空时 Resolve 一律返回未绑定（对应 Node
@@ -60,6 +64,7 @@ func NewResolver(options Options) *Resolver {
 		detectTUN:         options.DetectTUN,
 		pidAlive:          options.PidAlive,
 		platform:          options.Platform,
+		resolveManagedSSH: options.ResolveManagedSSH,
 	}
 	if resolver.readBinding == nil {
 		resolver.readBinding = newAppStateBindingReader(resolver.aiHomeDir)
@@ -143,6 +148,15 @@ func (resolver *Resolver) resolveBinding(
 		return resolver.resolveTUN(ctx)
 	case ModePool:
 		return resolver.resolvePool(accountRef)
+	case ModeSSH:
+		if resolver.resolveManagedSSH == nil {
+			return Decision{}, newErrorWithReason(ErrorUnknownMode, "ssh_proxy_resolver_missing")
+		}
+		proxyURL, err := resolver.resolveManagedSSH(binding.ProxyURL)
+		if err != nil {
+			return Decision{}, newErrorWithReason("ssh_proxy_unavailable", err.Error())
+		}
+		return boundDecision(Target{Source: ModeSSH, ProxyURL: proxyURL}), nil
 	default:
 		return Decision{}, newError(ErrorUnknownMode)
 	}

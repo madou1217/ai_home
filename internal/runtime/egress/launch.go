@@ -57,6 +57,12 @@ func ResolveAccountLaunchEgress(
 			return LaunchEgress{}, errors.New("egress_proxy_missing")
 		}
 		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
+	case agyegress.ModeSSH:
+		proxyURL, err := ManagedSSHProxyURL(aiHomeDir, binding.ProxyURL)
+		if err != nil {
+			return LaunchEgress{}, fmt.Errorf("ssh_proxy_unavailable: %w", err)
+		}
+		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
 	case agyegress.ModePool:
 		state, reason := ReadLivePoolState(aiHomeDir, nil)
 		if state == nil {

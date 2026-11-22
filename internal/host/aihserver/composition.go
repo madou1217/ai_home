@@ -731,7 +731,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 刷新后必须沿用同一绑定：url/system/tun/pool/direct 先由 egress 解析成
 	// 具体出站目标（fail-closed），再交给刷新策略；未绑定时保持进程默认。
 	// 绑定只存在于 Node 台账账号；无台账投影账号通常没有绑定，行为与默认一致。
-	agyEgress := agyegress.NewResolver(agyegress.Options{AIHomeDir: aiHomeDir})
+	agyEgress := agyegress.NewResolver(agyegress.Options{
+		AIHomeDir: aiHomeDir,
+		ResolveManagedSSH: func(reference string) (string, error) {
+			return runtimeegress.ManagedSSHProxyURL(aiHomeDir, reference)
+		},
+	})
 	agyEgressResolver := func(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,

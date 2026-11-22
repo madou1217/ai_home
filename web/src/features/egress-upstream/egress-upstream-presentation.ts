@@ -148,8 +148,8 @@ export function describeAccountEgress(account: EgressUpstreamAccount) {
       detail: account.lane ? `${account.lane.activeLabel || account.lane.activeNode || '选择中'} · 可用 ${account.lane.allowedCount}/${account.lane.scopeCount}` : ''
     };
   }
-  const labels: Record<string, string> = { url: '代理地址', system: '系统代理', tun: '外部 TUN' };
-  return { tone: 'success' as const, label: labels[account.egress.mode] || account.egress.mode, detail: account.network?.geoText || '' };
+  const labels: Record<string, string> = { url: '代理地址', system: '系统代理', tun: '外部 TUN', ssh: 'SSH 出口' };
+  return { tone: 'success' as const, label: labels[account.egress.mode] || account.egress.mode, detail: account.network?.geoText || account.egress.proxyUrl || '' };
 }
 
 export type BulkQuickSelect = 'unbound' | 'denied' | 'none';

@@ -144,6 +144,29 @@ type runtimeResponseView struct {
 	RuntimeError string                                    `json:"runtimeError,omitempty"`
 }
 
+// redactRuntimeSecrets 把管理面响应里的出口地址脱敏。
+//
+// SSH 出口的真实 URL 带有 AIH 管理的环回令牌；它只能存在于服务端进程内，
+// 不能经账号出口 API 回传给浏览器或日志。URL 模式同样统一走脱敏，避免以后
+// 放宽代理地址契约时出现同类泄漏。
+func redactRuntimeSecrets(view *runtimeResponseView) {
+	if view == nil {
+		return
+	}
+	if view.Apply != nil {
+		apply := *view.Apply
+		apply.ProxyServer = runtimeegress.RedactProxyURL(apply.ProxyServer)
+		view.Apply = &apply
+	}
+	if view.Runtime != nil && view.Runtime.Resolved != nil {
+		detail := *view.Runtime
+		resolved := *detail.Resolved
+		resolved.ProxyServer = runtimeegress.RedactProxyURL(resolved.ProxyServer)
+		detail.Resolved = &resolved
+		view.Runtime = &detail
+	}
+}
+
 // ServeHTTP 接受 GET（读）与 POST（写）。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if handler == nil || handler.authorizer == nil || handler.store == nil {
@@ -257,7 +280,7 @@ func (handler *Handler) read(response http.ResponseWriter, request *http.Request
 	}
 	runtimeDetail, runtimeErr := handler.readRuntimeDetail(request.Context(), provider, accountRef, explicit)
 	assignment := handler.readAssignment(request.Context(), accountRef)
-	writeJSON(response, http.StatusOK, runtimeResponseView{
+	view := runtimeResponseView{
 		OK:           true,
 		Provider:     provider,
 		AccountRef:   accountRef,
@@ -265,7 +288,9 @@ func (handler *Handler) read(response http.ResponseWriter, request *http.Request
 		Assignment:   assignment,
 		Runtime:      runtimeDetail,
 		RuntimeError: runtimeErr,
-	})
+	}
+	redactRuntimeSecrets(&view)
+	writeJSON(response, http.StatusOK, view)
 }
 
 func (handler *Handler) write(response http.ResponseWriter, request *http.Request, provider string, accountRef string) {
@@ -304,7 +329,11 @@ func (handler *Handler) write(response http.ResponseWriter, request *http.Reques
 			return
 		}
 	}
-	shouldClear := mode == "" || (mode == egress.ModeURL && proxyURL == "")
+	if mode == egress.ModeSSH && proxyURL != "" && !strings.HasPrefix(proxyURL, "ssh:") {
+		writeError(response, http.StatusBadRequest, "invalid_ssh_proxy", "")
+		return
+	}
+	shouldClear := mode == "" || (mode == egress.ModeURL && proxyURL == "") || (mode == egress.ModeSSH && proxyURL == "")
 
 	previous, hadPrevious, err := handler.store.Read(request.Context(), accountRef)
 	if err != nil {
@@ -390,7 +419,7 @@ func (handler *Handler) write(response http.ResponseWriter, request *http.Reques
 
 	runtimeDetail, runtimeErr := handler.readRuntimeDetail(ctx, provider, accountRef, bindingPtr(current, hasCurrent))
 	assignment := handler.readAssignment(ctx, accountRef)
-	writeJSON(response, http.StatusOK, runtimeResponseView{
+	view := runtimeResponseView{
 		OK:           true,
 		Provider:     provider,
 		AccountRef:   accountRef,
@@ -400,7 +429,9 @@ func (handler *Handler) write(response http.ResponseWriter, request *http.Reques
 		Apply:        applyResult,
 		Runtime:      runtimeDetail,
 		RuntimeError: runtimeErr,
-	})
+	}
+	redactRuntimeSecrets(&view)
+	writeJSON(response, http.StatusOK, view)
 }
 
 func (handler *Handler) syncPoolForTransition(ctx context.Context, currentIsPool bool, involvedPool bool) {

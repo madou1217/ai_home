@@ -405,6 +405,26 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 		}
 	}
 
+	// SSH 出口使用 AIH 自己管理的环回隧道，不经过 mihomo；引用非法或隧道
+	// 未就绪时必须失败关闭。
+	if binding.Mode == agyegress.ModeSSH {
+		proxyURL, err := ManagedSSHProxyURL(m.aiHomeDir, binding.ProxyURL)
+		if err != nil {
+			return EgressResolveResult{
+				OK:     false,
+				Bound:  true,
+				Error:  "ssh_proxy_unavailable",
+				Reason: err.Error(),
+			}
+		}
+		return EgressResolveResult{
+			OK:          true,
+			Bound:       true,
+			Source:      agyegress.ModeSSH,
+			ProxyServer: proxyURL,
+		}
+	}
+
 	// 通过合成 Reader 复用 agy/egress 的平台判定、地址归一化、scutil/networksetup 系统代理探测与 utun 探测。
 	rawMap := map[string]any{"mode": binding.Mode}
 	if binding.ProxyURL != "" {

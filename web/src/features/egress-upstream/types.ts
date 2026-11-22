@@ -165,9 +165,43 @@ export interface EgressActionResult {
 /** 按账号当前生效出口探测上游的结果（POST /egress-upstreams/{id}/probe-account）。 */
 export interface EgressAccountProbeResult extends EgressActionResult {
   status?: 'reachable' | 'blocked' | 'skipped';
-  exit?: 'pool' | 'proxy' | 'system' | 'direct';
+  exit?: 'pool' | 'proxy' | 'system' | 'direct' | 'ssh';
   proxyUrl?: string;
   node?: string;
   reason?: string;
   geo?: EgressGeo | null;
+}
+
+/** 代理层冲突诊断（GET /egress-upstreams/diagnostics，只读）。 */
+export interface EgressProxyProcess {
+  pid: number;
+  command: string;
+  kind: 'aih-core' | 'clash-verge' | 'mihomo' | 'sing-box' | string;
+}
+
+export interface EgressPortOwner {
+  port: number;
+  pid: number;
+  command: string;
+  aih: boolean;
+}
+
+export interface EgressDiagnostics {
+  ok: boolean;
+  platform: string;
+  pool: {
+    running: boolean;
+    mixedPort: number;
+    controllerPort: number;
+    probePort: number;
+    lanePorts: number[];
+    ownerPid: number;
+    corePid: number;
+    coreVerified: boolean;
+    coreCommand: string;
+  };
+  processes: EgressProxyProcess[];
+  portOwners: EgressPortOwner[];
+  conflicts: string[];
+  notes: string[];
 }

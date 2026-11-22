@@ -38,6 +38,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/imagestudio"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
@@ -592,7 +593,12 @@ func buildImageStudioCredentialResolver(
 		return nil, err
 	}
 
-	agyEgress := agyegress.NewResolver(agyegress.Options{AIHomeDir: aiHomeDir})
+	agyEgress := agyegress.NewResolver(agyegress.Options{
+		AIHomeDir: aiHomeDir,
+		ResolveManagedSSH: func(reference string) (string, error) {
+			return runtimeegress.ManagedSSHProxyURL(aiHomeDir, reference)
+		},
+	})
 	agyProvider, err := agyoauth.NewWithEgress(
 		oauthClient,
 		func(proxyURL string) agyoauth.HTTPClient {

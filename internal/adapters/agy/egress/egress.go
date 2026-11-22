@@ -32,6 +32,9 @@ const (
 	ModeTUN    = "tun"
 	ModeURL    = "url"
 	ModePool   = "pool"
+	// ModeSSH 使用 AIH 管理的 SSH 环回出口（如 AWS 服务器），不依赖 mihomo。
+	// ProxyURL 字段保存稳定引用 ssh:<connectionId>，真实地址与令牌在运行时解析。
+	ModeSSH = "ssh"
 )
 
 // 失败码对齐 Node 的 egress.error / egressError 字段，便于宿主按同一张文案表映射。

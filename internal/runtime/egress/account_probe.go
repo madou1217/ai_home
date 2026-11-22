@@ -124,6 +124,19 @@ func (m *Manager) probeDirectAccountUpstream(
 			exit = "proxy"
 			bindURL = true
 			proxyURL = strings.TrimSpace(binding.ProxyURL)
+		case agyegress.ModeSSH:
+			exit = "ssh"
+			bindURL = true
+			resolved, sshErr := ManagedSSHProxyURL(m.aiHomeDir, binding.ProxyURL)
+			if sshErr != nil {
+				return AccountUpstreamProbeResult{
+					OK:     false,
+					Status: "skipped",
+					Reason: "ssh_proxy_unavailable: " + sshErr.Error(),
+					Exit:   exit,
+				}
+			}
+			proxyURL = resolved
 		case agyegress.ModeSystem:
 			exit = "system"
 		default:

@@ -75,6 +75,11 @@ type AccountUpstreamProbeManager interface {
 	ProbeUpstreamAccount(ctx context.Context, upstreamID string, accountRef string) (runtimeegress.AccountUpstreamProbeResult, int)
 }
 
+// DiagnosticsManager 是可选的代理层冲突诊断能力（只读）。
+type DiagnosticsManager interface {
+	Diagnostics(ctx context.Context) runtimeegress.EgressDiagnostics
+}
+
 // Dependencies 注入鉴权策略、上游管理器及测试时钟/心跳配置。
 type Dependencies struct {
 	Authorizer        Authorizer
@@ -212,6 +217,17 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter, request *http.Request, escapedPath string) {
 	rest := strings.TrimPrefix(escapedPath, UpstreamsPath+"/")
 	switch {
+	case rest == "diagnostics":
+		if !requireMethod(responseWriter, request, http.MethodGet) {
+			return
+		}
+		manager, ok := handler.manager.(DiagnosticsManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "diagnostics_unavailable"})
+			return
+		}
+		writeJSON(responseWriter, http.StatusOK, manager.Diagnostics(request.Context()))
+
 	case strings.HasSuffix(rest, "/probe"):
 		if !requireMethod(responseWriter, request, http.MethodPost) {
 			return

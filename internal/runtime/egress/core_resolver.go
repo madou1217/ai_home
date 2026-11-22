@@ -1,3 +1,5 @@
+//go:build !no_builtin_engines
+
 package egress
 
 import (
@@ -49,18 +51,6 @@ func mihomoExecutableName(name string, platform string) string {
 	default:
 		return name
 	}
-}
-
-func isValidCoreFile(statFn func(string) (os.FileInfo, error), filePath string) bool {
-	if strings.TrimSpace(filePath) == "" {
-		return false
-	}
-	info, err := statFn(filePath)
-	if err != nil {
-		return false
-	}
-	// 拒绝目录与 0 字节占位文件（Clash Verge 的 verge-mihomo 常见 0 字节占位）。
-	return !info.IsDir() && info.Size() > 0
 }
 
 // ResolveMihomoCorePath 按优先级定位 mihomo 内核，AIH 不自行下载二进制。

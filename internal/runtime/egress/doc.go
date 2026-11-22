@@ -6,7 +6,7 @@
 //	          （模式、范围、策略；策略目录是唯一声明）
 //	解析层    Manager.ResolveAccountEgress / ResolveAccountLaunchEgress
 //	          （把绑定翻译成一次出口：direct/proxy/pool/ssh，失败关闭）
-//	执行层    PoolCore（mihomo / sing-box 车道）或 EndpointPool（无内核直连池）
+//	执行层    PoolCore（egress.engine 插件编译的车道）或 EndpointPool（无内核直连池）
 //	规划层    ComputeEgressPlan + NodeHealthLedger（账号→车道、节点选择）
 //	策略层    RoutingPolicy（domain/ip 规则 + DNS，编译进内核）
 //	呈现层    BuildUpstreamsView / StrategyCatalog / Diagnostics / WebUI
@@ -38,9 +38,10 @@
 //     在 strategy_registry.go 注册 Resolve/Launch/Display 三个入口（池模式单列），
 //     前端 AccountEgressMode union 加值；弹窗和策略面板会自动渲染
 //     （输入类型 none/proxy_url/ssh_connection/pool_scope）。
-//   - 新内核：实现 PoolCore 的 BuildConfig/CheckConfig/RunArgs/GlobalGroup/
-//     ConfigFileName，并让 ReadPoolRuntimeConfig 能解析其配置；控制面必须兼容
-//     Clash API（/version、/proxies、PUT /proxies/{group}、/delay）。
+//   - 新内核：实现 application/egressengine.Engine（Descriptor/Resolve/Compile），
+//     编译为 cmd/aih-engine-<id> 进程插件并放在 aih-server 同目录或
+//     <aiHome>/bin；控制面必须兼容 Clash API（/version、/proxies、
+//     PUT /proxies/{group}、/delay）。主体不新增内核分支。
 //   - 新规则类型：routing.go 的 normalize + MihomoRoutingRules/SingBoxRoutingRules，
 //     以及 WebUI 规则编辑器选项。
 //
@@ -48,12 +49,14 @@
 //
 //   - 内核插槽：application/egressengine.Engine（Descriptor/Compile），
 //     插件只编译配置与启动事实，宿主负责进程、控制面、健康、车道与回收。
-//   - 插件发现：pluginhost 能力 egress.engine（CollectEgressEngines），
-//     manifest contributes 声明；主体不 import 任何具体内核。
-//   - sing-box 已有进程插件实现：cmd/aih-engine-singbox +
-//     internal/engineplugins/singbox，engineplugin.Load 会发现并优先使用；
-//     mihomo 仍是内置过渡适配器。两者最终都迁到插件二进制后，删除主体里的
-//     内置编译器与回退分支。
+//   - 插件发现：engineplugin.Load 先扫描 aih-server 同目录，再扫
+//     <aiHome>/bin 与 plugins/engines manifest；去重键是插件自报的
+//     descriptor.id，随包二进制优先，陈旧副本不能抢占。
+//   - mihomo 与 sing-box 都已是进程插件：cmd/aih-engine-mihomo /
+//     cmd/aih-engine-singbox。生产构建使用 -tags no_builtin_engines，
+//     主体不编译任何内核编译器；池与单节点租约都只通过 Engine 契约取配置。
+//   - proxypoollease 也走同一契约：lease 能力由 descriptor.capabilities 声明，
+//     入口绑定/认证/启动参数由插件生成，主体不再改写具体内核字段。
 //   - 策略/呈现同理：StrategyRuntime 已可注册；Surge/sing-box profile 渲染
 //     属于呈现插件，不应进入代理执行层。
 //

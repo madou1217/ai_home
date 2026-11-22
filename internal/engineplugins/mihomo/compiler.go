@@ -48,9 +48,10 @@ var (
 // Descriptor 返回插件能力。
 func Descriptor() egressengine.Descriptor {
 	return egressengine.Descriptor{
-		ID:         engineID,
-		Label:      "mihomo",
-		Controller: "clash-api",
+		ID:           engineID,
+		Label:        "mihomo",
+		Capabilities: []string{"pool", "lease"},
+		Controller:   "clash-api",
 		Protocols: []string{
 			"shadowsocks", "shadowsocksr", "vmess", "vless", "trojan",
 			"hysteria", "hysteria2", "tuic", "anytls", "snell",
@@ -85,6 +86,9 @@ func Resolve(request egressengine.ResolveRequest) (egressengine.ResolveResult, e
 func Compile(_ context.Context, request egressengine.CompileRequest) (egressengine.LaunchSpec, error) {
 	if request.MixedPort <= 0 || request.ControllerPort <= 0 || strings.TrimSpace(request.Secret) == "" {
 		return egressengine.LaunchSpec{}, errors.New("mihomo_compile_ports_required")
+	}
+	if request.Lease != nil && (request.ProbePort > 0 || len(request.LanePorts) > 0) {
+		return egressengine.LaunchSpec{}, errors.New("mihomo_lease_pool_ports_forbidden")
 	}
 	proxies := make([]any, 0, len(request.Nodes))
 	nodeTags := make([]egressengine.NodeTag, 0, len(request.Nodes))
@@ -162,6 +166,7 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 	if len(listeners) > 0 {
 		config["listeners"] = listeners
 	}
+	applyLease(config, request.Lease)
 	raw, err := json.MarshalIndent(config, "", " ")
 	if err != nil {
 		return egressengine.LaunchSpec{}, err
@@ -177,6 +182,22 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 	}, nil
 }
 
+// applyLease 把单节点租约的入口约束写进配置：绑回环、入口独立认证、不持久化选择。
+func applyLease(config map[string]any, lease *egressengine.Lease) {
+	if lease == nil {
+		return
+	}
+	if bind := strings.TrimSpace(lease.BindAddress); bind != "" {
+		config["bind-address"] = bind
+	}
+	config["ipv6"] = false
+	if len(lease.IngressAuth) > 0 {
+		config["authentication"] = append([]string(nil), lease.IngressAuth...)
+		config["skip-auth-prefixes"] = []string{}
+	}
+	config["profile"] = map[string]any{"store-selected": false, "store-fake-ip": false}
+}
+
 func toSubaggregatorNode(node egressengine.Node) subaggregator.ProxyNode {
 	out := make(subaggregator.ProxyNode, len(node.Options)+6)
 	for key, value := range node.Options {
@@ -188,6 +209,12 @@ func toSubaggregatorNode(node egressengine.Node) subaggregator.ProxyNode {
 	out["server"] = node.Server
 	out["port"] = node.Port
 	return out
+}
+
+// ResolveBinary 返回可用的 mihomo 内核路径；找不到为空。
+func ResolveBinary(aiHomeDir, platform string) string {
+	binary, _ := resolveBinary(aiHomeDir, platform)
+	return binary
 }
 
 func resolveBinary(aiHomeDir, platform string) (string, string) {

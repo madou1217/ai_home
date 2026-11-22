@@ -29,9 +29,10 @@ const (
 // Descriptor 返回插件能力。
 func Descriptor() egressengine.Descriptor {
 	return egressengine.Descriptor{
-		ID:         engineID,
-		Label:      "sing-box",
-		Controller: "clash-api",
+		ID:           engineID,
+		Label:        "sing-box",
+		Capabilities: []string{"pool", "lease"},
+		Controller:   "clash-api",
 		Protocols: []string{
 			"shadowsocks", "shadowsocksr", "vmess", "vless", "trojan",
 			"hysteria", "hysteria2", "tuic", "anytls", "naive",
@@ -66,6 +67,9 @@ func Resolve(request egressengine.ResolveRequest) (egressengine.ResolveResult, e
 func Compile(_ context.Context, request egressengine.CompileRequest) (egressengine.LaunchSpec, error) {
 	if request.MixedPort <= 0 || request.ControllerPort <= 0 || strings.TrimSpace(request.Secret) == "" {
 		return egressengine.LaunchSpec{}, errors.New("sing_box_compile_ports_required")
+	}
+	if request.Lease != nil && (request.ProbePort > 0 || len(request.LanePorts) > 0) {
+		return egressengine.LaunchSpec{}, errors.New("sing_box_lease_pool_ports_forbidden")
 	}
 	outbounds := make([]map[string]any, 0, len(request.Nodes)+4)
 	nodeTags := make([]egressengine.NodeTag, 0, len(request.Nodes))
@@ -130,19 +134,36 @@ func Compile(_ context.Context, request egressengine.CompileRequest) (egressengi
 			rules = append(rules, item)
 		}
 	}
-	inbounds := []map[string]any{{
-		"type": "mixed", "tag": "aih-mixed", "listen": bindHost, "listen_port": request.MixedPort,
-	}}
+	listenHost := bindHost
+	leaseUsers := []map[string]any(nil)
+	if request.Lease != nil {
+		if bind := strings.TrimSpace(request.Lease.BindAddress); bind != "" {
+			listenHost = bind
+		}
+		for _, credential := range request.Lease.IngressAuth {
+			username, password, ok := strings.Cut(credential, ":")
+			if ok && username != "" {
+				leaseUsers = append(leaseUsers, map[string]any{"username": username, "password": password})
+			}
+		}
+	}
+	mixedInbound := map[string]any{
+		"type": "mixed", "tag": "aih-mixed", "listen": listenHost, "listen_port": request.MixedPort,
+	}
+	if len(leaseUsers) > 0 {
+		mixedInbound["users"] = leaseUsers
+	}
+	inbounds := []map[string]any{mixedInbound}
 	if request.ProbePort > 0 {
 		inbounds = append(inbounds, map[string]any{
-			"type": "mixed", "tag": "aih-probe", "listen": bindHost, "listen_port": request.ProbePort,
+			"type": "mixed", "tag": "aih-probe", "listen": listenHost, "listen_port": request.ProbePort,
 		})
 		rules = append(rules, map[string]any{"inbound": []string{"aih-probe"}, "outbound": "AIH-PROBE"})
 	}
 	for _, index := range laneIndexes {
 		port := request.LanePorts[index]
 		inbounds = append(inbounds, map[string]any{
-			"type": "mixed", "tag": fmt.Sprintf("aih-lane-%d", index), "listen": bindHost, "listen_port": port,
+			"type": "mixed", "tag": fmt.Sprintf("aih-lane-%d", index), "listen": listenHost, "listen_port": port,
 		})
 		rules = append(rules, map[string]any{
 			"inbound": []string{fmt.Sprintf("aih-lane-%d", index)}, "outbound": fmt.Sprintf("LANE-%d", index),

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
-	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 )
 
 // StrategyStatus 是策略目录 + 当前运行时可满足能力的合并视图。
@@ -205,22 +204,6 @@ func (m *Manager) pluginEngineLabels() []string {
 			label += " " + descriptor.Version
 		}
 		labels = append(labels, label)
-	}
-	return labels
-}
-
-func poolKernelLabels(aiHomeDir, platform string) []string {
-	labels := make([]string, 0, 2)
-	if kernel := subaggregator.ResolvePoolKernel("sing-box", aiHomeDir, platform); kernel != nil {
-		label := kernel.ID
-		if kernel.Version != "" {
-			label += " " + kernel.Version
-		}
-		labels = append(labels, label)
-	}
-	// mihomo 沿用自己的 tools/客户端/PATH 解析约定。
-	if resolved, err := ResolveMihomoCorePath(CoreResolverOptions{AIHomeDir: aiHomeDir, Platform: platform}); err == nil && resolved != nil {
-		labels = append(labels, "mihomo")
 	}
 	return labels
 }

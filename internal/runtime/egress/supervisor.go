@@ -478,17 +478,11 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 
 	var core *PoolCore
 	if s.corePath != "" {
-		// 测试/显式注入的路径沿用 mihomo 语义，保持既有行为。
-		if !isValidCoreFile(os.Stat, s.corePath) {
-			return s.setErrorResult("egress_pool_core_not_found")
+		explicit, explicitErr := newExplicitPoolCore(s.corePath)
+		if explicitErr != nil {
+			return s.setErrorResult(explicitErr.Error())
 		}
-		core = &PoolCore{
-			Kind:           PoolCoreMihomo,
-			Path:           s.corePath,
-			Source:         "configured",
-			ConfigFileName: "config.json",
-			GlobalGroup:    mihomoGlobalGroup,
-		}
+		core = explicit
 	} else {
 		resolved, resolveErr := s.mgr.resolvePoolCore(ctx, nodes)
 		if resolveErr != nil || resolved == nil {
@@ -604,7 +598,8 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	}
 
 	dnsProbe := DNSProbeStatus{OK: true}
-	if core.Kind != PoolCoreSingBox {
+	if core.Engine == nil {
+		// 内置回退路径沿用 DNS 可解析性自检；插件由插件自行保证。
 		dnsProbe = verifyNodeResolvable(ctx, ctrl, nodes)
 	}
 	s.mu.Lock()
@@ -672,11 +667,11 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	s.mu.Unlock()
 
 	// 清掉另一种内核的陈旧配置，避免后续读取把旧节点表当成当前池。
-	inactiveConfig := "sing-box.json"
-	if core.Kind == PoolCoreSingBox {
-		inactiveConfig = "config.json"
+	for _, inactive := range []string{"config.json", "sing-box.json"} {
+		if inactive != core.ConfigFileName {
+			_ = os.Remove(filepath.Join(workDir, inactive))
+		}
 	}
-	_ = os.Remove(filepath.Join(workDir, inactiveConfig))
 	s.startProbeLoop()
 	_ = s.mgr.ReconcileLanes(ctx)
 	s.mgr.triggerInitialMaintenance()

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/madou1217/ai_home/application/egressengine"
 	"github.com/madou1217/ai_home/internal/runtime/egress"
 )
 
@@ -22,6 +23,12 @@ const (
 )
 
 var errPortCollision = errors.New("proxy_pool_lease_port_collision")
+
+// EngineProvider 由出口池管理器实现：按节点选择声明了 lease 能力的内核插件。
+type EngineProvider interface {
+	LeaseEngine(ctx context.Context, node egress.ProxyNode) (egressengine.Engine, egressengine.ResolveResult, error)
+	HasLeaseEngine() bool
+}
 
 // Runtime belongs to a single task. Close is safe to call concurrently and more
 // than once; cancelling the context supplied to Start also closes the runtime.
@@ -36,15 +43,14 @@ type Runtime struct {
 	closeErr  error
 }
 
-// Available only resolves an existing core; it does not start or download one.
-func Available(aiHome string) bool {
-	core, err := egress.ResolveMihomoCorePath(egress.CoreResolverOptions{AIHomeDir: aiHome})
-	return err == nil && core != nil && core.Path != ""
+// Available 只回答是否存在可承接租约的引擎插件；不启动内核、不下载。
+func Available(provider EngineProvider) bool {
+	return provider != nil && provider.HasLeaseEngine()
 }
 
 // Start renders exactly node and starts a task-owned, loopback-only core. The
 // caller must keep ctx alive for the lease's lifetime, not just acquisition.
-func Start(ctx context.Context, aiHome string, node egress.ProxyNode) (*Runtime, error) {
+func Start(ctx context.Context, aiHome string, node egress.ProxyNode, provider EngineProvider) (*Runtime, error) {
 	if ctx == nil {
 		return nil, errors.New("proxy_pool_lease_context_required")
 	}
@@ -58,12 +64,18 @@ func Start(ctx context.Context, aiHome string, node egress.ProxyNode) (*Runtime,
 	if err != nil {
 		return nil, errors.New("proxy_pool_lease_home_invalid")
 	}
-	core, err := egress.ResolveMihomoCorePath(egress.CoreResolverOptions{AIHomeDir: home})
-	if err != nil || core == nil || core.Path == "" {
+	if provider == nil {
 		return nil, errors.New("proxy_pool_lease_core_unavailable")
 	}
-	corePath, err := filepath.Abs(core.Path)
+	engine, resolved, err := provider.LeaseEngine(ctx, node)
 	if err != nil {
+		return nil, errors.New("proxy_pool_lease_core_unavailable")
+	}
+	corePath, err := filepath.Abs(resolved.Binary)
+	if err != nil {
+		return nil, errors.New("proxy_pool_lease_core_unavailable")
+	}
+	if info, statErr := os.Stat(corePath); statErr != nil || info.IsDir() || info.Size() == 0 {
 		return nil, errors.New("proxy_pool_lease_core_unavailable")
 	}
 	runDir := filepath.Join(home, "run")
@@ -77,7 +89,7 @@ func Start(ctx context.Context, aiHome string, node egress.ProxyNode) (*Runtime,
 		if err := startupCtx.Err(); err != nil {
 			return nil, err
 		}
-		runtime, err := startAttempt(startupCtx, runDir, corePath, node)
+		runtime, err := startAttempt(startupCtx, runDir, corePath, node, engine, resolved)
 		if err != nil {
 			if errors.Is(err, errPortCollision) {
 				continue
@@ -101,7 +113,13 @@ func Start(ctx context.Context, aiHome string, node egress.ProxyNode) (*Runtime,
 	return nil, errPortCollision
 }
 
-func startAttempt(ctx context.Context, runDir, corePath string, node egress.ProxyNode) (_ *Runtime, err error) {
+func startAttempt(
+	ctx context.Context,
+	runDir, corePath string,
+	node egress.ProxyNode,
+	engine egressengine.Engine,
+	resolved egressengine.ResolveResult,
+) (_ *Runtime, err error) {
 	ports, err := reservePorts()
 	if err != nil {
 		return nil, err
@@ -120,14 +138,14 @@ func startAttempt(ctx context.Context, runDir, corePath string, node egress.Prox
 			}
 		}
 	}()
-	configPath, controlSecret, proxyToken, err := writeConfig(dir, ports, node)
+	controlSecret, proxyToken, coreArgs, err := writeConfig(ctx, dir, ports, node, engine, resolved)
 	if err != nil {
 		return nil, err
 	}
 	runtime.proxyURL = "http://aih:" + proxyToken + "@" + ports.proxyAddress()
 	output := newCoreOutput()
 	runtime.collision = output.collision
-	cmd := exec.Command(corePath, "-d", dir, "-f", configPath)
+	cmd := exec.Command(corePath, coreArgs...)
 	cmd.Dir = dir
 	cmd.Stdout = output
 	cmd.Stderr = output

@@ -756,44 +756,19 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	deleter.WithHostProjection(deletionHost, deletionHost)
 	deletionRuntime.Bind(deleter)
-	modelRefreshingRegistrar, err := accountapp.NewRegistrationModelRefreshDecorator(
+	accountLifecycle, err := newAccountRegistrationRuntime(
 		registrar,
 		modelRefresh,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建注册模型刷新边界失败: %w", err)
-	}
-	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
-		modelRefreshingRegistrar,
 		usage,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建注册额度刷新边界失败: %w", err)
-	}
-	modelRefreshingReauthenticator, err :=
-		accountapp.NewReauthenticationModelRefreshDecorator(
-			recoveringReauthenticator,
-			modelRefresh,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建重登模型刷新边界失败: %w", err)
-	}
-	scheduledReauthenticator, err :=
-		usageapp.NewReauthenticationDecorator(
-			modelRefreshingReauthenticator,
-			usage,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建重登额度刷新边界失败: %w", err)
-	}
-	accountImporter, err := accountapp.NewAccountImporter(
-		scheduledRegistrar,
+		recoveringReauthenticator,
 		store,
-		scheduledReauthenticator,
 	)
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号导入用例失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
+	scheduledRegistrar := accountLifecycle.registrar
+	scheduledReauthenticator := accountLifecycle.reauthenticator
+	accountImporter := accountLifecycle.importer
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)

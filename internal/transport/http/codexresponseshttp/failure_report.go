@@ -30,10 +30,15 @@ type AttemptReport struct {
 	// "precommit_failure"（尚未输出内容的流内/JSON 错误）或 "safety_rejected"。
 	Outcome string
 	// Kind 是账号运行态的失败分类；Code 是上游失败分类代码。分类失败时为空。
-	Kind    string
-	Code    string
-	Detail  string
-	Elapsed time.Duration
+	Kind   string
+	Code   string
+	Detail string
+	// Source/Signal/Semantic 是这次分类命中的规则层、信号 ID 与语义；
+	// 未命中契约信号（Provider 内置兜底）时为空。
+	Source   string
+	Signal   string
+	Semantic string
+	Elapsed  time.Duration
 }
 
 const maxFailureDetail = 200
@@ -75,6 +80,10 @@ func (trail *failureTrail) attempt(
 	if failure.IsValid() {
 		report.Kind = string(failure.RuntimeKind())
 		report.Code = failure.ResponseFailure().Code()
+		provenance := failure.Provenance()
+		report.Source = string(provenance.Source())
+		report.Signal = provenance.SignalID()
+		report.Semantic = string(failure.RuntimeKind())
 	}
 	trail.attempts = append(trail.attempts, report)
 }

@@ -30,6 +30,12 @@ func formatCodexResponsesFailure(report codexresponseshttp.FailureReport) string
 		if attempt.Code != "" {
 			entry += " code=" + attempt.Code
 		}
+		if attempt.Source != "" {
+			entry += " matched=" + attempt.Source
+			if attempt.Signal != "" {
+				entry += ":" + attempt.Signal
+			}
+		}
 		if attempt.Detail != "" {
 			entry += fmt.Sprintf(" detail=%q", attempt.Detail)
 		}

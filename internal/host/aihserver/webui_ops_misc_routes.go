@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/scheduledtasks"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
+	"github.com/madou1217/ai_home/internal/transport/http/failureprovenanceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicodexresetcreditapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipeerapi"
@@ -169,6 +171,10 @@ func buildWebUIOpsMiscRoutesWithPorts(
 	if err != nil {
 		return nil, fmt.Errorf("创建 server 重启接口失败: %w", err)
 	}
+	failureProvenanceHandler, err := failureprovenanceapi.NewHandler(dependencies.Authorizer)
+	if err != nil {
+		return nil, fmt.Errorf("创建失败命中接口失败: %w", err)
+	}
 
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuipeerapi.MessagesPath, Handler: peerHandler},
@@ -181,6 +187,10 @@ func buildWebUIOpsMiscRoutesWithPorts(
 		{Pattern: "GET " + webuitasksapi.Path, Handler: tasksHandler},
 		{Pattern: "GET " + webuitasksapi.WatchPath, Handler: tasksHandler},
 		{Pattern: "POST " + webuiserverrestartapi.Path, Handler: serverRestartHandler},
+		{Pattern: "GET " + failureprovenanceapi.HitsPath, Handler: http.HandlerFunc(failureProvenanceHandler.ServeHits)},
+		{Pattern: "GET " + failureprovenanceapi.WebUIHitsPath, Handler: http.HandlerFunc(failureProvenanceHandler.ServeHits)},
+		{Pattern: "GET " + failureprovenanceapi.SemanticsPath, Handler: http.HandlerFunc(failureProvenanceHandler.ServeSemantics)},
+		{Pattern: "GET " + failureprovenanceapi.WebUISemanticsPath, Handler: http.HandlerFunc(failureProvenanceHandler.ServeSemantics)},
 	}
 
 	scheduledSvc := ports.ScheduledTasks

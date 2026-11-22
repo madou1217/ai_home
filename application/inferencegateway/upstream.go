@@ -9,6 +9,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/core/failureprovenance"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
@@ -179,6 +180,7 @@ type AttemptFailure struct {
 	explicitRetryAfterOverflow             bool
 	explicitRetryAfterRaw                  string
 	blockDirective                         runtimecore.BlockDirective
+	provenance                             failureprovenance.Provenance
 	deferAccountFailureUntilRequestOutcome bool
 }
 
@@ -206,6 +208,8 @@ type AttemptFailureInput struct {
 	ExplicitRetryAfterRaw string
 	// BlockDirective 只允许用于 credential、quota 或 policy 硬阻塞。
 	BlockDirective runtimecore.BlockDirective
+	// Provenance 记录这次分类命中的规则层与信号；零值表示未提供。
+	Provenance failureprovenance.Provenance
 	// DeferAccountFailureUntilRequestOutcome 表示当前失败可能属于请求或共享资源，
 	// Coordinator 必须等待同一请求的其他账号证据后再决定是否写账号运行态。
 	DeferAccountFailureUntilRequestOutcome bool
@@ -247,6 +251,7 @@ func NewAttemptFailure(
 		explicitRetryAfterOverflow:             input.ExplicitRetryAfterOverflow,
 		explicitRetryAfterRaw:                  input.ExplicitRetryAfterRaw,
 		blockDirective:                         input.BlockDirective,
+		provenance:                             input.Provenance,
 		deferAccountFailureUntilRequestOutcome: input.DeferAccountFailureUntilRequestOutcome,
 	}, nil
 }
@@ -286,6 +291,11 @@ func (failure AttemptFailure) BlockDirective() runtimecore.BlockDirective {
 	return failure.blockDirective
 }
 
+// Provenance 返回这次分类命中的规则层与信号；零值表示未记录。
+func (failure AttemptFailure) Provenance() failureprovenance.Provenance {
+	return failure.provenance
+}
+
 // DefersAccountFailureUntilRequestOutcome 判断账号状态是否需要请求内的兄弟账号证据。
 func (failure AttemptFailure) DefersAccountFailureUntilRequestOutcome() bool {
 	return failure.deferAccountFailureUntilRequestOutcome
@@ -306,6 +316,7 @@ func (failure AttemptFailure) IsValid() bool {
 			ExplicitRetryAfterOverflow:             failure.explicitRetryAfterOverflow,
 			ExplicitRetryAfterRaw:                  failure.explicitRetryAfterRaw,
 			BlockDirective:                         failure.blockDirective,
+			Provenance:                             failure.provenance,
 			DeferAccountFailureUntilRequestOutcome: failure.deferAccountFailureUntilRequestOutcome,
 		},
 	)

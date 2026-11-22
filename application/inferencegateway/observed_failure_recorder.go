@@ -125,13 +125,14 @@ func (recorder *ObservedAttemptRecorder) RecordFailureWithReceipt(
 	route runtimecore.ModelRoute,
 	observation accountcredentials.CredentialObservation,
 	failure AttemptFailure,
-) (bool, runtimecore.CooldownReceipt, error) {
+) (recorded bool, receipt runtimecore.CooldownReceipt, err error) {
 	if !recorder.validObservation(ctx, route, observation) || !failure.IsValid() {
 		return false, runtimecore.CooldownReceipt{}, ErrInvalidObservedAttempt
 	}
 	if observation.IsStaticSecret() {
 		failure = failure.forStaticSecret()
 	}
+	defer emitFailureProvenance(route, failure, recorded, receipt)
 	defer pluginruntime.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), false, string(failure.RuntimeKind()))
 	eligible := observedCredentialRejection(observation, failure)
 	var write CredentialRejectionWrite
@@ -158,19 +159,22 @@ func (recorder *ObservedAttemptRecorder) RecordFailureWithReceipt(
 	if err != nil || !current {
 		return false, runtimecore.CooldownReceipt{}, nil
 	}
-	var receipt runtimecore.CooldownReceipt
 	if write != nil {
-		recorded, err := write.Commit(ctx, failure)
-		if err != nil || !recorded {
-			return recorded, runtimecore.CooldownReceipt{}, err
+		var commitErr error
+		recorded, commitErr = write.Commit(ctx, failure)
+		if commitErr != nil || !recorded {
+			return recorded, runtimecore.CooldownReceipt{}, commitErr
 		}
 	} else if receiptRuntime, ok := recorder.attempts.(ObservedFailureReceiptRuntime); ok {
 		receipt, err = receiptRuntime.RecordFailureWithReceipt(ctx, route, failure)
 		if err != nil {
 			return false, runtimecore.CooldownReceipt{}, err
 		}
-	} else if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
-		return false, runtimecore.CooldownReceipt{}, err
+		recorded = true
+	} else if recordErr := recorder.attempts.RecordFailure(ctx, route, failure); recordErr != nil {
+		return false, runtimecore.CooldownReceipt{}, recordErr
+	} else {
+		recorded = true
 	}
 	if eligible {
 		if scheduler, ok := recorder.attempts.(CredentialRejectionScheduler); ok {

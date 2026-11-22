@@ -91,6 +91,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/engineplugin"
+	"github.com/madou1217/ai_home/internal/runtime/failureprovenance"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
@@ -253,6 +254,8 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err := validateOptions(options); err != nil {
 		return nil, err
 	}
+	// 失败命中环形缓冲是进程级诊断面：所有推理入口共享同一次安装。
+	failureprovenance.Install()
 	// 前置门只在 Go 拥有公开端口时装配；目标为空时返回 nil，路由表保持 404。
 	// 地址校验放在获取任何资源之前，非法配置不会留下需要清理的租约。
 	frontDoor, err := newFrontDoorHandler(options.FrontDoorBaseURL)

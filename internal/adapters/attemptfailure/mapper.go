@@ -46,6 +46,7 @@ func New(
 			ExplicitRetryAfterOverflow: explicitRetryAfterOverflow,
 			ExplicitRetryAfterRaw:      explicitRetryAfterRaw,
 			BlockDirective:             classification.BlockDirective(),
+			Provenance:                 classification.Provenance(),
 		},
 	)
 	if err != nil {

@@ -6,21 +6,16 @@
 package engineplugin
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/application/egressengine"
+	"github.com/madou1217/ai_home/internal/runtime/pluginrpc"
 )
 
 const (
@@ -29,46 +24,13 @@ const (
 )
 
 // Manifest 是 <aiHome>/plugins/engines/*.json 的插件声明。
-type Manifest struct {
-	ID       string   `json:"id"`
-	Label    string   `json:"label"`
-	Command  string   `json:"command"`
-	Args     []string `json:"args,omitempty"`
-	Priority int      `json:"priority,omitempty"`
-}
-
-type wireRequest struct {
-	ID      int64  `json:"id"`
-	Op      string `json:"op"`
-	Request any    `json:"request,omitempty"`
-}
-
-type wireResponse struct {
-	ID     int64           `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-type pendingCall struct {
-	reply chan wireResponse
-}
+type Manifest = pluginrpc.Manifest
 
 // Client 是一个已启动的进程插件，实现 egressengine.Engine。
 type Client struct {
 	manifest   Manifest
 	descriptor egressengine.Descriptor
-	command    *exec.Cmd
-	stdin      io.WriteCloser
-	stdout     *bufio.Reader
-	writeMu    sync.Mutex
-	callMu     sync.Mutex
-	pendingMu  sync.Mutex
-	pending    map[int64]*pendingCall
-	nextID     int64
-	closeOnce  sync.Once
+	process    *pluginrpc.Process
 }
 
 // Load 扫描插件目录并启动可用插件；单个插件失败只跳过，不影响其它插件。
@@ -103,7 +65,7 @@ func Load(aiHomeDir string) []*Client {
 	}
 
 	// 先扫描与主体同目录/运行目录的 aih-engine-*。
-	for _, binDir := range engineSearchDirs(root) {
+	for _, binDir := range pluginrpc.SearchDirs(root) {
 		entries, err := os.ReadDir(binDir)
 		if err != nil {
 			continue
@@ -149,69 +111,20 @@ func Load(aiHomeDir string) []*Client {
 }
 
 // SearchDirs 返回插件二进制的搜索目录（按优先级去重），供诊断视图与测试注入。
-func SearchDirs(aiHomeDir string) []string { return engineSearchDirs(aiHomeDir) }
-
-// engineSearchDirs 返回插件二进制的搜索目录，按优先级去重。
-//
-// 主体可执行文件目录排在最前：打包后插件与 aih-server 放在一起，
-// 不依赖运行时数据目录是否被手工填充。
-func engineSearchDirs(aiHomeDir string) []string {
-	dirs := make([]string, 0, 4)
-	if exe, err := os.Executable(); err == nil {
-		if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil {
-			exe = resolved
-		}
-		dirs = append(dirs, filepath.Dir(exe))
-	}
-	if root := strings.TrimSpace(aiHomeDir); root != "" {
-		dirs = append(dirs, filepath.Join(root, "bin"))
-		dirs = append(dirs, filepath.Join(root, "bin", "native", runtime.GOOS+"-"+runtime.GOARCH))
-	}
-	seen := map[string]struct{}{}
-	out := dirs[:0]
-	for _, dir := range dirs {
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			continue
-		}
-		if _, exists := seen[abs]; exists {
-			continue
-		}
-		seen[abs] = struct{}{}
-		out = append(out, abs)
-	}
-	return out
-}
+func SearchDirs(aiHomeDir string) []string { return pluginrpc.SearchDirs(aiHomeDir) }
 
 // NewClient 启动插件并读取 describe 描述符。
 func NewClient(manifest Manifest) (*Client, error) {
-	if strings.TrimSpace(manifest.ID) == "" || strings.TrimSpace(manifest.Command) == "" {
-		return nil, errors.New("engine_plugin_manifest_invalid")
-	}
-	command := exec.Command(manifest.Command, manifest.Args...)
-	command.Dir = filepath.Dir(manifest.Command)
-	command.Stderr = io.Discard
-	stdin, err := command.StdinPipe()
+	process, err := pluginrpc.Start(manifest, callTimeout)
 	if err != nil {
+		if strings.TrimSpace(manifest.ID) == "" || strings.TrimSpace(manifest.Command) == "" {
+			return nil, errors.New("engine_plugin_manifest_invalid")
+		}
 		return nil, err
 	}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := command.Start(); err != nil {
-		return nil, err
-	}
-	client := &Client{
-		manifest: manifest,
-		command:  command,
-		stdin:    stdin,
-		stdout:   bufio.NewReader(stdout),
-		pending:  map[int64]*pendingCall{},
-	}
-	go client.readLoop()
+	client := &Client{manifest: manifest, process: process}
 	var descriptor egressengine.Descriptor
-	if err := client.call(context.Background(), "describe", nil, &descriptor); err != nil {
+	if err := process.Call(context.Background(), "describe", nil, &descriptor); err != nil {
 		_ = client.Close()
 		return nil, err
 	}
@@ -236,7 +149,7 @@ func (client *Client) Descriptor() egressengine.Descriptor { return client.descr
 // Resolve 实现 egressengine.Engine。
 func (client *Client) Resolve(ctx context.Context, request egressengine.ResolveRequest) (egressengine.ResolveResult, error) {
 	var result egressengine.ResolveResult
-	if err := client.call(ctx, "resolve", request, &result); err != nil {
+	if err := client.process.Call(ctx, "resolve", request, &result); err != nil {
 		return egressengine.ResolveResult{}, err
 	}
 	if result.UsableNodes > 0 && strings.TrimSpace(result.Binary) == "" {
@@ -248,7 +161,7 @@ func (client *Client) Resolve(ctx context.Context, request egressengine.ResolveR
 // Compile 实现 egressengine.Engine。
 func (client *Client) Compile(ctx context.Context, request egressengine.CompileRequest) (egressengine.LaunchSpec, error) {
 	var spec egressengine.LaunchSpec
-	if err := client.call(ctx, "compile", request, &spec); err != nil {
+	if err := client.process.Call(ctx, "compile", request, &spec); err != nil {
 		return egressengine.LaunchSpec{}, err
 	}
 	if len(spec.Config) == 0 || strings.TrimSpace(spec.ConfigFileName) == "" || strings.TrimSpace(spec.GlobalGroup) == "" {
@@ -257,97 +170,10 @@ func (client *Client) Compile(ctx context.Context, request egressengine.CompileR
 	return spec, nil
 }
 
-func (client *Client) call(ctx context.Context, op string, payload any, target any) error {
-	client.callMu.Lock()
-	defer client.callMu.Unlock()
-	if client.command == nil || client.command.Process == nil {
-		return errors.New("engine_plugin_not_running")
-	}
-	callCtx := ctx
-	if callCtx == nil {
-		callCtx = context.Background()
-	}
-	callCtx, cancel := context.WithTimeout(callCtx, callTimeout)
-	defer cancel()
-
-	client.pendingMu.Lock()
-	client.nextID++
-	id := client.nextID
-	reply := &pendingCall{reply: make(chan wireResponse, 1)}
-	client.pending[id] = reply
-	client.pendingMu.Unlock()
-	defer func() {
-		client.pendingMu.Lock()
-		delete(client.pending, id)
-		client.pendingMu.Unlock()
-	}()
-
-	encoded, err := json.Marshal(wireRequest{ID: id, Op: op, Request: payload})
-	if err != nil {
-		return err
-	}
-	client.writeMu.Lock()
-	_, err = client.stdin.Write(append(encoded, '\n'))
-	client.writeMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("engine_plugin_write_failed: %w", err)
-	}
-	select {
-	case response := <-reply.reply:
-		if response.Error != nil {
-			return fmt.Errorf("%s: %s", response.Error.Code, response.Error.Message)
-		}
-		if target == nil {
-			return nil
-		}
-		return json.Unmarshal(response.Result, target)
-	case <-callCtx.Done():
-		return fmt.Errorf("engine_plugin_timeout: %w", callCtx.Err())
-	}
-}
-
-func (client *Client) readLoop() {
-	decoder := json.NewDecoder(client.stdout)
-	for {
-		var response wireResponse
-		if err := decoder.Decode(&response); err != nil {
-			break
-		}
-		client.pendingMu.Lock()
-		call := client.pending[response.ID]
-		client.pendingMu.Unlock()
-		if call != nil {
-			select {
-			case call.reply <- response:
-			default:
-			}
-		}
-	}
-	// 进程退出时让所有等待者立即失败，而不是等满 30s 超时。
-	client.pendingMu.Lock()
-	for id, call := range client.pending {
-		select {
-		case call.reply <- wireResponse{ID: id, Error: &struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}{Code: "engine_plugin_exited", Message: "插件进程已退出"}}:
-		default:
-		}
-	}
-	client.pendingMu.Unlock()
-}
-
 // Close 关闭插件进程；幂等。
 func (client *Client) Close() error {
 	if client == nil {
 		return nil
 	}
-	client.closeOnce.Do(func() {
-		_ = client.stdin.Close()
-		if client.command != nil && client.command.Process != nil {
-			_ = client.command.Process.Kill()
-			_ = client.command.Wait()
-		}
-	})
-	return nil
+	return client.process.Close()
 }

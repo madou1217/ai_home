@@ -5,22 +5,17 @@
 package renderplugin
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/application/profilerender"
+	"github.com/madou1217/ai_home/internal/runtime/pluginrpc"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 )
 
@@ -31,45 +26,13 @@ const (
 )
 
 // Manifest 是 <aiHome>/plugins/renderers/*.json 的插件声明。
-type Manifest struct {
-	ID      string   `json:"id"`
-	Label   string   `json:"label"`
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-}
-
-type wireRequest struct {
-	ID      int64  `json:"id"`
-	Op      string `json:"op"`
-	Request any    `json:"request,omitempty"`
-}
-
-type wireResponse struct {
-	ID     int64           `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-type pendingCall struct {
-	reply chan wireResponse
-}
+type Manifest = pluginrpc.Manifest
 
 // Client 是一个已启动的渲染插件进程。
 type Client struct {
 	manifest   Manifest
 	descriptor profilerender.Descriptor
-	command    *exec.Cmd
-	stdin      io.WriteCloser
-	stdout     *bufio.Reader
-	writeMu    sync.Mutex
-	callMu     sync.Mutex
-	pendingMu  sync.Mutex
-	pending    map[int64]*pendingCall
-	nextID     int64
-	closeOnce  sync.Once
+	process    *pluginrpc.Process
 }
 
 type formatEntry struct {
@@ -136,7 +99,7 @@ func Load(aiHomeDir string) *Catalog {
 		}
 		_ = client.Close()
 	}
-	for _, binDir := range pluginSearchDirs(root) {
+	for _, binDir := range pluginrpc.SearchDirs(root) {
 		entries, err := os.ReadDir(binDir)
 		if err != nil {
 			continue
@@ -238,7 +201,7 @@ func (c *Catalog) Render(ctx context.Context, target string, profile subaggregat
 		return subaggregator.RenderResult{}, err
 	}
 	var result profilerender.RenderResult
-	if err := client.call(ctx, "render", profilerender.RenderRequest{
+	if err := client.process.Call(ctx, "render", profilerender.RenderRequest{
 		Target: target, Profile: profileRaw, Subscriptions: subsRaw, Nodes: nodesRaw, Context: ctxRaw,
 	}, &result); err != nil {
 		return subaggregator.RenderResult{}, err
@@ -278,7 +241,7 @@ func (c *Catalog) Supports(ctx context.Context, target string, entries []subaggr
 		return nil, err
 	}
 	var result profilerender.SupportsResult
-	if err := client.call(ctx, "supports", profilerender.SupportsRequest{Target: target, Entries: raw}, &result); err != nil {
+	if err := client.process.Call(ctx, "supports", profilerender.SupportsRequest{Target: target, Entries: raw}, &result); err != nil {
 		return nil, err
 	}
 	return result.Supported, nil
@@ -294,7 +257,7 @@ func (c *Catalog) SupportsRelayNode(ctx context.Context, kernel string, node sub
 		return false
 	}
 	var result profilerender.RelaySupportResult
-	if err := client.call(ctx, "relay_supports", profilerender.RelaySupportRequest{Kernel: kernel, Node: raw, Version: version}, &result); err != nil {
+	if err := client.process.Call(ctx, "relay_supports", profilerender.RelaySupportRequest{Kernel: kernel, Node: raw, Version: version}, &result); err != nil {
 		return false
 	}
 	return result.Supported
@@ -314,7 +277,7 @@ func (c *Catalog) CompileRelay(ctx context.Context, request subaggregator.RelayC
 		auth = &profilerender.RelayCredentials{Username: request.Auth.Username, Password: request.Auth.Password, Source: request.Auth.Source}
 	}
 	var result profilerender.RelayCompileResult
-	if err := client.call(ctx, "relay_compile", profilerender.RelayCompileRequest{
+	if err := client.process.Call(ctx, "relay_compile", profilerender.RelayCompileRequest{
 		Kernel: request.Kernel, Nodes: nodesRaw, ListenHost: request.ListenHost, Auth: auth,
 		MaxPorts: request.MaxPorts, OnlyIDs: request.OnlyIDs, BasePort: request.BasePort,
 		LogPath: request.LogPath, Version: request.Version, OfficialApp: request.OfficialApp,
@@ -377,57 +340,18 @@ func capabilitiesFromContract(capabilities profilerender.Capabilities) subaggreg
 	return out
 }
 
-func pluginSearchDirs(aiHomeDir string) []string {
-	dirs := make([]string, 0, 4)
-	if exe, err := os.Executable(); err == nil {
-		if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil {
-			exe = resolved
-		}
-		dirs = append(dirs, filepath.Dir(exe))
-	}
-	if root := strings.TrimSpace(aiHomeDir); root != "" {
-		dirs = append(dirs, filepath.Join(root, "bin"))
-		dirs = append(dirs, filepath.Join(root, "bin", "native", runtime.GOOS+"-"+runtime.GOARCH))
-	}
-	seen := map[string]struct{}{}
-	out := dirs[:0]
-	for _, dir := range dirs {
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			continue
-		}
-		if _, exists := seen[abs]; exists {
-			continue
-		}
-		seen[abs] = struct{}{}
-		out = append(out, abs)
-	}
-	return out
-}
-
 // NewClient 启动插件并读取 describe 描述符。
 func NewClient(manifest Manifest) (*Client, error) {
-	if strings.TrimSpace(manifest.ID) == "" || strings.TrimSpace(manifest.Command) == "" {
-		return nil, errors.New("render_plugin_manifest_invalid")
-	}
-	command := exec.Command(manifest.Command, manifest.Args...)
-	command.Dir = filepath.Dir(manifest.Command)
-	command.Stderr = io.Discard
-	stdin, err := command.StdinPipe()
+	process, err := pluginrpc.Start(manifest, callTimeout)
 	if err != nil {
+		if strings.TrimSpace(manifest.ID) == "" || strings.TrimSpace(manifest.Command) == "" {
+			return nil, errors.New("render_plugin_manifest_invalid")
+		}
 		return nil, err
 	}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := command.Start(); err != nil {
-		return nil, err
-	}
-	client := &Client{manifest: manifest, command: command, stdin: stdin, stdout: bufio.NewReader(stdout), pending: map[int64]*pendingCall{}}
-	go client.readLoop()
+	client := &Client{manifest: manifest, process: process}
 	var descriptor profilerender.Descriptor
-	if err := client.call(context.Background(), "describe", nil, &descriptor); err != nil {
+	if err := process.Call(context.Background(), "describe", nil, &descriptor); err != nil {
 		_ = client.Close()
 		return nil, err
 	}
@@ -439,97 +363,10 @@ func NewClient(manifest Manifest) (*Client, error) {
 	return client, nil
 }
 
-func (client *Client) call(ctx context.Context, op string, payload any, target any) error {
-	client.callMu.Lock()
-	defer client.callMu.Unlock()
-	if client.command == nil || client.command.Process == nil {
-		return errors.New("render_plugin_not_running")
-	}
-	callCtx := ctx
-	if callCtx == nil {
-		callCtx = context.Background()
-	}
-	callCtx, cancel := context.WithTimeout(callCtx, callTimeout)
-	defer cancel()
-
-	client.pendingMu.Lock()
-	client.nextID++
-	id := client.nextID
-	reply := &pendingCall{reply: make(chan wireResponse, 1)}
-	client.pending[id] = reply
-	client.pendingMu.Unlock()
-	defer func() {
-		client.pendingMu.Lock()
-		delete(client.pending, id)
-		client.pendingMu.Unlock()
-	}()
-
-	encoded, err := json.Marshal(wireRequest{ID: id, Op: op, Request: payload})
-	if err != nil {
-		return err
-	}
-	client.writeMu.Lock()
-	_, err = client.stdin.Write(append(encoded, '\n'))
-	client.writeMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("render_plugin_write_failed: %w", err)
-	}
-	select {
-	case response := <-reply.reply:
-		if response.Error != nil {
-			return fmt.Errorf("%s: %s", response.Error.Code, response.Error.Message)
-		}
-		if target == nil || len(response.Result) == 0 {
-			return nil
-		}
-		return json.Unmarshal(response.Result, target)
-	case <-callCtx.Done():
-		return fmt.Errorf("render_plugin_timeout: %w", callCtx.Err())
-	}
-}
-
-func (client *Client) readLoop() {
-	decoder := json.NewDecoder(client.stdout)
-	for {
-		var response wireResponse
-		if err := decoder.Decode(&response); err != nil {
-			break
-		}
-		client.pendingMu.Lock()
-		call := client.pending[response.ID]
-		client.pendingMu.Unlock()
-		if call != nil {
-			select {
-			case call.reply <- response:
-			default:
-			}
-		}
-	}
-	client.pendingMu.Lock()
-	for id, call := range client.pending {
-		select {
-		case call.reply <- wireResponse{ID: id, Error: &struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}{Code: "render_plugin_exited", Message: "插件进程已退出"}}:
-		default:
-		}
-	}
-	client.pendingMu.Unlock()
-}
-
+// Close 关闭插件进程；幂等。
 func (client *Client) Close() error {
 	if client == nil {
 		return nil
 	}
-	client.closeOnce.Do(func() {
-		if client.stdin != nil {
-			_ = client.stdin.Close()
-		}
-		if client.command != nil && client.command.Process != nil {
-			_ = client.command.Process.Kill()
-			_ = client.command.Wait()
-		}
-	})
-	return nil
+	return client.process.Close()
 }

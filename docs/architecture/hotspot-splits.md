@@ -19,6 +19,7 @@
 | SSH 路由 | `webui_ssh_core_routes.go` | 新增 SSH 路由不再改路由总装函数 |
 | 功能路由组 | `webui_feature_routes.go` | 新增一个域只改该文件 |
 | 组合根运行辅助 | `composition_runtime_helpers.go` | `composition.go` 2851 → 2550 行 |
+| Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
 
 ## 新代码应该落在哪里
 
@@ -27,9 +28,6 @@
 - 新 WebUI 依赖：优先收进现有能力结构（`webuiEgressDependencies` 等），不要继续平铺到 `webuiRouteDependencies` 顶层。
 - 新组合根辅助：放 `composition_runtime_helpers.go` 或新建 `composition_<topic>.go`。
 
-## 下一次拆分点
+## 后续可选
 
-以下不是当前未完成项，而是后续继续降低冲突概率的候选：
-
-- `newHandlers` 内的 credential refresh、egress runtime、WebUI dependency 三段装配；
-- `web/src/features/provider-config/ProviderNetworkSettings.tsx`（893 行）按策略/池/SSH 分区拆组件。
+本轮列出的热点已全部拆分。后续如果 `newHandlers` 内的 credential refresh / egress runtime / WebUI dependency 装配继续变大，按同样方式拆成 `composition_<topic>.go`，不需要再改已拆出的文件。

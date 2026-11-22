@@ -267,9 +267,9 @@ func TestEdgeProxyHTTP(t *testing.T) {
 		t.Fatalf("expected edge_unknown_provider: %s", rec.Body.String())
 	}
 
-	rec = doReq(t, h, http.MethodGet, EdgePlanPath+"?provider=frp&domain=example.com", "", true)
+	rec = doReq(t, h, http.MethodGet, EdgePlanPath+"?provider=frpc&domain=example.com", "", true)
 	if rec.Code != http.StatusBadRequest || decodeJSON(t, rec)["error"] != "edge_remote_port_required" {
-		t.Fatalf("expected frp missing port 400, got %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("expected frpc missing port 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
 	rec = doReq(t, h, http.MethodGet, EdgePlanPath+"?provider=caddy&domain=ai.example.com&aihPort=4999", "", true)

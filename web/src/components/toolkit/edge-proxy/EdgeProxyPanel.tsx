@@ -26,17 +26,12 @@ import { edgeProxyAPI } from './edge-proxy-api';
 import { EDGE_PROVIDER_META } from './edge-proxy-presentation';
 import type { EdgeProvider, EdgeStatus } from './types';
 
-// 入口层就是这三个软件：受管工具 id 与 edge provider 名不同（frpc ↔ frp），按显式映射取。
-const EDGE_TOOLS: ReadonlyArray<{ toolId: string; provider: EdgeProvider }> = [
-  { toolId: 'nginx', provider: 'nginx' },
-  { toolId: 'caddy', provider: 'caddy' },
-  { toolId: 'frpc', provider: 'frp' }
-];
-const EDGE_TOOL_IDS = EDGE_TOOLS.map((item) => item.toolId);
+// 入口层就是这三个软件：受管工具 id 与 edge provider 名一致，按 id 取（它们分属两个分类，界面要在一处管）。
+const EDGE_TOOL_IDS = ['nginx', 'caddy', 'frpc'];
 const PROVIDER_ACTIONS: Record<EdgeProvider, string> = {
   nginx: '配置 443 入口',
   caddy: '配置 HTTPS 反向代理',
-  frp: '转发到 VPS'
+  frpc: '转发到 VPS'
 };
 
 function managementLabel(managedBy: string) {
@@ -109,7 +104,7 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
             <div className="toolkit-panel-kicker">ENTRY &amp; FORWARDING</div>
             <h2 id="toolkit-edge-title">入口与转发</h2>
             <p>
-              管本机的 nginx / caddy / frp：装什么、配置怎么写、服务起没起都在这里；
+              管本机的 nginx / caddy / frpc：装什么、配置怎么写、服务起没起都在这里；
               改动一律先备份再校验，校验不过自动回滚。
             </p>
           </div>
@@ -138,7 +133,7 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
               },
               {
                 label: '本机边缘件',
-                value: `${installedCount} / ${EDGE_TOOLS.length} 已安装`,
+                value: `${installedCount} / ${EDGE_TOOL_IDS.length} 已安装`,
                 detail: '只按服务端真实探测结果显示，不猜测',
                 tone: installedCount ? 'success' : 'warning'
               },
@@ -152,8 +147,9 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
           />
 
           <div className="toolkit-observation-grid">
-            {EDGE_TOOLS.map(({ toolId, provider }) => {
+            {EDGE_TOOL_IDS.map((toolId) => {
               const tool = tools.find((item) => item.id === toolId);
+              const provider = toolId as EdgeProvider;
               if (!tool) return null;
               const busy = busyActionFor(tool);
               const task = activeTaskFor(tool);
@@ -181,7 +177,7 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
                       value: `${serviceSummary(tool.service)}${tool.service.message ? `；${tool.service.message}` : ''}`,
                       tooltip: tool.service.lastError || tool.service.message || undefined
                     }] : []),
-                    ...(provider === 'frp' && edge?.proxies?.length
+                    ...(provider === 'frpc' && edge?.proxies?.length
                       ? [{
                         label: '现有转发',
                         value: edge.proxies.map((item) => `${item.name}(${item.type} ${item.localPort}→${item.remotePort})`).join('、')

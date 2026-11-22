@@ -268,8 +268,8 @@ aih server config show --show-secrets --qr --qr-url https://aih.example.com
 
 ```bash
 aih edge status                          # 查看本机入口转发现状
-aih edge plan frp --remote-port 9527     # 预览配置改动
-aih edge apply frp --remote-port 9527    # 写入配置（--dry-run 只预览不写）
+aih edge plan frpc --remote-port 9527     # 预览配置改动
+aih edge apply frpc --remote-port 9527    # 写入配置（--dry-run 只预览不写）
 ```
 
 WebUI「开发工具 → 入口与转发」是同一套配置的界面。

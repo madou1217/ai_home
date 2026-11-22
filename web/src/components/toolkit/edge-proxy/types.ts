@@ -1,12 +1,12 @@
 /**
- * 本机入口转发（nginx / caddy / frp）的 WebUI 契约：字段与服务端
+ * 本机入口转发（nginx / caddy / frpc）的 WebUI 契约：字段与服务端
  * `lib/server/webui-edge-proxy-routes.js` 的返回一一对应。
  */
 
-export type EdgeProvider = 'nginx' | 'caddy' | 'frp';
+export type EdgeProvider = 'nginx' | 'caddy' | 'frpc';
 export type EdgeNginxMode = 'split' | 'passthrough' | 'http-only';
 
-export interface EdgeFrpProxy {
+export interface EdgeFrpcProxy {
   name: string;
   type: string;
   localPort?: number;
@@ -17,13 +17,13 @@ export interface EdgeProviderStatus {
   installed: boolean;
   binary?: string;
   version?: string;
-  /** caddy / frp：配置文件路径；可写性按它判定。 */
+  /** caddy / frpc：配置文件路径；可写性按它判定。 */
   configPath?: string;
   /** nginx：配置目录（片段与 conf.d 都写在这下面）。 */
   configDir?: string;
   writable?: boolean;
-  /** frp：配置里现有的转发条目（AIH 只动自己那两条）。 */
-  proxies?: EdgeFrpProxy[];
+  /** frpc：配置里现有的转发条目（AIH 只动自己那两条）。 */
+  proxies?: EdgeFrpcProxy[];
 }
 
 export interface EdgeStatus {

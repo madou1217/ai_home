@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	edgeKinds  = []string{"frp", "nginx", "caddy"}
+	edgeKinds  = []string{"frpc", "nginx", "caddy"}
 	nginxModes = []string{"split", "passthrough", "http-only"}
 
 	reProxiesHeader = regexp.MustCompile(`^\s*\[\[proxies\]\]\s*$`)
@@ -79,7 +79,7 @@ func ListEdgeKinds() []string {
 	return out
 }
 
-// IsKnownKind reports whether kind is one of frp, nginx, caddy.
+// IsKnownKind reports whether kind is one of frpc, nginx, caddy.
 func IsKnownKind(kind string) bool {
 	for _, k := range edgeKinds {
 		if k == kind {

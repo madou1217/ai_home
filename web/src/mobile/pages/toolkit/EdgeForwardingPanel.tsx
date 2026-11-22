@@ -27,13 +27,13 @@ import { serviceStateLabel } from '@/components/toolkit/tool-service-presentatio
 import { ActionButton, InlineError, MonoBlock, Note, PanelToolbar, StatusText } from './toolkit-parts';
 import ManagedToolConfigSheet from './ManagedToolConfigSheet';
 
-const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
+const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frpc'];
 const LIFECYCLE_API = {
   plan: toolkitAPI.planManagedToolAction,
   execute: toolkitAPI.executeManagedToolAction
 };
 
-/** 入口与转发（移动端）：与桌面同名同位置，看本机 nginx / caddy / frp 现状并落一次改动。 */
+/** 入口与转发（移动端）：与桌面同名同位置，看本机 nginx / caddy / frpc 现状并落一次改动。 */
 export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: boolean }) {
   const [status, setStatus] = useState<EdgeStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -89,10 +89,10 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
     provider,
     domain: domain.trim() || undefined,
     mode: provider === 'nginx' ? mode : undefined,
-    remotePort: provider === 'frp' && remotePort ? remotePort : undefined
+    remotePort: provider === 'frpc' && remotePort ? remotePort : undefined
   }), [provider, domain, mode, remotePort]);
 
-  const ready = provider === 'frp' ? Boolean(remotePort) : Boolean(domain.trim());
+  const ready = provider === 'frpc' ? Boolean(remotePort) : Boolean(domain.trim());
 
   // 参数齐了就自动预览（与桌面同一套：不用先点一次「生成计划」）。
   useEffect(() => {
@@ -269,7 +269,7 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
           }}
           options={PROVIDERS.map((item) => ({ value: item, label: EDGE_PROVIDER_META[item].label }))}
         />
-        {provider !== 'frp' ? (
+        {provider !== 'frpc' ? (
           <Input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="域名，例如 aih.example.com" />
         ) : null}
         {provider === 'nginx' ? (
@@ -280,7 +280,7 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
             options={EDGE_NGINX_MODES.map((item) => ({ value: item.value, label: item.label }))}
           />
         ) : null}
-        {provider === 'frp' ? (
+        {provider === 'frpc' ? (
           <InputNumber
             style={{ width: '100%' }}
             value={remotePort}
@@ -289,7 +289,7 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
           />
         ) : null}
         {!ready ? (
-          <Note tone="info">{provider === 'frp' ? '填上远端端口就会显示要写的内容。' : '填上域名就会显示要写的内容。'}</Note>
+          <Note tone="info">{provider === 'frpc' ? '填上远端端口就会显示要写的内容。' : '填上域名就会显示要写的内容。'}</Note>
         ) : null}
         {ready && planLoading && !plan ? <Note tone="info">正在算要写哪些文件…</Note> : null}
         {planError ? <InlineError title="生成失败" detail={planError} /> : null}

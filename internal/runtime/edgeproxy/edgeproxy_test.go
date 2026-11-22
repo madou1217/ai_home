@@ -102,11 +102,11 @@ remotePort = 29527
 	if !status.OK || status.AIHPort != 9530 {
 		t.Fatalf("unexpected status header: %+v", status)
 	}
-	if !status.Providers.Frp.Installed || !status.Providers.Frp.Writable || len(status.Providers.Frp.Proxies) != 2 {
-		t.Fatalf("unexpected frp status: %+v", status.Providers.Frp)
+	if !status.Providers.Frpc.Installed || !status.Providers.Frpc.Writable || len(status.Providers.Frpc.Proxies) != 2 {
+		t.Fatalf("unexpected frpc status: %+v", status.Providers.Frpc)
 	}
-	if status.Providers.Frp.Proxies[0].Managed || !status.Providers.Frp.Proxies[1].Managed {
-		t.Fatalf("unexpected managed flags: %+v", status.Providers.Frp.Proxies)
+	if status.Providers.Frpc.Proxies[0].Managed || !status.Providers.Frpc.Proxies[1].Managed {
+		t.Fatalf("unexpected managed flags: %+v", status.Providers.Frpc.Proxies)
 	}
 	if status.Providers.Nginx.Version != "1.25.4" || status.Providers.Nginx.ConfigDir != nginxDir {
 		t.Fatalf("unexpected nginx status: %+v", status.Providers.Nginx)
@@ -135,7 +135,7 @@ func TestApplyFrpIdempotentAndRejectCleanup(t *testing.T) {
 		},
 	}
 	svcFail := NewServiceWithDeps(fsImpl, failRunner, env, time.Now)
-	_, edgeErr := svcFail.Apply(context.Background(), "frp", PlanOptions{RemotePort: 29527, UDP: true, AIHPort: 9527, Reload: true})
+	_, edgeErr := svcFail.Apply(context.Background(), "frpc", PlanOptions{RemotePort: 29527, UDP: true, AIHPort: 9527, Reload: true})
 	if edgeErr == nil || edgeErr.Code != "edge_config_rejected" {
 		t.Fatalf("expected edge_config_rejected, got %+v", edgeErr)
 	}
@@ -150,7 +150,7 @@ func TestApplyFrpIdempotentAndRejectCleanup(t *testing.T) {
 	okRunner := &fakeRunner{}
 	svcOK := NewServiceWithDeps(fsImpl, okRunner, env, time.Now)
 	for i := 0; i < 2; i++ {
-		res, err := svcOK.Apply(context.Background(), "frp", PlanOptions{RemotePort: 29527 + i, UDP: true, AIHPort: 9527, Reload: true})
+		res, err := svcOK.Apply(context.Background(), "frpc", PlanOptions{RemotePort: 29527 + i, UDP: true, AIHPort: 9527, Reload: true})
 		if err != nil || !res.OK {
 			t.Fatalf("apply %d failed: res=%+v err=%+v", i, res, err)
 		}

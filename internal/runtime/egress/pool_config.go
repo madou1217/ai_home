@@ -133,6 +133,10 @@ type PoolConfigInput struct {
 	InterfacesFunc func() ([]NetInterfaceEntry, error)
 	ProbePort      int
 	LanePorts      []int
+	// SingBoxVersion 仅 sing-box 配置使用；空串时跳过版本相关的协议。
+	SingBoxVersion string
+	// Routing 是用户可视化的出口池规则与 DNS；零值保持内核默认。
+	Routing RoutingPolicy
 }
 
 // CompiledPoolConfig 包含编译后的 mihomo 配置结构、JSON/YAML 文本与节点映射。
@@ -243,18 +247,32 @@ func BuildEgressPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) {
 		"default-nameserver":      append([]string(nil), DOHBootstrap...),
 		"proxy-server-nameserver": append([]string(nil), DNSServers...),
 	}
+	if customDNS := input.Routing.MihomoNameservers(); len(customDNS) > 0 {
+		dnsSection["nameserver"] = append([]string(nil), customDNS...)
+		if input.Routing.DNS.Mode == "plain" {
+			dnsSection["proxy-server-nameserver"] = append([]string(nil), customDNS...)
+		} else {
+			dnsSection["proxy-server-nameserver"] = append([]string(nil), DOHBootstrap...)
+		}
+	}
 
+	mode := "global"
+	rules := []string{"MATCH,GLOBAL"}
+	if len(input.Routing.Rules) > 0 {
+		mode = "rule"
+		rules = input.Routing.MihomoRoutingRules()
+	}
 	configMap := map[string]any{
 		"mixed-port":          input.MixedPort,
 		"external-controller": fmt.Sprintf("%s:%d", PoolControllerHost, input.ControllerPort),
 		"secret":              secret,
 		"allow-lan":           false,
-		"mode":                "global",
+		"mode":                mode,
 		"log-level":           "warning",
 		"dns":                 dnsSection,
 		"proxies":             proxyObjects,
 		"proxy-groups":        groups,
-		"rules":               []string{"MATCH,GLOBAL"},
+		"rules":               rules,
 	}
 	if len(listeners) > 0 {
 		configMap["listeners"] = listeners

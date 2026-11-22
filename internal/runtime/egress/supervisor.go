@@ -169,6 +169,9 @@ type PoolSupervisor struct {
 	probeBatchSize      int
 	probeConcurrency    int
 	corePath            string
+	coreKind            PoolCoreKind
+	coreVersion         string
+	globalGroup         string
 	interfacesFunc      func() ([]NetInterfaceEntry, error)
 	spawnCore           func(ctx context.Context, binaryPath string, args []string) (CoreProcess, error)
 	killPID             func(pid int) error
@@ -305,6 +308,8 @@ func newPoolSupervisor(mgr *Manager, opts ManagerOptions) *PoolSupervisor {
 		probeBatchSize:      probeBatch,
 		probeConcurrency:    probeConcurrency,
 		corePath:            strings.TrimSpace(opts.CorePath),
+		coreKind:            PoolCoreMihomo,
+		globalGroup:         mihomoGlobalGroup,
 		interfacesFunc:      opts.InterfacesFunc,
 		spawnCore:           spawnCore,
 		killPID:             killPID,
@@ -471,21 +476,25 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 		return s.setErrorResult(err.Error())
 	}
 
-	var corePath string
+	var core *PoolCore
 	if s.corePath != "" {
+		// 测试/显式注入的路径沿用 mihomo 语义，保持既有行为。
 		if !isValidCoreFile(os.Stat, s.corePath) {
 			return s.setErrorResult("egress_pool_core_not_found")
 		}
-		corePath = s.corePath
+		core = &PoolCore{
+			Kind:           PoolCoreMihomo,
+			Path:           s.corePath,
+			Source:         "configured",
+			ConfigFileName: "config.json",
+			GlobalGroup:    mihomoGlobalGroup,
+		}
 	} else {
-		coreRes, err := ResolveMihomoCorePath(CoreResolverOptions{
-			AIHomeDir: s.aiHomeDir,
-			Platform:  s.platform,
-		})
-		if err != nil || coreRes == nil {
+		resolved, resolveErr := ResolvePoolCore(nodes, s.aiHomeDir, s.platform)
+		if resolveErr != nil || resolved == nil {
 			return s.setErrorResult("egress_pool_core_not_found")
 		}
-		corePath = coreRes.Path
+		core = resolved
 	}
 
 	gen := s.currentGen()
@@ -511,15 +520,15 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	}
 	secret := hex.EncodeToString(secretBuf)
 
-	built, err := BuildEgressPoolConfig(PoolConfigInput{
-		Nodes:          nodes,
+	built, err := core.BuildConfig(PoolConfigInput{
 		MixedPort:      s.mixedPort,
 		ControllerPort: s.controllerPort,
 		Secret:         secret,
 		InterfacesFunc: s.interfacesFunc,
 		ProbePort:      s.probePort,
 		LanePorts:      s.lanePorts,
-	})
+		Routing:        ReadRoutingPolicy(ctx, s.aiHomeDir),
+	}, nodes)
 	if err != nil {
 		return s.setErrorResult("egress_pool_config_failed:" + err.Error())
 	}
@@ -529,13 +538,16 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 		return s.setErrorResult("egress_pool_workdir_failed:" + err.Error())
 	}
 	_ = os.Chmod(workDir, 0o700)
-	configPath := filepath.Join(workDir, "config.json")
+	configPath := filepath.Join(workDir, core.ConfigFileName)
 	if err := os.WriteFile(configPath, built.JSONBytes, 0o600); err != nil {
 		return s.setErrorResult("egress_pool_workdir_failed:" + err.Error())
 	}
 	_ = os.Chmod(configPath, 0o600)
+	if err := core.CheckConfig(configPath, workDir); err != nil {
+		return s.setErrorResult(err.Error())
+	}
 
-	proc, err := s.spawnCore(ctx, corePath, []string{"-d", workDir, "-f", configPath})
+	proc, err := s.spawnCore(ctx, core.Path, core.RunArgs(configPath, workDir))
 	if err != nil || proc == nil {
 		errMsg := "nil_process"
 		if err != nil {
@@ -553,6 +565,9 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	}
 	s.workDir = workDir
 	s.controllerSecret = secret
+	s.coreKind = core.Kind
+	s.coreVersion = core.Version
+	s.globalGroup = core.GlobalGroup
 	s.proc = proc
 	s.spawnedCorePID = corePID
 	s.childAlive = true
@@ -588,7 +603,10 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 		return s.setErrorResult("egress_pool_stopped_during_start")
 	}
 
-	dnsProbe := verifyNodeResolvable(ctx, ctrl, nodes)
+	dnsProbe := DNSProbeStatus{OK: true}
+	if core.Kind != PoolCoreSingBox {
+		dnsProbe = verifyNodeResolvable(ctx, ctrl, nodes)
+	}
 	s.mu.Lock()
 	s.dnsProbe = &dnsProbe
 	s.mu.Unlock()
@@ -609,7 +627,7 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	if len(built.NodeNames) > 0 && s.mgr.health.IsCooling(built.NodeNames[0], s.mgr.nowMS()) {
 		policy := ReadNodePolicy(ctx, s.aiHomeDir)
 		if picked := s.mgr.health.PickNext(-1, nil, nil, &policy, s.mgr.nowMS()); picked > 0 && picked < len(built.NodeNames) {
-			if err := ctrl.SelectProxy(ctx, mihomoGlobalGroup, built.NodeNames[picked]); err == nil {
+			if err := ctrl.SelectProxy(ctx, s.globalGroup, built.NodeNames[picked]); err == nil {
 				s.mgr.health.RecordSwitch(built.NodeNames[0], built.NodeNames[picked], "select")
 				activeIndex = picked
 			}
@@ -623,6 +641,9 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 		ProxyURL:       proxyURL,
 		ControllerPort: s.controllerPort,
 		Secret:         secret,
+		CoreKind:       string(core.Kind),
+		CoreVersion:    core.Version,
+		GlobalGroup:    core.GlobalGroup,
 		StartedAt:      s.mgr.nowMS(),
 		Lanes:          map[string]string{},
 		SessionLanes:   map[string][]string{},
@@ -646,6 +667,12 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	s.activeNodeIndex = activeIndex
 	s.mu.Unlock()
 
+	// 清掉另一种内核的陈旧配置，避免后续读取把旧节点表当成当前池。
+	inactiveConfig := "sing-box.json"
+	if core.Kind == PoolCoreSingBox {
+		inactiveConfig = "config.json"
+	}
+	_ = os.Remove(filepath.Join(workDir, inactiveConfig))
 	s.startProbeLoop()
 	_ = s.mgr.ReconcileLanes(ctx)
 	s.mgr.triggerInitialMaintenance()
@@ -1360,7 +1387,7 @@ func (m *Manager) RotatePoolNode(ctx context.Context, fromNode string, reason st
 	if err != nil {
 		return ""
 	}
-	active := strings.TrimSpace(proxies[mihomoGlobalGroup].Now)
+	active := strings.TrimSpace(proxies[poolGlobalGroup(state)].Now)
 	expected := strings.TrimSpace(fromNode)
 	if expected != "" && active != "" && expected != active {
 		return active
@@ -1378,7 +1405,7 @@ func (m *Manager) RotatePoolNode(ctx context.Context, fromNode string, reason st
 		picked = (activeIdx + 1) % len(nodes)
 	}
 	nextName := nodes[picked].Name
-	if err := ctrl.SelectProxy(ctx, mihomoGlobalGroup, nextName); err != nil {
+	if err := ctrl.SelectProxy(ctx, poolGlobalGroup(state), nextName); err != nil {
 		return ""
 	}
 	if reason == "" {
@@ -1515,7 +1542,7 @@ func (m *Manager) CurrentAccountPoolNode(ctx context.Context, accountRef string)
 			}
 		}
 	}
-	return strings.TrimSpace(proxies[mihomoGlobalGroup].Now)
+	return strings.TrimSpace(proxies[poolGlobalGroup(state)].Now)
 }
 
 // CurrentAccountProxyURL 返回账号当前应使用的本地出口池回环地址（blocked/overflow/未就绪返回空串，绝不回落）。

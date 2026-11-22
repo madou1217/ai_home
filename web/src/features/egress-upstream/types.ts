@@ -192,6 +192,37 @@ export interface EgressStrategyStatus {
   boundAccounts: number;
 }
 
+/** 出口池路由规则与 DNS 策略（GET/PUT /egress-upstreams/routing）。 */
+export type EgressRoutingRuleType = 'domain' | 'domain-suffix' | 'domain-keyword' | 'ip-cidr';
+export type EgressRoutingAction = 'proxy' | 'direct' | 'reject';
+
+export interface EgressRoutingRule {
+  id: string;
+  type: EgressRoutingRuleType;
+  value: string;
+  action: EgressRoutingAction;
+  note?: string;
+}
+
+export interface EgressRoutingDNS {
+  mode: 'default' | 'doh' | 'plain';
+  servers: string[];
+  route: 'proxy' | 'direct';
+}
+
+export interface EgressRoutingPolicy {
+  rules: EgressRoutingRule[];
+  dns: EgressRoutingDNS;
+  updatedAt?: number;
+}
+
+export interface EgressRoutingResponse {
+  ok: boolean;
+  policy: EgressRoutingPolicy;
+  applied?: boolean;
+  error?: string;
+}
+
 /** 代理层冲突诊断（GET /egress-upstreams/diagnostics，只读）。 */
 export interface EgressProxyProcess {
   pid: number;
@@ -217,6 +248,8 @@ export interface EgressDiagnostics {
     lanePorts: number[];
     ownerPid: number;
     corePid: number;
+    coreKind?: string;
+    coreVersion?: string;
     coreSource: 'managed' | 'path' | 'client' | '';
     coreVerified: boolean;
     coreCommand: string;

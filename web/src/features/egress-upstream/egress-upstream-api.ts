@@ -4,6 +4,8 @@ import type {
   EgressActionResult,
   EgressDiagnostics,
   EgressRule,
+  EgressRoutingPolicy,
+  EgressRoutingResponse,
   EgressStrategyStatus,
   EgressUpstreamView
 } from './types';
@@ -47,6 +49,15 @@ export const egressUpstreamAPI = {
   /** 只读冲突诊断：池端口/进程身份、外部代理内核、端口占用。 */
   async diagnostics(): Promise<EgressDiagnostics> {
     return (await api.get<EgressDiagnostics>(`${BASE}/diagnostics`)).data;
+  },
+  /** 出口池路由/DNS 策略。 */
+  async routing(): Promise<EgressRoutingPolicy> {
+    const response = await api.get<{ ok: boolean; policy: EgressRoutingPolicy }>(`${BASE}/routing`);
+    return response.data.policy;
+  },
+  async saveRouting(policy: EgressRoutingPolicy, restart: boolean): Promise<EgressRoutingResponse> {
+    const response = await api.put<EgressRoutingResponse>(`${BASE}/routing`, { policy, restart });
+    return response.data;
   },
   /** 服务端策略目录 + 当前可用性。 */
   async strategies(): Promise<EgressStrategyStatus[]> {

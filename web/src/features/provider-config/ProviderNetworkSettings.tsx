@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Empty, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Empty, Input, Select, Space, Switch, Table, Tag, Tooltip, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  DeleteOutlined,
   GlobalOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -17,6 +21,9 @@ import type { BulkEgressTarget } from '@/features/egress-upstream/bulk-egress';
 import type {
   EgressAccountProbeResult,
   EgressDiagnostics,
+  EgressRoutingPolicy,
+  EgressRoutingRuleType,
+  EgressRoutingAction,
   EgressStrategyStatus,
   EgressUpstream,
   EgressUpstreamView
@@ -121,16 +128,22 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
   const [proxyStatus, setProxyStatus] = useState<ProxyStatusResponse | null>(null);
   const [diagnostics, setDiagnostics] = useState<EgressDiagnostics | null>(null);
   const [strategies, setStrategies] = useState<EgressStrategyStatus[]>([]);
+  const [routing, setRouting] = useState<EgressRoutingPolicy | null>(null);
+  const [routingRestart, setRoutingRestart] = useState(true);
+  const [routingSaving, setRoutingSaving] = useState(false);
+  const [routingStatus, setRoutingStatus] = useState('');
+  const [routingStatusTone, setRoutingStatusTone] = useState<'info' | 'success' | 'error'>('info');
   const [sshNames, setSshNames] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [viewResult, accountsResult, proxyResult, diagnosticsResult, candidatesResult, strategiesResult] = await Promise.allSettled([
+    const [viewResult, accountsResult, proxyResult, diagnosticsResult, candidatesResult, strategiesResult, routingResult] = await Promise.allSettled([
       egressUpstreamAPI.view(),
       accountsAPI.list(),
       toolkitAPI.getProxy(),
       egressUpstreamAPI.diagnostics(),
       toolkitAPI.listProxyCandidates(),
-      egressUpstreamAPI.strategies()
+      egressUpstreamAPI.strategies(),
+      egressUpstreamAPI.routing()
     ]);
     if (viewResult.status === 'fulfilled') {
       setView(viewResult.value);
@@ -154,6 +167,9 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
       setSshNames(names);
     }
     setStrategies(strategiesResult.status === 'fulfilled' ? strategiesResult.value : []);
+    if (routingResult.status === 'fulfilled') {
+      setRouting(routingResult.value);
+    }
     setLoading(false);
   }, [normalizedProvider]);
 
@@ -282,6 +298,79 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
       message.error(describeError(probeError));
     } finally {
       setProbingNodes(false);
+    }
+  };
+
+  const updateRoutingRule = useCallback((index: number, patch: Partial<EgressRoutingPolicy['rules'][number]>) => {
+    setRouting((current) => {
+      if (!current) return current;
+      const rules = current.rules.map((rule, ruleIndex) => (ruleIndex === index ? { ...rule, ...patch } : rule));
+      return { ...current, rules };
+    });
+  }, []);
+
+  const addRoutingRule = useCallback(() => {
+    setRouting((current) => current ? {
+      ...current,
+      rules: [...current.rules, {
+        id: `r${Date.now().toString(36)}`,
+        type: 'domain-suffix',
+        value: '',
+        action: 'proxy'
+      }]
+    } : current);
+  }, []);
+
+  const removeRoutingRule = useCallback((index: number) => {
+    setRouting((current) => current ? { ...current, rules: current.rules.filter((_, i) => i !== index) } : current);
+  }, []);
+
+  const moveRoutingRule = useCallback((index: number, delta: number) => {
+    setRouting((current) => {
+      if (!current) return current;
+      const next = index + delta;
+      if (next < 0 || next >= current.rules.length) return current;
+      const rules = [...current.rules];
+      [rules[index], rules[next]] = [rules[next], rules[index]];
+      return { ...current, rules };
+    });
+  }, []);
+
+  const updateRoutingDNS = useCallback((patch: Partial<EgressRoutingPolicy['dns']>) => {
+    setRouting((current) => current ? { ...current, dns: { ...current.dns, ...patch } } : current);
+  }, []);
+
+  const saveRouting = async () => {
+    if (!routing) return;
+    setRoutingSaving(true);
+    setRoutingStatus('');
+    try {
+      const payload: EgressRoutingPolicy = {
+        ...routing,
+        dns: {
+          ...routing.dns,
+          servers: routing.dns.servers.map((server) => server.trim()).filter(Boolean)
+        }
+      };
+      const result = await egressUpstreamAPI.saveRouting(payload, routingRestart);
+      if (result.policy) setRouting(result.policy);
+      if (result.applied === false) {
+        setRoutingStatusTone('error');
+        setRoutingStatus(result.error || '已保存，但出口池重启失败；下次池启动生效。');
+        message.warning('已保存，但出口池重启失败');
+      } else {
+        const suffix = routingRestart && view?.pool?.ready ? '，出口池已重启。' : '；下次池启动生效。';
+        setRoutingStatusTone('success');
+        setRoutingStatus(`路由/DNS 已保存${suffix}`);
+        message.success('路由/DNS 已保存');
+        await load();
+      }
+    } catch (error) {
+      setRoutingStatusTone('error');
+      setRoutingStatus(describeError(error));
+      message.error(describeError(error));
+    } finally {
+      setRoutingSaving(false);
     }
   };
 
@@ -534,6 +623,105 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
         </div>
       </section>
 
+      {routing ? (
+        <section className="pn-routing" aria-label="路由与 DNS">
+          <div className="pn-layer-head">
+            <strong>路由与 DNS</strong>
+            <span>规则按顺序匹配；proxy=当前账号车道，direct=直连，reject=拒绝。规则对 sing-box 每条车道分别生效；mihomo 内核使用全局规则，车道可能优先。</span>
+          </div>
+          <div className="pn-rule-list">
+            {routing.rules.length ? routing.rules.map((rule, index) => (
+              <div className="pn-rule-row" key={rule.id}>
+                <Select
+                  size="small"
+                  value={rule.type}
+                  options={[
+                    { value: 'domain', label: '精确域名' },
+                    { value: 'domain-suffix', label: '域名后缀' },
+                    { value: 'domain-keyword', label: '域名关键词' },
+                    { value: 'ip-cidr', label: 'IP 段' }
+                  ]}
+                  onChange={(value) => updateRoutingRule(index, { type: value as EgressRoutingRuleType })}
+                />
+                <Input
+                  size="small"
+                  value={rule.value}
+                  placeholder={rule.type === 'ip-cidr' ? '10.0.0.0/8' : 'example.com'}
+                  onChange={(event) => updateRoutingRule(index, { value: event.target.value })}
+                />
+                <Select
+                  size="small"
+                  value={rule.action}
+                  options={[
+                    { value: 'proxy', label: '出口池' },
+                    { value: 'direct', label: '直连' },
+                    { value: 'reject', label: '拒绝' }
+                  ]}
+                  onChange={(value) => updateRoutingRule(index, { action: value as EgressRoutingAction })}
+                />
+                <Tooltip title="上移">
+                  <Button size="small" icon={<ArrowUpOutlined />} disabled={index === 0} onClick={() => moveRoutingRule(index, -1)} aria-label="上移规则" />
+                </Tooltip>
+                <Tooltip title="下移">
+                  <Button size="small" icon={<ArrowDownOutlined />} disabled={index === routing.rules.length - 1} onClick={() => moveRoutingRule(index, 1)} aria-label="下移规则" />
+                </Tooltip>
+                <Tooltip title="删除">
+                  <Button size="small" danger icon={<DeleteOutlined />} onClick={() => removeRoutingRule(index)} aria-label="删除规则" />
+                </Tooltip>
+              </div>
+            )) : <span className="pn-muted">没有自定义规则；所有流量走出口池。</span>}
+          </div>
+          <div className="pn-routing-actions">
+            <Button size="small" icon={<PlusOutlined />} onClick={addRoutingRule}>添加规则</Button>
+          </div>
+          <div className="pn-dns-row">
+            <span className="pn-layer-name">DNS</span>
+            <Select
+              size="small"
+              value={routing.dns.mode}
+              options={[
+                { value: 'default', label: '内核默认' },
+                { value: 'doh', label: 'DoH' },
+                { value: 'plain', label: 'UDP' }
+              ]}
+              onChange={(value) => updateRoutingDNS({ mode: value as EgressRoutingPolicy['dns']['mode'] })}
+            />
+            {routing.dns.mode !== 'default' ? (
+              <>
+                <Input
+                  size="small"
+                  value={routing.dns.servers.join(',')}
+                  placeholder={routing.dns.mode === 'doh' ? 'https://1.1.1.1/dns-query' : '223.5.5.5'}
+                  onChange={(event) => updateRoutingDNS({ servers: event.target.value.split(',').map((item) => item.trim()) })}
+                />
+                <Select
+                  size="small"
+                  value={routing.dns.route}
+                  options={[
+                    { value: 'proxy', label: '经出口池' },
+                    { value: 'direct', label: '直连' }
+                  ]}
+                  onChange={(value) => updateRoutingDNS({ route: value as EgressRoutingPolicy['dns']['route'] })}
+                />
+              </>
+            ) : null}
+          </div>
+          <div className="pn-routing-foot">
+            <span className="pn-routing-restart">
+              <Switch size="small" checked={routingRestart} onChange={setRoutingRestart} /> 保存后重启出口池
+            </span>
+            <Button size="small" type="primary" loading={routingSaving} onClick={() => void saveRouting()}>
+              保存路由/DNS
+            </Button>
+          </div>
+          {routingStatus ? (
+            <InlineNote tone={routingStatusTone === 'success' ? 'success' : routingStatusTone === 'error' ? 'error' : 'info'}>
+              {routingStatus}
+            </InlineNote>
+          ) : null}
+        </section>
+      ) : null}
+
       {diagnostics ? (
         <section className="pn-diagnostics" aria-label="代理冲突检测">
           <div className="pn-upstream-head">
@@ -547,6 +735,7 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
             {diagnostics.pool.corePid ? (
               <span className="pn-muted">
                 core pid {diagnostics.pool.corePid}{diagnostics.pool.coreVerified ? ' · 已验证' : ' · 身份未知'}
+                {diagnostics.pool.coreKind ? ` · ${diagnostics.pool.coreKind}${diagnostics.pool.coreVersion ? ' ' + diagnostics.pool.coreVersion : ''}` : ''}
                 {diagnostics.pool.coreSource ? ` · ${CORE_SOURCE_LABELS[diagnostics.pool.coreSource] || diagnostics.pool.coreSource}` : ''}
               </span>
             ) : null}

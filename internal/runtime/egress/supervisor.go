@@ -754,10 +754,11 @@ func (s *PoolSupervisor) reapOwnOrphan(ctx context.Context) string {
 		_ = RemovePoolStateFile(s.aiHomeDir)
 		return ""
 	}
-	// PID 可能被系统复用给别的代理内核（例如 Clash Verge 的 mihomo）。只有命令
-	// 行确实指向 AIH 的 egress-pool 工作目录时才允许继续探测/结束它；身份不符
-	// 时只清掉陈旧状态，绝不向外部进程发信号。
-	if !looksLikeAIHPoolCore(processCommand(ctx, state.CorePID)) {
+	// PID 可能被系统复用给别的代理内核（例如 Clash Verge 的 mihomo）。只有能读到
+	// 命令行且确实指向 AIH 的 egress-pool 工作目录时才允许继续探测/结束它；身份
+	// 不符时只清掉陈旧状态，绝不向外部进程发信号。读不到命令行（旧平台/权限）
+	// 时保留原有 secret 校验路径，避免误伤受支持的环境。
+	if coreCommand := processCommand(ctx, state.CorePID); coreCommand != "" && !looksLikeAIHPoolCore(coreCommand) {
 		_ = RemovePoolStateFile(s.aiHomeDir)
 		s.logger(fmt.Sprintf("egress-pool ignored stale state: pid %d is not an AIH core", state.CorePID))
 		return "stale_identity"

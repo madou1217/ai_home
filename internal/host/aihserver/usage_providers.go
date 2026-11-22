@@ -16,7 +16,6 @@ import (
 	"github.com/madou1217/ai_home/core/accounts/kimiidentity"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyusage "github.com/madou1217/ai_home/internal/adapters/agy/usage"
 	claudeusage "github.com/madou1217/ai_home/internal/adapters/claude/usage"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
@@ -28,8 +27,8 @@ import (
 	kimiusage "github.com/madou1217/ai_home/internal/adapters/kimi/usage"
 	kirousage "github.com/madou1217/ai_home/internal/adapters/kiro/usage"
 	qoderusage "github.com/madou1217/ai_home/internal/adapters/qoder/usage"
-	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	zcodeusage "github.com/madou1217/ai_home/internal/adapters/zcode/usage"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 )
 
 // usageProviderContext 是 Provider 额度模块的装配上下文。
@@ -106,12 +105,7 @@ func buildKiroUsage(context usageProviderContext) ([]usageapp.ProviderStrategy, 
 func buildAgyUsage(providerContext usageProviderContext) ([]usageapp.ProviderStrategy, error) {
 	// 额度采集与刷新共用同一份账号出口绑定：有绑定时走对应代理/直连，
 	// 解析失败 fail-closed，不能静默走进程默认网络。
-	egressResolver := agyegress.NewResolver(agyegress.Options{
-		AIHomeDir: providerContext.aiHomeDir,
-		ResolveManagedSSH: func(reference string) (string, error) {
-			return runtimeegress.ManagedSSHProxyURL(providerContext.aiHomeDir, reference)
-		},
-	})
+	egressResolver := runtimeegress.NewAccountResolver(providerContext.aiHomeDir)
 	strategy, err := agyusage.NewWithEgress(
 		providerContext.client,
 		func(ctx context.Context, accountRef accountcore.AccountRef) (agyusage.HTTPClient, error) {

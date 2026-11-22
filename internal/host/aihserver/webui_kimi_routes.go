@@ -8,7 +8,6 @@ import (
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/desktopsession"
 	"github.com/madou1217/ai_home/internal/adapters/kimi/planstats"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
@@ -32,12 +31,7 @@ func buildWebUIKimiRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, er
 		return nil, err
 	}
 
-	egressResolver := agyegress.NewResolver(agyegress.Options{
-		AIHomeDir: dependencies.AIHomeDir,
-		ResolveManagedSSH: func(reference string) (string, error) {
-			return runtimeegress.ManagedSSHProxyURL(dependencies.AIHomeDir, reference)
-		},
-	})
+	egressResolver := runtimeegress.NewAccountResolver(dependencies.AIHomeDir)
 	resolveEgressClient := func(
 		ctx context.Context,
 		accountRef string,

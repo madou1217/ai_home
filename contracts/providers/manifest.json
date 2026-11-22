@@ -275,6 +275,10 @@
       "relayHosts": {
         "go": {
           "supported": true,
+          "nativeProtocols": [
+            "codex.responses",
+            "claude.messages"
+          ],
           "channel": "canonical"
         },
         "node": {
@@ -508,6 +512,9 @@
       "relayHosts": {
         "go": {
           "supported": true,
+          "nativeProtocols": [
+            "gemini.code_assist"
+          ],
           "channel": "canonical"
         },
         "node": {
@@ -806,6 +813,9 @@
       "relayHosts": {
         "go": {
           "supported": true,
+          "nativeProtocols": [
+            "claude.messages"
+          ],
           "channel": "canonical"
         },
         "node": {
@@ -1090,6 +1100,9 @@
       "relayHosts": {
         "go": {
           "supported": true,
+          "nativeProtocols": [
+            "agy.code_assist"
+          ],
           "channel": "canonical"
         },
         "node": {

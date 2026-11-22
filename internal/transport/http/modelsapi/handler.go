@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
@@ -52,10 +53,13 @@ type Dependencies struct {
 	ContextWindows modelmetadata.ContextWindowReader
 	Models         ModelReader
 	Catalog        CatalogReader
-	Modalities     modelmetadata.Reader
-	Reasoning      modelmetadata.ReasoningLadderReader
-	Aliases        modelalias.DisplayReader
-	Authorizer     Authorizer
+	// ProviderCatalog 是 Provider 合同目录，用于推导每个模型可服务的客户端入口。
+	// 可选：未注入时 supported_endpoints 缺省（不输出该字段）。
+	ProviderCatalog *providers.Catalog
+	Modalities      modelmetadata.Reader
+	Reasoning       modelmetadata.ReasoningLadderReader
+	Aliases         modelalias.DisplayReader
+	Authorizer      Authorizer
 }
 
 // CatalogReader is the optional public model catalog projection supplied by
@@ -66,14 +70,15 @@ type CatalogReader interface {
 
 // Handler 把本地 Provider 模型元组渲染为 OpenAI 模型列表。
 type Handler struct {
-	serviceTiers   modelmetadata.ServiceTierReader
-	contextWindows modelmetadata.ContextWindowReader
-	models         ModelReader
-	catalog        CatalogReader
-	modalities     modelmetadata.Reader
-	reasoning      modelmetadata.ReasoningLadderReader
-	aliases        modelalias.DisplayReader
-	authorizer     Authorizer
+	serviceTiers    modelmetadata.ServiceTierReader
+	contextWindows  modelmetadata.ContextWindowReader
+	models          ModelReader
+	catalog         CatalogReader
+	providerCatalog *providers.Catalog
+	modalities      modelmetadata.Reader
+	reasoning       modelmetadata.ReasoningLadderReader
+	aliases         modelalias.DisplayReader
+	authorizer      Authorizer
 }
 
 // NewHandler 创建不会访问 SQLite、凭据或上游的标准模型目录 Handler。
@@ -84,14 +89,15 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		serviceTiers:   dependencies.ServiceTiers,
-		contextWindows: dependencies.ContextWindows,
-		models:         dependencies.Models,
-		catalog:        dependencies.Catalog,
-		modalities:     dependencies.Modalities,
-		reasoning:      dependencies.Reasoning,
-		aliases:        dependencies.Aliases,
-		authorizer:     dependencies.Authorizer,
+		serviceTiers:    dependencies.ServiceTiers,
+		contextWindows:  dependencies.ContextWindows,
+		models:          dependencies.Models,
+		catalog:         dependencies.Catalog,
+		providerCatalog: dependencies.ProviderCatalog,
+		modalities:      dependencies.Modalities,
+		reasoning:       dependencies.Reasoning,
+		aliases:         dependencies.Aliases,
+		authorizer:      dependencies.Authorizer,
 	}, nil
 }
 
@@ -152,6 +158,7 @@ func (handler *Handler) ServeHTTP(
 			handler.aliases,
 			options.capability,
 			now,
+			handler.providerCatalog,
 		)
 		if err != nil {
 			writeError(response, http.StatusInternalServerError, "internal_error")
@@ -329,10 +336,18 @@ type modelList struct {
 
 // modelView 是不会暴露账号数量或身份的标准模型项。
 type modelView struct {
-	ID                  string               `json:"id"`
-	Object              string               `json:"object"`
-	Created             int64                `json:"created"`
-	OwnedBy             string               `json:"owned_by"`
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+	// SupportedEndpoints 是该模型可被调用的客户端入口路径。
+	//
+	// 取值是真实 HTTP 路径（/v1/messages 等），与 LiteLLM 的
+	// supported_endpoints 语义一致：LiteLLM 在 7100 个模型里正是用路径表达
+	// 这件事（/v1/chat/completions 979 次、/v1/responses 461 次、
+	// /v1/messages 76 次），客户端也按路径选择行为。对外不区分原生与转换——
+	// 那属于内部账本（见 providers.EndpointCapability）。
+	SupportedEndpoints  []string             `json:"supported_endpoints,omitempty"`
 	AIHModalities       *modelModalitiesView `json:"aih_modalities,omitempty"`
 	AIHReasoningEfforts []string             `json:"aih_reasoning_efforts,omitempty"`
 }
@@ -364,6 +379,7 @@ func newModelViews(
 	aliases modelalias.DisplayReader,
 	capability string,
 	created int64,
+	providerCatalog *providers.Catalog,
 ) ([]modelView, error) {
 	if modalities == nil {
 		return nil, errInvalidModelSnapshot
@@ -409,6 +425,10 @@ func newModelViews(
 		owners = append(owners, model.ProviderID())
 		previousProviderID = model.ProviderID()
 	}
+	// supported_endpoints 必须汇总**所有**提供该模型的 Provider：去重后每个
+	// 模型项只保留首个 Provider 供 owned_by 使用，但「这个模型能从哪些入口调」
+	// 取决于全部载体。同名模型由多家 Provider 提供时，任一能服务即算可用。
+	attachSupportedEndpoints(views, models, providerCatalog)
 	if aliases != nil {
 		seenIDs := make(map[string]struct{}, len(views))
 		for _, view := range views {
@@ -611,4 +631,57 @@ func writeJSONHeaders(response http.ResponseWriter, status int) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.WriteHeader(status)
+}
+
+// attachSupportedEndpoints 为每个模型项填充 supported_endpoints。
+//
+// 语义：这个模型**能从哪些客户端入口调用**。它取全部提供该模型的 Provider
+// 的能力并集——同名模型被多家提供时，任一能服务即算可用，而不是只看
+// owned_by 那一家。
+//
+// 对外只输出路径（与 LiteLLM 的 supported_endpoints 一致），原生/转换的区分
+// 留在内部账本（providers.EndpointCapability）里，不进入这个响应。
+func attachSupportedEndpoints(
+	views []modelView,
+	models []accountapp.RoutableModel,
+	providerCatalog *providers.Catalog,
+) {
+	if providerCatalog == nil || len(views) == 0 {
+		return
+	}
+	wires := providers.DefaultEndpointWires()
+	// modelID → 提供它的 Provider 列表
+	providersByModel := make(map[string][]string, len(models))
+	seen := make(map[string]map[string]bool, len(models))
+	for _, model := range models {
+		if !model.IsValid() {
+			continue
+		}
+		modelID := model.ModelID().String()
+		providerID := strings.ToLower(strings.TrimSpace(model.ProviderID()))
+		if providerID == "" {
+			continue
+		}
+		if seen[modelID] == nil {
+			seen[modelID] = make(map[string]bool, 2)
+		}
+		if seen[modelID][providerID] {
+			continue
+		}
+		seen[modelID][providerID] = true
+		providersByModel[modelID] = append(providersByModel[modelID], providerID)
+	}
+	for index := range views {
+		modelID := views[index].ID
+		capabilities := make([][]providers.EndpointCapability, 0, 2)
+		for _, providerID := range providersByModel[modelID] {
+			definition, found := providerCatalog.Get(providerID)
+			if !found {
+				continue
+			}
+			capabilities = append(capabilities, definition.EndpointCapabilities(wires))
+		}
+		merged := providers.MergeEndpointCapabilities(capabilities)
+		views[index].SupportedEndpoints = providers.EndpointPaths(merged)
+	}
 }

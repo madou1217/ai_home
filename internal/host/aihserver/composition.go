@@ -2011,6 +2011,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		ContextWindows: codexmodelcatalog.NewContextReader(),
 		Models:         inference.models,
 		Catalog:        modelCatalogStore,
+		ProviderCatalog: catalog,
 		Modalities:     modelModalities,
 		Reasoning:      modelModalities,
 		Aliases:        inference.models,

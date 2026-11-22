@@ -29,6 +29,19 @@ type OpenAIModelItem struct {
 	AIHReasoningEfforts []string            `json:"aih_reasoning_efforts,omitempty"`
 	Providers           []string            `json:"providers"`
 	AccountRefs         []string            `json:"account_refs"`
+	// SupportedEndpoints 是对外简版：该模型可被调用的客户端入口路径。
+	SupportedEndpoints []string `json:"supported_endpoints,omitempty"`
+	// EndpointCapabilities 是**内部账本**：区分原生与转换，并记录是哪几家
+	// Provider 撑起这条入口。对外只暴露上面的路径数组；这里保留完整事实，
+	// 供 WebUI 展示与排障使用。
+	EndpointCapabilities []EndpointCapabilityView `json:"endpoint_capabilities,omitempty"`
+}
+
+// EndpointCapabilityView 是一条入口能力的展示投影。
+type EndpointCapabilityView struct {
+	Path      string   `json:"path"`
+	Mode      string   `json:"mode"`
+	Providers []string `json:"providers,omitempty"`
 }
 
 // ManagedModelItem 对齐 WebUI 模型管理页的 managedData[] 条目。
@@ -393,6 +406,21 @@ func (handler *Handler) buildCatalog(ctx context.Context, scopedAccountRef strin
 			AIHReasoningEfforts: modelmetadata.ResolveReasoningEfforts(handler.modalities, entry.provider, entry.id),
 			Providers:           providersList,
 			AccountRefs:         accountRefsList,
+		}
+		if handler.catalog != nil {
+			caps := mergeProviderEndpointCapabilities(handler.catalog, providersList)
+			item.SupportedEndpoints = providers.EndpointPaths(caps)
+			if len(caps) > 0 {
+				views := make([]EndpointCapabilityView, 0, len(caps))
+				for _, cap := range caps {
+					views = append(views, EndpointCapabilityView{
+						Path:      cap.Path,
+						Mode:      string(cap.Mode),
+						Providers: cap.Providers,
+					})
+				}
+				item.EndpointCapabilities = views
+			}
 		}
 		data = append(data, item)
 		if _, exists := metadataMap[entry.id]; !exists {
@@ -910,4 +938,24 @@ func maxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// mergeProviderEndpointCapabilities 把一组 Provider 的入口能力合并成模型级账本。
+func mergeProviderEndpointCapabilities(
+	catalog *providers.Catalog,
+	providerIDs []string,
+) []providers.EndpointCapability {
+	if catalog == nil || len(providerIDs) == 0 {
+		return nil
+	}
+	wires := providers.DefaultEndpointWires()
+	perProvider := make([][]providers.EndpointCapability, 0, len(providerIDs))
+	for _, providerID := range providerIDs {
+		definition, found := catalog.Get(providerID)
+		if !found {
+			continue
+		}
+		perProvider = append(perProvider, definition.EndpointCapabilities(wires))
+	}
+	return providers.MergeEndpointCapabilities(perProvider)
 }

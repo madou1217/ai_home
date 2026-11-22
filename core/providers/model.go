@@ -162,6 +162,19 @@ type ModelPrefix struct {
 type RelayHost struct {
 	// Supported 表示该宿主能否服务该 Provider 的推理。
 	Supported bool `json:"supported"`
+	// NativeProtocols 声明该宿主**原生拥有**的线协议。
+	//
+	// 「有 canonical 适配器」与「按某门客户端协议原生收发」是两件事：codex 有
+	// Responses 适配器（canonical），但它同时按合同原生拥有 Claude Messages——
+	// 双协议厂商（千问、DeepSeek）的 Anthropic 兼容端点由 codex 账号直接访问。
+	// 只靠 channel 无法区分这两种情况，因此把原生协议显式列出。
+	//
+	// 取值与 gateway 侧 ProtocolID 逐字一致（claude.messages / codex.responses /
+	// agy.code_assist / gemini.code_assist）。字段放在这里而不是 core/inference，
+	// 是因为 core/providers 不能反向依赖 core/inference。
+	//
+	// 未登记该协议的 Provider 在该协议入口上只能是「转换」模式，不能是原生。
+	NativeProtocols []string `json:"nativeProtocols,omitempty"`
 	// Channel 是承接通道：'canonical'（有完整上游适配器，全入口可用）或
 	// 'relay'（同协议透传，受 Entries 限制）。Supported 为 false 时无意义。
 	Channel string `json:"channel,omitempty"`
@@ -293,8 +306,25 @@ func (definition Definition) CredentialProtocol(nativeResponses bool) string {
 	return ""
 }
 
-// RelayChannelOn 返回指定宿主在该客户端协议下的承接通道；空串表示不可服务。
+// OwnsWireProtocol 判断该 Provider 是否**原生拥有**这条线协议。
 //
+// 「原生」指请求按该协议直接与上游对话，不经过网关的跨协议重建。这与
+// RelayChannelOn 的 canonical 不同：canonical 只说明有完整上游适配器，
+// 如 codex 有 Responses 适配器却在 /v1/messages 上同样原生（合同声明它拥有
+// claude.messages，双协议厂商的 Anthropic 兼容端点）。
+func (definition Definition) OwnsWireProtocol(protocol string) bool {
+	protocol = strings.TrimSpace(protocol)
+	if protocol == "" || definition.RelayHosts == nil {
+		return false
+	}
+	relayHost, found := definition.RelayHosts[RelayHostGo]
+	if !found || !relayHost.Supported {
+		return false
+	}
+	return containsString(relayHost.NativeProtocols, protocol)
+}
+
+// RelayChannelOn 返回指定宿主在该客户端协议下的承接通道；空串表示不可服务。//
 // 这是「某个 Provider 能不能服务某门客户端协议」的唯一判定入口，调用方不得
 // 自行按 Provider 名或 Provider→协议表推导：
 //

@@ -47,10 +47,21 @@ func BuiltinManifest() Manifest {
 //
 // canonical 表示 Go 有该 Provider 的完整上游适配器（core/inference 的 ProviderID +
 // internal/adapters 下的协议适配器），因此覆盖全部推理入口，不限定 Entries。
-func relayHostsCanonical() map[string]RelayHost {
+// relayHostsCanonical 声明「Go 有完整上游适配器」的宿主能力。
+//
+// nativeProtocols 是该 Provider **原生拥有**的线协议（与 gateway 的
+// protocolID 逐字一致）。必须显式传：canonical 只说明有适配器，不说明按哪门
+// 客户端协议原生收发——codex 有 Responses 适配器，但合同上它同时原生拥有
+// Claude Messages（双协议厂商的 Anthropic 兼容端点由 codex 账号直接访问）。
+// 不传就退化为「只清非原生」，不会凭空认定某门协议是原生的。
+func relayHostsCanonical(nativeProtocols ...string) map[string]RelayHost {
 	return map[string]RelayHost{
 		RelayHostNode: {Supported: true, Channel: RelayChannelRelay},
-		RelayHostGo:   {Supported: true, Channel: RelayChannelCanonical},
+		RelayHostGo: {
+			Supported:       true,
+			Channel:         RelayChannelCanonical,
+			NativeProtocols: nativeProtocols,
+		},
 	}
 }
 
@@ -185,7 +196,7 @@ func builtinCodex() Definition {
 			},
 		},
 		NativeBoundary: nativeCodex(),
-		RelayHosts:     relayHostsCanonical(),
+		RelayHosts:     relayHostsCanonical("codex.responses", "claude.messages"),
 	}
 }
 
@@ -214,7 +225,7 @@ func builtinGemini() Definition {
 		},
 		// Gemini CLI 的 Code Assist 推理已由 Go 承接（gemini.code_assist），
 		// Node 只保留 CLI/桌面宿主能力。
-		RelayHosts:   relayHostsCanonical(),
+		RelayHosts:   relayHostsCanonical("gemini.code_assist"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(
@@ -334,7 +345,7 @@ func builtinClaude() Definition {
 			},
 		},
 		NativeBoundary: nativeClaude(),
-		RelayHosts:     relayHostsCanonical(),
+		RelayHosts:     relayHostsCanonical("claude.messages"),
 	}
 }
 
@@ -408,7 +419,7 @@ func builtinAntigravity() Definition {
 			),
 		},
 		NativeBoundary: nativeAntigravity(),
-		RelayHosts:     relayHostsCanonical(),
+		RelayHosts:     relayHostsCanonical("agy.code_assist"),
 	}
 }
 

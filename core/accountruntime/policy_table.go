@@ -80,6 +80,16 @@ func ConfigurePolicyDefaults(cooldown time.Duration, threshold uint8) error {
 	return nil
 }
 
+// ValidatePolicyOverrides 只校验覆盖参数，不修改生效快照。
+func ValidatePolicyOverrides(overrides []PolicyOverride) error {
+	policyStateMu.Lock()
+	cooldown := policyEnvCooldown
+	threshold := policyEnvThreshold
+	policyStateMu.Unlock()
+	_, err := buildPolicySnapshot(cooldown, threshold, overrides)
+	return err
+}
+
 // ApplyPolicyOverrides 替换运行时可编辑的策略参数覆盖。
 //
 // 空集合表示回到契约默认值（仍受进程环境变量影响）。校验失败时保持旧快照，

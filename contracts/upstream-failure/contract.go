@@ -182,6 +182,12 @@ func ParseOverride(raw []byte) (*Override, error) {
 	return &override, nil
 }
 
+// ValidateOverride 只校验覆盖能被合并进内置契约，不修改生效快照。
+func ValidateOverride(override *Override) error {
+	_, err := mergeOverride(builtin, override)
+	return err
+}
+
 // ConfigureOverrides 原子替换全局覆盖；nil 或空覆盖表示回到内置契约。
 func ConfigureOverrides(override *Override) error {
 	merged, err := mergeOverride(builtin, override)

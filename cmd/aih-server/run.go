@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
+	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 )
 
 // shutdownTimeout 覆盖推理流收尾窗口（30s）+ HTTP 优雅关闭预算。
@@ -72,6 +73,11 @@ func run(
 		if _, identityErr := appstate.EnsureServerIdentity(ctx, databasePath); identityErr != nil {
 			log.Printf("stable server identity unavailable: %v", identityErr)
 		}
+	}
+	// 失败语义全局覆盖必须先于任何推理入口生效；非法配置 fail-closed，
+	// 避免进程带着与验收时不同的冷却语义继续服务。
+	if policyErr := upstreamfailurepolicy.Load(ctx, config.aiHomeDir); policyErr != nil {
+		return fmt.Errorf("应用失败语义全局覆盖失败: %w", policyErr)
 	}
 	if err := distributioninstall.AwaitActivation(ctx, config.aiHomeDir, config.listenAddress(), runtime.listen, runtime.stderr); err != nil {
 		return err

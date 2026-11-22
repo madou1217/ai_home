@@ -1,6 +1,7 @@
 package serverconfig
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
@@ -116,6 +117,9 @@ var Fields = []Field{
 		Summary: "WebUI 粘贴多少字以上转文本附件；0 = 默认 200。"},
 	{Key: "upstream429Retry", Group: "调度", Type: TypeObject, Default: nil, Applies: "runtime", HotReload: true, ClearValue: map[string]any{"backoffSeconds": corepolicy.DefaultBackoffSeconds()},
 		Summary: "上游真实 429 的有界退避重试配置。"},
+	{Key: "upstreamFailurePolicy", Group: "调度", Type: TypeObject, Default: nil, Applies: "runtime", HotReload: true, ClearValue: map[string]any{},
+		Normalize: normalizeUpstreamFailurePolicy,
+		Summary:   "上游失败语义的全局覆盖（阈值/窗口/冷却与状态码语义）。"},
 }
 
 func init() {
@@ -219,6 +223,32 @@ func Sanitize(input map[string]any) map[string]any {
 		values["windowActivationDefaultIntervalMs"] = minInterval
 	}
 	return values
+}
+
+// normalizeUpstreamFailurePolicy 接受对象或 JSON 字符串；无法解析时回到 nil
+// （内置契约），真正的合法性由 internal/runtime/upstreamfailurepolicy 校验。
+func normalizeUpstreamFailurePolicy(raw any) any {
+	switch value := raw.(type) {
+	case nil:
+		return nil
+	case map[string]any:
+		if value == nil {
+			return nil
+		}
+		return value
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &object); err != nil {
+			return nil
+		}
+		return object
+	default:
+		return nil
+	}
 }
 
 func normalizeByType(field Field, raw any) any {

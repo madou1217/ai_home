@@ -41,6 +41,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
+	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 	"github.com/madou1217/ai_home/internal/transport/http/proxyleaseapi"
@@ -430,6 +431,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			if dependencies.Upstream429RetryStore != nil {
 				dependencies.Upstream429RetryStore.UpdateGlobal(saved.Upstream429Retry)
 			}
+			// 写路径已做过 dry-run 校验；这里只做原子应用，失败不应改写已保存配置。
+			_ = upstreamfailurepolicy.Configure(saved.UpstreamFailurePolicy)
 		},
 	})
 	if err != nil {

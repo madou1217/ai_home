@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
+	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 )
 
 // ReadConfig returns the public view without secrets.
@@ -46,6 +47,9 @@ func ApplyConfigPatch(ctx context.Context, aiHomeDir string, patch map[string]an
 		validatedRetry, hasRetryPatch, retryErr := validateUpstream429Patch(patch, base.Upstream429Retry)
 		if retryErr != nil {
 			return "", retryErr
+		}
+		if policyErr := upstreamfailurepolicy.Validate(patch[upstreamfailurepolicy.ConfigKey]); policyErr != nil {
+			return "", policyErr
 		}
 		merged := mergeServerConfigPatch(base, patch)
 		if err := outboundproxy.Validate(jsString(merged["proxyUrl"])); err != nil {

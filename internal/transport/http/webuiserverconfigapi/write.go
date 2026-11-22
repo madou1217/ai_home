@@ -2,11 +2,13 @@ package webuiserverconfigapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
+	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
@@ -46,6 +48,9 @@ func (handler *Handler) writeConfig(response http.ResponseWriter, request *http.
 		if retryErr != nil {
 			return "", retryErr
 		}
+		if policyErr := upstreamfailurepolicy.Validate(patch[upstreamfailurepolicy.ConfigKey]); policyErr != nil {
+			return "", policyErr
+		}
 		merged := mergeServerConfigPatch(base, patch)
 		if err := outboundproxy.Validate(jsString(merged["proxyUrl"])); err != nil {
 			return "", err
@@ -66,6 +71,10 @@ func (handler *Handler) writeConfig(response http.ResponseWriter, request *http.
 	if err != nil {
 		if code, msg, isValidation := upstream429ValidationError(err); isValidation {
 			writeError(response, http.StatusBadRequest, code, msg)
+			return
+		}
+		if errors.Is(err, upstreamfailurepolicy.ErrInvalidConfig) {
+			writeError(response, http.StatusBadRequest, "invalid_upstream_failure_policy", err.Error())
 			return
 		}
 		writeError(response, http.StatusInternalServerError, "set_server_config_failed", "")

@@ -106,6 +106,7 @@ type ConfigView struct {
 	EgressEvidenceTTLMs               float64                 `json:"egressEvidenceTtlMs"`
 	LargePasteChars                   int                     `json:"largePasteChars"`
 	Upstream429Retry                  corepolicy.GlobalPolicy `json:"upstream429Retry"`
+	UpstreamFailurePolicy             map[string]any          `json:"upstreamFailurePolicy,omitempty"`
 	APIKeyConfigured                  bool                    `json:"apiKeyConfigured"`
 	ManagementKeyConfigured           bool                    `json:"managementKeyConfigured"`
 }
@@ -218,6 +219,9 @@ func configViewFromValues(values map[string]any) ConfigView {
 		view.Upstream429Retry = retry
 	} else {
 		view.Upstream429Retry = corepolicy.SanitizeGlobalRaw(values["upstream429Retry"])
+	}
+	if object, ok := values["upstreamFailurePolicy"].(map[string]any); ok && object != nil {
+		view.UpstreamFailurePolicy = object
 	}
 	return view
 }

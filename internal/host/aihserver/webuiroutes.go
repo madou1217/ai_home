@@ -48,6 +48,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccount429retryapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountbrowserapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdetectapi"
@@ -87,6 +88,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiremotetargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
@@ -341,6 +343,24 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 反向隧道接口失败: %w", err)
+	}
+
+	remoteTargetSource := webuiremotetargetsapi.FactsSource{
+		ServerID: func(ctx context.Context) (string, error) {
+			return webuiaccountbrowserapi.ReadServerID(ctx, dependencies.AIHomeDir)
+		},
+		Connections:    sshSource,
+		Workspaces:     sshSource,
+		Catalog:        dependencies.Catalog,
+		AccountModels:  dependencies.Store,
+		AccountDetails: dependencies.Store,
+	}
+	remoteTargets, err := webuiremotetargetsapi.NewHandler(webuiremotetargetsapi.Dependencies{
+		Authorizer: authorizer,
+		Source:     remoteTargetSource,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建远程执行目标接口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -944,6 +964,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
 		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
 		{Pattern: "GET " + webuisshhostbrowseapi.Path, Handler: sshBrowse},
+		{Pattern: "GET " + webuiremotetargetsapi.Path, Handler: remoteTargets},
+		{Pattern: "GET " + webuiremotetargetsapi.ResolvePath, Handler: remoteTargets},
+		{Pattern: "GET " + webuiremotetargetsapi.DoctorPath, Handler: remoteTargets},
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},
 		{Pattern: "POST " + proxyleaseapi.LeasesPath, Handler: proxyAPI},
 		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},

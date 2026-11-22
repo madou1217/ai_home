@@ -2007,15 +2007,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("装配 WORK 原生启动边界失败: %w", nativeWorkErr)
 	}
 	webuiDeps := webuiRouteDependencies{
-		Authorizer:            authorizer,
-		AIHomeDir:             aiHomeDir,
-		Catalog:               catalog,
-		ModelModalities:       modelModalities,
-		ModelAliasExpander:    modelAliasExpander,
-		ModelAliasDisplay:     inference.models,
-		MetadataResolver:      pricingResolver,
-		EgressManager:         egressManager,
-		Upstream429RetryStore: upstream429Store,
+		Authorizer:         authorizer,
+		AIHomeDir:          aiHomeDir,
+		Catalog:            catalog,
+		ModelModalities:    modelModalities,
+		ModelAliasExpander: modelAliasExpander,
+		ModelAliasDisplay:  inference.models,
+		MetadataResolver:   pricingResolver,
+		webuiEgressDependencies: webuiEgressDependencies{
+			EgressManager:         egressManager,
+			Upstream429RetryStore: upstream429Store,
+			ProxyPool:             dependencies.ProxyPool,
+			SSHProxies:            sshProxySupervisor,
+			ReverseTunnels:        sshTunnelSupervisor,
+		},
 		ImageExecutionDependencies: imageexecution.Dependencies{
 			Upstream429Retries:     upstream429Controller,
 			Attempts:               accountRuntime,
@@ -2039,8 +2044,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		TerminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
-		ReverseTunnels:  sshTunnelSupervisor,
-		SSHProxies:      sshProxySupervisor,
 		AccountDeletion: deletionRuntime,
 		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
 		AccountHostGrant: deletionHost,
@@ -2048,7 +2051,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		NodeBaseURL:            nodeBaseURL,
 		SelfBaseURL:            selfBaseURL,
 		ManagementKey:          managementKey,
-		ProxyPool:              dependencies.ProxyPool,
 		RequestShutdown:        requestShutdown,
 		TerminalHandler:        webUITerminalHandler,
 		SubAggregator:          subAggSvc,

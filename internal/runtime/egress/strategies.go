@@ -162,15 +162,13 @@ func (m *Manager) resolveSyntheticStrategy(ctx context.Context, mode string) (ag
 	if err != nil {
 		return agyegress.Decision{}, err
 	}
-	resolver := agyegress.NewResolver(agyegress.Options{
-		AIHomeDir:         m.aiHomeDir,
+	// 统一入口负责默认接好 managed SSH；这里只需要覆盖 Manager 的平台判定、
+	// 系统代理/TUN 探测、PID 存活判断，以及合成绑定 Reader（不读 app-state）。
+	resolver := NewAccountResolverWithOptions(m.aiHomeDir, agyegress.Options{
 		Platform:          m.platform,
 		DetectSystemProxy: m.systemProxyDetector,
 		DetectTUN:         m.tunDetector,
 		PidAlive:          m.pidAlive,
-		ResolveManagedSSH: func(reference string) (string, error) {
-			return ManagedSSHProxyURL(m.aiHomeDir, reference)
-		},
 		ReadBinding: func(context.Context, string) (string, bool, error) {
 			return string(raw), true, nil
 		},

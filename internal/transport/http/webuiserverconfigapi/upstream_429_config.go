@@ -41,6 +41,13 @@ func mergeKnownFieldsPreservingUnknown(rawCurrent map[string]any, saved ConfigVi
 		}
 		stored[key] = value
 	}
+	// upstreamFailurePolicy 允许被显式清空：空对象/缺失必须真正删键，
+	// 否则残留的旧覆盖会在下次启动继续生效（JSON omitempty 会把它从 known 里漏掉）。
+	if len(saved.UpstreamFailurePolicy) == 0 {
+		delete(stored, "upstreamFailurePolicy")
+	} else {
+		stored["upstreamFailurePolicy"] = saved.UpstreamFailurePolicy
+	}
 	delete(stored, "apiKeyConfigured")
 	delete(stored, "managementKeyConfigured")
 	return stored

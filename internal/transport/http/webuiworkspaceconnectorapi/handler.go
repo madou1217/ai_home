@@ -161,6 +161,9 @@ func (handler *Handler) serveList(response http.ResponseWriter, request *http.Re
 			view.SessionID = status.SessionID
 			view.ConnectedAt = status.ConnectedAt
 			view.LiveLastSeenAt = status.LastSeenAt
+			// The live session is authoritative: it reflects a connector
+			// started with --no-command, not just the durable grant.
+			view.Capabilities = status.Capabilities
 		}
 		views = append(views, view)
 	}

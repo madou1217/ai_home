@@ -520,9 +520,15 @@ func (state *persistedState) normalize(now time.Time) {
 	}
 	for index := range state.Enrollments {
 		state.Enrollments[index].Capabilities = remoteconnector.NormalizeCapabilities(state.Enrollments[index].Capabilities)
+		// run_command arrived after the first enrollments. This record is the
+		// Server allow-list, not user consent: the local connector must still
+		// declare the capability (aih workspace connect, on unless --no-command).
+		// Backfill the bit so an existing workspace needs no re-enrollment.
+		state.Enrollments[index].Capabilities.RunCommand = true
 	}
 	for index := range state.Workspaces {
 		state.Workspaces[index].Capabilities = remoteconnector.NormalizeCapabilities(state.Workspaces[index].Capabilities)
+		state.Workspaces[index].Capabilities.RunCommand = true
 	}
 	state.prune(now)
 }
@@ -563,6 +569,7 @@ func workspaceView(record workspaceRecord) Workspace {
 func defaultCapabilities() remoteconnector.Capabilities {
 	return remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
+		RunCommand: true,
 	})
 }
 

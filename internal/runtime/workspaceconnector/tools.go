@@ -13,13 +13,15 @@ import (
 )
 
 const (
-	maxToolReadBytes = 512 * 1024
-	maxToolLines     = 4000
+	maxToolReadBytes    = 512 * 1024
+	maxToolLines        = 4000
+	maxToolCommandBytes = 64 * 1024
 )
 
 // ToolDefinitions is the provider-facing contract shared by the MCP bridge and
-// the internal tool endpoint. run_command is intentionally absent: the
-// connector does not yet implement durable jobs or an approval model.
+// the internal tool endpoint. run_command is synchronous and only advertised
+// when the live connector declares the capability; durable jobs and approvals
+// remain unimplemented.
 func ToolDefinitions() []map[string]any {
 	return []map[string]any{
 		{
@@ -82,7 +84,38 @@ func ToolDefinitions() []map[string]any {
 				"required": []any{"pattern"},
 			},
 		},
+		{
+			"name":        "run_command",
+			"description": "在本地工作区执行一条 shell 命令（macOS/Linux 用 sh -c，Windows 用 PowerShell），返回退出码、stdout 和 stderr。cwd 必须是工作区内的相对路径；命令以本机当前用户权限运行，不是 OS 沙箱。超时会终止整个进程组。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command":    map[string]any{"type": "string", "description": "要执行的 shell 命令"},
+					"cwd":        map[string]any{"type": "string", "description": "相对工作区根的工作目录（可选，默认工作区根）"},
+					"timeout_ms": map[string]any{"type": "integer", "description": "超时毫秒，默认 120000，上限 600000"},
+				},
+				"required": []any{"command"},
+			},
+		},
 	}
+}
+
+// ToolDefinitionsFor filters the contract down to the capabilities the live
+// connector actually declared, so a connector started with --no-command never
+// advertises run_command to the provider.
+func ToolDefinitionsFor(capabilities remoteconnector.Capabilities) []map[string]any {
+	normalized := remoteconnector.NormalizeCapabilities(capabilities)
+	tools := ToolDefinitions()
+	if normalized.RunCommand {
+		return tools
+	}
+	filtered := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		if tool["name"] != "run_command" {
+			filtered = append(filtered, tool)
+		}
+	}
+	return filtered
 }
 
 // CallTool maps the provider-facing tool names onto connector RPC. The result
@@ -107,7 +140,7 @@ func CallTool(ctx context.Context, hub *Hub, workspaceID, name string, arguments
 	case "search":
 		return callSearch(ctx, hub, workspaceID, arguments)
 	case "run_command":
-		return toolError(remoteconnector.CodeUnsupportedOperation, "workspace connector does not implement run_command yet")
+		return callRunCommand(ctx, hub, workspaceID, arguments)
 	default:
 		return toolError(remoteconnector.CodeUnsupportedOperation, "unknown workspace tool: "+name)
 	}
@@ -267,6 +300,54 @@ func callSearch(ctx context.Context, hub *Hub, workspaceID string, args map[stri
 		lines = append(lines, "(truncated)")
 	}
 	return toolText(strings.Join(lines, "\n"))
+}
+
+func callRunCommand(ctx context.Context, hub *Hub, workspaceID string, args map[string]any) map[string]any {
+	command, ok := args["command"].(string)
+	if !ok || strings.TrimSpace(command) == "" {
+		return toolError(remoteconnector.CodeInvalidPayload, "command is required")
+	}
+	if len(command) > maxToolCommandBytes {
+		return toolError(remoteconnector.CodeInvalidPayload, "command is larger than the command limit")
+	}
+	raw, err := hub.Call(ctx, workspaceID, remoteconnector.OperationRunCommand, remoteconnector.RunCommandRequest{
+		Command: command, Cwd: toolString(args["cwd"]), TimeoutMS: toolInt(args["timeout_ms"]),
+	})
+	if err != nil {
+		return toolFailure(err)
+	}
+	var result remoteconnector.RunCommandResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned an invalid command result")
+	}
+	stdout, err := base64.StdEncoding.DecodeString(result.Stdout)
+	if err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned invalid stdout")
+	}
+	stderr, err := base64.StdEncoding.DecodeString(result.Stderr)
+	if err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned invalid stderr")
+	}
+	header := "cwd: " + result.Cwd
+	if result.Truncated {
+		header += "（输出已截断）"
+	}
+	status := fmt.Sprintf("exit code: %d", result.ExitCode)
+	if result.TimedOut {
+		status = "exit code: -1（超时，进程组已终止）"
+	}
+	parts := []string{header, status, fmt.Sprintf("duration: %dms", result.DurationMS)}
+	if len(stdout) > 0 {
+		parts = append(parts, "stdout:\n"+string(strings.ToValidUTF8(string(stdout), "\uFFFD")))
+	}
+	if len(stderr) > 0 {
+		parts = append(parts, "stderr:\n"+string(strings.ToValidUTF8(string(stderr), "\uFFFD")))
+	}
+	output := toolText(strings.Join(parts, "\n"))
+	if result.ExitCode != 0 || result.TimedOut {
+		output["isError"] = true
+	}
+	return output
 }
 
 func numberToolLines(content string, offset, limit int) (string, int, int, int) {

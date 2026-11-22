@@ -1,6 +1,9 @@
 package remoteconnector
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // Error codes are shared by the Server, the local connector and every management
 // adapter. They are deliberately stable: UI text may change, these strings are
@@ -100,6 +103,8 @@ func NormalizeCapabilities(capabilities Capabilities) Capabilities {
 			capabilities.ListDirectory = true
 		case CapabilitySearch:
 			capabilities.Search = true
+		case CapabilityRunCommand:
+			capabilities.RunCommand = true
 		case CapabilityStartJob:
 			capabilities.StartJob = true
 		case CapabilityWatchJob:
@@ -122,6 +127,7 @@ func IntersectCapabilities(allowed, declared Capabilities) Capabilities {
 		WriteFile:     allowed.WriteFile && declared.WriteFile,
 		ListDirectory: allowed.ListDirectory && declared.ListDirectory,
 		Search:        allowed.Search && declared.Search,
+		RunCommand:    allowed.RunCommand && declared.RunCommand,
 		StartJob:      allowed.StartJob && declared.StartJob,
 		WatchJob:      allowed.WatchJob && declared.WatchJob,
 		InterruptJob:  allowed.InterruptJob && declared.InterruptJob,
@@ -143,6 +149,8 @@ func SupportsOperation(capabilities Capabilities, operation string) bool {
 		return capabilities.ListDirectory
 	case OperationSearch:
 		return capabilities.Search
+	case OperationRunCommand:
+		return capabilities.RunCommand
 	case OperationStartJob:
 		return capabilities.StartJob
 	case OperationWatchJob:
@@ -234,4 +242,52 @@ type SearchMatch struct {
 type SearchResult struct {
 	Matches   []SearchMatch `json:"matches"`
 	Truncated bool          `json:"truncated,omitempty"`
+}
+
+const (
+	// DefaultCommandTimeout bounds one run_command call when the caller does
+	// not ask for a different timeout.
+	DefaultCommandTimeout = 120 * time.Second
+	// MaxCommandTimeout is the hard ceiling shared by the Server tool endpoint
+	// and the local connector. run_command is synchronous; durable jobs are a
+	// separate protocol (workspace.start_job).
+	MaxCommandTimeout = 10 * time.Minute
+)
+
+// RunCommandRequest runs one shell command with the workspace root (or a
+// confined subdirectory) as its working directory. Cwd confinement is not an
+// OS sandbox: the command runs with the local user's own authority.
+type RunCommandRequest struct {
+	Command   string `json:"command"`
+	Cwd       string `json:"cwd,omitempty"`
+	TimeoutMS int    `json:"timeoutMs,omitempty"`
+}
+
+// RunCommandResult carries base64 streams so arbitrary command output survives
+// the JSON envelope. ExitCode is -1 when the process did not exit on its own.
+type RunCommandResult struct {
+	Cwd        string `json:"cwd"`
+	Stdout     string `json:"stdout"`
+	Stderr     string `json:"stderr"`
+	Encoding   string `json:"encoding"`
+	ExitCode   int    `json:"exitCode"`
+	Truncated  bool   `json:"truncated,omitempty"`
+	TimedOut   bool   `json:"timedOut,omitempty"`
+	DurationMS int64  `json:"durationMs"`
+}
+
+// CommandTimeout converts a caller-supplied millisecond budget into a bounded
+// duration. Zero or negative selects the default.
+func CommandTimeout(timeoutMS int) time.Duration {
+	timeout := DefaultCommandTimeout
+	if timeoutMS > 0 {
+		timeout = time.Duration(timeoutMS) * time.Millisecond
+	}
+	if timeout < time.Second {
+		timeout = time.Second
+	}
+	if timeout > MaxCommandTimeout {
+		timeout = MaxCommandTimeout
+	}
+	return timeout
 }

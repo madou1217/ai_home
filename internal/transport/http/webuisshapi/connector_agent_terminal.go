@@ -28,13 +28,18 @@ type ConnectorWorkspaceReader interface {
 }
 
 type ConnectorAgentTerminalDependencies struct {
-	Authorizer     Authorizer
-	Workspaces     ConnectorWorkspaceReader
-	Online         func(string) bool
-	IssueToolToken func(context.Context, string, time.Duration) (string, int64, error)
-	AIHomeDir      string
-	SelfBaseURL    string
-	Launcher       TerminalLauncher
+	Authorizer Authorizer
+	Workspaces ConnectorWorkspaceReader
+	Online     func(string) bool
+	// LiveCapabilities reports what the connected session declared. The tool
+	// list and the agent instructions must follow the live session, not the
+	// durable grant: a connector started with --no-command must not advertise
+	// run_command.
+	LiveCapabilities func(string) (remoteconnector.Capabilities, bool)
+	IssueToolToken   func(context.Context, string, time.Duration) (string, int64, error)
+	AIHomeDir        string
+	SelfBaseURL      string
+	Launcher         TerminalLauncher
 	// Preparer supplies the Server gateway environment (base URL and key).
 	// Connector agent terminals intentionally use gateway execution: account
 	// projection requires a session-close hook that the terminal launcher does
@@ -46,14 +51,15 @@ type ConnectorAgentTerminalDependencies struct {
 // an MCP bridge that forwards tool calls to one local Workspace Connector.
 // AGY is rejected explicitly: PTY-only agents have no structured tool channel.
 type ConnectorAgentTerminalHandler struct {
-	authorizer     Authorizer
-	workspaces     ConnectorWorkspaceReader
-	online         func(string) bool
-	issueToolToken func(context.Context, string, time.Duration) (string, int64, error)
-	aiHomeDir      string
-	selfBaseURL    string
-	launcher       TerminalLauncher
-	preparer       chatruntime.NativeLaunchPreparer
+	authorizer       Authorizer
+	workspaces       ConnectorWorkspaceReader
+	online           func(string) bool
+	liveCapabilities func(string) (remoteconnector.Capabilities, bool)
+	issueToolToken   func(context.Context, string, time.Duration) (string, int64, error)
+	aiHomeDir        string
+	selfBaseURL      string
+	launcher         TerminalLauncher
+	preparer         chatruntime.NativeLaunchPreparer
 }
 
 func NewConnectorAgentTerminalHandler(dependencies ConnectorAgentTerminalDependencies) (*ConnectorAgentTerminalHandler, error) {
@@ -61,14 +67,15 @@ func NewConnectorAgentTerminalHandler(dependencies ConnectorAgentTerminalDepende
 		return nil, ErrInvalidDependencies
 	}
 	return &ConnectorAgentTerminalHandler{
-		authorizer:     dependencies.Authorizer,
-		workspaces:     dependencies.Workspaces,
-		online:         dependencies.Online,
-		issueToolToken: dependencies.IssueToolToken,
-		aiHomeDir:      strings.TrimSpace(dependencies.AIHomeDir),
-		selfBaseURL:    strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/"),
-		launcher:       dependencies.Launcher,
-		preparer:       dependencies.Preparer,
+		authorizer:       dependencies.Authorizer,
+		workspaces:       dependencies.Workspaces,
+		online:           dependencies.Online,
+		liveCapabilities: dependencies.LiveCapabilities,
+		issueToolToken:   dependencies.IssueToolToken,
+		aiHomeDir:        strings.TrimSpace(dependencies.AIHomeDir),
+		selfBaseURL:      strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/"),
+		launcher:         dependencies.Launcher,
+		preparer:         dependencies.Preparer,
 	}, nil
 }
 
@@ -163,6 +170,12 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		writeError(response, http.StatusServiceUnavailable, "tool_bridge_unavailable", "Server 回环地址未配置")
 		return
 	}
+	capabilities := workspace.Capabilities
+	if handler.liveCapabilities != nil {
+		if live, ok := handler.liveCapabilities(workspaceID); ok {
+			capabilities = live
+		}
+	}
 	toolToken, expiresAt, err := handler.issueToolToken(request.Context(), workspaceID, connectorToolTokenTTL)
 	if err != nil {
 		writeError(response, http.StatusServiceUnavailable, "tool_token_failed", "无法签发工具令牌")
@@ -175,7 +188,7 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 	}
 	toolsURL := handler.selfBaseURL + remoteconnector.ToolPathFor(workspaceID)
 	providerPath, providerArgs, providerEnv, buildErr := buildConnectorAgentLaunch(
-		handler.aiHomeDir, workspaceID, agent, toolsURL, toolToken, workspaceconnector.ToolDefinitions(),
+		handler.aiHomeDir, workspaceID, agent, toolsURL, toolToken, capabilities,
 	)
 	if buildErr != nil {
 		if errors.Is(buildErr, ErrAGYRemoteUnsupported) {

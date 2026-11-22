@@ -71,6 +71,7 @@ type workspaceOptions struct {
 	code        string
 	jsonOutput  bool
 	noReconnect bool
+	noCommand   bool
 	help        bool
 }
 
@@ -84,6 +85,8 @@ func parseWorkspaceOptions(args []string) (workspaceOptions, []string, error) {
 			options.jsonOutput = true
 		case token == "--no-reconnect":
 			options.noReconnect = true
+		case token == "--no-command":
+			options.noCommand = true
 		case token == "--help" || token == "-h":
 			options.help = true
 		case strings.HasPrefix(token, "--"):
@@ -203,6 +206,7 @@ func runWorkspaceConnect(ctx context.Context, client *connectorapi.Client, profi
 	config := connectorclient.Config{
 		Endpoint: endpoint, Root: absoluteRoot, Label: label,
 		Token: token, WorkspaceID: workspaceID, ConnectorID: connectorID,
+		DisableCommand: options.noCommand,
 		OnSession: func(session connectorclient.Session) error {
 			return sessions.Save(workspaceSession{
 				ServerProfileID: profileID, Endpoint: endpoint, Root: absoluteRoot,
@@ -328,8 +332,12 @@ func runWorkspaceEnroll(ctx context.Context, client *connectorapi.Client, option
 }
 
 func printWorkspaceConnected(output io.Writer, session connectorclient.Session) {
-	_, _ = fmt.Fprintf(output, "[aih] workspace connected: %s connector=%s root=%s platform=%s\n",
-		session.WorkspaceID, session.ConnectorID, session.Root, session.Platform)
+	command := "off"
+	if remoteconnector.NormalizeCapabilities(session.Capabilities).RunCommand {
+		command = "on"
+	}
+	_, _ = fmt.Fprintf(output, "[aih] workspace connected: %s connector=%s root=%s platform=%s command=%s\n",
+		session.WorkspaceID, session.ConnectorID, session.Root, session.Platform, command)
 }
 
 func workspaceCLIError(err error) error {
@@ -385,11 +393,12 @@ func writeWorkspaceJSON(runtime commandRuntime, payload any) error {
 
 func writeWorkspaceUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
-	_, _ = fmt.Fprintln(output, "  aih workspace connect [--server <profile>] [--root <dir>] [--label <name>] [--code <code>] [--no-reconnect]")
+	_, _ = fmt.Fprintln(output, "  aih workspace connect [--server <profile>] [--root <dir>] [--label <name>] [--code <code>] [--no-reconnect] [--no-command]")
 	_, _ = fmt.Fprintln(output, "  aih workspace ls [--server <profile>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih workspace enroll [--server <profile>] [--label <name>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih workspace revoke <workspaceId> [--server <profile>]")
 	_, _ = fmt.Fprintln(output, "说明:")
 	_, _ = fmt.Fprintln(output, "  connect 只暴露显式选中的本地目录；不启动任何 Provider、模型或 Agent。")
 	_, _ = fmt.Fprintln(output, "  --code 使用一次性 enrollment code；不传时复用本机保存的会话，首次运行自动创建 enrollment。")
+	_, _ = fmt.Fprintln(output, "  --no-command 关闭 run_command：Agent 只能读写文件，不能在本机执行命令。")
 }

@@ -66,6 +66,12 @@ func (fs *filesystem) execute(ctx context.Context, operation string, raw json.Ra
 			return nil, err
 		}
 		return fs.search(ctx, request)
+	case remoteconnector.OperationRunCommand:
+		var request remoteconnector.RunCommandRequest
+		if err := decodePayload(raw, &request); err != nil {
+			return nil, err
+		}
+		return fs.runCommand(ctx, request)
 	default:
 		return nil, remoteconnector.NewProtocolError(remoteconnector.CodeUnsupportedOperation, "operation is not implemented by this connector")
 	}

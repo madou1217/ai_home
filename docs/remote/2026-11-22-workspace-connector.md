@@ -74,8 +74,9 @@ WebSocket 首帧 `hello` 携带 enrollment code 或 session token；之后只在
 | `workspace.write_file` | 原子写入，要求匹配 `expectedVersion` |
 | `workspace.list_directory` | 列出目录，默认 200 条，上限 1000 |
 | `workspace.search` | 文件名子串搜索，限制深度/条数/访问量 |
+| `workspace.run_command` | 在工作区内同步执行一条 shell 命令，返回退出码与输出 |
 
-尚未实现：`start_job` / `watch_job` / `interrupt_job`、审批协议、任意 shell。
+尚未实现：`start_job` / `watch_job` / `interrupt_job` 与审批协议。
 Connector 不声明这些能力，Server 也不会把未声明能力当成可用。
 
 ### 3.1 路径约束
@@ -85,7 +86,21 @@ Connector 不声明这些能力，Server 也不会把未声明能力当成可用
 - 写入要求父目录已存在，不自动创建目录；
 - 文件读写上限 4 MiB；目录/搜索有独立上限。
 
-### 3.2 Token 约束
+### 3.2 命令执行约束
+
+`run_command` 是同步调用，不产生持久 job：
+
+- 默认开启；`aih workspace connect --no-command` 关闭。关闭后 hello 不声明
+  `workspace.run_command`，Server 返回 `capability_not_allowed`，Provider 的工具列表
+  里也不会出现 `run_command`；
+- `cwd` 必须是工作区内的相对路径，按与文件操作相同的沙箱解析；命令本身以本机当前
+  用户权限运行，这是“工作目录约束”，不是 OS 沙箱；
+- 超时默认 120s，上限 10 分钟；超时后 Unix 上 `SIGKILL` 整个进程组，避免子进程残留；
+- stdout / stderr 各自保留前 256 KiB，超出标记 `truncated` 并继续排空，命令不会因
+  管道写满而阻塞；
+- 断线或进程退出时结果丢失；需要重连游标与后台任务时走下一阶段的 `start_job`。
+
+### 3.3 Token 约束
 
 - enrollment code 与 session token 只以 SHA-256 摘要落在 `aih.db` 的
   `remote:workspace-connectors` 键中；

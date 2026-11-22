@@ -130,6 +130,8 @@ Task 5 的 CLI/HTTP/runtime 真实验收已完成，证据见
 ## Provider Adapter 工具通道状态（2026-11-22）
 
 Codex/Claude 的 MCP 工具桥已接到 Workspace Connector，并通过真实 MCP/HTTP 验收；
-AGY 明确返回 agy_remote_workspace_unsupported；run_command、审批和真实模型账号下的
-Agent 工具循环仍未完成。详见 `docs/remote/2026-11-22-provider-adapter-tool-channel.md`。
+AGY 明确返回 agy_remote_workspace_unsupported。`run_command` 已实现（同步执行、工作区
+cwd 约束、超时终止进程组、`--no-command` 可关闭），并通过真实 MCP 调用验收；审批与
+持久 job、以及真实模型账号下的 Agent 工具循环仍未完成。详见
+`docs/remote/2026-11-22-provider-adapter-tool-channel.md`。
 

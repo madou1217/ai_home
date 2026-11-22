@@ -115,6 +115,11 @@ func (m *Manager) fillStrategyAvailability(ctx context.Context, status *Strategy
 			status.Reason = "出口池启动中"
 			return
 		}
+		if labels := m.pluginEngineLabels(); len(labels) > 0 {
+			status.Status = "degraded"
+			status.Reason = "已找到引擎插件：" + strings.Join(labels, "、") + "；池尚未启动"
+			return
+		}
 		if labels := poolKernelLabels(m.aiHomeDir, m.platform); len(labels) > 0 {
 			status.Status = "degraded"
 			status.Reason = "已找到代理内核：" + strings.Join(labels, "、") + "；池尚未启动"
@@ -186,6 +191,22 @@ func strategyErrorReason(err error) string {
 		return egressErr.Code
 	}
 	return err.Error()
+}
+
+func (m *Manager) pluginEngineLabels() []string {
+	if m == nil {
+		return nil
+	}
+	labels := make([]string, 0, len(m.enginePlugins))
+	for _, engine := range m.enginePlugins {
+		descriptor := engine.Descriptor()
+		label := firstNonEmpty(descriptor.Label, descriptor.ID)
+		if descriptor.Version != "" {
+			label += " " + descriptor.Version
+		}
+		labels = append(labels, label)
+	}
+	return labels
 }
 
 func poolKernelLabels(aiHomeDir, platform string) []string {

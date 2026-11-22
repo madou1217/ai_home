@@ -121,8 +121,8 @@ Task 1–4 已实现、构建并通过真实 CLI/HTTP/WebUI 构建检查：
   `aih workspace connect|ls|enroll|revoke`、WebUI 本地工作区面板。
 
 Task 5 的 CLI/HTTP/runtime 真实验收已完成，证据见
-`docs/remote/2026-11-22-workspace-connector.md`。未在本轮执行的部分：
+`docs/remote/2026-11-22-workspace-connector.md`。WebUI 面板已在真实 Chromium 中检查
+（Work 模式、在线状态、目录浏览、生成 code；无 console error）。尚未完成：
 
-- WebUI 目标/Connector 面板的真实浏览器视觉检查（仅完成 `npm run build`）；
 - AWS 服务器 + AGY + `gemini-4-neon-xhigh` 的真实 Agent 工具循环（属于 Provider
   Adapter 阶段；当前 preflight 明确保持 `remote_tools_unsupported`）。

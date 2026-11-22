@@ -42,7 +42,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
-	"github.com/madou1217/ai_home/internal/adapters/deletionhost"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
@@ -698,217 +697,68 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	upstream429Controller := credentialRuntime.upstream429Controller
 	credentials := credentialRuntime.credentials
 	ownsCredentialRefresh := credentialRuntime.ownsCredentialRefresh
-	// 模型发现与额度/推理共用同一个 credential resolver：探测前先按到期窗口刷新
-	// OAuth 并 CAS 落库。模型路径原先只接了 kiro 专用刷新器，agy 的 1h access token
-	// 过期后仍会拿旧值打 loadCodeAssist，上游固定 401。
-	modelCredentialRefresher := credentialSnapshots{
-		resolver: credentials,
-		store:    store,
-	}
-	modelManagement, err := accountapp.NewModelManagement(
-		store,
-		store,
-		modelDiscovery,
-		modelCredentialRefresher,
-		// 探测事实与目录快照落在同一 aih.db，WebUI 批量读一次 JOIN 取齐。
-		store,
-		time.Now,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号模型管理用例失败: %w", err)
-	}
-	// 网关账号（自定义 base_url）的模型列表动态并入本地可路由目录，新模型不必
-	// 等代理升级或 6 小时重扫才出现在目录里。
-	modelManagement.SetRoutableModelSource(store)
-	recoveringReauthenticator, err :=
-		accountrecovery.NewReauthenticator(
-			reauthenticator,
-			accountRuntime,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建账号重新认证恢复边界失败: %w",
-			err,
-		)
-	}
-	recoveringModelManagement, err :=
-		accountrecovery.NewModelManagement(
-			modelManagement,
-			accountRuntime,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建账号模型恢复边界失败: %w",
-			err,
-		)
-	}
-	modelRefresh, err = accountapp.NewModelRefreshCoordinator(
-		accountapp.ModelRefreshCoordinatorOptions{
-			Catalog:             catalog,
-			Refresher:           recoveringModelManagement,
-			ProviderConcurrency: modelRefreshProviderConcurrency(modelDiscovery.ProviderIDs()),
-			PluginProviders:     modelDiscovery.PluginProviderIDs,
-			RefreshTimeout:      modelRefreshTimeout,
-			BaseBackoff:         modelRefreshBaseBackoff,
-			MaxBackoff:          modelRefreshMaxBackoff,
-			MaxAttempts:         modelRefreshMaxAttempts,
-			Clock:               time.Now,
-			Random:              rand.Reader,
-			Observer:            newModelRefreshObserver(errorLog),
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号模型异步刷新协调器失败: %w", err)
-	}
-	// 启用即刷新复用同一个协调器：账号从停用切到启用时投递一次，合并与重试
-	// 仍由 Provider 队列负责；投递失败只记录，不回滚启停。
-	management, err := accountapp.NewManagement(
-		store,
-		store,
-		store,
-		store,
-		store,
-		time.Now,
-		accountapp.ManagementOptions{
-			ModelRefresh: modelRefresh,
-			ModelRefreshObserver: func(
-				accountRef accountcore.AccountRef,
-				providerID string,
-				err error,
-			) {
-				errorLog.Printf(
-					"账号启用后投递模型刷新失败 account=%s provider=%s: %v",
-					accountRef,
-					providerID,
-					err,
-				)
-			},
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号管理用例失败: %w", err)
-	}
-	usage, err = newUsageComposition(
+	modelUsage, err := newModelUsageRuntime(
 		ctx,
-		usageCompositionDependencies{
-			catalog:        catalog,
-			store:          store,
-			credentials:    credentials,
-			models:         store,
-			runtime:        accountRuntime,
-			httpClient:     newEgressContextClient(usageClient, egressClients),
-			egress:         managerAccountEgress{clients: egressClients},
-			clock:          time.Now,
-			codexVersions:  codexVersions,
-			claudeVersions: claudeVersions,
-			aiHomeDir:      aiHomeDir,
-		},
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号额度组合失败: %w", err)
-	}
-	// 额度耗尽类失败要立即刷新额度（快照才是额度真相），运行态装饰器在这里接上刷新入口。
-	if binder, ok := accountRuntime.(interface {
-		bindUsageRefresh(usageRefreshScheduler)
-	}); ok {
-		binder.bindUsageRefresh(usage.ScheduleUsageRefresh)
-	}
-	credentialRotator, err := accountapp.NewStaticCredentialRotator(
+		aiHomeDir,
 		catalog,
 		store,
-		time.Now,
+		modelDiscovery,
+		credentials,
 		accountRuntime,
+		errorLog,
+		usageClient,
+		egressClients,
+		codexVersions,
+		claudeVersions,
+		reauthenticator,
 	)
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建静态账号凭据轮换用例失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
-	usageRefreshingCredentialRotator, err :=
-		usageapp.NewStaticCredentialRotationDecorator(
-			credentialRotator,
-			usage,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建凭据轮换额度刷新边界失败: %w", err)
-	}
-	modelRefreshingCredentialRotator, err :=
-		accountapp.NewStaticCredentialRotationModelRefreshDecorator(
-			usageRefreshingCredentialRotator,
-			modelRefresh,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建凭据轮换模型刷新边界失败: %w", err)
-	}
+	recoveringReauthenticator := modelUsage.recoveringReauthenticator
+	recoveringModelManagement := modelUsage.recoveringModelManagement
+	modelRefresh = modelUsage.modelRefresh
+	management := modelUsage.management
+	usage = modelUsage.usage
+	credentialRotator := modelUsage.credentialRotator
+	modelRefreshingCredentialRotator := modelUsage.modelRefreshingCredentialRotator
 	// 宿主投影（直连授权回收 + AIH Server 落点）由 Go 自己承接。宿主配置文件
 	// 同步仍是 Node 的投影，通过 GatewaySync 端口注入；端口缺省时按 Node 同款
 	// 原因码如实上报，绝不先写档位再等宿主。
-	deletionHost, err := deletionhost.New(deletionhost.Options{
-		AIHomeDir:   aiHomeDir,
-		HostHomeDir: dependencies.HostHomeDir,
-		Catalog:     catalog,
-		Credentials: store,
-		// Codex host credentials/default pointers now share the transactional host
-		// service. Other providers remain explicitly unavailable in this adapter.
-		CodexDefaults: codexDefaultProjection{aiHome: aiHomeDir, hostHome: dependencies.HostHomeDir},
+	deletionLifecycle, err := newAccountDeletionLifecycle(accountDeletionInputs{
+		aiHomeDir:          aiHomeDir,
+		hostHomeDir:        dependencies.HostHomeDir,
+		catalog:            catalog,
+		store:              store,
+		nodeBaseURL:        nodeBaseURL,
+		managementKey:      managementKey,
+		occupancy:          deletionOccupancy,
+		preparation:        deletionPreparation,
+		chatRuntimeService: func() *chatruntime.Service { return chatRuntimeService },
+		upstream429Store:   upstream429Store,
+		modelRefresh:       modelRefresh,
+		usage:              usage,
+		accountRuntime:     accountRuntime,
+		credentials:        credentials,
 	})
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号删除宿主投影失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
-	deletionRuntime, err := newAccountDeletionRuntime(aiHomeDir, catalog, nodeBaseURL, managementKey, deletionOccupancy, deletionPreparation, func() *chatruntime.Service { return chatRuntimeService }, upstream429Store)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号删除运行保护失败: %w", err)
-	}
-	deleter, err := accountapp.NewDeleter(
-		store,
-		deletionRuntime,
-		deletionRuntime,
-		modelRefresh,
-		usage,
-		accountRuntime,
-		credentials,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
-	}
-	deleter.WithHostProjection(deletionHost, deletionHost)
-	deletionRuntime.Bind(deleter)
-	modelRefreshingRegistrar, err := accountapp.NewRegistrationModelRefreshDecorator(
+	deletionHost := deletionLifecycle.host
+	deletionRuntime := deletionLifecycle.guard
+	accountLifecycle, err := newAccountRegistrationRuntime(
 		registrar,
 		modelRefresh,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建注册模型刷新边界失败: %w", err)
-	}
-	scheduledRegistrar, err := usageapp.NewRegistrationDecorator(
-		modelRefreshingRegistrar,
 		usage,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建注册额度刷新边界失败: %w", err)
-	}
-	modelRefreshingReauthenticator, err :=
-		accountapp.NewReauthenticationModelRefreshDecorator(
-			recoveringReauthenticator,
-			modelRefresh,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建重登模型刷新边界失败: %w", err)
-	}
-	scheduledReauthenticator, err :=
-		usageapp.NewReauthenticationDecorator(
-			modelRefreshingReauthenticator,
-			usage,
-		)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建重登额度刷新边界失败: %w", err)
-	}
-	accountImporter, err := accountapp.NewAccountImporter(
-		scheduledRegistrar,
+		recoveringReauthenticator,
 		store,
-		scheduledReauthenticator,
 	)
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号导入用例失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
+	scheduledRegistrar := accountLifecycle.registrar
+	scheduledReauthenticator := accountLifecycle.reauthenticator
+	accountImporter := accountLifecycle.importer
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
@@ -1524,42 +1374,26 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			err,
 		)
 	}
-	relayAccounts, err := newRelayAccountSource(
-		catalog,
-		inference.recruiter,
-		claudeGatewayPolicy,
-	)
+	nativeRelayHandler, err := newClaudeNativeRelay(claudeNativeRelayInputs{
+		catalog:          catalog,
+		recruiter:        inference.recruiter,
+		claudePolicy:     claudeGatewayPolicy,
+		authorizer:       relayAuthorizer,
+		credentials:      credentials,
+		client:           relayClient,
+		egress:           relayEgress,
+		attempts:         accountRuntime,
+		modelRefreshes:   inference.modelRefreshes,
+		upstream429:      upstream429Controller,
+		rules:            upstreamRuleEvaluator,
+		errorLog:         errorLog,
+		fallback:         inference.handler,
+		messagesUpstream: messagesUpstream,
+		clientVersions:   claudeVersions,
+	})
 	if err != nil {
 		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建 Claude Relay 账号来源失败: %w",
-			err,
-		)
-	}
-	nativeRelayHandler, err := claudenativerelay.NewHandler(
-		claudenativerelay.Dependencies{
-			Authorizer:         relayAuthorizer,
-			Accounts:           relayAccounts,
-			Fallback:           inference.handler,
-			Credentials:        credentials,
-			Client:             relayClient,
-			AccountEgress:      relayEgress,
-			Attempts:           accountRuntime,
-			ModelRefreshes:     inference.modelRefreshes,
-			Upstream429Retries: upstream429Controller,
-			Clock:              time.Now,
-			Rules:              upstreamRuleEvaluator,
-			StreamDisconnects:  newRelayDisconnectObserver(errorLog),
-			Upstream:           messagesUpstream,
-			ClientVersions:     claudeVersions,
-		},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建 Claude Native Relay Handler 失败: %w",
-			err,
-		)
+		return serverHandlers{}, nil, err
 	}
 	// 家族透传通道（CodeBuddy / WorkBuddy 四支）与 Native Relay 共用凭据解析、上游客户端
 	// 与运行态记账；能承载的家族请求直连家族官方端点，其余交回 Canonical（见包注释）。

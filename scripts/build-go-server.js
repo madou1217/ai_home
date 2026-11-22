@@ -20,7 +20,7 @@ const {
 const REPOSITORY_ROOT = path.resolve(__dirname, '..');
 
 // egress.engine 进程插件与 aih-server 同目录分发；主体只按 ID 发现，不编译内核。
-const ENGINE_PLUGIN_NAMES = Object.freeze(['aih-engine-mihomo', 'aih-engine-singbox']);
+const PLUGIN_NAMES = Object.freeze(['aih-engine-mihomo', 'aih-engine-singbox', 'aih-render-subscriptions']);
 
 // Node 的 process.platform/arch 与 GOOS/GOARCH 命名不同，只映射受支持组合。
 const GOOS_BY_PLATFORM = Object.freeze({ darwin: 'darwin', linux: 'linux', win32: 'windows' });
@@ -51,8 +51,8 @@ function buildGoServerPlan(options = {}) {
     // 生产主体不带内置内核编译器：只发现同目录/aiHome 下的进程插件。
     // -s -w 去掉符号表与 DWARF：分发包小 ~19MiB（压缩后），panic 栈和 pprof
     // 仍可用（pclntab 保留）。发布流水线同样走这里，勿在别处另起一套 flag。
-    args: [...baseArgs, '-tags', 'no_builtin_engines', '-o', temporaryOutput, './cmd/aih-server'],
-    plugins: ENGINE_PLUGIN_NAMES.map((name) => ({
+    args: [...baseArgs, '-tags', 'no_builtin_engines,no_builtin_renderers', '-o', temporaryOutput, './cmd/aih-server'],
+    plugins: PLUGIN_NAMES.map((name) => ({
       name,
       output: path.join(outputDir, name + suffix),
       temporaryOutput: path.join(outputDir, `${name}.build-${process.pid}${suffix}`),

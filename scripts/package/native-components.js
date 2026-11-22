@@ -11,7 +11,7 @@ const { verifyBuildStamp, readPackageVersion, computeRouteManifestHash } = requi
 function copyNativeComponents(repositoryRoot, bundleRoot, target) {
   const key = targetKey(target);
   const suffix = isWindows(target) ? '.exe' : '';
-  const engineNames = ['aih-engine-mihomo', 'aih-engine-singbox'];
+  const engineNames = ['aih-engine-mihomo', 'aih-engine-singbox', 'aih-render-subscriptions'];
   const names = ['aih-server', 'aih-go', ...engineNames].map((name) => name + suffix);
   const sourceDir = path.join(repositoryRoot, 'bin', 'native', key);
   const files = names.map((name) => {

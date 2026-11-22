@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	native "github.com/madou1217/ai_home/native/account-browser"
@@ -77,4 +78,8 @@ func preflight(ctx context.Context, binary string) error {
 		return errPermission
 	}
 	return nil
+}
+
+func nativeArgs(pid int, started uint64) []string {
+	return []string{strconv.Itoa(pid), strconv.FormatUint(started, 10)}
 }

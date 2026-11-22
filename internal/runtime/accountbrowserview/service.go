@@ -141,5 +141,5 @@ func (s *Service) serve(ctx context.Context, t Transport, dataDir string, proxyU
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return serveNative(ctx, binary, status.PID, commands, t)
+	return serveNative(ctx, binary, status.PID, status.Started, commands, t)
 }

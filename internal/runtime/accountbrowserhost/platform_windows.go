@@ -22,9 +22,38 @@ type processIdentity struct {
 	started uint64
 }
 
-func platformSupported() bool { return true }
+func platformSupported() bool                            { return true }
+func processStartMarker(identity processIdentity) uint64 { return identity.started }
+
+// A Windows launch remains suspended until the root is assigned to its Job
+// Object and resume is attempted. Before that boundary the root Process handle
+// is the complete owned family; no renderer or GPU child can have been created.
+func (p *hostProcess) canReleaseWithoutFamily() bool {
+	return p != nil && !p.resumeAttempted && p.family == nil
+}
+
+func (p *hostProcess) recoverFamily() error {
+	if p == nil || p.family != nil || p.resumeAttempted || p.cmd == nil || p.cmd.Process == nil {
+		return ErrRecoveryRequired
+	}
+	identity, err := identifyProcess(p.cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+	family := trackFamily(identity)
+	if err := family.attach(p.cmd); err != nil {
+		family.close()
+		return err
+	}
+	p.identity = identity
+	p.family = family
+	return nil
+}
 func prepareCommand(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	// Keep the Edge primary thread suspended until it is inside our Job Object.
+	// This closes the window in which Edge could create renderer/GPU children
+	// before the supervisor obtains containment ownership.
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_SUSPENDED}
 }
 
 func discover(ctx context.Context) (installation, error) {
@@ -106,7 +135,13 @@ func (p processIdentity) empty() (bool, error) {
 		}
 		return false, err
 	}
-	return current != p, nil
+	if current != p {
+		// The PID is alive but no longer denotes the process we launched. Treat
+		// this as an uncertain lifecycle, never as an empty process family: a
+		// reused PID must not release the profile lock or active marker.
+		return false, ErrRecoveryRequired
+	}
+	return false, nil
 }
 
 func lockFile(file *os.File) error {
@@ -118,11 +153,131 @@ func unlockFile(file *os.File) error {
 	return windows.UnlockFileEx(windows.Handle(file.Fd()), 0, 1, 0, new(windows.Overlapped))
 }
 
-type processFamily struct{ root processIdentity }
+type jobBasicAccountingInformation struct {
+	TotalUserTime             int64
+	TotalKernelTime           int64
+	ThisPeriodTotalUserTime   int64
+	ThisPeriodTotalKernelTime int64
+	TotalPageFaultCount       uint32
+	TotalProcesses            uint32
+	ActiveProcesses           uint32
+	TotalTerminatedProcesses  uint32
+}
+
+type processFamily struct {
+	root processIdentity
+	job  windows.Handle
+}
 
 func trackFamily(root processIdentity) *processFamily { return &processFamily{root: root} }
-func (f *processFamily) empty() (bool, error)         { return f.root.empty() }
-func (*processFamily) close()                         {}
+
+func (f *processFamily) attach(cmd *exec.Cmd) error {
+	if f == nil || cmd == nil || cmd.Process == nil {
+		return ErrRecoveryRequired
+	}
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return err
+	}
+	limits := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
+		_ = windows.CloseHandle(job)
+		return err
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		_ = windows.CloseHandle(job)
+		return err
+	}
+	defer windows.CloseHandle(process)
+	if err := windows.AssignProcessToJobObject(job, process); err != nil {
+		_ = windows.CloseHandle(job)
+		return err
+	}
+	f.job = job
+	return nil
+}
+
+func (f *processFamily) resume(cmd *exec.Cmd) error {
+	if f == nil || f.job == 0 || cmd == nil || cmd.Process == nil {
+		return ErrRecoveryRequired
+	}
+	return resumeSuspendedProcess(cmd.Process.Pid)
+}
+
+func resumeSuspendedProcess(pid int) error {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(snapshot)
+
+	var entry windows.ThreadEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Thread32First(snapshot, &entry); err != nil {
+		return err
+	}
+	var lastErr error
+	for {
+		if entry.OwnerProcessID == uint32(pid) {
+			thread, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, entry.ThreadID)
+			if err != nil {
+				lastErr = err
+			} else {
+				_, resumeErr := windows.ResumeThread(thread)
+				_ = windows.CloseHandle(thread)
+				if resumeErr == nil {
+					return nil
+				}
+				lastErr = resumeErr
+			}
+		}
+		err := windows.Thread32Next(snapshot, &entry)
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+			if lastErr != nil {
+				return lastErr
+			}
+			return ErrRecoveryRequired
+		}
+		return err
+	}
+}
+
+func (f *processFamily) terminate() error {
+	if f == nil || f.job == 0 {
+		return ErrRecoveryRequired
+	}
+	if err := windows.TerminateJobObject(f.job, 1); err != nil {
+		return ErrRecoveryRequired
+	}
+	return nil
+}
+
+func (f *processFamily) empty() (bool, error) {
+	if f == nil {
+		return false, ErrRecoveryRequired
+	}
+	if f.job == 0 {
+		return f.root.empty()
+	}
+	var info jobBasicAccountingInformation
+	var returned uint32
+	if err := windows.QueryInformationJobObject(f.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)), &returned); err != nil {
+		return false, ErrRecoveryRequired
+	}
+	return info.ActiveProcesses == 0, nil
+}
+
+func (f *processFamily) close() {
+	if f != nil && f.job != 0 {
+		_ = windows.CloseHandle(f.job)
+		f.job = 0
+	}
+}
 
 func verifyStableEdgeSignature(path string) error {
 	filePath, err := windows.UTF16PtrFromString(path)

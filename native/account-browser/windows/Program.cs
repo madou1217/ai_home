@@ -25,12 +25,13 @@ internal static class Program
             Emit(new { type = "preflight", screenCapture = true, eventPosting = true });
             return 0;
         }
-        if (args.Length != 1 || !int.TryParse(args[0], out var pid) || pid <= 1)
+        if (args.Length != 2 || !int.TryParse(args[0], out var pid) || pid <= 1
+            || !ulong.TryParse(args[1], out var started) || started == 0)
         {
             Emit(new { type = "error", error = "browser_identity_unavailable" });
             return 2;
         }
-        if (!IsStableEdgeProcess(pid))
+        if (!IsStableEdgeProcess(pid, started))
         {
             Emit(new { type = "error", error = "browser_identity_unavailable" });
             return 4;
@@ -43,7 +44,7 @@ internal static class Program
         }
 
         using var stop = new CancellationTokenSource();
-        var capture = new CaptureLoop(hwnd, stop.Token);
+        var capture = new CaptureLoop(hwnd, pid, started, stop.Token);
         var captureTask = Task.Run(() => capture.RunAsync());
         Emit(new { type = "ready", width = capture.Width, height = capture.Height });
 
@@ -80,19 +81,35 @@ internal static class Program
         }
     }
 
-    private static bool IsStableEdgeProcess(int pid)
+    private static bool IsStableEdgeProcess(int pid, ulong expectedStarted)
     {
         try
         {
             using var process = Process.GetProcessById(pid);
             var image = process.MainModule?.FileName?.Replace('/', '\\');
             return !string.IsNullOrWhiteSpace(image)
-                && image.EndsWith("\\Microsoft\\Edge\\Application\\msedge.exe", StringComparison.OrdinalIgnoreCase);
+                && image.EndsWith("\\Microsoft\\Edge\\Application\\msedge.exe", StringComparison.OrdinalIgnoreCase)
+                && TryReadProcessStartMarker(pid, out var actualStarted)
+                && actualStarted == expectedStarted;
         }
         catch
         {
             return false;
         }
+    }
+
+    private static bool TryReadProcessStartMarker(int pid, out ulong marker)
+    {
+        marker = 0;
+        var handle = Native.OpenProcess(Native.PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)pid);
+        if (handle == IntPtr.Zero) return false;
+        try
+        {
+            if (!Native.GetProcessTimes(handle, out var creation, out _, out _, out _)) return false;
+            marker = ((ulong)creation.HighDateTime << 32) | creation.LowDateTime;
+            return marker != 0;
+        }
+        finally { Native.CloseHandle(handle); }
     }
 
     private static IntPtr FindWindow(int pid, TimeSpan timeout)
@@ -121,6 +138,8 @@ internal static class Program
     private sealed class CaptureLoop
     {
         private readonly IntPtr hwnd;
+        private readonly int pid;
+        private readonly ulong started;
         private readonly CancellationToken token;
         private long frame;
         private Task? task;
@@ -130,10 +149,19 @@ internal static class Program
         public int Width { get; private set; } = 1200;
         public int Height { get; private set; } = 900;
 
-        public CaptureLoop(IntPtr hwnd, CancellationToken token)
+        public CaptureLoop(IntPtr hwnd, int pid, ulong started, CancellationToken token)
         {
             this.hwnd = hwnd;
+            this.pid = pid;
+            this.started = started;
             this.token = token;
+        }
+
+        private bool IsLive()
+        {
+            if (!IsStableEdgeProcess(pid, started) || !Native.IsWindow(hwnd)) return false;
+            Native.GetWindowThreadProcessId(hwnd, out var owner);
+            return owner == (uint)pid;
         }
 
         public Task RunAsync()
@@ -144,7 +172,7 @@ internal static class Program
                 {
                     try
                     {
-                        if (!Native.IsWindow(hwnd) || !Native.GetWindowRect(hwnd, out var rect))
+                        if (!IsLive() || !Native.GetWindowRect(hwnd, out var rect))
                         {
                             Emit(new { type = "error", error = BrowserError });
                             return;
@@ -200,7 +228,7 @@ internal static class Program
 
         public bool Apply(Command command)
         {
-            if (stopped || !Native.IsWindow(hwnd)) return false;
+            if (stopped || !IsLive()) return false;
             try
             {
                 if (!Native.SetForegroundWindow(hwnd) || Native.GetForegroundWindow() != hwnd)
@@ -228,7 +256,9 @@ internal static class Program
                             lastPointerY = scrollRect.Top + scrollRect.Height / 2;
                         }
                         Native.SetCursorPos(lastPointerX, lastPointerY);
-                        Native.Scroll(hwnd, (int)Math.Clamp(command.DeltaY, -2000, 2000));
+                        Native.Scroll(hwnd,
+                            (int)Math.Clamp(command.DeltaX, -2000, 2000),
+                            (int)Math.Clamp(command.DeltaY, -2000, 2000));
                         return true;
                     default:
                         return false;
@@ -291,6 +321,7 @@ internal static class Program
         public string? Key { get; set; }
         public double X { get; set; }
         public double Y { get; set; }
+        public double DeltaX { get; set; }
         public double DeltaY { get; set; }
         public int Button { get; set; }
     }
@@ -301,16 +332,21 @@ internal static class Program
         public const int VK_ESCAPE = 0x1B, VK_LEFT = 0x25, VK_RIGHT = 0x27, VK_UP = 0x26, VK_DOWN = 0x28;
         public const int VK_HOME = 0x24, VK_END = 0x23, VK_PRIOR = 0x21, VK_NEXT = 0x22, VK_F5 = 0x74;
         public const uint MOD_ALT = 0x0001, MOD_CONTROL = 0x0002;
+        public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
+        [StructLayout(LayoutKind.Sequential)] public struct FILETIME { public uint LowDateTime; public uint HighDateTime; }
         [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; public int Width => Right - Left; public int Height => Bottom - Top; }
         [StructLayout(LayoutKind.Sequential)] private struct INPUT { public uint Type; public InputUnion Data; }
         [StructLayout(LayoutKind.Explicit)] private struct InputUnion { [FieldOffset(0)] public KEYBDINPUT Keyboard; [FieldOffset(0)] public MOUSEINPUT Mouse; }
         [StructLayout(LayoutKind.Sequential)] private struct KEYBDINPUT { public ushort Vk, Scan; public uint Flags, Time; public IntPtr ExtraInfo; }
         [StructLayout(LayoutKind.Sequential)] private struct MOUSEINPUT { public int Dx, Dy; public uint MouseData, Flags, Time; public IntPtr ExtraInfo; }
         private const uint INPUT_KEYBOARD = 1, INPUT_MOUSE = 0, KEYEVENTF_KEYUP = 0x0002, KEYEVENTF_UNICODE = 0x0004;
-        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004, MOUSEEVENTF_RIGHTDOWN = 0x0008, MOUSEEVENTF_RIGHTUP = 0x0010, MOUSEEVENTF_WHEEL = 0x0800;
+        private const uint MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004, MOUSEEVENTF_RIGHTDOWN = 0x0008, MOUSEEVENTF_RIGHTUP = 0x0010, MOUSEEVENTF_WHEEL = 0x0800, MOUSEEVENTF_HWHEEL = 0x01000;
 
         public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint access, bool inheritHandle, uint pid);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetProcessTimes(IntPtr process, out FILETIME creation, out FILETIME exit, out FILETIME kernel, out FILETIME user);
+        [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CloseHandle(IntPtr handle);
         [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr extra);
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
@@ -341,7 +377,16 @@ internal static class Program
         }
         private static void SendKeys(INPUT[] inputs) { if (inputs.Length > 0 && SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length) throw new InvalidOperationException("SendInput failed"); }
         public static void Click(int x, int y, bool right) { SetCursorPos(x, y); var down = right ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_LEFTDOWN; var up = right ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_LEFTUP; SendMouse(down); SendMouse(up); }
-        public static void Scroll(IntPtr _, int delta) { var input = new INPUT { Type = INPUT_MOUSE, Data = new InputUnion { Mouse = new MOUSEINPUT { MouseData = (uint)delta, Flags = MOUSEEVENTF_WHEEL } } }; if (SendInput(1, new[] { input }, Marshal.SizeOf<INPUT>()) != 1) throw new InvalidOperationException("SendInput failed"); }
+        public static void Scroll(IntPtr _, int deltaX, int deltaY)
+        {
+            if (deltaY != 0) SendMouseWheel(MOUSEEVENTF_WHEEL, deltaY);
+            if (deltaX != 0) SendMouseWheel(MOUSEEVENTF_HWHEEL, deltaX);
+        }
+        private static void SendMouseWheel(uint flags, int delta)
+        {
+            var input = new INPUT { Type = INPUT_MOUSE, Data = new InputUnion { Mouse = new MOUSEINPUT { MouseData = unchecked((uint)delta), Flags = flags } } };
+            if (SendInput(1, new[] { input }, Marshal.SizeOf<INPUT>()) != 1) throw new InvalidOperationException("SendInput failed");
+        }
         private static void SendMouse(uint flags) { var input = new INPUT { Type = INPUT_MOUSE, Data = new InputUnion { Mouse = new MOUSEINPUT { Flags = flags } } }; if (SendInput(1, new[] { input }, Marshal.SizeOf<INPUT>()) != 1) throw new InvalidOperationException("SendInput failed"); }
     }
 }

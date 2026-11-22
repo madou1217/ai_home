@@ -37,6 +37,7 @@ type Status struct {
 	State   string          `json:"state"`
 	PID     int             `json:"pid,omitempty"`
 	Browser BrowserIdentity `json:"browser"`
+	Started uint64          `json:"-"`
 }
 
 type installation struct {

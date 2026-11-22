@@ -29,6 +29,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
+	"github.com/madou1217/ai_home/internal/remoteexecution"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
@@ -44,6 +45,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	runtimeupstreamretry "github.com/madou1217/ai_home/internal/runtime/upstreamretry"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
+	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 	"github.com/madou1217/ai_home/internal/transport/http/proxyleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccount429retryapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountactivityapi"
@@ -111,6 +113,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkittargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolsettingsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiusageconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiworkspaceconnectorapi"
 	"github.com/madou1217/ai_home/internal/webuifile"
 )
 
@@ -345,6 +348,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建 SSH 反向隧道接口失败: %w", err)
 	}
 
+	workspaceDatabase, err := appstate.DatabasePath(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("解析工作区 Connector 数据库失败: %w", err)
+	}
+	workspaceStore, err := workspaceconnector.NewStore(workspaceDatabase)
+	if err != nil {
+		return nil, fmt.Errorf("创建工作区 Connector 存储失败: %w", err)
+	}
+	workspaceHub := workspaceconnector.NewHub()
+
 	remoteTargetSource := webuiremotetargetsapi.FactsSource{
 		ServerID: func(ctx context.Context) (string, error) {
 			return webuiaccountbrowserapi.ReadServerID(ctx, dependencies.AIHomeDir)
@@ -354,6 +367,28 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Catalog:        dependencies.Catalog,
 		AccountModels:  dependencies.Store,
 		AccountDetails: dependencies.Store,
+		ConnectorWorkspaces: func(ctx context.Context) ([]remoteexecution.WorkspaceFact, error) {
+			workspaces, listErr := workspaceStore.List(ctx)
+			if listErr != nil {
+				return nil, listErr
+			}
+			facts := make([]remoteexecution.WorkspaceFact, 0, len(workspaces))
+			for _, workspace := range workspaces {
+				state := "offline"
+				switch {
+				case workspace.Revoked():
+					state = "revoked"
+				case workspaceHub.Online(workspace.ID):
+					state = "online"
+				}
+				facts = append(facts, remoteexecution.WorkspaceFact{
+					ID: workspace.ID, Transport: remoteexecution.TransportConnector,
+					ConnectorID: workspace.ConnectorID, State: state,
+					Label: workspace.Label, RootLabel: workspace.RootLabel,
+				})
+			}
+			return facts, nil
+		},
 	}
 	remoteTargets, err := webuiremotetargetsapi.NewHandler(webuiremotetargetsapi.Dependencies{
 		Authorizer: authorizer,
@@ -361,6 +396,18 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建远程执行目标接口失败: %w", err)
+	}
+
+	workspaceConnectors, err := webuiworkspaceconnectorapi.NewHandler(webuiworkspaceconnectorapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      workspaceStore,
+		Hub:        workspaceHub,
+		ServerID: func(ctx context.Context) (string, error) {
+			return webuiaccountbrowserapi.ReadServerID(ctx, dependencies.AIHomeDir)
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建工作区 Connector 接口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -967,6 +1014,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiremotetargetsapi.Path, Handler: remoteTargets},
 		{Pattern: "GET " + webuiremotetargetsapi.ResolvePath, Handler: remoteTargets},
 		{Pattern: "GET " + webuiremotetargetsapi.DoctorPath, Handler: remoteTargets},
+		{Pattern: "GET " + webuiworkspaceconnectorapi.Path, Handler: workspaceConnectors},
+		{Pattern: "POST " + webuiworkspaceconnectorapi.EnrollmentsPath, Handler: workspaceConnectors},
+		{Pattern: "GET " + webuiworkspaceconnectorapi.ConnectPath, Handler: workspaceConnectors, SkipPublicAlias: true},
+		{Pattern: "DELETE " + webuiworkspaceconnectorapi.WorkspacePath, Handler: workspaceConnectors},
+		{Pattern: "GET " + webuiworkspaceconnectorapi.EntriesPath, Handler: workspaceConnectors},
+		{Pattern: "POST " + webuiworkspaceconnectorapi.RPCPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},
 		{Pattern: "POST " + proxyleaseapi.LeasesPath, Handler: proxyAPI},
 		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},

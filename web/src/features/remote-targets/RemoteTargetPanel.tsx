@@ -21,7 +21,8 @@ import {
   preflightStatus,
   stageLabel,
   stageStatusLabel,
-  statusLabel
+  statusLabel,
+  workspaceLocation
 } from './remote-targets-model';
 import './remote-targets.css';
 
@@ -159,7 +160,7 @@ export default function RemoteTargetPanel({ workspaceId }: RemoteTargetPanelProp
         <div className="remote-targets-empty">
           <span>当前没有可执行候选。</span>
           <span className="remote-targets-inventory">Workspace {inventory.workspaceCount} · Harness {inventory.runnerCount} · Account {inventory.accountCount} · Model {inventory.modelCount}</span>
-          <span>请先确认远端账号模型目录和 Harness 能力都已登记。</span>
+          <span>请先确认远端账号模型目录和 Harness 能力都已登记；本地目录用 aih workspace connect 登记。</span>
         </div>
       ) : null}
 
@@ -176,9 +177,12 @@ export default function RemoteTargetPanel({ workspaceId }: RemoteTargetPanelProp
                       <strong>{candidate.workspace.label}</strong>
                       <span className="remote-target-chip">{candidate.runner.id}</span>
                       <span className="remote-target-chip">{candidate.model.provider}</span>
+                      {candidate.workspace.transport === 'connector' ? (
+                        <span className="remote-target-chip">connector</span>
+                      ) : null}
                     </span>
                     <span className="remote-target-row-secondary">
-                      {candidate.account.accountRef} · {modelLabel(candidate.model)} · {candidate.workspace.remoteRoot}
+                      {candidate.account.accountRef} · {modelLabel(candidate.model)} · {workspaceLocation(candidate.workspace)}
                     </span>
                   </span>
                   <span className="remote-target-status" data-status={status}>{statusLabel(status)}</span>

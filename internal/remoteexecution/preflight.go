@@ -17,10 +17,10 @@ type PreflightReport struct {
 	Stages []PreflightStage `json:"stages"`
 }
 
-func BuildPreflight(facts Facts, target ExecutionTarget, runner RunnerFact, account AccountFact, model ModelFact) PreflightReport {
+func BuildPreflight(facts Facts, target ExecutionTarget, workspace WorkspaceFact, runner RunnerFact, account AccountFact, model ModelFact) PreflightReport {
 	stages := []PreflightStage{
 		stage(StageServer, facts.ServerID != "", "server_identity_missing", "server identity is unavailable"),
-		stage(StageWorkspace, target.WorkspaceID != "" && target.WorkspaceRoot != "", "workspace_unavailable", "workspace root is unavailable"),
+		workspaceStage(target, workspace),
 		stage(StageRunner, runner.ID != "", "runner_unavailable", "runner is unavailable"),
 		stage(StageProvider, target.Provider != "", "provider_unavailable", "provider is not selected"),
 		stage(StageAccount, account.AccountRef != "" && account.Enabled && account.CredentialKnown, "account_unavailable", "account is disabled or credential evidence is missing"),
@@ -38,6 +38,34 @@ func BuildPreflight(facts Facts, target ExecutionTarget, runner RunnerFact, acco
 		}
 	}
 	return PreflightReport{Ready: ready, Stages: stages}
+}
+
+// workspaceStage separates "the SSH path is recorded" from "the local connector
+// is online now". An offline or revoked connector must never pass preflight.
+func workspaceStage(target ExecutionTarget, workspace WorkspaceFact) PreflightStage {
+	if strings.TrimSpace(target.WorkspaceID) == "" {
+		return PreflightStage{Name: StageWorkspace, Status: StatusBlocked, Code: "workspace_unavailable", Detail: "workspace is not selected"}
+	}
+	switch strings.TrimSpace(target.Transport) {
+	case "", TransportSSH:
+		if strings.TrimSpace(target.WorkspaceRoot) == "" {
+			return PreflightStage{Name: StageWorkspace, Status: StatusBlocked, Code: "workspace_unavailable", Detail: "workspace root is unavailable"}
+		}
+	case TransportConnector:
+		if strings.TrimSpace(target.RootLabel) == "" {
+			return PreflightStage{Name: StageWorkspace, Status: StatusBlocked, Code: "workspace_unavailable", Detail: "connector root label is unavailable"}
+		}
+		switch strings.ToLower(strings.TrimSpace(workspace.State)) {
+		case "online":
+		case "revoked":
+			return PreflightStage{Name: StageWorkspace, Status: StatusBlocked, Code: "workspace_connector_revoked", Detail: "workspace connector enrollment was revoked"}
+		default:
+			return PreflightStage{Name: StageWorkspace, Status: StatusBlocked, Code: "workspace_connector_offline", Detail: "workspace connector is offline"}
+		}
+	default:
+		return PreflightStage{Name: StageWorkspace, Status: StatusUnsupported, Code: "workspace_transport_unsupported", Detail: "workspace transport is not supported"}
+	}
+	return PreflightStage{Name: StageWorkspace, Status: StatusOK}
 }
 
 func stage(name string, ok bool, code, detail string) PreflightStage {

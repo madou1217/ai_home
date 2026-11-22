@@ -3,11 +3,15 @@ export type RemoteTargetOverallStatus = RemoteTargetStageStatus;
 
 export interface RemoteWorkspaceFact {
   id: string;
-  connectionId: string;
+  transport?: 'ssh' | 'connector' | string;
+  connectionId?: string;
   connectionLabel?: string;
   host?: string;
+  connectorId?: string;
+  state?: 'online' | 'offline' | 'revoked' | string;
   label: string;
-  remoteRoot: string;
+  remoteRoot?: string;
+  rootLabel?: string;
 }
 
 export interface RemoteRunnerFact {
@@ -69,8 +73,9 @@ export interface RemoteExecutionTarget {
   serverId: string;
   serverProfileId?: string;
   workspaceId: string;
-  connectionId: string;
-  workspaceRoot: string;
+  connectionId?: string;
+  workspaceRoot?: string;
+  rootLabel?: string;
   harness: string;
   provider: string;
   accountRef: string;
@@ -122,6 +127,15 @@ export interface RemoteTargetSelector {
 
 export interface RemoteTargetQuery extends RemoteTargetSelector {
   signal?: AbortSignal;
+}
+
+export function workspaceLocation(workspace: RemoteWorkspaceFact): string {
+  if (workspace.transport === 'connector') {
+    const root = String(workspace.rootLabel || '').trim();
+    const state = String(workspace.state || '').trim();
+    return [root, state].filter(Boolean).join(' · ') || '本地工作区';
+  }
+  return String(workspace.remoteRoot || '').trim();
 }
 
 export function modelLabel(model: Pick<RemoteModelFact, 'catalogModelId' | 'cliModelName'>): string {

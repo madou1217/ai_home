@@ -54,6 +54,9 @@ type FactsSource struct {
 	Catalog        *providers.Catalog
 	AccountModels  AccountModelReader
 	AccountDetails AccountOverviewReader
+	// ConnectorWorkspaces is optional. It projects locally enrolled workspaces
+	// with their current online/offline state; it never opens a connector RPC.
+	ConnectorWorkspaces func(context.Context) ([]remoteexecution.WorkspaceFact, error)
 }
 
 func (source FactsSource) Read(ctx context.Context) (remoteexecution.Facts, error) {
@@ -76,6 +79,13 @@ func (source FactsSource) Read(ctx context.Context) (remoteexecution.Facts, erro
 	workspaces, err := decodeWorkspaces(workspacesRaw, workspacesFound, decodeConnections(connectionsRaw, connectionsFound))
 	if err != nil {
 		return remoteexecution.Facts{}, err
+	}
+	if source.ConnectorWorkspaces != nil {
+		connectorWorkspaces, connectorErr := source.ConnectorWorkspaces(ctx)
+		if connectorErr != nil {
+			return remoteexecution.Facts{}, fmt.Errorf("read workspace connectors: %w", connectorErr)
+		}
+		workspaces = append(workspaces, connectorWorkspaces...)
 	}
 	models, err := source.AccountModels.ListAllAccountModels(ctx)
 	if err != nil {
@@ -229,7 +239,8 @@ func decodeWorkspaces(raw string, found bool, connections map[string]connectionF
 			host = connection.User + "@" + host
 		}
 		result = append(result, remoteexecution.WorkspaceFact{
-			ID: id, ConnectionID: connectionID, ConnectionLabel: connection.Label,
+			ID: id, Transport: remoteexecution.TransportSSH,
+			ConnectionID: connectionID, ConnectionLabel: connection.Label,
 			Host: host, Label: label, RemoteRoot: remoteRoot,
 		})
 	}

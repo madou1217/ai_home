@@ -42,21 +42,26 @@ func (Resolver) Resolve(facts Facts, rawSelector TargetSelector) (Resolution, er
 		return Resolution{}, &ResolutionError{Code: "target_incomplete", Field: "model", Detail: "model does not belong to the selected provider and account"}
 	}
 
+	transport := strings.TrimSpace(workspace.Transport)
+	if transport == "" {
+		transport = TransportSSH
+	}
 	target := ExecutionTarget{
 		ServerProfileID: selector.ServerProfileID,
 		ServerID:        facts.ServerID,
 		WorkspaceID:     workspace.ID,
 		ConnectionID:    workspace.ConnectionID,
 		WorkspaceRoot:   workspace.RemoteRoot,
+		RootLabel:       workspace.RootLabel,
 		Harness:         runner.ID,
 		Provider:        provider,
 		AccountRef:      account.AccountRef,
 		CatalogModelID:  model.CatalogModelID,
 		CLIModelName:    model.CLIModelName,
-		Transport:       TransportSSH,
+		Transport:       transport,
 	}
 	target.ID = BuildTargetID(target)
-	return Resolution{Target: target, Preflight: BuildPreflight(facts, target, runner, account, model)}, nil
+	return Resolution{Target: target, Preflight: BuildPreflight(facts, target, workspace, runner, account, model)}, nil
 }
 
 func validateFacts(facts Facts) error {
@@ -64,8 +69,11 @@ func validateFacts(facts Facts) error {
 		return &ResolutionError{Code: "server_identity_unavailable", Field: "serverId", Detail: "server identity is missing"}
 	}
 	for _, workspace := range facts.Workspaces {
-		if strings.TrimSpace(workspace.ID) == "" || strings.TrimSpace(workspace.RemoteRoot) == "" {
-			return &ResolutionError{Code: "invalid_workspace_fact", Detail: "workspace id and remote root are required"}
+		if strings.TrimSpace(workspace.ID) == "" {
+			return &ResolutionError{Code: "invalid_workspace_fact", Detail: "workspace id is required"}
+		}
+		if strings.TrimSpace(workspace.RemoteRoot) == "" && strings.TrimSpace(workspace.RootLabel) == "" {
+			return &ResolutionError{Code: "invalid_workspace_fact", Detail: "workspace needs a remote root or a connector root label"}
 		}
 	}
 	return nil
@@ -198,17 +206,22 @@ func (Resolver) Candidates(facts Facts) []TargetCandidate {
 					if account.AccountRef != model.AccountRef || account.Provider != model.Provider {
 						continue
 					}
+					transport := strings.TrimSpace(workspace.Transport)
+					if transport == "" {
+						transport = TransportSSH
+					}
 					target := ExecutionTarget{
 						ServerID: facts.ServerID, WorkspaceID: workspace.ID, ConnectionID: workspace.ConnectionID,
-						WorkspaceRoot: workspace.RemoteRoot, Harness: runner.ID, Provider: model.Provider,
+						WorkspaceRoot: workspace.RemoteRoot, RootLabel: workspace.RootLabel,
+						Harness: runner.ID, Provider: model.Provider,
 						AccountRef: model.AccountRef, CatalogModelID: model.CatalogModelID,
-						CLIModelName: model.CLIModelName, Transport: TransportSSH,
+						CLIModelName: model.CLIModelName, Transport: transport,
 					}
 					target.ID = BuildTargetID(target)
 					result = append(result, TargetCandidate{
 						ID: target.ID, ServerID: facts.ServerID, Workspace: workspace, Runner: runner,
 						Account: account, Model: model,
-						Preflight: BuildPreflight(facts, target, runner, account, model),
+						Preflight: BuildPreflight(facts, target, workspace, runner, account, model),
 					})
 				}
 			}

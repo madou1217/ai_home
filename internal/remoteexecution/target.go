@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	TransportSSH = "ssh"
+	TransportSSH       = "ssh"
+	TransportConnector = "connector"
 
 	StageServer    = "server"
 	StageWorkspace = "workspace"
@@ -56,11 +57,19 @@ type TargetSelector struct {
 // real project root on the SSH host; no shadow project path belongs here.
 type WorkspaceFact struct {
 	ID              string `json:"id"`
-	ConnectionID    string `json:"connectionId"`
+	Transport       string `json:"transport,omitempty"`
+	ConnectionID    string `json:"connectionId,omitempty"`
 	ConnectionLabel string `json:"connectionLabel,omitempty"`
 	Host            string `json:"host,omitempty"`
-	Label           string `json:"label"`
-	RemoteRoot      string `json:"remoteRoot"`
+	ConnectorID     string `json:"connectorId,omitempty"`
+	// State is meaningful for connector workspaces: online / offline / revoked.
+	// SSH workspaces leave it empty because this projection does not probe them.
+	State      string `json:"state,omitempty"`
+	Label      string `json:"label"`
+	RemoteRoot string `json:"remoteRoot,omitempty"`
+	// RootLabel is a display-only label supplied by a local connector. It must
+	// never be interpreted as a Server-side filesystem path.
+	RootLabel string `json:"rootLabel,omitempty"`
 }
 
 // RunnerFact describes an Agent/Harness capability without claiming that a
@@ -124,7 +133,10 @@ type ExecutionTarget struct {
 	CatalogModelID  string `json:"catalogModelId"`
 	CLIModelName    string `json:"cliModelName,omitempty"`
 	Transport       string `json:"transport"`
-	PermissionMode  string `json:"permissionMode,omitempty"`
+	// RootLabel is display-only for connector transport. WorkspaceRoot is the
+	// real Server-side path only for SSH transport.
+	RootLabel      string `json:"rootLabel,omitempty"`
+	PermissionMode string `json:"permissionMode,omitempty"`
 }
 
 // TargetCandidate is the safe list representation before all selectors have

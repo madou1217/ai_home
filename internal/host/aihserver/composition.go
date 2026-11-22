@@ -33,7 +33,6 @@ import (
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/modelprobes"
-	"github.com/madou1217/ai_home/application/modelsnapshot"
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
@@ -82,7 +81,6 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
@@ -574,19 +572,6 @@ type handlerDependencies struct {
 	// ReverseTunnels 维护 ssh_connections.reverseTunnel；由 newHandlers 创建并随进程关闭。
 	ReverseTunnels     *sshtunnel.Supervisor
 	TranslationGateway http.Handler
-}
-
-// newModelSnapshotReader 构造快照读取端口；路径不可用时返回 nil，由使用方降级为空快照。
-func newModelSnapshotReader(aiHomeDir string) modelsnapshot.Reader {
-	dbPath, err := appstate.DatabasePath(aiHomeDir)
-	if err != nil {
-		return nil
-	}
-	reader, err := webuimodelssnapshot.NewReaderAt(dbPath)
-	if err != nil {
-		return nil
-	}
-	return reader
 }
 
 // newHandlers 共享数据库、运行态和鉴权端口，并保持各 HTTP 边界隔离。
@@ -2008,7 +1993,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if nativeWorkErr != nil {
 		return serverHandlers{}, nil, fmt.Errorf("装配 WORK 原生启动边界失败: %w", nativeWorkErr)
 	}
-	modelSnapshot := newModelSnapshotReader(aiHomeDir)
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:            authorizer,
 		AIHomeDir:             aiHomeDir,
@@ -2016,7 +2000,6 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		ModelModalities:       modelModalities,
 		ModelAliasExpander:    modelAliasExpander,
 		ModelAliasDisplay:     inference.models,
-		ModelSnapshot:         modelSnapshot,
 		MetadataResolver:      pricingResolver,
 		EgressManager:         egressManager,
 		Upstream429RetryStore: upstream429Store,

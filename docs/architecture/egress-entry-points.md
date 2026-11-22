@@ -239,6 +239,9 @@ sed -n '210,216p' internal/transport/http/webuiopenappapi/cli_launcher.go
 | R13 Claude Native Relay 不接出口 | 已修复 | `1e0fb182 feat(relay): honor account egress bindings`；`relaycore`（codebuddy 家族/插件 Provider 透传）同步接入共享 `relayegress` 端口 |
 | R5 池账号不在计划时借用全局出口 | 已修复 | `103f6453 fix(egress): fail closed when an account has no pool lane`：无车道返回空，展示同样不借用 GLOBAL |
 | R8 Image Studio 出图不带账号出口 | 已修复 | `91bd5e58 feat(images): honor account egress for image generation`：images API、共享执行器与 Studio 回退路径都按候选账号取客户端 |
-| R4/R6/R7/R9/R10/R11/R12/R14 | 未修复 | 仍按正文；R4（session 车道）优先 |
+| R4 session 车道请求期不可达 | 已修复 | `d85d4ad6 fix(egress): honor session pool lanes from binding`：解析从绑定识别 session 策略，CLI 启动按进程领会话车道 |
+| R7 CLI 的 system 绑定零校验 | 已修复 | `2ef2d2c2 fix(egress): validate system proxy for CLI launch`：无系统代理 fail-closed，探测地址写入 CLI 代理环境 |
+| R9 非 agy 绑定不参与刷新/额度 | 已修复 | `a0409868 feat(egress): apply account egress to refresh and usage`：应用层 Decision + Context 端口，OAuth/kiro/额度共用上下文感知客户端 |
+| R6/R10/R11/R12/R14 | 未修复 | 仍按正文；R10（管理面第二个 Manager）与 R14（nil 端口静默放行）优先 |
 
 新增回归守卫：`npm run egress:check`（`cmd/egress-guard`）禁止 `internal/runtime/egress` 之外自行构造 `agyegress.NewResolver/Options`。

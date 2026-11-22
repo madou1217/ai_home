@@ -256,6 +256,13 @@
   overflow-wrap: anywhere;
 }
 
+.pn-strategy-action {
+  align-self: flex-start;
+  margin-top: auto;
+  padding-inline: 0;
+  height: auto;
+}
+
 .pn-upstreams {
   display: flex;
   flex-direction: column;

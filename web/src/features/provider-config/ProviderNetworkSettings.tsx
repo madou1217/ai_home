@@ -216,6 +216,16 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
     });
   }, [providerUpstreams, rows, targetFor]);
 
+  const openStrategy = useCallback((strategy: EgressStrategyStatus) => {
+    if (!rows.length) return;
+    setConfiguring({
+      title: `${strategy.label} · 应用到全部账号`,
+      targets: rows.map(targetFor),
+      upstream: providerUpstreams.length === 1 ? providerUpstreams[0] : null,
+      initialMode: strategy.id as AccountEgressMode
+    });
+  }, [providerUpstreams, rows, targetFor]);
+
   const refreshNetwork = async () => {
     setBusy('network');
     try {
@@ -508,6 +518,15 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
                 </div>
                 <p>{strategy.description}</p>
                 {strategy.reason ? <small>{strategy.reason}</small> : null}
+                <Button
+                  size="small"
+                  type="link"
+                  className="pn-strategy-action"
+                  disabled={!rows.length || strategy.status === 'unavailable'}
+                  onClick={() => openStrategy(strategy)}
+                >
+                  应用到全部账号
+                </Button>
               </div>
             );
           })}

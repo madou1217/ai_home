@@ -301,3 +301,60 @@
 .pn-rules .ant-tag {
   margin-inline-end: 0;
 }
+/* 出口池路由与 DNS：规则行、DNS 行与保存动作。 */
+.pn-routing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pn-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pn-rule-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 110px auto auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.pn-routing-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.pn-dns-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pn-dns-row .ant-input {
+  max-width: 380px;
+}
+
+.pn-routing-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.pn-routing-restart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 720px) {
+  .pn-rule-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

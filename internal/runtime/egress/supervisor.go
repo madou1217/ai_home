@@ -527,6 +527,7 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 		InterfacesFunc: s.interfacesFunc,
 		ProbePort:      s.probePort,
 		LanePorts:      s.lanePorts,
+		Routing:        ReadRoutingPolicy(ctx, s.aiHomeDir),
 	}, nodes)
 	if err != nil {
 		return s.setErrorResult("egress_pool_config_failed:" + err.Error())

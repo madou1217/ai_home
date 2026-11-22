@@ -80,13 +80,35 @@ func BuildSingBoxPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) 
 		selectors = append(selectors, selector(LaneGroupName(index), nodeNames))
 	}
 
+	userRules := input.Routing.SingBoxRoutingRules()
+	ruleOutbound := func(action string, laneGroup string) string {
+		switch action {
+		case "direct":
+			return "direct"
+		case "reject":
+			return "block"
+		default:
+			return laneGroup
+		}
+	}
+	rules := make([]map[string]any, 0, len(userRules)*(len(laneIndexes)+1)+1+len(laneIndexes))
+	for _, index := range laneIndexes {
+		laneTag := fmt.Sprintf("aih-lane-%d", index)
+		for _, rule := range userRules {
+			item := map[string]any{"inbound": []string{laneTag}, "outbound": ruleOutbound(rule.Action, LaneGroupName(index))}
+			for key, value := range rule.Match {
+				item[key] = value
+			}
+			rules = append(rules, item)
+		}
+	}
+
 	inbounds := []map[string]any{{
 		"type":        "mixed",
 		"tag":         "aih-mixed",
 		"listen":      PoolBindHost,
 		"listen_port": input.MixedPort,
 	}}
-	rules := make([]map[string]any, 0, 1+len(laneIndexes))
 	if input.ProbePort > 0 {
 		inbounds = append(inbounds, map[string]any{
 			"type":        "mixed",
@@ -111,11 +133,25 @@ func BuildSingBoxPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) 
 			"outbound": LaneGroupName(index),
 		})
 	}
+	for _, rule := range userRules {
+		item := map[string]any{"inbound": []string{"aih-mixed"}, "outbound": ruleOutbound(rule.Action, "AIH-GLOBAL")}
+		for key, value := range rule.Match {
+			item[key] = value
+		}
+		rules = append(rules, item)
+	}
 
+	auxiliary := []map[string]any{
+		{"type": "direct", "tag": "direct"},
+		{"type": "block", "tag": "block"},
+	}
+	allOutbounds := append([]map[string]any(nil), selectors...)
+	allOutbounds = append(allOutbounds, outbounds...)
+	allOutbounds = append(allOutbounds, auxiliary...)
 	configMap := map[string]any{
 		"log":       map[string]any{"level": "warn"},
 		"inbounds":  inbounds,
-		"outbounds": append(append([]map[string]any(nil), selectors...), outbounds...),
+		"outbounds": allOutbounds,
 		"route": map[string]any{
 			"rules": rules,
 			"final": "AIH-GLOBAL",
@@ -126,6 +162,9 @@ func BuildSingBoxPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) 
 				"secret":              secret,
 			},
 		},
+	}
+	if dns := input.Routing.SingBoxDNS(); dns != nil {
+		configMap["dns"] = dns
 	}
 	jsonBytes, err := json.MarshalIndent(configMap, "", " ")
 	if err != nil {

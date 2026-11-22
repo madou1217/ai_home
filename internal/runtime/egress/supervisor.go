@@ -624,9 +624,13 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	s.mgr.health.BindNamedEntries(built.NodeEntries)
 
 	activeIndex := 0
-	if len(built.NodeNames) > 0 && s.mgr.health.IsCooling(built.NodeNames[0], s.mgr.nowMS()) {
+	if len(built.NodeNames) > 0 {
 		policy := ReadNodePolicy(ctx, s.aiHomeDir)
-		if picked := s.mgr.health.PickNext(-1, nil, nil, &policy, s.mgr.nowMS()); picked > 0 && picked < len(built.NodeNames) {
+		picked := s.mgr.health.PickBest(nil, &policy, s.mgr.nowMS())
+		if picked < 0 {
+			picked = 0
+		}
+		if picked > 0 && picked < len(built.NodeNames) {
 			if err := ctrl.SelectProxy(ctx, s.globalGroup, built.NodeNames[picked]); err == nil {
 				s.mgr.health.RecordSwitch(built.NodeNames[0], built.NodeNames[picked], "select")
 				activeIndex = picked

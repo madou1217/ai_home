@@ -177,3 +177,56 @@ func (l *NodeHealthLedger) DueForProbe(limit int, policy *NodePolicy, atMS int64
 	}
 	return out
 }
+
+// ProbeFreshMS 是“节点最近一次核心探测仍可信”的时间窗。
+const ProbeFreshMS = 15 * 60 * 1000
+
+// PickBest 从允许集合中按“新鲜成功 > 未知 > 陈旧成功 > 新鲜失败”评分选节点。
+//
+// 与 PickNext 的“按顺序轮换”不同，PickBest 用于初始车道与失效车道的重新选择：
+// 不把陈旧的成功探测当成可靠事实，也不在新鲜失败后继续首选该节点。
+// 没有可用候选（全被拦截/冷却）时返回 -1。
+func (l *NodeHealthLedger) PickBest(allowed map[string]bool, policy *NodePolicy, atMS int64) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.nodes) == 0 || (allowed != nil && len(allowed) == 0) {
+		return -1
+	}
+	at := l.effectiveAtLocked(atMS)
+	best := -1
+	bestScore := -1
+	for idx, entry := range l.nodes {
+		if allowed != nil && !allowed[entry.Name] {
+			continue
+		}
+		if l.isCoolingLocked(entry.Name, at) || l.blockedReasonLocked(entry.Name, policy).Status == "blocked" {
+			continue
+		}
+		score := 500 // 从未探测：可以作为候选尝试
+		stats := l.byIdentity[entry.Identity]
+		switch {
+		case stats != nil && stats.Probe != nil && stats.Probe.At > 0:
+			fresh := at-stats.Probe.At <= ProbeFreshMS
+			switch {
+			case stats.Probe.OK && fresh:
+				score = 1000 - int(stats.Probe.LatencyMS/10)
+				if score < 600 {
+					score = 600
+				}
+			case stats.Probe.OK:
+				score = 200 // 陈旧成功：不作为优先事实
+			case fresh:
+				score = 0 // 新鲜失败：不首选
+			default:
+				score = 400 // 陈旧失败：可重试
+			}
+		case entry.LibraryProbe != nil && entry.LibraryProbe.OK:
+			score = 300
+		}
+		if score > bestScore {
+			bestScore = score
+			best = idx
+		}
+	}
+	return best
+}

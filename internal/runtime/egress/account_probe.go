@@ -126,25 +126,25 @@ func (m *Manager) probeDirectAccountUpstream(
 	exit := "direct"
 	proxyURL := ""
 	bindURL := false
-	if hasBinding && !binding.Retired {
-		switch strings.ToLower(strings.TrimSpace(binding.Mode)) {
+	if hasBinding {
+		resolved, exitErr := ResolveNonPoolExit(ctx, m.aiHomeDir, upstream.Provider, &binding)
+		if exitErr != nil {
+			return AccountUpstreamProbeResult{
+				OK:     false,
+				Status: "skipped",
+				Reason: exitErr.Error(),
+				Exit:   strings.ToLower(strings.TrimSpace(binding.Mode)),
+			}
+		}
+		switch resolved.Mode {
 		case agyegress.ModeURL:
 			exit = "proxy"
 			bindURL = true
-			proxyURL = strings.TrimSpace(binding.ProxyURL)
+			proxyURL = resolved.ProxyURL
 		case agyegress.ModeSSH:
 			exit = "ssh"
 			bindURL = true
-			resolved, sshErr := ManagedSSHProxyURL(m.aiHomeDir, binding.ProxyURL)
-			if sshErr != nil {
-				return AccountUpstreamProbeResult{
-					OK:     false,
-					Status: "skipped",
-					Reason: "ssh_proxy_unavailable: " + sshErr.Error(),
-					Exit:   exit,
-				}
-			}
-			proxyURL = resolved
+			proxyURL = resolved.ProxyURL
 		case agyegress.ModeSystem:
 			exit = "system"
 		default:

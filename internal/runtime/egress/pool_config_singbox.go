@@ -36,8 +36,9 @@ func BuildSingBoxPoolConfig(input PoolConfigInput) (*CompiledPoolConfig, error) 
 	outbounds := make([]map[string]any, 0, len(input.Nodes)+4)
 	nodeNames := make([]string, 0, len(input.Nodes))
 	nodeEntries := make([]RuntimeNodeEntry, 0, len(input.Nodes))
-	for _, node := range input.Nodes {
-		tag := fmt.Sprintf("node-%d", len(nodeNames))
+	// 与 mihomo 相同：标签按输入位置固定，跨内核切换不重排；跳过节点留空洞。
+	for index, node := range input.Nodes {
+		tag := fmt.Sprintf("node-%d", index)
 		compiled, err := subaggregator.CompileSingBoxOutbound(node.ToSubaggregatorNode(), tag, input.SingBoxVersion, false)
 		if err != nil || compiled.IsEndpoint {
 			// Endpoint（如 WireGuard）不能出现在 selector 的 outbounds 列表里；

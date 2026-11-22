@@ -1157,7 +1157,10 @@ func (m *Manager) ReconcileLanes(ctx context.Context) error {
 			chosen = currentActive
 		} else {
 			avoidSet := selectedByAvoid[spec.AvoidGroup]
-			picked := m.health.PickNext(-1, allowedSet, avoidSet, &policy, atMS)
+			picked := m.health.PickBest(allowedSet, &policy, atMS)
+			if picked < 0 {
+				picked = m.health.PickNext(-1, allowedSet, avoidSet, &policy, atMS)
+			}
 			if picked >= 0 {
 				nodes := m.health.Nodes()
 				if picked < len(nodes) {

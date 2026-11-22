@@ -1,5 +1,14 @@
 # Server-bound cross-platform browser viewer
 
+## Status (2026-11-22)
+
+Windows stable-Edge hosting is implemented and verified on a real Windows host.
+macOS remains the original host adapter; Linux still reports unsupported. See
+`docs/product-integrity/account-browser-windows-2026-11-22.md` for acceptance
+evidence and the boundaries that remain unverified. The sections below record
+the 2026-11-20 design decision and no longer describe current platform
+availability.
+
 ## Approved boundary
 User confirmed on 2026-11-20: phones are WebUI operation clients only. The browser executes on the server selected through the existing WebUI server profiles. The viewing device's OS must not select the execution adapter. This extends the earlier desktop-only viewer scope; it does not claim Windows hosting already works.
 

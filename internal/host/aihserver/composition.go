@@ -1417,6 +1417,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if relayHTTPClient != nil {
 		relayClient = relayHTTPClient
 	}
+	// Relay 与 Canonical 共用同一份出口 Manager；Manager 在组合根后段创建，
+	// 这里用延迟取值避免把 nil 固化进解析器。
+	relayEgress := newRelayAccountEgress(func() *runtimeegress.Manager {
+		return egressManager
+	}, claudeRelayHTTPTimeout)
 	// 模态索引与图片仓必须在推理组合之前创建：vision guard 同时需要两者，
 	// 而它要在推理运行时装配时就注入。这里只创建一次，后续 modelsapi、Kimi runtime
 	// descriptor sink 与图片入口复用。
@@ -1757,6 +1762,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Fallback:           inference.handler,
 			Credentials:        credentials,
 			Client:             relayClient,
+			AccountEgress:      relayEgress,
 			Attempts:           accountRuntime,
 			ModelRefreshes:     inference.modelRefreshes,
 			Upstream429Retries: upstream429Controller,

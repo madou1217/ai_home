@@ -28,22 +28,31 @@ const (
 )
 
 const (
-	CodeRpcInvalid              = "plugin_rpc_invalid"
-	CodeRpcIncompatible         = "plugin_rpc_incompatible"
-	CodeRpcUnauthorized         = "plugin_rpc_unauthorized"
-	CodeRpcMetadataLimit        = "plugin_rpc_metadata_limit"
-	CodeRpcPayloadLimit         = "plugin_rpc_payload_limit"
-	CodeRpcBufferLimit          = "plugin_rpc_buffer_limit"
-	CodeRpcInflightLimit        = "plugin_rpc_inflight_limit"
-	CodeRpcTimeout              = "plugin_rpc_timeout"
-	CodeRpcCancelled            = "plugin_rpc_cancelled"
-	CodeRpcClosed               = "plugin_rpc_closed"
-	CodeRpcMethodUnknown        = "plugin_rpc_method_unknown"
-	CodeRpcParentUnknown        = "plugin_rpc_parent_unknown"
-	CodeNextCalledTwice         = "plugin_next_called_twice"
-	CodeContributionUnknown     = "plugin_contribution_unknown"
-	CodeContributionUnavailable = "plugin_contribution_unavailable"
-	CodeGenerationUnknown       = "plugin_generation_unknown"
+	CodeRpcInvalid                           = "plugin_rpc_invalid"
+	CodeRpcIncompatible                      = "plugin_rpc_incompatible"
+	CodeRpcUnauthorized                      = "plugin_rpc_unauthorized"
+	CodeRpcMetadataLimit                     = "plugin_rpc_metadata_limit"
+	CodeRpcPayloadLimit                      = "plugin_rpc_payload_limit"
+	CodeRpcBufferLimit                       = "plugin_rpc_buffer_limit"
+	CodeRpcInflightLimit                     = "plugin_rpc_inflight_limit"
+	CodeRpcTimeout                           = "plugin_rpc_timeout"
+	CodeRpcCancelled                         = "plugin_rpc_cancelled"
+	CodeRpcClosed                            = "plugin_rpc_closed"
+	CodeRpcMethodUnknown                     = "plugin_rpc_method_unknown"
+	CodeRpcParentUnknown                     = "plugin_rpc_parent_unknown"
+	CodeNextCalledTwice                      = "plugin_next_called_twice"
+	CodeContributionUnknown                  = "plugin_contribution_unknown"
+	CodeContributionUnavailable              = "plugin_contribution_unavailable"
+	CodeGenerationUnknown                    = "plugin_generation_unknown"
+	CodeNetworkConnectorConfirmationRequired = "network_connector_confirmation_required"
+	CodeNetworkConnectorOperationRequired    = "network_connector_operation_required"
+	CodeNetworkConnectorOperationUnsupported = "network_connector_operation_unsupported"
+	CodeNetworkConnectorUnknown              = "network_connector_unknown"
+	CodeNetworkConnectorPayloadTooLarge      = "network_connector_payload_too_large"
+	CodeNetworkConnectorDescriptorInvalid    = "network_connector_descriptor_invalid"
+	CodeNetworkConnectorStatusInvalid        = "network_connector_status_invalid"
+	CodeNetworkConnectorOperationInvalid     = "network_connector_operation_invalid"
+	CodeNetworkConnectorDuplicate            = "network_connector_duplicate"
 )
 
 var GatewayRequestFrozenTopLevel = []string{"session_id", "sessionId", "session", "conversation_id", "thread_id", "previous_response_id", "response_id", "store", "prompt_cache_key"}
@@ -101,6 +110,7 @@ var Capabilities = []Capability{
 	{ID: "tool", Version: 1, Mode: "terminal"},
 	{ID: "approval", Version: 1, Mode: "serial"},
 	{ID: "ui", Version: 1, Mode: "terminal"},
+	{ID: "network.connector", Version: 1, Mode: "collect"},
 	{ID: "provider", Version: 1, Mode: "terminal"},
 	{ID: "upstream", Version: 1, Mode: "terminal"},
 }

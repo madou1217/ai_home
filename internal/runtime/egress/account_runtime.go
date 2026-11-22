@@ -367,9 +367,17 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 			Reason: binding.Mode,
 		}
 	}
-	platform := firstNonEmpty(opts.Platform, m.platform)
-	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
+	runtime, ok := strategyRuntimeFor(binding.Mode)
+	if !ok {
+		return EgressResolveResult{OK: false, Bound: true, Error: "unknown_egress_mode", Reason: binding.Mode}
+	}
+	return runtime.Resolve(m, ctx, binding, opts)
+}
 
+// resolvePoolTarget 解析出口池绑定：mihomo 车道优先，没有内核/车道时回落
+// HTTP/SOCKS/SSH 直连节点池；两类都失败才 fail-closed。
+func (m *Manager) resolvePoolTarget(ctx context.Context, binding *agyegress.Binding, opts ResolveAccountEgressOptions) EgressResolveResult {
+	platform := firstNonEmpty(opts.Platform, m.platform)
 	// pool 模式优先走 mihomo 车道；没有可用内核/车道时回落到 HTTP/SOCKS/SSH
 	// 直连节点池（不启动任何内核）。两类出口都失败才 fail-closed。
 	if binding.Mode == agyegress.ModePool {
@@ -384,7 +392,7 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 		normPlat := normalizePlatformLabel(platform)
 		coreUsable := false
 		if nodes, nodesErr := ReadProxyPoolNodes(m.aiHomeDir); nodesErr == nil {
-			if core, coreErr := ResolvePoolCore(nodes, m.aiHomeDir, m.platform); coreErr == nil && core != nil && core.UsableNodes > 0 {
+			if core, coreErr := m.resolvePoolCore(ctx, nodes); coreErr == nil && core != nil && core.UsableNodes > 0 {
 				coreUsable = true
 			}
 		}
@@ -424,7 +432,13 @@ func (m *Manager) resolveEgressTarget(ctx context.Context, binding *agyegress.Bi
 			Reason: reason,
 		}
 	}
+	return EgressResolveResult{OK: false, Bound: true, Error: agyegress.ErrorPoolNotReady, Reason: "egress_pool_unavailable"}
+}
 
+// resolveNonPoolTarget 解析 direct/system/tun/url/ssh 绑定。
+func (m *Manager) resolveNonPoolTarget(ctx context.Context, binding *agyegress.Binding, opts ResolveAccountEgressOptions) EgressResolveResult {
+	platform := firstNonEmpty(opts.Platform, m.platform)
+	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
 	if binding.Mode == agyegress.ModeURL {
 		if issue := agyegress.ProxyURLIssueForProvider(binding.ProxyURL, provider); issue != "" {
 			return EgressResolveResult{

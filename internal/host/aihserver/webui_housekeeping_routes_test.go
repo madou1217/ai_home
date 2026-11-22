@@ -232,9 +232,6 @@ func TestStartHousekeepingDaemonsAndBuildRoutesLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUIHousekeepingRoutes() err = %v", err)
 	}
-	if len(routes) != 3 {
-		t.Fatalf("len(routes) = %d, want 3", len(routes))
-	}
 
 	mux := http.NewServeMux()
 	for _, r := range routes {

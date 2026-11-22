@@ -35,7 +35,7 @@ const PROVIDER_ACTIONS: Record<EdgeProvider, string> = {
 };
 
 function managementLabel(managedBy: string) {
-  if (!managedBy) return '未安装';
+  if (!managedBy) return '';
   // 标签只有一份事实源（与受管工具面板共用）。
   return MANAGEMENT_LABELS[managedBy] || managedBy;
 }
@@ -165,14 +165,14 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
                   badges={(
                     <>
                       {tool.version && tool.version !== '-' ? <Tag className="toolkit-status-tag">{tool.version}</Tag> : null}
-                      <Tag className="toolkit-status-tag">{managementLabel(tool.managedBy)}</Tag>
+                      {managementLabel(tool.managedBy) ? <Tag className="toolkit-status-tag">{managementLabel(tool.managedBy)}</Tag> : null}
                     </>
                   )}
                   details={[
                     { label: '用途', value: EDGE_PROVIDER_META[provider].role },
                     { label: '能力', value: EDGE_PROVIDER_META[provider].capability },
                     { label: '配置', value: configLine },
-                    ...(tool.service ? [{
+                    ...(tool.installed && tool.service ? [{
                       label: '服务',
                       value: `${serviceSummary(tool.service)}${tool.service.message ? `；${tool.service.message}` : ''}`,
                       tooltip: tool.service.lastError || tool.service.message || undefined
@@ -248,6 +248,7 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
                   )}
                   footer={tool.service ? (
                     <ToolServicePolicy
+                      installed={tool.installed}
                       service={tool.service}
                       busy={toolService.busyFor(tool)}
                       onChange={(settings) => void toolService.updateSettings(tool, settings)}

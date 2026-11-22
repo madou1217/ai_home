@@ -139,7 +139,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                       label: '配置',
                       value: configSummary(tool)
                     }] : []),
-                    ...(tool.service ? [{
+                    ...(tool.installed && tool.service ? [{
                       label: '服务',
                       value: `${serviceSummary(tool.service)}${tool.service.message ? `；${tool.service.message}` : ''}`,
                       tooltip: tool.service.lastError || tool.service.message || undefined
@@ -147,6 +147,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                       label: '守护策略',
                       value: (
                         <ToolServicePolicy
+                          installed={tool.installed}
                           service={tool.service}
                           busy={toolService.busyFor(tool)}
                           onChange={(settings) => void toolService.updateSettings(tool, settings)}

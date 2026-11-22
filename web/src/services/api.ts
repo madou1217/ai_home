@@ -2884,6 +2884,17 @@ export const toolkitAPI = {
     const response = await api.post(`/plugins/${action}`, input);
     return response.data;
   },
+  getNetworkConnectors: async (): Promise<import('@/types').NetworkConnectorView[]> => {
+    const response = await api.get<{ ok: boolean; connectors: import('@/types').NetworkConnectorView[] }>('/webui/plugins/network-connectors');
+    return Array.isArray(response.data?.connectors) ? response.data.connectors : [];
+  },
+  operateNetworkConnector: async (connectorId: string, action: string, input: unknown = {}, confirmed = false): Promise<import('@/types').NetworkConnectorOperationResult> => {
+    const response = await api.post<import('@/types').NetworkConnectorOperationResult>(
+      `/webui/plugins/network-connectors/${encodeURIComponent(connectorId)}`,
+      { action, input, confirmed }
+    );
+    return response.data;
+  },
   getNativeResources: async (): Promise<import('@/types').NativeResourceReport> => {
     const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
     return response.data;

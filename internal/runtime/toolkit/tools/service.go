@@ -18,14 +18,14 @@ import (
 )
 
 const (
-	brewStatusCacheTTL      = 3 * time.Second
-	brewStatusMaxStale      = 10 * time.Minute
-	maxServiceLogLines      = 400
-	defaultServiceLogLines  = 200
-	maxServiceLogReadBytes  = 256 * 1024
-	supervisorStopGrace     = 5 * time.Second
-	supervisorStableUptime  = 60 * time.Second
-	supervisorPollInterval  = 3 * time.Second
+	brewStatusCacheTTL     = 3 * time.Second
+	brewStatusMaxStale     = 10 * time.Minute
+	maxServiceLogLines     = 400
+	defaultServiceLogLines = 200
+	maxServiceLogReadBytes = 256 * 1024
+	supervisorStopGrace    = 5 * time.Second
+	supervisorStableUptime = 60 * time.Second
+	supervisorPollInterval = 3 * time.Second
 )
 
 var (
@@ -764,6 +764,22 @@ func (sm *ServiceManager) describeWithRuntime(ctx context.Context, plugin toolPl
 	if plugin.Service == nil {
 		return ServiceStatus{Backend: "none", State: "unknown"}
 	}
+	if !tool.Installed {
+		return ServiceStatus{
+			Backend:          "none",
+			BackendLabel:     "未安装",
+			Controllable:     false,
+			State:            "unknown",
+			SettingsEditable: false,
+			ConfigReady:      false,
+			CanCreateConfig:  false,
+			LogAvailable:     false,
+			CanStart:         false,
+			CanStop:          false,
+			CanRestart:       false,
+			Message:          "软件尚未安装，安装后才可配置服务",
+		}
+	}
 	if brew := sm.useHomebrewBackend(plugin, tool, o); brew != "" {
 		info := sm.readBrewInfo(ctx, brew, plugin.Service.HomebrewFormula, o)
 		if info == nil {
@@ -886,6 +902,9 @@ func (sm *ServiceManager) ControlToolService(ctx context.Context, toolID string,
 	if errRes != nil {
 		return *errRes
 	}
+	if !tool.Installed {
+		return ServiceOpResult{OK: false, ToolID: tool.ID, Error: "managed_tool_not_installed", Message: plugin.Name + " 尚未安装，安装后才可操作服务。"}
+	}
 	o := sm.opts
 	var res ServiceOpResult
 	if brew := sm.useHomebrewBackend(plugin, tool, o); brew != "" {
@@ -980,6 +999,9 @@ func (sm *ServiceManager) UpdateToolServiceSettings(ctx context.Context, toolID 
 	if errRes != nil {
 		return *errRes
 	}
+	if !tool.Installed {
+		return ServiceOpResult{OK: false, ToolID: tool.ID, Error: "managed_tool_not_installed", Message: plugin.Name + " 尚未安装，安装后才可修改守护策略。"}
+	}
 	o := sm.opts
 	var res ServiceOpResult
 	if sm.useHomebrewBackend(plugin, tool, o) != "" {
@@ -1002,6 +1024,9 @@ func (sm *ServiceManager) CreateToolServiceConfig(ctx context.Context, toolID st
 	plugin, tool, resolvedCfg, errRes := sm.resolveTarget(ctx, toolID)
 	if errRes != nil {
 		return *errRes
+	}
+	if !tool.Installed {
+		return ServiceOpResult{OK: false, ToolID: tool.ID, Error: "managed_tool_not_installed", Message: plugin.Name + " 尚未安装，安装后才可新建配置。"}
 	}
 	o := sm.opts
 	if sm.useHomebrewBackend(plugin, tool, o) != "" {
@@ -1045,6 +1070,9 @@ func (sm *ServiceManager) ReadToolServiceLogs(ctx context.Context, toolID string
 	plugin, tool, _, errRes := sm.resolveTarget(ctx, toolID)
 	if errRes != nil {
 		return ServiceLogsResult{OK: false, Error: errRes.Error, Message: errRes.Message}
+	}
+	if !tool.Installed {
+		return ServiceLogsResult{OK: false, ToolID: tool.ID, Error: "managed_tool_not_installed", Message: plugin.Name + " 尚未安装，暂无可读取的服务日志。"}
 	}
 	o := sm.opts
 	limit := linesLimit

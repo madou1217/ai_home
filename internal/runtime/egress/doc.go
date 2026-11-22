@@ -29,17 +29,33 @@
 //   - 初始/失效车道用 PickBest：新鲜成功 > 未探测 > 陈旧成功 > 新鲜失败；
 //     轮换用 PickNext 保证确定性顺序。陈旧成功不能当可靠事实。
 //   - 死节点不是控制面问题：它们是探测/冷却输入，不应改变账号绑定或架构。
+//   - 池生命周期显式化为 stopped/starting/ready/degraded/failed；ready 只有在
+//     控制器可用且至少一个节点有新鲜成功探测时才成立（见 lifecycle.go）。
 //
 // # 扩展点
 //
 //   - 新策略：在 adapters/agy/egress/strategies.go 加一条 StrategyDefinition，
-//     在解析/启动/探测/呈现路径补对应分支，前端 AccountEgressMode union 加值；
-//     弹窗和策略面板会自动渲染（输入类型 none/proxy_url/ssh_connection/pool_scope）。
+//     在 strategy_registry.go 注册 Resolve/Launch/Display 三个入口（池模式单列），
+//     前端 AccountEgressMode union 加值；弹窗和策略面板会自动渲染
+//     （输入类型 none/proxy_url/ssh_connection/pool_scope）。
 //   - 新内核：实现 PoolCore 的 BuildConfig/CheckConfig/RunArgs/GlobalGroup/
 //     ConfigFileName，并让 ReadPoolRuntimeConfig 能解析其配置；控制面必须兼容
 //     Clash API（/version、/proxies、PUT /proxies/{group}、/delay）。
 //   - 新规则类型：routing.go 的 normalize + MihomoRoutingRules/SingBoxRoutingRules，
 //     以及 WebUI 规则编辑器选项。
+//
+// # 插件化目标架构
+//
+//   - 内核插槽：application/egressengine.Engine（Descriptor/Compile），
+//     插件只编译配置与启动事实，宿主负责进程、控制面、健康、车道与回收。
+//   - 插件发现：pluginhost 能力 egress.engine（CollectEgressEngines），
+//     manifest contributes 声明；主体不 import 任何具体内核。
+//   - sing-box 已有进程插件实现：cmd/aih-engine-singbox +
+//     internal/engineplugins/singbox，engineplugin.Load 会发现并优先使用；
+//     mihomo 仍是内置过渡适配器。两者最终都迁到插件二进制后，删除主体里的
+//     内置编译器与回退分支。
+//   - 策略/呈现同理：StrategyRuntime 已可注册；Surge/sing-box profile 渲染
+//     属于呈现插件，不应进入代理执行层。
 //
 // # 当前边界
 //

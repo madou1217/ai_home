@@ -228,6 +228,28 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter, request *http.Request, escapedPath string) {
 	rest := strings.TrimPrefix(escapedPath, UpstreamsPath+"/")
 	switch {
+	case rest == "routing/test":
+		if !requireMethod(responseWriter, request, http.MethodPost) {
+			return
+		}
+		manager, ok := handler.manager.(RoutingPolicyManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "routing_unavailable"})
+			return
+		}
+		var body struct {
+			Target string `json:"target"`
+		}
+		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
+			return
+		}
+		result, err := manager.GetRoutingPolicy(request.Context()).MatchTarget(body.Target)
+		if err != nil {
+			writeError(responseWriter, http.StatusBadRequest, err.Error(), "目标无效")
+			return
+		}
+		writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "result": result})
+
 	case rest == "routing":
 		manager, ok := handler.manager.(RoutingPolicyManager)
 		if !ok {

@@ -83,6 +83,7 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsPath + "/routing", Handler: upstreamsHandler},
 		{Pattern: "PUT " + webuiegressupstreamsapi.UpstreamsPath + "/routing", Handler: upstreamsHandler},
 		{Pattern: "POST " + webuiegressupstreamsapi.UpstreamsPath + "/routing", Handler: upstreamsHandler},
+		{Pattern: "POST " + webuiegressupstreamsapi.UpstreamsPath + "/routing/test", Handler: upstreamsHandler},
 		{Pattern: "GET " + webuiegressupstreamsapi.UpstreamsWatchPath, Handler: upstreamsHandler},
 		{Pattern: "POST " + webuiegressupstreamsapi.NetworkRefreshPath, Handler: upstreamsHandler},
 		{Pattern: "PUT " + webuiegressupstreamsapi.UpstreamItemPath, Handler: upstreamsHandler},

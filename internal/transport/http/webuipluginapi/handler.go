@@ -32,6 +32,8 @@ const (
 	AccountsImportPath      = Path + "/accounts/import"
 	AccountsRefreshPath     = Path + "/accounts/refresh"
 	AccountsMaterializePath = Path + "/accounts/materialize"
+	NetworkConnectorsPath   = Path + "/network-connectors"
+	NetworkConnectorPath    = NetworkConnectorsPath + "/{connectorId}"
 
 	smallBodyBytes = 256 * 1024
 	largeBodyBytes = 16 * 1024 * 1024
@@ -107,7 +109,13 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		h.handleAccountsRefresh(response, request)
 	case AccountsMaterializePath:
 		h.handleAccountsMaterialize(response, request)
+	case NetworkConnectorsPath:
+		h.handleNetworkConnectors(response, request)
 	default:
+		if strings.HasPrefix(request.URL.Path, NetworkConnectorsPath+"/") {
+			h.handleNetworkConnector(response, request)
+			return
+		}
 		writePluginErrorJSON(response, http.StatusNotFound, "not_found", "")
 	}
 }
@@ -199,6 +207,54 @@ func (h *Handler) handleInvoke(response http.ResponseWriter, request *http.Reque
 		Value:        result.Value,
 		PayloadBytes: result.PayloadBytes,
 	})
+}
+
+func (h *Handler) handleNetworkConnectors(response http.ResponseWriter, request *http.Request) {
+	if !requireMethod(response, request, http.MethodGet) {
+		return
+	}
+	if h.hostService == nil {
+		writePluginErrorJSON(response, http.StatusServiceUnavailable, "plugin_runtime_unavailable", "Go 插件宿主未装配")
+		return
+	}
+	connectors, err := h.hostService.ListNetworkConnectors(request.Context())
+	if err != nil {
+		writeNetworkConnectorDomainError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "connectors": connectors})
+}
+
+type networkConnectorOperationRequest struct {
+	Action    string `json:"action"`
+	Input     any    `json:"input"`
+	Confirmed bool   `json:"confirmed"`
+}
+
+func (h *Handler) handleNetworkConnector(response http.ResponseWriter, request *http.Request) {
+	if !requireMethod(response, request, http.MethodPost) {
+		return
+	}
+	if h.hostService == nil {
+		writePluginErrorJSON(response, http.StatusServiceUnavailable, "plugin_runtime_unavailable", "Go 插件宿主未装配")
+		return
+	}
+	connectorID := strings.TrimSpace(request.PathValue("connectorId"))
+	if connectorID == "" {
+		writePluginErrorJSON(response, http.StatusBadRequest, "network_connector_required", "缺少 connectorId")
+		return
+	}
+	var body networkConnectorOperationRequest
+	if err := decodeOptionalJSONBody(response, request, &body, smallBodyBytes); err != nil {
+		writeDecodeError(response, err)
+		return
+	}
+	result, err := h.hostService.OperateNetworkConnectorWithConfirmation(request.Context(), connectorID, body.Action, body.Input, body.Confirmed)
+	if err != nil {
+		writeNetworkConnectorDomainError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, result)
 }
 
 type pricingRefreshRequest struct {
@@ -486,6 +542,43 @@ func writeDecodeError(response http.ResponseWriter, err error) {
 	}
 }
 
+func writeNetworkConnectorDomainError(response http.ResponseWriter, err error) {
+	code := extractErrorCode(err)
+	if code == "" {
+		code = "network_connector_error"
+	}
+	status := http.StatusBadRequest
+	switch code {
+	case "plugin_runtime_unavailable", "plugin_runtime_inactive", "plugin_contribution_unavailable":
+		status = http.StatusServiceUnavailable
+	case "network_connector_unknown":
+		status = http.StatusNotFound
+	case "network_connector_confirmation_required":
+		status = http.StatusPreconditionRequired
+	case "network_connector_duplicate":
+		status = http.StatusInternalServerError
+	}
+	messages := map[string]string{
+		"plugin_runtime_unavailable":              "插件运行时不可用",
+		"plugin_runtime_inactive":                 "当前没有已发布的插件代次",
+		"plugin_contribution_unavailable":         "插件连接器不可用",
+		"network_connector_unknown":               "未知网络连接器",
+		"network_connector_confirmation_required": "该操作需要明确确认",
+		"network_connector_operation_unsupported": "连接器未声明该操作",
+		"network_connector_operation_required":    "连接器操作参数不完整",
+		"network_connector_payload_too_large":     "连接器请求或响应过大",
+		"network_connector_descriptor_invalid":    "连接器描述无效",
+		"network_connector_status_invalid":        "连接器状态无效",
+		"network_connector_operation_invalid":     "连接器操作结果无效",
+		"network_connector_duplicate":             "检测到重复的网络连接器",
+	}
+	message := messages[code]
+	if message == "" {
+		message = "网络连接器操作失败"
+	}
+	writePluginErrorJSON(response, status, code, message)
+}
+
 func writePluginDomainError(response http.ResponseWriter, err error) {
 	code := extractErrorCode(err)
 	if code == "" {
@@ -497,7 +590,7 @@ func writePluginDomainError(response http.ResponseWriter, err error) {
 		status = http.StatusServiceUnavailable
 	case "plugin_revision_conflict", "plugin_in_use", "plugin_version_conflict":
 		status = http.StatusConflict
-	case "plugin_contribution_unknown", "plugin_not_installed", "plugin_instance_unknown":
+	case "plugin_contribution_unknown", "plugin_not_installed", "plugin_instance_unknown", "network_connector_unknown":
 		status = http.StatusNotFound
 	}
 	var diags []any

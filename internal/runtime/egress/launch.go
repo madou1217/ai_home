@@ -2,7 +2,6 @@ package egress
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -48,41 +47,11 @@ func ResolveAccountLaunchEgress(
 	if binding.Retired {
 		return LaunchEgress{}, fmt.Errorf("egress_binding_retired: %s", strings.TrimSpace(binding.Mode))
 	}
-	mode := strings.ToLower(strings.TrimSpace(binding.Mode))
-	if mode == agyegress.ModePool {
-		// 池有独立的车道与无内核直连池解析，见下方。
-	} else {
-		exit, exitErr := ResolveNonPoolExit(ctx, aiHomeDir, provider, &binding)
-		if exitErr != nil {
-			return LaunchEgress{}, exitErr
-		}
-		return LaunchEgress{Bound: true, Mode: exit.Mode, ProxyURL: exit.ProxyURL}, nil
+	runtime, ok := strategyRuntimeFor(binding.Mode)
+	if !ok {
+		return LaunchEgress{}, fmt.Errorf("egress_mode_unsupported: %s", strings.TrimSpace(binding.Mode))
 	}
-	switch mode {
-	case agyegress.ModePool:
-		state, reason := ReadLivePoolState(aiHomeDir, nil)
-		laneURL := ""
-		if state != nil {
-			laneURL = strings.TrimSpace(state.Lanes[ref])
-		}
-		if laneURL != "" {
-			return LaunchEgress{Bound: true, Mode: mode, ProxyURL: laneURL}, nil
-		}
-		// 没有 mihomo 车道时回落到 HTTP/SOCKS/SSH 直连节点池；两类都不可用
-		// 才失败关闭。
-		if endpoint, endpointErr := SelectEndpointPoolProxy(ctx, aiHomeDir, ref, &binding); endpointErr == nil && endpoint != nil {
-			return LaunchEgress{Bound: true, Mode: mode, ProxyURL: endpoint.ProxyURL}, nil
-		}
-		if state == nil {
-			if reason == "" {
-				reason = "egress_pool_not_running"
-			}
-			return LaunchEgress{}, errors.New(reason)
-		}
-		return LaunchEgress{}, errors.New("egress_pool_lane_not_ready")
-	default:
-		return LaunchEgress{}, fmt.Errorf("egress_mode_unsupported: %s", mode)
-	}
+	return runtime.Launch(ctx, aiHomeDir, provider, ref, &binding)
 }
 
 // Env 把出口翻译成前台 CLI 的环境变更。

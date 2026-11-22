@@ -193,25 +193,13 @@ func bindingSummaryFromRecord(b *agyegress.Binding) *UpstreamAccountEgressSummar
 	return out
 }
 
-func networkExitFor(ctx context.Context, binding *agyegress.Binding, upstream *UpstreamInfo, cfg ServerConfigEgress, aiHomeDir string) (kind string, proxyURL string, include bool) {
+func networkExitFor(ctx context.Context, manager *Manager, binding *agyegress.Binding, upstream *UpstreamInfo, cfg ServerConfigEgress) (kind string, proxyURL string, include bool) {
 	if binding != nil {
-		if strings.EqualFold(strings.TrimSpace(binding.Mode), agyegress.ModePool) {
+		runtime, ok := strategyRuntimeFor(binding.Mode)
+		if !ok {
 			return "", "", false
 		}
-		resolved, err := ResolveNonPoolExit(ctx, aiHomeDir, upstream.Provider, binding)
-		if err != nil {
-			return "", "", false
-		}
-		switch resolved.Mode {
-		case agyegress.ModeSystem:
-			return "system", "", true
-		case agyegress.ModeURL:
-			return "proxy", resolved.ProxyURL, true
-		case agyegress.ModeSSH:
-			return "ssh", resolved.ProxyURL, true
-		default:
-			return "direct", "", true
-		}
+		return runtime.Display(ctx, manager, binding, upstream)
 	}
 	resolved := ResolveServerProxyConfig(upstream.BaseURL, cfg)
 	if resolved != "" {
@@ -423,7 +411,7 @@ func (m *Manager) BuildUpstreamsView(ctx context.Context, accountRefFilter strin
 			}
 
 			var netView *UpstreamAccountNetworkView
-			exitKind, proxyURL, include := networkExitFor(ctx, bindingPtr, upstream, srvCfg, m.aiHomeDir)
+			exitKind, proxyURL, include := networkExitFor(ctx, m, bindingPtr, upstream, srvCfg)
 			// 没有 mihomo 车道时，展示 HTTP/SOCKS/SSH 直连池选出的节点；
 			// 这样账号行不会误显示“出口池无可用节点”。
 			if bindingPtr != nil && bindingPtr.Mode == agyegress.ModePool && (laneView == nil || laneView.ActiveNode == "") {

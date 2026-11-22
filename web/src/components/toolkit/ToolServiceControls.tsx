@@ -20,6 +20,7 @@ interface ToolServiceActionsProps {
 
 /** 服务操作按钮组：启动 / 停止 / 重启 / 新建配置 / 日志（图标 + 文字，避免与安装生命周期的图标按钮混淆）。 */
 export function ToolServiceActions({ tool, service, busy, onControl, onCreateConfig, onOpenLogs }: ToolServiceActionsProps) {
+  if (!tool.installed) return null;
   const disabled = Boolean(busy) || !service.controllable;
   return (
     <>
@@ -92,13 +93,15 @@ export function ToolServiceActions({ tool, service, busy, onControl, onCreateCon
 }
 
 interface ToolServicePolicyProps {
+  installed: boolean;
   service: ManagedToolService;
   busy: string;
   onChange: (settings: { autoStart?: boolean; autoRestart?: boolean }) => void;
 }
 
 /** 守护策略：AIH 守护可切换；Homebrew 服务只读（由服务定义决定）。 */
-export function ToolServicePolicy({ service, busy, onChange }: ToolServicePolicyProps) {
+export function ToolServicePolicy({ installed, service, busy, onChange }: ToolServicePolicyProps) {
+  if (!installed) return null;
   const editable = Boolean(service.settingsEditable) && !busy;
   const autoStartLabel = service.backend === 'homebrew' ? '开机自启' : '随 AIH 启动';
   return (

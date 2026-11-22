@@ -38,6 +38,9 @@ type EgressPoolDiagnostics struct {
 	CorePID        int    `json:"corePid"`
 	CoreKind       string `json:"coreKind,omitempty"`
 	CoreVersion    string `json:"coreVersion,omitempty"`
+	Phase          string `json:"phase,omitempty"`
+	PhaseReason    string `json:"phaseReason,omitempty"`
+	FreshHealthy   int    `json:"freshHealthy"`
 	CoreSource     string `json:"coreSource"`
 	CoreVerified   bool   `json:"coreVerified"`
 	CoreCommand    string `json:"coreCommand"`
@@ -73,6 +76,10 @@ func (m *Manager) Diagnostics(ctx context.Context) EgressDiagnostics {
 		return out
 	}
 	out.Pool = m.poolDiagnostics(ctx)
+	lifecycle := m.PoolLifecycle(ctx)
+	out.Pool.Phase = string(lifecycle.Phase)
+	out.Pool.PhaseReason = lifecycle.Reason
+	out.Pool.FreshHealthy = lifecycle.FreshHealthy
 
 	ports := make([]int, 0, 3+len(out.Pool.LanePorts))
 	for _, port := range []int{out.Pool.MixedPort, out.Pool.ControllerPort, out.Pool.ProbePort} {

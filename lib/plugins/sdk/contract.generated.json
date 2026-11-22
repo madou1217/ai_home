@@ -94,7 +94,16 @@
     "plugin_next_called_twice",
     "plugin_contribution_unknown",
     "plugin_contribution_unavailable",
-    "plugin_generation_unknown"
+    "plugin_generation_unknown",
+    "network_connector_confirmation_required",
+    "network_connector_operation_required",
+    "network_connector_operation_unsupported",
+    "network_connector_unknown",
+    "network_connector_payload_too_large",
+    "network_connector_descriptor_invalid",
+    "network_connector_status_invalid",
+    "network_connector_operation_invalid",
+    "network_connector_duplicate"
   ],
   "capabilities": [
     {
@@ -206,6 +215,11 @@
       "id": "ui",
       "version": 1,
       "mode": "terminal"
+    },
+    {
+      "id": "network.connector",
+      "version": 1,
+      "mode": "collect"
     },
     {
       "id": "provider",

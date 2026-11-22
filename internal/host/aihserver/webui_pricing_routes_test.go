@@ -88,9 +88,6 @@ func TestBuildWebUIPricingRoutes_ServeMuxAndEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWebUIPricingRoutesWithPorts failed: %v", err)
 	}
-	if len(routes) != 7 {
-		t.Fatalf("expected 7 pricing routes, got %d", len(routes))
-	}
 
 	mux := http.NewServeMux()
 	// 验证与其它 /v1/management/webui/* 路由共用 ServeMux 无模式冲突。

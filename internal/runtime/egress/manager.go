@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/egressengine"
 	"github.com/madou1217/ai_home/core/providers"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 )
@@ -79,6 +80,8 @@ type ManagerOptions struct {
 	Catalog             *providers.Catalog
 	LocalGeoHTTPClient  *http.Client
 	Logger              func(string)
+	// EnginePlugins 是已启动的 egress.engine 进程插件；为空时使用内置过渡适配器。
+	EnginePlugins []egressengine.Engine
 }
 
 // LaneView 描述一条活跃车道的展示状态。
@@ -194,6 +197,7 @@ type Manager struct {
 	tunDetector         func(context.Context) (agyegress.TUNStatus, error)
 	proxyProbeFunc      func(ctx context.Context, proxyURL string) ProxyProbeResult
 	desktopBridge       DesktopClientBridge
+	enginePlugins       []egressengine.Engine
 	catalog             *providers.Catalog
 	localGeoHTTPClient  *http.Client
 	planInterval        time.Duration
@@ -301,6 +305,7 @@ func NewManager(opts ManagerOptions) *Manager {
 		tunDetector:          opts.TUNDetector,
 		proxyProbeFunc:       opts.ProxyProbeFunc,
 		desktopBridge:        opts.DesktopBridge,
+		enginePlugins:        append([]egressengine.Engine(nil), opts.EnginePlugins...),
 		catalog:              opts.Catalog,
 		localGeoHTTPClient:   opts.LocalGeoHTTPClient,
 		planInterval:         planInterval,

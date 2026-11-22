@@ -28,6 +28,7 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/egressengine"
 	inferencegateway "github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
@@ -90,6 +91,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/engineplugin"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
@@ -1902,10 +1904,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return store.ContractQuoteSource()
 		})
 	}
+	enginePlugins := make([]egressengine.Engine, 0)
+	for _, client := range engineplugin.Load(aiHomeDir) {
+		enginePlugins = append(enginePlugins, client)
+	}
 	egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
-		AIHomeDir: aiHomeDir,
-		HomeDir:   dependencies.HostHomeDir,
-		Catalog:   catalog,
+		AIHomeDir:     aiHomeDir,
+		HomeDir:       dependencies.HostHomeDir,
+		Catalog:       catalog,
+		EnginePlugins: enginePlugins,
 	})
 	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
 		errorLog.Printf("出口池后台守护启动降级: %v", err)

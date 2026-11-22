@@ -34,8 +34,27 @@ type DNS struct {
 	Route   string   `json:"route,omitempty"` // proxy/direct
 }
 
+// ResolveRequest 让插件定位内核并统计当前节点可编译数量。
+type ResolveRequest struct {
+	AIHomeDir string `json:"aiHomeDir"`
+	Platform  string `json:"platform,omitempty"`
+	Nodes     []Node `json:"nodes"`
+}
+
+// ResolveResult 是插件对内核可用性的回答；宿主据此选择引擎。
+type ResolveResult struct {
+	Binary         string `json:"binary,omitempty"`
+	Version        string `json:"version,omitempty"`
+	UsableNodes    int    `json:"usableNodes"`
+	GlobalGroup    string `json:"globalGroup,omitempty"`
+	ConfigFileName string `json:"configFileName,omitempty"`
+}
+
 // CompileRequest 是主体交给内核插件的唯一输入。
 type CompileRequest struct {
+	// AIHomeDir/Platform 供插件定位内核与工作目录，不包含宿主凭据。
+	AIHomeDir      string `json:"aiHomeDir,omitempty"`
+	Platform       string `json:"platform,omitempty"`
 	Nodes          []Node `json:"nodes"`
 	MixedPort      int    `json:"mixedPort"`
 	ControllerPort int    `json:"controllerPort"`
@@ -91,5 +110,6 @@ type Descriptor struct {
 // 失败关闭与进程身份校验。插件只负责：描述能力、把节点编译成配置与启动参数。
 type Engine interface {
 	Descriptor() Descriptor
+	Resolve(ctx context.Context, request ResolveRequest) (ResolveResult, error)
 	Compile(ctx context.Context, request CompileRequest) (LaunchSpec, error)
 }

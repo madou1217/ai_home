@@ -392,7 +392,7 @@ func (m *Manager) resolvePoolTarget(ctx context.Context, binding *agyegress.Bind
 		normPlat := normalizePlatformLabel(platform)
 		coreUsable := false
 		if nodes, nodesErr := ReadProxyPoolNodes(m.aiHomeDir); nodesErr == nil {
-			if core, coreErr := ResolvePoolCore(nodes, m.aiHomeDir, m.platform); coreErr == nil && core != nil && core.UsableNodes > 0 {
+			if core, coreErr := m.resolvePoolCore(ctx, nodes); coreErr == nil && core != nil && core.UsableNodes > 0 {
 				coreUsable = true
 			}
 		}

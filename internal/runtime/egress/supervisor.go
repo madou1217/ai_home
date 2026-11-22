@@ -490,7 +490,7 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 			GlobalGroup:    mihomoGlobalGroup,
 		}
 	} else {
-		resolved, resolveErr := ResolvePoolCore(nodes, s.aiHomeDir, s.platform)
+		resolved, resolveErr := s.mgr.resolvePoolCore(ctx, nodes)
 		if resolveErr != nil || resolved == nil {
 			return s.setErrorResult("egress_pool_core_not_found")
 		}
@@ -520,7 +520,7 @@ func (s *PoolSupervisor) startOnce(ctx context.Context) PoolStartResult {
 	}
 	secret := hex.EncodeToString(secretBuf)
 
-	built, err := core.BuildConfig(PoolConfigInput{
+	built, err := core.BuildConfig(ctx, PoolConfigInput{
 		MixedPort:      s.mixedPort,
 		ControllerPort: s.controllerPort,
 		Secret:         secret,
@@ -987,6 +987,11 @@ func (m *Manager) Close() error {
 		m.supervisor.ensureWG.Wait()
 	}
 	m.daemonWG.Wait()
+	for _, engine := range m.enginePlugins {
+		if closer, ok := engine.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}
 	return nil
 }
 

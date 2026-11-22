@@ -88,6 +88,25 @@ func NewPluginEngine(descriptor Descriptor, invoke InvokeFunc) (*PluginEngine, e
 // Descriptor 返回插件自报能力。
 func (engine *PluginEngine) Descriptor() Descriptor { return engine.descriptor }
 
+// Resolve 调用插件定位内核并统计可编译节点。
+func (engine *PluginEngine) Resolve(ctx context.Context, request ResolveRequest) (ResolveResult, error) {
+	raw, err := engine.invoke(ctx, map[string]any{
+		"op":      "egress.engine.resolve",
+		"request": request,
+	}, 30*time.Second)
+	if err != nil {
+		return ResolveResult{}, err
+	}
+	var result ResolveResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return ResolveResult{}, fmt.Errorf("egress_engine_resolve_invalid: %w", err)
+	}
+	if result.UsableNodes > 0 && strings.TrimSpace(result.Binary) == "" {
+		return ResolveResult{}, errors.New("egress_engine_binary_required")
+	}
+	return result, nil
+}
+
 // Compile 调用插件编译配置；插件只返回配置/启动事实，不负责启动进程。
 func (engine *PluginEngine) Compile(ctx context.Context, request CompileRequest) (LaunchSpec, error) {
 	raw, err := engine.invoke(ctx, map[string]any{

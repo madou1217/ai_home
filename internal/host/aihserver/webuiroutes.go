@@ -30,19 +30,15 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
-	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
-	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
-	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
-	runtimeupstreamretry "github.com/madou1217/ai_home/internal/runtime/upstreamretry"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/proxyleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccount429retryapi"
@@ -133,10 +129,10 @@ type webuiRouteDependencies struct {
 	ModelModalities        modelmetadata.Catalog
 	ModelAliasExpander     modelmetadata.AliasExpander
 	// ModelAliasDisplay 提供已发布的具体别名，作为关键设置的模型候选。
-	ModelAliasDisplay          modelalias.DisplayReader
-	MetadataResolver           modelpricing.Resolver
-	EgressManager              *runtimeegress.Manager
-	Upstream429RetryStore      *runtimeupstreamretry.Store
+	ModelAliasDisplay modelalias.DisplayReader
+	MetadataResolver  modelpricing.Resolver
+	// 出口、代理与隧道能力统一由嵌入的窄结构提供，出口相关切片可单独取用。
+	webuiEgressDependencies
 	ImageExecutionDependencies imageexecution.Dependencies
 	HostHomeDir                string
 	Store                      *sqliteaccount.Store
@@ -167,11 +163,6 @@ type webuiRouteDependencies struct {
 	QuotaStats *usageapp.QuotaStatsService
 	// TerminalProbe 返回持久终端会话状态；SSH 工作区终端状态接口需要。
 	TerminalProbe func(sessionKey string) string
-	// ReverseTunnels 维护 ssh_connections.reverseTunnel。
-	ReverseTunnels *sshtunnel.Supervisor
-	SSHProxies     *sshproxy.Supervisor
-	// ProxyRuntime 为工具箱安装/更新提供任务期代理租约；与 CLI 的命名代理选择器同源。
-	ProxyRuntime *sshproxy.LeaseManager
 	// AccountDeletion 是账号删除用例（WebUI 的 DELETE 承接者）。
 	AccountDeletion webuiaccountdeleteapi.AccountDeletion
 	// AccountHostGrant 回收停用账号在宿主上的直连授权（当前只有 codex）。
@@ -182,8 +173,6 @@ type webuiRouteDependencies struct {
 	SelfBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
 	ManagementKey func() string
-	// ProxyPool 是进程级上游代理池，server-config 保存后立即热更新。
-	ProxyPool *outboundproxy.Manager
 	// RequestShutdown is the host graceful-exit port shared by both restart entry points.
 	RequestShutdown func()
 	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。

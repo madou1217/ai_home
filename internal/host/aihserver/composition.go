@@ -42,7 +42,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
-	"github.com/madou1217/ai_home/internal/adapters/deletionhost"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
@@ -726,36 +725,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 宿主投影（直连授权回收 + AIH Server 落点）由 Go 自己承接。宿主配置文件
 	// 同步仍是 Node 的投影，通过 GatewaySync 端口注入；端口缺省时按 Node 同款
 	// 原因码如实上报，绝不先写档位再等宿主。
-	deletionHost, err := deletionhost.New(deletionhost.Options{
-		AIHomeDir:   aiHomeDir,
-		HostHomeDir: dependencies.HostHomeDir,
-		Catalog:     catalog,
-		Credentials: store,
-		// Codex host credentials/default pointers now share the transactional host
-		// service. Other providers remain explicitly unavailable in this adapter.
-		CodexDefaults: codexDefaultProjection{aiHome: aiHomeDir, hostHome: dependencies.HostHomeDir},
+	deletionLifecycle, err := newAccountDeletionLifecycle(accountDeletionInputs{
+		aiHomeDir:          aiHomeDir,
+		hostHomeDir:        dependencies.HostHomeDir,
+		catalog:            catalog,
+		store:              store,
+		nodeBaseURL:        nodeBaseURL,
+		managementKey:      managementKey,
+		occupancy:          deletionOccupancy,
+		preparation:        deletionPreparation,
+		chatRuntimeService: func() *chatruntime.Service { return chatRuntimeService },
+		upstream429Store:   upstream429Store,
+		modelRefresh:       modelRefresh,
+		usage:              usage,
+		accountRuntime:     accountRuntime,
+		credentials:        credentials,
 	})
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号删除宿主投影失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
-	deletionRuntime, err := newAccountDeletionRuntime(aiHomeDir, catalog, nodeBaseURL, managementKey, deletionOccupancy, deletionPreparation, func() *chatruntime.Service { return chatRuntimeService }, upstream429Store)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号删除运行保护失败: %w", err)
-	}
-	deleter, err := accountapp.NewDeleter(
-		store,
-		deletionRuntime,
-		deletionRuntime,
-		modelRefresh,
-		usage,
-		accountRuntime,
-		credentials,
-	)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号删除用例失败: %w", err)
-	}
-	deleter.WithHostProjection(deletionHost, deletionHost)
-	deletionRuntime.Bind(deleter)
+	deletionHost := deletionLifecycle.host
+	deletionRuntime := deletionLifecycle.guard
 	accountLifecycle, err := newAccountRegistrationRuntime(
 		registrar,
 		modelRefresh,

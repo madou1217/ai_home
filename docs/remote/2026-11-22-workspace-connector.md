@@ -117,7 +117,9 @@ CLI/WebUI 不再依赖历史 Node 数据才能解析目标。
 9. 目标预检：online Connector 通过 workspace 阶段，但 tools/launch 阶段明确
    `remote_tools_unsupported` / `native_launch_unavailable`；offline/revoked 分别在
    workspace 阶段阻断；
-10. `go build ./...`、`go vet`（改动包）与 `npm run build` 通过。
+10. `go build ./...`、`go vet`（改动包）与 `npm run build` 通过；
+11. 真实浏览器（Work 模式）检查：本地工作区面板显示在线状态、目录浏览、enrollment
+    code 完整显示与复制按钮；无 console error，无大面积告警块或左侧粗色条。
 
 原始命令输出保存在本地 `run/remote-execution-connector-20261122/`（未入库）。
 

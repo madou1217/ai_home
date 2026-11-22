@@ -16,7 +16,6 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
-	"github.com/madou1217/ai_home/application/egressengine"
 	inferencegateway "github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
@@ -40,7 +39,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
@@ -53,7 +51,6 @@ import (
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	pluginmodelcatalog "github.com/madou1217/ai_home/internal/adapters/pluginprovider/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
-	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
@@ -65,7 +62,6 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
-	"github.com/madou1217/ai_home/internal/runtime/engineplugin"
 	"github.com/madou1217/ai_home/internal/runtime/failureprovenance"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
@@ -77,7 +73,6 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/renderplugin"
-	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
 	"github.com/madou1217/ai_home/internal/runtime/sshtunnel"
@@ -1695,103 +1690,22 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			return store.ContractQuoteSource()
 		})
 	}
-	enginePlugins := make([]egressengine.Engine, 0)
-	for _, client := range engineplugin.Load(aiHomeDir) {
-		enginePlugins = append(enginePlugins, client)
+	egressActivity, err := newEgressActivityRuntime(
+		ctx,
+		aiHomeDir,
+		dependencies.HostHomeDir,
+		catalog,
+		store,
+		accountRuntime,
+		dependencies.TokenEvents,
+		dependencies.OutcomeRecorder,
+		errorLog,
+	)
+	if err != nil {
+		return serverHandlers{}, nil, err
 	}
-	egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
-		AIHomeDir:             aiHomeDir,
-		HomeDir:               dependencies.HostHomeDir,
-		Catalog:               catalog,
-		EnginePlugins:         enginePlugins,
-		DisableBuiltinEngines: true,
-	})
-	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
-		errorLog.Printf("出口池后台守护启动降级: %v", err)
-	}
-	activityDaemon := sessionactivity.NewDaemon(sessionactivity.DaemonOptions{
-		AIHomeDir:   aiHomeDir,
-		HostHomeDir: dependencies.HostHomeDir,
-		OnSnapshotChanged: func(snapshot map[string]sessionactivity.AccountSnapshot) {
-			dependencies.TokenEvents.PublishAccountActivity(snapshot)
-		},
-		Catalog: catalog,
-		ResolveHarnessTurnMode: func(harnessID string) string {
-			definition, ok := catalog.Get(strings.TrimSpace(harnessID))
-			if !ok {
-				return "external"
-			}
-			if mode := strings.TrimSpace(string(definition.SessionSync.Mode)); mode != "" {
-				return mode
-			}
-			return "external"
-		},
-		IsAccountEnabled: func(checkCtx context.Context, _ string, accountRef string) bool {
-			if store == nil {
-				return true
-			}
-			parsedRef, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
-			if parseErr != nil {
-				return true
-			}
-			overview, lookupErr := store.GetAccountOverview(checkCtx, parsedRef)
-			if lookupErr != nil {
-				return true
-			}
-			return overview.Account().Enabled()
-		},
-		RecordOutcome: func(_ context.Context, accountRef, outcome string, atMS int64) bool {
-			if dependencies.OutcomeRecorder == nil {
-				return false
-			}
-			parsedRef, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(accountRef))
-			if parseErr != nil {
-				return false
-			}
-			trimmedOutcome := strings.TrimSpace(outcome)
-			if trimmedOutcome == "" {
-				return false
-			}
-			var at time.Time
-			if atMS > 0 {
-				at = time.UnixMilli(atMS)
-			}
-			dependencies.OutcomeRecorder.RecordAt(parsedRef, trimmedOutcome, at)
-			return true
-		},
-		OnCodebuddyLimit: func(limitCtx context.Context, obs sessionactivity.ObservedCodebuddyLimit) bool {
-			parsedRef, parseErr := accountcore.ParseAccountRef(strings.TrimSpace(obs.AccountRef))
-			if parseErr != nil {
-				return false
-			}
-			model := strings.TrimSpace(obs.Model)
-			if model == "" {
-				return false
-			}
-			route, routeErr := runtimecore.NewModelRoute(parsedRef, model)
-			if routeErr != nil {
-				return false
-			}
-			nowMS := time.Now().UnixMilli()
-			var retryAfter time.Duration
-			if !obs.HardExhaustion && obs.ResetAtMS > nowMS {
-				retryAfter = time.Duration(obs.ResetAtMS-nowMS) * time.Millisecond
-				if retryAfter > runtimecore.MaxCooldownHint {
-					retryAfter = runtimecore.MaxCooldownHint
-				}
-			}
-			classification, classErr := sharedfailure.NewClassification(runtimecore.FailureRateLimited, retryAfter)
-			if classErr != nil {
-				return false
-			}
-			failure, failErr := attemptfailure.New(classification)
-			if failErr != nil {
-				return false
-			}
-			return accountRuntime.RecordFailure(limitCtx, route, failure) == nil
-		},
-	})
-	activityDaemon.Start(ctx)
+	egressManager = egressActivity.manager
+	activityDaemon := egressActivity.activity
 	desktopChanged := &desktopSettingsNotifier{}
 	nativeWork, nativeWorkErr := worknative.New(worknative.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir, Catalog: catalog, Store: store, Credentials: credentials, GatewayURL: selfBaseURL, GatewayKey: clientKey})
 	if nativeWorkErr != nil {

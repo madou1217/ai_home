@@ -20,6 +20,7 @@
 | 功能路由组 | `webui_feature_routes.go` | 新增一个域只改该文件 |
 | 组合根运行辅助 | `composition_runtime_helpers.go` | `composition.go` 2851 → 2550 行 |
 | 凭据刷新/登录策略 | `composition_credentials.go`（Provider 刷新策略、kiro 刷新器、agy 投影回写） | `composition.go` 2550 → 2316 行 |
+| 出口池与账号活动 | `composition_egress_activity.go`（引擎加载、Manager、活动守护/限流回调） | `composition.go` 2316 → 2230 行 |
 | Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
 | 出口上游 API | routing / catalog / upstream actions 分成三个文件 | `webuiegressupstreamsapi/handler.go` 539 → 367 行 |
 

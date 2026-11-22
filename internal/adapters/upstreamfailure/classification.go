@@ -9,6 +9,7 @@ import (
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/core/failureprovenance"
 )
 
 const (
@@ -112,6 +113,7 @@ type Classification struct {
 	kind                       runtimecore.FailureKind
 	retryAfter                 time.Duration
 	blockDirective             runtimecore.BlockDirective
+	provenance                 failureprovenance.Provenance
 	observedHTTPStatus         int
 	hasExplicitRetryAfter      bool
 	explicitRetryAfter         time.Duration
@@ -196,6 +198,20 @@ func ClassifyTransport(kind TransportKind) (Classification, error) {
 // Kind 返回运行态核心识别的稳定失败类型。
 func (classification Classification) Kind() runtimecore.FailureKind {
 	return classification.kind
+}
+
+// WithProvenance 附加"这次分类命中了哪一层规则"的低敏证据。
+//
+// 来源证据不参与分类合法性判定：零值表示调用方没有提供（例如传输层失败或
+// 本机合成失败），而不是无效分类。
+func (classification Classification) WithProvenance(provenance failureprovenance.Provenance) Classification {
+	classification.provenance = provenance
+	return classification
+}
+
+// Provenance 返回来源证据；零值表示未记录。
+func (classification Classification) Provenance() failureprovenance.Provenance {
+	return classification.provenance
 }
 
 // RetryAfter 返回不超过领域上限的有限恢复提示。

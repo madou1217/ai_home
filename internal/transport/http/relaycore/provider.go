@@ -187,5 +187,5 @@ func (base BaseProvider) ClassifyFailure(
 	body []byte,
 	now time.Time,
 ) (sharedfailure.Classification, error) {
-	return sharedfailure.ObserveHTTP(statusCode, header, body, now)
+	return sharedfailure.ObserveHTTPForProvider(base.providerID, statusCode, header, body, now)
 }

@@ -113,6 +113,10 @@ type Match struct {
 	Semantic   string
 	BlockScope string
 	Source     string
+	// ErrorType/ErrorCode 是本次观察到的结构化错误标识（不是规则里的匹配式），
+	// 供失败来源证据与诊断展示。
+	ErrorType string
+	ErrorCode string
 }
 
 // Override 是运行时可编辑的全局覆盖。
@@ -274,6 +278,8 @@ func (document *Document) Resolve(input SignalInput) (Match, bool) {
 			Semantic:   signal.Semantic,
 			BlockScope: signal.BlockScope,
 			Source:     signal.Source,
+			ErrorType:  input.ErrorType,
+			ErrorCode:  input.ErrorCode,
 		}, true
 	}
 	return Match{}, false
@@ -361,8 +367,12 @@ func (document *Document) prepareSignals() error {
 		if strings.TrimSpace(signal.Provider) == "" {
 			return fmt.Errorf("%w: signal=%s provider 为空", ErrInvalidContract, signal.ID)
 		}
-		if _, found := document.policyIndex[strings.TrimSpace(signal.Semantic)]; !found {
+		policy, found := document.policyIndex[strings.TrimSpace(signal.Semantic)]
+		if !found {
 			return fmt.Errorf("%w: signal=%s 引用了未知语义 %s", ErrInvalidContract, signal.ID, signal.Semantic)
+		}
+		if blockingAction(policy.Action) && signal.BlockScope == "" && policy.DefaultBlockScope == "" {
+			return fmt.Errorf("%w: signal=%s 的阻塞语义 %s 缺少 block_scope", ErrInvalidContract, signal.ID, signal.Semantic)
 		}
 		if signal.BlockScope != "" && !validScope(signal.BlockScope) {
 			return fmt.Errorf("%w: signal=%s block_scope=%s 无效", ErrInvalidContract, signal.ID, signal.BlockScope)

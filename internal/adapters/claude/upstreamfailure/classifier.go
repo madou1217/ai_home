@@ -4,6 +4,7 @@ package upstreamfailure
 import (
 	"time"
 
+	failurecontract "github.com/madou1217/ai_home/contracts/upstream-failure"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
@@ -34,6 +35,27 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 	)
 	if err != nil {
 		return sharedfailure.Classification{}, err
+	}
+
+	conditions := map[string]bool{}
+	if input.UnifiedRateLimit {
+		conditions["unified_rate_limit"] = true
+	}
+	if match, matched := failurecontract.Resolve(sharedfailure.SignalInputFrom(
+		"claude",
+		input.StatusCode,
+		input.ErrorType,
+		input.ErrorCode,
+		input.RetryAfter,
+		conditions,
+	)); matched {
+		kind := runtimecore.FailureKind(match.Semantic)
+		classification, classifyErr := sharedfailure.ClassifySignal(
+			match,
+			input.StatusCode,
+			sharedfailure.SignalRetryAfter(kind, input.StatusCode, response.RetryAfter()),
+		)
+		return classification, classifyErr
 	}
 
 	kind, carriesRetryAfter := classifyResponse(

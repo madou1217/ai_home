@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	failurecontract "github.com/madou1217/ai_home/contracts/upstream-failure"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
 
@@ -29,6 +30,20 @@ func ObserveHTTP(
 	body []byte,
 	observedAt time.Time,
 ) (Classification, error) {
+	return ObserveHTTPForProvider("", statusCode, header, body, observedAt)
+}
+
+// ObserveHTTPForProvider 是带 Provider 身份的 ObserveHTTP。
+//
+// 契约里的 provider 专属信号行（例如某个厂商把某个状态码视为池耗尽）只有在
+// 这里传入真实 Provider 时才可能命中；空 Provider 只参与 "all" 通用行。
+func ObserveHTTPForProvider(
+	provider string,
+	statusCode int,
+	header http.Header,
+	body []byte,
+	observedAt time.Time,
+) (Classification, error) {
 	if statusCode <= 0 {
 		return Classification{}, ErrInvalidObservation
 	}
@@ -47,6 +62,31 @@ func ObserveHTTP(
 			return classification, err
 		}
 		return AttachExplicitRetryAfter(classification, header, observedAt), nil
+	}
+
+	if match, matched := failurecontract.Resolve(SignalInputFrom(
+		provider,
+		statusCode,
+		errorType,
+		errorCode,
+		0,
+		nil,
+	)); matched {
+		explicitWait, hasExplicit := parseHeaderRetryAfter(header, observedAt)
+		explicit := time.Duration(0)
+		if hasExplicit && explicitWait > 0 && explicitWait <= runtimecore.MaxCooldownHint {
+			explicit = explicitWait
+		}
+		kind := runtimecore.FailureKind(match.Semantic)
+		classification, classifyErr := ClassifySignal(
+			match,
+			statusCode,
+			SignalRetryAfter(kind, statusCode, explicit),
+		)
+		if classifyErr != nil {
+			return classification, classifyErr
+		}
+		return attachExplicit(classification, nil)
 	}
 
 	if kind, scope, blocking, matched := classifyKnownErrorIdentity(statusCode, errorType, errorCode); matched {

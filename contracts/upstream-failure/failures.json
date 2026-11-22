@@ -149,7 +149,7 @@
       "id": "builtin.all.quota.insufficient_quota",
       "provider": "all",
       "priority": 0,
-      "error_type_or_code": ["insufficient_quota", "quota_exhausted", "quota_exceeded", "quota_error"],
+      "error_type_or_code": ["insufficient_quota", "insufficient_credits", "quota_exhausted", "quota_exceeded", "quota_error"],
       "semantic": "quota_exhausted",
       "block_scope": "account"
     },

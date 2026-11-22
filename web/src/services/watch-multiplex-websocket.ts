@@ -32,6 +32,10 @@ export {
 };
 
 const MAX_UNOPENED_WS_PROBES = 2;
+// 有界降级：握手持续失败或鉴权持续被拒（但 HTTP 能力探测证明后端支持 WS）时，
+// 不能无限重连——切到抓取目标的 SSE，由 shared-watch 继续做单路径去重。
+const WS_OPEN_FAILURES_BEFORE_FALLBACK = 6;
+const WS_AUTH_FAILURES_BEFORE_FALLBACK = 3;
 const CAPABILITY_PROBE_TIMEOUT_MS = 5_000;
 const CAPABILITY_PROBE_COOLDOWN_MS = 30_000;
 const SILENCE_TIMEOUT_MS = 45_000;
@@ -87,6 +91,7 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
   private authenticatedAt = 0;
   private wsSupportedConfirmed = false;
   private unopenedFailures = 0;
+  private authFailures = 0;
   private reconnectAttempt = 0;
   private lastActivityAt = Date.now();
   private fallbackMode = false;
@@ -364,6 +369,10 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
       }
       if (opened) {
         this.unopenedFailures = 0;
+        if (authOrPolicyFailure) {
+          this.authFailures += 1;
+          this.maybeStartCapabilityProbe();
+        }
       }
       try {
         this.notifySubscriptionsDisconnect(true);
@@ -383,6 +392,7 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
       this.authenticatedAt = Date.now();
       this.wsSupportedConfirmed = true;
       this.unopenedFailures = 0;
+      this.authFailures = 0;
       this.abortCapabilityProbe();
       this.armStableResetTimer(socket, gen);
       for (const sub of [...this.subscriptions.values()]) {
@@ -441,7 +451,7 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
       this.disposed
       || this.suspended
       || this.fallbackMode
-      || this.wsSupportedConfirmed
+      || (this.wsSupportedConfirmed && this.authFailures < WS_AUTH_FAILURES_BEFORE_FALLBACK)
       || this.subscriptions.size === 0
       || !this.probeWebSocketSupport
       || this.probeController !== null
@@ -461,6 +471,8 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
     }
 
     this.lastProbeAt = now;
+    const failuresAtProbe = this.unopenedFailures;
+    const authFailuresAtProbe = this.authFailures;
     const expectedProbeGen = ++this.probeGen;
     const controller = new AbortController();
     this.probeController = controller;
@@ -480,7 +492,7 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
           this.disposed
           || this.suspended
           || this.fallbackMode
-          || this.wsSupportedConfirmed
+          || (this.wsSupportedConfirmed && authFailuresAtProbe < WS_AUTH_FAILURES_BEFORE_FALLBACK)
           || this.probeGen !== expectedProbeGen
         ) {
           return;
@@ -491,7 +503,14 @@ class WatchMultiplexClient implements WatchMultiplexClientBridge {
         }
         if (result === 'supported') {
           this.wsSupportedConfirmed = true;
-          this.unopenedFailures = 0;
+          // 后端支持 WS，但本端持续握手失败或鉴权被拒：说明这条 WS 通道在当前
+          // 网络/代次下不可用，按有界策略降级到 SSE；不重置失败计数，让下一次
+          // 探测能看到累计值。
+          if (failuresAtProbe >= WS_OPEN_FAILURES_BEFORE_FALLBACK ||
+              authFailuresAtProbe >= WS_AUTH_FAILURES_BEFORE_FALLBACK) {
+            this.activateFallbackMode();
+            return;
+          }
           return;
         }
         if (result === 'unsupported') {

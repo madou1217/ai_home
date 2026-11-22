@@ -74,6 +74,9 @@ import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-cont
 const DIRECT_REGISTER_AUTH_MODES: AccountAuthMode[] = ['api-key', 'auth-token', 'vertex-ai'];
 
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
+// 刷新作业的轮询兜底：watch 流不可用（WS 降级失败/连接占满）时仍能收尾。
+const ACCOUNT_REFRESH_POLL_INTERVAL_MS = 1_500;
+const ACCOUNT_REFRESH_POLL_DEADLINE_MS = 120_000;
 // 刷新分支的中文名（与服务端 webui-account-refresh.js 的 BRANCH_LABELS 同口径）：
 // 部分失败时用来告诉用户到底是哪一面没拿到。
 const REFRESH_BRANCH_LABELS: Record<string, string> = {
@@ -262,6 +265,7 @@ export function useAccountActions({
   const completedAuthJobKeysRef = React.useRef<Set<string>>(new Set());
   const completedRefreshJobKeysRef = React.useRef<Set<string>>(new Set());
   const refreshingUsageFallbackTimersRef = React.useRef<Record<string, number>>({});
+  const refreshJobPollsRef = React.useRef<Record<string, { timer: number | null; deadline: number }>>({});
   const previousAddProviderRef = React.useRef<Provider | undefined>(undefined);
   const cliClickTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
@@ -662,6 +666,68 @@ export function useAccountActions({
     }
   }, [clearAccountUsageRefresh, stageAccountRemoval, trackAccountUsageRefresh]);
 
+  const stopRefreshJobPoll = React.useCallback((accountRef: string) => {
+    const key = String(accountRef || '').trim();
+    if (!key) return;
+    const state = refreshJobPollsRef.current[key];
+    if (!state) return;
+    if (state.timer !== null) window.clearTimeout(state.timer);
+    delete refreshJobPollsRef.current[key];
+  }, []);
+
+  const clearRefreshSpinner = React.useCallback((accountRef: string) => {
+    const key = String(accountRef || '').trim();
+    if (!key) return;
+    setRefreshingAccountRefs((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    clearAccountUsageRefresh(key);
+  }, [clearAccountUsageRefresh]);
+
+  // startRefreshJobPoll 是 watch 之外的独立收尾路径：202 入队后按作业快照轮询，
+  // 终态喂给同一个 handleAccountRefreshJobUpdate，超时则清 spinner 并提示后台仍在跑。
+  const startRefreshJobPoll = React.useCallback((accountRef: string, jobId: string) => {
+    const key = String(accountRef || '').trim();
+    const id = String(jobId || '').trim();
+    if (!key || !id) return;
+    stopRefreshJobPoll(key);
+    const state = { timer: null as number | null, deadline: Date.now() + ACCOUNT_REFRESH_POLL_DEADLINE_MS };
+    refreshJobPollsRef.current[key] = state;
+    const tick = async () => {
+      if (!refreshJobPollsRef.current[key] || refreshJobPollsRef.current[key].deadline !== state.deadline) return;
+      if (Date.now() > state.deadline) {
+        stopRefreshJobPoll(key);
+        clearRefreshSpinner(key);
+        message.warning('刷新仍在后台进行，稍后可在账号列表查看结果');
+        return;
+      }
+      try {
+        const payload = await accountsAPI.getRefreshJob(id);
+        if (!refreshJobPollsRef.current[key] || refreshJobPollsRef.current[key].deadline !== state.deadline) return;
+        const job = payload?.job;
+        if (job) {
+          handleAccountRefreshJobUpdate(job);
+          if (job.status !== 'queued' && job.status !== 'running') {
+            stopRefreshJobPoll(key);
+            return;
+          }
+        }
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          stopRefreshJobPoll(key);
+          clearRefreshSpinner(key);
+          return;
+        }
+      }
+      if (!refreshJobPollsRef.current[key]) return;
+      state.timer = window.setTimeout(() => { void tick(); }, ACCOUNT_REFRESH_POLL_INTERVAL_MS);
+    };
+    state.timer = window.setTimeout(() => { void tick(); }, ACCOUNT_REFRESH_POLL_INTERVAL_MS);
+  }, [clearRefreshSpinner, handleAccountRefreshJobUpdate, stopRefreshJobPoll]);
+
   const updateCodexResetAvailableCount = React.useCallback((accountRef: string, availableCount: number) => {
     setAccounts((current) => current.map((item) => {
       if (item.provider !== 'codex' || getAccountRef(item) !== accountRef) return item;
@@ -736,6 +802,10 @@ export function useAccountActions({
         window.clearTimeout(timer);
       });
       refreshingUsageFallbackTimersRef.current = {};
+      Object.values(refreshJobPollsRef.current).forEach((state) => {
+        if (state.timer !== null) window.clearTimeout(state.timer);
+      });
+      refreshJobPollsRef.current = {};
     };
   }, []);
 
@@ -1421,6 +1491,9 @@ export function useAccountActions({
     try {
       const result = await accountsAPI.refresh(record.provider, accountRef);
       handleAccountRefreshJobUpdate(result.job);
+      if (result.job?.id && (result.job.status === 'queued' || result.job.status === 'running')) {
+        startRefreshJobPoll(getAccountRef(result.job) || accountRef, result.job.id);
+      }
     } catch (error: any) {
       setRefreshingAccountRefs((current) => {
         const next = { ...current };
@@ -1443,6 +1516,9 @@ export function useAccountActions({
       const result = await accountsAPI.refreshUsage(record.provider, record.accountRef);
       if (result.job) {
         handleAccountRefreshJobUpdate(result.job);
+        if (result.job.id && (result.job.status === 'queued' || result.job.status === 'running')) {
+          startRefreshJobPoll(getAccountRef(result.job) || record.accountRef, result.job.id);
+        }
       }
     } catch (error: any) {
       clearAccountUsageRefresh(accountRef);

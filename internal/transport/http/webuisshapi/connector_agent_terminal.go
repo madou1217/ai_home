@@ -185,7 +185,7 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		return
 	}
 	if handler.preparer != nil {
-		target, targetErr := handler.preparer.GetTarget(request.Context(), agent, "")
+		target, targetErr := handler.preparer.GetTarget(request.Context(), agent, chatruntime.GatewayRuntimeScope)
 		if targetErr != nil {
 			writeError(response, http.StatusServiceUnavailable, "native_target_unavailable", "无法解析 Server 网关执行目标")
 			return

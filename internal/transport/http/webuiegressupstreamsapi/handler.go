@@ -62,10 +62,17 @@ type UpstreamsManager interface {
 	UpdateUpstreamPolicy(ctx context.Context, upstreamID string, patch runtimeegress.UpstreamPolicyPatch) (runtimeegress.UpstreamPolicy, error)
 	ResetUpstreamEvidence(ctx context.Context, upstreamID string, exitKeys []string) (int, int, string)
 	StartUpstreamProbe(ctx context.Context, upstreamID string, requestedNodes []string) (runtimeegress.UpstreamProbeHTTPResult, int)
-	ProbeUpstreamAccount(ctx context.Context, upstreamID string, accountRef string) (runtimeegress.AccountUpstreamProbeResult, int)
 	ValidateAccountPath(ctx context.Context, provider string, accountRef string) (*runtimeegress.AccountRecord, int, string)
 	GetAccountEgressRuntime(ctx context.Context, account runtimeegress.AccountRecord) map[string]any
 	PutAccountEgressAssignment(ctx context.Context, account runtimeegress.AccountRecord, rawBody map[string]any) (map[string]any, int, string)
+}
+
+// AccountUpstreamProbeManager 是可选的按账号真实出口探测能力。
+//
+// 生产 runtimeegress.Manager 实现它；旧的测试/替代管理器没有该能力时，
+// 仅该路由返回 501，不影响其它出口管理路由的装配。
+type AccountUpstreamProbeManager interface {
+	ProbeUpstreamAccount(ctx context.Context, upstreamID string, accountRef string) (runtimeegress.AccountUpstreamProbeResult, int)
 }
 
 // Dependencies 注入鉴权策略、上游管理器及测试时钟/心跳配置。
@@ -248,7 +255,14 @@ func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter,
 		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
 			return
 		}
-		result, status := handler.manager.ProbeUpstreamAccount(request.Context(), id, body.AccountRef)
+		probeManager, ok := handler.manager.(AccountUpstreamProbeManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, runtimeegress.AccountUpstreamProbeResult{
+				OK: false, Status: "skipped", Reason: "account_probe_unavailable",
+			})
+			return
+		}
+		result, status := probeManager.ProbeUpstreamAccount(request.Context(), id, body.AccountRef)
 		writeJSON(responseWriter, status, result)
 
 	case strings.HasSuffix(rest, "/evidence/reset"):

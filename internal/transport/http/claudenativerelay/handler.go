@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+	"github.com/madou1217/ai_home/internal/transport/http/relayegress"
 	"io"
 	"mime"
 	"net/http"
@@ -76,19 +77,11 @@ type CredentialResolver interface {
 	inferencegateway.CredentialObservationVerifier
 }
 
-// HTTPClient 是 Relay 发起单个上游请求所需的最小端口。
-type HTTPClient interface {
-	Do(request *http.Request) (*http.Response, error)
-}
+// HTTPClient 与 AccountEgress 来自共享端口：relaycore 与 Native Relay
+// 使用同一套「按账号取上游客户端」的语义，宿主实现只写一次。
+type HTTPClient = relayegress.HTTPClient
 
-// AccountEgress 按本次尝试的账号解析出站客户端。
-//
-// bound=false 表示账号没有出口绑定，继续使用注入的默认 Client；
-// bound=true 时必须使用返回的客户端，不能回落到默认网络。
-// 解析失败同样以 bound=true 返回，由调用方失败关闭。
-type AccountEgress interface {
-	ClientForAccount(ctx context.Context, provider, accountRef string) (HTTPClient, bool, error)
-}
+type AccountEgress = relayegress.AccountEgress
 
 // Dependencies 集中声明 Native Relay 的鉴权、凭据、传输和运行态端口。
 type Dependencies struct {

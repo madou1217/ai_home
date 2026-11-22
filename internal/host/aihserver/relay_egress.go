@@ -9,7 +9,7 @@ import (
 	"time"
 
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
-	claudenativerelay "github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
+	"github.com/madou1217/ai_home/internal/transport/http/relayegress"
 )
 
 // relayAccountEgress 把账号出口绑定投影到 Claude Native Relay 的上游请求。
@@ -22,14 +22,14 @@ type relayAccountEgress struct {
 	timeout time.Duration
 
 	mu      sync.Mutex
-	clients map[string]claudenativerelay.HTTPClient
+	clients map[string]relayegress.HTTPClient
 }
 
 func newRelayAccountEgress(manager func() *runtimeegress.Manager, timeout time.Duration) *relayAccountEgress {
 	return &relayAccountEgress{
 		manager: manager,
 		timeout: timeout,
-		clients: make(map[string]claudenativerelay.HTTPClient),
+		clients: make(map[string]relayegress.HTTPClient),
 	}
 }
 
@@ -38,7 +38,7 @@ func (resolver *relayAccountEgress) ClientForAccount(
 	ctx context.Context,
 	provider string,
 	accountRef string,
-) (claudenativerelay.HTTPClient, bool, error) {
+) (relayegress.HTTPClient, bool, error) {
 	if resolver == nil || resolver.manager == nil {
 		return nil, false, nil
 	}
@@ -79,7 +79,7 @@ func (resolver *relayAccountEgress) ClientForAccount(
 }
 
 // cachedClient 按出口复用连接池；池车道地址变化时旧条目会被有界淘汰。
-func (resolver *relayAccountEgress) cachedClient(key, proxyURL string) claudenativerelay.HTTPClient {
+func (resolver *relayAccountEgress) cachedClient(key, proxyURL string) relayegress.HTTPClient {
 	resolver.mu.Lock()
 	defer resolver.mu.Unlock()
 	if client := resolver.clients[key]; client != nil {

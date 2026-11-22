@@ -1845,6 +1845,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Fallback:            inference.handler,
 			Credentials:         credentials,
 			Client:              relayClient,
+			AccountEgress:       relayEgress,
 			Attempts:            accountRuntime,
 			Upstream429Retries:  upstream429Controller,
 			Clock:               time.Now,

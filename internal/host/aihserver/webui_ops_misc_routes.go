@@ -10,7 +10,9 @@ import (
 	"github.com/madou1217/ai_home/application/accountoutcomes"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountactivity"
+	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/runtime/codexresetcredit"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/scheduledtasks"
 	"github.com/madou1217/ai_home/internal/runtime/taskhub"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
@@ -40,6 +42,12 @@ func newNativeActivityExecutor(dependencies webuiRouteDependencies) accountactiv
 		AIHomeDir:   dependencies.AIHomeDir,
 		HostHomeDir: dependencies.HostHomeDir,
 		Catalog:     accountactivity.BuiltinCatalog(),
+		EgressResolver: agyegress.NewResolver(agyegress.Options{
+			AIHomeDir: dependencies.AIHomeDir,
+			ResolveManagedSSH: func(reference string) (string, error) {
+				return runtimeegress.ManagedSSHProxyURL(dependencies.AIHomeDir, reference)
+			},
+		}),
 		OnClaimed: func(_ context.Context, _ string, accountRef string, result map[string]any) {
 			usageSvc := dependencies.UsageService
 			if usageSvc == nil || result == nil {

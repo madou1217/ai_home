@@ -57,6 +57,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/host/worknative"
+	"github.com/madou1217/ai_home/internal/runtime/accountbrowser"
 	"github.com/madou1217/ai_home/internal/runtime/accountwriterlease"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/codexmodelcatalog"
@@ -1148,6 +1149,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		// （state/PKCE 只在内存，重启后无法继续，冒充 pending 会让前端一直等）。
 		JobStore:  store,
 		AliasPool: newAccountAliasPoolWriter(aiHomeDir),
+		ProfileBinder: func(ctx context.Context, providerID, accountRef, jobID string) error {
+			return accountbrowser.BindJobProfile(aiHomeDir, providerID, accountRef, jobID)
+		},
 		OnJobSnapshot: func(job accountauth.Job) {
 			dependencies.TokenEvents.PublishAuthJob(webuiaccountaddapi.NewJobView(job))
 		},

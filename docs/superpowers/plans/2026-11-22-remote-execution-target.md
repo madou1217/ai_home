@@ -126,3 +126,10 @@ Task 5 的 CLI/HTTP/runtime 真实验收已完成，证据见
 
 - AWS 服务器 + AGY + `gemini-4-neon-xhigh` 的真实 Agent 工具循环（属于 Provider
   Adapter 阶段；当前 preflight 明确保持 `remote_tools_unsupported`）。
+
+## Provider Adapter 工具通道状态（2026-11-22）
+
+Codex/Claude 的 MCP 工具桥已接到 Workspace Connector，并通过真实 MCP/HTTP 验收；
+AGY 明确返回 agy_remote_workspace_unsupported；run_command、审批和真实模型账号下的
+Agent 工具循环仍未完成。详见 `docs/remote/2026-11-22-provider-adapter-tool-channel.md`。
+

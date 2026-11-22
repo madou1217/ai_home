@@ -420,3 +420,58 @@ AWS-side Agent + Local Workspace Connector + ExecutionTarget + Provider Adapter
 - 继续使用每工具一次 SSH 拨号的实现作为主链路。
 
 本 spec 只描述目标架构和证据边界。未得到用户批准前，不进入实现计划、不修改产品代码、不部署、不重启 AWS。
+
+## 14. 2026-11-22 本机只读 CLI 观察
+
+以下观察只针对当前本机 `/opt/homebrew/bin/aih` 和当前 active Server；它们不是 AWS 运行版本验收，也没有启动 native session、发送 inference、修改配置或写入账号。
+
+### 14.1 Server profile
+
+```text
+* 当前 Server  http://127.0.0.1:9527  ready  key=configured
+  AIH Server  http://localhost:9527  ready  key=configured
+```
+
+当前本机 CLI 没有显示 AWS Server profile。因此“本地指挥 AWS Server”在本机尚未形成一个可直接选择的 Server target；用户仍需先把 AWS profile 配置到当前控制端。
+
+### 14.2 Agent adapter
+
+当前真实 adapter 结果显示：
+
+```text
+codex  -> codex-app-server（native approval/question/plan）+ PTY fallback
+claude -> claude-stream-mcp（native approval）+ PTY fallback
+agy   -> PTY only，note=无 ACP、无审批通道
+```
+
+这证明当前 AGY 缺的不是 UI 按钮，而是结构化 AgentAdapter、远程工具协议和审批能力。AGY 的 PTY adapter 只能作为观察/交互兜底，不能被当作安全的 workspace tool loop。
+
+### 14.3 External harness
+
+当前真实 `aih harness` 列表为：
+
+```text
+pi
+ dsh
+ dsh-tui
+```
+
+入口文案明确为“通过本地 AIH 网关使用 Provider 账号”。这进一步证明 external harness 当前不是 AWS remote execution target，也没有 workspace connector 绑定。
+
+### 14.4 AGY model catalog
+
+当前 active localhost Server 的只读命令：
+
+```text
+aih agy models --json
+```
+
+返回的安全摘要为：
+
+```text
+provider=agy
+source=/v1/management/webui/openai-models/catalog
+data_count=0
+```
+
+这只说明当前本机 active Server 没有返回 AGY 模型目录；不能推导 AWS catalog 为空，也不能推导 `gemini-4-neon-xhigh` 不存在。它证明的是现有 CLI 没有把“AWS Server target 选择、AGY 账号、模型目录、remote workspace”统一到一个可用的本地入口中。

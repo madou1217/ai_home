@@ -89,12 +89,12 @@
     "description": "Tailnet mesh connector",
     "transport": "mesh",
     "operations": [
-      { "id": "install", "label": "安装依赖", "confirmation": "required" },
-      { "id": "uninstall", "label": "卸载依赖", "confirmation": "required" },
-      { "id": "enable", "label": "启用", "confirmation": "required" },
-      { "id": "disable", "label": "停用", "confirmation": "required" },
-      { "id": "configure", "label": "配置", "confirmation": "required" },
-      { "id": "probe", "label": "探测连通性", "confirmation": "none" }
+      { "id": "install", "label": "安装依赖", "confirmation": "required", "inputKind": "none" },
+      { "id": "uninstall", "label": "卸载依赖", "confirmation": "required", "inputKind": "none" },
+      { "id": "enable", "label": "启用", "confirmation": "required", "inputKind": "none" },
+      { "id": "disable", "label": "停用", "confirmation": "required", "inputKind": "none" },
+      { "id": "configure", "label": "配置", "confirmation": "required", "inputKind": "secret" },
+      { "id": "probe", "label": "探测连通性", "confirmation": "none", "inputKind": "none" }
     ],
     "config": {
       "schema": { "type": "object" },
@@ -106,6 +106,8 @@
 ```
 
 `operations[].id` 只能是插件实现实际支持的动作。宿主/WebUI 不为未声明的动作生成按钮。
+
+`inputKind` 可选值为 `none`、`custom`、`secret`，默认是 `none`。`none` 操作不会收到配置输入；`custom` 显示插件自定义文本/JSON 输入；`secret` 显示密码输入。若旧插件只声明了 `config.schema` 或 `secretFields`，WebUI 仅对 `configure` 做兼容推断，不把它当成完整 JSON Schema 表单。`install`、`uninstall`、`enable`、`disable`、`configure` 无论插件是否错误声明 `confirmation: "none"`，宿主都强制要求管理面明确确认。
 
 ### 3.2 `status`
 
@@ -176,7 +178,7 @@
 }
 ```
 
-`input` 的 schema 和 secret 字段由 `describe` 声明；宿主只转发已声明的操作，不把 secret 回显到状态或审计文本中。插件应该在写配置前备份、写入后校验，失败回滚，并把真实失败暴露给 UI。
+`input` 的 schema 和 secret 字段由 `describe` 声明；宿主只转发已声明的操作，不把 secret 回显到状态或审计文本中。带 `confirmation: "required"` 的操作必须由管理面在用户明确确认后携带 `confirmed: true` 才会执行；插件应该在写配置前备份、写入后校验，失败回滚，并把真实失败暴露给 UI。
 
 ## 4. P2P 与中继语义
 

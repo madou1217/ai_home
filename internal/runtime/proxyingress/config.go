@@ -47,10 +47,14 @@ type Dial func(ctx context.Context) (io.ReadWriteCloser, error)
 
 // Config configures an Ingress. At least one of HTTP or SOCKS5 must be true.
 type Config struct {
-	Dial             Dial
-	Credentials      Credentials
-	HTTP             bool
-	SOCKS5           bool
+	Dial        Dial
+	Credentials Credentials
+	HTTP        bool
+	SOCKS5      bool
+	// AllowAnonymous 允许 loopback HTTP 客户端不携带 Proxy-Authorization。
+	// 仅用于操作系统系统代理（系统代理无法可靠保存每应用凭据）；上游仍然
+	// 使用 Credentials 生成租约认证。SOCKS5 不允许匿名。
+	AllowAnonymous   bool
 	MaxHeaderBytes   int
 	HandshakeTimeout time.Duration
 	DialTimeout      time.Duration
@@ -66,6 +70,9 @@ func normalizeConfig(config Config) (Config, error) {
 	}
 	if err := validateCredentials(config.Credentials); err != nil {
 		return Config{}, err
+	}
+	if config.AllowAnonymous && (!config.HTTP || config.SOCKS5) {
+		return Config{}, errors.New("proxyingress: AllowAnonymous is only valid for HTTP without SOCKS5")
 	}
 	if config.SOCKS5 && (len(config.Credentials.Username) > 255 || len(config.Credentials.Password) > 255) {
 		return Config{}, errors.New("proxyingress: SOCKS5 credentials must not exceed 255 bytes")

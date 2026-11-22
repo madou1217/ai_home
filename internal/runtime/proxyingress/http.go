@@ -22,7 +22,7 @@ var hopByHopHeaders = []string{
 }
 
 func (i *Ingress) serveHTTP(writer http.ResponseWriter, request *http.Request) {
-	if !authorizedHeader(request.Header, i.authorizationValue) {
+	if !i.allowAnonymous && !authorizedHeader(request.Header, i.authorizationValue) {
 		writer.Header().Set("Proxy-Authenticate", `Basic realm="aih-ingress"`)
 		writer.Header().Set("Connection", "close")
 		http.Error(writer, "proxy authentication required", http.StatusProxyAuthRequired)

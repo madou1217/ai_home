@@ -19,6 +19,7 @@ type Ingress struct {
 	authorization      string
 	authorizationValue string
 	maxHeaderBytes     int
+	allowAnonymous     bool
 	handshakeTimeout   time.Duration
 	dialTimeout        time.Duration
 	shutdownTimeout    time.Duration
@@ -69,6 +70,7 @@ func Start(ctx context.Context, config Config) (*Ingress, error) {
 		authorization:      "Basic " + encoded,
 		authorizationValue: encoded,
 		maxHeaderBytes:     normalized.MaxHeaderBytes,
+		allowAnonymous:     normalized.AllowAnonymous,
 		handshakeTimeout:   normalized.HandshakeTimeout,
 		dialTimeout:        normalized.DialTimeout,
 		shutdownTimeout:    normalized.ShutdownTimeout,

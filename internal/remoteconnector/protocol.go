@@ -122,7 +122,8 @@ type HelloAccepted struct {
 	Type         string       `json:"type"`
 	SessionID    string       `json:"sessionId"`
 	WorkspaceID  string       `json:"workspaceId"`
-	SessionToken string       `json:"sessionToken"`
+	ConnectorID  string       `json:"connectorId"`
+	SessionToken string       `json:"sessionToken,omitempty"`
 	Capabilities Capabilities `json:"capabilities"`
 	HeartbeatSec int          `json:"heartbeatSec"`
 }

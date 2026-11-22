@@ -1,0 +1,227 @@
+package remoteconnector
+
+import "errors"
+
+// Error codes are shared by the Server, the local connector and every management
+// adapter. They are deliberately stable: UI text may change, these strings are
+// the machine-readable contract.
+const (
+	CodeInvalidToken           = "invalid_token"
+	CodeEnrollmentExpired      = "enrollment_expired"
+	CodeEnrollmentUsed         = "enrollment_used"
+	CodeEnrollmentNotFound     = "enrollment_not_found"
+	CodeWorkspaceNotFound      = "workspace_not_found"
+	CodeWorkspaceRevoked       = "workspace_revoked"
+	CodeWorkspaceOffline       = "workspace_offline"
+	CodeWorkspaceLimit         = "workspace_limit_reached"
+	CodeCapabilityNotAllowed   = "capability_not_allowed"
+	CodeUnsupportedOperation   = "unsupported_operation"
+	CodeInvalidPath            = "invalid_path"
+	CodePathOutsideWorkspace   = "path_outside_workspace"
+	CodePathNotFound           = "path_not_found"
+	CodePermissionDenied       = "permission_denied"
+	CodeNotAFile               = "not_a_file"
+	CodeNotADirectory          = "not_a_directory"
+	CodeFileTooLarge           = "file_too_large"
+	CodeVersionConflict        = "version_conflict"
+	CodeInvalidPayload         = "invalid_payload"
+	CodeInvalidQuery           = "invalid_query"
+	CodeRequestTimeout         = "request_timeout"
+	CodeProtocolError          = "protocol_error"
+	CodeConnectorSuperseded    = "connector_superseded"
+	CodeConnectorDisconnected  = "connector_disconnected"
+	CodeServerUnsupported      = "server_does_not_accept_requests"
+	CodeWorkspaceNotEnumerable = "workspace_not_enumerable"
+	CodeWorkspaceNotReadable   = "workspace_not_readable"
+	CodeWorkspaceNotWritable   = "workspace_not_writable"
+	CodeWorkspaceNotSearchable = "workspace_not_searchable"
+	CodeInternal               = "internal_error"
+)
+
+// ProtocolError is the only error shape that crosses the connector protocol.
+// It never contains local paths, credentials or raw OS errors.
+type ProtocolError struct {
+	Code    string `json:"code"`
+	Message string `json:"message,omitempty"`
+}
+
+func (err *ProtocolError) Error() string {
+	if err == nil {
+		return CodeInternal
+	}
+	if err.Message == "" {
+		return err.Code
+	}
+	return err.Code + ": " + err.Message
+}
+
+// ErrorCode returns the stable code for a protocol error, or the internal code
+// for an unexpected error. It must not leak the wrapped error text.
+func ErrorCode(err error) string {
+	var protocolErr *ProtocolError
+	if errors.As(err, &protocolErr) && protocolErr != nil && protocolErr.Code != "" {
+		return protocolErr.Code
+	}
+	return CodeInternal
+}
+
+// NewProtocolError builds a bounded error without wrapping OS text.
+func NewProtocolError(code, message string) *ProtocolError {
+	return &ProtocolError{Code: code, Message: message}
+}
+
+// IsPermanent reports whether retrying the same connector token cannot succeed.
+// Transient transport and server errors return false so callers can reconnect.
+func IsPermanent(code string) bool {
+	switch code {
+	case CodeInvalidToken, CodeEnrollmentExpired, CodeEnrollmentUsed, CodeEnrollmentNotFound,
+		CodeWorkspaceNotFound, CodeWorkspaceRevoked, CodeCapabilityNotAllowed,
+		CodeProtocolError, CodeUnsupportedOperation, CodeServerUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// NormalizeCapabilities converts a name-only declaration into the boolean form
+// used by dispatch. Bools remain authoritative when both are present.
+func NormalizeCapabilities(capabilities Capabilities) Capabilities {
+	if len(capabilities.Names) == 0 {
+		capabilities.Names = capabilities.NamesOrDerived()
+		return capabilities
+	}
+	for _, name := range capabilities.Names {
+		switch name {
+		case CapabilityReadFile:
+			capabilities.ReadFile = true
+		case CapabilityWriteFile:
+			capabilities.WriteFile = true
+		case CapabilityListDirectory:
+			capabilities.ListDirectory = true
+		case CapabilitySearch:
+			capabilities.Search = true
+		case CapabilityStartJob:
+			capabilities.StartJob = true
+		case CapabilityWatchJob:
+			capabilities.WatchJob = true
+		case CapabilityInterruptJob:
+			capabilities.InterruptJob = true
+		}
+	}
+	capabilities.Names = capabilities.NamesOrDerived()
+	return capabilities
+}
+
+// IntersectCapabilities keeps only capabilities both sides declare. The Server
+// uses this to enforce the enrollment grant even when a connector claims more.
+func IntersectCapabilities(allowed, declared Capabilities) Capabilities {
+	allowed = NormalizeCapabilities(allowed)
+	declared = NormalizeCapabilities(declared)
+	result := Capabilities{
+		ReadFile:      allowed.ReadFile && declared.ReadFile,
+		WriteFile:     allowed.WriteFile && declared.WriteFile,
+		ListDirectory: allowed.ListDirectory && declared.ListDirectory,
+		Search:        allowed.Search && declared.Search,
+		StartJob:      allowed.StartJob && declared.StartJob,
+		WatchJob:      allowed.WatchJob && declared.WatchJob,
+		InterruptJob:  allowed.InterruptJob && declared.InterruptJob,
+	}
+	result.Names = result.NamesOrDerived()
+	return result
+}
+
+// SupportsOperation reports whether a normalized capability declaration allows
+// one operation. Unknown operations are never allowed.
+func SupportsOperation(capabilities Capabilities, operation string) bool {
+	capabilities = NormalizeCapabilities(capabilities)
+	switch operation {
+	case OperationReadFile:
+		return capabilities.ReadFile
+	case OperationWriteFile:
+		return capabilities.WriteFile
+	case OperationListDirectory:
+		return capabilities.ListDirectory
+	case OperationSearch:
+		return capabilities.Search
+	case OperationStartJob:
+		return capabilities.StartJob
+	case OperationWatchJob:
+		return capabilities.WatchJob
+	case OperationInterruptJob:
+		return capabilities.InterruptJob
+	default:
+		return false
+	}
+}
+
+// ReadFileRequest asks for one regular file inside the connector workspace.
+type ReadFileRequest struct {
+	Path     string `json:"path"`
+	MaxBytes int64  `json:"maxBytes,omitempty"`
+}
+
+// ReadFileResult carries base64 content so the protocol stays text-safe.
+// Version is a content hash used by WriteFileRequest.ExpectedVersion.
+type ReadFileResult struct {
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	Encoding  string `json:"encoding"`
+	Version   string `json:"version"`
+	Size      int64  `json:"size"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// WriteFileRequest writes base64 content atomically. An empty ExpectedVersion
+// means "the file must not exist yet"; a non-empty value must match the current
+// content version. This prevents lost updates from concurrent tool calls.
+type WriteFileRequest struct {
+	Path            string `json:"path"`
+	Content         string `json:"content"`
+	Encoding        string `json:"encoding,omitempty"`
+	ExpectedVersion string `json:"expectedVersion,omitempty"`
+}
+
+type WriteFileResult struct {
+	Path    string `json:"path"`
+	Version string `json:"version"`
+	Size    int64  `json:"size"`
+}
+
+type ListDirectoryRequest struct {
+	Path  string `json:"path,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+// DirectoryEntry describes a single child. Version is omitted for directories,
+// symlinks and files above the versioning limit.
+type DirectoryEntry struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Size    int64  `json:"size,omitempty"`
+	ModTime int64  `json:"modTime,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
+type ListDirectoryResult struct {
+	Path      string           `json:"path"`
+	Entries   []DirectoryEntry `json:"entries"`
+	Truncated bool             `json:"truncated,omitempty"`
+}
+
+type SearchRequest struct {
+	Path       string `json:"path,omitempty"`
+	Query      string `json:"query"`
+	MaxResults int    `json:"maxResults,omitempty"`
+	MaxDepth   int    `json:"maxDepth,omitempty"`
+}
+
+type SearchMatch struct {
+	Path string `json:"path"`
+	Type string `json:"type"`
+	Size int64  `json:"size,omitempty"`
+}
+
+type SearchResult struct {
+	Matches   []SearchMatch `json:"matches"`
+	Truncated bool          `json:"truncated,omitempty"`
+}

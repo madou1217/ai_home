@@ -23,6 +23,7 @@
 | 出口池与账号活动 | `composition_egress_activity.go`（引擎加载、Manager、活动守护/限流回调） | `composition.go` 2316 → 2230 行 |
 | 模型管理/额度/轮换 | `composition_model_usage.go`（模型刷新、额度服务、凭据轮换装饰器） | `composition.go` 2230 → 2115 行 |
 | 账号生命周期 | `composition_account_lifecycle.go`（注册/重登/导入装饰器 + 删除宿主投影/运行保护） | `composition.go` 2115 → 2084 行 |
+| Claude Native Relay | `composition_relay.go`（账号来源 + Native Relay Handler） | `composition.go` 2084 → 2068 行 |
 | Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
 | 出口上游 API | routing / catalog / upstream actions 分成三个文件 | `webuiegressupstreamsapi/handler.go` 539 → 367 行 |
 

@@ -1374,42 +1374,26 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			err,
 		)
 	}
-	relayAccounts, err := newRelayAccountSource(
-		catalog,
-		inference.recruiter,
-		claudeGatewayPolicy,
-	)
+	nativeRelayHandler, err := newClaudeNativeRelay(claudeNativeRelayInputs{
+		catalog:          catalog,
+		recruiter:        inference.recruiter,
+		claudePolicy:     claudeGatewayPolicy,
+		authorizer:       relayAuthorizer,
+		credentials:      credentials,
+		client:           relayClient,
+		egress:           relayEgress,
+		attempts:         accountRuntime,
+		modelRefreshes:   inference.modelRefreshes,
+		upstream429:      upstream429Controller,
+		rules:            upstreamRuleEvaluator,
+		errorLog:         errorLog,
+		fallback:         inference.handler,
+		messagesUpstream: messagesUpstream,
+		clientVersions:   claudeVersions,
+	})
 	if err != nil {
 		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建 Claude Relay 账号来源失败: %w",
-			err,
-		)
-	}
-	nativeRelayHandler, err := claudenativerelay.NewHandler(
-		claudenativerelay.Dependencies{
-			Authorizer:         relayAuthorizer,
-			Accounts:           relayAccounts,
-			Fallback:           inference.handler,
-			Credentials:        credentials,
-			Client:             relayClient,
-			AccountEgress:      relayEgress,
-			Attempts:           accountRuntime,
-			ModelRefreshes:     inference.modelRefreshes,
-			Upstream429Retries: upstream429Controller,
-			Clock:              time.Now,
-			Rules:              upstreamRuleEvaluator,
-			StreamDisconnects:  newRelayDisconnectObserver(errorLog),
-			Upstream:           messagesUpstream,
-			ClientVersions:     claudeVersions,
-		},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建 Claude Native Relay Handler 失败: %w",
-			err,
-		)
+		return serverHandlers{}, nil, err
 	}
 	// 家族透传通道（CodeBuddy / WorkBuddy 四支）与 Native Relay 共用凭据解析、上游客户端
 	// 与运行态记账；能承载的家族请求直连家族官方端点，其余交回 Canonical（见包注释）。

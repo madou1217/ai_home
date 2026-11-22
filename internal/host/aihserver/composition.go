@@ -2015,6 +2015,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if nativeWorkErr != nil {
 		return serverHandlers{}, nil, fmt.Errorf("装配 WORK 原生启动边界失败: %w", nativeWorkErr)
 	}
+	imageEgress := newImageAccountEgress(func() *runtimeegress.Manager {
+		return egressManager
+	})
 	webuiDeps := webuiRouteDependencies{
 		Authorizer:         authorizer,
 		AIHomeDir:          aiHomeDir,
@@ -2031,6 +2034,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			ReverseTunnels:        sshTunnelSupervisor,
 		},
 		ImageExecutionDependencies: imageexecution.Dependencies{
+			AccountEgress:          imageEgress.HTTPForAccount,
 			Upstream429Retries:     upstream429Controller,
 			Attempts:               accountRuntime,
 			CredentialObservations: credentials,
@@ -2342,6 +2346,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			models:  inference.models,
 		},
 		HTTP:                   http.DefaultClient,
+		AccountEgress:          imageEgress.HTTPForAccount,
 		Authorizer:             clientAuthorizer,
 		Blobs:                  images.BlobStoreAdapter{Store: imageBlobs},
 		Usage:                  imageUsage,

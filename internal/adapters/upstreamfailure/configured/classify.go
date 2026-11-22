@@ -9,16 +9,11 @@ import (
 	"net/http"
 	"time"
 
+	failurecontract "github.com/madou1217/ai_home/contracts/upstream-failure"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/upstreamrules"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
-
-// rateLimitedCooldown / serviceUnavailableCooldown 与 Node 规则策略一致（统一的猜测冷却）。
-// 每次求值读当前进程覆盖值，避免包初始化时把默认值固化。
-func rateLimitedCooldown() time.Duration { return runtimecore.ConfiguredGuessedCooldown() }
-
-func serviceUnavailableCooldown() time.Duration { return runtimecore.ConfiguredGuessedCooldown() }
 
 // Rules 是账号自定义规则求值端口；为 nil 表示 Go 未承接该能力。
 type Rules interface {
@@ -97,46 +92,35 @@ func ClassifySSEWithRules(
 
 // Classify 把命中的规则映射为运行态分类。
 //
-// 作用域与冷却与 Node upstream-error-rule-policy 一致：
-//   - billing_blocked / quota_exhausted / permission_denied：账号级硬阻塞，无冷却；
-//   - auth_invalid：凭据阻塞（NewClassification 会补默认的账号级解除信号；静态密钥
-//     账号随后由 ObservedAttemptRecorder 降级为有限冷却，等价于 Node 的 apiKeyMode 分支）；
-//   - rate_limited / service_unavailable：账号+模型短期冷却。
+// 规则 kind → 失败语义 → 作用域/冷却全部来自 contracts/upstream-failure 的
+// rule_kinds 表：新增一种规则动作只加一行数据，不再改这里的分支。
 func Classify(rule upstreamrules.Rule) (sharedfailure.Classification, error) {
-	switch rule.Kind() {
-	case upstreamrules.KindBillingBlocked:
-		return sharedfailure.NewBlockingClassification(
-			runtimecore.FailureBillingBlocked,
-			runtimecore.BlockScopeAccount,
-		)
-	case upstreamrules.KindQuotaExhausted:
-		return sharedfailure.NewBlockingClassification(
-			runtimecore.FailureQuotaExhausted,
-			runtimecore.BlockScopeAccount,
-		)
-	case upstreamrules.KindPermissionDenied:
-		return sharedfailure.NewBlockingClassification(
-			runtimecore.FailurePermissionDenied,
-			runtimecore.BlockScopeAccount,
-		)
-	case upstreamrules.KindAuthInvalid:
-		return sharedfailure.NewClassification(
-			runtimecore.FailureCredentialRejected,
-			0,
-		)
-	case upstreamrules.KindRateLimited:
-		return sharedfailure.NewClassification(
-			runtimecore.FailureRateLimited,
-			rateLimitedCooldown(),
-		)
-	case upstreamrules.KindServiceUnavailable:
-		return sharedfailure.NewClassification(
-			runtimecore.FailureUpstreamUnavailable,
-			serviceUnavailableCooldown(),
-		)
-	default:
+	entry, found := failurecontract.Default().RuleKind(string(rule.Kind()))
+	if !found {
 		return sharedfailure.Classification{}, upstreamrules.ErrInvalidRules
 	}
+	kind := runtimecore.FailureKind(entry.Semantic)
+	policy, err := runtimecore.PolicyFor(kind)
+	if err != nil {
+		return sharedfailure.Classification{}, upstreamrules.ErrInvalidRules
+	}
+	blocking := entry.Blocking == nil || *entry.Blocking
+	if blocking && policy.BlocksRouting() {
+		scope := runtimecore.BlockScope(entry.BlockScope)
+		if scope == "" {
+			defaultScope, ok := policy.DefaultBlockScope()
+			if !ok {
+				return sharedfailure.Classification{}, upstreamrules.ErrInvalidRules
+			}
+			scope = defaultScope
+		}
+		return sharedfailure.NewBlockingClassification(kind, scope)
+	}
+	retryAfter := time.Duration(0)
+	if policy.EntersCooldown() {
+		retryAfter = policy.DefaultCooldown()
+	}
+	return sharedfailure.NewClassification(kind, retryAfter)
 }
 
 // Evaluate 对一组规则求值并映射分类。

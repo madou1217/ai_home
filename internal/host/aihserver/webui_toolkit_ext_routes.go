@@ -89,7 +89,7 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 	}
 
 	return []webuiRoute{
-		// 边缘代理（frp / nginx / caddy）
+		// 边缘代理（frpc / nginx / caddy）
 		{Pattern: "GET " + webuitoolkitextapi.EdgePath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitextapi.EdgePlanPath, Handler: handler},
 		{Pattern: "POST " + webuitoolkitextapi.EdgeApplyPath, Handler: handler},

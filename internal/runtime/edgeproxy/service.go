@@ -159,8 +159,8 @@ type Plan struct {
 	Notes   []string   `json:"notes"`
 }
 
-// FrpStatus 描述本机 frpc 探测状态。
-type FrpStatus struct {
+// FrpcStatus 描述本机 frpc 探测状态。
+type FrpcStatus struct {
 	Installed  bool       `json:"installed"`
 	Binary     string     `json:"binary"`
 	ConfigPath string     `json:"configPath"`
@@ -186,7 +186,7 @@ type CaddyStatus struct {
 
 // ProvidersStatus 汇总三大边缘代理状态。
 type ProvidersStatus struct {
-	Frp   FrpStatus   `json:"frp"`
+	Frpc  FrpcStatus  `json:"frpc"`
 	Nginx NginxStatus `json:"nginx"`
 	Caddy CaddyStatus `json:"caddy"`
 }
@@ -369,7 +369,7 @@ func (s *Service) resolveNginxConfigDir(env map[string]string, versionOutput str
 	return ""
 }
 
-// Status 探测本机 frp / nginx / caddy 安装与配置状态。
+// Status 探测本机 frpc / nginx / caddy 安装与配置状态。
 func (s *Service) Status(ctx context.Context, aihPort int) StatusResponse {
 	if aihPort <= 0 {
 		aihPort = DefaultAIHPort
@@ -404,7 +404,7 @@ func (s *Service) Status(ctx context.Context, aihPort int) StatusResponse {
 		Platform: nodePlatform(),
 		AIHPort:  aihPort,
 		Providers: ProvidersStatus{
-			Frp: FrpStatus{
+			Frpc: FrpcStatus{
 				Installed:  frpBinary != "",
 				Binary:     frpBinary,
 				ConfigPath: frpConfig,
@@ -436,7 +436,7 @@ func (s *Service) Plan(kind string, opts PlanOptions) (*Plan, *EdgeError) {
 	env := s.resolveEnv()
 
 	switch kind {
-	case "frp":
+	case "frpc":
 		return s.planFrp(opts, aihPort)
 	case "nginx":
 		return s.planNginx(opts, aihPort, env)
@@ -480,12 +480,12 @@ func (s *Service) planFrp(opts PlanOptions, aihPort int) (*Plan, *EdgeError) {
 		udpNote = "含同号 UDP 条目：QUIC/HTTP3 走它"
 	}
 	return &Plan{
-		Kind:    "frp",
+		Kind:    "frpc",
 		Name:    name,
 		Entries: entries,
-		Summary: fmt.Sprintf("frp：本机 %d（TCP%s）→ 远端 %d", localPort, udpTag, opts.RemotePort),
+		Summary: fmt.Sprintf("frpc：本机 %d（TCP%s）→ 远端 %d", localPort, udpTag, opts.RemotePort),
 		Notes: []string{
-			fmt.Sprintf("客户端条目会是 socks5, <frp 服务端地址>, %d, <用户名>, <密码>", opts.RemotePort),
+			fmt.Sprintf("客户端条目会是 socks5, <frps 服务端地址>, %d, <用户名>, <密码>", opts.RemotePort),
 			udpNote,
 		},
 	}, nil
@@ -542,7 +542,7 @@ func (s *Service) planNginx(opts PlanOptions, aihPort int, env map[string]string
 			{Path: sitePath, Content: nginxHTTPOnlySiteConfig(domain, aihPort, opts.CertDir)},
 		}
 		summary = "nginx：仅 https 反代 WebUI（SOCKS5 不在这个端口）"
-		notes = []string{"只有应用层：SOCKS5 上不来，中转走 frp 或 dedicated 模式"}
+		notes = []string{"只有应用层：SOCKS5 上不来，中转走 frpc 或 dedicated 模式"}
 	}
 
 	return &Plan{
@@ -571,7 +571,7 @@ func (s *Service) planCaddy(opts PlanOptions, aihPort int, env map[string]string
 			{Path: configPath, Content: caddySiteConfig(domain, aihPort), Append: true},
 		},
 		Summary: fmt.Sprintf("Caddy：https://%s → AIH（证书自动申请）", domain),
-		Notes:   []string{"标准 Caddy 不做四层转发；SOCKS5 中转请用 nginx 的 split 形态或 frp"},
+		Notes:   []string{"标准 Caddy 不做四层转发；SOCKS5 中转请用 nginx 的 split 形态或 frpc"},
 	}, nil
 }
 
@@ -592,7 +592,7 @@ func (s *Service) Apply(ctx context.Context, kind string, opts PlanOptions) (*Ap
 
 	env := s.resolveEnv()
 	switch kind {
-	case "frp":
+	case "frpc":
 		return s.applyFrp(ctx, plan, opts, env)
 	case "nginx":
 		return s.applyNginx(ctx, plan, opts, env)
@@ -606,11 +606,11 @@ func (s *Service) Apply(ctx context.Context, kind string, opts PlanOptions) (*Ap
 func (s *Service) applyFrp(ctx context.Context, plan *Plan, opts PlanOptions, env map[string]string) (*ApplyResult, *EdgeError) {
 	binary := s.resolveBinary("frpcBin", frpBinCandidates, env)
 	if binary == "" {
-		return nil, &EdgeError{Code: "edge_provider_not_installed", Provider: "frp"}
+		return nil, &EdgeError{Code: "edge_provider_not_installed", Provider: "frpc"}
 	}
 	configPath := s.resolveFrpConfigPath(env)
 	if configPath == "" {
-		return nil, &EdgeError{Code: "edge_config_not_found", Provider: "frp"}
+		return nil, &EdgeError{Code: "edge_config_not_found", Provider: "frpc"}
 	}
 	if !s.fs.IsWritable(configPath) {
 		return nil, &EdgeError{Code: "edge_config_not_writable", ConfigPath: configPath}
@@ -643,7 +643,7 @@ func (s *Service) applyFrp(ctx context.Context, plan *Plan, opts PlanOptions, en
 
 	result := &ApplyResult{
 		OK:         true,
-		Provider:   "frp",
+		Provider:   "frpc",
 		ConfigPath: configPath,
 		Summary:    plan.Summary,
 		BackupPath: backupPath,

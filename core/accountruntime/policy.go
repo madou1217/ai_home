@@ -6,7 +6,6 @@ package accountruntime
 
 import (
 	"errors"
-	"sync"
 	"time"
 )
 
@@ -31,50 +30,7 @@ const (
 var (
 	// ErrUnknownFailureKind 表示 Provider 适配器提交了未注册的失败分类。
 	ErrUnknownFailureKind = errors.New("账号运行态失败类型未知")
-
-	policyDefaultsMu       sync.RWMutex
-	policyDefaultCooldown  time.Duration
-	policyDefaultThreshold uint8
 )
-
-// ConfigurePolicyDefaults 配置本进程的猜测冷却与失败阈值覆盖。
-//
-// 0 表示保留领域默认值；非 0 冷却必须落在 [1s, 24h]，阈值必须在 [1,10]。
-// 这是启动期设置：运行中修改会让同一进程内的策略前后不一致。
-func ConfigurePolicyDefaults(cooldown time.Duration, threshold uint8) error {
-	if cooldown != 0 && (cooldown < time.Second || cooldown > MaxCooldownHint) {
-		return errors.New("猜测冷却时长必须在 1s 到 24h 之间")
-	}
-	if threshold > 10 {
-		return errors.New("失败阈值必须在 0 到 10 之间")
-	}
-	policyDefaultsMu.Lock()
-	policyDefaultCooldown = cooldown
-	policyDefaultThreshold = threshold
-	policyDefaultsMu.Unlock()
-	return nil
-}
-
-// ConfiguredGuessedCooldown 返回当前进程生效的猜测冷却。
-func ConfiguredGuessedCooldown() time.Duration {
-	policyDefaultsMu.RLock()
-	cooldown := policyDefaultCooldown
-	policyDefaultsMu.RUnlock()
-	if cooldown > 0 {
-		return cooldown
-	}
-	return GuessedCooldown
-}
-
-func configuredFailureThreshold(base uint8) uint8 {
-	policyDefaultsMu.RLock()
-	threshold := policyDefaultThreshold
-	policyDefaultsMu.RUnlock()
-	if threshold > 0 {
-		return threshold
-	}
-	return base
-}
 
 // FailureKind 是 Codex 与 Claude 上游结果的稳定低敏分类。
 type FailureKind string
@@ -86,6 +42,12 @@ const (
 	FailureModelOverloaded FailureKind = "model_overloaded"
 	// FailureUpstreamUnavailable 表示目标模型对应的上游 5xx 暂时不可用。
 	FailureUpstreamUnavailable FailureKind = "upstream_unavailable"
+	// FailurePoolExhausted 表示对端网关明确报告它的账号池当前没有可调度账号。
+	//
+	// 这不是本机账号故障：远端池耗尽只说明"此刻没有号可派"，既不能冷却本机中继
+	// 账号，也不能当作可换号重试的瞬态失败。语义由 contracts/upstream-failure 的
+	// no_available_account / remote_pool_unavailable 信号行映射到这里。
+	FailurePoolExhausted FailureKind = "pool_exhausted"
 	// FailureRequestTimeout 表示请求在上游完成前超时。
 	FailureRequestTimeout FailureKind = "request_timeout"
 	// FailureConnectionReset 表示连接被重置或等价网络断开。
@@ -151,48 +113,31 @@ const (
 )
 
 // FailurePolicy 是一个失败类型不可变的状态动作合同。
+//
+// 策略来自 contracts/upstream-failure 的 policies 表（内置默认 + 全局覆盖 +
+// 旧进程环境变量），由 policy_table.go 组装成只读快照。新增语义只需要加一行
+// 契约数据，不再修改这里的 switch。
 type FailurePolicy struct {
 	action          FailureAction
 	threshold       uint8
 	defaultCooldown time.Duration
 	failureWindow   time.Duration
+	scopes          []BlockScope
+	defaultScope    BlockScope
+	recovery        RecoveryTrigger
 }
 
 // PolicyFor 返回失败类型唯一允许的状态动作。
 func PolicyFor(kind FailureKind) (FailurePolicy, error) {
-	switch kind {
-	case FailureRateLimited:
-		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
-	case FailureModelOverloaded:
-		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
-	case FailureUpstreamUnavailable:
-		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
-	case FailureRequestTimeout,
-		FailureConnectionReset,
-		FailureStreamDisconnected:
-		return modelCooldownPolicy(configuredFailureThreshold(2), ConfiguredGuessedCooldown(), time.Minute), nil
-	case FailureStaticCredentialRejected:
-		return modelCooldownPolicy(configuredFailureThreshold(1), ConfiguredGuessedCooldown(), 0), nil
-	case FailureCredentialRejected, FailureReauthenticationRequired:
-		return blockingPolicy(ActionCredentialBlock), nil
-	case FailureQuotaExhausted, FailureBillingBlocked:
-		return blockingPolicy(ActionQuotaBlock), nil
-	case FailureWorkspaceDeactivated,
-		FailureModelUnsupported,
-		FailureRegionUnsupported,
-		FailurePermissionDenied:
-		return blockingPolicy(ActionPolicyBlock), nil
-	case FailureInvalidRequest,
-		FailureNotFound,
-		FailureSafetyRejected,
-		FailureMalformedResponse,
-		FailureRequestCancelled,
-		FailureUpstreamEdgeRejected,
-		FailureUnclassified:
-		return blockingPolicy(ActionNoStateChange), nil
-	default:
+	snapshot := currentPolicySnapshot()
+	if snapshot == nil {
 		return FailurePolicy{}, ErrUnknownFailureKind
 	}
+	policy, found := snapshot.byKind[kind]
+	if !found {
+		return FailurePolicy{}, ErrUnknownFailureKind
+	}
+	return policy, nil
 }
 
 // Action 返回该失败唯一允许的状态动作。
@@ -230,21 +175,30 @@ func (policy FailurePolicy) BlocksRouting() bool {
 	}
 }
 
-// modelCooldownPolicy 创建只作用于账号与模型元组的瞬态策略。
-func modelCooldownPolicy(
-	threshold uint8,
-	defaultCooldown time.Duration,
-	failureWindow time.Duration,
-) FailurePolicy {
-	return FailurePolicy{
-		action:          ActionModelCooldown,
-		threshold:       threshold,
-		defaultCooldown: defaultCooldown,
-		failureWindow:   failureWindow,
-	}
+// AllowedBlockScopes 返回该策略允许的硬阻塞作用域。
+func (policy FailurePolicy) AllowedBlockScopes() []BlockScope {
+	return append([]BlockScope(nil), policy.scopes...)
 }
 
-// blockingPolicy 创建不会写入 cooldown 的显式状态动作。
-func blockingPolicy(action FailureAction) FailurePolicy {
-	return FailurePolicy{action: action}
+// DefaultBlockScope 返回无需 Provider 额外证据时的默认作用域。
+func (policy FailurePolicy) DefaultBlockScope() (BlockScope, bool) {
+	if policy.defaultScope == "" {
+		return "", false
+	}
+	return policy.defaultScope, true
+}
+
+// Recovery 返回解除硬阻塞的唯一外部真相源。
+func (policy FailurePolicy) Recovery() RecoveryTrigger {
+	return policy.recovery
+}
+
+// allowsScope 判断作用域是否被该策略接受。
+func (policy FailurePolicy) allowsScope(scope BlockScope) bool {
+	for _, candidate := range policy.scopes {
+		if candidate == scope {
+			return true
+		}
+	}
+	return false
 }

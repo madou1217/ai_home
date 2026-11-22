@@ -50,40 +50,28 @@ func NewBlockDirective(
 	scope BlockScope,
 ) (BlockDirective, error) {
 	policy, err := PolicyFor(kind)
-	if err != nil || !policy.BlocksRouting() {
-		return BlockDirective{}, ErrInvalidBlockDirective
-	}
-	recovery, valid := recoveryForBlock(kind, scope)
-	if !valid {
+	if err != nil || !policy.BlocksRouting() || !policy.allowsScope(scope) {
 		return BlockDirective{}, ErrInvalidBlockDirective
 	}
 	return BlockDirective{
 		kind:     kind,
 		scope:    scope,
-		recovery: recovery,
+		recovery: policy.Recovery(),
 	}, nil
 }
 
 // DefaultBlockDirective 返回不依赖 Provider 额外证据的固定阻塞合同。
 //
-// quota、region 和 permission 可能作用于账号或账号模型，必须使用 NewBlockDirective
-// 显式声明，不能在共享领域层猜测。
+// 哪些类型有默认作用域由契约数据决定：quota、region 和 permission 允许账号或
+// 账号模型两种作用域，契约不设默认值，必须使用 NewBlockDirective 显式声明。
 func DefaultBlockDirective(kind FailureKind) (BlockDirective, error) {
-	var scope BlockScope
-	switch kind {
-	case FailureCredentialRejected,
-		FailureReauthenticationRequired,
-		FailureBillingBlocked,
-		FailureWorkspaceDeactivated:
-		scope = BlockScopeAccount
-	case FailureModelUnsupported:
-		scope = BlockScopeAccountModel
-	case FailureQuotaExhausted,
-		FailureRegionUnsupported,
-		FailurePermissionDenied:
-		return BlockDirective{}, ErrBlockScopeRequired
-	default:
+	policy, err := PolicyFor(kind)
+	if err != nil || !policy.BlocksRouting() {
 		return BlockDirective{}, ErrInvalidBlockDirective
+	}
+	scope, ok := policy.DefaultBlockScope()
+	if !ok {
+		return BlockDirective{}, ErrBlockScopeRequired
 	}
 	return NewBlockDirective(kind, scope)
 }
@@ -107,34 +95,4 @@ func (directive BlockDirective) IsZero() bool {
 func (directive BlockDirective) IsValidFor(kind FailureKind) bool {
 	restored, err := NewBlockDirective(kind, directive.scope)
 	return err == nil && restored == directive
-}
-
-// recoveryForBlock 返回指定失败和作用域唯一允许的解除信号。
-func recoveryForBlock(
-	kind FailureKind,
-	scope BlockScope,
-) (RecoveryTrigger, bool) {
-	switch kind {
-	case FailureCredentialRejected, FailureReauthenticationRequired:
-		return RecoveryCredentialsUpdated, scope == BlockScopeAccount
-	case FailureQuotaExhausted:
-		return RecoveryUsageSnapshot, isAccountScope(scope)
-	case FailureBillingBlocked:
-		return RecoveryBillingSnapshot, scope == BlockScopeAccount
-	case FailureWorkspaceDeactivated:
-		return RecoveryAccountStatus, scope == BlockScopeAccount
-	case FailureModelUnsupported:
-		return RecoveryModelCatalog, scope == BlockScopeAccountModel
-	case FailureRegionUnsupported:
-		return RecoveryPolicySnapshot, isAccountScope(scope)
-	case FailurePermissionDenied:
-		return RecoveryPolicySnapshot, isAccountScope(scope)
-	default:
-		return "", false
-	}
-}
-
-// isAccountScope 判断作用域是否能由当前账号征召键表达。
-func isAccountScope(scope BlockScope) bool {
-	return scope == BlockScopeAccount || scope == BlockScopeAccountModel
 }

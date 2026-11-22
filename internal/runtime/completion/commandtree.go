@@ -129,7 +129,7 @@ var serverNodeCommands = []commandSpec{
 	},
 	{
 		Name:    "edge",
-		Summary: "本机入口转发（nginx / caddy / frp）",
+		Summary: "本机入口转发（nginx / caddy / frpc）",
 		Subcommands: []namedSummary{
 			{Name: "status", Summary: "当前入口与转发状态"},
 			{Name: "plan", Summary: "只打印将要写入的配置"},

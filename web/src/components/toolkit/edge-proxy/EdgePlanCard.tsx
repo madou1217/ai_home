@@ -35,7 +35,7 @@ interface EdgePlanCardProps {
  * 内容与写入时逐字节一致（同一个 plan 接口）。管理面在预览下方接写入按钮，订阅侧只到预览为止。
  */
 export default function EdgePlanCard({
-  providers = ['nginx', 'caddy', 'frp'],
+  providers = ['nginx', 'caddy', 'frpc'],
   platform = '',
   apply,
   hint
@@ -54,10 +54,10 @@ export default function EdgePlanCard({
     provider,
     domain: domain.trim() || undefined,
     mode: provider === 'nginx' ? mode : undefined,
-    remotePort: provider === 'frp' && remotePort ? remotePort : undefined
+    remotePort: provider === 'frpc' && remotePort ? remotePort : undefined
   }), [provider, domain, mode, remotePort]);
 
-  const ready = provider === 'frp' ? Boolean(remotePort) : Boolean(domain.trim());
+  const ready = provider === 'frpc' ? Boolean(remotePort) : Boolean(domain.trim());
 
   // 参数齐了就自动预览（防抖）：用户不需要"先点一次生成计划"这个多余动作。
   useEffect(() => {
@@ -127,7 +127,7 @@ export default function EdgePlanCard({
             options={providers.map((item) => ({ value: item, label: EDGE_PROVIDER_META[item].label }))}
           />
         ) : null}
-        {provider !== 'frp' ? (
+        {provider !== 'frpc' ? (
           <Input
             style={{ minWidth: 240 }}
             value={domain}
@@ -145,7 +145,7 @@ export default function EdgePlanCard({
             options={EDGE_NGINX_MODES.map((item) => ({ value: item.value, label: item.label }))}
           />
         ) : null}
-        {provider === 'frp' ? (
+        {provider === 'frpc' ? (
           <InputNumber
             style={{ minWidth: 180 }}
             value={remotePort}
@@ -157,14 +157,14 @@ export default function EdgePlanCard({
       </Space>
 
       {provider === 'nginx' && activeMode ? <p className="toolkit-section-note">{activeMode.detail}</p> : null}
-      {provider === 'frp' ? (
+      {provider === 'frpc' ? (
         <p className="toolkit-section-note">只在本机 frpc 配置里补两条 [[proxies]]（TCP + UDP，名字带 aih-server），你自己写的转发不动。</p>
       ) : null}
       {hint ? <p className="toolkit-section-note">{hint}</p> : null}
 
       {!ready ? (
         <p className="toolkit-section-note">
-          {provider === 'frp' ? '填上远端端口就会显示要写的内容。' : '填上域名就会显示要写的内容。'}
+          {provider === 'frpc' ? '填上远端端口就会显示要写的内容。' : '填上域名就会显示要写的内容。'}
         </p>
       ) : null}
       {ready && previewing && !plan ? <p className="toolkit-section-note">正在算要写哪些文件…</p> : null}

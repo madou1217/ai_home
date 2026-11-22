@@ -58,7 +58,7 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'edge-forwarding',
       label: '入口与转发',
-      description: 'nginx / caddy / frp',
+      description: 'nginx / caddy / frpc',
       icon: <GatewayOutlined />
     },
     {

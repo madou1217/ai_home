@@ -23,8 +23,8 @@ export const EDGE_PROVIDER_META: Record<EdgeProvider, EdgeProviderMeta> = {
     role: '给 WebUI 上 HTTPS（证书自动申请）',
     capability: '只有应用层反代：SOCKS5 上不来'
   },
-  frp: {
-    label: 'frp',
+  frpc: {
+    label: 'frpc',
     role: '把 AIH 转发到有公网 IP 的 VPS（内网 / NAT 后面）',
     capability: '内网穿透：TCP + UDP 各一条转发行'
   }

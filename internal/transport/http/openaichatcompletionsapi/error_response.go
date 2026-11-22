@@ -182,7 +182,8 @@ func failureHTTPStatus(failure inference.ResponseFailure) int {
 	case string(runtimecore.FailureRequestTimeout):
 		return http.StatusGatewayTimeout
 	case string(runtimecore.FailureModelOverloaded),
-		string(runtimecore.FailureUpstreamUnavailable):
+		string(runtimecore.FailureUpstreamUnavailable),
+		string(runtimecore.FailurePoolExhausted):
 		return http.StatusServiceUnavailable
 	case string(runtimecore.FailureUpstreamEdgeRejected):
 		// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：

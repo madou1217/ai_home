@@ -25,7 +25,7 @@ type edgeOptions struct {
 	help       bool
 }
 
-var edgeKinds = []string{"frp", "nginx", "caddy"}
+var edgeKinds = []string{"frpc", "nginx", "caddy"}
 
 func runEdge(ctx context.Context, arguments []string, runtime commandRuntime) error {
 	options := parseEdgeOptions(arguments)
@@ -88,7 +88,7 @@ func runEdge(ctx context.Context, arguments []string, runtime commandRuntime) er
 		}
 		return nil
 	case "remove":
-		if kind != "frp" {
+		if kind != "frpc" {
 			writeEdgeUsage(runtime.stdout)
 			return nil
 		}
@@ -165,13 +165,13 @@ func writeEdgeUsageError(runtime commandRuntime, edgeErr *edgeproxy.EdgeError) e
 func writeEdgeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法：")
 	_, _ = fmt.Fprintln(output, "  aih edge status")
-	_, _ = fmt.Fprintln(output, "  aih edge plan  <frp|nginx|caddy> [...选项]")
-	_, _ = fmt.Fprintln(output, "  aih edge apply <frp|nginx|caddy> [...选项] [--dry-run] [--no-reload]")
-	_, _ = fmt.Fprintln(output, "  aih edge remove frp --name <名字>")
+	_, _ = fmt.Fprintln(output, "  aih edge plan  <frpc|nginx|caddy> [...选项]")
+	_, _ = fmt.Fprintln(output, "  aih edge apply <frpc|nginx|caddy> [...选项] [--dry-run] [--no-reload]")
+	_, _ = fmt.Fprintln(output, "  aih edge remove frpc --name <名字>")
 	_, _ = fmt.Fprintln(output, "选项：")
-	_, _ = fmt.Fprintln(output, "  --remote-port <n>   frp 远端端口（必填）")
-	_, _ = fmt.Fprintln(output, "  --local-port <n>    frp 本机端口（默认 AIH 端口）")
-	_, _ = fmt.Fprintln(output, "  --name <名字>       frp 条目名（默认 aih-server）")
+	_, _ = fmt.Fprintln(output, "  --remote-port <n>   frpc 远端端口（必填）")
+	_, _ = fmt.Fprintln(output, "  --local-port <n>    frpc 本机端口（默认 AIH 端口）")
+	_, _ = fmt.Fprintln(output, "  --name <名字>       frpc 条目名（默认 aih-server）")
 	_, _ = fmt.Fprintln(output, "  --no-udp            不添加 UDP 条目")
 	_, _ = fmt.Fprintln(output, "  --domain <域名>     nginx / caddy 必填")
 	_, _ = fmt.Fprintln(output, "  --mode <形态>       nginx：split/passthrough/http-only")

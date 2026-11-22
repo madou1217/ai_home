@@ -22,7 +22,7 @@ func (s *Service) RemoveFrp(ctx context.Context, name string, reload bool) (*App
 	}
 	next := RemoveFrpProxy(string(before), entryName)
 	next = RemoveFrpProxy(next, entryName+"-udp")
-	result := &ApplyResult{OK: true, Provider: "frp", ConfigPath: configPath}
+	result := &ApplyResult{OK: true, Provider: "frpc", ConfigPath: configPath}
 	if next == string(before) {
 		result.Summary = "没有找到受管条目 " + entryName
 		return result, nil
@@ -33,7 +33,7 @@ func (s *Service) RemoveFrp(ctx context.Context, name string, reload bool) (*App
 	}
 	result.BackupPath = backupPath
 	result.Entries = []FrpEntry{{Name: entryName}}
-	result.Summary = "已移除 frp 条目 " + entryName
+	result.Summary = "已移除 frpc 条目 " + entryName
 	if reload {
 		reloaded, via, detail, hint := s.reloadFrp(ctx, env)
 		result.Reloaded = reloaded

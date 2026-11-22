@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	// EdgePath 是本机边缘代理（frp/nginx/caddy）状态查询根路径。
+	// EdgePath 是本机边缘代理（frpc/nginx/caddy）状态查询根路径。
 	EdgePath = "/v1/management/webui/toolkit/edge"
 	// EdgePlanPath 是生成边缘代理配置预览的 GET 路径。
 	EdgePlanPath = EdgePath + "/plan"

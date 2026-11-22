@@ -102,6 +102,8 @@ func SafeMessage(kind runtimecore.FailureKind) string {
 		return "目标模型暂时容量不足"
 	case runtimecore.FailureUpstreamUnavailable:
 		return "上游服务暂时不可用"
+	case runtimecore.FailurePoolExhausted:
+		return "远端账号池暂时没有可用账号"
 	case runtimecore.FailureRequestTimeout:
 		return "上游请求超时"
 	case runtimecore.FailureConnectionReset:

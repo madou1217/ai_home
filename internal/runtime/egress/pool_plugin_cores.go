@@ -2,6 +2,7 @@ package egress
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -44,6 +45,9 @@ func (m *Manager) resolvePoolCore(ctx context.Context, nodes []ProxyNode) (*Pool
 			pluginAIHome:   m.aiHomeDir,
 			pluginPlatform: m.platform,
 		}, nil
+	}
+	if m.disableBuiltinEngines {
+		return nil, errors.New("egress_engine_not_installed")
 	}
 	return ResolvePoolCore(nodes, m.aiHomeDir, m.platform)
 }

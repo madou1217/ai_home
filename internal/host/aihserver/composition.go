@@ -1909,10 +1909,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		enginePlugins = append(enginePlugins, client)
 	}
 	egressManager = runtimeegress.NewManager(runtimeegress.ManagerOptions{
-		AIHomeDir:     aiHomeDir,
-		HomeDir:       dependencies.HostHomeDir,
-		Catalog:       catalog,
-		EnginePlugins: enginePlugins,
+		AIHomeDir:             aiHomeDir,
+		HomeDir:               dependencies.HostHomeDir,
+		Catalog:               catalog,
+		EnginePlugins:         enginePlugins,
+		DisableBuiltinEngines: true,
 	})
 	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
 		errorLog.Printf("出口池后台守护启动降级: %v", err)

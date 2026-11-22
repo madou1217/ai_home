@@ -80,8 +80,11 @@ type ManagerOptions struct {
 	Catalog             *providers.Catalog
 	LocalGeoHTTPClient  *http.Client
 	Logger              func(string)
-	// EnginePlugins 是已启动的 egress.engine 进程插件；为空时使用内置过渡适配器。
+	// EnginePlugins 是已启动的 egress.engine 进程插件。
 	EnginePlugins []egressengine.Engine
+	// DisableBuiltinEngines 为 true 时不再回落到主体内置的过渡内核实现；
+	// 生产组合根应开启，测试可保留回退。
+	DisableBuiltinEngines bool
 }
 
 // LaneView 描述一条活跃车道的展示状态。
@@ -191,19 +194,20 @@ type Manager struct {
 	geoCache    *NetworkGeoCache
 	supervisor  *PoolSupervisor
 
-	platform            string
-	ownerPID            int
-	systemProxyDetector func(context.Context) (agyegress.SystemProxyStatus, error)
-	tunDetector         func(context.Context) (agyegress.TUNStatus, error)
-	proxyProbeFunc      func(ctx context.Context, proxyURL string) ProxyProbeResult
-	desktopBridge       DesktopClientBridge
-	enginePlugins       []egressengine.Engine
-	catalog             *providers.Catalog
-	localGeoHTTPClient  *http.Client
-	planInterval        time.Duration
-	geoPerTick          int
-	probesPerTick       int
-	logger              func(string)
+	platform              string
+	ownerPID              int
+	systemProxyDetector   func(context.Context) (agyegress.SystemProxyStatus, error)
+	tunDetector           func(context.Context) (agyegress.TUNStatus, error)
+	proxyProbeFunc        func(ctx context.Context, proxyURL string) ProxyProbeResult
+	desktopBridge         DesktopClientBridge
+	enginePlugins         []egressengine.Engine
+	disableBuiltinEngines bool
+	catalog               *providers.Catalog
+	localGeoHTTPClient    *http.Client
+	planInterval          time.Duration
+	geoPerTick            int
+	probesPerTick         int
+	logger                func(string)
 
 	watchMu  sync.Mutex
 	watchers map[chan WatchEvent]struct{}
@@ -285,36 +289,37 @@ func NewManager(opts ManagerOptions) *Manager {
 	}
 
 	m := &Manager{
-		aiHomeDir:            aiHome,
-		homeDir:              home,
-		now:                  nowFn,
-		httpClient:           opts.HTTPClient,
-		probeURL:             probeURL,
-		probeTimeoutMS:       probeTimeoutMS,
-		upstreamProbeTimeout: upTimeout,
-		nodeGeoTTLMS:         geoTTL,
-		disableAutoDirectGeo: opts.DisableAutoDirectGeo,
-		health:               LoadNodeHealthLedger(aiHome, nowMS),
-		entities:             entityStore,
-		assignments:          assignmentSvc,
-		evidence:             evidenceStore,
-		geoCache:             geoCache,
-		platform:             strings.TrimSpace(opts.Platform),
-		ownerPID:             ownerPID,
-		systemProxyDetector:  opts.SystemProxyDetector,
-		tunDetector:          opts.TUNDetector,
-		proxyProbeFunc:       opts.ProxyProbeFunc,
-		desktopBridge:        opts.DesktopBridge,
-		enginePlugins:        append([]egressengine.Engine(nil), opts.EnginePlugins...),
-		catalog:              opts.Catalog,
-		localGeoHTTPClient:   opts.LocalGeoHTTPClient,
-		planInterval:         planInterval,
-		geoPerTick:           geoPerTick,
-		probesPerTick:        probesPerTick,
-		logger:               logger,
-		watchers:             make(map[chan WatchEvent]struct{}),
-		accountMutMap:        make(map[string]*sync.Mutex),
-		desktopOpMap:         make(map[string]*sync.Mutex),
+		aiHomeDir:             aiHome,
+		homeDir:               home,
+		now:                   nowFn,
+		httpClient:            opts.HTTPClient,
+		probeURL:              probeURL,
+		probeTimeoutMS:        probeTimeoutMS,
+		upstreamProbeTimeout:  upTimeout,
+		nodeGeoTTLMS:          geoTTL,
+		disableAutoDirectGeo:  opts.DisableAutoDirectGeo,
+		health:                LoadNodeHealthLedger(aiHome, nowMS),
+		entities:              entityStore,
+		assignments:           assignmentSvc,
+		evidence:              evidenceStore,
+		geoCache:              geoCache,
+		platform:              strings.TrimSpace(opts.Platform),
+		ownerPID:              ownerPID,
+		systemProxyDetector:   opts.SystemProxyDetector,
+		tunDetector:           opts.TUNDetector,
+		proxyProbeFunc:        opts.ProxyProbeFunc,
+		desktopBridge:         opts.DesktopBridge,
+		enginePlugins:         append([]egressengine.Engine(nil), opts.EnginePlugins...),
+		disableBuiltinEngines: opts.DisableBuiltinEngines,
+		catalog:               opts.Catalog,
+		localGeoHTTPClient:    opts.LocalGeoHTTPClient,
+		planInterval:          planInterval,
+		geoPerTick:            geoPerTick,
+		probesPerTick:         probesPerTick,
+		logger:                logger,
+		watchers:              make(map[chan WatchEvent]struct{}),
+		accountMutMap:         make(map[string]*sync.Mutex),
+		desktopOpMap:          make(map[string]*sync.Mutex),
 	}
 
 	m.supervisor = newPoolSupervisor(m, opts)

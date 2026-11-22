@@ -60,6 +60,8 @@ func buildWebUIPluginRoutesWithHostService(
 		{Pattern: "POST " + webuipluginapi.AccountsImportPath, Handler: handler},
 		{Pattern: "POST " + webuipluginapi.AccountsRefreshPath, Handler: handler},
 		{Pattern: "POST " + webuipluginapi.AccountsMaterializePath, Handler: handler},
+		{Pattern: "GET " + webuipluginapi.NetworkConnectorsPath, Handler: handler},
+		{Pattern: "POST " + webuipluginapi.NetworkConnectorPath, Handler: handler},
 		{Pattern: "POST " + webuipluginloginapi.StartPath, Handler: loginHandler},
 		{Pattern: "GET " + webuipluginloginapi.Prefix + "{jobId}", Handler: loginHandler},
 		{Pattern: "POST " + webuipluginloginapi.Prefix + "{jobId}/submit", Handler: loginHandler},

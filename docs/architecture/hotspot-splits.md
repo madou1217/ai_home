@@ -20,6 +20,7 @@
 | 功能路由组 | `webui_feature_routes.go` | 新增一个域只改该文件 |
 | 组合根运行辅助 | `composition_runtime_helpers.go` | `composition.go` 2851 → 2550 行 |
 | Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
+| 出口上游 API | routing / catalog / upstream actions 分成三个文件 | `webuiegressupstreamsapi/handler.go` 539 → 367 行 |
 
 ## 新代码应该落在哪里
 

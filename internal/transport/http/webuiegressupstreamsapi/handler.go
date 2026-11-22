@@ -229,193 +229,21 @@ func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter,
 	rest := strings.TrimPrefix(escapedPath, UpstreamsPath+"/")
 	switch {
 	case rest == "routing/test":
-		if !requireMethod(responseWriter, request, http.MethodPost) {
-			return
-		}
-		manager, ok := handler.manager.(RoutingPolicyManager)
-		if !ok {
-			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "routing_unavailable"})
-			return
-		}
-		var body struct {
-			Target string `json:"target"`
-		}
-		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
-			return
-		}
-		result, err := manager.GetRoutingPolicy(request.Context()).MatchTarget(body.Target)
-		if err != nil {
-			writeError(responseWriter, http.StatusBadRequest, err.Error(), "目标无效")
-			return
-		}
-		writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "result": result})
-
+		handler.serveRoutingTest(responseWriter, request, rest)
 	case rest == "routing":
-		manager, ok := handler.manager.(RoutingPolicyManager)
-		if !ok {
-			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "routing_unavailable"})
-			return
-		}
-		switch request.Method {
-		case http.MethodGet:
-			writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "policy": manager.GetRoutingPolicy(request.Context())})
-			return
-		case http.MethodPut, http.MethodPost:
-			var body struct {
-				Policy  runtimeegress.RoutingPolicy `json:"policy"`
-				Restart bool                        `json:"restart"`
-			}
-			if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
-				return
-			}
-			policy, err := manager.SaveRoutingPolicy(request.Context(), body.Policy, body.Restart)
-			if err != nil {
-				if strings.HasPrefix(err.Error(), "pool_restart_failed") {
-					writeJSON(responseWriter, http.StatusOK, map[string]any{
-						"ok": true, "policy": policy, "applied": false, "error": err.Error(),
-					})
-					return
-				}
-				writeError(responseWriter, http.StatusBadRequest, "routing_policy_invalid", err.Error())
-				return
-			}
-			writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "policy": policy, "applied": true})
-			return
-		default:
-			responseWriter.Header().Set("Allow", "GET, PUT, POST")
-			writeError(responseWriter, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/PUT/POST")
-			return
-		}
-
+		handler.serveRouting(responseWriter, request, rest)
 	case rest == "strategies":
-		if !requireMethod(responseWriter, request, http.MethodGet) {
-			return
-		}
-		manager, ok := handler.manager.(StrategyCatalogManager)
-		if !ok {
-			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "strategies_unavailable"})
-			return
-		}
-		writeJSON(responseWriter, http.StatusOK, map[string]any{
-			"ok":         true,
-			"strategies": manager.StrategyCatalog(request.Context()),
-		})
-
+		handler.serveStrategies(responseWriter, request, rest)
 	case rest == "diagnostics":
-		if !requireMethod(responseWriter, request, http.MethodGet) {
-			return
-		}
-		manager, ok := handler.manager.(DiagnosticsManager)
-		if !ok {
-			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "diagnostics_unavailable"})
-			return
-		}
-		writeJSON(responseWriter, http.StatusOK, manager.Diagnostics(request.Context()))
-
+		handler.serveDiagnostics(responseWriter, request, rest)
 	case strings.HasSuffix(rest, "/probe"):
-		if !requireMethod(responseWriter, request, http.MethodPost) {
-			return
-		}
-		rawID := strings.TrimSuffix(rest, "/probe")
-		if strings.Contains(rawID, "/") {
-			writeError(responseWriter, http.StatusNotFound, "not_found", "未找到路由")
-			return
-		}
-		id, ok := unescapeSegment(rawID)
-		if !ok {
-			writeError(responseWriter, http.StatusNotFound, "upstream_not_found", "未找到上游")
-			return
-		}
-		var body struct {
-			Nodes []string `json:"nodes"`
-		}
-		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, true) {
-			return
-		}
-		result, status := handler.manager.StartUpstreamProbe(request.Context(), id, body.Nodes)
-		writeJSON(responseWriter, status, result)
-
+		handler.serveUpstreamProbe(responseWriter, request, rest)
 	case strings.HasSuffix(rest, "/probe-account"):
-		if !requireMethod(responseWriter, request, http.MethodPost) {
-			return
-		}
-		rawID := strings.TrimSuffix(rest, "/probe-account")
-		if strings.Contains(rawID, "/") {
-			writeError(responseWriter, http.StatusNotFound, "not_found", "未找到路由")
-			return
-		}
-		id, ok := unescapeSegment(rawID)
-		if !ok {
-			writeError(responseWriter, http.StatusNotFound, "upstream_not_found", "未找到上游")
-			return
-		}
-		var body struct {
-			AccountRef string `json:"accountRef"`
-		}
-		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
-			return
-		}
-		probeManager, ok := handler.manager.(AccountUpstreamProbeManager)
-		if !ok {
-			writeJSON(responseWriter, http.StatusNotImplemented, runtimeegress.AccountUpstreamProbeResult{
-				OK: false, Status: "skipped", Reason: "account_probe_unavailable",
-			})
-			return
-		}
-		result, status := probeManager.ProbeUpstreamAccount(request.Context(), id, body.AccountRef)
-		writeJSON(responseWriter, status, result)
-
+		handler.serveProbeAccount(responseWriter, request, rest)
 	case strings.HasSuffix(rest, "/evidence/reset"):
-		if !requireMethod(responseWriter, request, http.MethodPost) {
-			return
-		}
-		rawID := strings.TrimSuffix(rest, "/evidence/reset")
-		if strings.Contains(rawID, "/") {
-			writeError(responseWriter, http.StatusNotFound, "not_found", "未找到路由")
-			return
-		}
-		id, ok := unescapeSegment(rawID)
-		if !ok {
-			writeError(responseWriter, http.StatusNotFound, "upstream_not_found", "未找到上游")
-			return
-		}
-		var body struct {
-			ExitKeys []string `json:"exitKeys"`
-		}
-		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, true) {
-			return
-		}
-		removed, status, code := handler.manager.ResetUpstreamEvidence(request.Context(), id, body.ExitKeys)
-		if status != http.StatusOK {
-			writeError(responseWriter, status, code, "未找到上游")
-			return
-		}
-		writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "removed": removed})
-
+		handler.serveEvidenceReset(responseWriter, request, rest)
 	case !strings.Contains(rest, "/"):
-		if !requireMethod(responseWriter, request, http.MethodPut) {
-			return
-		}
-		id, ok := unescapeSegment(rest)
-		if !ok || strings.TrimSpace(id) == "" {
-			writeError(responseWriter, http.StatusBadRequest, "invalid_upstream_id", "上游 ID 无效")
-			return
-		}
-		var patch runtimeegress.UpstreamPolicyPatch
-		if !readJSONObject(responseWriter, request, &patch, maxUpstreamBodyBytes, true) {
-			return
-		}
-		policy, err := handler.manager.UpdateUpstreamPolicy(request.Context(), id, patch)
-		if err != nil {
-			if err.Error() == "invalid_upstream_id" {
-				writeError(responseWriter, http.StatusBadRequest, "invalid_upstream_id", "上游 ID 无效")
-				return
-			}
-			writeError(responseWriter, http.StatusInternalServerError, err.Error(), "保存上游策略失败")
-			return
-		}
-		writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "policy": policy})
-
+		handler.serveUpstreamDetail(responseWriter, request, rest)
 	default:
 		writeError(responseWriter, http.StatusNotFound, "not_found", "未找到上游操作路由")
 	}

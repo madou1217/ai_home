@@ -77,6 +77,14 @@
   同一账号，库为 15 条，`BAIDUID` 的 `creation_utc` 和值哈希都不变，
   `last_access_utc` 前进到 `13439835705370770`，证明重开的浏览器读取并发送了
   原 Cookie。两次关闭耗时 2.2–2.4 秒。
+- 跨账号隔离：账号 E 打开 `http://localtest.me:19802/login` 写入
+  `aih_iso=e_only_123`；账号 F 打开同一 origin 的 `/whoami`，临时 HTTP 服务日志
+  为 `hasCookie=False`，F 的 Cookies 库也没有 `localtest.me` 行；E 重开
+  `/whoami` 为 `hasCookie=True`。两个账号的 `BAIDUID` creation/value 不同，
+  Profile 目录与 Cookies 数据库互相独立。
+- 安全观察：`navigate` 的 loopback 判定只看主机字符串；`localtest.me` 这类解析到
+  127.0.0.1 的公网域名可以通过校验并访问本机端口（本次正是借它做隔离测试）。
+  这属于 SSRF 边界缺口，建议后续在命令路径解析并拒绝 loopback/private 结果。
 - 真实边界：
   - 需要第三方凭据/二次验证的 OAuth 登录流程没有执行，不能声称某个真实账号
     已完成登录。

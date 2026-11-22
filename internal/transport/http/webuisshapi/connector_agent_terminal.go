@@ -101,11 +101,12 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		return
 	}
 	var body struct {
-		Agent string `json:"agent"`
-		Model string `json:"model"`
-		Fresh bool   `json:"fresh"`
-		Cols  any    `json:"cols"`
-		Rows  any    `json:"rows"`
+		Agent   string `json:"agent"`
+		Model   string `json:"model"`
+		Account string `json:"account"`
+		Fresh   bool   `json:"fresh"`
+		Cols    any    `json:"cols"`
+		Rows    any    `json:"rows"`
 	}
 	if request.Body != nil {
 		raw, err := io.ReadAll(io.LimitReader(request.Body, maxConnectorBodyBytes+1))
@@ -184,7 +185,25 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		writeError(response, http.StatusServiceUnavailable, "provider_cli_unavailable", buildErr.Error())
 		return
 	}
-	if handler.preparer != nil {
+	if account := strings.TrimSpace(body.Account); account != "" {
+		aihPath, lookErr := exec.LookPath("aih")
+		if lookErr != nil {
+			writeError(response, http.StatusServiceUnavailable, "aih_cli_unavailable", "Server 上找不到 aih CLI")
+			return
+		}
+		wrapped := []string{"codex", account}
+		wrapped = append(wrapped, providerArgs...)
+		if model := strings.TrimSpace(body.Model); model != "" {
+			wrapped = append(wrapped, "-m", model)
+		}
+		providerPath = aihPath
+		providerArgs = wrapped
+		providerEnv = append(providerEnv,
+			"AIH_HOME_DIR="+handler.aiHomeDir,
+			"HOME="+os.Getenv("HOME"),
+			"PATH="+os.Getenv("PATH"),
+		)
+	} else if handler.preparer != nil {
 		target, targetErr := handler.preparer.GetTarget(request.Context(), agent, chatruntime.GatewayRuntimeScope)
 		if targetErr != nil {
 			writeError(response, http.StatusServiceUnavailable, "native_target_unavailable", "无法解析 Server 网关执行目标")

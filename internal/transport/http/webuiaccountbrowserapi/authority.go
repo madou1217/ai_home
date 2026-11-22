@@ -2,7 +2,6 @@ package webuiaccountbrowserapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -71,15 +70,9 @@ func ReadServerID(ctx context.Context, aiHomeDir string) (string, error) {
 	if err != nil {
 		return "", ErrAuthorityUnavailable
 	}
-	value, found, err := appstate.ReadKV(ctx, databasePath, "server:identity")
-	if err != nil || !found || len(value) > 4096 {
+	identity, found, err := appstate.ReadServerIdentity(ctx, databasePath)
+	if err != nil || !found {
 		return "", ErrAuthorityUnavailable
 	}
-	var identity struct {
-		ID string `json:"id"`
-	}
-	if json.Unmarshal([]byte(value), &identity) != nil || identity.ID == "" {
-		return "", ErrAuthorityUnavailable
-	}
-	return identity.ID, nil
+	return identity, nil
 }

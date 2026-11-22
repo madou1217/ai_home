@@ -17,4 +17,12 @@ const (
 	// 账号适配器与 app-server 环境构建都读这两槽，键名必须同源。
 	KeyCodexProviderDefault = "provider:default:codex"
 	KeyCodexAccountDefault  = "account:default:codex"
+
+	// KeyWorkspaceConnectors 是不含明文的远程工作区 Connector 登记与
+	// 会话令牌摘要。令牌原文只通过 WebSocket 首帧传递，不进入这个键。
+	KeyWorkspaceConnectors = "remote:workspace-connectors"
+
+	// KeyServerIdentity 是本 AIH Server 的稳定非密钥身份。远程执行目标必须
+	// 同时携带控制端 profile 与服务端身份；缺失时由服务端启动阶段自举。
+	KeyServerIdentity = "server:identity"
 )

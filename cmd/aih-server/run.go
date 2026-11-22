@@ -14,6 +14,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
@@ -66,6 +67,11 @@ func run(
 	}
 	if config.generatedServerKeys {
 		_, _ = fmt.Fprintln(runtime.stderr, "[aih-server] 已生成默认管理/客户端密钥并写入 config:server；用 aih server config show --show-secrets 查看")
+	}
+	if databasePath, pathErr := appstate.DatabasePath(config.aiHomeDir); pathErr == nil {
+		if _, identityErr := appstate.EnsureServerIdentity(ctx, databasePath); identityErr != nil {
+			log.Printf("stable server identity unavailable: %v", identityErr)
+		}
 	}
 	if err := distributioninstall.AwaitActivation(ctx, config.aiHomeDir, config.listenAddress(), runtime.listen, runtime.stderr); err != nil {
 		return err

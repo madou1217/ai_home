@@ -153,6 +153,11 @@ import type {
   Session
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
+import type {
+  RemoteTargetListResponse,
+  RemoteTargetQuery,
+  RemoteTargetResolutionResponse
+} from '@/features/remote-targets/remote-targets-model';
 
 const api = axios.create({
   baseURL: '/v0',
@@ -2781,6 +2786,24 @@ export function dispatchModelUsageDashboardQueryPayload(
     );
   }
 }
+
+export const remoteTargetsAPI = {
+  list: async (query: RemoteTargetQuery = {}): Promise<RemoteTargetListResponse> => {
+    const { signal, ...params } = query;
+    const response = await api.get<RemoteTargetListResponse>('/webui/remote-targets', { params, signal });
+    return response.data;
+  },
+  resolve: async (query: RemoteTargetQuery = {}): Promise<RemoteTargetResolutionResponse> => {
+    const { signal, ...params } = query;
+    const response = await api.get<RemoteTargetResolutionResponse>('/webui/remote-targets/resolve', { params, signal });
+    return response.data;
+  },
+  preflight: async (query: RemoteTargetQuery = {}): Promise<RemoteTargetResolutionResponse> => {
+    const { signal, ...params } = query;
+    const response = await api.get<RemoteTargetResolutionResponse>('/webui/remote-targets/preflight', { params, signal });
+    return response.data;
+  }
+};
 
 export const sshHostsAPI = {
   listConnections: async (): Promise<any[]> => {

@@ -27,7 +27,7 @@ func listRemoteTargetCandidates(aiHome string, request remoteTargetRequest) []re
 	if profile == nil {
 		return nil
 	}
-	client, err := remoteexecutionapi.New(&httpClientWithTimeout{timeout: remoteCompletionTimeout}, remoteexecutionapi.Config{
+	client, err := remoteexecutionapi.New(&http.Client{Timeout: remoteCompletionTimeout}, remoteexecutionapi.Config{
 		BaseURL:       textValue(profile["endpoint"]),
 		ManagementKey: textValue(profile["managementKey"]),
 	})
@@ -50,16 +50,14 @@ func listRemoteTargetCandidates(aiHome string, request remoteTargetRequest) []re
 	if err != nil {
 		return nil
 	}
-	return remoteTargetChoices(response.Candidates, request.Field, request.Current)
-}
-
-// httpClientWithTimeout keeps completion's short deadline local to this lookup.
-type httpClientWithTimeout struct {
-	timeout time.Duration
-}
-
-func (client *httpClientWithTimeout) Do(request *http.Request) (*http.Response, error) {
-	return (&http.Client{Timeout: client.timeout}).Do(request)
+	choices := remoteTargetChoices(response.Candidates, request.Field, request.Current)
+	choices = appendRemoteTargetChoices(choices, remoteInventoryChoices(response.Inventory, request.Field, request.Current))
+	if request.Field == "server-id" {
+		choices = appendRemoteTargetChoices(choices, []remoteTargetChoice{{
+			Value: response.ServerID, Description: "远端 AIH Server", Group: "远程 Server",
+		}})
+	}
+	return choices
 }
 
 func selectCompletionProfile(store map[string]any, requested string) map[string]any {
@@ -67,12 +65,7 @@ func selectCompletionProfile(store map[string]any, requested string) map[string]
 	if requested == "" {
 		requested = textValue(store["activeProfileId"])
 	}
-	profiles, _ := store["profiles"].([]any)
-	for _, raw := range profiles {
-		profile, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
+	for _, profile := range completionProfiles(store) {
 		if textValue(profile["id"]) == requested || textValue(profile["name"]) == requested || strings.TrimRight(textValue(profile["endpoint"]), "/") == strings.TrimRight(requested, "/") {
 			return profile
 		}
@@ -101,6 +94,8 @@ func remoteTargetChoices(candidates []remoteexecution.TargetCandidate, field, cu
 		switch field {
 		case "workspace":
 			add(candidate.Workspace.ID, candidate.Workspace.Label, "远程 Workspace")
+		case "server-id":
+			add(candidate.ServerID, "远端 AIH Server", "远程 Server")
 		case "connection":
 			add(candidate.Workspace.ConnectionID, candidate.Workspace.ConnectionLabel, "远程 SSH Connection")
 		case "harness":
@@ -119,14 +114,70 @@ func remoteTargetChoices(candidates []remoteexecution.TargetCandidate, field, cu
 	return choices
 }
 
-func completionProfileChoices(store map[string]any, current string) []remoteTargetChoice {
-	profiles, _ := store["profiles"].([]any)
-	choices := make([]remoteTargetChoice, 0, len(profiles))
-	for _, raw := range profiles {
-		profile, ok := raw.(map[string]any)
-		if !ok {
+func appendRemoteTargetChoices(existing, additions []remoteTargetChoice) []remoteTargetChoice {
+	seen := make(map[string]struct{}, len(existing)+len(additions))
+	for _, choice := range existing {
+		seen[choice.Value] = struct{}{}
+	}
+	for _, choice := range additions {
+		if strings.TrimSpace(choice.Value) == "" {
 			continue
 		}
+		if _, found := seen[choice.Value]; found {
+			continue
+		}
+		seen[choice.Value] = struct{}{}
+		existing = append(existing, choice)
+	}
+	return existing
+}
+
+func remoteInventoryChoices(inventory remoteexecutionapi.InventorySummary, field, current string) []remoteTargetChoice {
+	choices := make([]remoteTargetChoice, 0)
+	add := func(value, description, group string) {
+		value = strings.TrimSpace(value)
+		if value == "" || (!matchesPrefix(value, current) && !matchesContains(description, current)) {
+			return
+		}
+		choices = append(choices, remoteTargetChoice{Value: value, Description: description, Group: group})
+	}
+	switch field {
+	case "workspace":
+		for _, item := range inventory.Workspaces {
+			add(item.ID, item.Label, "远程 Workspace")
+		}
+	case "connection":
+		for _, item := range inventory.Workspaces {
+			add(item.ConnectionID, item.ConnectionLabel, "远程 SSH Connection")
+		}
+	case "harness":
+		for _, item := range inventory.Runners {
+			add(item.ID, "远程 Harness", "远程 Harness")
+		}
+	case "provider":
+		for _, item := range inventory.Runners {
+			add(item.Provider, "远程 Provider", "远程 Provider")
+		}
+		for _, item := range inventory.Accounts {
+			add(item.Provider, "远程 Provider", "远程 Provider")
+		}
+	case "account":
+		for _, item := range inventory.Accounts {
+			add(item.AccountRef, "远程 Account", "远程 Account")
+		}
+	case "model":
+		for _, item := range inventory.Models {
+			add(item.CatalogModelID, "远程 Catalog Model", "远程 Model")
+			add(item.CLIModelName, "远程 CLI Model", "远程 Model")
+		}
+	}
+	return choices
+}
+
+func completionProfileChoices(store map[string]any, current string) []remoteTargetChoice {
+	profiles := completionProfiles(store)
+	choices := make([]remoteTargetChoice, 0, len(profiles))
+	for _, profile := range profiles {
 		id, name := textValue(profile["id"]), textValue(profile["name"])
 		if id == "" {
 			continue
@@ -141,6 +192,24 @@ func completionProfileChoices(store map[string]any, current string) []remoteTarg
 		choices = append(choices, remoteTargetChoice{Value: id, Description: description, Group: "Server Profile"})
 	}
 	return choices
+}
+
+func completionProfiles(store map[string]any) []map[string]any {
+	value := store["profiles"]
+	switch profiles := value.(type) {
+	case []map[string]any:
+		return profiles
+	case []any:
+		result := make([]map[string]any, 0, len(profiles))
+		for _, raw := range profiles {
+			if profile, ok := raw.(map[string]any); ok {
+				result = append(result, profile)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func textValue(value any) string {

@@ -5,15 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
-	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/remoteexecutionapi"
 	"github.com/madou1217/ai_home/internal/remoteexecution"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
 )
-
-const remoteTargetHTTPTimeout = 10 * time.Second
 
 // runRemoteCommand owns only the CLI grammar. It delegates transport, target
 // selection and preflight semantics to the remote execution API adapter/domain.
@@ -33,6 +31,11 @@ func runRemoteCommand(ctx context.Context, arguments []string, runtime commandRu
 		return true, nil
 	}
 	action := strings.ToLower(strings.TrimSpace(arguments[2]))
+	switch action {
+	case "ls", "list", "resolve", "doctor", "preflight":
+	default:
+		return true, fmt.Errorf("unknown remote target command: %s", action)
+	}
 	options, err := parseRemoteTargetOptions(arguments[3:])
 	if err != nil {
 		return true, err
@@ -190,7 +193,9 @@ func runRemoteTargetList(ctx context.Context, client *remoteexecutionapi.Client,
 		return writeRemoteJSON(runtime, response)
 	}
 	if len(response.Candidates) == 0 {
-		_, _ = fmt.Fprintln(runtime.stdout, "[aih] no remote execution targets")
+		_, _ = fmt.Fprintf(runtime.stdout, "[aih] no executable remote target candidates; inventory workspace=%d runner=%d account=%d model=%d\n",
+			response.Inventory.WorkspaceCount, response.Inventory.RunnerCount,
+			response.Inventory.AccountCount, response.Inventory.ModelCount)
 		return nil
 	}
 	for _, candidate := range response.Candidates {
@@ -266,7 +271,7 @@ func displayTargetModel(target remoteexecution.ExecutionTarget) string {
 	return target.CatalogModelID
 }
 
-func writeRemoteUsage(output interface{ Write([]byte) (int, error) }) {
+func writeRemoteUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
 	_, _ = fmt.Fprintln(output, "  aih remote target ls [--server <profile>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih remote target resolve [selectors]")

@@ -71,8 +71,22 @@ type TargetSelector = remoteexecution.TargetSelector
 type ListResponse struct {
 	OK         bool                              `json:"ok"`
 	ServerID   string                            `json:"serverId"`
+	Inventory  InventorySummary                  `json:"inventory"`
 	Candidates []remoteexecution.TargetCandidate `json:"candidates"`
 	Warnings   []string                          `json:"warnings,omitempty"`
+}
+
+// InventorySummary keeps an empty candidate list diagnosable without exposing
+// credentials or raw account records.
+type InventorySummary struct {
+	WorkspaceCount int                             `json:"workspaceCount"`
+	RunnerCount    int                             `json:"runnerCount"`
+	AccountCount   int                             `json:"accountCount"`
+	ModelCount     int                             `json:"modelCount"`
+	Workspaces     []remoteexecution.WorkspaceFact `json:"workspaces"`
+	Runners        []remoteexecution.RunnerFact    `json:"runners"`
+	Accounts       []remoteexecution.AccountFact   `json:"accounts"`
+	Models         []remoteexecution.ModelFact     `json:"models"`
 }
 
 // ResolutionResponse is the stable resolve/preflight response.
@@ -186,16 +200,40 @@ func setQuery(query url.Values, key, value string) {
 }
 
 func decodeRemoteError(statusCode int, body []byte) error {
-	var response ErrorResponse
-	if json.Unmarshal(body, &response) == nil {
-		return RemoteError{
-			StatusCode: statusCode,
-			Code:       boundedText(response.Error, 128),
-			Message:    boundedText(response.Message, 1024),
-			Field:      boundedText(response.Field, 128),
+	var envelope struct {
+		OK      bool            `json:"ok"`
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
+		Field   string          `json:"field"`
+	}
+	if json.Unmarshal(body, &envelope) != nil {
+		return RemoteError{StatusCode: statusCode, Code: "remote_target_request_failed", Message: "remote target server returned an invalid error response"}
+	}
+	code := ""
+	message := boundedText(envelope.Message, 1024)
+	field := boundedText(envelope.Field, 128)
+	var flatCode string
+	if json.Unmarshal(envelope.Error, &flatCode) == nil {
+		code = boundedText(flatCode, 128)
+	} else {
+		var nested struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(envelope.Error, &nested) == nil {
+			code = boundedText(nested.Code, 128)
+			if message == "" {
+				message = boundedText(nested.Message, 1024)
+			}
 		}
 	}
-	return RemoteError{StatusCode: statusCode, Code: "remote_target_request_failed", Message: "remote target server returned an invalid error response"}
+	if code == "" {
+		code = "remote_target_request_failed"
+	}
+	if message == "" {
+		message = "remote target server returned an error"
+	}
+	return RemoteError{StatusCode: statusCode, Code: code, Message: message, Field: field}
 }
 
 func normalizeBaseURL(value string) (string, error) {

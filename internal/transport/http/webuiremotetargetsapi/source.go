@@ -119,13 +119,17 @@ func (source FactsSource) Read(ctx context.Context) (remoteexecution.Facts, erro
 			catalogID := model.ModelID().String()
 			cliName := cliModelName(set.ProviderID, catalogID)
 			facts.Models = append(facts.Models, remoteexecution.ModelFact{
-				AccountRef:            accountRef,
-				Provider:              set.ProviderID,
-				CatalogModelID:        catalogID,
-				CLIModelName:          cliName,
-				Effective:             model.Effective(),
-				CatalogAvailable:      model.UpstreamAvailable(),
-				NativeLaunchAvailable: nativeLaunchAvailable(source.Catalog, set.ProviderID, cliName),
+				AccountRef:       accountRef,
+				Provider:         set.ProviderID,
+				CatalogModelID:   catalogID,
+				CLIModelName:     cliName,
+				Effective:        model.Effective(),
+				CatalogAvailable: model.UpstreamAvailable(),
+				// A catalog row and a static provider contract do not prove that
+				// the remote CLI binary is installed, accepts this model, or can
+				// attach the workspace. Keep launch fail-closed until the future
+				// supervisor performs a real capability probe.
+				NativeLaunchAvailable: false,
 			})
 		}
 	}
@@ -155,14 +159,6 @@ func runnerFacts(catalog *providers.Catalog) []remoteexecution.RunnerFact {
 		})
 	}
 	return result
-}
-
-func nativeLaunchAvailable(catalog *providers.Catalog, provider, cliModel string) bool {
-	if catalog == nil || strings.TrimSpace(cliModel) == "" {
-		return false
-	}
-	definition, found := catalog.Get(provider)
-	return found && definition.CLI != nil && definition.CLI.Headless != nil && definition.NativeBoundary != nil
 }
 
 func cliModelName(provider, model string) string {

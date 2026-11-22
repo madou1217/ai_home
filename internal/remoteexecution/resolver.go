@@ -10,6 +10,9 @@ func (Resolver) Resolve(facts Facts, rawSelector TargetSelector) (Resolution, er
 	if err := validateFacts(facts); err != nil {
 		return Resolution{}, err
 	}
+	if selector.ServerID != "" && selector.ServerID != facts.ServerID {
+		return Resolution{}, &ResolutionError{Code: "target_server_not_found", Field: "serverId", Value: selector.ServerID, Detail: "selected server identity does not match this AIH Server"}
+	}
 
 	workspace, err := selectWorkspace(facts.Workspaces, selector)
 	if err != nil {

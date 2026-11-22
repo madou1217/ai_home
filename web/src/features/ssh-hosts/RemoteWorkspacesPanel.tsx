@@ -4,6 +4,7 @@ import { CloudServerOutlined, CodeOutlined, DownOutlined, PlusOutlined, RightOut
 import { sshHostsAPI } from '@/services/api';
 import { buildAppHref } from '@/services/app-navigation';
 import { useOpenRemoteWorkspaceTerminal } from '@/features/web-terminal/use-open-remote-workspace-terminal';
+import RemoteTargetPanel from '@/features/remote-targets/RemoteTargetPanel';
 import type { SshConnection, SshWorkspace } from './ssh-hosts-model';
 import './remote-workspaces-panel.css';
 import Reveal from '@/components/ui/Reveal';
@@ -79,8 +80,9 @@ export default function RemoteWorkspacesPanel({ onOpenInWork }: {
   };
 
   return (
-    <section className="remote-ws" data-collapsed={collapsed || undefined} aria-label="远程工作区">
-      <div className="remote-ws-head">
+    <>
+      <section className="remote-ws" data-collapsed={collapsed || undefined} aria-label="远程工作区">
+        <div className="remote-ws-head">
         <button type="button" className="remote-ws-toggle" aria-expanded={!collapsed} onClick={toggle}>
           {collapsed ? <RightOutlined /> : <DownOutlined />}
           <span>远程工作区</span>
@@ -150,6 +152,8 @@ export default function RemoteWorkspacesPanel({ onOpenInWork }: {
         </ul>
         )}
       </Reveal>
-    </section>
+      </section>
+      <RemoteTargetPanel />
+    </>
   );
 }

@@ -53,8 +53,20 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 type listResponse struct {
 	OK         bool                              `json:"ok"`
 	ServerID   string                            `json:"serverId"`
+	Inventory  inventorySummary                  `json:"inventory"`
 	Candidates []remoteexecution.TargetCandidate `json:"candidates"`
 	Warnings   []string                          `json:"warnings,omitempty"`
+}
+
+type inventorySummary struct {
+	WorkspaceCount int                             `json:"workspaceCount"`
+	RunnerCount    int                             `json:"runnerCount"`
+	AccountCount   int                             `json:"accountCount"`
+	ModelCount     int                             `json:"modelCount"`
+	Workspaces     []remoteexecution.WorkspaceFact `json:"workspaces"`
+	Runners        []remoteexecution.RunnerFact    `json:"runners"`
+	Accounts       []remoteexecution.AccountFact   `json:"accounts"`
+	Models         []remoteexecution.ModelFact     `json:"models"`
 }
 
 type resolveResponse struct {
@@ -114,7 +126,19 @@ func (handler *Handler) serveList(response http.ResponseWriter, facts remoteexec
 	candidates := handler.resolver.Candidates(facts)
 	candidates = filterCandidates(candidates, selector)
 	writeJSON(response, http.StatusOK, listResponse{
-		OK: true, ServerID: facts.ServerID, Candidates: candidates,
+		OK:       true,
+		ServerID: facts.ServerID,
+		Inventory: inventorySummary{
+			WorkspaceCount: len(facts.Workspaces),
+			RunnerCount:    len(facts.Runners),
+			AccountCount:   len(facts.Accounts),
+			ModelCount:     len(facts.Models),
+			Workspaces:     facts.Workspaces,
+			Runners:        facts.Runners,
+			Accounts:       facts.Accounts,
+			Models:         facts.Models,
+		},
+		Candidates: candidates,
 	})
 }
 

@@ -1545,6 +1545,9 @@ func (m *Manager) CurrentAccountPoolNode(ctx context.Context, accountRef string)
 				}
 			}
 		}
+		// 账号不在计划里时没有“当前节点”：返回全局节点的当前值会误导展示，
+		// 也让调用方以为账号已有车道。
+		return ""
 	}
 	return strings.TrimSpace(proxies[poolGlobalGroup(state)].Now)
 }
@@ -1570,13 +1573,10 @@ func (m *Manager) CurrentAccountProxyURL(ctx context.Context, accountRef string,
 			// state.Lanes 显式记为空串时表示车道无可用节点/被拦截，必须 fail-closed。
 			return strings.TrimSpace(laneURL)
 		}
-		computed := m.computeCurrentPlan(ctx)
-		if info := computed.Accounts[ref]; info != nil {
-			if info.BlockedReason != "" || info.Allowed == 0 {
-				return ""
-			}
-			return ""
-		}
+		// 账号没有车道（不在当前计划里，或计划尚未生成）时不能借用全局池出口：
+		// 全局 scope 与账号绑定不同，静默替换会改变出口 IP。调用方会继续尝试
+		// 端点池或返回明确错误，而不是把流量悄悄送上共享节点。
+		return ""
 	}
 	return strings.TrimSpace(state.ProxyURL)
 }

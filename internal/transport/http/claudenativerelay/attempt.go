@@ -173,7 +173,31 @@ func (handler *Handler) attemptRelay(
 		}
 	}
 
-	upstreamResponse, err := handler.client.Do(upstream)
+	// 账号出口必须在触网前生效：绑定存在时用账号专属客户端，
+	// 解析失败或客户端缺失都失败关闭，不能回落到默认网络。
+	client := handler.client
+	if handler.accountEgress != nil {
+		egressClient, bound, egressErr := handler.accountEgress.ClientForAccount(
+			request.Context(),
+			string(binding.ProviderID()),
+			accountRef.String(),
+		)
+		if egressErr != nil || (bound && egressClient == nil) {
+			return attemptOutcome{
+				route: route,
+				failure: relayFailure{
+					status:  http.StatusBadGateway,
+					code:    "account_egress_unavailable",
+					message: "账号出口不可用",
+				},
+			}, false
+		}
+		if bound {
+			client = egressClient
+		}
+	}
+
+	upstreamResponse, err := client.Do(upstream)
 	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
 		closeUpstreamResponse(upstreamResponse)
 		retry := err != nil && handler.recordTransportFailure(

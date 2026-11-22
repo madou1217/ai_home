@@ -5,6 +5,7 @@ export interface WorkspaceConnectorCapabilities {
   writeFile: boolean;
   listDirectory: boolean;
   search: boolean;
+  runCommand: boolean;
   names?: string[];
 }
 

@@ -322,6 +322,11 @@ export default function WorkspaceConnectorPanel() {
                     <span className="ws-connector-label">{workspace.label}</span>
                   </span>
                   <span className="ws-connector-meta">{connectorLocation(workspace)}</span>
+                  {workspace.state === 'online' ? (
+                    <span className="ws-connector-meta">
+                      命令执行 {workspace.capabilities?.runCommand ? '已开启' : '已关闭'}
+                    </span>
+                  ) : null}
                   {workspace.liveLastSeenAt || workspace.lastSeenAt ? (
                     <span className="ws-connector-meta">最近心跳 {formatMoment(workspace.liveLastSeenAt || workspace.lastSeenAt)}</span>
                   ) : null}

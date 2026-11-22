@@ -16,6 +16,9 @@ const (
 	DefaultCallTimeout = 30 * time.Second
 	connectorWriteWait = 10 * time.Second
 	maxPendingCalls    = 64
+	// maxCallTimeout bounds any single RPC wait. run_command is the only
+	// operation that needs more than the default file-operation budget.
+	maxCallTimeout = remoteconnector.MaxCommandTimeout + 30*time.Second
 )
 
 var ErrHubClosed = errors.New("workspace connector hub is closed")
@@ -145,6 +148,12 @@ func (connection *Connection) Close(reason string) {
 
 // Call sends one capability-scoped RPC and waits for its bounded response.
 func (connection *Connection) Call(ctx context.Context, operation string, payload any) (json.RawMessage, error) {
+	return connection.CallWithTimeout(ctx, operation, payload, DefaultCallTimeout)
+}
+
+// CallWithTimeout is Call with an explicit wait budget. The budget is clamped
+// to maxCallTimeout; zero falls back to DefaultCallTimeout.
+func (connection *Connection) CallWithTimeout(ctx context.Context, operation string, payload any, timeout time.Duration) (json.RawMessage, error) {
 	if connection == nil || !connection.Active() {
 		return nil, remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceOffline, "workspace connector is offline")
 	}
@@ -182,7 +191,13 @@ func (connection *Connection) Call(ctx context.Context, operation string, payloa
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	timer := time.NewTimer(DefaultCallTimeout)
+	if timeout <= 0 {
+		timeout = DefaultCallTimeout
+	}
+	if timeout > maxCallTimeout {
+		timeout = maxCallTimeout
+	}
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case result := <-waiter:
@@ -293,11 +308,33 @@ func (hub *Hub) Status(workspaceID string) (LiveStatus, bool) {
 }
 
 func (hub *Hub) Call(ctx context.Context, workspaceID, operation string, payload any) (json.RawMessage, error) {
+	return hub.CallWithTimeout(ctx, workspaceID, operation, payload, CallTimeoutFor(operation, payload))
+}
+
+// CallTimeoutFor derives the RPC wait budget from the operation. Only
+// run_command carries its own bounded timeout; everything else uses the file
+// operation budget. Both the tool endpoint and the raw RPC endpoint go through
+// this function so they cannot drift.
+func CallTimeoutFor(operation string, payload any) time.Duration {
+	if operation != remoteconnector.OperationRunCommand {
+		return DefaultCallTimeout
+	}
+	var request remoteconnector.RunCommandRequest
+	if payload != nil {
+		if encoded, err := json.Marshal(payload); err == nil {
+			_ = json.Unmarshal(encoded, &request)
+		}
+	}
+	return remoteconnector.CommandTimeout(request.TimeoutMS) + 15*time.Second
+}
+
+// CallWithTimeout routes one RPC with an explicit wait budget.
+func (hub *Hub) CallWithTimeout(ctx context.Context, workspaceID, operation string, payload any, timeout time.Duration) (json.RawMessage, error) {
 	connection := hub.connection(workspaceID)
 	if connection == nil || !connection.Active() {
 		return nil, remoteconnector.NewProtocolError(remoteconnector.CodeWorkspaceOffline, "workspace connector is offline")
 	}
-	return connection.Call(ctx, operation, payload)
+	return connection.CallWithTimeout(ctx, operation, payload, timeout)
 }
 
 // Disconnect closes one live session without revoking its enrollment.

@@ -17,6 +17,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/remoteconnector"
+	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 )
 
 const remoteAgentMCPName = "aih_remote"
@@ -57,17 +60,22 @@ func buildRemoteAgentLaunch(aiHomeDir, workspaceID, agent string) (string, []str
 	return buildProviderMCPLaunch(agent, mcpServer, env, remoteAgentInstructions)
 }
 
-const connectorAgentInstructions = "你在一个「本地工作区」里工作：项目文件在用户本机，通过 Workspace Connector 访问；模型和你在 AIH Server 上。" +
-	"只能用 aih_remote 提供的工具（read_file / write_file / edit_file / list_directory / search）读写文件；路径一律相对工作区根目录。" +
-	"修改文件前先 read_file，写回时带上它返回的 version。本机当前目录是一个空的占位目录，不要在本机查找项目文件。" +
-	"当前通道不支持 run_command，请用文件工具完成任务。"
+func connectorAgentInstructions(capabilities remoteconnector.Capabilities) string {
+	instructions := "你在一个「本地工作区」里工作：项目文件在用户本机，通过 Workspace Connector 访问；模型和你在 AIH Server 上。" +
+		"只能用 aih_remote 提供的工具访问项目；路径一律相对工作区根目录。" +
+		"修改文件前先 read_file，写回时带上它返回的 version。本机当前目录是一个空的占位目录，不要在本机查找项目文件。"
+	if remoteconnector.NormalizeCapabilities(capabilities).RunCommand {
+		return instructions + "可以用 run_command 在工作区内执行命令（如构建、测试、git）；命令以本机用户权限运行，不是沙箱，避免交互式或长时间驻留的命令。"
+	}
+	return instructions + "当前通道不支持 run_command，请只用文件工具完成任务。"
+}
 
 // buildConnectorAgentLaunch builds a provider launch whose MCP bridge forwards
 // tool calls to the Server tool endpoint instead of opening SSH. The provider
 // still runs on the AIH Server; only the workspace files are local.
 func buildConnectorAgentLaunch(
 	aiHomeDir, workspaceID, agent, toolsURL, toolToken string,
-	tools []map[string]any,
+	capabilities remoteconnector.Capabilities,
 ) (string, []string, []string, error) {
 	switch agent {
 	case "codex", "claude":
@@ -91,7 +99,7 @@ func buildConnectorAgentLaunch(
 	raw, _ := json.Marshal(map[string]any{
 		"toolsUrl": toolsURL,
 		"token":    toolToken,
-		"tools":    tools,
+		"tools":    workspaceconnector.ToolDefinitionsFor(capabilities),
 	})
 	if err := os.WriteFile(contextPath, raw, 0o600); err != nil {
 		return "", nil, nil, err
@@ -102,7 +110,7 @@ func buildConnectorAgentLaunch(
 		"env":     map[string]string{"AIH_LAUNCH_CONTEXT": contextPath},
 	}
 	env := []string{"AIH_HOME_DIR=" + aiHomeDir}
-	return buildProviderMCPLaunch(agent, mcpServer, env, connectorAgentInstructions)
+	return buildProviderMCPLaunch(agent, mcpServer, env, connectorAgentInstructions(capabilities))
 }
 
 var ErrAGYRemoteUnsupported = errors.New("agy_remote_workspace_unsupported")

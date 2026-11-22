@@ -361,9 +361,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		connectorLauncher = webuiTerminalLauncherAdapter{handler: dependencies.TerminalHandler}
 	}
 	connectorAgentTerminal, err := webuisshapi.NewConnectorAgentTerminalHandler(webuisshapi.ConnectorAgentTerminalDependencies{
-		Authorizer:     authorizer,
-		Workspaces:     workspaceStore,
-		Online:         workspaceHub.Online,
+		Authorizer: authorizer,
+		Workspaces: workspaceStore,
+		Online:     workspaceHub.Online,
+		LiveCapabilities: func(workspaceID string) (remoteconnector.Capabilities, bool) {
+			status, online := workspaceHub.Status(workspaceID)
+			return status.Capabilities, online
+		},
 		IssueToolToken: workspaceStore.IssueToolToken,
 		AIHomeDir:      dependencies.AIHomeDir,
 		SelfBaseURL:    dependencies.SelfBaseURL,

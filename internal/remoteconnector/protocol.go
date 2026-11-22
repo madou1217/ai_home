@@ -22,6 +22,7 @@ const (
 	OperationWriteFile     = "workspace.write_file"
 	OperationListDirectory = "workspace.list_directory"
 	OperationSearch        = "workspace.search"
+	OperationRunCommand    = "workspace.run_command"
 	OperationStartJob      = "workspace.start_job"
 	OperationWatchJob      = "workspace.watch_job"
 	OperationInterruptJob  = "workspace.interrupt_job"
@@ -32,6 +33,7 @@ const (
 	CapabilityWriteFile     = "workspace.write_file"
 	CapabilityListDirectory = "workspace.list_directory"
 	CapabilitySearch        = "workspace.search"
+	CapabilityRunCommand    = "workspace.run_command"
 	CapabilityStartJob      = "workspace.start_job"
 	CapabilityWatchJob      = "workspace.watch_job"
 	CapabilityInterruptJob  = "workspace.interrupt_job"
@@ -44,6 +46,7 @@ type Capabilities struct {
 	WriteFile     bool     `json:"writeFile"`
 	ListDirectory bool     `json:"listDirectory"`
 	Search        bool     `json:"search"`
+	RunCommand    bool     `json:"runCommand"`
 	StartJob      bool     `json:"startJob"`
 	WatchJob      bool     `json:"watchJob"`
 	InterruptJob  bool     `json:"interruptJob"`
@@ -54,7 +57,7 @@ func (capabilities Capabilities) NamesOrDerived() []string {
 	if len(capabilities.Names) > 0 {
 		return append([]string(nil), capabilities.Names...)
 	}
-	result := make([]string, 0, 7)
+	result := make([]string, 0, 8)
 	if capabilities.ReadFile {
 		result = append(result, CapabilityReadFile)
 	}
@@ -66,6 +69,9 @@ func (capabilities Capabilities) NamesOrDerived() []string {
 	}
 	if capabilities.Search {
 		result = append(result, CapabilitySearch)
+	}
+	if capabilities.RunCommand {
+		result = append(result, CapabilityRunCommand)
 	}
 	if capabilities.StartJob {
 		result = append(result, CapabilityStartJob)

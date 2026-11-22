@@ -37,6 +37,10 @@ type Config struct {
 	Heartbeat      time.Duration
 	RequestTimeout time.Duration
 	MaxConcurrent  int
+	// DisableCommand opts this connector out of workspace.run_command. Command
+	// execution is enabled by default because the connector process is started
+	// by the local machine owner and runs with that user's own authority.
+	DisableCommand bool
 	OnSession      func(Session) error
 }
 
@@ -111,6 +115,7 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 
 	capabilities := remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
+		RunCommand: !config.DisableCommand,
 	})
 	hello := remoteconnector.Hello{
 		Type:         remoteconnector.MessageHello,
@@ -257,7 +262,7 @@ func (connector *Connector) Serve(ctx context.Context) error {
 			go func(message remoteconnector.Message) {
 				defer workers.Done()
 				defer func() { <-semaphore }()
-				requestCtx, requestCancel := context.WithTimeout(connCtx, requestTimeout)
+				requestCtx, requestCancel := context.WithTimeout(connCtx, connector.requestBudget(message, requestTimeout))
 				defer requestCancel()
 				response := connector.execute(requestCtx, message)
 				_ = connector.send(connCtx, response)
@@ -273,6 +278,20 @@ func (connector *Connector) Serve(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// requestBudget lets a run_command call carry its own (bounded) timeout instead
+// of inheriting the short file-operation budget. The extra grace covers process
+// startup, output draining and the response frame.
+func (connector *Connector) requestBudget(message remoteconnector.Message, fallback time.Duration) time.Duration {
+	if message.Operation != remoteconnector.OperationRunCommand {
+		return fallback
+	}
+	var request remoteconnector.RunCommandRequest
+	if len(message.Payload) > 0 {
+		_ = json.Unmarshal(message.Payload, &request)
+	}
+	return remoteconnector.CommandTimeout(request.TimeoutMS) + 10*time.Second
 }
 
 func (connector *Connector) execute(ctx context.Context, request remoteconnector.Message) remoteconnector.Message {

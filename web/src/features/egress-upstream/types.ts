@@ -197,6 +197,7 @@ export interface EgressDiagnostics {
     lanePorts: number[];
     ownerPid: number;
     corePid: number;
+    coreSource: 'managed' | 'path' | 'client' | '';
     coreVerified: boolean;
     coreCommand: string;
   };

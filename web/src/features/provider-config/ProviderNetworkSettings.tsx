@@ -78,6 +78,12 @@ const PROCESS_LABELS: Record<string, string> = {
   'aih-core': 'AIH 出口池内核'
 };
 
+const CORE_SOURCE_LABELS: Record<string, string> = {
+  managed: '托管内核',
+  path: 'PATH 内核',
+  client: '客户端自带内核'
+};
+
 function firstProxy(...values: Array<string | undefined | null>) {
   return values.map((value) => String(value || '').trim()).find(Boolean) || '';
 }
@@ -475,6 +481,7 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
             {diagnostics.pool.corePid ? (
               <span className="pn-muted">
                 core pid {diagnostics.pool.corePid}{diagnostics.pool.coreVerified ? ' · 已验证' : ' · 身份未知'}
+                {diagnostics.pool.coreSource ? ` · ${CORE_SOURCE_LABELS[diagnostics.pool.coreSource] || diagnostics.pool.coreSource}` : ''}
               </span>
             ) : null}
           </div>

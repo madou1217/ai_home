@@ -36,6 +36,7 @@ type EgressPoolDiagnostics struct {
 	LanePorts      []int  `json:"lanePorts"`
 	OwnerPID       int    `json:"ownerPid"`
 	CorePID        int    `json:"corePid"`
+	CoreSource     string `json:"coreSource"`
 	CoreVerified   bool   `json:"coreVerified"`
 	CoreCommand    string `json:"coreCommand"`
 }
@@ -112,6 +113,9 @@ func (m *Manager) Diagnostics(ctx context.Context) EgressDiagnostics {
 	if len(external) > 0 {
 		out.Notes = append(out.Notes, "检测到外部代理内核："+strings.Join(external, "、")+"；AIH 使用独立回环端口，不会接管或结束这些进程")
 	}
+	if out.Pool.CoreSource == "client" {
+		out.Notes = append(out.Notes, "当前出口池使用桌面代理客户端自带内核；建议改用 ~/.ai_home/tools/mihomo 或 SSH 出口，避免与客户端实例互相干扰")
+	}
 	if len(ports) > 0 && len(out.PortOwners) == 0 {
 		out.Notes = append(out.Notes, "出口池端口当前没有监听者（空闲或缺少 lsof）")
 	}
@@ -143,8 +147,24 @@ func (m *Manager) poolDiagnostics(ctx context.Context) EgressPoolDiagnostics {
 		pool.ControllerPort = state.ControllerPort
 	}
 	pool.CoreCommand = processCommand(ctx, state.CorePID)
+	pool.CoreSource = classifyCoreSource(pool.CoreCommand)
 	pool.CoreVerified = looksLikeAIHPoolCore(pool.CoreCommand)
 	return pool
+}
+
+// classifyCoreSource 从命令行推断内核来源；只用于诊断展示。
+func classifyCoreSource(command string) string {
+	lower := strings.ToLower(strings.TrimSpace(command))
+	switch {
+	case lower == "":
+		return ""
+	case strings.Contains(lower, "/.ai_home/tools/") || strings.Contains(lower, "\\ai_home\\tools\\"):
+		return "managed"
+	case strings.Contains(lower, "/applications/") || strings.Contains(lower, "program files"):
+		return "client"
+	default:
+		return "path"
+	}
 }
 
 func looksLikeAIHPoolCore(command string) bool {

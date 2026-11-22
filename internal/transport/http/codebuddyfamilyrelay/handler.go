@@ -51,6 +51,8 @@ type Dependencies struct {
 	Credentials CredentialResolver
 	// Client 发起上游请求。
 	Client HTTPClient
+	// AccountEgress 可选：按账号出口绑定切换本次请求的客户端。
+	AccountEgress relaycore.AccountEgress
 	// Attempts 记录运行态（成功与失败都要记，否则 Go 承接的请求在仪表盘上会消失）。
 	Attempts inferencegateway.AttemptRecorder
 	// Clock 提供时间（可注入，便于测试）。
@@ -93,15 +95,16 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	// 同一入口上可能还挂着别的透传 Provider（如 cline）：链按账号所属 Provider 分派。
 	members := append([]relaycore.Provider{provider}, dependencies.ExtraProviders...)
 	inner, err := relaycore.NewHandler(relaycore.Dependencies{
-		Provider:    relaycore.NewProviderChain(members...),
-		Path:        Path,
-		Aliases:     dependencies.Aliases,
-		Accounts:    dependencies.Accounts,
-		Fallback:    dependencies.Fallback,
-		Credentials: dependencies.Credentials,
-		Client:      dependencies.Client,
-		Attempts:    dependencies.Attempts,
-		Clock:       dependencies.Clock,
+		Provider:      relaycore.NewProviderChain(members...),
+		Path:          Path,
+		Aliases:       dependencies.Aliases,
+		Accounts:      dependencies.Accounts,
+		Fallback:      dependencies.Fallback,
+		Credentials:   dependencies.Credentials,
+		Client:        dependencies.Client,
+		AccountEgress: dependencies.AccountEgress,
+		Attempts:      dependencies.Attempts,
+		Clock:         dependencies.Clock,
 		// 家族四支共用同一份上游约束，请求体上限与 Node 宿主默认一致。
 		MaxRequestBodyBytes: MaxRequestBodyBytes,
 		UnavailableMessage:  "家族透传当前不可用",

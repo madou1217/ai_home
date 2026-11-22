@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+	"github.com/madou1217/ai_home/internal/transport/http/relayegress"
 	"io"
 	"mime"
 	"net/http"
@@ -76,10 +77,11 @@ type CredentialResolver interface {
 	inferencegateway.CredentialObservationVerifier
 }
 
-// HTTPClient 是 Relay 发起单个上游请求所需的最小端口。
-type HTTPClient interface {
-	Do(request *http.Request) (*http.Response, error)
-}
+// HTTPClient 与 AccountEgress 来自共享端口：relaycore 与 Native Relay
+// 使用同一套「按账号取上游客户端」的语义，宿主实现只写一次。
+type HTTPClient = relayegress.HTTPClient
+
+type AccountEgress = relayegress.AccountEgress
 
 // Dependencies 集中声明 Native Relay 的鉴权、凭据、传输和运行态端口。
 type Dependencies struct {
@@ -90,9 +92,12 @@ type Dependencies struct {
 	//
 	// 没有它就必须在此拒绝，而跨协议请求（Messages 客户端 + 非 claude 模型）
 	// 本就该由 Canonical 承载——透传只会说 Anthropic 一种线协议。
-	Fallback           http.Handler
-	Credentials        CredentialResolver
-	Client             HTTPClient
+	Fallback    http.Handler
+	Credentials CredentialResolver
+	Client      HTTPClient
+	// AccountEgress 可选：按账号出口绑定切换本次上游请求的客户端。
+	// 为空表示沿用 Client（未接账号出口的既有装配）。
+	AccountEgress      AccountEgress
 	Attempts           inferencegateway.AttemptRecorder
 	ModelRefreshes     inferencegateway.ModelRefreshScheduler
 	Upstream429Retries *upstreamretry.Controller
@@ -118,6 +123,7 @@ type Handler struct {
 	fallback           http.Handler
 	credentials        CredentialResolver
 	client             HTTPClient
+	accountEgress      AccountEgress
 	attempts           *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes     inferencegateway.ModelRefreshScheduler
 	upstream429Retries *upstreamretry.Controller
@@ -156,6 +162,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		fallback:           dependencies.Fallback,
 		credentials:        dependencies.Credentials,
 		client:             dependencies.Client,
+		accountEgress:      dependencies.AccountEgress,
 		attempts:           attempts,
 		modelRefreshes:     dependencies.ModelRefreshes,
 		upstream429Retries: dependencies.Upstream429Retries,

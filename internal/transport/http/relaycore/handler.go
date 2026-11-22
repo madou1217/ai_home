@@ -22,6 +22,7 @@ import (
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+	"github.com/madou1217/ai_home/internal/transport/http/relayegress"
 )
 
 const (
@@ -66,10 +67,11 @@ type CredentialResolver interface {
 	inferencegateway.CredentialObservationVerifier
 }
 
-// HTTPClient 是 Relay 发起单个上游请求所需的最小端口。
-type HTTPClient interface {
-	Do(request *http.Request) (*http.Response, error)
-}
+// HTTPClient 与 AccountEgress 来自共享端口：与 Native Relay 使用同一套
+// 「按账号取上游客户端」的语义，宿主实现只写一次。
+type HTTPClient = relayegress.HTTPClient
+
+type AccountEgress = relayegress.AccountEgress
 
 // QuotaBucketSource 返回该 (账号, 模型) 本次消费的额度档位；空表示不区分档位。
 //
@@ -103,6 +105,9 @@ type Dependencies struct {
 	Credentials CredentialResolver
 	// Client 发起上游请求。
 	Client HTTPClient
+	// AccountEgress 可选：按账号出口绑定切换本次上游请求的客户端。
+	// 为空表示沿用 Client（未接账号出口的既有装配）。
+	AccountEgress AccountEgress
 	// Attempts 记录运行态（成功与失败都要记，否则 Go 承接的请求在仪表盘上会消失）。
 	Attempts inferencegateway.AttemptRecorder
 	// Upstream429Retries 集中负责上游真实 HTTP 429 的有界可取消等待重试（可选）。
@@ -134,6 +139,7 @@ type Handler struct {
 	fallback            http.Handler
 	credentials         CredentialResolver
 	client              HTTPClient
+	accountEgress       AccountEgress
 	attempts            *inferencegateway.ObservedAttemptRecorder
 	upstream429Retries  *upstreamretry.Controller
 	clock               func() time.Time
@@ -177,6 +183,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		fallback:            dependencies.Fallback,
 		credentials:         dependencies.Credentials,
 		client:              dependencies.Client,
+		accountEgress:       dependencies.AccountEgress,
 		attempts:            attempts,
 		upstream429Retries:  dependencies.Upstream429Retries,
 		clock:               dependencies.Clock,
@@ -837,7 +844,31 @@ func (handler *Handler) attemptRelay(
 			}
 		}
 	}
-	upstreamResponse, err := handler.client.Do(upstream)
+	// 账号出口必须在触网前生效：绑定存在时用账号专属客户端，
+	// 解析失败或客户端缺失都失败关闭，不能回落到默认网络。
+	client := handler.client
+	if handler.accountEgress != nil {
+		egressClient, bound, egressErr := handler.accountEgress.ClientForAccount(
+			request.Context(),
+			string(binding.ProviderID()),
+			accountRef.String(),
+		)
+		if egressErr != nil || (bound && egressClient == nil) {
+			return attemptOutcome{
+				route: route,
+				failure: relayFailure{
+					status:  http.StatusBadGateway,
+					code:    "account_egress_unavailable",
+					message: "透传账号出口不可用",
+				},
+			}, false
+		}
+		if bound {
+			client = egressClient
+		}
+	}
+
+	upstreamResponse, err := client.Do(upstream)
 	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
 		closeUpstreamResponse(upstreamResponse)
 		retry := err != nil && handler.recordTransportFailure(request.Context(), route, observation, err)

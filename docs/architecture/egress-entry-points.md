@@ -224,3 +224,20 @@ sed -n '210,216p' internal/transport/http/webuiopenappapi/cli_launcher.go
 - **Provider 差异只按代码覆盖判断**：`isSupportedProvider` 用目录判定，而 egress-aware 的刷新/额度只有 agy（+ Kimi 的两条专用路由）。哪些 Provider 实际会写绑定，取决于 WebUI 前端是否对所有 Provider 展示出口选择；本次未审计前端。
 - **未审计 Node 残留路径**：仓库已无 Node 出口实现（`lib/` 不在本分支的 egress 引用里），但历史 `AIH_SERVER_PROXY_STRICT` 的写入方原本在 Node 侧；若仍有旧版 Node 启动器在跑，R2 的判定会不同。当前 Go 单入口下该变量无人写入。
 - **`probe` 的出口选择与真实流量不一致（R6）属于观测口径问题**，不改变真实请求路径；修不修取决于是否要求面板 geo 与账号真实出口严格一致。
+
+---
+
+## 8. 修复状态（2026-11-22）
+
+审计正文保留 `85c2509e` 的原始取证与行号，下表记录之后的落地情况：
+
+| 风险 | 状态 | 落地 |
+| --- | --- | --- |
+| R1 网关取到 nil Manager | 已修复 | `33f15ce0 fix(egress): make account exits effective and fail closed`：解析器改为延迟取值 |
+| R2 账号代理允许改直连 | 已修复 | 同上：账号代理客户端不再包 `wrapOutboundTransport` |
+| R3 裸 resolver 兜底丢 ssh | 已修复 | `c3dc4d27 refactor(egress): centralize account resolver construction`：唯一构造入口 + 失败关闭 |
+| R13 Claude Native Relay 不接出口 | 已修复 | `1e0fb182 feat(relay): honor account egress bindings`；`relaycore`（codebuddy 家族/插件 Provider 透传）同步接入共享 `relayegress` 端口 |
+| R5 池账号不在计划时借用全局出口 | 已修复 | `103f6453 fix(egress): fail closed when an account has no pool lane`：无车道返回空，展示同样不借用 GLOBAL |
+| R4/R6/R7/R8/R9/R10/R11/R12/R14 | 未修复 | 仍按正文；R8（Image Studio）与 R4（session 车道）优先 |
+
+新增回归守卫：`npm run egress:check`（`cmd/egress-guard`）禁止 `internal/runtime/egress` 之外自行构造 `agyegress.NewResolver/Options`。

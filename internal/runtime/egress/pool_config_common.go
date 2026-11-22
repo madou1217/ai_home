@@ -33,7 +33,7 @@ var (
 	}
 	DOHBootstrap = []string{"1.1.1.1", "8.8.8.8"}
 
-	virtualInterfacePattern = regexp.MustCompile(`(?i)^(utun|tun|tap|wintun)|clash|mihomo|^meta|sing-?box|wireguard`)
+	virtualInterfacePattern = regexp.MustCompile(`(?i)^(utun|tun|tap|wintun|veth|br-)|clash|mihomo|^meta|sing-?box|wireguard|vethernet|hyper-v|wsl|vmware|virtualbox|docker|virbr`)
 )
 
 // LaneGroupName 返回车道 index 对应的 mihomo select 策略组名。
@@ -57,6 +57,8 @@ type NetInterfaceEntry struct {
 	Name       string
 	IPv4       []string
 	IsLoopback bool
+	// IsDown 标记操作系统报告为未启用的接口；零值保持旧调用方“可用”的语义。
+	IsDown bool
 }
 
 func defaultSystemInterfaces() ([]NetInterfaceEntry, error) {
@@ -69,6 +71,7 @@ func defaultSystemInterfaces() ([]NetInterfaceEntry, error) {
 		entry := NetInterfaceEntry{
 			Name:       iface.Name,
 			IsLoopback: iface.Flags&net.FlagLoopback != 0,
+			IsDown:     iface.Flags&net.FlagUp == 0,
 		}
 		addrs, err := iface.Addrs()
 		if err != nil {
@@ -90,7 +93,12 @@ func defaultSystemInterfaces() ([]NetInterfaceEntry, error) {
 	return out, nil
 }
 
-// ResolvePhysicalInterface 选出第一块具可用非内网非 fake-ip IPv4 的物理网卡，找不到返回空串。
+// isLinkLocalIPv4 判断 169.254.0.0/16 自动地址；它是“未拿到 DHCP 地址”的证据，不能作为出口网卡。
+func isLinkLocalIPv4(ip net.IP) bool {
+	return len(ip) == net.IPv4len && ip[0] == 169 && ip[1] == 254
+}
+
+// ResolvePhysicalInterface 选出第一块已启用、非回环、非虚拟、非 fake-ip/link-local 的物理网卡。
 func ResolvePhysicalInterface(source func() ([]NetInterfaceEntry, error)) string {
 	if source == nil {
 		source = defaultSystemInterfaces
@@ -101,7 +109,7 @@ func ResolvePhysicalInterface(source func() ([]NetInterfaceEntry, error)) string
 	}
 	for _, entry := range entries {
 		name := strings.TrimSpace(entry.Name)
-		if name == "" || entry.IsLoopback || virtualInterfacePattern.MatchString(name) {
+		if name == "" || entry.IsLoopback || entry.IsDown || virtualInterfacePattern.MatchString(name) {
 			continue
 		}
 		for _, ipStr := range entry.IPv4 {
@@ -110,7 +118,7 @@ func ResolvePhysicalInterface(source func() ([]NetInterfaceEntry, error)) string
 				continue
 			}
 			v4 := ip.To4()
-			if v4 == nil || v4.IsLoopback() || IsTUNAddress(v4.String()) {
+			if v4 == nil || v4.IsLoopback() || v4.IsUnspecified() || IsTUNAddress(v4.String()) || isLinkLocalIPv4(v4) {
 				continue
 			}
 			return name

@@ -26,8 +26,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostdetect"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/sshhostbrowse"
-	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/remoteexecution"
@@ -101,9 +99,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuisetdefaultapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuisshhostbrowseapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuisshprobeapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuisshreverseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
@@ -295,48 +290,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建首屏检查配置接口失败: %w", err)
 	}
 
-	sshSource, err := webuisshapi.OpenSource(dependencies.AIHomeDir)
+	sshSource, sshCoreRoutes, err := buildWebUISSHCoreRoutes(dependencies)
 	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 连接数据源失败: %w", err)
-	}
-	sshHandler, err := webuisshapi.NewHandler(webuisshapi.Dependencies{Authorizer: authorizer, Store: sshSource})
-	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 连接接口失败: %w", err)
-	}
-	sshWorkspaces, err := webuisshapi.NewWorkspacesHandler(webuisshapi.Dependencies{Authorizer: authorizer}, sshSource, dependencies.AIHomeDir)
-	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 工作区接口失败: %w", err)
-	}
-	sshSessions, err := webuisshapi.NewSessionsHandler(webuisshapi.Dependencies{Authorizer: authorizer}, sshSource, dependencies.TerminalProbe)
-	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 工作区终端状态接口失败: %w", err)
-	}
-	// SSH 探测走 Go 进程内传输；第一切片只读，Node 仍承接终端与 Remote Workspace。
-	sshProbe, err := webuisshprobeapi.NewHandler(webuisshprobeapi.Dependencies{
-		Authorizer:  authorizer,
-		Connections: sshSource,
-		Prober:      sshremote.Prober{HomeDir: dependencies.HostHomeDir},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 探测接口失败: %w", err)
-	}
-	// 远端目录浏览：沿用 Node 的 argv 合同，Runner 用 Go 进程内 SSH 执行。
-	// 出口/反向隧道连接暂不承接，由 Runner 明确失败关闭。
-	sshBrowse, err := webuisshhostbrowseapi.NewHandler(webuisshhostbrowseapi.Dependencies{
-		Authorizer:  authorizer,
-		Connections: sshSource,
-		Runner:      sshhostbrowse.Runner{HomeDir: dependencies.HostHomeDir},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 目录浏览接口失败: %w", err)
-	}
-	sshReverseTunnels, err := webuisshreverseapi.NewHandler(webuisshreverseapi.Dependencies{
-		Authorizer:  authorizer,
-		Connections: sshSource,
-		Supervisor:  dependencies.ReverseTunnels,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 SSH 反向隧道接口失败: %w", err)
+		return nil, err
 	}
 
 	workspaceDatabase, err := appstate.DatabasePath(dependencies.AIHomeDir)
@@ -1016,11 +972,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiclaudepreflightapi.Path, Handler: claudePreflight},
 		{Pattern: "POST " + webuiclaudepreflightapi.Path, Handler: claudePreflight},
 		{Pattern: "POST " + webuiclaudepreflightapi.ProbePath, Handler: claudePreflight},
-		{Pattern: "GET " + webuisshapi.Path, Handler: sshHandler},
-		{Pattern: "GET " + webuisshapi.WorkspacesPath, Handler: sshWorkspaces},
-		{Pattern: "GET " + webuisshapi.WorkspaceSessionsPath, Handler: sshSessions},
-		{Pattern: "GET " + webuisshprobeapi.Path, Handler: sshProbe},
-		{Pattern: "GET " + webuisshhostbrowseapi.Path, Handler: sshBrowse},
 		{Pattern: "GET " + webuiremotetargetsapi.Path, Handler: remoteTargets},
 		{Pattern: "GET " + webuiremotetargetsapi.ResolvePath, Handler: remoteTargets},
 		{Pattern: "GET " + webuiremotetargetsapi.DoctorPath, Handler: remoteTargets},
@@ -1037,14 +988,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},
 		{Pattern: "GET " + proxyleaseapi.LeasesPath + "/{id}/connect", Handler: proxyAPI},
 		{Pattern: "GET /v1/management/webui/proxy-candidates", Handler: proxyAPI},
-		{Pattern: "GET " + webuisshreverseapi.Path, Handler: sshReverseTunnels},
-		{Pattern: "GET " + webuisshreverseapi.WatchPath, Handler: sshReverseTunnels},
-		{Pattern: "POST " + webuisshreverseapi.ReconcilePath, Handler: sshReverseTunnels},
-		// 旧 Node 公开路径兼容：SSH 页仍在用 /v0/webui/ssh-connections/tunnels 与 .../watch。
-		// 与 canonical ssh/reverse-tunnels 是同一份能力，只做前缀重写。
-		{Pattern: "GET /v0/webui/ssh-connections/tunnels", Handler: webuipublicalias.Rewrite("/v0/webui/ssh-connections/tunnels", webuisshreverseapi.Path, sshReverseTunnels), SkipPublicAlias: true},
-		{Pattern: "GET /v0/webui/ssh-connections/tunnels/watch", Handler: webuipublicalias.Rewrite("/v0/webui/ssh-connections/tunnels/watch", webuisshreverseapi.WatchPath, sshReverseTunnels), SkipPublicAlias: true},
-		{Pattern: "POST " + webuisshreverseapi.Path + "/{connectionId}/reconnect", Handler: sshReverseTunnels},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},
@@ -1172,147 +1115,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	// 账号刷新同样是可选能力：账号存储缺失时整组不挂载，让 Node 继续兜底，
 	// 而不是让三条写接口把整个 Go Core 拖到启动失败。
-	refreshRoutes, err := buildWebUIRefreshRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, refreshRoutes...)
-	accountAuthRoutes, err := buildWebUIAccountAuthRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, accountAuthRoutes...)
-	accountBrowserRoutes, err := buildWebUIAccountBrowserRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, accountBrowserRoutes...)
-	accountBrowserLiveRoutes, err := buildWebUIAccountBrowserLiveRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, accountBrowserLiveRoutes...)
-	// kimi 的套餐统计与桌面端托管登录：路由/上游协议都在 Go，Node 只做透传。
-	kimiRoutes, err := buildWebUIKimiRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, kimiRoutes...)
-	// 会话监听、Provider Hook 事件接收与恢复归档切 Go，不再依赖 Node sessionEventBus。
-	sessionsWatchRoutes, err := buildWebUISessionsWatchRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, sessionsWatchRoutes...)
-	// 项目管理、工作区文件/媒体/信任、Git 状态与工作区模型目录切 Go，不再依赖 Node 本地扫描与回退。
-	projectsFSRoutes, err := buildWebUIProjectsFSRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, projectsFSRoutes...)
-	// OpenAI 模型目录写改删查/监听与上游错误映射组管理切 Go，Node 只做透传。
-	modelsRulesRoutes, err := buildWebUIModelsRulesRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, modelsRulesRoutes...)
-	// AI 翻译与 Image Studio 生图工作台全量切 Go，Node 只做薄代理。
-	translationStudioRoutes, err := BuildWebUITranslationStudioRoutesWithOptions(dependencies, TranslationGatewayOptions{
-		GatewayHandler: dependencies.TranslationGateway,
-		ClientKey:      dependencies.ClientKey,
+	routes, err = appendWebUIFeatureRoutes(routes, dependencies, webuiFeatureRoutePorts{
+		OpsHub:                    opsHub,
+		ToolkitEnvironmentActions: toolkitEnvironmentActions,
+		ActivityService:           activityService,
+		SSHRoutes:                 sshCoreRoutes,
 	})
 	if err != nil {
 		return nil, err
 	}
-	routes = append(routes, translationStudioRoutes...)
-	// peer / 账号结果 / 活跃任务 / 计划任务 / Codex 重置卡 / 重启全量切 Go。
-	opsMiscRoutes, err := buildWebUIOpsMiscRoutesWithPorts(dependencies, webuiOpsMiscPorts{
-		Hub:             opsHub,
-		EnvironmentJobs: toolkitEnvironmentActions.Jobs(),
-		ActivityService: activityService,
-	})
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, opsMiscRoutes...)
-	// GeoIP 资源、出口池、上游地区策略与账号出口分配全量切 Go。
-	egressGeoRoutes, err := buildWebUIEgressGeoRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, egressGeoRoutes...)
-	// SSH 开发机与远程工作区补齐 POST 探测 / 浏览 / 工作区 CRUD 与工作区终端。
-	sshExtraRoutes, err := buildWebUISSHExtraRoutesWithPorts(dependencies, webUISSHPorts{
-		TerminalHandler: dependencies.TerminalHandler,
-	})
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, sshExtraRoutes...)
-	// node-rpc、聊天附件与 legacy 聊天会话全量切 Go。
-	nodeRPCChatLegacyRoutes, err := buildWebUINodeRPCChatLegacyRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, nodeRPCChatLegacyRoutes...)
-	// 价格目录、人工复核队列、社区价格采集与报价合并全量切 Go。
-	pricingRoutes, err := buildWebUIPricingRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, pricingRoutes...)
-	// 插件诊断、调试调用、插件报价刷新与账号插件管理路由统一由 Go pluginhost.Service 承接。
-	pluginRoutes, err := buildWebUIPluginRoutesWithHostService(dependencies, dependencies.PluginHostService)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, pluginRoutes...)
-	// Toolkit 扩展工作台（Edge 代理、Provider 配置、原生资源、订阅聚合）全量切 Go。
-	toolkitExtRoutes, err := buildWebUIToolkitExtRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, toolkitExtRoutes...)
-	// Toolkit 核心能力（镜像测速、代理与连通性、受管工具/服务、客户端终端、应用清单/安装任务）全量切 Go。
-	toolkitCoreRoutes, err := buildWebUIToolkitCoreRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, toolkitCoreRoutes...)
-	codexHooksRoutes, err := buildWebUICodexHooksRoutesWithRuntime(dependencies, dependencies.CodexHooks)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, codexHooksRoutes...)
-	// Provider CLI 自动升级与窗口激活调度器路由统一由 webui_scheduler_routes 装配。
-	schedulerRoutes, err := buildWebUISchedulerRoutesWithPorts(dependencies, webuiSchedulerPorts{
-		UpgradeScheduler:   dependencies.UpgradeScheduler,
-		WindowScheduler:    dependencies.WindowScheduler,
-		SkipSchedulerStart: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, schedulerRoutes...)
-	managementOpsRoutes, err := buildWebUIManagementOpsRoutesWithPorts(dependencies, webuiManagementOpsPorts{
-		Metrics:          newManagementMetricsPort(dependencies.MetricsRecorder),
-		StartedAt:        dependencies.StartedAt,
-		WarmUsageRollups: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, managementOpsRoutes...)
-	routingWeightsRoutes, err := buildWebUIRoutingWeightsRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, routingWeightsRoutes...)
-	loginJobRoutes, err := buildWebUILoginJobsRoutes(dependencies)
-	if err != nil {
-		return nil, err
-	}
-	routes = append(routes, loginJobRoutes...)
 	// 账号额度统计：管理面路由由 router 自动补 /v0 公开别名。
 	if accountQuotaStats != nil {
 		routes = append(routes, webuiRoute{

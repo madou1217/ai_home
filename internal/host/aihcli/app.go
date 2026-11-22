@@ -46,6 +46,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codebuddymodels"
 	"github.com/madou1217/ai_home/internal/runtime/codexexecintent"
 	"github.com/madou1217/ai_home/internal/runtime/codexhostauth"
+	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/launchsettings"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providersettings"
@@ -615,14 +616,24 @@ func (app *App) Run(
 	if permission.Applied {
 		launchArguments = permission.Args
 	}
-	if len(accountOverrides.Args) > 0 || len(accountOverrides.Env) > 0 {
-		// 用户显式接远端 server 时，账号覆盖无法保证生效；直接跳过并提示。
-		if containsLaunchArgument(launchArguments, "--server") {
-			accountOverrides = launchsettings.Overrides{}
-			overrideWarning = "[aih] 显式 --server 启动不注入账号级 Provider 设置；本次使用远端 server 配置。"
-		} else if containsLaunchArgument(launchArguments, "--standalone") {
-			accountOverrides.Args = removeLaunchArgument(accountOverrides.Args, "--standalone")
+	// Native Direct 必须应用账号出口；Gateway 模式交给本机网关解析。
+	// 显式 --server 时网络由远端决定，不解析本地出口，避免本机池未就绪误伤。
+	explicitServer := containsLaunchArgument(launchArguments, "--server")
+	var egressOptions providercli.RunOptions
+	if !explicitServer {
+		egressOptions, err = app.resolveLaunchEgress(ctx, plan)
+		if err != nil {
+			return err
 		}
+	}
+	if explicitServer {
+		// 用户显式接远端 server 时，账号覆盖无法保证生效；直接跳过并提示。
+		if len(accountOverrides.Args) > 0 || len(accountOverrides.Env) > 0 {
+			accountOverrides = launchsettings.Overrides{}
+			overrideWarning = "[aih] 显式 --server 启动不注入账号级 Provider 设置，也不应用本地账号出口；本次使用远端 server 配置。"
+		}
+	} else if containsLaunchArgument(launchArguments, "--standalone") {
+		accountOverrides.Args = removeLaunchArgument(accountOverrides.Args, "--standalone")
 	}
 	for _, warning := range accountOverrides.Warnings {
 		if app.stderr != nil && strings.TrimSpace(warning) != "" {
@@ -641,20 +652,25 @@ func (app *App) Run(
 		}
 		app.refreshProviderCLIVersion(planCLITarget.ProviderID)
 	}
-	extraEnv := permission.Env
-	if len(accountOverrides.Env) > 0 {
-		merged := make(map[string]string, len(permission.Env)+len(accountOverrides.Env))
-		for name, value := range permission.Env {
-			merged[name] = value
-		}
-		for name, value := range accountOverrides.Env {
-			merged[name] = value
-		}
-		extraEnv = merged
+	extraEnv := make(map[string]string, len(permission.Env)+len(egressOptions.ExtraEnv)+len(accountOverrides.Env))
+	for name, value := range permission.Env {
+		extraEnv[name] = value
+	}
+	// 账号出口在权限环境之后：direct/system/url/pool 的语义不能被权限合同的
+	// 沙箱变量覆盖。
+	for name, value := range egressOptions.ExtraEnv {
+		extraEnv[name] = value
+	}
+	for name, value := range accountOverrides.Env {
+		extraEnv[name] = value
+	}
+	if len(extraEnv) == 0 {
+		extraEnv = nil
 	}
 	runProvider := func() error {
 		return app.runner.RunWithOptions(ctx, plan, launchArguments, providercli.RunOptions{
 			ExtraEnv:       extraEnv,
+			UnsetEnv:       egressOptions.UnsetEnv,
 			ExtraArguments: accountOverrides.Args,
 		})
 	}
@@ -703,6 +719,35 @@ func (app *App) resolveAccountLaunchOverrides(
 		return overrides, fmt.Sprintf("[aih] %s 的账号级设置已保存，但该 CLI 暂未接入启动注入；本次使用公共配置。", provider)
 	}
 	return overrides, ""
+}
+
+// resolveLaunchEgress 解析本次 Native Direct 启动的账号出口并翻译成环境变更。
+//
+// Gateway 模式连接本机网关，外部网络由网关按账号出口处理；Native 模式必须显式
+// 应用，否则终端里的 aih grok/claude/... 会绕过 Toolkit 里设置的出口。
+// 绑定损坏或池车道未就绪时失败关闭，不静默回落到宿主网络。
+func (app *App) resolveLaunchEgress(
+	ctx context.Context,
+	plan providerlaunch.LaunchPlan,
+) (providercli.RunOptions, error) {
+	native, ok := plan.Native()
+	if !ok || app == nil || strings.TrimSpace(app.aiHomeDir) == "" {
+		return providercli.RunOptions{}, nil
+	}
+	providerID := strings.ToLower(strings.TrimSpace(native.ProviderID()))
+	accountRef := strings.TrimSpace(native.AccountRef().String())
+	if accountRef == "" {
+		return providercli.RunOptions{}, nil
+	}
+	egress, err := runtimeegress.ResolveAccountLaunchEgress(ctx, app.aiHomeDir, accountRef)
+	if err != nil {
+		return providercli.RunOptions{}, fmt.Errorf(
+			"账号出口不可用（%s / %s）: %w；请在 Toolkit 的网络设置里检查该账号出口，或恢复默认网络",
+			providerID, accountRef, err,
+		)
+	}
+	set, unset := egress.Env()
+	return providercli.RunOptions{ExtraEnv: set, UnsetEnv: unset}, nil
 }
 
 // containsLaunchArgument 判断 argv 是否包含精确参数。

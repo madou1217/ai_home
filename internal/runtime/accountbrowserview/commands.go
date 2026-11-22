@@ -2,8 +2,6 @@ package accountbrowserview
 
 import (
 	"math"
-	"net"
-	"net/url"
 	"strings"
 )
 
@@ -15,18 +13,8 @@ func validCommand(c Command) bool {
 	case "start", "close":
 		return true
 	case "navigate":
-		u, err := url.Parse(c.URL)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil || strings.ContainsAny(c.URL, "\r\n\x00") {
-			return false
-		}
-		host := strings.ToLower(u.Hostname())
-		if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.Contains(host, "metadata") {
-			return false
-		}
-		if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || !ip.IsGlobalUnicast()) {
-			return false
-		}
-		return true
+		_, err := validateNavigateURL(c.URL)
+		return err == nil
 	case "text":
 		return c.Text != "" && !strings.ContainsRune(c.Text, 0)
 	case "key":

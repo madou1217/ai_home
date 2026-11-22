@@ -32,13 +32,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
-	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	agyprojection "github.com/madou1217/ai_home/internal/adapters/agy/projection"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/imagestudio"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
@@ -593,12 +592,7 @@ func buildImageStudioCredentialResolver(
 		return nil, err
 	}
 
-	agyEgress := agyegress.NewResolver(agyegress.Options{
-		AIHomeDir: aiHomeDir,
-		ResolveManagedSSH: func(reference string) (string, error) {
-			return runtimeegress.ManagedSSHProxyURL(aiHomeDir, reference)
-		},
-	})
+	agyEgress := runtimeegress.NewAccountResolver(aiHomeDir)
 	agyProvider, err := agyoauth.NewWithEgress(
 		oauthClient,
 		func(proxyURL string) agyoauth.HTTPClient {

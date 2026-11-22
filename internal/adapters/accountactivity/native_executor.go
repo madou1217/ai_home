@@ -25,7 +25,8 @@ type NativeExecutorOptions struct {
 	HostHomeDir string
 	// Catalog 提供 Provider/Action 元数据；为空时回退 BuiltinCatalog()。
 	Catalog *Catalog
-	// EgressResolver 覆盖账号出口解析器；为空时按 AIHomeDir 构造。
+	// EgressResolver 是账号出口解析器，必须由组合根注入；为空时账号出口
+	// 解析 fail-closed（account_egress_unavailable:resolver_missing）。
 	EgressResolver *agyegress.Resolver
 	// HTTPClientForAccount 允许测试注入自定义 HTTPDoer，绕开网络与代理构建。
 	HTTPClientForAccount func(ctx context.Context, provider, accountRef string) (HTTPDoer, error)

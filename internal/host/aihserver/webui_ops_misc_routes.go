@@ -10,7 +10,6 @@ import (
 	"github.com/madou1217/ai_home/application/accountoutcomes"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountactivity"
-	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/runtime/codexresetcredit"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/scheduledtasks"
@@ -39,15 +38,10 @@ type webuiOpsMiscPorts struct {
 
 func newNativeActivityExecutor(dependencies webuiRouteDependencies) accountactivity.Executor {
 	return accountactivity.NewNativeExecutor(accountactivity.NativeExecutorOptions{
-		AIHomeDir:   dependencies.AIHomeDir,
-		HostHomeDir: dependencies.HostHomeDir,
-		Catalog:     accountactivity.BuiltinCatalog(),
-		EgressResolver: agyegress.NewResolver(agyegress.Options{
-			AIHomeDir: dependencies.AIHomeDir,
-			ResolveManagedSSH: func(reference string) (string, error) {
-				return runtimeegress.ManagedSSHProxyURL(dependencies.AIHomeDir, reference)
-			},
-		}),
+		AIHomeDir:      dependencies.AIHomeDir,
+		HostHomeDir:    dependencies.HostHomeDir,
+		Catalog:        accountactivity.BuiltinCatalog(),
+		EgressResolver: runtimeegress.NewAccountResolver(dependencies.AIHomeDir),
 		OnClaimed: func(_ context.Context, _ string, accountRef string, result map[string]any) {
 			usageSvc := dependencies.UsageService
 			if usageSvc == nil || result == nil {

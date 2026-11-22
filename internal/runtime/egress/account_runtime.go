@@ -475,8 +475,9 @@ func (m *Manager) resolveNonPoolTarget(ctx context.Context, binding *agyegress.B
 		rawMap["proxyUrl"] = binding.ProxyURL
 	}
 	rawBytes, _ := json.Marshal(rawMap)
-	resolver := agyegress.NewResolver(agyegress.Options{
-		AIHomeDir:         m.aiHomeDir,
+	// 统一入口负责默认接好 managed SSH；这里只需要覆盖 Manager 的平台判定、
+	// 系统代理/TUN 探测、PID 存活判断，以及合成绑定 Reader（不读 app-state）。
+	resolver := NewAccountResolverWithOptions(m.aiHomeDir, agyegress.Options{
 		Platform:          platform,
 		DetectSystemProxy: m.systemProxyDetector,
 		DetectTUN:         m.tunDetector,

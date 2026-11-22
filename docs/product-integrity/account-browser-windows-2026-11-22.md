@@ -45,12 +45,35 @@
 
 ## 未验证的边界
 
-- OAuth 登录后的 Cookie/登录态持久化（需要真实第三方登录，不能伪造）。
+- 真实 OAuth 登录流程本身（需要第三方凭据/二次验证，不能伪造）；Cookie 级持久化见下一节。
 - 站点级 Cookie 隔离的运行时证据；本次只证明 Profile 目录与 user-data 隔离。
 - 账号代理出口（没有绑定真实代理做出口验收）。
 - macOS 实机与 WebUI 视觉/移动端验收。
 - 多账号同时打开的内核复用：当前每个 durable Profile 启动一个普通 Edge 进程，
   不声称共享单内核。
+
+## 登录态持久化与终端弹窗（2026-11-22 追加）
+
+- Windows helper 和它的 `dotnet publish` 现在用 `CREATE_NO_WINDOW` 启动
+  （commit `f16d078a`），浏览器启动不再弹出控制台窗口。
+- 真实 Profile 的 Cookie 存储在关闭浏览器、重启临时服务后仍然存在：
+  - 账号 A 的 `Default/Network/Cookies` 保留 33 条记录（`.baidu.com`、
+    `.bing.com`、`chatgpt.com` 等，含 `is_persistent=1`）。
+  - 同一 `BAIDUID` 的 `creation_utc` 在关闭/重开前后保持
+    `13439829412031649` 不变，说明复用的是原持久 Cookie，而不是新建登录态。
+  - 账号 B 的独立 Profile 在 40 秒会话后写入 32 条 Cookie，与 A 的数据库文件
+    互相独立。
+- 真实边界：
+  - 需要第三方凭据/二次验证的 OAuth 登录流程没有执行，不能声称某个真实账号
+    已完成登录。
+  - 会话过短（导航后立即关闭）时，Chromium 可能还没把内存中的 Cookie 事务提交
+    到磁盘；实测新 Profile 的短会话为 0 条、40 秒会话为 32 条。正常登录耗时远长于
+    该窗口，但“登录完成立刻关闭”仍有丢失最后一次写入的风险。
+  - 关闭链路最终仍可能强制终止 Edge 进程族；本次没有证明 WM_CLOSE 优雅关闭能
+    稳定提交 Cookie，因此不声称该风险已修复。
+  - `navigate` 会拒绝 loopback/私有/`.local`/metadata 主机（安全边界）。OAuth
+    页面内部的跳转与回调不受命令校验影响，但手工输入 `http://127.0.0.1:...`
+    会被拒绝并结束当前会话。
 
 ## 复现要点
 

@@ -511,7 +511,7 @@ export default function ProviderNetworkSettings({ provider }: ProviderNetworkSet
               </div>
             );
           })}
-          {!strategies.length ? <span className="pn-muted">正在读取策略目录…</span> : null}
+          {!strategies.length ? <span className="pn-muted">策略目录暂不可用；出口弹窗会再次尝试读取服务端目录。</span> : null}
         </div>
       </section>
 

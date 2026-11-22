@@ -113,7 +113,7 @@ func (m *Manager) fillStrategyAvailability(ctx context.Context, status *Strategy
 		}
 		status.Status = "unavailable"
 		status.Available = false
-		status.Reason = "未安装 mihomo 内核；可改用 SSH 出口"
+		status.Reason = "未安装 mihomo 内核；可改用 SSH 出口，或把 mihomo 放到 ~/.ai_home/tools/mihomo"
 	case agyegress.ModeSystem, agyegress.ModeTUN:
 		decision, err := m.resolveSyntheticStrategy(ctx, status.ID)
 		if err != nil {

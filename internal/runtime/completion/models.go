@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -317,19 +318,25 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 		})
 	}
 
-	// 客户端协议兼容标注。
+	// 可用性标注。
 	//
 	// 用户在这里是给某个 CLI 选模型：`aih claude 22 --model X` 会用 Claude Code
 	// 启动，客户端入口协议是 Anthropic Messages。模型能否被服务，取决于**它的
 	// Provider 在这门协议下有没有通道**，而不是模型自己的名字。
 	//
 	// 依据全部来自合同查表：
-	//   - CLI → 客户端协议：Definition.CredentialProtocol()（claude 读写 ANTHROPIC_*）
+	//   - CLI → 客户端协议：Definition.CredentialProtocol()
 	//   - Provider → 该协议通道：Definition.RelayChannelOn(go, protocol)
 	//     （RelayHost.Entries 只挂 gateway.openai.chat_completions 的家族透传，
-	//      在 /v1/messages 上就是不可用——这正是「协议不兼容」）
+	//      在 /v1/messages 上就没有通道）
 	//
-	// 只标注**不兼容**的一侧：可用的占绝大多数，逐行加提示会把真正的风险信号
+	// 措辞刻意只说「当前入口不可用」，不写「协议不兼容」：实测抽样发现失败原因
+	// 至少有三类——协议入口没挂载、透传凭据不是原生登录态
+	// （unsupported_relay_credential）、上游本身不可用（inference_unavailable）。
+	// 这三类在补全阶段都能确定「选了会失败」，但**无法在这里区分具体是哪一类**。
+	// 把原因写死成协议问题会误导用户去改协议，所以只陈述可确证的事实。
+	//
+	// 只标注**不可用**的一侧：可用的占绝大多数，逐行加提示会把真正的风险信号
 	// 淹没；而不可用恰恰是用户点了会白跑一次请求的那些。
 	if protocol := cliClientProtocol(provider); protocol != "" {
 		blockedByModel := modelsWithoutProtocolChannel(aiHome, protocol)
@@ -339,7 +346,7 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 				if !blockedByModel[choice.Value] {
 					continue
 				}
-				note := "⚠ 协议不兼容：" + protocolDisplayName(protocol)
+				note := "⚠ 当前入口不可用"
 				if strings.TrimSpace(choice.Description) == "" {
 					choice.Description = note
 				} else {
@@ -395,10 +402,23 @@ func listModelCandidates(aiHome string, request modelRequest) []modelChoice {
 	return choices
 }
 
+// openAIChatCompletionsProtocol 是全部 OpenAI 家族中继 Provider 共用的客户端入口协议。
+const openAIChatCompletionsProtocol = "openai.chat_completions"
+
 // cliClientProtocol 返回该 CLI 自己的客户端入口协议；未知时返回空串。
 //
-// 唯一依据是 Provider 合同里声明的凭据环境变量前缀（见
-// providers.Definition.CredentialProtocol），因此这里不需要任何 provider 名单。
+// 依据全部来自 Provider 合同，没有 provider 名单：
+//   - 凭据环境变量前缀决定协议族（见 providers.Definition.CredentialProtocol）；
+//   - OPENAI_ 前缀在 codex 上归到 Responses（它有 Responses 原生适配器），
+//     在其余 OpenAI 家族 Provider 上归到 Chat Completions。
+//
+// 前缀认不出来时的回退只看**显式挂载**：必须 RelayHost.Entries 里点名
+// gateway.openai.chat_completions 才算「这个 CLI 走 Chat Completions」。
+// 不能用 RelayChannelOn 的返回值判断——canonical 通道的 entries 为空表示
+// 「任何入口都能转发它」，那是**网关的转发能力**，不是 CLI 自己的协议。
+// 实测反例：agy 是 canonical/entries 为空，腾讯系家族是 relay/entries 点名
+// chat_completions；若按前者当 Chat Completions，agy（Gemini CLI 体系，
+// 合同没声明 GEMINI_* 凭据前缀）会被误判并给它加上毫无根据的警告。
 func cliClientProtocol(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if provider == "" {
@@ -408,21 +428,63 @@ func cliClientProtocol(provider string) string {
 	if !found {
 		return ""
 	}
-	return definition.CredentialProtocol()
+	if protocol := definition.CredentialProtocol(isResponsesNativeProvider(provider)); protocol != "" {
+		return protocol
+	}
+	if declaresEntry(definition, openAIChatCompletionsProtocol) {
+		return openAIChatCompletionsProtocol
+	}
+	return ""
 }
 
-func protocolDisplayName(protocol string) string {
-	switch protocol {
-	case "anthropic.messages":
-		return "Anthropic 格式"
-	case "openai.responses":
-		return "OpenAI Responses 格式"
-	case "openai.chat_completions":
-		return "OpenAI Chat 格式"
-	case "gemini.generate_content":
-		return "Gemini 格式"
+// declaresEntry 判断 Provider 是否在 relayHosts 里**显式点名**了该网关入口。
+//
+// 与 RelayChannelOn 的区别是故意不把空 entries 当作「全部入口」：这里的语义是
+// 「这个 CLI 自己按哪门协议收发」，只有明确挂载的才算数。
+func declaresEntry(definition providers.Definition, protocol string) bool {
+	host, found := definition.RelayHosts[providers.RelayHostGo]
+	if !found || !host.Supported {
+		return false
 	}
-	return protocol
+	return containsEntry(host.Entries, "gateway."+protocol)
+}
+
+func containsEntry(entries []string, wanted string) bool {
+	for _, entry := range entries {
+		if strings.TrimSpace(entry) == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+// isResponsesNativeProvider 判断该 Provider 是否有 Responses 原生上游适配器。
+//
+// codex 是唯一一个与其它 OpenAI 家族共用 OPENAI_* 环境变量、却走 Responses
+// 入口协议的 Provider。该事实由 gateway 侧的 providerOwnsProtocol 固化
+// （codex ⇄ ProtocolCodexResponses），所以这里只需认出「是不是 codex 那一条
+// 合同」，不去按名字写分支。
+//
+// 判据用合同声明的原生配置根（providerroot），不写字面量。注意不能只比较
+// ConfigDir 是否相等：没有 CLI 声明或未注册的 Provider 都返回空串，会互相
+// 「相等」；而合同里 agy 与 gemini 的 GlobalDir 同为 .gemini。因此要求两边
+// 都非空，并且只承认与 codex 完全一致的那一条。
+func isResponsesNativeProvider(provider string) bool {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		return false
+	}
+	wanted := providerroot.ConfigDir("codex")
+	if wanted == "" {
+		// 合同缺失时保守返回 false：宁可把 codex 按 Chat Completions 判定，
+		// 也不要把任意 Provider 误判成 Responses 原生。
+		return false
+	}
+	actual := providerroot.ConfigDir(provider)
+	if actual == "" {
+		return false
+	}
+	return strings.EqualFold(actual, wanted)
 }
 
 // modelsWithoutProtocolChannel 返回「没有任何 Provider 能在该客户端协议下服务」的模型集合。

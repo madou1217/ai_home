@@ -30,6 +30,8 @@ const (
 	UpstreamItemPath = UpstreamsPath + "/{id}"
 	// UpstreamProbePath 是立即探测上游节点可用性的 POST 路径模板。
 	UpstreamProbePath = UpstreamsPath + "/{id}/probe"
+	// UpstreamProbeAccountPath 是按账号当前生效出口探测上游的 POST 路径模板。
+	UpstreamProbeAccountPath = UpstreamsPath + "/{id}/probe-account"
 	// UpstreamEvidenceResetPath 是清空上游实测证据的 POST 路径模板。
 	UpstreamEvidenceResetPath = UpstreamsPath + "/{id}/evidence/reset"
 
@@ -63,6 +65,30 @@ type UpstreamsManager interface {
 	ValidateAccountPath(ctx context.Context, provider string, accountRef string) (*runtimeegress.AccountRecord, int, string)
 	GetAccountEgressRuntime(ctx context.Context, account runtimeegress.AccountRecord) map[string]any
 	PutAccountEgressAssignment(ctx context.Context, account runtimeegress.AccountRecord, rawBody map[string]any) (map[string]any, int, string)
+}
+
+// AccountUpstreamProbeManager 是可选的按账号真实出口探测能力。
+//
+// 生产 runtimeegress.Manager 实现它；旧的测试/替代管理器没有该能力时，
+// 仅该路由返回 501，不影响其它出口管理路由的装配。
+type AccountUpstreamProbeManager interface {
+	ProbeUpstreamAccount(ctx context.Context, upstreamID string, accountRef string) (runtimeegress.AccountUpstreamProbeResult, int)
+}
+
+// DiagnosticsManager 是可选的代理层冲突诊断能力（只读）。
+type DiagnosticsManager interface {
+	Diagnostics(ctx context.Context) runtimeegress.EgressDiagnostics
+}
+
+// StrategyCatalogManager 是可选的出口策略目录能力（只读）。
+type StrategyCatalogManager interface {
+	StrategyCatalog(ctx context.Context) []runtimeegress.StrategyStatus
+}
+
+// RoutingPolicyManager 是出口池路由/DNS 策略的读写能力。
+type RoutingPolicyManager interface {
+	GetRoutingPolicy(ctx context.Context) runtimeegress.RoutingPolicy
+	SaveRoutingPolicy(ctx context.Context, policy runtimeegress.RoutingPolicy, restart bool) (runtimeegress.RoutingPolicy, error)
 }
 
 // Dependencies 注入鉴权策略、上游管理器及测试时钟/心跳配置。
@@ -202,6 +228,68 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter, request *http.Request, escapedPath string) {
 	rest := strings.TrimPrefix(escapedPath, UpstreamsPath+"/")
 	switch {
+	case rest == "routing":
+		manager, ok := handler.manager.(RoutingPolicyManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "routing_unavailable"})
+			return
+		}
+		switch request.Method {
+		case http.MethodGet:
+			writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "policy": manager.GetRoutingPolicy(request.Context())})
+			return
+		case http.MethodPut, http.MethodPost:
+			var body struct {
+				Policy  runtimeegress.RoutingPolicy `json:"policy"`
+				Restart bool                        `json:"restart"`
+			}
+			if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
+				return
+			}
+			policy, err := manager.SaveRoutingPolicy(request.Context(), body.Policy, body.Restart)
+			if err != nil {
+				if strings.HasPrefix(err.Error(), "pool_restart_failed") {
+					writeJSON(responseWriter, http.StatusOK, map[string]any{
+						"ok": true, "policy": policy, "applied": false, "error": err.Error(),
+					})
+					return
+				}
+				writeError(responseWriter, http.StatusBadRequest, "routing_policy_invalid", err.Error())
+				return
+			}
+			writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "policy": policy, "applied": true})
+			return
+		default:
+			responseWriter.Header().Set("Allow", "GET, PUT, POST")
+			writeError(responseWriter, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET/PUT/POST")
+			return
+		}
+
+	case rest == "strategies":
+		if !requireMethod(responseWriter, request, http.MethodGet) {
+			return
+		}
+		manager, ok := handler.manager.(StrategyCatalogManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "strategies_unavailable"})
+			return
+		}
+		writeJSON(responseWriter, http.StatusOK, map[string]any{
+			"ok":         true,
+			"strategies": manager.StrategyCatalog(request.Context()),
+		})
+
+	case rest == "diagnostics":
+		if !requireMethod(responseWriter, request, http.MethodGet) {
+			return
+		}
+		manager, ok := handler.manager.(DiagnosticsManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, map[string]any{"ok": false, "error": "diagnostics_unavailable"})
+			return
+		}
+		writeJSON(responseWriter, http.StatusOK, manager.Diagnostics(request.Context()))
+
 	case strings.HasSuffix(rest, "/probe"):
 		if !requireMethod(responseWriter, request, http.MethodPost) {
 			return
@@ -223,6 +311,36 @@ func (handler *Handler) serveUpstreamSubpath(responseWriter http.ResponseWriter,
 			return
 		}
 		result, status := handler.manager.StartUpstreamProbe(request.Context(), id, body.Nodes)
+		writeJSON(responseWriter, status, result)
+
+	case strings.HasSuffix(rest, "/probe-account"):
+		if !requireMethod(responseWriter, request, http.MethodPost) {
+			return
+		}
+		rawID := strings.TrimSuffix(rest, "/probe-account")
+		if strings.Contains(rawID, "/") {
+			writeError(responseWriter, http.StatusNotFound, "not_found", "未找到路由")
+			return
+		}
+		id, ok := unescapeSegment(rawID)
+		if !ok {
+			writeError(responseWriter, http.StatusNotFound, "upstream_not_found", "未找到上游")
+			return
+		}
+		var body struct {
+			AccountRef string `json:"accountRef"`
+		}
+		if !readJSONObject(responseWriter, request, &body, maxUpstreamBodyBytes, false) {
+			return
+		}
+		probeManager, ok := handler.manager.(AccountUpstreamProbeManager)
+		if !ok {
+			writeJSON(responseWriter, http.StatusNotImplemented, runtimeegress.AccountUpstreamProbeResult{
+				OK: false, Status: "skipped", Reason: "account_probe_unavailable",
+			})
+			return
+		}
+		result, status := probeManager.ProbeUpstreamAccount(request.Context(), id, body.AccountRef)
 		writeJSON(responseWriter, status, result)
 
 	case strings.HasSuffix(rest, "/evidence/reset"):

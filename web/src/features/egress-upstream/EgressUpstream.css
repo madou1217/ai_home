@@ -419,3 +419,14 @@
   justify-content: space-between;
   gap: var(--space-2);
 }
+
+/* 出口策略目录：按钮内的状态标签与说明行（不改变 Radio 自身语义）。 */
+.egress-strategy-status {
+  margin-inline-start: 6px;
+}
+
+.egress-strategy-hint {
+  margin-top: calc(var(--space-2) * -1);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-xs);
+}

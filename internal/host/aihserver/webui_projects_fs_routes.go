@@ -111,7 +111,6 @@ func buildWebUIProjectsFSRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 			Store:          dependencies.Store,
 			ModelRefresher: dependencies.ModelRefresher,
 			MetadataIndex:  dependencies.ModelModalities,
-			Snapshot:       dependencies.ModelSnapshot,
 			Settings:       settingsReader,
 			Refs:           accountrefmap.Dir{AIHomeDir: aiHome},
 		})

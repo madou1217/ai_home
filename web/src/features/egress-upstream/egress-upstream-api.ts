@@ -1,5 +1,14 @@
 import api from '@/services/api';
-import type { EgressActionResult, EgressRule, EgressUpstreamView } from './types';
+import type {
+  EgressAccountProbeResult,
+  EgressActionResult,
+  EgressDiagnostics,
+  EgressRule,
+  EgressRoutingPolicy,
+  EgressRoutingResponse,
+  EgressStrategyStatus,
+  EgressUpstreamView
+} from './types';
 
 const BASE = '/webui/egress-upstreams';
 
@@ -27,10 +36,32 @@ export const egressUpstreamAPI = {
   probe(id: string, nodes?: string[]) {
     return call('post', `${itemPath(id)}/probe`, nodes && nodes.length ? { nodes } : {});
   },
+  /** 按账号当前生效出口（出口池车道 / 代理地址 / 系统代理 / 直连）真实探测一次上游。 */
+  async probeAccount(id: string, accountRef: string): Promise<EgressAccountProbeResult> {
+    return (await call('post', `${itemPath(id)}/probe-account`, { accountRef })) as EgressAccountProbeResult;
+  },
   resetEvidence(id: string, exitKeys?: string[]) {
     return call('post', `${itemPath(id)}/evidence/reset`, exitKeys && exitKeys.length ? { exitKeys } : {});
   },
   refreshNetwork() {
     return call('post', `${BASE}/network/refresh`);
+  },
+  /** 只读冲突诊断：池端口/进程身份、外部代理内核、端口占用。 */
+  async diagnostics(): Promise<EgressDiagnostics> {
+    return (await api.get<EgressDiagnostics>(`${BASE}/diagnostics`)).data;
+  },
+  /** 出口池路由/DNS 策略。 */
+  async routing(): Promise<EgressRoutingPolicy> {
+    const response = await api.get<{ ok: boolean; policy: EgressRoutingPolicy }>(`${BASE}/routing`);
+    return response.data.policy;
+  },
+  async saveRouting(policy: EgressRoutingPolicy, restart: boolean): Promise<EgressRoutingResponse> {
+    const response = await api.put<EgressRoutingResponse>(`${BASE}/routing`, { policy, restart });
+    return response.data;
+  },
+  /** 服务端策略目录 + 当前可用性。 */
+  async strategies(): Promise<EgressStrategyStatus[]> {
+    const response = await api.get<{ ok: boolean; strategies?: EgressStrategyStatus[] }>(`${BASE}/strategies`);
+    return Array.isArray(response.data.strategies) ? response.data.strategies : [];
   }
 };

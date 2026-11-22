@@ -228,27 +228,48 @@ func (definition Definition) CredentialFacts() CredentialFacts {
 	return *definition.Credentials
 }
 
-// ProtocolEnvPrefixes 是「客户端环境变量前缀 → 客户端入口协议」的对照表。
+// ProtocolEnvPrefixes 是「凭据环境变量前缀 → 客户端入口协议」的对照表。
 //
 // 这是数据，不是 provider 分支：一个 CLI 用哪门协议，取决于它读写哪组
 // 环境变量（claude 读写 ANTHROPIC_*，codex 读写 OPENAI_*）。新增双协议 CLI
 // 时只加一行，不改变任何调用方。
+//
+// OPENAI_ 前缀映射到 **chat_completions** 而不是 responses：这是实测契约。
+// 全部 11 个 OpenAI 家族 Provider（opencode / zcode / kimi / cline / codebuddy* /
+// workbuddy* / qoder* / grok / kiro）在 relayHosts 里都只挂
+// `gateway.openai.chat_completions`，CodeBuddy 的 models.json 投影也把
+// `url` 拼成 `/v1/chat/completions`（见 runtime/codebuddymodels.ChatCompletionsURL）。
+// 只有 codex 自己走 Responses。
 var ProtocolEnvPrefixes = []struct {
 	Prefix   string
 	Protocol string
 }{
 	{Prefix: "ANTHROPIC_", Protocol: "anthropic.messages"},
-	{Prefix: "OPENAI_", Protocol: "openai.responses"},
+	{Prefix: "OPENAI_", Protocol: "openai.chat_completions"},
 	{Prefix: "GEMINI_", Protocol: "gemini.generate_content"},
 	{Prefix: "GOOGLE_", Protocol: "gemini.generate_content"},
 }
 
+// codexProtocolEnvPrefix 是 Responses 协议的唯一凭据前缀。
+//
+// codex 与其它 OpenAI 家族 Provider 共用 OPENAI_* 环境变量，却走不同的客户端
+// 入口协议（Responses 而非 Chat Completions），因此前缀表不足以区分它。
+// 这里用合同事实而不是名字分支：codex 是唯一在 relayHosts 之外由
+// inference.ProtocolCodexResponses 原生承接的 Provider——该事实由调用方
+// （gateway 的 providerOwnsProtocol）保证，本方法只负责把 OPENAI_ 前缀在
+// Responses 原生 Provider 上归到 responses。
+const codexProtocolEnvPrefix = "OPENAI_"
+
 // CredentialProtocol 返回该 Provider 自己使用的**客户端入口协议**。
 //
 // 依据是合同里声明的凭据环境变量前缀：谁读 ANTHROPIC_* 谁就按 Anthropic
-// Messages 收发，谁读 OPENAI_* 谁就按 OpenAI 协议收发。没有可识别前缀时返回
-// 空串——调用方必须把空串当作「未知」，不得退化成猜测。
-func (definition Definition) CredentialProtocol() string {
+// Messages 收发。没有可识别前缀时返回空串——调用方必须把空串当作「未知」，
+// 不得退化成猜测。
+//
+// nativeResponses 表示该 Provider 是否有 Responses 原生上游适配器（codex 为真）。
+// 它为真时，OPENAI_* 前缀归到 openai.responses；否则 OPENAI_* 只意味着
+// OpenAI 兼容的 Chat Completions 入口。
+func (definition Definition) CredentialProtocol(nativeResponses bool) string {
 	facts := definition.CredentialFacts()
 	candidates := make([]string, 0, len(facts.BaseURLEnv)+len(facts.AuthTokenEnv)+len(facts.APIKeyEnv))
 	candidates = append(candidates, facts.BaseURLEnv...)
@@ -260,9 +281,13 @@ func (definition Definition) CredentialProtocol() string {
 			continue
 		}
 		for _, mapping := range ProtocolEnvPrefixes {
-			if strings.HasPrefix(name, mapping.Prefix) {
-				return mapping.Protocol
+			if !strings.HasPrefix(name, mapping.Prefix) {
+				continue
 			}
+			if mapping.Prefix == codexProtocolEnvPrefix && nativeResponses {
+				return "openai.responses"
+			}
+			return mapping.Protocol
 		}
 	}
 	return ""

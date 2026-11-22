@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
-	"github.com/madou1217/ai_home/application/modelsnapshot"
 	"log"
 	"net/http"
 	"time"
@@ -135,7 +134,6 @@ type webuiRouteDependencies struct {
 	ModelAliasExpander     modelmetadata.AliasExpander
 	// ModelAliasDisplay 提供已发布的具体别名，作为关键设置的模型候选。
 	ModelAliasDisplay          modelalias.DisplayReader
-	ModelSnapshot              modelsnapshot.Reader
 	MetadataResolver           modelpricing.Resolver
 	EgressManager              *runtimeegress.Manager
 	Upstream429RetryStore      *runtimeupstreamretry.Store
@@ -443,7 +441,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	modelsRead, err := webuimodelsapi.NewHandler(webuimodelsapi.Dependencies{
 		Authorizer: authorizer, Reader: dependencies.Store,
 		Settings: modelcatalogsettings.Reader{DatabasePath: databasePath},
-		Snapshot: dependencies.ModelSnapshot,
 		Refs:     refResolver,
 		Metadata: dependencies.MetadataResolver,
 	})
@@ -453,7 +450,6 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	openaiModelsRead, err := webuiopenaimodelsapi.NewHandler(webuiopenaimodelsapi.Dependencies{
 		Authorizer: authorizer, Reader: dependencies.Store,
 		Settings:    modelcatalogsettings.Reader{DatabasePath: databasePath},
-		Snapshot:    dependencies.ModelSnapshot,
 		AccountRefs: refResolver,
 		Metadata:    dependencies.MetadataResolver,
 	})

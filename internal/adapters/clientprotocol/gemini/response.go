@@ -11,8 +11,10 @@ import (
 )
 
 // generateContentResponse 是 generateContent 的响应 envelope。
+//
+// candidates 用 omitempty：官方 Gemini 的纯用量帧只有 usageMetadata，没有 candidates。
 type generateContentResponse struct {
-	Candidates    []candidateDTO    `json:"candidates"`
+	Candidates    []candidateDTO    `json:"candidates,omitempty"`
 	UsageMetadata *usageMetadataDTO `json:"usageMetadata,omitempty"`
 	ModelVersion  string            `json:"modelVersion,omitempty"`
 	ResponseID    string            `json:"responseId,omitempty"`
@@ -285,7 +287,12 @@ func (state *responseState) partsOrEmpty() []partOutDTO {
 }
 
 // candidateFrame 构造一个只带当前增量的流式候选帧。
+//
+// content.parts 必须是数组：官方 Gemini 从不下发 null，客户端会直接读 parts.length。
 func (state *responseState) candidateFrame(parts []partOutDTO) candidateDTO {
+	if parts == nil {
+		parts = []partOutDTO{}
+	}
 	return candidateDTO{
 		Content: contentOutDTO{Role: "model", Parts: parts},
 		Index:   0,
@@ -367,9 +374,12 @@ func (renderer *StreamRenderer) Render(
 		return renderer.completionFrames()
 	}
 	if len(deltaParts) == 0 {
-		if _, isUsage := event.(inference.UsageUpdatedEvent); !isUsage {
+		// 纯用量事件单独成帧：官方 Gemini 的用量帧不带 candidates。
+		// 无效用量（例如全零）没有可报告的内容，就不产出空帧。
+		if _, isUsage := event.(inference.UsageUpdatedEvent); !isUsage || !renderer.state.hasUsage {
 			return nil, nil
 		}
+		return renderer.frame(nil, "", true)
 	}
 	return renderer.frame(deltaParts, "", false)
 }
@@ -380,16 +390,21 @@ func (renderer *StreamRenderer) Terminal() bool {
 }
 
 // frame 编码一个 data-only SSE 帧。
+//
+// 只有用量、没有增量内容或终态时省略 candidates：这是官方 Gemini 的用量帧形状。
+// 若在这种帧里带上空候选，客户端会看到没有任何内容的 candidate；parts 若编码为
+// null 还会让 gemini-cli 在 isValidContent 里读取 parts.length 时崩溃。
 func (renderer *StreamRenderer) frame(
 	parts []partOutDTO,
 	finishReason string,
 	withUsage bool,
 ) ([]clientprotocol.RenderedEvent, error) {
-	response := generateContentResponse{
-		Candidates: []candidateDTO{renderer.state.candidateFrame(parts)},
-	}
-	if finishReason != "" {
-		response.Candidates[0].FinishReason = finishReason
+	response := generateContentResponse{}
+	if finishReason != "" || len(parts) > 0 {
+		response.Candidates = []candidateDTO{renderer.state.candidateFrame(parts)}
+		if finishReason != "" {
+			response.Candidates[0].FinishReason = finishReason
+		}
 	}
 	if withUsage && renderer.state.hasUsage {
 		usage := renderer.state.usage

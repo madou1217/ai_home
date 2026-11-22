@@ -74,10 +74,6 @@ func seedAppState(t *testing.T, aiHomeDir string) {
 	if _, err := db.Exec("INSERT INTO app_kv VALUES (?, ?, 1)", overrideKey, overrides); err != nil {
 		t.Fatalf("overrides: %v", err)
 	}
-	snapshot := "{\"contextLimits\":{\"" + mainRef + "\":{\"gpt-5-mini\":32000}}}"
-	if _, err := db.Exec("INSERT INTO app_kv VALUES (?, ?, 1)", snapshotKey, snapshot); err != nil {
-		t.Fatalf("snapshot: %v", err)
-	}
 }
 
 func newTestHandler(t *testing.T, aiHomeDir string, metadata modelmetadata.ContextWindowLookup) http.Handler {
@@ -133,7 +129,7 @@ func TestResolutionOrderAndSiblings(t *testing.T) {
 		override float64
 	}{
 		{"gpt-5", 64000, "override", 64000},
-		{"gpt-5-mini", 32000, "probed", 0},
+		{"gpt-5-mini", 0, "unknown", 0},
 		{"gpt-5-nano", 128000, "catalog", 0},
 		{"unknown", 0, "unknown", 0},
 	}

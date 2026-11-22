@@ -100,6 +100,8 @@ type Runner struct {
 	extraEnv map[string]string
 	// extraArgs 是本次启动的账号级覆盖参数（如 codex -c / claude --settings）。
 	extraArgs []string
+	// extraUnsetEnv 是本次启动需要清除的宿主环境（如 direct 出口要丢掉宿主代理）。
+	extraUnsetEnv []string
 }
 
 // NewRunner 创建只依赖标准库操作系统边界的生产 Runtime。
@@ -142,6 +144,9 @@ func NewRunner(options Options) (*Runner, error) {
 type RunOptions struct {
 	// ExtraEnv 叠加在 Strategy/投影环境之后；只作用于本次子进程。
 	ExtraEnv map[string]string
+	// UnsetEnv 在 ExtraEnv 之后清除宿主继承的环境变量（例如 direct 出口要
+	// 丢掉宿主 HTTP(S)_PROXY）。
+	UnsetEnv []string
 	// ExtraArguments 是账号级覆盖参数；按子命令规则插在用户参数之前。
 	ExtraArguments []string
 }
@@ -165,7 +170,7 @@ func (runner *Runner) RunWithOptions(
 	if runner == nil {
 		return ErrInvalidRunRequest
 	}
-	if len(options.ExtraEnv) == 0 && len(options.ExtraArguments) == 0 {
+	if len(options.ExtraEnv) == 0 && len(options.UnsetEnv) == 0 && len(options.ExtraArguments) == 0 {
 		return runner.run(ctx, plan, arguments)
 	}
 	clone := *runner
@@ -174,6 +179,7 @@ func (runner *Runner) RunWithOptions(
 		clone.extraEnv[name] = value
 	}
 	clone.extraArgs = append([]string(nil), options.ExtraArguments...)
+	clone.extraUnsetEnv = append([]string(nil), options.UnsetEnv...)
 	return clone.run(ctx, plan, arguments)
 }
 
@@ -355,6 +361,13 @@ func (runner *Runner) runProviderProcess(
 	environment = applyProviderConfigRoot(providerID, runner.hostHomeDir, environment)
 	if len(runner.extraEnv) > 0 {
 		if patch, err := providerlaunch.NewEnvironmentPatch(runner.extraEnv, nil); err == nil {
+			environment = applyEnvironment(environment, patch)
+		}
+	}
+	// 清除必须发生在设置之后：direct 出口要覆盖 Strategy/投影/用户参数之后
+	// 仍残留的宿主代理变量。
+	if len(runner.extraUnsetEnv) > 0 {
+		if patch, err := providerlaunch.NewEnvironmentPatch(nil, runner.extraUnsetEnv); err == nil {
 			environment = applyEnvironment(environment, patch)
 		}
 	}

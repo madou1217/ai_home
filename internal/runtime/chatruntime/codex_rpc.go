@@ -360,16 +360,20 @@ func (c *CodexAppServerClient) resolveSpawnSpec() (string, []string, []string, C
 		}
 	}
 	if codexHome == "" && aiHomeDir != "" {
-		safeScope := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(scope)
-		codexHome = filepath.Join(aiHomeDir, "run", "codex-app-server-homes", safeScope)
+		codexHome = codexAppServerRuntimeHome(aiHomeDir, scope)
 		env = appendOrReplaceEnv(env, "CODEX_HOME", codexHome)
 		env = appendOrReplaceEnv(env, "CODEX_SQLITE_HOME", codexHome)
 		env = appendOrReplaceEnv(env, codexhooks.CodexAppServerPassthroughEnv, "1")
 	}
 	if codexHome != "" {
 		_ = os.MkdirAll(codexHome, 0o700)
-		// 对齐网关托管 config.toml：确保 aih_server provider 节存在，避免 codex 秒退。
-		_ = providercliupgrade.HealCodexSandboxConfig(codexHome, "")
+		// 只修 AIH 自己创建的 runtime home。宿主 ~/.codex 归 codexdefault 所有
+		// （声明 auth 命令表），外部继承的 CODEX_HOME 属于用户：对它们写 provider
+		// 段会与 auth 命令表互斥，整份配置被 Codex 拒绝加载（TUI 改权限时报
+		// thread/settings/update failed）。沙箱段仍然补齐，避免 codex 秒退。
+		if isManagedCodexRuntimeHome(aiHomeDir, codexHome) {
+			_ = providercliupgrade.HealCodexSandboxConfig(codexHome, "")
+		}
 	}
 
 	runtimeHome := CodexRuntimeHome{
@@ -377,6 +381,33 @@ func (c *CodexAppServerClient) resolveSpawnSpec() (string, []string, []string, C
 		CodexHome:    codexHome,
 	}
 	return command, args, env, runtimeHome, nil
+}
+
+// codexAppServerRuntimeHomeRoot 是 AIH 自建 Codex 运行时配置根的唯一推导。
+// 只有这个根下的 config.toml 归 chatruntime 补写，其它 CODEX_HOME（宿主
+// ~/.codex、用户自定义目录）由各自的所有者维护。
+func codexAppServerRuntimeHomeRoot(aiHomeDir string) string {
+	return filepath.Join(aiHomeDir, "run", "codex-app-server-homes")
+}
+
+// codexAppServerRuntimeHome 返回某个 runtime scope 的隔离配置根。
+func codexAppServerRuntimeHome(aiHomeDir, scope string) string {
+	safeScope := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(scope)
+	return filepath.Join(codexAppServerRuntimeHomeRoot(aiHomeDir), safeScope)
+}
+
+// isManagedCodexRuntimeHome 判断配置根是否由 AIH 自己创建（而非宿主或外部继承）。
+func isManagedCodexRuntimeHome(aiHomeDir, codexHome string) bool {
+	root := strings.TrimSpace(aiHomeDir)
+	home := strings.TrimSpace(codexHome)
+	if root == "" || home == "" || !filepath.IsAbs(root) || !filepath.IsAbs(home) {
+		return false
+	}
+	rel, err := filepath.Rel(codexAppServerRuntimeHomeRoot(root), filepath.Clean(home))
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func appendOrReplaceEnv(env []string, key, value string) []string {

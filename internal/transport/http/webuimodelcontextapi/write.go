@@ -108,14 +108,10 @@ func (handler *Handler) saveSingle(ctx context.Context, response http.ResponseWr
 		writeError(response, http.StatusBadRequest, "storage_write_failed", writeErr.Error())
 		return
 	}
-	probed, probedErr := readProbedLimits(ctx, databasePath)
-	if probedErr != nil {
-		probed = map[string]map[string]int{}
-	}
 	writeJSON(response, http.StatusOK, singleWriteResponse{
 		OK:        true,
 		Overrides: overrides,
-		Resolved:  handler.resolveModel(provider, accountRef, modelID, overrides, probed),
+		Resolved:  handler.resolveModel(provider, accountRef, modelID, overrides),
 	})
 }
 

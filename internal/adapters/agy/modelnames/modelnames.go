@@ -17,7 +17,17 @@ func List() []string {
 	return appnames.List()
 }
 
-// Default 返回自愈使用的缺省显示名（列表第一项，Node listAgyCliModelNames()[0]）。
+// Default 返回 Provider 配置目录使用的首个合法显示名。
 func Default() string {
 	return appnames.Default()
+}
+
+// ListMapped 返回已有内部 id 映射的显示名，供 settings 自愈使用。
+func ListMapped() []string {
+	return appnames.ListMapped()
+}
+
+// DefaultMapped 返回 settings 自愈使用的首个已映射显示名。
+func DefaultMapped() string {
+	return appnames.DefaultMapped()
 }

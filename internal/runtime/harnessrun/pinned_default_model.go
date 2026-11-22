@@ -7,21 +7,20 @@ import (
 
 	"github.com/madou1217/ai_home/application/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
 const (
-	harnessModelsSnapshotKey  = webuimodelssnapshot.CacheKey
 	harnessCatalogSettingsKey = modelcatalogsettings.DatabaseKey
 )
 
 // resolvePinnedHarnessDefaultModel 复刻 Node pinned-default-model.js：
-// 钉选账号、但没指定模型时，按「该账号配置的默认模型 → 该账号目录第一条」
+// 钉选账号、但没指定模型时，按「该账号配置的默认模型 → 该账号可用模型第一条」
 // 解析出一个该账号确实能路由的模型。
 //
 // 池级目录第一条常常是 auto 之类的入口，钉选后路由不到；直接用它会得到
-// 启动即 503。目录来自服务端持久化的 WebUI 模型快照（byAccount）。
-// 读不到、为空或形状不认识时返回空串，适配器维持原有回落。
+// 启动即 503。所以必须取**该账号自己的**模型。
+//
+// 读不到、为空时返回空串，适配器维持原有回落。
 func resolvePinnedHarnessDefaultModel(
 	ctx context.Context,
 	aiHomeDir string,
@@ -31,8 +30,8 @@ func resolvePinnedHarnessDefaultModel(
 	if accountRef == "" || strings.TrimSpace(aiHomeDir) == "" {
 		return ""
 	}
-	models := readSnapshotAccountModels(ctx, aiHomeDir, accountRef)
-	if len(models) == 0 {
+	models, err := readAccountRoutableModels(ctx, aiHomeDir, accountRef)
+	if err != nil || len(models) == 0 {
 		return ""
 	}
 	configured := readConfiguredDefaultModel(ctx, aiHomeDir, accountRef)
@@ -42,32 +41,50 @@ func resolvePinnedHarnessDefaultModel(
 	return models[0]
 }
 
-func readSnapshotAccountModels(ctx context.Context, aiHomeDir string, accountRef string) []string {
-	raw, found, err := readHarnessAppStateJSON(ctx, aiHomeDir, harnessModelsSnapshotKey)
-	if err != nil || !found {
-		return nil
+// readAccountRoutableModels 读取该账号当前**真正可路由**的模型，按 model_id 排序。
+//
+// 来源是 account_models，不是 app_kv 的 cache:webui-models-snapshot.json。
+// 后者是 Node 时代遗留的缓存键：Go 侧只有 reader 没有 writer，实测停更两天，
+// 且 31 个账号里有 6 个的首条模型已被上游移除（balanced-model、
+// cline-pass/deepseek-v4-pro 等，实测请求返回 403/422）。拿它当默认模型会让
+// 这些账号一钉选就启动失败。
+//
+// 过滤条件与网关路由一致：账号启用 + 行有效（inherit 需上游可用，或人工 force_enable）。
+// 被人工 force_disable 的模型即使上游可用也不返回。
+func readAccountRoutableModels(ctx context.Context, aiHomeDir, accountRef string) ([]string, error) {
+	databasePath, err := appstate.DatabasePath(aiHomeDir)
+	if err != nil {
+		return nil, err
 	}
-	var snapshot struct {
-		ByAccount map[string]json.RawMessage `json:"byAccount"`
+	database, err := appstate.OpenReadOnly(ctx, databasePath)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
-		return nil
+	defer func() { _ = database.Close() }()
+	rows, err := database.QueryContext(ctx, `
+		SELECT m.model_id AS model_id
+		  FROM account_models m
+		  JOIN accounts a ON a.account_ref = m.account_ref
+		 WHERE m.account_ref = ?
+		   AND a.enabled = 1
+		   AND m.manual_policy <> 'force_disable'
+		   AND (m.manual_policy = 'force_enable' OR m.upstream_available = 1)
+		 ORDER BY m.model_id`, accountRef)
+	if err != nil {
+		return nil, err
 	}
-	value := snapshot.ByAccount[accountRef]
-	if len(value) == 0 {
-		return nil
-	}
-	var items []string
-	if err := json.Unmarshal(value, &items); err != nil {
-		return nil
-	}
-	models := make([]string, 0, len(items))
-	for _, item := range items {
-		if text := strings.TrimSpace(item); text != "" {
-			models = append(models, text)
+	defer func() { _ = rows.Close() }()
+	models := make([]string, 0, 32)
+	for rows.Next() {
+		var modelID string
+		if scanErr := rows.Scan(&modelID); scanErr != nil {
+			continue
+		}
+		if trimmed := strings.TrimSpace(modelID); trimmed != "" {
+			models = append(models, trimmed)
 		}
 	}
-	return models
+	return models, rows.Err()
 }
 
 // readConfiguredDefaultModel 在 model-catalog-settings 里找该账号的默认模型。

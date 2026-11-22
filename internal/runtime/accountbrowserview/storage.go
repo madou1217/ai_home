@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 func (s *Service) sessionDir() (string, error) {
@@ -19,7 +20,7 @@ func (s *Service) sessionDir() (string, error) {
 			return "", surfaceFailure("browser_storage_unavailable")
 		}
 		info, err := root.Lstat(part)
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || (index > 0 && info.Mode().Perm()&0o077 != 0) {
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || (index > 0 && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
 			return "", surfaceFailure("browser_storage_unsafe")
 		}
 		next, err := root.OpenRoot(part)

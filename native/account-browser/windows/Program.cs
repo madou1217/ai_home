@@ -231,7 +231,7 @@ internal static class Program
             if (stopped || !IsLive()) return false;
             try
             {
-                if (!Native.SetForegroundWindow(hwnd) || Native.GetForegroundWindow() != hwnd)
+                if (!Native.ActivateWindow(hwnd))
                 {
                     throw new InvalidOperationException("browser window is not foreground");
                 }
@@ -355,8 +355,55 @@ internal static class Program
         [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+        [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint sourceThreadId, uint targetThreadId, bool attach);
         [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
+
+        private const int SW_RESTORE = 9;
+
+        public static bool ActivateWindow(IntPtr hwnd)
+        {
+            var currentThread = GetCurrentThreadId();
+            var foreground = GetForegroundWindow();
+            var foregroundThread = foreground == IntPtr.Zero
+                ? 0
+                : GetWindowThreadProcessId(foreground, out _);
+            var targetThread = GetWindowThreadProcessId(hwnd, out _);
+            var attachedForeground = false;
+            var attachedTarget = false;
+            try
+            {
+                // Windows may reject a foreground change from a background SSH/task
+                // thread. Temporarily sharing the foreground input queue is the
+                // documented user-window activation path; it is released immediately.
+                if (foregroundThread != 0 && foregroundThread != currentThread)
+                {
+                    attachedForeground = AttachThreadInput(currentThread, foregroundThread, true);
+                }
+                if (targetThread != 0 && targetThread != currentThread && targetThread != foregroundThread)
+                {
+                    attachedTarget = AttachThreadInput(currentThread, targetThread, true);
+                }
+                ShowWindow(hwnd, SW_RESTORE);
+                BringWindowToTop(hwnd);
+                if (!SetForegroundWindow(hwnd)) return false;
+                return GetForegroundWindow() == hwnd;
+            }
+            finally
+            {
+                if (attachedTarget)
+                {
+                    AttachThreadInput(currentThread, targetThread, false);
+                }
+                if (attachedForeground)
+                {
+                    AttachThreadInput(currentThread, foregroundThread, false);
+                }
+            }
+        }
 
         public static void KeyPress(IntPtr _, int vk) => SendKeys(new[] { Key(vk, 0), Key(vk, KEYEVENTF_KEYUP) });
         public static void KeyChord(IntPtr _, int vk, uint modifier)

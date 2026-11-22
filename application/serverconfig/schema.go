@@ -120,6 +120,9 @@ var Fields = []Field{
 	{Key: "upstreamFailurePolicy", Group: "调度", Type: TypeObject, Default: nil, Applies: "runtime", HotReload: true, ClearValue: map[string]any{},
 		Normalize: normalizeUpstreamFailurePolicy,
 		Summary:   "上游失败语义的全局覆盖（阈值/窗口/冷却与状态码语义）。"},
+	{Key: "concurrency", Group: "调度", Type: TypeObject, Default: nil, Applies: "runtime", HotReload: true, ClearValue: map[string]any{},
+		Normalize: normalizeConcurrency,
+		Summary:   "并发/速率上限（系统、Provider、账号；本轮只存储与预览）。"},
 }
 
 func init() {
@@ -228,6 +231,31 @@ func Sanitize(input map[string]any) map[string]any {
 // normalizeUpstreamFailurePolicy 接受对象或 JSON 字符串；无法解析时回到 nil
 // （内置契约），真正的合法性由 internal/runtime/upstreamfailurepolicy 校验。
 func normalizeUpstreamFailurePolicy(raw any) any {
+	switch value := raw.(type) {
+	case nil:
+		return nil
+	case map[string]any:
+		if value == nil {
+			return nil
+		}
+		return value
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &object); err != nil {
+			return nil
+		}
+		return object
+	default:
+		return nil
+	}
+}
+
+// normalizeConcurrency 接受对象或 JSON 字符串；合法性由 core/concurrency 校验。
+func normalizeConcurrency(raw any) any {
 	switch value := raw.(type) {
 	case nil:
 		return nil

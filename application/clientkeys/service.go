@@ -68,6 +68,11 @@ type Service struct {
 	used   map[string]int64
 }
 
+var currentService atomic.Pointer[Service]
+
+// Current 返回进程内安装的服务；未初始化时为 nil。
+func Current() *Service { return currentService.Load() }
+
 // NewService 创建服务并加载第一份快照。
 func NewService(store Store, master func() string, now func() time.Time) (*Service, error) {
 	if store == nil {
@@ -80,6 +85,7 @@ func NewService(store Store, master func() string, now func() time.Time) (*Servi
 	if err := service.Reload(context.Background()); err != nil {
 		return nil, err
 	}
+	currentService.Store(service)
 	return service, nil
 }
 

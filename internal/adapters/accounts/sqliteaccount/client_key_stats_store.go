@@ -43,65 +43,75 @@ func (store *Store) UpsertClientKeyStats(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	const requestSQL = `INSERT INTO %s (bucket_ms, key_id, surface, requests, aborted_requests)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(bucket_ms, key_id, surface) DO UPDATE SET
-			requests = requests + excluded.requests,
-			aborted_requests = aborted_requests + excluded.aborted_requests`
-	for _, table := range []struct{ minute, hour string }{{"client_key_request_minute", "client_key_request_hour"}} {
+	requestSQL := func(table, bucketColumn string) string {
+		return `INSERT INTO ` + table + ` (` + bucketColumn + `, key_id, surface, requests, aborted_requests)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(` + bucketColumn + `, key_id, surface) DO UPDATE SET
+				requests = requests + excluded.requests,
+				aborted_requests = aborted_requests + excluded.aborted_requests`
+	}
+	var requestTargets = []struct {
+		table  string
+		column string
+	}{
+		{table: "client_key_request_minute", column: "minute_ms"},
+		{table: "client_key_request_hour", column: "hour_ms"},
+	}
+	for _, target := range requestTargets {
 		for _, bucket := range requests {
 			if bucket.BucketMS <= 0 || strings.TrimSpace(bucket.KeyID) == "" {
 				continue
 			}
-			for _, target := range []struct {
-				table  string
-				bucket int64
-			}{
-				{table: table.minute, bucket: bucket.BucketMS},
-				{table: table.hour, bucket: hourStart(bucket.BucketMS)},
-			} {
-				if _, err := tx.ExecContext(ctx, sprintfQuery(requestSQL, target.table),
-					target.bucket, bucket.KeyID, bucket.Surface, bucket.Requests, bucket.Aborted); err != nil {
-					return err
-				}
+			bucketValue := bucket.BucketMS
+			if target.column == "hour_ms" {
+				bucketValue = hourStart(bucket.BucketMS)
+			}
+			if _, err := tx.ExecContext(ctx, requestSQL(target.table, target.column),
+				bucketValue, bucket.KeyID, bucket.Surface, bucket.Requests, bucket.Aborted); err != nil {
+				return err
 			}
 		}
 	}
 
-	const attemptSQL = `INSERT INTO %s (bucket_ms, key_id, provider_id, model_id, account_ref,
-		attempts, successes, failures, aborted, input_tokens, output_tokens,
-		cached_input_tokens, cache_write_input_tokens, reasoning_tokens, total_tokens)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(bucket_ms, key_id, provider_id, model_id, account_ref) DO UPDATE SET
-			attempts = attempts + excluded.attempts,
-			successes = successes + excluded.successes,
-			failures = failures + excluded.failures,
-			aborted = aborted + excluded.aborted,
-			input_tokens = input_tokens + excluded.input_tokens,
-			output_tokens = output_tokens + excluded.output_tokens,
-			cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
-			cache_write_input_tokens = cache_write_input_tokens + excluded.cache_write_input_tokens,
-			reasoning_tokens = reasoning_tokens + excluded.reasoning_tokens,
-			total_tokens = total_tokens + excluded.total_tokens`
-	for _, table := range []struct{ minute, hour string }{{"client_key_attempt_minute", "client_key_attempt_hour"}} {
+	attemptSQL := func(table, bucketColumn string) string {
+		return `INSERT INTO ` + table + ` (` + bucketColumn + `, key_id, provider_id, model_id, account_ref,
+			attempts, successes, failures, aborted, input_tokens, output_tokens,
+			cached_input_tokens, cache_write_input_tokens, reasoning_tokens, total_tokens)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(` + bucketColumn + `, key_id, provider_id, model_id, account_ref) DO UPDATE SET
+				attempts = attempts + excluded.attempts,
+				successes = successes + excluded.successes,
+				failures = failures + excluded.failures,
+				aborted = aborted + excluded.aborted,
+				input_tokens = input_tokens + excluded.input_tokens,
+				output_tokens = output_tokens + excluded.output_tokens,
+				cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
+				cache_write_input_tokens = cache_write_input_tokens + excluded.cache_write_input_tokens,
+				reasoning_tokens = reasoning_tokens + excluded.reasoning_tokens,
+				total_tokens = total_tokens + excluded.total_tokens`
+	}
+	var attemptTargets = []struct {
+		table  string
+		column string
+	}{
+		{table: "client_key_attempt_minute", column: "minute_ms"},
+		{table: "client_key_attempt_hour", column: "hour_ms"},
+	}
+	for _, target := range attemptTargets {
 		for _, bucket := range attempts {
 			if bucket.BucketMS <= 0 || strings.TrimSpace(bucket.KeyID) == "" {
 				continue
 			}
-			for _, target := range []struct {
-				table  string
-				bucket int64
-			}{
-				{table: table.minute, bucket: bucket.BucketMS},
-				{table: table.hour, bucket: hourStart(bucket.BucketMS)},
-			} {
-				if _, err := tx.ExecContext(ctx, sprintfQuery(attemptSQL, target.table),
-					target.bucket, bucket.KeyID, bucket.ProviderID, bucket.ModelID, bucket.AccountRef,
-					bucket.Attempts, bucket.Successes, bucket.Failures, bucket.Aborted,
-					bucket.InputTokens, bucket.OutputTokens, bucket.CachedInputTokens,
-					bucket.CacheWriteInputTokens, bucket.ReasoningTokens, bucket.TotalTokens); err != nil {
-					return err
-				}
+			bucketValue := bucket.BucketMS
+			if target.column == "hour_ms" {
+				bucketValue = hourStart(bucket.BucketMS)
+			}
+			if _, err := tx.ExecContext(ctx, attemptSQL(target.table, target.column),
+				bucketValue, bucket.KeyID, bucket.ProviderID, bucket.ModelID, bucket.AccountRef,
+				bucket.Attempts, bucket.Successes, bucket.Failures, bucket.Aborted,
+				bucket.InputTokens, bucket.OutputTokens, bucket.CachedInputTokens,
+				bucket.CacheWriteInputTokens, bucket.ReasoningTokens, bucket.TotalTokens); err != nil {
+				return err
 			}
 		}
 	}
@@ -239,9 +249,4 @@ func statsTable(granularity string, attempts bool) (string, string) {
 func hourStart(value int64) int64 {
 	const hourMS = int64(3_600_000)
 	return value - value%hourMS
-}
-
-// sprintfQuery 只用于拼接本文件内固定的表名，调用方不接受外部输入。
-func sprintfQuery(template, table string) string {
-	return strings.Replace(template, "%s", table, 1)
 }

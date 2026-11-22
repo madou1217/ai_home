@@ -24,6 +24,11 @@ func appendWebUIFeatureRoutes(routes []webuiRoute, dependencies webuiRouteDepend
 		return nil, err
 	}
 	routes = append(routes, refreshRoutes...)
+	clientKeyRoutes, err := buildWebUIClientKeyRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, clientKeyRoutes...)
 	accountAuthRoutes, err := buildWebUIAccountAuthRoutes(dependencies)
 	if err != nil {
 		return nil, err

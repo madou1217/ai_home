@@ -250,6 +250,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "failure-policy" {
 		return runFailurePolicy(ctx, arguments[1:], runtime)
 	}
+	if providerID == "client-keys" || providerID == "apikeys" {
+		return runClientKeys(ctx, arguments[1:], runtime)
+	}
 	if providerID == accountCommandName {
 		return runAccount(ctx, arguments[1:], runtime)
 	}

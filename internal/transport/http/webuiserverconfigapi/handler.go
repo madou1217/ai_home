@@ -107,6 +107,7 @@ type ConfigView struct {
 	LargePasteChars                   int                     `json:"largePasteChars"`
 	Upstream429Retry                  corepolicy.GlobalPolicy `json:"upstream429Retry"`
 	UpstreamFailurePolicy             map[string]any          `json:"upstreamFailurePolicy,omitempty"`
+	Concurrency                       map[string]any          `json:"concurrency,omitempty"`
 	APIKeyConfigured                  bool                    `json:"apiKeyConfigured"`
 	ManagementKeyConfigured           bool                    `json:"managementKeyConfigured"`
 }
@@ -222,6 +223,9 @@ func configViewFromValues(values map[string]any) ConfigView {
 	}
 	if object, ok := values["upstreamFailurePolicy"].(map[string]any); ok && object != nil {
 		view.UpstreamFailurePolicy = object
+	}
+	if object, ok := values["concurrency"].(map[string]any); ok && object != nil {
+		view.Concurrency = object
 	}
 	return view
 }

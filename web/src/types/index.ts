@@ -4571,3 +4571,51 @@ export interface AccountConfigFilesResponse {
   runtimeDirExists: boolean;
   files: AccountConfigFile[];
 }
+
+/** 客户端 API Key 的限流字段（本轮只展示，不执行）。 */
+export interface ClientKeyLimits {
+  maxConcurrency: number;
+  rpmLimit: number;
+  tpmLimit: number;
+  dailyTokenLimit: number;
+  allowedProviders?: string[];
+  allowedModels?: string[];
+}
+
+export interface ClientKeyLive {
+  inFlight: number;
+  rpm1m: number;
+  rpm5m: number;
+  tpm1m: number;
+  tpm5m: number;
+}
+
+export interface ClientKeyTotals {
+  requests: number;
+  abortedRequests: number;
+  attempts: number;
+  successes: number;
+  failures: number;
+  aborted: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+}
+
+export interface ClientKeyRow {
+  id: string;
+  name: string;
+  prefix: string;
+  enabled: boolean;
+  master: boolean;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+  lastUsedAtMs?: number;
+  limits?: ClientKeyLimits;
+  limitsEnforced?: boolean;
+  live?: ClientKeyLive;
+  totals?: ClientKeyTotals;
+}

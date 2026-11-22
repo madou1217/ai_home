@@ -153,7 +153,9 @@ import type {
   Session,
   FailureSemanticPolicy,
   FailureSemanticSignal,
-  FailureProvenanceEntry
+  FailureProvenanceEntry,
+  ClientKeyRow,
+  ClientKeyLimits
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 import type {
@@ -3406,5 +3408,34 @@ export const failureSemanticsAPI = {
       { params }
     );
     return { entries: response.data.entries || [], dropped: response.data.dropped || 0 };
+  }
+};
+
+/** 客户端 API Key 管理：创建/轮换的 secret 只返回一次。 */
+export const clientKeysAPI = {
+  list: async (): Promise<ClientKeyRow[]> => {
+    const response = await api.get<{ ok: boolean; keys: ClientKeyRow[] }>('/webui/client-keys');
+    return response.data.keys || [];
+  },
+  create: async (payload: { name: string; limits?: Partial<ClientKeyLimits> }): Promise<{ key: ClientKeyRow; secret: string }> => {
+    const response = await api.post<{ ok: boolean; key: ClientKeyRow; secret: string }>('/webui/client-keys', payload);
+    return { key: response.data.key, secret: response.data.secret };
+  },
+  update: async (id: string, payload: { name?: string; enabled?: boolean; limits?: Partial<ClientKeyLimits> }): Promise<ClientKeyRow> => {
+    const response = await api.patch<{ ok: boolean; key: ClientKeyRow }>(`/webui/client-keys/${encodeURIComponent(id)}`, payload);
+    return response.data.key;
+  },
+  revoke: async (id: string): Promise<void> => {
+    await api.delete(`/webui/client-keys/${encodeURIComponent(id)}`);
+  },
+  rotate: async (id: string): Promise<string> => {
+    const response = await api.post<{ ok: boolean; secret: string }>(`/webui/client-keys/${encodeURIComponent(id)}/rotate`);
+    return response.data.secret;
+  },
+  effectiveConcurrency: async (params: { provider?: string; account?: string; model?: string; key?: string }): Promise<{
+    systemMax: number; accountMax: number; keyMax: number; effective: number; enforced: boolean;
+  }> => {
+    const response = await api.get('/webui/client-keys/effective-concurrency', { params });
+    return response.data;
   }
 };

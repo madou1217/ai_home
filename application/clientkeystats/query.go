@@ -74,6 +74,9 @@ func Install(tracker *Tracker) {
 	installedOnce.Store(tracker != nil)
 }
 
+// Current 返回进程级 Tracker；未安装时为 nil。
+func Current() *Tracker { return currentTracker() }
+
 func currentTracker() *Tracker {
 	globalTrackerMu.RLock()
 	tracker := globalTracker
@@ -123,10 +126,13 @@ func (tracker *Tracker) QueryAttempts(ctx context.Context, query Query) ([]Row, 
 	if tracker == nil || tracker.store == nil {
 		return nil, ErrUnavailable
 	}
-	buckets, err := tracker.store.QueryClientKeyAttempts(ctx, statsQuery(query))
+	storeQuery := statsQuery(query)
+	buckets, err := tracker.store.QueryClientKeyAttempts(ctx, storeQuery)
 	if err != nil {
 		return nil, err
 	}
+	// 当前分钟尚未落库：查询必须合并内存桶，否则统计要等跨分钟才可见。
+	buckets = append(buckets, tracker.memoryAttemptBuckets(storeQuery)...)
 	aggregated := map[string]*Row{}
 	for _, bucket := range buckets {
 		key := bucket.KeyID + "\x00" + bucket.ProviderID + "\x00" + bucket.ModelID + "\x00" + bucket.AccountRef
@@ -173,10 +179,12 @@ func (tracker *Tracker) QueryRequests(ctx context.Context, query Query) ([]Reque
 	if tracker == nil || tracker.store == nil {
 		return nil, ErrUnavailable
 	}
-	buckets, err := tracker.store.QueryClientKeyRequests(ctx, statsQuery(query))
+	storeQuery := statsQuery(query)
+	buckets, err := tracker.store.QueryClientKeyRequests(ctx, storeQuery)
 	if err != nil {
 		return nil, err
 	}
+	buckets = append(buckets, tracker.memoryRequestBuckets(storeQuery)...)
 	aggregated := map[string]*RequestRow{}
 	for _, bucket := range buckets {
 		key := bucket.KeyID + "\x00" + bucket.Surface
@@ -223,4 +231,56 @@ func statsQuery(query Query) coreclientkeys.StatsQuery {
 		ModelID:     query.ModelID,
 		AccountRef:  query.AccountRef,
 	}
+}
+
+func (tracker *Tracker) memoryAttemptBuckets(query coreclientkeys.StatsQuery) []coreclientkeys.AttemptBucket {
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	buckets := make([]coreclientkeys.AttemptBucket, 0, len(tracker.attempts))
+	for key, counts := range tracker.attempts {
+		if key.minute < query.FromMS || key.minute >= query.ToMS {
+			continue
+		}
+		if query.KeyID != "" && query.KeyID != key.keyID {
+			continue
+		}
+		if query.ProviderID != "" && query.ProviderID != key.provider {
+			continue
+		}
+		if query.ModelID != "" && query.ModelID != key.model {
+			continue
+		}
+		if query.AccountRef != "" && query.AccountRef != key.account {
+			continue
+		}
+		buckets = append(buckets, coreclientkeys.AttemptBucket{
+			BucketMS: key.minute, KeyID: key.keyID, ProviderID: key.provider,
+			ModelID: key.model, AccountRef: key.account,
+			Attempts: counts.attempts, Successes: counts.successes,
+			Failures: counts.failures, Aborted: counts.aborted,
+			InputTokens: counts.inputTokens, OutputTokens: counts.outputTokens,
+			CachedInputTokens: counts.cachedInput, CacheWriteInputTokens: counts.cacheWrite,
+			ReasoningTokens: counts.reasoning, TotalTokens: counts.totalTokens,
+		})
+	}
+	return buckets
+}
+
+func (tracker *Tracker) memoryRequestBuckets(query coreclientkeys.StatsQuery) []coreclientkeys.RequestBucket {
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	buckets := make([]coreclientkeys.RequestBucket, 0, len(tracker.requests))
+	for key, counts := range tracker.requests {
+		if key.minute < query.FromMS || key.minute >= query.ToMS {
+			continue
+		}
+		if query.KeyID != "" && query.KeyID != key.keyID {
+			continue
+		}
+		buckets = append(buckets, coreclientkeys.RequestBucket{
+			BucketMS: key.minute, KeyID: key.keyID, Surface: key.surface,
+			Requests: counts.requests, Aborted: counts.aborted,
+		})
+	}
+	return buckets
 }

@@ -44,6 +44,17 @@
 //   - 新规则类型：routing.go 的 normalize + MihomoRoutingRules/SingBoxRoutingRules，
 //     以及 WebUI 规则编辑器选项。
 //
+// # 插件化目标架构
+//
+//   - 内核插槽：application/egressengine.Engine（Descriptor/Compile），
+//     插件只编译配置与启动事实，宿主负责进程、控制面、健康、车道与回收。
+//   - 插件发现：pluginhost 能力 egress.engine（CollectEgressEngines），
+//     manifest contributes 声明；主体不 import 任何具体内核。
+//   - 现有 mihomo/sing-box 的 in-tree 编译器是过渡参考适配器；目标是把它们
+//     移到独立进程插件（cmd/aih-engine-*），主二进制只保留注册表与规划。
+//   - 策略/呈现同理：StrategyRuntime 已可注册；Surge/sing-box profile 渲染
+//     属于呈现插件，不应进入代理执行层。
+//
 // # 当前边界
 //
 //   - mihomo 使用全局规则模式，listener 的强制出站可能优先于全局规则；

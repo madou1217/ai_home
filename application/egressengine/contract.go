@@ -1,0 +1,95 @@
+// Package egressengine 定义出口内核插件契约。
+//
+// 主体（egress 包）只依赖这里的接口与 JSON 结构，不 import mihomo/sing-box
+// 的配置编译器。内置适配器与外部进程插件实现同一份 Engine 接口；进程插件
+// 通过 pluginhost 的 egress.engine 能力交换 CompileRequest/LaunchSpec。
+package egressengine
+
+import "context"
+
+// Node 是插件编译配置所需的节点事实。
+//
+// Options 保留协议私有字段（密码、UUID、传输、TLS 等）；插件不得把 Options
+// 回传到结果或日志。主体只保证 ID/Name/Protocol/Server/Port 稳定。
+type Node struct {
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Protocol string         `json:"protocol"`
+	Server   string         `json:"server"`
+	Port     int            `json:"port"`
+	Options  map[string]any `json:"options,omitempty"`
+}
+
+// Rule 是内核无关的路由规则片段。
+type Rule struct {
+	Type   string `json:"type"` // domain/domain-suffix/domain-keyword/ip-cidr
+	Value  string `json:"value"`
+	Action string `json:"action"` // proxy/direct/reject
+}
+
+// DNS 是内核无关的 DNS 策略。
+type DNS struct {
+	Mode    string   `json:"mode"` // default/doh/plain
+	Servers []string `json:"servers,omitempty"`
+	Route   string   `json:"route,omitempty"` // proxy/direct
+}
+
+// CompileRequest 是主体交给内核插件的唯一输入。
+type CompileRequest struct {
+	Nodes          []Node `json:"nodes"`
+	MixedPort      int    `json:"mixedPort"`
+	ControllerPort int    `json:"controllerPort"`
+	ProbePort      int    `json:"probePort,omitempty"`
+	LanePorts      []int  `json:"lanePorts,omitempty"`
+	Secret         string `json:"secret"`
+	InterfaceName  string `json:"interfaceName,omitempty"`
+	Rules          []Rule `json:"rules,omitempty"`
+	DNS            DNS    `json:"dns"`
+	// Version 是插件自报的内核版本（可为空；插件可自行探测）。
+	Version string `json:"version,omitempty"`
+}
+
+// NodeTag 把运行时标签与稳定节点身份绑定；主体据此建立健康/车道索引。
+type NodeTag struct {
+	Tag      string `json:"tag"`
+	NodeID   string `json:"nodeId"`
+	Identity string `json:"identity"`
+	Label    string `json:"label"`
+	Protocol string `json:"protocol"`
+	Server   string `json:"server"`
+	Port     int    `json:"port"`
+}
+
+// LaunchSpec 是插件编译出的启动事实；主体负责启动/监督/控制面调用。
+type LaunchSpec struct {
+	// Config 是内核配置文件正文（JSON/YAML 由插件决定）。
+	Config         []byte `json:"config"`
+	ConfigFileName string `json:"configFileName"`
+	// Binary 为空时由主体按插件描述符/运行环境解析；非空时必须是插件确认的路径。
+	Binary      string    `json:"binary,omitempty"`
+	Args        []string  `json:"args,omitempty"`
+	GlobalGroup string    `json:"globalGroup"`
+	NodeTags    []NodeTag `json:"nodeTags"`
+	// Controller 固定为 "clash-api"（当前主体的控制面协议）。
+	Controller string `json:"controller,omitempty"`
+	Version    string `json:"version,omitempty"`
+}
+
+// Descriptor 是插件自报的静态能力。
+type Descriptor struct {
+	ID         string   `json:"id"`
+	Label      string   `json:"label"`
+	Version    string   `json:"version,omitempty"`
+	Protocols  []string `json:"protocols,omitempty"`
+	Priority   int      `json:"priority,omitempty"`
+	Controller string   `json:"controller"` // clash-api
+}
+
+// Engine 是内核插件的最小契约。
+//
+// 宿主负责：进程启动/停止、Clash 控制面选择节点、健康探测、车道规划、
+// 失败关闭与进程身份校验。插件只负责：描述能力、把节点编译成配置与启动参数。
+type Engine interface {
+	Descriptor() Descriptor
+	Compile(ctx context.Context, request CompileRequest) (LaunchSpec, error)
+}

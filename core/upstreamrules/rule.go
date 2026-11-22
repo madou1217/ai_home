@@ -12,6 +12,8 @@ package upstreamrules
 import (
 	"errors"
 	"fmt"
+
+	failurecontract "github.com/madou1217/ai_home/contracts/upstream-failure"
 )
 
 const (
@@ -52,6 +54,10 @@ const (
 	KindRateLimited Kind = "rate_limited"
 	// KindServiceUnavailable 表示上游暂时不可用。
 	KindServiceUnavailable Kind = "service_unavailable"
+	// KindPoolUnavailable 表示对端网关明确报告它的账号池当前没有可调度账号。
+	//
+	// 这是服务级事实，不是本机账号故障：命中该规则时不写本机账号冷却。
+	KindPoolUnavailable Kind = "pool_unavailable"
 )
 
 // IsHardBlock 判断该状态是否属于立即账号级硬阻塞。
@@ -111,13 +117,10 @@ const (
 
 // validKind 判断状态是否为已注册取值。
 func validKind(kind Kind) bool {
-	switch kind {
-	case KindBillingBlocked, KindQuotaExhausted, KindAuthInvalid,
-		KindPermissionDenied, KindRateLimited, KindServiceUnavailable:
-		return true
-	default:
-		return false
-	}
+	// 规则 kind 的词表由失败语义契约给出：新增一种规则动作只加一行 rule_kinds，
+	// 不在这里维护第二份 switch。
+	_, found := failurecontract.Default().RuleKind(string(kind))
+	return found
 }
 
 // invalid 构造统一的规则校验错误。

@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "policies": [
+    {
+      "kind": "rate_limited",
+      "action": "model_cooldown",
+      "threshold": 2,
+      "failure_window_ms": 60000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "model_overloaded",
+      "action": "model_cooldown",
+      "threshold": 2,
+      "failure_window_ms": 120000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "upstream_unavailable",
+      "action": "model_cooldown",
+      "threshold": 2,
+      "failure_window_ms": 60000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "request_timeout",
+      "action": "model_cooldown",
+      "threshold": 2,
+      "failure_window_ms": 60000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "connection_reset",
+      "action": "model_cooldown",
+      "threshold": 2,
+      "failure_window_ms": 60000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "stream_disconnected",
+      "action": "model_cooldown",
+      "threshold": 2,
+      "failure_window_ms": 60000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "static_credential_rejected",
+      "action": "model_cooldown",
+      "threshold": 1,
+      "failure_window_ms": 60000,
+      "default_cooldown_ms": 30000
+    },
+    {
+      "kind": "credential_rejected",
+      "action": "credential_block",
+      "block_scopes": ["account"],
+      "default_block_scope": "account",
+      "recovery": "credentials_updated"
+    },
+    {
+      "kind": "reauthentication_required",
+      "action": "credential_block",
+      "block_scopes": ["account"],
+      "default_block_scope": "account",
+      "recovery": "credentials_updated"
+    },
+    {
+      "kind": "quota_exhausted",
+      "action": "quota_block",
+      "block_scopes": ["account", "account_model"],
+      "recovery": "usage_snapshot"
+    },
+    {
+      "kind": "billing_blocked",
+      "action": "quota_block",
+      "block_scopes": ["account"],
+      "default_block_scope": "account",
+      "recovery": "billing_snapshot"
+    },
+    {
+      "kind": "workspace_deactivated",
+      "action": "policy_block",
+      "block_scopes": ["account"],
+      "default_block_scope": "account",
+      "recovery": "account_status"
+    },
+    {
+      "kind": "model_unsupported",
+      "action": "policy_block",
+      "block_scopes": ["account_model"],
+      "default_block_scope": "account_model",
+      "recovery": "model_catalog"
+    },
+    {
+      "kind": "region_unsupported",
+      "action": "policy_block",
+      "block_scopes": ["account", "account_model"],
+      "recovery": "policy_snapshot"
+    },
+    {
+      "kind": "permission_denied",
+      "action": "policy_block",
+      "block_scopes": ["account", "account_model"],
+      "recovery": "policy_snapshot"
+    },
+    {
+      "kind": "pool_exhausted",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "invalid_request",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "not_found",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "safety_rejected",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "malformed_response",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "request_cancelled",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "upstream_edge_rejected",
+      "action": "no_state_change"
+    },
+    {
+      "kind": "unclassified",
+      "action": "no_state_change"
+    }
+  ],
+  "signals": [
+    {
+      "id": "builtin.all.quota.usage_limit_reached",
+      "provider": "all",
+      "priority": 0,
+      "error_type_or_code": ["usage_limit_reached"],
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.quota.insufficient_quota",
+      "provider": "all",
+      "priority": 0,
+      "error_type_or_code": ["insufficient_quota", "quota_exhausted", "quota_exceeded", "quota_error"],
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.claude.quota.unified_rate_limit",
+      "provider": "claude",
+      "priority": 0,
+      "require_conditions": ["unified_rate_limit"],
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.codex.quota.retry_after_overflow",
+      "provider": "codex",
+      "priority": 0,
+      "statuses": [429],
+      "retry_after_over_ms": 86400000,
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.claude.quota.retry_after_overflow",
+      "provider": "claude",
+      "priority": 0,
+      "statuses": [429],
+      "retry_after_over_ms": 86400000,
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.codex.pool.no_available_account",
+      "provider": "codex",
+      "priority": 0,
+      "error_code": "no_available_account",
+      "semantic": "pool_exhausted"
+    },
+    {
+      "id": "builtin.all.pool.remote_pool_unavailable",
+      "provider": "all",
+      "priority": 0,
+      "error_code": "remote_pool_unavailable",
+      "semantic": "pool_exhausted"
+    },
+    {
+      "id": "builtin.all.billing.billing_not_active",
+      "provider": "all",
+      "priority": 5,
+      "error_type_or_code": ["billing_not_active", "billing_hard_limit_reached", "billing_error"],
+      "semantic": "billing_blocked",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.auth.invalid_api_key",
+      "provider": "all",
+      "priority": 5,
+      "error_type_or_code": ["invalid_api_key", "authentication_error"],
+      "semantic": "credential_rejected",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.claude.auth.permission_error",
+      "provider": "claude",
+      "priority": 5,
+      "error_type": "permission_error",
+      "semantic": "credential_rejected",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.auth.oauth_token_revoked",
+      "provider": "all",
+      "priority": 5,
+      "error_code": "oauth_token_revoked",
+      "semantic": "reauthentication_required",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.workspace.deactivated",
+      "provider": "all",
+      "priority": 5,
+      "statuses": [402],
+      "error_code": "deactivated_workspace",
+      "semantic": "workspace_deactivated",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.model.model_not_found",
+      "provider": "all",
+      "priority": 5,
+      "error_code": "model_not_found",
+      "semantic": "model_unsupported"
+    },
+    {
+      "id": "builtin.all.model.at_capacity",
+      "provider": "all",
+      "priority": 5,
+      "error_code": "model_at_capacity",
+      "semantic": "model_overloaded"
+    },
+    {
+      "id": "builtin.all.safety.content_policy",
+      "provider": "all",
+      "priority": 5,
+      "error_type_or_code": ["content_policy_violation", "safety_rejected"],
+      "semantic": "safety_rejected"
+    },
+    {
+      "id": "builtin.all.rate.rate_limit_error",
+      "provider": "all",
+      "priority": 10,
+      "error_type_or_code": ["rate_limit_error", "rate_limit_exceeded"],
+      "semantic": "rate_limited"
+    },
+    {
+      "id": "builtin.all.ledger.permission_denied",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [402],
+      "semantic": "permission_denied",
+      "block_scope": "account_model"
+    },
+    {
+      "id": "builtin.all.status.429",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [429],
+      "semantic": "rate_limited"
+    },
+    {
+      "id": "builtin.all.status.401",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [401],
+      "semantic": "credential_rejected",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.status.403",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [403],
+      "semantic": "credential_rejected",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.status.451",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [451],
+      "semantic": "region_unsupported",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.all.status.529",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [529],
+      "semantic": "model_overloaded"
+    },
+    {
+      "id": "builtin.all.status.408",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [408],
+      "semantic": "unclassified"
+    },
+    {
+      "id": "builtin.all.status.400",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [400, 422],
+      "semantic": "invalid_request"
+    },
+    {
+      "id": "builtin.all.status.404",
+      "provider": "all",
+      "priority": 20,
+      "statuses": [404],
+      "semantic": "not_found"
+    },
+    {
+      "id": "builtin.all.status.5xx",
+      "provider": "all",
+      "priority": 30,
+      "status_min": 500,
+      "status_max": 599,
+      "semantic": "upstream_unavailable"
+    }
+  ],
+  "rule_kinds": [
+    { "kind": "billing_blocked", "semantic": "billing_blocked", "block_scope": "account" },
+    { "kind": "quota_exhausted", "semantic": "quota_exhausted", "block_scope": "account" },
+    { "kind": "auth_invalid", "semantic": "credential_rejected", "blocking": false },
+    { "kind": "permission_denied", "semantic": "permission_denied", "block_scope": "account" },
+    { "kind": "rate_limited", "semantic": "rate_limited" },
+    { "kind": "service_unavailable", "semantic": "upstream_unavailable" },
+    { "kind": "pool_unavailable", "semantic": "pool_exhausted" }
+  ]
+}

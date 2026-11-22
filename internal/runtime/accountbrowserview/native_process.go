@@ -19,6 +19,7 @@ func serveNative(ctx context.Context, binary string, pid int, started uint64, co
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, nativeArgs(pid, started)...)
+	prepareBrowserCommand(command)
 	output, writer, err := os.Pipe()
 	if err != nil {
 		return surfaceFailure("browser_native_helper_unavailable")

@@ -62,7 +62,9 @@ func buildHelper(ctx context.Context) (string, func(), error) {
 }
 
 func runDotnet(ctx context.Context, dir, project, rid, output string) *exec.Cmd {
-	return exec.CommandContext(ctx, "dotnet", "publish", project, "--configuration", "Release", "--runtime", rid, "--self-contained", "true", "-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true", "--output", output)
+	command := exec.CommandContext(ctx, "dotnet", "publish", project, "--configuration", "Release", "--runtime", rid, "--self-contained", "true", "-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true", "--output", output)
+	prepareBrowserCommand(command)
+	return command
 }
 
 func preflight(ctx context.Context, binary string) error {

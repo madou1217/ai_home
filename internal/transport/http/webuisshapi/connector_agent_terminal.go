@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/remoteconnector"
+	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 )
 
@@ -33,6 +35,11 @@ type ConnectorAgentTerminalDependencies struct {
 	AIHomeDir      string
 	SelfBaseURL    string
 	Launcher       TerminalLauncher
+	// Preparer supplies the Server gateway environment (base URL and key).
+	// Connector agent terminals intentionally use gateway execution: account
+	// projection requires a session-close hook that the terminal launcher does
+	// not expose yet, and gateway mode keeps refreshed credentials on the Server.
+	Preparer chatruntime.NativeLaunchPreparer
 }
 
 // ConnectorAgentTerminalHandler launches Codex or Claude on the AIH Server with
@@ -46,6 +53,7 @@ type ConnectorAgentTerminalHandler struct {
 	aiHomeDir      string
 	selfBaseURL    string
 	launcher       TerminalLauncher
+	preparer       chatruntime.NativeLaunchPreparer
 }
 
 func NewConnectorAgentTerminalHandler(dependencies ConnectorAgentTerminalDependencies) (*ConnectorAgentTerminalHandler, error) {
@@ -60,7 +68,17 @@ func NewConnectorAgentTerminalHandler(dependencies ConnectorAgentTerminalDepende
 		aiHomeDir:      strings.TrimSpace(dependencies.AIHomeDir),
 		selfBaseURL:    strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/"),
 		launcher:       dependencies.Launcher,
+		preparer:       dependencies.Preparer,
 	}, nil
+}
+
+func hasEnvKey(env []string, key string) bool {
+	for _, item := range env {
+		if strings.HasPrefix(item, key+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -82,7 +100,13 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		writeError(response, http.StatusBadRequest, "workspace_not_found", "workspace id is required")
 		return
 	}
-	var body terminalBody
+	var body struct {
+		Agent string `json:"agent"`
+		Model string `json:"model"`
+		Fresh bool   `json:"fresh"`
+		Cols  any    `json:"cols"`
+		Rows  any    `json:"rows"`
+	}
 	if request.Body != nil {
 		raw, err := io.ReadAll(io.LimitReader(request.Body, maxConnectorBodyBytes+1))
 		if err != nil {
@@ -159,6 +183,41 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		}
 		writeError(response, http.StatusServiceUnavailable, "provider_cli_unavailable", buildErr.Error())
 		return
+	}
+	if handler.preparer != nil {
+		target, targetErr := handler.preparer.GetTarget(request.Context(), agent, "")
+		if targetErr != nil {
+			writeError(response, http.StatusServiceUnavailable, "native_target_unavailable", "无法解析 Server 网关执行目标")
+			return
+		}
+		plan, planErr := handler.preparer.Prepare(request.Context(), chatruntime.NativeLaunchRequest{
+			Target: target, CommandName: agent, Args: providerArgs,
+		})
+		if planErr != nil {
+			writeError(response, http.StatusServiceUnavailable, "native_launch_prepare_failed", "无法准备 Provider 启动环境")
+			return
+		}
+		if plan.Release != nil {
+			writeError(response, http.StatusConflict, "connector_agent_projection_unsupported", "账号投影终端缺少会话关闭钩子；请使用网关模式")
+			return
+		}
+		if resolved, lookErr := exec.LookPath(plan.BinaryName); lookErr == nil {
+			providerPath = resolved
+		} else {
+			providerPath = plan.BinaryName
+		}
+		providerArgs = append([]string(nil), plan.Args...)
+		providerEnv = append([]string(nil), plan.Env...)
+		if !hasEnvKey(providerEnv, "AIH_HOME_DIR") {
+			providerEnv = append(providerEnv, "AIH_HOME_DIR="+handler.aiHomeDir)
+		}
+		if model := strings.TrimSpace(body.Model); model != "" {
+			if agent == "codex" {
+				providerArgs = append(providerArgs, "-m", model)
+			} else {
+				providerArgs = append(providerArgs, "--model", model)
+			}
+		}
 	}
 	suffix := ""
 	if body.Fresh {

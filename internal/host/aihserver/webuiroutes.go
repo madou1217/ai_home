@@ -412,6 +412,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		AIHomeDir:      dependencies.AIHomeDir,
 		SelfBaseURL:    dependencies.SelfBaseURL,
 		Launcher:       connectorLauncher,
+		Preparer:       dependencies.NativeWorkPreparer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建工作区 Connector Agent 入口失败: %w", err)

@@ -31,6 +31,7 @@ var proxyEnvNames = []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}
 func ResolveAccountLaunchEgress(
 	ctx context.Context,
 	aiHomeDir string,
+	provider string,
 	accountRef string,
 ) (LaunchEgress, error) {
 	ref := strings.TrimSpace(accountRef)
@@ -48,21 +49,16 @@ func ResolveAccountLaunchEgress(
 		return LaunchEgress{}, fmt.Errorf("egress_binding_retired: %s", strings.TrimSpace(binding.Mode))
 	}
 	mode := strings.ToLower(strings.TrimSpace(binding.Mode))
+	if mode == agyegress.ModePool {
+		// 池有独立的车道与无内核直连池解析，见下方。
+	} else {
+		exit, exitErr := ResolveNonPoolExit(ctx, aiHomeDir, provider, &binding)
+		if exitErr != nil {
+			return LaunchEgress{}, exitErr
+		}
+		return LaunchEgress{Bound: true, Mode: exit.Mode, ProxyURL: exit.ProxyURL}, nil
+	}
 	switch mode {
-	case agyegress.ModeDirect, agyegress.ModeTUN, agyegress.ModeSystem:
-		return LaunchEgress{Bound: true, Mode: mode}, nil
-	case agyegress.ModeURL:
-		proxyURL := strings.TrimSpace(binding.ProxyURL)
-		if proxyURL == "" {
-			return LaunchEgress{}, errors.New("egress_proxy_missing")
-		}
-		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
-	case agyegress.ModeSSH:
-		proxyURL, err := ManagedSSHProxyURL(aiHomeDir, binding.ProxyURL)
-		if err != nil {
-			return LaunchEgress{}, fmt.Errorf("ssh_proxy_unavailable: %w", err)
-		}
-		return LaunchEgress{Bound: true, Mode: mode, ProxyURL: proxyURL}, nil
 	case agyegress.ModePool:
 		state, reason := ReadLivePoolState(aiHomeDir, nil)
 		laneURL := ""

@@ -5,6 +5,7 @@ import { sshHostsAPI } from '@/services/api';
 import { buildAppHref } from '@/services/app-navigation';
 import { useOpenRemoteWorkspaceTerminal } from '@/features/web-terminal/use-open-remote-workspace-terminal';
 import RemoteTargetPanel from '@/features/remote-targets/RemoteTargetPanel';
+import WorkspaceConnectorPanel from '@/features/workspace-connectors/WorkspaceConnectorPanel';
 import type { SshConnection, SshWorkspace } from './ssh-hosts-model';
 import './remote-workspaces-panel.css';
 import Reveal from '@/components/ui/Reveal';
@@ -154,6 +155,7 @@ export default function RemoteWorkspacesPanel({ onOpenInWork }: {
       </Reveal>
       </section>
       <RemoteTargetPanel />
+      <WorkspaceConnectorPanel />
     </>
   );
 }

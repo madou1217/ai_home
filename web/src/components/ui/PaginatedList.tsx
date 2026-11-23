@@ -45,7 +45,7 @@ export default function PaginatedList<T>({
   return (
     <div className={`paginated-list ${className}`.trim()}>
       {/* 翻页由预提交 surface 切换驱动旧页离场 + 新页进场；页内重排仍由 FLIP 接管。 */}
-      <div ref={surfaceRef}>
+      <div ref={surfaceRef} className="paginated-list-surface">
         <div ref={flipRef} className="paginated-list-grid aih-fade-in">
           {visibleItems.map((item, index) => renderItem(item, (currentPage - 1) * safePageSize + index))}
         </div>
@@ -58,6 +58,7 @@ export default function PaginatedList<T>({
             pageSize={safePageSize}
             total={total}
             showSizeChanger={false}
+            responsive
             onChange={(nextPage) => {
               switchSurface(() => setPage(nextPage), {
                 current: currentPage,

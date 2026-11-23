@@ -214,6 +214,7 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     toolBarRender,
     toolbar,
     locale: { emptyText: desktopEmptyState },
+    scroll: rest.scroll ?? { x: 'max-content' },
     ...rest,
     // 在调用方 onRow 之上补 data-flip-key：容器据此判断行顺序是否真的变了
     onRow: (record: T, index?: number) => {
@@ -226,7 +227,7 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     },
   };
   return (
-    <div ref={tableSurfaceRef}>
+    <div ref={tableSurfaceRef} className="unified-list-table-surface">
       <div ref={fadeRef} className="unified-list-table-fade">
         <ProTable {...(fixedProps as Omit<typeof fixedProps, 'rowKey'>)} rowKey={rowKey as never}>
           {children ? <span style={{ display: 'none' }}>{children}</span> : null}

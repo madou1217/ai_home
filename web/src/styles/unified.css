@@ -13,6 +13,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--unified-section-gap);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
   padding: 0 var(--unified-page-padding) var(--unified-page-padding);
 }
 
@@ -21,16 +24,100 @@
   padding-block: var(--space-10) var(--space-2) !important;
 }
 
+.unified-page-wrapper .ant-page-header-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  min-width: 0;
+}
+
+.unified-page-wrapper .ant-page-header-heading-left {
+  display: flex;
+  flex: 1 1 240px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+  margin-block: 0;
+  overflow: visible;
+}
+
+.unified-page-wrapper .ant-page-header-heading-title {
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-end: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.unified-page-wrapper .ant-page-header-heading-sub-title {
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-end: 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-body-sm);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.unified-page-wrapper .ant-page-header-heading-extra {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  max-width: 100%;
+  margin-block: 0;
+  white-space: normal;
+}
+
+.unified-page-wrapper .ant-page-header-content {
+  min-width: 0;
+  padding-top: var(--space-4);
+}
+
 .unified-page-content {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  max-width: 100%;
 }
 
 @media (max-width: 767px) {
   .unified-page-wrapper {
     padding: 0 var(--hos-space-4, 16px) var(--hos-space-4, 16px);
     gap: var(--hos-space-3, 12px);
+  }
+
+  .unified-page-wrapper .ant-page-header {
+    padding-block: var(--space-6) var(--space-2) !important;
+  }
+
+  .unified-page-wrapper .ant-page-header-heading-left {
+    flex: 1 1 180px;
+  }
+
+  .unified-page-wrapper .ant-page-header-heading-extra {
+    width: auto;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 479px) {
+  .unified-page-wrapper {
+    padding: 0 var(--space-6) var(--space-6);
+  }
+
+  .unified-page-wrapper .ant-page-header-heading {
+    gap: var(--space-3);
+  }
+
+  .unified-page-wrapper .ant-page-header-heading-extra {
+    width: 100%;
   }
 }
 
@@ -57,6 +144,8 @@
 .ant-pro-card.unified-section-card > .ant-pro-card-header {
   min-height: 48px;
   padding: var(--space-6) var(--unified-card-padding) !important;
+  gap: var(--space-3) var(--space-4);
+  flex-wrap: wrap;
 }
 
 .ant-pro-card.unified-section-card.ant-pro-card-border.ant-pro-card-has-header > .ant-pro-card-header,
@@ -65,13 +154,25 @@
 }
 
 .ant-pro-card.unified-section-card .ant-pro-card-title {
+  min-width: 0;
   font-size: var(--hos-text-h3);
   font-weight: 600;
   color: var(--color-heading);
+  overflow-wrap: anywhere;
+}
+
+.ant-pro-card.unified-section-card .ant-pro-card-extra {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  margin-inline-start: auto;
 }
 
 .ant-pro-card.unified-section-card .ant-pro-card-body {
   padding: var(--unified-card-padding) !important;
+  min-width: 0;
 }
 
 /* 2b. 卡片即容器：卡内的表格/列表去掉自身边框与阴影，杜绝「卡中卡」双层描边。
@@ -116,16 +217,75 @@
 /* 指标卡统一改用框架 StatisticCard.Group（自带卡片/响应式/分隔），
  * 原自定义 .unified-stat-card / .unified-stat-row 已删除——优先框架组件、少写 CSS。 */
 
-/* 3. 统一 ProTable 表格与大厂行 hover 高亮 */
+/* 3. 统一 ProTable 表格与大厂行 hover 高亮；宽表在自身容器内横向滚动，不撑破页面。 */
 .unified-list-table {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--unified-card-border-radius);
   background: var(--color-surface);
   overflow: hidden;
 }
 
+.unified-list-table .ant-table-wrapper,
+.unified-list-table .ant-table-container,
+.unified-list-table .ant-table-content {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.unified-list-table .ant-table-content {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .unified-list-table .ant-table {
   background: transparent !important;
+}
+
+.unified-list-table .ant-table-tbody > tr > td {
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.unified-list-table .ant-table-tbody > tr:focus-within > td {
+  background: var(--color-overlay-subtle);
+}
+
+/* 共享交互控件态（按钮 / 标签页 / 卡片 / 列表行）：统一过渡时长与焦点可见环，不靠纯色表达。 */
+.unified-page-wrapper .ant-btn,
+.unified-page-wrapper .ant-tabs-tab,
+.unified-page-wrapper .ant-segmented-item,
+.unified-page-wrapper .ant-pagination-item {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+.unified-page-wrapper .ant-btn:not(:disabled):not(.ant-btn-loading):active {
+  border-color: var(--color-accent);
+}
+
+.unified-page-wrapper .ant-btn:disabled,
+.unified-page-wrapper .ant-btn.ant-btn-disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.unified-page-wrapper .ant-tabs-tab:focus-visible,
+.unified-page-wrapper .ant-segmented-item:focus-visible,
+.unified-page-wrapper .ant-pagination-item:focus-visible,
+.unified-page-wrapper .ant-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  box-shadow: var(--ring-focus);
+}
+
+.unified-list-table-surface {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* 表头底色 / 行 hover 已迁到 antd 主题 token（config.ts > antd.theme.components.Table），
@@ -284,5 +444,30 @@
   height: 100% !important;
   flex: 1 1 0 !important;
   min-height: 0 !important;
+}
+
+/* =============================================================================
+ * 共享动效降级约定（prefers-reduced-motion: reduce）
+ * 共享原语入场不做位移/透明度补间，状态切换瞬时完成，不破坏 rc-motion 事件链。
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .unified-list-table-skeleton,
+  .unified-list-table-fade,
+  .paginated-list-grid.aih-fade-in,
+  .aih-reveal,
+  .aih-reveal-inner {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .unified-list-table .ant-table-tbody > tr > td,
+  .unified-page-wrapper .ant-btn,
+  .unified-page-wrapper .ant-tabs-tab,
+  .unified-page-wrapper .ant-segmented-item,
+  .unified-page-wrapper .ant-pagination-item,
+  .hos-setting-status-tag {
+    transition: none !important;
+  }
 }
 

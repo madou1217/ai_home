@@ -7,7 +7,7 @@ interface Props {
 }
 
 /** 空状态：「NO SIGNAL」式线框 + 说明 + 可选主操作。只描述真实空数据，不放示例数据。 */
-export default function EmptySignal({ title = 'NO SIGNAL', description, action }: Props) {
+export default function EmptySignal({ title = '暂无数据', description, action }: Props) {
   return (
     <div className="mhud-empty" role="status">
       <span className="mhud-empty__frame" aria-hidden="true">

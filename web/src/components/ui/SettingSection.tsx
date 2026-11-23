@@ -54,6 +54,9 @@ export const SettingSection = memo(function SettingSection({
   className,
   style
 }: SettingSectionProps) {
+  const normalizedTitle = typeof title === 'string' ? title.trim() : null;
+  const normalizedDesc = typeof description === 'string' ? description.trim() : null;
+  const showDescription = Boolean(description) && (!normalizedTitle || !normalizedDesc || normalizedDesc !== normalizedTitle);
   return (
     <section
       className={['hos-setting-section', 'hud-panel', className].filter(Boolean).join(' ')}
@@ -65,7 +68,7 @@ export const SettingSection = memo(function SettingSection({
             <h2 className="hos-setting-section-title">{title}</h2>
             {status ? <span className="hos-setting-section-status">{status}</span> : null}
           </div>
-          {description ? <p className="hos-setting-section-desc">{description}</p> : null}
+          {showDescription ? <p className="hos-setting-section-desc">{description}</p> : null}
         </div>
         {extra ? <div className="hos-setting-section-extra">{extra}</div> : null}
       </header>
@@ -92,6 +95,9 @@ export const SettingRow = memo(function SettingRow({
   className,
   style
 }: SettingRowProps) {
+  const normalizedTitle = typeof title === 'string' ? title.trim() : null;
+  const normalizedDesc = typeof description === 'string' ? description.trim() : null;
+  const showDescription = Boolean(description) && (!normalizedTitle || !normalizedDesc || normalizedDesc !== normalizedTitle);
   return (
     <div
       className={[
@@ -117,7 +123,7 @@ export const SettingRow = memo(function SettingRow({
           )}
           {status ? <span className="hos-setting-row-status">{status}</span> : null}
         </div>
-        {description ? <p className="hos-setting-row-desc">{description}</p> : null}
+        {showDescription ? <p className="hos-setting-row-desc">{description}</p> : null}
         {persistedValue ? <div className="hos-setting-row-persisted">{persistedValue}</div> : null}
         {caveat ? <p className="hos-setting-row-caveat">{caveat}</p> : null}
       </div>

@@ -9,9 +9,10 @@
 
 .hos-setting-section-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-3) var(--space-4);
   padding: var(--space-8) var(--space-8) var(--space-4);
 }
 
@@ -51,15 +52,16 @@
   height: 7px;
   flex: none;
   background: var(--color-accent);
-  box-shadow: var(--hud-glow-accent);
 }
 
 .hos-setting-section-status,
 .hos-setting-section-extra {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
+  max-width: 100%;
 }
 
 .hos-setting-section-desc {

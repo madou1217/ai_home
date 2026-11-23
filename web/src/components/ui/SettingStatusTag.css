@@ -65,3 +65,13 @@
 .hos-setting-status-tag-text {
   line-height: 1;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .hos-setting-status-tag {
+    transition: none;
+  }
+
+  .hos-setting-status-tag-icon .anticon-spin {
+    animation: none !important;
+  }
+}

@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Form, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Form, Input, Modal, Segmented, Select, Space, Typography, message } from 'antd';
+import { FolderOpenOutlined, LinkOutlined } from '@ant-design/icons';
 import { toolkitAPI } from '@/services/api';
-import type { NativeResourceKind, NativeResourceReport } from '@/types';
+import type {
+  NativeResourceKind,
+  NativeResourceReport,
+  NativeResourceSourceImport
+} from '@/types';
 import {
   KIND_LABELS,
   RESOURCE_KINDS,
@@ -24,6 +29,19 @@ interface InstallFormValues {
   name?: string;
 }
 
+type SourceMode = 'path' | 'folder' | 'url';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function relativePathOf(file: File): string {
+  const withPath = file as File & { webkitRelativePath?: string };
+  return withPath.webkitRelativePath || file.name;
+}
+
 export default function NativeResourceInstallModal({
   open,
   report,
@@ -34,6 +52,11 @@ export default function NativeResourceInstallModal({
   const [form] = Form.useForm<InstallFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [candidate, setCandidate] = useState<string>();
+  const [sourceMode, setSourceMode] = useState<SourceMode>('path');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [upload, setUpload] = useState<NativeResourceSourceImport | null>(null);
+  const [importing, setImporting] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const kind = Form.useWatch('kind', form) || initialKind;
   const candidates = useMemo(
     () => (report?.installCandidates || []).filter((item) => item.kind === kind),
@@ -41,22 +64,87 @@ export default function NativeResourceInstallModal({
   );
   const owners = useMemo(() => ownerOptions(report, kind), [report, kind]);
 
+  const resetSource = (mode: SourceMode) => {
+    setSourceMode(mode);
+    setCandidate(undefined);
+    setSourceUrl('');
+    setUpload(null);
+    form.setFieldsValue({ source: '' });
+  };
+
   useEffect(() => {
     if (!open) return;
     setCandidate(undefined);
+    setSourceMode('path');
+    setSourceUrl('');
+    setUpload(null);
     form.setFieldsValue({ kind: initialKind, owners: [], source: '', name: undefined });
   }, [open, initialKind, form]);
 
+  const importFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const entries = Array.from(files)
+      .filter((file) => {
+        const rel = relativePathOf(file);
+        return rel !== '.DS_Store' && !rel.split('/').includes('.git');
+      })
+      .map((file) => ({ path: relativePathOf(file), file }));
+    if (!entries.length) {
+      message.warning('所选文件夹没有可导入的文件');
+      return;
+    }
+    setImporting(true);
+    try {
+      const result = await toolkitAPI.uploadNativeResourceSource(kind, entries);
+      setUpload(result);
+      form.setFieldsValue({ source: '' });
+      message.success(`已导入 ${result.files} 个文件（${formatBytes(result.bytes)}）`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '文件夹导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const importUrl = async () => {
+    const value = sourceUrl.trim();
+    if (!value) {
+      message.warning('请填写安装源 URL');
+      return;
+    }
+    setImporting(true);
+    try {
+      const result = await toolkitAPI.importNativeResourceSourceUrl(kind, value);
+      setUpload(result);
+      form.setFieldsValue({ source: '' });
+      message.success(`已导入 ${result.files} 个文件（${formatBytes(result.bytes)}）`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'URL 导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const submit = async () => {
     const values = await form.validateFields();
+    const source = values.source?.trim() || '';
+    if (sourceMode === 'path' && !source) {
+      message.warning('请填写安装源路径');
+      return;
+    }
+    if (sourceMode !== 'path' && !upload) {
+      message.warning(sourceMode === 'folder' ? '请选择文件夹' : '请先下载 URL 安装源');
+      return;
+    }
     const selectedKind = values.kind;
     const targets = values.owners;
     setSubmitting(true);
     try {
+      const sourcePayload = sourceMode === 'path' ? { source } : { uploadId: upload?.uploadId };
       const results = await Promise.allSettled(targets.map((owner) => toolkitAPI.operateNativeResource({
         kind: selectedKind,
         action: 'install',
-        source: values.source.trim(),
+        ...sourcePayload,
         ...(selectedKind === 'mcp' ? { id: values.name?.trim() } : {}),
         ...ownerPayload(owner)
       })));
@@ -65,8 +153,9 @@ export default function NativeResourceInstallModal({
         .filter((item) => item.result.status === 'rejected');
       const succeeded = targets.length - failed.length;
       if (succeeded > 0) onInstalled(selectedKind);
+      const sourceLabel = sourceMode === 'path' ? source : upload?.name || '安装源';
       if (!failed.length) {
-        message.success(`${KIND_LABELS[selectedKind]} ${values.source.trim()} 已安装到 ${targets.length} 个目标`);
+        message.success(`${KIND_LABELS[selectedKind]} ${sourceLabel} 已安装到 ${targets.length} 个目标`);
         onClose();
         return;
       }
@@ -88,14 +177,15 @@ export default function NativeResourceInstallModal({
       onOk={() => void submit()}
       onCancel={onClose}
       destroyOnClose
+      width={640}
     >
       <Form form={form} layout="vertical" requiredMark={false}>
         <Form.Item name="kind" label="资源类型" rules={[{ required: true, message: '请选择资源类型' }]}>
           <Select
             options={RESOURCE_KINDS.map((item) => ({ value: item, label: KIND_LABELS[item] }))}
             onChange={() => {
-              setCandidate(undefined);
-              form.setFieldsValue({ owners: [], source: '', name: undefined });
+              resetSource('path');
+              form.setFieldsValue({ owners: [], name: undefined });
             }}
           />
         </Form.Item>
@@ -111,40 +201,114 @@ export default function NativeResourceInstallModal({
             <Input placeholder="例如 filesystem" autoComplete="off" />
           </Form.Item>
         ) : null}
-        {candidates.length ? (
-          <Form.Item label="随包提供的源">
-            <Select
-              allowClear
-              value={candidate}
-              placeholder="选择内置资源，或直接填写下方路径"
-              options={candidates.map((item) => ({
-                value: item.source,
-                label: `${item.id}（${item.source}）`
-              }))}
-              onChange={(value?: string) => {
-                setCandidate(value);
-                form.setFieldsValue({ source: value || '' });
+        <Form.Item label="安装源">
+          <Segmented
+            block
+            value={sourceMode}
+            onChange={(value) => resetSource(value as SourceMode)}
+            options={[
+              { value: 'path', label: '内置 / 路径' },
+              { value: 'folder', label: '本地文件夹' },
+              { value: 'url', label: 'URL' }
+            ]}
+          />
+        </Form.Item>
+        {sourceMode === 'path' ? (
+          <>
+            {candidates.length ? (
+              <Form.Item label="随包提供的源">
+                <Select
+                  allowClear
+                  value={candidate}
+                  placeholder="选择内置资源，或直接填写下方路径"
+                  options={candidates.map((item) => ({
+                    value: item.source,
+                    label: `${item.id}（${item.source}）`
+                  }))}
+                  onChange={(value?: string) => {
+                    setCandidate(value);
+                    form.setFieldsValue({ source: value || '' });
+                  }}
+                />
+              </Form.Item>
+            ) : null}
+            <Form.Item
+              name="source"
+              label={kind === 'mcp' ? 'Node 脚本路径' : '安装源路径'}
+              rules={[{ required: true, message: '请填写安装源路径' }]}
+              extra={
+                <Typography.Text type="secondary">
+                  路径相对安装包根目录；也可以选择文件夹或从 URL 导入。
+                  {kind === 'skill' ? ' Skill 目录需包含 SKILL.md。' : ''}
+                  {kind === 'plugin' ? ' 插件目录需包含 package.json 与 agentPlugin 声明。' : ''}
+                </Typography.Text>
+              }
+            >
+              <Input
+                placeholder={kind === 'skill' ? 'assets/provider-skills/aih-collab' : 'assets/native-plugins/<plugin>'}
+                autoComplete="off"
+              />
+            </Form.Item>
+          </>
+        ) : null}
+        {sourceMode === 'folder' ? (
+          <Form.Item
+            label="本地文件夹"
+            extra={<Typography.Text type="secondary">选择包含 package.json / SKILL.md 的目录；单包最多 4MB、256 个文件。</Typography.Text>}
+          >
+            <Space wrap>
+              <Button
+                icon={<FolderOpenOutlined />}
+                loading={importing}
+                onClick={() => folderInputRef.current?.click()}
+              >选择文件夹</Button>
+              {upload ? (
+                <Typography.Text type="secondary">
+                  已导入：{upload.name || '文件夹'} · {upload.files} 个文件 · {formatBytes(upload.bytes)}
+                </Typography.Text>
+              ) : null}
+            </Space>
+            <input
+              ref={(node) => {
+                folderInputRef.current = node;
+                node?.setAttribute('webkitdirectory', '');
+                node?.setAttribute('directory', '');
+              }}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(event) => {
+                void importFiles(event.target.files);
+                event.target.value = '';
               }}
             />
           </Form.Item>
         ) : null}
-        <Form.Item
-          name="source"
-          label={kind === 'mcp' ? 'Node 脚本路径' : '安装源路径'}
-          rules={[{ required: true, message: '请填写安装源路径' }]}
-          extra={
-            <Typography.Text type="secondary">
-              必须是随安装包交付的目录或脚本，路径相对安装包根目录。
-              {kind === 'skill' ? ' Skill 目录需包含 SKILL.md。' : ''}
-              {kind === 'plugin' ? ' 插件目录需包含 package.json 与 agentPlugin 声明。' : ''}
-            </Typography.Text>
-          }
-        >
-          <Input
-            placeholder={kind === 'skill' ? 'assets/provider-skills/aih-collab' : 'assets/native-plugins/<plugin>'}
-            autoComplete="off"
-          />
-        </Form.Item>
+        {sourceMode === 'url' ? (
+          <Form.Item
+            label="安装源 URL"
+            extra={<Typography.Text type="secondary">支持 http(s) 直链；zip / tar.gz / tar 会自动解包，单文件直接作为源。</Typography.Text>}
+          >
+            <Space.Compact style={{ width: '100%' }}>
+              <Input
+                value={sourceUrl}
+                placeholder="https://example.com/plugin.zip"
+                autoComplete="off"
+                onChange={(event) => setSourceUrl(event.target.value)}
+              />
+              <Button
+                icon={<LinkOutlined />}
+                loading={importing}
+                onClick={() => void importUrl()}
+              >下载</Button>
+            </Space.Compact>
+            {upload ? (
+              <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                已导入：{upload.name} · {upload.files} 个文件 · {formatBytes(upload.bytes)}
+              </Typography.Text>
+            ) : null}
+          </Form.Item>
+        ) : null}
         <Form.Item
           name="owners"
           label={(

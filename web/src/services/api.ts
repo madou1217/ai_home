@@ -3010,6 +3010,30 @@ export const toolkitAPI = {
     const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
     return response.data;
   },
+  uploadNativeResourceSource: async (
+    kind: import('@/types').NativeResourceKind,
+    files: Array<{ path: string; file: File }>
+  ): Promise<import('@/types').NativeResourceSourceImport> => {
+    const form = new FormData();
+    form.append('kind', kind);
+    for (const item of files) form.append('paths', item.path);
+    for (const item of files) form.append('files', item.file, item.file.name);
+    const response = await api.post<import('@/types').NativeResourceSourceImport>(
+      '/webui/toolkit/native-resources/source/files',
+      form
+    );
+    return response.data;
+  },
+  importNativeResourceSourceUrl: async (
+    kind: import('@/types').NativeResourceKind,
+    url: string
+  ): Promise<import('@/types').NativeResourceSourceImport> => {
+    const response = await api.post<import('@/types').NativeResourceSourceImport>(
+      '/webui/toolkit/native-resources/source/url',
+      { kind, url }
+    );
+    return response.data;
+  },
   operateNativeResource: async (input: {
     kind: import('@/types').NativeResourceKind;
     action: import('@/types').NativeResourceAction;
@@ -3017,6 +3041,7 @@ export const toolkitAPI = {
     provider?: string;
     host?: string;
     source?: string;
+    uploadId?: string;
     tool?: string;
     args?: Record<string, unknown>;
   }): Promise<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }> => {

@@ -95,7 +95,7 @@ func NewService(cfg Config) (*Service, error) {
 		return nil, err
 	}
 
-	return &Service{
+	svc := &Service{
 		aiHomeDir:       cfg.AIHomeDir,
 		hostHomeDir:     cfg.HostHomeDir,
 		catalog:         catalog,
@@ -108,7 +108,9 @@ func NewService(cfg Config) (*Service, error) {
 		skills:          sm,
 		mcps:            mm,
 		doctor:          newDoctorCache(),
-	}, nil
+	}
+	svc.pruneSourceUploads(svc.sourceUploadRoot())
+	return svc, nil
 }
 
 func envFromOS() map[string]string {
@@ -210,6 +212,7 @@ type OperateInput struct {
 	Provider string         `json:"provider"`
 	Host     string         `json:"host"`
 	Source   string         `json:"source"`
+	UploadID string         `json:"uploadId"`
 	ID       string         `json:"id"`
 	Tool     string         `json:"tool"`
 	Args     map[string]any `json:"args"`
@@ -383,7 +386,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 	switch kind {
 	case "plugin":
 		if action == "install" {
-			src, sErr := s.sourceFor(input.Source)
+			src, sErr := s.installSource(input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -393,7 +396,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 	case "skill":
 		if action == "install" {
-			src, sErr := s.sourceFor(input.Source)
+			src, sErr := s.installSource(input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -407,15 +410,19 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 		switch action {
 		case "install":
-			src, sErr := s.sourceFor(input.Source)
+			src, sErr := s.installSource(input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
+			}
+			script, scriptErr := singleSourceFile(src)
+			if scriptErr != nil {
+				return OperateResponse{}, scriptErr
 			}
 			nodeBin := s.runner.FindNode()
 			if nodeBin == "" {
 				nodeBin = "node"
 			}
-			if _, addErr := s.mcps.add(ctx, id, MCPServerSpec{Command: nodeBin, Args: []string{src}}, sel.Provider); addErr != nil {
+			if _, addErr := s.mcps.add(ctx, id, MCPServerSpec{Command: nodeBin, Args: []string{script}}, sel.Provider); addErr != nil {
 				return OperateResponse{}, addErr
 			}
 			result, err = s.mcps.change(ctx, id, sel.Provider, "enable")
@@ -461,6 +468,15 @@ func normalizeSelector(provider, host string) (Selector, error) {
 		return Selector{}, fail("native_resource_selector_required")
 	}
 	return Selector{Provider: p, Host: h}, nil
+}
+
+// installSource 解析本次安装的源：优先一次性上传目录，其次分发包内相对/绝对路径。
+// 上传目录不在这里删除：多目标安装会并发复用同一个 uploadId，统一由过期清理回收。
+func (s *Service) installSource(input OperateInput) (string, error) {
+	if uploadID := strings.TrimSpace(input.UploadID); uploadID != "" {
+		return s.resolveUploadSource(uploadID)
+	}
+	return s.sourceFor(input.Source)
 }
 
 func (s *Service) sourceFor(rawSource string) (string, error) {

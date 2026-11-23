@@ -165,3 +165,12 @@ between the runs; a cache hit leaves both unchanged.
 翻译 helper 不再调用 responsibility disclaim：它作为 aih-launch 的后代启动，直接继承
 launcher 的辅助功能授权，系统设置里不再需要单独的 AIH Translation 条目。旧的条目可以
 删除；只有从 Finder 直接双击 AIH Translation.app 时才仍会按独立 App 授权。
+
+## 多窗口保护调整（2026-11-23）
+
+输入侧原先要求 Edge 只能有一个 >=100x80 的窗口，一次辅助窗口（Chat、工具栏提示、
+导航弹出的新窗口）就会终止会话。现在输入固定到捕获的 windowID，键盘命令先 raise
+该窗口，因此删除了 count==1 的检查；辅助窗口不再影响控制。
+
+实测：start -> navigate -> pointer -> key -> close 全部 202，帧号从 2 增长到 11，
+没有再出现 browser_multiple_windows_not_supported。

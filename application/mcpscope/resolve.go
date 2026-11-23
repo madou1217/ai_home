@@ -100,8 +100,13 @@ func Resolve(definitions []Definition, policy Policy, context Context) ([]Resolv
 	return resolved, nil
 }
 
-// Validate checks a policy without resolving it.
+// Validate checks a policy against the built-in registry.
 func Validate(policy Policy) error {
+	return ValidateWith(Builtins(), policy)
+}
+
+// ValidateWith checks a policy against an explicit registry.
+func ValidateWith(definitions []Definition, policy Policy) error {
 	mode := policy.Mode
 	if mode == "" {
 		mode = ModeAuto
@@ -114,7 +119,7 @@ func Validate(policy Policy) error {
 		return fmt.Errorf("unknown mcp policy mode %q", policy.Mode)
 	}
 	known := make(map[string]bool)
-	for _, definition := range Builtins() {
+	for _, definition := range definitions {
 		known[definition.ID] = true
 	}
 	for _, raw := range policy.Allow {

@@ -93,8 +93,12 @@ func mcpEnabledForSession(aiHomeDir, accountRef, agent string, noMCP bool, only 
 			}
 		}
 	}
+	definitions, loadErr := mcpscope.LoadRegistry(aiHomeDir)
+	if loadErr != nil {
+		definitions = mcpscope.Builtins()
+	}
 	resolved, err := mcpscope.ResolveSession(
-		mcpscope.Builtins(),
+		definitions,
 		policy,
 		mcpscope.SessionSelection{NoMCP: noMCP, Only: only},
 		mcpscope.Context{Provider: agent, WorkspaceBound: true},

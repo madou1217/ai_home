@@ -10,6 +10,10 @@ const (
 type Definition struct {
 	ID           string
 	DisplayName  string
+	Transport    string
+	Command      string
+	Args         []string
+	Env          map[string]string
 	Default      bool
 	Capabilities []string
 	// Providers restricts the definition to specific harnesses. Empty means all.

@@ -4706,4 +4706,11 @@ export interface AccountMCPPolicyResponse {
   accountRef: string;
   policy: AccountMCPPolicy;
   resolved: AccountMCPPolicyResolvedEntry[];
+  available: AccountMCPPolicyAvailableEntry[];
+}
+
+export interface AccountMCPPolicyAvailableEntry {
+  id: string;
+  displayName: string;
+  capabilities?: string[];
 }

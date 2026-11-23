@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Button, Checkbox, Select, Space, Spin, Typography } from 'antd';
 
-import type { Account, AccountMCPPolicy, AccountMCPPolicyResolvedEntry } from '@/types';
+import type { Account, AccountMCPPolicy, AccountMCPPolicyAvailableEntry, AccountMCPPolicyResolvedEntry } from '@/types';
 import { accountsAPI } from '@/services/api';
-
-const MCP_OPTIONS = [{ id: 'aih_remote', label: 'Remote Workspace Tools' }];
 
 export function AccountMCPPolicySection({ account }: { account: Account | null }) {
   const [mode, setMode] = useState<AccountMCPPolicy['mode']>('auto');
   const [allow, setAllow] = useState<string[]>([]);
   const [resolved, setResolved] = useState<AccountMCPPolicyResolvedEntry[]>([]);
+  const [available, setAvailable] = useState<AccountMCPPolicyAvailableEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -28,6 +27,7 @@ export function AccountMCPPolicySection({ account }: { account: Account | null }
         setMode(response.policy.mode);
         setAllow(response.policy.allow ?? []);
         setResolved(response.resolved ?? []);
+        setAvailable(response.available ?? []);
       })
       .catch((cause: unknown) => {
         if (alive) setError(cause instanceof Error ? cause.message : String(cause));
@@ -54,6 +54,7 @@ export function AccountMCPPolicySection({ account }: { account: Account | null }
       setMode(response.policy.mode);
       setAllow(response.policy.allow ?? []);
       setResolved(response.resolved ?? []);
+      setAvailable(response.available ?? []);
       setMessage('已保存；新会话启动时生效。');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -82,7 +83,7 @@ export function AccountMCPPolicySection({ account }: { account: Account | null }
         {mode === 'allowlist' ? (
           <Space direction="vertical" size={8}>
             <Typography.Text strong>允许的 MCP</Typography.Text>
-            {MCP_OPTIONS.map((item) => (
+            {available.map((item) => (
               <Checkbox
                 key={item.id}
                 checked={allow.includes(item.id)}
@@ -94,7 +95,7 @@ export function AccountMCPPolicySection({ account }: { account: Account | null }
                   );
                 }}
               >
-                {item.label}
+                {item.displayName || item.id}
               </Checkbox>
             ))}
           </Space>

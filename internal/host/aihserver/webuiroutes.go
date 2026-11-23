@@ -457,6 +457,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	accountMCPPolicy, err := webuiaccountmcppolicyapi.NewHandler(webuiaccountmcppolicyapi.Dependencies{
 		Authorizer: authorizer,
+		AIHomeDir:  dependencies.AIHomeDir,
 		Store:      accountMCPStore,
 	})
 	if err != nil {

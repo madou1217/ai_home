@@ -15,6 +15,7 @@ const keyPrefix = "account:mcp-policy:"
 
 // Store keeps one MCP policy per account in app-state.
 type Store struct {
+	aiHomeDir    string
 	databasePath string
 }
 
@@ -24,7 +25,7 @@ func NewStore(aiHomeDir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{databasePath: path}, nil
+	return &Store{aiHomeDir: aiHomeDir, databasePath: path}, nil
 }
 
 // Get returns the saved policy, or auto when none exists.
@@ -48,7 +49,11 @@ func (store *Store) Get(ctx context.Context, accountRef string) (mcpscope.Policy
 
 // Save validates and persists the policy.
 func (store *Store) Save(ctx context.Context, accountRef string, policy mcpscope.Policy) error {
-	if err := mcpscope.Validate(policy); err != nil {
+	definitions, err := mcpscope.LoadRegistry(store.aiHomeDir)
+	if err != nil {
+		return err
+	}
+	if err := mcpscope.ValidateWith(definitions, policy); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(policy)

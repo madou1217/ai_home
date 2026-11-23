@@ -13,10 +13,10 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/accountusagefeed"
-	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
-	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
+	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	inferencegateway "github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
@@ -25,7 +25,6 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
-	modelpricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -50,11 +49,9 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
-	pluginmodelcatalog "github.com/madou1217/ai_home/internal/adapters/pluginprovider/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
-	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/host/worknative"
@@ -65,12 +62,9 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/failureprovenance"
-	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
-	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
-	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -1421,83 +1415,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 家族模型目录经无客户端 HTTP 通道进入 Go 的账号索引后，未钉选征召按家族表链式
 	// 开启多个会话；模型没有家族候选时安静交回 Canonical。Node 侧交还门按「透传通道」
 	// 判定哪些模型交给这里，本通道不为「别的 Provider 的模型」兜底。
-	familyRelayAccounts, err := newFamilyRelayAccountSource(
-		catalog,
-		inference.recruiter,
-		familyRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建家族透传账号来源失败: %w",
-			err,
-		)
-	}
-	// 单 Provider 透传模块：账号来源与 Provider 变体由同一张注册表构造（见 relay_modules.go）。
-	relayModules, err := buildRelayModules(relayBuildContext{
-		Catalog:   catalog,
-		Recruiter: inference.recruiter,
-		AIHomeDir: aiHomeDir,
+	familyRelay, err := newFamilyRelayRuntime(familyRelayInputs{
+		catalog:     catalog,
+		recruiter:   inference.recruiter,
+		aiHomeDir:   aiHomeDir,
+		aliases:     inference.modelAliases,
+		store:       dependencies.Store,
+		fallback:    inference.handler,
+		credentials: credentials,
+		client:      relayClient,
+		egress:      relayEgress,
+		attempts:    accountRuntime,
+		upstream429: upstream429Controller,
+		usage:       attemptUsage,
+		gate:        usageGate,
 	})
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
-	// 同一入口上挂多个透传 Provider：**一个** relaycore.Handler + ProviderChain
-	// + 合并的账号来源。
-	//
-	// 为什么不是两个 Handler 串接：每个 Handler 在「服务不了」时交回 Canonical，
-	// 串接会让第一个 Handler 直接交还、第二个永远轮不到。分派必须发生在**账号所属
-	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
-	pluginProviders := newPluginProviderRegistry()
-	pluginAccounts := &pluginRelayAccountSource{
-		registry:  pluginProviders,
-		catalog:   catalog,
-		recruiter: inference.recruiter,
-		transport: pluginRelayTransportPolicy{},
-	}
-	familyMembers := append(
-		[]relaycore.Provider{
-			pluginRelayProviderChain{registry: pluginProviders},
-			codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
-				ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
-			}),
-		},
-		relayModuleProviders(relayModules)...,
-	)
-	familyRelayHandler, err := relaycore.NewHandler(
-		relaycore.Dependencies{
-			Provider: relaycore.NewProviderChain(familyMembers...),
-			Path:     codebuddyfamilyrelay.Path,
-			Aliases:  newChatAliasResolver(inference.modelAliases, dependencies.Store),
-			// 别名拥有最高解释权；未命中别名时才解析 Provider 显式声明的
-			// `provider/model` 前缀，并把 Provider 钉死（与 Node 前门同一顺序）。
-			ModelPrefixes: newRelayModelPrefixResolver(catalog, dependencies.Store),
-			Accounts: relaycore.NewAccountSourceChain(
-				append(append(relayModuleAccounts(relayModules), familyRelayAccounts), pluginAccounts)...,
-			),
-			Fallback:            inference.handler,
-			Credentials:         credentials,
-			Client:              relayClient,
-			AccountEgress:       relayEgress,
-			Attempts:            accountRuntime,
-			Upstream429Retries:  upstream429Controller,
-			Clock:               time.Now,
-			MaxRequestBodyBytes: codebuddyfamilyrelay.MaxRequestBodyBytes,
-			UnavailableMessage:  "家族透传当前不可用",
-			// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
-			Usage: attemptUsage,
-			// 档位与选号/诊断同源：记账时按策略选出的档位归因。
-			Buckets: relayQuotaBuckets{gate: usageGate, evaluator: newSchedulingEvaluator()},
-		},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建家族透传 Handler 失败: %w",
-			err,
-		)
-	}
+	familyRelayHandler := familyRelay.handler
+	pluginProviders := familyRelay.pluginProviders
 	// 窗口激活探测回环处理器：直接覆盖 codex /v1/responses、agy /v1beta/models/ 与 /v1/chat/completions，
 	// 在 Go 进程内完成 /v1/* 极小探测而不绕经 Node 网关。
 	windowProbeMux := http.NewServeMux()
@@ -1507,46 +1445,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		nativeHTTP: codexHTTPHandler,
 	})
 	windowProbeMux.Handle(openaichatcompletionsapi.Path, familyRelayHandler)
-	pluginModelFallback := &pluginmodelcatalog.Discoverer{Client: &http.Client{Timeout: 15 * time.Second}}
-	bundle := newLocalPluginHandlers(localPluginHandlerOptions{
-		ManagementAuthorizer: authorizer,
-		ClientAuthorizer:     clientAuthorizer,
-		Describe:             accountProviderResolver(store),
-		AIHomeDir:            aiHomeDir,
-		OnProviderDescriptors: func(result pluginhost.DescriptorCollectResult) {
-			pluginProviders.Update(result)
-			catalog.ReplaceDynamic(pluginProviders.Definitions())
-			modelDiscovery.SetPluginProviders(pluginProviders.ModelDescriptors(), pluginModelFallback)
-			if inference != nil {
-				inference.RefreshCatalog()
-			}
-		},
-		OnLog: func(message string) {
-			if errorLog != nil && strings.TrimSpace(message) != "" {
-				errorLog.Println(message)
-			}
-		},
+	pluginRuntime := newPluginBundleRuntime(pluginBundleInputs{
+		ctx:              ctx,
+		aiHomeDir:        aiHomeDir,
+		authorizer:       authorizer,
+		clientAuthorizer: clientAuthorizer,
+		store:            store,
+		pluginProviders:  pluginProviders,
+		catalog:          catalog,
+		modelDiscovery:   modelDiscovery,
+		inference:        inference,
+		errorLog:         errorLog,
 	})
-	pluginBundle = &bundle
-	var sharedPricingService *pricingcatalog.Service
-	if pluginBundle.HostService != nil {
-		sharedPricingService = pluginBundle.HostService.PricingService()
-		if err := pluginBundle.HostService.Start(ctx); err != nil && errorLog != nil {
-			errorLog.Printf("插件宿主初始激活降级: %v", err)
-		}
-		installPluginAliasSync(inference.modelAliases, pluginBundle.HostService, inference.RefreshCatalog)
-	}
-	// 插件价格来源接进定价 Resolver：已生效（通过复核）的插件快照参与报价裁决，
-	// 按来源 authority 与宿主价格（账号/人工/官方）比较；未生效快照不参与计费。
-	if sharedPricingService != nil {
-		pricingresolver.ConfigurePluginSource(func() modelpricingcontract.QuoteSource {
-			store := sharedPricingService.Store()
-			if store == nil {
-				return nil
-			}
-			return store.ContractQuoteSource()
-		})
-	}
+	pluginBundle = pluginRuntime.bundle
+	sharedPricingService := pluginRuntime.pricing
 	egressActivity, err := newEgressActivityRuntime(
 		ctx,
 		aiHomeDir,
@@ -1571,73 +1483,57 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	imageEgress := newImageAccountEgress(func() *runtimeegress.Manager {
 		return egressManager
 	})
-	webuiDeps := webuiRouteDependencies{
-		Authorizer:         authorizer,
-		AIHomeDir:          aiHomeDir,
-		Catalog:            catalog,
-		ModelModalities:    modelModalities,
-		ModelAliasExpander: modelAliasExpander,
-		ModelAliasDisplay:  inference.models,
-		MetadataResolver:   pricingResolver,
-		webuiEgressDependencies: webuiEgressDependencies{
-			EgressManager:         egressManager,
-			Upstream429RetryStore: upstream429Store,
-			ProxyPool:             dependencies.ProxyPool,
-			SSHProxies:            sshProxySupervisor,
-			ReverseTunnels:        sshTunnelSupervisor,
-		},
-		ImageExecutionDependencies: imageexecution.Dependencies{
-			AccountEgress:          imageEgress.HTTPForAccount,
-			Upstream429Retries:     upstream429Controller,
-			Attempts:               accountRuntime,
-			CredentialObservations: credentials,
-			Rules:                  upstreamRuleEvaluator,
-		},
-		HostHomeDir:        dependencies.HostHomeDir,
-		Store:              store,
-		TokenEvents:        dependencies.TokenEvents,
-		NativeWorkPreparer: nativeWork,
-		AccountRuntime:     accountRuntime,
-		AuthJobs:           jobs,
-		LoginJobs:          aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
-		AccountsHandler:    accountsHandler,
-		AccountRows:        dependencies.WebUIAccountsSource,
-		CredentialEditor:   credentialRotator,
-		ProviderDefaults:   providerDefaults,
-		ModelRefresher:     recoveringModelManagement,
-		UsageService:       usage.service,
-		QuotaStats:         quotaStatsService,
-		TerminalProbe: func(sessionKey string) string {
+	webuiDeps := newWebUIDependencies(webuiDependenciesInputs{
+		host:                  dependencies,
+		authorizer:            authorizer,
+		aiHomeDir:             aiHomeDir,
+		catalog:               catalog,
+		nodeBaseURL:           nodeBaseURL,
+		selfBaseURL:           selfBaseURL,
+		managementKey:         managementKey,
+		clientKey:             clientKey,
+		requestShutdown:       requestShutdown,
+		desktopChanged:        desktopChanged,
+		metrics:               metrics,
+		modelModalities:       modelModalities,
+		modelAliasExpander:    modelAliasExpander,
+		modelAliasDisplay:     inference.models,
+		metadataResolver:      pricingResolver,
+		chatModels:            inference.models,
+		egressManager:         egressManager,
+		upstream429Store:      upstream429Store,
+		sshProxies:            sshProxySupervisor,
+		reverseTunnels:        sshTunnelSupervisor,
+		imageEgress:           imageEgress,
+		upstream429Controller: upstream429Controller,
+		accountRuntime:        accountRuntime,
+		credentials:           credentials,
+		upstreamRules:         upstreamRuleEvaluator,
+		nativeWork:            nativeWork,
+		authJobs:              jobs,
+		accountsHandler:       accountsHandler,
+		credentialEditor:      credentialRotator,
+		providerDefaults:      providerDefaults,
+		modelRefresher:        recoveringModelManagement,
+		usageService:          usage.service,
+		quotaStats:            quotaStatsService,
+		terminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
-		AccountDeletion: deletionRuntime,
-		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
-		AccountHostGrant: deletionHost,
-		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
-		NodeBaseURL:            nodeBaseURL,
-		SelfBaseURL:            selfBaseURL,
-		ManagementKey:          managementKey,
-		RequestShutdown:        requestShutdown,
-		TerminalHandler:        webUITerminalHandler,
-		SubAggregator:          subAggSvc,
-		SessionEventBus:        sessionEventBus,
-		CodexHooks:             hooksRuntime,
-		PluginHostService:      pluginBundle.HostService,
-		PricingService:         sharedPricingService,
-		MetricsRecorder:        metrics,
-		StartedAt:              time.Now(),
-		OutcomeRecorder:        dependencies.OutcomeRecorder,
-		AccountActivity:        hookSessionActivityTracker{activity: activityDaemon.Activity()},
-		AccountImporter:        accountImporter,
-		ClientKey:              clientKey,
-		TranslationGateway:     dependencies.TranslationGateway,
-		ChatGateway:            pluginBundle.Handlers.wrap("openai_chat", familyRelayHandler),
-		ChatModels:             inference.models,
-		DesktopSettingsChanged: desktopChanged.changed,
-
-		CredentialRefresher:       credentials,
-		DelegateCredentialRefresh: delegateCredentialRefresh,
-	}
+		accountDeletion:           deletionRuntime,
+		accountHostGrant:          deletionHost,
+		accountImporter:           accountImporter,
+		accountActivity:           hookSessionActivityTracker{activity: activityDaemon.Activity()},
+		credentialRefresher:       credentials,
+		delegateCredentialRefresh: delegateCredentialRefresh,
+		terminalHandler:           webUITerminalHandler,
+		subAggregator:             subAggSvc,
+		sessionEventBus:           sessionEventBus,
+		codexHooks:                hooksRuntime,
+		familyRelayHandler:        familyRelayHandler,
+		pluginBundle:              pluginBundle,
+		pricingService:            sharedPricingService,
+	})
 	schedulerPorts := webuiSchedulerPorts{
 		ClientKey:    clientKey,
 		LocalHandler: windowProbeMux,
@@ -1704,12 +1600,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Authorizer: authorizer,
 		Aliases:    newChatAliasResolver(inference.modelAliases, dependencies.Store),
 		Accounts: relaycore.NewAccountSourceChain(
-			append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
+			append(relayModuleAccounts(familyRelay.modules), familyRelay.familyAccounts)...,
 		),
 		Credentials: credentials,
 		Provider: relaycore.NewProviderChain(
 			append(
-				relayModuleProviders(relayModules),
+				relayModuleProviders(familyRelay.modules),
 				codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
 					ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
 				}),
@@ -1860,15 +1756,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		)
 	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
-		ServiceTiers:   codexmodelcatalog.NewReader(),
-		ContextWindows: codexmodelcatalog.NewContextReader(),
-		Models:         inference.models,
-		Catalog:        modelCatalogStore,
+		ServiceTiers:    codexmodelcatalog.NewReader(),
+		ContextWindows:  codexmodelcatalog.NewContextReader(),
+		Models:          inference.models,
+		Catalog:         modelCatalogStore,
 		ProviderCatalog: catalog,
-		Modalities:     modelModalities,
-		Reasoning:      modelModalities,
-		Aliases:        inference.models,
-		Authorizer:     clientAuthorizer,
+		Modalities:      modelModalities,
+		Reasoning:       modelModalities,
+		Aliases:         inference.models,
+		Authorizer:      clientAuthorizer,
 	})
 	if err != nil {
 		_ = inference.Close()

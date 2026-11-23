@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/proxytransport"
 )
@@ -49,11 +50,12 @@ type proxyServeOptions struct {
 	system        bool
 	systemService string
 	systemDryRun  bool
+	renewInterval time.Duration
 	json          bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress}
+	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, renewInterval: 30 * time.Minute}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
@@ -65,6 +67,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.BoolVar(&options.system, "system", false, "把入口写入系统 HTTP/HTTPS 代理，退出时恢复")
 	flags.StringVar(&options.systemService, "system-service", "", "系统网络服务名（macOS 必填，例如 Wi-Fi）")
 	flags.BoolVar(&options.systemDryRun, "system-dry-run", false, "只打印系统代理动作，不实际修改")
+	flags.DurationVar(&options.renewInterval, "renew-interval", 30*time.Minute, "租约续期间隔；0 表示关闭续期")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
 	if err := flags.Parse(args); err != nil {
 		return options, err
@@ -98,6 +101,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	}
 	if options.systemService != "" && !options.system {
 		return options, errors.New("--system-service 需要配合 --system 使用")
+	}
+	if options.renewInterval < 0 {
+		return options, errors.New("--renew-interval 不能为负数")
 	}
 	return options, nil
 }
@@ -181,7 +187,20 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		_, _ = fmt.Fprintf(runtime.stdout, "export HTTP_PROXY='%s' HTTPS_PROXY='%s' ALL_PROXY='%s'\n", lease.httpURL, lease.httpURL, allProxy)
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] 按 Ctrl+C 结束并释放租约。")
 	}
-	<-ctx.Done()
+	leaseErr := make(chan error, 1)
+	if options.renewInterval > 0 {
+		go lease.keepAlive(ctx, options.renewInterval, func(renewErr error) {
+			select {
+			case leaseErr <- renewErr:
+			default:
+			}
+		})
+	}
+	select {
+	case <-ctx.Done():
+	case renewErr := <-leaseErr:
+		return fmt.Errorf("代理租约续期失败: %w", renewErr)
+	}
 	stop()
 	return nil
 }

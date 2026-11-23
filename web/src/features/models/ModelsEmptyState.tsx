@@ -57,7 +57,13 @@ export const ModelsEmptyState = memo(function ModelsEmptyState({
         <SettingStatusTag status="error" label="刷新失败" compact live="off" />
         <div className="models-empty-state-copy">
           <strong>未能获取到可用模型</strong>
-          <p>{refreshError}。请检查账号授权或网络后重试，也可以手动补充模型。</p>
+          <p>上游探测没有返回可用模型；请检查账号授权或网络后重试，也可以手动补充模型。</p>
+          {refreshError ? (
+            <details className="models-refresh-error">
+              <summary>查看探测错误</summary>
+              <p>{refreshError}</p>
+            </details>
+          ) : null}
         </div>
         <div className="models-empty-state-actions">
           <Button type="primary" icon={<ReloadOutlined />} loading={refreshing} onClick={onRefresh}>

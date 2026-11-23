@@ -45,6 +45,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+.gateway-nowrap {
+  white-space: nowrap;
+}
+
+.gateway-ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
 .gateway-provider-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));

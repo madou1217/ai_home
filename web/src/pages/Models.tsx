@@ -679,7 +679,7 @@ export default function Models() {
           />
         )}
       >
-        {refreshFailureMessage ? (
+        {refreshFailureMessage && displayedRowCount > 0 ? (
           <details className="models-refresh-error">
             <summary>
               <span aria-hidden="true">⚠</span>

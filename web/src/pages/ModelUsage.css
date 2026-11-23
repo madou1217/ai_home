@@ -244,6 +244,15 @@
   border-inline-start: 1px solid var(--color-border);
 }
 
+.usage-chart-shell--empty {
+  min-height: 0;
+}
+
+.usage-chart-shell--empty .usage-chart-scroll {
+  flex: 0 0 auto;
+  min-height: 128px;
+}
+
 .usage-chart-scroll {
   width: 100%;
   min-width: 0;

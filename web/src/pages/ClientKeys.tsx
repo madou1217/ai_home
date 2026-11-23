@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Form, Input, InputNumber, Modal, Space, Switch, Table, Tag, message } from 'antd';
+import { Form, Input, InputNumber, Modal, Space, Switch, Table, Tag, Tooltip, message } from 'antd';
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SettingOutlined, SyncOutlined } from '@ant-design/icons';
 import type { ClientKeyRow } from '@/types';
 import { clientKeysAPI } from '@/services/api';
@@ -273,22 +273,24 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: '名称',
       dataIndex: 'name',
+      width: 160,
       render: (value: string, row: ClientKeyRow) => (
-        <Space size={6}>
+        <Space size={6} className="gateway-nowrap">
           <span>{value}</span>
-          {row.master ? <Tag>总 key</Tag> : null}
+          {row.master ? <Tag bordered={false}>总 key</Tag> : null}
         </Space>
       )
     },
     {
       title: '前缀',
       dataIndex: 'prefix',
-      render: (value: string) => <span className="aih-mono">{value || '—'}</span>
+      width: 110,
+      render: (value: string) => <span className="aih-mono gateway-nowrap">{value || '—'}</span>
     },
     {
       title: '状态',
       key: 'enabled',
-      width: 120,
+      width: 140,
       render: (_: unknown, row: ClientKeyRow) =>
         row.master ? (
           <SettingStatusTag status="applied" label="系统总 key" compact live="off" />
@@ -312,47 +314,68 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: '已生效限额',
       key: 'limits',
-      width: 240,
-      render: (_: unknown, row: ClientKeyRow) => (
-        <span className="gateway-limit-summary">{formatLimitText(row.limits)}</span>
-      )
+      width: 300,
+      render: (_: unknown, row: ClientKeyRow) => {
+        const text = formatLimitText(row.limits);
+        return (
+          <Tooltip title={text}>
+            <span className="gateway-limit-summary gateway-ellipsis">{text}</span>
+          </Tooltip>
+        );
+      }
     },
     {
       title: '在途',
       key: 'inFlight',
       width: 70,
+      align: 'right' as const,
       render: (_: unknown, row: ClientKeyRow) => row.live?.inFlight ?? 0
     },
     {
       title: 'RPM (1m)',
       key: 'rpm',
       width: 90,
+      align: 'right' as const,
       render: (_: unknown, row: ClientKeyRow) => Math.round(row.live?.rpm1m || 0)
     },
     {
       title: 'TPM (1m)',
       key: 'tpm',
       width: 100,
+      align: 'right' as const,
       render: (_: unknown, row: ClientKeyRow) => Math.round(row.live?.tpm1m || 0)
     },
     {
       title: '24h 请求',
       key: 'requests',
       width: 90,
+      align: 'right' as const,
       render: (_: unknown, row: ClientKeyRow) => row.totals?.requests ?? 0
     },
     {
       title: '24h Tokens',
       key: 'tokens',
       width: 100,
+      align: 'right' as const,
       render: (_: unknown, row: ClientKeyRow) => row.totals?.totalTokens ?? 0
     },
     {
       title: '最后使用',
       key: 'lastUsed',
-      width: 130,
+      width: 140,
       render: (_: unknown, row: ClientKeyRow) =>
-        row.lastUsedAtMs ? new Date(row.lastUsedAtMs).toLocaleString() : <span className="aih-muted">—</span>
+        row.lastUsedAtMs ? (
+          <span className="gateway-nowrap">
+            {new Date(row.lastUsedAtMs).toLocaleString('zh-CN', {
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </span>
+        ) : (
+          <span className="aih-muted">—</span>
+        )
     },
     {
       title: '操作',
@@ -417,7 +440,7 @@ const ClientKeysPanel: React.FC = () => {
           pagination={false}
           dataSource={rows}
           columns={columns}
-          scroll={{ x: 1120 }}
+          scroll={{ x: 1530 }}
         />
 
         {managed.length === 0 && !loading ? (

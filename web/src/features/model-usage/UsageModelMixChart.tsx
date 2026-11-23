@@ -111,7 +111,7 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
   }, [data, models, onSelectModel]);
 
   return (
-    <div className="usage-chart-shell usage-chart-shell--mix">
+    <div className={`usage-chart-shell usage-chart-shell--mix${data.length === 0 ? ' usage-chart-shell--empty' : ''}`}>
       <div className="usage-chart-heading">
         <div>
           <strong>模型分量</strong>

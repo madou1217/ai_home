@@ -61,6 +61,16 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
   const labels = useMemo(() => slots.map((point, index) => (
     formatAxisTime(point?.bucketStartMs || trend.fromMs + index * trend.bucketMs, trend.bucketMs)
   )), [slots, trend.bucketMs, trend.fromMs]);
+  // 空区间只有桶骨架、没有真实用量：折叠图表高度，避免空白坐标轴占据首屏。
+  const isEmpty = useMemo(() => slots.every((point) => {
+    if (!point) return true;
+    const tokens = (point.inputTokens || 0)
+      + (point.cacheReadInputTokens || 0)
+      + (point.cacheCreationInputTokens || 0)
+      + (point.outputTokens || 0)
+      + (point.reasoningOutputTokens || 0);
+    return tokens === 0 && (point.costUsd || 0) === 0;
+  }), [slots]);
 
   const buildOption = useCallback((palette: UsageChartPalette) => {
     const base = createBaseOption(palette, labels, '模型用量随时间变化图');
@@ -130,7 +140,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
   }, [labels, mode, slots]);
 
   return (
-    <div className="usage-chart-shell">
+    <div className={`usage-chart-shell${isEmpty ? ' usage-chart-shell--empty' : ''}`}>
       <div className="usage-chart-heading">
         <div>
           <strong>时间趋势</strong>
@@ -155,8 +165,8 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
         />
       </div>
       <div ref={surfaceRef} className="usage-chart-scroll">
-        {slots.length === 0 ? (
-          <HudStateView compact code="NO_TREND" title="暂无趋势数据" />
+        {slots.length === 0 || isEmpty ? (
+          <HudStateView compact code="NO_TREND" title="当前区间没有用量" />
         ) : (
           <EChartCanvas ariaLabel="模型用量时间趋势" buildOption={buildOption} />
         )}

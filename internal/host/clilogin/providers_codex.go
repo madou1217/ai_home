@@ -15,7 +15,7 @@ func init() {
 	providerSpecs["codex"] = providerSpec{
 		layout:          codexLoginLayout,
 		readCredential:  codexLoginCredential,
-		networkProbeURL: "https://auth.openai.com/",
+		networkProbeURL: "https://auth.openai.com/oauth/token",
 		loginArgs: func(args []string) []string {
 			for _, arg := range args {
 				if arg == "--device-auth" {

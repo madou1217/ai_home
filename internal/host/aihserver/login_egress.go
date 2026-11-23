@@ -3,13 +3,10 @@ package aihserver
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/loginprobe"
 	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
 )
 
@@ -36,51 +33,19 @@ func (egress *loginEgress) Acquire(ctx context.Context, providerID string, probe
 	if probe == "" {
 		return "", func() {}, nil
 	}
-	status, reachable := probeLoginEndpoint(ctx, probe, "")
-	if reachable {
+	direct := loginprobe.Check(ctx, probe, "")
+	if direct.Reachable {
 		return "", func() {}, nil
 	}
+	status := direct.Status
 	lease, err := egress.leases.Acquire(ctx, "auto")
 	if err != nil {
 		return "", nil, fmt.Errorf("直连 %s 不可用（%s），受管出口申请失败: %w", probe, status, err)
 	}
-	proxyStatus, proxyOK := probeLoginEndpoint(ctx, probe, lease.ProxyURL)
-	if !proxyOK {
+	if proxied := loginprobe.Check(ctx, probe, lease.ProxyURL); !proxied.Reachable {
 		egress.leases.Release(lease.ID)
-		return "", nil, fmt.Errorf("受管出口「%s」仍无法访问 %s（%s）", lease.Name, probe, proxyStatus)
+		return "", nil, fmt.Errorf("受管出口「%s」仍无法访问 %s（%s）", lease.Name, probe, proxied.Status)
 	}
 	log.Printf("accountauth: 直连 %s 不可用（%s）；换码临时使用受管出口 %s", probe, status, lease.Name)
 	return lease.ProxyURL, func() { egress.leases.Release(lease.ID) }, nil
-}
-
-// probeLoginEndpoint 直接或经代理访问探测地址，返回可读状态与是否可用。
-func probeLoginEndpoint(ctx context.Context, target, proxy string) (string, bool) {
-	transport := &http.Transport{
-		Proxy:                 nil,
-		TLSHandshakeTimeout:   6 * time.Second,
-		ResponseHeaderTimeout: 6 * time.Second,
-	}
-	if strings.TrimSpace(proxy) != "" {
-		if parsed, err := url.Parse(proxy); err == nil {
-			transport.Proxy = http.ProxyURL(parsed)
-		}
-	}
-	client := &http.Client{
-		Timeout:   8 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return "请求无效", false
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return "网络不可达", false
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-	return fmt.Sprintf("HTTP %d", response.StatusCode), response.StatusCode < 400
 }

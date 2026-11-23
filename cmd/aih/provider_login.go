@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
 	"github.com/madou1217/ai_home/application/providerruntime"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/loginprobe"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
@@ -129,10 +127,11 @@ func ensureLoginNetworkEnv(
 	if probe == "" {
 		return nil, func() {}, nil
 	}
-	status, reachable := probeLoginEndpoint(ctx, probe, "")
-	if reachable {
+	direct := loginprobe.Check(ctx, probe, "")
+	if direct.Reachable {
 		return nil, func() {}, nil
 	}
+	status := direct.Status
 	client, clientErr := managementProxyClient(runtime)
 	if clientErr != nil {
 		return nil, func() {}, fmt.Errorf(
@@ -145,9 +144,9 @@ func ensureLoginNetworkEnv(
 	if leaseErr != nil {
 		return nil, func() {}, fmt.Errorf("直连 %s 不可用（%s），受管出口申请失败: %w", probe, status, leaseErr)
 	}
-	if proxyStatus, proxyOK := probeLoginEndpoint(ctx, probe, lease.URL); !proxyOK {
+	if proxied := loginprobe.Check(ctx, probe, lease.URL); !proxied.Reachable {
 		lease.Release()
-		return nil, func() {}, fmt.Errorf("受管出口「%s」仍无法访问 %s（%s）；请更换出口（AIH_LOGIN_PROXY）或改用其他机器授权", displayEgressName(lease.Name), probe, proxyStatus)
+		return nil, func() {}, fmt.Errorf("受管出口「%s」仍无法访问 %s（%s）；请更换出口（AIH_LOGIN_PROXY）或改用其他机器授权", displayEgressName(lease.Name), probe, proxied.Status)
 	}
 	_, _ = fmt.Fprintf(notify, "[aih] 直连 %s 不可用（%s）；临时使用受管出口「%s」，登录结束后自动释放。\n",
 		probe, status, displayEgressName(lease.Name))
@@ -156,38 +155,6 @@ func ensureLoginNetworkEnv(
 		"HTTP_PROXY":  lease.URL,
 		"ALL_PROXY":   lease.URL,
 	}, lease.Release, nil
-}
-
-// probeLoginEndpoint 直接或经代理访问探测地址，返回可读状态与是否可用。
-func probeLoginEndpoint(ctx context.Context, target, proxy string) (string, bool) {
-	transport := &http.Transport{
-		Proxy:                 nil,
-		TLSHandshakeTimeout:   6 * time.Second,
-		ResponseHeaderTimeout: 6 * time.Second,
-	}
-	if strings.TrimSpace(proxy) != "" {
-		if parsed, err := url.Parse(proxy); err == nil {
-			transport.Proxy = http.ProxyURL(parsed)
-		}
-	}
-	client := &http.Client{
-		Timeout:   8 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return "请求无效", false
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return "网络不可达", false
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-	return fmt.Sprintf("HTTP %d", response.StatusCode), response.StatusCode < 400
 }
 
 // providerLoginProbe 解析登录前的网络预检地址。

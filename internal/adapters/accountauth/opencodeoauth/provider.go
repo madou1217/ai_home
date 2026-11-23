@@ -101,7 +101,7 @@ func (*Provider) ProviderID() string {
 }
 
 // LoginProbeURL 返回换码前的网络预检地址（设备码服务）。
-func (provider *Provider) LoginProbeURL() string { return provider.server + "/" }
+func (provider *Provider) LoginProbeURL() string { return provider.server + "/auth/device/token" }
 
 // BeginWithOptions 校验 OpenCode 的显式设备码策略；其它策略/身份提供方明确拒绝。
 func (provider *Provider) BeginWithOptions(

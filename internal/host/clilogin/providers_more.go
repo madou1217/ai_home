@@ -16,8 +16,8 @@ import (
 // 多文件/整库 Provider（cline/kimi/qoder/kiro）仍需各自的槽位合并与证据构造，暂不在此列。
 
 func init() {
-	providerSpecs["grok"] = providerSpec{layout: grokLoginLayout, readCredential: jsonFieldCredential("auth"), networkProbeURL: "https://auth.x.ai/"}
-	providerSpecs["opencode"] = providerSpec{layout: openCodeLoginLayout, readCredential: jsonFieldCredential("auth"), networkProbeURL: "https://opencode.ai/"}
+	providerSpecs["grok"] = providerSpec{layout: grokLoginLayout, readCredential: jsonFieldCredential("auth"), networkProbeURL: "https://auth.x.ai/oauth2/token"}
+	providerSpecs["opencode"] = providerSpec{layout: openCodeLoginLayout, readCredential: jsonFieldCredential("auth"), networkProbeURL: "https://opencode.ai/console/auth/device/token"}
 }
 
 // grokLoginLayout：HOME 与 GROK_HOME 都指向一次性目录，宿主 XAI/GROK 变量全部剥掉。

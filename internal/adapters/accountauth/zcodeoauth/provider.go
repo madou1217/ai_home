@@ -155,7 +155,7 @@ func (*Provider) ProviderID() string {
 }
 
 // LoginProbeURL 返回换码前的网络预检地址。
-func (*Provider) LoginProbeURL() string { return "https://zcode.z.ai/" }
+func (provider *Provider) LoginProbeURL() string { return provider.tokenEndpoint }
 
 // Begin 生成 32 字节 state 与官方授权 URL。
 func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, error) {

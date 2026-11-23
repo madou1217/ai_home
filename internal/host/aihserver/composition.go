@@ -46,7 +46,6 @@ import (
 	capabilityprojection "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/projection"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -277,12 +276,6 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, fmt.Errorf("创建客户端版本解析器失败: %w", err)
 	}
 	codexVersions := clientVersions.Codex
-	legacyMetadata, err := modelsdev.New()
-	if err != nil {
-		_ = clientVersions.Close()
-		_ = store.Close()
-		return nil, fmt.Errorf("创建 models.dev 兼容能力源失败: %w", err)
-	}
 	// 能力事实走独立的能力抽象：上游账号目录声明优先，models.dev 只作为兼容来源
 	// （它与 pricing 插件是两套不同的抽象，绝不共用）。
 	capabilityContract, err := capabilitycontract.New(capabilitybaseline.Embedded())
@@ -292,12 +285,11 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, fmt.Errorf("加载模型能力基线失败: %w", err)
 	}
 	// 能力事实按权威顺序合并：上游账号目录声明（注册表内部最高）→ aih.db 投影 →
-	// 冻结能力基线 → models.dev 兼容来源。models.dev 只作为没有任何声明时的最后兜底。
+	// 冻结能力基线。models.dev 不再参与任何能力事实（它只是价格插件）。
 	modelModalities := modelmetadata.NewCapabilityRegistry(modelmetadata.CapabilityRegistryOptions{
 		Sources: []modelmetadata.FactsSource{
 			capabilityprojection.New(modelCatalogStore),
 			capabilityContract,
-			legacyMetadata,
 		},
 		SourceID: "capabilities",
 	})

@@ -79,7 +79,7 @@ WebSocket 首帧 `hello` 携带 enrollment code 或 session token；之后只在
 | `workspace.watch_job` | 按 cursor 读取增量输出，可长轮询等待新输出 |
 | `workspace.interrupt_job` | 终止仍在运行的作业（整个进程组） |
 
-尚未实现：审批协议。作业不跨 Connector 进程重启。
+尚未实现：审批协议。作业在 Connector 退出/重启后仍可继续观察。
 Connector 不声明未实现的能力，Server 也不会把未声明能力当成可用。
 
 ### 3.1 路径约束
@@ -105,17 +105,21 @@ Connector 不声明未实现的能力，Server 也不会把未声明能力当成
 
 ### 3.3 持久作业约束
 
-- `start_job` 立即返回 `jobId`；作业在 Connector 进程内运行，不绑定启动它的 RPC、HTTP
-  请求或 Server 会话。Server 重启、Connector 重连后仍可继续 `watch_job`；
+- `start_job` 立即返回 `jobId`；命令由独立 runner 进程执行，spool 在
+  `~/.ai_home/run/workspace-jobs/<jobId>/`（meta、status、stdout.log、stderr.log、
+  heartbeat）。Connector 退出/重启、Server 重启、会话重连后，同一 `jobId` 仍可
+  `watch_job`；
+- runner 以新 session 启动，Connector 死亡不会带走作业；runner 每 2s 写心跳，心跳超过
+  10s 且没有 status 时作业为 `lost`；
 - `watch_job` 的 cursor 是 stdout / stderr 各自的绝对字节偏移，格式 `stdout:stderr`；
-  重复使用同一 cursor 不会重复消费，cursor 超过已产出字节会被拒绝；
-- 每个流只保留最近 512 KiB；窗口外的旧字节被丢弃并返回 `dropped`，单次返回每流最多
-  128 KiB；
-- 作业默认最长 30 分钟、上限 2 小时；超时杀进程组并进入 `timed_out`，主动终止进入
-  `interrupted`；
-- 同时最多 4 个运行中作业、保留 16 个作业记录；`--no-command` 会同时关闭
+  重复使用同一 cursor 不会重复消费，cursor 超过已落盘字节会被拒绝；
+- 每个流保留前 8 MiB；超出后继续排空但标记 `truncated`，单次返回每流最多 128 KiB；
+- 作业默认最长 30 分钟、上限 2 小时；超时由 runner 杀进程组并写入 `timed_out`；
+  `interrupt_job` 先发 SIGTERM 让 runner 收尾，5 秒无响应再 SIGKILL 整个进程组；
+- 同时最多 4 个运行中作业、保留最近 16 个作业目录；`--no-command` 会同时关闭
   `run_command` 与三个作业工具；
-- 边界：Connector 进程退出后作业不再受管（不是常驻服务管理器）；审批仍未实现。
+- 边界：Windows 只能终止 runner 进程本身，没有 POSIX 进程组语义；审批仍未实现。
+  `aih workspace __job-runner <dir>` 是 Connector 内部入口，不对用户暴露。
 
 ### 3.4 Token 约束
 

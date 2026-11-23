@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Home · macOS 账号浏览器权限指南</title>
+<meta name="description" content="AI Home 账号浏览器在 macOS 上的一次性系统权限授权指南：为什么授权给 aih-launch，如何开启屏幕录制与辅助功能，以及 OAuth 登录与出口代理说明。">
+<style>
+:root {
+  --bg: #fbfbfd;
+  --panel: #ffffff;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --line: #e5e5ea;
+  --accent: #0a66c2;
+  --accent-soft: #eef4fc;
+  --good: #1a7f37;
+  --code-bg: #f4f4f7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --text: #f2f3f5;
+    --muted: #a1a6b0;
+    --line: #2a2f3a;
+    --accent: #6cb0ff;
+    --accent-soft: #16233a;
+    --good: #5bd67d;
+    --code-bg: #10141b;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 900px; margin: 0 auto; padding: 0 22px; }
+header.top {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  position: sticky; top: 0; z-index: 10;
+}
+.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 58px; gap: 16px; }
+.brand { font-weight: 650; letter-spacing: .2px; }
+.brand span { color: var(--muted); font-weight: 400; margin-left: 8px; }
+nav a { color: var(--muted); font-size: 14px; margin-left: 18px; }
+nav a:hover { color: var(--text); text-decoration: none; }
+section { padding: 46px 0; border-bottom: 1px solid var(--line); }
+section:last-of-type { border-bottom: 0; }
+h1 { font-size: 34px; line-height: 1.25; margin: 8px 0 12px; letter-spacing: -.4px; }
+h2 { font-size: 23px; margin: 0 0 18px; letter-spacing: -.2px; }
+h3 { font-size: 17px; margin: 24px 0 8px; }
+p { margin: 10px 0; }
+.lead { color: var(--muted); font-size: 17px; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.badge {
+  font-size: 13px; color: var(--muted); border: 1px solid var(--line);
+  background: var(--panel); padding: 4px 10px; border-radius: 999px;
+}
+.hero { padding-top: 64px; padding-bottom: 52px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 22px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 16px; }
+.card h3 { margin: 0 0 6px; font-size: 16px; }
+.card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.card .k { font-size: 13px; color: var(--accent); font-weight: 600; letter-spacing: .3px; }
+ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 18px 0 0; }
+ol.steps > li { position: relative; padding: 0 0 22px 46px; }
+ol.steps > li::before {
+  counter-increment: step; content: counter(step);
+  position: absolute; left: 0; top: 1px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent);
+  display: grid; place-items: center; font-weight: 650; font-size: 14px;
+}
+ol.steps h3 { margin: 2px 0 4px; }
+ol.steps p { margin: 0; color: var(--muted); font-size: 15px; }
+kbd {
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 6px; padding: 1px 6px; background: var(--panel);
+}
+code {
+  font: 13.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--code-bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 5px;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 16px; overflow: auto; margin: 14px 0 0;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 13.5px; line-height: 1.6; }
+.mock {
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  margin: 18px 0 4px; background: var(--panel); max-width: 560px;
+}
+.mock .bar { padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.mock table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.mock td { padding: 10px 14px; border-top: 1px solid var(--line); }
+.mock tr:first-child td { border-top: 0; }
+.toggle { width: 38px; height: 22px; border-radius: 999px; background: var(--accent); position: relative; display: inline-block; }
+.toggle::after { content: ""; position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; }
+.mock .off { background: var(--line); }
+.mock .off::after { right: auto; left: 3px; }
+.note { color: var(--muted); font-size: 14px; }
+.flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  font-size: 13.5px; margin: 16px 0 6px;
+}
+.flow span.node { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 10px; }
+.flow span.arrow { color: var(--muted); }
+ul.plain { margin: 10px 0 0; padding-left: 20px; }
+ul.plain li { margin: 6px 0; color: var(--muted); }
+ul.plain li strong { color: var(--text); font-weight: 600; }
+details { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px; margin-top: 10px; }
+details summary { cursor: pointer; font-weight: 600; }
+details p { color: var(--muted); font-size: 14.5px; }
+footer { padding: 34px 0 60px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; }
+.copy { float: right; font-size: 12px; color: var(--muted); border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.copy:hover { color: var(--text); }
+@media (max-width: 620px) {
+  h1 { font-size: 27px; }
+  nav { display: none; }
+  section { padding: 34px 0; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">AI Home<span>账号浏览器 · macOS</span></div>
+    <nav>
+      <a href="#why">为什么需要权限</a>
+      <a href="#grant">一次性授权</a>
+      <a href="#launcher">为什么是 aih-launch</a>
+      <a href="#oauth">OAuth 与代理</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="k badge">macOS 14+ · Microsoft Edge stable</div>
+    <h1>让 AI Home 的账号浏览器<br>只差一次系统授权</h1>
+    <p class="lead">账号浏览器在服务器上启动一个真实的 Edge 窗口，把画面和输入转发到 WebUI。macOS 要求这类能力必须由系统明确授权。本页说明如何一次性完成授权，以及为什么这个授权绑定在 <code>aih-launch</code> 上，而不是每次升级都会变的 <code>aih-server</code>。</p>
+    <div class="badges">
+      <span class="badge">一次授权，长期有效</span>
+      <span class="badge">每个账号独立 Profile</span>
+      <span class="badge">OAuth 登录态可持久化</span>
+      <span class="badge">升级服务不再重授权</span>
+    </div>
+  </section>
+
+  <section id="why">
+    <h2>为什么需要系统权限</h2>
+    <p>账号浏览器不是截图接口的拼装，而是一个可见的 Edge 窗口。AI Home 需要两件事，分别对应 macOS 的两项隐私权限：</p>
+    <div class="grid">
+      <div class="card">
+        <div class="k">屏幕录制</div>
+        <h3>读取画面</h3>
+        <p>通过 ScreenCaptureKit 捕获该 Edge 窗口，压缩成帧推送到 WebUI。没有它，画布只能停在“等待画面”。</p>
+      </div>
+      <div class="card">
+        <div class="k">辅助功能</div>
+        <h3>发送输入</h3>
+        <p>把点击、滚动、键盘和中文文本注入到该窗口。没有它，页面能看不能操作，navigate 也无法提交地址。</p>
+      </div>
+    </div>
+    <p class="note">AI Home 只对由它自己启动、并按进程身份校验过的 Edge 窗口发送事件；不会读取其它窗口，也不会自动点击系统弹窗。</p>
+  </section>
+
+  <section id="grant">
+    <h2>一次性授权（约 1 分钟）</h2>
+    <p>打开“系统设置 → 隐私与安全性”，在两个列表里分别加入同一个文件：</p>
+    <pre><button class="copy" data-copy="~/.ai_home/bin/aih-launch">复制</button><code>~/.ai_home/bin/aih-launch</code></pre>
+    <ol class="steps">
+      <li>
+        <h3>屏幕录制</h3>
+        <p>进入“隐私与安全性 → 屏幕录制”，点列表下方的 <strong>+</strong>。在弹出的文件面板按 <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>，粘贴上面的路径并回车，选中 <code>aih-launch</code> 后点“打开”，确认开关为开启。</p>
+        <p class="note">macOS 15 及更新版本里，这一项可能显示为“屏幕与系统音频录制”。</p>
+      </li>
+      <li>
+        <h3>辅助功能</h3>
+        <p>进入“隐私与安全性 → 辅助功能”，用同样的方式再次加入 <code>aih-launch</code> 并打开开关。<strong>两个列表都要加</strong>，缺一个就会报 <code>browser_system_permission_required</code>。</p>
+      </li>
+      <li>
+        <h3>重启服务</h3>
+        <p>授权后重启一次后台服务，让新的 launcher 进程读取授权：</p>
+        <pre><button class="copy" data-copy="aih server restart">复制</button><code>aih server restart</code></pre>
+      </li>
+      <li>
+        <h3>验证</h3>
+        <p>打开 WebUI 的账号浏览器，点击“启动”。状态变为“运行中”并出现画面即成功。也可以直接检查：</p>
+        <pre><button class="copy" data-copy="~/.ai_home/bin/aih-browser-surface --preflight">复制</button><code>~/.ai_home/bin/aih-browser-surface --preflight</code></pre>
+        <p class="note">返回 <code>{"screenCapture":true,"eventPosting":true}</code> 表示两项都已就绪。</p>
+      </li>
+    </ol>
+    <div class="mock" aria-label="系统设置列表示意">
+      <div class="bar">隐私与安全性 · 屏幕录制</div>
+      <table>
+        <tr><td>aih-launch</td><td style="text-align:right"><span class="toggle" aria-hidden="true"></span></td></tr>
+        <tr><td class="note">允许应用录制屏幕和系统音频</td><td></td></tr>
+      </table>
+    </div>
+    <p class="note">列表里出现的是文件名 <code>aih-launch</code>，不是 <code>aih-server</code>。系统设置里多余的旧条目可以删除。</p>
+  </section>
+
+  <section id="launcher">
+    <h2>为什么授权给 aih-launch，而不是 aih-server</h2>
+    <p>macOS 的 TCC 把权限记在“责任进程”上。后台服务如果直接运行 <code>aih-server</code>，责任进程就是它本身；而这个二进制每次升级都会重新编译，代码身份随之变化，旧授权立刻失配。表现就是：刚授权完能用，下一次更新又要求重新授权。</p>
+    <div class="flow">
+      <span class="node">launchd</span><span class="arrow">→</span>
+      <span class="node">aih-launch（极少变化，持有授权）</span><span class="arrow">→</span>
+      <span class="node">aih-server（可随时升级）</span><span class="arrow">→</span>
+      <span class="node">Edge 窗口</span>
+    </div>
+    <p><code>aih-launch</code> 只做三件事：启动服务端、转发终止信号、透传退出码。它被设计成跨版本保持字节一致，因此系统授权可以长期复用。安装或升级后，后台服务会自动使用它；损坏或缺失时回退为直接运行 <code>aih-server</code>。</p>
+    <h3>什么时候需要重新授权</h3>
+    <ul class="plain">
+      <li><strong>aih-launch 自身被重新编译</strong>（极少数版本会改动它）——重新执行上面的两步即可。</li>
+      <li><strong>Go 工具链大版本变化导致二进制字节变化</strong>——同样只需再授权一次。</li>
+      <li><strong>普通服务升级、重启、切换账号</strong>——不需要。</li>
+    </ul>
+  </section>
+
+  <section id="oauth">
+    <h2>OAuth 登录与出口代理</h2>
+    <p>新建账号时还没有 <code>accountRef</code>，AI Home 会为这次登录创建一个独立的 job Profile（<code>run/account-browser/pending/&lt;jobId&gt;</code>），授权完成后自动绑定到新账号，后续打开账号浏览器会直接复用这次登录态。</p>
+    <h3>地区限制与代理</h3>
+    <p>授权页由 OpenAI 等第三方提供，可能按出口地区拒绝访问。在 WebUI 的“设置 → 服务端代理”里填写代理后，OAuth 任务浏览器会自动继承该代理启动：</p>
+    <pre><code># 例：本地 SOCKS5 或 HTTP 代理
+socks5://127.0.0.1:1080
+http://127.0.0.1:7890</code></pre>
+    <p class="note">job scope 会带上 <code>--proxy-server</code>、<code>--disable-quic</code> 和禁用非代理 UDP 的参数；已有账号的账号浏览器仍优先使用该账号自己的 egress 绑定。</p>
+    <h3>登录数据会保留吗</h3>
+    <p>会。关闭浏览器时 helper 会先让 Edge 正常退出，让 Chromium 把 Cookie 事务写盘；短会话也会落盘。重开同一账号、甚至重启服务后，登录态仍然存在，并且不同账号的 Profile 与 Cookies 互相隔离。</p>
+  </section>
+
+  <section id="faq">
+    <h2>常见问题</h2>
+    <details>
+      <summary>已经授权，仍然提示 browser_system_permission_required</summary>
+      <p>先确认两个列表都加了 <code>aih-launch</code>：屏幕录制给画面，辅助功能给输入，缺一不可。然后执行 <code>aih server restart</code>。如果只加了其中一个，另一个会继续拦截。</p>
+    </details>
+    <details>
+      <summary>列表里应该选哪个文件？路径是隐藏目录，找不到怎么办</summary>
+      <p>在文件面板按 <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>，直接粘贴 <code>~/.ai_home/bin/aih-launch</code>。如果 AIH 使用了自定义数据目录，把 <code>~/.ai_home</code> 换成对应目录即可。</p>
+    </details>
+    <details>
+      <summary>升级后又要重新授权，是不是没生效</summary>
+      <p>检查当前被授权的是不是 <code>aih-launch</code>。如果旧版本服务直接运行 <code>aih-server</code>，授权绑定的是服务端二进制，升级必然失配；按本页步骤改授权 <code>aih-launch</code> 后即可长期复用。</p>
+    </details>
+    <details>
+      <summary>开了代理，授权页还是地区不支持</summary>
+      <p>确认代理本身在支持的地区，并且代理对 <code>auth.openai.com</code> 生效。可以在服务器上直接验证：<code>curl -x socks5h://127.0.0.1:1080 -I https://auth.openai.com/</code>。另外检查 WebUI 设置里的代理是否已保存并生效。</p>
+    </details>
+    <details>
+      <summary>可以直接替换 aih-launch 吗</summary>
+      <p>不要用就地覆盖的方式替换可执行文件。macOS 会缓存 ad-hoc 签名，覆盖后启动会被内核以 <code>CODESIGNING, Invalid Page</code> 终止。升级应使用“同目录临时文件 + rename”的原子替换，AIH 的构建与安装流程已经这样做。</p>
+    </details>
+    <details>
+      <summary>这台机器需要一直开着吗</summary>
+      <p>账号浏览器在服务器上运行，窗口也开在服务器桌面。关闭 WebUI 不会立刻删除 Profile；但服务停止或机器休眠时浏览器无法继续使用。登录完成后可以随时在 WebUI 关闭窗口。</p>
+    </details>
+  </section>
+
+  <section id="commands">
+    <h2>命令速查</h2>
+    <pre><code># 重启后台服务（授权后执行一次）
+aih server restart
+
+# 查看服务状态
+aih server status
+
+# 检查浏览器 helper 的两项权限
+~/.ai_home/bin/aih-browser-surface --preflight
+
+# 查看当前 launcher 的代码身份
+codesign -dvvv ~/.ai_home/bin/aih-launch</code></pre>
+  </section>
+
+  <section id="security">
+    <h2>安全边界</h2>
+    <ul class="plain">
+      <li><strong>只控制自己启动的窗口。</strong>helper 校验 Edge 进程身份、窗口归属与尺寸；多窗口或身份不符会拒绝输入。</li>
+      <li><strong>只捕获该窗口。</strong>ScreenCaptureKit 的过滤器绑定窗口 ID，不录制整屏。</li>
+      <li><strong>账号数据隔离。</strong>每个账号使用独立的 Profile 目录与 Cookies 数据库。</li>
+      <li><strong>权限不越界。</strong>授权只影响 AI Home 启动的 helper，不改变系统其它应用的权限。</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>AI Home · 账号浏览器文档</span>
+    <span><a href="https://github.com/madou1217/ai_home">GitHub 仓库</a> · <a href="https://github.com/madou1217/ai_home/blob/main/docs/product-integrity/account-browser-macos-helper-2026-11-23.md">实机取证</a></span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = button.getAttribute('data-copy') || '';
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(function () {
+      var original = button.textContent;
+      button.textContent = '已复制';
+      setTimeout(function () { button.textContent = original; }, 1200);
+    });
+  });
+});
+</script>
+</body>
+</html>

@@ -3,6 +3,8 @@ package managementmetricsapi
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/madou1217/ai_home/application/admission"
 )
 
 const Path = "/v1/management/metrics"
@@ -41,7 +43,25 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	snapshot := handler.source.Snapshot()
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "total_requests": snapshot.TotalRequests, "total_success": snapshot.TotalSuccess, "total_failures": snapshot.TotalFailures, "total_timeouts": snapshot.TotalTimeouts, "success_rate": snapshot.SuccessRate, "timeout_rate": snapshot.TimeoutRate, "route_counts": snapshot.RouteCounts})
+	body := map[string]any{"ok": true, "total_requests": snapshot.TotalRequests, "total_success": snapshot.TotalSuccess, "total_failures": snapshot.TotalFailures, "total_timeouts": snapshot.TotalTimeouts, "success_rate": snapshot.SuccessRate, "timeout_rate": snapshot.TimeoutRate, "route_counts": snapshot.RouteCounts}
+	// 并发准入队列快照：复用既有 metrics 响应，不新建仪表盘。
+	if controller := admission.Current(); controller != nil {
+		stats := controller.Stats()
+		queue := make(map[string]any, len(stats.Providers))
+		for provider, item := range stats.Providers {
+			queue[provider] = map[string]any{
+				"name":           provider,
+				"running":        item.Running,
+				"queued":         stats.Queued,
+				"maxConcurrency": item.MaxConcurrency,
+				"queueLimit":     item.QueueLimit,
+				"totalScheduled": item.TotalScheduled,
+				"totalRejected":  item.TotalRejected,
+			}
+		}
+		body["queue"] = queue
+	}
+	writeJSON(response, http.StatusOK, body)
 }
 func writeJSON(response http.ResponseWriter, status int, body any) {
 	response.Header().Set("Cache-Control", "no-store")

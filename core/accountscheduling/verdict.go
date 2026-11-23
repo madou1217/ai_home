@@ -42,6 +42,10 @@ const (
 	ReasonModelCooldown Reason = "model_cooldown"
 	// ReasonModelCapacityRecovery 表示模型容量恢复中的单请求试探期。
 	ReasonModelCapacityRecovery Reason = "model_capacity_recovery_in_flight"
+	// ReasonAccountConcurrency 表示账号在途并发已达上限（容量存在，稍后可用）。
+	ReasonAccountConcurrency Reason = "account_concurrency_saturated"
+	// ReasonModelConcurrency 表示该账号该模型在途并发已达上限。
+	ReasonModelConcurrency Reason = "model_concurrency_saturated"
 	// ReasonPolicyBlocked 表示 Provider 策略基于自身的静态事实拒绝。
 	ReasonPolicyBlocked Reason = "policy_blocked"
 )

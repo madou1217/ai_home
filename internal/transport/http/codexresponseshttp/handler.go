@@ -10,10 +10,12 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
@@ -244,7 +246,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			contacted = true
 			// 传输失败且上游一个字节都没返回时，先在同一账号上有界重试，再考虑换号。
 			timing.markUpstreamStart()
-			upstream, transportFailure, attemptStarted := handler.nativeRoundTrip(ctx, selection, payload, request, trail, &transportBudget)
+			upstream, transportFailure, attemptStarted, admitErr := handler.nativeRoundTrip(ctx, selection, payload, request, trail, &transportBudget, metadata.Model)
+			if admitErr != nil {
+				if request.Context().Err() != nil {
+					return
+				}
+				handler.failAdmission(response, trail, admitErr)
+				return
+			}
 			if upstream == nil {
 				if request.Context().Err() != nil {
 					return
@@ -434,14 +443,25 @@ func (handler *Handler) nativeRoundTrip(
 	request *http.Request,
 	trail *failureTrail,
 	retryBudget *int,
-) (*http.Response, inferencegateway.AttemptFailure, time.Time) {
+	model string,
+) (*http.Response, inferencegateway.AttemptFailure, time.Time, error) {
 	var lastFailure inferencegateway.AttemptFailure
 	for attempt := 0; ; attempt++ {
+		lease, admitErr := admission.Acquire(ctx, admission.Request{
+			Provider:   string(inference.ProviderCodex),
+			AccountRef: selection.AccountRef.String(),
+			Model:      model,
+		})
+		if admitErr != nil {
+			return nil, lastFailure, time.Time{}, admitErr
+		}
 		started := trail.now()
 		upstream, err := handler.Upstream.RoundTripNative(ctx, selection.Credential, payload, request.Header, request.Host)
 		if err == nil && upstream != nil && upstream.Body != nil {
-			return upstream, inferencegateway.AttemptFailure{}, started
+			upstream.Body = &admissionBody{ReadCloser: upstream.Body, release: lease.Release}
+			return upstream, inferencegateway.AttemptFailure{}, started, nil
 		}
+		lease.Release()
 		if upstream != nil && upstream.Body != nil {
 			_ = upstream.Body.Close()
 		}
@@ -455,18 +475,33 @@ func (handler *Handler) nativeRoundTrip(
 		trail.attempt(selection.AccountRef, "transport", failure, err.Error(), started)
 		// 客户端断开或总预算耗尽时不再等待，也不再有意义地重试。
 		if ctx.Err() != nil {
-			return nil, lastFailure, time.Time{}
+			return nil, lastFailure, time.Time{}, nil
 		}
 		if attempt+1 >= nativeTransportAttemptsPerAccount || (retryBudget != nil && *retryBudget <= 0) {
-			return nil, lastFailure, time.Time{}
+			return nil, lastFailure, time.Time{}, nil
 		}
 		if retryBudget != nil {
 			*retryBudget--
 		}
 		if !waitTransportRetry(ctx, nativeTransportRetryDelay(attempt)) {
-			return nil, lastFailure, time.Time{}
+			return nil, lastFailure, time.Time{}, nil
 		}
 	}
+}
+
+// admissionBody 在上游响应体关闭时归还并发名额。
+type admissionBody struct {
+	io.ReadCloser
+	release func()
+}
+
+func (body *admissionBody) Close() error {
+	err := body.ReadCloser.Close()
+	if body.release != nil {
+		body.release()
+		body.release = nil
+	}
+	return err
 }
 
 // nativeTransportRetryDelay 返回第 retry 次重试（从 0 起）前的等待时长：250ms、500ms…上限 1s。
@@ -500,6 +535,30 @@ func waitTransportRetry(ctx context.Context, delay time.Duration) bool {
 func (handler *Handler) fail(response http.ResponseWriter, trail *failureTrail, code string) {
 	writeError(response, code)
 	trail.finish(codexrelay.Error(code).Status, code)
+}
+
+// failAdmission 把并发准入拒绝写成 429 + Retry-After（稳定错误码）。
+func (handler *Handler) failAdmission(response http.ResponseWriter, trail *failureTrail, err error) {
+	rejection, ok := admission.AsRejection(err)
+	if !ok {
+		handler.fail(response, trail, "upstream_temporarily_unavailable")
+		return
+	}
+	response.Header().Set("Retry-After", strconv.Itoa(rejection.RetryAfterSeconds()))
+	writeAdmissionError(response)
+	trail.finish(http.StatusTooManyRequests, admission.CodeAccountTemporarilyUnavailable)
+}
+
+// writeAdmissionError 写出与其它 Codex 错误同形的 429 错误体。
+func writeAdmissionError(response http.ResponseWriter) {
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(response).Encode(map[string]any{"error": map[string]any{
+		"code":    admission.CodeAccountTemporarilyUnavailable,
+		"message": "Inference capacity is temporarily unavailable, retry later",
+		"type":    "rate_limit_error",
+		"param":   nil,
+	}})
 }
 
 func (handler *Handler) recordFailure(ctx context.Context, route runtimecore.ModelRoute, selection Selection, failure inferencegateway.AttemptFailure) runtimecore.CooldownReceipt {

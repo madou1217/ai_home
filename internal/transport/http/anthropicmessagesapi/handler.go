@@ -279,6 +279,16 @@ func (handler *Handler) executeStream(
 			writeStreamFailure(stream, response, rejection.Status, "api_error", rejection.Message)
 			return
 		}
+		if inferenceapi.ApplyAdmissionRetryAfter(response.Header(), executionErr) {
+			writeStreamFailure(
+				stream,
+				response,
+				http.StatusTooManyRequests,
+				"rate_limit_error",
+				"account_temporarily_unavailable",
+			)
+			return
+		}
 		writeStreamFailure(
 			stream,
 			response,

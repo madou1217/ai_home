@@ -124,7 +124,15 @@ type ExecuteOptions struct {
 	HTTPForAccount func(ctx context.Context, account Account) (HTTPDoer, error)
 	// AttemptFailure 在每次换号前报告「这次是哪把凭据失败了」；为 nil 时不观察。
 	AttemptFailure AttemptFailureObserver
+	// AttemptAdmission 在每次真实上游生成/编辑调用前获取并发名额。
+	//
+	// 返回的 release 必须在该次调用结束后调用一次；返回错误时本次账号被跳过
+	// （换号），错误不会被当成账号失败记账。
+	AttemptAdmission AttemptAdmissionHook
 }
+
+// AttemptAdmissionHook 为一次真实上游调用获取并发名额。
+type AttemptAdmissionHook func(ctx context.Context, account Account, model string) (release func(), err error)
 
 // AttemptFailureObserver 观察一次账号级失败。
 //
@@ -230,7 +238,22 @@ func Execute(
 		if normalizeErr != nil {
 			return Execution{}, normalizeErr
 		}
-		result, generateErr := EmulateMultiple(ctx, strategy, normalizedInput, request.N)
+		release := func() {}
+		if options.AttemptAdmission != nil {
+			releaseAdmission, admissionErr := options.AttemptAdmission(ctx, next, request.Model)
+			if admissionErr != nil {
+				// 并发准入拒绝不是账号失败：不写冷却，直接换下一个候选。
+				lastErr = admissionErr
+				continue
+			}
+			if releaseAdmission != nil {
+				release = releaseAdmission
+			}
+		}
+		result, generateErr := func() (Result, error) {
+			defer release()
+			return EmulateMultiple(ctx, strategy, normalizedInput, request.N)
+		}()
 		if generateErr == nil {
 			// 统一格式交付：策略只产原生字节（N>1 被模拟时是多次调用合并后的全部图片），
 			// 客户端要的格式在这里**一次性**转码，转码器必须看到所有图片。

@@ -55,8 +55,14 @@ type ObservedFacts struct {
 	RuntimeModelCooldownUntil time.Time
 	// ModelFailureKind 是该模型最近的失败类别（例如 model_capacity_unavailable）。
 	ModelFailureKind string
-	AccountInFlight  int
-	ModelInFlight    int
+	// AccountInFlight 是该账号当前在途的上游尝试数。
+	AccountInFlight int
+	// AccountConcurrencyLimit 是账号总量并发上限（0=不限）。
+	AccountConcurrencyLimit int
+	// ModelInFlight 是该账号该模型当前在途的上游尝试数。
+	ModelInFlight int
+	// ModelConcurrencyLimit 是该账号该模型的并发上限（0=没有单独覆盖）。
+	ModelConcurrencyLimit int
 }
 
 // EligibilityFacts 是需要外部端口才能得出的两个结论，由适配层先问好再交给策略。

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/admission"
 	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/core/concurrency"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
@@ -51,9 +52,10 @@ func (handler *Handler) ServeEffectiveConcurrency(response http.ResponseWriter, 
 		effective = keyMax
 	}
 	providerDefault := config.ProviderDefaults[strings.ToLower(provider)]
+	live := admission.Observe(provider, accountRef, model)
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":                 true,
-		"enforced":           false,
+		"enforced":           true,
 		"systemMax":          config.SystemMax,
 		"accountMax":         accountMax,
 		"keyMax":             keyMax,
@@ -63,6 +65,11 @@ func (handler *Handler) ServeEffectiveConcurrency(response http.ResponseWriter, 
 		"queueLimit":         config.QueueLimit,
 		"queueWaitTimeoutMs": config.QueueWaitTimeoutMS,
 		"retryAfterSeconds":  config.RetryAfterSeconds,
+		"inFlight": map[string]any{
+			"system":  live.SystemInFlight,
+			"account": live.AccountInFlight,
+			"model":   live.ModelInFlight,
+		},
 	})
 }
 

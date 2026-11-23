@@ -12,11 +12,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -277,6 +279,14 @@ func (handler *Handler) ServeHTTP(
 	}
 	upstream.SetReadLimit(MaxMessageBytes)
 	handler.observeRoute(request.Header.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
+	turn := &turnAdmission{}
+	lease, admitErr := handler.admitTurn(session.Context(), selection, route.ModelID().String())
+	if admitErr != nil {
+		handler.writeAdmissionError(client, admitErr)
+		return
+	}
+	turn.set(lease)
+	defer turn.release()
 	sendFrame := firstFrame
 	if previous, found := handler.sessionAccounts.Swap(
 		sessionID,
@@ -330,8 +340,57 @@ func (handler *Handler) ServeHTTP(
 		request.Host,
 		pinnedAccountRef,
 		sessionID,
+		turn,
 	)
 }
+
+// admitTurn 为一轮 WS 生成获取并发名额（不是每连接一次）。
+func (handler *Handler) admitTurn(
+	ctx context.Context,
+	selection codexwebsocket.Selection,
+	model string,
+) (*admission.Lease, error) {
+	return admission.Acquire(ctx, admission.Request{
+		Provider:   string(inference.ProviderCodex),
+		AccountRef: selection.AccountRef().String(),
+		Model:      model,
+	})
+}
+
+// writeAdmissionError 把并发准入拒绝写成 WS 错误帧；升级后无法再改 HTTP 状态。
+func (handler *Handler) writeAdmissionError(client responseswebsocket.Connection, err error) {
+	if _, ok := admission.AsRejection(err); !ok {
+		writeWebSocketError(client, http.StatusServiceUnavailable, "no_available_account", "当前没有可用的 Codex 账号")
+		return
+	}
+	writeWebSocketError(
+		client,
+		http.StatusTooManyRequests,
+		admission.CodeAccountTemporarilyUnavailable,
+		"Inference capacity is temporarily unavailable, retry later",
+	)
+}
+
+// turnAdmission 持有本 WS 轮次的准入名额；模型切换时原子替换并释放旧名额。
+type turnAdmission struct {
+	mu    sync.Mutex
+	lease *admission.Lease
+}
+
+func (turn *turnAdmission) set(lease *admission.Lease) {
+	if turn == nil {
+		return
+	}
+	turn.mu.Lock()
+	previous := turn.lease
+	turn.lease = lease
+	turn.mu.Unlock()
+	if previous != nil {
+		previous.Release()
+	}
+}
+
+func (turn *turnAdmission) release() { turn.set(nil) }
 
 // observeRoute 把本轮选号交给可选的路由观测端口；会话键为空或未接入时什么都不做。
 func (handler *Handler) observeRoute(sessionKey string, accountRef accountcore.AccountRef, model string) {
@@ -362,6 +421,7 @@ func (handler *Handler) proxy(
 	localAuthority string,
 	pinnedAccountRef string,
 	sessionID string,
+	turn *turnAdmission,
 ) {
 	for {
 		results := make(chan pumpResult, 2)
@@ -377,6 +437,8 @@ func (handler *Handler) proxy(
 				_ = oldUpstream.CloseNow()
 			}
 			<-results
+			// 上一轮已经结束：先归还名额，避免同一账号上限为 1 时新轮次被自己挡住。
+			turn.release()
 			nextObserver, switched := handler.switchModel(
 				session,
 				result.modelSwitch,
@@ -385,6 +447,7 @@ func (handler *Handler) proxy(
 				localAuthority,
 				pinnedAccountRef,
 				sessionID,
+				turn,
 			)
 			if !switched {
 				session.Cancel()
@@ -431,6 +494,7 @@ func (handler *Handler) switchModel(
 	localAuthority string,
 	pinnedAccountRef string,
 	sessionID string,
+	turn *turnAdmission,
 ) (*turnObserver, bool) {
 	if handler == nil || session == nil || strings.TrimSpace(model) == "" {
 		return nil, false
@@ -453,6 +517,13 @@ func (handler *Handler) switchModel(
 	}
 	upstream.SetReadLimit(MaxMessageBytes)
 	handler.observeRoute(clientHeader.Get("X-Session-Id"), selection.AccountRef(), selection.Route().EffectiveModel())
+	lease, admitErr := handler.admitTurn(session.Context(), selection, route.ModelID().String())
+	if admitErr != nil {
+		_ = upstream.CloseNow()
+		handler.writeAdmissionError(session.Client(), admitErr)
+		return nil, false
+	}
+	turn.set(lease)
 	sendFrame := frame
 	if previous, found := handler.sessionAccounts.Swap(sessionID, selection.AccountRef(), handler.clock()); found && previous != selection.AccountRef() {
 		session.stripForeignReasoning = true

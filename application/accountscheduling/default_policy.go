@@ -79,6 +79,11 @@ func (policy *DefaultPolicy) EvaluateAccount(evidence Evidence) schedcore.Verdic
 	if !allowsLiveRuntimeRecheck(evidence.Account.SchedulableStatus) {
 		return schedcore.Blocked(schedcore.ReasonRuntimeBlocked)
 	}
+	// 账号在途并发已达上限：容量存在但本刻满了，其它账号仍有容量时应换号。
+	if evidence.Observed.AccountConcurrencyLimit > 0 &&
+		evidence.Observed.AccountInFlight >= evidence.Observed.AccountConcurrencyLimit {
+		return schedcore.Blocked(schedcore.ReasonAccountConcurrency)
+	}
 	return schedcore.Allowed("")
 }
 
@@ -117,6 +122,11 @@ func (policy *DefaultPolicy) EvaluateModel(evidence Evidence) schedcore.Verdict 
 	}
 	if verdict := blockedBy(evidence.Eligibility.UsageGate); !verdict.Schedulable() {
 		return verdict
+	}
+	// (账号,模型) 单独并发上限已满：只拦这一对，账号仍可服务其它模型。
+	if evidence.Observed.ModelConcurrencyLimit > 0 &&
+		evidence.Observed.ModelInFlight >= evidence.Observed.ModelConcurrencyLimit {
+		return schedcore.Blocked(schedcore.ReasonModelConcurrency)
 	}
 	return schedcore.Allowed("")
 }

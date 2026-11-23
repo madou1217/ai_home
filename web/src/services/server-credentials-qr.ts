@@ -40,7 +40,9 @@ export function normalizeManagementKey(value: unknown): string {
   if (
     key.length < MIN_MANAGEMENT_KEY_LENGTH
     || key.length > MAX_MANAGEMENT_KEY_LENGTH
-    || /[\r\n\u0000]/.test(key)
+    || key.includes('\r')
+    || key.includes('\n')
+    || key.includes('\u0000')
   ) {
     throw new Error(`Management Key 必须为 ${MIN_MANAGEMENT_KEY_LENGTH}-${MAX_MANAGEMENT_KEY_LENGTH} 个字符，且不能包含换行。`);
   }

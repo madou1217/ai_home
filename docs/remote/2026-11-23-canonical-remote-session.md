@@ -78,12 +78,24 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
   8070 → 8088（input +12 / output +6）；
 - 修复前同一场景首个请求直接收到 401，需要客户端重连才恢复；修复后自动选号连续 2 次
   均一次成功；
-- “本轮尚未输出时的可重试失败 → 1011 让 Codex 重连”分支已在隔离环境验证，见下节。
+- “本轮尚未输出时的可重试失败 → 1011 让 Codex 重连”分支已在 AWS 真实配额与隔离
+  环境分别验证，见下节。
 
 ### 429 / 配额耗尽换号（2026-11-23）
 
-为避免共享 AWS 账号被并发修改影响，本次在隔离的 Go Server（临时 `AIH_HOME_DIR`、
-`127.0.0.1:19601`）上，用两个假 Codex WS 上游验证同一份已提交代码：
+AWS 真实配额验证：
+
+- 账号 `acct_f543b2bf61e6241b1f72`（codex:5，plus）的真实 secondary 窗口已
+  `exhausted`（`account_usage.remaining_bps=0`）。为让它进入可选集合，临时启用账号并
+  放宽本地 quota 选择数据；验证后按备份精确恢复并重新停用，上游配额本身没有伪造；
+- 第一连接钉选该账号：客户端收到 0 帧，close 1011 `retryable upstream failure`；
+- 运行态：该账号 `blocks:["usage_snapshot"]`、`last_failure_kind=quota_exhausted`；
+- 立即重连（不钉选）：14 帧、`completed`、输出 `ws-ok`，由健康账号
+  `acct_9aa145b7fcd69a60cd73` 服务；
+- 会话 `rx-9124b1f3917c32c705` total 8160 → 8196（input +24 / output +12）。
+
+隔离复现（可重复，不消耗真实配额）：在临时 `AIH_HOME_DIR`、`127.0.0.1:19601` 上，
+用两个假 Codex WS 上游验证同一份已提交代码：
 
 - 上游 A（`127.0.0.1:19993`）：握手成功，发 `response.created` / `response.in_progress` /
   `response.metadata` 后返回 `{"type":"error","status":429,"error":{"type":"usage_limit_reached"...}}`；
@@ -108,8 +120,8 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 - Claude 的启动头注入已实现，本轮未用真实 Claude 会话验证；
 - 客户端在 `response.completed` 之前主动断开时仍拿不到该次用量；
 - 钉选账号在 401/403 时会回落到池内其它账号（与 HTTP native 的 pinned fallback 一致）；
-- 429/配额分支使用隔离 Server + 假上游验证，没有消耗真实账号配额；AWS 上的真实配额
-  耗尽本轮未复现。
+- AWS 真实配额验证只临时放宽了本地 quota 选择数据（已按备份恢复），没有消耗真实配额；
+  真实 429 由已耗尽账号的上游返回。
 
 ## 6. 原始设计（保留）
 

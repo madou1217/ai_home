@@ -878,10 +878,9 @@ func (handler *Handler) attemptRelay(
 	if admitErr != nil {
 		rejection, _ := admission.AsRejection(admitErr)
 		ownAccount := rejection.IsOwnAccountSaturated()
-		status := http.StatusServiceUnavailable
-		if !ownAccount {
-			status = http.StatusTooManyRequests
-		}
+		// 准入拒绝统一是 429 + Retry-After（own-account 仍会继续换号尝试；
+		// 若整轮耗尽，客户端拿到的是可重试的 429，而不是永久性 503）。
+		status := http.StatusTooManyRequests
 		// 准入拒绝是 429 契约的一部分：Retry-After 必须与错误一起交付，
 		// 否则客户端只能盲目立即重试。
 		var failureHeader http.Header

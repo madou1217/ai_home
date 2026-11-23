@@ -91,7 +91,7 @@ func limitsShow(ctx context.Context, home string, runtime commandRuntime, args [
 			"ok": true, "concurrency": config, "enforced": false,
 		})
 	}
-	_, _ = fmt.Fprintln(runtime.stdout, "CONCURRENCY（并发准入已启用；RPM/TPM 未执行）")
+	_, _ = fmt.Fprintln(runtime.stdout, "CONCURRENCY（并发与 RPM/TPM/每日 token 准入已启用）")
 	_, _ = fmt.Fprintf(runtime.stdout, "systemMax:          %d\n", config.SystemMax)
 	_, _ = fmt.Fprintf(runtime.stdout, "queueLimit:         %d\n", config.QueueLimit)
 	_, _ = fmt.Fprintf(runtime.stdout, "queueWaitTimeoutMs: %d\n", config.QueueWaitTimeoutMS)
@@ -250,7 +250,7 @@ func limitsSetAccount(ctx context.Context, home string, runtime commandRuntime, 
 	if *asJSON {
 		return json.NewEncoder(runtime.stdout).Encode(map[string]any{"ok": true, "limit": limit, "enforced": false})
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已设置账号覆盖: account=%s model=%s max=%d rpm=%d tpm=%d（并发已生效，rpm/tpm 未执行）\n",
+	_, _ = fmt.Fprintf(runtime.stdout, "已设置账号覆盖: account=%s model=%s max=%d rpm=%d tpm=%d（并发与 RPM/TPM 已生效）\n",
 		limit.AccountRef, displayOrAll(limit.ModelID), limit.MaxConcurrency, limit.RPMLimit, limit.TPMLimit)
 	return nil
 }

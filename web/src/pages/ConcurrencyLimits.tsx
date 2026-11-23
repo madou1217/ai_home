@@ -9,7 +9,7 @@ import { getProviderLabel, providerIds } from '@/providers/catalog';
  * 限流与并发设置。
  *
  * 本轮只存储与预览：全局系统上限、Provider 默认、账号（+模型）覆盖都会保存，
- * 并发准入已经执行；RPM/TPM 仍未执行，页面按字段分别标注。
+ * 并发与 RPM/TPM 准入均已执行；预览返回 enforced=true。
  */
 
 type AccountLimitRow = AccountConcurrencyLimit & { provider: string };

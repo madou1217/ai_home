@@ -384,6 +384,23 @@ func (coordinator *Coordinator) runUpstream429RetryLoop(
 			return false, attemptErr
 		}
 		if !reacquired {
+			if attemptResult.retryableCooldown {
+				// 冷却由本次或并发的 429 留下：继续等待下一档，不重新观察上游。
+				decision = coordinator.upstream429Retries.PlanNextWait(ctx, reqState, candidate.evidence)
+				if !decision.ShouldRetry {
+					reqState.NoteAbort(decision.AbortReason)
+					coordinator.upstream429Retries.ReportOutcome(
+						reqState,
+						surface,
+						string(candidate.route.ProviderID()),
+						candidate.accountRef.String(),
+						"aborted",
+						decision.AbortReason,
+					)
+					return false, nil
+				}
+				continue
+			}
 			if abortReason == upstreamretry.AbortNone {
 				abortReason = upstreamretry.AbortReacquireUnavailable
 			}
@@ -459,7 +476,10 @@ func (coordinator *Coordinator) runUpstream429RetryLoop(
 }
 
 type upstream429RetryAttemptResult struct {
-	terminal          bool
+	terminal bool
+	// retryableCooldown 表示本次没有重新派发，只因 (账号,模型) 软冷却而无法重征召；
+	// 调用方应继续按策略等待下一档，而不是把 429 交还客户端。
+	retryableCooldown bool
 	route             Route
 	accountRef        accountcore.AccountRef
 	failure           AttemptFailure
@@ -498,6 +518,9 @@ func (coordinator *Coordinator) executeSingleUpstream429Retry(
 		candidate,
 	)
 	if recruitErr != nil {
+		if errors.Is(recruitErr, accountrouting.ErrModelCooldown) {
+			return upstream429RetryAttemptResult{retryableCooldown: true}, false, upstreamretry.AbortNone, nil
+		}
 		if errors.Is(recruitErr, accountrouting.ErrNoRoutableAccount) ||
 			errors.Is(recruitErr, accountcredentials.ErrCredentialIdentityChanged) {
 			return upstream429RetryAttemptResult{}, false, upstreamretry.AbortReacquireUnavailable, nil

@@ -45,6 +45,11 @@ var (
 	// 它包装 ErrNoRoutableAccount（errors.Is 仍成立），让入站层把「全部候选都被
 	// 并发上限挡下」映射成可重试的 429，而不是永久的 503。
 	ErrConcurrencyExhausted = errors.New("候选账号仅因并发上限不可征召")
+	// ErrModelCooldown 表示没有可征召账号的唯一原因是 (账号,模型) 软冷却。
+	//
+	// 它同样包装 ErrNoRoutableAccount。429 等待后的重征召遇到它时，调用方应继续
+	// 按策略等待，而不是立刻把上游 429 交还给客户端：冷却通常正是本次 429 留下的。
+	ErrModelCooldown = errors.New("候选账号仅因模型冷却不可征召")
 )
 
 // CandidateSource 提供已经按 Provider、模型和启用状态筛选的不可变候选快照。
@@ -386,7 +391,9 @@ type Result struct {
 	usedRateLimitCooldownWaiver bool
 	// concurrencyBlocked 统计仅因并发上限被跳过的候选数。
 	concurrencyBlocked int
-	// otherBlocked 表示扫描中出现了非并发原因的跳过，不能把整轮归因为并发饱和。
+	// modelCooldownBlocked 统计仅因 (账号,模型) 软冷却被跳过的候选数。
+	modelCooldownBlocked int
+	// otherBlocked 表示扫描中出现了并发/冷却以外的跳过，不能把整轮归因为可重试状态。
 	otherBlocked bool
 }
 
@@ -680,9 +687,12 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		verdict := session.evaluate(candidate, eligibility, usage)
 		admitted, usedRateLimitWaiver := session.admits(route, verdict, eligibility, usage.Blocked, offset, candidate)
 		if !admitted {
-			if isConcurrencyReason(verdict.Reason) {
+			switch {
+			case verdict.Reason == schedcore.ReasonModelCooldown:
+				progress.modelCooldownBlocked++
+			case isConcurrencyReason(verdict.Reason):
 				progress.concurrencyBlocked++
-			} else {
+			default:
 				progress.otherBlocked = true
 			}
 			continue
@@ -727,6 +737,10 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		return progress, nil
 	}
 	progress.sourceExhausted = true
+	if progress.modelCooldownBlocked > 0 && !progress.otherBlocked {
+		// 全部候选都只因 (账号,模型) 软冷却被挡下：等待后的重征召应继续等待。
+		return progress, fmt.Errorf("%w: %w", ErrNoRoutableAccount, ErrModelCooldown)
+	}
 	if progress.concurrencyBlocked > 0 && !progress.otherBlocked {
 		// 全部候选都只因并发上限被挡下：这是可重试的饱和，不是永久无号。
 		return progress, fmt.Errorf("%w: %w", ErrNoRoutableAccount, ErrConcurrencyExhausted)

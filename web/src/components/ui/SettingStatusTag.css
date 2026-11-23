@@ -1,0 +1,67 @@
+/* 统一设置状态标签：1px 完整发丝框 + 图标 + 语义文字，禁止左侧装饰条与裸色值 */
+.hos-setting-status-tag {
+  --hos-status-tone: var(--color-muted-strong);
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 22px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--hos-status-tone) 38%, var(--color-border));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--hos-status-tone) 8%, transparent);
+  color: var(--hos-status-tone);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+.hos-setting-status-tag--compact {
+  min-height: 20px;
+  padding: 0 var(--space-2);
+  gap: var(--space-1);
+}
+
+.hos-setting-status-tag--dirty {
+  --hos-status-tone: var(--color-warning);
+}
+
+.hos-setting-status-tag--saved,
+.hos-setting-status-tag--applied {
+  --hos-status-tone: var(--color-success);
+}
+
+.hos-setting-status-tag--saving {
+  --hos-status-tone: var(--color-accent);
+}
+
+.hos-setting-status-tag--error {
+  --hos-status-tone: var(--color-danger);
+}
+
+.hos-setting-status-tag--unset {
+  --hos-status-tone: var(--color-muted);
+  border-color: var(--color-border);
+  background: var(--color-surface-sunken);
+}
+
+.hos-setting-status-tag--pending_restart {
+  --hos-status-tone: var(--color-accent);
+}
+
+.hos-setting-status-tag-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--hos-text-micro);
+}
+
+.hos-setting-status-tag-text {
+  line-height: 1;
+}

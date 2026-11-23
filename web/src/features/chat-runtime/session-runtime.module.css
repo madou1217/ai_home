@@ -804,17 +804,39 @@
   .queueActions { grid-column: 2; flex-wrap: wrap; }
 }
 /* 会话设置弹窗：hud-label 字段标题 + prose 说明 */
-.chatSettingsFields { display: flex; flex-direction: column; gap: 10px; }
-.chatSettingsFields > label {
-  margin-top: var(--space-2);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--color-faint);
+.chatSettingsTrigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-3);
 }
-.chatSettingsFields > label:first-child { margin-top: 0; }
-.chatSettingsHint { color: var(--color-muted); font-family: var(--font-prose); font-size: 12px; line-height: 1.55; }
+.chatSettingsModalTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.chatSettingsFields { display: flex; flex-direction: column; gap: var(--space-4); }
+.chatSettingsFieldHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.chatSettingsFieldHead:first-child { margin-top: 0; }
+.chatSettingsFieldHead > label {
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-heading);
+}
+.chatSettingsPersisted {
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+}
+.chatSettingsHint { color: var(--color-muted); font-family: var(--font-prose); font-size: var(--hos-text-caption); line-height: var(--leading-snug); }
 .chatSettingsHint[role='status'] { color: var(--color-warning); font-family: var(--font-mono); }
 .branchParent { font-family: var(--font-mono); font-size: 12px; margin: 0 20px 8px; color: var(--color-muted-strong); }
 

@@ -31,6 +31,12 @@
 .settings-grid.settings-grid--single {
   grid-template-columns: minmax(0, 1fr);
 }
+.settings-section-form {
+  min-width: 0;
+}
+.settings-inline-alert {
+  margin-bottom: var(--space-4);
+}
 .settings-panel {
   min-width: 0;
 }

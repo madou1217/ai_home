@@ -1,0 +1,71 @@
+/* 统一保存操作栏：状态与生效预期居左，动作按钮居右 */
+.hos-save-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  min-width: 0;
+}
+
+.hos-save-action-bar-info {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.hos-save-action-bar-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hos-save-action-bar-effect {
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.hos-save-action-bar-feedback {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.hos-save-action-bar-feedback--muted {
+  color: var(--color-muted);
+}
+
+.hos-save-action-bar-feedback--success {
+  color: var(--color-success);
+}
+
+.hos-save-action-bar-feedback--error {
+  color: var(--color-danger);
+}
+
+.hos-save-action-bar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+@media (max-width: 767.98px) {
+  .hos-save-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hos-save-action-bar-actions {
+    justify-content: flex-end;
+  }
+}

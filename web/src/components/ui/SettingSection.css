@@ -1,0 +1,193 @@
+/* 紧凑 SettingSection / SettingRow：严格使用 design-tokens，仅用 1px 发丝线区分控件边界 */
+.hos-setting-section {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hos-setting-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-8) var(--space-4);
+}
+
+.hos-setting-section-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.hos-setting-section-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.hos-setting-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h3);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: var(--tracking-wide);
+  line-height: 1.3;
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.hos-setting-section-title::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.hos-setting-section-status,
+.hos-setting-section-extra {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hos-setting-section-desc {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.hos-setting-section-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-8) var(--space-4);
+}
+
+.hos-setting-section-footer {
+  padding: var(--space-6) var(--space-8) var(--space-8);
+  border-top: 1px solid var(--color-border);
+}
+
+.hos-setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
+  align-items: start;
+  gap: var(--space-6);
+  padding: var(--space-5) 0;
+}
+
+.hos-setting-row + .hos-setting-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.hos-setting-row--stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.hos-setting-row-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.hos-setting-row-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hos-setting-row-title {
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+}
+
+.hos-setting-row-title--danger {
+  color: var(--color-danger);
+}
+
+.hos-setting-row-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+.hos-setting-row-desc {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.hos-setting-row-persisted {
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+}
+
+.hos-setting-row-caveat {
+  margin: 0;
+  color: var(--color-faint);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+}
+
+.hos-setting-row-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+}
+
+.hos-setting-row--stacked .hos-setting-row-control {
+  align-items: stretch;
+}
+
+.hos-setting-row-control .ant-form-item {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+@media (max-width: 767.98px) {
+  .hos-setting-section-head {
+    padding: var(--space-6) var(--space-6) var(--space-3);
+  }
+
+  .hos-setting-section-body {
+    padding: 0 var(--space-6) var(--space-3);
+  }
+
+  .hos-setting-section-footer {
+    padding: var(--space-5) var(--space-6) var(--space-6);
+  }
+
+  .hos-setting-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .hos-setting-row-control {
+    align-items: stretch;
+  }
+}

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Space, Switch, Tag, Typography, message } from 'antd';
+import { Switch } from 'antd';
 import Button from '@/components/ui/AppButton';
-import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
+import InlineNote from '@/components/ui/InlineNote';
+import SettingSection, { SettingRow } from '@/components/ui/SettingSection';
+import SettingStatusTag, { type SettingStatusState } from '@/components/ui/SettingStatusTag';
+import SaveActionBar from '@/components/ui/SaveActionBar';
 import { configAPI } from '@/services/api';
 import type { Upstream429RetryGlobalConfig } from '@/types';
 import {
@@ -17,6 +20,11 @@ import {
 
 type LoadStatus = 'loading' | 'loaded' | 'error';
 
+interface RetrySaveFeedback {
+  tone: 'success' | 'error';
+  text: string;
+}
+
 function arraysEqual(a: readonly number[], b: readonly number[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -27,8 +35,8 @@ function arraysEqual(a: readonly number[], b: readonly number[]): boolean {
 
 /**
  * 桌面设置页「上游 429 自动重试」卡片：
- * - 绑定完整传输目标与单调 generation（含 endpoint 与管理密钥修订），切服或修改配置立即失效重载；
- * - 仅在当前目标当前 generation 成功读取合法配置后开放编辑与保存（按钮/Enter/handler 同门禁）；
+ * - 绑定完整传输目标与单调 generation，切服或修改凭据立即失效重载；
+ * - 仅在当前目标当前 generation 成功读取合法配置后开放编辑与保存；
  * - 仅提交 upstream429Retry 局部补丁，保存后实时生效，无需重启。
  */
 export default function Upstream429RetrySettingCard() {
@@ -41,6 +49,7 @@ export default function Upstream429RetrySettingCard() {
   const [savedConfig, setSavedConfig] = useState<Upstream429RetryGlobalConfig | null>(null);
   const [enabled, setEnabled] = useState<boolean>(false);
   const [scheduleText, setScheduleText] = useState<string>('');
+  const [feedback, setFeedback] = useState<RetrySaveFeedback | null>(null);
 
   const mountedRef = useRef(true);
   const loadRequestSeqRef = useRef(0);
@@ -77,6 +86,7 @@ export default function Upstream429RetrySettingCard() {
     setLoadError(null);
     setSavedConfig(null);
     setSaving(false);
+    setFeedback(null);
 
     configAPI.getServer({
       signal: controller.signal,
@@ -89,12 +99,11 @@ export default function Upstream429RetrySettingCard() {
         }
         const parsedConfig = parseGlobalUpstream429RetryConfig(server);
         if (!parsedConfig) {
-          const errMsg = '服务端返回了无效的上游 429 重试配置，已禁止保存以免覆盖当前设置';
+          const errMsg = '服务端返回了无效的 429 重试配置，已禁止保存以免覆盖当前设置';
           setLoadStatus('error');
           setLoadedGeneration(null);
           setSavedConfig(null);
           setLoadError(errMsg);
-          message.error(errMsg);
           return;
         }
         setSavedConfig(parsedConfig);
@@ -111,12 +120,11 @@ export default function Upstream429RetrySettingCard() {
         const data = typeof error === 'object' && error
           ? (error as { response?: { data?: { message?: string; error?: string } } }).response?.data
           : undefined;
-        const errMsg = data?.message || data?.error || '读取上游 429 重试配置失败，已禁止保存以免覆盖当前设置';
+        const errMsg = data?.message || data?.error || '读取 429 重试配置失败，已禁止保存';
         setLoadStatus('error');
         setLoadedGeneration(null);
         setSavedConfig(null);
         setLoadError(errMsg);
-        message.error(errMsg);
       })
       .finally(() => {
         if (loadAbortRef.current === controller) {
@@ -144,6 +152,22 @@ export default function Upstream429RetrySettingCard() {
   const controlsDisabled = !loadedForCurrentScope || saving;
   const saveDisabled = controlsDisabled || !dirty || Boolean(parsed.error) || !parsed.steps;
 
+  const sectionStatus: SettingStatusState = saving
+    ? 'saving'
+    : loadStatus === 'error' || feedback?.tone === 'error'
+      ? 'error'
+      : !loadedForCurrentScope
+        ? 'saving'
+        : dirty
+          ? 'dirty'
+          : 'applied';
+
+  const sectionStatusLabel = !loadedForCurrentScope && loadStatus === 'loading'
+    ? '读取中'
+    : loadStatus === 'error'
+      ? '读取失败'
+      : undefined;
+
   const handleSave = async () => {
     const capturedScope = scope;
     if (
@@ -168,6 +192,7 @@ export default function Upstream429RetrySettingCard() {
     const payloadSteps = [...parsed.steps];
 
     setSaving(true);
+    setFeedback(null);
     try {
       const updatedServer = await configAPI.updateServer(
         {
@@ -187,17 +212,21 @@ export default function Upstream429RetrySettingCard() {
       }
       const parsedUpdated = parseGlobalUpstream429RetryConfig(updatedServer);
       if (!parsedUpdated) {
-        message.error('保存成功但返回配置结构异常，请重新加载确认');
+        setFeedback({ tone: 'error', text: '返回结构异常，正在重新读取确认' });
         loadForScope(capturedScope);
         return;
       }
+      const formatted = formatBackoffSeconds(parsedUpdated.backoffSeconds);
       setSavedConfig(parsedUpdated);
       setEnabled(parsedUpdated.enabled);
-      setScheduleText(formatBackoffSeconds(parsedUpdated.backoffSeconds));
+      setScheduleText(formatted);
       setLoadError(null);
       setLoadedGeneration(capturedScope.generation);
       setLoadStatus('loaded');
-      message.success('上游 429 重试配置已保存并实时生效');
+      setFeedback({
+        tone: 'success',
+        text: `已应用：${parsedUpdated.enabled ? '已启用' : '已关闭'}，退避队列 ${formatted}s`
+      });
     } catch (error: unknown) {
       if (!mountedRef.current || activeSaveReqRef.current !== saveReqId || !isScopeCurrent(capturedScope)) {
         return;
@@ -205,7 +234,10 @@ export default function Upstream429RetrySettingCard() {
       const data = typeof error === 'object' && error
         ? (error as { response?: { data?: { message?: string; error?: string } } }).response?.data
         : undefined;
-      message.error(data?.message || data?.error || '保存上游 429 重试配置失败');
+      setFeedback({
+        tone: 'error',
+        text: data?.message || data?.error || '保存 429 重试配置失败'
+      });
     } finally {
       if (saveAbortRef.current === controller) {
         saveAbortRef.current = null;
@@ -216,84 +248,105 @@ export default function Upstream429RetrySettingCard() {
     }
   };
 
+  const handleReset = () => {
+    if (!savedConfig) return;
+    setEnabled(savedConfig.enabled);
+    setScheduleText(formatBackoffSeconds(savedConfig.backoffSeconds));
+    setFeedback(null);
+  };
+
   return (
-    <SettingsGroupCard
+    <SettingSection
       title="上游 429 自动重试"
-      description="仅在请求钉选特定账号，或账号池内已无其它可用账号时生效；多账号池始终优先换号。保存后实时生效，无需重启。"
+      description="仅在钉选单账号或无可用替代账号时触发，多账号池始终优先换号。"
+      status={<SettingStatusTag status={sectionStatus} label={sectionStatusLabel} compact />}
+      footer={
+        <SaveActionBar
+          dirty={dirty}
+          saving={saving}
+          disabled={saveDisabled}
+          onSave={() => void handleSave()}
+          onReset={handleReset}
+          status={sectionStatus}
+          statusLabel={sectionStatusLabel}
+          saveLabel="保存重试配置"
+          cleanSaveLabel="已应用"
+          effectSummary="保存后实时生效，无需重启服务"
+          feedback={feedback?.text}
+          feedbackTone={feedback?.tone ?? 'muted'}
+        />
+      }
     >
       {loadStatus === 'error' && loadError ? (
-        <SettingsItem
-          title="配置读取状态"
-          subtitle={loadError}
-          action={(
-            <Button size="small" onClick={() => loadForScope(scope)}>
-              重新加载
-            </Button>
-          )}
-        />
+        <InlineNote
+          tone="error"
+          className="settings-inline-alert"
+          action={<Button size="small" onClick={() => loadForScope(scope)}>重新加载</Button>}
+        >
+          {loadError}
+        </InlineNote>
       ) : null}
-      <SettingsItem
+
+      <SettingRow
         title="启用全局 429 等待重试"
-        subtitle="关闭后默认遇到上游 HTTP 429 立即返回；单个账号仍可在「运行设置 → 429 重试」中独立覆盖。"
-        action={(
-          <Space size={8} align="center">
-            {loadedForCurrentScope ? (
-              <Tag color={enabled ? 'success' : 'default'}>{enabled ? '已启用' : '已关闭'}</Tag>
-            ) : (
-              <Tag color="default">{loadStatus === 'error' ? '读取失败' : '读取中'}</Tag>
-            )}
-            <Switch
-              id="upstream-429-retry-enabled"
-              aria-label="启用全局 429 等待重试"
-              checked={loadedForCurrentScope ? enabled : false}
-              disabled={controlsDisabled}
-              checkedChildren="开"
-              unCheckedChildren="关"
-              onChange={setEnabled}
+        htmlFor="upstream-429-retry-enabled"
+        description="关闭后遇到上游 HTTP 429 立即返回。"
+        persistedValue={
+          loadedForCurrentScope && savedConfig
+            ? `已应用：${savedConfig.enabled ? '已启用' : '已关闭'}`
+            : undefined
+        }
+        caveat="单个账号可在“运行设置 → 429 重试”中独立覆盖。"
+        status={
+          loadedForCurrentScope ? (
+            <SettingStatusTag
+              status={enabled !== savedConfig?.enabled ? 'dirty' : enabled ? 'applied' : 'unset'}
+              label={enabled !== savedConfig?.enabled ? (enabled ? '待启用' : '待关闭') : enabled ? '已启用' : '已关闭'}
+              compact
             />
-          </Space>
-        )}
+          ) : null
+        }
+        control={
+          <Switch
+            id="upstream-429-retry-enabled"
+            aria-label="启用全局 429 等待重试"
+            checked={loadedForCurrentScope ? enabled : false}
+            disabled={controlsDisabled}
+            checkedChildren="开"
+            unCheckedChildren="关"
+            onChange={(checked) => {
+              setEnabled(checked);
+              if (feedback) setFeedback(null);
+            }}
+          />
+        }
       />
-      <SettingsItem
+
+      <SettingRow
         title="退避等待队列（秒）"
-        subtitle="逗号分隔的有序等待秒数，每项为对应重试前的等待时长（默认 30 表示 30s 后重试 1 次）；若上游 Retry-After 更长且未超上限则按其延后。"
-        action={(
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 280, maxWidth: 360 }}>
-            <BackoffScheduleInput
-              id="upstream-429-retry-backoff"
-              ariaLabel="全局 429 退避等待队列（秒）"
-              value={loadedForCurrentScope ? scheduleText : ''}
-              disabled={controlsDisabled}
-              onChange={setScheduleText}
-              onPressEnter={() => { if (!saveDisabled) void handleSave(); }}
-            />
-            <Space size={8}>
-              <Button
-                type="primary"
-                disabled={saveDisabled}
-                loading={saving}
-                onClick={() => void handleSave()}
-              >
-                保存重试配置
-              </Button>
-              {dirty && loadedForCurrentScope && savedConfig ? (
-                <Button
-                  disabled={saving}
-                  onClick={() => {
-                    setEnabled(savedConfig.enabled);
-                    setScheduleText(formatBackoffSeconds(savedConfig.backoffSeconds));
-                  }}
-                >
-                  还原
-                </Button>
-              ) : null}
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                无需重启服务
-              </Typography.Text>
-            </Space>
-          </div>
-        )}
+        htmlFor="upstream-429-retry-backoff"
+        description="逗号分隔的等待秒数，默认 30 表示等待 30 秒后重试 1 次。"
+        persistedValue={
+          loadedForCurrentScope && savedConfig
+            ? `已应用：${formatBackoffSeconds(savedConfig.backoffSeconds)}s`
+            : undefined
+        }
+        caveat="若上游 Retry-After 更长且未超上限，按其延后。"
+        layout="stacked"
+        control={
+          <BackoffScheduleInput
+            id="upstream-429-retry-backoff"
+            ariaLabel="全局 429 退避等待队列（秒）"
+            value={loadedForCurrentScope ? scheduleText : ''}
+            disabled={controlsDisabled}
+            onChange={(next) => {
+              setScheduleText(next);
+              if (feedback) setFeedback(null);
+            }}
+            onPressEnter={() => { if (!saveDisabled) void handleSave(); }}
+          />
+        }
       />
-    </SettingsGroupCard>
+    </SettingSection>
   );
 }

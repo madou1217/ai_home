@@ -27,7 +27,9 @@ const (
 	MaxBackoffStepSeconds = 300
 
 	// MaxScheduleSumSeconds caps cumulative scheduled wait seconds per request.
-	MaxScheduleSumSeconds = 900
+	// 30 minutes: long enough for a concurrency-limited upstream to free a slot while
+	// unattended sessions keep retrying; still bounded by MaxBackoffSteps / per-step limits.
+	MaxScheduleSumSeconds = 1800
 
 	// MaxSingleWait caps any single wait (including upstream Retry-After).
 	MaxSingleWait = MaxBackoffStepSeconds * time.Second

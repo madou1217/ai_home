@@ -124,7 +124,7 @@ export function isValidBackoffSecondsArray(value: unknown): value is number[] {
       return false;
     }
     sum += item;
-    if (sum > 900) {
+    if (sum > 1800) {
       return false;
     }
   }

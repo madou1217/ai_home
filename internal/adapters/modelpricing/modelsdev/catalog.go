@@ -14,19 +14,11 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
-	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
-	metadatamodelsdev "github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
 //go:embed catalog.json.gz
 var embeddedModelsDevCatalogGZ []byte
-
-// ModelModalitiesView 对齐 /v1/models 的 aih_modalities 字段。
-type ModelModalitiesView struct {
-	Input  []string `json:"input"`
-	Output []string `json:"output"`
-}
 
 const (
 	modelsDevCatalogURL        = "https://models.dev/catalog.json"
@@ -143,10 +135,6 @@ type modelsDevCatalog struct {
 	providerIndex  map[string]map[string]indexedModelRecord
 	wildcardRows   []wildcardModelRow
 }
-
-var defaultModalitiesIndex = sync.OnceValues(func() (*metadatamodelsdev.Index, error) {
-	return metadatamodelsdev.New()
-})
 
 var loadedModelsDevCatalog = sync.OnceValues(func() (*modelsDevCatalog, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(embeddedModelsDevCatalogGZ))
@@ -1022,54 +1010,6 @@ func ResolveOpenAIProviderFromModel(modelID, ownedBy string) string {
 	default:
 		return ""
 	}
-}
-
-func ResolveModalities(index *metadatamodelsdev.Index, provider, modelID string) ModelModalitiesView {
-	if index == nil {
-		loaded, err := defaultModalitiesIndex()
-		if err == nil {
-			index = loaded
-		}
-	}
-	if index != nil {
-		if m, found := index.LookupOrInferModalities(provider, modelID); found {
-			in := m.Input()
-			out := m.Output()
-			if len(in) > 0 || len(out) > 0 {
-				return ModelModalitiesView{
-					Input:  in,
-					Output: out,
-				}
-			}
-		}
-	}
-	return ModelModalitiesView{
-		Input:  []string{"text"},
-		Output: []string{"text"},
-	}
-}
-
-func ResolveReasoningEfforts(index *metadatamodelsdev.Index, provider, modelID string) []string {
-	if index == nil {
-		loaded, err := defaultModalitiesIndex()
-		if err == nil {
-			index = loaded
-		}
-	}
-	if index == nil {
-		return nil
-	}
-	ladder, found := index.LookupReasoningEfforts(provider, modelID)
-	if !found || len(ladder) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(ladder))
-	for _, value := range ladder {
-		if value != inference.ReasoningEffort("") && value.IsValid() {
-			out = append(out, string(value))
-		}
-	}
-	return out
 }
 
 func finiteFloat(value *float64) bool {

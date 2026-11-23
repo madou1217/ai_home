@@ -31,6 +31,11 @@ const (
 	CodeInvalidQuery           = "invalid_query"
 	CodeJobNotFound            = "job_not_found"
 	CodeJobLimit               = "job_limit_reached"
+	CodeApprovalRequired       = "approval_required"
+	CodeApprovalNotFound       = "approval_not_found"
+	CodeApprovalDenied         = "approval_denied"
+	CodeApprovalExpired        = "approval_expired"
+	CodeApprovalUsed           = "approval_used"
 	CodeRequestTimeout         = "request_timeout"
 	CodeProtocolError          = "protocol_error"
 	CodeConnectorSuperseded    = "connector_superseded"
@@ -107,6 +112,8 @@ func NormalizeCapabilities(capabilities Capabilities) Capabilities {
 			capabilities.Search = true
 		case CapabilityRunCommand:
 			capabilities.RunCommand = true
+		case CapabilityApproval:
+			capabilities.Approval = true
 		case CapabilityStartJob:
 			capabilities.StartJob = true
 		case CapabilityWatchJob:
@@ -130,6 +137,7 @@ func IntersectCapabilities(allowed, declared Capabilities) Capabilities {
 		ListDirectory: allowed.ListDirectory && declared.ListDirectory,
 		Search:        allowed.Search && declared.Search,
 		RunCommand:    allowed.RunCommand && declared.RunCommand,
+		Approval:      allowed.Approval && declared.Approval,
 		StartJob:      allowed.StartJob && declared.StartJob,
 		WatchJob:      allowed.WatchJob && declared.WatchJob,
 		InterruptJob:  allowed.InterruptJob && declared.InterruptJob,
@@ -153,6 +161,8 @@ func SupportsOperation(capabilities Capabilities, operation string) bool {
 		return capabilities.Search
 	case OperationRunCommand:
 		return capabilities.RunCommand
+	case OperationListApprovals, OperationDecideApproval:
+		return capabilities.Approval
 	case OperationStartJob:
 		return capabilities.StartJob
 	case OperationWatchJob:
@@ -260,9 +270,10 @@ const (
 // confined subdirectory) as its working directory. Cwd confinement is not an
 // OS sandbox: the command runs with the local user's own authority.
 type RunCommandRequest struct {
-	Command   string `json:"command"`
-	Cwd       string `json:"cwd,omitempty"`
-	TimeoutMS int    `json:"timeoutMs,omitempty"`
+	Command    string `json:"command"`
+	Cwd        string `json:"cwd,omitempty"`
+	TimeoutMS  int    `json:"timeoutMs,omitempty"`
+	ApprovalID string `json:"approvalId,omitempty"`
 }
 
 // RunCommandResult carries base64 streams so arbitrary command output survives
@@ -304,9 +315,10 @@ const (
 // it through an on-disk spool, so the job outlives the RPC, the Server session
 // and connector restarts.
 type StartJobRequest struct {
-	Command   string `json:"command"`
-	Cwd       string `json:"cwd,omitempty"`
-	TimeoutMS int    `json:"timeoutMs,omitempty"`
+	Command    string `json:"command"`
+	Cwd        string `json:"cwd,omitempty"`
+	TimeoutMS  int    `json:"timeoutMs,omitempty"`
+	ApprovalID string `json:"approvalId,omitempty"`
 }
 
 type StartJobResult struct {
@@ -379,6 +391,48 @@ func JobWait(waitMS int) time.Duration {
 		wait = MaxJobWait
 	}
 	return wait
+}
+
+// Approval states are stable machine-readable values.
+const (
+	ApprovalPending  = "pending"
+	ApprovalApproved = "approved"
+	ApprovalDenied   = "denied"
+	ApprovalUsed     = "used"
+	ApprovalExpired  = "expired"
+)
+
+// Approval modes are declared by the local connector at connect time.
+const (
+	ApprovalModeNever       = "never"
+	ApprovalModeDestructive = "destructive"
+	ApprovalModeAll         = "all"
+)
+
+// ApprovalRequest is the view of one command waiting for a local decision.
+// The command text is shown to the user; it is never echoed back to the agent
+// through this endpoint.
+type ApprovalRequest struct {
+	ID        string `json:"id"`
+	Command   string `json:"command"`
+	Cwd       string `json:"cwd"`
+	State     string `json:"state"`
+	CreatedAt int64  `json:"createdAt"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+type ListApprovalsResult struct {
+	Mode      string            `json:"mode"`
+	Approvals []ApprovalRequest `json:"approvals"`
+}
+
+type DecideApprovalRequest struct {
+	ID      string `json:"id"`
+	Approve bool   `json:"approve"`
+}
+
+type DecideApprovalResult struct {
+	Approval ApprovalRequest `json:"approval"`
 }
 
 // CommandTimeout converts a caller-supplied millisecond budget into a bounded

@@ -169,6 +169,8 @@ import type {
   WorkspaceAgentTerminalResponse,
   WorkspaceConnectorEnrollmentResponse,
   WorkspaceConnectorListResponse,
+  WorkspaceApprovalListResponse,
+  WorkspaceApprovalDecisionResponse,
   WorkspaceDirectoryResponse
 } from '@/features/workspace-connectors/workspace-connectors-model';
 
@@ -2863,6 +2865,19 @@ export const workspaceConnectorsAPI = {
     const response = await api.post<WorkspaceAgentTerminalResponse>(
       `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/agent-terminal`,
       { agent, ...options }
+    );
+    return response.data;
+  },
+  listApprovals: async (workspaceId: string): Promise<WorkspaceApprovalListResponse> => {
+    const response = await api.get<WorkspaceApprovalListResponse>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/approvals`
+    );
+    return response.data;
+  },
+  decideApproval: async (workspaceId: string, id: string, approve: boolean): Promise<WorkspaceApprovalDecisionResponse> => {
+    const response = await api.post<WorkspaceApprovalDecisionResponse>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/approvals`,
+      { id, approve }
     );
     return response.data;
   }

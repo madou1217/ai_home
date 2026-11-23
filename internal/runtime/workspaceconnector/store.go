@@ -525,6 +525,7 @@ func (state *persistedState) normalize(now time.Time) {
 		// declare the capability (aih workspace connect, on unless --no-command).
 		// Backfill the bit so an existing workspace needs no re-enrollment.
 		state.Enrollments[index].Capabilities.RunCommand = true
+		state.Enrollments[index].Capabilities.Approval = true
 		state.Enrollments[index].Capabilities.StartJob = true
 		state.Enrollments[index].Capabilities.WatchJob = true
 		state.Enrollments[index].Capabilities.InterruptJob = true
@@ -532,6 +533,7 @@ func (state *persistedState) normalize(now time.Time) {
 	for index := range state.Workspaces {
 		state.Workspaces[index].Capabilities = remoteconnector.NormalizeCapabilities(state.Workspaces[index].Capabilities)
 		state.Workspaces[index].Capabilities.RunCommand = true
+		state.Workspaces[index].Capabilities.Approval = true
 		state.Workspaces[index].Capabilities.StartJob = true
 		state.Workspaces[index].Capabilities.WatchJob = true
 		state.Workspaces[index].Capabilities.InterruptJob = true
@@ -575,7 +577,7 @@ func workspaceView(record workspaceRecord) Workspace {
 func defaultCapabilities() remoteconnector.Capabilities {
 	return remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
-		RunCommand: true, StartJob: true, WatchJob: true, InterruptJob: true,
+		RunCommand: true, Approval: true, StartJob: true, WatchJob: true, InterruptJob: true,
 	})
 }
 

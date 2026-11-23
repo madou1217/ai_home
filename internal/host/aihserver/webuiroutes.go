@@ -986,6 +986,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "DELETE " + webuiworkspaceconnectorapi.WorkspacePath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.EntriesPath, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.RPCPath, Handler: workspaceConnectors},
+		{Pattern: "GET " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
+		{Pattern: "POST " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ToolPath, Handler: workspaceConnectors, SkipPublicAlias: true},
 		{Pattern: "POST " + remoteconnector.AgentTerminalPath, Handler: connectorAgentTerminal},
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},

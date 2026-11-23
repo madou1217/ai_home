@@ -269,3 +269,49 @@ button.ws-connector-entry:hover {
   color: var(--color-text-tertiary, inherit);
   font-variant-numeric: tabular-nums;
 }
+
+.ws-connector-approvals {
+  display: grid;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border, rgba(127, 127, 127, 0.18));
+}
+
+.ws-connector-approval {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid var(--color-border, rgba(127, 127, 127, 0.18));
+  border-radius: 6px;
+  background: var(--color-surface-subtle, rgba(127, 127, 127, 0.06));
+}
+
+.ws-connector-approval-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ws-connector-approval-title {
+  color: var(--color-text-secondary, inherit);
+  font-size: 12px;
+}
+
+.ws-connector-approval-command {
+  display: block;
+  max-height: 84px;
+  overflow: auto;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--color-surface-muted, rgba(127, 127, 127, 0.1));
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ws-connector-approval .ws-connector-row-actions {
+  flex: none;
+}

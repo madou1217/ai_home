@@ -91,9 +91,10 @@ func ToolDefinitions() []map[string]any {
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"command":    map[string]any{"type": "string", "description": "要执行的 shell 命令"},
-					"cwd":        map[string]any{"type": "string", "description": "相对工作区根的工作目录（可选，默认工作区根）"},
-					"timeout_ms": map[string]any{"type": "integer", "description": "超时毫秒，默认 120000，上限 600000"},
+					"command":     map[string]any{"type": "string", "description": "要执行的 shell 命令"},
+					"cwd":         map[string]any{"type": "string", "description": "相对工作区根的工作目录（可选，默认工作区根）"},
+					"timeout_ms":  map[string]any{"type": "integer", "description": "超时毫秒，默认 120000，上限 600000"},
+					"approval_id": map[string]any{"type": "string", "description": "只有返回 approval_required 时才需要：用户批准后带上该 id 重试同一命令"},
 				},
 				"required": []any{"command"},
 			},
@@ -104,9 +105,10 @@ func ToolDefinitions() []map[string]any {
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"command":    map[string]any{"type": "string", "description": "要执行的 shell 命令"},
-					"cwd":        map[string]any{"type": "string", "description": "相对工作区根的工作目录（可选）"},
-					"timeout_ms": map[string]any{"type": "integer", "description": "作业最长运行时间，默认 1800000，上限 7200000"},
+					"command":     map[string]any{"type": "string", "description": "要执行的 shell 命令"},
+					"cwd":         map[string]any{"type": "string", "description": "相对工作区根的工作目录（可选）"},
+					"timeout_ms":  map[string]any{"type": "integer", "description": "作业最长运行时间，默认 1800000，上限 7200000"},
+					"approval_id": map[string]any{"type": "string", "description": "只有返回 approval_required 时才需要：用户批准后带上该 id 重试同一命令"},
 				},
 				"required": []any{"command"},
 			},
@@ -370,6 +372,7 @@ func callRunCommand(ctx context.Context, hub *Hub, workspaceID string, args map[
 	}
 	raw, err := hub.Call(ctx, workspaceID, remoteconnector.OperationRunCommand, remoteconnector.RunCommandRequest{
 		Command: command, Cwd: toolString(args["cwd"]), TimeoutMS: toolInt(args["timeout_ms"]),
+		ApprovalID: toolString(args["approval_id"]),
 	})
 	if err != nil {
 		return toolFailure(err)
@@ -418,6 +421,7 @@ func callStartJob(ctx context.Context, hub *Hub, workspaceID string, args map[st
 	}
 	raw, err := hub.Call(ctx, workspaceID, remoteconnector.OperationStartJob, remoteconnector.StartJobRequest{
 		Command: command, Cwd: toolString(args["cwd"]), TimeoutMS: toolInt(args["timeout_ms"]),
+		ApprovalID: toolString(args["approval_id"]),
 	})
 	if err != nil {
 		return toolFailure(err)

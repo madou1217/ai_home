@@ -47,6 +47,27 @@ export interface WorkspaceConnectorEnrollmentResponse {
   enrollment: WorkspaceConnectorEnrollment;
 }
 
+export interface WorkspaceApproval {
+  id: string;
+  command: string;
+  cwd: string;
+  state: 'pending' | 'approved' | 'denied' | 'used' | 'expired' | string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export interface WorkspaceApprovalListResponse {
+  ok: boolean;
+  workspaceId: string;
+  mode: string;
+  approvals: WorkspaceApproval[];
+}
+
+export interface WorkspaceApprovalDecisionResponse {
+  ok: boolean;
+  approval: WorkspaceApproval;
+}
+
 export interface WorkspaceDirectoryEntry {
   name: string;
   type: 'file' | 'dir' | 'symlink' | 'other' | string;

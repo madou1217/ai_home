@@ -1,0 +1,90 @@
+# macOS surface helper build cache and signing (2026-11-23)
+
+Purpose: stop the macOS surface helper from asking for Screen Recording and
+Accessibility on every browser start, and stop recompiling Swift on each start.
+The helper is compiled from embedded sources, so its code identity changed
+whenever the temporary build path or bytes changed.
+
+## Environment
+
+- macOS 27.2.1 (build 26B131), Apple Silicon
+- Microsoft Edge stable 156.0.4314.58 (installed at `/Applications/Microsoft Edge.app`)
+- Server built from the commit that introduced the cache (see the commit log),
+  launched with a temporary HOME and port 19791 so the running service on 9527
+  was not touched
+
+## Change
+
+- Cache root: `<AIH home>/run/cache/account-browser/helper/<key>/aih-browser-surface`.
+- `<key>` is the first 24 hex characters of SHA-256 over the cache format tag,
+  the Swift target triple and every embedded Swift source. A source edit
+  therefore produces a new directory and a new grant; identical sources reuse
+  the exact same bytes.
+- The build runs in `.build-*` inside the cache root, is signed with
+  `codesign --force --sign - --identifier com.meadeo.aih.browser-surface`, and
+  is published by `rename`. A `helper.json` manifest records the key and the
+  binary SHA-256; a mismatch rebuilds instead of executing unknown bytes.
+- Old revisions and abandoned staging directories are pruned after a
+  successful start. If the home is not writable the old transient build remains
+  as a fallback, with the old re-prompt behavior.
+
+## Evidence
+
+- `codesign -dvv` on the cached binary:
+  `Identifier=com.meadeo.aih.browser-surface`, `Signature=adhoc`,
+  `Format=Mach-O thin (arm64)`.
+- Cold start (cache miss, includes Swift compile): `ready` in 8.56 s.
+- Warm start (cache hit): `ready` in 1.75 s and 1.81 s in two runs.
+- Across a full server restart the cached binary kept the same inode and mtime
+  (`inode=1178176803 mtime=1795399965 size=194256`), and the cache root held a
+  single revision directory.
+- Tamper check: appending one byte to the binary made the next start rebuild
+  it; the new size and SHA-256 matched `helper.json` again and a session
+  reached `ready`.
+- The cached binary reports
+  `{"eventPosting":true,"screenCapture":true,"type":"preflight"}` without a new
+  permission prompt.
+- Job-scope start created `run/account-browser/pending/<jobId>/user-data` and
+  produced frames at 1200x900, so the cached helper is a working surface.
+
+## Keyboard activation (fixed 2026-11-23)
+
+`navigate`, `key` and `text` now raise the captured Edge window through
+Accessibility (`kAXFrontmost`, `kAXRaise`, focused/main window) before posting
+events, with `NSRunningApplication.activate` as the fallback. Pointer and
+scroll keep addressing the captured `windowID` directly and do not take focus
+away from the WebUI.
+
+Verified on this Mac:
+
+- `https://www.baidu.com` and `https://example.com` load and render after one
+  `navigate` (140+ frames at 1200x900). Before the fix the same command left
+  `about:blank` with the URL only typed in the address bar.
+- The Codex authorize URL commits and enters the loading state. Its page stays
+  blank in this environment because `auth.openai.com` is unreachable without
+  the account egress proxy (`curl` returns 403), so a real login still needs a
+  configured proxy or the Windows host.
+
+## Remaining macOS risk
+
+Rapidly restarting sessions on the same profile, or starting while the previous
+Edge is still shutting down, can leave two Edge windows;
+`browser_multiple_windows_not_supported` then ends the session. A clean
+close -> start cycle leaves no Edge process and no `host.active` marker and
+reproduces neither problem. Any persistent second window of at least 100x80,
+including an OAuth popup, still aborts the session, so popup-based flows are not
+supported on macOS yet.
+
+## Reproduce
+
+```sh
+AIH_HOME_DIR=/private/tmp/aih-mac-oauth-home \
+AIH_SERVER_API_KEY=sk-local AIH_SERVER_MANAGEMENT_KEY=mk-local \
+aih-server --host 127.0.0.1 --port 19791
+
+find /private/tmp/aih-mac-oauth-home/run/cache/account-browser/helper -name aih-browser-surface
+codesign -dvv <that path>
+```
+
+Start the same task-scope surface twice and compare `stat -f '%i %m' <binary>`
+between the runs; a cache hit leaves both unchanged.

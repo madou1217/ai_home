@@ -18,6 +18,9 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/proxypoollease"
 )
 
+// LeaseTTL 是单次任务代理租约的默认有效期；客户端应在到期前续租。
+const LeaseTTL = 3 * time.Hour
+
 // LeaseManager owns task ingress, never changes a pool's selected global node.
 type LeaseManager struct {
 	ssh      *Supervisor
@@ -233,7 +236,7 @@ func (m *LeaseManager) Acquire(ctx context.Context, selector string) (LeaseView,
 	}
 	delete(m.pending, reservation)
 	m.leases[id] = entry
-	entry.timer = time.AfterFunc(3*time.Hour, func() { m.Release(id) })
+	entry.timer = time.AfterFunc(LeaseTTL, func() { m.Release(id) })
 	m.mu.Unlock()
 	go entry.server.Serve(listener)
 	retained = true
@@ -249,6 +252,27 @@ func (m *LeaseManager) Connect(ctx context.Context, id string) (net.Conn, error)
 	}
 	return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", entry.listener.Addr().String())
 }
+
+// Renew 延长一个仍然存在的租约；过期或未知租约返回 false。
+// 续租只刷新回收定时器，不改变租约 ID、入口端口或已建立的隧道。
+func (m *LeaseManager) Renew(id string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return false
+	}
+	entry := m.leases[id]
+	if entry == nil || entry.closing {
+		return false
+	}
+	entry.timer.Stop()
+	entry.timer = time.AfterFunc(LeaseTTL, func() { m.Release(id) })
+	return true
+}
+
 func (m *LeaseManager) Release(id string) bool {
 	m.mu.Lock()
 	entry := m.leases[id]

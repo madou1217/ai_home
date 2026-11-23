@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import Darwin
 import Foundation
@@ -58,6 +59,41 @@ final class BrowserInput {
     frame = actual
   }
 
+  // Synthetic keyboard events only reach the app's key window. A background
+  // Edge window is not key, so Cmd+L, typed text and Return were dropped and
+  // the omnibox kept the URL without navigating. Bring the captured window
+  // forward before keyboard input; pointer and scroll events target the window
+  // directly and must not steal focus from the WebUI.
+  private func activateWindow() {
+    guard let app = NSRunningApplication(processIdentifier: pid), !app.isActive else { return }
+    let element = AXUIElementCreateApplication(pid)
+    var frontmost: CFTypeRef?
+    if AXUIElementCopyAttributeValue(element, kAXFrontmostAttribute as CFString, &frontmost) != .success || (frontmost as? Bool) != true {
+      if AXUIElementSetAttributeValue(element, kAXFrontmostAttribute as CFString, kCFBooleanTrue) != .success {
+        _ = app.activate(options: [])
+      }
+    }
+    var value: CFTypeRef?
+    if AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value) == .success,
+      let windows = value as? [AXUIElement] {
+      for window in windows where windowMatchesCapture(window) {
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        _ = AXUIElementSetAttributeValue(element, kAXFocusedWindowAttribute as CFString, window)
+        _ = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, window)
+        break
+      }
+    }
+    usleep(150_000)
+  }
+
+  private func windowMatchesCapture(_ window: AXUIElement) -> Bool {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &value) == .success, let raw = value, CFGetTypeID(raw) == AXValueGetTypeID() else { return false }
+    var size = CGSize.zero
+    guard AXValueGetValue(raw as! AXValue, .cgSize, &size) else { return false }
+    return abs(size.width - frame.width) < 8 && abs(size.height - frame.height) < 8
+  }
+
   private func key(_ code: CGKeyCode, flags: CGEventFlags = []) {
     for down in [true, false] {
       guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { continue }
@@ -83,6 +119,7 @@ final class BrowserInput {
     try verifyWindow()
     guard let seen = command["frame"] as? Int64, let generated=history[seen], Date().timeIntervalSince(generated)<2.5 else {throw SurfaceFailure("browser_frame_stale")}
     let type = command["type"] as? String ?? ""
+    if type == "navigate" || type == "key" || type == "text" { activateWindow() }
     switch type {
     case "navigate":
       let raw = command["url"] as? String ?? ""

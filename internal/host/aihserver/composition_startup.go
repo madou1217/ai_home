@@ -85,12 +85,6 @@ func newWebUIStartupRuntime(inputs webuiStartupRuntimeInputs) (*webuiStartupRunt
 		startup.distributionUpdates = updateCloser
 		startup.routes = append(startup.routes, updateRoutes...)
 	}
-	backupRoutes, backupErr := buildInstallationBackupRoutes(deps)
-	if backupErr != nil {
-		log.Printf("运行文件备份不可用: %v", backupErr)
-	} else {
-		startup.routes = append(startup.routes, backupRoutes...)
-	}
 	backgroundDaemons, err := startBackgroundDaemons(inputs.ctx, deps)
 	startup.backgroundDaemons = backgroundDaemons
 	if err != nil {

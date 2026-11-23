@@ -127,6 +127,7 @@ type doctorResponse struct {
 	Issues            []pluginhost.DoctorIssue            `json:"issues"`
 	Warnings          []pluginhost.DoctorIssue            `json:"warnings"`
 	Capabilities      map[string]int                      `json:"capabilities"`
+	Contributions     []pluginhost.DoctorContribution     `json:"contributions"`
 	Installed         []pluginhost.DoctorInstalledSummary `json:"installed"`
 	Audit             []pluginhost.AuditRecord            `json:"audit"`
 	Runtime           pluginhost.RuntimeStatus            `json:"runtime"`
@@ -160,6 +161,7 @@ func (h *Handler) handleDoctor(response http.ResponseWriter, request *http.Reque
 		Issues:            nonNilSlice(report.Issues),
 		Warnings:          nonNilSlice(report.Warnings),
 		Capabilities:      nonNilMap(report.Capabilities),
+		Contributions:     nonNilSlice(report.Contributions),
 		Installed:         nonNilSlice(report.Installed),
 		Audit:             nonNilSlice(audit),
 		Runtime:           report.Runtime,

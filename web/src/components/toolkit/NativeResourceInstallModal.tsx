@@ -62,7 +62,27 @@ export default function NativeResourceInstallModal({
     () => (report?.installCandidates || []).filter((item) => item.kind === kind),
     [report, kind]
   );
-  const owners = useMemo(() => ownerOptions(report, kind), [report, kind]);
+  const declaredTargets = useMemo(() => {
+    if (sourceMode === 'path' && candidate) {
+      return candidates.find((item) => item.source === candidate)?.targets;
+    }
+    if (sourceMode !== 'path' && upload) return upload.targets;
+    return undefined;
+  }, [sourceMode, candidate, candidates, upload]);
+  const allOwners = useMemo(() => ownerOptions(report, kind), [report, kind]);
+  const owners = useMemo(() => {
+    if (!declaredTargets?.length) return allOwners;
+    const allowed = new Set(declaredTargets);
+    return allOwners.filter((option) => allowed.has(option.value.replace(/^(provider|host):/, '')));
+  }, [allOwners, declaredTargets]);
+
+  // 切换安装源后，剔除已经不在声明目标里的选择，避免用户以为还能装到不兼容宿主。
+  useEffect(() => {
+    const allowed = new Set(owners.map((option) => option.value));
+    const current = form.getFieldValue('owners') || [];
+    const next = current.filter((value) => allowed.has(value));
+    if (next.length !== current.length) form.setFieldsValue({ owners: next });
+  }, [owners, form]);
 
   const resetSource = (mode: SourceMode) => {
     setSourceMode(mode);
@@ -230,6 +250,11 @@ export default function NativeResourceInstallModal({
                     form.setFieldsValue({ source: value || '' });
                   }}
                 />
+                {declaredTargets?.length ? (
+                  <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                    声明目标：{declaredTargets.join(' / ')}；安装目标已按声明过滤。
+                  </Typography.Text>
+                ) : null}
               </Form.Item>
             ) : null}
             <Form.Item
@@ -265,6 +290,7 @@ export default function NativeResourceInstallModal({
               {upload ? (
                 <Typography.Text type="secondary">
                   已导入：{upload.name || '文件夹'} · {upload.files} 个文件 · {formatBytes(upload.bytes)}
+                  {upload.targets?.length ? ` · 兼容目标 ${upload.targets.join(' / ')}` : ''}
                 </Typography.Text>
               ) : null}
             </Space>
@@ -305,6 +331,7 @@ export default function NativeResourceInstallModal({
             {upload ? (
               <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                 已导入：{upload.name} · {upload.files} 个文件 · {formatBytes(upload.bytes)}
+                {upload.targets?.length ? ` · 兼容目标 ${upload.targets.join(' / ')}` : ''}
               </Typography.Text>
             ) : null}
           </Form.Item>

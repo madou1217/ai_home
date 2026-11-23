@@ -202,12 +202,13 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		nodeVersion = ResolveNodeVersion(os.LookupEnv)
 	}
 	report := DoctorReport{
-		OK:           true,
-		Issues:       []DoctorIssue{},
-		Warnings:     []DoctorIssue{},
-		Capabilities: map[string]int{},
-		Installed:    []DoctorInstalledSummary{},
-		Runtime:      p.runtime.Status(ctx),
+		OK:            true,
+		Issues:        []DoctorIssue{},
+		Warnings:      []DoctorIssue{},
+		Capabilities:  map[string]int{},
+		Contributions: []DoctorContribution{},
+		Installed:     []DoctorInstalledSummary{},
+		Runtime:       p.runtime.Status(ctx),
 	}
 	doc, err := p.loadStateDoc(ctx)
 	if err != nil {
@@ -252,9 +253,27 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 			}
 			for _, contrib := range mapSlice(manifest, "contributes") {
 				capName := stringField(contrib, "capability")
-				if capName != "" {
-					report.Capabilities[capName]++
+				if capName == "" {
+					continue
 				}
+				report.Capabilities[capName]++
+				order := 0
+				if ord, ok := asFiniteFloat(contrib["order"]); ok {
+					order = int(ord)
+				}
+				policy := "deny"
+				if stringField(contrib, "failurePolicy") == "delegate" {
+					policy = "delegate"
+				}
+				scope, _ := contrib["scope"].(map[string]any)
+				report.Contributions = append(report.Contributions, DoctorContribution{
+					PluginID:       pluginID,
+					ContributionID: stringField(contrib, "id"),
+					Capability:     capName,
+					Order:          order,
+					FailurePolicy:  policy,
+					Scope:          scope,
+				})
 			}
 			entryRel := stringField(manifest, "entry")
 			if directory != "" && entryRel != "" {

@@ -3525,6 +3525,7 @@ export interface NativeResourceInstallCandidate {
   source: string;
   description?: string;
   version?: string;
+  targets?: string[];
 }
 
 export interface NativeResourceSourceImport {
@@ -3533,6 +3534,7 @@ export interface NativeResourceSourceImport {
   name: string;
   files: number;
   bytes: number;
+  targets?: string[];
 }
 
 export interface NativeResourceReport {
@@ -3574,10 +3576,20 @@ export interface AihPluginReport {
   runtime?: Record<string, unknown> | null;
 }
 
+export interface AihPluginDoctorContribution {
+  pluginId: string;
+  contributionId: string;
+  capability: string;
+  order: number;
+  failurePolicy: string;
+  scope?: { providers?: string[]; hosts?: string[]; models?: string[] };
+}
+
 export interface AihPluginDoctorReport extends AihPluginReport {
   issues?: Array<Record<string, unknown>>;
   warnings?: Array<Record<string, unknown>>;
   capabilities?: Record<string, number>;
+  contributions?: AihPluginDoctorContribution[];
 }
 
 export type NetworkConnectorConnectivityMode =

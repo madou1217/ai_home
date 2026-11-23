@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, Empty, Space, Tag, Typography, message } from 'antd';
 import {
   CheckCircleOutlined,
@@ -49,6 +49,23 @@ export default function AihPluginPanel() {
 
   const installed = report?.installed || [];
   const instances = report?.instances || [];
+  // 同一个插件的多个安装版本会重复列出同一贡献项；目录只展示一份。
+  const contributionCatalog = useMemo(() => {
+    const seen = new Set<string>();
+    return (doctor?.contributions || []).filter((item) => {
+      const key = `${item.pluginId}:${item.contributionId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [doctor]);
+  const capabilityCatalog = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of contributionCatalog) {
+      counts.set(item.capability, (counts.get(item.capability) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort(([left], [right]) => left.localeCompare(right));
+  }, [contributionCatalog]);
   const signatureTag = (signature?: { status?: string; keyId?: string }) => {
     if (signature?.status === 'signed') return <Tag color="success">已签名</Tag>;
     if (signature?.status === 'untrusted') return <Tag color="warning">签名未验证</Tag>;
@@ -92,6 +109,38 @@ export default function AihPluginPanel() {
           );
         })}
       </Space>
+      {capabilityCatalog.length ? (
+        <Card size="small" title="声明的能力槽">
+          <Space wrap size={[6, 6]}>
+            {capabilityCatalog.map(([capability, count]) => (
+              <Tag key={capability}>{capability} × {count}</Tag>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
+      {contributionCatalog.length ? (
+        <Card size="small" title="贡献项目录">
+          <Space direction="vertical" size={6} style={{ width: '100%' }}>
+            {contributionCatalog.map((item) => {
+              const scope = item.scope
+                ? Object.entries(item.scope)
+                  .flatMap(([key, values]) => (values?.length ? [`${key}:${values.join('|')}`] : []))
+                  .join(' ')
+                : '';
+              return (
+                <Space wrap key={`${item.pluginId}:${item.contributionId}`} size={6}>
+                  <Tag color="processing">{item.capability}</Tag>
+                  <Typography.Text code>{item.contributionId}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {item.pluginId} · order {item.order} · {item.failurePolicy}
+                    {scope ? ` · scope ${scope}` : ''}
+                  </Typography.Text>
+                </Space>
+              );
+            })}
+          </Space>
+        </Card>
+      ) : null}
       {doctor ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>Doctor：{doctor.ok ? '健康' : `${doctor.issues?.length || 0} 个问题`}；runtime {String(doctor.runtime?.state || 'unknown')}</Typography.Text> : null}
     </section>
   );

@@ -10,11 +10,12 @@ import (
 
 // InstallCandidate 描述分发包内可用于安装的原生资源源。
 type InstallCandidate struct {
-	Kind        string `json:"kind"`
-	ID          string `json:"id"`
-	Source      string `json:"source"`
-	Description string `json:"description,omitempty"`
-	Version     string `json:"version,omitempty"`
+	Kind        string   `json:"kind"`
+	ID          string   `json:"id"`
+	Source      string   `json:"source"`
+	Description string   `json:"description,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Targets     []string `json:"targets,omitempty"`
 }
 
 // skillCandidatesRoots 是分发包内相对 package root 的 Skill 源目录。
@@ -154,6 +155,29 @@ func packageDeclaration(pkg PluginPackage) []string {
 	return out
 }
 
+// pluginDeclaredTargets 读取 agentPlugin 声明的 Harness / Host 目标，用于安装前过滤。
+func pluginDeclaredTargets(pkg PluginPackage) []string {
+	declared := map[string]bool{}
+	if agentPlugin, ok := pkg.PackageJSON["agentPlugin"].(map[string]any); ok {
+		if engines, ok := agentPlugin["engines"].(map[string]any); ok {
+			for name := range engines {
+				declared[name] = true
+			}
+		}
+		if hosts, ok := agentPlugin["hosts"].(map[string]any); ok {
+			for name := range hosts {
+				declared[name] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(declared))
+	for name := range declared {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func permissionSummary(permissions map[string]any) string {
 	parts := make([]string, 0, 3)
 	for _, name := range []string{"network", "filesystem", "secrets"} {
@@ -212,6 +236,7 @@ func (s *Service) installCandidates() []InstallCandidate {
 				Source:      filepath.ToSlash(filepath.Join(root, entry.Name())),
 				Description: packageDescription(pkg),
 				Version:     pkg.Version,
+				Targets:     pluginDeclaredTargets(pkg),
 			})
 		}
 	}

@@ -177,7 +177,28 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 });
 ```
 
-**当前限制**：能力链是全局的，声明里没有 `appliesTo: { providers: [...] }`。所以每个 Provider 插件都会被所有请求调用一次，只能靠代码 early-return。这是下一阶段最该补的声明式作用域。
+**声明式作用域（已支持）**：contribution 可以写 `scope`，宿主在调用前过滤，不再需要每个插件全局执行再 early-return。
+
+```json
+{
+  "id": "acme.gateway.account",
+  "capability": "gateway.account",
+  "version": 1,
+  "scope": {
+    "providers": ["acme"],
+    "hosts": ["deepseek"],
+    "models": ["acme-*"]
+  }
+}
+```
+
+匹配语义：
+
+- `providers` / `hosts`：精确匹配，支持 `*`；`hosts` 目前只在账号来源等带 host 的调用点生效。
+- `models`：`path.Match` 通配，例如 `acme-*`。
+- 空维度 = 不限制。
+- 调用方拿不到对应值（例如 `gateway.request` 尚未路由出 Provider）时，该维度不做过滤，避免静默跳过插件。
+- `gateway.request` 用请求体里的 `model` 过滤；`gateway.account` / `gateway.attempt` 用 `provider + model`；`account.*` 用 `provider` + `host`；`observe` 用事件里的 `provider + model`。
 
 ## 6. Harness B 的插件怎么做
 
@@ -199,24 +220,27 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 
 上传源是**一次性安装源**：多目标安装会复用同一份内容，过期 24 小时后清理；它不会成为插件的运行目录。
 
-## 7. 当前真正的弱点
+安装目标会按声明联动：候选插件或上传包解析出 `agentPlugin.engines/hosts` 后，目标下拉只保留兼容的 Provider / Host，`全选可用目标` 也只选兼容项。手写路径在安装前无法预检，仍由后端逐个校验。
 
-按影响排序：
+## 7. 仍然存在的弱点
 
-1. **没有声明式作用域。** contribution 只有 `order` / `failurePolicy`，没有 `providers` / `hosts` / `models` 过滤；Provider 专用插件必须全局执行再 early-return。
-2. **“插件”一词承载三个平面。** 用户无法从名字判断这是 AIH 能力插件还是 Harness 原生插件。
-3. **安装目标与声明不联动。** 多选安装已经支持，但还没有在安装前按 `agentPlugin.engines/hosts` 过滤目标，后端只能逐个失败。
-4. **能力目录不可见。** 宿主有 20+ 个槽位，WebUI 没有“哪个槽位被谁贡献、当前代次、失败策略”的目录页。
-5. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
-6. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
+已解决：声明式作用域、安装目标与声明联动、能力槽与贡献项目录（AIH 插件页显示插件、贡献项、能力、顺序、失败策略、scope）。
 
-## 8. 建议的下一步（按收益/成本）
+按影响排序，仍待处理：
 
-1. **给 contribution 增加 `scope`**：`{ "providers": ["acme"], "hosts": ["deepseek"], "models": ["acme-*"] }`，Node 与 Go 在调用前过滤，缺省 `any` 保持兼容。
-2. **统一 manifest 顶层 `kind`**：`capability`（AIH 能力插件）与 `harness`（原生插件），让 UI 和安装器不再靠目录猜。
-3. **安装预检**：读取候选的 `agentPlugin.engines/hosts`，多选目标只展示兼容项，安装前给出兼容矩阵。
-4. **能力目录页**：槽位、贡献者、代次、顺序、失败策略、最近调用结果。
-5. **模板与 doctor**：`account` / `provider` / `harness` 三个最小样例 + 每个能力的 smoke 检查。
+1. **“插件”一词承载三个平面。** 用户无法从名字判断这是 AIH 能力插件还是 Harness 原生插件。
+2. **目录还不是活跃代次视图。** 目前展示已安装插件的声明贡献项，没有标注哪些在活跃代次、最近调用结果与拒绝原因。
+3. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
+4. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
+5. **手写路径无法安装前预检。** 文件夹 / URL / 内置候选可以按声明过滤目标，手写路径只能在安装时逐个失败。
+
+## 8. 下一步建议（按收益/成本）
+
+1. **统一 manifest 顶层 `kind`**：`capability`（AIH 能力插件）与 `harness`（原生插件），让 UI 和安装器不再靠目录猜。
+2. **能力目录页**：在现有声明目录上补活跃代次、最近调用结果与拒绝原因。
+3. **模板与 doctor**：`account` / `provider` / `harness` 三个最小样例 + 每个能力的 smoke 检查。
+4. **补齐 `gateway.route` 或从合同移除**，避免空声明。
+5. **手写路径预检**：先探测 package.json / SKILL.md，再展示兼容目标。
 
 ## 9. 验证边界
 

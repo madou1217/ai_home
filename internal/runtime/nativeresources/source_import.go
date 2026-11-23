@@ -31,11 +31,12 @@ var uploadIDPattern = regexp.MustCompile(`^[a-f0-9]{16}$`)
 
 // SourceImport 是一次安装源导入的结果。
 type SourceImport struct {
-	OK       bool   `json:"ok"`
-	UploadID string `json:"uploadId"`
-	Name     string `json:"name"`
-	Files    int    `json:"files"`
-	Bytes    int64  `json:"bytes"`
+	OK       bool     `json:"ok"`
+	UploadID string   `json:"uploadId"`
+	Name     string   `json:"name"`
+	Files    int      `json:"files"`
+	Bytes    int64    `json:"bytes"`
+	Targets  []string `json:"targets,omitempty"`
 }
 
 // SourceFile 是上传或解包得到的单个文件（Path 是包内相对路径）。
@@ -78,7 +79,19 @@ func (s *Service) ImportSourceFiles(kind string, files []SourceFile, displayName
 			return SourceImport{}, fail("native_resource_source_forbidden")
 		}
 	}
-	return SourceImport{OK: true, UploadID: id, Name: strings.TrimSpace(displayName), Files: len(normalized), Bytes: total}, nil
+	return SourceImport{OK: true, UploadID: id, Name: strings.TrimSpace(displayName), Files: len(normalized), Bytes: total, Targets: sourceImportTargets(kind, dir)}, nil
+}
+
+// sourceImportTargets 在导入后读取插件声明的目标，让 UI 只展示兼容的 Provider / Host。
+func sourceImportTargets(kind, dir string) []string {
+	if strings.ToLower(strings.TrimSpace(kind)) != "plugin" {
+		return nil
+	}
+	pkg, err := readPluginPackage(dir)
+	if err != nil {
+		return nil
+	}
+	return pluginDeclaredTargets(pkg)
 }
 
 // ImportSourceURL 下载 http(s) 归档或单文件，解包后按上传源处理。

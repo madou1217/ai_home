@@ -152,6 +152,16 @@ type DoctorInstalledSummary struct {
 	Permissions any    `json:"permissions,omitempty"`
 }
 
+// DoctorContribution 描述已安装插件声明的一个能力贡献项。
+type DoctorContribution struct {
+	PluginID       string         `json:"pluginId"`
+	ContributionID string         `json:"contributionId"`
+	Capability     string         `json:"capability"`
+	Order          int            `json:"order"`
+	FailurePolicy  string         `json:"failurePolicy"`
+	Scope          map[string]any `json:"scope,omitempty"`
+}
+
 // DoctorReport 汇总插件控制面与运行时的静态和动态诊断。
 type DoctorReport struct {
 	OK                bool                     `json:"ok"`
@@ -160,6 +170,7 @@ type DoctorReport struct {
 	Issues            []DoctorIssue            `json:"issues"`
 	Warnings          []DoctorIssue            `json:"warnings"`
 	Capabilities      map[string]int           `json:"capabilities"`
+	Contributions     []DoctorContribution     `json:"contributions"`
 	Installed         []DoctorInstalledSummary `json:"installed"`
 	Runtime           RuntimeStatus            `json:"runtime"`
 }

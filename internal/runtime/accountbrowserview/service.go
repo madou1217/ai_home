@@ -101,7 +101,7 @@ func (s *Service) serve(ctx context.Context, t Transport, dataDir string, proxyU
 	if err = t.Send(ctx, Event{Type: "starting"}); err != nil {
 		return err
 	}
-	binary, cleanup, err := buildHelper(ctx)
+	binary, cleanup, err := buildHelper(ctx, s.home)
 	if err != nil {
 		_ = t.Send(ctx, Event{Type: "error", Error: "browser_native_build_unavailable"})
 		return surfaceFailure("browser_native_build_unavailable")

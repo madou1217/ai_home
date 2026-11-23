@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Segmented, Tag } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CheckOutlined, ReloadOutlined } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import HudStateView from '@/components/hud/HudStateView';
 import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import GuidedCommandPanel, {
   type GuidedCommandTask
 } from '@/components/toolkit/GuidedCommandPanel';
 import { getEnvironmentCategoryLabel } from '@/components/toolkit/environment-presentation';
-import { resolveRuntimePlugins, runtimePluginIcon } from '@/components/toolkit/runtime-plugin-presentation';
+import { resolveRuntimePlugins } from '@/components/toolkit/runtime-plugin-presentation';
+import ToolkitGuideSteps from '@/features/toolkit/ToolkitGuideSteps';
 import { buildAppHref } from '@/services/app-navigation';
 import { toolkitAPI } from '@/services/api';
 import type {
@@ -76,139 +78,149 @@ export default function ToolkitInstallGuide() {
   const selectedTool = tools.find((tool) => tool.id === selectedToolId) || tools[0] || null;
 
   useEffect(() => {
-    setSelectedToolId((current) => tools.some((tool) => tool.id === current) ? current : (tools[0]?.id || ''));
+    setSelectedToolId((current) => (tools.some((tool) => tool.id === current) ? current : (tools[0]?.id || '')));
   }, [tools]);
+
+  const handlePlatformChange = useCallback((nextPlatform: ClientPlatform) => {
+    if (!data) return;
+    const order = data.platforms.map((item) => item.id);
+    switchWorkbench(() => {
+      setPlatform(nextPlatform);
+      void load(nextPlatform);
+    }, {
+      slot: 'platform',
+      current: platform,
+      next: nextPlatform,
+      direction: platform ? resolveOrderedDirection(order, platform, nextPlatform) : 'neutral'
+    });
+  }, [data, load, platform, switchWorkbench]);
+
+  const handleRuntimeChange = useCallback((nextRuntime: string) => {
+    const order = runtimePlugins.map((plugin) => plugin.id);
+    switchWorkbench(() => setRuntime(nextRuntime), {
+      slot: 'runtime',
+      current: runtime,
+      next: nextRuntime,
+      direction: resolveOrderedDirection(order, runtime, nextRuntime)
+    });
+  }, [runtime, runtimePlugins, switchWorkbench]);
 
   return (
     <PageScaffold
-      code="TOOLKIT"
-      title="安装指南与命令"
-      subTitle="一次只查看一个系统；命令仅生成和复制，不会自动执行。"
+      title="安装指南"
+      subTitle="按系统生成可复制的安装命令，不会自动执行。"
       className="toolkit-scaffold toolkit-guide-scaffold"
       ghost
-      headerContent={(
-        <Button icon={<ArrowLeftOutlined />} href={buildAppHref('/toolkit')}>返回开发工具</Button>
+      extra={(
+        <div className="toolkit-guide-header-actions">
+          <Button
+            icon={<ReloadOutlined />}
+            loading={loading}
+            onClick={() => void load(platform || undefined)}
+          >
+            刷新
+          </Button>
+          <Button icon={<ArrowLeftOutlined />} href={buildAppHref('/toolkit')}>
+            返回开发工具
+          </Button>
+        </div>
       )}
     >
-      <section className="toolkit-guide-page hud-panel" aria-labelledby="toolkit-guide-title">
-        <header className="toolkit-panel-header">
-          <div>
-            <div className="toolkit-panel-kicker">PLATFORM PLAYBOOK</div>
-            <h2 id="toolkit-guide-title">运行环境安装指南</h2>
-          </div>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load(platform || undefined)}>重新读取</Button>
-        </header>
-
+      <div className="toolkit-guide-stack">
         {error ? (
-          <div className="toolkit-inline-error" role="alert">
-            <span className="hud-led hud-led--err" aria-hidden="true" />
-            <strong>指南读取失败</strong>
-            <span>{error}</span>
-          </div>
+          <InlineNote
+            tone="error"
+            action={(
+              <Button size="small" onClick={() => void load(platform || undefined)}>
+                重试
+              </Button>
+            )}
+          >
+            读取安装指南失败：{error}
+          </InlineNote>
         ) : null}
 
         {loading && !data ? (
-          <div className="toolkit-loading">
-            <HudStateView variant="loading" code="SYS // PLAYBOOK" title="正在生成当前系统指南…" />
-          </div>
+          <section className="toolkit-guide-page hud-panel">
+            <div className="toolkit-loading">
+              <HudStateView variant="loading" code="SYS // PLAYBOOK" title="正在加载安装指南…" />
+            </div>
+          </section>
         ) : data ? (
           <>
-            <div className="toolkit-guide-controls">
-              <div>
-                <span className="toolkit-control-label">目标系统</span>
-                <Segmented
-                  aria-label="目标系统"
-                  value={platform}
-                  options={data.platforms.map((item) => ({
-                    label: item.id === data.currentPlatform ? `${item.label} · 当前` : item.label,
-                    value: item.id
-                  }))}
-                  onChange={(value) => {
-                    const nextPlatform = value as ClientPlatform;
-                    const order = data.platforms.map((item) => item.id);
-                    switchWorkbench(() => {
-                      setPlatform(nextPlatform);
-                      void load(nextPlatform);
-                    }, {
-                      slot: 'platform',
-                      current: platform,
-                      next: nextPlatform,
-                      direction: platform ? resolveOrderedDirection(order, platform, nextPlatform) : 'neutral'
-                    });
-                  }}
-                />
-              </div>
-              <div>
-                <span className="toolkit-control-label">工具链</span>
-                <Segmented
-                  aria-label="工具链"
-                  value={runtime}
-                  options={runtimePlugins.map((plugin) => ({
-                    label: plugin.name,
-                    value: plugin.id,
-                    icon: runtimePluginIcon(plugin.id)
-                  }))}
-                  onChange={(value) => {
-                    const nextRuntime = String(value);
-                    const order = runtimePlugins.map((plugin) => plugin.id);
-                    switchWorkbench(() => setRuntime(nextRuntime), {
-                      slot: 'runtime',
-                      current: runtime,
-                      next: nextRuntime,
-                      direction: resolveOrderedDirection(order, runtime, nextRuntime)
-                    });
-                  }}
-                />
-              </div>
-            </div>
+            <ToolkitGuideSteps
+              platforms={data.platforms}
+              currentPlatform={data.currentPlatform}
+              selectedPlatform={platform}
+              runtimeOptions={runtimePlugins}
+              selectedRuntime={runtime}
+              selectedToolName={selectedTool?.name}
+              hasTool={Boolean(selectedTool)}
+              onPlatformChange={handlePlatformChange}
+              onRuntimeChange={handleRuntimeChange}
+            />
 
-            <div ref={workbenchRef} className="toolkit-workbench toolkit-guide-workbench">
-              <nav className="toolkit-tool-index" aria-label="运行环境工具">
-                {tools.map((tool) => (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    className="toolkit-tool-option"
-                    data-active={tool.id === selectedTool?.id || undefined}
-                    onClick={() => {
-                      const order = tools.map((entry) => entry.id);
-                      switchDetail(() => setSelectedToolId(tool.id), {
-                        current: selectedTool?.id,
-                        next: tool.id,
-                        direction: selectedTool ? resolveOrderedDirection(order, selectedTool.id, tool.id) : 'neutral'
-                      });
-                    }}
-                  >
-                    <span>
-                      <strong>{tool.name}</strong>
-                      <small>{tool.description}</small>
-                    </span>
-                    <Tag>{getEnvironmentCategoryLabel(tool.category)}</Tag>
-                  </button>
-                ))}
-              </nav>
-              <div ref={detailRef} className="toolkit-workbench-detail">
-                {selectedTool ? (
-                  <>
-                    <div className="toolkit-detail-heading">
-                      <div>
-                        <span>{platform.toUpperCase()} / {runtime.toUpperCase()}</span>
-                        <h3>{selectedTool.name}</h3>
+            <section className="toolkit-guide-page hud-panel" aria-label="工具命令详情">
+              <div ref={workbenchRef} className="toolkit-workbench toolkit-guide-workbench">
+                <nav className="toolkit-tool-index" aria-label="运行环境工具">
+                  {tools.map((tool) => {
+                    const isActive = tool.id === selectedTool?.id;
+                    return (
+                      <button
+                        key={tool.id}
+                        type="button"
+                        className="toolkit-tool-option"
+                        data-active={isActive || undefined}
+                        aria-current={isActive ? 'true' : undefined}
+                        onClick={() => {
+                          const order = tools.map((entry) => entry.id);
+                          switchDetail(() => setSelectedToolId(tool.id), {
+                            current: selectedTool?.id,
+                            next: tool.id,
+                            direction: selectedTool ? resolveOrderedDirection(order, selectedTool.id, tool.id) : 'neutral'
+                          });
+                        }}
+                      >
+                        <span className="toolkit-tool-option-main">
+                          <strong>{tool.name}</strong>
+                          <small>{getEnvironmentCategoryLabel(tool.category)}</small>
+                        </span>
+                        {isActive ? (
+                          <CheckOutlined className="toolkit-tool-option-check" aria-hidden="true" />
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </nav>
+                <div ref={detailRef} className="toolkit-workbench-detail">
+                  {selectedTool ? (
+                    <>
+                      <div className="toolkit-detail-heading">
+                        <div>
+                          <h3>{selectedTool.name}</h3>
+                          <p className="toolkit-detail-summary">{selectedTool.description}</p>
+                        </div>
+                        <SettingStatusTag
+                          compact
+                          status="saved"
+                          label={`${platform.toUpperCase()} · ${getEnvironmentCategoryLabel(selectedTool.category)}`}
+                        />
                       </div>
-                      <Tag>{selectedTool.description}</Tag>
-                    </div>
-                    <GuidedCommandPanel
-                      key={`${platform}:${selectedTool.id}`}
-                      title="命令生成器"
-                      tasks={guideTasks(selectedTool)}
-                    />
-                  </>
-                ) : <HudStateView compact code="NO_GUIDE" title="当前系统没有对应工具指南" />}
+                      <GuidedCommandPanel
+                        key={`${platform}:${selectedTool.id}`}
+                        title="命令生成"
+                        tasks={guideTasks(selectedTool)}
+                      />
+                    </>
+                  ) : (
+                    <HudStateView compact code="NO_GUIDE" title="当前系统暂无可用工具指南" />
+                  )}
+                </div>
               </div>
-            </div>
+            </section>
           </>
         ) : null}
-      </section>
+      </div>
     </PageScaffold>
   );
 }

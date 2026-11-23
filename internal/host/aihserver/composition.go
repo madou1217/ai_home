@@ -13,10 +13,10 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/accountusagefeed"
-	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
-	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
+	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	inferencegateway "github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
@@ -1421,83 +1421,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 家族模型目录经无客户端 HTTP 通道进入 Go 的账号索引后，未钉选征召按家族表链式
 	// 开启多个会话；模型没有家族候选时安静交回 Canonical。Node 侧交还门按「透传通道」
 	// 判定哪些模型交给这里，本通道不为「别的 Provider 的模型」兜底。
-	familyRelayAccounts, err := newFamilyRelayAccountSource(
-		catalog,
-		inference.recruiter,
-		familyRelayTransportPolicy{},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建家族透传账号来源失败: %w",
-			err,
-		)
-	}
-	// 单 Provider 透传模块：账号来源与 Provider 变体由同一张注册表构造（见 relay_modules.go）。
-	relayModules, err := buildRelayModules(relayBuildContext{
-		Catalog:   catalog,
-		Recruiter: inference.recruiter,
-		AIHomeDir: aiHomeDir,
+	familyRelay, err := newFamilyRelayRuntime(familyRelayInputs{
+		catalog:     catalog,
+		recruiter:   inference.recruiter,
+		aiHomeDir:   aiHomeDir,
+		aliases:     inference.modelAliases,
+		store:       dependencies.Store,
+		fallback:    inference.handler,
+		credentials: credentials,
+		client:      relayClient,
+		egress:      relayEgress,
+		attempts:    accountRuntime,
+		upstream429: upstream429Controller,
+		usage:       attemptUsage,
+		gate:        usageGate,
 	})
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
-	// 同一入口上挂多个透传 Provider：**一个** relaycore.Handler + ProviderChain
-	// + 合并的账号来源。
-	//
-	// 为什么不是两个 Handler 串接：每个 Handler 在「服务不了」时交回 Canonical，
-	// 串接会让第一个 Handler 直接交还、第二个永远轮不到。分派必须发生在**账号所属
-	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
-	pluginProviders := newPluginProviderRegistry()
-	pluginAccounts := &pluginRelayAccountSource{
-		registry:  pluginProviders,
-		catalog:   catalog,
-		recruiter: inference.recruiter,
-		transport: pluginRelayTransportPolicy{},
-	}
-	familyMembers := append(
-		[]relaycore.Provider{
-			pluginRelayProviderChain{registry: pluginProviders},
-			codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
-				ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
-			}),
-		},
-		relayModuleProviders(relayModules)...,
-	)
-	familyRelayHandler, err := relaycore.NewHandler(
-		relaycore.Dependencies{
-			Provider: relaycore.NewProviderChain(familyMembers...),
-			Path:     codebuddyfamilyrelay.Path,
-			Aliases:  newChatAliasResolver(inference.modelAliases, dependencies.Store),
-			// 别名拥有最高解释权；未命中别名时才解析 Provider 显式声明的
-			// `provider/model` 前缀，并把 Provider 钉死（与 Node 前门同一顺序）。
-			ModelPrefixes: newRelayModelPrefixResolver(catalog, dependencies.Store),
-			Accounts: relaycore.NewAccountSourceChain(
-				append(append(relayModuleAccounts(relayModules), familyRelayAccounts), pluginAccounts)...,
-			),
-			Fallback:            inference.handler,
-			Credentials:         credentials,
-			Client:              relayClient,
-			AccountEgress:       relayEgress,
-			Attempts:            accountRuntime,
-			Upstream429Retries:  upstream429Controller,
-			Clock:               time.Now,
-			MaxRequestBodyBytes: codebuddyfamilyrelay.MaxRequestBodyBytes,
-			UnavailableMessage:  "家族透传当前不可用",
-			// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
-			Usage: attemptUsage,
-			// 档位与选号/诊断同源：记账时按策略选出的档位归因。
-			Buckets: relayQuotaBuckets{gate: usageGate, evaluator: newSchedulingEvaluator()},
-		},
-	)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建家族透传 Handler 失败: %w",
-			err,
-		)
-	}
+	familyRelayHandler := familyRelay.handler
+	pluginProviders := familyRelay.pluginProviders
 	// 窗口激活探测回环处理器：直接覆盖 codex /v1/responses、agy /v1beta/models/ 与 /v1/chat/completions，
 	// 在 Go 进程内完成 /v1/* 极小探测而不绕经 Node 网关。
 	windowProbeMux := http.NewServeMux()
@@ -1704,12 +1648,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		Authorizer: authorizer,
 		Aliases:    newChatAliasResolver(inference.modelAliases, dependencies.Store),
 		Accounts: relaycore.NewAccountSourceChain(
-			append(relayModuleAccounts(relayModules), familyRelayAccounts)...,
+			append(relayModuleAccounts(familyRelay.modules), familyRelay.familyAccounts)...,
 		),
 		Credentials: credentials,
 		Provider: relaycore.NewProviderChain(
 			append(
-				relayModuleProviders(relayModules),
+				relayModuleProviders(familyRelay.modules),
 				codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
 					ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
 				}),
@@ -1860,15 +1804,15 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		)
 	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
-		ServiceTiers:   codexmodelcatalog.NewReader(),
-		ContextWindows: codexmodelcatalog.NewContextReader(),
-		Models:         inference.models,
-		Catalog:        modelCatalogStore,
+		ServiceTiers:    codexmodelcatalog.NewReader(),
+		ContextWindows:  codexmodelcatalog.NewContextReader(),
+		Models:          inference.models,
+		Catalog:         modelCatalogStore,
 		ProviderCatalog: catalog,
-		Modalities:     modelModalities,
-		Reasoning:      modelModalities,
-		Aliases:        inference.models,
-		Authorizer:     clientAuthorizer,
+		Modalities:      modelModalities,
+		Reasoning:       modelModalities,
+		Aliases:         inference.models,
+		Authorizer:      clientAuthorizer,
 	})
 	if err != nil {
 		_ = inference.Close()

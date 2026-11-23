@@ -36,6 +36,7 @@ import ListTable from '@/components/ui/ListTable';
 import HudCube from '@/components/hud/HudCube';
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 import DistributionUpdatePanel from '@/components/settings/DistributionUpdatePanel';
+import InstallationBackupPanel from '@/components/settings/InstallationBackupPanel';
 
 const PROFILE_STATUS_LED: Record<string, string> = {
   green: 'hud-led hud-led--ok',
@@ -269,6 +270,7 @@ export default function ServerSetup() {
       </SectionCard>
 
       {hasReadyServer ? <DistributionUpdatePanel /> : null}
+      {hasReadyServer ? <InstallationBackupPanel /> : null}
 
       <Modal
         title={effectiveDialog.mode === 'authorize'

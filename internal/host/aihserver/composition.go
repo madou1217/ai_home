@@ -407,6 +407,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		Catalog:                    catalog,
 		Store:                      store,
 		AIHomeDir:                  options.AIHomeDir,
+		WebDir:                     options.WebDir,
 		ProxyPool:                  options.ProxyPool,
 		NodeBaseURL:                options.NodeBaseURL,
 		SelfBaseURL:                options.SelfBaseURL,
@@ -514,6 +515,8 @@ type handlerDependencies struct {
 	Store   *sqliteaccount.Store
 	// AIHomeDir 供宿主事实读取（如 zcode 官方 harness）；不参与账号存储。
 	AIHomeDir string
+	// WebDir 是本进程托管的 Web UI 目录；运行文件备份需要。
+	WebDir string
 	// ProxyPool 是进程级上游代理池，WebUI 保存后热更新。
 	ProxyPool *outboundproxy.Manager
 	// NodeBaseURL 是 Node 回环地址；插件实例启停回调 Node 内部协议时需要。
@@ -1457,6 +1460,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		host:                  dependencies,
 		authorizer:            authorizer,
 		aiHomeDir:             aiHomeDir,
+		webDir:                dependencies.WebDir,
 		catalog:               catalog,
 		nodeBaseURL:           nodeBaseURL,
 		selfBaseURL:           selfBaseURL,

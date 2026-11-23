@@ -75,9 +75,16 @@ var egressFailureRules = []egressFailureRule{
 
 // EgressFailureReason 判断一段安装输出是否属于「换出口可能有用」的网络失败，
 // 并把具体现象压成一句可以给终端看的短原因。
+//
+// 判定顺序有意义：先排除「确定的终止条件」，再认传输层错误。像 Windows 上
+// 「安装器无法保证所有下载走代理」这类失败的文案里可能带 proxy 字样，如果先
+// 匹配传输层标记，它会被误当成网络问题而触发无意义的重试。
 func EgressFailureReason(text string) (string, bool) {
 	lower := strings.ToLower(text)
 	if strings.TrimSpace(lower) == "" {
+		return "", false
+	}
+	if strings.Contains(lower, egressUnsupportedMarker) {
 		return "", false
 	}
 	for _, rule := range egressFailureRules {
@@ -89,3 +96,7 @@ func EgressFailureReason(text string) (string, bool) {
 	}
 	return "", false
 }
+
+// egressUnsupportedMarker 与 apps.ErrEgressUnsupported 的文案保持同一口径。
+// 单列成常量而不是 import apps：本包是失败归因，不依赖安装计划实现。
+const egressUnsupportedMarker = "不能保证所有下载"

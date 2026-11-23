@@ -870,6 +870,11 @@ func installWindows(ctx context.Context, options Options) (Status, error) {
 		}
 		return statusWindows(options)
 	}
+	// 计划任务只声明 ONLOGON 触发；安装流程必须当场拉起一次，否则安装器随后的
+	// 启动验证没有任何进程可连。Linux/macOS 的安装路径本身就带 restart，Windows
+	// 的 schtasks /Create 不带。这里不把 /Run 的失败直接判死：服务是否真的起来
+	// 由安装器的启动验证统一决定（任务已运行时 /Run 也返回成功）。
+	_, _ = run(ctx, "schtasks", "/Run", "/TN", options.Label)
 	payload, _ := json.Marshal(map[string]string{"task": options.Label, "script": serveScript})
 	body := append(payload, byte(rune(10)))
 	if err := atomicWrite(marker, body, 0600); err != nil {

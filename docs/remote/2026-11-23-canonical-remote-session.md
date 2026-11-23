@@ -124,6 +124,12 @@ AWS 真实配额验证：
   input 15350 / output 236 / total 15586，客户端返回 `claude-ok`；
 - 顺带修复 `e2f50dfe`：Claude 流已观察到 `message_stop` 后，即使客户端立即断开，仍记录
   成功与用量。
+- `agent-terminal` 终端流程复核：Claude 会话 `rx-b558b0d69b27115097` 启动后，进程环境
+  实际包含 `ANTHROPIC_CUSTOM_HEADERS=x-aih-remote-session: rx-b558b0d69b27115097`
+  以及网关 `ANTHROPIC_BASE_URL` / client key，证明启动 helper 已把会话头注入终端；
+- 该终端随后被 Claude Code 2.1.330 的启动检查中止：它直接请求 `api.anthropic.com` 得到
+  403，忽略网关 base URL；同环境下 `claude -p` 仍可通过网关完成请求并记录用量。这是
+  Claude Code 的外部行为，不是 helper 注入失败。
 
 可重复执行的步骤与取证模板见
 [WebSocket 账号级 401/403 换号真机验收清单](2026-11-23-ws-credential-failover-acceptance.md)。
@@ -133,8 +139,8 @@ AWS 真实配额验证：
 - Codex 账号模式（`aih codex <id>`）直连上游，不经过 Server 网关，无法按会话计量；只有
   网关模式会产生会话用量；
 - Claude 真实会话用量已验证（Claude Code CLI + 显式会话头）；`agent-terminal` 的启动
-  头 helper 仍以代码路径核对为准：本机 `~/.claude/settings.json` 会覆盖网关 env，AWS
-  当前没有 Claude 账号；
+  头 helper 已用进程环境确认注入；完整 TUI 推理受 Claude Code 启动时直连
+  `api.anthropic.com` 的检查限制，本机该检查返回 403；
 - 客户端在 `response.completed` 之前主动断开时仍拿不到该次用量；
 - 钉选账号在 401/403 时会回落到池内其它账号（与 HTTP native 的 pinned fallback 一致）；
 - AWS 真实配额验证只临时放宽了本地 quota 选择数据（已按备份恢复），没有消耗真实配额；

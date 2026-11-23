@@ -46,8 +46,13 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 落点：
 
 1. `agent-terminal` 启动 Provider 时注入会话标识（env `AIH_REMOTE_SESSION_ID=rx-…`）；
-   账号模式经 `aih codex` 启动时，优先用 Provider 配置的请求头（Codex
-   `model_providers.<id>.http_headers`，需实装验证是否支持）把会话 id 带到网关；
+   账号模式经 `aih codex` 启动时，用 Provider 配置的请求头把会话 id 带到网关。
+   **已实装验证（2026-11-23，AWS Codex 0.171.0）**：`model_providers.<id>.http_headers`
+   与 `model_providers.<id>.env_http_headers` 均生效——echo 服务分别收到
+   `X-AIH-Remote-Session: rx-static` 和 `rx-env-test`。推荐静态头用 `http_headers`，
+   动态会话 id 用 `env_http_headers` 指向启动环境变量。
+   注意：本机 `~/.local/bin/codex` 0.170.0 是坏的 Node shim（MODULE_NOT_FOUND），
+   此类验证必须在实装 CLI（AWS 0.171.0）上做；
 2. 网关在推理完成写 usage 时读取该标识，落库到 `account_usage.remote_session_id`
    （可空列 + 索引，走既有 schema 升级流程）；
 3. 会话详情聚合 `remote_session_id` 对应的 token/成本；无标识的历史行保持账号级；

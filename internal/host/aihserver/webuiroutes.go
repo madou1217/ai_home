@@ -394,6 +394,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			}
 			// 写路径已做过 dry-run 校验；这里只做原子应用，失败不应改写已保存配置。
 			_ = upstreamfailurepolicy.Configure(saved.UpstreamFailurePolicy)
+			applyAdmissionConcurrency(saved.Concurrency)
 		},
 	})
 	if err != nil {

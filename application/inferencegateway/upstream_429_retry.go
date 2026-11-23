@@ -8,6 +8,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -482,14 +483,6 @@ func (coordinator *Coordinator) executeSingleUpstream429Retry(
 	if err != nil {
 		return upstream429RetryAttemptResult{}, false, upstreamretry.AbortNone, err
 	}
-	release, acquireErr := coordinator.acquireRouteSlot(ctx, route)
-	if acquireErr != nil {
-		if errors.Is(acquireErr, ErrProviderQueueFull) {
-			return upstream429RetryAttemptResult{}, false, upstreamretry.AbortReacquireUnavailable, nil
-		}
-		return upstream429RetryAttemptResult{}, false, upstreamretry.AbortNone, acquireErr
-	}
-	defer release()
 
 	if canDispatch, abortReason := coordinator.upstream429Retries.CanDispatchAfterWait(ctx, candidate.evidence); !canDispatch {
 		return upstream429RetryAttemptResult{}, false, abortReason, nil
@@ -550,7 +543,7 @@ func (coordinator *Coordinator) executeSingleUpstream429Retry(
 	}
 	if errors.Is(err, errAdmittedAccountUnavailable) ||
 		errors.Is(err, accountcredentials.ErrCredentialIdentityChanged) ||
-		errors.Is(err, ErrProviderQueueFull) {
+		admission.IsRejection(err) {
 		return upstream429RetryAttemptResult{}, false, upstreamretry.AbortReacquireUnavailable, nil
 	}
 	if err != nil {

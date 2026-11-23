@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -108,6 +109,14 @@ type Options struct {
 	ServerBinary string
 	WebDir       string
 	LogFile      string
+	// Args 非空时完全替代默认的 aih-server 启动参数（不含可执行文件本身）。
+	Args []string
+	// Env 是额外的服务环境变量；同名标准变量（HOME/PATH/AIH_HOME_DIR）会被覆盖。
+	Env map[string]string
+	// Description 用于 systemd unit；空值保持服务器默认文案。
+	Description string
+	// WorkingDir 是服务工作目录；空值使用可执行文件目录。
+	WorkingDir string
 }
 
 type Status struct {
@@ -162,10 +171,23 @@ func normalize(options Options) (Options, error) {
 	if strings.TrimSpace(options.LogFile) == "" {
 		options.LogFile = filepath.Join(options.Home, "logs", "services", "background-supervisor.log")
 	}
+	if strings.TrimSpace(options.Description) == "" {
+		options.Description = "AI Home local server"
+	}
+	if strings.TrimSpace(options.WorkingDir) == "" {
+		options.WorkingDir = filepath.Dir(options.ServerBinary)
+	} else if abs, err := filepath.Abs(options.WorkingDir); err == nil {
+		options.WorkingDir = filepath.Clean(abs)
+	}
 	return options, nil
 }
 
 func serviceArgs(options Options) []string {
+	if len(options.Args) > 0 {
+		args := make([]string, 0, len(options.Args)+1)
+		args = append(args, options.ServerBinary)
+		return append(args, options.Args...)
+	}
 	args := []string{options.ServerBinary, "--host", "127.0.0.1"}
 	if options.WebDir != "" {
 		args = append(args, "--web-dir", options.WebDir)
@@ -174,6 +196,30 @@ func serviceArgs(options Options) []string {
 		args = append(args, "--port", port)
 	}
 	return args
+}
+
+// serviceEnv 返回确定顺序的服务环境变量，额外 Env 覆盖标准值。
+func serviceEnv(options Options) [][2]string {
+	env := map[string]string{
+		"HOME":         options.HostHome,
+		"PATH":         os.Getenv("PATH"),
+		"AIH_HOME_DIR": options.Home,
+	}
+	for key, value := range options.Env {
+		if key = strings.TrimSpace(key); key != "" {
+			env[key] = value
+		}
+	}
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([][2]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, [2]string{key, env[key]})
+	}
+	return out
 }
 
 func Install(ctx context.Context, options Options) (Status, error) {
@@ -370,12 +416,12 @@ func buildPlist(options Options) []byte {
 		"    <string>"+xmlEscape(options.LogFile)+"</string>",
 		"    <key>EnvironmentVariables</key>",
 		"    <dict>",
-		"      <key>HOME</key>",
-		"      <string>"+xmlEscape(options.HostHome)+"</string>",
-		"      <key>PATH</key>",
-		"      <string>"+xmlEscape(os.Getenv("PATH"))+"</string>",
-		"      <key>AIH_HOME_DIR</key>",
-		"      <string>"+xmlEscape(options.Home)+"</string>",
+	)
+	for _, item := range serviceEnv(options) {
+		lines = append(lines, "      <key>"+xmlEscape(item[0])+"</key>")
+		lines = append(lines, "      <string>"+xmlEscape(item[1])+"</string>")
+	}
+	lines = append(lines,
 		"    </dict>",
 		"  </dict>",
 		"</plist>",
@@ -671,24 +717,26 @@ func buildUnit(options Options) []byte {
 	}
 	lines := []string{
 		"[Unit]",
-		"Description=AI Home local server",
+		"Description=" + options.Description,
 		"After=network-online.target",
 		"Wants=network-online.target",
 		"",
 		"[Service]",
 		"Type=simple",
 		"ExecStart=" + strings.Join(quoted, " "),
-		"WorkingDirectory=" + filepath.Dir(options.ServerBinary),
+		"WorkingDirectory=" + options.WorkingDir,
 		"Restart=always",
 		"RestartSec=5",
 		"TimeoutStopSec=45",
-		"Environment=" + systemdQuote("HOME="+options.HostHome),
-		"Environment=" + systemdQuote("AIH_HOME_DIR="+options.Home),
-		"Environment=" + systemdQuote("PATH="+os.Getenv("PATH")),
 		"",
 		"[Install]",
 		"WantedBy=default.target",
-		"",
+	}
+	for _, item := range serviceEnv(options) {
+		insertAt := len(lines) - 3
+		lines = append(lines, "")
+		copy(lines[insertAt+1:], lines[insertAt:])
+		lines[insertAt] = "Environment=" + systemdQuote(item[0]+"="+item[1])
 	}
 	return []byte(strings.Join(lines, string(rune(10))))
 }

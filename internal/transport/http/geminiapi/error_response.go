@@ -98,6 +98,10 @@ func writeExecutionError(response http.ResponseWriter, ctx context.Context, err 
 		writeError(response, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains a parameter the upstream protocol does not support")
 		return
 	}
+	if inferenceapi.ApplyAdmissionRetryAfter(response.Header(), err) {
+		writeError(response, http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "Inference capacity is temporarily unavailable, retry later")
+		return
+	}
 	writeError(response, http.StatusServiceUnavailable, "UNAVAILABLE", "Inference service is unavailable")
 }
 

@@ -10,9 +10,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	"github.com/madou1217/ai_home/core/inference"
@@ -280,6 +282,7 @@ func (handler *Handler) ServeHTTP(
 			return
 		}
 		applyImage429Headers(response.Header(), execResult.Retry)
+		applyAdmissionRetryAfter(response.Header(), executeErr)
 		writeError(response, asImageError(executeErr))
 		return
 	}
@@ -567,6 +570,13 @@ func writeParseError(response http.ResponseWriter, err error) {
 
 // asImageError 把任意 error 归一为本包错误。
 func asImageError(err error) *images.Error {
+	if _, ok := admission.AsRejection(err); ok {
+		return &images.Error{
+			StatusCode: http.StatusTooManyRequests,
+			Code:       admission.CodeAccountTemporarilyUnavailable,
+			Detail:     "Image generation capacity is temporarily unavailable, retry later",
+		}
+	}
 	if generationErr, ok := images.AsError(err); ok {
 		return generationErr
 	}
@@ -575,6 +585,15 @@ func asImageError(err error) *images.Error {
 		Code:       "upstream_failed",
 		Detail:     "Image generation failed",
 	}
+}
+
+// applyAdmissionRetryAfter 把准入拒绝的 Retry-After 写入响应头。
+func applyAdmissionRetryAfter(header http.Header, err error) {
+	rejection, ok := admission.AsRejection(err)
+	if !ok {
+		return
+	}
+	header.Set("Retry-After", strconv.Itoa(rejection.RetryAfterSeconds()))
 }
 
 // asRenderError 保留渲染阶段的具体错误码（取回/落仓失败），其余仍按无法渲染处理。

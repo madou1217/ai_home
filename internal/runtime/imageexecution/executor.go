@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -161,6 +162,17 @@ func (executor *Executor) Execute(
 			lastInitialFailure = failure
 			hasLastInitialFailure = hasFailure
 			stateMu.Unlock()
+		},
+		AttemptAdmission: func(attemptCtx context.Context, account images.Account, model string) (func(), error) {
+			lease, err := admission.Acquire(attemptCtx, admission.Request{
+				Provider:   provider,
+				AccountRef: strings.TrimSpace(account.AccountRef),
+				Model:      model,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return lease.Release, nil
 		},
 	}
 

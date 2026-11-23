@@ -30,17 +30,18 @@ type AccountLimit struct {
 	TPMLimit       int
 }
 
-// Default 返回内置默认值（与现有 provider gate 的默认并发一致）。
+// Default 返回内置默认值：并发上限默认**关闭**（0=不限）。
+//
+// 只有运营方显式配置 concurrency（或设置旧 AIH_SERVER_*_MAX_CONCURRENCY）
+// 时才启用限流，避免部署后无意中把既有流量掐到 2 并发。
 func Default() Config {
 	return Config{
 		SystemMax:          0,
 		QueueLimit:         200,
 		QueueWaitTimeoutMS: 30000,
 		RetryAfterSeconds:  1,
-		AccountDefault:     2,
-		ProviderDefaults: map[string]int{
-			"codex": 2, "gemini": 1, "claude": 2, "agy": 1, "opencode": 1,
-		},
+		AccountDefault:     0,
+		ProviderDefaults:   map[string]int{},
 	}
 }
 
@@ -82,31 +83,58 @@ func (config Config) AccountConcurrency(
 	model string,
 	limits []AccountLimit,
 ) int {
+	if value := config.AccountModelConcurrency(accountRef, model, limits); value > 0 {
+		return value
+	}
+	return config.AccountTotal(provider, accountRef, limits)
+}
+
+// AccountTotal 返回账号总量的并发上限：显式账号总量 → Provider 默认 → 全局账号默认。
+//
+// 账号+模型覆盖是另一层天花板，见 AccountModelConcurrency；两者都生效时取更小者。
+func (config Config) AccountTotal(
+	provider string,
+	accountRef string,
+	limits []AccountLimit,
+) int {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	accountRef = strings.TrimSpace(accountRef)
-	model = strings.TrimSpace(model)
-	var accountTotal, accountModel int
 	for _, limit := range limits {
 		if strings.TrimSpace(limit.AccountRef) != accountRef {
 			continue
 		}
-		if strings.TrimSpace(limit.ModelID) == model && model != "" {
-			accountModel = limit.MaxConcurrency
+		if strings.TrimSpace(limit.ModelID) == "" && limit.MaxConcurrency > 0 {
+			return limit.MaxConcurrency
 		}
-		if strings.TrimSpace(limit.ModelID) == "" {
-			accountTotal = limit.MaxConcurrency
-		}
-	}
-	if accountModel > 0 {
-		return accountModel
-	}
-	if accountTotal > 0 {
-		return accountTotal
 	}
 	if value := config.ProviderDefaults[provider]; value > 0 {
 		return value
 	}
-	return config.AccountDefault
+	if config.AccountDefault > 0 {
+		return config.AccountDefault
+	}
+	return 0
+}
+
+// AccountModelConcurrency 返回显式的 (账号, 模型) 覆盖；0 表示没有单独覆盖。
+func (config Config) AccountModelConcurrency(
+	accountRef string,
+	model string,
+	limits []AccountLimit,
+) int {
+	accountRef = strings.TrimSpace(accountRef)
+	model = strings.TrimSpace(model)
+	if accountRef == "" || model == "" {
+		return 0
+	}
+	for _, limit := range limits {
+		if strings.TrimSpace(limit.AccountRef) == accountRef &&
+			strings.TrimSpace(limit.ModelID) == model &&
+			limit.MaxConcurrency > 0 {
+			return limit.MaxConcurrency
+		}
+	}
+	return 0
 }
 
 // KeyConcurrency 返回 Key 的并发上限；0 表示不限（仍受全局/账号上限约束）。

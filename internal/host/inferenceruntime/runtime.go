@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/accountscheduling"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	"github.com/madou1217/ai_home/core/providers"
@@ -169,6 +170,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Weights:     dependencies.Weights,
 			Usage:       dependencies.UsageGate,
 			Scheduling:  dependencies.Scheduling,
+			Concurrency: admission.Observer{},
 			Strategy:    dependencies.Strategy,
 		},
 	)

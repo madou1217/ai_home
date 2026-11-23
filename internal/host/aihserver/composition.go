@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/accountusagefeed"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
@@ -842,6 +843,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	clientkeystats.Install(clientKeyStats)
 	go clientKeyService.Start(ctx)
 	go clientKeyStats.Start(ctx)
+	// 并发准入控制器：系统/Key/账号/账号+模型四层天花板、有界 FIFO 队列。
+	// 初始配置来自 server 配置的 concurrency 对象；未配置时回落旧环境变量默认值。
+	admissionController := admission.NewController(startupConcurrencyConfig(ctx, aiHomeDir))
+	admissionController.SetKeyLimiter(clientKeyService.ConcurrencyLimit)
+	admission.Install(admissionController)
+	go admissionController.RefreshAccountLimitsLoop(ctx, store, 5*time.Second)
 	clientAuthorizer, err := clientauth.NewAuthorizer(
 		clientKey,
 		clientauth.WithManagedKeys(clientKeyService),

@@ -8,6 +8,7 @@
   "no_available_account": { "status": 503, "message": "No available Codex account", "type": "server_error" },
   "remote_pool_unavailable": { "status": 503, "message": "The remote Codex account pool is temporarily unavailable", "type": "server_error" },
   "upstream_temporarily_unavailable": { "status": 502, "message": "Codex upstream is temporarily unavailable", "type": "server_error" },
+  "account_temporarily_unavailable": { "status": 429, "message": "Inference capacity is temporarily unavailable, retry later", "type": "rate_limit_error" },
   "upstream_safety_rejected": { "status": 403, "message": "The configured upstream rejected this request under its safety policy", "type": "permission_error" },
   "upstream_edge_rejected": { "status": 502, "message": "The upstream site edge rejected this request (not an account problem)", "type": "server_error" }
 }

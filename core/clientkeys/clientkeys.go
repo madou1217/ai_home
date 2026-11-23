@@ -64,12 +64,13 @@ func (key Key) Identity() Identity {
 	return Identity{KeyID: key.ID, Name: key.Name, Prefix: key.Prefix}
 }
 
-// AuthRecord 是鉴权快照的一行：只含摘要与展示信息。
+// AuthRecord 是鉴权快照的一行：只含摘要、展示信息与生效所需的限流字段。
 type AuthRecord struct {
 	KeyID  string
 	Name   string
 	Prefix string
 	Hash   [32]byte
+	Limits Limits
 }
 
 // 统计粒度。

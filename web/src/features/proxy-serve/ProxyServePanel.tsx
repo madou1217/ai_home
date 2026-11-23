@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, Select, Space, Switch, Tag, Typography, message } from 'antd';
 import {
-  CheckCircleOutlined,
-  DeploymentUnitOutlined,
-  DisconnectOutlined,
+	CheckCircleOutlined,
+	CloudServerOutlined,
+	DeploymentUnitOutlined,
+	DisconnectOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
   StopOutlined
@@ -14,6 +15,7 @@ import { toolkitAPI, type ToolkitProxyCandidate } from '@/services/api';
 import {
   describeProxyServeError,
   proxyServeAPI,
+  type ProxyServeService,
   type ProxyServeView
 } from './proxy-serve-api';
 import './ProxyServePanel.css';
@@ -52,6 +54,8 @@ export default function ProxyServePanel() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [candidateError, setCandidateError] = useState('');
+  const [service, setService] = useState<ProxyServeService | null>(null);
+  const [serviceError, setServiceError] = useState('');
 
   const session = view?.session;
   const running = Boolean(session?.running);
@@ -67,9 +71,10 @@ export default function ProxyServePanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [viewResult, candidatesResult] = await Promise.allSettled([
+    const [viewResult, candidatesResult, serviceResult] = await Promise.allSettled([
       proxyServeAPI.view(),
-      toolkitAPI.listProxyCandidates()
+      toolkitAPI.listProxyCandidates(),
+      proxyServeAPI.serviceStatus()
     ]);
     if (viewResult.status === 'fulfilled') {
       setView(viewResult.value);
@@ -83,6 +88,13 @@ export default function ProxyServePanel() {
     } else {
       setCandidates([]);
       setCandidateError(describeProxyServeError(candidatesResult.reason));
+    }
+    if (serviceResult.status === 'fulfilled') {
+      setService(serviceResult.value);
+      setServiceError('');
+    } else {
+      setService(null);
+      setServiceError(describeProxyServeError(serviceResult.reason));
     }
     setLoading(false);
   }, []);
@@ -149,6 +161,50 @@ export default function ProxyServePanel() {
       message.success('本机代理入口已停止');
     } catch (stopError) {
       message.error(describeProxyServeError(stopError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const refreshService = async () => {
+    setBusy('service-refresh');
+    try {
+      setService(await proxyServeAPI.serviceStatus());
+      setServiceError('');
+    } catch (serviceLoadError) {
+      const text = describeProxyServeError(serviceLoadError);
+      setServiceError(text);
+      message.error(text);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const installService = async () => {
+    setBusy('service-install');
+    setServiceError('');
+    try {
+      setService(await proxyServeAPI.installService({ selector, noSocks: !socks5 }));
+      message.success(service?.installed ? '常驻服务配置已更新' : '常驻服务已安装');
+    } catch (serviceInstallError) {
+      const text = describeProxyServeError(serviceInstallError);
+      setServiceError(text);
+      message.error(text);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const uninstallService = async () => {
+    setBusy('service-uninstall');
+    setServiceError('');
+    try {
+      setService(await proxyServeAPI.uninstallService());
+      message.success('常驻服务已移除');
+    } catch (serviceUninstallError) {
+      const text = describeProxyServeError(serviceUninstallError);
+      setServiceError(text);
+      message.error(text);
     } finally {
       setBusy('');
     }
@@ -262,6 +318,86 @@ export default function ProxyServePanel() {
               </Space>
             </>
           )}
+        </Space>
+      </Card>
+
+      <Card
+        size="small"
+        title={<Space><CloudServerOutlined /><strong>常驻服务</strong></Space>}
+        extra={(
+          <Tag
+            bordered={false}
+            color={service?.installed ? (service.loaded ? 'success' : 'warning') : 'default'}
+          >
+            {service?.installed ? (service.loaded ? '已加载' : '已安装未加载') : '未安装'}
+          </Tag>
+        )}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Typography.Text type="secondary">
+            安装为 launchd / systemd --user / Windows 登录任务，登录后自动运行
+            <code> aih proxy serve</code>；不会修改系统代理或创建 TUN。
+          </Typography.Text>
+          {serviceError ? <InlineNote tone="error">常驻服务状态读取或操作失败：{serviceError}</InlineNote> : null}
+          {service?.installed ? (
+            <div className="proxy-serve-meta">
+              <span>选择器：<code>{service.selector || '未记录'}</code></span>
+              <span>SOCKS5：{service.noSocks ? '关闭' : '开启'}</span>
+              {service.pid ? <span>PID：{service.pid}</span> : null}
+              {service.log ? <span>日志：<code>{service.log}</code></span> : null}
+            </div>
+          ) : null}
+          <div className="proxy-serve-controls">
+            <label className="proxy-serve-field">
+              <span>常驻出口选择器</span>
+              <Select
+                style={{ minWidth: 320, maxWidth: '100%' }}
+                value={selector}
+                options={options}
+                onChange={setSelector}
+                popupMatchSelectWidth={false}
+              />
+            </label>
+            <label className="proxy-serve-field proxy-serve-switch">
+              <span>同时提供 SOCKS5</span>
+              <Switch checked={socks5} onChange={setSocks5} />
+            </label>
+          </div>
+          <Space>
+            <Button
+              type="primary"
+              icon={<CloudServerOutlined />}
+              loading={busy === 'service-install'}
+              disabled={Boolean(busy) || (view ? !view.cliAvailable : false)}
+              onClick={() => void installService()}
+            >
+              {service?.installed ? '更新常驻配置' : '安装常驻服务'}
+            </Button>
+            {service?.installed ? (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                loading={busy === 'service-uninstall'}
+                disabled={Boolean(busy)}
+                onClick={() => void uninstallService()}
+              >
+                移除常驻服务
+              </Button>
+            ) : null}
+            <Button
+              icon={<ReloadOutlined />}
+              loading={busy === 'service-refresh'}
+              disabled={Boolean(busy)}
+              onClick={() => void refreshService()}
+            >
+              刷新状态
+            </Button>
+          </Space>
+          {service?.installed && running ? (
+            <InlineNote tone="warning">
+              常驻服务与页面上的「入口会话」会争用租约和端口，请只保留其中一种运行方式。
+            </InlineNote>
+          ) : null}
         </Space>
       </Card>
 

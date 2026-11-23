@@ -25,6 +25,10 @@ const (
 	Path      = "/v1/management/webui/proxy-serve"
 	StartPath = Path + "/start"
 	StopPath  = Path + "/stop"
+	// ServicePath 是常驻服务（launchd/systemd/登录任务）的状态与安装入口。
+	ServicePath          = Path + "/service"
+	ServiceInstallPath   = ServicePath + "/install"
+	ServiceUninstallPath = ServicePath + "/uninstall"
 
 	maxBodyBytes = 8 * 1024
 )
@@ -44,10 +48,18 @@ type SessionManager interface {
 	Stop(ctx context.Context) error
 }
 
+// ServiceManager 管理操作系统级的常驻代理服务。
+type ServiceManager interface {
+	ServiceStatus(ctx context.Context) (proxyserve.ServiceView, error)
+	InstallService(ctx context.Context, request proxyserve.ServiceRequest) (proxyserve.ServiceView, error)
+	UninstallService(ctx context.Context) (proxyserve.ServiceView, error)
+}
+
 // Dependencies 汇总 Handler 依赖。
 type Dependencies struct {
 	Authorizer Authorizer
 	Manager    SessionManager
+	Service    ServiceManager
 	// LocateCLI 仅用于投影「这台机器能否启动入口」；缺省用 proxyserve.LocateCLI。
 	LocateCLI func() (string, error)
 }
@@ -56,6 +68,7 @@ type Dependencies struct {
 type Handler struct {
 	authorizer Authorizer
 	manager    SessionManager
+	service    ServiceManager
 	locateCLI  func() (string, error)
 }
 
@@ -67,7 +80,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if locate == nil {
 		locate = proxyserve.LocateCLI
 	}
-	return &Handler{authorizer: dependencies.Authorizer, manager: dependencies.Manager, locateCLI: locate}, nil
+	return &Handler{authorizer: dependencies.Authorizer, manager: dependencies.Manager, service: dependencies.Service, locateCLI: locate}, nil
 }
 
 func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
@@ -91,6 +104,21 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 			return
 		}
 		handler.serveStop(responseWriter, request)
+	case ServicePath:
+		if !requireMethod(responseWriter, request, http.MethodGet) {
+			return
+		}
+		handler.serveServiceView(responseWriter, request)
+	case ServiceInstallPath:
+		if !requireMethod(responseWriter, request, http.MethodPost) {
+			return
+		}
+		handler.serveServiceInstall(responseWriter, request)
+	case ServiceUninstallPath:
+		if !requireMethod(responseWriter, request, http.MethodPost) {
+			return
+		}
+		handler.serveServiceUninstall(responseWriter, request)
 	default:
 		writeError(responseWriter, http.StatusNotFound, "not_found", "未找到代理入口接口")
 	}
@@ -138,6 +166,70 @@ func (handler *Handler) serveStop(responseWriter http.ResponseWriter, request *h
 		return
 	}
 	writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "session": handler.manager.View()})
+}
+
+func (handler *Handler) serveServiceView(responseWriter http.ResponseWriter, request *http.Request) {
+	if handler.service == nil {
+		writeError(responseWriter, http.StatusServiceUnavailable, "proxy_service_unavailable", "常驻服务管理未接线")
+		return
+	}
+	view, err := handler.service.ServiceStatus(request.Context())
+	if err != nil {
+		writeServiceError(responseWriter, err)
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "service": view})
+}
+
+func (handler *Handler) serveServiceInstall(responseWriter http.ResponseWriter, request *http.Request) {
+	if handler.service == nil {
+		writeError(responseWriter, http.StatusServiceUnavailable, "proxy_service_unavailable", "常驻服务管理未接线")
+		return
+	}
+	var body struct {
+		Selector string `json:"selector"`
+		NoSocks  bool   `json:"noSocks"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(responseWriter, request.Body, maxBodyBytes)).Decode(&body); err != nil {
+		writeError(responseWriter, http.StatusBadRequest, "invalid_request_body", "请求体不是有效的 JSON")
+		return
+	}
+	view, err := handler.service.InstallService(request.Context(), proxyserve.ServiceRequest{
+		Selector: strings.TrimSpace(body.Selector), NoSocks: body.NoSocks,
+	})
+	if err != nil {
+		writeServiceError(responseWriter, err)
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "service": view})
+}
+
+func (handler *Handler) serveServiceUninstall(responseWriter http.ResponseWriter, request *http.Request) {
+	if handler.service == nil {
+		writeError(responseWriter, http.StatusServiceUnavailable, "proxy_service_unavailable", "常驻服务管理未接线")
+		return
+	}
+	view, err := handler.service.UninstallService(request.Context())
+	if err != nil {
+		writeServiceError(responseWriter, err)
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true, "service": view})
+}
+
+func writeServiceError(responseWriter http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, proxyserve.ErrSelectorInvalid):
+		writeError(responseWriter, http.StatusBadRequest, "proxy_service_selector_invalid", "出口选择器无效")
+	case errors.Is(err, proxyserve.ErrCLINotFound):
+		writeError(responseWriter, http.StatusServiceUnavailable, "proxy_service_cli_not_found", "未找到与 Server 同目录的 aih-go 可执行文件")
+	case errors.Is(err, proxyserve.ErrServerURL):
+		writeError(responseWriter, http.StatusServiceUnavailable, "proxy_service_server_url_missing", "Server 未配置可拨号的回环地址")
+	case errors.Is(err, proxyserve.ErrStartFailed):
+		writeError(responseWriter, http.StatusBadGateway, "proxy_service_install_failed", describeStartFailure(err))
+	default:
+		writeError(responseWriter, http.StatusInternalServerError, "proxy_service_failed", err.Error())
+	}
 }
 
 func writeStartError(responseWriter http.ResponseWriter, err error) {

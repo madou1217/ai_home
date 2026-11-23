@@ -25,6 +25,19 @@ export interface ProxyServeStartInput {
   noSocks?: boolean;
 }
 
+/** 常驻服务视图；selector/noSocks 只来自本机安装记录，不回显 URL。 */
+export interface ProxyServeService {
+  installed: boolean;
+  loaded: boolean;
+  pid?: number;
+  label?: string;
+  file?: string;
+  log?: string;
+  selector?: string;
+  noSocks?: boolean;
+  error?: string;
+}
+
 const BASE = '/webui/proxy-serve';
 
 export const proxyServeAPI = {
@@ -47,6 +60,18 @@ export const proxyServeAPI = {
       session: response.data.session,
       cliAvailable: true
     };
+  },
+  async serviceStatus(): Promise<ProxyServeService> {
+    const response = await api.get<{ ok: boolean; service: ProxyServeService }>(`${BASE}/service`);
+    return response.data.service;
+  },
+  async installService(input: ProxyServeStartInput): Promise<ProxyServeService> {
+    const response = await api.post<{ ok: boolean; service: ProxyServeService }>(`${BASE}/service/install`, input);
+    return response.data.service;
+  },
+  async uninstallService(): Promise<ProxyServeService> {
+    const response = await api.post<{ ok: boolean; service: ProxyServeService }>(`${BASE}/service/uninstall`, {});
+    return response.data.service;
   }
 };
 

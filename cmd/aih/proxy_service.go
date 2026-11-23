@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -104,10 +105,14 @@ func runProxyServiceCommand(ctx context.Context, args []string, runtime commandR
 		if installErr != nil {
 			return installErr
 		}
-		writeProxyServiceStatus(runtime, status, serviceOptions.LogFile)
+		writeProxyServiceStatus(runtime, status, serviceOptions.LogFile, options.json)
 	case "uninstall":
 		if err := autostart.Uninstall(ctx, serviceOptions); err != nil {
 			return err
+		}
+		if options.json {
+			writeProxyServiceJSON(runtime, map[string]any{"ok": true, "action": "uninstall"})
+			return nil
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] proxy service uninstalled")
 	case "status":
@@ -115,7 +120,7 @@ func runProxyServiceCommand(ctx context.Context, args []string, runtime commandR
 		if statusErr != nil {
 			return statusErr
 		}
-		writeProxyServiceStatus(runtime, status, serviceOptions.LogFile)
+		writeProxyServiceStatus(runtime, status, serviceOptions.LogFile, options.json)
 	}
 	return nil
 }
@@ -132,7 +137,14 @@ func parseProxyServiceOptions(action string, args []string, runtime commandRunti
 	return options, label, nil
 }
 
-func writeProxyServiceStatus(runtime commandRuntime, status autostart.Status, logFile string) {
+func writeProxyServiceStatus(runtime commandRuntime, status autostart.Status, logFile string, jsonOutput bool) {
+	if jsonOutput {
+		writeProxyServiceJSON(runtime, map[string]any{
+			"ok": true, "label": status.Label, "installed": status.Installed,
+			"loaded": status.Loaded, "pid": status.PID, "file": status.File, "log": logFile,
+		})
+		return
+	}
 	_, _ = fmt.Fprintln(runtime.stdout, "[aih] proxy service")
 	_, _ = fmt.Fprintf(runtime.stdout, "  label: %s\n", status.Label)
 	_, _ = fmt.Fprintf(runtime.stdout, "  installed: %t\n", status.Installed)
@@ -140,6 +152,14 @@ func writeProxyServiceStatus(runtime commandRuntime, status autostart.Status, lo
 	_, _ = fmt.Fprintf(runtime.stdout, "  pid: %d\n", status.PID)
 	_, _ = fmt.Fprintf(runtime.stdout, "  file: %s\n", status.File)
 	_, _ = fmt.Fprintf(runtime.stdout, "  log: %s\n", logFile)
+}
+
+func writeProxyServiceJSON(runtime commandRuntime, payload any) {
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 }
 
 func writeProxyServiceUsage(runtime commandRuntime) {

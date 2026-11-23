@@ -109,6 +109,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.StringVar(&options.tunLogFile, "tun-log-file", "", "TUN 内核日志路径；空值使用 <aiHome>/logs/proxy-tun.log")
 	flags.BoolVar(&options.tunDryRun, "tun-dry-run", false, "只生成并校验 TUN 配置，不创建接口、不改路由")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
+	// launchd/systemd 的 autostart 会追加该监督器参数；proxy serve 自身不依赖父进程存续，
+	// 但必须接受它，否则常驻服务一启动就因未知参数退出。
+	flags.Bool("exit-with-parent", false, "接受宿主监督器的退出联动参数（launchd/systemd 下无额外效果）")
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}

@@ -17,6 +17,7 @@ func buildWebUIProxyServeRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 	handler, err := webuiproxyserveapi.NewHandler(webuiproxyserveapi.Dependencies{
 		Authorizer: dependencies.Authorizer,
 		Manager:    dependencies.ProxyServeManager,
+		Service:    dependencies.ProxyServeManager,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建本机代理入口接口失败: %w", err)
@@ -25,5 +26,8 @@ func buildWebUIProxyServeRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		{Pattern: "GET " + webuiproxyserveapi.Path, Handler: handler},
 		{Pattern: "POST " + webuiproxyserveapi.StartPath, Handler: handler},
 		{Pattern: "POST " + webuiproxyserveapi.StopPath, Handler: handler},
+		{Pattern: "GET " + webuiproxyserveapi.ServicePath, Handler: handler},
+		{Pattern: "POST " + webuiproxyserveapi.ServiceInstallPath, Handler: handler},
+		{Pattern: "POST " + webuiproxyserveapi.ServiceUninstallPath, Handler: handler},
 	}, nil
 }

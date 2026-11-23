@@ -97,6 +97,39 @@ the cache file share SHA-256 `dbbdbab2…`, and `codesign` reports
 server, so this path is for a future app-bundle layout rather than the current
 grant target.
 
+## Stable TCC identity and OAuth proxy (2026-11-23)
+
+TCC attributes Screen Recording and Accessibility to the **responsible process**
+of the launchd job. When the job runs the server directly, every server rebuild
+changes the code identity and the grant stops matching
+(`Failed to match existing code requirement`). The service now runs through
+`<AIH home>/bin/aih-launch`, a small parent that spawns the server, forwards
+signals and mirrors its exit code:
+
+```
+launchd -> aih-launch (granted once) -> aih-server (rebuilt freely) -> surface helper
+```
+
+Verified on the installed service: after switching the plist to
+`aih-launch -- <server>`, `tccd` reported
+`responsible_path=/Users/model/.ai_home/bin/aih-launch` for the surface helper,
+and the server ran as its child with `/readyz` 200. The launcher must stay byte
+identical across releases; changing its source or the Go toolchain requires the
+one-time grant again. Packaging ships it for darwin, the autostart plist uses it
+when present, and the distribution installer publishes it at the fixed path.
+
+The OAuth job browser now inherits the server's outbound proxy pool
+(`config:server.proxyUrl`). With `socks5://127.0.0.1:1080` configured, a real
+job-scope start launched Edge with `--proxy-server=socks5://127.0.0.1:1080
+--disable-quic --force-webrtc-ip-handling-policy=disable_non_proxied_udp`,
+which is what lets the authorize page leave an unsupported region.
+
+Deployment note: replacing a running server binary **in place** corrupts the
+ad-hoc code-signature cache and the next launch dies with
+`EXC_BAD_ACCESS / CODESIGNING, Invalid Page` (SIGKILL). Write a temporary file
+in the same directory and rename it over the target; the build script already
+does this and manual deployments must follow the same rule.
+
 ## Remaining macOS risk
 
 Rapidly restarting sessions on the same profile, or starting while the previous

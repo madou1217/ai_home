@@ -29,6 +29,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/remoteexecution"
+	"github.com/madou1217/ai_home/internal/runtime/accountmcps"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
@@ -56,6 +57,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountimportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountjobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountliveapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountmcppolicyapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountquotastatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountreauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
@@ -447,6 +449,18 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		if err != nil {
 			return nil, fmt.Errorf("创建账号 429 重试设置接口失败: %w", err)
 		}
+	}
+
+	accountMCPStore, err := accountmcps.NewStore(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("创建账号 MCP 设置存储失败: %w", err)
+	}
+	accountMCPPolicy, err := webuiaccountmcppolicyapi.NewHandler(webuiaccountmcppolicyapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      accountMCPStore,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建账号 MCP 设置接口失败: %w", err)
 	}
 
 	toolkitTargets, err := webuitoolkittargetsapi.NewHandler(webuitoolkittargetsapi.Dependencies{Authorizer: authorizer, Store: sshSource})
@@ -1155,6 +1169,16 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			},
 		)
 	}
+	routes = append(routes,
+		webuiRoute{
+			Pattern: "GET " + webuiaccountmcppolicyapi.Path + "/{provider}/{accountRef}" + webuiaccountmcppolicyapi.RouteSuffix,
+			Handler: accountMCPPolicy,
+		},
+		webuiRoute{
+			Pattern: "POST " + webuiaccountmcppolicyapi.Path + "/{provider}/{accountRef}" + webuiaccountmcppolicyapi.RouteSuffix,
+			Handler: accountMCPPolicy,
+		},
+	)
 	if restoreScheduling != nil {
 		routes = append(routes, webuiRoute{
 			Pattern: "POST " + webuirestoreschedulingapi.Path + webuirestoreschedulingapi.RouteSuffix,

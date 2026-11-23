@@ -100,6 +100,35 @@ func Resolve(definitions []Definition, policy Policy, context Context) ([]Resolv
 	return resolved, nil
 }
 
+// Validate checks a policy without resolving it.
+func Validate(policy Policy) error {
+	mode := policy.Mode
+	if mode == "" {
+		mode = ModeAuto
+	}
+	switch mode {
+	case ModeAuto, ModeDisabled:
+		return nil
+	case ModeAllowlist:
+	default:
+		return fmt.Errorf("unknown mcp policy mode %q", policy.Mode)
+	}
+	known := make(map[string]bool)
+	for _, definition := range Builtins() {
+		known[definition.ID] = true
+	}
+	for _, raw := range policy.Allow {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if !known[id] {
+			return fmt.Errorf("unknown mcp %q", id)
+		}
+	}
+	return nil
+}
+
 func providerAllowed(definition Definition, provider string) bool {
 	if len(definition.Providers) == 0 || strings.TrimSpace(provider) == "" {
 		return true

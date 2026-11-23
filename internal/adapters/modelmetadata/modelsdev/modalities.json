@@ -1,4 +1,14 @@
 {
+  "abacusai/dracarys-llama-3.1-70b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Dracarys Llama 3.1 70B Instruct",
+    "context": 131072
+  },
   "ai21/jamba-large": {
     "input": [
       "text"
@@ -61,13 +71,24 @@
   },
   "aisingapore/gemma-sea-lion-v4-27b-it": {
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "output": [
       "text"
     ],
     "name": "Gemma-SEA-LION-v4-27B-IT",
     "context": 128000
+  },
+  "aleph-alpha/kolibri-1": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Kolibri 1",
+    "context": 1048576
   },
   "alibaba/qwen-flash": {
     "input": [
@@ -177,6 +198,16 @@
     "name": "Qwen2.5-VL 72B Instruct",
     "context": 131072
   },
+  "alibaba/qwen2.5-7b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen2.5 7B Instruct",
+    "context": 131072
+  },
   "alibaba/qwen2.5-coder-0.5b": {
     "input": [
       "text"
@@ -217,6 +248,16 @@
     "name": "Qwen3 235B-A22B Instruct 2507",
     "context": 262144
   },
+  "alibaba/qwen3-235b-a22b-thinking-2507": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3 235B-A22B Thinking 2507",
+    "context": 262144
+  },
   "alibaba/qwen3-30b-a3b": {
     "input": [
       "text"
@@ -227,6 +268,16 @@
     "name": "Qwen3 30B A3B",
     "context": 131072
   },
+  "alibaba/qwen3-30b-a3b-instruct-2507": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3 30B-A3B Instruct 2507",
+    "context": 262144
+  },
   "alibaba/qwen3-32b": {
     "input": [
       "text"
@@ -236,6 +287,16 @@
     ],
     "name": "Qwen3 32B",
     "context": 131072
+  },
+  "alibaba/qwen3-8b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3 8B",
+    "context": 32768
   },
   "alibaba/qwen3-coder-30b-a3b-instruct": {
     "input": [
@@ -325,7 +386,7 @@
       "text"
     ],
     "name": "Qwen3-Next 80B-A3B Instruct",
-    "context": 131072
+    "context": 262144
   },
   "alibaba/qwen3-next-80b-a3b-thinking": {
     "input": [
@@ -335,7 +396,7 @@
       "text"
     ],
     "name": "Qwen3-Next 80B-A3B (Thinking)",
-    "context": 131072
+    "context": 262144
   },
   "alibaba/qwen3-omni-30b-a3b-thinking": {
     "input": [
@@ -408,7 +469,8 @@
   "alibaba/qwen3-vl-plus": {
     "input": [
       "text",
-      "image"
+      "image",
+      "video"
     ],
     "output": [
       "text"
@@ -416,12 +478,23 @@
     "name": "Qwen3-VL Plus",
     "context": 262144
   },
+  "alibaba/qwen3.5-0.8b": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3.5 0.8B",
+    "context": 262144
+  },
   "alibaba/qwen3.5-122b-a10b": {
     "input": [
       "text",
       "image",
-      "video",
-      "audio"
+      "video"
     ],
     "output": [
       "text"
@@ -433,8 +506,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "audio"
+      "video"
     ],
     "output": [
       "text"
@@ -442,12 +514,23 @@
     "name": "Qwen3.5 27B",
     "context": 262144
   },
+  "alibaba/qwen3.5-2b": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3.5 2B",
+    "context": 262144
+  },
   "alibaba/qwen3.5-35b-a3b": {
     "input": [
       "text",
       "image",
-      "video",
-      "audio"
+      "video"
     ],
     "output": [
       "text"
@@ -455,17 +538,40 @@
     "name": "Qwen3.5 35B-A3B",
     "context": 262144
   },
+  "alibaba/qwen3.5-35b-a3b-base": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3.5 35B-A3B Base",
+    "context": 262144
+  },
   "alibaba/qwen3.5-397b-a17b": {
     "input": [
       "text",
       "image",
-      "video",
-      "audio"
+      "video"
     ],
     "output": [
       "text"
     ],
     "name": "Qwen3.5 397B-A17B",
+    "context": 262144
+  },
+  "alibaba/qwen3.5-4b": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3.5 4B",
     "context": 262144
   },
   "alibaba/qwen3.5-9b": {
@@ -478,6 +584,18 @@
       "text"
     ],
     "name": "Qwen3.5 9B",
+    "context": 262144
+  },
+  "alibaba/qwen3.5-9b-base": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen3.5 9B Base",
     "context": 262144
   },
   "alibaba/qwen3.5-flash": {
@@ -508,8 +626,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "audio"
+      "video"
     ],
     "output": [
       "text"
@@ -521,8 +638,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "audio"
+      "video"
     ],
     "output": [
       "text"
@@ -707,6 +823,19 @@
     "name": "Qwen3.8 Omni Flash",
     "context": 1000000
   },
+  "alibaba/qwen4-max": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Qwen4 Max",
+    "context": 1000000
+  },
   "alibaba/qwq-32b": {
     "input": [
       "text"
@@ -726,6 +855,17 @@
     ],
     "name": "QwQ Plus",
     "context": 131072
+  },
+  "allenai/olmocr-2-7b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "olmOCR 2 7B",
+    "context": 16384
   },
   "amazon/nova-2-lite": {
     "input": [
@@ -930,6 +1070,25 @@
     "name": "Claude Fable 5.1",
     "context": 1000000
   },
+  "anthropic/claude-fable-5-2": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Claude Fable 5.2",
+    "context": 1000000
+  },
   "anthropic/claude-haiku-4-5": {
     "input": [
       "text",
@@ -983,6 +1142,18 @@
       "text"
     ],
     "name": "Claude Mythos 5",
+    "context": 1000000
+  },
+  "anthropic/claude-mythos-5-1": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Claude Mythos 5.1",
     "context": 1000000
   },
   "anthropic/claude-opus-4-0": {
@@ -1325,6 +1496,16 @@
     "name": "BGE M3",
     "context": 8192
   },
+  "baai/bge-multilingual-gemma2": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "BGE Multilingual Gemma2",
+    "context": 8192
+  },
   "baai/bge-reranker-v2-m3": {
     "input": [
       "text"
@@ -1365,6 +1546,16 @@
     "name": "ERNIE 4.5 21B A3B",
     "context": 131072
   },
+  "baidu/ernie-4.5-300b-a47b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "ERNIE 4.5 300B A47B",
+    "context": 131072
+  },
   "baidu/ernie-4.5-vl-424b-a47b": {
     "input": [
       "image",
@@ -1376,9 +1567,39 @@
     "name": "ERNIE 4.5 VL 424B A47B",
     "context": 123000
   },
-  "bytedance-seed/seed-1-6": {
+  "black-forest-labs/flux-1-dev": {
     "input": [
       "text"
+    ],
+    "output": [
+      "image"
+    ],
+    "name": "FLUX.1 [dev]"
+  },
+  "black-forest-labs/flux-1-kontext-dev": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "image"
+    ],
+    "name": "FLUX.1 Kontext [dev]"
+  },
+  "black-forest-labs/flux-1-schnell": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "image"
+    ],
+    "name": "FLUX.1 [schnell]"
+  },
+  "bytedance-seed/seed-1-6": {
+    "input": [
+      "text",
+      "image",
+      "video"
     ],
     "output": [
       "text"
@@ -1389,7 +1610,8 @@
   "bytedance-seed/seed-1-6-flash": {
     "input": [
       "text",
-      "image"
+      "image",
+      "video"
     ],
     "output": [
       "text"
@@ -1467,6 +1689,19 @@
     "name": "Seed 2.0 Pro",
     "context": 256000
   },
+  "bytedance-seed/seed-2.1-lite": {
+    "input": [
+      "text",
+      "image",
+      "audio",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Seed 2.1 Lite",
+    "context": 1024000
+  },
   "bytedance-seed/seed-2.1-pro": {
     "input": [
       "text",
@@ -1477,7 +1712,7 @@
       "text"
     ],
     "name": "Seed 2.1 Pro",
-    "context": 256000
+    "context": 1024000
   },
   "bytedance-seed/seed-2.1-turbo": {
     "input": [
@@ -1513,7 +1748,17 @@
       "text"
     ],
     "name": "Seed Evolving",
-    "context": 256000
+    "context": 1024000
+  },
+  "bytedance-seed/seed-oss-36b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Seed-OSS-36B-Instruct",
+    "context": 524288
   },
   "bytedance-seed/seedance-2.0": {
     "input": [
@@ -1540,6 +1785,48 @@
       "audio"
     ],
     "name": "Seedance 2.5"
+  },
+  "canopylabs/orpheus-arabic-saudi": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "audio"
+    ],
+    "name": "Orpheus Arabic Saudi",
+    "context": 4000
+  },
+  "canopylabs/orpheus-v1-english": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "audio"
+    ],
+    "name": "Orpheus V1 English",
+    "context": 4000
+  },
+  "cloudflare/clef": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Clef",
+    "context": 65536
+  },
+  "cloudflare/clef-flash": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Clef Flash",
+    "context": 262144
   },
   "cognitivecomputations/dolphin-mistral-24b-venice-edition": {
     "input": [
@@ -1799,6 +2086,17 @@
     "name": "Ornith 1.0 9B",
     "context": 262144
   },
+  "deepreinforce/ornith-1.5-122b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Ornith 1.5 122B",
+    "context": 262144
+  },
   "deepreinforce/ornith-1.5-35b-a3b": {
     "input": [
       "text",
@@ -2034,6 +2332,16 @@
     "name": "DeepSeek V4.1 Flash 1017",
     "context": 1000000
   },
+  "essentialai/rnj-1-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Rnj-1 Instruct",
+    "context": 32768
+  },
   "fireworks/ember-1": {
     "input": [
       "text",
@@ -2081,6 +2389,25 @@
       "max"
     ],
     "name": "Claude Fable 5.1",
+    "context": 1000000
+  },
+  "github-copilot/claude-fable-5.2": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Claude Fable 5.2",
     "context": 1000000
   },
   "github-copilot/claude-haiku-4.5": {
@@ -2303,7 +2630,8 @@
   "github-copilot/gemini-3.8-flash": {
     "input": [
       "text",
-      "image"
+      "image",
+      "pdf"
     ],
     "output": [
       "text"
@@ -2320,8 +2648,6 @@
     "input": [
       "text",
       "image",
-      "video",
-      "audio",
       "pdf"
     ],
     "output": [
@@ -2333,6 +2659,59 @@
       "high"
     ],
     "name": "Gemini 4 Argon",
+    "context": 1048576
+  },
+  "github-copilot/gemini-4-carbon": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "name": "Gemini 4 Carbon",
+    "context": 1048576
+  },
+  "github-copilot/gemini-4-hydrogen": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Hydrogen",
+    "context": 1048576
+  },
+  "github-copilot/gemini-4-neon": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Neon",
     "context": 1048576
   },
   "github-copilot/gpt-5-mini": {
@@ -2413,6 +2792,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ],
     "name": "GPT-5.4 nano",
     "context": 272000
@@ -2574,6 +2960,64 @@
     "name": "GPT-6.1 Sol",
     "context": 922000
   },
+  "github-copilot/gpt-6.1-terra": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.1 Terra",
+    "context": 922000
+  },
+  "github-copilot/gpt-6.2-astra": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.2 Astra",
+    "context": 922000
+  },
+  "github-copilot/gpt-6.2-sol": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.2 Sol",
+    "context": 922000
+  },
   "github-copilot/grok-4.5": {
     "input": [
       "text",
@@ -2610,8 +3054,7 @@
   "github-copilot/grok-4.7": {
     "input": [
       "text",
-      "image",
-      "pdf"
+      "image"
     ],
     "output": [
       "text"
@@ -2652,21 +3095,6 @@
     "name": "Kimi K3",
     "context": 1048576
   },
-  "github-copilot/mai-code-1-flash-picker": {
-    "input": [
-      "text"
-    ],
-    "output": [
-      "text"
-    ],
-    "efforts": [
-      "low",
-      "medium",
-      "high"
-    ],
-    "name": "MAI-Code-1-Flash",
-    "context": 128000
-  },
   "github-copilot/mai-code-1.1-flash": {
     "input": [
       "text",
@@ -2683,6 +3111,42 @@
     ],
     "name": "MAI-Code-1.1-Flash",
     "context": 128000
+  },
+  "github-copilot/mai-code-2": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "MAI Code 2",
+    "context": 922000
+  },
+  "github-copilot/mai-code-2-flash": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "MAI Code 2 Flash",
+    "context": 922000
   },
   "google-vertex/claude-fable-5-1@default": {
     "input": [
@@ -2701,6 +3165,25 @@
       "max"
     ],
     "name": "Claude Fable 5.1",
+    "context": 1000000
+  },
+  "google-vertex/claude-fable-5-2@default": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Claude Fable 5.2",
     "context": 1000000
   },
   "google-vertex/claude-fable-5@default": {
@@ -3147,7 +3630,9 @@
   "google-vertex/gemini-3.1-flash-lite-image": {
     "input": [
       "text",
-      "image"
+      "image",
+      "video",
+      "pdf"
     ],
     "output": [
       "text",
@@ -3315,6 +3800,65 @@
     "name": "Gemini 4 Argon",
     "context": 1048576
   },
+  "google-vertex/gemini-4-carbon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "name": "Gemini 4 Carbon",
+    "context": 1048576
+  },
+  "google-vertex/gemini-4-hydrogen": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Hydrogen",
+    "context": 1048576
+  },
+  "google-vertex/gemini-4-neon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Neon",
+    "context": 1048576
+  },
   "google-vertex/gemini-embedding-001": {
     "input": [
       "text"
@@ -3329,7 +3873,8 @@
     "input": [
       "text",
       "image",
-      "video"
+      "video",
+      "pdf"
     ],
     "output": [
       "text",
@@ -3588,7 +4133,7 @@
       "image"
     ],
     "name": "Deep Research Max Preview (Apr-21-2026)",
-    "context": 131072
+    "context": 1048576
   },
   "google/deep-research-preview-04-2026": {
     "input": [
@@ -3603,7 +4148,7 @@
       "image"
     ],
     "name": "Deep Research Preview (Apr-21-2026)",
-    "context": 131072
+    "context": 1048576
   },
   "google/diffusiongemma-26b-a4b-it": {
     "input": [
@@ -3693,6 +4238,48 @@
       "text"
     ],
     "name": "Gemini 2.5 Flash-Lite",
+    "context": 1048576
+  },
+  "google/gemini-2.5-flash-lite-preview-06-17": {
+    "input": [
+      "text",
+      "image",
+      "audio",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Gemini 2.5 Flash-Lite Preview 06-17",
+    "context": 1048576
+  },
+  "google/gemini-2.5-flash-lite-preview-09-2025": {
+    "input": [
+      "text",
+      "image",
+      "audio",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Gemini 2.5 Flash-Lite Preview 09-2025",
+    "context": 1048576
+  },
+  "google/gemini-2.5-flash-preview-05-20": {
+    "input": [
+      "text",
+      "image",
+      "audio",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Gemini 2.5 Flash Preview 05-20",
     "context": 1048576
   },
   "google/gemini-2.5-flash-preview-tts": {
@@ -3807,8 +4394,8 @@
       "text",
       "image"
     ],
-    "name": "Nano Banana Pro",
-    "context": 131072
+    "name": "Nano Banana Pro Preview",
+    "context": 65536
   },
   "google/gemini-3-pro-preview": {
     "input": [
@@ -3852,11 +4439,7 @@
       "text",
       "image"
     ],
-    "efforts": [
-      "minimal",
-      "high"
-    ],
-    "name": "Nano Banana 2",
+    "name": "Nano Banana 2 Preview",
     "context": 65536
   },
   "google/gemini-3.1-flash-lite": {
@@ -4120,6 +4703,65 @@
     "name": "Gemini 4 Argon",
     "context": 1048576
   },
+  "google/gemini-4-carbon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "name": "Gemini 4 Carbon",
+    "context": 1048576
+  },
+  "google/gemini-4-hydrogen": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Hydrogen",
+    "context": 1048576
+  },
+  "google/gemini-4-neon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Neon",
+    "context": 1048576
+  },
   "google/gemini-embedding-001": {
     "input": [
       "text"
@@ -4220,6 +4862,25 @@
     "name": "Gemini Omni Flash Preview",
     "context": 131072
   },
+  "google/gemini-pro-latest": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "name": "Gemini Pro Latest",
+    "context": 1048576
+  },
   "google/gemini-robotics-er-1.6-preview": {
     "input": [
       "text",
@@ -4241,6 +4902,16 @@
       "text"
     ],
     "name": "Gemma 2 27B",
+    "context": 8192
+  },
+  "google/gemma-2-2b-it": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Gemma 2 2B IT",
     "context": 8192
   },
   "google/gemma-3-12b-it": {
@@ -4275,6 +4946,30 @@
     ],
     "name": "Gemma 3 4B IT",
     "context": 131072
+  },
+  "google/gemma-3n-e2b-it": {
+    "input": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Gemma 3n E2B IT",
+    "context": 32768
+  },
+  "google/gemma-3n-e4b-it": {
+    "input": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Gemma 3n E4B IT",
+    "context": 32768
   },
   "google/gemma-4-12b-it": {
     "input": [
@@ -4366,8 +5061,8 @@
     "output": [
       "video"
     ],
-    "name": "Veo 3.1 fast",
-    "context": 480
+    "name": "Veo 3.1 Fast Preview",
+    "context": 1024
   },
   "google/veo-3.1-generate-preview": {
     "input": [
@@ -4377,8 +5072,8 @@
     "output": [
       "video"
     ],
-    "name": "Veo 3.1",
-    "context": 480
+    "name": "Veo 3.1 Preview",
+    "context": 1024
   },
   "google/veo-3.1-lite-generate-preview": {
     "input": [
@@ -4388,8 +5083,8 @@
     "output": [
       "video"
     ],
-    "name": "Veo 3.1 lite",
-    "context": 480
+    "name": "Veo 3.1 Lite Preview",
+    "context": 1024
   },
   "gryphe/mythomax-l2-13b": {
     "input": [
@@ -4400,6 +5095,26 @@
     ],
     "name": "MythoMax L2 13B",
     "context": 4096
+  },
+  "huawei/openpangu-2.0-flash": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "openPangu 2.0 Flash",
+    "context": 524288
+  },
+  "huawei/openpangu-2.0-pro": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "openPangu 2.0 Pro",
+    "context": 524288
   },
   "ibm/granite-4-h-micro": {
     "input": [
@@ -4451,6 +5166,26 @@
     "name": "Mercury 2.5",
     "context": 260000
   },
+  "inception/mercury-3": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Mercury 3",
+    "context": 1000000
+  },
+  "inception/mercury-edit-2": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Mercury Edit 2",
+    "context": 32000
+  },
   "inclusionai/ling-3.0-flash": {
     "input": [
       "text"
@@ -4493,6 +5228,16 @@
     "name": "Ling 3.0 Flash VL",
     "context": 262144
   },
+  "inclusionai/ling-3.0-tiny": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Ling 3.0 Tiny",
+    "context": 131072
+  },
   "inclusionai/ling-3.1-flash": {
     "input": [
       "text"
@@ -4502,6 +5247,18 @@
     ],
     "name": "Ling 3.1 Flash",
     "context": 262144
+  },
+  "inclusionai/ling-3.2-flash": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Ling 3.2 Flash",
+    "context": 1000000
   },
   "inference-net/schematron-v2-small": {
     "input": [
@@ -4523,15 +5280,59 @@
     "name": "Schematron V2 Turbo",
     "context": 128000
   },
+  "levanto/levanto-sage-v1.4": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Sage 1.4",
+    "context": 32768
+  },
+  "lightonai/lightonocr-2-1b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "LightOnOCR 2 1B",
+    "context": 16384
+  },
+  "lightonai/lightonocr-3-0.8b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "LightOnOCR-3 0.8B",
+    "context": 262144
+  },
   "liquid/d1": {
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "output": [
       "text"
     ],
     "name": "Liquid d1",
     "context": 65536
+  },
+  "liquid/lfm2-24b-a2b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "LFM2 24B A2B",
+    "context": 32768
   },
   "mancer/weaver": {
     "input": [
@@ -4553,6 +5354,17 @@
     "name": "LongCat-2.0",
     "context": 1000000
   },
+  "meituan/longcat-2.5": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "LongCat-2.5",
+    "context": 1000000
+  },
   "meituan/longcat-2.5-preview": {
     "input": [
       "text",
@@ -4563,6 +5375,16 @@
     ],
     "name": "LongCat-2.5-Preview",
     "context": 1000000
+  },
+  "meragpt/restyler-1": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Restyler 1",
+    "context": 4096
   },
   "meta/llama-3.1-70b-instruct": {
     "input": [
@@ -4625,6 +5447,27 @@
     "name": "Llama-3.2-3B",
     "context": 131072
   },
+  "meta/llama-3.2-3b-instruct": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Llama 3.2 3B Instruct",
+    "context": 131072
+  },
+  "meta/llama-3.2-90b-vision-instruct": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Llama-3.2-90B-Vision-Instruct",
+    "context": 128000
+  },
   "meta/llama-3.3-70b-instruct": {
     "input": [
       "text"
@@ -4666,6 +5509,51 @@
     ],
     "name": "Llama-Guard-3-8B",
     "context": 128000
+  },
+  "meta/llama-guard-4-12b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Llama Guard 4 12B",
+    "context": 163840
+  },
+  "meta/llama-prompt-guard-2-22m": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Llama Prompt Guard 2 22M",
+    "context": 512
+  },
+  "meta/llama-prompt-guard-2-86m": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Llama Prompt Guard 2 86M",
+    "context": 512
+  },
+  "meta/muse-ember-1.0": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Muse Ember",
+    "context": 1048576
   },
   "meta/muse-glimmer-30b": {
     "input": [
@@ -4780,6 +5668,28 @@
     "name": "MAI-Code-1.1-Flash",
     "context": 256000
   },
+  "microsoft/mai-code-2": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "MAI Code 2",
+    "context": 922000
+  },
+  "microsoft/mai-code-2-flash": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "MAI Code 2 Flash",
+    "context": 922000
+  },
   "microsoft/phi-4-mini": {
     "input": [
       "text"
@@ -4789,6 +5699,18 @@
     ],
     "name": "Phi-4-mini",
     "context": 128000
+  },
+  "microsoft/phi-4-multimodal-instruct": {
+    "input": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Phi-4-multimodal-instruct",
+    "context": 131072
   },
   "microsoft/wizardlm-2-8x22b": {
     "input": [
@@ -4802,7 +5724,8 @@
   },
   "mindlab/macaron-v1-tall": {
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -4915,6 +5838,18 @@
     "name": "MiniMax-M3",
     "context": 1048576
   },
+  "minimax/MiniMax-M3.1-Flash": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "MiniMax-M3.1-Flash",
+    "context": 1000000
+  },
   "minimax/MiniMax-M3.1-Flash-Preview": {
     "input": [
       "text",
@@ -4939,8 +5874,7 @@
   },
   "minimax/image-01": {
     "input": [
-      "text",
-      "image"
+      "text"
     ],
     "output": [
       "image"
@@ -5165,6 +6099,16 @@
     ],
     "name": "Ministral 8B Instruct",
     "context": 131072
+  },
+  "mistral/mistral-7b-instruct-v0.3": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Mistral 7B Instruct v0.3",
+    "context": 32768
   },
   "mistral/mistral-embed": {
     "input": [
@@ -5418,6 +6362,16 @@
     "name": "Mixtral 8x22B Instruct",
     "context": 65536
   },
+  "mistral/mixtral-8x7b-instruct-v0.1": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Mixtral 8x7B Instruct v0.1",
+    "context": 32768
+  },
   "mistral/pixtral-12b": {
     "input": [
       "text",
@@ -5547,6 +6501,40 @@
     "name": "Kimi K3",
     "context": 1048576
   },
+  "moonshotai-cn/kimi-k3.1-pro": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "name": "Kimi K3.1 Pro",
+    "context": 1048576
+  },
+  "moonshotai-cn/kimi-k3.1-pro-highspeed": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "name": "Kimi K3.1 Pro Highspeed",
+    "context": 1048576
+  },
   "moonshotai/kimi-k2": {
     "input": [
       "text"
@@ -5674,6 +6662,40 @@
     "name": "Kimi K3",
     "context": 1048576
   },
+  "moonshotai/kimi-k3.1-pro": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "name": "Kimi K3.1 Pro",
+    "context": 1048576
+  },
+  "moonshotai/kimi-k3.1-pro-highspeed": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "name": "Kimi K3.1 Pro Highspeed",
+    "context": 1048576
+  },
   "morph/morph-v3-fast": {
     "input": [
       "text"
@@ -5682,7 +6704,7 @@
       "text"
     ],
     "name": "Morph V3 Fast",
-    "context": 81920
+    "context": 262144
   },
   "morph/morph-v3-large": {
     "input": [
@@ -5844,7 +6866,7 @@
       "text"
     ],
     "name": "Llama Nemotron Embed VL 1B v2",
-    "context": 32768
+    "context": 10240
   },
   "nvidia/llama-nemotron-rerank-vl-1b-v2": {
     "input": [
@@ -5855,7 +6877,7 @@
       "text"
     ],
     "name": "Llama Nemotron Rerank VL 1B v2",
-    "context": 128000
+    "context": 10240
   },
   "nvidia/mistral-nemotron": {
     "input": [
@@ -5940,6 +6962,16 @@
     ],
     "name": "Nemotron 3.5 Lightning 30B A3B",
     "context": 262144
+  },
+  "nvidia/nemotron-3.5-super-120b-a12b": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Nemotron 3.5 Super 120B A12B",
+    "context": 1048576
   },
   "nvidia/nemotron-3.5-super-vl-120b-a12b": {
     "input": [
@@ -6350,9 +7382,6 @@
     "output": [
       "text"
     ],
-    "efforts": [
-      "medium"
-    ],
     "name": "GPT-5.2 Chat",
     "context": 128000
   },
@@ -6687,6 +7716,17 @@
     "name": "GPT-6 Astra (Fast)",
     "context": 922000
   },
+  "openai/gpt-6-cyber": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "GPT-6 Cyber",
+    "context": 922000
+  },
   "openai/gpt-6-luna": {
     "input": [
       "text",
@@ -6746,6 +7786,64 @@
     "name": "GPT-6.1 Sol",
     "context": 922000
   },
+  "openai/gpt-6.1-terra": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.1 Terra",
+    "context": 922000
+  },
+  "openai/gpt-6.2-astra": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.2 Astra",
+    "context": 922000
+  },
+  "openai/gpt-6.2-sol": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.2 Sol",
+    "context": 922000
+  },
   "openai/gpt-daybreak-blue-latest": {
     "input": [
       "text",
@@ -6793,7 +7891,7 @@
     "output": [
       "image"
     ],
-    "name": "gpt-image-1"
+    "name": "GPT-Image-1"
   },
   "openai/gpt-image-1-mini": {
     "input": [
@@ -7086,6 +8184,30 @@
     "name": "Whisper Large v3 Turbo",
     "context": 448
   },
+  "openbmb/minicpm-v-4.7-1b": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "MiniCPM-V 4.7 1B",
+    "context": 262144
+  },
+  "openbmb/minicpm-v-4.7-35b-a3b": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "MiniCPM-V 4.7 35B-A3B",
+    "context": 262144
+  },
   "openbmb/minicpm5-1b": {
     "input": [
       "text"
@@ -7159,6 +8281,27 @@
     "name": "Claude Haiku 5.5",
     "context": 1000000
   },
+  "opencode-go/crouton-alpha-free": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Crouton Alpha Free",
+    "context": 1048576
+  },
   "opencode-go/deepseek-v4-pro": {
     "input": [
       "text"
@@ -7170,7 +8313,7 @@
       "high",
       "max"
     ],
-    "name": "DeepSeek V4 Pro (New)",
+    "name": "DeepSeek V4 Pro",
     "context": 1000000
   },
   "opencode-go/deepseek-v4.1-flash": {
@@ -7186,8 +8329,27 @@
       "high",
       "max"
     ],
-    "name": "DeepSeek V4.1 Flash",
+    "name": "DeepSeek V4.1 Flash 1017",
     "context": 1000000
+  },
+  "opencode-go/gemini-4-argon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "name": "Gemini 4 Argon",
+    "context": 1048576
   },
   "opencode-go/gemini-4-argon-contributor": {
     "input": [
@@ -7241,8 +8403,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "pdf"
+      "video"
     ],
     "output": [
       "text"
@@ -7328,6 +8489,36 @@
     "name": "Hy3",
     "context": 192000
   },
+  "opencode-go/hy4": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "none",
+      "high"
+    ],
+    "name": "Hy4",
+    "context": 983010
+  },
+  "opencode-go/hy4-flash-free": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "none",
+      "high"
+    ],
+    "name": "Hy4 flash Free",
+    "context": 983040
+  },
   "opencode-go/hy4-preview": {
     "input": [
       "text"
@@ -7341,6 +8532,16 @@
     ],
     "name": "Hy4 preview",
     "context": 1024000
+  },
+  "opencode-go/iceman-contributor-free": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Iceman Contributor Free",
+    "context": 262144
   },
   "opencode-go/kimi-k2.7-code": {
     "input": [
@@ -7369,6 +8570,23 @@
     "name": "Kimi K3",
     "context": 1048576
   },
+  "opencode-go/kimi-k3.1-pro": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "name": "Kimi K3.1 Pro",
+    "context": 1048576
+  },
   "opencode-go/longcat-2.0": {
     "input": [
       "text"
@@ -7377,6 +8595,17 @@
       "text"
     ],
     "name": "LongCat-2.0",
+    "context": 1000000
+  },
+  "opencode-go/longcat-2.5-free": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "LongCat 2.5 Free",
     "context": 1000000
   },
   "opencode-go/longcat-2.5-preview-free": {
@@ -7459,6 +8688,44 @@
       "text"
     ],
     "name": "MiniMax-M3",
+    "context": 1000000
+  },
+  "opencode-go/minimax-m3.1-flash": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "MiniMax M3.1 Flash",
+    "context": 1000000
+  },
+  "opencode-go/minimax-m3.1-flash-free": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "MiniMax M3.1 Flash Free",
     "context": 1000000
   },
   "opencode-go/muse-spark-1.2-contributor": {
@@ -7547,6 +8814,23 @@
       "xhigh"
     ],
     "name": "Qwen3.8 Max",
+    "context": 1000000
+  },
+  "opencode-go/qwen4-max": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "xhigh"
+    ],
+    "name": "Qwen4 Max",
     "context": 1000000
   },
   "opencode-go/space-bunny": {
@@ -7694,6 +8978,25 @@
       "max"
     ],
     "name": "Claude Fable 5.1",
+    "context": 1000000
+  },
+  "opencode/claude-fable-5-2": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Claude Fable 5.2",
     "context": 1000000
   },
   "opencode/claude-haiku-4-5": {
@@ -7930,6 +9233,27 @@
     "name": "Claude Sonnet 5.5",
     "context": 1000000
   },
+  "opencode/crouton-alpha-free": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Crouton Alpha Free",
+    "context": 1048576
+  },
   "opencode/deepseek-v4-flash": {
     "input": [
       "text"
@@ -8003,7 +9327,7 @@
       "high",
       "max"
     ],
-    "name": "DeepSeek V4.1 Flash",
+    "name": "DeepSeek V4.1 Flash 1017",
     "context": 1000000
   },
   "opencode/deepseek-v4.1-flash-free": {
@@ -8051,6 +9375,23 @@
     ],
     "name": "Fledge Alpha Free",
     "context": 1048576
+  },
+  "opencode/flint-40b-free": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Flint 40B Free",
+    "context": 262144
   },
   "opencode/gemini-3-flash": {
     "input": [
@@ -8226,6 +9567,65 @@
     "name": "Gemini 4 Argon",
     "context": 1048576
   },
+  "opencode/gemini-4-carbon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "name": "Gemini 4 Carbon",
+    "context": 1048576
+  },
+  "opencode/gemini-4-hydrogen": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Hydrogen",
+    "context": 1048576
+  },
+  "opencode/gemini-4-neon": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Gemini 4 Neon",
+    "context": 1048576
+  },
   "opencode/glm-4.6": {
     "input": [
       "text"
@@ -8319,8 +9719,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "pdf"
+      "video"
     ],
     "output": [
       "text"
@@ -8337,8 +9736,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "pdf"
+      "video"
     ],
     "output": [
       "text"
@@ -8786,6 +10184,44 @@
     "name": "GPT-6.1 Sol",
     "context": 922000
   },
+  "opencode/gpt-6.2-astra": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.2 Astra",
+    "context": 922000
+  },
+  "opencode/gpt-6.2-sol": {
+    "input": [
+      "text",
+      "image",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "GPT-6.2 Sol",
+    "context": 922000
+  },
   "opencode/grok-4.5": {
     "input": [
       "text",
@@ -8872,7 +10308,7 @@
       "high"
     ],
     "name": "Hy3 Free",
-    "context": 192000
+    "context": 190000
   },
   "opencode/hy3-preview-free": {
     "input": [
@@ -8884,9 +10320,54 @@
     "name": "Hy3 preview Free",
     "context": 256000
   },
-  "opencode/jev-1.13": {
+  "opencode/hy4-flash-free": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "none",
+      "high"
+    ],
+    "name": "Hy4 flash Free",
+    "context": 983040
+  },
+  "opencode/iceman-free": {
     "input": [
       "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Iceman Free",
+    "context": 262144
+  },
+  "opencode/inkling-2-small-free": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
+    "name": "Inkling 2 Small Free",
+    "context": 1048576
+  },
+  "opencode/jev-1.13": {
+    "input": [
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -8896,7 +10377,8 @@
   },
   "opencode/jev-1.13-free": {
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -8982,6 +10464,8 @@
       "text"
     ],
     "efforts": [
+      "low",
+      "high",
       "max"
     ],
     "name": "Kimi K3",
@@ -9082,6 +10566,17 @@
       "text"
     ],
     "name": "LongCat-2.0 Free",
+    "context": 1000000
+  },
+  "opencode/longcat-2.5-free": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "LongCat 2.5 Free",
     "context": 1000000
   },
   "opencode/longcat-2.5-preview-free": {
@@ -9228,6 +10723,25 @@
     "name": "MiniMax-M3 Free",
     "context": 200000
   },
+  "opencode/minimax-m3.1-flash-free": {
+    "input": [
+      "text",
+      "image",
+      "video"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "MiniMax M3.1 Flash Free",
+    "context": 1000000
+  },
   "opencode/mistral-large-4": {
     "input": [
       "text",
@@ -9242,6 +10756,27 @@
     ],
     "name": "Mistral Large 4",
     "context": 524288
+  },
+  "opencode/muse-ember-1.0": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Muse Ember 1.0",
+    "context": 1048576
   },
   "opencode/muse-spark-1.2": {
     "input": [
@@ -9327,6 +10862,28 @@
     "name": "Muse Spark 1.3 Free",
     "context": 1048576
   },
+  "opencode/muse-wonder-1.0": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "pdf",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Muse Wonder",
+    "context": 1048576
+  },
   "opencode/nemotron-3-super-free": {
     "input": [
       "text"
@@ -9389,6 +10946,22 @@
     ],
     "name": "North Mini Code Free",
     "context": 256000
+  },
+  "opencode/pulse-alpha-free": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "name": "Pulse Alpha Free",
+    "context": 1048576
   },
   "opencode/qwen3-coder": {
     "input": [
@@ -9461,6 +11034,11 @@
     "output": [
       "text"
     ],
+    "efforts": [
+      "low",
+      "medium",
+      "xhigh"
+    ],
     "name": "Qwen3.8 Max",
     "context": 262144
   },
@@ -9510,6 +11088,24 @@
     "name": "Step 5 Preview Free",
     "context": 1000000
   },
+  "opencode/tidepool-alpha-free": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "name": "Tidepool Alpha Free",
+    "context": 1048576
+  },
   "opencode/trinity-large-preview-free": {
     "input": [
       "text"
@@ -9537,6 +11133,17 @@
     "name": "Ox Alpha Free (Unlimited)",
     "context": 1000000
   },
+  "opendatalab/mineru2.5-2509-1.2b": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "MinerU2.5 2509 1.2B",
+    "context": 16384
+  },
   "paddlepaddle/paddleocr-vl": {
     "input": [
       "text",
@@ -9547,6 +11154,17 @@
     ],
     "name": "PaddleOCR VL",
     "context": 131072
+  },
+  "particle-ai/particle-1": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Particle-1",
+    "context": 1048576
   },
   "perceptron/perceptron-mk1": {
     "input": [
@@ -9559,6 +11177,19 @@
     ],
     "name": "Perceptron Mk1",
     "context": 32768
+  },
+  "perceptron/perceptron-mk1.5": {
+    "input": [
+      "text",
+      "image",
+      "video",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Perceptron Mk1.5",
+    "context": 36864
   },
   "perplexity/sonar": {
     "input": [
@@ -9676,6 +11307,16 @@
     "name": "Arrow 2 Telos",
     "context": 1050000
   },
+  "recursive/flint": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Flint",
+    "context": 262144
+  },
   "reflection/beam-1.0-501b-a23b": {
     "input": [
       "text"
@@ -9727,6 +11368,26 @@
     ],
     "name": "Relace Search",
     "context": 256000
+  },
+  "respan/span-01": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Span-01"
+  },
+  "respan/span-02": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Span-02",
+    "context": 131072
   },
   "sakana/fugu": {
     "input": [
@@ -9836,6 +11497,16 @@
     "name": "Sarvam 30B",
     "context": 128000
   },
+  "sarvam/sarvam-m": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Sarvam-M",
+    "context": 32768
+  },
   "sdaia/allam-2-7b": {
     "input": [
       "text"
@@ -9910,6 +11581,30 @@
     "name": "Apertus 8B",
     "context": 65536
   },
+  "swiss-ai/apertus-v1.5-70b": {
+    "input": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Apertus 1.5 70B",
+    "context": 262144
+  },
+  "swiss-ai/apertus-v1.5-8b": {
+    "input": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Apertus v1.5 8B",
+    "context": 262144
+  },
   "tencent/hy-mt2-1.8b": {
     "input": [
       "text"
@@ -9959,6 +11654,28 @@
     ],
     "name": "Hy3 preview",
     "context": 256000
+  },
+  "tencent/hy4": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Hy4",
+    "context": 983010
+  },
+  "tencent/hy4-flash": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Hy4 flash",
+    "context": 983040
   },
   "tencent/hy4-preview": {
     "input": [
@@ -10012,6 +11729,17 @@
     "name": "Inkling",
     "context": 1048576
   },
+  "thinkingmachines/inkling-2-small": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Inkling 2 Small",
+    "context": 1048576
+  },
   "thinkingmachines/inkling-small": {
     "input": [
       "text",
@@ -10035,9 +11763,21 @@
     "name": "Trendyol Asure 12B",
     "context": 131072
   },
+  "typesafe/jev-1.13.0": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Jev 1.13",
+    "context": 64000
+  },
   "typesafe/jev-1.14.0": {
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -10047,7 +11787,8 @@
   },
   "typesafe/jev-latest": {
     "input": [
-      "text"
+      "text",
+      "image"
     ],
     "output": [
       "text"
@@ -10066,6 +11807,17 @@
     "name": "Pareto",
     "context": 262144
   },
+  "unbiased/pareto-26.10": {
+    "input": [
+      "text",
+      "image"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "Pareto 26.10",
+    "context": 1048576
+  },
   "undi95/remm-slerp-l2-13b": {
     "input": [
       "text"
@@ -10075,6 +11827,16 @@
     ],
     "name": "ReMM SLERP 13B",
     "context": 6144
+  },
+  "upstage/solar-10.7b-instruct-v1.0": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "text"
+    ],
+    "name": "SOLAR 10.7B Instruct v1.0",
+    "context": 4096
   },
   "upstage/solar-mini4": {
     "input": [
@@ -10293,7 +12055,8 @@
       "none",
       "low",
       "medium",
-      "high"
+      "high",
+      "xhigh"
     ],
     "name": "Grok 4.3",
     "context": 1000000
@@ -10310,7 +12073,8 @@
     "efforts": [
       "low",
       "medium",
-      "high"
+      "high",
+      "xhigh"
     ],
     "name": "Grok 4.5",
     "context": 500000
@@ -10376,12 +12140,10 @@
   "xai/grok-imagine-image": {
     "input": [
       "text",
-      "image",
-      "pdf"
+      "image"
     ],
     "output": [
-      "image",
-      "pdf"
+      "image"
     ],
     "name": "Grok Imagine Image",
     "context": 16000
@@ -10395,17 +12157,15 @@
       "image"
     ],
     "name": "Grok Imagine Image 2.0",
-    "context": 8000
+    "context": 64000
   },
   "xai/grok-imagine-image-quality": {
     "input": [
       "text",
-      "image",
-      "pdf"
+      "image"
     ],
     "output": [
-      "image",
-      "pdf"
+      "image"
     ],
     "name": "Grok Imagine Image Quality",
     "context": 16000
@@ -10414,8 +12174,7 @@
     "input": [
       "text",
       "image",
-      "video",
-      "pdf"
+      "video"
     ],
     "output": [
       "video"
@@ -10427,8 +12186,7 @@
     "input": [
       "text",
       "image",
-      "audio",
-      "pdf"
+      "audio"
     ],
     "output": [
       "video"
@@ -10439,8 +12197,7 @@
   "xai/grok-imagine-video-1.5-lite": {
     "input": [
       "text",
-      "image",
-      "pdf"
+      "image"
     ],
     "output": [
       "video"
@@ -10448,25 +12205,24 @@
     "name": "Grok Imagine Video 1.5 Lite",
     "context": 1024
   },
-  "xai/grok-voice-stt-1.0": {
+  "xai/grok-tts": {
     "input": [
-      "audio"
-    ],
-    "output": [
       "text"
     ],
-    "name": "Grok Voice STT 1.0",
+    "output": [
+      "audio"
+    ],
+    "name": "Grok TTS",
     "context": 15000
   },
-  "xai/grok-voice-tts-1.0": {
+  "xai/grok-voice-transcribe-2.0": {
     "input": [
-      "text"
-    ],
-    "output": [
       "audio"
     ],
-    "name": "Grok Voice TTS 1.0",
-    "context": 15000
+    "output": [
+      "text"
+    ],
+    "name": "Grok Voice Transcribe 2.0"
   },
   "xiaomi/mimo-v2-flash": {
     "input": [
@@ -10502,6 +12258,16 @@
     "name": "MiMo-V2-Pro",
     "context": 1048576
   },
+  "xiaomi/mimo-v2-tts": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "audio"
+    ],
+    "name": "MiMo-V2-TTS",
+    "context": 8192
+  },
   "xiaomi/mimo-v2.5": {
     "input": [
       "text",
@@ -10534,6 +12300,36 @@
     ],
     "name": "MiMo-V2.5-Pro-UltraSpeed",
     "context": 1048576
+  },
+  "xiaomi/mimo-v2.5-tts": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "audio"
+    ],
+    "name": "MiMo-V2.5-TTS",
+    "context": 8192
+  },
+  "xiaomi/mimo-v2.5-tts-voiceclone": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "audio"
+    ],
+    "name": "MiMo-V2.5-TTS-VoiceClone",
+    "context": 8192
+  },
+  "xiaomi/mimo-v2.5-tts-voicedesign": {
+    "input": [
+      "text"
+    ],
+    "output": [
+      "audio"
+    ],
+    "name": "MiMo-V2.5-TTS-VoiceDesign",
+    "context": 8192
   },
   "xiaomi/mimo-v2.6-flash": {
     "input": [

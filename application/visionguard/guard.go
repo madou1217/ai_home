@@ -80,8 +80,9 @@ type Result struct {
 // 模型仍能按文本指示借视，请求成功；错放一张图，上游整条 400 拒绝，模型连一个回合都
 // 拿不到，连借视的机会都没有。
 //
-// 家族启发式不在这里——它住在模态索引里（见 modelsdev.LookupOrInferModalities），
-// 这样模型目录的 capability 过滤与守卫共用同一份判定，不会各自演化出两套规则。
+// 家族启发式不在这里——它住在能力抽象里（application/modelmetadata.InferModalities
+// 与 CapabilityRegistry.LookupOrInferModalities），这样模型目录的 capability 过滤与
+// 守卫共用同一份判定，不会各自演化出两套规则。
 func (guard *Guard) Apply(
 	request inference.Request,
 	providerID inference.ProviderID,

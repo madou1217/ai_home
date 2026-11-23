@@ -16,7 +16,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelfixture "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/fixture"
 	"github.com/madou1217/ai_home/internal/runtime/translation"
 )
 
@@ -56,9 +56,9 @@ func newTestCatalogDeps(t *testing.T, dbPath string) translation.CatalogDependen
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}
-	modalities, err := modelsdev.New()
+	modalities, err := modelfixture.New()
 	if err != nil {
-		t.Fatalf("modelsdev.New: %v", err)
+		t.Fatalf("modelfixture.New: %v", err)
 	}
 	now := time.Unix(1700000000, 0).UTC()
 	ident, err := accountcore.NewNativeSubjectIdentity("kimi", "u-test-1")
@@ -101,9 +101,9 @@ func newTestCatalogDeps(t *testing.T, dbPath string) translation.CatalogDependen
 				{AccountRef: acc.Ref(), ProviderID: "kimi", Models: []accountapp.AccountModel{m}},
 			},
 		}},
-		Runtime:      stubElig{},
-		Providers:    cat,
-		Modalities:   modalities,
+		Runtime:    stubElig{},
+		Providers:  cat,
+		Modalities: modalities,
 	}
 }
 

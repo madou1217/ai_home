@@ -10,7 +10,7 @@ import (
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelfixture "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/fixture"
 )
 
 type stubOverviewLister struct {
@@ -93,9 +93,9 @@ func TestBuildTranslationModelCatalogAndResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}
-	modalities, err := modelsdev.New()
+	modalities, err := modelfixture.New()
 	if err != nil {
-		t.Fatalf("modelsdev.New: %v", err)
+		t.Fatalf("modelfixture.New: %v", err)
 	}
 	now := time.Unix(1700000000, 0).UTC()
 

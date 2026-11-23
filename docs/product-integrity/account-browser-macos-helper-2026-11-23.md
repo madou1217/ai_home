@@ -174,3 +174,13 @@ launcher 的辅助功能授权，系统设置里不再需要单独的 AIH Transl
 
 实测：start -> navigate -> pointer -> key -> close 全部 202，帧号从 2 增长到 11，
 没有再出现 browser_multiple_windows_not_supported。
+
+## 捕获窗口选择（2026-11-23）
+
+capture 不再因为存在多个 >=700x400 的 Edge 窗口而直接失败：先选择屏幕上的窗口，
+优先匹配宿主启动参数 1200x900，其次选面积最大的一个。输入仍然绑定到选中的
+windowID，因此后续控制不会漂移到其它窗口。
+
+实测（单窗口回归）：start -> navigate -> pointer -> key -> close 全部 202，
+帧号 1 -> 5 -> 10。双大窗口的选择分支未在真机上强制复现（会先触发 Edge 进程
+身份校验），但选择已从“抛错”改为确定性规则。

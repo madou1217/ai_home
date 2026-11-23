@@ -65,6 +65,38 @@ Verified on this Mac:
   the account egress proxy (`curl` returns 403), so a real login still needs a
   configured proxy or the Windows host.
 
+## TCC attribution under the launchd service (2026-11-23)
+
+The cached helper works when the server is started from a terminal, because TCC
+treats the terminal as the responsible process and reuses its Screen Recording
+grant. The installed service is a launchd job, and `tccd` then reports:
+
+```
+Service kTCCServiceScreenCapture does not allow prompting; returning denied.
+Service kTCCServicePostEvent does not allow prompting; returning denied.
+attribution={responsible={... responsible_path=.../bin/native/darwin-arm64/aih-server},
+             requesting={identifier=com.meadeo.aih.browser-surface, ...}}
+```
+
+So the grant belongs to the **server binary**, not the helper, and a background
+process cannot show the permission dialog. A launchd `--preflight` returns
+`{"eventPosting":false,"screenCapture":false}` while the same binary from a
+terminal returns both true.
+
+Required one-time setup for the service: add
+`<repo>/bin/native/darwin-arm64/aih-server` to System Settings → Privacy &
+Security → Screen Recording **and** Accessibility (the list's "+" button;
+Cmd+Shift+G accepts the absolute path). Rebuilding the server changes its
+cdhash and may require toggling the entry again.
+
+To keep the permission entry independent of the source-hash cache, the helper is
+now also published at `<AIH home>/bin/aih-browser-surface` (atomic rename,
+identical content left untouched) and executed from there. The stable file and
+the cache file share SHA-256 `dbbdbab2…`, and `codesign` reports
+`com.meadeo.aih.browser-surface`. The TCC responsible process is still the
+server, so this path is for a future app-bundle layout rather than the current
+grant target.
+
 ## Remaining macOS risk
 
 Rapidly restarting sessions on the same profile, or starting while the previous

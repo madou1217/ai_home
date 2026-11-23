@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowser"
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowserview"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
+	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountbrowserapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountbrowserliveapi"
 )
@@ -20,6 +21,7 @@ type accountBrowserLiveScopeResolver struct {
 	runtime   *accountbrowser.Service
 	egress    *runtimeegress.Manager
 	jobs      *accountauth.Service
+	proxyPool *outboundproxy.Manager
 	homeDir   string
 }
 
@@ -64,7 +66,16 @@ func (r accountBrowserLiveScopeResolver) resolveJob(ctx context.Context, jobID s
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return webuiaccountbrowserliveapi.Scope{}, webuiaccountbrowserliveapi.ErrScopeUnavailable
 	}
-	return webuiaccountbrowserliveapi.Scope{Kind: webuiaccountbrowserliveapi.ScopeJob, DataDir: dir}, nil
+	scope := webuiaccountbrowserliveapi.Scope{Kind: webuiaccountbrowserliveapi.ScopeJob, DataDir: dir}
+	// A new account has no egress binding yet, but the authorize page may only
+	// be reachable through the server's configured outbound proxy. Use the same
+	// proxy pool the server uses for upstream calls; an empty pool stays direct.
+	if r.proxyPool != nil {
+		if proxyURL := strings.TrimSpace(r.proxyPool.Status().ProxyURL); proxyURL != "" {
+			scope.ProxyURL = proxyURL
+		}
+	}
+	return scope, nil
 }
 
 func (r accountBrowserLiveScopeResolver) Resolve(ctx context.Context, request webuiaccountbrowserliveapi.ScopeRequest) (webuiaccountbrowserliveapi.Scope, error) {
@@ -134,7 +145,7 @@ func buildWebUIAccountBrowserLiveRoutes(deps webuiRouteDependencies) ([]webuiRou
 				return webuiaccountbrowserapi.ReadServerID(ctx, deps.AIHomeDir)
 			},
 		}
-		scopeResolver = accountBrowserLiveScopeResolver{authority: authority, runtime: profileRuntime, egress: deps.EgressManager, jobs: deps.AuthJobs, homeDir: deps.AIHomeDir}
+		scopeResolver = accountBrowserLiveScopeResolver{authority: authority, runtime: profileRuntime, egress: deps.EgressManager, jobs: deps.AuthJobs, proxyPool: deps.ProxyPool, homeDir: deps.AIHomeDir}
 	}
 	handler, err := webuiaccountbrowserliveapi.NewHandler(webuiaccountbrowserliveapi.Dependencies{
 		Authorizer:    deps.Authorizer,

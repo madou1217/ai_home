@@ -12,7 +12,11 @@ function copyNativeComponents(repositoryRoot, bundleRoot, target) {
   const key = targetKey(target);
   const suffix = isWindows(target) ? '.exe' : '';
   const engineNames = ['aih-engine-mihomo', 'aih-engine-singbox', 'aih-render-subscriptions'];
-  const names = ['aih-server', 'aih-go', ...engineNames].map((name) => name + suffix);
+  // macOS ships a rarely changed launcher: TCC grants are bound to its code
+  // identity, so it must not be rebuilt with the server.
+  const launcherNames = target.goos === 'darwin' ? ['aih-launch'] : [];
+  const names = ['aih-server', 'aih-go', ...launcherNames, ...engineNames].map((name) => name + suffix);
+  const engineStart = 2 + launcherNames.length;
   const sourceDir = path.join(repositoryRoot, 'bin', 'native', key);
   const files = names.map((name) => {
     const file = path.join(sourceDir, name);
@@ -38,7 +42,7 @@ function copyNativeComponents(repositoryRoot, bundleRoot, target) {
     binary: `bin/native/${key}/${names[0]}`,
     sha256: files[0].sha256,
     cli: { binary: `bin/native/${key}/${names[1]}`, sha256: files[1].sha256 },
-    engines: files.slice(2).map((file) => ({
+    engines: files.slice(engineStart).map((file) => ({
       binary: `bin/native/${key}/${file.name}`,
       sha256: file.sha256
     }))

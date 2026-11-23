@@ -41,6 +41,62 @@ func helperTarget() string {
 	return runtime.GOARCH + "-apple-macosx14.0"
 }
 
+// helperInstallPath is the stable executable macOS can be granted once. The
+// build cache is keyed by source hash, but TCC records the grant against the
+// path that actually ran, so the launched binary must not move between starts.
+func helperInstallPath(home string) string {
+	return filepath.Join(home, "bin", "aih-browser-surface")
+}
+
+// installHelperBinary publishes the signed bytes at the stable path. Identical
+// content is left untouched so the signed file and its TCC grant stay valid.
+func installHelperBinary(source, target string) (string, error) {
+	if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
+		sourceHash, sourceErr := fileSHA256(source)
+		targetHash, targetErr := fileSHA256(target)
+		if sourceErr == nil && targetErr == nil && sourceHash == targetHash {
+			return target, nil
+		}
+	}
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		return "", err
+	}
+	if err = os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return "", err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(target), ".aih-browser-surface-")
+	if err != nil {
+		return "", err
+	}
+	name := temp.Name()
+	if _, err = temp.Write(raw); err == nil {
+		err = temp.Chmod(0o700)
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	if err = os.Rename(name, target); err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	return target, nil
+}
+
+// publishHelper prunes old revisions and prefers the stable path; a read-only
+// home keeps the versioned cache path so the surface still starts.
+func publishHelper(home, root, key, binary string) string {
+	pruneHelperCache(root, key)
+	if installed, err := installHelperBinary(binary, helperInstallPath(home)); err == nil {
+		return installed
+	}
+	return binary
+}
+
 // buildHelper compiles the surface helper once per source revision and reuses
 // the same signed bytes afterwards. Rebuilding on every start produced a new
 // temporary path and a new ad-hoc cdhash, so macOS treated each start as a new
@@ -57,8 +113,7 @@ func buildHelper(ctx context.Context, home string) (string, func(), error) {
 	target := filepath.Join(root, key)
 	binary := filepath.Join(target, "aih-browser-surface")
 	if helperCacheValid(target, key) {
-		pruneHelperCache(root, key)
-		return binary, func() {}, nil
+		return publishHelper(home, root, key, binary), func() {}, nil
 	}
 	staging, err := os.MkdirTemp(root, ".build-")
 	if err != nil {
@@ -86,8 +141,7 @@ func buildHelper(ctx context.Context, home string) (string, func(), error) {
 	// Publish by rename so a half-written directory is never treated as valid.
 	if err = os.Rename(staging, target); err != nil {
 		if helperCacheValid(target, key) {
-			pruneHelperCache(root, key)
-			return binary, func() {}, nil
+			return publishHelper(home, root, key, binary), func() {}, nil
 		}
 		// A stale entry must not block a fresh build; the cache is disposable.
 		if removeErr := os.RemoveAll(target); removeErr != nil {
@@ -97,8 +151,7 @@ func buildHelper(ctx context.Context, home string) (string, func(), error) {
 			return "", nil, err
 		}
 	}
-	pruneHelperCache(root, key)
-	return binary, func() {}, nil
+	return publishHelper(home, root, key, binary), func() {}, nil
 }
 
 func buildTransientHelper(ctx context.Context) (string, func(), error) {

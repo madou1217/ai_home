@@ -7,12 +7,13 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/runtime/proxytransport"
 )
 
 // openSSHTransport 读取本机 SSH 连接记录，建立到远端 AIH loopback 的本地转发。
 // 只搬运 direct-tcpip 字节，不执行远端命令；具体转发生命周期由 proxytransport 管理。
-func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID, listenAddress, remoteAddress string) (proxytransport.Transport, error) {
+func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID, listenAddress, remoteAddress, viaConnectionID string) (proxytransport.Transport, error) {
 	connectionID = strings.TrimSpace(connectionID)
 	home, err := resolveAIHomeDir(runtime)
 	if err != nil {
@@ -38,12 +39,18 @@ func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID,
 	if err != nil {
 		return nil, err
 	}
-	initial, err := resolver.Open(ctx, connectionID)
+	open := func(openCtx context.Context) (*sshremote.Client, error) {
+		if strings.TrimSpace(viaConnectionID) != "" {
+			return resolver.OpenVia(openCtx, connectionID, viaConnectionID)
+		}
+		return resolver.Open(openCtx, connectionID)
+	}
+	initial, err := open(ctx)
 	if err != nil {
 		return nil, err
 	}
 	connector, err := proxytransport.NewReconnectingConnector(initial, func(factoryCtx context.Context) (proxytransport.Connector, error) {
-		return resolver.Open(factoryCtx, connectionID)
+		return open(factoryCtx)
 	})
 	if err != nil {
 		_ = initial.Close()

@@ -127,24 +127,34 @@ func resolveSourceRoot(env map[string]string) string {
 			return abs
 		}
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "."
+	// 后台/launchd 启动时 cwd 可能是 "/"，不能只靠 cwd 判断安装包根目录。
+	// 依次从 cwd 与可执行文件所在目录向上找带 package.json + lib 的目录。
+	starts := make([]string, 0, 2)
+	if cwd, err := os.Getwd(); err == nil {
+		starts = append(starts, cwd)
 	}
-	cur := cwd
-	for i := 0; i < 6; i++ {
-		if _, err := os.Stat(filepath.Join(cur, "package.json")); err == nil {
-			if _, err2 := os.Stat(filepath.Join(cur, "lib")); err2 == nil {
-				return cur
+	if exe, err := os.Executable(); err == nil {
+		starts = append(starts, filepath.Dir(exe))
+	}
+	for _, start := range starts {
+		cur := start
+		for i := 0; i < 6; i++ {
+			if _, err := os.Stat(filepath.Join(cur, "package.json")); err == nil {
+				if _, err2 := os.Stat(filepath.Join(cur, "lib")); err2 == nil {
+					return cur
+				}
 			}
+			parent := filepath.Dir(cur)
+			if parent == cur {
+				break
+			}
+			cur = parent
 		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			break
-		}
-		cur = parent
 	}
-	return cwd
+	if len(starts) > 0 {
+		return starts[0]
+	}
+	return "."
 }
 
 // ProviderResourceReport 描述报告中单类资源的完整状态（能力 + 已托管记录）。
@@ -182,14 +192,15 @@ type ManagedSummaryGroup struct {
 
 // ReportResponse 对应 GET /v1/management/webui/toolkit/native-resources 的完整 JSON 契约。
 type ReportResponse struct {
-	OK               bool                `json:"ok"`
-	Source           string              `json:"source"`
-	DemoSources      map[string]string   `json:"-"` // Deprecated: retained only for Go source compatibility; never populated.
-	Providers        []ProviderReportRow `json:"providers"`
-	Hosts            []HostReportRow     `json:"hosts"`
-	Managed          ManagedSummaryGroup `json:"managed"`
-	Lifecycle        []string            `json:"lifecycle"`
-	EvidenceBoundary string              `json:"evidenceBoundary"`
+	OK                bool                `json:"ok"`
+	Source            string              `json:"source"`
+	DemoSources       map[string]string   `json:"-"` // Deprecated: retained only for Go source compatibility; never populated.
+	Providers         []ProviderReportRow `json:"providers"`
+	Hosts             []HostReportRow     `json:"hosts"`
+	Managed           ManagedSummaryGroup `json:"managed"`
+	InstallCandidates []InstallCandidate  `json:"installCandidates"`
+	Lifecycle         []string            `json:"lifecycle"`
+	EvidenceBoundary  string              `json:"evidenceBoundary"`
 }
 
 // OperateInput 描述 POST /v1/management/webui/toolkit/native-resources 的操作请求。
@@ -238,6 +249,8 @@ func (s *Service) Report(ctx context.Context) (ReportResponse, error) {
 	if err != nil {
 		return ReportResponse{}, err
 	}
+	pluginRecs = s.plugins.describeAll(pluginRecs)
+	skillRecs = s.skills.describeAll(skillRecs)
 
 	provRows := make([]ProviderReportRow, 0, len(doctor.Providers))
 	for _, row := range doctor.Providers {
@@ -299,8 +312,9 @@ func (s *Service) Report(ctx context.Context) (ReportResponse, error) {
 			Skill:  sanitizeSummaryTargets(skillRecs),
 			MCP:    mcpRecs,
 		},
-		Lifecycle:        []string{"install", "enable", "disable", "remove"},
-		EvidenceBoundary: "management state and runtime declaration only; installed plugin execution requires separate verification",
+		InstallCandidates: s.installCandidates(),
+		Lifecycle:         []string{"install", "enable", "disable", "remove"},
+		EvidenceBoundary:  "management state and runtime declaration only; installed plugin execution requires separate verification",
 	}, nil
 }
 

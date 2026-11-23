@@ -2006,3 +2006,41 @@
   transition:
     box-shadow var(--motion-fast) var(--ease-standard);
 }
+
+/* 原生资源面板：按资源合并展示，Tab 区分插件 / Skill / MCP */
+.toolkit-native-resource-tabs > .ant-tabs-nav {
+  margin: 0;
+}
+
+.toolkit-native-resource-tabs .ant-tabs-tab {
+  padding: var(--space-6) 0;
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+}
+
+.toolkit-native-resource-tabs .ant-tabs-tab-btn > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.toolkit-native-resource-count {
+  margin-inline-start: var(--space-2);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.toolkit-native-resource-card .ant-card-head {
+  min-height: 44px;
+}
+
+.toolkit-native-resource-card .ant-card-head-title {
+  min-width: 0;
+}
+
+.toolkit-native-resource-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

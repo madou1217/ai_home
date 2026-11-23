@@ -78,16 +78,19 @@ type MCPServerSpec struct {
 
 // ManagedRecord 描述 app_kv 中持久化的托管资源记录（plugin / skill / mcp）。
 type ManagedRecord struct {
-	extra         map[string]json.RawMessage
-	Kind          string         `json:"kind"`
-	ID            string         `json:"id"`
-	Provider      string         `json:"provider,omitempty"`
-	Host          string         `json:"host,omitempty"`
-	Scope         string         `json:"scope"`
-	Target        string         `json:"target,omitempty"`
-	Mode          string         `json:"mode,omitempty"`
-	Version       string         `json:"version,omitempty"`
-	Digest        string         `json:"digest,omitempty"`
+	extra    map[string]json.RawMessage
+	Kind     string `json:"kind"`
+	ID       string `json:"id"`
+	Provider string `json:"provider,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Scope    string `json:"scope"`
+	Target   string `json:"target,omitempty"`
+	Mode     string `json:"mode,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Digest   string `json:"digest,omitempty"`
+	// Description is report-only metadata read from the installed package; it is
+	// never persisted, so a missing snapshot simply leaves it empty.
+	Description   string         `json:"description,omitempty"`
 	Enabled       bool           `json:"enabled"`
 	Removed       bool           `json:"removed,omitempty"`
 	CreatedAt     int64          `json:"createdAt"`

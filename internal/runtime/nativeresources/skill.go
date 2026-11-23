@@ -15,14 +15,15 @@ import (
 )
 
 var (
-	resourceIDPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-	skillDigestPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	skillFrontmatterRe  = regexp.MustCompile(`(?s)^---\r?\n(.*?)\r?\n---(?:\r?\n|$)`)
+	resourceIDPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	skillDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	skillFrontmatterRe = regexp.MustCompile(`(?s)^---\r?\n(.*?)\r?\n---(?:\r?\n|$)`)
 )
 
 // SkillPackage 表示校验通过的本地 Skill 资源包内容与摘要。
 type SkillPackage struct {
 	ID           string
+	Description  string
 	Files        []PackageFile
 	Digest       string
 	Instructions string
@@ -83,6 +84,7 @@ func readSkillPackage(root string) (SkillPackage, error) {
 	}
 	return SkillPackage{
 		ID:           id,
+		Description:  strings.TrimSpace(desc),
 		Files:        files,
 		Digest:       digestFiles(files),
 		Instructions: instructions,

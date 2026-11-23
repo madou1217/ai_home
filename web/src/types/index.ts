@@ -3484,7 +3484,9 @@ export interface NativeResourceManagedRecord {
   removed?: boolean;
   target?: string;
   mode?: string;
+  version?: string;
   digest?: string;
+  description?: string;
   projection?: string;
   command?: string;
   argCount?: number;
@@ -3516,12 +3518,21 @@ export interface NativeResourceHostRow {
   resources: { plugin: NativeResourceCapability };
 }
 
+export interface NativeResourceInstallCandidate {
+  kind: NativeResourceKind;
+  id: string;
+  source: string;
+  description?: string;
+  version?: string;
+}
+
 export interface NativeResourceReport {
   ok: boolean;
   source: string;
   providers: NativeResourceProviderRow[];
   hosts: NativeResourceHostRow[];
   managed: Record<NativeResourceKind, NativeResourceManagedRecord[]>;
+  installCandidates?: NativeResourceInstallCandidate[];
   lifecycle: string[];
   evidenceBoundary: string;
 }

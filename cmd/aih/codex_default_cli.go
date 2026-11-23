@@ -88,6 +88,16 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	if !hasStartupPolicyArg(forwardArgs) {
 		forwardArgs = append(codexappconfig.BuildStartupPolicyArgs(), forwardArgs...)
 	}
+	// 显式 --remote 表示调用方（例如 TUI 断线提示）要接回既有 app-server：
+	// 不再启动新的本地 app-server，并按 URL 补上 per-launch token。
+	explicitRemote := hasExplicitRemoteArg(forwardArgs)
+	if explicitRemote {
+		injected, tokenErr := withLocalRemoteToken(spawnEnv, forwardArgs)
+		if tokenErr != nil {
+			return tokenErr
+		}
+		spawnEnv = injected
+	}
 	if codexexecintent.IsExecResume(forwardArgs) {
 		prepared, lease, prepErr := codexexecintent.Prepare(ctx, "codex", upstream, forwardArgs, spawnEnv)
 		if prepErr != nil {
@@ -122,7 +132,7 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		}
 		return runErr
 	}
-	if interactive && !localAppServerDisabled(envMap, forwardArgs) {
+	if interactive && !explicitRemote && !localAppServerDisabled(envMap, forwardArgs) {
 		if codexappconfig.HasPermissionOverrides(forwardArgs) {
 			// 远程任务上的 /resume 与 /fork 会被 Codex 整单拒绝（“Permission overrides
 			// are not supported…”）。用户显式给了权限参数时优先保留其权限意图，

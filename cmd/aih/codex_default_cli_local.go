@@ -23,6 +23,7 @@ type localAppServer struct {
 	Token     string
 	command   *exec.Cmd
 	stdin     io.WriteCloser
+	cleanup   func()
 }
 
 // startLocalAppServer 启动 aih-server __codex-local-app-server，读取 ready 端口。
@@ -102,6 +103,12 @@ func startLocalAppServer(ctx context.Context, upstream string, cliArgs []string,
 		}
 		proxy.RemoteURL = fmt.Sprintf("ws://127.0.0.1:%d", port)
 		proxy.Token = token
+		// 登记 token，让 TUI 断线提示里的重连命令在新 shell 中可用。
+		if cleanup, cleanupErr := publishLocalAppServerToken(env, proxy.RemoteURL, token); cleanupErr != nil {
+			_, _ = fmt.Fprintf(stderr, "[aih] 未能登记本地 app-server token：%v\n", cleanupErr)
+		} else {
+			proxy.cleanup = cleanup
+		}
 		return proxy, nil
 	case <-time.After(5 * time.Second):
 		return fail(errors.New("codex_local_ready_timeout"))
@@ -111,6 +118,9 @@ func startLocalAppServer(ctx context.Context, upstream string, cliArgs []string,
 func (proxy *localAppServer) Close() {
 	if proxy == nil {
 		return
+	}
+	if proxy.cleanup != nil {
+		proxy.cleanup()
 	}
 	if proxy.stdin != nil {
 		_ = proxy.stdin.Close()

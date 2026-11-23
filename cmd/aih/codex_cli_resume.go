@@ -49,7 +49,17 @@ func runCodexCLIResume(ctx context.Context, args []string, runtime commandRuntim
 	}
 	forward := append([]string{}, args[separator+1:]...)
 	if len(forward) == 0 || strings.TrimSpace(forward[0]) != "resume" {
-		return execCodexUpstream(ctx, upstream, forward, os.Environ(), runtime)
+		// 断线提示的形式是 `codex --remote … resume <id>`：`resume` 不在首位，
+		// 这里同样要为显式 --remote 补回本地 token，否则会以缺失环境变量失败。
+		env := os.Environ()
+		if hasExplicitRemoteArg(forward) {
+			injected, tokenErr := withLocalRemoteToken(env, forward)
+			if tokenErr != nil {
+				return tokenErr
+			}
+			env = injected
+		}
+		return execCodexUpstream(ctx, upstream, forward, env, runtime)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -82,6 +92,14 @@ func runCodexCLIResume(ctx context.Context, args []string, runtime commandRuntim
 			if handled, remoteErr := tryRemoteResume(ctx, upstream, forward, spawnEnv, spawnMap, aiHome, runtime); handled {
 				return remoteErr
 			}
+		}
+		// TUI 断线提示的重连命令只带 URL；按 URL 从登记表补回 per-launch token。
+		if hasExplicitRemoteArg(forward) {
+			injected, tokenErr := withLocalRemoteToken(spawnEnv, forward)
+			if tokenErr != nil {
+				return tokenErr
+			}
+			spawnEnv = injected
 		}
 		return execCodexUpstream(ctx, upstream, forward, spawnEnv, runtime)
 	}

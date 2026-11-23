@@ -55,3 +55,16 @@ AIH 的默认 `codex` 启动路径固定走前者：`aih-go __codex-default-cli`
 
 - 本地模式（无 `--remote`）下不享受 app-server 池化；这是保留逐次权限参数的代价。
 - 原生继续命令不含 AIH 账号/网关参数；需要 AIH 账号时用 `aih` 命令。
+
+## 断线重连提示
+
+TUI 断线时会打印：
+
+```text
+codex --remote ws://127.0.0.1:<port>/ --remote-auth-token-env AIH_CODEX_LOCAL_REMOTE_TOKEN resume <id>
+```
+
+token 是每次启动的随机值。启动器把它登记到
+`<aiHome>/run/codex/local-app-servers/<host>_<port>.json`（0600，含父进程 PID）；
+包装器在显式 `--remote` 时按 URL 自动注入。父进程退出（含 SIGHUP）会删除登记并结束
+app-server，此时该命令返回“本地 app-server 已退出或未登记”，而不是缺失环境变量。

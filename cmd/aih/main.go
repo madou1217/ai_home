@@ -233,19 +233,24 @@ func execute(args []string, runtime commandRuntime) int {
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
+		syscall.SIGHUP,
 	)
 	defer stop()
 	signalCh := make(chan os.Signal, 2)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signalCh)
 
 	err := runCLI(ctx, args, runtime)
 	select {
 	case received := <-signalCh:
-		if received == os.Interrupt {
+		switch received {
+		case os.Interrupt:
 			return 130
+		case syscall.SIGHUP:
+			return 129
+		default:
+			return 143
 		}
-		return 143
 	default:
 	}
 	if err != nil {

@@ -248,6 +248,11 @@
   min-height: 0;
 }
 
+/* 两个图都无数据时不要用网格最小高度撑出整块空白舞台 */
+.usage-insight-grid:not(:has(> .usage-chart-shell:not(.usage-chart-shell--empty))) {
+  min-height: 0;
+}
+
 .usage-chart-shell--empty .usage-chart-scroll {
   flex: 0 0 auto;
   min-height: 128px;

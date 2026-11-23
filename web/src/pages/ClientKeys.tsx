@@ -274,6 +274,7 @@ const ClientKeysPanel: React.FC = () => {
       title: '名称',
       dataIndex: 'name',
       width: 160,
+      fixed: 'left' as const,
       render: (value: string, row: ClientKeyRow) => (
         <Space size={6} className="gateway-nowrap">
           <span>{value}</span>
@@ -380,7 +381,8 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 230,
+      width: 190,
+      fixed: 'right' as const,
       render: (_: unknown, row: ClientKeyRow) =>
         row.master ? null : (
           <Space size={4}>

@@ -63,6 +63,8 @@ func buildWebUIEgressGeoRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 
 		// 出口池面板数据面、分页/ETag 与节点/策略操作
 		{Pattern: "GET " + webuiegresspoolapi.Path, Handler: poolHandler},
+		{Pattern: "POST " + webuiegresspoolapi.StartPath, Handler: poolHandler},
+		{Pattern: "POST " + webuiegresspoolapi.StopPath, Handler: poolHandler},
 		{Pattern: "POST " + webuiegresspoolapi.ProbePath, Handler: poolHandler},
 		{Pattern: "GET " + webuiegresspoolapi.PolicyPath, Handler: poolHandler},
 		{Pattern: "POST " + webuiegresspoolapi.PolicyPath, Handler: poolHandler},

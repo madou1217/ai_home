@@ -8,6 +8,12 @@ import (
 
 // PoolManager 定义 Go 出口池完整运行态、节点操作、策略与资源查询接口。
 // 注入该端口时，Handler 承接完整读写与分页契约；未注入时回退到只读 go_partial 契约以兼容早期测试。
+// PoolLifecycleManager 是出口池内核的显式启停能力（可选）。
+type PoolLifecycleManager interface {
+	StartPool(ctx context.Context) runtimeegress.PoolStartResult
+	StopPool()
+}
+
 type PoolManager interface {
 	DescribePool(ctx context.Context, query runtimeegress.PoolQueryOptions) (*runtimeegress.PoolDescribeResult, string, error)
 	ProbePoolNodes(ctx context.Context, nodeName string) runtimeegress.PoolActionResult

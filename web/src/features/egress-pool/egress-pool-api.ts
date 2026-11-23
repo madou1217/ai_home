@@ -47,6 +47,12 @@ export const egressPoolAPI = {
     if (response.status === 304) return null;
     return response.data;
   },
+  start() {
+    return postAction(`${BASE}/start`);
+  },
+  stop() {
+    return postAction(`${BASE}/stop`);
+  },
   probe(node?: string) {
     return postAction(`${BASE}/probe`, node ? { node } : {});
   },

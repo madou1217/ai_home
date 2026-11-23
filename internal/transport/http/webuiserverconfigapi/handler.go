@@ -103,6 +103,7 @@ type ConfigView struct {
 	RelayPortMode                     string                  `json:"relayPortMode"`
 	RelayListenHost                   string                  `json:"relayListenHost"`
 	MaxAttempts                       float64                 `json:"maxAttempts"`
+	MCPBridgeSharing                  string                  `json:"mcpBridgeSharing"`
 	EgressEvidenceTTLMs               float64                 `json:"egressEvidenceTtlMs"`
 	LargePasteChars                   int                     `json:"largePasteChars"`
 	Upstream429Retry                  corepolicy.GlobalPolicy `json:"upstream429Retry"`
@@ -213,6 +214,7 @@ func configViewFromValues(values map[string]any) ConfigView {
 		RelayPortMode:                     jsString(values["relayPortMode"]),
 		RelayListenHost:                   jsString(values["relayListenHost"]),
 		MaxAttempts:                       numberOr(values["maxAttempts"], 0),
+		MCPBridgeSharing:                  serverconfig.NormalizeMCPBridgeSharing(jsString(values["mcpBridgeSharing"])),
 		EgressEvidenceTTLMs:               numberOr(values["egressEvidenceTtlMs"], 0),
 		LargePasteChars:                   int(numberOr(values["largePasteChars"], 0)),
 	}

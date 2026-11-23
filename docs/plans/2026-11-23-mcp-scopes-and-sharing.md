@@ -1,8 +1,18 @@
 # MCP 启用范围与共享桥设计
 
-- 状态：提案（待实现）
-- 日期：2026-11-23
+- 状态：Phase 1–3 已实现；Phase 4（跨 harness 聚合）待做
+- 日期：2026-11-23（实现更新 2026-11-24）
 - 范围：MCP registry、账号与会话级启用策略、共享桥进程模型、跨 harness 复用边界
+
+## 0. 实现进度
+
+- Phase 1：registry + 账号策略（auto/allowlist/disabled）+ 账号页 MCP Tab + 启动读取，已上线。
+- Phase 2：会话级 `--mcp` / `--no-mcp` / `--mcp-profile` / `--mcp-status`、统一 registry 选择、
+  Tab 补全（原生 MCP ∪ 账号允许的注册表 MCP）、外部 MCP `<id>.<tool>` 前缀代理，已实现。
+- Phase 3：共享桥 daemon + 薄 shim、`config:server.mcpBridgeSharing = global|workspace|off`，
+  已实现；Windows 暂回退到每会话一个桥（named pipe 权限模型未验证）。
+- 仍待做：把注册表 MCP 聚合进共享桥（跨 harness 复用，Phase 4）、`--mcp-status` 的
+  daemon 计数观测、Windows named pipe。
 
 ## 1. 背景
 

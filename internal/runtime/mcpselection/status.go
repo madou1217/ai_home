@@ -15,6 +15,7 @@ type Status struct {
 	Provider     string
 	AccountToken string
 	Native       []string
+	NativeNote   string
 	Registry     []RegistryServer
 	Sharing      string
 	Profiles     []string
@@ -22,9 +23,12 @@ type Status struct {
 
 // BuildStatus resolves the local CLI catalog plus the server-side sharing mode.
 func BuildStatus(aiHomeDir, provider, accountToken string) (Status, error) {
-	native, err := Names(provider)
-	if err != nil {
-		return Status{}, err
+	native, nativeErr := Names(provider)
+	nativeNote := ""
+	if nativeErr != nil {
+		// A slow/absent provider CLI must not make the status command unusable;
+		// the registry view is still valuable.
+		nativeNote = "读取失败，稍后重试"
 	}
 	registry, err := RegistryServers(aiHomeDir, provider, accountToken)
 	if err != nil {
@@ -34,6 +38,7 @@ func BuildStatus(aiHomeDir, provider, accountToken string) (Status, error) {
 		Provider:     strings.ToLower(strings.TrimSpace(provider)),
 		AccountToken: strings.TrimSpace(accountToken),
 		Native:       native,
+		NativeNote:   nativeNote,
 		Registry:     registry,
 		Sharing:      SharingMode(aiHomeDir),
 		Profiles:     ListProfiles(aiHomeDir),
@@ -65,7 +70,11 @@ func (status Status) Text() string {
 	fmt.Fprintf(&builder, "Provider: %s    账号: %s\n", status.Provider, account)
 	fmt.Fprintf(&builder, "共享桥: %s（服务端工作区会话；本地 CLI 自行挂载 MCP）\n", status.Sharing)
 	if len(status.Native) == 0 {
-		builder.WriteString("原生 MCP: (无)\n")
+		if status.NativeNote != "" {
+			fmt.Fprintf(&builder, "原生 MCP: (%s)\n", status.NativeNote)
+		} else {
+			builder.WriteString("原生 MCP: (无)\n")
+		}
 	} else {
 		fmt.Fprintf(&builder, "原生 MCP: %s\n", strings.Join(status.Native, ", "))
 	}

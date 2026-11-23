@@ -5,7 +5,8 @@ export const UPSTREAM_429_RETRY_LIMITS = {
   maxSteps: 10,
   minStepSeconds: 1,
   maxStepSeconds: 300,
-  maxTotalSeconds: 900
+  // 累计等待没有硬上限；超过建议值时只提示，不阻止保存。
+  recommendedTotalSeconds: 1800
 } as const;
 
 export interface ParsedBackoffSchedule {
@@ -73,13 +74,6 @@ export function parseBackoffSecondsText(
       };
     }
     totalSeconds += seconds;
-    if (totalSeconds > UPSTREAM_429_RETRY_LIMITS.maxTotalSeconds) {
-      return {
-        steps: null,
-        totalSeconds: 0,
-        error: `累计等待时长不能超过 ${UPSTREAM_429_RETRY_LIMITS.maxTotalSeconds} 秒`
-      };
-    }
     steps.push(seconds);
   }
   return { steps, totalSeconds, error: null };
@@ -128,12 +122,19 @@ export function BackoffScheduleInput({
           {parsed.error}
         </Typography.Text>
       ) : parsed.steps && parsed.steps.length > 0 ? (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          共 {parsed.steps.length} 次额外重试（顺序等待 {parsed.steps.map((s) => `${s}s`).join(' → ')}，总计 {parsed.totalSeconds}s）
-        </Typography.Text>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            共 {parsed.steps.length} 次额外重试（顺序等待 {parsed.steps.map((s) => `${s}s`).join(' → ')}，总计 {parsed.totalSeconds}s）
+          </Typography.Text>
+          {parsed.totalSeconds > UPSTREAM_429_RETRY_LIMITS.recommendedTotalSeconds ? (
+            <Typography.Text type="warning" style={{ fontSize: 12 }}>
+              累计等待超过 {UPSTREAM_429_RETRY_LIMITS.recommendedTotalSeconds} 秒，通常意义有限；仍可保存。
+            </Typography.Text>
+          ) : null}
+        </div>
       ) : (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          留空表示沿用全局退避队列；每项为该次重试前等待秒数（1–300s，最多 10 项，总计 ≤ 900s）
+          留空表示沿用全局退避队列；每项为该次重试前等待秒数（1–{UPSTREAM_429_RETRY_LIMITS.maxStepSeconds}s，最多 {UPSTREAM_429_RETRY_LIMITS.maxSteps} 项；累计超过 {UPSTREAM_429_RETRY_LIMITS.recommendedTotalSeconds}s 只提示，不阻止保存）
         </Typography.Text>
       )}
     </div>

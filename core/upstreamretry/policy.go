@@ -26,16 +26,13 @@ const (
 	MinBackoffStepSeconds = 1
 	MaxBackoffStepSeconds = 300
 
-	// MaxScheduleSumSeconds caps cumulative scheduled wait seconds per request.
-	// 30 minutes: long enough for a concurrency-limited upstream to free a slot while
-	// unattended sessions keep retrying; still bounded by MaxBackoffSteps / per-step limits.
-	MaxScheduleSumSeconds = 1800
-
 	// MaxSingleWait caps any single wait (including upstream Retry-After).
 	MaxSingleWait = MaxBackoffStepSeconds * time.Second
 
-	// MaxTotalWait caps cumulative 429 wait duration across a single request.
-	MaxTotalWait = MaxScheduleSumSeconds * time.Second
+	// MaxTotalWait 是“按形状可能达到的最大累计等待”，不是额外的配置上限：
+	// 上限只由步数与单步秒数决定（10 × 300s = 50 分钟）。累计时间不再做硬性限制，
+	// 过长只是意义有限，由 UI 提示而不阻止保存。
+	MaxTotalWait = MaxBackoffSteps * MaxBackoffStepSeconds * time.Second
 
 	// ErrCodeInvalidConfig is the stable HTTP 400 error code for invalid retry config.
 	ErrCodeInvalidConfig = "invalid_upstream_429_retry_config"
@@ -171,7 +168,6 @@ func ValidateBackoffSeconds(steps []int) ([]int, error) {
 			fmt.Sprintf("backoffSeconds supports at most %d steps", MaxBackoffSteps),
 		)
 	}
-	sum := 0
 	out := make([]int, len(steps))
 	for index, seconds := range steps {
 		if seconds < MinBackoffStepSeconds || seconds > MaxBackoffStepSeconds {
@@ -182,12 +178,6 @@ func ValidateBackoffSeconds(steps []int) ([]int, error) {
 					MinBackoffStepSeconds,
 					MaxBackoffStepSeconds,
 				),
-			)
-		}
-		sum += seconds
-		if sum > MaxScheduleSumSeconds {
-			return nil, newValidationError(
-				fmt.Sprintf("backoffSeconds cumulative total must not exceed %d seconds", MaxScheduleSumSeconds),
 			)
 		}
 		out[index] = seconds

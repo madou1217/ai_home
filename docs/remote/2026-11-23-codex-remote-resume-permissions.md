@@ -7,10 +7,14 @@
 
 AIH 的默认 `codex` 启动路径固定走前者：`aih-go __codex-default-cli` 先拉起
 `aih-server __codex-local-app-server`（loopback、一次性 token、父进程绑定），再由 TUI
-连接它。目的不是“远程执行”，而是：
+连接它。目的不是“远程执行”，按引入时间依次是：
 
+- **按项目列出所有 Provider 的 `/resume` 会话**：终端 `/resume` 选择器由 app-server
+  提供，才能只列当前项目的会话（2026-10-30 引入；2026-11-15 用户再次报障
+  “所有项目揉到一起了”，范围不限于 codex harness）；
+- **通知轮询、远程控制与 WebUI 会话 watch**：这些能力都依附该 app-server；
 - **同身份 app-server 池化复用**，减少每个终端各起一份 app-server 的内存占用
-  （见 `docs/product-integrity/terminal-memory-2026-11-17.md`）；
+  （见 `docs/product-integrity/terminal-memory-2026-11-17.md`，属于后续演进）；
 - 由 AIH 控制后端生命周期、MCP 预热与有效服务档位（`codexlocalappserver` 包）；
 - 需要时可以把同一后端换成远端地址（当前未启用）。
 
@@ -18,13 +22,22 @@ AIH 的默认 `codex` 启动路径固定走前者：`aih-go __codex-default-cli`
 权限覆盖**（`-s/-a/--full-auto/--approve-for-me/--dangerously-bypass…`、
 `-c approval_policy=… / sandbox_mode=… / permissions… / network… / approvals_reviewer…`）。
 
+## 历史处理（为什么这个冲突反复出现）
+
+| 日期 | 处理 |
+|---|---|
+| 2026-11-13 | Node `tool-permission-launch.js` 对 `resume`/`fork` 跳过权限注入，并把原因回传 |
+| 2026-11-19 | 判据收敛为「这次启动是否走远程 app-server」，受限子命令写进 Provider 权限目录字段（`subcommandsBlockingPermissionOverrides`） |
+| 2026-11-21 | Go 远程 resume 在注入 `--remote` 的同一步摘除权限旗标，并如实提示 |
+| 2026-11-23 | 补上交互式 bare TUI 的漏洞：带权限覆盖时不注入 `--remote`（本地 app-server）；本次再补 WebUI 命令提示与本文档 |
+
 ## 永久规则
 
 1. **AIH 不产生「remote + 权限覆盖」组合。**
    `runCodexDefaultCLI` 检测到权限覆盖时改用本地 app-server（不注入 `--remote`），
    显式权限被保留，`/resume`、`/fork` 可用（`fix(codex): keep permission overrides
    out of remote TUI mode`）。
-2. **要同时保留 remote（池化）与固定权限，把权限写进原生命令配置。**
+2. **要同时保留 remote（项目内 `/resume`、通知、池化）与固定权限，把权限写进原生命令配置。**
    Codex 从 `~/.codex/config.toml` 读取 `approval_policy` / `sandbox_mode`，属于配置层
    而非会话级覆盖，不触发守卫。Toolkit 的「应用到宿主配置」（`applyToHost`）正是写入
    这两个键；写入后 `permissionlaunch` 会跳过多余的命令行参数。

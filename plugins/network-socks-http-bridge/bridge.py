@@ -16,7 +16,7 @@ import threading
 import time
 import urllib.parse
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 DEFAULTS = {
     "socksUrl": "",
     "listenHost": "127.0.0.1",
@@ -262,8 +262,11 @@ class Bridge:
         os.makedirs("state", exist_ok=True)
         return os.path.join("state", "config-" + sanitize_instance(self.instance_id) + ".json")
 
-    def load_persisted(self):
-        path = self.state_path()
+    def host_config_path(self):
+        os.makedirs("state", exist_ok=True)
+        return os.path.join("state", "host-" + sanitize_instance(self.instance_id) + ".json")
+
+    def load_json(self, path):
         if not os.path.exists(path):
             return {}
         try:
@@ -274,23 +277,41 @@ class Bridge:
             log("state load failed: " + type(exc).__name__)
             return {}
 
-    def save(self):
-        path = self.state_path()
+    def save_json(self, path, value):
         temporary = path + ".tmp"
         with open(temporary, "w", encoding="utf-8") as handle:
-            json.dump(self.config, handle, ensure_ascii=False)
+            json.dump(value, handle, ensure_ascii=False)
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
 
+    def load_persisted(self):
+        return self.load_json(self.state_path())
+
+    def load_host_config(self):
+        return self.load_json(self.host_config_path())
+
+    def save(self):
+        self.save_json(self.state_path(), self.config)
+
     def merge_config(self, incoming):
         saved = self.load_persisted()
+        last_host = self.load_host_config()
+        incoming = incoming if isinstance(incoming, dict) else {}
+        incoming = {key: value for key, value in incoming.items() if value is not None}
+        if incoming and incoming != last_host:
+            merged = dict(DEFAULTS)
+            merged.update(incoming)
+            self.config = self.normalize(merged)
+            self.save_json(self.host_config_path(), incoming)
+            self.save()
+            return
         merged = dict(DEFAULTS)
         if saved:
             merged.update(saved)
-        elif isinstance(incoming, dict):
-            merged.update({key: value for key, value in incoming.items() if value is not None})
+        else:
+            merged.update(incoming)
         self.config = self.normalize(merged)
 
     def normalize(self, config):

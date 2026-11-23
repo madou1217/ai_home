@@ -16,7 +16,7 @@ import (
 
 func init() {
 	providerSpecs["cline"] = providerSpec{layout: clineLoginLayout, readCredential: clineLoginCredential}
-	providerSpecs["kimi"] = providerSpec{layout: kimiLoginLayout, readCredential: kimiLoginCredential}
+	providerSpecs["kimi"] = providerSpec{layout: kimiLoginLayout, readCredential: kimiLoginCredential, networkProbeURL: "https://auth.kimi.com/"}
 }
 
 // clineLoginLayout：CLINE_DIR/CLINE_DATA_DIR 指向一次性目录，HOME 保持宿主。

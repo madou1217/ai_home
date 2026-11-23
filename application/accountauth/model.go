@@ -443,5 +443,13 @@ type Dependencies struct {
 // 返回空 proxyURL + noop release 表示直连可用；返回错误表示直连不可用且出口
 // 不可得，调用方应把作业收尾为 provider_unavailable，而不是发出注定 403 的请求。
 type LoginEgress interface {
-	Acquire(ctx context.Context, providerID string) (proxyURL string, release func(), err error)
+	// Acquire 按 Provider 的预检地址决定是否需要临时出口；probeURL 为空表示不预检。
+	Acquire(ctx context.Context, providerID string, probeURL string) (proxyURL string, release func(), err error)
+}
+
+// LoginProbe 由需要外部授权域名的 OAuth Provider 可选实现。
+//
+// 端点事实留在 Provider 适配器里，账号登录服务不维护 Provider→域名的中央表。
+type LoginProbe interface {
+	LoginProbeURL() string
 }

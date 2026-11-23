@@ -494,7 +494,11 @@ func (service *Service) Complete(
 	}
 	claimed := claim.job
 	if service.loginEgress != nil {
-		proxyURL, release, egressErr := service.loginEgress.Acquire(ctx, claimed.providerID)
+		probeURL := ""
+		if probeProvider, ok := service.providers[claimed.providerID].(LoginProbe); ok {
+			probeURL = probeProvider.LoginProbeURL()
+		}
+		proxyURL, release, egressErr := service.loginEgress.Acquire(ctx, claimed.providerID, probeURL)
 		if egressErr != nil {
 			log.Printf("accountauth: 登录出口不可用 job=%s provider=%s: %v", jobID, claimed.providerID, egressErr)
 			return service.failJob(jobID, "provider_unavailable"), ErrProviderUnavailable

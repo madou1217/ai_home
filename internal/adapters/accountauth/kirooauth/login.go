@@ -154,6 +154,9 @@ func newLogin(options loginOptions) (*LoginProvider, error) {
 // ProviderID 返回规范 kiro Provider ID。
 func (*LoginProvider) ProviderID() string { return ProviderID }
 
+// LoginProbeURL 返回换码前的网络预检地址（OIDC 设备码）。
+func (*LoginProvider) LoginProbeURL() string { return "https://oidc.us-east-1.amazonaws.com/" }
+
 // Begin 登记 OIDC client 并申请设备码，把 verification_uri(_complete) 作为授权地址。
 func (provider *LoginProvider) Begin(ctx context.Context) (accountauth.OAuthFlow, error) {
 	if provider == nil || provider.client == nil || provider.clock == nil {

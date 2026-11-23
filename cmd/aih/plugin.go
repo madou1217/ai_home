@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
+	plugincontract "github.com/madou1217/ai_home/contracts/plugins"
 	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
 	"github.com/madou1217/ai_home/internal/adapters/plugintrust"
 	"github.com/madou1217/ai_home/internal/pluginerr"
@@ -30,8 +33,8 @@ const pluginUsage = `Usage: aih plugin <command> [options]
   trust <public.pem> [--key-id <id>]   把发布公钥加入本机信任根
   untrust <keyId>                  从本机信任根移除发布公钥
   trusted                          列出本机信任的发布公钥
-  install <file.aih-plugin> [--require-signed] [--trust-key <public.pem>] [--expect-fingerprint <hex>]
-                                   安装插件包；--trust-key 一步登记发布公钥再安装，--require-signed 拒绝未签名/未验证包
+  install <file.aih-plugin|https://...> [--require-signed] [--trust-key <pem|url>] [--expect-fingerprint <hex>]
+                                   安装插件包；支持 https 直链（本机回环可用 http）；--trust-key 一步登记公钥，--require-signed 拒绝未签名/未验证包
   list                             已安装插件、实例与运行状态
   enable <pluginId> [--instance <id>] [--version <v>] [--config-json <json>|@file|-] [--accept-permissions]
   disable <instanceId> [--remove]  停用实例（--remove 同时删除实例配置）
@@ -459,7 +462,12 @@ func pluginTrust(args []string, runtime commandRuntime) (map[string]any, error) 
 	if file == "" {
 		return nil, pluginArgumentRequired("trust 需要公钥文件（aih plugin trust <public.pem>）")
 	}
-	data, err := os.ReadFile(file)
+	keyFile, cleanup, err := pluginMaterialize(file, pluginPublicKeyBytesLimit, "公钥", runtime)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, pluginerr.New("plugin_signature_key_invalid", "公钥文件不可读")
 	}
@@ -535,7 +543,12 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 	if file == "" {
 		return nil, pluginArgumentRequired("install 需要插件包（aih plugin install <file.aih-plugin>）")
 	}
-	absolute, err := filepath.Abs(file)
+	local, cleanup, err := pluginMaterialize(file, plugincontract.MaxPackageBytes, "插件包", runtime)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	absolute, err := filepath.Abs(local)
 	if err != nil {
 		return nil, pluginerr.New("plugin_package_missing", "插件包路径不可用")
 	}
@@ -571,7 +584,12 @@ func trustPackageKey(packageFile string, publicKeyFile string, args []string, ru
 	if info.Status != "signed" || strings.TrimSpace(info.KeyID) == "" {
 		return pluginerr.New("plugin_signature_required", "该插件包没有签名，--trust-key 无意义")
 	}
-	data, err := os.ReadFile(publicKeyFile)
+	keyFile, cleanup, err := pluginMaterialize(publicKeyFile, pluginPublicKeyBytesLimit, "公钥", runtime)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	data, err := os.ReadFile(keyFile)
 	if err != nil {
 		return pluginerr.New("plugin_signature_key_invalid", "公钥文件不可读")
 	}
@@ -606,6 +624,90 @@ func trustPackageKey(packageFile string, publicKeyFile string, args []string, ru
 	}
 	_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已信任 %s（指纹 %s）\n", added.KeyID, added.Fingerprint)
 	return nil
+}
+
+const pluginPublicKeyBytesLimit = 64 << 10
+
+// pluginMaterialize 把本地路径或 http(s) URL 统一成本地文件。
+//
+// URL 只允许 https；本机回环（localhost / 127.0.0.0/8 / ::1）额外允许 http，
+// 方便本地验收。下载落在 0700 临时目录、文件 0600，cleanup 必须在安装请求
+// 返回后调用，否则服务端可能读不到文件。
+func pluginMaterialize(value string, limit int64, label string, runtime commandRuntime) (string, func(), error) {
+	raw := strings.TrimSpace(value)
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		return raw, func() {}, nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return "", nil, pluginerr.New("plugin_download_invalid", "下载地址不合法")
+	}
+	if !pluginDownloadAllowed(parsed) {
+		return "", nil, pluginerr.New("plugin_download_insecure",
+			"只允许 https 下载（本机回环地址可用 http）")
+	}
+	_, _ = fmt.Fprintf(runtime.stderr, "[aih] 正在下载%s：%s\n", label, raw)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return "", nil, pluginerr.New("plugin_download_invalid", "下载请求无法创建")
+	}
+	client := &http.Client{
+		CheckRedirect: func(next *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("重定向次数过多")
+			}
+			if !pluginDownloadAllowed(next.URL) {
+				return errors.New("重定向到了非 https 地址")
+			}
+			return nil
+		},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", nil, pluginerr.New("plugin_download_failed", "下载失败："+err.Error())
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return "", nil, pluginerr.New("plugin_download_failed",
+			fmt.Sprintf("下载失败：HTTP %d", response.StatusCode))
+	}
+	if response.ContentLength > limit {
+		return "", nil, pluginerr.New("plugin_download_too_large", "文件超过大小上限")
+	}
+	dir, err := os.MkdirTemp("", "aih-plugin-download-")
+	if err != nil {
+		return "", nil, pluginerr.New("plugin_download_failed", "无法创建临时目录")
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	target := filepath.Join(dir, "download")
+	handle, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		cleanup()
+		return "", nil, pluginerr.New("plugin_download_failed", "无法写入临时文件")
+	}
+	written, copyErr := io.Copy(handle, io.LimitReader(response.Body, limit+1))
+	closeErr := handle.Close()
+	if copyErr != nil || closeErr != nil {
+		cleanup()
+		return "", nil, pluginerr.New("plugin_download_failed", "下载中断")
+	}
+	if written > limit {
+		cleanup()
+		return "", nil, pluginerr.New("plugin_download_too_large", "文件超过大小上限")
+	}
+	return target, cleanup, nil
+}
+
+func pluginDownloadAllowed(candidate *url.URL) bool {
+	if candidate == nil {
+		return false
+	}
+	if candidate.Scheme == "https" {
+		return true
+	}
+	return candidate.Scheme == "http" && serverconfig.IsLoopbackHostValue(candidate.Hostname())
 }
 
 func pluginEnable(ctx context.Context, args []string, runtime commandRuntime) (map[string]any, error) {

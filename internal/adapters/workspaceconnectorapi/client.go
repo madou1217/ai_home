@@ -128,6 +128,46 @@ func (client *Client) Revoke(ctx context.Context, workspaceID string) error {
 	return client.doJSON(ctx, http.MethodDelete, remoteconnector.ManagementPath+"/"+url.PathEscape(workspaceID), nil, nil)
 }
 
+// ApprovalsResponse is the management view of the connector's pending command
+// decisions. Command text is for the local user, not for the agent.
+type ApprovalsResponse struct {
+	OK        bool                              `json:"ok"`
+	Mode      string                            `json:"mode"`
+	Approvals []remoteconnector.ApprovalRequest `json:"approvals"`
+}
+
+type approvalDecisionResponse struct {
+	OK       bool                            `json:"ok"`
+	Approval remoteconnector.ApprovalRequest `json:"approval"`
+}
+
+func (client *Client) ListApprovals(ctx context.Context, workspaceID string) (ApprovalsResponse, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return ApprovalsResponse{}, errors.New("workspace id is required")
+	}
+	var response ApprovalsResponse
+	path := remoteconnector.ManagementPath + "/" + url.PathEscape(workspaceID) + "/approvals"
+	err := client.doJSON(ctx, http.MethodGet, path, nil, &response)
+	return response, err
+}
+
+func (client *Client) DecideApproval(ctx context.Context, workspaceID, approvalID string, approve bool) (remoteconnector.ApprovalRequest, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	approvalID = strings.TrimSpace(approvalID)
+	if workspaceID == "" || approvalID == "" {
+		return remoteconnector.ApprovalRequest{}, errors.New("workspace id and approval id are required")
+	}
+	body, err := json.Marshal(map[string]any{"id": approvalID, "approve": approve})
+	if err != nil {
+		return remoteconnector.ApprovalRequest{}, err
+	}
+	var response approvalDecisionResponse
+	path := remoteconnector.ManagementPath + "/" + url.PathEscape(workspaceID) + "/approvals"
+	err = client.doJSON(ctx, http.MethodPost, path, body, &response)
+	return response.Approval, err
+}
+
 func (client *Client) doJSON(ctx context.Context, method, path string, body []byte, destination any) error {
 	if client == nil || client.httpClient == nil || client.baseURL == "" || client.managementKey == "" {
 		return ErrInvalidConfig

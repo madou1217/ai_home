@@ -12,6 +12,7 @@ const (
 	EntriesPath       = ManagementPath + "/{workspaceId}/entries"
 	RPCPath           = ManagementPath + "/{workspaceId}/rpc"
 	ToolPath          = ManagementPath + "/{workspaceId}/tools"
+	ApprovalsPath     = ManagementPath + "/{workspaceId}/approvals"
 	AgentTerminalPath = ManagementPath + "/{workspaceId}/agent-terminal"
 )
 

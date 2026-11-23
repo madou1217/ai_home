@@ -31,7 +31,7 @@ func runWorkspaceCommand(ctx context.Context, arguments []string, runtime comman
 	}
 	action := strings.ToLower(strings.TrimSpace(arguments[1]))
 	switch action {
-	case "connect", "ls", "list", "revoke", "enroll", "status":
+	case "connect", "ls", "list", "revoke", "enroll", "status", "approvals":
 	case "__job-runner":
 		if len(arguments) < 3 || strings.TrimSpace(arguments[2]) == "" {
 			return true, errors.New("用法: aih workspace __job-runner <spoolDir>")
@@ -64,6 +64,8 @@ func runWorkspaceCommand(ctx context.Context, arguments []string, runtime comman
 		return true, runWorkspaceRevoke(ctx, client, positionals[0], runtime)
 	case "enroll":
 		return true, runWorkspaceEnroll(ctx, client, options, runtime)
+	case "approvals":
+		return true, runWorkspaceApprovals(ctx, client, positionals, options, runtime)
 	default:
 		return true, fmt.Errorf("unknown workspace command: %s", action)
 	}
@@ -74,6 +76,7 @@ type workspaceOptions struct {
 	root        string
 	label       string
 	code        string
+	approval    string
 	jsonOutput  bool
 	noReconnect bool
 	noCommand   bool
@@ -109,12 +112,19 @@ func parseWorkspaceOptions(args []string) (workspaceOptions, []string, error) {
 				options.label = value
 			case "--code":
 				options.code = value
+			case "--approval":
+				options.approval = strings.ToLower(value)
 			default:
 				return workspaceOptions{}, nil, fmt.Errorf("unknown option: %s", name)
 			}
 		default:
 			positionals = append(positionals, token)
 		}
+	}
+	switch options.approval {
+	case "", "never", "destructive", "all":
+	default:
+		return workspaceOptions{}, nil, errors.New("--approval must be never, destructive or all")
 	}
 	return options, positionals, nil
 }
@@ -212,6 +222,7 @@ func runWorkspaceConnect(ctx context.Context, client *connectorapi.Client, profi
 		Endpoint: endpoint, Root: absoluteRoot, Label: label,
 		Token: token, WorkspaceID: workspaceID, ConnectorID: connectorID,
 		StateDir:       filepath.Join(home, "run", "workspace-jobs"),
+		ApprovalMode:   options.approval,
 		DisableCommand: options.noCommand,
 		OnSession: func(session connectorclient.Session) error {
 			return sessions.Save(workspaceSession{
@@ -318,6 +329,46 @@ func runWorkspaceRevoke(ctx context.Context, client *connectorapi.Client, worksp
 	return nil
 }
 
+func runWorkspaceApprovals(ctx context.Context, client *connectorapi.Client, positionals []string, options workspaceOptions, runtime commandRuntime) error {
+	if len(positionals) == 0 {
+		return errors.New("用法: aih workspace approvals <ls|approve|deny> <workspaceId> [approvalId]")
+	}
+	action := strings.ToLower(strings.TrimSpace(positionals[0]))
+	switch action {
+	case "ls", "list":
+		if len(positionals) != 2 {
+			return errors.New("用法: aih workspace approvals ls <workspaceId>")
+		}
+		response, err := client.ListApprovals(ctx, positionals[1])
+		if err != nil {
+			return workspaceCLIError(err)
+		}
+		if options.jsonOutput {
+			return writeWorkspaceJSON(runtime, response)
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "mode: %s\n", response.Mode)
+		if len(response.Approvals) == 0 {
+			_, _ = fmt.Fprintln(runtime.stdout, "[aih] no pending approvals")
+			return nil
+		}
+		for _, approval := range response.Approvals {
+			_, _ = fmt.Fprintf(runtime.stdout, "%s  state=%s  cwd=%s\n  %s\n", approval.ID, approval.State, approval.Cwd, approval.Command)
+		}
+		return nil
+	case "approve", "deny":
+		if len(positionals) != 3 {
+			return fmt.Errorf("用法: aih workspace approvals %s <workspaceId> <approvalId>", action)
+		}
+		approval, err := client.DecideApproval(ctx, positionals[1], positionals[2], action == "approve")
+		if err != nil {
+			return workspaceCLIError(err)
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "[aih] approval %s: %s\n", approval.ID, approval.State)
+		return nil
+	default:
+		return fmt.Errorf("unknown approvals command: %s", action)
+	}
+}
 func runWorkspaceEnroll(ctx context.Context, client *connectorapi.Client, options workspaceOptions, runtime commandRuntime) error {
 	label := strings.TrimSpace(options.label)
 	if label == "" {
@@ -399,12 +450,14 @@ func writeWorkspaceJSON(runtime commandRuntime, payload any) error {
 
 func writeWorkspaceUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
-	_, _ = fmt.Fprintln(output, "  aih workspace connect [--server <profile>] [--root <dir>] [--label <name>] [--code <code>] [--no-reconnect] [--no-command]")
+	_, _ = fmt.Fprintln(output, "  aih workspace connect [--server <profile>] [--root <dir>] [--label <name>] [--code <code>] [--no-reconnect] [--no-command] [--approval=destructive|never|all]")
 	_, _ = fmt.Fprintln(output, "  aih workspace ls [--server <profile>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih workspace enroll [--server <profile>] [--label <name>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih workspace revoke <workspaceId> [--server <profile>]")
+	_, _ = fmt.Fprintln(output, "  aih workspace approvals ls|approve|deny <workspaceId> [approvalId] [--server <profile>] [--json]")
 	_, _ = fmt.Fprintln(output, "说明:")
 	_, _ = fmt.Fprintln(output, "  connect 只暴露显式选中的本地目录；不启动任何 Provider、模型或 Agent。")
 	_, _ = fmt.Fprintln(output, "  --code 使用一次性 enrollment code；不传时复用本机保存的会话，首次运行自动创建 enrollment。")
 	_, _ = fmt.Fprintln(output, "  --no-command 关闭 run_command：Agent 只能读写文件，不能在本机执行命令。")
+	_, _ = fmt.Fprintln(output, "  --approval 高危命令审批模式：destructive（默认）只拦危险命令，all 全拦，never 不拦。")
 }

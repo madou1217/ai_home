@@ -24,7 +24,10 @@ Provider 进程仍在 AIH Server；本地 Connector 不持有 Provider 凭据。
   `list_directory` / `search`；search 为有界文本内容正则搜索。
 - 持久作业：`start_job` / `watch_job` / `interrupt_job`。作业由独立 runner 执行并把
   meta/status/输出落在 spool，通过 cursor 增量读取；Provider 工具调用之间、MCP 桥进程
-  重启、Connector 退出/重启之间都不丢状态。仍无审批。
+  重启、Connector 退出/重启之间都不丢状态。
+- 高危命令审批：`run_command` / `start_job` 命中本地策略时不执行，返回
+  `approval_required` 与 approval id；用户在 WebUI 或 CLI 批准后，Provider 用
+  `approval_id` 重试同一命令。审批与命令+cwd 绑定、一次性、10 分钟过期。
 - AGY：没有结构化工具/审批通道，`agent-terminal` 明确返回
   `agy_remote_workspace_unsupported`，不伪装支持。
 - `run_command`：同步执行本机命令，cwd 必须在工作区内；`aih workspace connect
@@ -73,7 +76,13 @@ Provider 进程仍在 AIH Server；本地 Connector 不持有 Provider 凭据。
 8. `--no-command` 时工具列表不含作业工具，RPC 返回 `capability_not_allowed`；
 9. 作业运行中 SIGKILL Connector：runner 仍存活，重启 Connector 后同一 `jobId` 继续
    watch，输出不重不漏并正常结束；`interrupt_job` 在重启后同样有效；
-10. runner 消失且心跳过期时状态为 `lost`。
+10. runner 消失且心跳过期时状态为 `lost`；
+11. `--approval=all`：命令不执行、返回 approval id；未批准前本机无产物；WebUI/CLI
+    批准后带 `approval_id` 重试成功，重复使用返回 `approval_used`，拒绝返回
+    `approval_denied`，换命令复用 id 被拒；
+12. `--approval=destructive`：`echo` 直接执行，`rm -rf` / `sudo` / `git push` /
+    `git reset --hard` / `curl|sh` / `chmod 777` 均进入审批；批准后执行并生效；
+13. `--approval=never`：破坏性命令直接执行。
 
 AWS 真机（2026-11-23）：新二进制 + 真实 Codex（free 账号 10，`gpt-5.6-luna`）调用
 `start_job` / `watch_job`，最终 `state: exited`、本机 `JOB_DONE.txt` 写入 `job-done`；

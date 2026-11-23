@@ -18,7 +18,6 @@ import (
 	clientkeysapp "github.com/madou1217/ai_home/application/clientkeys"
 	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
-	inferencegateway "github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelprobes"
@@ -80,7 +79,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
@@ -99,7 +97,6 @@ import (
 	upstreammappingapi "github.com/madou1217/ai_home/internal/transport/http/upstreammappingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuichatapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"io"
@@ -1521,60 +1518,27 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, err
 	}
 	webuiRoutes = append(webuiRoutes, housekeepingRoutes...)
-	// 内部聊天入口：Node 的轮次执行（session-actor 的 turn.submit）把本轮指令发到这里，
-	// 由 Go 完成账号征召、上游请求、改流与记账；事件流由 Node 翻译成既有 canonical 形状。
-	//
-	// 账号来源与 Provider 链与家族透传通道同一批对象：能走家族/透传 Provider 的会话本
-	// 切片就能服务，服务不了的账号在 Go 侧显式报错，而不是悄悄回落另一条推理路径。
-	webUIChatHandler, err := newWebUIChatHandler(webuichatapi.Dependencies{
-		Authorizer: authorizer,
-		Aliases:    newChatAliasResolver(inference.modelAliases, dependencies.Store),
-		Accounts: relaycore.NewAccountSourceChain(
-			append(relayModuleAccounts(familyRelay.modules), familyRelay.familyAccounts)...,
-		),
-		Credentials: credentials,
-		Provider: relaycore.NewProviderChain(
-			append(
-				relayModuleProviders(familyRelay.modules),
-				codebuddyfamilyrelay.NewProvider(codebuddyfamilyrelay.ProviderOptions{
-					ProviderID: codebuddyfamilyrelay.FamilyProviders[0],
-				}),
-			)...,
-		),
-		Client:   relayClient,
-		Attempts: accountRuntime,
-		Usage:    attemptUsage,
-		// 与协调器共用同一份 --max-attempts：进程内不能有两套上游尝试上限。
-		MaxAttempts: inferencegateway.ConfiguredUpstreamAttemptLimit(),
-		Clock:       time.Now,
+	// 内部聊天入口：账号来源与 Provider 链与家族透传同一批对象。
+	chatRuntime, err := newWebUIChatRuntime(webuiChatRuntimeInputs{
+		ctx:            ctx,
+		host:           dependencies,
+		webuiDeps:      webuiDeps,
+		authorizer:     authorizer,
+		familyRelay:    familyRelay,
+		modelAliases:   inference.modelAliases,
+		credentials:    credentials,
+		relayClient:    relayClient,
+		accountRuntime: accountRuntime,
+		attemptUsage:   attemptUsage,
 	})
 	if err != nil {
 		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建内部聊天 Handler 失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
-	if chatHandler, ok := webUIChatHandler.(*webuichatapi.Handler); ok {
-		var chatErr error
-		chatRuntimeService, chatErr = AttachWebUIChatRuntime(ctx, chatHandler, webuiDeps)
-		if chatErr != nil {
-			_ = inference.Close()
-			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runtime 失败: %w", chatErr)
-		}
-		chatCollectionRoutes, routesErr := BuildWebUIChatRuntimeCollectionRoutes(chatHandler)
-		if routesErr != nil {
-			_ = chatRuntimeService.Close()
-			_ = inference.Close()
-			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runtime 集合路由失败: %w", routesErr)
-		}
-		webuiRoutes = append(webuiRoutes, chatCollectionRoutes...)
-		chatRunsRoutes, runsRoutesErr := BuildWebUIChatRunsRoutes(chatHandler, dependencies.ManagementKey)
-		if runsRoutesErr != nil {
-			_ = chatRuntimeService.Close()
-			_ = inference.Close()
-			return serverHandlers{}, nil, fmt.Errorf("装配 Canonical Chat Runs 路由失败: %w", runsRoutesErr)
-		}
-		webuiRoutes = append(webuiRoutes, chatRunsRoutes...)
-		chatPrewarmCloser = startChatRuntimePrewarm(ctx, chatRuntimeService)
-	}
+	webUIChatHandler := chatRuntime.handler
+	chatRuntimeService = chatRuntime.service
+	chatPrewarmCloser = chatRuntime.prewarmCloser
+	webuiRoutes = append(webuiRoutes, chatRuntime.routes...)
 	var desktopTranslationService *desktoptranslation.Service
 	if !dependencies.DesktopManagedByHost {
 		var desktopRoutes []webuiRoute

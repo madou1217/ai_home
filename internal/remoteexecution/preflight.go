@@ -27,7 +27,13 @@ func BuildPreflight(facts Facts, target ExecutionTarget, workspace WorkspaceFact
 		stage(StageModel, model.CatalogAvailable && model.Effective, "model_unavailable", "model has no effective catalog evidence"),
 		stage(StageTools, runner.SupportsRemoteTools, "remote_tools_unsupported", "runner does not expose a verified remote tool channel"),
 	}
-	if !model.NativeLaunchAvailable {
+	launchAvailable := model.NativeLaunchAvailable
+	if target.Transport == TransportConnector && model.ServerCLIAvailable {
+		// Connector agent terminals run the provider CLI on the Server host, so
+		// an installed binary is real launch evidence for that transport.
+		launchAvailable = true
+	}
+	if !launchAvailable {
 		stages = append(stages, PreflightStage{Name: "launch", Status: StatusUnsupported, Code: "native_launch_unavailable", Detail: "native runner launch is not verified"})
 	}
 	ready := true

@@ -120,7 +120,9 @@ Task 1–4 已实现、构建并通过真实 CLI/HTTP/WebUI 构建检查：
 - 追加 Phase 1：Workspace Connector enrollment/store、WebSocket、受限文件 RPC、
   `aih workspace connect|ls|enroll|revoke`、WebUI 本地工作区面板。
 
-Task 5 的 CLI/HTTP/runtime 真实验收已完成，证据见
+Preflight 的 `launch` 阶段不再对 Connector + Codex/Claude 固定报
+`native_launch_unavailable`：Server 上存在对应 CLI 时该阶段为 OK（只证明二进制存在，
+不证明模型可用）；SSH transport 仍保持 fail-closed。CLI/HTTP/runtime 验收证据见
 `docs/remote/2026-11-22-workspace-connector.md`。WebUI 面板已在真实 Chromium 中检查
 （Work 模式、在线状态、目录浏览、生成 code；无 console error）。尚未完成：
 

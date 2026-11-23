@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -138,13 +139,26 @@ func (source FactsSource) Read(ctx context.Context) (remoteexecution.Facts, erro
 				CatalogAvailable: model.UpstreamAvailable(),
 				// A catalog row and a static provider contract do not prove that
 				// the remote CLI binary is installed, accepts this model, or can
-				// attach the workspace. Keep launch fail-closed until the future
-				// supervisor performs a real capability probe.
+				// attach the workspace. Native launch stays fail-closed; the
+				// connector transport uses ServerCLIAvailable as its launch evidence.
 				NativeLaunchAvailable: false,
+				ServerCLIAvailable:    serverAgentCLI(set.ProviderID),
 			})
 		}
 	}
 	return facts, nil
+}
+
+// serverAgentCLI reports whether the Server host has a structured-tool agent
+// CLI on PATH. AGY is excluded: the connector agent path has no tool channel.
+func serverAgentCLI(provider string) bool {
+	switch provider {
+	case "codex", "claude":
+		_, err := exec.LookPath(provider)
+		return err == nil
+	default:
+		return false
+	}
 }
 
 func runnerFacts(catalog *providers.Catalog) []remoteexecution.RunnerFact {

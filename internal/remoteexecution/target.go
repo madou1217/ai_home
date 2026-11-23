@@ -88,7 +88,7 @@ type RunnerFact struct {
 
 // AccountFact contains only non-secret account identity and model evidence.
 type AccountFact struct {
-	AccountRef        string `json:"accountRef"`
+	AccountRef string `json:"accountRef"`
 	// CLIAccountID is the provider-local numeric alias accepted by aih's
 	// account launch path. It is not a credential.
 	CLIAccountID      string `json:"cliAccountId,omitempty"`
@@ -109,6 +109,9 @@ type ModelFact struct {
 	Effective             bool   `json:"effective"`
 	CatalogAvailable      bool   `json:"catalogAvailable"`
 	NativeLaunchAvailable bool   `json:"nativeLaunchAvailable"`
+	// ServerCLIAvailable reports that the Server host has the agent CLI on PATH.
+	// It only proves the binary exists, not that this model/account works.
+	ServerCLIAvailable bool `json:"serverCliAvailable,omitempty"`
 }
 
 // Facts is the server-side snapshot used by the resolver. A caller should load

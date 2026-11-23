@@ -17,3 +17,15 @@ func ConfigureUpstreamTimeout(timeout time.Duration) error {
 	inferenceHTTPTimeout = timeout
 	return nil
 }
+
+// ConfigureAgyFirstByteTimeout 设置 agy 等待响应头的上限。
+//
+// 默认 12s 用于快速跳过卡住不回首包的账号；思考型模型可能在更久之后才产生
+// 首个事件，需要按部署调大。config:server.agyFirstByteTimeoutMs 在启动期设置。
+func ConfigureAgyFirstByteTimeout(timeout time.Duration) error {
+	if timeout < time.Second || timeout > 30*time.Minute {
+		return errors.New("agy 首包超时必须在 1s 到 30min 之间")
+	}
+	agyFirstByteTimeout = timeout
+	return nil
+}

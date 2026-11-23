@@ -113,6 +113,8 @@ var Fields = []Field{
 		Summary: "出口节点实测结论的有效期；0 = 默认 7 天。"},
 	{Key: "maxAttempts", Group: "调度", Type: TypeInt, Default: float64(0), Min: 0, Max: 32, Applies: "serve-arg", ClearValue: float64(0),
 		Summary: "单次请求最多尝试几个账号；0 = 默认 3。"},
+	{Key: "agyFirstByteTimeoutMs", Group: "调度", Type: TypeInt, Default: float64(12000), Min: 1000, Max: 1800000, Applies: "runtime", ClearValue: float64(12000),
+		Summary: "agy 等待响应头的上限；思考型模型首包较慢时调大（默认 12s）。"},
 	{Key: "largePasteChars", Group: "WebUI", Type: TypeInt, Default: float64(0), Min: 50, Max: 100000, Applies: "runtime", ClearValue: float64(0),
 		Summary: "WebUI 粘贴多少字以上转文本附件；0 = 默认 200。"},
 	{Key: "upstream429Retry", Group: "调度", Type: TypeObject, Default: nil, Applies: "runtime", HotReload: true, ClearValue: map[string]any{"backoffSeconds": corepolicy.DefaultBackoffSeconds()},

@@ -37,6 +37,38 @@ type Field struct {
 }
 
 const (
+	// MCPBridgeSharingGlobal shares one MCP bridge daemon across workspaces.
+	MCPBridgeSharingGlobal = "global"
+	// MCPBridgeSharingWorkspace starts one daemon per workspace.
+	MCPBridgeSharingWorkspace = "workspace"
+	// MCPBridgeSharingOff restores one bridge process per session.
+	MCPBridgeSharingOff = "off"
+)
+
+// NormalizeMCPBridgeSharing maps arbitrary input to a supported sharing mode.
+func NormalizeMCPBridgeSharing(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case MCPBridgeSharingWorkspace:
+		return MCPBridgeSharingWorkspace
+	case MCPBridgeSharingOff:
+		return MCPBridgeSharingOff
+	default:
+		return MCPBridgeSharingGlobal
+	}
+}
+
+// ParseMCPBridgeSharing reads the sharing mode out of a config:server document.
+func ParseMCPBridgeSharing(raw string) string {
+	var document struct {
+		MCPBridgeSharing string `json:"mcpBridgeSharing"`
+	}
+	if json.Unmarshal([]byte(raw), &document) != nil {
+		return MCPBridgeSharingGlobal
+	}
+	return NormalizeMCPBridgeSharing(document.MCPBridgeSharing)
+}
+
+const (
 	TypeIP       = "ip"
 	TypePort     = "port"
 	TypeBool     = "bool"
@@ -115,6 +147,10 @@ var Fields = []Field{
 		Summary: "单次请求最多尝试几个账号；0 = 默认 3。"},
 	{Key: "agyFirstByteTimeoutMs", Group: "调度", Type: TypeInt, Default: float64(12000), Min: 1000, Max: 1800000, Applies: "runtime", ClearValue: float64(12000),
 		Summary: "agy 等待响应头的上限；思考型模型首包较慢时调大（默认 12s）。"},
+	{Key: "mcpBridgeSharing", Group: "调度", Type: TypeEnum, Default: MCPBridgeSharingGlobal,
+		Choices: []string{MCPBridgeSharingGlobal, MCPBridgeSharingWorkspace, MCPBridgeSharingOff},
+		Applies: "runtime", HotReload: true, ClearValue: MCPBridgeSharingGlobal,
+		Summary: "MCP 桥共享：global 全局一个 / workspace 每工作区一个 / off 每会话一个。"},
 	{Key: "largePasteChars", Group: "WebUI", Type: TypeInt, Default: float64(0), Min: 50, Max: 100000, Applies: "runtime", ClearValue: float64(0),
 		Summary: "WebUI 粘贴多少字以上转文本附件；0 = 默认 200。"},
 	{Key: "upstream429Retry", Group: "调度", Type: TypeObject, Default: nil, Applies: "runtime", HotReload: true, ClearValue: map[string]any{"backoffSeconds": corepolicy.DefaultBackoffSeconds()},

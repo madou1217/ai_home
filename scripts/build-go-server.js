@@ -53,10 +53,17 @@ function buildGoServerPlan(options = {}) {
         args: [...baseArgs, '-o', path.join(outputDir, `aih-launch.build-${process.pid}`), './cmd/aih-launch']
       }
     : null;
+  // 共享 MCP 桥的薄 shim：与 server 同目录分发，缺失时会话回退到完整桥。
+  const shim = {
+    output: path.join(outputDir, 'aih-mcp-shim' + suffix),
+    temporaryOutput: path.join(outputDir, `aih-mcp-shim.build-${process.pid}${suffix}`),
+    args: [...baseArgs, '-o', path.join(outputDir, `aih-mcp-shim.build-${process.pid}${suffix}`), './cmd/aih-mcp-shim']
+  };
   return {
     output,
     temporaryOutput,
     launcher,
+    shim,
     target: `${platform}-${arch}`,
     // 生产主体不带内置内核编译器：只发现同目录/aiHome 下的进程插件。
     // -s -w 去掉符号表与 DWARF：分发包小 ~19MiB（压缩后），panic 栈和 pprof
@@ -88,9 +95,10 @@ function buildGoServer(options = {}) {
     if (result.error) throw result.error;
     if (result.status !== 0) throw new Error(`go build exited with ${result.status}`);
   };
-  const temporaryOutputs = [plan.temporaryOutput, ...(plan.launcher ? [plan.launcher.temporaryOutput] : []), ...plan.plugins.map((plugin) => plugin.temporaryOutput)];
+  const temporaryOutputs = [plan.temporaryOutput, plan.shim.temporaryOutput, ...(plan.launcher ? [plan.launcher.temporaryOutput] : []), ...plan.plugins.map((plugin) => plugin.temporaryOutput)];
   try {
     runGoBuild(plan.args);
+    runGoBuild(plan.shim.args);
     if (plan.launcher) runGoBuild(plan.launcher.args);
     for (const plugin of plan.plugins) runGoBuild(plugin.args);
     // Publish the CLI from the same source before the server. Database readiness
@@ -98,6 +106,7 @@ function buildGoServer(options = {}) {
     buildGoCLI({ ...options, repositoryRoot });
     for (const plugin of plan.plugins) fs.renameSync(plugin.temporaryOutput, plugin.output);
     if (plan.launcher) fs.renameSync(plan.launcher.temporaryOutput, plan.launcher.output);
+    fs.renameSync(plan.shim.temporaryOutput, plan.shim.output);
     fs.renameSync(plan.temporaryOutput, plan.output);
   } catch (error) {
     for (const temporary of temporaryOutputs) fs.rmSync(temporary, { force: true });

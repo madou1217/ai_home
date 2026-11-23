@@ -2,20 +2,12 @@ package mcpselection
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-)
-
-// Sharing modes for the server-side workspace bridge. The local CLI always
-// mounts MCP servers itself; these values describe server sessions.
-const (
-	SharingGlobal    = "global"
-	SharingWorkspace = "workspace"
-	SharingOff       = "off"
 )
 
 // Status is the resolved view behind `--mcp-status`.
@@ -52,28 +44,15 @@ func BuildStatus(aiHomeDir, provider, accountToken string) (Status, error) {
 func SharingMode(aiHomeDir string) string {
 	path, err := appstate.DatabasePath(aiHomeDir)
 	if err != nil {
-		return SharingGlobal
+		return serverconfig.MCPBridgeSharingGlobal
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 	raw, found, err := appstate.ReadKV(ctx, path, appstate.KeyServerConfig)
 	if err != nil || !found {
-		return SharingGlobal
+		return serverconfig.MCPBridgeSharingGlobal
 	}
-	var config struct {
-		MCPBridgeSharing string `json:"mcpBridgeSharing"`
-	}
-	if json.Unmarshal([]byte(raw), &config) != nil {
-		return SharingGlobal
-	}
-	switch strings.ToLower(strings.TrimSpace(config.MCPBridgeSharing)) {
-	case SharingWorkspace:
-		return SharingWorkspace
-	case SharingOff:
-		return SharingOff
-	default:
-		return SharingGlobal
-	}
+	return serverconfig.ParseMCPBridgeSharing(raw)
 }
 
 // Text renders a compact, terminal-friendly status report.

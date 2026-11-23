@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/accountdeletionmarker"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime/approvaltool"
@@ -138,6 +140,21 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "__mcp-remote-tools" {
 		if err := webuisshapi.RunRemoteToolsMCP(os.Stdin, os.Stdout, os.Getenv); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "aih-server __mcp-remote-tools: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	// 共享 MCP 桥 daemon：由会话启动路径按需拉起，空闲后自行退出。
+	if len(os.Args) > 1 && os.Args[1] == "__mcp-bridge-daemon" {
+		flags := flag.NewFlagSet("__mcp-bridge-daemon", flag.ContinueOnError)
+		socketPath := flags.String("socket", "", "unix socket path")
+		idle := flags.Duration("idle", 5*time.Minute, "idle timeout")
+		if err := flags.Parse(os.Args[2:]); err != nil || strings.TrimSpace(*socketPath) == "" {
+			_, _ = fmt.Fprintln(os.Stderr, "aih-server __mcp-bridge-daemon: --socket is required")
+			os.Exit(2)
+		}
+		if err := webuisshapi.RunMCPBridgeDaemon(*socketPath, *idle); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "aih-server __mcp-bridge-daemon: %v\n", err)
 			os.Exit(1)
 		}
 		return

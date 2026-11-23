@@ -47,16 +47,19 @@ func buildRemoteAgentLaunch(aiHomeDir, workspaceID, agent string) (string, []str
 		return "", nil, nil, err
 	}
 	contextPath := filepath.Join(contextDir, "remote-tools-direct-"+randomHex(6)+".json")
-	raw, _ := json.Marshal(map[string]any{
+	context := map[string]any{
 		"aiHomeDir":   aiHomeDir,
 		"workspaceId": workspaceID,
-	})
+	}
+	shared := attachMCPBridge(aiHomeDir, workspaceID, context)
+	raw, _ := json.Marshal(context)
 	if err := os.WriteFile(contextPath, raw, 0o600); err != nil {
 		return "", nil, nil, err
 	}
+	mcpCommand, mcpArgs := mcpBridgeChildCommand(executable, shared)
 	mcpServer := map[string]any{
-		"command": executable,
-		"args":    []string{"__mcp-remote-tools"},
+		"command": mcpCommand,
+		"args":    mcpArgs,
 		"env":     map[string]string{"AIH_LAUNCH_CONTEXT": contextPath},
 	}
 	env := []string{"AIH_HOME_DIR=" + aiHomeDir}
@@ -149,17 +152,20 @@ func buildConnectorAgentLaunch(
 		return "", nil, nil, err
 	}
 	contextPath := filepath.Join(contextDir, "connector-tools-"+randomHex(6)+".json")
-	raw, _ := json.Marshal(map[string]any{
+	context := map[string]any{
 		"toolsUrl": toolsURL,
 		"token":    toolToken,
 		"tools":    workspaceconnector.ToolDefinitionsFor(capabilities),
-	})
+	}
+	shared := attachMCPBridge(aiHomeDir, workspaceID, context)
+	raw, _ := json.Marshal(context)
 	if err := os.WriteFile(contextPath, raw, 0o600); err != nil {
 		return "", nil, nil, err
 	}
+	mcpCommand, mcpArgs := mcpBridgeChildCommand(executable, shared)
 	mcpServer := map[string]any{
-		"command": executable,
-		"args":    []string{"__mcp-remote-tools"},
+		"command": mcpCommand,
+		"args":    mcpArgs,
 		"env":     map[string]string{"AIH_LAUNCH_CONTEXT": contextPath},
 	}
 	env := []string{"AIH_HOME_DIR=" + aiHomeDir}

@@ -15,8 +15,10 @@ function copyNativeComponents(repositoryRoot, bundleRoot, target) {
   // macOS ships a rarely changed launcher: TCC grants are bound to its code
   // identity, so it must not be rebuilt with the server.
   const launcherNames = target.goos === 'darwin' ? ['aih-launch'] : [];
-  const names = ['aih-server', 'aih-go', ...launcherNames, ...engineNames].map((name) => name + suffix);
-  const engineStart = 2 + launcherNames.length;
+  // 共享 MCP 桥的薄 shim：所有平台都分发，缺失时运行时会话回退到完整桥。
+  const shimNames = ['aih-mcp-shim'];
+  const names = ['aih-server', 'aih-go', ...launcherNames, ...shimNames, ...engineNames].map((name) => name + suffix);
+  const engineStart = 2 + launcherNames.length + shimNames.length;
   const sourceDir = path.join(repositoryRoot, 'bin', 'native', key);
   const files = names.map((name) => {
     const file = path.join(sourceDir, name);

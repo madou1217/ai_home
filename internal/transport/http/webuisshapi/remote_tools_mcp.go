@@ -30,6 +30,11 @@ type remoteToolsLaunchContext struct {
 	WorkspaceID string `json:"workspaceId"`
 	ToolsURL    string `json:"toolsUrl"`
 	Token       string `json:"token"`
+	// BridgeSocket switches this process into a shim for a shared bridge daemon.
+	BridgeSocket string `json:"bridgeSocket,omitempty"`
+	// SessionToken identifies the shim connection for audit only; the socket is
+	// 0600 and each connection carries its own launch context.
+	SessionToken string `json:"sessionToken,omitempty"`
 	// Tools overrides tools/list for channel-specific capability sets. The
 	// connector launch uses this to omit run_command until jobs are supported.
 	Tools []any `json:"tools,omitempty"`
@@ -38,6 +43,9 @@ type remoteToolsLaunchContext struct {
 // RunRemoteToolsMCP 在 stdin/stdout 上服务 MCP 协议，直到 stdin 关闭。
 func RunRemoteToolsMCP(stdin io.Reader, stdout io.Writer, getenv func(string) string) error {
 	launch := readRemoteToolsLaunchContext(getenv)
+	if launch.BridgeSocket != "" {
+		return runRemoteToolsShim(launch, stdin, stdout)
+	}
 	scanner := bufio.NewScanner(stdin)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	encoder := json.NewEncoder(stdout)
@@ -78,10 +86,16 @@ func readRemoteToolsLaunchContext(getenv func(string) string) remoteToolsLaunchC
 	if json.Unmarshal(raw, &parsed) != nil {
 		return remoteToolsLaunchContext{}
 	}
+	return normalizeRemoteToolsLaunchContext(parsed)
+}
+
+func normalizeRemoteToolsLaunchContext(parsed remoteToolsLaunchContext) remoteToolsLaunchContext {
 	parsed.AIHomeDir = strings.TrimSpace(parsed.AIHomeDir)
 	parsed.WorkspaceID = strings.TrimSpace(parsed.WorkspaceID)
 	parsed.ToolsURL = strings.TrimSpace(parsed.ToolsURL)
 	parsed.Token = strings.TrimSpace(parsed.Token)
+	parsed.BridgeSocket = strings.TrimSpace(parsed.BridgeSocket)
+	parsed.SessionToken = strings.TrimSpace(parsed.SessionToken)
 	return parsed
 }
 

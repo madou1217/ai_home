@@ -19,6 +19,12 @@ import (
 // 交给管理端点：Windows 上 `child.kill('SIGTERM')` 实际是 TerminateProcess，
 // 宿主只能靠这条进程内路径触发优雅关闭。
 func main() {
+	for _, argument := range os.Args[1:] {
+		if argument == "--exit-with-parent" {
+			watchParent()
+			break
+		}
+	}
 	if len(os.Args) > 1 && os.Args[1] == "__usage-facts" {
 		if err := runUsageFacts(os.Args[2:]); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "aih usage facts:", err)

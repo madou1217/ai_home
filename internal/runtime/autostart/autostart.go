@@ -190,6 +190,7 @@ func serviceArgs(options Options) []string {
 	// upgrades, so the user grants the permissions once instead of on every
 	// rebuild.
 	if app := stableApp(options); app != "" {
+		command = append(command, "--exit-with-parent")
 		return append([]string{app, "--service", "--"}, command...)
 	}
 	if launcher := stableLauncher(options); launcher != "" {

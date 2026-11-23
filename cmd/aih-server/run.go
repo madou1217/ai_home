@@ -25,6 +25,21 @@ import (
 // shutdownTimeout 覆盖推理流收尾窗口（30s）+ HTTP 优雅关闭预算。
 const shutdownTimeout = 45 * time.Second
 
+// watchParent exits the server when the supervisor disappears (for example
+// when launchd force-restarts AI Home.app). Without it the server keeps the
+// port and the next supervisor cannot bind.
+func watchParent() {
+	parent := os.Getppid()
+	go func() {
+		for {
+			time.Sleep(time.Second)
+			if os.Getppid() != parent {
+				os.Exit(0)
+			}
+		}
+	}()
+}
+
 // commandRuntime 集中注入操作系统边界，便于无全局状态测试。
 type commandRuntime struct {
 	lookupEnv   func(string) (string, bool)

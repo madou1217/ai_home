@@ -38,10 +38,12 @@ func main() {
 	adoptSudoUserHome(os.Getenv, os.Setenv)
 	ensureManagementKeyEnv()
 	if len(os.Args) > 1 && os.Args[1] == "codex" {
-		if kept, disabled := stripNoMCPFlag(os.Args[2:]); disabled {
-			_ = os.Setenv("AIH_MCP_DISABLED", "1")
-			os.Args = append([]string{os.Args[0], "codex"}, kept...)
+		kept, err := applyCodexMCPFlags(os.Args[2:])
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "aih:", err)
+			os.Exit(1)
 		}
+		os.Args = append([]string{os.Args[0], "codex"}, kept...)
 	}
 	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到时交给 Go 的默认账号解析。
 	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {

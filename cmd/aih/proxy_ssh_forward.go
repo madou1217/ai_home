@@ -13,8 +13,7 @@ import (
 
 // openSSHTransport 读取本机 SSH 连接记录，建立到远端 AIH loopback 的本地转发。
 // 只搬运 direct-tcpip 字节，不执行远端命令；具体转发生命周期由 proxytransport 管理。
-func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID, listenAddress, remoteAddress, viaConnectionID string) (proxytransport.Transport, error) {
-	connectionID = strings.TrimSpace(connectionID)
+func loadSSHResolver(ctx context.Context, runtime commandRuntime) (*proxytransport.Resolver, error) {
 	home, err := resolveAIHomeDir(runtime)
 	if err != nil {
 		return nil, err
@@ -31,11 +30,29 @@ func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID,
 	if err != nil || strings.TrimSpace(hostHome) == "" {
 		return nil, errors.New("无法解析本机用户目录")
 	}
-	resolver, err := proxytransport.NewResolver(proxytransport.ResolverOptions{
+	return proxytransport.NewResolver(proxytransport.ResolverOptions{
 		Connections: []byte(raw),
 		KnownHosts:  readSSHKnownHosts(ctx, databasePath),
 		HomeDir:     hostHome,
 	})
+}
+
+// openSSHClient 拨号到已保存的 SSH 连接；viaConnectionID 非空时经该跳板建立链路。
+func openSSHClient(ctx context.Context, runtime commandRuntime, connectionID, viaConnectionID string) (*sshremote.Client, error) {
+	connectionID = strings.TrimSpace(connectionID)
+	resolver, err := loadSSHResolver(ctx, runtime)
+	if err != nil {
+		return nil, err
+	}
+	if via := strings.TrimSpace(viaConnectionID); via != "" {
+		return resolver.OpenVia(ctx, connectionID, via)
+	}
+	return resolver.Open(ctx, connectionID)
+}
+
+func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID, listenAddress, remoteAddress, viaConnectionID string) (proxytransport.Transport, error) {
+	connectionID = strings.TrimSpace(connectionID)
+	resolver, err := loadSSHResolver(ctx, runtime)
 	if err != nil {
 		return nil, err
 	}

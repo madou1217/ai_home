@@ -35,10 +35,11 @@ func runProxyCommand(ctx context.Context, arguments []string, runtime commandRun
 }
 
 func writeProxyCommandUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID] [--server URL | --ssh <connectionId>] [--no-socks] [--system --system-service <name>] [--system-dry-run] [--json]")
+	_, _ = fmt.Fprintln(runtime.stdout, "用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID] [--server URL | --ssh <connectionId> | --peer <connectionId>] [--no-socks] [--system --system-service <name>] [--system-dry-run] [--json]")
 	_, _ = fmt.Fprintln(runtime.stdout, "")
 	_, _ = fmt.Fprintln(runtime.stdout, "通过远端 AIH Server 的代理租约，在当前主机建立 loopback HTTP 与 SOCKS5 代理入口。")
 	_, _ = fmt.Fprintln(runtime.stdout, "需要 AIH_SERVER_MANAGEMENT_KEY；--server 直达管理面，--ssh 自动建立本地转发。")
+	_, _ = fmt.Fprintln(runtime.stdout, "--peer 在远端 AIH 上启动代理入口并经 SSH 转发到本机，不需要远端管理密钥；--peer-via 可指定跳板。")
 	_, _ = fmt.Fprintln(runtime.stdout, "--system 显式写入系统 HTTP/HTTPS 代理，退出时恢复；macOS 必须指定 --system-service。")
 	_, _ = fmt.Fprintln(runtime.stdout, "命令持续运行，Ctrl+C 释放租约；不会修改系统代理，除非指定 --system。")
 }
@@ -50,6 +51,9 @@ type proxyServeOptions struct {
 	sshVia            string
 	sshRemote         string
 	listen            string
+	peer              string
+	peerVia           string
+	peerAih           string
 	noSocks           bool
 	system            bool
 	systemService     string
@@ -74,7 +78,7 @@ type proxyServeOptions struct {
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5"}
+	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, peerAih: "aih", renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5"}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
@@ -83,6 +87,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.StringVar(&options.sshVia, "ssh-via", "", "可选的 SSH 跳板连接 ID（复用现有 mesh 链路）")
 	flags.StringVar(&options.sshRemote, "ssh-remote-address", proxytransport.DefaultRemoteAddress, "SSH 远端 AIH 管理面 loopback 地址")
 	flags.StringVar(&options.listen, "listen", proxytransport.DefaultListenAddress, "SSH 本地转发监听地址（仅 loopback）")
+	flags.StringVar(&options.peer, "peer", "", "在远端 AIH 上启动代理入口并经 SSH 转发到本机（SSH 连接 ID）")
+	flags.StringVar(&options.peerVia, "peer-via", "", "--peer 的可选 SSH 跳板连接 ID（复用现有 mesh 链路）")
+	flags.StringVar(&options.peerAih, "peer-aih", "aih", "远端 aih 可执行文件路径（Windows 可传绝对路径）")
 	flags.BoolVar(&options.noSocks, "no-socks", false, "不启动本地 SOCKS5 入口，只提供 HTTP 代理")
 	flags.BoolVar(&options.system, "system", false, "把入口写入系统 HTTP/HTTPS 代理，退出时恢复")
 	flags.StringVar(&options.systemService, "system-service", "", "系统网络服务名（macOS 必填，例如 Wi-Fi）")
@@ -114,13 +121,16 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	options.sshVia = strings.TrimSpace(options.sshVia)
 	options.sshRemote = strings.TrimSpace(options.sshRemote)
 	options.listen = strings.TrimSpace(options.listen)
+	options.peer = strings.TrimSpace(options.peer)
+	options.peerVia = strings.TrimSpace(options.peerVia)
+	options.peerAih = strings.TrimSpace(options.peerAih)
 	options.systemService = strings.TrimSpace(options.systemService)
 	options.managementKeyFile = strings.TrimSpace(options.managementKeyFile)
 	if options.selector == "" || strings.ContainsAny(options.selector, "\r\n\x00") {
 		return options, errors.New("--selector 无效")
 	}
-	if options.server != "" && options.ssh != "" {
-		return options, errors.New("--server 与 --ssh 只能选择一个")
+	if countNonEmpty(options.server, options.ssh, options.peer) > 1 {
+		return options, errors.New("--server、--ssh 与 --peer 只能选择一个")
 	}
 	if options.server != "" {
 		parsed, err := url.Parse(options.server)
@@ -128,8 +138,26 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 			return options, errors.New("--server 必须是有效的 HTTP(S) 管理面地址")
 		}
 	}
-	if options.ssh == "" && (options.sshVia != "" || options.sshRemote != proxytransport.DefaultRemoteAddress || options.listen != proxytransport.DefaultListenAddress) {
-		return options, errors.New("--ssh-via/--ssh-remote-address/--listen 需要配合 --ssh 使用")
+	if options.peerVia != "" && options.peer == "" {
+		return options, errors.New("--peer-via 需要配合 --peer 使用")
+	}
+	if options.peerAih == "" {
+		return options, errors.New("--peer-aih 不能为空")
+	}
+	if options.peer == "" && options.peerAih != "aih" {
+		return options, errors.New("--peer-aih 需要配合 --peer 使用")
+	}
+	if options.peer != "" && options.sshVia != "" {
+		return options, errors.New("--ssh-via 不适用于 --peer；请使用 --peer-via")
+	}
+	if options.peer != "" && options.sshRemote != proxytransport.DefaultRemoteAddress {
+		return options, errors.New("--ssh-remote-address 不适用于 --peer")
+	}
+	if options.peer != "" && (options.system || options.tun || options.systemService != "" || options.systemDryRun || options.systemForce || options.tunDryRun) {
+		return options, errors.New("--peer 只转发远端入口，不支持在本机执行 --system/--tun")
+	}
+	if options.peer == "" && options.ssh == "" && (options.sshVia != "" || options.sshRemote != proxytransport.DefaultRemoteAddress || options.listen != proxytransport.DefaultListenAddress) {
+		return options, errors.New("--ssh-via/--ssh-remote-address/--listen 需要配合 --ssh 或 --peer 使用")
 	}
 	if options.systemDryRun && !options.system {
 		return options, errors.New("--system-dry-run 需要配合 --system 使用")
@@ -147,6 +175,16 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 		return options, errors.New("TUN 相关参数需要配合 --tun 使用")
 	}
 	return options, nil
+}
+
+func countNonEmpty(values ...string) int {
+	count := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func runProxyServe(args []string, runtime commandRuntime) (err error) {
@@ -171,6 +209,9 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			}
 			return original(envKey)
 		}
+	}
+	if options.peer != "" {
+		return runProxyServePeer(ctx, options, runtime)
 	}
 
 	var transport proxytransport.Transport

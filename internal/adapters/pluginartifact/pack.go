@@ -252,9 +252,16 @@ func listSourceFiles(root string) ([]packFile, error) {
 			return pluginerr.New("plugin_package_symlink", "不允许符号链接："+relative)
 		}
 		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "__pycache__", "node_modules", ".venv", "venv":
+				return filepath.SkipDir
+			}
 			if !safePackagePath(relative) {
 				return pluginerr.New("plugin_package_path_invalid", "非法路径："+relative)
 			}
+			return nil
+		}
+		if entry.Name() == ".DS_Store" || strings.HasSuffix(strings.ToLower(entry.Name()), ".aih-plugin") {
 			return nil
 		}
 		if !entry.Type().IsRegular() {

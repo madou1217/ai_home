@@ -183,19 +183,44 @@ func normalize(options Options) (Options, error) {
 }
 
 func serviceArgs(options Options) []string {
-	if len(options.Args) > 0 {
-		args := make([]string, 0, len(options.Args)+1)
-		args = append(args, options.ServerBinary)
-		return append(args, options.Args...)
+	server, args := serverCommand(options)
+	command := append([]string{server}, args...)
+	// macOS TCC attributes Screen Recording and Accessibility to the job's
+	// responsible process. A stable launcher keeps that identity across server
+	// upgrades, so the user grants the permissions once instead of on every
+	// rebuild.
+	if launcher := stableLauncher(options); launcher != "" {
+		return append([]string{launcher, "--"}, command...)
 	}
-	args := []string{options.ServerBinary, "--host", "127.0.0.1"}
+	return command
+}
+
+// stableLauncher returns the rarely changed parent process installed beside the
+// AIH home. It is optional: installs without it keep running the server directly.
+func stableLauncher(options Options) string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	candidate := filepath.Join(options.Home, "bin", "aih-launch")
+	info, err := os.Stat(candidate)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+		return ""
+	}
+	return candidate
+}
+
+func serverCommand(options Options) (string, []string) {
+	if len(options.Args) > 0 {
+		return options.ServerBinary, append([]string(nil), options.Args...)
+	}
+	args := []string{"--host", "127.0.0.1"}
 	if options.WebDir != "" {
 		args = append(args, "--web-dir", options.WebDir)
 	}
 	if port := strings.TrimSpace(os.Getenv("AIH_SERVER_PORT")); port != "" {
 		args = append(args, "--port", port)
 	}
-	return args
+	return options.ServerBinary, args
 }
 
 // serviceEnv 返回确定顺序的服务环境变量，额外 Env 覆盖标准值。

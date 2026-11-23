@@ -44,8 +44,8 @@ var canonicalEffortLadder = newEffortLadder(
 
 // CanonicalEffortOrder 返回 Canonical 推理强度的升序全序副本。
 //
-// 生成器（internal/tools/modelsdevmodalities）必须按同一顺序写快照，而它不能 import
-// 本包，因此在那里显式重复了一份；两处一致性由本包的单测守住。
+// 它是能力事实规范化与对齐的唯一顺序来源；任何来源（上游声明、能力基线、模型目录投影）
+// 都必须按这份全序排序后再发布。
 func CanonicalEffortOrder() []ReasoningEffort {
 	return append([]ReasoningEffort(nil), canonicalEffortLadder.sorted...)
 }

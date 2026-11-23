@@ -189,10 +189,28 @@ func serviceArgs(options Options) []string {
 	// responsible process. A stable launcher keeps that identity across server
 	// upgrades, so the user grants the permissions once instead of on every
 	// rebuild.
+	if app := stableApp(options); app != "" {
+		return append([]string{app, "--service", "--"}, command...)
+	}
 	if launcher := stableLauncher(options); launcher != "" {
 		return append([]string{launcher, "--"}, command...)
 	}
 	return command
+}
+
+// stableApp returns the AI Home.app executable when it is installed. The app is
+// the preferred TCC owner because it is a foreground bundle: the system can list
+// it and prompt for Screen Recording and Accessibility without manual path entry.
+func stableApp(options Options) string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	candidate := filepath.Join(options.Home, "apps", "AI Home.app", "Contents", "MacOS", "ai-home")
+	info, err := os.Stat(candidate)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+		return ""
+	}
+	return candidate
 }
 
 // stableLauncher returns the rarely changed parent process installed beside the

@@ -7,9 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/remoteconnector"
@@ -18,39 +23,48 @@ import (
 const (
 	maxJobs          = 16
 	maxRunningJobs   = 4
-	jobBufferBytes   = 512 * 1024
 	jobChunkBytes    = 128 * 1024
-	jobInterruptWait = 2 * time.Second
+	jobSpoolBytes    = 8 * 1024 * 1024
+	jobPollInterval  = 150 * time.Millisecond
+	jobInterruptWait = 5 * time.Second
+	jobHeartbeat     = 10 * time.Second
 )
 
-// jobManager owns detached commands on the local connector. A job is not tied
-// to the RPC or the Server session that started it; it lives in this process.
+// jobMeta and jobStatus are the on-disk spool contract. They deliberately have
+// no json tags: the spool is private to this package and never crosses the
+// connector protocol.
+type jobMeta struct {
+	ID        string
+	Command   string
+	Cwd       string
+	TimeoutMS int
+	CreatedAt int64
+}
+
+type jobStatus struct {
+	State           string
+	ExitCode        int
+	StartedAt       int64
+	EndedAt         int64
+	StdoutBytes     int64
+	StderrBytes     int64
+	StdoutTruncated bool
+	StderrTruncated bool
+}
+
+// jobManager keeps jobs in a spool directory so they survive connector
+// restarts. The command itself runs in a detached runner process.
 type jobManager struct {
-	files *filesystem
-
-	mu    sync.Mutex
-	jobs  map[string]*job
-	order []string
+	files      *filesystem
+	stateDir   string
+	executable string
 }
 
-type job struct {
-	id        string
-	cwd       string
-	startedAt time.Time
-	process   *exec.Cmd
-
-	mu          sync.Mutex
-	state       string
-	exitCode    int
-	endedAt     time.Time
-	interrupted bool
-	notifyCh    chan struct{}
-	stdout      *jobStream
-	stderr      *jobStream
-}
-
-func newJobManager(files *filesystem) *jobManager {
-	return &jobManager{files: files, jobs: make(map[string]*job)}
+func newJobManager(files *filesystem, stateDir, executable string) *jobManager {
+	if strings.TrimSpace(stateDir) == "" {
+		stateDir = filepath.Join(os.TempDir(), "aih-workspace-jobs")
+	}
+	return &jobManager{files: files, stateDir: stateDir, executable: executable}
 }
 
 func (manager *jobManager) execute(ctx context.Context, operation string, raw json.RawMessage) (any, error) {
@@ -93,300 +107,239 @@ func (manager *jobManager) start(request remoteconnector.StartJobRequest) (remot
 	if running := manager.running(); running >= maxRunningJobs {
 		return remoteconnector.StartJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeJobLimit, "too many running jobs")
 	}
-
-	timeout := remoteconnector.JobTimeout(request.TimeoutMS)
-	runCtx, cancel := context.WithTimeout(context.Background(), timeout)
-	stdout := newJobStream(jobBufferBytes)
-	stderr := newJobStream(jobBufferBytes)
-	shell, shellArgs := commandShell(command)
-	process := exec.CommandContext(runCtx, shell, shellArgs...)
-	process.Dir = cwd
-	process.WaitDelay = commandKillGrace
-	configureCommand(process)
-
-	job := &job{
-		id: newJobID(), cwd: cwd, startedAt: time.Now(), process: process,
-		state: remoteconnector.JobRunning, notifyCh: make(chan struct{}),
-		stdout: stdout, stderr: stderr,
+	if err := os.MkdirAll(manager.stateDir, 0o700); err != nil {
+		return remoteconnector.StartJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job state directory is unavailable")
 	}
-	process.Stdout = jobStreamWriter{job: job, target: stdout}
-	process.Stderr = jobStreamWriter{job: job, target: stderr}
-	if err := process.Start(); err != nil {
-		cancel()
-		return remoteconnector.StartJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job could not be started")
+	manager.prune()
+
+	id := newJobID()
+	dir := filepath.Join(manager.stateDir, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return remoteconnector.StartJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job state directory is unavailable")
 	}
-
-	manager.mu.Lock()
-	manager.jobs[job.id] = job
-	manager.order = append(manager.order, job.id)
-	manager.evictLocked()
-	manager.mu.Unlock()
-
-	go func() {
-		waitErr := process.Wait()
-		job.finish(waitErr, runCtx.Err() == context.DeadlineExceeded)
-		cancel()
-	}()
-
+	meta := jobMeta{ID: id, Command: command, Cwd: cwd, TimeoutMS: request.TimeoutMS, CreatedAt: time.Now().UnixMilli()}
+	if err := writeJSONFile(filepath.Join(dir, "meta.json"), meta); err != nil {
+		_ = os.RemoveAll(dir)
+		return remoteconnector.StartJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "cannot write job metadata")
+	}
+	// The connector owns the first heartbeat so a just-started job is counted as
+	// running before its detached runner has booted.
+	_ = os.WriteFile(filepath.Join(dir, "heartbeat"), nil, 0o600)
+	if err := manager.spawn(dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return remoteconnector.StartJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job runner could not be started")
+	}
 	return remoteconnector.StartJobResult{
-		JobID: job.id, State: remoteconnector.JobRunning, Cwd: displayPath(manager.files.sandbox.root, cwd),
-		StdoutStart: 0, StderrStart: 0, StartedAt: job.startedAt.UnixMilli(),
+		JobID: id, State: remoteconnector.JobRunning,
+		Cwd:         displayPath(manager.files.sandbox.root, cwd),
+		StdoutStart: 0, StderrStart: 0, StartedAt: meta.CreatedAt,
 	}, nil
 }
 
+func (manager *jobManager) spawn(dir string) error {
+	executable := strings.TrimSpace(manager.executable)
+	if executable == "" {
+		resolved, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		executable = resolved
+	}
+	process := exec.Command(executable, "workspace", "__job-runner", dir)
+	process.Dir = dir
+	process.Env = os.Environ()
+	configureDetached(process)
+	if err := process.Start(); err != nil {
+		return err
+	}
+	return process.Process.Release()
+}
+
 func (manager *jobManager) watch(request remoteconnector.WatchJobRequest) (remoteconnector.WatchJobResult, error) {
-	job := manager.find(request.JobID)
-	if job == nil {
-		return remoteconnector.WatchJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeJobNotFound, "job does not exist")
+	meta, dir, err := manager.load(request.JobID)
+	if err != nil {
+		return remoteconnector.WatchJobResult{}, err
 	}
 	if request.StdoutOffset < 0 || request.StderrOffset < 0 {
 		return remoteconnector.WatchJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidPayload, "job cursor must not be negative")
 	}
 	deadline := time.Now().Add(remoteconnector.JobWait(request.WaitMS))
 	for {
-		job.mu.Lock()
-		if request.StdoutOffset > job.stdout.Written() || request.StderrOffset > job.stderr.Written() {
-			job.mu.Unlock()
-			return remoteconnector.WatchJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidPayload, "job cursor is ahead of the recorded output")
+		result, fresh, err := manager.snapshot(meta, dir, request)
+		if err != nil {
+			return remoteconnector.WatchJobResult{}, err
 		}
-		result, fresh := job.snapshotLocked(request)
-		waiting := !fresh && job.state == remoteconnector.JobRunning && time.Now().Before(deadline)
-		if !waiting {
-			job.mu.Unlock()
+		if fresh || result.State != remoteconnector.JobRunning || !time.Now().Before(deadline) {
 			return result, nil
 		}
-		changed := job.notifyCh
-		job.mu.Unlock()
-
-		timer := time.NewTimer(time.Until(deadline))
-		select {
-		case <-changed:
-		case <-timer.C:
-		}
-		timer.Stop()
+		time.Sleep(jobPollInterval)
 	}
 }
 
 func (manager *jobManager) interrupt(request remoteconnector.InterruptJobRequest) (remoteconnector.InterruptJobResult, error) {
-	job := manager.find(request.JobID)
-	if job == nil {
-		return remoteconnector.InterruptJobResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeJobNotFound, "job does not exist")
+	meta, dir, err := manager.load(request.JobID)
+	if err != nil {
+		return remoteconnector.InterruptJobResult{}, err
 	}
-	job.mu.Lock()
-	if job.state != remoteconnector.JobRunning {
-		state := job.state
-		job.mu.Unlock()
-		return remoteconnector.InterruptJobResult{JobID: job.id, State: state}, nil
+	status, found := readJSONStatus(filepath.Join(dir, "status.json"))
+	state := status.State
+	if !found || state == "" {
+		if runnerAlive(dir) {
+			state = remoteconnector.JobRunning
+		} else {
+			state = remoteconnector.JobLost
+		}
 	}
-	job.interrupted = true
-	process := job.process
-	job.mu.Unlock()
-
-	forced := terminateCommand(process) == nil
+	if state != remoteconnector.JobRunning {
+		return remoteconnector.InterruptJobResult{JobID: meta.ID, State: state}, nil
+	}
+	pid := readRunnerPID(dir)
+	if pid <= 0 {
+		writeInterrupted(dir)
+		return remoteconnector.InterruptJobResult{JobID: meta.ID, State: remoteconnector.JobInterrupted}, nil
+	}
+	forced := false
+	_ = signalRunner(pid, false)
 	deadline := time.Now().Add(jobInterruptWait)
-	for {
-		job.mu.Lock()
-		if job.state != remoteconnector.JobRunning {
-			state := job.state
-			job.mu.Unlock()
-			return remoteconnector.InterruptJobResult{JobID: job.id, State: state, Forced: forced}, nil
+	for time.Now().Before(deadline) {
+		if status, found := readJSONStatus(filepath.Join(dir, "status.json")); found && status.State != "" {
+			return remoteconnector.InterruptJobResult{JobID: meta.ID, State: status.State, Forced: forced}, nil
 		}
-		if time.Now().After(deadline) {
-			job.mu.Unlock()
-			return remoteconnector.InterruptJobResult{JobID: job.id, State: remoteconnector.JobRunning, Forced: forced}, nil
-		}
-		changed := job.notifyCh
-		job.mu.Unlock()
-		select {
-		case <-changed:
-		case <-time.After(50 * time.Millisecond):
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = signalRunner(pid, true)
+	forced = true
+	writeInterrupted(dir)
+	return remoteconnector.InterruptJobResult{JobID: meta.ID, State: remoteconnector.JobInterrupted, Forced: forced}, nil
+}
+
+func (manager *jobManager) snapshot(meta jobMeta, dir string, request remoteconnector.WatchJobRequest) (remoteconnector.WatchJobResult, bool, error) {
+	status, found := readJSONStatus(filepath.Join(dir, "status.json"))
+	state := status.State
+	if !found || state == "" {
+		if runnerAlive(dir) {
+			state = remoteconnector.JobRunning
+		} else {
+			state = remoteconnector.JobLost
 		}
 	}
-}
-
-func (manager *jobManager) find(jobID string) *job {
-	jobID = strings.TrimSpace(jobID)
-	if jobID == "" {
-		return nil
+	stdout, stdoutNext, err := readSpool(filepath.Join(dir, "stdout.log"), request.StdoutOffset, jobChunkBytes)
+	if err != nil {
+		return remoteconnector.WatchJobResult{}, false, err
 	}
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	return manager.jobs[jobID]
-}
-
-func (manager *jobManager) running() int {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	count := 0
-	for _, job := range manager.jobs {
-		job.mu.Lock()
-		if job.state == remoteconnector.JobRunning {
-			count++
-		}
-		job.mu.Unlock()
+	stderr, stderrNext, err := readSpool(filepath.Join(dir, "stderr.log"), request.StderrOffset, jobChunkBytes)
+	if err != nil {
+		return remoteconnector.WatchJobResult{}, false, err
 	}
-	return count
-}
-
-// evictLocked drops the oldest finished jobs; running jobs are never evicted.
-func (manager *jobManager) evictLocked() {
-	for len(manager.order) > maxJobs {
-		id := manager.order[0]
-		victim := manager.jobs[id]
-		if victim == nil {
-			manager.order = manager.order[1:]
-			continue
-		}
-		victim.mu.Lock()
-		running := victim.state == remoteconnector.JobRunning
-		victim.mu.Unlock()
-		if running {
-			break
-		}
-		delete(manager.jobs, id)
-		manager.order = manager.order[1:]
+	startedAt := status.StartedAt
+	if startedAt == 0 {
+		startedAt = meta.CreatedAt
 	}
-}
-
-func (job *job) finish(waitErr error, timedOut bool) {
-	job.mu.Lock()
-	defer job.mu.Unlock()
-	job.endedAt = time.Now()
-	var exitErr *exec.ExitError
-	switch {
-	case job.interrupted:
-		job.state = remoteconnector.JobInterrupted
-		job.exitCode = -1
-	case timedOut:
-		job.state = remoteconnector.JobTimedOut
-		job.exitCode = -1
-	case errors.As(waitErr, &exitErr):
-		job.state = remoteconnector.JobExited
-		job.exitCode = exitErr.ExitCode()
-	case waitErr != nil:
-		job.state = remoteconnector.JobFailed
-		job.exitCode = -1
-	default:
-		job.state = remoteconnector.JobExited
-		job.exitCode = 0
-	}
-	job.notifyLocked()
-}
-
-func (job *job) notify() {
-	job.mu.Lock()
-	job.notifyLocked()
-	job.mu.Unlock()
-}
-
-func (job *job) notifyLocked() {
-	close(job.notifyCh)
-	job.notifyCh = make(chan struct{})
-}
-
-func (job *job) snapshotLocked(request remoteconnector.WatchJobRequest) (remoteconnector.WatchJobResult, bool) {
-	stdout, stdoutNext, stdoutDropped := job.stdout.ReadFrom(request.StdoutOffset, jobChunkBytes)
-	stderr, stderrNext, stderrDropped := job.stderr.ReadFrom(request.StderrOffset, jobChunkBytes)
-	duration := job.endedAt.Sub(job.startedAt)
-	if job.endedAt.IsZero() {
-		duration = time.Since(job.startedAt)
+	duration := time.Duration(0)
+	if status.EndedAt > 0 {
+		duration = time.Duration(status.EndedAt-startedAt) * time.Millisecond
+	} else if startedAt > 0 {
+		duration = time.Since(time.UnixMilli(startedAt))
 	}
 	result := remoteconnector.WatchJobResult{
-		JobID: job.id, State: job.state, ExitCode: job.exitCode,
+		JobID: meta.ID, State: state, ExitCode: status.ExitCode,
 		Stdout:       base64.StdEncoding.EncodeToString(stdout),
 		Stderr:       base64.StdEncoding.EncodeToString(stderr),
 		Encoding:     "base64",
 		StdoutOffset: stdoutNext, StderrOffset: stderrNext,
-		Dropped:   stdoutDropped || stderrDropped,
-		StartedAt: job.startedAt.UnixMilli(), DurationMS: duration.Milliseconds(),
+		Truncated: status.StdoutTruncated || status.StderrTruncated,
+		StartedAt: startedAt, EndedAt: status.EndedAt,
+		DurationMS: duration.Milliseconds(),
 	}
-	if !job.endedAt.IsZero() {
-		result.EndedAt = job.endedAt.UnixMilli()
+	return result, len(stdout) > 0 || len(stderr) > 0, nil
+}
+
+func (manager *jobManager) load(jobID string) (jobMeta, string, error) {
+	jobID = strings.TrimSpace(jobID)
+	if !validJobID(jobID) {
+		return jobMeta{}, "", remoteconnector.NewProtocolError(remoteconnector.CodeJobNotFound, "job does not exist")
 	}
-	return result, len(stdout) > 0 || len(stderr) > 0
-}
-
-// jobStreamWriter feeds process output into the job ring and wakes watchers.
-type jobStreamWriter struct {
-	job    *job
-	target *jobStream
-}
-
-func (writer jobStreamWriter) Write(chunk []byte) (int, error) {
-	writer.job.mu.Lock()
-	_, _ = writer.target.Write(chunk)
-	writer.job.notifyLocked()
-	writer.job.mu.Unlock()
-	return len(chunk), nil
-}
-
-// jobStream keeps the last capacity bytes of one output stream. Written is the
-// absolute byte count, so cursors survive trimming of old bytes.
-type jobStream struct {
-	buffer  []byte
-	start   int
-	size    int
-	written int64
-}
-
-func newJobStream(capacity int) *jobStream {
-	return &jobStream{buffer: make([]byte, capacity)}
-}
-
-func (stream *jobStream) Written() int64 { return stream.written }
-
-func (stream *jobStream) Write(chunk []byte) (int, error) {
-	if len(chunk) == 0 {
-		return 0, nil
+	dir := filepath.Join(manager.stateDir, jobID)
+	meta, err := readJSONMeta(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return jobMeta{}, "", remoteconnector.NewProtocolError(remoteconnector.CodeJobNotFound, "job does not exist")
 	}
-	capacity := len(stream.buffer)
-	stream.written += int64(len(chunk))
-	if len(chunk) >= capacity {
-		copy(stream.buffer, chunk[len(chunk)-capacity:])
-		stream.start = 0
-		stream.size = capacity
-		return len(chunk), nil
+	return meta, dir, nil
+}
+
+func (manager *jobManager) running() int {
+	entries, err := os.ReadDir(manager.stateDir)
+	if err != nil {
+		return 0
 	}
-	for _, value := range chunk {
-		index := (stream.start + stream.size) % capacity
-		if stream.size < capacity {
-			stream.buffer[index] = value
-			stream.size++
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || !validJobID(entry.Name()) {
 			continue
 		}
-		stream.buffer[stream.start] = value
-		stream.start = (stream.start + 1) % capacity
+		dir := filepath.Join(manager.stateDir, entry.Name())
+		status, found := readJSONStatus(filepath.Join(dir, "status.json"))
+		if found && status.State != "" {
+			continue
+		}
+		if runnerAlive(dir) {
+			count++
+		}
 	}
-	return len(chunk), nil
+	return count
 }
 
-// ReadFrom returns up to limit bytes after offset. dropped reports that the
-// offset was older than the retained window.
-func (stream *jobStream) ReadFrom(offset int64, limit int) ([]byte, int64, bool) {
-	capacity := len(stream.buffer)
-	first := stream.written - int64(stream.size)
-	dropped := offset < first
-	if dropped {
-		offset = first
+func (manager *jobManager) prune() {
+	entries, err := os.ReadDir(manager.stateDir)
+	if err != nil {
+		return
 	}
-	if offset > stream.written || limit <= 0 {
-		return nil, offset, dropped
+	type candidate struct {
+		dir     string
+		created int64
 	}
-	index := (stream.start + int(offset-first)) % capacity
-	remaining := int(stream.written - offset)
-	if remaining > limit {
-		remaining = limit
-	}
-	chunk := make([]byte, 0, remaining)
-	for len(chunk) < remaining {
-		size := capacity - index
-		if size > remaining-len(chunk) {
-			size = remaining - len(chunk)
+	items := make([]candidate, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || !validJobID(entry.Name()) {
+			continue
 		}
-		chunk = append(chunk, stream.buffer[index:index+size]...)
-		index = (index + size) % capacity
+		dir := filepath.Join(manager.stateDir, entry.Name())
+		meta, err := readJSONMeta(filepath.Join(dir, "meta.json"))
+		if err != nil {
+			continue
+		}
+		items = append(items, candidate{dir: dir, created: meta.CreatedAt})
 	}
-	return chunk, offset + int64(len(chunk)), dropped
+	sort.Slice(items, func(left, right int) bool { return items[left].created < items[right].created })
+	for len(items) > maxJobs {
+		oldest := items[0]
+		items = items[1:]
+		if runnerAlive(oldest.dir) {
+			continue
+		}
+		_ = os.RemoveAll(oldest.dir)
+	}
+}
+
+// writeInterrupted is the fallback when the runner cannot report its own exit.
+func writeInterrupted(dir string) {
+	status := jobStatus{State: remoteconnector.JobInterrupted, ExitCode: -1, EndedAt: time.Now().UnixMilli()}
+	status.StdoutBytes = fileSize(filepath.Join(dir, "stdout.log"))
+	status.StderrBytes = fileSize(filepath.Join(dir, "stderr.log"))
+	_ = writeJSONFile(filepath.Join(dir, "status.json"), status)
+	_ = os.Remove(filepath.Join(dir, "runner.pid"))
+}
+
+func validJobID(jobID string) bool {
+	if len(jobID) != 22 || !strings.HasPrefix(jobID, "job-") {
+		return false
+	}
+	for _, char := range jobID[4:] {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func newJobID() string {
@@ -395,4 +348,100 @@ func newJobID() string {
 		return "job-000000000000000000"
 	}
 	return "job-" + hex.EncodeToString(buffer)
+}
+
+// runnerAlive uses a heartbeat file instead of process probes so the answer is
+// the same on every platform and survives a connector restart.
+func runnerAlive(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "heartbeat"))
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) < jobHeartbeat
+}
+
+func readRunnerPID(dir string) int {
+	raw, err := os.ReadFile(filepath.Join(dir, "runner.pid"))
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
+}
+
+func fileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+func readSpool(path string, offset int64, limit int) ([]byte, int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, offset, nil
+		}
+		return nil, offset, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job output is unavailable")
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, offset, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job output is unavailable")
+	}
+	if offset > info.Size() {
+		return nil, offset, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidPayload, "job cursor is ahead of the recorded output")
+	}
+	remaining := info.Size() - offset
+	if remaining <= 0 || limit <= 0 {
+		return nil, offset, nil
+	}
+	if int64(limit) < remaining {
+		remaining = int64(limit)
+	}
+	buffer := make([]byte, remaining)
+	if _, err := file.ReadAt(buffer, offset); err != nil && !errors.Is(err, io.EOF) {
+		return nil, offset, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "job output is unavailable")
+	}
+	return buffer, offset + int64(len(buffer)), nil
+}
+
+func readJSONMeta(path string) (jobMeta, error) {
+	var meta jobMeta
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return meta, err
+	}
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return meta, err
+	}
+	return meta, nil
+}
+
+func readJSONStatus(path string) (jobStatus, bool) {
+	var status jobStatus
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return status, false
+	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return status, false
+	}
+	return status, true
+}
+
+func writeJSONFile(path string, value any) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	temp := fmt.Sprintf("%s.tmp-%d", path, time.Now().UnixNano())
+	if err := os.WriteFile(temp, encoded, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temp, path)
 }

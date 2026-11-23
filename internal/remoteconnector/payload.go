@@ -297,11 +297,12 @@ const (
 	JobFailed      = "failed"
 	JobTimedOut    = "timed_out"
 	JobInterrupted = "interrupted"
+	JobLost        = "lost"
 )
 
-// StartJobRequest starts one detached command. Jobs are owned by the local
-// connector: they outlive the RPC that started them and the Server session, but
-// not a connector process restart.
+// StartJobRequest starts one detached command. The local connector supervises
+// it through an on-disk spool, so the job outlives the RPC, the Server session
+// and connector restarts.
 type StartJobRequest struct {
 	Command   string `json:"command"`
 	Cwd       string `json:"cwd,omitempty"`
@@ -336,6 +337,7 @@ type WatchJobResult struct {
 	StdoutOffset int64  `json:"stdoutOffset"`
 	StderrOffset int64  `json:"stderrOffset"`
 	Dropped      bool   `json:"dropped,omitempty"`
+	Truncated    bool   `json:"truncated,omitempty"`
 	StartedAt    int64  `json:"startedAt"`
 	EndedAt      int64  `json:"endedAt,omitempty"`
 	DurationMS   int64  `json:"durationMs"`

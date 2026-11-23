@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -37,6 +38,10 @@ type Config struct {
 	Heartbeat      time.Duration
 	RequestTimeout time.Duration
 	MaxConcurrent  int
+	// StateDir is where background jobs keep their spool (meta, status and
+	// output). It must be stable across connector restarts; empty falls back to
+	// a temp directory.
+	StateDir string
 	// DisableCommand opts this connector out of workspace.run_command. Command
 	// execution is enabled by default because the connector process is started
 	// by the local machine owner and runs with that user's own authority.
@@ -178,7 +183,8 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 			return nil, fmt.Errorf("persist workspace connector session: %w", err)
 		}
 	}
-	return &Connector{ws: ws, fs: files, jobs: newJobManager(files), config: config, session: session}, nil
+	executable, _ := os.Executable()
+	return &Connector{ws: ws, fs: files, jobs: newJobManager(files, config.StateDir, executable), config: config, session: session}, nil
 }
 
 func (connector *Connector) Session() Session { return connector.session }

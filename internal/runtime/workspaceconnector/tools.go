@@ -473,6 +473,9 @@ func callWatchJob(ctx context.Context, hub *Hub, workspaceID string, args map[st
 	if result.Dropped {
 		parts = append(parts, "（部分旧输出已被丢弃）")
 	}
+	if result.Truncated {
+		parts = append(parts, "（输出超过 8 MiB，后续内容未保存）")
+	}
 	if len(stdout) > 0 {
 		parts = append(parts, "stdout:\n"+string(strings.ToValidUTF8(string(stdout), "\uFFFD")))
 	}

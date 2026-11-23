@@ -22,9 +22,9 @@ Provider 进程仍在 AIH Server；本地 Connector 不持有 Provider 凭据。
 
 - Codex / Claude：通过 MCP 使用 `read_file` / `write_file` / `edit_file` /
   `list_directory` / `search`；search 为有界文本内容正则搜索。
-- 持久作业：`start_job` / `watch_job` / `interrupt_job`。作业在本地 Connector 进程内运行，
-  通过 cursor 增量读取；Provider 侧多次工具调用之间、MCP 桥进程重启之间都不丢状态。
-  作业不跨 Connector 进程重启，仍无审批。
+- 持久作业：`start_job` / `watch_job` / `interrupt_job`。作业由独立 runner 执行并把
+  meta/status/输出落在 spool，通过 cursor 增量读取；Provider 工具调用之间、MCP 桥进程
+  重启、Connector 退出/重启之间都不丢状态。仍无审批。
 - AGY：没有结构化工具/审批通道，`agent-terminal` 明确返回
   `agy_remote_workspace_unsupported`，不伪装支持。
 - `run_command`：同步执行本机命令，cwd 必须在工作区内；`aih workspace connect
@@ -67,10 +67,13 @@ Provider 进程仍在 AIH Server；本地 Connector 不持有 Provider 凭据。
 3. 作业结束时返回 `exited` + exit code，stderr 单独返回；
 4. `interrupt_job` 返回 `interrupted`，进程组无残留；
 5. `timeoutMs=400` 的作业进入 `timed_out`，进程组无残留；
-6. 2 MB 输出触发 ring 丢弃，返回 `dropped`，单次 chunk 不超过 128 KiB；
+6. 9 MB 输出触发 spool 截断，返回 `truncated`，单次 chunk 不超过 128 KiB；
 7. 第 5 个并发作业返回 `job_limit_reached`；cursor 超前返回 `invalid_payload`；
    未知 job 返回 `job_not_found`；
-8. `--no-command` 时工具列表不含作业工具，RPC 返回 `capability_not_allowed`。
+8. `--no-command` 时工具列表不含作业工具，RPC 返回 `capability_not_allowed`；
+9. 作业运行中 SIGKILL Connector：runner 仍存活，重启 Connector 后同一 `jobId` 继续
+   watch，输出不重不漏并正常结束；`interrupt_job` 在重启后同样有效；
+10. runner 消失且心跳过期时状态为 `lost`。
 
 AWS 真机（2026-11-23）：新二进制 + 真实 Codex（free 账号 10，`gpt-5.6-luna`）调用
 `start_job` / `watch_job`，最终 `state: exited`、本机 `JOB_DONE.txt` 写入 `job-done`；

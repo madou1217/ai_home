@@ -32,6 +32,11 @@ func runWorkspaceCommand(ctx context.Context, arguments []string, runtime comman
 	action := strings.ToLower(strings.TrimSpace(arguments[1]))
 	switch action {
 	case "connect", "ls", "list", "revoke", "enroll", "status":
+	case "__job-runner":
+		if len(arguments) < 3 || strings.TrimSpace(arguments[2]) == "" {
+			return true, errors.New("用法: aih workspace __job-runner <spoolDir>")
+		}
+		return true, connectorclient.RunJobRunner(strings.TrimSpace(arguments[2]))
 	default:
 		return true, fmt.Errorf("unknown workspace command: %s", action)
 	}
@@ -206,6 +211,7 @@ func runWorkspaceConnect(ctx context.Context, client *connectorapi.Client, profi
 	config := connectorclient.Config{
 		Endpoint: endpoint, Root: absoluteRoot, Label: label,
 		Token: token, WorkspaceID: workspaceID, ConnectorID: connectorID,
+		StateDir:       filepath.Join(home, "run", "workspace-jobs"),
 		DisableCommand: options.noCommand,
 		OnSession: func(session connectorclient.Session) error {
 			return sessions.Save(workspaceSession{

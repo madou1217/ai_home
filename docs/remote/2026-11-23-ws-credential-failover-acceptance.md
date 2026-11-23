@@ -242,7 +242,8 @@ rm -f "<server-ai-home>/run/route-observation/$SESSION.json"
 - 用量归属：路由观测已确认实际服务账号；本次没有单独核对逐请求 token 行；
 - 全池失效：未执行。AWS 是共享账号池，临时停用所有健康账号会影响其它会话；
 - 1011 重连分支：通过两种变体。① upstream 在 response.created 后、尚未输出时断开（incomplete-stream）：客户端收到 CLOSE 1011 / reason=retryable upstream failure；② upstream 发送 response.created 后紧跟 type=error,status=429 终态事件：同样收到 CLOSE 1011，错误帧未透传；两种变体预备帧均未下发；
-- Codex 客户端重连：通过（HTTP fallback 完成）。Codex CLI 0.171 TUI + supports_websockets=true 在 1011 后新开 WS 连接 #2–#4 并重发 response.create；同一轮也发起 HTTP POST，补全 HTTP SSE 上游后 TUI 显示 http-ok。客户端在 1011 后完成恢复；但成功回答由 HTTP fallback 提供，不是重连后的 WS 通道。
+- Codex 客户端重连：通过（HTTP fallback 完成）。Codex CLI 0.171 TUI + supports_websockets=true 在 1011 后新开 WS 连接 #2–#4 并重发 response.create；同一轮也发起 HTTP POST，补全 HTTP SSE 上游后 TUI 显示 http-ok。客户端在 1011 后完成恢复；但该轮成功回答由 HTTP fallback 提供，不是重连后的 WS 通道。
+- Codex 常规轮次走 WS：通过（2026-11-23 本地补验）。Codex CLI 0.171 TUI 在无注入失败的情况下向真实 Server 发起一轮 gpt-6-luna 请求：TUI 返回 `WS-OK`（4 秒），Server 写入 `run/route-observation/wscheck-*.json`（`accountRef=acct_c016fd7eee0f64163068, model=gpt-6-luna, source=go-core`），且同时间段没有该模型的 HTTP `responses native timing` 行。结论：Codex 0.171 的正常回答由 WS 通道端到端完成；上一行的 HTTP fallback 是注入断连后的客户端回退行为，不是常规路径。
 - WS 通道独立完成：通过。WS-only 客户端在收到 1011 后自行重连；第二次连接收到 response.completed 与 ws-ok，全程未使用 HTTP。
 - 全池失效（隔离 Server）：通过。复制主库、只保留一个测试账号并指向 401 上游；WS 请求约 1 秒返回 401 credential_rejected 后关闭，无死循环。
 - 真实 HTTP 429 握手：通过。上游返回 429 + Retry-After:1；网关 2 次尝试后约 31 秒返回 rate_limited，未无限重试。

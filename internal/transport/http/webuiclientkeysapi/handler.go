@@ -236,7 +236,7 @@ func (handler *Handler) ServeStats(response http.ResponseWriter, request *http.R
 		"requests":            requests,
 		"live":                handler.stats.Live(),
 		"concurrencyEnforced": true,
-		"rateLimitsEnforced":  false,
+		"rateLimitsEnforced":  true,
 	})
 }
 
@@ -282,6 +282,7 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 	}
 	master := keyView{
 		ID: coreclientkeys.MasterKeyID, Name: "master", Enabled: true, Master: true,
+		ConcurrencyEnforced: true, RateLimitsEnforced: true,
 	}
 	views := []keyStatsView{{
 		keyView: master,
@@ -393,7 +394,7 @@ func viewOf(key coreclientkeys.Key) keyView {
 			AllowedProviders: key.Limits.AllowedProviders, AllowedModels: key.Limits.AllowedModels,
 		},
 		ConcurrencyEnforced: true,
-		RateLimitsEnforced:  false,
+		RateLimitsEnforced:  true,
 	}
 }
 

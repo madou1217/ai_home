@@ -4,6 +4,7 @@ package aihserver
 
 import (
 	"context"
+	"time"
 
 	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/core/concurrency"
@@ -49,4 +50,53 @@ func applyAdmissionConcurrency(raw any) {
 		return
 	}
 	controller.Configure(parsed)
+}
+
+// refreshAdmissionConfigLoop 周期对齐 server 配置里的 concurrency 对象。
+//
+// WebUI 保存会走 OnSaved 立即生效；但 `aih limits` 等写路径直接改 config:server，
+// 不经过 HTTP 钩子。周期读取让运行中的控制器在数秒内收敛（与账号覆盖刷新同频），
+// 避免「CLI 已保存但排队超时仍是旧值」的静默漂移。
+func refreshAdmissionConfigLoop(
+	ctx context.Context,
+	controller *admission.Controller,
+	aiHomeDir string,
+	interval time.Duration,
+) {
+	if controller == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			config, ok := readAdmissionConcurrency(ctx, aiHomeDir)
+			if !ok {
+				continue
+			}
+			if controller.Config().Equal(config) {
+				continue
+			}
+			controller.Configure(config)
+		}
+	}
+}
+
+// readAdmissionConcurrency 读取 config:server 的 concurrency 对象；未配置时返回 false。
+func readAdmissionConcurrency(ctx context.Context, aiHomeDir string) (concurrency.Config, bool) {
+	view, err := webuiserverconfigapi.ReadFullConfig(ctx, aiHomeDir)
+	if err != nil || view.Concurrency == nil {
+		return concurrency.Config{}, false
+	}
+	parsed, err := concurrency.ParseConfig(view.Concurrency)
+	if err != nil {
+		return concurrency.Config{}, false
+	}
+	return parsed, true
 }

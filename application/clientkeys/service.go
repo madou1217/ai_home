@@ -130,22 +130,31 @@ func (service *Service) Authenticate(raw string) (coreclientkeys.Identity, bool)
 	return coreclientkeys.Identity{KeyID: record.KeyID, Name: record.Name, Prefix: record.Prefix}, true
 }
 
-// ConcurrencyLimit 返回 Key 的并发上限；0 表示不限（或 Key 未知）。
+// Limits 返回 Key 的生效限流字段；第二返回值表示 Key 是否在活动快照里。
 //
 // 只读原子快照，热路径可用；停用/撤销的 Key 不在快照里，鉴权阶段已被拒绝。
-func (service *Service) ConcurrencyLimit(keyID string) int {
+func (service *Service) Limits(keyID string) (coreclientkeys.Limits, bool) {
 	if service == nil {
-		return 0
+		return coreclientkeys.Limits{}, false
 	}
 	snap := service.current.Load()
 	if snap == nil {
-		return 0
+		return coreclientkeys.Limits{}, false
 	}
 	record, found := snap.byID[strings.TrimSpace(keyID)]
 	if !found {
+		return coreclientkeys.Limits{}, false
+	}
+	return record.Limits, true
+}
+
+// ConcurrencyLimit 返回 Key 的并发上限；0 表示不限（或 Key 未知）。
+func (service *Service) ConcurrencyLimit(keyID string) int {
+	limits, ok := service.Limits(keyID)
+	if !ok {
 		return 0
 	}
-	return record.Limits.MaxConcurrency
+	return limits.MaxConcurrency
 }
 
 // Create 生成并保存一把新 Key，明文只在此处返回一次。

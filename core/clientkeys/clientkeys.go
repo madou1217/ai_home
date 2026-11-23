@@ -30,7 +30,7 @@ var ErrInvalidSecret = errors.New("客户端 API Key 格式无效")
 
 // Limits 是一把 Key 的限流字段；0 表示不限/继承。
 //
-// 第一轮只存储与展示，不执行；白名单字段同样只预留。
+// 并发、RPM、TPM 与每日 token 都由 application/admission 执行；白名单字段仍只存储。
 type Limits struct {
 	MaxConcurrency   int
 	RPMLimit         int

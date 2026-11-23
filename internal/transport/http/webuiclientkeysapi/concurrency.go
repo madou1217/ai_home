@@ -1,8 +1,9 @@
 package webuiclientkeysapi
 
-// 并发限流的配置预览与账号覆盖读写。
+// 并发/速率的配置预览与账号覆盖读写。
 //
-// 本轮不执行拦截：effective 值只用于 UI 展示与下一轮实现对齐；enforced 恒为 false。
+// 并发与 RPM/TPM/每日 token 均由 application/admission 执行；effective 值用于 UI
+// 展示与解释拒绝原因，不再只是“下一轮实现”的占位。
 
 import (
 	"encoding/json"
@@ -41,10 +42,18 @@ func (handler *Handler) ServeEffectiveConcurrency(response http.ResponseWriter, 
 	accountRef := strings.TrimSpace(query.Get("account"))
 	model := strings.TrimSpace(query.Get("model"))
 	accountMax := config.AccountConcurrency(provider, accountRef, model, limits)
+	accountRPM := config.AccountRPM(accountRef, limits)
+	accountTPM := config.AccountTPM(accountRef, limits)
 	keyMax := 0
+	keyRPM := 0
+	keyTPM := 0
+	keyDaily := 0
 	if keyID := strings.TrimSpace(query.Get("key")); keyID != "" && keyID != coreclientkeys.MasterKeyID {
 		if key, getErr := handler.keys.Get(request.Context(), keyID); getErr == nil {
 			keyMax = config.KeyConcurrency(key.Limits.MaxConcurrency)
+			keyRPM = key.Limits.RPMLimit
+			keyTPM = key.Limits.TPMLimit
+			keyDaily = key.Limits.DailyTokenLimit
 		}
 	}
 	effective := config.ClampToSystem(accountMax)
@@ -56,9 +65,15 @@ func (handler *Handler) ServeEffectiveConcurrency(response http.ResponseWriter, 
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":                 true,
 		"enforced":           true,
+		"rateLimitsEnforced": true,
 		"systemMax":          config.SystemMax,
 		"accountMax":         accountMax,
 		"keyMax":             keyMax,
+		"accountRpmLimit":    accountRPM,
+		"accountTpmLimit":    accountTPM,
+		"keyRpmLimit":        keyRPM,
+		"keyTpmLimit":        keyTPM,
+		"keyDailyTokenLimit": keyDaily,
 		"providerDefault":    providerDefault,
 		"accountDefault":     config.AccountDefault,
 		"effective":          effective,

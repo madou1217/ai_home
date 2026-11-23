@@ -165,6 +165,9 @@ type routeExecution struct {
 	sawRawHTTP429  bool
 	// concurrencyExhausted 表示本路由的候选全部因并发上限被跳过（可稍后重试）。
 	concurrencyExhausted bool
+	// admissionRejection 保留最后一次真实准入拒绝，供整轮汇合时给出精确原因与
+	// Retry-After，而不是被压平成配置里的默认退避秒数。
+	admissionRejection *admission.Rejection
 }
 
 // requestPoolRetryPermit 把账号池第二轮限制在一次外部 Execute 调用内。
@@ -311,6 +314,7 @@ func (coordinator *Coordinator) executePlan(
 	defer poolRetryPermit.close()
 	var pendingFailure *attemptStream
 	var concurrencyExhausted bool
+	var admissionRejection *admission.Rejection
 	accountFailures := newRequestAccountFailureRecorder(
 		coordinator.attempts,
 	)
@@ -357,6 +361,9 @@ func (coordinator *Coordinator) executePlan(
 			}
 			if execution.concurrencyExhausted {
 				concurrencyExhausted = true
+			}
+			if execution.admissionRejection != nil {
+				admissionRejection = execution.admissionRejection
 			}
 			if err != nil {
 				if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
@@ -412,7 +419,11 @@ func (coordinator *Coordinator) executePlan(
 	coordinator.finalizeExhausted429Headers(ctx, request, reqState, pendingFailure)
 	if concurrencyExhausted && pendingFailure == nil {
 		// 整轮候选都因为并发上限被跳过：这是「稍后重试」而不是永久没有账号，
-		// 由统一 429 契约交付，不能落成 502/503。
+		// 由统一 429 契约交付，不能落成 502/503。优先保留真实准入拒绝，让
+		// Retry-After 反映实际窗口（RPM/TPM/每日 token）而不是固定秒数。
+		if admissionRejection != nil {
+			return admissionRejection
+		}
 		return admission.NewTransientError(admission.ReasonAccountSaturated, admissionRetryAfter())
 	}
 	return finishExhaustedPlan(pendingFailure)
@@ -709,6 +720,7 @@ func (coordinator *Coordinator) executeRouteRound(
 	sawRawHTTP429 := false
 	// admissionSaturated 记录本次扫描是否至少有一次候选仅因并发上限被挡下。
 	admissionSaturated := false
+	var admissionRejection *admission.Rejection
 	attempted := 0
 	session, err := coordinator.beginRecruitment(ctx, request, route, upstream)
 	if err != nil {
@@ -736,6 +748,7 @@ func (coordinator *Coordinator) executeRouteRound(
 					onlyDeferred:         attempted > 0 && onlyDeferred,
 					sawRawHTTP429:        sawRawHTTP429,
 					concurrencyExhausted: errors.Is(err, accountrouting.ErrConcurrencyExhausted) || admissionSaturated,
+					admissionRejection:   admissionRejection,
 				}, nil
 			}
 			// 征召中断发生在任何写出之前，已记录的真实上游失败仍然可交付。
@@ -785,6 +798,7 @@ func (coordinator *Coordinator) executeRouteRound(
 			continue
 		}
 		if rejection, ok := admission.AsRejection(err); ok {
+			admissionRejection = rejection
 			// 账号/模型自身满额：换下一个候选账号，不算一次上游尝试。
 			if rejection.IsOwnAccountSaturated() {
 				admissionSaturated = true
@@ -794,6 +808,7 @@ func (coordinator *Coordinator) executeRouteRound(
 						onlyDeferred:         attempted > 0 && onlyDeferred,
 						sawRawHTTP429:        sawRawHTTP429,
 						concurrencyExhausted: true,
+						admissionRejection:   rejection,
 					}, nil
 				}
 				continue
@@ -804,6 +819,7 @@ func (coordinator *Coordinator) executeRouteRound(
 				onlyDeferred:         attempted > 0 && onlyDeferred,
 				sawRawHTTP429:        sawRawHTTP429,
 				concurrencyExhausted: true,
+				admissionRejection:   rejection,
 			}, nil
 		}
 		attempted++

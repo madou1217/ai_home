@@ -1,9 +1,9 @@
-// Package admission 实现网关上真正生效的并发准入：系统/Key/账号/账号+模型
-// 四层天花板、有界 FIFO 等待队列与饱和账号观测。
+// Package admission 实现网关上真正生效的准入：系统/Key/账号/账号+模型四层并发
+// 天花板、Key/账号的 RPM/TPM/每日 token 速率上限、有界 FIFO 等待队列与饱和账号观测。
 //
-// 分层：core/concurrency 只提供上限解析（纯函数）；本包持有运行态计数、队列和
-// 热更新配置；传输层只负责在真实上游调用前后 Acquire/Release，并把拒绝映射成
-// 统一的 429 + Retry-After 契约。
+// 分层：core/concurrency 只提供上限解析与限流窗口契约（纯函数/接口）；本包持有运行态
+// 计数、队列和热更新配置；传输层只负责在真实上游调用前后 Acquire/Release，并把拒绝
+// 映射成统一的 429 + Retry-After 契约。
 package admission
 
 import (
@@ -28,6 +28,16 @@ const (
 	ReasonWaitTimeout Reason = "wait_timeout"
 	// ReasonCanceled 表示等待期间客户端取消。
 	ReasonCanceled Reason = "canceled"
+	// ReasonKeyRPM 表示 Key 的每分钟请求上限已满。
+	ReasonKeyRPM Reason = "key_rpm_limit"
+	// ReasonKeyTPM 表示 Key 的每分钟 token 上限已满。
+	ReasonKeyTPM Reason = "key_tpm_limit"
+	// ReasonKeyDailyTokens 表示 Key 的每日 token 上限已用完。
+	ReasonKeyDailyTokens Reason = "key_daily_token_limit"
+	// ReasonAccountRPM 表示账号的每分钟请求上限已满；调用方应换号。
+	ReasonAccountRPM Reason = "account_rpm_limit"
+	// ReasonAccountTPM 表示账号的每分钟 token 上限已满；调用方应换号。
+	ReasonAccountTPM Reason = "account_tpm_limit"
 )
 
 // Rejection 是准入拒绝的强类型错误。
@@ -61,12 +71,17 @@ func (rejection *Rejection) RetryAfterSeconds() int {
 
 // IsOwnAccountSaturated 报告拒绝是否只因为目标账号/模型自身满额。
 //
-// 这类拒绝不应继续排队等待：同一请求换一个账号可能马上就有容量。
+// 这类拒绝不应继续排队等待：同一请求换一个账号可能马上就有容量。账号级速率
+// 上限同理属于账号自身属性，换号可能绕开。
 func (rejection *Rejection) IsOwnAccountSaturated() bool {
 	if rejection == nil {
 		return false
 	}
-	return rejection.Reason == ReasonAccountSaturated || rejection.Reason == ReasonModelSaturated
+	switch rejection.Reason {
+	case ReasonAccountSaturated, ReasonModelSaturated, ReasonAccountRPM, ReasonAccountTPM:
+		return true
+	}
+	return false
 }
 
 // AsRejection 从错误链上取出准入拒绝。

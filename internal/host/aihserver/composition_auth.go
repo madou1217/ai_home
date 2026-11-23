@@ -54,6 +54,7 @@ type accountAuthInputs struct {
 	jobRegistrar   accountauth.Registrar
 	reauth         accountauth.Reauthenticator
 	tokenEvents    *tokenEventBus
+	loginEgress    accountauth.LoginEgress
 }
 
 // accountAuthRuntime 是账号管理与登录作业的装配结果。
@@ -130,8 +131,9 @@ func newAccountAuthRuntime(inputs accountAuthInputs) (*accountAuthRuntime, error
 		Decoder:    inputs.decoder,
 		Registrar:  inputs.jobRegistrar,
 		Reauth:     inputs.reauth,
-		Clock:      time.Now,
-		GenerateID: accountauth.NewRandomJobID,
+		Clock:       time.Now,
+		GenerateID:  accountauth.NewRandomJobID,
+		LoginEgress: inputs.loginEgress,
 		// 公开快照落 aih.db：重启后仍能查询 Job 状态；未完成 Job 由 Rehydrate 标成 expired
 		// （state/PKCE 只在内存，重启后无法继续，冒充 pending 会让前端一直等）。
 		JobStore:  inputs.store,

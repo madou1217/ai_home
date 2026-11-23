@@ -19,6 +19,13 @@ func parseCallback(
 	if rawCallback == "" || len(rawCallback) > maxCallbackBytes {
 		return "", accountauth.ErrInvalidCallback
 	}
+	// 允许只粘贴 code：WebUI 的作业已经绑定唯一的 state，换码失败由 PKCE 兜底。
+	if !strings.Contains(rawCallback, "://") {
+		if !validSecret(strings.TrimSpace(rawCallback)) {
+			return "", accountauth.ErrInvalidCallback
+		}
+		return strings.TrimSpace(rawCallback), nil
+	}
 	callback, err := url.Parse(rawCallback)
 	expected, expectedErr := url.Parse(expectedRedirect)
 	if err != nil ||
@@ -32,7 +39,8 @@ func parseCallback(
 	if err != nil {
 		return "", accountauth.ErrInvalidCallback
 	}
-	if !onlyAllowedKeys(query, "code", "state", "scope", "error", "error_description") {
+	// 未知查询键忽略（浏览器/上游可能追加非敏感参数）；已知键仍要求唯一。
+	if !uniqueKnownKeys(query, "code", "state", "scope", "error", "error_description") {
 		return "", accountauth.ErrInvalidCallback
 	}
 	state, valid := singleValue(query, "state")
@@ -52,20 +60,31 @@ func parseCallback(
 }
 
 // sameCallbackTarget 比较 scheme、host 和 path，不接受重定向到其他目标。
+// localhost / 127.0.0.1 / ::1 视为同一个回环目标；换码仍使用官方 redirect_uri。
 func sameCallbackTarget(callback *url.URL, expected *url.URL) bool {
-	return strings.EqualFold(callback.Scheme, expected.Scheme) &&
-		strings.EqualFold(callback.Host, expected.Host) &&
-		callback.Path == expected.Path
+	if !strings.EqualFold(callback.Scheme, expected.Scheme) || callback.Path != expected.Path {
+		return false
+	}
+	if strings.EqualFold(callback.Host, expected.Host) {
+		return true
+	}
+	return callback.Port() == expected.Port() &&
+		isLoopbackCallbackHost(callback.Hostname()) &&
+		isLoopbackCallbackHost(expected.Hostname())
 }
 
-// onlyAllowedKeys 拒绝回调中的历史兼容字段和重复键。
-func onlyAllowedKeys(query url.Values, allowed ...string) bool {
-	accepted := make(map[string]struct{}, len(allowed))
-	for _, key := range allowed {
-		accepted[key] = struct{}{}
+func isLoopbackCallbackHost(host string) bool {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
 	}
-	for key, values := range query {
-		if _, found := accepted[key]; !found || len(values) != 1 {
+	return false
+}
+
+// uniqueKnownKeys 只检查已知键的唯一性；未知键不影响换码。
+func uniqueKnownKeys(query url.Values, known ...string) bool {
+	for _, key := range known {
+		if values, found := query[key]; found && len(values) != 1 {
 			return false
 		}
 	}

@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountegress"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -58,6 +60,7 @@ type Service struct {
 	aliasPool     AliasPoolWriter
 	profileBinder func(ctx context.Context, providerID, accountRef, jobID string) error
 	onJobSnapshot func(Job)
+	loginEgress   LoginEgress
 	settings      serviceSettings
 }
 
@@ -117,6 +120,7 @@ func newService(
 		aliasPool:     dependencies.AliasPool,
 		profileBinder: dependencies.ProfileBinder,
 		onJobSnapshot: dependencies.OnJobSnapshot,
+		loginEgress:   dependencies.LoginEgress,
 		settings:      settings,
 	}, nil
 }
@@ -489,6 +493,19 @@ func (service *Service) Complete(
 		return claim.replay, nil
 	}
 	claimed := claim.job
+	if service.loginEgress != nil {
+		proxyURL, release, egressErr := service.loginEgress.Acquire(ctx, claimed.providerID)
+		if egressErr != nil {
+			log.Printf("accountauth: 登录出口不可用 job=%s provider=%s: %v", jobID, claimed.providerID, egressErr)
+			return service.failJob(jobID, "provider_unavailable"), ErrProviderUnavailable
+		}
+		if release != nil {
+			defer release()
+		}
+		if proxyURL != "" {
+			ctx = accountegress.WithDecision(ctx, accountegress.Decision{Bound: true, ProxyURL: proxyURL})
+		}
+	}
 	artifacts, err := claimed.flow.Exchange(ctx, callback)
 	if err != nil {
 		// 公开快照只暴露稳定错误码（provider_unavailable 等），换码真正失败的原因
@@ -501,6 +518,9 @@ func (service *Service) Complete(
 			failureCode(err),
 			err,
 		)
+		if errors.Is(err, ErrInvalidCallback) {
+			log.Printf("accountauth: 回调形状（脱敏） job=%s %s", jobID, callbackShape(callback))
+		}
 		return service.failJob(jobID, failureCode(err)), err
 	}
 	return service.finishClaim(ctx, claimed, artifacts)
@@ -1109,4 +1129,26 @@ type claimedJob struct {
 	purpose               Purpose
 	targetRef             accountcore.AccountRef
 	aliasPoolParticipates *bool
+}
+
+// callbackShape 生成脱敏的回调形状，用于排查 invalid_callback；不记录任何值。
+func callbackShape(callback string) string {
+	trimmed := strings.TrimSpace(callback)
+	if len(trimmed) > 512 {
+		trimmed = trimmed[:512]
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Sprintf("unparsable len=%d", len(trimmed))
+	}
+	if parsed.Scheme == "" && parsed.Host == "" {
+		return fmt.Sprintf("bare-input len=%d looks_code=%t", len(trimmed), !strings.ContainsAny(trimmed, " /?#"))
+	}
+	keys := make([]string, 0, len(parsed.Query()))
+	for key, values := range parsed.Query() {
+		keys = append(keys, fmt.Sprintf("%s:len=%d", key, len(strings.Join(values, ""))))
+	}
+	sort.Strings(keys)
+	return fmt.Sprintf("scheme=%s host=%s path=%s fragment=%t keys=[%s]",
+		parsed.Scheme, parsed.Host, parsed.Path, parsed.Fragment != "", strings.Join(keys, ","))
 }

@@ -155,7 +155,9 @@ import type {
   FailureSemanticSignal,
   FailureProvenanceEntry,
   ClientKeyRow,
-  ClientKeyLimits
+  ClientKeyLimits,
+  AccountConcurrencyLimit,
+  EffectiveConcurrency
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 import type {
@@ -3432,10 +3434,44 @@ export const clientKeysAPI = {
     const response = await api.post<{ ok: boolean; secret: string }>(`/webui/client-keys/${encodeURIComponent(id)}/rotate`);
     return response.data.secret;
   },
-  effectiveConcurrency: async (params: { provider?: string; account?: string; model?: string; key?: string }): Promise<{
-    systemMax: number; accountMax: number; keyMax: number; effective: number; enforced: boolean;
-  }> => {
-    const response = await api.get('/webui/client-keys/effective-concurrency', { params });
+  effectiveConcurrency: async (params: { provider?: string; account?: string; model?: string; key?: string }): Promise<EffectiveConcurrency> => {
+    const response = await api.get<EffectiveConcurrency>('/webui/client-keys/effective-concurrency', { params });
     return response.data;
+  }
+};
+
+/** 账号覆盖在 Go 端由无 json tag 的结构体编码，这里统一收口为前端小驼峰。 */
+const normalizeAccountLimit = (raw: Record<string, unknown> | undefined | null): AccountConcurrencyLimit => ({
+  accountRef: String(raw?.accountRef ?? raw?.AccountRef ?? ''),
+  modelId: String(raw?.modelId ?? raw?.ModelID ?? ''),
+  maxConcurrency: Number(raw?.maxConcurrency ?? raw?.MaxConcurrency ?? 0),
+  rpmLimit: Number(raw?.rpmLimit ?? raw?.RPMLimit ?? 0),
+  tpmLimit: Number(raw?.tpmLimit ?? raw?.TPMLimit ?? 0)
+});
+
+/** 并发限流：账号覆盖读写与生效值预览（本轮只存储/预览，尚未拦截）。 */
+export const concurrencyAPI = {
+  listAccountLimits: async (provider: string, accountRef: string): Promise<AccountConcurrencyLimit[]> => {
+    const response = await api.get<{ ok: boolean; limits: Array<Record<string, unknown>> }>(
+      `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/concurrency`
+    );
+    return (response.data.limits || []).map(normalizeAccountLimit);
+  },
+  setAccountLimit: async (
+    provider: string,
+    accountRef: string,
+    payload: { modelId?: string; maxConcurrency: number; rpmLimit: number; tpmLimit: number }
+  ): Promise<AccountConcurrencyLimit | null> => {
+    const response = await api.put<{ ok: boolean; limit?: Record<string, unknown> }>(
+      `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/concurrency`,
+      { modelId: payload.modelId || '', maxConcurrency: payload.maxConcurrency, rpmLimit: payload.rpmLimit, tpmLimit: payload.tpmLimit }
+    );
+    return response.data.limit ? normalizeAccountLimit(response.data.limit) : null;
+  },
+  deleteAccountLimit: async (provider: string, accountRef: string, modelId: string): Promise<void> => {
+    await api.put(
+      `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/concurrency`,
+      { modelId: modelId || '', delete: true }
+    );
   }
 };

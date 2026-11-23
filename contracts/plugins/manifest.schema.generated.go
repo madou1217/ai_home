@@ -42,7 +42,25 @@ const ManifestSchemaJSON = `{
           "capability": { "type": "string", "maxLength": 64 },
           "version": { "type": "integer", "minimum": 1 },
           "order": { "type": "integer", "minimum": -1000000, "maximum": 1000000 },
-          "failurePolicy": { "enum": ["deny", "delegate"] }
+          "failurePolicy": { "enum": ["deny", "delegate"] },
+          "scope": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "providers": {
+                "type": "array", "maxItems": 64, "uniqueItems": true,
+                "items": { "type": "string", "maxLength": 128, "pattern": "^(\\*|[a-z0-9][a-z0-9._-]{0,127})$" }
+              },
+              "hosts": {
+                "type": "array", "maxItems": 64, "uniqueItems": true,
+                "items": { "type": "string", "maxLength": 128, "pattern": "^(\\*|[a-z0-9][a-z0-9._-]{0,127})$" }
+              },
+              "models": {
+                "type": "array", "maxItems": 64, "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+              }
+            }
+          }
         }
       }
     }

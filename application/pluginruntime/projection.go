@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path"
 	"sort"
 	"sync"
 	"time"
@@ -18,13 +19,61 @@ import (
 // ErrInvalidProjection 表示推送的投影结构无效。
 var ErrInvalidProjection = errors.New("插件发布投影无效")
 
+// ContributionScope 声明贡献项只在哪些 Provider / Host / 模型上生效。
+// 空维度表示不限制；调用方拿不到对应值时也不做过滤，避免静默跳过插件。
+type ContributionScope struct {
+	Providers []string `json:"providers,omitempty"`
+	Hosts     []string `json:"hosts,omitempty"`
+	Models    []string `json:"models,omitempty"`
+}
+
+func (scope *ContributionScope) empty() bool {
+	return scope == nil || (len(scope.Providers) == 0 && len(scope.Hosts) == 0 && len(scope.Models) == 0)
+}
+
 // Contribution 是投影里的一个贡献项（与 Node 快照字段一致）。
 type Contribution struct {
-	ID            string `json:"id"`
-	Capability    string `json:"capability"`
-	Order         int    `json:"order"`
-	FailurePolicy string `json:"failurePolicy"`
-	InstanceID    string `json:"instanceId"`
+	ID            string             `json:"id"`
+	Capability    string             `json:"capability"`
+	Order         int                `json:"order"`
+	FailurePolicy string             `json:"failurePolicy"`
+	InstanceID    string             `json:"instanceId"`
+	Scope         *ContributionScope `json:"scope,omitempty"`
+}
+
+// Applies 报告贡献项是否适用于本次调用。provider/host 为精确匹配（支持 *）；
+// model 支持 path.Match 通配（例如 gpt-*）。对应维度为空时不限制。
+func (item Contribution) Applies(provider, host, model string) bool {
+	if item.Scope.empty() {
+		return true
+	}
+	if provider != "" && !matchesScopeList(item.Scope.Providers, provider, false) {
+		return false
+	}
+	if host != "" && !matchesScopeList(item.Scope.Hosts, host, false) {
+		return false
+	}
+	if model != "" && !matchesScopeList(item.Scope.Models, model, true) {
+		return false
+	}
+	return true
+}
+
+func matchesScopeList(patterns []string, value string, allowGlob bool) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, pattern := range patterns {
+		if pattern == "*" || pattern == value {
+			return true
+		}
+		if allowGlob {
+			if matched, err := path.Match(pattern, value); err == nil && matched {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Projection 是一个代次的不可变贡献快照。
@@ -33,11 +82,16 @@ type Projection struct {
 	Contributions []Contribution `json:"contributions"`
 }
 
-// ByCapability 返回某能力的贡献项，按 order、instanceId、id 稳定排序（与 Node buildSnapshot 一致）。
+// ByCapability 返回某能力的全部贡献项，按 order、instanceId、id 稳定排序（与 Node buildSnapshot 一致）。
 func (projection Projection) ByCapability(capability string) []Contribution {
+	return projection.ByCapabilityFor(capability, "", "", "")
+}
+
+// ByCapabilityFor 返回某能力且适用于给定 Provider / Host / 模型的贡献项。
+func (projection Projection) ByCapabilityFor(capability, provider, host, model string) []Contribution {
 	items := make([]Contribution, 0)
 	for _, item := range projection.Contributions {
-		if item.Capability == capability {
+		if item.Capability == capability && item.Applies(provider, host, model) {
 			items = append(items, item)
 		}
 	}

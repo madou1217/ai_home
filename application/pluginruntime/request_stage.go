@@ -76,8 +76,13 @@ type RequestOutcome struct {
 // lib/plugins/gateway/request-stage.js 一致：每一步之后核对身份字段（合同里的冻结清单与
 // 所有 encrypted_content）；失败按 failurePolicy：deny 让请求失败，delegate 跳过该插件。
 func RunRequestStage(ctx context.Context, invoker Invoker, projection Projection, input RequestInput) (RequestOutcome, error) {
-	chain := projection.ByCapability(CapabilityGatewayRequest)
 	original := input.Body
+	var probe struct {
+		Model any `json:"model"`
+	}
+	_ = json.Unmarshal(original, &probe)
+	modelName, _ := probe.Model.(string)
+	chain := projection.ByCapabilityFor(CapabilityGatewayRequest, "", "", modelName)
 	if len(chain) == 0 {
 		return RequestOutcome{Body: original}, nil
 	}

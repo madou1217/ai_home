@@ -163,7 +163,8 @@ func (s *Service) ListAccountSources(
 	sources := make([]AccountSource, 0)
 	warnings := make([]AccountWarning, 0)
 	seenIDs := make(map[string]struct{})
-	chain := lease.Snapshot.Projection.ByCapability(AccountSourceCapability)
+	host, _ := opts.Host.(string)
+	chain := lease.Snapshot.Projection.ByCapabilityFor(AccountSourceCapability, normalizedProvider, host, "")
 	for _, item := range chain {
 		raw, invokeErr := s.runtime.Invoke(ctx, lease.Generation, item.ID, map[string]any{
 			"schemaVersion": AccountSchemaVersion,
@@ -280,7 +281,7 @@ func (s *Service) ImportAccountSource(
 	if !target.DirectImport {
 		return AccountImportResult{OK: false, Code: "auth_source_requires_login_job", Source: target}, nil
 	}
-	chain := lease.Snapshot.Projection.ByCapability(AccountSourceCapability)
+	chain := lease.Snapshot.Projection.ByCapabilityFor(AccountSourceCapability, provider, "", "")
 	var contribFound bool
 	for _, item := range chain {
 		if item.ID == target.PluginContributionID {
@@ -394,7 +395,7 @@ func (s *Service) RefreshAccount(
 	}
 	defer lease.Release()
 
-	chain := lease.Snapshot.Projection.ByCapability(AccountRefreshCapability)
+	chain := lease.Snapshot.Projection.ByCapabilityFor(AccountRefreshCapability, provider, "", "")
 	timeout := accountTimeout(req.TimeoutMs)
 	for _, item := range chain {
 		matchRaw, matchErr := s.runtime.Invoke(ctx, lease.Generation, item.ID, map[string]any{
@@ -556,7 +557,7 @@ func (s *Service) MaterializeAccount(ctx context.Context, req AccountMaterialize
 	}
 	defer lease.Release()
 
-	chain := lease.Snapshot.Projection.ByCapability(AccountMaterializeCapability)
+	chain := lease.Snapshot.Projection.ByCapabilityFor(AccountMaterializeCapability, provider, "", "")
 	timeout := accountTimeout(req.TimeoutMs)
 	accountRef := strings.TrimSpace(req.AccountRef)
 	for _, item := range chain {
@@ -630,7 +631,7 @@ func (s *Service) MaterializeAccount(ctx context.Context, req AccountMaterialize
 }
 
 func findLoginContribution(projection appplugins.Projection, src AccountSource) (*appplugins.Contribution, error) {
-	chain := projection.ByCapability(AccountLoginCapability)
+	chain := projection.ByCapabilityFor(AccountLoginCapability, src.Provider, "", "")
 	if len(chain) == 0 {
 		return nil, nil
 	}
@@ -753,7 +754,7 @@ func (s *Service) materializeCredential(
 			return files, nil, err
 		}
 	}
-	chain := lease.Snapshot.Projection.ByCapability(AccountMaterializeCapability)
+	chain := lease.Snapshot.Projection.ByCapabilityFor(AccountMaterializeCapability, provider, "", "")
 	for _, item := range chain {
 		if instanceID != "" && item.InstanceID != instanceID {
 			continue

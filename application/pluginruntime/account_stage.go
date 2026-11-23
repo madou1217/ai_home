@@ -74,7 +74,7 @@ func (pin *Pin) Prefer(ctx context.Context, providerID string, modelID string, c
 	if pin == nil || pin.observer == nil {
 		return nil, nil
 	}
-	chain := pin.Projection.ByCapability(CapabilityGatewayAccount)
+	chain := pin.Projection.ByCapabilityFor(CapabilityGatewayAccount, providerID, "", modelID)
 	if len(chain) == 0 || len(candidates) == 0 {
 		return nil, nil
 	}

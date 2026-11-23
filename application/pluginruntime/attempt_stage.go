@@ -195,7 +195,7 @@ func newAttemptState(invoker Invoker, projection Projection, request AttemptRequ
 		invoker:    invoker,
 		generation: projection.Generation,
 		request:    request,
-		chain:      projection.ByCapability(CapabilityGatewayAttempt),
+		chain:      projection.ByCapabilityFor(CapabilityGatewayAttempt, request.Provider, "", request.Model),
 		budget:     budget,
 		deadline:   deadline,
 	}

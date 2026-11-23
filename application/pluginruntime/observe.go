@@ -161,7 +161,9 @@ func (observer *Observer) deliver(item observation) {
 	}
 	event["provider"] = observer.accounts.get(item.accountRef).Provider
 	event["accountRef"] = observer.registry.NodeAccountRef(item.accountRef)
-	for _, contribution := range item.projection.ByCapability(CapabilityObserve) {
+	provider, _ := event["provider"].(string)
+	model, _ := event["model"].(string)
+	for _, contribution := range item.projection.ByCapabilityFor(CapabilityObserve, provider, "", model) {
 		ctx, cancel := context.WithTimeout(context.Background(), observeInvokeTimeout)
 		_, err := observer.invoker.Invoke(ctx, item.generation, contribution.ID, event, observeInvokeTimeout)
 		cancel()

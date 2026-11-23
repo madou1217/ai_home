@@ -1185,6 +1185,7 @@ func buildProjectionSnapshot(generation int64, plugins []PluginSpec) appplugins.
 				Order:         order,
 				FailurePolicy: policy,
 				InstanceID:    p.InstanceID,
+				Scope:         contributionScope(contrib),
 			})
 		}
 	}
@@ -1201,6 +1202,35 @@ func buildProjectionSnapshot(generation int64, plugins []PluginSpec) appplugins.
 		Generation:    generation,
 		Contributions: items,
 	}
+}
+
+// contributionScope 读取清单里的声明式作用域；空作用域返回 nil（不限制）。
+func contributionScope(contribution map[string]any) *appplugins.ContributionScope {
+	raw, ok := contribution["scope"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	scope := &appplugins.ContributionScope{
+		Providers: stringListField(raw, "providers"),
+		Hosts:     stringListField(raw, "hosts"),
+		Models:    stringListField(raw, "models"),
+	}
+	if len(scope.Providers) == 0 && len(scope.Hosts) == 0 && len(scope.Models) == 0 {
+		return nil
+	}
+	return scope
+}
+
+func stringListField(source map[string]any, key string) []string {
+	raw, _ := source[key].([]any)
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		value, _ := item.(string)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func formatDiagnosticsSummary(diags []PrepareDiagnostic) string {

@@ -296,6 +296,11 @@ func buildTestGoCLI(t *testing.T) (string, string) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build aih-go: %v\n%s", err, output)
 	}
+	// 桌面 Provider 还会从仓库根读取 lib/runtime（CodeBuddy IDE bridge），
+	// 临时仓库用符号链接保持与真实工作树一致，避免只补 helper 后另一条路径缺失。
+	if err := os.Symlink(filepath.Join(root, "lib"), filepath.Join(repoRoot, "lib")); err != nil {
+		t.Fatalf("link repository lib: %v", err)
+	}
 	return repoRoot, target
 }
 
@@ -776,6 +781,7 @@ func TestNativeLauncherAgyKimiClaudeCodebuddyAndKiroStrategies(t *testing.T) {
 	aiHome := t.TempDir()
 	hostHome := t.TempDir()
 	cat := newTestCatalog(t)
+	repoRoot, _ := buildTestGoCLI(t)
 	runner := newFakeCommandRunner()
 	scanner := &fakeProcessScanner{}
 	kimiSessions := &fakeKimiSessionPort{found: false}
@@ -829,6 +835,7 @@ func TestNativeLauncherAgyKimiClaudeCodebuddyAndKiroStrategies(t *testing.T) {
 		AIHomeDir:      aiHome,
 		HostHomeDir:    hostHome,
 		Platform:       "darwin",
+		RepoRoot:       repoRoot,
 		Catalog:        cat,
 		Accounts:       accounts,
 		Runner:         runner,

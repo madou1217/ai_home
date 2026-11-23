@@ -361,6 +361,9 @@ func TestOpenManagedDesktopAppClaudeGateway(t *testing.T) {
 	tmp := t.TempDir()
 	hostHome := filepath.Join(tmp, "home")
 	aiHome := filepath.Join(tmp, "aihome")
+	// Claude Desktop 的 3p 网关需要一个真实 aih-go helper；临时构建并通过
+	// AIH_ROOT 暴露，保证干净检出（无 bin/native）也能运行。
+	repoRoot := buildTestAihGoHelper(t)
 	if err := os.MkdirAll(aiHome, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +395,7 @@ func TestOpenManagedDesktopAppClaudeGateway(t *testing.T) {
 		Platform:    "darwin",
 		HostHomeDir: hostHome,
 		AIHomeDir:   aiHome,
-		Env:         map[string]string{"HOME": hostHome},
+		Env:         map[string]string{"HOME": hostHome, "AIH_ROOT": repoRoot},
 		Executor:    execStub,
 		SpawnDetached: func(command string, args []string, env map[string]string) error {
 			spawnedCmd = command

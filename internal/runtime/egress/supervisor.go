@@ -954,6 +954,9 @@ func (m *Manager) Start(ctx context.Context) error {
 				case <-daemonCtx.Done():
 					return
 				case <-ticker.C:
+					// 池未就绪时也要检查订阅/节点变化：否则新建或刚清空订阅后，
+					// 池永远停在旧配置/未启动状态。
+					m.reloadPoolIfChanged(daemonCtx)
 					if !m.IsPoolReady() {
 						continue
 					}

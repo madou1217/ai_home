@@ -175,6 +175,18 @@ AIH 侧（`app_kv: ssh_connections`，本机 4 条）：
 - 明确写不进去的情况：`password` 认证、`egressConnectionId`、`reverseTunnel` —— 必须显式告知用户"这条在 Desktop 里连不了/会绕开出口"，
   不能静默降级（符合仓库的"禁止静默失败"原则）。
 - 不要直接写 `.codex-global-state.json`：App 运行中会被内存覆盖，且属于未文档化的私有格式。
+  （写入必须"先退出 App → 写 → 再启动"；实现在 §9 有真机验证，但仍不建议作为默认路径。）
+
+### 6.4 实测后的修正：Desktop 侧的真实连接契约（见 §9）
+
+真机验证推翻了三条早期假设，落地必须按实测来：
+
+1. **ssh config 里的别名不会自动变成连接**。`loadRemoteConnections()` 只从已保存的
+   `codex-managed-remote-connections` 出发；`eeu(~/.ssh/config)` 的结果只用于
+   "已有 remote-projects 时补回连接"和设置页Discover，不进连接列表。
+2. **深链 `?name=` 只打开表单**，不会直接建连接（实测路由到达、状态文件无新增条目）。
+3. **连接必须先有一条 remote project 才能真正连上**；而远端连接要求桌面端与远端
+   **登录同一个 ChatGPT 账号**，否则停在 `login-required`。
 
 ### 6.3 Codex → AIH：只做"导入"，不做"双向同步"
 
@@ -185,8 +197,9 @@ AIH 侧（`app_kv: ssh_connections`，本机 4 条）：
 
 ## 7. 未验证 / 风险清单
 
-- Desktop 深链 `codex://settings/connections/ssh/add` **未在本机验证**：本机没有安装 ChatGPT 桌面端
-  （LaunchServices 只注册了 `com.openai.codex.cli`，`com.openai.chat` 目录下只有 pairing 扩展）。
+- Desktop 连接**端到端未跑通**：桌面端未登录 ChatGPT（`status=432 Workspace routing is unavailable`），
+  SSH 阶段与远端 app-server 都起来了，最终停在 `error code=login-required`。要跑通需登录 ChatGPT 账号，
+  且远端要有同一账号（AIH 现有 codex 账号都是 `api_key` 类型，没有 ChatGPT OAuth，无法直接复用）。
 - `environments.toml` 属于未文档化接口（官方文档只有 `environment/info` 这一个实验性方法），
   字段可能随版本变化 → 需要做"版本探测 + 解析失败不阻断 CLI 启动"的降级。
 - `url` 模式要求远端常驻 `exec-server`，AIH 需要负责其生命周期（复用 `sshtunnel` 的退避/探活思路）。
@@ -204,3 +217,78 @@ CODEX_HOME=$(mktemp -d); printf 'default = "b"\n[[environments]]\nid = "b"\nprog
 ssh aws 'codex --version'                                        # codex-cli 0.171.0
 ssh -o BatchMode=yes -T aws codex exec-server --listen stdio     # 初始化后 process/start 返回 AIH_EXEC_OK
 ```
+
+## 9. Desktop 壳真机验证（2026-11-24）
+
+### 9.1 安装路径（走 AIH 自己的 WebUI，不是手工 brew）
+
+`/v1/management/webui/toolkit/apps` 里 `codex-desktop`（type=desktop）未安装；计划接口
+`POST .../toolkit/apps/plan` 返回 `brew install --cask chatgpt`。
+
+实测踩到两个坑：
+- 任务队列在内存里，**服务重启后 job 记录丢失**（查询 404 `job_not_found`），要重新发起；
+- cask 记录存在但 `/Applications/ChatGPT.app` 已被删除 → brew 报
+  `It seems the App source '/Applications/ChatGPT.app' is not there`。先
+  `brew uninstall --cask --force chatgpt` 再装即可，之后 WebUI 正确显示
+  `installed: true, version 26.1117.41037`。
+
+### 9.2 状态文件与键名（从 app.asar 解包实证）
+
+主进程 `.vite/build/early-bootstrap*.js`，状态文件 `~/.codex/.codex-global-state.json`：
+
+| 键 | 含义 |
+| --- | --- |
+| `codex-managed-remote-connections` | 连接列表（**唯一**的连接来源） |
+| `remote-projects` | 远端项目（hostId + 目录），连接恢复以它为前提 |
+| `remote-connection-auto-connect-by-host-id` | 按 hostId 的自动连接开关 |
+| `selected-remote-host-id` / `active-remote-project-id` / `project-order` | 选择与排序 |
+
+连接对象两种形态：
+
+```js
+// source=discovered —— 引用 ~/.ssh/config 别名
+{hostId:"remote-ssh-discovered:<encodeURIComponent(alias)>", displayName, source:"discovered",
+ alias:"aws", hostname:null, sshPort:null, identity:null}
+// source=codex-managed —— 直接 host/port/identity
+{hostId:"remote-ssh-codex-managed:<uuid>", displayName, source:"codex-managed",
+ alias:null, hostname:"host", sshPort:22, identity:"~/.ssh/id_x"}
+```
+
+hostId 生成：`remote-ssh-discovered:` + `encodeURIComponent(alias)`（实测 `aws` → `remote-ssh-discovered:aws`）。
+
+别名发现算法（`eeu`/`eeh`，已按源码复刻并跑真实配置）：
+- 入口固定 `~/.ssh/config`；支持 `Include` 递归（相对路径按入口所在目录解析，支持 glob）；
+- 每个 `Host` **只取第一个别名**；跳过含 `!*?[]` 的通配别名；过滤 `colima`；
+- 随后对每个别名执行 `ssh -G -F <config> <alias>` 解析真实 hostname/port/identity，
+  hostname 为 `github.com` 的直接排除。
+- 用本机真实配置复刻结果：收集 `["colima","aws","github.com"]` → 过滤后 `["aws"]`。
+
+### 9.3 实测结论（关键）
+
+写入 `codex-managed-remote-connections`（`aws`，discovered 形态）+ 自动连接开关，
+**退出 App 后写入再启动**，App 日志确认：
+
+```
+load_completed savedRemoteConnectionCount=1
+ssh_websocket_v0.shell_env_load_completed sshAlias=aws sshAttempted=true
+  sshHost=ec2-16-178-55-97.ap-southeast-2.compute.amazonaws.com sshPort=22 status=loaded
+remote_connections.connection_state_changed hostId=remote-ssh-discovered:aws state=error
+  error={"code":"login-required"}
+```
+
+即：**AIH 的连接事实可以被 Desktop 直接消费**，解析别名、起远端 app-server 都成功；
+唯一关卡是桌面端与远端的 ChatGPT 账号登录。远端 app-server 报
+`appServerVersion=0.171.0-alpha.13`（AWS 上装的就是 0.171.0）。
+
+另有三条与预期不同的行为，落地时必须处理：
+1. `refresh_completed discoveredConnectionCount=0`：ssh config 别名**不会**自动进连接列表，
+   `loadRemoteConnections()` 只从已保存连接出发。
+2. 深链 `codex://settings/connections/ssh/add?name=aws` 只把界面路由到
+   `/settings/connections/ssh/add?name=aws`（日志 `ownerRoutePath` 证实），**不落连接**。
+3. 没有 `remote-projects` 时 `remote_project_connection_restore_skipped reason=no_remote_projects`。
+
+### 9.4 逆向得到的 App 内部错误码分类（用于把失败原因如实透出）
+
+`remote-codex-not-found` / `login-required` / `update-required` / `restart-required` /
+`connection-failed`。AIH 若接管这块 UI，应按这套分类映射，而不是笼统报"连接失败"。
+

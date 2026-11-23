@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
@@ -87,6 +88,39 @@ func NewConnectorAgentTerminalHandler(dependencies ConnectorAgentTerminalDepende
 		launcher:         dependencies.Launcher,
 		preparer:         dependencies.Preparer,
 	}, nil
+}
+
+// claudeCustomHeadersEnv 是 Claude Code 支持的附加请求头环境变量（换行分隔）。
+const claudeCustomHeadersEnv = "ANTHROPIC_CUSTOM_HEADERS"
+
+// appendCustomHeader 把一条请求头并入环境里的 ANTHROPIC_CUSTOM_HEADERS。
+// 账号钉选也用同一个变量，直接追加第二个同名 env 会让先写入的那条失效。
+func appendCustomHeader(env []string, name, value string) []string {
+	name = strings.TrimSpace(name)
+	value = strings.TrimSpace(value)
+	if name == "" || value == "" {
+		return env
+	}
+	line := name + ": " + value
+	result := make([]string, 0, len(env)+1)
+	merged := false
+	for _, item := range env {
+		key, existing, found := strings.Cut(item, "=")
+		if !found || key != claudeCustomHeadersEnv {
+			result = append(result, item)
+			continue
+		}
+		merged = true
+		if strings.TrimSpace(existing) == "" {
+			result = append(result, claudeCustomHeadersEnv+"="+line)
+			continue
+		}
+		result = append(result, claudeCustomHeadersEnv+"="+existing+"\n"+line)
+	}
+	if !merged {
+		result = append(result, claudeCustomHeadersEnv+"="+line)
+	}
+	return result
 }
 
 func hasEnvKey(env []string, key string) bool {
@@ -262,9 +296,14 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		}
 	}
 	sessionID := remotesessions.NewSessionID()
-	if agent == "codex" {
+	switch agent {
+	case "codex":
 		providerArgs = append(providerArgs, clilaunch.RemoteSessionArguments()...)
 		providerEnv = append(providerEnv, clilaunch.RemoteSessionEnv+"="+sessionID)
+	case "claude":
+		// Claude Code 不展开 env_http_headers，只能在启动时把真实的会话 id
+		// 写进附加请求头。
+		providerEnv = appendCustomHeader(providerEnv, clientkeystats.RemoteSessionHeader, sessionID)
 	}
 	suffix := ""
 	if body.Fresh {

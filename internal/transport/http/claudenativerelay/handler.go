@@ -19,6 +19,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -179,6 +180,11 @@ func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	// Carry the remote execution session id through the whole attempt so usage
+	// recorded on success/failure can be attributed to that session.
+	request = request.WithContext(clientkeystats.WithRemoteSession(
+		request.Context(), request.Header.Get(clientkeystats.RemoteSessionHeader),
+	))
 	if handler == nil ||
 		handler.authorizer == nil ||
 		handler.credentials == nil ||

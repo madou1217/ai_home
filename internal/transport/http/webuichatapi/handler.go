@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -224,6 +225,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 // 这里把两条连接合成一条，因此凡是「还没向客户端写过字节」的失败都以 JSON 错误返回
 // （与历史路由错误形状一致），写过之后才改用 turn.failed 事件。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	// A caller that belongs to a remote execution can carry its session id in the
+	// same header the provider CLIs use, so streamed usage is attributed there.
+	request = request.WithContext(clientkeystats.WithRemoteSession(
+		request.Context(), request.Header.Get(clientkeystats.RemoteSessionHeader),
+	))
 	if !handler.authorizer.Authorized(request) {
 		writeRouteError(response, newRouteError(
 			http.StatusUnauthorized, "chat_runtime_unauthorized", "管理凭据无效", nil,

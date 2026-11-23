@@ -1,13 +1,17 @@
 package clilaunch
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/madou1217/ai_home/application/clientkeystats"
+)
 
 // RemoteSessionEnv carries the remote execution session id into the provider
 // process; RemoteSessionHeader is the request header Codex sends to the AIH
 // gateway so usage can be attributed to that session.
 const (
 	RemoteSessionEnv    = "AIH_REMOTE_SESSION_ID"
-	RemoteSessionHeader = "x-aih-remote-session"
+	RemoteSessionHeader = clientkeystats.RemoteSessionHeader
 )
 
 // RemoteSessionArguments maps the env var onto the managed provider's

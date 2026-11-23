@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
@@ -106,6 +107,11 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	// Carry the remote execution session id through the whole attempt so usage
+	// recorded on success/failure can be attributed to that session.
+	request = request.WithContext(clientkeystats.WithRemoteSession(
+		request.Context(), request.Header.Get(clientkeystats.RemoteSessionHeader),
+	))
 	if !handler.Authorizer.Authorized(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, "unauthorized")

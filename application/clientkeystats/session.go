@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+// RemoteSessionHeader is the request header that carries the remote execution
+// session id from a provider CLI to the inference gateway.
+const RemoteSessionHeader = "x-aih-remote-session"
+
 type remoteSessionContextKey struct{}
 
 // WithRemoteSession attaches the remote execution session id to a request

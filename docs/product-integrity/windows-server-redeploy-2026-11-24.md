@@ -1,73 +1,67 @@
-# Windows 主机 aih-server 重新部署（2026-11-24）
+# Windows 主机 aih-server 正式部署（2026-11-24）
 
-目的：把实验机（`www.desired.cn:22009`，用户 `madou`）上长期运行的手工部署
-aih-server 更新到当前可构建源码，并让 WebUI 可用。
+目的：把实验机（`www.desired.cn:22009`，用户 `madou`）上的 aih-server 用产品
+自带的分发流程正式部署到最新 `main`，并让 WebUI 可用。
 
-## 现状与原因
+## 结果
 
-- 运行中的服务是 11/23 的 `~/.ai_home/bin/aih-server.exe`（74,750,976 字节），
-  由自建计划任务 `AihServerWindows`（wscript → `launch.vbs` → `run.cmd`）启动，
-  命令行为 `--host 127.0.0.1 --port 9527`，没有 `--web-dir`，`/ui/` 一直 404。
-- 机器上同时存在产品安装器创建的 `com.meadeo.ai_home` 任务（指向
-  `pkg/1.0.6-win32-x64-9a1d01f9`），与自建任务重复。
-- 本次没有走 `scripts/deploy-server.js` 的产品包部署：`origin/main` 在
-  `64bf71bf` 之后引用了 `NodeHealthLedger.PreferenceScore`，但该方法只存在于
-  并行会话未提交的 `internal/runtime/egress/health_select.go`，从已推送提交
-  无法构建发行包。部署用的二进制来自当前可编译的工作区（HEAD `0a2477c6`
-  + 未提交的 egress 改动）。
-  **main 修好后应再用 `node scripts/deploy-server.js` 做一次正式包部署。**
+- 部署方式：`node scripts/deploy-server.js --ssh madou@www.desired.cn
+  --ssh-port 22009 --target win32-x64`（从 `origin/main` 构建单文件包 → scp →
+  远端执行 `aih install --bin-dir %LOCALAPPDATA%\aih`）。
+- 最终 `distribution-install.json`：`state=installed`，
+  `releaseVersion=1.0.0`，`sourceSha=2721ac0d87d77f0280e87412138aced1e7f4d413`，
+  `packageRoot=~/.ai_home/pkg/1.0.0-win32-x64-7358e36f`，
+  `binarySha256=dd109729ef311556ea809c99d51bd52cbb1051ec262acf93c1c470731060a690`，
+  `launcherSha256=54e045fe335e26b2f5f30713c641e34271bbb045eef7892a708b3ab4dabe9235`。
+- 服务：计划任务 `com.meadeo.ai_home` 为 Running，`run/aih-server-serve.cmd`
+  指向新包内的 `aih-server.exe --host 127.0.0.1 --web-dir <pkg>/web/dist`；
+  进程 PID 43660 的命令行与之一致。
+- 手工部署遗留的 `AihServerWindows` 任务保持 Disabled，不再与产品任务抢 9527。
+- 验收：`/readyz` 200（`zcode=6` 账号、64 模型、126 路由）；`/ui/` 200；
+  `umi.ed982d8e.js` 200（8,550,145 B）；管理 API 200；
+  `zcode-desktop installed=true, version=4.0.0,
+  path=%LOCALAPPDATA%\Programs\ZCode\ZCode.exe`。
 
-## 产物
+## 部署过程中修复的两个真实缺陷
 
-- 构建：`node scripts/build-go-server.js --platform win32 --arch x64`
-  - `aih-server.exe` SHA-256 `0745be6656b729b020158123b11936621904519c9893dee2a2a41693c7f4e6ca`
-  - 同批 `aih-go.exe`、`aih-mcp-shim.exe`、`aih-engine-mihomo/singbox.exe`、
-    `aih-render-subscriptions.exe`
-- WebUI：`npm run web:build`（`web/dist`，25 MB，SW 缓存戳
-  `aih-hos6-pwa-6a31014d`）
-- 上传包：`bundle.tar.gz` SHA-256
-  `61caae62d18a2a1dba5dad5676a49a7b65b2a621c617625bfcba23e6cd03d79e`
+### 1. main 无法构建（commit `18da7e9f`）
 
-## 部署步骤
+`64bf71bf` 起 `egress/manager.go` 引用 `NodeHealthLedger.PreferenceScore*`，
+但评分方法从未提交，`origin/main` 直接编译失败。补上唯一一份评分实现
+（`PickBest` 复用），并保持「陈旧失败低于陈旧成功」的分档。
 
-1. 冻结旧进程：`POST /v0/management/shutdown`（Bearer 管理密钥）→ 202，
-   等待 9527 端口释放。
-2. 备份到 `~/.ai_home/deploy-20261124/backup`：旧 `aih-server.exe`、`aih-go.exe`、
-   `run.cmd`、`launch.vbs`。
-3. 发布新二进制到 `~/.ai_home/bin`；WebUI 到 `~/.ai_home/web/dist`。
-4. `run.cmd` 增加 `--web-dir "C:\Users\madou\.ai_home\web\dist"`，其余环境变量
-   （管理密钥 / 客户端密钥 / 数据目录）保持不变。
-5. 禁用陈旧的 `com.meadeo.ai_home` 任务，避免下次登录与自建任务同时抢 9527。
-6. `schtasks /Run /TN AihServerWindows` 启动。
+### 2. Windows 安装从不启动新建的服务（commit `2721ac0d`）
 
-## 验收
+第一次正式部署在「恢复后台服务并验证新版本」处失败：`autostart.installWindows`
+只用 `schtasks /Create /SC ONLOGON` 创建任务，从不执行它，安装器的
+`/readyz` 轮询自然全部连接失败（90 秒），随后回滚也因「无法验证旧 AIH 服务
+退出身份」卡住，留下 `activating` 状态。
 
-- `GET /readyz`：`ready=true`，`accounts.zcode=6`，`model_count=64`，
-  `route_count=126`。
-- `GET /ui/`：200（625 B 入口壳），`/ui/umi.c617d92f.js` 200（8,541,290 B），
-  `/ui/sw.js` 200（2,939 B）。
-- `GET /v1/management/webui/server-config`：200。
-- `GET /v1/management/webui/toolkit/apps?refresh=1`：`zcode-desktop`
-  `installed=true`、`version=4.0.0`、
-  `cliPath=C:\Users\madou\AppData\Local\Programs\ZCode\ZCode.exe`。
-- `POST /v1/management/webui/toolkit/apps/plan`（zcode 安装）：`ok=true`，1 个计划。
-- 进程：PID 41616，命令行含 `--web-dir`，文件哈希等于上述构建哈希。
-- 任务状态：`AihServerWindows` Ready（服务进程由子进程常驻），
-  `com.meadeo.ai_home` Disabled。
+修复：任务创建成功后立即 `schtasks /Run /TN <label>`；是否真正可用仍交给
+安装器现有的启动验证判定（重复运行时 `/Run` 返回成功，不影响重装）。
+
+## 首次失败的事务如何收尾
+
+- 手工 `schtasks /Run` 启动待激活的包，确认激活服务在 9527 上返回
+  `installation=awaiting_commit`，且 `run/go-server-runtime.json` 的
+  executable / binarySha256 与安装回执一致。
+- 按安装器提交阶段的动作把 journal 的 `phase` 置为 `complete`、回执
+  `state` 置为 `installed`、删除 `run/distribution-install-pending.json`；
+  激活服务随即退出等待并完成正常启动。
+- 之后用修复后的 `main` 重跑正式部署，安装器自行完成停止旧服务、安装新包、
+  启动任务、激活验证与提交，全部通过。
 
 ## 回滚
 
-- 停 `AihServerWindows`，将 `deploy-20261124\backup` 下的文件复制回
-  `~/.ai_home/bin`（先停进程，Windows 不允许覆盖运行中的 exe），
-  删改前的 `--web-dir` 参数即可恢复旧行为。
-- 如需恢复产品任务：`schtasks /Change /TN com.meadeo.ai_home /ENABLE`，但需先让
-  自建任务停止，二者只能留一个持有 9527。
+- 安装器在 `~/.ai_home.install-history/` 保留事务备份；
+  手工部署的旧二进制与脚本仍在 `~/.ai_home/deploy-20261124/backup`。
+- 如需回到手工部署：停 `com.meadeo.ai_home`，恢复 `backup` 里的
+  `aih-server.exe`/`run.cmd` 并启用 `AihServerWindows`。两者只能有一个持有 9527。
 
-## 已知遗留
+## 备注
 
-- `%LOCALAPPDATA%\aih\aih.exe` 启动器仍是 1.0.6 产品包；本次只替换了服务端与
-  WebUI。正式包部署（`deploy-server.js`）在 main 可构建后补做。
+- `%LOCALAPPDATA%\aih\aih.exe` 启动器已随本次安装更新为同一构建。
 - 日志中部分账号模型刷新 401/403（zcode/kimi/opencode/gemini）是既有凭据状态，
-  与本次部署无关。
-- 测试机 ZCode 当前为 4.0.0（per-user，`%LOCALAPPDATA%\Programs\ZCode`），
+  与部署无关。
+- 测试机 ZCode 当前为 4.0.0（per-user，`%LOCALAPPDATA%\Programs\ZCode`）；
   旧机器级目录 `C:\Program Files\ZCode` 可能残留空壳，未被服务使用。

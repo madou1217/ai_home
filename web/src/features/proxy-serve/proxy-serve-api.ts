@@ -10,6 +10,10 @@ export interface ProxyServeSession {
   socks5Url?: string;
   startedAt?: number;
   error?: string;
+  /** server = 本机管理面；ssh-peer = 经已保存 SSH 连接借用远端 AIH 入口。 */
+  transport?: 'server' | 'ssh-peer';
+  peer?: string;
+  via?: string;
 }
 
 /** GET /webui/proxy-serve 的视图。 */
@@ -23,6 +27,18 @@ export interface ProxyServeView {
 export interface ProxyServeStartInput {
   selector: string;
   noSocks?: boolean;
+  /** 非空时用该 SSH 连接借用远端 AIH 的入口；远端管理密钥不出对端。 */
+  peer?: string;
+  peerVia?: string;
+  peerAih?: string;
+}
+
+export interface ProxyServeSSHConnection {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  user: string;
 }
 
 /** 常驻服务视图；selector/noSocks 只来自本机安装记录，不回显 URL。 */
@@ -46,7 +62,10 @@ export const proxyServeAPI = {
     return response.data;
   },
   async start(input: ProxyServeStartInput): Promise<ProxyServeView> {
-    const response = await api.post<{ ok: boolean; session: ProxyServeSession }>(`${BASE}/start`, input);
+    const response = await api.post<{
+      ok: boolean;
+      session: ProxyServeSession;
+    }>(`${BASE}/start`, input);
     return {
       ok: response.data.ok,
       session: response.data.session,
@@ -54,7 +73,10 @@ export const proxyServeAPI = {
     };
   },
   async stop(): Promise<ProxyServeView> {
-    const response = await api.post<{ ok: boolean; session: ProxyServeSession }>(`${BASE}/stop`, {});
+    const response = await api.post<{
+      ok: boolean;
+      session: ProxyServeSession;
+    }>(`${BASE}/stop`, {});
     return {
       ok: response.data.ok,
       session: response.data.session,
@@ -66,12 +88,25 @@ export const proxyServeAPI = {
     return response.data.service;
   },
   async installService(input: ProxyServeStartInput): Promise<ProxyServeService> {
-    const response = await api.post<{ ok: boolean; service: ProxyServeService }>(`${BASE}/service/install`, input);
+    const response = await api.post<{
+      ok: boolean;
+      service: ProxyServeService;
+    }>(`${BASE}/service/install`, input);
     return response.data.service;
   },
   async uninstallService(): Promise<ProxyServeService> {
-    const response = await api.post<{ ok: boolean; service: ProxyServeService }>(`${BASE}/service/uninstall`, {});
+    const response = await api.post<{
+      ok: boolean;
+      service: ProxyServeService;
+    }>(`${BASE}/service/uninstall`, {});
     return response.data.service;
+  },
+  async listSSHConnections(): Promise<ProxyServeSSHConnection[]> {
+    const response = await api.get<{
+      ok: boolean;
+      connections?: ProxyServeSSHConnection[];
+    }>('/webui/ssh-connections');
+    return Array.isArray(response.data.connections) ? response.data.connections : [];
   }
 };
 

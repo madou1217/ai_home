@@ -30,12 +30,18 @@ var (
 	ErrStartTimeout    = errors.New("proxy_serve_start_timeout")
 	ErrServerURL       = errors.New("proxy_serve_server_url_missing")
 	ErrSelectorInvalid = errors.New("proxy_serve_selector_invalid")
+	ErrPeerInvalid     = errors.New("proxy_serve_peer_invalid")
 )
 
 // Request 是本地入口的启动参数。
 type Request struct {
 	Selector string `json:"selector"`
 	NoSocks  bool   `json:"noSocks,omitempty"`
+	// Peer 非空时通过已保存的 SSH 连接借用远端 AIH 的入口；PeerVia 是可选跳板。
+	// PeerAIH 可指定远端可执行文件，空值由远端 CLI 自动探测。
+	Peer    string `json:"peer,omitempty"`
+	PeerVia string `json:"peerVia,omitempty"`
+	PeerAIH string `json:"peerAih,omitempty"`
 }
 
 // View 是 WebUI 可见的入口状态；URL 含租约令牌，只返回给管理面。
@@ -48,6 +54,10 @@ type View struct {
 	SOCKS5URL string `json:"socks5Url,omitempty"`
 	StartedAt int64  `json:"startedAt,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// Transport 为 server（本机管理面）或 ssh-peer（经 SSH 借用远端入口）。
+	Transport string `json:"transport,omitempty"`
+	Peer      string `json:"peer,omitempty"`
+	PeerVia   string `json:"via,omitempty"`
 }
 
 type session struct {
@@ -158,7 +168,18 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 		manager.mu.Unlock()
 		return View{}, ErrSelectorInvalid
 	}
-	if manager.serverURL == "" {
+	peer := strings.TrimSpace(request.Peer)
+	peerVia := strings.TrimSpace(request.PeerVia)
+	peerAIH := strings.TrimSpace(request.PeerAIH)
+	if !validPeerField(peer, 256) || !validPeerField(peerVia, 256) || !validPeerField(peerAIH, 512) {
+		manager.mu.Unlock()
+		return View{}, ErrPeerInvalid
+	}
+	if peer == "" && (peerVia != "" || peerAIH != "") {
+		manager.mu.Unlock()
+		return View{}, ErrPeerInvalid
+	}
+	if peer == "" && manager.serverURL == "" {
 		manager.mu.Unlock()
 		return View{}, ErrServerURL
 	}
@@ -179,7 +200,20 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 		}
 		cliPath = resolved
 	}
-	args := []string{"proxy", "serve", "--json", "--selector", selector, "--server", manager.serverURL}
+	args := []string{"proxy", "serve", "--json", "--selector", selector}
+	transport := "server"
+	if peer != "" {
+		transport = "ssh-peer"
+		args = append(args, "--peer", peer)
+		if peerVia != "" {
+			args = append(args, "--peer-via", peerVia)
+		}
+		if peerAIH != "" {
+			args = append(args, "--peer-aih", peerAIH)
+		}
+	} else {
+		args = append(args, "--server", manager.serverURL)
+	}
 	if request.NoSocks {
 		args = append(args, "--no-socks")
 	}
@@ -209,8 +243,16 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 	go readReady(stdout, ready)
 	manager.mu.Lock()
 	current := &session{
-		cmd:    command,
-		view:   View{Running: true, PID: command.Process.Pid, Selector: selector, StartedAt: time.Now().UnixMilli()},
+		cmd: command,
+		view: View{
+			Running:   true,
+			PID:       command.Process.Pid,
+			Selector:  selector,
+			StartedAt: time.Now().UnixMilli(),
+			Transport: transport,
+			Peer:      peer,
+			PeerVia:   peerVia,
+		},
 		exited: make(chan struct{}),
 	}
 	manager.current = current
@@ -300,6 +342,10 @@ func (manager *Manager) Stop(ctx context.Context) error {
 func (manager *Manager) Close() error { return manager.Stop(context.Background()) }
 
 // envWithOverrides 先删掉同名旧值再追加，避免子进程读到继承的环境变量而不是本次覆盖。
+func validPeerField(value string, max int) bool {
+	return len(value) <= max && !strings.HasPrefix(value, "-") && !strings.ContainsAny(value, "\r\n\x00")
+}
+
 func envWithOverrides(overrides map[string]string) []string {
 	environ := os.Environ()
 	env := make([]string, 0, len(environ)+len(overrides))

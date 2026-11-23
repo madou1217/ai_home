@@ -143,6 +143,9 @@ func (handler *Handler) serveStart(responseWriter http.ResponseWriter, request *
 	var body struct {
 		Selector string `json:"selector"`
 		NoSocks  bool   `json:"noSocks"`
+		Peer     string `json:"peer"`
+		PeerVia  string `json:"peerVia"`
+		PeerAIH  string `json:"peerAih"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(responseWriter, request.Body, maxBodyBytes)).Decode(&body); err != nil {
 		writeError(responseWriter, http.StatusBadRequest, "invalid_request_body", "请求体不是有效的 JSON")
@@ -152,7 +155,13 @@ func (handler *Handler) serveStart(responseWriter http.ResponseWriter, request *
 	if body.Selector == "" {
 		body.Selector = "auto"
 	}
-	view, err := handler.manager.Start(request.Context(), proxyserve.Request{Selector: body.Selector, NoSocks: body.NoSocks})
+	view, err := handler.manager.Start(request.Context(), proxyserve.Request{
+		Selector: body.Selector,
+		NoSocks:  body.NoSocks,
+		Peer:     body.Peer,
+		PeerVia:  body.PeerVia,
+		PeerAIH:  body.PeerAIH,
+	})
 	if err != nil {
 		writeStartError(responseWriter, err)
 		return
@@ -236,6 +245,8 @@ func writeStartError(responseWriter http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, proxyserve.ErrSelectorInvalid):
 		writeError(responseWriter, http.StatusBadRequest, "proxy_serve_selector_invalid", "出口选择器无效")
+	case errors.Is(err, proxyserve.ErrPeerInvalid):
+		writeError(responseWriter, http.StatusBadRequest, "proxy_serve_peer_invalid", "SSH 对等连接参数无效")
 	case errors.Is(err, proxyserve.ErrAlreadyRunning):
 		writeError(responseWriter, http.StatusConflict, "proxy_serve_already_running", "代理入口已在运行")
 	case errors.Is(err, proxyserve.ErrCLINotFound):

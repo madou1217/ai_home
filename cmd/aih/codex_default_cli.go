@@ -123,22 +123,29 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		return runErr
 	}
 	if interactive && !localAppServerDisabled(envMap, forwardArgs) {
-		proxy, proxyErr := startLocalAppServer(ctx, upstream, forwardArgs, spawnEnv, runtime.stderr)
-		if proxyErr != nil {
-			return proxyErr
+		if codexappconfig.HasPermissionOverrides(forwardArgs) {
+			// 远程任务上的 /resume 与 /fork 会被 Codex 整单拒绝（“Permission overrides
+			// are not supported…”）。用户显式给了权限参数时优先保留其权限意图，
+			// 改用本地 app-server；不再注入 --remote。
+			_, _ = runtime.stderr.Write([]byte("[aih] 检测到权限覆盖参数；本次使用本地 app-server，远程恢复不支持权限覆盖。\n"))
+		} else {
+			proxy, proxyErr := startLocalAppServer(ctx, upstream, forwardArgs, spawnEnv, runtime.stderr)
+			if proxyErr != nil {
+				return proxyErr
+			}
+			launchArgs := append([]string{"--remote", proxy.RemoteURL, "--remote-auth-token-env", localRemoteTokenEnv}, forwardArgs...)
+			command := exec.CommandContext(ctx, upstream, launchArgs...)
+			command.Env = append(append([]string{}, spawnEnv...), localRemoteTokenEnv+"="+proxy.Token)
+			command.Stdin = runtime.stdin
+			command.Stdout = runtime.stdout
+			command.Stderr = runtime.stderr
+			runErr := command.Run()
+			proxy.Close()
+			if exitErr, ok := runErr.(*exec.ExitError); ok {
+				os.Exit(exitErr.ExitCode())
+			}
+			return runErr
 		}
-		launchArgs := append([]string{"--remote", proxy.RemoteURL, "--remote-auth-token-env", localRemoteTokenEnv}, forwardArgs...)
-		command := exec.CommandContext(ctx, upstream, launchArgs...)
-		command.Env = append(append([]string{}, spawnEnv...), localRemoteTokenEnv+"="+proxy.Token)
-		command.Stdin = runtime.stdin
-		command.Stdout = runtime.stdout
-		command.Stderr = runtime.stderr
-		runErr := command.Run()
-		proxy.Close()
-		if exitErr, ok := runErr.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		return runErr
 	}
 	commandArgs := append([]string{upstream}, forwardArgs...)
 	if goruntime.GOOS != "windows" {

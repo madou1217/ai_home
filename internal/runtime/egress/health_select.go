@@ -181,6 +181,19 @@ func (l *NodeHealthLedger) DueForProbe(limit int, policy *NodePolicy, atMS int64
 // ProbeFreshMS 是“节点最近一次核心探测仍可信”的时间窗。
 const ProbeFreshMS = 15 * 60 * 1000
 
+// 偏好分档常量。对外暴露「从未探测」这一档，供没有账本事实的候选
+// （例如 SSH 出口）按同一口径计分，避免调用方各自写一个魔数。
+const (
+	// ScoreNeverProbed 是「账本里没有该出口的事实」的分数。
+	ScoreNeverProbed = 500
+	// ScoreStaleSuccess 是探测成功但已超出新鲜窗的分数。
+	ScoreStaleSuccess = 400
+	// ScoreStaleFailure 是探测失败且已超出新鲜窗的分数。
+	ScoreStaleFailure = 300
+	// ScoreFreshFailure 是刚探测失败的分数（最低，不首选）。
+	ScoreFreshFailure = 0
+)
+
 // PickBest 从允许集合中按“新鲜成功 > 未知 > 陈旧成功 > 新鲜失败”评分选节点。
 //
 // 与 PickNext 的“按顺序轮换”不同，PickBest 用于初始车道与失效车道的重新选择：
@@ -202,31 +215,81 @@ func (l *NodeHealthLedger) PickBest(allowed map[string]bool, policy *NodePolicy,
 		if l.isCoolingLocked(entry.Name, at) || l.blockedReasonLocked(entry.Name, policy).Status == "blocked" {
 			continue
 		}
-		score := 500 // 从未探测：可以作为候选尝试
-		stats := l.byIdentity[entry.Identity]
-		switch {
-		case stats != nil && stats.Probe != nil && stats.Probe.At > 0:
-			fresh := at-stats.Probe.At <= ProbeFreshMS
-			switch {
-			case stats.Probe.OK && fresh:
-				score = 1000 - int(stats.Probe.LatencyMS/10)
-				if score < 600 {
-					score = 600
-				}
-			case stats.Probe.OK:
-				score = 200 // 陈旧成功：不作为优先事实
-			case fresh:
-				score = 0 // 新鲜失败：不首选
-			default:
-				score = 400 // 陈旧失败：可重试
-			}
-		case entry.LibraryProbe != nil && entry.LibraryProbe.OK:
-			score = 300
-		}
+		score := l.preferenceScoreLocked(entry, at)
 		if score > bestScore {
 			bestScore = score
 			best = idx
 		}
 	}
 	return best
+}
+
+// PreferenceScore 返回单个出口名当前的偏好分（越大越优先）。
+//
+// 别名排序与 PickBest 共用同一份评分：这里是「哪个出口更值得先用」的唯一推导，
+// 候选列表与自动轮换都从它取序，而不是各自另写一套规则。
+// 未知出口名返回 0（排在有事实的出口之后）。
+func (l *NodeHealthLedger) PreferenceScore(name string, atMS int64) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry, found := l.entryByNameLocked(strings.TrimSpace(name))
+	if !found {
+		return 0
+	}
+	return l.preferenceScoreLocked(entry, l.effectiveAtLocked(atMS))
+}
+
+// PreferenceScoreByIdentity 按稳定出口身份（如 anytls|IP|port）查偏好分。
+//
+// 租约候选来自订阅快照，名字是订阅里的显示名；健康账本按池配置名字与出口身份
+// 绑定。两者常常不同名（实测候选叫「🇨🇳 Taiwan丨03」、账本叫 node-xx），
+// 因此候选排序必须按身份查，否则所有分数都是 0、排序退化成 ID 序。
+func (l *NodeHealthLedger) PreferenceScoreByIdentity(identity string, atMS int64) int {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	at := l.effectiveAtLocked(atMS)
+	for _, entry := range l.nodes {
+		if entry.Identity == identity {
+			return l.preferenceScoreLocked(entry, at)
+		}
+	}
+	return 0
+}
+
+// preferenceScoreLocked 是出口偏好分的唯一实现。
+//
+// 分档与 PickBest 文档承诺的顺序一致：
+// 新鲜成功(600–1000) > 未知(500) > 陈旧成功(400) > 陈旧失败/仅节点库探测(300) > 新鲜失败(0)。
+//
+// 关键一条：陈旧失败必须低于陈旧成功。旧实现给陈旧失败 400、陈旧成功 200，
+// 于是「很久以前失败过一次」会排在「很久以前成功过」前面，而且当全部探测都
+// 过期时（实测 572 个事实全部超过 15 分钟新鲜窗），整个排序会变成按失败次数
+// 优先，与文档和直觉都相反。
+func (l *NodeHealthLedger) preferenceScoreLocked(entry RuntimeNodeEntry, at int64) int {
+	stats := l.byIdentity[entry.Identity]
+	switch {
+	case stats != nil && stats.Probe != nil && stats.Probe.At > 0:
+		fresh := at-stats.Probe.At <= ProbeFreshMS
+		switch {
+		case stats.Probe.OK && fresh:
+			score := 1000 - int(stats.Probe.LatencyMS/10)
+			if score < 600 {
+				score = 600
+			}
+			return score
+		case stats.Probe.OK:
+			return ScoreStaleSuccess
+		case fresh:
+			return ScoreFreshFailure
+		default:
+			return ScoreStaleFailure
+		}
+	case entry.LibraryProbe != nil && entry.LibraryProbe.OK:
+		return ScoreStaleFailure
+	}
+	return ScoreNeverProbed
 }

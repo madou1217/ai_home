@@ -12,7 +12,9 @@ import (
 
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
+	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
 // providerCLIUpdateRefreshTimeout 是后台版本刷新（不阻断启动）的硬上限。
@@ -68,9 +70,16 @@ func providerCLIPlanTargetFromPlan(plan providerlaunch.LaunchPlan) (providerCLIP
 // appsCLILifecycle 把工具箱的安装/版本实现适配成上面的窄端口。
 type appsCLILifecycle struct {
 	options apps.Options
+	// egress 在留空时按需装配：缺失 CLI 的自动安装也要能走自动代理。
+	// 由 newAppsCLILifecycle 注入，保持「谁可以换出口」这一决定的唯一来源。
+	egress egressProvider
 }
 
-func newAppsCLILifecycle(aiHomeDir, hostHomeDir string) appsCLILifecycle {
+// egressProvider 提供「自动代理轮换」与面向用户的告知端口。
+// 返回 nil 表示当前没有可用管理面，安装保持直连语义。
+type egressProvider func(notify func(string)) *updateproxy.EgressRotation
+
+func newAppsCLILifecycle(aiHomeDir, hostHomeDir string, egress egressProvider) appsCLILifecycle {
 	environment := make(map[string]string)
 	for _, entry := range os.Environ() {
 		name, value, found := strings.Cut(entry, "=")
@@ -83,7 +92,7 @@ func newAppsCLILifecycle(aiHomeDir, hostHomeDir string) appsCLILifecycle {
 		HostHomeDir: hostHomeDir,
 		Platform:    runtime.GOOS,
 		Env:         environment,
-	}}
+	}, egress: egress}
 }
 
 func (lifecycle appsCLILifecycle) Resolve(providerID, binary string) string {
@@ -116,12 +125,41 @@ func (lifecycle appsCLILifecycle) Install(
 	providerID string,
 	progress func(string),
 ) (string, error) {
-	result, err := apps.InstallCLI(ctx, providerID, lifecycle.options, false, progress)
+	var rotation *updateproxy.EgressRotation
+	if lifecycle.egress != nil {
+		rotation = lifecycle.egress(func(message string) {
+			_, _ = fmt.Fprintln(os.Stderr, message)
+		})
+	}
+	// 与 aih <provider> install 共用同一个循环：直连失败于网络层才启用代理，
+	// 出口不可用则按服务端候选顺序换下一个。
+	lastProxyURL := ""
+	result, _, err := updateproxy.RetryWithEgress(
+		ctx, rotation, installEgressMaxAttempts,
+		func(err error) (string, bool) { return providercliupgrade.EgressFailureReason(err.Error()) },
+		func(proxyURL string) (apps.CLIUpdateResult, error) {
+			lastProxyURL = proxyURL
+			options := lifecycle.options
+			if proxyURL != "" {
+				env, envErr := updateproxy.Environment(options.Env, proxyURL)
+				if envErr != nil {
+					return apps.CLIUpdateResult{}, envErr
+				}
+				options.Env = env
+			}
+			// explicitProxy 必须跟随本轮是否真的配了代理：Windows 上它决定
+			// 「官方安装器能否保证所有下载都走代理」，漏掉就会静默直连。
+			return apps.InstallCLI(ctx, providerID, options, proxyURL != "", progress)
+		},
+	)
 	if err != nil {
-		return "", err
+		return "", errors.New(updateproxy.Redact(err.Error(), lastProxyURL))
 	}
 	return result.CLIPath, nil
 }
+
+// installEgressMaxAttempts 是自动代理在自动安装路径上最多尝试的出口数。
+const installEgressMaxAttempts = 4
 
 func (lifecycle appsCLILifecycle) CachedUpdateStatus(providerID string) (providerCLIVersionInfo, bool) {
 	return cliLifecycleVersionInfo(apps.CachedCLIUpdateStatus(providerID, lifecycle.options))

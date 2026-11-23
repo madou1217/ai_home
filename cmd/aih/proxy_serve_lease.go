@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/managementproxy"
 	"github.com/madou1217/ai_home/internal/runtime/proxyingress"
 )
 
@@ -26,33 +25,21 @@ type serveLease struct {
 	ingress       *proxyingress.Ingress
 	systemIngress *proxyingress.Ingress
 	dial          proxyingress.Dial
-	client        *providerProxyClient
+	client        *managementproxy.Client
 	once          sync.Once
 	closeErr      error
 }
 
 func acquireServeLease(ctx context.Context, runtime commandRuntime, selector string, socks5 bool) (*serveLease, error) {
-	client, err := newProviderProxyClient(runtime)
+	client, err := managementProxyClient(runtime)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := client.selector(ctx, selector)
+	raw, err := client.Lease(ctx, selector)
 	if err != nil {
 		return nil, err
 	}
-	var response struct {
-		OK       bool   `json:"ok"`
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		ProxyURL string `json:"proxyUrl"`
-	}
-	if err := client.call(ctx, http.MethodPost, providerProxyAPI, map[string]string{"selector": resolved}, &response); err != nil {
-		return nil, err
-	}
-	if !response.OK || response.ID == "" || len(response.ID) > 256 || strings.ContainsAny(response.ID, "/\\\r\n\x00") {
-		return nil, errors.New("代理 lease 响应无效")
-	}
-	proxy, parseErr := url.Parse(response.ProxyURL)
+	proxy, parseErr := url.Parse(raw.ProxyURL)
 	if parseErr != nil || proxy == nil || proxy.Scheme != "http" || proxy.User == nil {
 		return nil, errors.New("代理 lease 未返回有效的认证入口")
 	}
@@ -61,9 +48,9 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	if username == "" || !hasPassword || password == "" {
 		return nil, errors.New("代理 lease 未返回有效的认证入口")
 	}
-	lease := &serveLease{id: response.ID, name: response.Name, username: username, password: password, client: client}
+	lease := &serveLease{id: raw.ID, name: raw.Name, username: username, password: password, client: client}
 	lease.dial = func(dialCtx context.Context) (io.ReadWriteCloser, error) {
-		return client.connect(dialCtx, lease.id)
+		return client.Connect(dialCtx, lease.id)
 	}
 	ingress, ingressErr := proxyingress.Start(ctx, proxyingress.Config{
 		Credentials: proxyingress.Credentials{Username: username, Password: password},
@@ -94,7 +81,7 @@ func (lease *serveLease) keepAlive(ctx context.Context, interval time.Duration, 
 			return
 		case <-ticker.C:
 			renewCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := lease.client.renew(renewCtx, lease.id)
+			err := lease.client.Renew(renewCtx, lease.id)
 			cancel()
 			if err != nil {
 				onError(err)
@@ -156,11 +143,12 @@ func (lease *serveLease) Close() error {
 	return lease.closeErr
 }
 
+// releaseRemote 释放远端租约。managementproxy.Release 自带独立超时，
+// 因此调用方的取消不会把释放漏掉。
 func (lease *serveLease) releaseRemote() error {
 	if lease == nil || lease.client == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return lease.client.call(ctx, http.MethodDelete, providerProxyAPI+"/"+url.PathEscape(lease.id), nil, nil)
+	lease.client.Release(lease.id)
+	return nil
 }

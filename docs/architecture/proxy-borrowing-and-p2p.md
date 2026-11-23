@@ -86,3 +86,10 @@ Mac aih proxy serve --ssh <connectionId>
 3. `network.connector` 插件宿主与实装（Tailscale/WireGuard）；
 4. 连接器证据采集与 UI 状态（direct/relay/unknown 分开）；
 5. 只有插件给出可复核 path 证据后，才启用“直连 P2P”文案。
+
+## 7. 本地 TUN
+
+`aih proxy serve --tun` 通过 `internal/runtime/tuningress` 生成 sing-box TUN 配置，
+把租约的认证 HTTP 入口作为唯一出站。`--tun-dry-run` 只生成并执行 `sing-box check`，
+不创建接口、不改路由；真正启动需要 root/管理员权限，且是显式的网络层接管。
+外部 TUN（Clash Verge 等）与系统代理的所有权冲突必须由调用方显式报告，不能静默争抢。

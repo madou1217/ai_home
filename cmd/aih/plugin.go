@@ -33,8 +33,8 @@ const pluginUsage = `Usage: aih plugin <command> [options]
   trust <public.pem> [--key-id <id>]   把发布公钥加入本机信任根
   untrust <keyId>                  从本机信任根移除发布公钥
   trusted                          列出本机信任的发布公钥
-  install <file.aih-plugin|https://...> [--require-signed] [--trust-key <pem|url>] [--expect-fingerprint <hex>]
-                                   安装插件包；支持 https 直链（本机回环可用 http）；--trust-key 一步登记公钥，--require-signed 拒绝未签名/未验证包
+  install <file.aih-plugin|https://...> [--require-signed] [--server-download] [--trust-key <pem|url>] [--expect-fingerprint <hex>]
+                                   安装插件包；支持 https 直链（本机回环可用 http）；--server-download 跳过 CLI 下载、只让服务端抓 URL；--trust-key 一步登记公钥
   list                             已安装插件、实例与运行状态
   enable <pluginId> [--instance <id>] [--version <v>] [--config-json <json>|@file|-] [--accept-permissions]
   disable <instanceId> [--remove]  停用实例（--remove 同时删除实例配置）
@@ -543,27 +543,38 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 	if file == "" {
 		return nil, pluginArgumentRequired("install 需要插件包（aih plugin install <file.aih-plugin>）")
 	}
-	local, cleanup, err := pluginMaterialize(file, plugincontract.MaxPackageBytes, "插件包", runtime)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	absolute, err := filepath.Abs(local)
-	if err != nil {
-		return nil, pluginerr.New("plugin_package_missing", "插件包路径不可用")
-	}
-	digest, err := pluginartifact.FileSHA256(local)
-	if err != nil {
-		return nil, pluginerr.New("plugin_package_missing", "插件包无法读取")
-	}
-	payload := map[string]any{
-		"file":          absolute,
-		"sha256":        digest,
-		"requireSigned": pluginHasFlag(args, "--require-signed"),
-	}
-	if pluginIsRemoteInput(file) {
-		// 服务端会先尝试本地路径（摘要一致才用），否则按 URL 自行下载。
+	requireSigned := pluginHasFlag(args, "--require-signed")
+	payload := map[string]any{"requireSigned": requireSigned}
+	if pluginHasFlag(args, "--server-download") {
+		if !pluginIsRemoteInput(file) {
+			return nil, pluginerr.New("plugin_download_invalid",
+				"--server-download 只适用于 https URL；本地插件包请直接传路径")
+		}
 		payload["url"] = strings.TrimSpace(file)
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已跳过本地下载，改由服务端抓取：%s\n", strings.TrimSpace(file))
+		if !requireSigned {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 注意：本地摘要校验已跳过，完整性只依赖 https 与包内签名状态\n")
+		}
+	} else {
+		local, cleanup, err := pluginMaterialize(file, plugincontract.MaxPackageBytes, "插件包", runtime)
+		if err != nil {
+			return nil, err
+		}
+		defer cleanup()
+		absolute, err := filepath.Abs(local)
+		if err != nil {
+			return nil, pluginerr.New("plugin_package_missing", "插件包路径不可用")
+		}
+		digest, err := pluginartifact.FileSHA256(local)
+		if err != nil {
+			return nil, pluginerr.New("plugin_package_missing", "插件包无法读取")
+		}
+		payload["file"] = absolute
+		payload["sha256"] = digest
+		if pluginIsRemoteInput(file) {
+			// 服务端会先尝试本地路径（摘要一致才用），否则按 URL 自行下载。
+			payload["url"] = strings.TrimSpace(file)
+		}
 	}
 	if trustKey := strings.TrimSpace(pluginOption(args, "--trust-key")); trustKey != "" {
 		publicKeyPEM, expectedFingerprint, keyErr := pluginReadPublicKey(trustKey, args, runtime)

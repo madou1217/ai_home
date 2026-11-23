@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 )
 
 // prepareInput 是三个投影适配器共享的已解析启动事实。
@@ -22,7 +22,7 @@ type prepareInput struct {
 	BinPath        string
 	NodeExec       string
 	BaseEnv        map[string]string
-	Metadata       *modelsdev.Index
+	Metadata       modelmetadata.FactsSource
 }
 
 // preparedLaunch 只保留 spawn 需要的命令与环境。

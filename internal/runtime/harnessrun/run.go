@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/harnesses"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
 // Runtime 隔离环境、家目录、终端 I/O 与工作目录，便于 cmd/aih 注入。
@@ -25,6 +25,8 @@ type Runtime struct {
 	Stdout      io.Writer
 	Stderr      io.Writer
 	WorkDir     func() (string, error)
+	// Capabilities 是可选的能力事实来源（能力基线/上游声明）；为空时只用网关目录。
+	Capabilities modelmetadata.FactsSource
 }
 
 // normalizeRuntime 补齐未注入的端口：调用方只关心自己要替换的那几项。
@@ -182,10 +184,7 @@ func Run(arguments []string, rt Runtime) int {
 	if harness.ID != "pi" {
 		binaryPath = resolveHarnessBinaryPath(harness.BinaryName)
 	}
-	var metadata *modelsdev.Index
-	if index, err := modelsdev.New(); err == nil {
-		metadata = index
-	}
+	metadata := rt.Capabilities
 
 	prepared, prepareErr := prepareHarness(prepareInput{
 		HarnessID:      harness.ID,

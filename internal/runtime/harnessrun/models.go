@@ -3,7 +3,7 @@ package harnessrun
 import (
 	"strings"
 
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 )
 
 // thinkingLevelMap 与 pi 的 model-config schema 固定七档同序。
@@ -107,7 +107,7 @@ func normalizeInputModalities(metadataInput []string, fallback *modelModalities)
 }
 
 // buildHarnessModels 复刻 buildHarnessModelEntries：按出现顺序去重，丢弃空 id。
-func buildHarnessModels(entries []gatewayModel, provider string, metadata *modelsdev.Index) []harnessModel {
+func buildHarnessModels(entries []gatewayModel, provider string, metadata modelmetadata.FactsSource) []harnessModel {
 	models := make([]harnessModel, 0, len(entries))
 	seen := make(map[string]bool)
 	for _, entry := range entries {
@@ -121,7 +121,7 @@ func buildHarnessModels(entries []gatewayModel, provider string, metadata *model
 	return models
 }
 
-func buildHarnessModel(entry gatewayModel, provider string, metadata *modelsdev.Index) harnessModel {
+func buildHarnessModel(entry gatewayModel, provider string, metadata modelmetadata.FactsSource) harnessModel {
 	id := strings.TrimSpace(entry.ID)
 	model := harnessModel{
 		ID:    id,
@@ -178,7 +178,7 @@ func buildHarnessModel(entry gatewayModel, provider string, metadata *modelsdev.
 
 // ensureRequestedModel 在目录暂时缺这个 id 时保留一项，交给网关在真实请求时
 // 给权威结论，而不是在启动器里静默丢弃。
-func ensureRequestedModel(entries []gatewayModel, modelID string, provider string, metadata *modelsdev.Index) []gatewayModel {
+func ensureRequestedModel(entries []gatewayModel, modelID string, provider string, metadata modelmetadata.FactsSource) []gatewayModel {
 	id := strings.TrimSpace(modelID)
 	if id == "" {
 		return entries

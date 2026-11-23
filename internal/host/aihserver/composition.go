@@ -25,6 +25,7 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
+	capabilitybaseline "github.com/madou1217/ai_home/contracts/model-capabilities"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -41,6 +42,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	capabilitycontract "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/contract"
+	capabilityprojection "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/projection"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
@@ -263,6 +266,11 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	// 图片专用模型不在账号的对话模型快照里，但该 Provider 的凭据确实能出图：合成进路由索引，
 	// 否则「只写 model」的图片请求会 503，/v1/models 也不会列出这些模型。
 	store.SetSynthesizedModelSource(images.NativeImageModelIDs)
+	modelCatalogStore, err := modelcatalog.NewStore()
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("创建全局模型目录投影 Store 失败: %w", err)
+	}
 	clientVersions, err := newClientVersions(ctx, options.AIHomeDir)
 	if err != nil {
 		_ = store.Close()
@@ -277,8 +285,20 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	}
 	// 能力事实走独立的能力抽象：上游账号目录声明优先，models.dev 只作为兼容来源
 	// （它与 pricing 插件是两套不同的抽象，绝不共用）。
+	capabilityContract, err := capabilitycontract.New(capabilitybaseline.Embedded())
+	if err != nil {
+		_ = clientVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("加载模型能力基线失败: %w", err)
+	}
+	// 能力事实按权威顺序合并：上游账号目录声明（注册表内部最高）→ aih.db 投影 →
+	// 冻结能力基线 → models.dev 兼容来源。models.dev 只作为没有任何声明时的最后兜底。
 	modelModalities := modelmetadata.NewCapabilityRegistry(modelmetadata.CapabilityRegistryOptions{
-		Sources:  []modelmetadata.FactsSource{legacyMetadata},
+		Sources: []modelmetadata.FactsSource{
+			capabilityprojection.New(modelCatalogStore),
+			capabilityContract,
+			legacyMetadata,
+		},
 		SourceID: "capabilities",
 	})
 	agyModelWires := newAgyModelWires(options.AIHomeDir)
@@ -424,6 +444,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		ClaudeVersions:             clientVersions.Claude,
 		AGYModelWires:              agyModelWires,
 		ModelModalities:            modelModalities,
+		ModelCatalogStore:          modelCatalogStore,
 		RouteObserver:              codexresponsesws.FileRouteObserver{AIHomeDir: options.AIHomeDir},
 		HostHomeDir:                hostHomeDir,
 		TokenEvents:                tokenEvents,
@@ -539,6 +560,7 @@ type handlerDependencies struct {
 	ClaudeVersions             *clientversion.Resolver
 	AGYModelWires              *agycodeassist.ModelWireStore
 	ModelModalities            modelmetadata.Catalog
+	ModelCatalogStore          *modelcatalog.Store
 	// RouteObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
 	RouteObserver codexresponsesws.RouteObserver
 	// HostHomeDir 是宿主 CLI 配置文件所在家目录；工具权限设置的 host* 探测需要它。
@@ -589,6 +611,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	claudeVersions := dependencies.ClaudeVersions
 	agyModelWires := dependencies.AGYModelWires
 	modelModalities := dependencies.ModelModalities
+	modelCatalogStore := dependencies.ModelCatalogStore
 	routeObserver := dependencies.RouteObserver
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
@@ -1167,10 +1190,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型别名投影接口失败: %w", err)
 	}
-	modelCatalogStore, err := modelcatalog.NewStore()
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, fmt.Errorf("创建全局模型目录投影 Store 失败: %w", err)
+	if modelCatalogStore == nil {
+		modelCatalogStore, err = modelcatalog.NewStore()
+		if err != nil {
+			_ = inference.Close()
+			return serverHandlers{}, nil, fmt.Errorf("创建全局模型目录投影 Store 失败: %w", err)
+		}
 	}
 	modelCatalogHandler, err := modelcatalogapi.NewHandler(modelcatalogapi.Dependencies{
 		Authorizer: authorizer,

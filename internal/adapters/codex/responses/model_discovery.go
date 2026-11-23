@@ -81,7 +81,7 @@ func (source *ModelCatalogSource) DiscoverModels(
 		return nil, err
 	}
 	if source.ladders != nil && len(catalog.ladders) > 0 {
-		if err := source.ladders.ReplaceReasoningLadders(codexauth.ProviderID, catalog.ladders); err != nil {
+		if err := source.ladders.MergeReasoningLadders(codexauth.ProviderID, catalog.ladders); err != nil {
 			return nil, fmt.Errorf("发布模型推理档位失败: %w", err)
 		}
 	}

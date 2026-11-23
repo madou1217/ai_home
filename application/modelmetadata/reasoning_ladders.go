@@ -15,11 +15,14 @@ var (
 //
 // 上游模型目录是“这个端点接受哪些 effort”的权威事实。把它登记进来后，新发布的模型
 // 不必等待内置 models.dev 快照升级，就能在 /v1/models 的 supported_reasoning_levels
-// 里拿到档位；models.dev 继续作为没有声明档位的 Provider 的兜底。
+// 里拿到档位；Provider 一旦声明过档位，models.dev 就彻底退出该 Provider 的档位解析。
 type ReasoningLadderRegistrar interface {
-	// ReplaceReasoningLadders 全量替换一个 Provider 的模型档位覆盖。
+	// MergeReasoningLadders 按模型合并一个 Provider 的档位声明。
+	//
+	// 同一 Provider 可能由多个账号共同服务，而每个账号只能看到自己的目录：合并
+	// （而不是整表替换）才不会让“后刷新的小目录”抹掉其它账号已声明的模型档位。
 	// 空映射表示没有新事实，保留上一代 last-known-good。
-	ReplaceReasoningLadders(providerID string, ladders map[string][]inference.ReasoningEffort) error
+	MergeReasoningLadders(providerID string, ladders map[string][]inference.ReasoningEffort) error
 }
 
 // NormalizeReasoningLadder 返回按 Canonical 全序升序、去重后的档位副本。

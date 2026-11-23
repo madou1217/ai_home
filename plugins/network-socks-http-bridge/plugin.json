@@ -1,0 +1,35 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "network.socks-http-bridge",
+  "version": "1.0.2",
+  "engines": { "aih": ">=1.0.0" },
+  "runtime": "process",
+  "entry": "bridge.py",
+  "exec": { "argv": ["python3", "bridge.py"] },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["socksUrl"],
+    "properties": {
+      "socksUrl": { "type": "string" },
+      "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 3128 },
+      "autoStart": { "type": "boolean", "default": true }
+    }
+  },
+  "secretsSchema": { "type": "object", "properties": { "socksUrl": { "type": "string" } }, "additionalProperties": false },
+  "permissions": {
+    "network": [],
+    "filesystem": { "read": ["state"], "write": ["state"] },
+    "secrets": ["socksUrl"],
+    "environment": []
+  },
+  "contributes": [
+    {
+      "id": "network.socks-http-bridge.connector",
+      "capability": "network.connector",
+      "version": 1,
+      "failurePolicy": "delegate"
+    }
+  ]
+}

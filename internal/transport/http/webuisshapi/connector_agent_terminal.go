@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/remotesessions"
@@ -260,6 +261,11 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 			}
 		}
 	}
+	sessionID := remotesessions.NewSessionID()
+	if agent == "codex" {
+		providerArgs = append(providerArgs, clilaunch.RemoteSessionArguments()...)
+		providerEnv = append(providerEnv, clilaunch.RemoteSessionEnv+"="+sessionID)
+	}
 	suffix := ""
 	if body.Fresh {
 		suffix = ":" + randomHex(4)
@@ -292,6 +298,7 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 			accountLabel = "gateway"
 		}
 		_, _ = handler.sessions.Record(request.Context(), remotesessions.Session{
+			ID:          sessionID,
 			WorkspaceID: workspaceID, ConnectorID: workspace.ConnectorID,
 			Agent: agent, Account: accountLabel, Model: strings.TrimSpace(body.Model),
 			SessionKey: sessionKey, TermID: result.TermID,

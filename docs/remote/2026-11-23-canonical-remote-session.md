@@ -42,6 +42,9 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 
 已实现：
 
+- Codex 启动侧为受管 Provider 注入
+  `env_http_headers.x-aih-remote-session=AIH_REMOTE_SESSION_ID`，并在终端环境里写入本次
+  `rx-…` 会话 id（账号模式与网关模式共用同一 `-c` 参数）；
 - relaycore 推理入口读取 `x-aih-remote-session` 写入 context；
 - `clientkeystats.Tracker.RecordUsage` 按会话累积 token，Flush 时通过可选
   `SessionUsageStore` 落库；

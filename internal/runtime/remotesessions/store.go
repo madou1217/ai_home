@@ -99,7 +99,9 @@ func (store *Store) Record(ctx context.Context, session Session) (Session, error
 			return nil
 		}
 		record := session
-		record.ID = newSessionID()
+		if strings.TrimSpace(record.ID) == "" {
+			record.ID = newSessionID()
+		}
 		record.SessionKey = strings.TrimSpace(record.SessionKey)
 		record.WorkspaceID = strings.TrimSpace(record.WorkspaceID)
 		record.ConnectorID = sanitize(record.ConnectorID, maxLabelRunes)
@@ -250,6 +252,9 @@ func (store *Store) update(ctx context.Context, mutate func(*persistedState) err
 		return string(encoded), nil
 	})
 }
+
+// NewSessionID returns a fresh remote execution session id.
+func NewSessionID() string { return newSessionID() }
 
 func newSessionID() string {
 	buffer := make([]byte, 9)

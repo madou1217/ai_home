@@ -41,13 +41,20 @@ export default function PageHeaderActions({ actions }: { actions: PageHeaderActi
     return (
       <div className="m-header-actions">
         {visible.map((action) => {
+          const isDisabled = Boolean(action.disabled || action.loading);
           const node = (
             <button
               key={action.key}
               type="button"
-              className={action.primary ? 'm-icon-btn primary' : 'm-icon-btn'}
+              className={[
+                'm-icon-btn',
+                action.primary ? 'primary' : '',
+                action.loading ? 'is-loading' : '',
+              ].filter(Boolean).join(' ')}
               aria-label={action.label}
-              disabled={action.disabled || action.loading}
+              aria-busy={action.loading || undefined}
+              title={action.label}
+              disabled={isDisabled}
               onClick={action.onClick}
             >
               {action.icon}

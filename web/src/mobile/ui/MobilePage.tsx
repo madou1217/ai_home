@@ -19,11 +19,13 @@ export default function MobilePage({ children, toolbar, lead }: Props) {
   );
 }
 
+/* 移动端顶部页面容器：避免双空槽时出现额外 44px 空白，工具栏与首段说明紧贴 */
 export function MobileToolbar({ children, start }: { children?: ReactNode; start?: ReactNode }) {
+  if (!start && !children) return null;
   return (
     <div className="mhud-toolbar">
-      <div className="mhud-toolbar__start">{start}</div>
-      <div className="mhud-toolbar__end">{children}</div>
+      {start ? <div className="mhud-toolbar__start">{start}</div> : null}
+      {children ? <div className="mhud-toolbar__end">{children}</div> : null}
     </div>
   );
 }

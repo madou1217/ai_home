@@ -49,7 +49,7 @@ export default function MobileHudMoreSheet({ open, onClose }: { open: boolean; o
             <span className="mhud-more__label">显示模式</span>
             <span className="mhud-more__desc">MODE</span>
           </span>
-          <span className="mhud-more__value">{theme === 'dark' ? 'NIGHT' : 'DAY'}</span>
+          <span className="mhud-more__value">{theme === 'dark' ? '深色' : '浅色'}</span>
         </button>
       </div>
     </DetailSheet>

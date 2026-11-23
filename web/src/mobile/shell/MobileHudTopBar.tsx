@@ -6,11 +6,11 @@ import { formatHudCount } from '@/components/hud/hud-format';
 import type { MobileRouteEntry } from '../mobile-routes';
 
 const GATEWAY: Record<HudGatewayState, { text: string; tone: 'ok' | 'warn' | 'err' | 'info' }> = {
-  connecting: { text: 'SYNC', tone: 'info' },
-  online: { text: 'ONLINE', tone: 'ok' },
-  degraded: { text: 'DEGRADED', tone: 'warn' },
-  empty: { text: 'NO ACCTS', tone: 'warn' },
-  offline: { text: 'OFFLINE', tone: 'err' },
+  connecting: { text: '同步中', tone: 'info' },
+  online: { text: '在线', tone: 'ok' },
+  degraded: { text: '降级', tone: 'warn' },
+  empty: { text: '无账号', tone: 'warn' },
+  offline: { text: '离线', tone: 'err' },
 };
 
 interface Props {
@@ -35,7 +35,7 @@ export default function MobileHudTopBar({ entry, telemetryEnabled }: Props) {
       </div>
       {telemetryEnabled && (
         <div className="mhud-topbar__telemetry" aria-label={`网关 ${gateway.text}`}>
-          <span className={`hud-led hud-led--${gateway.tone}${state === 'online' ? ' hud-led--live' : ''}`} />
+          <span className={`hud-led hud-led--${gateway.tone}${state === 'connecting' ? ' hud-led--live' : ''}`} />
           <span className={`mhud-topbar__gateway mhud-tone--${gateway.tone}`}>{gateway.text}</span>
           <span className="mhud-topbar__accounts">
             {status ? `${formatHudCount(status.activeAccounts)}/${formatHudCount(status.totalAccounts)}` : '—'}

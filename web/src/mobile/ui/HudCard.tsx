@@ -33,6 +33,7 @@ export default function HudCard({ children, title, code, extra, tone, active, on
         .join(' ')}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
+      aria-pressed={interactive && active !== undefined ? active : undefined}
       aria-label={ariaLabel}
       onClick={onClick}
       onKeyDown={onKeyDown}

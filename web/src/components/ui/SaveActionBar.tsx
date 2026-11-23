@@ -75,6 +75,7 @@ export const SaveActionBar = memo(function SaveActionBar({
   );
   const saveDisabled = disabled || saving || !dirty;
   const buttonText = saving ? '保存中…' : dirty ? saveLabel : cleanSaveLabel;
+  const showStatusTag = Boolean(status || statusLabel || saving || dirty || feedbackTone === 'error');
 
   return (
     <div
@@ -83,7 +84,7 @@ export const SaveActionBar = memo(function SaveActionBar({
     >
       <div className="hos-save-action-bar-info">
         <div className="hos-save-action-bar-status-row">
-          <SettingStatusTag status={resolvedStatus} label={statusLabel} compact />
+          {showStatusTag ? <SettingStatusTag status={resolvedStatus} label={statusLabel} compact /> : null}
           <span className="hos-save-action-bar-effect">{effectSummary}</span>
         </div>
         {feedback ? (

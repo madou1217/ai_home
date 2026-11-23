@@ -22,6 +22,17 @@ const prefersReducedMotion = () => {
   }
 };
 
+const readMotionDurationMs = (node: HTMLElement): number => {
+  try {
+    const raw = window.getComputedStyle(node).getPropertyValue('--motion-base').trim();
+    const parsed = Number.parseFloat(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return raw.endsWith('ms') ? parsed : raw.endsWith('s') ? parsed * 1000 : parsed;
+  } catch {
+    return 160;
+  }
+};
+
 export default function AnimatedValue({ children, changeKey, className }: AnimatedValueProps) {
   const ref = useRef<HTMLSpanElement | null>(null);
   const key = changeKey !== undefined
@@ -37,12 +48,14 @@ export default function AnimatedValue({ children, changeKey, className }: Animat
     if (key === null || before === null || before === key) return;
     const node = ref.current;
     if (!node || node.getClientRects().length === 0 || prefersReducedMotion()) return;
+    const duration = readMotionDurationMs(node);
+    if (duration <= 0) return;
     node.animate(
       [
         { opacity: 0.35, transform: 'translateY(-3px)' },
         { opacity: 1, transform: 'none' }
       ],
-      { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' }
+      { duration, easing: 'cubic-bezier(0.2, 0, 0, 1)' }
     );
   }, [key]);
 

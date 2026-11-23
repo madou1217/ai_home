@@ -162,18 +162,24 @@
   --ring-focus: 0 0 0 1px var(--color-accent), 0 0 0 4px rgba(0, 134, 160, 0.18);
   --ring-focus-info: var(--ring-focus);
 
+  /* Shared motion contract:
+   * - instant (80ms): micro press / active feedback
+   * - fast (120ms): hover / focus / chip / row feedback
+   * - base (160ms): state transitions, reveal, card/tab switches
+   * - slow (240ms): drawer / sheet / modal / collapse motion
+   * - standard easing for state changes; emphasized for enter/exit surfaces */
   --motion-instant: 80ms;
   --motion-fast: 120ms;
   --motion-base: 160ms;
   --motion-slow: 240ms;
   --motion-slower: 320ms;
-  --motion-jelly: 620ms;
+  --motion-jelly: 240ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-snappy: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring-soft: cubic-bezier(0.34, 1.36, 0.64, 1);
-  --ease-jelly: cubic-bezier(0.25, 1.55, 0.5, 1);
+  --ease-spring-soft: var(--ease-emphasized);
+  --ease-jelly: var(--ease-emphasized);
 
   /* ---------------------------------------------------------------------------
    * 5. PRIMITIVES — Z-index layers
@@ -383,8 +389,8 @@
   --hud-grid-major-size: 128px;
   --hud-grid-line: rgba(0, 134, 160, 0.055);
   --hud-grid-major-line: rgba(0, 134, 160, 0.09);
-  --hud-glow-accent: 0 0 18px rgba(0, 134, 160, 0.20);
-  --hud-glow-panel-hover: inset 0 1px 0 var(--hud-glass-specular), inset 0 0 22px rgba(0, 134, 160, 0.07);
+  --hud-glow-accent: none;
+  --hud-glow-panel-hover: inset 0 1px 0 var(--hud-glass-specular);
   --hud-text-glow: none;
   --hud-text-glow-soft: none;
   --hud-text-glow-success: none;
@@ -668,13 +674,13 @@ body.dark {
   --hud-ambient-violet: rgba(168, 85, 247, 0.065);
   --hud-grid-line: rgba(0, 240, 255, 0.035);
   --hud-grid-major-line: rgba(0, 240, 255, 0.07);
-  --hud-glow-accent: 0 0 20px rgba(0, 240, 255, 0.26);
-  --hud-glow-panel-hover: inset 0 1px 0 rgba(162, 246, 255, 0.24), inset 0 0 26px rgba(0, 240, 255, 0.09);
-  --hud-text-glow: 0 0 10px rgba(0, 240, 255, 0.55);
-  --hud-text-glow-soft: 0 0 6px rgba(0, 240, 255, 0.28);
-  --hud-text-glow-success: 0 0 10px rgba(0, 255, 102, 0.5);
-  --hud-text-glow-warning: 0 0 10px rgba(255, 170, 0, 0.5);
-  --hud-text-glow-danger: 0 0 10px rgba(255, 0, 85, 0.55);
+  --hud-glow-accent: 0 0 12px rgba(0, 240, 255, 0.16);
+  --hud-glow-panel-hover: inset 0 1px 0 rgba(162, 246, 255, 0.20);
+  --hud-text-glow: none;
+  --hud-text-glow-soft: none;
+  --hud-text-glow-success: none;
+  --hud-text-glow-warning: none;
+  --hud-text-glow-danger: none;
   --hud-scanline: rgba(0, 0, 0, 0.26);
 }
 

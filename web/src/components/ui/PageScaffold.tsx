@@ -61,6 +61,12 @@ export default function PageScaffold({
       </PageContainer>
     );
   }
+  const normalizedTitle = typeof title === 'string' ? title.trim() : null;
+  const normalizedSubTitle = typeof subTitle === 'string' ? subTitle.trim() : null;
+  const resolvedSubTitle =
+    normalizedTitle && normalizedSubTitle && normalizedSubTitle === normalizedTitle
+      ? undefined
+      : subTitle;
   return (
     <div
       className={['unified-page-wrapper', code ? 'unified-page-wrapper--coded' : '', className]
@@ -79,7 +85,7 @@ export default function PageScaffold({
             title
           )
         }
-        subTitle={subTitle}
+        subTitle={resolvedSubTitle}
         extra={extra}
         content={headerContent}
         ghost={ghost}

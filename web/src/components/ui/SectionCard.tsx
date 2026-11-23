@@ -43,7 +43,7 @@ export default function SectionCard({
       headerBordered={headerBordered}
       gutter={gutter}
       bodyStyle={bodyStyle}
-      style={{ marginBottom: 16 }}
+      style={{ marginBottom: 'var(--unified-section-gap, 16px)' }}
     >
       {children}
     </ProCard>

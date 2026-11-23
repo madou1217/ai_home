@@ -26,6 +26,14 @@ const TALL_CONTENT_PX = 1200;
  * 内层 `.aih-reveal-inner` 负责 overflow 裁剪（见 styles/motion.css）。
  * 收起动画播完后默认卸载内容；keepMounted 时只收起不卸载（用于需要保存内部状态的轻量面板）。
  */
+const prefersReducedMotion = () => {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+};
+
 export default function Reveal({
   open,
   children,
@@ -35,33 +43,35 @@ export default function Reveal({
   keepMounted = false,
   tallThreshold = TALL_CONTENT_PX
 }: RevealProps) {
-  const { present, expanded } = useCollapsePresence(open, exitMs);
+  const reducedMotion = prefersReducedMotion();
+  const effectiveExitMs = reducedMotion ? 0 : exitMs;
+  const { present, expanded } = useCollapsePresence(open, effectiveExitMs);
   const innerRef = useRef<HTMLDivElement | null>(null);
   const [tall, setTall] = useState(false);
 
   // 展开前测一次内容高度（scrollHeight 在 0fr 裁剪下仍返回真实内容高度），只触发一次布局。
   useLayoutEffect(() => {
-    // 传 Infinity = 调用方明确要求逐帧展开：连 scrollHeight 都不要读（那是一次强制布局）。
-    if (!Number.isFinite(tallThreshold)) {
+    if (reducedMotion || !Number.isFinite(tallThreshold)) {
       setTall(false);
       return;
     }
     if (!open || !innerRef.current) return;
     const next = innerRef.current.scrollHeight > tallThreshold;
     setTall((previous) => (previous === next ? previous : next));
-  }, [open, present, tallThreshold]);
+  }, [open, present, reducedMotion, tallThreshold]);
 
   if (!present && !keepMounted) return null;
+  const isOpen = reducedMotion ? open : expanded;
   const classes = [
     'aih-reveal',
-    expanded ? 'aih-reveal-open' : 'aih-reveal-closed',
+    isOpen ? 'aih-reveal-open' : 'aih-reveal-closed',
     className || ''
   ].filter(Boolean).join(' ');
   return (
     <div
       className={classes}
       data-tall={tall ? 'true' : undefined}
-      style={{ '--aih-reveal-ms': `${exitMs}ms` } as CSSProperties}
+      style={{ '--aih-reveal-ms': `${effectiveExitMs}ms` } as CSSProperties}
       aria-hidden={open ? undefined : true}
     >
       <div ref={innerRef} className={`aih-reveal-inner${innerClassName ? ` ${innerClassName}` : ''}`}>{children}</div>

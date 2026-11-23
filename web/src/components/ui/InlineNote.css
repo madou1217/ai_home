@@ -28,7 +28,6 @@
   height: calc(var(--hos-text-body-sm) * 1.55);
   color: var(--hos-inline-note-tone);
   font-size: var(--hos-text-body-sm);
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--hos-inline-note-tone) 70%, transparent));
 }
 
 .hos-inline-note--error .hos-inline-note-text { color: var(--color-danger); }

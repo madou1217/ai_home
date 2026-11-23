@@ -43,6 +43,9 @@ export const InlineNote = memo(function InlineNote({
   style
 }: InlineNoteProps) {
   const role = tone === 'error' || tone === 'warning' ? 'alert' : 'note';
+  const normalizedTitle = typeof children === 'string' ? children.trim() : null;
+  const normalizedDesc = typeof description === 'string' ? description.trim() : null;
+  const showDescription = Boolean(description) && (!normalizedTitle || !normalizedDesc || normalizedDesc !== normalizedTitle);
   return (
     <div
       className={`hos-inline-note hos-inline-note--${tone}${className ? ` ${className}` : ''}`}
@@ -52,7 +55,7 @@ export const InlineNote = memo(function InlineNote({
       <span className="hos-inline-note-icon" aria-hidden="true">{icon ?? TONE_ICON[tone]}</span>
       <div className="hos-inline-note-body">
         <span className="hos-inline-note-text">{children}</span>
-        {description ? <span className="hos-inline-note-desc">{description}</span> : null}
+        {showDescription ? <span className="hos-inline-note-desc">{description}</span> : null}
       </div>
       {action ? <span className="hos-inline-note-action">{action}</span> : null}
     </div>

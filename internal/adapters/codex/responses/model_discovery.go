@@ -2,8 +2,10 @@ package responses
 
 import (
 	"context"
+	"fmt"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 )
@@ -12,6 +14,8 @@ import (
 type ModelCatalogSource struct {
 	client   HTTPClient
 	versions clientversion.Source
+	// ladders 可选：把上游目录声明的推理档位登记为运行时覆盖。
+	ladders modelmetadata.ReasoningLadderRegistrar
 }
 
 // 编译期确认 Codex 目录源实现统一 Provider 发现策略。
@@ -38,6 +42,20 @@ func (source *ModelCatalogSource) ProviderID() string {
 	return codexauth.ProviderID
 }
 
+// WithReasoningLadders 让目录发现把上游声明的档位登记为 Provider 级运行时覆盖。
+//
+// 档位是发布时数据：没有这条通道时，新模型要等内置 models.dev 快照升级并重新发版
+// 才会出现在 /v1/models 的 supported_reasoning_levels 里。registrar 为 nil 时保持
+// 只刷新模型 ID 的旧行为。
+func (source *ModelCatalogSource) WithReasoningLadders(
+	registrar modelmetadata.ReasoningLadderRegistrar,
+) *ModelCatalogSource {
+	if source != nil {
+		source.ladders = registrar
+	}
+	return source
+}
+
 // DiscoverModels 在账号管理阶段读取一次完整目录并返回独立切片。
 func (source *ModelCatalogSource) DiscoverModels(
 	ctx context.Context,
@@ -61,6 +79,11 @@ func (source *ModelCatalogSource) DiscoverModels(
 	catalog, err := fetchModelCatalog(ctx, source.client, auth)
 	if err != nil {
 		return nil, err
+	}
+	if source.ladders != nil && len(catalog.ladders) > 0 {
+		if err := source.ladders.ReplaceReasoningLadders(codexauth.ProviderID, catalog.ladders); err != nil {
+			return nil, fmt.Errorf("发布模型推理档位失败: %w", err)
+		}
 	}
 	return append([]string(nil), catalog.models...), nil
 }

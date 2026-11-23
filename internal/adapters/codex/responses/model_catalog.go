@@ -14,8 +14,10 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/core/inference"
 )
 
 const (
@@ -34,11 +36,13 @@ var (
 	errModelUnavailable = errors.New("当前 Codex 账号不支持目标模型")
 )
 
-// modelCatalog 保存排序、去重后的账号模型标识。
+// modelCatalog 保存排序、去重后的账号模型标识与上游声明的推理档位。
 //
 // 排序切片让管理写侧可直接持久化稳定快照，并允许测试执行二分校验。
+// ladders 只保存上游明确声明了档位的模型；缺失表示该端点没有声明，而不是“没有档位”。
 type modelCatalog struct {
-	models []string
+	models  []string
+	ladders map[string][]inference.ReasoningEffort
 }
 
 // count 返回当前目录中的模型数量。
@@ -214,6 +218,34 @@ type modelIdentityDTO struct {
 	// filterCodexModelEntries 一致，隐藏项与不支持 API 的项不进入账号目录。
 	Visibility     string `json:"visibility"`
 	SupportedInAPI *bool  `json:"supported_in_api"`
+	// SupportedReasoningLevels 是 Codex 官方目录（OAuth）声明的推理档位。
+	SupportedReasoningLevels []modelReasoningLevelDTO `json:"supported_reasoning_levels"`
+	// AIHReasoningEfforts 是 AI Home 兼容目录（API Key 端点）声明的推理档位。
+	AIHReasoningEfforts []string `json:"aih_reasoning_efforts"`
+}
+
+// modelReasoningLevelDTO 是官方 Codex 目录的单个推理档位项。
+type modelReasoningLevelDTO struct {
+	Effort string `json:"effort"`
+}
+
+// reasoningLadder 只读取上游明确声明的档位；未知档位丢弃，空结果表示未声明。
+//
+// 两个字段形状不同但语义相同：官方目录给对象数组，AI Home 兼容目录给字符串数组。
+// 同时出现时合并，由统一规范化去重并排序，绝不按目录书写顺序推断强弱。
+func reasoningLadder(entry modelIdentityDTO) ([]inference.ReasoningEffort, bool) {
+	values := make(
+		[]inference.ReasoningEffort,
+		0,
+		len(entry.SupportedReasoningLevels)+len(entry.AIHReasoningEfforts),
+	)
+	for _, level := range entry.SupportedReasoningLevels {
+		values = append(values, inference.ReasoningEffort(strings.TrimSpace(level.Effort)))
+	}
+	for _, effort := range entry.AIHReasoningEfforts {
+		values = append(values, inference.ReasoningEffort(strings.TrimSpace(effort)))
+	}
+	return modelmetadata.NormalizeReasoningLadder(values)
 }
 
 // listedModelIdentity 判断目录项是否对客户端公开：显式 supported_in_api=false 或
@@ -266,6 +298,7 @@ func decodeModelCatalog(
 		return modelCatalog{}, ErrInvalidModelCatalog
 	}
 	models := make([]string, 0, len(entries))
+	ladders := make(map[string][]inference.ReasoningEffort)
 	seen := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		model := entry.ID
@@ -283,12 +316,18 @@ func decodeModelCatalog(
 		}
 		seen[model] = struct{}{}
 		models = append(models, model)
+		if ladder, ok := reasoningLadder(entry); ok {
+			ladders[model] = ladder
+		}
 	}
 	if len(models) == 0 {
 		return modelCatalog{}, ErrInvalidModelCatalog
 	}
 	sort.Strings(models)
-	return modelCatalog{models: models}, nil
+	if len(ladders) == 0 {
+		ladders = nil
+	}
+	return modelCatalog{models: models, ladders: ladders}, nil
 }
 
 // validModelCatalogID 复用运行态真实模型 ID 的统一校验合同。

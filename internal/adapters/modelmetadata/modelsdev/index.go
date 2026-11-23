@@ -41,10 +41,19 @@ type Index struct {
 	contexts  map[string]int
 	names     map[string]string
 	overrides atomic.Pointer[modalityOverrideSnapshot]
+	// effortOverrides 是上游目录声明的运行时档位覆盖，优先于内置快照。
+	effortOverrides atomic.Pointer[reasoningOverrideSnapshot]
 }
 
 type modalityOverrideSnapshot struct {
 	byProvider map[string]map[string]modelmetadata.Modalities
+}
+
+// reasoningOverrideSnapshot 保存 Provider 级“模型 → 档位”运行时覆盖。
+//
+// 与模态覆盖分开存放：上游只声明档位时不应凭空改动模态，反之亦然。
+type reasoningOverrideSnapshot struct {
+	byProvider map[string]map[string][]inference.ReasoningEffort
 }
 
 // 编译期确认索引满足 HTTP 模型目录所依赖的应用层端口。
@@ -87,10 +96,14 @@ func New() (*Index, error) {
 	index.overrides.Store(&modalityOverrideSnapshot{
 		byProvider: map[string]map[string]modelmetadata.Modalities{},
 	})
+	index.effortOverrides.Store(&reasoningOverrideSnapshot{
+		byProvider: map[string]map[string][]inference.ReasoningEffort{},
+	})
 	return index, nil
 }
 
 var _ modelmetadata.ModelDescriptorRegistrar = (*Index)(nil)
+var _ modelmetadata.ReasoningLadderRegistrar = (*Index)(nil)
 var _ modelmetadata.DisplayNameLookup = (*Index)(nil)
 
 // SourceID 返回内置快照的稳定来源标识。
@@ -134,6 +147,46 @@ func (index *Index) ReplaceModelDescriptors(
 	next := cloneOverrideSnapshot(previous)
 	next.byProvider[provider] = nextProvider
 	index.overrides.Store(next)
+	return nil
+}
+
+// ReplaceReasoningLadders 原子替换一个 Provider 的运行时推理档位覆盖。
+//
+// 上游模型目录对“自己接受哪些 effort”是权威；这份覆盖优先于内置 models.dev 快照，
+// 因此新模型发布后，账号目录一刷新就能拿到档位，不必等待依赖升级与重新发版。
+// 空映射表示没有新事实，保留上一代 last-known-good；任一档位无效则整体拒绝。
+func (index *Index) ReplaceReasoningLadders(
+	providerID string,
+	ladders map[string][]inference.ReasoningEffort,
+) error {
+	if index == nil || index.efforts == nil {
+		return modelmetadata.ErrInvalidReasoningLadder
+	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	if provider == "" {
+		return modelmetadata.ErrInvalidReasoningLadder
+	}
+	if len(ladders) == 0 {
+		return nil
+	}
+	nextProvider := make(map[string][]inference.ReasoningEffort, len(ladders))
+	for modelID, values := range ladders {
+		key := normalizeRuntimeModelID(modelID)
+		if key == "" {
+			return modelmetadata.ErrInvalidReasoningLadder
+		}
+		if _, exists := nextProvider[key]; exists {
+			return modelmetadata.ErrInvalidReasoningLadder
+		}
+		ladder, ok := modelmetadata.NormalizeReasoningLadder(values)
+		if !ok {
+			return modelmetadata.ErrInvalidReasoningLadder
+		}
+		nextProvider[key] = ladder
+	}
+	next := cloneReasoningOverrideSnapshot(index.effortOverrides.Load())
+	next.byProvider[provider] = nextProvider
+	index.effortOverrides.Store(next)
 	return nil
 }
 
@@ -252,6 +305,33 @@ func normalizeRuntimeModelID(modelID string) string {
 	return strings.ToLower(strings.TrimSpace(normalizeVersionSeparators(modelID)))
 }
 
+// lookupRuntimeEffortOverride 只做精确模型 ID 命中。
+//
+// 档位覆盖来自上游对该模型 ID 的直接声明，不做命名空间或家族回退：把 A 模型的档位
+// 贴到 B 模型上正是这次要消除的那类猜测。
+func (index *Index) lookupRuntimeEffortOverride(
+	providerID string,
+	modelID string,
+) ([]inference.ReasoningEffort, bool) {
+	if index == nil {
+		return nil, false
+	}
+	snapshot := index.effortOverrides.Load()
+	if snapshot == nil {
+		return nil, false
+	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	models := snapshot.byProvider[provider]
+	if len(models) == 0 {
+		return nil, false
+	}
+	ladder, found := models[normalizeRuntimeModelID(modelID)]
+	if !found || len(ladder) == 0 {
+		return nil, false
+	}
+	return append([]inference.ReasoningEffort(nil), ladder...), true
+}
+
 func cloneOverrideSnapshot(previous *modalityOverrideSnapshot) *modalityOverrideSnapshot {
 	next := &modalityOverrideSnapshot{
 		byProvider: make(map[string]map[string]modelmetadata.Modalities),
@@ -263,6 +343,25 @@ func cloneOverrideSnapshot(previous *modalityOverrideSnapshot) *modalityOverride
 		copied := make(map[string]modelmetadata.Modalities, len(models))
 		for modelID, modalities := range models {
 			copied[modelID], _ = modelmetadata.NewModalities(modalities.Input(), modalities.Output())
+		}
+		next.byProvider[provider] = copied
+	}
+	return next
+}
+
+func cloneReasoningOverrideSnapshot(
+	previous *reasoningOverrideSnapshot,
+) *reasoningOverrideSnapshot {
+	next := &reasoningOverrideSnapshot{
+		byProvider: make(map[string]map[string][]inference.ReasoningEffort),
+	}
+	if previous == nil {
+		return next
+	}
+	for provider, models := range previous.byProvider {
+		copied := make(map[string][]inference.ReasoningEffort, len(models))
+		for modelID, ladder := range models {
+			copied[modelID] = append([]inference.ReasoningEffort(nil), ladder...)
 		}
 		next.byProvider[provider] = copied
 	}
@@ -281,11 +380,18 @@ func (index *Index) LookupReasoningEfforts(
 	providerID string,
 	modelID string,
 ) ([]inference.ReasoningEffort, bool) {
-	if index == nil || len(index.efforts) == 0 {
+	if index == nil {
 		return nil, false
 	}
 	id := strings.TrimSpace(modelID)
 	if id == "" {
+		return nil, false
+	}
+	// 上游目录声明的档位优先：它是该端点真正接受的值，models.dev 只是跨端点快照。
+	if ladder, found := index.lookupRuntimeEffortOverride(providerID, id); found {
+		return ladder, true
+	}
+	if len(index.efforts) == 0 {
 		return nil, false
 	}
 	stripped := stripKnownModelPrefix(id)

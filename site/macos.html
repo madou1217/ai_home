@@ -1234,7 +1234,7 @@
       <nav class="nav-links" aria-label="页面章节导航">
         <a href="#why">为什么</a>
         <a href="#setup">授权</a>
-        <a href="#launcher">launcher</a>
+        <a href="#launcher">授权主体</a>
         <a href="#oauth">OAuth</a>
         <a href="#faq">FAQ</a>
       </nav>
@@ -1262,7 +1262,7 @@
         </p>
         <div class="tag-row" aria-label="核心特性">
           <span class="tag-pill">两项系统权限 · 一次配置</span>
-          <span class="tag-pill">授权给 aih-launch · 升级不失配</span>
+          <span class="tag-pill">授权给 AI Home.app · 升级不失配</span>
           <span class="tag-pill">OAuth 自动继承服务端代理</span>
           <span class="tag-pill">每账号独立 Profile 隔离</span>
         </div>
@@ -1327,7 +1327,7 @@
         <div class="section-head">
           <span class="section-kicker">02 · One-time Setup</span>
           <h2>一次性授权步骤</h2>
-          <p>整个流程只需约一分钟。关键在于将 <code>aih-launch</code> 同时加入「屏幕录制」与「辅助功能」两个列表，并在授权后重启服务。</p>
+          <p>整个流程只需约一分钟：打开 AI Home.app，在授权窗口里点两次请求；macOS 会自动把 app 加入两个列表，你只需要打开开关。</p>
         </div>
 
         <div class="setup-layout">
@@ -1335,10 +1335,11 @@
             <li class="step-item">
               <span class="step-num" aria-hidden="true">1</span>
               <div class="step-body">
-                <h3>打开「系统设置 → 隐私与安全性」</h3>
-                <p>在右侧列表中依次找到 <strong>屏幕录制</strong> 和 <strong>辅助功能</strong>。两者都需要完成添加。</p>
-                <div class="step-note">
-                  在 macOS 15+ 中，「屏幕录制」可能显示为 <strong>屏幕与系统音频录制</strong>，属于同一权限入口。
+                <h3>打开 AI Home.app</h3>
+                <p>从「应用程序」打开，或执行下面的命令。它会弹出授权窗口，两项状态一目了然。</p>
+                <div class="code-row">
+                  <code>open "$HOME/.ai_home/apps/AI Home.app"</code>
+                  <button class="copy-btn" type="button" data-copy='open "$HOME/.ai_home/apps/AI Home.app"'>复制</button>
                 </div>
               </div>
             </li>
@@ -1346,11 +1347,10 @@
             <li class="step-item">
               <span class="step-num" aria-hidden="true">2</span>
               <div class="step-body">
-                <h3>分别点 + 并定位到 <code>aih-launch</code></h3>
-                <p>在两个权限列表中分别点击左下角 <kbd>+</kbd>，文件面板弹出后按 <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>，粘贴以下路径并回车：</p>
-                <div class="code-row">
-                  <code>~/.ai_home/bin/aih-launch</code>
-                  <button class="copy-btn" type="button" data-copy="~/.ai_home/bin/aih-launch">复制</button>
+                <h3>点「请求屏幕录制」</h3>
+                <p>macOS 会把 AI Home 自动加入「屏幕录制」并弹出提示。到系统设置中打开该条目右侧的开关。</p>
+                <div class="step-note">
+                  在 macOS 15+ 中，「屏幕录制」可能显示为 <strong>屏幕与系统音频录制</strong>，属于同一权限入口。
                 </div>
               </div>
             </li>
@@ -1358,10 +1358,10 @@
             <li class="step-item">
               <span class="step-num" aria-hidden="true">3</span>
               <div class="step-body">
-                <h3>选中 <code>aih-launch</code> 并打开开关</h3>
-                <p>确认两个列表中均已出现 <code>aih-launch</code> 且右侧开关处于开启状态。</p>
+                <h3>点「请求辅助功能」</h3>
+                <p>同样在「辅助功能」列表里打开 AI Home 的开关。<strong>两个列表都需要</strong>，缺一不可。</p>
                 <div class="step-note">
-                  注意核对名称：列表里应出现 <code>aih-launch</code>，<strong>不是</strong> <code>aih-server</code>。之前误添加的多余旧条目可以直接选中后点 <kbd>−</kbd> 删除。
+                  列表里应出现 <strong>AI Home</strong>，<strong>不是</strong> aih-server。之前误加的多余旧条目可以选中后点 <kbd>−</kbd> 删除。
                 </div>
               </div>
             </li>
@@ -1369,19 +1369,10 @@
             <li class="step-item">
               <span class="step-num" aria-hidden="true">4</span>
               <div class="step-body">
-                <h3>重启服务并执行预检</h3>
-                <p>权限变更需要重启后台服务才会由新进程继承。执行重启命令后运行 preflight 检查：</p>
-                <div class="code-row">
-                  <code>aih server restart</code>
-                  <button class="copy-btn" type="button" data-copy="aih server restart">复制</button>
-                </div>
-                <div class="code-row">
-                  <code>~/.ai_home/bin/aih-browser-surface --preflight</code>
-                  <button class="copy-btn" type="button" data-copy="~/.ai_home/bin/aih-browser-surface --preflight">复制</button>
-                </div>
-                <div class="preflight-ok">
-                  <span>返回如下 JSON 即表示两项权限均已就绪：</span>
-                  <code>{"screenCapture":true,"eventPosting":true}</code>
+                <h3>确认两项都显示 ✓</h3>
+                <p>回到 AI Home 窗口，两项都变成 ✓ 即可。随后到 WebUI 启动账号浏览器，出现画面就已经成功。</p>
+                <div class="step-note">
+                  状态没有刷新时点窗口里的「重新检查」，或执行 aih server restart。不要在终端直接运行 helper 的 preflight 来判断——那使用的是终端自己的授权身份。
                 </div>
               </div>
             </li>
@@ -1410,13 +1401,13 @@
               <div class="mac-list">
                 <div class="mac-row">
                   <div class="mac-row-info">
-                    <span class="mac-app-icon" aria-hidden="true">AL</span>
+                    <span class="mac-app-icon" aria-hidden="true">AH</span>
                     <div class="mac-app-meta">
                       <div class="mac-app-name">
-                        aih-launch
+                        AI Home.app
                         <span class="badge-mini badge-ok">必需</span>
                       </div>
-                      <div class="mac-app-path">~/.ai_home/bin/aih-launch</div>
+                      <div class="mac-app-path">~/.ai_home/apps/AI Home.app</div>
                     </div>
                   </div>
                   <span class="toggle-pill on" aria-label="已开启"></span>
@@ -1441,18 +1432,18 @@
                 <div class="mac-plus-group" aria-hidden="true">
                   <span>+</span><span>−</span>
                 </div>
-                <span>点 + 后按 <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></span>
+                <span>请求权限后 app 会自动出现在列表</span>
               </div>
             </div>
           </aside>
         </div>
       </section>
 
-      <!-- Section 3: Why aih-launch -->
+      <!-- Section 3: Why AI Home.app -->
       <section id="launcher" class="reveal">
         <div class="section-head">
           <span class="section-kicker">03 · Architecture</span>
-          <h2>为什么授权给 <code>aih-launch</code>，而不是 <code>aih-server</code></h2>
+          <h2>为什么授权给 <code>AI Home.app</code>，而不是 <code>aih-server</code></h2>
           <p>macOS 的 TCC 把隐私权限绑定在「责任进程」（Responsible Process）上。如果后台服务直接运行 <code>aih-server</code>，责任进程就是它本身——而 <code>aih-server</code> 每次升级都会变化，导致原有授权立刻失配。</p>
         </div>
 
@@ -1468,7 +1459,7 @@
             </div>
             <div class="chain-node highlight">
               <span class="chain-role">Responsible · 持有授权</span>
-              <span class="chain-name">aih-launch</span>
+              <span class="chain-name">AI Home.app</span>
               <span class="chain-desc">极少变化，长期稳定持有 TCC 权限记录</span>
             </div>
             <div class="chain-arrow" aria-hidden="true">
@@ -1492,8 +1483,8 @@
 
         <div class="grid-2">
           <div class="card">
-            <h3><code>aih-launch</code> 的极简职责</h3>
-            <p>为了保证跨版本字节一致、避免触碰 TCC 重签校验，<code>aih-launch</code> 被严格收敛为只做三件事：</p>
+            <h3><code>AI Home.app</code> 的两种模式</h3>
+            <p>正常打开时显示授权窗口；由 launchd 启动时进入 service 模式，只做三件事：</p>
             <ul class="bullet-list">
               <li>启动后端核心进程 <code>aih-server</code></li>
               <li>将系统终止信号准确转发给子进程</li>
@@ -1506,7 +1497,7 @@
             <p>绝大多数日常维护都不会触发权限失效：</p>
             <ul class="bullet-list">
               <li><strong>无需重授：</strong>普通的 <code>aih</code> 版本升级、重启服务、新增或切换账号。</li>
-              <li><strong>需要重授：</strong>仅当 <code>aih-launch</code> 自身被重新编译，或编译它的 Go 工具链发生大版本变化时。</li>
+              <li><strong>需要重授：</strong>仅当 AI Home.app 被替换（安装真正的新版本）时；普通 aih-server 升级不需要。</li>
             </ul>
           </div>
         </div>
@@ -1581,7 +1572,7 @@
           </div>
           <div class="boundary-item">
             <h3>不干扰其它应用</h3>
-            <p>授权仅服务于 <code>aih-launch</code> 启动链路，不影响 macOS 上其它应用程序的权限状态。</p>
+            <p>授权仅服务于 <code>AI Home.app</code> 启动链路，不影响 macOS 上其它应用程序的权限状态。</p>
           </div>
         </div>
       </section>
@@ -1601,8 +1592,8 @@
               <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </summary>
             <div class="faq-content">
-              <p>请确认 <strong>屏幕录制</strong> 与 <strong>辅助功能</strong> 两个列表都已添加 <code>aih-launch</code> 并打开开关，缺一不可。</p>
-              <p>确认后务必执行 <code>aih server restart</code> 重启服务，再用 <code>~/.ai_home/bin/aih-browser-surface --preflight</code> 验证返回是否均为 <code>true</code>。</p>
+              <p>请打开 AI Home.app，确认窗口里的两项都显示 ✓；两个系统列表里也应有 AI Home 且开关打开。缺一不可。</p>
+              <p>如果状态没有刷新，点窗口里的「重新检查」，或执行 <code>aih server restart</code>。不要在终端直接运行 helper 的 preflight 来判断——那使用的是终端自身的授权。</p>
             </div>
           </details>
 
@@ -1612,7 +1603,7 @@
               <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </summary>
             <div class="faq-content">
-              <p>在 macOS 文件选择面板中直接按 <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> 调出「前往文件夹」，粘贴 <code>~/.ai_home/bin/aih-launch</code> 回车即可直达。</p>
+              <p>先打开 AI Home.app 并点「请求屏幕录制 / 请求辅助功能」，macOS 会自动把它加入列表；不需要在文件面板里手动找路径。</p>
               <p>如果你自定义了 AI Home 数据目录，将路径前缀 <code>~/.ai_home</code> 替换为你的实际目录路径。</p>
             </div>
           </details>
@@ -1623,8 +1614,8 @@
               <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </summary>
             <div class="faq-content">
-              <p>打开「系统设置 → 隐私与安全性」的两个权限列表，检查授权条目是否是 <code>aih-launch</code>，而不是 <code>aih-server</code>。</p>
-              <p>如果列表里之前加的是 <code>aih-server</code>，请删除旧条目并改加 <code>~/.ai_home/bin/aih-launch</code>，随后重启服务。</p>
+              <p>打开「系统设置 → 隐私与安全性」的两个权限列表，检查授权条目是否是 <code>AI Home.app</code>，而不是 <code>aih-server</code>。</p>
+              <p>如果列表里之前加的是 aih-server 或旧的 launcher，删除旧条目；保留 AI Home 即可。</p>
             </div>
           </details>
 
@@ -1670,7 +1661,7 @@
         <div class="section-head">
           <span class="section-kicker">07 · Quick Reference</span>
           <h2>命令速查</h2>
-          <p>常用服务管理、权限预检与签名核验命令，点击右侧按钮可直接复制。</p>
+          <p>常用服务管理、授权窗口与签名核验命令，点击右侧按钮可直接复制。</p>
         </div>
 
         <div class="cmd-grid">
@@ -1693,20 +1684,20 @@
           </div>
 
           <div class="cmd-card">
-            <div class="cmd-label">权限预检（Preflight）</div>
-            <div class="cmd-desc">返回 <code>{"screenCapture":true,"eventPosting":true}</code> 即就绪</div>
+            <div class="cmd-label">打开授权窗口</div>
+            <div class="cmd-desc">重新检查两项权限并申请授权</div>
             <div class="code-row">
-              <code>~/.ai_home/bin/aih-browser-surface --preflight</code>
-              <button class="copy-btn" type="button" data-copy="~/.ai_home/bin/aih-browser-surface --preflight">复制</button>
+              <code>open "$HOME/.ai_home/apps/AI Home.app"</code>
+              <button class="copy-btn" type="button" data-copy='open "$HOME/.ai_home/apps/AI Home.app"'>复制</button>
             </div>
           </div>
 
           <div class="cmd-card">
-            <div class="cmd-label">检查 launcher 签名</div>
-            <div class="cmd-desc">查看 <code>aih-launch</code> 代码签名与标识信息</div>
+            <div class="cmd-label">检查 app 签名</div>
+            <div class="cmd-desc">查看 AI Home.app 的代码签名与标识信息</div>
             <div class="code-row">
-              <code>codesign -dvvv ~/.ai_home/bin/aih-launch</code>
-              <button class="copy-btn" type="button" data-copy="codesign -dvvv ~/.ai_home/bin/aih-launch">复制</button>
+              <code>codesign -dvvv "$HOME/.ai_home/apps/AI Home.app"</code>
+              <button class="copy-btn" type="button" data-copy='codesign -dvvv "$HOME/.ai_home/apps/AI Home.app"'>复制</button>
             </div>
           </div>
         </div>

@@ -53,9 +53,26 @@ v0.1.5 改为：
 - Release：https://github.com/madou1217/aih-plugin-cloudflared/releases/tag/v0.1.5
 - 资产：`cloudflared-0.1.5.aih-plugin`、`public.pem`、`SHA256SUMS`；下载哈希与本地构建一致（`b71a8568…`）。
 
-## 6. 边界
+## 6. Token 模式验证（临时隧道）
 
-- 本记录验证的是本地 credentials 模式（credentials JSON + 本地 ingress）；Tunnel Token
-  模式保持原有实现，未在本轮重复验证（其入口由 Cloudflare 远程管理）；
-- 未修改生产隧道配置，也未创建新隧道；
-- 若需要验证远程管理 ingress 下的 Token 模式，需要账号侧另行提供 Token。
+为不触碰生产隧道，用本机账号 cert 创建了一条**临时隧道**（不配置 DNS、不配置远程
+ingress，因此没有任何公网暴露），仅验证插件的 Token 链路：
+
+| 步骤 | 结果 |
+|---|---|
+| 插件 configure `{tunnelToken}` | 配置已保存 |
+| 插件 enable（`TUNNEL_TOKEN` + `cloudflared tunnel run`） | `运行中`，cloudflared 注册 4 条连接 |
+| 账号侧 `cloudflared tunnel list` | 临时隧道连接数 = 4（确认连接归属该隧道） |
+| 插件 disable | `已停止`，临时隧道连接数 = 0 |
+| 清理 | 删除临时隧道、credentials 与 Token 文件，生产隧道公网 200 |
+
+说明：Token 模式的 ingress 由 Cloudflare 远程管理，本轮没有配置远程 ingress 与 DNS，
+因此验证到「Token 被接受、连接建立、可被账号侧观测」为止；域名回源路由属于账号侧配置，
+未在本轮覆盖。
+
+## 7. 边界
+
+- 本记录验证了本地 credentials 模式的完整域名回源，以及 Token 模式的连接建立；
+- 未修改生产隧道配置，也未修改任何 DNS；
+- 若需要验证远程管理 ingress 下的 Token 域名回源，需要在 Cloudflare 侧配置远程 ingress
+  与 DNS 后再跑一次。

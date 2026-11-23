@@ -201,11 +201,13 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			err = closeErr
 		}
 	}()
+	var tunDone <-chan struct{}
 	if options.tun {
-		closeTUN, tunErr := startTUN(ctx, runtime, lease, options)
+		closeTUN, done, tunErr := startTUN(ctx, runtime, lease, options)
 		if tunErr != nil {
 			return tunErr
 		}
+		tunDone = done
 		if closeTUN != nil {
 			defer closeTUN()
 		}
@@ -261,6 +263,8 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	}
 	select {
 	case <-ctx.Done():
+	case <-tunDone:
+		return errors.New("TUN 内核已退出，代理入口随之关闭")
 	case renewErr := <-leaseErr:
 		return fmt.Errorf("代理租约续期失败: %w", renewErr)
 	}

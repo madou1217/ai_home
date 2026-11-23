@@ -37,7 +37,7 @@ func showLimitsUsage(runtime commandRuntime) {
 		"",
 		"说明:",
 		"  全局配置写入 config:server.concurrency；账号覆盖写入 account_concurrency_limits。",
-		"  本轮只存储与预览上限，不执行拦截（enforced=false）。",
+		"  并发上限已执行拦截；RPM/TPM 只存储与预览。",
 	}
 	for _, line := range lines {
 		_, _ = fmt.Fprintln(runtime.stdout, line)

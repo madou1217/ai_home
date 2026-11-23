@@ -19,7 +19,11 @@ import {
   selectActiveControlPlaneProfile,
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
-import { connectControlPlaneProfile } from '@/services/control-plane-profile-connection';
+import {
+  connectControlPlaneProfile,
+  probeControlPlaneProfile,
+  type ProbeControlPlaneProfileResult
+} from '@/services/control-plane-profile-connection';
 import type { ControlPlaneProfile } from '@/types';
 
 export type ServerSetupFormValues = {
@@ -42,9 +46,9 @@ export function normalizeServerSetupError(error: unknown) {
 
 /** 已保存 Server 的状态灯 / 文案（与首启页一致：ready / degraded / offline）。 */
 export function getServerSetupProfileStatus(profile: ControlPlaneProfile) {
-  if (isControlPlaneProfileReady(profile)) return { color: 'green', tone: 'ok' as const, label: 'ready' };
-  if (profile.state === 'degraded') return { color: 'orange', tone: 'warn' as const, label: 'degraded' };
-  return { color: 'default', tone: 'muted' as const, label: 'offline' };
+  if (isControlPlaneProfileReady(profile)) return { color: 'green', tone: 'ok' as const, label: '已连接' };
+  if (profile.state === 'degraded') return { color: 'orange', tone: 'warn' as const, label: '失败' };
+  return { color: 'default', tone: 'muted' as const, label: '未连接' };
 }
 
 export function formatServerSetupProfileDetail(profile: ControlPlaneProfile) {
@@ -72,6 +76,9 @@ export function useServerSetupProfiles() {
   const [activeProfileId, setActiveProfileId] = useState(initialState.activeProfileId);
   const [checkingId, setCheckingId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [lastProbe, setLastProbe] = useState<ProbeControlPlaneProfileResult | null>(null);
+  const [lastFeedback, setLastFeedback] = useState<{ tone: 'muted' | 'success' | 'error'; text: string } | null>(null);
   const [bootstrapIssue, setBootstrapIssue] = useState<ControlPlaneBootstrapIssue | null>(
     getLastControlPlaneBootstrapIssue
   );
@@ -112,12 +119,55 @@ export function useServerSetupProfiles() {
     // 只在挂载时与共享 Server 列表对齐一次（与桌面首启页一致）
   }, []);
 
+  const clearProbeState = () => {
+    setLastProbe(null);
+    setLastFeedback(null);
+  };
+
+  /**
+   * 仅探测连接与 Management Key，不写入持久化配置。
+   */
+  const probeServer = async (
+    profileId: string,
+    values: ServerSetupFormValues
+  ): Promise<ProbeControlPlaneProfileResult | null> => {
+    setProbing(true);
+    setLastFeedback(null);
+    try {
+      const result = await probeControlPlaneProfile({
+        profiles,
+        profileId,
+        endpoint: values.endpoint,
+        name: values.name,
+        managementKey: values.managementKey
+      });
+      setLastProbe(result);
+      const summary = [
+        result.serverVersion ? `版本 ${result.serverVersion}` : '',
+        `账号 ${result.activeAccountCount}/${result.accountCount}`
+      ].filter(Boolean).join(' · ');
+      setLastFeedback({
+        tone: 'success',
+        text: `探测通过（${summary}），点击保存后写入并切换为当前生效。`
+      });
+      return result;
+    } catch (error) {
+      const msg = normalizeServerSetupError(error);
+      setLastProbe(null);
+      setLastFeedback({ tone: 'error', text: msg });
+      return null;
+    } finally {
+      setProbing(false);
+    }
+  };
+
   /**
    * 连接 Server：探测 + 刷新设备状态 + 设为当前。
    * 刷新失败时把 Server 记为 degraded 并仍设为当前，然后提示错误。成功返回 true。
    */
   const saveServer = async (profileId: string, values: ServerSetupFormValues): Promise<boolean> => {
     setSaving(true);
+    setLastFeedback(null);
     try {
       const profile = await connectControlPlaneProfile({
         profiles,
@@ -148,10 +198,14 @@ export function useServerSetupProfiles() {
       await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
       syncProfiles();
       clearControlPlaneBootstrapIssue();
-      message.success('Server 已保存并设为当前');
+      setLastProbe(null);
+      setLastFeedback({ tone: 'success', text: `已保存并生效：${profile.endpoint}` });
+      message.success('Server 已保存并设为当前生效');
       return true;
     } catch (error) {
-      message.error(normalizeServerSetupError(error));
+      const msg = normalizeServerSetupError(error);
+      setLastFeedback({ tone: 'error', text: msg });
+      message.error(msg);
       return false;
     } finally {
       setSaving(false);
@@ -208,7 +262,12 @@ export function useServerSetupProfiles() {
     hasReadyServer,
     checkingId,
     saving,
+    probing,
+    lastProbe,
+    lastFeedback,
     bootstrapIssue,
+    clearProbeState,
+    probeServer,
     saveServer,
     refreshProfile,
     removeProfile,

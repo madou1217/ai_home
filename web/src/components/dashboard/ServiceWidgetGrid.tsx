@@ -8,6 +8,8 @@ export interface ServiceWidgetProps {
   subtitle?: string;
   icon?: ReactNode;
   status?: 'healthy' | 'warning' | 'error' | 'neutral';
+  /** 可选覆盖状态文案，避免与其他区块重复相同的状态词 */
+  statusLabel?: string;
   span?: 1 | 2;
   trend?: string;
   /**
@@ -30,6 +32,7 @@ export const ServiceWidget = memo(function ServiceWidget({
   subtitle,
   icon,
   status = 'healthy',
+  statusLabel,
   span = 1,
   trend,
   valueTone = 'status',
@@ -82,8 +85,8 @@ export const ServiceWidget = memo(function ServiceWidget({
 
       <div className={styles.widgetFooter}>
         <div className={`${styles.statusDotWrapper} ${statusClass}`}>
-          <span className={`hud-led ${ledClass}`} />
-          <span>{status === 'healthy' ? '运行正常' : status === 'warning' ? '存在告警' : status === 'neutral' ? '暂无数据' : '不可用'}</span>
+          <span className={`hud-led ${ledClass}`} aria-hidden="true" />
+          <span>{statusLabel ?? (status === 'healthy' ? '正常' : status === 'warning' ? '告警' : status === 'neutral' ? '暂无数据' : '异常')}</span>
         </div>
         {trend && <span className={styles.trendText}>{trend}</span>}
       </div>

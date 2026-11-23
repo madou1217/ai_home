@@ -17,7 +17,10 @@ import {
   normalizeEndpointHintWarnings,
   resolveDefaultControlEndpoint
 } from '@/services/control-plane-endpoints';
-import { connectControlPlaneProfile } from '@/services/control-plane-profile-connection';
+import {
+  connectControlPlaneProfile,
+  probeControlPlaneProfile
+} from '@/services/control-plane-profile-connection';
 import {
   getActiveControlPlaneProfileId,
   resolveStoredActiveControlPlaneProfile,
@@ -44,6 +47,7 @@ export function useControlPlaneServers() {
   const [checkingControlPlaneId, setCheckingControlPlaneId] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [probing, setProbing] = useState(false);
   const [endpointHints, setEndpointHints] = useState<ControlPlaneEndpointHint[]>([]);
   const [endpointWarnings, setEndpointWarnings] = useState<string[]>([]);
 
@@ -79,6 +83,27 @@ export function useControlPlaneServers() {
   useEffect(() => addControlPlaneProfilesChangeListener(() => {
     syncSavedControlPlaneProfiles(activeControlPlaneId);
   }), [activeControlPlaneId]);
+
+  /** 仅探测 Server 连通性与 Key 有效性，不写入本地配置。 */
+  const probeControlPlane = async (authorizingProfileId: string, values: ControlPlaneServerFormValues) => {
+    setProbing(true);
+    try {
+      const result = await probeControlPlaneProfile({
+        profiles,
+        profileId: authorizingProfileId,
+        endpoint: values.endpoint,
+        name: values.name,
+        managementKey: values.managementKey
+      });
+      message.success(`探测通过：${result.endpoint}`);
+      return result;
+    } catch (error) {
+      message.error(errorMessage(error) || 'Server 探测失败');
+      return null;
+    } finally {
+      setProbing(false);
+    }
+  };
 
   /** 探测并保存（authorizingProfileId 为空）或授权已发现的 Server；成功返回 true。 */
   const saveControlPlane = async (authorizingProfileId: string, values: ControlPlaneServerFormValues) => {
@@ -208,9 +233,11 @@ export function useControlPlaneServers() {
     checkingControlPlaneId,
     refreshingAll,
     saving,
+    probing,
     endpointHints,
     endpointWarnings,
     defaultEndpoint: resolveDefaultControlEndpoint(endpointHints, ''),
+    probeControlPlane,
     saveControlPlane,
     refreshControlPlane,
     refreshAllControlPlanes,

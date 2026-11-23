@@ -12,6 +12,7 @@ const asApiError = (error: unknown): ApiError => (error && typeof error === 'obj
 export interface SshTestState {
   loading: boolean;
   result?: SshHostTestResult;
+  testedAt?: number;
 }
 
 /**
@@ -86,19 +87,26 @@ export function useSshHosts() {
   };
 
   const testConnection = async (conn: SshConnection) => {
-    setTestStates((prev) => ({ ...prev, [conn.id]: { loading: true } }));
+    setTestStates((prev) => ({
+      ...prev,
+      [conn.id]: { ...prev[conn.id], loading: true }
+    }));
     try {
       const result = await sshHostsAPI.testConnection({
         connectionId: conn.id,
         timeoutMs: 5000
       });
-      setTestStates((prev) => ({ ...prev, [conn.id]: { loading: false, result } }));
+      setTestStates((prev) => ({
+        ...prev,
+        [conn.id]: { loading: false, result, testedAt: Date.now() }
+      }));
     } catch (err) {
       const error = asApiError(err);
       setTestStates((prev) => ({
         ...prev,
         [conn.id]: {
           loading: false,
+          testedAt: Date.now(),
           result: {
             status: 'unreachable',
             target: conn.host,

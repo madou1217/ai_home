@@ -27,6 +27,81 @@ export type ProviderRow = {
   failures: number;
 };
 
+export type ProviderHealthBucket = 'attention' | 'healthy' | 'inactive';
+
+export interface ProviderRowGroups {
+  attention: ProviderRow[];
+  healthy: ProviderRow[];
+  inactive: ProviderRow[];
+}
+
+export interface DashboardNextAction {
+  kind: 'accounts' | 'clear_cooldown' | 'none';
+  summary: string;
+  actionLabel?: string;
+}
+
+export function classifyProviderRow(row: ProviderRow): ProviderHealthBucket {
+  if (row.total <= 0) return 'inactive';
+  if (row.active < row.total || row.failures > 0) return 'attention';
+  return 'healthy';
+}
+
+export function groupProviderRows(rows: ProviderRow[]): ProviderRowGroups {
+  const groups: ProviderRowGroups = { attention: [], healthy: [], inactive: [] };
+  for (const row of rows) {
+    groups[classifyProviderRow(row)].push(row);
+  }
+  groups.attention.sort((a, b) => {
+    const aDegraded = Math.max(0, a.total - a.active);
+    const bDegraded = Math.max(0, b.total - b.active);
+    if (bDegraded !== aDegraded) return bDegraded - aDegraded;
+    return b.failures - a.failures;
+  });
+  groups.healthy.sort((a, b) => b.requests - a.requests || b.total - a.total);
+  return groups;
+}
+
+export function resolveDashboardNextAction(input: {
+  overallHealth: OverallHealth;
+  totalAccounts: number;
+  degradedCount: number;
+  cooldownAccounts: number;
+  attentionProviders: ProviderRow[];
+}): DashboardNextAction {
+  if (input.overallHealth === 'loading') {
+    return { kind: 'none', summary: '正在拉取网关与账号运行态。' };
+  }
+  if (input.totalAccounts === 0) {
+    return {
+      kind: 'accounts',
+      summary: '尚未接入可用账号，先添加账号即可开始调度。',
+      actionLabel: '去添加账号'
+    };
+  }
+  if (input.cooldownAccounts > 0) {
+    return {
+      kind: 'clear_cooldown',
+      summary: `${input.cooldownAccounts} 个账号在冷却中被临时摘除，可尝试清空冷却恢复。`,
+      actionLabel: '清空冷却'
+    };
+  }
+  if (input.degradedCount > 0) {
+    const names = input.attentionProviders
+      .slice(0, 3)
+      .map((row) => getProviderDisplayName(row.provider))
+      .join('、');
+    return {
+      kind: 'accounts',
+      summary: names
+        ? `${names} 存在异常账号，建议检查授权与配额。`
+        : `${input.degradedCount} 个账号处于降级态，建议检查账号状态。`,
+      actionLabel: '查看账号'
+    };
+  }
+  return { kind: 'none', summary: '网关与已接入 Provider 运行正常，无需干预。' };
+}
+
 export type RouteRow = { key: string; route: string; count: number };
 
 export const formatPercent = (value?: number) => `${(Number(value || 0) * 100).toFixed(1)}%`;

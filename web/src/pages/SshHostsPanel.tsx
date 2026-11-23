@@ -1,28 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { Form, Input, Collapse, Switch, Modal, Tag, Space, Select, Breadcrumb, Radio, Tabs, Drawer } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Collapse, Form, Input, Radio, Select, Space, Switch, Tabs } from 'antd';
+import { ModalForm } from '@ant-design/pro-components';
+import { FolderAddOutlined, FolderOpenOutlined, LinkOutlined } from '@ant-design/icons';
 import FormSurfaceField, { useFormSubmitTransitionGuard } from '@/components/ui/FormSurfaceField';
 import InlineNote from '@/components/ui/InlineNote';
 import Reveal from '@/components/ui/Reveal';
-import HudStateView from '@/components/hud/HudStateView';
-import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
-import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { SshConnectionCardList, SshWorkspaceCardList } from '@/components/settings/SshHostCardLists';
-import type { SshConnection, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
+import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import SshDiagnosticDrawer from '@/features/ssh-hosts/SshDiagnosticDrawer';
+import SshDirectoryBrowserModal from '@/features/ssh-hosts/SshDirectoryBrowserModal';
+import type { SshAuthType, SshConnection, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
 import {
   SSH_AUTH_OPTIONS,
   SSH_CONNECTION_FORM_DEFAULTS,
-  buildRemotePathCrumbs,
   buildSshConnectionFormValues
 } from '@/features/ssh-hosts/ssh-hosts-model';
 import { useSshDirectoryBrowser, useSshHosts } from '@/features/ssh-hosts/use-ssh-hosts';
-import { LoadingOutlined, FolderOpenOutlined, FolderAddOutlined, LinkOutlined, RightOutlined } from '@ant-design/icons';
 
 export default function SshHostsPanel({ setActions }: { setActions?: (actions: React.ReactNode) => void }) {
-  // ------------------------------------------
-  // 1. 数据状态（数据与请求由 useSshHosts 统一提供，移动端共用）
-  // ------------------------------------------
   const {
     connections,
     workspaces,
@@ -36,64 +34,27 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     saveWorkspace,
     deleteWorkspace
   } = useSshHosts();
+
   const [activeTab, setActiveTab] = useState<'connections' | 'workspaces'>('connections');
   const [filterConnectionId, setFilterConnectionId] = useState<string>('');
   const [diagnosticDrawerVisible, setDiagnosticDrawerVisible] = useState(false);
   const [activeDiagnosticConn, setActiveDiagnosticConn] = useState<SshConnection | null>(null);
 
-  // Connection 弹窗状态
   const [connModalVisible, setConnModalVisible] = useState(false);
   const [editingConn, setEditingConn] = useState<SshConnection | null>(null);
   const [connForm] = Form.useForm();
-  const [authType, setAuthType] = useState<'key' | 'key-file' | 'password' | 'agent'>('agent');
+  const [authType, setAuthType] = useState<SshAuthType>('agent');
 
-  // Workspace 弹窗状态
   const [wsModalVisible, setWsModalVisible] = useState(false);
   const [editingWs, setEditingWs] = useState<SshWorkspace | null>(null);
   const [wsForm] = Form.useForm();
   const [selectedConnIdInForm, setSelectedConnIdInForm] = useState<string>('');
 
-  useEffect(() => {
-    if (setActions) {
-      setActions(
-        <PageHeaderActions
-          actions={[
-            {
-              key: 'add-conn',
-              label: '添加连接',
-              icon: <LinkOutlined />,
-              onClick: () => showConnModal(),
-            },
-            {
-              key: 'add-ws',
-              label: '创建工作空间',
-              icon: <FolderAddOutlined />,
-              primary: true,
-              disabled: connections.length === 0,
-              onClick: () => showWsModal(),
-            },
-          ]}
-        />
-      );
-    }
-  }, [setActions, connections.length]);
-
-  useEffect(() => {
-    return () => {
-      setActions?.(null);
-    };
-  }, [setActions]);
-
-  // 远程目录浏览器状态
   useFormSubmitTransitionGuard(connForm);
   const dirBrowser = useSshDirectoryBrowser();
-  const { surfaceRef: dirListSurfaceRef, switchSurface: switchDirSurface } = useSurfaceSwitch<HTMLDivElement>();
   const { surfaceRef: authFieldsSurfaceRef, switchSurface: switchAuthFields } = useSurfaceSwitch<HTMLDivElement>();
 
-  // ------------------------------------------
-  // 3. Connection 物理连接管理逻辑
-  // ------------------------------------------
-  const showConnModal = (conn?: SshConnection) => {
+  const showConnModal = useCallback((conn?: SshConnection) => {
     if (conn) {
       setEditingConn(conn);
       setAuthType(conn.authType);
@@ -105,22 +66,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       connForm.setFieldsValue(SSH_CONNECTION_FORM_DEFAULTS);
     }
     setConnModalVisible(true);
-  };
+  }, [connForm]);
 
-  const handleSaveConn = (values: Record<string, unknown>): Promise<boolean> => saveConnection(editingConn, values);
-
-  const handleDeleteConn = (id: string) => deleteConnection(id);
-
-  const handleTestConnection = async (conn: SshConnection) => {
-    setActiveDiagnosticConn(conn);
-    setDiagnosticDrawerVisible(true);
-    await testConnection(conn);
-  };
-
-  // ------------------------------------------
-  // 4. Workspace 工作空间管理逻辑
-  // ------------------------------------------
-  const showWsModal = (ws?: SshWorkspace) => {
+  const showWsModal = useCallback((ws?: SshWorkspace, preferredConnId?: string) => {
     if (ws) {
       setEditingWs(ws);
       setSelectedConnIdInForm(ws.connectionId);
@@ -131,25 +79,51 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       });
     } else {
       setEditingWs(null);
-      setSelectedConnIdInForm('');
       wsForm.resetFields();
-      if (connections.length > 0) {
-        wsForm.setFieldsValue({ connectionId: connections[0].id });
-        setSelectedConnIdInForm(connections[0].id);
+      const targetConnId = preferredConnId || connections[0]?.id || '';
+      setSelectedConnIdInForm(targetConnId);
+      if (targetConnId) {
+        wsForm.setFieldsValue({ connectionId: targetConnId });
       }
     }
     setWsModalVisible(true);
-  };
+  }, [connections, wsForm]);
 
+  useEffect(() => {
+    if (!setActions) return;
+    setActions(
+      <PageHeaderActions
+        actions={[
+          {
+            key: 'add-conn',
+            label: '添加连接',
+            icon: <LinkOutlined />,
+            onClick: () => showConnModal()
+          },
+          {
+            key: 'add-ws',
+            label: '创建工作空间',
+            icon: <FolderAddOutlined />,
+            primary: true,
+            disabled: connections.length === 0,
+            onClick: () => showWsModal()
+          }
+        ]}
+      />
+    );
+  }, [connections.length, setActions, showConnModal, showWsModal]);
+
+  useEffect(() => () => {
+    setActions?.(null);
+  }, [setActions]);
+
+  const handleSaveConn = (values: Record<string, unknown>): Promise<boolean> => saveConnection(editingConn, values);
   const handleSaveWs = (values: Record<string, unknown>): Promise<boolean> => saveWorkspace(editingWs, values);
 
-  const handleDeleteWs = (id: string) => deleteWorkspace(id);
-
-  // ------------------------------------------
-  // 5. 远程目录浏览器逻辑
-  // ------------------------------------------
-  const openDirectoryBrowser = () => {
-    dirBrowser.openFor(selectedConnIdInForm);
+  const handleTestConnection = async (conn: SshConnection) => {
+    setActiveDiagnosticConn(conn);
+    setDiagnosticDrawerVisible(true);
+    await testConnection(conn);
   };
 
   const handleConfirmDirectory = () => {
@@ -157,194 +131,104 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     if (selected) wsForm.setFieldsValue({ remoteRoot: selected });
   };
 
-  // 构造面包屑
-  const renderBreadcrumbs = () => {
-    if (!dirBrowser.currentPath) return null;
-    const breadcrumbItems = [];
+  const workspaceCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const ws of workspaces) {
+      counts[ws.connectionId] = (counts[ws.connectionId] || 0) + 1;
+    }
+    return counts;
+  }, [workspaces]);
 
-    // 根目录项
-    breadcrumbItems.push(
-      <Breadcrumb.Item key="root" onClick={() => switchDirSurface(() => dirBrowser.navigate('/'), { direction: 'backward' })}>
-        <span className="ssh-dir-crumb">[Root]</span>
-      </Breadcrumb.Item>
-    );
-
-    buildRemotePathCrumbs(dirBrowser.currentPath).forEach((crumb, index) => {
-      breadcrumbItems.push(
-        <Breadcrumb.Item key={index} onClick={crumb.last ? undefined : () => switchDirSurface(() => dirBrowser.navigate(crumb.path), { direction: 'backward' })}>
-          <span className={crumb.last ? 'ssh-dir-crumb ssh-dir-crumb--current' : 'ssh-dir-crumb'}>
-            {crumb.name}
-          </span>
-        </Breadcrumb.Item>
-      );
-    });
-
-    return (
-      <Breadcrumb
-        separator={<RightOutlined className="ssh-dir-crumb-sep" />}
-        className="ssh-dir-breadcrumb"
-      >
-        {breadcrumbItems}
-      </Breadcrumb>
-    );
-  };
-
-  const renderDiagnosticDrawerContent = () => {
-    if (!activeDiagnosticConn) return null;
-    const state = testStates[activeDiagnosticConn.id];
-    if (!state) return <div className="ssh-diag-placeholder hud-label">等待测试连接...</div>;
-    if (state.loading) return (
-      <div className="ssh-diag-loading">
-        <HudStateView
-          variant="loading"
-          compact
-          code="SYS // SSH_PROBE"
-          title="正在连接远程主机并执行依赖诊断…"
-          description="正在核验 SSH 握手、平台架构与 Node / Git / AIH 工具链。"
-        />
-      </div>
-    );
-
-    const result = state.result;
-    if (!result) return null;
-    const targetLabel = result.target || `${activeDiagnosticConn.user ? `${activeDiagnosticConn.user}@` : ''}${activeDiagnosticConn.host}`;
-
-    return (
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
-        {result.status === 'reachable' && (
-          <InlineNote tone="success" description={`已成功建立连接。远程主机: ${targetLabel}。`}>
-            SSH 连通成功
-          </InlineNote>
-        )}
-        {result.status === 'auth-required' && (
-          <InlineNote
-            tone="warning"
-            description="主机可达，但 SSH 认证失败。请检查当前连接配置的私钥文件路径、私钥内容或密码；使用 SSH Agent 时，请确认当前 AIH Server 运行用户的 ssh-agent 已加载对应密钥。"
-          >
-            拒绝访问 (认证未通过)
-          </InlineNote>
-        )}
-        {result.status === 'unreachable' && (
-          <InlineNote
-            tone="error"
-            description={result.stderr || "网络不可达，请检查 IP 端口是否开通，或者 SSHD 服务是否启动。"}
-          >
-            连接失败
-          </InlineNote>
-        )}
-
-        {result.status === 'reachable' && (
-          <div className="ssh-diag-panel hud-panel hud-panel--sm">
-            <div className="ssh-diag-section">
-              <div className="ssh-diag-caption hud-label">系统平台 / 架构</div>
-              <Space size={6}>
-                <Tag color="blue" className="ssh-diag-mono-tag">{result.platform || '未知'}</Tag>
-                <Tag color="cyan" className="ssh-diag-mono-tag">{result.arch || '未知'}</Tag>
-              </Space>
-            </div>
-
-            <div>
-              <div className="ssh-diag-caption hud-label">依赖项检测</div>
-              <div className="ssh-diag-rows">
-                <div className="ssh-diag-row">
-                  <span className="ssh-diag-row-name">Node.js</span>
-                  <Tag color={result.commands?.node ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.node ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.node ? '已安装' : '未检测到'}</Tag>
-                </div>
-                <div className="ssh-diag-row">
-                  <span className="ssh-diag-row-name">Npm</span>
-                  <Tag color={result.commands?.npm ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.npm ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.npm ? '已安装' : '未检测到'}</Tag>
-                </div>
-                <div className="ssh-diag-row">
-                  <span className="ssh-diag-row-name">Git</span>
-                  <Tag color={result.commands?.git ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.git ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.git ? '已安装' : '未检测到'}</Tag>
-                </div>
-                <div className="ssh-diag-row">
-                  <span className="ssh-diag-row-name">AIH Agent</span>
-                  <Tag color={result.commands?.aih ? 'green' : 'orange'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.aih ? 'hud-led--ok' : 'hud-led--warn'}`} aria-hidden="true" />{result.commands?.aih ? '已配置' : '免装模式'}</Tag>
-                </div>
-              </div>
-            </div>
-
-            {result.recommendation && (
-              <div className="ssh-diag-advice">
-                <div className="ssh-diag-caption hud-label">诊断建议</div>
-                <p className="ssh-diag-advice-text hud-prose">{result.recommendation}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </Space>
-    );
-  };
-
-  const filteredWorkspaces = filterConnectionId 
-    ? workspaces.filter(w => w.connectionId === filterConnectionId)
+  const filteredWorkspaces = filterConnectionId
+    ? workspaces.filter((w) => w.connectionId === filterConnectionId)
     : workspaces;
 
+  const activeFilterConnection = connections.find((c) => c.id === filterConnectionId);
+  const proxyOutletCount = connections.filter((c) => c.proxyEnabled).length;
+
   return (
-    <div className="ssh-hosts-management-wrapper animate__animated animate__fadeIn animate__faster">
+    <div className="ssh-hosts-management-wrapper">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+        <SettingStatusTag
+          status={connections.length > 0 ? 'saved' : 'unset'}
+          label={`已保存连接 ${connections.length}`}
+          compact
+          live="off"
+        />
+        <SettingStatusTag
+          status={proxyOutletCount > 0 ? 'applied' : 'unset'}
+          label={`代理出口 ${proxyOutletCount}`}
+          compact
+          live="off"
+        />
+        <SettingStatusTag
+          status={workspaces.length > 0 ? 'saved' : 'unset'}
+          label={`工作空间 ${workspaces.length}`}
+          compact
+          live="off"
+        />
+      </div>
+
       <Tabs
         activeKey={activeTab}
         animated={{ inkBar: true, tabPane: true }}
-        onChange={(key: string) => setActiveTab(key as any)}
+        onChange={(key: string) => setActiveTab(key as 'connections' | 'workspaces')}
         className="settings-control-plane-manage-tabs"
         items={[
-            {
-              key: 'connections',
-              label: '远程连接',
-              children: (
-                <SshConnectionCardList
+          {
+            key: 'connections',
+            label: `远程连接 (${connections.length})`,
+            children: (
+              <SshConnectionCardList
+                connections={connections}
+                loading={loadingConns}
+                testingIds={testingIds}
+                testStates={testStates}
+                workspaceCounts={workspaceCounts}
+                onTest={(connection) => void handleTestConnection(connection)}
+                onViewWorkspaces={(connection) => {
+                  setFilterConnectionId(connection.id);
+                  setActiveTab('workspaces');
+                }}
+                onCreateWorkspace={(connection) => showWsModal(undefined, connection.id)}
+                onEdit={showConnModal}
+                onDelete={(id) => void deleteConnection(id)}
+              />
+            )
+          },
+          {
+            key: 'workspaces',
+            label: `项目工作空间 (${workspaces.length})`,
+            children: (
+              <>
+                <Reveal open={Boolean(filterConnectionId)}>
+                  <InlineNote tone="info" className="ssh-filter-note">
+                    <span>
+                      当前筛选连接：<strong>{activeFilterConnection?.label || '未知连接'}</strong>
+                      <Button
+                        type="link"
+                        size="small"
+                        className="ssh-filter-clear"
+                        onClick={() => setFilterConnectionId('')}
+                      >
+                        清除筛选
+                      </Button>
+                    </span>
+                  </InlineNote>
+                </Reveal>
+                <SshWorkspaceCardList
+                  workspaces={filteredWorkspaces}
                   connections={connections}
-                  loading={loadingConns}
-                  testingIds={testingIds}
-                  onTest={handleTestConnection}
-                  onViewWorkspaces={(connection) => {
-                    setFilterConnectionId(connection.id);
-                    setActiveTab('workspaces');
-                  }}
-                  onCreateWorkspace={(connection) => {
-                    showWsModal();
-                    setTimeout(() => {
-                      wsForm.setFieldsValue({ connectionId: connection.id });
-                      setSelectedConnIdInForm(connection.id);
-                    }, 50);
-                  }}
-                  onEdit={showConnModal}
-                  onDelete={handleDeleteConn}
+                  loading={loadingWorkspaces}
+                  onEdit={(ws) => showWsModal(ws)}
+                  onDelete={(id) => void deleteWorkspace(id)}
                 />
-              )
-            },
-            {
-              key: 'workspaces',
-              label: '项目工作空间',
-              children: (
-                <>
-                  <Reveal open={Boolean(filterConnectionId)}>
-                    <InlineNote tone="info" className="ssh-filter-note">
-                      <span>
-                        当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
-                        <Button type="link" size="small" className="ssh-filter-clear" onClick={() => setFilterConnectionId('')}>
-                          清除筛选
-                        </Button>
-                      </span>
-                    </InlineNote>
-                  </Reveal>
-                  <SshWorkspaceCardList
-                    workspaces={filteredWorkspaces}
-                    connections={connections}
-                    loading={loadingWorkspaces}
-                    onEdit={showWsModal}
-                    onDelete={handleDeleteWs}
-                  />
-                </>
-              )
-            }
-          ]}
+              </>
+            )
+          }
+        ]}
       />
 
-      {/* ==========================================
-          三、 Connection 添加/编辑 Modal
-          ========================================== */}
       <ModalForm
         title={editingConn ? '编辑远程连接' : '添加远程连接'}
         open={connModalVisible}
@@ -355,51 +239,49 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         width={600}
         submitter={{
           searchConfig: {
-            submitText: '保存',
-            resetText: '取消',
-          },
+            submitText: '保存连接',
+            resetText: '取消'
+          }
         }}
         modalProps={{
           destroyOnClose: true,
           style: { top: 24 },
-          styles: { body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' } },
+          styles: { body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' } }
         }}
       >
         <div className="ssh-form-body">
           <Form.Item
             name="label"
-            label="连接名称 (Label)"
-            rules={[{ required: true, message: '请输入显示名称，例如: 阿里云开发服务器' }]}
+            label="连接名称"
+            rules={[{ required: true, message: '请输入显示名称，例如 Aliyun-Box' }]}
           >
-            <Input placeholder="例如: Aliyun-Box" />
+            <Input placeholder="例如：Aliyun-Box" />
           </Form.Item>
 
-          <Space style={{ display: 'flex', width: '100%' }} size="middle">
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 120px', gap: 'var(--space-4)' }}>
             <Form.Item
               name="host"
-              label="主机名 / IP (Host)"
-              rules={[{ required: true, message: '请输入主机名或IP' }]}
-              style={{ width: '380px' }}
+              label="主机名 / IP"
+              rules={[{ required: true, message: '请输入主机名或 IP' }]}
             >
-              <Input placeholder="例如: 192.168.1.120" />
+              <Input placeholder="例如：192.168.1.120" />
             </Form.Item>
 
             <Form.Item
               name="port"
-              label="端口 (Port)"
+              label="端口"
               rules={[{ required: true, message: '请输入端口' }]}
-              style={{ width: '140px' }}
             >
               <Input placeholder="22" type="number" />
             </Form.Item>
-          </Space>
+          </div>
 
           <Form.Item
             name="user"
-            label="用户名 (User)"
+            label="用户名"
             rules={[{ required: true, message: '请输入连接用户名' }]}
           >
-            <Input placeholder="例如: root 或 ubuntu" />
+            <Input placeholder="例如：root 或 ubuntu" />
           </Form.Item>
 
           <Form.Item
@@ -409,7 +291,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           >
             <FormSurfaceField
               onBeforeFieldCommit={(commit, rawEvent) => {
-                const nextType = (rawEvent as { target?: { value?: typeof authType } } | null)?.target?.value;
+                const nextType = (rawEvent as { target?: { value?: SshAuthType } } | null)?.target?.value;
                 if (!nextType) {
                   commit();
                   return;
@@ -422,7 +304,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                   slot: 'authType',
                   current: authType,
                   next: nextType,
-                  direction: resolveOrderedDirection(authOrder, authType, nextType),
+                  direction: resolveOrderedDirection(authOrder, authType, nextType)
                 });
               }}
             >
@@ -435,22 +317,22 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           </Form.Item>
 
           <div ref={authFieldsSurfaceRef}>
-            {authType === 'key-file' && (
+            {authType === 'key-file' ? (
               <Form.Item
                 name="identityFile"
                 label="当前 Server 上的私钥路径"
-                help="例如 ~/.ssh/aws.pem；文件必须位于当前 AIH Server 运行用户的 ~/.ssh，AIH 只保存路径，不复制私钥内容。"
+                help="仅保存服务端 ~/.ssh 下路径，不复制私钥内容。"
                 rules={[{ required: true, message: '请输入当前 Server 上的私钥路径' }]}
               >
                 <Input placeholder="~/.ssh/aws.pem" />
               </Form.Item>
-            )}
+            ) : null}
 
-            {authType === 'key' && (
+            {authType === 'key' ? (
               <Form.Item
                 name="privateKey"
                 label="私钥内容"
-                rules={[{ required: true, message: '请粘贴 SSH 私钥 (PEM/OpenSSH格式)' }]}
+                rules={[{ required: true, message: '请粘贴 SSH 私钥 (PEM/OpenSSH 格式)' }]}
               >
                 <Input.TextArea
                   rows={6}
@@ -458,24 +340,24 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                   className="ssh-private-key-input"
                 />
               </Form.Item>
-            )}
+            ) : null}
 
-            {authType === 'password' && (
+            {authType === 'password' ? (
               <Form.Item
                 name="password"
-                label="连接密码 (Password)"
-                rules={[{ required: true, message: '请输入远程账户连接密码' }]}
+                label="连接密码"
+                rules={[{ required: true, message: '请输入远程账户密码' }]}
               >
                 <Input.Password placeholder="密码" />
               </Form.Item>
-            )}
+            ) : null}
           </div>
 
           <Collapse
             ghost
             items={[{
               key: 'advanced',
-              label: '高级设置',
+              label: '网络角色与隧道（高级）',
               forceRender: true,
               children: (
                 <>
@@ -483,22 +365,22 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                     name="reverseTunnelEnabled"
                     label="反向隧道"
                     valuePropName="checked"
-                    help="远端 sshd 自动分配回环端口，转发到 AIH Server 本机 SSH；实际端口在连接卡片显示，重连后可能变化，仍需本机 SSH 认证。"
+                    help="远端自动分配回环端口转发回本机 SSH，实际端口见连接卡片。"
                   >
                     <Switch aria-label="启用反向隧道" />
                   </Form.Item>
                   <Form.Item
                     name="proxyEnabled"
-                    label="作为代理出口"
+                    label="作为托管代理出口"
                     valuePropName="checked"
-                    help="将此连接加入托管代理池，供安装、更新等任务选择；与反向隧道、下方出网代理相互独立，不修改全局代理。"
+                    help="加入托管代理池供安装、更新等任务按需租用，不改全局代理。"
                   >
-                    <Switch aria-label="作为代理出口" />
+                    <Switch aria-label="作为托管代理出口" />
                   </Form.Item>
                   <Form.Item
                     name="egressConnectionId"
                     label="出网代理"
-                    help="这台机器访问外网（GitHub、npm 等）不通或很慢时，借另一台连接的网络出去。只在安装工具等任务期间临时生效，两端都不安装任何程序。"
+                    help="本机直连外网受限时，在安装任务期间临时借用另一台连接的出网通道。"
                   >
                     <Select
                       options={[
@@ -516,9 +398,6 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         </div>
       </ModalForm>
 
-      {/* ==========================================
-          四、 Workspace 添加/编辑 Modal
-          ========================================== */}
       <ModalForm
         title={editingWs ? '编辑项目工作空间' : '创建远程项目工作空间'}
         open={wsModalVisible}
@@ -528,138 +407,64 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         layout="vertical"
         submitter={{
           searchConfig: {
-            submitText: '保存',
-            resetText: '取消',
-          },
+            submitText: '保存工作空间',
+            resetText: '取消'
+          }
         }}
-        modalProps={{
-          destroyOnClose: true,
-        }}
+        modalProps={{ destroyOnClose: true }}
       >
         <div className="ssh-form-body">
           <Form.Item
             name="connectionId"
-            label="关联物理连接 (SSH Connection)"
-            rules={[{ required: true, message: '请选择一个有效的远程 SSH 连接' }]}
+            label="关联连接"
+            rules={[{ required: true, message: '请选择远程 SSH 连接' }]}
           >
             <Select
-              options={connections.map(c => ({ label: `${c.label} (${c.user}@${c.host})`, value: c.id }))}
+              options={connections.map((c) => ({ label: `${c.label} (${c.user}@${c.host})`, value: c.id }))}
               onChange={(value) => setSelectedConnIdInForm(value)}
             />
           </Form.Item>
 
           <Form.Item
             name="label"
-            label="项目空间名称 (Label)"
-            rules={[{ required: true, message: '请输入该项目空间在 Web 上的名称' }]}
+            label="工作空间名称"
+            rules={[{ required: true, message: '请输入工作空间名称' }]}
           >
-            <Input placeholder="例如: 订单微服务项目" />
+            <Input placeholder="例如：订单微服务项目" />
           </Form.Item>
 
-          <Form.Item label="远端绝对路径 (RemoteRoot)" required>
-            <Space style={{ display: 'flex', width: '100%' }}>
+          <Form.Item label="远端绝对路径" required>
+            <Space.Compact style={{ width: '100%' }}>
               <Form.Item
                 name="remoteRoot"
                 noStyle
-                rules={[{ required: true, message: '请选择远程项目绝对路径' }]}
+                rules={[{ required: true, message: '请通过目录浏览器选择远端路径' }]}
               >
                 <Input
-                  placeholder="不准手填，请点击右侧选择目录"
+                  placeholder="点击右侧选择远端目录"
                   readOnly
                   className="ssh-remote-root-input"
-                  style={{ width: '360px' }}
                 />
               </Form.Item>
-              <Button
-                icon={<FolderOpenOutlined />}
-                onClick={openDirectoryBrowser}
-              >
+              <Button icon={<FolderOpenOutlined />} onClick={() => dirBrowser.openFor(selectedConnIdInForm)}>
                 选择目录
               </Button>
-            </Space>
+            </Space.Compact>
           </Form.Item>
         </div>
       </ModalForm>
 
-      <Drawer
-        title={activeDiagnosticConn ? `${activeDiagnosticConn.label} 系统诊断结果` : '系统诊断结果'}
-        placement="right"
-        width={480}
-        onClose={() => setDiagnosticDrawerVisible(false)}
+      <SshDiagnosticDrawer
         open={diagnosticDrawerVisible}
-        destroyOnClose
-      >
-        {renderDiagnosticDrawerContent()}
-      </Drawer>
+        connection={activeDiagnosticConn}
+        testState={activeDiagnosticConn ? testStates[activeDiagnosticConn.id] : undefined}
+        onClose={() => setDiagnosticDrawerVisible(false)}
+      />
 
-      {/* ==========================================
-          五、 远程目录浏览器 Modal
-          ========================================== */}
-      <Modal
-        title="远程工作目录浏览器"
-        open={dirBrowser.open}
-        onOk={handleConfirmDirectory}
-        onCancel={dirBrowser.close}
-        okText="确认选择该路径"
-        cancelText="取消"
-        width={700}
-      >
-        <div className="ssh-form-body">
-          {/* 1. 面包屑路径层级 */}
-          {renderBreadcrumbs()}
-
-          {/* 2. 目录详细列表 */}
-          <div ref={dirListSurfaceRef} className="directory-list-container ssh-dir-list">
-            {dirBrowser.loading ? (
-              <div className="ssh-dir-loading">
-                <LoadingOutlined className="ssh-dir-loading-icon" />
-                <span className="hud-label">正在获取远程目录列表，请稍后...</span>
-              </div>
-            ) : (
-              <div className="ssh-dir-rows">
-                {dirBrowser.parentPath && dirBrowser.currentPath !== '/' && (
-                  <div
-                    className="dir-item ssh-dir-item ssh-dir-item--parent"
-                    onDoubleClick={() => switchDirSurface(() => dirBrowser.navigate(dirBrowser.parentPath), { direction: 'backward' })}
-                  >
-                    <FolderOpenOutlined className="ssh-dir-item-icon" />
-                    <strong className="ssh-dir-item-up">.. (返回上级目录)</strong>
-                  </div>
-                )}
-
-                {dirBrowser.dirs.length === 0 ? (
-                  <div className="ssh-dir-empty hud-label">
-                    没有子目录。双击上级目录可返回。
-                  </div>
-                ) : (
-                  dirBrowser.dirs.map(dir => {
-                    const isSelected = dirBrowser.selectedPath === dir.path;
-                    return (
-                      <div
-                        key={dir.path}
-                        className={`dir-item ssh-dir-item${isSelected ? ' ssh-dir-item--selected' : ''}`}
-                        onClick={() => dirBrowser.select(dir.path)}
-                        onDoubleClick={() => switchDirSurface(() => dirBrowser.navigate(dir.path), { direction: 'forward' })}
-                      >
-                        <FolderOpenOutlined className="ssh-dir-item-icon" />
-                        <span>{dir.name}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 3. 选定路径显示 */}
-          <div className="ssh-dir-selected">
-            <span className="ssh-dir-selected-label hud-label">当前选定路径:</span>
-            <code className="ssh-dir-selected-path">
-              {dirBrowser.selectedPath || '未选择'}
-            </code>
-          </div>
-        </div>
-      </Modal>
+      <SshDirectoryBrowserModal
+        dirBrowser={dirBrowser}
+        onConfirm={handleConfirmDirectory}
+      />
     </div>
   );
 }

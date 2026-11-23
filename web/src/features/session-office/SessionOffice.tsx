@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import OfficeMailbox from './OfficeMailbox';
 import OfficeRoom from './OfficeRoom';
 import SessionDesktop from './SessionDesktop';
@@ -633,23 +634,27 @@ export default function SessionOffice({
           </div>
 
           <div className="session-office-metrics" aria-label="办公室实时统计">
+            <SettingStatusTag
+              status={directoryError || peerError ? 'error' : directoryLoading || peerLoading ? 'saving' : runningSessionsCount > 0 ? 'applied' : 'unset'}
+              label={directoryError || peerError ? '同步异常' : directoryLoading || peerLoading ? '同步中' : runningSessionsCount > 0 ? `运行中 ${runningSessionsCount}/${allSessions.length}` : '暂无活跃会话'}
+              compact
+              live="off"
+            />
             <span className="session-office-metric">
-              <span className="hud-label">ROOMS</span>
+              <span className="hud-label">房间</span>
               <strong className="hud-display">{rooms.length}</strong>
             </span>
             <span className="session-office-metric">
-              <span className="hud-label">ONLINE</span>
-              <strong className="hud-display">{runningSessionsCount}/{allSessions.length}</strong>
-            </span>
-            <span className="session-office-metric">
-              <span className="hud-label">MAIL</span>
+              <span className="hud-label">邮件</span>
               <strong className="hud-display">{peerCounts.total}</strong>
             </span>
             {peerCounts.pending > 0 ? (
-              <span className="session-office-metric session-office-metric--warn">
-                <span className="hud-label">PENDING</span>
-                <strong className="hud-display">{peerCounts.pending}</strong>
-              </span>
+              <SettingStatusTag
+                status="dirty"
+                label={`待处理 ${peerCounts.pending}`}
+                compact
+                live="off"
+              />
             ) : null}
           </div>
         </div>
@@ -707,16 +712,18 @@ export default function SessionOffice({
         {directoryError || peerError ? (
           <div className="session-office-inline-errors" role="status" aria-live="polite">
             {directoryError ? (
-              <span className="session-office-inline-error">
-                <span className="hud-led hud-led--err" aria-hidden="true" />
-                会话目录：{directoryError}
-              </span>
+              <SettingStatusTag
+                status="error"
+                label={`会话目录：${directoryError}`}
+                compact
+              />
             ) : null}
             {peerError ? (
-              <span className="session-office-inline-error">
-                <span className="hud-led hud-led--err" aria-hidden="true" />
-                协作邮箱：{peerError}
-              </span>
+              <SettingStatusTag
+                status="error"
+                label={`协作邮箱：${peerError}`}
+                compact
+              />
             ) : null}
           </div>
         ) : null}

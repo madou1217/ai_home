@@ -2,26 +2,16 @@ import type { ReactNode } from 'react';
 import { Card, Dropdown, Space } from 'antd';
 import { DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined, EditOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { isControlPlaneManagementKeyConfigured } from '@/services/control-plane-profiles';
 import { buildServerScopedAppHref } from '@/services/app-navigation';
 import type { ControlPlaneProfile } from '@/types';
 import {
-  getControlPlaneProfileStatus,
-  summarizeControlPlaneServerMetrics,
-  type ControlPlaneStatusTone
+  resolveProfileLifecycle,
+  summarizeControlPlaneServerMetrics
 } from '@/components/control-plane/server-list-presentation';
 import type { ServerRouteRow, ServerRouteView } from '@/services/server-route-presentation';
 import './ControlPlaneServerList.css';
-
-type StatusTone = ControlPlaneStatusTone;
-
-// 状态 → HUD LED（只映射真实状态，不额外发明「在线心跳」）
-const STATUS_LED: Record<StatusTone | 'pending', string> = {
-  ready: 'hud-led hud-led--ok',
-  degraded: 'hud-led hud-led--warn',
-  offline: 'hud-led',
-  pending: 'hud-led hud-led--info'
-};
 
 const ROUTE_HEALTH_LED: Record<string, string> = {
   green: 'hud-led--ok',
@@ -117,16 +107,16 @@ function ServerCardActions({
             打开
           </Button>
           {active ? (
-            <span className="cp-current-badge">默认</span>
+            <span className="cp-current-badge">当前生效</span>
           ) : (
-            <Button size="small" onClick={() => onSelect(profile.id)}>设为默认</Button>
+            <Button size="small" onClick={() => onSelect(profile.id)}>设为当前</Button>
           )}
           <Button
             size="small"
             icon={<ReloadOutlined />}
             loading={checking}
             onClick={() => onRefresh(profile)}
-            aria-label="同步"
+            aria-label="探测同步"
           />
         </>
       )}
@@ -165,7 +155,11 @@ export default function ControlPlaneServerList({
       {rows.map((row) => {
         const { profile, authorizationPending } = row;
         const active = activeControlPlaneId === profile.id;
-        const status = getControlPlaneProfileStatus(profile.state);
+        const lifecycle = resolveProfileLifecycle(profile, {
+          active,
+          probing: checkingControlPlaneId === profile.id,
+          authorizationPending
+        });
         const name = profile.name || profile.endpoint;
         return (
           <Card
@@ -177,20 +171,15 @@ export default function ControlPlaneServerList({
             <div className="cp-server-card-head">
               <div className="cp-server-card-title">
                 <Space size={6} wrap>
-                  {authorizationPending ? (
-                    <span className="cp-status-pill cp-status-pill--pending">
-                      <span className={STATUS_LED.pending} aria-hidden="true" />
-                      已发现，待授权
-                    </span>
-                  ) : (
-                    <span className={`cp-status-pill cp-status-pill--${status.tone}`}>
-                      <span className={STATUS_LED[status.tone]} aria-hidden="true" />
-                      {status.label}
-                    </span>
-                  )}
+                  <SettingStatusTag
+                    status={lifecycle.tagStatus}
+                    label={lifecycle.label}
+                    detail={profile.lastError || undefined}
+                    compact
+                  />
                   <span className="cp-server-card-name" title={name}>{name}</span>
                   {!authorizationPending && isControlPlaneManagementKeyConfigured(profile) && (
-                    <span className="cp-key-configured">Key 已配置</span>
+                    <span className="cp-key-configured">Key 已保存</span>
                   )}
                 </Space>
                 <div className="cp-server-meta">

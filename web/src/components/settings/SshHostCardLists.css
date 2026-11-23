@@ -44,7 +44,69 @@
   min-width: 0;
   flex: 1 1 200px;
   flex-direction: column;
-  gap: var(--hos-space-1);
+  gap: var(--hos-space-1-5);
+}
+.ssh-list-card-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.ssh-list-card-badges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ssh-list-card-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--ssh-line);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+}
+.ssh-fact-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.ssh-fact-item--wide {
+  grid-column: 1 / -1;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--ssh-line);
+}
+.ssh-fact-item em {
+  font-style: normal;
+  color: var(--ssh-ink-3);
+  font-size: 10px;
+  letter-spacing: var(--tracking-caps);
+}
+.ssh-fact-item strong {
+  color: var(--ssh-ink-2);
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+.ssh-fact-item--error strong {
+  color: var(--color-danger);
+}
+.ssh-empty-panel {
+  padding: var(--space-10) var(--space-6);
+}
+@media (max-width: 767.98px) {
+  .ssh-list-card-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ssh-list-card-endpoint,
+  .ssh-list-card-path {
+    max-width: 100%;
+  }
 }
 .ssh-list-card-name {
   display: inline-block;

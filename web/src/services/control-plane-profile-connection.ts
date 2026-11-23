@@ -15,6 +15,17 @@ export interface ConnectControlPlaneProfileInput {
   managementKey?: string;
 }
 
+export interface ProbeControlPlaneProfileResult {
+  endpoint: string;
+  name: string;
+  usingSavedKey: boolean;
+  serverVersion: string;
+  hostLabel: string;
+  accountCount: number;
+  activeAccountCount: number;
+  probedAt: number;
+}
+
 function findConnectionProfile(
   profiles: ControlPlaneProfile[],
   profileId: string,
@@ -26,6 +37,43 @@ function findConnectionProfile(
       || profile.routes.some((route) => route.endpoint === endpoint)
     ))
     || null;
+}
+
+/**
+ * 探测目标 Server 的管理面连通性与凭证有效性（不持久化）。
+ * 用于「连接 → 探测 → 保存 → 当前生效」流程中的独立探测阶段。
+ */
+export async function probeControlPlaneProfile(
+  input: ConnectControlPlaneProfileInput
+): Promise<ProbeControlPlaneProfileResult> {
+  const endpoint = normalizeControlPlaneEndpoint(String(input.endpoint || ''));
+  if (!endpoint) throw new Error('请输入有效的 Server 网关地址');
+  const profiles = Array.isArray(input.profiles) ? input.profiles : [];
+  const profileId = String(input.profileId || '').trim();
+  const existing = findConnectionProfile(profiles, profileId, endpoint);
+  const inputKey = String(input.managementKey || '').trim();
+  const effectiveKey = inputKey || String(existing?.managementKey || '').trim();
+  const hasSavedKey = isControlPlaneManagementKeyConfigured(existing);
+
+  if (!effectiveKey && !hasSavedKey) {
+    throw new Error('请输入 Management Key');
+  }
+
+  const deviceStatus = await fetchControlPlaneDeviceStatus({
+    endpoint,
+    managementKey: effectiveKey
+  });
+
+  return {
+    endpoint,
+    name: String(input.name || existing?.name || 'AIH Server').trim(),
+    usingSavedKey: !inputKey && hasSavedKey,
+    serverVersion: deviceStatus.version || '',
+    hostLabel: deviceStatus.host && deviceStatus.port ? `${deviceStatus.host}:${deviceStatus.port}` : '',
+    accountCount: deviceStatus.accountCount,
+    activeAccountCount: deviceStatus.activeAccountCount,
+    probedAt: Date.now()
+  };
 }
 
 export async function connectControlPlaneProfile(input: ConnectControlPlaneProfileInput) {

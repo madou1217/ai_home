@@ -127,3 +127,49 @@ export function buildRemotePathCrumbs(currentPath: string) {
 
 export const SSH_DELETE_CONNECTION_CONFIRM = '将同步删除关联该连接的所有工作空间！确认删除？';
 export const SSH_DELETE_WORKSPACE_CONFIRM = '仅在数据库中删除此空间，不会影响远程服务器的物理文件。确认移除？';
+
+export type SshConnectionRuntimeStatus =
+  | 'saved_unprobed'
+  | 'probing'
+  | 'reachable'
+  | 'auth_failed'
+  | 'unreachable';
+
+export interface SshConnectionStatusMeta {
+  state: SshConnectionRuntimeStatus;
+  tagStatus: 'unset' | 'saving' | 'applied' | 'dirty' | 'error';
+  label: string;
+}
+
+export function resolveSshConnectionStatus(input: {
+  testing?: boolean;
+  probeStatus?: 'reachable' | 'auth-required' | 'unreachable';
+  tunnelState?: string;
+  proxyAvailable?: boolean;
+}): SshConnectionStatusMeta {
+  if (input.testing) {
+    return { state: 'probing', tagStatus: 'saving', label: '探测中' };
+  }
+  if (input.probeStatus === 'reachable') {
+    return { state: 'reachable', tagStatus: 'applied', label: '已连通' };
+  }
+  if (input.probeStatus === 'auth-required') {
+    return { state: 'auth_failed', tagStatus: 'dirty', label: '认证失败' };
+  }
+  if (input.probeStatus === 'unreachable') {
+    return { state: 'unreachable', tagStatus: 'error', label: '不可达' };
+  }
+  if (input.tunnelState === 'open' || input.proxyAvailable) {
+    return { state: 'reachable', tagStatus: 'applied', label: '运行可用' };
+  }
+  return { state: 'saved_unprobed', tagStatus: 'unset', label: '已保存·未探测' };
+}
+
+export function formatSshProbeTime(timestamp?: number): string {
+  if (!timestamp || !Number.isFinite(timestamp)) return '尚未探测';
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}

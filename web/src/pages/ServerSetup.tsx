@@ -1,17 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Form, Input, Modal, Space, Tag, Typography } from 'antd';
-import PageHeaderActions from '@/components/ui/PageHeaderActions';
+import { Space, Tag, Typography } from 'antd';
 import { StatisticCard } from '@ant-design/pro-components';
 import {
-  CheckCircleOutlined,
   DeleteOutlined,
   LoginOutlined,
-  ReloadOutlined,
-  PlusOutlined
+  PlusOutlined,
+  ReloadOutlined
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
-import { isControlPlaneManagementKeyConfigured, isControlPlaneProfileReady } from '@/services/control-plane-profiles';
+import PageHeaderActions from '@/components/ui/PageHeaderActions';
+import Button from '@/components/ui/AppButton';
+import PageScaffold from '@/components/ui/PageScaffold';
+import SettingSection, { SettingRow } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
+import ListTable from '@/components/ui/ListTable';
+import DistributionUpdatePanel from '@/components/settings/DistributionUpdatePanel';
+import ServerConnectionFlow from '@/components/control-plane/ServerConnectionFlow';
+import ServerSetupModal from '@/components/control-plane/ServerSetupModal';
+import {
+  formatServerKeyPersistenceLabel,
+  resolveProfileLifecycle
+} from '@/components/control-plane/server-list-presentation';
+import {
+  formatServerSetupProfileDetail as formatProfileDetail,
+  useServerSetupProfiles,
+  type ServerSetupFormValues as SaveFormValues
+} from '@/components/control-plane/use-server-setup-profiles';
+import {
+  isControlPlaneManagementKeyConfigured,
+  isControlPlaneProfileReady
+} from '@/services/control-plane-profiles';
 import { getBrowserControlEndpoint } from '@/services/control-plane-endpoints';
 import {
   CLOSED_SERVER_SETUP_DIALOG,
@@ -20,34 +39,15 @@ import {
   resolveServerSetupFormDefaults,
   type ServerSetupDialogState
 } from '@/services/server-setup-state';
-import {
-  formatServerSetupProfileDetail as formatProfileDetail,
-  getServerSetupProfileStatus as getProfileStatus,
-  useServerSetupProfiles,
-  type ServerSetupFormValues as SaveFormValues
-} from '@/components/control-plane/use-server-setup-profiles';
 import type { ControlPlaneProfile } from '@/types';
-import Button from '@/components/ui/AppButton';
-import PageScaffold from '@/components/ui/PageScaffold';
 import '@/components/settings/settings-shared.css';
 import '@/components/ui/kpi-strip.css';
-import SectionCard from '@/components/ui/SectionCard';
-import ListTable from '@/components/ui/ListTable';
-import HudCube from '@/components/hud/HudCube';
-import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
-import DistributionUpdatePanel from '@/components/settings/DistributionUpdatePanel';
-
-const PROFILE_STATUS_LED: Record<string, string> = {
-  green: 'hud-led hud-led--ok',
-  orange: 'hud-led hud-led--warn'
-};
 
 type ProfileRow = ControlPlaneProfile & { __key: string };
 
 export default function ServerSetup() {
   const navigate = useNavigate();
-  const [saveForm] = Form.useForm<SaveFormValues>();
-  // 数据与操作（连接 / 同步 / 移除 / 设为当前）由 useServerSetupProfiles 提供，移动端首启页共用
+  const location = useLocation();
   const {
     profiles,
     activeProfileId,
@@ -56,17 +56,23 @@ export default function ServerSetup() {
     hasReadyServer,
     checkingId,
     saving,
+    probing,
+    lastProbe,
+    lastFeedback,
     bootstrapIssue,
+    clearProbeState,
+    probeServer,
     saveServer,
     refreshProfile: handleRefreshProfile,
     removeProfile: handleRemoveProfile,
     selectProfile: handleSelectProfile
   } = useServerSetupProfiles();
+
   const [setupDialog, setSetupDialog] = useState<ServerSetupDialogState>(
     () => resolveRequiredServerSetupDialog(profiles, activeProfileId) || CLOSED_SERVER_SETUP_DIALOG
   );
-  const location = useLocation();
   const autoAuthorizeOpened = useRef(false);
+
   useEffect(() => {
     if (autoAuthorizeOpened.current) return;
     const dialog = resolveAutoAuthorizeDialog({
@@ -83,45 +89,42 @@ export default function ServerSetup() {
   const effectiveDialog = setupDialog.mode === 'closed' && requiredDialog
     ? requiredDialog
     : setupDialog;
-  const setupModalOpen = effectiveDialog.mode !== 'closed';
   const setupModalRequired = Boolean(requiredDialog);
   const dialogDefaults = resolveServerSetupFormDefaults({
     dialog: effectiveDialog,
     profiles,
     browserEndpoint: getBrowserControlEndpoint()
   });
-
-  useEffect(() => {
-    if (!setupModalOpen) return;
-    saveForm.setFieldsValue({
-      ...dialogDefaults,
-      managementKey: ''
-    });
-  }, [
-    dialogDefaults.endpoint,
-    dialogDefaults.name,
-    effectiveDialog.mode,
-    effectiveDialog.profileId,
-    saveForm,
-    setupModalOpen
-  ]);
+  const targetDialogProfile = useMemo(
+    () => profiles.find((item) => item.id === effectiveDialog.profileId) || null,
+    [effectiveDialog.profileId, profiles]
+  );
 
   const handleSaveServer = async (values: SaveFormValues) => {
     const completingInitialSetup = !hasReadyServer;
     const saved = await saveServer(effectiveDialog.profileId, values);
     if (!saved) return;
-    saveForm.setFieldValue('managementKey', '');
     setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
     if (completingInitialSetup) navigate('/dashboard', { replace: true });
   };
+
+  const handleProbeServer = useCallback(
+    (values: SaveFormValues) => probeServer(effectiveDialog.profileId, values),
+    [effectiveDialog.profileId, probeServer]
+  );
 
   const openAddServer = () => {
     setSetupDialog({ mode: 'add', profileId: '' });
   };
 
-  const openServerAuthorization = (profile: ControlPlaneProfile) => {
+  const openServerAuthorization = useCallback((profile: ControlPlaneProfile) => {
     setSetupDialog({ mode: 'authorize', profileId: profile.id });
-  };
+  }, []);
+
+  const activeLifecycle = resolveProfileLifecycle(activeProfile, {
+    active: Boolean(activeProfile),
+    probing: Boolean(activeProfile && checkingId === activeProfile.id)
+  });
 
   const profileRows: ProfileRow[] = useMemo(
     () => profiles.map((profile) => ({ ...profile, __key: profile.id })),
@@ -135,29 +138,36 @@ export default function ServerSetup() {
       width: 240,
       ellipsis: true,
       render: (_, record) => (
-        <Space direction="vertical" size={0} className="server-setup-cell">
+        <Space direction="vertical" size={2} className="server-setup-cell">
           <strong className="server-setup-name">
             {record.name || record.endpoint}
           </strong>
           <Typography.Text type="secondary" className="server-setup-endpoint">{record.endpoint}</Typography.Text>
-          {record.lastError && (
+          {record.lastError ? (
             <Typography.Text type="danger" className="server-setup-error">{record.lastError}</Typography.Text>
-          )}
+          ) : null}
         </Space>
       )
     },
     {
-      title: '状态 / 摘要',
-      width: 320,
+      title: '生效状态 / 摘要',
+      width: 340,
       render: (_, record) => {
-        const status = getProfileStatus(record);
         const active = record.id === activeProfileId;
+        const lifecycle = resolveProfileLifecycle(record, {
+          active,
+          probing: checkingId === record.id
+        });
         return (
-          <Space wrap size={[4, 4]}>
-            {active && <Tag className="settings-current-tag">当前</Tag>}
-            <Tag color={status.color} className="server-setup-status-tag">
-              <span className={PROFILE_STATUS_LED[status.color] || 'hud-led'} aria-hidden="true" />
-              {status.label}
+          <Space wrap size={[6, 6]}>
+            <SettingStatusTag
+              status={lifecycle.tagStatus}
+              label={lifecycle.label}
+              detail={record.lastError || undefined}
+              compact
+            />
+            <Tag className="server-setup-detail-tag">
+              {isControlPlaneManagementKeyConfigured(record) ? 'Key 已保存' : '未配置 Key'}
             </Tag>
             <Tag className="server-setup-detail-tag">{formatProfileDetail(record)}</Tag>
           </Space>
@@ -166,13 +176,13 @@ export default function ServerSetup() {
     },
     {
       title: '操作',
-      width: 200,
+      width: 220,
       render: (_, record) => {
         const active = record.id === activeProfileId;
         return (
           <Space size={6} wrap>
             <Button size="small" disabled={active} onClick={() => handleSelectProfile(record.id)}>
-              设为当前
+              {active ? '当前生效' : '设为当前'}
             </Button>
             {isControlPlaneManagementKeyConfigured(record) ? (
               <Button
@@ -181,7 +191,7 @@ export default function ServerSetup() {
                 loading={checkingId === record.id}
                 onClick={() => handleRefreshProfile(record)}
               >
-                同步
+                探测同步
               </Button>
             ) : (
               <Button size="small" type="primary" onClick={() => openServerAuthorization(record)}>
@@ -200,18 +210,19 @@ export default function ServerSetup() {
         );
       }
     }
-  ], [activeProfileId, checkingId, profiles]);
+  ], [activeProfileId, checkingId, handleRefreshProfile, handleRemoveProfile, handleSelectProfile, openServerAuthorization]);
 
   return (
-    <PageScaffold ghost
+    <PageScaffold
+      ghost
       code="SETUP"
       className="server-setup-page"
       title={setupModalRequired
         ? '连接 AIH Server'
         : hasReadyServer
-          ? '选择或添加 Server'
+          ? 'Server 连接与切换'
           : '授权或切换 Server'}
-      subTitle="使用 Server 网关地址和 Management Key 连接 AIH Server"
+      subTitle="按 连接 → 探测 → 保存 → 当前生效 完成 Server 配置。"
       extra={
         <PageHeaderActions
           actions={[
@@ -219,7 +230,7 @@ export default function ServerSetup() {
               key: 'add-server',
               label: '添加 Server',
               icon: <PlusOutlined />,
-              onClick: openAddServer,
+              onClick: openAddServer
             },
             {
               key: 'enter',
@@ -227,16 +238,62 @@ export default function ServerSetup() {
               icon: <LoginOutlined />,
               primary: true,
               disabled: !activeProfile || !isControlPlaneProfileReady(activeProfile),
-              onClick: () => navigate('/'),
-            },
+              onClick: () => navigate('/')
+            }
           ]}
         />
       }
     >
+      <SettingSection
+        title="当前连接状态"
+        description="明确区分已保存配置与当前生效实例；切换后立即作用于后续请求。"
+        status={
+          <SettingStatusTag
+            status={activeLifecycle.tagStatus}
+            label={activeLifecycle.label}
+            detail={activeProfile?.lastError || undefined}
+            compact
+          />
+        }
+      >
+        <div style={{ paddingTop: 'var(--space-4)' }}>
+          <ServerConnectionFlow
+            lifecycle={activeLifecycle.state}
+            detail={activeProfile?.lastError || lastFeedback?.text}
+          />
+        </div>
+        <SettingRow
+          title="已持久化连接"
+          description={activeProfile?.lastError ? `最近失败：${activeProfile.lastError}` : '当前默认实例的已保存地址与凭据状态。'}
+          persistedValue={
+            activeProfile
+              ? `${activeProfile.endpoint} · ${formatServerKeyPersistenceLabel(activeProfile)}`
+              : '未保存 Server 地址与凭据'
+          }
+          control={
+            <Space size={6} wrap>
+              {activeProfile ? (
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  loading={checkingId === activeProfile.id}
+                  onClick={() => void handleRefreshProfile(activeProfile)}
+                >
+                  重新探测
+                </Button>
+              ) : null}
+              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openAddServer}>
+                连接新 Server
+              </Button>
+            </Space>
+          }
+        />
+      </SettingSection>
+
       <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
         <StatisticCard
           statistic={{
-            title: '就绪 Server',
+            title: '可用 Server',
             value: readyProfiles.length,
             suffix: '个',
             status: readyProfiles.length > 0 ? 'success' : 'warning',
@@ -252,107 +309,43 @@ export default function ServerSetup() {
         />
       </StatisticCard.Group>
 
-      <SectionCard title="已保存 Server">
+      <SettingSection
+        title="已保存 Server"
+        description="点击「设为当前」将已保存配置切换为当前生效目标。"
+        extra={
+          hasReadyServer ? (
+            <Button type="link" className="server-setup-footer-link" onClick={() => navigate('/servers')}>
+              打开高级 Server 设置
+            </Button>
+          ) : null
+        }
+      >
         <ListTable<ProfileRow>
           rowKey="__key"
           columns={profileColumns}
           dataSource={profileRows}
           loading={false}
         />
-        {hasReadyServer && (
-          <div className="server-setup-footer">
-            <Button type="link" className="server-setup-footer-link" onClick={() => navigate('/servers')}>
-              打开高级 Server 设置
-            </Button>
-          </div>
-        )}
-      </SectionCard>
+      </SettingSection>
 
       {hasReadyServer ? <DistributionUpdatePanel /> : null}
 
-      <Modal
-        title={effectiveDialog.mode === 'authorize'
-          ? '授权 Server'
-          : effectiveDialog.mode === 'add'
-            ? '添加 Server'
-            : '连接 AIH Server'}
-        open={setupModalOpen}
-        width={760}
-        rootClassName={setupModalRequired ? 'server-setup-boot server-setup-boot--gate' : 'server-setup-boot'}
-        footer={null}
-        closable={!setupModalRequired}
-        maskClosable={!setupModalRequired}
-        keyboard={!setupModalRequired}
-        destroyOnClose={false}
-        forceRender
-        onCancel={() => {
-          if (!setupModalRequired) setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
-        }}
-      >
-        {/* HUD 引导代号行：携带 3D 切面果冻弹跳魔方，内容来自真实的弹窗模式（initial / add / authorize） */}
-        <div className="server-setup-boot-code">
-          <HudCube size={18} mode="brand" tone="cyan" interactive label="AIH Server 全息棱镜（点击果冻弹跳）" />
-          <span>SYS // SETUP</span>
-          <span className="server-setup-boot-mode">{effectiveDialog.mode.toUpperCase()}</span>
-        </div>
-        {effectiveDialog.mode === 'initial' && (
-          <Typography.Paragraph type="secondary" className="server-setup-boot-intro hud-prose">
-            首次使用需要连接一台 AIH Server。验证 Server 网关地址和 Management Key 后才能进入工作台。
-          </Typography.Paragraph>
-        )}
-        {bootstrapIssue === 'unauthorized' && (
-          <Typography.Paragraph type="warning" className="server-setup-boot-intro hud-prose">
-            Management Key 无效或缺失，请重新授权。
-          </Typography.Paragraph>
-        )}
-        <Form
-          form={saveForm}
-          className="settings-form"
-          layout="vertical"
-          onFinish={handleSaveServer}
-          initialValues={{
-            endpoint: '',
-            name: 'AIH Server',
-            managementKey: ''
-          }}
-        >
-          <div className="settings-form-panel hud-panel hud-panel--sm">
-            <Form.Item
-              name="endpoint"
-              label="Server 网关地址"
-              help="跨不可信网络访问时，建议使用 HTTPS、VPN 或受控隧道。"
-              rules={[{ required: true, message: '请输入 Server 网关地址' }]}
-            >
-              <Input
-                disabled={effectiveDialog.mode === 'authorize'}
-                placeholder="https://aih.example.com"
-              />
-            </Form.Item>
-            <Form.Item name="name" label="显示名称">
-              <Input placeholder="Home Server / Company Server" />
-            </Form.Item>
-            <Form.Item
-              name="managementKey"
-              label="Management Key"
-              help="可通过 aih server config --show-secrets 查看。"
-              required={effectiveDialog.mode !== 'authorize'}
-              rules={[{ required: effectiveDialog.mode !== 'authorize', message: '请输入 Management Key' }]}
-            >
-              <ManagementKeyInput
-                expectedEndpoint={effectiveDialog.profileId ? dialogDefaults.endpoint : undefined}
-                onCredentials={(credentials) => saveForm.setFieldsValue(credentials)}
-              />
-            </Form.Item>
-          </div>
-          <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={saving}>
-            {effectiveDialog.mode === 'authorize'
-              ? '授权并连接'
-              : effectiveDialog.mode === 'initial'
-                ? '连接并进入工作台'
-                : '探测并保存'}
-          </Button>
-        </Form>
-      </Modal>
+      <ServerSetupModal
+        dialog={effectiveDialog}
+        required={setupModalRequired}
+        defaults={dialogDefaults}
+        targetProfile={targetDialogProfile}
+        activeProfileId={activeProfileId}
+        bootstrapIssue={bootstrapIssue}
+        probing={probing}
+        saving={saving}
+        lastProbe={lastProbe}
+        lastFeedback={lastFeedback}
+        onCancel={() => setSetupDialog(CLOSED_SERVER_SETUP_DIALOG)}
+        onProbe={handleProbeServer}
+        onSave={handleSaveServer}
+        onResetProbe={clearProbeState}
+      />
     </PageScaffold>
   );
 }

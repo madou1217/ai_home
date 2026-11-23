@@ -2,8 +2,6 @@ import AccountCardGrid from '@/components/account/AccountCardGrid';
 import RoutingWeightsDrawer from '@/components/account/RoutingWeightsDrawer';
 import './Accounts.css';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { StatisticCard } from '@ant-design/pro-components';
-import AnimatedValue from '@/components/ui/AnimatedValue';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
@@ -152,6 +150,7 @@ import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-polle
 import { useAccountOutcomes } from '@/features/account-status/useAccountOutcomes';
 import GlobalStatusPanel from '@/features/account-status/GlobalStatusPanel';
 import AccountHealthIcon from '@/features/account-status/AccountHealthIcon';
+import AccountsStatusSummary from '@/features/accounts/AccountsStatusSummary';
 
 // 桌面账号页（≥ 768px）。移动端由 web/src/mobile/pages/MobileAccounts 独立渲染，
 // 两端共用 features/accounts 下的数据 hook、业务动作（useAccountActions）与业务弹窗（AccountFlowModals）。
@@ -1145,54 +1144,12 @@ export default function Accounts() {
       )}
     >
       {/* 顶部统计 */}
-      <StatisticCard.Group className="accounts-stat-group hos-kpi-strip" direction="row" style={{ marginBottom: 16 }}>
-        <StatisticCard
-          className={hydratingDetails ? 'accounts-stat--accent' : 'accounts-stat--success'}
-          statistic={{
-            title: '账号状态',
-            value: hydratingDetails ? '详情补全中' : '就绪',
-            status: hydratingDetails ? 'processing' : 'success'
-          }}
-        />
-        <StatisticCard
-          className={activeStats.healthy > 0 ? 'accounts-stat--success' : 'accounts-stat--accent'}
-          statistic={{
-            title: '正常可用',
-            value: `${activeStats.healthy} / ${activeStats.total}`,
-            valueRender: (node) => <AnimatedValue changeKey={`${activeStats.healthy}/${activeStats.total}`}>{node}</AnimatedValue>
-          }}
-        />
-        <StatisticCard
-          className={pendingIssueCount > 0 ? 'accounts-stat--warning' : 'accounts-stat--accent'}
-          statistic={{
-            title: '待处理问题',
-            value: pendingIssueCount,
-            valueRender: (node) => <AnimatedValue changeKey={pendingIssueCount}>{node}</AnimatedValue>,
-            description: `需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked}`,
-            valueStyle: {
-              color: pendingIssueCount > 0
-                ? 'var(--color-warning)'
-                : undefined
-            }
-          }}
-        />
-        <StatisticCard
-          className={unavailableCount > 0 ? 'accounts-stat--danger' : 'accounts-stat--accent'}
-          statistic={{
-            title: '耗尽/停用',
-            value: unavailableCount,
-            valueRender: (node) => <AnimatedValue changeKey={unavailableCount}>{node}</AnimatedValue>,
-            description: `耗尽 ${activeStats.exhausted} · 停池 ${activeStats.policyBlocked}`,
-            valueStyle: {
-              color: unavailableCount > 0
-                ? 'var(--color-danger)'
-                : undefined
-            }
-          }}
-        />
-      </StatisticCard.Group>
-
-      <GlobalStatusPanel outcomes={accountOutcomes} />
+      <AccountsStatusSummary
+        hydratingDetails={hydratingDetails}
+        stats={activeStats}
+        pendingIssueCount={pendingIssueCount}
+        unavailableCount={unavailableCount}
+      />
 
       <Reveal open={hasActiveImportJob}>
         <div className="accounts-import-running" role="status" aria-live="polite">
@@ -1358,6 +1315,8 @@ export default function Accounts() {
         )}
         </div>
       </SectionCard>
+
+      <GlobalStatusPanel outcomes={accountOutcomes} />
 
       <RoutingWeightsDrawer
         open={routingWeightsOpen}

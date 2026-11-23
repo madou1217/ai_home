@@ -55,6 +55,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if strings.HasSuffix(id, "/renew") && r.Method == "POST" {
+		id = strings.TrimSuffix(id, "/renew")
+		if !h.Runtime.Renew(id) {
+			write(w, 404, map[string]any{"ok": false, "error": "proxy_lease_expired"})
+			return
+		}
+		write(w, 200, map[string]any{"ok": true})
+		return
+	}
 	if strings.HasSuffix(id, "/connect") && r.Method == "GET" {
 		id = strings.TrimSuffix(id, "/connect")
 		h.connect(w, r, id)

@@ -20,9 +20,13 @@ Connector agent 终端启动后，Server 现在写入一条持久会话记录，
 状态：`running` / `exited` / `stopped` / `unknown`。列表读取时用 terminal 快照校正，
 terminal 已不存在且记录仍是 running 时显示 `unknown`。
 
+生命周期事件：`events[]`（最多 20 条，`{at,type,detail}`）。启动写 `started`，复用终端
+写 `started`，自然退出由列表观察后持久化 `exited`，主动停止写 `stopped`。
+
 ## 3. 接口
 
 - `GET /v1/management/webui/remote-execution/sessions`：按创建时间倒序返回会话；
+- `GET /v1/management/webui/remote-execution/sessions/{id}`：单条会话与事件时间线；
 - `POST /v1/management/webui/remote-execution/sessions/{id}/stop`：终止对应 terminal，
   并把记录置为 `stopped`；
 - WebUI 本地工作区面板显示最近 6 条（agent · 账号 · 模型 · 状态），running/unknown 可停止。
@@ -41,4 +45,6 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 1. `agent-terminal` 启动后列表出现
    `rx-4f582b849355406ae7 codex 10 gpt-5.6-luna running`；
 2. `POST …/{id}/stop` 返回 `stopped`，列表状态同步为 stopped；
+3. 事件时间线：启动后 `events=[started]`，停止后 `[started,stopped]`；单条详情接口
+   返回同一时间线；
 3. `go build ./...`、`go vet`、WebUI `tsc` + `npm run build` 通过。

@@ -31,19 +31,27 @@ const (
 
 // Session is one connector agent launch. It never contains tokens or paths.
 type Session struct {
-	ID            string `json:"id"`
-	WorkspaceID   string `json:"workspaceId"`
-	ConnectorID   string `json:"connectorId,omitempty"`
-	Agent         string `json:"agent"`
-	Account       string `json:"account,omitempty"`
-	Model         string `json:"model,omitempty"`
-	SessionKey    string `json:"sessionKey"`
-	TermID        string `json:"termId,omitempty"`
-	Status        string `json:"status"`
-	ToolExpiresAt int64  `json:"toolExpiresAt,omitempty"`
-	CreatedAt     int64  `json:"createdAt"`
-	UpdatedAt     int64  `json:"updatedAt"`
-	StoppedAt     int64  `json:"stoppedAt,omitempty"`
+	ID            string  `json:"id"`
+	WorkspaceID   string  `json:"workspaceId"`
+	ConnectorID   string  `json:"connectorId,omitempty"`
+	Agent         string  `json:"agent"`
+	Account       string  `json:"account,omitempty"`
+	Model         string  `json:"model,omitempty"`
+	SessionKey    string  `json:"sessionKey"`
+	TermID        string  `json:"termId,omitempty"`
+	Status        string  `json:"status"`
+	ToolExpiresAt int64   `json:"toolExpiresAt,omitempty"`
+	CreatedAt     int64   `json:"createdAt"`
+	UpdatedAt     int64   `json:"updatedAt"`
+	StoppedAt     int64   `json:"stoppedAt,omitempty"`
+	Events        []Event `json:"events,omitempty"`
+}
+
+// Event is one lifecycle fact about a remote execution session.
+type Event struct {
+	At     int64  `json:"at"`
+	Type   string `json:"type"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type Store struct {
@@ -83,6 +91,7 @@ func (store *Store) Record(ctx context.Context, session Session) (Session, error
 			record.Status = StatusRunning
 			record.StoppedAt = 0
 			record.UpdatedAt = now
+			record.Events = appendEvent(record.Events, "started", "")
 			if session.ToolExpiresAt > 0 {
 				record.ToolExpiresAt = session.ToolExpiresAt
 			}
@@ -101,6 +110,7 @@ func (store *Store) Record(ctx context.Context, session Session) (Session, error
 		record.CreatedAt = now
 		record.UpdatedAt = now
 		record.StoppedAt = 0
+		record.Events = []Event{{At: now, Type: "started"}}
 		state.Sessions = append(state.Sessions, record)
 		if len(state.Sessions) > maxRecords {
 			state.Sessions = state.Sessions[len(state.Sessions)-maxRecords:]
@@ -151,6 +161,7 @@ func (store *Store) Close(ctx context.Context, id string) (Session, error) {
 			if record.Status != StatusStopped {
 				record.Status = StatusStopped
 				record.StoppedAt = now
+				record.Events = appendEvent(record.Events, StatusStopped, "")
 			}
 			record.UpdatedAt = now
 			saved = *record
@@ -170,6 +181,41 @@ func (store *Store) Close(ctx context.Context, id string) (Session, error) {
 
 type persistedState struct {
 	Sessions []Session `json:"sessions"`
+}
+
+// MarkExited records an observed natural exit exactly once.
+func (store *Store) MarkExited(ctx context.Context, id string) error {
+	now := store.now().UnixMilli()
+	return store.update(ctx, func(state *persistedState) error {
+		for index := range state.Sessions {
+			record := &state.Sessions[index]
+			if record.ID != strings.TrimSpace(id) || record.Status == StatusStopped {
+				continue
+			}
+			if lastEventType(record.Events) == StatusExited {
+				return nil
+			}
+			record.Status = StatusExited
+			record.UpdatedAt = now
+			record.Events = appendEvent(record.Events, StatusExited, "")
+		}
+		return nil
+	})
+}
+
+func appendEvent(events []Event, eventType, detail string) []Event {
+	events = append(events, Event{At: time.Now().UnixMilli(), Type: eventType, Detail: detail})
+	if len(events) > 20 {
+		events = events[len(events)-20:]
+	}
+	return events
+}
+
+func lastEventType(events []Event) string {
+	if len(events) == 0 {
+		return ""
+	}
+	return events[len(events)-1].Type
 }
 
 func (store *Store) load(ctx context.Context) (persistedState, error) {

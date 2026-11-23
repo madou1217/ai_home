@@ -1019,6 +1019,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiremotesessionsapi.Path, Handler: remoteSessions},
+		{Pattern: "GET " + webuiremotesessionsapi.DetailPath, Handler: remoteSessions},
 		{Pattern: "POST " + webuiremotesessionsapi.StopPath, Handler: remoteSessions},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ToolPath, Handler: workspaceConnectors, SkipPublicAlias: true},
 		{Pattern: "POST " + remoteconnector.AgentTerminalPath, Handler: connectorAgentTerminal},

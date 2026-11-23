@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	Path     = "/v1/management/webui/remote-execution/sessions"
-	StopPath = Path + "/{sessionId}/stop"
+	Path       = "/v1/management/webui/remote-execution/sessions"
+	DetailPath = Path + "/{sessionId}"
+	StopPath   = Path + "/{sessionId}/stop"
 )
 
 type Authorizer interface {
@@ -53,6 +54,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	switch {
 	case request.Method == http.MethodGet && request.URL.Path == Path:
 		handler.list(response, request)
+	case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/") == false && strings.HasPrefix(request.URL.Path, Path+"/"):
+		handler.detail(response, request)
 	case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/stop"):
 		handler.stop(response, request)
 	default:
@@ -73,6 +76,7 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 			case "running":
 			case "exited":
 				record.Status = remotesessions.StatusExited
+				_ = handler.store.MarkExited(request.Context(), record.ID)
 			default:
 				record.Status = remotesessions.StatusUnknown
 			}
@@ -80,6 +84,24 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 		views = append(views, record)
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "count": len(views), "sessions": views})
+}
+
+func (handler *Handler) detail(response http.ResponseWriter, request *http.Request) {
+	sessionID := strings.TrimSpace(request.PathValue("sessionId"))
+	if sessionID == "" {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "session_id_required"})
+		return
+	}
+	record, found, err := handler.store.Find(request.Context(), sessionID)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "session_store_unavailable"})
+		return
+	}
+	if !found {
+		writeJSON(response, http.StatusNotFound, map[string]any{"ok": false, "error": "session_not_found"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "session": record})
 }
 
 func (handler *Handler) stop(response http.ResponseWriter, request *http.Request) {

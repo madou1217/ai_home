@@ -372,7 +372,7 @@ export default function WorkspaceConnectorPanel() {
                   {session.model ? ` · ${session.model}` : ''}
                 </span>
                 <span className="ws-connector-meta">
-                  {session.status} · {session.workspaceId} · {formatMoment(session.createdAt)}
+                  {session.status} · {session.events?.[session.events.length - 1]?.type || '-'} · {session.workspaceId} · {formatMoment(session.createdAt)}
                 </span>
               </span>
               {session.status === 'running' || session.status === 'unknown' ? (

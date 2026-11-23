@@ -82,6 +82,7 @@ export interface RemoteExecutionSession {
   createdAt: number;
   updatedAt: number;
   stoppedAt?: number;
+  events?: { at: number; type: string; detail?: string }[];
 }
 
 export interface RemoteExecutionSessionListResponse {

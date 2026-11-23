@@ -9,7 +9,7 @@ import { getProviderLabel, providerIds } from '@/providers/catalog';
  * 限流与并发设置。
  *
  * 本轮只存储与预览：全局系统上限、Provider 默认、账号（+模型）覆盖都会保存，
- * 但真正的准入拦截在下一轮实现，因此所有生效值都带“未生效”标记。
+ * 并发准入已经执行；RPM/TPM 仍未执行，页面按字段分别标注。
  */
 
 type AccountLimitRow = AccountConcurrencyLimit & { provider: string };
@@ -145,7 +145,7 @@ const ConcurrencyLimitsPanel: React.FC = () => {
       };
       await configAPI.updateServer({ concurrency: payload });
       setGlobalConfig({ ...DEFAULT_CONCURRENCY, ...payload });
-      message.success('并发配置已保存（尚未执行拦截）');
+      message.success('并发配置已保存并热生效');
     } catch (error: unknown) {
       message.error((error as { message?: string })?.message || '保存失败');
     } finally {
@@ -188,7 +188,7 @@ const ConcurrencyLimitsPanel: React.FC = () => {
         rpmLimit: Number(values.rpmLimit || 0),
         tpmLimit: Number(values.tpmLimit || 0)
       });
-      message.success('账号覆盖已保存（尚未生效）');
+      message.success('账号覆盖已保存并热生效');
       setEditorOpen(false);
       await load();
     } catch (error: unknown) {
@@ -301,7 +301,7 @@ const ConcurrencyLimitsPanel: React.FC = () => {
           <Space>
             <Button type="primary" loading={savingGlobal} onClick={() => void saveGlobal()}>保存全局配置</Button>
             <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>
-            <Tag>未生效</Tag>
+            <Tag>已生效</Tag>
           </Space>
         </Form>
       </Card>

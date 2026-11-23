@@ -132,7 +132,8 @@ Task 5 的 CLI/HTTP/runtime 真实验收已完成，证据见
 Codex/Claude 的 MCP 工具桥已接到 Workspace Connector，并通过真实 MCP/HTTP 验收；
 AGY 明确返回 agy_remote_workspace_unsupported。`run_command` 已实现（同步执行、工作区
 cwd 约束、超时终止进程组、`--no-command` 可关闭），并通过真实 MCP 调用验收；
-`start_job` / `watch_job` / `interrupt_job` 也已实现（cursor 增量、长轮询、ring 丢弃、
-作业上限与中断），并通过真实 MCP 验收；审批、作业跨 Connector 重启仍未完成。详见
+`start_job` / `watch_job` / `interrupt_job` 也已实现（cursor 增量、长轮询、输出上限、
+作业上限与中断），作业由独立 runner + 磁盘 spool 承载，Connector 退出/重启后仍可继续
+观察；高危命令审批已实现（never/destructive/all，命令绑定、一次性、可批准/拒绝）。详见
 `docs/remote/2026-11-22-provider-adapter-tool-channel.md`。
 

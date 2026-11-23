@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -37,6 +38,12 @@ type Config struct {
 	Heartbeat      time.Duration
 	RequestTimeout time.Duration
 	MaxConcurrent  int
+	// StateDir is where background jobs keep their spool (meta, status and
+	// output). It must be stable across connector restarts; empty falls back to
+	// a temp directory.
+	StateDir string
+	// ApprovalMode is never, destructive or all. Empty selects destructive.
+	ApprovalMode string
 	// DisableCommand opts this connector out of workspace.run_command. Command
 	// execution is enabled by default because the connector process is started
 	// by the local machine owner and runs with that user's own authority.
@@ -57,11 +64,12 @@ type Session struct {
 }
 
 type Connector struct {
-	ws      *websocket.Conn
-	fs      *filesystem
-	jobs    *jobManager
-	config  Config
-	session Session
+	ws        *websocket.Conn
+	fs        *filesystem
+	jobs      *jobManager
+	approvals *approvalManager
+	config    Config
+	session   Session
 
 	writeMu sync.Mutex
 }
@@ -117,7 +125,8 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 	commands := !config.DisableCommand
 	capabilities := remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
-		RunCommand: commands, StartJob: commands, WatchJob: commands, InterruptJob: commands,
+		RunCommand: commands, Approval: commands,
+		StartJob: commands, WatchJob: commands, InterruptJob: commands,
 	})
 	hello := remoteconnector.Hello{
 		Type:         remoteconnector.MessageHello,
@@ -178,7 +187,11 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 			return nil, fmt.Errorf("persist workspace connector session: %w", err)
 		}
 	}
-	return &Connector{ws: ws, fs: files, jobs: newJobManager(files), config: config, session: session}, nil
+	executable, _ := os.Executable()
+	return &Connector{
+		ws: ws, fs: files, jobs: newJobManager(files, config.StateDir, executable),
+		approvals: newApprovalManager(config.ApprovalMode), config: config, session: session,
+	}, nil
 }
 
 func (connector *Connector) Session() Session { return connector.session }
@@ -304,15 +317,30 @@ func (connector *Connector) requestBudget(message remoteconnector.Message, fallb
 	}
 }
 
-func (connector *Connector) execute(ctx context.Context, request remoteconnector.Message) remoteconnector.Message {
-	var result any
-	var err error
+// approvalGate stops a command before execution when the local policy requires
+// an explicit decision. It runs before dispatch so neither run_command nor
+// start_job can bypass approval.
+func (connector *Connector) approvalGate(request remoteconnector.Message) error {
 	switch request.Operation {
-	case remoteconnector.OperationStartJob, remoteconnector.OperationWatchJob, remoteconnector.OperationInterruptJob:
-		result, err = connector.jobs.execute(ctx, request.Operation, request.Payload)
+	case remoteconnector.OperationRunCommand:
+		var input remoteconnector.RunCommandRequest
+		if err := json.Unmarshal(request.Payload, &input); err != nil {
+			return nil
+		}
+		return connector.approvals.Require(input.Command, input.Cwd, input.ApprovalID)
+	case remoteconnector.OperationStartJob:
+		var input remoteconnector.StartJobRequest
+		if err := json.Unmarshal(request.Payload, &input); err != nil {
+			return nil
+		}
+		return connector.approvals.Require(input.Command, input.Cwd, input.ApprovalID)
 	default:
-		result, err = connector.fs.execute(ctx, request.Operation, request.Payload)
+		return nil
 	}
+}
+
+func (connector *Connector) execute(ctx context.Context, request remoteconnector.Message) remoteconnector.Message {
+	result, err := connector.dispatch(ctx, request)
 	if err != nil {
 		code := remoteconnector.ErrorCode(err)
 		message := ""
@@ -333,6 +361,30 @@ func (connector *Connector) execute(ctx context.Context, request remoteconnector
 		}
 	}
 	return remoteconnector.Message{Type: remoteconnector.MessageResponse, ID: request.ID, Payload: encoded}
+}
+
+func (connector *Connector) dispatch(ctx context.Context, request remoteconnector.Message) (any, error) {
+	if err := connector.approvalGate(request); err != nil {
+		return nil, err
+	}
+	switch request.Operation {
+	case remoteconnector.OperationListApprovals:
+		return connector.approvals.List(), nil
+	case remoteconnector.OperationDecideApproval:
+		var input remoteconnector.DecideApprovalRequest
+		if err := decodePayload(request.Payload, &input); err != nil {
+			return nil, err
+		}
+		view, err := connector.approvals.Decide(input.ID, input.Approve)
+		if err != nil {
+			return nil, err
+		}
+		return remoteconnector.DecideApprovalResult{Approval: view}, nil
+	case remoteconnector.OperationStartJob, remoteconnector.OperationWatchJob, remoteconnector.OperationInterruptJob:
+		return connector.jobs.execute(ctx, request.Operation, request.Payload)
+	default:
+		return connector.fs.execute(ctx, request.Operation, request.Payload)
+	}
 }
 
 func (connector *Connector) send(ctx context.Context, message remoteconnector.Message) error {

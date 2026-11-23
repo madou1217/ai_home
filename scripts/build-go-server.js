@@ -44,9 +44,19 @@ function buildGoServerPlan(options = {}) {
   const baseArgs = ['build', '-trimpath', '-ldflags', '-s -w'];
   const env = { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' };
   const outputDir = path.dirname(output);
+  // aih-launch is the stable macOS parent process for TCC; it must stay byte
+  // identical across releases, so it is built with the same reproducible flags.
+  const launcher = goos === 'darwin'
+    ? {
+        output: path.join(outputDir, 'aih-launch'),
+        temporaryOutput: path.join(outputDir, `aih-launch.build-${process.pid}`),
+        args: [...baseArgs, '-o', path.join(outputDir, `aih-launch.build-${process.pid}`), './cmd/aih-launch']
+      }
+    : null;
   return {
     output,
     temporaryOutput,
+    launcher,
     target: `${platform}-${arch}`,
     // 生产主体不带内置内核编译器：只发现同目录/aiHome 下的进程插件。
     // -s -w 去掉符号表与 DWARF：分发包小 ~19MiB（压缩后），panic 栈和 pprof
@@ -78,14 +88,16 @@ function buildGoServer(options = {}) {
     if (result.error) throw result.error;
     if (result.status !== 0) throw new Error(`go build exited with ${result.status}`);
   };
-  const temporaryOutputs = [plan.temporaryOutput, ...plan.plugins.map((plugin) => plugin.temporaryOutput)];
+  const temporaryOutputs = [plan.temporaryOutput, ...(plan.launcher ? [plan.launcher.temporaryOutput] : []), ...plan.plugins.map((plugin) => plugin.temporaryOutput)];
   try {
     runGoBuild(plan.args);
+    if (plan.launcher) runGoBuild(plan.launcher.args);
     for (const plugin of plan.plugins) runGoBuild(plugin.args);
     // Publish the CLI from the same source before the server. Database readiness
     // is capability-based; paired artifacts keep native commands in sync.
     buildGoCLI({ ...options, repositoryRoot });
     for (const plugin of plan.plugins) fs.renameSync(plugin.temporaryOutput, plugin.output);
+    if (plan.launcher) fs.renameSync(plan.launcher.temporaryOutput, plan.launcher.output);
     fs.renameSync(plan.temporaryOutput, plan.output);
   } catch (error) {
     for (const temporary of temporaryOutputs) fs.rmSync(temporary, { force: true });

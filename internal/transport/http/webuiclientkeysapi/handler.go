@@ -91,16 +91,17 @@ type limitsView struct {
 }
 
 type keyView struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	Prefix         string     `json:"prefix"`
-	Enabled        bool       `json:"enabled"`
-	Master         bool       `json:"master"`
-	CreatedAtMS    int64      `json:"createdAtMs"`
-	UpdatedAtMS    int64      `json:"updatedAtMs"`
-	LastUsedAtMS   int64      `json:"lastUsedAtMs"`
-	Limits         limitsView `json:"limits"`
-	LimitsEnforced bool       `json:"limitsEnforced"`
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	Prefix              string     `json:"prefix"`
+	Enabled             bool       `json:"enabled"`
+	Master              bool       `json:"master"`
+	CreatedAtMS         int64      `json:"createdAtMs"`
+	UpdatedAtMS         int64      `json:"updatedAtMs"`
+	LastUsedAtMS        int64      `json:"lastUsedAtMs"`
+	Limits              limitsView `json:"limits"`
+	ConcurrencyEnforced bool       `json:"concurrencyEnforced"`
+	RateLimitsEnforced  bool       `json:"rateLimitsEnforced"`
 }
 
 type liveView struct {
@@ -228,13 +229,14 @@ func (handler *Handler) ServeStats(response http.ResponseWriter, request *http.R
 		return
 	}
 	writeJSON(response, http.StatusOK, map[string]any{
-		"ok":             true,
-		"generatedAt":    time.Now().UnixMilli(),
-		"granularity":    query.Granularity,
-		"attempts":       attempts,
-		"requests":       requests,
-		"live":           handler.stats.Live(),
-		"limitsEnforced": false,
+		"ok":                  true,
+		"generatedAt":         time.Now().UnixMilli(),
+		"granularity":         query.Granularity,
+		"attempts":            attempts,
+		"requests":            requests,
+		"live":                handler.stats.Live(),
+		"concurrencyEnforced": true,
+		"rateLimitsEnforced":  false,
 	})
 }
 
@@ -390,7 +392,8 @@ func viewOf(key coreclientkeys.Key) keyView {
 			TPMLimit: key.Limits.TPMLimit, DailyTokenLimit: key.Limits.DailyTokenLimit,
 			AllowedProviders: key.Limits.AllowedProviders, AllowedModels: key.Limits.AllowedModels,
 		},
-		LimitsEnforced: false,
+		ConcurrencyEnforced: true,
+		RateLimitsEnforced:  false,
 	}
 }
 

@@ -1,6 +1,7 @@
 package distributioninstall
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -112,6 +113,9 @@ func (h platformHooks) Stop(ctx context.Context, o Options, s serviceSnapshot) e
 	return stopOwnedListener(ctx, o, s)
 }
 func (h platformHooks) Install(ctx context.Context, o Options) error {
+	if err := installStableLauncher(o); err != nil {
+		return err
+	}
 	_, err := autostart.Install(ctx, autostart.Options{
 		Label:        serviceName(o),
 		Home:         o.Home,
@@ -121,6 +125,55 @@ func (h platformHooks) Install(ctx context.Context, o Options) error {
 		LogFile:      filepath.Join(o.Home, "logs", "services", "background-supervisor.log"),
 	})
 	return err
+}
+
+// installStableLauncher publishes the macOS TCC parent at a fixed path. The
+// package root changes with every release, but the permission grant is bound to
+// this file's code identity, so it must live outside the versioned root.
+func installStableLauncher(o Options) error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	source := filepath.Join(o.PackageRoot, "bin", "native", Target(), "aih-launch")
+	info, err := os.Stat(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	target := filepath.Join(o.Home, "bin", "aih-launch")
+	if existing, readErr := os.ReadFile(target); readErr == nil && bytes.Equal(existing, raw) {
+		return nil
+	}
+	dir := filepath.Dir(target)
+	if err = os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, ".aih-launch-")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	if _, err = temp.Write(raw); err == nil {
+		err = temp.Chmod(0o755)
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if err = os.Rename(name, target); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return nil
 }
 
 func (h platformHooks) Restore(ctx context.Context, o Options, s serviceSnapshot) error {

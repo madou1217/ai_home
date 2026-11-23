@@ -47,6 +47,7 @@ type proxyServeOptions struct {
 	selector          string
 	server            string
 	ssh               string
+	sshVia            string
 	sshRemote         string
 	listen            string
 	noSocks           bool
@@ -65,6 +66,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
 	flags.StringVar(&options.server, "server", "", "远端 AIH Server 管理面地址；缺省读取 AIH_SERVER_BASE_URL")
 	flags.StringVar(&options.ssh, "ssh", "", "用已保存的 SSH 连接建立本地转发（连接 ID）")
+	flags.StringVar(&options.sshVia, "ssh-via", "", "可选的 SSH 跳板连接 ID（复用现有 mesh 链路）")
 	flags.StringVar(&options.sshRemote, "ssh-remote-address", proxytransport.DefaultRemoteAddress, "SSH 远端 AIH 管理面 loopback 地址")
 	flags.StringVar(&options.listen, "listen", proxytransport.DefaultListenAddress, "SSH 本地转发监听地址（仅 loopback）")
 	flags.BoolVar(&options.noSocks, "no-socks", false, "不启动本地 SOCKS5 入口，只提供 HTTP 代理")
@@ -83,6 +85,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	options.selector = strings.TrimSpace(options.selector)
 	options.server = strings.TrimSpace(options.server)
 	options.ssh = strings.TrimSpace(options.ssh)
+	options.sshVia = strings.TrimSpace(options.sshVia)
 	options.sshRemote = strings.TrimSpace(options.sshRemote)
 	options.listen = strings.TrimSpace(options.listen)
 	options.systemService = strings.TrimSpace(options.systemService)
@@ -99,8 +102,8 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 			return options, errors.New("--server 必须是有效的 HTTP(S) 管理面地址")
 		}
 	}
-	if options.ssh == "" && (options.sshRemote != proxytransport.DefaultRemoteAddress || options.listen != proxytransport.DefaultListenAddress) {
-		return options, errors.New("--ssh-remote-address/--listen 需要配合 --ssh 使用")
+	if options.ssh == "" && (options.sshVia != "" || options.sshRemote != proxytransport.DefaultRemoteAddress || options.listen != proxytransport.DefaultListenAddress) {
+		return options, errors.New("--ssh-via/--ssh-remote-address/--listen 需要配合 --ssh 使用")
 	}
 	if options.systemDryRun && !options.system {
 		return options, errors.New("--system-dry-run 需要配合 --system 使用")
@@ -141,7 +144,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	var transport proxytransport.Transport
 	base := options.server
 	if options.ssh != "" {
-		transport, err = openSSHTransport(ctx, runtime, options.ssh, options.listen, options.sshRemote)
+		transport, err = openSSHTransport(ctx, runtime, options.ssh, options.listen, options.sshRemote, options.sshVia)
 		if err != nil {
 			return err
 		}

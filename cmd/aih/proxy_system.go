@@ -67,7 +67,14 @@ func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, s
 		return nil, err
 	}
 	writeSystemProxyResult(cmdRuntime, "已应用系统代理", result)
+	if applied, detail := systemProxyMatches(ctx, service, host, port); !applied {
+		_, _ = fmt.Fprintf(cmdRuntime.stderr, "[aih] 警告：系统代理应用后已被其他程序改写（%s）；AIH 不会与其抢占，退出时也不会覆盖当前设置。\n", detail)
+	}
 	return func() {
+		if applied, detail := systemProxyMatches(context.Background(), service, host, port); !applied {
+			_, _ = fmt.Fprintf(cmdRuntime.stderr, "[aih] 系统代理已由其他程序接管（%s），跳过恢复。\n", detail)
+			return
+		}
 		restoreCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		restored, restoreErr := systemproxy.Restore(restoreCtx, snapshot, systemproxy.RestoreOptions{Service: service})
@@ -77,6 +84,39 @@ func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, s
 		}
 		writeSystemProxyResult(cmdRuntime, "已恢复系统代理", restored)
 	}, nil
+}
+
+// systemProxyMatches 确认系统当前仍指向本次应用的 loopback 入口。
+// 其他代理管理器（例如 Clash Verge）可能在我们写入后立即改写系统代理；
+// 这时 AIH 只报告冲突，不反复争抢。
+func systemProxyMatches(ctx context.Context, service, host string, port int) (bool, string) {
+	snapshot, err := systemproxy.Capture(ctx)
+	if err != nil {
+		return false, err.Error()
+	}
+	target := strings.TrimSpace(service)
+	if target == "" {
+		for _, item := range snapshot.Services {
+			if item.HTTP.Enabled {
+				target = item.Service
+				break
+			}
+		}
+		if target == "" && len(snapshot.Services) == 1 {
+			target = snapshot.Services[0].Service
+		}
+	}
+	state, found := snapshot.Service(target)
+	if !found {
+		return false, "找不到目标网络服务"
+	}
+	if !state.HTTP.Enabled || state.HTTP.Host != host || state.HTTP.Port != port {
+		return false, fmt.Sprintf("当前 HTTP 代理为 %s:%d enabled=%v", state.HTTP.Host, state.HTTP.Port, state.HTTP.Enabled)
+	}
+	if !state.HTTPS.Enabled || state.HTTPS.Host != host || state.HTTPS.Port != port {
+		return false, fmt.Sprintf("当前 HTTPS 代理为 %s:%d enabled=%v", state.HTTPS.Host, state.HTTPS.Port, state.HTTPS.Enabled)
+	}
+	return true, ""
 }
 
 func writeSystemProxyResult(runtime commandRuntime, prefix string, result systemproxy.Result) {

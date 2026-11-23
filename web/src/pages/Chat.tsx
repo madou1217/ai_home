@@ -309,8 +309,8 @@ function ChatSidebarPane({
 }: ChatSidebarPaneProps) {
   const showWorkFirstRun = workspaceMode === 'work' && !loading && projects.length === 0;
   const headingSubtitle = workspaceMode === 'chat'
-    ? '独立对话列表，支持角色与自动压缩设置'
-    : '按项目组织会话，支持本地与远程工作区';
+    ? '选择或新建对话；角色与压缩设置按会话保存'
+    : '按项目组织代码会话，支持本地与远程工作区';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', minHeight: 0 }}>

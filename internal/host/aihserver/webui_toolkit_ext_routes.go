@@ -109,6 +109,8 @@ func buildWebUIToolkitExtRoutes(dependencies webuiRouteDependencies) ([]webuiRou
 		// 原生资源探测与生命周期操作
 		{Pattern: "GET " + webuitoolkitextapi.NativeResourcesPath, Handler: handler},
 		{Pattern: "POST " + webuitoolkitextapi.NativeResourcesPath, Handler: handler},
+		{Pattern: "POST " + webuitoolkitextapi.NativeResourceSourceFilesPath, Handler: handler},
+		{Pattern: "POST " + webuitoolkitextapi.NativeResourceSourceURLPath, Handler: handler},
 
 		// 订阅聚合器管理面与同步进度 SSE
 		{Pattern: "GET " + webuitoolkitextapi.SubAggregatorPath, Handler: handler},

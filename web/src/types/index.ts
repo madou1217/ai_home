@@ -3527,6 +3527,14 @@ export interface NativeResourceInstallCandidate {
   version?: string;
 }
 
+export interface NativeResourceSourceImport {
+  ok: boolean;
+  uploadId: string;
+  name: string;
+  files: number;
+  bytes: number;
+}
+
 export interface NativeResourceReport {
   ok: boolean;
   source: string;

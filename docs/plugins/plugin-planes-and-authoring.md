@@ -187,6 +187,18 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 4. 详情里的“声明”会显示 `engine deepseek`、`export ./deepseek`、`dsh patch ./patch.yml` 等事实。
 5. 记住边界：AIH 只证明“已安装/已投影”，**不证明 Harness 内真的执行成功**。
 
+### 6.1 安装源
+
+“插件与资源 → 安装”支持三种源：
+
+| 模式 | 行为 | 限制 |
+|---|---|---|
+| 内置 / 路径 | 随包资源或安装包内相对路径 | 路径必须位于安装包根目录下 |
+| 本地文件夹 | 浏览器选择目录，上传到 `run/native-resource-sources/<id>` | 单包 4MB / 256 文件；自动跳过 `.git` |
+| URL | 服务端下载 http(s) 直链 | zip / tar.gz / tar 自动解包；单文件直连；64MB 下载上限 |
+
+上传源是**一次性安装源**：多目标安装会复用同一份内容，过期 24 小时后清理；它不会成为插件的运行目录。
+
 ## 7. 当前真正的弱点
 
 按影响排序：

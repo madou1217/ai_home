@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -48,11 +47,8 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 	if noMCP && onlySet {
 		return nil, errors.New("--no-mcp 与 --mcp 不能同时使用")
 	}
-	_ = os.Unsetenv("AIH_MCP_DISABLED")
-	_ = os.Unsetenv("AIH_MCP_DISABLE")
 	if noMCP {
-		_ = os.Setenv("AIH_MCP_DISABLED", "1")
-		return kept, nil
+		return append([]string{"-c", "mcp_servers={}"}, kept...), nil
 	}
 	if !onlySet {
 		return kept, nil
@@ -71,8 +67,11 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 	if len(disabled) == 0 {
 		return kept, nil
 	}
-	_ = os.Setenv("AIH_MCP_DISABLE", strings.Join(disabled, ","))
-	return kept, nil
+	pairs := make([]string, 0, len(disabled)*2)
+	for _, name := range disabled {
+		pairs = append(pairs, "-c", "mcp_servers."+name+".enabled=false")
+	}
+	return append(pairs, kept...), nil
 }
 
 func listCodexMCPNames() ([]string, error) {

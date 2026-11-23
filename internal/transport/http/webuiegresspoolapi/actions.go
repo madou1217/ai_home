@@ -34,6 +34,10 @@ const (
 	// EvidencePath 是限定作用域实测诊断查询路径。
 	EvidencePath = "/v1/management/webui/egress-evidence"
 
+	// StartPath / StopPath 显式控制出口池内核生命周期。
+	StartPath = Path + "/start"
+	StopPath  = Path + "/stop"
+
 	maxActionBodyBytes = 8 * 1024
 )
 
@@ -49,6 +53,24 @@ func (handler *Handler) serveFullHTTP(responseWriter http.ResponseWriter, reques
 	}
 
 	switch {
+	case escapedPath == StartPath || escapedPath == StopPath:
+		if !requireMethod(responseWriter, request, http.MethodPost) {
+			return
+		}
+		lifecycle, ok := handler.manager.(PoolLifecycleManager)
+		if !ok {
+			writeError(responseWriter, http.StatusNotImplemented, "pool_lifecycle_unavailable", "当前出口池不支持生命周期控制")
+			return
+		}
+		if escapedPath == StartPath {
+			result := lifecycle.StartPool(request.Context())
+			writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": result.OK, "error": result.Error, "proxyUrl": result.ProxyURL, "nodeCount": result.NodeCount})
+			return
+		}
+		lifecycle.StopPool()
+		writeJSON(responseWriter, http.StatusOK, map[string]any{"ok": true})
+		return
+
 	case escapedPath == Path:
 		if request.Method != http.MethodGet {
 			responseWriter.Header().Set("Allow", http.MethodGet)

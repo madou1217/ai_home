@@ -480,3 +480,33 @@
     border-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard);
 }
+
+/* 刷新失败提示：紧凑行内状态 + 折叠详情。
+   不使用整块告警容器——状态由图标、文字与留白表达，详情默认收起，
+   需要时才展开，避免长错误文本挤压目录列表。 */
+.models-refresh-error {
+  margin-top: var(--hos-space-2);
+  font-size: 12px;
+}
+.models-refresh-error > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-2);
+  cursor: pointer;
+  color: var(--hos-warn-text, #d9a441);
+  list-style: none;
+}
+.models-refresh-error > summary::-webkit-details-marker {
+  display: none;
+}
+.models-refresh-error-hint {
+  color: var(--hos-text-muted, rgba(255, 255, 255, 0.45));
+  text-decoration: underline dotted;
+}
+.models-refresh-error > p {
+  margin: var(--hos-space-2) 0 0;
+  padding-inline-start: var(--hos-space-3);
+  color: var(--hos-text-muted, rgba(255, 255, 255, 0.6));
+  line-height: 1.6;
+  word-break: break-word;
+}

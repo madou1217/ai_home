@@ -643,7 +643,18 @@ export default function Models() {
               <strong>{catalogJob.catalog?.scannedAccounts ?? '-'}</strong>
             </div>
           </div>
-          {catalogJob.error ? <p>{catalogJob.error}</p> : null}
+          {catalogJob.error ? (
+            // 仓库 UI 约束：禁止用大面积告警块承载页面主内容。这里只留一行
+            // 紧凑状态 + 折叠详情，错误全文按需展开，不占据版面。
+            <details className="models-refresh-error">
+              <summary>
+                <span aria-hidden="true">⚠</span>
+                <span>部分账号探测失败</span>
+                <span className="models-refresh-error-hint">展开详情</span>
+              </summary>
+              <p>{catalogJob.error}</p>
+            </details>
+          ) : null}
         </SectionCard>
       ) : null}
 

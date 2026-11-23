@@ -81,6 +81,29 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	return lease, nil
 }
 
+// keepAlive 在租约到期前续租；失败时通过 onError 通知主命令退出。
+func (lease *serveLease) keepAlive(ctx context.Context, interval time.Duration, onError func(error)) {
+	if interval <= 0 {
+		interval = 30 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			renewCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := lease.client.renew(renewCtx, lease.id)
+			cancel()
+			if err != nil {
+				onError(err)
+				return
+			}
+		}
+	}
+}
+
 func (lease *serveLease) HTTPAddress() string {
 	if lease == nil || lease.ingress == nil {
 		return ""

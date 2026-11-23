@@ -55,6 +55,8 @@ type Options struct {
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
+	// ExtraEnv 在 Provider 布局之外追加进程环境（例如登录期间临时出口代理）。
+	ExtraEnv map[string]string
 }
 
 // providerSpec 声明单个 Provider 的登录差异。
@@ -66,11 +68,22 @@ type providerSpec struct {
 	readCredential func(configDir string) ([]byte, error)
 	// loginArgs 在合同的 LoginArgs 上追加 Provider 专属参数（例如 codex --device-auth）。
 	loginArgs func([]string) []string
+	// networkProbeURL 是登录前要探测的授权域名；空表示该 Provider 不需要预检。
+	networkProbeURL string
 }
 
 // providerSpecs 是已迁移 Provider 的唯一注册点。
 var providerSpecs = map[string]providerSpec{
 	"agy": {layout: agyLayout, readCredential: agyCredential},
+}
+
+// ProbeURL 返回登录前的网络预检地址；未声明时返回空串。
+func ProbeURL(providerID string) string {
+	spec, ok := providerSpecs[providerruntime.NormalizeProvider(providerID)]
+	if !ok {
+		return ""
+	}
+	return spec.networkProbeURL
 }
 
 // Supported 判断 Provider 的原生 CLI 登录是否已由 Go 承接。
@@ -122,6 +135,11 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 		return accountcore.Account{}, fmt.Errorf("创建浏览器捕获脚本失败: %w", err)
 	}
 	env["BROWSER"] = capture
+	for key, value := range options.ExtraEnv {
+		if strings.TrimSpace(key) != "" {
+			env[key] = value
+		}
+	}
 	binaryName := strings.TrimSpace(definition.CLI.BinaryName)
 	if binaryName == "" {
 		// 与入口探测同口径：没有显式 BinaryName 时按 Provider ID 找同名可执行文件。

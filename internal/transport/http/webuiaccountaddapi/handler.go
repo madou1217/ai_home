@@ -912,7 +912,7 @@ func writeCallbackError(response http.ResponseWriter, err error, job *JobSnapsho
 	case errors.Is(err, accountauth.ErrJobNotPending):
 		writeError(response, http.StatusConflict, "job_not_pending", "OAuth Job 已被处理或结束", job)
 	case errors.Is(err, accountauth.ErrInvalidCallback):
-		writeError(response, http.StatusBadRequest, "invalid_callback", "OAuth 回调格式无效", job)
+		writeError(response, http.StatusBadRequest, "invalid_callback", "OAuth 回调格式无效：请粘贴完整回调地址（形如 http://localhost:1455/auth/callback?code=…&state=…），或只粘贴 code。", job)
 	case errors.Is(err, accountauth.ErrStateMismatch):
 		writeError(response, http.StatusBadRequest, "state_mismatch", "OAuth 回调与当前 Job 不匹配", job)
 	case errors.Is(err, accountauth.ErrProviderRejected):

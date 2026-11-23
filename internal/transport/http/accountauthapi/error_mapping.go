@@ -65,7 +65,7 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			response,
 			http.StatusUnprocessableEntity,
 			"invalid_callback",
-			"OAuth 回调格式无效",
+			"OAuth 回调格式无效：请粘贴完整回调地址（形如 http://localhost:1455/auth/callback?code=…&state=…），或只粘贴 code。",
 		)
 	case errors.Is(err, accountauth.ErrStateMismatch):
 		writeAPIError(

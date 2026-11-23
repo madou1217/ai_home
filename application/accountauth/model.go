@@ -433,4 +433,15 @@ type Dependencies struct {
 	ProfileBinder func(ctx context.Context, providerID, accountRef, jobID string) error
 	// OnJobSnapshot 在每次状态迁移后收到最新 Job；供账号实时流广播 auth-job。
 	OnJobSnapshot func(Job)
+	// LoginEgress 在换码前按 Provider 预检授权域名；直连不可用时返回临时出口。
+	// 为空表示不做网络预检，保持原有直连语义。
+	LoginEgress LoginEgress
+}
+
+// LoginEgress 为 OAuth 换码提供临时出口。
+//
+// 返回空 proxyURL + noop release 表示直连可用；返回错误表示直连不可用且出口
+// 不可得，调用方应把作业收尾为 provider_unavailable，而不是发出注定 403 的请求。
+type LoginEgress interface {
+	Acquire(ctx context.Context, providerID string) (proxyURL string, release func(), err error)
 }

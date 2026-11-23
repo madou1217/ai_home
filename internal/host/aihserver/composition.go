@@ -1006,6 +1006,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		jobRegistrar:       scheduledRegistrar,
 		reauth:             scheduledReauthenticator,
 		tokenEvents:        dependencies.TokenEvents,
+		loginEgress:        newLoginEgress(sshproxy.NewLeaseManager(sshProxySupervisor, aiHomeDir, egressManager)),
 	})
 	if err != nil {
 		return serverHandlers{}, nil, err

@@ -148,9 +148,10 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	options := plugincontrol.AcceptOptions{
-		HostVersion:   headerOr(request, HostVersionHeader, "1.0.0"),
-		NodeVersion:   firstHeader(request, RuntimeVersionHeader),
-		RequireSigned: payload.RequireSigned,
+		HostVersion:    headerOr(request, HostVersionHeader, "1.0.0"),
+		NodeVersion:    firstHeader(request, RuntimeVersionHeader),
+		RequireSigned:  payload.RequireSigned,
+		AllowUntrusted: !payload.RequireSigned,
 	}
 	result, err := handler.installer.Install(request.Context(), payload.File, options)
 	if err != nil {

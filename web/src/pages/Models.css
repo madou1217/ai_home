@@ -360,6 +360,17 @@
   gap: var(--hos-space-1);
   margin-inline-end: 0;
 }
+
+/* 客户端入口标签：用符号 + 文字表达原生/转换，不用色块或左侧竖条。
+   native 用实心菱形并带绿色调，convert 用空心菱形保持中性——
+   两者都可用，区别只在请求是否经过协议转换。 */
+.models-endpoint-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+  margin-inline-end: 0;
+  font-variant-numeric: tabular-nums;
+}
 /* 复制图标紧跟在模型 ID 后面：固定占位，只切换透明度，避免 hover 造成 row 高度/换行抖动。 */
 .models-global-title-line .copy-icon-btn,
 .models-model-title-line .copy-icon-btn {

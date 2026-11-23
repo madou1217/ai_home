@@ -43,6 +43,10 @@ type AcceptOptions struct {
 	NodeVersion   string
 	Target        string
 	RequireSigned bool
+	// AllowUntrusted 允许「带签名但公钥未登记」的包继续安装，并把状态记为
+	// untrusted（签名未验证）。默认 false：调用方必须显式选择这种宽松策略，
+	// 避免把「验不了」伪装成「验过了」。
+	AllowUntrusted bool
 	// TrustedKeys 仅供测试注入；生产路径读插件数据根的信任根文件。
 	TrustedKeys map[string]string
 }

@@ -23,9 +23,10 @@ const (
 )
 
 type signatureOptions struct {
-	AIHomeDir     string
-	TrustedKeys   map[string]string
-	RequireSigned bool
+	AIHomeDir      string
+	TrustedKeys    map[string]string
+	RequireSigned  bool
+	AllowUntrusted bool
 }
 
 // resolveSignature 校验 metadata 里的发布者签名并落实安装策略。
@@ -59,6 +60,10 @@ func resolveSignature(metadata map[string]any, options signatureOptions) (Signat
 	publicKeyPEM, isTrusted := trusted[keyID]
 	if !isTrusted {
 		detail := "本机没有该签名公钥"
+		if !options.RequireSigned && options.AllowUntrusted {
+			// 签名存在但无法验证：保留 keyId 供用户核对，绝不标记为 signed。
+			return Signature{Status: "untrusted", KeyID: keyID, Detail: detail}, nil
+		}
 		return Signature{Status: "untrusted", KeyID: keyID, Detail: detail},
 			pluginerr.New(codeSignatureUntrusted, fmt.Sprintf("插件包签名公钥 %s 不在本机信任根中（aih plugin trust）", keyID))
 	}

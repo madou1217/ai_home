@@ -148,7 +148,7 @@ html[data-mobile-hud] .mhud-shell .ant-select-single .ant-select-selector { alig
   backdrop-filter: blur(10px);
   border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
 }
-.mhud-topbar__title { display: flex; flex-direction: column; min-width: 0; flex: 1 1 88px; line-height: 1.15; }
+.mhud-topbar__title { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 88px; line-height: 1.25; }
 .mhud-topbar__code {
   overflow: hidden;
   font-family: var(--font-display);
@@ -312,7 +312,7 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   line-height: 1.55;
 }
 .mhud-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: var(--mhud-hit); min-width: 0; }
-.mhud-toolbar__start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); min-width: 0; flex: 1 1 160px; }
+.mhud-toolbar__start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); min-width: 0; flex: 0 1 auto; }
 .mhud-toolbar__end { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-3); flex: 0 1 auto; max-width: 100%; }
 
 .mhud-section { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }

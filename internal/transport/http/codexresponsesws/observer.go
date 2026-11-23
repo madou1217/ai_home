@@ -26,6 +26,7 @@ var (
 // turnObserver 只观察请求是否在途、是否预热和上游终态，不保存帧正文。
 type turnObserver struct {
 	mu             sync.Mutex
+	ctx            context.Context
 	model          string
 	route          runtimecore.ModelRoute
 	observation    accountcredentials.CredentialObservation
@@ -46,6 +47,7 @@ type turnObserver struct {
 
 // newTurnObserver 创建连接级串行状态机。
 func newTurnObserver(
+	ctx context.Context,
 	model string,
 	route runtimecore.ModelRoute,
 	observation accountcredentials.CredentialObservation,
@@ -55,6 +57,7 @@ func newTurnObserver(
 	rules configured.Rules,
 ) *turnObserver {
 	return &turnObserver{
+		ctx:            ctx,
 		model:          model,
 		route:          route,
 		observation:    observation,
@@ -148,7 +151,7 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 			success = success.WithUsage(usage)
 		}
 		_, successErr = observer.attempts.RecordSuccess(
-			context.Background(),
+			context.WithoutCancel(observer.ctx),
 			observer.route,
 			observer.observation,
 			success,

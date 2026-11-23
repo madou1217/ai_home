@@ -302,6 +302,7 @@ func (handler *Handler) ServeHTTP(
 		sendFrame = stripForeignReasoning(sendFrame)
 	}
 	observer := newTurnObserver(
+		session.Context(),
 		firstRequest.Model,
 		route,
 		selection.CredentialObservation(),
@@ -549,6 +550,7 @@ func (handler *Handler) switchModel(
 		sendFrame = stripForeignReasoning(sendFrame)
 	}
 	observer := newTurnObserver(
+		session.Context(),
 		model,
 		route,
 		selection.CredentialObservation(),

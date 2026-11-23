@@ -16,9 +16,11 @@ aih plugin enable network.socks-http-bridge --accept-permissions \
 
 ## 跟随常驻代理服务自动重连
 
-`aih proxy serve` 每次启动都会把当前入口写入
+`aih proxy serve` 由常驻服务（`aih proxy service install`，autostart 追加
+`--exit-with-parent`）启动时，会把当前入口写入
 `<aiHome>/run/proxy/entry.json`（0600，含租约凭据），字段为
 `{"version":1,"pid":…,"httpUrl":…,"socks5Url":…,"name":…,"updatedAt":…}`。
+临时手工启动的 `proxy serve` 不发布该文件，避免覆盖常驻入口。
 把桥的上游指向该文件即可跟随服务重启：
 
 ```bash

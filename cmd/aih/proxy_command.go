@@ -76,6 +76,8 @@ type proxyServeOptions struct {
 
 	// exitOnStdinEOF 只供 --peer 的远端子进程使用：控制连接关闭时优雅退出并释放租约。
 	exitOnStdinEOF bool
+	// exitWithParent 由 launchd/systemd 的包装器追加：监督进程消失时优雅退出。
+	exitWithParent bool
 	json           bool
 }
 
@@ -112,9 +114,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.BoolVar(&options.tunDryRun, "tun-dry-run", false, "只生成并校验 TUN 配置，不创建接口、不改路由")
 	flags.BoolVar(&options.exitOnStdinEOF, "exit-on-stdin-eof", false, "stdin 关闭时退出（--peer 远端子进程使用）")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
-	// launchd/systemd 的 autostart 会追加该监督器参数；proxy serve 自身不依赖父进程存续，
-	// 但必须接受它，否则常驻服务一启动就因未知参数退出。
-	flags.Bool("exit-with-parent", false, "接受宿主监督器的退出联动参数（launchd/systemd 下无额外效果）")
+	// launchd/systemd 的 autostart 会追加该监督器参数：包装器被 SIGKILL 时
+	// 子进程要自行发现父进程已消失，走与 Ctrl+C 相同的优雅退出路径。
+	flags.BoolVar(&options.exitWithParent, "exit-with-parent", false, "父监督进程退出后优雅关闭并释放租约")
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}
@@ -203,6 +205,10 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if options.exitWithParent {
+		// 包装器被杀时它无法转发信号；由子进程自己发现父进程消失。
+		go watchParentProcess(ctx, os.Getppid(), stop)
+	}
 	if options.exitOnStdinEOF {
 		// 对等模式：stdin 来自 SSH 会话；控制连接断开时读端 EOF，按 Ctrl+C 同一路径
 		// 取消 ctx，让 defer 释放远端租约并关闭入口，不依赖平台信号。
@@ -286,12 +292,16 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		}
 	}
 	// 发布本机入口，供桥插件等本地消费者在服务重启后自动重新发现。
+	// 只有受监督的常驻实例（autostart 追加 --exit-with-parent）发布：临时手工
+	// 启动的 serve 若也写同一路径，会在退出时删掉常驻服务的入口。
 	// 发布失败不影响代理本身工作，只把原因写到 stderr。
-	if home, homeErr := resolveAIHomeDir(runtime); homeErr == nil {
-		if cleanup, publishErr := publishServeEntry(home, lease); publishErr != nil {
-			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能发布本机代理入口状态: %v\n", publishErr)
-		} else {
-			defer cleanup()
+	if options.exitWithParent {
+		if home, homeErr := resolveAIHomeDir(runtime); homeErr == nil {
+			if cleanup, publishErr := publishServeEntry(home, lease); publishErr != nil {
+				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能发布本机代理入口状态: %v\n", publishErr)
+			} else {
+				defer cleanup()
+			}
 		}
 	}
 	if options.json {

@@ -34,16 +34,23 @@ func runService(_ raw: [String]) -> Never {
     FileHandle.standardError.write(Data("ai-home: \(error)\n".utf8))
     exit(1)
   }
+  // 服务模式没有运行 run loop，信号源必须挂在独立的串行队列上；
+  // 主队列的 DispatchSource 在 waitUntilExit 期间永远不会触发，监督器
+  // 收到的 SIGTERM 就传不到子进程（launchctl kill 只能杀掉包装器）。
   let signals = [SIGTERM, SIGINT, SIGHUP]
+  let signalQueue = DispatchQueue(label: "com.meadeo.aihome.service.signals")
+  var sources: [DispatchSourceSignal] = []
   for item in signals {
-    let source = DispatchSource.makeSignalSource(signal: item, queue: .main)
+    let source = DispatchSource.makeSignalSource(signal: item, queue: signalQueue)
     source.setEventHandler {
       if process.isRunning { process.terminate() }
     }
     source.resume()
     signal(item, SIG_IGN)
+    sources.append(source)
   }
   process.waitUntilExit()
+  for source in sources { source.cancel() }
   exit(process.terminationStatus)
 }
 

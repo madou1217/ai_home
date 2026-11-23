@@ -311,6 +311,7 @@ type pumpResult struct {
 func (handler *Handler) pumpClientToUpstream(
 	session *managedSession,
 	observer *turnObserver,
+	turn *turnAdmission,
 	results chan<- pumpResult,
 ) {
 	client := session.Client()
@@ -363,6 +364,24 @@ func (handler *Handler) pumpClientToUpstream(
 			}
 			return
 		}
+		// 每一轮（response.create）单独占一个并发名额。上一轮 response.completed
+		// 时已在 upstream 泵归还，因此空闲连接不会长期占用容量；这里为新轮次重新获取。
+		// 先显式释放再获取：Begin 成功已证明上一轮不再 active，但 upstream 泵的归还
+		// 与这里的再次获取没有先后保证，先归还才能避免同一账号上限为 1 时被自己挡住。
+		turn.release()
+		lease, admitErr := handler.admitTurnForObserver(session.Context(), observer)
+		if admitErr != nil {
+			// 准入拒绝是瞬态容量事实，不是账号失败：不写冷却，只让客户端稍后重试。
+			handler.writeAdmissionError(client, admitErr)
+			results <- pumpResult{
+				source:      pumpSourceClient,
+				err:         admitErr,
+				closeCode:   websocket.StatusPolicyViolation,
+				closeReason: "admission rejected",
+			}
+			return
+		}
+		turn.set(lease)
 		if session.stripForeignReasoning {
 			payload = stripForeignReasoning(payload)
 		}
@@ -382,6 +401,7 @@ func (handler *Handler) pumpClientToUpstream(
 func pumpUpstreamToClient(
 	session *managedSession,
 	observer *turnObserver,
+	turn *turnAdmission,
 	results chan<- pumpResult,
 ) {
 	client := session.Client()
@@ -404,6 +424,12 @@ func pumpUpstreamToClient(
 			return
 		}
 		terminal, err := observer.ObserveUpstream(payload)
+		// 本轮结束即归还名额：response.completed 时连接仍可复用，必须在把终态
+		// 交给客户端之前释放，否则下一轮会挡住自己（账号上限为 1 时尤其明显）。
+		// 失败终态随后会关闭连接，defer 释放是幂等的。
+		if observer.TakeTurnEnded() {
+			turn.release()
+		}
 		if err != nil {
 			results <- pumpResult{
 				source:      pumpSourceUpstream,

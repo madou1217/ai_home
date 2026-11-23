@@ -35,6 +35,9 @@ type turnObserver struct {
 	rules          configured.Rules
 	active         bool
 	generate       bool
+	// ended 标记刚刚观察到的一帧结束了本轮（response.completed 时连接仍可复用，
+	// 需要据此在下一轮之前归还并发名额）。由 TakeTurnEnded 消费一次。
+	ended bool
 	// committed 表示本轮已有非预备帧交给客户端；之后的失败绝不能换号重放。
 	committed bool
 	// retryableFailover 表示本轮终态是已记入运行态的可重试失败，可让客户端换号重连。
@@ -319,5 +322,18 @@ func (observer *turnObserver) finishTurn() (bool, error) {
 	generate := observer.generate
 	observer.active = false
 	observer.generate = false
+	observer.ended = true
 	return generate, nil
+}
+
+// TakeTurnEnded 读取并清除「刚刚结束了一轮」标记；每轮只会为 true 一次。
+func (observer *turnObserver) TakeTurnEnded() bool {
+	if observer == nil {
+		return false
+	}
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	ended := observer.ended
+	observer.ended = false
+	return ended
 }

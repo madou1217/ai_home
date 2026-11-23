@@ -107,8 +107,16 @@ func (executor *Executor) continueHealthyPoolAfter429(
 			return nil
 		})
 
+		releaseAdmission, admitErr := executor.acquireAttemptAdmission(ctx, provider, next.Account, request.Model)
+		if admitErr != nil {
+			// 准入拒绝是瞬态容量事实，不是账号失败：跳过该候选，不记冷却。
+			continue
+		}
 		strategy := executor.registry.Resolve(provider, next.Account)
-		generated, generateErr := strategy.Generate(submitCtx, buildImagesInput(request, next.Account, executor.http))
+		generated, generateErr := func() (images.Result, error) {
+			defer releaseAdmission()
+			return strategy.Generate(submitCtx, buildImagesInput(request, next.Account, executor.http))
+		}()
 		if generateErr == nil {
 			reqState.ClearExplicitRetryAfter()
 			outcome.recovered = true

@@ -64,6 +64,19 @@ func (tracker *image429Tracker) HasCandidates() bool {
 	return tracker != nil && len(tracker.candidates) > 0
 }
 
+// Remove 移除某个账号的候选；用于该账号因并发准入被跳过、不再参与本请求的 429 等待。
+func (tracker *image429Tracker) Remove(accountRef accountcore.AccountRef) {
+	if tracker == nil {
+		return
+	}
+	for index := range tracker.candidates {
+		if tracker.candidates[index].route.AccountRef() == accountRef {
+			tracker.candidates = append(tracker.candidates[:index], tracker.candidates[index+1:]...)
+			return
+		}
+	}
+}
+
 func sameCredentialObservation(
 	left accountcredentials.CredentialObservation,
 	right accountcredentials.CredentialObservation,
@@ -729,8 +742,26 @@ func (executor *Executor) runImage429RetryLoop(
 			return nil
 		})
 
+		releaseAdmission, admitErr := executor.acquireAttemptAdmission(ctx, provider, reacquired.Account, request.Model)
+		if admitErr != nil {
+			// 准入拒绝是瞬态容量事实，不是账号失败：不记冷却，移除该候选后换下一个
+			// 仍在等待 429 的账号；全部候选都被准入跳过时如实返回最近的真实上游错误。
+			tracker.Remove(candidate.route.AccountRef())
+			nextCandidate, nextDecision, nextFound := executor.selectNextImage429Candidate(ctx, reqState, tracker)
+			if !nextFound {
+				return Result{
+					Retry: buildRetryMetadata(reqState, isRaw429Error(candidate.lastErr), executor.now()),
+				}, candidate.lastErr
+			}
+			candidate = nextCandidate
+			decision = nextDecision
+			continue
+		}
 		strategy := executor.registry.Resolve(provider, reacquired.Account)
-		generated, generateErr := strategy.Generate(submitCtx, buildImagesInput(request, reacquired.Account, executor.http))
+		generated, generateErr := func() (images.Result, error) {
+			defer releaseAdmission()
+			return strategy.Generate(submitCtx, buildImagesInput(request, reacquired.Account, executor.http))
+		}()
 		if generateErr == nil {
 			reqState.ClearExplicitRetryAfter()
 			executor.upstream429Retries.ReportOutcome(

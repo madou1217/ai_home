@@ -1,16 +1,73 @@
 <p align="center">
-  <img src="web/src/assets/brand/ai-home-logo.png" alt="ai-home logo" width="220" />
+  <img src="web/src/assets/brand/ai-home-logo.png" alt="AI Home" width="200" />
 </p>
 
-# ai-home
+<h1 align="center">AI Home（aih）</h1>
 
-`ai-home`（命令 `aih`）在一台机器上管理多个 AI CLI 的多账号，并内置一个 OpenAI / Anthropic / Gemini 兼容网关（**AIH Server**）：对外一个端点，背后在多账号、多 provider 之间按额度路由，按（账号, 模型）熔断，按模型别名的优先级降级。CLI 会话默认跑在持久 tmux 里，关终端、断 SSH 都不会丢。
+<p align="center"><b>把多个 AI CLI 的账号、配额、会话和 MCP，收进一个本机端点。</b></p>
+
+<p align="center">
+  <a href="https://madou1217.github.io/ai_home/">产品页（含动画）</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#它是怎么工作的">架构</a> ·
+  <a href="#mcp-选择">MCP</a> ·
+  <a href="docs/packaging.md">打包与安装</a>
+</p>
+
+<p align="center">
+  <img src="site/assets/hero.svg" alt="多个终端通过 AI Home 网关连接到不同账号池" width="860" />
+</p>
+
+AI Home（命令 `aih`）是一台机器上的 **AI CLI 控制面**：管理 `codex`、`claude`、`gemini`、`agy` 等 16 个 CLI 的多个账号，内置 OpenAI / Anthropic / Gemini 兼容网关（**AIH Server**），并提供 WebUI、持久会话、MCP 选择与远程 Server。默认只监听 `127.0.0.1`。
+
+- **账号只隔离凭据。** 每个账号的目录里只有自己的登录态；会话、历史、设置和工具缓存共用一份，换账号不会让历史“消失”。
+- **一个端点，按池路由。** 裸启动默认走 AIH Server：按剩余额度加权选号，按（账号, 模型）熔断，模型别名按优先级降级。
+- **会话不丢。** CLI 会话跑在 tmux 里；`aih resume` 跨 provider 续接，`aih <cli> fork` 从最近一段分叉。
+- **MCP 可控。** 账号级 `auto / 手动选择 / 全部关闭`，会话级 `--mcp` / `--no-mcp` / `--mcp-status`，共享桥 `global / workspace / off`。
+
+它**不是**云端账号托管，也不是新的聊天客户端：请求仍发往各 provider 的官方接口，账号密码与二次验证仍由你完成，provider 的条款与风控由你承担。
+
+## 快速开始
+
+```bash
+# 安装（二选一）
+# 1) 下载对应平台的 release 单文件后：
+chmod +x aih-<version>-<target>.run && ./aih-<version>-<target>.run
+# 2) 从源码：
+npm install && npm link
+
+aih server start          # 启动本机 Server（默认 127.0.0.1:9527）
+aih codex login           # 添加账号（claude 等同理）
+aih ls                    # 看账号与状态
+aih codex                 # 走 AIH Server 账号池
+aih codex 1               # 指定 1 号账号
+aih resume                # 跨 provider 续接会话
+```
+
+WebUI：`http://127.0.0.1:9527/ui/`（需要 Management Key，见下文「AIH Server」）。
 
 支持的 CLI：`codex`、`claude`、`gemini`、`agy`（Antigravity）、`opencode`、`grok`、`kimi`、`kiro`、`qoder`、`qodercn`、`zcode`、`codebuddy`、`codebuddycn`、`workbuddy`、`workbuddycn`、`cline`。上游 Gemini CLI 已停止服务，Google 账号请改用 `agy`。
 
-部分 provider 还可以在 WebUI 的账号页里按账号打开桌面 App（例如 Codex、Claude、Kimi、ZCode、WorkBuddy、CodeBuddy），具体以账号页实际显示为准。
+> 账号浏览器（WebUI 里完成 OAuth 的内置浏览器）在 macOS 上由 **AI Home.app** 统一持有一次屏幕录制/辅助功能授权；升级 Server 不需要重复授权。步骤与排错见[产品页](https://madou1217.github.io/ai_home/)。
 
-> macOS 的账号浏览器需要在系统设置里一次性授权 `~/.ai_home/bin/aih-launch`（屏幕录制 + 辅助功能）。步骤、原理和排错见 [账号浏览器 macOS 权限指南](https://madou1217.github.io/ai_home/)。
+## 它是怎么工作的
+
+```
+CLI 会话 / WebUI
+        │  本机回环（默认 127.0.0.1:9527）
+        ▼
+   AIH Server（Go）
+   账号凭据索引 · 账号池 · 额度/熔断 · 模型别名
+   MCP 策略 · 会话选择 · WebUI 管理面
+        │
+        ▼
+各 provider 官方接口（OpenAI / Anthropic / Gemini …）
+```
+
+- **多 Server**：CLI 与浏览器都可以保存多个 Server（URL + Management Key），随时切换；远程 Server 只暴露网关与管理面。
+- **Workspace Connector**：把本机某个目录登记成工作区，远程会话通过受控工具访问它；不暴露任意路径。
+- **持久会话**：tmux 负责脱离终端；`aih resume` / `aih ss` 负责跨工具找回。
+- 完整命令与边界见下文，设计细节见 `docs/`。
 
 ## 设计原则
 
@@ -43,7 +100,7 @@ chmod +x aih-<version>-<target>.run
 - 数据仍在 `~/.ai_home`，升级或删除程序不会动账号
 - 单文件首次运行解包到 `~/.ai_home/pkg/<version>-<target>-<sha8>/`；升级后旧目录可手动删除
 - 分发包用 `aih update --check` 只会提示下载新安装包，不要用 npm 原地更新
-- 构建方法、产物布局与验证命令见 [docs/packaging.md](docs/packaging.md)
+- 构建方法、产物布局与验证命令见 [安装](#安装)
 
 macOS / Linux 建议安装 `tmux`；Windows 会自动使用 `psmux` 或 MSYS2 / Cygwin 的 `tmux.exe`。
 
@@ -183,7 +240,7 @@ aih backup restore me@backup-host --dry-run
 - 账号新增 / 导入（含同身份换凭据）/ 删除 / 启停后由 `aih server` 自动增量备份；token 刷新按 `interval`（默认 360 分钟）周期补跑，事件去抖 30 秒。
 - 增量按账号内容 sha256 比对，未变化的账号不重传；远端按 `accounts/<provider>/<acct_…>.json` 存放，`manifest.json` 记录版本与删除墓碑。
 - 密码只从 `--password-env` 指定的环境变量读取，不落盘；首次连接记录主机指纹（TOFU），之后不匹配直接拒绝。
-- 设计细节见 [docs/architecture/remote-account-backup.md](docs/architecture/remote-account-backup.md)。
+- 
 
 ## AIH Server（内置网关）
 
@@ -233,9 +290,31 @@ aih server config set --client-key <key>
   - grok OAuth 账号：xAI Images（最多 3 张参考图）。
 - **报错**：某个 provider 或模型不支持的参数会明确报错，不会被静默丢弃。
 
+## MCP 选择
+
+AIH 管理的 MCP 来自统一注册表 `~/.ai_home/mcp/registry.json`：内置 `aih_remote`（工作区工具桥），可追加自定义 stdio MCP。控制分三层：
+
+- **账号级**：WebUI「账号 → 运行设置 → MCP」，`自动 / 手动选择 / 全部关闭`。账号策略是硬天花板，会话只能收窄。
+- **会话级**：`aih codex --mcp aih_remote,github`、`--no-mcp`、`--mcp-profile work`、`--mcp-status`。选择会校验账号策略；未配置的 id 直接报错。
+- **共享桥**：`aih server config set --mcp-bridge-sharing global|workspace|off`（默认 `global`）。`global` / `workspace` 用一个 daemon 服务多个会话，`off` 回到每会话一个桥；Windows 当前回退为每会话一个桥。
+
+外部注册表 MCP 统一以 `<id>.<tool>` 暴露，避免与原生工具重名；本地 CLI 通过 stdio 前缀代理挂载。配置集格式：
+
+```json
+{"profiles": {"work": ["aih_remote", "github"]}}
+```
+
+Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp-status` 会打印当前解析结果、共享模式与配置集。
+
 ## Web UI
 
 服务启动后打开 `http://127.0.0.1:9527/ui/`。WebUI 和管理接口即使从本机访问，也需要 Management Key（见下文）。
+
+<p align="center">
+  <img src="docs/assets/webui-mock.png" alt="WebUI 账号与 MCP 设置示意（示例数据）" width="560" />
+</p>
+
+> 上图为 WebUI 的账号列表与 MCP 策略示意，账号数据是示例值，不包含真实账号信息。
 
 页面：
 
@@ -250,6 +329,16 @@ aih server config set --client-key <key>
 - 设置：Server 配置、模型别名等
 
 手机上有单独的移动端布局，也可以作为 Web App 安装。
+
+### 账号浏览器
+
+WebUI 的 OAuth 任务可以直接点「在内置浏览器打开」，在服务端的 Edge 里完成登录；浏览器 Profile 与 Cookie 按账号隔离，登录态在关闭前落盘、重开时可复用。macOS 的屏幕录制/辅助功能授权集中在 `AI Home.app`，升级 Server 不需要重复授权；Windows 使用对应的 helper。
+
+注意事项：
+
+- 需要真实账号密码与二次验证的步骤只能由你本人完成。
+- `navigate` 会拒绝回环/私网地址；页面内部的跳转不受此限制。
+- 账号浏览器的代理、登录态和平台限制以 WebUI 与产品页的当前说明为准。
 
 ## 远程 Server 与 SSH 开发机
 
@@ -308,7 +397,7 @@ npm run deploy:server -- --ssh me@host --artifact dist/release/aih-<version>-lin
 npm run deploy:server -- --ssh me@host --artifact <包> --dry-run  # 只打印上传路径与安装脚本，不连远端
 ```
 
-安装脚本会停旧服务、把上一版留成 `aih.prev`、换上新二进制、`aih server autostart install` 后重启并轮询 `/readyz`，失败自动回滚。Windows 目标自动改用 `scp` + PowerShell。细节见 [docs/packaging.md](docs/packaging.md)。
+安装脚本会停旧服务、把上一版留成 `aih.prev`、换上新二进制、`aih server autostart install` 后重启并轮询 `/readyz`，失败自动回滚。Windows 目标自动改用 `scp` + PowerShell。细节见 [安装](#安装)。
 
 > `aih codex` 等使用的内置 `.aih-server` 是 provider 的启动 profile，和这里保存的远程 Server 是两回事。
 

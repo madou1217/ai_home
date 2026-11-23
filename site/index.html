@@ -3,214 +3,446 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Home (aih) — 一个端点，管好所有 AI CLI 账号</title>
-<meta name="description" content="AI Home（aih）把 codex、claude、gemini 等 AI CLI 的多账号、额度路由与持久会话收进一个本地网关，并提供 WebUI、账号浏览器与远程 Server。">
+<title>AI Home (aih) — 把 AI CLI 的账号、配额与会话收进一个本机端点</title>
+<meta name="description" content="AI Home（aih）在一台机器上管理 codex、claude、gemini 等 AI CLI 的多个账号，内置 OpenAI / Anthropic / Gemini 兼容网关、WebUI、持久会话与 MCP 选择。默认只监听本机。">
+<link rel="icon" href="assets/mark.png" type="image/png">
 <style>
-:root{--bg:#f7f8fa;--panel:#fff;--text:#12141a;--muted:#5f6673;--line:#e3e6ec;--accent:#0b7a63;--accent2:#0d63c9;--soft:#e9f5f1;--code:#0f1419;--code-text:#d8e2ea}
-@media (prefers-color-scheme:dark){:root{--bg:#0b0e12;--panel:#12171d;--text:#eef1f4;--muted:#98a1ad;--line:#232a33;--accent:#4ad2ae;--accent2:#6aa8ff;--soft:#12251f;--code:#0a0d11;--code-text:#cfdae4}}
+:root{
+  --bg:#f6f7f9;--panel:#ffffff;--ink:#10151c;--muted:#5d6673;--line:#e2e6ec;
+  --teal:#1f9d82;--teal-soft:#e6f5f0;--blue:#3b76d9;--blue-soft:#e9f0fd;
+  --code:#0d1217;--code-ink:#d7e2ea;--shadow:0 24px 60px -36px rgba(16,21,28,.45);
+  --radius:16px;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0b0f13;--panel:#11171d;--ink:#edf1f4;--muted:#98a3af;--line:#222b34;
+    --teal:#4fd0b3;--teal-soft:#12241f;--blue:#7aa8ff;--blue-soft:#141e2d;
+    --code:#080c10;--code-ink:#cfdae4;--shadow:0 30px 70px -40px rgba(0,0,0,.8);}
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent2);text-decoration:none}a:hover{text-decoration:underline}
-.wrap{max-width:1040px;margin:0 auto;padding:0 22px}
-header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-.nav{display:flex;align-items:center;justify-content:space-between;height:60px;gap:16px}
-.logo{font-weight:750;letter-spacing:-.2px}.logo em{font-style:normal;color:var(--accent)}
-.nav nav{display:flex;gap:20px;font-size:14px}.nav nav a{color:var(--muted)}.nav nav a:hover{color:var(--text);text-decoration:none}
-.hero{padding:84px 0 60px;position:relative;overflow:hidden}
-.hero::before{content:"";position:absolute;inset:-30% 10% auto;height:520px;background:radial-gradient(60% 60% at 30% 40%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 70%),radial-gradient(50% 50% at 75% 20%,color-mix(in srgb,var(--accent2) 18%,transparent),transparent 70%);filter:blur(10px);pointer-events:none}
-.hero .wrap{position:relative}
-.kicker{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);border:1px solid var(--line);background:var(--panel);padding:5px 11px;border-radius:999px}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
-h1{font-size:52px;line-height:1.1;letter-spacing:-1.4px;margin:20px 0 16px;max-width:820px}
-h1 span{background:linear-gradient(92deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
-.lead{font-size:18px;color:var(--muted);max-width:720px;margin:0}
-.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid transparent}
-.btn.primary{background:var(--text);color:var(--bg)}.btn.primary:hover{opacity:.9;text-decoration:none}
-.btn.ghost{border-color:var(--line);background:var(--panel);color:var(--text)}.btn.ghost:hover{border-color:var(--muted);text-decoration:none}
-.install{margin-top:22px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
-.install code{background:var(--code);color:var(--code-text);padding:9px 13px;border-radius:9px;font:13.5px ui-monospace,SFMono-Regular,Menlo,monospace}
-.providers{margin-top:46px;display:flex;flex-wrap:wrap;gap:8px}
-.providers span{font-size:13px;color:var(--muted);border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px}
-section{padding:64px 0;border-top:1px solid var(--line)}
-h2{font-size:30px;letter-spacing:-.6px;margin:0 0 10px}
-.sub{color:var(--muted);margin:0 0 30px;max-width:680px}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.wrap{width:min(1120px,calc(100% - 44px));margin:0 auto}
+header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:62px;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:750;letter-spacing:-.2px;color:var(--ink)}
+.brand img{width:26px;height:26px;border-radius:8px}
+.brand small{font-weight:500;color:var(--muted);font-size:12.5px;letter-spacing:0}
+.nav nav{display:flex;gap:22px;font-size:14px}
+.nav nav a{color:var(--muted)}
+.nav nav a:hover{color:var(--ink);text-decoration:none}
+.nav .repo{color:var(--ink);border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:9px;font-size:13.5px}
+.hero{position:relative;overflow:hidden;padding:78px 0 58px}
+.hero::before{content:"";position:absolute;inset:-30% 8% auto;height:560px;background:radial-gradient(58% 58% at 28% 38%,color-mix(in srgb,var(--teal) 18%,transparent),transparent 72%),radial-gradient(48% 48% at 76% 22%,color-mix(in srgb,var(--blue) 14%,transparent),transparent 72%);pointer-events:none}
+.hero-grid{position:relative;display:grid;grid-template-columns:1.02fr .98fr;gap:44px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12.5px;border-radius:999px;padding:5px 11px}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 4px color-mix(in srgb,var(--teal) 18%,transparent)}
+h1{font-size:46px;line-height:1.12;letter-spacing:-1.3px;margin:18px 0 14px;max-width:640px}
+h1 span{color:var(--teal)}
+.lead{font-size:17.5px;color:var(--muted);max-width:620px;margin:0}
+.lead code{font-size:.92em;background:color-mix(in srgb,var(--line) 55%,transparent);padding:1px 5px;border-radius:5px;color:var(--ink)}
+.cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 17px;border-radius:10px;font-weight:650;font-size:14.5px;border:1px solid transparent}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.btn.primary:hover{opacity:.9;text-decoration:none}
+.btn.ghost{border-color:var(--line);background:var(--panel);color:var(--ink)}
+.btn.ghost:hover{border-color:var(--muted);text-decoration:none}
+.install{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:18px;color:var(--muted);font-size:13.5px}
+.install code{background:var(--code);color:var(--code-ink);padding:9px 12px;border-radius:9px;font-size:12.8px;border:1px solid var(--line)}
+.hint{margin:14px 0 0;color:var(--muted);font-size:12.8px}
+.hero-art{position:relative}
+.hero-art .frame{border-radius:22px;overflow:hidden;border:1px solid var(--line);background:#0a0f14;box-shadow:var(--shadow);transform:translateZ(0)}
+.hero-art img{display:block;width:100%;height:auto;animation:float 9s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.hero-art .note{position:absolute;left:14px;bottom:14px;font-size:11.5px;color:#9fb0bd;background:rgba(10,15,20,.72);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 8px;backdrop-filter:blur(6px)}
+main section{padding:66px 0;border-top:1px solid var(--line)}
+.eyebrow{font:650 12px/1 ui-monospace,monospace;letter-spacing:1.2px;color:var(--teal);text-transform:uppercase;margin:0 0 10px}
+h2{font-size:30px;line-height:1.2;letter-spacing:-.7px;margin:0 0 10px}
+.sub{color:var(--muted);margin:0 0 30px;max-width:680px;font-size:15.5px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
-.card h3{margin:0 0 6px;font-size:16.5px}
-.card p{margin:0;color:var(--muted);font-size:14.5px}
-.card .n{font:600 12px ui-monospace,monospace;color:var(--accent);letter-spacing:.8px}
-.flow{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start}
-.steps{counter-reset:s;list-style:none;padding:0;margin:0}
-.steps li{position:relative;padding:0 0 18px 38px;color:var(--muted)}
-.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:8px;background:var(--soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:13px}
-.steps b{color:var(--text)}
-pre{background:var(--code);color:var(--code-text);border-radius:12px;padding:16px;overflow:auto;font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;margin:0;border:1px solid var(--line)}
-.ui{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px -32px rgba(0,0,0,.35)}
-.ui .bar{display:flex;gap:6px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
-.tl{width:9px;height:9px;border-radius:50%;background:var(--line)}
-.ui .body{display:grid;grid-template-columns:170px 1fr;min-height:250px}
-.ui .side{border-right:1px solid var(--line);padding:12px;font-size:13px;color:var(--muted)}
-.ui .side div{padding:6px 8px;border-radius:7px}
-.ui .side .on{background:var(--soft);color:var(--accent);font-weight:600}
-.ui .main{padding:16px}
-.ui .row{height:9px;border-radius:5px;background:var(--line);margin:9px 0}
-.ui .row.w60{width:60%}.ui .row.w80{width:80%}.ui .row.w40{width:40%}
-.ui .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:14px}
-.ui .tile{border:1px solid var(--line);border-radius:9px;padding:10px;font-size:12px;color:var(--muted)}
-.ui .tile b{display:block;color:var(--text);font-size:18px;margin-bottom:2px}
-.callout{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;display:grid;grid-template-columns:1.3fr .7fr;gap:24px;align-items:center}
-.callout h3{margin:0 0 8px;font-size:21px}
-.callout p{color:var(--muted);margin:0 0 14px}
-.chips{display:flex;flex-wrap:wrap;gap:8px}
-.chips span{font-size:12.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
-table{width:100%;border-collapse:collapse;font-size:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-th,td{text-align:left;padding:10px 14px;border-top:1px solid var(--line)}
-th{font-size:12.5px;color:var(--muted);font-weight:600;border-top:0}
-code.inline{background:var(--soft);color:var(--accent);padding:1px 6px;border-radius:6px;font:13.5px ui-monospace,monospace}
-details{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px 16px;margin-top:10px}
-summary{cursor:pointer;font-weight:600}
-details p{color:var(--muted);margin:10px 0 0;font-size:14.5px}
-footer{border-top:1px solid var(--line);padding:36px 0 60px;color:var(--muted);font-size:14px}
-footer .row{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between}
-@media(max-width:880px){h1{font-size:38px}.grid{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr}.callout{grid-template-columns:1fr}.nav nav{display:none}}
-@media(max-width:560px){.grid{grid-template-columns:1fr}h1{font-size:32px}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+.card h3{margin:0 0 6px;font-size:16px;letter-spacing:-.1px}
+.card p{margin:0;color:var(--muted);font-size:14.2px}
+.card .tag{display:inline-block;font:600 10.5px/1 ui-monospace,monospace;letter-spacing:.6px;color:var(--teal);background:var(--teal-soft);border-radius:999px;padding:4px 7px;margin-bottom:10px}
+.two{display:grid;grid-template-columns:1.02fr .98fr;gap:26px;align-items:start}
+.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+.steps li{position:relative;padding:0 0 20px 44px;color:var(--muted)}
+.steps li:last-child{padding-bottom:0}
+.steps li::before{counter-increment:s;content:counter(s,decimal-leading-zero);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:9px;background:var(--teal-soft);color:var(--teal);display:grid;place-items:center;font:700 12px ui-monospace,monospace}
+.steps b{display:block;color:var(--ink);font-size:15.5px;margin-bottom:2px}
+.steps code{font-size:12.8px;background:color-mix(in srgb,var(--line) 50%,transparent);padding:1px 5px;border-radius:5px;color:var(--ink)}
+.terminal{background:var(--code);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+.terminal .tbar{display:flex;align-items:center;gap:6px;padding:10px 13px;border-bottom:1px solid rgba(255,255,255,.08);color:#8fa0ae;font-size:11.5px}
+.terminal .tbar i{width:9px;height:9px;border-radius:50%;background:#2a3642}
+.terminal .tbar i:nth-child(1){background:#e0655f}.terminal .tbar i:nth-child(2){background:#e2b34b}.terminal .tbar i:nth-child(3){background:#4bb673}
+.terminal pre{margin:0;padding:16px 15px 18px;color:var(--code-ink);font:12.7px/1.75 ui-monospace,SFMono-Regular,Menlo,monospace;min-height:286px;white-space:pre-wrap}
+.terminal .cmd{color:#8fd6c6}.terminal .dim{color:#7f8f9d}.terminal .ok{color:#83c995}.terminal .warn{color:#e2c07a}
+.cursor{display:inline-block;width:7px;height:14px;background:#8fd6c6;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.uimock{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+.uimock .ubar{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line);font-size:11.8px;color:var(--muted)}
+.uimock .ubar .dots{display:flex;gap:4px}
+.uimock .ubar .dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.uimock .ubody{padding:14px}
+.uimock .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:12.5px}
+.uimock .row .name{font-weight:600}
+.uimock .row .meta{color:var(--muted);font-size:11.5px}
+.uimock .pill{font:600 10.5px/1 ui-monospace,monospace;border-radius:999px;padding:4px 7px;background:var(--teal-soft);color:var(--teal)}
+.uimock .bar{height:5px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
+.uimock .bar span{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--teal),var(--blue));animation:fill 6s ease-in-out infinite alternate}
+@keyframes fill{from{width:32%}to{width:86%}}
+.uimock .mcp{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:11px}
+.uimock .mcp .mrow{display:flex;justify-content:space-between;font-size:11.8px;color:var(--muted);margin-top:6px}
+.uimock .mcp .switch{width:30px;height:17px;border-radius:999px;background:var(--teal);position:relative;flex:0 0 auto}
+.uimock .mcp .switch::after{content:"";position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+.flowcard{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow);overflow:hidden}
+.flowcard svg{display:block;width:100%;height:auto}
+.dash{stroke-dasharray:7 9;animation:dash 1.4s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-32}}
+.pulse{animation:pulse 2.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+.feature{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.feature .card{display:flex;gap:14px;align-items:flex-start}
+.feature .ico{flex:0 0 36px;height:36px;border-radius:10px;background:var(--teal-soft);color:var(--teal);display:grid;place-items:center;font:700 15px ui-monospace,monospace}
+.feature h3{margin:0 0 4px;font-size:15.5px}
+.feature p{margin:0;color:var(--muted);font-size:13.8px}
+.boundary{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px}
+.boundary div{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px 16px;font-size:13.8px;color:var(--muted)}
+.boundary b{color:var(--ink);display:block;margin-bottom:3px;font-size:14px}
+.startbox{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:var(--shadow)}
+.startbox h3{margin:0 0 8px;font-size:18px}
+.startbox p{margin:0 0 14px;color:var(--muted);font-size:14px}
+.startbox pre{background:var(--code);color:var(--code-ink);border-radius:11px;padding:14px;overflow:auto;font:12.7px/1.7 ui-monospace,monospace;margin:0 0 14px}
+.links{display:flex;flex-wrap:wrap;gap:14px;font-size:13.8px}
+footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted);font-size:13px}
+footer .wrap{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+.reveal.on{opacity:1;transform:none}
+@media (max-width:900px){
+  .hero-grid,.two{grid-template-columns:1fr}
+  .grid{grid-template-columns:1fr 1fr}
+  .feature{grid-template-columns:1fr}
+  h1{font-size:38px}
+  .hero{padding-top:52px}
+}
+@media (max-width:620px){
+  .nav nav{display:none}
+  .grid,.boundary{grid-template-columns:1fr}
+  h1{font-size:32px}
+  h2{font-size:25px}
+  .wrap{width:calc(100% - 32px)}
+  main section{padding:50px 0}
+  .terminal pre{min-height:250px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .reveal{opacity:1;transform:none}
+}
 </style>
 </head>
 <body>
-<header><div class="wrap nav">
-  <div class="logo">AI Home <em>aih</em></div>
-  <nav>
-    <a href="#features">功能</a>
-    <a href="#how">工作原理</a>
-    <a href="#webui">WebUI</a>
-    <a href="#browser">账号浏览器</a>
-    <a href="#install">安装</a>
-    <a href="macos.html">macOS 权限</a>
-    <a href="https://github.com/madou1217/ai_home">GitHub</a>
-  </nav>
-</div></header>
-
-<main>
-<section class="hero"><div class="wrap">
-  <span class="kicker"><i class="dot"></i>Go 单二进制 · OpenAI / Anthropic / Gemini 兼容</span>
-  <h1>把一堆 AI CLI 账号，<br>收进<span>一个端点</span>。</h1>
-  <p class="lead">aih 管理 codex、claude、gemini、opencode 等 CLI 的多账号，内置按额度路由的本地网关，并附上 WebUI、账号浏览器与远程 Server。会话跑在持久 tmux 里，关终端、断 SSH 都不会丢。</p>
-  <div class="cta">
-    <a class="btn primary" href="#install">安装 AI Home</a>
-    <a class="btn ghost" href="https://github.com/madou1217/ai_home">查看源码</a>
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><img src="assets/mark.png" alt=""><span>AI Home <small>aih</small></span></a>
+    <nav>
+      <a href="#why">解决什么</a>
+      <a href="#how">怎么用</a>
+      <a href="#system">系统怎么工作</a>
+      <a href="#features">能力</a>
+      <a href="#limits">边界</a>
+    </nav>
+    <a class="repo" href="https://github.com/madou1217/ai_home">GitHub</a>
   </div>
-  <div class="install"><span>一行开始</span><code>aih server start</code><span>WebUI 在 <code style="background:none;color:var(--muted);padding:0">127.0.0.1:9527/ui</code></span></div>
-  <div class="providers">
-    <span>codex</span><span>claude</span><span>gemini / agy</span><span>opencode</span><span>grok</span><span>kimi</span><span>kiro</span><span>qoder</span><span>zcode</span><span>codebuddy</span><span>workbuddy</span><span>cline</span>
-  </div>
-</div></section>
+</header>
 
-<section id="features"><div class="wrap">
-  <h2>一个工具，覆盖日常的每一环</h2>
-  <p class="sub">账号、网关、会话、界面和远程机器不再各自为政。所有数据只放在 <code class="inline">~/.ai_home</code>，升级或删除程序不会动账号。</p>
-  <div class="grid">
-    <div class="card"><div class="n">01</div><h3>多账号与凭据隔离</h3><p>每个账号独立目录，只放它自己的凭据；会话与历史共享，换账号不会“消失”。</p></div>
-    <div class="card"><div class="n">02</div><h3>统一网关</h3><p>对外一个端点，兼容 OpenAI、Anthropic 与 Gemini 协议，背后在多账号之间按额度路由。</p></div>
-    <div class="card"><div class="n">03</div><h3>熔断与降级</h3><p>按（账号, 模型）熔断，按模型别名优先级降级；429、5xx、凭据失效都有明确分类。</p></div>
-    <div class="card"><div class="n">04</div><h3>持久会话</h3><p>CLI 会话默认跑在 tmux 里，关终端、断 SSH 都还在；随时续写原生会话。</p></div>
-    <div class="card"><div class="n">05</div><h3>账号浏览器</h3><p>服务器端真实 Edge 窗口，画面与输入转发到 WebUI；每个账号独立 Profile，OAuth 登录态可持久化。</p></div>
-    <div class="card"><div class="n">06</div><h3>远程 Server</h3><p>把 WebUI、账号和网关放到远端机器，本机只做操作端；SSH 开发机与反向隧道一并管理。</p></div>
-  </div>
-</div></section>
-
-<section id="how"><div class="wrap">
-  <h2>怎么工作</h2>
-  <p class="sub">客户端只认一个地址和一把 key，剩下的交给 aih。</p>
-  <div class="flow">
-    <ol class="steps">
-      <li><b>客户端请求</b><br>codex / claude / 任意兼容 SDK 指向 <code class="inline">127.0.0.1:9527/v1</code>，模型名可以是别名。</li>
-      <li><b>路由与熔断</b><br>网关按额度、权重与账号健康度选号；失败按错误类型决定重试、换号或降级。</li>
-      <li><b>原生会话</b><br>需要 CLI 时，aih 在持久 tmux 中启动它，并把标准协议结果回传给客户端。</li>
-    </ol>
-    <pre><code>curl http://127.0.0.1:9527/v1/chat/completions \
-  -H "Authorization: Bearer $AIH_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "claude-sonnet",
-    "messages": [{"role":"user","content":"hello"}]
-  }'</code></pre>
-  </div>
-</div></section>
-
-<section id="webui"><div class="wrap">
-  <h2>WebUI：账号、会话、用量、浏览器</h2>
-  <p class="sub">打开 <code class="inline">http://127.0.0.1:9527/ui/</code>，用 Management Key 登录。仪表盘、账号管理、AI 会话、模型用量、模型目录、生图、Server 与设置都在一个界面里。</p>
-  <div class="ui" aria-hidden="true">
-    <div class="bar"><i class="tl"></i><i class="tl"></i><i class="tl"></i><span style="margin-left:8px">AI Home</span></div>
-    <div class="body">
-      <div class="side">
-        <div class="on">仪表盘</div><div>账号管理</div><div>AI 会话</div><div>模型用量</div><div>模型目录</div><div>开发工具</div><div>Server / SSH</div><div>设置</div>
-      </div>
-      <div class="main">
-        <div class="row w40"></div>
-        <div class="tiles">
-          <div class="tile"><b>12</b>在线账号</div>
-          <div class="tile"><b>6</b>Provider</div>
-          <div class="tile"><b>3</b>远程 Server</div>
-        </div>
-        <div class="row w80" style="margin-top:18px"></div>
-        <div class="row w60"></div>
-        <div class="row w80"></div>
-        <div class="row w40"></div>
-      </div>
-    </div>
-  </div>
-</div></section>
-
-<section id="browser"><div class="wrap">
-  <div class="callout">
+<main id="top">
+<section class="hero">
+  <div class="wrap hero-grid">
     <div>
-      <h3>在服务器上开一个真实的浏览器</h3>
-      <p>账号浏览器不是截图拼装：它在选定的 Server 上启动 Edge，按账号隔离 Profile，把画面与控制转发到 WebUI。适合完成 OpenAI / Claude 的 OAuth、处理只有网页端才能做的事，并在关闭后保留登录态。</p>
-      <div class="chips"><span>每个账号独立 Cookie</span><span>关闭前优雅落盘</span><span>macOS / Windows</span><span>出口代理可配置</span></div>
+      <span class="chip"><i></i>本机控制面 · 单二进制 Server · 开源</span>
+      <h1>把多个 AI CLI 的账号、配额和会话，<span>收进一个本机端点</span></h1>
+      <p class="lead">AI Home（<code>aih</code>）在一台机器上管理 <b>codex、claude、gemini、agy</b> 等 16 个 AI CLI 的多个账号，内置 OpenAI / Anthropic / Gemini 兼容网关，并提供 WebUI、持久会话与 MCP 选择。默认只监听 <code>127.0.0.1</code>。</p>
+      <div class="cta">
+        <a class="btn primary" href="#how">五分钟上手</a>
+        <a class="btn ghost" href="https://github.com/madou1217/ai_home#readme">阅读 README</a>
+      </div>
+      <div class="install"><span>启动后：</span><code>aih server start</code><span>→</span><code>http://127.0.0.1:9527/ui/</code></div>
+      <p class="hint">凭据留在本机 · 会话留在各工具原生目录 · 不依赖云端账号池</p>
     </div>
-    <div style="text-align:left"><a class="btn primary" href="macos.html">macOS 权限与使用指南</a></div>
+    <div class="hero-art">
+      <div class="frame"><img src="assets/hero.svg" alt="多个终端通过 AI Home 网关连接到不同账号池的示意图"></div>
+      <span class="note">示意图 · 由 AWS agy 生成</span>
+    </div>
   </div>
-</div></section>
+</section>
 
-<section id="install"><div class="wrap">
-  <h2>安装</h2>
-  <p class="sub">每个平台一个单文件安装包，内置运行环境与构建好的 WebUI，不需要预装 Node。也可以用 npm 安装。</p>
-  <table>
-    <tr><th>平台</th><th>安装包</th></tr>
-    <tr><td>macOS Apple Silicon</td><td><code class="inline">aih-&lt;version&gt;-darwin-arm64.run</code></td></tr>
-    <tr><td>macOS Intel</td><td><code class="inline">aih-&lt;version&gt;-darwin-x64.run</code></td></tr>
-    <tr><td>Linux x64 / arm64</td><td><code class="inline">aih-&lt;version&gt;-linux-{x64,arm64}.run</code></td></tr>
-    <tr><td>Windows x64 / arm64</td><td><code class="inline">aih-&lt;version&gt;-win32-{x64,arm64}.exe</code></td></tr>
-  </table>
-  <pre style="margin-top:16px"><code>chmod +x aih-&lt;version&gt;-&lt;target&gt;.run
-./aih-&lt;version&gt;-&lt;target&gt;.run     # 首次运行自动解包
-aih server start</code></pre>
-  <p class="sub" style="margin-top:14px">数据始终在 <code class="inline">~/.ai_home</code>；分发包升级用 <code class="inline">aih update --check</code>，不要用 npm 原地更新。</p>
-</div></section>
-
-<section id="docs"><div class="wrap">
-  <h2>文档与源码</h2>
-  <div class="grid">
-    <div class="card"><h3><a href="https://github.com/madou1217/ai_home#readme">README</a></h3><p>安装、账号、网关、WebUI、远程 Server 与插件的中文说明。</p></div>
-    <div class="card"><h3><a href="macos.html">macOS 账号浏览器</a></h3><p>一次性系统授权、launcher 原理、OAuth 代理、排错与命令速查。</p></div>
-    <div class="card"><h3><a href="https://github.com/madou1217/ai_home/tree/main/docs">产品与架构文档</a></h3><p>Provider 适配、插件契约、迁移记录与实机取证。</p></div>
+<section id="why">
+  <div class="wrap">
+    <p class="eyebrow">Why</p>
+    <h2>它解决的是“账号一多就乱”</h2>
+    <p class="sub">不是再做一个聊天客户端。AI Home 管理的是你已经装好的 CLI、已经登录的账号，以及它们共用的本机环境。</p>
+    <div class="grid">
+      <article class="card reveal"><span class="tag">账号</span><h3>多账号集中管理</h3><p>同一个 CLI 的多个 OAuth / API Key 账号放在一个地方：编号、额度、状态、登录与删除都在 CLI 和 WebUI 里完成，不需要来回复制配置目录。</p></article>
+      <article class="card reveal"><span class="tag">路由</span><h3>一个端点，按池选号</h3><p>codex / claude 等裸启动默认走内置网关：按剩余额度加权选号，429 与额度耗尽按（账号, 模型）熔断，模型别名可以配置优先级与降级。</p></article>
+      <article class="card reveal"><span class="tag">会话</span><h3>换账号，会话不消失</h3><p>账号之间只隔离凭据；会话、历史和工具缓存仍在各工具自己的目录里。关终端、断 SSH 不掉线，换账号也能接着原来的对话。</p></article>
+    </div>
   </div>
-</div></section>
+</section>
 
-<section id="faq"><div class="wrap">
-  <h2>常见问题</h2>
-  <details><summary>它和直接用各家 CLI 有什么区别？</summary><p>aih 不替换 CLI：它管理账号、隔离凭据、把请求路由到合适的账号，并让会话保持持久。你仍然可以用原来的命令，只是不再手动切换账号。</p></details>
-  <details><summary>我的账号数据会被上传吗？</summary><p>不会。账号、会话、统计与配置都在本机 <code class="inline">~/.ai_home</code>；只有你主动配置的远程 Server 才会承载对应数据。</p></details>
-  <details><summary>支持 Windows 吗？</summary><p>支持。CLI、网关、WebUI 与账号浏览器都有 Windows 实现；账号浏览器使用宿主安装的稳定版 Edge。</p></details>
-  <details><summary>账号浏览器为什么需要系统权限？</summary><p>它要读取真实窗口的画面并注入输入，macOS 要求屏幕录制与辅助功能授权。完整步骤见 <a href="macos.html">macOS 指南</a>。</p></details>
-</div></section>
+<section id="how">
+  <div class="wrap">
+    <p class="eyebrow">How</p>
+    <h2>三步开始使用</h2>
+    <p class="sub">下面用一个最小的真实流程说明；所有命令与 WebUI 都是当前系统已有的入口，没有演示专用的假功能。</p>
+    <div class="two">
+      <ol class="steps reveal">
+        <li><b>安装并启动</b>下载对应平台的单文件安装包，或从源码构建；启动本机 Server。<code>aih server status</code> 可以随时查看状态。</li>
+        <li><b>添加账号</b>CLI 里 <code>aih codex login</code>，或在 WebUI「账号管理」里登录、导入、扫描本机账号。每个账号的凭据只写进它自己的投影目录。</li>
+        <li><b>照常用 CLI</b><code>aih codex</code> 走网关账号池；<code>aih codex 3</code> 指定 3 号账号；<code>aih resume</code> 跨工具续接会话。WebUI 负责看状态、改配置和排查问题。</li>
+      </ol>
+      <div class="terminal reveal">
+        <div class="tbar"><i></i><i></i><i></i><span>zsh · 示例输出</span></div>
+        <pre id="demo"></pre>
+      </div>
+    </div>
+    <div class="two" style="margin-top:26px">
+      <div class="uimock reveal" aria-label="WebUI 账号与 MCP 设置示意">
+        <div class="ubar"><span class="dots"><i></i><i></i><i></i></span><span>127.0.0.1:9527/ui/accounts</span><span style="margin-left:auto">WebUI 示意</span></div>
+        <div class="ubody">
+          <div class="row"><div><div class="name">示例账号 A</div><div class="meta">codex · OAuth · 已就绪</div><div class="bar"><span></span></div></div><span class="pill">可调度</span></div>
+          <div class="row"><div><div class="name">示例账号 B</div><div class="meta">claude · API Key · 已就绪</div><div class="bar"><span style="animation-delay:-2s"></span></div></div><span class="pill">可调度</span></div>
+          <div class="row"><div><div class="name">示例账号 C</div><div class="meta">agy · OAuth · 冷却中</div><div class="bar"><span style="animation-delay:-4s"></span></div></div><span class="pill" style="background:var(--blue-soft);color:var(--blue)">冷却</span></div>
+          <div class="mcp">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600">MCP 策略<span class="switch"></span></div>
+            <div class="mrow"><span>启用模式</span><span>自动（按账号与 workspace 推导）</span></div>
+            <div class="mrow"><span>生效的 MCP</span><span>aih_remote</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card reveal" style="padding:22px">
+        <h3 style="margin-bottom:8px">WebUI 不是装饰</h3>
+        <p style="margin-bottom:12px">它在同一个 Server 上完成 CLI 不容易做的事：看每个账号的额度与探测状态、编辑模型别名与出口、管理 MCP 启用范围、查看会话与用量、切换远程 Server。</p>
+        <p style="margin-bottom:0;color:var(--muted);font-size:13.5px">本页的账号数据是示意值，不包含任何真实账号信息。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="system">
+  <div class="wrap">
+    <p class="eyebrow">Architecture</p>
+    <h2>系统怎么工作</h2>
+    <p class="sub">CLI 和 WebUI 都连本机同一个 Go Server；Server 持有账号凭据索引、模型路由和会话选择，实际请求仍发往各 provider 的官方接口。</p>
+    <div class="flowcard reveal">
+      <svg viewBox="0 0 1080 330" role="img" aria-label="客户端经 AIH Server 到 provider 账号池的数据流">
+        <defs>
+          <linearGradient id="line" x1="0" x2="1"><stop offset="0" stop-color="#1f9d82"/><stop offset="1" stop-color="#3b76d9"/></linearGradient>
+          <filter id="soft"><feGaussianBlur stdDeviation="6"/></filter>
+        </defs>
+        <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,sans-serif">
+          <g fill="none" stroke="url(#line)" stroke-width="2" opacity=".5">
+            <path id="p1" d="M190 110 C 300 110, 300 165, 410 165"/>
+            <path id="p2" d="M190 220 C 300 220, 300 165, 410 165"/>
+            <path id="p3" d="M650 165 C 760 165, 760 90, 870 90"/>
+            <path id="p4" d="M650 165 C 760 165, 760 165, 870 165"/>
+            <path id="p5" d="M650 165 C 760 165, 760 240, 870 240"/>
+          </g>
+          <g fill="none" stroke="url(#line)" stroke-width="2" class="dash" opacity=".8">
+            <use href="#p1"/><use href="#p2"/><use href="#p3"/><use href="#p4"/><use href="#p5"/>
+          </g>
+          <g fill="#1f9d82">
+            <circle r="4"><animateMotion dur="3.2s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion></circle>
+            <circle r="4"><animateMotion dur="3.2s" begin=".6s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+          </g>
+          <g fill="#3b76d9">
+            <circle r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+            <circle r="4"><animateMotion dur="3.6s" begin="1s" repeatCount="indefinite"><mpath href="#p4"/></animateMotion></circle>
+            <circle r="4"><animateMotion dur="3.6s" begin="2s" repeatCount="indefinite"><mpath href="#p5"/></animateMotion></circle>
+          </g>
+          <g>
+            <rect x="30" y="70" width="160" height="70" rx="12" style="fill:var(--teal-soft)" stroke="#1f9d82" stroke-opacity=".35"/>
+            <text x="110" y="100" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--ink)">aih CLI</text>
+            <text x="110" y="120" text-anchor="middle" font-size="11" style="fill:var(--muted)">codex / claude / agy …</text>
+            <rect x="30" y="190" width="160" height="70" rx="12" style="fill:var(--blue-soft)" stroke="#3b76d9" stroke-opacity=".35"/>
+            <text x="110" y="220" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--ink)">WebUI</text>
+            <text x="110" y="240" text-anchor="middle" font-size="11" style="fill:var(--muted)">账号 · 模型 · 会话</text>
+          </g>
+          <g>
+            <rect x="410" y="105" width="240" height="120" rx="18" style="fill:var(--ink)"/>
+            <circle cx="440" cy="135" r="5" fill="#4fd0b3" class="pulse"/>
+            <text x="530" y="145" text-anchor="middle" font-size="14" font-weight="750" fill="#edf1f4">AIH Server</text>
+            <text x="530" y="166" text-anchor="middle" font-size="11" fill="#9fb0bd">本机 · Go · 127.0.0.1:9527</text>
+            <text x="530" y="188" text-anchor="middle" font-size="11" fill="#9fb0bd">账号池 · 路由 · 熔断</text>
+            <text x="530" y="207" text-anchor="middle" font-size="11" fill="#9fb0bd">MCP 策略 · 会话选择</text>
+          </g>
+          <g>
+            <rect x="870" y="55" width="180" height="70" rx="12" style="fill:var(--panel);stroke:var(--line)"/>
+            <text x="960" y="84" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--ink)">codex 账号池</text>
+            <text x="960" y="104" text-anchor="middle" font-size="11" style="fill:var(--muted)">OAuth / API Key</text>
+            <rect x="870" y="130" width="180" height="70" rx="12" style="fill:var(--panel);stroke:var(--line)"/>
+            <text x="960" y="159" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--ink)">claude 账号池</text>
+            <text x="960" y="179" text-anchor="middle" font-size="11" style="fill:var(--muted)">OAuth / API Key</text>
+            <rect x="870" y="205" width="180" height="70" rx="12" style="fill:var(--panel);stroke:var(--line)"/>
+            <text x="960" y="234" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--ink)">其他 provider</text>
+            <text x="960" y="254" text-anchor="middle" font-size="11" style="fill:var(--muted)">agy · gemini · grok …</text>
+          </g>
+          <text x="530" y="300" text-anchor="middle" font-size="11.5" style="fill:var(--muted)">请求经 Server 选号后发往官方接口；凭据按账号隔离，会话留在各工具原生目录</text>
+        </g>
+      </svg>
+    </div>
+    <div class="grid" style="margin-top:16px">
+      <article class="card reveal"><span class="tag">凭据</span><h3>账号之间只隔离凭据</h3><p>每个账号的目录里只放该账号的登录态。会话、历史、设置和工具缓存共用一份，换账号不会让历史“消失”。</p></article>
+      <article class="card reveal"><span class="tag">兼容</span><h3>一个端点，三种协议</h3><p>OpenAI（<code>/v1</code>）、Anthropic（<code>/v1/messages</code>）、Gemini（<code>/v1beta</code>）。外部工具把 base_url 指向本机 Server 即可。</p></article>
+      <article class="card reveal"><span class="tag">会话</span><h3>持久与续接</h3><p>CLI 会话跑在 tmux 里；<code>aih resume</code> 跨 provider 选一段会话继续，<code>aih &lt;cli&gt; fork</code> 从最近一段分叉。</p></article>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <p class="eyebrow">Capabilities</p>
+    <h2>当前已经做到的事</h2>
+    <p class="sub">只列已经在代码和真机上验证过的能力；细节与完整命令见仓库 README。</p>
+    <div class="feature">
+      <article class="card reveal"><div class="ico">01</div><div><h3>账号与额度</h3><p>OAuth / API Key 账号、导入导出、扫描本机登录态、额度探测、启用/停用、默认账号、按账号打开桌面端或终端。</p></div></article>
+      <article class="card reveal"><div class="ico">02</div><div><h3>网关与调度</h3><p>剩余额度加权选号、（账号, 模型）熔断、模型别名 fallback、单次会话的 <code>--model-alias</code> 改写、图片生成与编辑接口。</p></div></article>
+      <article class="card reveal"><div class="ico">03</div><div><h3>持久会话</h3><p><code>aih ss</code>、<code>resume</code>、<code>fork</code>、具名会话、接管/镜像、空闲回收；关终端和断 SSH 不丢。</p></div></article>
+      <article class="card reveal"><div class="ico">04</div><div><h3>WebUI</h3><p>仪表盘、账号管理、AI 会话、用量、模型目录、开发工具、Server 管理、SSH 开发机；移动端也有独立布局。</p></div></article>
+      <article class="card reveal"><div class="ico">05</div><div><h3>MCP 选择与共享</h3><p>账号级 auto / allowlist / disabled，会话级 <code>--mcp</code> / <code>--no-mcp</code> / <code>--mcp-profile</code> / <code>--mcp-status</code>；注册表选择、Tab 补全与共享桥（global / workspace / off）。</p></div></article>
+      <article class="card reveal"><div class="ico">06</div><div><h3>远程与工作区</h3><p>多 Server 切换、Workspace Connector 把本机目录暴露给远程会话、SSH 开发机、入口转发配置（frp / nginx / caddy）。</p></div></article>
+      <article class="card reveal"><div class="ico">07</div><div><h3>终端体验</h3><p>zsh / bash / fish / PowerShell 补全与拼写纠正；<code>aih codex --mcp &lt;TAB&gt;</code>、<code>resume &lt;TAB&gt;</code> 这类位置感知补全。</p></div></article>
+      <article class="card reveal"><div class="ico">08</div><div><h3>账号浏览器</h3><p>WebUI 内完成 OAuth 登录，按账号隔离 Profile 与 Cookie；macOS 由 <code>AI Home.app</code> 统一持有一次屏幕录制/辅助功能授权。</p></div></article>
+    </div>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <p class="eyebrow">Limits</p>
+    <h2>边界与信任</h2>
+    <p class="sub">这些不是“以后会做”，而是当前系统的真实边界。写清楚比夸大更有用。</p>
+    <div class="boundary">
+      <div class="reveal"><b>默认只监听本机</b>Server 默认绑定 <code>127.0.0.1:9527</code>。要跨设备使用，需要自己通过 HTTPS、VPN 或受控隧道暴露，并保管好 Management Key。</div>
+      <div class="reveal"><b>凭据在你自己的机器上</b>账号数据在 <code>~/.ai_home</code>，登录态写进各账号的投影目录；AI Home 不托管云端账号池，也不绕过 provider 的条款与风控。</div>
+      <div class="reveal"><b>共享 MCP 桥有平台差异</b>global / workspace 共享桥在 macOS 与 Linux 可用；Windows 当前回退为每会话一个桥（named pipe 权限模型尚未验证）。</div>
+      <div class="reveal"><b>OAuth 登录仍由你完成</b>内置账号浏览器负责打开授权页、隔离登录态；账号密码与二次验证不会、也不应该由 AI Home 代填。</div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <p class="eyebrow">Start</p>
+    <h2>开始使用</h2>
+    <div class="two">
+      <div class="startbox reveal">
+        <h3>安装</h3>
+        <p>推荐使用对应平台的单文件安装包；也可以从源码构建。安装包自带运行时与构建好的 WebUI。</p>
+        <pre># 从源码（开发）
+npm install
+npm link
+aih server start
+
+# 或下载 release 单文件后
+chmod +x aih-&lt;version&gt;-&lt;target&gt;.run
+./aih-&lt;version&gt;-&lt;target&gt;.run</pre>
+        <div class="links">
+          <a href="https://github.com/madou1217/ai_home#readme">README</a>
+          <a href="https://github.com/madou1217/ai_home#readme">打包与安装</a>
+          <a href="https://github.com/madou1217/ai_home">GitHub 仓库</a>
+        </div>
+      </div>
+      <div class="startbox reveal">
+        <h3>最短路径</h3>
+        <p>启动 Server 后，用 CLI 添加账号即可；WebUI 在同一端口。</p>
+        <pre>aih server start
+aih codex login          # 或 aih claude login
+aih ls                   # 看账号与状态
+aih codex                # 走 AIH Server 账号池
+aih codex 1              # 指定 1 号账号
+aih resume               # 跨 provider 续接会话
+
+# 用浏览器打开
+http://127.0.0.1:9527/ui/</pre>
+        <p style="margin:0;font-size:12.8px">WebUI 与管理接口需要 Management Key；首次使用按 <code>aih server config show</code> 的提示配置。</p>
+      </div>
+    </div>
+  </div>
+</section>
 </main>
 
-<footer><div class="wrap row">
-  <span>AI Home · 本地优先的 AI CLI 账号与网关</span>
-  <span><a href="https://github.com/madou1217/ai_home">GitHub</a> · <a href="macos.html">macOS 指南</a> · <a href="https://github.com/madou1217/ai_home/blob/main/docs/product-integrity/account-browser-macos-helper-2026-11-23.md">实机取证</a></span>
-</div></footer>
+<footer>
+  <div class="wrap">
+    <span>AI Home · <code>aih</code> · 本机优先的 AI CLI 控制面</span>
+    <span><a href="https://github.com/madou1217/ai_home">GitHub</a> · <a href="https://github.com/madou1217/ai_home#readme">README</a></span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var lines = [
+    {t:'$ ', c:'aih server status', d:320},
+    {t:'Server  running  http://127.0.0.1:9527   accounts 5   ready 4', k:'dim'},
+    {t:'$ ', c:'aih ls', d:320},
+    {t:'codex     3 accounts   3 ready', k:'ok'},
+    {t:'claude    2 accounts   1 ready   1 cooldown', k:'warn'},
+    {t:'$ ', c:'aih codex --mcp-status', d:360},
+    {t:'Provider: codex    账号: (默认/未指定)', k:''},
+    {t:'共享桥: global（服务端工作区会话）', k:'dim'},
+    {t:'原生 MCP: codex-security, codex_app', k:'dim'},
+    {t:'注册表 MCP: aih_remote  [默认/仅服务端]', k:'dim'},
+    {t:'$ ', c:'aih codex', d:520},
+    {t:'按健康度选用 codex #2（剩余 78%）', k:'ok'},
+    {t:'启动持久会话 · Ctrl-b d 可暂时离开', k:'dim'}
+  ];
+  var box = document.getElementById('demo');
+  if(!box) return;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce){
+    box.innerHTML = lines.map(function(l){return '<span class="'+(l.k||'')+'">'+(l.t||'')+'</span>';}).join('\n');
+    return;
+  }
+  var out = [];
+  function render(){
+    box.innerHTML = out.join('\n') + '\n<span class="cursor"></span>';
+  }
+  function run(i){
+    if(i >= lines.length){ setTimeout(function(){ out=[]; run(0); }, 2600); return; }
+    var line = lines[i];
+    if(line.c !== undefined && line.t === '$ '){
+      var prefix = '<span class="cmd">$ ' + line.c + '</span>';
+      var pos = 0;
+      out.push(prefix.slice(0, 0));
+      var target = '$ ' + line.c;
+      var typed = '';
+      (function type(){
+        if(pos < target.length){
+          typed = target.slice(0, ++pos);
+          out[out.length-1] = '<span class="cmd">' + typed + '</span>';
+          render();
+          setTimeout(type, 32);
+        } else {
+          setTimeout(function(){ run(i+1); }, line.d || 300);
+        }
+      })();
+      return;
+    }
+    out.push('<span class="'+(line.k||'')+'">'+(line.t||'')+'</span>');
+    render();
+    setTimeout(function(){ run(i+1); }, line.k === 'dim' ? 160 : 300);
+  }
+  run(0);
+})();
+(function(){
+  var els = document.querySelectorAll('.reveal');
+  if(!('IntersectionObserver' in window)){ els.forEach(function(e){e.classList.add('on')}); return; }
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){ if(entry.isIntersecting){ entry.target.classList.add('on'); io.unobserve(entry.target); } });
+  }, {threshold:.14});
+  els.forEach(function(e){ io.observe(e); });
+})();
+</script>
 </body>
 </html>

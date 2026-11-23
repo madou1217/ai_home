@@ -385,6 +385,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建工作区 Connector Agent 入口失败: %w", err)
 	}
 	remoteSessionUsage := dependencies.Store.QueryRemoteSessionUsage
+	remoteSessionUsageBatch := dependencies.Store.QueryRemoteSessionUsageBatch
 	remoteSessions, err := webuiremotesessionsapi.NewHandler(webuiremotesessionsapi.Dependencies{
 		Authorizer: authorizer, Store: remoteSessionStore,
 		TerminalStatus: func(termID string) string {
@@ -404,7 +405,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			}
 			return dependencies.TerminalHandler.KillSession(termID)
 		},
-		Usage: remoteSessionUsage,
+		Usage:      remoteSessionUsage,
+		UsageBatch: remoteSessionUsageBatch,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建远程执行会话接口失败: %w", err)

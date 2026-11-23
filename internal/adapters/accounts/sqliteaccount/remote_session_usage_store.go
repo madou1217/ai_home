@@ -62,6 +62,58 @@ ON CONFLICT(session_id) DO UPDATE SET
 	return tx.Commit()
 }
 
+// QueryRemoteSessionUsageBatch 读取多个会话的累计用量（列表页一次查询，
+// 避免按行建表/查询把页面读接口拖慢）。
+func (store *Store) QueryRemoteSessionUsageBatch(ctx context.Context, sessionIDs []string) (map[string]clientkeys.RemoteSessionUsage, error) {
+	result := make(map[string]clientkeys.RemoteSessionUsage, len(sessionIDs))
+	if store == nil || store.db == nil {
+		return nil, errors.New("账号数据库不可用")
+	}
+	unique := make([]string, 0, len(sessionIDs))
+	seen := make(map[string]struct{}, len(sessionIDs))
+	for _, sessionID := range sessionIDs {
+		sessionID = strings.TrimSpace(sessionID)
+		if sessionID == "" {
+			continue
+		}
+		if _, exists := seen[sessionID]; exists {
+			continue
+		}
+		seen[sessionID] = struct{}{}
+		unique = append(unique, sessionID)
+	}
+	if len(unique) == 0 {
+		return result, nil
+	}
+	if _, err := store.db.ExecContext(ctx, remoteSessionUsageSchema); err != nil {
+		return nil, err
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(unique)), ",")
+	args := make([]any, 0, len(unique))
+	for _, sessionID := range unique {
+		args = append(args, sessionID)
+	}
+	rows, err := store.db.QueryContext(ctx, `SELECT session_id, input_tokens, output_tokens, cached_input_tokens,
+	cache_write_input_tokens, reasoning_tokens, total_tokens, updated_at_ms
+	FROM remote_session_usage WHERE session_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var entry clientkeys.RemoteSessionUsage
+		if err := rows.Scan(&entry.SessionID, &entry.InputTokens, &entry.OutputTokens, &entry.CachedInputTokens,
+			&entry.CacheWriteInputTokens, &entry.ReasoningTokens, &entry.TotalTokens, &entry.UpdatedAtMS); err != nil {
+			return nil, err
+		}
+		result[entry.SessionID] = entry
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // QueryRemoteSessionUsage 读取一个会话的累计用量。
 func (store *Store) QueryRemoteSessionUsage(ctx context.Context, sessionID string) (clientkeys.RemoteSessionUsage, bool, error) {
 	if store == nil || store.db == nil {

@@ -44,6 +44,13 @@ function formatMoment(value?: number): string {
   try { return new Date(value).toLocaleString(); } catch { return ''; }
 }
 
+function formatTokens(value?: number): string {
+  if (!value || value <= 0) return '';
+  if (value < 1000) return `${value} tok`;
+  if (value < 1000000) return `${(value / 1000).toFixed(1)}k tok`;
+  return `${(value / 1000000).toFixed(2)}M tok`;
+}
+
 function formatSize(value?: number): string {
   if (!value || value <= 0) return '';
   if (value < 1024) return `${value} B`;
@@ -373,6 +380,7 @@ export default function WorkspaceConnectorPanel() {
                 </span>
                 <span className="ws-connector-meta">
                   {session.status} · {session.events?.[session.events.length - 1]?.type || '-'} · {session.workspaceId} · {formatMoment(session.createdAt)}
+                  {formatTokens(session.usage?.totalTokens) ? ` · ${formatTokens(session.usage?.totalTokens)}` : ''}
                 </span>
               </span>
               {session.status === 'running' || session.status === 'unknown' ? (

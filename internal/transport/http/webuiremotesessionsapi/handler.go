@@ -32,6 +32,8 @@ type Dependencies struct {
 	// Usage returns the session-scoped token totals when the stats store
 	// supports them.
 	Usage func(ctx context.Context, sessionID string) (clientkeys.RemoteSessionUsage, bool, error)
+	// UsageBatch returns token totals for the list view in one query.
+	UsageBatch func(ctx context.Context, sessionIDs []string) (map[string]clientkeys.RemoteSessionUsage, error)
 }
 
 type Handler struct {
@@ -40,6 +42,7 @@ type Handler struct {
 	terminalStatus func(termID string) string
 	stopTerminal   func(termID string) error
 	usage          func(ctx context.Context, sessionID string) (clientkeys.RemoteSessionUsage, bool, error)
+	usageBatch     func(ctx context.Context, sessionIDs []string) (map[string]clientkeys.RemoteSessionUsage, error)
 }
 
 func NewHandler(dependencies Dependencies) (*Handler, error) {
@@ -49,8 +52,14 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		authorizer: dependencies.Authorizer, store: dependencies.Store,
 		terminalStatus: dependencies.TerminalStatus, stopTerminal: dependencies.StopTerminal,
-		usage: dependencies.Usage,
+		usage: dependencies.Usage, usageBatch: dependencies.UsageBatch,
 	}, nil
+}
+
+// sessionView 是列表投影：会话字段保持扁平，用量按需附加。
+type sessionView struct {
+	remotesessions.Session
+	Usage *clientkeys.RemoteSessionUsage `json:"usage,omitempty"`
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -76,7 +85,7 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "session_store_unavailable"})
 		return
 	}
-	views := make([]remotesessions.Session, 0, len(records))
+	views := make([]sessionView, 0, len(records))
 	for _, record := range records {
 		if record.Status == remotesessions.StatusRunning && record.TermID != "" && handler.terminalStatus != nil {
 			switch handler.terminalStatus(record.TermID) {
@@ -88,7 +97,20 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 				record.Status = remotesessions.StatusUnknown
 			}
 		}
-		views = append(views, record)
+		views = append(views, sessionView{Session: record})
+	}
+	if handler.usageBatch != nil && len(views) > 0 {
+		ids := make([]string, 0, len(views))
+		for _, view := range views {
+			ids = append(ids, view.Session.ID)
+		}
+		if usages, err := handler.usageBatch(request.Context(), ids); err == nil {
+			for index := range views {
+				if usage, found := usages[views[index].Session.ID]; found {
+					views[index].Usage = &usage
+				}
+			}
+		}
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "count": len(views), "sessions": views})
 }

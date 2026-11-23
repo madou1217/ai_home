@@ -68,6 +68,17 @@ export interface WorkspaceApprovalDecisionResponse {
   approval: WorkspaceApproval;
 }
 
+export interface RemoteSessionUsage {
+  sessionId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens: number;
+  updatedAtMs?: number;
+}
+
 export interface RemoteExecutionSession {
   id: string;
   workspaceId: string;
@@ -83,6 +94,7 @@ export interface RemoteExecutionSession {
   updatedAt: number;
   stoppedAt?: number;
   events?: { at: number; type: string; detail?: string }[];
+  usage?: RemoteSessionUsage;
 }
 
 export interface RemoteExecutionSessionListResponse {

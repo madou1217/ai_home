@@ -1,9 +1,8 @@
-/* =============================================================================
- * OfficeMailbox — Readable Desktop Email Client for Session Office (Cyber HUD)
- * Strict rules:
- * - Zero hardcoded colors: strictly use tokens from styles/design-tokens.css
- * - Zero decorative border-left / inset left stripes
- * - Zero large Alert banners
+/* ==========================================================================
+ * OfficeMailbox — Clean Desktop Email Client for Session Office
+ * - Design tokens only (no hardcoded colors)
+ * - No thick left bars, inset strips, glows, or gratuitous animations
+ * - Keyboard focus visible and prefers-reduced-motion respected
  * ========================================================================== */
 
 .office-mailbox {
@@ -15,75 +14,100 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
-  background: var(--hud-glass-gradient), var(--color-surface);
-  border: 1px solid var(--hud-border-glass, var(--color-border));
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   color: var(--color-text);
   overflow: hidden;
 }
 
+.office-mailbox button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* ---------------------------------------------------------------------------
- * 1. Top Header & Scope Switcher
+ * 1. Header & Scope Switcher
  * ------------------------------------------------------------------------ */
 .office-mailbox-header {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-5) var(--space-6);
-  background: var(--hud-glass-raised-gradient), var(--color-surface-raised);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface-raised);
   border-bottom: 1px solid var(--color-border);
 }
 
 .office-mailbox--compact .office-mailbox-header {
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
   gap: var(--space-2);
 }
 
-.office-mailbox-toolbar-top {
+.office-mailbox-header-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-4);
-}
-
-.office-mailbox-brand-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-5);
+  gap: var(--space-3);
   min-width: 0;
 }
 
-.office-mailbox-title-wrap {
+.office-mailbox-heading-block {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-}
-
-.office-mailbox-eyebrow {
-  font-family: var(--font-display);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: var(--tracking-caps);
-  color: var(--color-accent);
-  line-height: 1.2;
+  gap: 2px;
+  min-width: 0;
 }
 
 .office-mailbox-title {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--hos-text-h2);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: var(--weight-semibold);
   color: var(--color-heading);
+  line-height: 1.3;
 }
 
 .office-mailbox-title .anticon {
   color: var(--color-accent);
+}
+
+.office-mailbox-subtitle {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-mailbox-subtitle--compact {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.office-mailbox-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  min-width: 0;
+}
+
+.office-mailbox-search {
+  width: 236px;
+  max-width: 100%;
+}
+
+.office-mailbox-scope-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .office-mailbox-scope-tabs {
@@ -96,13 +120,13 @@
 .office-mailbox-scope-btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
   padding: 4px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-sunken);
+  background: var(--color-surface);
   color: var(--color-muted-strong);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 12px;
   font-weight: var(--weight-medium);
   cursor: pointer;
@@ -114,9 +138,9 @@
 }
 
 .office-mailbox-scope-btn:hover:not(:disabled) {
-  border-color: var(--color-accent);
-  color: var(--color-heading);
+  border-color: var(--color-border-strong);
   background: var(--color-overlay-subtle);
+  color: var(--color-heading);
 }
 
 .office-mailbox-scope-btn[data-active='true'] {
@@ -131,148 +155,42 @@
   cursor: not-allowed;
 }
 
-.office-mailbox-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-left: auto;
-  min-width: 0;
-}
-
-.office-mailbox-search {
-  width: 248px;
-  max-width: 100%;
-}
-
-.office-mailbox-status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.office-mailbox-summary-pills {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.office-mailbox-summary-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted-strong);
+.office-mailbox-scope-count {
   font-family: var(--font-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
-}
-
-.office-mailbox-summary-pill:hover {
-  border-color: var(--color-border-strong);
-  color: var(--color-heading);
-}
-
-.office-mailbox-summary-pill[data-active='true'] {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-  font-weight: var(--weight-semibold);
-}
-
-.office-mailbox-summary-pill--warn[data-active='true'] {
-  border-color: var(--color-warning);
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-}
-
-.office-mailbox-summary-pill--ok[data-active='true'] {
-  border-color: var(--color-success);
-  background: var(--color-success-soft);
-  color: var(--color-success);
-}
-
-.office-mailbox-summary-pill--err[data-active='true'] {
-  border-color: var(--color-danger);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-}
-
-.office-mailbox-status-right {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-left: auto;
-  min-width: 0;
-}
-
-.office-mailbox-context-caption {
-  font-family: var(--font-mono);
-  font-size: 11px;
   color: var(--color-muted);
 }
 
-.office-mailbox-sync-pill,
-.office-mailbox-error-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: 360px;
-  padding: 2px 8px;
-  border-radius: var(--hos-radius-xs);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.office-mailbox-sync-pill {
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
-  background: var(--color-accent-soft);
+.office-mailbox-scope-btn[data-active='true'] .office-mailbox-scope-count {
   color: var(--color-accent);
 }
 
-.office-mailbox-error-pill {
-  border: 1px solid color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-}
-
-.office-mailbox-error-pill > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.office-mailbox-header-error {
+  margin-top: 2px;
 }
 
 /* ---------------------------------------------------------------------------
- * 2. Three-Pane Desktop Email Body
+ * 2. Three-Pane Body Layout
  * ------------------------------------------------------------------------ */
 .office-mailbox-body {
   flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
   display: grid;
-  grid-template-columns: 198px minmax(272px, 344px) minmax(0, 1fr);
+  grid-template-columns: 176px minmax(264px, 336px) minmax(0, 1fr);
 }
 
 /* ---------------------------------------------------------------------------
- * 2a. Left Folder & Filter Rail
+ * 2a. Left Filter Rail
  * ------------------------------------------------------------------------ */
 .office-mailbox-rail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
   min-height: 0;
-  padding: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3);
   background: var(--color-surface-soft);
   border-right: 1px solid var(--color-border);
   overflow-y: auto;
@@ -281,28 +199,25 @@
 .office-mailbox-rail-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .office-mailbox-rail-heading {
-  padding: 0 var(--space-2);
+  padding: 2px var(--space-2);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
   color: var(--color-faint);
 }
 
-.office-mailbox-folder-list,
-.office-mailbox-filter-list {
+.office-mailbox-rail-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
-.office-mailbox-folder-btn,
-.office-mailbox-filter-btn {
+.office-mailbox-rail-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -314,7 +229,7 @@
   background: transparent;
   color: var(--color-muted-strong);
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 12.5px;
   text-align: left;
   cursor: pointer;
   transition:
@@ -323,72 +238,50 @@
     color var(--motion-fast) var(--ease-standard);
 }
 
-.office-mailbox-folder-btn:hover,
-.office-mailbox-filter-btn:hover {
+.office-mailbox-rail-btn:hover {
   border-color: var(--color-border);
   background: var(--color-overlay-subtle);
   color: var(--color-heading);
 }
 
-.office-mailbox-folder-btn[data-active='true'],
-.office-mailbox-filter-btn[data-active='true'] {
-  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
+.office-mailbox-rail-btn[data-active='true'] {
+  border-color: var(--color-accent);
   background: var(--color-accent-soft);
   color: var(--color-accent);
   font-weight: var(--weight-semibold);
 }
 
-.office-mailbox-folder-left {
+.office-mailbox-rail-label {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 7px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.office-mailbox-folder-count {
+.office-mailbox-rail-label .anticon {
   flex: none;
-  padding: 0 5px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-pill);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
+  font-size: 12px;
 }
 
-.office-mailbox-folder-btn[data-active='true'] .office-mailbox-folder-count,
-.office-mailbox-filter-btn[data-active='true'] .office-mailbox-folder-count {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+.office-mailbox-rail-count {
+  flex: none;
+  min-width: 20px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.office-mailbox-rail-btn[data-active='true'] .office-mailbox-rail-count {
   color: var(--color-accent);
 }
 
-.office-mailbox-readonly-note {
-  margin-top: auto;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.office-mailbox-readonly-note .anticon {
-  flex: none;
-  margin-top: 2px;
-  color: var(--color-faint);
-}
-
 /* ---------------------------------------------------------------------------
- * 2b. Middle Compact Readable Mail List
+ * 2b. Middle Message List Pane
  * ------------------------------------------------------------------------ */
 .office-mailbox-list-pane {
   display: flex;
@@ -405,7 +298,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-4);
+  min-height: 36px;
   border-bottom: 1px solid var(--color-border-subtle);
   background: var(--color-surface-raised);
 }
@@ -422,17 +316,17 @@
   flex: 1 1 0%;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-3);
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 6px;
 }
 
 .office-mailbox-list-empty {
   flex: 1 1 auto;
   display: grid;
   place-items: center;
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .office-mailbox-row {
@@ -440,7 +334,7 @@
   flex-direction: column;
   gap: 5px;
   width: 100%;
-  padding: var(--space-3) var(--space-4);
+  padding: 9px 11px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--hos-radius-sm);
   background: var(--color-surface-raised);
@@ -449,85 +343,22 @@
   cursor: pointer;
   transition:
     border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard);
 }
 
 .office-mailbox-row:hover {
   border-color: var(--color-border-strong);
-  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface-raised));
+  background: var(--color-overlay-subtle);
 }
 
 .office-mailbox-row[data-selected='true'] {
   border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-raised));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
-}
-
-.office-mailbox-row-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.office-mailbox-row-parties {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  flex: 1 1 auto;
-  font-family: var(--font-prose);
-  font-size: 11.5px;
-  color: var(--color-muted-strong);
-}
-
-.office-mailbox-row-party-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.office-mailbox-row-proj {
-  margin-left: 2px;
-  font-style: normal;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--color-faint);
-}
-
-.office-mailbox-dir-chip {
-  flex: none;
-  padding: 0 4px;
-  border-radius: var(--hos-radius-2xs);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-  border: 1px solid var(--color-border);
-}
-
-.office-mailbox-dir-chip--in {
-  background: var(--tint-info);
-  color: var(--ink-info);
-  border-color: color-mix(in srgb, var(--color-info) 35%, transparent);
-}
-
-.office-mailbox-dir-chip--out {
-  background: var(--tint-success);
-  color: var(--ink-success);
-  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
-}
-
-.office-mailbox-dir-chip--self {
-  background: var(--tint-neutral);
-  color: var(--ink-neutral);
+  background: var(--color-accent-soft);
 }
 
 .office-mailbox-row-subject-line {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
   min-width: 0;
@@ -541,51 +372,54 @@
   white-space: nowrap;
   font-family: var(--font-prose);
   font-size: 13px;
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   color: var(--color-heading);
 }
 
-.office-mailbox-row-id {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--color-accent);
+.office-mailbox-row[data-unread='true'] .office-mailbox-row-subject {
+  font-weight: var(--weight-semibold);
 }
 
-.office-mailbox-row-intent {
+.office-mailbox-row-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.office-mailbox-row-meta {
   display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
-  font-family: var(--font-prose);
+  font-family: var(--font-body);
   font-size: 11.5px;
   color: var(--color-muted);
+}
+
+.office-mailbox-row-parties {
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.office-mailbox-row-intent > span:first-child,
-.office-mailbox-row-intent > span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.office-mailbox-row-sep {
+  flex: none;
+  color: var(--color-faint);
 }
 
-.office-mailbox-row-times {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.office-mailbox-row-time {
+  flex: none;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--color-faint);
 }
 
-.office-mailbox-row-times .is-undelivered {
-  color: var(--color-warning);
-}
-
-.office-mailbox-row-badges {
+.office-mailbox-row-states {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -593,47 +427,74 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 2c. State Pills & Micro Badges (Shared)
+ * 2c. Explicit State Tags & Micro Badges (No Color-Only Status)
  * ------------------------------------------------------------------------ */
-.office-mailbox-state-pill {
+.office-mailbox-state-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 1px 6px;
-  border-radius: var(--hos-radius-2xs);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: var(--weight-semibold);
+  gap: 4px;
+  padding: 2px 7px;
   border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: var(--weight-medium);
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
-.office-mailbox-state-pill--warning {
-  background: var(--tint-warning);
-  color: var(--ink-warning);
-  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+.office-mailbox-state-tag--compact {
+  padding: 1px 6px;
+  font-size: 10.5px;
 }
 
-.office-mailbox-state-pill--info {
+.office-mailbox-state-tag-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+}
+
+.office-mailbox-state-tag--info {
   background: var(--tint-info);
   color: var(--ink-info);
-  border-color: color-mix(in srgb, var(--color-info) 35%, transparent);
+  border-color: color-mix(in srgb, var(--color-info) 38%, var(--color-border));
 }
 
-.office-mailbox-state-pill--success {
+.office-mailbox-state-tag--success {
   background: var(--tint-success);
   color: var(--ink-success);
-  border-color: var(--bd-success, color-mix(in srgb, var(--color-success) 35%, transparent));
+  border-color: color-mix(in srgb, var(--color-success) 38%, var(--color-border));
 }
 
-.office-mailbox-state-pill--danger {
+.office-mailbox-state-tag--warning {
+  background: var(--tint-warning);
+  color: var(--ink-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 38%, var(--color-border));
+}
+
+.office-mailbox-state-tag--danger {
   background: var(--tint-danger);
   color: var(--ink-danger);
-  border-color: var(--bd-danger, color-mix(in srgb, var(--color-danger) 35%, transparent));
+  border-color: color-mix(in srgb, var(--color-danger) 38%, var(--color-border));
 }
 
-.office-mailbox-state-pill--neutral {
-  background: var(--tint-neutral);
-  color: var(--ink-neutral);
+.office-mailbox-state-tag--neutral {
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
+  border-color: var(--color-border);
+}
+
+.office-mailbox-priority-tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  border-radius: var(--hos-radius-xs);
+  background: var(--tint-warning);
+  color: var(--ink-warning);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
 }
 
 .office-mailbox-micro-badge {
@@ -641,38 +502,17 @@
   align-items: center;
   gap: 4px;
   padding: 1px 6px;
-  border-radius: var(--hos-radius-2xs);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
   border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface-sunken);
   color: var(--color-muted-strong);
-}
-
-.office-mailbox-micro-badge--accent {
-  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-.office-mailbox-micro-badge--warn {
-  border-color: color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-}
-
-.office-mailbox-micro-badge--err {
-  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-}
-
-.office-mailbox-micro-badge--muted {
-  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------------------
- * 2d. Right Reading Pane & Article
+ * 2d. Right Detail Pane
  * ------------------------------------------------------------------------ */
 .office-mailbox-reader-pane {
   display: flex;
@@ -686,12 +526,12 @@
   flex: 1 1 0%;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
 }
 
 .office-mailbox-reader-empty {
   height: 100%;
-  min-height: 260px;
+  min-height: 240px;
   display: grid;
   place-items: center;
 }
@@ -699,21 +539,21 @@
 .office-mailbox-thread-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .office-mailbox-thread-header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-bottom: var(--space-4);
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--color-border);
 }
 
 .office-mailbox-thread-timeline {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .office-mailbox-thread-step {
@@ -723,9 +563,6 @@
 }
 
 .office-mailbox-thread-step-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--color-faint);
@@ -735,7 +572,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm);
   background: var(--color-surface);
@@ -743,9 +580,7 @@
 
 .office-mailbox-article[data-thread-card='true'] {
   cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+  transition: border-color var(--motion-fast) var(--ease-standard);
 }
 
 .office-mailbox-article[data-thread-card='true']:hover {
@@ -754,7 +589,7 @@
 
 .office-mailbox-article[data-thread-card='true'][data-active='true'] {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  background: var(--color-surface-raised);
 }
 
 .office-mailbox-article-head {
@@ -768,7 +603,7 @@
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .office-mailbox-subject {
@@ -784,43 +619,40 @@
 .office-mailbox-head-actions {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-2);
   flex: none;
 }
 
-.office-mailbox-provenance-chip {
+.office-mailbox-short-id {
   padding: 2px 7px;
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-xs);
   background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-}
-
-.office-mailbox-short-id {
-  padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  color: var(--color-muted-strong);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: var(--weight-semibold);
+}
+
+.office-mailbox-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .office-mailbox-meta-badges {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 6px;
 }
 
-.office-mailbox-reply-link {
-  padding-inline: 4px !important;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+.office-mailbox-article-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .office-mailbox-thread-target-badge {
@@ -828,19 +660,19 @@
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-xs);
   background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  color: var(--color-muted-strong);
+  font-family: var(--font-body);
+  font-size: 11px;
   cursor: pointer;
 }
 
 .office-mailbox-article[data-active='true'] .office-mailbox-thread-target-badge {
-  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  border-color: var(--color-accent);
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
 
-/* Readable Sender / Recipient Cards */
+/* Sender / Recipient Cards */
 .office-mailbox-parties {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -850,8 +682,8 @@
 .office-mailbox-party-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  gap: 6px;
+  padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm);
   background: var(--color-surface-raised);
@@ -869,9 +701,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: var(--weight-medium);
   color: var(--color-muted);
 }
 
@@ -881,6 +713,7 @@
   border-radius: var(--hos-radius-2xs);
   background: var(--color-surface-sunken);
   color: var(--color-heading);
+  font-family: var(--font-mono);
   font-size: 10.5px;
 }
 
@@ -893,13 +726,13 @@
 .office-mailbox-party-main {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 6px;
   min-width: 0;
 }
 
 .office-mailbox-party-name {
   font-family: var(--font-prose);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: var(--weight-semibold);
   color: var(--color-heading);
   overflow: hidden;
@@ -921,10 +754,10 @@
   gap: 5px;
   max-width: 100%;
   padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 32%, var(--color-border));
+  border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-xs);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
   font-family: var(--font-mono);
   font-size: 11px;
 }
@@ -936,12 +769,10 @@
 }
 
 .office-mailbox-project-badge--muted {
-  border-color: var(--color-border);
-  background: var(--color-surface-sunken);
   color: var(--color-muted);
 }
 
-/* Structured Human Digest Card */
+/* Structured Core Digest */
 .office-mailbox-digest {
   display: flex;
   flex-direction: column;
@@ -981,20 +812,12 @@
   border-radius: var(--hos-radius-2xs);
   background: var(--color-surface);
   color: var(--color-muted);
+  font-family: var(--font-body);
   font-size: 10px;
   font-weight: var(--weight-regular);
 }
 
-.office-mailbox-digest-tag--classified {
-  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
 .office-mailbox-digest-value {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
   font-family: var(--font-prose);
   font-size: 13px;
   line-height: 1.5;
@@ -1009,11 +832,17 @@
 .office-mailbox-time-pair {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--color-heading);
+}
+
+.office-mailbox-time-pair > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .office-mailbox-time-pair em {
@@ -1022,16 +851,11 @@
 }
 
 .office-mailbox-time-pair strong {
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
 }
 
 .office-mailbox-time-pair strong.is-undelivered {
   color: var(--color-warning);
-}
-
-.office-mailbox-caveat {
-  font-size: 11.5px;
-  color: var(--color-muted);
 }
 
 .office-mailbox-summary-row {
@@ -1071,13 +895,12 @@
 .office-mailbox-jargon-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 1px 6px;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-2xs);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface);
   color: var(--color-muted-strong);
-  font-family: var(--font-prose);
   font-size: 11px;
 }
 
@@ -1088,38 +911,16 @@
 }
 
 .office-mailbox-delivery-error {
-  display: flex;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.45;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
-.office-mailbox-delivery-error .hud-led {
-  margin-top: 5px;
-}
-
-.office-mailbox-delivery-error-label {
-  font-weight: var(--weight-semibold);
-}
-
-.office-mailbox-delivery-error-text {
-  word-break: break-word;
-}
-
-/* Explicit replyTo Chain Section */
+/* Explicit replyTo Chain */
 .office-mailbox-chain-box {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm);
   background: var(--color-surface-raised);
@@ -1137,10 +938,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-family: var(--font-body);
+  font-size: 12px;
   font-weight: var(--weight-semibold);
-  color: var(--color-accent);
+  color: var(--color-heading);
 }
 
 .office-mailbox-chain-list {
@@ -1167,7 +968,7 @@
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
   width: 100%;
-  padding: 5px 8px;
+  padding: 6px 8px;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--hos-radius-xs);
   background: var(--color-surface);
@@ -1236,14 +1037,60 @@
   color: var(--color-faint);
 }
 
-/* Message Raw Body Panel */
-.office-mailbox-body-panel {
-  display: flex;
-  flex-direction: column;
+/* Collapsed Disclosures (Raw Body & Technical Metadata) */
+.office-mailbox-disclosure {
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm);
-  background: var(--color-surface-raised);
+  background: var(--color-surface-sunken);
   overflow: hidden;
+}
+
+.office-mailbox-disclosure-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 9px var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-heading);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.office-mailbox-disclosure-toggle:hover {
+  background: var(--color-overlay-subtle);
+}
+
+.office-mailbox-disclosure-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.office-mailbox-disclosure-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+}
+
+.office-mailbox-disclosure-hint {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
+.office-mailbox-disclosure-body {
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
 }
 
 .office-mailbox-body-toolbar {
@@ -1251,26 +1098,10 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-sunken);
-}
-
-.office-mailbox-body-title {
-  display: inline-flex;
-  align-items: center;
   gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: var(--weight-semibold);
-  color: var(--color-muted-strong);
-}
-
-.office-mailbox-body-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-raised);
 }
 
 .office-mailbox-mode-toggle,
@@ -1284,12 +1115,12 @@
 }
 
 .office-mailbox-mode-btn {
-  padding: 2px 8px;
+  padding: 2px 9px;
   border: 0;
   background: transparent;
   color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 11.5px;
   cursor: pointer;
   transition:
     background-color var(--motion-fast) var(--ease-standard),
@@ -1308,10 +1139,10 @@
 
 .office-mailbox-body-content {
   margin: 0;
-  padding: var(--space-5);
+  padding: var(--space-4);
   color: var(--color-text);
-  font-size: 13.5px;
-  line-height: 1.68;
+  font-size: 13px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
@@ -1323,56 +1154,15 @@
 
 .office-mailbox-body-content[data-mode='mono'] {
   font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.58;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
-/* Expandable Technical & Provenance Details */
-.office-mailbox-tech-panel {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface-sunken);
-  overflow: hidden;
-}
-
-.office-mailbox-tech-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
-  border: 0;
-  background: transparent;
-  color: var(--color-muted-strong);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.office-mailbox-tech-toggle:hover {
-  background: var(--color-overlay-subtle);
-  color: var(--color-heading);
-}
-
-.office-mailbox-tech-toggle-left {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.office-mailbox-tech-toggle-hint {
-  flex: none;
-  color: var(--color-accent);
-  font-size: 11px;
-}
-
+/* Technical Metadata Body */
 .office-mailbox-tech-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   padding: var(--space-4);
   border-top: 1px solid var(--color-border-subtle);
   background: var(--color-surface);
@@ -1381,14 +1171,13 @@
 .office-mailbox-tech-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
 .office-mailbox-audit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-2);
 }
 
 .office-mailbox-audit-grid > div {
@@ -1425,7 +1214,7 @@
 
 .office-mailbox-tech-kv > div {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: 110px minmax(0, 1fr);
   gap: var(--space-3);
   font-size: 11.5px;
   line-height: 1.45;
@@ -1460,14 +1249,14 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 3. Honest CLI Reply Helper Footer
+ * 3. CLI Reply Helper Footer
  * ------------------------------------------------------------------------ */
 .office-mailbox-cli-footer {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-raised);
 }
@@ -1483,10 +1272,9 @@
 .office-mailbox-cli-title {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
   font-weight: var(--weight-semibold);
   color: var(--color-heading);
 }
@@ -1495,20 +1283,10 @@
   color: var(--color-accent);
 }
 
-.office-mailbox-cli-badge {
-  padding: 1px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-size: 10.5px;
-  font-weight: var(--weight-regular);
-}
-
 .office-mailbox-cli-command-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -1529,11 +1307,11 @@
 }
 
 /* ---------------------------------------------------------------------------
- * 4. Responsive Container Queries
+ * 4. Responsive Container Queries (Zero Horizontal Page Scroll)
  * ------------------------------------------------------------------------ */
-@container (max-width: 980px) {
+@container (max-width: 960px) {
   .office-mailbox-body {
-    grid-template-columns: 168px minmax(220px, 280px) minmax(0, 1fr);
+    grid-template-columns: 156px minmax(220px, 276px) minmax(0, 1fr);
   }
 
   .office-mailbox-parties,
@@ -1542,7 +1320,7 @@
   }
 
   .office-mailbox-reader-scroll {
-    padding: var(--space-4);
+    padding: var(--space-3) var(--space-4);
   }
 
   .office-mailbox-article {
@@ -1556,7 +1334,7 @@
 
 @container (max-width: 780px) {
   .office-mailbox-body {
-    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-columns: minmax(210px, 248px) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
   }
 
@@ -1565,8 +1343,8 @@
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-2) var(--space-4);
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
     overflow-y: visible;
@@ -1580,33 +1358,29 @@
   }
 
   .office-mailbox-rail-heading {
-    display: none;
+    padding: 0;
   }
 
-  .office-mailbox-folder-list,
-  .office-mailbox-filter-list {
+  .office-mailbox-rail-list {
     flex-direction: row;
     flex-wrap: wrap;
     gap: 4px;
   }
 
-  .office-mailbox-folder-btn,
-  .office-mailbox-filter-btn {
+  .office-mailbox-rail-btn {
     width: auto;
     padding: 4px 8px;
   }
 
-  .office-mailbox-readonly-note {
-    margin-top: 0;
-    margin-left: auto;
-    padding: 3px 8px;
+  .office-mailbox-rail-count {
+    min-width: auto;
   }
 }
 
 @container (max-width: 580px) {
   .office-mailbox-body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(200px, 280px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(190px, 260px) minmax(0, 1fr);
   }
 
   .office-mailbox-list-pane {
@@ -1620,10 +1394,18 @@
 
   .office-mailbox-toolbar-actions {
     width: 100%;
+    margin-left: 0;
   }
 
   .office-mailbox-tech-kv > div {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office-mailbox * {
+    transition: none !important;
+    animation: none !important;
   }
 }

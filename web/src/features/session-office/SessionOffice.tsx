@@ -19,6 +19,8 @@ import {
 } from '@ant-design/icons';
 import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
+import AppButton from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import OfficeMailbox from './OfficeMailbox';
 import OfficeRoom from './OfficeRoom';
@@ -710,20 +712,12 @@ export default function SessionOffice({
         </div>
 
         {directoryError || peerError ? (
-          <div className="session-office-inline-errors" role="status" aria-live="polite">
+          <div className="session-office-inline-errors">
             {directoryError ? (
-              <SettingStatusTag
-                status="error"
-                label={`会话目录：${directoryError}`}
-                compact
-              />
+              <InlineNote tone="error">会话目录：{directoryError}</InlineNote>
             ) : null}
             {peerError ? (
-              <SettingStatusTag
-                status="error"
-                label={`协作邮箱：${peerError}`}
-                compact
-              />
+              <InlineNote tone="error">协作邮箱：{peerError}</InlineNote>
             ) : null}
           </div>
         ) : null}
@@ -1111,28 +1105,26 @@ export default function SessionOffice({
             onClick={() => setMailboxOverlayOpen(false)}
             aria-hidden="true"
           />
-          <div className="session-office-mailbox-drawer hud-panel">
+          <div className="session-office-mailbox-drawer">
             <div className="session-office-mailbox-head">
               <div className="session-office-mailbox-heading">
-                <InboxOutlined className="session-office-mailbox-head-icon" />
-                <div>
-                  <span className="session-office-eyebrow">OFFICE MAILBOX // READ-ONLY QUEUE</span>
-                  <h2>
-                    {MAILBOX_SCOPE_TITLES[mailboxScope]}
-                    {mailboxScope === 'room' && unfilteredActiveRoom ? (
-                      <span className="session-office-mailbox-scope-tag">
-                        {resolveRoomDisplayTitle(unfilteredActiveRoom)}
-                      </span>
-                    ) : null}
-                  </h2>
+                <InboxOutlined className="session-office-mailbox-head-icon" aria-hidden="true" />
+                <div className="session-office-mailbox-title-group">
+                  <h2>{MAILBOX_SCOPE_TITLES[mailboxScope]}</h2>
+                  <span className="session-office-mailbox-subtitle">
+                    {mailboxScope === 'room' && unfilteredActiveRoom
+                      ? `${resolveRoomDisplayTitle(unfilteredActiveRoom)} · 只读消息队列`
+                      : '跨会话协作消息 · 只读查阅'}
+                  </span>
                 </div>
               </div>
-              <Button
+              <AppButton
+                appVariant="secondary"
                 icon={<CloseOutlined />}
                 onClick={() => setMailboxOverlayOpen(false)}
               >
                 返回房间
-              </Button>
+              </AppButton>
             </div>
 
             <div className="session-office-mailbox-body">
@@ -1150,7 +1142,7 @@ export default function SessionOffice({
                 error={peerError}
                 onRefresh={() => void refreshAll()}
                 onJumpToSession={handleJumpToSession}
-                compactHeader={false}
+                compactHeader
               />
             </div>
           </div>

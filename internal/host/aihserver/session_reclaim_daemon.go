@@ -3,6 +3,9 @@ package aihserver
 import (
 	"context"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/host/codexlocalappserver"
@@ -63,7 +66,7 @@ func (daemon sessionReclaimDaemon) runOnce(ctx context.Context) {
 		log.Printf("[housekeeping] 回收空闲 codex 共享后端 %d 个", reaped)
 	}
 	result, err := sessionreclaim.Reclaim(ctx, daemon.aiHomeDir, sessionreclaim.ReclaimOptions{
-		Options: sessionreclaim.Options{IdleThreshold: sessionReclaimIdleThreshold},
+		Options: sessionreclaim.Options{IdleThreshold: reclaimIdleThreshold()},
 		Apply:   true,
 	})
 	if err != nil {
@@ -75,4 +78,18 @@ func (daemon sessionReclaimDaemon) runOnce(ctx context.Context) {
 	}
 	log.Printf("[session-reclaim] 已回收 %d 个空闲会话: %v (跳过 %d)",
 		len(result.Reclaimed), result.Reclaimed, len(result.Skipped))
+}
+
+// reclaimIdleThreshold 允许用 AIH_SESSION_RECLAIM_IDLE_MINUTES 覆盖宽限期；
+// 仅用于运维/真机验收，非法值回落到 4 小时。
+func reclaimIdleThreshold() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("AIH_SESSION_RECLAIM_IDLE_MINUTES"))
+	if raw == "" {
+		return sessionReclaimIdleThreshold
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes <= 0 {
+		return sessionReclaimIdleThreshold
+	}
+	return time.Duration(minutes) * time.Minute
 }

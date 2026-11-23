@@ -52,6 +52,8 @@ type Options struct {
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
+	// ExtraEnv 在投影环境之外追加进程环境（例如登录期间临时出口代理）。
+	ExtraEnv map[string]string
 }
 
 // Run 执行登录并返回新注册/更新的账号。
@@ -118,6 +120,9 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 			"CODEBUDDY_INTERNET_ENVIRONMENT":         "internal",
 			"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
 		})
+	}
+	if len(options.ExtraEnv) > 0 {
+		env = mergedEnvironment(env, options.ExtraEnv)
 	}
 	cwd, _ := os.Getwd()
 	// 登录投影是独立 HOME：先把工作目录写进 trustedDirectories，避免无头登录

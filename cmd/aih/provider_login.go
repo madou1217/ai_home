@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/providerruntime"
+	"github.com/madou1217/ai_home/core/providers"
+
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihlogin"
@@ -57,13 +60,9 @@ func runProviderLogin(
 		}
 	}
 	var account accountcore.Account
-	var loginEnv map[string]string
-	releaseEgress := func() {}
-	if !family {
-		loginEnv, releaseEgress, err = ensureLoginNetworkEnv(ctx, providerID, runtime, runtime.stderr)
-		if err != nil {
-			return err
-		}
+	loginEnv, releaseEgress, err := ensureLoginNetworkEnv(ctx, providerID, providerLoginProbe(providerID), runtime, runtime.stderr)
+	if err != nil {
+		return err
 	}
 	defer releaseEgress()
 	if family {
@@ -74,6 +73,7 @@ func runProviderLogin(
 			Stdin:       runtime.stdin,
 			Stdout:      runtime.stdout,
 			Stderr:      runtime.stderr,
+			ExtraEnv:    loginEnv,
 		})
 	} else {
 		account, err = clilogin.Run(ctx, clilogin.Options{
@@ -121,10 +121,11 @@ func writeProviderLoginUsage(output io.Writer, providerID string) {
 func ensureLoginNetworkEnv(
 	ctx context.Context,
 	providerID string,
+	probe string,
 	runtime commandRuntime,
 	notify io.Writer,
 ) (map[string]string, func(), error) {
-	probe := clilogin.ProbeURL(providerID)
+	probe = strings.TrimSpace(probe)
 	if probe == "" {
 		return nil, func() {}, nil
 	}
@@ -187,4 +188,27 @@ func probeLoginEndpoint(ctx context.Context, target, proxy string) (string, bool
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	return fmt.Sprintf("HTTP %d", response.StatusCode), response.StatusCode < 400
+}
+
+// providerLoginProbe 解析登录前的网络预检地址。
+//
+// 优先用 CLI 登录 spec 声明的授权域；家族 Provider 等没有 spec 的，退回
+// Provider 合同里声明的官方主机（OfficialHosts），不在命令层写厂商域名表。
+func providerLoginProbe(providerID string) string {
+	if probe := clilogin.ProbeURL(providerID); probe != "" {
+		return probe
+	}
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		return ""
+	}
+	definition, found := catalog.Get(providerruntime.NormalizeProvider(providerID))
+	if !found || definition.Upstream == nil || len(definition.Upstream.OfficialHosts) == 0 {
+		return ""
+	}
+	host := strings.TrimSpace(definition.Upstream.OfficialHosts[0])
+	if host == "" {
+		return ""
+	}
+	return "https://" + host + "/"
 }

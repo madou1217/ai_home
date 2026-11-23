@@ -73,6 +73,18 @@ func runProxyServiceCommand(ctx context.Context, args []string, runtime commandR
 			serviceArgs = append(serviceArgs, "--system-service", options.systemService)
 		}
 	}
+	if options.tun {
+		serviceArgs = append(serviceArgs, "--tun", "--tun-stack", options.tunStack, "--tun-dns", options.tunDNS, "--tun-mtu", fmt.Sprint(options.tunMTU))
+		if options.tunInterface != "" {
+			serviceArgs = append(serviceArgs, "--tun-interface", options.tunInterface)
+		}
+		if options.tunNoAutoRoute {
+			serviceArgs = append(serviceArgs, "--tun-no-auto-route")
+		}
+		if options.tunStrictRoute {
+			serviceArgs = append(serviceArgs, "--tun-strict-route")
+		}
+	}
 	serviceOptions := autostart.Options{
 		Label:        label,
 		Home:         home,

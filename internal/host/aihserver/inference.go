@@ -35,14 +35,10 @@ const (
 	// defaultInferenceHTTPTimeout 是直接启动 aih-server 时的上游客户端超时。
 	// aih server serve 会按 Node 的 upstreamTimeoutMs 默认值通过环境变量覆盖。
 	defaultInferenceHTTPTimeout = inferenceapi.StreamTotalTimeout
-	// agyFirstByteTimeout 只限制「等到响应头」的时间，不限制流式正文长度。
-	// agy 池里偶发某个账号卡住不回首包；共享客户端没有首包超时，单次会吃满
-	// 30s 的重试预算，剩下账号来不及接管。12s 内不回首包就换号。
-	agyFirstByteTimeout     = 12 * time.Second
-	modelRefreshTimeout     = 20 * time.Second
-	modelRefreshBaseBackoff = time.Second
-	modelRefreshMaxBackoff  = time.Minute
-	modelRefreshConcurrency = 1
+	modelRefreshTimeout         = 20 * time.Second
+	modelRefreshBaseBackoff     = time.Second
+	modelRefreshMaxBackoff      = time.Minute
+	modelRefreshConcurrency     = 1
 	// modelRefreshMaxAttempts 限制单账号刷新代次在协调器内的重试次数。退避按 1s 起步、
 	// 封顶 1min（1s/2s/4s/8s/16s/32s/60s），8 次累计约 2 分钟；达到后放弃，交由周期
 	// 重扫（6h）/路由未命中/按需触发重新入队，避免对确定性失败账号无限重试。
@@ -51,6 +47,13 @@ const (
 
 // inferenceHTTPTimeout 是上游推理客户端的超时；启动期由 ConfigureUpstreamTimeout 覆盖。
 var inferenceHTTPTimeout = defaultInferenceHTTPTimeout
+
+// agyFirstByteTimeout 只限制「等到响应头」的时间，不限制流式正文长度。
+// agy 池里偶发某个账号卡住不回首包；共享客户端没有首包超时，单次会吃满
+// 30s 的重试预算，剩下账号来不及接管。默认 12s 内不回首包就换号；思考型
+// 请求（例如 xhigh）可能超过 12s 才产生首个 SSE 事件，可通过
+// config:server.agyFirstByteTimeoutMs 放宽。
+var agyFirstByteTimeout = 12 * time.Second
 
 // inferenceComposition 保存推理 HTTP、原子模型目录及其内部生命周期。
 type inferenceComposition struct {

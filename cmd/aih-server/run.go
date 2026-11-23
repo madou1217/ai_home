@@ -66,6 +66,11 @@ func run(
 	if err != nil {
 		return err
 	}
+	if config.agyFirstByteTimeoutMs > 0 {
+		if err := aihserver.ConfigureAgyFirstByteTimeout(time.Duration(config.agyFirstByteTimeoutMs) * time.Millisecond); err != nil {
+			return fmt.Errorf("config:server.agyFirstByteTimeoutMs 无效: %w", err)
+		}
+	}
 	if config.generatedServerKeys {
 		_, _ = fmt.Fprintln(runtime.stderr, "[aih-server] 已生成默认管理/客户端密钥并写入 config:server；用 aih server config show --show-secrets 查看")
 	}

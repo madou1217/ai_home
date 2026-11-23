@@ -56,11 +56,24 @@ type proxyServeOptions struct {
 	systemDryRun      bool
 	renewInterval     time.Duration
 	managementKeyFile string
-	json              bool
+
+	tun            bool
+	tunInterface   string
+	tunAddresses   string
+	tunMTU         int
+	tunNoAutoRoute bool
+	tunStrictRoute bool
+	tunStack       string
+	tunDNS         string
+	tunSingBox     string
+	tunLogFile     string
+	tunDryRun      bool
+
+	json bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, renewInterval: 30 * time.Minute}
+	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5"}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
@@ -75,6 +88,17 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.BoolVar(&options.systemDryRun, "system-dry-run", false, "只打印系统代理动作，不实际修改")
 	flags.DurationVar(&options.renewInterval, "renew-interval", 30*time.Minute, "租约续期间隔；0 表示关闭续期")
 	flags.StringVar(&options.managementKeyFile, "management-key-file", "", "从 0600 文件读取 Management Key（服务模式使用）")
+	flags.BoolVar(&options.tun, "tun", false, "显式创建本地 TUN 并接管系统流量（需要 root/管理员）")
+	flags.StringVar(&options.tunInterface, "tun-interface", "", "TUN 接口名；空值由 sing-box 选择")
+	flags.StringVar(&options.tunAddresses, "tun-address", "", "TUN 地址 CIDR，逗号分隔；空值使用 172.19.0.1/30")
+	flags.IntVar(&options.tunMTU, "tun-mtu", 9000, "TUN MTU")
+	flags.BoolVar(&options.tunNoAutoRoute, "tun-no-auto-route", false, "不安装 TUN 路由（只创建接口，不接管流量）")
+	flags.BoolVar(&options.tunStrictRoute, "tun-strict-route", false, "启用 sing-box strict_route")
+	flags.StringVar(&options.tunStack, "tun-stack", "system", "TUN 栈：system/gvisor/mixed")
+	flags.StringVar(&options.tunDNS, "tun-dns", "223.5.5.5", "TUN 直连 DNS 服务器 IP")
+	flags.StringVar(&options.tunSingBox, "tun-singbox", "", "sing-box 内核路径；空值自动发现")
+	flags.StringVar(&options.tunLogFile, "tun-log-file", "", "TUN 内核日志路径；空值使用 <aiHome>/logs/proxy-tun.log")
+	flags.BoolVar(&options.tunDryRun, "tun-dry-run", false, "只生成并校验 TUN 配置，不创建接口、不改路由")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
 	if err := flags.Parse(args); err != nil {
 		return options, err
@@ -113,6 +137,12 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	}
 	if options.renewInterval < 0 {
 		return options, errors.New("--renew-interval 不能为负数")
+	}
+	if options.tunDryRun && !options.tun {
+		return options, errors.New("--tun-dry-run 需要配合 --tun 使用")
+	}
+	if !options.tun && (options.tunInterface != "" || options.tunAddresses != "" || options.tunSingBox != "" || options.tunLogFile != "" || options.tunNoAutoRoute || options.tunStrictRoute || options.tunStack != "system" || options.tunDNS != "223.5.5.5" || options.tunMTU != 9000) {
+		return options, errors.New("TUN 相关参数需要配合 --tun 使用")
 	}
 	return options, nil
 }
@@ -169,6 +199,15 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			err = closeErr
 		}
 	}()
+	if options.tun {
+		closeTUN, tunErr := startTUN(ctx, runtime, lease, options)
+		if tunErr != nil {
+			return tunErr
+		}
+		if closeTUN != nil {
+			defer closeTUN()
+		}
+	}
 	if options.system {
 		systemAddress, ingressErr := lease.startSystemIngress(ctx)
 		if ingressErr != nil {

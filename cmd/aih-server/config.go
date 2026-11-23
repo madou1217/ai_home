@@ -43,6 +43,8 @@ type commandConfig struct {
 	managementKey string
 	clientKey     string
 	proxyURL      string
+	// agyFirstByteTimeoutMs 覆盖 agy 首包超时；0 使用默认 12s。
+	agyFirstByteTimeoutMs int
 	// delegateCredentialRefresh 由 AIH_SERVER_CREDENTIAL_REFRESH=delegated 打开：
 	// Node 宿主监督 Go 时独占 OAuth 刷新，避免两个刷新者竞争会轮换的 Refresh Token。
 	delegateCredentialRefresh bool
@@ -237,6 +239,7 @@ func loadCommandConfig(
 		clientKey:                  clientKey,
 		generatedServerKeys:        generatedServerKeys,
 		proxyURL:                   persisted.ProxyURL,
+		agyFirstByteTimeoutMs:      persisted.AgyFirstByteTimeoutMs,
 		delegateCredentialRefresh:  delegate,
 		upstreamErrorRuleProviders: ruleProviders,
 		webDir:                     strings.TrimSpace(webDir),
@@ -417,6 +420,8 @@ type persistedServerConfig struct {
 	ManagementKey string
 	APIKey        string
 	ProxyURL      string
+	// AgyFirstByteTimeoutMs 覆盖 agy 等待响应头的上限；0 保持 12s 默认值。
+	AgyFirstByteTimeoutMs int
 }
 
 // readPersistedServerConfig 从 app-state.db 的 config:server 读取权威启动配置。
@@ -434,21 +439,23 @@ func readPersistedServerConfig(aiHomeDir string) persistedServerConfig {
 		return persistedServerConfig{}
 	}
 	var stored struct {
-		Host          string `json:"host"`
-		Port          int    `json:"port"`
-		ManagementKey string `json:"managementKey"`
-		APIKey        string `json:"apiKey"`
-		ProxyURL      string
+		Host                  string `json:"host"`
+		Port                  int    `json:"port"`
+		ManagementKey         string `json:"managementKey"`
+		APIKey                string `json:"apiKey"`
+		ProxyURL              string
+		AgyFirstByteTimeoutMs int `json:"agyFirstByteTimeoutMs"`
 	}
 	if json.Unmarshal([]byte(raw), &stored) != nil {
 		return persistedServerConfig{}
 	}
 	return persistedServerConfig{
-		Host:          strings.TrimSpace(stored.Host),
-		Port:          stored.Port,
-		ManagementKey: strings.TrimSpace(stored.ManagementKey),
-		APIKey:        strings.TrimSpace(stored.APIKey),
-		ProxyURL:      strings.TrimSpace(stored.ProxyURL),
+		Host:                  strings.TrimSpace(stored.Host),
+		Port:                  stored.Port,
+		ManagementKey:         strings.TrimSpace(stored.ManagementKey),
+		APIKey:                strings.TrimSpace(stored.APIKey),
+		ProxyURL:              strings.TrimSpace(stored.ProxyURL),
+		AgyFirstByteTimeoutMs: stored.AgyFirstByteTimeoutMs,
 	}
 }
 

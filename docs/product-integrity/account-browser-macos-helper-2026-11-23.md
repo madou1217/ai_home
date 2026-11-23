@@ -159,3 +159,9 @@ between the runs; a cache hit leaves both unchanged.
 安装流程不再覆盖已存在的 `~/.ai_home/bin/aih-launch`：TCC 记录的是它的代码身份，
 每次升级替换都会让已授权失效。只有文件缺失时才安装；确实需要更新 launcher 时，
 先删除该文件、重新运行安装，并接受一次新的系统授权。
+
+## 翻译 helper 继承授权（2026-11-23）
+
+翻译 helper 不再调用 responsibility disclaim：它作为 aih-launch 的后代启动，直接继承
+launcher 的辅助功能授权，系统设置里不再需要单独的 AIH Translation 条目。旧的条目可以
+删除；只有从 Finder 直接双击 AIH Translation.app 时才仍会按独立 App 授权。

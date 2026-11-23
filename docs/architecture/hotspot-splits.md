@@ -27,6 +27,7 @@
 | 家族透传通道 | `composition_family_relay.go`（家族账号来源、透传模块、插件 Provider 注册表、Handler） | `composition.go` 2068 → 2033 行 |
 | 插件 bundle | `composition_plugin_bundle.go`（本地插件宿主、描述符回调、价格来源接入） | `composition.go` 2033 → 2003 行 |
 | WebUI 路由依赖 | `composition_webui_deps.go`（按能力分组的输入 + `newWebUIDependencies` 构造器） | `composition.go` 2003 → 1985 行 |
+| 生产推理组合 | `composition_inference.go`（推理输入 + 解码/拒绝观察器、出口与账号提示解析器） | `composition.go` 1985 → 1977 行 |
 | Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
 | 出口上游 API | routing / catalog / upstream actions 分成三个文件 | `webuiegressupstreamsapi/handler.go` 539 → 367 行 |
 

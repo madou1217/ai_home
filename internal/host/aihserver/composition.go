@@ -1114,43 +1114,35 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	upstreamRuleEvaluator := configured.NewEvaluator(upstreamRulesService)
 	// 选号前额度门禁：与 Node account-usage-gate 同口径，阈值读 config:usage。
 	usageGate := newUsageSchedulingGate(usage.service, aiHomeDir, time.Now)
-	inference, err := newInferenceComposition(
-		ctx,
-		inferenceCompositionDependencies{
-			catalog:                   catalog,
-			store:                     store,
-			runtime:                   accountRuntime,
-			weights:                   accountRuntime,
-			usageGate:                 usageGate,
-			strategy:                  selectionStrategy,
-			models:                    recoveringModelManagement,
-			modelRefreshes:            modelRefresh,
-			credentials:               credentials,
-			delegateCredentialRefresh: delegateCredentialRefresh,
-			ownsCredentialRefresh:     ownsCredentialRefresh,
-			authorizer:                clientAuthorizer,
-			httpClient:                inferenceClient,
-			decodeErrors:              decodeErrors,
-			responsesDecodeErrors:     newResponsesDecodeErrorObserver(errorLog),
-			upstreamDecodeErrors:      upstreamDecodeErrors,
-			clock:                     time.Now,
-			requestRewriter:           visionGuard,
-			effortLadders:             modelModalities,
-			codexVersions:             codexVersions,
-			claudeVersions:            claudeVersions,
-			codexRejections:           newCodexRejectionObserver(errorLog),
-			agyModelWires:             agyModelWires,
-			upstreamRules:             upstreamRuleEvaluator,
-			upstream429Retries:        upstream429Controller,
-			componentLog:              errorLog,
-			accountEgress: inferenceEgressResolver{manager: func() *runtimeegress.Manager {
-				return egressManager
-			}},
-			accountHints: inferenceAccountHintResolver{store: store},
-		},
-	)
+	inference, err := newInferenceRuntime(inferenceRuntimeInputs{
+		ctx:                       ctx,
+		catalog:                   catalog,
+		store:                     store,
+		runtime:                   accountRuntime,
+		weights:                   accountRuntime,
+		usageGate:                 usageGate,
+		strategy:                  selectionStrategy,
+		models:                    recoveringModelManagement,
+		modelRefreshes:            modelRefresh,
+		credentials:               credentials,
+		delegateCredentialRefresh: delegateCredentialRefresh,
+		ownsCredentialRefresh:     ownsCredentialRefresh,
+		authorizer:                clientAuthorizer,
+		httpClient:                inferenceClient,
+		decodeErrors:              decodeErrors,
+		upstreamDecodeErrors:      upstreamDecodeErrors,
+		errorLog:                  errorLog,
+		requestRewriter:           visionGuard,
+		effortLadders:             modelModalities,
+		codexVersions:             codexVersions,
+		claudeVersions:            claudeVersions,
+		agyModelWires:             agyModelWires,
+		upstreamRules:             upstreamRuleEvaluator,
+		upstream429Retries:        upstream429Controller,
+		egressManager:             func() *runtimeegress.Manager { return egressManager },
+	})
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建生产推理组合失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
 	// 别名投影管理接口：Node 推送后立即重建目录，让 applied_generation 追平。
 	// 别名 CRUD：与投影接口共用同一个 Store 和代次，写进去立刻参与路由编译。

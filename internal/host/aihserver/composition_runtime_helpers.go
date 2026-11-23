@@ -2,6 +2,7 @@ package aihserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelmetadata"
@@ -35,10 +36,10 @@ func newWebUIChatHandler(dependencies webuichatapi.Dependencies) (http.Handler, 
 // 协调器对失败账号按不超过 1 分钟的退避重试，最多 modelRefreshMaxAttempts 次后放弃；
 // 未节流时单个坏账号仍会写出大量日志，这里按账号节流，首次失败立即可见，成功后清除
 // 节流使下次失败重新可见。放弃是终态，单独记录并清掉节流，避免「静默放弃」。
-func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver {
-	if logger == nil {
-		return nil
-	}
+func newModelRefreshObserver(
+	logger *log.Logger,
+	onAuthRejected func(accountcore.AccountRef, error) bool,
+) accountapp.ModelRefreshObserver {
 	var mu sync.Mutex
 	lastLogged := make(map[accountcore.AccountRef]time.Time)
 	return func(result accountapp.ModelRefreshResult) {
@@ -62,28 +63,42 @@ func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver
 		}
 		mu.Unlock()
 		if result.NonRetryable {
-			logger.Printf(
-				"账号模型刷新停止本轮重试: provider=%s account=%s attempts=%d err=%v（认证被拒绝，后续凭据更新或外部重扫可再探测）",
-				result.ProviderID, result.AccountRef, result.Attempts, result.Err,
-			)
+			// 认证被拒绝是账号级终态：先把账号标记为需要重新授权，再只记录一次
+			// 状态迁移日志。已经处于 auth_invalid 的账号不再重复刷同一行日志。
+			if onAuthRejected != nil &&
+				errors.Is(result.Err, accountapp.ErrModelAuthenticationRejected) {
+				if !onAuthRejected(result.AccountRef, result.Err) {
+					return
+				}
+			}
+			if logger != nil {
+				logger.Printf(
+					"账号模型刷新停止本轮重试: provider=%s account=%s attempts=%d err=%v（认证被拒绝，已标记需要重新授权；后续凭据更新或外部重扫可再探测）",
+					result.ProviderID, result.AccountRef, result.Attempts, result.Err,
+				)
+			}
 			return
 		}
 		if result.Exhausted {
-			logger.Printf(
-				"账号模型刷新放弃: provider=%s account=%s attempts=%d err=%v（等待下次周期重扫）",
-				result.ProviderID,
-				result.AccountRef,
-				result.Attempts,
-				result.Err,
-			)
+			if logger != nil {
+				logger.Printf(
+					"账号模型刷新放弃: provider=%s account=%s attempts=%d err=%v（等待下次周期重扫）",
+					result.ProviderID,
+					result.AccountRef,
+					result.Attempts,
+					result.Err,
+				)
+			}
 			return
 		}
-		logger.Printf(
-			"账号模型刷新失败: provider=%s account=%s err=%v",
-			result.ProviderID,
-			result.AccountRef,
-			result.Err,
-		)
+		if logger != nil {
+			logger.Printf(
+				"账号模型刷新失败: provider=%s account=%s err=%v",
+				result.ProviderID,
+				result.AccountRef,
+				result.Err,
+			)
+		}
 	}
 }
 

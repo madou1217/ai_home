@@ -315,3 +315,28 @@ button.ws-connector-entry:hover {
 .ws-connector-approval .ws-connector-row-actions {
   flex: none;
 }
+.ws-connector-sessions {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border, rgba(127, 127, 127, 0.18));
+}
+
+.ws-connector-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.ws-connector-session-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ws-connector-session-title {
+  font-size: 12px;
+  color: var(--color-text-secondary, inherit);
+}

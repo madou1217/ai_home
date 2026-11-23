@@ -34,6 +34,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
+	"github.com/madou1217/ai_home/internal/runtime/remotesessions"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
 	"github.com/madou1217/ai_home/internal/runtime/subaggregator"
@@ -86,6 +87,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiproviderhooksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiquotaresetapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiremotesessionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiremotetargetsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiroutingrulesapi"
@@ -304,6 +306,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建工作区 Connector 存储失败: %w", err)
 	}
 	workspaceHub := workspaceconnector.NewHub()
+	remoteSessionStore, err := remotesessions.NewStore(workspaceDatabase)
+	if err != nil {
+		return nil, fmt.Errorf("创建远程执行会话存储失败: %w", err)
+	}
 
 	remoteTargetSource := webuiremotetargetsapi.FactsSource{
 		ServerID: func(ctx context.Context) (string, error) {
@@ -368,6 +374,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 			status, online := workspaceHub.Status(workspaceID)
 			return status.Capabilities, online
 		},
+		Sessions:       remoteSessionStore,
 		IssueToolToken: workspaceStore.IssueToolToken,
 		AIHomeDir:      dependencies.AIHomeDir,
 		SelfBaseURL:    dependencies.SelfBaseURL,
@@ -376,6 +383,29 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建工作区 Connector Agent 入口失败: %w", err)
+	}
+	remoteSessions, err := webuiremotesessionsapi.NewHandler(webuiremotesessionsapi.Dependencies{
+		Authorizer: authorizer, Store: remoteSessionStore,
+		TerminalStatus: func(termID string) string {
+			if dependencies.TerminalHandler == nil {
+				return ""
+			}
+			for _, snapshot := range dependencies.TerminalHandler.SessionSnapshots() {
+				if snapshot.ID == termID {
+					return string(snapshot.Status)
+				}
+			}
+			return ""
+		},
+		StopTerminal: func(termID string) error {
+			if dependencies.TerminalHandler == nil {
+				return fmt.Errorf("terminal service is unavailable")
+			}
+			return dependencies.TerminalHandler.KillSession(termID)
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建远程执行会话接口失败: %w", err)
 	}
 
 	serverConfigSource, err := webuiserverconfigapi.OpenSource(dependencies.AIHomeDir)
@@ -988,6 +1018,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiworkspaceconnectorapi.RPCPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
+		{Pattern: "GET " + webuiremotesessionsapi.Path, Handler: remoteSessions},
+		{Pattern: "POST " + webuiremotesessionsapi.StopPath, Handler: remoteSessions},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ToolPath, Handler: workspaceConnectors, SkipPublicAlias: true},
 		{Pattern: "POST " + remoteconnector.AgentTerminalPath, Handler: connectorAgentTerminal},
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},

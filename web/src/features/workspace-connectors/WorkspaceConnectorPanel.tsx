@@ -13,10 +13,11 @@ import {
   ReloadOutlined,
   RightOutlined
 } from '@ant-design/icons';
-import { remoteTargetsAPI, workspaceConnectorsAPI } from '@/services/api';
+import { remoteExecutionAPI, remoteTargetsAPI, workspaceConnectorsAPI } from '@/services/api';
 import type { RemoteAccountFact, RemoteModelFact, RemoteTargetInventory } from '@/features/remote-targets/remote-targets-model';
 import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
 import type {
+  RemoteExecutionSession,
   WorkspaceApproval,
   WorkspaceConnector,
   WorkspaceConnectorEnrollment,
@@ -97,6 +98,8 @@ export default function WorkspaceConnectorPanel() {
   const [approvals, setApprovals] = useState<Record<string, WorkspaceApproval[]>>({});
   const [approvalModes, setApprovalModes] = useState<Record<string, string>>({});
   const [decidingId, setDecidingId] = useState('');
+  const [sessions, setSessions] = useState<RemoteExecutionSession[]>([]);
+  const [stoppingSession, setStoppingSession] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +123,12 @@ export default function WorkspaceConnectorPanel() {
       );
       setApprovals(nextApprovals);
       setApprovalModes(nextModes);
+      try {
+        const execution = await remoteExecutionAPI.listSessions();
+        setSessions(Array.isArray(execution.sessions) ? execution.sessions : []);
+      } catch {
+        setSessions([]);
+      }
     } catch (loadError) {
       setWorkspaces([]);
       setApprovals({});
@@ -129,6 +138,19 @@ export default function WorkspaceConnectorPanel() {
       setLoading(false);
     }
   }, []);
+
+  const stopSession = useCallback(async (sessionId: string) => {
+    setStoppingSession(sessionId);
+    setError('');
+    try {
+      await remoteExecutionAPI.stopSession(sessionId);
+    } catch (stopError) {
+      setError(errorMessage(stopError));
+    } finally {
+      setStoppingSession('');
+    }
+    await load();
+  }, [load]);
 
   const decideApproval = useCallback(async (workspaceId: string, approvalId: string, approve: boolean) => {
     setDecidingId(approvalId);
@@ -336,6 +358,30 @@ export default function WorkspaceConnectorPanel() {
         <div className="ws-connector-inline-status" data-status="blocked" role="status">
           <span>{error}</span>
           <Button type="link" size="small" onClick={() => void load()}>重试</Button>
+        </div>
+      ) : null}
+
+      {sessions.length > 0 ? (
+        <div className="ws-connector-sessions">
+          {sessions.slice(0, 6).map((session) => (
+            <div className="ws-connector-session" key={session.id}>
+              <span className="ws-connector-session-main">
+                <span className="ws-connector-session-title">
+                  {session.agent}
+                  {session.account ? ` · ${session.account}` : ''}
+                  {session.model ? ` · ${session.model}` : ''}
+                </span>
+                <span className="ws-connector-meta">
+                  {session.status} · {session.workspaceId} · {formatMoment(session.createdAt)}
+                </span>
+              </span>
+              {session.status === 'running' || session.status === 'unknown' ? (
+                <Button size="small" loading={stoppingSession === session.id} onClick={() => void stopSession(session.id)}>
+                  停止
+                </Button>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
 

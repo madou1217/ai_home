@@ -14,6 +14,7 @@ import (
 
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
+	"github.com/madou1217/ai_home/internal/runtime/remotesessions"
 	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 )
 
@@ -27,6 +28,11 @@ type ConnectorWorkspaceReader interface {
 	Find(context.Context, string) (workspaceconnector.Workspace, bool, error)
 }
 
+// RemoteSessionRecorder is the canonical remote execution ledger.
+type RemoteSessionRecorder interface {
+	Record(context.Context, remotesessions.Session) (remotesessions.Session, error)
+}
+
 type ConnectorAgentTerminalDependencies struct {
 	Authorizer Authorizer
 	Workspaces ConnectorWorkspaceReader
@@ -36,6 +42,7 @@ type ConnectorAgentTerminalDependencies struct {
 	// durable grant: a connector started with --no-command must not advertise
 	// run_command.
 	LiveCapabilities func(string) (remoteconnector.Capabilities, bool)
+	Sessions         RemoteSessionRecorder
 	IssueToolToken   func(context.Context, string, time.Duration) (string, int64, error)
 	AIHomeDir        string
 	SelfBaseURL      string
@@ -55,6 +62,7 @@ type ConnectorAgentTerminalHandler struct {
 	workspaces       ConnectorWorkspaceReader
 	online           func(string) bool
 	liveCapabilities func(string) (remoteconnector.Capabilities, bool)
+	sessions         RemoteSessionRecorder
 	issueToolToken   func(context.Context, string, time.Duration) (string, int64, error)
 	aiHomeDir        string
 	selfBaseURL      string
@@ -71,6 +79,7 @@ func NewConnectorAgentTerminalHandler(dependencies ConnectorAgentTerminalDepende
 		workspaces:       dependencies.Workspaces,
 		online:           dependencies.Online,
 		liveCapabilities: dependencies.LiveCapabilities,
+		sessions:         dependencies.Sessions,
 		issueToolToken:   dependencies.IssueToolToken,
 		aiHomeDir:        strings.TrimSpace(dependencies.AIHomeDir),
 		selfBaseURL:      strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/"),
@@ -276,6 +285,18 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 	}
 	if result.SessionKey != "" {
 		sessionKey = result.SessionKey
+	}
+	if handler.sessions != nil {
+		accountLabel := strings.TrimSpace(body.Account)
+		if accountLabel == "" {
+			accountLabel = "gateway"
+		}
+		_, _ = handler.sessions.Record(request.Context(), remotesessions.Session{
+			WorkspaceID: workspaceID, ConnectorID: workspace.ConnectorID,
+			Agent: agent, Account: accountLabel, Model: strings.TrimSpace(body.Model),
+			SessionKey: sessionKey, TermID: result.TermID,
+			Status: remotesessions.StatusRunning, ToolExpiresAt: expiresAt,
+		})
 	}
 	writeJSON(response, http.StatusOK, map[string]any{
 		"ok":            true,

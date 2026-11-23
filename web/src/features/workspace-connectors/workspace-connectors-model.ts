@@ -68,6 +68,28 @@ export interface WorkspaceApprovalDecisionResponse {
   approval: WorkspaceApproval;
 }
 
+export interface RemoteExecutionSession {
+  id: string;
+  workspaceId: string;
+  connectorId?: string;
+  agent: string;
+  account?: string;
+  model?: string;
+  sessionKey: string;
+  termId?: string;
+  status: 'running' | 'exited' | 'stopped' | 'unknown' | string;
+  toolExpiresAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  stoppedAt?: number;
+}
+
+export interface RemoteExecutionSessionListResponse {
+  ok: boolean;
+  count: number;
+  sessions: RemoteExecutionSession[];
+}
+
 export interface WorkspaceDirectoryEntry {
   name: string;
   type: 'file' | 'dir' | 'symlink' | 'other' | string;

@@ -171,7 +171,8 @@ import type {
   WorkspaceConnectorListResponse,
   WorkspaceApprovalListResponse,
   WorkspaceApprovalDecisionResponse,
-  WorkspaceDirectoryResponse
+  WorkspaceDirectoryResponse,
+  RemoteExecutionSessionListResponse
 } from '@/features/workspace-connectors/workspace-connectors-model';
 
 const api = axios.create({
@@ -2879,6 +2880,17 @@ export const workspaceConnectorsAPI = {
       `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/approvals`,
       { id, approve }
     );
+    return response.data;
+  }
+};
+
+export const remoteExecutionAPI = {
+  listSessions: async (): Promise<RemoteExecutionSessionListResponse> => {
+    const response = await api.get<RemoteExecutionSessionListResponse>('/webui/remote-execution/sessions');
+    return response.data;
+  },
+  stopSession: async (sessionId: string): Promise<{ ok: boolean; session?: unknown }> => {
+    const response = await api.post(`/webui/remote-execution/sessions/${encodeURIComponent(sessionId)}/stop`);
     return response.data;
   }
 };

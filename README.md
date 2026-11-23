@@ -10,6 +10,8 @@
 
 部分 provider 还可以在 WebUI 的账号页里按账号打开桌面 App（例如 Codex、Claude、Kimi、ZCode、WorkBuddy、CodeBuddy），具体以账号页实际显示为准。
 
+> macOS 的账号浏览器需要在系统设置里一次性授权 `~/.ai_home/bin/aih-launch`（屏幕录制 + 辅助功能）。步骤、原理和排错见 [账号浏览器 macOS 权限指南](https://madou1217.github.io/ai_home/)。
+
 ## 设计原则
 
 - **账号之间只隔离凭据。** 每个账号的目录（`~/.ai_home/run/auth-projections/<provider>/<accountRef>/`）里只放该账号的凭据。

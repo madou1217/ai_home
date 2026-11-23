@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/proxytransport"
 )
@@ -19,13 +20,16 @@ import (
 //
 // 传输层（SSH/未来 connector）与出口层分开；本命令只负责租约、本地入口和
 // 可选的系统代理写入，不自动修改系统配置，除非显式 --system。
-func runProxyCommand(_ context.Context, arguments []string, runtime commandRuntime) error {
+func runProxyCommand(ctx context.Context, arguments []string, runtime commandRuntime) error {
 	if len(arguments) == 0 || arguments[0] == "help" || arguments[0] == "--help" || arguments[0] == "-h" {
 		writeProxyCommandUsage(runtime)
 		return nil
 	}
+	if arguments[0] == "service" {
+		return runProxyServiceCommand(ctx, arguments[1:], runtime)
+	}
 	if arguments[0] != "serve" {
-		return errors.New("用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID] [--server URL | --ssh <connectionId>] [--no-socks] [--system --system-service <name>] [--json]")
+		return errors.New("用法: aih proxy serve [...] 或 aih proxy service <install|uninstall|status>")
 	}
 	return runProxyServe(arguments[1:], runtime)
 }
@@ -40,20 +44,22 @@ func writeProxyCommandUsage(runtime commandRuntime) {
 }
 
 type proxyServeOptions struct {
-	selector      string
-	server        string
-	ssh           string
-	sshRemote     string
-	listen        string
-	noSocks       bool
-	system        bool
-	systemService string
-	systemDryRun  bool
-	json          bool
+	selector          string
+	server            string
+	ssh               string
+	sshRemote         string
+	listen            string
+	noSocks           bool
+	system            bool
+	systemService     string
+	systemDryRun      bool
+	renewInterval     time.Duration
+	managementKeyFile string
+	json              bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress}
+	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, renewInterval: 30 * time.Minute}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
@@ -65,6 +71,8 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.BoolVar(&options.system, "system", false, "把入口写入系统 HTTP/HTTPS 代理，退出时恢复")
 	flags.StringVar(&options.systemService, "system-service", "", "系统网络服务名（macOS 必填，例如 Wi-Fi）")
 	flags.BoolVar(&options.systemDryRun, "system-dry-run", false, "只打印系统代理动作，不实际修改")
+	flags.DurationVar(&options.renewInterval, "renew-interval", 30*time.Minute, "租约续期间隔；0 表示关闭续期")
+	flags.StringVar(&options.managementKeyFile, "management-key-file", "", "从 0600 文件读取 Management Key（服务模式使用）")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
 	if err := flags.Parse(args); err != nil {
 		return options, err
@@ -78,6 +86,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	options.sshRemote = strings.TrimSpace(options.sshRemote)
 	options.listen = strings.TrimSpace(options.listen)
 	options.systemService = strings.TrimSpace(options.systemService)
+	options.managementKeyFile = strings.TrimSpace(options.managementKeyFile)
 	if options.selector == "" || strings.ContainsAny(options.selector, "\r\n\x00") {
 		return options, errors.New("--selector 无效")
 	}
@@ -99,6 +108,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	if options.systemService != "" && !options.system {
 		return options, errors.New("--system-service 需要配合 --system 使用")
 	}
+	if options.renewInterval < 0 {
+		return options, errors.New("--renew-interval 不能为负数")
+	}
 	return options, nil
 }
 
@@ -112,6 +124,19 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if options.managementKeyFile != "" {
+		key, keyErr := readManagementKeyFile(options.managementKeyFile)
+		if keyErr != nil {
+			return keyErr
+		}
+		original := runtime.lookupEnv
+		runtime.lookupEnv = func(envKey string) (string, bool) {
+			if envKey == "AIH_SERVER_MANAGEMENT_KEY" {
+				return key, true
+			}
+			return original(envKey)
+		}
+	}
 
 	var transport proxytransport.Transport
 	base := options.server
@@ -181,7 +206,20 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		_, _ = fmt.Fprintf(runtime.stdout, "export HTTP_PROXY='%s' HTTPS_PROXY='%s' ALL_PROXY='%s'\n", lease.httpURL, lease.httpURL, allProxy)
 		_, _ = fmt.Fprintln(runtime.stdout, "[aih] 按 Ctrl+C 结束并释放租约。")
 	}
-	<-ctx.Done()
+	leaseErr := make(chan error, 1)
+	if options.renewInterval > 0 {
+		go lease.keepAlive(ctx, options.renewInterval, func(renewErr error) {
+			select {
+			case leaseErr <- renewErr:
+			default:
+			}
+		})
+	}
+	select {
+	case <-ctx.Done():
+	case renewErr := <-leaseErr:
+		return fmt.Errorf("代理租约续期失败: %w", renewErr)
+	}
 	stop()
 	return nil
 }

@@ -18,7 +18,7 @@ import (
 
 func platformSupported() bool { return true }
 
-func buildHelper(ctx context.Context) (string, func(), error) {
+func buildHelper(ctx context.Context, _ string) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "aih-browser-surface-")
 	if err != nil {
 		return "", nil, err

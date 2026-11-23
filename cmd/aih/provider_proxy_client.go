@@ -144,6 +144,10 @@ func (client *providerProxyClient) selector(ctx context.Context, value string) (
 	return matches[0].ID, nil
 }
 
+func (client *providerProxyClient) renew(ctx context.Context, id string) error {
+	return client.call(ctx, http.MethodPost, providerProxyAPI+"/"+url.PathEscape(id)+"/renew", map[string]any{}, nil)
+}
+
 func (client *providerProxyClient) connect(ctx context.Context, id string) (io.ReadWriteCloser, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+providerProxyAPI+"/"+url.PathEscape(id)+"/connect", nil)
 	if err != nil {

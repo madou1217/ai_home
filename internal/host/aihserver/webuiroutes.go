@@ -991,6 +991,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},
 		{Pattern: "POST " + proxyleaseapi.LeasesPath, Handler: proxyAPI},
 		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},
+		{Pattern: "POST " + proxyleaseapi.LeasesPath + "/{id}/renew", Handler: proxyAPI},
 		{Pattern: "GET " + proxyleaseapi.LeasesPath + "/{id}/connect", Handler: proxyAPI},
 		{Pattern: "GET /v1/management/webui/proxy-candidates", Handler: proxyAPI},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},

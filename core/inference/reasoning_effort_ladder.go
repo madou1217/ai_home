@@ -114,6 +114,13 @@ func AlignReasoningEffort(
 	if len(client.sorted) == 0 {
 		client = model
 	}
+	// ultra 是 Codex 客户端的界面别名（“最强推理 + 自动委派子任务”），不是线上值：
+	// Codex 官方模型目录会把它列进 supported_reasoning_levels，但 Responses API 只接受
+	// low..max；官方客户端在发请求前会按模型的 multi_agent_reasoning_effort 或 max 解析它。
+	// 网关必须做同样的收敛，否则直接把 ultra 写进 reasoning.effort 会被上游 400。
+	if effort == ReasoningEffortUltra {
+		return resolveUltraEffort(model)
+	}
 	position, known := client.positionOf(effort)
 	if !known {
 		return "", false
@@ -128,6 +135,28 @@ func AlignReasoningEffort(
 		target = len(model.sorted) - 1
 	}
 	return model.sorted[target], true
+}
+
+// resolveUltraEffort 把客户端别名 ultra 收敛为模型真实接受的最强档位。
+//
+// 优先 max（与官方客户端在没有 multi_agent_reasoning_effort 时的回退一致），否则取
+// 阶梯里最强的非 ultra 档位。只声明了 ultra 的阶梯无法表达线上强度，按"目标没有档位"
+// 处理，由调用方去掉整个 reasoning 意图。
+func resolveUltraEffort(model effortLadder) (ReasoningEffort, bool) {
+	for position := len(model.sorted) - 1; position >= 0; position-- {
+		if model.sorted[position] == ReasoningEffortUltra {
+			continue
+		}
+		if model.sorted[position] == ReasoningEffortMax {
+			return ReasoningEffortMax, true
+		}
+	}
+	for position := len(model.sorted) - 1; position >= 0; position-- {
+		if model.sorted[position] != ReasoningEffortUltra {
+			return model.sorted[position], true
+		}
+	}
+	return "", false
 }
 
 // positionOf 返回档位在本阶梯上的升序位置。

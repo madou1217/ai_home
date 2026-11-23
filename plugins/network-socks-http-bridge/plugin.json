@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "protocolVersion": 1,
   "pluginId": "network.socks-http-bridge",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "engines": { "aih": ">=1.0.0" },
   "runtime": "process",
   "entry": "bridge.py",
@@ -10,9 +10,10 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["socksUrl"],
+    "required": [],
     "properties": {
       "socksUrl": { "type": "string" },
+      "socksUrlFile": { "type": "string" },
       "listenPort": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 3128 },
       "autoStart": { "type": "boolean", "default": true }
     }

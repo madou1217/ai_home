@@ -285,6 +285,15 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			defer restore()
 		}
 	}
+	// 发布本机入口，供桥插件等本地消费者在服务重启后自动重新发现。
+	// 发布失败不影响代理本身工作，只把原因写到 stderr。
+	if home, homeErr := resolveAIHomeDir(runtime); homeErr == nil {
+		if cleanup, publishErr := publishServeEntry(home, lease); publishErr != nil {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能发布本机代理入口状态: %v\n", publishErr)
+		} else {
+			defer cleanup()
+		}
+	}
 	if options.json {
 		encoded, marshalErr := json.MarshalIndent(map[string]any{
 			"ok":            true,

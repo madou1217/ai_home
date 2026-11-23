@@ -4,6 +4,11 @@
 Protocol: line-delimited JSON-RPC on stdin/stdout. Logs go to stderr.
 The bridge only listens on loopback. The upstream SOCKS URL is stored in
 state/ and is never returned by describe/status.
+
+Upstream can come from a static `socksUrl` or from `socksUrlFile`: a JSON
+file published by the local `aih proxy serve` service. The file is re-read
+when it changes, so a restarted service (new port and lease token) is picked
+up without reconfiguring or restarting the bridge.
 """
 
 import json
@@ -16,14 +21,23 @@ import threading
 import time
 import urllib.parse
 
-VERSION = "1.0.3"
+VERSION = "1.1.0"
 DEFAULTS = {
     "socksUrl": "",
+    "socksUrlFile": "",
     "listenHost": "127.0.0.1",
     "listenPort": 3128,
     "autoStart": True,
 }
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+class UpstreamError(OSError):
+    """上游代理本身不可用（连接、认证或协议失败），区别于目标不可达。"""
+
+
+class TargetError(OSError):
+    """上游代理可达，但拒绝/无法连到目标地址。"""
 
 
 def log(message):
@@ -64,7 +78,7 @@ def recv_exact(sock, size):
     while remaining > 0:
         data = sock.recv(remaining)
         if not data:
-            raise OSError("unexpected EOF")
+            raise UpstreamError("unexpected EOF")
         chunks.append(data)
         remaining -= len(data)
     return b"".join(chunks)
@@ -72,22 +86,25 @@ def recv_exact(sock, size):
 
 def socks5_connect(upstream, host, port):
     proxy_host, proxy_port, username, password = upstream
-    sock = socket.create_connection((proxy_host, proxy_port), timeout=20)
+    try:
+        sock = socket.create_connection((proxy_host, proxy_port), timeout=20)
+    except OSError as exc:
+        raise UpstreamError("upstream unreachable: " + type(exc).__name__)
     try:
         methods = b"\x00" if not username else b"\x00\x02"
         sock.sendall(b"\x05" + bytes([len(methods)]) + methods)
         version, method = recv_exact(sock, 2)
         if version != 5:
-            raise OSError("SOCKS5 version mismatch")
+            raise UpstreamError("SOCKS5 version mismatch")
         if method == 0x02:
             user_bytes = username.encode("utf-8")[:255]
             pass_bytes = password.encode("utf-8")[:255]
             sock.sendall(b"\x01" + bytes([len(user_bytes)]) + user_bytes + bytes([len(pass_bytes)]) + pass_bytes)
             _, status = recv_exact(sock, 2)
             if status != 0:
-                raise OSError("SOCKS5 authentication rejected")
+                raise UpstreamError("SOCKS5 authentication rejected")
         elif method != 0x00:
-            raise OSError("SOCKS5 no acceptable authentication method")
+            raise UpstreamError("SOCKS5 no acceptable authentication method")
 
         host_bytes = host.encode("idna") if not _is_ip_literal(host) else host.encode("ascii")
         if _is_ipv4_literal(host):
@@ -100,7 +117,7 @@ def socks5_connect(upstream, host, port):
 
         _, reply, _, atyp = recv_exact(sock, 4)
         if reply != 0:
-            raise OSError("SOCKS5 connect rejected: " + str(reply))
+            raise TargetError("SOCKS5 connect rejected: " + str(reply))
         if atyp == 0x01:
             recv_exact(sock, 4)
         elif atyp == 0x03:
@@ -109,13 +126,16 @@ def socks5_connect(upstream, host, port):
         elif atyp == 0x04:
             recv_exact(sock, 16)
         else:
-            raise OSError("SOCKS5 invalid address type")
+            raise UpstreamError("SOCKS5 invalid address type")
         recv_exact(sock, 2)
         sock.settimeout(None)
         return sock
-    except Exception:
+    except (UpstreamError, TargetError):
         sock.close()
         raise
+    except OSError as exc:
+        sock.close()
+        raise UpstreamError("SOCKS5 transport failed: " + type(exc).__name__)
 
 
 def _is_ipv4_literal(host):
@@ -210,10 +230,6 @@ def relay(left, right):
 class BridgeHandler(socketserver.BaseRequestHandler):
     def handle(self):
         bridge = self.server.bridge
-        upstream = bridge.upstream()
-        if upstream is None:
-            http_error(self.request, 503, "bridge upstream is not configured")
-            return
         try:
             head, rest = read_http_head(self.request)
             lines = head.decode("latin1").split("\r\n")
@@ -222,9 +238,32 @@ class BridgeHandler(socketserver.BaseRequestHandler):
                 http_error(self.request, 501, "only HTTPS CONNECT is supported")
                 return
             host, port = split_target(target)
-            upstream_socket = socks5_connect(upstream, host, port)
         except Exception as exc:
-            log("CONNECT failed: " + type(exc).__name__)
+            log("request head failed: " + type(exc).__name__)
+            http_error(self.request, 400, "invalid CONNECT request")
+            return
+
+        upstream_socket = None
+        for attempt in (0, 1):
+            # 首次使用当前上游；上游握手失败时强制重读入口文件再试一次，
+            # 覆盖常驻服务重启、端口和租约令牌已变化的窗口。
+            upstream, source = bridge.upstream(force=attempt > 0)
+            if upstream is None:
+                http_error(self.request, 503, "bridge upstream is not configured")
+                return
+            try:
+                upstream_socket = socks5_connect(upstream, host, port)
+                break
+            except UpstreamError as exc:
+                log("upstream attempt " + str(attempt + 1) + " failed via " + str(source) + ": " + str(exc))
+                if attempt == 1:
+                    http_error(self.request, 502, "upstream connection failed")
+                    return
+            except Exception as exc:
+                log("CONNECT failed: " + type(exc).__name__)
+                http_error(self.request, 502, "upstream connection failed")
+                return
+        if upstream_socket is None:
             http_error(self.request, 502, "upstream connection failed")
             return
         try:
@@ -257,6 +296,11 @@ class Bridge:
         self.thread = None
         self.last_error = ""
         self.started_at = 0.0
+        # 入口文件缓存：签名用于判断是否需要重读；缓存值在上游短暂
+        # 不可用（如常驻服务重启中）时继续服务，避免直接断流。
+        self.entry_signature = None
+        self.entry_upstream = None
+        self.upstream_source = ""
 
     def state_path(self):
         os.makedirs("state", exist_ok=True)
@@ -328,23 +372,67 @@ class Bridge:
         result["socksUrl"] = str(result.get("socksUrl") or "").strip()
         if result["socksUrl"]:
             parse_socks_url(result["socksUrl"])
+        result["socksUrlFile"] = str(result.get("socksUrlFile") or "").strip()
         return result
 
-    def upstream(self):
+    def read_entry_file(self, path, force):
+        """读取入口文件里的 SOCKS5 URL；读不到时保留上一次的有效值。"""
+        try:
+            info = os.stat(path)
+            signature = (info.st_mtime_ns, info.st_size)
+        except OSError:
+            return self.entry_upstream
+        if not force and signature == self.entry_signature:
+            return self.entry_upstream
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except Exception as exc:
+            log("entry file read failed: " + type(exc).__name__)
+            return self.entry_upstream
+        raw = ""
+        if isinstance(payload, dict):
+            raw = str(payload.get("socks5Url") or payload.get("socksUrl") or "").strip()
+        if not raw:
+            return self.entry_upstream
+        try:
+            parsed = parse_socks_url(raw)
+        except ValueError:
+            log("entry file has invalid socks5Url")
+            return self.entry_upstream
+        self.entry_signature = signature
+        self.entry_upstream = parsed
+        return parsed
+
+    def upstream(self, force=False):
+        """返回 (上游, 来源)；来源只用于状态展示，不含凭据。"""
         with self.lock:
-            if not self.config.get("socksUrl"):
-                return None
-            try:
-                return parse_socks_url(self.config["socksUrl"])
-            except ValueError:
-                return None
+            path = self.config.get("socksUrlFile") or ""
+            if path:
+                parsed = self.read_entry_file(path, force)
+                if parsed is not None:
+                    self.upstream_source = "socksUrlFile"
+                    return parsed, "socksUrlFile"
+            static = self.config.get("socksUrl") or ""
+            if static:
+                try:
+                    self.upstream_source = "socksUrl"
+                    return parse_socks_url(static), "socksUrl"
+                except ValueError:
+                    pass
+            self.upstream_source = ""
+            return None, ""
+
+    def has_upstream(self, force=False):
+        upstream, _ = self.upstream(force=force)
+        return upstream is not None
 
     def start(self):
         with self.lock:
             if self.server is not None:
                 return True
-            if not self.config.get("socksUrl"):
-                self.last_error = "socksUrl 未配置"
+            if not self.has_upstream(force=True):
+                self.last_error = "上游 SOCKS5 未配置（socksUrl 或 socksUrlFile）"
                 return False
             host = self.config["listenHost"]
             port = self.config["listenPort"]
@@ -392,8 +480,22 @@ class Bridge:
     def status(self):
         with self.lock:
             running = self.server is not None
-            message = self.last_error or (("listening on loopback:" + str(self.server.server_address[1])) if running else "stopped")
-            state = "listening" if running else ("error" if self.last_error else ("needs_configuration" if not self.config.get("socksUrl") else "stopped"))
+            source = self.upstream_source or ("socksUrlFile" if self.config.get("socksUrlFile") else "")
+            if running:
+                detail = "listening on loopback:" + str(self.server.server_address[1])
+                if source:
+                    detail += " (upstream: " + source + ")"
+                message = self.last_error or detail
+            else:
+                message = self.last_error or "stopped"
+            if running:
+                state = "listening"
+            elif self.last_error:
+                state = "error"
+            elif not self.has_upstream():
+                state = "needs_configuration"
+            else:
+                state = "stopped"
             connectivity = {
                 "mode": "outbound-tunnel" if running else "unavailable",
                 "confidence": "observed" if running else "unknown",
@@ -411,6 +513,7 @@ class Bridge:
                 "state": state,
                 "version": VERSION,
                 "message": message,
+                "upstream": {"source": source or "none", "configured": self.has_upstream()},
                 "connectivity": connectivity,
             }
 
@@ -432,10 +535,11 @@ class Bridge:
                     "type": "object",
                     "properties": {
                         "socksUrl": {"type": "string", "title": "SOCKS5h 上游", "description": "socks5h://[user:pass@]host:port"},
+                        "socksUrlFile": {"type": "string", "title": "入口文件", "description": "读取 aih proxy serve 发布的 entry.json（服务重启后自动更新上游）"},
                         "listenPort": {"type": "integer", "title": "监听端口", "minimum": 1, "maximum": 65535},
                         "autoStart": {"type": "boolean", "title": "随插件启动"},
                     },
-                    "required": ["socksUrl"],
+                    "required": [],
                 },
                 "secretFields": ["socksUrl"],
             },
@@ -448,23 +552,26 @@ class Bridge:
         current = dict(self.config)
         current.update({key: value for key, value in payload.items() if value is not None})
         self.config = self.normalize(current)
+        if not self.config.get("socksUrl") and not self.config.get("socksUrlFile"):
+            raise ValueError("socksUrl 与 socksUrlFile 至少配置一个")
         self.save()
         self.stop()
-        if self.config.get("autoStart", True) and self.config.get("socksUrl"):
+        if self.config.get("autoStart", True) and self.has_upstream(force=True):
             self.start()
         return True
 
     def probe(self):
-        upstream = self.upstream()
+        upstream, source = self.upstream(force=True)
         if upstream is None:
-            return {"ok": False, "message": "socksUrl 未配置"}
+            return {"ok": False, "message": "上游 SOCKS5 未配置（socksUrl 或 socksUrlFile）"}
         started = time.time()
         try:
             sock = socks5_connect(upstream, "example.com", 443)
             sock.close()
-        except Exception:
+        except Exception as exc:
+            log("probe via " + source + " failed: " + type(exc).__name__)
             return {"ok": False, "message": "上游 SOCKS5 探测失败"}
-        return {"ok": True, "message": "上游 SOCKS5 可达", "latencyMs": int((time.time() - started) * 1000)}
+        return {"ok": True, "message": "上游 SOCKS5 可达（" + source + "）", "latencyMs": int((time.time() - started) * 1000)}
 
     def handle_operate(self, action, payload):
         if action == "configure":
@@ -519,11 +626,11 @@ def main():
                     plugin = plugins[0] or {}
                     BRIDGE.instance_id = plugin.get("instanceId") or "default"
                     BRIDGE.merge_config(plugin.get("configuration") or {})
-                    if BRIDGE.config.get("autoStart", True) and BRIDGE.config.get("socksUrl"):
+                    if BRIDGE.config.get("autoStart", True) and BRIDGE.has_upstream(force=True):
                         BRIDGE.start()
                 respond(request_id, {"state": "prepared"})
             elif method == "activate":
-                if BRIDGE.config.get("autoStart", True) and BRIDGE.config.get("socksUrl") and BRIDGE.server is None:
+                if BRIDGE.config.get("autoStart", True) and BRIDGE.has_upstream(force=True) and BRIDGE.server is None:
                     BRIDGE.start()
                 respond(request_id, {"state": "active"})
             elif method == "invoke":

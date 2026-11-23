@@ -3585,6 +3585,11 @@ export interface NetworkConnectorDescriptor {
   transport?: string;
   operations: NetworkConnectorOperation[];
   config?: { schema?: Record<string, unknown>; secretFields?: string[] };
+  setup?: {
+    summary?: string;
+    steps?: string[];
+    links?: Array<{ label: string; url: string }>;
+  };
   connectivityModes?: NetworkConnectorConnectivityMode[];
   instanceId: string;
   contributionId: string;
@@ -3621,6 +3626,7 @@ export interface NetworkConnectorOperationResult {
   changed?: boolean;
   message?: string;
   output?: string[];
+  links?: Array<{ label: string; url: string }>;
   status?: NetworkConnectorStatus;
 }
 

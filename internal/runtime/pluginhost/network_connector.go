@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -54,6 +56,7 @@ type NetworkConnector struct {
 	Transport    string                      `json:"transport,omitempty"`
 	Operations   []NetworkConnectorOperation `json:"operations"`
 	Config       NetworkConnectorConfig      `json:"config,omitempty"`
+	Setup        *NetworkConnectorSetup      `json:"setup,omitempty"`
 	Connectivity []string                    `json:"connectivityModes,omitempty"`
 	InstanceID   string                      `json:"instanceId"`
 	Contribution string                      `json:"contributionId"`
@@ -68,6 +71,20 @@ type NetworkConnectorOperation struct {
 	// none 是默认值；custom 使用普通文本/JSON 输入；secret 使用密码输入。
 	InputKind    string `json:"inputKind,omitempty"`
 	Confirmation string `json:"confirmation,omitempty"`
+}
+
+// NetworkConnectorSetup 是插件声明的新手引导：宿主只负责渲染，不写死厂商步骤。
+// Links 由插件提供，宿主只接受 https（或 loopback http）且拒绝带凭据的 URL。
+type NetworkConnectorSetup struct {
+	Summary string                 `json:"summary,omitempty"`
+	Steps   []string               `json:"steps,omitempty"`
+	Links   []NetworkConnectorLink `json:"links,omitempty"`
+}
+
+// NetworkConnectorLink 是插件声明的外部帮助/登录链接。
+type NetworkConnectorLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 // NetworkConnectorConfig 描述配置 schema 的脱敏投影。
@@ -119,6 +136,7 @@ type NetworkConnectorOperationResult struct {
 	Changed     bool                    `json:"changed,omitempty"`
 	Message     string                  `json:"message,omitempty"`
 	Output      []string                `json:"output,omitempty"`
+	Links       []NetworkConnectorLink  `json:"links,omitempty"`
 	Status      *NetworkConnectorStatus `json:"status,omitempty"`
 }
 
@@ -314,6 +332,7 @@ func decodeNetworkConnectorOperation(raw json.RawMessage) (NetworkConnectorOpera
 	}
 	result.Message = sanitizeNetworkConnectorText(result.Message, maxNetworkConnectorText)
 	result.Output = sanitizeNetworkConnectorOutput(result.Output)
+	result.Links = sanitizeNetworkConnectorLinks(result.Links)
 	if result.Status != nil {
 		sanitized := sanitizeNetworkConnectorStatus(*result.Status)
 		result.Status = &sanitized
@@ -379,7 +398,67 @@ func sanitizeNetworkConnector(connector NetworkConnector) NetworkConnector {
 		fields = append(fields, field)
 	}
 	connector.Config.SecretFields = fields
+	connector.Setup = sanitizeNetworkConnectorSetup(connector.Setup)
 	return connector
+}
+
+func sanitizeNetworkConnectorSetup(setup *NetworkConnectorSetup) *NetworkConnectorSetup {
+	if setup == nil {
+		return nil
+	}
+	cleaned := &NetworkConnectorSetup{Summary: sanitizeNetworkConnectorText(setup.Summary, maxNetworkConnectorText)}
+	for _, step := range setup.Steps {
+		if len(cleaned.Steps) >= 8 {
+			break
+		}
+		if text := sanitizeNetworkConnectorText(step, 300); text != "" {
+			cleaned.Steps = append(cleaned.Steps, text)
+		}
+	}
+	cleaned.Links = sanitizeNetworkConnectorLinks(setup.Links)
+	if cleaned.Summary == "" && len(cleaned.Steps) == 0 && len(cleaned.Links) == 0 {
+		return nil
+	}
+	return cleaned
+}
+
+func sanitizeNetworkConnectorLinks(links []NetworkConnectorLink) []NetworkConnectorLink {
+	if len(links) == 0 {
+		return nil
+	}
+	cleaned := make([]NetworkConnectorLink, 0, len(links))
+	for _, link := range links {
+		if len(cleaned) >= 5 {
+			break
+		}
+		label := sanitizeNetworkConnectorText(link.Label, 96)
+		rawURL := strings.TrimSpace(link.URL)
+		if label == "" || rawURL == "" || len(rawURL) > 512 {
+			continue
+		}
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed == nil || parsed.Host == "" || parsed.User != nil {
+			continue
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "https" && !(scheme == "http" && networkConnectorLoopbackHost(parsed.Hostname())) {
+			continue
+		}
+		cleaned = append(cleaned, NetworkConnectorLink{Label: label, URL: rawURL})
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
+}
+
+func networkConnectorLoopbackHost(host string) bool {
+	trimmed := strings.Trim(host, "[]")
+	if strings.EqualFold(trimmed, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(trimmed)
+	return ip != nil && ip.IsLoopback()
 }
 
 func sanitizeNetworkConnectorStatus(status NetworkConnectorStatus) NetworkConnectorStatus {

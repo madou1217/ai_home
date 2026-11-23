@@ -107,6 +107,33 @@
 
 `operations[].id` 只能是插件实现实际支持的动作。宿主/WebUI 不为未声明的动作生成按钮。
 
+### 3.1.1 `setup` 新手引导与外部链接
+
+`describe` 可以额外返回 `connector.setup`，宿主只渲染，不写死厂商步骤：
+
+```json
+{
+  "setup": {
+    "summary": "使用 Tailscale Auth Key 连接 Tailnet；密钥只提交给本地插件，状态和日志不回显。",
+    "steps": [
+      "打开管理台 → Settings → Keys",
+      "Generate auth key，复制 tskey-auth-...",
+      "粘贴到 authKey 后依次配置/安装/连接"
+    ],
+    "links": [
+      { "label": "打开 Tailscale Keys 页面", "url": "https://login.tailscale.com/admin/settings/keys" }
+    ]
+  }
+}
+```
+
+- `steps` 最多 8 条、单条最多 300 字符；`links` 最多 5 条、仅接受 `https`（loopback 可用 `http`）且拒绝带凭据的 URL。
+- `operate` 结果同样可以返回 `links`，用于把登录/授权 URL 结构化呈现给 WebUI；不要把 URL 塞进会被脱敏的 `message`。
+- 配置 schema 的 `x-aih-proxy: true` 表示该字段可以填本机代理 URL；WebUI 会提供
+  「使用 AIH 本机代理」按钮，自动启动一个本机代理入口并填入带租约认证的 URL。
+  这只是把代理 URL 注入插件配置；浏览器登录页仍使用浏览器自己的网络/系统代理，
+  宿主不会静默修改系统代理或浏览器代理。
+
 `inputKind` 可选值为 `none`、`custom`、`secret`，默认是 `none`。`none` 操作不会收到配置输入；`custom` 显示插件自定义文本/JSON 输入；`secret` 显示密码输入。若旧插件只声明了 `config.schema` 或 `secretFields`，WebUI 仅对 `configure` 做兼容推断，不把它当成完整 JSON Schema 表单。`install`、`uninstall`、`enable`、`disable`、`configure` 无论插件是否错误声明 `confirmation: "none"`，宿主都强制要求管理面明确确认。
 
 ### 3.2 `status`
@@ -186,7 +213,7 @@
 
 | `connectivity.mode` | 含义 | UI 文案建议 |
 | --- | --- | --- |
-| `direct-p2p` | 已观察到两端直接路径，没有中继 | 直连 P2P |
+| `direct-p2p` | 已观察到两端数据面直接路径，没有应用层中继；传输可以是 Tailscale、WireGuard、SSH、QUIC 等 | 直连 P2P |
 | `peer-relay` | 通过同一网络中的对等中继节点 | 对等中继 |
 | `derp-relay` | 通过 DERP 或厂商云中继 | DERP/云中继 |
 | `outbound-tunnel` | 本机仅建立出站连接，由云端/远端入口转发 | 出站隧道 |
@@ -194,7 +221,9 @@
 | `unavailable` | 未安装、未启用或探测失败 | 不可用 |
 | `unknown` | 已连接但插件没有足够证据判断路径 | 已连接，路径未知 |
 
-插件不得因为“有一个公网 endpoint”就声明 `direct-p2p`；必须带有可复核的 `evidence.source` 与 `evidence.path`。探测结果可能随 NAT、防火墙或网络变化而降级，宿主应允许状态从 direct 回到 relay/unknown。
+插件不得因为“有一个公网 endpoint”就声明 `direct-p2p`；必须带有可复核的 `evidence.source` 与 `evidence.path`。
+公网服务器如果只用于信令/协调/打洞、不转发数据，不影响直连结论；只要它代转字节就是
+`peer-relay`/`derp-relay`。探测结果可能随 NAT、防火墙或网络变化而降级，宿主应允许状态从 direct 回到 relay/unknown。
 
 ## 5. Tailscale、WireGuard、Cloudflare 的建模建议
 

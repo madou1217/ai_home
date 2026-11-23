@@ -4,12 +4,15 @@ import {
   ApiOutlined,
   CheckCircleOutlined,
   DisconnectOutlined,
+  LinkOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import { toolkitAPI } from '@/services/api';
+import { proxyServeAPI } from '@/features/proxy-serve/proxy-serve-api';
+import { openExternalUrl } from '@/services/open-external-url';
 import type {
   NetworkConnectorConnectivityMode,
   NetworkConnectorInputKind,
@@ -35,6 +38,8 @@ interface ConfigField {
   key: string;
   description?: string;
   secret: boolean;
+  /** 插件声明该字段可以填 AIH 本机代理 URL（schema 的 x-aih-proxy）。 */
+  proxy: boolean;
 }
 
 function actionLabel(operation: NetworkConnectorOperation) {
@@ -71,10 +76,12 @@ function configFields(view: NetworkConnectorView): ConfigField[] {
     .filter(([, value]) => value && typeof value === 'object')
     .map(([key, value]) => {
       const description = (value as { description?: unknown }).description;
+      const proxy = (value as { 'x-aih-proxy'?: unknown })['x-aih-proxy'];
       return {
         key,
         description: typeof description === 'string' ? description : undefined,
-        secret: secretFields.has(key)
+        secret: secretFields.has(key),
+        proxy: proxy === true
       };
     });
 }
@@ -120,6 +127,7 @@ export default function NetworkConnectorPanel() {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [configValues, setConfigValues] = useState<Record<string, Record<string, string>>>({});
   const [results, setResults] = useState<Record<string, NetworkConnectorOperationResult>>({});
+  const [proxyBusy, setProxyBusy] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,6 +194,38 @@ export default function NetworkConnectorPanel() {
     }
   };
 
+  const openLink = async (url: string) => {
+    try {
+      await openExternalUrl(url);
+    } catch (_error) {
+      message.error('浏览器拦截了外部链接，请允许弹窗后重试');
+    }
+  };
+
+  // 智能代理注入：连接器字段声明 x-aih-proxy 时，可一键启动本机代理入口并填入
+  // 带租约认证的 HTTP URL，让安装/连接命令走 AIH 出口，而不是要求用户自己找代理。
+  const applyAihProxy = async (connectorId: string, fieldKey: string) => {
+    const key = `${connectorId}:${fieldKey}`;
+    setProxyBusy(key);
+    try {
+      let session = (await proxyServeAPI.view()).session;
+      if (!session.running || !session.httpUrl) {
+        const started = await proxyServeAPI.start({ selector: 'auto' });
+        session = started.session;
+      }
+      if (!session.httpUrl) throw new Error('本机代理入口未返回 URL');
+      setConfigValues((current) => ({
+        ...current,
+        [connectorId]: { ...(current[connectorId] || {}), [fieldKey]: session.httpUrl || '' }
+      }));
+      message.success(`已填入 AIH 本机代理入口（出口：${session.name || '自动选择'}）`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '启动本机代理入口失败');
+    } finally {
+      setProxyBusy('');
+    }
+  };
+
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-network-connectors">
       <header className="toolkit-panel-header">
@@ -218,6 +258,44 @@ export default function NetworkConnectorPanel() {
             >
               <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 {connector.description ? <Typography.Text type="secondary">{connector.description}</Typography.Text> : null}
+                {connector.setup ? (
+                  <div
+                    style={{
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      background: 'var(--color-surface)'
+                    }}
+                  >
+                    <Typography.Text strong>{connector.name || connector.id} 接入步骤</Typography.Text>
+                    {connector.setup.summary ? (
+                      <div><Typography.Text type="secondary">{connector.setup.summary}</Typography.Text></div>
+                    ) : null}
+                    {connector.setup.steps?.length ? (
+                      <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                        {connector.setup.steps.map((step, index) => (
+                          <li key={`${connector.id}:step:${index}`}>
+                            <Typography.Text>{step}</Typography.Text>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : null}
+                    {connector.setup.links?.length ? (
+                      <Space wrap style={{ marginTop: 6 }}>
+                        {connector.setup.links.map((link) => (
+                          <Button
+                            key={`${connector.id}:link:${link.label}`}
+                            size="small"
+                            icon={<LinkOutlined />}
+                            onClick={() => void openLink(link.url)}
+                          >
+                            {link.label}
+                          </Button>
+                        ))}
+                      </Space>
+                    ) : null}
+                  </div>
+                ) : null}
                 <Space wrap>
                   <Tag icon={status?.running ? <CheckCircleOutlined /> : <DisconnectOutlined />} color={status?.running ? 'success' : 'default'}>
                     {status?.state || '状态未知'}
@@ -277,6 +355,21 @@ export default function NetworkConnectorPanel() {
                         <div key={field.key}>
                           <Typography.Text>{field.key}</Typography.Text>
                           {field.description ? <Typography.Text type="secondary"> · {field.description}</Typography.Text> : null}
+                          {field.proxy ? (
+                            <div style={{ marginTop: 4 }}>
+                              <Button
+                                size="small"
+                                loading={proxyBusy === `${connector.id}:${field.key}`}
+                                disabled={Boolean(proxyBusy)}
+                                onClick={() => void applyAihProxy(connector.id, field.key)}
+                              >
+                                使用 AIH 本机代理
+                              </Button>
+                              <Typography.Text type="secondary">
+                                {' '}自动启动本机代理入口并填入出口 URL，供安装/连接命令使用。
+                              </Typography.Text>
+                            </div>
+                          ) : null}
                           {field.secret ? (
                             <Input.Password
                               placeholder="输入敏感值"
@@ -330,6 +423,20 @@ export default function NetworkConnectorPanel() {
                 {result ? (
                   <div>
                     <Typography.Text type={result.ok ? 'success' : 'danger'}>{resultText(result)}</Typography.Text>
+                    {result.links?.length ? (
+                      <Space wrap style={{ marginTop: 6 }}>
+                        {result.links.map((link) => (
+                          <Button
+                            key={`${connector.id}:result-link:${link.label}`}
+                            size="small"
+                            icon={<LinkOutlined />}
+                            onClick={() => void openLink(link.url)}
+                          >
+                            {link.label}
+                          </Button>
+                        ))}
+                      </Space>
+                    ) : null}
                     {result.output?.length ? (
                       <details style={{ marginTop: 6 }}>
                         <summary style={{ cursor: 'pointer' }}>操作日志（{result.output.length} 行）</summary>

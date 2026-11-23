@@ -6,6 +6,7 @@ import {
   FileTextOutlined,
   InfoCircleOutlined,
   SafetyCertificateOutlined,
+  SwapOutlined,
   WarningOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
@@ -35,6 +36,7 @@ import {
   groupPermissionFlags,
   parsePermissionArgs,
   removeSelection,
+  resolveLaunchPlan,
   serializePermissionArgs,
   upsertSelection,
   type PermissionSelection
@@ -178,6 +180,29 @@ export default function AppAdvancedSettingsModal({
       : parsePermissionArgs(catalog, capability?.maxArgs || []);
     return describeSelectionCommand(executableName(app, provider), sample);
   }, [app, capability, catalog, provider, selections]);
+
+  // 与能力目录默认最大权限等价的逐项选择，仍可写入宿主配置。
+  const sameAsMaxArgs = Boolean(
+    capability
+    && permissionArgs.length === (capability.maxArgs || []).length
+    && permissionArgs.every((arg, index) => arg === capability.maxArgs[index])
+  );
+  const customArgs = sameAsMaxArgs ? [] : permissionArgs;
+  const hostUsable = Boolean(
+    capability?.hostSupported && (!capability.hostExists || capability.hostWritable)
+  );
+  const launchPlan = capability && settings
+    ? resolveLaunchPlan({
+        resumeBlocked,
+        maxPermission: settings.maxPermission,
+        applyToHost: settings.applyToHost,
+        customArgs,
+        maxArgs: capability.maxArgs || [],
+        hostSupported: capability.hostSupported,
+        hostExists: capability.hostExists,
+        hostWritable: capability.hostWritable
+      })
+    : null;
 
   const savePermission = async () => {
     if (!provider || !settings) return;
@@ -341,19 +366,71 @@ export default function AppAdvancedSettingsModal({
                       已经显式传入权限参数（例如 <code>--permission-mode</code>）时不会覆盖；
                       登录 / 授权流程也不会注入。
                     </p>
-                    {resumeBlocked.length ? (
-                      <div className="aas-inline-state" data-tone="muted">
-                        <InfoCircleOutlined />
-                        <span>
-                          {resumeBlocked.map((item) => `\`${item}\``).join(' / ')} 恢复远程会话时不接受权限覆盖；
-                          带权限参数启动时 AIH 会改用本地 app-server，会话仍可恢复。
-                          {settings.maxPermission && !settings.applyToHost
-                            ? ' 需要同时保留远程模式与可恢复性时，请开启下面的“应用到宿主配置”，把权限写进原生命令配置。'
-                            : ''}
+                  </section>
+
+                  {launchPlan ? (
+                    <section className="aas-section">
+                      <div className="aas-section-head aas-section-head--plain">
+                        <SwapOutlined />
+                        <div>
+                          <strong>启动方式</strong>
+                          <span>
+                            权限参数与远程 app-server 只能二选一（{resumeBlocked.join(' / ')} 在远程模式下不接受权限覆盖）。
+                            这里显示本次实际会怎么启动。
+                          </span>
+                        </div>
+                        <span className="aas-plan-badge" data-mode={launchPlan.mode}>
+                          {launchPlan.mode === 'local'
+                            ? '本地回退'
+                            : launchPlan.mode === 'remote-host'
+                              ? '远程 · 宿主配置'
+                              : '远程'}
                         </span>
                       </div>
-                    ) : null}
-                  </section>
+                      <div className="aas-plan-line">{launchPlan.reason}</div>
+                      {launchPlan.injected.length ? (
+                        <div className="aas-code-line">
+                          <span>本次注入</span>
+                          <code>{launchPlan.injected.join(' ')}</code>
+                        </div>
+                      ) : null}
+                      {launchPlan.mode === 'local' ? (
+                        <div className="aas-plan-actions">
+                          <Tooltip
+                            title={!capability.hostSupported
+                              ? (capability.hostReason || '该应用不支持写入宿主配置')
+                              : customArgs.length
+                                ? '逐项参数无法写入宿主配置；先改用默认最大权限。'
+                                : !hostUsable
+                                  ? hostStateText(capability)
+                                  : ''}
+                          >
+                            <span>
+                              <Button
+                                size="small"
+                                disabled={!hostUsable || customArgs.length > 0}
+                                onClick={() => setSettings({ ...settings, applyToHost: true })}
+                              >
+                                写入宿主配置并保持远程
+                              </Button>
+                            </span>
+                          </Tooltip>
+                          {customArgs.length ? (
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                setSelections([]);
+                                setSettings({ ...settings, applyToHost: true });
+                              }}
+                            >
+                              改用默认最大权限并写入宿主
+                            </Button>
+                          ) : null}
+                          <span className="aas-plan-line">保存后生效；已在运行的会话不受影响。</span>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   <section className="aas-section">
                     <div className="aas-section-head aas-section-head--plain">

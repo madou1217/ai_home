@@ -216,3 +216,62 @@ export function describeSelectionCommand(
 export function blockingSubcommands(catalog: ToolPermissionCatalog | null): string[] {
   return catalog?.subcommandsBlockingPermissionOverrides || [];
 }
+
+export type LaunchMode = 'remote' | 'remote-host' | 'local';
+
+export interface LaunchPlan {
+  mode: LaunchMode;
+  /** 本次实际会注入的权限参数；空表示不注入。 */
+  injected: string[];
+  /** 面向用户的一句话说明。 */
+  reason: string;
+}
+
+/**
+ * 计算「启动权限 + 远程 app-server」的实际组合。
+ *
+ * 事实来源：受限子命令（resume/fork）拒绝会话级权限覆盖；因此只要本次启动会注入
+ * 权限参数，就不能同时走远程 app-server。宿主配置（applyToHost）表达的是默认最大
+ * 权限，无法表达逐项选择，所以逐项参数只能走本地模式。
+ *
+ * 返回 null 表示该应用没有远程守卫，不需要展示这套选择。
+ */
+export function resolveLaunchPlan(input: {
+  resumeBlocked: string[];
+  maxPermission: boolean;
+  applyToHost: boolean;
+  customArgs: string[];
+  maxArgs: string[];
+  hostSupported: boolean;
+  hostExists: boolean;
+  hostWritable: boolean;
+}): LaunchPlan | null {
+  if (input.resumeBlocked.length === 0) return null;
+  const injected = !input.maxPermission
+    ? []
+    : input.customArgs.length > 0
+      ? input.customArgs
+      : input.maxArgs;
+  if (injected.length === 0) {
+    return {
+      mode: 'remote',
+      injected: [],
+      reason: '不注入权限参数，保持远程 app-server（项目内 /resume、通知与后端复用）。'
+    };
+  }
+  const hostUsable = input.hostSupported && (!input.hostExists || input.hostWritable);
+  if (input.maxPermission && input.applyToHost && hostUsable && input.customArgs.length === 0) {
+    return {
+      mode: 'remote-host',
+      injected: [],
+      reason: '权限写入宿主配置，启动不再带命令行参数，远程能力保留。'
+    };
+  }
+  return {
+    mode: 'local',
+    injected,
+    reason: input.customArgs.length > 0
+      ? '逐项权限参数无法写入宿主配置，本次会改用本地 app-server。'
+      : '命令行权限参数与远程模式互斥，本次会改用本地 app-server。'
+  };
+}

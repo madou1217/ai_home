@@ -48,14 +48,10 @@ final class BrowserInput {
     guard enabled, windowID != 0, Date().timeIntervalSince(lastFrame) < 3 else { throw SurfaceFailure("browser_frame_stale") }
     guard let rows = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String:Any]], let row = rows.first, (row[kCGWindowOwnerPID as String] as? Int) == Int(pid), (row[kCGWindowIsOnscreen as String] as? Bool) == true, let bounds = row[kCGWindowBounds as String] as? [String:Any], let actual = CGRect(dictionaryRepresentation: bounds as CFDictionary), actual.width > 0, actual.height > 0 else { throw SurfaceFailure("browser_window_unavailable") }
     guard abs(actual.width-frame.width)<2, abs(actual.height-frame.height)<2 else { throw SurfaceFailure("browser_window_resized_reconnect") }
-    guard let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String:Any]] else { throw SurfaceFailure("browser_window_unavailable") }
-    let count=windows.filter { row in
-      guard (row[kCGWindowOwnerPID as String] as? Int)==Int(pid), (row[kCGWindowLayer as String] as? Int)==0,
-        (row[kCGWindowIsOnscreen as String] as? Bool)==true,
-        let box=row[kCGWindowBounds as String] as? [String:Any], let rect=CGRect(dictionaryRepresentation:box as CFDictionary) else {return false}
-      return rect.width>=100 && rect.height>=80
-    }.count
-    guard count==1 else { throw SurfaceFailure("browser_multiple_windows_not_supported") }
+    // Input is pinned to the captured windowID, and keyboard commands raise that
+    // window before posting events. Extra Edge windows (toolbars, Chat, OAuth
+    // popups) must not abort the session: a single auxiliary window used to kill
+    // every navigation and freeze the surface.
     frame = actual
   }
 

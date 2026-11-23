@@ -14,6 +14,8 @@ type EgressClassifier func(err error) (reason string, retryable bool)
 type UsedEgress struct {
 	URL  string
 	Name string
+	// Identity 是该出口在健康账本中的键；为空表示没有可记账条目。
+	Identity string
 	// Auto 表示这是自动选出的出口（而非调用方显式指定）。
 	Auto bool
 }
@@ -56,7 +58,7 @@ func RetryWithEgress[T any](
 		if next.Exhausted {
 			return zero, used, fmt.Errorf("%w；%s", err, next.Message)
 		}
-		used = UsedEgress{URL: next.Lease.URL, Name: next.Lease.Name, Auto: true}
+		used = UsedEgress{URL: next.Lease.URL, Name: next.Lease.Name, Identity: next.Lease.Identity, Auto: true}
 		result, err = run(next.Lease.URL)
 		if err == nil {
 			return result, used, nil

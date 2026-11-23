@@ -10,9 +10,11 @@ import (
 // EgressLease 是一次任务期出口：loopback HTTP 代理地址 + 可展示的出口名。
 // Release 必须幂等，且任务取消后仍要能释放远端租约。
 type EgressLease struct {
-	URL     string
-	Name    string
-	Release func()
+	URL  string
+	Name string
+	// Identity 是该出口在健康账本中的键；为空表示该来源没有账本条目。
+	Identity string
+	Release  func()
 }
 
 // EgressCandidateSource 返回受管出口候选的稳定 ID，顺序即优先级。

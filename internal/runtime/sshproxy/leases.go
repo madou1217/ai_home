@@ -3,6 +3,7 @@ package sshproxy
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/managedproxy"
 	"github.com/madou1217/ai_home/internal/runtime/proxypoollease"
+	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
 // LeaseTTL 是单次任务代理租约的默认有效期；客户端应在到期前续租。
@@ -71,6 +73,7 @@ func (m *LeaseManager) Candidates() []Candidate {
 		result = m.ssh.Candidates()
 	}
 	nodes, _ := egress.ReadProxyPoolNodes(m.home)
+	identities := make(map[string]string, len(nodes))
 	for _, node := range nodes {
 		if node.Raw["managedBy"] == "sshproxy" {
 			continue
@@ -80,18 +83,137 @@ func (m *LeaseManager) Candidates() []Candidate {
 		if !available {
 			item.Error = "此协议需要已安装的代理内核"
 		}
+		identities[node.ID] = egress.BuildExitIdentity(node.Protocol, node.Server, node.Port)
 		result = append(result, item)
 	}
 	if m.pool != nil && m.pool.IsPoolReady() {
 		result = append(result, Candidate{ID: "pool", Name: "当前代理池", Source: "pool", Available: true})
 	}
-	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].Source != result[j].Source {
-			return result[i].Source == "ssh"
-		}
-		return result[i].ID < result[j].ID
-	})
+	m.sortByPreference(result, identities)
 	return result
+}
+
+// sortByPreference 按节点健康账本的偏好分排序候选：可用优先、分高优先。
+//
+// 此前这里只按 Source + ID 字典序，于是「哪个出口更值得先用」在这里和
+// NodeHealthLedger.PickBest 是两套结论——自动代理会永远先试同一个出口，
+// 即使账本里有更新鲜的失败/成功探测。现在两边共用 PreferenceScore。
+//
+// 按 identity 而不是名字查分：候选名来自订阅快照，账本条目名来自池配置，
+// 实测两者不同名；只有出口身份（protocol|server|port）是共同键。
+// 同分时保留原来的 Source(ssh 优先)/ID 顺序，保证输出稳定。
+func (m *LeaseManager) sortByPreference(result []Candidate, identities map[string]string) {
+	if m.pool == nil {
+		// 没有池管理器就没有健康账本；保持原有的确定性顺序。
+		sort.SliceStable(result, func(i, j int) bool { return candidateLess(result[i], result[j]) })
+		return
+	}
+	at := time.Now().UnixMilli()
+	score := func(item Candidate) int {
+		if !item.Available {
+			return -1 // 不可用恒排在可用之后
+		}
+		identity := identities[item.ID]
+		if identity == "" {
+			// 没有出口身份的候选（SSH 出口）在账本里没有事实，按「从未探测」
+			// 计分，而不是 0：0 是「新鲜失败」的分档，会把从未失败的出口
+			// 当成刚失败过，直接沉到末尾。
+			return egress.ScoreNeverProbed
+		}
+		return m.pool.NodePreferenceScoreByIdentity(identity, at)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		left, right := score(result[i]), score(result[j])
+		if left != right {
+			return left > right
+		}
+		return candidateLess(result[i], result[j])
+	})
+}
+
+func candidateLess(left, right Candidate) bool {
+	if left.Source != right.Source {
+		return left.Source == "ssh"
+	}
+	return left.ID < right.ID
+}
+
+// Rotation 用当前候选顺序装配自动出口轮换器（进程内，不经管理面 HTTP）。
+//
+// WebUI 安装作业与 CLI 自动代理共用同一份 updateproxy 状态机，只是取租约的
+// 入口不同：这里直接用本进程的 LeaseManager，因此不需要管理密钥。
+func (m *LeaseManager) Rotation(notify func(string)) *updateproxy.EgressRotation {
+	if m == nil {
+		return nil
+	}
+	return updateproxy.NewEgressRotation(
+		func(context.Context) ([]string, error) {
+			// 只轮换有可用入口的候选；服务端排序（含健康账本）即优先级。
+			ids := make([]string, 0, 8)
+			for _, candidate := range m.Candidates() {
+				if candidate.Available && candidate.ID != "" {
+					ids = append(ids, candidate.ID)
+				}
+			}
+			if len(ids) == 0 {
+				return nil, errors.New("没有可用的受管代理出口")
+			}
+			return ids, nil
+		},
+		func(ctx context.Context, selector string) (updateproxy.EgressLease, error) {
+			view, err := m.Acquire(ctx, selector)
+			if err != nil {
+				return updateproxy.EgressLease{}, err
+			}
+			id := view.ID
+			return updateproxy.EgressLease{
+				URL:      view.ProxyURL,
+				Name:     view.Name,
+				Identity: m.identityOf(selector),
+				Release: func() {
+					m.Release(id)
+				},
+			}, nil
+		},
+		notify,
+	)
+}
+
+// identityOf 把候选 ID 换成健康账本使用的出口身份。
+func (m *LeaseManager) identityOf(selector string) string {
+	if m == nil {
+		return ""
+	}
+	for _, candidate := range m.Candidates() {
+		if candidate.ID == selector {
+			return candidate.Identity
+		}
+	}
+	return ""
+}
+
+// RecordOutcome 把任务级出口结果写回健康账本。
+//
+// 优先按出口身份记账：账本条目名由绑定方式决定（池内节点是 node-<index>、
+// SSH 是 ssh|connId），拿显示名查会全部落空、结果被静默丢弃。identity 为空时
+// 退回按名字查，兼容只给名字的调用方。
+func (m *LeaseManager) RecordOutcome(name string, identity string, ok bool, reason string) {
+	if m == nil || m.pool == nil {
+		return
+	}
+	if strings.TrimSpace(identity) != "" {
+		m.pool.RecordEgressOutcomeByIdentity(identity, ok, reason)
+		return
+	}
+	m.recordOutcome(name, ok, reason)
+}
+
+// recordOutcome 把任务级出口结果写回健康账本（没有池管理器时安全跳过）。
+func (m *LeaseManager) recordOutcome(name string, ok bool, reason string) {
+	if m == nil || m.pool == nil || strings.TrimSpace(name) == "" {
+		return
+	}
+	m.pool.RecordEgressOutcome(name, ok, reason)
 }
 func (m *LeaseManager) dialer(ctx context.Context, selector string) (managedproxy.Dialer, string, func(), error) {
 	candidates := m.Candidates()

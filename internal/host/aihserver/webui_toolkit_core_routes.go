@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
+	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiopenappapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitcoreapi"
 )
@@ -34,6 +35,8 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 	// 安装/更新代理复用管理面同一套候选：CLI 通过 HTTP 管理 API 取租约，
 	// WebUI 作业在本进程取租约，二者最终都落到 updateproxy.Environment。
 	var installProxyResolver apps.InstallProxyResolver
+	var egressAutoProxy apps.EgressAutoProxyProvider
+	var recordEgressOutcome func(name string, identity string, ok bool, reason string)
 	if dependencies.ProxyRuntime != nil {
 		proxyRuntime := dependencies.ProxyRuntime
 		installProxyResolver = func(ctx context.Context, selector string) (apps.InstallProxyLease, error) {
@@ -50,6 +53,12 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 				},
 			}, nil
 		}
+		// 自动兜底与显式选择共用同一份候选与排序（LeaseManager.Candidates 已按
+		// 健康账本排序），因此这里不需要另做一套「哪个出口更好」的判断。
+		egressAutoProxy = func(notify func(string)) *updateproxy.EgressRotation {
+			return proxyRuntime.Rotation(notify)
+		}
+		recordEgressOutcome = proxyRuntime.RecordOutcome
 	}
 
 	handler, err := webuitoolkitcoreapi.NewHandler(webuitoolkitcoreapi.Dependencies{
@@ -60,6 +69,8 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		DefaultAccountResolver: defaultAccountResolver,
 		AppLauncher:            appLauncher,
 		InstallProxyResolver:   installProxyResolver,
+		EgressAutoProxy:        egressAutoProxy,
+		RecordEgressOutcome:    recordEgressOutcome,
 	})
 	if err != nil {
 		return nil, err

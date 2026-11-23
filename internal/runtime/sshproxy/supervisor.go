@@ -23,6 +23,9 @@ type Candidate struct {
 	Source    string `json:"source"`
 	Available bool   `json:"available"`
 	Error     string `json:"error,omitempty"`
+	// Identity 是健康账本的共同键（protocol|server|port 或 ssh|connId）。
+	// 不对外序列化：它是内部对账用的，不属于给用户/客户端的候选契约。
+	Identity string `json:"-"`
 }
 type outlet struct {
 	spec     spec
@@ -221,7 +224,7 @@ func (s *Supervisor) Candidates() []Candidate {
 	defer s.mu.Unlock()
 	result := make([]Candidate, 0, len(s.entries))
 	for id, entry := range s.entries {
-		result = append(result, Candidate{ID: "ssh:" + id, Name: entry.spec.Name, Source: "ssh", Available: entry.ready, Error: entry.err})
+		result = append(result, Candidate{ID: "ssh:" + id, Name: entry.spec.Name, Source: "ssh", Available: entry.ready, Error: entry.err, Identity: "ssh|" + id})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result

@@ -660,7 +660,43 @@ func boolDigitInt(v bool) int {
 	return 0
 }
 
-// RecordSuccess 记录一次经 name 节点出网成功的请求；若节点处于网络类冷却中则立即解除。
+// RecordOutcomeByIdentity 按稳定出口身份记录一次任务级成功/失败。
+//
+// 为什么需要它：账本条目的名字由绑定方式决定（池内节点被绑成 node-<index>，
+// SSH 出口是 ssh|conn_xxx），而自动代理手上只有候选的显示名。按名字查会
+// 全部落空、结果被静默丢弃——自动代理就记不住上次用了哪个出口。
+// 身份（protocol|server|port 或 ssh|connId）才是候选与账本的共同键。
+func (l *NodeHealthLedger) RecordOutcomeByIdentity(identity string, ok bool, failureKind string) {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return
+	}
+	l.mu.Lock()
+	entry, found := l.entryByIdentityLocked(identity)
+	if !found {
+		l.mu.Unlock()
+		return
+	}
+	name := entry.Name
+	l.mu.Unlock()
+	if ok {
+		l.RecordSuccess(name, "")
+		return
+	}
+	l.RecordFailure(name, failureKind, "", "", 0)
+}
+
+// entryByIdentityLocked 按出口身份查找绑定条目。
+func (l *NodeHealthLedger) entryByIdentityLocked(identity string) (RuntimeNodeEntry, bool) {
+	for _, entry := range l.nodes {
+		if entry.Identity == identity {
+			return entry, true
+		}
+	}
+	return RuntimeNodeEntry{}, false
+}
+
+// RecordSuccess 记录一次经 name 节点出网成功，并解除网络类冷却。
 func (l *NodeHealthLedger) RecordSuccess(name string, accountRef string) {
 	l.mu.Lock()
 	entry, found := l.entryByNameLocked(name)

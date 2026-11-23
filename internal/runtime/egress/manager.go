@@ -369,6 +369,19 @@ func (m *Manager) NodePreferenceScoreByIdentity(identity string, atMS int64) int
 	return m.health.PreferenceScoreByIdentity(identity, atMS)
 }
 
+// RecordEgressOutcomeByIdentity 按出口身份记录任务级结果（自动代理用这个）。
+func (m *Manager) RecordEgressOutcomeByIdentity(identity string, ok bool, reason string) {
+	if m == nil || m.health == nil {
+		return
+	}
+	kind := "network"
+	if ok {
+		kind = ""
+	}
+	m.health.RecordOutcomeByIdentity(identity, ok, kind)
+	_ = reason
+}
+
 // RecordEgressOutcome 把一次任务级出口使用结果写回健康账本。
 //
 // 自动代理选出口后，成功/失败必须回写，否则下一次仍按同一顺序先试同一个出口；

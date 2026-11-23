@@ -120,6 +120,11 @@ type Dependencies struct {
 	// InstallProxyResolver 把安装代理选择器解析为 Server 端任务期租约。
 	// 为空时作业只接受 HTTP(S) URL。
 	InstallProxyResolver apps.InstallProxyResolver
+	// EgressAutoProxy 为安装作业提供「网络失败后自动选出口并轮换」的能力。
+	// 为空时作业保持直连语义；只在调用方没有显式指定代理时才启用。
+	EgressAutoProxy apps.EgressAutoProxyProvider
+	// RecordEgressOutcome 把作业实际使用的出口结果回写健康账本，供下次优先选用。
+	RecordEgressOutcome func(name string, identity string, ok bool, reason string)
 }
 
 type toolsListCache struct {
@@ -300,6 +305,8 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 		appsOpts = *deps.AppsBaseOpts
 	}
 	appsOpts.ProxyResolver = deps.InstallProxyResolver
+	appsOpts.EgressAutoProxy = deps.EgressAutoProxy
+	appsOpts.RecordEgressOutcome = deps.RecordEgressOutcome
 	appsMgr := deps.AppsManager
 	if appsMgr == nil {
 		appsMgr = apps.NewManager()

@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
+	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
 const (
@@ -66,6 +67,15 @@ type Options struct {
 	// ProxyResolver 把安装/更新代理选择器解析为任务期本地 HTTP 代理。
 	// 为空时作业只接受 HTTP(S) URL；命名节点由调用方在进入作业前解析。
 	ProxyResolver InstallProxyResolver
+
+	// RecordEgressOutcome 把任务级出口结果回写健康账本（成功/失败）。
+	// 为空表示没有账本：自动代理仍按候选顺序工作，只是不记忆结果。
+	RecordEgressOutcome func(name string, identity string, ok bool, reason string)
+
+	// EgressAutoProxy 是「直连网络失败后自动选出口并轮换」的端口。
+	// 为空表示该部署没有可用受管出口：作业保持直连语义，失败即失败。
+	// 与 ProxyResolver 的分工：用户显式选择走 ProxyResolver，自动兜底走这里。
+	EgressAutoProxy EgressAutoProxyProvider
 
 	// SenderExecPath 覆盖原生 Hook 发送器；为空时定位当前、同目录或 PATH 上的 aih-server。
 	SenderExecPath string
@@ -331,6 +341,14 @@ type InstallProxyLease struct {
 
 // InstallProxyResolver 把代理选择器解析成任务期代理；Release 必须可重复调用。
 type InstallProxyResolver func(ctx context.Context, selector string) (InstallProxyLease, error)
+
+// EgressAutoProxyProvider 为一次作业装配自动出口轮换器。
+//
+// notify 用于把「因何启用代理 / 已切换到哪个出口」交给作业进度展示；
+// 返回 nil 表示当前没有可用出口，调用方应保持直连语义而不是失败。
+// 轮换器内部已持有「试过哪些出口」，因此每次作业调用一次、用后释放。
+type EgressAutoProxyProvider func(notify func(string)) *updateproxy.EgressRotation
+
 
 // InstallTarget 是归一化后的安装目标。
 type InstallTarget struct {

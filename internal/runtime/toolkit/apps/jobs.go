@@ -11,12 +11,15 @@ import (
 
 	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
 const (
 	defaultPlanExecTimeout = 5 * time.Minute
+	// defaultAutoEgressAttempts 是自动代理在作业路径上最多尝试的出口数。
+	defaultAutoEgressAttempts = 4
 	minVerifyRetries       = 1
 	maxVerifyRetries       = 12
 	maxVerifyDelay         = 5 * time.Second
@@ -549,6 +552,39 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 		}
 	}
 
+	// 显式指定代理的作业只跑一轮：用户选定的出口失败就不能自动换出口，
+	// 那会静默改变出口 IP。只有「没指定代理」的作业才走自动兜底。
+	if input.Proxy != "" {
+		outcome := m.runLifecyclePlans(ctx, jobID, target, opts, true)
+		succeeded, finalResult, finalErr = outcome.ok, outcome.result, outcome.err
+		return
+	}
+	outcome := m.runWithAutoEgress(ctx, jobID, target, opts)
+	succeeded, finalResult, finalErr = outcome.ok, outcome.result, outcome.err
+}
+
+// lifecycleOutcome 是一轮生命周期计划执行的完整结果。
+//
+// 单独成类型而不是散落成多个返回值：自动代理每一轮都要完整复现「计划失败
+// 文案 + 成功结果」，用零散变量会在轮次之间串味。
+type lifecycleOutcome struct {
+	ok     bool
+	err    string
+	result *JobResultView
+}
+
+// runLifecyclePlans 解析并执行一次生命周期计划。
+//
+// proxyActive 表示本轮是否真的配了代理：Windows 上它决定是否接受官方安装器
+// （无法保证全部下载走代理的安装器必须拒绝）。每次轮换后按本轮的实际情况重算，
+// 不能沿用作业创建时的判定。
+func (m *JobManager) runLifecyclePlans(
+	ctx context.Context,
+	jobID string,
+	target *InstallTarget,
+	opts Options,
+	proxyActive bool,
+) lifecycleOutcome {
 	var installedPath string
 	var installedRecord *DesktopRecord
 	if target.Action != "install" {
@@ -561,19 +597,16 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 	plans := ResolveLifecyclePlans(target.Provider, target.Kind, target.Action, opts, installedPath, installedRecord)
 	if len(plans) == 0 {
 		if target.Action == "install" && target.Kind == "desktop" {
-			finalErr = BuildDesktopInstallHint(target.Provider, opts)
-		} else {
-			finalErr = "应用生命周期配置异常，请刷新资源清单后重试。"
+			return lifecycleOutcome{err: BuildDesktopInstallHint(target.Provider, opts)}
 		}
-		return
+		return lifecycleOutcome{err: "应用生命周期配置异常，请刷新资源清单后重试。"}
 	}
 	// 与 CLI 的 --proxy 契约一致：Windows 官方安装器无法保证全部下载走代理时
 	// 直接失败，不能把「设置了代理」静默变成直连。
-	if input.Proxy != "" && target.Kind == "cli" && resolvePlatform(opts) == platformWindows {
+	if proxyActive && target.Kind == "cli" && resolvePlatform(opts) == platformWindows {
 		for _, plan := range plans {
 			if !isNPMCommand(plan.Command) {
-				finalErr = "此 Windows 官方安装器不能保证所有下载使用代理；请使用支持代理的官方原生命令，不会修改系统代理或回落直连"
-				return
+				return lifecycleOutcome{err: fmt.Sprintf("%v: 此 Windows 官方安装器不能保证所有下载使用代理；请使用支持代理的官方原生命令，不会修改系统代理或回落直连", ErrEgressUnsupported)}
 			}
 		}
 	}
@@ -588,20 +621,96 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 		}
 		m.appendAttempt(jobID, attempt, pct, nonEmpty(attempt.Label, plan.Label))
 		if ok {
-			succeeded = true
-			finalResult = resultView
-			finalErr = ""
-			return
+			return lifecycleOutcome{ok: true, result: resultView}
 		}
 		if attempt.Error != "" {
 			errs = append(errs, attempt.Error)
 		}
 	}
-
 	if len(errs) > 0 {
-		finalErr = strings.Join(errs, "; ")
-	} else {
-		finalErr = "安装完成后未检测到目标应用。"
+		return lifecycleOutcome{err: strings.Join(errs, "; ")}
+	}
+	return lifecycleOutcome{err: "安装完成后未检测到目标应用。"}
+}
+
+// runWithAutoEgress 直连失败于网络层后，按服务端候选顺序启用并轮换受管出口。
+//
+// 与 CLI 入口共用 updateproxy.RetryWithEgress：判定「什么算网络失败」、试过哪个
+// 出口、谁负责释放租约都只有一份实现。作业已在自己的 goroutine 里运行，因此
+// 这里申请租约不会阻塞 HTTP 请求。
+func (m *JobManager) runWithAutoEgress(
+	ctx context.Context,
+	jobID string,
+	target *InstallTarget,
+	opts Options,
+) lifecycleOutcome {
+	provider := m.baseOpts.EgressAutoProxy
+	if provider == nil {
+		return m.runLifecyclePlans(ctx, jobID, target, opts, false)
+	}
+	rotation := provider(func(message string) {
+		// 轮换告知必须同时进 attempts 与进度：进度 label 会被后续计划覆盖，
+		// 只写进度的话用户在任务队列里看不到「用了哪个出口」；attempts 是
+		// 追加式的，能看到完整序列。
+		text := strings.TrimPrefix(strings.TrimSpace(message), "[aih] ")
+		if text == "" {
+			return
+		}
+		m.appendAttempt(jobID, AttemptView{ID: "egress", Label: text, OK: true}, 0, text)
+	})
+	outcome, used, err := updateproxy.RetryWithEgress(
+		ctx, rotation, defaultAutoEgressAttempts,
+		func(runErr error) (string, bool) {
+			return providercliupgrade.EgressFailureReason(runErr.Error())
+		},
+		func(proxyURL string) (lifecycleOutcome, error) {
+			runOpts := opts
+			if proxyURL != "" {
+				proxyEnv, envErr := updateproxy.Environment(runOpts.Env, proxyURL)
+				if envErr != nil {
+					return lifecycleOutcome{}, envErr
+				}
+				runOpts.Env = proxyEnv
+			}
+			result := m.runLifecyclePlans(ctx, jobID, target, runOpts, proxyURL != "")
+			if result.ok {
+				return result, nil
+			}
+			return result, errors.New(result.err)
+		},
+	)
+	if err != nil {
+		// planErr 保留最后一轮的原始失败文案；err 额外带上了自动代理的说明。
+		if outcome.err == "" {
+			return lifecycleOutcome{err: err.Error()}
+		}
+		return lifecycleOutcome{err: outcome.err + "；" + err.Error()}
+	}
+	if used.Name != "" {
+		// 作业视图的 Proxy 建单时来自用户输入，自动出口是后来才定的：
+		// 不回写的话任务队列会显示「未使用代理」，与事实不符。
+		m.noteJobProxy(jobID, used.Name, used.Identity)
+		m.updateProgress(jobID, 90, "经代理 "+used.Name+" 完成")
+	}
+	return outcome
+}
+
+// noteJobProxy 把实际使用的出口写进作业视图，并回写健康账本。
+//
+// 回写让下一次自动代理能从「上次成功的出口」开始，而不是永远按同一顺序试探；
+// 它复用账本既有的 uses/successes 事实，不新增存储。
+func (m *JobManager) noteJobProxy(jobID string, name string, identity string) {
+	display := strings.Join(strings.Fields(name), " ")
+	nowMs := m.nowTime().UnixMilli()
+	m.mu.Lock()
+	entry := m.jobs[jobID]
+	if entry != nil {
+		entry.job.Proxy = display
+		entry.job.UpdatedAt = nowMs
+	}
+	m.mu.Unlock()
+	if m.baseOpts.RecordEgressOutcome != nil {
+		m.baseOpts.RecordEgressOutcome(name, identity, true, "")
 	}
 }
 

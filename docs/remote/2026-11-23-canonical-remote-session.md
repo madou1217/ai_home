@@ -38,7 +38,26 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 - terminal 服务重启后旧 session 显示 unknown，记录保留用于审计；
 - 只有 Connector agent 终端会写记录；SSH workspace 终端仍走原有路径。
 
-## 5. 验收（2026-11-23）
+## 5. 下一阶段：按会话 usage 归属（设计，未实现）
+
+现状：usage 由 `clientkeystats.RecordUsage(ctx, accountRef, model, usage)` 按账号+模型记录，
+没有会话维度；会话台账只有 account/model/时间。
+
+落点：
+
+1. `agent-terminal` 启动 Provider 时注入会话标识（env `AIH_REMOTE_SESSION_ID=rx-…`）；
+   账号模式经 `aih codex` 启动时，优先用 Provider 配置的请求头（Codex
+   `model_providers.<id>.http_headers`，需实装验证是否支持）把会话 id 带到网关；
+2. 网关在推理完成写 usage 时读取该标识，落库到 `account_usage.remote_session_id`
+   （可空列 + 索引，走既有 schema 升级流程）；
+3. 会话详情聚合 `remote_session_id` 对应的 token/成本；无标识的历史行保持账号级；
+4. Claude/其他 Provider 按各自可注入请求头的方式补齐，未支持时明确显示“会话级用量不可用”。
+
+验收：一次 Codex 会话产生请求后，usage 行带 `remote_session_id`，会话详情显示
+token/成本；同一账号并发两个会话时各自独立。风险：Provider 是否允许注入请求头、
+账号模式与网关模式的差异、历史数据不可回填。
+
+## 6. 验收（2026-11-23）
 
 本机真实 Server + Connector + 假 codex/aih CLI：
 

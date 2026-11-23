@@ -1386,6 +1386,7 @@ export default function Accounts() {
         account={runtimeSettingsAccount}
         models={runtimeSettingsAccount ? getAccountModelProbe(runtimeSettingsAccount, modelCatalog).models : []}
         showUpstream429Retry
+        showMCPPolicy
         onClose={() => {
           setRuntimeSettingsAccount(null);
           void egressSummary.reload();

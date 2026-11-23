@@ -8,6 +8,7 @@ import { AccountWindowActivationModal } from './AccountWindowActivationModal';
 import { AccountAliasPoolModal } from './AccountAliasPoolModal';
 import { AccountModelContextModal } from './AccountModelContextModal';
 import { AccountUpstream429RetryModal } from './AccountUpstream429RetryModal';
+import { AccountMCPPolicySection } from './AccountMCPPolicySection';
 import './account-overlays.css';
 
 interface AccountRuntimeSettingsModalProps {
@@ -16,6 +17,7 @@ interface AccountRuntimeSettingsModalProps {
   models?: readonly string[];
   /** 仅桌面端账号页显式开启 429 重试 Tab，保持移动端界面范围不变。 */
   showUpstream429Retry?: boolean;
+  showMCPPolicy?: boolean;
   onClose: () => void;
 }
 
@@ -28,6 +30,7 @@ export function AccountRuntimeSettingsModal({
   account,
   models = [],
   showUpstream429Retry = false,
+  showMCPPolicy = false,
   onClose
 }: AccountRuntimeSettingsModalProps) {
   const open = Boolean(account);
@@ -56,7 +59,8 @@ export function AccountRuntimeSettingsModal({
       key: 'upstream429',
       label: '429 重试',
       children: <AccountUpstream429RetryModal account={account} onClose={onClose} embedded />
-    }] : [])
+    }] : []),
+    ...(showMCPPolicy ? [{ key: 'mcp', label: 'MCP', children: <AccountMCPPolicySection account={account} /> }] : [])
   ];
   return (
     <Modal

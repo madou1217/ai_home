@@ -4681,3 +4681,23 @@ export interface ClientKeyRow {
   live?: ClientKeyLive;
   totals?: ClientKeyTotals;
 }
+
+export interface AccountMCPPolicy {
+  mode: 'auto' | 'allowlist' | 'disabled';
+  allow: string[];
+}
+
+export interface AccountMCPPolicyResolvedEntry {
+  id: string;
+  displayName: string;
+  capabilities?: string[];
+  source: string;
+  reason: string;
+}
+
+export interface AccountMCPPolicyResponse {
+  ok: boolean;
+  accountRef: string;
+  policy: AccountMCPPolicy;
+  resolved: AccountMCPPolicyResolvedEntry[];
+}

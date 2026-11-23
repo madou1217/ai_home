@@ -122,6 +122,8 @@ import type {
   AccountWindowActivationResponse,
   AccountUpstream429RetryOverride,
   AccountUpstream429RetryResponse,
+  AccountMCPPolicy,
+  AccountMCPPolicyResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -966,6 +968,25 @@ export const accountsAPI = {
       return requestBoundWebUiJson<AccountUpstream429RetryResponse>('POST', path, override, options);
     }
     const response = await api.post<AccountUpstream429RetryResponse>(path, override, { signal: options?.signal });
+    return response.data;
+  },
+
+  getAccountMCPPolicy: async (
+    provider: string,
+    accountRef: string
+  ): Promise<AccountMCPPolicyResponse> => {
+    const path = '/webui/accounts/' + encodeURIComponent(provider) + '/' + encodeURIComponent(accountRef) + '/mcp-policy';
+    const response = await api.get<AccountMCPPolicyResponse>(path);
+    return response.data;
+  },
+
+  saveAccountMCPPolicy: async (
+    provider: string,
+    accountRef: string,
+    policy: AccountMCPPolicy
+  ): Promise<AccountMCPPolicyResponse> => {
+    const path = '/webui/accounts/' + encodeURIComponent(provider) + '/' + encodeURIComponent(accountRef) + '/mcp-policy';
+    const response = await api.post<AccountMCPPolicyResponse>(path, policy);
     return response.data;
   },
 

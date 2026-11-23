@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/sessionindex"
+	"github.com/madou1217/ai_home/internal/sessionhints"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -115,6 +116,8 @@ type sessionView struct {
 	UpdatedAt      int64  `json:"updatedAt"`
 	Provider       string `json:"provider"`
 	ProjectDirName string `json:"projectDirName"`
+	// Continue 是继续此会话的 AIH/原生命令；Provider 未声明会话恢复能力时省略。
+	Continue *sessionhints.Continue `json:"continue,omitempty"`
 }
 
 // responseView 是成功响应。truncated 只在扫描被预算或超时截断时出现，
@@ -207,6 +210,12 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	defer cancel()
 
 	projects, truncated := handler.collect(ctx, provider, accountRef)
+	for projectIndex := range projects {
+		sessions := projects[projectIndex].Sessions
+		for sessionIndex := range sessions {
+			sessions[sessionIndex].Continue = sessionhints.For(provider, sessions[sessionIndex].ID)
+		}
+	}
 	writeJSON(responseWriter, http.StatusOK, responseView{
 		OK:        true,
 		Projects:  projects,

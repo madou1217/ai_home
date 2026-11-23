@@ -345,8 +345,11 @@ export default function AppAdvancedSettingsModal({
                       <div className="aas-inline-state" data-tone="muted">
                         <InfoCircleOutlined />
                         <span>
-                          {resumeBlocked.map((item) => `\`${item}\``).join(' / ')} 恢复远程会话时不接受权限覆盖，
-                          这些启动只沿用会话自己保存的权限。
+                          {resumeBlocked.map((item) => `\`${item}\``).join(' / ')} 恢复远程会话时不接受权限覆盖；
+                          带权限参数启动时 AIH 会改用本地 app-server，会话仍可恢复。
+                          {settings.maxPermission && !settings.applyToHost
+                            ? ' 需要同时保留远程模式与可恢复性时，请开启下面的“应用到宿主配置”，把权限写进原生命令配置。'
+                            : ''}
                         </span>
                       </div>
                     ) : null}

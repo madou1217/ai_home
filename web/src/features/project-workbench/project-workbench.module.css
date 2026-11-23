@@ -644,3 +644,10 @@
   overflow: auto;
   padding-left: 18px;
 }
+
+.sessionContinue {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.08);
+}

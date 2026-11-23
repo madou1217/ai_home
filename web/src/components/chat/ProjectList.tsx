@@ -44,6 +44,7 @@ import {
 import folderIcon from '@/assets/icons/folder.svg';
 import expandIcon from '@/assets/icons/expand.svg';
 import SessionRelativeTime from './SessionRelativeTime';
+import { SessionContinueButton } from './SessionContinueHint';
 import styles from './session-list.module.css';
 
 
@@ -501,6 +502,7 @@ const ProjectList = ({
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
                       <span className={styles.sessionTitle} title={title}>{title}</span>
+                      <SessionContinueButton session={session} />
                       <Button
                         type="text"
                         size="small"

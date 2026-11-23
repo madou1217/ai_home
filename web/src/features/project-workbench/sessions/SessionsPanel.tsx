@@ -9,6 +9,7 @@ import {
 } from '@/components/chat/project-runtime-state.js';
 import type { Session } from '@/types';
 import chatStyles from '@/components/chat/session-list.module.css';
+import { SessionContinueCommands } from '@/components/chat/SessionContinueHint';
 import styles from '../project-workbench.module.css';
 
 interface Props {
@@ -54,6 +55,11 @@ export default function SessionsPanel({ sessions, selectedSession, runningSessio
           </div>
         );
       })}
+      {selectedSession?.continue ? (
+        <div className={styles.sessionContinue}>
+          <SessionContinueCommands session={selectedSession} />
+        </div>
+      ) : null}
     </div>
   );
 }

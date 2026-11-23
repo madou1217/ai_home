@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/sessionhints"
 )
 
 // base64StdEncoding 是 Node Buffer 默认的 base64 字母表（codex / opencode 项目 id 用）。
@@ -101,6 +103,7 @@ func aggregateProjects(raw []rawProject, pathExists func(string) bool, options a
 				Provider:       project.Provider,
 				ProjectDirName: dirName,
 				ProjectPath:    projectPath,
+				Continue:       sessionhints.For(project.Provider, sessionID),
 			}
 			if index, seen := sessionIndex[sessionID]; seen {
 				target.Sessions[index] = mergeProjectSession(target.Sessions[index], incoming)

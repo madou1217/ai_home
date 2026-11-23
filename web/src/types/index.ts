@@ -4157,6 +4157,16 @@ export interface SlashCommandsResponse {
   slashPassthrough?: boolean;
 }
 
+/** 继续会话的命令提示；Provider 未声明会话恢复能力时后端不下发。 */
+export interface SessionContinueHint {
+  /** 经 AIH 账号/网关继续的命令。 */
+  aih: string;
+  /** Provider 原生 CLI 继续的命令。 */
+  native: string;
+  /** 使用原生命令时的注意事项（例如 Codex 远程模式不接受权限覆盖）。 */
+  note?: string;
+}
+
 export interface Session {
   id: string;
   runtimeSessionId?: string;
@@ -4170,6 +4180,7 @@ export interface Session {
   status?: string;
   model?: string;   // 会话最近使用的模型（快照可选带上，用于列表展示）
   preview?: string; // 最后一条消息的简短预览（快照可选带上）
+  continue?: SessionContinueHint;
 }
 
 export interface ProviderInfo {

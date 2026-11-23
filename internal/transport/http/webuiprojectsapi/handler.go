@@ -43,6 +43,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/sessionhints"
 	"github.com/madou1217/ai_home/internal/webuiremoteworkspace"
 )
 
@@ -180,6 +181,8 @@ type sessionView struct {
 	Provider       string `json:"provider"`
 	ProjectDirName string `json:"projectDirName"`
 	ProjectPath    string `json:"projectPath"`
+	// Continue 是继续此会话的 AIH/原生命令；Provider 未声明会话恢复能力时省略。
+	Continue *sessionhints.Continue `json:"continue,omitempty"`
 }
 
 // response 是成功响应。truncated 只在扫描被预算截断时出现，

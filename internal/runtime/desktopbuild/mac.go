@@ -173,7 +173,7 @@ func buildMacIcon(ctx context.Context, work, logo, target string) error {
 }
 
 func buildMacInherit(ctx context.Context, opts Options, root string) (string, error) {
-	source := filepath.Join(opts.RepoRoot, "native", "translation", "disclaim-launcher.c")
+	source := filepath.Join(opts.RepoRoot, "native", "translation", "inherit-launcher.c")
 	raw, err := os.ReadFile(source)
 	if err != nil {
 		return "", err
@@ -192,7 +192,7 @@ func buildMacInherit(ctx context.Context, opts Options, root string) (string, er
 	if arch == "x64" {
 		arch = "x86_64"
 	}
-	copySource := filepath.Join(stage, "disclaim-launcher.c")
+	copySource := filepath.Join(stage, "inherit-launcher.c")
 	if err := os.WriteFile(copySource, raw, 0o600); err != nil {
 		return "", err
 	}

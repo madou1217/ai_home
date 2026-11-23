@@ -152,12 +152,14 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 		return
 	}
 	var body struct {
-		Agent   string `json:"agent"`
-		Model   string `json:"model"`
-		Account string `json:"account"`
-		Fresh   bool   `json:"fresh"`
-		Cols    any    `json:"cols"`
-		Rows    any    `json:"rows"`
+		Agent   string   `json:"agent"`
+		Model   string   `json:"model"`
+		Account string   `json:"account"`
+		NoMCP   bool     `json:"noMcp"`
+		MCP     []string `json:"mcp"`
+		Fresh   bool     `json:"fresh"`
+		Cols    any      `json:"cols"`
+		Rows    any      `json:"rows"`
 	}
 	if request.Body != nil {
 		raw, err := io.ReadAll(io.LimitReader(request.Body, maxConnectorBodyBytes+1))
@@ -232,7 +234,7 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 	}
 	toolsURL := handler.selfBaseURL + remoteconnector.ToolPathFor(workspaceID)
 	providerPath, providerArgs, providerEnv, buildErr := buildConnectorAgentLaunch(
-		handler.aiHomeDir, workspaceID, agent, toolsURL, toolToken, capabilities, body.Account,
+		handler.aiHomeDir, workspaceID, agent, toolsURL, toolToken, capabilities, body.Account, body.NoMCP, body.MCP,
 	)
 	if buildErr != nil {
 		if errors.Is(buildErr, ErrAGYRemoteUnsupported) {

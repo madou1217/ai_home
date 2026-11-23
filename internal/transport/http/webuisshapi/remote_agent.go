@@ -83,37 +83,43 @@ func connectorAgentInstructions(capabilities remoteconnector.Capabilities) strin
 // mcpEnabledForAccount applies the account MCP policy at launch time. An empty
 // account keeps the current behavior; policy lookup failures fail open so a
 // missing database never blocks a session.
-func mcpEnabledForAccount(aiHomeDir, accountRef, agent string) bool {
+func mcpEnabledForSession(aiHomeDir, accountRef, agent string, noMCP bool, only []string) (bool, error) {
+	policy := mcpscope.Policy{Mode: mcpscope.ModeAuto}
 	accountRef = strings.TrimSpace(accountRef)
-	if accountRef == "" {
-		return true
+	if accountRef != "" {
+		if store, err := accountmcps.NewStore(aiHomeDir); err == nil {
+			if stored, getErr := store.Get(context.Background(), accountRef); getErr == nil {
+				policy = stored
+			}
+		}
 	}
-	store, err := accountmcps.NewStore(aiHomeDir)
+	resolved, err := mcpscope.ResolveSession(
+		mcpscope.Builtins(),
+		policy,
+		mcpscope.SessionSelection{NoMCP: noMCP, Only: only},
+		mcpscope.Context{Provider: agent, WorkspaceBound: true},
+	)
 	if err != nil {
-		return true
-	}
-	policy, err := store.Get(context.Background(), accountRef)
-	if err != nil {
-		return true
-	}
-	resolved, err := mcpscope.Resolve(mcpscope.Builtins(), policy, mcpscope.Context{Provider: agent, WorkspaceBound: true})
-	if err != nil {
-		return true
+		return false, err
 	}
 	for _, item := range resolved {
 		if item.ID == mcpscope.IDRemoteTools {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func buildConnectorAgentLaunch(
 	aiHomeDir, workspaceID, agent, toolsURL, toolToken string,
 	capabilities remoteconnector.Capabilities,
-	accountRef string,
+	accountRef string, noMCP bool, only []string,
 ) (string, []string, []string, error) {
-	if !mcpEnabledForAccount(aiHomeDir, accountRef, agent) {
+	mcpEnabled, mcpErr := mcpEnabledForSession(aiHomeDir, accountRef, agent, noMCP, only)
+	if mcpErr != nil {
+		return "", nil, nil, mcpErr
+	}
+	if !mcpEnabled {
 		providerPath, err := exec.LookPath(agent)
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("找不到 %s CLI: %w", agent, err)

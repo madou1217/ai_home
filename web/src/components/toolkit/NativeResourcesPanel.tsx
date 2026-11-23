@@ -239,6 +239,9 @@ export default function NativeResourcesPanel() {
           <Typography.Text type="secondary">
             按资源合并展示：同一 Skill 在不同 Provider / Harness 的投影收敛为一张卡片；启停与移除按宿主分别执行。
           </Typography.Text>
+          <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+            这里的「插件」指运行在 Provider / Harness 内的原生插件；AIH 自身的签名插件在「AIH 插件宿主」。
+          </Typography.Text>
         </div>
         <Space>
           <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>安装</Button>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Form, Input, Modal, Select, Space, Typography, message } from 'antd';
+import { Button, Form, Input, Modal, Select, Space, Typography, message } from 'antd';
 import { toolkitAPI } from '@/services/api';
 import type { NativeResourceKind, NativeResourceReport } from '@/types';
 import {
@@ -19,7 +19,7 @@ interface Props {
 
 interface InstallFormValues {
   kind: NativeResourceKind;
-  owner: string;
+  owners: string[];
   source: string;
   name?: string;
 }
@@ -44,26 +44,35 @@ export default function NativeResourceInstallModal({
   useEffect(() => {
     if (!open) return;
     setCandidate(undefined);
-    form.setFieldsValue({ kind: initialKind, owner: undefined, source: '', name: undefined });
+    form.setFieldsValue({ kind: initialKind, owners: [], source: '', name: undefined });
   }, [open, initialKind, form]);
 
   const submit = async () => {
     const values = await form.validateFields();
-    const owner = ownerPayload(values.owner);
+    const selectedKind = values.kind;
+    const targets = values.owners;
     setSubmitting(true);
     try {
-      await toolkitAPI.operateNativeResource({
-        kind: values.kind,
+      const results = await Promise.allSettled(targets.map((owner) => toolkitAPI.operateNativeResource({
+        kind: selectedKind,
         action: 'install',
         source: values.source.trim(),
-        ...(values.kind === 'mcp' ? { id: values.name?.trim() } : {}),
-        ...owner
-      });
-      message.success(`${KIND_LABELS[values.kind]} ${values.source.trim()} 已安装`);
-      onInstalled(values.kind);
-      onClose();
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : `${KIND_LABELS[values.kind]} 安装失败`);
+        ...(selectedKind === 'mcp' ? { id: values.name?.trim() } : {}),
+        ...ownerPayload(owner)
+      })));
+      const failed = results
+        .map((result, index) => ({ result, owner: targets[index] }))
+        .filter((item) => item.result.status === 'rejected');
+      const succeeded = targets.length - failed.length;
+      if (succeeded > 0) onInstalled(selectedKind);
+      if (!failed.length) {
+        message.success(`${KIND_LABELS[selectedKind]} ${values.source.trim()} 已安装到 ${targets.length} 个目标`);
+        onClose();
+        return;
+      }
+      const first = failed[0].result as PromiseRejectedResult;
+      const reason = first.reason instanceof Error ? first.reason.message : '安装失败';
+      message.warning(`已安装 ${succeeded}/${targets.length}；${first.owner} 失败：${reason}`);
     } finally {
       setSubmitting(false);
     }
@@ -86,7 +95,7 @@ export default function NativeResourceInstallModal({
             options={RESOURCE_KINDS.map((item) => ({ value: item, label: KIND_LABELS[item] }))}
             onChange={() => {
               setCandidate(undefined);
-              form.setFieldsValue({ owner: undefined, source: '', name: undefined });
+              form.setFieldsValue({ owners: [], source: '', name: undefined });
             }}
           />
         </Form.Item>
@@ -136,10 +145,25 @@ export default function NativeResourceInstallModal({
             autoComplete="off"
           />
         </Form.Item>
-        <Form.Item name="owner" label="安装到" rules={[{ required: true, message: '请选择 Provider 或宿主' }]}>
+        <Form.Item
+          name="owners"
+          label={(
+            <Space size={8}>
+              <span>安装到（可多选）</span>
+              <Button
+                size="small"
+                type="link"
+                onClick={() => form.setFieldsValue({ owners: owners.map((item) => item.value) })}
+              >全选可用目标</Button>
+            </Space>
+          )}
+          rules={[{ required: true, message: '请选择至少一个 Provider 或宿主' }]}
+        >
           <Select
+            mode="multiple"
             showSearch
-            placeholder="选择 Provider 或宿主"
+            maxTagCount="responsive"
+            placeholder="选择一个或多个 Provider / 宿主"
             options={owners}
             optionFilterProp="label"
           />

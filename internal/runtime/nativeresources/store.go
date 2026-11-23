@@ -90,7 +90,10 @@ type ManagedRecord struct {
 	Digest   string `json:"digest,omitempty"`
 	// Description is report-only metadata read from the installed package; it is
 	// never persisted, so a missing snapshot simply leaves it empty.
-	Description   string         `json:"description,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Declaration is report-only: the targets/capabilities/permissions the
+	// installed artifact declares in its own manifest.
+	Declaration   []string       `json:"declaration,omitempty"`
 	Enabled       bool           `json:"enabled"`
 	Removed       bool           `json:"removed,omitempty"`
 	CreatedAt     int64          `json:"createdAt"`

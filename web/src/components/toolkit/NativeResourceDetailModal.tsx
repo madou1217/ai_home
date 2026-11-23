@@ -27,6 +27,9 @@ interface Props {
 }
 
 export default function NativeResourceDetailModal({ group, busy, onClose, onAction }: Props) {
+  const declarations = group
+    ? Array.from(new Set(group.records.flatMap((record) => record.declaration || [])))
+    : [];
   const columns: ColumnsType<NativeResourceManagedRecord> = [
     {
       title: '宿主',
@@ -122,6 +125,14 @@ export default function NativeResourceDetailModal({ group, busy, onClose, onActi
             {group.version ? <Typography.Text type="secondary">版本：{group.version}</Typography.Text> : null}
             <Typography.Text type="secondary">宿主数：{group.records.length}</Typography.Text>
           </Space>
+          {declarations.length ? (
+            <div>
+              <Typography.Text type="secondary">声明</Typography.Text>
+              <Space wrap size={[6, 6]} style={{ marginTop: 4 }}>
+                {declarations.map((item) => <Tag key={item}>{item}</Tag>)}
+              </Space>
+            </div>
+          ) : null}
           <Table
             size="small"
             rowKey={resourceKey}

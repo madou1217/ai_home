@@ -1,6 +1,7 @@
 package nativeresources
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -59,38 +60,111 @@ func (m *skillManager) describe(rec ManagedRecord) string {
 	return pkg.Description
 }
 
-// describeAll 为插件报告副本补齐 package.json 描述。
+// describeAll 为插件报告副本补齐 package.json 描述与声明摘要。
 func (m *nativePluginManager) describeAll(records []ManagedRecord) []ManagedRecord {
 	out := make([]ManagedRecord, len(records))
-	cache := make(map[string]string, len(records))
+	cache := make(map[string]pluginMetadata, len(records))
 	for i, rec := range records {
 		key := rec.ID + "@" + rec.Version
-		description, cached := cache[key]
+		meta, cached := cache[key]
 		if !cached {
-			description = m.describe(rec)
-			cache[key] = description
+			meta = m.metadata(rec)
+			cache[key] = meta
 		}
-		rec.Description = description
+		rec.Description = meta.description
+		rec.Declaration = meta.declaration
 		out[i] = rec
 	}
 	return out
 }
 
-func (m *nativePluginManager) describe(rec ManagedRecord) string {
+type pluginMetadata struct {
+	description string
+	declaration []string
+}
+
+func (m *nativePluginManager) metadata(rec ManagedRecord) pluginMetadata {
 	snapshot := filepath.Join(m.snapshotRoot, rec.ID, rec.Version)
 	if pkg, err := verifyPluginSnapshot(snapshot, rec); err == nil {
-		return packageDescription(pkg)
+		return pluginMetadata{description: packageDescription(pkg), declaration: packageDeclaration(pkg)}
 	}
 	pkg, err := readPluginPackage(rec.Target)
 	if err != nil {
-		return ""
+		return pluginMetadata{}
 	}
-	return packageDescription(pkg)
+	return pluginMetadata{description: packageDescription(pkg), declaration: packageDeclaration(pkg)}
 }
 
 func packageDescription(pkg PluginPackage) string {
 	description, _ := pkg.PackageJSON["description"].(string)
 	return strings.TrimSpace(description)
+}
+
+// packageDeclaration 把插件自己的清单折叠成可读声明：引擎/宿主目标、能力、
+// 权限与导出入口。它只描述插件声明了什么，不代表宿主已经执行过。
+func packageDeclaration(pkg PluginPackage) []string {
+	declared := map[string]bool{}
+	if agentPlugin, ok := pkg.PackageJSON["agentPlugin"].(map[string]any); ok {
+		if engines, ok := agentPlugin["engines"].(map[string]any); ok {
+			for name, versionRange := range engines {
+				declared["engine "+name+" "+fmt.Sprint(versionRange)] = true
+			}
+		}
+		if hosts, ok := agentPlugin["hosts"].(map[string]any); ok {
+			for name := range hosts {
+				declared["host "+name] = true
+			}
+		}
+		if capabilities, ok := agentPlugin["capabilities"].([]any); ok {
+			for _, item := range capabilities {
+				capability, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				id, _ := capability["id"].(string)
+				declared[fmt.Sprintf("capability %s@%v", id, capability["version"])] = true
+			}
+		}
+		if permissions, ok := agentPlugin["permissions"].(map[string]any); ok {
+			declared[permissionSummary(permissions)] = true
+		}
+	}
+	if exports, ok := pkg.PackageJSON["exports"].(map[string]any); ok {
+		for key := range exports {
+			declared["export "+key] = true
+		}
+	}
+	if dshMap, ok := pkg.PackageJSON["dsh"].(map[string]any); ok {
+		if bundle, ok := dshMap["bundle"].(map[string]any); ok {
+			if patch, _ := bundle["patch"].(string); patch != "" {
+				declared["dsh patch "+patch] = true
+			}
+		}
+	}
+	for _, file := range []string{"gemini-extension.json", ".claude-plugin/plugin.json"} {
+		if findPackageFile(pkg.Files, file) != nil {
+			declared["manifest "+file] = true
+		}
+	}
+	out := make([]string, 0, len(declared))
+	for item := range declared {
+		out = append(out, item)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func permissionSummary(permissions map[string]any) string {
+	parts := make([]string, 0, 3)
+	for _, name := range []string{"network", "filesystem", "secrets"} {
+		if list, ok := permissions[name].([]any); ok && len(list) > 0 {
+			parts = append(parts, fmt.Sprintf("%s:%d", name, len(list)))
+		}
+	}
+	if len(parts) == 0 {
+		return "permissions none"
+	}
+	return "permissions " + strings.Join(parts, ",")
 }
 
 // installCandidates 扫描分发包内随包交付的 Skill/Plugin 源，回答“从哪里安装”。

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Empty, message as toast } from 'antd';
+import { message as toast } from 'antd';
 import { ArrowDownOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import type {
@@ -169,13 +169,16 @@ export default function ConversationTimeline({
         />
       ) : null}
       {presentation.items.length === 0 ? (
-        <Empty
-          className={styles.emptyTimeline}
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={<span>{workspaceMode === 'chat'
-            ? '发送消息开始对话，上下文会随会话保留'
-            : '开始一次原生会话，计划、工具和审批会实时出现在这里'}</span>}
-        />
+        <div className={styles.emptyTimeline} role="status">
+          <strong className={styles.emptyTimelineTitle}>
+            {workspaceMode === 'chat' ? '开始对话' : '会话已就绪'}
+          </strong>
+          <p className={styles.emptyTimelineDesc}>
+            {workspaceMode === 'chat'
+              ? '在下方输入消息即可开始，上下文会随本会话保留。'
+              : '在下方发送指令，计划、工具调用与审批会实时显示在这里。'}
+          </p>
+        </div>
       ) : presentation.items.map((item) => (
         workspaceMode === 'chat' && item.kind === 'notice'
           && ['contextCompaction', 'context_compacted'].includes(item.detail.code || '')

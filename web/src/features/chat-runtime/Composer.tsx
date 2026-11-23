@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type ClipboardEvent } from 'react';
 import { Input, message } from 'antd';
+import { useSessionSelector } from '@/chat-runtime';
 import type { ChatAccount } from '@/types';
 import type { SessionProjectionStore, SessionRuntimeController } from '@/chat-runtime';
 import type { RuntimeComposerCatalogState } from './use-runtime-composer-catalog';
@@ -105,12 +106,7 @@ export default function Composer(props: ComposerProps) {
   return (
     <div className={styles.composerStack}>
       {props.workspaceMode === 'chat' ? (
-        <div className={styles.chatSessionBar} aria-label="会话状态">
-          <div className={styles.chatSessionSummary}>
-            <SessionMetrics store={props.store} actions={props.actions} onCompact={compactContext} />
-          </div>
-          <ChatSessionSettings store={props.store} actions={props.actions} />
-        </div>
+        <ChatSessionBar store={props.store} actions={props.actions} onCompact={compactContext} />
       ) : null}
       <section className={styles.composer} aria-label="消息输入"
       onDragOver={(event) => { if (controller.canAttach) event.preventDefault(); }}
@@ -119,7 +115,7 @@ export default function Composer(props: ComposerProps) {
         if (controller.canAttach) void controller.addAttachments(Array.from(event.dataTransfer.files));
       }}>
       {controller.slashMatches.length > 0 ? (
-        <div className={styles.slashSuggestions}>
+        <div className={styles.slashSuggestions} role="listbox" aria-label="斜杠指令建议">
           {controller.slashMatches.map((command) => (
             <button key={command} type="button" onClick={() => controller.setInput(`/${command} `)}>
               /{command}
@@ -147,7 +143,7 @@ export default function Composer(props: ComposerProps) {
         value={controller.input}
         autoSize={{ minRows: 2, maxRows: 8 }}
         placeholder={controller.policy.turnActive ? '插话，或加入本轮后的队列…'
-          : props.workspaceMode === 'chat' ? '发送消息…' : '向 AIH Chat Runtime 发送消息…'}
+          : props.workspaceMode === 'chat' ? '输入消息…' : '输入指令或问题…'}
         onChange={(event) => controller.setInput(event.target.value)}
         onKeyDown={(event) => { if (!fileRefs.handleKeyDown(event)) controller.handleKeyDown(event); }}
         onPaste={handlePaste}
@@ -169,6 +165,34 @@ export default function Composer(props: ComposerProps) {
           onSelectImages={selectImages}
         />
       </section>
+    </div>
+  );
+}
+
+function ChatSessionBar({
+  store,
+  actions,
+  onCompact,
+}: {
+  readonly store: SessionProjectionStore;
+  readonly actions: SessionRuntimeActions;
+  readonly onCompact: () => void;
+}) {
+  const autoCompactPercent = useSessionSelector(
+    store,
+    (projection) => Number(projection.policy.autoCompactPercent) || 80,
+  );
+  return (
+    <div className={styles.chatSessionBar} aria-label="会话状态">
+      <div className={styles.chatSessionSummary}>
+        <SessionMetrics store={store} actions={actions} onCompact={onCompact} />
+      </div>
+      <div className={styles.chatSessionPolicyGroup}>
+        <span className={styles.chatSessionPolicyText} title={`上下文达到 ${autoCompactPercent}% 时自动压缩`}>
+          自动压缩 {autoCompactPercent}%
+        </span>
+        <ChatSessionSettings store={store} actions={actions} />
+      </div>
     </div>
   );
 }

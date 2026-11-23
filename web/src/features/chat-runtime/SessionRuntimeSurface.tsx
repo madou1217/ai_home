@@ -1,6 +1,7 @@
-import { Badge, Spin } from 'antd';
+import { Spin } from 'antd';
+import { ExclamationCircleOutlined, ReloadOutlined, UserSwitchOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import HudCube from '@/components/hud/HudCube';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import type { ChatRuntimeSession } from '@/chat-runtime';
 import type { ChatAccount, Provider, Session } from '@/types';
 import SessionWorkspace from './SessionWorkspace';
@@ -94,14 +95,16 @@ function RuntimeConnectingShell({
     <main className={styles.workspace} data-runtime-workspace="true" data-runtime-connecting="true">
       <header className={styles.workspaceHeader}>
         <div className={styles.workspaceHeaderMain}>
-          {!mobile ? <strong className={styles.workspaceTitle} title={title}>{title}</strong> : null}
-          <Badge status="processing" text={label} className={styles.workspaceStateBadge} />
+          {!mobile ? (
+            <strong className={styles.workspaceTitle} data-workspace-title="true" title={title}>{title}</strong>
+          ) : null}
+          <SettingStatusTag status="saving" label={label} compact />
         </div>
-        {!chat ? <div className={styles.workspaceHeaderMeta}>正在准备运行时</div> : null}
+        {!chat ? <div className={styles.workspaceHeaderMeta}>连接就绪后即可输入</div> : null}
       </header>
       <div className={styles.timelineFrame}>
         <div className={styles.connectingTimeline} role="status" aria-live="polite">
-          {mobile ? <Spin size="small" /> : <HudCube size={28} mode="loading" tone="cyan" />}
+          <Spin size="small" />
           <span>{label}…</span>
         </div>
       </div>
@@ -118,40 +121,69 @@ function RuntimeConnectionState({
   connection: ReturnType<typeof useSessionRuntime>;
 }) {
   if (connection.phase === 'blocked') {
-    return <RuntimeState
-      title="请选择运行凭据"
-      description={BLOCK_REASON_TEXT[connection.reason]}
-    />;
+    return (
+      <RuntimeState
+        tone="blocked"
+        title="需要选择运行凭据"
+        description={BLOCK_REASON_TEXT[connection.reason]}
+        hint="请在底部运行目标中选择可用账号后继续。"
+      />
+    );
   }
   if (connection.phase === 'error') {
     const presentation = runtimeFailurePresentation(connection.failure);
-    return <RuntimeState
-      title={presentation.title}
-      description={presentation.description}
-      retry={connection.retry}
-    />;
+    return (
+      <RuntimeState
+        tone="error"
+        title={presentation.title}
+        description={presentation.description}
+        hint="运行时未就绪，发送暂不可用。"
+        retry={connection.retry}
+      />
+    );
   }
   return (
-    <div className={runtimeStyles.runtimeState}>
-      <Spin size="large" />
-      <strong>{connection.phase === 'pending' ? '正在读取会话策略…' : '正在连接原生运行时…'}</strong>
+    <div className={runtimeStyles.runtimeState} role="status" aria-live="polite">
+      <Spin size="small" />
+      <strong>{connection.phase === 'pending' ? '正在读取会话策略…' : '正在连接运行时…'}</strong>
     </div>
   );
 }
 
 interface RuntimeStateProps {
+  readonly tone: 'blocked' | 'error';
   readonly title: string;
   readonly description: string;
+  readonly hint: string;
   readonly retry?: () => void;
 }
 
 function RuntimeState(props: RuntimeStateProps) {
+  const isError = props.tone === 'error';
   return (
     <div className={runtimeStyles.runtimeState}>
-      <strong role="status">{props.title}</strong>
-      <span>{props.description}</span>
-      {props.retry ? <Button type="primary" onClick={props.retry}>重试 AIH Chat Runtime</Button> : null}
-      <span>运行时未就绪，发送已禁用。</span>
+      <section
+        className={runtimeStyles.runtimeStateCard}
+        role={isError ? 'alert' : 'status'}
+        aria-live={isError ? 'assertive' : 'polite'}
+      >
+        <div className={runtimeStyles.runtimeStateHead}>
+          <span className={runtimeStyles.runtimeStateIcon} data-tone={props.tone} aria-hidden="true">
+            {isError ? <ExclamationCircleOutlined /> : <UserSwitchOutlined />}
+          </span>
+          <strong className={runtimeStyles.runtimeStateTitle}>{props.title}</strong>
+          <SettingStatusTag status={isError ? 'error' : 'unset'} label={isError ? '连接异常' : '未就绪'} compact />
+        </div>
+        <p className={runtimeStyles.runtimeStateDesc}>{props.description}</p>
+        <div className={runtimeStyles.runtimeStateFooter}>
+          <span className={runtimeStyles.runtimeStateHint}>{props.hint}</span>
+          {props.retry ? (
+            <Button type="primary" size="small" icon={<ReloadOutlined />} onClick={props.retry}>
+              重试连接
+            </Button>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

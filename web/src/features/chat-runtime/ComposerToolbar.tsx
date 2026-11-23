@@ -1,5 +1,6 @@
 import {
   CodeOutlined,
+  LoadingOutlined,
   PlusOutlined,
   SendOutlined,
   StopOutlined,
@@ -130,20 +131,24 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
             type="button"
             className={styles.stopButton}
             aria-label="停止生成"
+            title="停止生成"
             onClick={() => void controller.interrupt()}
           >
-            <StopOutlined />
+            <StopOutlined aria-hidden="true" />
+            <span className={styles.actionBtnLabel}>停止</span>
           </button>
         ) : null}
         {!controller.policy.canInterrupt || controller.canSend ? (
           <button
             type="button"
             className={styles.sendButton}
-            aria-label={controller.policy.turnActive ? '发送补充消息' : '发送消息'}
+            aria-label={controller.busy ? '正在发送' : (controller.policy.turnActive ? '发送补充消息' : '发送消息')}
+            aria-busy={controller.busy || undefined}
+            title={controller.busy ? '发送中…' : (controller.canSend ? '发送' : '输入消息后可发送')}
             disabled={!controller.canSend || controller.busy}
             onClick={() => void controller.send()}
           >
-            <SendOutlined />
+            {controller.busy ? <LoadingOutlined spin aria-hidden="true" /> : <SendOutlined aria-hidden="true" />}
           </button>
         ) : null}
       </div>

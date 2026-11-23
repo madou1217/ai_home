@@ -29,8 +29,12 @@ export default function QueueDock({ store, actions }: Props) {
   if (presence.render.length === 0) return null;
   return (
     <section className={styles.queueDock} aria-label="消息队列">
-      <header><strong>接下来</strong><span>{queue.length} 条</span>
-        {paused ? <span role="status">已暂停，待发消息已保留</span> : null}
+      <header className={styles.queueDockHeader}>
+        <div className={styles.queueDockHeading}>
+          <strong>待发队列</strong>
+          <span>{queue.length} 条</span>
+        </div>
+        {paused ? <span className={styles.queuePausedStatus} role="status">已暂停，待发消息已保留</span> : null}
       </header>
       {presence.render.map(({ item: entry, leaving }) => {
         // 离场行不参与策略计算（它已不在 queue 里，位置/可操作性都失效）
@@ -115,21 +119,26 @@ function QueueRow(props: QueueRowProps) {
         <small>{props.entry.policy === 'after_turn' ? '本轮结束后' : '工具边界后'}</small>
       </div>
       <div className={styles.queueActions}>
-        {!props.mutable ? <span>{QUEUE_STATUS_LABELS[props.entry.status]}</span> : editingActive ? (
-          <Button size="small" loading={busy} onClick={() => void save()}>保存</Button>
+        {!props.mutable ? <span className={styles.queueRowStatus}>{QUEUE_STATUS_LABELS[props.entry.status]}</span> : editingActive ? (
+          <>
+            <Button size="small" disabled={busy} onClick={() => setEditing(false)}>取消</Button>
+            <Button size="small" type="primary" loading={busy} onClick={() => void save()}>保存</Button>
+          </>
         ) : (
           <Button
             size="small"
             icon={<EditOutlined />}
+            aria-label="编辑队列消息"
+            title="编辑"
             disabled={busy}
             onClick={() => { setDraft(content); setEditing(true); }}
           />
         )}
         {props.mutable ? <>
-          <Button size="small" icon={<ArrowUpOutlined />} disabled={busy || !props.onMoveUp} onClick={() => props.onMoveUp && void run(props.onMoveUp)} />
-          <Button size="small" icon={<ArrowDownOutlined />} disabled={busy || !props.onMoveDown} onClick={() => props.onMoveDown && void run(props.onMoveDown)} />
-          <Button size="small" disabled={busy || !props.canDispatch} onClick={() => void run(props.onDispatch)}>现在执行</Button>
-          <Button size="small" danger icon={<DeleteOutlined />} disabled={busy} onClick={() => void run(props.onRemove)} />
+          <Button size="small" icon={<ArrowUpOutlined />} aria-label="上移" title="上移" disabled={busy || !props.onMoveUp} onClick={() => props.onMoveUp && void run(props.onMoveUp)} />
+          <Button size="small" icon={<ArrowDownOutlined />} aria-label="下移" title="下移" disabled={busy || !props.onMoveDown} onClick={() => props.onMoveDown && void run(props.onMoveDown)} />
+          <Button size="small" disabled={busy || !props.canDispatch} onClick={() => void run(props.onDispatch)}>立即发送</Button>
+          <Button size="small" danger icon={<DeleteOutlined />} aria-label="删除队列消息" title="删除" disabled={busy} onClick={() => void run(props.onRemove)} />
         </> : null}
       </div>
     </article>

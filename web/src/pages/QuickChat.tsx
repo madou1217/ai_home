@@ -3,7 +3,6 @@ import { Drawer } from 'antd';
 import { MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import { ProjectList } from '@/components/chat';
 import { getSessionRunKey } from '@/components/chat/project-runtime-state.js';
-import HudCube from '@/components/hud/HudCube';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import type { AggregatedProject, Session } from '@/types';
 import { ChatConversationContent, useChatPageState } from './chat-page-state';
@@ -49,7 +48,7 @@ function useContainerLayout(): [React.RefObject<HTMLDivElement>, Layout] {
   return [ref, layout];
 }
 
-const MODE_LABEL: Record<WorkspaceMode, string> = { chat: 'Chat', work: 'Work' };
+const MODE_LABEL: Record<WorkspaceMode, string> = { chat: '对话', work: '工作区' };
 
 export default function QuickChat() {
   const [launch] = useState(() => readQuickChatLaunch());
@@ -238,7 +237,10 @@ export default function QuickChat() {
   );
 
   const title = projectCatalog.selectedSession?.title
-    || (workspaceMode === 'chat' ? '新对话' : (projectCatalog.selectedProject?.name || '选择项目'));
+    || (workspaceMode === 'chat' ? 'AI 对话' : (projectCatalog.selectedProject?.name || '工作区'));
+  const subtitle = workspaceMode === 'chat'
+    ? '轻量快速对话，上下文自动保留'
+    : (projectCatalog.selectedProject ? '项目工程会话与文件工作台' : '打开项目目录开始工作区会话');
 
   return (
     <div
@@ -247,33 +249,16 @@ export default function QuickChat() {
       data-quick-chat="true"
       data-layout={layout}
     >
-      <header className={styles.topbar}>
-        {compact ? (
-          <button type="button" className={styles.iconButton} aria-label="会话列表" onClick={() => setDrawerOpen(true)}>
-            <MenuOutlined />
-          </button>
-        ) : null}
-        <HudCube size={18} mode="brand" tone="cyan" interactive label="AI Home 全息棱镜（点击果冻弹跳）" />
-        <div className={styles.modeSwitch} data-mode={workspaceMode} role="tablist" aria-label="模式">
-          {(['chat', 'work'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              role="tab"
-              aria-selected={workspaceMode === mode}
-              className={styles.modeTab}
-              data-active={workspaceMode === mode || undefined}
-              onClick={() => switchMode(mode)}
-            >
-              {MODE_LABEL[mode]}
-            </button>
-          ))}
-        </div>
-        <div className={styles.title} title={title}>{title}</div>
-        <button type="button" className={styles.iconButton} aria-label="新建会话" onClick={createSession}>
-          <PlusOutlined />
-        </button>
-      </header>
+      <QuickChatHeader
+        compact={compact}
+        workspaceMode={workspaceMode}
+        title={title}
+        subtitle={subtitle}
+        canCreate={workspaceMode === 'chat' || Boolean(projectCatalog.selectedProject)}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onSwitchMode={switchMode}
+        onCreateSession={createSession}
+      />
       <div ref={workspaceSurfaceRef} className={styles.body}>
         {compact ? null : <aside className={styles.sidebar} aria-label="会话列表">{sessionList}</aside>}
         <main ref={mainSurfaceRef} className={styles.main}>
@@ -295,5 +280,74 @@ export default function QuickChat() {
       ) : null}
       {dialogs.node}
     </div>
+  );
+}
+
+interface QuickChatHeaderProps {
+  readonly compact: boolean;
+  readonly workspaceMode: WorkspaceMode;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly canCreate: boolean;
+  readonly onOpenDrawer: () => void;
+  readonly onSwitchMode: (mode: WorkspaceMode) => void;
+  readonly onCreateSession: () => void;
+}
+
+function QuickChatHeader({
+  compact,
+  workspaceMode,
+  title,
+  subtitle,
+  canCreate,
+  onOpenDrawer,
+  onSwitchMode,
+  onCreateSession,
+}: QuickChatHeaderProps) {
+  return (
+    <header className={styles.topbar}>
+      <div className={styles.topbarLeading}>
+        {compact ? (
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="打开会话列表"
+            title="会话列表"
+            onClick={onOpenDrawer}
+          >
+            <MenuOutlined />
+          </button>
+        ) : null}
+        <div className={styles.modeSwitch} data-mode={workspaceMode} role="tablist" aria-label="工作模式">
+          {(['chat', 'work'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={workspaceMode === mode}
+              className={styles.modeTab}
+              data-active={workspaceMode === mode || undefined}
+              onClick={() => onSwitchMode(mode)}
+            >
+              {MODE_LABEL[mode]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={styles.heading}>
+        <h1 className={styles.title} title={title}>{title}</h1>
+        <p className={styles.subtitle} title={subtitle}>{subtitle}</p>
+      </div>
+      <button
+        type="button"
+        className={styles.iconButton}
+        aria-label={workspaceMode === 'chat' ? '新建对话' : '新建会话'}
+        title={canCreate ? (workspaceMode === 'chat' ? '新建对话' : '新建会话') : '请先选择项目'}
+        disabled={!canCreate}
+        onClick={onCreateSession}
+      >
+        <PlusOutlined />
+      </button>
+    </header>
   );
 }

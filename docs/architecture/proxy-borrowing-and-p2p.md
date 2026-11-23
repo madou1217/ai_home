@@ -47,7 +47,8 @@ Mac aih proxy serve --ssh <connectionId>
 
 | 传输 | 适用 | 状态 |
 | --- | --- | --- |
-| SSH 本地转发 | Mac 能 SSH 到 Windows/Linux；最稳定 | 已实现 `--ssh` 自动转发并真机验证 |
+| SSH 本地转发 | Mac 能 SSH 到 Windows/Linux；最稳定 | 已实现 `--ssh` 自动转发并真机验证；`--ssh-via` 可指定跳板 |
+| SSH mesh 跳板 | 已有 Mac↔Windows、Mac↔AWS、Windows↔AWS 链路 | 已真机验证 Mac→AWS→Windows→Clash 出口 |
 | SSH 反向隧道 + 公网中继 | 双方都在 NAT 后，但有一台可达中继 | 已有 `sshtunnel` / reverse tunnel 组件，可复用 |
 | Tailscale | 需要设备间 mesh、DERP 回退 | 通过 `network.connector@1` 外部插件；未安装/未验证 |
 | WireGuard | 固定节点、可接受手工 peer 配置 | 通过外部插件；未验证 |
@@ -80,6 +81,7 @@ Mac aih proxy serve --ssh <connectionId>
 
 1. `aih proxy serve` HTTP + SOCKS5（已实现并真机验证）；
 2. `--ssh <connectionId>` 自动 SSH 本地转发（已实现并真机验证）；
+   `--ssh-via <connectionId>` 使用已有链路做跳板（Mac→AWS→Windows 已验证）；
 3. `--system` 系统代理写入/恢复（macOS 真机验证；Windows/Linux 使用系统无认证入口）；
 3. `network.connector` 插件宿主与实装（Tailscale/WireGuard）；
 4. 连接器证据采集与 UI 状态（direct/relay/unknown 分开）；

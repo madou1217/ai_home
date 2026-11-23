@@ -60,6 +60,9 @@ func runProxyServiceCommand(ctx context.Context, args []string, runtime commandR
 	}
 	if options.ssh != "" {
 		serviceArgs = append(serviceArgs, "--ssh", options.ssh, "--ssh-remote-address", options.sshRemote, "--listen", options.listen)
+		if options.sshVia != "" {
+			serviceArgs = append(serviceArgs, "--ssh-via", options.sshVia)
+		}
 	}
 	if options.noSocks {
 		serviceArgs = append(serviceArgs, "--no-socks")

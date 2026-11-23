@@ -232,7 +232,7 @@ func (handler *ConnectorAgentTerminalHandler) ServeHTTP(response http.ResponseWr
 	}
 	toolsURL := handler.selfBaseURL + remoteconnector.ToolPathFor(workspaceID)
 	providerPath, providerArgs, providerEnv, buildErr := buildConnectorAgentLaunch(
-		handler.aiHomeDir, workspaceID, agent, toolsURL, toolToken, capabilities,
+		handler.aiHomeDir, workspaceID, agent, toolsURL, toolToken, capabilities, body.Account,
 	)
 	if buildErr != nil {
 		if errors.Is(buildErr, ErrAGYRemoteUnsupported) {

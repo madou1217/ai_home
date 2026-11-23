@@ -8,6 +8,7 @@ package webuisshapi
 // Codex 用 -c TOML 覆盖挂 MCP 并关掉本机 shell 工具。
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/mcpscope"
 	"github.com/madou1217/ai_home/internal/remoteconnector"
+	"github.com/madou1217/ai_home/internal/runtime/accountmcps"
 	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 )
 
@@ -77,10 +80,46 @@ func connectorAgentInstructions(capabilities remoteconnector.Capabilities) strin
 // buildConnectorAgentLaunch builds a provider launch whose MCP bridge forwards
 // tool calls to the Server tool endpoint instead of opening SSH. The provider
 // still runs on the AIH Server; only the workspace files are local.
+// mcpEnabledForAccount applies the account MCP policy at launch time. An empty
+// account keeps the current behavior; policy lookup failures fail open so a
+// missing database never blocks a session.
+func mcpEnabledForAccount(aiHomeDir, accountRef, agent string) bool {
+	accountRef = strings.TrimSpace(accountRef)
+	if accountRef == "" {
+		return true
+	}
+	store, err := accountmcps.NewStore(aiHomeDir)
+	if err != nil {
+		return true
+	}
+	policy, err := store.Get(context.Background(), accountRef)
+	if err != nil {
+		return true
+	}
+	resolved, err := mcpscope.Resolve(mcpscope.Builtins(), policy, mcpscope.Context{Provider: agent, WorkspaceBound: true})
+	if err != nil {
+		return true
+	}
+	for _, item := range resolved {
+		if item.ID == mcpscope.IDRemoteTools {
+			return true
+		}
+	}
+	return false
+}
+
 func buildConnectorAgentLaunch(
 	aiHomeDir, workspaceID, agent, toolsURL, toolToken string,
 	capabilities remoteconnector.Capabilities,
+	accountRef string,
 ) (string, []string, []string, error) {
+	if !mcpEnabledForAccount(aiHomeDir, accountRef, agent) {
+		providerPath, err := exec.LookPath(agent)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("找不到 %s CLI: %w", agent, err)
+		}
+		return providerPath, nil, []string{"AIH_HOME_DIR=" + aiHomeDir}, nil
+	}
 	switch agent {
 	case "codex", "claude":
 	case "agy":

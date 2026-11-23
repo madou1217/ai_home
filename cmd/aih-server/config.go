@@ -124,6 +124,7 @@ func loadCommandConfig(
 	}
 
 	flags := flag.NewFlagSet("aih-server", flag.ContinueOnError)
+	_ = flags.Bool("exit-with-parent", false, "exit when the supervising parent disappears")
 	flags.SetOutput(runtime.stderr)
 	flags.StringVar(&host, "host", host, "监听地址；当前只允许 loopback")
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")

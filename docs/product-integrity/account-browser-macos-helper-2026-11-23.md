@@ -184,3 +184,9 @@ windowID，因此后续控制不会漂移到其它窗口。
 实测（单窗口回归）：start -> navigate -> pointer -> key -> close 全部 202，
 帧号 1 -> 5 -> 10。双大窗口的选择分支未在真机上强制复现（会先触发 Edge 进程
 身份校验），但选择已从“抛错”改为确定性规则。
+
+### 选择逻辑的单元测试
+
+捕获窗口选择抽成 native/account-browser/selection.swift 的纯函数，
+scripts/test-capture-selection.sh 覆盖：单窗口、优先 1200x900、面积兜底、
+忽略离屏窗口、低于 700x400 阈值、空输入。helper 的嵌入源与编译顺序已同步。

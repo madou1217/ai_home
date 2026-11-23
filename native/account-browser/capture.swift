@@ -33,18 +33,15 @@ final class BrowserCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     var selected: SCWindow?
     for _ in 0..<40 {
       let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly:false)
-      let candidates = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 && $0.isOnScreen && $0.frame.width >= 700 && $0.frame.height >= 400 }
-      if candidates.count > 1 {
-        // The host launches the surface with --window-size=1200,900. Prefer that
-        // exact size, then the largest window; never fail just because Edge also
-        // restored or opened another large window.
-        let preferred = candidates.first { abs($0.frame.width-1200) < 2 && abs($0.frame.height-900) < 2 }
-        selected = preferred ?? candidates.max { left, right in
-          left.frame.width * left.frame.height < right.frame.width * right.frame.height
-        }
+      let owned = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 }
+      let candidates = owned.map {
+        CaptureWindowCandidate(id: $0.windowID, width: $0.frame.width, height: $0.frame.height, onScreen: $0.isOnScreen)
+      }
+      if let chosen = selectCaptureWindow(candidates),
+        let window = owned.first(where: { $0.windowID == chosen.id }) {
+        selected = window
         break
       }
-      if let window = candidates.first { selected=window;break }
       try await Task.sleep(nanoseconds:100_000_000)
     }
     guard let window = selected else { throw SurfaceFailure("browser_window_unavailable") }

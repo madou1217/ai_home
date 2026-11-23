@@ -32,7 +32,7 @@ const helperSigningIdentifier = "com.meadeo.aih.browser-surface"
 const helperCacheFormat = "aih-browser-surface/v1"
 
 // helperSources is also the compile order: Swift requires top-level code last.
-var helperSources = []string{"identity.swift", "mouse-events.swift", "input.swift", "capture.swift", "output.swift", "main.swift"}
+var helperSources = []string{"identity.swift", "mouse-events.swift", "input.swift", "capture.swift", "selection.swift", "output.swift", "main.swift"}
 
 func helperTarget() string {
 	if runtime.GOARCH == "amd64" {

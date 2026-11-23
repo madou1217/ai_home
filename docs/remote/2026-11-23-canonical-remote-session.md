@@ -38,7 +38,21 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 - terminal 服务重启后旧 session 显示 unknown，记录保留用于审计；
 - 只有 Connector agent 终端会写记录；SSH workspace 终端仍走原有路径。
 
-## 5. 下一阶段：按会话 usage 归属（设计，未实现）
+## 5. 按会话 usage 归属（已实现数据链路，验证待补）
+
+已实现：
+
+- relaycore 推理入口读取 `x-aih-remote-session` 写入 context；
+- `clientkeystats.Tracker.RecordUsage` 按会话累积 token，Flush 时通过可选
+  `SessionUsageStore` 落库；
+- `sqliteaccount` 新增 `remote_session_usage`（首次写入惰性建表，不迁移既有表）；
+- 会话详情 `GET …/sessions/{id}` 返回 `usage`（input/output/cached/cacheWrite/
+  reasoning/total）。
+
+未完成：codexresponseshttp / claudenativerelay / webuichatapi 等其他入口尚未读头；
+UI 未展示用量；尚未用真实推理请求做端到端验证。
+
+## 6. 原始设计（保留）
 
 现状：usage 由 `clientkeystats.RecordUsage(ctx, accountRef, model, usage)` 按账号+模型记录，
 没有会话维度；会话台账只有 account/model/时间。

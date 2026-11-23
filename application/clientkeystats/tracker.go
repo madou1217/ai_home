@@ -72,7 +72,15 @@ type Tracker struct {
 	rates        map[string]*rateRing
 	accountRates map[string]*rateRing
 	daily        map[string]dailyCacheEntry
+	sessionUsage map[string]*coreclientkeys.RemoteSessionUsage
 	flushAt      time.Time
+}
+
+// SessionUsageStore is the optional remote-session usage sink. Stores that do
+// not implement it keep account-level stats only.
+type SessionUsageStore interface {
+	UpsertRemoteSessionUsage(ctx context.Context, entries []coreclientkeys.RemoteSessionUsage) error
+	QueryRemoteSessionUsage(ctx context.Context, sessionID string) (coreclientkeys.RemoteSessionUsage, bool, error)
 }
 
 // dailyCacheEntry 缓存某 Key 自 UTC 零点起已落库的 token 数；未落库的内存桶每次另加。
@@ -150,6 +158,7 @@ func NewTracker(options Options) (*Tracker, error) {
 		rates:        map[string]*rateRing{},
 		accountRates: map[string]*rateRing{},
 		daily:        map[string]dailyCacheEntry{},
+		sessionUsage: map[string]*coreclientkeys.RemoteSessionUsage{},
 	}
 	tracker.flushAt = clock()
 	return tracker, nil
@@ -377,6 +386,20 @@ func (tracker *Tracker) RecordUsage(
 	counts.totalTokens += saturating(usage.TotalTokens())
 	tracker.rateAddLocked(tracker.rates, identity.KeyID, now, 0, 0, saturating(usage.TotalTokens()))
 	tracker.rateAddLocked(tracker.accountRates, accountRef, now, 0, 0, saturating(usage.TotalTokens()))
+	if sessionID := RemoteSessionFromContext(ctx); sessionID != "" {
+		entry := tracker.sessionUsage[sessionID]
+		if entry == nil {
+			entry = &coreclientkeys.RemoteSessionUsage{SessionID: sessionID}
+			tracker.sessionUsage[sessionID] = entry
+		}
+		entry.InputTokens += saturating(usage.InputTokens())
+		entry.OutputTokens += saturating(usage.OutputTokens())
+		entry.CachedInputTokens += saturating(usage.CachedInputTokens())
+		entry.CacheWriteInputTokens += saturating(usage.CacheWriteInputTokens())
+		entry.ReasoningTokens += saturating(usage.ReasoningTokens())
+		entry.TotalTokens += saturating(usage.TotalTokens())
+		entry.UpdatedAtMS = now.UnixMilli()
+	}
 	tracker.mu.Unlock()
 }
 
@@ -415,8 +438,22 @@ func (tracker *Tracker) Flush(ctx context.Context) error {
 		})
 		delete(tracker.attempts, key)
 	}
+	sessionEntries := make([]coreclientkeys.RemoteSessionUsage, 0, len(tracker.sessionUsage))
+	for sessionID, entry := range tracker.sessionUsage {
+		sessionEntries = append(sessionEntries, *entry)
+		delete(tracker.sessionUsage, sessionID)
+	}
 	tracker.mu.Unlock()
-	return tracker.store.UpsertClientKeyStats(ctx, requestBuckets, attemptBuckets)
+	if err := tracker.store.UpsertClientKeyStats(ctx, requestBuckets, attemptBuckets); err != nil {
+		return err
+	}
+	if len(sessionEntries) == 0 {
+		return nil
+	}
+	if sessionStore, ok := tracker.store.(SessionUsageStore); ok {
+		return sessionStore.UpsertRemoteSessionUsage(ctx, sessionEntries)
+	}
+	return nil
 }
 
 // Start 运行刷盘循环直到 ctx 结束。

@@ -107,6 +107,18 @@ type AttemptBucket struct {
 	TotalTokens           int64
 }
 
+// RemoteSessionUsage 是远程执行会话维度的 token 聚合。
+type RemoteSessionUsage struct {
+	SessionID             string
+	InputTokens           int64
+	OutputTokens          int64
+	CachedInputTokens     int64
+	CacheWriteInputTokens int64
+	ReasoningTokens       int64
+	TotalTokens           int64
+	UpdatedAtMS           int64
+}
+
 // StatsQuery 是统计读取条件。
 type StatsQuery struct {
 	Granularity string

@@ -15,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -239,6 +240,7 @@ func (outcome attemptOutcome) closeResponse() {
 // 与 Canonical 的关系：任何「本通道表达不了」的请求都交回 Canonical，而不是在这里拒绝
 // ——跨协议/非本 Provider 模型的请求本来就该由它承载，透传只承诺处理官方端点这一种形态。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	request = request.WithContext(clientkeystats.WithRemoteSession(request.Context(), request.Header.Get("x-aih-remote-session")))
 	if handler == nil ||
 		handler.provider == nil ||
 		handler.credentials == nil ||

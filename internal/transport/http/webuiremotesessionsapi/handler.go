@@ -3,10 +3,12 @@
 package webuiremotesessionsapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/internal/runtime/remotesessions"
 )
 
@@ -27,6 +29,9 @@ type Dependencies struct {
 	// terminal service no longer knows it.
 	TerminalStatus func(termID string) string
 	StopTerminal   func(termID string) error
+	// Usage returns the session-scoped token totals when the stats store
+	// supports them.
+	Usage func(ctx context.Context, sessionID string) (clientkeys.RemoteSessionUsage, bool, error)
 }
 
 type Handler struct {
@@ -34,6 +39,7 @@ type Handler struct {
 	store          *remotesessions.Store
 	terminalStatus func(termID string) string
 	stopTerminal   func(termID string) error
+	usage          func(ctx context.Context, sessionID string) (clientkeys.RemoteSessionUsage, bool, error)
 }
 
 func NewHandler(dependencies Dependencies) (*Handler, error) {
@@ -43,6 +49,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		authorizer: dependencies.Authorizer, store: dependencies.Store,
 		terminalStatus: dependencies.TerminalStatus, stopTerminal: dependencies.StopTerminal,
+		usage: dependencies.Usage,
 	}, nil
 }
 
@@ -101,7 +108,13 @@ func (handler *Handler) detail(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusNotFound, map[string]any{"ok": false, "error": "session_not_found"})
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "session": record})
+	payload := map[string]any{"ok": true, "session": record}
+	if handler.usage != nil {
+		if usage, found, err := handler.usage(request.Context(), record.ID); err == nil && found {
+			payload["usage"] = usage
+		}
+	}
+	writeJSON(response, http.StatusOK, payload)
 }
 
 func (handler *Handler) stop(response http.ResponseWriter, request *http.Request) {

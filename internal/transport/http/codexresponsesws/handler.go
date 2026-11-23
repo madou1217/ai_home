@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
+	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -175,6 +176,10 @@ func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	// WebSocket 的会话标识来自握手请求头；同一条连接上的所有 turn 共用它。
+	request = request.WithContext(clientkeystats.WithRemoteSession(
+		request.Context(), request.Header.Get(clientkeystats.RemoteSessionHeader),
+	))
 	if !handler.available() {
 		writeHTTPError(
 			response,

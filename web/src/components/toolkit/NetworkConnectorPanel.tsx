@@ -341,6 +341,7 @@ export default function NetworkConnectorPanel() {
                   {status?.version ? <Tag>{status.version}</Tag> : null}
                   {status?.connectivity?.latencyMs ? <Typography.Text type="secondary">{status.connectivity.latencyMs} ms</Typography.Text> : null}
                 </Space>
+                {status?.message ? <Typography.Text type="secondary">{status.message}</Typography.Text> : null}
                 {status?.connectivity?.evidence ? (
                   <InlineNote tone="info" description={`${status.connectivity.evidence.source || '未标注来源'} · ${status.connectivity.evidence.path || '路径未知'}`}>
                     连通性证据：{status.connectivity.evidence.transport || '传输方式未标注'}

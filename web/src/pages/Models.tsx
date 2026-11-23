@@ -1,5 +1,6 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
+import { EndpointCapabilityTags } from '@/components/models/EndpointCapabilityTags';
 import { notifyAccountModelCatalogChanged } from '@/features/models/account-model-catalog-events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/components/mobile/mobile-icon-button.css';
@@ -522,6 +523,10 @@ export default function Models() {
               )) : <Tag>未知来源</Tag>}
               {!visible ? <Tag>不可见</Tag> : null}
               {model.manualCount > 0 ? <Tag color="processing">手动 {model.manualCount}</Tag> : null}
+              <EndpointCapabilityTags
+                paths={model.supported_endpoints}
+                capabilities={model.endpoint_capabilities}
+              />
             </div>
           </div>
           <p>

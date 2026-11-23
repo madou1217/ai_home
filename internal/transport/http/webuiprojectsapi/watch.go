@@ -16,6 +16,7 @@ import (
 
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
+	"github.com/madou1217/ai_home/internal/webuifile"
 )
 
 const (
@@ -648,6 +649,11 @@ func (hub *projectWatchHub) shutdown() {
 // 目录监听负责结构变化（新项目/新会话文件/新账号投影）；数据库文件与 -wal
 // 监听负责 SQLite 写入。会话 JSONL 的纯追加不改目录项，由 Provider hook 写入的
 // run/provider-session-state 事件驱动刷新，不额外轮询文件 mtime。
+//
+// 宿主 home 本身及其祖先永远不是监听目标：fsnotify 在 macOS 走 kqueue，挂目录时
+// 会遍历并逐个打开它的子项（backend_kqueue 的 watchDirectoryFiles），监听 home
+// 等于替用户去打开 Desktop / Documents / Downloads，每次页面连接都会触发 macOS
+// 「文件与文件夹」授权弹窗。home 下真正需要监听的文件单独挂（.claude.json）。
 func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 	targets := make(map[string]projectWatchKind, 256)
 	add := func(kind projectWatchKind, path string) {
@@ -656,6 +662,9 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 		}
 		cleaned := filepath.Clean(strings.TrimSpace(path))
 		if cleaned == "" || cleaned == "." {
+			return
+		}
+		if webuifile.HostHomeRootDenied(cleaned, handler.hostHomeDir) {
 			return
 		}
 		info, err := os.Lstat(cleaned)
@@ -704,7 +713,9 @@ func (handler *Handler) collectWatchTargets() map[string]projectWatchKind {
 	}
 
 	hostHome := handler.hostHomeDir
-	add(projectWatchKindProjects, hostHome)
+	// .claude.json 是 Claude 项目反解与会话标题的 home 级事实，只挂这个文件；
+	// 不能改成监听 home 目录（见函数注释）。
+	add(projectWatchKindProjects, filepath.Join(hostHome, ".claude.json"))
 
 	claudeDir := filepath.Join(hostHome, providerroot.ConfigDir("claude"))
 	add(projectWatchKindProjects, claudeDir)

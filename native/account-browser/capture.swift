@@ -33,9 +33,15 @@ final class BrowserCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     var selected: SCWindow?
     for _ in 0..<40 {
       let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly:false)
-      let candidates = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 && $0.frame.width >= 700 && $0.frame.height >= 400 }
-      if candidates.count > 1 { throw SurfaceFailure("browser_multiple_windows_not_supported") }
-      if let window = candidates.first { selected=window;break }
+      let owned = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 }
+      let candidates = owned.map {
+        CaptureWindowCandidate(id: $0.windowID, width: $0.frame.width, height: $0.frame.height, onScreen: $0.isOnScreen)
+      }
+      if let chosen = selectCaptureWindow(candidates),
+        let window = owned.first(where: { $0.windowID == chosen.id }) {
+        selected = window
+        break
+      }
       try await Task.sleep(nanoseconds:100_000_000)
     }
     guard let window = selected else { throw SurfaceFailure("browser_window_unavailable") }

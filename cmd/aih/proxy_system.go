@@ -16,7 +16,7 @@ import (
 
 // applySystemProxy 把本机 lease 入口写入系统 HTTP/HTTPS 代理。
 // 只接受显式服务名（macOS 有多个网络服务），退出时用快照恢复。
-func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, service string, dryRun bool) (func(), error) {
+func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, service string, dryRun, force bool) (func(), error) {
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, errors.New("代理入口地址无效")
@@ -53,6 +53,10 @@ func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, s
 	snapshot, err := systemproxy.Capture(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !force && systemProxyAlreadyEnabled(snapshot, service) {
+		_, _ = fmt.Fprintf(cmdRuntime.stderr, "[aih] 系统代理已由其他程序启用；跳过 --system 写入。确认要接管请加 --system-force。\n")
+		return nil, nil
 	}
 	result, err := systemproxy.Apply(ctx, systemproxy.ApplyOptions{
 		Service: service, HTTP: endpoint, HTTPS: endpoint,
@@ -117,6 +121,19 @@ func systemProxyMatches(ctx context.Context, service, host string, port int) (bo
 		return false, fmt.Sprintf("当前 HTTPS 代理为 %s:%d enabled=%v", state.HTTPS.Host, state.HTTPS.Port, state.HTTPS.Enabled)
 	}
 	return true, ""
+}
+
+func systemProxyAlreadyEnabled(snapshot systemproxy.Snapshot, service string) bool {
+	service = strings.TrimSpace(service)
+	for _, item := range snapshot.Services {
+		if service != "" && item.Service != service {
+			continue
+		}
+		if item.HTTP.Enabled || item.HTTPS.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 func writeSystemProxyResult(runtime commandRuntime, prefix string, result systemproxy.Result) {

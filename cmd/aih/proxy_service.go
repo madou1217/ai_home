@@ -72,6 +72,9 @@ func runProxyServiceCommand(ctx context.Context, args []string, runtime commandR
 		if options.systemService != "" {
 			serviceArgs = append(serviceArgs, "--system-service", options.systemService)
 		}
+		if options.systemForce {
+			serviceArgs = append(serviceArgs, "--system-force")
+		}
 	}
 	if options.tun {
 		serviceArgs = append(serviceArgs, "--tun", "--tun-stack", options.tunStack, "--tun-dns", options.tunDNS, "--tun-mtu", fmt.Sprint(options.tunMTU))

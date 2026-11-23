@@ -6,6 +6,7 @@ import (
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	clinecli "github.com/madou1217/ai_home/internal/adapters/cline/clilaunch"
 	codebuddycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
+	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	geminicli "github.com/madou1217/ai_home/internal/adapters/gemini/clilaunch"
 	grokcli "github.com/madou1217/ai_home/internal/adapters/grok/clilaunch"
 	kimicli "github.com/madou1217/ai_home/internal/adapters/kimi/clilaunch"
@@ -38,6 +39,11 @@ func registeredStrategies() (map[string]providerlaunch.Strategy, map[string]prov
 	}
 	// Only existing Go strategies with an executable native gateway contract are
 	// admitted. AGY GatewayActive is upstream support, not a CLI gateway profile.
-	gateways := map[string]providerlaunch.GatewayStrategy{"claude": claudecli.NewGatewayStrategy()}
+	gateways := map[string]providerlaunch.GatewayStrategy{
+		"claude": claudecli.NewGatewayStrategy(),
+		// Codex 网关档把 Responses 请求送回本机 AIH Server，会话 id 才能随请求
+		// 进入 usage 归集；未注入配置来源时按裸配置的 env_key 形态启动。
+		"codex": codexcli.NewGatewayStrategy(nil),
+	}
 	return strategies, gateways, nil
 }

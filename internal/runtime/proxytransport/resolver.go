@@ -114,6 +114,21 @@ func (resolver *Resolver) Open(ctx context.Context, connectionID string) (*sshre
 	return sshremote.Dial(ctx, config, resolver.timeout)
 }
 
+// OpenVia 通过指定的已保存连接作为跳板打开目标连接。
+// 只复用现有 SSH 记录，不写入或推导任何新拓扑。
+func (resolver *Resolver) OpenVia(ctx context.Context, connectionID, jumpID string) (*sshremote.Client, error) {
+	config, err := resolver.Config(connectionID)
+	if err != nil {
+		return nil, err
+	}
+	jump, err := resolver.Config(jumpID)
+	if err != nil {
+		return nil, err
+	}
+	config.Jump = &jump
+	return sshremote.Dial(ctx, config, resolver.timeout)
+}
+
 // OpenTransport 打开连接并把它包装成 SSH 传输，供 aih proxy serve 等入口
 // 直接使用；任一步失败都会关闭已经建立的 SSH 客户端。
 func (resolver *Resolver) OpenTransport(ctx context.Context, connectionID string, options SSHOptions) (*SSH, error) {

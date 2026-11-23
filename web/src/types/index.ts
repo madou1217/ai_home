@@ -3603,6 +3603,8 @@ export interface NetworkConnectorStatus {
   state?: string;
   version?: string;
   message?: string;
+  /** 插件是否已声明并启用随登录/开机启动的托管守护进程。 */
+  autostart?: boolean;
   connectivity?: {
     mode: NetworkConnectorConnectivityMode;
     confidence?: string;

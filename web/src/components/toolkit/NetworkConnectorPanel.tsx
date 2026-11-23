@@ -339,6 +339,7 @@ export default function NetworkConnectorPanel() {
                   </Tag>
                   {mode ? <Tag icon={<SafetyCertificateOutlined />}>{CONNECTIVITY_LABELS[mode] || mode}</Tag> : null}
                   {status?.version ? <Tag>{status.version}</Tag> : null}
+                  {status?.autostart ? <Tag bordered={false} color="processing">开机自启</Tag> : null}
                   {status?.connectivity?.latencyMs ? <Typography.Text type="secondary">{status.connectivity.latencyMs} ms</Typography.Text> : null}
                 </Space>
                 {status?.message ? <Typography.Text type="secondary">{status.message}</Typography.Text> : null}

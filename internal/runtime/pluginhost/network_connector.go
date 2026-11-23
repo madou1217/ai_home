@@ -35,7 +35,7 @@ func networkConnectorTimeoutForAction(action string) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "install", "uninstall":
 		return installNetworkConnectorTimeout
-	case "enable", "disable":
+	case "enable", "disable", "autostart-enable", "autostart-disable", "daemon-start", "daemon-stop":
 		return lifecycleConnectorTimeout
 	default:
 		return defaultNetworkConnectorTimeout
@@ -95,12 +95,14 @@ type NetworkConnectorConfig struct {
 
 // NetworkConnectorStatus 是插件返回的脱敏状态。
 type NetworkConnectorStatus struct {
-	Installed    bool                 `json:"installed"`
-	Enabled      bool                 `json:"enabled"`
-	Running      bool                 `json:"running"`
-	State        string               `json:"state,omitempty"`
-	Version      string               `json:"version,omitempty"`
-	Message      string               `json:"message,omitempty"`
+	Installed bool   `json:"installed"`
+	Enabled   bool   `json:"enabled"`
+	Running   bool   `json:"running"`
+	State     string `json:"state,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Message   string `json:"message,omitempty"`
+	// Autostart 表示连接器声明了随登录/开机启动的托管守护进程。
+	Autostart    bool                 `json:"autostart,omitempty"`
 	Connectivity *NetworkConnectivity `json:"connectivity,omitempty"`
 }
 

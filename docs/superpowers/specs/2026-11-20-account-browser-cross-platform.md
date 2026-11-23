@@ -3,10 +3,11 @@
 ## Status (2026-11-22)
 
 Windows stable-Edge hosting is implemented and verified on a real Windows host.
-macOS remains the original host adapter and now caches its signed helper so the
-system permission grant survives restarts; its synthetic keyboard path still
-fails to commit the omnibox when the Edge window is inactive, so real OAuth
-logins stay on Windows. Linux still reports unsupported. See
+macOS remains the original host adapter, caches its signed helper so the system
+permission grant survives restarts, and now activates the captured window before
+synthetic keyboard input. Real OAuth logins still need an egress proxy or the
+Windows host because the macOS test network cannot reach the authorize page and
+popup-based flows remain unsupported. Linux still reports unsupported. See
 `docs/product-integrity/account-browser-windows-2026-11-22.md` and
 `docs/product-integrity/account-browser-macos-helper-2026-11-23.md` for
 acceptance evidence and the boundaries that remain unverified. The sections below record

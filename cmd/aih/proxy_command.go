@@ -54,6 +54,7 @@ type proxyServeOptions struct {
 	system            bool
 	systemService     string
 	systemDryRun      bool
+	systemForce       bool
 	renewInterval     time.Duration
 	managementKeyFile string
 
@@ -86,6 +87,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.BoolVar(&options.system, "system", false, "把入口写入系统 HTTP/HTTPS 代理，退出时恢复")
 	flags.StringVar(&options.systemService, "system-service", "", "系统网络服务名（macOS 必填，例如 Wi-Fi）")
 	flags.BoolVar(&options.systemDryRun, "system-dry-run", false, "只打印系统代理动作，不实际修改")
+	flags.BoolVar(&options.systemForce, "system-force", false, "即使已有系统代理也强制接管（默认不抢占）")
 	flags.DurationVar(&options.renewInterval, "renew-interval", 30*time.Minute, "租约续期间隔；0 表示关闭续期")
 	flags.StringVar(&options.managementKeyFile, "management-key-file", "", "从 0600 文件读取 Management Key（服务模式使用）")
 	flags.BoolVar(&options.tun, "tun", false, "显式创建本地 TUN 并接管系统流量（需要 root/管理员）")
@@ -213,7 +215,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		if ingressErr != nil {
 			return ingressErr
 		}
-		restore, applyErr := applySystemProxy(ctx, runtime, systemAddress, options.systemService, options.systemDryRun)
+		restore, applyErr := applySystemProxy(ctx, runtime, systemAddress, options.systemService, options.systemDryRun, options.systemForce)
 		if applyErr != nil {
 			return applyErr
 		}

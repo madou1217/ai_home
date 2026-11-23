@@ -62,6 +62,19 @@ AWS: codex-cli 0.171.0; systemd active; aih-server sha256=3d91b252...
   协议回复通道，回车不会提交。
 - 本次新 workspace 与临时 profile 仅用于验收，验收后已撤销并清理。
 
+### 复核（2026-11-23）
+
+AWS Server 随后被其他会话更新过，复核时运行中的二进制 sha256 为
+`82c5d3e1da77d575fe9f2379f39957bd759332bdb5bc0d07a93583acb90bf406`。重新登记一个
+workspace（`wc-e439391e87c8332f68`）后重跑同一闭环：
+
+- Codex 终端：`Calling aih_remote.run_command`、`duration: 147ms`、
+  `stdout: codex-verify-1795399851741`；
+- 本机 `VERIFY.txt` 实际写入同一随机串。
+
+复核用的 workspace、enrollment 与临时 profile 已在验证后撤销并清除；当前 Server 的
+Connector 登记为空。
+
 ## 账号与模型选择器（2026-11-22）
 
 WebUI 本地工作区行的 AI 终端改为 Popover 选择器：先选 Agent（Codex/Claude），再选账号

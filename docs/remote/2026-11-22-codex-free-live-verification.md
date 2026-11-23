@@ -94,6 +94,35 @@ Connector 登记为空。
 清理：验收 workspace、enrollment 与临时 profile 已撤销/清除；Server 的 Connector
 登记为空。
 
+## 审批与持久作业 AWS 复核（2026-11-23）
+
+部署：AWS Server 换成 `dff9b224d0dfab5fde02ee5bf9b4e93215ee58a18889da7ab4f92395bca47bf2`
+（origin/main 合并树构建），旧二进制备份 `aih-server.prev-20261123-042626`；WebUI 资产
+同步部署（含待审批面板）。
+
+环境：新 workspace `wc-53f35013582dd8c266`，`--approval=destructive`，free 账号 10 +
+`gpt-5.6-luna`。
+
+审批闭环：
+
+1. Codex 先执行 `echo hello > SAFE.txt`（exit 0）；
+2. `rm -rf protected` 返回
+   `approval_required: approval ap-53e410715fc0917049 is required ...`，本机
+   `protected/` 未被删除；
+3. 本地 `aih workspace approvals approve` 批准后，Codex 带 `approval_id` 重试同一命令，
+   返回 exit 0，`protected/` 实际删除。
+
+持久作业跨 Connector 重启：
+
+1. Codex 用 `start_job` 启动 6×2s 的作业，拿到 `job-8b9360655791215ed5`；
+2. 直接 SIGKILL 本地 Connector，runner 仍存活；
+3. 重启 Connector 后 Codex 用 `watch_job` 继续，最终 `state: exited`、stdout
+   `aws-job-1..6`；
+4. 本机 `AWS_JOB_DONE.txt` 写入 `aws-done`（在 Connector 死亡期间由 runner 完成）。
+
+清理：终端已关闭，workspace/enrollment 已撤销并清除，临时 profile 已删除、原活跃
+profile 已恢复；Server 的 Connector 登记为空。
+
 ## 账号与模型选择器（2026-11-22）
 
 WebUI 本地工作区行的 AI 终端改为 Popover 选择器：先选 Agent（Codex/Claude），再选账号

@@ -121,6 +121,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	switch request.URL.Path {
 	case InstallPath:
 		handler.install(response, request)
+	case UploadPath:
+		handler.upload(response, request)
 	case UninstallPath:
 		handler.uninstall(response, request)
 	case StatePath:
@@ -183,6 +185,11 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 		AllowUntrusted: !payload.RequireSigned,
 	}
 	result, err := handler.installer.Install(request.Context(), file, options)
+	handler.respondInstall(response, result, err)
+}
+
+// respondInstall 统一安装成功后的审计与响应，JSON 安装与上传安装共用。
+func (handler *Handler) respondInstall(response http.ResponseWriter, result plugincontrol.InstallResult, err error) {
 	if err != nil {
 		writeControlError(response, err)
 		return
@@ -221,6 +228,11 @@ func (handler *Handler) resolveInstallArtifact(ctx context.Context, payload inst
 	if remote == "" {
 		if path == "" {
 			return "", nil, pluginerr.New("plugin_package_missing", "缺少插件包路径或下载地址")
+		}
+		if expected != "" {
+			if digest, digestErr := pluginartifact.FileSHA256(path); digestErr == nil && digest != expected {
+				return "", nil, pluginerr.New("plugin_package_digest_mismatch", "服务端本地插件包与客户端摘要不一致")
+			}
 		}
 		return path, func() {}, nil
 	}

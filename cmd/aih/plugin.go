@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,8 +34,8 @@ const pluginUsage = `Usage: aih plugin <command> [options]
   trust <public.pem> [--key-id <id>]   把发布公钥加入本机信任根
   untrust <keyId>                  从本机信任根移除发布公钥
   trusted                          列出本机信任的发布公钥
-  install <file.aih-plugin|https://...> [--require-signed] [--server-download] [--trust-key <pem|url>] [--expect-fingerprint <hex>]
-                                   安装插件包；支持 https 直链（本机回环可用 http）；--server-download 跳过 CLI 下载、只让服务端抓 URL；--trust-key 一步登记公钥
+  install <file.aih-plugin|dir|https://...> [--require-signed] [--server-download] [--signing-key <pem> --key-id <id>] [--trust-key <pem|url>] [--expect-fingerprint <hex>]
+                                   安装插件包；目录会先自动打包；远程 server 看不到本地文件时自动上传；--server-download 跳过 CLI 下载、只让服务端抓 URL
   list                             已安装插件、实例与运行状态
   enable <pluginId> [--instance <id>] [--version <v>] [--config-json <json>|@file|-] [--accept-permissions]
   disable <instanceId> [--remove]  停用实例（--remove 同时删除实例配置）
@@ -541,14 +542,30 @@ func pluginTrusted(runtime commandRuntime) (map[string]any, error) {
 func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (map[string]any, error) {
 	file := pluginPositional(args, 0)
 	if file == "" {
-		return nil, pluginArgumentRequired("install 需要插件包（aih plugin install <file.aih-plugin>）")
+		return nil, pluginArgumentRequired("install 需要插件包或插件目录（aih plugin install <file.aih-plugin|dir|https://...>）")
 	}
 	requireSigned := pluginHasFlag(args, "--require-signed")
+	trustKeyPEM := ""
+	expectedFingerprint := ""
+	replaceKey := pluginHasFlag(args, "--replace-key")
+	if trustKey := strings.TrimSpace(pluginOption(args, "--trust-key")); trustKey != "" {
+		pemValue, fingerprint, keyErr := pluginReadPublicKey(trustKey, args, runtime)
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		trustKeyPEM = pemValue
+		expectedFingerprint = fingerprint
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 安装时将把发布公钥登记到服务端（指纹 %s）\n", fingerprint)
+	}
+
 	payload := map[string]any{"requireSigned": requireSigned}
+	absolute := ""
+	digest := ""
+	localInput := false
 	if pluginHasFlag(args, "--server-download") {
 		if !pluginIsRemoteInput(file) {
 			return nil, pluginerr.New("plugin_download_invalid",
-				"--server-download 只适用于 https URL；本地插件包请直接传路径")
+				"--server-download 只适用于 https URL；本地插件包请直接传路径或目录")
 		}
 		payload["url"] = strings.TrimSpace(file)
 		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已跳过本地下载，改由服务端抓取：%s\n", strings.TrimSpace(file))
@@ -556,16 +573,22 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 注意：本地摘要校验已跳过，完整性只依赖 https 与包内签名状态\n")
 		}
 	} else {
-		local, cleanup, err := pluginMaterialize(file, plugincontract.MaxPackageBytes, "插件包", runtime)
+		prepared, packCleanup, err := pluginPrepareLocalPackage(file, args, runtime)
 		if err != nil {
 			return nil, err
 		}
-		defer cleanup()
-		absolute, err := filepath.Abs(local)
+		defer packCleanup()
+		localInput = !pluginIsRemoteInput(file)
+		local, downloadCleanup, err := pluginMaterialize(prepared, plugincontract.MaxPackageBytes, "插件包", runtime)
+		if err != nil {
+			return nil, err
+		}
+		defer downloadCleanup()
+		absolute, err = filepath.Abs(local)
 		if err != nil {
 			return nil, pluginerr.New("plugin_package_missing", "插件包路径不可用")
 		}
-		digest, err := pluginartifact.FileSHA256(local)
+		digest, err = pluginartifact.FileSHA256(local)
 		if err != nil {
 			return nil, pluginerr.New("plugin_package_missing", "插件包无法读取")
 		}
@@ -576,17 +599,16 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 			payload["url"] = strings.TrimSpace(file)
 		}
 	}
-	if trustKey := strings.TrimSpace(pluginOption(args, "--trust-key")); trustKey != "" {
-		publicKeyPEM, expectedFingerprint, keyErr := pluginReadPublicKey(trustKey, args, runtime)
-		if keyErr != nil {
-			return nil, keyErr
-		}
-		payload["trustKeyPem"] = publicKeyPEM
+	if trustKeyPEM != "" {
+		payload["trustKeyPem"] = trustKeyPEM
 		payload["expectFingerprint"] = expectedFingerprint
-		payload["replaceKey"] = pluginHasFlag(args, "--replace-key")
-		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 安装时将把发布公钥登记到服务端（指纹 %s）\n", expectedFingerprint)
+		payload["replaceKey"] = replaceKey
 	}
 	result, err := pluginRequest(ctx, "POST", "/v1/management/plugins/install", payload, runtime)
+	if err != nil && localInput && pluginUploadable(pluginErrorCode(err)) {
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 服务端看不到本地包，改为上传安装…\n")
+		result, err = pluginUpload(ctx, absolute, digest, trustKeyPEM, expectedFingerprint, replaceKey, requireSigned, runtime)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -597,6 +619,104 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 			keyID)
 	}
 	return result, nil
+}
+
+// pluginPrepareLocalPackage 支持直接给插件源码目录：先打成临时 .aih-plugin，
+// 再走统一的安装/上传流程。普通文件和 URL 原样返回。
+func pluginPrepareLocalPackage(input string, args []string, runtime commandRuntime) (string, func(), error) {
+	if pluginIsRemoteInput(input) {
+		return input, func() {}, nil
+	}
+	info, err := os.Stat(input)
+	if err != nil || !info.IsDir() {
+		return input, func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "aih-plugin-build-")
+	if err != nil {
+		return "", nil, pluginerr.New("plugin_package_missing", "无法创建打包临时目录")
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	output := filepath.Join(dir, "package.aih-plugin")
+	result, buildErr := pluginartifact.BuildArtifact(input, output, pluginartifact.BuildOptions{
+		SigningKey: pluginOption(args, "--signing-key"),
+		KeyID:      pluginOption(args, "--key-id"),
+	})
+	if buildErr != nil {
+		cleanup()
+		return "", nil, buildErr
+	}
+	_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已打包插件目录：%s（%d 个文件）\n", input, result.Files)
+	return output, cleanup, nil
+}
+
+func pluginUploadable(code string) bool {
+	return code == "plugin_package_missing" || code == "plugin_package_digest_mismatch"
+}
+
+func pluginErrorCode(err error) string {
+	if coded, ok := pluginerr.From(err); ok {
+		return coded.Code
+	}
+	return ""
+}
+
+// pluginUpload 把本地包原始字节直接推给服务端；远程 server 看不到本地文件时
+// 由它兜底。摘要、签名策略和公钥都通过请求头传递，服务端仍会完整校验。
+func pluginUpload(ctx context.Context, file string, digest string, trustKeyPEM string, expectedFingerprint string, replaceKey bool, requireSigned bool, runtime commandRuntime) (map[string]any, error) {
+	home, err := resolveAIHome(runtime)
+	if err != nil {
+		return nil, pluginerr.New("plugin_home_unavailable", "无法定位 AIH_HOME_DIR")
+	}
+	baseURL, key, err := pluginServerConnection(ctx, home)
+	if err != nil {
+		return nil, err
+	}
+	if key == "" {
+		return nil, pluginerr.New("plugin_management_key_missing",
+			"需要管理密钥：请先运行 aih server config，或设置 AIH_SERVER_MANAGEMENT_KEY")
+	}
+	handle, err := os.Open(file)
+	if err != nil {
+		return nil, pluginerr.New("plugin_package_missing", "插件包无法读取")
+	}
+	defer func() { _ = handle.Close() }()
+	info, err := handle.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, pluginerr.New("plugin_package_missing", "插件包不可用")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(baseURL, "/")+"/v1/management/plugins/install-upload", handle)
+	if err != nil {
+		return nil, pluginerr.New("plugin_request_invalid", "上传请求无法创建")
+	}
+	request.ContentLength = info.Size()
+	request.Header.Set("Content-Type", "application/octet-stream")
+	request.Header.Set("Authorization", "Bearer "+key)
+	request.Header.Set("X-Aih-Host-Version", "1.0.0")
+	if nodeVersion := pluginNodeVersion(); nodeVersion != "" {
+		request.Header.Set("X-Aih-JS-Runtime-Version", nodeVersion)
+	}
+	if digest != "" {
+		request.Header.Set("X-Aih-Package-Sha256", digest)
+	}
+	if trustKeyPEM != "" {
+		request.Header.Set("X-Aih-Trust-Key-Pem", base64.StdEncoding.EncodeToString([]byte(trustKeyPEM)))
+	}
+	if expectedFingerprint != "" {
+		request.Header.Set("X-Aih-Expect-Fingerprint", expectedFingerprint)
+	}
+	if replaceKey {
+		request.Header.Set("X-Aih-Replace-Key", "true")
+	}
+	if requireSigned {
+		request.Header.Set("X-Aih-Require-Signed", "true")
+	}
+	response, err := runtime.managementAPI.Do(request)
+	if err != nil {
+		return nil, pluginerr.New("plugin_server_unreachable", "连不上 aih server（"+baseURL+"）："+err.Error()+"。请先运行 aih server start")
+	}
+	defer func() { _ = response.Body.Close() }()
+	return pluginDecodeResponse(response)
 }
 
 // pluginReadPublicKey 读取本地或 URL 公钥，归一化并核对指纹。公钥内容会随
@@ -831,6 +951,11 @@ func pluginRequest(ctx context.Context, method, path string, payload map[string]
 		return nil, pluginerr.New("plugin_server_unreachable", "连不上 aih server（"+baseURL+"）："+err.Error()+"。请先运行 aih server start")
 	}
 	defer func() { _ = response.Body.Close() }()
+	return pluginDecodeResponse(response)
+}
+
+// pluginDecodeResponse 统一解析管理 API 响应，JSON 安装与上传安装共用。
+func pluginDecodeResponse(response *http.Response) (map[string]any, error) {
 	raw, readErr := io.ReadAll(io.LimitReader(response.Body, 8<<20))
 	if readErr != nil {
 		return nil, pluginerr.New("plugin_request_invalid", "服务端响应不可读")

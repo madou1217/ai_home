@@ -154,6 +154,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 启用/停用/doctor/list 仍是 Node / Node 只读清单。
 	if handlers.plugins.control != nil {
 		mux.Handle(plugincontrolapi.InstallPath, handlers.plugins.control)
+		mux.Handle(plugincontrolapi.UploadPath, handlers.plugins.control)
 		mux.Handle(plugincontrolapi.UninstallPath, handlers.plugins.control)
 		// enable/disable 的候选 CAS 提交：Node 计算候选，Go 是唯一写者。
 		mux.Handle(plugincontrolapi.StatePath, handlers.plugins.control)

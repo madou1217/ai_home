@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/accountscheduling"
+	"github.com/madou1217/ai_home/application/admission"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	schedcore "github.com/madou1217/ai_home/core/accountscheduling"
@@ -39,6 +40,11 @@ var (
 	ErrInvalidCredentialTransport = errors.New("账号征召凭据传输策略无效")
 	// ErrNoRoutableAccount 表示当前候选快照没有可直接交给上游的账号。
 	ErrNoRoutableAccount = errors.New("没有可征召账号")
+	// ErrConcurrencyExhausted 表示没有可征召账号的唯一原因是并发上限。
+	//
+	// 它包装 ErrNoRoutableAccount（errors.Is 仍成立），让入站层把「全部候选都被
+	// 并发上限挡下」映射成可重试的 429，而不是永久的 503。
+	ErrConcurrencyExhausted = errors.New("候选账号仅因并发上限不可征召")
 )
 
 // CandidateSource 提供已经按 Provider、模型和启用状态筛选的不可变候选快照。
@@ -106,6 +112,13 @@ type UsageGate interface {
 	) (UsageDecision, error)
 }
 
+// ConcurrencyObserver 提供账号/模型的实时在途并发（准入控制器实现）。
+//
+// 为 nil 时不做并发饱和判定，行为与引入准入前一致。
+type ConcurrencyObserver interface {
+	Observe(provider, accountRef, model string) admission.Observation
+}
+
 // Dependencies 声明征召器所需的四个最小应用端口。
 type Dependencies struct {
 	// Candidates 负责从本地模型倒排读取启用账号的不可变紧凑快照。
@@ -121,6 +134,8 @@ type Dependencies struct {
 	// Scheduling 是账号/Provider 调度策略，与 WebUI 路由诊断共用同一套判定。
 	// 为空时退回"运行态资格 + 额度门禁"的内联判定（旧组合方式）。
 	Scheduling *accountscheduling.Evaluator
+	// Concurrency 提供实时在途并发，用于在选号时跳过已饱和账号；可为空。
+	Concurrency ConcurrencyObserver
 	// Strategy 是选号策略；零值非法，必须由调用方显式解析。
 	Strategy SelectionStrategy
 }
@@ -369,6 +384,10 @@ type Result struct {
 	quotaBucket string
 	// usedRateLimitCooldownWaiver 表示本次选中依赖了 429 自冷却豁免而非独立可用。
 	usedRateLimitCooldownWaiver bool
+	// concurrencyBlocked 统计仅因并发上限被跳过的候选数。
+	concurrencyBlocked int
+	// otherBlocked 表示扫描中出现了非并发原因的跳过，不能把整轮归因为并发饱和。
+	otherBlocked bool
 }
 
 // Account 返回本次选中的紧凑账号投影。
@@ -420,6 +439,7 @@ type Recruiter struct {
 	weights     AccountWeightSource
 	usage       UsageGate
 	scheduling  *accountscheduling.Evaluator
+	concurrency ConcurrencyObserver
 	strategy    SelectionStrategy
 	scheduler   *FairRoundRobinScheduler
 	// affinity 保存 (Provider, 会话键) -> 账号的粘性绑定。
@@ -476,6 +496,7 @@ func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 		weights:     dependencies.Weights,
 		usage:       dependencies.Usage,
 		scheduling:  dependencies.Scheduling,
+		concurrency: dependencies.Concurrency,
 		strategy:    strategy,
 		scheduler:   &FairRoundRobinScheduler{},
 		affinity:    NewSessionAffinity(),
@@ -640,6 +661,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 			return progress, ErrInvalidCandidateSnapshot
 		}
 		if session.request.excludes(candidate.Ref()) {
+			progress.otherBlocked = true
 			continue
 		}
 		route, routeErr := candidateModelRoute(candidate, session.request.ModelID())
@@ -658,6 +680,11 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		verdict := session.evaluate(candidate, eligibility, usage)
 		admitted, usedRateLimitWaiver := session.admits(route, verdict, eligibility, usage.Blocked, offset, candidate)
 		if !admitted {
+			if isConcurrencyReason(verdict.Reason) {
+				progress.concurrencyBlocked++
+			} else {
+				progress.otherBlocked = true
+			}
 			continue
 		}
 		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
@@ -669,6 +696,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 				return progress, ctxErr
 			}
 			if isAccountUnavailable(resolveErr) {
+				progress.otherBlocked = true
 				continue
 			}
 			return progress, fmt.Errorf(
@@ -682,10 +710,12 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if usedRateLimitWaiver && !sameCredentialObservation(observation, session.request.rateLimitCooldownWaiver.Observation) {
 			// 自冷却豁免严格绑定失败时的原始持久化凭据代次；等待期间若账号已换代，
 			// 不得将旧代次的冷却豁免权转移给新凭据代次。
+			progress.otherBlocked = true
 			continue
 		}
 		credential := binding.Credential()
 		if !session.transport.SupportsCredential(credential) {
+			progress.otherBlocked = true
 			continue
 		}
 		progress.account = candidate
@@ -697,7 +727,17 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		return progress, nil
 	}
 	progress.sourceExhausted = true
+	if progress.concurrencyBlocked > 0 && !progress.otherBlocked {
+		// 全部候选都只因并发上限被挡下：这是可重试的饱和，不是永久无号。
+		return progress, fmt.Errorf("%w: %w", ErrNoRoutableAccount, ErrConcurrencyExhausted)
+	}
 	return progress, ErrNoRoutableAccount
+}
+
+// isConcurrencyReason 报告调度原因码是否只表达"并发/容量已满"。
+func isConcurrencyReason(reason schedcore.Reason) bool {
+	return reason == schedcore.ReasonAccountConcurrency ||
+		reason == schedcore.ReasonModelConcurrency
 }
 
 // bindAffinity 把本次选中的账号记为该会话键的绑定。
@@ -816,6 +856,17 @@ func (session *RecruitmentSession) evaluate(
 	}
 	if retryAt := eligibility.RetryAt(); !retryAt.IsZero() {
 		evidence.Observed.ModelCooldownUntil = retryAt
+	}
+	if observer := session.recruiter.concurrency; observer != nil {
+		observation := observer.Observe(
+			session.request.ProviderID(),
+			string(candidate.Ref()),
+			session.request.ModelID().String(),
+		)
+		evidence.Observed.AccountInFlight = observation.AccountInFlight
+		evidence.Observed.AccountConcurrencyLimit = observation.AccountLimit
+		evidence.Observed.ModelInFlight = observation.ModelInFlight
+		evidence.Observed.ModelConcurrencyLimit = observation.ModelLimit
 	}
 	return session.recruiter.scheduling.Evaluate(evidence)
 }

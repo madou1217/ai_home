@@ -9,6 +9,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/clientkeystats"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -151,8 +152,6 @@ type Coordinator struct {
 	requestRewriter      RequestRewriter
 	accountEgress        AccountEgressResolver
 	accountHints         AccountHintResolver
-	gate                 *providerGate
-	accountGate          *claudeAccountGate
 	routeCursor          atomic.Uint64
 	routeSourceCursor    atomic.Uint64
 }
@@ -164,6 +163,8 @@ type routeExecution struct {
 	poolExhausted  bool
 	onlyDeferred   bool
 	sawRawHTTP429  bool
+	// concurrencyExhausted 表示本路由的候选全部因并发上限被跳过（可稍后重试）。
+	concurrencyExhausted bool
 }
 
 // requestPoolRetryPermit 把账号池第二轮限制在一次外部 Execute 调用内。
@@ -256,8 +257,6 @@ func NewCoordinator(
 		requestRewriter:      dependencies.RequestRewriter,
 		accountEgress:        dependencies.AccountEgress,
 		accountHints:         dependencies.AccountHints,
-		gate:                 newProviderGate(),
-		accountGate:          newClaudeAccountGate(),
 	}, nil
 }
 
@@ -311,7 +310,7 @@ func (coordinator *Coordinator) executePlan(
 	poolRetryPermit := coordinator.newRequestPoolRetryPermit(ctx)
 	defer poolRetryPermit.close()
 	var pendingFailure *attemptStream
-	var queueFailure error
+	var concurrencyExhausted bool
 	accountFailures := newRequestAccountFailureRecorder(
 		coordinator.attempts,
 	)
@@ -329,7 +328,6 @@ func (coordinator *Coordinator) executePlan(
 			phaseCtx = withoutPinnedAccount(ctx)
 		}
 		phaseTracker := &upstream429Tracker{}
-		phaseQueueFailure := error(nil)
 		for _, route := range phasePlan.candidates[:phasePlan.count] {
 			if hint := request.ProviderHint(); hint != "" && hint != "auto" && hint != string(route.ProviderID()) {
 				continue
@@ -341,42 +339,26 @@ func (coordinator *Coordinator) executePlan(
 				continue
 			}
 			supported = true
-			// Claude takes its provider slot only after the per-account slot:
-			// waiting sessions on one upstream must not occupy the whole provider.
-			// Outer phaseCtx is used here so AGY's legacy 30s pool-retry timeout
-			// never caps initial or 429-backoff attempts.
-			release, acquireErr := coordinator.acquireRouteSlot(phaseCtx, route)
-			if acquireErr != nil {
-				if errors.Is(acquireErr, ErrProviderQueueFull) {
-					queueFailure = acquireErr
-					phaseQueueFailure = acquireErr
-					continue
-				}
-				return finishInterruptedPlan(pendingFailure, acquireErr)
-			}
-			execution, err := func() (routeExecution, error) {
-				defer release()
-				return coordinator.executeCandidate(
-					phaseCtx,
-					request,
-					route,
-					emit,
-					accountFailures,
-					poolRetryPermit,
-					phasePinned,
-					phaseTracker,
-					reqState,
-				)
-			}()
+			// 准入（系统/Key/账号/账号+模型）在 runUpstreamAttempt 里紧贴真实上游调用获取，
+			// 路由层不再持有 Provider 级长生命周期名额。
+			execution, err := coordinator.executeCandidate(
+				phaseCtx,
+				request,
+				route,
+				emit,
+				accountFailures,
+				poolRetryPermit,
+				phasePinned,
+				phaseTracker,
+				reqState,
+			)
 			if execution.pendingFailure != nil {
 				pendingFailure = execution.pendingFailure
 			}
+			if execution.concurrencyExhausted {
+				concurrencyExhausted = true
+			}
 			if err != nil {
-				if errors.Is(err, ErrProviderQueueFull) {
-					queueFailure = err
-					phaseQueueFailure = err
-					continue
-				}
 				if finalizeErr := accountFailures.FinalizeFailure(ctx); finalizeErr != nil {
 					return finishInterruptedPlan(
 						pendingFailure,
@@ -392,7 +374,7 @@ func (coordinator *Coordinator) executePlan(
 				return nil
 			}
 		}
-		if phaseQueueFailure == nil && phaseTracker.HasCandidates() && (pendingFailure == nil || !pendingFailure.Visible()) {
+		if phaseTracker.HasCandidates() && (pendingFailure == nil || !pendingFailure.Visible()) {
 			recovered, retryErr := coordinator.runUpstream429RetryLoop(
 				phaseCtx,
 				request,
@@ -424,14 +406,25 @@ func (coordinator *Coordinator) executePlan(
 	if !supported {
 		return ErrUnsupportedRouteCapabilities
 	}
-	if queueFailure != nil {
-		return queueFailure
-	}
 	if err := accountFailures.FinalizeFailure(ctx); err != nil {
 		return fmt.Errorf("提交请求级上游失败状态失败: %w", err)
 	}
 	coordinator.finalizeExhausted429Headers(ctx, request, reqState, pendingFailure)
+	if concurrencyExhausted && pendingFailure == nil {
+		// 整轮候选都因为并发上限被跳过：这是「稍后重试」而不是永久没有账号，
+		// 由统一 429 契约交付，不能落成 502/503。
+		return admission.NewTransientError(admission.ReasonAccountSaturated, admissionRetryAfter())
+	}
 	return finishExhaustedPlan(pendingFailure)
+}
+
+// admissionRetryAfter 返回配置的 Retry-After；未安装控制器时用默认 1s。
+func admissionRetryAfter() time.Duration {
+	config := admission.Current().Config()
+	if config.RetryAfterSeconds <= 0 {
+		return time.Second
+	}
+	return time.Duration(config.RetryAfterSeconds) * time.Second
 }
 
 // shouldFallBackFromPin 判断钉选尝试是否可以安全回落普通账号池：只在没有终态、
@@ -714,6 +707,8 @@ func (coordinator *Coordinator) executeRouteRound(
 	var pendingFailure *attemptStream
 	onlyDeferred := true
 	sawRawHTTP429 := false
+	// admissionSaturated 记录本次扫描是否至少有一次候选仅因并发上限被挡下。
+	admissionSaturated := false
 	attempted := 0
 	session, err := coordinator.beginRecruitment(ctx, request, route, upstream)
 	if err != nil {
@@ -736,10 +731,11 @@ func (coordinator *Coordinator) executeRouteRound(
 		if err != nil {
 			if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 				return routeExecution{
-					pendingFailure: pendingFailure,
-					poolExhausted:  true,
-					onlyDeferred:   attempted > 0 && onlyDeferred,
-					sawRawHTTP429:  sawRawHTTP429,
+					pendingFailure:       pendingFailure,
+					poolExhausted:        true,
+					onlyDeferred:         attempted > 0 && onlyDeferred,
+					sawRawHTTP429:        sawRawHTTP429,
+					concurrencyExhausted: errors.Is(err, accountrouting.ErrConcurrencyExhausted) || admissionSaturated,
 				}, nil
 			}
 			// 征召中断发生在任何写出之前，已记录的真实上游失败仍然可交付。
@@ -782,6 +778,33 @@ func (coordinator *Coordinator) executeRouteRound(
 		if errors.Is(err, errAdmittedAccountUnavailable) {
 			// Admission is local, not an upstream attempt or account failure.
 			continue
+		}
+		if errors.Is(err, errAdmittedAccountConcurrency) {
+			// 排队复核时账号并发已满：本请求仍可稍后重试，不能落成永久无号。
+			admissionSaturated = true
+			continue
+		}
+		if rejection, ok := admission.AsRejection(err); ok {
+			// 账号/模型自身满额：换下一个候选账号，不算一次上游尝试。
+			if rejection.IsOwnAccountSaturated() {
+				admissionSaturated = true
+				if recruited.SourceExhausted() {
+					return routeExecution{
+						pendingFailure:       pendingFailure,
+						onlyDeferred:         attempted > 0 && onlyDeferred,
+						sawRawHTTP429:        sawRawHTTP429,
+						concurrencyExhausted: true,
+					}, nil
+				}
+				continue
+			}
+			// 系统/Key/队列满：本路由暂时无法承载，交给其它路由或最终 429 契约。
+			return routeExecution{
+				pendingFailure:       pendingFailure,
+				onlyDeferred:         attempted > 0 && onlyDeferred,
+				sawRawHTTP429:        sawRawHTTP429,
+				concurrencyExhausted: true,
+			}, nil
 		}
 		attempted++
 		if err != nil {
@@ -966,11 +989,17 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 	accountFailures *requestAccountFailureRecorder,
 ) (attemptOutcome, error) {
 	outcome := newAttemptOutcome(stream, false)
-	release, err := coordinator.acquireAttemptSlots(ctx, invocation)
+	// 先做排队后的资格/凭据复核，再获取准入名额：准入计数会把本次尝试算作
+	// 在途，若在复核前获取，账号上限为 1 时会把「自己」判成饱和而误拒。
+	invocation, err := coordinator.refreshAdmittedInvocationForAttempt(ctx, invocation, upstream)
 	if err != nil {
 		return outcome, err
 	}
-	defer release()
+	lease, err := coordinator.acquireAttemptSlots(ctx, invocation)
+	if err != nil {
+		return outcome, err
+	}
+	defer lease.Release()
 	attemptScope := clientkeystats.AttemptBegin(
 		ctx,
 		invocation.Account().ProviderID(),
@@ -981,10 +1010,6 @@ func (coordinator *Coordinator) runUpstreamAttempt(
 		aborted := ctx.Err() != nil || stream.Err() != nil
 		attemptScope.Finish(aborted)
 	}()
-	invocation, err = coordinator.refreshAdmittedInvocationForAttempt(ctx, invocation, upstream)
-	if err != nil {
-		return outcome, err
-	}
 	result, executeErr := upstream.Execute(ctx, invocation, stream.Accept)
 	if stream.Err() != nil {
 		return outcome, stream.Err()

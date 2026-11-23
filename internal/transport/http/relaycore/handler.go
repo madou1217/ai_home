@@ -13,6 +13,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -868,6 +869,37 @@ func (handler *Handler) attemptRelay(
 		}
 	}
 
+	lease, admitErr := admission.Acquire(request.Context(), admission.Request{
+		Provider:   string(binding.ProviderID()),
+		AccountRef: accountRef.String(),
+		Model:      modelID.String(),
+	})
+	if admitErr != nil {
+		rejection, _ := admission.AsRejection(admitErr)
+		ownAccount := rejection.IsOwnAccountSaturated()
+		status := http.StatusServiceUnavailable
+		if !ownAccount {
+			status = http.StatusTooManyRequests
+		}
+		return attemptOutcome{
+			route:        route,
+			retryAccount: ownAccount,
+			failure: relayFailure{
+				status:  status,
+				code:    admission.CodeAccountTemporarilyUnavailable,
+				message: "透传通道当前并发已满，请稍后重试",
+			},
+		}, ownAccount
+	}
+	released := false
+	releaseLease := func() {
+		if !released {
+			released = true
+			lease.Release()
+		}
+	}
+	defer releaseLease()
+
 	upstreamResponse, err := client.Do(upstream)
 	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
 		closeUpstreamResponse(upstreamResponse)
@@ -901,6 +933,7 @@ func (handler *Handler) attemptRelay(
 		}
 		// 成功也要记账：否则运行态与仪表盘看不到这个账号在工作。
 		handler.recordSuccess(request.Context(), route, observation)
+		upstreamResponse.Body = &releaseBody{ReadCloser: upstreamResponse.Body, release: releaseLease}
 		return attemptOutcome{
 			response:     upstreamResponse,
 			route:        route,
@@ -948,6 +981,21 @@ func (handler *Handler) attemptRelay(
 		provider:     provider.ID(),
 		retryAccount: failure.retry,
 	}, failure.retry
+}
+
+// releaseBody 在上游响应体关闭时归还并发名额，保证流式/非流式都恰好释放一次。
+type releaseBody struct {
+	io.ReadCloser
+	release func()
+}
+
+func (body *releaseBody) Close() error {
+	err := body.ReadCloser.Close()
+	if body.release != nil {
+		body.release()
+		body.release = nil
+	}
+	return err
 }
 
 // writeResponse 把上游响应交付给客户端。

@@ -82,31 +82,58 @@ func (config Config) AccountConcurrency(
 	model string,
 	limits []AccountLimit,
 ) int {
+	if value := config.AccountModelConcurrency(accountRef, model, limits); value > 0 {
+		return value
+	}
+	return config.AccountTotal(provider, accountRef, limits)
+}
+
+// AccountTotal 返回账号总量的并发上限：显式账号总量 → Provider 默认 → 全局账号默认。
+//
+// 账号+模型覆盖是另一层天花板，见 AccountModelConcurrency；两者都生效时取更小者。
+func (config Config) AccountTotal(
+	provider string,
+	accountRef string,
+	limits []AccountLimit,
+) int {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	accountRef = strings.TrimSpace(accountRef)
-	model = strings.TrimSpace(model)
-	var accountTotal, accountModel int
 	for _, limit := range limits {
 		if strings.TrimSpace(limit.AccountRef) != accountRef {
 			continue
 		}
-		if strings.TrimSpace(limit.ModelID) == model && model != "" {
-			accountModel = limit.MaxConcurrency
+		if strings.TrimSpace(limit.ModelID) == "" && limit.MaxConcurrency > 0 {
+			return limit.MaxConcurrency
 		}
-		if strings.TrimSpace(limit.ModelID) == "" {
-			accountTotal = limit.MaxConcurrency
-		}
-	}
-	if accountModel > 0 {
-		return accountModel
-	}
-	if accountTotal > 0 {
-		return accountTotal
 	}
 	if value := config.ProviderDefaults[provider]; value > 0 {
 		return value
 	}
-	return config.AccountDefault
+	if config.AccountDefault > 0 {
+		return config.AccountDefault
+	}
+	return 0
+}
+
+// AccountModelConcurrency 返回显式的 (账号, 模型) 覆盖；0 表示没有单独覆盖。
+func (config Config) AccountModelConcurrency(
+	accountRef string,
+	model string,
+	limits []AccountLimit,
+) int {
+	accountRef = strings.TrimSpace(accountRef)
+	model = strings.TrimSpace(model)
+	if accountRef == "" || model == "" {
+		return 0
+	}
+	for _, limit := range limits {
+		if strings.TrimSpace(limit.AccountRef) == accountRef &&
+			strings.TrimSpace(limit.ModelID) == model &&
+			limit.MaxConcurrency > 0 {
+			return limit.MaxConcurrency
+		}
+	}
+	return 0
 }
 
 // KeyConcurrency 返回 Key 的并发上限；0 表示不限（仍受全局/账号上限约束）。

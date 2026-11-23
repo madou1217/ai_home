@@ -280,14 +280,19 @@ func (handler *Handler) runCodex429RetryLoop(
 			attemptCtx = runtimecore.ContextWithPriorCooldownReceipt(ctx, runtimecore.CooldownReceipt{})
 		}
 
-		upstream, transportFailure, attemptStarted := handler.nativeRoundTrip(
+		upstream, transportFailure, attemptStarted, admitErr := handler.nativeRoundTrip(
 			attemptCtx,
 			selection,
 			payload,
 			request,
 			trail,
 			transportBudget,
+			metadata.Model,
 		)
+		if admitErr != nil {
+			reqState.NoteAbort(upstreamretry.AbortReacquireUnavailable)
+			return false
+		}
 		if upstream == nil {
 			if request.Context().Err() != nil {
 				return true

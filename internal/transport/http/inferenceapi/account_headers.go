@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -80,4 +81,23 @@ func ApplyUpstream429HeadersWithAction(
 // 入站层据此返回 400 而不是 503（与 Node 把上游 400 原样返回的语义一致）。
 func IsRequestNotRepresentable(err error) bool {
 	return errors.Is(err, inferencegateway.ErrRequestNotRepresentable)
+}
+
+// AdmissionRetryAfter 把并发准入拒绝映射成 (秒数, true)；不是准入拒绝时返回 (0,false)。
+func AdmissionRetryAfter(err error) (int, bool) {
+	rejection, ok := admission.AsRejection(err)
+	if !ok {
+		return 0, false
+	}
+	return rejection.RetryAfterSeconds(), true
+}
+
+// ApplyAdmissionRetryAfter 准入拒绝时写入 Retry-After 头，返回是否写入。
+func ApplyAdmissionRetryAfter(header http.Header, err error) bool {
+	seconds, ok := AdmissionRetryAfter(err)
+	if !ok {
+		return false
+	}
+	header.Set("Retry-After", strconv.Itoa(seconds))
+	return true
 }

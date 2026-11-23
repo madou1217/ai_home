@@ -224,7 +224,7 @@ func (store *Store) LoadActiveClientKeys(ctx context.Context) ([]ClientKeyAuthRe
 	if store == nil || store.db == nil {
 		return nil, errors.New("账号数据库不可用")
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT key_id, name, key_prefix, key_hash
+	rows, err := store.db.QueryContext(ctx, `SELECT key_id, name, key_prefix, key_hash, max_concurrency
 		FROM client_api_keys WHERE enabled = 1 AND revoked_at_ms = 0`)
 	if err != nil {
 		return nil, err
@@ -233,16 +233,18 @@ func (store *Store) LoadActiveClientKeys(ctx context.Context) ([]ClientKeyAuthRe
 	records := make([]ClientKeyAuthRecord, 0, 8)
 	for rows.Next() {
 		var (
-			record ClientKeyAuthRecord
-			hash   []byte
+			record         ClientKeyAuthRecord
+			hash           []byte
+			maxConcurrency int
 		)
-		if err := rows.Scan(&record.KeyID, &record.Name, &record.Prefix, &hash); err != nil {
+		if err := rows.Scan(&record.KeyID, &record.Name, &record.Prefix, &hash, &maxConcurrency); err != nil {
 			return nil, err
 		}
 		if len(hash) != len(record.Hash) {
 			continue
 		}
 		copy(record.Hash[:], hash)
+		record.Limits.MaxConcurrency = maxConcurrency
 		records = append(records, record)
 	}
 	return records, rows.Err()

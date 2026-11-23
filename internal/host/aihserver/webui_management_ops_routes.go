@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
@@ -282,20 +283,44 @@ func newManagementMetricsPort(recorder *metricsRecorder) managementops.MetricsSn
 }
 
 func (a managementMetricsAdapter) SnapshotMetrics() managementops.MetricsResponse {
-	if a.recorder == nil {
-		return managementops.MetricsResponse{}
+	response := managementops.MetricsResponse{}
+	if a.recorder != nil {
+		snap := a.recorder.Snapshot()
+		response = managementops.MetricsResponse{
+			OK:            true,
+			TotalRequests: snap.TotalRequests,
+			TotalSuccess:  snap.TotalSuccess,
+			TotalFailures: snap.TotalFailures,
+			TotalTimeouts: snap.TotalTimeouts,
+			SuccessRate:   snap.SuccessRate,
+			TimeoutRate:   snap.TimeoutRate,
+			RouteCounts:   snap.RouteCounts,
+		}
 	}
-	snap := a.recorder.Snapshot()
-	return managementops.MetricsResponse{
-		OK:            true,
-		TotalRequests: snap.TotalRequests,
-		TotalSuccess:  snap.TotalSuccess,
-		TotalFailures: snap.TotalFailures,
-		TotalTimeouts: snap.TotalTimeouts,
-		SuccessRate:   snap.SuccessRate,
-		TimeoutRate:   snap.TimeoutRate,
-		RouteCounts:   snap.RouteCounts,
+	// 并发准入队列快照：复用既有 /metrics 的 Queue 字段，不新建仪表盘。
+	if controller := admission.Current(); controller != nil {
+		stats := controller.Stats()
+		response.Queue = make(map[string]managementops.QueueSnapshot, len(stats.Providers))
+		for provider, item := range stats.Providers {
+			response.Queue[provider] = managementops.QueueSnapshot{
+				Name:           provider,
+				Running:        item.Running,
+				MaxConcurrency: item.MaxConcurrency,
+				QueueLimit:     item.QueueLimit,
+				TotalScheduled: item.TotalScheduled,
+				TotalRejected:  item.TotalRejected,
+			}
+		}
+		if len(response.Queue) > 0 {
+			// 全局排队数只在一个代表项上暴露，避免每个 Provider 重复累加。
+			for provider, item := range response.Queue {
+				item.Queued = stats.Queued
+				response.Queue[provider] = item
+				break
+			}
+		}
 	}
+	return response
 }
 
 func (a managementMetricsAdapter) SnapshotSessionAffinity() map[string]int {

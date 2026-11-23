@@ -1,23 +1,48 @@
-/* 账号额度统计页 —— 只放页面特有样式；
+/* 账号额度统计页布局补充：
    KPI 切角条 / 图表壳 / 发丝网格全部复用 ModelUsage.css 的 .usage-* 表面。 */
+
+.account-quota-page {
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.quota-stats-toolbar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
 
 .quota-stats-toolbar {
   width: 100%;
   align-items: center;
 }
 
+.quota-stats-status-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
 .quota-stats-note {
-  flex: 1 1 260px;
-  min-width: 220px;
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.quota-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .quota-stats-footnote {
   display: block;
-  margin-top: 12px;
+  margin-top: var(--space-4);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .quota-chart-legend {
@@ -90,8 +115,18 @@
   color: var(--color-muted);
 }
 
+@media (max-width: 1024px) {
+  .quota-kpi-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
-  .quota-stats-note {
+  .quota-kpi-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quota-stats-status-inline {
     flex-basis: 100%;
   }
 }

@@ -378,7 +378,7 @@ func TestProjectWatchFrameShapeMatchesNode(t *testing.T) {
 	if err := json.Unmarshal(envelope.Projects[0], &project); err != nil || len(project.Sessions) != 1 {
 		t.Fatalf("project sessions 解析失败: %v", err)
 	}
-	if keys := topLevelJSONKeys(t, string(project.Sessions[0])); strings.Join(keys, ",") != "id,title,updatedAt,provider,projectDirName,projectPath" {
+	if keys := topLevelJSONKeys(t, string(project.Sessions[0])); strings.Join(keys, ",") != "id,title,updatedAt,provider,projectDirName,projectPath,continue" {
 		t.Fatalf("session 键序 = %v", keys)
 	}
 

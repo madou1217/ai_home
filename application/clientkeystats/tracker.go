@@ -17,6 +17,7 @@ import (
 	"time"
 
 	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
+	"github.com/madou1217/ai_home/core/concurrency"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
@@ -44,9 +45,13 @@ const (
 
 const (
 	minuteMS     = int64(60_000)
-	rateBucketMS = int64(10_000)
-	rateSlots    = 30 // 5 分钟
+	rateBucketMS = int64(1_000)
+	rateSlots    = 300 // 5 分钟，1s 粒度：滚动 60s 窗口误差不超过 1s
 	defaultFlush = 5 * time.Second
+	// rateWindowMS 是 RPM/TPM 的滚动窗口。
+	rateWindowMS = int64(60_000)
+	// dailyCacheTTL 是每日持久桶求和的缓存时长；期间只叠加未落库的内存桶。
+	dailyCacheTTL = time.Second
 )
 
 // Options 是 Tracker 的构造参数。
@@ -60,12 +65,21 @@ type Tracker struct {
 	store Store
 	clock func() time.Time
 
-	mu       sync.Mutex
-	requests map[requestKey]*requestCounts
-	attempts map[attemptKey]*attemptCounts
-	live     map[liveKey]int64
-	rates    map[string]*rateRing
-	flushAt  time.Time
+	mu           sync.Mutex
+	requests     map[requestKey]*requestCounts
+	attempts     map[attemptKey]*attemptCounts
+	live         map[liveKey]int64
+	rates        map[string]*rateRing
+	accountRates map[string]*rateRing
+	daily        map[string]dailyCacheEntry
+	flushAt      time.Time
+}
+
+// dailyCacheEntry 缓存某 Key 自 UTC 零点起已落库的 token 数；未落库的内存桶每次另加。
+type dailyCacheEntry struct {
+	dayStartMS int64
+	fetchedAt  time.Time
+	tokens     int64
 }
 
 type requestKey struct {
@@ -113,7 +127,8 @@ type rateRing struct {
 
 type rateBucket struct {
 	startMS  int64
-	requests int64
+	requests int64 // 客户端请求（鉴权阶段计入）
+	admitted int64 // 已准入的真实上游调用
 	tokens   int64
 }
 
@@ -127,12 +142,14 @@ func NewTracker(options Options) (*Tracker, error) {
 		clock = time.Now
 	}
 	tracker := &Tracker{
-		store:    options.Store,
-		clock:    clock,
-		requests: map[requestKey]*requestCounts{},
-		attempts: map[attemptKey]*attemptCounts{},
-		live:     map[liveKey]int64{},
-		rates:    map[string]*rateRing{},
+		store:        options.Store,
+		clock:        clock,
+		requests:     map[requestKey]*requestCounts{},
+		attempts:     map[attemptKey]*attemptCounts{},
+		live:         map[liveKey]int64{},
+		rates:        map[string]*rateRing{},
+		accountRates: map[string]*rateRing{},
+		daily:        map[string]dailyCacheEntry{},
 	}
 	tracker.flushAt = clock()
 	return tracker, nil
@@ -161,7 +178,7 @@ func (tracker *Tracker) BeginRequest(identity coreclientkeys.Identity, surface s
 		tracker.requests[key] = counts
 	}
 	counts.requests++
-	tracker.rateAddLocked(identity.KeyID, now, 1, 0)
+	tracker.rateAddLocked(tracker.rates, identity.KeyID, now, 1, 0, 0)
 	tracker.live[liveKey{keyID: identity.KeyID}]++
 	tracker.mu.Unlock()
 	return &RequestScope{tracker: tracker, keyID: identity.KeyID, surface: surface}
@@ -316,6 +333,18 @@ func (tracker *Tracker) recordAttempt(keyID, provider, accountRef, model string,
 	}
 }
 
+// RecordAdmitted 记录一次被准入的真实上游调用；被拒绝的请求不消耗 RPM 名额。
+func (tracker *Tracker) RecordAdmitted(keyID, accountRef string) {
+	if tracker == nil {
+		return
+	}
+	now := tracker.clock()
+	tracker.mu.Lock()
+	tracker.rateAddLocked(tracker.rates, keyID, now, 0, 1, 0)
+	tracker.rateAddLocked(tracker.accountRates, accountRef, now, 0, 1, 0)
+	tracker.mu.Unlock()
+}
+
 // RecordUsage 记录一次 token 用量（与 usage_ledger 同源）。
 func (tracker *Tracker) RecordUsage(
 	ctx context.Context,
@@ -346,7 +375,8 @@ func (tracker *Tracker) RecordUsage(
 	counts.cacheWrite += saturating(usage.CacheWriteInputTokens())
 	counts.reasoning += saturating(usage.ReasoningTokens())
 	counts.totalTokens += saturating(usage.TotalTokens())
-	tracker.rateAddLocked(identity.KeyID, now, 0, saturating(usage.TotalTokens()))
+	tracker.rateAddLocked(tracker.rates, identity.KeyID, now, 0, 0, saturating(usage.TotalTokens()))
+	tracker.rateAddLocked(tracker.accountRates, accountRef, now, 0, 0, saturating(usage.TotalTokens()))
 	tracker.mu.Unlock()
 }
 
@@ -448,22 +478,170 @@ func (tracker *Tracker) Live() []LiveRow {
 	return rows
 }
 
-func (tracker *Tracker) rateAddLocked(keyID string, now time.Time, requests, tokens int64) {
-	if keyID == "" {
+func (tracker *Tracker) rateAddLocked(
+	rings map[string]*rateRing,
+	subject string,
+	now time.Time,
+	requests int64,
+	admitted int64,
+	tokens int64,
+) {
+	if subject == "" {
 		return
 	}
 	start := now.UnixMilli() - now.UnixMilli()%rateBucketMS
-	ring := tracker.rates[keyID]
+	ring := rings[subject]
 	if ring == nil {
 		ring = &rateRing{}
-		tracker.rates[keyID] = ring
+		rings[subject] = ring
 	}
 	index := int((start / rateBucketMS) % rateSlots)
 	if ring.slots[index].startMS != start {
 		ring.slots[index] = rateBucket{startMS: start}
 	}
 	ring.slots[index].requests += requests
+	ring.slots[index].admitted += admitted
 	ring.slots[index].tokens += tokens
+}
+
+// KeyWindow 返回某 Key 在滚动 60s 窗口内已准入的调用数与 token。
+func (tracker *Tracker) KeyWindow(keyID string) concurrency.Window {
+	return tracker.window(0, keyID)
+}
+
+// AccountWindow 返回某账号在滚动 60s 窗口内已准入的调用数与 token。
+func (tracker *Tracker) AccountWindow(accountRef string) concurrency.Window {
+	return tracker.window(1, accountRef)
+}
+
+func (tracker *Tracker) window(kind int, subject string) concurrency.Window {
+	if tracker == nil || subject == "" {
+		return concurrency.Window{}
+	}
+	now := tracker.clock()
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	var ring *rateRing
+	if kind == 0 {
+		ring = tracker.rates[subject]
+	} else {
+		ring = tracker.accountRates[subject]
+	}
+	return windowOf(ring, now)
+}
+
+func windowOf(ring *rateRing, now time.Time) concurrency.Window {
+	var window concurrency.Window
+	if ring == nil {
+		return window
+	}
+	nowMS := now.UnixMilli()
+	var oldestRequest, oldestToken int64
+	for _, slot := range ring.slots {
+		if slot.startMS == 0 {
+			continue
+		}
+		age := nowMS - slot.startMS
+		if age < 0 || age >= rateWindowMS {
+			continue
+		}
+		if slot.admitted > 0 {
+			window.Requests += slot.admitted
+			if oldestRequest == 0 || slot.startMS < oldestRequest {
+				oldestRequest = slot.startMS
+			}
+		}
+		if slot.tokens > 0 {
+			window.Tokens += slot.tokens
+			if oldestToken == 0 || slot.startMS < oldestToken {
+				oldestToken = slot.startMS
+			}
+		}
+	}
+	// 槽位内的样本都发生在 [start, start+1s)，整批过期时刻取上界以给出保守的
+	// Retry-After；调用方还会把它收窄到窗口长度。
+	if oldestRequest > 0 {
+		window.OldestRequestAt = time.UnixMilli(oldestRequest + rateBucketMS + rateWindowMS)
+	}
+	if oldestToken > 0 {
+		window.OldestTokenAt = time.UnixMilli(oldestToken + rateBucketMS + rateWindowMS)
+	}
+	return window
+}
+
+// KeyDailyTokens 返回某 Key 自 UTC 零点起累计的 token。
+//
+// 口径：已落库的小时桶（跨重启）加上内存里尚未落库的分钟桶；两者互斥（Flush
+// 落库后会从内存删除），因此不会重复计数。持久部分按 1s 缓存，避免每个准入判定
+// 都查库。
+func (tracker *Tracker) KeyDailyTokens(ctx context.Context, keyID string) int64 {
+	if tracker == nil || keyID == "" {
+		return 0
+	}
+	now := tracker.clock()
+	dayStart := utcDayStartMS(now)
+	if !tracker.dailyFresh(keyID, dayStart, now) {
+		if persisted, err := tracker.queryDailyTokens(ctx, keyID, dayStart, now); err == nil {
+			tracker.mu.Lock()
+			tracker.daily[keyID] = dailyCacheEntry{dayStartMS: dayStart, fetchedAt: now, tokens: persisted}
+			tracker.mu.Unlock()
+		}
+	}
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	var persisted int64
+	if entry, ok := tracker.daily[keyID]; ok && entry.dayStartMS == dayStart {
+		persisted = entry.tokens
+	}
+	var memory int64
+	for key, counts := range tracker.attempts {
+		if key.keyID == keyID && key.minute >= dayStart {
+			memory += counts.totalTokens
+		}
+	}
+	return persisted + memory
+}
+
+func (tracker *Tracker) dailyFresh(keyID string, dayStart int64, now time.Time) bool {
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	entry, ok := tracker.daily[keyID]
+	if !ok || entry.dayStartMS != dayStart {
+		return false
+	}
+	return now.Sub(entry.fetchedAt) < dailyCacheTTL
+}
+
+func (tracker *Tracker) queryDailyTokens(
+	ctx context.Context,
+	keyID string,
+	dayStartMS int64,
+	now time.Time,
+) (int64, error) {
+	if tracker.store == nil {
+		return 0, ErrUnavailable
+	}
+	// 小时桶已覆盖当日全部分钟桶，行数远少于分钟桶；UTC 零点与整点对齐。
+	buckets, err := tracker.store.QueryClientKeyAttempts(ctx, coreclientkeys.StatsQuery{
+		Granularity: coreclientkeys.GranularityHour,
+		FromMS:      dayStartMS,
+		ToMS:        now.UnixMilli() + 1,
+		KeyID:       keyID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, bucket := range buckets {
+		total += bucket.TotalTokens
+	}
+	return total, nil
+}
+
+func utcDayStartMS(now time.Time) int64 {
+	utc := now.UTC()
+	midnight := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+	return midnight.UnixMilli()
 }
 
 func (tracker *Tracker) ratesLocked(keyID string, now time.Time) (rpm1, rpm5, tpm1, tpm5 float64) {

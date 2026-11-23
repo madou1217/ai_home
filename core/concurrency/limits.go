@@ -1,9 +1,9 @@
 // Package concurrency 定义网关并发/速率的配置与解析规则（纯领域）。
 //
-// 本轮只用于字段、预览和统计；真正拦截在下一轮实现。解析顺序：
-// 全局上限 → Key 上限 → (账号,模型) 覆盖 → 账号总量 → Provider 默认 → 全局账号默认。
-// 层级只是上限，不是预留：例如 5 个账号 × 2 = 10 容量，key1 已占 8 时，
-// key2 即使配置 4 也只能拿到剩余 2。
+// 并发天花板由 application/admission 执行；速率窗口的只读契约见 windows.go。
+// 解析顺序：全局上限 → Key 上限 → (账号,模型) 覆盖 → 账号总量 → Provider 默认 →
+// 全局账号默认。层级只是上限，不是预留：例如 5 个账号 × 2 = 10 容量，key1 已占 8
+// 时，key2 即使配置 4 也只能拿到剩余 2。
 package concurrency
 
 import (
@@ -135,6 +135,62 @@ func (config Config) AccountModelConcurrency(
 		}
 	}
 	return 0
+}
+
+// AccountRPM 返回账号级每分钟请求上限；0 表示不限。
+//
+// 只读取账号总量覆盖（model_id 为空）：速率限制没有模型维度，账号+模型行里的
+// rpm/tpm 仍只作为存储字段保留，不参与准入。
+func (config Config) AccountRPM(accountRef string, limits []AccountLimit) int {
+	return accountRateLimit(accountRef, limits, func(limit AccountLimit) int { return limit.RPMLimit })
+}
+
+// AccountTPM 返回账号级每分钟 token 上限；0 表示不限。
+func (config Config) AccountTPM(accountRef string, limits []AccountLimit) int {
+	return accountRateLimit(accountRef, limits, func(limit AccountLimit) int { return limit.TPMLimit })
+}
+
+func accountRateLimit(
+	accountRef string,
+	limits []AccountLimit,
+	value func(AccountLimit) int,
+) int {
+	accountRef = strings.TrimSpace(accountRef)
+	if accountRef == "" {
+		return 0
+	}
+	for _, limit := range limits {
+		if strings.TrimSpace(limit.AccountRef) != accountRef {
+			continue
+		}
+		if strings.TrimSpace(limit.ModelID) != "" {
+			continue
+		}
+		if resolved := value(limit); resolved > 0 {
+			return resolved
+		}
+	}
+	return 0
+}
+
+// Equal 判断两份配置在生效字段上是否相同（用于热更新的无变化短路）。
+func (config Config) Equal(other Config) bool {
+	if config.SystemMax != other.SystemMax ||
+		config.QueueLimit != other.QueueLimit ||
+		config.QueueWaitTimeoutMS != other.QueueWaitTimeoutMS ||
+		config.RetryAfterSeconds != other.RetryAfterSeconds ||
+		config.AccountDefault != other.AccountDefault {
+		return false
+	}
+	if len(config.ProviderDefaults) != len(other.ProviderDefaults) {
+		return false
+	}
+	for provider, value := range config.ProviderDefaults {
+		if other.ProviderDefaults[provider] != value {
+			return false
+		}
+	}
+	return true
 }
 
 // KeyConcurrency 返回 Key 的并发上限；0 表示不限（仍受全局/账号上限约束）。

@@ -1,7 +1,7 @@
 package sqliteaccount
 
 // 本文件维护账号级并发/速率覆盖（account_concurrency_limits）。
-// 本轮只存储与预览，不参与准入拦截。
+// 并发、RPM、TPM 都由 application/admission 执行；账号+模型行里的速率字段仍只存储。
 
 import (
 	"context"

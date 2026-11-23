@@ -16,8 +16,14 @@ func (controller *Controller) resolveLocked(request Request, keyID string) resol
 	accountLimit := config.AccountTotal(request.Provider, request.AccountRef, controller.limits)
 	modelLimit := config.AccountModelConcurrency(request.AccountRef, request.Model, controller.limits)
 	keyLimit := 0
-	if controller.keyLim != nil && keyID != "" {
-		keyLimit = config.ClampToSystem(controller.keyLim(keyID))
+	var keyRPM, keyTPM, keyDaily int
+	if controller.keyLimits != nil && keyID != "" {
+		if limits, ok := controller.keyLimits(keyID); ok {
+			keyLimit = config.ClampToSystem(limits.MaxConcurrency)
+			keyRPM = limits.RPMLimit
+			keyTPM = limits.TPMLimit
+			keyDaily = limits.DailyTokenLimit
+		}
 	}
 	return resolved{
 		provider:     request.Provider,
@@ -29,6 +35,11 @@ func (controller *Controller) resolveLocked(request Request, keyID string) resol
 		modelLimit:   modelLimit,
 		systemMax:    config.SystemMax,
 		queueLimit:   config.QueueLimit,
+		keyRPM:       keyRPM,
+		keyTPM:       keyTPM,
+		keyDaily:     keyDaily,
+		accountRPM:   config.AccountRPM(request.AccountRef, controller.limits),
+		accountTPM:   config.AccountTPM(request.AccountRef, controller.limits),
 		retryAfter:   time.Duration(config.RetryAfterSeconds) * time.Second,
 		waitTimeout:  time.Duration(config.QueueWaitTimeoutMS) * time.Millisecond,
 	}
@@ -77,6 +88,7 @@ type Snapshot struct {
 	TimedOut     int64                       `json:"timedOut"`
 	QueueFull    int64                       `json:"queueFull"`
 	AccountRejct int64                       `json:"accountRejected"`
+	RateLimited  int64                       `json:"rateLimited"`
 	SystemMax    int                         `json:"systemMax"`
 	QueueLimit   int                         `json:"queueLimit"`
 	Providers    map[string]ProviderSnapshot `json:"providers"`
@@ -106,6 +118,7 @@ func (controller *Controller) Stats() Snapshot {
 		TimedOut:     controller.stats.timedOut,
 		QueueFull:    controller.stats.queueFull,
 		AccountRejct: controller.stats.accountRejct,
+		RateLimited:  controller.stats.rateLimited,
 		SystemMax:    controller.config.SystemMax,
 		QueueLimit:   controller.config.QueueLimit,
 		Providers:    map[string]ProviderSnapshot{},

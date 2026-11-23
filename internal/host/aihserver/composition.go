@@ -843,9 +843,23 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 并发准入控制器：系统/Key/账号/账号+模型四层天花板、有界 FIFO 队列。
 	// 初始配置来自 server 配置的 concurrency 对象；未配置时回落旧环境变量默认值。
 	admissionController := admission.NewController(startupConcurrencyConfig(ctx, aiHomeDir))
-	admissionController.SetKeyLimiter(clientKeyService.ConcurrencyLimit)
+	admissionController.SetKeyLimitSource(func(keyID string) (admission.KeyLimits, bool) {
+		limits, ok := clientKeyService.Limits(keyID)
+		if !ok {
+			return admission.KeyLimits{}, false
+		}
+		return admission.KeyLimits{
+			MaxConcurrency:  limits.MaxConcurrency,
+			RPMLimit:        limits.RPMLimit,
+			TPMLimit:        limits.TPMLimit,
+			DailyTokenLimit: limits.DailyTokenLimit,
+		}, true
+	})
+	admissionController.SetRateWindows(clientKeyStats)
+	admissionController.SetRateRecorder(clientKeyStats)
 	admission.Install(admissionController)
 	go admissionController.RefreshAccountLimitsLoop(ctx, store, 5*time.Second)
+	go refreshAdmissionConfigLoop(ctx, admissionController, aiHomeDir, 5*time.Second)
 	clientAuthorizer, err := clientauth.NewAuthorizer(
 		clientKey,
 		clientauth.WithManagedKeys(clientKeyService),

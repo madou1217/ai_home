@@ -927,6 +927,10 @@ func (m *Manager) Start(ctx context.Context) error {
 	daemonCtx, cancel := context.WithCancel(baseCtx)
 	m.daemonActive = true
 	m.daemonCancel = cancel
+	// 记录启动时的池节点指纹；维护循环据此发现订阅/节点变化并重建配置。
+	m.poolMu.Lock()
+	m.poolFingerprint = PoolFingerprint(m.aiHomeDir)
+	m.poolMu.Unlock()
 
 	if m.supervisor != nil && m.supervisor.enabled && HasAnyEgressPoolBinding(daemonCtx, m.aiHomeDir) {
 		m.daemonWG.Add(1)
@@ -1207,6 +1211,9 @@ func (m *Manager) MaintenanceTick(ctx context.Context, opts MaintenanceOptions) 
 }
 
 func (m *Manager) runMaintenanceTick(ctx context.Context, opts MaintenanceOptions) MaintenanceResult {
+	// 订阅源增删、节点同步会改写 proxy-pool.json；池配置只在启动时编译，
+	// 因此这里先比对指纹，变化时重建内核，避免池长期停留在旧节点集合。
+	m.reloadPoolIfChanged(ctx)
 	if !m.IsPoolReady() {
 		return MaintenanceResult{}
 	}

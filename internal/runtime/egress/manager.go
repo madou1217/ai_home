@@ -217,8 +217,11 @@ type Manager struct {
 
 	daemonMu     sync.Mutex
 	daemonActive bool
-	daemonCancel context.CancelFunc
-	daemonWG     sync.WaitGroup
+
+	poolMu          sync.Mutex
+	poolFingerprint string
+	daemonCancel    context.CancelFunc
+	daemonWG        sync.WaitGroup
 
 	maintMu       sync.Mutex
 	maintInFlight *maintenanceCall
@@ -344,6 +347,47 @@ func (m *Manager) GetAssignment(ctx context.Context, accountRef string) (*Accoun
 
 func (m *Manager) nowMS() int64 {
 	return m.now().UnixMilli()
+}
+
+// NodePreferenceScore 返回受管出口名当前的偏好分（越大越优先）。
+//
+// 这是「哪个出口更值得先用」对外的唯一入口：租约候选排序、SSH 与池内节点
+// 共用同一份账本推导，避免出现「面板说 A 更好、自动代理却永远先试 B」。
+// 未装配健康账本时返回 0，调用方据此保持确定性顺序。
+func (m *Manager) NodePreferenceScore(name string, atMS int64) int {
+	if m == nil || m.health == nil {
+		return 0
+	}
+	return m.health.PreferenceScore(name, atMS)
+}
+
+// NodePreferenceScoreByIdentity 按稳定出口身份查偏好分（租约候选用它排序）。
+func (m *Manager) NodePreferenceScoreByIdentity(identity string, atMS int64) int {
+	if m == nil || m.health == nil {
+		return 0
+	}
+	return m.health.PreferenceScoreByIdentity(identity, atMS)
+}
+
+// RecordEgressOutcome 把一次任务级出口使用结果写回健康账本。
+//
+// 自动代理选出口后，成功/失败必须回写，否则下一次仍按同一顺序先试同一个出口；
+// 这也是「记住上次成功的出口」的唯一实现——不新增存储，复用既有 uses/
+// successes/failures/lastSuccessAt 事实。未知节点名（如 SSH 出口）安全忽略。
+func (m *Manager) RecordEgressOutcome(name string, ok bool, reason string) {
+	if m == nil || m.health == nil {
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	if ok {
+		m.health.RecordSuccess(name, "")
+		return
+	}
+	// kind 决定冷却时长；任务级失败统一归为 network，让刚失败的出口短期内靠后。
+	m.health.RecordFailure(name, "network", "", strings.TrimSpace(reason), 0)
 }
 
 // SubscribeWatch 注册一条 SSE 变更监听流，返回事件通道与取消函数。

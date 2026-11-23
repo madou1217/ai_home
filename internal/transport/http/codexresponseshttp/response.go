@@ -2,6 +2,7 @@ package codexresponseshttp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -107,19 +108,20 @@ func (handler *Handler) deliver(
 			}
 		}
 	}
-	if downstreamErr != nil || request.Context().Err() != nil {
-		return
-	}
-	if observed.failure.IsValid() {
-		handler.recordFailure(request.Context(), route, selection, observed.failure)
-	} else if observed.completed {
+	if observed.completed {
+		// 客户端可能在读到最终答案后立即断开（Codex TUI 实测如此）。上游已经完整
+		// 结束，用量属于本次尝试，不能因为下游取消就丢掉归属。
 		success, err := inferencegateway.NewAttemptSuccess(handler.Clock())
 		if err == nil {
 			if observed.usage.TotalTokens() > 0 {
 				success = success.WithUsage(observed.usage)
 			}
-			_, _ = handler.observed.RecordSuccess(request.Context(), route, selection.Observation, success)
+			_, _ = handler.observed.RecordSuccess(context.WithoutCancel(request.Context()), route, selection.Observation, success)
 		}
+	} else if downstreamErr != nil || request.Context().Err() != nil {
+		return
+	} else if observed.failure.IsValid() {
+		handler.recordFailure(request.Context(), route, selection, observed.failure)
 	} else if !observed.incomplete {
 		if upstreamErr == nil {
 			upstreamErr = io.ErrUnexpectedEOF

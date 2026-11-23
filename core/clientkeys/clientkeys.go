@@ -109,14 +109,14 @@ type AttemptBucket struct {
 
 // RemoteSessionUsage 是远程执行会话维度的 token 聚合。
 type RemoteSessionUsage struct {
-	SessionID             string
-	InputTokens           int64
-	OutputTokens          int64
-	CachedInputTokens     int64
-	CacheWriteInputTokens int64
-	ReasoningTokens       int64
-	TotalTokens           int64
-	UpdatedAtMS           int64
+	SessionID             string `json:"sessionId"`
+	InputTokens           int64  `json:"inputTokens"`
+	OutputTokens          int64  `json:"outputTokens"`
+	CachedInputTokens     int64  `json:"cachedInputTokens"`
+	CacheWriteInputTokens int64  `json:"cacheWriteInputTokens"`
+	ReasoningTokens       int64  `json:"reasoningTokens"`
+	TotalTokens           int64  `json:"totalTokens"`
+	UpdatedAtMS           int64  `json:"updatedAtMs"`
 }
 
 // StatsQuery 是统计读取条件。

@@ -47,7 +47,7 @@ aih account usage show <B-ref> --json > /tmp/usage-b-before.json
 
 ## 4. 制造账号级 401/403
 
-优先使用可丢弃的 api-key 账号，不要直接破坏真实 OAuth 账号。
+优先使用可丢弃、原本健康且已物化 `<model>` 的 api-key 账号，并保管它的原 key；不要直接破坏真实 OAuth 账号。
 
 ```sh
 OPENAI_API_KEY='sk-invalid-acceptance-only' \
@@ -161,10 +161,18 @@ aih account usage show <A-ref> --json > /tmp/usage-a-after.json
 使用一个可丢弃账号 `C`，把上游基地址指向不可达地址，或让上游返回 503：
 
 ```sh
+# 若 C 尚未创建
+OPENAI_API_KEY='sk-acceptance-c' \
+OPENAI_BASE_URL='http://127.0.0.1:1' \
+  aih account add codex --from-env
+
+# 若 C 已存在
 OPENAI_API_KEY='sk-acceptance-c' \
 OPENAI_BASE_URL='http://127.0.0.1:1' \
   aih account credential update <C-ref> --from-env
 ```
+
+`C` 也必须已物化 `<model>`，否则请求会在选号阶段失败，无法验证握手错误分类。若 `C` 无法物化模型，改用 `A`：恢复原 key，只把 base URL 改成不可达地址。
 
 钉选 `C` 发起 WS 请求。通过标准：
 

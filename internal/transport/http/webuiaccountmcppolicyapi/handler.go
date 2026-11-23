@@ -36,12 +36,14 @@ type Store interface {
 // Dependencies collects handler ports.
 type Dependencies struct {
 	Authorizer Authorizer
+	AIHomeDir  string
 	Store      Store
 }
 
 // Handler serves GET/POST /v1/management/webui/accounts/{provider}/{accountRef}/mcp-policy.
 type Handler struct {
 	authorizer Authorizer
+	aiHomeDir  string
 	store      Store
 }
 
@@ -50,7 +52,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	if dependencies.Authorizer == nil || dependencies.Store == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Handler{authorizer: dependencies.Authorizer, store: dependencies.Store}, nil
+	return &Handler{authorizer: dependencies.Authorizer, aiHomeDir: dependencies.AIHomeDir, store: dependencies.Store}, nil
 }
 
 type resolvedEntry struct {
@@ -61,11 +63,18 @@ type resolvedEntry struct {
 	Reason       string   `json:"reason"`
 }
 
+type availableEntry struct {
+	ID           string   `json:"id"`
+	DisplayName  string   `json:"displayName"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
 type policyResponse struct {
-	OK         bool            `json:"ok"`
-	AccountRef string          `json:"accountRef"`
-	Policy     mcpscope.Policy `json:"policy"`
-	Resolved   []resolvedEntry `json:"resolved"`
+	OK         bool             `json:"ok"`
+	AccountRef string           `json:"accountRef"`
+	Policy     mcpscope.Policy  `json:"policy"`
+	Resolved   []resolvedEntry  `json:"resolved"`
+	Available  []availableEntry `json:"available"`
 }
 
 type requestBody struct {
@@ -124,7 +133,16 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if policy.Mode == "" {
 		policy.Mode = mcpscope.ModeAuto
 	}
-	resolved, err := mcpscope.Resolve(mcpscope.Builtins(), policy, mcpscope.Context{Provider: provider})
+	definitions, loadErr := mcpscope.LoadRegistry(handler.aiHomeDir)
+	if loadErr != nil {
+		writeError(response, http.StatusInternalServerError, "mcp_registry_invalid", loadErr.Error())
+		return
+	}
+	available := make([]availableEntry, 0, len(definitions))
+	for _, definition := range definitions {
+		available = append(available, availableEntry{ID: definition.ID, DisplayName: definition.DisplayName, Capabilities: definition.Capabilities})
+	}
+	resolved, err := mcpscope.Resolve(definitions, policy, mcpscope.Context{Provider: provider})
 	if err != nil {
 		writeError(response, http.StatusBadRequest, "invalid_mcp_policy", err.Error())
 		return
@@ -136,7 +154,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			Capabilities: item.Capabilities, Source: item.Source, Reason: item.Reason,
 		})
 	}
-	writeJSON(response, http.StatusOK, policyResponse{OK: true, AccountRef: accountRef, Policy: policy, Resolved: entries})
+	writeJSON(response, http.StatusOK, policyResponse{OK: true, AccountRef: accountRef, Policy: policy, Resolved: entries, Available: available})
 }
 
 func writeJSON(response http.ResponseWriter, status int, payload any) {

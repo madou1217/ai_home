@@ -1259,6 +1259,41 @@ export interface ServerConfig {
   upstream429Retry?: Upstream429RetryGlobalConfig;
   /** 失败语义全局覆盖；空对象表示使用内置契约（形状见 FailureSemanticsOverrides）。 */
   upstreamFailurePolicy?: object;
+  /** 并发/速率上限（系统、Provider、账号）；本轮只存储与预览，不执行拦截。 */
+  concurrency?: GatewayConcurrencyConfig;
+}
+
+/** server 配置里的 concurrency 对象；数值 0 表示不设上限。 */
+export interface GatewayConcurrencyConfig {
+  systemMax: number;
+  queueLimit: number;
+  queueWaitTimeoutMs: number;
+  retryAfterSeconds: number;
+  accountDefault: number;
+  providerDefaults: Record<string, number>;
+}
+
+/** 账号（或账号+模型）并发覆盖；modelId 为空表示账号总量。 */
+export interface AccountConcurrencyLimit {
+  accountRef: string;
+  modelId: string;
+  maxConcurrency: number;
+  rpmLimit: number;
+  tpmLimit: number;
+}
+
+/** 并发生效值预览；enforced=false 表示本轮尚未真正拦截。 */
+export interface EffectiveConcurrency {
+  enforced: boolean;
+  systemMax: number;
+  accountMax: number;
+  keyMax: number;
+  providerDefault: number;
+  accountDefault: number;
+  effective: number;
+  queueLimit: number;
+  queueWaitTimeoutMs: number;
+  retryAfterSeconds: number;
 }
 
 /** 失败语义策略行（内置契约或合并覆盖后的生效值）。 */

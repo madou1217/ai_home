@@ -25,6 +25,7 @@
 | 账号生命周期 | `composition_account_lifecycle.go`（注册/重登/导入装饰器 + 删除宿主投影/运行保护） | `composition.go` 2115 → 2084 行 |
 | Claude Native Relay | `composition_relay.go`（账号来源 + Native Relay Handler） | `composition.go` 2084 → 2068 行 |
 | 家族透传通道 | `composition_family_relay.go`（家族账号来源、透传模块、插件 Provider 注册表、Handler） | `composition.go` 2068 → 2033 行 |
+| 插件 bundle | `composition_plugin_bundle.go`（本地插件宿主、描述符回调、价格来源接入） | `composition.go` 2033 → 2003 行 |
 | Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
 | 出口上游 API | routing / catalog / upstream actions 分成三个文件 | `webuiegressupstreamsapi/handler.go` 539 → 367 行 |
 

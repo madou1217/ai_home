@@ -25,7 +25,6 @@ import (
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
-	modelpricingcontract "github.com/madou1217/ai_home/contracts/modelpricing"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
@@ -50,7 +49,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/aliasdisplay"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
-	pluginmodelcatalog "github.com/madou1217/ai_home/internal/adapters/pluginprovider/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
@@ -69,8 +67,6 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
-	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
-	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
@@ -1451,46 +1447,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		nativeHTTP: codexHTTPHandler,
 	})
 	windowProbeMux.Handle(openaichatcompletionsapi.Path, familyRelayHandler)
-	pluginModelFallback := &pluginmodelcatalog.Discoverer{Client: &http.Client{Timeout: 15 * time.Second}}
-	bundle := newLocalPluginHandlers(localPluginHandlerOptions{
-		ManagementAuthorizer: authorizer,
-		ClientAuthorizer:     clientAuthorizer,
-		Describe:             accountProviderResolver(store),
-		AIHomeDir:            aiHomeDir,
-		OnProviderDescriptors: func(result pluginhost.DescriptorCollectResult) {
-			pluginProviders.Update(result)
-			catalog.ReplaceDynamic(pluginProviders.Definitions())
-			modelDiscovery.SetPluginProviders(pluginProviders.ModelDescriptors(), pluginModelFallback)
-			if inference != nil {
-				inference.RefreshCatalog()
-			}
-		},
-		OnLog: func(message string) {
-			if errorLog != nil && strings.TrimSpace(message) != "" {
-				errorLog.Println(message)
-			}
-		},
+	pluginRuntime := newPluginBundleRuntime(pluginBundleInputs{
+		ctx:              ctx,
+		aiHomeDir:        aiHomeDir,
+		authorizer:       authorizer,
+		clientAuthorizer: clientAuthorizer,
+		store:            store,
+		pluginProviders:  pluginProviders,
+		catalog:          catalog,
+		modelDiscovery:   modelDiscovery,
+		inference:        inference,
+		errorLog:         errorLog,
 	})
-	pluginBundle = &bundle
-	var sharedPricingService *pricingcatalog.Service
-	if pluginBundle.HostService != nil {
-		sharedPricingService = pluginBundle.HostService.PricingService()
-		if err := pluginBundle.HostService.Start(ctx); err != nil && errorLog != nil {
-			errorLog.Printf("插件宿主初始激活降级: %v", err)
-		}
-		installPluginAliasSync(inference.modelAliases, pluginBundle.HostService, inference.RefreshCatalog)
-	}
-	// 插件价格来源接进定价 Resolver：已生效（通过复核）的插件快照参与报价裁决，
-	// 按来源 authority 与宿主价格（账号/人工/官方）比较；未生效快照不参与计费。
-	if sharedPricingService != nil {
-		pricingresolver.ConfigurePluginSource(func() modelpricingcontract.QuoteSource {
-			store := sharedPricingService.Store()
-			if store == nil {
-				return nil
-			}
-			return store.ContractQuoteSource()
-		})
-	}
+	pluginBundle = pluginRuntime.bundle
+	sharedPricingService := pluginRuntime.pricing
 	egressActivity, err := newEgressActivityRuntime(
 		ctx,
 		aiHomeDir,

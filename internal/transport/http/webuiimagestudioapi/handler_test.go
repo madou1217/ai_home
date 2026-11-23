@@ -17,7 +17,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/images"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelfixture "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/fixture"
 	"github.com/madou1217/ai_home/internal/runtime/imagestudio"
 )
 
@@ -38,7 +38,9 @@ func (s stubOverviews) ListAccountOverviews(_ context.Context) ([]accountapp.Acc
 	return s.items, nil
 }
 
-type stubModels struct{ cat accountapp.AccountModelCatalog }
+type stubModels struct {
+	cat accountapp.AccountModelCatalog
+}
 
 func (s stubModels) ListAllAccountModels(_ context.Context) (accountapp.AccountModelCatalog, error) {
 	return s.cat, nil
@@ -75,7 +77,7 @@ func newTestStudioHandler(t *testing.T) (*Handler, *httptest.Server) {
 		t.Fatalf("NewStore: %v", err)
 	}
 	cat, _ := providers.NewCatalog(providers.BuiltinManifest())
-	modalities, _ := modelsdev.New()
+	modalities, _ := modelfixture.New()
 	now := time.Unix(1700000000, 0).UTC()
 	ident, _ := accountcore.NewNativeSubjectIdentity("kimi", "studio-http-user")
 	aliasID, _ := accountcore.NewCLIAccountID(1)

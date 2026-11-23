@@ -18,7 +18,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/images"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	modelfixture "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/fixture"
 )
 
 // 1x1 PNG pixel (valid header + CRC)
@@ -140,7 +140,9 @@ func (s stubStudioOverviews) ListAccountOverviews(_ context.Context) ([]accounta
 	return s.items, nil
 }
 
-type stubStudioModels struct{ cat accountapp.AccountModelCatalog }
+type stubStudioModels struct {
+	cat accountapp.AccountModelCatalog
+}
 
 func (s stubStudioModels) ListAllAccountModels(_ context.Context) (accountapp.AccountModelCatalog, error) {
 	return s.cat, nil
@@ -225,7 +227,7 @@ func TestServiceCatalogAndExecuteRunAndEdit(t *testing.T) {
 	}
 
 	cat, _ := providers.NewCatalog(providers.BuiltinManifest())
-	modalities, _ := modelsdev.New()
+	modalities, _ := modelfixture.New()
 	now := time.Unix(1700000000, 0).UTC()
 	// 用一个 api-key 账号走 PassthroughStrategy 指向本地 httptest 上游，完成真端到端生成+编辑闭环
 	acc, ov := mustStudioAccountOverview(t, cat, "kimi", "studio-relay-1", 10)

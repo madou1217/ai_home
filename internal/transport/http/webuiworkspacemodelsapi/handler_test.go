@@ -16,8 +16,8 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	modelfixture "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/fixture"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
 
@@ -149,9 +149,9 @@ func TestWorkspaceModelsFullContractAndColdProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	modalIndex, err := modelsdev.New()
+	modalIndex, err := modelfixture.New()
 	if err != nil {
-		t.Fatalf("modelsdev.New: %v", err)
+		t.Fatalf("modelfixture.New: %v", err)
 	}
 
 	refresher := &fakeRefresher{

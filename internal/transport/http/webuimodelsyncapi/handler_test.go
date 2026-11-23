@@ -21,9 +21,9 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	modelfixture "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/fixture"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogjobhistory"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	modelsdevpricing "github.com/madou1217/ai_home/internal/adapters/modelpricing/modelsdev"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
@@ -288,9 +288,9 @@ func setupTempAppState(t *testing.T) string {
 
 func newTestHandler(t *testing.T, store Store, refresher accountapp.AccountModelRefresher, aiHomeDir string, now time.Time) *Handler {
 	t.Helper()
-	modalities, err := modelsdev.New()
+	modalities, err := modelfixture.New()
 	if err != nil {
-		t.Fatalf("modelsdev.New: %v", err)
+		t.Fatalf("modelfixture.New: %v", err)
 	}
 	expander, err := modelsdevpricing.New()
 	if err != nil {

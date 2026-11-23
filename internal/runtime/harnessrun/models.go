@@ -20,9 +20,9 @@ type thinkingLevelMap struct {
 
 // harnessModel 是 pi / dsh 模型投影的共同事实。
 //
-// 展示名、模态、上下文/输出上限、推理标记与价格来自 assets/modelsdev-metadata.json
-// （与 Node attachModelMetadata 同源快照的压缩投影）；modelsdev 运行时索引只用于
-// 快速模态/档位回退。
+// 展示名、上下文/输出上限、推理标记与价格来自 assets/modelsdev-metadata.json
+// （与 Node attachModelMetadata 同源快照的压缩投影）；模态/档位回退来自调用方注入的
+// 能力来源（Runtime.Capabilities，当前是 contracts/model-capabilities 冻结基线）。
 type harnessModel struct {
 	ID               string
 	Name             string

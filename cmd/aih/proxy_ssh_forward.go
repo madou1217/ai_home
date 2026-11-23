@@ -38,7 +38,18 @@ func openSSHTransport(ctx context.Context, runtime commandRuntime, connectionID,
 	if err != nil {
 		return nil, err
 	}
-	return resolver.OpenTransport(ctx, connectionID, proxytransport.SSHOptions{
+	initial, err := resolver.Open(ctx, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	connector, err := proxytransport.NewReconnectingConnector(initial, func(factoryCtx context.Context) (proxytransport.Connector, error) {
+		return resolver.Open(factoryCtx, connectionID)
+	})
+	if err != nil {
+		_ = initial.Close()
+		return nil, err
+	}
+	return proxytransport.NewSSH(ctx, connector, proxytransport.SSHOptions{
 		RemoteAddress: remoteAddress,
 		ListenAddress: listenAddress,
 	})

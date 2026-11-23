@@ -32,10 +32,32 @@ type AccountRuntimeNotifier interface {
 	ClearAccountBlock(ctx context.Context, accountRef accountcore.AccountRef, trigger runtimecore.RecoveryTrigger) error
 }
 
+// AccountStateApplier 是写 auth_invalid 所需的最小投影端口。
+//
+// 模型发现等非令牌刷新路径只需要把状态投影到调度门禁，不应被迫实现清理端口。
+type AccountStateApplier interface {
+	ApplyAccountState(ctx context.Context, state runtimecore.AccountState) error
+}
+
+// MarkAccountAuthInvalid 在模型发现等非令牌路径明确收到认证拒绝后标记账号需要
+// 重新授权：写入 auth_invalid/冷却并投影到内存调度门禁。
+//
+// marked=false 表示账号已处于 auth_invalid，调用方不必重复记录同一条日志。
+func MarkAccountAuthInvalid(
+	ctx context.Context,
+	store AccountStore,
+	applier AccountStateApplier,
+	accountRef accountcore.AccountRef,
+	reason string,
+	now time.Time,
+) (bool, error) {
+	return markAccountAuthInvalid(ctx, store, applier, accountRef, reason, now)
+}
+
 func markAccountAuthInvalid(
 	ctx context.Context,
 	store AccountStore,
-	runtimeNotifier AccountRuntimeNotifier,
+	runtimeNotifier AccountStateApplier,
 	accountRef accountcore.AccountRef,
 	reason string,
 	now time.Time,

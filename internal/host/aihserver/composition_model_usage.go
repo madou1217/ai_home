@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"log"
 	"time"
 )
@@ -101,7 +102,26 @@ func newModelUsageRuntime(
 			MaxAttempts:         modelRefreshMaxAttempts,
 			Clock:               time.Now,
 			Random:              rand.Reader,
-			Observer:            newModelRefreshObserver(errorLog),
+			Observer: newModelRefreshObserver(errorLog, func(accountRef accountcore.AccountRef, _ error) bool {
+				markCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				marked, markErr := tokenrefreshdaemon.MarkAccountAuthInvalid(
+					markCtx,
+					store,
+					accountRuntime,
+					accountRef,
+					"模型目录认证被拒绝，请重新授权",
+					time.Now(),
+				)
+				if markErr != nil {
+					if errorLog != nil {
+						errorLog.Printf("标记账号重新授权失败: account=%s err=%v", accountRef, markErr)
+					}
+					// 标记失败时仍记录本轮拒绝，避免静默。
+					return true
+				}
+				return marked
+			}),
 		},
 	)
 	if err != nil {

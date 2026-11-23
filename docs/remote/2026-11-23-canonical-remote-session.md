@@ -81,6 +81,9 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 - 本轮未真实触发“本轮尚未输出时的可重试失败 → 1011 让 Codex 重连”分支（需要真实
   429/配额耗尽），只做了代码路径核对。
 
+可重复执行的步骤与取证模板见
+[WebSocket 账号级 401/403 换号真机验收清单](2026-11-23-ws-credential-failover-acceptance.md)。
+
 边界：
 
 - Codex 账号模式（`aih codex <id>`）直连上游，不经过 Server 网关，无法按会话计量；只有

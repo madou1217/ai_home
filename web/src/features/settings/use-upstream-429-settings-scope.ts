@@ -115,16 +115,11 @@ export function isValidBackoffSecondsArray(value: unknown): value is number[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 10) {
     return false;
   }
-  let sum = 0;
   for (const item of value) {
     if (typeof item !== 'number' || !Number.isFinite(item) || !Number.isInteger(item)) {
       return false;
     }
     if (item < 1 || item > 300) {
-      return false;
-    }
-    sum += item;
-    if (sum > 1800) {
       return false;
     }
   }

@@ -109,6 +109,9 @@ func newLoginProvider(options loginOptions) (*LoginProvider, error) {
 // ProviderID 返回规范 Antigravity Provider ID。
 func (*LoginProvider) ProviderID() string { return "agy" }
 
+// LoginProbeURL 返回换码前的网络预检地址（Google OAuth）。
+func (*LoginProvider) LoginProbeURL() string { return "https://accounts.google.com/" }
+
 // BeginWithOptions 校验 agy 的显式子策略；当前只支持默认 Google OAuth。
 func (provider *LoginProvider) BeginWithOptions(
 	ctx context.Context,

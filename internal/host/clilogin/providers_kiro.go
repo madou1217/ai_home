@@ -19,7 +19,7 @@ import (
 // 所以登录后用 kirooauth.ImportRefreshToken 兑换/验证并构建完整 artifact。
 
 func init() {
-	providerSpecs["kiro"] = providerSpec{layout: kiroLoginLayout, readCredential: kiroLoginCredential}
+	providerSpecs["kiro"] = providerSpec{layout: kiroLoginLayout, readCredential: kiroLoginCredential, networkProbeURL: "https://oidc.us-east-1.amazonaws.com/"}
 }
 
 // kiroReadAuth 是测试注入点；生产直接读账号目录里的 data.sqlite3。

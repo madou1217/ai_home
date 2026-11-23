@@ -21,11 +21,6 @@ type loginEgress struct {
 	leases *sshproxy.LeaseManager
 }
 
-// loginProbeURLs 是各 Provider 登录前的网络预检地址；未列出的 Provider 不做预检。
-var loginProbeURLs = map[string]string{
-	"codex": "https://auth.openai.com/",
-}
-
 func newLoginEgress(leases *sshproxy.LeaseManager) *loginEgress {
 	if leases == nil {
 		return nil
@@ -33,11 +28,11 @@ func newLoginEgress(leases *sshproxy.LeaseManager) *loginEgress {
 	return &loginEgress{leases: leases}
 }
 
-func (egress *loginEgress) Acquire(ctx context.Context, providerID string) (string, func(), error) {
+func (egress *loginEgress) Acquire(ctx context.Context, providerID string, probeURL string) (string, func(), error) {
 	if egress == nil || egress.leases == nil {
 		return "", func() {}, nil
 	}
-	probe := loginProbeURLs[strings.ToLower(strings.TrimSpace(providerID))]
+	probe := strings.TrimSpace(probeURL)
 	if probe == "" {
 		return "", func() {}, nil
 	}

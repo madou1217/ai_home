@@ -74,7 +74,7 @@ type providerSpec struct {
 
 // providerSpecs 是已迁移 Provider 的唯一注册点。
 var providerSpecs = map[string]providerSpec{
-	"agy": {layout: agyLayout, readCredential: agyCredential},
+	"agy": {layout: agyLayout, readCredential: agyCredential, networkProbeURL: "https://accounts.google.com/"},
 }
 
 // ProbeURL 返回登录前的网络预检地址；未声明时返回空串。

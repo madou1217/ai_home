@@ -87,6 +87,9 @@ func (*Provider) ProviderID() string {
 	return providerID
 }
 
+// LoginProbeURL 返回换码前的网络预检地址。
+func (*Provider) LoginProbeURL() string { return authorizeEndpoint }
+
 // Begin 生成 64 字节 PKCE verifier、32 字节 state 和官方授权 URL。
 func (provider *Provider) Begin(ctx context.Context) (accountauth.OAuthFlow, error) {
 	if err := ctx.Err(); err != nil {

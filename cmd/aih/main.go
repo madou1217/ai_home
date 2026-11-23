@@ -35,6 +35,7 @@ func main() {
 	if isCompletionEntry(os.Args[1:]) {
 		os.Exit(execute(os.Args[1:], defaultCommandRuntime()))
 	}
+	adoptSudoUserHome(os.Getenv, os.Setenv)
 	ensureManagementKeyEnv()
 	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到时交给 Go 的默认账号解析。
 	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {

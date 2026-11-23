@@ -116,7 +116,7 @@ func buildMac(ctx context.Context, opts Options, root string) (LaunchSpec, error
 	}
 	executable := filepath.Join(app, binaryRel)
 	if opts.Mode == "helper" {
-		wrapper, err := buildMacDisclaim(ctx, opts, root)
+		wrapper, err := buildMacInherit(ctx, opts, root)
 		// Never silently change TCC responsibility by dropping the wrapper on a failed build.
 		if err != nil {
 			return LaunchSpec{}, err
@@ -172,16 +172,16 @@ func buildMacIcon(ctx context.Context, work, logo, target string) error {
 	return err
 }
 
-func buildMacDisclaim(ctx context.Context, opts Options, root string) (string, error) {
-	source := filepath.Join(opts.RepoRoot, "native", "translation", "disclaim-launcher.c")
+func buildMacInherit(ctx context.Context, opts Options, root string) (string, error) {
+	source := filepath.Join(opts.RepoRoot, "native", "translation", "inherit-launcher.c")
 	raw, err := os.ReadFile(source)
 	if err != nil {
 		return "", err
 	}
-	fingerprint := hashBytes([]byte("go-disclaim-v1"), []byte(opts.Arch), raw)
+	fingerprint := hashBytes([]byte("go-inherit-v1"), []byte(opts.Arch), raw)
 	dir := filepath.Join(root, "launcher")
-	if cachedArtifact(dir, fingerprint, "aih-disclaim") {
-		return filepath.Join(dir, "aih-disclaim"), nil
+	if cachedArtifact(dir, fingerprint, "aih-inherit") {
+		return filepath.Join(dir, "aih-inherit"), nil
 	}
 	stage, err := os.MkdirTemp(root, ".launcher-build-")
 	if err != nil {
@@ -192,20 +192,20 @@ func buildMacDisclaim(ctx context.Context, opts Options, root string) (string, e
 	if arch == "x64" {
 		arch = "x86_64"
 	}
-	copySource := filepath.Join(stage, "disclaim-launcher.c")
+	copySource := filepath.Join(stage, "inherit-launcher.c")
 	if err := os.WriteFile(copySource, raw, 0o600); err != nil {
 		return "", err
 	}
-	if _, err := runTool(ctx, time.Minute, opts.RepoRoot, nil, "/usr/bin/xcrun", "clang", "-O2", "-arch", arch, "-o", filepath.Join(stage, "aih-disclaim"), copySource); err != nil {
+	if _, err := runTool(ctx, time.Minute, opts.RepoRoot, nil, "/usr/bin/xcrun", "clang", "-O2", "-arch", arch, "-o", filepath.Join(stage, "aih-inherit"), copySource); err != nil {
 		return "", err
 	}
-	if err := writeArtifactStamp(stage, fingerprint, "aih-disclaim"); err != nil {
+	if err := writeArtifactStamp(stage, fingerprint, "aih-inherit"); err != nil {
 		return "", err
 	}
 	if err := publishDirectory(stage, dir); err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "aih-disclaim"), nil
+	return filepath.Join(dir, "aih-inherit"), nil
 }
 
 func registerMac(ctx context.Context, app string) error {

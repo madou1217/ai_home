@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.parse
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 DEFAULTS = {
     "socksUrl": "",
     "socksUrlFile": "",
@@ -439,11 +439,19 @@ class Bridge:
             family = socket.AF_INET6 if ":" in host else socket.AF_INET
             class FamilyServer(BridgeServer):
                 address_family = family
-            try:
-                self.server = FamilyServer((host, port), BridgeHandler, self)
-            except Exception as exc:
-                self.last_error = "listen failed: " + type(exc).__name__
-                self.server = None
+            # 插件宿主重启时新旧实例可能短暂重叠；端口释放有延迟时短暂重试，
+            # 避免一次 listen 失败就让桥永久停在 error。
+            attempts = 10
+            for attempt in range(attempts):
+                try:
+                    self.server = FamilyServer((host, port), BridgeHandler, self)
+                    break
+                except Exception as exc:
+                    self.server = None
+                    self.last_error = "listen failed: " + type(exc).__name__
+                    if attempt + 1 < attempts:
+                        time.sleep(0.25)
+            if self.server is None:
                 return False
             self.last_error = ""
             self.started_at = time.time()

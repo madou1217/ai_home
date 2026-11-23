@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FC } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FC, type ReactNode } from 'react';
 import {
   ApartmentOutlined,
   BranchesOutlined,
+  CheckCircleOutlined,
   CheckOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
@@ -17,9 +18,8 @@ import {
   GlobalOutlined,
   HistoryOutlined,
   InboxOutlined,
-  InfoCircleOutlined,
-  LockOutlined,
   MailOutlined,
+  MessageOutlined,
   ReloadOutlined,
   RightOutlined,
   RollbackOutlined,
@@ -27,13 +27,20 @@ import {
   SwapOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Tooltip, message } from 'antd';
+import { Input, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
+import AppButton from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { writeClipboardText } from '@/utils/clipboard';
 import {
   buildExplicitReplyChain,
+  buildRepliedMessageIdSet,
   evaluateMailLifecycle,
   formatAbsoluteTimestamp,
+  resolveMailDisplayStates,
+  type MailBadgeTone,
+  type MailDisplayStateBadge,
 } from './peer-message-presentation';
 import { buildSessionMailboxView } from './session-office-model';
 import type {
@@ -49,7 +56,6 @@ import type {
   PeerThreadGroup,
   ReadablePartySummary,
   ResolvedPeerEndpoint,
-  ResolvedReplyPolicyKind,
 } from './session-office-types';
 import './OfficeMailbox.css';
 
@@ -84,7 +90,7 @@ const FOLDER_ITEMS: ReadonlyArray<{
 }> = [
   { key: 'inbox', label: '收件箱', icon: InboxOutlined },
   { key: 'sent', label: '已发送', icon: SendOutlined },
-  { key: 'all', label: '全部往来', icon: MailOutlined },
+  { key: 'all', label: '全部', icon: MailOutlined },
   { key: 'threads', label: '会话串', icon: BranchesOutlined },
 ];
 
@@ -98,7 +104,7 @@ function getMatchBasisLabel(basis: ResolvedPeerEndpoint['matchBasis']): string {
       return 'scopedName（按项目作用域名称关联）';
     case 'unresolved':
     default:
-      return 'unresolved（外部或历史会话端点，未猜测归属）';
+      return 'unresolved（外部或历史会话端点）';
   }
 }
 
@@ -109,23 +115,10 @@ function getProvenanceFieldNote(source: PeerFieldProvenance): string {
     case 'classified':
       return '系统归类';
     case 'extracted':
-      return '原文明示/提取';
+      return '原文提取';
     case 'unknown':
     default:
       return '未说明';
-  }
-}
-
-function getReplyPolicyPillTone(kind: ResolvedReplyPolicyKind): 'warning' | 'info' | 'neutral' {
-  switch (kind) {
-    case 'required':
-      return 'warning';
-    case 'optional':
-      return 'info';
-    case 'none':
-    case 'unknown':
-    default:
-      return 'neutral';
   }
 }
 
@@ -160,7 +153,7 @@ function resolveReplyPeerTarget(
 
 /**
  * Builds read-only CLI command templates using the unmodified message shortId/id
- * and real target endpoint. Human display summaries never replace raw message body.
+ * and real target endpoint.
  */
 function buildCliHelperCommand(
   msg: EnrichedPeerMessage,
@@ -194,25 +187,522 @@ function findEndpointRoom(
   return null;
 }
 
-function getDirectionIndicator(
-  msg: EnrichedPeerMessage,
-  focusedSession: OfficeSessionItem | null,
-): { code: 'self' | 'in' | 'out' | null; label: string } {
-  if (!focusedSession) return { code: null, label: '' };
-  const fromMe = msg.fromResolved.sessionKey === focusedSession.sessionKey;
-  const toMe = msg.toResolved.sessionKey === focusedSession.sessionKey;
-  if (fromMe && toMe) return { code: 'self', label: '自发' };
-  if (toMe) return { code: 'in', label: '收' };
-  if (fromMe) return { code: 'out', label: '发' };
-  return { code: null, label: '' };
-}
-
 function getCombinedDeliveryError(msg: EnrichedPeerMessage): string {
   const parts = [msg.raw.error, msg.raw.lastAttemptError, msg.raw.receiptError]
     .map((item) => String(item || '').trim())
     .filter(Boolean);
   return [...new Set(parts)].join(' · ');
 }
+
+function renderStateIcon(tone: MailBadgeTone, key: string): ReactNode {
+  if (key === 'replied' || key === 'read') return <CheckCircleOutlined aria-hidden="true" />;
+  if (key === 'awaiting-reply' || key === 'undelivered' || key === 'manual') {
+    return <ClockCircleOutlined aria-hidden="true" />;
+  }
+  if (key === 'unread') return <MailOutlined aria-hidden="true" />;
+  if (tone === 'danger') return <ExclamationCircleOutlined aria-hidden="true" />;
+  if (key === 'no-reply') return <CloseCircleOutlined aria-hidden="true" />;
+  return <MessageOutlined aria-hidden="true" />;
+}
+
+interface StateTagProps {
+  badge: MailDisplayStateBadge;
+  compact?: boolean;
+}
+
+const MailStateTag: FC<StateTagProps> = ({ badge, compact = false }) => (
+  <span
+    className={`office-mailbox-state-tag office-mailbox-state-tag--${badge.tone}${compact ? ' office-mailbox-state-tag--compact' : ''}`}
+    title={badge.title || badge.label}
+  >
+    <span className="office-mailbox-state-tag-icon" aria-hidden="true">
+      {renderStateIcon(badge.tone, badge.key)}
+    </span>
+    <span>{badge.label}</span>
+  </span>
+);
+
+interface ScopeOptionItem {
+  key: MailboxScope;
+  label: string;
+  count?: number;
+  icon: typeof DesktopOutlined;
+  disabled?: boolean;
+  tooltip?: string;
+}
+
+interface MailboxHeaderProps {
+  compactHeader: boolean;
+  scope: MailboxScope;
+  scopeOptions: ScopeOptionItem[];
+  subtitle: string;
+  searchQuery: string;
+  loading: boolean;
+  hasMessages: boolean;
+  error: string;
+  onSelectScope: (scope: MailboxScope) => void;
+  onSearchChange: (value: string) => void;
+  onRefresh: () => void;
+}
+
+const MailboxHeader: FC<MailboxHeaderProps> = ({
+  compactHeader,
+  scope,
+  scopeOptions,
+  subtitle,
+  searchQuery,
+  loading,
+  hasMessages,
+  error,
+  onSelectScope,
+  onSearchChange,
+  onRefresh,
+}) => (
+  <header className="office-mailbox-header">
+    <div className="office-mailbox-header-main">
+      {!compactHeader ? (
+        <div className="office-mailbox-heading-block">
+          <h2 className="office-mailbox-title">
+            <MailOutlined aria-hidden="true" />
+            <span>协作邮箱</span>
+          </h2>
+          <p className="office-mailbox-subtitle" title={subtitle}>
+            {subtitle}
+          </p>
+        </div>
+      ) : (
+        <p className="office-mailbox-subtitle office-mailbox-subtitle--compact" title={subtitle}>
+          {subtitle}
+        </p>
+      )}
+
+      <div className="office-mailbox-toolbar-actions">
+        {loading && hasMessages ? (
+          <SettingStatusTag status="saving" label="同步中" compact live="polite" />
+        ) : null}
+        <Input.Search
+          size="small"
+          allowClear
+          className="office-mailbox-search"
+          aria-label="搜索邮件"
+          placeholder="搜索主题、发件人、正文…"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+          onSearch={onSearchChange}
+        />
+        <AppButton
+          size="small"
+          appVariant="secondary"
+          icon={<ReloadOutlined />}
+          loading={loading}
+          onClick={onRefresh}
+        >
+          刷新
+        </AppButton>
+      </div>
+    </div>
+
+    <div className="office-mailbox-scope-bar">
+      <div
+        className="office-mailbox-scope-tabs"
+        role="tablist"
+        aria-label="邮箱范围切换"
+      >
+        {scopeOptions.map((item) => {
+          const Icon = item.icon;
+          const active = scope === item.key;
+          return (
+            <Tooltip key={item.key} title={item.tooltip}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                disabled={item.disabled}
+                data-active={active ? 'true' : undefined}
+                className="office-mailbox-scope-btn"
+                onClick={() => onSelectScope(item.key)}
+              >
+                <Icon aria-hidden="true" />
+                <span>{item.label}</span>
+                {typeof item.count === 'number' ? (
+                  <span className="office-mailbox-scope-count">{item.count}</span>
+                ) : null}
+              </button>
+            </Tooltip>
+          );
+        })}
+      </div>
+    </div>
+
+    {error ? (
+      <InlineNote tone="error" className="office-mailbox-header-error">
+        {error}
+      </InlineNote>
+    ) : null}
+  </header>
+);
+
+interface MailboxFilterRailProps {
+  folder: MailboxFolder;
+  folderCounts: Record<MailboxFolder, number>;
+  stateFilter: MailboxStateFilter;
+  stateFilterItems: ReadonlyArray<{
+    key: MailboxStateFilter;
+    label: string;
+    count: number;
+    icon: ReactNode;
+  }>;
+  replyFilter: MailboxReplyFilter;
+  replyFilterItems: ReadonlyArray<{
+    key: MailboxReplyFilter;
+    label: string;
+    count?: number;
+    icon: ReactNode;
+  }>;
+  onSelectFolder: (folder: MailboxFolder) => void;
+  onSelectStateFilter: (filter: MailboxStateFilter) => void;
+  onSelectReplyFilter: (filter: MailboxReplyFilter) => void;
+}
+
+const MailboxFilterRail: FC<MailboxFilterRailProps> = ({
+  folder,
+  folderCounts,
+  stateFilter,
+  stateFilterItems,
+  replyFilter,
+  replyFilterItems,
+  onSelectFolder,
+  onSelectStateFilter,
+  onSelectReplyFilter,
+}) => (
+  <aside className="office-mailbox-rail" aria-label="文件夹与筛选">
+    <div className="office-mailbox-rail-section">
+      <div className="office-mailbox-rail-heading">目录</div>
+      <nav className="office-mailbox-rail-list" aria-label="邮件目录">
+        {FOLDER_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const active = folder === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className="office-mailbox-rail-btn"
+              data-active={active ? 'true' : undefined}
+              aria-pressed={active}
+              onClick={() => onSelectFolder(item.key)}
+            >
+              <span className="office-mailbox-rail-label">
+                <Icon aria-hidden="true" />
+                <span>{item.label}</span>
+              </span>
+              <span className="office-mailbox-rail-count">{folderCounts[item.key]}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+
+    <div className="office-mailbox-rail-section">
+      <div className="office-mailbox-rail-heading">状态</div>
+      <div className="office-mailbox-rail-list" role="group" aria-label="按投递状态筛选">
+        {stateFilterItems.map((item) => {
+          const active = stateFilter === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className="office-mailbox-rail-btn"
+              data-active={active ? 'true' : undefined}
+              aria-pressed={active}
+              onClick={() => onSelectStateFilter(item.key)}
+            >
+              <span className="office-mailbox-rail-label">
+                {item.icon}
+                <span>{item.label}</span>
+              </span>
+              <span className="office-mailbox-rail-count">{item.count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+
+    <div className="office-mailbox-rail-section">
+      <div className="office-mailbox-rail-heading">回复</div>
+      <div className="office-mailbox-rail-list" role="group" aria-label="按回复要求筛选">
+        {replyFilterItems.map((item) => {
+          const active = replyFilter === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className="office-mailbox-rail-btn"
+              data-active={active ? 'true' : undefined}
+              aria-pressed={active}
+              onClick={() => onSelectReplyFilter(item.key)}
+            >
+              <span className="office-mailbox-rail-label">
+                {item.icon}
+                <span>{item.label}</span>
+              </span>
+              {typeof item.count === 'number' ? (
+                <span className="office-mailbox-rail-count">{item.count}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </aside>
+);
+
+interface MailboxListPaneProps {
+  folder: MailboxFolder;
+  activeFolderLabel: string;
+  visibleCount: number;
+  hasActiveFilter: boolean;
+  loading: boolean;
+  scope: MailboxScope;
+  activeRoom: OfficeProjectRoom | null;
+  allCountInScope: number;
+  totalCount: number;
+  threads: PeerThreadGroup[];
+  messages: EnrichedPeerMessage[];
+  selectedThreadId: string | null;
+  selectedMessageId: string | null;
+  nowMs: number;
+  repliedIds: ReadonlySet<string>;
+  locallyReadIds: ReadonlySet<string>;
+  onResetFilters: () => void;
+  onSelectFolder: (folder: MailboxFolder) => void;
+  onSelectScope: (scope: MailboxScope) => void;
+  onSelectThread: (thread: PeerThreadGroup) => void;
+  onSelectMessage: (msg: EnrichedPeerMessage) => void;
+  onRefresh: () => void;
+}
+
+const MailboxListPane: FC<MailboxListPaneProps> = ({
+  folder,
+  activeFolderLabel,
+  visibleCount,
+  hasActiveFilter,
+  loading,
+  scope,
+  activeRoom,
+  allCountInScope,
+  totalCount,
+  threads,
+  messages,
+  selectedThreadId,
+  selectedMessageId,
+  nowMs,
+  repliedIds,
+  locallyReadIds,
+  onResetFilters,
+  onSelectFolder,
+  onSelectScope,
+  onSelectThread,
+  onSelectMessage,
+  onRefresh,
+}) => {
+  const renderEmptyAction = (): ReactNode => {
+    if (hasActiveFilter) {
+      return (
+        <AppButton size="small" appVariant="primary" onClick={onResetFilters}>
+          清除筛选条件
+        </AppButton>
+      );
+    }
+    if ((folder === 'inbox' || folder === 'sent') && allCountInScope > 0) {
+      return (
+        <AppButton size="small" appVariant="primary" onClick={() => onSelectFolder('all')}>
+          查看全部往来 ({allCountInScope})
+        </AppButton>
+      );
+    }
+    if (scope === 'session' && activeRoom) {
+      return (
+        <AppButton size="small" appVariant="primary" onClick={() => onSelectScope('room')}>
+          切换到当前房间
+        </AppButton>
+      );
+    }
+    if (scope !== 'all' && totalCount > 0) {
+      return (
+        <AppButton size="small" appVariant="primary" onClick={() => onSelectScope('all')}>
+          查看全部消息 ({totalCount})
+        </AppButton>
+      );
+    }
+    return (
+      <AppButton size="small" appVariant="secondary" icon={<ReloadOutlined />} onClick={onRefresh}>
+        刷新消息
+      </AppButton>
+    );
+  };
+
+  return (
+    <div className="office-mailbox-list-pane">
+      <div className="office-mailbox-list-head">
+        <span className="office-mailbox-list-title">
+          {activeFolderLabel} · {visibleCount}
+          {folder === 'threads' ? ' 组' : ' 封'}
+        </span>
+        {hasActiveFilter ? (
+          <AppButton
+            size="small"
+            appVariant="quiet"
+            icon={<CloseCircleOutlined />}
+            onClick={onResetFilters}
+          >
+            清除筛选
+          </AppButton>
+        ) : null}
+      </div>
+
+      <div
+        className="office-mailbox-list"
+        role="listbox"
+        aria-label={folder === 'threads' ? '会话串列表' : '邮件列表'}
+      >
+        {loading && visibleCount === 0 ? (
+          <div className="office-mailbox-list-empty">
+            <HudStateView
+              compact
+              variant="loading"
+              title="正在加载协作邮件"
+              description="同步会话映射与投递状态"
+            />
+          </div>
+        ) : visibleCount === 0 ? (
+          <div className="office-mailbox-list-empty">
+            <HudStateView
+              compact
+              title={
+                hasActiveFilter
+                  ? '没有匹配的邮件'
+                  : scope === 'session'
+                    ? '当前工位暂无邮件'
+                    : scope === 'room'
+                      ? '当前房间暂无邮件'
+                      : scope === 'unassigned'
+                        ? '暂无未归属或历史邮件'
+                        : '暂无协作邮件'
+              }
+              description={
+                hasActiveFilter
+                  ? '可清除筛选或修改关键词后重试。'
+                  : '跨会话发送的 Peer 消息会显示在此处。'
+              }
+              extra={renderEmptyAction()}
+            />
+          </div>
+        ) : folder === 'threads' ? (
+          threads.map((thread) => {
+            const isSelected = selectedThreadId === thread.threadId;
+            const latest = thread.latestMessage;
+            const lifecycle = evaluateMailLifecycle(latest, nowMs);
+            const displayStates = resolveMailDisplayStates(
+              latest,
+              lifecycle,
+              repliedIds,
+              locallyReadIds.has(latest.id),
+            );
+            const partiesText = `${latest.fromReadable.shortName} → ${latest.toReadable.shortName}`;
+
+            return (
+              <button
+                key={thread.threadId}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                data-selected={isSelected ? 'true' : undefined}
+                data-unread={displayStates.isUnread ? 'true' : undefined}
+                className="office-mailbox-row"
+                onClick={() => onSelectThread(thread)}
+              >
+                <div className="office-mailbox-row-subject-line">
+                  <span className="office-mailbox-row-subject" title={thread.subjectLine || '(无主题)'}>
+                    {thread.subjectLine || '(无主题)'}
+                  </span>
+                  <span className="office-mailbox-row-count">{thread.messageCount} 封</span>
+                </div>
+
+                <div className="office-mailbox-row-meta" title={`${partiesText} · ${lifecycle.sentAbsoluteText}`}>
+                  <span className="office-mailbox-row-parties">{partiesText}</span>
+                  <span className="office-mailbox-row-sep" aria-hidden="true">·</span>
+                  <span className="office-mailbox-row-time">{lifecycle.sentCompactText}</span>
+                </div>
+
+                <div className="office-mailbox-row-states">
+                  <MailStateTag badge={displayStates.primary} compact />
+                  {displayStates.reply ? <MailStateTag badge={displayStates.reply} compact /> : null}
+                  {thread.isCrossProject ? (
+                    <span className="office-mailbox-micro-badge">
+                      <SwapOutlined aria-hidden="true" />
+                      <span>跨项目</span>
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })
+        ) : (
+          messages.map((item) => {
+            const isSelected = selectedMessageId === item.id;
+            const lifecycle = evaluateMailLifecycle(item, nowMs);
+            const displayStates = resolveMailDisplayStates(
+              item,
+              lifecycle,
+              repliedIds,
+              locallyReadIds.has(item.id),
+            );
+            const partiesText = `${item.fromReadable.shortName} → ${item.toReadable.shortName}`;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                data-selected={isSelected ? 'true' : undefined}
+                data-unread={displayStates.isUnread ? 'true' : undefined}
+                className="office-mailbox-row"
+                onClick={() => onSelectMessage(item)}
+              >
+                <div className="office-mailbox-row-subject-line">
+                  <span className="office-mailbox-row-subject" title={item.presentation.title}>
+                    {item.presentation.title}
+                  </span>
+                  {Number(item.raw.priority || 0) > 0 ? (
+                    <span className="office-mailbox-priority-tag">加急</span>
+                  ) : null}
+                </div>
+
+                <div className="office-mailbox-row-meta" title={`${partiesText} · ${lifecycle.sentAbsoluteText}`}>
+                  <span className="office-mailbox-row-parties">{partiesText}</span>
+                  <span className="office-mailbox-row-sep" aria-hidden="true">·</span>
+                  <span className="office-mailbox-row-time">{lifecycle.sentCompactText}</span>
+                </div>
+
+                <div className="office-mailbox-row-states">
+                  <MailStateTag badge={displayStates.primary} compact />
+                  {displayStates.reply ? <MailStateTag badge={displayStates.reply} compact /> : null}
+                  {item.isCrossProject ? (
+                    <span className="office-mailbox-micro-badge">
+                      <SwapOutlined aria-hidden="true" />
+                      <span>跨项目</span>
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
 
 interface ReadablePartyCardProps {
   roleLabel: '发件方' | '收件方';
@@ -259,9 +749,7 @@ const ReadablePartyCard: FC<ReadablePartyCardProps> = ({
           <span className="office-mailbox-party-provider">{readable.providerLabel}</span>
         </span>
         {readable.shortIdentity ? (
-          <Tooltip title="短会话标识（完整 UUID 请见下方技术详情）">
-            <span className="office-mailbox-party-short-id">{readable.shortIdentity}</span>
-          </Tooltip>
+          <span className="office-mailbox-party-short-id">{readable.shortIdentity}</span>
         ) : null}
       </div>
 
@@ -270,24 +758,25 @@ const ReadablePartyCard: FC<ReadablePartyCardProps> = ({
           {readable.shortName}
         </strong>
         <div className="office-mailbox-party-foot">
-          {readable.hasKnownProject || matchedRoom ? (
-            <Tooltip title={projectPathHint}>
-              <span className="office-mailbox-project-badge">
+          <Tooltip title={projectPathHint}>
+            <span
+              className={`office-mailbox-project-badge${
+                readable.hasKnownProject || matchedRoom ? '' : ' office-mailbox-project-badge--muted'
+              }`}
+            >
+              {readable.hasKnownProject || matchedRoom ? (
                 <FolderOpenOutlined aria-hidden="true" />
-                <span>{projectDisplay}</span>
-              </span>
-            </Tooltip>
-          ) : (
-            <span className="office-mailbox-project-badge office-mailbox-project-badge--muted">
-              <HistoryOutlined aria-hidden="true" />
+              ) : (
+                <HistoryOutlined aria-hidden="true" />
+              )}
               <span>{projectDisplay}</span>
             </span>
-          )}
+          </Tooltip>
 
           {endpoint.sessionKey && onJumpToSession ? (
-            <Button
+            <AppButton
               size="small"
-              type="default"
+              appVariant="secondary"
               disabled={isCurrentDesk}
               icon={isCrossRoomJump ? <EnvironmentOutlined /> : <DesktopOutlined />}
               onClick={(event) => {
@@ -295,8 +784,8 @@ const ReadablePartyCard: FC<ReadablePartyCardProps> = ({
                 onJumpToSession(endpoint.sessionKey!, endpoint.projectKey);
               }}
             >
-              {isCurrentDesk ? '当前工位' : isCrossRoomJump ? '前往对方房间' : '前往工位'}
-            </Button>
+              {isCurrentDesk ? '当前工位' : isCrossRoomJump ? '前往房间' : '前往工位'}
+            </AppButton>
           ) : null}
         </div>
       </div>
@@ -311,6 +800,9 @@ interface MailDetailArticleProps {
   focusedSession: OfficeSessionItem | null;
   activeRoom: OfficeProjectRoom | null;
   nowMs: number;
+  repliedIds: ReadonlySet<string>;
+  isLocallyRead: boolean;
+  onToggleLocalRead: (messageId: string) => void;
   bodyMode: BodyRenderMode;
   onBodyModeChange: (mode: BodyRenderMode) => void;
   copiedKey: string | null;
@@ -330,6 +822,9 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
   focusedSession,
   activeRoom,
   nowMs,
+  repliedIds,
+  isLocallyRead,
+  onToggleLocalRead,
   bodyMode,
   onBodyModeChange,
   copiedKey,
@@ -341,18 +836,31 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
   isActiveInThread = false,
   onSelectInThread,
 }) => {
+  const [rawExpanded, setRawExpanded] = useState(false);
   const [techExpanded, setTechExpanded] = useState(false);
+
+  useEffect(() => {
+    setRawExpanded(false);
+    setTechExpanded(false);
+  }, [messageItem.id]);
 
   const lifecycle = useMemo(
     () => evaluateMailLifecycle(messageItem, nowMs),
     [messageItem, nowMs],
+  );
+  const displayStates = useMemo(
+    () => resolveMailDisplayStates(messageItem, lifecycle, repliedIds, isLocallyRead),
+    [isLocallyRead, lifecycle, messageItem, repliedIds],
   );
   const deliveryError = useMemo(
     () => getCombinedDeliveryError(messageItem),
     [messageItem],
   );
   const explicitChain = useMemo(
-    () => (isThreadCard ? { hasExplicitChain: false, rootMissingShortId: '', nodes: [] } : buildExplicitReplyChain(messageItem, allMessages)),
+    () =>
+      isThreadCard
+        ? { hasExplicitChain: false, rootMissingShortId: '', nodes: [] }
+        : buildExplicitReplyChain(messageItem, allMessages),
     [allMessages, isThreadCard, messageItem],
   );
 
@@ -363,11 +871,20 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
   }, [allMessages, messageItem.raw.supersedes]);
 
   const { presentation, fromReadable, toReadable } = messageItem;
-  const replyPolicyTone = getReplyPolicyPillTone(presentation.replyPolicyKind);
   const shortMsgId = messageItem.shortId || messageItem.id.slice(0, 8);
   const idCopyKey = `id:${messageItem.id}`;
   const bodyCopyKey = `body:${messageItem.id}`;
+  const replyCmdKey = `inline-reply:${messageItem.id}`;
+  const replyCommand = useMemo(
+    () => buildCliHelperCommand(messageItem, 'reply', focusedSession),
+    [focusedSession, messageItem],
+  );
   const rawBodyVerbatim = messageItem.raw.body;
+  const canMarkRead = lifecycle.kind !== 'read';
+  const showSummarySeparately =
+    Boolean(presentation.summary)
+    && presentation.summary !== presentation.purpose
+    && presentation.summary !== presentation.title;
 
   return (
     <article
@@ -380,20 +897,14 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
           : undefined
       }
     >
-      {/* 1. Readable Title + Status & Provenance Header */}
+      {/* 1. Subject, States & Quick Actions First */}
       <header className="office-mailbox-article-head">
         <div className="office-mailbox-subject-row">
-          <h2 className="office-mailbox-subject">
-            {presentation.title}
-          </h2>
-
+          <h2 className="office-mailbox-subject">{presentation.title}</h2>
           <div className="office-mailbox-head-actions">
-            <span className="office-mailbox-provenance-chip" title="摘要字段来源说明">
-              {presentation.provenanceLabel}
+            <span className="office-mailbox-short-id" title={`完整 ID: ${messageItem.id}`}>
+              #{shortMsgId}
             </span>
-            <Tooltip title="短消息标识；展开底部技术详情可查看完整 UUID">
-              <span className="office-mailbox-short-id">#{shortMsgId}</span>
-            </Tooltip>
             {isThreadCard && onSelectInThread ? (
               <button
                 type="button"
@@ -410,77 +921,76 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
           </div>
         </div>
 
-        <div className="office-mailbox-meta-badges">
-          <span className={`office-mailbox-state-pill office-mailbox-state-pill--${lifecycle.pillTone}`}>
-            <span
-              className={`hud-led hud-led--${lifecycle.ledTone === 'neutral' ? 'info' : lifecycle.ledTone}`}
-              aria-hidden="true"
-            />
-            <span>{lifecycle.label}</span>
-          </span>
-
-          <span className={`office-mailbox-state-pill office-mailbox-state-pill--${replyPolicyTone}`}>
-            <span>回复要求：{presentation.replyPolicyLabel}</span>
-          </span>
-
-          {Number(messageItem.raw.priority || 0) > 0 ? (
-            <span className="office-mailbox-state-pill office-mailbox-state-pill--warning">
-              <span>加急</span>
-            </span>
-          ) : Number(messageItem.raw.priority || 0) < 0 ? (
-            <span className="office-mailbox-state-pill office-mailbox-state-pill--neutral">
-              <span>低优先级</span>
-            </span>
-          ) : null}
-
-          {messageItem.isCrossProject ? (
-            <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
-              <SwapOutlined aria-hidden="true" />
-              <span>跨项目协作</span>
-            </span>
-          ) : null}
-
-          {messageItem.isFullyUnassigned ? (
-            <span className="office-mailbox-micro-badge office-mailbox-micro-badge--warn">
-              <HistoryOutlined aria-hidden="true" />
-              <span>历史 / 外部消息</span>
-            </span>
-          ) : messageItem.hasUnresolvedParty ? (
-            <span className="office-mailbox-micro-badge office-mailbox-micro-badge--muted">
-              <HistoryOutlined aria-hidden="true" />
-              <span>含历史或外部会话</span>
-            </span>
-          ) : null}
-
-          {messageItem.raw.supersedes ? (
-            supersedesMessage ? (
-              <Button
-                size="small"
-                type="link"
-                className="office-mailbox-reply-link"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onJumpToMessage(supersedesMessage);
-                }}
-              >
-                替代旧消息 #{supersedesMessage.shortId}
-              </Button>
-            ) : (
-              <span className="office-mailbox-micro-badge office-mailbox-micro-badge--muted">
-                替代 #{messageItem.raw.supersedes.slice(0, 8)}
+        <div className="office-mailbox-meta-row">
+          <div className="office-mailbox-meta-badges">
+            <MailStateTag badge={displayStates.primary} />
+            {displayStates.reply ? <MailStateTag badge={displayStates.reply} /> : null}
+            {Number(messageItem.raw.priority || 0) > 0 ? (
+              <span className="office-mailbox-priority-tag">加急</span>
+            ) : null}
+            {messageItem.isCrossProject ? (
+              <span className="office-mailbox-micro-badge">
+                <SwapOutlined aria-hidden="true" />
+                <span>跨项目</span>
               </span>
-            )
-          ) : null}
+            ) : null}
+            {messageItem.isFullyUnassigned ? (
+              <span className="office-mailbox-micro-badge">
+                <HistoryOutlined aria-hidden="true" />
+                <span>历史 / 外部</span>
+              </span>
+            ) : null}
+            {messageItem.raw.supersedes ? (
+              supersedesMessage ? (
+                <AppButton
+                  size="small"
+                  appVariant="quiet"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onJumpToMessage(supersedesMessage);
+                  }}
+                >
+                  替代 #{supersedesMessage.shortId}
+                </AppButton>
+              ) : (
+                <span className="office-mailbox-micro-badge">
+                  替代 #{messageItem.raw.supersedes.slice(0, 8)}
+                </span>
+              )
+            ) : null}
+            {messageItem.supersededByIds.length > 0 ? (
+              <span className="office-mailbox-micro-badge">
+                已被 #{messageItem.supersededByIds.join(', #')} 替代
+              </span>
+            ) : null}
+          </div>
 
-          {messageItem.supersededByIds.length > 0 ? (
-            <span className="office-mailbox-micro-badge office-mailbox-micro-badge--warn">
-              已被新消息 #{messageItem.supersededByIds.join(', #')} 替代
-            </span>
-          ) : null}
+          <div className="office-mailbox-article-actions" onClick={(event) => event.stopPropagation()}>
+            <AppButton
+              size="small"
+              appVariant="primary"
+              icon={copiedKey === replyCmdKey ? <CheckOutlined /> : <CopyOutlined />}
+              onClick={() =>
+                onCopy(replyCmdKey, replyCommand, '已复制回复命令，可在终端执行')
+              }
+            >
+              {copiedKey === replyCmdKey ? '已复制命令' : '复制回复命令'}
+            </AppButton>
+            {canMarkRead ? (
+              <AppButton
+                size="small"
+                appVariant="secondary"
+                icon={<EyeOutlined />}
+                onClick={() => onToggleLocalRead(messageItem.id)}
+              >
+                {isLocallyRead ? '标为未读' : '标记已读'}
+              </AppButton>
+            ) : null}
+          </div>
         </div>
       </header>
 
-      {/* 2. Readable Sender / Project & Recipient / Project */}
+      {/* 2. Sender -> Recipient */}
       <div className="office-mailbox-parties">
         <ReadablePartyCard
           roleLabel="发件方"
@@ -502,20 +1012,22 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
         />
       </div>
 
-      {/* 3. Structured Human Digest: Purpose, Action Required, Timing & Validity */}
-      <section className="office-mailbox-digest" aria-label="邮件可读要点">
+      {/* 3. Structured Purpose, Expected Action, Timing & State */}
+      <section className="office-mailbox-digest" aria-label="邮件核心信息">
         <div className="office-mailbox-digest-grid">
           <div className="office-mailbox-digest-item">
             <div className="office-mailbox-digest-label">
-              <span>联系目的（为何联系）</span>
-              {presentation.purposeSource === 'classified' ? (
-                <span className="office-mailbox-digest-tag office-mailbox-digest-tag--classified">系统归类</span>
-              ) : presentation.purposeSource === 'extracted' ? (
-                <span className="office-mailbox-digest-tag">原文明示/提取</span>
+              <span>联系目的</span>
+              {presentation.purposeSource !== 'unknown' ? (
+                <span className="office-mailbox-digest-tag">
+                  {getProvenanceFieldNote(presentation.purposeSource)}
+                </span>
               ) : null}
             </div>
             <div
-              className={`office-mailbox-digest-value${presentation.purposeSource === 'unknown' ? ' is-unknown' : ''}`}
+              className={`office-mailbox-digest-value${
+                presentation.purposeSource === 'unknown' ? ' is-unknown' : ''
+              }`}
             >
               {presentation.purpose}
             </div>
@@ -523,44 +1035,41 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
 
           <div className="office-mailbox-digest-item">
             <div className="office-mailbox-digest-label">
-              <span>收件会话待办 / 行动说明</span>
-              {presentation.actionSource === 'classified' ? (
-                <span className="office-mailbox-digest-tag office-mailbox-digest-tag--classified">系统归类</span>
-              ) : presentation.actionSource === 'extracted' ? (
-                <span className="office-mailbox-digest-tag">原文标注</span>
+              <span>期望行动</span>
+              {presentation.actionSource !== 'unknown' ? (
+                <span className="office-mailbox-digest-tag">
+                  {getProvenanceFieldNote(presentation.actionSource)}
+                </span>
               ) : null}
             </div>
             <div
-              className={`office-mailbox-digest-value${presentation.actionSource === 'unknown' ? ' is-unknown' : ''}`}
+              className={`office-mailbox-digest-value${
+                presentation.actionSource === 'unknown' ? ' is-unknown' : ''
+              }`}
             >
-              <span>{presentation.actionText}</span>
-              {presentation.actionSource !== 'unknown' ? (
-                <span className="office-mailbox-caveat">
-                  仅转述发送方对收件会话的请求说明，不构成超出当前批准任务的额外授权。
-                </span>
-              ) : null}
+              {presentation.actionText}
             </div>
           </div>
 
           <div className="office-mailbox-digest-item">
             <div className="office-mailbox-digest-label">
               <ClockCircleOutlined aria-hidden="true" />
-              <span>发送时间 vs 送达时间（绝对时间）</span>
+              <span>时间记录</span>
             </div>
             <div className="office-mailbox-time-pair">
               <span>
-                <em>发送：</em>
+                <em>发送</em>
                 <strong>{lifecycle.sentAbsoluteText}</strong>
               </span>
               <span>
-                <em>送达：</em>
+                <em>送达</em>
                 <strong className={lifecycle.isUndelivered ? 'is-undelivered' : undefined}>
                   {lifecycle.deliveredAbsoluteText}
                 </strong>
               </span>
               {messageItem.raw.readAt > 0 ? (
                 <span>
-                  <em>读取记录：</em>
+                  <em>已读</em>
                   <strong>{lifecycle.readAbsoluteText}</strong>
                 </span>
               ) : null}
@@ -569,69 +1078,57 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
 
           <div className="office-mailbox-digest-item">
             <div className="office-mailbox-digest-label">
-              <InfoCircleOutlined aria-hidden="true" />
-              <span>时效与状态说明</span>
+              <span>投递与时效</span>
             </div>
             <div className="office-mailbox-digest-value">
               <span>{lifecycle.validitySummary}</span>
-              <span className="office-mailbox-caveat">{lifecycle.processingCaveat}</span>
             </div>
           </div>
         </div>
 
-        <div className="office-mailbox-summary-row">
-          <span className="office-mailbox-digest-label">
-            <span>可读摘要</span>
-            <span
-              className={`office-mailbox-digest-tag${presentation.summarySource === 'classified' ? ' office-mailbox-digest-tag--classified' : ''}`}
-            >
-              {presentation.summarySource === 'classified'
-                ? '系统归类（可核对原文）'
-                : getProvenanceFieldNote(presentation.summarySource)}
-            </span>
-          </span>
-          <p className="office-mailbox-summary-text">{presentation.summary}</p>
-        </div>
+        {showSummarySeparately ? (
+          <div className="office-mailbox-summary-row">
+            <span className="office-mailbox-digest-label">摘要</span>
+            <p className="office-mailbox-summary-text">{presentation.summary}</p>
+          </div>
+        ) : null}
 
         {presentation.jargonHints.length > 0 ? (
-          <div className="office-mailbox-jargon-row" aria-label="原文常见术语说明">
-            <span className="office-mailbox-jargon-label">原文术语参考：</span>
+          <div className="office-mailbox-jargon-row" aria-label="术语参考">
+            <span className="office-mailbox-jargon-label">术语：</span>
             {presentation.jargonHints.map((hint) => (
               <span key={hint.term} className="office-mailbox-jargon-chip">
                 <code>{hint.term}</code>
-                <span>= {hint.meaning}</span>
+                <span>{hint.meaning}</span>
               </span>
             ))}
           </div>
         ) : null}
 
         {deliveryError ? (
-          <div className="office-mailbox-delivery-error" role="status">
-            <span className="hud-led hud-led--err" aria-hidden="true" />
-            <ExclamationCircleOutlined aria-hidden="true" />
-            <span className="office-mailbox-delivery-error-label">投递异常记录：</span>
-            <span className="office-mailbox-delivery-error-text">{deliveryError}</span>
-          </div>
+          <InlineNote tone="error" className="office-mailbox-delivery-error">
+            投递异常：{deliveryError}
+          </InlineNote>
         ) : null}
       </section>
 
-      {/* 4. Explicit replyTo Threaded Chain (only when explicit replyTo links exist) */}
+      {/* 4. Explicit replyTo Chain (only when explicit links exist) */}
       {!isThreadCard && explicitChain.hasExplicitChain ? (
-        <section className="office-mailbox-chain-box" aria-label="显式回复链">
+        <section className="office-mailbox-chain-box" aria-label="回复链">
           <div className="office-mailbox-chain-head">
             <span className="office-mailbox-chain-title">
               <BranchesOutlined aria-hidden="true" />
-              <span>显式回复链（按 replyTo 串联 · 共 {explicitChain.nodes.length} 封）</span>
+              <span>回复链（{explicitChain.nodes.length} 封）</span>
             </span>
             {onOpenThread && explicitChain.nodes.length > 1 ? (
-              <Button
+              <AppButton
                 size="small"
-                type="text"
+                appVariant="quiet"
                 icon={<BranchesOutlined />}
                 onClick={() => onOpenThread(messageItem.threadRootId)}
               >
-                在会话串视图展开
-              </Button>
+                展开会话串
+              </AppButton>
             ) : null}
           </div>
 
@@ -639,12 +1136,13 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
             {explicitChain.rootMissingShortId ? (
               <div className="office-mailbox-chain-missing">
                 <RollbackOutlined aria-hidden="true" />
-                <span>早期父消息 #{explicitChain.rootMissingShortId} 不在当前队列缓存中</span>
+                <span>父消息 #{explicitChain.rootMissingShortId} 不在当前缓存中</span>
               </div>
             ) : null}
 
             {explicitChain.nodes.map((node, index) => {
               const nodeLifecycle = evaluateMailLifecycle(node.message, nowMs);
+              const nodeStates = resolveMailDisplayStates(node.message, nodeLifecycle, repliedIds);
               return (
                 <button
                   key={node.message.id}
@@ -668,9 +1166,7 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
                   </span>
                   <span className="office-mailbox-chain-meta">
                     <span>{nodeLifecycle.sentCompactText}</span>
-                    <span className={`office-mailbox-state-pill office-mailbox-state-pill--${nodeLifecycle.pillTone}`}>
-                      {nodeLifecycle.shortLabel}
-                    </span>
+                    <MailStateTag badge={nodeStates.primary} compact />
                   </span>
                 </button>
               );
@@ -679,135 +1175,137 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
         </section>
       ) : null}
 
-      {/* 5. Unchanged Original Body */}
-      <div className="office-mailbox-body-panel">
-        <div className="office-mailbox-body-toolbar">
-          <span className="office-mailbox-body-title">
-            <FileTextOutlined aria-hidden="true" />
-            <span>原始正文（完整未改写）</span>
-          </span>
-          <div className="office-mailbox-body-controls">
-            <div className="office-mailbox-mode-toggle" role="group" aria-label="正文排版模式">
-              <button
-                type="button"
-                className="office-mailbox-mode-btn"
-                data-active={bodyMode === 'prose' ? 'true' : undefined}
-                aria-pressed={bodyMode === 'prose'}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onBodyModeChange('prose');
-                }}
-              >
-                阅读排版
-              </button>
-              <button
-                type="button"
-                className="office-mailbox-mode-btn"
-                data-active={bodyMode === 'mono' ? 'true' : undefined}
-                aria-pressed={bodyMode === 'mono'}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onBodyModeChange('mono');
-                }}
-              >
-                等宽原文
-              </button>
-            </div>
-            <Button
-              size="small"
-              type="text"
-              icon={copiedKey === bodyCopyKey ? <CheckOutlined /> : <CopyOutlined />}
-              onClick={(event) => {
-                event.stopPropagation();
-                onCopy(bodyCopyKey, rawBodyVerbatim, '原始正文已原样复制');
-              }}
-            >
-              {copiedKey === bodyCopyKey ? '已复制原文' : '复制原文'}
-            </Button>
-          </div>
-        </div>
-
-        <pre className="office-mailbox-body-content" data-mode={bodyMode}>
-          {rawBodyVerbatim.length > 0 ? rawBodyVerbatim : '(空正文)'}
-        </pre>
-      </div>
-
-      {/* 6. Expandable Technical & Delivery Provenance Details */}
-      <section className="office-mailbox-tech-panel" aria-label="技术详情与投递审计">
+      {/* 5. Collapsed Disclosure: Original Raw Body */}
+      <section className="office-mailbox-disclosure" aria-label="原始正文">
         <button
           type="button"
-          className="office-mailbox-tech-toggle"
+          className="office-mailbox-disclosure-toggle"
+          aria-expanded={rawExpanded}
+          onClick={(event) => {
+            event.stopPropagation();
+            setRawExpanded((prev) => !prev);
+          }}
+        >
+          <span className="office-mailbox-disclosure-left">
+            {rawExpanded ? <DownOutlined aria-hidden="true" /> : <RightOutlined aria-hidden="true" />}
+            <FileTextOutlined aria-hidden="true" />
+            <span>原始正文</span>
+            <span className="office-mailbox-disclosure-meta">
+              {rawBodyVerbatim.length > 0 ? `${rawBodyVerbatim.length} 字符` : '空正文'}
+            </span>
+          </span>
+          <span className="office-mailbox-disclosure-hint">{rawExpanded ? '收起' : '展开原文'}</span>
+        </button>
+
+        {rawExpanded ? (
+          <div className="office-mailbox-disclosure-body" onClick={(event) => event.stopPropagation()}>
+            <div className="office-mailbox-body-toolbar">
+              <div className="office-mailbox-mode-toggle" role="group" aria-label="正文排版模式">
+                <button
+                  type="button"
+                  className="office-mailbox-mode-btn"
+                  data-active={bodyMode === 'prose' ? 'true' : undefined}
+                  aria-pressed={bodyMode === 'prose'}
+                  onClick={() => onBodyModeChange('prose')}
+                >
+                  阅读
+                </button>
+                <button
+                  type="button"
+                  className="office-mailbox-mode-btn"
+                  data-active={bodyMode === 'mono' ? 'true' : undefined}
+                  aria-pressed={bodyMode === 'mono'}
+                  onClick={() => onBodyModeChange('mono')}
+                >
+                  等宽
+                </button>
+              </div>
+              <AppButton
+                size="small"
+                appVariant="quiet"
+                icon={copiedKey === bodyCopyKey ? <CheckOutlined /> : <CopyOutlined />}
+                onClick={() => onCopy(bodyCopyKey, rawBodyVerbatim, '原始正文已复制')}
+              >
+                {copiedKey === bodyCopyKey ? '已复制' : '复制原文'}
+              </AppButton>
+            </div>
+
+            <pre className="office-mailbox-body-content" data-mode={bodyMode}>
+              {rawBodyVerbatim.length > 0 ? rawBodyVerbatim : '(空正文)'}
+            </pre>
+          </div>
+        ) : null}
+      </section>
+
+      {/* 6. Collapsed Disclosure: Technical & Delivery Metadata */}
+      <section className="office-mailbox-disclosure" aria-label="技术详情与原始字段">
+        <button
+          type="button"
+          className="office-mailbox-disclosure-toggle"
           aria-expanded={techExpanded}
           onClick={(event) => {
             event.stopPropagation();
             setTechExpanded((prev) => !prev);
           }}
         >
-          <span className="office-mailbox-tech-toggle-left">
+          <span className="office-mailbox-disclosure-left">
             {techExpanded ? <DownOutlined aria-hidden="true" /> : <RightOutlined aria-hidden="true" />}
-            <span>技术详情与投递审计（完整 UUID · 历史累计尝试 {lifecycle.attemptCount} 次 / 目标检查 {lifecycle.probeCount ?? '未记录'}）</span>
+            <CodeOutlined aria-hidden="true" />
+            <span>技术详情与投递审计</span>
+            <span className="office-mailbox-disclosure-meta">
+              尝试 {lifecycle.attemptCount} 次 · 检查 {lifecycle.probeCount ?? '-'}
+            </span>
           </span>
-          <span className="office-mailbox-tech-toggle-hint">
-            {techExpanded ? '收起' : '展开'}
-          </span>
+          <span className="office-mailbox-disclosure-hint">{techExpanded ? '收起' : '展开'}</span>
         </button>
 
         {techExpanded ? (
           <div className="office-mailbox-tech-body" onClick={(event) => event.stopPropagation()}>
             <div className="office-mailbox-tech-actions">
-              <Button
+              <AppButton
                 size="small"
+                appVariant="secondary"
                 icon={copiedKey === idCopyKey ? <CheckOutlined /> : <CopyOutlined />}
                 onClick={() => onCopy(idCopyKey, messageItem.id, '完整消息 ID 已复制')}
               >
-                {copiedKey === idCopyKey ? '已复制完整消息 ID' : '复制完整消息 ID'}
-              </Button>
+                {copiedKey === idCopyKey ? '已复制 ID' : '复制完整 ID'}
+              </AppButton>
             </div>
 
             <div className="office-mailbox-audit-grid">
               <div>
-                <span>历史累计尝试 (attemptCount)</span>
-                <strong>{lifecycle.attemptCount} 次（旧版可能包含忙碌检查，不代表实际发送次数）</strong>
-              </div>
-              <div>
-                <span>目标检查 (probeCount)</span>
+                <span>队列 / 通知状态</span>
                 <strong>
-                  {lifecycle.probeCount !== null
-                    ? `${lifecycle.probeCount} 次（目标级忙碌检查，不是本消息发送次数）`
-                    : '未记录（目标级忙碌检查，不是本消息发送次数）'}
+                  {messageItem.raw.state || '-'} / {messageItem.raw.notificationState || '-'}
                 </strong>
               </div>
               <div>
-                <span>队列状态 / 调度状态</span>
+                <span>尝试 / 目标检查</span>
                 <strong>
-                  state={messageItem.raw.state || '-'} · notification={messageItem.raw.notificationState || '未记录'}
+                  {lifecycle.attemptCount} / {lifecycle.probeCount ?? '未记录'}
                 </strong>
               </div>
               <div>
-                <span>自动通知窗口 (autoDeliverUntil)</span>
+                <span>自动通知窗口</span>
                 <strong>{formatAbsoluteTimestamp(messageItem.raw.autoDeliverUntil)}</strong>
               </div>
               <div>
-                <span>语义过期时间 (expiresAt)</span>
+                <span>语义过期</span>
                 <strong>
                   {messageItem.raw.expiresAt
                     ? formatAbsoluteTimestamp(messageItem.raw.expiresAt)
-                    : '无语义过期 (0)'}
+                    : '无限制'}
                 </strong>
               </div>
               <div>
-                <span>取消时间 (canceledAt)</span>
-                <strong>{formatAbsoluteTimestamp(messageItem.raw.canceledAt)}</strong>
-              </div>
-              <div>
-                <span>忙碌起始 / 调度原因 (waitingReason)</span>
+                <span>忙碌起始 / 调度原因</span>
                 <strong>
                   {messageItem.raw.busySince ? formatAbsoluteTimestamp(messageItem.raw.busySince) : '-'}
                   {messageItem.raw.waitingReason ? ` · ${messageItem.raw.waitingReason}` : ''}
                 </strong>
               </div>
               <div>
-                <span>下次重试时间 (nextAttemptAt)</span>
+                <span>下次重试</span>
                 <strong>{formatAbsoluteTimestamp(messageItem.raw.nextAttemptAt)}</strong>
               </div>
             </div>
@@ -818,25 +1316,24 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
                 <dd><code>{messageItem.id}</code></dd>
               </div>
               <div>
-                <dt>replyTo 原始值</dt>
-                <dd><code>{messageItem.raw.replyTo || '无'}</code></dd>
-              </div>
-              <div>
-                <dt>supersedes 原始值</dt>
-                <dd><code>{messageItem.raw.supersedes || '无'}</code></dd>
-              </div>
-              <div>
-                <dt>可读字段来源</dt>
+                <dt>replyTo / supersedes</dt>
                 <dd>
-                  标题={getProvenanceFieldNote(presentation.titleSource)} · 摘要={getProvenanceFieldNote(presentation.summarySource)} · 目的={getProvenanceFieldNote(presentation.purposeSource)} · 行动={getProvenanceFieldNote(presentation.actionSource)} · 回复策略={getProvenanceFieldNote(presentation.replyPolicySource)}
+                  <code>
+                    replyTo={messageItem.raw.replyTo || '-'} · supersedes={messageItem.raw.supersedes || '-'}
+                  </code>
                 </dd>
               </div>
               <div>
-                <dt>发件方原始标识</dt>
+                <dt>字段来源</dt>
+                <dd>
+                  标题={getProvenanceFieldNote(presentation.titleSource)} · 目的={getProvenanceFieldNote(presentation.purposeSource)} · 行动={getProvenanceFieldNote(presentation.actionSource)} · 回复={getProvenanceFieldNote(presentation.replyPolicySource)}
+                </dd>
+              </div>
+              <div>
+                <dt>发件方端点</dt>
                 <dd>
                   <code>
-                    channel={messageItem.raw.from.channel || '-'} · provider={messageItem.raw.from.provider || '-'} · name={messageItem.raw.from.name || '-'} · address={messageItem.raw.from.address || '-'} · sessionId={messageItem.raw.from.sessionId || '-'}
-                    {messageItem.fromResolved.sessionKey ? ` · sessionKey=${messageItem.fromResolved.sessionKey}` : ''}
+                    {messageItem.raw.from.provider || '-'} · {messageItem.raw.from.name || '-'} · {messageItem.raw.from.address || messageItem.raw.from.sessionId || '-'}
                   </code>
                   <span className="office-mailbox-tech-basis">
                     {getMatchBasisLabel(messageItem.fromResolved.matchBasis)}
@@ -844,11 +1341,10 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
                 </dd>
               </div>
               <div>
-                <dt>收件方原始标识</dt>
+                <dt>收件方端点</dt>
                 <dd>
                   <code>
-                    channel={messageItem.raw.to.channel || '-'} · provider={messageItem.raw.to.provider || '-'} · name={messageItem.raw.to.name || '-'} · address={messageItem.raw.to.address || '-'} · sessionId={messageItem.raw.to.sessionId || '-'}
-                    {messageItem.toResolved.sessionKey ? ` · sessionKey=${messageItem.toResolved.sessionKey}` : ''}
+                    {messageItem.raw.to.provider || '-'} · {messageItem.raw.to.name || '-'} · {messageItem.raw.to.address || messageItem.raw.to.sessionId || '-'}
                   </code>
                   <span className="office-mailbox-tech-basis">
                     {getMatchBasisLabel(messageItem.toResolved.matchBasis)}
@@ -860,6 +1356,79 @@ const MailDetailArticle: FC<MailDetailArticleProps> = ({
         ) : null}
       </section>
     </article>
+  );
+};
+
+interface MailboxCliFooterProps {
+  targetMessage: EnrichedPeerMessage;
+  cliMode: CliCommandMode;
+  cliSendTarget: string;
+  cliCommandText: string;
+  copiedKey: string | null;
+  onModeChange: (mode: CliCommandMode) => void;
+  onCopy: (key: string, text: string, successLabel: string) => void;
+}
+
+const MailboxCliFooter: FC<MailboxCliFooterProps> = ({
+  targetMessage,
+  cliMode,
+  cliSendTarget,
+  cliCommandText,
+  copiedKey,
+  onModeChange,
+  onCopy,
+}) => {
+  const effectiveMode: CliCommandMode = cliMode === 'send' && cliSendTarget ? 'send' : 'reply';
+  const copyId = `cli:${targetMessage.id}:${effectiveMode}`;
+  const isCopied = copiedKey === copyId;
+
+  return (
+    <footer className="office-mailbox-cli-footer" aria-label="CLI 回复命令">
+      <div className="office-mailbox-cli-top">
+        <span className="office-mailbox-cli-title">
+          <CodeOutlined aria-hidden="true" />
+          <span>CLI 命令</span>
+        </span>
+        <div className="office-mailbox-cli-modes" role="group" aria-label="CLI 命令类型">
+          <button
+            type="button"
+            className="office-mailbox-mode-btn"
+            data-active={effectiveMode === 'reply' ? 'true' : undefined}
+            aria-pressed={effectiveMode === 'reply'}
+            onClick={() => onModeChange('reply')}
+          >
+            回复 #{targetMessage.shortId || targetMessage.id.slice(0, 6)}
+          </button>
+          {cliSendTarget ? (
+            <button
+              type="button"
+              className="office-mailbox-mode-btn"
+              data-active={effectiveMode === 'send' ? 'true' : undefined}
+              aria-pressed={effectiveMode === 'send'}
+              onClick={() => onModeChange('send')}
+            >
+              发给对方
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="office-mailbox-cli-command-row">
+        <code className="office-mailbox-cli-code" title={cliCommandText}>
+          {cliCommandText}
+        </code>
+        <AppButton
+          size="small"
+          appVariant="primary"
+          icon={isCopied ? <CheckOutlined /> : <CopyOutlined />}
+          onClick={() =>
+            onCopy(copyId, cliCommandText, '已复制 CLI 命令，可在终端填写正文后执行')
+          }
+        >
+          {isCopied ? '已复制' : '复制命令'}
+        </AppButton>
+      </div>
+    </footer>
   );
 };
 
@@ -895,6 +1464,7 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
   );
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [activeThreadMessageId, setActiveThreadMessageId] = useState<string | null>(null);
+  const [locallyReadIds, setLocallyReadIds] = useState<Set<string>>(() => new Set());
   const [bodyMode, setBodyMode] = useState<BodyRenderMode>('prose');
   const [cliMode, setCliMode] = useState<CliCommandMode>('reply');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -929,6 +1499,8 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
       setFolder(initialFolder);
     }
   }, [initialFolder]);
+
+  const repliedIds = useMemo(() => buildRepliedMessageIdSet(allMessages), [allMessages]);
 
   const mailboxView = useMemo(
     () =>
@@ -1018,6 +1590,18 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     [],
   );
 
+  const handleToggleLocalRead = useCallback((messageId: string) => {
+    setLocallyReadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, []);
+
   const handleSelectScope = useCallback(
     (nextScope: MailboxScope) => {
       setPinnedMessageId(null);
@@ -1031,14 +1615,19 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     setFolder(nextFolder);
   }, []);
 
-  const handleToggleStateFilter = useCallback((nextState: MailboxStateFilter) => {
+  const handleSelectStateFilter = useCallback((nextState: MailboxStateFilter) => {
     setPinnedMessageId(null);
     setStateFilter((current) => (current === nextState && nextState !== 'all' ? 'all' : nextState));
   }, []);
 
-  const handleToggleReplyFilter = useCallback((nextReply: MailboxReplyFilter) => {
+  const handleSelectReplyFilter = useCallback((nextReply: MailboxReplyFilter) => {
     setPinnedMessageId(null);
     setReplyFilter((current) => (current === nextReply && nextReply !== 'all' ? 'all' : nextReply));
+  }, []);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setPinnedMessageId(null);
+    setSearchQuery(value);
   }, []);
 
   const handleResetFilters = useCallback(() => {
@@ -1080,14 +1669,8 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     setActiveThreadMessageId(null);
   }, []);
 
-  const scopeOptions = useMemo(() => {
-    const items: Array<{
-      key: MailboxScope;
-      label: string;
-      icon: typeof DesktopOutlined;
-      disabled?: boolean;
-      tooltip?: string;
-    }> = [];
+  const scopeOptions = useMemo<ScopeOptionItem[]>(() => {
+    const items: ScopeOptionItem[] = [];
 
     if (focusedSession || scope === 'session') {
       items.push({
@@ -1104,25 +1687,28 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     items.push({
       key: 'room',
       label: '当前房间',
+      count: activeRoom?.roomMessages.length,
       icon: ApartmentOutlined,
       disabled: !activeRoom,
       tooltip: activeRoom
-        ? `${activeRoom.projectName} · ${activeRoom.roomMessages.length} 封关联邮件`
+        ? `${activeRoom.projectName} · ${activeRoom.roomMessages.length} 封邮件`
         : '当前未选择项目房间',
     });
 
     items.push({
       key: 'unassigned',
-      label: `未归属 / 历史 (${unassignedMessages.length})`,
+      label: '未归属',
+      count: unassignedMessages.length,
       icon: HistoryOutlined,
-      tooltip: `含未解析端点 ${unassignedMessages.length} 封（其中完全未归属 ${fullyUnassignedCount} 封）`,
+      tooltip: `含未解析端点 ${unassignedMessages.length} 封（完全未归属 ${fullyUnassignedCount} 封）`,
     });
 
     items.push({
       key: 'all',
-      label: `全量消息 (${counts.total})`,
+      label: '全量',
+      count: counts.total,
       icon: GlobalOutlined,
-      tooltip: `当前服务器全部 ${counts.total} 封 Peer 消息`,
+      tooltip: `当前服务器全部 ${counts.total} 封协作消息`,
     });
 
     return items;
@@ -1135,30 +1721,22 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     unassignedMessages.length,
   ]);
 
-  const scopeContextCaption = useMemo(() => {
+  const activeFolderLabel =
+    FOLDER_ITEMS.find((item) => item.key === folder)?.label ?? '全部';
+
+  const headerSubtitle = useMemo(() => {
+    let scopePart = '全量消息队列';
     if (scope === 'session') {
-      return focusedSession
-        ? `工位: ${focusedSession.shortLabel || focusedSession.label}`
-        : '当前未选中工位';
+      scopePart = focusedSession
+        ? `工位 · ${focusedSession.shortLabel || focusedSession.label}`
+        : '工位范围（未选中）';
+    } else if (scope === 'room') {
+      scopePart = activeRoom ? `房间 · ${activeRoom.projectName}` : '项目房间（未选择）';
+    } else if (scope === 'unassigned') {
+      scopePart = '未归属与历史会话';
     }
-    if (scope === 'room') {
-      return activeRoom
-        ? `房间: ${activeRoom.projectName} (${activeRoom.roomMessages.length})`
-        : '未选择项目房间';
-    }
-    if (scope === 'unassigned') {
-      const partialCount = Math.max(0, unassignedMessages.length - fullyUnassignedCount);
-      return `完全未归属 ${fullyUnassignedCount} · 单端历史 ${partialCount}`;
-    }
-    return `全量消息队列 (${counts.total})`;
-  }, [
-    activeRoom,
-    counts.total,
-    focusedSession,
-    fullyUnassignedCount,
-    scope,
-    unassignedMessages.length,
-  ]);
+    return `${scopePart} / ${activeFolderLabel} · 只读查阅`;
+  }, [activeFolderLabel, activeRoom, focusedSession, scope]);
 
   const folderCounts: Record<MailboxFolder, number> = {
     inbox: mailboxView.inboxCount,
@@ -1167,30 +1745,89 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     threads: mailboxView.threadCount,
   };
 
-  const stateFilterItems: ReadonlyArray<{
-    key: MailboxStateFilter;
-    label: string;
-    count?: number;
-    ledTone?: 'warn' | 'info' | 'ok' | 'err';
-  }> = [
-    { key: 'all', label: '全部状态', count: folder === 'threads' ? mailboxView.threadCount : mailboxView.allCount },
-    { key: 'undelivered', label: '尚未送达', count: mailboxView.undeliveredCount, ledTone: 'warn' },
-    { key: 'stale', label: '滞留 / 待人工', count: mailboxView.staleCount, ledTone: 'warn' },
-    { key: 'delivered', label: '已送达 / 已读', count: mailboxView.deliveredOrReadCount, ledTone: 'ok' },
-    { key: 'attention', label: '失败 / 过期 / 取消', count: mailboxView.attentionCount, ledTone: 'err' },
-  ];
+  const stateFilterItems = useMemo(
+    () => [
+      {
+        key: 'all' as MailboxStateFilter,
+        label: '全部',
+        count: folder === 'threads' ? mailboxView.threadCount : mailboxView.allCount,
+        icon: <EyeOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'undelivered' as MailboxStateFilter,
+        label: '未送达',
+        count: mailboxView.undeliveredCount,
+        icon: <ClockCircleOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'stale' as MailboxStateFilter,
+        label: '待人工',
+        count: mailboxView.staleCount,
+        icon: <HistoryOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'delivered' as MailboxStateFilter,
+        label: '已送达',
+        count: mailboxView.deliveredOrReadCount,
+        icon: <CheckCircleOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'attention' as MailboxStateFilter,
+        label: '异常',
+        count: mailboxView.attentionCount,
+        icon: <ExclamationCircleOutlined aria-hidden="true" />,
+      },
+    ],
+    [
+      folder,
+      mailboxView.allCount,
+      mailboxView.attentionCount,
+      mailboxView.deliveredOrReadCount,
+      mailboxView.staleCount,
+      mailboxView.threadCount,
+      mailboxView.undeliveredCount,
+    ],
+  );
 
-  const replyFilterItems: ReadonlyArray<{
-    key: MailboxReplyFilter;
-    label: string;
-    count?: number;
-  }> = [
-    { key: 'all', label: '全部回复要求' },
-    { key: 'required', label: '明确需回复', count: mailboxView.replyRequiredCount },
-    { key: 'none', label: '无需回复', count: mailboxView.noReplyCount },
-    { key: 'threaded', label: '显式回复链', count: mailboxView.threadedMsgCount },
-    { key: 'unspecified', label: '未说明要求', count: mailboxView.unspecifiedReplyCount },
-  ];
+  const replyFilterItems = useMemo(
+    () => [
+      {
+        key: 'all' as MailboxReplyFilter,
+        label: '不限',
+        icon: <MessageOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'required' as MailboxReplyFilter,
+        label: '需回复',
+        count: mailboxView.replyRequiredCount,
+        icon: <ClockCircleOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'none' as MailboxReplyFilter,
+        label: '无需回复',
+        count: mailboxView.noReplyCount,
+        icon: <CloseCircleOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'threaded' as MailboxReplyFilter,
+        label: '回复链',
+        count: mailboxView.threadedMsgCount,
+        icon: <BranchesOutlined aria-hidden="true" />,
+      },
+      {
+        key: 'unspecified' as MailboxReplyFilter,
+        label: '未说明',
+        count: mailboxView.unspecifiedReplyCount,
+        icon: <MailOutlined aria-hidden="true" />,
+      },
+    ],
+    [
+      mailboxView.noReplyCount,
+      mailboxView.replyRequiredCount,
+      mailboxView.threadedMsgCount,
+      mailboxView.unspecifiedReplyCount,
+    ],
+  );
 
   const visibleCount =
     folder === 'threads'
@@ -1201,8 +1838,6 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     stateFilter !== 'all'
     || replyFilter !== 'all'
     || searchQuery.trim().length > 0;
-  const activeFolderLabel =
-    FOLDER_ITEMS.find((item) => item.key === folder)?.label ?? '邮件';
 
   const cliSendTarget = cliTargetMessage
     ? resolveReplyPeerTarget(cliTargetMessage, focusedSession)
@@ -1218,566 +1853,85 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
   return (
     <section
       className={`office-mailbox${compactHeader ? ' office-mailbox--compact' : ''}`}
-      aria-label="Peer 桌面邮箱"
+      aria-label="协作邮箱"
     >
-      <header className="office-mailbox-header">
-        <div className="office-mailbox-toolbar-top">
-          <div className="office-mailbox-brand-group">
-            {!compactHeader ? (
-              <div className="office-mailbox-title-wrap">
-                <span className="office-mailbox-eyebrow">SYS // PEER MAILBOX</span>
-                <h2 className="office-mailbox-title">
-                  <MailOutlined aria-hidden="true" />
-                  <span>协作邮箱</span>
-                </h2>
-              </div>
-            ) : null}
-
-            <div
-              className="office-mailbox-scope-tabs"
-              role="tablist"
-              aria-label="邮箱作用域切换"
-            >
-              {scopeOptions.map((item) => {
-                const Icon = item.icon;
-                const active = scope === item.key;
-                return (
-                  <Tooltip key={item.key} title={item.tooltip}>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      disabled={item.disabled}
-                      data-active={active ? 'true' : undefined}
-                      className="office-mailbox-scope-btn"
-                      onClick={() => handleSelectScope(item.key)}
-                    >
-                      <Icon aria-hidden="true" />
-                      <span>{item.label}</span>
-                    </button>
-                  </Tooltip>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="office-mailbox-toolbar-actions">
-            <Input.Search
-              size="small"
-              allowClear
-              className="office-mailbox-search"
-              aria-label="搜索邮件"
-              placeholder="搜索标题、目的、行动、项目、原文…"
-              value={searchQuery}
-              onChange={(event) => {
-                setPinnedMessageId(null);
-                setSearchQuery(event.target.value);
-              }}
-              onSearch={(value) => {
-                setPinnedMessageId(null);
-                setSearchQuery(value);
-              }}
-            />
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              loading={loading}
-              onClick={onRefresh}
-            >
-              刷新
-            </Button>
-          </div>
-        </div>
-
-        <div className="office-mailbox-status-bar">
-          <div className="office-mailbox-summary-pills" aria-label="当前目录投递状态快筛">
-            <button
-              type="button"
-              className="office-mailbox-summary-pill"
-              data-active={stateFilter === 'all' ? 'true' : undefined}
-              aria-pressed={stateFilter === 'all'}
-              onClick={() => handleToggleStateFilter('all')}
-            >
-              当前范围 {mailboxView.allCount}
-            </button>
-            <button
-              type="button"
-              className="office-mailbox-summary-pill office-mailbox-summary-pill--warn"
-              data-active={stateFilter === 'undelivered' ? 'true' : undefined}
-              aria-pressed={stateFilter === 'undelivered'}
-              onClick={() => handleToggleStateFilter('undelivered')}
-            >
-              <span className="hud-led hud-led--warn" aria-hidden="true" />
-              尚未送达 {mailboxView.undeliveredCount}
-            </button>
-            <button
-              type="button"
-              className="office-mailbox-summary-pill office-mailbox-summary-pill--warn"
-              data-active={stateFilter === 'stale' ? 'true' : undefined}
-              aria-pressed={stateFilter === 'stale'}
-              onClick={() => handleToggleStateFilter('stale')}
-            >
-              滞留/待人工 {mailboxView.staleCount}
-            </button>
-            <button
-              type="button"
-              className="office-mailbox-summary-pill office-mailbox-summary-pill--ok"
-              data-active={stateFilter === 'delivered' ? 'true' : undefined}
-              aria-pressed={stateFilter === 'delivered'}
-              onClick={() => handleToggleStateFilter('delivered')}
-            >
-              <span className="hud-led hud-led--ok" aria-hidden="true" />
-              已送达/已读 {mailboxView.deliveredOrReadCount}
-            </button>
-            <button
-              type="button"
-              className="office-mailbox-summary-pill office-mailbox-summary-pill--err"
-              data-active={stateFilter === 'attention' ? 'true' : undefined}
-              aria-pressed={stateFilter === 'attention'}
-              onClick={() => handleToggleStateFilter('attention')}
-            >
-              <span className="hud-led hud-led--err" aria-hidden="true" />
-              失败/过期/取消 {mailboxView.attentionCount}
-            </button>
-          </div>
-
-          <div className="office-mailbox-status-right">
-            <span className="office-mailbox-context-caption">{scopeContextCaption}</span>
-            {loading && allMessages.length > 0 ? (
-              <span className="office-mailbox-sync-pill" role="status">
-                <span className="hud-led hud-led--info hud-led--live" aria-hidden="true" />
-                同步中
-              </span>
-            ) : null}
-            {error ? (
-              <span className="office-mailbox-error-pill" role="alert" title={error}>
-                <span className="hud-led hud-led--err" aria-hidden="true" />
-                <span>{error}</span>
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </header>
+      <MailboxHeader
+        compactHeader={compactHeader}
+        scope={scope}
+        scopeOptions={scopeOptions}
+        subtitle={headerSubtitle}
+        searchQuery={searchQuery}
+        loading={loading}
+        hasMessages={allMessages.length > 0}
+        error={error}
+        onSelectScope={handleSelectScope}
+        onSearchChange={handleSearchChange}
+        onRefresh={onRefresh}
+      />
 
       <div className="office-mailbox-body">
-        {/* Left Folder & Multi-Dimension Filter Rail */}
-        <aside className="office-mailbox-rail" aria-label="文件夹与筛选">
-          <div className="office-mailbox-rail-section">
-            <div className="office-mailbox-rail-heading">文件夹</div>
-            <nav className="office-mailbox-folder-list" aria-label="邮件文件夹">
-              {FOLDER_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const active = folder === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className="office-mailbox-folder-btn"
-                    data-active={active ? 'true' : undefined}
-                    aria-pressed={active}
-                    onClick={() => handleSelectFolder(item.key)}
-                  >
-                    <span className="office-mailbox-folder-left">
-                      <Icon aria-hidden="true" />
-                      <span>{item.label}</span>
-                    </span>
-                    <span className="office-mailbox-folder-count">
-                      {folderCounts[item.key]}
-                    </span>
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
+        <MailboxFilterRail
+          folder={folder}
+          folderCounts={folderCounts}
+          stateFilter={stateFilter}
+          stateFilterItems={stateFilterItems}
+          replyFilter={replyFilter}
+          replyFilterItems={replyFilterItems}
+          onSelectFolder={handleSelectFolder}
+          onSelectStateFilter={handleSelectStateFilter}
+          onSelectReplyFilter={handleSelectReplyFilter}
+        />
 
-          <div className="office-mailbox-rail-section">
-            <div className="office-mailbox-rail-heading">投递与时效</div>
-            <div className="office-mailbox-filter-list" role="group" aria-label="按投递状态筛选">
-              {stateFilterItems.map((item) => {
-                const active = stateFilter === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className="office-mailbox-filter-btn"
-                    data-active={active ? 'true' : undefined}
-                    aria-pressed={active}
-                    onClick={() => {
-                      setPinnedMessageId(null);
-                      setStateFilter(item.key);
-                    }}
-                  >
-                    <span className="office-mailbox-folder-left">
-                      {item.ledTone ? (
-                        <span className={`hud-led hud-led--${item.ledTone}`} aria-hidden="true" />
-                      ) : (
-                        <EyeOutlined aria-hidden="true" />
-                      )}
-                      <span>{item.label}</span>
-                    </span>
-                    {typeof item.count === 'number' ? (
-                      <span className="office-mailbox-folder-count">{item.count}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <MailboxListPane
+          folder={folder}
+          activeFolderLabel={activeFolderLabel}
+          visibleCount={visibleCount}
+          hasActiveFilter={hasActiveFilter}
+          loading={loading}
+          scope={scope}
+          activeRoom={activeRoom}
+          allCountInScope={mailboxView.allCount}
+          totalCount={counts.total}
+          threads={mailboxView.threads}
+          messages={mailboxView.filteredMessages}
+          selectedThreadId={selectedThread?.threadId ?? null}
+          selectedMessageId={selectedMessage?.id ?? null}
+          nowMs={nowMs}
+          repliedIds={repliedIds}
+          locallyReadIds={locallyReadIds}
+          onResetFilters={handleResetFilters}
+          onSelectFolder={handleSelectFolder}
+          onSelectScope={handleSelectScope}
+          onSelectThread={(thread) => {
+            setPinnedMessageId(null);
+            setSelectedThreadId(thread.threadId);
+            setActiveThreadMessageId(thread.latestMessage.id);
+          }}
+          onSelectMessage={(item) => {
+            setPinnedMessageId(null);
+            setSelectedMessageId(item.id);
+          }}
+          onRefresh={onRefresh}
+        />
 
-          <div className="office-mailbox-rail-section">
-            <div className="office-mailbox-rail-heading">回复与线程</div>
-            <div className="office-mailbox-filter-list" role="group" aria-label="按回复要求筛选">
-              {replyFilterItems.map((item) => {
-                const active = replyFilter === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className="office-mailbox-filter-btn"
-                    data-active={active ? 'true' : undefined}
-                    aria-pressed={active}
-                    onClick={() => handleToggleReplyFilter(item.key)}
-                  >
-                    <span className="office-mailbox-folder-left">
-                      <span>{item.label}</span>
-                    </span>
-                    {typeof item.count === 'number' ? (
-                      <span className="office-mailbox-folder-count">{item.count}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="office-mailbox-readonly-note" role="note">
-            <LockOutlined aria-hidden="true" />
-            <span>只读查阅队列 · “已送达/已读”仅反映传输状态，不代表已处理完成</span>
-          </div>
-        </aside>
-
-        {/* Middle Compact Mail / Thread List Pane */}
-        <div className="office-mailbox-list-pane">
-          <div className="office-mailbox-list-head">
-            <span className="office-mailbox-list-title">
-              {activeFolderLabel} · {visibleCount}
-              {folder === 'threads' ? ' 组' : ' 封'}
-            </span>
-            {hasActiveFilter ? (
-              <Button
-                size="small"
-                type="text"
-                icon={<CloseCircleOutlined />}
-                onClick={handleResetFilters}
-              >
-                清除筛选
-              </Button>
-            ) : null}
-          </div>
-
-          <div
-            className="office-mailbox-list"
-            role="listbox"
-            aria-label={folder === 'threads' ? '会话串列表' : '邮件列表'}
-          >
-            {loading && visibleCount === 0 ? (
-              <div className="office-mailbox-list-empty">
-                <HudStateView
-                  compact
-                  variant="loading"
-                  code="MAIL // SYNCING"
-                  title="正在读取协作邮件"
-                  description="同步会话映射、可读摘要与最新投递状态"
-                />
-              </div>
-            ) : visibleCount === 0 ? (
-              <div className="office-mailbox-list-empty">
-                <HudStateView
-                  compact
-                  code="MAIL // EMPTY"
-                  title={
-                    hasActiveFilter
-                      ? '没有匹配的邮件'
-                      : scope === 'session'
-                        ? '当前工位暂无邮件'
-                        : scope === 'room'
-                          ? '当前项目房间暂无邮件'
-                          : scope === 'unassigned'
-                            ? '当前没有未归属或历史邮件'
-                            : '暂无协作邮件'
-                  }
-                  description={
-                    hasActiveFilter
-                      ? '可调整状态/回复筛选条件或清空搜索关键词。'
-                      : scope === 'session' && activeRoom
-                        ? '可切换到「当前房间」或「全量消息」浏览同项目与历史往来。'
-                        : '由 aih peer send / reply 发送的跨会话消息会显示在这里。'
-                  }
-                  extra={
-                    hasActiveFilter ? (
-                      <Button size="small" onClick={handleResetFilters}>
-                        重置筛选
-                      </Button>
-                    ) : (folder === 'inbox' || folder === 'sent') && mailboxView.allCount > 0 ? (
-                      <Button size="small" onClick={() => handleSelectFolder('all')}>
-                        查看全部往来 ({mailboxView.allCount})
-                      </Button>
-                    ) : scope === 'session' && activeRoom ? (
-                      <Button size="small" onClick={() => handleSelectScope('room')}>
-                        查看当前房间
-                      </Button>
-                    ) : scope !== 'all' && counts.total > 0 ? (
-                      <Button size="small" onClick={() => handleSelectScope('all')}>
-                        查看全量消息 ({counts.total})
-                      </Button>
-                    ) : null
-                  }
-                />
-              </div>
-            ) : folder === 'threads' ? (
-              mailboxView.threads.map((thread) => {
-                const isSelected = selectedThread?.threadId === thread.threadId;
-                const latest = thread.latestMessage;
-                const latestLifecycle = evaluateMailLifecycle(latest, nowMs);
-                const hasExplicitReplies =
-                  thread.messageCount > 1
-                  || Boolean(latest.raw.replyTo || latest.raw.replyToShort);
-
-                return (
-                  <button
-                    key={thread.threadId}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    data-selected={isSelected ? 'true' : undefined}
-                    className="office-mailbox-row"
-                    onClick={() => {
-                      setPinnedMessageId(null);
-                      setSelectedThreadId(thread.threadId);
-                      setActiveThreadMessageId(latest.id);
-                    }}
-                  >
-                    <div className="office-mailbox-row-top">
-                      <span
-                        className="office-mailbox-row-parties"
-                        title={`${latest.fromReadable.shortName} (${latest.fromReadable.projectLabel}) → ${latest.toReadable.shortName} (${latest.toReadable.projectLabel})`}
-                      >
-                        <span className="office-mailbox-row-party-text">
-                          {latest.fromReadable.shortName}
-                          <em className="office-mailbox-row-proj">[{latest.fromReadable.projectLabel}]</em>
-                          {' → '}
-                          {latest.toReadable.shortName}
-                          <em className="office-mailbox-row-proj">[{latest.toReadable.projectLabel}]</em>
-                        </span>
-                      </span>
-                      <span className="office-mailbox-row-id">{thread.messageCount} 封</span>
-                    </div>
-
-                    <div className="office-mailbox-row-subject-line">
-                      <span className="office-mailbox-row-subject">
-                        {thread.subjectLine || '(无标题)'}
-                      </span>
-                    </div>
-
-                    <div className="office-mailbox-row-intent">
-                      <span>目的：{latest.presentation.purpose}</span>
-                      <span>·</span>
-                      <span>行动：{latest.presentation.actionText}</span>
-                    </div>
-
-                    <div className="office-mailbox-row-times">
-                      <span>发 {latestLifecycle.sentCompactText}</span>
-                      <span>·</span>
-                      <span className={latestLifecycle.isUndelivered ? 'is-undelivered' : undefined}>
-                        {latestLifecycle.isUndelivered
-                          ? latestLifecycle.deliveredCompactText
-                          : `达 ${latestLifecycle.deliveredCompactText}`}
-                      </span>
-                    </div>
-
-                    <div className="office-mailbox-row-badges">
-                      <span
-                        className={`office-mailbox-state-pill office-mailbox-state-pill--${latestLifecycle.pillTone}`}
-                      >
-                        <span
-                          className={`hud-led hud-led--${latestLifecycle.ledTone === 'neutral' ? 'info' : latestLifecycle.ledTone}`}
-                          aria-hidden="true"
-                        />
-                        {latestLifecycle.shortLabel}
-                      </span>
-                      {hasExplicitReplies ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
-                          <BranchesOutlined aria-hidden="true" /> 回复链
-                        </span>
-                      ) : null}
-                      {thread.isCrossProject ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
-                          <SwapOutlined aria-hidden="true" /> 跨项目
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              mailboxView.filteredMessages.map((item) => {
-                const isSelected = selectedMessage?.id === item.id;
-                const lifecycle = evaluateMailLifecycle(item, nowMs);
-                const direction = getDirectionIndicator(item, focusedSession);
-                const hasError = Boolean(getCombinedDeliveryError(item));
-                const { presentation, fromReadable, toReadable } = item;
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    data-selected={isSelected ? 'true' : undefined}
-                    className="office-mailbox-row"
-                    onClick={() => {
-                      setPinnedMessageId(null);
-                      setSelectedMessageId(item.id);
-                    }}
-                  >
-                    <div className="office-mailbox-row-top">
-                      <span
-                        className="office-mailbox-row-parties"
-                        title={`${fromReadable.shortName} (${fromReadable.projectLabel}) → ${toReadable.shortName} (${toReadable.projectLabel})`}
-                      >
-                        {direction.code ? (
-                          <span className={`office-mailbox-dir-chip office-mailbox-dir-chip--${direction.code}`}>
-                            {direction.label}
-                          </span>
-                        ) : null}
-                        <span className="office-mailbox-row-party-text">
-                          {fromReadable.shortName}
-                          <em className="office-mailbox-row-proj">[{fromReadable.projectLabel}]</em>
-                          {' → '}
-                          {toReadable.shortName}
-                          <em className="office-mailbox-row-proj">[{toReadable.projectLabel}]</em>
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="office-mailbox-row-subject-line">
-                      <span className="office-mailbox-row-subject">
-                        {presentation.title}
-                      </span>
-                    </div>
-
-                    <div className="office-mailbox-row-intent">
-                      <span>目的：{presentation.purpose}</span>
-                      <span>·</span>
-                      <span>行动：{presentation.actionText}</span>
-                    </div>
-
-                    <div
-                      className="office-mailbox-row-times"
-                      title={`发送: ${lifecycle.sentAbsoluteText} | 送达: ${lifecycle.deliveredAbsoluteText}`}
-                    >
-                      <span>发 {lifecycle.sentCompactText}</span>
-                      <span>·</span>
-                      <span className={lifecycle.isUndelivered ? 'is-undelivered' : undefined}>
-                        {lifecycle.isUndelivered
-                          ? lifecycle.deliveredCompactText
-                          : `达 ${lifecycle.deliveredCompactText}`}
-                      </span>
-                    </div>
-
-                    <div className="office-mailbox-row-badges">
-                      <span
-                        className={`office-mailbox-state-pill office-mailbox-state-pill--${lifecycle.pillTone}`}
-                      >
-                        <span
-                          className={`hud-led hud-led--${lifecycle.ledTone === 'neutral' ? 'info' : lifecycle.ledTone}`}
-                          aria-hidden="true"
-                        />
-                        {lifecycle.shortLabel}
-                      </span>
-
-                      {presentation.legacyCategory ? (
-                        <span className="office-mailbox-micro-badge">
-                          系统归类
-                        </span>
-                      ) : null}
-
-                      {Number(item.raw.priority || 0) > 0 ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--warn">
-                          加急
-                        </span>
-                      ) : Number(item.raw.priority || 0) < 0 ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--muted">
-                          低优先级
-                        </span>
-                      ) : null}
-
-                      {presentation.replyPolicyKind === 'required' ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--warn">
-                          需回复
-                        </span>
-                      ) : presentation.replyPolicyKind === 'none' ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--muted">
-                          {presentation.replyPolicyLabel}
-                        </span>
-                      ) : presentation.replyPolicyKind === 'optional' ? (
-                        <span className="office-mailbox-micro-badge">
-                          可选回复
-                        </span>
-                      ) : null}
-
-                      {item.raw.replyTo || item.raw.replyToShort ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
-                          ↩ 回复 #{item.raw.replyToShort || item.raw.replyTo.slice(0, 6)}
-                        </span>
-                      ) : null}
-
-                      {item.isCrossProject ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
-                          <SwapOutlined aria-hidden="true" /> 跨项目
-                        </span>
-                      ) : null}
-
-                      {hasError ? (
-                        <span
-                          className="office-mailbox-micro-badge office-mailbox-micro-badge--err"
-                          title={getCombinedDeliveryError(item)}
-                        >
-                          <ExclamationCircleOutlined aria-hidden="true" /> 异常
-                        </span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Right Human-First Reading Pane */}
         <div className="office-mailbox-reader-pane">
           <div className="office-mailbox-reader-scroll">
             {folder === 'threads' ? (
               selectedThread ? (
                 <div className="office-mailbox-thread-view">
                   <header className="office-mailbox-thread-header">
-                    <div>
-                      <span className="office-mailbox-eyebrow">
-                        THREAD // {selectedThread.messageCount} MESSAGES
-                      </span>
-                      <h2 className="office-mailbox-subject">
-                        {selectedThread.subjectLine || '(无主题会话串)'}
-                      </h2>
-                    </div>
+                    <h2 className="office-mailbox-subject">
+                      {selectedThread.subjectLine || '(无主题会话串)'}
+                    </h2>
                     <div className="office-mailbox-meta-badges">
-                      <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
+                      <span className="office-mailbox-micro-badge">
                         <BranchesOutlined aria-hidden="true" />
-                        <span>时间线共 {selectedThread.messageCount} 封</span>
+                        <span>共 {selectedThread.messageCount} 封</span>
                       </span>
                       {selectedThread.isCrossProject ? (
-                        <span className="office-mailbox-micro-badge office-mailbox-micro-badge--accent">
+                        <span className="office-mailbox-micro-badge">
                           <SwapOutlined aria-hidden="true" />
-                          <span>跨项目会话串</span>
+                          <span>跨项目</span>
                         </span>
                       ) : null}
                     </div>
@@ -1787,9 +1941,7 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
                     {sortedThreadMessages.map((threadMsg, index) => (
                       <div key={threadMsg.id} className="office-mailbox-thread-step">
                         <div className="office-mailbox-thread-step-label">
-                          <span>
-                            #{index + 1} · 发送于 {formatAbsoluteTimestamp(threadMsg.raw.createdAt)}
-                          </span>
+                          #{index + 1} · {formatAbsoluteTimestamp(threadMsg.raw.createdAt)}
                         </div>
                         <MailDetailArticle
                           messageItem={threadMsg}
@@ -1798,6 +1950,9 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
                           focusedSession={focusedSession}
                           activeRoom={activeRoom}
                           nowMs={nowMs}
+                          repliedIds={repliedIds}
+                          isLocallyRead={locallyReadIds.has(threadMsg.id)}
+                          onToggleLocalRead={handleToggleLocalRead}
                           bodyMode={bodyMode}
                           onBodyModeChange={setBodyMode}
                           copiedKey={copiedKey}
@@ -1815,9 +1970,8 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
               ) : (
                 <div className="office-mailbox-reader-empty">
                   <HudStateView
-                    code="MAIL // THREAD"
                     title="选择一组会话串"
-                    description="从中间列表选择会话串，按发送时间顺序查阅完整往来。"
+                    description="从左侧列表选择会话串以按时间顺序查看。"
                   />
                 </div>
               )
@@ -1829,6 +1983,9 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
                 focusedSession={focusedSession}
                 activeRoom={activeRoom}
                 nowMs={nowMs}
+                repliedIds={repliedIds}
+                isLocallyRead={locallyReadIds.has(selectedMessage.id)}
+                onToggleLocalRead={handleToggleLocalRead}
                 bodyMode={bodyMode}
                 onBodyModeChange={setBodyMode}
                 copiedKey={copiedKey}
@@ -1840,77 +1997,23 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
             ) : (
               <div className="office-mailbox-reader-empty">
                 <HudStateView
-                  code="MAIL // PREVIEW"
                   title="选择一封邮件查看详情"
-                  description="默认展示可读发收件人、联系目的、所需行动与绝对时间，并保留完整原文与技术详情。"
+                  description="查看联系目的、期望行动、投递状态与原文记录。"
                 />
               </div>
             )}
           </div>
 
           {cliTargetMessage ? (
-            <footer className="office-mailbox-cli-footer" aria-label="CLI 回复命令助手">
-              <div className="office-mailbox-cli-top">
-                <div className="office-mailbox-cli-title">
-                  <CodeOutlined aria-hidden="true" />
-                  <span>CLI 回复命令助手</span>
-                  <span className="office-mailbox-cli-badge">
-                    只读模板 · 保留原始标识，建议写清主题/目的/待办/回复要求
-                  </span>
-                </div>
-
-                <div className="office-mailbox-cli-modes" role="group" aria-label="CLI 命令形式">
-                  <button
-                    type="button"
-                    className="office-mailbox-mode-btn"
-                    data-active={effectiveCliMode === 'reply' ? 'true' : undefined}
-                    aria-pressed={effectiveCliMode === 'reply'}
-                    onClick={() => setCliMode('reply')}
-                  >
-                    reply #{cliTargetMessage.shortId || cliTargetMessage.id.slice(0, 6)}
-                  </button>
-                  {cliSendTarget ? (
-                    <button
-                      type="button"
-                      className="office-mailbox-mode-btn"
-                      data-active={effectiveCliMode === 'send' ? 'true' : undefined}
-                      aria-pressed={effectiveCliMode === 'send'}
-                      onClick={() => setCliMode('send')}
-                    >
-                      发送给此会话
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="office-mailbox-cli-command-row">
-                <code className="office-mailbox-cli-code" title={cliCommandText}>
-                  {cliCommandText}
-                </code>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={
-                    copiedKey === `cli:${cliTargetMessage.id}:${effectiveCliMode}` ? (
-                      <CheckOutlined />
-                    ) : (
-                      <CopyOutlined />
-                    )
-                  }
-                  onClick={() =>
-                    handleCopy(
-                      `cli:${cliTargetMessage.id}:${effectiveCliMode}`,
-                      cliCommandText,
-                      'CLI 回复命令模板已复制，可在工位终端填写正文后执行',
-                    )
-                  }
-                >
-                  {copiedKey === `cli:${cliTargetMessage.id}:${effectiveCliMode}`
-                    ? '已复制命令'
-                    : '复制回复命令'}
-                </Button>
-              </div>
-            </footer>
+            <MailboxCliFooter
+              targetMessage={cliTargetMessage}
+              cliMode={cliMode}
+              cliSendTarget={cliSendTarget}
+              cliCommandText={cliCommandText}
+              copiedKey={copiedKey}
+              onModeChange={setCliMode}
+              onCopy={handleCopy}
+            />
           ) : null}
         </div>
       </div>

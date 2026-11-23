@@ -1387,3 +1387,163 @@ export function buildExplicitReplyChain(
     nodes,
   };
 }
+
+export type MailBadgeTone = 'success' | 'info' | 'warning' | 'danger' | 'neutral';
+
+export interface MailDisplayStateBadge {
+  key: string;
+  label: string;
+  tone: MailBadgeTone;
+  title?: string;
+}
+
+export interface MailDisplayStates {
+  primary: MailDisplayStateBadge;
+  reply: MailDisplayStateBadge | null;
+  isUnread: boolean;
+  isReplied: boolean;
+}
+
+/**
+ * Collects IDs (full and short) of messages that have at least one explicit replyTo child.
+ */
+export function buildRepliedMessageIdSet(allMessages: EnrichedPeerMessage[]): Set<string> {
+  const replied = new Set<string>();
+  for (const item of allMessages) {
+    const replyTo = String(item.raw.replyTo ?? '').trim();
+    const replyToShort = String(item.raw.replyToShort ?? '').trim();
+    if (replyTo) replied.add(replyTo);
+    if (replyToShort) replied.add(replyToShort);
+  }
+  return replied;
+}
+
+/**
+ * Resolves explicit, human-readable Chinese states for list rows and detail headers:
+ * - Primary read/delivery state: 未读 / 已读 / 未送达 / 待人工 / 投递失败 / 已过期 / 已取消
+ * - Secondary reply state: 已回复 / 等待回复 / 无需回复 / 可选回复
+ */
+export function resolveMailDisplayStates(
+  msg: EnrichedPeerMessage,
+  lifecycle: EvaluatedMailLifecycle,
+  repliedIds: ReadonlySet<string>,
+  locallyMarkedRead = false,
+): MailDisplayStates {
+  const isReplied =
+    repliedIds.has(msg.id) || (Boolean(msg.shortId) && repliedIds.has(msg.shortId));
+
+  let primary: MailDisplayStateBadge;
+  let isUnread = false;
+
+  switch (lifecycle.kind) {
+    case 'read':
+      primary = {
+        key: 'read',
+        label: '已读',
+        tone: 'success',
+        title: lifecycle.label,
+      };
+      break;
+    case 'delivered':
+      if (locallyMarkedRead) {
+        primary = {
+          key: 'read',
+          label: '已读',
+          tone: 'success',
+          title: '已在本视图标记已读',
+        };
+      } else {
+        isUnread = true;
+        primary = {
+          key: 'unread',
+          label: '未读',
+          tone: 'info',
+          title: lifecycle.label,
+        };
+      }
+      break;
+    case 'waiting':
+    case 'ready':
+      isUnread = !locallyMarkedRead;
+      primary = {
+        key: 'undelivered',
+        label: locallyMarkedRead ? '已读' : '未送达',
+        tone: locallyMarkedRead ? 'success' : 'warning',
+        title: lifecycle.label,
+      };
+      break;
+    case 'manual':
+    case 'stale':
+      isUnread = !locallyMarkedRead;
+      primary = {
+        key: 'manual',
+        label: locallyMarkedRead ? '已读' : '待人工',
+        tone: locallyMarkedRead ? 'success' : 'warning',
+        title: lifecycle.label,
+      };
+      break;
+    case 'failed':
+      primary = {
+        key: 'failed',
+        label: '失败',
+        tone: 'danger',
+        title: lifecycle.label,
+      };
+      break;
+    case 'expired':
+      primary = {
+        key: 'expired',
+        label: '已过期',
+        tone: 'danger',
+        title: lifecycle.label,
+      };
+      break;
+    case 'canceled':
+    default:
+      primary = {
+        key: 'canceled',
+        label: '已取消',
+        tone: 'neutral',
+        title: lifecycle.label,
+      };
+      break;
+  }
+
+  let reply: MailDisplayStateBadge | null = null;
+  if (isReplied) {
+    reply = {
+      key: 'replied',
+      label: '已回复',
+      tone: 'success',
+      title: '该消息已有显式回复',
+    };
+  } else if (msg.presentation.replyPolicyKind === 'required') {
+    reply = {
+      key: 'awaiting-reply',
+      label: '等待回复',
+      tone: 'warning',
+      title: '发送方要求回复，尚未收到显式回复',
+    };
+  } else if (msg.presentation.replyPolicyKind === 'none') {
+    reply = {
+      key: 'no-reply',
+      label: '无需回复',
+      tone: 'neutral',
+      title: msg.presentation.replyPolicyLabel,
+    };
+  } else if (msg.presentation.replyPolicyKind === 'optional') {
+    reply = {
+      key: 'optional-reply',
+      label: '可选回复',
+      tone: 'info',
+      title: '发送方标注为可选回复',
+    };
+  }
+
+  return {
+    primary,
+    reply,
+    isUnread,
+    isReplied,
+  };
+}

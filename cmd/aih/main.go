@@ -35,8 +35,17 @@ func main() {
 	if isCompletionEntry(os.Args[1:]) {
 		os.Exit(execute(os.Args[1:], defaultCommandRuntime()))
 	}
+	// 外部注册表 MCP 的 stdio 前缀代理：与补全一样是热路径，不读数据库。
+	if len(os.Args) > 1 && os.Args[1] == "__mcp-prefixed" {
+		os.Exit(runPrefixedMCPEntry(os.Args[2:]))
+	}
 	adoptSudoUserHome(os.Getenv, os.Setenv)
 	ensureManagementKeyEnv()
+	if len(os.Args) > 1 && (os.Args[1] == "codex" || os.Args[1] == "claude") {
+		if handled, code := maybePrintMCPStatus(os.Args[1], os.Args[2:]); handled {
+			os.Exit(code)
+		}
+	}
 	if len(os.Args) > 1 && os.Args[1] == "codex" {
 		kept, err := applyCodexMCPFlags(os.Args[2:])
 		if err != nil {

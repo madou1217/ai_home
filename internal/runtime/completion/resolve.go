@@ -254,7 +254,7 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	switch lastPrior {
 	case "--mcp":
 		if isProviderName(head) && mcpselection.Supports(head) {
-			addMCPNames(target, context, head, current)
+			addMCPNames(target, context, prior, head, current)
 			return target.items
 		}
 	case "--provider":

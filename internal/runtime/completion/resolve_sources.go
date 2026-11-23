@@ -26,9 +26,10 @@ func addSessionFlags(target *collector, provider string) {
 	target.add(escapeHatchValue, escapeHatchSummary, groupOther, "")
 }
 
-// addMCPNames 补全 --mcp 的取值。当前词里的逗号表示「继续追加」：
-// `--mcp demo,` 的候选会保留已敲的前缀，并排除已经选中的名字。
-func addMCPNames(target *collector, context *resolverContext, provider, current string) {
+// addMCPNames 补全 --mcp 的取值：Provider 原生 MCP + 账号允许的注册表 MCP。
+// 当前词里的逗号表示「继续追加」：`--mcp demo,` 的候选会保留已敲的前缀，
+// 并排除已经选中的名字。
+func addMCPNames(target *collector, context *resolverContext, prior []string, provider, current string) {
 	if context.mcpLister == nil {
 		return
 	}
@@ -42,12 +43,31 @@ func addMCPNames(target *collector, context *resolverContext, provider, current 
 			selected[name] = true
 		}
 	}
-	for _, name := range context.mcpLister(provider) {
-		if selected[name] {
+	for _, choice := range context.mcpLister(provider, accountTokenBefore(prior)) {
+		if selected[choice.Value] {
 			continue
 		}
-		target.add(prefix+name, "MCP 服务器", groupMCP, "")
+		target.add(prefix+choice.Value, choice.Description, groupMCP, "")
 	}
+}
+
+// accountTokenBefore returns the explicit CLI account token in front of the
+// current flag, matching the launch path's "first positional word" rule.
+func accountTokenBefore(prior []string) string {
+	for index := 1; index < len(prior); index++ {
+		token := prior[index]
+		if token == "--" {
+			return ""
+		}
+		if strings.HasPrefix(token, "-") {
+			continue
+		}
+		if accountTokenPattern.MatchString(token) {
+			return token
+		}
+		return ""
+	}
+	return ""
 }
 
 func addPeerMessageIds(target *collector, context *resolverContext, current string) {

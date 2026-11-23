@@ -67,6 +67,12 @@ type proxyChoice struct {
 	Description string
 }
 
+// mcpChoice is one selectable MCP id for the current provider/account.
+type mcpChoice struct {
+	Value       string
+	Description string
+}
+
 // resolverContext 注入所有动态候选来源；每项都允许为空，解析器按位置惰性调用。
 type resolverContext struct {
 	historyEntries     []historyEntry
@@ -79,7 +85,7 @@ type resolverContext struct {
 	peerLister         func(current string) []peerChoice
 	peerMessageLister  func(current string) []peerChoice
 	modelLister        func(request modelRequest) []modelChoice
-	mcpLister          func(provider string) []string
+	mcpLister          func(provider, accountToken string) []mcpChoice
 	remoteTargetLister func(request remoteTargetRequest) []remoteTargetChoice
 	workspaceLister    func(request workspaceRequest) []remoteTargetChoice
 	aihServerProfileID string

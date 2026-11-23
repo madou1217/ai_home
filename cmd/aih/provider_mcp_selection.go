@@ -9,6 +9,8 @@ import (
 )
 
 func applyCodexMCPFlags(args []string) ([]string, error) {
+	aiHomeDir := bareLaunchHomeDir()
+	accountToken := accountTokenFromProviderArgs(args)
 	kept := make([]string, 0, len(args))
 	noMCP := false
 	onlySet := false
@@ -16,6 +18,14 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 	addOnly := func(value string) {
 		onlySet = true
 		only = append(only, mcpselection.SplitList(value)...)
+	}
+	addProfile := func(name string) error {
+		ids, err := mcpselection.LoadProfile(aiHomeDir, name)
+		if err != nil {
+			return err
+		}
+		addOnly(strings.Join(ids, ","))
+		return nil
 	}
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
@@ -34,6 +44,20 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 			addOnly(args[index])
 		case strings.HasPrefix(argument, "--mcp="):
 			addOnly(strings.TrimPrefix(argument, "--mcp="))
+		case argument == "--mcp-profile":
+			if index+1 >= len(args) {
+				return nil, errors.New("--mcp-profile 需要名称")
+			}
+			index++
+			if err := addProfile(args[index]); err != nil {
+				return nil, err
+			}
+		case strings.HasPrefix(argument, "--mcp-profile="):
+			if err := addProfile(strings.TrimPrefix(argument, "--mcp-profile=")); err != nil {
+				return nil, err
+			}
+		case argument == "--mcp-status":
+			return nil, errors.New("--mcp-status 不能与启动参数一起使用")
 		default:
 			kept = append(kept, argument)
 		}
@@ -50,21 +74,27 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 	if len(only) == 0 {
 		return nil, mcpselection.ErrNoSelection
 	}
-	names, err := mcpselection.CodexNames()
+	nativeNames, err := mcpselection.Names(mcpselection.ProviderCodex)
 	if err != nil {
 		return nil, err
 	}
-	disabled, err := disabledMCPNames(names, only)
+	nativeSelected, mounted, err := selectedRegistryServers(aiHomeDir, mcpselection.ProviderCodex, "Codex", accountToken, only)
 	if err != nil {
 		return nil, err
 	}
-	if len(disabled) == 0 {
-		return kept, nil
+	disabled, err := disabledMCPNames(nativeNames, nativeSelected)
+	if err != nil {
+		return nil, err
 	}
 	pairs := make([]string, 0, len(disabled)*2)
 	for _, name := range disabled {
 		pairs = append(pairs, "-c", "mcp_servers."+name+".enabled=false")
 	}
+	registryArgs, err := codexRegistryArgs(mounted)
+	if err != nil {
+		return nil, err
+	}
+	pairs = append(pairs, registryArgs...)
 	return append(pairs, kept...), nil
 }
 

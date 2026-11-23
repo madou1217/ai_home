@@ -396,13 +396,34 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		modelLister: func(request modelRequest) []modelChoice {
 			return listModelCandidates(aiHome, request)
 		},
-		mcpLister: func(provider string) []string {
-			// 名单读取有 2s 上限；补全路径上失败即空，绝不让 TAB 等错误。
-			names, err := mcpselection.Names(provider)
-			if err != nil {
-				return nil
+		mcpLister: func(provider, accountToken string) []mcpChoice {
+			choices := make([]mcpChoice, 0, 8)
+			seen := make(map[string]bool, 8)
+			if names, err := mcpselection.Names(provider); err == nil {
+				for _, name := range names {
+					if seen[name] {
+						continue
+					}
+					seen[name] = true
+					choices = append(choices, mcpChoice{Value: name, Description: "原生 MCP"})
+				}
 			}
-			return names
+			// 注册表候选只列出账号允许且本地可挂载的项；读取失败按空处理。
+			if servers, err := mcpselection.MountableRegistryServers(aiHome, provider, accountToken); err == nil {
+				for _, server := range servers {
+					id := server.Definition.ID
+					if seen[id] {
+						continue
+					}
+					seen[id] = true
+					description := "注册表 MCP"
+					if len(server.Definition.Capabilities) > 0 {
+						description += " · " + strings.Join(server.Definition.Capabilities, "/")
+					}
+					choices = append(choices, mcpChoice{Value: id, Description: description})
+				}
+			}
+			return choices
 		},
 		remoteTargetLister: func(request remoteTargetRequest) []remoteTargetChoice {
 			return listRemoteTargetCandidates(aiHome, request)

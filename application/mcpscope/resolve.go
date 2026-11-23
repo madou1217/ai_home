@@ -134,6 +134,12 @@ func ValidateWith(definitions []Definition, policy Policy) error {
 	return nil
 }
 
+// AllowsProvider reports whether a definition applies to the given harness.
+// Completion and local CLI mounting use the same compatibility rule as Resolve.
+func AllowsProvider(definition Definition, provider string) bool {
+	return providerAllowed(definition, provider)
+}
+
 func providerAllowed(definition Definition, provider string) bool {
 	if len(definition.Providers) == 0 || strings.TrimSpace(provider) == "" {
 		return true

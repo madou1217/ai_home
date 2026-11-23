@@ -253,6 +253,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "client-keys" || providerID == "apikeys" {
 		return runClientKeys(ctx, arguments[1:], runtime)
 	}
+	if providerID == "limits" {
+		return runLimits(ctx, arguments[1:], runtime)
+	}
 	if providerID == accountCommandName {
 		return runAccount(ctx, arguments[1:], runtime)
 	}

@@ -64,10 +64,14 @@ func connectorAgentInstructions(capabilities remoteconnector.Capabilities) strin
 	instructions := "你在一个「本地工作区」里工作：项目文件在用户本机，通过 Workspace Connector 访问；模型和你在 AIH Server 上。" +
 		"只能用 aih_remote 提供的工具访问项目；路径一律相对工作区根目录。" +
 		"修改文件前先 read_file，写回时带上它返回的 version。本机当前目录是一个空的占位目录，不要在本机查找项目文件。"
-	if remoteconnector.NormalizeCapabilities(capabilities).RunCommand {
-		return instructions + "可以用 run_command 在工作区内执行命令（如构建、测试、git）；命令以本机用户权限运行，不是沙箱，避免交互式或长时间驻留的命令。"
+	normalized := remoteconnector.NormalizeCapabilities(capabilities)
+	if normalized.RunCommand {
+		instructions += "可以用 run_command 在工作区内执行短命令（如 git status、单个测试）；命令以本机用户权限运行，不是沙箱，避免交互式命令。"
 	}
-	return instructions + "当前通道不支持 run_command，请只用文件工具完成任务。"
+	if normalized.StartJob && normalized.WatchJob && normalized.InterruptJob {
+		instructions += "长任务（构建、全量测试、开发服务器）必须用 start_job 启动，再用 watch_job 带上一次返回的 cursor 读取增量输出；需要停止时用 interrupt_job。不要用 run_command 长时间阻塞。"
+	}
+	return instructions
 }
 
 // buildConnectorAgentLaunch builds a provider launch whose MCP bridge forwards

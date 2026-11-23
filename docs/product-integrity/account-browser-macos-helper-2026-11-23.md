@@ -47,29 +47,33 @@ whenever the temporary build path or bytes changed.
 - Job-scope start created `run/account-browser/pending/<jobId>/user-data` and
   produced frames at 1200x900, so the cached helper is a working surface.
 
-## Remaining macOS blockers (not fixed here)
+## Keyboard activation (fixed 2026-11-23)
 
-A real OpenAI login was not completed on macOS. Two input-path problems showed
-up while driving the OAuth URL, and both are outside the build cache:
+`navigate`, `key` and `text` now raise the captured Edge window through
+Accessibility (`kAXFrontmost`, `kAXRaise`, focused/main window) before posting
+events, with `NSRunningApplication.activate` as the fallback. Pointer and
+scroll keep addressing the captured `windowID` directly and do not take focus
+away from the WebUI.
 
-1. `navigate` types the URL through Cmd+L and Return using `postToPid`. When the
-   Edge window is not the active application, Return frequently does not
-   commit the omnibox; the address bar keeps the typed text and the tab title
-   stays `about:blank`. Activating Microsoft Edge first made the address bar
-   enter the loading state, so window activation is the missing piece
-   (Windows already activates its surface for the same reason).
-2. After a successful navigation, the helper reported
-   `browser_multiple_windows_not_supported` and stopped the session, freezing
-   frames. A window probe during a later run showed the browser window plus a
-   small auxiliary layer-0 window owned by the same Edge process. The input
-   guard requires exactly one on-screen window of at least 100x80, so a
-   transient or auxiliary window aborts the session. OAuth flows also open
-   popups, which the same guard would reject.
+Verified on this Mac:
 
-Next step: activate the owned window before synthetic input and decide how to
-treat extra Edge windows (ignore windows other than the captured one, or make
-the single-window violation retryable instead of fatal). Until then, real
-OAuth logins should use the Windows execution host.
+- `https://www.baidu.com` and `https://example.com` load and render after one
+  `navigate` (140+ frames at 1200x900). Before the fix the same command left
+  `about:blank` with the URL only typed in the address bar.
+- The Codex authorize URL commits and enters the loading state. Its page stays
+  blank in this environment because `auth.openai.com` is unreachable without
+  the account egress proxy (`curl` returns 403), so a real login still needs a
+  configured proxy or the Windows host.
+
+## Remaining macOS risk
+
+Rapidly restarting sessions on the same profile, or starting while the previous
+Edge is still shutting down, can leave two Edge windows;
+`browser_multiple_windows_not_supported` then ends the session. A clean
+close -> start cycle leaves no Edge process and no `host.active` marker and
+reproduces neither problem. Any persistent second window of at least 100x80,
+including an OAuth popup, still aborts the session, so popup-based flows are not
+supported on macOS yet.
 
 ## Reproduce
 

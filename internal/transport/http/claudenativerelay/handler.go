@@ -434,8 +434,7 @@ func (handler *Handler) ServeHTTP(
 	}
 	handler.reportDisconnect(route, copyStartedAt, copyResult, streamObservation)
 	if upstreamResponse.StatusCode < http.StatusOK ||
-		upstreamResponse.StatusCode >= http.StatusMultipleChoices ||
-		copyResult.downstreamErr != nil {
+		upstreamResponse.StatusCode >= http.StatusMultipleChoices {
 		return
 	}
 	if streamObservation.failed {
@@ -445,6 +444,11 @@ func (handler *Handler) ServeHTTP(
 			observation,
 			streamObservation.failure,
 		)
+		return
+	}
+	// Claude Code 读到最终答案后可能立即断开下游连接。上游已经完整结束（观察到
+	// message_stop）时，用量仍属于本次尝试，不能因为下游取消而丢掉归属。
+	if copyResult.downstreamErr != nil && !streamObservation.completed {
 		return
 	}
 	if copyResult.upstreamErr != nil && !streamObservation.completed {
@@ -466,7 +470,7 @@ func (handler *Handler) ServeHTTP(
 	}
 	if err == nil {
 		_, _ = handler.attempts.RecordSuccess(
-			request.Context(),
+			context.WithoutCancel(request.Context()),
 			route,
 			observation,
 			success,

@@ -221,7 +221,7 @@ rm -f "<server-ai-home>/run/route-observation/$SESSION.json"
 | 全部账号失效时有限终止 | 是 |
 | 503/连接失败不跨账号换号 | 是 |
 | 证据不含凭据 | 是 |
-| 1011 重连分支 | 可选，未验证需明确记录 |
+| 1011 重连分支 | 已验证（2026-11-23） |
 
 ## 10. 已知覆盖边界
 
@@ -241,5 +241,5 @@ rm -f "<server-ai-home>/run/route-observation/$SESSION.json"
 - 503 负向：钉选同一失效账号并让上游返回 503，客户端收到 upstream_unavailable，连接终止；没有产生路由观测，说明未换号；
 - 用量归属：路由观测已确认实际服务账号；本次没有单独核对逐请求 token 行；
 - 全池失效：未执行。AWS 是共享账号池，临时停用所有健康账号会影响其它会话；
-- 1011 重连分支：未执行，原因同清单第 7.3 节；
+- 1011 重连分支：通过。受控上游在 response.created 后、尚未输出时主动断开，客户端收到 CLOSE 1011 / reason=retryable upstream failure；预备帧未下发，符合「让 Codex 换号重连」语义；
 - 清理：api-key 账号凭据已按备份恢复，临时上游已停止，路由观测测试文件已删除。

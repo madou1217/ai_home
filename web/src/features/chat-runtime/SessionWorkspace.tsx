@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Badge } from 'antd';
 import { useSessionSelector } from '@/chat-runtime';
+import SettingStatusTag, { type SettingStatusState } from '@/components/ui/SettingStatusTag';
 import type {
   SessionProjection,
   SessionRuntimeController,
@@ -220,15 +220,21 @@ function WorkspaceHeader({
   const meta = `${connection.label} · ${projection.version || '默认运行时'} · seq ${projection.throughSeq}`;
   // 连接状态优先于会话状态：connecting 现在也允许输入，但徽标仍要告诉用户数据还在路上。
   const connectionPending = projection.connectionState !== 'connected';
+  const statusTagState: SettingStatusState = connectionPending
+    ? (projection.connectionState === 'reconnecting' ? 'dirty' : 'saving')
+    : STATE_TAG[projection.state];
   if (mobile && chat && projection.state === 'idle' && !connectionPending) return null;
   return (
     <header className={styles.workspaceHeader}>
       <div className={styles.workspaceHeaderMain}>
-        {!mobile ? <strong className={styles.workspaceTitle} title={title}>{title}</strong> : null}
-        <Badge
-          status={connectionPending ? CONNECTION_BADGE[projection.connectionState] : STATE_BADGE[projection.state]}
-          text={connectionPending ? connection.label : stateLabel}
-          className={styles.workspaceStateBadge}
+        {!mobile ? (
+          <strong className={styles.workspaceTitle} data-workspace-title="true" title={title}>{title}</strong>
+        ) : null}
+        <SettingStatusTag
+          status={statusTagState}
+          label={connectionPending ? connection.label : stateLabel}
+          detail={!chat ? meta : undefined}
+          compact
         />
       </div>
       {!chat ? <div className={styles.workspaceHeaderMeta} title={meta}>{meta}</div> : null}
@@ -275,15 +281,17 @@ function currentPlanRuntimePort(
   };
 }
 
-// 会话状态 → Badge 小指示灯语义色（antd Badge status，禁大色块状态 Tag）。
-const STATE_BADGE: Readonly<Record<SessionState, 'default' | 'processing' | 'warning'>> = {
-  idle: 'default', starting: 'processing', running: 'processing', waiting_input: 'warning',
-  interrupting: 'warning', completing: 'processing', recovering: 'warning', closed: 'default',
+// 会话状态 → 统一状态标签（含图标与中文文本，不依赖纯颜色）
+const STATE_TAG: Readonly<Record<SessionState, SettingStatusState>> = {
+  idle: 'applied',
+  starting: 'saving',
+  running: 'saving',
+  waiting_input: 'dirty',
+  interrupting: 'dirty',
+  completing: 'saving',
+  recovering: 'dirty',
+  closed: 'unset',
 };
-
-const CONNECTION_BADGE = {
-  connecting: 'processing', connected: 'default', reconnecting: 'warning', resyncing: 'warning',
-} as const;
 
 function useSecondClock(startedAt: number | undefined): number {
   const [now, setNow] = useState(Date.now);

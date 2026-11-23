@@ -9,24 +9,22 @@
   min-height: 300px;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
-  border-radius: 2px;
-  background: var(--hud-glass-raised-gradient), var(--color-bg);
-  -webkit-backdrop-filter: var(--hud-panel-blur);
-  backdrop-filter: var(--hud-panel-blur);
-  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--elevation-5);
-  /* 连续可逆过渡（只碰 opacity/transform）：关闭中途重开可直接从当前插值态反转，避免重播进场跳闪 */
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: var(--hos-radius-md, 8px);
+  background: var(--color-bg);
+  box-shadow: var(--elevation-5);
+  /* 连续可逆过渡（只碰 opacity/transform）：关闭中途重开可直接从当前插值态反转 */
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
   transition:
-    opacity var(--motion-base, 180ms) var(--ease-spring-soft, var(--ease-emphasized)),
-    transform var(--motion-base, 180ms) var(--ease-spring-soft, var(--ease-emphasized));
+    opacity var(--motion-base, 180ms) var(--ease-standard),
+    transform var(--motion-base, 180ms) var(--ease-standard);
 }
 
 /* 挂载首帧与关闭退场态：对齐 useCollapsePresence 的 160ms 卸载计时 */
 .windowClosed {
   opacity: 0;
-  transform: translate3d(0, 8px, 0) scale(0.985);
+  transform: translate3d(0, 6px, 0) scale(0.99);
   transition-duration: 160ms;
   transition-timing-function: var(--ease-standard);
 }
@@ -35,19 +33,21 @@
   pointer-events: none;
 }
 
-.pinned { box-shadow: 0 0 0 1px var(--color-accent), var(--elevation-5); }
+.pinned {
+  border-color: var(--color-accent);
+}
 
 .header {
   display: flex;
-  min-height: 38px;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 7px 10px;
+  gap: 8px;
+  padding: 6px 10px;
   cursor: move;
   user-select: none;
   border-bottom: 1px solid var(--color-border);
-  background: var(--hud-panel-bg);
+  background: var(--color-surface-raised);
 }
 
 .titleGroup,
@@ -58,64 +58,226 @@
   align-items: center;
 }
 
-.titleGroup { min-width: 0; gap: 7px; font: 11px var(--font-mono); letter-spacing: var(--tracking-wide); color: var(--color-accent); }
-.titleGroup strong { white-space: nowrap; }
-.sessionTitle { min-width: 0; overflow: hidden; color: var(--color-muted-strong); text-overflow: ellipsis; white-space: nowrap; }
-.led { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 7px var(--color-accent); }
-.headerActions { gap: 2px; }
+.titleGroup {
+  min-width: 0;
+  gap: 6px;
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.titleGroup strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pinHint {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-pill, 999px);
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.headerActions {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
 .headerActions button,
-.runtimeActions button {
+.runtimeActions button,
+.statusAction,
+.inlineError button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: var(--hos-radius-xs, 4px);
   background: transparent;
   color: var(--color-muted-strong);
   cursor: pointer;
-  font: 11px var(--font-mono);
-}
-.headerActions button { padding: 4px; font-size: 13px; }
-.headerActions button:hover,
-.runtimeActions button:hover { color: var(--color-accent); }
-.runtimeActions button:disabled { cursor: default; opacity: .45; }
-
-.body { display: flex; min-height: 0; flex: 1; flex-direction: column; }
-.status { padding: 20px 14px; color: var(--color-muted-strong); font: 12px/1.5 var(--font-mono); }
-.inlineError { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; color: var(--color-danger); font: 11px/1.4 var(--font-mono); }
-.inlineError span { overflow-wrap: anywhere; }
-.inlineError button { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; border: 0; background: transparent; color: var(--color-accent); cursor: pointer; font: inherit; }
-.runtimeToolbar { justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 10px; border-bottom: 1px solid var(--color-border); color: var(--color-muted-strong); font: 10px var(--font-mono); }
-.runtimeState { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.runtimeState[data-state='running'], .runtimeState[data-state='starting'] { color: var(--color-accent); }
-.runtimeActions { gap: 7px; }
-
-/* SessionWorkspace owns the canonical timeline/composer; this wrapper only sets the compact viewport. */
-.body :global([data-runtime-workspace]) { min-height: 0; }
-.body :global([data-runtime-workspace] > header) { flex: 0 0 auto; }
-.body :global([data-runtime-workspace-dock]) { padding-bottom: 10px; }
-.body :global(.ant-empty) { margin-block: 30px; }
-
-@media (max-width: 640px) {
-  .window { right: 8px; bottom: 8px; width: calc(100vw - 16px); height: min(640px, calc(100vh - 16px)); }
-}
-
-/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
- * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
-.headerActions button,
-.runtimeActions button {
+  font-size: 12px;
+  line-height: 1.3;
   transition:
     color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.headerActions button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.runtimeActions button {
+  padding: 3px 6px;
+}
+
+.headerActions button:hover,
+.runtimeActions button:hover:not(:disabled),
+.statusAction:hover,
+.inlineError button:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.headerActions button:focus-visible,
+.runtimeActions button:focus-visible,
+.statusAction:focus-visible,
+.inlineError button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.runtimeActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.statusCard {
+  margin: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 6px);
+  background: var(--color-surface);
+}
+
+.statusHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.statusErrorIcon {
+  color: var(--color-danger);
+}
+
+.statusDesc {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.statusAction {
+  margin-top: 2px;
+  padding: 4px 10px;
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.inlineError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 10px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 4px);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inlineErrorText {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.inlineError button {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  color: var(--color-accent);
+}
+
+.runtimeToolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.runtimeState {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.runtimeActions {
+  gap: 4px;
+}
+
+/* SessionWorkspace owns the canonical timeline/composer; mini window header already shows title & status. */
+.body :global([data-runtime-workspace]) {
+  min-height: 0;
+}
+
+.body :global([data-runtime-workspace] > header) {
+  display: none;
+}
+
+.body :global([data-runtime-workspace-dock]) {
+  padding-bottom: 10px;
+}
+
+.body :global(.ant-empty) {
+  margin-block: 24px;
+}
+
+@media (max-width: 640px) {
+  .window {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+    height: min(640px, calc(100vh - 16px));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .window,
   .windowClosed,
-  .windowClosing {
+  .windowClosing,
+  .headerActions button,
+  .runtimeActions button,
+  .statusAction,
+  .inlineError button {
     animation: none !important;
     transition: none !important;
     transform: none !important;
   }
+
   .window[data-open='true'] {
     opacity: 1 !important;
   }

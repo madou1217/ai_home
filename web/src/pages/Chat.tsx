@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Grid } from 'antd';
+import { FolderOpenOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
+import Button from '@/components/ui/AppButton';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { ProjectList } from '@/components/chat';
 import GlobalCommandPalette from '@/components/chat/GlobalCommandPalette';
 import KeyboardShortcutsModal from '@/components/chat/KeyboardShortcutsModal';
@@ -204,73 +207,28 @@ export default function Chat() {
   ]);
 
   const projectList = (
-    <div style={{ position: 'relative', height: '100%', minHeight: 0 }}>
-      <ProjectList
-        mobile={mobile}
-        projects={canonicalDirectory.projects}
-        loading={projectCatalog.loadingProjects}
-        hydratingProjectPaths={projectCatalog.hydratingProjectPaths}
-        runningSessionKeys={runningSessionKeys}
-        selectedSession={projectCatalog.selectedSession}
-        selectedProject={projectCatalog.selectedProject}
-        expandedProjects={projectCatalog.expandedProjects}
-        mode={workspaceMode}
-        onModeChange={switchMode}
-        onRefresh={refreshProjectList}
-        onToggleProject={projectCatalog.toggleProject}
-        onSelectProject={switchProject}
-        onSelectSession={switchSession}
-        onOpenProject={dialogs.openProject}
-        onCreateSession={switchCreateSession}
-        onProjectRemoved={handleProjectRemoved}
-        remoteSessionsPanel={workspaceMode === 'work' ? <RemoteWorkspacesPanel onOpenInWork={switchRemoteWorkspace} /> : null}
-      />
-      {canonicalDirectory.status === 'failed' ? (
-        <div
-          role="alert"
-          style={{
-            position: 'absolute',
-            left: 12,
-            right: 12,
-            bottom: 12,
-            zIndex: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            padding: '6px 12px',
-            borderRadius: 2,
-            border: '1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border))',
-            background: 'var(--color-surface-raised)',
-            boxShadow: 'var(--elevation-3)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            color: 'var(--color-muted-strong)',
-          }}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span className="hud-led hud-led--warn" aria-hidden="true" />
-            {canonicalDirectory.offlineCached
-              ? '服务端不可达，展示离线缓存的会话列表'
-              : '会话目录同步失败，展示的是最近一次结果'}
-          </span>
-          <button
-            type="button"
-            onClick={refreshProjectList}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              padding: 0,
-              cursor: 'pointer',
-              fontSize: 12,
-              color: 'var(--color-accent)',
-            }}
-          >
-            重试
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <ChatSidebarPane
+      mobile={mobile}
+      workspaceMode={workspaceMode}
+      projects={canonicalDirectory.projects}
+      directoryStatus={canonicalDirectory.status}
+      offlineCached={canonicalDirectory.offlineCached}
+      loading={projectCatalog.loadingProjects}
+      hydratingProjectPaths={projectCatalog.hydratingProjectPaths}
+      runningSessionKeys={runningSessionKeys}
+      selectedSession={projectCatalog.selectedSession}
+      selectedProject={projectCatalog.selectedProject}
+      expandedProjects={projectCatalog.expandedProjects}
+      onModeChange={switchMode}
+      onRefresh={refreshProjectList}
+      onToggleProject={projectCatalog.toggleProject}
+      onSelectProject={switchProject}
+      onSelectSession={switchSession}
+      onOpenProject={dialogs.openProject}
+      onCreateSession={switchCreateSession}
+      onProjectRemoved={handleProjectRemoved}
+      onOpenRemoteWorkspace={switchRemoteWorkspace}
+    />
   );
 
   return (
@@ -301,5 +259,185 @@ export default function Chat() {
         contentSurfaceRef={contentSurfaceRef}
       />
     </>
+  );
+}
+
+interface ChatSidebarPaneProps {
+  readonly mobile: boolean;
+  readonly workspaceMode: WorkspaceMode;
+  readonly projects: AggregatedProject[];
+  readonly directoryStatus: 'loading' | 'ready' | 'failed';
+  readonly offlineCached: boolean;
+  readonly loading: boolean;
+  readonly hydratingProjectPaths: Set<string>;
+  readonly runningSessionKeys: Set<string>;
+  readonly selectedSession: Session | null;
+  readonly selectedProject: AggregatedProject | null;
+  readonly expandedProjects: Set<string>;
+  readonly onModeChange: (mode: WorkspaceMode) => void;
+  readonly onRefresh: () => void;
+  readonly onToggleProject: (projectId: string) => void;
+  readonly onSelectProject: (project: AggregatedProject) => void;
+  readonly onSelectSession: (session: Session) => void;
+  readonly onOpenProject: () => void;
+  readonly onCreateSession: () => void;
+  readonly onProjectRemoved: (project: AggregatedProject) => void;
+  readonly onOpenRemoteWorkspace: (workspace: { projectPath?: string }) => Promise<void>;
+}
+
+function ChatSidebarPane({
+  mobile,
+  workspaceMode,
+  projects,
+  directoryStatus,
+  offlineCached,
+  loading,
+  hydratingProjectPaths,
+  runningSessionKeys,
+  selectedSession,
+  selectedProject,
+  expandedProjects,
+  onModeChange,
+  onRefresh,
+  onToggleProject,
+  onSelectProject,
+  onSelectSession,
+  onOpenProject,
+  onCreateSession,
+  onProjectRemoved,
+  onOpenRemoteWorkspace,
+}: ChatSidebarPaneProps) {
+  const showWorkFirstRun = workspaceMode === 'work' && !loading && projects.length === 0;
+  const headingSubtitle = workspaceMode === 'chat'
+    ? '独立对话列表，支持角色与自动压缩设置'
+    : '按项目组织会话，支持本地与远程工作区';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', minHeight: 0 }}>
+      {!mobile ? (
+        <div
+          style={{
+            flex: '0 0 auto',
+            padding: '12px 14px 8px',
+            borderBottom: '1px solid var(--color-border-subtle, var(--color-border))',
+            background: 'var(--color-surface-raised)',
+          }}
+        >
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 15,
+              fontWeight: 600,
+              lineHeight: 1.35,
+              color: 'var(--color-heading)',
+            }}
+          >
+            AI 会话
+          </h1>
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontSize: 12,
+              lineHeight: 1.45,
+              color: 'var(--color-muted)',
+            }}
+          >
+            {headingSubtitle}
+          </p>
+        </div>
+      ) : null}
+
+      <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+        <ProjectList
+          mobile={mobile}
+          projects={projects}
+          loading={loading}
+          hydratingProjectPaths={hydratingProjectPaths}
+          runningSessionKeys={runningSessionKeys}
+          selectedSession={selectedSession}
+          selectedProject={selectedProject}
+          expandedProjects={expandedProjects}
+          mode={workspaceMode}
+          onModeChange={onModeChange}
+          onRefresh={onRefresh}
+          onToggleProject={onToggleProject}
+          onSelectProject={onSelectProject}
+          onSelectSession={onSelectSession}
+          onOpenProject={onOpenProject}
+          onCreateSession={onCreateSession}
+          onProjectRemoved={onProjectRemoved}
+          remoteSessionsPanel={workspaceMode === 'work' ? <RemoteWorkspacesPanel onOpenInWork={onOpenRemoteWorkspace} /> : null}
+        />
+
+        {showWorkFirstRun ? (
+          <div
+            style={{
+              position: 'absolute',
+              left: 12,
+              right: 12,
+              bottom: directoryStatus === 'failed' ? 56 : 12,
+              zIndex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 8,
+              padding: 12,
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--hos-radius-md, 8px)',
+              background: 'var(--color-surface)',
+            }}
+          >
+            <strong style={{ fontSize: 13, color: 'var(--color-heading)' }}>首次使用工作区</strong>
+            <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--color-muted)' }}>
+              打开本地项目目录即可开始代码会话、文件查看与终端。
+            </span>
+            <Button type="primary" size="small" icon={<FolderOpenOutlined />} onClick={onOpenProject}>
+              打开项目目录
+            </Button>
+          </div>
+        ) : null}
+
+        {directoryStatus === 'failed' ? (
+          <div
+            role="alert"
+            style={{
+              position: 'absolute',
+              left: 12,
+              right: 12,
+              bottom: 12,
+              zIndex: 2,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+              padding: '8px 10px',
+              borderRadius: 'var(--hos-radius-sm, 6px)',
+              border: '1px solid var(--color-border-strong, var(--color-border))',
+              background: 'var(--color-surface-raised)',
+              boxShadow: 'var(--elevation-3)',
+              fontSize: 12,
+              color: 'var(--color-muted-strong)',
+            }}
+          >
+            <SettingStatusTag
+              status="error"
+              label={offlineCached ? '离线缓存' : '同步失败'}
+              detail={offlineCached ? '服务端不可达，当前展示离线缓存的会话列表' : '会话目录同步失败，展示最近一次结果'}
+              compact
+            />
+            <Button
+              type="link"
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={onRefresh}
+              style={{ paddingInline: 4 }}
+            >
+              重试
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

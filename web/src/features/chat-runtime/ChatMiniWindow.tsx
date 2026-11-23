@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, Spin } from 'antd';
 import type { ThemeConfig } from 'antd';
 import { useLocation } from '@umijs/max';
 import {
   CloseOutlined,
   DisconnectOutlined,
+  ExclamationCircleOutlined,
   PushpinFilled,
   PushpinOutlined,
   ReloadOutlined,
   StopOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import type { ChatAccount, Provider, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import { readPersistedSelection } from '@/pages/chat-selection-state.js';
@@ -38,7 +41,7 @@ import type { SessionProjection } from '@/chat-runtime';
 import { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './chat-mini-window.module.css';
 
-const MINI_SESSION_TITLE = '快速 Chat';
+const MINI_SESSION_TITLE = '快速对话';
 const MINI_WINDOW_EXIT_MS = 160;
 
 /**
@@ -283,32 +286,44 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
           onLostPointerCapture={endDrag}
         >
           <div className={styles.titleGroup}>
-            <span className={styles.led} aria-hidden="true" />
-            <strong>CHAT / QUICK</strong>
-            {session ? <span className={styles.sessionTitle}>{session.title || MINI_SESSION_TITLE}</span> : null}
+            <strong>{session?.title || MINI_SESSION_TITLE}</strong>
+            {pinned ? <span className={styles.pinHint}>已固定</span> : null}
           </div>
           <div className={styles.headerActions} data-panel-actions="true">
-            <button type="button" onClick={togglePin} aria-label={pinned ? '取消固定 Chat 窗口' : '固定 Chat 窗口'}>
+            <button
+              type="button"
+              onClick={togglePin}
+              aria-label={pinned ? '取消固定窗口' : '固定窗口'}
+              aria-pressed={pinned}
+              title={pinned ? '取消固定' : '固定窗口'}
+            >
               {pinned ? <PushpinFilled /> : <PushpinOutlined />}
             </button>
-            <button type="button" onClick={close} aria-label="关闭 Chat 窗口"><CloseOutlined /></button>
+            <button type="button" onClick={close} aria-label="关闭窗口" title="关闭"><CloseOutlined /></button>
           </div>
         </header>
         <div ref={bodyRef} className={styles.body}>
           <Reveal open={Boolean(sessionError)}>
             <div className={styles.inlineError} role="alert">
-              <span>{sessionError}</span>
+              <span className={styles.inlineErrorText}>
+                <ExclamationCircleOutlined aria-hidden="true" />
+                <span>{sessionError}</span>
+              </span>
               <button type="button" onClick={() => void loadSession()}><ReloadOutlined /> 重试</button>
             </div>
           </Reveal>
-          {loadingSession ? <div className={styles.status} role="status">正在读取最近 Chat 会话…</div> : null}
+          {loadingSession ? (
+            <MiniStatusView kind="loading" title="正在读取最近会话" description="加载完成后即可继续对话。" />
+          ) : null}
           {!loadingSession && !session ? (
-            <div className={styles.status} role="status">
-              {accounts.length ? '正在准备 Chat Runtime…' : '暂无可用账号，请先配置 Chat 账号'}
-            </div>
+            <MiniStatusView
+              kind={accounts.length ? 'loading' : 'empty'}
+              title={accounts.length ? '正在准备对话环境' : '暂无可用账号'}
+              description={accounts.length ? '即将就绪，请稍候。' : '请先在账号管理中配置可用凭据后再开始对话。'}
+            />
           ) : null}
           {persistedSessionOwnsCanonicalRoute ? (
-            <div className={styles.status} role="status">正在切换到独立 Chat 窗口…</div>
+            <MiniStatusView kind="loading" title="正在切换为独立会话" description="避免与当前会话页冲突。" />
           ) : null}
           {session && selectedAccount && !persistedSessionOwnsCanonicalRoute ? (
             <MiniRuntime
@@ -360,18 +375,27 @@ function MiniRuntime({
   );
 
   if (connection.phase === 'blocked') {
-    return <div className={styles.status} role="status">当前 Chat 目标尚未准备好。</div>;
+    return (
+      <MiniStatusView
+        kind="empty"
+        title="当前对话目标未就绪"
+        description="请检查所选账号凭据是否有效。"
+      />
+    );
   }
   if (connection.phase === 'error') {
     return (
-      <div className={styles.inlineError} role="alert">
-        <span>{connection.failure.message || 'Chat Runtime 连接失败'}</span>
-        <button type="button" onClick={connection.retry}><ReloadOutlined /> 重连</button>
-      </div>
+      <MiniStatusView
+        kind="error"
+        title="连接失败"
+        description={connection.failure.message || '暂时无法连接到对话运行时。'}
+        actionLabel="重试连接"
+        onAction={connection.retry}
+      />
     );
   }
   if (connection.phase !== 'ready') {
-    return <div className={styles.status} role="status">正在连接 Chat Runtime…</div>;
+    return <MiniStatusView kind="loading" title="正在连接运行时" description="连接完成后即可输入消息。" />;
   }
   return (
     <MiniRuntimeReady
@@ -426,18 +450,30 @@ function MiniRuntimeReady({
   const canStop = projection.state === 'running' || projection.state === 'starting'
     || projection.state === 'waiting_input' || projection.state === 'completing';
   const target = resolution.status === 'ready' ? resolution.target : fallbackTarget(session, account);
+  const stateText = MINI_STATE_LABELS[projection.state] || projection.state;
+  const statusTag = projection.connectionState !== 'connected'
+    ? <SettingStatusTag status="saving" label="正在重连" compact />
+    : <SettingStatusTag status={canStop ? 'saving' : 'applied'} label={`已连接 · ${stateText}`} compact />;
+
   return (
     <>
       <div className={styles.runtimeToolbar}>
-        <span className={styles.runtimeState} data-state={projection.state}>
-          {projection.connectionState === 'connected' ? '已连接' : '正在重连'} · {projection.state}
-        </span>
+        <div className={styles.runtimeState} data-state={projection.state}>
+          {statusTag}
+        </div>
         <div className={styles.runtimeActions}>
-          <button type="button" onClick={onReconnect} aria-label="重连 Chat Runtime"><DisconnectOutlined /> 重连</button>
-          <button type="button" onClick={() => void stop()} disabled={!canStop} aria-label="停止 Chat Runtime"><StopOutlined /> 停止</button>
+          <button type="button" onClick={onReconnect} aria-label="重新连接运行时"><DisconnectOutlined /> 重连</button>
+          <button type="button" onClick={() => void stop()} disabled={!canStop} aria-label="停止当前生成"><StopOutlined /> 停止</button>
         </div>
       </div>
-      {actionError ? <div className={styles.inlineError} role="alert">{actionError}</div> : null}
+      {actionError ? (
+        <div className={styles.inlineError} role="alert">
+          <span className={styles.inlineErrorText}>
+            <ExclamationCircleOutlined aria-hidden="true" />
+            <span>{actionError}</span>
+          </span>
+        </div>
+      ) : null}
       <SessionWorkspace
         controller={controller}
         runtimeTarget={target}
@@ -458,6 +494,53 @@ function MiniRuntimeReady({
     </>
   );
 }
+
+function MiniStatusView({
+  kind,
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  readonly kind: 'loading' | 'empty' | 'error';
+  readonly title: string;
+  readonly description: string;
+  readonly actionLabel?: string;
+  readonly onAction?: () => void;
+}) {
+  return (
+    <div
+      className={styles.statusCard}
+      role={kind === 'error' ? 'alert' : 'status'}
+      aria-live={kind === 'error' ? 'assertive' : 'polite'}
+    >
+      <div className={styles.statusHead}>
+        {kind === 'loading' ? <Spin size="small" /> : null}
+        {kind === 'empty' ? <UserOutlined aria-hidden="true" /> : null}
+        {kind === 'error' ? <ExclamationCircleOutlined aria-hidden="true" className={styles.statusErrorIcon} /> : null}
+        <strong>{title}</strong>
+      </div>
+      <p className={styles.statusDesc}>{description}</p>
+      {actionLabel && onAction ? (
+        <button type="button" className={styles.statusAction} onClick={onAction}>
+          <ReloadOutlined aria-hidden="true" />
+          <span>{actionLabel}</span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+const MINI_STATE_LABELS: Readonly<Record<SessionProjection['state'], string>> = {
+  idle: '就绪',
+  starting: '启动中',
+  running: '生成中',
+  waiting_input: '等待确认',
+  interrupting: '停止中',
+  completing: '收尾中',
+  recovering: '恢复中',
+  closed: '已关闭',
+};
 
 function selectMiniProjection(projection: SessionProjection) {
   return {

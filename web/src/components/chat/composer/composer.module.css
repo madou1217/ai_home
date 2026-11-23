@@ -1058,7 +1058,8 @@
 
 .goalControl { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
 .goalControlButton { color: var(--color-muted-strong); }
-.goalEditor { display: grid; width: 280px; gap: 8px; }
+.goalEditor { display: grid; width: min(280px, calc(100vw - 48px)); gap: 8px; }
+.goalEditorStatus { display: flex; align-items: center; justify-content: space-between; }
 .goalEditor :global(.ant-input-number) { width: 100%; font-family: var(--font-mono); }
 .goalEditorActions { display: flex; justify-content: flex-end; gap: 4px; }
 

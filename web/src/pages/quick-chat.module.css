@@ -95,19 +95,36 @@
 
 /* —— 顶栏：3D 魔方徽标 + 模式切换 + 标题 + 新建（轻透毛玻璃） —— */
 .topbar {
-  flex: 0 0 var(--qc-topbar-h);
+  flex: 0 0 auto;
+  min-height: var(--qc-topbar-h);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--color-border-subtle);
-  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
-  backdrop-filter: blur(12px) saturate(140%);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.topbarLeading {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heading {
+  flex: 1 1 140px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .title {
-  flex: 1 1 auto;
+  margin: 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -115,7 +132,18 @@
   color: var(--color-heading);
   font-size: 13px;
   font-weight: 600;
-  text-align: center;
+  line-height: 1.3;
+}
+
+.subtitle {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .modeSwitch {
@@ -193,9 +221,10 @@
     color var(--motion-fast) var(--ease-standard),
     transform var(--motion-instant) var(--ease-standard);
 }
-.iconButton:hover { background: var(--color-surface-muted); color: var(--color-heading); }
-.iconButton:active,
-.modeTab:active { transform: scale(0.95); }
+.iconButton:hover:not(:disabled) { background: var(--color-surface-muted); color: var(--color-heading); }
+.iconButton:disabled { opacity: 0.45; cursor: not-allowed; }
+.iconButton:not(:disabled):active,
+.modeTab:active { opacity: 0.82; }
 
 /* —— 主体：侧栏 + 会话区 —— */
 .body {
@@ -229,8 +258,26 @@
   background-image: none !important;
 }
 
+/* QuickChat 顶部已有统一标题与副标题，内部工作区不再重复渲染同名标题行 */
+.main :global([data-runtime-workspace] > header) {
+  padding-block: 6px;
+}
+.main :global([data-runtime-workspace] > header [data-workspace-title='true']) {
+  display: none;
+}
+
 .drawer :global(.ant-drawer-content) {
   background: var(--color-bg);
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .subtitle {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -238,9 +285,5 @@
   .modeTab,
   .iconButton {
     transition: none;
-  }
-  .iconButton:active,
-  .modeTab:active {
-    transform: none;
   }
 }

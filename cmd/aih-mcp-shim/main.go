@@ -44,11 +44,20 @@ func main() {
 	if _, err := conn.Write(append(registration, '\n')); err != nil {
 		fail("注册到 MCP 共享桥失败: %v", err)
 	}
+	done := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(os.Stdout, conn)
-		os.Exit(0)
+		close(done)
 	}()
 	_, _ = io.Copy(conn, os.Stdin)
+	// 半关闭写端让 daemon 处理完已发送的请求，再等它把回复写完。
+	if unixConn, ok := conn.(*net.UnixConn); ok {
+		_ = unixConn.CloseWrite()
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
 	_ = conn.Close()
 }
 

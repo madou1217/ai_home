@@ -50,7 +50,8 @@ func mcpBridgeChildCommand(executable string, shared bool) (string, []string) {
 	if shared {
 		shim := filepath.Join(filepath.Dir(executable), "aih-mcp-shim")
 		if info, err := os.Stat(shim); err == nil && !info.IsDir() && strings.TrimSpace(shim) != "" {
-			return shim, nil
+			// 空数组而非 nil：Claude 对 "args": null 会静默跳过该 MCP 服务器。
+			return shim, []string{}
 		}
 	}
 	return executable, []string{"__mcp-remote-tools"}

@@ -152,8 +152,19 @@ func runRemoteToolsShim(launch remoteToolsLaunchContext, stdin io.Reader, stdout
 	if _, err := conn.Write(append(registration, '\n')); err != nil {
 		return err
 	}
-	go func() { _, _ = io.Copy(stdout, conn) }()
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(stdout, conn)
+		close(done)
+	}()
 	_, err = io.Copy(conn, stdin)
+	if unixConn, ok := conn.(*net.UnixConn); ok {
+		_ = unixConn.CloseWrite()
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
 	return err
 }
 

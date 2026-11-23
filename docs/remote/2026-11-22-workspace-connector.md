@@ -135,6 +135,8 @@ Connector 不声明未实现的能力，Server 也不会把未声明能力当成
   10 分钟过期。拒绝/过期/重复使用分别返回 `approval_denied` / `approval_expired` /
   `approval_used`；
 - `run_command` 与 `start_job` 共用同一网关，不能绕过；`--approval=never` 关闭审批。
+- 审批记录保存在 Connector 进程内：Connector 重启后未决审批失效，代理会收到
+  `approval_not_found`，需要重新发起命令。
 
 ### 3.5 Token 约束
 

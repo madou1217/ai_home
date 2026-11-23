@@ -6,6 +6,7 @@ import {
   subscribeTransportTargetChange,
   type WebUiTransportTarget
 } from '@/services/webui-auth-transport';
+import { UPSTREAM_429_RETRY_LIMITS } from './BackoffScheduleInput';
 import type {
   AccountUpstream429RetryMode,
   Upstream429RetryGlobalConfig
@@ -112,14 +113,14 @@ export function useUpstream429TransportScope() {
 }
 
 export function isValidBackoffSecondsArray(value: unknown): value is number[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 10) {
+  if (!Array.isArray(value) || value.length < UPSTREAM_429_RETRY_LIMITS.minSteps || value.length > UPSTREAM_429_RETRY_LIMITS.maxSteps) {
     return false;
   }
   for (const item of value) {
     if (typeof item !== 'number' || !Number.isFinite(item) || !Number.isInteger(item)) {
       return false;
     }
-    if (item < 1 || item > 300) {
+    if (item < UPSTREAM_429_RETRY_LIMITS.minStepSeconds || item > UPSTREAM_429_RETRY_LIMITS.maxStepSeconds) {
       return false;
     }
   }

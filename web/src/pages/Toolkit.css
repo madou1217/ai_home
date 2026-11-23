@@ -23,7 +23,7 @@
 
 .toolkit-primary-tabs > .ant-tabs-nav {
   margin: 0;
-  padding: 0 var(--space-10);
+  padding: 0 var(--space-8);
   border-bottom: 1px solid var(--color-border);
   background: transparent;
 }
@@ -32,31 +32,68 @@
   border-bottom: 0;
 }
 
+.toolkit-primary-tabs .ant-tabs-nav-wrap {
+  overflow: visible;
+}
+
+.toolkit-primary-tabs .ant-tabs-nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) 0;
+}
+
 .toolkit-primary-tabs .ant-tabs-tab {
-  min-height: 52px;
-  margin: 0 var(--space-10) 0 0;
-  padding: var(--space-8) var(--space-4);
+  min-height: 36px;
+  margin: 0;
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
   color: var(--color-muted-strong);
   font-family: var(--font-display);
   font-size: var(--hos-text-body-sm);
   font-weight: var(--weight-medium);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
 }
 
-.toolkit-primary-tabs .ant-tabs-tab-btn > span {
+.toolkit-primary-tabs .ant-tabs-tab:hover {
+  border-color: var(--color-border);
+  background: var(--color-overlay);
+  color: var(--color-heading);
+}
+
+.toolkit-primary-tab-label {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
+}
+
+.toolkit-primary-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-md);
+}
+
+.toolkit-primary-tabs .ant-tabs-tab-active {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
 }
 
 .toolkit-primary-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--color-heading);
+  font-weight: var(--weight-semibold);
+  text-shadow: none;
+}
+
+.toolkit-primary-tabs .ant-tabs-tab-active .toolkit-primary-tab-icon {
   color: var(--color-accent);
-  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-primary-tabs .ant-tabs-ink-bar {
-  height: 2px;
-  background: var(--color-accent);
-  box-shadow: 0 0 10px var(--color-accent);
+  display: none;
 }
 
 .toolkit-primary-tabs > .ant-tabs-content-holder {
@@ -69,45 +106,62 @@
 
 .toolkit-console-body {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   min-width: 0;
   min-height: 610px;
 }
 
 .toolkit-secondary-nav {
   min-width: 0;
-  padding: var(--space-10) var(--space-6);
+  padding: var(--space-8) var(--space-6);
   border-right: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-surface-soft) 70%, transparent);
 }
 
+.toolkit-secondary-nav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-5);
+}
+
 .toolkit-secondary-nav-label,
 .toolkit-panel-kicker {
-  color: var(--color-accent);
+  color: var(--color-muted);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-caps);
   line-height: var(--leading-tight);
 }
 
-.toolkit-secondary-nav-label {
-  padding: 0 var(--space-6) var(--space-6);
-  color: var(--color-accent);
-  opacity: 0.8;
+.toolkit-secondary-nav-count {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xs);
+}
+
+.toolkit-secondary-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .toolkit-secondary-nav-item {
   position: relative;
   display: grid;
-  grid-template-columns: 24px 24px minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
   width: 100%;
   min-width: 0;
-  margin: 0 0 var(--space-3);
-  padding: var(--space-6);
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
   border: 1px solid transparent;
-  border-radius: 0;
+  border-radius: var(--radius-sm, 4px);
   background: transparent;
   color: var(--color-muted-strong);
   font: inherit;
@@ -120,75 +174,50 @@
 }
 
 .toolkit-secondary-nav-item:hover {
+  border-color: var(--color-border);
   background: var(--color-overlay);
   color: var(--color-heading);
 }
 
-/* 选中：HUD 选中态 —— 青色描边 + 柔和辉光 + 左上角标（与侧栏导航同一语言） */
+/* 选中：清晰边框 + 浅底 + 加粗文本 + 图标勾选，不用左侧色条或装饰性辉光 */
 .toolkit-secondary-nav-item[data-active='true'] {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
   color: var(--color-heading);
-  box-shadow: var(--hud-glow-accent);
+  box-shadow: none;
 }
 
-.toolkit-secondary-nav-item[data-active='true']::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  width: 8px;
-  height: 8px;
-  border-top: 2px solid var(--hud-tick-color);
-  border-left: 2px solid var(--hud-tick-color);
-  pointer-events: none;
-}
-
-.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-index,
-.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-icon {
+.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-icon,
+.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-check {
   color: var(--color-accent);
 }
 
-.toolkit-secondary-nav-index {
-  padding-top: var(--hos-space-0-5);
-  color: color-mix(in srgb, var(--color-accent) 60%, var(--color-faint));
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums slashed-zero;
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: var(--tracking-wide);
-}
-
-.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-index {
-  text-shadow: var(--hud-text-glow);
-}
-
 .toolkit-secondary-nav-icon {
-  font-size: var(--text-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-md);
   line-height: 1;
 }
 
-.toolkit-secondary-nav-item > span:last-child {
+.toolkit-secondary-nav-text {
   min-width: 0;
-}
-
-.toolkit-secondary-nav-item strong,
-.toolkit-secondary-nav-item small {
-  display: block;
-}
-
-.toolkit-secondary-nav-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   line-height: var(--leading-tight);
 }
 
-.toolkit-secondary-nav-item small {
-  margin-top: var(--space-3);
-  color: var(--color-muted);
-  font-size: var(--text-2xs);
-  line-height: var(--leading-snug);
+.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-text {
+  font-weight: var(--weight-semibold);
+}
+
+.toolkit-secondary-nav-check {
+  font-size: var(--text-xs);
+  flex: none;
 }
 
 .toolkit-secondary-nav-item:focus-visible,
@@ -238,7 +267,6 @@
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-wide);
   line-height: var(--leading-tight);
-  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-panel-header p {
@@ -350,13 +378,9 @@
   overflow-wrap: anywhere;
 }
 
-/* 有状态色的读数：数值跟随状态色并发光（中性读数保持 heading 色） */
+/* 有状态色的读数：数值跟随状态色（中性读数保持 heading 色） */
 .toolkit-status-track > li:not([data-tone='neutral']) .toolkit-status-track-copy strong {
   color: var(--track-color);
-}
-
-[data-theme='dark'] .toolkit-status-track > li:not([data-tone='neutral']) .toolkit-status-track-copy strong {
-  text-shadow: 0 0 10px color-mix(in srgb, var(--track-color) 55%, transparent);
 }
 
 .toolkit-status-track-copy small {
@@ -391,7 +415,6 @@
  * 内边距 / 底色由各自规则决定。 */
 .toolkit-workbench,
 .toolkit-mirror-workbench,
-.toolkit-guide-controls,
 .toolkit-observation-card,
 .toolkit-tool-config-card,
 .toolkit-proxy-apply,
@@ -413,7 +436,6 @@
 
 .toolkit-workbench::before,
 .toolkit-mirror-workbench::before,
-.toolkit-guide-controls::before,
 .toolkit-observation-card::before,
 .toolkit-tool-config-card::before,
 .toolkit-proxy-apply::before,
@@ -509,28 +531,28 @@
 
 .toolkit-tool-option[data-active='true'],
 .toolkit-mirror-option[data-active='true'] {
-  border-color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
   background: var(--color-accent-soft);
-  box-shadow: var(--hud-glow-accent);
-}
-
-.toolkit-tool-option[data-active='true']::before,
-.toolkit-mirror-option[data-active='true']::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  width: 8px;
-  height: 8px;
-  border-top: 2px solid var(--hud-tick-color);
-  border-left: 2px solid var(--hud-tick-color);
-  pointer-events: none;
+  box-shadow: none;
 }
 
 .toolkit-tool-option[data-active='true'] strong,
 .toolkit-mirror-option[data-active='true'] .toolkit-mirror-option-main strong {
+  color: var(--color-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.toolkit-tool-option-check {
   color: var(--color-accent);
-  text-shadow: var(--hud-text-glow-soft);
+  font-size: var(--text-xs);
+  flex: none;
+}
+
+.toolkit-detail-summary {
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 .toolkit-tool-option > span:first-child {
@@ -604,7 +626,7 @@
   line-height: var(--leading-tight);
 }
 
-/* 子面板标题：青色 Orbitron + 柔和辉光（面板头语义，与 unified-section-card 标题一致） */
+/* 子面板标题：青色强调（与 unified-section-card 标题一致） */
 .toolkit-observation-card h3,
 .toolkit-tool-config-card h3,
 .toolkit-proxy-apply h3,
@@ -613,7 +635,6 @@
 .toolkit-command-guide h3 {
   color: var(--color-accent);
   font-size: var(--hos-text-h3);
-  text-shadow: var(--hud-text-glow-soft);
 }
 
 /* 来源说明：中性描边小框（列出 registry / 命令来源），不做彩色弱底；
@@ -740,7 +761,6 @@
 
 .toolkit-command[data-copied='true'] {
   border-color: color-mix(in srgb, var(--color-success) 65%, var(--color-border-strong));
-  box-shadow: inset 0 0 12px color-mix(in srgb, var(--color-success) 10%, transparent);
 }
 
 .toolkit-command[data-copied='true'] .ant-btn:not(:disabled) {
@@ -1427,7 +1447,31 @@
   margin-left: auto;
 }
 
-/* 安装指南页：外框由 .hud-panel（hud.css）画切角 + 角标 + HUD 底色，这里只管布局 */
+/* 安装指南页：顶部步骤分组 + 命令工作台 */
+.toolkit-guide-header-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.toolkit-guide-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.toolkit-guide-steps .ant-segmented {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.toolkit-guide-step-summary .hos-setting-row-control:empty {
+  display: none;
+}
+
 .toolkit-guide-page {
   display: flex;
   min-width: 0;
@@ -1437,55 +1481,8 @@
   box-shadow: none;
 }
 
-/* 目标系统 / 工具链选择：两步 HUD 步骤轨（01 / 02），编号来自固定顺序，不是数据 */
-.toolkit-guide-controls {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface-sunken) 55%, transparent);
-  counter-reset: toolkit-guide-step;
-}
-
-.toolkit-guide-controls > div {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-4);
-  padding: var(--space-8);
-  counter-increment: toolkit-guide-step;
-}
-
-.toolkit-guide-controls > div + div {
-  border-left: 1px solid var(--color-border);
-}
-
-.toolkit-guide-controls .toolkit-control-label::before {
-  content: counter(toolkit-guide-step, decimal-leading-zero);
-  margin-right: var(--space-4);
-  color: var(--color-accent);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums slashed-zero;
-  text-shadow: var(--hud-text-glow-soft);
-}
-
-.toolkit-control-label {
-  color: var(--color-faint);
-  font-family: var(--font-body);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.toolkit-guide-controls .ant-segmented {
-  width: fit-content;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
 .toolkit-guide-workbench {
-  min-height: 480px;
+  min-height: 440px;
 }
 
 .toolkit-capabilities {
@@ -1662,7 +1659,6 @@
   font-family: var(--font-display);
   font-size: var(--hos-text-h3);
   letter-spacing: var(--tracking-wide);
-  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-environment-action-form {
@@ -1732,12 +1728,10 @@
 
 .toolkit-kpi-icon[data-tone='ok'] {
   color: var(--color-success);
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-success) 60%, transparent));
 }
 
 .toolkit-kpi-icon[data-tone='err'] {
   color: var(--color-danger);
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-danger) 60%, transparent));
 }
 
 @media (max-width: 1024px) {
@@ -1775,17 +1769,19 @@
   }
 
   .toolkit-secondary-nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-3);
     padding: var(--space-6);
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
   }
 
-  .toolkit-secondary-nav-label {
-    grid-column: 1 / -1;
-    padding: 0 var(--space-3) var(--space-3);
+  .toolkit-secondary-nav-head {
+    padding: 0 0 var(--space-4);
+  }
+
+  .toolkit-secondary-nav-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
   }
 
   .toolkit-secondary-nav-item {
@@ -1856,15 +1852,6 @@
     text-align: left;
   }
 
-  .toolkit-guide-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .toolkit-guide-controls > div + div {
-    border-top: 1px solid var(--color-border);
-    border-left: 0;
-  }
-
   .toolkit-environment-action-form {
     display: grid;
     grid-template-columns: 1fr;
@@ -1884,18 +1871,27 @@
     padding: 0 var(--space-4);
   }
 
+  .toolkit-primary-tabs .ant-tabs-nav-list {
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+  }
+
   .toolkit-primary-tabs .ant-tabs-tab {
-    min-height: 48px;
-    margin-right: var(--space-6);
-    padding-inline: var(--space-2);
+    min-height: 36px;
+    margin: 0;
+    padding: var(--space-2) var(--space-4);
     font-size: var(--text-xs);
   }
 
-  .toolkit-primary-tabs .ant-tabs-tab .anticon {
-    display: none;
+  .toolkit-primary-tab-icon {
+    font-size: var(--text-sm);
   }
 
   .toolkit-secondary-nav {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .toolkit-secondary-nav-list {
     grid-template-columns: 1fr;
   }
 
@@ -1959,16 +1955,23 @@
   }
 
   .toolkit-stat-row > .ant-pro-card {
-    min-width: 520px;
+    min-width: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .toolkit-primary-tabs .ant-tabs-tab,
   .toolkit-secondary-nav-item,
-.toolkit-tool-option,
-.toolkit-mirror-option,
-.toolkit-app-card {
+  .toolkit-tool-option,
+  .toolkit-mirror-option,
+  .toolkit-app-card,
+  .toolkit-command,
+  .toolkit-command pre {
     transition: none;
+  }
+
+  .toolkit-inline-error {
+    animation: none;
   }
 
   .toolkit-app-card:hover {

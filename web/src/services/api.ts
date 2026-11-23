@@ -2882,7 +2882,7 @@ export const workspaceConnectorsAPI = {
   openAgentTerminal: async (
     workspaceId: string,
     agent: 'codex' | 'claude',
-    options: { fresh?: boolean; cols?: number; rows?: number; account?: string; model?: string } = {}
+    options: { fresh?: boolean; cols?: number; rows?: number; account?: string; model?: string; noMcp?: boolean } = {}
   ): Promise<WorkspaceAgentTerminalResponse> => {
     const response = await api.post<WorkspaceAgentTerminalResponse>(
       `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/agent-terminal`,

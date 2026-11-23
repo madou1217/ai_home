@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Input, Popconfirm, Popover, Select, Tooltip } from 'antd';
+import { Button, Input, Popconfirm, Popover, Select, Tooltip, Checkbox} from 'antd';
 import {
   CodeOutlined,
   CopyOutlined,
@@ -99,6 +99,7 @@ export default function WorkspaceConnectorPanel() {
   const [pickerAgent, setPickerAgent] = useState<'codex' | 'claude'>('codex');
   const [pickerAccount, setPickerAccount] = useState('');
   const [pickerModel, setPickerModel] = useState('');
+  const [pickerNoMcp, setPickerNoMcp] = useState(false);
   const [pickerError, setPickerError] = useState('');
   const [catalog, setCatalog] = useState<RemoteTargetInventory | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -219,11 +220,11 @@ export default function WorkspaceConnectorPanel() {
     }
   };
 
-  const openAgent = async (workspace: WorkspaceConnector, agent: 'codex' | 'claude', account: string, model: string) => {
+  const openAgent = async (workspace: WorkspaceConnector, agent: 'codex' | 'claude', account: string, model: string, noMcp: boolean) => {
     setAgentOpening(workspace.id);
     setError('');
     try {
-      const result = await workspaceConnectorsAPI.openAgentTerminal(workspace.id, agent, { account, model });
+      const result = await workspaceConnectorsAPI.openAgentTerminal(workspace.id, agent, { account, model, noMcp });
       if (!result.ok || !result.sessionKey) {
         setError('打开 AI 终端失败');
         return;
@@ -531,6 +532,9 @@ export default function WorkspaceConnectorPanel() {
                           }))}
                           onChange={setPickerModel}
                         />
+                        <Checkbox checked={pickerNoMcp} onChange={(event) => setPickerNoMcp(event.target.checked)}>
+                          本次禁用 MCP
+                        </Checkbox>
                         {pickerError ? <span className="ws-connector-picker-error">{pickerError}</span> : null}
                         <Button
                           type="primary"
@@ -538,7 +542,7 @@ export default function WorkspaceConnectorPanel() {
                           block
                           disabled={!pickerAccount || !pickerModel}
                           loading={agentOpening === workspace.id}
-                          onClick={() => void openAgent(workspace, pickerAgent, pickerAccount, pickerModel)}
+                          onClick={() => void openAgent(workspace, pickerAgent, pickerAccount, pickerModel, pickerNoMcp)}
                         >
                           打开终端
                         </Button>

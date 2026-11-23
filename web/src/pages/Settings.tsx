@@ -49,6 +49,7 @@ import UpstreamErrorMappings from './UpstreamErrorMappings';
 import SshHostsPanel from './SshHostsPanel';
 import FailureSemantics from './FailureSemantics';
 import ClientKeysPanel from './ClientKeys';
+import InstallationBackupPanel from '@/components/settings/InstallationBackupPanel';
 import ConcurrencyLimitsPanel from './ConcurrencyLimits';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
@@ -892,6 +893,7 @@ const Settings = ({ section }: SettingsProps) => {
                   </Form.Item>
         </Form>
       </Modal>
+      {activeControlPlaneProfile ? <InstallationBackupPanel /> : null}
     </div>
   );
 

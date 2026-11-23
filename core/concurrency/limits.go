@@ -30,17 +30,18 @@ type AccountLimit struct {
 	TPMLimit       int
 }
 
-// Default 返回内置默认值（与现有 provider gate 的默认并发一致）。
+// Default 返回内置默认值：并发上限默认**关闭**（0=不限）。
+//
+// 只有运营方显式配置 concurrency（或设置旧 AIH_SERVER_*_MAX_CONCURRENCY）
+// 时才启用限流，避免部署后无意中把既有流量掐到 2 并发。
 func Default() Config {
 	return Config{
 		SystemMax:          0,
 		QueueLimit:         200,
 		QueueWaitTimeoutMS: 30000,
 		RetryAfterSeconds:  1,
-		AccountDefault:     2,
-		ProviderDefaults: map[string]int{
-			"codex": 2, "gemini": 1, "claude": 2, "agy": 1, "opencode": 1,
-		},
+		AccountDefault:     0,
+		ProviderDefaults:   map[string]int{},
 	}
 }
 

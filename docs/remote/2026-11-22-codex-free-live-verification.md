@@ -75,6 +75,25 @@ workspace（`wc-e439391e87c8332f68`）后重跑同一闭环：
 复核用的 workspace、enrollment 与临时 profile 已在验证后撤销并清除；当前 Server 的
 Connector 登记为空。
 
+## 持久作业真机闭环（2026-11-23）
+
+部署：AWS Server 换成 `6bc330825d44a96e2045f910610b0413904e92b64d629bb74b06e61f795dce15`
+（合并树 `f5c482f7` 的 linux-arm64 构建，含 `start_job` / `watch_job` / `interrupt_job`）。
+旧二进制备份为 `aih-server.prev-*`。
+
+流程：新 workspace `wc-c29eb9f14b4c6a731e` → `agent-terminal`（free 账号 10、
+`gpt-5.6-luna`）→ Codex 调用 `aih_remote.start_job`（cursor `0:0`）→
+`aih_remote.watch_job` 轮询 → `state: exited`，stdout `job-step-1/2/3`。
+
+证据：
+
+- Codex 终端：`Called aih_remote.start_job`、`Called aih_remote.watch_job`、
+  `state: exited`、`stdout: job-step-1 job-step-2 3`、`Worked for 11s`；
+- 本机 `JOB_DONE.txt` 实际写入 `job-done`。
+
+清理：验收 workspace、enrollment 与临时 profile 已撤销/清除；Server 的 Connector
+登记为空。
+
 ## 账号与模型选择器（2026-11-22）
 
 WebUI 本地工作区行的 AI 终端改为 Popover 选择器：先选 Agent（Codex/Claude），再选账号

@@ -1,7 +1,7 @@
 # Canonical 远程执行会话（第一阶段）
 
 日期：2026-11-23（Asia/Shanghai）
-状态：会话台账、列表与停止已实现；按会话的 usage/事件归属仍未接入。
+状态：会话台账、列表、停止与按会话 usage 归属已实现；usage 已在 AWS 真机 Codex 网关会话闭环，事件仍以生命周期为准。
 
 ## 1. 目的
 
@@ -33,27 +33,46 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 
 ## 4. 边界
 
-- usage 仍归属到账号与网关既有路径，尚未按 remote session 汇总；
+- usage 已按 remote session 汇总（见第 5 节），账号级路径保持不变；
 - 事件/消息尚未绑定到该 session（terminal 输出仍由 WebTerminal 承担）；
 - terminal 服务重启后旧 session 显示 unknown，记录保留用于审计；
 - 只有 Connector agent 终端会写记录；SSH workspace 终端仍走原有路径。
 
-## 5. 按会话 usage 归属（已实现数据链路，验证待补）
+## 5. 按会话 usage 归属（已在 AWS 真机闭环）
 
-已实现：
+实现：
 
 - Codex 启动侧为受管 Provider 注入
   `env_http_headers.x-aih-remote-session=AIH_REMOTE_SESSION_ID`，并在终端环境里写入本次
-  `rx-…` 会话 id（账号模式与网关模式共用同一 `-c` 参数）；
-- relaycore 推理入口读取 `x-aih-remote-session` 写入 context；
+  `rx-…` 会话 id；
+- 所有推理入口读取请求头：relaycore、codexresponseshttp、codexresponsesws（握手头）、
+  claudenativerelay、webuichatapi；
+- Claude 启动侧把真实会话 id 并入 `ANTHROPIC_CUSTOM_HEADERS`（与账号钉选共用同一变量时
+  按换行追加，不覆盖既有头）；
+- `worknative` 注册 Codex 网关档：`agent-terminal` 不指定账号时，Codex 直接请求 Server
+  的 `/v1/responses`，模型、账号与用量都留在 Server；
 - `clientkeystats.Tracker.RecordUsage` 按会话累积 token，Flush 时通过可选
-  `SessionUsageStore` 落库；
-- `sqliteaccount` 新增 `remote_session_usage`（首次写入惰性建表，不迁移既有表）；
-- 会话详情 `GET …/sessions/{id}` 返回 `usage`（input/output/cached/cacheWrite/
-  reasoning/total）。
+  `SessionUsageStore` 落库；`sqliteaccount` 的 `remote_session_usage` 首次写入惰性建表；
+- 列表与详情返回 `usage`（lowerCamel）；客户端在读到最终答案后立即断开时，只要上游已
+  发送 `response.completed`，仍记录该次尝试与用量；
+- WebUI 最近会话在状态行显示 `N tok`。
 
-未完成：codexresponseshttp / claudenativerelay / webuichatapi 等其他入口尚未读头；
-UI 未展示用量；尚未用真实推理请求做端到端验证。
+真机验证（2026-11-23，AWS）：
+
+- 部署二进制 sha256 `09e5207ee875173ef21e5a59109ca94fc6abf9c792038088bb3f72e9679ab7f9`；
+- 新 workspace `wc-2bf25b91406ce32111`，`agent-terminal` 网关模式（codex +
+  `gpt-5.6-luna`）；
+- Codex TUI 回复 `usage-fix`，会话 `rx-9124b1f3917c32c705` 详情的 usage 为
+  input 7991 / output 7 / cached 6272 / total 7998；
+- 手动非流式与流式 `/v1/responses` 请求分别累加到同一会话，证明多条请求按会话聚合；
+- 浏览器进入 Work 模式的远程执行面板，最近会话显示 `· 8.0k tok` 与 `· 34 tok`。
+
+边界：
+
+- Codex 账号模式（`aih codex <id>`）直连上游，不经过 Server 网关，无法按会话计量；只有
+  网关模式会产生会话用量；
+- Claude 的启动头注入已实现，本轮未用真实 Claude 会话验证；
+- 客户端在 `response.completed` 之前主动断开时仍拿不到该次用量。
 
 ## 6. 原始设计（保留）
 

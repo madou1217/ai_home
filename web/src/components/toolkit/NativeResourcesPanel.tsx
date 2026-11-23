@@ -5,6 +5,7 @@ import {
   BookOutlined,
   CodeOutlined,
   DeleteOutlined,
+  ExperimentOutlined,
   InfoCircleOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -19,6 +20,7 @@ import type {
   NativeResourceManagedRecord,
   NativeResourceReport
 } from '@/types';
+import AihPluginPanel from './AihPluginPanel';
 import NativeResourceDetailModal from './NativeResourceDetailModal';
 import NativeResourceInstallModal from './NativeResourceInstallModal';
 import {
@@ -33,6 +35,7 @@ import {
 import type { NativeResourceGroup } from './native-resource-grouping';
 
 type ManagedAction = Extract<NativeResourceAction, 'enable' | 'disable' | 'remove' | 'test'>;
+type ResourceTab = NativeResourceKind | 'aih';
 
 const KIND_ICONS: Record<NativeResourceKind, React.ReactNode> = {
   plugin: <CodeOutlined />,
@@ -56,7 +59,7 @@ function actionLabel(action: ManagedAction, count: number): string {
 export default function NativeResourcesPanel() {
   const [report, setReport] = useState<NativeResourceReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeKind, setActiveKind] = useState<NativeResourceKind>('plugin');
+  const [activeKind, setActiveKind] = useState<ResourceTab>('plugin');
   const [busy, setBusy] = useState('');
   const [bulkBusy, setBulkBusy] = useState('');
   const [installOpen, setInstallOpen] = useState(false);
@@ -89,7 +92,7 @@ export default function NativeResourcesPanel() {
     return next;
   }, [groups]);
   const visibleGroups = useMemo(
-    () => groups.filter((group) => group.kind === activeKind),
+    () => groups.filter((group) => activeKind !== 'aih' && group.kind === activeKind),
     [groups, activeKind]
   );
 
@@ -234,28 +237,26 @@ export default function NativeResourcesPanel() {
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-native-resources">
       <header className="toolkit-panel-header">
         <div>
-          <div className="toolkit-panel-kicker">NATIVE RESOURCE CONTROL</div>
-          <h2 id="toolkit-native-resources">插件、Skill 与 MCP</h2>
+          <div className="toolkit-panel-kicker">PLUGIN CONTROL SURFACE</div>
+          <h2 id="toolkit-native-resources">插件与资源</h2>
           <Typography.Text type="secondary">
-            按资源合并展示：同一 Skill 在不同 Provider / Harness 的投影收敛为一张卡片；启停与移除按宿主分别执行。
-          </Typography.Text>
-          <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
-            这里的「插件」指运行在 Provider / Harness 内的原生插件；AIH 自身的签名插件在「AIH 插件宿主」。
+            AIH 能力插件运行在 AIH 宿主；原生插件、Skill、MCP 由 Provider / Harness 加载。四类资源在同一页按平面分组。
           </Typography.Text>
         </div>
-        <Space>
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>安装</Button>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
-        </Space>
+        {activeKind !== 'aih' ? (
+          <Space>
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>安装</Button>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
+          </Space>
+        ) : null}
       </header>
       {loading && !report ? <div className="toolkit-loading"><Spin size="large" /></div> : null}
-      {!loading && !groups.length ? <Empty description="暂无已安装资源，可使用右上角安装" /> : null}
-      {groups.length ? (
-        <Tabs
-          className="toolkit-native-resource-tabs"
-          activeKey={activeKind}
-          onChange={(value) => setActiveKind(value as NativeResourceKind)}
-          items={RESOURCE_KINDS.map((kind) => ({
+      <Tabs
+        className="toolkit-native-resource-tabs"
+        activeKey={activeKind}
+        onChange={(value) => setActiveKind(value as ResourceTab)}
+        items={[
+          ...RESOURCE_KINDS.map((kind) => ({
             key: kind,
             label: <span>{KIND_ICONS[kind]} {KIND_LABELS[kind]}<Tag className="toolkit-native-resource-count">{counts[kind]}</Tag></span>,
             children: (
@@ -265,10 +266,15 @@ export default function NativeResourcesPanel() {
                   : <Empty description={`当前没有已安装的${KIND_LABELS[kind]}`} />}
               </Space>
             )
-          }))}
-        />
-      ) : null}
-      {report ? (
+          })),
+          {
+            key: 'aih',
+            label: <span><ExperimentOutlined /> AIH 能力插件</span>,
+            children: <AihPluginPanel />
+          }
+        ]}
+      />
+      {report && activeKind !== 'aih' ? (
         <Typography.Text type="secondary" style={{ display: 'block' }}>
           此页仅反映安装与启停状态，不作为插件已真实执行的证明。
         </Typography.Text>
@@ -282,7 +288,7 @@ export default function NativeResourcesPanel() {
       <NativeResourceInstallModal
         open={installOpen}
         report={report}
-        initialKind={activeKind}
+        initialKind={activeKind === 'aih' ? 'plugin' : activeKind}
         onClose={() => setInstallOpen(false)}
         onInstalled={(kind) => {
           setActiveKind(kind);

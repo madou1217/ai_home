@@ -64,6 +64,33 @@ func (h *Handler) serveNativeResourceSourceFiles(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, result)
 }
 
+// serveNativeResourceSourceInspect 预检手写路径的声明，不安装、不落盘。
+func (h *Handler) serveNativeResourceSourceInspect(w http.ResponseWriter, r *http.Request) {
+	if h.nativeResources == nil {
+		writeError(w, http.StatusServiceUnavailable, "native_resources_unavailable", "原生资源服务不可用")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 POST")
+		return
+	}
+	var input struct {
+		Kind   string `json:"kind"`
+		Source string `json:"source"`
+	}
+	if err := readJSONTarget(w, r, &input, 8*1024); err != nil {
+		writeError(w, http.StatusBadRequest, "native_resource_source_invalid", "请求体无效")
+		return
+	}
+	result, err := h.nativeResources.InspectSource(input.Kind, input.Source)
+	if err != nil {
+		writeNativeResourceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // serveNativeResourceSourceURL 下载远程归档并导入为一次性安装源。
 func (h *Handler) serveNativeResourceSourceURL(w http.ResponseWriter, r *http.Request) {
 	if h.nativeResources == nil {

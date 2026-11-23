@@ -3537,6 +3537,15 @@ export interface NativeResourceSourceImport {
   targets?: string[];
 }
 
+export interface NativeResourceSourceInspection {
+  ok: boolean;
+  kind: NativeResourceKind;
+  id?: string;
+  description?: string;
+  version?: string;
+  targets?: string[];
+}
+
 export interface NativeResourceReport {
   ok: boolean;
   source: string;

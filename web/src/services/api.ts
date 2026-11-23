@@ -3034,6 +3034,16 @@ export const toolkitAPI = {
     );
     return response.data;
   },
+  inspectNativeResourceSource: async (
+    kind: import('@/types').NativeResourceKind,
+    source: string
+  ): Promise<import('@/types').NativeResourceSourceInspection> => {
+    const response = await api.post<import('@/types').NativeResourceSourceInspection>(
+      '/webui/toolkit/native-resources/source/inspect',
+      { kind, source }
+    );
+    return response.data;
+  },
   operateNativeResource: async (input: {
     kind: import('@/types').NativeResourceKind;
     action: import('@/types').NativeResourceAction;

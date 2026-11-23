@@ -51,6 +51,8 @@ const (
 	NativeResourceSourceFilesPath = NativeResourcesPath + "/source/files"
 	// NativeResourceSourceURLPath 是从 http(s) 归档/文件导入安装源的路径。
 	NativeResourceSourceURLPath = NativeResourcesPath + "/source/url"
+	// NativeResourceSourceInspectPath 是手写路径安装前的声明预检路径。
+	NativeResourceSourceInspectPath = NativeResourcesPath + "/source/inspect"
 
 	// SubAggregatorPath 是订阅聚合器总览根路径。
 	SubAggregatorPath = "/v1/management/webui/toolkit/subscription-aggregator"
@@ -140,6 +142,7 @@ type NativeResourcesService interface {
 	Operate(ctx context.Context, input nativeresources.OperateInput) (nativeresources.OperateResponse, error)
 	ImportSourceFiles(kind string, files []nativeresources.SourceFile, displayName string) (nativeresources.SourceImport, error)
 	ImportSourceURL(ctx context.Context, kind, rawURL string) (nativeresources.SourceImport, error)
+	InspectSource(kind, source string) (nativeresources.SourceInspection, error)
 }
 
 // SubAggregatorService 抽象订阅聚合器全部管理面操作与同步监听订阅能力。
@@ -245,6 +248,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveNativeResourceSourceFiles(w, r)
 	case p == NativeResourceSourceURLPath:
 		h.serveNativeResourceSourceURL(w, r)
+	case p == NativeResourceSourceInspectPath:
+		h.serveNativeResourceSourceInspect(w, r)
 	case p == NativeResourcesPath:
 		h.serveNativeResources(w, r)
 	case p == SubAggregatorPath || strings.HasPrefix(p, SubAggregatorPath+"/"):

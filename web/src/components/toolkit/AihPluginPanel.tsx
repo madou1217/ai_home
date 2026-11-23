@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, Empty, Space, Tag, Typography, message } from 'antd';
+import { Card, Collapse, Empty, Space, Tag, Typography, message } from 'antd';
 import {
   CheckCircleOutlined,
   DeleteOutlined,
@@ -9,7 +9,24 @@ import {
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
-import type { AihPluginDoctorReport, AihPluginReport } from '@/types';
+import type {
+  AihPluginDoctorReport,
+  AihPluginInstalled,
+  AihPluginInstance,
+  AihPluginReport
+} from '@/types';
+
+interface AihPluginGroup {
+  pluginId: string;
+  versions: AihPluginInstalled[];
+  active?: AihPluginInstalled;
+  instance?: AihPluginInstance;
+  others: AihPluginInstalled[];
+}
+
+function compareVersion(left: string, right: string): number {
+  return right.localeCompare(left, undefined, { numeric: true, sensitivity: 'base' });
+}
 
 export default function AihPluginPanel() {
   const [report, setReport] = useState<AihPluginReport | null>(null);
@@ -49,6 +66,30 @@ export default function AihPluginPanel() {
 
   const installed = report?.installed || [];
   const instances = report?.instances || [];
+  // 按 pluginId 聚合：当前实例版本作为主卡，旧版本收进折叠区，避免所有版本平铺。
+  const groups = useMemo<AihPluginGroup[]>(() => {
+    const byId = new Map<string, AihPluginGroup>();
+    for (const plugin of installed) {
+      const group = byId.get(plugin.pluginId) || { pluginId: plugin.pluginId, versions: [], others: [] };
+      if (!group.versions.some((item) => item.version === plugin.version)) {
+        group.versions.push(plugin);
+      }
+      byId.set(plugin.pluginId, group);
+    }
+    for (const instance of instances) {
+      const group = byId.get(instance.pluginId) || { pluginId: instance.pluginId, versions: [], others: [] };
+      if (!group.instance || (instance.enabled && !group.instance.enabled)) group.instance = instance;
+      byId.set(instance.pluginId, group);
+    }
+    const result = Array.from(byId.values());
+    for (const group of result) {
+      group.versions.sort((left, right) => compareVersion(left.version, right.version));
+      const activeVersion = group.instance?.version;
+      group.active = group.versions.find((item) => item.version === activeVersion) || group.versions[0];
+      group.others = group.versions.filter((item) => item.version !== group.active?.version);
+    }
+    return result.sort((left, right) => left.pluginId.localeCompare(right.pluginId));
+  }, [installed, instances]);
   // 同一个插件的多个安装版本会重复列出同一贡献项；目录只展示一份。
   const contributionCatalog = useMemo(() => {
     const seen = new Set<string>();
@@ -75,35 +116,75 @@ export default function AihPluginPanel() {
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-aih-plugins">
       <header className="toolkit-panel-header">
         <div>
-          <div className="toolkit-panel-kicker">AIH SUPERVISED PLUGINS</div>
-          <h2 id="toolkit-aih-plugins">AIH 插件宿主</h2>
-          <Typography.Text type="secondary">这是 AIH 自有签名插件与 Host/RPC 生命周期控制面，和 Codex、Claude 等原生资源分开管理。</Typography.Text>
+          <div className="toolkit-panel-kicker">AIH CAPABILITY PLUGINS</div>
+          <h2 id="toolkit-aih-plugins">AIH 能力插件</h2>
+          <Typography.Text type="secondary">运行在 AIH 宿主内的签名插件，通过 contributes 声明能力槽；与 Provider / Harness 内执行的原生插件不是同一平面。</Typography.Text>
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} loading={busy === 'load'} onClick={() => void load()}>重新探测</Button>
         </Space>
       </header>
-      {!installed.length && !instances.length ? <Empty description="当前没有已安装的 AIH 插件" /> : null}
+      {!groups.length ? <Empty description="当前没有已安装的 AIH 插件" /> : null}
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {installed.map((plugin) => {
-          const instance = instances.find((item) => item.pluginId === plugin.pluginId && item.version === plugin.version);
+        {groups.map((group) => {
+          const plugin = group.active;
+          const instance = group.instance;
           const enabled = Boolean(instance?.enabled);
+          const stateLabel = instance ? (enabled ? '运行中' : '已停用') : '未运行';
           return (
-            <Card key={`${plugin.pluginId}:${plugin.version}`} size="small" title={<Space><strong>{plugin.pluginId}</strong><Tag>{plugin.version}</Tag>{signatureTag(plugin.signature)}</Space>}>
+            <Card
+              key={group.pluginId}
+              size="small"
+              title={(
+                <Space wrap>
+                  <strong>{group.pluginId}</strong>
+                  {plugin ? <Tag>{plugin.version}</Tag> : instance ? <Tag>{instance.version}</Tag> : null}
+                  {plugin ? signatureTag(plugin.signature) : null}
+                  {group.others.length ? <Tag>{group.others.length} 个旧版本</Tag> : null}
+                </Space>
+              )}
+            >
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 <Typography.Text type="secondary">
-                  贡献项：{plugin.contributes?.length ? plugin.contributes.join(' · ') : '未声明'}
+                  贡献项：{plugin?.contributes?.length ? plugin.contributes.join(' · ') : '未声明'}
                 </Typography.Text>
                 <Space wrap>
-                  <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{enabled ? '运行中' : '已停用'}</Tag>
+                  <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{stateLabel}</Tag>
                   <Typography.Text type="secondary">revision {report?.revision ?? '-'}</Typography.Text>
                   {instance ? (
                     <>
                       <Button size="small" icon={enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} loading={busy === (enabled ? 'disable' : 'enable')} onClick={() => void operate(enabled ? 'disable' : 'enable', { instanceId: instance.instanceId })}>{enabled ? '停用' : '启用'}</Button>
-                      <Button size="small" danger icon={<DeleteOutlined />} loading={busy === 'uninstall'} onClick={() => void operate('uninstall', { pluginId: plugin.pluginId, version: plugin.version })}>卸载</Button>
+                      <Button size="small" danger icon={<DeleteOutlined />} loading={busy === 'uninstall'} onClick={() => void operate('uninstall', { pluginId: group.pluginId, version: instance.version })}>卸载</Button>
                     </>
                   ) : null}
                 </Space>
+                {group.others.length ? (
+                  <Collapse
+                    ghost
+                    size="small"
+                    items={[{
+                      key: 'versions',
+                      label: `其他已安装版本（${group.others.length}）`,
+                      children: (
+                        <Space direction="vertical" size={4}>
+                          {group.others.map((item) => (
+                            <Space key={item.version} wrap size={6}>
+                              <Tag>{item.version}</Tag>
+                              {signatureTag(item.signature)}
+                              <Button
+                                size="small"
+                                danger
+                                icon={<DeleteOutlined />}
+                                loading={busy === 'uninstall'}
+                                onClick={() => void operate('uninstall', { pluginId: group.pluginId, version: item.version })}
+                              >移除</Button>
+                            </Space>
+                          ))}
+                        </Space>
+                      )
+                    }]}
+                  />
+                ) : null}
               </Space>
             </Card>
           );

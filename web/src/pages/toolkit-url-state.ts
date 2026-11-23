@@ -14,7 +14,9 @@ export const TOOLKIT_PANEL_QUERY_KEY = 'panel';
  * 引用的 `?panel=cli-upgrade` 必须还能落到应用管理，而不是打开一个空面板。
  */
 const RETIRED_PANEL_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-  'cli-upgrade': 'apps'
+  'cli-upgrade': 'apps',
+  // AIH 能力插件已并入「插件与资源」的同类资源页。
+  'aih-plugins': 'native-resources'
 });
 
 /** 把历史面板 id 归一到当前面板 id；未知 id 原样返回。 */

@@ -5,7 +5,8 @@ import { toolkitAPI } from '@/services/api';
 import type {
   NativeResourceKind,
   NativeResourceReport,
-  NativeResourceSourceImport
+  NativeResourceSourceImport,
+  NativeResourceSourceInspection
 } from '@/types';
 import {
   KIND_LABELS,
@@ -55,6 +56,9 @@ export default function NativeResourceInstallModal({
   const [sourceMode, setSourceMode] = useState<SourceMode>('path');
   const [sourceUrl, setSourceUrl] = useState('');
   const [upload, setUpload] = useState<NativeResourceSourceImport | null>(null);
+  const [inspection, setInspection] = useState<NativeResourceSourceInspection | null>(null);
+  const [inspectError, setInspectError] = useState('');
+  const [inspecting, setInspecting] = useState(false);
   const [importing, setImporting] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const kind = Form.useWatch('kind', form) || initialKind;
@@ -66,9 +70,10 @@ export default function NativeResourceInstallModal({
     if (sourceMode === 'path' && candidate) {
       return candidates.find((item) => item.source === candidate)?.targets;
     }
+    if (sourceMode === 'path' && inspection?.targets?.length) return inspection.targets;
     if (sourceMode !== 'path' && upload) return upload.targets;
     return undefined;
-  }, [sourceMode, candidate, candidates, upload]);
+  }, [sourceMode, candidate, candidates, inspection, upload]);
   const allOwners = useMemo(() => ownerOptions(report, kind), [report, kind]);
   const owners = useMemo(() => {
     if (!declaredTargets?.length) return allOwners;
@@ -89,6 +94,8 @@ export default function NativeResourceInstallModal({
     setCandidate(undefined);
     setSourceUrl('');
     setUpload(null);
+    setInspection(null);
+    setInspectError('');
     form.setFieldsValue({ source: '' });
   };
 
@@ -142,6 +149,25 @@ export default function NativeResourceInstallModal({
       message.error(error instanceof Error ? error.message : 'URL 导入失败');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const inspectPath = async () => {
+    const value = String(form.getFieldValue('source') || '').trim();
+    if (!value) {
+      setInspection(null);
+      setInspectError('');
+      return;
+    }
+    setInspecting(true);
+    try {
+      setInspection(await toolkitAPI.inspectNativeResourceSource(kind, value));
+      setInspectError('');
+    } catch (error) {
+      setInspection(null);
+      setInspectError(error instanceof Error ? error.message : '预检失败');
+    } finally {
+      setInspecting(false);
     }
   };
 
@@ -247,6 +273,8 @@ export default function NativeResourceInstallModal({
                   }))}
                   onChange={(value?: string) => {
                     setCandidate(value);
+                    setInspection(null);
+                    setInspectError('');
                     form.setFieldsValue({ source: value || '' });
                   }}
                 />
@@ -272,7 +300,36 @@ export default function NativeResourceInstallModal({
               <Input
                 placeholder={kind === 'skill' ? 'assets/provider-skills/aih-collab' : 'assets/native-plugins/<plugin>'}
                 autoComplete="off"
+                onChange={() => {
+                  setInspection(null);
+                  setInspectError('');
+                }}
+                onBlur={() => void inspectPath()}
+                addonAfter={(
+                  <Button
+                    size="small"
+                    type="link"
+                    loading={inspecting}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => void inspectPath()}
+                  >
+                    预检
+                  </Button>
+                )}
               />
+              {inspectError ? (
+                <Typography.Text type="danger" style={{ display: 'block', marginTop: 4 }}>
+                  预检失败：{inspectError}
+                </Typography.Text>
+              ) : inspection ? (
+                <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                  预检：{inspection.id || '脚本'}
+                  {inspection.version ? ` ${inspection.version}` : ''}
+                  {inspection.targets?.length
+                    ? ` · 兼容目标 ${inspection.targets.join(' / ')}`
+                    : ' · 未声明目标限制'}
+                </Typography.Text>
+              ) : null}
             </Form.Item>
           </>
         ) : null}

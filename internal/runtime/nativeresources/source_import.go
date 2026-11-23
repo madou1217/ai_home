@@ -381,3 +381,45 @@ func singleSourceFile(source string) (string, error) {
 	sort.Strings(names)
 	return filepath.Join(source, names[0]), nil
 }
+
+// SourceInspection 是安装源预检结果（不落盘、不安装）。
+type SourceInspection struct {
+	OK          bool     `json:"ok"`
+	Kind        string   `json:"kind"`
+	ID          string   `json:"id,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Targets     []string `json:"targets,omitempty"`
+}
+
+// InspectSource 读取安装包声明，供 UI 在安装前收敛目标。
+func (s *Service) InspectSource(kind, rawSource string) (SourceInspection, error) {
+	if err := validateSourceKind(kind); err != nil {
+		return SourceInspection{}, err
+	}
+	src, err := s.sourceFor(rawSource)
+	if err != nil {
+		return SourceInspection{}, err
+	}
+	normalizedKind := strings.ToLower(strings.TrimSpace(kind))
+	inspection := SourceInspection{OK: true, Kind: normalizedKind}
+	switch normalizedKind {
+	case "plugin":
+		pkg, readErr := readPluginPackage(src)
+		if readErr != nil {
+			return SourceInspection{}, readErr
+		}
+		inspection.ID = pkg.ID
+		inspection.Description = packageDescription(pkg)
+		inspection.Version = pkg.Version
+		inspection.Targets = pluginDeclaredTargets(pkg)
+	case "skill":
+		pkg, readErr := readSkillPackage(src)
+		if readErr != nil {
+			return SourceInspection{}, readErr
+		}
+		inspection.ID = pkg.ID
+		inspection.Description = pkg.Description
+	}
+	return inspection, nil
+}

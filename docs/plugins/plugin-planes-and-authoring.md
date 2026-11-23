@@ -13,8 +13,8 @@
 
 | 平面 | 装在哪 | 在哪运行 | 声明文件 | 当前 UI |
 |---|---|---|---|---|
-| A. AIH 能力插件 | `~/.ai_home/plugins`，签名制品 | AIH 插件宿主（Node / process） | `plugin.json`（manifest v1） | 开发工具 → AIH 插件宿主 |
-| B. Harness 原生资源 | Provider / Harness 自己的目录 | 对应 CLI / Harness 内部 | `package.json#agentPlugin`、`SKILL.md`、MCP server spec | 开发工具 → 插件与资源 |
+| A. AIH 能力插件 | `~/.ai_home/plugins`，签名制品 | AIH 插件宿主（Node / process） | `plugin.json`（manifest v1） | 插件与资源 → AIH 能力插件 |
+| B. Harness 原生资源 | Provider / Harness 自己的目录 | 对应 CLI / Harness 内部 | `package.json#agentPlugin`、`SKILL.md`、MCP server spec | 插件与资源 → 原生插件 / Skill / MCP |
 | C. 专用进程插件 | 同 A | 同 A，但走领域合同 | `plugin.json` + 领域能力 | 各自功能页（网络连接器等） |
 
 - **A 是“给 AIH 增加能力”**：账号来源、账号刷新、Provider 描述符、网关请求/选号/尝试钩子、聊天准备、工具与审批等。
@@ -22,7 +22,8 @@
 - **C 是 A 的领域特化**：例如 `network.connector`、出口内核、订阅渲染。它们仍用 A 的 manifest 与生命周期，只是能力合同由领域拥有。
 
 > 页面上的 `aih-dsh-gateway / 插件 / host/deepseek` 属于 **B**；它不是 AIH 能力插件。
-> AIH 能力插件在“AIH 插件宿主”页，两者不应互相替代。
+> 三个平面现在共用同一个“插件与资源”页面：AIH 能力插件、原生插件、Skill、MCP 各占一个 Tab。
+> AIH 能力插件按 pluginId 聚合，主卡只显示当前实例版本，旧版本收进折叠区。
 
 ## 2. 声明是什么
 
@@ -220,19 +221,18 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 
 上传源是**一次性安装源**：多目标安装会复用同一份内容，过期 24 小时后清理；它不会成为插件的运行目录。
 
-安装目标会按声明联动：候选插件或上传包解析出 `agentPlugin.engines/hosts` 后，目标下拉只保留兼容的 Provider / Host，`全选可用目标` 也只选兼容项。手写路径在安装前无法预检，仍由后端逐个校验。
+安装目标会按声明联动：候选插件或上传包解析出 `agentPlugin.engines/hosts` 后，目标下拉只保留兼容的 Provider / Host，`全选可用目标` 也只选兼容项。手写路径在离开输入框或点击“预检”时读取声明，同样收敛目标。
 
 ## 7. 仍然存在的弱点
 
-已解决：声明式作用域、安装目标与声明联动、能力槽与贡献项目录（AIH 插件页显示插件、贡献项、能力、顺序、失败策略、scope）。
+已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面。
 
 按影响排序，仍待处理：
 
-1. **“插件”一词承载三个平面。** 用户无法从名字判断这是 AIH 能力插件还是 Harness 原生插件。
+1. **“插件”一词仍承载多个平面。** 页面已统一，但 manifest 顶层还没有 `kind` 区分 AIH 能力插件与 Harness 原生插件。
 2. **目录还不是活跃代次视图。** 目前展示已安装插件的声明贡献项，没有标注哪些在活跃代次、最近调用结果与拒绝原因。
 3. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
 4. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
-5. **手写路径无法安装前预检。** 文件夹 / URL / 内置候选可以按声明过滤目标，手写路径只能在安装时逐个失败。
 
 ## 8. 下一步建议（按收益/成本）
 
@@ -240,7 +240,6 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 2. **能力目录页**：在现有声明目录上补活跃代次、最近调用结果与拒绝原因。
 3. **模板与 doctor**：`account` / `provider` / `harness` 三个最小样例 + 每个能力的 smoke 检查。
 4. **补齐 `gateway.route` 或从合同移除**，避免空声明。
-5. **手写路径预检**：先探测 package.json / SKILL.md，再展示兼容目标。
 
 ## 9. 验证边界
 

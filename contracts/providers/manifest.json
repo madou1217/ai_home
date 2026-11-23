@@ -2608,6 +2608,9 @@
             ],
             "execNames": [
               "ZCode.exe"
+            ],
+            "displayNames": [
+              "ZCode"
             ]
           },
           "linux": {

@@ -402,9 +402,20 @@ func findWindowsRegisteredDesktopClient(ctx context.Context, provider string, cf
 		return nil
 	}
 	iconPath := strings.Trim(strings.Split(parsed.DisplayIcon, ",")[0], `" `)
-	for _, execName := range cfg.ExecNames {
-		if parsed.InstallLocation != "" {
-			cand := joinPlatformPath(platformWindows, parsed.InstallLocation, execName)
+	// 安装目录优先取 InstallLocation；不少 NSIS 安装器（ZCode 3.16.3 实测）
+	// 只写 DisplayIcon 不写 InstallLocation，此时图标所在目录就是安装目录。
+	var installDirs []string
+	if dir := strings.TrimSpace(parsed.InstallLocation); dir != "" {
+		installDirs = append(installDirs, dir)
+	}
+	if iconPath != "" && !strings.HasSuffix(strings.ToLower(iconPath), ".exe") {
+		if dir := filepath.Dir(iconPath); dir != "" && dir != "." && dir != iconPath {
+			installDirs = append(installDirs, dir)
+		}
+	}
+	for _, dir := range uniqueStrings(installDirs) {
+		for _, execName := range cfg.ExecNames {
+			cand := joinPlatformPath(platformWindows, dir, execName)
 			if fileExists(cand) {
 				return &DesktopRecord{Provider: provider, ClientName: nonEmpty(cfg.ClientName, provider), ExecutablePath: cand, DisplayPath: cand, Version: strings.TrimSpace(parsed.DisplayVersion)}
 			}

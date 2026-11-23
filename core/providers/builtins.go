@@ -906,7 +906,7 @@ func builtinZcode() Definition {
 				[]string{"ZCode.exe"},
 				[]string{"ZCode.exe"},
 				[]string{"zcode"},
-			), "dev.zcode.app", nil),
+			), "dev.zcode.app", []string{"ZCode"}),
 				"zcode", "zcode-shadow",
 				[]string{"ZCode.app", "ZCode Desktop.app"},
 				nil,

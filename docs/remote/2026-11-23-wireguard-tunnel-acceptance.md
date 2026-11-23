@@ -72,6 +72,9 @@ v0.1.1 在 Linux 上先 `install -m 600` 到 `/etc/wireguard/<iface>.conf`，再
 - 插件：`aih-plugin-wireguard` v0.1.1（commit `0c99ab3`）
 - Release：https://github.com/madou1217/aih-plugin-wireguard/releases/tag/v0.1.1
 - 资产：`wireguard-0.1.1.aih-plugin`、`public.pem`、`SHA256SUMS`；下载哈希与本地构建一致（`87999385…`）。
+- v0.1.2（SSH 传输 + `listenPort`）：commit `b5c6910`，Release
+  https://github.com/madou1217/aih-plugin-wireguard/releases/tag/v0.1.2，
+  资产哈希 `200c6500…`，本地已安装。
 
 ## 7. SSH 自建传输（v0.1.2）
 

@@ -91,7 +91,7 @@ func limitsShow(ctx context.Context, home string, runtime commandRuntime, args [
 			"ok": true, "concurrency": config, "enforced": false,
 		})
 	}
-	_, _ = fmt.Fprintln(runtime.stdout, "CONCURRENCY（已存储，未执行拦截）")
+	_, _ = fmt.Fprintln(runtime.stdout, "CONCURRENCY（并发准入已启用；RPM/TPM 未执行）")
 	_, _ = fmt.Fprintf(runtime.stdout, "systemMax:          %d\n", config.SystemMax)
 	_, _ = fmt.Fprintf(runtime.stdout, "queueLimit:         %d\n", config.QueueLimit)
 	_, _ = fmt.Fprintf(runtime.stdout, "queueWaitTimeoutMs: %d\n", config.QueueWaitTimeoutMS)
@@ -173,7 +173,7 @@ func limitsSetProvider(ctx context.Context, home string, runtime commandRuntime,
 	if *asJSON {
 		return json.NewEncoder(runtime.stdout).Encode(map[string]any{"ok": true, "provider": provider, "max": saved.ProviderDefaults[provider], "enforced": false})
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已设置 %s 默认并发 = %d（未生效）\n", provider, saved.ProviderDefaults[provider])
+	_, _ = fmt.Fprintf(runtime.stdout, "已设置 %s 默认并发 = %d（已生效）\n", provider, saved.ProviderDefaults[provider])
 	return nil
 }
 
@@ -198,7 +198,7 @@ func limitsUnsetProvider(ctx context.Context, home string, runtime commandRuntim
 	if *asJSON {
 		return json.NewEncoder(runtime.stdout).Encode(map[string]any{"ok": true, "provider": provider, "unset": true})
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已移除 %s 默认并发；回落到 accountDefault=%d（未生效）\n", provider, saved.AccountDefault)
+	_, _ = fmt.Fprintf(runtime.stdout, "已移除 %s 默认并发；回落到 accountDefault=%d\n", provider, saved.AccountDefault)
 	return nil
 }
 
@@ -250,7 +250,7 @@ func limitsSetAccount(ctx context.Context, home string, runtime commandRuntime, 
 	if *asJSON {
 		return json.NewEncoder(runtime.stdout).Encode(map[string]any{"ok": true, "limit": limit, "enforced": false})
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已设置账号覆盖（未生效）: account=%s model=%s max=%d rpm=%d tpm=%d\n",
+	_, _ = fmt.Fprintf(runtime.stdout, "已设置账号覆盖: account=%s model=%s max=%d rpm=%d tpm=%d（并发已生效，rpm/tpm 未执行）\n",
 		limit.AccountRef, displayOrAll(limit.ModelID), limit.MaxConcurrency, limit.RPMLimit, limit.TPMLimit)
 	return nil
 }
@@ -397,7 +397,7 @@ func printLimitsConfig(runtime commandRuntime, config concurrency.Config, asJSON
 	if asJSON {
 		return json.NewEncoder(runtime.stdout).Encode(map[string]any{"ok": true, "concurrency": config, "enforced": false})
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已保存（未生效）: systemMax=%d queueLimit=%d queueWaitTimeoutMs=%d retryAfterSeconds=%d accountDefault=%d\n",
+	_, _ = fmt.Fprintf(runtime.stdout, "已保存并热生效: systemMax=%d queueLimit=%d queueWaitTimeoutMs=%d retryAfterSeconds=%d accountDefault=%d\n",
 		config.SystemMax, config.QueueLimit, config.QueueWaitTimeoutMS, config.RetryAfterSeconds, config.AccountDefault)
 	return nil
 }

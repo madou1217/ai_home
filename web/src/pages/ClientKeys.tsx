@@ -10,7 +10,7 @@ import { writeClipboardText } from '@/utils/clipboard';
  *
  * - 总 key（master）由 server 配置提供，这里只展示与统计；
  * - 托管 Key 可创建/停用/改名/轮换/撤销，secret 只在创建和轮换时显示一次；
- * - 并发/速率字段本轮只展示，标注“未生效”。
+ * - 并发上限已执行；RPM/TPM/每日 Tokens 仍只存储、标注“未生效”。
  */
 const ClientKeysPanel: React.FC = () => {
   const [rows, setRows] = useState<ClientKeyRow[]>([]);
@@ -110,7 +110,7 @@ const ClientKeysPanel: React.FC = () => {
           dailyTokenLimit: Number(values.dailyTokenLimit || 0)
         }
       });
-      message.success('限额已保存（尚未生效）');
+      message.success('限额已保存：并发立即生效，RPM/TPM/每日 Tokens 暂未执行');
       setEditingKey(null);
       await load();
     } catch (error: unknown) {
@@ -200,7 +200,7 @@ const ClientKeysPanel: React.FC = () => {
         return (
           <Space size={4} wrap>
             <span>{text}</span>
-            <Tag>未生效</Tag>
+            <Tag>已生效</Tag>
           </Space>
         );
       }
@@ -262,7 +262,7 @@ const ClientKeysPanel: React.FC = () => {
       <Space style={{ marginBottom: 12 }} wrap>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建 API Key</Button>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>
-        <span className="aih-muted">并发/速率字段本轮只存储与展示，尚未执行；创建与轮换的 secret 只显示一次。</span>
+        <span className="aih-muted">并发上限已执行；RPM/TPM/每日 Tokens 仅存储、暂未执行。创建与轮换的 secret 只显示一次。</span>
       </Space>
       <Table
         size="small"
@@ -286,7 +286,7 @@ const ClientKeysPanel: React.FC = () => {
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="例如：laptop / build-server" maxLength={80} />
           </Form.Item>
-          <Form.Item name="maxConcurrency" label="最大并发（未生效）" initialValue={0}>
+          <Form.Item name="maxConcurrency" label="最大并发（已生效）" initialValue={0}>
             <InputNumber min={0} max={64} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="rpmLimit" label="RPM 上限（未生效）" initialValue={0}>
@@ -310,7 +310,7 @@ const ClientKeysPanel: React.FC = () => {
         onCancel={() => setEditingKey(null)}
         destroyOnClose
       >
-        <p className="aih-muted">这些字段只存储与展示，本轮尚未执行拦截；0 表示不限。</p>
+        <p className="aih-muted">最大并发立即生效；RPM/TPM/每日 Tokens 仅存储。0 表示不限。</p>
         <Form form={limitForm} layout="vertical">
           <Form.Item name="maxConcurrency" label="最大并发" initialValue={0}>
             <InputNumber min={0} max={64} style={{ width: '100%' }} />

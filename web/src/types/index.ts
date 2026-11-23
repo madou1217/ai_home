@@ -873,6 +873,31 @@ export interface OpenAIModelItem {
   object: 'model';
   created: number;
   owned_by: string;
+  /**
+   * 该模型可被调用的客户端入口路径，例如 `/v1/messages`。
+   *
+   * 与 LiteLLM 的 supported_endpoints 同义：只回答「能从哪些端点调」，
+   * 不区分上游是原生承接还是网关做了协议转换。原生/转换的区分在内部账本
+   * （`endpoint_capabilities`）里，只供管理页展示。
+   */
+  supported_endpoints?: string[];
+  /**
+   * 入口能力的内部账本（明细版）。
+   *
+   * 后端在 data[] 里同时给出 supported_endpoints（简版）与本字段（明细）。
+   * managedData[] 不重复这份明细，因此只在这里声明。
+   */
+  endpoint_capabilities?: EndpointCapability[];
+}
+
+/** 一条入口能力的内部账本条目（仅管理页可见）。 */
+export interface EndpointCapability {
+  /** 客户端入口路径，例如 `/v1/messages`。 */
+  path: string;
+  /** `native` = 上游按该协议原生承接；`convert` = 网关做跨协议转换。 */
+  mode: 'native' | 'convert';
+  /** 能在这条入口服务该模型的 Provider。 */
+  providers?: Provider[];
 }
 
 export interface ModelMetadata {
@@ -4650,7 +4675,8 @@ export interface ClientKeyRow {
   updatedAtMs?: number;
   lastUsedAtMs?: number;
   limits?: ClientKeyLimits;
-  limitsEnforced?: boolean;
+  concurrencyEnforced?: boolean;
+  rateLimitsEnforced?: boolean;
   live?: ClientKeyLive;
   totals?: ClientKeyTotals;
 }

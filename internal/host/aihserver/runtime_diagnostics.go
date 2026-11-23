@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/sessionreclaim"
@@ -41,7 +43,8 @@ func (h sessionDiagnosticsHandler) ServeHTTP(response http.ResponseWriter, reque
 		writeSystemJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
 		return
 	}
-	reports, err := sessionreclaim.Detect(request.Context(), h.aiHomeDir, sessionreclaim.Options{})
+	options := sessionreclaim.Options{IdleThreshold: idleThresholdFromQuery(request)}
+	reports, err := sessionreclaim.Detect(request.Context(), h.aiHomeDir, options)
 	if err != nil {
 		writeSystemJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return
@@ -104,7 +107,8 @@ func (h sessionReclaimHandler) ServeHTTP(response http.ResponseWriter, request *
 		return
 	}
 	var body struct {
-		Apply bool `json:"apply"`
+		Apply       bool `json:"apply"`
+		IdleMinutes int  `json:"idleMinutes,omitempty"`
 	}
 	if request.ContentLength > 0 {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
@@ -112,7 +116,14 @@ func (h sessionReclaimHandler) ServeHTTP(response http.ResponseWriter, request *
 			return
 		}
 	}
-	result, err := sessionreclaim.Reclaim(request.Context(), h.aiHomeDir, sessionreclaim.ReclaimOptions{Apply: body.Apply})
+	options := sessionreclaim.Options{}
+	if body.IdleMinutes > 0 {
+		options.IdleThreshold = time.Duration(body.IdleMinutes) * time.Minute
+	}
+	result, err := sessionreclaim.Reclaim(request.Context(), h.aiHomeDir, sessionreclaim.ReclaimOptions{
+		Options: options,
+		Apply:   body.Apply,
+	})
 	if err != nil {
 		writeSystemJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return
@@ -124,6 +135,19 @@ func (h sessionReclaimHandler) ServeHTTP(response http.ResponseWriter, request *
 		"reclaimed": result.Reclaimed,
 		"skipped":   result.Skipped,
 	})
+}
+
+// idleThresholdFromQuery 读取 ?idleMinutes=，只用于诊断/验收；非法值交给默认值。
+func idleThresholdFromQuery(request *http.Request) time.Duration {
+	raw := strings.TrimSpace(request.URL.Query().Get("idleMinutes"))
+	if raw == "" {
+		return 0
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes <= 0 {
+		return 0
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 func bytesToMiB(value uint64) float64 {

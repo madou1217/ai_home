@@ -60,14 +60,11 @@ const defaultIdleThreshold = 4 * time.Hour
 func Detect(ctx context.Context, aiHomeDir string, opts Options) ([]Report, error) {
 	options := normalize(opts)
 	dir := filepath.Join(aiHomeDir, "run", "persistent-sessions")
+	sessions := make([]Session, 0, 16)
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	sessions := make([]Session, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -85,6 +82,20 @@ func Detect(ctx context.Context, aiHomeDir string, opts Options) ([]Report, erro
 			continue
 		}
 		session.Path = path
+		sessions = append(sessions, session)
+	}
+	// Web 终端（aih-web-*）不写注册表，必须从 socket 目录补充发现；
+	// 否则它们永远不会进入四证据判定（2026-11-23 AWS 遗留进程事故的根因）。
+	seen := make(map[string]struct{}, len(sessions))
+	for _, session := range sessions {
+		seen[session.Socket+"\x00"+session.Name] = struct{}{}
+	}
+	for _, session := range discoverWebSessions(ctx) {
+		key := session.Socket + "\x00" + session.Name
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
 		sessions = append(sessions, session)
 	}
 	reports := make([]Report, 0, len(sessions))

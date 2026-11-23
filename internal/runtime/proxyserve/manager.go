@@ -44,6 +44,16 @@ type Request struct {
 	PeerAIH string `json:"peerAih,omitempty"`
 }
 
+// PathEvidence 是对等链路的脱敏路径证据。
+// Mode 取值与 network.connector 的 direct-p2p / peer-relay 语义一致。
+type PathEvidence struct {
+	Mode       string `json:"mode,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Transport  string `json:"transport,omitempty"`
+}
+
 // View 是 WebUI 可见的入口状态；URL 含租约令牌，只返回给管理面。
 type View struct {
 	Running   bool   `json:"running"`
@@ -58,6 +68,8 @@ type View struct {
 	Transport string `json:"transport,omitempty"`
 	Peer      string `json:"peer,omitempty"`
 	PeerVia   string `json:"via,omitempty"`
+	// Path 只在对等模式下出现；本机管理面模式不虚构 P2P 路径。
+	Path *PathEvidence `json:"path,omitempty"`
 }
 
 type session struct {
@@ -286,6 +298,9 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 		current.view.Name = result.view.Name
 		current.view.HTTPURL = result.view.HTTPURL
 		current.view.SOCKS5URL = result.view.SOCKS5URL
+		if result.view.Path != nil {
+			current.view.Path = result.view.Path
+		}
 		view := current.view
 		manager.mu.Unlock()
 		return view, nil
@@ -342,6 +357,15 @@ func (manager *Manager) Stop(ctx context.Context) error {
 func (manager *Manager) Close() error { return manager.Stop(context.Background()) }
 
 // envWithOverrides 先删掉同名旧值再追加，避免子进程读到继承的环境变量而不是本次覆盖。
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func validPeerField(value string, max int) bool {
 	return len(value) <= max && !strings.HasPrefix(value, "-") && !strings.ContainsAny(value, "\r\n\x00")
 }
@@ -439,11 +463,14 @@ type readyResult struct {
 func readReady(stdout io.Reader, ready chan<- readyResult) {
 	decoder := json.NewDecoder(stdout)
 	var payload struct {
-		OK        bool   `json:"ok"`
-		HTTPURL   string `json:"httpUrl"`
-		SOCKS5URL string `json:"socks5Url"`
-		Name      string `json:"name"`
-		Error     string `json:"error"`
+		OK             bool          `json:"ok"`
+		HTTPURL        string        `json:"httpUrl"`
+		SOCKS5URL      string        `json:"socks5Url"`
+		Name           string        `json:"name"`
+		Error          string        `json:"error"`
+		PathMode       string        `json:"pathMode"`
+		PathConfidence string        `json:"pathConfidence"`
+		PathEvidence   *PathEvidence `json:"pathEvidence"`
 	}
 	sent := false
 	for {
@@ -465,6 +492,18 @@ func readReady(stdout io.Reader, ready chan<- readyResult) {
 			ready <- readyResult{err: fmt.Errorf("%w: %s", ErrStartFailed, message)}
 			continue
 		}
-		ready <- readyResult{view: View{HTTPURL: payload.HTTPURL, SOCKS5URL: payload.SOCKS5URL, Name: payload.Name}}
+		view := View{HTTPURL: payload.HTTPURL, SOCKS5URL: payload.SOCKS5URL, Name: payload.Name}
+		if payload.PathMode != "" {
+			path := &PathEvidence{Mode: payload.PathMode, Confidence: payload.PathConfidence}
+			if payload.PathEvidence != nil {
+				path.Mode = firstNonEmpty(payload.PathEvidence.Mode, path.Mode)
+				path.Confidence = firstNonEmpty(payload.PathEvidence.Confidence, path.Confidence)
+				path.Source = payload.PathEvidence.Source
+				path.Path = payload.PathEvidence.Path
+				path.Transport = payload.PathEvidence.Transport
+			}
+			view.Path = path
+		}
+		ready <- readyResult{view: view}
 	}
 }

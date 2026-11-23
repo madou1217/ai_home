@@ -14,6 +14,14 @@ export interface ProxyServeSession {
   transport?: 'server' | 'ssh-peer';
   peer?: string;
   via?: string;
+  /** SSH 对等链路的路径证据；本机 Server 模式为空。 */
+  path?: {
+    mode?: 'direct-p2p' | 'peer-relay' | 'unknown';
+    confidence?: string;
+    source?: string;
+    path?: string;
+    transport?: string;
+  };
 }
 
 /** GET /webui/proxy-serve 的视图。 */

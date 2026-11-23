@@ -59,6 +59,7 @@ func runProxyServePeer(ctx context.Context, options proxyServeOptions, runtime c
 		return fmt.Errorf("无法连接对等节点: %w", err)
 	}
 	defer func() { _ = client.Close() }()
+	path := peerPathFor(ctx, runtime, options)
 	command, err := resolvePeerCommand(ctx, client, options)
 	if err != nil {
 		return err
@@ -170,7 +171,7 @@ func runProxyServePeer(ctx context.Context, options proxyServeOptions, runtime c
 			return err
 		}
 	}
-	writePeerServeOutput(runtime, options, payload, localHTTP, localSOCKS)
+	writePeerServeOutput(runtime, options, payload, path, localHTTP, localSOCKS)
 
 	select {
 	case <-ctx.Done():
@@ -306,28 +307,87 @@ func peerSOCKSListenAddress(listen string) string {
 	return net.JoinHostPort(host, "0")
 }
 
-func writePeerServeOutput(runtime commandRuntime, options proxyServeOptions, payload peerServePayload, httpURL, socksURL string) {
+// peerPath 是 SSH 对等链路报告给管理面的路径证据。
+// 这里按“已配置拓扑”区分：无跳板 => direct-p2p；有 --peer-via 或连接记录
+// 自带 egressConnectionId => peer-relay。它是应用层证据，不是运营商级探针。
+type peerPath struct {
+	Mode       string            `json:"mode"`
+	Confidence string            `json:"confidence"`
+	Evidence   map[string]string `json:"evidence"`
+}
+
+func peerPathFor(ctx context.Context, runtime commandRuntime, options proxyServeOptions) peerPath {
+	if strings.TrimSpace(options.peerVia) != "" {
+		return peerRelayPath("ssh-jump")
+	}
+	resolver, err := loadSSHResolver(ctx, runtime)
+	if err == nil {
+		if record, recordErr := resolver.Record(options.peer); recordErr == nil {
+			if jump, _ := record["egressConnectionId"].(string); strings.TrimSpace(jump) != "" {
+				return peerRelayPath("ssh-egress-jump")
+			}
+		}
+	}
+	return peerPath{
+		Mode:       "direct-p2p",
+		Confidence: "configured",
+		Evidence: map[string]string{
+			"source":    "ssh-direct-tcpip",
+			"path":      "direct",
+			"transport": "ssh",
+		},
+	}
+}
+
+func peerRelayPath(source string) peerPath {
+	return peerPath{
+		Mode:       "peer-relay",
+		Confidence: "configured",
+		Evidence: map[string]string{
+			"source":    source,
+			"path":      "via-jump",
+			"transport": "ssh",
+		},
+	}
+}
+
+func peerPathLabel(path peerPath) string {
+	switch path.Mode {
+	case "direct-p2p":
+		return "直连 P2P（SSH direct-tcpip，无跳板）"
+	case "peer-relay":
+		return "对等中继（SSH 跳板）"
+	default:
+		return "路径未知"
+	}
+}
+
+func writePeerServeOutput(runtime commandRuntime, options proxyServeOptions, payload peerServePayload, path peerPath, httpURL, socksURL string) {
 	name := strings.TrimSpace(payload.Name)
 	if name == "" {
 		name = "对等节点"
 	}
 	if options.json {
 		encoded, err := json.MarshalIndent(map[string]any{
-			"ok":        true,
-			"httpUrl":   httpURL,
-			"socks5Url": socksURL,
-			"name":      name,
-			"selector":  options.selector,
-			"transport": "ssh-peer",
-			"peer":      options.peer,
-			"via":       options.peerVia,
+			"ok":             true,
+			"httpUrl":        httpURL,
+			"socks5Url":      socksURL,
+			"name":           name,
+			"selector":       options.selector,
+			"transport":      "ssh-peer",
+			"peer":           options.peer,
+			"via":            options.peerVia,
+			"pathMode":       path.Mode,
+			"pathConfidence": path.Confidence,
+			"pathEvidence":   path.Evidence,
 		}, "", "  ")
 		if err == nil {
 			_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 		}
 		return
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "[aih] SSH 对等中继：%s\n", options.peer)
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] SSH 对等链路：%s\n", options.peer)
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] P2P 路径：%s（%s）\n", peerPathLabel(path), path.Confidence)
 	_, _ = fmt.Fprintf(runtime.stdout, "[aih] HTTP 代理入口：%s\n", httpURL)
 	if socksURL != "" {
 		_, _ = fmt.Fprintf(runtime.stdout, "[aih] SOCKS5 代理入口：%s\n", socksURL)

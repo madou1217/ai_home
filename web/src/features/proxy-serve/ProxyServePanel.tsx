@@ -355,18 +355,36 @@ export default function ProxyServePanel() {
                 </span>
                 {runningPeer ? (
                   <span>
-                    链路：SSH 对等中继 → {peerLabel(session?.peer)}
+                    链路：SSH 对等 → {peerLabel(session?.peer)}
                     {session?.via ? `（经 ${peerLabel(session.via)}）` : ''}
                   </span>
                 ) : (
                   <span>链路：本机 Server</span>
                 )}
+                {runningPeer && session?.path?.mode ? (
+                  <Tag
+                    bordered={false}
+                    color={session.path.mode === 'direct-p2p' ? 'success' : 'default'}
+                  >
+                    {session.path.mode === 'direct-p2p'
+                      ? '直连 P2P · SSH'
+                      : session.path.mode === 'peer-relay'
+                        ? '对等中继 · SSH'
+                        : '路径未知'}
+                  </Tag>
+                ) : null}
                 <span>
                   选择器：<code>{session?.selector || 'auto'}</code>
                 </span>
                 {session?.pid ? <span>PID：{session.pid}</span> : null}
                 {session?.startedAt ? <span>启动于 {formatStartedAt(session.startedAt)}</span> : null}
               </div>
+              {runningPeer && session?.path?.source ? (
+                <Typography.Text type="secondary">
+                  路径证据：{session.path.source} / {session.path.path || 'direct'} / {session.path.transport || 'ssh'}
+                  （{session.path.confidence || 'configured'}；按已配置拓扑判定）
+                </Typography.Text>
+              ) : null}
               <div className="proxy-serve-urls">
                 {session?.httpUrl ? (
                   <div className="proxy-serve-url">
@@ -484,7 +502,7 @@ export default function ProxyServePanel() {
               {peerMode ? (
                 <InlineNote
                   tone="info"
-                  description="SSH 对等是经已保存链路的借用/中继，不是 Tailscale/WireGuard 直连 P2P；直连路径必须由网络连接器提供可复核证据。"
+                  description="无跳板的 SSH 直连报告 direct-p2p；带 --peer-via 或连接记录含 egressConnectionId 报告 peer-relay。Tailscale/WireGuard 只是其他传输实现，不是直连 P2P 的定义。"
                 >
                   远端运行它自己的 aih proxy serve，远端 Management Key 不出对端。
                 </InlineNote>

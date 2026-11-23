@@ -58,7 +58,12 @@ Mac aih proxy serve --ssh <connectionId>
 
 ## 4. 直连 P2P 的边界
 
-连接器必须用证据区分：
+直连 P2P 是由**数据面路径**定义的，不是由厂商或协议定义的。Tailscale、WireGuard、SSH、
+QUIC 都可以提供 `direct-p2p`，只要证据表明两端之间没有应用层中继；公网服务器如果只做
+信令/协调/打洞，不转发数据，也不影响直连结论。公网服务器代转字节、SSH 跳板或 DERP
+中继则必须报告 `peer-relay` / `derp-relay`。
+
+连接器/传输层必须用证据区分：
 
 - `direct-p2p`：两端观察到直接路径，无中继；
 - `peer-relay`：同一网络的对等中继；
@@ -68,6 +73,12 @@ Mac aih proxy serve --ssh <connectionId>
 - `unavailable` / `unknown`。
 
 禁止把 `derp-relay`、`outbound-tunnel` 或“公网 endpoint 可连”展示为直连 P2P。路径变化时必须允许降级。
+
+SSH 对等模式按已配置拓扑报告：无 `--peer-via` 且连接记录没有 `egressConnectionId` 时，
+SSH direct-tcpip 是端到端数据路径，报告 `direct-p2p`（confidence=`configured`，evidence
+`source=ssh-direct-tcpip, path=direct, transport=ssh`）；带跳板时报告 `peer-relay`
+（evidence `source=ssh-jump|ssh-egress-jump, path=via-jump`）。这是应用层配置证据，
+不是运营商级路径探针，UI 必须同时展示 confidence/evidence。
 
 ## 5. 安全边界
 
@@ -126,5 +137,7 @@ Mac aih proxy serve --peer <windowsConnectionId> [--peer-via <jumpId>]
   不依赖平台的 SIGTERM 或 `taskkill`。
 - 远端 aih 路径默认按 PATH、Homebrew、`~/.ai_home/bin`、Windows `%LOCALAPPDATA%`/`$env:` 探测；
   也可用 `--peer-aih <path>` 显式指定。
-- 这是**对等中继**，不是直连 P2P。只有 `network.connector` 插件观察到 `direct-p2p` 的
-  `CurAddr` 等路径证据时，才能使用“直连 P2P”文案。
+- SSH 直连（无跳板、无 `egressConnectionId`）报告 `direct-p2p`；带跳板报告 `peer-relay`。
+  `pathMode`、`pathConfidence`、`pathEvidence` 会返回给 WebUI，页面必须同时展示证据。
+- 公网服务器只做协调/信令时不影响直连；一旦代转字节就是 `peer-relay`。直连 P2P 不是
+  Tailscale/WireGuard 的专属能力，任何传输只要数据面无中继并给出证据即可。

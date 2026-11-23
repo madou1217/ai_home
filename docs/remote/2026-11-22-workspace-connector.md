@@ -78,8 +78,10 @@ WebSocket 首帧 `hello` 携带 enrollment code 或 session token；之后只在
 | `workspace.start_job` | 启动后台命令作业，立即返回 `jobId` 与初始 cursor |
 | `workspace.watch_job` | 按 cursor 读取增量输出，可长轮询等待新输出 |
 | `workspace.interrupt_job` | 终止仍在运行的作业（整个进程组） |
+| `workspace.list_approvals` | 列出待审批命令与当前审批模式 |
+| `workspace.decide_approval` | 批准或拒绝一条待审批命令 |
 
-尚未实现：审批协议。作业在 Connector 退出/重启后仍可继续观察。
+作业在 Connector 退出/重启后仍可继续观察。高危命令审批见 3.4。
 Connector 不声明未实现的能力，Server 也不会把未声明能力当成可用。
 
 ### 3.1 路径约束
@@ -121,7 +123,20 @@ Connector 不声明未实现的能力，Server 也不会把未声明能力当成
 - 边界：Windows 只能终止 runner 进程本身，没有 POSIX 进程组语义；审批仍未实现。
   `aih workspace __job-runner <dir>` 是 Connector 内部入口，不对用户暴露。
 
-### 3.4 Token 约束
+### 3.4 高危命令审批
+
+- 连接时用 `--approval=never|destructive|all` 选择策略，默认 `destructive`；
+- `destructive` 是启发式规则集：`rm -rf`、`sudo`、`git push`、`git reset --hard`、
+  `git clean -fd`、`chmod 777`、`dd of=`、`mkfs`、关机命令、`curl|sh`；不是沙箱，
+  需要严格模式时用 `all`；
+- 命中策略的命令不会执行，返回 `approval_required` 与 approval id；用户在 WebUI
+  「本地工作区」面板或 `aih workspace approvals` 批准/拒绝；
+- 批准后用同一命令和 cwd 带 `approval_id` 重试；审批与命令+cwd 哈希绑定、一次性、
+  10 分钟过期。拒绝/过期/重复使用分别返回 `approval_denied` / `approval_expired` /
+  `approval_used`；
+- `run_command` 与 `start_job` 共用同一网关，不能绕过；`--approval=never` 关闭审批。
+
+### 3.5 Token 约束
 
 - enrollment code 与 session token 只以 SHA-256 摘要落在 `aih.db` 的
   `remote:workspace-connectors` 键中；

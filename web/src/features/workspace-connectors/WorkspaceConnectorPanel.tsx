@@ -17,6 +17,7 @@ import { remoteTargetsAPI, workspaceConnectorsAPI } from '@/services/api';
 import type { RemoteAccountFact, RemoteModelFact, RemoteTargetInventory } from '@/features/remote-targets/remote-targets-model';
 import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
 import type {
+  WorkspaceApproval,
   WorkspaceConnector,
   WorkspaceConnectorEnrollment,
   WorkspaceDirectoryEntry
@@ -93,20 +94,54 @@ export default function WorkspaceConnectorPanel() {
   const [pickerError, setPickerError] = useState('');
   const [catalog, setCatalog] = useState<RemoteTargetInventory | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [approvals, setApprovals] = useState<Record<string, WorkspaceApproval[]>>({});
+  const [approvalModes, setApprovalModes] = useState<Record<string, string>>({});
+  const [decidingId, setDecidingId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const response = await workspaceConnectorsAPI.list();
-      setWorkspaces(Array.isArray(response.workspaces) ? response.workspaces : []);
+      const nextWorkspaces = Array.isArray(response.workspaces) ? response.workspaces : [];
+      setWorkspaces(nextWorkspaces);
+      const nextApprovals: Record<string, WorkspaceApproval[]> = {};
+      const nextModes: Record<string, string> = {};
+      await Promise.all(
+        nextWorkspaces.filter((workspace) => workspace.online).map(async (workspace) => {
+          try {
+            const result = await workspaceConnectorsAPI.listApprovals(workspace.id);
+            nextApprovals[workspace.id] = Array.isArray(result.approvals) ? result.approvals : [];
+            nextModes[workspace.id] = result.mode || '';
+          } catch {
+            nextApprovals[workspace.id] = [];
+          }
+        })
+      );
+      setApprovals(nextApprovals);
+      setApprovalModes(nextModes);
     } catch (loadError) {
       setWorkspaces([]);
+      setApprovals({});
+      setApprovalModes({});
       setError(errorMessage(loadError));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const decideApproval = useCallback(async (workspaceId: string, approvalId: string, approve: boolean) => {
+    setDecidingId(approvalId);
+    setError('');
+    try {
+      await workspaceConnectorsAPI.decideApproval(workspaceId, approvalId, approve);
+    } catch (decisionError) {
+      setError(errorMessage(decisionError));
+    } finally {
+      setDecidingId('');
+    }
+    await load();
+  }, [load]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -304,6 +339,44 @@ export default function WorkspaceConnectorPanel() {
         </div>
       ) : null}
 
+      {Object.values(approvals).some((items) => items.some((item) => item.state === 'pending')) ? (
+        <div className="ws-connector-approvals">
+          {Object.entries(approvals).flatMap(([workspaceId, items]) =>
+            items.filter((item) => item.state === 'pending').map((item) => (
+              <div className="ws-connector-approval" key={item.id}>
+                <div className="ws-connector-approval-main">
+                  <span className="ws-connector-approval-title">
+                    {workspaces.find((workspace) => workspace.id === workspaceId)?.label || workspaceId} · 等待审批
+                  </span>
+                  <code className="ws-connector-approval-command">{item.command}</code>
+                  <span className="ws-connector-meta">
+                    cwd: {item.cwd} · {formatMoment(item.expiresAt)} 过期
+                  </span>
+                </div>
+                <span className="ws-connector-row-actions">
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={decidingId === item.id}
+                    onClick={() => void decideApproval(workspaceId, item.id, true)}
+                  >
+                    批准
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    loading={decidingId === item.id}
+                    onClick={() => void decideApproval(workspaceId, item.id, false)}
+                  >
+                    拒绝
+                  </Button>
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      ) : null}
+
       {workspaces.length === 0 && !loading ? (
         <p className="ws-connector-empty">
           还没有本地工作区。在目标目录运行 aih workspace connect --root .，或先生成一次性 code。
@@ -325,6 +398,7 @@ export default function WorkspaceConnectorPanel() {
                   {workspace.state === 'online' ? (
                     <span className="ws-connector-meta">
                       命令执行 {workspace.capabilities?.runCommand ? '已开启' : '已关闭'}
+                      {approvalModes[workspace.id] ? ` · 审批 ${approvalModes[workspace.id]}` : ''}
                     </span>
                   ) : null}
                   {workspace.liveLastSeenAt || workspace.lastSeenAt ? (

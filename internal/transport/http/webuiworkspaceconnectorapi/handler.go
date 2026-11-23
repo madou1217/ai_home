@@ -28,6 +28,7 @@ const (
 	EntriesPath     = remoteconnector.EntriesPath
 	RPCPath         = remoteconnector.RPCPath
 	ToolPath        = remoteconnector.ToolPath
+	ApprovalsPath   = remoteconnector.ApprovalsPath
 
 	maxEnrollmentBodyBytes = 16 * 1024
 	maxRPCBodyBytes        = 8 * 1024 * 1024
@@ -131,6 +132,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.serveEnrollment(response, request)
 	case strings.HasSuffix(request.URL.Path, "/entries"):
 		handler.serveEntries(response, request)
+	case strings.HasSuffix(request.URL.Path, "/approvals"):
+		handler.serveApprovals(response, request)
 	case strings.HasSuffix(request.URL.Path, "/rpc"):
 		handler.serveRPC(response, request)
 	case request.PathValue("workspaceId") != "":
@@ -394,6 +397,77 @@ func (handler *Handler) serveRPC(response http.ResponseWriter, request *http.Req
 	})
 }
 
+type approvalsResponse struct {
+	OK        bool                              `json:"ok"`
+	Workspace string                            `json:"workspaceId"`
+	Mode      string                            `json:"mode"`
+	Approvals []remoteconnector.ApprovalRequest `json:"approvals"`
+}
+
+type decideApprovalRequest struct {
+	ID      string `json:"id"`
+	Approve bool   `json:"approve"`
+}
+
+type decideApprovalResponse struct {
+	OK       bool                            `json:"ok"`
+	Approval remoteconnector.ApprovalRequest `json:"approval"`
+}
+
+// serveApprovals exposes the local command approvals to the WebUI. The
+// decision itself is recorded by the connector; this endpoint only relays it
+// over the authenticated management surface.
+func (handler *Handler) serveApprovals(response http.ResponseWriter, request *http.Request) {
+	workspaceID := strings.TrimSpace(request.PathValue("workspaceId"))
+	if workspaceID == "" {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeWorkspaceNotFound, "workspace id is required")
+		return
+	}
+	switch request.Method {
+	case http.MethodGet:
+		raw, err := handler.hub.Call(request.Context(), workspaceID, remoteconnector.OperationListApprovals, struct{}{})
+		if err != nil {
+			writeProtocolError(response, err)
+			return
+		}
+		var result remoteconnector.ListApprovalsResult
+		if err := json.Unmarshal(raw, &result); err != nil {
+			writeError(response, http.StatusBadGateway, remoteconnector.CodeProtocolError, "connector returned an invalid approvals result")
+			return
+		}
+		if result.Approvals == nil {
+			result.Approvals = []remoteconnector.ApprovalRequest{}
+		}
+		writeJSON(response, http.StatusOK, approvalsResponse{OK: true, Workspace: workspaceID, Mode: result.Mode, Approvals: result.Approvals})
+	case http.MethodPost:
+		body, err := io.ReadAll(io.LimitReader(request.Body, 4096))
+		if err != nil {
+			writeError(response, http.StatusBadRequest, remoteconnector.CodeInvalidPayload, "cannot read approval decision")
+			return
+		}
+		var input decideApprovalRequest
+		if err := json.Unmarshal(body, &input); err != nil || strings.TrimSpace(input.ID) == "" {
+			writeError(response, http.StatusBadRequest, remoteconnector.CodeInvalidPayload, "approval decision must include an id")
+			return
+		}
+		raw, err := handler.hub.Call(request.Context(), workspaceID, remoteconnector.OperationDecideApproval, remoteconnector.DecideApprovalRequest{
+			ID: strings.TrimSpace(input.ID), Approve: input.Approve,
+		})
+		if err != nil {
+			writeProtocolError(response, err)
+			return
+		}
+		var result remoteconnector.DecideApprovalResult
+		if err := json.Unmarshal(raw, &result); err != nil {
+			writeError(response, http.StatusBadGateway, remoteconnector.CodeProtocolError, "connector returned an invalid approval result")
+			return
+		}
+		writeJSON(response, http.StatusOK, decideApprovalResponse{OK: true, Approval: result.Approval})
+	default:
+		methodNotAllowed(response, http.MethodGet+", "+http.MethodPost)
+	}
+}
+
 func methodNotAllowed(response http.ResponseWriter, allowed string) {
 	response.Header().Set("Allow", allowed)
 	writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 "+allowed)
@@ -421,11 +495,14 @@ func statusForCode(code string) int {
 	case remoteconnector.CodeInvalidToken, remoteconnector.CodeEnrollmentNotFound,
 		remoteconnector.CodeEnrollmentExpired, remoteconnector.CodeEnrollmentUsed:
 		return http.StatusUnauthorized
-	case remoteconnector.CodeWorkspaceNotFound, remoteconnector.CodePathNotFound, remoteconnector.CodeJobNotFound:
+	case remoteconnector.CodeWorkspaceNotFound, remoteconnector.CodePathNotFound, remoteconnector.CodeJobNotFound,
+		remoteconnector.CodeApprovalNotFound:
 		return http.StatusNotFound
 	case remoteconnector.CodeWorkspaceRevoked, remoteconnector.CodeWorkspaceOffline,
 		remoteconnector.CodeVersionConflict, remoteconnector.CodeWorkspaceLimit,
-		remoteconnector.CodeJobLimit:
+		remoteconnector.CodeJobLimit, remoteconnector.CodeApprovalRequired,
+		remoteconnector.CodeApprovalDenied, remoteconnector.CodeApprovalExpired,
+		remoteconnector.CodeApprovalUsed:
 		return http.StatusConflict
 	case remoteconnector.CodeCapabilityNotAllowed:
 		return http.StatusForbidden

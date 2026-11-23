@@ -3,6 +3,7 @@
 package workspaceconnector
 
 import (
+	"errors"
 	"os/exec"
 	"syscall"
 )
@@ -12,9 +13,19 @@ import (
 func configureCommand(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
-		if command.Process == nil {
-			return nil
-		}
-		return syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		return terminateCommand(command)
 	}
+}
+
+// terminateCommand kills the whole process group. It is used by context
+// cancellation and by interrupt_job.
+func terminateCommand(command *exec.Cmd) error {
+	if command == nil || command.Process == nil {
+		return nil
+	}
+	err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+	if errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
 }

@@ -421,10 +421,11 @@ func statusForCode(code string) int {
 	case remoteconnector.CodeInvalidToken, remoteconnector.CodeEnrollmentNotFound,
 		remoteconnector.CodeEnrollmentExpired, remoteconnector.CodeEnrollmentUsed:
 		return http.StatusUnauthorized
-	case remoteconnector.CodeWorkspaceNotFound, remoteconnector.CodePathNotFound:
+	case remoteconnector.CodeWorkspaceNotFound, remoteconnector.CodePathNotFound, remoteconnector.CodeJobNotFound:
 		return http.StatusNotFound
 	case remoteconnector.CodeWorkspaceRevoked, remoteconnector.CodeWorkspaceOffline,
-		remoteconnector.CodeVersionConflict, remoteconnector.CodeWorkspaceLimit:
+		remoteconnector.CodeVersionConflict, remoteconnector.CodeWorkspaceLimit,
+		remoteconnector.CodeJobLimit:
 		return http.StatusConflict
 	case remoteconnector.CodeCapabilityNotAllowed:
 		return http.StatusForbidden

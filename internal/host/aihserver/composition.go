@@ -231,7 +231,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("创建前置门处理器失败: %w", err)
 	}
-	writerLease, err := accountwriterlease.Acquire(options.AIHomeDir)
+	writerLease, err := acquireAccountWriterLease(ctx, options.AIHomeDir)
 	if err != nil {
 		return nil, err
 	}
@@ -1881,6 +1881,29 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		return closers
 	}(), nil
+}
+
+// acquireAccountWriterLease 等待上一次 Server 退出时释放的单写者租约。
+//
+// 守护进程会在旧实例优雅关闭期间立即拉起新实例：旧实例仍持有租约时，
+// 立即失败会造成 “backup_core_writer_busy” 启动风暴。这里做有界等待，
+// 让重启自然交接；超过上限仍返回原始错误，避免掩盖真正的占用者。
+func acquireAccountWriterLease(ctx context.Context, home string) (*accountwriterlease.Lease, error) {
+	deadline := time.Now().Add(45 * time.Second)
+	for {
+		lease, err := accountwriterlease.Acquire(home)
+		if err == nil {
+			return lease, nil
+		}
+		if !errors.Is(err, accountwriterlease.ErrBusy) || time.Now().After(deadline) {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 // newWebUIChatHandler 把内部聊天入口装配在管理前缀上。

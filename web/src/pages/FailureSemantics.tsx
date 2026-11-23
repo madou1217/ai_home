@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, InputNumber, Select, Space, Switch, Table, Tabs, Tag, message } from 'antd';
-import { ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { InputNumber, Select, Space, Switch, Table, Tabs, Tag, message } from 'antd';
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
+  PauseCircleOutlined,
+  ReloadOutlined,
+  StopOutlined
+} from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
 import type {
   FailureProvenanceEntry,
   FailureSemanticPolicy,
@@ -8,13 +16,16 @@ import type {
 } from '@/types';
 import { configAPI, failureSemanticsAPI } from '@/services/api';
 import type { FailureSemanticsOverrides } from '@/services/api';
+import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import SaveActionBar from '@/components/ui/SaveActionBar';
+import { SettingRow, SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
+import HudStateView from '@/components/hud/HudStateView';
 
 /**
  * 失败语义页：把「状态码/错误码 → 语义 → 动作/阈值/窗口/冷却」与「最近命中」
  * 放在同一处。配置写回 config:server 的 upstreamFailurePolicy，保存后服务端热生效。
- *
- * 页面约束：不使用大面积 Alert 提示块，也不用左侧彩色竖条表达状态；状态用
- * Tag、文本与表格列表达。
  */
 
 type OverridePolicy = {
@@ -25,20 +36,37 @@ type OverridePolicy = {
 
 type OverrideShape = FailureSemanticsOverrides;
 
-const actionLabels: Record<string, string> = {
-  model_cooldown: '模型冷却',
-  no_state_change: '不改状态',
-  credential_block: '凭据阻塞',
-  quota_block: '额度阻塞',
-  policy_block: '策略阻塞'
+type InlineFeedback = {
+  tone: 'success' | 'error';
+  text: string;
 };
 
-const scopeLabels: Record<string, string> = {
+const ACTION_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  model_cooldown: { label: '模型冷却', icon: <PauseCircleOutlined /> },
+  no_state_change: { label: '不改状态', icon: <CheckCircleOutlined /> },
+  credential_block: { label: '凭据阻塞', icon: <CloseCircleOutlined /> },
+  quota_block: { label: '额度阻塞', icon: <ExclamationCircleOutlined /> },
+  policy_block: { label: '策略阻塞', icon: <StopOutlined /> }
+};
+
+const SEMANTIC_DESCRIPTIONS: Record<string, { label: string; desc: string }> = {
+  rate_limit: { label: '触发限流', desc: '上游返回速率限制，按冷却策略暂避' },
+  quota_exhausted: { label: '额度耗尽', desc: '账号余额或配额不足，触发额度阻塞' },
+  auth_invalid: { label: '认证失效', desc: '凭据过期、吊销或鉴权失败' },
+  permission_denied: { label: '权限不足', desc: '账号无权访问目标模型或接口' },
+  policy_violation: { label: '策略拦截', desc: '请求或账号触发风控与合规限制' },
+  model_unavailable: { label: '模型不可用', desc: '上游模型下线、未开通或暂时不可达' },
+  server_error: { label: '服务端异常', desc: '上游 5xx 或网关临时故障' },
+  transient_error: { label: '瞬时故障', desc: '短暂网络抖动或上游过载' },
+  bad_request: { label: '请求无效', desc: '调用参数错误，不修改账号健康状态' }
+};
+
+const SCOPE_LABELS: Record<string, string> = {
   account: '账号',
   account_model: '账号+模型'
 };
 
-const sourceLabels: Record<string, string> = {
+const SOURCE_LABELS: Record<string, string> = {
   builtin_contract: '内置契约',
   global_override: '全局覆盖',
   account_rule: '账号规则'
@@ -86,6 +114,421 @@ function toServerFailurePolicy(overrides: OverrideShape) {
   };
 }
 
+function renderActionTag(action: string) {
+  const meta = ACTION_META[action];
+  if (!meta) return <Tag>{action}</Tag>;
+  return <Tag icon={meta.icon}>{meta.label}</Tag>;
+}
+
+const HttpStatusTag: React.FC<{ status: number }> = ({ status }) => {
+  const label = status >= 500
+    ? `5xx · ${status}`
+    : status === 429
+      ? `限流 · ${status}`
+      : String(status);
+  return (
+    <Tag color={status >= 500 ? 'red' : status === 429 ? 'orange' : 'default'}>
+      {label}
+    </Tag>
+  );
+};
+
+interface PolicyTableSectionProps {
+  policyRows: FailureSemanticPolicy[];
+  overrides: OverrideShape;
+  draft: Record<string, FailureSemanticPolicy>;
+  dirtyCount: number;
+  loading: boolean;
+  saving: boolean;
+  loadError: string;
+  feedback: InlineFeedback | null;
+  onUpdateDraft: (kind: string, patch: Partial<FailureSemanticPolicy>) => void;
+  onSave: () => void;
+  onReset: () => void;
+  onReload: () => void;
+}
+
+const PolicyTableSection: React.FC<PolicyTableSectionProps> = ({
+  policyRows,
+  overrides,
+  draft,
+  dirtyCount,
+  loading,
+  saving,
+  loadError,
+  feedback,
+  onUpdateDraft,
+  onSave,
+  onReset,
+  onReload
+}) => {
+  const columns = useMemo<ColumnsType<FailureSemanticPolicy>>(() => [
+    {
+      title: '语义',
+      dataIndex: 'kind',
+      width: 220,
+      render: (value: string) => {
+        const meta = SEMANTIC_DESCRIPTIONS[value];
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span className="aih-mono">{meta ? `${meta.label} (${value})` : value}</span>
+            {meta ? <span className="aih-muted" style={{ fontSize: 12 }}>{meta.desc}</span> : null}
+          </div>
+        );
+      }
+    },
+    {
+      title: '动作',
+      dataIndex: 'action',
+      width: 130,
+      render: (value: string) => renderActionTag(value)
+    },
+    {
+      title: '阈值',
+      dataIndex: 'threshold',
+      width: 110,
+      render: (value: number | undefined, row: FailureSemanticPolicy) => {
+        if (row.action !== 'model_cooldown') return <span className="aih-muted">—</span>;
+        return (
+          <InputNumber
+            aria-label={`${row.kind} 阈值`}
+            min={1}
+            max={10}
+            size="small"
+            value={draft[row.kind]?.threshold ?? value}
+            onChange={(next) => onUpdateDraft(row.kind, { threshold: next ?? undefined })}
+          />
+        );
+      }
+    },
+    {
+      title: '窗口 (ms)',
+      dataIndex: 'failure_window_ms',
+      width: 140,
+      render: (value: number | undefined, row: FailureSemanticPolicy) => {
+        if (row.action !== 'model_cooldown') return <span className="aih-muted">—</span>;
+        return (
+          <InputNumber
+            aria-label={`${row.kind} 统计窗口`}
+            min={0}
+            step={1000}
+            size="small"
+            value={draft[row.kind]?.failure_window_ms ?? value}
+            onChange={(next) => onUpdateDraft(row.kind, { failure_window_ms: next ?? undefined })}
+          />
+        );
+      }
+    },
+    {
+      title: '冷却 (ms)',
+      dataIndex: 'default_cooldown_ms',
+      width: 140,
+      render: (value: number | undefined, row: FailureSemanticPolicy) => {
+        if (row.action !== 'model_cooldown') return <span className="aih-muted">—</span>;
+        return (
+          <InputNumber
+            aria-label={`${row.kind} 默认冷却`}
+            min={1000}
+            step={1000}
+            size="small"
+            value={draft[row.kind]?.default_cooldown_ms ?? value}
+            onChange={(next) => onUpdateDraft(row.kind, { default_cooldown_ms: next ?? undefined })}
+          />
+        );
+      }
+    },
+    {
+      title: '阻塞范围',
+      dataIndex: 'block_scopes',
+      width: 140,
+      render: (value: string[] | undefined) =>
+        value && value.length > 0
+          ? value.map((scope) => <Tag key={scope}>{SCOPE_LABELS[scope] || scope}</Tag>)
+          : <span className="aih-muted">—</span>
+    },
+    {
+      title: '来源',
+      key: 'source',
+      width: 110,
+      render: (_: unknown, row: FailureSemanticPolicy) => (
+        overrides.policies && overrides.policies[row.kind]
+          ? <SettingStatusTag status="applied" label="全局覆盖" compact />
+          : <SettingStatusTag status="unset" label="内置契约" compact />
+      )
+    }
+  ], [draft, onUpdateDraft, overrides.policies]);
+
+  const sectionStatus = saving
+    ? <SettingStatusTag status="saving" compact />
+    : feedback?.tone === 'error'
+      ? <SettingStatusTag status="error" compact />
+      : dirtyCount > 0
+        ? <SettingStatusTag status="dirty" label={`未保存 ${dirtyCount} 项`} compact />
+        : <SettingStatusTag status="saved" label="已同步" compact />;
+
+  return (
+    <SettingSection
+      title="语义与策略参数"
+      description="仅「模型冷却」类语义支持覆盖阈值、统计窗口与默认冷却；账号级规则优先级高于全局覆盖。"
+      status={sectionStatus}
+      footer={(
+        <SaveActionBar
+          dirty={dirtyCount > 0}
+          saving={saving}
+          onSave={onSave}
+          onReset={onReset}
+          saveLabel="保存语义参数"
+          cleanSaveLabel="已同步"
+          effectSummary="保存后热生效，无需重启服务"
+          feedback={feedback?.text}
+          feedbackTone={feedback?.tone === 'error' ? 'error' : feedback?.tone === 'success' ? 'success' : 'muted'}
+        />
+      )}
+    >
+      {loadError ? (
+        <div style={{ padding: '12px 18px 0' }}>
+          <InlineNote
+            tone="error"
+            action={<Button size="small" type="link" onClick={onReload}>重试</Button>}
+          >
+            {loadError}
+          </InlineNote>
+        </div>
+      ) : null}
+      <div style={{ padding: '12px 18px', overflowX: 'auto' }}>
+        <Table
+          size="small"
+          rowKey="kind"
+          loading={loading}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          dataSource={policyRows}
+          columns={columns}
+          locale={{
+            emptyText: <HudStateView compact code="NO_POLICIES" title="当前筛选下无语义策略" />
+          }}
+        />
+      </div>
+    </SettingSection>
+  );
+};
+
+interface SignalTableSectionProps {
+  signals: FailureSemanticSignal[];
+  overrides: OverrideShape;
+  loading: boolean;
+  saving: boolean;
+  feedback: InlineFeedback | null;
+  onToggle: (signal: FailureSemanticSignal, enabled: boolean) => void;
+}
+
+const SignalTableSection: React.FC<SignalTableSectionProps> = ({
+  signals,
+  overrides,
+  loading,
+  saving,
+  feedback,
+  onToggle
+}) => {
+  const columns = useMemo<ColumnsType<FailureSemanticSignal>>(() => [
+    {
+      title: 'Provider',
+      dataIndex: 'provider',
+      width: 110,
+      render: (value: string) => <span className="aih-mono">{value}</span>
+    },
+    {
+      title: '匹配条件',
+      key: 'matcher',
+      render: (_: unknown, row: FailureSemanticSignal) => <span className="aih-mono">{matcherText(row)}</span>
+    },
+    {
+      title: '映射语义',
+      dataIndex: 'semantic',
+      width: 180,
+      render: (value: string) => <span className="aih-mono">{value}</span>
+    },
+    {
+      title: '范围',
+      dataIndex: 'block_scope',
+      width: 110,
+      render: (value: string | undefined) =>
+        value ? <Tag>{SCOPE_LABELS[value] || value}</Tag> : <span className="aih-muted">—</span>
+    },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      width: 110,
+      render: (value: string | undefined) => (
+        <span className="aih-muted">{SOURCE_LABELS[value || 'builtin_contract'] || value}</span>
+      )
+    },
+    {
+      title: '状态',
+      key: 'enabled',
+      width: 120,
+      render: (_: unknown, row: FailureSemanticSignal) => {
+        const checked = signalEnabled(row, overrides);
+        return (
+          <Switch
+            size="small"
+            loading={saving}
+            checked={checked}
+            checkedChildren="启用"
+            unCheckedChildren="停用"
+            onChange={(next) => onToggle(row, next)}
+          />
+        );
+      }
+    }
+  ], [onToggle, overrides, saving]);
+
+  return (
+    <SettingSection
+      title="信号匹配表"
+      description="按状态码、错误类型与错误码归类失败信号；启停开关会立即写回并热生效。"
+      status={
+        saving
+          ? <SettingStatusTag status="saving" compact />
+          : feedback?.tone === 'error'
+            ? <SettingStatusTag status="error" compact />
+            : <SettingStatusTag status="applied" label={`共 ${signals.length} 条`} compact />
+      }
+    >
+      {feedback ? (
+        <div style={{ padding: '12px 18px 0' }}>
+          <InlineNote tone={feedback.tone}>{feedback.text}</InlineNote>
+        </div>
+      ) : null}
+      <div style={{ padding: '12px 18px', overflowX: 'auto' }}>
+        <Table
+          size="small"
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          dataSource={signals}
+          columns={columns}
+          locale={{
+            emptyText: <HudStateView compact code="NO_SIGNALS" title="当前筛选下无信号规则" />
+          }}
+        />
+      </div>
+    </SettingSection>
+  );
+};
+
+interface HitsTableSectionProps {
+  hits: FailureProvenanceEntry[];
+  dropped: number;
+  loading: boolean;
+  error: string;
+  onReload: () => void;
+}
+
+const HitsTableSection: React.FC<HitsTableSectionProps> = ({
+  hits,
+  dropped,
+  loading,
+  error,
+  onReload
+}) => {
+  const columns = useMemo<ColumnsType<FailureProvenanceEntry>>(() => [
+    {
+      title: '时间',
+      dataIndex: 'atMs',
+      width: 130,
+      render: (value: number) => <span className="aih-mono">{formatTime(value)}</span>
+    },
+    {
+      title: '账号',
+      dataIndex: 'accountRef',
+      width: 160,
+      render: (value: string) => <span className="aih-mono">{value}</span>
+    },
+    { title: '模型', dataIndex: 'model', width: 160 },
+    {
+      title: 'HTTP',
+      dataIndex: 'httpStatus',
+      width: 110,
+      render: (value: number | undefined) => (value ? <HttpStatusTag status={value} /> : <span className="aih-muted">—</span>)
+    },
+    {
+      title: '语义',
+      dataIndex: 'semantic',
+      width: 160,
+      render: (value: string) => <span className="aih-mono">{value}</span>
+    },
+    {
+      title: '动作',
+      dataIndex: 'action',
+      width: 130,
+      render: (value: string) => renderActionTag(value)
+    },
+    {
+      title: '来源 : 信号',
+      key: 'source',
+      render: (_: unknown, row: FailureProvenanceEntry) => (
+        <span className="aih-mono aih-muted">
+          {SOURCE_LABELS[row.source] || row.source || '—'}
+          {row.signalId ? ` : ${row.signalId}` : ''}
+        </span>
+      )
+    },
+    {
+      title: '冷却至',
+      dataIndex: 'cooldownUntilMs',
+      width: 130,
+      render: (value: number | undefined) => <span className="aih-mono aih-muted">{formatTime(value)}</span>
+    }
+  ], []);
+
+  return (
+    <SettingSection
+      title="最近命中记录"
+      description="展示运行池最近 100 条失败语义判定结果，便于核对信号与冷却是否按预期触发。"
+      status={
+        error
+          ? <SettingStatusTag status="error" label="读取失败" compact />
+          : <SettingStatusTag status="applied" label={`已记录 ${hits.length} 条`} compact />
+      }
+      extra={(
+        <Space size={8} wrap>
+          <span className="aih-muted" style={{ fontSize: 12 }}>缓冲区丢弃 {dropped} 条</span>
+          <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={onReload}>
+            刷新命中
+          </Button>
+        </Space>
+      )}
+    >
+      {error ? (
+        <div style={{ padding: '12px 18px 0' }}>
+          <InlineNote
+            tone="error"
+            action={<Button size="small" type="link" onClick={onReload}>重试</Button>}
+          >
+            {error}
+          </InlineNote>
+        </div>
+      ) : null}
+      <div style={{ padding: '12px 18px', overflowX: 'auto' }}>
+        <Table
+          size="small"
+          rowKey={(row) => `${row.atMs}-${row.accountRef}-${row.model}-${row.signalId}`}
+          loading={loading}
+          pagination={{ pageSize: 20 }}
+          scroll={{ x: 'max-content' }}
+          dataSource={hits}
+          columns={columns}
+          locale={{
+            emptyText: <HudStateView compact code="NO_HITS" title="暂无最近命中记录" />
+          }}
+        />
+      </div>
+    </SettingSection>
+  );
+};
+
 const FailureSemantics: React.FC = () => {
   const [provider, setProvider] = useState('');
   const [tab, setTab] = useState('policies');
@@ -95,20 +538,26 @@ const FailureSemantics: React.FC = () => {
   const [draft, setDraft] = useState<Record<string, FailureSemanticPolicy>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [policyFeedback, setPolicyFeedback] = useState<InlineFeedback | null>(null);
+  const [signalFeedback, setSignalFeedback] = useState<InlineFeedback | null>(null);
   const [hits, setHits] = useState<FailureProvenanceEntry[]>([]);
   const [dropped, setDropped] = useState(0);
   const [hitsLoading, setHitsLoading] = useState(false);
+  const [hitsError, setHitsError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const data = await failureSemanticsAPI.get(provider || undefined);
       setPolicies(data.policies || []);
       setSignals(data.signals || []);
       setOverrides(data.overrides || {});
       setDraft({});
-    } catch {
-      message.error('读取失败语义失败');
+    } catch (error) {
+      const text = error instanceof Error ? `读取失败语义失败：${error.message}` : '读取失败语义失败';
+      setLoadError(text);
     } finally {
       setLoading(false);
     }
@@ -116,12 +565,13 @@ const FailureSemantics: React.FC = () => {
 
   const loadHits = useCallback(async () => {
     setHitsLoading(true);
+    setHitsError('');
     try {
       const data = await failureSemanticsAPI.hits({ limit: 100, provider: provider || undefined });
       setHits(data.entries);
       setDropped(data.dropped);
     } catch {
-      message.error('读取最近命中失败（server 未运行？）');
+      setHitsError('读取最近命中失败，请确认网关服务已启动。');
     } finally {
       setHitsLoading(false);
     }
@@ -154,11 +604,28 @@ const FailureSemantics: React.FC = () => {
     return policies.filter((policy) => visible.has(policy.kind));
   }, [policies, provider, visibleSignals]);
 
-  const updateDraft = (kind: string, patch: Partial<FailureSemanticPolicy>) => {
-    const base = draft[kind] || policies.find((policy) => policy.kind === kind);
-    if (!base) return;
-    setDraft({ ...draft, [kind]: { ...base, ...patch } });
-  };
+  const dirtyCount = useMemo(() => {
+    let count = 0;
+    Object.entries(draft).forEach(([kind, row]) => {
+      const before = policies.find((policy) => policy.kind === kind);
+      if (!before) return;
+      const changed =
+        row.threshold !== before.threshold ||
+        row.failure_window_ms !== before.failure_window_ms ||
+        row.default_cooldown_ms !== before.default_cooldown_ms;
+      if (changed) count += 1;
+    });
+    return count;
+  }, [draft, policies]);
+
+  const updateDraft = useCallback((kind: string, patch: Partial<FailureSemanticPolicy>) => {
+    setPolicyFeedback(null);
+    setDraft((prev) => {
+      const base = prev[kind] || policies.find((policy) => policy.kind === kind);
+      if (!base) return prev;
+      return { ...prev, [kind]: { ...base, ...patch } };
+    });
+  }, [policies]);
 
   const savePolicies = async () => {
     const nextPolicies: Record<string, OverridePolicy> = { ...(overrides.policies || {}) };
@@ -175,21 +642,24 @@ const FailureSemantics: React.FC = () => {
       if (Object.keys(patch).length > 0) nextPolicies[kind] = patch;
     });
     setSaving(true);
+    setPolicyFeedback(null);
     try {
       const next: OverrideShape = { ...overrides, policies: nextPolicies };
       await configAPI.updateServer({
         upstreamFailurePolicy: toServerFailurePolicy(next)
       });
-      message.success('已保存，热生效');
+      message.success('失败语义参数已保存并热生效');
+      setPolicyFeedback({ tone: 'success', text: '已保存并热生效。' });
       await load();
     } catch (error) {
-      message.error(error instanceof Error ? `保存失败：${error.message}` : '保存失败');
+      const text = error instanceof Error ? `保存失败：${error.message}` : '保存失败';
+      setPolicyFeedback({ tone: 'error', text });
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleSignal = async (signal: FailureSemanticSignal, enabled: boolean) => {
+  const toggleSignal = useCallback(async (signal: FailureSemanticSignal, enabled: boolean) => {
     const next: OverrideShape = {
       ...overrides,
       policies: { ...(overrides.policies || {}) },
@@ -206,232 +676,87 @@ const FailureSemantics: React.FC = () => {
       next.disable = [...(next.disable || []), signal.id];
     }
     setSaving(true);
+    setSignalFeedback(null);
     try {
       await configAPI.updateServer({ upstreamFailurePolicy: toServerFailurePolicy(next) });
-      message.success(enabled ? '已启用' : '已停用');
+      setSignalFeedback({ tone: 'success', text: `已${enabled ? '启用' : '停用'}信号 ${signal.id} 并热生效。` });
       await load();
-    } catch {
-      message.error('保存失败');
+    } catch (error) {
+      setSignalFeedback({
+        tone: 'error',
+        text: error instanceof Error ? `更新信号状态失败：${error.message}` : '更新信号状态失败'
+      });
     } finally {
       setSaving(false);
     }
-  };
-
-  const policyColumns = [
-    {
-      title: '语义',
-      dataIndex: 'kind',
-      render: (value: string) => <span className="aih-mono">{value}</span>
-    },
-    {
-      title: '动作',
-      dataIndex: 'action',
-      render: (value: string) => <Tag>{actionLabels[value] || value}</Tag>
-    },
-    {
-      title: '阈值',
-      dataIndex: 'threshold',
-      width: 110,
-      render: (value: number | undefined, row: FailureSemanticPolicy) => {
-        if (row.action !== 'model_cooldown') return <span className="aih-muted">—</span>;
-        return (
-          <InputNumber
-            min={1}
-            max={10}
-            size="small"
-            value={draft[row.kind]?.threshold ?? value}
-            onChange={(next) => updateDraft(row.kind, { threshold: next ?? undefined })}
-          />
-        );
-      }
-    },
-    {
-      title: '窗口 (ms)',
-      dataIndex: 'failure_window_ms',
-      width: 140,
-      render: (value: number | undefined, row: FailureSemanticPolicy) => {
-        if (row.action !== 'model_cooldown') return <span className="aih-muted">—</span>;
-        return (
-          <InputNumber
-            min={0}
-            step={1000}
-            size="small"
-            value={draft[row.kind]?.failure_window_ms ?? value}
-            onChange={(next) => updateDraft(row.kind, { failure_window_ms: next ?? undefined })}
-          />
-        );
-      }
-    },
-    {
-      title: '冷却 (ms)',
-      dataIndex: 'default_cooldown_ms',
-      width: 140,
-      render: (value: number | undefined, row: FailureSemanticPolicy) => {
-        if (row.action !== 'model_cooldown') return <span className="aih-muted">—</span>;
-        return (
-          <InputNumber
-            min={1000}
-            step={1000}
-            size="small"
-            value={draft[row.kind]?.default_cooldown_ms ?? value}
-            onChange={(next) => updateDraft(row.kind, { default_cooldown_ms: next ?? undefined })}
-          />
-        );
-      }
-    },
-    {
-      title: '阻塞范围',
-      dataIndex: 'block_scopes',
-      render: (value: string[] | undefined) =>
-        value && value.length > 0 ? value.map((scope) => <Tag key={scope}>{scopeLabels[scope] || scope}</Tag>) : <span className="aih-muted">—</span>
-    },
-    {
-      title: '来源',
-      key: 'source',
-      render: (_: unknown, row: FailureSemanticPolicy) =>
-        overrides.policies && overrides.policies[row.kind] ? <Tag color="blue">全局覆盖</Tag> : <span className="aih-muted">内置契约</span>
-    }
-  ];
-
-  const signalColumns = [
-    {
-      title: 'Provider',
-      dataIndex: 'provider',
-      width: 110,
-      render: (value: string) => <span className="aih-mono">{value}</span>
-    },
-    {
-      title: '匹配',
-      key: 'matcher',
-      render: (_: unknown, row: FailureSemanticSignal) => <span className="aih-mono">{matcherText(row)}</span>
-    },
-    {
-      title: '语义',
-      dataIndex: 'semantic',
-      render: (value: string) => <span className="aih-mono">{value}</span>
-    },
-    {
-      title: '范围',
-      dataIndex: 'block_scope',
-      width: 110,
-      render: (value: string | undefined) =>
-        value ? <Tag>{scopeLabels[value] || value}</Tag> : <span className="aih-muted">—</span>
-    },
-    {
-      title: '来源',
-      dataIndex: 'source',
-      width: 120,
-      render: (value: string | undefined) => <span className="aih-muted">{sourceLabels[value || 'builtin_contract'] || value}</span>
-    },
-    {
-      title: '启用',
-      key: 'enabled',
-      width: 90,
-      render: (_: unknown, row: FailureSemanticSignal) => (
-        <Switch
-          size="small"
-          loading={saving}
-          checked={signalEnabled(row, overrides)}
-          onChange={(next) => void toggleSignal(row, next)}
-        />
-      )
-    }
-  ];
-
-  const hitColumns = [
-    {
-      title: '时间',
-      dataIndex: 'atMs',
-      width: 130,
-      render: (value: number) => <span className="aih-mono">{formatTime(value)}</span>
-    },
-    {
-      title: '账号',
-      dataIndex: 'accountRef',
-      render: (value: string) => <span className="aih-mono">{value}</span>
-    },
-    { title: '模型', dataIndex: 'model' },
-    {
-      title: 'HTTP',
-      dataIndex: 'httpStatus',
-      width: 80,
-      render: (value: number | undefined) => (value ? <Tags status={value} /> : <span className="aih-muted">—</span>)
-    },
-    {
-      title: '语义',
-      dataIndex: 'semantic',
-      render: (value: string) => <span className="aih-mono">{value}</span>
-    },
-    {
-      title: '动作',
-      dataIndex: 'action',
-      render: (value: string) => <Tag>{actionLabels[value] || value}</Tag>
-    },
-    {
-      title: '来源 : 信号',
-      key: 'source',
-      render: (_: unknown, row: FailureProvenanceEntry) => (
-        <span className="aih-mono aih-muted">
-          {sourceLabels[row.source] || row.source || '—'}
-          {row.signalId ? ` : ${row.signalId}` : ''}
-        </span>
-      )
-    },
-    {
-      title: '冷却至',
-      dataIndex: 'cooldownUntilMs',
-      width: 130,
-      render: (value: number | undefined) => <span className="aih-mono aih-muted">{formatTime(value)}</span>
-    }
-  ];
+  }, [load, overrides]);
 
   return (
-    <div className="failure-semantics-panel">
-      <Space wrap style={{ marginBottom: 12 }}>
-        <Select
-          style={{ minWidth: 180 }}
-          value={provider}
-          options={providerOptions}
-          onChange={setProvider}
-          placeholder="Provider"
+    <div className="failure-semantics-panel" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <SettingSection
+        title="失败语义范围"
+        description="按 Provider 过滤失败语义、匹配信号与近期命中记录。"
+        extra={(
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
+            刷新配置
+          </Button>
+        )}
+      >
+        <SettingRow
+          title="Provider 筛选"
+          description="留空查看全局与所有 Provider 的契约及覆盖规则。"
+          htmlFor="failure-semantics-provider"
+          control={(
+            <Select
+              id="failure-semantics-provider"
+              style={{ width: '100%', maxWidth: 240 }}
+              value={provider}
+              options={providerOptions}
+              onChange={setProvider}
+              placeholder="全部 Provider"
+            />
+          )}
         />
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
-          刷新
-        </Button>
-        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void savePolicies()}>
-          保存语义参数
-        </Button>
-        <span className="aih-muted">账号级规则优先于这里的全局覆盖；保存后无需重启。</span>
-      </Space>
+      </SettingSection>
+
       <Tabs
         activeKey={tab}
         onChange={setTab}
         items={[
           {
             key: 'policies',
-            label: '语义与策略',
+            label: `语义与策略 (${policyRows.length})`,
             children: (
-              <Table
-                size="small"
-                rowKey="kind"
+              <PolicyTableSection
+                policyRows={policyRows}
+                overrides={overrides}
+                draft={draft}
+                dirtyCount={dirtyCount}
                 loading={loading}
-                pagination={false}
-                dataSource={policyRows}
-                columns={policyColumns}
+                saving={saving}
+                loadError={loadError}
+                feedback={policyFeedback}
+                onUpdateDraft={updateDraft}
+                onSave={() => void savePolicies()}
+                onReset={() => {
+                  setDraft({});
+                  setPolicyFeedback(null);
+                }}
+                onReload={() => void load()}
               />
             )
           },
           {
             key: 'signals',
-            label: '信号表',
+            label: `信号表 (${visibleSignals.length})`,
             children: (
-              <Table
-                size="small"
-                rowKey="id"
+              <SignalTableSection
+                signals={visibleSignals}
+                overrides={overrides}
                 loading={loading}
-                pagination={false}
-                dataSource={visibleSignals}
-                columns={signalColumns}
+                saving={saving}
+                feedback={signalFeedback}
+                onToggle={(signal, enabled) => void toggleSignal(signal, enabled)}
               />
             )
           },
@@ -439,22 +764,13 @@ const FailureSemantics: React.FC = () => {
             key: 'hits',
             label: '最近命中',
             children: (
-              <>
-                <Space style={{ marginBottom: 8 }}>
-                  <Button icon={<ReloadOutlined />} loading={hitsLoading} onClick={() => void loadHits()}>
-                    刷新命中
-                  </Button>
-                  <span className="aih-muted">缓冲区丢弃 {dropped} 条</span>
-                </Space>
-                <Table
-                  size="small"
-                  rowKey={(row) => `${row.atMs}-${row.accountRef}-${row.model}-${row.signalId}`}
-                  loading={hitsLoading}
-                  pagination={{ pageSize: 20 }}
-                  dataSource={hits}
-                  columns={hitColumns}
-                />
-              </>
+              <HitsTableSection
+                hits={hits}
+                dropped={dropped}
+                loading={hitsLoading}
+                error={hitsError}
+                onReload={() => void loadHits()}
+              />
             )
           }
         ]}
@@ -462,9 +778,5 @@ const FailureSemantics: React.FC = () => {
     </div>
   );
 };
-
-const Tags: React.FC<{ status: number }> = ({ status }) => (
-  <Tag color={status >= 500 ? 'red' : status === 429 ? 'orange' : 'default'}>{status}</Tag>
-);
 
 export default FailureSemantics;

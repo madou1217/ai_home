@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Form,
   Input,
   Modal,
   Popconfirm,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -13,11 +13,24 @@ import {
   Tooltip,
   message
 } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  LoadingOutlined,
+  MinusCircleOutlined,
+  PauseCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined
+} from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
 import PageScaffold from '@/components/ui/PageScaffold';
 import Reveal from '@/components/ui/Reveal';
+import SaveActionBar from '@/components/ui/SaveActionBar';
 import SectionCard from '@/components/ui/SectionCard';
+import { SettingRow, SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import HudStateView from '@/components/hud/HudStateView';
 import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import {
@@ -46,6 +59,8 @@ import dayjs from 'dayjs';
 import './ScheduledTasks.css';
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+type TaskFilter = 'all' | 'enabled' | 'paused' | 'running' | 'failed';
 
 type EditorState = {
   open: boolean;
@@ -93,23 +108,334 @@ function formatTime(timestamp: number) {
   });
 }
 
-function statusTag(status: string) {
+function isFailedStatus(status?: string) {
   const value = String(status || '').toLowerCase();
-  if (value === 'ok' || value === 'succeeded') return <Tag color="green">成功</Tag>;
-  if (value === 'skipped') return <Tag>跳过</Tag>;
-  if (value === 'error' || value === 'failed') return <Tag color="red">失败</Tag>;
-  if (value === 'running' || value === 'queued') return <Tag color="blue">执行中</Tag>;
-  return <Tag>—</Tag>;
+  return value === 'error' || value === 'failed';
+}
+
+function recordStatusTag(status: string) {
+  const value = String(status || '').toLowerCase();
+  if (value === 'ok' || value === 'succeeded') {
+    return <Tag color="green" icon={<CheckCircleOutlined />}>成功</Tag>;
+  }
+  if (value === 'skipped') {
+    return <Tag icon={<MinusCircleOutlined />}>跳过</Tag>;
+  }
+  if (value === 'error' || value === 'failed') {
+    return <Tag color="red" icon={<CloseCircleOutlined />}>失败</Tag>;
+  }
+  if (value === 'running' || value === 'queued') {
+    return <Tag color="blue" icon={<LoadingOutlined spin />}>运行中</Tag>;
+  }
+  return <Tag icon={<MinusCircleOutlined />}>未运行</Tag>;
+}
+
+function taskStateTag(task: ScheduledTask) {
+  if (task.running) {
+    return <Tag color="blue" icon={<LoadingOutlined spin />}>运行中</Tag>;
+  }
+  if (isFailedStatus(task.lastStatus)) {
+    return <Tag color="red" icon={<CloseCircleOutlined />}>失败</Tag>;
+  }
+  if (task.enabled === false) {
+    return <Tag icon={<PauseCircleOutlined />}>暂停</Tag>;
+  }
+  return <Tag color="green" icon={<CheckCircleOutlined />}>启用</Tag>;
 }
 
 function describeSchedule(schedule: ScheduledTaskSchedule) {
   if (!schedule) return '未设置';
   if (schedule.kind === 'daily') return `每天 ${schedule.at}`;
   if (schedule.kind === 'weekly') return `每${WEEKDAYS[Number(schedule.weekday) || 0]} ${schedule.at}`;
+  if (schedule.kind === 'cron') return schedule.expression ? `Cron: ${schedule.expression}` : 'Cron';
   const parts: string[] = [];
   if (schedule.hours) parts.push(`${schedule.hours} 小时`);
   if (schedule.minutes) parts.push(`${schedule.minutes} 分钟`);
   return `每 ${parts.join(' ') || '—'}`;
+}
+
+interface TaskEditorModalProps {
+  editor: EditorState;
+  events: ScheduledTaskEvent[];
+  eventOptions: Array<{ value: string; label: string; disabled: boolean }>;
+  selectedEvent: ScheduledTaskEvent | null;
+  paramFields: ActivityParamField[];
+  accountOptions: ActivityParamOption[];
+  probe: ActivityProbeResult | null;
+  probing: boolean;
+  preview: { label: string; nextRunAt: number } | null;
+  previewError: string;
+  saving: boolean;
+  submitError: string;
+  scheduleSurfaceRef: React.RefObject<HTMLDivElement>;
+  onSwitchScheduleSurface: ReturnType<typeof useSurfaceSwitch<HTMLDivElement>>['switchSurface'];
+  onChangeEditor: React.Dispatch<React.SetStateAction<EditorState>>;
+  onResetProbe: () => void;
+  onProbe: () => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}
+
+function TaskEditorModal({
+  editor,
+  events,
+  eventOptions,
+  selectedEvent,
+  paramFields,
+  accountOptions,
+  probe,
+  probing,
+  preview,
+  previewError,
+  saving,
+  submitError,
+  scheduleSurfaceRef,
+  onSwitchScheduleSurface,
+  onChangeEditor,
+  onResetProbe,
+  onProbe,
+  onCancel,
+  onSubmit
+}: TaskEditorModalProps) {
+  const canSave = Boolean(editor.eventId) && !previewError;
+
+  return (
+    <Modal
+      open={editor.open}
+      title={editor.editing ? '编辑计划任务' : '新建计划任务'}
+      width="min(760px, calc(100vw - 24px))"
+      footer={null}
+      onCancel={onCancel}
+      destroyOnClose
+    >
+      <div className="scheduled-tasks-modal-body">
+        {submitError ? <InlineNote tone="error">{submitError}</InlineNote> : null}
+
+        <SettingSection
+          title="基础配置"
+          description="选择定时触发的事件与展示名称。"
+        >
+          <SettingRow
+            title="执行事件"
+            description={selectedEvent?.description || '决定定时触发时执行的具体作业。'}
+            htmlFor="st-event"
+            control={(
+              <Select
+                id="st-event"
+                style={{ width: '100%' }}
+                value={editor.eventId || undefined}
+                placeholder="选择要定时执行的事件"
+                options={eventOptions}
+                onChange={(value) => {
+                  const event = events.find((item) => item.id === value) || null;
+                  onResetProbe();
+                  onChangeEditor((prev) => ({
+                    ...prev,
+                    eventId: value,
+                    activityParams: {},
+                    name: prev.editing ? prev.name : (event ? event.label : prev.name)
+                  }));
+                }}
+              />
+            )}
+          />
+          <SettingRow
+            title="任务名称"
+            description="留空时自动沿用事件名称。"
+            htmlFor="st-name"
+            control={(
+              <Input
+                id="st-name"
+                value={editor.name}
+                placeholder="留空则用事件名"
+                onChange={(event) => onChangeEditor((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            )}
+          />
+          <SettingRow
+            title="任务状态"
+            description="暂停后保留配置，但不按调度自动触发。"
+            htmlFor="st-enabled"
+            control={(
+              <Switch
+                id="st-enabled"
+                checked={editor.enabled}
+                checkedChildren="启用"
+                unCheckedChildren="暂停"
+                onChange={(checked) => onChangeEditor((prev) => ({ ...prev, enabled: checked }))}
+              />
+            )}
+          />
+        </SettingSection>
+
+        <Reveal open={selectedEvent?.kind === 'custom'}>
+          <SettingSection
+            title="命令参数"
+            description="命令以服务进程身份在宿主环境执行。"
+          >
+            <SettingRow
+              title="执行命令"
+              description="支持多行脚本或单行 CLI 命令。"
+              htmlFor="st-command"
+              layout="stacked"
+              control={(
+                <Input.TextArea
+                  id="st-command"
+                  rows={3}
+                  value={editor.command}
+                  placeholder="例如：echo hello"
+                  onChange={(event) => onChangeEditor((prev) => ({ ...prev, command: event.target.value }))}
+                />
+              )}
+            />
+            <SettingRow
+              title="工作目录"
+              description="可选，留空使用服务默认目录。"
+              htmlFor="st-cwd"
+              control={(
+                <Input
+                  id="st-cwd"
+                  value={editor.cwd}
+                  placeholder="例如：/srv/aih"
+                  onChange={(event) => onChangeEditor((prev) => ({ ...prev, cwd: event.target.value }))}
+                />
+              )}
+            />
+          </SettingSection>
+        </Reveal>
+
+        <Reveal open={selectedEvent?.kind === 'activity'}>
+          {selectedEvent ? (
+            <SettingSection
+              title="活动参数"
+              description="限定本次签到或活动作业的账号与类型范围；留空表示不限。"
+            >
+              <div className="scheduled-tasks-activity-wrap">
+                <ActivityParamFields
+                  fields={paramFields}
+                  value={editor.activityParams}
+                  onChange={(next) => onChangeEditor((prev) => ({ ...prev, activityParams: next }))}
+                  accountOptions={accountOptions}
+                  probe={probe}
+                  probing={probing}
+                  onProbe={selectedEvent.supportsProbe ? onProbe : undefined}
+                />
+              </div>
+            </SettingSection>
+          ) : null}
+        </Reveal>
+
+        <SettingSection
+          title="调度周期"
+          description="设置触发频率；服务端实时校验表达式并计算下次运行时间。"
+          footer={(
+            <SaveActionBar
+              dirty={canSave}
+              saving={saving}
+              disabled={!canSave}
+              onSave={onSubmit}
+              saveLabel={editor.editing ? '保存任务' : '创建任务'}
+              cleanSaveLabel={previewError ? '调度无效' : '请选择事件'}
+              effectSummary="保存后立即同步到调度器"
+              feedback={submitError || undefined}
+              feedbackTone={submitError ? 'error' : 'muted'}
+              extraActions={(
+                <Button disabled={saving} onClick={onCancel}>取消</Button>
+              )}
+            />
+          )}
+        >
+          <SettingRow
+            title="触发规则"
+            description="支持每天、每周、固定间隔或 5 段 Cron 表达式。"
+            layout="stacked"
+            control={(
+              <div className="scheduled-tasks-schedule-control">
+                <Space size={8} wrap>
+                  <Select
+                    style={{ width: 132 }}
+                    value={editor.scheduleKind}
+                    onChange={(value) => {
+                      const kindOrder = ['daily', 'weekly', 'interval', 'cron'] as const;
+                      onSwitchScheduleSurface(() => {
+                        onChangeEditor((prev) => ({ ...prev, scheduleKind: value }));
+                      }, {
+                        current: editor.scheduleKind,
+                        next: value,
+                        direction: resolveOrderedDirection(kindOrder, editor.scheduleKind, value)
+                      });
+                    }}
+                    options={[
+                      { value: 'daily', label: '每天' },
+                      { value: 'weekly', label: '每周' },
+                      { value: 'interval', label: '按间隔' },
+                      { value: 'cron', label: 'Cron 表达式' }
+                    ]}
+                  />
+                  <div ref={scheduleSurfaceRef} className="scheduled-tasks-schedule-fields">
+                    {editor.scheduleKind === 'weekly' ? (
+                      <Select
+                        style={{ width: 108 }}
+                        value={editor.weekday}
+                        onChange={(value) => onChangeEditor((prev) => ({ ...prev, weekday: Number(value) }))}
+                        options={WEEKDAYS.map((label, index) => ({ value: index, label }))}
+                      />
+                    ) : null}
+                    {editor.scheduleKind === 'interval' ? (
+                      <>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={24}
+                          style={{ width: 112 }}
+                          value={editor.hours}
+                          addonAfter="小时"
+                          onChange={(event) => onChangeEditor((prev) => ({ ...prev, hours: Number(event.target.value) }))}
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          max={59}
+                          style={{ width: 112 }}
+                          value={editor.minutes}
+                          addonAfter="分钟"
+                          onChange={(event) => onChangeEditor((prev) => ({ ...prev, minutes: Number(event.target.value) }))}
+                        />
+                      </>
+                    ) : editor.scheduleKind === 'cron' ? (
+                      <Input
+                        style={{ width: 240, maxWidth: '100%' }}
+                        value={editor.expression}
+                        placeholder="分 时 日 月 周，例如 0 20 * * *"
+                        onChange={(event) => onChangeEditor((prev) => ({ ...prev, expression: event.target.value }))}
+                      />
+                    ) : (
+                      <TimePicker
+                        format="HH:mm"
+                        minuteStep={5}
+                        value={dayjs(editor.at, 'HH:mm')}
+                        onChange={(value) => onChangeEditor((prev) => ({
+                          ...prev,
+                          at: value ? value.format('HH:mm') : prev.at
+                        }))}
+                      />
+                    )}
+                  </div>
+                </Space>
+                {previewError ? (
+                  <InlineNote tone="error">无法识别该调度：{previewError}</InlineNote>
+                ) : preview ? (
+                  <div className="scheduled-tasks-preview">
+                    {preview.label} · 下次运行 {formatTime(preview.nextRunAt)}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          />
+        </SettingSection>
+      </div>
+    </Modal>
+  );
 }
 
 export default function ScheduledTasks() {
@@ -118,18 +444,23 @@ export default function ScheduledTasks() {
   const [events, setEvents] = useState<ScheduledTaskEvent[]>([]);
   const [records, setRecords] = useState<ScheduledTaskRecord[]>([]);
   const [recordDays, setRecordDays] = useState(7);
-  // 执行记录分页（**服务端分页**：后端按 days/taskId 过滤出全集再切页，响应带 total）。
   const [recordPage, setRecordPage] = useState(1);
   const [recordPageSize, setRecordPageSize] = useState(20);
   const [recordTotal, setRecordTotal] = useState(0);
   const [schedulerRunning, setSchedulerRunning] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
+  const [searchText, setSearchText] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
+  const [savingEditor, setSavingEditor] = useState(false);
+  const [editorError, setEditorError] = useState('');
   const [busyId, setBusyId] = useState('');
   const { surfaceRef: recordsSurfaceRef, switchSurface: switchRecordsSurface } = useSurfaceSwitch<HTMLDivElement>();
   const { surfaceRef: scheduleSurfaceRef, switchSurface: switchScheduleSurface } = useSurfaceSwitch<HTMLDivElement>();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const [tasksResponse, recordsResponse] = await Promise.all([
         listScheduledTasks(),
@@ -144,7 +475,7 @@ export default function ScheduledTasks() {
       setRecords(Array.isArray(recordsResponse.records) ? recordsResponse.records : []);
       setRecordTotal(Number(recordsResponse.total || 0));
     } catch (_error) {
-      message.error('读取计划任务失败');
+      setLoadError('读取计划任务失败，请确认网关服务正常运行后重试。');
     } finally {
       setLoading(false);
     }
@@ -154,7 +485,6 @@ export default function ScheduledTasks() {
     void load();
   }, [load]);
 
-  // 计划任务执行进统一任务队列；完成事件到达后补一次列表/记录，不再周期轮询。
   useEffect(() => {
     const handleTaskCompleted = () => {
       void load();
@@ -163,7 +493,6 @@ export default function ScheduledTasks() {
     return () => window.removeEventListener('aih:webui-task-completed', handleTaskCompleted);
   }, [load]);
 
-  // 时间窗变化时回到第 1 页（否则会停在窗口内不存在的页码上）。
   useEffect(() => {
     setRecordPage(1);
   }, [recordDays]);
@@ -181,7 +510,32 @@ export default function ScheduledTasks() {
     [editor.eventId, events]
   );
 
-  // ---- 活动参数：schema 由事件下发，候选值按需拉（账号来自凭据库、类型来自声明）----
+  const taskStats = useMemo(() => {
+    let enabled = 0;
+    let paused = 0;
+    let running = 0;
+    let failed = 0;
+    for (const task of tasks) {
+      if (task.enabled === false) paused += 1;
+      else enabled += 1;
+      if (task.running) running += 1;
+      if (isFailedStatus(task.lastStatus)) failed += 1;
+    }
+    return { total: tasks.length, enabled, paused, running, failed };
+  }, [tasks]);
+
+  const filteredTasks = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    return tasks.filter((task) => {
+      if (taskFilter === 'enabled' && task.enabled === false) return false;
+      if (taskFilter === 'paused' && task.enabled !== false) return false;
+      if (taskFilter === 'running' && !task.running) return false;
+      if (taskFilter === 'failed' && !isFailedStatus(task.lastStatus)) return false;
+      if (!keyword) return true;
+      return `${task.name} ${task.eventLabel} ${describeSchedule(task.schedule)}`.toLowerCase().includes(keyword);
+    });
+  }, [tasks, taskFilter, searchText]);
+
   const [accountOptions, setAccountOptions] = useState<ActivityParamOption[]>([]);
   const [paramFields, setParamFields] = useState<ActivityParamField[]>([]);
   const [probe, setProbe] = useState<ActivityProbeResult | null>(null);
@@ -189,7 +543,6 @@ export default function ScheduledTasks() {
 
   const isActivityEvent = selectedEvent?.kind === 'activity';
 
-  // 账号选项只在需要时拉一次：这里是计划任务页，不该为了一个下拉框建立常驻 SSE。
   useEffect(() => {
     if (!editor.open || !isActivityEvent || accountOptions.length > 0) return undefined;
     let cancelled = false;
@@ -211,7 +564,6 @@ export default function ScheduledTasks() {
     return () => { cancelled = true; };
   }, [editor.open, isActivityEvent, accountOptions.length, selectedEvent?.provider]);
 
-  // 参数 schema + 动态选项：服务端按描述符解析；失败时退回事件自带的静态 schema。
   useEffect(() => {
     if (!editor.open || !isActivityEvent || !selectedEvent?.provider || !selectedEvent.actionId) {
       setParamFields([]);
@@ -250,12 +602,11 @@ export default function ScheduledTasks() {
     }
   }, [selectedEvent?.provider, selectedEvent?.actionId]);
 
-  // 调度预览（含 cron 的中文解读）：防抖 400ms，避免边打字边打服务端。
   const [preview, setPreview] = useState<{ label: string; nextRunAt: number } | null>(null);
   const [previewError, setPreviewError] = useState('');
   useEffect(() => {
     if (!editor.open) return undefined;
-    const schedule: ScheduledTaskSchedule | null = editor.scheduleKind === 'interval'
+    const schedule: ScheduledTaskSchedule = editor.scheduleKind === 'interval'
       ? { kind: 'interval', hours: Number(editor.hours) || 0, minutes: Number(editor.minutes) || 0 }
       : editor.scheduleKind === 'weekly'
         ? { kind: 'weekly', weekday: Number(editor.weekday), at: editor.at }
@@ -284,13 +635,13 @@ export default function ScheduledTasks() {
     };
   }, [editor.open, editor.scheduleKind, editor.at, editor.weekday, editor.hours, editor.minutes, editor.expression]);
 
-  // 单个任务的独立执行记录（入口就在任务行上）；同样**服务端分页**。
   const [recordsTask, setRecordsTask] = useState<ScheduledTask | null>(null);
   const [taskRecords, setTaskRecords] = useState<ScheduledTaskRecord[]>([]);
   const [taskRecordsLoading, setTaskRecordsLoading] = useState(false);
   const [taskRecordsPage, setTaskRecordsPage] = useState(1);
   const [taskRecordsPageSize, setTaskRecordsPageSize] = useState(10);
   const [taskRecordsTotal, setTaskRecordsTotal] = useState(0);
+
   const loadTaskRecords = useCallback(async (
     task: ScheduledTask,
     page: number,
@@ -312,6 +663,7 @@ export default function ScheduledTasks() {
       setTaskRecordsLoading(false);
     }
   }, [recordDays]);
+
   const openTaskRecords = useCallback(async (task: ScheduledTask) => {
     setRecordsTask(task);
     setTaskRecordsPage(1);
@@ -321,6 +673,7 @@ export default function ScheduledTasks() {
   const openCreate = () => {
     const first = events.find((event) => event.available !== false) || null;
     setProbe(null);
+    setEditorError('');
     setEditor({
       ...EMPTY_EDITOR,
       open: true,
@@ -332,13 +685,13 @@ export default function ScheduledTasks() {
   const openEdit = (task: ScheduledTask) => {
     const schedule = task.schedule || { kind: 'daily', at: '20:00' };
     const rawParams = task.eventParams || {};
-    // 活动参数整体回填（不再只认 command/cwd）；未知 key 会被服务端 schema 丢掉。
     const activityParams: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(rawParams)) {
       if (key === 'command' || key === 'cwd') continue;
       activityParams[key] = value;
     }
     setProbe(null);
+    setEditorError('');
     setEditor({
       open: true,
       editing: task,
@@ -357,7 +710,6 @@ export default function ScheduledTasks() {
     });
   };
 
-  /** 只提交非空值：空数组/空串代表「不限」，服务端与指纹都按「没填」处理。 */
   const buildActivityEventParams = () => {
     const params: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(editor.activityParams)) {
@@ -370,7 +722,7 @@ export default function ScheduledTasks() {
 
   const submitEditor = async () => {
     if (!editor.eventId) {
-      message.warning('请选择事件');
+      setEditorError('请选择要定时执行的事件');
       return;
     }
     const schedule: ScheduledTaskSchedule = editor.scheduleKind === 'interval'
@@ -385,21 +737,29 @@ export default function ScheduledTasks() {
       : selectedEvent?.kind === 'activity'
         ? buildActivityEventParams()
         : {};
-    const result = await saveScheduledTask({
-      ...(editor.editing ? { id: editor.editing.id } : {}),
-      name: editor.name.trim() || (selectedEvent ? selectedEvent.label : ''),
-      eventId: editor.eventId,
-      eventParams,
-      schedule,
-      enabled: editor.enabled
-    } as Partial<ScheduledTask> & { eventId: string; schedule: ScheduledTaskSchedule });
-    if (!result.ok) {
-      message.error(`保存失败：${result.error || 'unknown'}`);
-      return;
+    setSavingEditor(true);
+    setEditorError('');
+    try {
+      const result = await saveScheduledTask({
+        ...(editor.editing ? { id: editor.editing.id } : {}),
+        name: editor.name.trim() || (selectedEvent ? selectedEvent.label : ''),
+        eventId: editor.eventId,
+        eventParams,
+        schedule,
+        enabled: editor.enabled
+      } as Partial<ScheduledTask> & { eventId: string; schedule: ScheduledTaskSchedule });
+      if (!result.ok) {
+        setEditorError(`保存失败：${result.error || 'unknown'}`);
+        return;
+      }
+      setEditor(EMPTY_EDITOR);
+      message.success('计划任务已保存');
+      void load();
+    } catch (error) {
+      setEditorError(error instanceof Error ? `保存失败：${error.message}` : '保存失败');
+    } finally {
+      setSavingEditor(false);
     }
-    setEditor(EMPTY_EDITOR);
-    message.success('已保存');
-    void load();
   };
 
   const handleRun = async (task: ScheduledTask) => {
@@ -407,7 +767,7 @@ export default function ScheduledTasks() {
     try {
       const result = await runScheduledTask(task.id);
       if (!result.ok) message.error(`执行失败：${result.error || 'unknown'}`);
-      else message.success('已开始执行（进度见右下角任务队列）');
+      else message.success('已触发执行，进度可在任务队列查看');
       void load();
     } finally {
       setBusyId('');
@@ -433,115 +793,229 @@ export default function ScheduledTasks() {
     void load();
   };
 
+  const taskColumns: ColumnsType<ScheduledTask> = [
+    {
+      title: '任务',
+      dataIndex: 'name',
+      width: 220,
+      render: (_value, task) => (
+        <div className="scheduled-tasks-name">
+          <strong>{task.name}</strong>
+          <span>{task.eventLabel}</span>
+        </div>
+      )
+    },
+    {
+      title: '调度',
+      width: 160,
+      render: (_value, task) => <span className="scheduled-tasks-mono">{describeSchedule(task.schedule)}</span>
+    },
+    {
+      title: '状态',
+      width: 180,
+      render: (_value, task) => (
+        <Space size={8}>
+          <Switch
+            size="small"
+            checked={task.enabled !== false}
+            checkedChildren="启用"
+            unCheckedChildren="暂停"
+            onChange={(checked) => void handleToggle(task, checked)}
+          />
+          {taskStateTag(task)}
+        </Space>
+      )
+    },
+    {
+      title: '下次运行',
+      width: 130,
+      render: (_value, task) => (
+        <span className="scheduled-tasks-mono">
+          {task.enabled === false ? '已暂停' : formatTime(task.nextRunAt)}
+        </span>
+      )
+    },
+    {
+      title: '上次运行',
+      width: 150,
+      render: (_value, task) => (
+        <Tooltip title={task.lastSummary || ''}>
+          <span className="scheduled-tasks-mono">{formatTime(task.lastRunAt)}</span>
+        </Tooltip>
+      )
+    },
+    {
+      title: '操作',
+      width: 220,
+      render: (_value, task) => (
+        <Space size={4}>
+          <Button
+            size="small"
+            loading={busyId === task.id}
+            disabled={task.running}
+            onClick={() => void handleRun(task)}
+          >
+            立即执行
+          </Button>
+          <Button size="small" onClick={() => void openTaskRecords(task)}>记录</Button>
+          <Button size="small" onClick={() => openEdit(task)}>编辑</Button>
+          <Popconfirm title="删除该计划任务？" onConfirm={() => void handleDelete(task)}>
+            <Button size="small" danger>删除</Button>
+          </Popconfirm>
+        </Space>
+      )
+    }
+  ];
+
+  const recordColumns: ColumnsType<ScheduledTaskRecord> = [
+    { title: '时间', width: 120, render: (_value, row) => <span className="scheduled-tasks-mono">{formatTime(row.startedAt)}</span> },
+    { title: '任务', dataIndex: 'taskName', width: 160 },
+    { title: '事件', dataIndex: 'eventLabel', width: 140 },
+    { title: '触发', width: 72, render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
+    { title: '结果', width: 96, render: (_value, row) => recordStatusTag(row.status) },
+    {
+      title: '摘要',
+      render: (_value, row) => (
+        <span className="scheduled-tasks-summary">
+          {row.errorSummary || row.error || row.summary || '—'}
+        </span>
+      )
+    }
+  ];
+
   return (
     <PageScaffold
       ghost
       code="SCHEDULE"
       className="scheduled-tasks-page"
       title="计划任务"
-      subTitle={`把活动签到与自定义命令排成定时任务；执行进度在右下角任务队列实时可见，历史结果保留最近 ${recordDays} 天。`}
+      subTitle="统一编排定时活动签到与自动化命令，并跟踪执行结果。"
       extra={(
         <Space size={8} wrap>
-          <span className={`scheduled-tasks-scheduler is-${schedulerRunning ? 'on' : 'off'}`}>
-            <span className={`hud-led ${schedulerRunning ? 'hud-led--ok hud-led--live' : ''}`} aria-hidden="true" />
-            {schedulerRunning ? '调度器运行中' : '调度器未启动'}
-          </span>
+          <SettingStatusTag
+            status={schedulerRunning ? 'applied' : 'unset'}
+            label={schedulerRunning ? '调度器运行中' : '调度器未启动'}
+            compact
+          />
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建计划任务</Button>
         </Space>
       )}
     >
-      <SectionCard title="任务列表">
+      <div className="scheduled-tasks-kpi-bar" aria-label="计划任务概览">
+        <div className="scheduled-tasks-kpi-cell">
+          <span>全部任务</span>
+          <strong>{taskStats.total}</strong>
+        </div>
+        <div className="scheduled-tasks-kpi-cell">
+          <span>启用</span>
+          <strong>{taskStats.enabled}</strong>
+        </div>
+        <div className="scheduled-tasks-kpi-cell">
+          <span>暂停</span>
+          <strong>{taskStats.paused}</strong>
+        </div>
+        <div className="scheduled-tasks-kpi-cell">
+          <span>运行中</span>
+          <strong>{taskStats.running}</strong>
+        </div>
+        <div className="scheduled-tasks-kpi-cell">
+          <span>最近失败</span>
+          <strong>{taskStats.failed}</strong>
+        </div>
+      </div>
+
+      {loadError ? (
+        <InlineNote
+          tone="error"
+          style={{ marginBottom: 16 }}
+          action={<Button size="small" type="link" onClick={() => void load()}>重试</Button>}
+        >
+          {loadError}
+        </InlineNote>
+      ) : null}
+
+      <SectionCard
+        title="任务列表"
+        extra={(
+          <div className="scheduled-tasks-filters">
+            <Segmented
+              size="small"
+              value={taskFilter}
+              onChange={(value) => setTaskFilter(value as TaskFilter)}
+              options={[
+                { label: `全部 ${taskStats.total}`, value: 'all' },
+                { label: `启用 ${taskStats.enabled}`, value: 'enabled' },
+                { label: `暂停 ${taskStats.paused}`, value: 'paused' },
+                { label: `运行中 ${taskStats.running}`, value: 'running' },
+                { label: `失败 ${taskStats.failed}`, value: 'failed' }
+              ]}
+            />
+            <Input
+              allowClear
+              size="small"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="筛选名称或事件"
+              className="scheduled-tasks-search"
+            />
+          </div>
+        )}
+      >
         {tasks.length === 0 ? (
           <HudStateView
             compact
             code="NO_SCHEDULES"
             title="还没有计划任务"
-            description="点击右上角「新建计划任务」即可配置按日、按周、固定间隔或 Cron 表达式触发的自动作业。"
+            description="配置按日、按周、固定间隔或 Cron 触发的自动作业。"
             extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建计划任务</Button>}
           />
-        ) : (
-          <Table<ScheduledTask>
-            rowKey="id"
-            size="small"
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50],
-              showTotal: (total) => `共 ${total} 个任务`
-            }}
-            dataSource={tasks}
-            columns={[
-              {
-                title: '名称',
-                dataIndex: 'name',
-                render: (_value, task) => (
-                  <div className="scheduled-tasks-name">
-                    <strong>{task.name}</strong>
-                    <span>{task.eventLabel}</span>
-                  </div>
-                )
-              },
-              { title: '调度', render: (_value, task) => describeSchedule(task.schedule) },
-              {
-                title: '状态',
-                render: (_value, task) => (
-                  <Space size={6}>
-                    <Switch
-                      size="small"
-                      checked={task.enabled !== false}
-                      onChange={(checked) => void handleToggle(task, checked)}
-                    />
-                    {task.running ? <Tag color="blue">执行中</Tag> : statusTag(task.lastStatus)}
-                  </Space>
-                )
-              },
-              {
-                title: '下次运行',
-                render: (_value, task) => (task.enabled === false ? '已停用' : formatTime(task.nextRunAt))
-              },
-              {
-                title: '上次运行',
-                render: (_value, task) => (
-                  <Tooltip title={task.lastSummary || ''}>
-                    <span>{formatTime(task.lastRunAt)}</span>
-                  </Tooltip>
-                )
-              },
-              {
-                title: '操作',
-                render: (_value, task) => (
-                  <Space size={4}>
-                    <Button
-                      size="small"
-                      loading={busyId === task.id}
-                      disabled={task.running}
-                      onClick={() => void handleRun(task)}
-                    >
-                      立即执行
-                    </Button>
-                    <Button size="small" onClick={() => void openTaskRecords(task)}>记录</Button>
-                    <Button size="small" onClick={() => openEdit(task)}>编辑</Button>
-                    <Popconfirm title="删除该计划任务？" onConfirm={() => void handleDelete(task)}>
-                      <Button size="small" danger>删除</Button>
-                    </Popconfirm>
-                  </Space>
-                )
-              }
-            ]}
+        ) : filteredTasks.length === 0 ? (
+          <HudStateView
+            compact
+            code="NO_MATCH"
+            title="当前筛选下无任务"
+            description="清空状态或关键词筛选即可查看全部任务。"
+            extra={(
+              <Button
+                onClick={() => {
+                  setTaskFilter('all');
+                  setSearchText('');
+                }}
+              >
+                重置筛选
+              </Button>
+            )}
           />
+        ) : (
+          <div className="scheduled-tasks-table-scroll">
+            <Table<ScheduledTask>
+              rowKey="id"
+              size="small"
+              loading={loading}
+              scroll={{ x: 'max-content' }}
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50],
+                showTotal: (total) => `共 ${total} 个任务`
+              }}
+              dataSource={filteredTasks}
+              columns={taskColumns}
+            />
+          </div>
         )}
       </SectionCard>
 
       <SectionCard
         title="运行记录"
         extra={(
-          <Space size={6}>
-            <span className="scheduled-tasks-hint">显示最近</span>
+          <Space size={8} wrap>
+            <span className="scheduled-tasks-hint">实时进度见右下角队列 · 窗口</span>
             <Select
               size="small"
               value={recordDays}
-              style={{ width: 96 }}
+              style={{ width: 92 }}
               onChange={(value) => {
                 const nextDays = Number(value);
                 const dayOrder = [1, 3, 7, 14] as const;
@@ -553,10 +1027,10 @@ export default function ScheduledTasks() {
                 });
               }}
               options={[
-                { value: 1, label: '1 天' },
-                { value: 3, label: '3 天' },
-                { value: 7, label: '7 天' },
-                { value: 14, label: '14 天' }
+                { value: 1, label: '最近 1 天' },
+                { value: 3, label: '最近 3 天' },
+                { value: 7, label: '最近 7 天' },
+                { value: 14, label: '最近 14 天' }
               ]}
             />
           </Space>
@@ -564,214 +1038,68 @@ export default function ScheduledTasks() {
       >
         <div ref={recordsSurfaceRef}>
           {records.length === 0 ? (
-            <HudStateView compact code="NO_LOGS" title="暂无运行记录" />
+            <HudStateView compact code="NO_LOGS" title={`最近 ${recordDays} 天暂无运行记录`} />
           ) : (
-            <Table<ScheduledTaskRecord>
-              rowKey="id"
-              size="small"
-              pagination={{
-                current: recordPage,
-                pageSize: recordPageSize,
-                total: recordTotal,
-                showSizeChanger: true,
-                pageSizeOptions: [20, 50, 100],
-                showTotal: (total) => `共 ${total} 条记录`,
-                onChange: (page, pageSize) => {
-                  switchRecordsSurface(() => {
-                    setRecordPage(page);
-                    if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
-                  }, {
-                    direction: page > recordPage ? 'forward' : page < recordPage ? 'backward' : 'neutral'
-                  });
-                }
-              }}
-              dataSource={records}
-              columns={[
-                { title: '时间', render: (_value, row) => formatTime(row.startedAt) },
-                { title: '任务', dataIndex: 'taskName' },
-                { title: '事件', dataIndex: 'eventLabel' },
-                { title: '触发', render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
-                { title: '结果', render: (_value, row) => statusTag(row.status) },
-                {
-                  title: '摘要',
-                  render: (_value, row) => (
-                    <span className="scheduled-tasks-summary">
-                      {row.errorSummary || row.error || row.summary || '—'}
-                    </span>
-                  )
-                }
-              ]}
-            />
+            <div className="scheduled-tasks-table-scroll">
+              <Table<ScheduledTaskRecord>
+                rowKey="id"
+                size="small"
+                loading={loading}
+                scroll={{ x: 'max-content' }}
+                pagination={{
+                  current: recordPage,
+                  pageSize: recordPageSize,
+                  total: recordTotal,
+                  showSizeChanger: true,
+                  pageSizeOptions: [20, 50, 100],
+                  showTotal: (total) => `共 ${total} 条记录`,
+                  onChange: (page, pageSize) => {
+                    switchRecordsSurface(() => {
+                      setRecordPage(page);
+                      if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
+                    }, {
+                      direction: page > recordPage ? 'forward' : page < recordPage ? 'backward' : 'neutral'
+                    });
+                  }
+                }}
+                dataSource={records}
+                columns={recordColumns}
+              />
+            </div>
           )}
         </div>
       </SectionCard>
 
-      <Modal
-        open={editor.open}
-        title={editor.editing ? '编辑计划任务' : '新建计划任务'}
-        okText="保存"
-        cancelText="取消"
-        onCancel={() => setEditor(EMPTY_EDITOR)}
-        onOk={() => void submitEditor()}
-        destroyOnClose
-      >
-        <Form layout="vertical">
-          <Form.Item label="事件">
-            <Select
-              value={editor.eventId || undefined}
-              placeholder="选择要定时执行的事件"
-              options={eventOptions}
-              onChange={(value) => {
-                const event = events.find((item) => item.id === value) || null;
-                // 换事件 = 换参数 schema：清掉旧参数与旧探测结果，避免把 A 事件的
-                // 参数存进 B 事件（服务端会丢弃未知 key，但 UI 不该制造这种静默差异）。
-                setProbe(null);
-                setEditor((prev) => ({
-                  ...prev,
-                  eventId: value,
-                  activityParams: {},
-                  name: prev.editing ? prev.name : (event ? event.label : prev.name)
-                }));
-              }}
-            />
-            {selectedEvent?.description ? (
-              <div className="scheduled-tasks-hint">{selectedEvent.description}</div>
-            ) : null}
-          </Form.Item>
-          <Form.Item label="名称">
-            <Input
-              value={editor.name}
-              placeholder="留空则用事件名"
-              onChange={(event) => setEditor((prev) => ({ ...prev, name: event.target.value }))}
-            />
-          </Form.Item>
-          <Reveal open={selectedEvent?.kind === 'custom'}>
-            <div>
-              <Form.Item label="命令">
-                <Input.TextArea
-                  rows={3}
-                  value={editor.command}
-                  placeholder="以服务进程身份执行，例如：echo hello"
-                  onChange={(event) => setEditor((prev) => ({ ...prev, command: event.target.value }))}
-                />
-              </Form.Item>
-              <Form.Item label="工作目录（可选）">
-                <Input
-                  value={editor.cwd}
-                  onChange={(event) => setEditor((prev) => ({ ...prev, cwd: event.target.value }))}
-                />
-              </Form.Item>
-            </div>
-          </Reveal>
-          <Reveal open={selectedEvent?.kind === 'activity'}>
-            {selectedEvent ? (
-              <ActivityParamFields
-                fields={paramFields}
-                value={editor.activityParams}
-                onChange={(next) => setEditor((prev) => ({ ...prev, activityParams: next }))}
-                accountOptions={accountOptions}
-                probe={probe}
-                probing={probing}
-                onProbe={selectedEvent.supportsProbe ? () => void handleProbe() : undefined}
-              />
-            ) : null}
-          </Reveal>
-          <Form.Item label="周期">
-            <Space size={8} wrap>
-              <Select
-                style={{ width: 120 }}
-                value={editor.scheduleKind}
-                onChange={(value) => {
-                  const kindOrder = ['daily', 'weekly', 'interval', 'cron'] as const;
-                  switchScheduleSurface(() => {
-                    setEditor((prev) => ({ ...prev, scheduleKind: value }));
-                  }, {
-                    current: editor.scheduleKind,
-                    next: value,
-                    direction: resolveOrderedDirection(kindOrder, editor.scheduleKind, value)
-                  });
-                }}
-                options={[
-                  { value: 'daily', label: '每天' },
-                  { value: 'weekly', label: '每周' },
-                  { value: 'interval', label: '按间隔' },
-                  { value: 'cron', label: 'cron 表达式' }
-                ]}
-              />
-              <div ref={scheduleSurfaceRef} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {editor.scheduleKind === 'weekly' ? (
-                  <Select
-                    style={{ width: 110 }}
-                    value={editor.weekday}
-                    onChange={(value) => setEditor((prev) => ({ ...prev, weekday: Number(value) }))}
-                    options={WEEKDAYS.map((label, index) => ({ value: index, label }))}
-                  />
-                ) : null}
-                {editor.scheduleKind === 'interval' ? (
-                  <>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={24}
-                      style={{ width: 110 }}
-                      value={editor.hours}
-                      addonAfter="小时"
-                      onChange={(event) => setEditor((prev) => ({ ...prev, hours: Number(event.target.value) }))}
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      max={59}
-                      style={{ width: 110 }}
-                      value={editor.minutes}
-                      addonAfter="分钟"
-                      onChange={(event) => setEditor((prev) => ({ ...prev, minutes: Number(event.target.value) }))}
-                    />
-                  </>
-                ) : editor.scheduleKind === 'cron' ? (
-                  <Input
-                    style={{ width: 240 }}
-                    value={editor.expression}
-                    placeholder="分 时 日 月 周，例如 0 20 * * *"
-                    onChange={(event) => setEditor((prev) => ({ ...prev, expression: event.target.value }))}
-                  />
-                ) : (
-                  <TimePicker
-                    format="HH:mm"
-                    minuteStep={5}
-                    value={dayjs(editor.at, 'HH:mm')}
-                    onChange={(value) => setEditor((prev) => ({
-                      ...prev,
-                      at: value ? value.format('HH:mm') : prev.at
-                    }))}
-                  />
-                )}
-              </div>
-            </Space>
-            {/* 解读与下次运行由服务端算（唯一实现处），前端只展示。 */}
-            {previewError ? (
-              <div className="scheduled-tasks-preview is-error">无法识别该调度：{previewError}</div>
-            ) : preview ? (
-              <div className="scheduled-tasks-preview">
-                {preview.label} · 下次运行 {formatTime(preview.nextRunAt)}
-              </div>
-            ) : null}
-          </Form.Item>
-          <Form.Item label="启用">
-            <Switch
-              checked={editor.enabled}
-              onChange={(checked) => setEditor((prev) => ({ ...prev, enabled: checked }))}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <TaskEditorModal
+        editor={editor}
+        events={events}
+        eventOptions={eventOptions}
+        selectedEvent={selectedEvent}
+        paramFields={paramFields}
+        accountOptions={accountOptions}
+        probe={probe}
+        probing={probing}
+        preview={preview}
+        previewError={previewError}
+        saving={savingEditor}
+        submitError={editorError}
+        scheduleSurfaceRef={scheduleSurfaceRef}
+        onSwitchScheduleSurface={switchScheduleSurface}
+        onChangeEditor={setEditor}
+        onResetProbe={() => setProbe(null)}
+        onProbe={() => void handleProbe()}
+        onCancel={() => {
+          setEditor(EMPTY_EDITOR);
+          setEditorError('');
+        }}
+        onSubmit={() => void submitEditor()}
+      />
 
-      {/* 单个任务的独立执行记录：入口在任务行的「记录」按钮上。 */}
       <Modal
         open={Boolean(recordsTask)}
         title={recordsTask ? `执行记录 · ${recordsTask.name}` : '执行记录'}
         footer={null}
-        width={760}
+        width="min(760px, calc(100vw - 24px))"
         onCancel={() => setRecordsTask(null)}
       >
         {taskRecords.length === 0 ? (
@@ -782,38 +1110,41 @@ export default function ScheduledTasks() {
             title={taskRecordsLoading ? '正在读取执行记录…' : `最近 ${recordDays} 天没有执行记录`}
           />
         ) : (
-          <Table<ScheduledTaskRecord>
-            rowKey="id"
-            size="small"
-            pagination={{
-              current: taskRecordsPage,
-              pageSize: taskRecordsPageSize,
-              total: taskRecordsTotal,
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50],
-              showTotal: (total) => `共 ${total} 条记录`,
-              onChange: (page, pageSize) => {
-                if (!recordsTask) return;
-                setTaskRecordsPage(page);
-                if (pageSize !== taskRecordsPageSize) setTaskRecordsPageSize(pageSize);
-                void loadTaskRecords(recordsTask, page, pageSize);
-              }
-            }}
-            dataSource={taskRecords}
-            columns={[
-              { title: '时间', render: (_value, row) => formatTime(row.startedAt) },
-              { title: '触发', render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
-              { title: '结果', render: (_value, row) => statusTag(row.status) },
-              {
-                title: '摘要',
-                render: (_value, row) => (
-                  <span className="scheduled-tasks-summary">
-                    {row.errorSummary || row.error || row.summary || '—'}
-                  </span>
-                )
-              }
-            ]}
-          />
+          <div className="scheduled-tasks-table-scroll">
+            <Table<ScheduledTaskRecord>
+              rowKey="id"
+              size="small"
+              scroll={{ x: 'max-content' }}
+              pagination={{
+                current: taskRecordsPage,
+                pageSize: taskRecordsPageSize,
+                total: taskRecordsTotal,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50],
+                showTotal: (total) => `共 ${total} 条记录`,
+                onChange: (page, pageSize) => {
+                  if (!recordsTask) return;
+                  setTaskRecordsPage(page);
+                  if (pageSize !== taskRecordsPageSize) setTaskRecordsPageSize(pageSize);
+                  void loadTaskRecords(recordsTask, page, pageSize);
+                }
+              }}
+              dataSource={taskRecords}
+              columns={[
+                { title: '时间', width: 120, render: (_value, row) => <span className="scheduled-tasks-mono">{formatTime(row.startedAt)}</span> },
+                { title: '触发', width: 72, render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
+                { title: '结果', width: 96, render: (_value, row) => recordStatusTag(row.status) },
+                {
+                  title: '摘要',
+                  render: (_value, row) => (
+                    <span className="scheduled-tasks-summary">
+                      {row.errorSummary || row.error || row.summary || '—'}
+                    </span>
+                  )
+                }
+              ]}
+            />
+          </div>
         )}
       </Modal>
     </PageScaffold>

@@ -44,6 +44,7 @@ type webuiDependenciesInputs struct {
 	// 鉴权、地址与监控
 	authorizer      interface{ Authorized(*http.Request) bool }
 	aiHomeDir       string
+	webDir          string
 	catalog         *providers.Catalog
 	nodeBaseURL     string
 	selfBaseURL     string
@@ -109,6 +110,7 @@ func newWebUIDependencies(inputs webuiDependenciesInputs) webuiRouteDependencies
 	return webuiRouteDependencies{
 		Authorizer:         inputs.authorizer,
 		AIHomeDir:          inputs.aiHomeDir,
+		WebDir:             inputs.webDir,
 		Catalog:            inputs.catalog,
 		ModelModalities:    inputs.modelModalities,
 		ModelAliasExpander: inputs.modelAliasExpander,

@@ -130,6 +130,8 @@ type webuiRoute struct {
 // 里加一个 constructor + 路由条目即可，composition/router 不再逐切片增长。
 type webuiRouteDependencies struct {
 	DesktopSettingsChanged func()
+	// WebDir 是本进程实际托管的 Web UI 目录；运行文件备份/恢复需要。
+	WebDir string
 	Authorizer             interface{ Authorized(*http.Request) bool }
 	AIHomeDir              string
 	Catalog                *providers.Catalog

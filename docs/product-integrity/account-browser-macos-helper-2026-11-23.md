@@ -153,3 +153,9 @@ codesign -dvv <that path>
 
 Start the same task-scope surface twice and compare `stat -f '%i %m' <binary>`
 between the runs; a cache hit leaves both unchanged.
+
+## Launcher 冻结（2026-11-23）
+
+安装流程不再覆盖已存在的 `~/.ai_home/bin/aih-launch`：TCC 记录的是它的代码身份，
+每次升级替换都会让已授权失效。只有文件缺失时才安装；确实需要更新 launcher 时，
+先删除该文件、重新运行安装，并接受一次新的系统授权。

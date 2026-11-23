@@ -93,6 +93,12 @@ func appendWebUIFeatureRoutes(routes []webuiRoute, dependencies webuiRouteDepend
 		return nil, err
 	}
 	routes = append(routes, egressGeoRoutes...)
+	// 本机代理入口：由核心承接会话生命周期，插件只提供出口引擎能力。
+	proxyServeRoutes, err := buildWebUIProxyServeRoutes(dependencies)
+	if err != nil {
+		return nil, err
+	}
+	routes = append(routes, proxyServeRoutes...)
 	routes = append(routes, ports.SSHRoutes...)
 	// SSH 开发机与远程工作区补齐 POST 探测 / 浏览 / 工作区 CRUD 与工作区终端。
 	sshExtraRoutes, err := buildWebUISSHExtraRoutesWithPorts(dependencies, webUISSHPorts{

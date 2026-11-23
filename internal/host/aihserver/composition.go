@@ -60,6 +60,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/pricingresolver"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
+	"github.com/madou1217/ai_home/internal/runtime/proxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/renderplugin"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
@@ -591,6 +592,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	var distributionUpdates io.Closer
 	var upgradeScheduler *providercliupgrade.Scheduler
 	var windowScheduler *windowactivation.Scheduler
+	var proxyServeManager *proxyserve.Manager
 	var pluginBundle *localPluginRuntimeBundle
 	var egressManager *runtimeegress.Manager
 	// 刷新/额度/Relay/图片共用同一份账号出口解析与连接池；Manager 在组合根
@@ -628,6 +630,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && windowScheduler != nil {
 			_ = windowScheduler.Close()
+		}
+		if resultErr != nil && proxyServeManager != nil {
+			proxyServeManager.Close()
 		}
 		if resultErr != nil && pluginBundle != nil {
 			_ = pluginBundle.Close()
@@ -1485,6 +1490,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	})
 	upgradeScheduler = startupRuntime.upgradeScheduler
 	windowScheduler = startupRuntime.windowScheduler
+	proxyServeManager = startupRuntime.proxyServeManager
 	watchWSCloser = startupRuntime.watchWSCloser
 	distributionUpdates = startupRuntime.distributionUpdates
 	backgroundDaemons = startupRuntime.backgroundDaemons
@@ -1829,6 +1835,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if windowScheduler != nil {
 			closers = append(closers, windowScheduler)
+		}
+		if proxyServeManager != nil {
+			// 先停外部入口子进程，再拆它依赖的出口/推理运行时。
+			closers = append([]io.Closer{proxyServeManager}, closers...)
 		}
 		if pluginBundle != nil {
 			closers = append(closers, pluginBundle)

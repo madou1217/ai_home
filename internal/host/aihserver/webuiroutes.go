@@ -34,6 +34,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
+	"github.com/madou1217/ai_home/internal/runtime/proxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/remotesessions"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
 	"github.com/madou1217/ai_home/internal/runtime/sshproxy"
@@ -177,6 +178,8 @@ type webuiRouteDependencies struct {
 	SelfBaseURL string
 	// ManagementKey 返回 Go Core 自己的引导密钥，Node 内部回调用它鉴权。
 	ManagementKey func() string
+	// ProxyServeManager 是本机代理入口子进程的唯一生命周期所有者。
+	ProxyServeManager *proxyserve.Manager
 	// RequestShutdown is the host graceful-exit port shared by both restart entry points.
 	RequestShutdown func()
 	// TerminalHandler 供 SSH 工作区终端直接复用意图一致的 PTY 会话创建逻辑。

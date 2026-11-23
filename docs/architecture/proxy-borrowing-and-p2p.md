@@ -1,6 +1,6 @@
 # 借用远端代理与 P2P 隧道设计
 
-状态：传输与出口分层已落地；SSH 本地转发借用 Windows 代理已真机验证；直连 P2P 尚未安装网络连接器插件，不作已打通声明。
+状态：传输与出口分层已落地；SSH 本地转发借用 Windows 代理已真机验证；WebUI 本机入口面板由核心维护并已验证启停/HTTP/SOCKS5；直连 P2P 尚未安装网络连接器插件，不作已打通声明。
 
 ## 1. 三个平面必须分开
 
@@ -93,3 +93,16 @@ Mac aih proxy serve --ssh <connectionId>
 把租约的认证 HTTP 入口作为唯一出站。`--tun-dry-run` 只生成并执行 `sing-box check`，
 不创建接口、不改路由；真正启动需要 root/管理员权限，且是显式的网络层接管。
 外部 TUN（Clash Verge 等）与系统代理的所有权冲突必须由调用方显式报告，不能静默争抢。
+
+## 8. WebUI 操作面
+
+本机入口的操作面板由**核心项目维护**，不交给插件提供任意 UI：
+
+- 插件只贡献 `egress.engine` / `network.connector` 能力，不拥有入口会话；
+- 会话生命周期必须由宿主唯一持有，否则无法保证同时只有一个入口去申请租约、
+  占用系统代理和监听回环端口；
+- 管理面契约是 `GET/POST /v1/management/webui/proxy-serve[/start|/stop]`，
+  由 `internal/runtime/proxyserve` 启动同目录 `aih-go proxy serve --json` 子进程；
+- 子进程只拿到 `AIH_HOME_DIR` 与管理密钥环境变量，不把密钥写进命令行；
+- `--system` / `--tun` 需要操作系统提权，面板只展示可复制命令，不静默执行；
+- 入口停止或意外退出后，带租约令牌的 URL 不再回传，客户端退出必须释放监听。

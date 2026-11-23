@@ -7,6 +7,7 @@ import {
   CloudServerOutlined,
   CloudSyncOutlined,
   CodeOutlined,
+  DeploymentUnitOutlined,
   ExperimentOutlined,
   ForkOutlined,
   GatewayOutlined,
@@ -28,6 +29,7 @@ import NativeResourcesPanel from '@/components/toolkit/NativeResourcesPanel';
 import AihPluginPanel from '@/components/toolkit/AihPluginPanel';
 import NetworkConnectorPanel from '@/components/toolkit/NetworkConnectorPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
+import ProxyServePanel from '@/features/proxy-serve/ProxyServePanel';
 import { isSameCommittedIntent, resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
@@ -108,6 +110,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <ForkOutlined />
     },
     {
+      id: 'proxy-serve',
+      label: '本机代理入口',
+      description: '借用服务端出口开 HTTP/SOCKS 入口',
+      icon: <DeploymentUnitOutlined />
+    },
+    {
       id: 'egress-pool',
       label: '出口池',
       description: '节点使用、冷却与恢复',
@@ -173,6 +181,8 @@ function renderPanel(panelId: string) {
       );
     case 'subscription-aggregator':
       return <SubscriptionAggregatorPanel />;
+    case 'proxy-serve':
+      return <ProxyServePanel />;
     case 'egress-pool':
       return <EgressPoolPanel />;
     case 'egress-upstreams':

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
+	"github.com/madou1217/ai_home/internal/runtime/proxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 )
 
@@ -35,6 +36,8 @@ type webuiStartupRuntime struct {
 	distributionUpdates io.Closer
 	backgroundDaemons   *backgroundDaemonsRuntime
 	housekeepingDaemons *HousekeepingDaemons
+	// proxyServeManager 只在 WebUI 启停本机入口时拉起子进程；没有入口会话时为空转。
+	proxyServeManager *proxyserve.Manager
 }
 
 // newWebUIStartupRuntime 装配 WebUI 启动路由与后台守护进程。
@@ -55,6 +58,12 @@ func newWebUIStartupRuntime(inputs webuiStartupRuntimeInputs) (*webuiStartupRunt
 	startup.windowScheduler.Start(inputs.ctx)
 	deps.UpgradeScheduler = startup.upgradeScheduler
 	deps.WindowScheduler = startup.windowScheduler
+	startup.proxyServeManager = proxyserve.NewManager(proxyserve.Options{
+		AIHomeDir:     deps.AIHomeDir,
+		ServerURL:     deps.SelfBaseURL,
+		ManagementKey: deps.ManagementKey,
+	})
+	deps.ProxyServeManager = startup.proxyServeManager
 	*inputs.webuiDeps = deps
 	routes, err := buildWebUIRoutes(deps)
 	if err != nil {

@@ -78,8 +78,25 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
   8070 → 8088（input +12 / output +6）；
 - 修复前同一场景首个请求直接收到 401，需要客户端重连才恢复；修复后自动选号连续 2 次
   均一次成功；
-- 本轮未真实触发“本轮尚未输出时的可重试失败 → 1011 让 Codex 重连”分支（需要真实
-  429/配额耗尽），只做了代码路径核对。
+- “本轮尚未输出时的可重试失败 → 1011 让 Codex 重连”分支已在隔离环境验证，见下节。
+
+### 429 / 配额耗尽换号（2026-11-23）
+
+为避免共享 AWS 账号被并发修改影响，本次在隔离的 Go Server（临时 `AIH_HOME_DIR`、
+`127.0.0.1:19601`）上，用两个假 Codex WS 上游验证同一份已提交代码：
+
+- 上游 A（`127.0.0.1:19993`）：握手成功，发 `response.created` / `response.in_progress` /
+  `response.metadata` 后返回 `{"type":"error","status":429,"error":{"type":"usage_limit_reached"...}}`；
+- 上游 B（`127.0.0.1:19992`）：握手成功并返回完整 `response.completed`（`ws-ok`，
+  usage 12/6/18）；
+- 两个 API Key 账号均通过 `/models` 注册 `gpt-5.6-luna`；
+- 第一连接钉选 A：客户端收到 0 帧，close 1011 `retryable upstream failure`；
+- 运行态快照：A `blocks:["usage_snapshot"]`、`last_failure_kind=quota_exhausted`，B 成功；
+- 1 秒后自动选号重连：10 帧、`completed`、输出 `ws-ok`；
+- 会话 `rx-wsf-local` 的用量写入 12/6/18，证明换号后的请求仍按会话归属。
+
+结论：预备帧被扣留、429 错误没有下发给客户端、失败账号按额度阻塞、下一连接换到健康
+账号继续完成。
 
 可重复执行的步骤与取证模板见
 [WebSocket 账号级 401/403 换号真机验收清单](2026-11-23-ws-credential-failover-acceptance.md)。
@@ -90,7 +107,9 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
   网关模式会产生会话用量；
 - Claude 的启动头注入已实现，本轮未用真实 Claude 会话验证；
 - 客户端在 `response.completed` 之前主动断开时仍拿不到该次用量；
-- 钉选账号在 401/403 时会回落到池内其它账号（与 HTTP native 的 pinned fallback 一致）。
+- 钉选账号在 401/403 时会回落到池内其它账号（与 HTTP native 的 pinned fallback 一致）；
+- 429/配额分支使用隔离 Server + 假上游验证，没有消耗真实账号配额；AWS 上的真实配额
+  耗尽本轮未复现。
 
 ## 6. 原始设计（保留）
 

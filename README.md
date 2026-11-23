@@ -109,7 +109,6 @@ aih codex update --proxy http://127.0.0.1:8080  # 仅本次更新使用代理
 aih claude update --proxy http://127.0.0.1:8080
 aih agy update --proxy http://127.0.0.1:8080
 aih codex -- update                   # 需要官方 CLI 原生 update 时显式透传
-
 aih codex set-default 3               # 设置默认账号（作用见上）
 aih codex set-default                 # 宿主原生 CLI 改走 AIH Server
 aih codex unset-default
@@ -131,6 +130,16 @@ aih claim --dry-run                   # 每日签到 / 活动福利：先看有�
 ```
 
 `aih <provider> install|update [--proxy[=<选择器或 HTTP(S) URL>]]` 只作用于本次任务，不写入全局配置；不加旗标则继承当前代理环境。裸 `--proxy` 选择 `auto`，支持 `--proxy 名称`、`--proxy=稳定ID`、`ssh:conn_...` 或 `pool`；同名冲突请用稳定 ID，下一项旗标不会被当成代理值。显式 HTTP(S) URL 仍可离线于 AIH Server 使用；SOCKS URL 需先转换为 HTTP 代理。Windows 上无法保证遵守代理的官方安装器会明确拒绝，不回落直连。
+
+**不加 `--proxy` 时会自动兜底**：先直连，只有当失败明确属于网络层（DNS 解析失败、连接超时/被拒/被重置、网络不可达、代理隧道失败）才自动取一个可用受管出口重试。版本不存在、权限不足、安装脚本报错等不触发——换个出口不会让它们成功。选中出口不可用时按 Server 的候选顺序换下一个，终端会逐条说明：
+
+```
+[aih] 由于连接被拒绝，已自动启用代理 AWS（仅本次任务，不改全局配置）。
+[aih] 代理 AWS 不可用（DNS 解析失败），已自动切换到 🇯🇵JP02。
+[aih] 本次经自动代理 🇯🇵JP02 完成；全局代理配置未改动。
+```
+
+显式 `--proxy` 时**绝不**自动换出口——你选的就是唯一出口，失败即失败。缺 CLI 时的自动安装（`aih <provider>` 交互确认后运行官方安装器）走同一套轮换，且允许从本地 `config:server` 兜底管理密钥（仅回环地址生效）。
 
 命名/自动选择使用既有管理面配置（`AIH_SERVER_BASE_URL` / `AIH_SERVER_MANAGEMENT_KEY`，Node 入口也读取现有 Server 配置；显式指定远程地址时须同时提供对应管理 key），申请任务 lease。远程 CLI 不使用 Server 的 localhost 地址：CLI 在自己的 `127.0.0.1` 随机端口建立认证入口，每个连接通过带管理认证的 HTTP Upgrade 转发到租约代理，TLS 证书验证保持不变。正常完成、失败及取消都会关闭本机入口并释放 lease；崩溃残留由 Server 在 3 小时到期时清理。管理凭据不传给安装器。
 

@@ -392,7 +392,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 	}
 	// 官方 CLI 的安装位置、安装计划与版本源统一由工具箱回答；Runner 用同一
 	// 份事实解析可执行文件，安装成功即能被下一次启动发现（例如 ~/.local/bin）。
-	cliLifecycle := newAppsCLILifecycle(options.AIHomeDir, hostHomeDir)
+	// 自动代理同理：缺 CLI 的自动安装与 aih <provider> install 走同一套出口轮换。
+	cliLifecycle := newAppsCLILifecycle(options.AIHomeDir, hostHomeDir, localEgressProvider(ctx, options.AIHomeDir))
 	runner, err := providercli.NewRunner(providercli.Options{
 		Credentials:  credentials,
 		Stdin:        options.Stdin,

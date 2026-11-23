@@ -8,6 +8,10 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
 )
 
+// CLILifecycleFunc 是一次 CLI 安装或更新的统一签名。
+// 调用方据此在「直连失败 → 换出口重试」时按同一入口重跑，而不复制计划差异。
+type CLILifecycleFunc func(ctx context.Context, provider string, opts Options, explicitProxy bool, progress func(string)) (CLIUpdateResult, error)
+
 // InstallCLI uses the catalog's official install plans, with the same terminal
 // cancellation and executable/version verification as UpdateCLI.
 func InstallCLI(ctx context.Context, provider string, opts Options, explicitProxy bool, progress func(string)) (CLIUpdateResult, error) {

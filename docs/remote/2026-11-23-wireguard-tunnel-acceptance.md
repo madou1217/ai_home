@@ -12,16 +12,27 @@
 
 ## 2. 网络前提与传输路径
 
-两台测试机都没有可达的入站 UDP 端口：
+端口号不是约束，协议才是。实测两端的入站规则：
 
-- AWS 侧安全组未放行 UDP；实例 IAM 角色 `AWSEC2RoleforDefaultAWSServiceAccess`
-  没有 `ec2:DescribeInstances` / `ec2:AuthorizeSecurityGroupIngress` 权限，
-  无法由会话自行放行；
-- `desired.cn` 侧只转发 TCP 端口，51820/443/22008 的 UDP 均不可达。
+| 目标 | 协议/端口 | 结果 |
+|---|---|---|
+| AWS | UDP 53 / 123 / 443 / 500 / 4500 / 3478 / 51820 | 全部收不到包 |
+| AWS | TCP 443 / 80 / 8080 / 8443 / 2222 | 全部连接超时 |
+| AWS | TCP 22 | 唯一可达（SSH） |
+| desired.cn | UDP 51820 / 443 / 22008 | 全部收不到包 |
+| desired.cn | TCP 22008 | 唯一可达（SSH） |
 
-因此验收用 SSH 转发的 TCP 通道承载 WireGuard 的 UDP 报文（两端各一个最小编码的
-UDP-over-TCP 中继进程），仅作为测试环境传输垫片。WireGuard 本身仍是真实密钥、
-真实握手、真实数据面，没有伪报。
+也就是说，AWS 安全组与 desired.cn 的端口映射都只放行了各自的 SSH 端口。把 WireGuard
+改听 443 或任何“已知开放端口”都不成立——这些端口在入站方向并未开放；51820 只是
+WireGuard 的默认值，与阻塞原因无关。
+
+- AWS 侧无法自行放行：实例 IAM 角色 `AWSEC2RoleforDefaultAWSServiceAccess`
+  没有 `ec2:DescribeInstances` / `ec2:AuthorizeSecurityGroupIngress` 权限，本机也没有
+  其他 AWS 凭据；路由器不支持 NAT-PMP/UPnP，两台主机也没有全局 IPv6。
+
+因此在“条件无法改变”时的解法是：复用唯一开放端口（SSH/22）承载 WireGuard 的 UDP
+报文（两端各一个最小编码的 UDP-over-TCP 中继进程）。WireGuard 仍是真实密钥、真实
+握手、真实数据面，没有伪报；这不需要新开端口，也不依赖云权限。
 
 ## 3. 插件路径验收
 

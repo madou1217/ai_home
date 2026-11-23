@@ -142,6 +142,26 @@ export default function NetworkConnectorPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const focusConnector = (connectorId: string) => {
+    const target = document.getElementById(`connector-${connectorId}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // 深链：/ui/toolkit?panel=network-access#tailscale 或 ?connector=tailscale
+  useEffect(() => {
+    if (!connectors.length) return;
+    const hash = window.location.hash.replace(/^#/, '').trim();
+    const query = new URLSearchParams(window.location.search).get('connector') || '';
+    const key = hash || query;
+    if (!key) return;
+    const match = connectors.find(
+      (view) => view.connector.id === key || view.connector.name === key
+    );
+    if (match) {
+      window.setTimeout(() => focusConnector(match.connector.id), 50);
+    }
+  }, [connectors]);
+
   useEffect(() => {
     if (!busy) return undefined;
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -239,6 +259,21 @@ export default function NetworkConnectorPanel() {
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
       </header>
 
+      {connectors.length ? (
+        <Space wrap size={6} style={{ marginBottom: 4 }}>
+          <Typography.Text type="secondary">快速定位连接器：</Typography.Text>
+          {connectors.map((view) => (
+            <Button
+              key={`focus:${view.connector.instanceId}:${view.connector.contributionId}`}
+              size="small"
+              icon={<ApiOutlined />}
+              onClick={() => focusConnector(view.connector.id)}
+            >
+              {view.connector.name || view.connector.id}
+            </Button>
+          ))}
+        </Space>
+      ) : null}
       {!loading && !connectors.length ? <Empty description="当前没有启用网络连接器插件" /> : null}
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         {connectors.map((view) => {
@@ -253,7 +288,9 @@ export default function NetworkConnectorPanel() {
           return (
             <Card
               key={`${connector.instanceId}:${connector.contributionId}`}
+              id={`connector-${connector.id}`}
               size="small"
+              style={{ scrollMarginTop: 72 }}
               title={<Space><ApiOutlined /><strong>{connector.name || connector.id}</strong>{connector.transport ? <Tag>{connector.transport}</Tag> : null}</Space>}
             >
               <Space direction="vertical" size={10} style={{ width: '100%' }}>

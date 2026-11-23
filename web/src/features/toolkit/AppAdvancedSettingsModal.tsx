@@ -24,6 +24,7 @@ import ProviderNetworkSettings from '@/features/provider-config/ProviderNetworkS
 import { supportsClaudePreflight } from '@/components/toolkit/managed-app-capabilities';
 import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
 import ClaudePreflightSettings from './ClaudePreflightSettings';
+import Upstream429SettingsPanel from './Upstream429SettingsPanel';
 import {
   blockingSubcommands,
   describeSelectionCommand,
@@ -109,8 +110,11 @@ export default function AppAdvancedSettingsModal({
     // 网络对所有 agent/harness 都可用：官方账号需要验证网络或设置代理，
     // 默认出口跟随 OAuth 授权网络，账号可独立覆盖。
     items.push({ key: 'network', label: '网络' });
+    if (provider) {
+      items.push({ key: 'upstream429', label: '429 重试' });
+    }
     return items;
-  }, [showConfigTab, showPermissionTab, showPreflightTab]);
+  }, [provider, showConfigTab, showPermissionTab, showPreflightTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -624,6 +628,8 @@ export default function AppAdvancedSettingsModal({
             <div className="aas-config-pane">
               <ProviderNetworkSettings provider={provider} />
             </div>
+          ) : activeTab === 'upstream429' && provider ? (
+            <Upstream429SettingsPanel provider={provider} />
           ) : null}
           </div>
         </div>

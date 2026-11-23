@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/mcpselection"
 )
 
 var (
@@ -76,6 +78,9 @@ func isManagedValueFlag(flag string, prior []string) bool {
 	switch flag {
 	case "--provider", "--scope", "--account", "--model", "--model-alias":
 		return true
+	case "--mcp":
+		// 只有 Provider 启动位上的 --mcp 是 aih 自己解析的名单。
+		return isProviderName(head) && mcpselection.Supports(head)
 	}
 	if head == "shell" && flag == "--shell" {
 		return true
@@ -247,6 +252,11 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	}
 
 	switch lastPrior {
+	case "--mcp":
+		if isProviderName(head) && mcpselection.Supports(head) {
+			addMCPNames(target, context, head, current)
+			return target.items
+		}
 	case "--provider":
 		for _, provider := range providerNames() {
 			target.add(provider, describeProvider(provider), groupProvider, "")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/mcpselection"
 	"github.com/madou1217/ai_home/internal/runtime/shellsetup"
 )
 
@@ -394,6 +395,14 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		},
 		modelLister: func(request modelRequest) []modelChoice {
 			return listModelCandidates(aiHome, request)
+		},
+		mcpLister: func(provider string) []string {
+			// 名单读取有 2s 上限；补全路径上失败即空，绝不让 TAB 等错误。
+			names, err := mcpselection.Names(provider)
+			if err != nil {
+				return nil
+			}
+			return names
 		},
 		remoteTargetLister: func(request remoteTargetRequest) []remoteTargetChoice {
 			return listRemoteTargetCandidates(aiHome, request)

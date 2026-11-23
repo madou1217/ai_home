@@ -19,11 +19,35 @@ func addHistoryCandidates(target *collector, context *resolverContext, current, 
 	}
 }
 
-func addSessionFlags(target *collector) {
-	for _, flag := range sessionFlags {
+func addSessionFlags(target *collector, provider string) {
+	for _, flag := range providerSessionFlags(provider) {
 		target.add(flag.Name, flag.Summary, groupFlag, "")
 	}
 	target.add(escapeHatchValue, escapeHatchSummary, groupOther, "")
+}
+
+// addMCPNames 补全 --mcp 的取值。当前词里的逗号表示「继续追加」：
+// `--mcp demo,` 的候选会保留已敲的前缀，并排除已经选中的名字。
+func addMCPNames(target *collector, context *resolverContext, provider, current string) {
+	if context.mcpLister == nil {
+		return
+	}
+	prefix := ""
+	if index := strings.LastIndex(current, ","); index >= 0 {
+		prefix = current[:index+1]
+	}
+	selected := make(map[string]bool)
+	for _, name := range strings.Split(strings.TrimSuffix(prefix, ","), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			selected[name] = true
+		}
+	}
+	for _, name := range context.mcpLister(provider) {
+		if selected[name] {
+			continue
+		}
+		target.add(prefix+name, "MCP 服务器", groupMCP, "")
+	}
 }
 
 func addPeerMessageIds(target *collector, context *resolverContext, current string) {
@@ -129,6 +153,10 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 		}
 		addAccounts(target, context, head, false)
 		target.add(escapeHatchValue, escapeHatchSummary, groupOther, "")
+		// 用户已经开始敲旗标：直接给出本次启动可用的旗标，而不是只有动作名。
+		if strings.HasPrefix(current, "-") {
+			addSessionFlags(target, head)
+		}
 		addHistoryCandidates(target, context, current, head)
 		return target.items
 	}
@@ -179,7 +207,7 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 				}
 			}
 		}
-		addSessionFlags(target)
+		addSessionFlags(target, head)
 		return target.items
 	}
 	if len(prior) == 3 && sessionPositionActions[at(prior, 2)] && !strings.HasPrefix(at(prior, 1), "-") {
@@ -191,7 +219,7 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 			target.add(flag, describeFlag(flag), groupFlag, "")
 		}
 	}
-	addSessionFlags(target)
+	addSessionFlags(target, head)
 	return target.items
 }
 

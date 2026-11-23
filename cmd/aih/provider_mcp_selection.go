@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
-	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/mcpselection"
 )
 
 func applyCodexMCPFlags(args []string) ([]string, error) {
@@ -17,11 +15,7 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 	only := make([]string, 0, 4)
 	addOnly := func(value string) {
 		onlySet = true
-		for _, item := range strings.Split(value, ",") {
-			if item = strings.TrimSpace(item); item != "" {
-				only = append(only, item)
-			}
-		}
+		only = append(only, mcpselection.SplitList(value)...)
 	}
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
@@ -54,9 +48,9 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 		return kept, nil
 	}
 	if len(only) == 0 {
-		return nil, errors.New("--mcp 名单为空")
+		return nil, mcpselection.ErrNoSelection
 	}
-	names, err := listCodexMCPNames()
+	names, err := mcpselection.CodexNames()
 	if err != nil {
 		return nil, err
 	}
@@ -74,48 +68,10 @@ func applyCodexMCPFlags(args []string) ([]string, error) {
 	return append(pairs, kept...), nil
 }
 
-func listCodexMCPNames() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	output, err := exec.CommandContext(ctx, "codex", "mcp", "list", "--json").Output()
-	if err != nil {
-		return nil, fmt.Errorf("读取 Codex MCP 名单失败: %w", err)
+// disabledMCPNames 校验名单并返回「未选中」的名字；名单事实来自 mcpselection。
+func disabledMCPNames(all, only []string) ([]string, error) {
+	if missing := mcpselection.Missing(all, only); len(missing) > 0 {
+		return nil, fmt.Errorf("未配置的 Codex MCP: %s", strings.Join(missing, ","))
 	}
-	var entries []any
-	if err := json.Unmarshal(output, &entries); err != nil {
-		return nil, fmt.Errorf("Codex MCP 名单格式无效: %w", err)
-	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		switch value := entry.(type) {
-		case string:
-			names = append(names, value)
-		case map[string]any:
-			if name, ok := value["name"].(string); ok && name != "" {
-				names = append(names, name)
-			}
-		}
-	}
-	return names, nil
-}
-
-func disabledMCPNames(all []string, only []string) ([]string, error) {
-	allowed := make(map[string]bool, len(all))
-	for _, name := range all {
-		allowed[name] = true
-	}
-	selected := make(map[string]bool, len(only))
-	for _, name := range only {
-		if !allowed[name] {
-			return nil, fmt.Errorf("未配置的 Codex MCP: %s", name)
-		}
-		selected[name] = true
-	}
-	disabled := make([]string, 0, len(all))
-	for _, name := range all {
-		if !selected[name] {
-			disabled = append(disabled, name)
-		}
-	}
-	return disabled, nil
+	return mcpselection.Remaining(all, only), nil
 }

@@ -79,6 +79,7 @@ type resolverContext struct {
 	peerLister         func(current string) []peerChoice
 	peerMessageLister  func(current string) []peerChoice
 	modelLister        func(request modelRequest) []modelChoice
+	mcpLister          func(provider string) []string
 	remoteTargetLister func(request remoteTargetRequest) []remoteTargetChoice
 	workspaceLister    func(request workspaceRequest) []remoteTargetChoice
 	aihServerProfileID string

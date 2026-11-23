@@ -1,6 +1,10 @@
 package completion
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/mcpselection"
+)
 
 // sessionFlags 是 aih 自己的持久会话旗标（在 Provider 参数之前被摘走）。
 var sessionFlags = []namedSummary{
@@ -13,6 +17,22 @@ var sessionFlags = []namedSummary{
 	{Name: "--remote", Summary: "指定远程主机名（远程粘贴通道）"},
 	{Name: "--model", Summary: "本次启动请求的模型名"},
 	{Name: "--model-alias", Summary: "本次启动的临时转发：A 请求实际用 B（不落库）"},
+}
+
+// mcpSessionFlags 只在实现了 MCP 选择入口的 Provider 上出现。
+var mcpSessionFlags = []namedSummary{
+	{Name: "--mcp", Summary: "只启用列出的 MCP（逗号分隔，可多选）"},
+	{Name: "--no-mcp", Summary: "本次会话不启用任何 MCP"},
+}
+
+// providerSessionFlags 是某个 Provider 启动位的旗标面：通用会话旗标 +
+// 该 Provider 实际支持的扩展旗标。支持判定来自 mcpselection，避免两处各写一份。
+func providerSessionFlags(provider string) []namedSummary {
+	flags := append([]namedSummary(nil), sessionFlags...)
+	if mcpselection.Supports(provider) {
+		flags = append(flags, mcpSessionFlags...)
+	}
+	return flags
 }
 
 const escapeHatchValue = "--"

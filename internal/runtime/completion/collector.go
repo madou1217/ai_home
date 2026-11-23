@@ -27,6 +27,7 @@ const (
 	groupFlag       = "选项"
 	groupHistory    = "历史（你用过）"
 	groupModel      = "模型"
+	groupMCP        = "MCP"
 	groupOther      = "其它"
 )
 

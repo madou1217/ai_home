@@ -6,5 +6,6 @@
 // 只读 HTTP 查询，失败时不使用本地 Provider/账号/模型候选。所有对外入口都保证：
 //   - 退出码永远为 0；
 //   - stdout 只写协议行，诊断只在 --debug 时写 stderr；
-//   - 不启动 Node，不触碰网络（代理候选除外，且有 650ms 上限与本地缓存）。
+//   - 不启动 Node，不触碰网络（代理候选除外，且有 650ms 上限与本地缓存）；
+//   - 唯一的子进程是 `codex mcp list --json`（--mcp 取值候选，2s 上限，失败即空）。
 package completion

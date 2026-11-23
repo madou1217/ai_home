@@ -21,6 +21,8 @@ var flagSummaries = map[string]string{
 	"--mode":                "peer 的投递模式",
 	"--model":               "本次启动请求的模型名",
 	"--model-alias":         "本次启动的临时转发：请求 A 实际用 B",
+	"--mcp":                 "只启用列出的 MCP（逗号分隔；Codex / Claude）",
+	"--no-mcp":              "本次会话不启用任何 MCP",
 	"--no-browser":          "不打开浏览器（设备码直接打印）",
 	"--completion":          "开启 TAB 补全",
 	"--typo":                "开启命令纠错建议",

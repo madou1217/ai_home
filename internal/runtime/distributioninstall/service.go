@@ -1,7 +1,6 @@
 package distributioninstall
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -147,7 +146,10 @@ func installStableLauncher(o Options) error {
 		return err
 	}
 	target := filepath.Join(o.Home, "bin", "aih-launch")
-	if existing, readErr := os.ReadFile(target); readErr == nil && bytes.Equal(existing, raw) {
+	// The launcher carries the macOS TCC grant. Replacing it changes its code
+	// identity and forces the user to grant Screen Recording and Accessibility
+	// again, so an existing installation is never overwritten by an upgrade.
+	if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
 		return nil
 	}
 	dir := filepath.Dir(target)

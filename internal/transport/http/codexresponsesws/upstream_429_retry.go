@@ -123,6 +123,19 @@ func (outcome wsDialOutcome) allowsPoolFailover() bool {
 	return outcome.failure.ResponseFailure().Retryable()
 }
 
+// rejectsCredential reports an account-level authentication rejection. Other
+// accounts in the same pool may still be healthy, so handshake must skip this
+// account instead of ending the whole turn with the first 401/403.
+func (outcome wsDialOutcome) rejectsCredential() bool {
+	if outcome.failure.IsValid() {
+		switch outcome.failure.RuntimeKind() {
+		case runtimecore.FailureCredentialRejected, runtimecore.FailureStaticCredentialRejected:
+			return true
+		}
+	}
+	return outcome.wsErr.status == http.StatusUnauthorized || outcome.wsErr.status == http.StatusForbidden
+}
+
 type ws429Candidate struct {
 	route             runtimecore.ModelRoute
 	evidence          upstreamretry.Evidence
@@ -322,9 +335,13 @@ func (handler *Handler) connectUpstreamForTurn(
 					return nil, codexwebsocket.Selection{}, runtimecore.ModelRoute{}, false
 				}
 				excludePinned = []accountcore.AccountRef{selection.AccountRef()}
+			} else if outcome.rejectsCredential() {
+				// 账号级 401/403：钉选账号可能已失效，但池里其它账号仍然健康，
+				// 把它加入排除集后继续 Phase 1，而不是把第一次鉴权失败直接交给客户端。
+				excludePinned = []accountcore.AccountRef{selection.AccountRef()}
 			} else {
 				// 尚未进入合法 raw HTTP 429 恢复前，任何非 429 或不合格 429（如 503/网络超时/
-				// 硬配额/401 等）都严格保持基线单次握手返回映射错误并终止，不跨账号回落。
+				// 硬配额等）都严格保持基线单次握手返回映射错误并终止，不跨账号回落。
 				handler.writeTerminalWSError(session, lastErr)
 				return nil, codexwebsocket.Selection{}, runtimecore.ModelRoute{}, false
 			}
@@ -498,9 +515,9 @@ func (handler *Handler) runHandshakePoolPhase(
 				originObservation: selection.CredentialObservation(),
 			})
 		}
-		// 本 turn 尚未观察到任何合法 raw HTTP 429 时，严禁把 503/超时/断连等普通失败升级为
-		// 跨账号握手重试：立即返回当前账号的映射错误并保持基线单次握手语义。
-		if !enteredRaw429Recovery || !outcome.allowsPoolFailover() {
+		// 账号级 401/403 可以换一个账号重试；其它非 429 失败（503/超时/断连）仍保持
+		// 基线单次握手语义，不把普通故障升级为全池重试。
+		if !outcome.rejectsCredential() && (!enteredRaw429Recovery || !outcome.allowsPoolFailover()) {
 			handler.writeTerminalWSError(session, lastErr)
 			return nil, codexwebsocket.Selection{}, runtimecore.ModelRoute{}, false
 		}

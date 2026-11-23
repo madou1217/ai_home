@@ -19,10 +19,26 @@ const NetworkConnectorCapability = "network.connector"
 
 const (
 	defaultNetworkConnectorTimeout = 10 * time.Second
+	installNetworkConnectorTimeout = 10 * time.Minute
+	lifecycleConnectorTimeout      = 2 * time.Minute
 	maxNetworkConnectorPayload     = 256 * 1024
 	maxNetworkConnectorItems       = 64
 	maxNetworkConnectorText        = 512
+	maxNetworkConnectorOutputLines = 40
 )
+
+// networkConnectorTimeoutForAction 给长耗时生命周期操作留出预算：
+// Homebrew 安装/卸载可能超过 10 秒，而状态探测仍必须快速失败。
+func networkConnectorTimeoutForAction(action string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "install", "uninstall":
+		return installNetworkConnectorTimeout
+	case "enable", "disable":
+		return lifecycleConnectorTimeout
+	default:
+		return defaultNetworkConnectorTimeout
+	}
+}
 
 var (
 	networkConnectorIPv4RE = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
@@ -102,6 +118,7 @@ type NetworkConnectorOperationResult struct {
 	OK          bool                    `json:"ok"`
 	Changed     bool                    `json:"changed,omitempty"`
 	Message     string                  `json:"message,omitempty"`
+	Output      []string                `json:"output,omitempty"`
 	Status      *NetworkConnectorStatus `json:"status,omitempty"`
 }
 
@@ -229,7 +246,7 @@ func (s *Service) operateNetworkConnector(ctx context.Context, connectorID, acti
 		"action":        operation,
 		"input":         input,
 	}
-	raw, err := s.runtime.Invoke(ctx, lease.Generation, owner.ID, payload, defaultNetworkConnectorTimeout)
+	raw, err := s.runtime.Invoke(ctx, lease.Generation, owner.ID, payload, networkConnectorTimeoutForAction(operation))
 	if err != nil {
 		return NetworkConnectorOperationResult{}, err
 	}
@@ -296,6 +313,7 @@ func decodeNetworkConnectorOperation(raw json.RawMessage) (NetworkConnectorOpera
 		result.Message = "连接器操作失败"
 	}
 	result.Message = sanitizeNetworkConnectorText(result.Message, maxNetworkConnectorText)
+	result.Output = sanitizeNetworkConnectorOutput(result.Output)
 	if result.Status != nil {
 		sanitized := sanitizeNetworkConnectorStatus(*result.Status)
 		result.Status = &sanitized
@@ -305,6 +323,27 @@ func decodeNetworkConnectorOperation(raw json.RawMessage) (NetworkConnectorOpera
 		}
 	}
 	return result, nil
+}
+
+func sanitizeNetworkConnectorOutput(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	output := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		output = append(output, sanitizeNetworkConnectorText(trimmed, maxNetworkConnectorText))
+		if len(output) >= maxNetworkConnectorOutputLines {
+			break
+		}
+	}
+	if len(output) == 0 {
+		return nil
+	}
+	return output
 }
 
 func requiresNetworkConnectorConfirmation(operation NetworkConnectorOperation) bool {

@@ -31,6 +31,12 @@ const CONNECTIVITY_LABELS: Record<NetworkConnectorConnectivityMode, string> = {
 const INPUT_OPERATIONS = new Set(['configure', 'connect', 'login', 'authenticate', 'auth']);
 const CONFIRM_OPERATIONS = new Set(['install', 'uninstall', 'enable', 'disable', 'configure']);
 
+interface ConfigField {
+  key: string;
+  description?: string;
+  secret: boolean;
+}
+
 function actionLabel(operation: NetworkConnectorOperation) {
   return operation.label || operation.id;
 }
@@ -56,6 +62,23 @@ function inputKey(view: NetworkConnectorView, operation: NetworkConnectorOperati
   return `${view.connector.contributionId}:${operation.id}`;
 }
 
+function configFields(view: NetworkConnectorView): ConfigField[] {
+  const schema = view.connector.config?.schema as { properties?: Record<string, unknown> } | undefined;
+  const properties = schema?.properties;
+  if (!properties || typeof properties !== 'object') return [];
+  const secretFields = new Set(view.connector.config?.secretFields || []);
+  return Object.entries(properties)
+    .filter(([, value]) => value && typeof value === 'object')
+    .map(([key, value]) => {
+      const description = (value as { description?: unknown }).description;
+      return {
+        key,
+        description: typeof description === 'string' ? description : undefined,
+        secret: secretFields.has(key)
+      };
+    });
+}
+
 function operationDisabled(
   operation: NetworkConnectorOperation,
   status: NetworkConnectorView['status']
@@ -73,6 +96,7 @@ function operationDisabled(
     case 'disable':
       return !status.installed || !status.enabled;
     case 'configure':
+      return false;
     case 'connect':
     case 'login':
     case 'authenticate':
@@ -91,7 +115,11 @@ export default function NetworkConnectorPanel() {
   const [connectors, setConnectors] = useState<NetworkConnectorView[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState('');
+  const [busySince, setBusySince] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [configValues, setConfigValues] = useState<Record<string, Record<string, string>>>({});
+  const [results, setResults] = useState<Record<string, NetworkConnectorOperationResult>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,29 +134,55 @@ export default function NetworkConnectorPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!busy) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [busy]);
+
   const operate = async (view: NetworkConnectorView, operation: NetworkConnectorOperation, confirmed = false) => {
     const key = `${view.connector.contributionId}:${operation.id}`;
+    const connectorId = view.connector.id;
     setBusy(key);
+    setBusySince(Date.now());
     try {
-      const kind = operationInputKind(operation, view);
-      const raw = (inputs[inputKey(view, operation)] || '').trim();
+      const fields = configFields(view);
       let input: unknown = {};
-      if (kind === 'secret' && raw) {
-        input = { value: raw };
-      } else if (kind === 'custom' && raw) {
-        try {
-          input = JSON.parse(raw) as unknown;
-        } catch (_error) {
+      if (operation.id === 'configure' && fields.length) {
+        const values = configValues[connectorId] || {};
+        const next: Record<string, string> = {};
+        for (const field of fields) {
+          const value = (values[field.key] || '').trim();
+          if (value) next[field.key] = value;
+        }
+        input = next;
+      } else {
+        const kind = operationInputKind(operation, view);
+        const raw = (inputs[inputKey(view, operation)] || '').trim();
+        if (kind === 'secret' && raw) {
           input = { value: raw };
+        } else if (kind === 'custom' && raw) {
+          try {
+            input = JSON.parse(raw) as unknown;
+          } catch (_error) {
+            input = { value: raw };
+          }
         }
       }
-      const result = await toolkitAPI.operateNetworkConnector(view.connector.id, operation.id, input, confirmed);
+      const result = await toolkitAPI.operateNetworkConnector(connectorId, operation.id, input, confirmed);
+      setResults((current) => ({ ...current, [connectorId]: result }));
       message[result.ok ? 'success' : 'error'](resultText(result));
       await load();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '网络连接器操作失败');
+      const detail = error instanceof Error ? error.message : '网络连接器操作失败';
+      setResults((current) => ({
+        ...current,
+        [connectorId]: { connectorId, action: operation.id, ok: false, message: detail }
+      }));
+      message.error(detail);
     } finally {
       setBusy('');
+      setBusySince(0);
     }
   };
 
@@ -151,6 +205,11 @@ export default function NetworkConnectorPanel() {
           const connector = view.connector;
           const status = view.status;
           const mode = status?.connectivity?.mode;
+          const fields = configFields(view);
+          const result = results[connector.id];
+          const activeOperation = busy.startsWith(`${connector.contributionId}:`)
+            ? connector.operations.find((item) => busy === inputKey(view, item))
+            : undefined;
           return (
             <Card
               key={`${connector.instanceId}:${connector.contributionId}`}
@@ -173,6 +232,11 @@ export default function NetworkConnectorPanel() {
                   </InlineNote>
                 ) : null}
                 {view.error ? <InlineNote tone="error">连接器状态读取失败：{view.error}</InlineNote> : null}
+                {activeOperation ? (
+                  <InlineNote tone="info">
+                    正在{actionLabel(activeOperation)}，安装/卸载可能需要数分钟… 已用 {Math.max(0, Math.floor((now - busySince) / 1000))}s
+                  </InlineNote>
+                ) : null}
                 <Space wrap>
                   {connector.operations.map((operation) => {
                     const key = inputKey(view, operation);
@@ -203,9 +267,43 @@ export default function NetworkConnectorPanel() {
                     ) : button;
                   })}
                 </Space>
+                {fields.length ? (
+                  <div>
+                    <Typography.Text type="secondary">
+                      连接器配置：敏感字段只提交给插件，状态列表不回显。
+                    </Typography.Text>
+                    <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
+                      {fields.map((field) => (
+                        <div key={field.key}>
+                          <Typography.Text>{field.key}</Typography.Text>
+                          {field.description ? <Typography.Text type="secondary"> · {field.description}</Typography.Text> : null}
+                          {field.secret ? (
+                            <Input.Password
+                              placeholder="输入敏感值"
+                              value={(configValues[connector.id] || {})[field.key] || ''}
+                              onChange={(event) => setConfigValues((current) => ({
+                                ...current,
+                                [connector.id]: { ...(current[connector.id] || {}), [field.key]: event.target.value }
+                              }))}
+                            />
+                          ) : (
+                            <Input
+                              value={(configValues[connector.id] || {})[field.key] || ''}
+                              onChange={(event) => setConfigValues((current) => ({
+                                ...current,
+                                [connector.id]: { ...(current[connector.id] || {}), [field.key]: event.target.value }
+                              }))}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </Space>
+                  </div>
+                ) : null}
                 {connector.operations.map((operation) => {
                   const inputKind = operationInputKind(operation, view);
                   if (inputKind === 'none') return null;
+                  if (operation.id === 'configure' && fields.length) return null;
                   const key = inputKey(view, operation);
                   return (
                     <div key={`${key}:input`}>
@@ -229,6 +327,19 @@ export default function NetworkConnectorPanel() {
                     </div>
                   );
                 })}
+                {result ? (
+                  <div>
+                    <Typography.Text type={result.ok ? 'success' : 'danger'}>{resultText(result)}</Typography.Text>
+                    {result.output?.length ? (
+                      <details style={{ marginTop: 6 }}>
+                        <summary style={{ cursor: 'pointer' }}>操作日志（{result.output.length} 行）</summary>
+                        <pre style={{ margin: '6px 0 0', maxHeight: 220, overflow: 'auto', fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                          {result.output.join('\n')}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
               </Space>
             </Card>
           );

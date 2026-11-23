@@ -3620,6 +3620,7 @@ export interface NetworkConnectorOperationResult {
   ok: boolean;
   changed?: boolean;
   message?: string;
+  output?: string[];
   status?: NetworkConnectorStatus;
 }
 

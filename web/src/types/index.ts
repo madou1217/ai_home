@@ -3487,6 +3487,7 @@ export interface NativeResourceManagedRecord {
   version?: string;
   digest?: string;
   description?: string;
+  declaration?: string[];
   projection?: string;
   command?: string;
   argCount?: number;

@@ -73,15 +73,20 @@ export default function AihPluginPanel() {
           const enabled = Boolean(instance?.enabled);
           return (
             <Card key={`${plugin.pluginId}:${plugin.version}`} size="small" title={<Space><strong>{plugin.pluginId}</strong><Tag>{plugin.version}</Tag>{signatureTag(plugin.signature)}</Space>}>
-              <Space wrap>
-                <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{enabled ? '运行中' : '已停用'}</Tag>
-                <Typography.Text type="secondary">revision {report?.revision ?? '-'}</Typography.Text>
-                {instance ? (
-                  <>
-                    <Button size="small" icon={enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} loading={busy === (enabled ? 'disable' : 'enable')} onClick={() => void operate(enabled ? 'disable' : 'enable', { instanceId: instance.instanceId })}>{enabled ? '停用' : '启用'}</Button>
-                    <Button size="small" danger icon={<DeleteOutlined />} loading={busy === 'uninstall'} onClick={() => void operate('uninstall', { pluginId: plugin.pluginId, version: plugin.version })}>卸载</Button>
-                  </>
-                ) : null}
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <Typography.Text type="secondary">
+                  贡献项：{plugin.contributes?.length ? plugin.contributes.join(' · ') : '未声明'}
+                </Typography.Text>
+                <Space wrap>
+                  <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{enabled ? '运行中' : '已停用'}</Tag>
+                  <Typography.Text type="secondary">revision {report?.revision ?? '-'}</Typography.Text>
+                  {instance ? (
+                    <>
+                      <Button size="small" icon={enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />} loading={busy === (enabled ? 'disable' : 'enable')} onClick={() => void operate(enabled ? 'disable' : 'enable', { instanceId: instance.instanceId })}>{enabled ? '停用' : '启用'}</Button>
+                      <Button size="small" danger icon={<DeleteOutlined />} loading={busy === 'uninstall'} onClick={() => void operate('uninstall', { pluginId: plugin.pluginId, version: plugin.version })}>卸载</Button>
+                    </>
+                  ) : null}
+                </Space>
               </Space>
             </Card>
           );

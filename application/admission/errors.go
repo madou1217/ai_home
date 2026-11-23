@@ -104,3 +104,18 @@ func IsRejection(err error) bool {
 func NewTransientError(reason Reason, retryAfter time.Duration) *Rejection {
 	return &Rejection{Reason: reason, RetryAfter: retryAfter}
 }
+
+// NewSaturationError 构造“整轮候选仅因并发上限被跳过”的临时拒绝。
+//
+// 与 Canonical Coordinator 的汇合点一致：Retry-After 取当前安装控制器的配置，
+// 未安装时回落到默认最小 1 秒。传输层必须把它映射成可重试的 429，而不是
+// “没有可用账号”的 503 —— 账号是存在的，只是此刻被自己的并发天花板占满。
+func NewSaturationError(reason Reason) *Rejection {
+	seconds := 1
+	if controller := Current(); controller != nil {
+		if configured := controller.Config().RetryAfterSeconds; configured > 0 {
+			seconds = configured
+		}
+	}
+	return &Rejection{Reason: reason, RetryAfter: time.Duration(seconds) * time.Second}
+}

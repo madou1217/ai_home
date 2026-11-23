@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/clientkeystats"
@@ -218,6 +219,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	var last *http.Response
 	var lastRef accountcore.AccountRef
 	contacted := false
+	var selectionErr error
 	transportBudget := nativeTransportRetryBudget
 	defer func() {
 		if last != nil {
@@ -229,6 +231,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		phaseTracker := &codex429Tracker{}
 		for attempt := 0; attempt < 4; attempt++ {
 			selection, found, err := cursor.Next(ctx)
+			if err != nil {
+				selectionErr = err
+			}
 			if err != nil || !found || ctx.Err() != nil {
 				break
 			}
@@ -431,6 +436,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if !contacted {
+		// 选号阶段整轮候选仅因并发天花板被跳过时，账号是存在的、只是此刻满了：
+		// 与 Canonical 汇合点和 WS 入口一致，交回可重试的 429，而不是 503。
+		if selectionErr != nil {
+			trail.selection(selectionErr)
+		}
+		if errors.Is(selectionErr, accountrouting.ErrConcurrencyExhausted) {
+			handler.failAdmission(response, trail, admission.NewSaturationError(admission.ReasonAccountSaturated))
+			return
+		}
 		handler.fail(response, trail, "no_available_account")
 		return
 	}

@@ -21,6 +21,11 @@ type FailureReport struct {
 	Code     string
 	Elapsed  time.Duration
 	Attempts []AttemptReport
+	// Selection 是选号阶段（尚未联系任何上游）失败的截断描述。
+	//
+	// 没有它时，attempts=[] 的 503 无法区分“没有候选账号”和“候选账号全部被并发、
+	// 额度或运行态门禁挡下”。只写错误文本与稳定码，不含凭据。
+	Selection string
 }
 
 // AttemptReport 描述一次失败的上游尝试。
@@ -45,11 +50,12 @@ const maxFailureDetail = 200
 
 // failureTrail 在一次请求内累积失败尝试；没有 FailureLog 时所有方法都是空操作。
 type failureTrail struct {
-	sink     func(FailureReport)
-	clock    func() time.Time
-	model    string
-	started  time.Time
-	attempts []AttemptReport
+	sink      func(FailureReport)
+	clock     func() time.Time
+	model     string
+	started   time.Time
+	attempts  []AttemptReport
+	selectErr string
 }
 
 func (handler *Handler) newFailureTrail(model string) *failureTrail {
@@ -88,16 +94,25 @@ func (trail *failureTrail) attempt(
 	trail.attempts = append(trail.attempts, report)
 }
 
+// selection 记录选号阶段（尚未联系上游）的错误；只保留错误文本。
+func (trail *failureTrail) selection(err error) {
+	if trail.sink == nil || err == nil {
+		return
+	}
+	trail.selectErr = sanitizeDetail(err.Error())
+}
+
 func (trail *failureTrail) finish(status int, code string) {
 	if trail.sink == nil {
 		return
 	}
 	trail.sink(FailureReport{
-		Model:    trail.model,
-		Status:   status,
-		Code:     code,
-		Elapsed:  trail.clock().Sub(trail.started),
-		Attempts: append([]AttemptReport(nil), trail.attempts...),
+		Model:     trail.model,
+		Status:    status,
+		Code:      code,
+		Elapsed:   trail.clock().Sub(trail.started),
+		Attempts:  append([]AttemptReport(nil), trail.attempts...),
+		Selection: trail.selectErr,
 	})
 }
 

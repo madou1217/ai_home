@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/clientkeystats"
@@ -682,6 +683,12 @@ func (handler *Handler) writeSelectionError(
 		code = "model_not_found"
 		message = "当前没有对应的 Codex WebSocket 模型路由"
 		handler.routeMisses.ReportRouteMiss(string(inference.ProviderCodex))
+	} else if errors.Is(err, accountrouting.ErrConcurrencyExhausted) {
+		// 账号存在，只是整轮候选都被自己的并发天花板占满：与准入拒绝同形，
+		// 让客户端稍后重试，而不是让用户以为没有 Codex 账号。
+		status = http.StatusTooManyRequests
+		code = admission.CodeAccountTemporarilyUnavailable
+		message = "Inference capacity is temporarily unavailable, retry later"
 	}
 	writeWebSocketError(client, status, code, message)
 }

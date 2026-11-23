@@ -471,6 +471,10 @@ func (cursor *recruitmentSelectionCursor) Next(ctx context.Context) (Selection, 
 		return Selection{}, false, nil
 	}
 	result, err := cursor.session.Next(ctx)
+	// 仅因并发天花板被跳过是可重试的 429，不能折叠成“整池已耗尽”。
+	if errors.Is(err, accountrouting.ErrConcurrencyExhausted) {
+		return Selection{}, false, err
+	}
 	if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 		return Selection{}, false, nil
 	}
@@ -503,6 +507,9 @@ func (cursor *singleShotSelectionCursor) Next(ctx context.Context) (Selection, b
 	}
 	cursor.done = true
 	result, err := cursor.recruiter.Recruit(ctx, cursor.recruitment, cursor.transports)
+	if errors.Is(err, accountrouting.ErrConcurrencyExhausted) {
+		return Selection{}, false, err
+	}
 	if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 		return Selection{}, false, nil
 	}

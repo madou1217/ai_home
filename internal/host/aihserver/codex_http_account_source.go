@@ -52,6 +52,12 @@ type codexHTTPCursor struct {
 
 func (cursor *codexHTTPCursor) Next(ctx context.Context) (codexresponseshttp.Selection, bool, error) {
 	result, err := cursor.session.Next(ctx)
+	// 钉选账号只被自己的并发天花板挡下时，回落池的“空结果”不能覆盖掉这个可重试事实：
+	// 账号存在、只是此刻满了，客户端应收到 429，而不是“没有可用账号”的 503。
+	var saturation error
+	if errors.Is(err, accountrouting.ErrConcurrencyExhausted) {
+		saturation = err
+	}
 	if errors.Is(err, accountrouting.ErrNoRoutableAccount) && cursor.pinned.IsValid() {
 		request, requestErr := accountrouting.NewRequestExcluding(cursor.source.catalog, "codex", cursor.model, []accountcore.AccountRef{cursor.pinned})
 		cursor.pinned = ""
@@ -63,6 +69,12 @@ func (cursor *codexHTTPCursor) Next(ctx context.Context) (codexresponseshttp.Sel
 			return codexresponseshttp.Selection{}, false, err
 		}
 		result, err = cursor.session.Next(ctx)
+		if saturation != nil && errors.Is(err, accountrouting.ErrNoRoutableAccount) {
+			return codexresponseshttp.Selection{}, false, saturation
+		}
+	}
+	if errors.Is(err, accountrouting.ErrConcurrencyExhausted) {
+		return codexresponseshttp.Selection{}, false, err
 	}
 	if errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 		return codexresponseshttp.Selection{}, false, nil

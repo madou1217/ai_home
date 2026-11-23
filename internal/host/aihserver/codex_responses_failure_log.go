@@ -42,7 +42,7 @@ func formatCodexResponsesFailure(report codexresponseshttp.FailureReport) string
 		entry += fmt.Sprintf(" %dms", attempt.Elapsed.Milliseconds())
 		attempts = append(attempts, entry)
 	}
-	return fmt.Sprintf(
+	merged := fmt.Sprintf(
 		"Codex Responses failed: status=%d code=%s model=%s elapsed_ms=%d attempts=[%s]",
 		report.Status,
 		report.Code,
@@ -50,4 +50,8 @@ func formatCodexResponsesFailure(report codexresponseshttp.FailureReport) string
 		report.Elapsed.Milliseconds(),
 		strings.Join(attempts, "; "),
 	)
+	if report.Selection != "" {
+		merged += fmt.Sprintf(" selection_error=%q", report.Selection)
+	}
+	return merged
 }

@@ -23,9 +23,9 @@ import {
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import Reveal from '@/components/ui/Reveal';
-import HudCube from '@/components/hud/HudCube';
-import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
-import { useSwitchFade } from '@/hooks/use-switch-fade';
+import SectionCard from '@/components/ui/SectionCard';
+import { SettingRow, SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { translationAPI } from '@/services/api';
 import type { TranslationDetectionResponse, TranslationRoutePreference, TranslationProviderOption } from '@/types';
 import {
@@ -56,7 +56,6 @@ import {
   setTranslationFloatingPreferences,
   subscribeTranslationFloatingPreferences,
 } from './translation-preferences';
-import { useAppendEnter } from '@/hooks/use-append-enter';
 import { useTranslationBootstrap, useTranslationStream } from './use-translation';
 import {
   resolveLanguageIntent,
@@ -71,7 +70,7 @@ import { formatTranslationHistoryTime } from './translation-history';
 import { applyPageTranslation, collectPageSegments, createBoundedPageTranslator, type PageTranslationMode, type TranslationPageProgress } from './page-translation';
 import styles from './translation.module.css';
 import SystemTranslationControl from './SystemTranslationControl';
-import TranslationProviderSettings from './TranslationProviderSettings';
+import TranslationProviderSettings, { type TranslationProviderFeedback } from './TranslationProviderSettings';
 
 const CONFIDENCE_LABEL: Record<string, string> = {
   high: '高置信',
@@ -113,21 +112,259 @@ function createRoutePreference(index: number, model: { id: string; provider: str
   };
 }
 
+interface TranslationRoutesSectionProps {
+  routes: TranslationRoutePreference[];
+  providers: TranslationProviderOption[];
+  models: TranslationBootstrap['models'];
+  modelOptions: Array<{ value: string; label: string; title: string }>;
+  onAdd: () => void;
+  onChange: (index: number, patch: Partial<TranslationRoutePreference>) => void;
+  onToggleOperation: (index: number, operation: TranslationRoutePreference['operations'][number]) => void;
+  onMove: (index: number, direction: -1 | 1) => void;
+  onRemove: (index: number) => void;
+}
+
+function TranslationRoutesSection({
+  routes,
+  providers,
+  models,
+  modelOptions,
+  onAdd,
+  onChange,
+  onToggleOperation,
+  onMove,
+  onRemove,
+}: TranslationRoutesSectionProps) {
+  return (
+    <SettingSection
+      title="翻译路由"
+      description="按顺序尝试已启用的路由，每条可限定适用场景。"
+      status={<SettingStatusTag status={routes.length ? 'applied' : 'unset'} label={routes.length ? `已设定 ${routes.length} 条` : '未设定'} compact />}
+      extra={(
+        <Button appVariant="secondary" icon={<PlusOutlined />} onClick={onAdd}>
+          添加路由
+        </Button>
+      )}
+      className={styles.routePanel}
+    >
+      {routes.length ? (
+        <ol className={styles.routeList}>
+          {routes.map((route, index) => {
+            const descriptor = providers.find((item) => item.id === route.provider);
+            const gatewayModels = descriptor?.config.modelSource === 'gateway';
+            const routeModelOptions = route.model && !modelOptions.some((option) => option.value === route.model)
+              ? [{ value: route.model, label: route.model, title: route.model }, ...modelOptions]
+              : modelOptions;
+            return (
+              <li key={route.id} className={styles.routeRow}>
+                <span className={styles.routeOrder}>{index + 1}</span>
+                <Switch
+                  size="small"
+                  checked={route.enabled}
+                  aria-label={`启用路由 ${index + 1}`}
+                  onChange={(enabled) => onChange(index, { enabled })}
+                />
+                <Select
+                  size="small"
+                  className={styles.routeProvider}
+                  value={route.provider}
+                  aria-label={`路由 ${index + 1} 引擎`}
+                  placeholder="引擎"
+                  options={providers.map((item) => ({ value: item.id, label: `${item.label}（${item.configured ? '已设定' : '未设定'}）` }))}
+                  onChange={(provider) => {
+                    const selected = providers.find((item) => item.id === provider);
+                    onChange(index, {
+                      provider,
+                      model: selected?.config.defaultModel || models[0]?.id || '',
+                      modelProvider: selected?.config.modelSource === 'gateway' ? models[0]?.provider || '' : '',
+                    });
+                  }}
+                />
+                {gatewayModels ? (
+                  <Select
+                    size="small"
+                    className={styles.routeModel}
+                    value={route.model || undefined}
+                    options={routeModelOptions}
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="模型"
+                    aria-label={`路由 ${index + 1} 模型`}
+                    onChange={(model) => {
+                      const selected = models.find((item) => item.id === model);
+                      onChange(index, {
+                        model,
+                        ...(selected?.provider ? { modelProvider: selected.provider } : {}),
+                      });
+                    }}
+                  />
+                ) : (
+                  <Input
+                    size="small"
+                    className={styles.routeModel}
+                    value={route.model}
+                    aria-label={`路由 ${index + 1} 模型`}
+                    placeholder={descriptor?.config.defaultModel || 'default'}
+                    onChange={(event) => onChange(index, { model: event.target.value })}
+                  />
+                )}
+                {gatewayModels ? (
+                  <Input
+                    size="small"
+                    className={styles.routeModelProvider}
+                    value={route.modelProvider || ''}
+                    aria-label={`路由 ${index + 1} 模型提供方`}
+                    placeholder="模型提供方"
+                    onChange={(event) => onChange(index, { modelProvider: event.target.value })}
+                  />
+                ) : null}
+                <div className={styles.routeOperations} aria-label={`路由 ${index + 1} 操作`}>
+                  {ROUTE_OPERATIONS.map((operation) => (
+                    <label key={operation.value} className={styles.routeOperation}>
+                      <input
+                        type="checkbox"
+                        checked={route.operations.includes(operation.value)}
+                        onChange={() => onToggleOperation(index, operation.value)}
+                      />
+                      {operation.label}
+                    </label>
+                  ))}
+                </div>
+                <div className={styles.routeActions}>
+                  <Button
+                    appVariant="icon"
+                    aria-label={`路由 ${index + 1} 上移`}
+                    icon={<ArrowUpOutlined />}
+                    disabled={index === 0}
+                    onClick={() => onMove(index, -1)}
+                  />
+                  <Button
+                    appVariant="icon"
+                    aria-label={`路由 ${index + 1} 下移`}
+                    icon={<ArrowDownOutlined />}
+                    disabled={index === routes.length - 1}
+                    onClick={() => onMove(index, 1)}
+                  />
+                  <Button
+                    appVariant="icon"
+                    aria-label={`删除路由 ${index + 1}`}
+                    icon={<MinusCircleOutlined />}
+                    onClick={() => onRemove(index)}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <div className={styles.routeEmpty}>
+          <span>尚未设定额外路由，默认使用上方模型。</span>
+          <Button appVariant="quiet" size="small" icon={<PlusOutlined />} onClick={onAdd}>
+            添加第一条路由
+          </Button>
+        </div>
+      )}
+    </SettingSection>
+  );
+}
+
+interface TranslationHistorySectionProps {
+  entries: ReturnType<typeof useTranslationHistory>['entries'];
+  onClear: () => void;
+  onCopy: (entry: ReturnType<typeof useTranslationHistory>['entries'][number]) => void;
+  onRemove: (id: string) => void;
+  onTryExample: () => void;
+}
+
+function TranslationHistorySection({
+  entries,
+  onClear,
+  onCopy,
+  onRemove,
+  onTryExample,
+}: TranslationHistorySectionProps) {
+  return (
+    <SectionCard
+      title="翻译记录"
+      className={styles.historyCard}
+      bodyStyle={{ padding: 0 }}
+      extra={(
+        <div className={styles.historyHeaderRight}>
+          <span className={styles.paneMeta}>{entries.length} 条 · 仅保存在本机</span>
+          {entries.length ? (
+            <Button
+              appVariant="quiet"
+              aria-label="清空翻译记录"
+              onClick={onClear}
+            >
+              清空记录
+            </Button>
+          ) : null}
+        </div>
+      )}
+    >
+      {entries.length === 0 ? (
+        <div className={styles.historyEmpty}>
+          <strong>暂无翻译记录</strong>
+          <span>完成一次翻译后，原文、译文与模型信息会保存在本机。</span>
+          <Button appVariant="secondary" size="small" onClick={onTryExample}>
+            填入示例开始翻译
+          </Button>
+        </div>
+      ) : (
+        <ul className={styles.historyList}>
+          {entries.map((entry, index) => (
+            <li key={entry.id} data-history-item className={`${styles.historyItem} ${index === 0 ? styles.historyItemLatest : ''}`}>
+              <div className={styles.historyItemHeader}>
+                <span className={styles.historyRoute}>
+                  {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}
+                </span>
+                <span className={styles.historyMeta}>
+                  {entry.model}
+                  {entry.provider ? ` · ${entry.provider}` : ''}
+                  {' · '}
+                  {formatTranslationHistoryTime(entry.createdAt)}
+                </span>
+                <div className={styles.historyActions}>
+                  <Button
+                    appVariant="icon"
+                    aria-label="复制这条译文"
+                    title="复制这条译文"
+                    icon={<CopyOutlined />}
+                    onClick={() => onCopy(entry)}
+                  />
+                  <Button
+                    appVariant="icon"
+                    aria-label="删除这条记录"
+                    title="删除这条记录"
+                    icon={<DeleteOutlined />}
+                    onClick={() => onRemove(entry.id)}
+                  />
+                </div>
+              </div>
+              <div className={styles.historyBody}>
+                <div className={styles.historySource} title={entry.sourceText}>
+                  {entry.sourceText}
+                </div>
+                <div className={styles.historyResult} title={entry.resultText}>
+                  {entry.resultText}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
 export default function TranslationWorkspace() {
   const { status, bootstrap, error: bootstrapError, reload } = useTranslationBootstrap();
   const stream = useTranslationStream();
   const history = useTranslationHistory();
   useTranslationHistoryRecorder(stream.state);
 
-  // 翻译记录是「新的在最上面」：只让新插入的那一条进场（head 模式追加判定）。
-  const historyListRef = useRef<HTMLUListElement | null>(null);
-  const outputRef = useRef<HTMLDivElement | null>(null);
-  const { surfaceRef: historySurfaceRef, switchSurface: switchHistorySurface } = useSurfaceSwitch<HTMLDivElement>();
-  const historyKeys = useMemo(() => history.entries.map((entry) => entry.id), [history.entries]);
-  useAppendEnter(historyListRef, historyKeys, 'translation-history', {
-    selector: '[data-history-item]',
-    direction: 'head'
-  });
+  const sourceInputRef = useRef<{ resizableTextArea?: { textArea?: HTMLTextAreaElement } } | null>(null);
 
   const [text, setText] = useState('');
   const [source, setSource] = useState(AUTO_LANGUAGE);
@@ -143,6 +380,7 @@ export default function TranslationWorkspace() {
   const [routes, setRoutes] = useState<TranslationRoutePreference[]>([]);
   const [providers, setProviders] = useState<TranslationProviderOption[]>([]);
   const [providerDrafts, setProviderDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [providerFeedback, setProviderFeedback] = useState<Record<string, TranslationProviderFeedback>>({});
   const [savingProvider, setSavingProvider] = useState('');
   const [providerError, setProviderError] = useState('');
   const [pageMode, setPageMode] = useState<PageTranslationMode>('side-by-side');
@@ -163,8 +401,17 @@ export default function TranslationWorkspace() {
     void translationAPI.saveProvider(provider, config).then((catalog) => {
       setProviders(catalog);
       setProviderDrafts((current) => ({ ...current, [provider]: {} }));
-      message.success('引擎配置已保存');
-    }).catch(() => setProviderError('保存失败，请检查字段和服务地址')).finally(() => setSavingProvider(''));
+      setProviderFeedback((current) => ({
+        ...current,
+        [provider]: { tone: 'success', message: '已保存并立即可用' },
+      }));
+    }).catch(() => {
+      setProviderError('保存失败，请检查字段和服务地址');
+      setProviderFeedback((current) => ({
+        ...current,
+        [provider]: { tone: 'error', message: '保存失败，请检查字段与服务地址' },
+      }));
+    }).finally(() => setSavingProvider(''));
   }, []);
   const [confirmationDismissed, setConfirmationDismissed] = useState(false);
   const [floatingEnabled, setFloatingEnabled] = useState(
@@ -651,14 +898,17 @@ export default function TranslationWorkspace() {
     });
 
   const pageFailedCount = pageProgress.filter((item) => Boolean(item.error)).length;
-  const outputPhaseKey = resultText ? 'result' : feedback.active ? 'waiting' : 'empty';
-  useSwitchFade(outputRef, outputPhaseKey, { scope: 'translation-output-phase', duration: 165, from: 0.4 });
+  const configuredProviderCount = providers.filter((item) => item.configured).length;
+  const handleTryQuickExample = useCallback(() => {
+    handleTextChange(QUICK_START_EXAMPLES[0]);
+    sourceInputRef.current?.resizableTextArea?.textArea?.focus();
+  }, [handleTextChange]);
 
   return (
     <PageScaffold
-      title="灵感工坊 / 翻译"
+      title="翻译工作台"
       code="TRANSLATE"
-      subTitle="把选区、页面和长文本放进同一条工作流；划词浮层与页面共用默认值。"
+      subTitle="统一处理选区、整页与长文本翻译，划词浮层共用语言与模型默认值。"
       extra={
         <div className={styles.translationControls}>
           <div className={styles.floatingToggle}>
@@ -682,10 +932,25 @@ export default function TranslationWorkspace() {
       }
     >
       <div className={styles.workspace}>
+        {status === 'loading' ? (
+          <div className={styles.inlineNotice} role="status" aria-live="polite">
+            正在读取翻译语言与默认模型…
+          </div>
+        ) : null}
+
+        {status === 'error' ? (
+          <div className={styles.inlineError} role="alert">
+            <span>{bootstrapError || '加载翻译设置失败'}</span>
+            <Button appVariant="quiet" onClick={reload}>
+              重试
+            </Button>
+          </div>
+        ) : null}
+
         <div className={styles.heroBar}>
           <div className={`${styles.languageToolbar} ${styles.heroLanguageControl}`}>
             <div className={styles.languageField}>
-              <span className={styles.fieldLabel}>源语言</span>
+              <label className={styles.fieldLabel} htmlFor="translation-source-language">源语言</label>
               <Select
                 id="translation-source-language"
                 className={styles.languageSelect}
@@ -707,7 +972,7 @@ export default function TranslationWorkspace() {
               />
             </Tooltip>
             <div className={`${styles.languageField} ${styles.targetLanguageField}`}>
-              <span className={styles.fieldLabel}>目标语言</span>
+              <label className={styles.fieldLabel} htmlFor="translation-target-language">目标语言</label>
               <Select
                 id="translation-target-language"
                 className={`${styles.languageSelect} ${styles.targetLanguageSelect}`}
@@ -721,24 +986,23 @@ export default function TranslationWorkspace() {
             </div>
           </div>
           <div className={styles.heroMeta}>
-            <span className={styles.statusPill} data-tone="accent">
-              <span className={styles.statusPillDot} aria-hidden="true" />
-              {detectedStatus}
+            <span className={styles.metaReadout} role="status">
+              识别：{detectedStatus}
             </span>
-            <span className={styles.statusPill} title={selection.model || bootstrap?.defaultModel || '自动选择可用模型'}>
-              模型 · {selection.model || bootstrap?.defaultModel || '自动选择'}
+            <span className={styles.metaReadout} title={selection.model || bootstrap?.defaultModel || '自动选择可用模型'}>
+              模型：{selection.model || bootstrap?.defaultModel || '自动选择'} · {executionTarget}
             </span>
-            <span className={styles.statusPill}>执行 · {executionTarget}</span>
           </div>
         </div>
 
         <div className={styles.panes}>
-          <section className={`${styles.pane} ${styles.paneSource} ${styles['pane--source']}`} aria-labelledby="translation-source-title">
+          <section className={`${styles.pane} ${styles.paneSource}`} aria-labelledby="translation-source-title">
             <header className={styles.paneHeader}>
               <span id="translation-source-title" className={styles.paneTitle}>原文输入</span>
               <span className={styles.paneMeta}>{chars} 字符</span>
             </header>
             <Input.TextArea
+              ref={sourceInputRef}
               className={styles.sourceInput}
               value={text}
               onChange={(event) => handleTextChange(event.target.value)}
@@ -750,7 +1014,7 @@ export default function TranslationWorkspace() {
             />
             {!text && !busy ? (
               <div className={styles.sourceEmptyState} aria-label="快速开始示例">
-                <span className={styles.sourceEmptyEyebrow}>从一个句子开始</span>
+                <span className={styles.sourceEmptyEyebrow}>快速示例</span>
                 <div className={styles.quickExamples}>
                   {QUICK_START_EXAMPLES.map((example) => (
                     <button
@@ -775,7 +1039,7 @@ export default function TranslationWorkspace() {
                   <span className={styles.paneHint}>自动检测输入语言</span>
                 )}
                 {overLimit ? (
-                  <span className={styles.limitWarning}>
+                  <span className={styles.limitWarning} role="alert">
                     超出 {chars - MAX_TRANSLATION_INPUT_CHARS} 字符
                   </span>
                 ) : null}
@@ -802,7 +1066,7 @@ export default function TranslationWorkspace() {
                   disabled={!canTranslate(text) || overLimit || sameLanguage}
                   onClick={() => void handleTranslate()}
                 >
-                  {busy || detecting ? '翻译中' : '翻译'}
+                  {busy || detecting ? '翻译中' : '开始翻译'}
                 </Button>
               </div>
             </footer>
@@ -822,40 +1086,40 @@ export default function TranslationWorkspace() {
             </Reveal>
           </section>
 
-          <section className={`${styles.pane} ${styles.paneResult} ${styles['pane--result']}`} data-phase={feedback.phase} aria-labelledby="translation-result-title" aria-busy={feedback.active}>
+          <section className={`${styles.pane} ${styles.paneResult}`} data-phase={feedback.phase} aria-labelledby="translation-result-title" aria-busy={feedback.active}>
             <header className={styles.paneHeader}>
               <span id="translation-result-title" className={styles.paneTitle}>译文输出</span>
               <span className={styles.paneMeta}>{routeLabel}</span>
             </header>
             <Reveal open={stream.state.status !== 'idle' || detecting}>
               <div className={styles.translationStatus} role="status" aria-live="polite">
-                <span className={styles.statusDot} aria-hidden="true" />
-                <span key={feedback.phase} className={styles.statusCaption}>{feedback.label}</span>
+                <span className={styles.statusCaption}>{feedback.label}</span>
                 <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
               </div>
             </Reveal>
-            <div ref={outputRef} className={styles.output} aria-label="译文输出">
+            <div className={styles.output} aria-label="译文输出">
               {resultText ? (
                 <div className={styles.outputText}>
                   {resultText}
                   {busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
                 </div>
               ) : feedback.active ? (
-                <div className={styles.waitingState}>
+                <div className={styles.waitingState} role="status" aria-live="polite">
                   <span>{feedback.hint}</span>
-                  <div className={styles.waitingSkeleton} aria-hidden="true"><span /><span /><span /></div>
                 </div>
               ) : (
                 <div className={styles.outputEmpty}>
-                  <HudCube size={32} mode={busy ? 'loading' : 'empty'} tone="cyan" interactive={!busy} label="点击弹跳译文工作台全息魔方" />
-                  <strong>{busy ? '正在翻译…' : '译文会在这里流式出现'}</strong>
-                  <span>输入原文并开始翻译，结果会实时显示在这里。</span>
+                  <strong>等待翻译内容</strong>
+                  <span>在左侧输入原文后开始翻译，译文会流式显示在这里。</span>
+                  <Button appVariant="secondary" size="small" onClick={handleTryQuickExample}>
+                    填入示例文本
+                  </Button>
                 </div>
               )}
             </div>
             {stream.state.status === 'error' && stream.state.error ? (
-              <div className={styles.inlineError}>
-                {stream.state.error.message}
+              <div className={styles.inlineError} role="alert">
+                <span>{stream.state.error.message}</span>
                 {stream.state.error.code ? (
                   <code className={styles.errorCode}>{stream.state.error.code}</code>
                 ) : null}
@@ -890,41 +1154,34 @@ export default function TranslationWorkspace() {
                 {stream.state.status === 'cancelled' ? (
                   <Button appVariant="secondary" aria-label="重新翻译" onClick={() => void handleTranslate()}>重新翻译</Button>
                 ) : null}
-                {canCopy ? <Button
-                  appVariant="secondary"
-                  className={copied ? styles.copyConfirmed : undefined}
-                  aria-label={copied ? '已复制译文' : '复制译文'}
-                  icon={copied ? <CheckOutlined /> : <CopyOutlined />}
-                  onClick={handleCopy}
-                >
-                  {copied ? '已复制' : '复制'}
-                </Button> : null}
+                {canCopy ? (
+                  <Button
+                    appVariant="secondary"
+                    className={copied ? styles.copyConfirmed : undefined}
+                    aria-label={copied ? '已复制译文' : '复制译文'}
+                    icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+                    onClick={handleCopy}
+                  >
+                    {copied ? '已复制' : '复制'}
+                  </Button>
+                ) : null}
               </div>
             </footer>
           </section>
         </div>
 
         {fallbackFrom ? (
-          <div className={styles.inlineNotice}>
+          <div className={styles.inlineNotice} role="status">
             已保存的模型 {fallbackFrom} 当前不可用，本次改用{' '}
             {selection.model || '服务端默认模型'}
           </div>
         ) : null}
 
-        {status === 'error' ? (
-          <div className={styles.inlineError}>
-            {bootstrapError || '加载翻译设置失败'}
-            <Button appVariant="quiet" onClick={reload}>
-              重试
-            </Button>
-          </div>
-        ) : null}
-
-        <section className={`${styles.pageTranslationPanel} ${styles.taskStrip}`} aria-labelledby="translation-page-title">
+        <section className={styles.pageTranslationPanel} aria-labelledby="translation-page-title">
           <div className={styles.pageTranslationHeader}>
             <div>
               <span id="translation-page-title" className={styles.paneTitle}>整页翻译</span>
-              <span className={styles.routeHint}>识别正文段落后有界并发翻译，支持旁注或替换。</span>
+              <span className={styles.routeHint}>识别正文段落后并发翻译，支持原文旁注或替换原文。</span>
             </div>
             <div className={styles.pageTranslationActions}>
               <Select
@@ -934,8 +1191,29 @@ export default function TranslationWorkspace() {
                 options={[{ value: 'side-by-side', label: '原文旁注' }, { value: 'replace', label: '替换原文' }]}
                 onChange={setPageMode}
               />
-              {pageBusy ? <Button appVariant="quiet" aria-label="停止整页翻译" onClick={() => pageAbortRef.current?.abort()}>停止</Button> : <Button appVariant="secondary" onClick={() => void translateCurrentPage()}>{pageFailedCount || pageCancelled ? '重试页面翻译' : '翻译当前页面'}</Button>}
-              {pageApplied && !pageBusy ? <Button appVariant="quiet" aria-label="撤回页面译文" onClick={() => { pageUndoRef.current?.(); pageUndoRef.current = null; setPageProgress([]); setPageApplied(false); }}>撤回页面译文</Button> : null}
+              {pageBusy ? (
+                <Button appVariant="quiet" aria-label="停止整页翻译" onClick={() => pageAbortRef.current?.abort()}>
+                  停止
+                </Button>
+              ) : (
+                <Button appVariant="secondary" onClick={() => void translateCurrentPage()}>
+                  {pageFailedCount || pageCancelled ? '重试页面翻译' : '翻译当前页面'}
+                </Button>
+              )}
+              {pageApplied && !pageBusy ? (
+                <Button
+                  appVariant="quiet"
+                  aria-label="撤回页面译文"
+                  onClick={() => {
+                    pageUndoRef.current?.();
+                    pageUndoRef.current = null;
+                    setPageProgress([]);
+                    setPageApplied(false);
+                  }}
+                >
+                  撤回页面译文
+                </Button>
+              ) : null}
             </div>
           </div>
           <Reveal open={Boolean(pageBusy || pageProgress.length || pageCancelled)}>
@@ -947,264 +1225,129 @@ export default function TranslationWorkspace() {
         </section>
 
         <details className={styles.advancedTranslationSettings}>
-          <summary><span className={styles.settingsSummaryTitle}>高级设置</span> <span className={styles.savedHint}>模型、Provider、路由和服务凭据</span><span className={styles.settingsSummaryHint}>按需展开</span></summary>
-          <section className={styles.modelSettings} aria-labelledby="translation-model-settings-title">
-            <div className={styles.routeHeader}>
-              <div>
-                <span id="translation-model-settings-title" className={styles.paneTitle}>默认模型</span>
-                <span className={styles.routeHint}>用于手动翻译、系统取词和浏览器整页翻译；留空时由服务端按可用账号自动选择。</span>
-              </div>
-              <Select
-                className={styles.modelSelect}
-                value={modelValue}
-                options={[
-                  {
-                    value: '',
-                    label: bootstrap?.defaultModel
-                      ? `自动 · ${bootstrap.defaultModel}`
-                      : '自动选择可用模型',
-                  },
-                  ...modelOptions,
-                ]}
-                optionFilterProp="label"
-                showSearch
-                popupMatchSelectWidth={false}
-                onChange={handleModelChange}
-                aria-label="默认翻译模型"
+          <summary>
+            <span className={styles.settingsSummaryTitle}>高级设置</span>
+            <span className={styles.savedHint}>
+              默认模型、系统取词、Provider（已设定 {configuredProviderCount}/{providers.length}）与路由
+            </span>
+            <span className={styles.settingsSummaryHint}>展开配置</span>
+          </summary>
+          <div className={styles.advancedSettingsBody}>
+            <SettingSection
+              title="常规偏好"
+              description="变更会立即保存并同步到划词浮层与整页翻译。"
+              className={styles.generalSettingsSection}
+            >
+              <SettingRow
+                title="默认模型"
+                htmlFor="translation-default-model"
+                description="留空时由服务端按可用账号自动选择。"
+                persistedValue={modelValue ? `已保存：${modelValue}` : '已保存：自动选择'}
+                status={<SettingStatusTag status={modelValue ? 'applied' : 'unset'} label={modelValue ? '已设定' : '自动'} compact />}
+                control={(
+                  <Select
+                    id="translation-default-model"
+                    className={styles.modelSelect}
+                    value={modelValue}
+                    options={[
+                      {
+                        value: '',
+                        label: bootstrap?.defaultModel
+                          ? `自动 · ${bootstrap.defaultModel}`
+                          : '自动选择可用模型',
+                      },
+                      ...modelOptions,
+                    ]}
+                    optionFilterProp="label"
+                    showSearch
+                    popupMatchSelectWidth={false}
+                    onChange={handleModelChange}
+                    aria-label="默认翻译模型"
+                  />
+                )}
               />
-            </div>
-          </section>
-          <section className={styles.systemSettings} aria-labelledby="translation-system-settings-title">
-            <div>
-              <span id="translation-system-settings-title" className={styles.paneTitle}>系统级取词</span>
-              <span className={styles.routeHint}>桌面取词、全局快捷键和权限状态。</span>
-            </div>
-            <SystemTranslationControl persistedExecutionTarget={bootstrap?.settings.executionTarget} />
-          </section>
-          <section className={styles.copySettings} aria-labelledby="translation-copy-settings-title">
-            <div>
-              <span id="translation-copy-settings-title" className={styles.paneTitle}>完成后复制</span>
-              <span className={styles.routeHint}>整段成功完成后复制译文，避免把半成品写入剪贴板。</span>
-            </div>
-            <div className={styles.copySettingsControl}>
-              <Switch
-                size="small"
-                checked={autoCopy}
-                aria-label="完成后自动复制"
-                onChange={(checked) => { setAutoCopy(checked); persist({ autoCopy: checked }); }}
-              />
-              {autoCopy ? <Select
-                size="small"
-                value={copyScope}
-                aria-label="自动复制范围"
-                options={[{ value: 'selection', label: '选区' }, { value: 'page', label: '页面' }, { value: 'all', label: '全部' }]}
-                onChange={(value) => { setCopyScope(value); persist({ copyScope: value }); }}
-              /> : null}
-              <span className={styles.savedHint}>{autoCopy ? '已开启' : '已关闭'}</span>
-            </div>
-          </section>
-          <TranslationProviderSettings
-            providers={providers}
-            drafts={providerDrafts}
-            saving={savingProvider}
-            error={providerError}
-            onChange={(provider, field, value) => setProviderDrafts((current) => ({ ...current, [provider]: { ...current[provider], [field]: value } }))}
-            onSave={saveProvider}
-            onReload={reloadProviders}
-          />
-
-          <section className={styles.routePanel} aria-labelledby="translation-route-title">
-          <header className={styles.routeHeader}>
-            <div>
-              <span id="translation-route-title" className={styles.paneTitle}>翻译路由</span>
-              <span className={styles.routeHint}>按顺序尝试启用的模型；每条路由可限定使用场景。</span>
-            </div>
-            <Button appVariant="secondary" icon={<PlusOutlined />} onClick={handleAddRoute}>
-              添加路由
-            </Button>
-          </header>
-          {routes.length ? (
-            <ol className={styles.routeList}>
-              {routes.map((route, index) => {
-                const descriptor = providers.find((item) => item.id === route.provider);
-                const gatewayModels = descriptor?.config.modelSource === 'gateway';
-                const routeModelOptions = route.model && !modelOptions.some((option) => option.value === route.model)
-                  ? [{ value: route.model, label: route.model, title: route.model }, ...modelOptions]
-                  : modelOptions;
-                return (
-                  <li key={route.id} className={styles.routeRow}>
-                    <span className={styles.routeOrder}>{index + 1}</span>
+              <SettingRow
+                title="完成后自动复制"
+                description="整段翻译成功后自动复制译文到剪贴板。"
+                status={<SettingStatusTag status={autoCopy ? 'applied' : 'unset'} label={autoCopy ? '已开启' : '未开启'} compact />}
+                control={(
+                  <div className={styles.copySettingsControl}>
                     <Switch
                       size="small"
-                      checked={route.enabled}
-                      aria-label={`启用路由 ${index + 1}`}
-                      onChange={(enabled) => handleRouteChange(index, { enabled })}
+                      checked={autoCopy}
+                      aria-label="完成后自动复制"
+                      onChange={(checked) => { setAutoCopy(checked); persist({ autoCopy: checked }); }}
                     />
-                    <Select
-                      size="small"
-                      className={styles.routeProvider}
-                      value={route.provider}
-                      aria-label={`路由 ${index + 1} 引擎`}
-                      placeholder="引擎"
-                      options={providers.map((item) => ({ value: item.id, label: `${item.label}${item.configured ? '' : ' · 待配置'}` }))}
-                      onChange={(provider) => {
-                        const selected = providers.find((item) => item.id === provider);
-                        handleRouteChange(index, { provider, model: selected?.config.defaultModel || models[0]?.id || '', modelProvider: selected?.config.modelSource === 'gateway' ? models[0]?.provider || '' : '' });
-                      }}
-                    />
-                    {gatewayModels ? <Select
-                      size="small"
-                      className={styles.routeModel}
-                      value={route.model || undefined}
-                      options={routeModelOptions}
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="模型"
-                      aria-label={`路由 ${index + 1} 模型`}
-                      onChange={(model) => {
-                        const selected = models.find((item) => item.id === model);
-                        handleRouteChange(index, {
-                          model,
-                          ...(selected?.provider ? { modelProvider: selected.provider } : {}),
-                        });
-                      }}
-                    /> : <Input
-                      size="small"
-                      className={styles.routeModel}
-                      value={route.model}
-                      aria-label={`路由 ${index + 1} 模型`}
-                      placeholder={descriptor?.config.defaultModel || 'default'}
-                      onChange={(event) => handleRouteChange(index, { model: event.target.value })}
-                    />}
-                    {gatewayModels ? <Input
-                      size="small"
-                      className={styles.routeModelProvider}
-                      value={route.modelProvider || ''}
-                      aria-label={`路由 ${index + 1} 模型提供方`}
-                      placeholder="模型提供方"
-                      onChange={(event) => handleRouteChange(index, { modelProvider: event.target.value })}
-                    /> : null}
-                    <div className={styles.routeOperations} aria-label={`路由 ${index + 1} 操作`}>
-                      {ROUTE_OPERATIONS.map((operation) => (
-                        <label key={operation.value} className={styles.routeOperation}>
-                          <input
-                            type="checkbox"
-                            checked={route.operations.includes(operation.value)}
-                            onChange={() => toggleRouteOperation(index, operation.value)}
-                          />
-                          {operation.label}
-                        </label>
-                      ))}
-                    </div>
-                    <div className={styles.routeActions}>
-                      <Button
-                        appVariant="icon"
-                        aria-label={`路由 ${index + 1} 上移`}
-                        icon={<ArrowUpOutlined />}
-                        disabled={index === 0}
-                        onClick={() => handleMoveRoute(index, -1)}
+                    {autoCopy ? (
+                      <Select
+                        size="small"
+                        value={copyScope}
+                        aria-label="自动复制范围"
+                        options={[{ value: 'selection', label: '选区' }, { value: 'page', label: '页面' }, { value: 'all', label: '全部' }]}
+                        onChange={(value) => { setCopyScope(value); persist({ copyScope: value }); }}
                       />
-                      <Button
-                        appVariant="icon"
-                        aria-label={`路由 ${index + 1} 下移`}
-                        icon={<ArrowDownOutlined />}
-                        disabled={index === routes.length - 1}
-                        onClick={() => handleMoveRoute(index, 1)}
-                      />
-                      <Button
-                        appVariant="icon"
-                        aria-label={`删除路由 ${index + 1}`}
-                        icon={<MinusCircleOutlined />}
-                        onClick={() => handleRemoveRoute(index)}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <div className={styles.routeEmpty}>尚未配置额外路由。添加后可按优先级尝试多个模型。</div>
-          )}
-          </section>
-        </details>
-      </div>
+                    ) : null}
+                  </div>
+                )}
+              />
+              <SettingRow
+                title="系统级取词"
+                description="桌面取词开关、执行目标与全局快捷键。"
+                layout="stacked"
+                control={<SystemTranslationControl persistedExecutionTarget={bootstrap?.settings.executionTarget} />}
+              />
+            </SettingSection>
 
-      <section className={styles.history}>
-        <header className={styles.paneHeader}>
-          <span className={styles.paneTitle}>翻译记录</span>
-          <div className={styles.historyHeaderRight}>
-            <span className={styles.paneMeta}>
-              {history.entries.length} 条 · 仅保存在本机
-            </span>
-            {history.entries.length ? (
-              <Button
-                appVariant="quiet"
-                aria-label="清空翻译记录"
-                onClick={() => switchHistorySurface(() => history.clear(), { direction: 'backward' })}
-              >
-                清空记录
-              </Button>
-            ) : null}
+            <TranslationProviderSettings
+              providers={providers}
+              drafts={providerDrafts}
+              saving={savingProvider}
+              error={providerError}
+              feedbackByProvider={providerFeedback}
+              onChange={(provider, field, value) => {
+                setProviderDrafts((current) => ({ ...current, [provider]: { ...current[provider], [field]: value } }));
+                setProviderFeedback((current) => {
+                  if (!current[provider]) return current;
+                  const next = { ...current };
+                  delete next[provider];
+                  return next;
+                });
+              }}
+              onReset={(provider) => {
+                setProviderDrafts((current) => ({ ...current, [provider]: {} }));
+                setProviderFeedback((current) => {
+                  if (!current[provider]) return current;
+                  const next = { ...current };
+                  delete next[provider];
+                  return next;
+                });
+              }}
+              onSave={saveProvider}
+              onReload={reloadProviders}
+            />
+
+            <TranslationRoutesSection
+              routes={routes}
+              providers={providers}
+              models={models}
+              modelOptions={modelOptions}
+              onAdd={handleAddRoute}
+              onChange={handleRouteChange}
+              onToggleOperation={toggleRouteOperation}
+              onMove={handleMoveRoute}
+              onRemove={handleRemoveRoute}
+            />
           </div>
-        </header>
-        <div ref={historySurfaceRef}>
-        {history.entries.length === 0 ? (
-          <div className={styles.historyEmpty}>
-            <HudCube size={32} mode="empty" tone="violet" interactive label="点击弹跳翻译历史全息魔方" />
-            <strong>还没有翻译记录</strong>
-            <span>完成一次翻译后，原文、译文和模型信息会保存在本机。</span>
-          </div>
-        ) : (
-          <ul ref={historyListRef} className={`${styles.historyList} aih-fade-in`}>
-            {history.entries.map((entry, index) => (
-              <li key={entry.id} data-history-item className={`${styles.historyItem} ${index === 0 ? styles.historyItemLatest : ''}`}>
-                <div className={styles.historyItemHeader}>
-                  <span className={styles.historyRoute}>
-                    {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}
-                  </span>
-                  <span className={styles.historyMeta}>
-                    {entry.model}
-                    {entry.provider ? ` · ${entry.provider}` : ''}
-                    {' · '}
-                    {formatTranslationHistoryTime(entry.createdAt)}
-                  </span>
-                  <div className={styles.historyActions}>
-                    <Button
-                      appVariant="icon"
-                      aria-label="复制这条译文"
-                      title="复制这条译文"
-                      icon={<CopyOutlined />}
-                      onClick={() => void handleCopyHistory(entry)}
-                    />
-                    <Button
-                      appVariant="icon"
-                      aria-label="删除这条记录"
-                      title="删除这条记录"
-                      icon={<DeleteOutlined />}
-                      onClick={() => {
-                        if (history.entries.length === 1) {
-                          switchHistorySurface(() => history.remove(entry.id), { direction: 'backward' });
-                          return;
-                        }
-                        history.remove(entry.id);
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className={styles.historyBody}>
-                  <div className={styles.historySource} title={entry.sourceText}>
-                    {entry.sourceText}
-                  </div>
-                  <div className={styles.historyResult} title={entry.resultText}>
-                    {entry.resultText}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        </div>
-      </section>
+        </details>
+
+        <TranslationHistorySection
+          entries={history.entries}
+          onClear={history.clear}
+          onCopy={(entry) => void handleCopyHistory(entry)}
+          onRemove={history.remove}
+          onTryExample={handleTryQuickExample}
+        />
+      </div>
     </PageScaffold>
   );
 }

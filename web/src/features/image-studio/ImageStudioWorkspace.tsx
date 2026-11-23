@@ -1,18 +1,16 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PageContainer } from '@ant-design/pro-components';
 import {
   EditOutlined,
+  LoadingOutlined,
   PlusOutlined,
   ReloadOutlined,
   SelectOutlined,
   DeleteOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Modal, Spin, Tooltip, message } from 'antd';
-import HudCube from '@/components/hud/HudCube';
-import HudStateView from '@/components/hud/HudStateView';
-import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
-import { useSwitchFade } from '@/hooks/use-switch-fade';
+import { Input, Modal, Spin, Tooltip, message } from 'antd';
+import AppButton from '@/components/ui/AppButton';
+import PageScaffold from '@/components/ui/PageScaffold';
 import { useSearchParams } from 'react-router-dom';
 import { imageStudioAPI } from '@/services/api';
 import { buildAppHref } from '@/services/app-navigation';
@@ -26,6 +24,7 @@ import type {
 } from '@/types';
 import ImageStudioCanvas from './ImageStudioCanvas';
 import ImageStudioComposer, {
+  type ImageStudioComposerFeedback,
   type ImageStudioSourcePreview,
   type ImageStudioUploadValue,
 } from './ImageStudioComposer';
@@ -119,8 +118,10 @@ const ImageStudioWorkspace: React.FC = () => {
   const [parentRevisionId, setParentRevisionId] = useState('');
   const [maskUpload, setMaskUpload] = useState<ImageStudioUploadValue | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [initError, setInitError] = useState('');
   const [switchingSession, setSwitchingSession] = useState(false);
   const [running, setRunning] = useState(false);
+  const [composerFeedback, setComposerFeedback] = useState<ImageStudioComposerFeedback | null>(null);
   const [deletingRevisionId, setDeletingRevisionId] = useState('');
   const [previewTarget, setPreviewTarget] = useState<{
     revisionId: string;
@@ -129,9 +130,6 @@ const ImageStudioWorkspace: React.FC = () => {
   } | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
-  const sessionHeaderRef = useRef<HTMLDivElement | null>(null);
-  const { surfaceRef: mainStageRef, switchSurface: switchMainStage } = useSurfaceSwitch<HTMLElement>();
-  useSwitchFade(sessionHeaderRef, session?.id || null, { scope: 'image-studio-session-header', duration: 165 });
 
   const setSelectionFromSession = useCallback((
     nextSession: ImageStudioSession,
@@ -160,6 +158,7 @@ const ImageStudioWorkspace: React.FC = () => {
     setOutputFormat('');
     setOutputCompression(100);
     setModeration('auto');
+    setComposerFeedback(null);
   }, []);
 
   const applyModelCatalog = useCallback((
@@ -176,55 +175,61 @@ const ImageStudioWorkspace: React.FC = () => {
     ));
   }, []);
 
+  const initializeWorkspace = useCallback(async (isCancelled: () => boolean = () => false) => {
+    setInitializing(true);
+    setInitError('');
+    try {
+      const [modelResponse, sessionResponse] = await Promise.all([
+        imageStudioAPI.listModels(),
+        imageStudioAPI.listSessions(),
+      ]);
+      if (isCancelled()) return;
+      setSessions(sessionResponse.sessions || []);
+
+      let nextSession: ImageStudioSession | null = null;
+      const requestedId = initialSessionId.current;
+      if (requestedId) {
+        try {
+          nextSession = (await imageStudioAPI.getSession(requestedId)).session;
+        } catch (_error) {
+          nextSession = null;
+        }
+      }
+      if (!nextSession && sessionResponse.sessions?.[0]?.id) {
+        nextSession = (await imageStudioAPI.getSession(sessionResponse.sessions[0].id)).session;
+      }
+      if (!nextSession) {
+        nextSession = (await imageStudioAPI.createSession()).session;
+        const refreshed = await imageStudioAPI.listSessions();
+        if (!isCancelled()) setSessions(refreshed.sessions || []);
+      }
+      if (isCancelled()) return;
+      setSelectionFromSession(nextSession);
+      const latestRevision = resolveSelectedRevision(nextSession, getLatestRevisionId(nextSession));
+      applyModelCatalog(
+        modelResponse.models || [],
+        modelResponse.defaultModelKey,
+        latestRevision?.modelKey,
+      );
+      setSearchParams({ session: nextSession.id }, { replace: true });
+    } catch (error) {
+      if (!isCancelled()) {
+        const detail = errorMessage(error);
+        setInitError(`影像工作台加载失败：${detail}`);
+        message.error(`影像工作台初始化失败：${detail}`);
+      }
+    } finally {
+      if (!isCancelled()) setInitializing(false);
+    }
+  }, [applyModelCatalog, setSearchParams, setSelectionFromSession]);
+
   useEffect(() => {
     let cancelled = false;
-    const initialize = async () => {
-      setInitializing(true);
-      try {
-        const [modelResponse, sessionResponse] = await Promise.all([
-          imageStudioAPI.listModels(),
-          imageStudioAPI.listSessions(),
-        ]);
-        if (cancelled) return;
-        setSessions(sessionResponse.sessions || []);
-
-        let nextSession: ImageStudioSession | null = null;
-        const requestedId = initialSessionId.current;
-        if (requestedId) {
-          try {
-            nextSession = (await imageStudioAPI.getSession(requestedId)).session;
-          } catch (_error) {
-            nextSession = null;
-          }
-        }
-        if (!nextSession && sessionResponse.sessions?.[0]?.id) {
-          nextSession = (await imageStudioAPI.getSession(sessionResponse.sessions[0].id)).session;
-        }
-        if (!nextSession) {
-          nextSession = (await imageStudioAPI.createSession()).session;
-          const refreshed = await imageStudioAPI.listSessions();
-          if (!cancelled) setSessions(refreshed.sessions || []);
-        }
-        if (cancelled) return;
-        setSelectionFromSession(nextSession);
-        const latestRevision = resolveSelectedRevision(nextSession, getLatestRevisionId(nextSession));
-        applyModelCatalog(
-          modelResponse.models || [],
-          modelResponse.defaultModelKey,
-          latestRevision?.modelKey,
-        );
-        setSearchParams({ session: nextSession.id }, { replace: true });
-      } catch (error) {
-        if (!cancelled) message.error(`影像工作台初始化失败：${errorMessage(error)}`);
-      } finally {
-        if (!cancelled) setInitializing(false);
-      }
-    };
-    void initialize();
+    void initializeWorkspace(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [applyModelCatalog, setSearchParams, setSelectionFromSession]);
+  }, [initializeWorkspace]);
 
   useEffect(() => {
     if (initializing || !requestedSessionId || requestedSessionId === session?.id) return undefined;
@@ -535,6 +540,10 @@ const ImageStudioWorkspace: React.FC = () => {
     const runSessionId = session.id;
     const runMode = mode;
     setRunning(true);
+    setComposerFeedback({
+      tone: 'running',
+      text: runMode === 'edit' ? '生成中：正在处理编辑修订…' : '生成中：正在生成新图像…',
+    });
     try {
       const response = await imageStudioAPI.run(runSessionId, buildImageStudioRunInput({
         model: selectedModel,
@@ -566,7 +575,10 @@ const ImageStudioWorkspace: React.FC = () => {
         }
       }
       await refreshSessionList();
-      message.success(runMode === 'edit' ? '编辑修订已保存' : '新修订已保存');
+      setComposerFeedback({
+        tone: 'success',
+        text: runMode === 'edit' ? '已生成：编辑修订已保存到当前会话。' : '已生成：新图像已保存到当前会话。',
+      });
     } catch (error) {
       if (activeSessionIdRef.current === runSessionId) {
         try {
@@ -575,7 +587,11 @@ const ImageStudioWorkspace: React.FC = () => {
         } catch (_refreshError) {}
       }
       await refreshSessionList();
-      message.error(`图片处理失败：${errorMessage(error)}`);
+      const detail = errorMessage(error);
+      setComposerFeedback({
+        tone: 'error',
+        text: `失败：${detail}`,
+      });
     } finally {
       setRunning(false);
     }
@@ -767,171 +783,168 @@ const ImageStudioWorkspace: React.FC = () => {
   const sessionHasRunningRevision = Boolean(
     running || session?.revisions.some((revision) => revision.status === 'running'),
   );
+  const onlineModelCount = models.filter((model) => model.availableAccountCount > 0).length;
 
-  if (initializing) {
-    return (
-      <PageContainer title={false} className={styles.pageContainer}>
-        <div className={styles.initialLoading} role="status">
-          <HudStateView
-            variant="loading"
-            tone="violet"
-            cubeSize={44}
-            code="SYS // IMAGE_STUDIO"
-            title="正在装载影像会话与模型目录…"
-          />
-        </div>
-      </PageContainer>
-    );
-  }
+  const headerExtra = (
+    <div className={styles.workspaceActions}>
+      <span className={styles.workspaceReadout} role="status">
+        可用模型 {onlineModelCount}/{models.length}
+      </span>
+      {switchingSession && <Spin size="small" />}
+      <Tooltip title="重命名当前会话">
+        <AppButton
+          appVariant="icon"
+          icon={<EditOutlined />}
+          aria-label="重命名当前会话"
+          disabled={!session}
+          onClick={() => {
+            setRenameValue(session?.title || '');
+            setRenameOpen(true);
+          }}
+        />
+      </Tooltip>
+      <Tooltip title="在新窗口打开当前会话">
+        <AppButton
+          appVariant="icon"
+          icon={<SelectOutlined />}
+          aria-label="在新窗口打开当前会话"
+          disabled={!session}
+          onClick={() => session && handleOpenWindow(session.id)}
+        />
+      </Tooltip>
+      <Tooltip title="刷新会话">
+        <AppButton
+          appVariant="icon"
+          icon={<ReloadOutlined />}
+          aria-label="刷新会话"
+          disabled={!session || running}
+          onClick={handleRefreshCurrent}
+        />
+      </Tooltip>
+      <Tooltip title={sessionHasRunningRevision ? '生成中的会话不可删除' : '删除当前会话'}>
+        <AppButton
+          danger
+          appVariant="icon"
+          icon={<DeleteOutlined />}
+          aria-label="删除当前会话"
+          disabled={!session || sessionHasRunningRevision}
+          onClick={confirmDeleteSession}
+        />
+      </Tooltip>
+      <AppButton type="primary" icon={<PlusOutlined />} onClick={handleCreateSession}>
+        新建会话
+      </AppButton>
+    </div>
+  );
 
   return (
-    <PageContainer title={false} className={styles.pageContainer}>
-      <div className={styles.workspace}>
-        <header className={styles.workspaceHeader}>
-          <div ref={sessionHeaderRef} className={styles.workspaceIdentity}>
-            <span className={styles.workspaceMark}>
-              <HudCube size={22} mode="brand" tone="violet" interactive label="Image Studio 全息棱镜（点击果冻弹跳）" />
-            </span>
-            <div>
-              <span className={styles.eyebrow}>AI HOME · IMAGE STUDIO</span>
-              <h1>{session?.title || '影像工作台'}</h1>
-            </div>
-            {switchingSession && <Spin size="small" />}
+    <PageScaffold
+      title="影像工作台"
+      code="IMAGE_STUDIO"
+      subTitle={session?.title ? `当前会话：${session.title}` : '在同一会话内完成图像生成、参考图编辑与版本对比。'}
+      extra={headerExtra}
+      className={styles.pageContainer}
+    >
+      {initializing ? (
+        <div className={styles.statePanel} role="status" aria-live="polite">
+          <LoadingOutlined spin aria-hidden="true" />
+          <div>
+            <strong>正在载入影像会话</strong>
+            <p>读取会话列表与可用图片模型…</p>
           </div>
-          <div className={styles.workspaceActions}>
-            <span className={styles.workspaceReadout}>
-              <span
-                className={`hud-led ${models.some((model) => model.availableAccountCount > 0) ? 'hud-led--ok' : 'hud-led--warn'}`}
-                aria-hidden
-              />
-              {models.filter((model) => model.availableAccountCount > 0).length}/{models.length} MODELS ONLINE
-            </span>
-            <Tooltip title="重命名当前会话">
-              <Button
-                icon={<EditOutlined />}
-                disabled={!session}
-                onClick={() => {
-                  setRenameValue(session?.title || '');
-                  setRenameOpen(true);
-                }}
-              />
-            </Tooltip>
-            <Tooltip title="在新窗口打开当前会话">
-              <Button icon={<SelectOutlined />} disabled={!session} onClick={() => session && handleOpenWindow(session.id)} />
-            </Tooltip>
-            <Tooltip title="刷新会话">
-              <Button
-                icon={<ReloadOutlined />}
-                disabled={!session || running}
-                onClick={handleRefreshCurrent}
-              />
-            </Tooltip>
-            <Tooltip title={sessionHasRunningRevision ? '运行中的会话不能删除' : '删除当前会话'}>
-              <Button
-                danger
-                icon={<DeleteOutlined />}
-                disabled={!session || sessionHasRunningRevision}
-                onClick={confirmDeleteSession}
-              />
-            </Tooltip>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSession}>新会话</Button>
+        </div>
+      ) : initError && !session ? (
+        <div className={styles.statePanel} role="alert">
+          <div>
+            <strong>无法载入影像工作台</strong>
+            <p>{initError}</p>
           </div>
-        </header>
-
-        <div className={styles.workspaceGrid}>
-          <ImageStudioSessionRail
-            sessions={sessions}
-            activeSessionId={session?.id || ''}
-            assetUrls={assetUrls}
-            onCreate={handleCreateSession}
-            onSelect={handleSelectSession}
-            onOpenWindow={handleOpenWindow}
-          />
-
-          <main ref={mainStageRef} className={styles.workspaceMain}>
-            <ImageStudioCanvas
-              session={session}
-              revision={selectedRevision}
-              selectedAsset={selectedAsset}
+          <AppButton type="primary" icon={<ReloadOutlined />} onClick={() => void initializeWorkspace()}>
+            重试加载
+          </AppButton>
+        </div>
+      ) : (
+        <div className={styles.workspace}>
+          <div className={styles.workspaceGrid}>
+            <ImageStudioSessionRail
+              sessions={sessions}
+              activeSessionId={session?.id || ''}
               assetUrls={assetUrls}
-              running={running}
-              onSelectAsset={(nextAssetId) => {
-                const assetOrder = selectedRevision?.outputAssetIds || [];
-                switchMainStage(() => setSelectedAssetId(nextAssetId), {
-                  slot: 'asset',
-                  current: selectedAssetId,
-                  next: nextAssetId,
-                  direction: resolveOrderedDirection(assetOrder, selectedAssetId, nextAssetId)
-                });
-              }}
-              onPreview={handleOpenPreview}
-              onContinueEdit={handleContinueEdit}
-              onReuseRevision={handleReuseRevision}
-              onDownload={handleDownload}
-              onCopyPrompt={handleCopyPrompt}
+              onCreate={handleCreateSession}
+              onSelect={handleSelectSession}
+              onOpenWindow={handleOpenWindow}
             />
-            <ImageStudioRevisionStrip
-              session={session}
-              selectedRevisionId={selectedRevision?.id || ''}
-              deletingRevisionId={deletingRevisionId}
-              assetUrls={assetUrls}
-              onSelect={(revision) => {
-                const revisionOrder = (session?.revisions || []).map((item) => item.id);
-                switchMainStage(() => {
+
+            <main className={styles.workspaceMain}>
+              <ImageStudioCanvas
+                session={session}
+                revision={selectedRevision}
+                selectedAsset={selectedAsset}
+                assetUrls={assetUrls}
+                running={running}
+                onSelectAsset={(nextAssetId) => {
+                  setSelectedAssetId(nextAssetId);
+                }}
+                onPreview={handleOpenPreview}
+                onContinueEdit={handleContinueEdit}
+                onReuseRevision={handleReuseRevision}
+                onDownload={handleDownload}
+                onCopyPrompt={handleCopyPrompt}
+              />
+              <ImageStudioRevisionStrip
+                session={session}
+                selectedRevisionId={selectedRevision?.id || ''}
+                deletingRevisionId={deletingRevisionId}
+                assetUrls={assetUrls}
+                onSelect={(revision) => {
                   setSelectedRevisionId(revision.id);
                   setSelectedAssetId(getRevisionPreviewAssetId(revision));
-                }, {
-                  slot: 'revision',
-                  current: selectedRevision?.id,
-                  next: revision.id,
-                  direction: selectedRevision
-                    ? resolveOrderedDirection(revisionOrder, selectedRevision.id, revision.id)
-                    : 'neutral'
-                });
-              }}
-              onPreview={handleOpenPreview}
-              onDelete={confirmDeleteRevision}
-            />
-          </main>
+                }}
+                onPreview={handleOpenPreview}
+                onDelete={confirmDeleteRevision}
+              />
+            </main>
 
-          <ImageStudioComposer
-            models={models}
-            modelKey={modelKey}
-            mode={mode}
-            prompt={prompt}
-            n={outputCount}
-            size={size}
-            quality={quality}
-            background={background}
-            outputFormat={outputFormat}
-            outputCompression={outputCompression}
-            moderation={moderation}
-            sources={sourcePreviews}
-            sourceLimit={sourceLimit}
-            maskPreviewUrl={maskPreviewUrl}
-            maskLabel={maskUpload?.name || (maskAsset ? `遮罩资产 · ${maskAsset.id.slice(-8)}` : '')}
-            running={running}
-            onModelChange={setModelKey}
-            onModeChange={setMode}
-            onPromptChange={setPrompt}
-            onNChange={setOutputCount}
-            onSizeChange={setSize}
-            onQualityChange={setQuality}
-            onBackgroundChange={setBackground}
-            onOutputFormatChange={setOutputFormat}
-            onOutputCompressionChange={setOutputCompression}
-            onModerationChange={setModeration}
-            onSourceFiles={handleSourceFiles}
-            onMaskFile={handleMaskFile}
-            onRemoveSource={handleRemoveSource}
-            onClearMask={() => {
-              setMaskAssetId('');
-              setMaskUpload(null);
-            }}
-            onSubmit={handleRun}
-          />
+            <ImageStudioComposer
+              models={models}
+              modelKey={modelKey}
+              mode={mode}
+              prompt={prompt}
+              n={outputCount}
+              size={size}
+              quality={quality}
+              background={background}
+              outputFormat={outputFormat}
+              outputCompression={outputCompression}
+              moderation={moderation}
+              sources={sourcePreviews}
+              sourceLimit={sourceLimit}
+              maskPreviewUrl={maskPreviewUrl}
+              maskLabel={maskUpload?.name || (maskAsset ? `遮罩资产 · ${maskAsset.id.slice(-8)}` : '')}
+              running={running}
+              feedback={composerFeedback}
+              onModelChange={setModelKey}
+              onModeChange={setMode}
+              onPromptChange={setPrompt}
+              onNChange={setOutputCount}
+              onSizeChange={setSize}
+              onQualityChange={setQuality}
+              onBackgroundChange={setBackground}
+              onOutputFormatChange={setOutputFormat}
+              onOutputCompressionChange={setOutputCompression}
+              onModerationChange={setModeration}
+              onSourceFiles={handleSourceFiles}
+              onMaskFile={handleMaskFile}
+              onRemoveSource={handleRemoveSource}
+              onClearMask={() => {
+                setMaskAssetId('');
+                setMaskUpload(null);
+              }}
+              onSubmit={handleRun}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <Modal
         title="重命名影像会话"
@@ -950,7 +963,7 @@ const ImageStudioWorkspace: React.FC = () => {
         onClose={() => setPreviewTarget(null)}
         onDownload={handleDownload}
       />
-    </PageContainer>
+    </PageScaffold>
   );
 };
 

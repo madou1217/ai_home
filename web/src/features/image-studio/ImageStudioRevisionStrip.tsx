@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React from 'react';
 import {
   CheckOutlined,
   DeleteOutlined,
@@ -10,7 +10,6 @@ import {
 } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import type { ImageStudioAsset, ImageStudioRevision, ImageStudioSession } from '@/types';
-import { useAppendEnter } from '@/hooks/use-append-enter';
 import {
   formatRevisionClock,
   formatRevisionFrameLabel,
@@ -31,9 +30,16 @@ interface ImageStudioRevisionStripProps {
 }
 
 function RevisionStatusIcon({ revision }: { revision: ImageStudioRevision }) {
-  if (revision.status === 'running') return <SyncOutlined spin />;
-  if (revision.status === 'failed') return <ExclamationCircleOutlined />;
-  return <CheckOutlined />;
+  if (revision.status === 'running') return <SyncOutlined spin aria-hidden="true" />;
+  if (revision.status === 'failed') return <ExclamationCircleOutlined aria-hidden="true" />;
+  return <CheckOutlined aria-hidden="true" />;
+}
+
+function revisionStatusText(revision: ImageStudioRevision) {
+  if (revision.status === 'running') return '生成中';
+  if (revision.status === 'failed') return '失败';
+  const clock = formatRevisionClock(revision.completedAt);
+  return clock ? `已生成 · ${clock}` : '已生成';
 }
 
 export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> = ({
@@ -47,27 +53,16 @@ export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> =
 }) => {
   const assets = mapAssetsById(session);
   const revisions = session?.revisions || [];
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  // 修订只会在末尾追加（新一帧生成/编辑完成）：纯追加且增量小才逐帧进场，
-  // 切会话/首屏整批挂载不播。运行中→完成是同一 id 更新，不会重播。
-  const revisionKeys = useMemo(() => revisions.map((revision) => revision.id), [revisions]);
-  useAppendEnter(scrollerRef, revisionKeys, session?.id || '', {
-    selector: '[data-revision-card]',
-    distance: 4,
-  });
 
   return (
-    <section className={styles.revisionStrip} aria-label="修订时间线">
+    <section className={styles.revisionStrip} aria-label="修订记录">
       <div className={styles.revisionStripHeader}>
-        <div>
-          <span className={styles.eyebrow}>CONTACT SHEET</span>
-          <strong>修订接触印样</strong>
-        </div>
-        <span>{revisions.length} 帧</span>
+        <strong className={styles.panelTitle}>修订记录</strong>
+        <span className={styles.panelCount}>{revisions.length} 帧</span>
       </div>
-      <div ref={scrollerRef} className={styles.revisionScroller}>
+      <div className={styles.revisionScroller}>
         {revisions.length === 0 ? (
-          <div className={styles.revisionEmpty}>首张图像生成后，修订链会固定在这里。</div>
+          <div className={styles.revisionEmpty}>未生成修订，完成一次生成后会按顺序显示在这里。</div>
         ) : revisions.map((revision, index) => {
           const frameLabel = formatRevisionFrameLabel(index);
           const previewAssetId = getRevisionPreviewAssetId(revision);
@@ -80,7 +75,7 @@ export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> =
           const isDeleting = deletingRevisionId === revision.id;
           const deleteDisabled = isRunning || isDeleting;
           const deleteTooltip = isRunning
-            ? `${frameLabel} 正在处理中，暂不可删除`
+            ? `${frameLabel} 生成中，暂不可删除`
             : isDeleting
               ? `正在删除 ${frameLabel}…`
               : `删除 ${frameLabel}`;
@@ -127,13 +122,13 @@ export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> =
               >
                 <span className={styles.revisionInfo}>
                   <span className={styles.revisionMode}>
-                    {revision.mode === 'edit' ? <EditOutlined /> : <PictureOutlined />}
+                    {revision.mode === 'edit' ? <EditOutlined aria-hidden="true" /> : <PictureOutlined aria-hidden="true" />}
                     {revision.mode === 'edit' ? '编辑' : '生成'}
                   </span>
                   <span className={styles.revisionPrompt}>{revision.prompt}</span>
                   <span className={`${styles.revisionStatus} ${styles[`revisionStatus_${revision.status}`]}`}>
                     <RevisionStatusIcon revision={revision} />
-                    {revision.status === 'running' ? '处理中' : revision.status === 'failed' ? '失败' : formatRevisionClock(revision.completedAt)}
+                    <span>{revisionStatusText(revision)}</span>
                   </span>
                 </span>
               </button>

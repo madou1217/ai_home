@@ -543,11 +543,10 @@ export default function TranslationFloatingPanel() {
           </header>
           <div className={styles.statusRow} role="status" aria-live="polite">
             <span className={styles.phase}>
-              <span className={styles.phaseDot} aria-hidden="true" />
-              <span key={feedback.phase} className={styles.statusLabel} aria-live="polite">{feedback.label}</span>
+              <span key={feedback.phase} className={styles.statusLabel}>{feedback.label}</span>
             </span>
             <span className={styles.statusAside}>
-              {pinned ? <span className={styles.pinBadge}><PushpinFilled /> 已置顶</span> : null}
+              {pinned ? <span className={styles.pinBadge}><PushpinFilled aria-hidden="true" /> 已置顶</span> : null}
               {feedback.active || stream.state.status !== 'idle' ? <span className={styles.elapsed}>{feedback.elapsedLabel}</span> : null}
             </span>
           </div>
@@ -563,9 +562,8 @@ export default function TranslationFloatingPanel() {
                 {stream.busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
               </div>
             ) : feedback.active ? (
-              <div className={styles.loadingState}>
-                <div className={styles.loadingCaption}><span className={styles.loadingOrb} aria-hidden="true" />{feedback.hint}</div>
-                <div className={styles.skeleton} aria-hidden="true"><span /><span /><span /></div>
+              <div className={styles.loadingState} role="status" aria-live="polite">
+                <div className={styles.loadingCaption}>{feedback.hint}</div>
               </div>
             ) : feedback.phase === 'cancelled' ? (
               <span className={styles.placeholder}>已停止生成，点击「重新翻译」继续。</span>

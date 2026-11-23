@@ -74,7 +74,9 @@ type proxyServeOptions struct {
 	tunLogFile     string
 	tunDryRun      bool
 
-	json bool
+	// exitOnStdinEOF 只供 --peer 的远端子进程使用：控制连接关闭时优雅退出并释放租约。
+	exitOnStdinEOF bool
+	json           bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
@@ -108,6 +110,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.StringVar(&options.tunSingBox, "tun-singbox", "", "sing-box 内核路径；空值自动发现")
 	flags.StringVar(&options.tunLogFile, "tun-log-file", "", "TUN 内核日志路径；空值使用 <aiHome>/logs/proxy-tun.log")
 	flags.BoolVar(&options.tunDryRun, "tun-dry-run", false, "只生成并校验 TUN 配置，不创建接口、不改路由")
+	flags.BoolVar(&options.exitOnStdinEOF, "exit-on-stdin-eof", false, "stdin 关闭时退出（--peer 远端子进程使用）")
 	flags.BoolVar(&options.json, "json", false, "以 JSON 输出入口信息")
 	// launchd/systemd 的 autostart 会追加该监督器参数；proxy serve 自身不依赖父进程存续，
 	// 但必须接受它，否则常驻服务一启动就因未知参数退出。
@@ -200,6 +203,19 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if options.exitOnStdinEOF {
+		// 对等模式：stdin 来自 SSH 会话；控制连接断开时读端 EOF，按 Ctrl+C 同一路径
+		// 取消 ctx，让 defer 释放远端租约并关闭入口，不依赖平台信号。
+		go func() {
+			buffer := make([]byte, 256)
+			for {
+				if _, readErr := runtime.stdin.Read(buffer); readErr != nil {
+					stop()
+					return
+				}
+			}
+		}()
+	}
 	if options.managementKeyFile != "" {
 		key, keyErr := readManagementKeyFile(options.managementKeyFile)
 		if keyErr != nil {

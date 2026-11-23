@@ -189,6 +189,12 @@ func (client *Client) Stream(ctx context.Context, command string, stdout, stderr
 	return client.stream(ctx, command, nil, stdout, stderr)
 }
 
+// StreamWithInput 与 Stream 相同，但把 stdin 持续写入远端进程。
+// 关闭 stdin 的读端会让远端收到 EOF；用于让对等节点在控制连接结束时优雅退出。
+func (client *Client) StreamWithInput(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	return client.stream(ctx, command, stdin, stdout, stderr)
+}
+
 func (client *Client) stream(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
 	if client == nil || client.client == nil {
 		return -1, newError(CodeDialFailed, "SSH 连接已关闭", nil)

@@ -67,12 +67,31 @@ func runProxyServePeer(ctx context.Context, options proxyServeOptions, runtime c
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	reader, writer := io.Pipe()
+	stdinReader, stdinWriter := io.Pipe()
 	diagnostics := &peerTail{limit: peerDiagnosticLimit}
 	streamDone := make(chan peerStreamResult, 1)
 	go func() {
-		code, streamErr := client.Stream(streamCtx, command, writer, diagnostics)
+		code, streamErr := client.StreamWithInput(streamCtx, command, stdinReader, writer, diagnostics)
 		_ = writer.Close()
 		streamDone <- peerStreamResult{code: code, err: streamErr}
+	}()
+	var streamResult *peerStreamResult
+	defer func() {
+		// 先关 stdin：远端 CLI 收到 EOF 后走正常退出路径并释放租约；
+		// 超时才取消 SSH 会话，避免远端残留 cmd/aih 进程。
+		_ = stdinWriter.Close()
+		if streamResult == nil {
+			select {
+			case result := <-streamDone:
+				streamResult = &result
+			case <-time.After(5 * time.Second):
+				cancel()
+				select {
+				case <-streamDone:
+				case <-time.After(2 * time.Second):
+				}
+			}
+		}
 	}()
 
 	var payload peerServePayload
@@ -157,6 +176,7 @@ func runProxyServePeer(ctx context.Context, options proxyServeOptions, runtime c
 	case <-ctx.Done():
 		return nil
 	case result := <-streamDone:
+		streamResult = &result
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -187,10 +207,12 @@ func resolvePeerCommand(ctx context.Context, client *sshremote.Client, options p
 	var last string
 	for _, prefix := range peerCommandPrefixes(requested) {
 		probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		result, probeErr := client.Run(probeCtx, prefix+" proxy --help", 2048)
+		result, probeErr := client.Run(probeCtx, prefix+" proxy serve --help", 8192)
 		cancel()
-		if probeErr == nil && result.Code == 0 {
-			command := prefix + " proxy serve --json --selector " + selector
+		// --exit-on-stdin-eof 是 peer 模式的优雅退出协议；没有它的旧版 CLI 不能作为对等端。
+		if probeErr == nil && result.Code == 0 &&
+			strings.Contains(string(result.Stdout)+string(result.Stderr), "exit-on-stdin-eof") {
+			command := prefix + " proxy serve --json --selector " + selector + " --exit-on-stdin-eof"
 			if options.noSocks {
 				command += " --no-socks"
 			}
@@ -203,12 +225,12 @@ func resolvePeerCommand(ctx context.Context, client *sshremote.Client, options p
 		}
 	}
 	if requested != "aih" {
-		return "", fmt.Errorf("对等节点上的 aih 不可执行：%s%s", requested, peerDiagnosticSuffix(last, ""))
+		return "", fmt.Errorf("对等节点上的 aih 不可用或版本过旧：%s%s", requested, peerDiagnosticSuffix(last, ""))
 	}
 	if last == "" {
-		last = "未找到 aih"
+		last = "未找到支持 --peer 的 aih"
 	}
-	return "", fmt.Errorf("对等节点未找到可用的 aih，请用 --peer-aih 指定路径（%s）", last)
+	return "", fmt.Errorf("对等节点未找到支持 --peer 的 aih，请升级或用 --peer-aih 指定路径（%s）", last)
 }
 
 // peerCommandPrefixes 覆盖 POSIX shell、Windows cmd 与 PowerShell 的调用写法。

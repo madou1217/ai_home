@@ -14,8 +14,8 @@ import (
 type ModelCatalogSource struct {
 	client   HTTPClient
 	versions clientversion.Source
-	// ladders 可选：把上游目录声明的推理档位登记为运行时覆盖。
-	ladders modelmetadata.ReasoningLadderRegistrar
+	// facts 可选：把上游目录声明的能力事实（档位/模态/上下文/显示名）登记为运行时事实。
+	facts modelmetadata.ModelFactsRegistrar
 }
 
 // 编译期确认 Codex 目录源实现统一 Provider 发现策略。
@@ -42,16 +42,15 @@ func (source *ModelCatalogSource) ProviderID() string {
 	return codexauth.ProviderID
 }
 
-// WithReasoningLadders 让目录发现把上游声明的档位登记为 Provider 级运行时覆盖。
+// WithModelFacts 让目录发现把上游声明的能力事实登记到运行时注册表。
 //
-// 档位是发布时数据：没有这条通道时，新模型要等内置 models.dev 快照升级并重新发版
-// 才会出现在 /v1/models 的 supported_reasoning_levels 里。registrar 为 nil 时保持
-// 只刷新模型 ID 的旧行为。
-func (source *ModelCatalogSource) WithReasoningLadders(
-	registrar modelmetadata.ReasoningLadderRegistrar,
+// 没有这条通道时，新模型的档位/模态/上下文要等第三方快照升级并重新发版才会出现。
+// registrar 为 nil 时保持只刷新模型 ID 的旧行为。
+func (source *ModelCatalogSource) WithModelFacts(
+	registrar modelmetadata.ModelFactsRegistrar,
 ) *ModelCatalogSource {
 	if source != nil {
-		source.ladders = registrar
+		source.facts = registrar
 	}
 	return source
 }
@@ -80,9 +79,9 @@ func (source *ModelCatalogSource) DiscoverModels(
 	if err != nil {
 		return nil, err
 	}
-	if source.ladders != nil && len(catalog.ladders) > 0 {
-		if err := source.ladders.MergeReasoningLadders(codexauth.ProviderID, catalog.ladders); err != nil {
-			return nil, fmt.Errorf("发布模型推理档位失败: %w", err)
+	if source.facts != nil && len(catalog.facts) > 0 {
+		if err := source.facts.MergeModelFacts(codexauth.ProviderID, catalog.facts); err != nil {
+			return nil, fmt.Errorf("发布模型能力事实失败: %w", err)
 		}
 	}
 	return append([]string(nil), catalog.models...), nil

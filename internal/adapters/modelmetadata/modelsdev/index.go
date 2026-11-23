@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync/atomic"
 
@@ -41,22 +40,10 @@ type Index struct {
 	contexts  map[string]int
 	names     map[string]string
 	overrides atomic.Pointer[modalityOverrideSnapshot]
-	// effortOverrides 是上游目录声明的运行时档位覆盖，优先于内置快照。
-	effortOverrides atomic.Pointer[reasoningOverrideSnapshot]
 }
 
 type modalityOverrideSnapshot struct {
 	byProvider map[string]map[string]modelmetadata.Modalities
-}
-
-// reasoningOverrideSnapshot 保存 Provider 级“模型 → 档位”运行时覆盖。
-//
-// 与模态覆盖分开存放：上游只声明档位时不应凭空改动模态，反之亦然。
-// declared 记录哪些 Provider 已经自己声明过档位：一旦声明过，它就是该 Provider
-// 档位事实的唯一来源，models.dev 不再参与（第三方快照只能给没有声明的 Provider 兜底）。
-type reasoningOverrideSnapshot struct {
-	byProvider map[string]map[string][]inference.ReasoningEffort
-	declared   map[string]bool
 }
 
 // 编译期确认索引满足 HTTP 模型目录所依赖的应用层端口。
@@ -99,14 +86,11 @@ func New() (*Index, error) {
 	index.overrides.Store(&modalityOverrideSnapshot{
 		byProvider: map[string]map[string]modelmetadata.Modalities{},
 	})
-	index.effortOverrides.Store(&reasoningOverrideSnapshot{
-		byProvider: map[string]map[string][]inference.ReasoningEffort{},
-	})
 	return index, nil
 }
 
 var _ modelmetadata.ModelDescriptorRegistrar = (*Index)(nil)
-var _ modelmetadata.ReasoningLadderRegistrar = (*Index)(nil)
+var _ modelmetadata.FactsSource = (*Index)(nil)
 var _ modelmetadata.DisplayNameLookup = (*Index)(nil)
 
 // SourceID 返回内置快照的稳定来源标识。
@@ -150,49 +134,6 @@ func (index *Index) ReplaceModelDescriptors(
 	next := cloneOverrideSnapshot(previous)
 	next.byProvider[provider] = nextProvider
 	index.overrides.Store(next)
-	return nil
-}
-
-// MergeReasoningLadders 原子合并一个 Provider 的运行时推理档位声明。
-//
-// 上游模型目录对“自己接受哪些 effort”是权威；一份 Provider 一旦声明过档位，
-// models.dev 就彻底退出该 Provider 的档位解析（不再作为参考）。按模型合并而不是整表
-// 替换：同一 Provider 的多个账号各自只有自己的目录，后刷新的小目录不能抹掉其它账号
-// 已声明的模型档位。空映射表示没有新事实，保留上一代 last-known-good；任一档位无效
-// 则整体拒绝。
-func (index *Index) MergeReasoningLadders(
-	providerID string,
-	ladders map[string][]inference.ReasoningEffort,
-) error {
-	if index == nil || index.efforts == nil {
-		return modelmetadata.ErrInvalidReasoningLadder
-	}
-	provider := strings.ToLower(strings.TrimSpace(providerID))
-	if provider == "" {
-		return modelmetadata.ErrInvalidReasoningLadder
-	}
-	if len(ladders) == 0 {
-		return nil
-	}
-	next := cloneReasoningOverrideSnapshot(index.effortOverrides.Load())
-	nextProvider := next.byProvider[provider]
-	if nextProvider == nil {
-		nextProvider = make(map[string][]inference.ReasoningEffort, len(ladders))
-	}
-	for modelID, values := range ladders {
-		key := normalizeRuntimeModelID(modelID)
-		if key == "" {
-			return modelmetadata.ErrInvalidReasoningLadder
-		}
-		ladder, ok := modelmetadata.NormalizeReasoningLadder(values)
-		if !ok {
-			return modelmetadata.ErrInvalidReasoningLadder
-		}
-		nextProvider[key] = ladder
-	}
-	next.byProvider[provider] = nextProvider
-	next.declared[provider] = true
-	index.effortOverrides.Store(next)
 	return nil
 }
 
@@ -308,36 +249,7 @@ func (index *Index) lookupRuntimeOverride(providerID, modelID string) (modelmeta
 }
 
 func normalizeRuntimeModelID(modelID string) string {
-	return strings.ToLower(strings.TrimSpace(normalizeVersionSeparators(modelID)))
-}
-
-// lookupRuntimeEffortOverride 只做精确模型 ID 命中，并报告该 Provider 是否已声明过档位。
-//
-// 档位覆盖来自上游对该模型 ID 的直接声明，不做命名空间或家族回退：把 A 模型的档位
-// 贴到 B 模型上正是这次要消除的那类猜测。declared=true 且 found=false 表示该 Provider
-// 已经在自我声明，但这个模型不在声明范围内 —— 正确结果是“没有档位”，不是去问 models.dev。
-func (index *Index) lookupRuntimeEffortOverride(
-	providerID string,
-	modelID string,
-) (ladder []inference.ReasoningEffort, found bool, declared bool) {
-	if index == nil {
-		return nil, false, false
-	}
-	snapshot := index.effortOverrides.Load()
-	if snapshot == nil {
-		return nil, false, false
-	}
-	provider := strings.ToLower(strings.TrimSpace(providerID))
-	declared = snapshot.declared[provider]
-	models := snapshot.byProvider[provider]
-	if len(models) == 0 {
-		return nil, false, declared
-	}
-	value, exists := models[normalizeRuntimeModelID(modelID)]
-	if !exists || len(value) == 0 {
-		return nil, false, declared
-	}
-	return append([]inference.ReasoningEffort(nil), value...), true, declared
+	return strings.ToLower(strings.TrimSpace(modelmetadata.NormalizeVersionSeparators(modelID)))
 }
 
 func cloneOverrideSnapshot(previous *modalityOverrideSnapshot) *modalityOverrideSnapshot {
@@ -353,29 +265,6 @@ func cloneOverrideSnapshot(previous *modalityOverrideSnapshot) *modalityOverride
 			copied[modelID], _ = modelmetadata.NewModalities(modalities.Input(), modalities.Output())
 		}
 		next.byProvider[provider] = copied
-	}
-	return next
-}
-
-func cloneReasoningOverrideSnapshot(
-	previous *reasoningOverrideSnapshot,
-) *reasoningOverrideSnapshot {
-	next := &reasoningOverrideSnapshot{
-		byProvider: make(map[string]map[string][]inference.ReasoningEffort),
-		declared:   make(map[string]bool),
-	}
-	if previous == nil {
-		return next
-	}
-	for provider, models := range previous.byProvider {
-		copied := make(map[string][]inference.ReasoningEffort, len(models))
-		for modelID, ladder := range models {
-			copied[modelID] = append([]inference.ReasoningEffort(nil), ladder...)
-		}
-		next.byProvider[provider] = copied
-	}
-	for provider := range previous.declared {
-		next.declared[provider] = true
 	}
 	return next
 }
@@ -397,15 +286,6 @@ func (index *Index) LookupReasoningEfforts(
 	}
 	id := strings.TrimSpace(modelID)
 	if id == "" {
-		return nil, false
-	}
-	// 上游目录声明的档位优先；Provider 声明过档位后，models.dev 不再参与该 Provider
-	// 的档位事实（第三方快照只给“从未声明”的 Provider 兜底）。
-	ladder, found, declared := index.lookupRuntimeEffortOverride(providerID, id)
-	if found {
-		return ladder, true
-	}
-	if declared {
 		return nil, false
 	}
 	if len(index.efforts) == 0 {
@@ -481,132 +361,13 @@ func (index *Index) LookupOrInferModalities(
 	}
 	modalities, found := index.LookupModalities(providerID, modelID)
 	if !found {
-		inferred, ok := inferModalities(modelID)
+		inferred, ok := modelmetadata.InferModalities(modelID)
 		if !ok {
 			return modelmetadata.Modalities{}, false
 		}
 		modalities = inferred
 	}
-	return withImageGeneration(modalities, modelID), true
-}
-
-// inferModalities 按模型名家族给出保守兜底能力（对应 Node 的 buildFallbackModalities）。
-//
-// 两个家族彼此独立：视觉家族只影响输入，图像生成家族只影响输出（输入那侧由
-// withImageGeneration 统一补）。都不命中时返回 false，让调用方按纯文本降级。
-func inferModalities(modelID string) (modelmetadata.Modalities, bool) {
-	input := []string{"text"}
-	output := []string{"text"}
-	if matchesImageGenerationFamily(modelID) {
-		output = append(output, "image")
-	}
-	if matchesVisionFamily(modelID) {
-		input = append(input, "image")
-	}
-	if len(input) == 1 && len(output) == 1 {
-		return modelmetadata.Modalities{}, false
-	}
-	modalities, err := modelmetadata.NewModalities(input, output)
-	if err != nil {
-		return modelmetadata.Modalities{}, false
-	}
-	return modalities, true
-}
-
-// withImageGeneration 给图像生成模型补上 image 输入与输出。
-//
-// 与 Node 的 computeModelModalities 末段一致：快照命中也要补——目录里
-// `gemini-3.1-flash-image` 这类模型的记录可能只声明输出，而它们实际上也接受图片输入，
-// 少补会让 vision guard 把用户贴的图剥掉。
-func withImageGeneration(
-	modalities modelmetadata.Modalities,
-	modelID string,
-) modelmetadata.Modalities {
-	if !matchesImageGenerationFamily(modelID) {
-		return modalities
-	}
-	input := modalities.Input()
-	output := modalities.Output()
-	if !containsModality(input, "image") {
-		input = append(input, "image")
-	}
-	if !containsModality(output, "image") {
-		output = append(output, "image")
-	}
-	augmented, err := modelmetadata.NewModalities(input, output)
-	if err != nil {
-		return modalities
-	}
-	return augmented
-}
-
-// containsModality 判断模态列表是否已包含指定模态（大小写不敏感）。
-func containsModality(values []string, target string) bool {
-	for _, value := range values {
-		if strings.EqualFold(strings.TrimSpace(value), target) {
-			return true
-		}
-	}
-	return false
-}
-
-// visionFamilyPatterns 是未收录模型的保守家族兜底。
-//
-// 与 Node 的 VISION_INPUT_MODEL_PATTERNS 相比，OpenAI 一条从「枚举具体版本」改成
-// 「按主版本号」：枚举会随时间腐坏——Node 写的是 `gpt-(4o|4[.-]1|5)`，而目录里已经有
-// gpt-6-astra，枚举表会把能看图的 gpt-6 判成看不见图片。
-//
-// 放宽边界逐条对当前快照验证过：
-//   - `^gpt-[4-9]` 覆盖 gpt-4.x / 5.x / 6.x（快照里全部含 image 输入），刻意排除
-//     `gpt-3.5-turbo` 与 `gpt-oss-*`（快照里都是纯文本）；
-//   - `^o[1-9]` 覆盖 o 系列推理模型，已知例外 `o3-mini` 在快照里能解析到，走不到兜底。
-var visionFamilyPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`^claude-`),
-	regexp.MustCompile(`^gemini-`),
-	regexp.MustCompile(`^gpt-[4-9]`),
-	regexp.MustCompile(`^o[1-9]($|[.-])`),
-}
-
-// matchesVisionFamily 判断模型名是否属于已知的「能看见图片」家族。
-//
-// 同时匹配原样与版本分隔符归一化后的形态，因此 `gpt-5.5` 与 `gpt-5-5` 命中同一条规则。
-func matchesVisionFamily(modelID string) bool {
-	for _, key := range visionFamilyLookupKeys(modelID) {
-		for _, pattern := range visionFamilyPatterns {
-			if pattern.MatchString(key) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// matchesImageGenerationFamily 判断模型名是否属于图像生成家族。
-//
-// 规则只在 application/modelmetadata 定义一次（与 CLI 侧拒绝生图共用），这里不做
-// 版本分隔符归一化：Node 的 isImageGenerationModel 直接用小写原名匹配，而归一化只服务于
-// 视觉家族那张表。两边必须保持这个差别，否则同一模型会在两端得到不同的 image_out 判定。
-func matchesImageGenerationFamily(modelID string) bool {
-	return modelmetadata.MatchesImageGenerationName(modelID)
-}
-
-// visionFamilyLookupKeys 返回家族匹配用的模型 ID 变体。
-func visionFamilyLookupKeys(modelID string) []string {
-	trimmed := strings.TrimSpace(modelID)
-	if trimmed == "" {
-		return nil
-	}
-	normalized := normalizeVersionSeparators(trimmed)
-	if normalized == trimmed {
-		return []string{trimmed}
-	}
-	return []string{trimmed, normalized}
-}
-
-// normalizeVersionSeparators 把「数字.数字」里的点换成横线；规则只在
-// application/modelmetadata 定义一次（与目录收窄、计价快照共用）。
-func normalizeVersionSeparators(modelID string) string {
-	return modelmetadata.NormalizeVersionSeparators(modelID)
+	return modelmetadata.WithImageGeneration(modalities, modelID), true
 }
 
 // providerNamespacesFor 返回该 Provider 与模型组合的候选 models.dev 命名空间（按序）。

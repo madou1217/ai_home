@@ -41,8 +41,9 @@ var (
 // 排序切片让管理写侧可直接持久化稳定快照，并允许测试执行二分校验。
 // ladders 只保存上游明确声明了档位的模型；缺失表示该端点没有声明，而不是“没有档位”。
 type modelCatalog struct {
-	models  []string
-	ladders map[string][]inference.ReasoningEffort
+	models []string
+	// facts 是上游目录声明的低敏能力事实（档位、模态、上下文、显示名）。
+	facts []modelmetadata.ModelFacts
 }
 
 // count 返回当前目录中的模型数量。
@@ -222,11 +223,49 @@ type modelIdentityDTO struct {
 	SupportedReasoningLevels []modelReasoningLevelDTO `json:"supported_reasoning_levels"`
 	// AIHReasoningEfforts 是 AI Home 兼容目录（API Key 端点）声明的推理档位。
 	AIHReasoningEfforts []string `json:"aih_reasoning_efforts"`
+	// InputModalities 是官方 Codex 目录声明的输入模态；输出按 Responses 合同为纯文本。
+	InputModalities []string `json:"input_modalities"`
+	// AIHModalities 是 AI Home 兼容目录声明的完整模态对。
+	AIHModalities *modelModalitiesDTO `json:"aih_modalities"`
+	// ContextWindow 是官方目录声明的输入上下文窗口；0 表示未声明。
+	ContextWindow int64 `json:"context_window"`
+	// DisplayName 是官方目录声明的显示名。
+	DisplayName string `json:"display_name"`
+}
+
+// modelModalitiesDTO 是 AI Home 兼容目录的模态对。
+type modelModalitiesDTO struct {
+	Input  []string `json:"input"`
+	Output []string `json:"output"`
 }
 
 // modelReasoningLevelDTO 是官方 Codex 目录的单个推理档位项。
 type modelReasoningLevelDTO struct {
 	Effort string `json:"effort"`
+}
+
+// modelFacts 把目录项转换成能力事实；未声明的字段保持零值。
+func modelFacts(entry modelIdentityDTO, model string) modelmetadata.ModelFacts {
+	facts := modelmetadata.ModelFacts{ModelID: model, DisplayName: entry.DisplayName}
+	if ladder, ok := reasoningLadder(entry); ok {
+		facts.ReasoningEfforts = ladder
+	}
+	if entry.ContextWindow > 0 {
+		facts.ContextWindow = int(entry.ContextWindow)
+	}
+	input, output := entry.InputModalities, []string(nil)
+	if entry.AIHModalities != nil {
+		input, output = entry.AIHModalities.Input, entry.AIHModalities.Output
+	} else if len(input) > 0 && len(output) == 0 {
+		output = []string{"text"}
+	}
+	if len(input) > 0 && len(output) > 0 {
+		if modalities, err := modelmetadata.NewModalities(input, output); err == nil {
+			facts.HasModalities = true
+			facts.Modalities = modalities
+		}
+	}
+	return facts
 }
 
 // reasoningLadder 只读取上游明确声明的档位；未知档位丢弃，空结果表示未声明。
@@ -298,7 +337,7 @@ func decodeModelCatalog(
 		return modelCatalog{}, ErrInvalidModelCatalog
 	}
 	models := make([]string, 0, len(entries))
-	ladders := make(map[string][]inference.ReasoningEffort)
+	facts := make([]modelmetadata.ModelFacts, 0, len(entries))
 	seen := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		model := entry.ID
@@ -316,18 +355,13 @@ func decodeModelCatalog(
 		}
 		seen[model] = struct{}{}
 		models = append(models, model)
-		if ladder, ok := reasoningLadder(entry); ok {
-			ladders[model] = ladder
-		}
+		facts = append(facts, modelFacts(entry, model))
 	}
 	if len(models) == 0 {
 		return modelCatalog{}, ErrInvalidModelCatalog
 	}
 	sort.Strings(models)
-	if len(ladders) == 0 {
-		ladders = nil
-	}
-	return modelCatalog{models: models, ladders: ladders}, nil
+	return modelCatalog{models: models, facts: facts}, nil
 }
 
 // validModelCatalogID 复用运行态真实模型 ID 的统一校验合同。

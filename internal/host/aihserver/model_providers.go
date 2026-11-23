@@ -83,9 +83,10 @@ func buildCodexModelProvider(context modelProviderContext) ([]accountapp.Provide
 		return nil, err
 	}
 	// 内置 models.dev 快照是发布时数据；上游目录（官方 supported_reasoning_levels /
-	// AI Home 兼容 aih_reasoning_efforts）才是新模型档位的权威来源，能随账号目录刷新即时到达。
-	if registrar, ok := context.modalityRegistrar.(modelmetadata.ReasoningLadderRegistrar); ok {
-		source.WithReasoningLadders(registrar)
+	// AI Home 兼容 aih_reasoning_efforts / 模态 / 上下文）才是能力事实的权威来源，
+	// 能随账号目录刷新即时到达。
+	if registrar, ok := context.modalityRegistrar.(modelmetadata.ModelFactsRegistrar); ok {
+		source.WithModelFacts(registrar)
 	}
 	return []accountapp.ProviderModelDiscoverer{source}, nil
 }

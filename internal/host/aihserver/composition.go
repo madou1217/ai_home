@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/modelprobes"
 	upstreammappingapp "github.com/madou1217/ai_home/application/upstreammapping"
 	"github.com/madou1217/ai_home/application/upstreamrules"
@@ -268,12 +269,18 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, fmt.Errorf("创建客户端版本解析器失败: %w", err)
 	}
 	codexVersions := clientVersions.Codex
-	modelModalities, err := modelsdev.New()
+	legacyMetadata, err := modelsdev.New()
 	if err != nil {
 		_ = clientVersions.Close()
 		_ = store.Close()
-		return nil, fmt.Errorf("创建 models.dev 模态索引失败: %w", err)
+		return nil, fmt.Errorf("创建 models.dev 兼容能力源失败: %w", err)
 	}
+	// 能力事实走独立的能力抽象：上游账号目录声明优先，models.dev 只作为兼容来源
+	// （它与 pricing 插件是两套不同的抽象，绝不共用）。
+	modelModalities := modelmetadata.NewCapabilityRegistry(modelmetadata.CapabilityRegistryOptions{
+		Sources:  []modelmetadata.FactsSource{legacyMetadata},
+		SourceID: "capabilities",
+	})
 	agyModelWires := newAgyModelWires(options.AIHomeDir)
 	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires, modelModalities, options.AIHomeDir)
 	if err != nil {
@@ -531,7 +538,7 @@ type handlerDependencies struct {
 	CodexVersions              *clientversion.Resolver
 	ClaudeVersions             *clientversion.Resolver
 	AGYModelWires              *agycodeassist.ModelWireStore
-	ModelModalities            *modelsdev.Index
+	ModelModalities            modelmetadata.Catalog
 	// RouteObserver 落原生 WS 每轮选号（终端标题的当前路由帧）；Node 看不到 WS 管道里的选号。
 	RouteObserver codexresponsesws.RouteObserver
 	// HostHomeDir 是宿主 CLI 配置文件所在家目录；工具权限设置的 host* 探测需要它。

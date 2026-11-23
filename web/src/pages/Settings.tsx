@@ -49,6 +49,7 @@ import UpstreamErrorMappings from './UpstreamErrorMappings';
 import SshHostsPanel from './SshHostsPanel';
 import FailureSemantics from './FailureSemantics';
 import ClientKeysPanel from './ClientKeys';
+import ConcurrencyLimitsPanel from './ConcurrencyLimits';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
 import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
@@ -107,7 +108,7 @@ const renderControlEndpointHints = (
   );
 };
 
-export type SettingsSectionKey = 'basic' | 'capture' | 'service' | 'aliases' | 'upstream-errors' | 'failure-semantics' | 'api-keys' | 'control-planes' | 'ssh-hosts';
+export type SettingsSectionKey = 'basic' | 'capture' | 'service' | 'aliases' | 'upstream-errors' | 'failure-semantics' | 'api-keys' | 'concurrency' | 'control-planes' | 'ssh-hosts';
 
 interface SettingsProps {
   section?: SettingsSectionKey;
@@ -170,6 +171,12 @@ const SETTINGS_PAGE_META = {
     eyebrow: '配置',
     description: '管理客户端 API Key 与调用统计；限流字段本轮只展示。'
   },
+  concurrency: {
+    code: 'LIMITS',
+    title: '限流与并发',
+    eyebrow: '配置',
+    description: '管理全局并发、Provider 默认与账号覆盖；本轮只存储与预览，尚未执行拦截。'
+  },
   'control-planes': {
     code: 'SERVER',
     title: 'Server 管理',
@@ -188,7 +195,7 @@ const getInitialSettingsTab = () => {
   if (typeof window === 'undefined') return 'basic';
   const params = new URLSearchParams(window.location.search);
   const tab = String(params.get('tab') || '').trim();
-  return ['capture', 'service', 'aliases', 'upstream-errors', 'failure-semantics', 'api-keys', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
+  return ['capture', 'service', 'aliases', 'upstream-errors', 'failure-semantics', 'api-keys', 'concurrency', 'control-planes', 'ssh-hosts'].includes(tab) ? tab : 'basic';
 };
 
 const formatActiveControlPlaneLabel = (profile: ControlPlaneProfile | null) => {
@@ -926,6 +933,11 @@ const Settings = ({ section }: SettingsProps) => {
       key: 'api-keys',
       label: 'API Keys',
       children: <ClientKeysPanel />,
+    },
+    {
+      key: 'concurrency',
+      label: '限流与并发',
+      children: <ConcurrencyLimitsPanel />,
     },
     {
       key: 'control-planes',

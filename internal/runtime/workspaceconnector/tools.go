@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -97,6 +98,43 @@ func ToolDefinitions() []map[string]any {
 				"required": []any{"command"},
 			},
 		},
+		{
+			"name":        "start_job",
+			"description": "在本地工作区启动一个后台命令作业，立即返回 job id。长任务（构建、测试、watch）用它，不要用 run_command 阻塞等待。用 watch_job 带 cursor 读取增量输出，用 interrupt_job 终止。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command":    map[string]any{"type": "string", "description": "要执行的 shell 命令"},
+					"cwd":        map[string]any{"type": "string", "description": "相对工作区根的工作目录（可选）"},
+					"timeout_ms": map[string]any{"type": "integer", "description": "作业最长运行时间，默认 1800000，上限 7200000"},
+				},
+				"required": []any{"command"},
+			},
+		},
+		{
+			"name":        "watch_job",
+			"description": "读取后台作业从 cursor 之后的新输出。job 还在运行且暂时没有输出时会等待 wait_ms。返回 state、exit code（结束后）、stdout/stderr 和 next cursor；下次继续传 cursor。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"job_id":  map[string]any{"type": "string"},
+					"cursor":  map[string]any{"type": "string", "description": "上次返回的 cursor（stdout:stderr）；第一次留空"},
+					"wait_ms": map[string]any{"type": "integer", "description": "最长等待毫秒，默认 10000，上限 30000"},
+				},
+				"required": []any{"job_id"},
+			},
+		},
+		{
+			"name":        "interrupt_job",
+			"description": "终止一个仍在运行的后台作业（整个进程组）。已结束的作业返回当前状态。",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"job_id": map[string]any{"type": "string"},
+				},
+				"required": []any{"job_id"},
+			},
+		},
 	}
 }
 
@@ -106,14 +144,28 @@ func ToolDefinitions() []map[string]any {
 func ToolDefinitionsFor(capabilities remoteconnector.Capabilities) []map[string]any {
 	normalized := remoteconnector.NormalizeCapabilities(capabilities)
 	tools := ToolDefinitions()
-	if normalized.RunCommand {
-		return tools
-	}
 	filtered := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
-		if tool["name"] != "run_command" {
-			filtered = append(filtered, tool)
+		name, _ := tool["name"].(string)
+		switch name {
+		case "run_command":
+			if !normalized.RunCommand {
+				continue
+			}
+		case "start_job":
+			if !normalized.StartJob {
+				continue
+			}
+		case "watch_job":
+			if !normalized.WatchJob {
+				continue
+			}
+		case "interrupt_job":
+			if !normalized.InterruptJob {
+				continue
+			}
 		}
+		filtered = append(filtered, tool)
 	}
 	return filtered
 }
@@ -141,6 +193,12 @@ func CallTool(ctx context.Context, hub *Hub, workspaceID, name string, arguments
 		return callSearch(ctx, hub, workspaceID, arguments)
 	case "run_command":
 		return callRunCommand(ctx, hub, workspaceID, arguments)
+	case "start_job":
+		return callStartJob(ctx, hub, workspaceID, arguments)
+	case "watch_job":
+		return callWatchJob(ctx, hub, workspaceID, arguments)
+	case "interrupt_job":
+		return callInterruptJob(ctx, hub, workspaceID, arguments)
 	default:
 		return toolError(remoteconnector.CodeUnsupportedOperation, "unknown workspace tool: "+name)
 	}
@@ -348,6 +406,130 @@ func callRunCommand(ctx context.Context, hub *Hub, workspaceID string, args map[
 		output["isError"] = true
 	}
 	return output
+}
+
+func callStartJob(ctx context.Context, hub *Hub, workspaceID string, args map[string]any) map[string]any {
+	command, ok := args["command"].(string)
+	if !ok || strings.TrimSpace(command) == "" {
+		return toolError(remoteconnector.CodeInvalidPayload, "command is required")
+	}
+	if len(command) > maxToolCommandBytes {
+		return toolError(remoteconnector.CodeInvalidPayload, "command is larger than the command limit")
+	}
+	raw, err := hub.Call(ctx, workspaceID, remoteconnector.OperationStartJob, remoteconnector.StartJobRequest{
+		Command: command, Cwd: toolString(args["cwd"]), TimeoutMS: toolInt(args["timeout_ms"]),
+	})
+	if err != nil {
+		return toolFailure(err)
+	}
+	var result remoteconnector.StartJobResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned an invalid job start result")
+	}
+	return toolText(fmt.Sprintf("job: %s\nstate: %s\ncwd: %s\ncursor: %d:%d\n用 watch_job 带 cursor 读取增量输出。",
+		result.JobID, result.State, result.Cwd, result.StdoutStart, result.StderrStart))
+}
+
+func callWatchJob(ctx context.Context, hub *Hub, workspaceID string, args map[string]any) map[string]any {
+	jobID := toolString(args["job_id"])
+	if jobID == "" {
+		return toolError(remoteconnector.CodeInvalidPayload, "job_id is required")
+	}
+	stdoutOffset, stderrOffset, ok := parseJobCursor(toolString(args["cursor"]))
+	if !ok {
+		return toolError(remoteconnector.CodeInvalidPayload, "cursor must be stdout:stderr byte offsets")
+	}
+	waitMS := toolInt(args["wait_ms"])
+	if waitMS <= 0 {
+		waitMS = 10000
+	}
+	raw, err := hub.Call(ctx, workspaceID, remoteconnector.OperationWatchJob, remoteconnector.WatchJobRequest{
+		JobID: jobID, StdoutOffset: stdoutOffset, StderrOffset: stderrOffset, WaitMS: waitMS,
+	})
+	if err != nil {
+		return toolFailure(err)
+	}
+	var result remoteconnector.WatchJobResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned an invalid job watch result")
+	}
+	stdout, err := base64.StdEncoding.DecodeString(result.Stdout)
+	if err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned invalid job stdout")
+	}
+	stderr, err := base64.StdEncoding.DecodeString(result.Stderr)
+	if err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned invalid job stderr")
+	}
+	parts := []string{
+		"job: " + result.JobID,
+		"state: " + result.State,
+		fmt.Sprintf("cursor: %d:%d", result.StdoutOffset, result.StderrOffset),
+		fmt.Sprintf("duration: %dms", result.DurationMS),
+	}
+	if result.State != remoteconnector.JobRunning {
+		parts = append(parts, fmt.Sprintf("exit code: %d", result.ExitCode))
+	}
+	if result.Dropped {
+		parts = append(parts, "（部分旧输出已被丢弃）")
+	}
+	if len(stdout) > 0 {
+		parts = append(parts, "stdout:\n"+string(strings.ToValidUTF8(string(stdout), "\uFFFD")))
+	}
+	if len(stderr) > 0 {
+		parts = append(parts, "stderr:\n"+string(strings.ToValidUTF8(string(stderr), "\uFFFD")))
+	}
+	if len(stdout) == 0 && len(stderr) == 0 && result.State == remoteconnector.JobRunning {
+		parts = append(parts, "（暂无新输出）")
+	}
+	output := toolText(strings.Join(parts, "\n"))
+	if result.State == remoteconnector.JobFailed {
+		output["isError"] = true
+	}
+	return output
+}
+
+func callInterruptJob(ctx context.Context, hub *Hub, workspaceID string, args map[string]any) map[string]any {
+	jobID := toolString(args["job_id"])
+	if jobID == "" {
+		return toolError(remoteconnector.CodeInvalidPayload, "job_id is required")
+	}
+	raw, err := hub.Call(ctx, workspaceID, remoteconnector.OperationInterruptJob, remoteconnector.InterruptJobRequest{JobID: jobID})
+	if err != nil {
+		return toolFailure(err)
+	}
+	var result remoteconnector.InterruptJobResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return toolError(remoteconnector.CodeProtocolError, "connector returned an invalid job interrupt result")
+	}
+	text := fmt.Sprintf("job: %s\nstate: %s", result.JobID, result.State)
+	if result.State == remoteconnector.JobRunning {
+		text += "\n（进程仍未退出）"
+	}
+	return toolText(text)
+}
+
+// parseJobCursor parses "stdout:stderr" byte offsets; an empty cursor starts at
+// the beginning of both streams.
+func parseJobCursor(value string) (int64, int64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, 0, true
+	}
+	parts := strings.SplitN(value, ":", 2)
+	stdout, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	if err != nil || stdout < 0 {
+		return 0, 0, false
+	}
+	var stderr int64
+	if len(parts) == 2 {
+		parsed, parseErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+		if parseErr != nil || parsed < 0 {
+			return 0, 0, false
+		}
+		stderr = parsed
+	}
+	return stdout, stderr, true
 }
 
 func numberToolLines(content string, offset, limit int) (string, int, int, int) {

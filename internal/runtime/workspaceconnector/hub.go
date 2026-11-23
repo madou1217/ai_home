@@ -316,16 +316,27 @@ func (hub *Hub) Call(ctx context.Context, workspaceID, operation string, payload
 // operation budget. Both the tool endpoint and the raw RPC endpoint go through
 // this function so they cannot drift.
 func CallTimeoutFor(operation string, payload any) time.Duration {
-	if operation != remoteconnector.OperationRunCommand {
+	switch operation {
+	case remoteconnector.OperationRunCommand:
+		var request remoteconnector.RunCommandRequest
+		decodeCallPayload(payload, &request)
+		return remoteconnector.CommandTimeout(request.TimeoutMS) + 15*time.Second
+	case remoteconnector.OperationWatchJob:
+		var request remoteconnector.WatchJobRequest
+		decodeCallPayload(payload, &request)
+		return remoteconnector.JobWait(request.WaitMS) + 15*time.Second
+	default:
 		return DefaultCallTimeout
 	}
-	var request remoteconnector.RunCommandRequest
-	if payload != nil {
-		if encoded, err := json.Marshal(payload); err == nil {
-			_ = json.Unmarshal(encoded, &request)
-		}
+}
+
+func decodeCallPayload(payload any, target any) {
+	if payload == nil {
+		return
 	}
-	return remoteconnector.CommandTimeout(request.TimeoutMS) + 15*time.Second
+	if encoded, err := json.Marshal(payload); err == nil {
+		_ = json.Unmarshal(encoded, target)
+	}
 }
 
 // CallWithTimeout routes one RPC with an explicit wait budget.

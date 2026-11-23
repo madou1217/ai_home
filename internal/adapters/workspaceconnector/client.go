@@ -59,6 +59,7 @@ type Session struct {
 type Connector struct {
 	ws      *websocket.Conn
 	fs      *filesystem
+	jobs    *jobManager
 	config  Config
 	session Session
 
@@ -113,9 +114,10 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 	ws.SetReadLimit(clientReadLimit)
 	closeOnError := func() { _ = ws.CloseNow() }
 
+	commands := !config.DisableCommand
 	capabilities := remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
-		RunCommand: !config.DisableCommand,
+		RunCommand: commands, StartJob: commands, WatchJob: commands, InterruptJob: commands,
 	})
 	hello := remoteconnector.Hello{
 		Type:         remoteconnector.MessageHello,
@@ -176,7 +178,7 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 			return nil, fmt.Errorf("persist workspace connector session: %w", err)
 		}
 	}
-	return &Connector{ws: ws, fs: files, config: config, session: session}, nil
+	return &Connector{ws: ws, fs: files, jobs: newJobManager(files), config: config, session: session}, nil
 }
 
 func (connector *Connector) Session() Session { return connector.session }
@@ -284,18 +286,33 @@ func (connector *Connector) Serve(ctx context.Context) error {
 // of inheriting the short file-operation budget. The extra grace covers process
 // startup, output draining and the response frame.
 func (connector *Connector) requestBudget(message remoteconnector.Message, fallback time.Duration) time.Duration {
-	if message.Operation != remoteconnector.OperationRunCommand {
+	switch message.Operation {
+	case remoteconnector.OperationRunCommand:
+		var request remoteconnector.RunCommandRequest
+		if len(message.Payload) > 0 {
+			_ = json.Unmarshal(message.Payload, &request)
+		}
+		return remoteconnector.CommandTimeout(request.TimeoutMS) + 10*time.Second
+	case remoteconnector.OperationWatchJob:
+		var request remoteconnector.WatchJobRequest
+		if len(message.Payload) > 0 {
+			_ = json.Unmarshal(message.Payload, &request)
+		}
+		return remoteconnector.JobWait(request.WaitMS) + 10*time.Second
+	default:
 		return fallback
 	}
-	var request remoteconnector.RunCommandRequest
-	if len(message.Payload) > 0 {
-		_ = json.Unmarshal(message.Payload, &request)
-	}
-	return remoteconnector.CommandTimeout(request.TimeoutMS) + 10*time.Second
 }
 
 func (connector *Connector) execute(ctx context.Context, request remoteconnector.Message) remoteconnector.Message {
-	result, err := connector.fs.execute(ctx, request.Operation, request.Payload)
+	var result any
+	var err error
+	switch request.Operation {
+	case remoteconnector.OperationStartJob, remoteconnector.OperationWatchJob, remoteconnector.OperationInterruptJob:
+		result, err = connector.jobs.execute(ctx, request.Operation, request.Payload)
+	default:
+		result, err = connector.fs.execute(ctx, request.Operation, request.Payload)
+	}
 	if err != nil {
 		code := remoteconnector.ErrorCode(err)
 		message := ""

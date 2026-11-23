@@ -52,7 +52,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/sshremote"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/adapters/usagepricing"
-	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/host/worknative"
@@ -63,7 +62,6 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/failureprovenance"
-	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
@@ -1116,43 +1114,35 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	upstreamRuleEvaluator := configured.NewEvaluator(upstreamRulesService)
 	// 选号前额度门禁：与 Node account-usage-gate 同口径，阈值读 config:usage。
 	usageGate := newUsageSchedulingGate(usage.service, aiHomeDir, time.Now)
-	inference, err := newInferenceComposition(
-		ctx,
-		inferenceCompositionDependencies{
-			catalog:                   catalog,
-			store:                     store,
-			runtime:                   accountRuntime,
-			weights:                   accountRuntime,
-			usageGate:                 usageGate,
-			strategy:                  selectionStrategy,
-			models:                    recoveringModelManagement,
-			modelRefreshes:            modelRefresh,
-			credentials:               credentials,
-			delegateCredentialRefresh: delegateCredentialRefresh,
-			ownsCredentialRefresh:     ownsCredentialRefresh,
-			authorizer:                clientAuthorizer,
-			httpClient:                inferenceClient,
-			decodeErrors:              decodeErrors,
-			responsesDecodeErrors:     newResponsesDecodeErrorObserver(errorLog),
-			upstreamDecodeErrors:      upstreamDecodeErrors,
-			clock:                     time.Now,
-			requestRewriter:           visionGuard,
-			effortLadders:             modelModalities,
-			codexVersions:             codexVersions,
-			claudeVersions:            claudeVersions,
-			codexRejections:           newCodexRejectionObserver(errorLog),
-			agyModelWires:             agyModelWires,
-			upstreamRules:             upstreamRuleEvaluator,
-			upstream429Retries:        upstream429Controller,
-			componentLog:              errorLog,
-			accountEgress: inferenceEgressResolver{manager: func() *runtimeegress.Manager {
-				return egressManager
-			}},
-			accountHints: inferenceAccountHintResolver{store: store},
-		},
-	)
+	inference, err := newInferenceRuntime(inferenceRuntimeInputs{
+		ctx:                       ctx,
+		catalog:                   catalog,
+		store:                     store,
+		runtime:                   accountRuntime,
+		weights:                   accountRuntime,
+		usageGate:                 usageGate,
+		strategy:                  selectionStrategy,
+		models:                    recoveringModelManagement,
+		modelRefreshes:            modelRefresh,
+		credentials:               credentials,
+		delegateCredentialRefresh: delegateCredentialRefresh,
+		ownsCredentialRefresh:     ownsCredentialRefresh,
+		authorizer:                clientAuthorizer,
+		httpClient:                inferenceClient,
+		decodeErrors:              decodeErrors,
+		upstreamDecodeErrors:      upstreamDecodeErrors,
+		errorLog:                  errorLog,
+		requestRewriter:           visionGuard,
+		effortLadders:             modelModalities,
+		codexVersions:             codexVersions,
+		claudeVersions:            claudeVersions,
+		agyModelWires:             agyModelWires,
+		upstreamRules:             upstreamRuleEvaluator,
+		upstream429Retries:        upstream429Controller,
+		egressManager:             func() *runtimeegress.Manager { return egressManager },
+	})
 	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建生产推理组合失败: %w", err)
+		return serverHandlers{}, nil, err
 	}
 	// 别名投影管理接口：Node 推送后立即重建目录，让 applied_generation 追平。
 	// 别名 CRUD：与投影接口共用同一个 Store 和代次，写进去立刻参与路由编译。
@@ -1485,73 +1475,57 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	imageEgress := newImageAccountEgress(func() *runtimeegress.Manager {
 		return egressManager
 	})
-	webuiDeps := webuiRouteDependencies{
-		Authorizer:         authorizer,
-		AIHomeDir:          aiHomeDir,
-		Catalog:            catalog,
-		ModelModalities:    modelModalities,
-		ModelAliasExpander: modelAliasExpander,
-		ModelAliasDisplay:  inference.models,
-		MetadataResolver:   pricingResolver,
-		webuiEgressDependencies: webuiEgressDependencies{
-			EgressManager:         egressManager,
-			Upstream429RetryStore: upstream429Store,
-			ProxyPool:             dependencies.ProxyPool,
-			SSHProxies:            sshProxySupervisor,
-			ReverseTunnels:        sshTunnelSupervisor,
-		},
-		ImageExecutionDependencies: imageexecution.Dependencies{
-			AccountEgress:          imageEgress.HTTPForAccount,
-			Upstream429Retries:     upstream429Controller,
-			Attempts:               accountRuntime,
-			CredentialObservations: credentials,
-			Rules:                  upstreamRuleEvaluator,
-		},
-		HostHomeDir:        dependencies.HostHomeDir,
-		Store:              store,
-		TokenEvents:        dependencies.TokenEvents,
-		NativeWorkPreparer: nativeWork,
-		AccountRuntime:     accountRuntime,
-		AuthJobs:           jobs,
-		LoginJobs:          aihloginjob.NewManager(aihloginjob.Options{AIHomeDir: aiHomeDir, HostHomeDir: dependencies.HostHomeDir}),
-		AccountsHandler:    accountsHandler,
-		AccountRows:        dependencies.WebUIAccountsSource,
-		CredentialEditor:   credentialRotator,
-		ProviderDefaults:   providerDefaults,
-		ModelRefresher:     recoveringModelManagement,
-		UsageService:       usage.service,
-		QuotaStats:         quotaStatsService,
-		TerminalProbe: func(sessionKey string) string {
+	webuiDeps := newWebUIDependencies(webuiDependenciesInputs{
+		host:                  dependencies,
+		authorizer:            authorizer,
+		aiHomeDir:             aiHomeDir,
+		catalog:               catalog,
+		nodeBaseURL:           nodeBaseURL,
+		selfBaseURL:           selfBaseURL,
+		managementKey:         managementKey,
+		clientKey:             clientKey,
+		requestShutdown:       requestShutdown,
+		desktopChanged:        desktopChanged,
+		metrics:               metrics,
+		modelModalities:       modelModalities,
+		modelAliasExpander:    modelAliasExpander,
+		modelAliasDisplay:     inference.models,
+		metadataResolver:      pricingResolver,
+		chatModels:            inference.models,
+		egressManager:         egressManager,
+		upstream429Store:      upstream429Store,
+		sshProxies:            sshProxySupervisor,
+		reverseTunnels:        sshTunnelSupervisor,
+		imageEgress:           imageEgress,
+		upstream429Controller: upstream429Controller,
+		accountRuntime:        accountRuntime,
+		credentials:           credentials,
+		upstreamRules:         upstreamRuleEvaluator,
+		nativeWork:            nativeWork,
+		authJobs:              jobs,
+		accountsHandler:       accountsHandler,
+		credentialEditor:      credentialRotator,
+		providerDefaults:      providerDefaults,
+		modelRefresher:        recoveringModelManagement,
+		usageService:          usage.service,
+		quotaStats:            quotaStatsService,
+		terminalProbe: func(sessionKey string) string {
 			return string(terminalDurable.Probe(sessionKey).State)
 		},
-		AccountDeletion: deletionRuntime,
-		// 停用 codex 账号时一并回收宿主直连授权（WebUI 启停的唯一权威）。
-		AccountHostGrant: deletionHost,
-		// 账号活动的 provider handler 仍由 Node 执行：Go 只持有任务状态与限流。
-		NodeBaseURL:            nodeBaseURL,
-		SelfBaseURL:            selfBaseURL,
-		ManagementKey:          managementKey,
-		RequestShutdown:        requestShutdown,
-		TerminalHandler:        webUITerminalHandler,
-		SubAggregator:          subAggSvc,
-		SessionEventBus:        sessionEventBus,
-		CodexHooks:             hooksRuntime,
-		PluginHostService:      pluginBundle.HostService,
-		PricingService:         sharedPricingService,
-		MetricsRecorder:        metrics,
-		StartedAt:              time.Now(),
-		OutcomeRecorder:        dependencies.OutcomeRecorder,
-		AccountActivity:        hookSessionActivityTracker{activity: activityDaemon.Activity()},
-		AccountImporter:        accountImporter,
-		ClientKey:              clientKey,
-		TranslationGateway:     dependencies.TranslationGateway,
-		ChatGateway:            pluginBundle.Handlers.wrap("openai_chat", familyRelayHandler),
-		ChatModels:             inference.models,
-		DesktopSettingsChanged: desktopChanged.changed,
-
-		CredentialRefresher:       credentials,
-		DelegateCredentialRefresh: delegateCredentialRefresh,
-	}
+		accountDeletion:           deletionRuntime,
+		accountHostGrant:          deletionHost,
+		accountImporter:           accountImporter,
+		accountActivity:           hookSessionActivityTracker{activity: activityDaemon.Activity()},
+		credentialRefresher:       credentials,
+		delegateCredentialRefresh: delegateCredentialRefresh,
+		terminalHandler:           webUITerminalHandler,
+		subAggregator:             subAggSvc,
+		sessionEventBus:           sessionEventBus,
+		codexHooks:                hooksRuntime,
+		familyRelayHandler:        familyRelayHandler,
+		pluginBundle:              pluginBundle,
+		pricingService:            sharedPricingService,
+	})
 	schedulerPorts := webuiSchedulerPorts{
 		ClientKey:    clientKey,
 		LocalHandler: windowProbeMux,

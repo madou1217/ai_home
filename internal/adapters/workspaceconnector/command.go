@@ -31,20 +31,9 @@ func (fs *filesystem) runCommand(ctx context.Context, request remoteconnector.Ru
 	if len(command) > maxCommandBytes {
 		return remoteconnector.RunCommandResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInvalidPayload, "command is larger than the command limit")
 	}
-	cwd := fs.sandbox.root
-	if relative := strings.TrimSpace(request.Cwd); relative != "" {
-		resolved, err := fs.sandbox.resolve(relative, false)
-		if err != nil {
-			return remoteconnector.RunCommandResult{}, err
-		}
-		info, statErr := os.Stat(resolved)
-		if statErr != nil {
-			return remoteconnector.RunCommandResult{}, fileError(statErr)
-		}
-		if !info.IsDir() {
-			return remoteconnector.RunCommandResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeNotADirectory, "command cwd is not a directory")
-		}
-		cwd = resolved
+	cwd, err := fs.commandDir(request.Cwd)
+	if err != nil {
+		return remoteconnector.RunCommandResult{}, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, remoteconnector.CommandTimeout(request.TimeoutMS))
 	defer cancel()
@@ -87,6 +76,27 @@ func (fs *filesystem) runCommand(ctx context.Context, request remoteconnector.Ru
 		return result, nil
 	}
 	return remoteconnector.RunCommandResult{}, remoteconnector.NewProtocolError(remoteconnector.CodeInternal, "command execution failed")
+}
+
+// commandDir resolves an optional workspace-relative cwd and requires it to be
+// an existing directory inside the sandbox.
+func (fs *filesystem) commandDir(relative string) (string, error) {
+	relative = strings.TrimSpace(relative)
+	if relative == "" {
+		return fs.sandbox.root, nil
+	}
+	resolved, err := fs.sandbox.resolve(relative, false)
+	if err != nil {
+		return "", err
+	}
+	info, statErr := os.Stat(resolved)
+	if statErr != nil {
+		return "", fileError(statErr)
+	}
+	if !info.IsDir() {
+		return "", remoteconnector.NewProtocolError(remoteconnector.CodeNotADirectory, "command cwd is not a directory")
+	}
+	return resolved, nil
 }
 
 // commandShell picks the local shell. The command is passed as a single argv

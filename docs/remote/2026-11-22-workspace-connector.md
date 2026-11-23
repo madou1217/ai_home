@@ -75,9 +75,12 @@ WebSocket 首帧 `hello` 携带 enrollment code 或 session token；之后只在
 | `workspace.list_directory` | 列出目录，默认 200 条，上限 1000 |
 | `workspace.search` | 文件名子串搜索，限制深度/条数/访问量 |
 | `workspace.run_command` | 在工作区内同步执行一条 shell 命令，返回退出码与输出 |
+| `workspace.start_job` | 启动后台命令作业，立即返回 `jobId` 与初始 cursor |
+| `workspace.watch_job` | 按 cursor 读取增量输出，可长轮询等待新输出 |
+| `workspace.interrupt_job` | 终止仍在运行的作业（整个进程组） |
 
-尚未实现：`start_job` / `watch_job` / `interrupt_job` 与审批协议。
-Connector 不声明这些能力，Server 也不会把未声明能力当成可用。
+尚未实现：审批协议。作业不跨 Connector 进程重启。
+Connector 不声明未实现的能力，Server 也不会把未声明能力当成可用。
 
 ### 3.1 路径约束
 
@@ -100,7 +103,21 @@ Connector 不声明这些能力，Server 也不会把未声明能力当成可用
   管道写满而阻塞；
 - 断线或进程退出时结果丢失；需要重连游标与后台任务时走下一阶段的 `start_job`。
 
-### 3.3 Token 约束
+### 3.3 持久作业约束
+
+- `start_job` 立即返回 `jobId`；作业在 Connector 进程内运行，不绑定启动它的 RPC、HTTP
+  请求或 Server 会话。Server 重启、Connector 重连后仍可继续 `watch_job`；
+- `watch_job` 的 cursor 是 stdout / stderr 各自的绝对字节偏移，格式 `stdout:stderr`；
+  重复使用同一 cursor 不会重复消费，cursor 超过已产出字节会被拒绝；
+- 每个流只保留最近 512 KiB；窗口外的旧字节被丢弃并返回 `dropped`，单次返回每流最多
+  128 KiB；
+- 作业默认最长 30 分钟、上限 2 小时；超时杀进程组并进入 `timed_out`，主动终止进入
+  `interrupted`；
+- 同时最多 4 个运行中作业、保留 16 个作业记录；`--no-command` 会同时关闭
+  `run_command` 与三个作业工具；
+- 边界：Connector 进程退出后作业不再受管（不是常驻服务管理器）；审批仍未实现。
+
+### 3.4 Token 约束
 
 - enrollment code 与 session token 只以 SHA-256 摘要落在 `aih.db` 的
   `remote:workspace-connectors` 键中；

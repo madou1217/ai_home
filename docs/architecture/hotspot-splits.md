@@ -26,6 +26,8 @@
 | Claude Native Relay | `composition_relay.go`（账号来源 + Native Relay Handler） | `composition.go` 2084 → 2068 行 |
 | 家族透传通道 | `composition_family_relay.go`（家族账号来源、透传模块、插件 Provider 注册表、Handler） | `composition.go` 2068 → 2033 行 |
 | 插件 bundle | `composition_plugin_bundle.go`（本地插件宿主、描述符回调、价格来源接入） | `composition.go` 2033 → 2003 行 |
+| WebUI 路由依赖 | `composition_webui_deps.go`（按能力分组的输入 + `newWebUIDependencies` 构造器） | `composition.go` 2003 → 1985 行 |
+| 生产推理组合 | `composition_inference.go`（推理输入 + 解码/拒绝观察器、出口与账号提示解析器） | `composition.go` 1985 → 1977 行 |
 | Provider 网络面板 | 拆成 Layers / Strategies / Routing / Diagnostics / Table / Upstreams 六个组件 | `ProviderNetworkSettings.tsx` 893 → 449 行 |
 | 出口上游 API | routing / catalog / upstream actions 分成三个文件 | `webuiegressupstreamsapi/handler.go` 539 → 367 行 |
 
@@ -33,7 +35,7 @@
 
 - 新路由组：新建 `webui_<domain>_routes.go`，在 `webui_feature_routes.go` 追加一行装配；不要再往 `buildWebUIRoutes` 里塞静态路由。
 - 新 egress 能力：在 `internal/runtime/egress` 增加端口/实现，由 `account_egress_clients.go` 统一取客户端；应用层只依赖 `application/accountegress.Decision`。
-- 新 WebUI 依赖：优先收进现有能力结构（`webuiEgressDependencies` 等），不要继续平铺到 `webuiRouteDependencies` 顶层。
+- 新 WebUI 依赖：加到 `composition_webui_deps.go` 的对应能力分组（鉴权/模型/出口/账号/运行面），不要直接写回 `newHandlers` 的依赖字面量；能复用既有能力结构（`webuiEgressDependencies` 等）时优先复用。
 - 新组合根辅助：放 `composition_runtime_helpers.go` 或新建 `composition_<topic>.go`。
 
 ## 后续可选

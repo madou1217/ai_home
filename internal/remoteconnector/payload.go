@@ -29,6 +29,8 @@ const (
 	CodeVersionConflict        = "version_conflict"
 	CodeInvalidPayload         = "invalid_payload"
 	CodeInvalidQuery           = "invalid_query"
+	CodeJobNotFound            = "job_not_found"
+	CodeJobLimit               = "job_limit_reached"
 	CodeRequestTimeout         = "request_timeout"
 	CodeProtocolError          = "protocol_error"
 	CodeConnectorSuperseded    = "connector_superseded"
@@ -274,6 +276,107 @@ type RunCommandResult struct {
 	Truncated  bool   `json:"truncated,omitempty"`
 	TimedOut   bool   `json:"timedOut,omitempty"`
 	DurationMS int64  `json:"durationMs"`
+}
+
+const (
+	// DefaultJobTimeout bounds a background job lifetime when the caller does
+	// not ask for a different one.
+	DefaultJobTimeout = 30 * time.Minute
+	// MaxJobTimeout is the hard ceiling for a background job.
+	MaxJobTimeout = 2 * time.Hour
+	// MaxJobWait bounds one watch_job long-poll; callers poll again with the
+	// returned cursor.
+	MaxJobWait = 30 * time.Second
+)
+
+// Job states are stable machine-readable values shared by the connector, the
+// Server tool layer and the agent-facing tool output.
+const (
+	JobRunning     = "running"
+	JobExited      = "exited"
+	JobFailed      = "failed"
+	JobTimedOut    = "timed_out"
+	JobInterrupted = "interrupted"
+)
+
+// StartJobRequest starts one detached command. Jobs are owned by the local
+// connector: they outlive the RPC that started them and the Server session, but
+// not a connector process restart.
+type StartJobRequest struct {
+	Command   string `json:"command"`
+	Cwd       string `json:"cwd,omitempty"`
+	TimeoutMS int    `json:"timeoutMs,omitempty"`
+}
+
+type StartJobResult struct {
+	JobID       string `json:"jobId"`
+	State       string `json:"state"`
+	Cwd         string `json:"cwd"`
+	StdoutStart int64  `json:"stdoutStart"`
+	StderrStart int64  `json:"stderrStart"`
+	StartedAt   int64  `json:"startedAt"`
+}
+
+// WatchJobRequest reads output after the given absolute byte offsets. Offsets
+// are per stream and never regress; the caller passes back what it consumed.
+type WatchJobRequest struct {
+	JobID        string `json:"jobId"`
+	StdoutOffset int64  `json:"stdoutOffset,omitempty"`
+	StderrOffset int64  `json:"stderrOffset,omitempty"`
+	WaitMS       int    `json:"waitMs,omitempty"`
+}
+
+type WatchJobResult struct {
+	JobID        string `json:"jobId"`
+	State        string `json:"state"`
+	ExitCode     int    `json:"exitCode"`
+	Stdout       string `json:"stdout"`
+	Stderr       string `json:"stderr"`
+	Encoding     string `json:"encoding"`
+	StdoutOffset int64  `json:"stdoutOffset"`
+	StderrOffset int64  `json:"stderrOffset"`
+	Dropped      bool   `json:"dropped,omitempty"`
+	StartedAt    int64  `json:"startedAt"`
+	EndedAt      int64  `json:"endedAt,omitempty"`
+	DurationMS   int64  `json:"durationMs"`
+}
+
+type InterruptJobRequest struct {
+	JobID string `json:"jobId"`
+}
+
+type InterruptJobResult struct {
+	JobID  string `json:"jobId"`
+	State  string `json:"state"`
+	Forced bool   `json:"forced,omitempty"`
+}
+
+// JobTimeout converts a caller-supplied millisecond budget into a bounded
+// duration. Zero or negative selects the default.
+func JobTimeout(timeoutMS int) time.Duration {
+	timeout := DefaultJobTimeout
+	if timeoutMS > 0 {
+		timeout = time.Duration(timeoutMS) * time.Millisecond
+	}
+	if timeout < time.Second {
+		timeout = time.Second
+	}
+	if timeout > MaxJobTimeout {
+		timeout = MaxJobTimeout
+	}
+	return timeout
+}
+
+// JobWait bounds one watch long-poll.
+func JobWait(waitMS int) time.Duration {
+	wait := time.Duration(waitMS) * time.Millisecond
+	if wait < 0 {
+		wait = 0
+	}
+	if wait > MaxJobWait {
+		wait = MaxJobWait
+	}
+	return wait
 }
 
 // CommandTimeout converts a caller-supplied millisecond budget into a bounded

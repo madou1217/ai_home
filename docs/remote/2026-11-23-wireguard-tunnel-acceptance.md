@@ -73,7 +73,30 @@ v0.1.1 在 Linux 上先 `install -m 600` 到 `/etc/wireguard/<iface>.conf`，再
 - Release：https://github.com/madou1217/aih-plugin-wireguard/releases/tag/v0.1.1
 - 资产：`wireguard-0.1.1.aih-plugin`、`public.pem`、`SHA256SUMS`；下载哈希与本地构建一致（`87999385…`）。
 
-## 7. 边界
+## 7. SSH 自建传输（v0.1.2）
+
+“开哪个端口”不应成为用户负担。v0.1.2 增加 `transport: "ssh"`：插件复用一台已有
+SSH 账号的主机，把 WireGuard 的 UDP 报文按长度分帧走 SSH 的 stdin/stdout，两端都只
+使用环回 UDP 端口（默认 `localUdpPort=51822`、`remoteUdpPort=51821`），不监听任何
+公网端口，也不需要在对端开放新端口或使用常用端口。
+
+验收（Linux 测试机，2026-11-24）：
+
+| 检查项 | 结果 |
+|---|---|
+| 插件 configure（transport=ssh） | 通过 |
+| 插件 enable | 通过，`运行中` / `wireguard-tunnel` |
+| WireGuard 真实握手 | 通过（对端为独立网络命名空间中的内核 WireGuard） |
+| 隧道内 ICMP | 通过，3/3 |
+| 隧道内 HTTP | 通过，返回 `netns-http-ok` |
+| 插件 disable | 通过，接口与 SSH 中继均停止 |
+| 对外监听端口 | 无（仅本机环回） |
+
+说明：该轮对端是测试机上的独立网络命名空间，用于消除对 AWS 实例的依赖；SSH 传输的
+代码路径（ssh 子进程、分帧、内核 WireGuard 握手）全部经过真实执行。跨主机版本此前已
+用同一传输方式（手工中继）验证过。
+
+## 8. 边界
 
 - 本记录没有使用原生 UDP 入站路径；若需要验证 NAT 穿透/原生 UDP 性能，需要先开放
   任一侧的 UDP 端口（AWS 安全组或 desired.cn 路由器）；

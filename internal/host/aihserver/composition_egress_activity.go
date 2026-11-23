@@ -48,6 +48,11 @@ func newEgressActivityRuntime(
 		Catalog:               catalog,
 		EnginePlugins:         enginePlugins,
 		DisableBuiltinEngines: true,
+		Logger: func(message string) {
+			if errorLog != nil {
+				errorLog.Printf("出口池: %s", message)
+			}
+		},
 	})
 	if err := egressManager.Start(ctx); err != nil && errorLog != nil {
 		errorLog.Printf("出口池后台守护启动降级: %v", err)

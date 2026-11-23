@@ -1,6 +1,6 @@
 # 借用远端代理与 P2P 隧道设计
 
-状态：传输与出口分层已落地；SSH 本地转发借用 Windows 代理已真机验证；WebUI 本机入口面板由核心维护并已验证启停/HTTP/SOCKS5；直连 P2P 尚未安装网络连接器插件，不作已打通声明。
+状态：传输与出口分层已落地；SSH 本地转发借用 Windows 代理已真机验证；WebUI 本机入口面板由核心维护并已验证启停/HTTP/SOCKS5；`--peer` 在 Mac→Windows 与 Mac→AWS→Windows 链路上借用 Windows Clash 出口（SG）真机验证；直连 P2P 仍要求 `network.connector` 给出可复核路径证据，当前不作“已打通直连 P2P”声明。
 
 ## 1. 三个平面必须分开
 
@@ -49,6 +49,7 @@ Mac aih proxy serve --ssh <connectionId>
 | --- | --- | --- |
 | SSH 本地转发 | Mac 能 SSH 到 Windows/Linux；最稳定 | 已实现 `--ssh` 自动转发并真机验证；`--ssh-via` 可指定跳板 |
 | SSH mesh 跳板 | 已有 Mac↔Windows、Mac↔AWS、Windows↔AWS 链路 | 已真机验证 Mac→AWS→Windows→Clash 出口 |
+| SSH 对等借用（`--peer`） | 对端自己运行 aih，且不共享管理密钥 | 已实现并在 Mac→Windows、Mac→AWS→Windows 真机验证；远端密钥不出对端 |
 | SSH 反向隧道 + 公网中继 | 双方都在 NAT 后，但有一台可达中继 | 已有 `sshtunnel` / reverse tunnel 组件，可复用 |
 | Tailscale | 需要设备间 mesh、DERP 回退 | 通过 `network.connector@1` 外部插件；未安装/未验证 |
 | WireGuard | 固定节点、可接受手工 peer 配置 | 通过外部插件；未验证 |
@@ -106,3 +107,24 @@ Mac aih proxy serve --ssh <connectionId>
 - 子进程只拿到 `AIH_HOME_DIR` 与管理密钥环境变量，不把密钥写进命令行；
 - `--system` / `--tun` 需要操作系统提权，面板只展示可复制命令，不静默执行；
 - 入口停止或意外退出后，带租约令牌的 URL 不再回传，客户端退出必须释放监听。
+
+## 9. SSH 对等借用（`--peer`）
+
+`--ssh` 复用本机管理密钥，适合两端共享同一管理信任根。独立安装的对等节点通常
+各有自己的 Management Key，因此新增 `--peer <connectionId>`：
+
+```text
+Mac aih proxy serve --peer <windowsConnectionId> [--peer-via <jumpId>]
+  -> SSH 会话在 Windows 执行固定的 `aih proxy serve --json --selector ...`
+  -> Windows CLI 用它自己的 Management Key 申请 Windows 租约、建立 loopback 入口
+  -> Mac 只经 SSH direct-tcpip 转发入口端口，返回本地 HTTP/SOCKS5 URL
+```
+
+- 远端密钥与租约控制面不出对端；本机只拿到入口 URL（含租约令牌）。
+- `--peer-via` 复用已保存的 SSH 连接作为跳板，已验证 Mac→AWS→Windows→Clash 出口。
+- 远端 CLI 必须支持 `--exit-on-stdin-eof`；本机通过关闭 SSH stdin 让远端走正常退出路径并释放租约，
+  不依赖平台的 SIGTERM 或 `taskkill`。
+- 远端 aih 路径默认按 PATH、Homebrew、`~/.ai_home/bin`、Windows `%LOCALAPPDATA%`/`$env:` 探测；
+  也可用 `--peer-aih <path>` 显式指定。
+- 这是**对等中继**，不是直连 P2P。只有 `network.connector` 插件观察到 `direct-p2p` 的
+  `CurAddr` 等路径证据时，才能使用“直连 P2P”文案。

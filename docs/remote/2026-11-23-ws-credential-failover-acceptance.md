@@ -230,3 +230,16 @@ rm -f "<server-ai-home>/run/route-observation/$SESSION.json"
 - `rejectsCredential()` 的两个 RuntimeKind 分支、Phase 1 候选账号分支、全池失效分支，
   目前只能靠本清单和代码核对覆盖；
 - 修改该文件后，至少重跑第 5、6、7.1、7.2 节。
+
+## 11. 执行记录（2026-11-23，AWS）
+
+环境：AWS Server + SSH 隧道 + 真实 WS 客户端；acct_97ed95c232eb87316477 是可丢弃的 api-key 账号，临时指向受控 WS 上游（对指定 key 返回 401/503）；acct_9aa145b7fcd69a60cd73 是真实健康账号。
+
+结果：
+
+- 401/403 主路径：3 次钉选失效账号，全部收到 response.completed 与 ws-ok；路由观测均落到健康账号 acct_9aa145b7fcd69a60cd73；
+- 503 负向：钉选同一失效账号并让上游返回 503，客户端收到 upstream_unavailable，连接终止；没有产生路由观测，说明未换号；
+- 用量归属：路由观测已确认实际服务账号；本次没有单独核对逐请求 token 行；
+- 全池失效：未执行。AWS 是共享账号池，临时停用所有健康账号会影响其它会话；
+- 1011 重连分支：未执行，原因同清单第 7.3 节；
+- 清理：api-key 账号凭据已按备份恢复，临时上游已停止，路由观测测试文件已删除。

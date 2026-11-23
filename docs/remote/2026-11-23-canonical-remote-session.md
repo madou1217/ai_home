@@ -59,12 +59,14 @@ terminal 已不存在且记录仍是 running 时显示 `unknown`。
 
 真机验证（2026-11-23，AWS）：
 
-- 部署二进制 sha256 `09e5207ee875173ef21e5a59109ca94fc6abf9c792038088bb3f72e9679ab7f9`；
+- 部署二进制 sha256 `c1c0f886643c004f106abc625753f03913d7bd7c8956f14543afbbc05f140e1d`；
 - 新 workspace `wc-2bf25b91406ce32111`，`agent-terminal` 网关模式（codex +
   `gpt-5.6-luna`）；
 - Codex TUI 回复 `usage-fix`，会话 `rx-9124b1f3917c32c705` 详情的 usage 为
   input 7991 / output 7 / cached 6272 / total 7998；
 - 手动非流式与流式 `/v1/responses` 请求分别累加到同一会话，证明多条请求按会话聚合；
+- WebSocket 入口单独验证：握手头带同一 `rx-…` 会话，真实 WS 推理回复 `ws-ok`，该会话
+  total 从 7998 增至 8016（input +12 / output +6），证明握手头上的会话标识进入记账；
 - 浏览器进入 Work 模式的远程执行面板，最近会话显示 `· 8.0k tok` 与 `· 34 tok`。
 
 边界：

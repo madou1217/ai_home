@@ -27,14 +27,18 @@ export function useModelAliases() {
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [modelLabels, setModelLabels] = useState<Record<string, Record<string, string>>>({});
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [lastError, setLastError] = useState('');
 
   const fetchAliases = useCallback(async () => {
     setLoading(true);
     try {
       const data = await modelAliasesAPI.getAll();
       setAliases(data);
+      setLastError('');
     } catch (error: unknown) {
-      message.error(errorText(error, '获取模型别名失败'));
+      const errMsg = errorText(error, '获取模型别名失败');
+      setLastError(errMsg);
+      message.error(errMsg);
     } finally {
       setLoading(false);
       setLoaded(true);
@@ -79,10 +83,13 @@ export function useModelAliases() {
   const deleteAliases = useCallback(async (ids: string[]) => {
     try {
       await modelAliasesAPI.replace(ids, []);
+      setLastError('');
       message.success('删除成功');
       return true;
     } catch (error: unknown) {
-      message.error(errorText(error, '删除失败'));
+      const errMsg = errorText(error, '删除失败');
+      setLastError(errMsg);
+      message.error(errMsg);
       return false;
     } finally {
       fetchAliases();
@@ -94,10 +101,15 @@ export function useModelAliases() {
   const toggleAlias = useCallback(async (id: string) => {
     try {
       await modelAliasesAPI.toggle(id);
+      setLastError('');
       message.success('状态已更新');
       fetchAliases();
+      return true;
     } catch (error: unknown) {
-      message.error(errorText(error, '更新状态失败'));
+      const errMsg = errorText(error, '更新状态失败');
+      setLastError(errMsg);
+      message.error(errMsg);
+      return false;
     }
   }, [fetchAliases]);
 
@@ -116,11 +128,14 @@ export function useModelAliases() {
     const records = Array.isArray(expanded) && expanded.length > 0 ? expanded : [single];
     try {
       await modelAliasesAPI.replace(replaceIds || [], records);
+      setLastError('');
       if (replaceIds && replaceIds.length > 0) message.success('更新成功');
       else message.success(records.length > 1 ? `已添加 ${records.length} 条别名` : '添加成功');
       return true;
     } catch (error: unknown) {
-      message.error(errorText(error, '保存失败'));
+      const errMsg = errorText(error, '保存失败');
+      setLastError(errMsg);
+      message.error(errMsg);
       return false;
     } finally {
       fetchAliases();
@@ -132,6 +147,7 @@ export function useModelAliases() {
     sortedAliases,
     loading,
     loaded,
+    lastError,
     modelsByProvider,
     modelLabels,
     modelsLoading,

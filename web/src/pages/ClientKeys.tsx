@@ -1,46 +1,124 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Space, Switch, Table, Tag, message } from 'antd';
+import { Form, Input, InputNumber, Modal, Space, Switch, Table, Tag, message } from 'antd';
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SettingOutlined, SyncOutlined } from '@ant-design/icons';
 import type { ClientKeyRow } from '@/types';
 import { clientKeysAPI } from '@/services/api';
 import { writeClipboardText } from '@/utils/clipboard';
+import Button from '@/components/ui/AppButton';
+import SettingSection, { SettingRow } from '@/components/ui/SettingSection';
+import SettingStatusTag, { type SettingStatusState } from '@/components/ui/SettingStatusTag';
+import SaveActionBar from '@/components/ui/SaveActionBar';
+import '@/components/settings/gateway-settings.css';
+
+type LimitFormValues = {
+  maxConcurrency: number;
+  rpmLimit: number;
+  tpmLimit: number;
+  dailyTokenLimit: number;
+};
+
+type InlineFeedback = {
+  tone: 'success' | 'error';
+  text: string;
+};
+
+function readLimitValues(row: ClientKeyRow | null): LimitFormValues {
+  return {
+    maxConcurrency: Number(row?.limits?.maxConcurrency || 0),
+    rpmLimit: Number(row?.limits?.rpmLimit || 0),
+    tpmLimit: Number(row?.limits?.tpmLimit || 0),
+    dailyTokenLimit: Number(row?.limits?.dailyTokenLimit || 0)
+  };
+}
+
+function limitsEqual(left: LimitFormValues, right: LimitFormValues) {
+  return left.maxConcurrency === right.maxConcurrency
+    && left.rpmLimit === right.rpmLimit
+    && left.tpmLimit === right.tpmLimit
+    && left.dailyTokenLimit === right.dailyTokenLimit;
+}
+
+function formatLimitText(limits?: ClientKeyRow['limits']) {
+  return `并发 ${limits?.maxConcurrency || '不限'} · RPM ${limits?.rpmLimit || '不限'} · TPM ${limits?.tpmLimit || '不限'} · 日 Tokens ${limits?.dailyTokenLimit || '不限'}`;
+}
 
 /**
  * 客户端 API Key 管理。
  *
  * - 总 key（master）由 server 配置提供，这里只展示与统计；
- * - 托管 Key 可创建/停用/改名/轮换/撤销，secret 只在创建和轮换时显示一次；
- * - 并发、RPM、TPM、每日 Tokens 均已执行。
+ * - 托管 Key 可创建/停用/轮换/撤销与调整限额，secret 只在创建与轮换时展示一次。
  */
 const ClientKeysPanel: React.FC = () => {
   const [rows, setRows] = useState<ClientKeyRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [panelFeedback, setPanelFeedback] = useState<InlineFeedback | null>(null);
+  const [togglingKeyId, setTogglingKeyId] = useState('');
+
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createFeedback, setCreateFeedback] = useState<InlineFeedback | null>(null);
   const [secret, setSecret] = useState('');
   const [secretTitle, setSecretTitle] = useState('');
+
   const [editingKey, setEditingKey] = useState<ClientKeyRow | null>(null);
   const [savingLimits, setSavingLimits] = useState(false);
-  type LimitFormValues = { maxConcurrency: number; rpmLimit: number; tpmLimit: number; dailyTokenLimit: number };
+  const [limitFeedback, setLimitFeedback] = useState<InlineFeedback | null>(null);
+
   const [form] = Form.useForm<{ name: string } & LimitFormValues>();
   const [limitForm] = Form.useForm<LimitFormValues>();
 
-  const load = useCallback(async () => {
+  const watchedCreateName = Form.useWatch('name', form);
+  const watchedLimits = Form.useWatch([], limitForm) as Partial<LimitFormValues> | undefined;
+
+  const load = useCallback(async (quiet = true) => {
     setLoading(true);
     try {
       setRows(await clientKeysAPI.list());
-    } catch {
-      message.error('读取 API Key 列表失败');
+      if (!quiet) {
+        setPanelFeedback({ tone: 'success', text: '已同步最新 API Key 列表' });
+      }
+    } catch (error: unknown) {
+      const errorText = (error as { message?: string })?.message || '读取 API Key 列表失败';
+      setPanelFeedback({ tone: 'error', text: errorText });
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
 
   const managed = useMemo(() => rows.filter((row) => !row.master), [rows]);
+  const persistedLimits = useMemo(() => readLimitValues(editingKey), [editingKey]);
+  const draftLimits = useMemo<LimitFormValues>(() => ({
+    maxConcurrency: Number(watchedLimits?.maxConcurrency ?? persistedLimits.maxConcurrency),
+    rpmLimit: Number(watchedLimits?.rpmLimit ?? persistedLimits.rpmLimit),
+    tpmLimit: Number(watchedLimits?.tpmLimit ?? persistedLimits.tpmLimit),
+    dailyTokenLimit: Number(watchedLimits?.dailyTokenLimit ?? persistedLimits.dailyTokenLimit)
+  }), [persistedLimits, watchedLimits]);
+
+  const limitsDirty = Boolean(editingKey) && !limitsEqual(draftLimits, persistedLimits);
+  const createDirty = Boolean(String(watchedCreateName || '').trim());
+
+  const panelStatus: { status: SettingStatusState; label: string } = loading
+    ? { status: 'saving', label: '同步中' }
+    : panelFeedback?.tone === 'error'
+      ? { status: 'error', label: '操作失败' }
+      : { status: 'applied', label: `已生效 · ${managed.length} 个托管 Key` };
+
+  const openCreateModal = () => {
+    form.resetFields();
+    form.setFieldsValue({
+      name: '',
+      maxConcurrency: 0,
+      rpmLimit: 0,
+      tpmLimit: 0,
+      dailyTokenLimit: 0
+    });
+    setCreateFeedback(null);
+    setCreateOpen(true);
+  };
 
   const create = async () => {
     let values: { name: string } & LimitFormValues;
@@ -50,9 +128,10 @@ const ClientKeysPanel: React.FC = () => {
       return;
     }
     setCreating(true);
+    setCreateFeedback(null);
     try {
       const result = await clientKeysAPI.create({
-        name: values.name,
+        name: values.name.trim(),
         limits: {
           maxConcurrency: Number(values.maxConcurrency || 0),
           rpmLimit: Number(values.rpmLimit || 0),
@@ -64,36 +143,46 @@ const ClientKeysPanel: React.FC = () => {
       form.resetFields();
       setSecretTitle(`已创建 ${result.key.name}（${result.key.prefix}）`);
       setSecret(result.secret);
-      await load();
+      setPanelFeedback({ tone: 'success', text: `已创建 ${result.key.name} 并立即生效` });
+      await load(true);
     } catch (error: unknown) {
-      message.error((error as { message?: string })?.message || '创建失败');
+      setCreateFeedback({
+        tone: 'error',
+        text: (error as { message?: string })?.message || '创建失败'
+      });
     } finally {
       setCreating(false);
     }
   };
 
   const toggle = async (row: ClientKeyRow, enabled: boolean) => {
+    setTogglingKeyId(row.id);
+    setPanelFeedback(null);
     try {
       await clientKeysAPI.update(row.id, { enabled });
-      message.success(enabled ? '已启用' : '已停用');
-      await load();
-    } catch {
-      message.error('保存失败');
+      setPanelFeedback({
+        tone: 'success',
+        text: `${row.name} 已${enabled ? '启用' : '停用'}并立即生效`
+      });
+      await load(true);
+    } catch (error: unknown) {
+      setPanelFeedback({
+        tone: 'error',
+        text: (error as { message?: string })?.message || `更新 ${row.name} 状态失败`
+      });
+    } finally {
+      setTogglingKeyId('');
     }
   };
 
   const openLimits = (row: ClientKeyRow) => {
     setEditingKey(row);
-    limitForm.setFieldsValue({
-      maxConcurrency: row.limits?.maxConcurrency || 0,
-      rpmLimit: row.limits?.rpmLimit || 0,
-      tpmLimit: row.limits?.tpmLimit || 0,
-      dailyTokenLimit: row.limits?.dailyTokenLimit || 0
-    });
+    setLimitFeedback(null);
+    limitForm.setFieldsValue(readLimitValues(row));
   };
 
   const saveLimits = async () => {
-    if (!editingKey) return;
+    if (!editingKey || !limitsDirty) return;
     let values: LimitFormValues;
     try {
       values = await limitForm.validateFields();
@@ -101,20 +190,24 @@ const ClientKeysPanel: React.FC = () => {
       return;
     }
     setSavingLimits(true);
+    setLimitFeedback(null);
     try {
-      await clientKeysAPI.update(editingKey.id, {
-        limits: {
-          maxConcurrency: Number(values.maxConcurrency || 0),
-          rpmLimit: Number(values.rpmLimit || 0),
-          tpmLimit: Number(values.tpmLimit || 0),
-          dailyTokenLimit: Number(values.dailyTokenLimit || 0)
-        }
-      });
-      message.success('限额已保存并热生效');
-      setEditingKey(null);
-      await load();
+      const nextLimits: LimitFormValues = {
+        maxConcurrency: Number(values.maxConcurrency || 0),
+        rpmLimit: Number(values.rpmLimit || 0),
+        tpmLimit: Number(values.tpmLimit || 0),
+        dailyTokenLimit: Number(values.dailyTokenLimit || 0)
+      };
+      await clientKeysAPI.update(editingKey.id, { limits: nextLimits });
+      setEditingKey({ ...editingKey, limits: nextLimits });
+      setLimitFeedback({ tone: 'success', text: '限额已保存并立即生效' });
+      setPanelFeedback({ tone: 'success', text: `已更新 ${editingKey.name} 的限额并立即生效` });
+      await load(true);
     } catch (error: unknown) {
-      message.error((error as { message?: string })?.message || '保存失败');
+      setLimitFeedback({
+        tone: 'error',
+        text: (error as { message?: string })?.message || '保存失败'
+      });
     } finally {
       setSavingLimits(false);
     }
@@ -123,7 +216,7 @@ const ClientKeysPanel: React.FC = () => {
   const rotate = (row: ClientKeyRow) => {
     Modal.confirm({
       title: `轮换 ${row.name} 的密钥？`,
-      content: '旧 secret 会立即失效；正在进行的请求不受影响。',
+      content: '旧密钥会立即失效；正在进行的请求不受影响。',
       okText: '轮换',
       cancelText: '取消',
       onOk: async () => {
@@ -131,9 +224,13 @@ const ClientKeysPanel: React.FC = () => {
           const next = await clientKeysAPI.rotate(row.id);
           setSecretTitle(`已轮换 ${row.name}（${row.prefix}）`);
           setSecret(next);
-          await load();
-        } catch {
-          message.error('轮换失败');
+          setPanelFeedback({ tone: 'success', text: `已轮换 ${row.name} 的密钥` });
+          await load(true);
+        } catch (error: unknown) {
+          setPanelFeedback({
+            tone: 'error',
+            text: (error as { message?: string })?.message || '轮换失败'
+          });
         }
       }
     });
@@ -142,17 +239,20 @@ const ClientKeysPanel: React.FC = () => {
   const remove = (row: ClientKeyRow) => {
     Modal.confirm({
       title: `撤销 ${row.name}？`,
-      content: '撤销后该 Key 立即无法鉴权；历史统计保留。',
+      content: '撤销后该 Key 立即无法鉴权，历史统计保留。',
       okText: '撤销',
       okButtonProps: { danger: true },
       cancelText: '取消',
       onOk: async () => {
         try {
           await clientKeysAPI.revoke(row.id);
-          message.success('已撤销');
-          await load();
-        } catch {
-          message.error('撤销失败');
+          setPanelFeedback({ tone: 'success', text: `已撤销 ${row.name}` });
+          await load(true);
+        } catch (error: unknown) {
+          setPanelFeedback({
+            tone: 'error',
+            text: (error as { message?: string })?.message || '撤销失败'
+          });
         }
       }
     });
@@ -160,8 +260,13 @@ const ClientKeysPanel: React.FC = () => {
 
   const copySecret = async () => {
     if (!secret) return;
-    await writeClipboardText(secret);
-    message.success('已复制');
+    try {
+      await writeClipboardText(secret);
+      message.success('密钥已复制');
+      setSecret('');
+    } catch {
+      message.error('复制失败，请手动复制');
+    }
   };
 
   const columns = [
@@ -172,7 +277,6 @@ const ClientKeysPanel: React.FC = () => {
         <Space size={6}>
           <span>{value}</span>
           {row.master ? <Tag>总 key</Tag> : null}
-          {!row.master && row.enabled === false ? <Tag>已停用</Tag> : null}
         </Space>
       )
     },
@@ -182,28 +286,36 @@ const ClientKeysPanel: React.FC = () => {
       render: (value: string) => <span className="aih-mono">{value || '—'}</span>
     },
     {
-      title: '启用',
+      title: '状态',
       key: 'enabled',
-      width: 80,
+      width: 120,
       render: (_: unknown, row: ClientKeyRow) =>
-        row.master ? <span className="aih-muted">—</span> : (
-          <Switch size="small" checked={row.enabled !== false} onChange={(next) => void toggle(row, next)} />
+        row.master ? (
+          <SettingStatusTag status="applied" label="系统总 key" compact live="off" />
+        ) : (
+          <Space size={6}>
+            <Switch
+              size="small"
+              loading={togglingKeyId === row.id}
+              checked={row.enabled !== false}
+              onChange={(next) => void toggle(row, next)}
+            />
+            <SettingStatusTag
+              status={row.enabled === false ? 'unset' : 'applied'}
+              label={row.enabled === false ? '已停用' : '已启用'}
+              compact
+              live="off"
+            />
+          </Space>
         )
     },
     {
-      title: '限额',
+      title: '已生效限额',
       key: 'limits',
-      width: 220,
-      render: (_: unknown, row: ClientKeyRow) => {
-        const limits = row.limits;
-        const text = `并发 ${limits?.maxConcurrency || '不限'} · RPM ${limits?.rpmLimit || '不限'} · TPM ${limits?.tpmLimit || '不限'} · 令牌 ${limits?.dailyTokenLimit || '不限'}`;
-        return (
-          <Space size={4} wrap>
-            <span>{text}</span>
-            <Tag>已生效</Tag>
-          </Space>
-        );
-      }
+      width: 240,
+      render: (_: unknown, row: ClientKeyRow) => (
+        <span className="gateway-limit-summary">{formatLimitText(row.limits)}</span>
+      )
     },
     {
       title: '在途',
@@ -220,19 +332,19 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: 'TPM (1m)',
       key: 'tpm',
-      width: 110,
+      width: 100,
       render: (_: unknown, row: ClientKeyRow) => Math.round(row.live?.tpm1m || 0)
     },
     {
       title: '24h 请求',
       key: 'requests',
-      width: 100,
+      width: 90,
       render: (_: unknown, row: ClientKeyRow) => row.totals?.requests ?? 0
     },
     {
       title: '24h Tokens',
       key: 'tokens',
-      width: 110,
+      width: 100,
       render: (_: unknown, row: ClientKeyRow) => row.totals?.totalTokens ?? 0
     },
     {
@@ -245,7 +357,7 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 250,
+      width: 230,
       render: (_: unknown, row: ClientKeyRow) =>
         row.master ? null : (
           <Space size={4}>
@@ -257,61 +369,80 @@ const ClientKeysPanel: React.FC = () => {
     }
   ];
 
+  const limitStatus: SettingStatusState = savingLimits
+    ? 'saving'
+    : limitFeedback?.tone === 'error'
+      ? 'error'
+      : limitsDirty
+        ? 'dirty'
+        : 'applied';
+
   return (
-    <div className="client-keys-panel">
-      <Space style={{ marginBottom: 12 }} wrap>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建 API Key</Button>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>
-        <span className="aih-muted">并发与速率上限均已执行；创建与轮换的 secret 只显示一次。</span>
-      </Space>
-      <Table
-        size="small"
-        rowKey="id"
-        loading={loading}
-        pagination={false}
-        dataSource={rows}
-        columns={columns}
-      />
+    <div className="client-keys-panel gateway-settings-stack">
+      <SettingSection
+        title="客户端 API Key"
+        description="管理分发给客户端的独立密钥与限额；密钥仅在创建和轮换时展示一次。"
+        status={<SettingStatusTag status={panelStatus.status} label={panelStatus.label} compact />}
+        extra={(
+          <Space size={8} wrap>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load(false)}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+              新建 API Key
+            </Button>
+          </Space>
+        )}
+      >
+        {panelFeedback ? (
+          <div
+            className={`gateway-inline-feedback gateway-inline-feedback--${panelFeedback.tone}`}
+            role={panelFeedback.tone === 'error' ? 'alert' : 'status'}
+            aria-live={panelFeedback.tone === 'error' ? 'assertive' : 'polite'}
+          >
+            <SettingStatusTag
+              status={panelFeedback.tone === 'error' ? 'error' : 'applied'}
+              label={panelFeedback.tone === 'error' ? '失败' : '已生效'}
+              compact
+              live="off"
+            />
+            <span>{panelFeedback.text}</span>
+          </div>
+        ) : null}
+
+        <Table
+          size="small"
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          dataSource={rows}
+          columns={columns}
+          scroll={{ x: 1120 }}
+        />
+
+        {managed.length === 0 && !loading ? (
+          <p className="gateway-empty-note">暂无托管 API Key；服务总 key 仍可直接鉴权。</p>
+        ) : null}
+      </SettingSection>
+
       <Modal
         open={createOpen}
         title="新建客户端 API Key"
-        okText="创建"
-        cancelText="取消"
-        confirmLoading={creating}
-        onOk={() => void create()}
         onCancel={() => setCreateOpen(false)}
+        footer={null}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
+        <p className="gateway-modal-hint">0 表示不限；创建后立即生效，密钥明文仅展示一次。</p>
+        <Form
+          form={form}
+          layout="vertical"
+          onValuesChange={() => {
+            if (createFeedback) setCreateFeedback(null);
+          }}
+        >
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="例如：laptop / build-server" maxLength={80} />
           </Form.Item>
-          <Form.Item name="maxConcurrency" label="最大并发（已生效）" initialValue={0}>
-            <InputNumber min={0} max={64} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="rpmLimit" label="RPM 上限" initialValue={0}>
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="tpmLimit" label="TPM 上限" initialValue={0}>
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="dailyTokenLimit" label="每日 Tokens 上限" initialValue={0}>
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
-      </Modal>
-      <Modal
-        open={Boolean(editingKey)}
-        title={editingKey ? `编辑 ${editingKey.name} 的限额` : '编辑限额'}
-        okText="保存"
-        cancelText="取消"
-        confirmLoading={savingLimits}
-        onOk={() => void saveLimits()}
-        onCancel={() => setEditingKey(null)}
-        destroyOnClose
-      >
-        <p className="aih-muted">所有限额保存后立即生效。0 表示不限。</p>
-        <Form form={limitForm} layout="vertical">
           <Form.Item name="maxConcurrency" label="最大并发" initialValue={0}>
             <InputNumber min={0} max={64} style={{ width: '100%' }} />
           </Form.Item>
@@ -325,20 +456,126 @@ const ClientKeysPanel: React.FC = () => {
             <InputNumber min={0} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
+        <div className="gateway-modal-footer">
+          <SaveActionBar
+            dirty={createDirty}
+            saving={creating}
+            status={creating ? 'saving' : createFeedback?.tone === 'error' ? 'error' : createDirty ? 'dirty' : 'unset'}
+            statusLabel={createDirty ? '待创建' : '待填写名称'}
+            saveLabel="创建 Key"
+            cleanSaveLabel="请填写名称"
+            effectSummary="创建后立即生效并展示一次性密钥"
+            feedback={createFeedback?.text}
+            feedbackTone={createFeedback?.tone ?? 'muted'}
+            onSave={() => void create()}
+            extraActions={(
+              <Button disabled={creating} onClick={() => setCreateOpen(false)}>
+                取消
+              </Button>
+            )}
+          />
+        </div>
       </Modal>
+
       <Modal
-        open={Boolean(secret)}
-        title={secretTitle || 'Secret'}
-        onCancel={() => setSecret('')}
-        footer={<Button type="primary" onClick={() => void copySecret()}>复制并关闭</Button>}
+        open={Boolean(editingKey)}
+        title={editingKey ? `编辑 ${editingKey.name} 的限额` : '编辑限额'}
+        onCancel={() => setEditingKey(null)}
+        footer={null}
         destroyOnClose
       >
-        <p className="aih-muted">此密钥只显示一次，关闭后无法再次查看。</p>
-        <Input.TextArea value={secret} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
+        <Form
+          form={limitForm}
+          layout="vertical"
+          onValuesChange={() => {
+            if (limitFeedback) setLimitFeedback(null);
+          }}
+        >
+          <SettingRow
+            title="最大并发"
+            description="0 表示不限。"
+            persistedValue={`已应用：${persistedLimits.maxConcurrency || '不限'}`}
+            control={(
+              <Form.Item name="maxConcurrency" initialValue={0}>
+                <InputNumber min={0} max={64} style={{ width: 160 }} />
+              </Form.Item>
+            )}
+          />
+          <SettingRow
+            title="RPM 上限"
+            description="每分钟请求数限制，0 表示不限。"
+            persistedValue={`已应用：${persistedLimits.rpmLimit || '不限'}`}
+            control={(
+              <Form.Item name="rpmLimit" initialValue={0}>
+                <InputNumber min={0} style={{ width: 160 }} />
+              </Form.Item>
+            )}
+          />
+          <SettingRow
+            title="TPM 上限"
+            description="每分钟 Tokens 限制，0 表示不限。"
+            persistedValue={`已应用：${persistedLimits.tpmLimit || '不限'}`}
+            control={(
+              <Form.Item name="tpmLimit" initialValue={0}>
+                <InputNumber min={0} style={{ width: 160 }} />
+              </Form.Item>
+            )}
+          />
+          <SettingRow
+            title="每日 Tokens 上限"
+            description="自然日累计 Tokens 限制，0 表示不限。"
+            persistedValue={`已应用：${persistedLimits.dailyTokenLimit || '不限'}`}
+            control={(
+              <Form.Item name="dailyTokenLimit" initialValue={0}>
+                <InputNumber min={0} style={{ width: 160 }} />
+              </Form.Item>
+            )}
+          />
+        </Form>
+        <div className="gateway-modal-footer">
+          <SaveActionBar
+            dirty={limitsDirty}
+            saving={savingLimits}
+            status={limitStatus}
+            saveLabel="保存限额"
+            cleanSaveLabel="已应用"
+            effectSummary="保存后立即生效，无需重启"
+            feedback={limitFeedback?.text}
+            feedbackTone={limitFeedback?.tone ?? 'muted'}
+            onSave={() => void saveLimits()}
+            onReset={() => {
+              limitForm.setFieldsValue(persistedLimits);
+              setLimitFeedback(null);
+            }}
+            extraActions={(
+              <Button disabled={savingLimits} onClick={() => setEditingKey(null)}>
+                关闭
+              </Button>
+            )}
+          />
+        </div>
       </Modal>
-      {managed.length === 0 && !loading ? (
-        <div className="aih-muted" style={{ marginTop: 8 }}>还没有托管的 API Key；总 key 仍然可用。</div>
-      ) : null}
+
+      <Modal
+        open={Boolean(secret)}
+        title={secretTitle || '一次性密钥'}
+        onCancel={() => setSecret('')}
+        footer={(
+          <Space>
+            <Button onClick={() => setSecret('')}>关闭</Button>
+            <Button type="primary" onClick={() => void copySecret()}>复制并关闭</Button>
+          </Space>
+        )}
+        destroyOnClose
+      >
+        <p className="gateway-modal-hint">此密钥只显示一次，关闭后无法再次查看，请妥善保存。</p>
+        <Input.TextArea
+          className="gateway-secret-textarea"
+          value={secret}
+          readOnly
+          autoSize={{ minRows: 2, maxRows: 4 }}
+        />
+      </Modal>
     </div>
   );
 };

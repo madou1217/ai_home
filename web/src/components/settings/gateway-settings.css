@@ -1,0 +1,126 @@
+/* ClientKeys / ConcurrencyLimits / ModelAliases 共享的设置子面板样式（全部引用 design-tokens） */
+
+.gateway-settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.gateway-inline-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+}
+
+.gateway-inline-feedback--success {
+  color: var(--color-success);
+}
+
+.gateway-inline-feedback--error {
+  color: var(--color-danger);
+}
+
+.gateway-inline-feedback--muted {
+  color: var(--color-muted);
+}
+
+.gateway-empty-note {
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.gateway-limit-summary {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.gateway-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  width: 100%;
+}
+
+.gateway-provider-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.gateway-provider-field-label {
+  overflow: hidden;
+  color: var(--color-muted-strong);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gateway-preview-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.gateway-preview-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.gateway-preview-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.gateway-preview-metric {
+  color: var(--color-muted);
+}
+
+.gateway-preview-metric > strong {
+  color: var(--color-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.gateway-modal-footer {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.gateway-modal-hint {
+  margin: 0 0 var(--space-4);
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.gateway-secret-textarea {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 767.98px) {
+  .gateway-provider-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

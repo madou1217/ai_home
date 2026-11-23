@@ -35,11 +35,11 @@ export const MODEL_ALIAS_FIELD_RULES: Record<'alias' | 'target' | 'provider' | '
 };
 
 export const MODEL_ALIAS_FIELD_HELP = {
-  alias: '客户端请求的模型名称，通配符只能放在末尾且前缀至少 2 个字符',
-  target: '实际转发到后端的模型名称；可多选，选中项与目标供应商两两组合，各自存成一条记录',
-  provider: "选择 '全部' 表示对所有请求生效，否则只对该特定供应商的请求生效",
-  targetProvider: "可多选。选 '自动' 表示按目标模型自动识别归属；多选供应商时只保留该供应商目录里真实存在的模型组合",
-  priority: '数字越大优先级越高;同名别名按优先级降序依次尝试,target 无可用账号时自动回退到下一条'
+  alias: '客户端请求的模型名，支持末尾通配符（前缀不少于 2 字符）',
+  target: '实际转发的目标模型，可多选',
+  provider: '限定命中的请求入口，选「全部」对所有入口生效',
+  targetProvider: '可多选；「自动」按模型归属展开',
+  priority: '数值越大越先尝试，无可用账号时自动回退到下一条'
 };
 
 export function formatAliasScope(provider: string) {

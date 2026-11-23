@@ -154,7 +154,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
           }}
         />
       </div>
-      <div ref={surfaceRef}>
+      <div ref={surfaceRef} className="usage-chart-scroll">
         {slots.length === 0 ? (
           <HudStateView compact code="NO_TREND" title="暂无趋势数据" />
         ) : (

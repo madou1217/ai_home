@@ -5,8 +5,7 @@ import { notifyAccountModelCatalogChanged } from '@/features/models/account-mode
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/components/mobile/mobile-icon-button.css';
 import './Models.css';
-import '@/components/ui/kpi-strip.css';
-import { Form, Input, Segmented, Select, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
+import { Form, Input, Select, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
@@ -19,12 +18,14 @@ import type {
   WebUiOpenAIModelsResponse
 } from '@/types';
 import { EditModelPricingModal } from '@/features/models/EditModelPricingModal';
+import ModelsFilterToolbar from '@/features/models/ModelsFilterToolbar';
+import ModelsEmptyState from '@/features/models/ModelsEmptyState';
 import Button from '@/components/ui/AppButton';
-import DataToolbar from '@/components/ui/DataToolbar';
 import PaginatedList from '@/components/ui/PaginatedList';
-import { ModalForm, StatisticCard } from '@ant-design/pro-components';
+import { ModalForm } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
-import SectionCard from '@/components/ui/SectionCard';
+import SettingSection from '@/components/ui/SettingSection';
+import SettingStatusTag, { type SettingStatusState } from '@/components/ui/SettingStatusTag';
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
 import {
   DEFAULT_MANUAL_MODEL_PROVIDER,
@@ -35,12 +36,9 @@ import {
   buildModelAccountOptions,
   countGlobalModelRowsByProvider,
   filterGlobalModelRows,
-  formatCatalogJobStatus,
-  formatCatalogProbeScope,
   formatUpdatedAt,
   getAccountLabel,
   getCatalogJobScopeKey,
-  getCatalogJobVisibleCount,
   getGlobalModelDisplayLabel,
   getManagedModelSource,
   getModelDisplayLabel as getCatalogModelDisplayLabel,
@@ -57,7 +55,6 @@ import {
   type ProviderFilter
 } from '@/features/models/model-catalog';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
-import Reveal from '@/components/ui/Reveal';
 import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { parseUpstreamError } from '@/utils/format-upstream-error';
@@ -85,6 +82,7 @@ export default function Models() {
   const pageScopeKey = accountScoped ? scopedAccountRef : 'global';
   const [catalog, setCatalog] = useState<WebUiOpenAIModelsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [catalogJob, setCatalogJob] = useState<WebUiOpenAIModelsJob | null>(null);
   const [providerFilter, setProviderFilter] = useState<ProviderFilter>(() => scopedProvider || normalizeProvider(searchParams.get('provider')));
   const [accountFilter, setAccountFilter] = useState<AccountFilter>(() => scopedAccountRef || searchParams.get('accountRef') || 'all');
@@ -125,6 +123,7 @@ export default function Models() {
 
   const loadModels = useCallback(async (options: { refresh?: boolean; quiet?: boolean } = {}) => {
     setLoading(true);
+    setLoadError('');
     try {
       const payload = await modelsAPI.listOpenAICompatible(buildCatalogRequestOptions());
       setCatalog(payload);
@@ -132,7 +131,9 @@ export default function Models() {
         message.success('模型缓存已重新读取');
       }
     } catch (error: any) {
-      message.error(error?.response?.data?.message || error?.message || '加载模型目录失败');
+      const errorMessage = error?.response?.data?.message || error?.message || '加载模型目录失败';
+      setLoadError(errorMessage);
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -179,13 +180,16 @@ export default function Models() {
       return;
     }
     setLoading(true);
+    setLoadError('');
     try {
       const response = await modelsAPI.refreshOpenAICompatible(buildCatalogRequestOptions());
       setCatalogJob(response.job || null);
       if (response.job?.catalog) setCatalog(response.job.catalog);
       message.info(response.alreadyRunning ? '账号模型探测已在进行' : '账号模型探测已开始');
     } catch (error: any) {
-      message.error(error?.response?.data?.message || error?.message || '刷新模型目录失败');
+      const errorMessage = error?.response?.data?.message || error?.message || '刷新模型目录失败';
+      setLoadError(errorMessage);
+      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -400,6 +404,51 @@ export default function Models() {
     : globalModelRows.filter(isGlobalModelVisible).length;
   const manualCount = metricSource.filter((model) => model.manual).length;
   const globalProbeError = getVisibleModelProbeError(catalog);
+  const refreshing = loading || isCatalogJobActive(catalogJob);
+  const refreshFailureMessage = loadError || (catalogJob?.status === 'failed' ? catalogJob.error || '刷新模型目录失败' : '');
+  const updatedAtTimestamp = Number(catalog?.updatedAt || 0);
+  const refreshStatus: { state: SettingStatusState; label: string; detail?: string } = refreshing
+    ? {
+      state: 'saving',
+      label: '刷新中',
+      detail: catalogJob?.status === 'queued' ? '探测任务排队中' : '正在刷新模型目录'
+    }
+    : refreshFailureMessage
+      ? {
+        state: 'error',
+        label: '刷新失败',
+        detail: refreshFailureMessage
+      }
+      : updatedAtTimestamp > 0
+        ? {
+          state: 'applied',
+          label: `已刷新（${formatUpdatedAt(updatedAtTimestamp)}）`,
+          detail: catalog?.cached ? '当前展示已缓存目录' : '当前展示最新探测结果'
+        }
+        : {
+          state: 'unset',
+          label: '未刷新',
+          detail: '尚未完成模型目录探测'
+        };
+  const hasCatalogModels = accountScoped ? metricSource.length > 0 : globalModelRows.length > 0;
+  const displayedRowCount = accountScoped ? accountModelRows.length : globalRows.length;
+  const hasActiveFilters = Boolean(
+    keyword.trim()
+    || statusFilter !== 'all'
+    || groupFilter !== 'all'
+    || (!accountScoped && (providerFilter !== 'all' || accountFilter !== 'all'))
+  );
+  const resetFilters = useCallback(() => {
+    switchModelSurface(() => {
+      if (!accountScoped) {
+        setProviderFilter('all');
+        setAccountFilter('all');
+      }
+      setStatusFilter('all');
+      setGroupFilter('all');
+      setKeyword('');
+    });
+  }, [accountScoped, switchModelSurface]);
   const manualAccountOptionSource = accountScoped && scopedAccount
     ? [scopedAccount]
     : accountOptions.filter((account) => account.provider === (manualProvider || DEFAULT_MANUAL_MODEL_PROVIDER));
@@ -578,22 +627,16 @@ export default function Models() {
         </Button>
       ].filter(Boolean)}
     >
-      {/* 顶部统计 —— 一条 KPI 条（StatisticCard.Group + 发丝线分隔） */}
-      <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
-        <StatisticCard statistic={{ title: '账号模型', value: metricSource.length }} />
-        <StatisticCard statistic={{ title: accountScoped ? '启用模型' : '可见模型', value: visibleUnionCount }} />
-        <StatisticCard statistic={{ title: '手动补充', value: manualCount }} />
-      </StatisticCard.Group>
-
       {globalProbeError ? (() => {
         const probeError = parseUpstreamError(globalProbeError);
         return (
           <div className="models-probe-status" role="status">
-            <span
-              className={`hud-led ${catalog?.source === 'remote' ? 'hud-led--warn' : 'hud-led--err'}`}
-              aria-hidden="true"
+            <SettingStatusTag
+              status={catalog?.source === 'remote' ? 'dirty' : 'error'}
+              label="部分账号探测失败"
+              compact
+              live="off"
             />
-            <Tag color={catalog?.source === 'remote' ? 'warning' : 'error'}>部分账号模型探测失败</Tag>
             {probeError.statusCode ? <Tag color="error">HTTP {probeError.statusCode}</Tag> : null}
             <span className="models-probe-status-message" title={probeError.message}>{probeError.message}</span>
             {probeError.url ? (
@@ -621,56 +664,30 @@ export default function Models() {
         );
       })() : null}
 
-      {catalogJob ? (
-        <SectionCard
-          className={`models-live-refresh models-live-refresh--${catalogJob.status} animate__animated animate__fadeIn animate__faster`}
-        >
-          <div className="models-live-refresh-grid">
-            <div>
-              <span className="hud-label">刷新状态</span>
-              <strong>{formatCatalogJobStatus(catalogJob)}</strong>
-            </div>
-            <div>
-              <span className="hud-label">探测范围</span>
-              <strong>{formatCatalogProbeScope(catalogJob)}</strong>
-            </div>
-            <div>
-              <span className="hud-label">可见模型</span>
-              <strong>{getCatalogJobVisibleCount(catalogJob) ?? '-'}</strong>
-            </div>
-            <div>
-              <span className="hud-label">探测账号</span>
-              <strong>{catalogJob.catalog?.scannedAccounts ?? '-'}</strong>
-            </div>
-          </div>
-          {catalogJob.error ? (
-            // 仓库 UI 约束：禁止用大面积告警块承载页面主内容。这里只留一行
-            // 紧凑状态 + 折叠详情，错误全文按需展开，不占据版面。
-            <details className="models-refresh-error">
-              <summary>
-                <span aria-hidden="true">⚠</span>
-                <span>部分账号探测失败</span>
-                <span className="models-refresh-error-hint">展开详情</span>
-              </summary>
-              <p>{catalogJob.error}</p>
-            </details>
-          ) : null}
-        </SectionCard>
-      ) : null}
-
-      <SectionCard
+      <SettingSection
+        className="models-catalog-section"
         title={accountScoped ? '当前账号模型' : '模型目录'}
-        extra={(
-          <Tag color={catalog?.cached ? 'default' : 'processing'}>
-            {catalog?.cached ? '缓存' : '实时'}
-          </Tag>
+        description={accountScoped
+          ? `${scopedAccountTitle} · 账号模型 ${metricSource.length} 个 · 已启用 ${visibleUnionCount} 个${manualCount > 0 ? ` · 手动 ${manualCount} 个` : ''}`
+          : `端点 ${catalog?.endpoint || '/v1/models'} · 可见模型 ${visibleUnionCount} 个 · 账号模型 ${metricSource.length} 个${manualCount > 0 ? ` · 手动 ${manualCount} 个` : ''}`}
+        status={(
+          <SettingStatusTag
+            status={refreshStatus.state}
+            label={refreshStatus.label}
+            detail={refreshStatus.detail}
+            compact
+          />
         )}
       >
-        <p className="models-catalog-desc">
-          {accountScoped
-            ? `${scopedAccountTitle}，更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`
-            : `端点 ${catalog?.endpoint || '/v1/models'}，当前可见模型 ${visibleUnionCount} 个。更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`}
-        </p>
+        {refreshFailureMessage ? (
+          <details className="models-refresh-error">
+            <summary>
+              <span aria-hidden="true">⚠</span>
+              <span>查看刷新失败详情</span>
+            </summary>
+            <p>{refreshFailureMessage}</p>
+          </details>
+        ) : null}
 
         {accountScoped ? (
           <div className="models-account-context">
@@ -683,128 +700,87 @@ export default function Models() {
             <div className="models-account-context-stats">
               <span>{metricSource.length} 个账号模型</span>
               <span>{visibleUnionCount} 个启用</span>
-              <span>{manualCount} 个手动</span>
+              {manualCount > 0 ? <span>{manualCount} 个手动</span> : null}
             </div>
           </div>
         ) : null}
 
-        <DataToolbar
-          filters={(
-            <>
-              {!accountScoped ? (
-                <>
-                  {/* Segmented 没有分组能力，所以这里保持"每个 Provider 一个 chip"，
-                      靠 providerNames 的站点后缀（"Qoder · 国内站"）区分同族站点——
-                      同族站点模型清单不同，筛选轴必须留在真实 Provider 上。 */}
-                  <div className="models-provider-scroll">
-                    <Segmented
-                      value={providerFilter}
-                      onChange={(value) => {
-                        const next = value as ProviderFilter;
-                        const providerOrder: readonly ProviderFilter[] = ['all', ...MODEL_PROVIDERS];
-                        switchModelSurface(() => {
-                          setProviderFilter(next);
-                          setAccountFilter('all');
-                        }, {
-                          slot: 'provider',
-                          current: providerFilter,
-                          next,
-                          direction: resolveOrderedDirection(providerOrder, providerFilter, next)
-                        });
-                      }}
-                      options={[
-                        { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
-                        ...MODEL_PROVIDERS.map((provider) => ({
-                          label: `${providerNames[provider]} ${providerCounts[provider] || 0}`,
-                          value: provider
-                        }))
-                      ]}
-                    />
-                  </div>
-                  <Select
-                    className="models-account-filter"
-                    value={accountFilter}
-                    onChange={(value) => {
-                      switchModelSurface(() => setAccountFilter(value), {
-                        slot: 'account',
-                        current: accountFilter,
-                        next: value
-                      });
-                    }}
-                    options={[
-                      { label: '全部账号', value: 'all' },
-                      ...accountOptions
-                        .filter((account) => providerFilter === 'all' || account.provider === providerFilter)
-                        .map((account) => ({
-                          label: (
-                            <span className="models-account-option">
-                              <ProviderIcon provider={account.provider} size={14} />
-                              <span>{getAccountLabel(account)}</span>
-                            </span>
-                          ),
-                          value: account.accountRef
-                        }))
-                    ]}
-                  />
-                </>
-              ) : null}
-              <Input.Search
-                allowClear
-                className="models-search"
-                placeholder={accountScoped ? '搜索模型' : '搜索模型 ID'}
-                value={keyword}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setKeyword(value);
-                }}
-              />
-              <Reveal open={isOpenCodeScoped}>
-                <Segmented
-                  value={groupFilter}
-                  onChange={(value) => {
-                    const next = value as ModelGroupFilter;
-                    const groupOrder: readonly ModelGroupFilter[] = ['all', 'go', 'zen', 'free'];
-                    switchModelSurface(() => setGroupFilter(next), {
-                      slot: 'group',
-                      current: groupFilter,
-                      next,
-                      direction: resolveOrderedDirection(groupOrder, groupFilter, next)
-                    });
-                  }}
-                  options={[
-                    { label: `全部分组 (${metricSource.length})`, value: 'all' },
-                    { label: `Go 订阅 (${openCodeGoCount})`, value: 'go' },
-                    { label: `Zen 按量 (${openCodeZenCount})`, value: 'zen' },
-                    ...(openCodeFreeCount > 0 ? [{ label: `Free 免费 (${openCodeFreeCount})`, value: 'free' }] : [])
-                  ]}
-                />
-              </Reveal>
-              <Segmented
-                value={statusFilter}
-                onChange={(value) => {
-                  const next = value as ModelStatusFilter;
-                  const statusOrder = MODEL_STATUS_FILTER_OPTIONS.map((item) => item.value);
-                  switchModelSurface(() => setStatusFilter(next), {
-                    slot: 'status',
-                    current: statusFilter,
-                    next,
-                    direction: resolveOrderedDirection(statusOrder, statusFilter, next)
-                  });
-                }}
-                options={MODEL_STATUS_FILTER_OPTIONS}
-              />
-            </>
-          )}
+        <ModelsFilterToolbar
+          accountScoped={accountScoped}
+          providerFilter={providerFilter}
+          providerCounts={providerCounts}
+          accountFilter={accountFilter}
+          accountOptions={accountOptions}
+          keyword={keyword}
+          isOpenCodeScoped={isOpenCodeScoped}
+          groupFilter={groupFilter}
+          totalScopedCount={metricSource.length}
+          openCodeGoCount={openCodeGoCount}
+          openCodeZenCount={openCodeZenCount}
+          openCodeFreeCount={openCodeFreeCount}
+          statusFilter={statusFilter}
+          onProviderChange={(next) => {
+            const providerOrder: readonly ProviderFilter[] = ['all', ...MODEL_PROVIDERS];
+            switchModelSurface(() => {
+              setProviderFilter(next);
+              setAccountFilter('all');
+            }, {
+              slot: 'provider',
+              current: providerFilter,
+              next,
+              direction: resolveOrderedDirection(providerOrder, providerFilter, next)
+            });
+          }}
+          onAccountChange={(value) => {
+            switchModelSurface(() => setAccountFilter(value), {
+              slot: 'account',
+              current: accountFilter,
+              next: value
+            });
+          }}
+          onKeywordChange={setKeyword}
+          onGroupChange={(next) => {
+            const groupOrder: readonly ModelGroupFilter[] = ['all', 'go', 'zen', 'free'];
+            switchModelSurface(() => setGroupFilter(next), {
+              slot: 'group',
+              current: groupFilter,
+              next,
+              direction: resolveOrderedDirection(groupOrder, groupFilter, next)
+            });
+          }}
+          onStatusChange={(next) => {
+            const statusOrder = MODEL_STATUS_FILTER_OPTIONS.map((item) => item.value);
+            switchModelSurface(() => setStatusFilter(next), {
+              slot: 'status',
+              current: statusFilter,
+              next,
+              direction: resolveOrderedDirection(statusOrder, statusFilter, next)
+            });
+          }}
         />
 
         <div ref={modelListRef}>
           <div ref={searchFadeRef}>
-            {accountScoped ? (
+            {displayedRowCount === 0 ? (
+              <ModelsEmptyState
+                accountScoped={accountScoped}
+                hasCatalogModels={hasCatalogModels}
+                hasAccounts={accountOptions.length > 0}
+                hasActiveFilters={hasActiveFilters}
+                refreshing={refreshing}
+                refreshError={refreshFailureMessage}
+                canCreateManualModel={canCreateManualModel}
+                onRefresh={() => void refreshModels()}
+                onResetFilters={resetFilters}
+                onAddManualModel={openManualModal}
+                onGoAccounts={() => navigate('/accounts')}
+              />
+            ) : accountScoped ? (
               <PaginatedList<ManagedOpenAIModelItem>
                 className="models-list models-list--account"
                 items={accountModelRows}
                 pageSize={16}
-                emptyText="暂无数据"
+                emptyText="暂无模型"
                 renderItem={(model) => renderModelRow(model)}
               />
             ) : (
@@ -812,13 +788,13 @@ export default function Models() {
                 className="models-list"
                 items={globalRows}
                 pageSize={14}
-                emptyText="暂无数据"
+                emptyText="暂无模型"
                 renderItem={(model) => renderGlobalModelRow(model)}
               />
             )}
           </div>
         </div>
-      </SectionCard>
+      </SettingSection>
 
       <EditModelPricingModal
         open={pricingTarget !== null}

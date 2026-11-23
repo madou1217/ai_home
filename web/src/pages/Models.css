@@ -65,46 +65,146 @@
   color: var(--color-danger);
   font-size: var(--hos-text-caption);
 }
-/* Provider 筛选：单行，横向滚动；右缘渐隐提示还有更多（mask，不是装饰渐变），
- * 右侧留白保证滚到末尾时最后一项完整可见。 */
-.models-provider-scroll {
-  flex: 1 1 100%;
+/* 筛选工具栏：Provider 芯片自动折行且保持可读；控件行自适应换行 */
+.models-filter-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
   min-width: 0;
-  max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
 }
-.models-provider-scroll::-webkit-scrollbar {
-  display: none;
+
+.models-provider-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
-.models-provider-scroll > .ant-segmented {
-  min-width: max-content;
-  margin-right: var(--space-12);
+
+.models-provider-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 2px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
+  font-family: var(--font-body);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
-/* Provider 筛选 = HUD 分段：等宽小号字距，选中项青色描边 + 辉光 */
-.models-provider-scroll .ant-segmented,
-.models-provider-scroll .ant-segmented-item {
+
+.models-provider-chip:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  color: var(--color-heading);
+}
+
+.models-provider-chip:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.models-provider-chip--active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.models-provider-chip--empty {
+  color: var(--color-muted);
+}
+
+.models-provider-chip-count {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.models-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.models-filter-controls .ant-segmented,
+.models-filter-controls .ant-segmented-item,
+.models-filter-controls .ant-segmented-thumb {
   border-radius: 0 !important;
 }
-.models-provider-scroll .ant-segmented-item-label {
+
+.models-filter-controls .ant-segmented-item-label {
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
-  letter-spacing: 0.02em;
 }
-.models-provider-scroll .ant-segmented-item-selected {
+
+.models-filter-controls .ant-segmented-item-selected {
   background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
   color: var(--color-accent) !important;
   box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent) !important;
 }
-.models-provider-scroll .ant-segmented-thumb {
-  border-radius: 0 !important;
+
+.models-filter-controls .ant-segmented-thumb {
   background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
 }
+
+.models-empty-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  margin-top: var(--space-5);
+  padding: var(--space-6) var(--space-5);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+
+.models-empty-state-copy {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.models-empty-state-copy strong {
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.models-empty-state-copy p {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.models-empty-state-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .models-search {
-  width: min(320px, 100%);
+  width: min(300px, 100%);
 }
 /* 账号模型行（ModelCapsuleCard）之间的行距 */
 .models-capsule-slot {
@@ -485,19 +585,26 @@
    不使用整块告警容器——状态由图标、文字与留白表达，详情默认收起，
    需要时才展开，避免长错误文本挤压目录列表。 */
 .models-refresh-error {
-  margin-top: var(--hos-space-2);
-  font-size: 12px;
+  margin-bottom: var(--hos-space-3);
+  font-size: var(--hos-text-caption);
 }
 .models-refresh-error > summary {
   display: inline-flex;
   align-items: center;
   gap: var(--hos-space-2);
   cursor: pointer;
-  color: var(--hos-warn-text, #d9a441);
+  color: var(--color-warning);
   list-style: none;
 }
 .models-refresh-error > summary::-webkit-details-marker {
   display: none;
+}
+.models-refresh-error > p {
+  margin: var(--hos-space-2) 0 0;
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  overflow-wrap: anywhere;
 }
 .models-refresh-error-hint {
   color: var(--hos-text-muted, rgba(255, 255, 255, 0.45));

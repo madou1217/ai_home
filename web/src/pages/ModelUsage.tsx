@@ -2,9 +2,6 @@ import { writeClipboardText } from '@/utils/clipboard';
 import './ModelUsage.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DatePicker,
-  Segmented,
-  Select,
   Space,
   Tabs,
   Tooltip,
@@ -18,7 +15,7 @@ import {
   ReloadOutlined,
   SyncOutlined
 } from '@ant-design/icons';
-import dayjs, { Dayjs } from 'dayjs';
+import type { Dayjs } from 'dayjs';
 import { accountsAPI, modelUsageAPI } from '@/services/api';
 import type {
   Account,
@@ -36,12 +33,15 @@ import type {
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
-import Reveal from '@/components/ui/Reveal';
 import SectionCard from '@/components/ui/SectionCard';
+import SettingStatusTag, { type SettingStatusState } from '@/components/ui/SettingStatusTag';
 import ListTable from '@/components/ui/ListTable';
 import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import UsageTrendChart from '@/features/model-usage/UsageTrendChart';
 import UsageModelMixChart from '@/features/model-usage/UsageModelMixChart';
+import UsageKpiRow from '@/features/model-usage/UsageKpiRow';
+import UsageFilterToolbar from '@/features/model-usage/UsageFilterToolbar';
+import UsageEmptyState from '@/features/model-usage/UsageEmptyState';
 import RequestDetailsSection from '@/features/model-usage/RequestDetailsSection';
 import UsageBreakdownDrawer, {
   type UsageBreakdownTarget
@@ -71,7 +71,6 @@ import {
   type UsageRangeMode
 } from '@/features/model-usage/model-usage-query';
 
-const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
 type ProviderFilter = UsageProviderFilter;
@@ -459,6 +458,14 @@ export default function ModelUsage() {
     });
   };
 
+  const handleResetFilters = () => {
+    switchUsageDataSurface(() => {
+      beginUsageTransition();
+      setProvider('');
+      setModel('');
+    });
+  };
+
   const requestUsageRefresh = useCallback((quiet: boolean) => {
     beginUsageTransition(quiet);
     if (rangeMode !== 'custom') setRange(buildRangeByMode(rangeMode));
@@ -789,16 +796,35 @@ export default function ModelUsage() {
 
   const totalCacheTokens = getCacheTokens(stats);
   const overallCacheHitRate = calculateCacheHitRate(stats);
+  const hasUsageData = stats.totalCalls > 0
+    || stats.totalTokens > 0
+    || models.length > 0
+    || sessions.length > 0
+    || trend.points.length > 0;
+  const hasActiveFilters = Boolean(provider || model.trim());
   const dashboardProgress = dashboardQueryJob && dashboardQueryJob.totalShards > 0
     ? `${dashboardQueryJob.completedShards}/${dashboardQueryJob.totalShards}`
     : '';
+  const dashboardStatusTag: { status: SettingStatusState; label: string } | null = loading
+    ? {
+      status: 'saving',
+      label: hasDashboardSnapshot ? '刷新中' : '加载中'
+    }
+    : dashboardLoadError
+      ? {
+        status: 'error',
+        label: '加载失败'
+      }
+      : null;
   const dashboardStatusText = loading
     ? [
-      hasDashboardSnapshot ? '正在切换数据范围' : '正在加载模型用量',
+      hasDashboardSnapshot ? '正在切换数据范围' : '正在汇总模型用量',
       dashboardProgress ? `已汇总 ${dashboardProgress}` : ''
     ].filter(Boolean).join(' · ')
     : dashboardLoadError
-      ? hasDashboardSnapshot ? '切换失败，仍显示上一次成功快照' : '加载失败，请重试'
+      ? hasDashboardSnapshot
+        ? `刷新失败，当前保留上一次快照：${dashboardLoadError}`
+        : dashboardLoadError
       : '';
   const dashboardBodyClassName = [
     'usage-dashboard-body',
@@ -829,133 +855,115 @@ export default function ModelUsage() {
         aria-live="polite"
         aria-atomic="true"
       >
-        {loading ? <SyncOutlined spin aria-hidden /> : null}
+        {dashboardStatusTag ? (
+          <SettingStatusTag
+            status={dashboardStatusTag.status}
+            label={dashboardStatusTag.label}
+            compact
+            live="off"
+          />
+        ) : null}
         {dashboardStatusText ? (
-          <Text type={dashboardLoadError && !loading ? 'danger' : 'secondary'}>
+          <Text type={dashboardLoadError && !loading ? 'danger' : 'secondary'} className="usage-query-progress-text">
             {dashboardStatusText}
           </Text>
         ) : null}
+        {dashboardLoadError && !loading ? (
+          <Button size="small" onClick={handleRefreshUsage}>
+            重试
+          </Button>
+        ) : null}
       </div>
 
-      <section className="usage-kpi-rail" aria-label="核心用量指标">
-        <div className="usage-kpi-item usage-kpi-item--primary">
-          <span>总 Tokens</span>
-          <strong>{formatTokens(stats.totalTokens)}</strong>
-          <small>{stats.totalCalls} 次调用 · {stats.totalSessions} 个会话</small>
-        </div>
-        <div className="usage-kpi-item">
-          <span>Input</span>
-          <strong>{formatTokens(stats.inputTokens)}</strong>
-          <small>未含缓存读写</small>
-        </div>
-        <div className="usage-kpi-item">
-          <span>Output</span>
-          <strong>{formatTokens(stats.outputTokens)}</strong>
-          <small>推理 {formatTokens(stats.reasoningOutputTokens)}</small>
-        </div>
-        <div className="usage-kpi-item">
-          <span>Cache</span>
-          <strong>{formatTokens(totalCacheTokens)}</strong>
-          <small>读 {formatTokens(stats.cacheReadInputTokens)} · 写 {formatTokens(stats.cacheCreationInputTokens)}</small>
-        </div>
-        <div className="usage-kpi-item">
-          <span>缓存率</span>
-          <strong>{formatCacheRate(overallCacheHitRate)}</strong>
-          <small>读取 / 全部输入侧 Tokens</small>
-        </div>
-        <div className="usage-kpi-item usage-kpi-item--cost">
-          <span>估算成本</span>
-          <strong>{formatCost(stats.totalCostUsd)}</strong>
-          <small>USD · 按当前价格快照</small>
-        </div>
-      </section>
+      <UsageKpiRow
+        stats={stats}
+        totalCacheTokens={totalCacheTokens}
+        overallCacheHitRate={overallCacheHitRate}
+      />
 
-      <SectionCard bordered >
-        <Space size={12} wrap className="usage-filter-space">
-          <Segmented
-            value={rangeMode}
-            options={RANGE_OPTIONS}
-            onChange={(value) => handleRangeModeChange(value as RangeMode)}
-          />
-          <Reveal open={rangeMode === 'custom'}>
-            <RangePicker
-              value={range}
-              onChange={handleRangeChange}
-              allowClear={false}
-              disabledDate={(current) => Boolean(current && current > dayjs().endOf('day'))}
-              showTime={{ format: 'HH:mm' }}
-              format="YYYY-MM-DD HH:mm"
-            />
-          </Reveal>
-          <div className="usage-provider-scroll">
-            <Segmented
-              value={provider}
-              options={PROVIDER_OPTIONS}
-              onChange={(value) => handleProviderChange(value as ProviderFilter)}
-            />
-          </div>
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            placeholder="全部模型"
-            value={model || undefined}
-            onChange={handleModelChange}
-            style={{ width: 260 }}
-            options={modelSelectOptions}
-          />
-          <Button icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
-            查询
-          </Button>
-        </Space>
+      <SectionCard bordered className="usage-filter-card">
+        <UsageFilterToolbar
+          rangeMode={rangeMode}
+          rangeOptions={RANGE_OPTIONS}
+          range={range}
+          provider={provider}
+          providerOptions={PROVIDER_OPTIONS}
+          model={model}
+          modelOptions={modelSelectOptions}
+          loading={loading}
+          onRangeModeChange={handleRangeModeChange}
+          onRangeChange={handleRangeChange}
+          onProviderChange={handleProviderChange}
+          onModelChange={handleModelChange}
+          onRefresh={handleRefreshUsage}
+        />
       </SectionCard>
 
       <div ref={usageDataSurfaceRef}>
-        <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
-          <div className="usage-insight-grid">
-            <UsageTrendChart trend={trend} />
-            <UsageModelMixChart
-              models={models}
-              onSelectModel={(row) => void openBreakdown({ kind: 'model', row })}
+        {!hasUsageData ? (
+          <SectionCard className="usage-insights-card usage-insights-card--empty">
+            <UsageEmptyState
+              loading={loading}
+              error={dashboardLoadError}
+              hasActiveFilters={hasActiveFilters}
+              rangeMode={rangeMode}
+              canScan={canScanUsageProvider(provider)}
+              scanning={scanning || isScanJobActive(scanJob)}
+              onRetry={handleRefreshUsage}
+              onExpandRange={() => handleRangeModeChange('7d')}
+              onResetFilters={handleResetFilters}
+              onScan={() => void handleScan()}
             />
-          </div>
-        </SectionCard>
+          </SectionCard>
+        ) : (
+          <>
+            <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
+              <div className="usage-insight-grid">
+                <UsageTrendChart trend={trend} />
+                <UsageModelMixChart
+                  models={models}
+                  onSelectModel={(row) => void openBreakdown({ kind: 'model', row })}
+                />
+              </div>
+            </SectionCard>
 
-        <SectionCard className="usage-results-card">
-          <Tabs
-            activeKey={usageTab}
-            animated={{ inkBar: true, tabPane: true }}
-            onChange={(key) => setUsageTab(key as 'model' | 'session')}
-            items={[
-              {
-                key: 'model',
-                label: '按模型',
-                children: (
-                  <ListTable<ModelUsageModelRow>
-                    loading={loading && models.length === 0}
-                    rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
-                    columns={modelColumns}
-                    dataSource={models}
-                    scroll={{ x: 1280 }}
-                  />
-                )
-              },
-              {
-                key: 'session',
-                label: '按会话',
-                children: (
-                  <ListTable<ModelUsageSessionRow>
-                    loading={loading && sessions.length === 0}
-                    rowKey={getSessionKey}
-                    columns={sessionColumns}
-                    dataSource={sessions}
-                    scroll={{ x: 1560 }}
-                  />
-                )
-              }
-            ]}
-          />
-        </SectionCard>
+            <SectionCard className="usage-results-card">
+              <Tabs
+                activeKey={usageTab}
+                animated={{ inkBar: true, tabPane: true }}
+                onChange={(key) => setUsageTab(key as 'model' | 'session')}
+                items={[
+                  {
+                    key: 'model',
+                    label: `按模型 (${models.length})`,
+                    children: (
+                      <ListTable<ModelUsageModelRow>
+                        loading={loading && models.length === 0}
+                        rowKey={(row) => `${row.provider}:${row.model || 'unknown'}`}
+                        columns={modelColumns}
+                        dataSource={models}
+                        scroll={{ x: 1280 }}
+                      />
+                    )
+                  },
+                  {
+                    key: 'session',
+                    label: `按会话 (${sessions.length})`,
+                    children: (
+                      <ListTable<ModelUsageSessionRow>
+                        loading={loading && sessions.length === 0}
+                        rowKey={getSessionKey}
+                        columns={sessionColumns}
+                        dataSource={sessions}
+                        scroll={{ x: 1560 }}
+                      />
+                    )
+                  }
+                ]}
+              />
+            </SectionCard>
+          </>
+        )}
       </div>
 
       <RequestDetailsSection

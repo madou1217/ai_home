@@ -134,7 +134,7 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
           }}
         />
       </div>
-      <div ref={surfaceRef}>
+      <div ref={surfaceRef} className="usage-chart-scroll">
         {data.length === 0 ? (
           <HudStateView compact code="NO_MIX" title="暂无模型分量" />
         ) : (

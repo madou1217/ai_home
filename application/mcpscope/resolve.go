@@ -20,8 +20,8 @@ const (
 
 // Policy is the account-level MCP selection.
 type Policy struct {
-	Mode  Mode
-	Allow []string
+	Mode  Mode     `json:"mode"`
+	Allow []string `json:"allow"`
 }
 
 // Context describes the session that is resolving MCPs.

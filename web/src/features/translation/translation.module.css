@@ -1,26 +1,22 @@
-/* AI 翻译工作台：HUD 面板式双栏（原文 / 流式译文）。
- *
- * 视觉只借用既有 token 与形态语言：等宽字体只用于元信息（字符数、模型、代号），
- * 正文用正文字体与行高保证长文本可读。分隔只出现在面板标题/页脚的功能边界，
- * 不用左侧色条或整块告警卡片表达状态。 */
+/* 翻译工作台样式：复用共享设计 token，克制简洁，无装饰性发光、无左侧色条、无大块告警。 */
 
 .workspace {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .heroBar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--hud-border-glass, var(--color-border));
-  background: var(--hud-glass-gradient), var(--hud-panel-bg);
-  -webkit-backdrop-filter: var(--hud-panel-blur);
-  backdrop-filter: var(--hud-panel-blur);
-  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
 }
 
 .languageToolbar,
@@ -45,10 +41,10 @@
 }
 
 .targetLanguageField {
-  padding: 4px 8px;
+  padding: 2px 8px;
   border: 1px solid var(--color-accent);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-accent-soft);
-  border-radius: var(--hos-radius-sm);
 }
 
 .targetLanguageSelect {
@@ -59,39 +55,22 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px 10px;
-  text-align: right;
 }
 
-.statusPill {
+.metaReadout {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 230px;
-  padding: 4px 8px;
+  max-width: 280px;
+  padding: 2px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface-muted);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-sunken);
   color: var(--color-muted-strong);
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.02em;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.statusPill[data-tone="accent"] {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-.statusPillDot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .settingsSummaryTitle {
@@ -104,57 +83,18 @@
   font-size: 11px;
 }
 
-.copySettings {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
-  padding: 12px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.copySettings > div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .copySettingsControl {
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.taskStrip {
-  box-shadow: none;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-}
-
-.toolbarGroup {
-  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
 .fieldLabel {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted);
+  color: var(--color-muted-strong);
+  white-space: nowrap;
 }
 
 .languageSelect {
@@ -171,31 +111,22 @@
   color: var(--color-muted);
 }
 
-.providerSettings {
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-  transition: border-color var(--motion-base) var(--ease-standard),
-    background-color var(--motion-base) var(--ease-standard);
-}
-
 .advancedTranslationSettings {
   border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
-  transition: border-color var(--motion-base) var(--ease-standard),
-    background-color var(--motion-base) var(--ease-standard);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
 }
 
 .advancedTranslationSettings > summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
   cursor: pointer;
   color: var(--color-text);
   font-size: 13px;
-  transition: color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
 .advancedTranslationSettings > summary:hover {
@@ -211,91 +142,52 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.advancedTranslationSettings > .providerSettings,
-.advancedTranslationSettings > .routePanel {
-  border: 0;
-  background: transparent;
+.advancedSettingsBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.generalSettingsSection,
+.providerSection,
+.routePanel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface);
+}
+
+.providerSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.providerStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .providerTabs {
-  margin-top: 10px;
-}
-
-.modelSettings {
-  padding: 12px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.systemSettings {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
-  padding: 12px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.systemSettings > div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.providerSettings summary {
-  cursor: pointer;
-  color: var(--color-text);
-  font-size: 13px;
-}
-
-.providerSettingsRow {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  animation: translation-panel-enter var(--motion-base) var(--ease-standard);
-  transition: border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
-}
-
-.providerSettingsRow:hover {
-  border-color: var(--color-border-strong, var(--color-border));
-}
-
-.providerSettingsHeading,
-.providerFields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.providerFields {
-  align-items: flex-end;
-}
-
-.providerField {
-  display: flex;
-  flex: 1 1 220px;
   min-width: 0;
+}
+
+.providerMetaStrip {
+  display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.providerNoFields {
+  padding: 10px 0;
 }
 
 .providerMissingFields {
-  color: var(--color-warning, var(--color-muted-strong));
+  color: var(--color-warning, var(--color-danger));
   font-size: 12px;
-}
-
-.routePanel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
 }
 
 .pageTranslationPanel {
@@ -304,13 +196,15 @@
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
 }
 
 .pageTranslationHeader,
 .pageTranslationActions,
 .pageTranslationProgress {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -327,37 +221,22 @@
 }
 
 .pageTranslationProgress {
-  color: var(--color-muted);
+  color: var(--color-muted-strong);
   font-size: 12px;
 }
 
-@media (max-width: 860px) {
-  .pageTranslationHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .pageTranslationActions {
-    flex-wrap: wrap;
-  }
+.routeHint {
+  font-size: 12px;
+  color: var(--color-muted);
 }
 
-.routeHeader {
+.routeEmpty {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-
-.routeHeader > div {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
   gap: 8px;
-  min-width: 0;
-}
-
-.routeHint,
-.routeEmpty {
+  padding: 10px 0;
   font-size: 12px;
   color: var(--color-muted);
 }
@@ -377,14 +256,12 @@
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-  padding: 6px 0;
+  padding: 8px 0;
   border-top: 1px solid var(--color-border-subtle);
-  transition: background-color var(--motion-fast) var(--ease-standard),
-    opacity var(--motion-fast) var(--ease-standard);
 }
 
-.routeRow:hover {
-  background: var(--color-surface-muted);
+.routeRow:first-child {
+  border-top: 0;
 }
 
 .routeOrder {
@@ -397,11 +274,11 @@
 }
 
 .routeProvider {
-  width: 120px;
+  width: 148px;
 }
 
 .routeModel {
-  width: 240px;
+  width: 220px;
   max-width: 100%;
 }
 
@@ -420,9 +297,10 @@
 .routeOperation {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 5px;
+  gap: 4px;
+  padding: 2px 6px;
   border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-2xs);
   background: var(--color-surface-muted);
   color: var(--color-muted-strong);
   font-size: 11px;
@@ -435,36 +313,20 @@
   margin: 0;
 }
 
+.routeOperation:focus-within {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .routeActions {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
 }
 
-@media (max-width: 860px) {
-  .routeHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .routeProvider,
-  .routeModel,
-  .routeModelProvider {
-    flex: 1 1 160px;
-    width: auto;
-  }
-
-  .routeOperations {
-    flex: 1 1 100%;
-  }
-
-  .routeActions {
-    margin-left: 0;
-  }
-}
-
 .floatingToggle {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: 12px;
@@ -479,28 +341,57 @@
   cursor: default;
 }
 
+.systemControl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.systemControlRow,
+.systemControlTargets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .executionTargetControl {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  min-width: min(100%, 320px);
+  min-width: 0;
 }
 
-.executionTargetSelect {
-  min-width: 180px;
+.executionTargetSelect,
+.systemTargetSelect {
+  min-width: 168px;
   max-width: 100%;
-  padding: 3px 7px;
+  padding: 4px 8px;
   border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface);
   color: var(--color-text);
   font-size: 12px;
+}
+
+.executionTargetSelect:focus-visible,
+.systemTargetSelect:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .executionTargetHint {
   flex: 1 1 100%;
   color: var(--color-muted);
   font-size: 11px;
+}
+
+.systemStatus {
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
 }
 
 .kbd {
@@ -522,42 +413,34 @@
   align-items: stretch;
 }
 
-@media (max-width: 1100px) {
-  .panes {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .pane {
   display: flex;
   flex-direction: column;
-  min-height: 460px;
+  min-height: 400px;
   min-width: 0;
-  border: 1px solid var(--hud-border-glass, var(--color-border));
-  background: var(--hud-glass-gradient), var(--hud-panel-bg);
-  -webkit-backdrop-filter: var(--hud-panel-blur);
-  backdrop-filter: var(--hud-panel-blur);
-  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
-  transition: border-color var(--motion-base) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+  transition: border-color var(--motion-fast) var(--ease-standard);
 }
 
 .paneSource,
-.paneResult,
-.pane--source,
-.pane--result {
-  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--elevation-1);
+.paneResult {
+  overflow: hidden;
 }
 
 .paneResult[data-phase="waiting"],
 .paneResult[data-phase="preparing"],
 .paneResult[data-phase="streaming"] {
   border-color: var(--color-accent);
-  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent), var(--hud-glow-accent);
 }
 
 .paneResult[data-phase="done"] {
   border-color: var(--color-success);
+}
+
+.pane:focus-within {
+  border-color: var(--color-accent);
 }
 
 .paneHeader {
@@ -571,11 +454,9 @@
 }
 
 .paneTitle {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-muted-strong);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-heading);
 }
 
 .paneMeta {
@@ -587,7 +468,6 @@
   white-space: nowrap;
 }
 
-/* 选择器带 .pane 前缀：覆盖 antd 的 .ant-input 内边距/边框（同级单类选择器会随注入顺序失效）。 */
 .pane .sourceInput {
   flex: 1;
   min-height: 0;
@@ -598,7 +478,7 @@
   background: transparent;
   font-family: var(--font-body);
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.7;
   resize: none;
 }
 
@@ -612,7 +492,7 @@
 .sourceEmptyState {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   margin: 0 14px 10px;
   padding: 8px 0 0;
   border-top: 1px dashed var(--color-border-subtle);
@@ -620,10 +500,7 @@
 
 .sourceEmptyEyebrow {
   color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 
 .quickExamples {
@@ -636,27 +513,26 @@
   max-width: 100%;
   padding: 4px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface-muted);
   color: var(--color-muted-strong);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
   transition: border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
-.quickExample:hover,
-.quickExample:focus-visible {
+.quickExample:hover {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
 
-.pane:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent-soft);
+.quickExample:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .output {
@@ -670,52 +546,50 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.7;
   color: var(--color-text);
-  animation: translation-result-in var(--motion-slow) var(--ease-standard);
 }
 
-.translationStatus { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-7) 0; color: var(--color-accent); font-size: var(--text-xs); }
-.statusDot { width: var(--space-3); height: var(--space-3); border-radius: 50%; background: currentColor; }
-.statusElapsed { margin-left: auto; color: var(--color-muted); font-variant-numeric: tabular-nums; }
-.statusCaption { animation: translation-result-in var(--motion-base) var(--ease-standard); }
-.pane[data-phase="done"] .translationStatus { color: var(--color-success); }
-.pane[data-phase="error"] .translationStatus { color: var(--color-danger); }
-.pane[data-phase="cancelled"] .translationStatus { color: var(--color-muted); }
-.pane[data-phase="waiting"] .statusDot, .pane[data-phase="streaming"] .statusDot, .pane[data-phase="preparing"] .statusDot { animation: translation-status-pulse calc(var(--motion-slower) * 4) infinite; }
-.waitingState { display: flex; flex-direction: column; gap: var(--space-8); color: var(--color-muted); font-size: var(--text-base); }
-.waitingSkeleton { display: flex; flex-direction: column; gap: var(--space-6); max-width: 90%; }
-.waitingSkeleton span { height: var(--space-4); background: linear-gradient(100deg, var(--color-surface-muted) 20%, var(--color-accent-soft) 45%, var(--color-surface-muted) 70%); background-size: 220% 100%; border-radius: var(--hos-radius-sm); animation: translation-waiting calc(var(--motion-slower) * 5) var(--ease-in-out) infinite; }
-.waitingSkeleton span:nth-child(2) { width: 86%; }
-.waitingSkeleton span:nth-child(3) { width: 60%; }
-@keyframes translation-result-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-@keyframes translation-waiting { from { background-position: 130% 0; } to { background-position: -30% 0; } }
-@keyframes translation-status-pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
-@keyframes translation-panel-enter { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
-/* 条件挂载的状态块（快速示例 / 语言确认条 / 状态行 / 等待 / 空态 / 错误 / 页面翻译进度 / 检测标签）：
- * 出现时一次轻量淡入上移，不再硬切（只碰 opacity/transform）。 */
-.sourceEmptyState,
-.languageIntentStrip,
-.translationStatus,
-.waitingState,
-.outputEmpty,
-.inlineError,
-.inlineNotice,
-.pageTranslationProgress,
-.historyEmpty {
-  animation: translation-panel-enter var(--motion-base) var(--ease-standard) backwards;
-}
-.detectChip,
-.limitWarning {
-  animation: translation-result-in var(--motion-fast) var(--ease-standard) backwards;
-}
-@media (prefers-reduced-motion: reduce) {
-  .workspace *, .history * { animation: none !important; transition: none !important; }
+.translationStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-size: 12px;
 }
 
-.outputPlaceholder {
-  font-size: 13px;
+.statusCaption {
+  font-weight: 500;
+}
+
+.statusElapsed {
   color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.pane[data-phase="done"] .translationStatus {
+  color: var(--color-success);
+}
+
+.pane[data-phase="error"] .translationStatus {
+  color: var(--color-danger);
+}
+
+.pane[data-phase="cancelled"] .translationStatus {
+  color: var(--color-muted-strong);
+}
+
+.waitingState {
+  display: flex;
+  align-items: center;
+  min-height: 120px;
+  color: var(--color-muted-strong);
+  font-size: 13px;
 }
 
 .outputEmpty {
@@ -723,55 +597,29 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 180px;
   color: var(--color-muted);
   font-size: 12px;
 }
 
 .outputEmpty strong {
-  color: var(--color-muted-strong);
+  color: var(--color-heading);
   font-size: 14px;
-  font-weight: 500;
-}
-
-.outputEmptyIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
+  font-weight: 600;
 }
 
 .primaryAction {
   min-width: 96px;
-  box-shadow: 0 0 0 0 var(--color-accent-soft);
-  transition: box-shadow var(--motion-base) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
 }
 
 .resultToolbar {
   align-items: center;
 }
 
-.primaryAction:hover,
-.primaryAction:focus-visible {
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
-}
-
 .copyConfirmed {
   color: var(--color-success) !important;
   border-color: var(--color-success) !important;
-  animation: translation-copy-confirmed var(--motion-base) var(--ease-standard);
-}
-
-@keyframes translation-copy-confirmed {
-  from { transform: scale(0.98); }
-  50% { transform: scale(1.02); }
-  to { transform: scale(1); }
 }
 
 .cursor {
@@ -781,17 +629,6 @@
   margin-left: 2px;
   vertical-align: text-bottom;
   background: var(--color-accent);
-  animation: translation-cursor 1s step-end infinite;
-}
-
-@keyframes translation-cursor {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
 }
 
 .paneFooter {
@@ -824,9 +661,9 @@
 .detectChip {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.02em;
   padding: 1px 6px;
   border: 1px solid var(--color-accent);
+  border-radius: var(--hos-radius-2xs);
   color: var(--color-accent);
   background: var(--color-accent-soft);
 }
@@ -837,9 +674,10 @@
 }
 
 .inlineNotice {
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface-soft);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-sunken);
   font-size: 12px;
   color: var(--color-muted-strong);
 }
@@ -849,8 +687,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--color-danger);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-danger-soft);
   font-size: 12px;
   color: var(--color-danger);
@@ -860,34 +699,31 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-7);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--color-text);
+  font-size: 12px;
   border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-sunken);
 }
 
-.languageIntentStrip > span { flex: 1 1 240px; }
+.languageIntentStrip > span {
+  flex: 1 1 220px;
+}
 
 .errorCode {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--color-danger);
-  opacity: 0.75;
 }
 
-/* 翻译记录：本机便利记录列表。行内展示原文/译文，等宽元信息标注语言与模型，
- * 只保留图标化的复制/删除，不引入大块提示或左侧色条。 */
-
-.history {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+.historyCard {
+  margin-bottom: 0;
 }
 
 .historyHeaderRight {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -902,8 +738,12 @@
 }
 
 .historyItem {
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-top: 1px solid var(--color-border-subtle);
+}
+
+.historyItem:first-child {
+  border-top: 0;
 }
 
 .historyItemLatest {
@@ -912,6 +752,7 @@
 
 .historyItemHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -920,7 +761,6 @@
 .historyRoute {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.04em;
   color: var(--color-muted-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -950,12 +790,6 @@
   margin-top: 6px;
 }
 
-@media (max-width: 1100px) {
-  .historyBody {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .historySource,
 .historyResult {
   font-size: 13px;
@@ -980,85 +814,70 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
+  gap: 8px;
   padding: 16px 14px;
   font-size: 12px;
   color: var(--color-muted);
 }
 
 .historyEmpty strong {
-  color: var(--color-muted-strong);
+  color: var(--color-heading);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-.historyEmptyIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
 .translationControls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.systemControl {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+@media (max-width: 1100px) {
+  .panes,
+  .historyBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-.systemTargetSelect {
-  max-width: 170px;
-  min-width: 120px;
-  padding: 3px 22px 3px 6px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
-  color: var(--color-muted-strong);
-  font-size: 11px;
-}
+@media (max-width: 860px) {
+  .pageTranslationHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 
-.systemStatus {
-  font-size: 11px;
-  color: var(--color-muted);
-  max-width: 300px;
-}
+  .routeProvider,
+  .routeModel,
+  .routeModelProvider {
+    flex: 1 1 160px;
+    width: auto;
+  }
 
-.systemAction {
-  border: 0;
-  background: transparent;
-  color: var(--color-accent);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 0;
+  .routeOperations {
+    flex: 1 1 100%;
+  }
+
+  .routeActions {
+    margin-left: 0;
+  }
 }
 
 @media (max-width: 720px) {
-  .heroBar,
-  .copySettings {
+  .heroBar {
     align-items: stretch;
     flex-direction: column;
   }
 
   .heroMeta {
     justify-content: flex-start;
-    text-align: left;
   }
 
   .languageToolbar,
   .languageField,
   .targetLanguageField,
   .targetLanguageSelect,
-  .languageSelect {
+  .languageSelect,
+  .modelSelect {
     width: 100%;
   }
 
@@ -1070,16 +889,14 @@
     justify-content: space-between;
   }
 
-  .copySettingsControl {
-    justify-content: flex-start;
+  .historyMeta {
+    margin-left: 0;
   }
 }
 
-/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
- * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
-.pane .sourceInput {
-  transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+@media (prefers-reduced-motion: reduce) {
+  .workspace * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

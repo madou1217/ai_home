@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Switch, Tooltip, message } from 'antd';
 import { DesktopOutlined } from '@ant-design/icons';
+import AppButton from '@/components/ui/AppButton';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import type { SystemTranslationStatus, TranslationExecutionTarget } from '@/types';
 import { translationAPI } from '@/services/api';
 import styles from './translation.module.css';
@@ -148,87 +150,142 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
   const copy = platformCopy(status);
   const unsupported = status?.platform === 'linux' || status?.status === 'unsupported';
   const shortcut = status?.shortcut || (status?.platform === 'win32' ? 'Ctrl+Alt+T' : '⌥⌘T');
+  const statusTag = error
+    ? { status: 'error' as const, label: '服务异常' }
+    : !status
+      ? { status: 'saving' as const, label: '读取中' }
+      : status.status === 'running'
+        ? { status: 'applied' as const, label: '已就绪' }
+        : status.status === 'permission-required'
+          ? { status: 'unset' as const, label: '待授权' }
+          : status.status === 'disabled'
+            ? { status: 'unset' as const, label: '已关闭' }
+            : { status: 'unset' as const, label: '未就绪' };
+  const detailText = error
+    || (!status
+      ? '正在读取系统取词状态…'
+      : status.status === 'running'
+        ? '已应用，可使用快捷键取词翻译'
+        : status.status === 'disabled'
+          ? '开启后可在本机其他应用选词翻译'
+          : status.detail || copy.permission);
+
   return (
     <div className={styles.systemControl}>
-      <Tooltip title={copy.description}>
-        <span className={styles.floatingToggleLabel}><DesktopOutlined /> {copy.title}</span>
-      </Tooltip>
-      <Switch
-        size="small"
-        aria-label="系统取词"
-        checked={status?.enabled || false}
-        disabled={!status?.supported || unsupported}
-        loading={saving}
-        onChange={async (enabled) => {
-          setSaving(true);
-          try {
-            setStatus(await translationAPI.setSystemEnabled(enabled));
-            window.dispatchEvent(new Event('aih-system-translation-changed'));
-          } catch (_error) { message.error('保存系统取词设置失败'); }
-          finally { setSaving(false); }
-        }}
-      />
-      {status?.supported ? <kbd className={styles.kbd}>{shortcut}</kbd> : null}
-      {executionTargets.length ? (
-        <div className={styles.executionTargetControl}>
-          <span className={styles.fieldLabel}>执行目标</span>
-          <select
-            className={styles.executionTargetSelect}
-            aria-label="系统取词执行目标"
-            value={selectedExecutionTarget}
-            disabled={saving}
-            onChange={async (event) => {
-              const target = executionTargets.find((item) => item.id === event.target.value);
-              if (!target || !target.available || !target.configured) return;
-              setSaving(true);
-              try {
-                setStatus(await translationAPI.setSystemExecutionTarget(target.id as 'aih-server' | 'direct-provider'));
-                setSelectedExecutionTargetOverride(target.id as 'aih-server' | 'direct-provider');
-                setError('');
-              } catch (_error) {
-                setError('切换执行目标失败，请检查目标配置');
-              } finally {
-                setSaving(false);
-              }
+      <div className={styles.systemControlRow}>
+        <Tooltip title={copy.description}>
+          <span className={styles.floatingToggleLabel}><DesktopOutlined /> {copy.title}</span>
+        </Tooltip>
+        <Switch
+          size="small"
+          aria-label="系统取词"
+          checked={status?.enabled || false}
+          disabled={!status?.supported || unsupported}
+          loading={saving}
+          onChange={async (enabled) => {
+            setSaving(true);
+            try {
+              setStatus(await translationAPI.setSystemEnabled(enabled));
+              window.dispatchEvent(new Event('aih-system-translation-changed'));
+            } catch (_error) { message.error('保存系统取词设置失败'); }
+            finally { setSaving(false); }
+          }}
+        />
+        <SettingStatusTag status={statusTag.status} label={statusTag.label} compact />
+        {status?.supported ? <kbd className={styles.kbd}>{shortcut}</kbd> : null}
+        {status?.status === 'permission-required' ? (
+          <AppButton
+            appVariant="quiet"
+            size="small"
+            onClick={() => {
+              void translationAPI.requestSystemPermission().catch(() => message.error(permissionErrorCopy(status)));
             }}
           >
-            {executionTargets.map((target) => (
-              <option key={target.id} value={target.id} disabled={!getTranslationTargetStatus(target).selectable}>
-                {target.label} · {getTranslationTargetStatus(target).label}
+            去授权
+          </AppButton>
+        ) : null}
+      </div>
+
+      <div className={styles.systemControlTargets}>
+        {executionTargets.length ? (
+          <div className={styles.executionTargetControl}>
+            <label className={styles.fieldLabel} htmlFor="system-translation-execution-target">执行目标</label>
+            <select
+              id="system-translation-execution-target"
+              className={styles.executionTargetSelect}
+              aria-label="系统取词执行目标"
+              value={selectedExecutionTarget}
+              disabled={saving}
+              onChange={async (event) => {
+                const target = executionTargets.find((item) => item.id === event.target.value);
+                if (!target || !target.available || !target.configured) return;
+                setSaving(true);
+                try {
+                  setStatus(await translationAPI.setSystemExecutionTarget(target.id as 'aih-server' | 'direct-provider'));
+                  setSelectedExecutionTargetOverride(target.id as 'aih-server' | 'direct-provider');
+                  setError('');
+                } catch (_error) {
+                  setError('切换执行目标失败，请检查目标配置');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              {executionTargets.map((target) => {
+                const targetStatus = getTranslationTargetStatus(target);
+                const stateLabel = targetStatus.state === 'configured'
+                  ? '已设定'
+                  : targetStatus.state === 'pending'
+                    ? '未设定'
+                    : '不可用';
+                return (
+                  <option key={target.id} value={target.id} disabled={!targetStatus.selectable}>
+                    {target.label} · {stateLabel}
+                  </option>
+                );
+              })}
+            </select>
+            {selectedExecutionTargetDetails ? (
+              <span className={styles.executionTargetHint} role="status">
+                {executionTargetHint(selectedExecutionTargetDetails)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className={styles.executionTargetControl}>
+          <label className={styles.fieldLabel} htmlFor="system-translation-server-target">服务地址</label>
+          <select
+            id="system-translation-server-target"
+            className={styles.systemTargetSelect}
+            aria-label="系统取词服务目标"
+            value={status?.serverTarget?.serverId || status?.serverTarget?.origin || window.location.origin}
+            disabled={saving}
+            onChange={async (event) => {
+              const found = serverTargets.find((item) => (item.serverId || item.origin) === event.target.value);
+              if (!found) return;
+              setSaving(true);
+              try { setStatus(await translationAPI.setSystemServerTarget({ ...found }, serverTargets.map((item) => ({ ...item })))); }
+              catch (_error) { message.error('切换翻译服务失败'); }
+              finally { setSaving(false); }
+            }}
+          >
+            {serverTargets.map((item) => (
+              <option key={targetKey(item)} value={targetKey(item)} disabled={!item.available}>
+                {item.label}{item.available ? '' : '（未设定）'}
               </option>
             ))}
           </select>
-          {selectedExecutionTargetDetails ? (
-            <span className={styles.executionTargetHint} role="status">
-              {executionTargetHint(selectedExecutionTargetDetails)}
-            </span>
-          ) : null}
         </div>
-      ) : null}
-      <select
-        className={styles.systemTargetSelect}
-        aria-label="系统取词服务目标"
-        value={status?.serverTarget?.serverId || status?.serverTarget?.origin || window.location.origin}
-        disabled={saving}
-        onChange={async (event) => {
-          const found = serverTargets.find((item) => (item.serverId || item.origin) === event.target.value);
-          if (!found) return;
-          setSaving(true);
-          try { setStatus(await translationAPI.setSystemServerTarget({ ...found }, serverTargets.map((item) => ({ ...item })))); }
-          catch (_error) { message.error('切换翻译服务失败'); }
-          finally { setSaving(false); }
-        }}
-      >
-        {serverTargets.map((item) => <option key={targetKey(item)} value={targetKey(item)} disabled={!item.available}>{item.label}{item.available ? '' : '（未配置）'}</option>)}
-      </select>
-      <span className={styles.systemStatus} role="status">
-        {error || (!status ? '正在读取服务状态…' : status.status === 'running' ? '已就绪' : status.status === 'disabled' ? '' : status.detail || copy.permission)}
+      </div>
+
+      <span className={styles.systemStatus} role={error ? 'alert' : 'status'}>
+        {detailText}
       </span>
-      {alternateTargetCount === 0 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
-      {status?.status === 'permission-required' ? (
-        <button type="button" className={styles.systemAction} onClick={() => {
-          void translationAPI.requestSystemPermission().catch(() => message.error(permissionErrorCopy(status)));
-        }}>去授权</button>
+      {alternateTargetCount === 0 ? (
+        <span className={styles.systemStatus}>
+          当前仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换。
+        </span>
       ) : null}
     </div>
   );

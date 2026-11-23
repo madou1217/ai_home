@@ -18,10 +18,13 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/plugincontrol"
+	plugincontract "github.com/madou1217/ai_home/contracts/plugins"
+	"github.com/madou1217/ai_home/internal/adapters/pluginartifact"
 	"github.com/madou1217/ai_home/internal/pluginerr"
 )
 
@@ -69,6 +72,8 @@ type InstanceOperator interface {
 type Dependencies struct {
 	Authorizer Authorizer
 	Installer  Installer
+	// AIHomeDir 是服务端插件数据根；安装时登记发布公钥需要它。
+	AIHomeDir string
 	// Committer 为空时只关闭 state/commit 路由；install/uninstall 不受影响。
 	Committer StateCommitter
 	// Operator 为空时只关闭实例启停路由；Node 代理会得到 404（不回落到本地写）。
@@ -84,6 +89,7 @@ type Handler struct {
 	committer  StateCommitter
 	operator   InstanceOperator
 	onAudit    func(operation string, details map[string]any)
+	aiHomeDir  string
 }
 
 // NewHandler 创建管理接口；依赖缺失时拒绝装配。
@@ -97,6 +103,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		committer:  dependencies.Committer,
 		operator:   dependencies.Operator,
 		onAudit:    dependencies.OnAudit,
+		aiHomeDir:  dependencies.AIHomeDir,
 	}, nil
 }
 
@@ -130,7 +137,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 
 type installPayload struct {
 	File          string `json:"file"`
+	URL           string `json:"url"`
+	SHA256        string `json:"sha256"`
 	RequireSigned bool   `json:"requireSigned"`
+	// TrustKeyPEM 是「一步信任」的公钥内容；keyId 取包内签名声明。
+	TrustKeyPEM       string `json:"trustKeyPem"`
+	ExpectFingerprint string `json:"expectFingerprint"`
+	ReplaceKey        bool   `json:"replaceKey"`
 }
 
 type uninstallPayload struct {
@@ -147,13 +160,29 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 	if !decodePayload(response, request, &payload) {
 		return
 	}
+	file, cleanup, resolveErr := handler.resolveInstallArtifact(request.Context(), payload)
+	if resolveErr != nil {
+		writeControlError(response, resolveErr)
+		return
+	}
+	defer cleanup()
+	if strings.TrimSpace(payload.TrustKeyPEM) != "" {
+		if strings.TrimSpace(handler.aiHomeDir) == "" {
+			writeControlError(response, pluginerr.New("plugin_home_unavailable", "服务端插件数据根不可用"))
+			return
+		}
+		if _, trustErr := pluginartifact.TrustPackageKey(file, payload.TrustKeyPEM, payload.ExpectFingerprint, payload.ReplaceKey, handler.aiHomeDir); trustErr != nil {
+			writeControlError(response, trustErr)
+			return
+		}
+	}
 	options := plugincontrol.AcceptOptions{
 		HostVersion:    headerOr(request, HostVersionHeader, "1.0.0"),
 		NodeVersion:    firstHeader(request, RuntimeVersionHeader),
 		RequireSigned:  payload.RequireSigned,
 		AllowUntrusted: !payload.RequireSigned,
 	}
-	result, err := handler.installer.Install(request.Context(), payload.File, options)
+	result, err := handler.installer.Install(request.Context(), file, options)
 	if err != nil {
 		writeControlError(response, err)
 		return
@@ -180,6 +209,43 @@ func (handler *Handler) install(response http.ResponseWriter, request *http.Requ
 		OK bool `json:"ok"`
 		plugincontrol.InstallResult
 	}{OK: true, InstallResult: result})
+}
+
+// resolveInstallArtifact 优先使用服务端可见且摘要一致的本地包；否则按 URL
+// 下载。远程 server 看不到客户端临时文件时，CLI 会同时带上 url 和 sha256。
+func (handler *Handler) resolveInstallArtifact(ctx context.Context, payload installPayload) (string, func(), error) {
+	path := strings.TrimSpace(payload.File)
+	remote := strings.TrimSpace(payload.URL)
+	expected := strings.ToLower(strings.TrimSpace(payload.SHA256))
+	// 没有 URL 时保持旧语义：把路径原样交给安装器，由它给出统一的缺包错误。
+	if remote == "" {
+		if path == "" {
+			return "", nil, pluginerr.New("plugin_package_missing", "缺少插件包路径或下载地址")
+		}
+		return path, func() {}, nil
+	}
+	if path != "" {
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			if expected == "" {
+				return path, func() {}, nil
+			}
+			if digest, digestErr := pluginartifact.FileSHA256(path); digestErr == nil && digest == expected {
+				return path, func() {}, nil
+			}
+		}
+	}
+	downloaded, cleanup, err := pluginartifact.Download(ctx, remote, plugincontract.MaxPackageBytes)
+	if err != nil {
+		return "", nil, err
+	}
+	if expected != "" {
+		digest, digestErr := pluginartifact.FileSHA256(downloaded)
+		if digestErr != nil || digest != expected {
+			cleanup()
+			return "", nil, pluginerr.New("plugin_package_digest_mismatch", "下载的插件包与客户端摘要不一致")
+		}
+	}
+	return downloaded, cleanup, nil
 }
 
 func (handler *Handler) uninstall(response http.ResponseWriter, request *http.Request) {

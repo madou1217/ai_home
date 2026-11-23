@@ -552,81 +552,77 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 	if err != nil {
 		return nil, pluginerr.New("plugin_package_missing", "插件包路径不可用")
 	}
-	if trustKey := strings.TrimSpace(pluginOption(args, "--trust-key")); trustKey != "" {
-		if err := trustPackageKey(absolute, trustKey, args, runtime); err != nil {
-			return nil, err
-		}
+	digest, err := pluginartifact.FileSHA256(local)
+	if err != nil {
+		return nil, pluginerr.New("plugin_package_missing", "插件包无法读取")
 	}
-	result, err := pluginRequest(ctx, "POST", "/v1/management/plugins/install", map[string]any{
+	payload := map[string]any{
 		"file":          absolute,
+		"sha256":        digest,
 		"requireSigned": pluginHasFlag(args, "--require-signed"),
-	}, runtime)
+	}
+	if pluginIsRemoteInput(file) {
+		// 服务端会先尝试本地路径（摘要一致才用），否则按 URL 自行下载。
+		payload["url"] = strings.TrimSpace(file)
+	}
+	if trustKey := strings.TrimSpace(pluginOption(args, "--trust-key")); trustKey != "" {
+		publicKeyPEM, expectedFingerprint, keyErr := pluginReadPublicKey(trustKey, args, runtime)
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		payload["trustKeyPem"] = publicKeyPEM
+		payload["expectFingerprint"] = expectedFingerprint
+		payload["replaceKey"] = pluginHasFlag(args, "--replace-key")
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 安装时将把发布公钥登记到服务端（指纹 %s）\n", expectedFingerprint)
+	}
+	result, err := pluginRequest(ctx, "POST", "/v1/management/plugins/install", payload, runtime)
 	if err != nil {
 		return nil, err
 	}
 	if signature, ok := result["signature"].(map[string]any); ok && signature["status"] == "untrusted" {
 		keyID := strings.TrimSpace(stringValue(signature["keyId"]))
 		_, _ = fmt.Fprintf(runtime.stderr,
-			"[aih] 签名未验证：包由 keyId %s 签名，但本机未登记该公钥。确认来源后可运行 aih plugin trust <public.pem> --key-id %s，或下次安装加 --trust-key <public.pem>。\n",
-			keyID, keyID)
+			"[aih] 签名未验证：包由 keyId %s 签名，但服务端信任根没有该公钥。确认来源后重新安装并加 --trust-key <public.pem>，公钥会登记到服务端。\n",
+			keyID)
 	}
 	return result, nil
 }
 
-// trustPackageKey 实现「一步信任」：从包内读取签名 keyId，把用户给的公钥
-// 登记到同一个槽位，再交给服务端安装并验签。keyId 冲突默认拒绝，避免
-// 同名标签悄悄覆盖已信任的发布者。
-func trustPackageKey(packageFile string, publicKeyFile string, args []string, runtime commandRuntime) error {
-	info, err := pluginartifact.ReadSignatureInfo(packageFile)
+// pluginReadPublicKey 读取本地或 URL 公钥，归一化并核对指纹。公钥内容会随
+// 安装请求发给服务端，由服务端登记；CLI 不再写自己的信任根，因此远程 server
+// 与隧道场景也能一步信任。
+func pluginReadPublicKey(value string, args []string, runtime commandRuntime) (string, string, error) {
+	keyFile, cleanup, err := pluginMaterialize(value, pluginPublicKeyBytesLimit, "公钥", runtime)
 	if err != nil {
-		return err
-	}
-	if info.Status != "signed" || strings.TrimSpace(info.KeyID) == "" {
-		return pluginerr.New("plugin_signature_required", "该插件包没有签名，--trust-key 无意义")
-	}
-	keyFile, cleanup, err := pluginMaterialize(publicKeyFile, pluginPublicKeyBytesLimit, "公钥", runtime)
-	if err != nil {
-		return err
+		return "", "", err
 	}
 	defer cleanup()
 	data, err := os.ReadFile(keyFile)
 	if err != nil {
-		return pluginerr.New("plugin_signature_key_invalid", "公钥文件不可读")
+		return "", "", pluginerr.New("plugin_signature_key_invalid", "公钥文件不可读")
 	}
 	normalized, err := plugintrust.NormalizePublicKey(string(data))
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	fingerprint := plugintrust.Fingerprint(normalized)
-	if expected := strings.TrimSpace(pluginOption(args, "--expect-fingerprint")); expected != "" && !strings.EqualFold(expected, fingerprint) {
-		return pluginerr.New("plugin_signature_key_invalid",
+	expected := strings.TrimSpace(pluginOption(args, "--expect-fingerprint"))
+	if expected != "" && !strings.EqualFold(expected, fingerprint) {
+		return "", "", pluginerr.New("plugin_signature_key_invalid",
 			fmt.Sprintf("公钥指纹不匹配：期望 %s，实际 %s", expected, fingerprint))
 	}
-	home, err := resolveAIHome(runtime)
-	if err != nil {
-		return pluginerr.New("plugin_home_unavailable", "无法定位 AIH_HOME_DIR")
+	if expected == "" {
+		expected = fingerprint
 	}
-	store, err := plugintrust.NewTrustStore(home)
-	if err != nil {
-		return err
-	}
-	keys, err := store.Read()
-	if err != nil {
-		return err
-	}
-	if existing, present := keys[info.KeyID]; present && existing != normalized && !pluginHasFlag(args, "--replace-key") {
-		return pluginerr.New("plugin_signature_key_conflict",
-			fmt.Sprintf("keyId %s 已登记为另一把公钥；确认要替换请加 --replace-key", info.KeyID))
-	}
-	added, err := store.Add(plugintrust.AddInput{PublicKey: normalized, KeyID: info.KeyID})
-	if err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已信任 %s（指纹 %s）\n", added.KeyID, added.Fingerprint)
-	return nil
+	return normalized, expected, nil
 }
 
 const pluginPublicKeyBytesLimit = 64 << 10
+
+func pluginIsRemoteInput(value string) bool {
+	raw := strings.TrimSpace(value)
+	return strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://")
+}
 
 // pluginMaterialize 把本地路径或 http(s) URL 统一成本地文件。
 //

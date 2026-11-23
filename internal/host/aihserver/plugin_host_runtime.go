@@ -137,6 +137,7 @@ func newLocalPluginControlHandler(
 	handler, err := plugincontrolapi.NewHandler(plugincontrolapi.Dependencies{
 		Authorizer: authorizer,
 		Installer:  installer,
+		AIHomeDir:  aiHomeDir,
 		Committer:  store,
 		Operator:   operator,
 		OnAudit:    hostService.Audit,

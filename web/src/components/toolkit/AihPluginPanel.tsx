@@ -49,6 +49,11 @@ export default function AihPluginPanel() {
 
   const installed = report?.installed || [];
   const instances = report?.instances || [];
+  const signatureTag = (signature?: { status?: string; keyId?: string }) => {
+    if (signature?.status === 'signed') return <Tag color="success">已签名</Tag>;
+    if (signature?.status === 'untrusted') return <Tag color="warning">签名未验证</Tag>;
+    return <Tag>未签名</Tag>;
+  };
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-aih-plugins">
       <header className="toolkit-panel-header">
@@ -67,7 +72,7 @@ export default function AihPluginPanel() {
           const instance = instances.find((item) => item.pluginId === plugin.pluginId && item.version === plugin.version);
           const enabled = Boolean(instance?.enabled);
           return (
-            <Card key={`${plugin.pluginId}:${plugin.version}`} size="small" title={<Space><strong>{plugin.pluginId}</strong><Tag>{plugin.version}</Tag>{plugin.signature?.status === 'signed' ? <Tag color="success">已签名</Tag> : <Tag>未签名</Tag>}</Space>}>
+            <Card key={`${plugin.pluginId}:${plugin.version}`} size="small" title={<Space><strong>{plugin.pluginId}</strong><Tag>{plugin.version}</Tag>{signatureTag(plugin.signature)}</Space>}>
               <Space wrap>
                 <Tag icon={<CheckCircleOutlined />} color={enabled ? 'success' : 'default'}>{enabled ? '运行中' : '已停用'}</Tag>
                 <Typography.Text type="secondary">revision {report?.revision ?? '-'}</Typography.Text>

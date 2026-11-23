@@ -20,11 +20,11 @@ const (
 
 	// MinBackoffSteps and MaxBackoffSteps bound the explicit retry schedule length.
 	MinBackoffSteps = 1
-	MaxBackoffSteps = 10
+	MaxBackoffSteps = 24
 
 	// MinBackoffStepSeconds and MaxBackoffStepSeconds bound each step in seconds.
 	MinBackoffStepSeconds = 1
-	MaxBackoffStepSeconds = 300
+	MaxBackoffStepSeconds = 3600
 
 	// MaxSingleWait caps any single wait (including upstream Retry-After).
 	MaxSingleWait = MaxBackoffStepSeconds * time.Second

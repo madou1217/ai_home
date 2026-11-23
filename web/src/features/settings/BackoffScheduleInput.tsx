@@ -2,9 +2,9 @@ import { Input, Typography } from 'antd';
 
 export const UPSTREAM_429_RETRY_LIMITS = {
   minSteps: 1,
-  maxSteps: 10,
+  maxSteps: 24,
   minStepSeconds: 1,
-  maxStepSeconds: 300,
+  maxStepSeconds: 3600,
   // 累计等待没有硬上限；超过建议值时只提示，不阻止保存。
   recommendedTotalSeconds: 1800
 } as const;

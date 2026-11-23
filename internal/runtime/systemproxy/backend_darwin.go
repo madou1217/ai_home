@@ -289,6 +289,13 @@ func addDarwinRestoreProxySteps(
 		return
 	}
 	if !target.Enabled {
+		// networksetup 的 state off 只关闭开关，不会还原 host/port。先写入
+		// 快照里的 endpoint，再关闭开关，避免恢复后残留上一次的端口。
+		if strings.TrimSpace(target.Host) != "" && target.Port > 0 {
+			endpoint := Endpoint{Host: target.Host, Port: target.Port}
+			args, display := darwinProxyArgs(setCommand, service, endpoint, current.Authentication)
+			changes.addCommand(service, setAction, networksetupCommand, args, display)
+		}
 		changes.addCommand(service, disableAction, networksetupCommand,
 			[]string{stateCommand, service, "off"}, nil)
 		return

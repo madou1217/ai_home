@@ -322,6 +322,27 @@ func (executor *Executor) RecordSuccess(
 	}
 }
 
+// acquireAttemptAdmission 在真实上游生成/编辑调用前获取并发名额。
+//
+// 返回的 release 必须在该次真实调用结束后调用一次；返回错误时调用方应跳过该候选，
+// 且不得把它记成账号失败（准入拒绝是瞬态的容量事实，不是账号健康问题）。
+func (executor *Executor) acquireAttemptAdmission(
+	ctx context.Context,
+	provider string,
+	account images.Account,
+	model string,
+) (func(), error) {
+	lease, err := admission.Acquire(ctx, admission.Request{
+		Provider:   provider,
+		AccountRef: strings.TrimSpace(account.AccountRef),
+		Model:      strings.TrimSpace(model),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return lease.Release, nil
+}
+
 func (executor *Executor) now() time.Time {
 	if executor != nil && executor.clock != nil {
 		return executor.clock().UTC()

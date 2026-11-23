@@ -357,6 +357,20 @@ func (handler *Handler) admitTurn(
 	})
 }
 
+// admitTurnForObserver 为同一连接上的后续轮次（复用已固定的账号与有效模型）
+// 获取并发名额；与首轮一样以 response.create 为单位，而不是整条连接。
+func (handler *Handler) admitTurnForObserver(
+	ctx context.Context,
+	observer *turnObserver,
+) (*admission.Lease, error) {
+	route := observer.Route()
+	return admission.Acquire(ctx, admission.Request{
+		Provider:   string(inference.ProviderCodex),
+		AccountRef: route.AccountRef().String(),
+		Model:      route.ModelID().String(),
+	})
+}
+
 // writeAdmissionError 把并发准入拒绝写成 WS 错误帧；升级后无法再改 HTTP 状态。
 func (handler *Handler) writeAdmissionError(client responseswebsocket.Connection, err error) {
 	if _, ok := admission.AsRejection(err); !ok {
@@ -425,8 +439,8 @@ func (handler *Handler) proxy(
 ) {
 	for {
 		results := make(chan pumpResult, 2)
-		go handler.pumpClientToUpstream(session, observer, results)
-		go pumpUpstreamToClient(session, observer, results)
+		go handler.pumpClientToUpstream(session, observer, turn, results)
+		go pumpUpstreamToClient(session, observer, turn, results)
 		result := <-results
 		if len(result.modelSwitch) > 0 {
 			// The client pump has consumed the new response.create. Close only the

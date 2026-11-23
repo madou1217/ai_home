@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/textproto"
+	"strconv"
 	"strings"
 	"time"
 
@@ -881,6 +882,14 @@ func (handler *Handler) attemptRelay(
 		if !ownAccount {
 			status = http.StatusTooManyRequests
 		}
+		// 准入拒绝是 429 契约的一部分：Retry-After 必须与错误一起交付，
+		// 否则客户端只能盲目立即重试。
+		var failureHeader http.Header
+		if rejection != nil {
+			failureHeader = http.Header{
+				"Retry-After": []string{strconv.Itoa(rejection.RetryAfterSeconds())},
+			}
+		}
 		return attemptOutcome{
 			route:        route,
 			retryAccount: ownAccount,
@@ -888,6 +897,7 @@ func (handler *Handler) attemptRelay(
 				status:  status,
 				code:    admission.CodeAccountTemporarilyUnavailable,
 				message: "透传通道当前并发已满，请稍后重试",
+				header:  failureHeader,
 			},
 		}, ownAccount
 	}
@@ -898,7 +908,15 @@ func (handler *Handler) attemptRelay(
 			lease.Release()
 		}
 	}
-	defer releaseLease()
+	// 成功响应要把名额交给响应体：流式/非流式的真实上游调用直到 body 关闭才算结束，
+	// 提前在 attemptRelay 返回时释放会让并发上限对长连接失效。非成功路径（含
+	// transport 失败、上游错误、business failure）在此统一释放。
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			releaseLease()
+		}
+	}()
 
 	upstreamResponse, err := client.Do(upstream)
 	if err != nil || upstreamResponse == nil || upstreamResponse.Body == nil {
@@ -934,6 +952,7 @@ func (handler *Handler) attemptRelay(
 		// 成功也要记账：否则运行态与仪表盘看不到这个账号在工作。
 		handler.recordSuccess(request.Context(), route, observation)
 		upstreamResponse.Body = &releaseBody{ReadCloser: upstreamResponse.Body, release: releaseLease}
+		handedOff = true
 		return attemptOutcome{
 			response:     upstreamResponse,
 			route:        route,

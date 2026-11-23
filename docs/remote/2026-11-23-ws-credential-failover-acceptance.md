@@ -243,4 +243,5 @@ rm -f "<server-ai-home>/run/route-observation/$SESSION.json"
 - 全池失效：未执行。AWS 是共享账号池，临时停用所有健康账号会影响其它会话；
 - 1011 重连分支：通过两种变体。① upstream 在 response.created 后、尚未输出时断开（incomplete-stream）：客户端收到 CLOSE 1011 / reason=retryable upstream failure；② upstream 发送 response.created 后紧跟 type=error,status=429 终态事件：同样收到 CLOSE 1011，错误帧未透传；两种变体预备帧均未下发；
 - Codex 客户端重连：通过（HTTP fallback 完成）。Codex CLI 0.171 TUI + supports_websockets=true 在 1011 后新开 WS 连接 #2–#4 并重发 response.create；同一轮也发起 HTTP POST，补全 HTTP SSE 上游后 TUI 显示 http-ok。客户端在 1011 后完成恢复；但成功回答由 HTTP fallback 提供，不是重连后的 WS 通道。
+- WS 通道独立完成：通过。WS-only 客户端在收到 1011 后自行重连；第二次连接收到 response.completed 与 ws-ok，全程未使用 HTTP。
 - 清理：api-key 账号凭据已按备份恢复，临时上游已停止，路由观测测试文件已删除。

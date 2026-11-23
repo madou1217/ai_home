@@ -119,6 +119,9 @@ AWS 真实配额验证：
   Claude-protocol 模型为 `deepseek-flash`，官方 Claude 模型在该账号上返回 429；
 - 会话 `rx-claude-cli` 用量：input 15348 / output 243 / total 15591；同分钟尝试统计为
   1 次成功、token 与用量行一致；
+- 本机主 Server（`127.0.0.1:9527`）复测：本地 DeepSeek 账号 + Claude Code CLI，临时
+  `CLAUDE_CONFIG_DIR` 隔离宿主 settings，会话 `rx-claude-local` 记录
+  input 15350 / output 236 / total 15586，客户端返回 `claude-ok`；
 - 顺带修复 `e2f50dfe`：Claude 流已观察到 `message_stop` 后，即使客户端立即断开，仍记录
   成功与用量。
 

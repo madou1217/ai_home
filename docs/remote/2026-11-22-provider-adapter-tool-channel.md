@@ -72,6 +72,10 @@ Provider 进程仍在 AIH Server；本地 Connector 不持有 Provider 凭据。
    未知 job 返回 `job_not_found`；
 8. `--no-command` 时工具列表不含作业工具，RPC 返回 `capability_not_allowed`。
 
+AWS 真机（2026-11-23）：新二进制 + 真实 Codex（free 账号 10，`gpt-5.6-luna`）调用
+`start_job` / `watch_job`，最终 `state: exited`、本机 `JOB_DONE.txt` 写入 `job-done`；
+详见 `docs/remote/2026-11-22-codex-free-live-verification.md`。
+
 真实模型闭环（2026-11-23）：AWS Server 上的 Codex（free 账号 10，`gpt-5.6-luna`）通过
 `aih_remote.run_command` 在本地工作区执行命令，终端显示 `Calling aih_remote.run_command`、
 `duration: 17ms`、`stdout: aws-codex-ok`，本机 `RUN_CMD.txt` 实际写入 `aws-codex-ok`。

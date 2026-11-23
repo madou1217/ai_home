@@ -1,5 +1,6 @@
 import { buildProviderSelectOptions, providerIds, providerNames } from '@/providers/catalog';
 import type {
+  EndpointCapability,
   ManagedOpenAIModelItem,
   OpenAIModelItem,
   Provider,
@@ -31,6 +32,13 @@ export type GlobalModelRow = OpenAIModelItem & {
   disabledCount: number;
   manualCount: number;
   visible: boolean;
+  /**
+   * 入口能力的内部账本（来自 managedSource）。
+   *
+   * supported_endpoints 已由 OpenAIModelItem 带出（对外简版）；这里保留
+   * 原生/转换的明细，供管理页区分「上游直接应答」与「网关协议转换」。
+   */
+  endpoint_capabilities?: EndpointCapability[];
 };
 
 export const MODEL_PROVIDERS: Provider[] = [...providerIds];
@@ -221,7 +229,8 @@ export function buildGlobalModelRows(
       enabledCount: 0,
       disabledCount: 0,
       manualCount: 0,
-      visible: false
+      visible: false,
+      endpoint_capabilities: []
     };
     rowsById.set(id, row);
     return row;
@@ -233,6 +242,15 @@ export function buildGlobalModelRows(
     row.visible = true;
     row.created = Number(model.created || row.created || 0);
     row.owned_by = model.owned_by || row.owned_by;
+    // supported_endpoints 只出现在 data[]（对外简版）；ensureRow 构造新行时
+    // 不会自动带过来，必须在这里显式赋值，否则管理页看不到入口标签。
+    if (model.supported_endpoints?.length && !row.supported_endpoints?.length) {
+      row.supported_endpoints = model.supported_endpoints;
+    }
+    // 账本同样只在 data[] 上（managedData 不重复这份明细）。
+    if (model.endpoint_capabilities?.length && !row.endpoint_capabilities?.length) {
+      row.endpoint_capabilities = model.endpoint_capabilities;
+    }
     MODEL_PROVIDERS.forEach((provider) => {
       if ((catalog?.byProvider?.[provider] || []).includes(model.id) && !row.providers.includes(provider)) {
         row.providers.push(provider);
@@ -258,6 +276,11 @@ export function buildGlobalModelRows(
     }
     if (model.manual) row.manualCount += 1;
     if (!row.owned_by || row.owned_by === 'aih') row.owned_by = model.owned_by || row.owned_by;
+    // 入口账本取首个非空来源即可：后端已在模型级合并过全部 Provider，
+    // 各账号行给出的同一模型账本是一致的。
+    if (!row.endpoint_capabilities?.length && model.endpoint_capabilities?.length) {
+      row.endpoint_capabilities = model.endpoint_capabilities;
+    }
   });
 
   return Array.from(rowsById.values())

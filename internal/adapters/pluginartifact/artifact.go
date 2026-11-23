@@ -236,9 +236,10 @@ func inspectArtifact(file string, aiHomeDir string, options AcceptOptions) (insp
 		return inspectedArtifact{}, err
 	}
 	signature, signatureErr := resolveSignature(metadataObject, signatureOptions{
-		AIHomeDir:     aiHomeDir,
-		TrustedKeys:   options.TrustedKeys,
-		RequireSigned: options.RequireSigned,
+		AIHomeDir:      aiHomeDir,
+		TrustedKeys:    options.TrustedKeys,
+		RequireSigned:  options.RequireSigned,
+		AllowUntrusted: options.AllowUntrusted,
 	})
 	if signatureErr != nil {
 		return inspectedArtifact{}, signatureErr

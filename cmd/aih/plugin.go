@@ -30,7 +30,8 @@ const pluginUsage = `Usage: aih plugin <command> [options]
   trust <public.pem> [--key-id <id>]   把发布公钥加入本机信任根
   untrust <keyId>                  从本机信任根移除发布公钥
   trusted                          列出本机信任的发布公钥
-  install <file.aih-plugin> [--require-signed]   安装插件包（校验摘要/签名后接受）
+  install <file.aih-plugin> [--require-signed] [--trust-key <public.pem>] [--expect-fingerprint <hex>]
+                                   安装插件包；--trust-key 一步登记发布公钥再安装，--require-signed 拒绝未签名/未验证包
   list                             已安装插件、实例与运行状态
   enable <pluginId> [--instance <id>] [--version <v>] [--config-json <json>|@file|-] [--accept-permissions]
   disable <instanceId> [--remove]  停用实例（--remove 同时删除实例配置）
@@ -538,10 +539,73 @@ func pluginInstall(ctx context.Context, args []string, runtime commandRuntime) (
 	if err != nil {
 		return nil, pluginerr.New("plugin_package_missing", "插件包路径不可用")
 	}
-	return pluginRequest(ctx, "POST", "/v1/management/plugins/install", map[string]any{
+	if trustKey := strings.TrimSpace(pluginOption(args, "--trust-key")); trustKey != "" {
+		if err := trustPackageKey(absolute, trustKey, args, runtime); err != nil {
+			return nil, err
+		}
+	}
+	result, err := pluginRequest(ctx, "POST", "/v1/management/plugins/install", map[string]any{
 		"file":          absolute,
 		"requireSigned": pluginHasFlag(args, "--require-signed"),
 	}, runtime)
+	if err != nil {
+		return nil, err
+	}
+	if signature, ok := result["signature"].(map[string]any); ok && signature["status"] == "untrusted" {
+		keyID := strings.TrimSpace(stringValue(signature["keyId"]))
+		_, _ = fmt.Fprintf(runtime.stderr,
+			"[aih] 签名未验证：包由 keyId %s 签名，但本机未登记该公钥。确认来源后可运行 aih plugin trust <public.pem> --key-id %s，或下次安装加 --trust-key <public.pem>。\n",
+			keyID, keyID)
+	}
+	return result, nil
+}
+
+// trustPackageKey 实现「一步信任」：从包内读取签名 keyId，把用户给的公钥
+// 登记到同一个槽位，再交给服务端安装并验签。keyId 冲突默认拒绝，避免
+// 同名标签悄悄覆盖已信任的发布者。
+func trustPackageKey(packageFile string, publicKeyFile string, args []string, runtime commandRuntime) error {
+	info, err := pluginartifact.ReadSignatureInfo(packageFile)
+	if err != nil {
+		return err
+	}
+	if info.Status != "signed" || strings.TrimSpace(info.KeyID) == "" {
+		return pluginerr.New("plugin_signature_required", "该插件包没有签名，--trust-key 无意义")
+	}
+	data, err := os.ReadFile(publicKeyFile)
+	if err != nil {
+		return pluginerr.New("plugin_signature_key_invalid", "公钥文件不可读")
+	}
+	normalized, err := plugintrust.NormalizePublicKey(string(data))
+	if err != nil {
+		return err
+	}
+	fingerprint := plugintrust.Fingerprint(normalized)
+	if expected := strings.TrimSpace(pluginOption(args, "--expect-fingerprint")); expected != "" && !strings.EqualFold(expected, fingerprint) {
+		return pluginerr.New("plugin_signature_key_invalid",
+			fmt.Sprintf("公钥指纹不匹配：期望 %s，实际 %s", expected, fingerprint))
+	}
+	home, err := resolveAIHome(runtime)
+	if err != nil {
+		return pluginerr.New("plugin_home_unavailable", "无法定位 AIH_HOME_DIR")
+	}
+	store, err := plugintrust.NewTrustStore(home)
+	if err != nil {
+		return err
+	}
+	keys, err := store.Read()
+	if err != nil {
+		return err
+	}
+	if existing, present := keys[info.KeyID]; present && existing != normalized && !pluginHasFlag(args, "--replace-key") {
+		return pluginerr.New("plugin_signature_key_conflict",
+			fmt.Sprintf("keyId %s 已登记为另一把公钥；确认要替换请加 --replace-key", info.KeyID))
+	}
+	added, err := store.Add(plugintrust.AddInput{PublicKey: normalized, KeyID: info.KeyID})
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已信任 %s（指纹 %s）\n", added.KeyID, added.Fingerprint)
+	return nil
 }
 
 func pluginEnable(ctx context.Context, args []string, runtime commandRuntime) (map[string]any, error) {
@@ -741,8 +805,13 @@ func renderPluginList(result map[string]any) string {
 	for _, item := range installed {
 		entry, _ := item.(map[string]any)
 		signature := "未签名"
-		if sig, ok := entry["signature"].(map[string]any); ok && sig["status"] == "signed" {
-			signature = "签名 " + stringValue(sig["keyId"])
+		if sig, ok := entry["signature"].(map[string]any); ok {
+			switch sig["status"] {
+			case "signed":
+				signature = "签名 " + stringValue(sig["keyId"])
+			case "untrusted":
+				signature = "签名未验证 " + stringValue(sig["keyId"])
+			}
 		}
 		digest := stringValue(entry["digest"])
 		if len(digest) > 12 {

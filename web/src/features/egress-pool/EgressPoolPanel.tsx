@@ -371,6 +371,17 @@ export default function EgressPoolPanel() {
             <span>自动刷新</span>
           </span>
           <Button
+            icon={status?.ready ? <StopOutlined /> : <ApiOutlined />}
+            loading={busy === 'lifecycle'}
+            onClick={() => void runAction(
+              'lifecycle',
+              () => status?.ready ? egressPoolAPI.stop() : egressPoolAPI.start(),
+              status?.ready ? '出口池已停止' : '出口池已启动'
+            )}
+          >
+            {status?.ready ? '停止池' : '启动池'}
+          </Button>
+          <Button
             icon={<ThunderboltOutlined />}
             disabled={!status?.ready}
             loading={busy === 'probe:all'}

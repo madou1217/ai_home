@@ -185,8 +185,8 @@ AIH 侧（`app_kv: ssh_connections`，本机 4 条）：
    `codex-managed-remote-connections` 出发；`eeu(~/.ssh/config)` 的结果只用于
    "已有 remote-projects 时补回连接"和设置页Discover，不进连接列表。
 2. **深链 `?name=` 只打开表单**，不会直接建连接（实测路由到达、状态文件无新增条目）。
-3. **连接必须先有一条 remote project 才能真正连上**；而远端连接要求桌面端与远端
-   **登录同一个 ChatGPT 账号**，否则停在 `login-required`。
+3. **连接必须先有一条 remote project 才能真正连上**；且远端 codex 必须有**已配置的认证**
+   （`authMethod != null`），否则停在 `login-required`。OAuth **不是**必需的，见 §9.5。
 
 ### 6.3 Codex → AIH：只做"导入"，不做"双向同步"
 
@@ -197,9 +197,8 @@ AIH 侧（`app_kv: ssh_connections`，本机 4 条）：
 
 ## 7. 未验证 / 风险清单
 
-- Desktop 连接**端到端未跑通**：桌面端未登录 ChatGPT（`status=432 Workspace routing is unavailable`），
-  SSH 阶段与远端 app-server 都起来了，最终停在 `error code=login-required`。要跑通需登录 ChatGPT 账号，
-  且远端要有同一账号（AIH 现有 codex 账号都是 `api_key` 类型，没有 ChatGPT OAuth，无法直接复用）。
+- Desktop 的 **remote-project 注册**未跑通（`remote-projects` 仍是 null）：连接本身已 `connected`，
+  但要新建远端项目、跑任务还需要 UI 侧动作；其状态格式同属未文档化私有格式，需下一步验证。
 - `environments.toml` 属于未文档化接口（官方文档只有 `environment/info` 这一个实验性方法），
   字段可能随版本变化 → 需要做"版本探测 + 解析失败不阻断 CLI 启动"的降级。
 - `url` 模式要求远端常驻 `exec-server`，AIH 需要负责其生命周期（复用 `sshtunnel` 的退避/探活思路）。
@@ -291,4 +290,46 @@ remote_connections.connection_state_changed hostId=remote-ssh-discovered:aws sta
 
 `remote-codex-not-found` / `login-required` / `update-required` / `restart-required` /
 `connection-failed`。AIH 若接管这块 UI，应按这套分类映射，而不是笼统报"连接失败"。
+
+### 9.5 `login-required` 的真实根因：**不是 OAuth**（实测纠正）
+
+早先据此结论写成"必须登录 ChatGPT OAuth 账号"是错的。`app-server-host.js` 里的判定只有一句：
+
+```js
+async getPostInitializeConnectionState() {
+  if (!this.options.ensureAuth) return {state:"connected", error:null};
+  let e = await this.requestAuthStatus(false, false);
+  return e?.authMethod == null && (e?.requiresOpenaiAuth ?? true)
+    ? {state:"error", error:{code:"login-required"}}   // iQ
+    : {state:"connected", error:null};
+}
+```
+
+即：**只要远端 app-server 报 `authMethod != null` 就连上**；`requiresOpenaiAuth` 只是第二条件，
+且缺省值是 `true`（所以"什么都没配"才落到 error）。真机对照：
+
+| 远端 aws 的状态 | `getAuthStatus` 返回 | 桌面端结果 |
+| --- | --- | --- |
+| 无 auth.json | `authMethod:null, requiresOpenaiAuth:true` | `state=error, code=login-required` |
+| 自定义 provider + 环境变量 key | `authMethod:null, requiresOpenaiAuth:**false**` | 判定通过（第一条件 false） |
+| `codex login --with-api-key`（**非 OAuth**） | `authMethod:**"apikey"`** | 判定通过，`state=connected` |
+
+最终实测（API key 登录后重启桌面端）：
+
+```
+[AppServerConnection] Starting app-server connection hostId=remote-ssh-discovered:aws transport=websocket
+[AppServerConnection] Transport start success connectionId=2
+[AppServerConnection] Current reported app-server version: currentVersion=0.171.0
+[AppServerConnection] state_changed cause=post_initialize_connection_state
+  next=connected connectionError=null
+remote_connections.connection_state_changed hostId=remote-ssh-discovered:aws
+  state=connected appServerVersion=0.171.0 error=null
+```
+
+**结论：桌面端远程连 codex 只需远端有任意可用认证（API key 即可），不需要 ChatGPT OAuth。**
+这也解释了为什么 `codex login --with-api-key` 是存在的：它就是给无人值守/远程场景用的。
+
+（注：`codex login --with-api-key` 存的是 `auth_mode: apikey`；登录后远端 models 刷新仍会打
+`chatgpt.com/backend-api` 并 401，那是模型目录刷新，不影响连接与执行——用自定义 provider 即可避开。）
+
 

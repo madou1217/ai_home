@@ -1461,63 +1461,25 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		pluginBundle:              pluginBundle,
 		pricingService:            sharedPricingService,
 	})
-	schedulerPorts := webuiSchedulerPorts{
-		ClientKey:    clientKey,
-		LocalHandler: windowProbeMux,
-	}
-	upgradeScheduler = NewUpgradeScheduler(webuiDeps, schedulerPorts)
-	upgradeScheduler.Start(ctx)
-	windowScheduler = NewWindowActivationScheduler(webuiDeps, schedulerPorts)
-	windowScheduler.Start(ctx)
-	webuiDeps.UpgradeScheduler = upgradeScheduler
-	webuiDeps.WindowScheduler = windowScheduler
-	webuiRoutes, err := buildWebUIRoutes(webuiDeps)
+	startupRuntime, err := newWebUIStartupRuntime(webuiStartupRuntimeInputs{
+		ctx:            ctx,
+		webuiDeps:      &webuiDeps,
+		clientKey:      clientKey,
+		windowProbeMux: windowProbeMux,
+		authorizer:     authorizer,
+		aiHomeDir:      aiHomeDir,
+	})
+	upgradeScheduler = startupRuntime.upgradeScheduler
+	windowScheduler = startupRuntime.windowScheduler
+	watchWSCloser = startupRuntime.watchWSCloser
+	distributionUpdates = startupRuntime.distributionUpdates
+	backgroundDaemons = startupRuntime.backgroundDaemons
+	housekeepingDaemons = startupRuntime.housekeepingDaemons
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, err
 	}
-	watchWSCloser = findWebUIWatchWSCloser(webuiRoutes)
-	// 运行时画像：内存/协程/GC 的唯一只读观测口。
-	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "GET " + runtimeDiagnosticsPath, Handler: runtimeDiagnosticsHandler{authorizer: authorizer}})
-	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "GET " + sessionDiagnosticsPath, Handler: sessionDiagnosticsHandler{authorizer: authorizer, aiHomeDir: aiHomeDir}})
-	webuiRoutes = append(webuiRoutes, webuiRoute{Pattern: "POST " + sessionReclaimPath, Handler: sessionReclaimHandler{authorizer: authorizer, aiHomeDir: aiHomeDir}})
-	// 后台巡检：按四重证据回收长时间无人使用的持久会话。
-	sessionReclaimDaemon{aiHomeDir: aiHomeDir}.Start(ctx)
-	spaceGCDaemon{aiHomeDir: aiHomeDir}.Start(ctx)
-	updateRoutes, updateCloser, updateErr := buildDistributionUpdate(ctx, webuiDeps)
-	if updateErr != nil {
-		log.Printf("AIH 更新检测不可用: %v", updateErr)
-	} else {
-		distributionUpdates = updateCloser
-		webuiRoutes = append(webuiRoutes, updateRoutes...)
-	}
-	backgroundDaemons, err = startBackgroundDaemons(ctx, webuiDeps)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	if binder, ok := webuiDeps.AccountRuntime.(credentialRejectionRefreshBinder); ok {
-		binder.bindCredentialRejectionRefresh(backgroundDaemons.tokenRefresh)
-	}
-	daemonsRoutes, err := backgroundDaemons.Routes(authorizer)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	webuiRoutes = append(webuiRoutes, daemonsRoutes...)
-	// 启动期一次性清理陈旧 runtime projections 与 codex app-server 状态，并拉起远程备份与持久会话清理守护。
-	_, _ = runStartupHousekeeping(ctx, webuiDeps)
-	housekeepingDaemons, err = startHousekeepingDaemonsWithPorts(ctx, webuiDeps, housekeepingDaemonsPorts{})
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	housekeepingRoutes, err := housekeepingDaemons.Routes(authorizer)
-	if err != nil {
-		_ = inference.Close()
-		return serverHandlers{}, nil, err
-	}
-	webuiRoutes = append(webuiRoutes, housekeepingRoutes...)
+	webuiRoutes := startupRuntime.routes
 	// 内部聊天入口：账号来源与 Provider 链与家族透传同一批对象。
 	chatRuntime, err := newWebUIChatRuntime(webuiChatRuntimeInputs{
 		ctx:            ctx,

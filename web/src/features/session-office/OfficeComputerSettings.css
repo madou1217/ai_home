@@ -1,4 +1,4 @@
-/* =============================================================================
+/* ==========================================================================
  * OfficeComputerSettings — 工位电脑设置与配置窗口
  * -----------------------------------------------------------------------------
  * 视觉约束：
@@ -12,22 +12,11 @@
   min-height: 0;
 }
 
-.office-cs-scope-tag {
-  padding: 1px var(--space-3, 6px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-pill, 9999px);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 15px;
-}
-
 .office-cs-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4, 8px);
+  gap: var(--space-3, 6px);
   flex-wrap: wrap;
   flex: 0 0 auto;
   padding: var(--space-3, 6px) var(--space-5, 10px);
@@ -43,20 +32,21 @@
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm, 3px);
   background: var(--color-surface-sunken);
+  max-width: 100%;
 }
 
 .office-cs-tab {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3, 6px);
+  gap: var(--space-2, 4px);
   height: 26px;
-  padding: 0 var(--space-5, 10px);
+  padding: 0 var(--space-4, 8px);
   border: 1px solid transparent;
   border-radius: var(--hos-radius-xs, 2px);
   background: transparent;
   color: var(--color-muted);
   font-family: var(--font-body);
-  font-size: var(--text-xs, 12px);
+  font-size: var(--hos-text-caption, 12px);
   font-weight: var(--weight-medium, 500);
   cursor: pointer;
   white-space: nowrap;
@@ -80,7 +70,7 @@
 .office-cs-inline-hint {
   color: var(--color-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
 }
 
 .office-cs-body {
@@ -88,20 +78,26 @@
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
-  padding: var(--space-6, 12px);
+  overflow-x: hidden;
+  padding: var(--space-5, 10px);
   background: var(--color-bg);
+}
+
+.office-cs-notice {
+  margin-bottom: var(--space-4, 8px);
 }
 
 .office-cs-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6, 12px);
+  gap: var(--space-5, 10px);
+  min-width: 0;
 }
 
 .office-cs-config-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: var(--space-6, 12px);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-5, 10px);
   align-items: start;
 }
 
@@ -109,7 +105,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4, 8px);
-  padding: var(--space-6, 12px);
+  min-width: 0;
+  padding: var(--space-5, 10px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-md, 4px);
   background: var(--color-surface);
@@ -119,7 +116,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4, 8px);
+  gap: var(--space-3, 6px);
   flex-wrap: wrap;
 }
 
@@ -139,40 +136,30 @@
 .office-cs-section-heading h4 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 12.5px;
+  font-size: var(--hos-text-body-sm, 13px);
   font-weight: var(--weight-semibold, 600);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   color: var(--color-heading);
 }
 
 .office-cs-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 1px var(--space-3, 6px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-pill, 9999px);
   background: var(--color-surface-sunken);
   color: var(--color-muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--hos-text-micro, 11px);
   line-height: 16px;
-}
-
-.office-cs-pill--ok {
-  border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
-  background: var(--tint-success, var(--color-surface-sunken));
-  color: var(--ink-success, var(--color-success));
-}
-
-.office-cs-pill--muted {
-  color: var(--color-muted);
 }
 
 .office-cs-caption {
   margin: 0;
   color: var(--color-muted);
-  font-size: var(--text-xs, 12px);
+  font-size: var(--hos-text-caption, 12px);
   line-height: 1.5;
 }
 
@@ -182,7 +169,7 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: var(--space-3, 6px);
 }
 
@@ -190,6 +177,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
   padding: var(--space-4, 8px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm, 3px);
@@ -205,7 +193,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2, 4px);
-  font-size: 11.5px;
+  font-size: var(--hos-text-caption, 12px);
   color: var(--color-heading);
 }
 
@@ -219,7 +207,7 @@
 }
 
 .office-cs-semantic-desc {
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
   line-height: 1.45;
   color: var(--color-muted);
 }
@@ -227,15 +215,16 @@
 /* ── 单屏 / 双联屏选择卡 ──────────────────────────────────────────────────── */
 .office-cs-monitor-choices {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: var(--space-4, 8px);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-3, 6px);
 }
 
 .office-cs-choice-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-2, 4px);
-  padding: var(--space-5, 10px);
+  min-width: 0;
+  padding: var(--space-4, 8px) var(--space-5, 10px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm, 3px);
   background: var(--color-surface-raised);
@@ -272,8 +261,8 @@
 .office-cs-choice-title {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3, 6px);
-  font-size: 12.5px;
+  gap: var(--space-2, 4px);
+  font-size: var(--hos-text-body-sm, 13px);
   font-weight: var(--weight-semibold, 600);
   color: var(--color-heading);
 }
@@ -284,7 +273,7 @@
 }
 
 .office-cs-choice-desc {
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
   line-height: 1.45;
   color: var(--color-muted);
 }
@@ -292,14 +281,15 @@
 /* ── 壁纸主题选择网格 ─────────────────────────────────────────────────────── */
 .office-cs-wallpaper-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
-  gap: var(--space-4, 8px);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-3, 6px);
 }
 
 .office-cs-wallpaper-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4, 8px);
+  gap: var(--space-3, 6px);
+  min-width: 0;
   padding: var(--space-4, 8px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-sm, 3px);
@@ -329,7 +319,7 @@
 .office-cs-wallpaper-swatch {
   display: block;
   width: 100%;
-  height: 62px;
+  height: 58px;
   border-radius: var(--hos-radius-xs, 2px);
   border: 1px solid var(--color-border);
   background-size: cover;
@@ -371,18 +361,18 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2, 4px);
-  font-size: 12px;
+  font-size: var(--hos-text-caption, 12px);
   color: var(--color-heading);
 }
 
 .office-cs-wallpaper-sub {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--hos-text-micro, 11px);
   color: var(--color-accent);
 }
 
 .office-cs-wallpaper-desc {
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
   line-height: 1.4;
   color: var(--color-muted);
 }
@@ -392,21 +382,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4, 8px);
+  gap: var(--space-3, 6px);
   flex-wrap: wrap;
 }
 
 .office-cs-rgb-swatches {
   display: flex;
   align-items: center;
-  gap: var(--space-3, 6px);
+  gap: var(--space-2, 4px);
   flex-wrap: wrap;
 }
 
 .office-cs-rgb-swatch {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2, 4px);
   height: 28px;
   padding: 0 var(--space-4, 8px);
   border: 1px solid var(--color-border);
@@ -414,7 +404,7 @@
   background: var(--color-surface-raised);
   color: var(--color-text);
   font-family: var(--font-body);
-  font-size: 11.5px;
+  font-size: var(--hos-text-caption, 12px);
   cursor: pointer;
   transition:
     border-color var(--motion-fast, 120ms) var(--ease-standard, ease),
@@ -454,7 +444,7 @@
   border-radius: var(--hos-radius-sm, 3px);
   background: var(--color-surface-raised);
   color: var(--color-muted);
-  font-size: 11.5px;
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .office-cs-color-picker input[type='color'] {
@@ -480,17 +470,17 @@
 
 .office-cs-kv-row {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 108px minmax(0, 1fr);
   align-items: baseline;
-  gap: var(--space-4, 8px);
-  font-size: 12px;
+  gap: var(--space-3, 6px);
+  font-size: var(--hos-text-caption, 12px);
 }
 
 .office-cs-kv-row dt {
   margin: 0;
-  color: var(--color-faint);
+  color: var(--color-faint, var(--color-muted));
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
 }
 
 .office-cs-kv-row dd {
@@ -507,14 +497,34 @@
   background: var(--color-surface);
   color: var(--color-accent);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
   user-select: text;
 }
 
+/* ── 底部应用操作栏 ───────────────────────────────────────────────────────── */
+.office-cs-footer {
+  flex: 0 0 auto;
+  padding: var(--space-3, 6px) var(--space-5, 10px);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
 @media (max-width: 680px) {
+  .office-cs-body {
+    padding: var(--space-4, 8px);
+  }
+
+  .office-cs-section {
+    padding: var(--space-4, 8px);
+  }
+
   .office-cs-kv-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
+  }
+
+  .office-cs-footer {
+    padding: var(--space-3, 6px) var(--space-4, 8px);
   }
 }
 

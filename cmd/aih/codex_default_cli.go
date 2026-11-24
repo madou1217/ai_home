@@ -77,7 +77,8 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 		return healErr
 	}
 	// environments.toml 是未文档化接口：同步失败绝不影响 CLI 启动。
-	syncCodexEnvironments(ctx, aiHome, codexHome)
+	// 被跳过的连接原因只写 stderr，不污染 codex 的 stdout。
+	syncCodexEnvironments(ctx, aiHome, codexHome, runtime.stderr)
 	repairProjectedRollouts(ctx, codexHome)
 
 	if !codexappconfig.HasCodexModelProviderArg(forwardArgs) {

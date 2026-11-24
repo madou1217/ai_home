@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/codexenvironments"
@@ -18,7 +21,7 @@ import (
 //
 // 这里保持同步调用而不是后台 goroutine：CLI 进程往往一两秒就退出，后台任务
 // 会被一起杀掉，文件永远写不出来（实测过，功能等于失效）。
-func syncCodexEnvironments(ctx context.Context, aiHomeDir, codexHome string) {
+func syncCodexEnvironments(ctx context.Context, aiHomeDir, codexHome string, stderr io.Writer) {
 	if aiHomeDir == "" || codexHome == "" {
 		return
 	}
@@ -36,8 +39,10 @@ func syncCodexEnvironments(ctx context.Context, aiHomeDir, codexHome string) {
 	if err != nil {
 		return
 	}
-	if report.Outcome.Written {
-		recordCodexEnvironmentSync(report)
+	// 有连接被跳过时必须落一条可诊断的记录；不能只看 Written——
+	// 全部连接都被拒绝时文件没有变化，Written 为 false。
+	if len(report.Rejected) > 0 {
+		recordCodexEnvironmentSync(stderr, report)
 	}
 }
 
@@ -47,10 +52,28 @@ func syncCodexEnvironments(ctx context.Context, aiHomeDir, codexHome string) {
 // 但仍是有限值——宁可这次不写，也不让 CLI 永远卡住。
 const codexEnvironmentSyncBudget = 45 * time.Second
 
-// recordCodexEnvironmentSync 是唯一的观测出口；默认不输出，避免污染 CLI 的
-// stdout/stderr（codex 的管道输出会被上层解析）。
-func recordCodexEnvironmentSync(report codexenvironments.SyncReport) {
-	codexEnvironmentSyncSink(report)
+// recordCodexEnvironmentSync 把被跳过的连接原因写到 stderr。
+//
+// 只写 stderr、不碰 stdout：codex 的 stdout 会被上层解析。code 是稳定常量，
+// message 是已经脱敏的一行原因，两者都原样输出，方便用户直接搜索/报障。
+func recordCodexEnvironmentSync(output io.Writer, report codexenvironments.SyncReport) {
+	if output == nil {
+		return
+	}
+	for _, rejection := range report.Rejected {
+		label := strings.TrimSpace(rejection.Label)
+		if label == "" {
+			label = rejection.ConnectionID
+		}
+		_, _ = fmt.Fprintf(
+			output,
+			"[aih] codex 环境跳过 %s (%s): %s - %s\n",
+			label,
+			rejection.ConnectionID,
+			rejection.Code,
+			rejection.Message,
+		)
+	}
 }
 
 func hostHomeDir() string {
@@ -60,6 +83,3 @@ func hostHomeDir() string {
 	}
 	return home
 }
-
-// codexEnvironmentSyncSink 可在测试或诊断模式替换。
-var codexEnvironmentSyncSink = func(codexenvironments.SyncReport) {}

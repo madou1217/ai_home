@@ -651,7 +651,10 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 }
 
 func buildCodexAPIKeyConfig(hostConfig, baseURL, sqliteHome string) string {
-	// 去除宿主的 [model_providers.aih_server] 与管理标记行，固定用 openai + apikey。
+	// 去除宿主的 [model_providers.aih_server] / [model_providers.openai] 块与管理标记行。
+	// Codex ≥0.171 把 openai 视为内置保留 Provider，禁止在 model_providers 里重定义；
+	// 改用官方支持的 openai_base_url 覆盖内置 openai 的端点（内置 Provider 本身即
+	// wire_api=responses + requires_openai_auth，与旧块语义一致）。
 	lines := strings.Split(strings.ReplaceAll(hostConfig, "\r\n", "\n"), "\n")
 	filtered := make([]string, 0, len(lines))
 	skipSection := false
@@ -682,9 +685,11 @@ func buildCodexAPIKeyConfig(hostConfig, baseURL, sqliteHome string) string {
 		`preferred_auth_method = "apikey"`,
 		`model_provider = "openai"`,
 	}
+	if url := strings.TrimSpace(baseURL); url != "" {
+		rootPrefix = append(rootPrefix, `openai_base_url = "`+escapeTomlBasicString(url)+`"`)
+	}
 	if strings.TrimSpace(sqliteHome) != "" {
-		escaped := strings.ReplaceAll(sqliteHome, `"`, `\"`)
-		rootPrefix = append(rootPrefix, `sqlite_home = "`+escaped+`"`)
+		rootPrefix = append(rootPrefix, `sqlite_home = "`+escapeTomlBasicString(sqliteHome)+`"`)
 	}
 	body := strings.TrimSpace(strings.Join(filtered, "\n"))
 	var b strings.Builder
@@ -696,13 +701,12 @@ func buildCodexAPIKeyConfig(hostConfig, baseURL, sqliteHome string) string {
 		b.WriteString(body)
 		b.WriteByte('\n')
 	}
-	escapedURL := strings.ReplaceAll(strings.TrimSpace(baseURL), `"`, `\"`)
-	b.WriteString("\n[model_providers.openai]\n")
-	b.WriteString(`name = "OpenAI"` + "\n")
-	b.WriteString(`base_url = "` + escapedURL + `"` + "\n")
-	b.WriteString(`wire_api = "responses"` + "\n")
-	b.WriteString(`requires_openai_auth = true` + "\n")
 	return b.String()
+}
+
+// escapeTomlBasicString 转义 TOML 基本字符串中的反斜杠与双引号。
+func escapeTomlBasicString(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), `"`, `\"`)
 }
 
 // --- Claude Desktop Gateway (Claude-3p) ---

@@ -53,6 +53,14 @@ func p(kind valueKind) positionalSpec {
 	return positionalSpec{Kind: kind}
 }
 
+func positionEnum(values ...string) positionalSpec {
+	return positionalSpec{Kind: kindEnum, Values: values}
+}
+
+func failureStatusPosition() positionalSpec {
+	return positionEnum("*", "400", "401", "403", "404", "408", "409", "413", "422", "429", "500", "502", "503", "504")
+}
+
 func pr(kind valueKind) positionalSpec {
 	return positionalSpec{Kind: kind, Repeat: true}
 }
@@ -113,7 +121,7 @@ func buildCommandCatalog() []commandNode {
 			n("models", "查看 / 刷新账号模型目录与策略").withChildren(
 				n("list", "查看已物化账号模型").withPositionals(p(kindAccountTarget)),
 				n("refresh", "刷新账号模型目录").withPositionals(p(kindAccountTarget)),
-				n("set-policy", "设置人工模型策略").withPositionals(p(kindAccountTarget), p(kindModel), p(kindFree)),
+				n("set-policy", "设置人工模型策略").withPositionals(p(kindAccountTarget), p(kindModel), positionEnum("inherit", "force_enable", "force_disable")),
 			),
 			n("usage", "查看 / 刷新账号额度快照").withChildren(
 				n("show", "查看最近额度快照").withPositionals(p(kindAccountTarget)),
@@ -132,8 +140,8 @@ func buildCommandCatalog() []commandNode {
 		),
 		n("failure-policy", "上游失败语义覆盖：账号规则 > 全局覆盖 > 内置合同").withChildren(
 			n("list", "列出当前生效规则").withOptions(vf("--provider", "只看某个 Provider", kindProvider), jsonFlag),
-			n("explain", "解释某个状态码会怎么处理").withOptions(f("--code", ""), f("--type", ""), f("--retry-after-ms", ""), jsonFlag).withPositionals(p(kindProvider), p(kindFree)),
-			n("set", "覆盖某 Provider 的状态语义").withOptions(f("--semantic", ""), vf("--block-scope", "阻断范围", kindEnum, "account", "account_model")).withPositionals(p(kindProvider), p(kindFree)),
+			n("explain", "解释某个状态码会怎么处理").withOptions(f("--code", ""), f("--type", ""), f("--retry-after-ms", ""), jsonFlag).withPositionals(p(kindProvider), failureStatusPosition()),
+			n("set", "覆盖某 Provider 的状态语义").withOptions(f("--semantic", ""), vf("--block-scope", "阻断范围", kindEnum, "account", "account_model")).withPositionals(p(kindProvider), failureStatusPosition()),
 			n("set-policy", "设置全局阈值 / 窗口 / 冷却").withOptions(f("--threshold", ""), f("--window-ms", ""), f("--cooldown-ms", "")).withPositionals(p(kindFree)),
 			n("unset", "删除一条覆盖").withPositionals(p(kindFree)),
 			n("unset-policy", "删除一条全局策略").withPositionals(p(kindFree)),

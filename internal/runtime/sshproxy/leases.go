@@ -216,23 +216,31 @@ func (m *LeaseManager) recordOutcome(name string, ok bool, reason string) {
 	m.pool.RecordEgressOutcome(name, ok, reason)
 }
 func (m *LeaseManager) dialer(ctx context.Context, selector string) (managedproxy.Dialer, string, func(), error) {
-	candidates := m.Candidates()
-	selected := selector
+	// auto 的含义是「给我一个能用的出口」，不是「只试排第一的那个」。
+	// 排在首位的候选可能只是「可用」标记为真、实际内核/SSH 通道启动失败
+	// （实测 AWS 出口未就绪时 auto 直接 409，而池里有 100+ 个可用出口）。
+	// 因此按同一份候选顺序逐个尝试，首个真正建立成功的才返回。
 	if selector == "" || selector == "auto" {
-		selected = ""
-		for _, c := range candidates {
-			if c.Available {
-				selected = c.ID
-				break
+		var lastErr error
+		for _, candidate := range m.Candidates() {
+			if !candidate.Available || candidate.ID == "" {
+				continue
 			}
+			dial, name, cleanup, retryErr := m.dialer(ctx, candidate.ID)
+			if retryErr == nil {
+				return dial, name, cleanup, nil
+			}
+			lastErr = retryErr
 		}
-		if selected == "" {
-			return nil, "", func() {}, fmt.Errorf("代理池中没有可用出口；请在 SSH 主机中启用作为代理并等待连接")
+		if lastErr != nil {
+			return nil, "", func() {}, fmt.Errorf("没有成功建立的可用出口（最后一次失败：%w）", lastErr)
 		}
+		return nil, "", func() {}, fmt.Errorf("代理池中没有可用出口；请在 SSH 主机中启用作为代理并等待连接")
 	}
+	candidates := m.Candidates()
 	var item *Candidate
 	for i := range candidates {
-		if candidates[i].ID == selected {
+		if candidates[i].ID == selector {
 			item = &candidates[i]
 			break
 		}
@@ -240,12 +248,12 @@ func (m *LeaseManager) dialer(ctx context.Context, selector string) (managedprox
 	if item == nil || !item.Available {
 		return nil, "", func() {}, fmt.Errorf("指定代理不存在或未就绪")
 	}
-	if strings.HasPrefix(selected, "ssh:") {
-		id := strings.TrimPrefix(selected, "ssh:")
+	if strings.HasPrefix(selector, "ssh:") {
+		id := strings.TrimPrefix(selector, "ssh:")
 		return func(ctx context.Context, _, address string) (net.Conn, error) { return m.ssh.Dial(ctx, id, address) }, item.Name, func() {}, nil
 	}
 	var proxy *url.URL
-	if selected == "pool" {
+	if selector == "pool" {
 		state, _ := egress.ReadLivePoolState(m.home, nil)
 		if state == nil {
 			return nil, "", func() {}, fmt.Errorf("代理池未就绪")
@@ -254,7 +262,7 @@ func (m *LeaseManager) dialer(ctx context.Context, selector string) (managedprox
 	} else {
 		nodes, _ := egress.ReadProxyPoolNodes(m.home)
 		for _, node := range nodes {
-			if node.ID == selected {
+			if node.ID == selector {
 				if node.Protocol != "http" && node.Protocol != "https" && node.Protocol != "socks5" && node.Protocol != "socks5h" {
 					runtime, err := proxypoollease.Start(ctx, m.home, node, m.engineProvider())
 					if err != nil {

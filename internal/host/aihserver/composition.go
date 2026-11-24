@@ -623,6 +623,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return egressManager
 	}, 0)
 	var chatRuntimeService *chatruntime.Service
+	var requirementsRuntimeService *requirementsRuntime
 	var chatPrewarmCloser io.Closer
 	var watchWSCloser io.Closer
 	defer func() {
@@ -664,6 +665,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && chatPrewarmCloser != nil {
 			_ = chatPrewarmCloser.Close()
+		}
+		if resultErr != nil && requirementsRuntimeService != nil {
+			_ = requirementsRuntimeService.Close()
 		}
 		if resultErr != nil && chatRuntimeService != nil {
 			_ = chatRuntimeService.Close()
@@ -1546,6 +1550,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	chatRuntimeService = chatRuntime.service
 	chatPrewarmCloser = chatRuntime.prewarmCloser
 	webuiRoutes = append(webuiRoutes, chatRuntime.routes...)
+	requirementsRuntimeService, requirementRoutes, requirementErr := newRequirementsRuntime(ctx, webuiDeps, chatRuntimeService)
+	if requirementErr != nil {
+		_ = chatRuntimeService.Close()
+		return serverHandlers{}, nil, fmt.Errorf("装配需求管理调度器失败: %w", requirementErr)
+	}
+	webuiRoutes = append(webuiRoutes, requirementRoutes...)
 	var desktopTranslationService *desktoptranslation.Service
 	if !dependencies.DesktopManagedByHost {
 		var desktopRoutes []webuiRoute
@@ -1876,6 +1886,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if chatPrewarmCloser != nil {
 			closers = append(closers, chatPrewarmCloser)
+		}
+		if requirementsRuntimeService != nil {
+			closers = append(closers, requirementsRuntimeService)
 		}
 		if chatRuntimeService != nil {
 			closers = append(closers, chatRuntimeService)

@@ -23,8 +23,11 @@ type LoopDecision struct {
 }
 
 // LoopJudgeSystemPrompt 要求模型只输出完成判定 JSON。
-const LoopJudgeSystemPrompt = "你是严格的需求验收员。根据需求、验收标准、执行步骤和本轮最终回复，" +
-	"判断需求是否已经真正完成并通过验证。不要因为模型口头声称完成就通过；要看是否有可验证的结果或改动。" +
+// 某些 Provider（AGY）不上报结构化工具事件，此时最终回复中的具体产物与验证描述
+// 是唯一可用的完成证据，不能仅因缺少 tool 事件就否定。
+const LoopJudgeSystemPrompt = "你是严格但务实的需求验收员。根据需求、验收标准、执行步骤和本轮最终回复判断是否完成。" +
+	"某些 Provider（例如 AGY）不会上报结构化工具事件；此时最终回复中明确给出具体产物、文件或验证结果即可作为完成证据，" +
+	"不要仅因缺少工具事件就判未完成。只有当证据不足、与需求矛盾或明确还有未完成项时才判 false。" +
 	"只输出 JSON：{\"done\":true|false,\"reason\":\"判定依据\",\"next\":\"若未完成，下一轮应做什么\"}"
 
 // BuildLoopJudgePrompt 组装验收上下文。
@@ -45,7 +48,11 @@ func BuildLoopJudgePrompt(requirement Requirement, finalMessage string, hadWork 
 		}
 		builder.WriteString("\n")
 	}
-	builder.WriteString(fmt.Sprintf("## 本轮是否产生工具/文件变更\n%v\n\n", hadWork))
+	if hadWork {
+		builder.WriteString("## 本轮工具事件\n本轮检测到工具/文件变更。\n\n")
+	} else {
+		builder.WriteString("## 本轮工具事件\nProvider 未上报结构化工具事件；请结合最终回复中的具体产物与验证描述判断。\n\n")
+	}
 	builder.WriteString("## 本轮最终回复\n")
 	if trimmed := strings.TrimSpace(finalMessage); trimmed != "" {
 		builder.WriteString(truncateRunes(trimmed, 12000))

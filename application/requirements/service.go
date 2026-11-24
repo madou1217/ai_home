@@ -20,6 +20,10 @@ type Service struct {
 	subscribersMu sync.Mutex
 	subscribers   map[int]chan struct{}
 	nextSubID     int
+
+	// lastLoopMessage 用于发现“连续两轮回复完全相同”的空转，自动停止循环。
+	loopMu          sync.Mutex
+	lastLoopMessage map[string]string
 }
 
 // Snapshot 是页面一次加载所需的完整读模型。
@@ -35,11 +39,12 @@ func NewService(store Store, model ModelClient, clock func() time.Time) *Service
 		clock = time.Now
 	}
 	return &Service{
-		store:       store,
-		model:       model,
-		clock:       clock,
-		newID:       defaultNewID,
-		subscribers: map[int]chan struct{}{},
+		store:           store,
+		model:           model,
+		clock:           clock,
+		newID:           defaultNewID,
+		subscribers:     map[int]chan struct{}{},
+		lastLoopMessage: map[string]string{},
 	}
 }
 
@@ -520,7 +525,7 @@ func (service *Service) ApplyProgress(ctx context.Context, requirementID string,
 }
 
 // ContinueLoop 在 loop 模式一轮结束后做自动验收：完成标记 → 直接停止；
-// 无标记 → AI 验收员判断；没有真实工作且未确认完成 → 自动停止并标 blocked。
+// 无标记 → AI 验收员判断；连续两轮回复完全相同 → 自动停止等待人工确认。
 // 不再用固定 5 轮强行截断。
 func (service *Service) ContinueLoop(ctx context.Context, id, finalMessage string, hadWork bool) {
 	requirement, err := service.store.GetRequirement(ctx, id)
@@ -535,6 +540,16 @@ func (service *Service) ContinueLoop(ctx context.Context, id, finalMessage strin
 		service.Notify()
 		return
 	}
+	normalizedMessage := strings.TrimSpace(finalMessage)
+	service.loopMu.Lock()
+	previousMessage, seenPrevious := service.lastLoopMessage[requirement.ID]
+	if seenPrevious && previousMessage == normalizedMessage {
+		service.loopMu.Unlock()
+		service.stopLoopStalled(ctx, requirement)
+		return
+	}
+	service.lastLoopMessage[requirement.ID] = normalizedMessage
+	service.loopMu.Unlock()
 	if HasLoopMarker(finalMessage, LoopDoneMarker) {
 		service.finishLoop(ctx, requirement, "模型输出完成标记")
 		return
@@ -575,21 +590,41 @@ func (service *Service) ContinueLoop(ctx context.Context, id, finalMessage strin
 		service.continueLoop(ctx, requirement, next)
 		return
 	}
-	if !hadWork {
-		reason := "loop 自动停止：本轮没有产生工具/文件变更，且模型未确认完成"
-		requirement.Status = StatusBlocked
+	if !hadWork && normalizedMessage == "" {
+		reason := "loop 自动停止：本轮没有回复也没有工具事件，无法判断进展"
+		requirement.Status = StatusReview
 		requirement.ProgressNote = reason
-		requirement.LastError = reason
 		requirement.UpdatedAt = service.Now()
 		_ = service.store.SaveRequirement(ctx, requirement)
-		service.appendEvent(ctx, requirement.ID, "loop.blocked", reason)
+		service.appendEvent(ctx, requirement.ID, "loop.stalled", reason)
 		service.Notify()
+		service.clearLoopMessage(requirement.ID)
 		return
 	}
 	service.continueLoop(ctx, requirement, "未获得明确完成信号，继续下一轮")
 }
 
+// stopLoopStalled 在连续两轮回复完全相同时停止，避免模型空转。
+func (service *Service) stopLoopStalled(ctx context.Context, requirement Requirement) {
+	reason := "连续两轮回复没有新进展，循环已自动停止，请人工确认"
+	requirement.Status = StatusReview
+	requirement.Progress = 90
+	requirement.ProgressNote = reason
+	requirement.UpdatedAt = service.Now()
+	_ = service.store.SaveRequirement(ctx, requirement)
+	service.appendEvent(ctx, requirement.ID, "loop.stalled", reason)
+	service.Notify()
+	service.clearLoopMessage(requirement.ID)
+}
+
+func (service *Service) clearLoopMessage(id string) {
+	service.loopMu.Lock()
+	defer service.loopMu.Unlock()
+	delete(service.lastLoopMessage, id)
+}
+
 func (service *Service) finishLoop(ctx context.Context, requirement Requirement, reason string) {
+	service.clearLoopMessage(requirement.ID)
 	requirement.Progress = 95
 	requirement.ProgressNote = "目标已完成：" + reason
 	requirement.LastError = ""

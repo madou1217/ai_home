@@ -386,7 +386,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 	switch kind {
 	case "plugin":
 		if action == "install" {
-			src, sErr := s.installSource(input)
+			src, sErr := s.installSource(ctx, input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -396,7 +396,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 	case "skill":
 		if action == "install" {
-			src, sErr := s.installSource(input)
+			src, sErr := s.installSource(ctx, input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -410,7 +410,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 		switch action {
 		case "install":
-			src, sErr := s.installSource(input)
+			src, sErr := s.installSource(ctx, input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
@@ -470,9 +470,13 @@ func normalizeSelector(provider, host string) (Selector, error) {
 	return Selector{Provider: p, Host: h}, nil
 }
 
-// installSource 解析本次安装的源：优先一次性上传目录，其次分发包内相对/绝对路径。
+// installSource 解析本次安装的源：优先 npm 描述符，其次一次性上传目录，最后分发包内相对/绝对路径。
 // 上传目录不在这里删除：多目标安装会并发复用同一个 uploadId，统一由过期清理回收。
-func (s *Service) installSource(input OperateInput) (string, error) {
+func (s *Service) installSource(ctx context.Context, input OperateInput) (string, error) {
+	source := strings.TrimSpace(input.Source)
+	if strings.HasPrefix(strings.ToLower(source), npmSourcePrefix) {
+		return s.importNpmDescriptor(ctx, input.Kind, source, input.Provider, input.Host)
+	}
 	if uploadID := strings.TrimSpace(input.UploadID); uploadID != "" {
 		return s.resolveUploadSource(uploadID)
 	}

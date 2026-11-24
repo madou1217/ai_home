@@ -23,6 +23,7 @@ import {
 } from '@/features/settings/settings-config';
 import { useAppearanceSettings } from '@/features/settings/use-appearance-settings';
 import { useManagementRestart } from '@/features/settings/use-management-restart';
+import { SettingStatusTag, type SettingStatusState } from '@/components/ui/SettingStatusTag';
 import { HudCard, HudIconButton, HudSection } from '@/mobile/ui';
 import { configAPI } from '@/services/api';
 import type { ServerConfig } from '@/types';
@@ -72,6 +73,8 @@ export default function BasicSettingsPanel() {
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverSaving, setServerSaving] = useState(false);
+  const [usageSaveStatus, setUsageSaveStatus] = useState<SettingStatusState>('saved');
+  const [serverSaveStatus, setServerSaveStatus] = useState<SettingStatusState>('saved');
   const [pickerOpen, setPickerOpen] = useState(false);
   const servers = useSettingsServers();
   const { restarting, restartNote, restartServer } = useManagementRestart();
@@ -86,9 +89,13 @@ export default function BasicSettingsPanel() {
       ]);
       usageForm.setFieldsValue(toUsageFormValues(config));
       serverForm.setFieldsValue(serverConfig);
+      setUsageSaveStatus('saved');
+      setServerSaveStatus('saved');
       setLoadError(false);
     } catch (_error) {
       setLoadError(true);
+      setUsageSaveStatus('error');
+      setServerSaveStatus('error');
       message.error('加载配置失败');
     } finally {
       setLoading(false);
@@ -107,10 +114,13 @@ export default function BasicSettingsPanel() {
       return;
     }
     setSaving(true);
+    setUsageSaveStatus('saving');
     try {
       await configAPI.update(toUsageConfig(values));
+      setUsageSaveStatus('saved');
       message.success('保存额度配置成功');
     } catch (_error) {
+      setUsageSaveStatus('error');
       message.error('保存额度配置失败');
     } finally {
       setSaving(false);
@@ -125,12 +135,15 @@ export default function BasicSettingsPanel() {
       return;
     }
     setServerSaving(true);
+    setServerSaveStatus('saving');
     try {
       const { saved, rotatedProfileId } = await saveServerConfig(values, servers.activeProfile);
       if (rotatedProfileId) servers.refresh();
       serverForm.setFieldsValue({ ...saved, apiKey: '', managementKey: '' });
+      setServerSaveStatus('pending_restart');
       message.success('保存服务配置成功');
     } catch (error: unknown) {
+      setServerSaveStatus('error');
       message.error((error as { message?: string } | null)?.message || '保存服务配置失败');
     } finally {
       setServerSaving(false);
@@ -243,7 +256,7 @@ export default function BasicSettingsPanel() {
         </div>
       </HudSection>
 
-      <HudSection title="账号调度" code="QUOTA">
+      <HudSection title="账号调度" code="QUOTA" extra={<SettingStatusTag status={usageSaveStatus} compact />}>
         <p className={styles.groupDesc}>控制额度阈值和后台刷新节奏。</p>
         <HudCard>
           {loadError ? (
@@ -258,11 +271,12 @@ export default function BasicSettingsPanel() {
             layout="vertical"
             className={styles.form}
             initialValues={USAGE_FORM_DEFAULTS}
+            onValuesChange={() => setUsageSaveStatus('dirty')}
           >
             <Form.Item
               name="threshold_pct"
               label="自动切换阈值 (%)"
-              help="账号已用额度达到此百分比（剩余 ≤ 100 − 阈值）即退出调度、切到其它账号；后台用量刷新显示额度恢复后自动重新参与。对所有按账号计额度的账号生效。"
+              help="已用额度达到阈值时切至其他账号，恢复后自动重新调度。"
               rules={USAGE_FIELD_RULES.threshold_pct}
             >
               <InputNumber min={0} max={100} addonAfter="%" inputMode="numeric" />
@@ -270,7 +284,7 @@ export default function BasicSettingsPanel() {
             <Form.Item
               name="active_refresh_interval"
               label="活跃刷新间隔 (秒)"
-              help="正在使用的账号额度刷新间隔时间"
+              help="当前活跃账号的额度刷新间隔"
               rules={USAGE_FIELD_RULES.active_refresh_interval}
             >
               <InputNumber min={10} addonAfter="秒" inputMode="numeric" />
@@ -278,7 +292,7 @@ export default function BasicSettingsPanel() {
             <Form.Item
               name="background_refresh_interval"
               label="后台刷新间隔 (秒)"
-              help="未使用账号的额度刷新间隔时间"
+              help="空闲账号的额度刷新间隔"
               rules={USAGE_FIELD_RULES.background_refresh_interval}
             >
               <InputNumber min={60} addonAfter="秒" inputMode="numeric" />
@@ -288,7 +302,7 @@ export default function BasicSettingsPanel() {
             <HudIconButton icon={<UndoOutlined />} label="重置" showLabel disabled={loading} onClick={loadConfig} />
             <HudIconButton
               icon={<SaveOutlined />}
-              label="保存额度设置"
+              label={usageSaveStatus === 'error' ? '重试保存' : '保存额度设置'}
               tone="primary"
               showLabel
               loading={saving}
@@ -299,11 +313,11 @@ export default function BasicSettingsPanel() {
         </HudCard>
       </HudSection>
 
-      <HudSection title="服务配置" code="SERVICE">
-        <p className={styles.groupDesc}>管理监听地址、端口和本地接口密钥。</p>
+      <HudSection title="服务配置" code="SERVICE" extra={<SettingStatusTag status={serverSaveStatus} compact />}>
+        <p className={styles.groupDesc}>管理监听地址、端口与访问密钥。</p>
         <HudCard>
           <InlineHudNote type="info">
-            开启开放网络后，Server 会监听 0.0.0.0。监听配置保存后，需要点击“一键重启服务”才会生效。
+            开放网络将监听 0.0.0.0；监听地址与端口修改保存后需重启生效。
           </InlineHudNote>
           {restartNote ? <InlineHudNote type={restartNote.type}>{restartNote.message}</InlineHudNote> : null}
           <Form
@@ -312,6 +326,7 @@ export default function BasicSettingsPanel() {
             layout="vertical"
             className={styles.form}
             initialValues={SERVER_FORM_DEFAULTS}
+            onValuesChange={() => setServerSaveStatus('dirty')}
           >
             <div className={styles.inlineSwitch}>
               <span className={styles.rowTitle}>开放网络访问</span>
@@ -322,27 +337,27 @@ export default function BasicSettingsPanel() {
             <Form.Item
               name="host"
               label="监听地址"
-              help={openNetwork ? '开放网络时会自动使用 0.0.0.0' : '默认仅监听本机 127.0.0.1'}
+              help={openNetwork ? '开放网络时自动使用 0.0.0.0' : '默认仅监听本机 127.0.0.1'}
             >
               <Input disabled={openNetwork} placeholder="127.0.0.1" inputMode="url" autoCapitalize="off" autoCorrect="off" />
             </Form.Item>
             <Form.Item name="port" label="端口" rules={SERVER_PORT_RULES}>
               <InputNumber min={1} max={65535} inputMode="numeric" />
             </Form.Item>
-            <Form.Item name="apiKey" label="API Key" help="用于访问 /v1 接口的客户端密钥。留空保留当前配置。">
+            <Form.Item name="apiKey" label="API Key" help="访问 /v1 接口密钥，留空保留原值。">
               <Input.Password autoComplete="new-password" placeholder="例如 sk-local-xxxx" />
             </Form.Item>
-            <Form.Item name="managementKey" label="Management Key" help="用于访问 Server 管理接口的客户端密钥。留空保留当前配置。">
+            <Form.Item name="managementKey" label="Management Key" help="访问管理接口密钥，留空保留原值。">
               <Input.Password autoComplete="new-password" placeholder="输入新的 Management Key" />
             </Form.Item>
-            <Form.Item name="proxyUrl" label="上游代理池" help="逗号或换行分隔；保存后立即生效，留空直连。">
+            <Form.Item name="proxyUrl" label="上游代理池" help="逗号或换行分隔，保存后立即生效，留空直连。">
               <Input.TextArea rows={3} placeholder="socks5://127.0.0.1:1080, http://user:pass@host:8080" />
             </Form.Item>
           </Form>
           <div className={styles.actions}>
             <HudIconButton
               icon={<ReloadOutlined />}
-              label="一键重启服务"
+              label="重启服务"
               showLabel
               loading={restarting}
               disabled={loading}
@@ -358,7 +373,7 @@ export default function BasicSettingsPanel() {
             />
             <HudIconButton
               icon={<SaveOutlined />}
-              label="保存服务配置"
+              label={serverSaveStatus === 'error' ? '重试保存' : '保存服务配置'}
               tone="primary"
               showLabel
               loading={serverSaving}

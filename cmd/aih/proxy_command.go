@@ -258,52 +258,17 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			return original(key)
 		}
 	}
-	lease, err := acquireServeLease(ctx, runtime, options.selector, !options.noSocks)
+	unit, err := newServeEntryUnit(ctx, runtime, options)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if closeErr := lease.Close(); closeErr != nil && err == nil {
+		if closeErr := unit.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
 	}()
-	var tunDone <-chan struct{}
-	if options.tun {
-		closeTUN, done, tunErr := startTUN(ctx, runtime, lease, options)
-		if tunErr != nil {
-			return tunErr
-		}
-		tunDone = done
-		if closeTUN != nil {
-			defer closeTUN()
-		}
-	}
-	if options.system {
-		systemAddress, ingressErr := lease.startSystemIngress(ctx)
-		if ingressErr != nil {
-			return ingressErr
-		}
-		restore, applyErr := applySystemProxy(ctx, runtime, systemAddress, options.systemService, options.systemDryRun, options.systemForce)
-		if applyErr != nil {
-			return applyErr
-		}
-		if restore != nil {
-			defer restore()
-		}
-	}
-	// 发布本机入口，供桥插件等本地消费者在服务重启后自动重新发现。
-	// 只有受监督的常驻实例（autostart 追加 --exit-with-parent）发布：临时手工
-	// 启动的 serve 若也写同一路径，会在退出时删掉常驻服务的入口。
-	// 发布失败不影响代理本身工作，只把原因写到 stderr。
-	if options.exitWithParent {
-		if home, homeErr := resolveAIHomeDir(runtime); homeErr == nil {
-			if cleanup, publishErr := publishServeEntry(home, lease); publishErr != nil {
-				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能发布本机代理入口状态: %v\n", publishErr)
-			} else {
-				defer cleanup()
-			}
-		}
-	}
+	lease := unit.lease
+	tunDone := unit.tunDone
 	if options.json {
 		encoded, marshalErr := json.MarshalIndent(map[string]any{
 			"ok":            true,
@@ -319,18 +284,13 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		}
 		_, _ = fmt.Fprintln(runtime.stdout, string(encoded))
 	} else {
-		_, _ = fmt.Fprintf(runtime.stdout, "[aih] HTTP 代理入口：%s\n", lease.httpURL)
-		if lease.socksURL != "" {
-			_, _ = fmt.Fprintf(runtime.stdout, "[aih] SOCKS5 代理入口：%s\n", lease.socksURL)
-		}
-		_, _ = fmt.Fprintf(runtime.stdout, "[aih] 出口：%s\n", lease.name)
-		allProxy := lease.httpURL
-		if lease.socksURL != "" {
-			allProxy = lease.socksURL
-		}
-		_, _ = fmt.Fprintf(runtime.stdout, "export HTTP_PROXY='%s' HTTPS_PROXY='%s' ALL_PROXY='%s'\n", lease.httpURL, lease.httpURL, allProxy)
-		_, _ = fmt.Fprintln(runtime.stdout, "[aih] 按 Ctrl+C 结束并释放租约。")
+		writeServeEntrySummary(runtime, options, lease)
 	}
+	// 续期失败时，只有 auto/pool 允许自动换出口并重建整套入口；显式点名的
+	// 节点等于用户选定出口，换掉就是静默改变出口 IP。
+	rotation := serveRotation(ctx, runtime, options.selector, func(message string) {
+		_, _ = fmt.Fprintln(runtime.stderr, message)
+	})
 	leaseErr := make(chan error, 1)
 	if options.renewInterval > 0 {
 		go lease.keepAlive(ctx, options.renewInterval, func(renewErr error) {
@@ -340,13 +300,54 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			}
 		})
 	}
-	select {
-	case <-ctx.Done():
-	case <-tunDone:
-		return errors.New("TUN 内核已退出，代理入口随之关闭")
-	case renewErr := <-leaseErr:
-		return fmt.Errorf("代理租约续期失败: %w", renewErr)
+	for {
+		select {
+		case <-ctx.Done():
+			stop()
+			return nil
+		case <-tunDone:
+			return errors.New("TUN 内核已退出，代理入口随之关闭")
+		case renewErr := <-leaseErr:
+			if rotation == nil || !isLeaseLossError(renewErr) {
+				return fmt.Errorf("代理租约续期失败: %w", renewErr)
+			}
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在自动切换…\n", renewErr)
+			// 先拆旧入口再建新的：同一个常驻服务只能有一个有效入口。
+			_ = unit.Close()
+			next, name, healErr := rotateServeEntry(ctx, runtime, options, rotation, renewErr.Error())
+			if healErr != nil {
+				return fmt.Errorf("出口切换失败: %w", healErr)
+			}
+			unit, lease = next, next.lease
+			tunDone = next.tunDone
+			if name != "" {
+				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已切换到出口 %s（入口已重建）。\n", name)
+			}
+			if options.json {
+				continue
+			}
+			writeServeEntrySummary(runtime, options, lease)
+			go lease.keepAlive(ctx, options.renewInterval, func(nextErr error) {
+				select {
+				case leaseErr <- nextErr:
+				default:
+				}
+			})
+		}
 	}
-	stop()
-	return nil
+}
+
+// writeServeEntrySummary 打印当前入口与一次性 export 行。
+func writeServeEntrySummary(runtime commandRuntime, options proxyServeOptions, lease *serveLease) {
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] HTTP 代理入口：%s\n", lease.httpURL)
+	if lease.socksURL != "" {
+		_, _ = fmt.Fprintf(runtime.stdout, "[aih] SOCKS5 代理入口：%s\n", lease.socksURL)
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "[aih] 出口：%s\n", lease.name)
+	allProxy := lease.httpURL
+	if lease.socksURL != "" {
+		allProxy = lease.socksURL
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "export HTTP_PROXY='%s' HTTPS_PROXY='%s' ALL_PROXY='%s'\n", lease.httpURL, lease.httpURL, allProxy)
+	_, _ = fmt.Fprintln(runtime.stdout, "[aih] 按 Ctrl+C 结束并释放租约。")
 }

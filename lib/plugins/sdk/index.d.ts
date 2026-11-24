@@ -4,7 +4,7 @@ export * from './wire.generated';
 export interface ContributionScope { providers?: string[]; hosts?: string[]; models?: string[]; }
 export interface Contribution { id: string; capability: string; version: number; order?: number; failurePolicy?: 'deny' | 'delegate'; scope?: ContributionScope; }
 export interface Manifest {
-  manifestVersion: 1; protocolVersion: 1; pluginId: string; version: string;
+  manifestVersion: 1; kind?: 'capability'; protocolVersion: 1; pluginId: string; version: string;
   engines: { aih: string; node?: string }; runtime: 'node'; entry: string; targets?: string[];
   contributes: Contribution[]; requires?: { name: string; versionRange: string }[];
   provides?: { name: string; version: string }[];

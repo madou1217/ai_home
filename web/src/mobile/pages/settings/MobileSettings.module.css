@@ -145,13 +145,24 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
 }
 
 .actions > * {
-  flex: 1 1 0;
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.formStatusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .note {
@@ -161,7 +172,6 @@
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
-  border-left-width: 2px;
   background: var(--color-surface-sunken);
   font-family: var(--font-prose);
   font-size: 12px;
@@ -175,15 +185,18 @@
 }
 
 .noteInfo {
-  border-left-color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-sunken));
 }
 
 .noteSuccess {
-  border-left-color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success) 7%, var(--color-surface-sunken));
 }
 
 .noteError {
-  border-left-color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface-sunken));
   color: var(--color-danger);
 }
 

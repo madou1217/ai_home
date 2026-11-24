@@ -108,6 +108,7 @@ export default function ToolkitInstallGuide() {
   return (
     <PageScaffold
       title="安装指南"
+      code="INSTALL_GUIDE"
       subTitle="按系统生成可复制的安装命令，不会自动执行。"
       className="toolkit-scaffold toolkit-guide-scaffold"
       ghost

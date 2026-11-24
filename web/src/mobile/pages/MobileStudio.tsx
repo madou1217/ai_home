@@ -42,7 +42,7 @@ function ModelsReadout({ studio }: { studio: MobileImageStudio }) {
   return (
     <span className="mhud-status">
       <span className={`hud-led ${online > 0 ? 'hud-led--ok' : 'hud-led--warn'}`} aria-hidden="true" />
-      {online}/{studio.models.length} MODELS ONLINE
+      {online}/{studio.models.length} 模型可用
     </span>
   );
 }
@@ -56,6 +56,7 @@ export default function MobileStudio(_props: MobilePageProps) {
 
   return (
     <MobilePage
+      lead="按会话管理生图任务、参考图与修订记录。"
       toolbar={(
         <MobileToolbar start={<ModelsReadout studio={studio} />}>
           <HudIconButton icon={<ReloadOutlined />} label="刷新会话" loading={studio.refreshingList} onClick={() => void studio.refreshList()} />

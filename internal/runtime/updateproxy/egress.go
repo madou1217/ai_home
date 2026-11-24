@@ -104,6 +104,9 @@ func (rotation *EgressRotation) Next(ctx context.Context, cause string) (EgressA
 		}
 		rotation.current = &lease
 		message := rotation.announce(cause, lease.Name)
+		// started 只标记「这次任务已经用上过自动出口」。它必须在 announce 之后
+		// 才置位：启用第一轮要说「由于…已自动启用」，已经启用过再换出口要说
+		// 「已切换到…」，否则长驻代理自愈时会重复说「刚刚启用」。
 		rotation.failed, rotation.failedReason = "", ""
 		rotation.started = true
 		rotation.notify(message)
@@ -146,6 +149,11 @@ func (rotation *EgressRotation) announce(cause, name string) string {
 	if rotation.failed != "" {
 		return fmt.Sprintf("[aih] 代理 %s 不可用（%s），已自动切换到 %s。",
 			displayName(rotation.failed), reasonOr(rotation.failedReason), name)
+	}
+	// 已经启用过（长驻代理自愈、或同一轮里换过出口）就不再声称「刚刚启用」：
+	// 那句话会让用户以为代理是这次才打开的。
+	if rotation.started {
+		return fmt.Sprintf("[aih] 已切换到出口 %s（原因：%s）。", name, reasonOr(strings.TrimSpace(cause)))
 	}
 	return fmt.Sprintf("[aih] 由于%s，已自动启用代理 %s（仅本次任务，不改全局配置）。",
 		reasonOr(strings.TrimSpace(cause)), name)

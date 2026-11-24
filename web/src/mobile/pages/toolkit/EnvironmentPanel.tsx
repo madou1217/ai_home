@@ -127,7 +127,18 @@ export default function EnvironmentPanel() {
                 ))}
               </MonoList>
             ) : (
-              <EmptySignal description="当前系统没有可管理的运行环境工具" />
+              <EmptySignal
+                description="当前系统没有可管理的运行环境工具"
+                action={(
+                  <HudIconButton
+                    icon={<ReloadOutlined />}
+                    label="重新探测"
+                    showLabel
+                    loading={loading}
+                    onClick={() => void load({ refresh: true })}
+                  />
+                )}
+              />
             )}
           </HudSection>
         </>

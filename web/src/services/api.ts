@@ -2995,6 +2995,20 @@ export const toolkitAPI = {
     const response = await api.post(`/plugins/${action}`, input);
     return response.data;
   },
+  installAihPluginUrl: async (url: string, requireSigned: boolean) => {
+    const response = await api.post('/plugins/install', { url, requireSigned });
+    return response.data;
+  },
+  uploadAihPlugin: async (file: File, requireSigned: boolean) => {
+    const buffer = await file.arrayBuffer();
+    const response = await api.post('/plugins/install-upload', buffer, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        ...(requireSigned ? { 'X-Aih-Require-Signed': 'true' } : {})
+      }
+    });
+    return response.data;
+  },
   getNetworkConnectors: async (): Promise<import('@/types').NetworkConnectorView[]> => {
     const response = await api.get<{ ok: boolean; connectors: import('@/types').NetworkConnectorView[] }>('/webui/plugins/network-connectors');
     return Array.isArray(response.data?.connectors) ? response.data.connectors : [];

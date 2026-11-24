@@ -27,11 +27,28 @@
 
 ## 2. 声明是什么
 
+### 2.0 顶层 `kind` 是什么
+
+`kind` 是清单最外层的**平面标识**，回答“这个包归谁管”：
+
+| kind | 含义 | 清单 |
+|---|---|---|
+| `capability` | AIH 能力插件，运行在 AIH 宿主，挂能力槽 | `plugin.json` |
+| `harness` | Harness 原生插件，投影到 Provider / Harness 内执行 | `package.json#agentPlugin` |
+
+它不是 `contributes[].capability`：
+
+- `kind` = 插件平面（capability / harness）。
+- `capability` = 具体能力槽（`account.login`、`gateway.attempt`、`network.connector` 等）。
+
+省略时按清单默认：`plugin.json` → `capability`，`agentPlugin` → `harness`。安装预检会读取它；把 AIH 能力插件拖进原生插件安装页时会明确提示，而不是报一个晦涩的清单错误。
+
 ### 2.1 AIH 能力插件：`plugin.json`
 
 ```json
 {
   "manifestVersion": 1,
+  "kind": "capability",
   "protocolVersion": 1,
   "pluginId": "acme.account",
   "version": "1.0.0",
@@ -58,6 +75,7 @@
 - `failurePolicy` 只有 `deny` / `delegate`；`order` 决定同一能力链中的顺序。
 - `permissions` 是安装确认与宿主边界，**不是执行沙箱**；process 插件没有沙箱。
 - `engines` / `targets` 管宿主版本与平台，不是 Provider / Harness 选择器。
+- 安装入口：插件与资源 → AIH 能力插件 → 安装，支持 URL 与本地 `.aih-plugin`；也可用 `aih plugin install`。
 
 ### 2.2 Harness 原生插件：`package.json#agentPlugin`
 
@@ -70,6 +88,7 @@
   "dsh": { "bundle": { "patch": "./patch.yml" } },
   "agentPlugin": {
     "pluginId": "acme-dsh-tool",
+    "kind": "harness",
     "manifestVersion": 1,
     "engines": { "deepseek": ">=0.0.0" }
   }
@@ -106,7 +125,7 @@
 | `gateway.request` | waterfall | `protocol/path/model/body` | 改写或拒绝请求；冻结身份字段不可改 |
 | `gateway.account` | serial | `provider/model/candidates` | 只能排序/挑选候选账号，越界即 `plugin_scope_violation` |
 | `gateway.attempt` | middleware | `provider/model/accountRef/authType/attempt` + `next()` | 包裹真实尝试；`next()` 至多一次 |
-| `gateway.route` | serial | — | 合同已声明；**截至 2026-11-24 仓库内没有调用点** |
+| `gateway.route` | serial | — | **预留（reserved）**：运行时没有调用点；Doctor 会对贡献者发 `plugin_capability_reserved` 警告 |
 
 ### Provider / 模型 / 计费
 
@@ -218,6 +237,9 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 | 内置 / 路径 | 随包资源或安装包内相对路径 | 路径必须位于安装包根目录下 |
 | 本地文件夹 | 浏览器选择目录，上传到 `run/native-resource-sources/<id>` | 单包 4MB / 256 文件；自动跳过 `.git` |
 | URL | 服务端下载 http(s) 直链 | zip / tar.gz / tar 自动解包；单文件直连；64MB 下载上限 |
+| npm | `npm:包名@版本`（也支持 `latest`） | DSH 走 profile 插件；OpenCode 写 `opencode.json#plugin`；不改包源码 |
+
+真实 DSH / OpenCode 插件集成示例见 `docs/plugins/real-plugin-integration-2026-11-24.md`。
 
 上传源是**一次性安装源**：多目标安装会复用同一份内容，过期 24 小时后清理；它不会成为插件的运行目录。
 
@@ -225,21 +247,15 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 
 ## 7. 仍然存在的弱点
 
-已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面。
+已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面、清单顶层 `kind` 平面标识与错平面预检、贡献项调用次数 / 失败 / 拒绝 / 耗时 / 最近错误、AIH 能力插件网页安装、三套作者样例（`docs/plugins/examples`）、`gateway.route` 预留标记与 Doctor 警告。
 
-按影响排序，仍待处理：
+仍待处理（优先级较低）：
 
-1. **“插件”一词仍承载多个平面。** 页面已统一，但 manifest 顶层还没有 `kind` 区分 AIH 能力插件与 Harness 原生插件。
-2. **目录还不是活跃代次视图。** 目前展示已安装插件的声明贡献项，没有标注哪些在活跃代次、最近调用结果与拒绝原因。
-3. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
-4. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
+1. **每个能力的自动化 smoke 还没有统一入口。** 样例可手工校验，但还没有 `plugin doctor --smoke` 这类一键检查。
 
 ## 8. 下一步建议（按收益/成本）
 
-1. **统一 manifest 顶层 `kind`**：`capability`（AIH 能力插件）与 `harness`（原生插件），让 UI 和安装器不再靠目录猜。
-2. **能力目录页**：在现有声明目录上补活跃代次、最近调用结果与拒绝原因。
-3. **模板与 doctor**：`account` / `provider` / `harness` 三个最小样例 + 每个能力的 smoke 检查。
-4. **补齐 `gateway.route` 或从合同移除**，避免空声明。
+1. **能力 smoke 自动化**：用 `docs/plugins/examples` 三个样例跑通安装、调用、拒绝与卸载。
 
 ## 9. 验证边界
 

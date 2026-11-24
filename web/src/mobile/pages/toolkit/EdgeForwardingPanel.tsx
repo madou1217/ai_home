@@ -26,6 +26,7 @@ import { useToolService } from '@/components/toolkit/use-tool-service';
 import { serviceStateLabel } from '@/components/toolkit/tool-service-presentation';
 import { ActionButton, InlineError, MonoBlock, Note, PanelToolbar, StatusText } from './toolkit-parts';
 import ManagedToolConfigSheet from './ManagedToolConfigSheet';
+import styles from '../MobileToolkit.module.css';
 
 const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frpc'];
 const LIFECYCLE_API = {
@@ -190,70 +191,72 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
                 ...(service ? [{ key: 'service', label: '服务', value: service.controllable ? serviceStateLabel(service) : '未托管', tone: service.state === 'running' ? 'ok' as const : 'muted' as const }] : [])
               ]}
             />
-            {tool?.canInstall ? (
-              <ActionButton
-                icon={<DownloadOutlined />}
-                label="安装"
-                tone="primary"
-                loading={busy === 'install'}
-                disabled={Boolean(busy)}
-                onClick={() => void runAction(tool, 'install')}
-              />
-            ) : null}
-            {tool?.configEditable ? (
-              <ActionButton
-                icon={<EditOutlined />}
-                label="配置"
-                disabled={Boolean(busy)}
-                onClick={() => setConfigTool(tool)}
-              />
-            ) : null}
-            {tool?.canUpdate ? (
-              <ActionButton
-                icon={<ReloadOutlined />}
-                label="更新"
-                loading={busy === 'update'}
-                disabled={Boolean(busy)}
-                onClick={() => void runAction(tool, 'update')}
-              />
-            ) : null}
-            {service?.canStart ? (
-              <ActionButton
-                icon={<PlayCircleOutlined />}
-                label="启动"
-                loading={serviceBusy === 'start'}
-                disabled={Boolean(serviceBusy) || !service.controllable}
-                onClick={() => tool && toolService.control(tool, 'start')}
-              />
-            ) : null}
-            {service?.canStop ? (
-              <ActionButton
-                icon={<PauseCircleOutlined />}
-                label="停止"
-                loading={serviceBusy === 'stop'}
-                disabled={Boolean(serviceBusy) || !service.controllable}
-                onClick={() => tool && toolService.control(tool, 'stop')}
-              />
-            ) : null}
-            {service?.canRestart ? (
-              <ActionButton
-                icon={<SyncOutlined />}
-                label="重启"
-                loading={serviceBusy === 'restart'}
-                disabled={Boolean(serviceBusy) || !service.controllable}
-                onClick={() => tool && toolService.control(tool, 'restart')}
-              />
-            ) : null}
-            {tool?.canUninstall ? (
-              <ActionButton
-                icon={<DeleteOutlined />}
-                label="卸载"
-                tone="danger"
-                loading={busy === 'uninstall'}
-                disabled={Boolean(busy)}
-                onClick={() => void runAction(tool, 'uninstall')}
-              />
-            ) : null}
+            <div className={styles.buttonRow}>
+              {tool?.canInstall ? (
+                <ActionButton
+                  icon={<DownloadOutlined />}
+                  label="安装"
+                  tone="primary"
+                  loading={busy === 'install'}
+                  disabled={Boolean(busy)}
+                  onClick={() => void runAction(tool, 'install')}
+                />
+              ) : null}
+              {tool?.configEditable ? (
+                <ActionButton
+                  icon={<EditOutlined />}
+                  label="配置"
+                  disabled={Boolean(busy)}
+                  onClick={() => setConfigTool(tool)}
+                />
+              ) : null}
+              {tool?.canUpdate ? (
+                <ActionButton
+                  icon={<ReloadOutlined />}
+                  label="更新"
+                  loading={busy === 'update'}
+                  disabled={Boolean(busy)}
+                  onClick={() => void runAction(tool, 'update')}
+                />
+              ) : null}
+              {service?.canStart ? (
+                <ActionButton
+                  icon={<PlayCircleOutlined />}
+                  label="启动"
+                  loading={serviceBusy === 'start'}
+                  disabled={Boolean(serviceBusy) || !service.controllable}
+                  onClick={() => tool && toolService.control(tool, 'start')}
+                />
+              ) : null}
+              {service?.canStop ? (
+                <ActionButton
+                  icon={<PauseCircleOutlined />}
+                  label="停止"
+                  loading={serviceBusy === 'stop'}
+                  disabled={Boolean(serviceBusy) || !service.controllable}
+                  onClick={() => tool && toolService.control(tool, 'stop')}
+                />
+              ) : null}
+              {service?.canRestart ? (
+                <ActionButton
+                  icon={<SyncOutlined />}
+                  label="重启"
+                  loading={serviceBusy === 'restart'}
+                  disabled={Boolean(serviceBusy) || !service.controllable}
+                  onClick={() => tool && toolService.control(tool, 'restart')}
+                />
+              ) : null}
+              {tool?.canUninstall ? (
+                <ActionButton
+                  icon={<DeleteOutlined />}
+                  label="卸载"
+                  tone="danger"
+                  loading={busy === 'uninstall'}
+                  disabled={Boolean(busy)}
+                  onClick={() => void runAction(tool, 'uninstall')}
+                />
+              ) : null}
+            </div>
           </HudSection>
         );
       })}

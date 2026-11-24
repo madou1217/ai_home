@@ -280,6 +280,7 @@ func (state *attemptState) enter(ctx context.Context, index int) attemptSummary 
 	failure := state.stepFailure(item, invokeErr, overBudget)
 	if failure == nil && !nextCalled {
 		if rejection := validAttemptRejection(raw); rejection != nil {
+			recordPluginRejection(state.invoker, item.ID, rejection.Message)
 			state.rejected = rejection
 			return attemptSummary{Outcome: "rejected"}
 		}

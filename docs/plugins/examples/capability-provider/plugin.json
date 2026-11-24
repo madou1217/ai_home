@@ -1,0 +1,24 @@
+{
+  "manifestVersion": 1,
+  "kind": "capability",
+  "protocolVersion": 1,
+  "pluginId": "example.provider",
+  "version": "0.1.0",
+  "engines": { "aih": ">=1.0.0", "node": ">=20" },
+  "runtime": "node",
+  "entry": "index.js",
+  "permissions": {
+    "network": [],
+    "filesystem": { "read": [], "write": [] },
+    "secrets": [],
+    "environment": []
+  },
+  "contributes": [
+    {
+      "id": "example.gateway.account",
+      "capability": "gateway.account",
+      "version": 1,
+      "scope": { "providers": ["example"], "models": ["example-*"] }
+    }
+  ]
+}

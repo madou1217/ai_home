@@ -55,11 +55,13 @@
 
 .sheetFooter {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   width: 100%;
 }
 .sheetFooter > * {
-  flex: 1;
+  flex: 1 1 112px;
+  min-width: 0;
 }
 
 .manualForm {

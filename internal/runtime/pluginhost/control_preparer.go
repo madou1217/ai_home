@@ -221,6 +221,20 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	report.Revision = doc.revision
+	invocationStats := p.runtime.InvocationStats()
+	reservedWarned := map[string]bool{}
+	activeArtifacts := map[string]bool{}
+	for _, instance := range doc.instances {
+		enabled, _ := instance["enabled"].(bool)
+		if !enabled {
+			continue
+		}
+		pluginID := stringField(instance, "pluginId")
+		version := stringField(instance, "version")
+		if pluginID != "" && version != "" {
+			activeArtifacts[pluginID+"@"+version] = true
+		}
+	}
 
 	for _, item := range doc.installedMaps {
 		pluginID := stringField(item, "pluginId")
@@ -236,10 +250,14 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		summary := DoctorInstalledSummary{
 			PluginID:  pluginID,
 			Version:   version,
+			Kind:      "capability",
 			Digest:    digest,
 			Signature: sigValue,
 		}
 		if manifest != nil {
+			if kind, _ := manifest["kind"].(string); strings.TrimSpace(kind) != "" {
+				summary.Kind = kind
+			}
 			summary.Permissions = manifest["permissions"]
 			if _, vErr := pluginartifact.ValidateManifest(manifest, pluginartifact.ManifestOptions{
 				HostVersion: p.hostVersion,
@@ -266,13 +284,35 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 					policy = "delegate"
 				}
 				scope, _ := contrib["scope"].(map[string]any)
+				contributionID := stringField(contrib, "id")
+				stat := invocationStats[contributionID]
+				reserved := pluginartifact.CapabilityReserved(capName)
+				warnKey := pluginID + ":" + capName
+				if reserved && !reservedWarned[warnKey] {
+					reservedWarned[warnKey] = true
+					report.Warnings = append(report.Warnings, DoctorIssue{
+						Code:     "plugin_capability_reserved",
+						PluginID: pluginID,
+						Detail:   capName + " 是预留能力，当前运行时不会调用",
+					})
+				}
 				report.Contributions = append(report.Contributions, DoctorContribution{
-					PluginID:       pluginID,
-					ContributionID: stringField(contrib, "id"),
-					Capability:     capName,
-					Order:          order,
-					FailurePolicy:  policy,
-					Scope:          scope,
+					PluginID:         pluginID,
+					ContributionID:   contributionID,
+					Capability:       capName,
+					Order:            order,
+					FailurePolicy:    policy,
+					Active:           activeArtifacts[pluginID+"@"+version],
+					Reserved:         reserved,
+					Calls:            stat.Calls,
+					Failures:         stat.Failures,
+					Rejections:       stat.Rejections,
+					LastError:        stat.LastError,
+					LastRejectReason: stat.LastRejectReason,
+					LastDurationMs:   stat.LastDurationMs,
+					LastCalledAt:     stat.LastCalledAt,
+					LastSucceededAt:  stat.LastSucceededAt,
+					Scope:            scope,
 				})
 			}
 			entryRel := stringField(manifest, "entry")

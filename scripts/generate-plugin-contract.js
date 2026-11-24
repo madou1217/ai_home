@@ -48,12 +48,14 @@ function renderGo() {
   // 能力目录：Go 的清单校验要检查贡献项的 capability/version 是否在合同里，
   // 不能另抄一份白名单，否则合同新增能力时 Go 会单方面拒绝合法插件。
   go += '\ntype Capability struct {\n';
-  go += '\tID      string `json:"id"`\n';
-  go += '\tVersion int    `json:"version"`\n';
-  go += '\tMode    string `json:"mode"`\n';
+  go += '\tID       string `json:"id"`\n';
+  go += '\tVersion  int    `json:"version"`\n';
+  go += '\tMode     string `json:"mode"`\n';
+  go += '\tReserved bool   `json:"reserved,omitempty"`\n';
   go += '}\n\nvar Capabilities = []Capability{\n';
   for (const item of contract.capabilities) {
-    go += '\t{ID: ' + JSON.stringify(item.id) + ', Version: ' + item.version + ', Mode: ' + JSON.stringify(item.mode) + '},\n';
+    go += '\t{ID: ' + JSON.stringify(item.id) + ', Version: ' + item.version + ', Mode: ' + JSON.stringify(item.mode)
+      + (item.reserved ? ', Reserved: true' : '') + '},\n';
   }
   go += '}\n';
   return go;

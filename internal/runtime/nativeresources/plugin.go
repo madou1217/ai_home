@@ -95,6 +95,9 @@ func readPluginPackage(source string) (PluginPackage, error) {
 	if !ok {
 		return PluginPackage{}, fail("native_plugin_id_invalid")
 	}
+	if kind, _ := ap["kind"].(string); strings.TrimSpace(kind) != "" && kind != "harness" {
+		return PluginPackage{}, fail("native_plugin_kind_invalid")
+	}
 	id, _ := ap["pluginId"].(string)
 	if !resourceIDPattern.MatchString(id) {
 		return PluginPackage{}, fail("native_plugin_id_invalid")
@@ -755,7 +758,34 @@ func containsString(list []string, v string) bool {
 	return false
 }
 
+func opencodeNpmSpec(pkg PluginPackage) string {
+	return npmPackageFrom(pkg, "opencodePackage")
+}
+
+func npmSnapshotPath(ctx pluginAdapterContext, id, version string) string {
+	return filepath.Join(ctx.aiHomeDir, "managed-resources", "native-plugins", id, version)
+}
+
 func (opencodePluginAdapter) install(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord, prev *ManagedRecord) (map[string]any, error) {
+	if spec := opencodeNpmSpec(pkg); spec != "" {
+		snapshot := npmSnapshotPath(ctx, pkg.ID, pkg.Version)
+		if directoryStatus(snapshot, pkg.Digest) != "present" {
+			return nil, fail("native_plugin_snapshot_modified")
+		}
+		cfg, err := readOpencodeConfig(ctx, prev)
+		if err != nil {
+			return nil, err
+		}
+		if !containsString(cfg.values, spec) {
+			nextVals := append(append([]string{}, cfg.values...), spec)
+			if err := writeOpencodeConfig(cfg, nextVals); err != nil {
+				return nil, err
+			}
+		}
+		rec.Target = snapshot
+		rec.ConfigFile = cfg.file
+		return map[string]any{"status": "configured", "package": spec}, nil
+	}
 	cfg, err := readOpencodeConfig(ctx, prev)
 	if err != nil {
 		return nil, err
@@ -776,10 +806,19 @@ func (opencodePluginAdapter) install(ctx pluginAdapterContext, pkg PluginPackage
 	return map[string]any{"status": "projected"}, nil
 }
 
-func (opencodePluginAdapter) disable(ctx pluginAdapterContext, _ PluginPackage, rec *ManagedRecord) error {
+func (opencodePluginAdapter) disable(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord) error {
 	cfg, err := readOpencodeConfig(ctx, rec)
 	if err != nil {
 		return err
+	}
+	if spec := opencodeNpmSpec(pkg); spec != "" {
+		next := make([]string, 0, len(cfg.values))
+		for _, value := range cfg.values {
+			if value != spec {
+				next = append(next, value)
+			}
+		}
+		return writeOpencodeConfig(cfg, next)
 	}
 	if directoryStatus(rec.Target, rec.Digest) == "modified" {
 		return fail("native_plugin_target_modified")
@@ -797,12 +836,24 @@ func (opencodePluginAdapter) disable(ctx pluginAdapterContext, _ PluginPackage, 
 }
 
 func (a opencodePluginAdapter) remove(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord) error {
-	return a.disable(ctx, pkg, rec)
+	if opencodeNpmSpec(pkg) == "" {
+		return a.disable(ctx, pkg, rec)
+	}
+	if err := a.disable(ctx, pkg, rec); err != nil {
+		return err
+	}
+	return removeOwnedDir(rec.Target, rec.Digest)
 }
 
 func (opencodePluginAdapter) inspect(ctx pluginAdapterContext, rec ManagedRecord) string {
 	cfg, err := readOpencodeConfig(ctx, &rec)
 	if err != nil {
+		return "modified"
+	}
+	if spec, _ := rec.NativeInstall["package"].(string); spec != "" {
+		if directoryStatus(rec.Target, rec.Digest) == "present" && containsString(cfg.values, spec) {
+			return "present"
+		}
 		return "modified"
 	}
 	status := directoryStatus(rec.Target, rec.Digest)
@@ -862,7 +913,169 @@ func cordisPatchStatus(rec *ManagedRecord) string {
 func (cordisPatchAdapter) validate(_ PluginPackage) error { return nil }
 func (cordisPatchAdapter) hasReplace() bool               { return false }
 
+func dshNpmSpec(pkg PluginPackage) string {
+	return npmPackageFrom(pkg, "npmPackage")
+}
+
+func dshProfileDir(hostHome string) string {
+	return filepath.Join(hostHome, ".dsh", "profiles", "aih")
+}
+
+func dshProfilePackagePath(hostHome string) string {
+	return filepath.Join(dshProfileDir(hostHome), "package.json")
+}
+
+func resolveDshRuntime(ctx pluginAdapterContext) (node, entry string, env map[string]string, err error) {
+	node = ""
+	if ctx.runner != nil {
+		node = ctx.runner.FindNode()
+	}
+	if node == "" {
+		return "", "", nil, fail("native_plugin_runtime_unavailable")
+	}
+	var desc *HostDescriptor
+	for i := range importedHosts {
+		if importedHosts[i].Host == "deepseek" {
+			desc = &importedHosts[i]
+			break
+		}
+	}
+	if desc == nil {
+		return "", "", nil, fail("native_plugin_runtime_unavailable")
+	}
+	_, _, entry, found := findHostRuntimePackage(*desc, ctx.hostHomeDir, node, ctx.env)
+	if !found {
+		return "", "", nil, fail("native_plugin_runtime_unavailable")
+	}
+	env = copyEnvMap(ctx.env)
+	env["HOME"] = ctx.hostHomeDir
+	env["USERPROFILE"] = ctx.hostHomeDir
+	env["DSH_HOME"] = filepath.Join(ctx.hostHomeDir, ".dsh")
+	return node, entry, env, nil
+}
+
+func ensureDshProfile(ctx pluginAdapterContext, node, entry string, env map[string]string) error {
+	packagePath := dshProfilePackagePath(ctx.hostHomeDir)
+	if _, err := os.Stat(packagePath); err != nil {
+		res := ctx.runner.Run(context.Background(), node, []string{entry, "--profile", "aih", "--from-default-profile", "web", "--dump-config"}, ctx.hostHomeDir, env, 120*time.Second)
+		if res.ExitCode != 0 {
+			return fail("native_plugin_dsh_profile_init_failed")
+		}
+	}
+	raw, err := os.ReadFile(packagePath)
+	if err != nil {
+		return fail("native_plugin_dsh_profile_init_failed")
+	}
+	var document map[string]any
+	if json.Unmarshal(raw, &document) != nil {
+		return fail("native_plugin_dsh_profile_invalid")
+	}
+	dshMap, _ := document["dsh"].(map[string]any)
+	profile, _ := dshMap["profile"].(map[string]any)
+	bundles := stringListField(profile, "bundles")
+	for _, required := range []string{"@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"} {
+		if !containsString(bundles, required) {
+			bundles = append(bundles, required)
+		}
+	}
+	profile["bundles"] = bundles
+	dshMap["profile"] = profile
+	document["dsh"] = dshMap
+	encoded, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return fail("native_plugin_dsh_profile_invalid")
+	}
+	return atomicWriteFile(packagePath, append(encoded, '\n'), 0o600)
+}
+
+func stringListField(source map[string]any, key string) []string {
+	raw, _ := source[key].([]any)
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if value, ok := item.(string); ok {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func dshProfileHasPackage(hostHome, packageName string) bool {
+	raw, err := os.ReadFile(dshProfilePackagePath(hostHome))
+	if err != nil {
+		return false
+	}
+	var document map[string]any
+	if json.Unmarshal(raw, &document) != nil {
+		return false
+	}
+	dshMap, _ := document["dsh"].(map[string]any)
+	profile, _ := dshMap["profile"].(map[string]any)
+	if containsString(stringListField(profile, "bundles"), packageName) {
+		return true
+	}
+	dependencies, _ := document["dependencies"].(map[string]any)
+	_, present := dependencies[packageName]
+	return present
+}
+
+func runDshProfileCommand(ctx pluginAdapterContext, node, entry string, env map[string]string, args ...string) error {
+	res := ctx.runner.Run(context.Background(), node, append([]string{entry, "plugin", "--profile", "aih"}, args...), ctx.hostHomeDir, env, 180*time.Second)
+	if res.ExitCode != 0 {
+		return fail("native_plugin_dsh_plugin_failed")
+	}
+	return nil
+}
+
+func installDshProfilePlugin(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord) (map[string]any, error) {
+	spec := dshNpmSpec(pkg)
+	name, _, err := parseNpmSpec(spec)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := npmSnapshotPath(ctx, pkg.ID, pkg.Version)
+	if directoryStatus(snapshot, pkg.Digest) != "present" {
+		return nil, fail("native_plugin_snapshot_modified")
+	}
+	node, entry, env, err := resolveDshRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureDshProfile(ctx, node, entry, env); err != nil {
+		return nil, err
+	}
+	if !dshProfileHasPackage(ctx.hostHomeDir, name) {
+		if err := runDshProfileCommand(ctx, node, entry, env, "add", spec); err != nil {
+			return nil, err
+		}
+	}
+	if !dshProfileHasPackage(ctx.hostHomeDir, name) {
+		return nil, fail("native_plugin_dsh_profile_not_updated")
+	}
+	rec.Target = snapshot
+	return map[string]any{"status": "installed", "mode": "dsh-profile", "package": spec}, nil
+}
+
+func removeDshProfilePlugin(ctx pluginAdapterContext, packageName string) error {
+	if packageName == "" || !dshProfileHasPackage(ctx.hostHomeDir, packageName) {
+		return nil
+	}
+	node, entry, env, err := resolveDshRuntime(ctx)
+	if err != nil {
+		return err
+	}
+	if err := runDshProfileCommand(ctx, node, entry, env, "remove", packageName); err != nil {
+		return err
+	}
+	if dshProfileHasPackage(ctx.hostHomeDir, packageName) {
+		return fail("native_plugin_dsh_profile_not_updated")
+	}
+	return nil
+}
+
 func (cordisPatchAdapter) install(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord, prev *ManagedRecord) (map[string]any, error) {
+	if dshNpmSpec(pkg) != "" {
+		return installDshProfilePlugin(ctx, pkg, rec)
+	}
 	file := cordisPatchFilePath(ctx, pkg.ID)
 	info, err := lstatMaybe(file)
 	if err != nil {
@@ -900,7 +1113,18 @@ func (cordisPatchAdapter) install(ctx pluginAdapterContext, pkg PluginPackage, r
 	}, nil
 }
 
-func (cordisPatchAdapter) disable(_ pluginAdapterContext, _ PluginPackage, rec *ManagedRecord) error {
+func (cordisPatchAdapter) disable(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord) error {
+	if dshNpmSpec(pkg) != "" || rec.NativeInstall["mode"] == "dsh-profile" {
+		spec := dshNpmSpec(pkg)
+		if spec == "" {
+			spec, _ = rec.NativeInstall["package"].(string)
+		}
+		name, _, err := parseNpmSpec(spec)
+		if err != nil {
+			return err
+		}
+		return removeDshProfilePlugin(ctx, name)
+	}
 	projected := directoryStatus(rec.Target, rec.Digest)
 	patch := cordisPatchStatus(rec)
 	if projected == "modified" || patch == "modified" {
@@ -917,10 +1141,32 @@ func (cordisPatchAdapter) disable(_ pluginAdapterContext, _ PluginPackage, rec *
 }
 
 func (a cordisPatchAdapter) remove(ctx pluginAdapterContext, pkg PluginPackage, rec *ManagedRecord) error {
-	return a.disable(ctx, pkg, rec)
+	if err := a.disable(ctx, pkg, rec); err != nil {
+		return err
+	}
+	if dshNpmSpec(pkg) != "" || rec.NativeInstall["mode"] == "dsh-profile" {
+		return removeOwnedDir(rec.Target, rec.Digest)
+	}
+	return nil
 }
 
-func (cordisPatchAdapter) inspect(_ pluginAdapterContext, rec ManagedRecord) string {
+func (cordisPatchAdapter) inspect(ctx pluginAdapterContext, rec ManagedRecord) string {
+	if rec.NativeInstall["mode"] == "dsh-profile" {
+		spec, _ := rec.NativeInstall["package"].(string)
+		name, _, err := parseNpmSpec(spec)
+		if err != nil {
+			return "modified"
+		}
+		inProfile := dshProfileHasPackage(ctx.hostHomeDir, name)
+		projected := directoryStatus(rec.Target, rec.Digest)
+		if projected == "present" && inProfile {
+			return "present"
+		}
+		if projected == "absent" && !inProfile {
+			return "absent"
+		}
+		return "modified"
+	}
 	projected := directoryStatus(rec.Target, rec.Digest)
 	patch := cordisPatchStatus(&rec)
 	if projected == patch {
@@ -1930,7 +2176,7 @@ func (m *nativePluginManager) install(ctx context.Context, source, provider, hos
 	if err != nil {
 		return PluginOperateResult{}, err
 	}
-	if aCtx.host != "" {
+	if aCtx.host != "" && dshNpmSpec(pkg) == "" {
 		ports := inspectPortablePlugin(pkg)
 		if ports[aCtx.host].State != "projection-ready" {
 			return PluginOperateResult{}, fail("native_plugin_host_projection_invalid")

@@ -118,8 +118,8 @@ export default function MobileUsage(_props: MobilePageProps) {
     usage.handleRangeChange([start, end]);
   };
 
-  const statusTone: HudTone = loading ? 'info' : dashboardLoadError ? 'err' : 'ok';
-  const statusCode = loading ? 'SYNC' : dashboardLoadError ? 'ERR' : scanActive ? 'SCAN' : 'READY';
+  const statusTone: HudTone = loading ? 'info' : dashboardLoadError ? 'err' : scanActive ? 'info' : 'ok';
+  const statusLabel = loading ? '同步中' : dashboardLoadError ? '加载失败' : scanActive ? '扫描中' : '就绪';
   const statusText = dashboardStatusText
     || (scanActive ? '扫描进行中' : `${range[0].format('MM-DD HH:mm')} → ${range[1].format('MM-DD HH:mm')}`);
 
@@ -129,7 +129,7 @@ export default function MobileUsage(_props: MobilePageProps) {
         <span className={styles.status} role="status" aria-live="polite">
           <span className="mhud-status">
             <span className={`hud-led hud-led--${statusTone}${loading || scanActive ? ' hud-led--live' : ''}`} />
-            <span className={`mhud-tone--${statusTone}`}>{statusCode}</span>
+            <span className={`mhud-tone--${statusTone}`}>{statusLabel}</span>
           </span>
           <span className={`${styles.statusText}${dashboardLoadError && !loading ? ' mhud-tone--err' : ''}`}>{statusText}</span>
         </span>
@@ -144,7 +144,10 @@ export default function MobileUsage(_props: MobilePageProps) {
   const listRows = view === 'model' ? models : sessions;
 
   return (
-    <MobilePage toolbar={toolbar}>
+    <MobilePage
+      toolbar={toolbar}
+      lead="按时间范围与来源查看 Token 消耗、估算成本和明细。"
+    >
       <div className={styles.filters}>
         <HudChips
           ariaLabel="时间范围"
@@ -197,10 +200,11 @@ export default function MobileUsage(_props: MobilePageProps) {
 
       <div className={`${styles.body}${loading && hasDashboardSnapshot ? ` ${styles.bodyRefreshing}` : ''}`} aria-busy={loading}>
         {dashboardLoadError && !loading && !hasDashboardSnapshot ? (
-          <div className={styles.loadError} role="alert">
-            <span className={styles.inlineError}>加载模型用量失败：{dashboardLoadError}</span>
-            <Button icon={<ReloadOutlined />} onClick={usage.handleRefreshUsage}>重试</Button>
-          </div>
+          <EmptySignal
+            title="加载失败"
+            description={`加载模型用量失败：${dashboardLoadError}`}
+            action={<Button icon={<ReloadOutlined />} onClick={usage.handleRefreshUsage}>重试</Button>}
+          />
         ) : null}
 
         <TelemetryGrid>
@@ -212,20 +216,20 @@ export default function MobileUsage(_props: MobilePageProps) {
             value={formatTokens(stats.totalTokens)}
             sub={`${stats.totalCalls} 次调用 · ${stats.totalSessions} 个会话`}
           />
-          <TelemetryTile label="Input" tone="info" value={formatTokens(stats.inputTokens)} sub="未含缓存读写" />
-          <TelemetryTile label="Output" tone="info" value={formatTokens(stats.outputTokens)} sub={`推理 ${formatTokens(stats.reasoningOutputTokens)}`} />
+          <TelemetryTile label="输入" tone="info" value={formatTokens(stats.inputTokens)} sub="不含缓存读写" />
+          <TelemetryTile label="输出" tone="info" value={formatTokens(stats.outputTokens)} sub={`推理 ${formatTokens(stats.reasoningOutputTokens)}`} />
           <TelemetryTile
-            label="Cache"
+            label="缓存"
             tone="info"
             value={formatTokens(totalCacheTokens)}
             sub={`读 ${formatTokens(stats.cacheReadInputTokens)} · 写 ${formatTokens(stats.cacheCreationInputTokens)}`}
           />
           <TelemetryTile
-            label="缓存率"
+            label="缓存命中率"
             tone="warn"
             value={formatCacheRate(overallCacheHitRate)}
             track={overallCacheHitRate == null ? null : overallCacheHitRate * 100}
-            sub="读取 / 全部输入侧 Tokens"
+            sub="缓存读取占比"
           />
           <TelemetryTile wide label="估算成本" tone="ok" value={formatCost(stats.totalCostUsd)} sub="USD · 按当前价格快照" />
         </TelemetryGrid>

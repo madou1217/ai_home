@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Select, Spin } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -41,25 +40,10 @@ import type {
   QuotaUsageBucket,
   QuotaWindowMetric
 } from '@/types';
+import QuotaBarStrip, { type QuotaBarPoint } from './QuotaBarStrip';
 import styles from './MobileAccountQuota.module.css';
 
 type UsageMetric = 'tokens' | 'cost' | 'requests';
-
-interface QuotaBarPoint {
-  key: string;
-  /** 两端轴标签 */
-  axisLabel: string;
-  /** 读数标题（窗口区间 / 自然周期） */
-  title: string;
-  value: number | null;
-}
-
-interface QuotaBarStripProps {
-  points: QuotaBarPoint[];
-  ariaLabel: string;
-  tone: HudTone;
-  formatValue: (value: number | null) => string;
-}
 
 const METRIC_TONES: Record<string, HudTone> = {
   percent: 'warn',
@@ -71,99 +55,6 @@ const METRIC_TONES: Record<string, HudTone> = {
 function shortenAccountRef(accountRef: string) {
   if (accountRef.length <= 20) return accountRef;
   return `${accountRef.slice(0, 10)}…${accountRef.slice(-6)}`;
-}
-
-/**
- * 紧凑柱带：把窗口 / 自然周期画成等宽柱（纯 CSS，不加载图表库）。
- * 手指横向拖动逐柱读数；键盘左右方向键同样可用。
- */
-function QuotaBarStrip({ points, ariaLabel, tone, formatValue }: QuotaBarStripProps) {
-  const [selected, setSelected] = useState<number | null>(null);
-  const stripRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setSelected(null);
-  }, [points]);
-
-  const peakIndex = useMemo(() => {
-    let best = -1;
-    points.forEach((point, index) => {
-      if (point.value == null) return;
-      if (best < 0 || point.value > (points[best].value ?? 0)) best = index;
-    });
-    return best;
-  }, [points]);
-
-  const scale = Math.max(peakIndex >= 0 ? points[peakIndex].value ?? 0 : 0, 0);
-  const readoutIndex = selected ?? (peakIndex >= 0 ? peakIndex : points.length - 1);
-  const readoutLabel = selected == null ? (peakIndex >= 0 ? '峰值' : '最新') : '所选';
-  const readoutPoint = points[readoutIndex];
-
-  const pickFromPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const rect = stripRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return;
-    const ratio = (event.clientX - rect.left) / rect.width;
-    setSelected(Math.max(0, Math.min(points.length - 1, Math.floor(ratio * points.length))));
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    const step = event.key === 'ArrowLeft' ? -1 : 1;
-    setSelected((current) => Math.max(0, Math.min(points.length - 1, (current ?? readoutIndex) + step)));
-  };
-
-  return (
-    <div className={styles.strip}>
-      <div className={styles.stripReadout} aria-live="polite">
-        <span className="hud-label">{readoutLabel} · {readoutPoint?.title || '—'}</span>
-        <span className={`${styles.stripValue} mhud-tone--${tone}`}>{formatValue(readoutPoint?.value ?? null)}</span>
-      </div>
-      <div
-        ref={stripRef}
-        className={styles.stripBars}
-        role="slider"
-        tabIndex={0}
-        aria-label={ariaLabel}
-        aria-valuemin={0}
-        aria-valuemax={Math.max(points.length - 1, 0)}
-        aria-valuenow={readoutIndex}
-        aria-valuetext={`${readoutPoint?.title || ''} ${formatValue(readoutPoint?.value ?? null)}`}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture?.(event.pointerId);
-          pickFromPointer(event);
-        }}
-        onPointerMove={(event) => {
-          if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
-          pickFromPointer(event);
-        }}
-        onKeyDown={onKeyDown}
-      >
-        {points.map((point, index) => {
-          const height = point.value == null || scale <= 0
-            ? 0
-            : Math.max(2, Math.round((point.value / scale) * 100));
-          return (
-            <span
-              key={point.key}
-              className={`${styles.stripBar}${index === readoutIndex ? ` ${styles.stripBarActive}` : ''}`}
-              aria-hidden="true"
-            >
-              {point.value == null ? (
-                <span className={styles.stripGap} />
-              ) : (
-                <span className={`${styles.stripFill} mhud-bg--${tone}`} style={{ height: `${height}%` }} />
-              )}
-            </span>
-          );
-        })}
-      </div>
-      <div className={styles.stripAxis} aria-hidden="true">
-        <span>{points[0]?.axisLabel || ''}</span>
-        <span>{points[points.length - 1]?.axisLabel || ''}</span>
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -313,9 +204,9 @@ export default function MobileAccountQuota({ params }: MobilePageProps) {
     return (
       <MobilePage toolbar={toolbar}>
         <EmptySignal
-          title="NO ACCOUNT"
-          description="当前账号缺少公开引用，请从账号列表重新进入"
-          action={<HudIconButton icon={<ArrowLeftOutlined />} label="返回账号" showLabel onClick={backToAccounts} />}
+          title="缺少账号引用"
+          description="当前账号缺少公开引用，请从账号列表重新进入。"
+          action={<HudIconButton icon={<ArrowLeftOutlined />} label="返回账号" tone="primary" showLabel onClick={backToAccounts} />}
         />
       </MobilePage>
     );
@@ -336,23 +227,20 @@ export default function MobileAccountQuota({ params }: MobilePageProps) {
   }
 
   return (
-    <MobilePage toolbar={toolbar}>
+    <MobilePage
+      toolbar={toolbar}
+      lead={subtitle}
+    >
       <HudCard
         code={String(provider).toUpperCase()}
-        title="额度统计"
-        extra={(
-          <span className={`mhud-status ${current?.remainingPct == null ? 'mhud-tone--muted' : 'mhud-tone--ok'}`}>
-            <span className={`hud-led${current?.remainingPct == null ? '' : ' hud-led--ok'}`} aria-hidden="true" />
-            {formatQuotaPct(current?.remainingPct)}
-          </span>
-        )}
+        title={`${providerLabel} · ${shortenAccountRef(accountRef)}`}
       >
         <div className={styles.accountHead}>
           <ProviderIcon provider={data?.provider || provider} size={22} />
-          <span className={styles.accountDesc}>
-            {providerLabel} · <span title={accountRef}>{shortenAccountRef(accountRef)}</span>
-            <br />
-            {subtitle}
+          <span className={styles.accountDesc} title={accountRef}>
+            {isUsageView
+              ? `按服务器本地时区切分自然${periodLabel}，统计本账号归属的网关用量。`
+              : '窗口由关闭后首个请求锚定，已剔除空闲期重置。'}
           </span>
         </div>
       </HudCard>
@@ -450,21 +338,26 @@ export default function MobileAccountQuota({ params }: MobilePageProps) {
                 allowClear
               />
             ) : null}
-            <p className={styles.note}>
-              {isUsageView
-                ? `按服务器本地时区切分自然${periodLabel}，只统计归属到本账号的网关调用。`
-                : '窗口由关闭后的第一个真实请求锚定，不按日历滚动；空闲期的 reset 已剔除。'}
-            </p>
           </HudSection>
 
           <HudSection title={isUsageView ? `${periodLabel}用量` : '窗口消耗'} code="CHART" count={rowCount}>
             {rowCount === 0 ? (
               <EmptySignal
-                title="NO SIGNAL"
+                title="暂无统计"
                 description={(
                   <>
                     {getQuotaEmptyDescription(data?.emptyReason)}。{getQuotaEmptyHint(data?.emptyReason)}
                   </>
+                )}
+                action={(
+                  <HudIconButton
+                    icon={<RefreshIcon spinning={loading} />}
+                    label="刷新统计"
+                    tone="primary"
+                    showLabel
+                    loading={loading}
+                    onClick={() => { void reload(); }}
+                  />
                 )}
               />
             ) : (

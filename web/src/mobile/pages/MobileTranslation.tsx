@@ -205,9 +205,10 @@ export default function MobileTranslation() {
 
   return (
     <MobilePage
+      lead="选择源语言、目标语言与模型，实时输出流式译文。"
       toolbar={
         <MobileToolbar
-          start={<span className={styles.toolbarCode}>TRANSLATE</span>}
+          start={<span className={styles.toolbarCode}>实时翻译</span>}
         >
           {busy ? (
             <Button size="small" aria-label="停止翻译" onClick={stream.cancel}>
@@ -377,70 +378,91 @@ export default function MobileTranslation() {
         ) : null}
       </HudSection>
 
-      <HudSection
-        title="翻译记录"
-        code="LOG"
-        extra={
-          history.entries.length ? (
-            <button type="button" className={styles.linkButton} onClick={history.clear}>
-              清空
-            </button>
-          ) : null
-        }
-      >
-        {history.entries.length === 0 ? (
-          <span className={styles.placeholder}>
-            完成一次翻译后，原文 / 译文 / 模型会记录在这里。
-          </span>
-        ) : (
-          <div ref={historyListRef} className={`${styles.historyList} aih-fade-in`}>
-            {history.entries.map((entry) => (
-              <div key={entry.id} data-history-item className={styles.historyItem}>
-                <div className={styles.historyItemHeader}>
-                  <span className={styles.historyRoute}>
-                    {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}
-                  </span>
-                  <span className={styles.historyMeta}>
-                    {entry.model}
-                    {entry.provider ? ` · ${entry.provider}` : ''}
-                    {' · '}
-                    {formatTranslationHistoryTime(entry.createdAt)}
-                  </span>
-                </div>
-                <div className={styles.historySource} title={entry.sourceText}>
-                  {entry.sourceText}
-                </div>
-                <div className={styles.historyResult} title={entry.resultText}>
-                  {entry.resultText}
-                </div>
-                <div className={styles.historyActions}>
-                  <button
-                    type="button"
-                    className={styles.linkButton}
-                    onClick={async () => {
-                      try {
-                        await writeClipboardText(entry.resultText);
-                        message.success('译文已复制');
-                      } catch (_error) {
-                        message.error('复制失败，请手动选择译文');
-                      }
-                    }}
-                  >
-                    <CopyOutlined /> 复制译文
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.linkButton}
-                    onClick={() => history.remove(entry.id)}
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </HudSection>
+      <TranslationHistorySection
+        entries={history.entries}
+        listRef={historyListRef}
+        onClear={history.clear}
+        onRemove={history.remove}
+      />
     </MobilePage>
+  );
+}
+
+function TranslationHistorySection({
+  entries,
+  listRef,
+  onClear,
+  onRemove,
+}: {
+  entries: ReturnType<typeof useTranslationHistory>['entries'];
+  listRef: React.RefObject<HTMLDivElement | null>;
+  onClear: () => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <HudSection
+      title="翻译记录"
+      code="LOG"
+      extra={
+        entries.length ? (
+          <button type="button" className={styles.linkButton} onClick={onClear}>
+            清空
+          </button>
+        ) : null
+      }
+    >
+      {entries.length === 0 ? (
+        <span className={styles.placeholder}>
+          完成一次翻译后，原文、译文与模型会记录在这里。
+        </span>
+      ) : (
+        <div ref={listRef} className={`${styles.historyList} aih-fade-in`}>
+          {entries.map((entry) => (
+            <div key={entry.id} data-history-item className={styles.historyItem}>
+              <div className={styles.historyItemHeader}>
+                <span className={styles.historyRoute}>
+                  {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}
+                </span>
+                <span className={styles.historyMeta}>
+                  {entry.model}
+                  {entry.provider ? ` · ${entry.provider}` : ''}
+                  {' · '}
+                  {formatTranslationHistoryTime(entry.createdAt)}
+                </span>
+              </div>
+              <div className={styles.historySource} title={entry.sourceText}>
+                {entry.sourceText}
+              </div>
+              <div className={styles.historyResult} title={entry.resultText}>
+                {entry.resultText}
+              </div>
+              <div className={styles.historyActions}>
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={async () => {
+                    try {
+                      await writeClipboardText(entry.resultText);
+                      message.success('译文已复制');
+                    } catch (_error) {
+                      message.error('复制失败，请手动选择译文');
+                    }
+                  }}
+                >
+                  <CopyOutlined /> 复制译文
+                </button>
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={() => onRemove(entry.id)}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </HudSection>
   );
 }

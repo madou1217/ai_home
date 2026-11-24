@@ -189,7 +189,7 @@
 }
 .frame:last-child { border-bottom: 0; }
 .frameActive {
-  box-shadow: inset 0 0 0 1px var(--color-accent);
+  border-color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
 }
 .frameSelect {
@@ -366,7 +366,7 @@
 }
 .modelRow:last-child { border-bottom: 0; }
 .modelRow:disabled { cursor: not-allowed; opacity: 0.6; }
-.modelRowActive { box-shadow: inset 0 0 0 1px var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.modelRowActive { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
 .modelName { font-size: 14px; font-weight: 600; }
 .modelId { font-family: var(--font-mono); font-size: 11px; color: var(--color-faint); overflow-wrap: anywhere; }
 .modelAvailability { white-space: normal; text-transform: none; }
@@ -404,6 +404,14 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
   color: var(--color-muted-strong);
+  cursor: pointer;
+}
+.iconButton:focus-visible,
+.preset:focus-visible,
+.modelRow:focus-visible,
+.output:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 .fileButton {
   position: relative;

@@ -3535,11 +3535,13 @@ export interface NativeResourceSourceImport {
   files: number;
   bytes: number;
   targets?: string[];
+  plane?: 'harness' | 'capability';
 }
 
 export interface NativeResourceSourceInspection {
   ok: boolean;
   kind: NativeResourceKind;
+  plane?: 'harness' | 'capability';
   id?: string;
   description?: string;
   version?: string;
@@ -3560,6 +3562,7 @@ export interface NativeResourceReport {
 export interface AihPluginInstalled {
   pluginId: string;
   version: string;
+  kind?: string;
   digest: string;
   installedAt: number;
   signature?: { status?: string; keyId?: string; [key: string]: unknown };
@@ -3585,18 +3588,35 @@ export interface AihPluginReport {
   runtime?: Record<string, unknown> | null;
 }
 
+export interface AihPluginDoctorIssue {
+  code: string;
+  pluginId?: string;
+  instanceId?: string;
+  detail?: string;
+}
+
 export interface AihPluginDoctorContribution {
   pluginId: string;
   contributionId: string;
   capability: string;
   order: number;
   failurePolicy: string;
+  active: boolean;
+  reserved: boolean;
+  calls: number;
+  failures: number;
+  rejections: number;
+  lastError?: string;
+  lastRejectReason?: string;
+  lastDurationMs: number;
+  lastCalledAt: number;
+  lastSucceededAt: number;
   scope?: { providers?: string[]; hosts?: string[]; models?: string[] };
 }
 
 export interface AihPluginDoctorReport extends AihPluginReport {
-  issues?: Array<Record<string, unknown>>;
-  warnings?: Array<Record<string, unknown>>;
+  issues?: AihPluginDoctorIssue[];
+  warnings?: AihPluginDoctorIssue[];
   capabilities?: Record<string, number>;
   contributions?: AihPluginDoctorContribution[];
 }

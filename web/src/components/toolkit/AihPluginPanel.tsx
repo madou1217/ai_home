@@ -5,10 +5,12 @@ import {
   DeleteOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
+import AihPluginInstallModal from './AihPluginInstallModal';
 import type {
   AihPluginDoctorReport,
   AihPluginInstalled,
@@ -32,6 +34,7 @@ export default function AihPluginPanel() {
   const [report, setReport] = useState<AihPluginReport | null>(null);
   const [doctor, setDoctor] = useState<AihPluginDoctorReport | null>(null);
   const [busy, setBusy] = useState('');
+  const [installOpen, setInstallOpen] = useState(false);
 
   const load = useCallback(async () => {
     setBusy('load');
@@ -90,14 +93,18 @@ export default function AihPluginPanel() {
     }
     return result.sort((left, right) => left.pluginId.localeCompare(right.pluginId));
   }, [installed, instances]);
-  // 同一个插件的多个安装版本会重复列出同一贡献项；目录只展示一份。
+  // 同一个插件的多个安装版本会重复列出同一贡献项；目录只展示一份，并优先保留活跃版本。
   const contributionCatalog = useMemo(() => {
-    const seen = new Set<string>();
-    return (doctor?.contributions || []).filter((item) => {
+    const byKey = new Map<string, AihPluginDoctorContribution>();
+    for (const item of doctor?.contributions || []) {
       const key = `${item.pluginId}:${item.contributionId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+      const previous = byKey.get(key);
+      if (!previous || (item.active && !previous.active)) byKey.set(key, item);
+    }
+    return Array.from(byKey.values()).sort((left, right) => {
+      if (left.active !== right.active) return left.active ? -1 : 1;
+      if (left.capability !== right.capability) return left.capability.localeCompare(right.capability);
+      return `${left.pluginId}:${left.contributionId}`.localeCompare(`${right.pluginId}:${right.contributionId}`);
     });
   }, [doctor]);
   const capabilityCatalog = useMemo(() => {
@@ -121,6 +128,7 @@ export default function AihPluginPanel() {
           <Typography.Text type="secondary">运行在 AIH 宿主内的签名插件，通过 contributes 声明能力槽；与 Provider / Harness 内执行的原生插件不是同一平面。</Typography.Text>
         </div>
         <Space>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>安装</Button>
           <Button icon={<ReloadOutlined />} loading={busy === 'load'} onClick={() => void load()}>重新探测</Button>
         </Space>
       </header>
@@ -139,6 +147,7 @@ export default function AihPluginPanel() {
                 <Space wrap>
                   <strong>{group.pluginId}</strong>
                   {plugin ? <Tag>{plugin.version}</Tag> : instance ? <Tag>{instance.version}</Tag> : null}
+                  <Tag color="processing">{plugin?.kind || 'capability'}</Tag>
                   {plugin ? signatureTag(plugin.signature) : null}
                   {group.others.length ? <Tag>{group.others.length} 个旧版本</Tag> : null}
                 </Space>
@@ -211,18 +220,43 @@ export default function AihPluginPanel() {
               return (
                 <Space wrap key={`${item.pluginId}:${item.contributionId}`} size={6}>
                   <Tag color="processing">{item.capability}</Tag>
+                  {item.reserved ? <Tag color="warning">预留</Tag> : null}
+                  <Tag color={item.active ? 'success' : 'default'}>{item.active ? '活跃' : '未激活'}</Tag>
                   <Typography.Text code>{item.contributionId}</Typography.Text>
                   <Typography.Text type="secondary">
                     {item.pluginId} · order {item.order} · {item.failurePolicy}
                     {scope ? ` · scope ${scope}` : ''}
+                    {item.calls > 0
+                      ? ` · 调用 ${item.calls} · 失败 ${item.failures} · 拒绝 ${item.rejections} · 最近 ${item.lastDurationMs}ms`
+                      : ' · 尚未调用'}
                   </Typography.Text>
+                  {item.lastError ? <Tag color="error">{item.lastError}</Tag> : null}
+                  {item.lastRejectReason ? <Tag color="warning">拒绝：{item.lastRejectReason}</Tag> : null}
                 </Space>
               );
             })}
           </Space>
         </Card>
       ) : null}
+      {doctor?.warnings?.length ? (
+        <Card size="small" title="Doctor 警告">
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {doctor.warnings.map((warning, index) => (
+              <Typography.Text type="secondary" key={`${warning.code}:${warning.pluginId || ''}:${index}`}>
+                {warning.code}
+                {warning.pluginId ? ` · ${warning.pluginId}` : ''}
+                {warning.detail ? ` · ${warning.detail}` : ''}
+              </Typography.Text>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
       {doctor ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>Doctor：{doctor.ok ? '健康' : `${doctor.issues?.length || 0} 个问题`}；runtime {String(doctor.runtime?.state || 'unknown')}</Typography.Text> : null}
+      <AihPluginInstallModal
+        open={installOpen}
+        onClose={() => setInstallOpen(false)}
+        onInstalled={() => void load()}
+      />
     </section>
   );
 }

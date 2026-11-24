@@ -30,10 +30,34 @@ const nodeRoutes = [
     layout: false,
   },
   {
-    name: "项目办公室",
+    name: "项目管理",
+    path: "/projects",
+    icon: "project",
+    routes: [
+      {
+        path: "/projects",
+        redirect: "/projects/office",
+      },
+      {
+        name: "项目办公室",
+        path: "/projects/office",
+        component: "./TerminalSessions",
+        icon: "desktop",
+      },
+      {
+        name: "需求管理",
+        path: "/projects/requirements",
+        component: "./Requirements",
+        icon: "unorderedList",
+      },
+    ],
+  },
+  {
+    // 历史深链：项目办公室从 /terminals 迁到项目管理子菜单。保留原组件以继承
+    // view/scope/room/session 查询参数，不能简单 redirect 丢参数。
     path: "/terminals",
     component: "./TerminalSessions",
-    icon: "desktop",
+    hideInMenu: true,
   },
   {
     name: "模型用量",

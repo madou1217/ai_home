@@ -132,6 +132,7 @@ export default function Toolkit() {
   return (
     <PageScaffold
       title="开发工具"
+      code="TOOLKIT"
       subTitle="统一管理应用、运行环境与网络。"
       className="toolkit-scaffold"
       ghost

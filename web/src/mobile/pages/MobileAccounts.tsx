@@ -340,14 +340,20 @@ export default function MobileAccounts(_props: MobilePageProps) {
   const toolbar = (
     <MobileToolbar
       start={(
-        <HudIconButton
-          icon={<SyncOutlined spin={refreshing} />}
-          label="刷新"
-          disabled={refreshing}
-          onClick={() => { void actions.handleReload(); }}
-        />
+        <span className={styles.syncStatus} role="status" aria-live="polite">
+          <span className={`mhud-status ${hydratingDetails ? 'mhud-tone--info' : 'mhud-tone--ok'}`}>
+            <span className={`hud-led ${hydratingDetails ? 'hud-led--info hud-led--live' : 'hud-led--ok'}`} aria-hidden="true" />
+            {hydratingDetails ? '详情补全中' : '状态就绪'}
+          </span>
+        </span>
       )}
     >
+      <HudIconButton
+        icon={<SyncOutlined spin={refreshing} />}
+        label="刷新"
+        disabled={refreshing}
+        onClick={() => { void actions.handleReload(); }}
+      />
       <HudIconButton
         icon={<ExportOutlined />}
         label="导出"
@@ -375,36 +381,34 @@ export default function MobileAccounts(_props: MobilePageProps) {
   return (
     <MobilePage
       toolbar={toolbar}
-      lead="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
+      lead="管理 OAuth 与密钥账号状态，密钥账号可达性以模型探测为准。"
     >
       <TelemetryGrid>
         <TelemetryTile
-          label="正常可用"
-          value={`${activeStats.healthy}/${activeStats.total}`}
+          wide
+          label="可用账号"
+          value={activeStats.healthy}
+          unit={`/ ${activeStats.total}`}
           tone={activeStats.healthy > 0 ? 'ok' : 'muted'}
           led
           track={activeStats.total > 0 ? (activeStats.healthy / activeStats.total) * 100 : null}
+          sub={activeStats.total > 0
+            ? `可用率 ${Math.round((activeStats.healthy / activeStats.total) * 100)}%`
+            : '当前筛选下暂无账号'}
         />
         <TelemetryTile
-          label="账号状态"
-          value={hydratingDetails ? '补全中' : '就绪'}
-          tone={hydratingDetails ? 'info' : 'ok'}
-          led={hydratingDetails ? 'live' : true}
-          sub={hydratingDetails ? '详情补全中' : undefined}
-        />
-        <TelemetryTile
-          label="待处理问题"
+          label="待处理"
           value={pendingIssues}
           tone={pendingIssues > 0 ? 'warn' : 'muted'}
           led={pendingIssues > 0}
-          sub={`需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked}`}
+          sub={`需登录 ${activeStats.reauthRequired} · 冷却/阻塞 ${activeStats.runtimeBlocked}`}
         />
         <TelemetryTile
-          label="耗尽/停用"
+          label="耗尽 / 停用"
           value={unavailable}
           tone={unavailable > 0 ? 'err' : 'muted'}
           led={unavailable > 0}
-          sub={`耗尽 ${activeStats.exhausted} · 停池 ${activeStats.policyBlocked}`}
+          sub={`耗尽 ${activeStats.exhausted} · 停用 ${activeStats.policyBlocked}`}
         />
       </TelemetryGrid>
 
@@ -437,10 +441,11 @@ export default function MobileAccounts(_props: MobilePageProps) {
       <HudSection title="账号列表" code="POOL" count={filteredAccounts.length}>
         <div ref={listRef}>
         {loading && accounts.length === 0 ? (
-          <MobileBoot label="LOADING ACCOUNTS" />
+          <MobileBoot label="加载账号列表" />
         ) : filteredAccounts.length === 0 ? (
           accounts.length === 0 ? (
             <EmptySignal
+              title="暂无账号"
               description="还没有账号。添加 OAuth 或密钥账号，或从文件导入。"
               action={(
                 <HudIconButton
@@ -454,9 +459,10 @@ export default function MobileAccounts(_props: MobilePageProps) {
             />
           ) : (
             <EmptySignal
-              description="没有符合条件的账号"
+              title="无匹配账号"
+              description="当前筛选条件下没有账号，可重置筛选查看全部。"
               action={(
-                <HudIconButton icon={<SyncOutlined />} label="显示全部账号" showLabel onClick={resetFilters} />
+                <HudIconButton icon={<SyncOutlined />} label="显示全部账号" tone="primary" showLabel onClick={resetFilters} />
               )}
             />
           )

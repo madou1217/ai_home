@@ -44,6 +44,7 @@ import { DetailSheet, EmptySignal, HudSection, KeyValue, MonoList, SwipeRow, Tel
 import { confirmAction } from '@/utils/confirm-action';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText } from './toolkit-parts';
 import EdgeForwardingPanel from './EdgeForwardingPanel';
+import styles from '../MobileToolkit.module.css';
 
 // 手机屏幕小：订阅源列表先显示这么多，其余按需展开。
 const MOBILE_SOURCE_PAGE_SIZE = 12;
@@ -154,7 +155,10 @@ export default function SubscriptionAggregatorPanel() {
                 ))}
               </MonoList>
             ) : (
-              <EmptySignal description="还没有聚合订阅，新建一个把订阅源合并成一个链接" />
+              <EmptySignal
+                description="还没有聚合订阅，新建一个把订阅源合并成一个链接"
+                action={<ActionButton icon={<PlusOutlined />} label="新建聚合订阅" tone="primary" onClick={createProfile} />}
+              />
             )}
           </HudSection>
 
@@ -234,7 +238,10 @@ export default function SubscriptionAggregatorPanel() {
                 )}
               </>
             ) : (
-              <EmptySignal description="还没有订阅源，点「添加」填订阅地址（可批量）、扫描本机，或粘贴自建节点" />
+              <EmptySignal
+                description="还没有订阅源，添加订阅地址或自建节点即可开始聚合"
+                action={<ActionButton icon={<PlusOutlined />} label="添加订阅源" tone="primary" onClick={() => setSourceEditor({ source: null })} />}
+              />
             )}
           </HudSection>
 
@@ -253,16 +260,21 @@ export default function SubscriptionAggregatorPanel() {
             ) : null}
           >
             {detail ? (
-              <>
-                <SubscriptionLinkField
-                  path={detail.subscriptionPath}
-                  name={detail.name}
-                  formats={overview.catalog.formats}
-                  clients={overview.catalog.clients}
-                  stacked
-                />
-                <ActionButton icon={<ImportOutlined />} label="导入到客户端 / 扫码" tone="primary" onClick={() => setImportProfile(detail)} />
-                <KeyValue
+            <div className={styles.sheetStack}>
+              <div className={styles.panelToolbar}>
+                <span className={styles.panelToolbarStatus}>
+                  {`${detail.nodeCount ?? 0} 个节点 · ${countEnabledPresets(detail)} 个规则组`}
+                </span>
+              </div>
+              <SubscriptionLinkField
+                path={detail.subscriptionPath}
+                name={detail.name}
+                formats={overview.catalog.formats}
+                clients={overview.catalog.clients}
+                stacked
+              />
+              <ActionButton icon={<ImportOutlined />} label="导入到客户端 / 扫码" tone="primary" onClick={() => setImportProfile(detail)} />
+              <KeyValue
                   rows={[
                     { key: 'nodes', label: '节点', value: `${detail.nodeCount ?? 0} 个` },
                     { key: 'scope', label: '订阅源', value: describeSourceScope(detail, sources.length) },
@@ -278,7 +290,7 @@ export default function SubscriptionAggregatorPanel() {
                     }
                   ]}
                 />
-              </>
+              </div>
             ) : null}
           </DetailSheet>
 

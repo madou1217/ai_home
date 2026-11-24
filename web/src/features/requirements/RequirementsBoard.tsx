@@ -1,0 +1,1130 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AppstoreOutlined,
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  ExclamationCircleOutlined,
+  FolderOpenOutlined,
+  ImportOutlined,
+  LinkOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  RobotOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
+  UnorderedListOutlined
+} from '@ant-design/icons';
+import {
+  Badge,
+  Button,
+  Card,
+  Drawer,
+  Empty,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Progress,
+  Segmented,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Tooltip,
+  message
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { sessionsAPI } from '@/services/api';
+import type { AggregatedProject } from '@/types';
+import {
+  requirementsAPI,
+  type Requirement,
+  type RequirementEvent,
+  type RequirementMode,
+  type RequirementSnapshot,
+  type RequirementStatus,
+  type RequirementStep,
+  type RequirementWorkspace
+} from './requirements-api';
+import styles from './requirements.module.css';
+
+type ViewMode = 'kanban' | 'list';
+
+const STATUS_LABEL: Record<RequirementStatus, string> = {
+  idea: '想法',
+  ready: '待排期',
+  queued: '已领取',
+  running: '执行中',
+  waiting: '等待输入',
+  review: '待验收',
+  done: '已完成',
+  blocked: '受阻',
+  archived: '归档'
+};
+
+const STATUS_TONE: Record<RequirementStatus, string> = {
+  idea: 'default',
+  ready: 'blue',
+  queued: 'gold',
+  running: 'processing',
+  waiting: 'orange',
+  review: 'purple',
+  done: 'success',
+  blocked: 'error',
+  archived: 'default'
+};
+
+const MODE_LABEL: Record<RequirementMode, string> = {
+  plan: 'plan',
+  goal: 'goal',
+  loop: 'loop'
+};
+
+const PRIORITY_LABEL = ['高', '普通', '低'];
+
+const COLUMNS: Array<{ key: string; title: string; statuses: RequirementStatus[] }> = [
+  { key: 'idea', title: '想法池', statuses: ['idea'] },
+  { key: 'ready', title: '待排期', statuses: ['ready'] },
+  { key: 'running', title: '执行中', statuses: ['queued', 'running', 'waiting'] },
+  { key: 'review', title: '待验收', statuses: ['review'] },
+  { key: 'closed', title: '已完成 / 受阻', statuses: ['done', 'blocked', 'archived'] }
+];
+
+function sortRequirements(items: Requirement[]): Requirement[] {
+  return [...items].sort((left, right) => {
+    if (left.priority !== right.priority) return left.priority - right.priority;
+    if (left.position !== right.position) return left.position - right.position;
+    return left.createdAt - right.createdAt;
+  });
+}
+
+function formatTime(value: number): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
+
+function statusTag(status: RequirementStatus) {
+  return <Tag color={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Tag>;
+}
+
+function modeTag(mode: RequirementMode) {
+  return <Tag color={mode === 'loop' ? 'magenta' : mode === 'goal' ? 'cyan' : 'geekblue'}>{MODE_LABEL[mode]}</Tag>;
+}
+
+function progressOf(requirement: Requirement): number {
+  if (requirement.status === 'done') return 100;
+  return Math.max(0, Math.min(100, requirement.progress || 0));
+}
+
+function stepsDone(requirement: Requirement): number {
+  return (requirement.steps || []).filter((step) => step.status === 'done').length;
+}
+
+interface RequirementFormValues {
+  title: string;
+  description?: string;
+  status?: RequirementStatus;
+  priority?: number;
+  workspaceId?: string;
+  mode?: RequirementMode;
+  parallel?: boolean;
+  steps?: Array<{ text?: string }>;
+}
+
+interface WorkspaceFormValues {
+  name: string;
+  projectPaths: Array<{ path?: string }>;
+  provider?: string;
+  model?: string;
+  accountRef?: string;
+  maxParallel?: number;
+}
+
+export default function RequirementsBoard() {
+  const [snapshot, setSnapshot] = useState<RequirementSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [live, setLive] = useState(false);
+  const [view, setView] = useState<ViewMode>('kanban');
+  const [query, setQuery] = useState('');
+  const [workspaceFilter, setWorkspaceFilter] = useState<string>('all');
+  const [detail, setDetail] = useState<Requirement | null>(null);
+  const [events, setEvents] = useState<RequirementEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<Requirement | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceEditorOpen, setWorkspaceEditorOpen] = useState(false);
+  const [editingWorkspace, setEditingWorkspace] = useState<RequirementWorkspace | null>(null);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string>('');
+  const [projects, setProjects] = useState<AggregatedProject[]>([]);
+  const [form] = Form.useForm<RequirementFormValues>();
+  const [importForm] = Form.useForm<{ format: string; workspaceId?: string; content: string }>();
+  const [workspaceForm] = Form.useForm<WorkspaceFormValues>();
+  const [schedulerForm] = Form.useForm<{ enabled: boolean; provider: string; model: string; accountRef?: string }>();
+  const detailRef = useRef<string>('');
+
+  const applySnapshot = useCallback((next: RequirementSnapshot) => {
+    setSnapshot(next);
+    setError('');
+  }, []);
+
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
+    try {
+      const next = await requirementsAPI.load();
+      applySnapshot(next);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : '需求数据加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const source = requirementsAPI.watch({
+      onSnapshot: (next) => {
+        applySnapshot(next);
+        setLive(true);
+      },
+      onConnected: () => setLive(true),
+      onError: () => setLive(false)
+    });
+    return () => source.close();
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      void refresh({ silent: true });
+      if (detailRef.current) {
+        void loadEvents(detailRef.current);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!snapshot || !detail) return;
+    const found = snapshot.requirements.find((item) => item.id === detail.id);
+    if (found) setDetail(found);
+  }, [snapshot, detail?.id]);
+
+  const workspaces = snapshot?.workspaces || [];
+  const requirements = snapshot?.requirements || [];
+  const scheduler = snapshot?.scheduler;
+
+  const workspaceName = useCallback((id: string) => workspaces.find((workspace) => workspace.id === id)?.name || '未绑定', [workspaces]);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return sortRequirements(requirements).filter((item) => {
+      if (workspaceFilter !== 'all' && item.workspaceId !== workspaceFilter) return false;
+      if (!needle) return true;
+      return `${item.title} ${item.description} ${workspaceName(item.workspaceId)}`.toLowerCase().includes(needle);
+    });
+  }, [requirements, query, workspaceFilter, workspaceName]);
+
+  const counts = useMemo(() => {
+    const result = { idea: 0, ready: 0, running: 0, review: 0, done: 0 };
+    for (const item of requirements) {
+      if (item.status === 'idea') result.idea += 1;
+      else if (item.status === 'ready') result.ready += 1;
+      else if (item.status === 'queued' || item.status === 'running' || item.status === 'waiting') result.running += 1;
+      else if (item.status === 'review') result.review += 1;
+      else if (item.status === 'done') result.done += 1;
+    }
+    return result;
+  }, [requirements]);
+
+  async function loadEvents(id: string) {
+    detailRef.current = id;
+    setEventsLoading(true);
+    try {
+      const list = await requirementsAPI.events(id);
+      setEvents(list);
+    } catch {
+      setEvents([]);
+    } finally {
+      setEventsLoading(false);
+    }
+  }
+
+  function openDetail(requirement: Requirement) {
+    setDetail(requirement);
+    setEvents([]);
+    void loadEvents(requirement.id);
+  }
+
+  function closeDetail() {
+    setDetail(null);
+    setEvents([]);
+    detailRef.current = '';
+  }
+
+  function openCreate() {
+    setEditing(null);
+    form.resetFields();
+    form.setFieldsValue({ status: 'idea', priority: 1, mode: 'plan', parallel: false, steps: [] });
+    setEditorOpen(true);
+  }
+
+  function openEdit(requirement: Requirement) {
+    setEditing(requirement);
+    form.setFieldsValue({
+      title: requirement.title,
+      description: requirement.description,
+      status: requirement.status,
+      priority: requirement.priority,
+      workspaceId: requirement.workspaceId || undefined,
+      mode: requirement.mode,
+      parallel: requirement.parallel,
+      steps: requirement.steps?.map((step) => ({ text: step.text })) || []
+    });
+    setEditorOpen(true);
+  }
+
+  async function submitEditor() {
+    try {
+      const values = await form.validateFields();
+      const steps: RequirementStep[] = (values.steps || [])
+        .map((step) => String(step?.text || '').trim())
+        .filter(Boolean)
+        .map((text) => ({ text, status: 'pending' as const }));
+      if (editing) {
+        const updated = await requirementsAPI.update(editing.id, {
+          title: values.title,
+          description: values.description || '',
+          priority: values.priority ?? 1,
+          workspaceId: values.workspaceId || '',
+          mode: values.mode || 'plan',
+          parallel: Boolean(values.parallel),
+          steps
+        });
+        setDetail(updated);
+        message.success('需求已更新');
+      } else {
+        await requirementsAPI.create({
+          title: values.title,
+          description: values.description || '',
+          status: values.status || 'idea',
+          priority: values.priority ?? 1,
+          workspaceId: values.workspaceId || undefined,
+          mode: values.mode || 'plan',
+          parallel: Boolean(values.parallel),
+          steps
+        });
+        message.success('需求已创建');
+      }
+      setEditorOpen(false);
+      await refresh({ silent: true });
+    } catch (submitError) {
+      if (submitError instanceof Error) message.error(submitError.message);
+    }
+  }
+
+  async function mutate(requirement: Requirement, action: 'confirm' | 'refine' | 'dispatch' | 'cancel' | 'done' | 'delete') {
+    if (action === 'delete') {
+      setBusyId(requirement.id);
+      try {
+        await requirementsAPI.remove(requirement.id);
+        if (detail?.id === requirement.id) closeDetail();
+        message.success('需求已删除');
+        await refresh({ silent: true });
+      } catch (deleteError) {
+        message.error(deleteError instanceof Error ? deleteError.message : '删除失败');
+      } finally {
+        setBusyId('');
+      }
+      return;
+    }
+    setBusyId(requirement.id);
+    try {
+      if (action === 'confirm') {
+        if (!requirement.workspaceId) {
+          message.warning('请先在详情或编辑中绑定工作区');
+          return;
+        }
+        await requirementsAPI.update(requirement.id, { status: 'ready' });
+        message.success('已确认进入排期');
+      } else if (action === 'refine') {
+        if (!requirement.workspaceId) {
+          message.warning('优化需求前必须指定工作区');
+          return;
+        }
+        message.loading({ content: 'AI 正在拆解需求…', key: 'refine', duration: 0 });
+        await requirementsAPI.refine(requirement.id, requirement.workspaceId);
+        message.success({ content: '需求已拆解', key: 'refine' });
+      } else if (action === 'dispatch') {
+        await requirementsAPI.dispatch(requirement.id, requirement.workspaceId);
+        message.success('已派发给执行会话');
+      } else if (action === 'cancel') {
+        await requirementsAPI.cancel(requirement.id);
+        message.success('已取消执行');
+      } else if (action === 'done') {
+        await requirementsAPI.update(requirement.id, { status: 'done' });
+        message.success('需求已验收');
+      }
+      await refresh({ silent: true });
+      if (detail?.id === requirement.id) await loadEvents(requirement.id);
+    } catch (actionError) {
+      if (action === 'refine') message.destroy('refine');
+      message.error(actionError instanceof Error ? actionError.message : '操作失败');
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  async function toggleStep(requirement: Requirement, index: number) {
+    const steps = requirement.steps.map((step, stepIndex) => stepIndex === index
+      ? { ...step, status: step.status === 'done' ? 'pending' as const : 'done' as const }
+      : step);
+    try {
+      await requirementsAPI.update(requirement.id, { steps });
+      await refresh({ silent: true });
+    } catch (stepError) {
+      message.error(stepError instanceof Error ? stepError.message : '步骤更新失败');
+    }
+  }
+
+  async function runScheduler() {
+    try {
+      await requirementsAPI.runScheduler();
+      message.success('调度器已执行一轮');
+      await refresh({ silent: true });
+    } catch (runError) {
+      message.error(runError instanceof Error ? runError.message : '调度失败');
+    }
+  }
+
+  async function toggleScheduler(enabled: boolean) {
+    try {
+      await requirementsAPI.updateScheduler({ ...(snapshot?.settings || {}), enabled });
+      message.success(enabled ? '调度器已启用' : '调度器已暂停');
+      await refresh({ silent: true });
+    } catch (toggleError) {
+      message.error(toggleError instanceof Error ? toggleError.message : '调度器设置失败');
+    }
+  }
+
+  function openSchedulerSettings() {
+    const settings = snapshot?.settings;
+    schedulerForm.setFieldsValue({
+      enabled: settings?.enabled ?? true,
+      provider: settings?.provider || 'agy',
+      model: settings?.model || 'gemini-4-neon-xhigh',
+      accountRef: settings?.accountRef || ''
+    });
+    setSchedulerOpen(true);
+  }
+
+  async function saveSchedulerSettings() {
+    try {
+      const values = await schedulerForm.validateFields();
+      await requirementsAPI.updateScheduler(values);
+      setSchedulerOpen(false);
+      message.success('调度器配置已保存');
+      await refresh({ silent: true });
+    } catch (saveError) {
+      if (saveError instanceof Error) message.error(saveError.message);
+    }
+  }
+
+  async function openWorkspaces() {
+    setWorkspaceOpen(true);
+    try {
+      const list = await sessionsAPI.getAllProjects();
+      setProjects(list || []);
+    } catch {
+      setProjects([]);
+    }
+  }
+
+  function openWorkspaceCreate() {
+    setEditingWorkspace(null);
+    workspaceForm.resetFields();
+    workspaceForm.setFieldsValue({
+      projectPaths: [{ path: '' }],
+      provider: 'agy',
+      model: 'gemini-4-neon-xhigh',
+      maxParallel: 1
+    });
+    setWorkspaceEditorOpen(true);
+  }
+
+  function openWorkspaceEdit(workspace: RequirementWorkspace) {
+    setEditingWorkspace(workspace);
+    workspaceForm.setFieldsValue({
+      name: workspace.name,
+      projectPaths: workspace.projectPaths.map((path) => ({ path })),
+      provider: workspace.provider,
+      model: workspace.model,
+      accountRef: workspace.accountRef,
+      maxParallel: workspace.maxParallel
+    });
+    setWorkspaceEditorOpen(true);
+  }
+
+  async function submitWorkspace() {
+    try {
+      const values = await workspaceForm.validateFields();
+      const projectPaths = (values.projectPaths || []).map((entry) => String(entry?.path || '').trim()).filter(Boolean);
+      if (!projectPaths.length) {
+        message.warning('至少需要一个项目路径');
+        return;
+      }
+      const payload = {
+        name: values.name,
+        projectPaths,
+        provider: values.provider || 'agy',
+        model: values.model || 'gemini-4-neon-xhigh',
+        accountRef: values.accountRef || '',
+        maxParallel: values.maxParallel || 1
+      };
+      if (editingWorkspace) {
+        await requirementsAPI.updateWorkspace(editingWorkspace.id, payload);
+        message.success('工作区已更新');
+      } else {
+        await requirementsAPI.createWorkspace(payload);
+        message.success('工作区已创建');
+      }
+      setWorkspaceEditorOpen(false);
+      await refresh({ silent: true });
+    } catch (submitError) {
+      if (submitError instanceof Error) message.error(submitError.message);
+    }
+  }
+
+  async function deleteWorkspace(workspace: RequirementWorkspace) {
+    try {
+      await requirementsAPI.removeWorkspace(workspace.id);
+      message.success('工作区已删除');
+      await refresh({ silent: true });
+    } catch (deleteError) {
+      message.error(deleteError instanceof Error ? deleteError.message : '删除失败');
+    }
+  }
+
+  async function submitImport() {
+    try {
+      const values = await importForm.validateFields();
+      const result = await requirementsAPI.import({
+        format: values.format,
+        content: values.content,
+        workspaceId: values.workspaceId
+      });
+      message.success(`已导入 ${result.count} 条需求`);
+      setImportOpen(false);
+      importForm.resetFields();
+      await refresh({ silent: true });
+    } catch (submitError) {
+      if (submitError instanceof Error) message.error(submitError.message);
+    }
+  }
+
+  async function moveRequirement(requirement: Requirement, direction: -1 | 1) {
+    const ordered = sortRequirements(requirements);
+    const index = ordered.findIndex((item) => item.id === requirement.id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= ordered.length) return;
+    const next = [...ordered];
+    const [moved] = next.splice(index, 1);
+    next.splice(target, 0, moved);
+    try {
+      const updated = await requirementsAPI.reorder(next.map((item) => item.id));
+      applySnapshot(updated);
+    } catch (moveError) {
+      message.error(moveError instanceof Error ? moveError.message : '排序失败');
+    }
+  }
+
+  const columns: ColumnsType<Requirement> = [
+    {
+      title: '需求',
+      dataIndex: 'title',
+      key: 'title',
+      render: (_value, record) => (
+        <button type="button" className={styles.titleLink} onClick={() => openDetail(record)}>
+          <span>{record.title}</span>
+          <span className={styles.titleMeta}>
+            {workspaceName(record.workspaceId)} · {record.parallel ? '可并行' : '顺序'}
+          </span>
+        </button>
+      )
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 110,
+      render: (status: RequirementStatus) => statusTag(status)
+    },
+    {
+      title: '优先级',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 90,
+      render: (priority: number) => <Tag color={priority === 0 ? 'red' : priority === 1 ? 'default' : 'blue'}>{PRIORITY_LABEL[priority] || '普通'}</Tag>
+    },
+    {
+      title: '模式',
+      dataIndex: 'mode',
+      key: 'mode',
+      width: 90,
+      render: (mode: RequirementMode) => modeTag(mode)
+    },
+    {
+      title: '进度',
+      dataIndex: 'progress',
+      key: 'progress',
+      width: 180,
+      render: (_value, record) => (
+        <div className={styles.progressCell}>
+          <Progress percent={progressOf(record)} size="small" showInfo={false} status={record.status === 'blocked' ? 'exception' : undefined} />
+          <span>{record.progressNote || `${progressOf(record)}%`}</span>
+        </div>
+      )
+    },
+    {
+      title: '步骤',
+      key: 'steps',
+      width: 90,
+      render: (_value, record) => `${stepsDone(record)}/${record.steps?.length || 0}`
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 190,
+      render: (_value, record) => (
+        <Space size={4} wrap>
+          <Button size="small" icon={<ArrowUpOutlined />} onClick={() => void moveRequirement(record, -1)} />
+          <Button size="small" icon={<ArrowDownOutlined />} onClick={() => void moveRequirement(record, 1)} />
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+          <Popconfirm title="删除这张需求？" onConfirm={() => void mutate(record, 'delete')}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      )
+    }
+  ];
+
+  const workspaceOptions = [
+    { label: '全部工作区', value: 'all' },
+    ...workspaces.map((workspace) => ({ label: workspace.name, value: workspace.id }))
+  ];
+
+  const requirementWorkspaceOptions = workspaces.map((workspace) => ({
+    label: `${workspace.name} · ${workspace.projectPaths[0] || ''}`,
+    value: workspace.id
+  }));
+
+  return (
+    <main className={`${styles.page} aih-panel-enter`}>
+      <header className={`${styles.hero} hud-panel hud-panel--sm`}>
+        <div className={styles.heroMain}>
+          <span className={styles.eyebrow}>SYS // REQUIREMENT OPS</span>
+          <h1>需求管理</h1>
+          <p>想法池、排期与 AI 执行进度在同一条流水线上。调度器按顺序派发，可并行的需求会并行完成。</p>
+          <div className={styles.metrics}>
+            <span><strong>{counts.idea}</strong><em>想法</em></span>
+            <span><strong>{counts.ready}</strong><em>待排期</em></span>
+            <span><strong>{counts.running}</strong><em>执行中</em></span>
+            <span><strong>{counts.review}</strong><em>待验收</em></span>
+            <span><strong>{counts.done}</strong><em>已完成</em></span>
+          </div>
+        </div>
+        <div className={styles.heroActions}>
+          <div className={styles.schedulerCard}>
+            <div className={styles.schedulerHead}>
+              <span className={styles.schedulerTitle}><RobotOutlined /> 调度器</span>
+              <Switch size="small" checked={Boolean(snapshot?.settings?.enabled)} onChange={(checked) => void toggleScheduler(checked)} />
+            </div>
+            <div className={styles.schedulerMeta}>
+              <Tag color="geekblue">{scheduler?.provider || 'agy'} / {scheduler?.model || 'gemini-4-neon-xhigh'}</Tag>
+              <span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span>
+            </div>
+            <div className={styles.schedulerStats}>
+              <span>运行 {scheduler?.running ?? 0}</span>
+              <span>待排 {scheduler?.ready ?? 0}</span>
+              <span>上次 {scheduler?.lastRun ? new Date(scheduler.lastRun).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span>
+            </div>
+            <Space size={4} wrap>
+              <Button size="small" icon={<ThunderboltOutlined />} onClick={() => void runScheduler()}>运行调度</Button>
+              <Button size="small" icon={<SettingOutlined />} onClick={openSchedulerSettings}>配置</Button>
+            </Space>
+          </div>
+          <div className={styles.primaryActions}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建需求</Button>
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
+            <Button icon={<FolderOpenOutlined />} onClick={() => void openWorkspaces()}>工作区</Button>
+          </div>
+        </div>
+      </header>
+
+      {error ? (
+        <div className={styles.inlineError} role="status">
+          <ExclamationCircleOutlined /> {error}
+          <Button size="small" type="link" onClick={() => void refresh()}>重试</Button>
+        </div>
+      ) : null}
+      {scheduler?.lastError ? (
+        <div className={styles.inlineNote} role="status">
+          <ClockCircleOutlined /> 调度器：{scheduler.lastError}
+        </div>
+      ) : null}
+
+      <section className={styles.toolbar}>
+        <Input.Search
+          allowClear
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索需求、描述或工作区"
+          className={styles.search}
+        />
+        <Select value={workspaceFilter} onChange={setWorkspaceFilter} options={workspaceOptions} className={styles.workspaceFilter} />
+        <Segmented
+          value={view}
+          onChange={(value) => setView(value as ViewMode)}
+          options={[
+            { label: '看板', value: 'kanban', icon: <AppstoreOutlined /> },
+            { label: '列表', value: 'list', icon: <UnorderedListOutlined /> }
+          ]}
+        />
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refresh()}>刷新</Button>
+      </section>
+
+      {view === 'kanban' ? (
+        <section className={styles.board}>
+          {COLUMNS.map((column) => {
+            const items = filtered.filter((item) => column.statuses.includes(item.status));
+            return (
+              <div key={column.key} className={styles.column}>
+                <div className={styles.columnHead}>
+                  <span>{column.title}</span>
+                  <Badge count={items.length} showZero color="var(--color-muted)" />
+                </div>
+                <div className={styles.columnBody}>
+                  {items.length === 0 ? <div className={styles.columnEmpty}>暂无需求</div> : items.map((item) => renderCard(item))}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      ) : (
+        <Card className={styles.tableCard} bordered={false}>
+          <Table<Requirement>
+            rowKey="id"
+            size="small"
+            columns={columns}
+            dataSource={filtered}
+            pagination={false}
+            scroll={{ x: 980 }}
+            locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有需求" /> }}
+          />
+        </Card>
+      )}
+
+      <Drawer
+        open={Boolean(detail)}
+        onClose={closeDetail}
+        width={620}
+        title={detail ? <span className={styles.drawerTitle}>{detail.title} {statusTag(detail.status)}</span> : '需求详情'}
+        extra={detail ? (
+          <Space size={4} wrap>
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(detail)}>编辑</Button>
+            {detail.status === 'idea' ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => void mutate(detail, 'confirm')}>确认排期</Button> : null}
+            {detail.status === 'ready' ? <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => void mutate(detail, 'dispatch')}>立即执行</Button> : null}
+            {detail.status === 'review' ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => void mutate(detail, 'done')}>验收完成</Button> : null}
+            {detail.status === 'blocked' ? <Button size="small" icon={<ReloadOutlined />} onClick={() => void mutate(detail, 'confirm')}>重新排期</Button> : null}
+            {['queued', 'running', 'waiting'].includes(detail.status) ? <Button size="small" icon={<PauseCircleOutlined />} onClick={() => void mutate(detail, 'cancel')}>取消</Button> : null}
+          </Space>
+        ) : null}
+      >
+        {detail ? (
+          <div className={styles.detail}>
+            <div className={styles.detailTags}>
+              {statusTag(detail.status)}
+              {modeTag(detail.mode)}
+              <Tag>{workspaceName(detail.workspaceId)}</Tag>
+              <Tag color={detail.parallel ? 'green' : 'default'}>{detail.parallel ? '可并行' : '顺序执行'}</Tag>
+              {detail.source !== 'manual' ? <Tag color="gold">{detail.source}</Tag> : null}
+            </div>
+            <div className={styles.detailProgress}>
+              <Progress percent={progressOf(detail)} status={detail.status === 'blocked' ? 'exception' : undefined} />
+              <span>{detail.progressNote || '等待调度'}</span>
+            </div>
+            {detail.lastError ? <div className={styles.inlineError}><ExclamationCircleOutlined /> {detail.lastError}</div> : null}
+            <section className={styles.detailSection}>
+              <h3>描述</h3>
+              <pre className={styles.description}>{detail.description || '暂无描述'}</pre>
+            </section>
+            <section className={styles.detailSection}>
+              <div className={styles.sectionHead}>
+                <h3>执行步骤</h3>
+                <Button
+                  size="small"
+                  icon={<RobotOutlined />}
+                  loading={busyId === detail.id}
+                  onClick={() => void mutate(detail, 'refine')}
+                >
+                  AI 拆解
+                </Button>
+              </div>
+              {detail.steps?.length ? (
+                <ul className={styles.steps}>
+                  {detail.steps.map((step, index) => (
+                    <li key={`${detail.id}-${index}`} data-done={step.status === 'done'}>
+                      <button type="button" onClick={() => void toggleStep(detail, index)} aria-label={step.status === 'done' ? '标记未完成' : '标记完成'}>
+                        <CheckCircleOutlined />
+                      </button>
+                      <span>{step.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <div className={styles.muted}>还没有拆解步骤。指定工作区后可以让 AI 生成 1..n 步。</div>}
+            </section>
+            {detail.sessionId ? (
+              <section className={styles.detailSection}>
+                <h3>执行会话</h3>
+                <div className={styles.sessionRow}>
+                  <Tag color="geekblue">{detail.sessionId}</Tag>
+                  <Button
+                    size="small"
+                    icon={<LinkOutlined />}
+                    href={`/projects/office?session=${encodeURIComponent(detail.sessionId)}`}
+                  >
+                    在项目办公室打开
+                  </Button>
+                </div>
+                {detail.peerMessageId ? <div className={styles.muted}>peer 任务：{detail.peerMessageId}</div> : null}
+              </section>
+            ) : null}
+            <section className={styles.detailSection}>
+              <h3>时间线</h3>
+              {eventsLoading ? <div className={styles.muted}>加载中…</div> : events.length ? (
+                <ul className={styles.timeline}>
+                  {events.map((event) => (
+                    <li key={event.id}>
+                      <span className={styles.timelineDot} />
+                      <div>
+                        <strong>{event.message}</strong>
+                        <span>{formatTime(event.at)} · {event.kind}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : <div className={styles.muted}>暂无记录</div>}
+            </section>
+          </div>
+        ) : null}
+      </Drawer>
+
+      <Modal
+        open={editorOpen}
+        title={editing ? '编辑需求' : '新建需求'}
+        onCancel={() => setEditorOpen(false)}
+        onOk={() => void submitEditor()}
+        okText={editing ? '保存' : '创建'}
+        width={640}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical" className={styles.form}>
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入需求标题' }]}>
+            <Input placeholder="例如：把需求管理接入项目办公室" />
+          </Form.Item>
+          <Form.Item name="description" label="描述">
+            <Input.TextArea rows={5} placeholder="可以很短、很模糊；确认后可用 AI 拆解成 1..n 步。" />
+          </Form.Item>
+          <div className={styles.formRow}>
+            <Form.Item name="status" label="状态" initialValue="idea">
+              <Select
+                options={[
+                  { label: '想法（未确认）', value: 'idea' },
+                  { label: '待排期（已确认）', value: 'ready' }
+                ]}
+                disabled={Boolean(editing)}
+              />
+            </Form.Item>
+            <Form.Item name="priority" label="优先级" initialValue={1}>
+              <Select options={[{ label: '高', value: 0 }, { label: '普通', value: 1 }, { label: '低', value: 2 }]} />
+            </Form.Item>
+          </div>
+          <div className={styles.formRow}>
+            <Form.Item name="workspaceId" label="工作区">
+              <Select allowClear options={requirementWorkspaceOptions} placeholder="选择唯一工作区" />
+            </Form.Item>
+            <Form.Item name="mode" label="执行模式" initialValue="plan">
+              <Select options={[{ label: 'plan · 先计划', value: 'plan' }, { label: 'goal · 目标驱动', value: 'goal' }, { label: 'loop · 循环推进', value: 'loop' }]} />
+            </Form.Item>
+          </div>
+          <Form.Item name="parallel" label="允许并行" valuePropName="checked" initialValue={false}>
+            <Switch checkedChildren="并行" unCheckedChildren="顺序" />
+          </Form.Item>
+          <Form.Item label="步骤（可留空，由 AI 拆解）">
+            <Form.List name="steps">
+              {(fields, { add, remove }) => (
+                <div className={styles.stepEditor}>
+                  {fields.map((field, index) => (
+                    <div key={field.key} className={styles.stepEditorRow}>
+                      <span className={styles.stepIndex}>{index + 1}</span>
+                      <Form.Item name={[field.name, 'text']} noStyle>
+                        <Input placeholder="步骤内容" />
+                      </Form.Item>
+                      <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                    </div>
+                  ))}
+                  <Button size="small" icon={<PlusOutlined />} onClick={() => add({ text: '' })}>添加步骤</Button>
+                </div>
+              )}
+            </Form.List>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={importOpen}
+        title="导入 TodoList"
+        onCancel={() => setImportOpen(false)}
+        onOk={() => void submitImport()}
+        okText="导入"
+        width={680}
+        destroyOnClose
+      >
+        <Form form={importForm} layout="vertical" initialValues={{ format: 'auto' }}>
+          <div className={styles.formRow}>
+            <Form.Item name="format" label="格式">
+              <Select options={[
+                { label: '自动识别', value: 'auto' },
+                { label: 'Markdown 清单', value: 'markdown' },
+                { label: 'Todoist JSON', value: 'todoist' },
+                { label: 'Trello JSON', value: 'trello' },
+                { label: 'CSV', value: 'csv' },
+                { label: '通用 JSON', value: 'json' }
+              ]} />
+            </Form.Item>
+            <Form.Item name="workspaceId" label="导入后分配工作区">
+              <Select allowClear options={requirementWorkspaceOptions} placeholder="留空则先进入想法池" />
+            </Form.Item>
+          </div>
+          <Form.Item name="content" label="内容" rules={[{ required: true, message: '粘贴要导入的内容' }]}>
+            <Input.TextArea rows={10} placeholder="支持 - [ ] 任务、Todoist/Trello 导出 JSON、CSV 或通用 JSON。" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={workspaceOpen}
+        title="工作区"
+        onCancel={() => setWorkspaceOpen(false)}
+        footer={<Button onClick={() => setWorkspaceOpen(false)}>关闭</Button>}
+        width={760}
+      >
+        <div className={styles.workspaceToolbar}>
+          <span>工作区绑定一个或多个项目路径；需求调度时必须且只能选择一个。</span>
+          <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openWorkspaceCreate}>新建工作区</Button>
+        </div>
+        <div className={styles.workspaceList}>
+          {workspaces.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有工作区" /> : workspaces.map((workspace) => (
+            <div key={workspace.id} className={styles.workspaceItem}>
+              <div className={styles.workspaceMain}>
+                <strong>{workspace.name}</strong>
+                <div className={styles.workspacePaths}>
+                  {workspace.projectPaths.map((path) => <code key={path}>{path}</code>)}
+                </div>
+                <div className={styles.workspaceMeta}>
+                  <Tag>{workspace.provider || 'agy'}</Tag>
+                  <Tag>{workspace.model || 'gemini-4-neon-xhigh'}</Tag>
+                  <Tag color="blue">并行 {workspace.maxParallel}</Tag>
+                </div>
+              </div>
+              <Space size={4}>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openWorkspaceEdit(workspace)} />
+                <Popconfirm title="删除这个工作区？" onConfirm={() => void deleteWorkspace(workspace)}>
+                  <Button size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={workspaceEditorOpen}
+        title={editingWorkspace ? '编辑工作区' : '新建工作区'}
+        onCancel={() => setWorkspaceEditorOpen(false)}
+        onOk={() => void submitWorkspace()}
+        okText="保存"
+        width={640}
+        destroyOnClose
+      >
+        <Form form={workspaceForm} layout="vertical">
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入工作区名称' }]}>
+            <Input placeholder="例如：AIH 主仓" />
+          </Form.Item>
+          <Form.Item label="项目路径" required>
+            <Form.List name="projectPaths">
+              {(fields, { add, remove }) => (
+                <div className={styles.pathEditor}>
+                  {fields.map((field) => (
+                    <div key={field.key} className={styles.stepEditorRow}>
+                      <Form.Item name={[field.name, 'path']} noStyle>
+                        <Input placeholder="/absolute/path/to/project" />
+                      </Form.Item>
+                      <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                    </div>
+                  ))}
+                  <Space wrap>
+                    <Button size="small" icon={<PlusOutlined />} onClick={() => add({ path: '' })}>添加路径</Button>
+                    <Select
+                      size="small"
+                      showSearch
+                      placeholder="从已有项目添加"
+                      style={{ minWidth: 220 }}
+                      value={null}
+                      options={projects.map((project) => ({ label: `${project.name} · ${project.path}`, value: project.path }))}
+                      onChange={(value) => {
+                        const current = (workspaceForm.getFieldValue('projectPaths') || []) as Array<{ path?: string }>;
+                        const exists = current.some((entry) => entry?.path === value);
+                        if (!exists) add({ path: value });
+                      }}
+                    />
+                  </Space>
+                </div>
+              )}
+            </Form.List>
+          </Form.Item>
+          <div className={styles.formRow}>
+            <Form.Item name="provider" label="Provider">
+              <Input placeholder="agy" />
+            </Form.Item>
+            <Form.Item name="model" label="Model">
+              <Input placeholder="gemini-4-neon-xhigh" />
+            </Form.Item>
+          </div>
+          <div className={styles.formRow}>
+            <Form.Item name="accountRef" label="固定账号（可选）">
+              <Input placeholder="留空则由网关自动选号" />
+            </Form.Item>
+            <Form.Item name="maxParallel" label="最大并行数">
+              <InputNumber min={1} max={4} style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={schedulerOpen}
+        title="调度器配置"
+        onCancel={() => setSchedulerOpen(false)}
+        onOk={() => void saveSchedulerSettings()}
+        okText="保存"
+        width={560}
+        destroyOnClose
+      >
+        <Form form={schedulerForm} layout="vertical">
+          <Form.Item name="enabled" label="自动调度" valuePropName="checked">
+            <Switch checkedChildren="启用" unCheckedChildren="暂停" />
+          </Form.Item>
+          <div className={styles.formRow}>
+            <Form.Item name="provider" label="Provider">
+              <Input placeholder="agy" />
+            </Form.Item>
+            <Form.Item name="model" label="Model">
+              <Input placeholder="gemini-4-neon-xhigh" />
+            </Form.Item>
+          </div>
+          <Form.Item name="accountRef" label="固定账号（可选）">
+            <Input placeholder="留空则由网关自动选号" />
+          </Form.Item>
+          <div className={styles.muted}>执行会话由 AWS Server 上的 AGY 启动，模型默认为 gemini-4-neon-xhigh。</div>
+        </Form>
+      </Modal>
+    </main>
+  );
+
+  function renderCard(requirement: Requirement) {
+    const isBusy = busyId === requirement.id;
+    const isActive = ['queued', 'running', 'waiting'].includes(requirement.status);
+    return (
+      <article
+        key={requirement.id}
+        className={styles.card}
+        data-status={requirement.status}
+        onClick={() => openDetail(requirement)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') openDetail(requirement);
+        }}
+      >
+        <div className={styles.cardHead}>
+          <span className={styles.priorityDot} data-priority={requirement.priority} />
+          <h3>{requirement.title}</h3>
+          <span className={styles.cardStatus}>{statusTag(requirement.status)}</span>
+        </div>
+        {requirement.description ? <p className={styles.cardDescription}>{requirement.description}</p> : null}
+        <div className={styles.cardMeta}>
+          <Tag icon={<FolderOpenOutlined />}>{workspaceName(requirement.workspaceId)}</Tag>
+          {modeTag(requirement.mode)}
+          {requirement.parallel ? <Tag color="green">并行</Tag> : null}
+          {requirement.steps?.length ? <span className={styles.cardSteps}>{stepsDone(requirement)}/{requirement.steps.length} 步</span> : null}
+        </div>
+        {(isActive || requirement.status === 'review' || requirement.status === 'done') ? (
+          <div className={styles.cardProgress}>
+            <Progress percent={progressOf(requirement)} size="small" status={requirement.status === 'blocked' ? 'exception' : undefined} />
+            <span>{requirement.progressNote || '等待执行'}</span>
+          </div>
+        ) : null}
+        <div className={styles.cardActions} onClick={(event) => event.stopPropagation()}>
+          <Tooltip title="AI 拆解">
+            <Button size="small" icon={<RobotOutlined />} loading={isBusy} disabled={!requirement.workspaceId} onClick={() => void mutate(requirement, 'refine')} />
+          </Tooltip>
+          {requirement.status === 'idea' ? (
+            <Tooltip title="确认进入排期">
+              <Button size="small" icon={<CheckCircleOutlined />} loading={isBusy} disabled={!requirement.workspaceId} onClick={() => void mutate(requirement, 'confirm')} />
+            </Tooltip>
+          ) : null}
+          {requirement.status === 'ready' ? (
+            <Tooltip title="立即执行">
+              <Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'dispatch')} />
+            </Tooltip>
+          ) : null}
+          {requirement.status === 'review' ? (
+            <Tooltip title="验收完成">
+              <Button size="small" icon={<CheckCircleOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'done')} />
+            </Tooltip>
+          ) : null}
+          {requirement.status === 'blocked' ? (
+            <Tooltip title="重新排期">
+              <Button size="small" icon={<ReloadOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'confirm')} />
+            </Tooltip>
+          ) : null}
+          {isActive ? (
+            <Tooltip title="取消执行">
+              <Button size="small" icon={<PauseCircleOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'cancel')} />
+            </Tooltip>
+          ) : null}
+          <span className={styles.cardTime}>{new Date(requirement.updatedAt).toLocaleString('zh-CN', { hour12: false })}</span>
+        </div>
+      </article>
+    );
+  }
+}

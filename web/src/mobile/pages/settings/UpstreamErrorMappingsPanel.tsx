@@ -166,7 +166,7 @@ export default function UpstreamErrorMappingsPanel() {
                   <span className="mhud-row__side">
                     <span className={`mhud-status ${enabled ? 'mhud-tone--ok' : 'mhud-tone--muted'}`}>
                       <span className={`hud-led ${enabled ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
-                      {enabled ? 'ON' : 'OFF'}
+                      {enabled ? '已启用' : '已停用'}
                     </span>
                   </span>
                 </SwipeRow>

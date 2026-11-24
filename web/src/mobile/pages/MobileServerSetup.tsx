@@ -249,12 +249,9 @@ export default function MobileServerSetup(_props: MobilePageProps) {
   return (
     <MobilePage
       lead={
-        <>
-          使用 Server 网关地址和 Management Key 连接 AIH Server
-          {setup.bootstrapIssue === 'unauthorized'
-            ? ' · Management Key 无效或缺失，请重新授权'
-            : null}
-        </>
+        setup.bootstrapIssue === 'unauthorized'
+          ? 'Management Key 无效或缺失，请重新授权后进入工作台。'
+          : '配置网关地址与 Management Key，连接并管理 AIH Server。'
       }
       toolbar={(
         <MobileToolbar>

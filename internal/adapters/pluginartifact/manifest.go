@@ -47,10 +47,11 @@ const (
 )
 
 var (
-	manifestSchemaOnce  sync.Once
-	manifestSchemaValue *Schema
-	manifestSchemaErr   error
-	capabilityVersions  = buildCapabilityVersions()
+	manifestSchemaOnce   sync.Once
+	manifestSchemaValue  *Schema
+	manifestSchemaErr    error
+	capabilityVersions   = buildCapabilityVersions()
+	reservedCapabilities = buildReservedCapabilities()
 )
 
 func buildCapabilityVersions() map[string]int {
@@ -59,6 +60,21 @@ func buildCapabilityVersions() map[string]int {
 		versions[capability.ID] = capability.Version
 	}
 	return versions
+}
+
+func buildReservedCapabilities() map[string]bool {
+	reserved := make(map[string]bool)
+	for _, capability := range plugincontract.Capabilities {
+		if capability.Reserved {
+			reserved[capability.ID] = true
+		}
+	}
+	return reserved
+}
+
+// CapabilityReserved 报告合同里是否把该能力标记为预留（尚无运行时调用点）。
+func CapabilityReserved(id string) bool {
+	return reservedCapabilities[id]
 }
 
 var accountCapabilities = map[string]bool{
@@ -313,6 +329,9 @@ func normalizeManifest(input map[string]any) map[string]any {
 	normalized := make(map[string]any, len(input))
 	for key, value := range input {
 		normalized[key] = value
+	}
+	if kind, _ := normalized["kind"].(string); strings.TrimSpace(kind) == "" {
+		normalized["kind"] = "capability"
 	}
 	permissions, ok := input["permissions"].(map[string]any)
 	if !ok {

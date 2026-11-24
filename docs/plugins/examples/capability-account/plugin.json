@@ -1,0 +1,30 @@
+{
+  "manifestVersion": 1,
+  "kind": "capability",
+  "protocolVersion": 1,
+  "pluginId": "example.account",
+  "version": "0.1.0",
+  "engines": { "aih": ">=1.0.0", "node": ">=20" },
+  "runtime": "node",
+  "entry": "index.js",
+  "permissions": {
+    "network": [],
+    "filesystem": { "read": [], "write": [] },
+    "secrets": [],
+    "environment": []
+  },
+  "contributes": [
+    {
+      "id": "example.account.source",
+      "capability": "account.source",
+      "version": 1,
+      "scope": { "providers": ["example"] }
+    },
+    {
+      "id": "example.account.login",
+      "capability": "account.login",
+      "version": 1,
+      "scope": { "providers": ["example"] }
+    }
+  ]
+}

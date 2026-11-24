@@ -1190,28 +1190,56 @@ func planExecOptions(timeout time.Duration, baseEnv, planEnv map[string]string) 
 //
 // 其它（原生 exe 安装器、msiexec 等）一律按不可代理处理：宁可明确拒绝，
 // 也不能让用户以为走了代理。
+// planHonorsProxy 判断一条 Windows 计划能否保证**本轮**的下载走任务期代理。
+//
+// 判断依据是「这个可执行文件读不读代理配置」，不是「它是不是我们写的脚本」。
+// 先前按命令名白名单判，误判了两类：把「PowerShell 里用 curl.exe 下载再
+// Start-Process 跑 exe」当成不可代理（其实完全受控），以及把 uv 当成不可代理
+// （它读 HTTP(S)_PROXY，见官方环境变量文档）。
+//
+// 可代理（有依据）：
+//   - npm / npm.cmd：读 npm_config_proxy 与 HTTP(S)_PROXY
+//   - uv / uv.exe  ：读 HTTP(S)_PROXY
+//   - cmd 计划     ：curl 读 HTTPS_PROXY
+//   - PowerShell   ：计划内已注入 DefaultWebProxy（覆盖 irm 与 curl.exe）
+//
+// 不可代理（真机确认）：
+//   - winget.exe：死代理下仍能访问源，既不读环境变量也不读 DefaultWebProxy
+//
+// 其余 OEM 安装器（msiexec、Inno Setup、NSIS 的 exe）分两种情形：
+//   * 若计划由我们下载再执行（buildWindowsExecutableInstallPlan），下载那步
+//     走 curl/Invoke-WebRequest，已受控——按可代理处理；
+//   * 若是裸调用安装器让它自己联网，则无法保证，按不可代理处理。
 func planHonorsProxy(plan LifecyclePlan) bool {
-	switch strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command))) {
-	case "npm", "npm.cmd":
+	command := strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command)))
+	switch command {
+	case "winget", "winget.exe":
+		return false
+	case "npm", "npm.cmd", "uv", "uv.exe":
 		return true
 	case "cmd", "cmd.exe":
 		// 我们的 cmd 计划用 curl 下载；凭据在 HTTPS_PROXY 里，curl 认。
-		for _, arg := range plan.Args {
-			if strings.Contains(arg, "curl") {
-				return true
-			}
-		}
-		return false
+		return argsMention(plan.Args, "curl")
 	case "powershell", "powershell.exe", "pwsh", "pwsh.exe":
-		for _, arg := range plan.Args {
-			if strings.Contains(arg, "DefaultWebProxy") {
-				return true
-			}
-		}
+		// 注入了 DefaultWebProxy，或计划内自己用 curl 下载，两者都受控。
+		return argsMention(plan.Args, "DefaultWebProxy") || argsMention(plan.Args, "curl")
+	case "msiexec", "msiexec.exe":
+		// 裸 msiexec 拉 URL 时会自己联网，我们无法注入代理。
 		return false
 	default:
 		return false
 	}
+}
+
+// argsMention 判断任一参数里出现 token（大小写不敏感）。
+func argsMention(args []string, token string) bool {
+	token = strings.ToLower(token)
+	for _, arg := range args {
+		if strings.Contains(strings.ToLower(arg), token) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatExecFailure(res environment.RunResult) string {
@@ -1245,4 +1273,13 @@ func truncateJobString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen]
+}
+
+// ProxySupport 返回该计划对任务期代理的支持情况，用于诊断与真实核对。
+// yes：计划内确有代理机制；no：完全没有（proxyActive 时会被剔除）。
+func ProxySupport(plan LifecyclePlan) string {
+	if planHonorsProxy(plan) {
+		return "yes"
+	}
+	return "NO"
 }

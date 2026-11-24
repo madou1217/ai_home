@@ -362,7 +362,7 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		model = "gemini-4-neon-xhigh"
 	}
 	effort := strings.ToLower(strings.TrimSpace(request.Effort))
-	if effort == "" {
+	if effort == "" && provider != "agy" {
 		effort = "xhigh"
 	}
 	accountRef := strings.TrimSpace(request.AccountRef)

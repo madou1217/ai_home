@@ -25,9 +25,10 @@ import {
   Progress, Segmented, Select, Space, Switch, Table, Tag, Tooltip, message
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { sessionsAPI, sshHostsAPI } from '@/services/api';
+import { accountsAPI, modelsAPI, sessionsAPI, sshHostsAPI } from '@/services/api';
 import type { AggregatedProject } from '@/types';
 import type { SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
+import { chatRuntimeProviders } from '@/features/chat-runtime/runtime-provider-registry';
 import {
   requirementsAPI,
   type Requirement,
@@ -56,6 +57,11 @@ const EXECUTION_LABEL: Record<string, string> = { native: '原生账号', relay:
 
 function executionLabel(value: string): string {
   return EXECUTION_LABEL[value] || (value ? value : '自动选号');
+}
+
+function effortFromModel(model: string): string {
+  const match = /-(low|medium|high|xhigh)$/.exec(String(model || '').toLowerCase());
+  return match ? match[1] : '';
 }
 const COLUMNS: Array<{ key: string; title: string; statuses: RequirementStatus[] }> = [
   { key: 'idea', title: '想法池', statuses: ['idea'] },
@@ -117,10 +123,17 @@ export default function RequirementsBoard() {
   const [projects, setProjects] = useState<AggregatedProject[]>([]);
   const [sshWorkspaces, setSshWorkspaces] = useState<SshWorkspace[]>([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [schedulerProviders, setSchedulerProviders] = useState<string[]>([]);
+  const [schedulerModels, setSchedulerModels] = useState<Record<string, string[]>>({});
+  const [schedulerLabels, setSchedulerLabels] = useState<Record<string, Record<string, string>>>({});
+  const [schedulerOptionsLoading, setSchedulerOptionsLoading] = useState(false);
+  const [schedulerOptionsError, setSchedulerOptionsError] = useState('');
   const [form] = Form.useForm<RequirementFormValues>();
   const [importForm] = Form.useForm<{ format: string; workspacePath?: string; content: string }>();
   const [schedulerForm] = Form.useForm<{ enabled: boolean; provider: string; model: string; accountRef?: string; reasoningEffort?: string; maxParallel?: number }>();
   const detailRef = useRef<string>('');
+  const schedulerProvider = Form.useWatch('provider', schedulerForm);
+  const schedulerModel = Form.useWatch('model', schedulerForm);
 
   const applySnapshot = useCallback((next: RequirementSnapshot) => { setSnapshot(next); setError(''); }, []);
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
@@ -137,6 +150,32 @@ export default function RequirementsBoard() {
       setSshWorkspaces(Array.isArray(sshList) ? sshList as SshWorkspace[] : []);
     } catch { setProjects([]); setSshWorkspaces([]); }
     finally { setWorkspacesLoading(false); }
+  }, []);
+
+  const loadSchedulerOptions = useCallback(async () => {
+    setSchedulerOptionsLoading(true);
+    setSchedulerOptionsError('');
+    try {
+      const [accountResult, catalog] = await Promise.all([accountsAPI.list(), modelsAPI.listCatalog()]);
+      const supported = new Set(chatRuntimeProviders.providers().map(String));
+      const providers = new Set<string>();
+      for (const account of accountResult.accounts || []) {
+        const provider = String(account.provider || '');
+        if (!provider || !supported.has(provider)) continue;
+        if ((account as { gateway?: boolean }).gateway) continue;
+        providers.add(provider);
+      }
+      setSchedulerProviders(Array.from(providers).sort());
+      setSchedulerModels(catalog.models || {});
+      setSchedulerLabels(catalog.labels || {});
+    } catch (optionError) {
+      setSchedulerOptionsError(optionError instanceof Error ? optionError.message : '无法读取可用 Provider / 模型目录');
+      setSchedulerProviders([]);
+      setSchedulerModels({});
+      setSchedulerLabels({});
+    } finally {
+      setSchedulerOptionsLoading(false);
+    }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -218,6 +257,56 @@ export default function RequirementsBoard() {
     }
     return result;
   }, [requirements]);
+
+  const schedulerProviderOptions = useMemo(() => {
+    const providers = new Set(schedulerProviders);
+    const current = snapshot?.settings?.provider;
+    if (current) providers.add(current);
+    return Array.from(providers).sort().map((provider) => ({ label: provider, value: provider }));
+  }, [schedulerProviders, snapshot?.settings?.provider]);
+
+  const schedulerModelOptions = useMemo(() => {
+    const provider = String(schedulerProvider || '');
+    const models = new Set(schedulerModels[provider] || []);
+    const current = snapshot?.settings?.model;
+    if (provider && provider === snapshot?.settings?.provider && current) models.add(current);
+    return Array.from(models).sort().map((model) => ({
+      label: schedulerLabels[provider]?.[model] || model,
+      value: model
+    }));
+  }, [schedulerLabels, schedulerModels, schedulerProvider, snapshot?.settings?.model, snapshot?.settings?.provider]);
+
+  const derivedSchedulerEffort = effortFromModel(String(schedulerModel || ''));
+  const schedulerEffortDisabled = Boolean(derivedSchedulerEffort) || schedulerProvider === 'agy';
+  const schedulerEffortOptions = useMemo(() => {
+    if (derivedSchedulerEffort) return [{ label: `${derivedSchedulerEffort}（由模型决定）`, value: derivedSchedulerEffort }];
+    if (schedulerProvider === 'agy') return [{ label: '默认（由模型决定）', value: '' }];
+    return ['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => ({ label: effort, value: effort }));
+  }, [derivedSchedulerEffort, schedulerProvider]);
+
+  function effectiveSchedulerEffort(provider: string | undefined, model: string, fallback?: string): string {
+    const derived = effortFromModel(model);
+    if (derived) return derived;
+    if (provider === 'agy') return '';
+    return fallback || 'xhigh';
+  }
+
+  function handleSchedulerProviderChange(provider: string): void {
+    const firstModel = (schedulerModels[provider] || [])[0] || '';
+    schedulerForm.setFieldsValue({
+      provider,
+      model: firstModel,
+      reasoningEffort: effectiveSchedulerEffort(provider, firstModel, ''),
+      accountRef: ''
+    });
+  }
+
+  function handleSchedulerModelChange(model: string): void {
+    schedulerForm.setFieldsValue({
+      model,
+      reasoningEffort: effectiveSchedulerEffort(schedulerProvider, model, schedulerForm.getFieldValue('reasoningEffort'))
+    });
+  }
 
   async function loadEvents(id: string) {
     detailRef.current = id; setEventsLoading(true);
@@ -321,12 +410,18 @@ export default function RequirementsBoard() {
   }
   function openSchedulerSettings() {
     const settings = snapshot?.settings;
-		schedulerForm.setFieldsValue({
-      enabled: settings?.enabled ?? true, provider: settings?.provider || 'agy',
-      model: settings?.model || 'gemini-4-neon-xhigh', accountRef: settings?.accountRef || '',
-      reasoningEffort: settings?.reasoningEffort || 'xhigh', maxParallel: settings?.maxParallel || 2
+    const provider = settings?.provider || 'agy';
+    const model = settings?.model || 'gemini-4-neon-xhigh';
+    schedulerForm.setFieldsValue({
+      enabled: settings?.enabled ?? true,
+      provider,
+      model,
+      accountRef: settings?.accountRef || '',
+      reasoningEffort: effectiveSchedulerEffort(provider, model, settings?.reasoningEffort || 'xhigh'),
+      maxParallel: settings?.maxParallel || 2
     });
     setSchedulerOpen(true);
+    void loadSchedulerOptions();
   }
   async function saveSchedulerSettings() {
     try { await requirementsAPI.updateScheduler(await schedulerForm.validateFields()); setSchedulerOpen(false); message.success('调度器配置已保存'); await refresh({ silent: true }); }
@@ -400,7 +495,7 @@ export default function RequirementsBoard() {
             <span className={styles.assignmentArrow}>→</span>
             <Tag color="geekblue">{requirement.assignedProvider || '—'}</Tag>
             <Tag>{requirement.assignedModel || '—'}</Tag>
-            <Tag color="cyan">{requirement.assignedEffort || '—'}</Tag>
+            <Tag color="cyan">{requirement.assignedEffort || '默认'}</Tag>
             <span className={styles.assignmentExecution}>{executionLabel(requirement.assignedExecution)}</span>
           </div>
         ) : null}
@@ -436,7 +531,7 @@ export default function RequirementsBoard() {
         <div className={styles.heroActions}>
           <div className={styles.schedulerCard}>
             <div className={styles.schedulerHead}><span className={styles.schedulerTitle}><RobotOutlined /> 调度器</span><Switch size="small" checked={Boolean(snapshot?.settings?.enabled)} onChange={(checked) => void toggleScheduler(checked)} /></div>
-            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || 'agy'} / {scheduler?.model || 'gemini-4-neon-xhigh'} / {scheduler?.reasoningEffort || 'xhigh'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
+            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || 'agy'} / {scheduler?.model || 'gemini-4-neon-xhigh'} / {scheduler?.reasoningEffort || '默认'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
             <div className={styles.schedulerStats}><span>运行 {scheduler?.running ?? 0}</span><span>并行 {scheduler?.maxParallel ?? 2}</span><span>上次 {scheduler?.lastRun ? new Date(scheduler.lastRun).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span></div>
             <Space size={4} wrap><Button size="small" icon={<ThunderboltOutlined />} onClick={() => void runScheduler()}>运行调度</Button><Button size="small" icon={<SettingOutlined />} onClick={openSchedulerSettings}>配置</Button></Space>
           </div>
@@ -512,7 +607,7 @@ export default function RequirementsBoard() {
                   <div><span>执行方式</span><strong>{executionLabel(detail.assignedExecution)}</strong></div>
                   <div><span>账号</span><strong>{detail.assignedAccountRef || '自动选号'}</strong></div>
                   <div><span>模型</span><strong>{detail.assignedModel || '—'}</strong></div>
-                  <div><span>思考强度</span><strong>{detail.assignedEffort || '—'}</strong></div>
+                  <div><span>思考强度</span><strong>{detail.assignedEffort || '默认（由模型决定）'}</strong></div>
                   <div><span>分配时间</span><strong>{formatTime(detail.assignedAt)}</strong></div>
                   <div><span>会话</span><strong>{detail.sessionId || '—'}</strong></div>
                 </div>
@@ -598,16 +693,31 @@ export default function RequirementsBoard() {
       <Modal open={schedulerOpen} title="调度器配置" onCancel={() => setSchedulerOpen(false)} onOk={() => void saveSchedulerSettings()} okText="保存" width={560} destroyOnClose>
         <Form form={schedulerForm} layout="vertical">
           <Form.Item name="enabled" label="自动调度" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="暂停" /></Form.Item>
+          {schedulerOptionsError ? <div className={styles.inlineError} role="status"><ExclamationCircleOutlined /> {schedulerOptionsError}</div> : null}
           <div className={styles.formRow}>
-            <Form.Item name="provider" label="Provider"><Input placeholder="agy" /></Form.Item>
-            <Form.Item name="model" label="Model"><Input placeholder="gemini-4-neon-xhigh" /></Form.Item>
+            <Form.Item name="provider" label="Provider">
+              <Select loading={schedulerOptionsLoading} options={schedulerProviderOptions} onChange={handleSchedulerProviderChange} showSearch placeholder="选择有可用账号的 Provider" />
+            </Form.Item>
+            <Form.Item name="model" label="Model">
+              <Select loading={schedulerOptionsLoading} options={schedulerModelOptions} onChange={handleSchedulerModelChange} showSearch placeholder="选择该 Provider 的模型" />
+            </Form.Item>
           </div>
           <div className={styles.formRow}>
-            <Form.Item name="accountRef" label="固定账号（可选）"><Input placeholder="留空则由网关自动选号" /></Form.Item>
-            <Form.Item name="reasoningEffort" label="思考强度"><Select options={[{ label: 'low', value: 'low' }, { label: 'medium', value: 'medium' }, { label: 'high', value: 'high' }, { label: 'xhigh', value: 'xhigh' }, { label: 'max', value: 'max' }]} /></Form.Item>
+            <Form.Item name="accountRef" label="固定账号（可选）"><Input placeholder="留空则自动选号" /></Form.Item>
+            <Form.Item
+              name="reasoningEffort"
+              label="思考强度"
+              extra={derivedSchedulerEffort
+                ? '该模型的思考强度由模型 ID 决定'
+                : schedulerProvider === 'agy'
+                  ? 'AGY 不提供独立 effort，模型变体即强度'
+                  : '按 Provider 支持选择'}
+            >
+              <Select disabled={schedulerEffortDisabled} options={schedulerEffortOptions} />
+            </Form.Item>
           </div>
           <Form.Item name="maxParallel" label="全局最大并行数"><InputNumber min={1} max={8} style={{ width: '100%' }} /></Form.Item>
-          <div className={styles.muted}>执行会话使用 /ui/chat（Work）同一套项目/远程工作区与 chat runtime；loop 模式由完成标记 + AI 验收员自动判定是否停止。</div>
+          <div className={styles.muted}>Provider / 模型来自当前可用账号与模型目录；AGY 的思考强度编码在模型变体（如 -low / -high / -xhigh）中，选中模型即选中强度。固定账号仍是手填，选择器需求已记录但未执行。</div>
         </Form>
       </Modal>
     </main>

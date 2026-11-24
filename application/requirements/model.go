@@ -78,6 +78,18 @@ const (
 	ExecutionGateway = "gateway"
 )
 
+// DeriveEffortFromModel 从模型 ID 的 -low/-medium/-high/-xhigh 后缀推导思考强度。
+// 这是 AGY 模型目录的真实表达方式：选中变体就是选择强度。
+func DeriveEffortFromModel(model string) string {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	for _, effort := range []string{"xhigh", "medium", "high", "low"} {
+		if strings.HasSuffix(normalized, "-"+effort) {
+			return effort
+		}
+	}
+	return ""
+}
+
 // NormalizeWorkspacePath 校验 Work 工作区路径。
 // 本地项目就是项目绝对路径；SSH 工作区是 Server 生成的影子路径。
 // 需求不再拥有额外的“工作区实体”，只引用 Work 里已经存在的路径。
@@ -158,7 +170,13 @@ func (settings SchedulerSettings) Normalized() SchedulerSettings {
 		settings.Model = "gemini-4-neon-xhigh"
 	}
 	settings.ReasoningEffort = strings.ToLower(strings.TrimSpace(settings.ReasoningEffort))
-	if settings.ReasoningEffort == "" {
+	if derived := DeriveEffortFromModel(settings.Model); derived != "" {
+		// AGY 等 Provider 把思考强度编码在模型 ID 里；记录必须与真实模型一致。
+		settings.ReasoningEffort = derived
+	} else if settings.Provider == "agy" {
+		// AGY 的 composer catalog 不提供独立 effort；不要伪装成 xhigh。
+		settings.ReasoningEffort = ""
+	} else if settings.ReasoningEffort == "" {
 		settings.ReasoningEffort = "xhigh"
 	}
 	if settings.MaxParallel <= 0 {

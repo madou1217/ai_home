@@ -26,13 +26,6 @@ func (result ProbeResult) Available() bool {
 	return result.Reachable && result.CodexFound
 }
 
-// 远端探测命令：必须与 Codex 的真实调用方式一致。
-//
-// Codex 是直接 spawn `ssh <target> codex exec-server ...`（非登录 shell），
-// 所以这里也走非登录 shell。用 `sh -lc` 探测会得出"可用"的假结论——
-// 登录 shell 的 PATH 里有 ~/.local/bin，而 Codex 拿不到。
-const probeScript = `command -v codex`
-
 // remoteProbeTimeout 给慢链路留余量，但必须远小于一次用户可感知的等待。
 const remoteProbeTimeout = 20 * time.Second
 
@@ -40,6 +33,9 @@ const remoteProbeTimeout = 20 * time.Second
 type ProbeRunner func(ctx context.Context, connection Connection, script string) (stdout string, stderr string, err error)
 
 // ProbeConnection 探测一条连接是否可用作 Codex 执行环境。
+//
+// 依次尝试 POSIX 与 Windows 两种探测写法：平台在建连前不可知，只看最终结果。
+// 只要有一次成功退出且给出路径，就认为远端装好了 codex。
 func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connection) ProbeResult {
 	result := ProbeResult{ConnectionID: connection.ID, Label: connection.Label}
 	if runner == nil {
@@ -48,20 +44,42 @@ func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connect
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, remoteProbeTimeout)
 	defer cancel()
-	stdout, stderr, err := runner(probeCtx, connection, probeScript)
-	if err != nil {
-		result.Detail = strings.TrimSpace(firstNonEmpty(cleanSSHError(stderr), err.Error()))
+	lastDetail := ""
+	reachable := false
+	for _, script := range probeScripts() {
+		stdout, stderr, err := runner(probeCtx, connection, script)
+		if err != nil {
+			if !reachable {
+				lastDetail = firstNonEmpty(cleanSSHError(stderr), err.Error())
+			}
+			continue
+		}
+		reachable = true
+		if path := firstLine(stdout); path != "" {
+			result.Reachable = true
+			result.CodexFound = true
+			result.CodexPath = path
+			return result
+		}
+	}
+	// 走到这里说明连不上，或者连上了但两种写法都找不到 codex。
+	if !reachable {
+		result.Detail = firstNonEmpty(lastDetail, "SSH 连接失败")
 		return result
 	}
 	result.Reachable = true
-	path := strings.TrimSpace(stdout)
-	if path == "" {
-		result.Detail = "远端登录 shell 里找不到 codex（需要先在该主机安装 Codex CLI）"
-		return result
-	}
-	result.CodexFound = true
-	result.CodexPath = path
+	result.Detail = "远端 shell 里找不到 codex（需要先在该主机安装 Codex CLI）"
 	return result
+}
+
+// firstLine 取首行：Windows 的 where 会返回多个候选，只留第一条。
+func firstLine(raw string) string {
+	for _, line := range strings.Split(TrimOutput(raw), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // cleanSSHError 只保留一行可读原因，避免把整段 ssh 日志塞给用户。

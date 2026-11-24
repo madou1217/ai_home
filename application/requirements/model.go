@@ -65,109 +65,69 @@ type Step struct {
 	Status string `json:"status"`
 }
 
-// Workspace 绑定一个确定的需求执行范围，可包含一个或多个项目路径。
-// 需求在调度时必须恰好关联一个 Workspace。
-type Workspace struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	ProjectPaths []string `json:"projectPaths"`
-	Provider     string   `json:"provider"`
-	Model        string   `json:"model"`
-	AccountRef   string   `json:"accountRef"`
-	MaxParallel  int      `json:"maxParallel"`
-	CreatedAt    int64    `json:"createdAt"`
-	UpdatedAt    int64    `json:"updatedAt"`
-}
+// WorkspaceKind 是 Work 工作区的来源类型，与 /ui/chat（Work）完全同源。
+const (
+	WorkspaceKindLocal = "local"
+	WorkspaceKindSSH   = "ssh"
+)
 
-// PrimaryPath 返回执行会话的工作目录（第一个路径）。
-func (workspace Workspace) PrimaryPath() string {
-	if len(workspace.ProjectPaths) == 0 {
-		return ""
+// NormalizeWorkspacePath 校验 Work 工作区路径。
+// 本地项目就是项目绝对路径；SSH 工作区是 Server 生成的影子路径。
+// 需求不再拥有额外的“工作区实体”，只引用 Work 里已经存在的路径。
+func NormalizeWorkspacePath(raw string) (string, error) {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return "", nil
 	}
-	return workspace.ProjectPaths[0]
-}
-
-// Normalize 清理并校验工作区输入。
-func (workspace *Workspace) Normalize() error {
-	if workspace == nil {
-		return ErrInvalid
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("%w: 工作区必须是绝对路径：%s", ErrInvalid, path)
 	}
-	workspace.Name = strings.TrimSpace(workspace.Name)
-	if workspace.Name == "" {
-		return fmt.Errorf("%w: 工作区名称不能为空", ErrInvalid)
-	}
-	seen := make(map[string]struct{}, len(workspace.ProjectPaths))
-	paths := make([]string, 0, len(workspace.ProjectPaths))
-	for _, raw := range workspace.ProjectPaths {
-		path := strings.TrimSpace(raw)
-		if path == "" {
-			continue
-		}
-		if !filepath.IsAbs(path) {
-			return fmt.Errorf("%w: 项目路径必须是绝对路径：%s", ErrInvalid, path)
-		}
-		path = filepath.Clean(path)
-		if _, found := seen[path]; found {
-			continue
-		}
-		seen[path] = struct{}{}
-		paths = append(paths, path)
-	}
-	if len(paths) == 0 {
-		return fmt.Errorf("%w: 工作区至少需要一个项目路径", ErrInvalid)
-	}
-	workspace.ProjectPaths = paths
-	workspace.Provider = strings.TrimSpace(workspace.Provider)
-	workspace.Model = strings.TrimSpace(workspace.Model)
-	workspace.AccountRef = strings.TrimSpace(workspace.AccountRef)
-	if workspace.MaxParallel <= 0 {
-		workspace.MaxParallel = 1
-	}
-	if workspace.MaxParallel > 4 {
-		workspace.MaxParallel = 4
-	}
-	return nil
+	return filepath.Clean(path), nil
 }
 
 // Requirement 是需求卡片。
 type Requirement struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Description   string `json:"description"`
-	Status        string `json:"status"`
-	Priority      int    `json:"priority"`
-	Position      int    `json:"position"`
-	WorkspaceID   string `json:"workspaceId"`
-	Mode          string `json:"mode"`
-	Parallel      bool   `json:"parallel"`
-	Steps         []Step `json:"steps"`
-	RefinedAt     int64  `json:"refinedAt"`
-	Progress      int    `json:"progress"`
-	ProgressNote  string `json:"progressNote"`
-	SessionID     string `json:"sessionId"`
-	PeerMessageID string `json:"peerMessageId"`
-	TurnID        string `json:"turnId"`
-	LoopCount     int    `json:"loopCount"`
-	LastError     string `json:"lastError"`
-	Source        string `json:"source"`
-	CreatedAt     int64  `json:"createdAt"`
-	UpdatedAt     int64  `json:"updatedAt"`
-	StartedAt     int64  `json:"startedAt"`
-	CompletedAt   int64  `json:"completedAt"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	Priority    int    `json:"priority"`
+	Position    int    `json:"position"`
+	// WorkspacePath 直接引用 /ui/chat（Work）里的项目/远程工作区路径。
+	WorkspacePath  string `json:"workspacePath"`
+	WorkspaceLabel string `json:"workspaceLabel"`
+	WorkspaceKind  string `json:"workspaceKind"`
+	Mode           string `json:"mode"`
+	Parallel       bool   `json:"parallel"`
+	Steps          []Step `json:"steps"`
+	RefinedAt      int64  `json:"refinedAt"`
+	Progress       int    `json:"progress"`
+	ProgressNote   string `json:"progressNote"`
+	SessionID      string `json:"sessionId"`
+	PeerMessageID  string `json:"peerMessageId"`
+	TurnID         string `json:"turnId"`
+	LoopCount      int    `json:"loopCount"`
+	LastError      string `json:"lastError"`
+	Source         string `json:"source"`
+	CreatedAt      int64  `json:"createdAt"`
+	UpdatedAt      int64  `json:"updatedAt"`
+	StartedAt      int64  `json:"startedAt"`
+	CompletedAt    int64  `json:"completedAt"`
 }
 
 // SchedulerSettings 是调度器的 AI 执行目标配置。
 type SchedulerSettings struct {
-	Enabled    bool   `json:"enabled"`
-	Provider   string `json:"provider"`
-	Model      string `json:"model"`
-	AccountRef string `json:"accountRef"`
-	UpdatedAt  int64  `json:"updatedAt"`
+	Enabled     bool   `json:"enabled"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	AccountRef  string `json:"accountRef"`
+	MaxParallel int    `json:"maxParallel"`
+	UpdatedAt   int64  `json:"updatedAt"`
 }
 
 // DefaultSchedulerSettings 使用 AWS Server + AGY + Gemini Neon xhigh。
 func DefaultSchedulerSettings() SchedulerSettings {
-	return SchedulerSettings{Enabled: true, Provider: "agy", Model: "gemini-4-neon-xhigh"}
+	return SchedulerSettings{Enabled: true, Provider: "agy", Model: "gemini-4-neon-xhigh", MaxParallel: 2}
 }
 
 // Normalized 清理调度器配置。
@@ -180,6 +140,12 @@ func (settings SchedulerSettings) Normalized() SchedulerSettings {
 	}
 	if settings.Model == "" {
 		settings.Model = "gemini-4-neon-xhigh"
+	}
+	if settings.MaxParallel <= 0 {
+		settings.MaxParallel = 2
+	}
+	if settings.MaxParallel > 8 {
+		settings.MaxParallel = 8
 	}
 	return settings
 }
@@ -195,15 +161,17 @@ type Event struct {
 
 // RequirementPatch 是局部更新；nil 表示不修改。
 type RequirementPatch struct {
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Status      *string `json:"status,omitempty"`
-	Priority    *int    `json:"priority,omitempty"`
-	Position    *int    `json:"position,omitempty"`
-	WorkspaceID *string `json:"workspaceId,omitempty"`
-	Mode        *string `json:"mode,omitempty"`
-	Parallel    *bool   `json:"parallel,omitempty"`
-	Steps       *[]Step `json:"steps,omitempty"`
+	Title          *string `json:"title,omitempty"`
+	Description    *string `json:"description,omitempty"`
+	Status         *string `json:"status,omitempty"`
+	Priority       *int    `json:"priority,omitempty"`
+	Position       *int    `json:"position,omitempty"`
+	WorkspacePath  *string `json:"workspacePath,omitempty"`
+	WorkspaceLabel *string `json:"workspaceLabel,omitempty"`
+	WorkspaceKind  *string `json:"workspaceKind,omitempty"`
+	Mode           *string `json:"mode,omitempty"`
+	Parallel       *bool   `json:"parallel,omitempty"`
+	Steps          *[]Step `json:"steps,omitempty"`
 }
 
 // ProgressUpdate 是执行器回写的进度。
@@ -257,7 +225,7 @@ func NormalizePriority(value int) int {
 
 // CanDispatch 只有已确认且已绑定工作区的需求可以进入调度。
 func (requirement Requirement) CanDispatch() bool {
-	if requirement.WorkspaceID == "" {
+	if requirement.WorkspacePath == "" {
 		return false
 	}
 	switch requirement.Status {

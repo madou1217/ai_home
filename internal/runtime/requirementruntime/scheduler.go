@@ -5,6 +5,7 @@ package requirementruntime
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -136,37 +137,42 @@ func (scheduler *Scheduler) RunOnce(ctx context.Context) (summary requirements.D
 	activeByWorkspace := map[string]int{}
 	activeNonParallel := map[string]bool{}
 	for _, item := range snapshot.Requirements {
-		if item.WorkspaceID == "" {
+		if item.WorkspacePath == "" {
 			continue
 		}
 		if item.IsActive() {
-			activeByWorkspace[item.WorkspaceID]++
+			activeByWorkspace[item.WorkspacePath]++
 			if !item.Parallel {
-				activeNonParallel[item.WorkspaceID] = true
+				activeNonParallel[item.WorkspacePath] = true
 			}
 			continue
 		}
 		if item.Status == requirements.StatusReady {
-			byWorkspace[item.WorkspaceID] = append(byWorkspace[item.WorkspaceID], item)
+			byWorkspace[item.WorkspacePath] = append(byWorkspace[item.WorkspacePath], item)
 		}
 	}
-	for _, workspace := range snapshot.Workspaces {
-		ready := byWorkspace[workspace.ID]
+	paths := make([]string, 0, len(byWorkspace))
+	for path := range byWorkspace {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	capacity := settings.MaxParallel
+	if capacity <= 0 {
+		capacity = 2
+	}
+	for _, path := range paths {
+		ready := byWorkspace[path]
 		if len(ready) == 0 {
 			continue
 		}
 		requirements.SortRequirements(ready)
-		active := activeByWorkspace[workspace.ID]
-		capacity := workspace.MaxParallel
-		if capacity <= 0 {
-			capacity = 1
-		}
+		active := activeByWorkspace[path]
 		for _, item := range ready {
-			if active >= capacity || (active > 0 && (activeNonParallel[workspace.ID] || !item.Parallel)) {
+			if active >= capacity || (active > 0 && (activeNonParallel[path] || !item.Parallel)) {
 				summary.Skipped++
 				continue
 			}
-			dispatched, dispatchErr := scheduler.service.Dispatch(ctx, scheduler.dispatcher, item.ID, "")
+			dispatched, dispatchErr := scheduler.service.Dispatch(ctx, scheduler.dispatcher, item.ID, item.WorkspacePath, item.WorkspaceLabel, item.WorkspaceKind)
 			if dispatchErr != nil {
 				summary.Failed++
 				summary.LastError = dispatchErr.Error()
@@ -176,7 +182,7 @@ func (scheduler *Scheduler) RunOnce(ctx context.Context) (summary requirements.D
 				summary.Started++
 				active++
 				if !item.Parallel {
-					activeNonParallel[workspace.ID] = true
+					activeNonParallel[path] = true
 				}
 			}
 			if !item.Parallel {
@@ -266,6 +272,7 @@ func (scheduler *Scheduler) Status() requirements.SchedulerStatus {
 		status.Provider = settings.Provider
 		status.Model = settings.Model
 		status.AccountRef = settings.AccountRef
+		status.MaxParallel = settings.MaxParallel
 	}
 	snapshot, listErr := scheduler.service.List(ctx)
 	if listErr == nil {
@@ -299,6 +306,8 @@ type WorkDispatcher struct {
 	SelfBaseURL   func() string
 	ManagementKey func() string
 	OnProgress    func(requirementID string, update requirements.ProgressUpdate)
+	// OnLoopTurnCompleted 在 loop 模式一轮结束后交给 AI 判定是否继续。
+	OnLoopTurnCompleted func(requirementID, finalMessage string, hadWork bool)
 
 	mu       sync.Mutex
 	sessions map[string]sessionTrace
@@ -308,6 +317,7 @@ type sessionTrace struct {
 	requirementID string
 	cancel        func()
 	completed     int
+	work          int
 }
 
 // ChatSessionPort 是执行器需要的 chat 运行时子集。
@@ -315,6 +325,7 @@ type ChatSessionPort interface {
 	CreateSession(ctx context.Context, in chatruntime.CreateSessionInput) (*chatruntime.Session, error)
 	DispatchCommand(ctx context.Context, sessionID string, input map[string]any) (map[string]any, error)
 	Subscribe(sessionID string, listener chatruntime.EventListener) (func(), error)
+	GetSnapshot(ctx context.Context, sessionID string) (*chatruntime.Snapshot, error)
 }
 
 // AccountCandidates 是账号路由候选读取端口。
@@ -363,10 +374,13 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		"reasoningEffort": "xhigh",
 		"approvalMode":    "bypass",
 	}
+	if strings.TrimSpace(request.WorkspacePath) == "" {
+		return requirements.WorkHandle{}, fmt.Errorf("work_workspace_path_required")
+	}
 	session, err := dispatcher.Chat.CreateSession(ctx, chatruntime.CreateSessionInput{
 		Provider:            provider,
 		ExecutionAccountRef: accountRef,
-		ProjectPath:         request.Workspace.PrimaryPath(),
+		ProjectPath:         request.WorkspacePath,
 		Policy:              policy,
 	})
 	if err != nil {
@@ -442,6 +456,12 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 	}
 	switch event.Type {
 	case "turn.started":
+		dispatcher.mu.Lock()
+		trace := dispatcher.sessions[sessionID]
+		trace.completed = 0
+		trace.work = 0
+		dispatcher.sessions[sessionID] = trace
+		dispatcher.mu.Unlock()
 		dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusRunning, Progress: 18, Note: "AI 开始执行", TurnID: event.TurnID, SessionID: sessionID})
 	case "timeline.item.completed":
 		item, _ := event.Payload["item"].(map[string]any)
@@ -453,6 +473,9 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 		dispatcher.mu.Lock()
 		trace := dispatcher.sessions[sessionID]
 		trace.completed++
+		if kind == "tool" || kind == "shell" || kind == "file_change" {
+			trace.work++
+		}
 		dispatcher.sessions[sessionID] = trace
 		completed := trace.completed
 		dispatcher.mu.Unlock()
@@ -471,7 +494,15 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 	case "interaction.requested":
 		dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusWaiting, Progress: 60, Note: "等待用户输入或审批", TurnID: event.TurnID, SessionID: sessionID})
 	case "turn.completed":
+		dispatcher.mu.Lock()
+		trace := dispatcher.sessions[sessionID]
+		hadWork := trace.work > 0
+		dispatcher.mu.Unlock()
+		finalMessage := dispatcher.finalAssistantMessage(sessionID)
 		dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusReview, Progress: 92, Note: "执行完成，等待验收", TurnID: event.TurnID, SessionID: sessionID})
+		if dispatcher.OnLoopTurnCompleted != nil {
+			go dispatcher.OnLoopTurnCompleted(requirementID, finalMessage, hadWork)
+		}
 	case "turn.failed":
 		message := strings.TrimSpace(fmt.Sprintf("%v", event.Payload["message"]))
 		if message == "" {
@@ -481,4 +512,28 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 	case "turn.interrupted":
 		dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusReady, Progress: 0, Note: "执行已中断", TurnID: event.TurnID, SessionID: sessionID})
 	}
+}
+
+// finalAssistantMessage 读取本轮最终 assistant 文本。
+func (dispatcher *WorkDispatcher) finalAssistantMessage(sessionID string) string {
+	if dispatcher == nil || dispatcher.Chat == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	snapshot, err := dispatcher.Chat.GetSnapshot(ctx, sessionID)
+	if err != nil || snapshot == nil {
+		return ""
+	}
+	for index := len(snapshot.Timeline) - 1; index >= 0; index-- {
+		item := snapshot.Timeline[index]
+		if item.Kind != "message" || item.Content == nil {
+			continue
+		}
+		role := strings.TrimSpace(fmt.Sprintf("%v", item.Detail["role"]))
+		if role == "assistant" {
+			return *item.Content
+		}
+	}
+	return ""
 }

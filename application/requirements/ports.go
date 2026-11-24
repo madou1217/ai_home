@@ -4,11 +4,6 @@ import "context"
 
 // Store 是需求的持久化端口。
 type Store interface {
-	ListWorkspaces(ctx context.Context) ([]Workspace, error)
-	GetWorkspace(ctx context.Context, id string) (Workspace, error)
-	SaveWorkspace(ctx context.Context, workspace Workspace) error
-	DeleteWorkspace(ctx context.Context, id string) error
-
 	ListRequirements(ctx context.Context) ([]Requirement, error)
 	GetRequirement(ctx context.Context, id string) (Requirement, error)
 	SaveRequirement(ctx context.Context, requirement Requirement) error
@@ -39,15 +34,17 @@ type ModelClient interface {
 
 // WorkRequest 描述一次执行会话的创建参数。
 type WorkRequest struct {
-	RequirementID string
-	Title         string
-	Prompt        string
-	Mode          string
-	Workspace     Workspace
-	Provider      string
-	Model         string
-	AccountRef    string
-	GoalObjective string
+	RequirementID  string
+	Title          string
+	Prompt         string
+	Mode           string
+	WorkspacePath  string
+	WorkspaceLabel string
+	WorkspaceKind  string
+	Provider       string
+	Model          string
+	AccountRef     string
+	GoalObjective  string
 }
 
 // WorkHandle 是执行器创建会话后的身份。
@@ -82,13 +79,14 @@ type DispatchSummary struct {
 
 // SchedulerStatus 是调度器对外状态。
 type SchedulerStatus struct {
-	Enabled    bool   `json:"enabled"`
-	Provider   string `json:"provider"`
-	Model      string `json:"model"`
-	AccountRef string `json:"accountRef"`
-	Running    int    `json:"running"`
-	Queued     int    `json:"queued"`
-	Ready      int    `json:"ready"`
-	LastRun    int64  `json:"lastRun"`
-	LastError  string `json:"lastError"`
+	Enabled     bool   `json:"enabled"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	AccountRef  string `json:"accountRef"`
+	MaxParallel int    `json:"maxParallel"`
+	Running     int    `json:"running"`
+	Queued      int    `json:"queued"`
+	Ready       int    `json:"ready"`
+	LastRun     int64  `json:"lastRun"`
+	LastError   string `json:"lastError"`
 }

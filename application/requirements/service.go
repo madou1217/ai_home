@@ -24,7 +24,6 @@ type Service struct {
 
 // Snapshot 是页面一次加载所需的完整读模型。
 type Snapshot struct {
-	Workspaces   []Workspace       `json:"workspaces"`
 	Requirements []Requirement     `json:"requirements"`
 	Settings     SchedulerSettings `json:"settings"`
 	GeneratedAt  int64             `json:"generatedAt"`
@@ -57,10 +56,6 @@ func (service *Service) Now() int64 { return NowMillis(service.clock) }
 
 // List 返回页面快照。读路径不调用模型、不启动进程。
 func (service *Service) List(ctx context.Context) (Snapshot, error) {
-	workspaces, err := service.store.ListWorkspaces(ctx)
-	if err != nil {
-		return Snapshot{}, err
-	}
 	items, err := service.store.ListRequirements(ctx)
 	if err != nil {
 		return Snapshot{}, err
@@ -71,73 +66,10 @@ func (service *Service) List(ctx context.Context) (Snapshot, error) {
 	}
 	SortRequirements(items)
 	return Snapshot{
-		Workspaces:   workspaces,
 		Requirements: items,
 		Settings:     settings.Normalized(),
 		GeneratedAt:  service.Now(),
 	}, nil
-}
-
-// CreateWorkspace 创建一个绑定一到多个项目路径的工作区。
-func (service *Service) CreateWorkspace(ctx context.Context, workspace Workspace) (Workspace, error) {
-	if err := workspace.Normalize(); err != nil {
-		return Workspace{}, err
-	}
-	now := service.Now()
-	workspace.ID = strings.TrimSpace(workspace.ID)
-	if workspace.ID == "" {
-		workspace.ID = service.newID("ws")
-	}
-	workspace.CreatedAt = now
-	workspace.UpdatedAt = now
-	if err := service.store.SaveWorkspace(ctx, workspace); err != nil {
-		return Workspace{}, err
-	}
-	service.Notify()
-	return workspace, nil
-}
-
-// UpdateWorkspace 更新工作区；已有需求引用时不允许删除最后一条路径。
-func (service *Service) UpdateWorkspace(ctx context.Context, id string, workspace Workspace) (Workspace, error) {
-	current, err := service.store.GetWorkspace(ctx, id)
-	if err != nil {
-		return Workspace{}, err
-	}
-	workspace.ID = current.ID
-	workspace.CreatedAt = current.CreatedAt
-	if err := workspace.Normalize(); err != nil {
-		return Workspace{}, err
-	}
-	workspace.UpdatedAt = service.Now()
-	if err := service.store.SaveWorkspace(ctx, workspace); err != nil {
-		return Workspace{}, err
-	}
-	service.Notify()
-	return workspace, nil
-}
-
-// DeleteWorkspace 删除工作区；仍有需求引用时拒绝。
-func (service *Service) DeleteWorkspace(ctx context.Context, id string) error {
-	if strings.TrimSpace(id) == "" {
-		return ErrInvalid
-	}
-	items, err := service.store.ListRequirements(ctx)
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		if item.WorkspaceID == id && !item.IsActive() {
-			return fmt.Errorf("%w: 工作区仍被需求 %s 引用，请先迁移或删除该需求", ErrConflict, item.Title)
-		}
-		if item.WorkspaceID == id && item.IsActive() {
-			return fmt.Errorf("%w: 工作区仍有执行中的需求 %s", ErrConflict, item.Title)
-		}
-	}
-	if err := service.store.DeleteWorkspace(ctx, id); err != nil {
-		return err
-	}
-	service.Notify()
-	return nil
 }
 
 // CreateRequirement 创建需求；默认是 idea，不会自动进入调度。
@@ -161,14 +93,15 @@ func (service *Service) CreateRequirement(ctx context.Context, requirement Requi
 	}
 	requirement.Status = status
 	requirement.Priority = NormalizePriority(requirement.Priority)
-	requirement.WorkspaceID = strings.TrimSpace(requirement.WorkspaceID)
-	if requirement.WorkspaceID != "" {
-		if _, err := service.store.GetWorkspace(ctx, requirement.WorkspaceID); err != nil {
-			return Requirement{}, err
-		}
+	workspacePath, err := NormalizeWorkspacePath(requirement.WorkspacePath)
+	if err != nil {
+		return Requirement{}, err
 	}
-	if requirement.Status == StatusReady && requirement.WorkspaceID == "" {
-		return Requirement{}, fmt.Errorf("%w: 进入排期前必须绑定工作区", ErrInvalid)
+	requirement.WorkspacePath = workspacePath
+	requirement.WorkspaceLabel = strings.TrimSpace(requirement.WorkspaceLabel)
+	requirement.WorkspaceKind = strings.TrimSpace(requirement.WorkspaceKind)
+	if requirement.Status == StatusReady && requirement.WorkspacePath == "" {
+		return Requirement{}, fmt.Errorf("%w: 进入排期前必须在 Work 中绑定工作区路径", ErrInvalid)
 	}
 	if requirement.Status == StatusReady && requirement.Description == "" && len(requirement.Steps) == 0 {
 		return Requirement{}, fmt.Errorf("%w: 进入排期前需要描述或已拆解步骤", ErrInvalid)
@@ -246,25 +179,29 @@ func (service *Service) UpdateRequirement(ctx context.Context, id string, patch 
 	if patch.Steps != nil {
 		next.Steps = normalizeSteps(*patch.Steps)
 	}
-	if patch.WorkspaceID != nil {
-		workspaceID := strings.TrimSpace(*patch.WorkspaceID)
-		if workspaceID != "" {
-			if _, err := service.store.GetWorkspace(ctx, workspaceID); err != nil {
-				return Requirement{}, err
-			}
+	if patch.WorkspacePath != nil {
+		workspacePath, err := NormalizeWorkspacePath(*patch.WorkspacePath)
+		if err != nil {
+			return Requirement{}, err
 		}
-		if current.IsActive() && workspaceID != current.WorkspaceID {
+		if current.IsActive() && workspacePath != current.WorkspacePath {
 			return Requirement{}, fmt.Errorf("%w: 执行中的需求不能切换工作区", ErrConflict)
 		}
-		next.WorkspaceID = workspaceID
+		next.WorkspacePath = workspacePath
+	}
+	if patch.WorkspaceLabel != nil {
+		next.WorkspaceLabel = strings.TrimSpace(*patch.WorkspaceLabel)
+	}
+	if patch.WorkspaceKind != nil {
+		next.WorkspaceKind = strings.TrimSpace(*patch.WorkspaceKind)
 	}
 	if patch.Status != nil {
 		status, err := NormalizeStatus(*patch.Status)
 		if err != nil {
 			return Requirement{}, err
 		}
-		if status == StatusReady && next.WorkspaceID == "" {
-			return Requirement{}, fmt.Errorf("%w: 进入排期前必须绑定工作区", ErrInvalid)
+		if status == StatusReady && next.WorkspacePath == "" {
+			return Requirement{}, fmt.Errorf("%w: 进入排期前必须在 Work 中绑定工作区路径", ErrInvalid)
 		}
 		if status == StatusReady && strings.TrimSpace(next.Description) == "" && len(next.Steps) == 0 {
 			return Requirement{}, fmt.Errorf("%w: 进入排期前需要描述或已拆解步骤", ErrInvalid)
@@ -334,22 +271,28 @@ func (service *Service) Reorder(ctx context.Context, ids []string) error {
 	return nil
 }
 
-// Refine 手动触发 AI 需求优化；必须指定工作区。
-func (service *Service) Refine(ctx context.Context, id string, workspaceID string) (Requirement, error) {
+// Refine 手动触发 AI 需求优化；必须指定 Work 工作区路径。
+func (service *Service) Refine(ctx context.Context, id, workspacePath, workspaceLabel, workspaceKind string) (Requirement, error) {
 	requirement, err := service.store.GetRequirement(ctx, id)
 	if err != nil {
 		return Requirement{}, err
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		workspaceID = requirement.WorkspaceID
-	}
-	if workspaceID == "" {
-		return Requirement{}, fmt.Errorf("%w: 优化需求前必须指定工作区", ErrInvalid)
-	}
-	workspace, err := service.store.GetWorkspace(ctx, workspaceID)
+	workspacePath, err = NormalizeWorkspacePath(workspacePath)
 	if err != nil {
 		return Requirement{}, err
+	}
+	if workspacePath == "" {
+		workspacePath = requirement.WorkspacePath
+	}
+	if workspacePath == "" {
+		return Requirement{}, fmt.Errorf("%w: 优化需求前必须指定 Work 工作区", ErrInvalid)
+	}
+	requirement.WorkspacePath = workspacePath
+	if label := strings.TrimSpace(workspaceLabel); label != "" {
+		requirement.WorkspaceLabel = label
+	}
+	if kind := strings.TrimSpace(workspaceKind); kind != "" {
+		requirement.WorkspaceKind = kind
 	}
 	settings, err := service.store.GetSchedulerSettings(ctx)
 	if err != nil {
@@ -360,11 +303,11 @@ func (service *Service) Refine(ctx context.Context, id string, workspaceID strin
 		return Requirement{}, fmt.Errorf("%w: 模型客户端未配置", ErrInvalid)
 	}
 	output, err := service.model.Complete(ctx, ModelRequest{
-		Provider:   firstNonEmpty(workspace.Provider, settings.Provider),
-		Model:      firstNonEmpty(workspace.Model, settings.Model),
-		AccountRef: firstNonEmpty(workspace.AccountRef, settings.AccountRef),
+		Provider:   settings.Provider,
+		Model:      settings.Model,
+		AccountRef: settings.AccountRef,
 		System:     RefineSystemPrompt,
-		Prompt:     BuildRefinePrompt(requirement, workspace),
+		Prompt:     BuildRefinePrompt(requirement),
 	})
 	if err != nil {
 		return Requirement{}, err
@@ -377,7 +320,6 @@ func (service *Service) Refine(ctx context.Context, id string, workspaceID strin
 	requirement.Description = composeRefinedDescription(requirement.Description, summary, steps, acceptance)
 	requirement.Steps = steps
 	requirement.RefinedAt = service.Now()
-	requirement.WorkspaceID = workspace.ID
 	requirement.UpdatedAt = service.Now()
 	if requirement.Status == StatusIdea {
 		// 优化不等于确认：保持 idea，用户仍需显式确认进入排期。
@@ -392,20 +334,29 @@ func (service *Service) Refine(ctx context.Context, id string, workspaceID strin
 }
 
 // Dispatch 手动或调度器触发一次执行。
-func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id string, workspaceID string) (Requirement, error) {
+func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id, workspacePath, workspaceLabel, workspaceKind string) (Requirement, error) {
 	requirement, err := service.store.GetRequirement(ctx, id)
 	if err != nil {
 		return Requirement{}, err
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID != "" && requirement.WorkspaceID != workspaceID {
+	workspacePath, err = NormalizeWorkspacePath(workspacePath)
+	if err != nil {
+		return Requirement{}, err
+	}
+	if workspacePath != "" && requirement.WorkspacePath != workspacePath {
 		if requirement.IsActive() {
 			return Requirement{}, fmt.Errorf("%w: 执行中的需求不能切换工作区", ErrConflict)
 		}
-		requirement.WorkspaceID = workspaceID
+		requirement.WorkspacePath = workspacePath
 	}
-	if requirement.WorkspaceID == "" {
-		return Requirement{}, fmt.Errorf("%w: 调度前必须绑定唯一工作区", ErrInvalid)
+	if label := strings.TrimSpace(workspaceLabel); label != "" {
+		requirement.WorkspaceLabel = label
+	}
+	if kind := strings.TrimSpace(workspaceKind); kind != "" {
+		requirement.WorkspaceKind = kind
+	}
+	if requirement.WorkspacePath == "" {
+		return Requirement{}, fmt.Errorf("%w: 调度前必须在 Work 中绑定工作区路径", ErrInvalid)
 	}
 	if requirement.Status != StatusReady {
 		return Requirement{}, fmt.Errorf("%w: 只有已确认的需求可以调度，当前状态 %s", ErrConflict, requirement.Status)
@@ -413,18 +364,14 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id 
 	if dispatcher == nil {
 		return Requirement{}, fmt.Errorf("%w: 执行器未配置", ErrInvalid)
 	}
-	workspace, err := service.store.GetWorkspace(ctx, requirement.WorkspaceID)
-	if err != nil {
-		return Requirement{}, err
-	}
 	settings, err := service.store.GetSchedulerSettings(ctx)
 	if err != nil {
 		return Requirement{}, err
 	}
 	settings = settings.Normalized()
-	provider := firstNonEmpty(workspace.Provider, settings.Provider)
-	model := firstNonEmpty(workspace.Model, settings.Model)
-	accountRef := firstNonEmpty(workspace.AccountRef, settings.AccountRef)
+	provider := settings.Provider
+	model := settings.Model
+	accountRef := settings.AccountRef
 
 	requirement.Status = StatusQueued
 	requirement.Progress = 3
@@ -438,15 +385,17 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id 
 	service.Notify()
 
 	handle, startErr := dispatcher.Start(ctx, WorkRequest{
-		RequirementID: requirement.ID,
-		Title:         requirement.Title,
-		Prompt:        BuildWorkPrompt(requirement, workspace),
-		Mode:          requirement.Mode,
-		Workspace:     workspace,
-		Provider:      provider,
-		Model:         model,
-		AccountRef:    accountRef,
-		GoalObjective: requirement.GoalObjective(),
+		RequirementID:  requirement.ID,
+		Title:          requirement.Title,
+		Prompt:         BuildWorkPrompt(requirement),
+		Mode:           requirement.Mode,
+		WorkspacePath:  requirement.WorkspacePath,
+		WorkspaceLabel: requirement.WorkspaceLabel,
+		WorkspaceKind:  requirement.WorkspaceKind,
+		Provider:       provider,
+		Model:          model,
+		AccountRef:     accountRef,
+		GoalObjective:  requirement.GoalObjective(),
 	})
 	if startErr != nil {
 		requirement.Status = StatusBlocked
@@ -568,27 +517,104 @@ func (service *Service) ApplyProgress(ctx context.Context, requirementID string,
 	}
 	service.appendEvent(ctx, requirement.ID, "progress", update.Note)
 	service.Notify()
-	if requirement.Status == StatusReview && requirement.Mode == ModeLoop {
-		service.scheduleLoopContinue(ctx, requirement)
-	}
 }
 
-// scheduleLoopContinue 在 loop 模式下自动开始下一轮，直到人工验收或轮次上限。
-func (service *Service) scheduleLoopContinue(ctx context.Context, requirement Requirement) {
-	if requirement.LoopCount >= 5 || requirement.Status != StatusReview {
+// ContinueLoop 在 loop 模式一轮结束后做自动验收：完成标记 → 直接停止；
+// 无标记 → AI 验收员判断；没有真实工作且未确认完成 → 自动停止并标 blocked。
+// 不再用固定 5 轮强行截断。
+func (service *Service) ContinueLoop(ctx context.Context, id, finalMessage string, hadWork bool) {
+	requirement, err := service.store.GetRequirement(ctx, id)
+	if err != nil || requirement.Mode != ModeLoop || requirement.Status != StatusReview {
 		return
 	}
-	requirement.Status = StatusReady
-	requirement.Progress = 5
-	requirement.ProgressNote = fmt.Sprintf("循环模式第 %d 轮继续", requirement.LoopCount+1)
-	requirement.LoopCount++
-	requirement.SessionID = ""
-	requirement.PeerMessageID = ""
+	if requirement.LoopCount >= LoopSafetyLimit {
+		requirement.ProgressNote = fmt.Sprintf("循环已达到安全上限 %d 轮，请人工确认", LoopSafetyLimit)
+		requirement.UpdatedAt = service.Now()
+		_ = service.store.SaveRequirement(ctx, requirement)
+		service.appendEvent(ctx, requirement.ID, "loop.blocked", requirement.ProgressNote)
+		service.Notify()
+		return
+	}
+	if HasLoopMarker(finalMessage, LoopDoneMarker) {
+		service.finishLoop(ctx, requirement, "模型输出完成标记")
+		return
+	}
+	if HasLoopMarker(finalMessage, LoopContinueMarker) {
+		service.continueLoop(ctx, requirement, "模型请求继续下一轮")
+		return
+	}
+	settings, settingsErr := service.store.GetSchedulerSettings(ctx)
+	if settingsErr != nil {
+		settings = DefaultSchedulerSettings()
+	}
+	settings = settings.Normalized()
+	decision := LoopDecision{}
+	decided := false
+	if service.model != nil {
+		output, modelErr := service.model.Complete(ctx, ModelRequest{
+			Provider: settings.Provider, Model: settings.Model, AccountRef: settings.AccountRef,
+			System: LoopJudgeSystemPrompt, Prompt: BuildLoopJudgePrompt(requirement, finalMessage, hadWork),
+		})
+		if modelErr == nil {
+			decision, decided = ParseLoopDecision(output)
+		}
+	}
+	if decided && decision.Done {
+		reason := decision.Reason
+		if reason == "" {
+			reason = "验收通过"
+		}
+		service.finishLoop(ctx, requirement, reason)
+		return
+	}
+	if decided && !decision.Done {
+		next := decision.Next
+		if next == "" {
+			next = "继续推进未完成步骤"
+		}
+		service.continueLoop(ctx, requirement, next)
+		return
+	}
+	if !hadWork {
+		reason := "loop 自动停止：本轮没有产生工具/文件变更，且模型未确认完成"
+		requirement.Status = StatusBlocked
+		requirement.ProgressNote = reason
+		requirement.LastError = reason
+		requirement.UpdatedAt = service.Now()
+		_ = service.store.SaveRequirement(ctx, requirement)
+		service.appendEvent(ctx, requirement.ID, "loop.blocked", reason)
+		service.Notify()
+		return
+	}
+	service.continueLoop(ctx, requirement, "未获得明确完成信号，继续下一轮")
+}
+
+func (service *Service) finishLoop(ctx context.Context, requirement Requirement, reason string) {
+	requirement.Progress = 95
+	requirement.ProgressNote = "目标已完成：" + reason
+	requirement.LastError = ""
 	requirement.UpdatedAt = service.Now()
 	if err := service.store.SaveRequirement(ctx, requirement); err != nil {
 		return
 	}
-	service.appendEvent(ctx, requirement.ID, "loop", requirement.ProgressNote)
+	service.appendEvent(ctx, requirement.ID, "loop.completed", requirement.ProgressNote)
+	service.Notify()
+}
+
+func (service *Service) continueLoop(ctx context.Context, requirement Requirement, next string) {
+	requirement.Status = StatusReady
+	requirement.Progress = 5
+	requirement.LoopCount++
+	requirement.ProgressNote = fmt.Sprintf("循环第 %d 轮：%s", requirement.LoopCount, strings.TrimSpace(next))
+	requirement.SessionID = ""
+	requirement.PeerMessageID = ""
+	requirement.TurnID = ""
+	requirement.LastError = ""
+	requirement.UpdatedAt = service.Now()
+	if err := service.store.SaveRequirement(ctx, requirement); err != nil {
+		return
+	}
+	service.appendEvent(ctx, requirement.ID, "loop.continue", requirement.ProgressNote)
 	service.Notify()
 }
 
@@ -693,15 +719,6 @@ func clampProgress(value int) int {
 	return value
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
 func strPtr(value string) *string { return &value }
 
 // GoalObjective 返回写入会话 goal 的目标文本。
@@ -714,7 +731,7 @@ func (requirement Requirement) GoalObjective() string {
 }
 
 // BuildWorkPrompt 把需求卡片展开成执行 Agent 的任务说明。
-func BuildWorkPrompt(requirement Requirement, workspace Workspace) string {
+func BuildWorkPrompt(requirement Requirement) string {
 	var builder strings.Builder
 	builder.WriteString("你是「需求管理」派发的执行代理。现在开始处理一张需求卡片。\n\n")
 	builder.WriteString("## 需求\n")
@@ -733,12 +750,9 @@ func BuildWorkPrompt(requirement Requirement, workspace Workspace) string {
 		builder.WriteString("\n")
 	}
 	builder.WriteString("## 工作区\n")
-	builder.WriteString("主目录：" + workspace.PrimaryPath() + "\n")
-	if len(workspace.ProjectPaths) > 1 {
-		builder.WriteString("其它绑定路径：\n")
-		for _, path := range workspace.ProjectPaths[1:] {
-			builder.WriteString("- " + path + "\n")
-		}
+	builder.WriteString("主目录：" + requirement.WorkspacePath + "\n")
+	if label := strings.TrimSpace(requirement.WorkspaceLabel); label != "" {
+		builder.WriteString("工作区名称：" + label + "\n")
 	}
 	builder.WriteString("\n## 执行模式\n")
 	switch requirement.Mode {
@@ -746,6 +760,8 @@ func BuildWorkPrompt(requirement Requirement, workspace Workspace) string {
 		builder.WriteString("目标模式：先声明可验证的完成标准，然后持续推进直到目标达成；每完成一个阶段说明当前进度。\n")
 	case ModeLoop:
 		builder.WriteString(fmt.Sprintf("循环模式（第 %d 轮）：每轮结束检查目标是否达成；未达成时继续下一轮。只有在确实完成或需要用户决策时停止。\n", requirement.LoopCount+1))
+		builder.WriteString("完成信号：如果目标已全部完成并通过验证，在最终回复的最后单独一行输出 [[REQUIREMENT_DONE]]；" +
+			"如果仍有未完成项，输出 [[REQUIREMENT_CONTINUE]] 并列出下一步。系统会据此自动决定是否继续循环。\n")
 	default:
 		builder.WriteString("计划模式：先给出编号执行计划，再按计划逐步实现。\n")
 	}

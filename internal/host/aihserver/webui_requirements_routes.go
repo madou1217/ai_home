@@ -37,8 +37,8 @@ func (runtime *requirementsRuntime) Close() error {
 
 // newRequirementsRuntime 装配需求管理与调度器。
 //
-// 模型与执行目标固定为 AIH 网关中的 agy / gemini-4-neon-xhigh（可由工作区或调度器设置覆盖）；
-// 需求执行会话通过 chat runtime 的 work session 启动，任务通过 peer 投递。
+// 模型与执行目标默认使用 AIH 网关中的 agy / gemini-4-neon-xhigh（由调度器设置统一覆盖）；
+// 需求直接引用 /ui/chat（Work）里的工作区路径，执行会话与手工 Work 会话同一套 runtime。
 func newRequirementsRuntime(ctx context.Context, dependencies webuiRouteDependencies, chat *chatruntime.Service) (*requirementsRuntime, []webuiRoute, error) {
 	store, err := requirementstore.Open(ctx, dependencies.AIHomeDir)
 	if err != nil {
@@ -66,6 +66,11 @@ func newRequirementsRuntime(ctx context.Context, dependencies webuiRouteDependen
 			service.ApplyProgress(progressCtx, requirementID, update)
 		},
 	)
+	dispatcher.OnLoopTurnCompleted = func(requirementID, finalMessage string, hadWork bool) {
+		loopCtx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+		defer cancel()
+		service.ContinueLoop(loopCtx, requirementID, finalMessage, hadWork)
+	}
 	scheduler := requirementruntime.NewScheduler(service, dispatcher, time.Now)
 	scheduler.Inspector = chat
 	handler, handlerErr := webuirequirementsapi.NewHandler(dependencies.Authorizer, service, scheduler, dispatcher)

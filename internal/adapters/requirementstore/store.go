@@ -18,17 +18,6 @@ import (
 )
 
 const schema = `
-CREATE TABLE IF NOT EXISTS requirement_workspaces (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    project_paths TEXT NOT NULL,
-    provider TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL DEFAULT '',
-    account_ref TEXT NOT NULL DEFAULT '',
-    max_parallel INTEGER NOT NULL DEFAULT 1,
-    created_at_ms INTEGER NOT NULL,
-    updated_at_ms INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS requirements (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -36,7 +25,9 @@ CREATE TABLE IF NOT EXISTS requirements (
     status TEXT NOT NULL,
     priority INTEGER NOT NULL DEFAULT 1,
     position INTEGER NOT NULL DEFAULT 0,
-    workspace_id TEXT NOT NULL DEFAULT '',
+    workspace_path TEXT NOT NULL DEFAULT '',
+    workspace_label TEXT NOT NULL DEFAULT '',
+    workspace_kind TEXT NOT NULL DEFAULT '',
     mode TEXT NOT NULL DEFAULT 'plan',
     parallel INTEGER NOT NULL DEFAULT 0,
     steps_json TEXT NOT NULL DEFAULT '[]',
@@ -55,7 +46,6 @@ CREATE TABLE IF NOT EXISTS requirements (
     completed_at_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS requirements_status_position ON requirements(status, priority, position);
-CREATE INDEX IF NOT EXISTS requirements_workspace ON requirements(workspace_id);
 CREATE TABLE IF NOT EXISTS requirement_events (
     id TEXT PRIMARY KEY,
     requirement_id TEXT NOT NULL,
@@ -98,7 +88,16 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("初始化需求表失败: %w", err)
 	}
-	return &Store{db: db}, nil
+	store := &Store{db: db}
+	if err := store.migrateLegacyWorkspace(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("迁移旧工作区失败: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS requirements_workspace_path ON requirements(workspace_path)"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("创建需求工作区索引失败: %w", err)
+	}
+	return store, nil
 }
 
 // Close 关闭数据库连接。
@@ -109,73 +108,80 @@ func (store *Store) Close() error {
 	return store.db.Close()
 }
 
-// ListWorkspaces 返回全部工作区。
-func (store *Store) ListWorkspaces(ctx context.Context) ([]requirements.Workspace, error) {
-	rows, err := store.db.QueryContext(ctx, `
-		SELECT id, name, project_paths, provider, model, account_ref, max_parallel, created_at_ms, updated_at_ms
-		FROM requirement_workspaces ORDER BY created_at_ms ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []requirements.Workspace{}
-	for rows.Next() {
-		var workspace requirements.Workspace
-		var paths string
-		if err := rows.Scan(&workspace.ID, &workspace.Name, &paths, &workspace.Provider, &workspace.Model, &workspace.AccountRef, &workspace.MaxParallel, &workspace.CreatedAt, &workspace.UpdatedAt); err != nil {
-			return nil, err
-		}
-		_ = json.Unmarshal([]byte(paths), &workspace.ProjectPaths)
-		if workspace.ProjectPaths == nil {
-			workspace.ProjectPaths = []string{}
-		}
-		out = append(out, workspace)
-	}
-	return out, rows.Err()
-}
-
-// GetWorkspace 按 ID 读取工作区。
-func (store *Store) GetWorkspace(ctx context.Context, id string) (requirements.Workspace, error) {
-	var workspace requirements.Workspace
-	var paths string
-	err := store.db.QueryRowContext(ctx, `
-		SELECT id, name, project_paths, provider, model, account_ref, max_parallel, created_at_ms, updated_at_ms
-		FROM requirement_workspaces WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).
-		Scan(&workspace.ID, &workspace.Name, &paths, &workspace.Provider, &workspace.Model, &workspace.AccountRef, &workspace.MaxParallel, &workspace.CreatedAt, &workspace.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return requirements.Workspace{}, fmt.Errorf("%w: 工作区不存在", requirements.ErrNotFound)
-	}
-	if err != nil {
-		return requirements.Workspace{}, err
-	}
-	_ = json.Unmarshal([]byte(paths), &workspace.ProjectPaths)
-	if workspace.ProjectPaths == nil {
-		workspace.ProjectPaths = []string{}
-	}
-	return workspace, nil
-}
-
-// SaveWorkspace 插入或更新工作区。
-func (store *Store) SaveWorkspace(ctx context.Context, workspace requirements.Workspace) error {
-	paths, err := json.Marshal(workspace.ProjectPaths)
+// migrateLegacyWorkspace 把旧的 requirement_workspaces 实体折叠成 Work 工作区路径。
+// 仅用于本次概念统一前的数据库；迁移后旧表删除，不再存在第二套工作区。
+func (store *Store) migrateLegacyWorkspace(ctx context.Context) error {
+	columns := map[string]bool{}
+	rows, err := store.db.QueryContext(ctx, `PRAGMA table_info(requirements)`)
 	if err != nil {
 		return err
 	}
-	_, err = store.db.ExecContext(ctx, `
-		INSERT INTO requirement_workspaces (id, name, project_paths, provider, model, account_ref, max_parallel, created_at_ms, updated_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			name=excluded.name, project_paths=excluded.project_paths, provider=excluded.provider,
-			model=excluded.model, account_ref=excluded.account_ref, max_parallel=excluded.max_parallel,
-			updated_at_ms=excluded.updated_at_ms`,
-		workspace.ID, workspace.Name, string(paths), workspace.Provider, workspace.Model, workspace.AccountRef, workspace.MaxParallel, workspace.CreatedAt, workspace.UpdatedAt)
-	return err
-}
-
-// DeleteWorkspace 删除工作区。
-func (store *Store) DeleteWorkspace(ctx context.Context, id string) error {
-	_, err := store.db.ExecContext(ctx, `DELETE FROM requirement_workspaces WHERE id = ?`, strings.TrimSpace(id))
-	return err
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, pk int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		columns[name] = true
+	}
+	_ = rows.Close()
+	for _, column := range []string{"workspace_path", "workspace_label", "workspace_kind"} {
+		if columns[column] {
+			continue
+		}
+		if _, err := store.db.ExecContext(ctx, "ALTER TABLE requirements ADD COLUMN "+column+" TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
+	var legacyExists int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='requirement_workspaces'`).Scan(&legacyExists); err != nil {
+		return err
+	}
+	if legacyExists == 0 || !columns["workspace_id"] {
+		return nil
+	}
+	type legacyWorkspace struct {
+		id    string
+		name  string
+		paths string
+	}
+	legacy := []legacyWorkspace{}
+	legacyRows, err := store.db.QueryContext(ctx, `SELECT id, name, project_paths FROM requirement_workspaces`)
+	if err != nil {
+		return err
+	}
+	for legacyRows.Next() {
+		var item legacyWorkspace
+		if err := legacyRows.Scan(&item.id, &item.name, &item.paths); err != nil {
+			_ = legacyRows.Close()
+			return err
+		}
+		legacy = append(legacy, item)
+	}
+	_ = legacyRows.Close()
+	transaction, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
+	for _, item := range legacy {
+		var paths []string
+		if json.Unmarshal([]byte(item.paths), &paths) != nil || len(paths) == 0 || strings.TrimSpace(paths[0]) == "" {
+			continue
+		}
+		if _, err := transaction.ExecContext(ctx, `
+			UPDATE requirements SET workspace_path = ?, workspace_label = ?, workspace_kind = 'local'
+			WHERE workspace_id = ? AND workspace_path = ''`, filepath.Clean(paths[0]), item.name, item.id); err != nil {
+			return err
+		}
+	}
+	if _, err := transaction.ExecContext(ctx, `DROP TABLE requirement_workspaces`); err != nil {
+		return err
+	}
+	return transaction.Commit()
 }
 
 // ListRequirements 返回全部需求。
@@ -197,8 +203,8 @@ func (store *Store) ListRequirements(ctx context.Context) ([]requirements.Requir
 }
 
 const requirementSelect = `
-	SELECT id, title, description, status, priority, position, workspace_id, mode, parallel,
-	       steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
+	SELECT id, title, description, status, priority, position, workspace_path, workspace_label, workspace_kind,
+	       mode, parallel, steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
 	       loop_count, last_error, source, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
 	FROM requirements`
 
@@ -211,8 +217,8 @@ func scanRequirement(row scanner) (requirements.Requirement, error) {
 	var steps string
 	var parallel int
 	err := row.Scan(&requirement.ID, &requirement.Title, &requirement.Description, &requirement.Status,
-		&requirement.Priority, &requirement.Position, &requirement.WorkspaceID, &requirement.Mode, &parallel,
-		&steps, &requirement.RefinedAt, &requirement.Progress, &requirement.ProgressNote, &requirement.SessionID,
+		&requirement.Priority, &requirement.Position, &requirement.WorkspacePath, &requirement.WorkspaceLabel, &requirement.WorkspaceKind,
+		&requirement.Mode, &parallel, &steps, &requirement.RefinedAt, &requirement.Progress, &requirement.ProgressNote, &requirement.SessionID,
 		&requirement.PeerMessageID, &requirement.TurnID, &requirement.LoopCount, &requirement.LastError,
 		&requirement.Source, &requirement.CreatedAt, &requirement.UpdatedAt, &requirement.StartedAt, &requirement.CompletedAt)
 	if err != nil {
@@ -247,20 +253,22 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 	}
 	_, err = store.db.ExecContext(ctx, `
 		INSERT INTO requirements (
-			id, title, description, status, priority, position, workspace_id, mode, parallel,
-			steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
+			id, title, description, status, priority, position, workspace_path, workspace_label, workspace_kind,
+			mode, parallel, steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
 			loop_count, last_error, source, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title=excluded.title, description=excluded.description, status=excluded.status,
-			priority=excluded.priority, position=excluded.position, workspace_id=excluded.workspace_id,
+			priority=excluded.priority, position=excluded.position, workspace_path=excluded.workspace_path,
+			workspace_label=excluded.workspace_label, workspace_kind=excluded.workspace_kind,
 			mode=excluded.mode, parallel=excluded.parallel, steps_json=excluded.steps_json,
 			refined_at_ms=excluded.refined_at_ms, progress=excluded.progress, progress_note=excluded.progress_note,
 			session_id=excluded.session_id, peer_message_id=excluded.peer_message_id, turn_id=excluded.turn_id,
 			loop_count=excluded.loop_count, last_error=excluded.last_error, source=excluded.source,
 			updated_at_ms=excluded.updated_at_ms, started_at_ms=excluded.started_at_ms, completed_at_ms=excluded.completed_at_ms`,
 		requirement.ID, requirement.Title, requirement.Description, requirement.Status, requirement.Priority,
-		requirement.Position, requirement.WorkspaceID, requirement.Mode, parallel, string(steps),
+		requirement.Position, requirement.WorkspacePath, requirement.WorkspaceLabel, requirement.WorkspaceKind,
+		requirement.Mode, parallel, string(steps),
 		requirement.RefinedAt, requirement.Progress, requirement.ProgressNote, requirement.SessionID,
 		requirement.PeerMessageID, requirement.TurnID, requirement.LoopCount, requirement.LastError,
 		requirement.Source, requirement.CreatedAt, requirement.UpdatedAt, requirement.StartedAt, requirement.CompletedAt)

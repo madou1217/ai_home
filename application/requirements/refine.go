@@ -12,8 +12,8 @@ const RefineSystemPrompt = "你是需求分析器。把用户的一段需求整�
 	"只输出一个 JSON 对象，不要代码块，不要额外解释。格式：" +
 	"{\"title\":\"简短标题\",\"summary\":\"一句话目标\",\"steps\":[{\"text\":\"步骤\"}],\"acceptance\":[\"验收标准\"]}"
 
-// BuildRefinePrompt 把需求与工作区上下文交给模型。
-func BuildRefinePrompt(requirement Requirement, workspace Workspace) string {
+// BuildRefinePrompt 把需求与 Work 工作区上下文交给模型。
+func BuildRefinePrompt(requirement Requirement) string {
 	var builder strings.Builder
 	builder.WriteString("原始需求：\n")
 	builder.WriteString(requirement.Title)
@@ -22,9 +22,10 @@ func BuildRefinePrompt(requirement Requirement, workspace Workspace) string {
 		builder.WriteString(description)
 		builder.WriteString("\n")
 	}
-	builder.WriteString("\n工作区项目路径：\n")
-	for _, path := range workspace.ProjectPaths {
-		builder.WriteString("- " + path + "\n")
+	builder.WriteString("\nWork 工作区：\n")
+	builder.WriteString("- " + requirement.WorkspacePath + "\n")
+	if label := strings.TrimSpace(requirement.WorkspaceLabel); label != "" {
+		builder.WriteString("名称：" + label + "\n")
 	}
 	builder.WriteString("\n要求：\n")
 	builder.WriteString("1. 步骤必须能由 AI 在工程环境中直接执行（读代码、改代码、跑验证）。\n")

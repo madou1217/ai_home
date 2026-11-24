@@ -13,9 +13,11 @@ import (
 
 // ImportInput 描述一次从外部 TodoList 导入。
 type ImportInput struct {
-	Format      string `json:"format"`
-	Content     string `json:"content"`
-	WorkspaceID string `json:"workspaceId"`
+	Format         string `json:"format"`
+	Content        string `json:"content"`
+	WorkspacePath  string `json:"workspacePath"`
+	WorkspaceLabel string `json:"workspaceLabel"`
+	WorkspaceKind  string `json:"workspaceKind"`
 }
 
 // ImportItem 是解析后的中间条目。
@@ -37,12 +39,12 @@ func (service *Service) Import(ctx context.Context, input ImportInput) ([]Requir
 	if len(items) == 0 {
 		return nil, fmt.Errorf("%w: 没有解析到可导入的条目", ErrInvalid)
 	}
-	workspaceID := strings.TrimSpace(input.WorkspaceID)
-	if workspaceID != "" {
-		if _, err := service.store.GetWorkspace(ctx, workspaceID); err != nil {
-			return nil, err
-		}
+	workspacePath, err := NormalizeWorkspacePath(input.WorkspacePath)
+	if err != nil {
+		return nil, err
 	}
+	workspaceLabel := strings.TrimSpace(input.WorkspaceLabel)
+	workspaceKind := strings.TrimSpace(input.WorkspaceKind)
 	created := make([]Requirement, 0, len(items))
 	for _, item := range items {
 		description := strings.TrimSpace(item.Description)
@@ -50,20 +52,22 @@ func (service *Service) Import(ctx context.Context, input ImportInput) ([]Requir
 		switch {
 		case item.Done:
 			status = StatusDone
-		case workspaceID != "":
+		case workspacePath != "":
 			if description == "" {
 				description = item.Title
 			}
 			status = StatusReady
 		}
 		requirement, createErr := service.CreateRequirement(ctx, Requirement{
-			Title:       item.Title,
-			Description: description,
-			Status:      status,
-			Priority:    item.Priority,
-			WorkspaceID: workspaceID,
-			Mode:        ModePlan,
-			Source:      format,
+			Title:          item.Title,
+			Description:    description,
+			Status:         status,
+			Priority:       item.Priority,
+			WorkspacePath:  workspacePath,
+			WorkspaceLabel: workspaceLabel,
+			WorkspaceKind:  workspaceKind,
+			Mode:           ModePlan,
+			Source:         format,
 		})
 		if createErr != nil {
 			return created, fmt.Errorf("导入 %q 失败: %w", item.Title, createErr)

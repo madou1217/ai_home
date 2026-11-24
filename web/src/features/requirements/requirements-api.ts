@@ -18,18 +18,6 @@ export interface RequirementStep {
   status: 'pending' | 'running' | 'done';
 }
 
-export interface RequirementWorkspace {
-  id: string;
-  name: string;
-  projectPaths: string[];
-  provider: string;
-  model: string;
-  accountRef: string;
-  maxParallel: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
 export interface Requirement {
   id: string;
   title: string;
@@ -37,7 +25,10 @@ export interface Requirement {
   status: RequirementStatus;
   priority: number;
   position: number;
-  workspaceId: string;
+  /** /ui/chat（Work）里的项目路径或远程工作区影子路径。 */
+  workspacePath: string;
+  workspaceLabel: string;
+  workspaceKind: string;
   mode: RequirementMode;
   parallel: boolean;
   steps: RequirementStep[];
@@ -61,6 +52,7 @@ export interface RequirementSchedulerSettings {
   provider: string;
   model: string;
   accountRef: string;
+  maxParallel: number;
   updatedAt: number;
 }
 
@@ -69,6 +61,7 @@ export interface RequirementSchedulerStatus {
   provider: string;
   model: string;
   accountRef: string;
+  maxParallel: number;
   running: number;
   queued: number;
   ready: number;
@@ -77,7 +70,6 @@ export interface RequirementSchedulerStatus {
 }
 
 export interface RequirementSnapshot {
-  workspaces: RequirementWorkspace[];
   requirements: Requirement[];
   settings: RequirementSchedulerSettings;
   scheduler: RequirementSchedulerStatus;
@@ -97,7 +89,9 @@ export interface RequirementInput {
   description?: string;
   status?: RequirementStatus;
   priority?: number;
-  workspaceId?: string;
+  workspacePath?: string;
+  workspaceLabel?: string;
+  workspaceKind?: string;
   mode?: RequirementMode;
   parallel?: boolean;
   steps?: RequirementStep[];
@@ -109,7 +103,9 @@ export interface RequirementPatch {
   status?: RequirementStatus;
   priority?: number;
   position?: number;
-  workspaceId?: string;
+  workspacePath?: string;
+  workspaceLabel?: string;
+  workspaceKind?: string;
   mode?: RequirementMode;
   parallel?: boolean;
   steps?: RequirementStep[];
@@ -118,7 +114,17 @@ export interface RequirementPatch {
 export interface RequirementImportInput {
   format: string;
   content: string;
-  workspaceId?: string;
+  workspacePath?: string;
+  workspaceLabel?: string;
+  workspaceKind?: string;
+}
+
+/** 与 /ui/chat（Work）同源的工作区选项。 */
+export interface WorkWorkspaceOption {
+  path: string;
+  label: string;
+  kind: 'local' | 'ssh';
+  detail?: string;
 }
 
 const BASE = '/webui/requirements';
@@ -126,10 +132,9 @@ const BASE = '/webui/requirements';
 function snapshotFrom(payload: any): RequirementSnapshot {
   const data = payload?.snapshot || payload || {};
   return {
-    workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
     requirements: Array.isArray(data.requirements) ? data.requirements : [],
-    settings: data.settings || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', updatedAt: 0 },
-    scheduler: data.scheduler || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
+    settings: data.settings || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', maxParallel: 2, updatedAt: 0 },
+    scheduler: data.scheduler || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', maxParallel: 2, running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
     generatedAt: Number(data.generatedAt) || Date.now()
   };
 }
@@ -150,12 +155,20 @@ export const requirementsAPI = {
   remove: async (id: string): Promise<void> => {
     await api.delete(`${BASE}/${encodeURIComponent(id)}`);
   },
-  refine: async (id: string, workspaceId?: string): Promise<Requirement> => {
-    const response = await api.post(`${BASE}/${encodeURIComponent(id)}/refine`, { workspaceId: workspaceId || '' });
+  refine: async (id: string, workspace?: WorkWorkspaceOption): Promise<Requirement> => {
+    const response = await api.post(`${BASE}/${encodeURIComponent(id)}/refine`, {
+      workspacePath: workspace?.path || '',
+      workspaceLabel: workspace?.label || '',
+      workspaceKind: workspace?.kind || ''
+    });
     return response.data.requirement as Requirement;
   },
-  dispatch: async (id: string, workspaceId?: string): Promise<Requirement> => {
-    const response = await api.post(`${BASE}/${encodeURIComponent(id)}/dispatch`, { workspaceId: workspaceId || '' });
+  dispatch: async (id: string, workspace?: WorkWorkspaceOption): Promise<Requirement> => {
+    const response = await api.post(`${BASE}/${encodeURIComponent(id)}/dispatch`, {
+      workspacePath: workspace?.path || '',
+      workspaceLabel: workspace?.label || '',
+      workspaceKind: workspace?.kind || ''
+    });
     return response.data.requirement as Requirement;
   },
   cancel: async (id: string): Promise<Requirement> => {
@@ -173,17 +186,6 @@ export const requirementsAPI = {
   reorder: async (ids: string[]): Promise<RequirementSnapshot> => {
     const response = await api.post(`${BASE}/reorder`, { ids });
     return snapshotFrom(response.data);
-  },
-  createWorkspace: async (input: Partial<RequirementWorkspace>): Promise<RequirementWorkspace> => {
-    const response = await api.post(`${BASE}/workspaces`, input);
-    return response.data.workspace as RequirementWorkspace;
-  },
-  updateWorkspace: async (id: string, input: Partial<RequirementWorkspace>): Promise<RequirementWorkspace> => {
-    const response = await api.patch(`${BASE}/workspaces/${encodeURIComponent(id)}`, input);
-    return response.data.workspace as RequirementWorkspace;
-  },
-  removeWorkspace: async (id: string): Promise<void> => {
-    await api.delete(`${BASE}/workspaces/${encodeURIComponent(id)}`);
   },
   updateScheduler: async (settings: Partial<RequirementSchedulerSettings>): Promise<RequirementSchedulerSettings> => {
     const response = await api.patch(`${BASE}/scheduler`, settings);

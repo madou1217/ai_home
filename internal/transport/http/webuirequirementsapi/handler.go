@@ -10,10 +10,6 @@
 //	GET    /v1/management/webui/requirements/{id}/events  需求时间线
 //	POST   /v1/management/webui/requirements/import      导入 TodoList
 //	POST   /v1/management/webui/requirements/reorder     人工排序
-//	GET    /v1/management/webui/requirements/workspaces  工作区列表
-//	POST   /v1/management/webui/requirements/workspaces  新建工作区
-//	PATCH  /v1/management/webui/requirements/workspaces/{id}
-//	DELETE /v1/management/webui/requirements/workspaces/{id}
 //	GET    /v1/management/webui/requirements/scheduler   调度器状态
 //	POST   /v1/management/webui/requirements/scheduler/run 立即调度一次
 //	PATCH  /v1/management/webui/requirements/scheduler   更新调度器配置
@@ -84,10 +80,6 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.handleCollection(response, request)
 	case rest == "watch":
 		handler.handleWatch(response, request)
-	case rest == "workspaces":
-		handler.handleWorkspaces(response, request)
-	case strings.HasPrefix(rest, "workspaces/"):
-		handler.handleWorkspaceItem(response, request, strings.TrimPrefix(rest, "workspaces/"))
 	case rest == "import":
 		handler.handleImport(response, request)
 	case rest == "reorder":
@@ -161,14 +153,16 @@ func (handler *Handler) handleRefine(response http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
-		WorkspaceID string `json:"workspaceId"`
+		WorkspacePath  string `json:"workspacePath"`
+		WorkspaceLabel string `json:"workspaceLabel"`
+		WorkspaceKind  string `json:"workspaceKind"`
 	}
 	if request.ContentLength != 0 {
 		if !decodeJSON(response, request, handler.MaxBody, &input) {
 			return
 		}
 	}
-	updated, err := handler.Service.Refine(request.Context(), id, input.WorkspaceID)
+	updated, err := handler.Service.Refine(request.Context(), id, input.WorkspacePath, input.WorkspaceLabel, input.WorkspaceKind)
 	if err != nil {
 		writeServiceError(response, err)
 		return
@@ -182,14 +176,16 @@ func (handler *Handler) handleDispatch(response http.ResponseWriter, request *ht
 		return
 	}
 	var input struct {
-		WorkspaceID string `json:"workspaceId"`
+		WorkspacePath  string `json:"workspacePath"`
+		WorkspaceLabel string `json:"workspaceLabel"`
+		WorkspaceKind  string `json:"workspaceKind"`
 	}
 	if request.ContentLength != 0 {
 		if !decodeJSON(response, request, handler.MaxBody, &input) {
 			return
 		}
 	}
-	updated, err := handler.Service.Dispatch(request.Context(), handler.Dispatcher, id, input.WorkspaceID)
+	updated, err := handler.Service.Dispatch(request.Context(), handler.Dispatcher, id, input.WorkspacePath, input.WorkspaceLabel, input.WorkspaceKind)
 	if err != nil {
 		writeServiceError(response, err)
 		return
@@ -221,55 +217,6 @@ func (handler *Handler) handleEvents(response http.ResponseWriter, request *http
 		return
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "events": events})
-}
-
-func (handler *Handler) handleWorkspaces(response http.ResponseWriter, request *http.Request) {
-	switch request.Method {
-	case http.MethodGet:
-		workspaces, err := handler.Service.List(request.Context())
-		if err != nil {
-			writeServiceError(response, err)
-			return
-		}
-		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "workspaces": workspaces.Workspaces})
-	case http.MethodPost:
-		var input requirements.Workspace
-		if !decodeJSON(response, request, handler.MaxBody, &input) {
-			return
-		}
-		created, err := handler.Service.CreateWorkspace(request.Context(), input)
-		if err != nil {
-			writeServiceError(response, err)
-			return
-		}
-		writeJSON(response, http.StatusCreated, map[string]any{"ok": true, "workspace": created})
-	default:
-		methodNotAllowed(response, "GET, POST")
-	}
-}
-
-func (handler *Handler) handleWorkspaceItem(response http.ResponseWriter, request *http.Request, id string) {
-	switch request.Method {
-	case http.MethodPatch:
-		var input requirements.Workspace
-		if !decodeJSON(response, request, handler.MaxBody, &input) {
-			return
-		}
-		updated, err := handler.Service.UpdateWorkspace(request.Context(), id, input)
-		if err != nil {
-			writeServiceError(response, err)
-			return
-		}
-		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "workspace": updated})
-	case http.MethodDelete:
-		if err := handler.Service.DeleteWorkspace(request.Context(), id); err != nil {
-			writeServiceError(response, err)
-			return
-		}
-		writeJSON(response, http.StatusOK, map[string]any{"ok": true})
-	default:
-		methodNotAllowed(response, "PATCH, DELETE")
-	}
 }
 
 func (handler *Handler) handleImport(response http.ResponseWriter, request *http.Request) {
@@ -432,7 +379,6 @@ func (handler *Handler) readSnapshot(ctx context.Context) (map[string]any, error
 		status = handler.Scheduler.Status()
 	}
 	return map[string]any{
-		"workspaces":   snapshot.Workspaces,
 		"requirements": snapshot.Requirements,
 		"settings":     snapshot.Settings,
 		"scheduler":    status,

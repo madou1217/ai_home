@@ -1054,20 +1054,27 @@ export default function Accounts() {
   const tabItems = [
     {
       key: 'all',
-      label: <span style={{ padding: '0 8px' }}>全部 ({providerStats.all.total})</span>
+      label: (
+        <span className="accounts-provider-tab-label" title={`全部 (${providerStats.all.total})`}>
+          全部 ({providerStats.all.total})
+        </span>
+      )
     },
     ...visibleFamilyGroups.map((group) => {
       const representative = familyRepresentative(group.family);
       return {
         key: group.family,
         label: (
-          <span style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span
+            className="accounts-provider-tab-label"
+            title={`${group.label} (${providerStats[group.family]?.total || 0})`}
+          >
             <AccountActivityIcon
               provider={representative}
               activity={providerActivity[group.family] || null}
               size={14}
             />
-            {group.label} ({providerStats[group.family]?.total || 0})
+            <span className="accounts-provider-tab-name">{group.label}</span> ({providerStats[group.family]?.total || 0})
           </span>
         )
       };

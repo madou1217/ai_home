@@ -31,6 +31,56 @@
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
+.accounts-provider-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+/* 未达到完整标签单行所需的宽度时，改用图标 + 数量紧凑模式。
+ * 名称保留在 DOM（视觉隐藏），tab 的无障碍名称与 hover title 仍完整。 */
+@media (max-width: 2100px) {
+  .accounts-provider-tabs .ant-tabs-nav-wrap {
+    overflow: hidden;
+  }
+
+  .accounts-provider-tabs .ant-tabs-nav-list {
+    flex-wrap: nowrap;
+  }
+
+  .accounts-provider-tabs .accounts-provider-tab-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .accounts-provider-tabs .ant-tabs-tab + .ant-tabs-tab {
+    margin-left: 8px;
+  }
+
+  .accounts-provider-tabs .accounts-provider-tab-label {
+    padding: 0 6px;
+  }
+
+  .accounts-provider-tabs .ant-tabs-tab {
+    padding-inline: 4px;
+  }
+}
+
+/* 超宽屏恢复完整标签时收紧间距，避免最后一项仍被挤到第二行。 */
+@media (min-width: 2101px) {
+  .accounts-provider-tabs .ant-tabs-tab + .ant-tabs-tab {
+    margin-left: 16px;
+  }
+}
+
 /* 供应商动作条：位于 provider tab 内容区顶部，只显示当前供应商支持的动作。
  * 不放进 tab 栏，也不使用卡片 / Alert 容器；进度是紧凑的行内文字。 */
 .accounts-activity-bar {

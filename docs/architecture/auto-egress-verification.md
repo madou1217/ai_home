@@ -181,6 +181,47 @@ LEASE port=44700 userinfo=True
 exit=0
 ```
 
+### 7. 更正：原生 exe 安装器**可以**代理
+
+先前文档写「非 PowerShell、非 curl、非 npm 的原生 exe 安装器一律按不可代理处理」，
+这是错的，而且那条规则会**跳过本来能用的计划**。核实结果：
+
+`opencode_desktop_windows`（其他 exe 桌面端同理）的计划体是：
+
+```
+[aih] ProxyPrepend: DefaultWebProxy + Credentials
+$curl = Get-Command curl.exe; & $curl.Source -fL ... -o $dest <url>   ← 下载，受控
+Start-Process -FilePath $dest ...                                      ← 之后才跑 exe
+```
+
+下载那一步是我们自己的 curl / Invoke-WebRequest，完整受代理控制；exe 只是本地
+执行，不需要代理。把它判成不可代理是分类错误。
+
+`uv`（kimi 的 `kimi_uv_official`）同样被判错：它读 `HTTP(S)_PROXY`
+（官方环境变量文档列出两者）。
+
+判定规则已改为「这个可执行文件读不读代理配置」，并按机制而不是命令名判断：
+
+| 计划 | 依据 | 结果 |
+| --- | --- | --- |
+| `npm` / `npm.cmd` | 读 `npm_config_proxy`、`HTTP(S)_PROXY` | 可代理 |
+| `uv` / `uv.exe` | 读 `HTTP(S)_PROXY` | 可代理 |
+| `cmd` + curl | curl 读 `HTTPS_PROXY` | 可代理 |
+| PowerShell | 已注入 `DefaultWebProxy`，或计划内自带 curl | 可代理 |
+| **`winget.exe`** | **真机：死代理下仍访问源** | 不可代理 |
+| 裸 `msiexec` | 自己拉 URL，无法注入 | 不可代理 |
+
+全量矩阵（13 个 provider × cli/desktop）修复后只剩 **3 条**不可代理，全部是
+winget（claude cli、claude desktop、codex desktop）。
+
+真机最终确认（真实租约，端口 54674）：
+
+```
+[aih] 已跳过不支持代理的安装器：WinGet 安装 Claude Code
+[aih] claude CLI 安装验证通过: 2.1.330 -> 2.1.331
+exit=0
+```
+
 ### 仍未验证
 
 - **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前

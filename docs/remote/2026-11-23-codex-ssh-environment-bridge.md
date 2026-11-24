@@ -344,3 +344,44 @@ remote_connections.connection_state_changed hostId=remote-ssh-discovered:aws
 `chatgpt.com/backend-api` 并 401，那是模型目录刷新，不影响连接与执行——用自定义 provider 即可避开。）
 
 
+
+## 10. 校验方法：`--print-startup-config` 不是充分条件
+
+`codex app-server --print-startup-config` 只校验**能不能解析**，不校验**语义约束**。
+实测：`program` 与 `connect_timeout_sec` 同写时它照样输出 `appServerVersion`，
+只有 app-server 真正启动才报：
+
+```
+Error: exec-server protocol error: environment `x` connect_timeout_sec requires url
+```
+
+因此凡是验证 environments.toml 的改动，一律用真实启动（喂空 stdin 即可）判定，
+不用 `--print-startup-config`。这一条曾让我误以为「program + connect_timeout_sec 合法」。
+
+## 11. 实现完成度（2026-11-24）
+
+| 能力 | 状态 | 证据 |
+| --- | --- | --- |
+| 生成受管块并保留用户内容 | 已实现 | 10 类边界用例，含表在首/尾、缩进表体、id 冲突、CRLF、重复根键 |
+| 合并幂等 | 已实现 | 二次合并字节相同 |
+| 顶层键封闭集合 | 已实现 | 非法键被剥离并上报 `DroppedRootKeys` |
+| `default` 指向真实条目 | 已实现 | 悬空值回退；`DefaultKept` 只报真正保留的 |
+| program 模式（ssh 直连） | 已实现 | AWS `bash`、Windows `powershell` 均 `environment/info` 成功 |
+| 探测可执行文件真的能跑 | 已实现 | Windows 上跳过不兼容 exe，选中 pnpm shim |
+| url 模式渲染 | 已实现 | 生成的 `url` + `connect_timeout_sec` 通过真实启动 |
+| 探测结果缓存 | 已实现 | 冷启动 5.5s、热启动 0.34s |
+| 反向隧道连接 | 正常渲染 | 隧道只把远端端口转发回 AIH，与 Codex 直连正交 |
+| 密码认证连接 | 显式拒绝 | 返回 `codex_environment_unsupported_auth` |
+| 出口绑定（egress）多跳 | 展开为 ProxyJump | 未在真机验证多跳链 |
+| Desktop `remote-projects` | 未做 | 见 §6.4，需要先解决账号作用域 |
+
+### 11.1 已知缺口
+
+- **url 模式只实现了渲染，没有实现通道宿主**：还没有把 `sshremote.DialTCP` 的本地监听
+  与 `url` 环境绑定起来的运行时。当前 url 环境需要调用方自己保证回环端口可达。
+- **同步必须同步执行**：最初放在后台 goroutine 里，实测 CLI 一两秒就退出、任务被杀，
+  文件永远写不出来。现在靠"探测结果缓存 + 有界预算"解决启动耗时，而不是靠异步。
+- **多跳（egress 链）只做了 ProxyJump 字符串拼接**，没有真机验证过 3 段以上链路。
+- **Windows 上 Codex 的默认 shell 是 powershell**：`exec-server` 能起来，但
+  `process/start` 里的 `sh` 脚本假设在 Windows 上不成立；走 Windows 环境时应让
+  模型用 PowerShell 语法，或由 AIH 显式传 `cwd`/shell。

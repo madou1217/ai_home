@@ -566,6 +566,14 @@
   }
 }
 
+/* 1280 等窄桌面：页头已有“项目终端”入口，房间工具条隐藏重复按钮，
+ * 避免它单独折到第二行。 */
+@media (max-width: 1400px) {
+  .office-room-new-terminal {
+    display: none;
+  }
+}
+
 @media (min-width: 1680px) {
   .office-room-topbar {
     padding: var(--space-4) var(--space-8);

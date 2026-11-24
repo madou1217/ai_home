@@ -926,6 +926,7 @@ export function OfficeRoom({
           </Button>
 
           <Button
+            className="office-room-new-terminal"
             size="small"
             type="primary"
             icon={<PlusOutlined />}

@@ -122,13 +122,81 @@ func buildSSHArgsWithProgram(connection Connection, remoteCodex string) []string
 	if identity := strings.TrimSpace(connection.IdentityFile); identity != "" {
 		args = append(args, "-i", expandHome(identity), "-o", "IdentitiesOnly=yes")
 	}
-	if jump := connection.Jump; jump != nil {
-		jumpArgs := buildSSHArgsWithProgram(*jump, defaultRemoteCodex)
-		args = append(args, "-o", "ProxyJump="+strings.Join(jumpArgs[:len(jumpArgs)-1-len(execServerArgs)], " "))
+	// ProxyJump 只接受一份「跳板规格」，不能把内层的 ssh 选项再嵌进去：
+	// 内层嵌套会变成 `-o ProxyJump=-T -o BatchMode=yes ...` 这种被 ssh 拒绝的参数。
+	if proxy := proxyJumpSpec(connection); proxy != "" {
+		args = append(args, "-o", "ProxyJump="+proxy)
 	}
 	args = append(args, sshTarget(connection))
 	args = append(args, remoteCodex)
 	return append(args, execServerArgs...)
+}
+
+// linearJumpChain 把 Jump 链按「由外到内」摊平成 [最外层跳板, ..., 最内层]。
+func linearJumpChain(connection Connection) []Connection {
+	chain := []Connection{}
+	for hop := connection.Jump; hop != nil; hop = hop.Jump {
+		chain = append(chain, *hop)
+		if len(chain) >= maxJumpDepth {
+			break
+		}
+	}
+	return chain
+}
+
+// proxyJumpSpec 产出 ProxyJump 的取值。
+//
+//   - 单跳：直接写该跳的 user@host:port（OpenSSH 从 7.3 起支持这种写法）；
+//   - 多跳：用逗号连接各跳的 ssh 目标，OpenSSH 会按顺序建立隧道。
+//
+// 身份文件等选项无法在 ProxyJump 里逐跳指定：OpenSSH 的 ProxyJump 只接受目标，
+// 不接受任意 ssh 选项。内层跳板的凭据必须由 ssh-agent 或 ~/.ssh/config 提供，
+// 这一点在 buildSSHArgsWithProgram 之外的调用方必须知道（见 ProxyJumpLimitations）。
+func proxyJumpSpec(connection Connection) string {
+	chain := linearJumpChain(connection)
+	if len(chain) == 0 {
+		return ""
+	}
+	specs := make([]string, 0, len(chain))
+	for i := len(chain) - 1; i >= 0; i-- {
+		specs = append(specs, sshJumpTarget(chain[i]))
+	}
+	return strings.Join(specs, ",")
+}
+
+// sshJumpTarget 是 ProxyJump 里单个跳板的写法：user@host 或 user@host:port。
+func sshJumpTarget(hop Connection) string {
+	target := sshTarget(hop)
+	if port := connectionPort(hop); port != 22 {
+		return target + ":" + strconv.Itoa(port)
+	}
+	return target
+}
+
+// ProxyJumpLimitations 说明多跳渲染的真实限制，供 UI 如实告警。
+//
+// OpenSSH 的 ProxyJump 只接受「目标列表」，不能为每一跳指定 -i / -o。
+// 因此内层跳板若使用 AIH 保存的私钥（而非 ssh-agent 或 ~/.ssh/config），
+// Codex 直连会失败。这类连接应当改用 url 模式（由 AIH 自己完成多跳拨号）。
+func ProxyJumpLimitations(connection Connection) []string {
+	chain := linearJumpChain(connection)
+	problems := []string{}
+	for _, hop := range chain {
+		label := strings.TrimSpace(hop.Label)
+		if label == "" {
+			label = strings.TrimSpace(hop.Host)
+		}
+		// -i / IdentitiesOnly 只作用于最终目标，ProxyJump 建立的跳板段拿不到它。
+		// 实测：跳板需要专用私钥时，直连会得到 Permission denied (publickey)。
+		if strings.TrimSpace(hop.IdentityFile) != "" {
+			problems = append(problems, label+" 使用专用私钥；ProxyJump 只把 -i 用在最终目标，跳板段拿不到，需在 ~/.ssh/config 声明该跳板或改用 url 模式")
+			continue
+		}
+		if normalizeAuth(hop.AuthType) == AuthPassword {
+			problems = append(problems, label+" 使用密码认证；ProxyJump 无法提供密码，需改用 url 模式")
+		}
+	}
+	return problems
 }
 
 // sshTarget 产出 user@host。用户名必须带上：AIH 连接里的 user 是权威事实，

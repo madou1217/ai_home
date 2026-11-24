@@ -193,17 +193,19 @@ func buildPosixScriptPlan(id, label, rawURL string, hosts []string, args []strin
 
 // buildPowerShellScriptPlan 生成「下载官方脚本并执行」的 Windows 计划。
 //
-// Invoke-RestMethod / Invoke-WebRequest 不读 HTTP_PROXY/HTTPS_PROXY 环境变量
-// （PowerShell 的已知行为；实测：设了 $env:HTTPS_PROXY 仍直连成功）。所以只把
-// 代理写进环境，Windows 上的自动代理会「换了出口却照旧直连」，看起来成功、
-// 实际没走代理。
+// 两个独立的 Windows 陷阱，必须同时处理，否则自动代理等于没生效：
 //
-// 修法：给本进程设置 [System.Net.WebRequest]::DefaultWebProxy。它同时作用于
-// 我们这条 irm 和官方脚本内部后续的下载（实测：设为死端口后 irm 立即失败，
-// 证明生效）。只给第一条请求加 -Proxy 不够——脚本内部还会继续下载。
+//  1. Invoke-RestMethod / Invoke-WebRequest 不读 HTTP_PROXY/HTTPS_PROXY 环境变量。
+//     只写环境变量的结果是「换了出口却照旧直连」——看起来成功，实际没走代理。
 //
-// 代理地址从环境推导而不是拼进脚本字面量：凭据留在环境变量里，脚本参数在
-// Windows 上对所有进程可见。
+//  2. **WebProxy 不会把 URL 里的 userinfo 当成代理凭据**。受管租约的地址正是
+//     http://aih:<token>@127.0.0.1:<port>，若只 New-Object WebProxy($p)，
+//     PowerShell 发出的 CONNECT 不带 Proxy-Authorization，代理回 407。
+//     实测（PowerShell 5.1）：-Proxy 带 userinfo → 407；DefaultWebProxy 带
+//     userinfo → 407；只有显式设置 .Credentials → 认证通过。
+//
+// 因此这里把 URL 拆成「无凭据地址 + NetworkCredential」，并同时设
+// DefaultWebProxy（覆盖官方脚本内部后续的下载，只给首条请求加 -Proxy 不够）。
 func buildPowerShellScriptPlan(id, label, rawURL string, hosts []string, opts Options) LifecyclePlan {
 	official, err := assertOfficialURL(rawURL, hosts)
 	if err != nil {
@@ -211,11 +213,34 @@ func buildPowerShellScriptPlan(id, label, rawURL string, hosts []string, opts Op
 	}
 	script := fmt.Sprintf("irm %s | iex", powershellQuote(official))
 	if taskProxyURL(mergePlanEnv(opts.Env, nil)) != "" {
-		script = "$p = $env:HTTPS_PROXY; if (-not $p) { $p = $env:HTTP_PROXY }; " +
-			"if ($p) { [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy($p) }; " +
-			script
+		script = powershellProxyPrepend() + script
 	}
 	return buildPowerShellPlan(id, label, script, opts)
+}
+
+// powershellProxyPrepend 是 PowerShell 计划前置的代理装配片段。
+//
+// URL 从环境读（凭据不进 argv），在这里拆出 userinfo 并转成 Credentials。
+// 拆解在 PowerShell 内完成，因此不需要把代理密码拼进脚本文本。
+func powershellProxyPrepend() string {
+	// 逐句解释：
+	//   $p            —— 本轮代理 URL（含 userinfo），来自任务环境
+	//   $uri          —— 解析后用于取 Host/Port/凭据
+	//   $builder      —— 重建一个不含 userinfo 的地址，WebProxy 只认这种
+	//   Credentials   —— 关键一步；缺了它 CONNECT 就没有 Proxy-Authorization
+	return strings.Join([]string{
+		"$p = $env:AIH_TASK_PROXY; if (-not $p) { $p = $env:HTTPS_PROXY }; if (-not $p) { $p = $env:HTTP_PROXY }; ",
+		"if ($p) { ",
+		"$u = [Uri]$p; ",
+		"$b = '{0}://{1}:{2}' -f $u.Scheme, $u.Host, $u.Port; ",
+		"$wp = New-Object System.Net.WebProxy($b); ",
+		"if ($u.UserInfo) { ",
+		"$c = $u.UserInfo.Split(':', 2); ",
+		"$wp.Credentials = New-Object System.Net.NetworkCredential($c[0], $c[1]); ",
+		"} ",
+		"[System.Net.WebRequest]::DefaultWebProxy = $wp; ",
+		"} ",
+	}, "")
 }
 
 // taskProxyURL 从安装器环境里读本轮代理（没有则空）。

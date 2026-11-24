@@ -287,7 +287,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <tr>
 <td>办公室 zsh 窗口关不掉</td><td class="meta">11-18</td>
 <td><span class="chip s-已完成">已完成</span></td>
-<td class="ev">2026-11-25 真实浏览器：/tmp/office-ui-verify 新建 Web Shell → 选中工位 → 关闭会话 → 确认弹窗 → 房间/工位立即消失，API 只剩原会话；同时修复 1280×720 下停靠栏被裁切、状态标签与按钮重叠（3fba9944），1440/1280 实测无溢出</td><td class="sess">—</td></tr>
+<td class="ev">2026-11-25 真实浏览器两次验证：临时 Web Shell 分别走「关闭会话」与「结束终端」→ 确认弹窗 → toast「已关闭会话」→ 房间/工位立即移除，close 200，临时目录已删；同时修复 1280×720 停靠栏裁切与状态标签/按钮重叠（3fba9944）。/Users/model 为持久 adopted 工位，未在临时终端注册表内，保持不动</td><td class="sess">—</td></tr>
 <tr>
 <td>设置页重排、Claude 首屏配置迁到 toolkit</td><td class="meta">11-20</td>
 <td><span class="chip s-已完成">已完成</span></td>

@@ -41,8 +41,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>124 条已完成</b>、9 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>89%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D 建模精细度。</p><div class="legend">
-<span class="chip s-已完成">已完成 124</span>
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>127 条已完成</b>、9 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>89%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D 建模精细度。</p><div class="legend">
+<span class="chip s-已完成">已完成 127</span>
 <span class="chip s-部分">部分 9</span>
 <span class="chip s-未完成">未完成 3</span>
 <span class="chip s-未核实">未核实 3</span>
@@ -269,7 +269,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td><span class="chip s-已完成">已完成</span></td>
 <td class="ev">Go 终端路由 + 兼容别名</td><td class="sess">—</td></tr>
 </tbody></table></div></section>
-<section id="t6"><h2>WebUI、性能与需求管理 <span class="count">19 条</span></h2>
+<section id="t6"><h2>WebUI、性能与需求管理 <span class="count">22 条</span></h2>
 <p class="note">HUD、用量看板、TCC 授权、需求办公室与调度器。</p>
 <div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
 <tr>
@@ -336,6 +336,18 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td>Codex high effort 的 encrypted reasoning 不得中断整条流</td><td class="meta">11-24</td>
 <td><span class="chip s-已完成">已完成</span></td>
 <td class="ev">a7109587：Chat Completions 渲染器跳过 encrypted/redacted reasoning delta/completed；gpt-6-luna low→high→low 正常</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>账号 Provider 标签隐藏 0 账号的族</td><td class="meta">11-25</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">439f4504：按 providerStats 过滤空族；0 账号族（如 AGY）不出现在 tab，添加账号弹窗仍使用完整 Provider 目录；隐藏族作为已存选择时自动回落全部</td><td class="sess">01a20e40</td></tr>
+<tr>
+<td>Provider 选中下划线必须跟随当前标签</td><td class="meta">11-25</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">439f4504：隐藏只位于 nav 底边的全局 ink bar，改用 active tab 的 inset 下划线；1280 两行时第一行选中不再割裂，ChatGPT/全部实测线宽与 tab 完全一致</td><td class="sess">01a20e40</td></tr>
+<tr>
+<td>1280 办公室房间工具栏不单独折行</td><td class="meta">11-25</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">c522b5d8：≤1400 隐藏房间内重复“新建终端”（页头“项目终端”保留）；1280 topbar 81px 单行，1440 恢复按钮仍单行</td><td class="sess">01a20e40</td></tr>
 <tr>
 <td>Codex Work（原生 CLI）无原生 bearer 时不应返回 401</td><td class="meta">11-24</td>
 <td><span class="chip s-已完成">已完成</span></td>

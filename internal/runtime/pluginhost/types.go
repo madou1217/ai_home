@@ -160,6 +160,7 @@ type DoctorContribution struct {
 	Capability     string         `json:"capability"`
 	Order          int            `json:"order"`
 	FailurePolicy  string         `json:"failurePolicy"`
+	Active         bool           `json:"active"`
 	Scope          map[string]any `json:"scope,omitempty"`
 }
 

@@ -3594,6 +3594,7 @@ export interface AihPluginDoctorContribution {
   capability: string;
   order: number;
   failurePolicy: string;
+  active: boolean;
   scope?: { providers?: string[]; hosts?: string[]; models?: string[] };
 }
 

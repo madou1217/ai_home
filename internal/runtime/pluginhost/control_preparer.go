@@ -221,6 +221,18 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	report.Revision = doc.revision
+	activeArtifacts := map[string]bool{}
+	for _, instance := range doc.instances {
+		enabled, _ := instance["enabled"].(bool)
+		if !enabled {
+			continue
+		}
+		pluginID := stringField(instance, "pluginId")
+		version := stringField(instance, "version")
+		if pluginID != "" && version != "" {
+			activeArtifacts[pluginID+"@"+version] = true
+		}
+	}
 
 	for _, item := range doc.installedMaps {
 		pluginID := stringField(item, "pluginId")
@@ -276,6 +288,7 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 					Capability:     capName,
 					Order:          order,
 					FailurePolicy:  policy,
+					Active:         activeArtifacts[pluginID+"@"+version],
 					Scope:          scope,
 				})
 			}

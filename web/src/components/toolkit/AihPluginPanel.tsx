@@ -90,14 +90,18 @@ export default function AihPluginPanel() {
     }
     return result.sort((left, right) => left.pluginId.localeCompare(right.pluginId));
   }, [installed, instances]);
-  // 同一个插件的多个安装版本会重复列出同一贡献项；目录只展示一份。
+  // 同一个插件的多个安装版本会重复列出同一贡献项；目录只展示一份，并优先保留活跃版本。
   const contributionCatalog = useMemo(() => {
-    const seen = new Set<string>();
-    return (doctor?.contributions || []).filter((item) => {
+    const byKey = new Map<string, AihPluginDoctorContribution>();
+    for (const item of doctor?.contributions || []) {
       const key = `${item.pluginId}:${item.contributionId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+      const previous = byKey.get(key);
+      if (!previous || (item.active && !previous.active)) byKey.set(key, item);
+    }
+    return Array.from(byKey.values()).sort((left, right) => {
+      if (left.active !== right.active) return left.active ? -1 : 1;
+      if (left.capability !== right.capability) return left.capability.localeCompare(right.capability);
+      return `${left.pluginId}:${left.contributionId}`.localeCompare(`${right.pluginId}:${right.contributionId}`);
     });
   }, [doctor]);
   const capabilityCatalog = useMemo(() => {
@@ -212,6 +216,7 @@ export default function AihPluginPanel() {
               return (
                 <Space wrap key={`${item.pluginId}:${item.contributionId}`} size={6}>
                   <Tag color="processing">{item.capability}</Tag>
+                  <Tag color={item.active ? 'success' : 'default'}>{item.active ? '活跃' : '未激活'}</Tag>
                   <Typography.Text code>{item.contributionId}</Typography.Text>
                   <Typography.Text type="secondary">
                     {item.pluginId} · order {item.order} · {item.failurePolicy}

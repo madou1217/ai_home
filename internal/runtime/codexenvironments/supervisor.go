@@ -2,6 +2,9 @@ package codexenvironments
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 	"sync"
@@ -49,6 +52,13 @@ type HostStatus struct {
 	Attempt      int
 	Error        string
 	OpenedAt     int64
+
+	// fingerprint 是当前 HostSpec 的摘要；配置变化时 Apply 会重建宿主。
+	// 小写字段不会被 JSON 序列化，也不会进入日志。
+	fingerprint string
+	// done 在 run goroutine 完全退出（宿主已关闭）后关闭；Apply 替换配置时
+	// 先等旧宿主让出端口，再启动新宿主，避免自己和自己抢监听端口。
+	done chan struct{}
 }
 
 const (
@@ -60,6 +70,10 @@ const (
 // hostBackoff 是重试间隔；与 sshtunnel 的退避序列保持同一节奏。
 var hostBackoff = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second}
 
+// hostRestartDrainTimeout 是配置变化时等待旧宿主关闭的上限。
+// 正常关闭是毫秒级；给 10s 是为了容忍正在建立 SSH 的连接。
+const hostRestartDrainTimeout = 10 * time.Second
+
 // NewHostSupervisor 构造监督器；opener 为空时使用 OpenHost。
 func NewHostSupervisor(opener HostOpener) *HostSupervisor {
 	if opener == nil {
@@ -68,9 +82,24 @@ func NewHostSupervisor(opener HostOpener) *HostSupervisor {
 	return &HostSupervisor{opener: opener, now: time.Now, hosts: map[string]*HostStatus{}}
 }
 
-// Apply 让运行中的宿主集合与 specs 一致：新增的启动，消失的关闭，其余保持。
+// hostSpecFingerprint 把会影响宿主的配置压成稳定摘要。
 //
-// 它不做阻塞等待——宿主在各自 goroutine 里建立与重建，状态通过 Status 观察。
+// 凭据只参与哈希，不落盘、不写状态；Label 变化也会触发一次重建，代价很小，
+// 换来的是「所有连接字段改动都能生效」这条简单规则。
+func hostSpecFingerprint(spec HostSpec) string {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// Apply 让运行中的宿主集合与 specs 一致：新增的启动，消失的关闭，配置变化的
+// 重建。
+//
+// 它不等待宿主建立完成——宿主在各自 goroutine 里建立与重建，状态通过 Status
+// 观察；但配置变化时会最多等 10s 让旧宿主关闭，避免同端口自抢。
 // ctx 会交给宿主 goroutine，取消 ctx 会关闭宿主；常驻调用方必须传服务生命周期
 // 的 ctx，不能传单轮探测的超时 ctx。
 func (supervisor *HostSupervisor) Apply(ctx context.Context, specs []HostSpec, homeDir string) {
@@ -81,9 +110,11 @@ func (supervisor *HostSupervisor) Apply(ctx context.Context, specs []HostSpec, h
 		ctx = context.Background()
 	}
 	desired := make(map[string]HostSpec, len(specs))
+	fingerprints := make(map[string]string, len(specs))
 	for _, spec := range specs {
 		if id := strings.TrimSpace(spec.Connection.ID); id != "" {
 			desired[id] = spec
+			fingerprints[id] = hostSpecFingerprint(spec)
 		}
 	}
 	supervisor.mu.Lock()
@@ -91,25 +122,42 @@ func (supervisor *HostSupervisor) Apply(ctx context.Context, specs []HostSpec, h
 		supervisor.mu.Unlock()
 		return
 	}
-	// 关闭不再需要的宿主。
-	for id := range supervisor.hosts {
-		if _, keep := desired[id]; !keep {
+	// 关闭不再需要或配置已变化的宿主。删除后旧的 run goroutine 会通过
+	// 状态指针发现「自己已被替换」并退出，不会误删新状态。
+	stale := make([]*HostStatus, 0)
+	for id, status := range supervisor.hosts {
+		_, keep := desired[id]
+		if !keep || status.fingerprint != fingerprints[id] {
 			delete(supervisor.hosts, id)
+			stale = append(stale, status)
 		}
 	}
 	supervisor.mu.Unlock()
+	// 等旧宿主真正关闭再启动同端口的替代者；否则新宿主会先撞上
+	// "address already in use"，再白等一轮退避。
+	supervisor.waitForHosts(stale, hostRestartDrainTimeout)
 
 	for id, spec := range desired {
 		supervisor.mu.Lock()
-		if _, running := supervisor.hosts[id]; running {
+		if supervisor.closed {
+			// waitForHosts 期间可能已经开始 Close；不要再往已关闭的监督器里加宿主。
 			supervisor.mu.Unlock()
-			continue
+			return
+		}
+		if existing := supervisor.hosts[id]; existing != nil {
+			if existing.fingerprint == fingerprints[id] {
+				supervisor.mu.Unlock()
+				continue
+			}
+			delete(supervisor.hosts, id)
 		}
 		status := &HostStatus{
 			ConnectionID: id,
 			State:        hostStatePending,
 			LocalPort:    spec.ListenPort,
 			Remote:       firstNonEmpty(strings.TrimSpace(spec.RemoteAddress), DefaultRemoteExecServerAddress),
+			fingerprint:  fingerprints[id],
+			done:         make(chan struct{}),
 		}
 		supervisor.hosts[id] = status
 		supervisor.wg.Add(1)
@@ -121,17 +169,17 @@ func (supervisor *HostSupervisor) Apply(ctx context.Context, specs []HostSpec, h
 
 // run 维持单条宿主：建立、保活、断线退避重建，直到 context 取消或被 Apply 移除。
 func (supervisor *HostSupervisor) run(ctx context.Context, spec HostSpec, status *HostStatus, homeDir string) {
-	defer supervisor.wg.Done()
+	defer func() {
+		close(status.done)
+		supervisor.wg.Done()
+	}()
 	attempt := 0
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if !supervisor.tracked(spec.Connection.ID) {
-			// 已被 Apply 移除；若宿主已建立由外层关闭。
-			supervisor.mu.Lock()
-			delete(supervisor.hosts, spec.Connection.ID)
-			supervisor.mu.Unlock()
+		if !supervisor.current(status) {
+			// 已被 Apply 移除或被同 ID 的新配置替换；旧宿主由本 goroutine 关闭。
 			return
 		}
 		host, err := supervisor.opener(ctx, HostOptions{
@@ -145,7 +193,7 @@ func (supervisor *HostSupervisor) run(ctx context.Context, spec HostSpec, status
 		})
 		if err != nil {
 			attempt++
-			supervisor.setStatus(spec.Connection.ID, func(s *HostStatus) {
+			supervisor.setStatus(status, func(s *HostStatus) {
 				s.State = hostStateDisconnected
 				s.Attempt = attempt
 				s.Error = err.Error()
@@ -156,44 +204,69 @@ func (supervisor *HostSupervisor) run(ctx context.Context, spec HostSpec, status
 			continue
 		}
 		attempt = 0
-		supervisor.setStatus(spec.Connection.ID, func(s *HostStatus) {
+		supervisor.setStatus(status, func(s *HostStatus) {
 			s.State = hostStateReady
 			s.Attempt = 0
 			s.Error = ""
 			s.LocalPort = host.LocalPort()
 			s.OpenedAt = supervisor.now().UnixMilli()
 		})
-		// 等 context 取消或该宿主被移除；两者任一发生就关闭。
-		supervisor.waitUntilRemoved(ctx, spec.Connection.ID)
+		// 等 context 取消、该宿主被移除或被同 ID 的新配置替换；任一发生就关闭。
+		supervisor.waitUntilRemoved(ctx, status)
 		_ = host.Close()
 		supervisor.mu.Lock()
-		_, stillTracked := supervisor.hosts[spec.Connection.ID]
+		stillCurrent := supervisor.hosts[spec.Connection.ID] == status
 		supervisor.mu.Unlock()
-		if !stillTracked {
+		if !stillCurrent {
 			return
 		}
 	}
 }
 
-func (supervisor *HostSupervisor) tracked(connectionID string) bool {
+// current 判断 status 是否仍是该连接当前生效的那一份。
+//
+// 不能用「连接 ID 还在 map 里」判断：配置变化时 Apply 会删除旧状态并立刻
+// 放入同 ID 的新状态；旧 goroutine 必须靠指针身份退出，否则会和新的宿主
+// 并发运行，甚至把新状态删掉。
+func (supervisor *HostSupervisor) current(status *HostStatus) bool {
 	supervisor.mu.Lock()
 	defer supervisor.mu.Unlock()
 	if supervisor.closed {
 		return false
 	}
-	_, ok := supervisor.hosts[connectionID]
-	return ok
+	return supervisor.hosts[status.ConnectionID] == status
 }
 
-func (supervisor *HostSupervisor) waitUntilRemoved(ctx context.Context, connectionID string) {
-	ticker := time.NewTicker(2 * time.Second)
+// waitForHosts 等这些旧状态的 run goroutine 关闭宿主；超时后交给新宿主的
+// 重试逻辑兜底，不能无限阻塞对账。
+func (supervisor *HostSupervisor) waitForHosts(statuses []*HostStatus, timeout time.Duration) {
+	if len(statuses) == 0 {
+		return
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for _, status := range statuses {
+		if status == nil || status.done == nil {
+			continue
+		}
+		select {
+		case <-status.done:
+		case <-timer.C:
+			return
+		}
+	}
+}
+
+func (supervisor *HostSupervisor) waitUntilRemoved(ctx context.Context, status *HostStatus) {
+	// 配置替换时 Apply 会等 done，不能等 2s 才让出端口。
+	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !supervisor.tracked(connectionID) {
+			if !supervisor.current(status) {
 				return
 			}
 		}
@@ -215,10 +288,10 @@ func (supervisor *HostSupervisor) sleep(ctx context.Context, attempt int) bool {
 	}
 }
 
-func (supervisor *HostSupervisor) setStatus(connectionID string, mutate func(*HostStatus)) {
+func (supervisor *HostSupervisor) setStatus(status *HostStatus, mutate func(*HostStatus)) {
 	supervisor.mu.Lock()
 	defer supervisor.mu.Unlock()
-	if status, ok := supervisor.hosts[connectionID]; ok {
+	if current, ok := supervisor.hosts[status.ConnectionID]; ok && current == status {
 		mutate(status)
 	}
 }

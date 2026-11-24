@@ -1,22 +1,62 @@
 # 真实 DSH / OpenCode 插件集成（2026-11-24）
 
-目标：选取真实社区插件，**不改插件源码**，由 AIH 的 native-resource adapter 安装与管理。
+目标不是“装上”，而是**不改插件源码、能在真实 harness 里用起来**。
 
-## 1. 本次集成的 5 个插件
+## 1. 最终保留的 3 个插件
 
-| 插件 | 版本 | 平面 | 安装方式 |
+| 插件 | 版本 | 用途 | 是否已验证可用 |
 |---|---|---|---|
-| `dsh-whale-widget` | 0.4.2 | DSH 原生 | `dsh plugin --profile aih add` |
-| `dsh-context` | 0.87.1 | DSH 原生 | 同上 |
-| `dshmarket` | 1.80.1 | DSH 原生 | 同上 |
-| `opencode-wakatime` | 1.4.0 | OpenCode 原生 | 写入 `opencode.json` 的 `plugin` 数组 |
-| `opencode-rules` | 2.0.0 | OpenCode 原生 | 同上 |
+| `dsh-context` | 0.87.1 | DSH 上下文/Token/成本洞察，左侧「上下文洞察」页、Context 侧栏、`/context` 命令、Fleet 多 Agent 视图 | ✅ DSH Web 侧边栏出现该入口，客户端资源实际返回 200 |
+| `dsh-whale-widget` | 0.4.2 | DSH Web 右下角 DeepSeek 余额/今日已用/每轮消耗挂件 | ✅ DSH Web 右下角实际渲染，`/dsh-whale/widget.js` 返回 200 |
+| `opencode-rules` | 2.0.0 | 按 glob/keyword/model 等条件向 OpenCode 注入 markdown 规则 | ✅ 插件入口已加载；规则发现与元数据解析已实际验证 |
 
-这些包都不是 AIH 能力插件：没有 `plugin.json#contributes`。它们由对应 Harness 自己加载。
+已移除两个“装了也用不上”的：
 
-## 2. 真实插件与旧假设的差异
+- `opencode-wakatime`：本机没有 `~/.wakatime.cfg` / API key，无法上报。
+- `dshmarket`：DSH 内置插件市场，与 AIH 自己的插件管理重复，容易形成第二套来源。
 
-DSH 社区插件的真实形状：
+## 2. 怎么用
+
+### DSH
+
+启动（AIH 网关身份）：
+
+```bash
+aih harness dsh --provider <provider> --account <n>
+```
+
+Web UI 中：
+
+- 左侧 **上下文洞察**：`dsh-context` 的跨会话 KPI、Token/成本图表、会话卡片。
+- 会话内 **Context** 侧栏 / `/context` 命令：当前上下文组成、时间线、Agent Fleet。
+- 右下角 **小鲸鱼**：DeepSeek 余额、今日已用、每轮消耗；点击手动刷新，菜单里可调显示与音效。
+
+### OpenCode
+
+正常启动 `opencode`。`opencode-rules` 会在启动时扫描：
+
+1. `~/.config/opencode/rules/`（全局）
+2. `.opencode/rules/`（项目）
+3. 插件配置里的 `additionalRuleDirectories`
+
+已创建一条实际规则：`~/.config/opencode/rules/aih-plugin-boundary.mdc`
+
+```yaml
+---
+keywords: ['插件适配', 'plugin adapter']
+globs: ['**/ai_home/**']
+---
+# AIH 插件边界
+- 不修改第三方插件源码；优先在 AIH adapter 层完成适配。
+- 安装真实插件后必须验证实际加载/使用，不以“已安装”作为完成。
+- 验证优先使用真实 harness / 真实页面，不新增测试文件。
+```
+
+当讨论插件适配或处理 `ai_home` 项目文件时，这条规则会作为 `<rule name="aih-plugin-boundary">` 注入上下文。新增规则只需往目录里放 `.md` / `.mdc`。
+
+## 3. 真实插件形状与 adapter
+
+### DSH 社区插件
 
 ```json
 {
@@ -27,98 +67,63 @@ DSH 社区插件的真实形状：
 }
 ```
 
-- 没有 `agentPlugin`。
-- 没有 `exports["./deepseek"]`。
-- patch entry 的 `name` 是包名，不是 `file://` 入口。
-- 安装机制是 DSH profile + pnpm，而不是把目录塞进 `~/.dsh/plugins`。
+没有 `agentPlugin`，也没有 `exports["./deepseek"]`。官方安装机制是 DSH profile + pnpm。
 
-OpenCode 插件的真实形状：
+Adapter：
 
-```json
-{
-  "name": "opencode-sandbox",
-  "main": "dist/index.js",
-  "dependencies": { "@anthropic-ai/sandbox-runtime": "^0.0.76" }
-}
-```
+- 确保 `~/.dsh/profiles/aih` 存在，并包含 `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`。
+- 执行 `dsh plugin --profile aih add <pkg>@<version>`。
+- 禁用/移除执行 `dsh plugin --profile aih remove <pkg>`。
+- AIH 启动 DSH 时使用 `--profile aih`；这类插件不再生成 `--patch`。
+- 健康检查要求：AIH 快照存在 + profile bundle/dependency 存在。
 
-- 插件是 npm 包，声明在 `opencode.json` 的 `plugin` 数组。
-- 依赖由 OpenCode/Bun 在启动时安装；AIH 不应复制源码，也不应替它解析依赖。
+### OpenCode npm 插件
 
-## 3. Adapter 设计
+插件是 npm 包，声明在 `opencode.json#plugin`；依赖由 OpenCode/Bun 自己安装。
 
-### 3.1 npm 源描述符
+Adapter：
 
-安装源支持：
+- 把 `name@version` 写入 `~/.config/opencode/opencode.json#plugin`。
+- 不复制源码，不替 OpenCode 解析依赖。
+- 禁用/移除只改数组项；卸载时删除 AIH 快照。
 
-```text
-npm:dsh-context@0.87.1
-npm:opencode-sandbox@0.7.0
-```
+### npm 源
 
-AIH 向 npm registry 读取被锁定版本的元数据，生成一个**只属于 AIH 的安装描述符**（不是修改插件源码）：
-
-```json
-{
-  "name": "dsh-context",
-  "version": "0.87.1",
-  "agentPlugin": {
-    "pluginId": "dsh-context",
-    "kind": "harness",
-    "manifestVersion": 1,
-    "engines": { "deepseek": ">=0.0.0" },
-    "mode": "dsh-profile",
-    "npmPackage": "dsh-context@0.87.1"
-  }
-}
-```
-
-OpenCode 的描述符把 `mode` / `opencodePackage` 换成 `opencode-npm`。描述符只是 AIH 的托管记录与快照，目标 harness 实际加载的仍是 npm 原包。
-
-### 3.2 DSH：profile 插件
-
-- 确保 `~/.dsh/profiles/aih` 存在，并按 web 模板补齐 `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`。
-- 执行：
-  `dsh plugin --profile aih add <name>@<version>`
-- DSH 会把它写入 profile 的 `dependencies` 和 `dsh.profile.bundles`。
-- AIH 启动 DSH 时继续使用 `--profile aih`；这类记录不再传 `--patch`。
-- 禁用/移除执行 `dsh plugin --profile aih remove <name>`。
-- 健康检查同时要求：AIH 快照存在 + profile bundles/dependencies 中存在该包。
-
-### 3.3 OpenCode：npm 插件数组
-
-- 在 `~/.config/opencode/opencode.json` 的 `plugin` 数组写入 `name@version`。
-- 不复制文件；OpenCode 启动时自行安装依赖。
-- 禁用/移除只删除数组项；卸载时删除 AIH 快照。
+安装源支持 `npm:<name>@<version>` 或 `npm:<name>@latest`。AIH 读取 registry 元数据并生成**仅属于 AIH 的托管描述符**，第三方包本身不变。
 
 ## 4. 验证证据
 
-- 临时 HOME 中 5 个插件全部安装成功，并完成 disable/enable 往返。
-- 真实 home 安装后：
-  - `~/.dsh/profiles/aih/package.json` 的 bundles：
-    `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`dsh-whale-widget`、`dsh-context`、`dshmarket`
-  - `DSH_HOME=~/.dsh dsh --profile aih --dump-config` 中出现三个插件层。
-  - `~/.dsh/profiles/aih/node_modules` 中存在三个包及其依赖。
-  - `~/.config/opencode/opencode.json#plugin`：
-    `opencode-wakatime@1.4.0`、`opencode-rules@2.0.0`。
-- OpenCode standalone 启动日志确认两个入口都已加载：
-  - `opencode-wakatime@1.4.0` → `.cache/opencode/npm/.../dist/server.js`
-  - `opencode-rules@2.0.0` → `.cache/opencode/npm/.../dist/src/index.js`
-- 仍有 `ServiceUnavailableError: Location plugins did not finish activating`，说明完整激活阶段未在 10s 内完成；插件入口加载已证实，但不等同于运行时 hook 全部就绪。
+DSH：
 
-### 4.1 未采用的候选
+- `~/.dsh/profiles/aih/package.json` 的 bundles 含 `dsh-context`、`dsh-whale-widget`。
+- `dsh --profile aih --dump-config` 中出现两个插件层。
+- 实际启动 `DSH_HOME=~/.dsh dsh --profile aih`：
+  - 页面左侧出现「上下文洞察」。
+  - 页面右下角出现小鲸鱼挂件。
+  - `/dsh-whale/widget.js` 返回 200（1.1MB）。
+  - dsh-context client 资源返回 200（1.0MB）。
 
-以下包真实存在，但在本机 OpenCode 2.3.0 上安装/激活失败，已从配置移除：
+OpenCode：
 
-| 包 | 失败点 |
+- `opencode-rules@2.0.0` 入口被 OpenCode 加载：
+  `.cache/opencode/npm/.../opencode-rules/dist/src/index.js`
+- 用插件自身的 `discoverRuleFiles` 验证：
+  `aih-plugin-boundary.mdc` 被发现，元数据解析为
+  `globs: ["**/ai_home/**"]`、`keywords: ["插件适配","plugin adapter"]`。
+
+## 5. 未采用/已移除的候选
+
+| 包 | 原因 |
 |---|---|
+| `opencode-wakatime@1.4.0` | 无 WakaTime API key，装了不会上报 |
+| `dshmarket@1.80.1` | 与 AIH 插件管理重复，形成第二套安装来源 |
 | `opencode-sandbox@0.7.0` | OpenCode 缓存安装未完成，空目录并阻塞启动 |
 | `@jgordijn/opencode-remote-config@0.3.1` | OpenCode 未生成 npm 缓存条目 |
 | `opencode-subagent-statusline@2.1.1` | `NpmInstallFailedError: unable to resolve dependency tree` |
 
-## 5. 边界
+## 6. 边界
 
 - AIH 不修改 npm 包内容，也不替 Harness 解决 peer dependency。
-- DSH 插件是否真正运行取决于 DSH 版本与 profile 启动；AIH 只验证 profile 与快照一致。
-- OpenCode 插件是否真正加载取决于 OpenCode/Bun 的启动阶段；AIH 只验证配置项与快照一致。
-- npm 源只支持精确版本或 dist-tag（`latest`）；范围解析留给 npm 生态。
+- DSH 插件是否运行取决于 DSH 版本与 profile 启动；AIH 验证 profile、快照与 Web 资源。
+- OpenCode 插件是否运行取决于 OpenCode/Bun 启动阶段；AIH 验证配置项、快照与插件入口加载。
+- npm 源只支持精确版本或 dist-tag（`latest`）。

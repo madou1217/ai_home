@@ -385,3 +385,54 @@ Error: exec-server protocol error: environment `x` connect_timeout_sec requires 
 - **Windows 上 Codex 的默认 shell 是 powershell**：`exec-server` 能起来，但
   `process/start` 里的 `sh` 脚本假设在 Windows 上不成立；走 Windows 环境时应让
   模型用 PowerShell 语法，或由 AIH 显式传 `cwd`/shell。
+
+## 12. Desktop 远端项目：契约与真机验证（2026-11-24）
+
+§6.4 说过「连接通了但 remote-projects 还是 null」。现已把这块逆向清楚并真机验证。
+
+### 12.1 精确 schema（源码实证：`app.asar` 的 zod 定义 `eD1` / `eD2`）
+
+```js
+// createRemote 入参
+{appearance: <obj|null>, hostId: string, label: string, remotePath: string, reuseExisting?: boolean}
+// 落盘对象（createRemote 内部构造）
+{id: string, hostId: string, remotePath: string, label: string}
+```
+
+ID 生成：`id = String(randomUUID())`（`Np8` 是恒等函数）。
+`remotePath` 经 `GGi→oY` 归一：trim、`/` 折叠、去掉尾部 `/`。
+`label` 为空时取路径的 posix basename。
+
+### 12.2 写入必须同时维护的键
+
+| 键 | 必需性 | 说明 |
+| --- | --- | --- |
+| `remote-projects` | 必需 | 项目数组，顺序即展示顺序 |
+| `project-order` | 必需 | `createRemote` 会把新 id 插到最前 |
+| `remote-connection-auto-connect-by-host-id` | 建议 | 否则重连要靠手点 |
+| `codex-managed-remote-connections` | 必需 | 连接本体，`hostId` 必须与项目一致 |
+| `remote-project-connection-backfill-completed` | 建议 | 置 true 后不再走回填补齐 |
+| `selected-remote-host-id` / `active-remote-project-id` | 可选 | 只是当前选中态 |
+
+### 12.3 真机验证（App 26.1117.41037，macOS）
+
+退出 App → 写入 `remote-projects` 一条（`hostId=remote-ssh-discovered:aws`，
+`remotePath=/home/ubuntu`）→ 重启。日志：
+
+```
+remote_project_connection_restore_completed discoveredAliasCount=2
+  remoteProjectCount=1 restoredConnectionCount=0 savedRemoteConnectionCountAfter=1
+AppServerConnection Transport start success hostId=remote-ssh-discovered:aws
+app_server_connection.state_changed cause=post_initialize_connection_state next=connected
+```
+
+`remoteProjectCount=1` 说明项目被接受，连接随项目自动建立并达到 `connected`。
+
+### 12.4 仍然存在的限制
+
+- **账号作用域**：状态键有 `:signed-out` / `electron-owner-value:<key>:<scope>` 变体。
+  本次是在未登录状态下写入并生效的；登录后是否沿用同一份 `remote-projects` 未验证。
+  因此 AIH 若代写这块状态，**必须先确认 App 已退出**，并在写前备份
+  （App 运行时会用内存态覆写文件）。
+- `confirmProjectFolders` 是 UI 侧授权流程，代写绕过了它；若目标目录该账号无权访问，
+  App 会在打开项目时自行报错，不会静默。

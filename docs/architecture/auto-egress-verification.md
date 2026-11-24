@@ -128,6 +128,23 @@ curl: (5) Unsupported proxy syntax in 'http://aih:tok@...': Port number was not 
 真机核对：生成的任务环境里 `HTTP_PROXY`/`HTTPS_PROXY` 无尾随空白、`ALL_PROXY`
 不存在、`UnsetForTask` 返回 `[ALL_PROXY all_proxy]`；干净环境安装仍成功。
 
+### 3. WebProxy 不会把 URL 里的凭据当代理凭据（PS 5.1）
+
+受管租约地址是 `http://aih:<token>@127.0.0.1:<port>`。PowerShell 5.1 既不会把
+URL 里的 userinfo 当凭据，`New-Object System.Net.WebProxy($url)` 和 `-Proxy $url`
+都一样。真机测（代理侧记录 `Proxy-Authorization`）：
+
+| 写法 | 结果 | 代理收到的头 |
+| --- | --- | --- |
+| `irm -Proxy 'http://aih:tok@…'` | 407 | `MISSING` |
+| `DefaultWebProxy = WebProxy('http://aih:tok@…')` | 407 | `MISSING` |
+| `WebProxy('http://host:port')` + `.Credentials` | OK | `OK` |
+
+**这正是先前验证方法的缺陷**：只用死端口测「连接被拒」，认证路径从未被走通，
+于是「代理生效」的结论是错的。修正后计划会重建无凭据地址并显式设
+`.Credentials`；用真实受管租约（端口 9618）在该主机上跑通 irm 下载，curl
+路径同样跑通。
+
 ### 仍未验证
 
 - **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前

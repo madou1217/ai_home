@@ -647,6 +647,49 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 		}
 	}
 
+	var hostConfig string
+	if p.hostHomeDir != "" {
+		if raw, err := os.ReadFile(filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")); err == nil {
+			hostConfig = string(raw)
+		}
+	}
+	sqliteHome := ""
+	if p.hostHomeDir != "" {
+		sqliteHome = filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"))
+	}
+	if isAPIKey && strings.TrimSpace(baseURL) == "" {
+		baseURL = defaultOpenAIBaseURL
+	}
+
+	// API Key 账号的模型必须来自账号自己的模型事实。宿主 config 里的 model 属于
+	// 宿主账号池（AIH 网关），把它原样投给只有 qwen/deepseek 的上游会直接请求
+	// 一个不存在的模型。
+	model := hostRootModel(hostConfig)
+	dropModelTuning := false
+	if isAPIKey {
+		facts := p.codexDesktopModelFacts()
+		if facts.Known {
+			// AIH 的账号探测已经记录了这个账号被上游 401 拒绝；此时再拉起桌面端
+			// 只会让用户在 App 里看到原始错误。直接按认证失效处理，走重新配置入口。
+			if facts.AuthRejected && facts.ProbeAtMS > p.snapshot.CredentialUpdatedAtMS {
+				return &Result{
+					OK:      false,
+					Error:   "account_auth_invalid",
+					Reason:  facts.ProbeMessage,
+					Message: "该账号最近一次上游探测返回认证失败（401/403），请更新 API Key 或端点后重试。",
+				}
+			}
+			if len(facts.Models) == 0 {
+				return &Result{
+					OK:      false,
+					Error:   "codex_desktop_model_unavailable",
+					Message: "该账号没有可用的模型目录（上游未发现模型或全部被停用），无法确定桌面端模型。",
+				}
+			}
+		}
+		model, dropModelTuning = selectCodexDesktopModel(facts, model)
+	}
+
 	codexHome := filepath.Join(p.profileDir, providerroot.ConfigDir("codex"))
 	authPath := filepath.Join(codexHome, "auth.json")
 	configPath := filepath.Join(codexHome, "config.toml")
@@ -677,27 +720,16 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 		}
 	}
 
-	var hostConfig string
-	if p.hostHomeDir != "" {
-		if raw, err := os.ReadFile(filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"), "config.toml")); err == nil {
-			hostConfig = string(raw)
-		}
-	}
-	sqliteHome := ""
-	if p.hostHomeDir != "" {
-		sqliteHome = filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"))
-	}
-	if isAPIKey && strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultOpenAIBaseURL
-	}
 	configText := buildCodexDesktopConfig(codexDesktopConfigInput{
-		HostConfig:     hostConfig,
-		Mode:           mode,
-		AccountRef:     p.snapshot.AccountRef.String(),
-		Label:          codexAccountLabel(p.snapshot),
-		AccountBaseURL: baseURL,
-		RelayBaseURL:   relayBaseURL,
-		SQLiteHome:     sqliteHome,
+		HostConfig:          hostConfig,
+		Mode:                mode,
+		AccountRef:          p.snapshot.AccountRef.String(),
+		Label:               codexAccountLabel(p.snapshot),
+		AccountBaseURL:      baseURL,
+		RelayBaseURL:        relayBaseURL,
+		SQLiteHome:          sqliteHome,
+		Model:               model,
+		DropHostModelTuning: dropModelTuning,
 	})
 	if err := writeBytesAtomic(configPath, []byte(configText), 0o600); err != nil {
 		return &Result{

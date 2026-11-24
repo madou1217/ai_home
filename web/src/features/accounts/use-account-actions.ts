@@ -1684,6 +1684,18 @@ export function useAccountActions({
         return false;
       }
       if (code === 'account_auth_invalid') {
+        // API Key 账号没有 OAuth 登录流程，重新授权必须是「编辑密钥/端点」，
+        // 否则会把用户送进一个对静态凭据无效的登录流程。
+        if (record.apiKeyMode) {
+          Modal.confirm({
+            title: '账号凭据已失效',
+            content: `「${getAccountPrimaryLabel(record)}」的上游拒绝了当前 API Key（401/403）。请更新 API Key 或端点后再打开客户端。`,
+            okText: '编辑密钥',
+            cancelText: '取消',
+            onOk: () => handleEdit(record)
+          });
+          return false;
+        }
         // 打开客户端时直接给**可操作的重新授权入口**，而不是只弹一条警告：
         // 桌面端用 access_token，领取/余额用 zcodejwt，两者会分叉；这里以账号名
         // 明确告诉用户要为哪个账号重新登录。

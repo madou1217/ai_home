@@ -58,6 +58,11 @@ type codexDesktopConfigInput struct {
 	// RelayBaseURL 是 relay 形态下本机 AIH Server 的 /v1 地址。
 	RelayBaseURL string
 	SQLiteHome   string
+	// Model 是 api-key 账号解析出的模型；空表示沿用宿主配置。
+	Model string
+	// DropHostModelTuning 表示模型已偏离宿主值，宿主的推理强度/verbosity 等
+	// 模型专属设置不能再沿用到账号上游。
+	DropHostModelTuning bool
 }
 
 // buildCodexDesktopConfig 由宿主 config.toml 生成账号投影配置。
@@ -69,18 +74,40 @@ func buildCodexDesktopConfig(input codexDesktopConfigInput) string {
 	mode := input.Mode
 	accountKey := codexDesktopAccountProviderKey(input.AccountRef)
 	stripProviders := []string{codexRelayProviderKey, "openai"}
+	stripRootKeys := map[string]bool{
+		"preferred_auth_method": true,
+		"model_provider":        true,
+		"openai_base_url":       true,
+		"sqlite_home":           true,
+	}
 	if mode == codexDesktopModeAPIKey {
 		stripProviders = append(stripProviders, accountKey)
+		// 账号专属投影的模型必须由账号模型事实决定。
+		stripRootKeys["model"] = true
+		if input.DropHostModelTuning {
+			for _, key := range []string{
+				"model_reasoning_effort",
+				"plan_mode_reasoning_effort",
+				"model_reasoning_summary",
+				"model_verbosity",
+				"service_tier",
+			} {
+				stripRootKeys[key] = true
+			}
+		}
 	}
-	filtered := filterCodexHostConfig(input.HostConfig, stripProviders)
+	filtered := filterCodexHostConfig(input.HostConfig, stripProviders, stripRootKeys)
 
-	root := make([]string, 0, 4)
+	root := make([]string, 0, 5)
 	switch mode {
 	case codexDesktopModeAPIKey:
 		root = append(root,
 			`preferred_auth_method = "apikey"`,
 			`model_provider = "`+accountKey+`"`,
 		)
+		if model := strings.TrimSpace(input.Model); model != "" {
+			root = append(root, `model = "`+escapeTomlBasicString(model)+`"`)
+		}
 	case codexDesktopModeNative:
 		// OAuth 直连：不写 model_provider，Codex 默认使用内置 openai + auth.json 的
 		// ChatGPT 授权；preferred_auth_method 供旧版 Codex 选择 OAuth 登录态。
@@ -146,7 +173,10 @@ func codexDesktopProviderLabel(input codexDesktopConfigInput) string {
 }
 
 // filterCodexHostConfig 去掉宿主里由投影接管的 Provider 表与根键，其余原样保留。
-func filterCodexHostConfig(hostConfig string, stripProviders []string) []string {
+//
+// 根键只在第一个表头之前生效：`model = ...` 这类键名在 profile 表里也可能出现，
+// 不能按前缀做全局删除。
+func filterCodexHostConfig(hostConfig string, stripProviders []string, stripRootKeys map[string]bool) []string {
 	lines := strings.Split(strings.ReplaceAll(hostConfig, "\r\n", "\n"), "\n")
 	sectionPrefixes := make([]string, 0, len(stripProviders))
 	for _, key := range stripProviders {
@@ -156,9 +186,11 @@ func filterCodexHostConfig(hostConfig string, stripProviders []string) []string 
 	}
 	filtered := make([]string, 0, len(lines))
 	skipSection := false
+	inRoot := true
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "[") {
+			inRoot = false
 			lowerSection := strings.ToLower(trimmed)
 			skipSection = false
 			for _, prefix := range sectionPrefixes {
@@ -174,14 +206,39 @@ func filterCodexHostConfig(hostConfig string, stripProviders []string) []string 
 		if skipSection {
 			continue
 		}
-		lower := strings.ToLower(trimmed)
-		if strings.HasPrefix(lower, "preferred_auth_method") && strings.Contains(lower, "=") ||
-			strings.HasPrefix(lower, "model_provider") && strings.Contains(lower, "=") ||
-			strings.HasPrefix(lower, "openai_base_url") && strings.Contains(lower, "=") ||
-			strings.HasPrefix(lower, "sqlite_home") && strings.Contains(lower, "=") {
-			continue
+		if inRoot {
+			if key, _, found := strings.Cut(trimmed, "="); found {
+				if stripRootKeys[strings.ToLower(strings.TrimSpace(key))] {
+					continue
+				}
+			}
 		}
 		filtered = append(filtered, line)
 	}
 	return filtered
+}
+
+// hostRootModel 读取宿主 config.toml 根区的 model 值（单/双引号或裸值）。
+func hostRootModel(hostConfig string) string {
+	inRoot := true
+	for _, line := range strings.Split(strings.ReplaceAll(hostConfig, "\r\n", "\n"), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			inRoot = false
+			continue
+		}
+		if !inRoot {
+			continue
+		}
+		key, value, found := strings.Cut(trimmed, "=")
+		if !found || strings.TrimSpace(key) != "model" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && (value[0] == '"' && value[len(value)-1] == '"' || value[0] == '\'' && value[len(value)-1] == '\'') {
+			value = value[1 : len(value)-1]
+		}
+		return strings.TrimSpace(value)
+	}
+	return ""
 }

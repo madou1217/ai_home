@@ -597,7 +597,8 @@ func launchErrorStatus(code string) int {
 		"agy_desktop_keychain_conflict", "agy_desktop_restart_required",
 		"agy_desktop_auth_unavailable", "kimi_desktop_session_required",
 		"kimi_desktop_session_seed_failed", "kimi_desktop_restart_failed",
-		"zcode_native_proxy_marker_unrecognized", "codex_desktop_mode_required":
+		"zcode_native_proxy_marker_unrecognized", "codex_desktop_mode_required",
+		"codex_desktop_model_unavailable":
 		return http.StatusConflict
 	case "agy_desktop_process_probe_failed", "codebuddy_desktop_keychain_unavailable",
 		"account_egress_unavailable", "zcode_egress_unavailable", "launch_host_unavailable",
@@ -629,6 +630,7 @@ var launchErrorMessages = map[string]string{
 	"codex_desktop_profile_prepare_failed":   "准备 Codex 桌面端账号投影目录失败。",
 	"codex_desktop_mode_required":            "该 Codex 账号使用 OAuth 登录，请选择原生直连或经 AIH Server 中转。",
 	"codex_desktop_mode_invalid":             "Codex Desktop 只支持 native 或 relay 两种连接方式。",
+	"codex_desktop_model_unavailable":        "该账号没有可用的模型目录，无法确定桌面端模型。",
 	"codex_desktop_relay_unavailable":        "本机 AIH Server 的中转地址或客户端密钥不可用，无法以中转方式打开 Codex Desktop。",
 	"claude_gateway_prepare_failed":          "准备 Claude 桌面端本地网关配置失败。",
 	"kiro_desktop_profile_unavailable":       "准备 Kiro 桌面端隔离运行目录失败。",

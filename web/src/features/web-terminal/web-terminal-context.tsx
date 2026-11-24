@@ -61,6 +61,8 @@ interface WebTerminalManagerValue extends WebTerminalLayoutState {
   openTab: (input: OpenWebTerminalTabInput) => void;
   adoptSessions: (inputs: OpenWebTerminalTabInput[]) => void;
   unavailableTabs: WebTerminalTab[];
+  /** 连续两次目录快照都确认服务端已不存在的 project-shell 会话键。 */
+  goneShellKeys: ReadonlySet<string>;
   directory: ReturnType<typeof useTerminalDirectory>;
   closeTab: (id: string) => void;
   closeAll: () => void;
@@ -217,7 +219,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     tabs: state.tabs,
   });
 
-  const { directory, interactiveTabs, unavailableTabs, isUnavailable } = useTerminalAvailability(
+  const { directory, interactiveTabs, unavailableTabs, isUnavailable, goneShellKeys } = useTerminalAvailability(
     serverId,
     state.tabs,
     directoryEnabled,
@@ -347,12 +349,26 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     update((current) => {
       const selected = current.tabs.find((tab) => tab.id === id);
       // Removing an unavailable viewer is not a request to forget its task.
-      // User callbacks may race discovery; never forget a retained identity.
-      if (selected && isUnavailable(selected.sessionKey)) return current;
+      // 项目 shell 没有可保的任务：它的 PTY 已不存在，保留只会留下幽灵工位。
+      const shellWithoutTask = Boolean(selected) && !selected!.sessionKey.startsWith('native:');
+      if (selected && isUnavailable(selected.sessionKey) && !shellWithoutTask) return current;
       const tabs = current.tabs.filter((tab) => tab.id !== id);
       return { ...current, tabs, activeTabId: current.activeTabId === id ? (tabs[tabs.length - 1]?.id || '') : current.activeTabId };
     });
   }, [isUnavailable, update]);
+
+  // 连续两次目录快照都确认服务端已不存在该 shell：直接移除，不留幽灵工位。
+  useEffect(() => {
+    if (!goneShellKeys.size) return;
+    update((current) => {
+      const tabs = current.tabs.filter((tab) => !goneShellKeys.has(tab.sessionKey));
+      if (tabs.length === current.tabs.length) return current;
+      const activeTabId = tabs.some((tab) => tab.id === current.activeTabId)
+        ? current.activeTabId
+        : (tabs[tabs.length - 1]?.id || '');
+      return { ...current, tabs, activeTabId };
+    });
+  }, [goneShellKeys, update]);
 
   const adoptSessions = useCallback((inputs: OpenWebTerminalTabInput[]) => {
     update((current) => {
@@ -459,6 +475,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     minimized: !floatingVisible,
     tabs: interactiveTabs,
     unavailableTabs,
+    goneShellKeys,
     activeTabId: interactiveTabs.some((tab) => tab.id === state.activeTabId) ? state.activeTabId : interactiveTabs[0]?.id || '',
     serverId,
     overviewVisible,

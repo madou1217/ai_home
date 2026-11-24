@@ -624,6 +624,8 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
 
     const source: 'native' | 'web' = dir?.source || (sessionKey.startsWith('native:') ? 'native' : 'web');
     const kind: 'account-cli' | 'shell' = tab?.kind || (source === 'native' ? 'account-cli' : 'shell');
+    // project-shell 没有可保的「任务」：已退出且不可交互的 shell 只会留下无法接入的幽灵工位。
+    if (kind === 'shell' && availability === 'exited' && !interactiveTab) continue;
     const cwd = String(dir?.cwd ?? tab?.cwd ?? '').trim();
     const projectKey = normalizeProjectPath(cwd);
     const projectName = extractProjectDisplayName(projectKey);

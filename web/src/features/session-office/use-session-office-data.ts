@@ -211,8 +211,12 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     for (const key of terminatedKeysList) {
       merged.add(key);
     }
+    // 服务端已连续两次确认不存在的 project-shell：不作为工位保留。
+    for (const key of manager.goneShellKeys) {
+      merged.add(key);
+    }
     return merged;
-  }, [hiddenKeysList, terminatedKeysList]);
+  }, [hiddenKeysList, terminatedKeysList, manager.goneShellKeys]);
 
   useEffect(() => {
     setHiddenState((current) => (
@@ -861,8 +865,14 @@ export function useSessionOfficeData(): SessionOfficeDataState {
           return { ok: true };
         }
 
-        if (
+        // 服务端重启/网络抖动时 close 可能拿不到响应（terminal_request_failed）或 5xx；
+        // 只要目录核对证明会话已不在服务端，就按「已关闭」收尾，不把幽灵工位留给用户。
+        const reconcilableClose =
           closeResult.error === 'terminal_not_found'
+          || closeResult.error === 'terminal_request_failed'
+          || /^terminal_http_5\d\d$/.test(closeResult.error || '');
+        if (
+          reconcilableClose
           && mountedRef.current
           && activeServerRef.current === requestServerId
         ) {

@@ -55,5 +55,40 @@ export function useTerminalAvailability(
   const interactiveTabs = useMemo(() => tabs.filter((tab) => !unavailableKeys.has(tab.sessionKey)), [tabs, unavailableKeys]);
   const unavailableTabs = useMemo(() => tabs.filter((tab) => unavailableKeys.has(tab.sessionKey)), [tabs, unavailableKeys]);
   const isUnavailable = useCallback((key: string) => unavailableRef.current.has(key), []);
-  return { directory, interactiveTabs, unavailableTabs, isUnavailable };
+
+  // 项目 shell（非 native 身份）没有「任务」可保：目录成功返回且连续两次快照都查不到它，
+  // 就说明服务端该会话确实不存在，保留它只会留下无法接入的幽灵工位。
+  const settledDirectory = directory.enabled && !directory.loading && !directory.error;
+  const directoryKeys = useMemo(
+    () => new Set(directory.sessions.map((item) => item.sessionKey)),
+    [directory.sessions],
+  );
+  const missingStrikesRef = useRef(new Map<string, number>());
+  const goneShellKeys = useMemo(() => {
+    const gone = new Set<string>();
+    if (!settledDirectory) {
+      missingStrikesRef.current.clear();
+      return gone;
+    }
+    const shellTabs = tabs.filter(
+      (tab) => tab.serverId === serverId && !tab.sessionKey.startsWith('native:'),
+    );
+    const present = new Set<string>();
+    for (const tab of shellTabs) {
+      if (directoryKeys.has(tab.sessionKey)) {
+        present.add(tab.sessionKey);
+        missingStrikesRef.current.delete(tab.sessionKey);
+        continue;
+      }
+      const strikes = (missingStrikesRef.current.get(tab.sessionKey) || 0) + 1;
+      missingStrikesRef.current.set(tab.sessionKey, strikes);
+      if (strikes >= 2) gone.add(tab.sessionKey);
+    }
+    for (const key of Array.from(missingStrikesRef.current.keys())) {
+      if (!shellTabs.some((tab) => tab.sessionKey === key)) missingStrikesRef.current.delete(key);
+    }
+    return gone;
+  }, [directoryKeys, serverId, settledDirectory, tabs]);
+
+  return { directory, interactiveTabs, unavailableTabs, isUnavailable, goneShellKeys };
 }

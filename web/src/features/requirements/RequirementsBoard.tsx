@@ -707,7 +707,7 @@ export default function RequirementsBoard() {
       )}
 
       <Drawer open={Boolean(detail)} onClose={closeDetail} width={620}
-        title={detail ? <span className={styles.drawerTitle}>{detail.title} {statusTag(detail.status)}</span> : '需求详情'}
+        title={detail ? <span className={styles.drawerTitle}><span className={styles.drawerTitleText}>{detail.title}</span>{statusTag(detail.status)}</span> : '需求详情'}
         extra={detail ? (
           <Space size={4} wrap>
             <Button size="small" icon={<RobotOutlined />} loading={busyId === detail.id} onClick={() => void mutate(detail, 'refine')}>AI 优化</Button>

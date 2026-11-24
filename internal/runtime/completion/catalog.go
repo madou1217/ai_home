@@ -37,6 +37,12 @@ func (node commandNode) withAlwaysOptions() commandNode {
 	return node
 }
 
+// plusOptions 在子命令现有选项之后追加父级通用选项，保持顺序稳定。
+func (node commandNode) plusOptions(options ...optionSpec) commandNode {
+	node.Options = append(append([]optionSpec(nil), node.Options...), options...)
+	return node
+}
+
 func f(name, summary string) optionSpec {
 	return optionSpec{Name: name, Summary: summary}
 }
@@ -66,8 +72,27 @@ func pr(kind valueKind) positionalSpec {
 }
 
 func buildCommandCatalog() []commandNode {
-	providerFlags := []optionSpec{vf("--provider", "指定 Provider", kindProvider), vf("--account", "账号编号或 accountRef", kindAccount)}
 	jsonFlag := f("--json", "以 JSON 输出")
+	usageOptions := []optionSpec{
+		f("--from", "起始时间（含）"), f("--to", "结束时间（含）"),
+		vf("--provider", "指定 Provider", kindProvider), vf("--model", "限定模型", kindModel),
+		f("--session-id", "限定某个会话"), f("--no-scan", "不重新扫描历史记录"), jsonFlag,
+		f("--reindex-codex-forks", "重建 codex fork 的索引"),
+	}
+	peerOptions := []optionSpec{
+		vf("--provider", "指定 Provider", kindProvider),
+		vf("--channel", "投递通道", kindEnum, "native", "inject", "webui-chat"),
+		f("--mode", "投递模式"), f("--from", "发送方"),
+		vf("--target", "收件人", kindPeerTarget), vf("--reply-to", "回复指定消息", kindPeerMessage),
+		f("--self", "只看发给自己的"), f("--unread", "只看未读"),
+		vf("--state", "按消息状态过滤", kindEnum, "pending", "delivered", "read", "failed", "unread", "all"),
+		f("--limit", "最多返回多少条"), f("--wait", "等待可投递后再发"),
+		f("--no-envelope", "发送时不带信封"), f("--dry-run", "只打印将要做的改动"), jsonFlag,
+	}
+	mcpOptions := []optionSpec{vf("--provider", "指定 Provider", kindProvider), jsonFlag}
+	skillOptions := []optionSpec{vf("--provider", "指定 Provider", kindProvider), f("--all-supported", "对所有支持的 Provider 生效"), jsonFlag}
+	claimOptions := []optionSpec{f("--dry-run", "只预览"), vf("--account", "指定账号", kindAccount), jsonFlag, f("--quiet", "安静模式")}
+	pluginOptions := []optionSpec{jsonFlag}
 	remoteTargetOptions := []optionSpec{
 		vf("--server", "目标 Server profile", kindRemoteServer),
 		f("--server-id", "Server id"),
@@ -90,21 +115,16 @@ func buildCommandCatalog() []commandNode {
 			withOptions(f("--list", "按项目预览所有活跃会话"), f("--detail", "列出活跃会话的完整状态"), f("--refresh", "强制重新采集"), f("--all-projects", "查看全部项目"), f("--all", "查看全部项目"), f("--limit", "最多返回多少条")).
 			withPositionals(p(kindPersistent)).withAlwaysOptions(),
 		n("usage", "按 provider / 模型统计 token 与成本").withChildren(
-			n("stats", "总览"),
-			n("models", "按模型汇总"),
-			n("sessions", "按会话汇总"),
-			n("session-detail", "单个会话明细").withPositionals(p(kindFree)),
-			n("scan", "重新扫描历史记录"),
-			n("recalculate-costs", "用当前定价重算历史成本"),
-		).withOptions(
-			f("--from", "起始时间（含）"), f("--to", "结束时间（含）"),
-			vf("--provider", "指定 Provider", kindProvider), vf("--model", "限定模型", kindModel),
-			f("--session-id", "限定某个会话"), f("--no-scan", "不重新扫描历史记录"), jsonFlag,
-			f("--reindex-codex-forks", "重建 codex fork 的索引"),
-		),
+			n("stats", "总览").plusOptions(usageOptions...),
+			n("models", "按模型汇总").plusOptions(usageOptions...),
+			n("sessions", "按会话汇总").plusOptions(usageOptions...),
+			n("session-detail", "单个会话明细").withPositionals(p(kindFree)).plusOptions(usageOptions...),
+			n("scan", "重新扫描历史记录").plusOptions(usageOptions...),
+			n("recalculate-costs", "用当前定价重算历史成本").plusOptions(usageOptions...),
+		).withOptions(usageOptions...),
 		n("update", "检查更新或通过 npm 更新 ai-home").withOptions(f("--check", "只检查是否有更新"), f("--dry-run", "只打印将要做的改动"), f("--force", "跳过确认强制执行")),
 		n("install", "安装 / 升级 aih 发行包与托管服务"),
-		n("account", "Server 账号管理：增删启停、默认账号、模型与额度").withChildren(
+		n("account", "Server 账号管理：增删启停、默认账号、模型与额度").withOptions(f("--from-env", "从官方环境变量读取凭据"), f("--yes", "跳过确认"), f("--limit", "最多返回多少条"), vf("--after", "从某个 account_ref 之后继续", kindAccountTarget), jsonFlag).withChildren(
 			n("add", "从环境变量添加静态账号").withOptions(f("--from-env", "从官方环境变量读取凭据")).withPositionals(p(kindProvider)),
 			n("list", "分页列出公开账号信息").withOptions(f("--limit", "最多返回多少条"), vf("--after", "从某个 account_ref 之后继续", kindAccountTarget), jsonFlag),
 			n("show", "查看一个账号详情").withPositionals(p(kindAccountTarget)),
@@ -129,7 +149,7 @@ func buildCommandCatalog() []commandNode {
 			),
 			n("import", "导入官方 CLI 当前登录态").withOptions(vf("--artifact-file", "显式原生 artifact envelope", kindFile)).withPositionals(p(kindProvider)),
 		),
-		n("limits", "并发与速率上限：全局配置 + Provider / 账号覆盖").withChildren(
+		n("limits", "并发与速率上限：全局配置 + Provider / 账号覆盖").withOptions(jsonFlag).withChildren(
 			n("show", "查看生效上限").withOptions(jsonFlag),
 			n("set-global", "设置全局并发与排队参数").withOptions(f("--system-max", ""), f("--queue-limit", ""), f("--queue-wait-ms", ""), f("--retry-after", ""), f("--account-default", ""), jsonFlag),
 			n("set-provider", "设置某 Provider 的并发上限").withOptions(f("--max", ""), jsonFlag).withPositionals(p(kindProvider)),
@@ -138,7 +158,7 @@ func buildCommandCatalog() []commandNode {
 			n("unset-account", "清除账号级覆盖").withOptions(vf("--model", "限定模型", kindModel), jsonFlag).withPositionals(p(kindAccountTarget)),
 			n("preview", "预览某次请求会命中的上限").withOptions(vf("--provider", "指定 Provider", kindProvider), vf("--account", "账号", kindAccountTarget), vf("--model", "限定模型", kindModel), f("--key", "客户端 key id"), jsonFlag),
 		),
-		n("failure-policy", "上游失败语义覆盖：账号规则 > 全局覆盖 > 内置合同").withChildren(
+		n("failure-policy", "上游失败语义覆盖：账号规则 > 全局覆盖 > 内置合同").withOptions(jsonFlag).withChildren(
 			n("list", "列出当前生效规则").withOptions(vf("--provider", "只看某个 Provider", kindProvider), jsonFlag),
 			n("explain", "解释某个状态码会怎么处理").withOptions(f("--code", ""), f("--type", ""), f("--retry-after-ms", ""), jsonFlag).withPositionals(p(kindProvider), failureStatusPosition()),
 			n("set", "覆盖某 Provider 的状态语义").withOptions(f("--semantic", ""), vf("--block-scope", "阻断范围", kindEnum, "account", "account_model")).withPositionals(p(kindProvider), failureStatusPosition()),
@@ -148,7 +168,7 @@ func buildCommandCatalog() []commandNode {
 			n("disable", "停用一条规则").withPositionals(p(kindFree)),
 			n("enable", "启用一条规则").withPositionals(p(kindFree)),
 		),
-		n("client-keys", "网关客户端 key：创建 / 轮换 / 限额 / 统计").withAliases("apikeys").withChildren(
+		n("client-keys", "网关客户端 key：创建 / 轮换 / 限额 / 统计").withAliases("apikeys").withOptions(jsonFlag).withChildren(
 			n("list", "列出 key（只显示前缀）").withOptions(jsonFlag),
 			n("create", "创建 key（secret 只输出一次）").withOptions(f("--name", "key 名称"), f("--max-concurrency", ""), f("--rpm", ""), f("--tpm", "")),
 			n("show", "查看 key 详情").withOptions(jsonFlag).withPositionals(p(kindFree)),
@@ -180,7 +200,7 @@ func buildCommandCatalog() []commandNode {
 			),
 			n("sessions", "列出工作区会话").withOptions(vf("--server", "目标 Server profile", kindRemoteServer), jsonFlag),
 		),
-		n("server", "管理本机 OpenAI 兼容网关").withAliases("serve", "daemon").withChildren(
+		n("server", "管理本机 OpenAI 兼容网关").withAliases("serve", "daemon").withOptions(jsonFlag).withChildren(
 			n("start", "启动（daemon 模式）").withOptions(f("--graceful", "平滑停止/重启")),
 			n("restart", "重启").withOptions(f("--graceful", "平滑停止/重启")),
 			n("stop", "停止").withOptions(f("--graceful", "平滑停止/重启")),
@@ -201,16 +221,21 @@ func buildCommandCatalog() []commandNode {
 			n("env", "打印可用的网关环境变量"),
 			n("sync-codex", "同步 Codex 账号到远端 Server").withAliases("sync_codex"),
 		),
-		n("desktop", "桌面端版本总览（canonical / 影子 / 运行中）").withChildren(n("status", "canonical 版本、影子副本、运行中实例与漂移").withOptions(jsonFlag)),
-		n("edge", "本机入口转发（nginx / caddy / frpc）").withChildren(
+		n("desktop", "桌面端版本总览（canonical / 影子 / 运行中）").withOptions(jsonFlag).withChildren(n("status", "canonical 版本、影子副本、运行中实例与漂移").withOptions(jsonFlag)),
+		n("edge", "本机入口转发（nginx / caddy / frpc）").withOptions(f("--dry-run", "只打印将要做的改动"), jsonFlag).withChildren(
 			n("status", "当前入口与转发状态").withChildren(n("frpc", "frpc 入口").withOptions(jsonFlag), n("nginx", "nginx 入口").withOptions(jsonFlag), n("caddy", "caddy 入口").withOptions(jsonFlag)),
 			n("plan", "只打印将要写入的配置").withChildren(n("frpc", "frpc 入口").withOptions(f("--dry-run", ""), jsonFlag), n("nginx", "nginx 入口").withOptions(f("--dry-run", ""), jsonFlag), n("caddy", "caddy 入口").withOptions(f("--dry-run", ""), jsonFlag)),
 			n("apply", "写入配置并校验/重载").withChildren(n("frpc", "frpc 入口").withOptions(f("--dry-run", ""), f("--no-reload", ""), jsonFlag), n("nginx", "nginx 入口").withOptions(f("--dry-run", ""), f("--no-reload", ""), jsonFlag), n("caddy", "caddy 入口").withOptions(f("--dry-run", ""), f("--no-reload", ""), jsonFlag)),
 			n("remove", "移除受管条目").withChildren(n("frpc", "frpc 入口").withOptions(f("--name", ""), f("--dry-run", ""), jsonFlag)),
 		),
-		n("claim", "领取账号福利 / 活动（签到）").withChildren(n("qoder", "Qoder 每日签到"), n("qodercn", "Qoder 国内站每日签到"), n("zcode", "ZCode 活动领取"), n("all", "全部可领取项（默认）")).withOptions(f("--dry-run", "只预览"), vf("--account", "指定账号", kindAccount), jsonFlag, f("--quiet", "安静模式")),
-		n("harness", "用某个 Provider 的某个账号跑外部 harness（经本地网关 relay）").withChildren(buildHarnessNodes()...).withOptions(providerFlags...),
-		n("shell", "终端集成：补全、拼写纠正、rc 片段管理").withChildren(
+		n("claim", "领取账号福利 / 活动（签到）").withOptions(claimOptions...).withChildren(
+			n("qoder", "Qoder 每日签到").plusOptions(claimOptions...),
+			n("qodercn", "Qoder 国内站每日签到").plusOptions(claimOptions...),
+			n("zcode", "ZCode 活动领取").plusOptions(claimOptions...),
+			n("all", "全部可领取项（默认）").plusOptions(claimOptions...),
+		),
+		n("harness", "用某个 Provider 的某个账号跑外部 harness（经本地网关 relay）").withChildren(buildHarnessNodes()...).withOptions(vf("--provider", "指定 Provider", kindProvider), vf("--account", "账号编号或 accountRef", kindAccount), vf("--model", "模型", kindModel), vf("--model-alias", "临时转发", kindAlias), jsonFlag, f("--list", "只列出 harness")),
+		n("shell", "终端集成：补全、拼写纠正、rc 片段管理").withOptions(vf("--shell", "目标 shell", kindShell), f("--rc-file", "写入哪个 shell rc 文件"), f("--all", "对所有已安装 shell 执行"), f("--completion", "开启 TAB 补全"), f("--typo", "开启纠错建议"), f("--wrapper", "开启 aih 包装函数"), f("--no-typo", "不安装拼写纠正"), f("--no-completion", "不安装 TAB 补全"), f("--no-wrapper", "不安装包装函数"), f("--dry-run", "只打印将要做的改动"), jsonFlag).withChildren(
 			n("status", "当前 shell 集成状态").withOptions(jsonFlag),
 			n("plan", "打印将要写入 rc 的片段（不写文件）").withOptions(vf("--shell", "目标 shell", kindShell), f("--rc-file", ""), jsonFlag),
 			n("apply", "写入 shell 集成（带备份）").withOptions(vf("--shell", "目标 shell", kindShell), f("--rc-file", ""), f("--all", ""), f("--completion", ""), f("--typo", ""), f("--wrapper", ""), f("--no-typo", ""), f("--no-completion", ""), f("--no-wrapper", ""), f("--dry-run", ""), jsonFlag),
@@ -219,23 +244,23 @@ func buildCommandCatalog() []commandNode {
 			n("doctor", "检查实际安装、语法与补全入口").withOptions(vf("--shell", "目标 shell", kindShell), jsonFlag),
 			n("typo", "查看/遗忘已学习的拼写纠正").withChildren(n("list", "列出已学习纠正"), n("forget", "遗忘一条纠正").withPositionals(p(kindFree))),
 		),
-		n("agent", "TUI harness 的会话适配层：用哪个 adapter、三种交互从哪来").withChildren(
+		n("agent", "TUI harness 的会话适配层：用哪个 adapter、三种交互从哪来").withOptions(jsonFlag).withChildren(
 			n("adapters", "每个 harness 的 adapter 候选与实现状态").withOptions(jsonFlag),
 			n("capabilities", "某 harness 的审批/提问/计划确认支持级别").withOptions(jsonFlag).withPositionals(p(kindProvider)),
 			n("probe", "现在实际会选中哪个 adapter").withOptions(jsonFlag).withPositionals(p(kindProvider)),
 		),
-		n("peer", "给另一个正在跑的会话发消息 / 看收件箱（协议 / 注入 / chat 总线）").withChildren(
-			n("list", "列出可发消息的会话").withAliases("ls").withOptions(jsonFlag),
-			n("send", "发一条消息：send <名字|id> \"<正文>\"").withOptions(f("--channel", ""), f("--wait", ""), f("--no-envelope", ""), f("--dry-run", "")).withPositionals(p(kindPeerTarget), p(kindFree)),
-			n("inbox", "看收件箱：inbox [--target <名字>] [--self]").withOptions(vf("--target", "收件人", kindPeerTarget), f("--self", ""), f("--unread", ""), vf("--state", "按状态过滤", kindEnum, "pending", "delivered", "read", "failed", "unread", "all"), f("--limit", ""), jsonFlag),
-			n("read", "看一条消息全文：read <msg-id>").withOptions(jsonFlag).withPositionals(p(kindPeerMessage)),
-			n("reply", "回给原发送方：reply <msg-id> \"<正文>\"").withOptions(f("--channel", ""), f("--mode", ""), f("--wait", ""), f("--dry-run", "")).withPositionals(p(kindPeerMessage), p(kindFree)),
-			n("flush", "手动补投一轮待投递消息").withOptions(f("--dry-run", ""), jsonFlag),
-			n("channels", "每条通道怎么投递").withOptions(jsonFlag),
+		n("peer", "给另一个正在跑的会话发消息 / 看收件箱（协议 / 注入 / chat 总线）").withOptions(peerOptions...).withChildren(
+			n("list", "列出可发消息的会话").withAliases("ls").plusOptions(peerOptions...),
+			n("send", "发一条消息：send <名字|id> \"<正文>\"").withPositionals(p(kindPeerTarget), p(kindFree)).plusOptions(peerOptions...),
+			n("inbox", "看收件箱：inbox [--target <名字>] [--self]").plusOptions(peerOptions...),
+			n("read", "看一条消息全文：read <msg-id>").withPositionals(p(kindPeerMessage)).plusOptions(peerOptions...),
+			n("reply", "回给原发送方：reply <msg-id> \"<正文>\"").withPositionals(p(kindPeerMessage), p(kindFree)).plusOptions(peerOptions...),
+			n("flush", "手动补投一轮待投递消息").plusOptions(peerOptions...),
+			n("channels", "每条通道怎么投递").plusOptions(peerOptions...),
 		),
 		n("export", "导出账号（aih 原生 JSON，含明文凭据）").withPositionals(p(kindFile), pr(kindFile)),
 		n("import", "导入 aih 账号文件").withOptions(f("--dry-run", "只打印将要做的改动")).withPositionals(pr(kindFile)),
-		n("backup", "导出 / 导入 / 远程自动备份").withChildren(
+		n("backup", "导出 / 导入 / 远程自动备份").withOptions(f("--name", "目标名称"), f("--port", "SSH 端口"), f("--key", "SSH 私钥"), f("--remote-dir", "远端目录"), f("--password-env", "密码环境变量"), f("--strategy", "备份策略"), f("--interval", "备份间隔"), f("--debounce", "防抖秒数"), vf("--enabled", "是否启用", kindEnum, "on", "off"), f("--full", "全量备份"), f("--dry-run", "只打印将要做的改动"), f("--remote", "读取远端清单"), jsonFlag).withChildren(
 			n("add", "添加 SSH 备份目标").withOptions(f("--name", ""), f("--port", ""), f("--key", ""), f("--remote-dir", ""), f("--password-env", ""), f("--strategy", "")).withPositionals(p(kindFree)),
 			n("list", "列出目标与最近结果").withAliases("ls"),
 			n("remove", "删除目标").withAliases("rm").withPositionals(p(kindFree)),
@@ -249,7 +274,7 @@ func buildCommandCatalog() []commandNode {
 			n("config", "修改自动备份参数").withOptions(f("--interval", ""), f("--debounce", ""), vf("--enabled", "", kindEnum, "on", "off")),
 			n("show", "打印配置与状态"),
 		),
-		n("provider", "Provider 目录、资源边界与诊断").withChildren(
+		n("provider", "Provider 目录、资源边界与诊断").withOptions(mf("--scope", "按 provider 过滤"), jsonFlag).withChildren(
 			n("ls", "列出 provider 与各自的账号数（支持通配）").withOptions(mf("--scope", "按 provider 过滤"), jsonFlag),
 			n("capabilities", "列出各 provider 的资源边界").withOptions(jsonFlag),
 			n("doctor", "本机可用性与受管资源状态").withOptions(jsonFlag),
@@ -265,42 +290,42 @@ func buildCommandCatalog() []commandNode {
 			n("project", "重新投影"),
 			n("doctor", "检查一致性"),
 		).withOptions(vf("--provider", "指定 Provider", kindProvider), jsonFlag)),
-		n("mcp", "管理并测试原生 MCP 投影").withChildren(
-			n("list", "列出已登记 MCP"),
-			n("add", "登记一个 stdio MCP").withPositionals(p(kindFree), p(kindFree)),
-			n("test", "运行并握手测试").withPositionals(p(kindFree)),
-			n("tools", "列出工具").withPositionals(p(kindFree)),
-			n("call", "调用一个工具").withPositionals(p(kindFree), p(kindFree), pr(kindFree)),
-			n("enable", "写入原生配置").withPositionals(p(kindFree)),
-			n("disable", "停用原生投影").withPositionals(p(kindFree)),
-			n("remove", "移除登记").withPositionals(p(kindFree)),
-			n("doctor", "检查投影一致性"),
-		).withOptions(vf("--provider", "指定 Provider", kindProvider), jsonFlag),
-		n("skill", "管理原生 skill 与指令投影").withChildren(
-			n("list", "列出 skill"),
-			n("install", "安装并启用").withPositionals(p(kindFree)),
-			n("enable", "启用").withPositionals(p(kindFree)),
-			n("disable", "停用").withPositionals(p(kindFree)),
-			n("remove", "移除").withPositionals(p(kindFree)),
-			n("doctor", "检查投影一致性"),
-		).withOptions(vf("--provider", "指定 Provider", kindProvider), f("--all-supported", ""), jsonFlag),
-		n("plugin", "AIH 插件包与实例").withChildren(
-			n("validate", "校验插件包").withPositionals(p(kindFile)),
-			n("pack", "打包成离线插件包").withPositionals(p(kindFile)),
-			n("keygen", "生成发布密钥对"),
-			n("trust", "把发布公钥加入本机信任根").withOptions(f("--trust-key", "")),
-			n("untrust", "移除发布公钥").withPositionals(p(kindFree)),
-			n("trusted", "列出信任的发布公钥"),
-			n("install", "安装插件包").withOptions(f("--trust-key", ""), f("--require-signed", "")).withPositionals(p(kindFile)),
-			n("list", "已安装插件与实例").withAliases("status"),
-			n("enable", "启用实例").withPositionals(p(kindFree)),
-			n("disable", "停用实例").withPositionals(p(kindFree)),
-			n("uninstall", "卸载插件").withPositionals(p(kindFree)),
-			n("call", "调试调用一个贡献项").withOptions(f("--args-json", "")).withPositionals(p(kindFree), p(kindFree)),
-			n("doctor", "检查制品/签名/权限"),
-		).withOptions(jsonFlag),
+		n("mcp", "管理并测试原生 MCP 投影").withOptions(mcpOptions...).withChildren(
+			n("list", "列出已登记 MCP").plusOptions(mcpOptions...),
+			n("add", "登记一个 stdio MCP").withPositionals(p(kindFree), p(kindFree)).plusOptions(mcpOptions...),
+			n("test", "运行并握手测试").withPositionals(p(kindFree)).plusOptions(mcpOptions...),
+			n("tools", "列出工具").withPositionals(p(kindFree)).plusOptions(mcpOptions...),
+			n("call", "调用一个工具").withPositionals(p(kindFree), p(kindFree), pr(kindFree)).plusOptions(mcpOptions...),
+			n("enable", "写入原生配置").withPositionals(p(kindFree)).plusOptions(mcpOptions...),
+			n("disable", "停用原生投影").withPositionals(p(kindFree)).plusOptions(mcpOptions...),
+			n("remove", "移除登记").withPositionals(p(kindFree)).plusOptions(mcpOptions...),
+			n("doctor", "检查投影一致性").plusOptions(mcpOptions...),
+		),
+		n("skill", "管理原生 skill 与指令投影").withOptions(skillOptions...).withChildren(
+			n("list", "列出 skill").plusOptions(skillOptions...),
+			n("install", "安装并启用").withPositionals(p(kindFree)).plusOptions(skillOptions...),
+			n("enable", "启用").withPositionals(p(kindFree)).plusOptions(skillOptions...),
+			n("disable", "停用").withPositionals(p(kindFree)).plusOptions(skillOptions...),
+			n("remove", "移除").withPositionals(p(kindFree)).plusOptions(skillOptions...),
+			n("doctor", "检查投影一致性").plusOptions(skillOptions...),
+		),
+		n("plugin", "AIH 插件包与实例").withOptions(pluginOptions...).withChildren(
+			n("validate", "校验插件包").withPositionals(p(kindFile)).plusOptions(pluginOptions...),
+			n("pack", "打包成离线插件包").withPositionals(p(kindFile)).plusOptions(pluginOptions...),
+			n("keygen", "生成发布密钥对").plusOptions(pluginOptions...),
+			n("trust", "把发布公钥加入本机信任根").withOptions(f("--trust-key", "")).plusOptions(pluginOptions...),
+			n("untrust", "移除发布公钥").withPositionals(p(kindFree)).plusOptions(pluginOptions...),
+			n("trusted", "列出信任的发布公钥").plusOptions(pluginOptions...),
+			n("install", "安装插件包").withOptions(f("--trust-key", ""), f("--require-signed", "")).withPositionals(p(kindFile)).plusOptions(pluginOptions...),
+			n("list", "已安装插件与实例").withAliases("status").plusOptions(pluginOptions...),
+			n("enable", "启用实例").withPositionals(p(kindFree)).plusOptions(pluginOptions...),
+			n("disable", "停用实例").withPositionals(p(kindFree)).plusOptions(pluginOptions...),
+			n("uninstall", "卸载插件").withPositionals(p(kindFree)).plusOptions(pluginOptions...),
+			n("call", "调试调用一个贡献项").withOptions(f("--args-json", "")).withPositionals(p(kindFree), p(kindFree)).plusOptions(pluginOptions...),
+			n("doctor", "检查制品/签名/权限").plusOptions(pluginOptions...),
+		),
 		n("ssh", "非零客户端 SSH 图片粘贴包装").withPositionals(pr(kindFree)),
-		n("ssh-clipboard", "严格零客户端终端图片剪贴板探针").withChildren(n("probe", "诊断真实粘贴路径").withOptions(jsonFlag, f("--paste-event", ""), f("--timeout-ms", ""))),
+		n("ssh-clipboard", "严格零客户端终端图片剪贴板探针").withOptions(jsonFlag, f("--paste-event", "用真实粘贴事件测试"), f("--timeout-ms", "超时毫秒数")).withChildren(n("probe", "诊断真实粘贴路径").withOptions(jsonFlag, f("--paste-event", ""), f("--timeout-ms", ""))),
 		n("clip-agent", "SSH RemoteForward 剪贴板图片提供方").withChildren(n("start", "启动本机剪贴板代理")),
 		n("help", "打印用法").withAliases("--help", "-h").withPositionals(p(kindProvider)),
 	}
@@ -309,9 +334,21 @@ func buildCommandCatalog() []commandNode {
 func buildHarnessNodes() []commandNode {
 	items := harnessSubcommands()
 	nodes := make([]commandNode, 0, len(items))
+	harnessOptions := []optionSpec{
+		vf("--provider", "指定 Provider", kindProvider),
+		vf("--account", "账号编号或 accountRef", kindAccount),
+		vf("--model", "模型", kindModel),
+		vf("--model-alias", "临时转发", kindAlias),
+		jsonFlagOnly(),
+		f("--list", "只列出 harness"),
+	}
 	for _, item := range items {
-		nodes = append(nodes, n(item.Name, item.Summary).withChildren(
-			n("models", "只读 harness 可选模型").withOptions(vf("--provider", "指定 Provider", kindProvider), vf("--account", "账号", kindAccount), jsonFlagOnly()),
+		nodes = append(nodes, n(item.Name, item.Summary).withOptions(harnessOptions...).withChildren(
+			n("models", "只读 harness 可选模型").withOptions(
+				vf("--provider", "指定 Provider", kindProvider),
+				vf("--account", "账号", kindAccount),
+				jsonFlagOnly(),
+			),
 		))
 	}
 	return nodes

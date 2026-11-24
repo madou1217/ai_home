@@ -1,5 +1,11 @@
 /* /accounts 移动端局部样式：语义 token、等宽数值、直角 / 切角（无大圆角） */
 
+.syncStatus {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
 /* ---- 账号行（SwipeRow 内容） ---- */
 .row {
   display: flex;
@@ -13,23 +19,31 @@
   opacity: 0.25;
   transform: translateX(-12px);
 }
+.rowMuted {
+  opacity: 0.68;
+}
 .quota {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums slashed-zero;
+  white-space: nowrap;
 }
 .quotaTrack {
   width: 52px;
 }
 .quotaNone {
+  max-width: 100%;
+  overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- 导入进度 ---- */
@@ -188,11 +202,13 @@
 }
 .sheetFooter {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   width: 100%;
 }
 .sheetFooter > * {
-  flex: 1;
+  flex: 1 1 96px;
+  min-width: 0;
 }
 .cardDesc {
   margin: 0;
@@ -209,4 +225,12 @@
   transition:
     background-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .actionItem,
+  .inlineIconBtn {
+    transition: none;
+  }
 }

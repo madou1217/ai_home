@@ -109,11 +109,25 @@ export default function MobileModels(_props: MobilePageProps) {
 
   const resetLimit = () => setLimit(PAGE_STEP);
 
-  if (!page.loaded && !catalog) return <MobileBoot label="LOADING MODELS" />;
+  const resetFilters = () => {
+    page.setKeyword('');
+    page.setProviderFilter('all');
+    page.setAccountFilter('all');
+    page.setStatusFilter('all');
+    resetLimit();
+  };
+  const hasFilters = Boolean(
+    page.keyword.trim()
+    || page.providerFilter !== 'all'
+    || page.accountFilter !== 'all'
+    || page.statusFilter !== 'all'
+  );
+
+  if (!page.loaded && !catalog) return <MobileBoot label="加载模型目录" />;
 
   return (
     <MobilePage
-      lead="按模型聚合展示可见状态；客户端看到的是所有启用账号模型的去重合集。"
+      lead={`聚合所有启用账号模型去重输出至 ${catalog?.endpoint || '/v1/models'}。`}
       toolbar={(
         <MobileToolbar
           start={(
@@ -204,10 +218,6 @@ export default function MobileModels(_props: MobilePageProps) {
         code="CATALOG"
         count={page.rows.length}
       >
-        <p className={styles.catalogMeta}>
-          端点 {catalog?.endpoint || '/v1/models'}，当前可见模型 {page.visibleModelCount} 个。
-        </p>
-
         <div className={styles.filters}>
           <Input
             allowClear
@@ -257,16 +267,25 @@ export default function MobileModels(_props: MobilePageProps) {
         {page.rows.length === 0 ? (
           page.loadError && !catalog ? (
             <EmptySignal
-              title="LINK ERROR"
+              title="加载失败"
               description={page.loadError}
               action={<HudIconButton icon={<ReloadOutlined />} label="重试" tone="primary" showLabel onClick={() => page.loadModels({ quiet: true })} />}
             />
+          ) : hasFilters ? (
+            <EmptySignal
+              title="无匹配模型"
+              description="当前筛选条件下没有模型，可重置筛选查看全部。"
+              action={<HudIconButton icon={<ReloadOutlined />} label="重置筛选" tone="primary" showLabel onClick={resetFilters} />}
+            />
           ) : (
             <EmptySignal
-              description="暂无数据"
+              title="暂无模型"
+              description="尚未探测到可用模型，可刷新探测或手动补充模型。"
               action={page.canCreateManualModel ? (
                 <HudIconButton icon={<PlusOutlined />} label="添加模型" tone="primary" showLabel onClick={openManual} />
-              ) : null}
+              ) : (
+                <HudIconButton icon={<ReloadOutlined />} label="刷新模型" tone="primary" showLabel loading={refreshing} onClick={page.refreshModels} />
+              )}
             />
           )
         ) : (
@@ -280,7 +299,7 @@ export default function MobileModels(_props: MobilePageProps) {
               return (
                 <SwipeRow
                   key={row.id}
-                  ariaLabel={`${displayLabel || row.id} 详情`}
+                  ariaLabel={`${displayLabel || row.id}，${visible ? '可见' : '已停用'}`}
                   onTap={() => setDetailRow(row)}
                   actions={[{
                     key: 'copy',
@@ -302,11 +321,11 @@ export default function MobileModels(_props: MobilePageProps) {
                   <span className="mhud-row__side">
                     <span className={`mhud-status ${visible ? 'mhud-tone--ok' : 'mhud-tone--muted'}`}>
                       <span className={`hud-led ${visible ? 'hud-led--ok' : 'hud-led--warn'}`} aria-hidden="true" />
-                      {visible ? 'VIS' : 'HID'}
+                      {visible ? '可见' : '已停用'}
                     </span>
                     <span className={styles.sideCount}>
-                      {row.enabledCount}/{row.enabledCount + row.disabledCount}
-                      {row.manualCount > 0 ? <span className={styles.manualTag}> M{row.manualCount}</span> : null}
+                      启用 {row.enabledCount}/{row.enabledCount + row.disabledCount}
+                      {row.manualCount > 0 ? <span className={styles.manualTag}> · 手动 {row.manualCount}</span> : null}
                     </span>
                   </span>
                 </SwipeRow>

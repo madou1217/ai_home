@@ -78,7 +78,7 @@ export default function ArchivedSessionsSheet({ open, onClose, onRestored }: Pro
 
   let body;
   if (loading && sessions.length === 0) {
-    body = <MobileBoot label="SYNC" />;
+    body = <MobileBoot label="加载归档列表" />;
   } else if (failed && sessions.length === 0) {
     body = (
       <div className={styles.errorLine} role="alert">
@@ -88,7 +88,13 @@ export default function ArchivedSessionsSheet({ open, onClose, onRestored }: Pro
       </div>
     );
   } else if (sessions.length === 0 && sessionPresence.render.length === 0) {
-    body = <EmptySignal title="NO ARCHIVE" description="暂无归档会话" />;
+    body = (
+      <EmptySignal
+        title="暂无归档"
+        description="当前没有已归档的会话。"
+        action={<HudIconButton icon={<ReloadOutlined />} label="刷新" showLabel onClick={() => { void loadArchived(); }} />}
+      />
+    );
   } else {
     body = (
       <MonoList ariaLabel="已归档的会话">

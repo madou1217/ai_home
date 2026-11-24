@@ -53,7 +53,7 @@ export default function ChatConversationScreen({ state, sessions }: Props) {
   const pinned = session ? sessions.pinnedSessionIds.has(session.id) : false;
   const archive = session && !chatSession ? sessions.archiveAction(session) : null;
   const statusTone = selectedSessionRunning ? 'ok' : session?.draft ? 'warn' : 'info';
-  const statusText = selectedSessionRunning ? 'RUNNING' : session?.draft ? 'DRAFT' : 'IDLE';
+  const statusText = selectedSessionRunning ? '生成中' : session?.draft ? '草稿' : '空闲';
 
   const closeSheetThen = (action: () => void) => () => {
     setSheetOpen(false);
@@ -62,7 +62,7 @@ export default function ChatConversationScreen({ state, sessions }: Props) {
 
   const infoRows = session ? [
     { key: 'state', label: '状态', value: statusText, tone: statusTone as 'ok' | 'warn' | 'info' },
-    { key: 'mode', label: '模式', value: chatSession ? 'CHAT · 纯聊天' : 'WORK · 工作区' },
+    { key: 'mode', label: '模式', value: chatSession ? '纯聊天' : '工作区' },
     { key: 'provider', label: '提供方', value: getProviderLabel(session.provider) },
     { key: 'model', label: '模型', value: model || '—' },
     {
@@ -103,10 +103,13 @@ export default function ChatConversationScreen({ state, sessions }: Props) {
           <div className={styles.convoTitles}>
             <span className={styles.convoTitle}>{session?.title || projectLabel}</span>
             <span className={styles.convoMeta}>
-              <span
-                className={`hud-led hud-led--${statusTone}${selectedSessionRunning ? ' hud-led--live' : ''}`}
-                aria-hidden="true"
-              />
+              <span className={`mhud-status mhud-tone--${statusTone}`}>
+                <span
+                  className={`hud-led hud-led--${statusTone}${selectedSessionRunning ? ' hud-led--live' : ''}`}
+                  aria-hidden="true"
+                />
+                {statusText}
+              </span>
               {session?.provider ? (
                 <span className={styles.convoProvider}>
                   <ProviderIcon provider={session.provider} size={12} />

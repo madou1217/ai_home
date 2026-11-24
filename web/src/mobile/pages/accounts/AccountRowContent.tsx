@@ -49,15 +49,16 @@ export default function AccountRowContent({ record, activity, removing, desktopR
     // 多套餐逐个列出（不再用 `A + B` 的拼接串，见 getPlanTagLabels）。
     ...getPlanTagLabels(record),
     record.isDefault ? '默认' : '',
-    record.isMobile ? 'APP' : '',
+    record.isMobile ? 'App' : '',
     // 双协议厂商能力：只显示短标签，完整端点放在详情抽屉。
     getAccountVendorMeta(record)?.label || '',
-    desktopRunning ? 'DESKTOP' : ''
+    desktopRunning ? 'Desktop 运行中' : ''
   ].filter(Boolean).join(' · ');
+  const quotaFallback = getQuotaStateMeta(record)?.label || (record.apiKeyMode ? '上游计费' : '额度未知');
 
   return (
     <div
-      className={`${styles.row}${removing ? ` ${styles.rowRemoving}` : ''}`}
+      className={`${styles.row}${removing ? ` ${styles.rowRemoving}` : ''}${!record.configured ? ` ${styles.rowMuted}` : ''}`}
       data-account-ref={getAccountRef(record)}
     >
       <span className="mhud-row__icon" aria-hidden="true">
@@ -74,7 +75,7 @@ export default function AccountRowContent({ record, activity, removing, desktopR
         </span>
         {remaining != null ? (
           <span className={styles.quota}>
-            <span className={`mhud-tone--${remainingTone(remaining)}`}>{remaining.toFixed(0)}%</span>
+            <span className={`mhud-tone--${remainingTone(remaining)}`}>剩余 {remaining.toFixed(0)}%</span>
             <span className={`mhud-track ${styles.quotaTrack}`} aria-hidden="true">
               <span
                 className={`mhud-track__fill mhud-bg--${remainingTone(remaining)}`}
@@ -83,7 +84,7 @@ export default function AccountRowContent({ record, activity, removing, desktopR
             </span>
           </span>
         ) : (
-          <span className={styles.quotaNone} title={quotaPlaceholderTitle(record)}>—</span>
+          <span className={styles.quotaNone} title={quotaPlaceholderTitle(record)}>{quotaFallback}</span>
         )}
       </span>
     </div>

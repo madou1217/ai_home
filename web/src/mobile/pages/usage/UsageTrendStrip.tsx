@@ -57,7 +57,7 @@ export default function UsageTrendStrip({ trend }: { trend: ModelUsageTrend }) {
   const tone = METRICS.find((item) => item.key === metric)?.tone || 'info';
 
   if (slots.length === 0) {
-    return <EmptySignal title="NO TREND" description="当前范围内暂无趋势数据。" />;
+    return <EmptySignal title="暂无趋势" description="当前范围内暂无趋势数据。" />;
   }
 
   const slotTime = (index: number) => slots[index]?.bucketStartMs || trend.fromMs + index * trend.bucketMs;

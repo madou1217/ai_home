@@ -14,6 +14,8 @@ export interface WorkspaceConnector {
   connectorId: string;
   label: string;
   rootLabel?: string;
+  /** Server-side anchor path used by Work/requirements. Not a local copy. */
+  shadowPath?: string;
   platform?: string;
   capabilities: WorkspaceConnectorCapabilities;
   createdAt: number;

@@ -14,6 +14,9 @@ const (
 	ToolPath          = ManagementPath + "/{workspaceId}/tools"
 	ApprovalsPath     = ManagementPath + "/{workspaceId}/approvals"
 	AgentTerminalPath = ManagementPath + "/{workspaceId}/agent-terminal"
+	MirrorPath        = ManagementPath + "/{workspaceId}/mirror"
+	MirrorSyncPath    = MirrorPath + "/{mirrorId}/sync"
+	MirrorItemPath    = MirrorPath + "/{mirrorId}"
 )
 
 // ToolTokenHeader authenticates a provider tool bridge. The token is scoped to

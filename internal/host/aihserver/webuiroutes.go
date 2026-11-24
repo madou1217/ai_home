@@ -360,6 +360,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		Authorizer: authorizer,
 		Store:      workspaceStore,
 		Hub:        workspaceHub,
+		AIHomeDir:  dependencies.AIHomeDir,
 		ServerID: func(ctx context.Context) (string, error) {
 			return webuiaccountbrowserapi.ReadServerID(ctx, dependencies.AIHomeDir)
 		},
@@ -1040,6 +1041,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiworkspaceconnectorapi.RPCPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ApprovalsPath, Handler: workspaceConnectors},
+		{Pattern: "POST " + remoteconnector.MirrorPath, Handler: workspaceConnectors},
+		{Pattern: "POST " + remoteconnector.MirrorSyncPath, Handler: workspaceConnectors},
+		{Pattern: "DELETE " + remoteconnector.MirrorItemPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiremotesessionsapi.Path, Handler: remoteSessions},
 		{Pattern: "GET " + webuiremotesessionsapi.DetailPath, Handler: remoteSessions},
 		{Pattern: "POST " + webuiremotesessionsapi.StopPath, Handler: remoteSessions},

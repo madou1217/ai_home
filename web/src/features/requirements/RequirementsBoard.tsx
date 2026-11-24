@@ -25,9 +25,10 @@ import {
   Progress, Segmented, Select, Space, Switch, Table, Tag, Tooltip, message
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { accountsAPI, modelsAPI, sessionsAPI, sshHostsAPI } from '@/services/api';
+import { accountsAPI, modelsAPI, sessionsAPI, sshHostsAPI, workspaceConnectorsAPI } from '@/services/api';
 import type { AggregatedProject } from '@/types';
 import type { SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
+import type { WorkspaceConnector } from '@/features/workspace-connectors/workspace-connectors-model';
 import { chatRuntimeProviders } from '@/features/chat-runtime/runtime-provider-registry';
 import {
   requirementsAPI,
@@ -122,6 +123,7 @@ export default function RequirementsBoard() {
   const [busyId, setBusyId] = useState<string>('');
   const [projects, setProjects] = useState<AggregatedProject[]>([]);
   const [sshWorkspaces, setSshWorkspaces] = useState<SshWorkspace[]>([]);
+  const [connectorWorkspaces, setConnectorWorkspaces] = useState<WorkspaceConnector[]>([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [schedulerProviders, setSchedulerProviders] = useState<string[]>([]);
   const [schedulerModels, setSchedulerModels] = useState<Record<string, string[]>>({});
@@ -147,10 +149,15 @@ export default function RequirementsBoard() {
   const loadWorkWorkspaces = useCallback(async () => {
     setWorkspacesLoading(true);
     try {
-      const [projectList, sshList] = await Promise.all([sessionsAPI.getAllProjects(), sshHostsAPI.listWorkspaces()]);
+      const [projectList, sshList, connectorList] = await Promise.all([
+        sessionsAPI.getAllProjects(),
+        sshHostsAPI.listWorkspaces(),
+        workspaceConnectorsAPI.list().catch(() => ({ ok: false, count: 0, workspaces: [] as WorkspaceConnector[] }))
+      ]);
       setProjects(Array.isArray(projectList) ? projectList : []);
       setSshWorkspaces(Array.isArray(sshList) ? sshList as SshWorkspace[] : []);
-    } catch { setProjects([]); setSshWorkspaces([]); }
+      setConnectorWorkspaces(Array.isArray(connectorList?.workspaces) ? connectorList.workspaces : []);
+    } catch { setProjects([]); setSshWorkspaces([]); setConnectorWorkspaces([]); }
     finally { setWorkspacesLoading(false); }
   }, []);
 
@@ -231,14 +238,28 @@ export default function RequirementsBoard() {
       if (!workspace.projectPath) continue;
       map.set(workspace.projectPath, { path: workspace.projectPath, label: `远程 · ${workspace.label || pathLabel(workspace.projectPath)}`, kind: 'ssh', detail: workspace.remoteRoot || workspace.projectPath });
     }
+    for (const workspace of connectorWorkspaces) {
+      if (!workspace.shadowPath) continue;
+      const state = workspace.state === 'online' ? '在线' : workspace.state === 'revoked' ? '已撤销' : '离线';
+      map.set(workspace.shadowPath, {
+        path: workspace.shadowPath,
+        label: `本地工作区 · ${workspace.label || workspace.id}`,
+        kind: 'connector',
+        detail: [workspace.rootLabel, state].filter(Boolean).join(' · ')
+      });
+    }
     for (const requirement of requirements) {
       if (!requirement.workspacePath || map.has(requirement.workspacePath)) continue;
-      map.set(requirement.workspacePath, { path: requirement.workspacePath, label: requirement.workspaceLabel || pathLabel(requirement.workspacePath), kind: requirement.workspaceKind === 'ssh' ? 'ssh' : 'local', detail: requirement.workspacePath });
+      const kind = requirement.workspaceKind === 'ssh' ? 'ssh' : requirement.workspaceKind === 'connector' ? 'connector' : 'local';
+      map.set(requirement.workspacePath, { path: requirement.workspacePath, label: requirement.workspaceLabel || pathLabel(requirement.workspacePath), kind, detail: requirement.workspacePath });
     }
     return Array.from(map.values()).sort((left, right) => left.label.localeCompare(right.label));
-  }, [projects, requirements, sshWorkspaces]);
+  }, [projects, requirements, sshWorkspaces, connectorWorkspaces]);
 
   const workspaceOption = useCallback((path: string) => workWorkspaces.find((workspace) => workspace.path === path), [workWorkspaces]);
+  const workspaceDetail = useCallback((requirement: Requirement) => (
+    workspaceOption(requirement.workspacePath)?.detail || requirement.workspacePath
+  ), [workspaceOption]);
   const workspaceName = useCallback((requirement: Requirement) => {
     const option = workspaceOption(requirement.workspacePath);
     if (option) return option.label;
@@ -247,12 +268,19 @@ export default function RequirementsBoard() {
   }, [workspaceOption]);
   const workspaceOptions = useMemo(() => {
     const options = [{ label: '全部工作区', value: 'all' }];
-    for (const workspace of workWorkspaces) options.push({ label: `${workspace.label}${workspace.kind === 'ssh' ? ' · SSH' : ''}`, value: workspace.path });
+    for (const workspace of workWorkspaces) {
+      const suffix = workspace.kind === 'ssh' ? ' · SSH' : workspace.kind === 'connector' ? ' · 本地工作区' : '';
+      options.push({ label: `${workspace.label}${suffix}`, value: workspace.path });
+    }
     return options;
   }, [workWorkspaces]);
-  const requirementWorkspaceOptions = useMemo(() => workWorkspaces.map((workspace) => ({
-    label: `${workspace.label}${workspace.kind === 'ssh' ? ' · 远程' : ''} · ${workspace.path}`, value: workspace.path
-  })), [workWorkspaces]);
+  const requirementWorkspaceOptions = useMemo(() => workWorkspaces.map((workspace) => {
+    const suffix = workspace.kind === 'ssh' ? ' · 远程' : workspace.kind === 'connector' ? ' · 本地工作区' : '';
+    return {
+      label: `${workspace.label}${suffix} · ${workspace.detail || workspace.path}`,
+      value: workspace.path
+    };
+  }), [workWorkspaces]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return sortRequirements(requirements).filter((item) => {
@@ -653,7 +681,7 @@ export default function RequirementsBoard() {
               {detail.refinedAt ? <Tag color="purple">AI 已优化 · {(detail.steps || []).length} 步</Tag> : null}
               {detail.source !== 'manual' ? <Tag color="gold">{detail.source}</Tag> : null}
             </div>
-            {detail.workspacePath ? <code className={styles.pathCode}>{detail.workspacePath}</code> : <div className={styles.inlineNote}><FolderOpenOutlined /> 还没有绑定 Work 工作区。请编辑并选择 /ui/chat（Work）里的项目或远程工作区。</div>}
+            {detail.workspacePath ? <code className={styles.pathCode}>{detail.workspaceKind === 'connector' ? `本地工作区 · ${workspaceDetail(detail)}（执行时镜像，完成后写回）` : detail.workspacePath}</code> : <div className={styles.inlineNote}><FolderOpenOutlined /> 还没有绑定 Work 工作区。请编辑并选择 /ui/chat（Work）里的项目或远程工作区。</div>}
             <div className={styles.detailProgress}><Progress percent={progressOf(detail)} status={detail.status === 'blocked' ? 'exception' : undefined} /><span>{detail.progressNote || '等待调度'}</span></div>
             {detail.lastError ? <div className={styles.inlineError}><ExclamationCircleOutlined /> {detail.lastError}</div> : null}
             <section className={styles.detailSection}>
@@ -689,7 +717,9 @@ export default function RequirementsBoard() {
                 <h3>执行会话</h3>
                 <div className={styles.sessionRow}>
                   <Tag color="geekblue">{detail.sessionId}</Tag>
-                  <Button size="small" icon={<LinkOutlined />} href={`/ui/chat?sessionId=${encodeURIComponent(detail.sessionId)}&projectPath=${encodeURIComponent(detail.workspacePath)}`}>在 Work 打开</Button>
+                  {detail.workspaceKind === 'connector'
+                    ? <span className={styles.muted}>本地 Connector 工作区；执行和同步都在 Server 端完成</span>
+                    : <Button size="small" icon={<LinkOutlined />} href={`/ui/chat?sessionId=${encodeURIComponent(detail.sessionId)}&projectPath=${encodeURIComponent(detail.workspacePath)}`}>在 Work 打开</Button>}
                 </div>
                 {detail.peerMessageId ? <div className={styles.muted}>peer 任务：{detail.peerMessageId}</div> : null}
               </section>
@@ -714,7 +744,7 @@ export default function RequirementsBoard() {
             <Form.Item name="status" label="状态" initialValue="idea"><Select options={[{ label: '想法（未确认）', value: 'idea' }, { label: '待排期（已确认）', value: 'ready' }]} disabled={Boolean(editing)} /></Form.Item>
             <Form.Item name="priority" label="优先级" initialValue={1}><Select options={[{ label: '高', value: 0 }, { label: '普通', value: 1 }, { label: '低', value: 2 }]} /></Form.Item>
           </div>
-          <Form.Item name="workspacePath" label="Work 工作区" extra="与 AI 会话 → Work 的工作区同一概念；远程工作区会自动使用影子路径。">
+          <Form.Item name="workspacePath" label="Work 工作区" extra="与 AI 会话 → Work 的工作区同一概念；远程工作区会自动使用影子路径，本地 Connector 工作区会在执行时镜像并在完成后写回。">
             <Select allowClear showSearch options={requirementWorkspaceOptions} placeholder={requirementWorkspaceOptions.length ? '选择 Work 中的项目或远程工作区' : '还没有 Work 工作区，请先去 AI 会话 → Work 打开项目'} />
           </Form.Item>
           <div className={styles.formRow}>

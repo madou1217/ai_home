@@ -132,7 +132,7 @@ export interface RequirementImportInput {
 export interface WorkWorkspaceOption {
   path: string;
   label: string;
-  kind: 'local' | 'ssh';
+  kind: 'local' | 'ssh' | 'connector';
   detail?: string;
 }
 
@@ -142,7 +142,7 @@ function snapshotFrom(payload: any): RequirementSnapshot {
   const data = payload?.snapshot || payload || {};
   return {
     requirements: Array.isArray(data.requirements) ? data.requirements : [],
-		settings: data.settings || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', reasoningEffort: 'xhigh', maxParallel: 2, updatedAt: 0 },
+		settings: data.settings || { enabled: true, provider: '', model: '', accountRef: '', reasoningEffort: '', maxParallel: 2, updatedAt: 0 },
 		scheduler: data.scheduler || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', reasoningEffort: 'xhigh', maxParallel: 2, running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
     generatedAt: Number(data.generatedAt) || Date.now()
   };

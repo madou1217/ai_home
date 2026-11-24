@@ -47,6 +47,9 @@ type Dependencies struct {
 	Store      *workspaceconnector.Store
 	Hub        *workspaceconnector.Hub
 	ServerID   func(context.Context) (string, error)
+	// AIHomeDir owns connector shadow and mirror directories. It is optional
+	// for the enrollment/RPC surface, but mirror operations require it.
+	AIHomeDir string
 }
 
 type Handler struct {
@@ -54,6 +57,7 @@ type Handler struct {
 	store      *workspaceconnector.Store
 	hub        *workspaceconnector.Hub
 	serverID   func(context.Context) (string, error)
+	aiHomeDir  string
 }
 
 func NewHandler(dependencies Dependencies) (*Handler, error) {
@@ -65,6 +69,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		store:      dependencies.Store,
 		hub:        dependencies.Hub,
 		serverID:   dependencies.ServerID,
+		aiHomeDir:  strings.TrimSpace(dependencies.AIHomeDir),
 	}, nil
 }
 
@@ -86,6 +91,10 @@ type workspaceView struct {
 	SessionID      string `json:"sessionId,omitempty"`
 	ConnectedAt    int64  `json:"connectedAt,omitempty"`
 	LiveLastSeenAt int64  `json:"liveLastSeenAt,omitempty"`
+	// ShadowPath is the Server-side anchor used by Work/requirements. It is not
+	// a copy of the local project; agents that cannot use the tool channel must
+	// materialize a mirror explicitly.
+	ShadowPath string `json:"shadowPath,omitempty"`
 }
 
 type listResponse struct {
@@ -99,6 +108,104 @@ type entriesResponse struct {
 	OK          bool                                `json:"ok"`
 	WorkspaceID string                              `json:"workspaceId"`
 	Directory   remoteconnector.ListDirectoryResult `json:"directory"`
+}
+
+type mirrorResponse struct {
+	OK          bool                                 `json:"ok"`
+	WorkspaceID string                               `json:"workspaceId"`
+	Mirror      workspaceconnector.Mirror            `json:"mirror"`
+	Result      *workspaceconnector.MirrorSyncResult `json:"result,omitempty"`
+}
+
+type mirrorRemoveResponse struct {
+	OK          bool   `json:"ok"`
+	WorkspaceID string `json:"workspaceId"`
+	MirrorID    string `json:"mirrorId"`
+	Removed     bool   `json:"removed"`
+}
+
+func (handler *Handler) serveMirrorStart(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		methodNotAllowed(response, http.MethodPost)
+		return
+	}
+	workspaceID := strings.TrimSpace(request.PathValue("workspaceId"))
+	if workspaceID == "" {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeWorkspaceNotFound, "workspace id is required")
+		return
+	}
+	if handler.aiHomeDir == "" {
+		writeError(response, http.StatusServiceUnavailable, remoteconnector.CodeInternal, "server workspace directory is unavailable")
+		return
+	}
+	workspace, found, err := handler.store.Find(request.Context(), workspaceID)
+	if err != nil {
+		writeProtocolError(response, err)
+		return
+	}
+	if !found {
+		writeError(response, http.StatusNotFound, remoteconnector.CodeWorkspaceNotFound, "workspace not found")
+		return
+	}
+	if workspace.Revoked() {
+		writeError(response, http.StatusConflict, remoteconnector.CodeWorkspaceRevoked, "workspace enrollment was revoked")
+		return
+	}
+	if !handler.hub.Online(workspaceID) {
+		writeError(response, http.StatusConflict, remoteconnector.CodeWorkspaceOffline, "workspace connector is offline")
+		return
+	}
+	mirror, err := workspaceconnector.StartMirror(request.Context(), handler.hub, workspaceID, handler.aiHomeDir, workspaceconnector.MirrorOptions{})
+	if err != nil {
+		writeProtocolError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusCreated, mirrorResponse{OK: true, WorkspaceID: workspaceID, Mirror: mirror})
+}
+
+func (handler *Handler) serveMirrorSync(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		methodNotAllowed(response, http.MethodPost)
+		return
+	}
+	workspaceID := strings.TrimSpace(request.PathValue("workspaceId"))
+	mirrorID := strings.TrimSpace(request.PathValue("mirrorId"))
+	if workspaceID == "" || mirrorID == "" {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeInvalidPayload, "workspace and mirror ids are required")
+		return
+	}
+	if handler.aiHomeDir == "" {
+		writeError(response, http.StatusServiceUnavailable, remoteconnector.CodeInternal, "server workspace directory is unavailable")
+		return
+	}
+	result, err := workspaceconnector.SyncMirror(request.Context(), handler.hub, workspaceID, handler.aiHomeDir, mirrorID, workspaceconnector.MirrorOptions{})
+	if err != nil {
+		writeProtocolError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, mirrorResponse{OK: true, WorkspaceID: workspaceID, Result: &result})
+}
+
+func (handler *Handler) serveMirrorRemove(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodDelete {
+		methodNotAllowed(response, http.MethodDelete)
+		return
+	}
+	workspaceID := strings.TrimSpace(request.PathValue("workspaceId"))
+	mirrorID := strings.TrimSpace(request.PathValue("mirrorId"))
+	if workspaceID == "" || mirrorID == "" {
+		writeError(response, http.StatusBadRequest, remoteconnector.CodeInvalidPayload, "workspace and mirror ids are required")
+		return
+	}
+	if handler.aiHomeDir == "" {
+		writeError(response, http.StatusServiceUnavailable, remoteconnector.CodeInternal, "server workspace directory is unavailable")
+		return
+	}
+	if err := workspaceconnector.RemoveMirror(handler.aiHomeDir, workspaceID, mirrorID); err != nil {
+		writeProtocolError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, mirrorRemoveResponse{OK: true, WorkspaceID: workspaceID, MirrorID: mirrorID, Removed: true})
 }
 
 type errorResponse struct {
@@ -136,6 +243,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.serveApprovals(response, request)
 	case strings.HasSuffix(request.URL.Path, "/rpc"):
 		handler.serveRPC(response, request)
+	case strings.HasSuffix(request.URL.Path, "/mirror"):
+		handler.serveMirrorStart(response, request)
+	case request.PathValue("mirrorId") != "" && strings.HasSuffix(request.URL.Path, "/sync"):
+		handler.serveMirrorSync(response, request)
+	case request.PathValue("mirrorId") != "":
+		handler.serveMirrorRemove(response, request)
 	case request.PathValue("workspaceId") != "":
 		handler.serveWorkspace(response, request)
 	default:
@@ -167,6 +280,11 @@ func (handler *Handler) serveList(response http.ResponseWriter, request *http.Re
 			// The live session is authoritative: it reflects a connector
 			// started with --no-command, not just the durable grant.
 			view.Capabilities = status.Capabilities
+		}
+		if handler.aiHomeDir != "" {
+			if shadow, err := workspaceconnector.ShadowDir(handler.aiHomeDir, workspace.ID); err == nil {
+				view.ShadowPath = shadow
+			}
 		}
 		views = append(views, view)
 	}
@@ -478,6 +596,12 @@ func writeProtocolError(response http.ResponseWriter, err error) {
 	message := "workspace connector operation failed"
 	if protocolErr := asProtocolError(err); protocolErr != nil && protocolErr.Message != "" {
 		message = protocolErr.Message
+	}
+	if code == "" {
+		code = remoteconnector.CodeInternal
+		if err != nil && strings.TrimSpace(err.Error()) != "" {
+			message = err.Error()
+		}
 	}
 	writeError(response, statusForCode(code), code, message)
 }

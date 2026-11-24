@@ -71,6 +71,11 @@ func newRequirementsRuntime(ctx context.Context, dependencies webuiRouteDependen
 		defer cancel()
 		service.ContinueLoop(loopCtx, requirementID, finalMessage, hadWork)
 	}
+	dispatcher.MirrorClient = &requirementruntime.MirrorClient{
+		BaseURL:       func() string { return dependencies.SelfBaseURL },
+		ManagementKey: dependencies.ManagementKey,
+		HTTPClient:    &http.Client{Timeout: 10 * time.Minute},
+	}
 	scheduler := requirementruntime.NewScheduler(service, dispatcher, time.Now)
 	scheduler.Inspector = chat
 	handler, handlerErr := webuirequirementsapi.NewHandler(dependencies.Authorizer, service, scheduler, dispatcher)

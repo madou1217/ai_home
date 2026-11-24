@@ -88,24 +88,53 @@ TUN 路由、系统代理与已发布的 `run/proxy/entry.json` 随整套入口�
 | `npm error code E403` | 否 | 上游拒绝 |
 | `此 Windows 官方安装器不能保证所有下载使用 --proxy` | 否 | 显式终止条件，见下 |
 
-## 未验证：Windows 真机
+## Windows 真机验证（已完成）
 
-**本仓库当前没有 Windows 机器可用**（AWS 主机是 Ubuntu），因此以下只做了静态核对，
-没有真机结论：
+主机：`Windows - MeaDeo`（`madou@www.desired.cn:22009`，Windows 10.0.26300）。
+主机信息从 `aih.db` 的 `ssh_connections` 查，见 skill
+`assets/provider-skills/remote-realmachine`。
 
-1. **代理环境变量在全链路生效**：`curl`、`npm.cmd`、PowerShell `Invoke-WebRequest`
-   三类下载方式都识别 `http_proxy`/`https_proxy`/`all_proxy`。环境变量由
-   `updateproxy.Environment` 生成（含清空 `no_proxy` 与 `NPM_CONFIG_*` 大小写变体），
-   `hostexec.mergedEnv` 叠在宿主环境之上并覆盖同名键。
-2. **凭据不进 argv**：代理 URL 含租约令牌，只存在于环境变量；计划 argv 不含。
-   已静态核对 `ResolveLifecyclePlans("codex","cli","install",…)` 的全部参数。
-3. **Windows 安装器拒绝语义**：无法保证全部下载走代理的官方安装器（非 npm 计划）
-   在 `proxyActive` 时直接失败，错误带 `apps.ErrEgressUnsupported`；
-   `EgressFailureReason` 先匹配这个标记再判传输层，避免把「安装器不支持代理」
-   当成网络错误去反复换出口。
+### 发现并修复的两个真实缺陷
 
-待办：拿到 Windows 机器后补三件事——npm 计划经代理安装成功、官方原生安装器被正确拒绝、
-以及拒绝后**不**进入轮换（attempts 里只应有一条失败）。
+**1. PowerShell 安装器完全无视代理**
+
+`Invoke-RestMethod` / `Invoke-WebRequest` **不读** `HTTP_PROXY`/`HTTPS_PROXY`。
+真机对照：
+
+| 设置 | `irm https://x.ai/cli/install.ps1` |
+| --- | --- |
+| 仅 `$env:HTTPS_PROXY=http://127.0.0.1:9` | 成功返回脚本（代理被忽略） |
+| 加 `[System.Net.WebRequest]::DefaultWebProxy` | `无法连接到远程服务器`（代理生效） |
+
+影响 6 个 provider 的 Windows 计划（claude / grok / opencode / kimi / kiro /
+codebuddy）。自动代理选中出口后，这些安装器仍会直连下载——「看起来成功、
+实际没走代理」。
+
+修法用 `DefaultWebProxy` 而非给单条请求加 `-Proxy`：官方脚本首屏之后还会继续
+下载，只代理第一跳没用。代理地址从环境读，不拼进脚本——Windows 上 argv 对所有
+进程可见。
+
+**2. `ALL_PROXY` 让 Windows 自带 curl 全部失败**
+
+```
+curl: (5) Unsupported proxy syntax in 'http://aih:tok@...': Port number was not a decimal number
+```
+
+设成空串更糟：cmd 传播出 `' '`，curl 报 `Unsupported proxy syntax in ' '`。
+所有走 curl 的 Windows 计划（cmd 脚本计划全部）在设了代理后反而**连下载都发不出去**。
+
+修法：Windows 上从任务环境里**删除** `ALL_PROXY`/`all_proxy`（不是设空），
+`HTTP(S)_PROXY` 已足够 curl/npm 使用；执行层新增 `UnsetEnv` 表达「移除继承变量」。
+真机核对：生成的任务环境里 `HTTP_PROXY`/`HTTPS_PROXY` 无尾随空白、`ALL_PROXY`
+不存在、`UnsetForTask` 返回 `[ALL_PROXY all_proxy]`；干净环境安装仍成功。
+
+### 仍未验证
+
+- **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前
+  `proxyActive` 的 Windows 检查只覆盖 `kind=cli` 且计划为 npm 的情况，
+  WinGet/原生安装器需要单独确认是否应当拒绝——**待定，属于设计决策**。
+- **真实租约端到端**：Windows 上只用伪造的死代理验证了「代理被正确应用/拒绝」，
+  没有用真实受管出口跑完整安装（那需要 Windows 上可达的 Server 配置）。
 
 ## 相关源码
 

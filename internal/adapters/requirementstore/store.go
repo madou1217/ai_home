@@ -286,10 +286,20 @@ func (store *Store) AttachWorkSession(ctx context.Context, id, sessionID, peerMe
 	return store.GetRequirement(ctx, id)
 }
 
-// DeleteRequirement 删除需求。
+// DeleteRequirement 删除需求及它的时间线事件。
 func (store *Store) DeleteRequirement(ctx context.Context, id string) error {
-	_, err := store.db.ExecContext(ctx, `DELETE FROM requirements WHERE id = ?`, strings.TrimSpace(id))
-	return err
+	transaction, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM requirement_events WHERE requirement_id = ?`, strings.TrimSpace(id)); err != nil {
+		return err
+	}
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM requirements WHERE id = ?`, strings.TrimSpace(id)); err != nil {
+		return err
+	}
+	return transaction.Commit()
 }
 
 // AppendEvent 追加需求时间线。

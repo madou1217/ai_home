@@ -2,6 +2,7 @@ package openairesponsesapi
 
 import (
 	"errors"
+	"log"
 	"math"
 	"net/http"
 
@@ -71,6 +72,8 @@ func (stream *responseStream) Accept(event inference.StreamEvent) error {
 	frames, err := stream.renderer.Render(event)
 	if err != nil {
 		stream.renderErr = err
+		// 只记录事件类型与序号，便于定位上游流形状问题；不记录正文。
+		log.Printf("openairesponses stream render failed: event=%T sequence=%d error=%v", event, event.Sequence(), err)
 		return err
 	}
 	stream.lastSequence = event.Sequence()

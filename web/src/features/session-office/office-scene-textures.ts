@@ -77,9 +77,11 @@ function createPixelCanvasBundle(
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = THREE.NearestFilter;
-  texture.magFilter = THREE.NearestFilter;
-  texture.generateMipmaps = false;
+  // UI 面（屏幕/铭牌/终端）按文字优先：线性过滤 + mipmap，远距离与斜视角不糊也不闪。
+  // 方块世界的像素风只属于 atlas（office-voxel-atlas），那里仍是 NearestFilter。
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
   texture.anisotropy = Math.max(4, Math.floor(anisotropy || 4));
 
   return {

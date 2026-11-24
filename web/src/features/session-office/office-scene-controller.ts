@@ -114,7 +114,7 @@ const CLOUD_RING_CLEARANCE = 6.5; // 严格 > outerHalf + 6 的内缘安全距�
 const CLOUD_INNER_BAND_SPAN = 15.5;
 const CLOUD_OUTER_BAND_SPAN = 18.0;
 const CLOUD_ORBIT_SPEED_RAD = 0.014;
-const FOCUS_MONITOR_DISTANCE = 3.2;
+const FOCUS_MONITOR_DISTANCE = 2.1;
 const FOCUS_CAMERA_ELEVATION_OFFSET = 0.28;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -471,6 +471,13 @@ export class OfficeSceneController {
   };
   private monitorDrag: MonitorDragSession | null = null;
 
+  private surfacePan: { active: boolean; pointerId: number; lastX: number; lastY: number } = {
+    active: false,
+    pointerId: 0,
+    lastX: 0,
+    lastY: 0,
+  };
+
   private readonly pressedPanKeys = new Set<PanDirectionKey>();
   private panShiftHeld = false;
   private readonly panVelocity = new THREE.Vector3();
@@ -590,18 +597,21 @@ export class OfficeSceneController {
       controls.enableZoom = true;
       controls.enablePan = true;
       controls.screenSpacePanning = true;
+      // 平移由控制器自己在捕获阶段实现（右键/中键/Shift+左键），OrbitControls 只保留左键旋转。
+      // 这样右键不会被浏览器菜单或其它手势抢走，中键也回到「平移」而不是极弱的缩放。
       controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN,
-      };
+        MIDDLE: null,
+        RIGHT: null,
+      } as unknown as typeof controls.mouseButtons;
       controls.rotateSpeed = 0.78;
-      controls.zoomSpeed = 0.9;
+      controls.zoomSpeed = 1.4;
+      controls.zoomToCursor = true;
       controls.panSpeed = 0.85;
       controls.minDistance = 1.2;
       controls.maxDistance = 60;
       controls.minPolarAngle = 0.02;
-      controls.maxPolarAngle = Math.PI * 0.98;
+      controls.maxPolarAngle = Math.PI * 0.62;
 
       const anisotropy = Math.max(4, renderer.capabilities.getMaxAnisotropy());
       roomRig = createOfficeRoomRig(this.currentPalette, anisotropy);
@@ -786,6 +796,12 @@ export class OfficeSceneController {
   private updateDynamicSceneForCamera(): boolean {
     const cullingChanged = updateOfficeRoomDynamicCulling(this.roomRig, this.camera.position);
     this.updateCloudProximityFade();
+    // 贴近读屏时隐藏选中描边框，避免青色边框压在屏幕上。
+    const selectedKey = this.currentState?.selectedSessionKey || '';
+    const readingDistance = this.camera.position.distanceTo(this.controls.target) <= 3.4;
+    for (const rig of this.stations.values()) {
+      rig.selectionFrameMesh.visible = Boolean(selectedKey) && rig.sessionKey === selectedKey && !readingDistance;
+    }
     return cullingChanged;
   }
 
@@ -834,6 +850,8 @@ export class OfficeSceneController {
     canvas.addEventListener('pointerup', this.handlePointerUp);
     canvas.addEventListener('pointerleave', this.handlePointerLeave);
     canvas.addEventListener('pointercancel', this.handlePointerCancel);
+    canvas.addEventListener('contextmenu', this.handleContextMenu);
+    canvas.addEventListener('wheel', this.handleWheel, { passive: false, capture: true });
     canvas.addEventListener('lostpointercapture', this.handleLostPointerCapture);
     canvas.addEventListener('dblclick', this.handleDoubleClick);
     canvas.addEventListener('webglcontextlost', this.handleContextLost);
@@ -852,6 +870,8 @@ export class OfficeSceneController {
     canvas.removeEventListener('pointerup', this.handlePointerUp);
     canvas.removeEventListener('pointerleave', this.handlePointerLeave);
     canvas.removeEventListener('pointercancel', this.handlePointerCancel);
+    canvas.removeEventListener('contextmenu', this.handleContextMenu);
+    canvas.removeEventListener('wheel', this.handleWheel, { capture: true } as EventListenerOptions);
     canvas.removeEventListener('lostpointercapture', this.handleLostPointerCapture);
     canvas.removeEventListener('dblclick', this.handleDoubleClick);
     canvas.removeEventListener('webglcontextlost', this.handleContextLost);
@@ -1277,6 +1297,59 @@ export class OfficeSceneController {
   }
 
   /** 将 controls.target 夹紧在岛屿边界 ±(outerHalfWidth + 2)、±(outerHalfDepth + 2)、y ∈ [0, 3] 内，并同步校正相机避免拖歪 */
+  /** 屏幕像素位移 → 世界平移；与 OrbitControls 的 screenSpacePanning 同一手感。 */
+  private panByScreenPixels(dx: number, dy: number): void {
+    const height = Math.max(1, this.viewportHeight);
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    const fovRad = (this.camera.fov * Math.PI) / 180;
+    const scale = (2 * distance * Math.tan(fovRad / 2)) / height;
+    this.camera.matrixWorld.extractBasis(
+      this.panRightScratch,
+      this.panForwardScratch,
+      this.panDeltaScratch
+    );
+    const delta = this.panTargetVelScratch;
+    delta.set(0, 0, 0);
+    delta.addScaledVector(this.panRightScratch, -dx * scale);
+    delta.addScaledVector(this.panForwardScratch, dy * scale);
+    this.controls.target.add(delta);
+    this.camera.position.add(delta);
+    this.clampControlsTarget();
+    this.controls.update();
+    this.updateDynamicSceneForCamera();
+    this.userMovedCamera = true;
+    this.renderSingleFrame();
+  }
+
+  private endSurfacePan(pointerId: number): void {
+    if (!this.surfacePan.active) return;
+    this.surfacePan.active = false;
+    try {
+      this.renderer.domElement.releasePointerCapture(pointerId);
+    } catch {
+      // 捕获已释放时忽略
+    }
+    this.controls.enabled = true;
+    this.updateCursorForState(this.hoveredTarget);
+    this.renderSingleFrame();
+  }
+
+  private readonly handleContextMenu = (event: MouseEvent): void => {
+    // 右键平移全程不得弹出浏览器菜单。
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  private readonly handleWheel = (event: WheelEvent): void => {
+    if (this.disposed || this.contextLost) return;
+    const horizontal = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY) * 1.2;
+    if (!horizontal) return; // 纵向滚轮交给 OrbitControls 缩放
+    event.preventDefault();
+    event.stopPropagation();
+    const amount = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+    this.panByScreenPixels(-amount * 0.6, 0);
+  };
+
   private clampControlsTarget(): void {
     const prevX = this.controls.target.x;
     const prevY = this.controls.target.y;
@@ -1844,6 +1917,32 @@ export class OfficeSceneController {
       event.preventDefault();
       return;
     }
+    // 右键 / 中键 / Shift+左键：控制器自己平移。捕获阶段抢占，OrbitControls 与浏览器右键菜单都不能插手。
+    const wantsPan =
+      event.button === 2
+      || event.button === 1
+      || (event.button === 0 && event.shiftKey && !this.monitorEditState.enabled);
+    if (wantsPan) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      this.cancelPointerTrack();
+      this.freezeOrbitMotion();
+      this.controls.enabled = false;
+      this.surfacePan = {
+        active: true,
+        pointerId: event.pointerId,
+        lastX: event.clientX,
+        lastY: event.clientY,
+      };
+      try {
+        this.renderer.domElement.setPointerCapture(event.pointerId);
+      } catch {
+        // 合成事件环境下忽略指针捕获异常
+      }
+      this.renderer.domElement.style.cursor = 'grabbing';
+      return;
+    }
     if (event.button !== 0) return;
 
     if (this.monitorEditState.enabled && this.currentState?.selectedSessionKey) {
@@ -1916,6 +2015,16 @@ export class OfficeSceneController {
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     if (this.disposed || this.contextLost) return;
+    if (this.surfacePan.active) {
+      if (event.pointerId !== this.surfacePan.pointerId) return;
+      const dx = event.clientX - this.surfacePan.lastX;
+      const dy = event.clientY - this.surfacePan.lastY;
+      this.surfacePan.lastX = event.clientX;
+      this.surfacePan.lastY = event.clientY;
+      this.panByScreenPixels(dx, dy);
+      event.preventDefault();
+      return;
+    }
     if (this.monitorDrag?.active) {
       if (event.pointerId !== this.monitorDrag.pointerId) return;
 
@@ -1980,6 +2089,10 @@ export class OfficeSceneController {
 
   private readonly handlePointerUp = (event: PointerEvent): void => {
     if (this.disposed) return;
+    if (this.surfacePan.active && event.pointerId === this.surfacePan.pointerId) {
+      this.endSurfacePan(event.pointerId);
+      return;
+    }
     if (this.monitorDrag?.active) {
       if (event.pointerId === this.monitorDrag.pointerId) {
         this.commitMonitorDrag();
@@ -2027,6 +2140,10 @@ export class OfficeSceneController {
 
   private readonly handlePointerCancel = (event: PointerEvent): void => {
     this.cancelPointerTrack();
+    if (this.surfacePan.active && event.pointerId === this.surfacePan.pointerId) {
+      this.endSurfacePan(event.pointerId);
+      return;
+    }
     if (this.monitorDrag?.active && event.pointerId === this.monitorDrag.pointerId) {
       this.cancelMonitorDrag();
     } else if (!this.monitorDrag?.active) {
@@ -2036,6 +2153,10 @@ export class OfficeSceneController {
 
   private readonly handleLostPointerCapture = (event: PointerEvent): void => {
     this.cancelPointerTrack();
+    if (this.surfacePan.active && event.pointerId === this.surfacePan.pointerId) {
+      this.endSurfacePan(event.pointerId);
+      return;
+    }
     if (this.monitorDrag?.active && event.pointerId === this.monitorDrag.pointerId) {
       this.cancelMonitorDrag();
     } else if (!this.monitorDrag?.active) {

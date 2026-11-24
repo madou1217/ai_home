@@ -124,6 +124,7 @@ export default function NativeResourceDetailModal({ group, busy, onClose, onActi
             <Typography.Text type="secondary">标识：{group.id}</Typography.Text>
             {group.version ? <Typography.Text type="secondary">版本：{group.version}</Typography.Text> : null}
             <Typography.Text type="secondary">宿主数：{group.records.length}</Typography.Text>
+            <Typography.Text type="secondary">平面：Harness 原生资源</Typography.Text>
           </Space>
           {declarations.length ? (
             <div>

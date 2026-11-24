@@ -34,6 +34,7 @@ type Signature = json.RawMessage
 type Manifest struct {
 	PluginID    string         `json:"pluginId"`
 	Version     string         `json:"version"`
+	Kind        string         `json:"kind,omitempty"`
 	Contributes []Contribution `json:"contributes"`
 }
 

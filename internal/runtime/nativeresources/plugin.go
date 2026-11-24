@@ -95,6 +95,9 @@ func readPluginPackage(source string) (PluginPackage, error) {
 	if !ok {
 		return PluginPackage{}, fail("native_plugin_id_invalid")
 	}
+	if kind, _ := ap["kind"].(string); strings.TrimSpace(kind) != "" && kind != "harness" {
+		return PluginPackage{}, fail("native_plugin_kind_invalid")
+	}
 	id, _ := ap["pluginId"].(string)
 	if !resourceIDPattern.MatchString(id) {
 		return PluginPackage{}, fail("native_plugin_id_invalid")

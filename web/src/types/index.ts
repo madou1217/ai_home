@@ -3535,11 +3535,13 @@ export interface NativeResourceSourceImport {
   files: number;
   bytes: number;
   targets?: string[];
+  plane?: 'harness' | 'capability';
 }
 
 export interface NativeResourceSourceInspection {
   ok: boolean;
   kind: NativeResourceKind;
+  plane?: 'harness' | 'capability';
   id?: string;
   description?: string;
   version?: string;
@@ -3560,6 +3562,7 @@ export interface NativeResourceReport {
 export interface AihPluginInstalled {
   pluginId: string;
   version: string;
+  kind?: string;
   digest: string;
   installedAt: number;
   signature?: { status?: string; keyId?: string; [key: string]: unknown };

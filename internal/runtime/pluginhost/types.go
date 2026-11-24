@@ -147,6 +147,7 @@ type DoctorIssue struct {
 type DoctorInstalledSummary struct {
 	PluginID    string `json:"pluginId"`
 	Version     string `json:"version"`
+	Kind        string `json:"kind"`
 	Digest      string `json:"digest,omitempty"`
 	Signature   any    `json:"signature"`
 	Permissions any    `json:"permissions,omitempty"`

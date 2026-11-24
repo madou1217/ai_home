@@ -139,6 +139,7 @@ export default function AihPluginPanel() {
                 <Space wrap>
                   <strong>{group.pluginId}</strong>
                   {plugin ? <Tag>{plugin.version}</Tag> : instance ? <Tag>{instance.version}</Tag> : null}
+                  <Tag color="processing">{plugin?.kind || 'capability'}</Tag>
                   {plugin ? signatureTag(plugin.signature) : null}
                   {group.others.length ? <Tag>{group.others.length} 个旧版本</Tag> : null}
                 </Space>

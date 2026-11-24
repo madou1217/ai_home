@@ -27,11 +27,28 @@
 
 ## 2. 声明是什么
 
+### 2.0 顶层 `kind` 是什么
+
+`kind` 是清单最外层的**平面标识**，回答“这个包归谁管”：
+
+| kind | 含义 | 清单 |
+|---|---|---|
+| `capability` | AIH 能力插件，运行在 AIH 宿主，挂能力槽 | `plugin.json` |
+| `harness` | Harness 原生插件，投影到 Provider / Harness 内执行 | `package.json#agentPlugin` |
+
+它不是 `contributes[].capability`：
+
+- `kind` = 插件平面（capability / harness）。
+- `capability` = 具体能力槽（`account.login`、`gateway.attempt`、`network.connector` 等）。
+
+省略时按清单默认：`plugin.json` → `capability`，`agentPlugin` → `harness`。安装预检会读取它；把 AIH 能力插件拖进原生插件安装页时会明确提示，而不是报一个晦涩的清单错误。
+
 ### 2.1 AIH 能力插件：`plugin.json`
 
 ```json
 {
   "manifestVersion": 1,
+  "kind": "capability",
   "protocolVersion": 1,
   "pluginId": "acme.account",
   "version": "1.0.0",
@@ -70,6 +87,7 @@
   "dsh": { "bundle": { "patch": "./patch.yml" } },
   "agentPlugin": {
     "pluginId": "acme-dsh-tool",
+    "kind": "harness",
     "manifestVersion": 1,
     "engines": { "deepseek": ">=0.0.0" }
   }
@@ -225,14 +243,13 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 
 ## 7. 仍然存在的弱点
 
-已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面。
+已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面、清单顶层 `kind` 平面标识与错平面预检。
 
 按影响排序，仍待处理：
 
-1. **“插件”一词仍承载多个平面。** 页面已统一，但 manifest 顶层还没有 `kind` 区分 AIH 能力插件与 Harness 原生插件。
-2. **目录还不是活跃代次视图。** 目前展示已安装插件的声明贡献项，没有标注哪些在活跃代次、最近调用结果与拒绝原因。
-3. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
-4. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
+1. **目录还不是活跃代次视图。** 目前展示已安装插件的声明贡献项，没有标注哪些在活跃代次、最近调用结果与拒绝原因。
+2. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
+3. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
 
 ## 8. 下一步建议（按收益/成本）
 

@@ -182,6 +182,13 @@ export default function NativeResourceInstallModal({
       message.warning(sourceMode === 'folder' ? '请选择文件夹' : '请先下载 URL 安装源');
       return;
     }
+    const wrongPlane = sourceMode === 'path'
+      ? inspection?.plane === 'capability'
+      : upload?.plane === 'capability';
+    if (wrongPlane) {
+      message.error('这是 AIH 能力插件（capability），请使用 aih plugin install；当前页只安装 Harness 原生插件');
+      return;
+    }
     const selectedKind = values.kind;
     const targets = values.owners;
     setSubmitting(true);
@@ -321,6 +328,10 @@ export default function NativeResourceInstallModal({
                 <Typography.Text type="danger" style={{ display: 'block', marginTop: 4 }}>
                   预检失败：{inspectError}
                 </Typography.Text>
+              ) : inspection?.plane === 'capability' ? (
+                <Typography.Text type="danger" style={{ display: 'block', marginTop: 4 }}>
+                  这是 AIH 能力插件（capability，{inspection.id || '未命名'}），不是 Harness 原生插件；请使用 aih plugin install。
+                </Typography.Text>
               ) : inspection ? (
                 <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                   预检：{inspection.id || '脚本'}
@@ -348,6 +359,7 @@ export default function NativeResourceInstallModal({
                 <Typography.Text type="secondary">
                   已导入：{upload.name || '文件夹'} · {upload.files} 个文件 · {formatBytes(upload.bytes)}
                   {upload.targets?.length ? ` · 兼容目标 ${upload.targets.join(' / ')}` : ''}
+                  {upload.plane === 'capability' ? ' · AIH 能力插件（当前页不可安装）' : ''}
                 </Typography.Text>
               ) : null}
             </Space>
@@ -389,6 +401,7 @@ export default function NativeResourceInstallModal({
               <Typography.Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
                 已导入：{upload.name} · {upload.files} 个文件 · {formatBytes(upload.bytes)}
                 {upload.targets?.length ? ` · 兼容目标 ${upload.targets.join(' / ')}` : ''}
+                {upload.plane === 'capability' ? ' · AIH 能力插件（当前页不可安装）' : ''}
               </Typography.Text>
             ) : null}
           </Form.Item>

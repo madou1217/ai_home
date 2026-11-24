@@ -314,6 +314,9 @@ func normalizeManifest(input map[string]any) map[string]any {
 	for key, value := range input {
 		normalized[key] = value
 	}
+	if kind, _ := normalized["kind"].(string); strings.TrimSpace(kind) == "" {
+		normalized["kind"] = "capability"
+	}
 	permissions, ok := input["permissions"].(map[string]any)
 	if !ok {
 		return normalized

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -37,6 +38,7 @@ type SourceImport struct {
 	Files    int      `json:"files"`
 	Bytes    int64    `json:"bytes"`
 	Targets  []string `json:"targets,omitempty"`
+	Plane    string   `json:"plane,omitempty"`
 }
 
 // SourceFile 是上传或解包得到的单个文件（Path 是包内相对路径）。
@@ -79,7 +81,43 @@ func (s *Service) ImportSourceFiles(kind string, files []SourceFile, displayName
 			return SourceImport{}, fail("native_resource_source_forbidden")
 		}
 	}
-	return SourceImport{OK: true, UploadID: id, Name: strings.TrimSpace(displayName), Files: len(normalized), Bytes: total, Targets: sourceImportTargets(kind, dir)}, nil
+	return SourceImport{OK: true, UploadID: id, Name: strings.TrimSpace(displayName), Files: len(normalized), Bytes: total, Targets: sourceImportTargets(kind, dir), Plane: sourceImportPlane(kind, dir)}, nil
+}
+
+// sourceImportPlane 区分 Harness 原生插件与 AIH 能力插件，避免装错入口。
+func sourceImportPlane(kind, dir string) string {
+	if strings.ToLower(strings.TrimSpace(kind)) != "plugin" {
+		return "harness"
+	}
+	if _, err := readPluginPackage(dir); err == nil {
+		return "harness"
+	}
+	if _, ok := capabilityManifest(dir); ok {
+		return "capability"
+	}
+	return ""
+}
+
+// capabilityManifest 识别 AIH 能力插件的 plugin.json（只读、限 1MB）。
+func capabilityManifest(dir string) (map[string]any, bool) {
+	file := filepath.Join(dir, "plugin.json")
+	info, err := os.Stat(file)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 1024*1024 {
+		return nil, false
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, false
+	}
+	var doc map[string]any
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil, false
+	}
+	pluginID, _ := doc["pluginId"].(string)
+	if strings.TrimSpace(pluginID) == "" || doc["manifestVersion"] == nil {
+		return nil, false
+	}
+	return doc, true
 }
 
 // sourceImportTargets 在导入后读取插件声明的目标，让 UI 只展示兼容的 Provider / Host。
@@ -386,6 +424,7 @@ func singleSourceFile(source string) (string, error) {
 type SourceInspection struct {
 	OK          bool     `json:"ok"`
 	Kind        string   `json:"kind"`
+	Plane       string   `json:"plane,omitempty"`
 	ID          string   `json:"id,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Version     string   `json:"version,omitempty"`
@@ -407,8 +446,22 @@ func (s *Service) InspectSource(kind, rawSource string) (SourceInspection, error
 	case "plugin":
 		pkg, readErr := readPluginPackage(src)
 		if readErr != nil {
+			if manifest, ok := capabilityManifest(src); ok {
+				id, _ := manifest["pluginId"].(string)
+				version, _ := manifest["version"].(string)
+				description, _ := manifest["description"].(string)
+				return SourceInspection{
+					OK:          true,
+					Kind:        normalizedKind,
+					Plane:       "capability",
+					ID:          id,
+					Version:     version,
+					Description: strings.TrimSpace(description),
+				}, nil
+			}
 			return SourceInspection{}, readErr
 		}
+		inspection.Plane = "harness"
 		inspection.ID = pkg.ID
 		inspection.Description = packageDescription(pkg)
 		inspection.Version = pkg.Version
@@ -418,8 +471,11 @@ func (s *Service) InspectSource(kind, rawSource string) (SourceInspection, error
 		if readErr != nil {
 			return SourceInspection{}, readErr
 		}
+		inspection.Plane = "harness"
 		inspection.ID = pkg.ID
 		inspection.Description = pkg.Description
+	default:
+		inspection.Plane = "harness"
 	}
 	return inspection, nil
 }

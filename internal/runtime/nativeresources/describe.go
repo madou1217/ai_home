@@ -104,7 +104,7 @@ func packageDescription(pkg PluginPackage) string {
 // packageDeclaration 把插件自己的清单折叠成可读声明：引擎/宿主目标、能力、
 // 权限与导出入口。它只描述插件声明了什么，不代表宿主已经执行过。
 func packageDeclaration(pkg PluginPackage) []string {
-	declared := map[string]bool{}
+	declared := map[string]bool{"kind harness": true}
 	if agentPlugin, ok := pkg.PackageJSON["agentPlugin"].(map[string]any); ok {
 		if engines, ok := agentPlugin["engines"].(map[string]any); ok {
 			for name, versionRange := range engines {

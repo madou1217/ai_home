@@ -38,6 +38,7 @@ type LiveProjections interface {
 type InstalledView struct {
 	PluginID    string          `json:"pluginId"`
 	Version     string          `json:"version"`
+	Kind        string          `json:"kind"`
 	Digest      string          `json:"digest"`
 	InstalledAt int64           `json:"installedAt"`
 	Signature   json.RawMessage `json:"signature"`
@@ -139,6 +140,7 @@ func BuildInventory(state ControlState, live LiveProjections) Inventory {
 		inventory.Installed = append(inventory.Installed, InstalledView{
 			PluginID:    item.PluginID,
 			Version:     item.Version,
+			Kind:        firstNonEmpty(item.Manifest.Kind, "capability"),
 			Digest:      item.Digest,
 			InstalledAt: item.InstalledAt,
 			Signature:   signatureOrUnsigned(item.Signature),

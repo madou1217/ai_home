@@ -236,10 +236,14 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		summary := DoctorInstalledSummary{
 			PluginID:  pluginID,
 			Version:   version,
+			Kind:      "capability",
 			Digest:    digest,
 			Signature: sigValue,
 		}
 		if manifest != nil {
+			if kind, _ := manifest["kind"].(string); strings.TrimSpace(kind) != "" {
+				summary.Kind = kind
+			}
 			summary.Permissions = manifest["permissions"]
 			if _, vErr := pluginartifact.ValidateManifest(manifest, pluginartifact.ManifestOptions{
 				HostVersion: p.hostVersion,

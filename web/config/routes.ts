@@ -53,9 +53,10 @@ const nodeRoutes = [
     ],
   },
   {
-    // 历史深链：项目办公室从 /terminals 迁到项目管理子菜单，旧链接继续可用。
+    // 历史深链：项目办公室从 /terminals 迁到项目管理子菜单。保留原组件以继承
+    // view/scope/room/session 查询参数，不能简单 redirect 丢参数。
     path: "/terminals",
-    redirect: "/projects/office",
+    component: "./TerminalSessions",
     hideInMenu: true,
   },
   {

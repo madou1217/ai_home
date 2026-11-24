@@ -21,6 +21,7 @@ import (
 // 交给管理端点：Windows 上 `child.kill('SIGTERM')` 实际是 TerminateProcess，
 // 宿主只能靠这条进程内路径触发优雅关闭。
 func main() {
+	raiseFileDescriptorLimit()
 	for _, argument := range os.Args[1:] {
 		if argument == "--exit-with-parent" {
 			watchParent()

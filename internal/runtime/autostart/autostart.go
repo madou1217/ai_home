@@ -458,6 +458,18 @@ func buildPlist(options Options) []byte {
 		"    <string>"+xmlEscape(options.LogFile)+"</string>",
 		"    <key>StandardErrorPath</key>",
 		"    <string>"+xmlEscape(options.LogFile)+"</string>",
+		// launchd 的默认 soft limit 是 256；Server 的 SSE/PTY/SQLite/插件子进程
+		// 很快就会耗尽，表现为 accept: too many open files 与大量 5xx。
+		"    <key>SoftResourceLimits</key>",
+		"    <dict>",
+		"      <key>NumberOfFiles</key>",
+		"      <integer>65536</integer>",
+		"    </dict>",
+		"    <key>HardResourceLimits</key>",
+		"    <dict>",
+		"      <key>NumberOfFiles</key>",
+		"      <integer>65536</integer>",
+		"    </dict>",
 		"    <key>EnvironmentVariables</key>",
 		"    <dict>",
 	)

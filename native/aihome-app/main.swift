@@ -28,6 +28,13 @@ func runService(_ raw: [String]) -> Never {
   process.standardInput = FileHandle.standardInput
   process.standardOutput = FileHandle.standardOutput
   process.standardError = FileHandle.standardError
+  // launchd 的默认 soft limit 是 256；子进程继承这个值。这里抬到硬上限，
+  // 避免 Server 的 SSE/PTY/数据库句柄很快耗尽。
+  var descriptorLimit = rlimit()
+  if getrlimit(RLIMIT_NOFILE, &descriptorLimit) == 0 {
+    descriptorLimit.rlim_cur = min(descriptorLimit.rlim_max, 65536)
+    setrlimit(RLIMIT_NOFILE, &descriptorLimit)
+  }
   do {
     try process.run()
   } catch {

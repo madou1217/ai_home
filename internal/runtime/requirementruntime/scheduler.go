@@ -407,6 +407,12 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		serverLabel = resolved.Profile().Label
 	}
 	accountRef := strings.TrimSpace(request.AccountRef)
+	// Codex Work 在没有显式指定账号时默认走网关池化：原生 CLI 需要账号自己的
+	// bearer，而网关账号通常只有 AIH 凭据；网关模式仍在本机执行工具，请求经
+	// Server 的 /v1/responses 选号，不把 401 暴露给需求执行。
+	if accountRef == "" && strings.EqualFold(provider, "codex") {
+		accountRef = chatruntime.GatewayRuntimeScope
+	}
 	if accountRef == "" {
 		var resolved string
 		var err error
@@ -526,8 +532,8 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		}
 	}
 	execution := requirements.ExecutionNative
-	if accountRef == "gateway" {
-		execution = requirements.ExecutionRelay
+	if accountRef == chatruntime.GatewayRuntimeScope {
+		execution = requirements.ExecutionGateway
 	}
 	return requirements.WorkHandle{
 		SessionID:     session.SessionID,

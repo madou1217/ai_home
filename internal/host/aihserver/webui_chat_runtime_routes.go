@@ -29,6 +29,8 @@ type WebUIChatRuntimeBuildOptions struct {
 	ModelModalities      modelmetadata.Catalog
 	AccountStore         chatruntime.AccountPoolReader
 	NativeLaunchPreparer chatruntime.NativeLaunchPreparer
+	// CodexGatewayAppServer supplies the app-server argv/env for gateway Work.
+	CodexGatewayAppServer func() (args []string, env []string, err error)
 	// Both dependencies remain nil until a paired owner transfer is authorized.
 	LegacyNativeOwner       chatruntime.LegacyNativeRunOwner
 	LegacyNativeMultiplexer chatruntime.LegacyNativeMultiplexer
@@ -91,6 +93,7 @@ func BuildWebUIChatRuntimeService(
 		HostHomeDir:            hostHome,
 		AccountStore:           opts.AccountStore,
 		NativeLaunchPreparer:   opts.NativeLaunchPreparer,
+		CodexGatewayAppServer:  opts.CodexGatewayAppServer,
 		GatewayModels:          opts.GatewayModels,
 		GatewayAccounts:        gatewayAccounts,
 		ProviderCatalog:        opts.Catalog,
@@ -169,7 +172,15 @@ func AttachWebUIChatRuntime(
 		ModelModalities:      dependencies.ModelModalities,
 		AccountStore:         accountPool,
 		NativeLaunchPreparer: dependencies.NativeWorkPreparer,
-		GatewayModels:        dependencies.ChatModels,
+		CodexGatewayAppServer: func() ([]string, []string, error) {
+			if provider, ok := dependencies.NativeWorkPreparer.(interface {
+				CodexGatewayAppServer() ([]string, []string, error)
+			}); ok {
+				return provider.CodexGatewayAppServer()
+			}
+			return nil, nil, nil
+		},
+		GatewayModels: dependencies.ChatModels,
 		ChatStreamer: &webuichatapi.GatewayChatTurnStreamer{
 			Client:    &http.Client{Transport: inprocesshttp.NewTransport(dependencies.ChatGateway)},
 			ClientKey: dependencies.ClientKey,

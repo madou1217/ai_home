@@ -38,6 +38,8 @@ type CodexDriverOptions struct {
 	HostHomeDir           string
 	Endpoint              string
 	ExecutablePath        string
+	Args                  []string
+	Env                   []string
 	RuntimeConfigRevision string
 	ReplayTimeout         time.Duration
 	CleanupTimeout        time.Duration
@@ -166,6 +168,8 @@ func NewCodexSessionDriver(opts CodexDriverOptions) (*CodexSessionDriver, error)
 			AIHomeDir:          opts.AIHomeDir,
 			HostHomeDir:        opts.HostHomeDir,
 			ExecutablePath:     opts.ExecutablePath,
+			Args:               append([]string(nil), opts.Args...),
+			Env:                append([]string(nil), opts.Env...),
 			RuntimeFingerprint: fp,
 			RuntimeScope:       opts.Runtime.RuntimeScope,
 		}

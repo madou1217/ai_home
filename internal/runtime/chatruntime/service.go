@@ -45,21 +45,24 @@ func (unsupportedArtifactReader) Read(_ context.Context, _ string) (*Artifact, e
 
 // ServiceOptions 配置全功能的 Canonical Chat Runtime Service。
 type ServiceOptions struct {
-	Store                   *Store
-	DBPath                  string
-	AIHomeDir               string
-	HostHomeDir             string
-	AccountStore            AccountPoolReader
-	GatewayModels           GatewayModelReader
-	GatewayAccounts         accountrouting.CandidateSource
-	ProviderCatalog         *providers.Catalog
-	MetadataIndex           modelmetadata.Catalog
-	ChatStreamer            ChatTurnStreamer
-	CodexPool               *CodexClientPool
-	ApprovalCallbackURL     string
-	CodexExecutablePath     string
-	CodexRPCClient          CodexRPCClient
-	CodexDriverFactory      func(ctx context.Context, opts CodexDriverOptions) (*DriverEntry, error)
+	Store               *Store
+	DBPath              string
+	AIHomeDir           string
+	HostHomeDir         string
+	AccountStore        AccountPoolReader
+	GatewayModels       GatewayModelReader
+	GatewayAccounts     accountrouting.CandidateSource
+	ProviderCatalog     *providers.Catalog
+	MetadataIndex       modelmetadata.Catalog
+	ChatStreamer        ChatTurnStreamer
+	CodexPool           *CodexClientPool
+	ApprovalCallbackURL string
+	CodexExecutablePath string
+	CodexRPCClient      CodexRPCClient
+	CodexDriverFactory  func(ctx context.Context, opts CodexDriverOptions) (*DriverEntry, error)
+	// CodexGatewayAppServer supplies the app-server argv/env for gateway scope.
+	// The driver owns its process, so it cannot rely on the one-shot launch plan.
+	CodexGatewayAppServer   func() (args []string, env []string, err error)
 	NativeRunner            NativeTurnRunner
 	NativeLaunchPreparer    NativeLaunchPreparer
 	NativeModelCatalog      *NativeModelCatalogResolver
@@ -1165,6 +1168,12 @@ func (r *defaultDriverRegistry) resolveCodexEntry(ctx context.Context, sess *Ses
 		IsModelEnabled:     s.opts.IsModelEnabled,
 		ReleaseFailureSink: s.opts.ReleaseFailureSink,
 		RemoteTools:        s.opts.RemoteTools,
+	}
+	if IsGatewayRuntimeScope(rt.RuntimeScope) && s.opts.CodexGatewayAppServer != nil {
+		if args, env, gatewayErr := s.opts.CodexGatewayAppServer(); gatewayErr == nil {
+			opts.Args = args
+			opts.Env = env
+		}
 	}
 	var entry *DriverEntry
 	var err error

@@ -391,7 +391,7 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 	case "":
 		assignmentExecution = ""
 	case "gateway":
-		assignmentExecution = ExecutionRelay
+		assignmentExecution = ExecutionGateway
 	default:
 		assignmentExecution = ExecutionNative
 	}

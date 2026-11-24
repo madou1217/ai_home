@@ -354,7 +354,10 @@ export default function RequirementsBoard() {
 
   const schedulerAccountOptions = useMemo(() => {
     const options: Array<{ label: string; value: string }> = [{ label: '自动选号（推荐）', value: '' }];
-    let hasCurrent = false;
+    if (schedulerProvider === 'codex') {
+      options.push({ label: '网关池化（Codex Work 推荐）', value: 'gateway' });
+    }
+    let hasCurrent = schedulerAccountRef === 'gateway';
     for (const account of schedulerAccounts) {
       if (account.provider !== schedulerProvider) continue;
       if (account.accountRef === schedulerAccountRef) hasCurrent = true;
@@ -850,7 +853,11 @@ export default function RequirementsBoard() {
             </Form.Item>
           </div>
           <div className={styles.formRow}>
-            <Form.Item name="accountRef" label="执行账号" extra="留空自动选号；只显示当前 Provider 的账号">
+            <Form.Item
+              name="accountRef"
+              label="执行账号"
+              extra="留空自动选号；Codex 留空默认走网关池化，也可显式选择网关或账号"
+            >
               <Select
                 loading={schedulerOptionsLoading}
                 options={schedulerAccountOptions}

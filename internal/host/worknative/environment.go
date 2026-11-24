@@ -84,6 +84,34 @@ func (s *Service) gatewayTarget() (providerlaunch.GatewayTarget, error) {
 	}
 	return target, nil
 }
+
+// CodexGatewayAppServer returns the app-server argv and environment for the
+// Codex gateway runtime. The Codex driver owns its own long-lived app-server,
+// so it must receive the same model_provider overrides and client key as the
+// one-shot gateway launch; otherwise it falls back to official auth and 401s.
+func (s *Service) CodexGatewayAppServer() ([]string, []string, error) {
+	if s == nil {
+		return nil, nil, unavailable()
+	}
+	strategy, ok := s.gateways["codex"]
+	if !ok {
+		return nil, nil, unavailable()
+	}
+	target, err := s.gatewayTarget()
+	if err != nil {
+		return nil, nil, err
+	}
+	result, err := strategy.Build(target)
+	if err != nil {
+		return nil, nil, unavailable()
+	}
+	args := []string{"app-server", "--listen", "stdio://", "-c", "thread_unload_delay_secs=0"}
+	args = append(args, result.Arguments()...)
+	env := scopedBase(s.opts.HostHomeDir)
+	applyPatch(env, result.Environment())
+	return args, environmentSlice(env), nil
+}
+
 func (s *Service) prepareGateway(ctx context.Context, req chatruntime.NativeLaunchRequest) (chatruntime.NativeLaunchPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return chatruntime.NativeLaunchPlan{}, err

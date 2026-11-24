@@ -95,6 +95,7 @@
     "plugin_contribution_unknown",
     "plugin_contribution_unavailable",
     "plugin_generation_unknown",
+    "plugin_capability_requires_installers",
     "network_connector_confirmation_required",
     "network_connector_operation_required",
     "network_connector_operation_unsupported",
@@ -221,6 +222,12 @@
       "id": "network.connector",
       "version": 1,
       "mode": "collect"
+    },
+    {
+      "id": "app.install",
+      "version": 1,
+      "mode": "collect",
+      "reserved": true
     },
     {
       "id": "provider",

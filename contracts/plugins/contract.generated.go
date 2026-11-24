@@ -44,6 +44,7 @@ const (
 	CodeContributionUnknown                  = "plugin_contribution_unknown"
 	CodeContributionUnavailable              = "plugin_contribution_unavailable"
 	CodeGenerationUnknown                    = "plugin_generation_unknown"
+	CodeCapabilityRequiresInstallers         = "plugin_capability_requires_installers"
 	CodeNetworkConnectorConfirmationRequired = "network_connector_confirmation_required"
 	CodeNetworkConnectorOperationRequired    = "network_connector_operation_required"
 	CodeNetworkConnectorOperationUnsupported = "network_connector_operation_unsupported"
@@ -112,6 +113,7 @@ var Capabilities = []Capability{
 	{ID: "approval", Version: 1, Mode: "serial"},
 	{ID: "ui", Version: 1, Mode: "terminal"},
 	{ID: "network.connector", Version: 1, Mode: "collect"},
+	{ID: "app.install", Version: 1, Mode: "collect", Reserved: true},
 	{ID: "provider", Version: 1, Mode: "terminal"},
 	{ID: "upstream", Version: 1, Mode: "terminal"},
 }

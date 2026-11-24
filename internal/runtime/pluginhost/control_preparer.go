@@ -269,10 +269,18 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 					Detail:   vErr.Error(),
 				})
 			}
+			installersDeclared := false
+			if permissions, ok := manifest["permissions"].(map[string]any); ok {
+				installersDeclared, _ = permissions["installers"].(bool)
+			}
+			hasInstallContribution := false
 			for _, contrib := range mapSlice(manifest, "contributes") {
 				capName := stringField(contrib, "capability")
 				if capName == "" {
 					continue
+				}
+				if capName == "app.install" {
+					hasInstallContribution = true
 				}
 				report.Capabilities[capName]++
 				order := 0
@@ -313,6 +321,13 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 					LastCalledAt:     stat.LastCalledAt,
 					LastSucceededAt:  stat.LastSucceededAt,
 					Scope:            scope,
+				})
+			}
+			if installersDeclared && !hasInstallContribution {
+				report.Warnings = append(report.Warnings, DoctorIssue{
+					Code:     "plugin_installers_unused",
+					PluginID: pluginID,
+					Detail:   "permissions.installers=true 但未贡献 app.install，安装权限不会被使用",
 				})
 			}
 			entryRel := stringField(manifest, "entry")

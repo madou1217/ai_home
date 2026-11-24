@@ -397,6 +397,7 @@ func manifestDeclaresPermissions(raw json.RawMessage) bool {
 			Network     []json.RawMessage `json:"network"`
 			Secrets     []json.RawMessage `json:"secrets"`
 			Environment []json.RawMessage `json:"environment"`
+			Installers  bool              `json:"installers"`
 			Filesystem  struct {
 				Read  []json.RawMessage `json:"read"`
 				Write []json.RawMessage `json:"write"`
@@ -410,6 +411,7 @@ func manifestDeclaresPermissions(raw json.RawMessage) bool {
 	return len(permissions.Network) > 0 ||
 		len(permissions.Secrets) > 0 ||
 		len(permissions.Environment) > 0 ||
+		permissions.Installers ||
 		len(permissions.Filesystem.Read) > 0 ||
 		len(permissions.Filesystem.Write) > 0
 }

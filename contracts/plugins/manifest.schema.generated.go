@@ -92,7 +92,8 @@ const ManifestSchemaJSON = `{
         "environment": {
           "type": "array", "maxItems": 64, "uniqueItems": true,
           "items": { "type": "string", "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }
-        }
+        },
+        "installers": { "type": "boolean" }
       }
     },
     "service": {

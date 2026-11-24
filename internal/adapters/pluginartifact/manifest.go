@@ -29,21 +29,22 @@ type ManifestOptions struct {
 
 // 错误码与 Node plugin sdk 的 PluginError.code 逐字一致。
 const (
-	codeManifestInvalid             = "plugin_manifest_invalid"
-	codeEntryInvalid                = "plugin_entry_invalid"
-	codeVersionInvalid              = "plugin_version_invalid"
-	codeHostIncompatible            = "plugin_host_incompatible"
-	codeNodeIncompatible            = "plugin_node_incompatible"
-	codePlatformIncompatible        = "plugin_platform_incompatible"
-	codeCapabilityIncompatible      = "plugin_capability_incompatible"
-	codeContributionDuplicate       = "plugin_contribution_duplicate"
-	codeServiceDuplicate            = "plugin_service_duplicate"
-	codeServiceVersionInvalid       = "plugin_service_version_invalid"
-	codeRequirementDuplicate        = "plugin_requirement_duplicate"
-	codeConfigSchemaInvalid         = "plugin_config_schema_invalid"
-	codePermissionsRequired         = "plugin_permissions_required"
-	codePermissionNetworkInvalid    = "plugin_permission_network_invalid"
-	codePermissionFilesystemInvalid = "plugin_permission_filesystem_invalid"
+	codeManifestInvalid              = "plugin_manifest_invalid"
+	codeEntryInvalid                 = "plugin_entry_invalid"
+	codeVersionInvalid               = "plugin_version_invalid"
+	codeHostIncompatible             = "plugin_host_incompatible"
+	codeNodeIncompatible             = "plugin_node_incompatible"
+	codePlatformIncompatible         = "plugin_platform_incompatible"
+	codeCapabilityIncompatible       = "plugin_capability_incompatible"
+	codeCapabilityRequiresInstallers = "plugin_capability_requires_installers"
+	codeContributionDuplicate        = "plugin_contribution_duplicate"
+	codeServiceDuplicate             = "plugin_service_duplicate"
+	codeServiceVersionInvalid        = "plugin_service_version_invalid"
+	codeRequirementDuplicate         = "plugin_requirement_duplicate"
+	codeConfigSchemaInvalid          = "plugin_config_schema_invalid"
+	codePermissionsRequired          = "plugin_permissions_required"
+	codePermissionNetworkInvalid     = "plugin_permission_network_invalid"
+	codePermissionFilesystemInvalid  = "plugin_permission_filesystem_invalid"
 )
 
 var (
@@ -82,6 +83,11 @@ var accountCapabilities = map[string]bool{
 	"account.login":       true,
 	"account.refresh":     true,
 	"account.materialize": true,
+}
+
+// installCapabilities 会下载并运行安装程序，权限声明必须显式包含 installers。
+var installCapabilities = map[string]bool{
+	"app.install": true,
 }
 
 func compiledManifestSchema() (*Schema, error) {
@@ -256,16 +262,23 @@ func ValidateManifest(input any, options ManifestOptions) (map[string]any, error
 func validatePermissions(manifest map[string]any) error {
 	contributes, _ := manifest["contributes"].([]any)
 	contributesAccount := false
+	contributesInstall := false
 	for _, item := range contributes {
 		contribution, _ := item.(map[string]any)
 		capability, _ := contribution["capability"].(string)
 		if accountCapabilities[capability] {
 			contributesAccount = true
-			break
+		}
+		if installCapabilities[capability] {
+			contributesInstall = true
 		}
 	}
 	permissions, present := manifest["permissions"]
 	if !present || permissions == nil {
+		if contributesInstall {
+			return pluginerr.New(codeCapabilityRequiresInstallers,
+				"app.install 插件必须显式声明 permissions.installers=true")
+		}
 		if contributesAccount {
 			return pluginerr.New(codePermissionsRequired, "账号插件必须显式声明 permissions（network / filesystem / secrets）")
 		}
@@ -274,6 +287,13 @@ func validatePermissions(manifest map[string]any) error {
 	object, ok := permissions.(map[string]any)
 	if !ok {
 		return pluginerr.New(codePermissionsRequired, "")
+	}
+	if contributesInstall {
+		installers, _ := object["installers"].(bool)
+		if !installers {
+			return pluginerr.New(codeCapabilityRequiresInstallers,
+				"app.install 插件必须显式声明 permissions.installers=true")
+		}
 	}
 	if network, ok := object["network"].([]any); ok {
 		for _, item := range network {
@@ -323,6 +343,9 @@ type normalizedPermissions struct {
 	Filesystem  filesystemPermissions `json:"filesystem"`
 	Secrets     []string              `json:"secrets"`
 	Environment []string              `json:"environment"`
+	// Installers 追加在最后且 omitempty：旧插件没有该字段时指纹逐字节不变，
+	// 声明了安装能力的插件会得到新指纹并触发重新确认。
+	Installers bool `json:"installers,omitempty"`
 }
 
 func normalizeManifest(input map[string]any) map[string]any {
@@ -359,9 +382,15 @@ func permissionDocument(value any) (normalizedPermissions, bool) {
 			},
 			Secrets:     stringValues(typed["secrets"]),
 			Environment: stringValues(typed["environment"]),
+			Installers:  boolValue(typed["installers"]),
 		}, true
 	}
 	return normalizedPermissions{}, false
+}
+
+func boolValue(value any) bool {
+	result, _ := value.(bool)
+	return result
 }
 
 func stringValues(value any) []string {

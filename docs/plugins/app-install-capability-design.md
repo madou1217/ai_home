@@ -2,7 +2,8 @@
 
 日期：2026-11-25
 
-状态：设计稿，未实现。
+状态：契约已实现（capability=`app.install`，`reserved: true`）；宿主调用点（pluginhost → toolkit → app-entries）
+待 Phase 2 接线。已完成的部分见 §11。
 
 目标：让第三方以**签名/可发现的能力插件**声明桌面客户端、IDE 或 CLI 的安装、
 更新、卸载、状态与打开，WebUI 的 Toolkit 与 Accounts 自动出现对应入口；核心只保留
@@ -406,3 +407,23 @@ Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
   与内置 IDE 客户端一致，进入 IDE 页。
 - 插件安装的 CLI 是否允许被账号命令行直接使用（例如 PATH 注入）？v1 只保证
   应用清单可见与打开，PATH 注入仍由内置安装器负责。
+
+## 11. 已落地的契约（2026-11-25）
+
+- `contracts/plugins/contract.json`：新增能力 `app.install`（version 1，mode
+  `collect`，`reserved: true`）与错误码 `plugin_capability_requires_installers`。
+- `contracts/plugins/manifest.schema.json`：`permissions.installers`（boolean，
+  可选）。
+- Go 清单校验（`internal/adapters/pluginartifact`）：
+  - 贡献 `app.install` 但未声明 `permissions.installers=true` → 拒绝；
+  - `permissions` 归一化追加 `installers`（omitempty），旧插件指纹不变；
+  - 声明安装能力的插件指纹变化，启用时触发重新确认。
+- Node SDK（`lib/plugins/sdk/manifest.js`）同步同一规则与同一归一化字段顺序，
+  Go/Node 指纹逐字节一致。
+- 插件控制面（`application/plugincontrol`）：`installers` 计入“已声明权限”，
+  安装确认页不会漏掉只有安装权限的插件。
+- Doctor：`permissions.installers=true` 但未贡献 `app.install` 时给
+  `plugin_installers_unused` 警告；`app.install` 作为预留能力给
+  `plugin_capability_reserved` 警告，直到宿主调用点接线。
+- 生成物：`contract.generated.go`、`manifest.schema.generated.go`、
+  `lib/plugins/sdk/*.generated.*` 已重新生成，`--check` 通过。

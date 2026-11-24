@@ -146,6 +146,12 @@
 
 `network.connector`（collect）是 C 平面的代表：核心只拥有生命周期与通用调用，厂商细节全在插件里。
 
+`app.install`（collect）让插件声明桌面 / IDE / CLI 的安装、更新、卸载、状态与打开；
+宿主只做作业编排、确认、代理、脱敏与审计，安装动作在插件内执行。契约已落地
+（`reserved: true`，宿主调用点尚未接线），贡献该能力必须声明
+`permissions.installers: true`。设计见
+[app-install-capability-design.md](app-install-capability-design.md)。
+
 ## 4. 账号级插件是什么，怎么做
 
 “账号级插件”不是一个新的插件平面，而是 **贡献 `account.*` 能力** 的 AIH 能力插件。

@@ -75,22 +75,24 @@ type mcpChoice struct {
 
 // resolverContext 注入所有动态候选来源；每项都允许为空，解析器按位置惰性调用。
 type resolverContext struct {
-	historyEntries     []historyEntry
-	historyLimit       int
-	accountLister      func(provider string) []accountRow
-	proxyLister        func() []proxyChoice
-	sessionLister      func(provider, accountRef, current string) []sessionChoice
-	resumeLister       func(current string) []resumeChoice
-	persistentLister   func(current string) []persistentChoice
-	peerLister         func(current string) []peerChoice
-	peerMessageLister  func(current string) []peerChoice
-	modelLister        func(request modelRequest) []modelChoice
-	mcpLister          func(provider, accountToken string) []mcpChoice
-	remoteTargetLister func(request remoteTargetRequest) []remoteTargetChoice
-	workspaceLister    func(request workspaceRequest) []remoteTargetChoice
-	nativeFlagLister   func(provider, current string) []nativeFlagEntry
-	aihServerProfileID string
-	now                time.Time
+	historyEntries        []historyEntry
+	historyLimit          int
+	accountLister         func(provider string) []accountRow
+	allAccountLister      func() []accountRow
+	proxyLister           func() []proxyChoice
+	sessionLister         func(provider, accountRef, current string) []sessionChoice
+	resumeLister          func(current string) []resumeChoice
+	persistentLister      func(current string) []persistentChoice
+	peerLister            func(current string) []peerChoice
+	peerMessageLister     func(current string) []peerChoice
+	modelLister           func(request modelRequest) []modelChoice
+	mcpLister             func(provider, accountToken string) []mcpChoice
+	remoteTargetLister    func(request remoteTargetRequest) []remoteTargetChoice
+	workspaceLister       func(request workspaceRequest) []remoteTargetChoice
+	nativeFlagLister      func(provider, current string) []nativeFlagEntry
+	nativeFlagValueLister func(provider, flag string) []string
+	aihServerProfileID    string
+	now                   time.Time
 }
 
 // remoteTargetRequest describes one progressive remote target lookup.

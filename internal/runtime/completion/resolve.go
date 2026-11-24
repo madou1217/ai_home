@@ -1,7 +1,6 @@
 package completion
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -37,7 +36,7 @@ var peerChannelCandidates = []namedSummary{
 	{Name: "webui-chat", Summary: "WebUI chat runtime 的命令总线"},
 }
 
-var shellValueCandidates = []string{"zsh", "bash", "fish", "powershell"}
+var shellValueCandidates = []string{"zsh", "bash", "fish", "powershell", "sh"}
 
 func at(values []string, index int) string {
 	if index < 0 || index >= len(values) {
@@ -193,9 +192,31 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	// 当前词不是旗标时返回空，让 shell 继续做路径补全（prompt 里的文件参数）。
 	if containsString(prior, "--") {
 		head := at(prior, 0)
-		if isProviderName(head) && context.nativeFlagLister != nil && strings.HasPrefix(current, "-") {
-			for _, flag := range context.nativeFlagLister(head, current) {
-				target.add(flag.Value, flag.Description, groupFlag, "")
+		if isProviderName(head) {
+			if context.nativeFlagLister != nil && strings.HasPrefix(current, "-") {
+				for _, flag := range context.nativeFlagLister(head, current) {
+					target.add(flag.Value, flag.Description, groupFlag, "")
+				}
+			}
+			if context.nativeFlagValueLister != nil {
+				// `--flag=<TAB>` 直接补取值本身，保留已敲的 flag= 前缀。
+				if name, prefix, inline := splitOptionToken(current); inline && strings.HasPrefix(current, "-") {
+					for _, value := range context.nativeFlagValueLister(head, name) {
+						if strings.HasPrefix(value, prefix) {
+							target.add(name+"="+value, "允许的取值", groupFlag, "")
+						}
+					}
+				}
+				// 旗标之后的下一个词就是它的取值。
+				if !strings.HasPrefix(current, "-") && len(prior) > 0 {
+					last := at(prior, len(prior)-1)
+					if strings.HasPrefix(last, "--") {
+						for _, value := range context.nativeFlagValueLister(head, last) {
+							target.add(value, "允许的取值", groupFlag, "")
+						}
+						addNativeDynamicValues(target, context, head, last, prior, current)
+					}
+				}
 			}
 		}
 		return target.items
@@ -361,112 +382,12 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 		return target.items
 	}
 
-	if head == "remote" {
-		return resolveRemoteCompletion(target, context, prior, current)
-	}
-
-	if head == "workspace" {
-		return resolveWorkspaceCompletion(target, context, prior, current)
-	}
-
 	if isProviderName(head) {
 		return resolveProviderCompletion(target, context, prior, head, current)
 	}
 
-	node, found := findTopLevelCommand(head)
-	if !found {
-		return nil
-	}
-
-	if len(prior) == 1 {
-		if node.Name == "ss" && context.persistentLister != nil {
-			for _, row := range context.persistentLister(current) {
-				name := strings.TrimSpace(row.Name)
-				if name == "" {
-					continue
-				}
-				detail := persistentDetail(row, context.now)
-				target.add(name, detail, groupSession, strings.TrimSpace(row.MatchText))
-			}
-			for _, sub := range node.Subcommands {
-				target.add(sub.Name, sub.Summary, groupSubcommand, "")
-			}
-			return target.items
-		}
-		if node.Name == "resume" && context.resumeLister != nil {
-			for _, session := range context.resumeLister(current) {
-				title := strings.TrimSpace(session.Title)
-				when := formatSessionTime(fmt.Sprintf("%d", session.UpdatedAt))
-				displayTitle := title
-				if displayTitle == "" {
-					displayTitle = "(无标题)"
-				}
-				parts := make([]string, 0, 3)
-				for _, part := range []string{displayTitle, strings.TrimSpace(session.Provider), when} {
-					if part != "" {
-						parts = append(parts, part)
-					}
-				}
-				target.add(session.ID, strings.Join(parts, " · "), groupSession, title)
-			}
-			return target.items
-		}
-		if node.Name == "export" || node.Name == "import" {
-			return target.items
-		}
-		for _, sub := range node.Subcommands {
-			target.add(sub.Name, sub.Summary, groupSubcommand, "")
-		}
-		for _, flag := range node.Flags {
-			target.add(flag, describeFlag(flag), groupFlag, "")
-		}
-		if len(node.Subcommands) == 0 {
-			target.add("--help", "打印用法", groupFlag, "")
-		}
-		return target.items
-	}
-
-	if node.Name == "peer" && (at(prior, 1) == "read" || at(prior, 1) == "reply") && len(prior) == 2 {
-		addPeerMessageIds(target, context, current)
-		for _, flag := range node.Flags {
-			target.add(flag, describeFlag(flag), groupFlag, "")
-		}
-		return target.items
-	}
-
-	if node.Name == "peer" && at(prior, 1) == "send" && len(prior) == 2 && context.peerLister != nil {
-		for _, row := range context.peerLister(current) {
-			detail := strings.TrimSpace(row.Detail)
-			if detail == "" {
-				detail = "收件箱消息"
-			}
-			target.add(row.Value, detail, groupSession, detail)
-		}
-		for _, flag := range node.Flags {
-			target.add(flag, describeFlag(flag), groupFlag, "")
-		}
-		return target.items
-	}
-
-	// 账号 / 限额 / 失败策略的 provider 位：所有注册 Provider 都是合法取值，
-	// 不只原生 CLI 那 14 个。
-	if len(prior) == 2 && providerPositionCommands[node.Name][at(prior, 1)] {
-		addRegisteredProviders(target)
-		return target.items
-	}
-
-	nestedKey := strings.Join(append([]string{node.Name}, prior[1:]...), " ")
-	if nested, exists := nestedSubcommandTables[nestedKey]; exists {
-		for _, name := range nested {
-			target.add(name, describeNestedSubcommand(name), groupSubcommand, "")
-		}
-		for _, flag := range node.Flags {
-			target.add(flag, describeFlag(flag), groupFlag, "")
-		}
-		return target.items
-	}
-
-	if node.Name == "server" && at(prior, 1) == "config" && len(prior) >= 3 &&
+	// server config 的旗标来自 serverconfig schema，不在命令树里重复。
+	if head == "server" && at(prior, 1) == "config" && len(prior) >= 3 &&
 		(at(prior, 2) == "set" || at(prior, 2) == "get") {
 		if at(prior, 2) == "set" && strings.HasPrefix(lastPrior, "--") {
 			values, present := serverConfigValues(lastPrior)
@@ -483,11 +404,9 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 		return target.items
 	}
 
-	if node.Name == "export" || node.Name == "import" {
-		return target.items
+	node, found := findTopLevelCommand(head)
+	if !found {
+		return nil
 	}
-	for _, flag := range node.Flags {
-		target.add(flag, describeFlag(flag), groupFlag, "")
-	}
-	return target.items
+	return resolveCommandTree(&node, prior[1:], current, context, target)
 }

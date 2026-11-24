@@ -71,7 +71,7 @@ func CheckShellSyntax(shell, snippet, binary string) SyntaxCheck {
 		return result
 	}
 	switch shell {
-	case "zsh", "bash", "fish":
+	case "zsh", "bash", "fish", "sh":
 	default:
 		return SyntaxCheck{OK: true, Shell: shell, Skipped: true, Detail: "unsupported_shell"}
 	}

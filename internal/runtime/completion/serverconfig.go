@@ -53,6 +53,16 @@ func buildServerConfigFields() []serverConfigField {
 	return fields
 }
 
+// serverConfigOptionSpecs 把同一份 schema 投影成命令树选项，供
+// `aih server config <TAB>` 直接列出；取值仍由 serverConfigValues 提供。
+func serverConfigOptionSpecs() []optionSpec {
+	options := make([]optionSpec, 0, len(serverConfigFields))
+	for _, field := range serverConfigFields {
+		options = append(options, optionSpec{Name: field.Flag, Summary: field.Summary})
+	}
+	return options
+}
+
 func findServerConfigField(flag string) (serverConfigField, bool) {
 	name := strings.TrimSpace(flag)
 	for _, field := range serverConfigFields {

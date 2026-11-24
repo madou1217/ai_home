@@ -80,7 +80,7 @@ _aih_complete() {
           *) printf -v _aih_cur "%q" "$_aih_line" ;;
         esac
         COMPREPLY+=("$_aih_cur")
-      done < <(compgen -f -- "${COMP_WORDS[COMP_CWORD]}")
+      done <<< "$(compgen -f -- "${COMP_WORDS[COMP_CWORD]}")"
     fi
   fi
   return 0

@@ -30,6 +30,11 @@ func addSessionFlags(target *collector, provider string) {
 // 当前词里的逗号表示「继续追加」：`--mcp demo,` 的候选会保留已敲的前缀，
 // 并排除已经选中的名字。
 func addMCPNames(target *collector, context *resolverContext, prior []string, provider, current string) {
+	addMCPChoices(target, context, provider, accountTokenBefore(prior), current)
+}
+
+// addMCPChoices 是 --mcp 取值补全的公共实现：账号 token 已由调用方解析。
+func addMCPChoices(target *collector, context *resolverContext, provider, accountToken, current string) {
 	if context.mcpLister == nil {
 		return
 	}
@@ -43,7 +48,7 @@ func addMCPNames(target *collector, context *resolverContext, prior []string, pr
 			selected[name] = true
 		}
 	}
-	for _, choice := range context.mcpLister(provider, accountTokenBefore(prior)) {
+	for _, choice := range context.mcpLister(provider, accountToken) {
 		if selected[choice.Value] {
 			continue
 		}
@@ -257,13 +262,6 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 	return target.items
 }
 
-// providerPositionCommands 声明「第二个词之后需要 Provider 名」的子命令。
-var providerPositionCommands = map[string]map[string]bool{
-	"account":        {"add": true, "import": true},
-	"limits":         {"set-provider": true, "unset-provider": true},
-	"failure-policy": {"explain": true, "set": true},
-}
-
 func addRegisteredProviders(target *collector) {
 	for _, definition := range loadProviderSnapshot().definitions {
 		target.add(definition.ID, describeProvider(definition.ID), groupProvider, "")
@@ -280,70 +278,6 @@ func isAllDigits(value string) bool {
 		}
 	}
 	return true
-}
-
-func resolveRemoteCompletion(target *collector, context *resolverContext, prior []string, current string) []Candidate {
-	if context.remoteTargetLister == nil {
-		return target.items
-	}
-	if len(prior) == 1 {
-		target.add("target", "解析远程执行目标", groupSubcommand, "")
-		return target.items
-	}
-	if prior[1] != "target" {
-		return target.items
-	}
-	if len(prior) == 2 {
-		for _, action := range []namedSummary{
-			{Name: "ls", Summary: "列出远程目标候选"},
-			{Name: "resolve", Summary: "解析一个远程目标"},
-			{Name: "doctor", Summary: "预检远程目标能力"},
-		} {
-			target.add(action.Name, action.Summary, groupSubcommand, "")
-		}
-		return target.items
-	}
-	action := prior[2]
-	if action != "ls" && action != "list" && action != "resolve" && action != "doctor" && action != "preflight" {
-		return target.items
-	}
-	if action != "ls" && action != "list" && len(prior) == 3 {
-		for _, flag := range []string{"--server", "--server-id", "--workspace", "--connection", "--harness", "--provider", "--account", "--model", "--json"} {
-			target.add(flag, describeFlag(flag), groupFlag, "")
-		}
-		return target.items
-	}
-	last := prior[len(prior)-1]
-	if last == "--server" {
-		for _, profile := range listCompletionServerProfiles(context, current) {
-			target.add(profile.Value, profile.Description, groupOther, profile.Description)
-		}
-		return target.items
-	}
-	if last == "--server-id" || last == "--workspace" || last == "--connection" || last == "--harness" || last == "--provider" || last == "--account" || last == "--model" {
-		request := remoteTargetRequest{Action: "list", Server: remoteOptionValue(prior, "--server"), ServerID: remoteOptionValue(prior, "--server-id"), Workspace: remoteOptionValue(prior, "--workspace"), Connection: remoteOptionValue(prior, "--connection"), Harness: remoteOptionValue(prior, "--harness"), Provider: remoteOptionValue(prior, "--provider"), Account: remoteOptionValue(prior, "--account"), Model: remoteOptionValue(prior, "--model"), Field: strings.TrimPrefix(last, "--"), Current: current}
-		for _, choice := range context.remoteTargetLister(request) {
-			group := choice.Group
-			if group == "" {
-				group = groupOther
-			}
-			target.add(choice.Value, choice.Description, group, choice.Description)
-		}
-		return target.items
-	}
-	for _, flag := range []string{"--server", "--server-id", "--workspace", "--connection", "--harness", "--provider", "--account", "--model", "--json"} {
-		target.add(flag, describeFlag(flag), groupFlag, "")
-	}
-	return target.items
-}
-
-func remoteOptionValue(prior []string, flag string) string {
-	for index := len(prior) - 1; index >= 0; index-- {
-		if prior[index] == flag && index+1 < len(prior) {
-			return strings.TrimSpace(prior[index+1])
-		}
-	}
-	return ""
 }
 
 func listCompletionServerProfiles(context *resolverContext, current string) []remoteTargetChoice {

@@ -93,17 +93,22 @@ var providerActionSubcommands = map[string][]string{
 
 // providerActionFlags 按动作名声明通用选项。
 var providerActionFlags = map[string][]string{
-	"usage":       {"--refresh", "--preflight", "-j"},
-	"install":     {"--proxy"},
-	"update":      {"--proxy"},
-	"auto-switch": {"--remaining"},
-	"login":       {"--no-browser"},
-	"sessions":    {"--history", "--limit", "--all-projects"},
-	"import":      {"--dry-run"},
-	"set-default": {"--restart-client", "--force-quit-client"},
-	"set-mobile":  {},
-	"resume":      {},
-	"fork":        {},
+	"usage":         {"--refresh", "--preflight", "-j"},
+	"install":       {"--proxy"},
+	"update":        {"--proxy"},
+	"auto-switch":   {"--remaining"},
+	"login":         {"--no-browser"},
+	"sessions":      {"--history", "--limit", "--all-projects"},
+	"import":        {"--dry-run"},
+	"set-default":   {"--restart-client", "--force-quit-client"},
+	"set-mobile":    {},
+	"resume":        {},
+	"fork":          {},
+	"terminal-icon": {"--install", "--install-iterm2", "--install-linux", "--install-windows-terminal", "--all"},
+	"home":          {"--json"},
+	"detect":        {"--json"},
+	"delete":        {"--yes"},
+	"deleteall":     {"--yes"},
 }
 
 // listProviderActions 返回某个 Provider 的动作候选：通用动作 + 该 CLI 的界面动作。

@@ -382,6 +382,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		accountLister: func(provider string) []accountRow {
 			return listCLIAccounts(aiHome, provider)
 		},
+		allAccountLister: func() []accountRow {
+			return listRawCLIAccounts(aiHome)
+		},
 		proxyLister: func() []proxyChoice {
 			return listProxyCandidates(environment, aiHome)
 		},
@@ -440,6 +443,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		},
 		nativeFlagLister: func(provider, current string) []nativeFlagEntry {
 			return filterNativeFlags(listNativeFlags(environment, provider), current)
+		},
+		nativeFlagValueLister: func(provider, flag string) []string {
+			return listNativeFlagValues(environment, provider, flag)
 		},
 		aihServerProfileID: aihServerProfileID,
 		now:                environment.now(),

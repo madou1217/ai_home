@@ -45,7 +45,7 @@ var flagSummaries = map[string]string{
 	"--scope":               "按 provider 过滤（支持 * 与 ? 通配）",
 	"--self":                "只看发给自己的",
 	"--session-id":          "限定某个会话",
-	"--shell":               "目标 shell（zsh / bash / fish / powershell）",
+	"--shell":               "目标 shell（zsh / bash / fish / powershell / sh）",
 	"--state":               "按消息状态过滤",
 	"--target":              "收件人（会话名或 id）",
 	"--timeout-ms":          "超时毫秒数",
@@ -124,22 +124,4 @@ func describeNestedSubcommand(name string) string {
 		return summary
 	}
 	return "子命令：" + key
-}
-
-// nestedSubcommandTables 是第三层及更深的下钻表。
-var nestedSubcommandTables = map[string][]string{
-	"server config":       {"show", "get", "set", "list"},
-	"server autostart":    {"install", "uninstall", "status"},
-	"native plugin":       {"list", "install", "enable", "disable", "remove", "inspect", "project", "doctor"},
-	"ssh-clipboard probe": {},
-	"shell typo":          {"list", "forget"},
-	"edge status":         {"frpc", "nginx", "caddy"},
-	"edge plan":           {"frpc", "nginx", "caddy"},
-	"edge apply":          {"frpc", "nginx", "caddy"},
-	"edge remove":         {"frpc"},
-	"account credential":  {"update"},
-	"account default":     {"show", "set", "clear"},
-	"account models":      {"list", "refresh", "set-policy"},
-	"account usage":       {"show", "refresh"},
-	"account transfer":    {"export", "import"},
 }

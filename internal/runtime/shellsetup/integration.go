@@ -99,6 +99,8 @@ func snippetExtension(shell string) string {
 		return "fish"
 	case "powershell":
 		return "ps1"
+	case "sh":
+		return "sh"
 	default:
 		return ""
 	}

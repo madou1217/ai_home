@@ -25,7 +25,8 @@ const shellHelp = `用法：
   拼写纠正    命令打错时（如 ahi）列出最接近的候选，确认后才运行；e = 放到命令行自己编辑
   自学习      你确认过的纠正会被记住，下次同一个错法排第一
 
-支持的 shell：zsh / bash / fish / PowerShell（PS 5.1 与 7.x）
+支持的 shell：zsh / bash / fish / PowerShell（PS 5.1 与 7.x）/ sh
+  sh：/bin/sh 是 bash/zsh 时自动复用原生补全；dash/ash 没有编程补全接口，提供 aih_complete 手动查询
 
 选项：
   --shell <zsh|bash|fish|powershell>  目标 shell（默认按「父进程 → PSModulePath → $SHELL」判断）

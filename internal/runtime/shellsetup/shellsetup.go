@@ -148,6 +148,9 @@ func Snippet(shell string, options SnippetOptions) (string, bool) {
 		return "", false
 	}
 	options = NormalizeSnippetOptions(options)
+	if normalizedShell == "sh" {
+		return shSnippet(options), true
+	}
 	mask := 0
 	if options.Completion {
 		mask |= 1
@@ -191,6 +194,8 @@ func replaceHistoryTailDeclaration(shell, body string, historyTail int) string {
 		declaration = "set -g AIH_SHELL_HISTORY_TAIL 1000"
 	case "powershell":
 		declaration = "$global:AIH_SHELL_HISTORY_TAIL = 1000"
+	case "sh":
+		declaration = "AIH_SHELL_HISTORY_TAIL=1000"
 	default:
 		return body
 	}
@@ -210,7 +215,7 @@ func escapeSingleQuotes(shell, value string) string {
 
 // SupportedShells 返回可安装的 shell 名。
 func SupportedShells() []string {
-	return []string{"zsh", "bash", "fish", "powershell"}
+	return []string{"zsh", "bash", "fish", "powershell", "sh"}
 }
 
 // NormalizeShell 把别名归一成受支持的名字；未知返回空串。
@@ -224,6 +229,8 @@ func NormalizeShell(value string) string {
 		return "fish"
 	case "pwsh", "powershell":
 		return "powershell"
+	case "sh", "dash", "ash":
+		return "sh"
 	default:
 		return ""
 	}
@@ -290,6 +297,11 @@ func RcFile(shell, homeDir string, env func(string) string) string {
 			return profile
 		}
 		return bashrc
+	case "sh":
+		if envFile := get("ENV"); envFile != "" {
+			return envFile
+		}
+		return filepath.Join(homeDir, ".profile")
 	case "fish":
 		configHome := get("XDG_CONFIG_HOME")
 		if configHome == "" {
@@ -341,6 +353,7 @@ func ResolveShellBinary(shell string, env func(string) string) string {
 		"bash":       {"bash"},
 		"fish":       {"fish"},
 		"powershell": {"pwsh", "pwsh.exe", "powershell", "powershell.exe"},
+		"sh":         {"sh", "dash"},
 	}[NormalizeShell(shell)]
 	if len(names) == 0 {
 		return ""

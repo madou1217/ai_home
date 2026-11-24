@@ -29,14 +29,17 @@ const (
 )
 
 var (
-	nativeFlagTokenPattern  = regexp.MustCompile(`--[A-Za-z0-9][A-Za-z0-9_-]*`)
-	nativeFlagColumnPattern = regexp.MustCompile(`\s{2,}`)
-	nativeFlagAnsiPattern   = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+	nativeFlagTokenPattern   = regexp.MustCompile(`--[A-Za-z0-9][A-Za-z0-9_-]*`)
+	nativeFlagColumnPattern  = regexp.MustCompile(`\s{2,}`)
+	nativeFlagAnsiPattern    = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+	nativeFlagChoicesPattern = regexp.MustCompile(`(?i)choices?:\s*([^.;)]+)`)
+	nativeFlagValuePattern   = regexp.MustCompile(`^[A-Za-z0-9_.:/+-]+$`)
 )
 
 type nativeFlagEntry struct {
-	Value       string `json:"value"`
-	Description string `json:"description,omitempty"`
+	Value       string   `json:"value"`
+	Description string   `json:"description,omitempty"`
+	Values      []string `json:"values,omitempty"`
 }
 
 type nativeFlagCache struct {
@@ -247,6 +250,99 @@ func refreshNativeFlags(provider string, environment Environment) {
 	})
 }
 
+// addNativeDynamicValues 给 help 里没有 Choices 的常见旗标补上 AIH 数据源：
+// --model 用模型目录，--resume 用该 Provider 的会话列表。
+func addNativeDynamicValues(target *collector, context *resolverContext, provider, flag string, prior []string, current string) {
+	switch flag {
+	case "--model", "-m":
+		if context.modelLister == nil {
+			return
+		}
+		targetProvider, token := resolveModelTarget(prior)
+		if targetProvider == "" {
+			targetProvider = provider
+		}
+		accountRef := resolveAccountRef(context, targetProvider, token)
+		for _, model := range context.modelLister(modelRequest{
+			Provider: targetProvider, AccountRef: accountRef, AccountToken: token, Current: current, Mode: "model",
+		}) {
+			group := groupModel
+			if strings.TrimSpace(model.Group) != "" {
+				group = model.Group
+			}
+			target.add(model.Value, model.Description, group, model.Value)
+		}
+	case "--resume", "-r":
+		if context.sessionLister == nil {
+			return
+		}
+		accountToken := accountTokenBefore(prior)
+		accountRef := resolveAccountRef(context, provider, accountToken)
+		for _, session := range context.sessionLister(provider, accountRef, current) {
+			title := strings.TrimSpace(session.Title)
+			if title == "" {
+				title = "(无标题)"
+			}
+			target.add(session.ID, formatSessionTime(session.UpdatedAt)+" · "+title, groupSession, title)
+		}
+	}
+}
+
+// parseNativeFlagChoices 从 help 说明里抽取枚举取值（Choices: a, b / choices: "a","b"）。
+func parseNativeFlagChoices(description string) []string {
+	match := nativeFlagChoicesPattern.FindStringSubmatch(description)
+	if match == nil {
+		return nil
+	}
+	parts := strings.FieldsFunc(match[1], func(char rune) bool {
+		return char == ',' || char == '|'
+	})
+	values := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		value := trimChoiceQuotes(part)
+		if value == "" || !nativeFlagValuePattern.MatchString(value) {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+		if len(values) >= 16 {
+			break
+		}
+	}
+	return values
+}
+
+// listNativeFlagValues 返回某个原生旗标的枚举取值；缓存缺失时返回空。
+func trimChoiceQuotes(value string) string {
+	value = strings.TrimSpace(value)
+	for len(value) > 0 && (value[0] == 34 || value[0] == 39 || value[0] == 96) {
+		value = value[1:]
+	}
+	for len(value) > 0 && (value[len(value)-1] == 34 || value[len(value)-1] == 39 || value[len(value)-1] == 96) {
+		value = value[:len(value)-1]
+	}
+	return value
+}
+
+func listNativeFlagValues(environment Environment, provider, flag string) []string {
+	file := nativeFlagCacheFile(environment.aiHomeDir(), provider)
+	binary, size, mod := resolveNativeFlagBinary(provider)
+	entries, ok := readNativeFlagCache(file, binary, size, mod, environment.now())
+	if !ok {
+		return nil
+	}
+	for _, entry := range entries {
+		if entry.Value == flag {
+			return entry.Values
+		}
+	}
+	return nil
+}
+
 // filterNativeFlags 只在当前词是旗标时才给原生候选：其它形态交回 shell 的
 // 路径补全（prompt 里的文件参数仍然可用）。
 func filterNativeFlags(entries []nativeFlagEntry, current string) []nativeFlagEntry {
@@ -302,6 +398,7 @@ func parseNativeHelpFlags(text string) []nativeFlagEntry {
 			entries = append(entries, nativeFlagEntry{
 				Value:       token,
 				Description: clipText(description, nativeFlagDescriptionMax),
+				Values:      parseNativeFlagChoices(description),
 			})
 			if len(entries) >= nativeFlagCacheDepth {
 				return entries

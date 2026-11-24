@@ -71,6 +71,8 @@ func NewHostSupervisor(opener HostOpener) *HostSupervisor {
 // Apply 让运行中的宿主集合与 specs 一致：新增的启动，消失的关闭，其余保持。
 //
 // 它不做阻塞等待——宿主在各自 goroutine 里建立与重建，状态通过 Status 观察。
+// ctx 会交给宿主 goroutine，取消 ctx 会关闭宿主；常驻调用方必须传服务生命周期
+// 的 ctx，不能传单轮探测的超时 ctx。
 func (supervisor *HostSupervisor) Apply(ctx context.Context, specs []HostSpec, homeDir string) {
 	if supervisor == nil {
 		return

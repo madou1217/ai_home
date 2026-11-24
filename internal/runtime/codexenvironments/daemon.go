@@ -12,8 +12,6 @@ const (
 	// 每轮只做一次本地 KV 读取和集合比较；只有新增连接才会真的连 SSH 探测。
 	// 间隔短一点，用户在 WebUI 新增连接后很快就能在 Codex 里用上。
 	URLHostReconcileInterval = 3 * time.Second
-	// urlHostReconcileTimeout 是单轮探测的硬上限，避免 SSH 卡死把下一轮拖住。
-	urlHostReconcileTimeout = 45 * time.Second
 )
 
 // StartURLHostDaemon 在后台维持 url 模式通道宿主。
@@ -30,13 +28,14 @@ func StartURLHostDaemon(ctx context.Context, supervisor *HostSupervisor, aiHomeD
 	}
 	go func() {
 		for {
-			reconcileCtx, cancel := context.WithTimeout(ctx, urlHostReconcileTimeout)
-			ReconcileURLHosts(reconcileCtx, ProbeOptions{
+			// 必须用服务生命周期 ctx：Apply 会把 ctx 交给宿主 goroutine，
+			// 用单轮超时 ctx 会让宿主在超时后一起退出。探测本身的 SSH
+			// 调用各自有超时，不需要在这里再套一层。
+			ReconcileURLHosts(ctx, ProbeOptions{
 				AIHomeDir:      aiHomeDir,
 				HomeDir:        homeDir,
 				HostSupervisor: supervisor,
 			})
-			cancel()
 			select {
 			case <-ctx.Done():
 				return

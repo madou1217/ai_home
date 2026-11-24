@@ -200,6 +200,7 @@ func (service *Service) UpdateRequirement(ctx context.Context, id string, patch 
 	if patch.WorkspaceKind != nil {
 		next.WorkspaceKind = strings.TrimSpace(*patch.WorkspaceKind)
 	}
+	service.clearLoopMessage(current.ID)
 	if patch.Status != nil {
 		status, err := NormalizeStatus(*patch.Status)
 		if err != nil {
@@ -246,6 +247,7 @@ func (service *Service) DeleteRequirement(ctx context.Context, id string) error 
 	if err := service.store.DeleteRequirement(ctx, id); err != nil {
 		return err
 	}
+	service.clearLoopMessage(id)
 	service.Notify()
 	return nil
 }
@@ -447,6 +449,7 @@ func (service *Service) ResetToReady(ctx context.Context, id string, note string
 	requirement.TurnID = ""
 	requirement.LastError = ""
 	requirement.UpdatedAt = service.Now()
+	service.clearLoopMessage(requirement.ID)
 	if err := service.store.SaveRequirement(ctx, requirement); err != nil {
 		return Requirement{}, err
 	}
@@ -473,6 +476,7 @@ func (service *Service) Cancel(ctx context.Context, dispatcher Dispatcher, id st
 	requirement.SessionID = ""
 	requirement.PeerMessageID = ""
 	requirement.UpdatedAt = service.Now()
+	service.clearLoopMessage(requirement.ID)
 	if err := service.store.SaveRequirement(ctx, requirement); err != nil {
 		return Requirement{}, err
 	}

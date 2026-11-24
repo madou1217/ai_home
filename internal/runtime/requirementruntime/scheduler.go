@@ -127,6 +127,10 @@ func (scheduler *Scheduler) RunOnce(ctx context.Context) (summary requirements.D
 	if !settings.Enabled {
 		return summary, nil
 	}
+	if strings.TrimSpace(settings.Provider) == "" || strings.TrimSpace(settings.Model) == "" {
+		summary.LastError = "调度器未配置 Provider/Model"
+		return summary, nil
+	}
 	scheduler.maybeReconcile(ctx)
 	snapshot, err := scheduler.service.List(ctx)
 	if err != nil {

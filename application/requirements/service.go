@@ -306,6 +306,9 @@ func (service *Service) Refine(ctx context.Context, id, workspacePath, workspace
 		return Requirement{}, err
 	}
 	settings = settings.Normalized()
+	if strings.TrimSpace(settings.Provider) == "" || strings.TrimSpace(settings.Model) == "" {
+		return Requirement{}, fmt.Errorf("%w: 调度器未配置 Provider/Model，无法优化需求", ErrInvalid)
+	}
 	if service.model == nil {
 		return Requirement{}, fmt.Errorf("%w: 模型客户端未配置", ErrInvalid)
 	}
@@ -376,8 +379,11 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 		return Requirement{}, err
 	}
 	settings = settings.Normalized()
-	provider := settings.Provider
-	model := settings.Model
+	provider := strings.TrimSpace(settings.Provider)
+	model := strings.TrimSpace(settings.Model)
+	if provider == "" || model == "" {
+		return Requirement{}, fmt.Errorf("%w: 调度器未配置 Provider/Model，请先在调度器配置中选择", ErrInvalid)
+	}
 	accountRef := settings.AccountRef
 	effort := settings.ReasoningEffort
 	assignmentExecution := ""
@@ -587,7 +593,7 @@ func (service *Service) ContinueLoop(ctx context.Context, id, finalMessage strin
 	settings = settings.Normalized()
 	decision := LoopDecision{}
 	decided := false
-	if service.model != nil {
+	if service.model != nil && settings.Provider != "" && settings.Model != "" {
 		output, modelErr := service.model.Complete(ctx, ModelRequest{
 			Provider: settings.Provider, Model: settings.Model, AccountRef: settings.AccountRef,
 			System: LoopJudgeSystemPrompt, Prompt: BuildLoopJudgePrompt(requirement, finalMessage, hadWork),

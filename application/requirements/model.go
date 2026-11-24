@@ -159,9 +159,10 @@ type SchedulerSettings struct {
 	UpdatedAt       int64  `json:"updatedAt"`
 }
 
-// DefaultSchedulerSettings 使用 AWS Server + AGY + Gemini Neon xhigh。
+// DefaultSchedulerSettings 只给启用与并行度，不再硬编码 Provider/Model。
+// 执行目标必须来自当前机器实际存在的账号与模型目录，而不是某个部署的默认值。
 func DefaultSchedulerSettings() SchedulerSettings {
-	return SchedulerSettings{Enabled: true, Provider: "agy", Model: "gemini-4-neon-xhigh", ReasoningEffort: "xhigh", MaxParallel: 2}
+	return SchedulerSettings{Enabled: true, MaxParallel: 2}
 }
 
 // Normalized 清理调度器配置。
@@ -169,12 +170,6 @@ func (settings SchedulerSettings) Normalized() SchedulerSettings {
 	settings.Provider = strings.TrimSpace(settings.Provider)
 	settings.Model = strings.TrimSpace(settings.Model)
 	settings.AccountRef = strings.TrimSpace(settings.AccountRef)
-	if settings.Provider == "" {
-		settings.Provider = "agy"
-	}
-	if settings.Model == "" {
-		settings.Model = "gemini-4-neon-xhigh"
-	}
 	settings.ReasoningEffort = strings.ToLower(strings.TrimSpace(settings.ReasoningEffort))
 	if derived := DeriveEffortFromModel(settings.Model); derived != "" {
 		// AGY 等 Provider 把思考强度编码在模型 ID 里；记录必须与真实模型一致。

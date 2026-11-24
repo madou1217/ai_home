@@ -37,6 +37,7 @@ export interface UseAccountsSnapshotResult {
   hydratingDetails: boolean;
   removingAccountRefs: Record<string, boolean>;
   loading: boolean;
+  loaded: boolean;
   refreshing: boolean;
   requestAccountsSnapshotUpdate: (options?: {
     announce?: boolean;
@@ -52,6 +53,7 @@ export function useAccountsSnapshot(
   const [hydratingDetails, setHydratingDetails] = React.useState(false);
   const [removingAccountRefs, setRemovingAccountRefs] = React.useState<Record<string, boolean>>({});
   const [loading, setLoading] = React.useState(false);
+  const [loaded, setLoaded] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
   const removingAccountTimersRef = React.useRef<Record<string, number>>({});
   const accountsSnapshotFallbackTimerRef = React.useRef<number | null>(null);
@@ -168,6 +170,7 @@ export function useAccountsSnapshot(
       if (requestId === accountsLoadRequestRef.current) {
         setLoading(false);
         setRefreshing(false);
+        setLoaded(true);
       }
     }
   }, [applyAccountsSnapshot]);
@@ -210,6 +213,7 @@ export function useAccountsSnapshot(
         setHydratingDetails(Boolean(hydrating));
         hasLoadedAccountsRef.current = true;
         setLoading(false);
+        setLoaded(true);
       },
       onSnapshotRequested: () => {
         trackAccountsSnapshotRefresh();
@@ -265,6 +269,7 @@ export function useAccountsSnapshot(
     hydratingDetails,
     removingAccountRefs,
     loading,
+    loaded,
     refreshing,
     requestAccountsSnapshotUpdate,
     stageAccountRemoval

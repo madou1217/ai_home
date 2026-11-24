@@ -6,9 +6,12 @@
   margin-inline: auto;
 }
 
-/* Provider 标签较多时换行显示，避免右侧 tab 被裁掉且没有可见的溢出提示。 */
+/* Provider tabs 可以换行，但选中态必须跟随当前 tab：
+ * 全局 ink bar 只会在整个 nav 的底边，第一行选中时会离文字很远；
+ * 这里改用 tab 自己的内阴影下划线，第二行选中也不会割裂。 */
 .accounts-provider-tabs > .ant-tabs-nav {
   overflow: visible;
+  margin-bottom: 12px;
 }
 
 .accounts-provider-tabs .ant-tabs-nav-wrap {
@@ -18,6 +21,14 @@
 .accounts-provider-tabs .ant-tabs-nav-list {
   flex-wrap: wrap;
   row-gap: 4px;
+}
+
+.accounts-provider-tabs .ant-tabs-ink-bar {
+  display: none;
+}
+
+.accounts-provider-tabs .ant-tabs-tab-active {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
 /* 供应商动作条：位于 provider tab 内容区顶部，只显示当前供应商支持的动作。

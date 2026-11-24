@@ -186,7 +186,8 @@ export default function Accounts() {
     accounts,
     hydratingDetails,
     removingAccountRefs,
-    loading
+    loading,
+    loaded
   } = accountsSnapshot;
   const tokenDrops = useTokenDropEvents(accounts);
   const accountOutcomes = useAccountOutcomes();
@@ -305,6 +306,20 @@ export default function Accounts() {
     return stats;
   }, [accounts]);
   const activeStats = providerStats[activeProvider] || providerStats.all;
+  // 只保留有账号的 Provider 族：空族不占 tab，避免 1280 宽度下折成两行、选中线落到整块底部。
+  // 添加账号仍走独立弹窗，不受这里的导航过滤影响。
+  const visibleFamilyGroups = useMemo(
+    () => PROVIDER_FAMILY_GROUPS.filter((group) => (providerStats[group.family]?.total || 0) > 0),
+    [providerStats]
+  );
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (activeProvider === 'all') return;
+    if (visibleFamilyGroups.some((group) => group.family === activeProvider)) return;
+    setActiveProvider('all');
+  }, [activeProvider, loaded, visibleFamilyGroups]);
+
   // Provider 级桌面端入口：族 tab 下没有任何账号时，仍可安装/打开官方客户端。
   // 能力与安装状态来自 app-entries（Toolkit 应用清单），这里不判断厂商；
   // 无桌面系统（serverRuntime）一律不出现安装/打开。
@@ -1041,7 +1056,7 @@ export default function Accounts() {
       key: 'all',
       label: <span style={{ padding: '0 8px' }}>全部 ({providerStats.all.total})</span>
     },
-    ...PROVIDER_FAMILY_GROUPS.map((group) => {
+    ...visibleFamilyGroups.map((group) => {
       const representative = familyRepresentative(group.family);
       return {
         key: group.family,

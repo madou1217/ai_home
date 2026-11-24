@@ -19,8 +19,10 @@ const (
 	cacheFileName = "codex-environments-probe.json"
 	// cacheTTL 是探测结论的可信时长。SSH 主机的可用性变化远慢于这个窗口，
 	// 而每次启动都重探会让 CLI 变慢。
-	cacheTTL     = 10 * time.Minute
-	cacheVersion = 1
+	cacheTTL = 10 * time.Minute
+	// cacheVersion 变更会丢弃旧结论；探测语义改动（如区分可达与缺 codex）
+	// 必须递增，否则旧缓存里的误判会继续沿用。
+	cacheVersion = 2
 )
 
 type probeCache struct {

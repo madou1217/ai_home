@@ -38,7 +38,8 @@ type ProbeRunner func(ctx context.Context, connection Connection, script string)
 
 // ProbeConnection 探测一条连接是否可用作 Codex 执行环境。
 //
-// 分两步：先找出候选可执行文件，再逐个实际执行 `--version` 确认它真的能跑。
+// 分三步：先验证 SSH/shell 可达，再找出候选可执行文件，最后逐个实际执行
+// `--version` 确认它真的能跑。
 // 只看"路径存在"是不够的——实测有一台 Windows 的 PATH 里第一个 codex.exe 是
 // 不兼容的旧构建，而下一个候选正常，只看路径会把这条连接误判为可用。
 func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connection) ProbeResult {
@@ -49,28 +50,26 @@ func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connect
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, remoteProbeTimeout)
 	defer cancel()
-	reachable := false
-	lastDetail := ""
+	// 先单独验证 SSH 可达。command -v codex / where codex 在没装 codex 时
+	// 返回非 0，不能拿来当连通性探针，否则「可达但缺 codex」会被写成不可达。
+	if _, stderr, err := runner(probeCtx, connection, connectivityProbeScript); err != nil {
+		result.Detail = firstNonEmpty(cleanSSHError(stderr), err.Error(), "SSH 连接失败")
+		return result
+	}
+	result.Reachable = true
+
 	var candidates []string
 	for _, script := range probeScripts() {
-		stdout, stderr, err := runner(probeCtx, connection, script)
+		stdout, _, err := runner(probeCtx, connection, script)
 		if err != nil {
-			if !reachable {
-				lastDetail = firstNonEmpty(cleanSSHError(stderr), err.Error())
-			}
+			// 已证明 SSH 可达；这里非 0 通常就是「命令不存在」，继续试下一个平台写法。
 			continue
 		}
-		reachable = true
 		if list := nonEmptyLines(stdout); len(list) > 0 {
 			candidates = list
 			break
 		}
 	}
-	if !reachable {
-		result.Detail = firstNonEmpty(lastDetail, "SSH 连接失败")
-		return result
-	}
-	result.Reachable = true
 	if len(candidates) == 0 {
 		result.Detail = "远端 shell 里找不到 codex（需要先在该主机安装 Codex CLI）"
 		return result

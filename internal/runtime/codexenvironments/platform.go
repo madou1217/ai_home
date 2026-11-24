@@ -12,8 +12,12 @@ package codexenvironments
 //
 // 平台在建连前不可知（ssh_connections 上没有 dialect 字段），所以按顺序尝试两种写法。
 const (
-	posixProbeScript   = `command -v codex 2>/dev/null`
-	windowsProbeScript = `where codex 2>nul`
+	// connectivityProbeScript 只验证「SSH 能登录并执行 shell 命令」。
+	// 不能用 command -v codex / where codex 代替：主机没装 codex 时这两条
+	// 必然非 0，会把「可达但缺 codex」误判成「SSH 不可达」。
+	connectivityProbeScript = `echo aih-probe-ok`
+	posixProbeScript        = `command -v codex 2>/dev/null`
+	windowsProbeScript      = `where codex 2>nul`
 )
 
 // probeScripts 返回候选查找脚本；前一条没有结果时才试下一条。

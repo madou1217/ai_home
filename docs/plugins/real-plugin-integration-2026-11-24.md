@@ -9,8 +9,8 @@
 | `dsh-whale-widget` | 0.4.2 | DSH 原生 | `dsh plugin --profile aih add` |
 | `dsh-context` | 0.87.1 | DSH 原生 | 同上 |
 | `dshmarket` | 1.80.1 | DSH 原生 | 同上 |
-| `opencode-sandbox` | 0.7.0 | OpenCode 原生 | 写入 `opencode.json` 的 `plugin` 数组 |
-| `opencode-wakatime` | 1.4.0 | OpenCode 原生 | 同上 |
+| `opencode-wakatime` | 1.4.0 | OpenCode 原生 | 写入 `opencode.json` 的 `plugin` 数组 |
+| `opencode-rules` | 2.0.0 | OpenCode 原生 | 同上 |
 
 这些包都不是 AIH 能力插件：没有 `plugin.json#contributes`。它们由对应 Harness 自己加载。
 
@@ -100,8 +100,21 @@ OpenCode 的描述符把 `mode` / `opencodePackage` 换成 `opencode-npm`。描�
   - `DSH_HOME=~/.dsh dsh --profile aih --dump-config` 中出现三个插件层。
   - `~/.dsh/profiles/aih/node_modules` 中存在三个包及其依赖。
   - `~/.config/opencode/opencode.json#plugin`：
-    `opencode-sandbox@0.7.0`、`opencode-wakatime@1.4.0`。
-- OpenCode 的 `plugin list` 在当前机器被已有 service 端口占用挡住，未能在线确认包已下载；配置文件是官方声明入口，下次 service 启动时会解析并安装。
+    `opencode-wakatime@1.4.0`、`opencode-rules@2.0.0`。
+- OpenCode standalone 启动日志确认两个入口都已加载：
+  - `opencode-wakatime@1.4.0` → `.cache/opencode/npm/.../dist/server.js`
+  - `opencode-rules@2.0.0` → `.cache/opencode/npm/.../dist/src/index.js`
+- 仍有 `ServiceUnavailableError: Location plugins did not finish activating`，说明完整激活阶段未在 10s 内完成；插件入口加载已证实，但不等同于运行时 hook 全部就绪。
+
+### 4.1 未采用的候选
+
+以下包真实存在，但在本机 OpenCode 2.3.0 上安装/激活失败，已从配置移除：
+
+| 包 | 失败点 |
+|---|---|
+| `opencode-sandbox@0.7.0` | OpenCode 缓存安装未完成，空目录并阻塞启动 |
+| `@jgordijn/opencode-remote-config@0.3.1` | OpenCode 未生成 npm 缓存条目 |
+| `opencode-subagent-statusline@2.1.1` | `NpmInstallFailedError: unable to resolve dependency tree` |
 
 ## 5. 边界
 

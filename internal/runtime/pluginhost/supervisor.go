@@ -238,9 +238,23 @@ func NewSupervisor(options SupervisorOptions) (*Supervisor, error) {
 func resolveHostScripts(repoRoot, entryPath, hooksPath string) (string, string) {
 	entry := strings.TrimSpace(entryPath)
 	hooks := strings.TrimSpace(hooksPath)
-	searchRoots := make([]string, 0, 8)
+	searchRoots := make([]string, 0, 16)
 	if strings.TrimSpace(repoRoot) != "" {
 		searchRoots = append(searchRoots, strings.TrimSpace(repoRoot))
+	}
+	// 服务端装配目前不传 RepoRoot，只靠 cwd/环境推导在「服务由 launchd 或
+	// 计划任务拉起」时拿不到仓库根，node 运行时插件就会报找不到 host-entry.mjs。
+	// 可执行文件所在目录是最可靠的事实：从它向上找 lib/plugins/host。
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for level := 0; level < 6 && dir != ""; level++ {
+			searchRoots = append(searchRoots, dir)
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 	}
 	// 打包安装时服务进程的 cwd 是用户目录：安装器给出的 AIH_PACKAGE_ROOT /
 	// AIH_SERVER_ENTRY_FILE 才是权威的安装根，不能只靠 cwd 祖先推导。

@@ -2,6 +2,7 @@ package openaichatcompletionsapi
 
 import (
 	"errors"
+	"log"
 	"math"
 	"net/http"
 
@@ -67,6 +68,7 @@ func (stream *responseStream) Accept(event inference.StreamEvent) error {
 	frames, err := stream.renderer.Render(event)
 	if err != nil {
 		stream.renderErr = err
+		log.Printf("openaichat stream render failed: event=%T sequence=%d error=%v", event, event.Sequence(), err)
 		return err
 	}
 	stream.lastSequence = event.Sequence()

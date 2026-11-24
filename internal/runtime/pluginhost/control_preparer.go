@@ -286,19 +286,21 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 				contributionID := stringField(contrib, "id")
 				stat := invocationStats[contributionID]
 				report.Contributions = append(report.Contributions, DoctorContribution{
-					PluginID:        pluginID,
-					ContributionID:  contributionID,
-					Capability:      capName,
-					Order:           order,
-					FailurePolicy:   policy,
-					Active:          activeArtifacts[pluginID+"@"+version],
-					Calls:           stat.Calls,
-					Failures:        stat.Failures,
-					LastError:       stat.LastError,
-					LastDurationMs:  stat.LastDurationMs,
-					LastCalledAt:    stat.LastCalledAt,
-					LastSucceededAt: stat.LastSucceededAt,
-					Scope:           scope,
+					PluginID:         pluginID,
+					ContributionID:   contributionID,
+					Capability:       capName,
+					Order:            order,
+					FailurePolicy:    policy,
+					Active:           activeArtifacts[pluginID+"@"+version],
+					Calls:            stat.Calls,
+					Failures:         stat.Failures,
+					Rejections:       stat.Rejections,
+					LastError:        stat.LastError,
+					LastRejectReason: stat.LastRejectReason,
+					LastDurationMs:   stat.LastDurationMs,
+					LastCalledAt:     stat.LastCalledAt,
+					LastSucceededAt:  stat.LastSucceededAt,
+					Scope:            scope,
 				})
 			}
 			entryRel := stringField(manifest, "entry")

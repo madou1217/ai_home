@@ -112,13 +112,15 @@ type pendingCandidate struct {
 // Runtime 管理 Plugin Host 子进程、代次准备/激活/排空回收、崩溃退避恢复及 Go Registry 投影同步。
 // InvocationStat 是单个贡献项的进程内调用统计（重启后清零）。
 type InvocationStat struct {
-	ContributionID  string `json:"contributionId"`
-	Calls           int64  `json:"calls"`
-	Failures        int64  `json:"failures"`
-	LastError       string `json:"lastError,omitempty"`
-	LastDurationMs  int64  `json:"lastDurationMs"`
-	LastCalledAt    int64  `json:"lastCalledAt"`
-	LastSucceededAt int64  `json:"lastSucceededAt"`
+	ContributionID   string `json:"contributionId"`
+	Calls            int64  `json:"calls"`
+	Failures         int64  `json:"failures"`
+	Rejections       int64  `json:"rejections"`
+	LastError        string `json:"lastError,omitempty"`
+	LastRejectReason string `json:"lastRejectReason,omitempty"`
+	LastDurationMs   int64  `json:"lastDurationMs"`
+	LastCalledAt     int64  `json:"lastCalledAt"`
+	LastSucceededAt  int64  `json:"lastSucceededAt"`
 }
 
 type Runtime struct {
@@ -697,6 +699,23 @@ func truncateDiagnostic(text string) string {
 		return text
 	}
 	return text[:500]
+}
+
+// RecordPluginRejection 记录一次“插件正常返回但拒绝请求”，与 RPC 失败分开计数。
+func (r *Runtime) RecordPluginRejection(contributionID, reason string) {
+	if r == nil || contributionID == "" {
+		return
+	}
+	r.statsMu.Lock()
+	defer r.statsMu.Unlock()
+	if r.invokeStats == nil {
+		r.invokeStats = make(map[string]InvocationStat)
+	}
+	stat := r.invokeStats[contributionID]
+	stat.ContributionID = contributionID
+	stat.Rejections++
+	stat.LastRejectReason = truncateDiagnostic(firstNonEmpty(reason, "plugin_rejected"))
+	r.invokeStats[contributionID] = stat
 }
 
 // Invoke 在指定代次上通过活跃宿主调用插件贡献项，并在调用期间自动持有租约。

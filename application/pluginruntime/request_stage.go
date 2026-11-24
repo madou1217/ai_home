@@ -113,6 +113,7 @@ func RunRequestStage(ctx context.Context, invoker Invoker, projection Projection
 		}
 		invoked++
 		if reject != nil {
+			recordPluginRejection(invoker, item.ID, reject.Message)
 			return RequestOutcome{Reject: reject, Invoked: invoked}, nil
 		}
 		if next != nil {

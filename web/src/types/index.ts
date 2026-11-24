@@ -3597,7 +3597,9 @@ export interface AihPluginDoctorContribution {
   active: boolean;
   calls: number;
   failures: number;
+  rejections: number;
   lastError?: string;
+  lastRejectReason?: string;
   lastDurationMs: number;
   lastCalledAt: number;
   lastSucceededAt: number;

@@ -213,9 +213,6 @@ export default function RequirementsBoard() {
   }, []);
   useEffect(() => { void loadWorkWorkspaces(activeServerProfileId); }, [activeServerProfileId, loadWorkWorkspaces]);
   useEffect(() => {
-    if (schedulerOpen) void loadSchedulerOptions(activeServerProfileId);
-  }, [activeServerProfileId, schedulerOpen, loadSchedulerOptions]);
-  useEffect(() => {
     const source = requirementsAPI.watch({
       onSnapshot: (next) => { applySnapshot(next); setLive(true); },
       onConnected: () => setLive(true),
@@ -321,13 +318,19 @@ export default function RequirementsBoard() {
     return Array.from(providers).sort().map((provider) => ({ label: provider, value: provider }));
   }, [schedulerProviders, snapshot?.settings?.provider]);
 
-  const schedulerServerOptions = useMemo(() => [
-    { label: '本地（当前 Server）', value: '' },
-    ...serverProfiles.map((profile) => ({
-      label: `${profile.label}${profile.active ? ' · 当前' : ''} · ${profile.endpoint}`,
-      value: profile.id
-    }))
-  ], [serverProfiles]);
+  const schedulerServerOptions = useMemo(() => {
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const remoteProfiles = serverProfiles.filter((profile) => {
+      try { return new URL(profile.endpoint).origin !== currentOrigin; } catch { return true; }
+    });
+    return [
+      { label: '本地（当前 Server）', value: '' },
+      ...remoteProfiles.map((profile) => ({
+        label: `${profile.label} · ${profile.endpoint}`,
+        value: profile.id
+      }))
+    ];
+  }, [serverProfiles]);
 
   const schedulerModelOptions = useMemo(() => {
     const provider = String(schedulerProvider || '');

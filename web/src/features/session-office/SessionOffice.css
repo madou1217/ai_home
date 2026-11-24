@@ -12,6 +12,31 @@
   padding: var(--space-5) var(--space-7) var(--space-6);
 }
 
+/* 项目办公室是整屏工作台。默认内容区会给上下各留 32px，若页面再按 100vh
+ * 扣顶栏高度，整体会比可视区高出 16px，底部停靠栏被内容区裁掉。这里让
+ * 路由舞台承接内容区的剩余高度，页面高度改由 flex 分配，不再重复计算视口。 */
+@media (min-width: 1121px) {
+  .ant-pro-layout-content:has(.session-office) {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding-block: 0 !important;
+  }
+
+  .aih-route-stage:has(.session-office) {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .session-office {
+    flex: 1 1 0%;
+    height: auto;
+    min-height: 0;
+  }
+}
+
 /* -------------------------------------------------------------------------
  * 1. Top Office Command Bar
  * ---------------------------------------------------------------------- */

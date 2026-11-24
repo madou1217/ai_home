@@ -417,6 +417,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
@@ -430,7 +431,7 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 260px;
 }
 
 .office-selected-badge {
@@ -537,6 +538,7 @@
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .office-action-count {
@@ -553,6 +555,14 @@
   .office-camera-btn,
   .office-station-chip {
     transition: none !important;
+  }
+}
+
+/* 矮视口（如 1280×720）下停靠栏换行后需要让出高度，3D 视口仍保留
+ * 可用的最小画布；高视口继续使用 320px 的下限。 */
+@media (max-height: 820px) {
+  .office-webgl-viewport {
+    min-height: 240px;
   }
 }
 

@@ -26,7 +26,9 @@ func triggerPluginAppRefresh(source appinstall.Source) {
 
 // pluginAppViews 把插件声明映射为 Toolkit 应用卡。
 //
-// appId 与内置应用冲突时跳过插件项：v1 不做覆盖，避免同一张卡出现两个来源。
+// appId 与内置应用精确冲突时跳过插件项（v1 不做覆盖）；provider+kind 相同但
+// appId 不同时保留插件卡，便于插件与内置安装计划并行验证，账号入口仍按 provider
+// + kind 取 OR。
 func (m *Manager) pluginAppViews(opts Options, existing []AppView) []AppView {
 	source := opts.PluginApps
 	if source == nil {

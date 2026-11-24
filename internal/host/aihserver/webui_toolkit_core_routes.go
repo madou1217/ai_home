@@ -68,6 +68,7 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		Catalog:                dependencies.Catalog,
 		DefaultAccountResolver: defaultAccountResolver,
 		AppLauncher:            appLauncher,
+		PluginApps:             dependencies.PluginHostService,
 		InstallProxyResolver:   installProxyResolver,
 		EgressAutoProxy:        egressAutoProxy,
 		RecordEgressOutcome:    recordEgressOutcome,

@@ -17,6 +17,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/configedit"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
@@ -107,6 +108,9 @@ type Dependencies struct {
 	HTTPClient   *http.Client
 	ServerConfig network.ServerConfigReader
 	Now          func() time.Time
+
+	// PluginApps 是插件式应用安装端口；nil 表示当前宿主未启用插件应用。
+	PluginApps appinstall.Source
 
 	MirrorsManager *mirrors.Manager
 	NetworkManager *network.Manager
@@ -304,6 +308,9 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 	}
 	if deps.AppsBaseOpts != nil {
 		appsOpts = *deps.AppsBaseOpts
+	}
+	if deps.PluginApps != nil {
+		appsOpts.PluginApps = deps.PluginApps
 	}
 	// winget 的代理开关是机器级管理员设置：需要时走标准提权（Windows 弹 UAC）。
 	appsOpts.RunElevated = func(ctx context.Context, command string) (bool, bool, string) {

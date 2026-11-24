@@ -25,6 +25,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 )
 
 // Path 是入口可用性只读契约的管理面路径。
@@ -61,6 +62,8 @@ type Dependencies struct {
 	Accounts HostAccounts
 	// Scanner 可替换宿主进程扫描器（测试用）；零值时按 runtime.GOOS 构造。
 	Scanner *hostapps.Scanner
+	// PluginApps 是插件式应用安装的只读缓存；nil 表示未启用插件应用。
+	PluginApps appinstall.RefreshingReader
 }
 
 // HostAccounts 是运行态匹配所需的账号台账读端口。

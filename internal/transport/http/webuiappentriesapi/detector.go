@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/core/harnesses"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 )
 
 const (
@@ -58,6 +59,7 @@ type detector struct {
 	platform    string
 	accounts    HostAccounts
 	scanner     *hostapps.Scanner
+	pluginApps  appinstall.RefreshingReader
 
 	mu     sync.Mutex
 	cached *snapshot
@@ -94,6 +96,7 @@ func newDetector(dependencies Dependencies, catalog ProviderCatalog) *detector {
 		platform:    platform,
 		accounts:    dependencies.Accounts,
 		scanner:     scanner,
+		pluginApps:  dependencies.PluginApps,
 	}
 }
 
@@ -203,7 +206,55 @@ func (detector *detector) probe() (map[string]entryView, map[string]capabilityVi
 			budgetExceeded = append(budgetExceeded, harness.ID)
 		}
 	}
+	detector.mergePluginApps(entries, capabilities)
 	return entries, capabilities, budgetExceeded
+}
+
+// mergePluginApps 把插件声明的 app.install 状态并入入口事实。
+//
+// 只读缓存，绝不在这里等待插件 RPC：缓存未就绪时触发一次后台刷新，本次仍按
+// 未安装返回；下一轮轮询（30 秒缓存）会看到新状态。
+func (detector *detector) mergePluginApps(entries map[string]entryView, capabilities map[string]capabilityView) {
+	source := detector.pluginApps
+	if source == nil {
+		return
+	}
+	// 总是触发一次后台刷新：Refresh 内部有 TTL 与单飞，插件代次切换也能被发现；
+	// 本次探测只读缓存，不等待插件 RPC。
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = source.Refresh(ctx)
+	}()
+	apps := source.Apps()
+	statuses := source.Snapshot()
+	if len(apps) == 0 {
+		return
+	}
+	known := make(map[string]bool, 32)
+	for _, definition := range detector.catalog.List() {
+		known[definition.ID] = true
+	}
+	for _, app := range apps {
+		if app.Provider == "" || !known[app.Provider] || !app.SupportsPlatform(appinstall.CurrentPlatform()) {
+			continue
+		}
+		entry := entries[app.Provider]
+		capability := capabilities[app.Provider]
+		if capability.Label == "" {
+			capability.Label = app.Name
+		}
+		status := statuses[app.AppID]
+		if app.AccountKind() == "cli" {
+			capability.CLI = true
+			entry.CLI = entry.CLI || status.Installed
+		} else {
+			capability.Desktop = true
+			entry.Desktop = entry.Desktop || status.Installed
+		}
+		entries[app.Provider] = entry
+		capabilities[app.Provider] = capability
+	}
 }
 
 // running 返回本次扫描到的运行中账号。

@@ -45,6 +45,15 @@ const (
 	CodeContributionUnavailable              = "plugin_contribution_unavailable"
 	CodeGenerationUnknown                    = "plugin_generation_unknown"
 	CodeCapabilityRequiresInstallers         = "plugin_capability_requires_installers"
+	CodeAppInstallDescriptorInvalid          = "app_install_descriptor_invalid"
+	CodeAppInstallDuplicate                  = "app_install_duplicate"
+	CodeAppInstallStatusInvalid              = "app_install_status_invalid"
+	CodeAppInstallOperationInvalid           = "app_install_operation_invalid"
+	CodeAppInstallOperationUnsupported       = "app_install_operation_unsupported"
+	CodeAppInstallConfirmationRequired       = "app_install_confirmation_required"
+	CodeAppInstallPayloadTooLarge            = "app_install_payload_too_large"
+	CodeAppInstallPluginUnavailable          = "app_install_plugin_unavailable"
+	CodeAppInstallProxyInvalid               = "app_install_proxy_invalid"
 	CodeNetworkConnectorConfirmationRequired = "network_connector_confirmation_required"
 	CodeNetworkConnectorOperationRequired    = "network_connector_operation_required"
 	CodeNetworkConnectorOperationUnsupported = "network_connector_operation_unsupported"
@@ -113,7 +122,7 @@ var Capabilities = []Capability{
 	{ID: "approval", Version: 1, Mode: "serial"},
 	{ID: "ui", Version: 1, Mode: "terminal"},
 	{ID: "network.connector", Version: 1, Mode: "collect"},
-	{ID: "app.install", Version: 1, Mode: "collect", Reserved: true},
+	{ID: "app.install", Version: 1, Mode: "collect"},
 	{ID: "provider", Version: 1, Mode: "terminal"},
 	{ID: "upstream", Version: 1, Mode: "terminal"},
 }

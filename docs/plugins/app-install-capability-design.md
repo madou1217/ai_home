@@ -2,8 +2,8 @@
 
 日期：2026-11-25
 
-状态：契约已实现（capability=`app.install`，`reserved: true`）；宿主调用点（pluginhost → toolkit → app-entries）
-待 Phase 2 接线。已完成的部分见 §11。
+状态：v1 已实现（契约 + 宿主调用点 + 参考插件）；内置安装计划保留为兜底。
+实现记录见 §11 / §12。
 
 目标：让第三方以**签名/可发现的能力插件**声明桌面客户端、IDE 或 CLI 的安装、
 更新、卸载、状态与打开，WebUI 的 Toolkit 与 Accounts 自动出现对应入口；核心只保留
@@ -126,7 +126,7 @@
 - `kind`：`desktop` | `ide` | `cli`。`ide` 在作业层归一到 `desktop`，
   与现有 `normalizeLifecycleKind` 一致。
 - `platforms`：`macos` | `windows` | `linux`；空数组表示全平台。
-- `capabilities.open.mode`：`plugin`（默认，插件自己拉起）或 `host`
+- `open.mode`：`plugin`（默认，插件自己拉起）或 `host`
   （宿主按 `executable` 拉起；v1 仅允许无账号投影的应用）。
 - 每个贡献项最多 32 个应用；文本最长 160 字符；描述最长 512 字符。
 
@@ -423,7 +423,31 @@ Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
 - 插件控制面（`application/plugincontrol`）：`installers` 计入“已声明权限”，
   安装确认页不会漏掉只有安装权限的插件。
 - Doctor：`permissions.installers=true` 但未贡献 `app.install` 时给
-  `plugin_installers_unused` 警告；`app.install` 作为预留能力给
-  `plugin_capability_reserved` 警告，直到宿主调用点接线。
+  `plugin_installers_unused` 警告。
 - 生成物：`contract.generated.go`、`manifest.schema.generated.go`、
   `lib/plugins/sdk/*.generated.*` 已重新生成，`--check` 通过。
+
+## 12. Phase 2：宿主调用点（2026-11-25）
+
+- `internal/runtime/appinstall`：新增中性数据模型与端口（`App` / `Status` /
+  `OperateRequest` / `OperateResult` / `Source` / `RefreshingReader`），
+  pluginhost、toolkit 与 app-entries 不互相导入。
+- `internal/runtime/pluginhost/app_install.go`：
+  - `describe` / `status` / `operate` 三类调用与 30 秒状态缓存、单飞刷新；
+  - 描述与状态校验、重复 appId 拒绝、executable 存在性校验、输出脱敏与审计；
+  - 安装/更新 30 分钟、卸载 5 分钟、打开 30 秒、状态 5 秒超时；
+  - `operate` 对 install/update/uninstall 要求 `Confirmed`，代理只接受无认证
+    loopback HTTP。
+- `internal/runtime/toolkit/apps`：
+  - `Options.PluginApps` 注入端口；应用清单合并插件应用（`source: "plugin"`），
+    内置 appId 冲突时跳过插件项；
+  - `Plan` / `Start` / `CanInstall` 先解析插件应用；
+  - 作业执行分支调用插件 `operate`，步骤映射到 `attempts`，最终状态映射到
+    `result`；打开动作走插件 `open`。
+- `internal/transport/http/webuiappentriesapi`：只读缓存合并插件状态；
+  缓存未就绪时后台刷新，页面不等待插件 RPC；无桌面 Server 的 `serverRuntime`
+  规则不变。
+- `internal/host/aihserver`：app-entries 与 Toolkit 共用 `PluginHostService`。
+- 参考插件 `plugins/antigravity-desktop`：status/open/install/uninstall/update，
+  Mac 与 Windows 真机验证通过；安装计划由插件执行。
+- `app.install` 的 `reserved` 标记已移除；Doctor 不再报预留能力。

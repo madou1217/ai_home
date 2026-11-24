@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	plugincontrol "github.com/madou1217/ai_home/application/plugincontrol"
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	adapterplugins "github.com/madou1217/ai_home/internal/adapters/pluginruntime"
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 )
 
@@ -59,6 +61,17 @@ type Service struct {
 
 	// accountProjectionRegistrar 由组合根注入，供插件登录成功后把投影登记进账号库。
 	accountProjectionRegistrar AccountProjectionRegistrar
+
+	onLog func(string)
+
+	// app.install 的声明/状态缓存与单飞刷新状态；代次变化时整体替换。
+	appInstallMu          sync.Mutex
+	appInstallGeneration  int64
+	appInstallApps        []appinstall.App
+	appInstallStatus      map[string]appinstall.Status
+	appInstallStatusAt    time.Time
+	appInstallRefreshing  bool
+	appInstallRefreshDone chan struct{}
 }
 
 // NewService 创建并装配完整的插件宿主运行服务。
@@ -158,21 +171,30 @@ func NewService(options ServiceOptions) (*Service, error) {
 			_ = invoker.Close()
 			return nil, err
 		}
-		rt.SetOnRuntimeChange(pricingSync.NotifyRuntimeChanged)
 	}
 
-	return &Service{
-		aiHomeDir:      strings.TrimSpace(options.AIHomeDir),
-		auditLog:       auditLog,
-		onAudit:        combinedAudit,
-		registry:       registry,
-		invoker:        invoker,
-		observer:       observer,
-		runtime:        rt,
-		preparer:       preparer,
-		pricingService: pricingSvc,
-		pricingSync:    pricingSync,
-	}, nil
+	service := &Service{
+		aiHomeDir:        strings.TrimSpace(options.AIHomeDir),
+		auditLog:         auditLog,
+		onAudit:          combinedAudit,
+		registry:         registry,
+		invoker:          invoker,
+		observer:         observer,
+		runtime:          rt,
+		preparer:         preparer,
+		pricingService:   pricingSvc,
+		pricingSync:      pricingSync,
+		onLog:            options.OnLog,
+		appInstallStatus: map[string]appinstall.Status{},
+	}
+	rt.SetOnRuntimeChange(func() {
+		if pricingSync != nil {
+			pricingSync.NotifyRuntimeChanged()
+		}
+		// 代次切换后 app.install 声明/状态可能变化：异步刷新，避免页面等插件 RPC。
+		service.scheduleAppInstallRefresh()
+	})
+	return service, nil
 }
 
 // Start 读取期望插件列表激活初始代次，并启动价格同步周期任务。
@@ -186,6 +208,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.runtime.Start(ctx); err != nil {
 		return err
 	}
+	s.scheduleAppInstallRefresh()
 	if s.pricingSync != nil {
 		return s.pricingSync.Start(ctx)
 	}

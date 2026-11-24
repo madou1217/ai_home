@@ -785,8 +785,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	appEntries, err := webuiappentriesapi.NewHandler(webuiappentriesapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
-		AIHomeDir: dependencies.AIHomeDir,
-		Accounts:  hostapps.NewSource(dependencies.AIHomeDir),
+		AIHomeDir:  dependencies.AIHomeDir,
+		Accounts:   hostapps.NewSource(dependencies.AIHomeDir),
+		PluginApps: dependencies.PluginHostService,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建应用入口探测接口失败: %w", err)

@@ -45,16 +45,11 @@ func (aggregator *ResponseAggregator) Marshal() ([]byte, error) {
 	return json.Marshal(response)
 }
 
-// validateSupportedResponseEvent 在修改状态前拒绝无法无损表达的事件。
+// validateSupportedResponseEvent 在修改状态前校验终态。
+// encrypted / redacted reasoning 在 Chat 线协议里没有公开 carrier，由
+// responseState 以空 reasoning 内容块安全收口，不再拒绝整条响应。
 func validateSupportedResponseEvent(event inference.StreamEvent) error {
-	switch typed := event.(type) {
-	case inference.ReasoningCompletedEvent:
-		kind := typed.Content().ReasoningKind()
-		if kind != inference.ReasoningSummary &&
-			kind != inference.ReasoningThinking {
-			return ErrUnsupportedResponseEvent
-		}
-	case inference.ResponseCompletedEvent:
+	if typed, ok := event.(inference.ResponseCompletedEvent); ok {
 		if _, err := mapFinishReason(typed.StopReason()); err != nil {
 			return err
 		}

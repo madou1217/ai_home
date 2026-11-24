@@ -69,14 +69,23 @@ func (state *responseState) completeBlockText(
 	return nil
 }
 
+// visibleReasoningText 只返回 Chat reasoning_content 能公开表达的内容。
+// encrypted / redacted 是 Provider 私有连续性，不能写进 reasoning_content。
+func visibleReasoningText(content inference.ReasoningContent) (string, bool) {
+	switch content.ReasoningKind() {
+	case inference.ReasoningSummary, inference.ReasoningThinking:
+		return content.Text(), true
+	default:
+		return "", false
+	}
+}
+
 // appendReasoning 只累计 Chat reasoning_content 可表达的可见文本。
+// 签名、encrypted、redacted 没有公开 carrier，直接忽略而不是让整条流失败。
 func (state *responseState) appendReasoning(
 	event inference.ReasoningDeltaEvent,
 ) error {
 	switch event.DeltaKind() {
-	case inference.ReasoningDeltaSignature:
-		// 签名由 Canonical 终值校验，Chat 线协议没有对应公开字段。
-		return nil
 	case inference.ReasoningDeltaSummary, inference.ReasoningDeltaThinking:
 		return state.appendBlockText(
 			event.OutputIndex(),
@@ -85,20 +94,19 @@ func (state *responseState) appendReasoning(
 			event.Delta(),
 		)
 	default:
-		return ErrUnsupportedResponseEvent
+		return nil
 	}
 }
 
-// completeReasoning 投影可见摘要或 thinking 文本，拒绝不可读加密连续性。
-// Chat 没有签名字段，因此只输出其公开 reasoning_content 文本。
+// completeReasoning 只投影可见摘要或 thinking 文本。
+// encrypted / redacted 保持空内容块，等待 ContentBlockCompleted 正常收口；
+// Chat 无法表达这些私有连续性，但不能因此判整轮失败。
 func (state *responseState) completeReasoning(
 	event inference.ReasoningCompletedEvent,
 ) error {
 	content := event.Content()
-	kind := content.ReasoningKind()
-	if kind != inference.ReasoningSummary &&
-		kind != inference.ReasoningThinking {
-		return ErrUnsupportedResponseEvent
+	if _, visible := visibleReasoningText(content); !visible {
+		return nil
 	}
 	return state.completeBlockText(
 		event.OutputIndex(),

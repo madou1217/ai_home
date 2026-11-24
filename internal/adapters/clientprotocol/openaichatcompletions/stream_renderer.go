@@ -74,6 +74,9 @@ func (renderer *StreamRenderer) prepare(
 		)
 		return preparedDelta{text: suffix}, err
 	case inference.ReasoningCompletedEvent:
+		if _, visible := visibleReasoningText(typed.Content()); !visible {
+			return preparedDelta{}, nil
+		}
 		suffix, err := renderer.state.textSuffix(
 			typed.OutputIndex(),
 			typed.BlockIndex(),
@@ -119,7 +122,8 @@ func (renderer *StreamRenderer) renderApplied(
 			},
 		)
 	case inference.ReasoningDeltaEvent:
-		if typed.DeltaKind() == inference.ReasoningDeltaSignature {
+		if typed.DeltaKind() != inference.ReasoningDeltaSummary &&
+			typed.DeltaKind() != inference.ReasoningDeltaThinking {
 			return nil, nil
 		}
 		return renderer.renderDelta(chatDeltaWire{

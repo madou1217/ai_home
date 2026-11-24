@@ -26,10 +26,17 @@ export interface Requirement {
   priority: number;
   position: number;
   /** /ui/chat（Work）里的项目路径或远程工作区影子路径。 */
-  workspacePath: string;
-  workspaceLabel: string;
-  workspaceKind: string;
-  mode: RequirementMode;
+	workspacePath: string;
+	workspaceLabel: string;
+	workspaceKind: string;
+	assignedProvider: string;
+	assignedHarness: string;
+	assignedExecution: string;
+	assignedAccountRef: string;
+	assignedModel: string;
+	assignedEffort: string;
+	assignedAt: number;
+	mode: RequirementMode;
   parallel: boolean;
   steps: RequirementStep[];
   refinedAt: number;
@@ -51,18 +58,20 @@ export interface RequirementSchedulerSettings {
   enabled: boolean;
   provider: string;
   model: string;
-  accountRef: string;
-  maxParallel: number;
-  updatedAt: number;
+	accountRef: string;
+	reasoningEffort: string;
+	maxParallel: number;
+	updatedAt: number;
 }
 
 export interface RequirementSchedulerStatus {
   enabled: boolean;
   provider: string;
   model: string;
-  accountRef: string;
-  maxParallel: number;
-  running: number;
+	accountRef: string;
+	reasoningEffort: string;
+	maxParallel: number;
+	running: number;
   queued: number;
   ready: number;
   lastRun: number;
@@ -133,8 +142,8 @@ function snapshotFrom(payload: any): RequirementSnapshot {
   const data = payload?.snapshot || payload || {};
   return {
     requirements: Array.isArray(data.requirements) ? data.requirements : [],
-    settings: data.settings || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', maxParallel: 2, updatedAt: 0 },
-    scheduler: data.scheduler || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', maxParallel: 2, running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
+		settings: data.settings || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', reasoningEffort: 'xhigh', maxParallel: 2, updatedAt: 0 },
+		scheduler: data.scheduler || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', reasoningEffort: 'xhigh', maxParallel: 2, running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
     generatedAt: Number(data.generatedAt) || Date.now()
   };
 }

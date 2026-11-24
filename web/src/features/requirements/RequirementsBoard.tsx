@@ -52,6 +52,11 @@ const STATUS_TONE: Record<RequirementStatus, string> = {
 };
 const MODE_LABEL: Record<RequirementMode, string> = { plan: 'plan', goal: 'goal', loop: 'loop' };
 const PRIORITY_LABEL = ['高', '普通', '低'];
+const EXECUTION_LABEL: Record<string, string> = { native: '原生账号', relay: 'Relay 固定账号', gateway: '网关池化' };
+
+function executionLabel(value: string): string {
+  return EXECUTION_LABEL[value] || (value ? value : '自动选号');
+}
 const COLUMNS: Array<{ key: string; title: string; statuses: RequirementStatus[] }> = [
   { key: 'idea', title: '想法池', statuses: ['idea'] },
   { key: 'ready', title: '待排期', statuses: ['ready'] },
@@ -114,7 +119,7 @@ export default function RequirementsBoard() {
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [form] = Form.useForm<RequirementFormValues>();
   const [importForm] = Form.useForm<{ format: string; workspacePath?: string; content: string }>();
-  const [schedulerForm] = Form.useForm<{ enabled: boolean; provider: string; model: string; accountRef?: string; maxParallel?: number }>();
+  const [schedulerForm] = Form.useForm<{ enabled: boolean; provider: string; model: string; accountRef?: string; reasoningEffort?: string; maxParallel?: number }>();
   const detailRef = useRef<string>('');
 
   const applySnapshot = useCallback((next: RequirementSnapshot) => { setSnapshot(next); setError(''); }, []);
@@ -316,9 +321,10 @@ export default function RequirementsBoard() {
   }
   function openSchedulerSettings() {
     const settings = snapshot?.settings;
-    schedulerForm.setFieldsValue({
+		schedulerForm.setFieldsValue({
       enabled: settings?.enabled ?? true, provider: settings?.provider || 'agy',
-      model: settings?.model || 'gemini-4-neon-xhigh', accountRef: settings?.accountRef || '', maxParallel: settings?.maxParallel || 2
+      model: settings?.model || 'gemini-4-neon-xhigh', accountRef: settings?.accountRef || '',
+      reasoningEffort: settings?.reasoningEffort || 'xhigh', maxParallel: settings?.maxParallel || 2
     });
     setSchedulerOpen(true);
   }
@@ -386,13 +392,23 @@ export default function RequirementsBoard() {
           <Tag icon={<FolderOpenOutlined />}>{workspaceName(requirement)}</Tag>
           {modeTag(requirement.mode)}
           {requirement.parallel ? <Tag color="green">并行</Tag> : null}
+          {requirement.refinedAt ? <Tag color="purple">AI 已优化</Tag> : null}
           {requirement.steps?.length ? <span className={styles.cardSteps}>{stepsDone(requirement)}/{requirement.steps.length} 步</span> : null}
         </div>
+        {requirement.assignedAt ? (
+          <div className={styles.cardAssignment} title={`harness: ${requirement.assignedHarness || requirement.assignedProvider}`}>
+            <span className={styles.assignmentArrow}>→</span>
+            <Tag color="geekblue">{requirement.assignedProvider || '—'}</Tag>
+            <Tag>{requirement.assignedModel || '—'}</Tag>
+            <Tag color="cyan">{requirement.assignedEffort || '—'}</Tag>
+            <span className={styles.assignmentExecution}>{executionLabel(requirement.assignedExecution)}</span>
+          </div>
+        ) : null}
         {(isActive || requirement.status === 'review' || requirement.status === 'done') ? (
           <div className={styles.cardProgress}><Progress percent={progressOf(requirement)} size="small" status={requirement.status === 'blocked' ? 'exception' : undefined} /><span>{requirement.progressNote || '等待执行'}</span></div>
         ) : null}
         <div className={styles.cardActions} onClick={(event) => event.stopPropagation()}>
-          <Tooltip title="AI 拆解"><Button size="small" icon={<RobotOutlined />} loading={isBusy} disabled={!requirement.workspacePath} onClick={() => void mutate(requirement, 'refine')} /></Tooltip>
+          <Tooltip title="AI 优化需求（手动触发）"><Button size="small" className={styles.cardOptimize} icon={<RobotOutlined />} loading={isBusy} disabled={!requirement.workspacePath} onClick={() => void mutate(requirement, 'refine')}>优化</Button></Tooltip>
           {requirement.status === 'idea' ? <Tooltip title="确认进入排期"><Button size="small" icon={<CheckCircleOutlined />} loading={isBusy} disabled={!requirement.workspacePath} onClick={() => void mutate(requirement, 'confirm')} /></Tooltip> : null}
           {requirement.status === 'ready' ? <Tooltip title="立即执行"><Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'dispatch')} /></Tooltip> : null}
           {requirement.status === 'review' ? <Tooltip title="验收完成"><Button size="small" icon={<CheckCircleOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'done')} /></Tooltip> : null}
@@ -420,7 +436,7 @@ export default function RequirementsBoard() {
         <div className={styles.heroActions}>
           <div className={styles.schedulerCard}>
             <div className={styles.schedulerHead}><span className={styles.schedulerTitle}><RobotOutlined /> 调度器</span><Switch size="small" checked={Boolean(snapshot?.settings?.enabled)} onChange={(checked) => void toggleScheduler(checked)} /></div>
-            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || 'agy'} / {scheduler?.model || 'gemini-4-neon-xhigh'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
+            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || 'agy'} / {scheduler?.model || 'gemini-4-neon-xhigh'} / {scheduler?.reasoningEffort || 'xhigh'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
             <div className={styles.schedulerStats}><span>运行 {scheduler?.running ?? 0}</span><span>并行 {scheduler?.maxParallel ?? 2}</span><span>上次 {scheduler?.lastRun ? new Date(scheduler.lastRun).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span></div>
             <Space size={4} wrap><Button size="small" icon={<ThunderboltOutlined />} onClick={() => void runScheduler()}>运行调度</Button><Button size="small" icon={<SettingOutlined />} onClick={openSchedulerSettings}>配置</Button></Space>
           </div>
@@ -467,6 +483,7 @@ export default function RequirementsBoard() {
         title={detail ? <span className={styles.drawerTitle}>{detail.title} {statusTag(detail.status)}</span> : '需求详情'}
         extra={detail ? (
           <Space size={4} wrap>
+            <Button size="small" icon={<RobotOutlined />} loading={busyId === detail.id} onClick={() => void mutate(detail, 'refine')}>AI 优化</Button>
             <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(detail)}>编辑</Button>
             {detail.status === 'idea' ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => void mutate(detail, 'confirm')}>确认排期</Button> : null}
             {detail.status === 'ready' ? <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => void mutate(detail, 'dispatch')}>立即执行</Button> : null}
@@ -480,14 +497,31 @@ export default function RequirementsBoard() {
             <div className={styles.detailTags}>
               {statusTag(detail.status)}{modeTag(detail.mode)}<Tag icon={<FolderOpenOutlined />}>{workspaceName(detail)}</Tag>
               <Tag color={detail.parallel ? 'green' : 'default'}>{detail.parallel ? '可并行' : '顺序执行'}</Tag>
+              {detail.refinedAt ? <Tag color="purple">AI 已优化 · {(detail.steps || []).length} 步</Tag> : null}
               {detail.source !== 'manual' ? <Tag color="gold">{detail.source}</Tag> : null}
             </div>
             {detail.workspacePath ? <code className={styles.pathCode}>{detail.workspacePath}</code> : <div className={styles.inlineNote}><FolderOpenOutlined /> 还没有绑定 Work 工作区。请编辑并选择 /ui/chat（Work）里的项目或远程工作区。</div>}
             <div className={styles.detailProgress}><Progress percent={progressOf(detail)} status={detail.status === 'blocked' ? 'exception' : undefined} /><span>{detail.progressNote || '等待调度'}</span></div>
             {detail.lastError ? <div className={styles.inlineError}><ExclamationCircleOutlined /> {detail.lastError}</div> : null}
+            <section className={styles.detailSection}>
+              <h3>调度安排</h3>
+              {detail.assignedAt ? (
+                <div className={styles.assignmentGrid}>
+                  <div><span>Provider</span><strong>{detail.assignedProvider || '—'}</strong></div>
+                  <div><span>Harness</span><strong>{detail.assignedHarness || detail.assignedProvider || '—'}</strong></div>
+                  <div><span>执行方式</span><strong>{executionLabel(detail.assignedExecution)}</strong></div>
+                  <div><span>账号</span><strong>{detail.assignedAccountRef || '自动选号'}</strong></div>
+                  <div><span>模型</span><strong>{detail.assignedModel || '—'}</strong></div>
+                  <div><span>思考强度</span><strong>{detail.assignedEffort || '—'}</strong></div>
+                  <div><span>分配时间</span><strong>{formatTime(detail.assignedAt)}</strong></div>
+                  <div><span>会话</span><strong>{detail.sessionId || '—'}</strong></div>
+                </div>
+              ) : <div className={styles.muted}>尚未调度。确认排期并执行后，这里会显示实际 provider/harness、原生账号或 Relay、模型与思考强度。</div>}
+            </section>
             <section className={styles.detailSection}><h3>描述</h3><pre className={styles.description}>{detail.description || '暂无描述'}</pre></section>
             <section className={styles.detailSection}>
-              <div className={styles.sectionHead}><h3>执行步骤</h3><Button size="small" icon={<RobotOutlined />} loading={busyId === detail.id} onClick={() => void mutate(detail, 'refine')}>AI 拆解</Button></div>
+              <div className={styles.sectionHead}><h3>执行步骤</h3><Button size="small" icon={<RobotOutlined />} loading={busyId === detail.id} onClick={() => void mutate(detail, 'refine')}>AI 优化</Button></div>
+              <div className={styles.muted}>手动触发；必须已绑定 Work 工作区。AI 会把模糊描述整理成 1..n 步和验收标准。</div>
               {detail.steps?.length ? (
                 <ul className={styles.steps}>{detail.steps.map((step, index) => (
                   <li key={`${detail.id}-${index}`} data-done={step.status === 'done'}>
@@ -570,8 +604,9 @@ export default function RequirementsBoard() {
           </div>
           <div className={styles.formRow}>
             <Form.Item name="accountRef" label="固定账号（可选）"><Input placeholder="留空则由网关自动选号" /></Form.Item>
-            <Form.Item name="maxParallel" label="全局最大并行数"><InputNumber min={1} max={8} style={{ width: '100%' }} /></Form.Item>
+            <Form.Item name="reasoningEffort" label="思考强度"><Select options={[{ label: 'low', value: 'low' }, { label: 'medium', value: 'medium' }, { label: 'high', value: 'high' }, { label: 'xhigh', value: 'xhigh' }, { label: 'max', value: 'max' }]} /></Form.Item>
           </div>
+          <Form.Item name="maxParallel" label="全局最大并行数"><InputNumber min={1} max={8} style={{ width: '100%' }} /></Form.Item>
           <div className={styles.muted}>执行会话使用 /ui/chat（Work）同一套项目/远程工作区与 chat runtime；loop 模式由完成标记 + AI 验收员自动判定是否停止。</div>
         </Form>
       </Modal>

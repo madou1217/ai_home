@@ -272,6 +272,7 @@ func (scheduler *Scheduler) Status() requirements.SchedulerStatus {
 		status.Provider = settings.Provider
 		status.Model = settings.Model
 		status.AccountRef = settings.AccountRef
+		status.ReasoningEffort = settings.ReasoningEffort
 		status.MaxParallel = settings.MaxParallel
 	}
 	snapshot, listErr := scheduler.service.List(ctx)
@@ -360,6 +361,10 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 	if model == "" {
 		model = "gemini-4-neon-xhigh"
 	}
+	effort := strings.ToLower(strings.TrimSpace(request.Effort))
+	if effort == "" {
+		effort = "xhigh"
+	}
 	accountRef := strings.TrimSpace(request.AccountRef)
 	if accountRef == "" {
 		resolved, err := dispatcher.resolveAccount(ctx, provider, model)
@@ -371,7 +376,7 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 	policy := map[string]any{
 		"title":           request.Title,
 		"model":           model,
-		"reasoningEffort": "xhigh",
+		"reasoningEffort": effort,
 		"approvalMode":    "bypass",
 	}
 	if strings.TrimSpace(request.WorkspacePath) == "" {
@@ -412,7 +417,18 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 			return requirements.WorkHandle{}, fmt.Errorf("派发执行任务失败: %w (peer: %v)", directErr, deliveryErr)
 		}
 	}
-	return requirements.WorkHandle{SessionID: session.SessionID, PeerMessageID: peerID}, nil
+	execution := requirements.ExecutionNative
+	if accountRef == "gateway" {
+		execution = requirements.ExecutionRelay
+	}
+	return requirements.WorkHandle{
+		SessionID:     session.SessionID,
+		PeerMessageID: peerID,
+		Assignment: requirements.WorkAssignment{
+			Provider: provider, Harness: provider, Execution: execution,
+			AccountRef: accountRef, Model: model, Effort: effort,
+		},
+	}, nil
 }
 
 // Interrupt 中断执行会话。

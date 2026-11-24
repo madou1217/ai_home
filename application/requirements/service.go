@@ -379,12 +379,30 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 	provider := settings.Provider
 	model := settings.Model
 	accountRef := settings.AccountRef
+	effort := settings.ReasoningEffort
+	assignmentExecution := ""
+	switch accountRef {
+	case "":
+		assignmentExecution = ""
+	case "gateway":
+		assignmentExecution = ExecutionRelay
+	default:
+		assignmentExecution = ExecutionNative
+	}
 
+	now := service.Now()
 	requirement.Status = StatusQueued
 	requirement.Progress = 3
 	requirement.ProgressNote = "调度器已领取，正在创建执行会话"
 	requirement.LastError = ""
-	requirement.UpdatedAt = service.Now()
+	requirement.AssignedProvider = provider
+	requirement.AssignedHarness = provider
+	requirement.AssignedExecution = assignmentExecution
+	requirement.AssignedAccountRef = accountRef
+	requirement.AssignedModel = model
+	requirement.AssignedEffort = effort
+	requirement.AssignedAt = now
+	requirement.UpdatedAt = now
 	if err := service.store.SaveRequirement(ctx, requirement); err != nil {
 		return Requirement{}, err
 	}
@@ -402,6 +420,7 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 		Provider:       provider,
 		Model:          model,
 		AccountRef:     accountRef,
+		Effort:         effort,
 		GoalObjective:  requirement.GoalObjective(),
 	})
 	if startErr != nil {
@@ -415,10 +434,9 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 		service.Notify()
 		return requirement, fmt.Errorf("%w: %v", ErrUnavailable, startErr)
 	}
-	now := service.Now()
 	// Start 期间的 turn 事件可能已经先一步把卡片推进到 blocked/review；
 	// AttachWorkSession 只在卡片仍处于 queued 时才写 running，避免把失败覆盖成执行中。
-	attached, err := service.store.AttachWorkSession(ctx, requirement.ID, handle.SessionID, handle.PeerMessageID, now)
+	attached, err := service.store.AttachWorkSession(ctx, requirement.ID, handle.SessionID, handle.PeerMessageID, handle.Assignment, now)
 	if err != nil {
 		return Requirement{}, err
 	}

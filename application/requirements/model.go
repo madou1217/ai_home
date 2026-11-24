@@ -71,6 +71,13 @@ const (
 	WorkspaceKindSSH   = "ssh"
 )
 
+// 执行方式：原生账号 / Relay 固定账号 / 网关池化。
+const (
+	ExecutionNative  = "native"
+	ExecutionRelay   = "relay"
+	ExecutionGateway = "gateway"
+)
+
 // NormalizeWorkspacePath 校验 Work 工作区路径。
 // 本地项目就是项目绝对路径；SSH 工作区是 Server 生成的影子路径。
 // 需求不再拥有额外的“工作区实体”，只引用 Work 里已经存在的路径。
@@ -97,37 +104,46 @@ type Requirement struct {
 	WorkspacePath  string `json:"workspacePath"`
 	WorkspaceLabel string `json:"workspaceLabel"`
 	WorkspaceKind  string `json:"workspaceKind"`
-	Mode           string `json:"mode"`
-	Parallel       bool   `json:"parallel"`
-	Steps          []Step `json:"steps"`
-	RefinedAt      int64  `json:"refinedAt"`
-	Progress       int    `json:"progress"`
-	ProgressNote   string `json:"progressNote"`
-	SessionID      string `json:"sessionId"`
-	PeerMessageID  string `json:"peerMessageId"`
-	TurnID         string `json:"turnId"`
-	LoopCount      int    `json:"loopCount"`
-	LastError      string `json:"lastError"`
-	Source         string `json:"source"`
-	CreatedAt      int64  `json:"createdAt"`
-	UpdatedAt      int64  `json:"updatedAt"`
-	StartedAt      int64  `json:"startedAt"`
-	CompletedAt    int64  `json:"completedAt"`
+	// 调度安排：记录实际执行的 provider/harness、原生账号或 relay、模型与思考强度。
+	AssignedProvider   string `json:"assignedProvider"`
+	AssignedHarness    string `json:"assignedHarness"`
+	AssignedExecution  string `json:"assignedExecution"`
+	AssignedAccountRef string `json:"assignedAccountRef"`
+	AssignedModel      string `json:"assignedModel"`
+	AssignedEffort     string `json:"assignedEffort"`
+	AssignedAt         int64  `json:"assignedAt"`
+	Mode               string `json:"mode"`
+	Parallel           bool   `json:"parallel"`
+	Steps              []Step `json:"steps"`
+	RefinedAt          int64  `json:"refinedAt"`
+	Progress           int    `json:"progress"`
+	ProgressNote       string `json:"progressNote"`
+	SessionID          string `json:"sessionId"`
+	PeerMessageID      string `json:"peerMessageId"`
+	TurnID             string `json:"turnId"`
+	LoopCount          int    `json:"loopCount"`
+	LastError          string `json:"lastError"`
+	Source             string `json:"source"`
+	CreatedAt          int64  `json:"createdAt"`
+	UpdatedAt          int64  `json:"updatedAt"`
+	StartedAt          int64  `json:"startedAt"`
+	CompletedAt        int64  `json:"completedAt"`
 }
 
 // SchedulerSettings 是调度器的 AI 执行目标配置。
 type SchedulerSettings struct {
-	Enabled     bool   `json:"enabled"`
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	AccountRef  string `json:"accountRef"`
-	MaxParallel int    `json:"maxParallel"`
-	UpdatedAt   int64  `json:"updatedAt"`
+	Enabled         bool   `json:"enabled"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	AccountRef      string `json:"accountRef"`
+	ReasoningEffort string `json:"reasoningEffort"`
+	MaxParallel     int    `json:"maxParallel"`
+	UpdatedAt       int64  `json:"updatedAt"`
 }
 
 // DefaultSchedulerSettings 使用 AWS Server + AGY + Gemini Neon xhigh。
 func DefaultSchedulerSettings() SchedulerSettings {
-	return SchedulerSettings{Enabled: true, Provider: "agy", Model: "gemini-4-neon-xhigh", MaxParallel: 2}
+	return SchedulerSettings{Enabled: true, Provider: "agy", Model: "gemini-4-neon-xhigh", ReasoningEffort: "xhigh", MaxParallel: 2}
 }
 
 // Normalized 清理调度器配置。
@@ -140,6 +156,10 @@ func (settings SchedulerSettings) Normalized() SchedulerSettings {
 	}
 	if settings.Model == "" {
 		settings.Model = "gemini-4-neon-xhigh"
+	}
+	settings.ReasoningEffort = strings.ToLower(strings.TrimSpace(settings.ReasoningEffort))
+	if settings.ReasoningEffort == "" {
+		settings.ReasoningEffort = "xhigh"
 	}
 	if settings.MaxParallel <= 0 {
 		settings.MaxParallel = 2

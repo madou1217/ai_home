@@ -7,8 +7,8 @@ type Store interface {
 	ListRequirements(ctx context.Context) ([]Requirement, error)
 	GetRequirement(ctx context.Context, id string) (Requirement, error)
 	SaveRequirement(ctx context.Context, requirement Requirement) error
-	// AttachWorkSession 只把执行会话身份写回卡片；不改写已被事件推进的状态。
-	AttachWorkSession(ctx context.Context, id, sessionID, peerMessageID string, at int64) (Requirement, error)
+	// AttachWorkSession 把执行会话身份和实际分配写回卡片；不改写已被事件推进的状态。
+	AttachWorkSession(ctx context.Context, id, sessionID, peerMessageID string, assignment WorkAssignment, at int64) (Requirement, error)
 	DeleteRequirement(ctx context.Context, id string) error
 
 	AppendEvent(ctx context.Context, event Event) error
@@ -32,6 +32,16 @@ type ModelClient interface {
 	Complete(ctx context.Context, request ModelRequest) (string, error)
 }
 
+// WorkAssignment 是一次调度实际选中的执行目标。
+type WorkAssignment struct {
+	Provider   string
+	Harness    string
+	Execution  string
+	AccountRef string
+	Model      string
+	Effort     string
+}
+
 // WorkRequest 描述一次执行会话的创建参数。
 type WorkRequest struct {
 	RequirementID  string
@@ -44,13 +54,15 @@ type WorkRequest struct {
 	Provider       string
 	Model          string
 	AccountRef     string
+	Effort         string
 	GoalObjective  string
 }
 
-// WorkHandle 是执行器创建会话后的身份。
+// WorkHandle 是执行器创建会话后的身份与最终分配。
 type WorkHandle struct {
 	SessionID     string
 	PeerMessageID string
+	Assignment    WorkAssignment
 }
 
 // Dispatcher 负责把需求变成真实的 AI 工作会话，并通过 peer 投递任务。
@@ -79,14 +91,15 @@ type DispatchSummary struct {
 
 // SchedulerStatus 是调度器对外状态。
 type SchedulerStatus struct {
-	Enabled     bool   `json:"enabled"`
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	AccountRef  string `json:"accountRef"`
-	MaxParallel int    `json:"maxParallel"`
-	Running     int    `json:"running"`
-	Queued      int    `json:"queued"`
-	Ready       int    `json:"ready"`
-	LastRun     int64  `json:"lastRun"`
-	LastError   string `json:"lastError"`
+	Enabled         bool   `json:"enabled"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	AccountRef      string `json:"accountRef"`
+	ReasoningEffort string `json:"reasoningEffort"`
+	MaxParallel     int    `json:"maxParallel"`
+	Running         int    `json:"running"`
+	Queued          int    `json:"queued"`
+	Ready           int    `json:"ready"`
+	LastRun         int64  `json:"lastRun"`
+	LastError       string `json:"lastError"`
 }

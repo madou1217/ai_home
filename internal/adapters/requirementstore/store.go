@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS requirements (
     workspace_path TEXT NOT NULL DEFAULT '',
     workspace_label TEXT NOT NULL DEFAULT '',
     workspace_kind TEXT NOT NULL DEFAULT '',
+    assigned_provider TEXT NOT NULL DEFAULT '',
+    assigned_harness TEXT NOT NULL DEFAULT '',
+    assigned_execution TEXT NOT NULL DEFAULT '',
+    assigned_account_ref TEXT NOT NULL DEFAULT '',
+    assigned_model TEXT NOT NULL DEFAULT '',
+    assigned_effort TEXT NOT NULL DEFAULT '',
+    assigned_at_ms INTEGER NOT NULL DEFAULT 0,
     mode TEXT NOT NULL DEFAULT 'plan',
     parallel INTEGER NOT NULL DEFAULT 0,
     steps_json TEXT NOT NULL DEFAULT '[]',
@@ -128,11 +135,26 @@ func (store *Store) migrateLegacyWorkspace(ctx context.Context) error {
 		columns[name] = true
 	}
 	_ = rows.Close()
-	for _, column := range []string{"workspace_path", "workspace_label", "workspace_kind"} {
-		if columns[column] {
+	additions := []struct {
+		name string
+		ddl  string
+	}{
+		{"workspace_path", "workspace_path TEXT NOT NULL DEFAULT ''"},
+		{"workspace_label", "workspace_label TEXT NOT NULL DEFAULT ''"},
+		{"workspace_kind", "workspace_kind TEXT NOT NULL DEFAULT ''"},
+		{"assigned_provider", "assigned_provider TEXT NOT NULL DEFAULT ''"},
+		{"assigned_harness", "assigned_harness TEXT NOT NULL DEFAULT ''"},
+		{"assigned_execution", "assigned_execution TEXT NOT NULL DEFAULT ''"},
+		{"assigned_account_ref", "assigned_account_ref TEXT NOT NULL DEFAULT ''"},
+		{"assigned_model", "assigned_model TEXT NOT NULL DEFAULT ''"},
+		{"assigned_effort", "assigned_effort TEXT NOT NULL DEFAULT ''"},
+		{"assigned_at_ms", "assigned_at_ms INTEGER NOT NULL DEFAULT 0"},
+	}
+	for _, addition := range additions {
+		if columns[addition.name] {
 			continue
 		}
-		if _, err := store.db.ExecContext(ctx, "ALTER TABLE requirements ADD COLUMN "+column+" TEXT NOT NULL DEFAULT ''"); err != nil {
+		if _, err := store.db.ExecContext(ctx, "ALTER TABLE requirements ADD COLUMN "+addition.ddl); err != nil {
 			return err
 		}
 	}
@@ -204,6 +226,7 @@ func (store *Store) ListRequirements(ctx context.Context) ([]requirements.Requir
 
 const requirementSelect = `
 	SELECT id, title, description, status, priority, position, workspace_path, workspace_label, workspace_kind,
+	       assigned_provider, assigned_harness, assigned_execution, assigned_account_ref, assigned_model, assigned_effort, assigned_at_ms,
 	       mode, parallel, steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
 	       loop_count, last_error, source, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
 	FROM requirements`
@@ -218,6 +241,8 @@ func scanRequirement(row scanner) (requirements.Requirement, error) {
 	var parallel int
 	err := row.Scan(&requirement.ID, &requirement.Title, &requirement.Description, &requirement.Status,
 		&requirement.Priority, &requirement.Position, &requirement.WorkspacePath, &requirement.WorkspaceLabel, &requirement.WorkspaceKind,
+		&requirement.AssignedProvider, &requirement.AssignedHarness, &requirement.AssignedExecution, &requirement.AssignedAccountRef,
+		&requirement.AssignedModel, &requirement.AssignedEffort, &requirement.AssignedAt,
 		&requirement.Mode, &parallel, &steps, &requirement.RefinedAt, &requirement.Progress, &requirement.ProgressNote, &requirement.SessionID,
 		&requirement.PeerMessageID, &requirement.TurnID, &requirement.LoopCount, &requirement.LastError,
 		&requirement.Source, &requirement.CreatedAt, &requirement.UpdatedAt, &requirement.StartedAt, &requirement.CompletedAt)
@@ -254,13 +279,17 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 	_, err = store.db.ExecContext(ctx, `
 		INSERT INTO requirements (
 			id, title, description, status, priority, position, workspace_path, workspace_label, workspace_kind,
+			assigned_provider, assigned_harness, assigned_execution, assigned_account_ref, assigned_model, assigned_effort, assigned_at_ms,
 			mode, parallel, steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
 			loop_count, last_error, source, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title=excluded.title, description=excluded.description, status=excluded.status,
 			priority=excluded.priority, position=excluded.position, workspace_path=excluded.workspace_path,
 			workspace_label=excluded.workspace_label, workspace_kind=excluded.workspace_kind,
+			assigned_provider=excluded.assigned_provider, assigned_harness=excluded.assigned_harness,
+			assigned_execution=excluded.assigned_execution, assigned_account_ref=excluded.assigned_account_ref,
+			assigned_model=excluded.assigned_model, assigned_effort=excluded.assigned_effort, assigned_at_ms=excluded.assigned_at_ms,
 			mode=excluded.mode, parallel=excluded.parallel, steps_json=excluded.steps_json,
 			refined_at_ms=excluded.refined_at_ms, progress=excluded.progress, progress_note=excluded.progress_note,
 			session_id=excluded.session_id, peer_message_id=excluded.peer_message_id, turn_id=excluded.turn_id,
@@ -268,6 +297,8 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 			updated_at_ms=excluded.updated_at_ms, started_at_ms=excluded.started_at_ms, completed_at_ms=excluded.completed_at_ms`,
 		requirement.ID, requirement.Title, requirement.Description, requirement.Status, requirement.Priority,
 		requirement.Position, requirement.WorkspacePath, requirement.WorkspaceLabel, requirement.WorkspaceKind,
+		requirement.AssignedProvider, requirement.AssignedHarness, requirement.AssignedExecution, requirement.AssignedAccountRef,
+		requirement.AssignedModel, requirement.AssignedEffort, requirement.AssignedAt,
 		requirement.Mode, parallel, string(steps),
 		requirement.RefinedAt, requirement.Progress, requirement.ProgressNote, requirement.SessionID,
 		requirement.PeerMessageID, requirement.TurnID, requirement.LoopCount, requirement.LastError,
@@ -277,17 +308,27 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 
 // AttachWorkSession 绑定执行会话并只在 queued 时推进到 running。
 // CASE 表达式保证 Start 期间已经到达的 blocked/review 事件不会被覆盖。
-func (store *Store) AttachWorkSession(ctx context.Context, id, sessionID, peerMessageID string, at int64) (requirements.Requirement, error) {
+func (store *Store) AttachWorkSession(ctx context.Context, id, sessionID, peerMessageID string, assignment requirements.WorkAssignment, at int64) (requirements.Requirement, error) {
 	_, err := store.db.ExecContext(ctx, `
 		UPDATE requirements SET
 			session_id = ?,
 			peer_message_id = ?,
+			assigned_provider = ?,
+			assigned_harness = ?,
+			assigned_execution = ?,
+			assigned_account_ref = ?,
+			assigned_model = ?,
+			assigned_effort = ?,
+			assigned_at_ms = CASE WHEN assigned_at_ms = 0 THEN ? ELSE assigned_at_ms END,
 			status = CASE WHEN status = 'queued' THEN 'running' ELSE status END,
 			progress = CASE WHEN status = 'queued' AND progress < 10 THEN 10 ELSE progress END,
 			progress_note = CASE WHEN status = 'queued' THEN 'AI 已开始执行' ELSE progress_note END,
 			started_at_ms = CASE WHEN started_at_ms = 0 THEN ? ELSE started_at_ms END,
 			updated_at_ms = ?
-		WHERE id = ?`, strings.TrimSpace(sessionID), strings.TrimSpace(peerMessageID), at, at, strings.TrimSpace(id))
+		WHERE id = ?`,
+		strings.TrimSpace(sessionID), strings.TrimSpace(peerMessageID),
+		assignment.Provider, assignment.Harness, assignment.Execution, assignment.AccountRef,
+		assignment.Model, assignment.Effort, at, at, at, strings.TrimSpace(id))
 	if err != nil {
 		return requirements.Requirement{}, err
 	}

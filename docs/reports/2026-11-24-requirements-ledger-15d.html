@@ -287,7 +287,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <tr>
 <td>办公室 zsh 窗口关不掉</td><td class="meta">11-18</td>
 <td><span class="chip s-已完成">已完成</span></td>
-<td class="ev">2026-11-25 真实浏览器两次验证：临时 Web Shell 分别走「关闭会话」与「结束终端」→ 确认弹窗 → toast「已关闭会话」→ 房间/工位立即移除，close 200，临时目录已删；同时修复 1280×720 停靠栏裁切与状态标签/按钮重叠（3fba9944）。/Users/model 为持久 adopted 工位，未在临时终端注册表内，保持不动</td><td class="sess">—</td></tr>
+<td class="ev">2026-11-25 真实浏览器两次验证：临时 Web Shell 分别走「关闭会话」与「结束终端」→ 确认弹窗 → toast「已关闭会话」→ 房间/工位立即移除；另以空 termId + sessionKey 关闭 durable tmux，close 200 且 tmux socket 退出，覆盖 Server 重启后 termId 失效的路径；同时修复 1280×720 停靠栏裁切与状态标签/按钮重叠（3fba9944）。/Users/model 持久工位保持不动</td><td class="sess">—</td></tr>
 <tr>
 <td>设置页重排、Claude 首屏配置迁到 toolkit</td><td class="meta">11-20</td>
 <td><span class="chip s-已完成">已完成</span></td>

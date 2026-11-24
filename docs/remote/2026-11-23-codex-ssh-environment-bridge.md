@@ -153,18 +153,29 @@ AIH 侧（`app_kv: ssh_connections`，本机 4 条）：
 **关键结论：AIH 的 SSH 事实模型比 Codex 的远端环境模型信息量更大**（认证/跳板/出口/隧道 vs 只有"怎么连 exec-server"）。
 所以同步不能是"逐字段映射"，只能是"在 Codex 侧的两种连接原语里挑一个落地"。
 
-## 6. 推荐的落地方案（供决策，尚未实现）
+## 6. 落地方案与实现状态
 
-### 6.1 AIH → Codex：生成 `environments.toml`（主推）
+### 6.1 AIH → Codex：生成 `environments.toml`（**已实现**：`internal/runtime/codexenvironments`）
 
-- 位置：AIH 已经在管理 Codex 的 `CODEX_HOME` 投影（`codex_default_cli.go`、`codexappconfig`），
-  所以可以按"账号/投影根"写 `<CODEX_HOME>/environments.toml`，不改用户私有目录里的手写内容；
-  已有 `environments.toml` 时按 id 合并（保留用户自定义条目，AIH 条目加前缀 `aih-<connId>`）。
-- 每条 `ssh_connections` 映射为一个环境：
-  - 默认用 `program = "ssh"` + 显式 `-o` 参数（`BatchMode=yes`、`ConnectTimeout`、`StrictHostKeyChecking`
-    沿用 AIH 的 known_hosts 事实），认证尽量复用 AIH 落盘的临时 key/askpass 文件路径；
-  - 需要多跳/出口/反向隧道时用 `url`：由 AIH 建 `DialTCP` 本地监听 → 环境指向 `ws://127.0.0.1:<port>`。
-    这条路径还能顺带解决"password 认证 + 跳板"这些 ssh config 表达不了的情况。
+实现要点（每条都由真机验证支撑）：
+
+- **只写受管块**：`# >>> aih managed environments` 之间由 AIH 全权维护，块外用户内容原样保留；
+  合并幂等，重复同步不产生 diff。
+- **顶层键是封闭集合**：Codex 遇到 `default` / `include_local` / `environments` 之外的任何顶层键
+  都会拒载整份文件（实测报 `unknown field`）。因此合并时会剥离并**上报** `DroppedRootKeys`，
+  而不是把用户的非法内容带进去一起崩掉。
+- **每条连接 → `program = "ssh"` + 显式参数**：`-T -o BatchMode=yes -o ConnectTimeout=12`，
+  非 22 端口用 `-p`，身份文件用 `-i … -o IdentitiesOnly=yes`，跳板用 `-o ProxyJump=…`。
+  目标串必须带 `user@host`：只写 host 会退化成当前用户（实测 `Permission denied (publickey)`）。
+- **探测必须复刻 Codex 的调用方式**：Codex 直接 spawn `ssh <target> codex exec-server`（非登录 shell）。
+  用 `sh -lc` 探测会得到假结论——本机登录 shell 的 PATH 有 `~/.local/bin/codex`，
+  而 Codex 拿不到。修正为裸 `command -v codex` 后，探测结果与真实连接结果一致。
+- **不静默丢弃**：不可用的连接不写入，改为返回稳定原因码
+  （`codex_environment_unreachable` / `codex_environment_remote_codex_missing` /
+  `codex_environment_unsupported_auth` / `codex_environment_invalid_connection`），
+  由调用方原样透出。`password` 认证明确拒绝（需要 askpass 临时凭据，Codex 无法复用）。
+- `url` 模式（AIH 建 `DialTCP` 本地监听 → `ws://127.0.0.1:<port>`）同样真机验证可用，
+  适合后续承接"反向隧道/出口绑定"这类 expr 不出来的连接。
 - 远端前置条件要显式校验：远端 `codex` 在登录 shell `PATH` 内（可用 AIH 已有 `sshhost.Probe` 探）。
 - 命名与 UI：环境 id 稳定为 `aih-<connectionId>`，这样重复生成幂等；删除连接时删对应条目。
 

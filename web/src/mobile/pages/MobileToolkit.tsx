@@ -96,7 +96,7 @@ export default function MobileToolkit(_props: MobilePageProps) {
   const panelId = selection[section];
 
   return (
-    <MobilePage>
+    <MobilePage lead="管理应用集成、运行环境与网络诊断工具。">
       <div className={styles.nav}>
         <HudChips
           ariaLabel="开发工具分区"
@@ -108,9 +108,9 @@ export default function MobileToolkit(_props: MobilePageProps) {
           ariaLabel={`${SECTIONS.find((item) => item.key === section)?.label || ''}二级导航`}
           value={panelId}
           onChange={(key) => setSelection((current) => ({ ...current, [section]: key }))}
-          items={SECTION_ITEMS[section].map((item, index) => ({
+          items={SECTION_ITEMS[section].map((item) => ({
             key: item.id,
-            label: <><span className={styles.navIndex}>{String(index + 1).padStart(2, '0')}</span>{item.label}</>,
+            label: item.label,
             icon: item.icon
           }))}
         />

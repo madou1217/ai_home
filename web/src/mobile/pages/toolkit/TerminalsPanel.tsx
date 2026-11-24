@@ -116,7 +116,10 @@ export default function TerminalsPanel() {
             ))}
           </MonoList>
         ) : (
-          <EmptySignal description="当前平台没有可管理的终端" />
+          <EmptySignal
+            description="当前平台没有可管理的终端"
+            action={<ActionButton icon={<ReloadOutlined />} label="重新探测" loading={loading} onClick={() => void load()} />}
+          />
         )}
       </HudSection>
 

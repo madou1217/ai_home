@@ -314,7 +314,14 @@ export default function AppsPanel() {
                 ))}
               </MonoList>
             ) : (
-              <EmptySignal description="当前分类没有应用" />
+              <EmptySignal
+                description="当前分类没有应用"
+                action={category !== 'ALL' ? (
+                  <ActionButton label="查看全部应用" tone="primary" onClick={() => setCategory('ALL')} />
+                ) : (
+                  <ActionButton icon={<ReloadOutlined />} label="重新探测" loading={loading} onClick={() => { void fetchApps(); void fetchUpgradeStatus(); }} />
+                )}
+              />
             )}
           </HudSection>
         </>

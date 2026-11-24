@@ -23,6 +23,7 @@ import {
   TelemetryTile
 } from '@/mobile/ui';
 import type { HudTone } from '@/mobile/ui';
+import { SettingStatusTag, type SettingStatusState } from '@/components/ui/SettingStatusTag';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText } from './toolkit-parts';
 import styles from '../MobileToolkit.module.css';
 
@@ -119,19 +120,23 @@ export default function DiagnosticsPanel() {
             </div>
           </HudCard>
 
-          {toolTargets.map((target) => (
-            <ManualProxyCard
-              key={target.id}
-              code={target.scopeLabel}
-              title={`${target.name} 代理`}
-              target={target.id}
-              value={proxyInputs[target.id] || ''}
-              onChange={(value) => setProxyInput(target.id, value)}
-              saving={savingTarget === target.id}
-              onSave={saveProxy}
-              hint="手动值是用户明确输入，不会自动回退到本地默认端口；保存后重新读取实际配置。"
-            />
-          ))}
+          {toolTargets.map((target) => {
+            const currentSaved = proxyData.tools[target.id]?.proxyUrl || '';
+            return (
+              <ManualProxyCard
+                key={target.id}
+                code={target.scopeLabel}
+                title={`${target.name} 代理`}
+                target={target.id}
+                value={proxyInputs[target.id] || ''}
+                savedValue={currentSaved}
+                onChange={(value) => setProxyInput(target.id, value)}
+                saving={savingTarget === target.id}
+                onSave={saveProxy}
+                hint="保存后重新读取实际配置，不会回退到本地默认端口。"
+              />
+            );
+          })}
 
           {proxyData.tools.git?.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 ? (
             <HudCard code="GIT SCOPED" title="Git 特定作用域配置">
@@ -191,7 +196,18 @@ export default function DiagnosticsPanel() {
             ))}
           </MonoList>
         ) : (
-          <EmptySignal description="没有端点测试结果" />
+          <EmptySignal
+            description="没有端点测试结果"
+            action={(
+              <ActionButton
+                icon={<ThunderboltOutlined />}
+                label="开始测试"
+                tone="primary"
+                loading={connectivityLoading}
+                onClick={() => void testConnectivity(probeRoute)}
+              />
+            )}
+          />
         )}
       </HudSection>
 
@@ -234,18 +250,27 @@ export default function DiagnosticsPanel() {
   );
 }
 
-function ManualProxyCard({ code, title, target, value, onChange, saving, onSave, hint }: {
+function ManualProxyCard({ code, title, target, value, savedValue, onChange, saving, onSave, hint }: {
   code: string;
   title: string;
   target: ProxyTarget;
   value: string;
+  savedValue: string;
   onChange: (value: string) => void;
   saving: boolean;
   onSave: (target: ProxyTarget, value: string, action: string) => Promise<void>;
   hint: string;
 }) {
+  const status: SettingStatusState = saving
+    ? 'saving'
+    : value.trim() !== savedValue.trim()
+      ? 'dirty'
+      : savedValue.trim()
+        ? 'saved'
+        : 'unset';
+
   return (
-    <HudCard code={code} title={title}>
+    <HudCard code={code} title={title} extra={<SettingStatusTag status={status} compact />}>
       <HudField label="代理地址" hint={hint}>
         <Input
           value={value}

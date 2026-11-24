@@ -362,7 +362,7 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
 .mhud-card.is-interactive { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .mhud-card.is-interactive:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); }
 .mhud-card.is-interactive:active { background: color-mix(in srgb, var(--color-accent) 7%, var(--hud-panel-bg)); border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border)); }
-.mhud-card.is-active { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent); }
+.mhud-card.is-active { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 5%, var(--hud-panel-bg)); }
 .mhud-card:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .mhud-card__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-3) var(--space-5); min-width: 0; }
 .mhud-card__titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 140px; }

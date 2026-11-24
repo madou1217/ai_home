@@ -88,7 +88,7 @@ export default function MobileInstallGuide(_props: MobilePageProps) {
           <HudIconButton icon={<ReloadOutlined />} label="重新读取" loading={loading} onClick={() => void load(platform || undefined)} />
         </MobileToolbar>
       )}
-      lead="一次只查看一个系统；命令仅生成和复制，不会自动执行。"
+      lead="按目标系统与工具链生成可复制安装命令，不会自动执行。"
     >
       {error ? <InlineError title="指南读取失败" detail={error} onRetry={() => void load(platform || undefined)} retrying={loading} /> : null}
 
@@ -131,7 +131,18 @@ export default function MobileInstallGuide(_props: MobilePageProps) {
                 ))}
               </MonoList>
             ) : (
-              <EmptySignal description="当前系统没有对应工具指南" />
+              <EmptySignal
+                description="当前系统没有对应工具指南"
+                action={(
+                  <HudIconButton
+                    icon={<ReloadOutlined />}
+                    label="重新读取"
+                    showLabel
+                    loading={loading}
+                    onClick={() => void load(platform || undefined)}
+                  />
+                )}
+              />
             )}
           </HudSection>
         </>

@@ -127,7 +127,7 @@ export default function AliasesPanel() {
                   <span className="mhud-row__side">
                     <span className={`mhud-status ${enabled ? 'mhud-tone--ok' : 'mhud-tone--muted'}`}>
                       <span className={`hud-led ${enabled ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
-                      {enabled ? 'ON' : 'OFF'}
+                      {enabled ? '已启用' : '已停用'}
                     </span>
                     <span className={styles.aliasPriority}>P{Number(group.records[0]?.priority) || 0}</span>
                   </span>
@@ -157,26 +157,28 @@ export default function AliasesPanel() {
         ) : null}
       >
         {detail ? (
-          <KeyValue
-            rows={[
-              { key: 'alias', label: '别名', value: detail.alias, tone: 'info' },
-              ...detail.records.map((record) => ({
-                key: `target:${record.id}`,
-                label: '目标模型',
-                value: `${targetText(record)} ← ${formatAliasTargetProvider(record.targetProvider)}`
-              })),
-              { key: 'count', label: '记录数', value: detail.records.length },
-              { key: 'priority', label: '优先级', value: Number(detail.records[0]?.priority) || 0 },
-              { key: 'scope', label: '请求范围', value: formatAliasScope(detail.provider), mono: false },
-              ...(detail.description ? [{ key: 'desc', label: '备注', value: detail.description, mono: false }] : []),
-              {
-                key: 'status',
-                label: '状态',
-                value: detail.enabled ? '启用' : '禁用',
-                tone: detail.enabled ? 'ok' as const : 'muted' as const
-              }
-            ]}
-          />
+          <div className={styles.sheetStack}>
+            <KeyValue
+              rows={[
+                { key: 'alias', label: '别名', value: detail.alias, tone: 'info' },
+                ...detail.records.map((record) => ({
+                  key: `target:${record.id}`,
+                  label: '目标模型',
+                  value: `${targetText(record)} ← ${formatAliasTargetProvider(record.targetProvider)}`
+                })),
+                { key: 'count', label: '记录数', value: detail.records.length },
+                { key: 'priority', label: '优先级', value: Number(detail.records[0]?.priority) || 0 },
+                { key: 'scope', label: '请求范围', value: formatAliasScope(detail.provider), mono: false },
+                ...(detail.description ? [{ key: 'desc', label: '备注', value: detail.description, mono: false }] : []),
+                {
+                  key: 'status',
+                  label: '状态',
+                  value: detail.enabled ? '已启用' : '已停用',
+                  tone: detail.enabled ? 'ok' as const : 'muted' as const
+                }
+              ]}
+            />
+          </div>
         ) : null}
       </DetailSheet>
 

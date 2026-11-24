@@ -52,17 +52,17 @@ type TabKey = 'connections' | 'workspaces';
 type ConnFormState = { editing: SshConnection | null; version: number };
 type WsFormState = { editing: SshWorkspace | null; connectionId: string; version: number };
 
-/** 行内测试状态：直接显示真实的 testConnection 结果枚举（LED + 大写等宽文字）。 */
-const TEST_TONE: Record<string, HudTone> = {
-  reachable: 'ok',
-  'auth-required': 'warn',
-  unreachable: 'err'
+/** 行内测试状态：将连接测试结果映射为清晰中文与语义色调。 */
+const TEST_STATUS_MAP: Record<string, { tone: HudTone; label: string }> = {
+  reachable: { tone: 'ok', label: '已连接' },
+  'auth-required': { tone: 'warn', label: '待认证' },
+  unreachable: { tone: 'err', label: '连接失败' }
 };
 
 function testBadge(state?: SshTestState) {
-  if (!state) return null;
-  if (state.loading) return { tone: 'info' as HudTone, label: 'TESTING' };
-  return state.result ? { tone: TEST_TONE[state.result.status] || 'muted', label: state.result.status } : null;
+  if (!state) return { tone: 'muted' as HudTone, label: '未检测' };
+  if (state.loading) return { tone: 'info' as HudTone, label: '检测中' };
+  return state.result ? (TEST_STATUS_MAP[state.result.status] || { tone: 'muted' as HudTone, label: state.result.status }) : { tone: 'muted' as HudTone, label: '未检测' };
 }
 
 /**
@@ -241,14 +241,12 @@ export default function MobileSshHosts(_props: MobilePageProps) {
                       <span className="mhud-row__title">{conn.label}</span>
                       <span className="mhud-row__meta">{formatSshTarget(conn)}</span>
                     </span>
-                    <span className="mhud-row__side">
+        <span className="mhud-row__side">
                       <span className={styles.auth}>{SSH_AUTH_LABELS[conn.authType]}</span>
-                      {badge ? (
-                        <span className={`mhud-status mhud-tone--${badge.tone}`}>
-                          <span className={`hud-led hud-led--${badge.tone}${badge.tone === 'info' ? ' hud-led--live' : ''}`} aria-hidden="true" />
-                          {badge.label}
-                        </span>
-                      ) : null}
+                      <span className={`mhud-status mhud-tone--${badge.tone}`}>
+                        <span className={`hud-led hud-led--${badge.tone === 'muted' ? 'info' : badge.tone}${badge.tone === 'info' ? ' hud-led--live' : ''}`} aria-hidden="true" />
+                        {badge.label}
+                      </span>
                     </span>
                   </SwipeRow>
                 );
@@ -271,12 +269,16 @@ export default function MobileSshHosts(_props: MobilePageProps) {
           ) : filteredWorkspaces.length === 0 ? (
             <EmptySignal
               title="NO WORKSPACE"
-              description="暂无项目工作空间"
+              description={connections.length > 0 ? '暂无项目工作空间' : '请先添加 SSH 远程连接，再创建工作空间'}
               action={connections.length > 0 ? (
                 <Button type="primary" icon={<FolderAddOutlined />} onClick={() => showWsForm(undefined, filterConnectionId)}>
                   创建工作空间
                 </Button>
-              ) : undefined}
+              ) : (
+                <Button type="primary" icon={<LinkOutlined />} onClick={() => showConnForm()}>
+                  添加连接
+                </Button>
+              )}
             />
           ) : (
             <MonoList ariaLabel="项目工作空间" className="aih-fade-in">
@@ -412,23 +414,23 @@ export default function MobileSshHosts(_props: MobilePageProps) {
           >
             <RemoteFormItem
               name="label"
-              label="连接名称 (Label)"
+              label="连接名称"
               required
-              rules={[{ required: true, message: '请输入显示名称，例如: 阿里云开发服务器' }]}
+              rules={[{ required: true, message: '请输入连接名称' }]}
             >
               <Input placeholder="例如: Aliyun-Box" aria-label="连接名称" />
             </RemoteFormItem>
             <RemoteFormItem
               name="host"
-              label="主机名 / IP (Host)"
+              label="主机名 / IP"
               required
-              rules={[{ required: true, message: '请输入主机名或IP' }]}
+              rules={[{ required: true, message: '请输入主机名或 IP' }]}
             >
               <Input placeholder="例如: 192.168.1.120" autoCapitalize="off" autoCorrect="off" aria-label="主机名或 IP" />
             </RemoteFormItem>
             <RemoteFormItem
               name="port"
-              label="端口 (Port)"
+              label="端口"
               required
               rules={[{ required: true, message: '请输入端口' }]}
             >
@@ -436,9 +438,9 @@ export default function MobileSshHosts(_props: MobilePageProps) {
             </RemoteFormItem>
             <RemoteFormItem
               name="user"
-              label="用户名 (User)"
+              label="用户名"
               required
-              rules={[{ required: true, message: '请输入连接用户名' }]}
+              rules={[{ required: true, message: '请输入用户名' }]}
             >
               <Input placeholder="例如: root 或 ubuntu" autoCapitalize="off" autoCorrect="off" aria-label="用户名" />
             </RemoteFormItem>
@@ -452,10 +454,10 @@ export default function MobileSshHosts(_props: MobilePageProps) {
             {authType === 'key-file' ? (
               <RemoteFormItem
                 name="identityFile"
-                label="当前 Server 上的私钥路径"
+                label="私钥路径"
                 required
-                hint="例如 ~/.ssh/aws.pem；文件必须位于当前 AIH Server 运行用户的 ~/.ssh，AIH 只保存路径，不复制私钥内容。"
-                rules={[{ required: true, message: '请输入当前 Server 上的私钥路径' }]}
+                hint="位于当前 Server 运行用户的 ~/.ssh，仅保存路径，不复制私钥。"
+                rules={[{ required: true, message: '请输入私钥路径' }]}
               >
                 <Input placeholder="~/.ssh/aws.pem" autoCapitalize="off" autoCorrect="off" aria-label="私钥路径" />
               </RemoteFormItem>
@@ -465,7 +467,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
                 name="privateKey"
                 label="私钥内容"
                 required
-                rules={[{ required: true, message: '请粘贴 SSH 私钥 (PEM/OpenSSH格式)' }]}
+                rules={[{ required: true, message: '请粘贴 SSH 私钥' }]}
               >
                 <Input.TextArea
                   rows={6}
@@ -481,9 +483,9 @@ export default function MobileSshHosts(_props: MobilePageProps) {
             {authType === 'password' ? (
               <RemoteFormItem
                 name="password"
-                label="连接密码 (Password)"
+                label="连接密码"
                 required
-                rules={[{ required: true, message: '请输入远程账户连接密码' }]}
+                rules={[{ required: true, message: '请输入连接密码' }]}
               >
                 <Input.Password placeholder="密码" autoComplete="new-password" aria-label="连接密码" />
               </RemoteFormItem>
@@ -497,7 +499,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
         open={Boolean(wsForm)}
         onClose={() => setWsForm(null)}
         code={wsForm?.editing ? 'EDIT WS' : 'NEW WS'}
-        title={wsForm?.editing ? '编辑项目工作空间' : '创建远程项目工作空间'}
+        title={wsForm?.editing ? '编辑工作空间' : '创建工作空间'}
         maxHeight="96dvh"
         footer={(
           <>
@@ -520,31 +522,31 @@ export default function MobileSshHosts(_props: MobilePageProps) {
           >
             <RemoteFormItem
               name="connectionId"
-              label="关联物理连接 (SSH Connection)"
+              label="关联连接"
               required
-              rules={[{ required: true, message: '请选择一个有效的远程 SSH 连接' }]}
+              rules={[{ required: true, message: '请选择远程连接' }]}
             >
               <Select
-                aria-label="关联物理连接"
+                aria-label="关联连接"
                 options={connections.map((conn) => ({ label: `${conn.label} (${conn.user}@${conn.host})`, value: conn.id }))}
               />
             </RemoteFormItem>
             <RemoteFormItem
               name="label"
-              label="项目空间名称 (Label)"
+              label="工作空间名称"
               required
-              rules={[{ required: true, message: '请输入该项目空间在 Web 上的名称' }]}
+              rules={[{ required: true, message: '请输入工作空间名称' }]}
             >
-              <Input placeholder="例如: 订单微服务项目" aria-label="项目空间名称" />
+              <Input placeholder="例如: 订单微服务项目" aria-label="工作空间名称" />
             </RemoteFormItem>
-            <HudField label="远端绝对路径 (RemoteRoot)" required>
+            <HudField label="远端绝对路径" required>
               <div className={styles.rootPicker}>
                 <Form.Item
                   name="remoteRoot"
                   className={remote.formItem}
-                  rules={[{ required: true, message: '请选择远程项目绝对路径' }]}
+                  rules={[{ required: true, message: '请选择远端目录' }]}
                 >
-                  <Input placeholder="不准手填，请点击下方选择目录" readOnly className={remote.mono} aria-label="远端绝对路径" />
+                  <Input placeholder="点击下方按钮选择远端目录" readOnly className={remote.mono} aria-label="远端绝对路径" />
                 </Form.Item>
                 <Button block icon={<FolderOpenOutlined />} onClick={() => dirBrowser.openFor(wsConnectionId || '')}>
                   选择目录

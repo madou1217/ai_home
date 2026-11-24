@@ -76,6 +76,8 @@ func runCodexDefaultCLI(ctx context.Context, args []string, runtime commandRunti
 	if _, healErr := codexappconfig.HealConfigFile(configPath, codexappconfig.HealOptions{}); healErr != nil {
 		return healErr
 	}
+	// environments.toml 是未文档化接口：同步失败绝不影响 CLI 启动。
+	syncCodexEnvironments(ctx, aiHome, codexHome)
 	repairProjectedRollouts(ctx, codexHome)
 
 	if !codexappconfig.HasCodexModelProviderArg(forwardArgs) {

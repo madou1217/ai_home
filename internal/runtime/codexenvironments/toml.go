@@ -50,6 +50,8 @@ type MergeResult struct {
 //     这件事通过 MergeResult 暴露，不做静默处理。
 func Merge(existing string, entries []Entry, includeLocal bool) MergeResult {
 	cleaned := stripManagedBlock(existing)
+	// 必须在剥离 default 之前读取用户的默认环境，否则永远读不到。
+	userDefault := parseRootString(cleaned, rootKeyDefault)
 	userBody, droppedKeys := stripRootKey(cleaned, rootKeyDefault)
 
 	kept := dedupeEntries(entries)
@@ -58,7 +60,6 @@ func Merge(existing string, entries []Entry, includeLocal bool) MergeResult {
 	// 受管 id 与用户 id 冲突时移除用户条目，并记录。
 	userBody, conflicts := dropUserEntryIDs(userBody, kept)
 
-	userDefault := parseRootString(stripRootKeyOnly(userBody, rootKeyIncludeLocal), rootKeyDefault)
 	defaultID := userDefault
 	if defaultID == "" {
 		defaultID = firstEntryID(kept)
@@ -158,8 +159,9 @@ func stripRootKey(text string, key string) (string, []string) {
 				dropped = appendUnique(dropped, name)
 				continue
 			}
-			if ok && name == key {
-				// 被剥离的默认值不需要保留，稍后统一重写。
+			// default 由本函数重写，include_local 与 environments 稍后统一重建，
+			// 所以这三类顶层标量都不保留原行——留下会写出重复键。
+			if ok && (name == key || name == rootKeyIncludeLocal || name == rootKeyEnvironments) {
 				continue
 			}
 			out = append(out, line)
@@ -174,26 +176,6 @@ func stripRootKey(text string, key string) (string, []string) {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n"), dropped
-}
-
-// stripRootKeyOnly 只移除标量行，不处理表（用于读取 include_local 前的清理）。
-func stripRootKeyOnly(text, key string) string {
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
-	seenHeader := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !seenHeader && strings.HasPrefix(trimmed, "[") {
-			seenHeader = true
-		}
-		if !seenHeader {
-			if name, _, ok := splitAssignment(trimmed); ok && name == key {
-				continue
-			}
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
 }
 
 func appendUnique(values []string, value string) []string {

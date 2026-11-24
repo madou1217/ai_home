@@ -222,6 +222,37 @@ winget（claude cli、claude desktop、codex desktop）。
 exit=0
 ```
 
+### 8. 更正：winget **可以**代理，只是开关默认关闭
+
+先前把它判为「唯一不可代理」也是错的。真机（winget v1.29.380）核实：
+
+| 机制 | 结果 |
+| --- | --- |
+| `HTTP(S)_PROXY` | 忽略 |
+| `DefaultWebProxy` | 忽略 |
+| `--proxy`（默认） | **被禁用**：`This feature needs to be enabled by administrators. To run: winget settings --enable ProxyCommandLineOptions as administrator` |
+| `--proxy`（启用后） | 生效 |
+| `--proxy` + 认证入口 | `0x80190197 Proxy authentication required (407)` |
+| `--proxy` + **匿名**入口 | 源、清单、安装包下载全部走代理 |
+
+`--proxy` 会把 URL 里的 userinfo 丢掉，所以认证入口必然 407。因此租约现在
+**同时**开一个匿名 loopback 入口（与系统代理入口同一安全边界），winget 计划
+在可用时自动注入 `--proxy <该地址>`；地址不带 userinfo。
+
+另修一个由此暴露的真实缺陷：`proxyActive` 曾由「环境里恰好有没有代理变量」
+推导，导致自动代理的**直连轮**也认为自己配了代理，把 winget 误剔除。现在只看
+本轮实际拿到哪个出口。
+
+启用 `ProxyCommandLineOptions` 是**机器级管理员设置**，我们不静默修改；未启用时
+winget 会以自己的退出码和提示说明，用户可自行开启。
+
+### 并行修掉的同类缺陷
+
+- `sshExecutor` 忽略 `UnsetEnv`（远端残留 `ALL_PROXY`）
+- 代理注入只写在 `buildPowerShellScriptPlan`，8 个 PowerShell 计划绕过
+- Windows 代理检查只看 `kind=cli`，且自动代理轮传 `proxyActive=false`
+- 检查遇第一个不可代理计划就整体拒绝（winget 让 claude 整条链路失败）
+
 ### 仍未验证
 
 - **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前

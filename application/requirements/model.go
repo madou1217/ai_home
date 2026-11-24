@@ -78,6 +78,12 @@ const (
 	ExecutionGateway = "gateway"
 )
 
+// SupportsIndependentEffort 表示该 Provider 的会话策略确实会消费独立 effort。
+// 目前 Codex 的原生驱动读 policy.reasoningEffort；AGY 则由模型变体决定。
+func SupportsIndependentEffort(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), "codex")
+}
+
 // DeriveEffortFromModel 从模型 ID 的 -low/-medium/-high/-xhigh 后缀推导思考强度。
 // 这是 AGY 模型目录的真实表达方式：选中变体就是选择强度。
 func DeriveEffortFromModel(model string) string {
@@ -173,8 +179,8 @@ func (settings SchedulerSettings) Normalized() SchedulerSettings {
 	if derived := DeriveEffortFromModel(settings.Model); derived != "" {
 		// AGY 等 Provider 把思考强度编码在模型 ID 里；记录必须与真实模型一致。
 		settings.ReasoningEffort = derived
-	} else if settings.Provider == "agy" {
-		// AGY 的 composer catalog 不提供独立 effort；不要伪装成 xhigh。
+	} else if settings.Provider == "agy" || !SupportsIndependentEffort(settings.Provider) {
+		// 没有独立 effort 通道的 Provider 不要伪装成 xhigh。
 		settings.ReasoningEffort = ""
 	} else if settings.ReasoningEffort == "" {
 		settings.ReasoningEffort = "xhigh"

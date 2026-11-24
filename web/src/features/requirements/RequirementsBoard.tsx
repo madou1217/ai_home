@@ -277,17 +277,18 @@ export default function RequirementsBoard() {
   }, [schedulerLabels, schedulerModels, schedulerProvider, snapshot?.settings?.model, snapshot?.settings?.provider]);
 
   const derivedSchedulerEffort = effortFromModel(String(schedulerModel || ''));
-  const schedulerEffortDisabled = Boolean(derivedSchedulerEffort) || schedulerProvider === 'agy';
+  const schedulerIndependentEffort = schedulerProvider === 'codex';
+  const schedulerEffortDisabled = Boolean(derivedSchedulerEffort) || schedulerProvider === 'agy' || !schedulerIndependentEffort;
   const schedulerEffortOptions = useMemo(() => {
     if (derivedSchedulerEffort) return [{ label: `${derivedSchedulerEffort}（由模型决定）`, value: derivedSchedulerEffort }];
-    if (schedulerProvider === 'agy') return [{ label: '默认（由模型决定）', value: '' }];
+    if (!schedulerIndependentEffort) return [{ label: schedulerProvider === 'agy' ? '默认（由模型变体决定）' : '默认（由 Provider 决定）', value: '' }];
     return ['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => ({ label: effort, value: effort }));
-  }, [derivedSchedulerEffort, schedulerProvider]);
+  }, [derivedSchedulerEffort, schedulerIndependentEffort, schedulerProvider]);
 
   function effectiveSchedulerEffort(provider: string | undefined, model: string, fallback?: string): string {
     const derived = effortFromModel(model);
     if (derived) return derived;
-    if (provider === 'agy') return '';
+    if (provider !== 'codex') return '';
     return fallback || 'xhigh';
   }
 
@@ -709,9 +710,11 @@ export default function RequirementsBoard() {
               label="思考强度"
               extra={derivedSchedulerEffort
                 ? '该模型的思考强度由模型 ID 决定'
-                : schedulerProvider === 'agy'
-                  ? 'AGY 不提供独立 effort，模型变体即强度'
-                  : '按 Provider 支持选择'}
+                : schedulerIndependentEffort
+                  ? 'Codex 原生会话会消费这个 effort'
+                  : schedulerProvider === 'agy'
+                    ? 'AGY 不提供独立 effort，模型变体即强度'
+                    : '该 Provider 暂不暴露独立 effort，使用默认值'}
             >
               <Select disabled={schedulerEffortDisabled} options={schedulerEffortOptions} />
             </Form.Item>

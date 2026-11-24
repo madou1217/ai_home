@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/runtime/platform"
 )
 
 // DoctorCheck 是单项自检结果。
@@ -85,10 +87,8 @@ func (s *Service) Doctor(shellOption, rcOverride string, explicit SnippetOverrid
 
 	binPath := status.AihBinPath
 	binOK := false
-	if binPath != "" {
-		if info, err := os.Stat(binPath); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			binOK = true
-		}
+	if binPath != "" && platform.IsExecutable(binPath) {
+		binOK = true
 	}
 	push("aih 路径可用", binOK, binPath)
 

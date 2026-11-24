@@ -301,7 +301,8 @@ func parseNativeFlagChoices(description string) []string {
 	seen := make(map[string]struct{}, len(parts))
 	for _, part := range parts {
 		value := trimChoiceQuotes(part)
-		if value == "" || !nativeFlagValuePattern.MatchString(value) {
+		if value == "" || strings.HasSuffix(value, ":") || strings.ContainsAny(value, " \t") ||
+			!nativeFlagValuePattern.MatchString(value) {
 			continue
 		}
 		if _, exists := seen[value]; exists {
@@ -374,16 +375,22 @@ func parseNativeHelpFlags(text string) []nativeFlagEntry {
 			spec = strings.TrimSpace(trimmed[:location[0]])
 			description = strings.TrimSpace(trimmed[location[1]:])
 		}
-		if description == "" {
-			for lookahead := index + 1; lookahead < len(lines) && lookahead <= index+3; lookahead++ {
-				next := strings.TrimSpace(lines[lookahead])
-				if next == "" {
-					continue
-				}
-				if strings.HasPrefix(next, "-") || strings.HasSuffix(next, ":") {
-					break
-				}
-				description = next
+		// help 的说明会按终端宽度换行（Windows 的 claude 尤其明显）：
+		// 把紧随其后的缩进续行拼回来，否则 "(choices: ...)" 会被截断成空枚举。
+		for lookahead := index + 1; lookahead < len(lines); lookahead++ {
+			raw := lines[lookahead]
+			next := strings.TrimSpace(raw)
+			if next == "" {
+				break
+			}
+			if strings.HasPrefix(next, "-") {
+				break
+			}
+			if !strings.HasPrefix(raw, " ") && !strings.HasPrefix(raw, "\t") {
+				break
+			}
+			description = strings.TrimSpace(description + " " + next)
+			if len(description) > 400 {
 				break
 			}
 		}

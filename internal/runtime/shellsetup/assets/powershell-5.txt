@@ -86,7 +86,8 @@ Register-ArgumentCompleter -Native -CommandName aih -ScriptBlock {
             $parts = $line -split [string]$global:_AIH_SHELL_US
             $value = $parts[0]
             $desc = ""
-            if ($parts.Count -ge 2) { $desc = $parts[1] }
+            if ($parts.Count -ge 2 -and $null -ne $parts[1]) { $desc = [string]$parts[1] }
+            if ([string]::IsNullOrEmpty($desc)) { $desc = ' ' }
             [System.Management.Automation.CompletionResult]::new($value, $value, "ParameterValue", $desc)
         }
     } catch { }
@@ -115,4 +116,43 @@ function global:aih {
 }
 
 try { Set-AihShellEnterHandler } catch { }
+
+# ---- 裸 - / -- 的兜底 ----
+# PS 5.1 的 TabExpansion2 对「当前词正好是 - 或 --」直接短路，不会调用 native
+# completer；这里包一层，只在这种形态下自己查 aih，其余原样交给系统实现。
+if (-not (Get-Command _aih_original_tabexpansion2 -ErrorAction SilentlyContinue)) {
+    $aihOriginalTabExpansion = Get-Command TabExpansion2 -CommandType Function -ErrorAction SilentlyContinue
+    if ($aihOriginalTabExpansion) {
+        Set-Item -Path function:global:_aih_original_tabexpansion2 -Value $aihOriginalTabExpansion.ScriptBlock
+    }
+}
+if (Get-Command _aih_original_tabexpansion2 -ErrorAction SilentlyContinue) {
+    function global:TabExpansion2 {
+        param($inputScript, $cursorColumn = $inputScript.Length)
+        $line = $inputScript.Substring(0, [Math]::Min($cursorColumn, $inputScript.Length))
+        if ($line -match '^(?<pre>.*)\s(?<token>-{1,2})$') {
+            $token = $Matches['token']
+            $words = @($Matches['pre'].TrimEnd() -split '\s+')
+            $leaf = Split-Path -Leaf $words[0]
+            if ($leaf -eq 'aih' -or $leaf -eq 'aih.exe') {
+                $prior = @()
+                if ($words.Count -gt 1) { $prior = $words[1..($words.Count - 1)] }
+                $toolArgs = @('__complete', '--shell', 'powershell', '--history-stdin', "--current=$token", '--') + $prior
+                $lines = Invoke-AihShellTool -ToolArgs $toolArgs -HistoryLines (Get-AihShellHistory)
+                $results = New-Object 'System.Collections.ObjectModel.Collection[System.Management.Automation.CompletionResult]'
+                foreach ($item in $lines) {
+                    if (-not $item) { continue }
+                    $parts = $item -split [string]$global:_AIH_SHELL_US
+                    $desc = ''
+                    if ($parts.Count -ge 2 -and $null -ne $parts[1]) { $desc = [string]$parts[1] }
+                    if ([string]::IsNullOrEmpty($desc)) { $desc = ' ' }
+                    $results.Add([System.Management.Automation.CompletionResult]::new($parts[0], $parts[0], 'ParameterValue', $desc))
+                }
+                $start = $line.Length - $token.Length
+                return [System.Management.Automation.CommandCompletion]::new($results, 0, $start, $token.Length)
+            }
+        }
+        return _aih_original_tabexpansion2 $inputScript $cursorColumn
+    }
+}
 

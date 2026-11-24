@@ -79,6 +79,7 @@ func writeLSHelp(output io.Writer, palette terminalPalette, target string) {
 	_, _ = fmt.Fprintln(output, "  - TTY 下接管屏幕，每 100ms 重绘；每 1s 重建状态与额度。")
 	_, _ = fmt.Fprintln(output, "  - 首帧只读账号索引；凭据/额度/运行态在后台补算。")
 	_, _ = fmt.Fprintln(output, "  - / 筛选：输入即窄化，Enter 保留，Esc 清空；q/Esc 退出，Ctrl+C 退出。")
+	_, _ = fmt.Fprintln(output, "  - ↑/↓ 逐行滚动，PgUp/PgDn 翻页，Home/End 到顶/到底；首屏从顶部开始。")
 	_, _ = fmt.Fprintln(output, "  - 限流/额度/身份/套餐徽章按时间轮换，同一时刻只换一行。")
 	_, _ = fmt.Fprintln(output, "  - 非 TTY（管道/重定向）输出完整快照。")
 	_, _ = fmt.Fprintln(output)

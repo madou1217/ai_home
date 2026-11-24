@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -69,6 +70,10 @@ type lsAnimation struct {
 	rowKeys     []string
 	layouts     []lsRowLayout
 	lastQuery   string
+	offset      int
+	scrollStart int
+	scrollEnd   int
+	scrollTotal int
 	screen      terminalui.Frame
 	paintErr    error
 	frameIdx    []int
@@ -253,13 +258,28 @@ func (animation *lsAnimation) handleKeys(chunk []byte) string {
 				return "escape-pending"
 			}
 			if text[1] == '[' || text[1] == 'O' {
-				index := 2
+				start := 2
+				index := start
 				for index < len(text) {
 					if text[index] >= 0x40 && text[index] <= 0x7e {
 						index++
 						break
 					}
 					index++
+				}
+				switch text[start:index] {
+				case "A":
+					animation.scrollBy(-1)
+				case "B":
+					animation.scrollBy(1)
+				case "5~":
+					animation.scrollBy(-animation.pageSize())
+				case "6~":
+					animation.scrollBy(animation.pageSize())
+				case "H":
+					animation.offset = 0
+				case "F":
+					animation.offset = 1 << 30
 				}
 				text = text[index:]
 				continue
@@ -332,14 +352,33 @@ func (animation *lsAnimation) applyEscape() string {
 	return "quit"
 }
 
+func (animation *lsAnimation) pageSize() int {
+	size := animation.rows - 1
+	if size < 1 {
+		size = 1
+	}
+	return size
+}
+
+func (animation *lsAnimation) scrollBy(delta int) {
+	animation.offset += delta
+	if animation.offset < 0 {
+		animation.offset = 0
+	}
+}
+
 func (animation *lsAnimation) statusLine() string {
+	scroll := ""
+	if animation.scrollTotal > 0 {
+		scroll = fmt.Sprintf("%d-%d/%d  ·  ↑↓ 滚动 · PgUp/PgDn 翻页  ·  ", animation.scrollStart+1, animation.scrollEnd, animation.scrollTotal)
+	}
 	if animation.editing {
 		return animation.palette.cyan("/") + animation.query + animation.palette.gray("  Enter 保留 · Esc 清空 · Ctrl+C 退出")
 	}
 	if animation.query != "" {
-		return animation.palette.gray("筛选: " + animation.query + "  ·  / 继续输入  ·  Esc 清空  ·  q 退出")
+		return animation.palette.gray("筛选: " + animation.query + "  ·  " + scroll + "/ 继续输入  ·  Esc 清空  ·  q 退出")
 	}
-	return animation.palette.gray("/ 筛选  ·  q/Esc 退出")
+	return animation.palette.gray(scroll + "/ 筛选  ·  q/Esc 退出")
 }
 
 func (animation *lsAnimation) render(static bool) {
@@ -347,6 +386,9 @@ func (animation *lsAnimation) render(static bool) {
 		return
 	}
 	resized := animation.refreshSize()
+	if animation.lastQuery != animation.query {
+		animation.offset = 0
+	}
 	if animation.activities == nil || time.Since(animation.activityAt) >= lsActivityReadEvery {
 		animation.activities = readLSActivity(animation.aiHomeDir)
 		animation.activityAt = time.Now()
@@ -386,19 +428,51 @@ func (animation *lsAnimation) render(static bool) {
 		animation.renderSizeHint()
 		return
 	}
-	status := ""
+	contentLines := len(lines)
+	statusRows := 0
 	if !static {
-		status = animation.statusLine()
+		statusRows = 1
 	}
-	statusLines, err := terminalui.Wrap(status, animation.maxWidth(), 0)
-	if err != nil {
-		animation.renderSizeHint()
-		return
+	var visible []string
+	var statusLines []terminalui.Line
+	for attempt := 0; attempt < 2; attempt++ {
+		maxContent := animation.rows - statusRows
+		if maxContent < 1 {
+			maxContent = 1
+		}
+		if contentLines <= maxContent {
+			animation.offset = 0
+		} else if animation.offset > contentLines-maxContent {
+			animation.offset = contentLines - maxContent
+		}
+		if animation.offset < 0 {
+			animation.offset = 0
+		}
+		start := animation.offset
+		end := start + maxContent
+		if end > contentLines {
+			end = contentLines
+		}
+		animation.scrollStart, animation.scrollEnd, animation.scrollTotal = start, end, contentLines
+		status := ""
+		if !static {
+			status = animation.statusLine()
+		}
+		statusLines, err = terminalui.Wrap(status, animation.maxWidth(), 0)
+		if err != nil {
+			animation.renderSizeHint()
+			return
+		}
+		visible = append(visible[:0], lines[start:end]...)
+		if len(statusLines) == statusRows {
+			break
+		}
+		statusRows = len(statusLines)
 	}
 	for _, line := range statusLines {
-		lines = append(lines, line.Text)
+		visible = append(visible, line.Text)
 	}
-	animation.paintErr = animation.screen.Present(animation.stdout, lines, animation.cols, animation.rows, static)
+	animation.paintErr = animation.screen.Present(animation.stdout, visible, animation.cols, animation.rows, static)
 	animation.targets = targets
 	animation.rowKeys = rowKeys
 	animation.lastQuery = animation.query

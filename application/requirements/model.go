@@ -67,8 +67,9 @@ type Step struct {
 
 // WorkspaceKind 是 Work 工作区的来源类型，与 /ui/chat（Work）完全同源。
 const (
-	WorkspaceKindLocal = "local"
-	WorkspaceKindSSH   = "ssh"
+	WorkspaceKindLocal     = "local"
+	WorkspaceKindSSH       = "ssh"
+	WorkspaceKindConnector = "connector"
 )
 
 // 执行方式：原生账号 / Relay 固定账号 / 网关池化。

@@ -5,6 +5,7 @@ package requirementruntime
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -337,13 +338,15 @@ type WorkDispatcher struct {
 }
 
 type sessionTrace struct {
-	requirementID string
-	cancel        func()
-	chat          ChatSessionPort
-	completed     int
-	work          int
-	mirrorID      string
-	mirrorWSID    string
+	requirementID  string
+	cancel         func()
+	chat           ChatSessionPort
+	completed      int
+	work           int
+	mirrorID       string
+	mirrorWSID     string
+	remoteMirrorID string
+	remoteMirrorWS string
 }
 
 // ChatSessionPort 是执行器需要的 chat 运行时子集。
@@ -429,6 +432,21 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 	projectPath := strings.TrimSpace(request.WorkspacePath)
 	mirrorID := ""
 	mirrorWorkspaceID := ""
+	remoteMirrorID := ""
+	remoteMirrorWorkspaceID := ""
+	if remoteSession != nil && strings.EqualFold(strings.TrimSpace(request.WorkspaceKind), requirements.WorkspaceKindConnector) {
+		workspaceID := connectorWorkspaceIDFromPath(projectPath)
+		if workspaceID == "" {
+			return requirements.WorkHandle{}, fmt.Errorf("connector_workspace_id_missing")
+		}
+		mirror, mirrorErr := remoteSession.StartMirror(ctx, workspaceID)
+		if mirrorErr != nil {
+			return requirements.WorkHandle{}, fmt.Errorf("准备目标 Server 工作区镜像失败: %w", mirrorErr)
+		}
+		projectPath = mirror.Path
+		remoteMirrorID = mirror.ID
+		remoteMirrorWorkspaceID = workspaceID
+	}
 	if remoteSession == nil {
 		if workspaceID := workspaceconnector.WorkspaceIDFromShadowPath(dispatcher.AIHomeDir, projectPath); workspaceID != "" {
 			if dispatcher.MirrorClient == nil {
@@ -453,15 +471,20 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		if mirrorID != "" {
 			_ = dispatcher.MirrorClient.Remove(context.WithoutCancel(ctx), mirrorWorkspaceID, mirrorID)
 		}
+		if remoteMirrorID != "" && remoteSession != nil {
+			_ = remoteSession.RemoveMirror(context.WithoutCancel(ctx), remoteMirrorWorkspaceID, remoteMirrorID)
+		}
 		return requirements.WorkHandle{}, fmt.Errorf("创建执行会话失败: %w", err)
 	}
 	// 先登记 trace 再订阅：订阅回调可能在 Subscribe 返回前就投递事件。
 	dispatcher.mu.Lock()
 	dispatcher.sessions[session.SessionID] = sessionTrace{
-		requirementID: request.RequirementID,
-		chat:          chat,
-		mirrorID:      mirrorID,
-		mirrorWSID:    mirrorWorkspaceID,
+		requirementID:  request.RequirementID,
+		chat:           chat,
+		mirrorID:       mirrorID,
+		mirrorWSID:     mirrorWorkspaceID,
+		remoteMirrorID: remoteMirrorID,
+		remoteMirrorWS: remoteMirrorWorkspaceID,
 	}
 	dispatcher.mu.Unlock()
 	// 目标/循环模式先写入会话目标，模型在每轮都能看到完成标准。
@@ -495,6 +518,9 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		}); directErr != nil {
 			if mirrorID != "" {
 				_ = dispatcher.MirrorClient.Remove(context.WithoutCancel(ctx), mirrorWorkspaceID, mirrorID)
+			}
+			if remoteMirrorID != "" && remoteSession != nil {
+				_ = remoteSession.RemoveMirror(context.WithoutCancel(ctx), remoteMirrorWorkspaceID, remoteMirrorID)
 			}
 			return requirements.WorkHandle{}, fmt.Errorf("派发执行任务失败: %w (peer: %v)", directErr, deliveryErr)
 		}
@@ -534,6 +560,14 @@ func (dispatcher *WorkDispatcher) Interrupt(ctx context.Context, sessionID strin
 		"payload":   map[string]any{},
 	})
 	return err
+}
+
+func connectorWorkspaceIDFromPath(projectPath string) string {
+	base := strings.TrimSpace(filepath.Base(strings.TrimRight(strings.TrimSpace(projectPath), `\/`)))
+	if strings.HasPrefix(base, "wc-") && len(base) > 3 {
+		return base
+	}
+	return ""
 }
 
 func (dispatcher *WorkDispatcher) resolveAccount(ctx context.Context, provider, model string) (string, error) {
@@ -607,9 +641,35 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 		hadWork := trace.work > 0
 		mirrorID := trace.mirrorID
 		mirrorWorkspaceID := trace.mirrorWSID
+		remoteMirrorID := trace.remoteMirrorID
+		remoteMirrorWorkspaceID := trace.remoteMirrorWS
 		dispatcher.mu.Unlock()
 		finalMessage := dispatcher.finalAssistantMessage(chat, sessionID)
-		if mirrorID != "" {
+		synced := false
+		if remoteMirrorID != "" {
+			dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusRunning, Progress: 90, Note: "正在把目标 Server 的改动同步回本地工作区", TurnID: event.TurnID, SessionID: sessionID})
+			remote, ok := chat.(*RemoteChatSession)
+			if !ok {
+				message := "目标 Server 镜像通道不可用"
+				dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusBlocked, Progress: 90, Note: message, LastError: message, TurnID: event.TurnID, SessionID: sessionID})
+				return
+			}
+			syncResult, syncErr := syncRemoteMirror(remote, remoteMirrorWorkspaceID, remoteMirrorID)
+			if syncErr != nil {
+				message := "同步目标 Server 工作区失败: " + syncErr.Error()
+				dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusBlocked, Progress: 90, Note: message, LastError: message, TurnID: event.TurnID, SessionID: sessionID})
+				return
+			}
+			if syncResult.Conflicts > 0 || syncResult.Errors > 0 {
+				message := fmt.Sprintf("改动未完全同步：写回 %d，删除 %d，冲突 %d，失败 %d", syncResult.Written, syncResult.Deleted, syncResult.Conflicts, syncResult.Errors)
+				if len(syncResult.Messages) > 0 {
+					message += "；" + strings.Join(syncResult.Messages, "；")
+				}
+				dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusBlocked, Progress: 90, Note: message, LastError: message, TurnID: event.TurnID, SessionID: sessionID})
+				return
+			}
+			synced = true
+		} else if mirrorID != "" {
 			dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusRunning, Progress: 90, Note: "正在把改动同步回本地工作区", TurnID: event.TurnID, SessionID: sessionID})
 			syncResult, syncErr := dispatcher.syncMirror(mirrorWorkspaceID, mirrorID)
 			if syncErr != nil {
@@ -625,9 +685,10 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 				dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusBlocked, Progress: 90, Note: message, LastError: message, TurnID: event.TurnID, SessionID: sessionID})
 				return
 			}
+			synced = true
 		}
 		note := "执行完成，等待验收"
-		if mirrorID != "" {
+		if synced {
 			note = "执行完成，改动已同步到本地工作区"
 		}
 		dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusReview, Progress: 92, Note: note, TurnID: event.TurnID, SessionID: sessionID})
@@ -643,6 +704,12 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 	case "turn.interrupted":
 		dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusReady, Progress: 0, Note: "执行已中断", TurnID: event.TurnID, SessionID: sessionID})
 	}
+}
+
+func syncRemoteMirror(remote *RemoteChatSession, workspaceID, mirrorID string) (MirrorSyncResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	return remote.SyncMirror(ctx, workspaceID, mirrorID)
 }
 
 func (dispatcher *WorkDispatcher) syncMirror(workspaceID, mirrorID string) (MirrorSyncResult, error) {

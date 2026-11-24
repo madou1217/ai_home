@@ -241,6 +241,41 @@ func (remote *RemoteChatSession) ResolveAccount(ctx context.Context, provider, m
 	return "", fmt.Errorf("远程 Server 没有支持 %s / %s 的可用账号", provider, model)
 }
 
+// StartMirror asks the target Server to materialize one connector workspace.
+// The returned path is on the target host and is the project path for the
+// remote work session.
+func (remote *RemoteChatSession) StartMirror(ctx context.Context, workspaceID string) (MirrorInfo, error) {
+	var envelope mirrorEnvelope
+	if err := remote.doJSON(ctx, http.MethodPost, "/v1/management/webui/workspace-connectors/"+url.PathEscape(strings.TrimSpace(workspaceID))+"/mirror", map[string]any{}, &envelope); err != nil {
+		return MirrorInfo{}, err
+	}
+	if strings.TrimSpace(envelope.Mirror.Path) == "" {
+		return MirrorInfo{}, fmt.Errorf("remote_workspace_mirror_path_missing")
+	}
+	return envelope.Mirror, nil
+}
+
+// SyncMirror writes the remote mirror changes back to the target connector.
+func (remote *RemoteChatSession) SyncMirror(ctx context.Context, workspaceID, mirrorID string) (MirrorSyncResult, error) {
+	var envelope mirrorEnvelope
+	path := "/v1/management/webui/workspace-connectors/" + url.PathEscape(strings.TrimSpace(workspaceID)) +
+		"/mirror/" + url.PathEscape(strings.TrimSpace(mirrorID)) + "/sync"
+	if err := remote.doJSON(ctx, http.MethodPost, path, map[string]any{}, &envelope); err != nil {
+		return MirrorSyncResult{}, err
+	}
+	if envelope.Result == nil {
+		return MirrorSyncResult{}, fmt.Errorf("remote_workspace_mirror_sync_missing")
+	}
+	return *envelope.Result, nil
+}
+
+// RemoveMirror deletes a remote mirror after a failed dispatch.
+func (remote *RemoteChatSession) RemoveMirror(ctx context.Context, workspaceID, mirrorID string) error {
+	path := "/v1/management/webui/workspace-connectors/" + url.PathEscape(strings.TrimSpace(workspaceID)) +
+		"/mirror/" + url.PathEscape(strings.TrimSpace(mirrorID))
+	return remote.doJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
 func (remote *RemoteChatSession) sessionPath(sessionID string) string {
 	return "/v1/management/webui/chat/sessions/" + url.PathEscape(strings.TrimSpace(sessionID))
 }

@@ -574,6 +574,18 @@
   }
 }
 
+/* 1200 左右的窄桌面：视角按钮只留图标（title 仍给出名称），
+ * 避免相机组与操作按钮把工具栏折成三行。 */
+@media (max-width: 1240px) {
+  .office-camera-btn {
+    padding-inline: 6px;
+  }
+
+  .office-camera-btn > span {
+    display: none;
+  }
+}
+
 @media (min-width: 1680px) {
   .office-room-topbar {
     padding: var(--space-4) var(--space-8);

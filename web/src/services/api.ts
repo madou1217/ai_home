@@ -858,7 +858,14 @@ export const accountsAPI = {
     action: 'open' | 'close' = 'open',
     terminalId?: string,
     workdir?: string,
-    options?: { harness?: string; model?: string; transport?: 'webui' | 'native'; sessionKey?: string }
+    options?: {
+      harness?: string;
+      model?: string;
+      transport?: 'webui' | 'native';
+      /** 桌面端账号连接方式：native 原生直连，relay 经 AIH Server 中转。 */
+      desktopMode?: 'native' | 'relay';
+      sessionKey?: string;
+    }
   ): Promise<AccountAppLaunchResponse> => {
     const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
@@ -870,6 +877,7 @@ export const accountsAPI = {
         ...(options?.harness ? { harness: options.harness } : {}),
         ...(options?.model ? { model: options.model } : {}),
         ...(options?.transport ? { transport: options.transport } : {}),
+        ...(options?.desktopMode ? { desktopMode: options.desktopMode } : {}),
         ...(options?.sessionKey ? { sessionKey: options.sessionKey } : {})
       }
     );

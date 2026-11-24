@@ -560,7 +560,7 @@ func afterCloseDesktopProvider(
 	hook.afterClose(ctx, deps, req, snapshot, profileDir, now)
 }
 
-// --- Codex Desktop API-Key Profile ---
+// --- Codex Desktop Profile ---
 
 func extractCodexAPIKey(snapshot AccountSnapshot) (apiKey string, baseURL string, ok bool) {
 	if snapshot.Credential != nil {
@@ -594,9 +594,59 @@ func extractCodexAPIKey(snapshot AccountSnapshot) (apiKey string, baseURL string
 
 func (p *desktopPrepContext) prepareCodexProfile() *Result {
 	apiKey, baseURL, isAPIKey := extractCodexAPIKey(p.snapshot)
+	isOAuth := false
 	if !isAPIKey {
+		if auth, ok := p.snapshot.Credential.(*codex.OAuthAuth); ok && auth != nil {
+			isOAuth = true
+		}
+	}
+	if !isAPIKey && !isOAuth {
 		return nil
 	}
+
+	mode := codexDesktopModeAPIKey
+	if isOAuth {
+		switch strings.ToLower(strings.TrimSpace(p.req.DesktopMode)) {
+		case "native":
+			mode = codexDesktopModeNative
+		case "relay":
+			mode = codexDesktopModeRelay
+		case "":
+			// OAuth 账号有两条合法走向，不能替用户猜：原生直连会直接用账号的
+			// ChatGPT 授权，中转则把模型请求交给本机 AIH Server 的账号路由。
+			return &Result{
+				OK:     false,
+				Status: "choice_required",
+				Error:  "codex_desktop_mode_required",
+				RequiredAction: map[string]any{
+					"kind":    "codex-desktop-mode",
+					"options": []string{"native", "relay"},
+				},
+				Message: "该 Codex 账号使用 OAuth 登录，请选择原生直连或经 AIH Server 中转。",
+			}
+		default:
+			return &Result{
+				OK:      false,
+				Error:   "codex_desktop_mode_invalid",
+				Message: "Codex Desktop 只支持 native 或 relay 两种连接方式。",
+			}
+		}
+	}
+
+	relayBaseURL := ""
+	relayClientKey := ""
+	if mode == codexDesktopModeRelay {
+		relayBaseURL = codexRelayBaseURL(p.deps.ServerBaseURL)
+		relayClientKey = p.deps.resolveClientKey()
+		if relayBaseURL == "" || relayClientKey == "" {
+			return &Result{
+				OK:      false,
+				Error:   "codex_desktop_relay_unavailable",
+				Message: "本机 AIH Server 的中转地址或客户端密钥不可用，无法以中转方式打开 Codex Desktop。",
+			}
+		}
+	}
+
 	codexHome := filepath.Join(p.profileDir, providerroot.ConfigDir("codex"))
 	authPath := filepath.Join(codexHome, "auth.json")
 	configPath := filepath.Join(codexHome, "config.toml")
@@ -610,18 +660,20 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 			Message: launchErrorMessage("codex_desktop_profile_prepare_failed"),
 		}
 	}
-	authDoc := map[string]any{
-		"auth_mode":      "apikey",
-		"OPENAI_API_KEY": apiKey,
-		"tokens":         nil,
-		"last_refresh":   nil,
-	}
-	if err := writeJSONAtomic(authPath, authDoc); err != nil {
-		return &Result{
-			OK:      false,
-			Error:   "codex_desktop_profile_prepare_failed",
-			Reason:  err.Error(),
-			Message: launchErrorMessage("codex_desktop_profile_prepare_failed"),
+	if isAPIKey {
+		authDoc := map[string]any{
+			"auth_mode":      "apikey",
+			"OPENAI_API_KEY": apiKey,
+			"tokens":         nil,
+			"last_refresh":   nil,
+		}
+		if err := writeJSONAtomic(authPath, authDoc); err != nil {
+			return &Result{
+				OK:      false,
+				Error:   "codex_desktop_profile_prepare_failed",
+				Reason:  err.Error(),
+				Message: launchErrorMessage("codex_desktop_profile_prepare_failed"),
+			}
 		}
 	}
 
@@ -635,10 +687,18 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 	if p.hostHomeDir != "" {
 		sqliteHome = filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex"))
 	}
-	if strings.TrimSpace(baseURL) == "" {
+	if isAPIKey && strings.TrimSpace(baseURL) == "" {
 		baseURL = defaultOpenAIBaseURL
 	}
-	configText := buildCodexAPIKeyConfig(hostConfig, baseURL, sqliteHome)
+	configText := buildCodexDesktopConfig(codexDesktopConfigInput{
+		HostConfig:     hostConfig,
+		Mode:           mode,
+		AccountRef:     p.snapshot.AccountRef.String(),
+		Label:          codexAccountLabel(p.snapshot),
+		AccountBaseURL: baseURL,
+		RelayBaseURL:   relayBaseURL,
+		SQLiteHome:     sqliteHome,
+	})
 	if err := writeBytesAtomic(configPath, []byte(configText), 0o600); err != nil {
 		return &Result{
 			OK:      false,
@@ -647,61 +707,21 @@ func (p *desktopPrepContext) prepareCodexProfile() *Result {
 			Message: launchErrorMessage("codex_desktop_profile_prepare_failed"),
 		}
 	}
+	if mode == codexDesktopModeRelay {
+		// 中转凭据只进进程环境，不落盘：auth.json 保留 OAuth 登录态，
+		// Provider 用 env_key 读取这里的 AIH 客户端密钥。
+		p.setEnv(codexRelayEnvKey, relayClientKey)
+	}
 	return nil
 }
 
-func buildCodexAPIKeyConfig(hostConfig, baseURL, sqliteHome string) string {
-	// 去除宿主的 [model_providers.aih_server] / [model_providers.openai] 块与管理标记行。
-	// Codex ≥0.171 把 openai 视为内置保留 Provider，禁止在 model_providers 里重定义；
-	// 改用官方支持的 openai_base_url 覆盖内置 openai 的端点（内置 Provider 本身即
-	// wire_api=responses + requires_openai_auth，与旧块语义一致）。
-	lines := strings.Split(strings.ReplaceAll(hostConfig, "\r\n", "\n"), "\n")
-	filtered := make([]string, 0, len(lines))
-	skipSection := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") {
-			lowerSection := strings.ToLower(trimmed)
-			if strings.HasPrefix(lowerSection, "[model_providers.aih_server") ||
-				strings.HasPrefix(lowerSection, "[model_providers.openai") {
-				skipSection = true
-				continue
-			}
-			skipSection = false
+func codexAccountLabel(snapshot AccountSnapshot) string {
+	for _, candidate := range []string{snapshot.DisplayName, snapshot.Email} {
+		if label := strings.TrimSpace(candidate); label != "" {
+			return label
 		}
-		if skipSection {
-			continue
-		}
-		lower := strings.ToLower(trimmed)
-		if strings.HasPrefix(lower, "preferred_auth_method") && strings.Contains(lower, "=") ||
-			strings.HasPrefix(lower, "model_provider") && strings.Contains(lower, "=") ||
-			strings.HasPrefix(lower, "openai_base_url") && strings.Contains(lower, "=") ||
-			strings.HasPrefix(lower, "sqlite_home") && strings.Contains(lower, "=") {
-			continue
-		}
-		filtered = append(filtered, line)
 	}
-	rootPrefix := []string{
-		`preferred_auth_method = "apikey"`,
-		`model_provider = "openai"`,
-	}
-	if url := strings.TrimSpace(baseURL); url != "" {
-		rootPrefix = append(rootPrefix, `openai_base_url = "`+escapeTomlBasicString(url)+`"`)
-	}
-	if strings.TrimSpace(sqliteHome) != "" {
-		rootPrefix = append(rootPrefix, `sqlite_home = "`+escapeTomlBasicString(sqliteHome)+`"`)
-	}
-	body := strings.TrimSpace(strings.Join(filtered, "\n"))
-	var b strings.Builder
-	for _, line := range rootPrefix {
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	if body != "" {
-		b.WriteString(body)
-		b.WriteByte('\n')
-	}
-	return b.String()
+	return snapshot.AccountRef.String()
 }
 
 // escapeTomlBasicString 转义 TOML 基本字符串中的反斜杠与双引号。

@@ -190,10 +190,23 @@ type NativeLauncherDependencies struct {
 	// 这是一个组合根事实（哪些启动策略真被注册），只能由宿主注入：
 	// 为零时回退到 Provider 合同声明的 CLI 客户端，那只是能力的必要非充分条件。
 	NativeCLIProvider func(providerID string) bool
-	Now               func() time.Time
-	Sleep             func(context.Context, time.Duration) error
-	Environ           func() []string
-	Warn              func(string)
+	// ServerBaseURL 是本机 AIH Server 的回环地址：Codex OAuth 账号选择
+	// 「经 AIH Server 中转」时，投影配置的 Provider 指向它。
+	ServerBaseURL string
+	// ClientKey 返回 AIH Server 客户端密钥；中转形态下只注入子进程环境，不落盘。
+	ClientKey func() string
+	Now       func() time.Time
+	Sleep     func(context.Context, time.Duration) error
+	Environ   func() []string
+	Warn      func(string)
+}
+
+// resolveClientKey 读取本机 Server 的客户端密钥；依赖缺失时返回空串。
+func (deps NativeLauncherDependencies) resolveClientKey() string {
+	if deps.ClientKey == nil {
+		return ""
+	}
+	return strings.TrimSpace(deps.ClientKey())
 }
 
 type sqliteAccountAdapter struct {

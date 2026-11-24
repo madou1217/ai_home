@@ -56,6 +56,8 @@ func newWebUIOpenAppLauncher(dependencies webuiRouteDependencies) webuiopenappap
 		EgressManager:       dependencies.EgressManager,
 		CodexHooksService:   dependencies.CodexHooks.DesktopService(),
 		WebUITerminalOpener: webTerminalOpener,
+		ServerBaseURL:       dependencies.SelfBaseURL,
+		ClientKey:           dependencies.ClientKey,
 		// 原生 CLI 承接范围由 CLI 组合根回答，传输层不再复制一份 Provider 名单。
 		NativeCLIProvider: aihcli.SupportsNativeCLI,
 	})

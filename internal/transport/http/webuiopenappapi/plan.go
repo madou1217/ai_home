@@ -50,18 +50,19 @@ var proxyHeaders = []string{
 
 // planInput 是一次启动判定所需的全部输入：请求已归一化的字段 + 身份 Provider 合同。
 type planInput struct {
-	catalog    ProviderCatalog
-	definition providers.Definition
-	provider   string
-	accountRef string
-	kind       string
-	action     string
-	harness    string
-	model      string
-	terminalID string
-	workdir    string
-	transport  string
-	sessionKey string
+	catalog     ProviderCatalog
+	definition  providers.Definition
+	provider    string
+	accountRef  string
+	kind        string
+	action      string
+	harness     string
+	model       string
+	terminalID  string
+	workdir     string
+	transport   string
+	desktopMode string
+	sessionKey  string
 }
 
 // planError 是判定阶段的可直接回写的失败：status 与 Node 的错误码保持一致。
@@ -125,6 +126,7 @@ func resolvePlan(input planInput) (Request, *planError) {
 			ManagedAppID:  input.provider,
 			BinaryName:    binaryName(input.definition, input.provider),
 			Transport:     input.transport,
+			DesktopMode:   input.desktopMode,
 			SessionKey:    input.sessionKey,
 		}, nil
 	}

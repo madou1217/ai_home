@@ -95,6 +95,9 @@ type Request struct {
 	Workdir    string
 	// Transport 是 CLI 的承载方式：native 或 webui。
 	Transport string
+	// DesktopMode 是桌面端的账号连接方式：native（原生直连）或 relay（经 AIH Server）。
+	// 只有同时支持两种形态的 Provider（当前是 OAuth 登录的 Codex）需要它。
+	DesktopMode string
 	// SessionKey 是 Web Terminal 会话键（transport=webui 时非空）。
 	SessionKey string
 	// AIHomeDir / HostHomeDir 让 Launcher 定位账号投影与宿主安装落点，
@@ -217,14 +220,15 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 
 // requestPayload 是 Node handleOpenAccountAppRequest 读取的请求体字段。
 type requestPayload struct {
-	Kind       string `json:"kind"`
-	Action     string `json:"action"`
-	TerminalID string `json:"terminalId"`
-	Workdir    string `json:"workdir"`
-	Harness    string `json:"harness"`
-	Model      string `json:"model"`
-	Transport  string `json:"transport"`
-	SessionKey string `json:"sessionKey"`
+	Kind        string `json:"kind"`
+	Action      string `json:"action"`
+	TerminalID  string `json:"terminalId"`
+	Workdir     string `json:"workdir"`
+	Harness     string `json:"harness"`
+	Model       string `json:"model"`
+	Transport   string `json:"transport"`
+	DesktopMode string `json:"desktopMode"`
+	SessionKey  string `json:"sessionKey"`
 }
 
 // planView 是启动计划在响应里的投影（camelCase 与 Node 的 launch-plan 词表一致）。
@@ -242,6 +246,7 @@ type planView struct {
 	TerminalID       string `json:"terminalId"`
 	Workdir          string `json:"workdir"`
 	Transport        string `json:"transport"`
+	DesktopMode      string `json:"desktopMode,omitempty"`
 	SessionKey       string `json:"sessionKey"`
 	Executable       string `json:"executable"`
 	Installed        bool   `json:"installed"`
@@ -355,6 +360,18 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	workdir := strings.TrimSpace(payload.Workdir)
 	terminalID := strings.ToLower(strings.TrimSpace(payload.TerminalID))
 	requestedTransport := strings.ToLower(strings.TrimSpace(payload.Transport))
+	desktopMode := strings.ToLower(strings.TrimSpace(payload.DesktopMode))
+	switch desktopMode {
+	case "", "native", "relay":
+	default:
+		writeError(responseWriter, http.StatusBadRequest, errorView{
+			Error:      "unsupported_desktop_mode",
+			Message:    "desktopMode 只支持 native 或 relay",
+			Provider:   provider,
+			AccountRef: accountRef.String(),
+		})
+		return
+	}
 	sessionKey := strings.TrimSpace(payload.SessionKey)
 
 	// CLI 的承载方式由 Server 决定；sessionKey 在降级到 Web Terminal 时补默认值。
@@ -367,18 +384,19 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 	}
 
 	plan, planErr := resolvePlan(planInput{
-		catalog:    handler.catalog,
-		definition: definition,
-		provider:   provider,
-		accountRef: accountRef.String(),
-		kind:       kind,
-		action:     action,
-		harness:    harness,
-		model:      model,
-		terminalID: terminalID,
-		workdir:    workdir,
-		transport:  transport,
-		sessionKey: sessionKey,
+		catalog:     handler.catalog,
+		definition:  definition,
+		provider:    provider,
+		accountRef:  accountRef.String(),
+		kind:        kind,
+		action:      action,
+		harness:     harness,
+		model:       model,
+		terminalID:  terminalID,
+		workdir:     workdir,
+		transport:   transport,
+		desktopMode: desktopMode,
+		sessionKey:  sessionKey,
 	})
 	if planErr != nil {
 		writeError(responseWriter, planErr.status, errorView{
@@ -579,11 +597,11 @@ func launchErrorStatus(code string) int {
 		"agy_desktop_keychain_conflict", "agy_desktop_restart_required",
 		"agy_desktop_auth_unavailable", "kimi_desktop_session_required",
 		"kimi_desktop_session_seed_failed", "kimi_desktop_restart_failed",
-		"zcode_native_proxy_marker_unrecognized":
+		"zcode_native_proxy_marker_unrecognized", "codex_desktop_mode_required":
 		return http.StatusConflict
 	case "agy_desktop_process_probe_failed", "codebuddy_desktop_keychain_unavailable",
 		"account_egress_unavailable", "zcode_egress_unavailable", "launch_host_unavailable",
-		"web_terminal_unavailable":
+		"web_terminal_unavailable", "codex_desktop_relay_unavailable":
 		return http.StatusServiceUnavailable
 	case "zcode_native_proxy_settings_failed",
 		"account_egress_binding_unavailable", "zcode_egress_binding_unavailable",
@@ -609,6 +627,9 @@ var launchErrorMessages = map[string]string{
 	"web_terminal_unavailable":               "Web 虚拟终端服务不可用。",
 	"web_terminal_open_failed":               "Web 虚拟终端打开失败。",
 	"codex_desktop_profile_prepare_failed":   "准备 Codex 桌面端账号投影目录失败。",
+	"codex_desktop_mode_required":            "该 Codex 账号使用 OAuth 登录，请选择原生直连或经 AIH Server 中转。",
+	"codex_desktop_mode_invalid":             "Codex Desktop 只支持 native 或 relay 两种连接方式。",
+	"codex_desktop_relay_unavailable":        "本机 AIH Server 的中转地址或客户端密钥不可用，无法以中转方式打开 Codex Desktop。",
 	"claude_gateway_prepare_failed":          "准备 Claude 桌面端本地网关配置失败。",
 	"kiro_desktop_profile_unavailable":       "准备 Kiro 桌面端隔离运行目录失败。",
 	"workdir_not_found":                      "所选项目目录不存在或不是文件夹，未启动 CLI。",
@@ -663,6 +684,7 @@ func newPlanView(plan Request) planView {
 		TerminalID:       plan.TerminalID,
 		Workdir:          plan.Workdir,
 		Transport:        plan.Transport,
+		DesktopMode:      plan.DesktopMode,
 		SessionKey:       plan.SessionKey,
 		Executable:       plan.Executable,
 		Installed:        plan.Executable != "",

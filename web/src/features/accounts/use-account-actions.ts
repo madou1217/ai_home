@@ -1,6 +1,7 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import React from 'react';
 import { Form, Modal, message } from 'antd';
+import Button from '@/components/ui/AppButton';
 import { useNavigate } from 'react-router-dom';
 import {
   accountsAPI,
@@ -144,6 +145,44 @@ function buildWebTerminalSessionKey(serverId: string, accountRef: string, harnes
   // The server accepts printable keys only; URI encoding keeps paths such as
   // /workspace/foo and Windows drive letters unambiguous across refreshes.
   return `account-cli:${encodeURIComponent(raw).slice(0, 150)}`;
+}
+
+type CodexDesktopMode = 'native' | 'relay';
+
+/**
+ * OAuth 登录的 Codex 桌面端有两条合法走向，服务端不替用户猜：缺少选择时返回
+ * codex_desktop_mode_required，由这里让用户明确选择后再重发一次启动请求。
+ */
+function askCodexDesktopMode(): Promise<CodexDesktopMode | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (mode: CodexDesktopMode | null) => {
+      if (settled) return;
+      settled = true;
+      modal.destroy();
+      resolve(mode);
+    };
+    const modal = Modal.confirm({
+      title: '选择 Codex Desktop 的连接方式',
+      icon: null,
+      width: 480,
+      content: React.createElement(
+        'div',
+        { style: { lineHeight: 1.8 } },
+        React.createElement('div', null, '该账号使用 ChatGPT OAuth 登录。请选择本次桌面端模型请求的走向：'),
+        React.createElement('div', null, '· 原生直连：使用账号自己的 ChatGPT 授权直接连接 OpenAI。'),
+        React.createElement('div', null, '· AIH Server 中转：经本机 AIH Server 的账号路由与出口访问。')
+      ),
+      footer: React.createElement(
+        'div',
+        { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } },
+        React.createElement(Button, { key: 'cancel', onClick: () => settle(null) }, '取消'),
+        React.createElement(Button, { key: 'native', onClick: () => settle('native') }, '原生直连'),
+        React.createElement(Button, { key: 'relay', type: 'primary', onClick: () => settle('relay') }, '经 AIH Server 中转')
+      ),
+      onCancel: () => settle(null)
+    });
+  });
 }
 
 export interface AccountAppInstallResult {
@@ -1597,6 +1636,28 @@ export function useAccountActions({
       return true;
     } catch (error: any) {
       const code = String(error?.response?.data?.error || '').trim();
+      if (code === 'codex_desktop_mode_required' && kind === 'desktop') {
+        const desktopMode = await askCodexDesktopMode();
+        if (!desktopMode) return false;
+        try {
+          const retried = await accountsAPI.openApp(
+            record.provider,
+            record.accountRef,
+            'desktop',
+            'open',
+            terminalId,
+            workdir,
+            { desktopMode }
+          );
+          onOpenAppResponseRef.current?.(retried);
+          message.success(desktopMode === 'relay' ? '已通过 AIH Server 中转打开 Desktop 应用' : '已以原生直连方式打开 Desktop 应用');
+          loadAppEntries({ refresh: true });
+          return true;
+        } catch (retryError: any) {
+          message.error(retryError?.response?.data?.message || '打开 Desktop 应用失败');
+          return false;
+        }
+      }
       if (code === 'install_required') {
         if (error?.response?.data?.installAvailable === false) {
           Modal.info({

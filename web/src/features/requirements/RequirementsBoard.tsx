@@ -126,6 +126,7 @@ export default function RequirementsBoard() {
   const [schedulerProviders, setSchedulerProviders] = useState<string[]>([]);
   const [schedulerModels, setSchedulerModels] = useState<Record<string, string[]>>({});
   const [schedulerLabels, setSchedulerLabels] = useState<Record<string, Record<string, string>>>({});
+  const [schedulerAccounts, setSchedulerAccounts] = useState<Array<{ provider: string; accountRef: string; label: string; status: string }>>([]);
   const [schedulerOptionsLoading, setSchedulerOptionsLoading] = useState(false);
   const [schedulerOptionsError, setSchedulerOptionsError] = useState('');
   const [form] = Form.useForm<RequirementFormValues>();
@@ -134,6 +135,7 @@ export default function RequirementsBoard() {
   const detailRef = useRef<string>('');
   const schedulerProvider = Form.useWatch('provider', schedulerForm);
   const schedulerModel = Form.useWatch('model', schedulerForm);
+  const schedulerAccountRef = Form.useWatch('accountRef', schedulerForm);
 
   const applySnapshot = useCallback((next: RequirementSnapshot) => { setSnapshot(next); setError(''); }, []);
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
@@ -159,20 +161,33 @@ export default function RequirementsBoard() {
       const [accountResult, catalog] = await Promise.all([accountsAPI.list(), modelsAPI.listCatalog()]);
       const supported = new Set(chatRuntimeProviders.providers().map(String));
       const providers = new Set<string>();
+      const accounts: Array<{ provider: string; accountRef: string; label: string; status: string }> = [];
       for (const account of accountResult.accounts || []) {
         const provider = String(account.provider || '');
-        if (!provider || !supported.has(provider)) continue;
+        const accountRef = String(account.accountRef || '');
+        if (!provider || !accountRef || !supported.has(provider)) continue;
         if ((account as { gateway?: boolean }).gateway) continue;
         providers.add(provider);
+        const record = account as { label?: string; displayName?: string; email?: string; status?: string };
+        accounts.push({
+          provider,
+          accountRef,
+          label: record.label || record.displayName || record.email || accountRef,
+          status: String(record.status || '')
+        });
       }
       setSchedulerProviders(Array.from(providers).sort());
       setSchedulerModels(catalog.models || {});
       setSchedulerLabels(catalog.labels || {});
+      setSchedulerAccounts(accounts.sort((left, right) => left.label.localeCompare(right.label)));
+      return { providers: Array.from(providers).sort(), models: catalog.models || {}, labels: catalog.labels || {}, accounts };
     } catch (optionError) {
       setSchedulerOptionsError(optionError instanceof Error ? optionError.message : '无法读取可用 Provider / 模型目录');
       setSchedulerProviders([]);
       setSchedulerModels({});
       setSchedulerLabels({});
+      setSchedulerAccounts([]);
+      return null;
     } finally {
       setSchedulerOptionsLoading(false);
     }
@@ -284,6 +299,27 @@ export default function RequirementsBoard() {
     if (!schedulerIndependentEffort) return [{ label: schedulerProvider === 'agy' ? '默认（由模型变体决定）' : '默认（由 Provider 决定）', value: '' }];
     return ['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => ({ label: effort, value: effort }));
   }, [derivedSchedulerEffort, schedulerIndependentEffort, schedulerProvider]);
+
+  const schedulerAccountOptions = useMemo(() => {
+    const options: Array<{ label: string; value: string }> = [{ label: '自动选号（推荐）', value: '' }];
+    let hasCurrent = false;
+    for (const account of schedulerAccounts) {
+      if (account.provider !== schedulerProvider) continue;
+      if (account.accountRef === schedulerAccountRef) hasCurrent = true;
+      options.push({
+        label: `${account.label}${account.status ? ` · ${account.status}` : ''}`,
+        value: account.accountRef
+      });
+    }
+    if (schedulerAccountRef && !hasCurrent) {
+      options.push({ label: `${schedulerAccountRef}（当前配置）`, value: schedulerAccountRef });
+    }
+    return options;
+  }, [schedulerAccountRef, schedulerAccounts, schedulerProvider]);
+
+  const schedulerProviderAvailable = schedulerOptionsLoading || !schedulerProvider
+    ? true
+    : schedulerProviders.includes(schedulerProvider);
 
   function effectiveSchedulerEffort(provider: string | undefined, model: string, fallback?: string): string {
     const derived = effortFromModel(model);
@@ -411,18 +447,39 @@ export default function RequirementsBoard() {
   }
   function openSchedulerSettings() {
     const settings = snapshot?.settings;
-    const provider = settings?.provider || 'agy';
-    const model = settings?.model || 'gemini-4-neon-xhigh';
+    const provider = settings?.provider || '';
+    const model = settings?.model || '';
     schedulerForm.setFieldsValue({
       enabled: settings?.enabled ?? true,
-      provider,
-      model,
+      provider: provider || undefined,
+      model: model || undefined,
       accountRef: settings?.accountRef || '',
-      reasoningEffort: effectiveSchedulerEffort(provider, model, settings?.reasoningEffort || 'xhigh'),
+      reasoningEffort: effectiveSchedulerEffort(provider, model, settings?.reasoningEffort || ''),
       maxParallel: settings?.maxParallel || 2
     });
     setSchedulerOpen(true);
-    void loadSchedulerOptions();
+    void loadSchedulerOptions().then((options) => {
+      if (!options) return;
+      const currentProvider = String(schedulerForm.getFieldValue('provider') || '');
+      const currentModel = String(schedulerForm.getFieldValue('model') || '');
+      if (currentProvider) {
+        if (!currentModel) {
+          const nextModel = (options.models[currentProvider] || [])[0] || '';
+          schedulerForm.setFieldsValue({
+            model: nextModel || undefined,
+            reasoningEffort: effectiveSchedulerEffort(currentProvider, nextModel, '')
+          });
+        }
+        return;
+      }
+      const nextProvider = options.providers[0] || '';
+      const nextModel = (options.models[nextProvider] || [])[0] || '';
+      schedulerForm.setFieldsValue({
+        provider: nextProvider || undefined,
+        model: nextModel || undefined,
+        reasoningEffort: effectiveSchedulerEffort(nextProvider, nextModel, '')
+      });
+    });
   }
   async function saveSchedulerSettings() {
     try { await requirementsAPI.updateScheduler(await schedulerForm.validateFields()); setSchedulerOpen(false); message.success('调度器配置已保存'); await refresh({ silent: true }); }
@@ -532,7 +589,7 @@ export default function RequirementsBoard() {
         <div className={styles.heroActions}>
           <div className={styles.schedulerCard}>
             <div className={styles.schedulerHead}><span className={styles.schedulerTitle}><RobotOutlined /> 调度器</span><Switch size="small" checked={Boolean(snapshot?.settings?.enabled)} onChange={(checked) => void toggleScheduler(checked)} /></div>
-            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || 'agy'} / {scheduler?.model || 'gemini-4-neon-xhigh'} / {scheduler?.reasoningEffort || '默认'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
+            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || '未配置'} / {scheduler?.model || '未配置'} / {scheduler?.reasoningEffort || '—'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
             <div className={styles.schedulerStats}><span>运行 {scheduler?.running ?? 0}</span><span>并行 {scheduler?.maxParallel ?? 2}</span><span>上次 {scheduler?.lastRun ? new Date(scheduler.lastRun).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span></div>
             <Space size={4} wrap><Button size="small" icon={<ThunderboltOutlined />} onClick={() => void runScheduler()}>运行调度</Button><Button size="small" icon={<SettingOutlined />} onClick={openSchedulerSettings}>配置</Button></Space>
           </div>
@@ -693,6 +750,14 @@ export default function RequirementsBoard() {
 
       <Modal open={schedulerOpen} title="调度器配置" onCancel={() => setSchedulerOpen(false)} onOk={() => void saveSchedulerSettings()} okText="保存" width={560} destroyOnClose>
         <Form form={schedulerForm} layout="vertical">
+          {schedulerProvider && !schedulerOptionsLoading && !schedulerProviderAvailable ? (
+            <div className={styles.inlineError} role="status">
+              <ExclamationCircleOutlined /> 当前 Provider「{schedulerProvider}」在此服务器没有可用账号；请重新选择，或先在账号管理里添加账号。
+            </div>
+          ) : null}
+          {!schedulerProvider && !schedulerOptionsLoading ? (
+            <div className={styles.inlineNote} role="status"><ExclamationCircleOutlined /> 尚未选择 Provider/Model；保存前请从可用账号中选择。</div>
+          ) : null}
           <Form.Item name="enabled" label="自动调度" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="暂停" /></Form.Item>
           {schedulerOptionsError ? <div className={styles.inlineError} role="status"><ExclamationCircleOutlined /> {schedulerOptionsError}</div> : null}
           <div className={styles.formRow}>
@@ -704,7 +769,15 @@ export default function RequirementsBoard() {
             </Form.Item>
           </div>
           <div className={styles.formRow}>
-            <Form.Item name="accountRef" label="固定账号（可选）"><Input placeholder="留空则自动选号" /></Form.Item>
+            <Form.Item name="accountRef" label="执行账号" extra="留空自动选号；只显示当前 Provider 的账号">
+              <Select
+                loading={schedulerOptionsLoading}
+                options={schedulerAccountOptions}
+                showSearch
+                allowClear
+                placeholder="自动选号（推荐）"
+              />
+            </Form.Item>
             <Form.Item
               name="reasoningEffort"
               label="思考强度"

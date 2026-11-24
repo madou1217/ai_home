@@ -37,6 +37,12 @@ import {
   createWireframeBoxGeometry,
   sampleRectilinearPath,
 } from './office-voxel-kit';
+import {
+  SEAT_FACING_YAW,
+  SEAT_LOCAL_X,
+  SEAT_LOCAL_Z,
+  type CharacterPoseOutput,
+} from './office-voxel-behaviour';
 
 /**
  * Minecraft 体素工位组装模块：
@@ -116,6 +122,56 @@ function hashKey(value: string): number {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
+}
+
+/**
+ * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃、RGB 灯条与电源灯）
+ * 精准平移至桌子侧后方地面地毯（x ∈ [0.375, 0.625], y ∈ [0.03125, 0.46875], z ∈ [-0.75, -0.375]）：
+ * - 严格避开桌腿、椅子、显示器与键盘鼠标；
+ * - 任意正视屏幕视角（含单/双屏与全范围偏航角）均保证整块屏幕零遮挡；
+ * - 完整保留机箱原有合批 Draw Call、RGB/电源灯效材质与 station 拾取标签。
+ */
+const ORIGINAL_PC_MIN_X = -0.98;
+const ORIGINAL_PC_MAX_X = -0.7;
+const ORIGINAL_PC_MIN_Y = DESK_SURFACE_Y - 0.01;
+const ORIGINAL_PC_MAX_Y = DESK_SURFACE_Y + 0.48;
+const ORIGINAL_PC_MIN_Z = 0.04;
+const ORIGINAL_PC_MAX_Z = 0.46;
+
+const PC_RELOCATE_DX = 1.34375; // [-0.96875, -0.71875] -> [+0.375, +0.625]
+const PC_RELOCATE_DY = CARPET_TOP_Y - DESK_SURFACE_Y; // 落于地毯顶面 y = 0.03125
+const PC_RELOCATE_DZ = -0.8125; // [+0.0625, +0.4375] -> [-0.75, -0.375]
+
+function relocateDesktopPcTowerToFloor(computerRig: DesktopComputerRig): void {
+  computerRig.root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const pos = obj.geometry.getAttribute('position');
+    if (!(pos instanceof THREE.BufferAttribute)) return;
+
+    let moved = false;
+    for (let i = 0; i < pos.count; i += 1) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      if (
+        x >= ORIGINAL_PC_MIN_X
+        && x <= ORIGINAL_PC_MAX_X
+        && y >= ORIGINAL_PC_MIN_Y
+        && y <= ORIGINAL_PC_MAX_Y
+        && z >= ORIGINAL_PC_MIN_Z
+        && z <= ORIGINAL_PC_MAX_Z
+      ) {
+        pos.setXYZ(i, x + PC_RELOCATE_DX, y + PC_RELOCATE_DY, z + PC_RELOCATE_DZ);
+        moved = true;
+      }
+    }
+
+    if (moved) {
+      pos.needsUpdate = true;
+      obj.geometry.computeBoundingBox();
+      obj.geometry.computeBoundingSphere();
+    }
+  });
 }
 
 function tagPickableTree(
@@ -501,11 +557,12 @@ export function createWorkstationPod(
   selectionFrameMesh.userData.hitKind = 'station';
   root.add(selectionFrameMesh);
 
-  // 3. Minecraft 体素 PC 主机、方块键鼠与杯子/花盆小装饰
+  // 3. Minecraft 体素 PC 主机（挪至桌旁侧后方地面避免遮挡屏幕）、方块键鼠与杯子/花盆小装饰
   const computerRig = createDesktopComputerRig(
     palette,
     session.persona.deskAccent || palette.accentHex
   );
+  relocateDesktopPcTowerToFloor(computerRig);
   tagPickableTree(computerRig.root, session.sessionKey, 'station', true);
   root.add(computerRig.root);
 
@@ -697,7 +754,8 @@ export function animateWorkstationPod(
   rig: OfficeStationRig,
   elapsedSec: number,
   dtSec: number,
-  reducedMotion: boolean
+  reducedMotion: boolean,
+  behaviourPose?: CharacterPoseOutput | null
 ): void {
   if (reducedMotion) {
     rig.root.position.copy(rig.targetPosition);
@@ -706,7 +764,19 @@ export function animateWorkstationPod(
     rig.root.position.lerp(rig.targetPosition, lerpAlpha);
   }
 
-  animateOfficeCharacter(rig.character, elapsedSec, reducedMotion);
+  if (!reducedMotion && behaviourPose && behaviourPose.phase !== 'seated') {
+    rig.character.root.position.set(
+      behaviourPose.worldX - rig.root.position.x,
+      0,
+      behaviourPose.worldZ - rig.root.position.z
+    );
+    rig.character.root.rotation.y = behaviourPose.yaw;
+  } else {
+    rig.character.root.position.set(SEAT_LOCAL_X, 0, SEAT_LOCAL_Z);
+    rig.character.root.rotation.y = SEAT_FACING_YAW;
+  }
+
+  animateOfficeCharacter(rig.character, elapsedSec, reducedMotion, behaviourPose);
   animateDesktopComputerRig(rig.computerRig, elapsedSec, dtSec, reducedMotion);
 
   // 悬浮邮件包裹正弦弹跳（reducedMotion 时保持静止）

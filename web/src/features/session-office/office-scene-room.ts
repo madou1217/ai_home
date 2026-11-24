@@ -30,6 +30,11 @@ import {
   addOakTreeToGrid,
   createVoxelLanternGeometry,
 } from './office-voxel-kit';
+import type {
+  CoffeeStationAnchor,
+  RoomWalkLayout,
+  WorldRect2D,
+} from './office-voxel-behaviour';
 
 /**
  * Minecraft 体素办公室房间与室外景观构建器：
@@ -60,10 +65,14 @@ export interface OfficeRoomRig {
   lanternLightPositions: THREE.Vector3[];
   currentWidth: number;
   currentDepth: number;
+  halfW: number;
+  halfD: number;
   outerHalfWidth: number;
   outerHalfDepth: number;
   hiddenWallX: 'px' | 'nx';
   hiddenWallZ: 'pz' | 'nz';
+  coffeeStation: CoffeeStationAnchor;
+  walkLayout: RoomWalkLayout;
 }
 
 const WALL_DIRECTIONS: readonly OfficeWallDirection[] = ['px', 'nx', 'pz', 'nz'];
@@ -440,6 +449,180 @@ function populateRoomVoxelGrids(
   }
 }
 
+/**
+ * 构建靠后墙（-Z）右侧空位的体素咖啡台与咖啡机，全部并入房间基础合批网格（0 额外 Draw Call）：
+ * - 深色橡木柜体 + 橡木台面 + 深铁/铁块咖啡机机身 + 咖啡豆仓 + 双出水口 + 接水托盘 + 备用马克杯；
+ * - 正面电子屏与绿色就绪指示灯并入 room-base-emissive；
+ * - 顶部高度 1.6875，严格低于后墙房间邮件终端（底沿 2.25），正面留出 1 格开阔交互点且不遮挡工位与走道。
+ */
+function appendCoffeeMachineCounter(
+  opaqueBuilder: VoxelBoxBuilder,
+  emissiveBuilder: VoxelBoxBuilder,
+  halfW: number,
+  halfD: number
+): CoffeeStationAnchor {
+  const cx = snapToVoxel(halfW - 1.5);
+  const backZ = -halfD;
+  const minX = cx - 0.5;
+  const maxX = cx + 0.5;
+  const minZ = backZ;
+  const maxZ = backZ + 0.75;
+
+  // 1. 木质咖啡台底柜与台面（宽 1.00 × 深 0.75 × 高 0.875）
+  opaqueBuilder.addBox({
+    minX,
+    minY: 0,
+    minZ,
+    maxX,
+    maxY: 0.75,
+    maxZ: backZ + 0.6875,
+    tiles: 'dark_oak_planks',
+    floorY: 0,
+    hiddenFaces: { ny: true, nz: true },
+  });
+  opaqueBuilder.addBox({
+    minX,
+    minY: 0.75,
+    minZ,
+    maxX,
+    maxY: 0.875,
+    maxZ,
+    tiles: { top: 'oak_planks', side: 'spruce_planks', bottom: 'spruce_planks' },
+    hiddenFaces: { nz: true },
+  });
+  // 柜门铁色拉手
+  opaqueBuilder.addBox({
+    minX: cx - 0.125,
+    minY: 0.4375,
+    minZ: backZ + 0.6875,
+    maxX: cx + 0.125,
+    maxY: 0.5,
+    maxZ: backZ + 0.71875,
+    tiles: 'iron_block',
+    occludes: false,
+    hiddenFaces: { nz: true },
+  });
+
+  // 2. 铁/深铁体素咖啡机机身（靠台面左侧偏中，留出右侧摆杯空间）
+  const mMinX = cx - 0.375;
+  const mMaxX = cx + 0.1875;
+  // 后立柱机身
+  opaqueBuilder.addBox({
+    minX: mMinX,
+    minY: 0.875,
+    minZ: backZ + 0.0625,
+    maxX: mMaxX,
+    maxY: 1.5625,
+    maxZ: backZ + 0.3125,
+    tiles: 'dark_iron',
+    floorY: 0.875,
+    hiddenFaces: { ny: true },
+  });
+  // 顶部前探冲煮头
+  opaqueBuilder.addBox({
+    minX: mMinX,
+    minY: 1.3125,
+    minZ: backZ + 0.3125,
+    maxX: mMaxX,
+    maxY: 1.5625,
+    maxZ: backZ + 0.5625,
+    tiles: { top: 'iron_block', side: 'dark_iron', bottom: 'dark_iron' },
+    hiddenFaces: { nz: true },
+  });
+  // 顶部咖啡豆仓（深木框 + 咖啡豆棕顶面）
+  opaqueBuilder.addBox({
+    minX: cx - 0.25,
+    minY: 1.5625,
+    minZ: backZ + 0.125,
+    maxX: cx + 0.0625,
+    maxY: 1.6875,
+    maxZ: backZ + 0.375,
+    tiles: { top: 'wool_brown', side: 'dark_oak_planks', bottom: 'dark_oak_planks' },
+    hiddenFaces: { ny: true },
+  });
+  // 底部不锈钢接水滴盘
+  opaqueBuilder.addBox({
+    minX: mMinX,
+    minY: 0.875,
+    minZ: backZ + 0.3125,
+    maxX: mMaxX,
+    maxY: 0.9375,
+    maxZ: backZ + 0.5625,
+    tiles: 'iron_block',
+    floorY: 0.875,
+    hiddenFaces: { ny: true, nz: true },
+  });
+  // 双咖啡出水嘴（从冲煮头下沿垂下）
+  opaqueBuilder.addBox({
+    minX: cx - 0.1875,
+    minY: 1.21875,
+    minZ: backZ + 0.4375,
+    maxX: cx - 0.125,
+    maxY: 1.3125,
+    maxZ: backZ + 0.5,
+    tiles: 'iron_block',
+    occludes: false,
+    hiddenFaces: { py: true },
+  });
+  opaqueBuilder.addBox({
+    minX: cx - 0.0625,
+    minY: 1.21875,
+    minZ: backZ + 0.4375,
+    maxX: cx,
+    maxY: 1.3125,
+    maxZ: backZ + 0.5,
+    tiles: 'iron_block',
+    occludes: false,
+    hiddenFaces: { py: true },
+  });
+
+  // 3. 咖啡机正面发光小屏与绿色工作指示灯（并入 room-base-emissive）
+  emissiveBuilder.addBox({
+    minX: cx - 0.3125,
+    minY: 1.375,
+    minZ: backZ + 0.5625,
+    maxX: cx - 0.0625,
+    maxY: 1.5,
+    maxZ: backZ + 0.59375,
+    tiles: 'wool_cyan',
+    occludes: false,
+    hiddenFaces: { nz: true },
+  });
+  emissiveBuilder.addBox({
+    minX: cx + 0.03125,
+    minY: 1.40625,
+    minZ: backZ + 0.5625,
+    maxX: cx + 0.125,
+    maxY: 1.46875,
+    maxZ: backZ + 0.59375,
+    tiles: 'emerald_block',
+    occludes: false,
+    hiddenFaces: { nz: true },
+  });
+
+  // 4. 台面右侧摆放的白色备用马克杯
+  opaqueBuilder.addBox({
+    minX: cx + 0.25,
+    minY: 0.875,
+    minZ: backZ + 0.375,
+    maxX: cx + 0.375,
+    maxY: 1.0,
+    maxZ: backZ + 0.5,
+    tiles: { side: 'mug_white', top: 'wool_brown', bottom: 'mug_white' },
+    floorY: 0.875,
+    hiddenFaces: { ny: true },
+  });
+
+  return {
+    anchorX: cx,
+    anchorZ: backZ + 0.375,
+    interactX: cx,
+    interactZ: backZ + 1.25,
+    facingYaw: Math.PI,
+    footprint: { minX, maxX, minZ, maxZ },
+  };
+}
+
 /** 构建子体素建筑细部：拆分为常驻室外层、+Z 墙附属门与雨棚、四向屋檐与天花核心横梁/灯具 */
 function buildSubVoxelDetails(
   halfW: number,
@@ -452,6 +635,7 @@ function buildSubVoxelDetails(
   roofCoreOpaqueGeo: THREE.BufferGeometry;
   roofCoreEmissiveGeo: THREE.BufferGeometry;
   lanternLightPositions: [THREE.Vector3, THREE.Vector3];
+  coffeeStation: CoffeeStationAnchor;
 } {
   const eaveBuilders: Record<OfficeWallDirection, VoxelBoxBuilder> = {
     px: new VoxelBoxBuilder(),
@@ -464,6 +648,15 @@ function buildSubVoxelDetails(
   const roofEmissiveBuilder = new VoxelBoxBuilder();
   const wallPzDetailBuilder = new VoxelBoxBuilder();
   const baseDetailBuilder = new VoxelBoxBuilder();
+  const baseEmissiveDetailBuilder = new VoxelBoxBuilder();
+
+  // 0. 室内靠后墙（-Z）右侧体素咖啡台与咖啡机（与房间基础合批，零额外 Draw Call）
+  const coffeeStation = appendCoffeeMachineCounter(
+    baseDetailBuilder,
+    baseEmissiveDetailBuilder,
+    halfW,
+    halfD
+  );
 
   // 1. 四向悬挑屋檐（互不重叠，按墙体可见性同步显隐，仰角 > 55° 时随 roofGroup 整体隐藏）
   // -Z 屋檐（全宽，含后角悬挑）
@@ -664,6 +857,7 @@ function buildSubVoxelDetails(
   const roofLampGeo = roofEmissiveBuilder.build(false);
   const wallPzDetailGeo = wallPzDetailBuilder.build(true);
   const baseDetailGeo = baseDetailBuilder.build(true);
+  const baseEmissiveDetailGeo = baseEmissiveDetailBuilder.build(false);
   const flowerGeo = flowerBuilder.build(false);
 
   const roofEaveGeos: Record<OfficeWallDirection, THREE.BufferGeometry> = {
@@ -678,7 +872,10 @@ function buildSubVoxelDetails(
     flowerGeo,
     porchLantern.frameGeo,
   ]);
-  const baseEmissiveGeo = porchLantern.glowGeo;
+  const baseEmissiveGeo = mergeVoxelGeometries([
+    porchLantern.glowGeo,
+    baseEmissiveDetailGeo,
+  ]);
 
   const roofCoreOpaqueGeo = mergeVoxelGeometries([
     roofCoreBeamGeo,
@@ -694,10 +891,12 @@ function buildSubVoxelDetails(
   roofDetailGeo.dispose();
   roofLampGeo.dispose();
   baseDetailGeo.dispose();
+  baseEmissiveDetailGeo.dispose();
   flowerGeo.dispose();
   indoorLantern.frameGeo.dispose();
   indoorLantern.glowGeo.dispose();
   porchLantern.frameGeo.dispose();
+  porchLantern.glowGeo.dispose();
 
   return {
     baseOpaqueGeo,
@@ -707,6 +906,7 @@ function buildSubVoxelDetails(
     roofCoreOpaqueGeo,
     roofCoreEmissiveGeo,
     lanternLightPositions,
+    coffeeStation,
   };
 }
 
@@ -730,6 +930,8 @@ function rebuildRoomWorldGeometry(
 
   rig.currentWidth = roomWidth;
   rig.currentDepth = roomDepth;
+  rig.halfW = halfW;
+  rig.halfD = halfD;
   rig.outerHalfWidth = halfW + YARD_EXTEND + 1;
   rig.outerHalfDepth = halfD + YARD_EXTEND + 1;
 
@@ -861,12 +1063,35 @@ function rebuildRoomWorldGeometry(
   roofCoreEmissiveMesh.name = 'room-roof-core-emissive';
   rig.roofGroup.add(roofCoreEmissiveMesh);
 
-  // 同步两处室内暖色灯笼点光源世界坐标
+  // 同步两处室内暖色灯笼点光源世界坐标与可通行障碍元数据（书架、咖啡台、室外水池）
   rig.lanternLightPositions.length = 0;
   rig.lanternLightPositions.push(
     subDetails.lanternLightPositions[0],
     subDetails.lanternLightPositions[1]
   );
+  rig.coffeeStation = subDetails.coffeeStation;
+  const staticObstacles: WorldRect2D[] = [
+    // 后左内侧书架（x = -halfW + 1 .. -halfW + 2, z = -halfD）
+    {
+      minX: -halfW + 1,
+      maxX: -halfW + 3,
+      minZ: -halfD,
+      maxZ: -halfD + 1,
+    },
+    // 室外前右浅水池（显式纳入不可通行列表）
+    {
+      minX: halfW + 1,
+      maxX: halfW + 5,
+      minZ: halfD,
+      maxZ: halfD + 3,
+    },
+  ];
+  rig.walkLayout = {
+    halfW,
+    halfD,
+    coffeeStation: subDetails.coffeeStation,
+    staticObstacles,
+  };
 
   // 同步两块贴墙面板位置（挂在 -Z 后墙中央窗左右两侧实心石砖墙面上，z = -halfD，高度 2.6875 不挡工位）
   const leftBayCenterX = snapToVoxel((-halfW - 1.0) * 0.5);
@@ -1024,10 +1249,43 @@ export function createOfficeRoomRig(
     lanternLightPositions: [],
     currentWidth: 0,
     currentDepth: 0,
+    halfW: MIN_HALF_W,
+    halfD: MIN_HALF_D,
     outerHalfWidth: 0,
     outerHalfDepth: 0,
     hiddenWallX: 'px',
     hiddenWallZ: 'pz',
+    coffeeStation: {
+      anchorX: MIN_HALF_W - 1.5,
+      anchorZ: -MIN_HALF_D + 0.375,
+      interactX: MIN_HALF_W - 1.5,
+      interactZ: -MIN_HALF_D + 1.25,
+      facingYaw: Math.PI,
+      footprint: {
+        minX: MIN_HALF_W - 2,
+        maxX: MIN_HALF_W - 1,
+        minZ: -MIN_HALF_D,
+        maxZ: -MIN_HALF_D + 0.75,
+      },
+    },
+    walkLayout: {
+      halfW: MIN_HALF_W,
+      halfD: MIN_HALF_D,
+      coffeeStation: {
+        anchorX: MIN_HALF_W - 1.5,
+        anchorZ: -MIN_HALF_D + 0.375,
+        interactX: MIN_HALF_W - 1.5,
+        interactZ: -MIN_HALF_D + 1.25,
+        facingYaw: Math.PI,
+        footprint: {
+          minX: MIN_HALF_W - 2,
+          maxX: MIN_HALF_W - 1,
+          minZ: -MIN_HALF_D,
+          maxZ: -MIN_HALF_D + 0.75,
+        },
+      },
+      staticObstacles: [],
+    },
   };
 
   rebuildRoomWorldGeometry(rig, DEFAULT_INIT_WIDTH, DEFAULT_INIT_DEPTH);

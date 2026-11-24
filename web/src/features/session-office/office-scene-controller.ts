@@ -54,6 +54,10 @@ import {
 } from './office-voxel-atlas';
 import { createSolidColorVoxelGeometry } from './office-voxel-builder';
 import { createBlockyCloudRingGeometry, createStarFieldGeometry } from './office-voxel-kit';
+import {
+  OfficeBehaviourManager,
+  type StationSeatAnchor,
+} from './office-voxel-behaviour';
 
 interface CameraGoal {
   position: THREE.Vector3;
@@ -440,6 +444,7 @@ export class OfficeSceneController {
   private readonly roomRig: OfficeRoomRig;
   private readonly voxelMaterials: VoxelMaterialSet;
   private readonly stations = new Map<string, OfficeStationRig>();
+  private readonly behaviourManager = new OfficeBehaviourManager();
 
   private currentState: OfficeSceneSyncState | null = null;
   private currentPalette: OfficeScenePalette;
@@ -456,6 +461,7 @@ export class OfficeSceneController {
   private userMovedCamera = false;
 
   private hoveredTarget: OfficeHitTarget | null = null;
+  private pointerDownTarget: OfficeHitTarget | null = null;
   private pointerTrack: PointerTrackState = {
     active: false,
     startX: 0,
@@ -488,8 +494,14 @@ export class OfficeSceneController {
   private readonly panFallbackUpScratch = new THREE.Vector3();
 
   private rafId: number | null = null;
+  private behaviourWakeTimerId: number | null = null;
   private lastFrameTimeMs = 0;
+  private lastBehaviourClockMs = 0;
   private elapsedActiveSec = 0;
+  private controlsInteracting = false;
+  private cameraSettleFrames = 0;
+  private readonly prevCamPosScratch = new THREE.Vector3();
+  private readonly prevCamTargetScratch = new THREE.Vector3();
   private needsStaticRender = true;
   private singleFrameRendering = false;
   private contextLost = false;
@@ -655,6 +667,7 @@ export class OfficeSceneController {
       this.unsubscribeWallpaperRaster = unsubscribeWallpaperRaster;
       this.acquiredWallpaperCacheRef = true;
       this.acquiredVoxelMaterialsRef = true;
+      this.lastBehaviourClockMs = performance.now();
 
       this.syncAnimationSchedule();
     } catch (error: unknown) {
@@ -844,6 +857,7 @@ export class OfficeSceneController {
   private attachEventListeners(canvas: HTMLCanvasElement, controls: OrbitControls): void {
     controls.addEventListener('change', this.handleControlsChange);
     controls.addEventListener('start', this.handleControlsStart);
+    controls.addEventListener('end', this.handleControlsEnd);
     // 捕获阶段优先接管编辑模式下的显示器拖拽，抢先于 OrbitControls 的冒泡阶段 pointerdown
     canvas.addEventListener('pointerdown', this.handlePointerDown, true);
     canvas.addEventListener('pointermove', this.handlePointerMove);
@@ -865,6 +879,7 @@ export class OfficeSceneController {
   private detachEventListeners(canvas: HTMLCanvasElement, controls: OrbitControls): void {
     controls.removeEventListener('change', this.handleControlsChange);
     controls.removeEventListener('start', this.handleControlsStart);
+    controls.removeEventListener('end', this.handleControlsEnd);
     canvas.removeEventListener('pointerdown', this.handlePointerDown, true);
     canvas.removeEventListener('pointermove', this.handlePointerMove);
     canvas.removeEventListener('pointerup', this.handlePointerUp);
@@ -965,6 +980,16 @@ export class OfficeSceneController {
       }
     }
 
+    const roomChanged = state.roomKey !== this.lastRoomKey;
+    const isRealRoomSwitch = this.lastRoomKey !== '' && roomChanged;
+    if (isRealRoomSwitch) {
+      this.behaviourManager.resetRoom();
+      this.lastBehaviourClockMs = performance.now();
+    } else if (this.rafId === null && !prevReducedMotion && !state.reducedMotion) {
+      // 按需静止期间发生数据同步时，补齐真实经过的坐姿计时，不丢失定时进度
+      this.advanceBehaviourIdleClock(performance.now());
+    }
+
     syncOfficeRoomRig(
       this.roomRig,
       state,
@@ -975,7 +1000,17 @@ export class OfficeSceneController {
     );
     this.syncShadowAndLanternBounds();
 
-    const roomChanged = state.roomKey !== this.lastRoomKey;
+    const seatAnchors: StationSeatAnchor[] = state.sessions.map((session, index) => {
+      const bay = metrics.bayPositions[index] || { x: 0, z: 0 };
+      return { sessionKey: session.sessionKey, bayX: bay.x, bayZ: bay.z };
+    });
+    this.behaviourManager.syncSessions(
+      this.roomRig.walkLayout,
+      state.sessions,
+      seatAnchors,
+      state.reducedMotion
+    );
+
     const presetChanged = state.cameraPreset !== this.lastPreset;
     const countChanged = state.sessions.length !== this.lastSessionCount;
     this.lastSessionCount = state.sessions.length;
@@ -1003,13 +1038,7 @@ export class OfficeSceneController {
     }
 
     this.needsStaticRender = true;
-    if (prevReducedMotion !== state.reducedMotion) {
-      this.syncAnimationSchedule();
-    } else if (state.reducedMotion) {
-      this.renderSingleFrame();
-    } else {
-      this.syncAnimationSchedule();
-    }
+    this.syncAnimationSchedule();
   }
 
   public setMonitorEditState(
@@ -1064,7 +1093,7 @@ export class OfficeSceneController {
     ];
     applyDualMonitorTransforms(rig.monitorAssembly, nextMonitors, prefs.dualMonitor);
     this.needsStaticRender = true;
-    if (this.currentState?.reducedMotion) {
+    if (this.rafId === null) {
       this.renderSingleFrame();
     }
   }
@@ -1182,6 +1211,8 @@ export class OfficeSceneController {
     this.clearKeyboardPanState();
     this.cancelMonitorDrag();
     this.stopAnimationLoop();
+    this.clearBehaviourWakeTimer();
+    this.behaviourManager.resetRoom();
     this.resizeObserver.disconnect();
     this.unsubscribeWallpaperRaster();
     if (this.acquiredWallpaperCacheRef) {
@@ -1253,7 +1284,7 @@ export class OfficeSceneController {
       });
     }
     this.needsStaticRender = true;
-    if (this.currentState.reducedMotion) {
+    if (this.rafId === null) {
       this.renderSingleFrame();
     }
   }
@@ -1291,7 +1322,7 @@ export class OfficeSceneController {
     this.updateDynamicSceneForCamera();
     this.applyingCameraTransition = false;
     this.needsStaticRender = true;
-    if (this.currentState?.reducedMotion) {
+    if (this.rafId === null) {
       this.renderSingleFrame();
     }
   }
@@ -1485,10 +1516,20 @@ export class OfficeSceneController {
   };
 
   private readonly handleControlsStart = (): void => {
+    this.controlsInteracting = true;
+    this.cameraSettleFrames = 3;
     if (!this.applyingCameraTransition) {
       this.activeCameraGoal = null;
       this.userMovedCamera = true;
     }
+    if (!this.currentState?.reducedMotion) {
+      this.syncAnimationSchedule();
+    }
+  };
+
+  private readonly handleControlsEnd = (): void => {
+    this.controlsInteracting = false;
+    this.cameraSettleFrames = Math.max(this.cameraSettleFrames, 2);
   };
 
   private readonly handleControlsChange = (): void => {
@@ -1498,9 +1539,15 @@ export class OfficeSceneController {
       this.needsStaticRender = true;
     }
 
-    if (!this.applyingCameraTransition && this.currentState?.reducedMotion) {
-      this.needsStaticRender = true;
-      this.renderSingleFrame();
+    if (!this.applyingCameraTransition && !this.singleFrameRendering) {
+      if (this.currentState?.reducedMotion) {
+        this.needsStaticRender = true;
+        this.renderSingleFrame();
+      } else if (this.rafId === null) {
+        // 滚轮缩放或外部触发相机变化时启动短时 RAF 让阻尼平滑收尾，静止后自动停表
+        this.cameraSettleFrames = Math.max(this.cameraSettleFrames, 3);
+        this.syncAnimationSchedule();
+      }
     }
   };
 
@@ -1523,13 +1570,14 @@ export class OfficeSceneController {
       this.applyCameraPreset(this.currentState.cameraPreset, true);
     } else {
       this.needsStaticRender = true;
-      if (this.currentState?.reducedMotion) {
+      if (this.rafId === null) {
         this.renderSingleFrame();
       }
     }
   };
 
   private cancelPointerTrack(): void {
+    this.pointerDownTarget = null;
     if (this.pointerTrack.active) {
       this.pointerTrack.active = false;
       this.lastClickMaxDistSq = CLICK_DRAG_THRESHOLD_SQ + 1;
@@ -1543,8 +1591,11 @@ export class OfficeSceneController {
       this.cancelPointerTrack();
       this.cancelMonitorDrag();
       this.stopAnimationLoop();
+      this.clearBehaviourWakeTimer();
     } else {
-      this.lastFrameTimeMs = performance.now();
+      const now = performance.now();
+      this.lastFrameTimeMs = now;
+      this.lastBehaviourClockMs = now;
       this.needsStaticRender = true;
       this.syncAnimationSchedule();
     }
@@ -1564,6 +1615,7 @@ export class OfficeSceneController {
     this.cancelPointerTrack();
     this.cancelMonitorDrag();
     this.stopAnimationLoop();
+    this.clearBehaviourWakeTimer();
     if (!this.disposed) {
       this.callbacks.onContextLostChange?.(true);
     }
@@ -1572,6 +1624,7 @@ export class OfficeSceneController {
   private readonly handleContextRestored = (): void => {
     if (this.disposed) return;
     this.contextLost = false;
+    this.lastBehaviourClockMs = performance.now();
     this.callbacks.onContextLostChange?.(false);
     this.needsStaticRender = true;
     this.syncAnimationSchedule();
@@ -1685,7 +1738,7 @@ export class OfficeSceneController {
           this.currentMetrics.roomDepth,
           target?.kind === 'room-mailbox'
         );
-        if (this.currentState.reducedMotion) {
+        if (this.rafId === null) {
           this.renderSingleFrame();
         }
       }
@@ -1770,11 +1823,25 @@ export class OfficeSceneController {
         clientY,
       };
     }
+    const pose = target.sessionKey ? this.behaviourManager.getPose(target.sessionKey) : null;
+    let stationHint = '点击选中工位 · 双击打开桌面';
+    if (pose && pose.phase !== 'seated') {
+      if (
+        pose.goal === 'coffee'
+        || pose.phase === 'brewing_coffee'
+        || pose.phase === 'drinking_coffee'
+        || pose.holdingCoffee
+      ) {
+        stationHint = '点击选中工位 · 正在接咖啡 · 双击打开桌面';
+      } else if (pose.goal === 'stroll') {
+        stationHint = '点击选中工位 · 正在散步 · 双击打开桌面';
+      }
+    }
     return {
       kind: 'station',
       sessionKey: target.sessionKey,
       label,
-      hint: '点击选中工位 · 双击打开桌面',
+      hint: stationHint,
       clientX,
       clientY,
     };
@@ -1853,11 +1920,7 @@ export class OfficeSceneController {
         drag.monitorIndex
       );
       if (!this.contextLost) {
-        if (this.currentState?.reducedMotion) {
-          this.renderSingleFrame();
-        } else {
-          this.syncAnimationSchedule();
-        }
+        this.syncAnimationSchedule();
       }
       this.updateCursorForState(this.hoveredTarget);
     }
@@ -1900,11 +1963,7 @@ export class OfficeSceneController {
 
     this.needsStaticRender = true;
     if (!this.contextLost) {
-      if (this.currentState?.reducedMotion) {
-        this.renderSingleFrame();
-      } else {
-        this.syncAnimationSchedule();
-      }
+      this.syncAnimationSchedule();
     }
     this.updateCursorForState(this.hoveredTarget);
   }
@@ -2005,6 +2064,7 @@ export class OfficeSceneController {
       }
     }
 
+    this.pointerDownTarget = this.raycastAtClientPoint(event.clientX, event.clientY);
     this.pointerTrack = {
       active: true,
       startX: event.clientX,
@@ -2106,13 +2166,28 @@ export class OfficeSceneController {
     const maxDistSq = Math.max(this.pointerTrack.maxDistSq, dx * dx + dy * dy);
     this.lastClickMaxDistSq = maxDistSq;
     this.pointerTrack.active = false;
+    const downTarget = this.pointerDownTarget;
+    this.pointerDownTarget = null;
+
+    const upTarget = this.raycastAtClientPoint(event.clientX, event.clientY);
 
     if (maxDistSq > CLICK_DRAG_THRESHOLD_SQ) {
+      // 轻拖跟随走动中的角色时仍选中其所属工位（不误触桌面/大范围环绕拖拽）
+      if (
+        maxDistSq <= 400
+        && downTarget?.kind === 'station'
+        && downTarget.sessionKey
+        && upTarget?.kind === 'station'
+        && upTarget.sessionKey === downTarget.sessionKey
+      ) {
+        this.callbacks.onSelectStation(downTarget.sessionKey);
+      }
       this.updateCursorForState(this.hoveredTarget);
       return;
     }
 
-    const target = this.raycastAtClientPoint(event.clientX, event.clientY);
+    // 走动中的角色若在按下到抬起瞬间微移出光标正下方，回落至按下命中的目标确保点击稳定选中
+    const target = upTarget ?? downTarget;
     if (!target) return;
 
     if (target.kind === 'room-mailbox') {
@@ -2209,23 +2284,95 @@ export class OfficeSceneController {
     }
   };
 
-  /** 按需渲染调度：reducedMotion 且无相机缓动时停止常驻 RAF，仅在变化时单帧重绘 */
+  private hasStationsSettling(): boolean {
+    for (const rig of this.stations.values()) {
+      if (rig.root.position.distanceToSquared(rig.targetPosition) > 1e-5) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 是否需要启用连续 RAF：存在离座行为、相机缓动/阻尼、键盘平移或工位过渡 */
+  private needsContinuousAnimation(): boolean {
+    if (this.disposed || this.contextLost || document.hidden) return false;
+    const reduced = Boolean(this.currentState?.reducedMotion);
+    const draggingMonitor = Boolean(this.monitorDrag?.active);
+    if (this.activeCameraGoal && !draggingMonitor) return true;
+    if (reduced) return false;
+    if (this.behaviourManager.hasActiveBehaviour()) return true;
+    if (!draggingMonitor && (this.pressedPanKeys.size > 0 || this.panVelocity.lengthSq() > 1e-4)) {
+      return true;
+    }
+    if (this.controlsInteracting || this.cameraSettleFrames > 0) return true;
+    if (this.hasStationsSettling()) return true;
+    return false;
+  }
+
+  private clearBehaviourWakeTimer(): void {
+    if (this.behaviourWakeTimerId !== null) {
+      window.clearTimeout(this.behaviourWakeTimerId);
+      this.behaviourWakeTimerId = null;
+    }
+  }
+
+  private advanceBehaviourIdleClock(nowMs: number): void {
+    if (this.disposed || this.contextLost || document.hidden || this.currentState?.reducedMotion) {
+      this.lastBehaviourClockMs = nowMs;
+      return;
+    }
+    const elapsedSec = Math.max(0, (nowMs - this.lastBehaviourClockMs) / 1000);
+    this.lastBehaviourClockMs = nowMs;
+    if (elapsedSec > 0) {
+      this.behaviourManager.step(elapsedSec);
+    }
+  }
+
+  private readonly handleBehaviourWakeup = (): void => {
+    this.behaviourWakeTimerId = null;
+    if (this.disposed || this.contextLost || document.hidden || this.currentState?.reducedMotion) {
+      return;
+    }
+    this.advanceBehaviourIdleClock(performance.now());
+    if (this.behaviourManager.hasActiveBehaviour()) {
+      this.syncAnimationSchedule();
+    } else {
+      this.scheduleBehaviourWakeTimer();
+    }
+  };
+
+  /** 全员回座静止后关闭 RAF，仅挂单次 setTimeout 在下一个行为触发时刻精准唤醒 */
+  private scheduleBehaviourWakeTimer(): void {
+    this.clearBehaviourWakeTimer();
+    if (this.disposed || this.contextLost || document.hidden) return;
+    if (this.currentState?.reducedMotion || this.rafId !== null) return;
+    const delayMs = this.behaviourManager.getNextWakeDelayMs();
+    if (delayMs === null) return;
+    this.behaviourWakeTimerId = window.setTimeout(this.handleBehaviourWakeup, delayMs);
+  }
+
+  /** 按需与连续渲染切换：有角色移动/行为动画或相机/平移过渡时启用 RAF，全员坐姿静止后立即停表 */
   private syncAnimationSchedule(): void {
     if (this.disposed || this.contextLost || document.hidden) {
       this.stopAnimationLoop();
+      this.clearBehaviourWakeTimer();
       return;
     }
-    if (this.currentState?.reducedMotion && !this.activeCameraGoal) {
-      this.stopAnimationLoop();
-      if (this.needsStaticRender) {
-        this.renderSingleFrame();
+    if (this.needsContinuousAnimation()) {
+      this.clearBehaviourWakeTimer();
+      if (this.rafId === null) {
+        const now = performance.now();
+        this.lastFrameTimeMs = now;
+        this.lastBehaviourClockMs = now;
+        this.rafId = window.requestAnimationFrame(this.tickFrame);
       }
       return;
     }
-    if (this.rafId === null) {
-      this.lastFrameTimeMs = performance.now();
-      this.rafId = window.requestAnimationFrame(this.tickFrame);
+    this.stopAnimationLoop();
+    if (this.needsStaticRender) {
+      this.renderSingleFrame();
     }
+    this.scheduleBehaviourWakeTimer();
   }
 
   private stopAnimationLoop(): void {
@@ -2244,7 +2391,8 @@ export class OfficeSceneController {
         this.skyRig.cloudGroup.rotation.y = 0;
       }
       for (const rig of this.stations.values()) {
-        animateWorkstationPod(rig, this.elapsedActiveSec, 0.016, reduced);
+        const pose = this.behaviourManager.getPose(rig.sessionKey);
+        animateWorkstationPod(rig, this.elapsedActiveSec, 0.016, reduced, pose);
       }
       if (!this.monitorDrag?.active) {
         this.controls.update();
@@ -2264,12 +2412,14 @@ export class OfficeSceneController {
 
     const rawDtSec = Math.max(0.001, (nowMs - this.lastFrameTimeMs) / 1000);
     this.lastFrameTimeMs = nowMs;
+    this.lastBehaviourClockMs = nowMs;
     const dtSec = Math.min(0.05, rawDtSec);
     const reduced = Boolean(this.currentState?.reducedMotion);
     const draggingMonitor = Boolean(this.monitorDrag?.active);
 
     if (!reduced) {
       this.elapsedActiveSec += dtSec;
+      this.behaviourManager.step(dtSec);
       // 云环绕 Y 轴缓慢旋转，所有云块始终严格保持在半径 > outerHalf + 6 环带内
       this.skyRig.cloudGroup.rotation.y =
         (this.elapsedActiveSec * CLOUD_ORBIT_SPEED_RAD) % (Math.PI * 2);
@@ -2319,18 +2469,35 @@ export class OfficeSceneController {
     }
 
     for (const rig of this.stations.values()) {
-      animateWorkstationPod(rig, this.elapsedActiveSec, dtSec, reduced);
+      const pose = this.behaviourManager.getPose(rig.sessionKey);
+      animateWorkstationPod(rig, this.elapsedActiveSec, dtSec, reduced, pose);
     }
 
+    this.prevCamPosScratch.copy(this.camera.position);
+    this.prevCamTargetScratch.copy(this.controls.target);
     if (!draggingMonitor) {
+      this.applyingCameraTransition = true;
       this.controls.update();
+      this.applyingCameraTransition = false;
     }
     this.clampControlsTarget();
+    const camSettling =
+      this.prevCamPosScratch.distanceToSquared(this.camera.position) > 1e-8
+      || this.prevCamTargetScratch.distanceToSquared(this.controls.target) > 1e-8;
+    if (camSettling) {
+      this.cameraSettleFrames = 2;
+    } else if (this.cameraSettleFrames > 0) {
+      this.cameraSettleFrames -= 1;
+    }
+
     this.updateDynamicSceneForCamera();
     this.renderer.render(this.scene, this.camera);
+    this.needsStaticRender = false;
 
-    if (!reduced || (this.activeCameraGoal && !draggingMonitor)) {
+    if (this.needsContinuousAnimation()) {
       this.rafId = window.requestAnimationFrame(this.tickFrame);
+    } else {
+      this.scheduleBehaviourWakeTimer();
     }
   };
 }

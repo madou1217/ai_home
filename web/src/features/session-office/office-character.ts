@@ -8,10 +8,10 @@ import type { OfficeScenePalette } from './office-scene-types';
 import {
   createSolidColorVoxelGeometry,
   FACE_SHADE,
-  mergeVoxelGeometries,
   type SolidColorBoxInput,
   type VoxelFaceDir,
 } from './office-voxel-builder';
+import type { CharacterPoseOutput } from './office-voxel-behaviour';
 
 /**
  * Minecraft Steve 体素角色模块：
@@ -237,11 +237,16 @@ export interface OfficeCharacterRig {
   leftArmGroup: THREE.Group;
   rightArmGroup: THREE.Group;
   legsGroup: THREE.Group;
+  leftLegGroup: THREE.Group;
+  rightLegGroup: THREE.Group;
   torsoMesh: THREE.Mesh;
   headMesh: THREE.Mesh;
   leftArmMesh: THREE.Mesh;
   rightArmMesh: THREE.Mesh;
   legsMesh: THREE.Mesh;
+  leftLegMesh: THREE.Mesh;
+  rightLegMesh: THREE.Mesh;
+  handMugMesh: THREE.Mesh;
   visorMesh: THREE.Mesh;
   glassesMesh: THREE.Mesh;
   headsetMesh: THREE.Mesh;
@@ -258,6 +263,9 @@ export interface OfficeCharacterRig {
   recentPulse: boolean;
   lastSkinSignature: string;
   lastAccentHex: string;
+  lastElapsedSec: number;
+  lastReducedMotion: boolean;
+  activePose: CharacterPoseOutput | null;
 }
 
 function hashText(value: string): number {
@@ -793,6 +801,46 @@ function createHeadsetGeometry(accentHex: string): THREE.BufferGeometry {
   return createSolidColorVoxelGeometry(boxes);
 }
 
+/** 构建手持方块咖啡杯几何（局部 +Z 朝上，匹配右臂前伸 -90° 时的竖直托杯姿态） */
+function createHandCoffeeMugGeometry(): THREE.BufferGeometry {
+  const boxes: SolidColorBoxInput[] = [
+    // 白色陶瓷杯身（位于右拳掌心前方）
+    {
+      minX: -0.055,
+      minY: -0.57,
+      minZ: 0.0,
+      maxX: 0.055,
+      maxY: -0.46,
+      maxZ: 0.125,
+      color: '#f1f5f9',
+      shadeFaces: true,
+    },
+    // 深棕咖啡液面顶盖
+    {
+      minX: -0.042,
+      minY: -0.558,
+      minZ: 0.115,
+      maxX: 0.042,
+      maxY: -0.472,
+      maxZ: 0.132,
+      color: '#4a2c18',
+      shadeFaces: true,
+    },
+    // 外侧方块杯耳
+    {
+      minX: -0.09,
+      minY: -0.535,
+      minZ: 0.03,
+      maxX: -0.055,
+      maxY: -0.495,
+      maxZ: 0.095,
+      color: '#e2e8f0',
+      shadeFaces: true,
+    },
+  ];
+  return createSolidColorVoxelGeometry(boxes);
+}
+
 function tagCharacterTree(object: THREE.Object3D, sessionKey: string): void {
   object.traverse((child) => {
     child.userData.sessionKey = sessionKey;
@@ -910,27 +958,36 @@ export function createOfficeCharacter(
   const rightArmMesh = new THREE.Mesh(rightArmGeo, skinMaterial);
   rightArmGroup.add(rightArmMesh);
 
-  // 坐姿双腿合批：枢轴位于 (0, 0.50, 0.0625) 并精确旋转 -Math.PI / 2 沿 +Z 前伸，
-  // 垂直覆盖 y = 0.375..0.625（紧贴椅面且完全低于桌面底沿 y = 0.6835，零穿模）
+  // 右手手持方块咖啡杯（默认隐藏，接咖啡/喝咖啡/端杯回座期间显示，复用 accessoryMaterial 零新增材质）
+  const handMugMesh = new THREE.Mesh(createHandCoffeeMugGeometry(), accessoryMaterial);
+  handMugMesh.name = 'character-hand-coffee-mug';
+  handMugMesh.visible = false;
+  rightArmGroup.add(handMugMesh);
+
+  // 左右独立腿部关节（支持坐姿 -90° 前伸、0.4s 坐站过渡、走路 ±30° 交替摆腿，复用共享皮肤材质）：
+  // 站立时 legsGroup 位于 y = 0.625，腿盒覆盖 [-0.625, 0] 使鞋底精准贴地 y = 0；
+  // 坐姿时 legsGroup 位于 (0, 0.50, -0.0625) 且左右腿旋转 -Math.PI/2，覆盖 y ∈ [0.375, 0.625]，与椅面/桌面零穿模。
   const legsGroup = new THREE.Group();
-  legsGroup.position.set(0, 0.5, 0.0625);
-  legsGroup.rotation.set(-Math.PI / 2, 0, 0);
+  legsGroup.position.set(0, 0.5, -0.0625);
   root.add(legsGroup);
 
-  const leftLegGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, LEFT_LEG_UV, [0.125, -0.1875, 0], {
-    faceShadeOverride: SEATED_FORWARD_FACE_SHADE,
-    hiddenFaces: { nx: true },
-  });
-  const rightLegGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, RIGHT_LEG_UV, [-0.125, -0.1875, 0], {
-    faceShadeOverride: SEATED_FORWARD_FACE_SHADE,
-    hiddenFaces: { px: true },
-  });
-  const mergedLegsGeo = mergeVoxelGeometries([leftLegGeo, rightLegGeo]);
-  leftLegGeo.dispose();
-  rightLegGeo.dispose();
+  const leftLegGroup = new THREE.Group();
+  leftLegGroup.position.set(0.125, 0, 0);
+  leftLegGroup.rotation.set(-Math.PI / 2, 0, 0);
+  legsGroup.add(leftLegGroup);
 
-  const legsMesh = new THREE.Mesh(mergedLegsGeo, skinMaterial);
-  legsGroup.add(legsMesh);
+  const leftLegGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, LEFT_LEG_UV, [0, -0.3125, 0]);
+  const leftLegMesh = new THREE.Mesh(leftLegGeo, skinMaterial);
+  leftLegGroup.add(leftLegMesh);
+
+  const rightLegGroup = new THREE.Group();
+  rightLegGroup.position.set(-0.125, 0, 0);
+  rightLegGroup.rotation.set(-Math.PI / 2, 0, 0);
+  legsGroup.add(rightLegGroup);
+
+  const rightLegGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, RIGHT_LEG_UV, [0, -0.3125, 0]);
+  const rightLegMesh = new THREE.Mesh(rightLegGeo, skinMaterial);
+  rightLegGroup.add(rightLegMesh);
 
   // 统一打标命中元数据与阴影开关
   tagCharacterTree(root, session.sessionKey);
@@ -942,11 +999,16 @@ export function createOfficeCharacter(
     leftArmGroup,
     rightArmGroup,
     legsGroup,
+    leftLegGroup,
+    rightLegGroup,
     torsoMesh,
     headMesh,
     leftArmMesh,
     rightArmMesh,
-    legsMesh,
+    legsMesh: leftLegMesh,
+    leftLegMesh,
+    rightLegMesh,
+    handMugMesh,
     visorMesh,
     glassesMesh,
     headsetMesh,
@@ -963,6 +1025,9 @@ export function createOfficeCharacter(
     recentPulse: session.activity.recentPulse,
     lastSkinSignature: `${session.sessionKey}|${shirtHex}|${accentHex}`,
     lastAccentHex: accentHex,
+    lastElapsedSec: 0,
+    lastReducedMotion: true,
+    activePose: null,
   };
 
   updateOfficeCharacter(rig, session, palette);
@@ -1032,16 +1097,153 @@ export function updateOfficeCharacter(
     rig.badgeLedMaterial.emissiveIntensity = session.activity.recentPulse ? 1.45 : 1.0;
   }
 
-  animateOfficeCharacter(rig, 0, true);
+  // 若角色正在走动或执行行为动画，保持当前姿态不被悬停/选中重同步打断
+  animateOfficeCharacter(rig, rig.lastElapsedSec, rig.lastReducedMotion, rig.activePose);
 }
+
+const WALK_LEG_SWING_RAD = THREE.MathUtils.degToRad(30);
+const WALK_ARM_SWING_RAD = THREE.MathUtils.degToRad(22);
+const WALK_BODY_BOB = 0.02;
+const SEATED_TORSO_Y = 0.375;
+const STANDING_TORSO_Y = 0.625;
+const SEATED_LEGS_Y = 0.5;
+const SEATED_LEGS_Z = -0.0625;
+const STANDING_LEGS_Y = 0.625;
 
 export function animateOfficeCharacter(
   rig: OfficeCharacterRig,
   elapsedSec: number,
-  reducedMotion: boolean
+  reducedMotion: boolean,
+  pose?: CharacterPoseOutput | null
 ): void {
-  // 坐姿双腿始终保持精确 -90° 前伸
-  rig.legsGroup.rotation.set(-Math.PI / 2, 0, 0);
+  rig.lastElapsedSec = elapsedSec;
+  rig.lastReducedMotion = reducedMotion;
+  rig.activePose = pose ?? null;
+
+  const t = elapsedSec + rig.phaseOffset;
+
+  // 非坐姿行为动画（仅在非 reducedMotion 且存在活动行为时生效，全程零临时对象分配）
+  if (!reducedMotion && pose && pose.phase !== 'seated') {
+    const stand = pose.standBlend;
+    rig.handMugMesh.visible = pose.holdingCoffee;
+
+    if (pose.phase === 'standing_up' || pose.phase === 'sitting_down') {
+      // 坐 ⇄ 站 约 0.4s 平滑过渡（腿部折叠/展开、躯干升降、双臂由敲键垂落）
+      const torsoY = SEATED_TORSO_Y + (STANDING_TORSO_Y - SEATED_TORSO_Y) * stand;
+      const legsY = SEATED_LEGS_Y + (STANDING_LEGS_Y - SEATED_LEGS_Y) * stand;
+      const legsZ = SEATED_LEGS_Z * (1 - stand);
+      const legPitch = -Math.PI * 0.5 * (1 - stand);
+      const leftArmPitch = -Math.PI * 0.5 * (1 - stand);
+      const rightArmPitch = pose.holdingCoffee
+        ? -1.25 - 0.25 * (1 - stand)
+        : leftArmPitch;
+
+      rig.torsoGroup.position.set(0, torsoY, 0);
+      rig.torsoGroup.rotation.set((1 - stand) * 0.08, 0, 0);
+      rig.headGroup.rotation.set((1 - stand) * 0.06, 0, 0);
+      rig.legsGroup.position.set(0, legsY, legsZ);
+      rig.legsGroup.rotation.set(0, 0, 0);
+      rig.leftLegGroup.rotation.set(legPitch, 0, 0);
+      rig.rightLegGroup.rotation.set(legPitch, 0, 0);
+      rig.leftArmGroup.rotation.set(leftArmPitch, 0, 0);
+      rig.rightArmGroup.rotation.set(rightArmPitch, 0, pose.holdingCoffee ? 0.1 : 0);
+      return;
+    }
+
+    if (pose.phase === 'brewing_coffee') {
+      // 面向咖啡机：右臂前伸取杯，到达后半段杯方块出现在手上并略微收回
+      const p = pose.actionProgress;
+      let reach = 0;
+      if (p < 0.3) {
+        reach = p / 0.3;
+      } else if (p < 0.72) {
+        reach = 1;
+      } else {
+        reach = 1 - ((p - 0.72) / 0.28) * 0.22;
+      }
+      const rightArmX = -1.48 * reach;
+      const rightArmZ = pose.holdingCoffee ? 0.12 * Math.min(1, (p - 0.5) * 3) : 0;
+      const headPitch = p < 0.75 ? 0.12 * reach : 0.12 * (1 - (p - 0.75) / 0.25);
+
+      rig.torsoGroup.position.set(0, STANDING_TORSO_Y, 0);
+      rig.torsoGroup.rotation.set(0.03 * reach, 0, 0);
+      rig.headGroup.rotation.set(headPitch, 0, 0);
+      rig.legsGroup.position.set(0, STANDING_LEGS_Y, 0);
+      rig.legsGroup.rotation.set(0, 0, 0);
+      rig.leftLegGroup.rotation.set(0, 0, 0);
+      rig.rightLegGroup.rotation.set(0, 0, 0);
+      rig.leftArmGroup.rotation.set(-0.08 + Math.sin(t * 1.8) * 0.02, 0, 0);
+      rig.rightArmGroup.rotation.set(rightArmX, 0, rightArmZ);
+      return;
+    }
+
+    if (pose.phase === 'drinking_coffee') {
+      // 举杯喝两口：右臂两次举向嘴边、内收对准口部，头部轻微上仰
+      const sipSlot = (pose.actionProgress * 2) % 1;
+      const sip = sipSlot > 0.1 && sipSlot < 0.9
+        ? Math.sin(((sipSlot - 0.1) / 0.8) * Math.PI)
+        : 0;
+
+      rig.torsoGroup.position.set(0, STANDING_TORSO_Y, 0);
+      rig.torsoGroup.rotation.set(-0.04 * sip, 0, 0);
+      rig.headGroup.rotation.set(-0.22 * sip, 0, 0);
+      rig.legsGroup.position.set(0, STANDING_LEGS_Y, 0);
+      rig.legsGroup.rotation.set(0, 0, 0);
+      rig.leftLegGroup.rotation.set(0, 0, 0);
+      rig.rightLegGroup.rotation.set(0, 0, 0);
+      rig.leftArmGroup.rotation.set(-0.06, 0, 0);
+      rig.rightArmGroup.rotation.set(-1.18 - 0.9 * sip, 0, 0.14 + 0.3 * sip);
+      return;
+    }
+
+    if (pose.phase === 'stroll_pause') {
+      // 散步路点停顿观望：自然呼吸 + 左右缓慢环顾
+      const breath = Math.sin(t * 2.0) * 0.015;
+      const lookYaw = Math.sin(pose.actionProgress * Math.PI * 2 + rig.phaseOffset) * 0.28;
+
+      rig.torsoGroup.position.set(0, STANDING_TORSO_Y, 0);
+      rig.torsoGroup.rotation.set(breath, lookYaw * 0.16, 0);
+      rig.headGroup.rotation.set(0.03, lookYaw, 0);
+      rig.legsGroup.position.set(0, STANDING_LEGS_Y, 0);
+      rig.legsGroup.rotation.set(0, 0, 0);
+      rig.leftLegGroup.rotation.set(0, 0, 0);
+      rig.rightLegGroup.rotation.set(0, 0, 0);
+      rig.leftArmGroup.rotation.set(Math.sin(t * 1.6) * 0.03, 0, 0);
+      rig.rightArmGroup.rotation.set(-Math.sin(t * 1.6) * 0.03, 0, 0);
+      return;
+    }
+
+    // 走路循环：双腿前后摆 ±30°、双臂反向摆 ±22°、身体上下微颠 0.02
+    const wb = pose.walkBlend;
+    const strideSin = Math.sin(pose.walkPhase);
+    const legSwing = strideSin * WALK_LEG_SWING_RAD * wb;
+    const armSwing = strideSin * WALK_ARM_SWING_RAD * wb;
+    const bob = Math.abs(strideSin) * WALK_BODY_BOB * wb;
+
+    rig.torsoGroup.position.set(0, STANDING_TORSO_Y + bob, 0);
+    rig.torsoGroup.rotation.set(0.03 * wb, 0, 0);
+    rig.headGroup.rotation.set(0.02 * wb, Math.sin(t * 1.1) * 0.06, 0);
+    rig.legsGroup.position.set(0, STANDING_LEGS_Y, 0);
+    rig.legsGroup.rotation.set(0, 0, 0);
+    rig.leftLegGroup.rotation.set(legSwing, 0, 0);
+    rig.rightLegGroup.rotation.set(-legSwing, 0, 0);
+    rig.leftArmGroup.rotation.set(-armSwing, 0, 0);
+    if (pose.holdingCoffee) {
+      // 端着咖啡杯慢走回座：右臂前平端稳杯子，随步态小幅柔和起伏
+      rig.rightArmGroup.rotation.set(-1.24 + strideSin * 0.05 * wb, 0, 0.1);
+    } else {
+      rig.rightArmGroup.rotation.set(armSwing, 0, 0);
+    }
+    return;
+  }
+
+  // 坐姿基准：躯干落于椅面 y = 0.375，双腿精确 -90° 前伸且不持杯
+  rig.handMugMesh.visible = false;
+  rig.torsoGroup.position.set(0, SEATED_TORSO_Y, 0);
+  rig.legsGroup.position.set(0, SEATED_LEGS_Y, SEATED_LEGS_Z);
+  rig.legsGroup.rotation.set(0, 0, 0);
+  rig.leftLegGroup.rotation.set(-Math.PI / 2, 0, 0);
+  rig.rightLegGroup.rotation.set(-Math.PI / 2, 0, 0);
 
   if (rig.availability === 'exited') {
     // 退出状态：微微低头、双手静置桌面边缘上方（严格高于桌面 y = 0.746，零穿模）
@@ -1062,7 +1264,7 @@ export function animateOfficeCharacter(
   }
 
   if (reducedMotion) {
-    // 减弱动态模式：严格静止，全肢体保持精确 90° 轴对齐坐姿
+    // 减弱动态模式：保持坐姿不位移
     rig.torsoGroup.rotation.set(0, 0, 0);
     rig.headGroup.rotation.set(0, 0, 0);
     rig.leftArmGroup.rotation.set(-Math.PI / 2, 0, 0);
@@ -1070,7 +1272,6 @@ export function animateOfficeCharacter(
     return;
   }
 
-  const t = elapsedSec + rig.phaseOffset;
   const breath = Math.sin(t * 2.0) * 0.015;
   const pulseNod = rig.recentPulse ? Math.sin(t * 6.4) * 0.035 : 0;
 
@@ -1117,7 +1318,9 @@ export function disposeOfficeCharacter(rig: OfficeCharacterRig): void {
     rig.headMesh.geometry,
     rig.leftArmMesh.geometry,
     rig.rightArmMesh.geometry,
-    rig.legsMesh.geometry,
+    rig.leftLegMesh.geometry,
+    rig.rightLegMesh.geometry,
+    rig.handMugMesh.geometry,
     rig.visorMesh.geometry,
     rig.glassesMesh.geometry,
     rig.headsetMesh.geometry,

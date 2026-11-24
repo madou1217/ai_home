@@ -339,7 +339,17 @@ func (manager *Manager) Submit(ctx context.Context, id, content, peerMessageID s
 	}
 	turnID, err := sess.proc.Submit(content, peerMessageID)
 	if err != nil {
-		return 0, err
+		// 进程在长轮之间掉线（例如 SSH 255）时重新拉起一次再投递同一轮，
+		// 不把用户的追问静默丢掉。
+		retryCtx, retryCancel := context.WithTimeout(ctx, 30*time.Second)
+		restartErr := sess.proc.EnsureStarted(retryCtx)
+		retryCancel()
+		if restartErr == nil {
+			turnID, err = sess.proc.Submit(content, peerMessageID)
+		}
+		if err != nil {
+			return 0, err
+		}
 	}
 	manager.mu.Lock()
 	if peerMessageID != "" {

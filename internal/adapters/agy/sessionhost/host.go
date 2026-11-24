@@ -587,8 +587,11 @@ func buildSSHArgs(transport SSHTransport, remoteCommand string) []string {
 	args := []string{
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=4",
+		// 一轮可能几十分钟没有可读输出；keepalive 太短会把长轮误判为断线（ssh 退出 255）。
+		"-o", "ServerAliveInterval=10",
+		"-o", "ServerAliveCountMax=18",
+		"-o", "TCPKeepAlive=yes",
+		"-o", "ConnectionAttempts=2",
 	}
 	if identity := strings.TrimSpace(transport.IdentityFile); identity != "" {
 		args = append(args, "-i", identity)

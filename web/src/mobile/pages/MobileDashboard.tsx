@@ -1,17 +1,7 @@
-import { writeClipboardText } from '@/utils/clipboard';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, message } from 'antd';
-import {
-  CopyOutlined,
-  DisconnectOutlined,
-  DownOutlined,
-  MessageOutlined,
-  ReloadOutlined,
-  UpOutlined,
-  WarningOutlined
-} from '@ant-design/icons';
-import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
+import { DisconnectOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useGatewayDashboard, type DashboardLiveState } from '@/features/dashboard/use-gateway-dashboard';
 import { usePresenceList } from '@/hooks/use-presence-list';
 import {
@@ -22,9 +12,7 @@ import {
   formatUptime,
   getOverallHealth,
   getOverallHealthMeta,
-  getRecentErrorProvider,
   getSuccessTone,
-  normalizeQueueCount,
   resolveFriendlyAccountDisplay,
   sumRunningQueue,
   type ProviderRow
@@ -33,33 +21,34 @@ import MobileBoot from '@/mobile/MobileBoot';
 import type { MobilePageProps } from '@/mobile/mobile-routes';
 import {
   DetailSheet,
+  EmptySignal,
   HudCard,
   HudIconButton,
-  HudSection,
   KeyValue,
   MobilePage,
   MobileToolbar,
-  MonoList,
-  SwipeRow,
   TelemetryGrid,
   TelemetryTile,
-  type HudTone,
-  type SwipeAction
+  type HudTone
 } from '@/mobile/ui';
 import { confirmAction } from '@/utils/confirm-action';
+import { writeClipboardText } from '@/utils/clipboard';
 import { HEALTH_TONE, SUCCESS_TONE } from './dashboard/dashboard-tones';
+import {
+  DashboardHotRoutesSection,
+  DashboardProviderSection,
+  DashboardRecentErrorsSection
+} from './dashboard/DashboardSections';
 import ProviderStatusSheet from './dashboard/ProviderStatusSheet';
 import RecentErrorSheet, { type RecentErrorView } from './dashboard/RecentErrorSheet';
 import styles from './MobileDashboard.module.css';
 
 /** 管理快照通道状态（真实 watch / 回落读取），只做展示映射。 */
 const LIVE_STATE: Record<DashboardLiveState, { text: string; tone: HudTone }> = {
-  live: { text: 'LIVE', tone: 'ok' },
-  connecting: { text: 'SYNC', tone: 'info' },
-  degraded: { text: 'POLL', tone: 'warn' }
+  live: { text: '实时推送', tone: 'ok' },
+  connecting: { text: '连接中', tone: 'info' },
+  degraded: { text: '轮询模式', tone: 'warn' }
 };
-
-const providerLabel = (provider: string) => providerNames[provider as keyof typeof providerNames] || provider;
 
 /**
  * 移动端网关仪表盘（/dashboard）。
@@ -134,8 +123,6 @@ export default function MobileDashboard(_props: MobilePageProps) {
     text: formatRecentErrorMessage(item)
   })), [accountByRef, recentErrors]);
 
-  const routeTotalMax = Math.max(routeRows[0]?.count || 0, 1);
-
   const onClearCooldown = async () => {
     const confirmed = await confirmAction({
       title: '清空冷却',
@@ -170,38 +157,6 @@ export default function MobileDashboard(_props: MobilePageProps) {
     setErrorOpen(true);
   };
 
-  const renderProviderRow = (row: ProviderRow, entering = false, leaving = false) => {
-    const pct = row.total > 0 ? Math.round((row.active / row.total) * 100) : 0;
-    const offline = row.total === 0;
-    const running = normalizeQueueCount(row.queue?.running);
-    const queued = normalizeQueueCount(row.queue?.queued);
-    const conc = normalizeQueueCount(row.queue?.maxConcurrency, 1);
-    const ratioTone: HudTone = offline ? 'muted' : pct < 100 ? 'warn' : 'ok';
-    return (
-      <SwipeRow
-        key={row.key}
-        onTap={() => openProvider(row)}
-        ariaLabel={`查看 ${providerLabel(row.provider)} 运行状态`}
-        className={leaving ? 'aih-leaving' : entering ? 'aih-fade-in' : undefined}
-      >
-        <span className={`mhud-row__icon${offline ? ` ${styles.idle}` : ''}`}>
-          <ProviderIcon provider={row.provider} size={20} />
-        </span>
-        <span className={`mhud-row__main${offline ? ` ${styles.idle}` : ''}`}>
-          <span className="mhud-row__title">{providerLabel(row.provider)}</span>
-          <span className="mhud-row__meta">队列 {running}/{queued} · 并发 {conc} · 请求 {row.requests}</span>
-        </span>
-        <span className="mhud-row__side">
-          <span className={`${styles.ratio} mhud-tone--${ratioTone}`}>{row.active}/{row.total}</span>
-          <span className={styles.counts}>
-            <span className="mhud-tone--ok">✓{row.success}</span>
-            <span className={row.failures > 0 ? 'mhud-tone--err' : styles.dim}>✗{row.failures}</span>
-          </span>
-        </span>
-      </SwipeRow>
-    );
-  };
-
   const toolbar = (
     <MobileToolbar
       start={(
@@ -210,7 +165,6 @@ export default function MobileDashboard(_props: MobilePageProps) {
             <span className={`hud-led hud-led--${channel.tone === 'muted' ? 'info' : channel.tone}${liveState === 'live' ? ' hud-led--live' : ''}`} />
             <span className={`mhud-tone--${channel.tone}`}>{channel.text}</span>
           </span>
-          <span className={styles.channelHealth}>{health.label}</span>
         </span>
       )}
     >
@@ -232,18 +186,18 @@ export default function MobileDashboard(_props: MobilePageProps) {
 
   if (!status) {
     return (
-      <MobilePage toolbar={toolbar}>
+      <MobilePage
+        toolbar={toolbar}
+        lead="查看网关吞吐、账号健康与异常请求。"
+      >
         {loadError && !loading ? (
-          <div className={styles.loadError} role="alert">
-            <span className="mhud-status mhud-tone--err">
-              <span className="hud-led hud-led--err" />
-              LINK DOWN
-            </span>
-            <span className={styles.loadErrorText}>加载管理面板失败：{loadError}</span>
-            <Button icon={<ReloadOutlined />} onClick={() => void handleRefreshDashboard()}>重试</Button>
-          </div>
+          <EmptySignal
+            title="连接失败"
+            description={`加载管理面板失败：${loadError}`}
+            action={<Button icon={<ReloadOutlined />} onClick={() => void handleRefreshDashboard()}>重试</Button>}
+          />
         ) : (
-          <MobileBoot label="SYNC" />
+          <MobileBoot label="同步网关状态" />
         )}
       </MobilePage>
     );
@@ -252,7 +206,10 @@ export default function MobileDashboard(_props: MobilePageProps) {
   const runtimeParams = buildRuntimeParams(status, displayedUptimeSec);
 
   return (
-    <MobilePage toolbar={toolbar}>
+    <MobilePage
+      toolbar={toolbar}
+      lead="查看网关吞吐、账号健康与异常请求。"
+    >
       <TelemetryGrid>
         <TelemetryTile
           wide
@@ -274,14 +231,14 @@ export default function MobileDashboard(_props: MobilePageProps) {
           sub={health.label}
         />
         <TelemetryTile
-          label="冷却摘除"
+          label="冷却中账号"
           led
           tone={cooldownAccounts > 0 ? 'warn' : 'ok'}
           value={cooldownAccounts}
-          sub={cooldownAccounts > 0 ? '已被调度层临时摘除' : '无摘除账号'}
+          sub={cooldownAccounts > 0 ? '调度层临时摘除' : '无冷却账号'}
         />
         <TelemetryTile
-          label="总请求吞吐"
+          label="累计请求"
           tone={throughputTone === 'muted' ? 'info' : throughputTone}
           value={totalRequestsCount.toLocaleString()}
           sub={totalRequestsCount > 0 ? `成功率 ${formatPercent(metrics?.successRate)}` : '暂无请求'}
@@ -291,10 +248,10 @@ export default function MobileDashboard(_props: MobilePageProps) {
           led={totalQueueRunning > 0 ? 'live' : true}
           tone={totalQueueRunning > 10 ? 'warn' : 'ok'}
           value={totalQueueRunning}
-          sub="实时活跃 Session 队列"
+          sub="活跃会话队列"
         />
         <TelemetryTile
-          label="运行时间"
+          label="运行时长"
           tone="info"
           value={formatUptime(displayedUptimeSec)}
           sub={`后端 ${status.backend || 'Node'}`}
@@ -302,88 +259,30 @@ export default function MobileDashboard(_props: MobilePageProps) {
         <TelemetryTile
           label="调度策略"
           tone="info"
-          value={<span className={styles.textValue}>{status.strategy || '-'}</span>}
-          sub={`Provider 模式 ${status.providerMode || '-'}`}
+          value={<span className={styles.textValue}>{status.strategy || '—'}</span>}
+          sub={`模式 ${status.providerMode || '—'}`}
         />
       </TelemetryGrid>
 
-      <HudSection title="Provider 运行状态" code="PROV" count={`${activeProviders.length}/${providerRows.length}`}>
-        <MonoList ariaLabel="Provider 运行状态">
-          {providerPresence.render.map(({ item, leaving }) => renderProviderRow(item.row, item.idle, leaving))}
-        </MonoList>
-        {idleProviders.length > 0 ? (
-          <button
-            type="button"
-            className={styles.expander}
-            aria-expanded={showIdleProviders}
-            onClick={() => setShowIdleProviders((value) => !value)}
-          >
-            {showIdleProviders ? <UpOutlined /> : <DownOutlined />}
-            <span>{showIdleProviders ? '收起未接入账号的 Provider' : `显示未接入账号的 Provider（${idleProviders.length}）`}</span>
-          </button>
-        ) : null}
-      </HudSection>
+      <DashboardProviderSection
+        activeCount={activeProviders.length}
+        totalCount={providerRows.length}
+        idleCount={idleProviders.length}
+        showIdleProviders={showIdleProviders}
+        onToggleIdleProviders={() => setShowIdleProviders((value) => !value)}
+        entries={providerPresence.render}
+        onOpenProvider={openProvider}
+        onGoAccounts={() => navigate('/accounts')}
+      />
 
-      {errorViews.length > 0 ? (
-        <HudSection title="最近错误" code="ERR" count={errorViews.length} className="aih-fade-in">
-          <MonoList ariaLabel="最近错误">
-            {errorViews.map((view) => {
-              const provider = getRecentErrorProvider(view.item);
-              const canOpenChat = Boolean(view.item.projectPath || view.item.sessionId);
-              const actions: SwipeAction[] = [
-                { key: 'copy', label: '复制', icon: <CopyOutlined />, onAction: () => void copyErrorText(view.text) }
-              ];
-              if (canOpenChat) {
-                actions.push({
-                  key: 'chat',
-                  label: '会话',
-                  icon: <MessageOutlined />,
-                  tone: 'primary',
-                  onAction: () => openChat({ projectPath: view.item.projectPath, sessionId: view.item.sessionId })
-                });
-              }
-              return (
-                <SwipeRow key={view.key} actions={actions} onTap={() => openError(view)} ariaLabel={`查看错误详情：${view.account}`}>
-                  <span className="mhud-row__icon">
-                    {provider ? <ProviderIcon provider={provider} size={18} /> : <WarningOutlined className="mhud-tone--err" />}
-                  </span>
-                  <span className="mhud-row__main">
-                    <span className="mhud-row__title">{view.account}</span>
-                    <span className={`mhud-row__meta ${styles.errorMeta}`}>{view.text}</span>
-                  </span>
-                  <span className="mhud-row__side">
-                    <span className="mhud-status mhud-tone--err">
-                      <span className="hud-led hud-led--err" />
-                      ERR
-                    </span>
-                    {view.item.at ? <span className={styles.dim}>{new Date(view.item.at).toLocaleTimeString()}</span> : null}
-                  </span>
-                </SwipeRow>
-              );
-            })}
-          </MonoList>
-        </HudSection>
-      ) : null}
+      <DashboardRecentErrorsSection
+        errorViews={errorViews}
+        onOpenError={openError}
+        onCopyError={(text) => void copyErrorText(text)}
+        onOpenChat={openChat}
+      />
 
-      {routeRows.length > 0 ? (
-        <HudSection title="热点路由" code="ROUTE" count={routeRows.length} className="aih-fade-in">
-          <HudCard>
-            <div className={styles.routeList}>
-              {routeRows.map((row) => (
-                <div className={styles.routeItem} key={row.key}>
-                  <div className={styles.routeLine}>
-                    <span className={styles.routeName}>{row.route}</span>
-                    <span className={styles.routeCount}>{row.count}</span>
-                  </div>
-                  <span className="mhud-track" aria-hidden="true">
-                    <span className="mhud-track__fill mhud-bg--info" style={{ width: `${Math.round((row.count / routeTotalMax) * 100)}%` }} />
-                  </span>
-                </div>
-              ))}
-            </div>
-          </HudCard>
-        </HudSection>
-      ) : null}
+      <DashboardHotRoutesSection routeRows={routeRows} />
 
       <HudCard
         code="RUNTIME"
@@ -392,7 +291,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
         onClick={() => setParamsOpen(true)}
         ariaLabel="查看服务运行参数"
       >
-        <span className={styles.cardHint}>Backend {status.backend || '-'} · 缓存模型 {status.modelsCached || 0} · 点按展开</span>
+        <span className={styles.cardHint}>后端 {status.backend || '—'} · 缓存模型 {status.modelsCached || 0} · 点击查看</span>
       </HudCard>
 
       <ProviderStatusSheet open={providerOpen} row={selectedProvider} onClose={() => setProviderOpen(false)} />

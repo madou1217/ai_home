@@ -187,8 +187,20 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
           </span>
         </div>
         <div className="mhud-row__side">
-          {running ? <span className="mhud-status mhud-tone--ok"><span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />RUN</span> : <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>}
-          {active ? <span className="mhud-status mhud-tone--info"><span className="hud-led hud-led--info" aria-hidden="true" />OPEN</span> : null}
+          {running ? (
+            <span className="mhud-status mhud-tone--ok">
+              <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />
+              运行中
+            </span>
+          ) : (
+            <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>
+          )}
+          {active ? (
+            <span className="mhud-status mhud-tone--info">
+              <span className="hud-led hud-led--info" aria-hidden="true" />
+              当前
+            </span>
+          ) : null}
         </div>
       </SwipeRow>
     );
@@ -228,10 +240,19 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
         </div>
         <div className="mhud-row__side">
           {running ? (
-            <span className="mhud-status mhud-tone--ok"><span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />RUN</span>
+            <span className="mhud-status mhud-tone--ok">
+              <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />
+              运行中
+            </span>
           ) : (
             <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>
           )}
+          {active ? (
+            <span className="mhud-status mhud-tone--info">
+              <span className="hud-led hud-led--info" aria-hidden="true" />
+              当前
+            </span>
+          ) : null}
         </div>
       </SwipeRow>
     );
@@ -317,7 +338,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
   };
 
   const chatBody = () => {
-    if (sessions.loadingChatSessions && sessions.chatSessions.length === 0) return <MobileBoot label="SYNC" />;
+    if (sessions.loadingChatSessions && sessions.chatSessions.length === 0) return <MobileBoot label="加载会话列表" />;
     if (sessions.chatSessionsFailed && sessions.chatSessions.length === 0) {
       return (
         <div className={`${styles.errorLine} aih-fade-in`} role="alert">
@@ -328,19 +349,25 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
       );
     }
     if (sessions.chatSessions.length === 0) {
-      return <EmptySignal title="NO SESSIONS" description="暂无纯聊天会话，点击下方「发起新对话」开始。" />;
+      return (
+        <EmptySignal
+          title="暂无对话"
+          description="还没有纯聊天会话，可立即发起新对话。"
+          action={<HudIconButton icon={<PlusOutlined />} label="发起新对话" tone="primary" showLabel onClick={handleCreateSession} />}
+        />
+      );
     }
     return <MonoList ariaLabel="纯聊天会话" className="aih-fade-in">{sessions.chatSessions.map(renderChatSession)}</MonoList>;
   };
 
   const workBody = () => {
-    if (projectCatalog.loadingProjects && projects.length === 0) return <MobileBoot label="SYNC" />;
+    if (projectCatalog.loadingProjects && projects.length === 0) return <MobileBoot label="加载项目列表" />;
     if (projects.length === 0) {
       return (
         <EmptySignal
-          title="NO PROJECTS"
-          description="暂无项目。挂载一个服务器上的项目目录后即可新建工作区会话。"
-          action={<HudIconButton icon={<FolderOpenOutlined />} label="打开项目" showLabel onClick={dialogs.openProject} />}
+          title="暂无项目"
+          description="挂载服务器上的项目目录后即可新建工作区会话。"
+          action={<HudIconButton icon={<FolderOpenOutlined />} label="打开项目" tone="primary" showLabel onClick={dialogs.openProject} />}
         />
       );
     }
@@ -348,14 +375,14 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
   };
 
   return (
-    <MobilePage>
+    <MobilePage lead="切换纯聊天与项目工作区会话，左滑行可执行快捷操作。">
       <HudChips
         ariaLabel="会话模式"
         value={workspaceMode}
         onChange={(key) => handleModeChange(key === 'work' ? 'work' : 'chat')}
         items={[
-          { key: 'chat', label: 'CHAT · 纯聊天', icon: <MessageOutlined /> },
-          { key: 'work', label: 'WORK · 工作区', icon: <CodeOutlined /> },
+          { key: 'chat', label: '纯聊天', icon: <MessageOutlined /> },
+          { key: 'work', label: '工作区', icon: <CodeOutlined /> },
         ]}
       />
       <MobileToolbar

@@ -109,7 +109,11 @@ export default function UsageRequestDetails({ usage, errors, requested, loading,
       {loading && rows.length === 0 ? (
         <div className={styles.listLoading}><Spin /></div>
       ) : rows.length === 0 ? (
-        <EmptySignal description={kind === 'usage' ? '当前范围内没有用量明细。' : '当前范围内没有错误请求。'} />
+        <EmptySignal
+          title={kind === 'usage' ? '暂无用量明细' : '暂无错误请求'}
+          description={kind === 'usage' ? '当前范围内没有用量明细记录。' : '当前范围内没有失败请求记录。'}
+          action={<HudIconButton icon={<ReloadOutlined />} label="刷新明细" showLabel loading={loading} onClick={onRequest} />}
+        />
       ) : (
         <MonoList ariaLabel={kind === 'usage' ? '用量明细' : '错误请求'}>
           {rows.map((row) => (

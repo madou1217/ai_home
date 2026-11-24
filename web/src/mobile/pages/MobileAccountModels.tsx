@@ -101,15 +101,21 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
     return (
       <MobilePage toolbar={toolbar}>
         <EmptySignal
-          title="NO ACCOUNT"
-          description="当前账号缺少公开引用，请从账号列表重新进入"
-          action={<HudIconButton icon={<ArrowLeftOutlined />} label="返回账号" showLabel onClick={backToAccounts} />}
+          title="缺少账号引用"
+          description="当前账号缺少公开引用，请从账号列表重新进入。"
+          action={<HudIconButton icon={<ArrowLeftOutlined />} label="返回账号" tone="primary" showLabel onClick={backToAccounts} />}
         />
       </MobilePage>
     );
   }
 
   const probeError = state.probeError ? parseUpstreamError(state.probeError) : null;
+  const hasFilters = Boolean(state.keyword.trim() || state.statusFilter !== 'all' || (state.isOpenCode && state.groupFilter !== 'all'));
+  const resetFilters = () => {
+    state.setKeyword('');
+    state.setStatusFilter('all');
+    if (state.isOpenCode) state.setGroupFilter('all');
+  };
 
   const statusChips: HudChipItem[] = MODEL_STATUS_FILTER_OPTIONS.map((option) => ({
     key: option.value,
@@ -154,7 +160,10 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
   };
 
   return (
-    <MobilePage toolbar={toolbar}>
+    <MobilePage
+      toolbar={toolbar}
+      lead="控制当前账号的独立模型开关、默认模型与手动补充项。"
+    >
       <HudCard
         code={String(state.scopedProvider || '').toUpperCase()}
         title={state.accountTitle}
@@ -168,23 +177,23 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
         <div className={styles.accountHead}>
           {state.scopedProvider ? <ProviderIcon provider={state.scopedProvider} size={22} /> : null}
           <span className={styles.accountDesc}>
-            独立模型开关和手动补充 · 更新时间 {formatUpdatedAt(state.catalog?.updatedAt)}
+            {providerLabel || state.scopedProvider} · 更新时间 {formatUpdatedAt(state.catalog?.updatedAt)}
           </span>
         </div>
       </HudCard>
 
       <TelemetryGrid>
         <TelemetryTile label="账号模型" value={state.accountModelCount} tone="info" />
-        <TelemetryTile label="启用模型" value={state.enabledModelCount} tone={state.enabledModelCount > 0 ? 'ok' : 'muted'} led />
+        <TelemetryTile label="已启用" value={state.enabledModelCount} tone={state.enabledModelCount > 0 ? 'ok' : 'muted'} led />
         <TelemetryTile label="手动补充" value={state.manualModelCount} tone="muted" />
         <TelemetryTile
-          label="刷新状态"
+          label="探测状态"
           value={formatCatalogJobStatus(state.catalogJob)}
           tone={state.catalogJob?.status === 'failed' ? 'err' : jobActive ? 'info' : 'muted'}
           led={jobActive ? 'live' : Boolean(state.catalogJob)}
           sub={state.catalogJob
-            ? `${formatCatalogProbeScope(state.catalogJob)} · 可见 ${getCatalogJobVisibleCount(state.catalogJob) ?? '-'} · 探测账号 ${state.catalogJob.catalog?.scannedAccounts ?? '-'}`
-            : undefined}
+            ? `${formatCatalogProbeScope(state.catalogJob)} · 可见 ${getCatalogJobVisibleCount(state.catalogJob) ?? '—'}`
+            : '尚未执行刷新'}
         />
       </TelemetryGrid>
 
@@ -241,33 +250,52 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
         />
 
         {!state.loaded && state.loading ? (
-          <MobileBoot label="LOADING MODELS" />
+          <MobileBoot label="加载账号模型" />
         ) : state.loadError && !state.catalog ? (
           <EmptySignal
-            title="LINK ERROR"
+            title="加载失败"
             description={state.loadError}
             action={(
               <HudIconButton
                 icon={<ReloadOutlined />}
                 label="重试"
+                tone="primary"
                 showLabel
                 onClick={() => { void state.loadModels({ quiet: true }); }}
               />
             )}
           />
         ) : state.rows.length === 0 ? (
-          <EmptySignal
-            description="暂无数据"
-            action={(
-              <HudIconButton
-                icon={<ReloadOutlined />}
-                label="探测账号模型"
-                showLabel
-                disabled={jobActive}
-                onClick={() => { void state.refreshModels(); }}
-              />
-            )}
-          />
+          hasFilters ? (
+            <EmptySignal
+              title="无匹配模型"
+              description="当前筛选条件下没有模型，可重置筛选查看全部。"
+              action={(
+                <HudIconButton
+                  icon={<ReloadOutlined />}
+                  label="重置筛选"
+                  tone="primary"
+                  showLabel
+                  onClick={resetFilters}
+                />
+              )}
+            />
+          ) : (
+            <EmptySignal
+              title="暂无模型"
+              description="尚未探测到该账号的模型，可执行探测刷新或手动补充。"
+              action={(
+                <HudIconButton
+                  icon={<ReloadOutlined />}
+                  label="探测账号模型"
+                  tone="primary"
+                  showLabel
+                  disabled={jobActive}
+                  onClick={() => { void state.refreshModels(); }}
+                />
+              )}
+            />
+          )
         ) : (
           <MonoList ariaLabel="账号模型列表" className="aih-fade-in">
             {state.rows.map((model) => {
@@ -276,16 +304,16 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
               const displayLabel = state.getModelDisplayLabel(model);
               const flags = [
                 displayLabel ? model.id : '',
+                enabled ? '已启用' : '已停用',
                 model.defaultModel ? '默认' : '',
-                model.manual ? '手动' : '',
-                enabled ? '' : '停用'
+                model.manual ? '手动' : ''
               ].filter(Boolean).join(' · ');
               return (
                 <SwipeRow
                   key={rowKey}
                   actions={buildSwipeActions(model)}
                   onTap={() => setSelectedKey(rowKey)}
-                  ariaLabel={`查看模型 ${model.id}`}
+                  ariaLabel={`查看模型 ${model.id}，${enabled ? '已启用' : '已停用'}`}
                 >
                   <span className={`mhud-row__main${enabled ? '' : ` ${styles.disabledRow}`}`}>
                     <span className="mhud-row__title">{displayLabel || model.id}</span>

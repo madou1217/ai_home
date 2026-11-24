@@ -31,6 +31,7 @@ export default function HudChips({ items, value, onChange, ariaLabel }: Props) {
             className={`mhud-chip${active ? ' is-active' : ''}`}
             onClick={() => onChange(item.key)}
           >
+            {active ? <span className="mhud-chip__mark" aria-hidden="true" /> : null}
             {item.icon}
             <span>{item.label}</span>
             {typeof item.count === 'number' ? <span className="mhud-chip__count">{item.count}</span> : null}

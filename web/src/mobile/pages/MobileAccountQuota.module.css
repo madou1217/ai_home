@@ -73,14 +73,15 @@
 
 .stripReadout {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
 }
 
 .stripValue {
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: clamp(18px, 5.4vw, 22px);
   font-weight: 700;
   font-variant-numeric: tabular-nums slashed-zero;
 }

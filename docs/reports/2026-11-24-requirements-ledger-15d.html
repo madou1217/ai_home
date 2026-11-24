@@ -1,0 +1,787 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Home 近 15 天需求与完成度台账</title><style>
+:root{--bg:#f6f5f1;--surface:#fff;--sunken:#efeee8;--fg:#1d2124;--muted:#5b6469;--line:#d9d7cf;--accent:#14636b;--done:#1f7a4d;--done-bg:#dff0e5;--partial:#8a5a0b;--partial-bg:#f7ebd3;--open:#a33a2c;--open-bg:#f6e0da;--unknown:#5b6469;--unknown-bg:#e8e7e2;--rule:#3f4f8a;--rule-bg:#e2e5f3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 "Noto Sans SC",system-ui,-apple-system,"PingFang SC",sans-serif;padding:28px 18px 72px}
+.wrap{max-width:1180px;margin:0 auto}header{border-bottom:2px solid var(--fg);padding-bottom:18px}
+.eyebrow{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:clamp(26px,4.5vw,40px);line-height:1.15;margin:8px 0 10px;font-weight:650}
+.lede{max-width:78ch;color:var(--muted);margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin:22px 0 6px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:11px 13px}
+.stat b{display:block;font-size:23px;line-height:1.2;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:6px 14px;padding:12px 0;margin:8px 0 0;border-bottom:1px solid var(--line);font-size:13px}
+nav a{color:var(--accent);text-decoration:none}nav a:hover{text-decoration:underline}
+section{margin-top:34px}h2{font-size:20px;margin:0 0 4px;display:flex;align-items:baseline;gap:9px}h2 .count{font:12px ui-monospace,monospace;color:var(--muted);font-weight:400}
+.note{color:var(--muted);font-size:13.5px;margin:0 0 10px;max-width:78ch}
+.board{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:760px}
+th{text-align:left;font:11.5px ui-monospace,monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);background:var(--sunken);padding:8px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}tr:last-child td{border-bottom:none}
+td:first-child{min-width:250px}td.meta{font:11.5px ui-monospace,monospace;color:var(--muted);white-space:nowrap}
+td.ev{color:var(--muted);font-size:12.5px;min-width:260px}
+td.sess{font:11px ui-monospace,monospace;color:var(--muted);white-space:nowrap}
+.chip{display:inline-block;font-size:11.5px;font-weight:650;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.s-已完成{background:var(--done-bg);color:var(--done)}.s-部分{background:var(--partial-bg);color:var(--partial)}.s-未完成{background:var(--open-bg);color:var(--open)}.s-未核实{background:var(--unknown-bg);color:var(--unknown)}.s-约束{background:var(--rule-bg);color:var(--rule)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12.5px;color:var(--muted);margin:14px 0 0}
+.openlist{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 18px}
+.openlist li{margin:9px 0}.openlist b{font-weight:650}
+.notes{margin-top:40px;border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:13px}
+.notes ul{margin:6px 0 0;padding-left:18px}.notes li{margin-bottom:5px}
+code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;border-radius:3px}
+@media(max-width:640px){td:first-child{min-width:190px}body{padding:18px 12px 56px}}
+</style></head><body><div class="wrap">
+<header><div class="eyebrow">2026-11-09 → 2026-11-24 · 本项目全部会话</div><h1>AI Home 近 15 天需求与完成度台账</h1>
+<p class="lede">来源：本项目 198 个会话文件（48 个有真实用户输入、36 个设置过 /goal、68 个去重目标、约 1,292 条去噪指令）与同期 2,284 个提交。状态只按可核对的提交、文档、真实服务/真机结果标注；外部条件缺失的单独标为未核实。当前会话本身不计入需求统计。</p>
+<div class="stats">
+<div class="stat"><b>198</b><span>会话文件</span></div>
+<div class="stat"><b>48</b><span>有真实输入</span></div>
+<div class="stat"><b>36</b><span>设置过 /goal</span></div>
+<div class="stat"><b>68</b><span>去重目标</span></div>
+<div class="stat"><b>~1,292</b><span>去噪指令</span></div>
+<div class="stat"><b>151</b><span>台账条目</span></div>
+<div class="stat"><b>2,284</b><span>同期提交</span></div>
+<div class="stat"><b>114</b><span>已完成</span></div>
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>114 条已完成</b>、14 条部分、5 条未完成、6 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>82%</b>。未完成与边界集中在 AGY 结构化工具、Cloudflare 正式插件、调度器固定账号选择、安装包 ≤80MiB、Codex Work 原生 401。</p><div class="legend">
+<span class="chip s-已完成">已完成 114</span>
+<span class="chip s-部分">部分 14</span>
+<span class="chip s-未完成">未完成 5</span>
+<span class="chip s-未核实">未核实 6</span>
+<span class="chip s-约束">约束 11</span>
+</div></header>
+<nav>
+<a href="#t0">Node→Go 与单库</a>
+<a href="#t1">模型目录与供应商</a>
+<a href="#t2">网关协议与请求体</a>
+<a href="#t3">429 / 重试 / 冷却</a>
+<a href="#t4">账号、凭据与调度</a>
+<a href="#t5">终端与渲染</a>
+<a href="#t6">WebUI、性能与需求管理</a>
+<a href="#t7">peer / harness / 协作</a>
+<a href="#t8">用量与计费</a>
+<a href="#t9">分发、Windows 与运维</a>
+<a href="#t10">zcode 专项</a>
+<a href="#t11">图片与 Image Studio</a>
+<a href="#t12">工作方式约束</a>
+<a href="#t13">远程执行、Connector 与插件</a>
+<a href="#t14">网关、模型与其它修复</a>
+<a href="#open">未完成与边界</a><a href="#sessions">会话索引</a><a href="#method">口径</a></nav>
+<section id="t0"><h2>Node→Go 与单库 <span class="count">10 条</span></h2>
+<p class="note">数据面已全部由 Go 承接；Node 只剩 PTY/插件宿主等无法搬走的位置。迁移“不丢细节”是持续项。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>核心是 Go 单 owner，停止两套并行</td><td class="meta">11-15</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">同一审计：launchd、bin/aih 均为 Go 单入口；无 Node 网关监听；Node 只保留宿主/插件 helper；Node 网关入口与路由文件已删除</td><td class="sess">—</td></tr>
+<tr>
+<td>只保留一个业务权威库，禁止双轨</td><td class="meta">11-15</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">appstate.DatabasePath → aih.db；夹具与消费者已对齐</td><td class="sess">—</td></tr>
+<tr>
+<td>迁移报 aih_database_migration_required 导致全会话退出</td><td class="meta">11-15</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">单库迁移 + 一键续接落地</td><td class="sess">—</td></tr>
+<tr>
+<td>迁移不得以&quot;更安全&quot;为由删功能或返回 unavailable</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">迁移文档记录能力边界，不再以缩窄代替终态</td><td class="sess">—</td></tr>
+<tr>
+<td>agy OAuth 回调 502 / 账号未添加 / 邮箱缺失</td><td class="meta">11-11</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">11-20 AWS 复验：8 个账号资料/凭据齐全，回调错误分类正确，usage refresh 成功；成功入库仍需一次真实 Google 授权</td><td class="sess">—</td></tr>
+<tr>
+<td>service_tier 档位不得丢失</td><td class="meta">11-15</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">25dc9524：Messages/Chat decoder 接受 service_tier 并写入 canonical，Claude Messages 上游按字段透传；实测 Messages auto/standard_only、Chat auto 均 200（served by claude），无 tier 基线仍 200；Responses 原有支持不变</td><td class="sess">—</td></tr>
+<tr>
+<td>取消 Node-only / Go-only 概念，Go 为超集</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">文档与注释已清理；labels/contextLimits 已改为 Go 主源（models.dev：203 labels / 481 limits，7bf7ab00），model-context 命中返回 source=catalog，host snapshot 仅兜底；Node 网关与兼容别名已完成审计并删除不可达代码（docs/product-integrity/node-alias-audit-2026-11-21.md，115 文件/28,744 行），route-ownership node_ro…</td><td class="sess">—</td></tr>
+<tr>
+<td>Claude 高级设置丢失要全量扫描</td><td class="meta">11-20</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">高级设置迁入 toolkit 并字段级对拍；11-24 前端审计继续收敛，但仍有并行热点</td><td class="sess">—</td></tr>
+<tr>
+<td>迁移不得宣称已完成</td><td class="meta">11-18</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">已体现在迁移账本口径中</td><td class="sess">—</td></tr>
+<tr>
+<td>未提交的 composition/pricingcatalog 收尾</td><td class="meta">11-20</td>
+<td><span class="chip s-未完成">未完成</span></td>
+<td class="ev">并行会话仍持有未提交改动；当前工作区 composition_auth.go / public_add_account.go / webui_scheduler_routes.go 等仍有 M 状态</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t1"><h2>模型目录与供应商 <span class="count">6 条</span></h2>
+<p class="note">目录、协议切换、缓存失效与别名规则。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>modelseed 账号探测失败但直连正常</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">66d2c018：单条坏 ID 不再作废整份目录</td><td class="sess">—</td></tr>
+<tr>
+<td>千问等大厂双协议 base，按账号 URL 识别分组</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">607f98c2：共享契约 9 家厂商；账号 23 取回 16 个文本模型</td><td class="sess">—</td></tr>
+<tr>
+<td>天然支持 Anthropic 的供应商原生切换</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">feffef4e/87d4df50：协议级适配器 + 字节透传；实测命中厂商 /v1/messages</td><td class="sess">—</td></tr>
+<tr>
+<td>供应商接入先抽象再策略</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">契约 JSON（Go embed + Node require）+ MessagesUpstream 接口</td><td class="sess">—</td></tr>
+<tr>
+<td>/v1/models 模型目录缓存陈旧</td><td class="meta">11-21</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">3b5491c：账号/凭据/资料/模型/探测/别名事实 + 模型设置文档签名作为失效键；显式刷新与人工模型变更立即作废，3s/5min TTL 保留</td><td class="sess">—</td></tr>
+<tr>
+<td>/v1/models ContextWindows 基于原生二进制指纹</td><td class="meta">11-17</td>
+<td><span class="chip s-未核实">未核实</span></td>
+<td class="ev">本窗口无直接证据</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t2"><h2>网关协议与请求体 <span class="count">6 条</span></h2>
+<p class="note">请求形状、工具结果、延迟与 localhost 差异。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>CRLF 工具结果导致 400</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">435323b8；112 条历史消息回放 200</td><td class="sess">—</td></tr>
+<tr>
+<td>17MB 请求被 16MiB 上限拒绝（HTTP/WS/Node）</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">peer 恢复广播记录「16MiB 已修」；未见独立提交（跨端修复）</td><td class="sess">—</td></tr>
+<tr>
+<td>可&quot;成功也慢&quot;的本地延迟要查清</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">Native timing：账号 2ms、上游头 3944ms、本地首写 +6ms；本地非瓶颈，耗时在上游响应头；见 docs/product-integrity/local-responses-latency-2026-11-20.md</td><td class="sess">—</td></tr>
+<tr>
+<td>gpt-6.1-sol 不支持 reasoning none</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">effort 对齐与 service tier 保留多次提交</td><td class="sess">—</td></tr>
+<tr>
+<td>invalid_request_body 反复出现</td><td class="meta">11-15</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">965af763 / 852b833b 修 tool_reference object/array 与二进制工具结果；两种形状探针均 200；2026-11-20 12:07 后无新 decode rejected（该条为旧构建）；其余模式 11-19 后未再出现</td><td class="sess">—</td></tr>
+<tr>
+<td>localhost 与 127.0.0.1 行为不一致</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">实测差异为浏览器 localStorage 分源；用户表示不重要</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t3"><h2>429 / 重试 / 冷却 <span class="count">2 条</span></h2>
+<p class="note">真实 429 的账号屏蔽、冷却与重试策略。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>scoped cooldown retry 覆盖 HTTP/WS/images</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">2ee94d5e / 1042ee27 / 3452356b；HTTP relay/core、Codex WS 握手、images/Studio 均已接线；images/Studio 受控真实 429 验收（30.005s）见 docs/gateway-upstream-429-retry.md；relaycore 测试通过；未做付费生产 429 实验</td><td class="sess">—</td></tr>
+<tr>
+<td>&quot;没有条件就创造条件完成&quot;</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">真实上游 429（codebuddy credits exhausted）实测：30.387s、X-Aih-Upstream-429-Retries:1、Wait-Ms:30000、最终 429 code 14018；run/upstream-429-20261119 已清理；详见 docs/gateway-upstream-429-retry.md</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t4"><h2>账号、凭据与调度 <span class="count">15 条</span></h2>
+<p class="note">编辑、换号、续接、显示名与凭据刷新。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>codebuddy(cn) 403 request illegal</td><td class="meta">11-11</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">783e5618：风控识别为 manual 阻塞 + 同站换号</td><td class="sess">—</td></tr>
+<tr>
+<td>Windows aih codex version 走 Node 取不到版本</td><td class="meta">11-17</td>
+<td><span class="chip s-未核实">未核实</span></td>
+<td class="ev">11-22 已删 Windows 别名 Node 兜底，但该条历史版本探测未单独复验</td><td class="sess">—</td></tr>
+<tr>
+<td>移除 demo 与非正式插件</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">f83ab14b：移除 demo 插件与隐式示例动作</td><td class="sess">—</td></tr>
+<tr>
+<td>CLI 登录作业（agy/grok/qoder/kimi/cline/CodeBuddy/codex 设备码）</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">371f7da5 + 7dffcc4b：account-jobs 端点回退</td><td class="sess">—</td></tr>
+<tr>
+<td>codebuddycn 充值但 WebUI 不显示套餐</td><td class="meta">11-17</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">CodeBuddy family usage 已有 planType/subscription 渲染与契约测试（strategy.go:450）；本机无充值账号可做真机复验</td><td class="sess">—</td></tr>
+<tr>
+<td>WebUI 编辑账号 URL 不得派生出新账号</td><td class="meta">11-04</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">编辑走 webuiaccountupdateapi，只更新现有 accountRef，不创建新账号；原回归守卫 3/3，HEAD 旧代码 3/3 失败（会话 01a1a645）</td><td class="sess">01a1a645</td></tr>
+<tr>
+<td>codebuddycn 没有可用账号时必须自动换号并恢复会话</td><td class="meta">11-10</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">783e5618 风控识别为 manual 阻塞 + 同站换号；309a812e 裸启动/续接按健康度选号，不再固定落到额度耗尽的 #1</td><td class="sess">01a1c4d5 / 01a1c544 / 01a1f298</td></tr>
+<tr>
+<td>resume 历史里的 429 不得触发自动换号</td><td class="meta">11-12</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">4a22ce8a：CodeBuddy 家族改为只读会话 jsonl 的 providerData.error，基线抬到本 PTY 启动/切会话之后；旧 429 触发 0 次、live 429 触发 1 次。Claude/Codex 仍走 PTY 文本兜底</td><td class="sess">01a1cf4d</td></tr>
+<tr>
+<td>gpt-6.1-sol 不得被调度到 free 账号</td><td class="meta">11-13</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">01a1d3dc：isPinUsable 不再把 upstream_error/rate_limited 软冷却当停用；同时修正客户端 Version 门控与 pinned fallback</td><td class="sess">01a1d3dc</td></tr>
+<tr>
+<td>账号列表 displayNames 不再包含 #cliID，点击复制 accountId</td><td class="meta">11-13</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">d6e8bf84：Go 侧派生 displayNames；列表显示身份标签，accountId 独立浅色可复制</td><td class="sess">01a1d313</td></tr>
+<tr>
+<td>新增模型时“同步账号模型策略失败”</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">09f898c2：手动策略时间归一为 UTC 毫秒；真实 9527 新增/停用/删除模型均 200，account_models 正确落库</td><td class="sess">01a1ef76</td></tr>
+<tr>
+<td>账号编辑保存 URL 提示“更新失败”</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">6977a6d7：Go 更新接口返回完整 account 行，与旧 Node 契约一致；真实浏览器保存 200、提示更新成功</td><td class="sess">01a1ef76</td></tr>
+<tr>
+<td>codebuddycn 会话一发消息就退出</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">04329aa4 + 309a812e：健康选号后续接成功，会话在独立 tmux PTY 中恢复为 active</td><td class="sess">01a1f298</td></tr>
+<tr>
+<td>账号级 401/403 必须换号（WS / 图片 / 推理）</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">5fa01ece WS 握手 401/403 同请求换号；87ca93f4 图片换号；真实 AWS WS 401 与图片 401 均验证；文档 ws-credential-failover</td><td class="sess">01a1f7ef / 01a202ad</td></tr>
+<tr>
+<td>qoder_token_missing 失败后不得永久阻塞重试</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">01a1ecd1：失败会清防抖；卸载 CLI 后任务 failed，立即再跑同批返回新 job</td><td class="sess">01a1ecd1</td></tr>
+</tbody></table></div></section>
+<section id="t5"><h2>终端与渲染 <span class="count">6 条</span></h2>
+<p class="note">PTY 回放、ANSI、aih ls 与终端生命周期。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>DA/DECRQM 垃圾字符彻底解决</td><td class="meta">11-17</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">垃圾回复过滤已在安装件上验证</td><td class="sess">—</td></tr>
+<tr>
+<td>aih ls 首屏楼梯错位、中文/emoji/ANSI 续行</td><td class="meta">11-15</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">真实 PTY 40/60/80 列复验无超宽、续行统一、emoji 未拆；内容超过终端高度时首屏仍落在列表尾部，无应用内滚动</td><td class="sess">—</td></tr>
+<tr>
+<td>长内容换行优先最近空格</td><td class="meta">11-15</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">换行策略调整并随 CLI 发布</td><td class="sess">—</td></tr>
+<tr>
+<td>终端生命周期：自动唤醒/重复渲染/反馈循环</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">真实一次性会话：open 200（durable 80x24）→ 同 sessionKey 复用同 termId → 输入实际 CR 后 pane 仅 2 行（命令+输出）→ 4s 后屏幕 hash 不变、marker 仍 2 → resize 100x30 → sessions 1→0、tmux server 退出；无重复渲染/反馈循环/残留</td><td class="sess">—</td></tr>
+<tr>
+<td>任意页面概率唤醒 Web 终端并卡死</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">66e98484 隔离 watch scope；真实浏览器审计 dashboard/accounts/usage/models/settings 各 5s：0 个 terminal/attach/WS 请求、console 无错误，前后 terminal sessions 0→0；peer-inbox/office 仅 GET /v0/webui/terminal/sessions（办公上下文，无 attach）</td><td class="sess">—</td></tr>
+<tr>
+<td>/v0/webui/terminal/attach 404</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">Go 终端路由 + 兼容别名</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t6"><h2>WebUI、性能与需求管理 <span class="count">19 条</span></h2>
+<p class="note">HUD、用量看板、TCC 授权、需求办公室与调度器。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>菜单加序号、全部切换带动画</td><td class="meta">11-17</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">HUD 导航序号与动效落地</td><td class="sess">—</td></tr>
+<tr>
+<td>tooltip / 下拉框漂移</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">motion.css 定位修复，九文件审查 PASS</td><td class="sess">—</td></tr>
+<tr>
+<td>项目办公室纯 3D、机箱/双屏建模、可转视角</td><td class="meta">11-18</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">Office 页面与终端路由在 Go；建模精细度未验收</td><td class="sess">—</td></tr>
+<tr>
+<td>办公室 zsh 窗口关不掉</td><td class="meta">11-18</td>
+<td><span class="chip s-未核实">未核实</span></td>
+<td class="ev">无对应修复证据</td><td class="sess">—</td></tr>
+<tr>
+<td>设置页重排、Claude 首屏配置迁到 toolkit</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">3ee5eb9d + 60667145；五个 tab 结构</td><td class="sess">—</td></tr>
+<tr>
+<td>Cannot read properties of undefined (accountRef)</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">账号行投影补齐；页面不再取空对象</td><td class="sess">—</td></tr>
+<tr>
+<td>打开 ui/chat 不得触发 macOS Desktop/Documents 权限弹窗</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">f2dcff83 列目录不再触碰宿主受保护目录、拒绝把 home 当项目根；2884dec9 项目监听不再挂宿主 home；两处叠加消除反复授权</td><td class="sess">01a1f3c6</td></tr>
+<tr>
+<td>macOS 授权条目收敛，升级后不反复授权</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">feeb05e6/f98d38b7 用稳定 launcher 保持服务 TCC 授权；a866bd36 browser helper 稳定路径；清理重复 aih-* 授权条目</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>日粒度汇总表 + C SQLite + 极限性能</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">7829929e 档位聚合读 UTC 日汇总；61ea392a 覆盖索引 + 短缓存，90 天窗口 &lt;100ms；74ffa74f 时间桶图读日汇总；6466633c 页缓存 8MiB</td><td class="sess">01a1f3c6</td></tr>
+<tr>
+<td>需求管理：项目管理父菜单 + 看板/列表 + 导入 + AI 拆解</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">6738db7d 需求办公室与 AI 调度器；Work 工作区同源；Todoist/Trello/Markdown/CSV/JSON 导入；plan/goal/loop</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>调度器 Provider/Model/Effort 必须选择而不是手填</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">d5dcf4f4 选择器 + 从模型变体推导 effort；b6e3b592 卡片显示 harness/route/model/effort；Codex luna low/medium/high 实测</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>调度器固定账号也应选择而不是手填</td><td class="meta">11-24</td>
+<td><span class="chip s-未完成">未完成</span></td>
+<td class="ev">已记录为 idea 卡 req_e9fe1434d50f8600，未执行；当前仍为手填</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>loop 不设硬边界，自动判断是否完成并停止</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">[[REQUIREMENT_DONE]]/[[REQUIREMENT_CONTINUE]] + AI 验收员；连续两轮相同自动停止；50 轮仅安全网</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>跨 AIH Server 调度需求</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">03a5210f RemoteChatSession；AWS 真机在 /home/ubuntu/aih-cross-proj 创建 CROSS_OK.txt；UI 执行 Server 下拉</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>Connector 工作区镜像给远端 AGY 使用并写回</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">a7c46400/6c65cfca mirror；本机 Mac 项目经 AWS AGY 处理，RESULT.md 写回；跨 Server + Connector 创建 BOTH_OK.txt</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>Codex high effort 的 encrypted reasoning 不得中断整条流</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">a7109587：Chat Completions 渲染器跳过 encrypted/redacted reasoning delta/completed；gpt-6-luna low→high→low 正常</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>Codex Work（原生 CLI）无原生 bearer 时不应返回 401</td><td class="meta">11-24</td>
+<td><span class="chip s-未完成">未完成</span></td>
+<td class="ev">原生 Codex Work 走 codex:&lt;scope&gt;，需要原生登录账号；当前以 gateway chat 路径可用，Codex Work 未设计 gateway work 路径</td><td class="sess">01a20b43</td></tr>
+<tr>
+<td>Image Studio：单帧删除、纵向预览不裁切、悬停预览按钮</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">c6fb8992：单帧删除 + 全图预览弹窗（object-fit: contain）；桌面与移动端共用；isRunning 时删除禁用</td><td class="sess">01a1f7ef</td></tr>
+<tr>
+<td>小屏 chat 账号显示邮箱/手机号优先，chat box 紧凑</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">getAccountPrimaryLabel 统一主标签；11-24 移动端核心页与工具栏重排（508614f8/a89681e9/45caf8dd）</td><td class="sess">01a1d5c6</td></tr>
+</tbody></table></div></section>
+<section id="t7"><h2>peer / harness / 协作 <span class="count">10 条</span></h2>
+<p class="note">peer 投递、会话续接与 harness 安装。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>peer 要内建优先级/回执/可控投递</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">d5ff428d：aih peer send --priority high|normal|low；ListPending 同目标高优先，FlushPending 公平轮转优先、同一起跑线按优先级；inbox 显示加急/低优先级；store 实测 high/high2/normal/low，真实 inbox 两档标签可见；scripts/verify-peer-priority 端到端（真实 FlushPending + HTTP mock）验证跨目标 high→low、同目标 high→low、低优先老目标…</td><td class="sess">—</td></tr>
+<tr>
+<td>peer 内容看不懂要可读</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">eae79515 紧凑中文抬头；/ui/peer-inbox</td><td class="sess">—</td></tr>
+<tr>
+<td>target_busy 重试数千次要优化</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">目标门禁 + 退避 + 内容指纹活动探测</td><td class="sess">—</td></tr>
+<tr>
+<td>--from ambiguous_sender</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">回复按原发件实例解析</td><td class="sess">—</td></tr>
+<tr>
+<td>注入消息保留来源 + 紧凑抬头</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">信封格式收敛</td><td class="sess">—</td></tr>
+<tr>
+<td>重启后自动 continue，不要逐个 resume</td><td class="meta">11-15</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">批量恢复广播 + 11-23 会话续接命令展示；peer 消息 ACK 闭环仍未全量验证</td><td class="sess">—</td></tr>
+<tr>
+<td>不要停在 &quot;Resume paused goal?&quot;</td><td class="meta">11-18</td>
+<td><span class="chip s-未核实">未核实</span></td>
+<td class="ev">本窗口无确认</td><td class="sess">—</td></tr>
+<tr>
+<td>dsh-tui 二次启动误报未安装</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">6331d2b9 + ba55b4a4 系列修复，真机二次启动零安装行</td><td class="sess">—</td></tr>
+<tr>
+<td>进度汇报格式化 / HTML 看板</td><td class="meta">11-16</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">本页面即一次交付</td><td class="sess">—</td></tr>
+<tr>
+<td>peer 修复勿引入新数据库锁</td><td class="meta">11-17</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">复用既有 atomic-lock/mutex</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t8"><h2>用量与计费 <span class="count">4 条</span></h2>
+<p class="note">日/周桶、按策略归因、价格源。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>Profile 用量看板 24s → sub-1s</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">11-21：31d 48–103ms、6mo 87–125ms、重启冷起 71–121ms、有写入时仍亚秒；长窗改持久 rollup + 后台回填，冷路径与 rollup 输出逐字段 deep-equal（31d/6mo/7d 独立复验）；回填 4236 小时行</td><td class="sess">—</td></tr>
+<tr>
+<td>日/周桶完整、桶上限</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">b0cf9a57/9cc6ed11：上限 4000 且保留最近桶</td><td class="sess">—</td></tr>
+<tr>
+<td>账本按策略账号归因</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">quota bucket 贯穿 relay/ledger/UI</td><td class="sess">—</td></tr>
+<tr>
+<td>插件价格源参与裁决</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">dedcf637</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t9"><h2>分发、Windows 与运维 <span class="count">26 条</span></h2>
+<p class="note">安装包、Windows 真机、代理、AWS 部署与清理。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>面向小白：安装即用、自动更新提示 + 预约重启</td><td class="meta">11-17</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">安装件、升级检测与 11-24 Windows 安装/代理修复已落地；预约重启未核实</td><td class="sess">—</td></tr>
+<tr>
+<td>不要人工换二进制/迁库</td><td class="meta">11-17</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">distributiondata 提供 prepare/verify；仍偏工程化</td><td class="sess">—</td></tr>
+<tr>
+<td>资源下限 ≥15G</td><td class="meta">11-17</td>
+<td><span class="chip s-未核实">未核实</span></td>
+<td class="ev">部署侧参数，未形成检查</td><td class="sess">—</td></tr>
+<tr>
+<td>Windows 升级指纹被 wal/shm 打断回滚</td><td class="meta">11-17</td>
+<td><span class="chip s-未核实">未核实</span></td>
+<td class="ev">需 Windows 真机升级复验</td><td class="sess">—</td></tr>
+<tr>
+<td>AWS metadata 与二进制 hash 不符：只改 metadata 不重启</td><td class="meta">11-18</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">当次执行遵守；未形成机制</td><td class="sess">—</td></tr>
+<tr>
+<td>托管 SSH 代理更新 harness</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">aih provider update --proxy + lease 实现</td><td class="sess">—</td></tr>
+<tr>
+<td>池 UI/API 展示 managed SSH 来源</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">proxy-candidates 带 source/availability</td><td class="sess">—</td></tr>
+<tr>
+<td>网络失败用 AWS 作 git 代理由此推送</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">lease → 临时 GIT_CONFIG_GLOBAL → push</td><td class="sess">—</td></tr>
+<tr>
+<td>磁盘满要无害清理</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">2026-11-18 清 AWS /tmp 与构建残留；11-21 spacegc 常驻规则；11-23 AWS 根分区 7.5G→5.8G，删除 43 个 .prev-* 备份</td><td class="sess">—</td></tr>
+<tr>
+<td>安装包 -s -w 并做三平台真机冒烟</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">714a61fb 统一 -s -w，安装包 117.0→100.6MiB；linux-x64 / win32-x64 / darwin-arm64 三平台 smoke PASS，Windows 无残留进程</td><td class="sess">01a1f824</td></tr>
+<tr>
+<td>安装包压到 20/50/80MiB</td><td class="meta">11-20</td>
+<td><span class="chip s-未完成">未完成</span></td>
+<td class="ev">实测 80MiB 必须去掉内置 Node（119.5→79.9MiB）；用户选择“先不去”，当前停在 91.9–100.6MiB，三平台可用</td><td class="sess">01a1f824</td></tr>
+<tr>
+<td>Windows 安装/升级走代理（PowerShell 凭据与 ALL_PROXY）</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">07180166/8aab293d/610f1292/56412e8b/039f4331/4e04ba93：代理规则覆盖每条执行路径，Windows 真机验证</td><td class="sess">01a20b43 邻近会话</td></tr>
+<tr>
+<td>Windows OAuth 登录不弹终端、Cookie 持久化与跨账号隔离</td><td class="meta">11-22</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">account-browser Windows surface：job-scoped profile、关闭前 flush、跨账号隔离；文档 account-browser-windows-2026-11-22</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>内嵌浏览器完成 Codex/Claude OAuth 登录</td><td class="meta">11-21</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">account-browser 服务端 surface + macOS/Windows helper；e3f6c62c/f17626a4/a4c5576d/33725d58；文档 account-browser-macos-helper</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>GitHub Pages 产品站与 README 重建</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">88fda628 Pages 产品站；a4c44cc6 产品页与 README 按当前设计重建</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>AWS 部署不留 .prev-* 备份，失败按 SHA 重建</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">01a202ac 清理 30 个 binary + 13 个 web 备份，释放 2.0GB；后续部署直接覆盖；脚本无自动回滚分支</td><td class="sess">01a202ac</td></tr>
+<tr>
+<td>AWS 磁盘满 / go-build 残留清理</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">01a1ec2c：/tmp 763M→106M，删除 go-build 573M 等；确认部署机只收二进制；11-23 根分区 7.5G→5.8G</td><td class="sess">01a1ec2c / 01a202ac</td></tr>
+<tr>
+<td>AWS 旧 aih-node/aih-go 1.0.0-1.x 进程彻底消失</td><td class="meta">11-18</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">已审计：服务只有 1.0.6 一组，其余是旧终端会话的包装进程链（4 组，空闲）；未全部 kill，清理需用户确认</td><td class="sess">01a1ef47</td></tr>
+<tr>
+<td>AWS WebUI 账号额度不刷新</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">1.0.6 热修：refresh-usage 同事务写 account_usage 与 account_usage_snapshots；11-20 再修 control-plane 刷新结果形状</td><td class="sess">01a1ef61</td></tr>
+<tr>
+<td>peer-inbox 大量待投递/失败要根治</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">6230ae1f capture-pane 内容指纹判活；cea4d07c 识别裸 &gt; 输入框；27 条历史移入 archive-retired-20261118；待投递归零</td><td class="sess">01a1ea9b</td></tr>
+<tr>
+<td>N 个账号共享 CLI/缓存/运行时，资源占用接近单账号</td><td class="meta">11-21</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">6efe7744/5debbe76 CLI 版本树与缓存共享；artifact-store reflink/硬链接；macOS APFS、Linux ext4/btrfs/XFS、Windows NTFS 真机验证</td><td class="sess">01a1f97e</td></tr>
+<tr>
+<td>空间治理一劳永逸：常驻回收而不是每次手工清</td><td class="meta">11-21</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">spacegc 规则 + 6 小时节流 + 进程引用跳过；webpack/pnpm 共享缓存；docs/plans/2026-11-21-space-governance</td><td class="sess">01a1f97e</td></tr>
+<tr>
+<td>Kiro 是 CLI 不是桌面应用：按实装取证 bundle id</td><td class="meta">11-21</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">docs/product-integrity/desktop-bundle-id-evidence-2026-11-21；实装确认 Kiro CLI 无 .app，桌面端为 Kiro.app/dev.kiro.desktop</td><td class="sess">01a1f97e</td></tr>
+<tr>
+<td>server_config.go 热点重构，减少 if/else 与耦合</td><td class="meta">11-20</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">1496dd62/927b5264/3622c2be/40a1b9e6 等把 config 读写、端口、地址收敛为共享契约；composition.go 仍是并行热点</td><td class="sess">01a1f824 / 01a202ac</td></tr>
+<tr>
+<td>codex.aih-original / app-server 复用，减少常驻内存</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">40d92e76 空闲共享后端随巡检回收；ddc085dd 共享 MCP bridge；MCP 账号/会话策略；AWS noMcp 真机</td><td class="sess">01a1efa2 / 01a202ad</td></tr>
+<tr>
+<td>本地几十个 node 进程是谁启动的</td><td class="meta">11-13</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">01a1d4ab 审计：逐 PID/父进程/cwd 归属，确认来自多个 provider 会话与旧 wrapper；未做未授权清理</td><td class="sess">01a1d4ab</td></tr>
+</tbody></table></div></section>
+<section id="t10"><h2>zcode 专项 <span class="count">3 条</span></h2>
+<p class="note">zcode 版本、登录与套餐。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>app_version 假阴性（写死 3.16.3 vs 3.18.2）</td><td class="meta">11-17</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">改为从真实安装解析版本</td><td class="sess">—</td></tr>
+<tr>
+<td>多版本并存、3.18.x chunk 路径支持</td><td class="meta">11-17</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">版本解析与 profile 关联；chunk 路径未核实</td><td class="sess">—</td></tr>
+<tr>
+<td>移除不稳定的登录策略/入口</td><td class="meta">11-17</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">登录入口收敛</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t11"><h2>图片与 Image Studio <span class="count">4 条</span></h2>
+<p class="note">图片能力合同、换号、单帧编辑与预览。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>图像库 SQLITE_BUSY</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">46a0459c 写者预留</td><td class="sess">—</td></tr>
+<tr>
+<td>PNG 编码预算</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">dea7669f 每次写入强制预算</td><td class="sess">—</td></tr>
+<tr>
+<td>gpt-image-2 needs Respan credits 要查明</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">AWS 真机：有 entitlement 的账号生成成功（3/3，约 9s/张）；无 entitlement 账号被可用性过滤为 503 no_available_account，不再暴露上游 credits 文本</td><td class="sess">—</td></tr>
+<tr>
+<td>图片能力对外透传 + 双向格式归一</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">能力合同上移到抽象层（文生图/图生图、输入/输出格式、数量上限、尺寸、质量）；GET /v1/images/models 对外透传；入口接受 png/jpeg/webp/gif，按 Provider 声明双向转码；输出数量、尺寸/质量词表、response_format(b64↔url) 全部由网关归一（单图上游 n≤4 模拟、url 落盘为 /v1/blobs、b64 可回填）；未知厂商先走通用 passthrough；已部署 AWS 并真机验证：output_format=webp 得真实 WEBP、n=…</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t12"><h2>工作方式约束 <span class="count">12 条</span></h2>
+<p class="note">不改变功能、但决定交付方式的要求。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>scoped commit + 显式 pathspec</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">AGENTS.md 明确规定；执行 ~52 次</td><td class="sess">—</td></tr>
+<tr>
+<td>推送网络问题用 AWS 临时代理</td><td class="meta">11-18</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">proxy lease 流程 + 记忆</td><td class="sess">—</td></tr>
+<tr>
+<td>不得回退并行 session；禁自建 branch/worktree</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">AGENTS.md 章节</td><td class="sess">—</td></tr>
+<tr>
+<td>自己登录、自己闭环测试，不打扰用户</td><td class="meta">11-20</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">本次会话已按此执行</td><td class="sess">—</td></tr>
+<tr>
+<td>不要重启共享服务/网关（特定窗口）</td><td class="meta">11-18</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">执行 ~63 次</td><td class="sess">—</td></tr>
+<tr>
+<td>禁止创建测试文件，只做真实/真机测试</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">AGENTS.md；本窗口所有验收均为真实服务/真机/真实上游，不新增测试文件</td><td class="sess">—</td></tr>
+<tr>
+<td>推送网络问题用 AWS 临时 SOCKS 代理</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">临时 ssh -N -D，仅 GIT_SSH_COMMAND，推送后即停；不写全局 git config</td><td class="sess">—</td></tr>
+<tr>
+<td>不得回退并行会话的未提交改动</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">称“并行会话进行中改动”；只提交本人 hunk</td><td class="sess">—</td></tr>
+<tr>
+<td>不要写 JS，Go 为默认实现</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">本窗口新增能力全 Go；Node 仅保留 PTY/插件宿主等无法搬走的位置，且逐渐删除</td><td class="sess">—</td></tr>
+<tr>
+<td>每轮汇报需求与完成状态</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">已固化为团队记忆；本报告即一次交付</td><td class="sess">—</td></tr>
+<tr>
+<td>WebUI 不做轮询</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">刷新只走挂载/聚焦/SSE/手动</td><td class="sess">—</td></tr>
+<tr>
+<td>中文文件改动后检查 U+FFFD</td><td class="meta">11-09</td>
+<td><span class="chip s-约束">约束</span></td>
+<td class="ev">提交前字节级扫描；本报告已检查</td><td class="sess">—</td></tr>
+</tbody></table></div></section>
+<section id="t13"><h2>远程执行、Connector 与插件 <span class="count">16 条</span></h2>
+<p class="note">Workspace Connector、run_command、持久 job、审批、插件与 MCP。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>本地指挥 AWS Server 上的 Agent 开发本地项目（模型/账号/Agent 留在 Server）</td><td class="meta">11-22</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">Workspace Connector Phase 1：0ba71ada 协议/enrollment/hub，9bc67fe3 WebUI 面板，e1b40e7c CLI；本地只暴露显式目录，不 relay 模型</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>Connector 文件读写、目录、搜索、版本防覆盖、路径沙箱</td><td class="meta">11-22</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">read_file/write_file/edit_file/list_directory/search + version_conflict；非法 token 401；真实 MCP initialize/tools/call 通过</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>run_command 远端执行与边界（cwd、超时、输出上限、可关闭）</td><td class="meta">11-22</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">461e5f0b：cwd 限工作区，越界 path_outside_workspace；800ms 超时约 1s 返回；400KB 输出截到 256KiB；--no-command 时能力消失</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>持久 job start_job / watch_job / interrupt_job，跨 Connector 重启</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">729d7640 + e4d87e87：独立 runner + spool；SIGKILL Connector 后 runner 存活，重连 watch 读到 aws-job-1..6，state exited</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>高危命令审批（never / destructive / all）</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">6e9d9a5f：approval_required + approval id，命令+cwd 绑定、一次性、10 分钟；AWS 真机 rm -rf 未执行，批准后执行</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>Canonical 远程执行会话台账 / 列表 / 停止 / 事件</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">rx-… 台账 app_kv remote:execution-sessions；started/exited/stopped 事件；AWS 真机创建、列表、stop 验证</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>AGY 结构化远程工具循环（read/write/run_command/审批）</td><td class="meta">11-23</td>
+<td><span class="chip s-未完成">未完成</span></td>
+<td class="ev">能力边界：AGY 只有 PTY，无工具/审批协议，agent-terminal 明确返回 agy_remote_workspace_unsupported；不伪装支持</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>按会话归属 usage（Codex/Claude HTTP+WS）</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">eb88bc38 各入口读 x-aih-remote-session；370df0f0 WS 握手；2a4e2d3e/e2f50dfe 客户端早断仍记账；AWS 真机 rx- 会话 token 增长</td><td class="sess">01a202ae / 01a202ad</td></tr>
+<tr>
+<td>SOCKS5h → HTTP CONNECT 本地桥，最好插件化</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">fc2b3e36：仓外插件 network.socks-http-bridge@1.0.3，HTTP CONNECT 经 SOCKS5h 远端解析；127.0.0.1:3128 probe 可达，Claude TUI 通过连通性检查</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>aih proxy serve 常驻服务 + WebUI 可视化安装/状态</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">34d805d1 安装为登录服务；WebUI 卡片真实点击安装成功，launchd com.meadeo.ai_home.proxy running，PID/日志可见</td><td class="sess">01a202ae</td></tr>
+<tr>
+<td>插件框架 + 仓外插件 + 签名可选 + 一步信任</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">3 个仓外插件（cloudflared/tailscale/wireguard）；未签名默认安装并标记，已签名可 --trust-key 一步登记；损坏签名拒绝</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>插件 URL 安装 / 本地目录一键上传 / --server-download</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">服务端 https 下载 + SSRF 校验；本地目录自动打包；远端看不到文件时上传安装；AWS 真机签名/上传验证</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>Cloudflare 隧道可视化与厂商连接器插件</td><td class="meta">11-23</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">network.connector@1 契约、Go 宿主、通用面板与 cloudflared Quick Tunnel 已落地；Cloudflare 厂商插件未作为正式插件交付</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>Tailscale / WireGuard 连接器可视化与真机验收</td><td class="meta">11-23</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">Tailscale 隧道边界与 WireGuard 0.1.0/0.1.2 真机验收；只报告 wireguard-tunnel，不声称 P2P；安装/卸载/日志在 WebUI 可见</td><td class="sess">01a202ad</td></tr>
+<tr>
+<td>MCP 全局共享桥 + 账号/会话级策略 + CLI 选择</td><td class="meta">11-24</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">ddc085dd 共享 bridge daemon；f13c61ee 设计；07b47b1f 账号级策略；07249e70/ff52341b CLI --mcp/--no-mcp；AWS noMcp ps 验证</td><td class="sess">01a202ad / 01a202ae</td></tr>
+<tr>
+<td>Claude --mcp 的 Tab 补全与临时配置清理</td><td class="meta">11-23</td>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">ff52341b 已实现 --mcp/--no-mcp 与真实参数捕获；Tab 补全未实现，run/mcp 临时配置清理策略未加</td><td class="sess">01a202ad</td></tr>
+</tbody></table></div></section>
+<section id="t14"><h2>网关、模型与其它修复 <span class="count">11 条</span></h2>
+<p class="note">本窗口内的具体线上故障修复。</p>
+<div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
+<tr>
+<td>kiro WebUI chat 上游 403</td><td class="meta">11-13</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">UA 版本门控 + token 刷新归属 + event-stream 解码三层修复；AWS 5 个真实 kiro 账号全部 200</td><td class="sess">01a1d417</td></tr>
+<tr>
+<td>POST /v0/webui/openai-models/refresh 405</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">公开面按方法接完整模型目录处理器；refresh 改异步 202；真实请求返回 queued→succeeded</td><td class="sess">01a1d886</td></tr>
+<tr>
+<td>AWS SSH 工作区 browse 500</td><td class="meta">11-14</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">探测命令换行丢失 + known_hosts host key mismatch 两处修复；真实 AWS browse 返回 200 与目录列表</td><td class="sess">01a1d8b8</td></tr>
+<tr>
+<td>WebUI chat 发送消息报 native_projection_unavailable</td><td class="meta">11-17</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">01a1e902：旧布局自指链接导致投影生成失败；改为真实目录链接后会话恢复</td><td class="sess">01a1e902</td></tr>
+<tr>
+<td>Claude 会话反复 400 Invalid request</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">852b833b/965af763 容忍二进制/内联 tool_reference；993eca89 删除不可达 Node 网关；aa804e0d 剥离历史辅助项</td><td class="sess">01a1f7ef</td></tr>
+<tr>
+<td>Claude Messages 对 DeepSeek 兼容流 500</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">0d11243d 容忍 one-past content_block_stop、空 text/thinking；deepseek-v4-pro 固定账号 200 并收到 message_stop</td><td class="sess">01a1ef61</td></tr>
+<tr>
+<td>Claude 首屏连通性预检与 WebUI 配置</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">60667145/712b4a65 首屏预检策略可配置并进 toolkit；CLAUDE_CONFIG_DIR 注入修复；真实 TUI 无 Checking connectivity</td><td class="sess">01a1f378</td></tr>
+<tr>
+<td>上游代理池：多代理、动态切换、unset、故障切换</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">ce4af248 热加载代理池；270d4d7c WebUI；afe1a9f5 unset 为规范；531f0094 CONNECT EOF 故障切换；927b5264 完成推送</td><td class="sess">01a1f4be</td></tr>
+<tr>
+<td>上游 429 重试可配、长冷却继续重试</td><td class="meta">11-20</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">7f8a7ee4 WebUI 设置；83d9eaf7 30 分钟账号调度并穿过冷却；c8b59fdd 24×3600s；真实 429 30.387s 验证</td><td class="sess">01a1f4be 邻近会话</td></tr>
+<tr>
+<td>供应商双协议端点/原生 Anthropic 切换</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">607f98c2 共享契约 9 家厂商；feffef4e/87d4df50 原生 Messages 路由；实测命中厂商 /v1/messages</td><td class="sess">01a1ef76</td></tr>
+<tr>
+<td>模型目录缓存陈旧与探测失败</td><td class="meta">11-19</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">66d2c018 单条坏 ID 不作废整目录；3b5491c 状态/退避 + 失效键；缓存 TTL 3s/5min</td><td class="sess">01a1ef76</td></tr>
+</tbody></table></div></section>
+<section id="open"><h2>未完成与明确边界</h2><p class="note">这些不是“没做”，而是当前仍未闭环、需要外部条件或用户决策的事项。</p><ul class="openlist">
+<li><b>AGY 结构化远程工具循环</b>：未实现。AGY 只有 PTY，没有工具/审批协议；远程入口明确返回 <code>agy_remote_workspace_unsupported</code>。需求办公室用的是 Connector 工作区镜像 + AGY 原生 CLI，不是这条工具通道。</li>
+<li><b>Cloudflare 厂商连接器插件</b>：网络连接器框架、通用面板与 cloudflared Quick Tunnel 已落地；Cloudflare 正式插件未作为仓外插件交付。</li>
+<li><b>调度器固定账号选择器</b>：已记录为 idea 卡 <code>req_e9fe1434d50f8600</code>，当前仍为手填。Provider/Model/Effort 已是选择器。</li>
+<li><b>安装包 ≤80MiB</b>：实测 80MiB 必须去掉内置 Node（119.5→79.9MiB）；用户选择“先不去”，当前 91.9–100.6MiB，三平台可用。20/50MiB 不可行。</li>
+<li><b>Codex Work 原生 401</b>：Codex Work 走 <code>codex:&lt;scope&gt;</code> 原生 CLI，这些账号没有原生 bearer，需要原生登录账号，或单独设计 gateway work 路径。</li>
+<li><b>aih ls 首屏尾部</b>：内容超过终端高度时首屏落在列表尾部，无应用内滚动；是否改为视口滚动待产品决定。</li>
+<li><b>项目办公室 3D 精细度</b>：Office 页面与终端路由在 Go；机箱/双屏建模与可转视角未验收。</li>
+<li><b>Claude/Codex 的 PTY 429 文本兜底</b>：CodeBuddy 家族已改为结构化事实源；Claude/Codex 仍可能因 resume 回放误判，需要把会话事实源迁到 Go/结构化读取。</li>
+<li><b>Claude --mcp 的 Tab 补全与临时配置清理</b>：--mcp/--no-mcp 已实现并验证；Tab 补全未做，<code>run/mcp</code> 临时配置清理策略未加。</li>
+<li><b>未提交的 composition/pricingcatalog 收尾</b>：并行会话仍持有未提交改动；当前工作区 <code>composition_auth.go</code>、<code>public_add_account.go</code>、<code>webui_scheduler_routes.go</code> 等仍有 M 状态。</li>
+<li><b>被 429 截断的会话</b>：01a1ef47（AWS 老进程清理未全部执行）、01a202ad（cloudflared Quick Tunnel 中途收尾）、01a202ad-ab5d（Claude --mcp 未部署/Tab 未做）等；其余被截断会话的成果已由后续会话接续或已在代码中验证。</li>
+<li><b>需要真机/外部条件</b>：Windows 升级指纹 wal/shm、资源下限 ≥15G、zcode 3.18.x chunk 路径、办公室 zsh 窗口关闭、Resume paused goal、ContextWindows 原生二进制指纹。</li>
+</ul></section>
+<section id="sessions"><h2>会话索引 <span class="count">36 个 /goal 会话</span></h2><p class="note">同一 8 位 ID 出现两次表示该会话设置了多个阶段目标；未设置 /goal 但有明确需求的会话（01a1c4d6、01a1f4be、01a1de78 等）已并入上方主题。</p><div class="board"><table><thead><tr><th>会话</th><th>日期</th><th>目标 / 主题</th><th>状态</th><th>结果</th></tr></thead><tbody>
+<tr><td class="sess">01a1a645</td><td class="meta">11-04→11-13</td><td>编辑账号 URL 不派生；Node→Go/单库；多 agent 迁移；sessions 端点</td><td><span class="chip s-部分">部分</span></td><td class="ev">编辑修复并验证；迁移持续，仍有未提交收尾</td></tr>
+<tr><td class="sess">01a1bee8</td><td class="meta">11-09→11-10</td><td>每次并行 5 个，最后汇报表格</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">迁移切片批量交付；429 收尾但主线继续</td></tr>
+<tr><td class="sess">01a1c4d5</td><td class="meta">11-10→11-11</td><td>codebuddycn 无账号自动换号并恢复会话；401</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">783e5618 同站换号；健康选号后续接</td></tr>
+<tr><td class="sess">01a1c544</td><td class="meta">11-10→11-11</td><td>没有触发自动换号；PTY 429</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">换号根因修复；PTY 结论见 01a1cf4d</td></tr>
+<tr><td class="sess">01a1ca2e</td><td class="meta">11-11→11-13</td><td>接管 claude 未完成会话；agy 403；gemini 模型</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">AGY 版本门控/模型映射；真实账号验证</td></tr>
+<tr><td class="sess">01a1cf4d</td><td class="meta">11-12→11-13</td><td>resume 历史 429 不得换号；PTY 宿主迁 Go</td><td><span class="chip s-部分">部分</span></td><td class="ev">CodeBuddy 家族结构化修复；Claude/Codex 仍文本兜底；Windows 当时不可达</td></tr>
+<tr><td class="sess">01a1cf91</td><td class="meta">11-12→11-13</td><td>High risk operation 每次确认</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">17ac9389；旧会话重启验证放行</td></tr>
+<tr><td class="sess">01a1d313</td><td class="meta">11-13</td><td>displayNames 不含 #cliID + 复制 accountId</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">d6e8bf84；Go 侧派生</td></tr>
+<tr><td class="sess">01a1d31f</td><td class="meta">11-13</td><td>contracts 的 go-bridge JSON 清理</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">拆分提交，工作区干净</td></tr>
+<tr><td class="sess">01a1d3dc</td><td class="meta">11-13</td><td>gpt-6.1-sol 是否串 free 账号</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">isPinUsable 修复；pinned fallback</td></tr>
+<tr><td class="sess">01a1d417</td><td class="meta">11-13→11-14</td><td>kiro WebUI chat 403；Go 不依赖 Node</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">5 个真实 kiro 账号 200</td></tr>
+<tr><td class="sess">01a1d4ab</td><td class="meta">11-13→11-14</td><td>几十个 node 进程是谁启动的</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">逐 PID 审计，未授权清理</td></tr>
+<tr><td class="sess">01a1d5c6</td><td class="meta">11-14→11-18</td><td>CodeBuddy 套餐；Node→Go；zcode 桌面；chat 小屏；会话排序</td><td><span class="chip s-部分">部分</span></td><td class="ev">套餐部分；11-17 会话排序稳定；Node→Go 持续</td></tr>
+<tr><td class="sess">01a1d7c3</td><td class="meta">11-14</td><td>Node→Go 丢失细节（aih ls 等）</td><td><span class="chip s-部分">部分</span></td><td class="ev">列清单并补细节；aih ls 首屏仍部分</td></tr>
+<tr><td class="sess">01a1d886</td><td class="meta">11-14→11-15</td><td>openai-models refresh 405</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">异步 202→succeeded</td></tr>
+<tr><td class="sess">01a1d8b8</td><td class="meta">11-14</td><td>AWS SSH 工作区 browse 500</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">探测与 host key 修复；200 列表</td></tr>
+<tr><td class="sess">01a1e902</td><td class="meta">11-17</td><td>chat native_projection_unavailable</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">投影自指链接修复</td></tr>
+<tr><td class="sess">01a1ea9b</td><td class="meta">11-18→11-19</td><td>AWS peer-inbox 积压</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">活动指纹 + composer 修复；积压归档</td></tr>
+<tr><td class="sess">01a1ec2c</td><td class="meta">11-18</td><td>AWS 磁盘满清理</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">/tmp 763M→106M；部署机只收二进制</td></tr>
+<tr><td class="sess">01a1ecd1</td><td class="meta">11-18</td><td>qoder_token_missing</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">防抖清除 + 立即重试通过</td></tr>
+<tr><td class="sess">01a1ef47</td><td class="meta">11-18→11-19</td><td>AWS 旧 aih-node/aih-go 进程</td><td><span class="chip s-部分">部分</span></td><td class="ev">审计完成；旧终端包装链未全部清理</td></tr>
+<tr><td class="sess">01a1ef61</td><td class="meta">11-18→11-19</td><td>AWS WebUI 额度不刷新</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">同事务写 usage + snapshot；真实刷新</td></tr>
+<tr><td class="sess">01a1ef76</td><td class="meta">11-19</td><td>新增模型同步失败；账号 URL 更新失败</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">09f898c2 + 6977a6d7；真实 9527/UI 验证</td></tr>
+<tr><td class="sess">01a1efa2</td><td class="meta">11-19</td><td>codex.aih-original 复用降内存</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">共享后端空闲回收；MCP 共享桥后续</td></tr>
+<tr><td class="sess">01a1f298</td><td class="meta">11-19</td><td>codebuddycn 会话一发消息退出</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">健康选号 + tmux 续接</td></tr>
+<tr><td class="sess">01a1f378</td><td class="meta">11-19</td><td>aih claude deepseek-flash 首屏/400</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">首屏预检可配 + 配置根注入</td></tr>
+<tr><td class="sess">01a1f3c6</td><td class="meta">11-19→11-20</td><td>TCC 权限弹窗；日汇总；24s 看板</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">f2dcff83/2884dec9；日汇总 + &lt;100ms</td></tr>
+<tr><td class="sess">01a1f7ef</td><td class="meta">11-20→11-21</td><td>Claude 400；Image Studio 三需求；401 换号</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">解码修复；c6fb8992；WS/图片换号</td></tr>
+<tr><td class="sess">01a1f824</td><td class="meta">11-20→11-21</td><td>本地/AWS 重启失败；包体积；Windows 真机</td><td><span class="chip s-部分">部分</span></td><td class="ev">重启根因修复；三平台 smoke PASS；≤80MiB 未采纳</td></tr>
+<tr><td class="sess">01a1f97e</td><td class="meta">11-20→11-22</td><td>资源复用/空间治理；bundle id 取证</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">APFS/ext4/btrfs/XFS/NTFS 验证；spacegc</td></tr>
+<tr><td class="sess">01a1f97e</td><td class="meta">11-20→11-22</td><td>可持续治理、桌面设计、Kiro 取证</td><td><span class="chip s-部分">部分</span></td><td class="ev">共享/取证完成；composition 热点仍持续</td></tr>
+<tr><td class="sess">01a202ac</td><td class="meta">11-22→11-23</td><td>接管 egress/组合根/发布；清理 AWS</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">12/14 修复 + 2 项保留；清理 2.0GB</td></tr>
+<tr><td class="sess">01a202ad</td><td class="meta">11-22→11-23</td><td>连接器/插件/worktree/WS 验收</td><td><span class="chip s-部分">部分</span></td><td class="ev">插件与 WS 验收完成；Cloudflare 正式插件未交付</td></tr>
+<tr><td class="sess">01a202ad</td><td class="meta">11-22→11-23</td><td>OAuth 内嵌浏览器/TCC/MCP</td><td><span class="chip s-部分">部分</span></td><td class="ev">OAuth/TCC/MCP 完成；Claude --mcp Tab 未做</td></tr>
+<tr><td class="sess">01a202ae</td><td class="meta">11-22→11-23</td><td>远程执行/Connector/job/审批/usage/代理桥</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">除 AGY 结构化工具循环外全部闭环并真机验证</td></tr>
+<tr><td class="sess">01a20b43</td><td class="meta">11-24</td><td>项目管理父菜单 + 需求管理 + 调度器</td><td><span class="chip s-已完成">已完成</span></td><td class="ev">Chrome/Edge 视觉验收；固定账号选择器留 idea 卡</td></tr>
+</tbody></table></div></section>
+<section id="method"><h2>口径与数据来源</h2><div class="notes"><ul>
+<li>窗口：2026-11-09 00:00 → 2026-11-24 23:59（Asia/Shanghai）。01a1a645 首次目标在 11-04，但在窗口内持续推进，纳入。</li>
+<li>会话文件 198 个（按 mtime 落入窗口）；其中 0 字节/纯命令回显/问候等噪声已剔除；48 个有真实用户输入，36 个设置过 /goal，68 个去重目标，约 1,292 条去噪指令。</li>
+<li>同期提交 2,284 个；状态证据优先取 git 提交、docs/、真实服务/真机结果，其次才是会话内自述。</li>
+<li>“已完成”表示主路径有代码与可核对验收；“部分”表示主链可用但有明确缺口；“未完成”表示未见落地或明确未达标；“未核实”表示证据不在本仓库/需要真机或外部账号；“约束”是工作方式要求。</li>
+<li>被 429 截断的会话不代表需求失败；多数成果已在后续会话接续或落在提交里，仍有缺口的单独列在“未完成与边界”。</li>
+<li>排除：本报告会话自身、shalou/project-admin 等非本项目内容、纯连通性测试与重复的 peer 回显。</li>
+</ul></div></section></div></body></html>

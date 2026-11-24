@@ -112,7 +112,8 @@ func composeRefinedDescription(original, summary string, steps []Step, acceptanc
 	if builder.Len() == 0 {
 		return strings.TrimSpace(original)
 	}
-	if original = strings.TrimSpace(original); original != "" && !strings.Contains(builder.String(), original) {
+	// 第二次 refine 时 original 已经是上一次的结构化结果，再追加会无限嵌套。
+	if original = strings.TrimSpace(original); original != "" && !strings.Contains(builder.String(), original) && !strings.Contains(original, "执行步骤：") {
 		builder.WriteString("\n原始描述：\n")
 		builder.WriteString(original)
 	}

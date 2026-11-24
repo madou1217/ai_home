@@ -727,8 +727,9 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 	execEnv := mergePlanEnv(opts.Env, plan.Env)
 	execEnv = withUsableJQPath(ctx, execEnv, opts)
 	res := runCodexNPMPlan(ctx, plan, opts, environment.ExecOptions{
-		Timeout: timeout,
-		Env:     execEnv,
+		Timeout:  timeout,
+		Env:      execEnv,
+		UnsetEnv: updateproxy.UnsetForTask(execEnv),
 	})
 	// 镜像同步滞后时 npm 会报 notarget/ETARGET（包或版本还没同步）；同一计划
 	// 换官方源再跑一次，避免「镜像少一个版本就让整个 CLI 装不上」。
@@ -738,8 +739,9 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 			execEnv = mergePlanEnv(opts.Env, plan.Env)
 			execEnv = withUsableJQPath(ctx, execEnv, opts)
 			res = runCodexNPMPlan(ctx, plan, opts, environment.ExecOptions{
-				Timeout: timeout,
-				Env:     execEnv,
+				Timeout:  timeout,
+				Env:      execEnv,
+				UnsetEnv: updateproxy.UnsetForTask(execEnv),
 			})
 		}
 	}

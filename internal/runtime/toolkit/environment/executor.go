@@ -14,8 +14,12 @@ const DefaultProbeTimeout = 3 * time.Second
 // Env 只包含计划或探测额外声明的变量；实现负责把它叠加到宿主环境之上
 // （Node 是 { ...process.env, ...plan.env }）。Dir 为空表示宿主默认工作目录。
 type ExecOptions struct {
-	Dir            string
-	Env            map[string]string
+	Dir     string
+	Env     map[string]string
+	// UnsetEnv 列出必须从宿主环境中移除的变量名（大小写不敏感地匹配）。
+	// 与「把值设为空串」不同：Windows 上 curl 对 ALL_PROXY 的存在极敏感，
+	// 空串也会被当成非法代理语法，所以那里必须真正删除变量。
+	UnsetEnv       []string
 	Timeout        time.Duration
 	MaxOutputBytes int
 	OnOutput       func(stream string, chunk string)

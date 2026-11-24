@@ -56,7 +56,7 @@ func (executor Executor) Run(ctx context.Context, command string, args []string,
 	defer cancel()
 	commandObj := exec.CommandContext(runCtx, command, args...)
 	commandObj.Dir = options.Dir
-	commandObj.Env = mergedEnv(options.Env)
+	commandObj.Env = mergedEnv(options.Env, options.UnsetEnv)
 	commandObj.Stdout = nil
 	commandObj.Stderr = nil
 	commandObj.Cancel = func() error {
@@ -135,14 +135,20 @@ func (executor Executor) Run(ctx context.Context, command string, args []string,
 }
 
 // mergedEnv 在宿主环境之上叠加计划声明的变量（Node: {...process.env, ...plan.env}）。
-func mergedEnv(extra map[string]string) []string {
+func mergedEnv(extra map[string]string, unset []string) []string {
 	base := os.Environ()
-	if len(extra) == 0 {
+	if len(extra) == 0 && len(unset) == 0 {
 		return base
 	}
 	overridden := make(map[string]struct{}, len(extra))
 	for key := range extra {
 		overridden[key] = struct{}{}
+	}
+	// Windows 环境变量名大小写不敏感；这里统一按大写比对，避免宿主里的
+	// all_proxy / ALL_PROXY 混写漏掉一个。
+	removed := make(map[string]struct{}, len(unset))
+	for _, key := range unset {
+		removed[strings.ToUpper(strings.TrimSpace(key))] = struct{}{}
 	}
 	merged := make([]string, 0, len(base)+len(extra))
 	for _, entry := range base {
@@ -150,7 +156,11 @@ func mergedEnv(extra map[string]string) []string {
 		if index <= 0 {
 			continue
 		}
-		if _, replaced := overridden[entry[:index]]; replaced {
+		name := entry[:index]
+		if _, drop := removed[strings.ToUpper(name)]; drop {
+			continue
+		}
+		if _, replaced := overridden[name]; replaced {
 			continue
 		}
 		merged = append(merged, entry)

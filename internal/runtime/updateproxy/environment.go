@@ -28,9 +28,23 @@ func Environment(base map[string]string, raw string) (map[string]string, error) 
 		env[key] = value
 	}
 	values := map[string]string{
-		"http_proxy": proxy.String(), "https_proxy": proxy.String(), "all_proxy": proxy.String(),
+		"http_proxy": proxy.String(), "https_proxy": proxy.String(),
 		"no_proxy": "", "npm_config_proxy": proxy.String(), "npm_config_https_proxy": proxy.String(),
 		"npm_config_noproxy": "", "node_use_env_proxy": "1",
+		"AIH_TASK_PROXY": proxy.String(),
+	}
+	// all_proxy 在 Windows 上必须留空。
+	//
+	// Windows 自带的 curl（System32\curl.exe）把 all_proxy 当作 SOCKS 入口解析，
+	// 遇到 http://user:pass@host:port 会直接拒绝：
+	//   curl: (5) Unsupported proxy syntax in 'http://aih:tok@127.0.0.1:18080'
+	//   curl: (3) URL rejected: Port number was not a decimal number
+	// 于是所有走 curl 的 Windows 安装计划（cmd 脚本计划全都是）在设了代理后
+	// 反而比不设代理更糟：连下载都发不出去。HTTP(S)_PROXY 已被 curl/npm 识别，
+	// 不需要 all_proxy 兜底。
+	if !isWindowsEnv(base) {
+		values["all_proxy"] = proxy.String()
+		values["ALL_PROXY"] = proxy.String()
 	}
 	for key := range env {
 		if value, ok := values[strings.ToLower(key)]; ok {
@@ -40,10 +54,48 @@ func Environment(base map[string]string, raw string) (map[string]string, error) 
 	for key, value := range values {
 		env[key] = value
 	}
-	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "NODE_USE_ENV_PROXY"} {
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "NODE_USE_ENV_PROXY"} {
 		env[key] = values[strings.ToLower(key)]
 	}
+	if _, set := values["ALL_PROXY"]; !set {
+		// Windows：必须彻底移除，不能设成空串。
+		// Windows 自带 curl 对 ALL_PROXY 的存在极其敏感——即使值是空串，
+		// 经 cmd/宿主环境传播后它会看到 " " 并拒绝：
+		//   curl: (5) Unsupported proxy syntax in ' ': Bad hostname
+		// 设成 "" 只会把「坏代理」换成「坏 proxy 语法」，仍然下载不了。
+		delete(env, "ALL_PROXY")
+		delete(env, "all_proxy")
+	}
 	return env, nil
+}
+
+// UnsetForTask 返回一次任务执行时必须从宿主环境里删除的变量名。
+//
+// Windows 自带 curl 只要看到 ALL_PROXY 就会尝试把它当作 SOCKS 入口解析，
+// 即使我们把它设成空串，经 cmd 传播后仍会变成 " " 并报
+//   curl: (5) Unsupported proxy syntax in ' ': Bad hostname
+// 所以那里不能「设为空」，只能真正移除变量。HTTP(S)_PROXY 已足够 curl/npm 使用。
+func UnsetForTask(base map[string]string) []string {
+	if !isWindowsEnv(base) {
+		return nil
+	}
+	return []string{"ALL_PROXY", "all_proxy"}
+}
+
+// isWindowsEnv 从环境本身判断目标平台，避免让本包依赖 GOOS。
+// 调用方在 Windows 上的安装作业一律带 SystemRoot/OS=Windows_NT。
+func isWindowsEnv(base map[string]string) bool {
+	for key, value := range base {
+		switch strings.ToUpper(key) {
+		case "OS":
+			if strings.EqualFold(strings.TrimSpace(value), "Windows_NT") {
+				return true
+			}
+		case "SYSTEMROOT", "SYSTEMDRIVE":
+			return true
+		}
+	}
+	return false
 }
 
 func parse(raw string) (*url.URL, error) {

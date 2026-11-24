@@ -1,0 +1,42 @@
+{
+  "manifestVersion": 1,
+  "kind": "capability",
+  "protocolVersion": 1,
+  "pluginId": "antigravity.desktop",
+  "version": "1.0.0",
+  "engines": {
+    "aih": ">=1.0.0"
+  },
+  "runtime": "node",
+  "entry": "index.js",
+  "permissions": {
+    "network": [
+      "https://antigravity.google",
+      "https://storage.googleapis.com"
+    ],
+    "filesystem": {
+      "read": [
+        "state"
+      ],
+      "write": [
+        "state"
+      ]
+    },
+    "secrets": [],
+    "environment": [],
+    "installers": true
+  },
+  "contributes": [
+    {
+      "id": "antigravity.desktop.apps",
+      "capability": "app.install",
+      "version": 1,
+      "failurePolicy": "delegate",
+      "scope": {
+        "providers": [
+          "agy"
+        ]
+      }
+    }
+  ]
+}

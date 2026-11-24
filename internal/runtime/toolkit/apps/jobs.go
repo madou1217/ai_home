@@ -726,11 +726,7 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 	plan = withUsableJQScript(ctx, plan, opts)
 	execEnv := mergePlanEnv(opts.Env, plan.Env)
 	execEnv = withUsableJQPath(ctx, execEnv, opts)
-	res := runCodexNPMPlan(ctx, plan, opts, environment.ExecOptions{
-		Timeout:  timeout,
-		Env:      execEnv,
-		UnsetEnv: updateproxy.UnsetForTask(execEnv),
-	})
+	res := runCodexNPMPlan(ctx, plan, opts, planExecOptions(timeout, opts.Env, plan.Env))
 	// 镜像同步滞后时 npm 会报 notarget/ETARGET（包或版本还没同步）；同一计划
 	// 换官方源再跑一次，避免「镜像少一个版本就让整个 CLI 装不上」。
 	if !res.OK && npmResolutionFailure(res) {
@@ -738,11 +734,7 @@ func (m *JobManager) executeSinglePlan(ctx context.Context, target *InstallTarge
 			plan = fallback
 			execEnv = mergePlanEnv(opts.Env, plan.Env)
 			execEnv = withUsableJQPath(ctx, execEnv, opts)
-			res = runCodexNPMPlan(ctx, plan, opts, environment.ExecOptions{
-				Timeout:  timeout,
-				Env:      execEnv,
-				UnsetEnv: updateproxy.UnsetForTask(execEnv),
-			})
+			res = runCodexNPMPlan(ctx, plan, opts, planExecOptions(timeout, opts.Env, plan.Env))
 		}
 	}
 	attempt := AttemptView{
@@ -869,10 +861,7 @@ func (m *JobManager) runLegacyNpmCleanup(ctx context.Context, jobID string, pkgs
 			continue
 		}
 		m.updateProgress(jobID, 10, plan.Label)
-		res := (&opts).exec().Run(ctx, plan.Command, plan.Args, environment.ExecOptions{
-			Timeout: packagePlanTimeout,
-			Env:     mergePlanEnv(opts.Env, plan.Env),
-		})
+		res := (&opts).exec().Run(ctx, plan.Command, plan.Args, planExecOptions(packagePlanTimeout, opts.Env, plan.Env))
 		if !res.OK {
 			failures = append(failures, pkg+": "+truncateJobString(formatExecFailure(res), 200))
 		}
@@ -1148,7 +1137,27 @@ func mergePlanEnv(baseEnv, planEnv map[string]string) map[string]string {
 	for k, v := range planEnv {
 		merged[k] = v
 	}
+	// Windows 上 ALL_PROXY 必须真正消失，而不是被设成空串（见
+	// updateproxy.UnsetForTask）。注意 npmPlanEnv 会为 npm 显式置空一批代理
+	// 变量——npm 认空串，但同一个进程环境里 curl 见到 ALL_PROXY="" 就会失败，
+	// 所以这里对有凭据/为空的值一律删除，只保留真正有效的 HTTP(S)_PROXY。
+	for _, key := range updateproxy.UnsetForTask(merged) {
+		delete(merged, key)
+	}
 	return merged
+}
+
+// planExecOptions 构建一次生命周期计划的执行参数。
+//
+// 所有安装/更新计划的执行都必须走这里：Env 与 UnsetEnv 的搭配只有这一处推导，
+// 避免再出现「某个分支记得清 ALL_PROXY、另一个分支忘了」。
+func planExecOptions(timeout time.Duration, baseEnv, planEnv map[string]string) environment.ExecOptions {
+	merged := mergePlanEnv(baseEnv, planEnv)
+	return environment.ExecOptions{
+		Timeout:  timeout,
+		Env:      merged,
+		UnsetEnv: updateproxy.UnsetForTask(merged),
+	}
 }
 
 func formatExecFailure(res environment.RunResult) string {

@@ -12,6 +12,7 @@ package updateproxy
 import (
 	"fmt"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -42,7 +43,7 @@ func Environment(base map[string]string, raw string) (map[string]string, error) 
 	// 于是所有走 curl 的 Windows 安装计划（cmd 脚本计划全都是）在设了代理后
 	// 反而比不设代理更糟：连下载都发不出去。HTTP(S)_PROXY 已被 curl/npm 识别，
 	// 不需要 all_proxy 兜底。
-	if !isWindowsEnv(base) {
+	if !taskRunsOnWindows(base) {
 		values["all_proxy"] = proxy.String()
 		values["ALL_PROXY"] = proxy.String()
 	}
@@ -75,28 +76,55 @@ func Environment(base map[string]string, raw string) (map[string]string, error) 
 // 即使我们把它设成空串，经 cmd 传播后仍会变成 " " 并报
 //   curl: (5) Unsupported proxy syntax in ' ': Bad hostname
 // 所以那里不能「设为空」，只能真正移除变量。HTTP(S)_PROXY 已足够 curl/npm 使用。
+//
+// 平台判定用「环境事实」而不是调用方传进来的 base：WebUI 作业的 base 常常是
+// nil（服务端没有 deps.Env），按 base 判断会导致这条规则在服务端永远不会生效。
 func UnsetForTask(base map[string]string) []string {
-	if !isWindowsEnv(base) {
+	if !taskRunsOnWindows(base) {
 		return nil
 	}
 	return []string{"ALL_PROXY", "all_proxy"}
 }
 
-// isWindowsEnv 从环境本身判断目标平台，避免让本包依赖 GOOS。
-// 调用方在 Windows 上的安装作业一律带 SystemRoot/OS=Windows_NT。
-func isWindowsEnv(base map[string]string) bool {
+// taskRunsOnWindows 判断任务将在哪个平台执行。
+//
+// 顺序很重要：base 里如果**明确**说明了平台（Windows 事实 或 POSIX 事实），
+// 以它为准——同一进程可能把作业派发到别的平台（SSH 远端执行）。
+// 只有 base 完全没有平台线索时才回落到本进程 GOOS：安装作业默认就在
+// server/CLI 所在的机器上执行，这也是 WebUI 作业的实际情况（deps.Env 为 nil）。
+func taskRunsOnWindows(base map[string]string) bool {
+	if platform, known := platformFromEnv(base); known {
+		return platform == "windows"
+	}
+	return runtime.GOOS == "windows"
+}
+
+// platformFromEnv 从环境里读出目标平台，读不出时返回 known=false。
+func platformFromEnv(base map[string]string) (string, bool) {
 	for key, value := range base {
 		switch strings.ToUpper(key) {
 		case "OS":
-			if strings.EqualFold(strings.TrimSpace(value), "Windows_NT") {
-				return true
+			trimmed := strings.TrimSpace(value)
+			if strings.EqualFold(trimmed, "Windows_NT") {
+				return "windows", true
 			}
-		case "SYSTEMROOT", "SYSTEMDRIVE":
-			return true
+			if trimmed != "" {
+				// OS=Darwin / OS=Linux 等：明确的 POSIX 事实。
+				return "posix", true
+			}
+		case "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR":
+			if strings.TrimSpace(value) != "" {
+				return "windows", true
+			}
 		}
 	}
-	return false
+	// POSIX 侧没有像 SystemRoot 这样普遍存在的标记，只在明确见到时才认。
+	if strings.TrimSpace(base["HOME"]) != "" && !strings.Contains(strings.TrimSpace(base["HOME"]), `\`) {
+		return "posix", true
+	}
+	return "", false
 }
+
 
 func parse(raw string) (*url.URL, error) {
 	proxy, err := url.Parse(raw)

@@ -37,7 +37,7 @@ func executeCodexRuntimePlan(ctx context.Context, target *InstallTarget, plan Li
 		timeout = defaultPlanExecTimeout
 	}
 	run := func(candidate LifecyclePlan) environment.RunResult {
-		return runCodexNPMPlan(ctx, candidate, opts, environment.ExecOptions{Timeout: timeout, Env: mergePlanEnv(opts.Env, candidate.Env)})
+		return runCodexNPMPlan(ctx, candidate, opts, planExecOptions(timeout, opts.Env, candidate.Env))
 	}
 	res := run(plan)
 	if !res.OK && npmResolutionFailure(res) {

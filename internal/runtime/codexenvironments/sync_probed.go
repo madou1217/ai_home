@@ -17,6 +17,9 @@ type ProbeOptions struct {
 	Dialer SSHDialer
 	// SkipProbe 为真时跳过探测，直接写入全部可渲染的连接（离线/调试用）。
 	SkipProbe bool
+	// URLHosts 为空时 url 模式条目不写入（表示没有通道宿主在跑）。
+	// 非空时 key 是连接 ID，值是该连接实际监听的本机端口。
+	URLHosts map[string]int
 }
 
 // SyncProbed 探测全部连接，只把可用的写进 environments.toml。
@@ -30,9 +33,33 @@ func SyncProbed(ctx context.Context, options ProbeOptions) (SyncReport, error) {
 	report := SyncReport{}
 	report.CacheHit = false
 	connections := LoadConnectionsForProbe(ctx, options.AIHomeDir)
+	report.URLReasons = map[string]Reason{}
+
 	entries := make([]Entry, 0, len(connections))
 	candidates := make([]Connection, 0, len(connections))
 	for _, connection := range connections {
+		mode, reason := SelectMode(connection)
+		if mode == ModeURL {
+			// url 模式只有在真的有宿主监听时才写；否则 Codex 会连一个空端口。
+			port, running := options.URLHosts[connection.ID]
+			if !running || port <= 0 {
+				report.Rejected = append(report.Rejected, Rejection{
+					ConnectionID: connection.ID,
+					Label:        firstNonEmpty(connection.Label, connection.ID),
+					Code:         CodeURLHostRequired,
+					Message:      urlReasonMessage(reason),
+				})
+				continue
+			}
+			entry, rejection := BuildURLEntry(URLEnvironment{ConnectionID: connection.ID, LocalPort: port})
+			if rejection != nil {
+				report.Rejected = append(report.Rejected, *rejection)
+				continue
+			}
+			report.URLReasons[connection.ID] = reason
+			entries = append(entries, entry)
+			continue
+		}
 		entry, rejection := BuildEntry(connection)
 		if rejection != nil {
 			report.Rejected = append(report.Rejected, *rejection)
@@ -83,4 +110,18 @@ func SyncProbed(ctx context.Context, options ProbeOptions) (SyncReport, error) {
 	}
 	report.Outcome = outcome
 	return report, nil
+}
+
+// urlReasonMessage 把模式原因翻译成可展示的说明。
+func urlReasonMessage(reason Reason) string {
+	switch reason {
+	case ReasonPasswordAuth:
+		return "该连接使用密码认证，需要 AIH 常驻通道宿主（url 模式）才能接入 Codex"
+	case ReasonJumpNeedsKey:
+		return "跳板使用专用私钥，ProxyJump 无法逐跳指定凭据，需要 url 模式"
+	case ReasonJumpNeedsPasswd:
+		return "跳板使用密码认证，ProxyJump 无法提供密码，需要 url 模式"
+	default:
+		return "该连接需要 url 模式"
+	}
 }

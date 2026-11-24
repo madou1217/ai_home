@@ -153,6 +153,8 @@ type SyncReport struct {
 	Rejected []Rejection
 	// CacheHit 为真表示本次用的是落盘的探测结论，没有真的连 SSH。
 	CacheHit bool
+	// URLReasons 记录哪些连接以 url 模式写入，以及原因。
+	URLReasons map[string]Reason
 }
 
 // Describe 产出不含凭据的一行摘要。

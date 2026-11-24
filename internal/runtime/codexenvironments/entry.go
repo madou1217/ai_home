@@ -9,8 +9,9 @@ import (
 
 // 拒绝原因码；稳定且可直接透出给用户。
 const (
-	CodeUnsupported = "codex_environment_unsupported_auth"
-	CodeInvalid     = "codex_environment_invalid_connection"
+	CodeUnsupported     = "codex_environment_unsupported_auth"
+	CodeInvalid         = "codex_environment_invalid_connection"
+	CodeURLHostRequired = "codex_environment_url_host_required"
 )
 
 // exec-server 的启动参数（程序名单独给，便于换成探测到的绝对路径）。

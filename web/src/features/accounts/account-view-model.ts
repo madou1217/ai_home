@@ -227,6 +227,8 @@ export type AccountAppEntryFlags = {
   desktop: boolean;
   cli: boolean;
   crossProviderHarness?: boolean;
+  /** 应用清单里的展示名（Provider 级安装/打开入口使用）。 */
+  label?: string;
 };
 export type AccountAppEntryMap = Record<string, AccountAppEntryFlags>;
 

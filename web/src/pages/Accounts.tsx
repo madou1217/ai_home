@@ -120,6 +120,7 @@ import { resolveOrderedDirection, useSurfaceSwitch } from '@/hooks/use-surface-s
 import { useAccountAppEntries } from '@/features/accounts/use-account-app-entries';
 import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
+import { ProviderDesktopSetup } from '@/features/accounts/ProviderDesktopSetup';
 import AccountConfigFilesModal from '@/features/accounts/AccountConfigFilesModal';
 import { AccountRuntimeSettingsModal } from '@/features/accounts/AccountRuntimeSettingsModal';
 import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
@@ -304,6 +305,26 @@ export default function Accounts() {
     return stats;
   }, [accounts]);
   const activeStats = providerStats[activeProvider] || providerStats.all;
+  // Provider 级桌面端入口：族 tab 下没有任何账号时，仍可安装/打开官方客户端。
+  // 能力与安装状态来自 app-entries（Toolkit 应用清单），这里不判断厂商；
+  // 无桌面系统（serverRuntime）一律不出现安装/打开。
+  const activeFamilyProvider = activeProvider === 'all' ? '' : familyRepresentative(activeProvider);
+  const providerDesktopSetup = React.useMemo(() => {
+    if (!activeFamilyProvider || !appEntries) return null;
+    if (serverRuntime) return null;
+    if ((providerStats[activeProvider]?.total || 0) > 0) return null;
+    // 多站点族（如 CodeBuddy 国际/国内）共用一个 tab，但桌面客户端不是同一个，
+    // 不应替用户选站点；族内任一站点有账号时行内入口已经能处理安装/打开。
+    const group = PROVIDER_FAMILY_GROUPS.find((entry) => entry.family === activeProvider);
+    if (group?.multiSite) return null;
+    const capability = appCapabilities[activeFamilyProvider];
+    if (!capability?.desktop) return null;
+    return {
+      provider: activeFamilyProvider,
+      label: capability.label || activeFamilyProvider,
+      installed: Boolean(appEntries[activeFamilyProvider]?.desktop)
+    };
+  }, [activeFamilyProvider, activeProvider, appCapabilities, appEntries, providerStats, serverRuntime]);
 
   // 过滤账号
   const filteredAccounts = useMemo(() => {
@@ -1223,6 +1244,14 @@ export default function Accounts() {
           }}
           items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
         />
+        {providerDesktopSetup ? (
+          <ProviderDesktopSetup
+            provider={providerDesktopSetup.provider}
+            label={providerDesktopSetup.label}
+            installed={providerDesktopSetup.installed}
+            onRefresh={() => loadAppEntries({ refresh: true })}
+          />
+        ) : null}
         {/* 卡片视图：供应商动作放在 tab 内容区顶部；列表视图把它并到“可用 n”同一行。 */}
         <Reveal open={viewMode === 'card' && (visibleActivityActions.length > 0 || Boolean(rewardsProgressText))}>
           <div className="accounts-activity-bar">

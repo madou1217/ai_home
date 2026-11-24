@@ -400,27 +400,46 @@ func builtinAntigravity() Definition {
 			Events: []string{"PreInvocation", "PostInvocation", "Stop"},
 		},
 		CLI: &CLIConfig{
-			Order:        1,
-			GlobalDir:    ".gemini",
-			ConfigSubDir: "antigravity-cli",
-			ConfigFile:   "hooks.json",
-			LoginArgs:    []string{},
-			Package:      "",
-			EnvKeys:      []string{"AGY_ACCESS_TOKEN", "GOOGLE_OAUTH_ACCESS_TOKEN"},
-			Headless:     &HeadlessConfig{TriggerFlags: []string{"--print"}},
-			DesktopClient: desktopClient(
-				"Antigravity",
-				[]string{"Antigravity"},
-				[]string{"/Antigravity.app/Contents/MacOS/"},
-				[]string{"/Applications/Antigravity.app", "{hostHomeDir}/Applications/Antigravity.app"},
-				[]string{"Antigravity.exe"},
-				[]string{"Antigravity.exe"},
-				[]string{"antigravity", "agy"},
-			),
+			Order:         1,
+			GlobalDir:     ".gemini",
+			ConfigSubDir:  "antigravity-cli",
+			ConfigFile:    "hooks.json",
+			LoginArgs:     []string{},
+			Package:       "",
+			EnvKeys:       []string{"AGY_ACCESS_TOKEN", "GOOGLE_OAUTH_ACCESS_TOKEN"},
+			Headless:      &HeadlessConfig{TriggerFlags: []string{"--print"}},
+			DesktopClient: agyDesktopClient(),
 		},
 		NativeBoundary: nativeAntigravity(),
 		RelayHosts:     relayHostsCanonical("agy.code_assist"),
 	}
+}
+
+// agyDesktopClient 声明 Antigravity 桌面端（IDE）的跨平台查找信息。
+//
+// Windows 安装器（Electron NSIS）默认装到 %LOCALAPPDATA%\Programs\Antigravity，
+// 卸载注册表里的 DisplayName 是 "Antigravity"；只按 PATH 找 Antigravity.exe 会
+// 把已安装判成未安装。这里显式给出安装路径与注册表名，由 Toolkit 与 WebUI 入口
+// 共同读取，避免各自维护一份候选列表。
+func agyDesktopClient() *DesktopClient {
+	client := desktopClient(
+		"Antigravity",
+		[]string{"Antigravity"},
+		[]string{"/Antigravity.app/Contents/MacOS/"},
+		[]string{"/Applications/Antigravity.app", "{hostHomeDir}/Applications/Antigravity.app"},
+		[]string{"Antigravity.exe"},
+		[]string{"Antigravity.exe"},
+		[]string{"antigravity", "agy"},
+	)
+	// 官方 DMG 的 Info.plist 实测值；用于进程归属与 Finder 定位，避免按名字猜。
+	client.MacOS.BundleID = "com.google.antigravity"
+	client.Windows.InstallPaths = []string{
+		"{localAppData}/Programs/Antigravity/Antigravity.exe",
+		"{programFiles}/Antigravity/Antigravity.exe",
+		"{programFilesX86}/Antigravity/Antigravity.exe",
+	}
+	client.Windows.DisplayNames = []string{"Antigravity"}
+	return client
 }
 
 // builtinOpenCode 定义由 OpenCode API 密钥认证的 CLI 与网关能力。

@@ -904,6 +904,7 @@
             "pathIncludes": [
               "/Antigravity.app/Contents/MacOS/"
             ],
+            "bundleId": "com.google.antigravity",
             "installPaths": [
               "/Applications/Antigravity.app",
               "{hostHomeDir}/Applications/Antigravity.app"
@@ -916,6 +917,14 @@
             ],
             "execNames": [
               "Antigravity.exe"
+            ],
+            "installPaths": [
+              "{localAppData}/Programs/Antigravity/Antigravity.exe",
+              "{programFiles}/Antigravity/Antigravity.exe",
+              "{programFilesX86}/Antigravity/Antigravity.exe"
+            ],
+            "displayNames": [
+              "Antigravity"
             ]
           },
           "linux": {

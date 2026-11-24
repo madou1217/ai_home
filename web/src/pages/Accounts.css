@@ -33,6 +33,36 @@
   animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
 }
 
+/* Provider 级桌面端入口：没有账号时也能安装/打开官方客户端。
+ * 只做一行紧凑状态，不使用 Alert / 大色块，也不加左侧装饰条。 */
+.accounts-provider-client-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
+
+.accounts-provider-client-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--hos-text-caption, 12px);
+  letter-spacing: var(--tracking-caps);
+}
+
+.accounts-provider-client-state {
+  margin-right: auto;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption, 12px);
+  color: var(--color-faint);
+}
+
 /* 额度列缩窄后，取消内部各快照渲染器的旧最小宽度。 */
 .accounts-remaining-cell,
 .accounts-remaining-cell .usage-progress-effects,

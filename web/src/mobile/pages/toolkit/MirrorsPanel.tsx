@@ -117,7 +117,10 @@ export default function MirrorsPanel() {
                 })}
               </MonoList>
             ) : (
-              <EmptySignal description="没有可选择的镜像源" />
+              <EmptySignal
+                description="没有可选择的镜像源"
+                action={<ActionButton icon={<CloudSyncOutlined />} label="重新读取" loading={loading} onClick={fetchMirrors} />}
+              />
             )}
           </HudSection>
         </>

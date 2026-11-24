@@ -130,7 +130,10 @@ export default function ToolsPanel({ category }: { category: ToolkitToolCategory
                 ))}
               </MonoList>
             ) : (
-              <EmptySignal description="当前分类没有工具记录" />
+              <EmptySignal
+                description="当前分类没有工具记录"
+                action={<ActionButton icon={<ReloadOutlined />} label="重新探测" loading={loading} onClick={() => void fetchTools()} />}
+              />
             )}
           </HudSection>
         </>

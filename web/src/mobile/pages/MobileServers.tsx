@@ -181,7 +181,7 @@ export default function MobileServers(_props: MobilePageProps) {
 
   const toolbar = (
     <MobileToolbar
-      start={<span className={`${remote.mono} ${styles.toolbarCount}`}>{serverRouteRows.length} SERVER</span>}
+      start={<span className={`${remote.mono} ${styles.toolbarCount}`}>{serverRouteRows.length} 台 Server</span>}
     >
       <HudIconButton
         icon={<ReloadOutlined />}
@@ -197,7 +197,7 @@ export default function MobileServers(_props: MobilePageProps) {
   return (
     <MobilePage
       toolbar={toolbar}
-      lead="默认 Server 用于无参数页面；点击“打开”会用显式 server 参数固定当前标签页，可同时操作多台 Server。"
+      lead="管理默认 Server 与多台控制面连接。"
     >
       <HudCard
         code="DEFAULT"
@@ -275,9 +275,8 @@ export default function MobileServers(_props: MobilePageProps) {
                     </span>
                   </span>
                   <span className="mhud-row__side">
-                    <StatusText tone={status.tone} label={status.label} />
+                    <StatusText tone={status.tone} label={checkingControlPlaneId === profile.id ? '同步中' : status.label} />
                     {active ? <span className={remote.badge}>默认</span> : null}
-                    {checkingControlPlaneId === profile.id ? <span className="mhud-tone--info">SYNC…</span> : null}
                   </span>
                 </SwipeRow>
               );

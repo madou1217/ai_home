@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from 'antd';
 import { ClearOutlined, ReloadOutlined, SaveOutlined, SyncOutlined } from '@ant-design/icons';
 import type { ManagedToolItem } from '@/types';
+import { SettingStatusTag, type SettingStatusState } from '@/components/ui/SettingStatusTag';
 import { DetailSheet } from '@/mobile/ui';
 import { useManagedToolConfig } from '@/components/toolkit/use-managed-tool-config';
 import { ActionButton, InlineError, Note } from './toolkit-parts';
+import styles from '../MobileToolkit.module.css';
 
 interface ManagedToolConfigSheetProps {
   /** 要编辑的工具；为空即关闭。 */
@@ -35,6 +37,15 @@ export default function ManagedToolConfigSheet({ tool, onClose, onSaved }: Manag
   }, [configData, tool?.id]);
 
   const reset = useCallback(() => setContent(initial), [initial, setContent]);
+  const saveState: SettingStatusState = saving
+    ? 'saving'
+    : error
+      ? 'error'
+      : configData?.exists === false
+        ? 'unset'
+        : dirty
+          ? 'dirty'
+          : 'saved';
 
   return (
     <DetailSheet
@@ -66,7 +77,7 @@ export default function ManagedToolConfigSheet({ tool, onClose, onSaved }: Manag
           ) : null}
           <ActionButton
             icon={<SaveOutlined />}
-            label={configData?.exists === false ? '创建配置' : dirty ? '保存' : '已保存'}
+            label={error ? '重试保存' : configData?.exists === false ? '创建配置' : dirty ? '保存' : '已保存'}
             tone="primary"
             onClick={() => void save()}
             disabled={saving || loading || !configData || !canSave}
@@ -75,32 +86,36 @@ export default function ManagedToolConfigSheet({ tool, onClose, onSaved }: Manag
         </>
       ) : null}
     >
-      {loading ? <Note tone="info">正在读取配置…</Note> : null}
-      {error ? <InlineError title="配置操作失败" detail={error} onRetry={() => void reload()} retrying={loading} /> : null}
-      {configData && !configData.writable ? (
-        <Note tone="warn">当前配置不可写（或需要系统授权），保存时可能被拒绝。</Note>
-      ) : null}
-      {tool?.requiresElevation || configData?.requiresElevation ? (
-        <Note tone="info">该配置保存需要系统授权，接口不会返回绝对路径。</Note>
-      ) : null}
-      {configData?.exists === false ? <Note>尚无配置文件，保存后会创建。</Note> : null}
-      {tool?.configNote ? <Note>{tool.configNote}</Note> : null}
-      {configData && !loading ? (
-        <Input.TextArea
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          autoSize={{ minRows: 12, maxRows: 26 }}
-          spellCheck={false}
-          aria-label={`${tool?.name || '工具'} 配置内容`}
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}
-        />
-      ) : null}
-      {configData ? (
-        <Note tone="info">
-          {configData.configName || tool?.configName || '配置文件'} · 格式 {configData.configFormat || 'text'}
-          {dirty ? ' · 有未保存改动' : ''}
-        </Note>
-      ) : null}
+      <div className={styles.sheetStack}>
+        {configData ? (
+          <div className={styles.panelToolbar}>
+            <span className={styles.panelToolbarStatus}>
+              {configData.configName || tool?.configName || '配置文件'} · {configData.configFormat || 'text'}
+            </span>
+            <SettingStatusTag status={saveState} compact />
+          </div>
+        ) : null}
+        {loading ? <Note tone="info">正在读取配置…</Note> : null}
+        {error ? <InlineError title="配置操作失败" detail={error} onRetry={() => void reload()} retrying={loading} /> : null}
+        {configData && !configData.writable ? (
+          <Note tone="warn">当前配置不可写（或需要系统授权），保存时可能被拒绝。</Note>
+        ) : null}
+        {tool?.requiresElevation || configData?.requiresElevation ? (
+          <Note tone="info">该配置保存需要系统授权，接口不会返回绝对路径。</Note>
+        ) : null}
+        {configData?.exists === false ? <Note>尚无配置文件，保存后会创建。</Note> : null}
+        {tool?.configNote ? <Note>{tool.configNote}</Note> : null}
+        {configData && !loading ? (
+          <Input.TextArea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            autoSize={{ minRows: 12, maxRows: 26 }}
+            spellCheck={false}
+            aria-label={`${tool?.name || '工具'} 配置内容`}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}
+          />
+        ) : null}
+      </div>
     </DetailSheet>
   );
 }

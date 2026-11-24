@@ -32,7 +32,7 @@ export default function MobileSettings(_props: MobilePageProps) {
   useSwitchFade(panelBodyRef, tab, { scope: 'mobile-settings-tab' });
 
   return (
-    <MobilePage lead="管理 server、额度刷新和模型别名。">
+    <MobilePage lead="管理基础配置、模型别名与上游异常映射。">
       <HudChips ariaLabel="设置分区" items={TABS} value={tab} onChange={(key) => setTab(key as SettingsTab)} />
       <div ref={panelBodyRef}>
       {/* 基础设置常驻挂载：切换分区不丢未保存的表单输入（桌面同为 forceRender）；别名分区按需挂载 */}

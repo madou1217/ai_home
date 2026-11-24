@@ -367,7 +367,12 @@ func renderManagedBlock(entries []Entry) string {
 	for _, entry := range entries {
 		builder.WriteString("\n[[environments]]\n")
 		writeStringField(&builder, "id", entry.ID)
-		if program := strings.TrimSpace(entry.Program); program != "" {
+		if url := strings.TrimSpace(entry.URL); url != "" {
+			writeStringField(&builder, "url", url)
+			if token := strings.TrimSpace(entry.AuthBearerToken); token != "" {
+				writeStringField(&builder, "auth_bearer_token", token)
+			}
+		} else if program := strings.TrimSpace(entry.Program); program != "" {
 			writeStringField(&builder, "program", program)
 		}
 		if len(entry.Args) > 0 {
@@ -399,6 +404,12 @@ func renderManagedBlock(entries []Entry) string {
 				builder.WriteString(quoteTOML(entry.Env[key]))
 			}
 			builder.WriteString(" }\n")
+		}
+		// connect_timeout_sec 只在 url 模式下合法；与 program 同用会被 Codex 拒载。
+		if entry.ConnectTimeoutSec > 0 && strings.TrimSpace(entry.URL) != "" {
+			builder.WriteString("connect_timeout_sec = ")
+			builder.WriteString(strconv.Itoa(entry.ConnectTimeoutSec))
+			builder.WriteString("\n")
 		}
 		if entry.InitializeTimeoutSec > 0 {
 			builder.WriteString("initialize_timeout_sec = ")

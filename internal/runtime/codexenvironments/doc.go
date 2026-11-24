@@ -38,12 +38,21 @@ type Connection struct {
 	// EgressConnectionID 非空表示该连接的出口是另一条连接（跳板链）。
 	EgressConnectionID string
 	// HasReverseTunnel 为真表示该连接挂着反向隧道。
+	//
+	// 反向隧道是 AIH 侧的附加能力（把远端 127.0.0.1:remotePort 转发回本机），
+	// 与 Codex 的 ssh 直连正交，不影响渲染：Codex 只是多一条普通的 SSH 连接。
 	HasReverseTunnel bool
 	// Jump 非空表示已经可以经跳板拨号（由 EgressConnectionID 展开而来）。
 	Jump *Connection
 }
 
 // Entry 是一条待渲染的 Codex 执行环境。
+//
+// program 模式与 url 模式共用这个结构，但字段互斥：
+//   - program 模式用 Program/Args；
+//   - url 模式用 URL/AuthBearerToken/ConnectTimeoutSec。
+//
+// connect_timeout_sec 只对 url 合法，所以它只在 URL 非空时才会被渲染。
 type Entry struct {
 	ID                   string
 	Program              string
@@ -51,6 +60,9 @@ type Entry struct {
 	Env                  map[string]string
 	Cwd                  string
 	InitializeTimeoutSec int
+	URL                  string
+	AuthBearerToken      string
+	ConnectTimeoutSec    int
 }
 
 // Rejection 描述一条无法安全渲染的连接及其原因。

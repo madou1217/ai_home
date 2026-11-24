@@ -26,8 +26,12 @@ func (result ProbeResult) Available() bool {
 	return result.Reachable && result.CodexFound
 }
 
-// remoteProbeTimeout 给慢链路留余量，但必须远小于一次用户可感知的等待。
-const remoteProbeTimeout = 20 * time.Second
+// remoteProbeTimeout 覆盖整个探测（找出候选 + 逐个执行 --version）。
+//
+// 实测一次成功的 AWS 探测约 5.4s；探测要跑两条脚本、最多 4 个候选，
+// 20s 在并发或慢链路上不够，会把可用连接误判为不可用。这里给足余量，
+// 代价只是启动慢一点——但同步是异步旁路，不该为了快而误杀。
+const remoteProbeTimeout = 60 * time.Second
 
 // ProbeRunner 是执行远端探测的最小依赖；生产实现走 sshremote，测试可注入。
 type ProbeRunner func(ctx context.Context, connection Connection, script string) (stdout string, stderr string, err error)
@@ -147,6 +151,8 @@ type SyncReport struct {
 	Outcome  SyncOutcome
 	Probes   []ProbeResult
 	Rejected []Rejection
+	// CacheHit 为真表示本次用的是落盘的探测结论，没有真的连 SSH。
+	CacheHit bool
 }
 
 // Describe 产出不含凭据的一行摘要。
@@ -160,4 +166,19 @@ func (report SyncReport) Describe() string {
 	}
 	return fmt.Sprintf("已写入 %d 条环境（探测 %d 条，可用 %d 条，拒绝 %d 条）",
 		report.Outcome.Entries, total, available, len(report.Rejected))
+}
+
+// coversConnections 判断缓存是否覆盖了当前全部候选连接。
+// 只要有一条新连接不在缓存里，就重探，避免新加的连接被旧结论挡住。
+func coversConnections(cached []ProbeResult, candidates []Connection) bool {
+	byID := make(map[string]struct{}, len(cached))
+	for _, probe := range cached {
+		byID[probe.ConnectionID] = struct{}{}
+	}
+	for _, connection := range candidates {
+		if _, ok := byID[connection.ID]; !ok {
+			return false
+		}
+	}
+	return true
 }

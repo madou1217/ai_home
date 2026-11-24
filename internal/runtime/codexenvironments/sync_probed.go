@@ -2,6 +2,7 @@ package codexenvironments
 
 import (
 	"context"
+	"time"
 )
 
 // ProbeOptions 是一次「探测后同步」的输入。
@@ -22,8 +23,12 @@ type ProbeOptions struct {
 //
 // 探测走 AIH 自己的拨号能力（凭据、known_hosts、跳板都与用户点「测试连接」一致），
 // 因此不可达的连接不会被写进去、也就不会在 Codex 里变成长期报错项。
+//
+// 探测结论会缓存到 AIH 的 run 目录：CLI 进程活不久，缓存让「上次探过」的结论
+// 在下次启动时立即生效，不必每条连接都重连一次 SSH。
 func SyncProbed(ctx context.Context, options ProbeOptions) (SyncReport, error) {
 	report := SyncReport{}
+	report.CacheHit = false
 	connections := LoadConnectionsForProbe(ctx, options.AIHomeDir)
 	entries := make([]Entry, 0, len(connections))
 	candidates := make([]Connection, 0, len(connections))
@@ -44,11 +49,17 @@ func SyncProbed(ctx context.Context, options ProbeOptions) (SyncReport, error) {
 		report.Outcome = outcome
 		return report, nil
 	}
-	dialer := options.Dialer
-	if dialer == nil {
-		dialer = SSHRemoteExecutor{HomeDir: options.HomeDir}
+	if cached, ok := LoadCache(options.AIHomeDir, time.Now()); ok && coversConnections(cached, candidates) {
+		report.Probes = cached
+		report.CacheHit = true
+	} else {
+		dialer := options.Dialer
+		if dialer == nil {
+			dialer = SSHRemoteExecutor{HomeDir: options.HomeDir}
+		}
+		report.Probes = ProbeAll(ctx, dialer, candidates)
+		_ = SaveCache(options.AIHomeDir, report.Probes, time.Now())
 	}
-	report.Probes = ProbeAll(ctx, dialer, candidates)
 	available, probeRejected := FilterAvailable(candidates, report.Probes)
 	report.Rejected = append(report.Rejected, probeRejected...)
 

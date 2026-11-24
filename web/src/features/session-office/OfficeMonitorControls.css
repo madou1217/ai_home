@@ -1,4 +1,4 @@
-/* =============================================================================
+/* ==========================================================================
  * OfficeMonitorControls — Presentational 3D Monitor Layout & Dual-Screen Bar
  * Strictly uses design-tokens.css variables and 1px full borders (no thick
  * left/inset stripes or alert blocks), with prefers-reduced-motion support.
@@ -6,14 +6,49 @@
 
 .office-monitor-editor {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  padding: var(--space-2) var(--space-4);
+  flex-direction: column;
+  gap: var(--space-3, 6px);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--space-3, 6px) var(--space-4, 8px);
   border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
   border-radius: var(--hos-radius-sm, 3px);
   background: var(--color-surface-sunken);
+  box-sizing: border-box;
+}
+
+.office-monitor-editor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 6px);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.office-monitor-controls-cluster {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3, 6px);
+  min-width: 0;
+}
+
+.office-monitor-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 4px);
+  min-width: 0;
+}
+
+.office-monitor-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-muted);
+  font-size: var(--hos-text-micro, 11px);
+  white-space: nowrap;
 }
 
 .office-monitor-editor-group {
@@ -27,20 +62,20 @@
 }
 
 .office-monitor-seg-btn {
-  padding: 2px var(--space-3);
+  padding: 2px var(--space-3, 6px);
   border: 1px solid transparent;
   border-radius: var(--hos-radius-2xs, 2px);
   background: transparent;
   color: var(--color-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--hos-text-micro, 11px);
+  font-weight: var(--weight-medium, 500);
   cursor: pointer;
   white-space: nowrap;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast, 120ms) var(--ease-standard, ease),
+    background-color var(--motion-fast, 120ms) var(--ease-standard, ease),
+    border-color var(--motion-fast, 120ms) var(--ease-standard, ease);
 }
 
 .office-monitor-seg-btn:hover {
@@ -52,21 +87,23 @@
   border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
   background: var(--color-accent-soft);
   color: var(--color-accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold, 600);
 }
 
 .office-monitor-steppers {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(126px, 1fr));
+  gap: var(--space-2, 4px);
+  min-width: 0;
 }
 
 .office-monitor-stepper {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 3px;
-  padding: 2px var(--space-2);
+  min-width: 0;
+  padding: 2px var(--space-2, 4px);
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-xs, 2px);
   background: var(--color-surface-raised);
@@ -74,18 +111,19 @@
 
 .office-monitor-stepper-label {
   padding: 0 3px;
-  color: var(--color-muted-strong);
+  color: var(--color-muted-strong, var(--color-muted));
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--hos-text-micro, 11px);
+  font-weight: var(--weight-semibold, 600);
 }
 
 .office-monitor-stepper-val {
-  min-width: 48px;
+  flex: 1 1 auto;
+  min-width: 44px;
   text-align: center;
   color: var(--color-heading);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--hos-text-micro, 11px);
   font-variant-numeric: tabular-nums;
 }
 
@@ -93,8 +131,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-2xs, 2px);
@@ -103,8 +142,9 @@
   font-size: 10px;
   cursor: pointer;
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast, 120ms) var(--ease-standard, ease),
+    background-color var(--motion-fast, 120ms) var(--ease-standard, ease),
+    color var(--motion-fast, 120ms) var(--ease-standard, ease);
 }
 
 .office-monitor-step-btn:hover:not(:disabled) {
@@ -120,8 +160,31 @@
 .office-monitor-editor-actions {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  gap: var(--space-2, 4px);
   margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .office-monitor-steppers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .office-monitor-editor {
+    padding: var(--space-2, 4px) var(--space-3, 6px);
+  }
+
+  .office-monitor-editor-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .office-monitor-steppers {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

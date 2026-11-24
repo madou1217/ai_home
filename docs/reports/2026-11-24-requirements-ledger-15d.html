@@ -41,9 +41,9 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>123 条已完成</b>、10 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>88%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D/终端 UI。</p><div class="legend">
-<span class="chip s-已完成">已完成 123</span>
-<span class="chip s-部分">部分 10</span>
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>124 条已完成</b>、9 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>89%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D 建模精细度。</p><div class="legend">
+<span class="chip s-已完成">已完成 124</span>
+<span class="chip s-部分">部分 9</span>
 <span class="chip s-未完成">未完成 3</span>
 <span class="chip s-未核实">未核实 3</span>
 <span class="chip s-约束">约束 11</span>
@@ -286,8 +286,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td class="ev">Office 页面与终端路由在 Go；建模精细度未验收</td><td class="sess">—</td></tr>
 <tr>
 <td>办公室 zsh 窗口关不掉</td><td class="meta">11-18</td>
-<td><span class="chip s-部分">部分</span></td>
-<td class="ev">2026-11-25 实测 /terminal/open → close → 再次 close 均 200 且幂等，测试终端已清；持久 project-shell 会话未动，办公室 UI 未复验</td><td class="sess">—</td></tr>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">2026-11-25 真实浏览器：/tmp/office-ui-verify 新建 Web Shell → 选中工位 → 关闭会话 → 确认弹窗 → 房间/工位立即消失，API 只剩原会话；同时修复 1280×720 下停靠栏被裁切、状态标签与按钮重叠（3fba9944），1440/1280 实测无溢出</td><td class="sess">—</td></tr>
 <tr>
 <td>设置页重排、Claude 首屏配置迁到 toolkit</td><td class="meta">11-20</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -730,7 +730,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <li><b>安装包 ≤80MiB</b>：实测 80MiB 必须去掉内置 Node（119.5→79.9MiB）；用户选择“先不去”，当前 91.9–100.6MiB，三平台可用。20/50MiB 不可行。</li>
 <li><b>项目办公室 3D 精细度</b>：Office 页面与终端路由在 Go；机箱/双屏建模与可转视角未验收。</li>
 <li><b>未提交的 composition/pricingcatalog 收尾</b>：并行会话仍持有未提交改动；当前工作区 <code>composition_auth.go</code>、<code>public_add_account.go</code>、<code>webui_scheduler_routes.go</code> 等仍有 M 状态。</li>
-<li><b>需要真机/外部条件</b>：资源下限 ≥15G、zcode 3.18.x chunk 路径、办公室 zsh 窗口 UI 复验、Resume paused goal。</li>
+<li><b>需要真机/外部条件</b>：资源下限 ≥15G、zcode 3.18.x chunk 路径、项目办公室 3D 建模精细度、Resume paused goal。</li>
 </ul></section>
 <section id="sessions"><h2>会话索引 <span class="count">36 个 /goal 会话</span></h2><p class="note">同一 8 位 ID 出现两次表示该会话设置了多个阶段目标；未设置 /goal 但有明确需求的会话（01a1c4d6、01a1f4be、01a1de78 等）已并入上方主题。</p><div class="board"><table><thead><tr><th>会话</th><th>日期</th><th>目标 / 主题</th><th>状态</th><th>结果</th></tr></thead><tbody>
 <tr><td class="sess">01a1a645</td><td class="meta">11-04→11-13</td><td>编辑账号 URL 不派生；Node→Go/单库；多 agent 迁移；sessions 端点</td><td><span class="chip s-部分">部分</span></td><td class="ev">编辑修复并验证；迁移持续，仍有未提交收尾</td></tr>

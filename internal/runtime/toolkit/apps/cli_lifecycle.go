@@ -71,6 +71,7 @@ func runCLILifecycle(ctx context.Context, provider, action string, opts Options,
 	// PowerShell / cmd / winget 混合列表，逐条尝试；把 winget 剔掉后其余计划
 	// 仍能完成安装，全部被剔时才如实失败。
 	if proxyActive && resolvePlatform(opts) == platformWindows {
+		plans, _ = EnsureWingetProxy(ctx, plans, opts, progress)
 		kept := make([]LifecyclePlan, 0, len(plans))
 		var skipped []string
 		for _, plan := range plans {

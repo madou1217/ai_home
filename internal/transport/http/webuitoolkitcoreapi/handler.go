@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -303,6 +304,14 @@ func NewHandler(deps Dependencies) (*Handler, error) {
 	}
 	if deps.AppsBaseOpts != nil {
 		appsOpts = *deps.AppsBaseOpts
+	}
+	// winget 的代理开关是机器级管理员设置：需要时走标准提权（Windows 弹 UAC）。
+	appsOpts.RunElevated = func(ctx context.Context, command string) (bool, bool, string) {
+		platform := deps.Platform
+		if platform == "" {
+			platform = runtime.GOOS
+		}
+		return configedit.RunElevatedCommand(ctx, platform, command, appsOpts.Env)
 	}
 	appsOpts.ProxyResolver = deps.InstallProxyResolver
 	appsOpts.EgressAutoProxy = deps.EgressAutoProxy

@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
+	"github.com/madou1217/ai_home/internal/runtime/toolkit/configedit"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
@@ -92,6 +93,12 @@ func newAppsCLILifecycle(aiHomeDir, hostHomeDir string, egress egressProvider) a
 		HostHomeDir: hostHomeDir,
 		Platform:    runtime.GOOS,
 		Env:         environment,
+		// winget 的代理开关是机器级管理员设置：需要时走标准提权（Windows 弹 UAC）。
+		// 用户在终端跑 aih <provider> install 时同样应当被询问，而不是让 winget
+		// 静默失败在「需要管理员启用」上。
+		RunElevated: func(ctx context.Context, command string) (bool, bool, string) {
+			return configedit.RunElevatedCommand(ctx, runtime.GOOS, command, environment)
+		},
 	}, egress: egress}
 }
 

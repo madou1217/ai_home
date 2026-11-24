@@ -612,6 +612,17 @@ func (m *JobManager) runLifecyclePlans(
 	// 剩下的计划仍能完成安装；若全被剔掉才如实失败。
 	// 真机实测：winget 既不读 HTTP(S)_PROXY 也不读 DefaultWebProxy，死代理下
 	// 仍能访问源——它是唯一不可代理的一类。
+	// winget 的 --proxy 默认被管理员开关关闭；未开启时它的计划连 --proxy 都
+	// 带不上，只能被剔除。这里先尝试启用（会弹 UAC），成功则计划自然可代理。
+	if proxyActive && resolvePlatform(opts) == platformWindows {
+		var wingetNote string
+		plans, wingetNote = EnsureWingetProxy(ctx, plans, opts, func(message string) {
+			m.updateProgress(jobID, 8, message)
+		})
+		if wingetNote != "" {
+			m.updateProgress(jobID, 8, "winget 代理未启用（"+wingetNote+"）；将跳过 winget 计划")
+		}
+	}
 	if proxyActive && resolvePlatform(opts) == platformWindows {
 		kept := make([]LifecyclePlan, 0, len(plans))
 		var skipped []string
@@ -1192,6 +1203,120 @@ func planExecOptions(timeout time.Duration, baseEnv, planEnv map[string]string) 
 //
 // 其它（原生 exe 安装器、msiexec 等）一律按不可代理处理：宁可明确拒绝，
 // 也不能让用户以为走了代理。
+// ensureWingetProxyPlans 确保 winget 能带 --proxy，并在必要时重新生成计划。
+//
+// winget 的 --proxy 需要管理员开启 ProxyCommandLineOptions（机器级设置）。
+// 未开启时我们无法静默改它：通过 RunElevated 弹 UAC 征得同意，成功后再解析
+// 一次计划，winget 就会带上 --proxy。
+//
+// 用户取消授权或没有提权通道时**不报错**：只是回到旧行为（winget 计划不可
+// 代理，会在后续过滤中被剔除并点名）。这是刻意的——装个 CLI 不该因为一个
+// 可选开关而整体失败。
+// EnsureWingetProxy 确保 winget 能带 --proxy：必要时通过提权启用机器级开关。
+//
+// 抽成包级函数是因为两条执行路径都要用：WebUI 作业（JobManager）与 CLI
+// （runCLILifecycle）。progress 为 nil 时不报告。
+//
+// 语义：**尽力而为**。没有提权通道或用户取消时返回原计划并给出说明文案，
+// 不报错——装个 CLI 不该因为一个可选开关而整体失败；后续过滤会把确实无法
+// 代理的 winget 计划剔除并点名。
+func EnsureWingetProxy(
+	ctx context.Context,
+	plans []LifecyclePlan,
+	opts Options,
+	progress func(string),
+) ([]LifecyclePlan, string) {
+	report := func(message string) {
+		if progress != nil {
+			progress(message)
+		}
+	}
+	// 判定依据是「有 winget 计划」而不是「计划里没 --proxy」：--proxy 是否注入
+	// 取决于有没有匿名入口，而开关是否开启是另一个独立条件。先前用前者判断，
+	// 于是 --proxy 已经注入、但机器开关仍关着的场景完全漏掉——那正是 winget
+	// 报 exit=-1978335230 的情形。
+	if !containsWingetPlan(plans) {
+		return plans, ""
+	}
+	if wingetProxyEnabled(ctx, opts) {
+		// 已经启用：把缺失的 --proxy 补上即可。
+		return rebuildPlansWithProxy(plans, opts), ""
+	}
+	if opts.RunElevated == nil {
+		return plans, "此环境没有管理员提权通道"
+	}
+	report("正在请求管理员权限以启用 winget 代理支持…")
+	ok, cancelled, detail := opts.RunElevated(ctx, "winget settings --enable ProxyCommandLineOptions")
+	if !ok {
+		reason := "未获得管理员授权"
+		if !cancelled && strings.TrimSpace(detail) != "" {
+			reason = "启用失败：" + strings.TrimSpace(detail)
+		}
+		return plans, reason
+	}
+	report("已启用 winget 代理支持")
+	return rebuildPlansWithProxy(plans, opts), ""
+}
+
+// containsWingetPlan 判断列表里是否有 winget 计划。
+func containsWingetPlan(plans []LifecyclePlan) bool {
+	for _, plan := range plans {
+		switch strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command))) {
+		case "winget", "winget.exe":
+			return true
+		}
+	}
+	return false
+}
+
+// wingetProxyEnabled 查询机器级开关状态。
+//
+// 读不到一律按「未启用」处理：宁可多问一次管理员，也不要让 winget 带着
+// --proxy 去撞 exit=-1978335230。
+func wingetProxyEnabled(ctx context.Context, opts Options) bool {
+	res := opts.exec().Run(ctx, "winget.exe", []string{"settings", "export"},
+		environment.ExecOptions{Timeout: 10 * time.Second, Env: resolveEnvMap(opts)})
+	if !res.OK {
+		return false
+	}
+	// 只看 adminSettings 里的开关；不解析整份 JSON，避免对 winget 输出格式过度依赖。
+	text := res.Stdout + res.Stderr
+	idx := strings.Index(text, `"ProxyCommandLineOptions"`)
+	if idx < 0 {
+		return false
+	}
+	rest := text[idx+len(`"ProxyCommandLineOptions"`):]
+	colon := strings.Index(rest, ":")
+	if colon < 0 {
+		return false
+	}
+	rest = strings.TrimSpace(rest[colon+1:])
+	return strings.HasPrefix(rest, "true")
+}
+
+
+// rebuildPlansWithProxy 给列表里的 winget 计划补上 --proxy。
+//
+// 不重新解析整份计划：解析需要 provider/kind/action 等上下文，而这些在调用
+// 点已经用于生成 plans；就地补参数语义等价且不引入额外状态。
+func rebuildPlansWithProxy(plans []LifecyclePlan, opts Options) []LifecyclePlan {
+	flags := wingetProxyFlags(opts)
+	if len(flags) == 0 {
+		return plans
+	}
+	out := make([]LifecyclePlan, 0, len(plans))
+	for _, plan := range plans {
+		switch strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command))) {
+		case "winget", "winget.exe":
+			if !argsMention(plan.Args, "--proxy") {
+				plan.Args = append(append([]string{}, plan.Args...), flags...)
+			}
+		}
+		out = append(out, plan)
+	}
+	return out
+}
+
 // planHonorsProxy 判断一条 Windows 计划能否保证**本轮**的下载走任务期代理。
 //
 // 判断依据是「这个可执行文件读不读代理配置」，不是「它是不是我们写的脚本」。

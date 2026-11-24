@@ -232,3 +232,13 @@ func randomHex(bytesLen int) string {
 	}
 	return string(out)
 }
+
+// RunElevatedCommand 用当前平台的标准提权方式执行一条命令（Windows 弹 UAC）。
+//
+// 供工具箱的安装计划复用：那些操作需要管理员权限（例如 winget 的
+// ProxyCommandLineOptions），但 configedit 的其余部分是私有的。
+// 返回 (ok, cancelled)：cancelled 表示用户在授权对话框里点了取消。
+func RunElevatedCommand(ctx context.Context, platform string, command string, env map[string]string) (bool, bool, string) {
+	result := defaultElevationRunner(nil).RunElevated(ctx, platform, command, env)
+	return result.OK, result.Cancelled, result.Detail
+}

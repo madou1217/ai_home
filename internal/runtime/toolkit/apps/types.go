@@ -68,6 +68,12 @@ type Options struct {
 	// 为空时作业只接受 HTTP(S) URL；命名节点由调用方在进入作业前解析。
 	ProxyResolver InstallProxyResolver
 
+	// RunElevated 执行一条需要管理员权限的命令，返回 (OK, 用户是否取消)。
+	//
+	// 为空表示当前调用方没有提权通道：需要管理员权限的计划会如实失败并给出
+	// 手工命令，而不是静默降级。Windows 上它应当弹出 UAC（RunAs）。
+	RunElevated func(ctx context.Context, command string) (ok bool, cancelled bool, detail string)
+
 	// AnonymousProxyURL 是本轮出口的**匿名** loopback 入口；为空表示没有。
 	//
 	// 给只接受无认证代理的客户端用（winget 已实测：--proxy 丢掉 userinfo，

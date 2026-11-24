@@ -191,13 +191,43 @@ func buildPosixScriptPlan(id, label, rawURL string, hosts []string, args []strin
 	return buildShellPlan(id, label, script)
 }
 
+// buildPowerShellScriptPlan 生成「下载官方脚本并执行」的 Windows 计划。
+//
+// Invoke-RestMethod / Invoke-WebRequest 不读 HTTP_PROXY/HTTPS_PROXY 环境变量
+// （PowerShell 的已知行为；实测：设了 $env:HTTPS_PROXY 仍直连成功）。所以只把
+// 代理写进环境，Windows 上的自动代理会「换了出口却照旧直连」，看起来成功、
+// 实际没走代理。
+//
+// 修法：给本进程设置 [System.Net.WebRequest]::DefaultWebProxy。它同时作用于
+// 我们这条 irm 和官方脚本内部后续的下载（实测：设为死端口后 irm 立即失败，
+// 证明生效）。只给第一条请求加 -Proxy 不够——脚本内部还会继续下载。
+//
+// 代理地址从环境推导而不是拼进脚本字面量：凭据留在环境变量里，脚本参数在
+// Windows 上对所有进程可见。
 func buildPowerShellScriptPlan(id, label, rawURL string, hosts []string, opts Options) LifecyclePlan {
 	official, err := assertOfficialURL(rawURL, hosts)
 	if err != nil {
 		return LifecyclePlan{}
 	}
 	script := fmt.Sprintf("irm %s | iex", powershellQuote(official))
+	if taskProxyURL(mergePlanEnv(opts.Env, nil)) != "" {
+		script = "$p = $env:HTTPS_PROXY; if (-not $p) { $p = $env:HTTP_PROXY }; " +
+			"if ($p) { [System.Net.WebRequest]::DefaultWebProxy = New-Object System.Net.WebProxy($p) }; " +
+			script
+	}
 	return buildPowerShellPlan(id, label, script, opts)
+}
+
+// taskProxyURL 从安装器环境里读本轮代理（没有则空）。
+// 只认 updateproxy.Environment 写入的那几个键，避免把用户 shell 里的
+// 无关变量误当任务代理。
+func taskProxyURL(env map[string]string) string {
+	for _, key := range []string{"AIH_TASK_PROXY", "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"} {
+		if value, ok := env[key]; ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func buildCmdScriptPlan(id, label, rawURL string, hosts []string) LifecyclePlan {

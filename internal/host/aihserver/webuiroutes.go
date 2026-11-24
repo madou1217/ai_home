@@ -30,6 +30,7 @@ import (
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/remoteexecution"
 	"github.com/madou1217/ai_home/internal/runtime/accountmcps"
+	"github.com/madou1217/ai_home/internal/runtime/agysession"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
 	"github.com/madou1217/ai_home/internal/runtime/pluginhost"
@@ -64,6 +65,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiagysessionapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiappentriesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiarchivedsessionsapi"
@@ -354,6 +356,26 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建远程执行目标接口失败: %w", err)
+	}
+
+	agyDatabase, err := appstate.DatabasePath(dependencies.AIHomeDir)
+	if err != nil {
+		return nil, fmt.Errorf("解析 AGY 会话数据库失败: %w", err)
+	}
+	agySessionManager := agysession.New(agysession.Dependencies{
+		AIHomeDir:     dependencies.AIHomeDir,
+		HostHomeDir:   dependencies.HostHomeDir,
+		DatabasePath:  agyDatabase,
+		SelfBaseURL:   func() string { return dependencies.SelfBaseURL },
+		ManagementKey: dependencies.ManagementKey,
+		HTTPClient:    &http.Client{Timeout: 30 * time.Second},
+	})
+	agySessions, err := webuiagysessionapi.NewHandler(webuiagysessionapi.Dependencies{
+		Authorizer: authorizer,
+		Manager:    agySessionManager,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 AGY 会话接口失败: %w", err)
 	}
 
 	workspaceConnectors, err := webuiworkspaceconnectorapi.NewHandler(webuiworkspaceconnectorapi.Dependencies{
@@ -1033,6 +1055,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiremotetargetsapi.Path, Handler: remoteTargets},
 		{Pattern: "GET " + webuiremotetargetsapi.ResolvePath, Handler: remoteTargets},
 		{Pattern: "GET " + webuiremotetargetsapi.DoctorPath, Handler: remoteTargets},
+		{Pattern: "GET " + webuiagysessionapi.Path, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "POST " + webuiagysessionapi.Path, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "GET " + webuiagysessionapi.DetailPath, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "DELETE " + webuiagysessionapi.DetailPath, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "POST " + webuiagysessionapi.MessagePath, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "GET " + webuiagysessionapi.EventPath, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "POST " + webuiagysessionapi.ClosePath, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "POST " + webuiagysessionapi.ResumePath, Handler: agySessions, SkipPublicAlias: true},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.Path, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.EnrollmentsPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.ConnectPath, Handler: workspaceConnectors, SkipPublicAlias: true},

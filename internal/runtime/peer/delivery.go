@@ -211,6 +211,8 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 		return deliverNative(ctx, rec, text, opts)
 	case "webui-chat":
 		return deliverWebuiChat(ctx, rec, text, opts)
+	case "agy-session":
+		return deliverAGYSession(ctx, rec, text, opts)
 	default:
 		return deliverInject(ctx, rec, text, opts)
 	}
@@ -455,6 +457,72 @@ func defaultSendNative(ctx context.Context, req NativeSendRequest, opts Delivery
 	case <-timer.C:
 	}
 	return NativeSendResult{MsgID: msgID, Status: receipt.wait(ctx)}, nil
+}
+
+// deliverAGYSession 把消息投进常驻 AGY 会话（一条需求一个进程）。
+// 与管理 API 同源：不存在第二条投递路径。
+func deliverAGYSession(ctx context.Context, rec Record, text string, opts DeliveryOptions) DeliveryResult {
+	baseURL := ""
+	if opts.ServerBaseURL != nil {
+		baseURL = strings.TrimRight(strings.TrimSpace(opts.ServerBaseURL()), "/")
+	}
+	mgmtKey := ""
+	if opts.ManagementKey != nil {
+		mgmtKey = strings.TrimSpace(opts.ManagementKey())
+	}
+	if baseURL == "" || mgmtKey == "" {
+		return DeliveryResult{
+			OK:      false,
+			Error:   "agy_session_unavailable",
+			Message: "AIH Server 没在跑或没配 Management Key；消息先留在收件箱。",
+		}
+	}
+	sessionID := strings.TrimSpace(rec.To.SessionID)
+	if sessionID == "" {
+		sessionID = strings.TrimSpace(rec.To.Address)
+	}
+	if sessionID == "" {
+		return DeliveryResult{OK: false, Error: "missing_session_target"}
+	}
+	if opts.DryRun {
+		return DeliveryResult{OK: true, Channel: "agy-session"}
+	}
+	body, err := json.Marshal(map[string]any{"content": text, "peerMessageId": rec.ID})
+	if err != nil {
+		return DeliveryResult{Error: "agy_session_send_failed", Message: err.Error()}
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, DefaultWebuiChatTimeout)
+	defer cancel()
+	endpoint := fmt.Sprintf("%s/v1/management/agy-sessions/%s/messages", baseURL, url.PathEscape(sessionID))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return DeliveryResult{Error: "agy_session_send_failed", Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+mgmtKey)
+	if err := authorizeTransport(ctx, rec, opts); err != nil {
+		return blockedDelivery(err)
+	}
+	client := opts.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: DefaultWebuiChatTimeout}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return DeliveryResult{Error: "agy_session_send_failed", Message: err.Error()}
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		return DeliveryResult{OK: true, Channel: "agy-session", ChannelMessageID: rec.ID + "-turn"}
+	case resp.StatusCode == http.StatusConflict:
+		return DeliveryResult{Error: "agy_session_busy"}
+	case resp.StatusCode == http.StatusNotFound:
+		return DeliveryResult{Error: "session_gone"}
+	default:
+		return DeliveryResult{Error: "agy_session_send_failed", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+	}
 }
 
 func deliverWebuiChat(ctx context.Context, rec Record, text string, opts DeliveryOptions) DeliveryResult {

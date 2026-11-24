@@ -38,6 +38,7 @@ func runPeer(ctx context.Context, args []string, runtime commandRuntime) error {
 		return err
 	}
 	targets = append(targets, listPeerChatTargets(ctx, configured)...)
+	targets = append(targets, listAGYSessionTargets(ctx, configured)...)
 	store := peer.NewDispatchStore(home, peer.StoreOptions{})
 	self := peer.ResolveSelf(ctx, targets, getenv)
 	output := func(value any) error {

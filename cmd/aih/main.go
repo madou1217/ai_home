@@ -159,6 +159,13 @@ func execute(args []string, runtime commandRuntime) int {
 		}
 		return 0
 	}
+	if handled, err := runAGYCommand(context.Background(), args, runtime); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(runtime.stderr, "aih:", err)
+			return 1
+		}
+		return 0
+	}
 	if handled, err := runRemoteCommand(context.Background(), args, runtime); handled {
 		if err != nil {
 			var silent silentExit

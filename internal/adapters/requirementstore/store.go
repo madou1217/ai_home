@@ -395,7 +395,8 @@ func (store *Store) ListEvents(ctx context.Context, requirementID string, limit 
 	return out, rows.Err()
 }
 
-// GetSchedulerSettings 读取调度器设置；缺省时返回默认的 agy / gemini-4-neon-xhigh。
+// GetSchedulerSettings 读取调度器设置；缺省时只返回启用状态与并行度，
+// Provider/Model/Server 必须由用户从真实目录中选择。
 func (store *Store) GetSchedulerSettings(ctx context.Context) (requirements.SchedulerSettings, error) {
 	var raw string
 	err := store.db.QueryRowContext(ctx, `SELECT value FROM requirement_settings WHERE key = 'scheduler' LIMIT 1`).Scan(&raw)

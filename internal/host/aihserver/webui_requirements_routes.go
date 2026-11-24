@@ -37,8 +37,9 @@ func (runtime *requirementsRuntime) Close() error {
 
 // newRequirementsRuntime 装配需求管理与调度器。
 //
-// 模型与执行目标默认使用 AIH 网关中的 agy / gemini-4-neon-xhigh（由调度器设置统一覆盖）；
-// 需求直接引用 /ui/chat（Work）里的工作区路径，执行会话与手工 Work 会话同一套 runtime。
+// 模型与执行目标由调度器设置决定；设置只保存用户从真实目录选中的值，
+// 不再注入任何 Provider/Model 默认值。需求直接引用 Work 工作区路径，
+// 执行会话与手工 Work 会话同一套 runtime。
 func newRequirementsRuntime(ctx context.Context, dependencies webuiRouteDependencies, chat *chatruntime.Service) (*requirementsRuntime, []webuiRoute, error) {
 	store, err := requirementstore.Open(ctx, dependencies.AIHomeDir)
 	if err != nil {

@@ -34,8 +34,9 @@ type ProbeRunner func(ctx context.Context, connection Connection, script string)
 
 // ProbeConnection 探测一条连接是否可用作 Codex 执行环境。
 //
-// 依次尝试 POSIX 与 Windows 两种探测写法：平台在建连前不可知，只看最终结果。
-// 只要有一次成功退出且给出路径，就认为远端装好了 codex。
+// 分两步：先找出候选可执行文件，再逐个实际执行 `--version` 确认它真的能跑。
+// 只看"路径存在"是不够的——实测有一台 Windows 的 PATH 里第一个 codex.exe 是
+// 不兼容的旧构建，而下一个候选正常，只看路径会把这条连接误判为可用。
 func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connection) ProbeResult {
 	result := ProbeResult{ConnectionID: connection.ID, Label: connection.Label}
 	if runner == nil {
@@ -44,8 +45,9 @@ func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connect
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, remoteProbeTimeout)
 	defer cancel()
-	lastDetail := ""
 	reachable := false
+	lastDetail := ""
+	var candidates []string
 	for _, script := range probeScripts() {
 		stdout, stderr, err := runner(probeCtx, connection, script)
 		if err != nil {
@@ -55,21 +57,56 @@ func ProbeConnection(ctx context.Context, runner ProbeRunner, connection Connect
 			continue
 		}
 		reachable = true
-		if path := firstLine(stdout); path != "" {
-			result.Reachable = true
-			result.CodexFound = true
-			result.CodexPath = path
-			return result
+		if list := nonEmptyLines(stdout); len(list) > 0 {
+			candidates = list
+			break
 		}
 	}
-	// 走到这里说明连不上，或者连上了但两种写法都找不到 codex。
 	if !reachable {
 		result.Detail = firstNonEmpty(lastDetail, "SSH 连接失败")
 		return result
 	}
 	result.Reachable = true
-	result.Detail = "远端 shell 里找不到 codex（需要先在该主机安装 Codex CLI）"
+	if len(candidates) == 0 {
+		result.Detail = "远端 shell 里找不到 codex（需要先在该主机安装 Codex CLI）"
+		return result
+	}
+	if len(candidates) > maxProbeCandidates {
+		candidates = candidates[:maxProbeCandidates]
+	}
+	// 逐个验证：真实执行 `--version`，第一个能跑通的就是可用路径。
+	firstFailure := ""
+	for _, candidate := range candidates {
+		stdout, stderr, err := runner(probeCtx, connection, candidate+" --version")
+		if err == nil && firstLine(stdout) != "" {
+			result.CodexFound = true
+			result.CodexPath = candidate
+			return result
+		}
+		if firstFailure == "" {
+			firstFailure = firstNonEmpty(cleanSSHError(stderr), errText(err))
+		}
+	}
+	result.Detail = "远端找到 codex 但无法执行：" + firstNonEmpty(firstFailure, "所有候选都运行失败")
 	return result
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// nonEmptyLines 取所有非空行，用于 `where` 返回多个候选的情况。
+func nonEmptyLines(raw string) []string {
+	out := []string{}
+	for _, line := range strings.Split(TrimOutput(raw), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // firstLine 取首行：Windows 的 where 会返回多个候选，只留第一条。

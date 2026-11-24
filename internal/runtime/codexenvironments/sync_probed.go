@@ -52,9 +52,14 @@ func SyncProbed(ctx context.Context, options ProbeOptions) (SyncReport, error) {
 	available, probeRejected := FilterAvailable(candidates, report.Probes)
 	report.Rejected = append(report.Rejected, probeRejected...)
 
+	// 用探测到的绝对路径渲染，避免 Codex 命中 PATH 里不可用的同名程序。
+	codexPathByID := make(map[string]string, len(report.Probes))
+	for _, probe := range report.Probes {
+		codexPathByID[probe.ConnectionID] = probe.CodexPath
+	}
 	readyEntries := make([]Entry, 0, len(available))
 	for _, connection := range available {
-		entry, rejection := BuildEntry(connection)
+		entry, rejection := BuildEntryFor(connection, codexPathByID[connection.ID])
 		if rejection != nil {
 			continue
 		}

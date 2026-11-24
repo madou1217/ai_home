@@ -52,17 +52,46 @@ func Merge(existing string, entries []Entry, includeLocal bool) MergeResult {
 	cleaned := stripManagedBlock(existing)
 	// 必须在剥离 default 之前读取用户的默认环境，否则永远读不到。
 	userDefault := parseRootString(cleaned, rootKeyDefault)
-	userBody, droppedKeys := stripRootKey(cleaned, rootKeyDefault)
 
+	parsed := parseDocument(cleaned)
 	kept := dedupeEntries(entries)
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].ID < kept[j].ID })
 
-	// 受管 id 与用户 id 冲突时移除用户条目，并记录。
-	userBody, conflicts := dropUserEntryIDs(userBody, kept)
+	managedIDs := make(map[string]struct{}, len(kept))
+	for _, entry := range kept {
+		managedIDs[entry.ID] = struct{}{}
+	}
 
+	// 用户区只保留合法顶层标量与 [[environments]] 表；
+	// 其它表（如 [tui]）连同表体整体丢弃，否则表体会被当成顶层键，Codex 拒载整份文件。
+	var userScalars []string
+	sections := make([]userSection, 0, len(parsed.sections))
+	for _, section := range parsed.sections {
+		if section.isEnvironments {
+			if _, clash := managedIDs[section.id]; clash {
+				continue
+			}
+			sections = append(sections, section)
+		}
+	}
+	dropped := append([]string{}, parsed.droppedKeys...)
+	conflicts := []string{}
+	for _, entry := range kept {
+		for _, section := range parsed.sections {
+			if section.isEnvironments && section.id == entry.ID {
+				conflicts = appendUnique(conflicts, entry.ID)
+			}
+		}
+	}
+
+	// default 必须指向真实存在的环境：用户的默认值只在它仍有对应条目时保留，
+	// 否则 Codex 的默认环境会指向一个不存在的 id。
 	defaultID := userDefault
-	if defaultID == "" {
+	if defaultID == "" || !hasEnvironment(defaultID, kept, sections) {
 		defaultID = firstEntryID(kept)
+		if defaultID == "" {
+			defaultID = firstUserEnvironmentID(sections)
+		}
 	}
 
 	var builder strings.Builder
@@ -70,11 +99,14 @@ func Merge(existing string, entries []Entry, includeLocal bool) MergeResult {
 		builder.WriteString(rootKeyDefault + " = " + quoteTOML(defaultID) + "\n")
 	}
 	builder.WriteString(rootKeyIncludeLocal + " = " + strconv.FormatBool(includeLocal) + "\n")
-
-	body := strings.TrimLeft(userBody, "\n")
-	if strings.TrimSpace(body) != "" {
+	for _, line := range userScalars {
+		builder.WriteString(line)
 		builder.WriteString("\n")
-		builder.WriteString(strings.TrimRight(body, "\n"))
+	}
+	for _, section := range sections {
+		builder.WriteString("\n")
+		// 表体尾部的空行必须剥掉：留着会在每次合并后累积，破坏幂等。
+		builder.WriteString(strings.TrimRight(strings.Join(section.lines, "\n"), "\n"))
 		builder.WriteString("\n")
 	}
 	if block := renderManagedBlock(kept); block != "" {
@@ -83,12 +115,124 @@ func Merge(existing string, entries []Entry, includeLocal bool) MergeResult {
 	}
 
 	config := normalizeTrailingNewline(builder.String())
+	// DefaultKept 只在用户的默认环境确实保留下来时才有意义。
+	keptDefault := ""
+	if userDefault != "" && defaultID == userDefault {
+		keptDefault = userDefault
+	}
 	return MergeResult{
 		Config:          config,
 		Changed:         config != existing,
-		DefaultKept:     userDefault,
-		DroppedRootKeys: appendKeys(droppedKeys, conflicts),
+		DefaultKept:     keptDefault,
+		DroppedRootKeys: appendKeys(dropped, conflicts),
 	}
+}
+
+// userSection 是用户区里的一张 [[environments]] 表。
+type userSection struct {
+	lines          []string
+	isEnvironments bool
+	id             string
+}
+
+// parsedDocument 是 environments.toml 的结构化视图。
+type parsedDocument struct {
+	// scalars 是顶层标量行（已剔除 default / include_local）。
+	scalars []string
+	// sections 是所有表（[[environments]] 与其它表），其它表整体标记为不收留。
+	sections []userSection
+	// droppedKeys 是被丢弃的顶层键与表名，供调用方如实上报。
+	droppedKeys []string
+}
+
+// parseDocument 把文本切成「顶层标量」与「表」两类，并识别非法顶层键。
+//
+// TOML 语义：第一个表头之后的一切都属于某张表，因此顶层标量必须严格取
+// 表头之前的部分；把表体漏到顶层会写出 Codex 无法解析的文件。
+func parseDocument(text string) parsedDocument {
+	doc := parsedDocument{}
+	lines := strings.Split(text, "\n")
+	current := userSection{}
+	inSection := false
+	flush := func() {
+		if inSection {
+			doc.sections = append(doc.sections, current)
+			current = userSection{}
+		}
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[[") && strings.HasSuffix(trimmed, "]]") {
+			flush()
+			inSection = true
+			name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "[["), "]]"))
+			current = userSection{lines: []string{line}, isEnvironments: name == rootKeyEnvironments}
+			if !current.isEnvironments {
+				doc.droppedKeys = appendUnique(doc.droppedKeys, name)
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			flush()
+			inSection = true
+			name := strings.TrimSpace(strings.Trim(line, "[]"))
+			current = userSection{lines: []string{line}}
+			doc.droppedKeys = appendUnique(doc.droppedKeys, name)
+			continue
+		}
+		if inSection {
+			current.lines = append(current.lines, line)
+			if current.isEnvironments && current.id == "" && strings.HasPrefix(trimmed, "id") {
+				if name, value, ok := splitAssignment(trimmed); ok && name == "id" {
+					current.id = unquoteTOML(value)
+				}
+			}
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			doc.scalars = append(doc.scalars, line)
+			continue
+		}
+		name, _, ok := splitAssignment(trimmed)
+		if !ok {
+			// 不是合法赋值：原样保留（多半是注释风格的说明），交给 Codex 判定。
+			doc.scalars = append(doc.scalars, line)
+			continue
+		}
+		switch name {
+		case rootKeyDefault, rootKeyIncludeLocal:
+			// 这两个由 AIH 统一重建，丢弃原行。
+			continue
+		default:
+			doc.droppedKeys = appendUnique(doc.droppedKeys, name)
+		}
+	}
+	flush()
+	return doc
+}
+
+// hasEnvironment 判断 id 是否对应一条受管条目或用户自己的 [[environments]]。
+func hasEnvironment(id string, managed []Entry, sections []userSection) bool {
+	for _, entry := range managed {
+		if entry.ID == id {
+			return true
+		}
+	}
+	for _, section := range sections {
+		if section.isEnvironments && section.id == id {
+			return true
+		}
+	}
+	return false
+}
+
+func firstUserEnvironmentID(sections []userSection) string {
+	for _, section := range sections {
+		if section.isEnvironments && section.id != "" {
+			return section.id
+		}
+	}
+	return ""
 }
 
 func appendKeys(keys []string, extra []string) []string {
@@ -131,53 +275,6 @@ func stripManagedBlock(text string) string {
 	return managedBlockPattern.ReplaceAllString(text, "")
 }
 
-// stripRootKey 移除某个顶层标量键并回报它是否存在（用于 default 之外的非法键）。
-func stripRootKey(text string, key string) (string, []string) {
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
-	dropped := []string{}
-	seenHeader := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !seenHeader {
-			if strings.HasPrefix(trimmed, "[") {
-				seenHeader = true
-				// 表名本身也必须是合法集合里的；这里只处理 environments。
-				if !strings.HasPrefix(trimmed, "[["+rootKeyEnvironments+"]") {
-					dropped = appendUnique(dropped, strings.Trim(trimmed, "[]"))
-					continue
-				}
-				out = append(out, line)
-				continue
-			}
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-				out = append(out, line)
-				continue
-			}
-			name, _, ok := splitAssignment(trimmed)
-			if ok && name != key && name != rootKeyIncludeLocal && name != rootKeyEnvironments {
-				dropped = appendUnique(dropped, name)
-				continue
-			}
-			// default 由本函数重写，include_local 与 environments 稍后统一重建，
-			// 所以这三类顶层标量都不保留原行——留下会写出重复键。
-			if ok && (name == key || name == rootKeyIncludeLocal || name == rootKeyEnvironments) {
-				continue
-			}
-			out = append(out, line)
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") && !strings.HasPrefix(trimmed, "[["+rootKeyEnvironments+"]") {
-			dropped = appendUnique(dropped, strings.Trim(trimmed, "[]"))
-			// 跳过该表直到下一个表头。
-			out = append(out, "")
-			continue
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n"), dropped
-}
-
 func appendUnique(values []string, value string) []string {
 	if value == "" {
 		return values
@@ -188,70 +285,6 @@ func appendUnique(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
-}
-
-// dropUserEntryIDs 移除用户区里与受管条目同 id 的整张 [[environments]] 表。
-//
-// Codex 不接受重复 id，因此冲突必须消解；消解方向是"受管优先"，
-// 并把它作为 conflict 透出，让调用方告知用户而不是悄悄改掉用户的条目。
-func dropUserEntryIDs(text string, managed []Entry) (string, []string) {
-	if len(managed) == 0 {
-		return text, nil
-	}
-	managedIDs := make(map[string]struct{}, len(managed))
-	for _, entry := range managed {
-		managedIDs[entry.ID] = struct{}{}
-	}
-	// 先按表切分，再决定整张表去留。
-	blocks := splitEntryBlocks(text)
-	out := make([]string, 0, len(blocks))
-	conflicts := []string{}
-	for _, block := range blocks {
-		if !block.isEntryTable {
-			out = append(out, block.lines...)
-			continue
-		}
-		if _, clash := managedIDs[block.id]; clash {
-			conflicts = appendUnique(conflicts, block.id)
-			continue
-		}
-		out = append(out, block.lines...)
-	}
-	return strings.Join(out, "\n"), conflicts
-}
-
-type entryBlock struct {
-	lines        []string
-	isEntryTable bool
-	id           string
-}
-
-// splitEntryBlocks 把文本切成「表格」与「表前内容」两类块。
-func splitEntryBlocks(text string) []entryBlock {
-	lines := strings.Split(text, "\n")
-	blocks := make([]entryBlock, 0, 4)
-	current := entryBlock{lines: []string{}}
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[[") {
-			blocks = append(blocks, current)
-			current = entryBlock{lines: []string{line}, isEntryTable: true}
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") {
-			blocks = append(blocks, current)
-			current = entryBlock{lines: []string{line}}
-			continue
-		}
-		if current.isEntryTable && current.id == "" {
-			if name, value, ok := splitAssignment(trimmed); ok && name == "id" {
-				current.id = unquoteTOML(value)
-			}
-		}
-		current.lines = append(current.lines, line)
-	}
-	blocks = append(blocks, current)
-	return blocks
 }
 
 func firstEntryID(entries []Entry) string {

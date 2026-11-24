@@ -1,20 +1,28 @@
 package codexenvironments
 
-// 远端探测脚本：必须与 Codex 的真实调用方式一致。
+// 远端探测分两步，缺一不可：
 //
-// Codex 是直接 spawn `ssh <target> codex exec-server ...`（非登录 shell），所以这里
-// 也走非登录 shell。用 `sh -lc` 探测会得出假结论——本机登录 shell 的 PATH 里有
-// ~/.local/bin/codex，而 Codex 拿不到。
+//  1. 找出候选可执行文件（POSIX 用 `command -v`，Windows 用 `where`）；
+//  2. 对每个候选**实际执行一次 `--version`**。
 //
-// 平台在拨号前不可知（ssh_connections 上没有 dialect 字段），所以按顺序尝试：
-// POSIX 的 `command -v` 失败后回退 Windows 的 `where`。两条都失败才判定不可用，
-// 避免把 Windows 主机误判成"没装 codex"。
+// 第 2 步是必须的：本机实测过一台 Windows，`where codex` 命中的第一个 exe 是
+// 不兼容的旧构建（"not compatible with the version of Windows"），而下一个候选
+// （pnpm shim）工作正常。只看路径存在会把这条连接写成"可用"，然后在 Codex 里
+// 长期报 "exec-server transport closed"。
+//
+// 平台在建连前不可知（ssh_connections 上没有 dialect 字段），所以按顺序尝试两种写法。
 const (
 	posixProbeScript   = `command -v codex 2>/dev/null`
 	windowsProbeScript = `where codex 2>nul`
 )
 
-// probeScripts 是探测顺序；前一条不可用时才试下一条。
+// probeScripts 返回候选查找脚本；前一条没有结果时才试下一条。
 func probeScripts() []string {
 	return []string{posixProbeScript, windowsProbeScript}
 }
+
+// maxProbeCandidates 限制逐候选验证的次数，避免 PATH 里堆积大量同名命令时拖慢启动。
+const maxProbeCandidates = 4
+
+// probeCandidates 是候选查找结果的最大保留数（where 可能返回多个）。
+const probeCandidatesOutputLimit = 4 * 1024

@@ -13,8 +13,11 @@ const (
 	CodeInvalid     = "codex_environment_invalid_connection"
 )
 
-// 远端 exec-server 的固定启动方式：在远端用户的登录 shell 里起 stdio 执行服务。
-var remoteExecServerArgv = []string{"codex", "exec-server", "--listen", "stdio"}
+// exec-server 的启动参数（程序名单独给，便于换成探测到的绝对路径）。
+var execServerArgs = []string{"exec-server", "--listen", "stdio"}
+
+// defaultRemoteCodex 是探测未给出路径时的兜底程序名。
+const defaultRemoteCodex = "codex"
 
 // defaultInitializeTimeoutSec 给远端首次启动留出余量（远端要拉起 codex 进程树）。
 const defaultInitializeTimeoutSec = 30
@@ -35,6 +38,21 @@ func BuildEntry(connection Connection) (Entry, *Rejection) {
 		Program:              "ssh",
 		Args:                 args,
 		InitializeTimeoutSec: defaultInitializeTimeoutSec,
+	}
+	return entry, nil
+}
+
+// BuildEntryFor 在 BuildEntry 之上使用探测到的远端 codex 路径。
+//
+// 必须用绝对路径：PATH 里的第一个 codex 未必能跑（实测一台 Windows 上第一个候选
+// 是不兼容的旧 exe），用裸名字会让 Codex 命中同一个坏程序。
+func BuildEntryFor(connection Connection, remoteCodexPath string) (Entry, *Rejection) {
+	entry, rejection := BuildEntry(connection)
+	if rejection != nil {
+		return entry, rejection
+	}
+	if path := strings.TrimSpace(remoteCodexPath); path != "" {
+		entry.Args = buildSSHArgsWithProgram(connection, path)
 	}
 	return entry, nil
 }
@@ -93,6 +111,10 @@ func connectionPort(connection Connection) int {
 // BatchMode 禁止交互提示，ConnectTimeout 与 sshhost 的探测口径对齐；
 // 端口用 -p 传递（不要把端口拼进目标串，否则 -p 会重复生效）。
 func buildSSHArgs(connection Connection) []string {
+	return buildSSHArgsWithProgram(connection, defaultRemoteCodex)
+}
+
+func buildSSHArgsWithProgram(connection Connection, remoteCodex string) []string {
 	args := []string{"-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"}
 	if port := connectionPort(connection); port != 22 {
 		args = append(args, "-p", strconv.Itoa(port))
@@ -101,11 +123,12 @@ func buildSSHArgs(connection Connection) []string {
 		args = append(args, "-i", expandHome(identity), "-o", "IdentitiesOnly=yes")
 	}
 	if jump := connection.Jump; jump != nil {
-		jumpArgs := buildSSHArgs(*jump)
-		args = append(args, "-o", "ProxyJump="+strings.Join(jumpArgs[:len(jumpArgs)-len(remoteExecServerArgv)], " "))
+		jumpArgs := buildSSHArgsWithProgram(*jump, defaultRemoteCodex)
+		args = append(args, "-o", "ProxyJump="+strings.Join(jumpArgs[:len(jumpArgs)-1-len(execServerArgs)], " "))
 	}
 	args = append(args, sshTarget(connection))
-	return append(args, remoteExecServerArgv...)
+	args = append(args, remoteCodex)
+	return append(args, execServerArgs...)
 }
 
 // sshTarget 产出 user@host。用户名必须带上：AIH 连接里的 user 是权威事实，

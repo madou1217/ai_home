@@ -460,17 +460,43 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id 
 		return requirement, fmt.Errorf("%w: %v", ErrUnavailable, startErr)
 	}
 	now := service.Now()
-	requirement.SessionID = handle.SessionID
-	requirement.PeerMessageID = handle.PeerMessageID
-	requirement.Status = StatusRunning
-	requirement.Progress = 10
-	requirement.ProgressNote = "AI 已开始执行"
-	requirement.StartedAt = now
-	requirement.UpdatedAt = now
+	// Start 期间的 turn 事件可能已经先一步把卡片推进到 blocked/review；
+	// AttachWorkSession 只在卡片仍处于 queued 时才写 running，避免把失败覆盖成执行中。
+	attached, err := service.store.AttachWorkSession(ctx, requirement.ID, handle.SessionID, handle.PeerMessageID, now)
+	if err != nil {
+		return Requirement{}, err
+	}
+	if attached.Status == StatusRunning {
+		service.appendEvent(ctx, attached.ID, "running", "AI 工作会话已启动")
+	}
+	service.Notify()
+	return attached, nil
+}
+
+// ResetToReady 把卡住的执行态重新放回待排期；只作用于 active 状态。
+func (service *Service) ResetToReady(ctx context.Context, id string, note string) (Requirement, error) {
+	requirement, err := service.store.GetRequirement(ctx, id)
+	if err != nil {
+		return Requirement{}, err
+	}
+	if !requirement.IsActive() {
+		return requirement, nil
+	}
+	requirement.Status = StatusReady
+	requirement.Progress = 5
+	requirement.ProgressNote = strings.TrimSpace(note)
+	if requirement.ProgressNote == "" {
+		requirement.ProgressNote = "重新排期"
+	}
+	requirement.SessionID = ""
+	requirement.PeerMessageID = ""
+	requirement.TurnID = ""
+	requirement.LastError = ""
+	requirement.UpdatedAt = service.Now()
 	if err := service.store.SaveRequirement(ctx, requirement); err != nil {
 		return Requirement{}, err
 	}
-	service.appendEvent(ctx, requirement.ID, "running", "AI 工作会话已启动")
+	service.appendEvent(ctx, requirement.ID, "requeued", requirement.ProgressNote)
 	service.Notify()
 	return requirement, nil
 }

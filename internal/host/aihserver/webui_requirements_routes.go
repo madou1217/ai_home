@@ -67,6 +67,7 @@ func newRequirementsRuntime(ctx context.Context, dependencies webuiRouteDependen
 		},
 	)
 	scheduler := requirementruntime.NewScheduler(service, dispatcher, time.Now)
+	scheduler.Inspector = chat
 	handler, handlerErr := webuirequirementsapi.NewHandler(dependencies.Authorizer, service, scheduler, dispatcher)
 	if handlerErr != nil {
 		_ = store.Close()

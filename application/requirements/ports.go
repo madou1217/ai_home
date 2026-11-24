@@ -12,6 +12,8 @@ type Store interface {
 	ListRequirements(ctx context.Context) ([]Requirement, error)
 	GetRequirement(ctx context.Context, id string) (Requirement, error)
 	SaveRequirement(ctx context.Context, requirement Requirement) error
+	// AttachWorkSession 只把执行会话身份写回卡片；不改写已被事件推进的状态。
+	AttachWorkSession(ctx context.Context, id, sessionID, peerMessageID string, at int64) (Requirement, error)
 	DeleteRequirement(ctx context.Context, id string) error
 
 	AppendEvent(ctx context.Context, event Event) error

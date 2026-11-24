@@ -21,6 +21,9 @@ type Scheduler struct {
 	dispatcher requirements.Dispatcher
 	clock      func() time.Time
 	interval   time.Duration
+	// Inspector 用于服务重启后判定卡片的会话是否仍活着；为空时跳过对账。
+	Inspector     SessionInspector
+	lastReconcile int64
 
 	mu        sync.Mutex
 	runMu     sync.Mutex
@@ -28,6 +31,11 @@ type Scheduler struct {
 	done      chan struct{}
 	lastRun   int64
 	lastError string
+}
+
+// SessionInspector 是 chat 会话快照读取端口。
+type SessionInspector interface {
+	GetSnapshot(ctx context.Context, sessionID string) (*chatruntime.Snapshot, error)
 }
 
 // NewScheduler 创建调度器。
@@ -118,6 +126,7 @@ func (scheduler *Scheduler) RunOnce(ctx context.Context) (summary requirements.D
 	if !settings.Enabled {
 		return summary, nil
 	}
+	scheduler.maybeReconcile(ctx)
 	snapshot, err := scheduler.service.List(ctx)
 	if err != nil {
 		return summary, err
@@ -176,6 +185,71 @@ func (scheduler *Scheduler) RunOnce(ctx context.Context) (summary requirements.D
 		}
 	}
 	return summary, nil
+}
+
+// maybeReconcile 限制对账频率，避免每个 5s tick 都读取会话快照。
+func (scheduler *Scheduler) maybeReconcile(ctx context.Context) {
+	if scheduler == nil || scheduler.Inspector == nil {
+		return
+	}
+	now := requirements.NowMillis(scheduler.clock)
+	scheduler.mu.Lock()
+	last := scheduler.lastReconcile
+	scheduler.mu.Unlock()
+	if now-last < 30_000 {
+		return
+	}
+	scheduler.reconcileActive(ctx)
+}
+
+// reconcileActive 把重启后遗留的 active 卡片对齐到真实会话状态。
+func (scheduler *Scheduler) reconcileActive(ctx context.Context) {
+	if scheduler == nil || scheduler.service == nil || scheduler.Inspector == nil {
+		return
+	}
+	snapshot, err := scheduler.service.List(ctx)
+	if err != nil {
+		return
+	}
+	for _, item := range snapshot.Requirements {
+		if !item.IsActive() {
+			continue
+		}
+		if item.SessionID == "" {
+			_, _ = scheduler.service.ResetToReady(ctx, item.ID, "执行会话未建立，重新排期")
+			continue
+		}
+		state, snapErr := scheduler.Inspector.GetSnapshot(ctx, item.SessionID)
+		if snapErr != nil {
+			_, _ = scheduler.service.ResetToReady(ctx, item.ID, "执行会话不存在，重新排期")
+			continue
+		}
+		switch state.State {
+		case "running", "starting", "waiting_input", "interrupting":
+			continue
+		}
+		if state.FailedTurn != nil {
+			message := "执行失败"
+			if value, ok := state.FailedTurn.Error["message"].(string); ok && strings.TrimSpace(value) != "" {
+				message = strings.TrimSpace(value)
+			}
+			scheduler.service.ApplyProgress(ctx, item.ID, requirements.ProgressUpdate{
+				Status: requirements.StatusBlocked, Note: message, LastError: message,
+				SessionID: item.SessionID, TurnID: state.FailedTurn.TurnID,
+			})
+			continue
+		}
+		if len(state.Timeline) > 0 {
+			scheduler.service.ApplyProgress(ctx, item.ID, requirements.ProgressUpdate{
+				Status: requirements.StatusReview, Progress: 92, Note: "执行完成，等待验收", SessionID: item.SessionID,
+			})
+			continue
+		}
+		_, _ = scheduler.service.ResetToReady(ctx, item.ID, "执行会话未启动，重新排期")
+	}
+	scheduler.mu.Lock()
+	scheduler.lastReconcile = requirements.NowMillis(scheduler.clock)
+	scheduler.mu.Unlock()
 }
 
 // Status 返回调度器当前状态。

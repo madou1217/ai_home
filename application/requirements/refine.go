@@ -63,7 +63,8 @@ func ParseRefinement(output string, fallbackTitle string) (string, string, []Ste
 			}
 			steps := make([]Step, 0, len(payload.Steps))
 			for _, step := range payload.Steps {
-				if text := strings.TrimSpace(step.Text); text != "" {
+				text := strings.TrimSpace(numberedLinePattern.ReplaceAllString(strings.TrimSpace(step.Text), ""))
+				if text != "" {
 					steps = append(steps, Step{Text: text, Status: "pending"})
 				}
 			}

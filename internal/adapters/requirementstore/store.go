@@ -267,6 +267,25 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 	return err
 }
 
+// AttachWorkSession 绑定执行会话并只在 queued 时推进到 running。
+// CASE 表达式保证 Start 期间已经到达的 blocked/review 事件不会被覆盖。
+func (store *Store) AttachWorkSession(ctx context.Context, id, sessionID, peerMessageID string, at int64) (requirements.Requirement, error) {
+	_, err := store.db.ExecContext(ctx, `
+		UPDATE requirements SET
+			session_id = ?,
+			peer_message_id = ?,
+			status = CASE WHEN status = 'queued' THEN 'running' ELSE status END,
+			progress = CASE WHEN status = 'queued' AND progress < 10 THEN 10 ELSE progress END,
+			progress_note = CASE WHEN status = 'queued' THEN 'AI 已开始执行' ELSE progress_note END,
+			started_at_ms = CASE WHEN started_at_ms = 0 THEN ? ELSE started_at_ms END,
+			updated_at_ms = ?
+		WHERE id = ?`, strings.TrimSpace(sessionID), strings.TrimSpace(peerMessageID), at, at, strings.TrimSpace(id))
+	if err != nil {
+		return requirements.Requirement{}, err
+	}
+	return store.GetRequirement(ctx, id)
+}
+
 // DeleteRequirement 删除需求。
 func (store *Store) DeleteRequirement(ctx context.Context, id string) error {
 	_, err := store.db.ExecContext(ctx, `DELETE FROM requirements WHERE id = ?`, strings.TrimSpace(id))

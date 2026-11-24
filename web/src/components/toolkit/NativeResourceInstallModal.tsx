@@ -299,13 +299,16 @@ export default function NativeResourceInstallModal({
               extra={
                 <Typography.Text type="secondary">
                   路径相对安装包根目录；也可以选择文件夹或从 URL 导入。
+                  {kind === 'plugin' ? ' 支持 npm:包名@版本（DSH / OpenCode 社区插件，由目标 harness 自己安装依赖）。' : ''}
                   {kind === 'skill' ? ' Skill 目录需包含 SKILL.md。' : ''}
                   {kind === 'plugin' ? ' 插件目录需包含 package.json 与 agentPlugin 声明。' : ''}
                 </Typography.Text>
               }
             >
               <Input
-                placeholder={kind === 'skill' ? 'assets/provider-skills/aih-collab' : 'assets/native-plugins/<plugin>'}
+                placeholder={kind === 'skill'
+                  ? 'assets/provider-skills/aih-collab'
+                  : kind === 'plugin' ? 'npm:dsh-context@0.87.1 或 assets/native-plugins/<plugin>' : 'assets/native-plugins/<plugin>'}
                 autoComplete="off"
                 onChange={() => {
                   setInspection(null);

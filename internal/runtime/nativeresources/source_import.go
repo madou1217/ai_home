@@ -436,6 +436,12 @@ func (s *Service) InspectSource(kind, rawSource string) (SourceInspection, error
 	if err := validateSourceKind(kind); err != nil {
 		return SourceInspection{}, err
 	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(rawSource)), npmSourcePrefix) {
+		if strings.ToLower(strings.TrimSpace(kind)) != "plugin" {
+			return SourceInspection{}, fail("native_resource_npm_kind_unsupported")
+		}
+		return s.inspectNpmSource(context.Background(), rawSource)
+	}
 	src, err := s.sourceFor(rawSource)
 	if err != nil {
 		return SourceInspection{}, err

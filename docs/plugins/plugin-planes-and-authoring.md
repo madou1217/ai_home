@@ -237,6 +237,9 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 | 内置 / 路径 | 随包资源或安装包内相对路径 | 路径必须位于安装包根目录下 |
 | 本地文件夹 | 浏览器选择目录，上传到 `run/native-resource-sources/<id>` | 单包 4MB / 256 文件；自动跳过 `.git` |
 | URL | 服务端下载 http(s) 直链 | zip / tar.gz / tar 自动解包；单文件直连；64MB 下载上限 |
+| npm | `npm:包名@版本`（也支持 `latest`） | DSH 走 profile 插件；OpenCode 写 `opencode.json#plugin`；不改包源码 |
+
+真实 DSH / OpenCode 插件集成示例见 `docs/plugins/real-plugin-integration-2026-11-24.md`。
 
 上传源是**一次性安装源**：多目标安装会复用同一份内容，过期 24 小时后清理；它不会成为插件的运行目录。
 

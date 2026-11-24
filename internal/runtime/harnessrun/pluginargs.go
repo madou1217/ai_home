@@ -75,7 +75,12 @@ func buildHostPluginArgs(
 		if resource.Kind != "native-plugin" || !strings.EqualFold(strings.TrimSpace(resource.Host), host) {
 			continue
 		}
-		status := inspectManagedResource(capability.Adapter, resource)
+		var status string
+		if resource.NativeInstall["mode"] == "dsh-profile" {
+			status = dshProfileResourceStatus(hostHomeDir, resource)
+		} else {
+			status = inspectManagedResource(capability.Adapter, resource)
+		}
 		healthy := status == "present"
 		if !resource.Enabled {
 			healthy = status == "absent"
@@ -86,6 +91,10 @@ func buildHostPluginArgs(
 	}
 	for _, resource := range resources {
 		if resource.Kind != "native-plugin" || !strings.EqualFold(strings.TrimSpace(resource.Host), host) || !resource.Enabled {
+			continue
+		}
+		// profile 插件由 DSH profile 的 bundle 层加载，不再生成 --patch 参数。
+		if resource.NativeInstall["mode"] == "dsh-profile" {
 			continue
 		}
 		target := resource.Target
@@ -116,6 +125,51 @@ func readManagedResources(ctx context.Context, aiHomeDir string) []managedResour
 		return nil
 	}
 	return state.Resources
+}
+
+// dshProfileResourceStatus 校验 profile 插件：快照目录与 profile bundle 必须同时存在。
+func dshProfileResourceStatus(hostHomeDir string, resource managedResource) string {
+	projected := directoryStatus(resource)
+	spec, _ := resource.NativeInstall["package"].(string)
+	name := spec
+	if at := strings.LastIndex(spec, "@"); at > 0 {
+		name = spec[:at]
+	}
+	raw, err := os.ReadFile(filepath.Join(hostHomeDir, ".dsh", "profiles", "aih", "package.json"))
+	if err != nil {
+		if projected == "absent" {
+			return "absent"
+		}
+		return "modified"
+	}
+	var document struct {
+		Dependencies map[string]any `json:"dependencies"`
+		DSH          struct {
+			Profile struct {
+				Bundles []string `json:"bundles"`
+			} `json:"profile"`
+		} `json:"dsh"`
+	}
+	if json.Unmarshal(raw, &document) != nil {
+		return "modified"
+	}
+	inProfile := false
+	for _, bundle := range document.DSH.Profile.Bundles {
+		if bundle == name {
+			inProfile = true
+			break
+		}
+	}
+	if !inProfile {
+		_, inProfile = document.Dependencies[name]
+	}
+	if projected == "present" && inProfile {
+		return "present"
+	}
+	if projected == "absent" && !inProfile {
+		return "absent"
+	}
+	return "modified"
 }
 
 // inspectManagedResource 对应 Node adapter.inspect。

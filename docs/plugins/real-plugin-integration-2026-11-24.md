@@ -43,7 +43,7 @@ Web UI 中：
 
 ```yaml
 ---
-keywords: ['插件适配', 'plugin adapter']
+keywords: ['plugin adapter', 'dsh plugin', 'opencode plugin']
 globs: ['**/ai_home/**']
 ---
 # AIH 插件边界
@@ -52,7 +52,7 @@ globs: ['**/ai_home/**']
 - 验证优先使用真实 harness / 真实页面，不新增测试文件。
 ```
 
-当讨论插件适配或处理 `ai_home` 项目文件时，这条规则会作为 `<rule name="aih-plugin-boundary">` 注入上下文。新增规则只需往目录里放 `.md` / `.mdc`。
+当输入包含 `plugin adapter` 等 ASCII 关键词，或处理 `ai_home` 项目文件时，这条规则会作为 `<rule name="aih-plugin-boundary">` 注入上下文。新增规则只需往目录里放 `.md` / `.mdc`。
 
 ## 3. 真实插件形状与 adapter
 
@@ -109,7 +109,12 @@ OpenCode：
   `.cache/opencode/npm/.../opencode-rules/dist/src/index.js`
 - 用插件自身的 `discoverRuleFiles` 验证：
   `aih-plugin-boundary.mdc` 被发现，元数据解析为
-  `globs: ["**/ai_home/**"]`、`keywords: ["插件适配","plugin adapter"]`。
+  `globs: ["**/ai_home/**"]`、`keywords: ["plugin adapter","dsh plugin","opencode plugin"]`。
+- 真实免费模型回合（`opencode/deepseek-v4.1-flash-free`）：
+  - 输入含 `plugin adapter`，模型原样返回了 `# AIH 插件边界` 规则正文。
+  - `~/.opencode/state/opencode-rules/{sessionId}.json` 记录
+    `matchedRulePaths: ["/Users/model/.config/opencode/rules/aih-plugin-boundary.mdc"]`。
+- 注意：`opencode-rules` 的关键词匹配使用 ASCII `\b` 词边界，**纯中文关键词不会命中**；规则里要写 ASCII 触发词。
 
 ## 5. 未采用/已移除的候选
 

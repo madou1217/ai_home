@@ -753,6 +753,7 @@ export default function RequirementsBoard() {
             {detail.status === 'idea' ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => void mutate(detail, 'confirm')}>确认排期</Button> : null}
             {detail.status === 'ready' ? <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={() => void mutate(detail, 'dispatch')}>立即执行</Button> : null}
             {detail.status === 'review' ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => void mutate(detail, 'done')}>验收完成</Button> : null}
+            {detail.status === 'blocked' ? <Button size="small" icon={<ReloadOutlined />} onClick={() => void mutate(detail, 'confirm')}>重新排期</Button> : null}
             {['queued', 'running', 'waiting'].includes(detail.status) ? <Button size="small" icon={<PauseCircleOutlined />} onClick={() => void mutate(detail, 'cancel')}>取消</Button> : null}
           </Space>
         ) : null}
@@ -1109,6 +1110,11 @@ export default function RequirementsBoard() {
           {requirement.status === 'review' ? (
             <Tooltip title="验收完成">
               <Button size="small" icon={<CheckCircleOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'done')} />
+            </Tooltip>
+          ) : null}
+          {requirement.status === 'blocked' ? (
+            <Tooltip title="重新排期">
+              <Button size="small" icon={<ReloadOutlined />} loading={isBusy} onClick={() => void mutate(requirement, 'confirm')} />
             </Tooltip>
           ) : null}
           {isActive ? (

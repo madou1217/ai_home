@@ -313,12 +313,12 @@ func RcFile(shell, homeDir string, env func(string) string) string {
 			documents := resolveWindowsDocumentsDir(homeDir)
 			ps7 := filepath.Join(documents, "PowerShell", "Microsoft.PowerShell_profile.ps1")
 			ps5 := filepath.Join(documents, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1")
-			if _, err := os.Stat(ps7); err == nil {
+			// PS7 进程的 PSModulePath 指向 PowerShell\7；即使 7 的 profile 还没建立，
+			// 也应写入 PS7 的位置，不能因为文件不存在就回落到 5.1。
+			if powershellIsSeven(get("PSModulePath")) {
 				return ps7
 			}
-			if _, err := os.Stat(ps5); err == nil {
-				return ps5
-			}
+			// 5.1 的进程必须写 5.1 的 profile；不能因为 7 的 profile 已存在就跳过去。
 			return ps5
 		}
 		configHome := get("XDG_CONFIG_HOME")
@@ -329,6 +329,16 @@ func RcFile(shell, homeDir string, env func(string) string) string {
 	default:
 		return ""
 	}
+}
+
+// powershellIsSeven 通过 PSModulePath 判断当前进程是 PowerShell 7+。
+func powershellIsSeven(modulePath string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(modulePath), "/", "\\"))
+	// 安装版是 \PowerShell\7\Modules；便携版可能只有 \PowerShell\Modules。
+	// 5.1 的模块根是 \WindowsPowerShell\Modules，不会命中这两个前缀。
+	return strings.Contains(normalized, "\\powershell\\modules") ||
+		strings.Contains(normalized, "\\powershell\\7") ||
+		strings.Contains(normalized, "\\powershell\\6")
 }
 
 func resolveWindowsDocumentsDir(homeDir string) string {

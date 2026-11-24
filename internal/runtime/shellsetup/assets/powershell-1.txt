@@ -88,7 +88,152 @@ Register-ArgumentCompleter -Native -CommandName aih -ScriptBlock {
             $desc = ""
             if ($parts.Count -ge 2 -and $null -ne $parts[1]) { $desc = [string]$parts[1] }
             if ([string]::IsNullOrEmpty($desc)) { $desc = ' ' }
-            [System.Management.Automation.CompletionResult]::new($value, $value, "ParameterValue", $desc)
+            $label = $value
+            if ($desc -ne ' ') { $label = $value + '  ' + $desc }
+            [System.Management.Automation.CompletionResult]::new($value, $label, "ParameterValue", $desc)
+        }
+    } catch { }
+}
+
+# ---- powershell / pwsh / cmd 自身的开关补全 ----
+# 这些是 Windows 自带程序，不在 aih 的命令树里；补全它们可以避免
+# `powershell -<TAB>` 只剩文件候选。只补以 - 或 / 开头的开关，空词仍交回路径补全。
+$global:_AIH_POWERSHELL_SWITCHES = @(
+    @('-NoLogo', '不显示启动版权标志'),
+    @('-NoProfile', '不加载 PowerShell 配置文件'),
+    @('-NonInteractive', '非交互模式'),
+    @('-NoExit', '执行命令后不退出'),
+    @('-InputFormat', '输入格式（Text / XML）'),
+    @('-OutputFormat', '输出格式（Text / XML）'),
+    @('-WindowStyle', '窗口样式（Normal / Hidden / Minimized / Maximized）'),
+    @('-Version', '指定 Windows PowerShell 版本'),
+    @('-Help', '显示帮助'),
+    @('-Command', '执行命令后退出'),
+    @('-File', '执行脚本文件'),
+    @('-ExecutionPolicy', '执行策略（Bypass / RemoteSigned / ...）'),
+    @('-ConfigurationName', '加载指定的会话配置'),
+    @('-EncodedCommand', '执行 Base64 编码命令'),
+    @('-PSConsoleFile', '加载控制台文件'),
+    @('-Sta', '单线程单元'),
+    @('-Mta', '多线程单元')
+)
+$global:_AIH_PWSH_SWITCHES = $global:_AIH_POWERSHELL_SWITCHES + @(
+    @('-Login', '登录式启动'),
+    @('-WorkingDirectory', '启动目录（路径）'),
+    @('-SettingsFile', '指定 settings.json（路径）'),
+    @('-ConfigurationFile', '指定配置文件（路径）'),
+    @('-CustomPipeName', '自定义命名管道'),
+    @('-SSHServerMode', '以 SSH 服务端模式运行')
+)
+$global:_AIH_CMD_SWITCHES = @(
+    @('/C', '执行字符串命令后退出'),
+    @('/K', '执行字符串命令后保留窗口'),
+    @('/S', '修改 /C 或 /K 的引号处理'),
+    @('/Q', '关闭命令回显'),
+    @('/D', '禁用 AutoRun'),
+    @('/A', 'ANSI 输出'),
+    @('/U', 'Unicode 输出'),
+    @('/E', '命令扩展 on/off'),
+    @('/F', '文件和目录名补全 on/off'),
+    @('/V', '延迟环境变量扩展 on/off'),
+    @('/X', '同 /E:ON'),
+    @('/Y', '同 /E:OFF'),
+    @('/T', '前景/背景颜色'),
+    @('/?', '显示帮助')
+)
+function global:New-AihSwitchResult {
+    param([string]$Value, [string]$Description)
+    $label = $Value
+    if (-not [string]::IsNullOrEmpty($Description)) { $label = $Value + '  ' + $Description }
+    if ([string]::IsNullOrEmpty($Description)) { $Description = ' ' }
+    return [System.Management.Automation.CompletionResult]::new($Value, $label, 'ParameterName', $Description)
+}
+Register-ArgumentCompleter -Native -CommandName powershell,powershell.exe -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $prev = $null
+    if ($commandAst.CommandElements.Count -ge 2) { $prev = $commandAst.CommandElements[-2].Extent.Text }
+    if ($prev -eq '-ExecutionPolicy') {
+        foreach ($v in @('Restricted','AllSigned','RemoteSigned','Unrestricted','Bypass','Undefined')) {
+            if ($v -like "$wordToComplete*") { New-AihSwitchResult $v '执行策略' }
+        }
+        return
+    }
+    if ($prev -eq '-InputFormat' -or $prev -eq '-OutputFormat') {
+        foreach ($v in @('Text','XML')) { if ($v -like "$wordToComplete*") { New-AihSwitchResult $v '格式' } }
+        return
+    }
+    if ($prev -eq '-WindowStyle') {
+        foreach ($v in @('Normal','Hidden','Minimized','Maximized')) { if ($v -like "$wordToComplete*") { New-AihSwitchResult $v '窗口样式' } }
+        return
+    }
+    if (-not $wordToComplete.StartsWith('-')) { return }
+    foreach ($item in $global:_AIH_POWERSHELL_SWITCHES) {
+        if ($item[0] -like "$wordToComplete*") { New-AihSwitchResult $item[0] $item[1] }
+    }
+}
+Register-ArgumentCompleter -Native -CommandName pwsh,pwsh.exe -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $prev = $null
+    if ($commandAst.CommandElements.Count -ge 2) { $prev = $commandAst.CommandElements[-2].Extent.Text }
+    if ($prev -eq '-ExecutionPolicy') {
+        foreach ($v in @('Restricted','AllSigned','RemoteSigned','Unrestricted','Bypass','Undefined')) {
+            if ($v -like "$wordToComplete*") { New-AihSwitchResult $v '执行策略' }
+        }
+        return
+    }
+    if ($prev -eq '-InputFormat' -or $prev -eq '-OutputFormat') {
+        foreach ($v in @('Text','XML')) { if ($v -like "$wordToComplete*") { New-AihSwitchResult $v '格式' } }
+        return
+    }
+    if ($prev -eq '-WindowStyle') {
+        foreach ($v in @('Normal','Hidden','Minimized','Maximized')) { if ($v -like "$wordToComplete*") { New-AihSwitchResult $v '窗口样式' } }
+        return
+    }
+    if (-not $wordToComplete.StartsWith('-')) { return }
+    foreach ($item in $global:_AIH_PWSH_SWITCHES) {
+        if ($item[0] -like "$wordToComplete*") { New-AihSwitchResult $item[0] $item[1] }
+    }
+}
+Register-ArgumentCompleter -Native -CommandName cmd,cmd.exe -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    if ($wordToComplete -match '^/(E|F|V):') {
+        $prefix = $Matches[0]
+        foreach ($v in @('ON','OFF')) {
+            $candidate = $prefix + $v
+            if ($candidate -like "$wordToComplete*") { New-AihSwitchResult $candidate '开关取值' }
+        }
+        return
+    }
+    if ($wordToComplete -match '^/T:') { return }
+    if (-not $wordToComplete.StartsWith('/')) { return }
+    foreach ($item in $global:_AIH_CMD_SWITCHES) {
+        if ($item[0] -like "$wordToComplete*") { New-AihSwitchResult $item[0] $item[1] }
+    }
+}
+
+# ---- aih 的 Tab 用菜单展示候选（仅当 Tab 仍是默认的循环补全）----
+# PowerShell 默认 TabCompleteNext 只在命令行里静默轮换；让 aih 用户看到的「候选效果」
+# 更接近 zsh 的菜单。这里只接管 aih 行，其它命令保持原行为；用户自定义过 Tab 则不动。
+if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
+    try {
+        $tabHandler = @(Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -contains 'Tab' }) | Select-Object -First 1
+        $tabFunction = ''
+        if ($tabHandler) { $tabFunction = [string]$tabHandler.Function }
+        if ($tabFunction -eq 'TabCompleteNext' -or $tabFunction -eq 'Complete') {
+            $global:_AIH_TAB_FUNCTION = $tabFunction
+            Set-PSReadLineKeyHandler -Chord Tab -ScriptBlock {
+                param($key, $arg)
+                $line = $null
+                $cursor = $null
+                [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+                if ($line -match '^\s*(&\s*)?\S*aih(\.exe)?(\s|$)') {
+                    [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($key, $arg)
+                } elseif ($global:_AIH_TAB_FUNCTION -eq 'Complete') {
+                    [Microsoft.PowerShell.PSConsoleReadLine]::Complete($key, $arg)
+                } else {
+                    [Microsoft.PowerShell.PSConsoleReadLine]::TabCompleteNext($key, $arg)
+                }
+            }
         }
     } catch { }
 }
@@ -122,10 +267,60 @@ if (Get-Command _aih_original_tabexpansion2 -ErrorAction SilentlyContinue) {
                     $desc = ''
                     if ($parts.Count -ge 2 -and $null -ne $parts[1]) { $desc = [string]$parts[1] }
                     if ([string]::IsNullOrEmpty($desc)) { $desc = ' ' }
-                    $results.Add([System.Management.Automation.CompletionResult]::new($parts[0], $parts[0], 'ParameterValue', $desc))
+                    $label = $parts[0]
+                    if ($desc -ne ' ') { $label = $parts[0] + '  ' + $desc }
+                    $results.Add([System.Management.Automation.CompletionResult]::new($parts[0], $label, 'ParameterValue', $desc))
                 }
                 $start = $line.Length - $token.Length
                 return [System.Management.Automation.CommandCompletion]::new($results, 0, $start, $token.Length)
+            } elseif ($leaf -in @('powershell','powershell.exe','pwsh','pwsh.exe')) {
+                $switches = $global:_AIH_POWERSHELL_SWITCHES
+                if ($leaf -like 'pwsh*') { $switches = $global:_AIH_PWSH_SWITCHES }
+                $results = New-Object 'System.Collections.ObjectModel.Collection[System.Management.Automation.CompletionResult]'
+                foreach ($item in $switches) {
+                    if ($item[0] -like "$token*") { $results.Add((New-AihSwitchResult $item[0] $item[1])) }
+                }
+                $start = $line.Length - $token.Length
+                return [System.Management.Automation.CommandCompletion]::new($results, 0, $start, $token.Length)
+            }
+        }
+        $current = ''
+        $prefixLine = $line.TrimEnd()
+        if ($line -eq $prefixLine) {
+            $parts = @($line -split '\s+')
+            if ($parts.Count -gt 0) {
+                $current = $parts[-1]
+                $prefixLine = $line.Substring(0, $line.Length - $current.Length).TrimEnd()
+            }
+        }
+        $parts = @($prefixLine -split '\s+' | Where-Object { $_ -ne '' })
+        if ($parts.Count -gt 0) {
+            $shellLeaf = Split-Path -Leaf $parts[0]
+            if ($shellLeaf -in @('powershell','powershell.exe','pwsh','pwsh.exe')) {
+                $prev = ''
+                if ($parts.Count -ge 2) { $prev = $parts[-1] }
+                $values = $null
+                $valueDesc = ''
+                switch ($prev) {
+                    '-ExecutionPolicy' { $values = @('Restricted','AllSigned','RemoteSigned','Unrestricted','Bypass','Undefined'); $valueDesc = '执行策略' }
+                    '-InputFormat' { $values = @('Text','XML'); $valueDesc = '格式' }
+                    '-OutputFormat' { $values = @('Text','XML'); $valueDesc = '格式' }
+                    '-WindowStyle' { $values = @('Normal','Hidden','Minimized','Maximized'); $valueDesc = '窗口样式' }
+                }
+                $results = New-Object 'System.Collections.ObjectModel.Collection[System.Management.Automation.CompletionResult]'
+                if ($null -ne $values) {
+                    foreach ($v in $values) { if ($v -like "$current*") { $results.Add((New-AihSwitchResult $v $valueDesc)) } }
+                } elseif ($current.StartsWith('-')) {
+                    $switches = $global:_AIH_POWERSHELL_SWITCHES
+                    if ($shellLeaf -like 'pwsh*') { $switches = $global:_AIH_PWSH_SWITCHES }
+                    foreach ($item in $switches) {
+                        if ($item[0] -like "$current*") { $results.Add((New-AihSwitchResult $item[0] $item[1])) }
+                    }
+                } else {
+                    return _aih_original_tabexpansion2 $inputScript $cursorColumn
+                }
+                $start = $line.Length - $current.Length
+                return [System.Management.Automation.CommandCompletion]::new($results, 0, $start, $current.Length)
             }
         }
         return _aih_original_tabexpansion2 $inputScript $cursorColumn

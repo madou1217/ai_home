@@ -319,7 +319,7 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		if _, directErr := dispatcher.Chat.DispatchCommand(ctx, session.SessionID, map[string]any{
 			"commandId": request.RequirementID + ":turn:" + fmt.Sprintf("%d", time.Now().UnixNano()),
 			"type":      "turn.submit",
-			"payload":   map[string]any{"content": request.Prompt, "model": model, "reasoningEffort": "xhigh"},
+			"payload":   map[string]any{"content": request.Prompt, "model": model},
 		}); directErr != nil {
 			return requirements.WorkHandle{}, fmt.Errorf("派发执行任务失败: %w (peer: %v)", directErr, deliveryErr)
 		}

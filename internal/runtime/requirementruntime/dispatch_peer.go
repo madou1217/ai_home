@@ -31,18 +31,22 @@ func (dispatcher *WorkDispatcher) sendPeer(ctx context.Context, sessionID, provi
 		Address:   sessionID,
 		SessionID: sessionID,
 	}
+	// ReplyPolicy=none 会被 peer 当成纯收件箱消息，永远不会自动投递；
+	// 调度任务必须落在 autoDeliver 窗口内，否则会话只能空等。
+	autoDeliverUntil := time.Now().Add(time.Hour).UnixMilli()
 	record, err := store.CreateMessageDeduplicated(peer.CreateMessageInput{
-		From:        from,
-		To:          to,
-		Body:        prompt,
-		Subject:     "[需求] " + title,
-		Summary:     "需求调度器派发执行任务",
-		Purpose:     "requirement.dispatch",
-		Action:      "execute",
-		ReplyPolicy: "none",
-		FromMode:    "server",
-		NoEnvelope:  true,
-		Priority:    peer.PriorityNormal,
+		From:             from,
+		To:               to,
+		Body:             prompt,
+		Subject:          "[需求] " + title,
+		Summary:          "需求调度器派发执行任务",
+		Purpose:          "requirement.dispatch",
+		Action:           "execute",
+		ReplyPolicy:      "optional",
+		AutoDeliverUntil: &autoDeliverUntil,
+		FromMode:         "server",
+		NoEnvelope:       true,
+		Priority:         peer.PriorityNormal,
 	}, 30*time.Second)
 	if err != nil {
 		return "", err

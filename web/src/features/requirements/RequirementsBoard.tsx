@@ -793,7 +793,7 @@ export default function RequirementsBoard() {
             </Form.Item>
           </div>
           <Form.Item name="maxParallel" label="全局最大并行数"><InputNumber min={1} max={8} style={{ width: '100%' }} /></Form.Item>
-          <div className={styles.muted}>Provider / 模型来自当前可用账号与模型目录；AGY 的思考强度编码在模型变体（如 -low / -high / -xhigh）中，选中模型即选中强度。固定账号仍是手填，选择器需求已记录但未执行。</div>
+          <div className={styles.muted}>Provider / 模型 / 执行账号均来自当前服务器的可用账号与模型目录；执行账号留空即自动选号。AGY 的思考强度编码在模型变体（如 -low / -high / -xhigh）中，选中模型即选中强度。</div>
         </Form>
       </Modal>
     </main>

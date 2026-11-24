@@ -372,13 +372,16 @@ Error: exec-server protocol error: environment `x` connect_timeout_sec requires 
 | 探测结果缓存 | 已实现 | 冷启动 5.5s、热启动 0.34s |
 | 反向隧道连接 | 正常渲染 | 隧道只把远端端口转发回 AIH，与 Codex 直连正交 |
 | 密码认证连接 | 显式拒绝 | 返回 `codex_environment_unsupported_auth` |
-| 出口绑定（egress）多跳 | 展开为 ProxyJump | 未在真机验证多跳链 |
+| 出口绑定（egress）多跳（各跳都用 agent） | 展开为 ProxyJump 列表 | 渲染已修正为合法形式；未真机验 3 跳 |
+| 跳板需专用私钥 / 密码认证 | 自动转 url 模式 | 见 §13 |
+| url 模式通道宿主 | 已实现 | 真机完整回合跑通 |
+| 通道宿主常驻监督 | 已实现 | Apply 收缩、退避重建、状态可观测 |
 | Desktop `remote-projects` | 未做 | 见 §6.4，需要先解决账号作用域 |
 
 ### 11.1 已知缺口
 
-- **url 模式只实现了渲染，没有实现通道宿主**：还没有把 `sshremote.DialTCP` 的本地监听
-  与 `url` 环境绑定起来的运行时。当前 url 环境需要调用方自己保证回环端口可达。
+- **url 宿主尚未挂到 aih-server 的常驻守护里**：`HostSupervisor` 已实现并真机验证，
+  但还没有在 `startBackgroundDaemons` 中启动，因此当前运行态下没有常驻宿主。
 - **同步必须同步执行**：最初放在后台 goroutine 里，实测 CLI 一两秒就退出、任务被杀，
   文件永远写不出来。现在靠"探测结果缓存 + 有界预算"解决启动耗时，而不是靠异步。
 - **多跳（egress 链）只做了 ProxyJump 字符串拼接**，没有真机验证过 3 段以上链路。
@@ -436,3 +439,58 @@ app_server_connection.state_changed cause=post_initialize_connection_state next=
   （App 运行时会用内存态覆写文件）。
 - `confirmProjectFolders` 是 UI 侧授权流程，代写绕过了它；若目标目录该账号无权访问，
   App 会在打开项目时自行报错，不会静默。
+
+## 13. url 模式：通道宿主与模式分流（2026-11-24）
+
+### 13.1 为什么需要宿主
+
+`url = "ws://127.0.0.1:18081"` 只是个地址，端口上必须有东西在监听并把字节经 SSH
+送到远端 `codex exec-server --listen ws://127.0.0.1:7788`。`OpenHost` 就是这个宿主：
+`proxytransport.NewSSH`（监听 + DialTCP + 双向 relay）+ `ReconnectingConnector`
+（SSH 断开后重建拨号器，监听端口不变）。
+
+### 13.2 模式分流规则（`SelectMode`）
+
+program 模式把跳板压成 `ProxyJump`，而 ProxyJump 只接受 `[user@]host[:port]`，
+**无法逐跳指定 `-i` 或密码**。实测证据：跳板需要专用私钥时
+
+```
+ssh -o ProxyJump=ubuntu@aws -i ~/.ssh/aws.pem ubuntu@127.0.0.1
+→ Permission denied (publickey). Connection closed by UNKNOWN
+```
+
+因此：
+
+| 连接形态 | 模式 | 原因码 |
+| --- | --- | --- |
+| 单跳，agent 或密钥 | program | — |
+| 多跳，各跳都用 agent | program（ProxyJump 列表） | — |
+| 任意密码认证 | url | `password_auth` |
+| 跳板需专用私钥 | url | `jump_needs_identity` |
+| 跳板用密码 | url | `jump_needs_password` |
+| 应为 url 但没有宿主在监听 | 不写入 | `codex_environment_url_host_required` |
+
+最后一行是刻意设计：宁可如实报告"需要宿主"，也不让 Codex 去连一个空端口。
+
+### 13.3 端口稳定性
+
+宿主端口由连接 ID 的 SHA-256 映射到 `[20000,40000)`，冲突时线性探测，
+输出与输入顺序无关。**端口必须稳定**，因为地址要写进 `environments.toml`；
+每次重启换端口就得重写文件并让 Codex 的现有连接失效。
+
+### 13.4 真机验证
+
+```
+远端: codex exec-server --listen ws://127.0.0.1:7788   (AWS)
+宿主: 127.0.0.1:18081 / 18082 监听
+Codex: environment/info → {"shell":{"name":"bash","path":"/bin/bash"},"cwd":"file:///home/ubuntu"}
+完整回合: 模型调用 shell → aggregatedOutput="ip-172-31-36-89\n" → final_answer 同值
+监督器: state=ready → Apply(nil) 收缩 → Close 干净退出
+```
+
+### 13.5 尚未完成
+
+- `HostSupervisor` 没有接进 `aih-server` 的 `startBackgroundDaemons`，因此当前没有
+  常驻宿主；要在真实产品里用 url 模式，必须先挂上去。
+- 远端 `codex exec-server --listen ws` 的拉起与回收还没有实现（现在靠手工
+  `setsid ... </dev/null`）。它必须由宿主负责，否则远端进程会随 SSH 会话退出。

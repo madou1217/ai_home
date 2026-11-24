@@ -303,7 +303,7 @@
 /* HUD KPI 条：外框由 .hud-kpi-strip（hud.css）画切角 + 角标；数值等宽粗体（斜杠零）+ 状态色辉光 */
 .toolkit-status-track {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -1732,6 +1732,25 @@
 
 .toolkit-kpi-icon[data-tone='err'] {
   color: var(--color-danger);
+}
+
+@media (min-width: 1025px) and (max-width: 1280px) {
+  /* 四项状态轨道：窄桌面用 2×2，避免第 4 项单独掉到第二行、看起来像坏掉的网格。 */
+  .toolkit-status-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .toolkit-status-track > li {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .toolkit-status-track > li:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .toolkit-status-track > li:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
 }
 
 @media (max-width: 1024px) {

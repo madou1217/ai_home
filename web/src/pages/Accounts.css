@@ -6,6 +6,20 @@
   margin-inline: auto;
 }
 
+/* Provider 标签较多时换行显示，避免右侧 tab 被裁掉且没有可见的溢出提示。 */
+.accounts-provider-tabs > .ant-tabs-nav {
+  overflow: visible;
+}
+
+.accounts-provider-tabs .ant-tabs-nav-wrap {
+  overflow: visible;
+}
+
+.accounts-provider-tabs .ant-tabs-nav-list {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
 /* 供应商动作条：位于 provider tab 内容区顶部，只显示当前供应商支持的动作。
  * 不放进 tab 栏，也不使用卡片 / Alert 容器；进度是紧凑的行内文字。 */
 .accounts-activity-bar {

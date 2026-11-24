@@ -21,6 +21,19 @@
   padding: var(--hos-space-2-5) 0;
   font-weight: var(--weight-medium);
 }
+/* 桌面端页签较多：换行而不是把最后几项裁到容器外。 */
+@media (min-width: 768px) {
+  .settings-tabs > .ant-tabs-nav {
+    overflow: visible;
+  }
+  .settings-tabs .ant-tabs-nav-wrap {
+    overflow: visible;
+  }
+  .settings-tabs .ant-tabs-nav-list {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+}
 .settings-grid {
   display: grid;
   align-items: start;

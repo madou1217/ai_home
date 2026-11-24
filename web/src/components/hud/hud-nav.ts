@@ -17,7 +17,11 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/dashboard': { no: '01', code: 'DASHBOARD', order: 1 },
   '/accounts': { no: '02', code: 'ACCOUNTS', order: 2 },
   '/chat': { no: '03', code: 'SESSIONS', order: 3 },
-  '/terminals': { no: '04', code: 'OFFICE', order: 4 },
+  '/projects': { no: '04', code: 'PROJECTS', order: 4 },
+  '/projects/office': { no: '04.01', code: 'OFFICE', parentPath: '/projects', order: 4.01 },
+  '/projects/requirements': { no: '04.02', code: 'REQUIREMENTS', parentPath: '/projects', order: 4.02 },
+  // 历史深链：项目办公室迁移后仍映射到 04.01，避免旧链接失去序号/顺序。
+  '/terminals': { no: '04.01', code: 'OFFICE', parentPath: '/projects', order: 4.01 },
   '/usage': { no: '05', code: 'USAGE', order: 5 },
   '/models': { no: '06', code: 'MODELS', order: 6 },
   '/scheduled-tasks': { no: '07', code: 'SCHEDULE', order: 7 },

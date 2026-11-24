@@ -145,6 +145,8 @@ func connectionFromRecord(object map[string]any) Connection {
 		Port:               recordInt(object, "port"),
 		AuthType:           recordField(object, "authType"),
 		IdentityFile:       recordField(object, "identityFile"),
+		Password:           recordRawField(object, "password"),
+		PrivateKey:         recordRawField(object, "privateKey"),
 		EgressConnectionID: recordField(object, "egressConnectionId"),
 		HasReverseTunnel:   recordReverseTunnel(object),
 	}
@@ -153,6 +155,12 @@ func connectionFromRecord(object map[string]any) Connection {
 func recordField(object map[string]any, key string) string {
 	value, _ := object[key].(string)
 	return strings.TrimSpace(value)
+}
+
+// recordRawField 保留原始空白：密码和私钥内容不能被 TrimSpace 改掉。
+func recordRawField(object map[string]any, key string) string {
+	value, _ := object[key].(string)
+	return value
 }
 
 func recordInt(object map[string]any, key string) int {

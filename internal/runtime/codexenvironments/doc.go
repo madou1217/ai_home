@@ -35,6 +35,12 @@ type Connection struct {
 	Port         int
 	AuthType     string
 	IdentityFile string
+	// Password / PrivateKey 只在 url 模式拨号时使用。
+	//
+	// program 模式无法把密码或逐跳私钥交给 Codex 的 ProxyJump，所以那两条
+	// 路径不会渲染这两个字段；url 模式由 AIH 自己拨号，需要凭据本体。
+	Password   string
+	PrivateKey string
 	// EgressConnectionID 非空表示该连接的出口是另一条连接（跳板链）。
 	EgressConnectionID string
 	// HasReverseTunnel 为真表示该连接挂着反向隧道。

@@ -371,17 +371,18 @@ Error: exec-server protocol error: environment `x` connect_timeout_sec requires 
 | url 模式渲染 | 已实现 | 生成的 `url` + `connect_timeout_sec` 通过真实启动 |
 | 探测结果缓存 | 已实现 | 冷启动 5.5s、热启动 0.34s |
 | 反向隧道连接 | 正常渲染 | 隧道只把远端端口转发回 AIH，与 Codex 直连正交 |
-| 密码认证连接 | 显式拒绝 | 返回 `codex_environment_unsupported_auth` |
+| 密码认证连接 | 转 url 模式 | 由常驻宿主用凭据本体拨号；program 模式仍拒绝 |
 | 出口绑定（egress）多跳（各跳都用 agent） | 展开为 ProxyJump 列表 | 渲染已修正为合法形式；未真机验 3 跳 |
 | 跳板需专用私钥 / 密码认证 | 自动转 url 模式 | 见 §13 |
-| url 模式通道宿主 | 已实现 | 真机完整回合跑通 |
-| 通道宿主常驻监督 | 已实现 | Apply 收缩、退避重建、状态可观测 |
+| url 模式通道宿主 | 已实现 | 真机完整回合跑通；由 aih-server 常驻维持 |
+| 通道宿主常驻监督 | 已实现 | 3s 周期对账；Apply 收缩、退避重建、状态可观测 |
 | Desktop `remote-projects` | 未做 | 见 §6.4，需要先解决账号作用域 |
 
 ### 11.1 已知缺口
 
-- **url 宿主尚未挂到 aih-server 的常驻守护里**：`HostSupervisor` 已实现并真机验证，
-  但还没有在 `startBackgroundDaemons` 中启动，因此当前运行态下没有常驻宿主。
+- **url 宿主已接进 aih-server**：`startBackgroundDaemons` 启动 `HostSupervisor`，
+  `StartURLHostDaemon` 每 3s 把宿主集合与 `ssh_connections` 对齐；CLI 只写端口
+  确实在监听的 url 条目。新增连接最迟下一轮生效。
 - **同步必须同步执行**：最初放在后台 goroutine 里，实测 CLI 一两秒就退出、任务被杀，
   文件永远写不出来。现在靠"探测结果缓存 + 有界预算"解决启动耗时，而不是靠异步。
 - **多跳（egress 链）只做了 ProxyJump 字符串拼接**，没有真机验证过 3 段以上链路。
@@ -488,9 +489,15 @@ Codex: environment/info → {"shell":{"name":"bash","path":"/bin/bash"},"cwd":"f
 监督器: state=ready → Apply(nil) 收缩 → Close 干净退出
 ```
 
-### 13.5 尚未完成
+### 13.5 产品接线（2026-11-25）
 
-- `HostSupervisor` 没有接进 `aih-server` 的 `startBackgroundDaemons`，因此当前没有
-  常驻宿主；要在真实产品里用 url 模式，必须先挂上去。
-- 远端 `codex exec-server --listen ws` 的拉起与回收还没有实现（现在靠手工
-  `setsid ... </dev/null`）。它必须由宿主负责，否则远端进程会随 SSH 会话退出。
+- `aih-server` 的 `startBackgroundDaemons` 创建 `HostSupervisor`，并由
+  `StartURLHostDaemon` 每 3s 对账：新增连接自动建宿主，删除连接自动关闭；
+  已在监督器里的连接不重复探测。
+- CLI 的 `SyncProbed` 设置 `DetectURLHosts`：按连接 ID 的固定端口探测本机监听，
+  只把真的有人监听的连接写成 `url` 条目；没有宿主时仍按 `codex_url_host_required`
+  拒绝，不会写出 connection refused 的坏地址。
+- url 模式拨号所需 `password` / `privateKey` 从 `ssh_connections` 读取并只用于
+  AIH 自己拨号，不进入 `environments.toml`。
+- 远端 `codex exec-server --listen ws` 由 `OpenHost` 在建隧道前拉起（POSIX 用
+  `setsid`，Windows 用 WMI），连接删除或进程退出时随宿主关闭。

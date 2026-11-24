@@ -288,10 +288,10 @@ func startBackgroundDaemonsWithPorts(
 
 	// 6) Codex url 模式通道宿主：program 模式表达不了的连接（密码认证、
 	//    跳板需专用私钥）只能由 AIH 自己拨号并暴露成本机 ws 端口。
-	//    这里只负责「维持已有宿主」；具体哪些连接需要 url 模式由
-	//    SyncProbed 按需调用 Apply 决定。
+	//    宿主必须由本进程常驻维持，CLI 只负责写 environments.toml。
 	if aiHomeDir != "" {
 		rt.codexHosts = codexenvironments.NewHostSupervisor(nil)
+		codexenvironments.StartURLHostDaemon(ctx, rt.codexHosts, aiHomeDir, hostHomeDir)
 	}
 
 	return rt, nil
@@ -475,6 +475,9 @@ func (r *backgroundDaemonsRuntime) Close() error {
 		}
 		if r.peerDaemon != nil {
 			_ = r.peerDaemon.Close()
+		}
+		if r.codexHosts != nil {
+			_ = r.codexHosts.Close()
 		}
 		if r.ownedOwnerStore != nil {
 			closeErr = r.ownedOwnerStore.Close()

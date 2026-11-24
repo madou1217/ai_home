@@ -63,6 +63,8 @@ func toSSHConfig(connection Connection, homeDir string) (sshremote.Config, error
 		User:         strings.TrimSpace(connection.User),
 		AuthType:     connection.AuthType,
 		IdentityFile: strings.TrimSpace(connection.IdentityFile),
+		Password:     connection.Password,
+		PrivateKey:   connection.PrivateKey,
 		HomeDir:      homeDir,
 	}
 	if strings.TrimSpace(config.AuthType) == "" {

@@ -30,6 +30,8 @@ func syncCodexEnvironments(ctx context.Context, aiHomeDir, codexHome string) {
 		CodexHome:    codexHome,
 		HomeDir:      hostHomeDir(),
 		IncludeLocal: true,
+		// 宿主由常驻的 aih-server 维持；CLI 只写端口确实在监听的 url 条目。
+		DetectURLHosts: true,
 	})
 	if err != nil {
 		return

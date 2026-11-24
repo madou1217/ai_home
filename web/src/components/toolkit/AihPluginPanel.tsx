@@ -5,10 +5,12 @@ import {
   DeleteOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
+import AihPluginInstallModal from './AihPluginInstallModal';
 import type {
   AihPluginDoctorReport,
   AihPluginInstalled,
@@ -32,6 +34,7 @@ export default function AihPluginPanel() {
   const [report, setReport] = useState<AihPluginReport | null>(null);
   const [doctor, setDoctor] = useState<AihPluginDoctorReport | null>(null);
   const [busy, setBusy] = useState('');
+  const [installOpen, setInstallOpen] = useState(false);
 
   const load = useCallback(async () => {
     setBusy('load');
@@ -125,6 +128,7 @@ export default function AihPluginPanel() {
           <Typography.Text type="secondary">运行在 AIH 宿主内的签名插件，通过 contributes 声明能力槽；与 Provider / Harness 内执行的原生插件不是同一平面。</Typography.Text>
         </div>
         <Space>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>安装</Button>
           <Button icon={<ReloadOutlined />} loading={busy === 'load'} onClick={() => void load()}>重新探测</Button>
         </Space>
       </header>
@@ -233,6 +237,11 @@ export default function AihPluginPanel() {
         </Card>
       ) : null}
       {doctor ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>Doctor：{doctor.ok ? '健康' : `${doctor.issues?.length || 0} 个问题`}；runtime {String(doctor.runtime?.state || 'unknown')}</Typography.Text> : null}
+      <AihPluginInstallModal
+        open={installOpen}
+        onClose={() => setInstallOpen(false)}
+        onInstalled={() => void load()}
+      />
     </section>
   );
 }

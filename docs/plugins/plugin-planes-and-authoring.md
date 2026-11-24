@@ -75,6 +75,7 @@
 - `failurePolicy` 只有 `deny` / `delegate`；`order` 决定同一能力链中的顺序。
 - `permissions` 是安装确认与宿主边界，**不是执行沙箱**；process 插件没有沙箱。
 - `engines` / `targets` 管宿主版本与平台，不是 Provider / Harness 选择器。
+- 安装入口：插件与资源 → AIH 能力插件 → 安装，支持 URL 与本地 `.aih-plugin`；也可用 `aih plugin install`。
 
 ### 2.2 Harness 原生插件：`package.json#agentPlugin`
 

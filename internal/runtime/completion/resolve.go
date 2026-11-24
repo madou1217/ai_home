@@ -36,7 +36,7 @@ var peerChannelCandidates = []namedSummary{
 	{Name: "webui-chat", Summary: "WebUI chat runtime 的命令总线"},
 }
 
-var shellValueCandidates = []string{"zsh", "bash", "fish", "powershell", "sh"}
+var shellValueCandidates = []string{"zsh", "bash", "fish", "powershell", "sh", "cmd"}
 
 func at(values []string, index int) string {
 	if index < 0 || index >= len(values) {

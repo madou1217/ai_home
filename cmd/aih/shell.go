@@ -25,11 +25,12 @@ const shellHelp = `用法：
   拼写纠正    命令打错时（如 ahi）列出最接近的候选，确认后才运行；e = 放到命令行自己编辑
   自学习      你确认过的纠正会被记住，下次同一个错法排第一
 
-支持的 shell：zsh / bash / fish / PowerShell（PS 5.1 与 7.x）/ sh
+支持的 shell：zsh / bash / fish / PowerShell（PS 5.1 与 7.x）/ sh / cmd
   sh：/bin/sh 是 bash/zsh 时自动复用原生补全；dash/ash 没有编程补全接口，提供 aih_complete 手动查询
+  cmd：需要先安装 Clink（cmd 原生没有参数补全接口）；aih shell apply --shell cmd 写入 Clink 脚本
 
 选项：
-  --shell <zsh|bash|fish|powershell>  目标 shell（默认按「父进程 → PSModulePath → $SHELL」判断）
+  --shell <zsh|bash|fish|powershell|sh|cmd>  目标 shell（默认按「父进程 → PSModulePath → $SHELL」判断）
   --rc-file <路径>       写到指定文件而不是默认 rc
   --all                  对每个「已安装或已有 rc」的 shell 都执行一次
   --completion           开启 TAB 补全（恢复之前关闭的功能）
@@ -244,6 +245,9 @@ func runShell(arguments []string, runtime commandRuntime) error {
 	rcOverride := ""
 	if options.rcFileSet {
 		rcOverride = options.rcFile
+	}
+	if isClinkShell(shellOption) {
+		return runClinkShell(action, options, runtime)
 	}
 
 	switch action {

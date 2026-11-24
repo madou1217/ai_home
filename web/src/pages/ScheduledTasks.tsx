@@ -797,7 +797,7 @@ export default function ScheduledTasks() {
     {
       title: '任务',
       dataIndex: 'name',
-      width: 220,
+      width: 140,
       render: (_value, task) => (
         <div className="scheduled-tasks-name">
           <strong>{task.name}</strong>
@@ -807,12 +807,12 @@ export default function ScheduledTasks() {
     },
     {
       title: '调度',
-      width: 160,
+      width: 110,
       render: (_value, task) => <span className="scheduled-tasks-mono">{describeSchedule(task.schedule)}</span>
     },
     {
       title: '状态',
-      width: 180,
+      width: 150,
       render: (_value, task) => (
         <Space size={8}>
           <Switch
@@ -828,7 +828,7 @@ export default function ScheduledTasks() {
     },
     {
       title: '下次运行',
-      width: 130,
+      width: 110,
       render: (_value, task) => (
         <span className="scheduled-tasks-mono">
           {task.enabled === false ? '已暂停' : formatTime(task.nextRunAt)}
@@ -837,7 +837,7 @@ export default function ScheduledTasks() {
     },
     {
       title: '上次运行',
-      width: 150,
+      width: 120,
       render: (_value, task) => (
         <Tooltip title={task.lastSummary || ''}>
           <span className="scheduled-tasks-mono">{formatTime(task.lastRunAt)}</span>
@@ -846,16 +846,17 @@ export default function ScheduledTasks() {
     },
     {
       title: '操作',
-      width: 220,
+      width: 235,
       render: (_value, task) => (
         <Space size={4}>
           <Button
             size="small"
+            title="立即执行"
             loading={busyId === task.id}
             disabled={task.running}
             onClick={() => void handleRun(task)}
           >
-            立即执行
+            执行
           </Button>
           <Button size="small" onClick={() => void openTaskRecords(task)}>记录</Button>
           <Button size="small" onClick={() => openEdit(task)}>编辑</Button>

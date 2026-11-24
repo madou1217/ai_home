@@ -53,6 +53,22 @@
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.scheduled-tasks-table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.scheduled-tasks-table-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--color-border);
+}
+
+/* 摘要列是最后一块可伸缩空间：允许单元格换行，长错误不要被右侧裁掉。 */
+.scheduled-tasks-table-scroll .ant-table-tbody > tr > td {
+  white-space: normal;
 }
 
 .scheduled-tasks-name {
@@ -86,6 +102,8 @@
 }
 
 .scheduled-tasks-summary {
+  white-space: normal;
+  word-break: break-word;
   color: var(--color-muted);
   font-family: var(--font-mono);
   font-size: 12px;

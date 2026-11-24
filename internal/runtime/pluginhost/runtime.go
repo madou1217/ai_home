@@ -110,6 +110,17 @@ type pendingCandidate struct {
 }
 
 // Runtime 管理 Plugin Host 子进程、代次准备/激活/排空回收、崩溃退避恢复及 Go Registry 投影同步。
+// InvocationStat 是单个贡献项的进程内调用统计（重启后清零）。
+type InvocationStat struct {
+	ContributionID  string `json:"contributionId"`
+	Calls           int64  `json:"calls"`
+	Failures        int64  `json:"failures"`
+	LastError       string `json:"lastError,omitempty"`
+	LastDurationMs  int64  `json:"lastDurationMs"`
+	LastCalledAt    int64  `json:"lastCalledAt"`
+	LastSucceededAt int64  `json:"lastSucceededAt"`
+}
+
 type Runtime struct {
 	options                 RuntimeOptions
 	registry                *appplugins.Registry
@@ -146,6 +157,9 @@ type Runtime struct {
 	restartTimer        *time.Timer
 	stoppingHost        bool
 	stopped             bool
+
+	statsMu     sync.Mutex
+	invokeStats map[string]InvocationStat
 
 	bgWG sync.WaitGroup
 }
@@ -640,6 +654,51 @@ func (r *Runtime) releaseLease(gen int64) {
 	}
 }
 
+// InvocationStats 返回贡献项调用统计的快照。
+func (r *Runtime) InvocationStats() map[string]InvocationStat {
+	if r == nil {
+		return map[string]InvocationStat{}
+	}
+	r.statsMu.Lock()
+	defer r.statsMu.Unlock()
+	out := make(map[string]InvocationStat, len(r.invokeStats))
+	for id, stat := range r.invokeStats {
+		out[id] = stat
+	}
+	return out
+}
+
+func (r *Runtime) recordInvocation(contributionID string, started time.Time, err error) {
+	if r == nil || contributionID == "" {
+		return
+	}
+	now := time.Now()
+	r.statsMu.Lock()
+	defer r.statsMu.Unlock()
+	if r.invokeStats == nil {
+		r.invokeStats = make(map[string]InvocationStat)
+	}
+	stat := r.invokeStats[contributionID]
+	stat.ContributionID = contributionID
+	stat.Calls++
+	stat.LastDurationMs = now.Sub(started).Milliseconds()
+	stat.LastCalledAt = now.UnixMilli()
+	if err != nil {
+		stat.Failures++
+		stat.LastError = truncateDiagnostic(firstNonEmpty(errorCode(err), err.Error()))
+	} else {
+		stat.LastSucceededAt = now.UnixMilli()
+	}
+	r.invokeStats[contributionID] = stat
+}
+
+func truncateDiagnostic(text string) string {
+	if len(text) <= 500 {
+		return text
+	}
+	return text[:500]
+}
+
 // Invoke 在指定代次上通过活跃宿主调用插件贡献项，并在调用期间自动持有租约。
 func (r *Runtime) Invoke(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, error) {
 	raw, _, err := r.InvokeWithPayload(ctx, generation, contributionID, value, timeout)
@@ -653,7 +712,9 @@ func (r *Runtime) InvokeEmbedded(ctx context.Context, generation int64, contribu
 }
 
 // InvokeEmbeddedReverse 实现内嵌反向调用（gateway.attempt 的 next()）。
-func (r *Runtime) InvokeEmbeddedReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall appplugins.ReverseCall) (json.RawMessage, error) {
+func (r *Runtime) InvokeEmbeddedReverse(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration, onCall appplugins.ReverseCall) (raw json.RawMessage, err error) {
+	started := time.Now()
+	defer func() { r.recordInvocation(contributionID, started, err) }()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -673,7 +734,9 @@ func (r *Runtime) InvokeEmbeddedReverse(ctx context.Context, generation int64, c
 }
 
 // InvokeWithPayload 与 Invoke 相同，但保留宿主附带的二进制 payload。
-func (r *Runtime) InvokeWithPayload(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (json.RawMessage, []byte, error) {
+func (r *Runtime) InvokeWithPayload(ctx context.Context, generation int64, contributionID string, value any, timeout time.Duration) (raw json.RawMessage, payload []byte, err error) {
+	started := time.Now()
+	defer func() { r.recordInvocation(contributionID, started, err) }()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -692,8 +755,8 @@ func (r *Runtime) InvokeWithPayload(ctx context.Context, generation int64, contr
 	if rawClient, ok := host.(HostRawClient); ok {
 		return rawClient.InvokeRaw(ctx, lease.Generation, contributionID, value, timeout)
 	}
-	raw, err := host.Invoke(ctx, lease.Generation, contributionID, value, timeout)
-	return raw, nil, err
+	invoked, invokeErr := host.Invoke(ctx, lease.Generation, contributionID, value, timeout)
+	return invoked, nil, invokeErr
 }
 
 func (r *Runtime) acquireForGeneration(generation int64) *Lease {

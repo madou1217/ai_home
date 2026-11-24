@@ -3595,6 +3595,12 @@ export interface AihPluginDoctorContribution {
   order: number;
   failurePolicy: string;
   active: boolean;
+  calls: number;
+  failures: number;
+  lastError?: string;
+  lastDurationMs: number;
+  lastCalledAt: number;
+  lastSucceededAt: number;
   scope?: { providers?: string[]; hosts?: string[]; models?: string[] };
 }
 

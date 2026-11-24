@@ -221,6 +221,7 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	report.Revision = doc.revision
+	invocationStats := p.runtime.InvocationStats()
 	activeArtifacts := map[string]bool{}
 	for _, instance := range doc.instances {
 		enabled, _ := instance["enabled"].(bool)
@@ -282,14 +283,22 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 					policy = "delegate"
 				}
 				scope, _ := contrib["scope"].(map[string]any)
+				contributionID := stringField(contrib, "id")
+				stat := invocationStats[contributionID]
 				report.Contributions = append(report.Contributions, DoctorContribution{
-					PluginID:       pluginID,
-					ContributionID: stringField(contrib, "id"),
-					Capability:     capName,
-					Order:          order,
-					FailurePolicy:  policy,
-					Active:         activeArtifacts[pluginID+"@"+version],
-					Scope:          scope,
+					PluginID:        pluginID,
+					ContributionID:  contributionID,
+					Capability:      capName,
+					Order:           order,
+					FailurePolicy:   policy,
+					Active:          activeArtifacts[pluginID+"@"+version],
+					Calls:           stat.Calls,
+					Failures:        stat.Failures,
+					LastError:       stat.LastError,
+					LastDurationMs:  stat.LastDurationMs,
+					LastCalledAt:    stat.LastCalledAt,
+					LastSucceededAt: stat.LastSucceededAt,
+					Scope:           scope,
 				})
 			}
 			entryRel := stringField(manifest, "entry")

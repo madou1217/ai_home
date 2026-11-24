@@ -221,7 +221,11 @@ export default function AihPluginPanel() {
                   <Typography.Text type="secondary">
                     {item.pluginId} · order {item.order} · {item.failurePolicy}
                     {scope ? ` · scope ${scope}` : ''}
+                    {item.calls > 0
+                      ? ` · 调用 ${item.calls} · 失败 ${item.failures} · 最近 ${item.lastDurationMs}ms`
+                      : ' · 尚未调用'}
                   </Typography.Text>
+                  {item.lastError ? <Tag color="error">{item.lastError}</Tag> : null}
                 </Space>
               );
             })}

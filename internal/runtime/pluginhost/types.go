@@ -155,13 +155,19 @@ type DoctorInstalledSummary struct {
 
 // DoctorContribution 描述已安装插件声明的一个能力贡献项。
 type DoctorContribution struct {
-	PluginID       string         `json:"pluginId"`
-	ContributionID string         `json:"contributionId"`
-	Capability     string         `json:"capability"`
-	Order          int            `json:"order"`
-	FailurePolicy  string         `json:"failurePolicy"`
-	Active         bool           `json:"active"`
-	Scope          map[string]any `json:"scope,omitempty"`
+	PluginID        string         `json:"pluginId"`
+	ContributionID  string         `json:"contributionId"`
+	Capability      string         `json:"capability"`
+	Order           int            `json:"order"`
+	FailurePolicy   string         `json:"failurePolicy"`
+	Active          bool           `json:"active"`
+	Calls           int64          `json:"calls"`
+	Failures        int64          `json:"failures"`
+	LastError       string         `json:"lastError,omitempty"`
+	LastDurationMs  int64          `json:"lastDurationMs"`
+	LastCalledAt    int64          `json:"lastCalledAt"`
+	LastSucceededAt int64          `json:"lastSucceededAt"`
+	Scope           map[string]any `json:"scope,omitempty"`
 }
 
 // DoctorReport 汇总插件控制面与运行时的静态和动态诊断。

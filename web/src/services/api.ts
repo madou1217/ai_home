@@ -637,8 +637,10 @@ function readAccountMutationResult(
 
 export const accountsAPI = {
   // 获取所有账号
-  list: async (): Promise<AccountsListResponse> => {
-    const response = await api.get<{ ok: boolean } & AccountsListResponse>('/webui/accounts');
+  list: async (options: { serverProfileId?: string } = {}): Promise<AccountsListResponse> => {
+    const response = await api.get<{ ok: boolean } & AccountsListResponse>('/webui/accounts', {
+      headers: serverProfileHeaders(options.serverProfileId)
+    });
     return {
       accounts: response.data.accounts,
       hydrating: Boolean(response.data.hydrating),
@@ -1781,8 +1783,10 @@ export const sessionsAPI = {
     const response = await api.delete<{ ok: boolean; deleted: boolean }>(`/webui/chat-sessions/${encodeURIComponent(sessionId)}`);
     return Boolean(response.data.deleted);
   },
-  getAllProjects: async (): Promise<AggregatedProject[]> => {
-    const response = await api.get<{ ok: boolean; projects: AggregatedProject[] }>('/webui/projects');
+  getAllProjects: async (options: { serverProfileId?: string } = {}): Promise<AggregatedProject[]> => {
+    const response = await api.get<{ ok: boolean; projects: AggregatedProject[] }>('/webui/projects', {
+      headers: serverProfileHeaders(options.serverProfileId)
+    });
     return response.data.projects;
   },
 
@@ -2028,7 +2032,12 @@ export const sessionsAPI = {
 
 type ModelCatalogRequestOptions = {
   accountRef?: string;
+  serverProfileId?: string;
 };
+
+function serverProfileHeaders(serverProfileId?: string) {
+  return serverProfileId ? { 'x-aih-server-id': serverProfileId } : undefined;
+}
 
 function appendModelCatalogParams(params: Record<string, string>, options: ModelCatalogRequestOptions) {
   if (options.accountRef) params.accountRef = String(options.accountRef);
@@ -2039,7 +2048,8 @@ async function fetchWebUiModels(options: ModelCatalogRequestOptions = {}): Promi
   const params: Record<string, string> = {};
   appendModelCatalogParams(params, options);
   const response = await api.get<WebUiModelsResponse>('/webui/models', {
-    params: Object.keys(params).length > 0 ? params : undefined
+    params: Object.keys(params).length > 0 ? params : undefined,
+    headers: serverProfileHeaders(options.serverProfileId)
   });
   return {
     ...response.data,
@@ -2861,8 +2871,10 @@ export const remoteTargetsAPI = {
 };
 
 export const workspaceConnectorsAPI = {
-  list: async (): Promise<WorkspaceConnectorListResponse> => {
-    const response = await api.get<WorkspaceConnectorListResponse>('/webui/workspace-connectors');
+  list: async (options: { serverProfileId?: string } = {}): Promise<WorkspaceConnectorListResponse> => {
+    const response = await api.get<WorkspaceConnectorListResponse>('/webui/workspace-connectors', {
+      headers: serverProfileHeaders(options.serverProfileId)
+    });
     return response.data;
   },
   enroll: async (label: string): Promise<WorkspaceConnectorEnrollmentResponse> => {
@@ -2936,8 +2948,10 @@ export const sshHostsAPI = {
     const response = await api.post<{ ok: boolean; result: SshHostTestResult }>('/webui/ssh-connections/test', payload);
     return response.data.result;
   },
-  listWorkspaces: async (): Promise<any[]> => {
-    const response = await api.get<{ ok: boolean; workspaces: any[] }>('/webui/ssh-workspaces');
+  listWorkspaces: async (options: { serverProfileId?: string } = {}): Promise<any[]> => {
+    const response = await api.get<{ ok: boolean; workspaces: any[] }>('/webui/ssh-workspaces', {
+      headers: serverProfileHeaders(options.serverProfileId)
+    });
     return response.data.workspaces || [];
   },
   createWorkspace: async (payload: any): Promise<any> => {

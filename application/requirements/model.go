@@ -123,34 +123,38 @@ type Requirement struct {
 	WorkspaceLabel string `json:"workspaceLabel"`
 	WorkspaceKind  string `json:"workspaceKind"`
 	// 调度安排：记录实际执行的 provider/harness、原生账号或 relay、模型与思考强度。
-	AssignedProvider   string `json:"assignedProvider"`
-	AssignedHarness    string `json:"assignedHarness"`
-	AssignedExecution  string `json:"assignedExecution"`
-	AssignedAccountRef string `json:"assignedAccountRef"`
-	AssignedModel      string `json:"assignedModel"`
-	AssignedEffort     string `json:"assignedEffort"`
-	AssignedAt         int64  `json:"assignedAt"`
-	Mode               string `json:"mode"`
-	Parallel           bool   `json:"parallel"`
-	Steps              []Step `json:"steps"`
-	RefinedAt          int64  `json:"refinedAt"`
-	Progress           int    `json:"progress"`
-	ProgressNote       string `json:"progressNote"`
-	SessionID          string `json:"sessionId"`
-	PeerMessageID      string `json:"peerMessageId"`
-	TurnID             string `json:"turnId"`
-	LoopCount          int    `json:"loopCount"`
-	LastError          string `json:"lastError"`
-	Source             string `json:"source"`
-	CreatedAt          int64  `json:"createdAt"`
-	UpdatedAt          int64  `json:"updatedAt"`
-	StartedAt          int64  `json:"startedAt"`
-	CompletedAt        int64  `json:"completedAt"`
+	AssignedProvider        string `json:"assignedProvider"`
+	AssignedHarness         string `json:"assignedHarness"`
+	AssignedExecution       string `json:"assignedExecution"`
+	AssignedServerProfileID string `json:"assignedServerProfileId"`
+	AssignedServerLabel     string `json:"assignedServerLabel"`
+	AssignedAccountRef      string `json:"assignedAccountRef"`
+	AssignedModel           string `json:"assignedModel"`
+	AssignedEffort          string `json:"assignedEffort"`
+	AssignedAt              int64  `json:"assignedAt"`
+	Mode                    string `json:"mode"`
+	Parallel                bool   `json:"parallel"`
+	Steps                   []Step `json:"steps"`
+	RefinedAt               int64  `json:"refinedAt"`
+	Progress                int    `json:"progress"`
+	ProgressNote            string `json:"progressNote"`
+	SessionID               string `json:"sessionId"`
+	PeerMessageID           string `json:"peerMessageId"`
+	TurnID                  string `json:"turnId"`
+	LoopCount               int    `json:"loopCount"`
+	LastError               string `json:"lastError"`
+	Source                  string `json:"source"`
+	CreatedAt               int64  `json:"createdAt"`
+	UpdatedAt               int64  `json:"updatedAt"`
+	StartedAt               int64  `json:"startedAt"`
+	CompletedAt             int64  `json:"completedAt"`
 }
 
 // SchedulerSettings 是调度器的 AI 执行目标配置。
 type SchedulerSettings struct {
 	Enabled         bool   `json:"enabled"`
+	ServerProfileID string `json:"serverProfileId"`
+	ServerLabel     string `json:"serverLabel"`
 	Provider        string `json:"provider"`
 	Model           string `json:"model"`
 	AccountRef      string `json:"accountRef"`
@@ -167,6 +171,11 @@ func DefaultSchedulerSettings() SchedulerSettings {
 
 // Normalized 清理调度器配置。
 func (settings SchedulerSettings) Normalized() SchedulerSettings {
+	settings.ServerProfileID = strings.TrimSpace(settings.ServerProfileID)
+	settings.ServerLabel = strings.TrimSpace(settings.ServerLabel)
+	if settings.ServerProfileID == "" {
+		settings.ServerLabel = ""
+	}
 	settings.Provider = strings.TrimSpace(settings.Provider)
 	settings.Model = strings.TrimSpace(settings.Model)
 	settings.AccountRef = strings.TrimSpace(settings.AccountRef)

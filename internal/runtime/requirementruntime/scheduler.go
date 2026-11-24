@@ -24,8 +24,9 @@ type Scheduler struct {
 	clock      func() time.Time
 	interval   time.Duration
 	// Inspector 用于服务重启后判定卡片的会话是否仍活着；为空时跳过对账。
-	Inspector     SessionInspector
-	lastReconcile int64
+	Inspector       SessionInspector
+	RemoteInspector func(ctx context.Context, profileID string) (SessionInspector, error)
+	lastReconcile   int64
 
 	mu        sync.Mutex
 	runMu     sync.Mutex
@@ -230,7 +231,19 @@ func (scheduler *Scheduler) reconcileActive(ctx context.Context) {
 			_, _ = scheduler.service.ResetToReady(ctx, item.ID, "执行会话未建立，重新排期")
 			continue
 		}
-		state, snapErr := scheduler.Inspector.GetSnapshot(ctx, item.SessionID)
+		inspector := scheduler.Inspector
+		if profileID := strings.TrimSpace(item.AssignedServerProfileID); profileID != "" {
+			if scheduler.RemoteInspector == nil {
+				continue
+			}
+			remote, remoteErr := scheduler.RemoteInspector(ctx, profileID)
+			if remoteErr != nil {
+				// A temporary target failure is not proof that the session died.
+				continue
+			}
+			inspector = remote
+		}
+		state, snapErr := inspector.GetSnapshot(ctx, item.SessionID)
 		if snapErr != nil {
 			_, _ = scheduler.service.ResetToReady(ctx, item.ID, "执行会话不存在，重新排期")
 			continue
@@ -274,6 +287,8 @@ func (scheduler *Scheduler) Status() requirements.SchedulerStatus {
 	settings, err := scheduler.service.Settings(ctx)
 	if err == nil {
 		status.Enabled = settings.Enabled
+		status.ServerProfileID = settings.ServerProfileID
+		status.ServerLabel = settings.ServerLabel
 		status.Provider = settings.Provider
 		status.Model = settings.Model
 		status.AccountRef = settings.AccountRef
@@ -308,6 +323,7 @@ type WorkDispatcher struct {
 	Chat          ChatSessionPort
 	Accounts      AccountCandidates
 	MirrorClient  *MirrorClient
+	RemoteChats   *RemoteChatFactory
 	AIHomeDir     string
 	HostHomeDir   string
 	SelfBaseURL   func() string
@@ -323,6 +339,7 @@ type WorkDispatcher struct {
 type sessionTrace struct {
 	requirementID string
 	cancel        func()
+	chat          ChatSessionPort
 	completed     int
 	work          int
 	mirrorID      string
@@ -363,19 +380,38 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 	}
 	provider := strings.TrimSpace(request.Provider)
 	if provider == "" {
-		provider = "agy"
+		return requirements.WorkHandle{}, fmt.Errorf("work_provider_required")
 	}
 	model := strings.TrimSpace(request.Model)
 	if model == "" {
-		model = "gemini-4-neon-xhigh"
+		return requirements.WorkHandle{}, fmt.Errorf("work_model_required")
 	}
 	effort := strings.ToLower(strings.TrimSpace(request.Effort))
-	if effort == "" && provider != "agy" {
-		effort = "xhigh"
+	chat := dispatcher.Chat
+	var remoteSession *RemoteChatSession
+	serverProfileID := strings.TrimSpace(request.ServerProfileID)
+	serverLabel := ""
+	if serverProfileID != "" {
+		if dispatcher.RemoteChats == nil {
+			return requirements.WorkHandle{}, fmt.Errorf("remote_chat_unavailable")
+		}
+		resolved, resolveErr := dispatcher.RemoteChats.For(ctx, serverProfileID)
+		if resolveErr != nil {
+			return requirements.WorkHandle{}, fmt.Errorf("解析执行 Server 失败: %w", resolveErr)
+		}
+		remoteSession = resolved
+		chat = resolved
+		serverLabel = resolved.Profile().Label
 	}
 	accountRef := strings.TrimSpace(request.AccountRef)
 	if accountRef == "" {
-		resolved, err := dispatcher.resolveAccount(ctx, provider, model)
+		var resolved string
+		var err error
+		if remoteSession != nil {
+			resolved, err = remoteSession.ResolveAccount(ctx, provider, model)
+		} else {
+			resolved, err = dispatcher.resolveAccount(ctx, provider, model)
+		}
 		if err != nil {
 			return requirements.WorkHandle{}, err
 		}
@@ -393,19 +429,21 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 	projectPath := strings.TrimSpace(request.WorkspacePath)
 	mirrorID := ""
 	mirrorWorkspaceID := ""
-	if workspaceID := workspaceconnector.WorkspaceIDFromShadowPath(dispatcher.AIHomeDir, projectPath); workspaceID != "" {
-		if dispatcher.MirrorClient == nil {
-			return requirements.WorkHandle{}, fmt.Errorf("connector_workspace_mirror_unavailable")
+	if remoteSession == nil {
+		if workspaceID := workspaceconnector.WorkspaceIDFromShadowPath(dispatcher.AIHomeDir, projectPath); workspaceID != "" {
+			if dispatcher.MirrorClient == nil {
+				return requirements.WorkHandle{}, fmt.Errorf("connector_workspace_mirror_unavailable")
+			}
+			mirror, mirrorErr := dispatcher.MirrorClient.Start(ctx, workspaceID)
+			if mirrorErr != nil {
+				return requirements.WorkHandle{}, fmt.Errorf("准备本地工作区镜像失败: %w", mirrorErr)
+			}
+			projectPath = mirror.Path
+			mirrorID = mirror.ID
+			mirrorWorkspaceID = workspaceID
 		}
-		mirror, mirrorErr := dispatcher.MirrorClient.Start(ctx, workspaceID)
-		if mirrorErr != nil {
-			return requirements.WorkHandle{}, fmt.Errorf("准备本地工作区镜像失败: %w", mirrorErr)
-		}
-		projectPath = mirror.Path
-		mirrorID = mirror.ID
-		mirrorWorkspaceID = workspaceID
 	}
-	session, err := dispatcher.Chat.CreateSession(ctx, chatruntime.CreateSessionInput{
+	session, err := chat.CreateSession(ctx, chatruntime.CreateSessionInput{
 		Provider:            provider,
 		ExecutionAccountRef: accountRef,
 		ProjectPath:         projectPath,
@@ -421,20 +459,21 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 	dispatcher.mu.Lock()
 	dispatcher.sessions[session.SessionID] = sessionTrace{
 		requirementID: request.RequirementID,
+		chat:          chat,
 		mirrorID:      mirrorID,
 		mirrorWSID:    mirrorWorkspaceID,
 	}
 	dispatcher.mu.Unlock()
 	// 目标/循环模式先写入会话目标，模型在每轮都能看到完成标准。
 	if request.Mode == requirements.ModeGoal || request.Mode == requirements.ModeLoop {
-		_, _ = dispatcher.Chat.DispatchCommand(ctx, session.SessionID, map[string]any{
+		_, _ = chat.DispatchCommand(ctx, session.SessionID, map[string]any{
 			"commandId": request.RequirementID + ":goal",
 			"type":      "session.goal.set",
 			"payload":   map[string]any{"objective": request.GoalObjective},
 		})
 	}
-	if cancel, subscribeErr := dispatcher.Chat.Subscribe(session.SessionID, func(event chatruntime.EventEnvelope) {
-		dispatcher.handleEvent(request.RequirementID, session.SessionID, event)
+	if cancel, subscribeErr := chat.Subscribe(session.SessionID, func(event chatruntime.EventEnvelope) {
+		dispatcher.handleEvent(request.RequirementID, session.SessionID, event, chat)
 	}); subscribeErr == nil {
 		dispatcher.mu.Lock()
 		trace := dispatcher.sessions[session.SessionID]
@@ -442,10 +481,14 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		dispatcher.sessions[session.SessionID] = trace
 		dispatcher.mu.Unlock()
 	}
-	peerID, deliveryErr := dispatcher.sendPeer(ctx, session.SessionID, provider, request.Title, request.Prompt)
+	peerID := ""
+	deliveryErr := fmt.Errorf("remote_server_uses_direct_turn")
+	if remoteSession == nil {
+		peerID, deliveryErr = dispatcher.sendPeer(ctx, session.SessionID, provider, request.Title, request.Prompt)
+	}
 	if deliveryErr != nil {
 		// peer 不可用时直接派发 turn，需求仍能执行；失败原因会留在 peer 收件箱。
-		if _, directErr := dispatcher.Chat.DispatchCommand(ctx, session.SessionID, map[string]any{
+		if _, directErr := chat.DispatchCommand(ctx, session.SessionID, map[string]any{
 			"commandId": request.RequirementID + ":turn:" + fmt.Sprintf("%d", time.Now().UnixNano()),
 			"type":      "turn.submit",
 			"payload":   map[string]any{"content": request.Prompt, "model": model},
@@ -465,6 +508,7 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 		PeerMessageID: peerID,
 		Assignment: requirements.WorkAssignment{
 			Provider: provider, Harness: provider, Execution: execution,
+			ServerProfileID: serverProfileID, ServerLabel: serverLabel,
 			AccountRef: accountRef, Model: model, Effort: effort,
 		},
 	}, nil
@@ -472,10 +516,19 @@ func (dispatcher *WorkDispatcher) Start(ctx context.Context, request requirement
 
 // Interrupt 中断执行会话。
 func (dispatcher *WorkDispatcher) Interrupt(ctx context.Context, sessionID string) error {
-	if dispatcher == nil || dispatcher.Chat == nil || strings.TrimSpace(sessionID) == "" {
+	if dispatcher == nil || strings.TrimSpace(sessionID) == "" {
 		return nil
 	}
-	_, err := dispatcher.Chat.DispatchCommand(ctx, sessionID, map[string]any{
+	chat := dispatcher.Chat
+	dispatcher.mu.Lock()
+	if trace, found := dispatcher.sessions[sessionID]; found && trace.chat != nil {
+		chat = trace.chat
+	}
+	dispatcher.mu.Unlock()
+	if chat == nil {
+		return nil
+	}
+	_, err := chat.DispatchCommand(ctx, sessionID, map[string]any{
 		"commandId": sessionID + ":interrupt:" + fmt.Sprintf("%d", time.Now().UnixNano()),
 		"type":      "turn.interrupt",
 		"payload":   map[string]any{},
@@ -505,7 +558,7 @@ func (dispatcher *WorkDispatcher) resolveAccount(ctx context.Context, provider, 
 	return account.Ref().String(), nil
 }
 
-func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, event chatruntime.EventEnvelope) {
+func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, event chatruntime.EventEnvelope, chat ChatSessionPort) {
 	if dispatcher.OnProgress == nil {
 		return
 	}
@@ -555,7 +608,7 @@ func (dispatcher *WorkDispatcher) handleEvent(requirementID, sessionID string, e
 		mirrorID := trace.mirrorID
 		mirrorWorkspaceID := trace.mirrorWSID
 		dispatcher.mu.Unlock()
-		finalMessage := dispatcher.finalAssistantMessage(sessionID)
+		finalMessage := dispatcher.finalAssistantMessage(chat, sessionID)
 		if mirrorID != "" {
 			dispatcher.OnProgress(requirementID, requirements.ProgressUpdate{Status: requirements.StatusRunning, Progress: 90, Note: "正在把改动同步回本地工作区", TurnID: event.TurnID, SessionID: sessionID})
 			syncResult, syncErr := dispatcher.syncMirror(mirrorWorkspaceID, mirrorID)
@@ -602,13 +655,13 @@ func (dispatcher *WorkDispatcher) syncMirror(workspaceID, mirrorID string) (Mirr
 }
 
 // finalAssistantMessage 读取本轮最终 assistant 文本。
-func (dispatcher *WorkDispatcher) finalAssistantMessage(sessionID string) string {
-	if dispatcher == nil || dispatcher.Chat == nil {
+func (dispatcher *WorkDispatcher) finalAssistantMessage(chat ChatSessionPort, sessionID string) string {
+	if dispatcher == nil || chat == nil {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	snapshot, err := dispatcher.Chat.GetSnapshot(ctx, sessionID)
+	snapshot, err := chat.GetSnapshot(ctx, sessionID)
 	if err != nil || snapshot == nil {
 		return ""
 	}

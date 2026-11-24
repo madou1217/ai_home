@@ -34,28 +34,31 @@ type ModelClient interface {
 
 // WorkAssignment 是一次调度实际选中的执行目标。
 type WorkAssignment struct {
-	Provider   string
-	Harness    string
-	Execution  string
-	AccountRef string
-	Model      string
-	Effort     string
+	Provider        string
+	Harness         string
+	Execution       string
+	ServerProfileID string
+	ServerLabel     string
+	AccountRef      string
+	Model           string
+	Effort          string
 }
 
 // WorkRequest 描述一次执行会话的创建参数。
 type WorkRequest struct {
-	RequirementID  string
-	Title          string
-	Prompt         string
-	Mode           string
-	WorkspacePath  string
-	WorkspaceLabel string
-	WorkspaceKind  string
-	Provider       string
-	Model          string
-	AccountRef     string
-	Effort         string
-	GoalObjective  string
+	RequirementID   string
+	Title           string
+	Prompt          string
+	Mode            string
+	WorkspacePath   string
+	WorkspaceLabel  string
+	WorkspaceKind   string
+	ServerProfileID string
+	Provider        string
+	Model           string
+	AccountRef      string
+	Effort          string
+	GoalObjective   string
 }
 
 // WorkHandle 是执行器创建会话后的身份与最终分配。
@@ -92,6 +95,8 @@ type DispatchSummary struct {
 // SchedulerStatus 是调度器对外状态。
 type SchedulerStatus struct {
 	Enabled         bool   `json:"enabled"`
+	ServerProfileID string `json:"serverProfileId"`
+	ServerLabel     string `json:"serverLabel"`
 	Provider        string `json:"provider"`
 	Model           string `json:"model"`
 	AccountRef      string `json:"accountRef"`

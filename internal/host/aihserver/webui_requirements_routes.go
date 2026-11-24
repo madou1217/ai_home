@@ -76,9 +76,18 @@ func newRequirementsRuntime(ctx context.Context, dependencies webuiRouteDependen
 		ManagementKey: dependencies.ManagementKey,
 		HTTPClient:    &http.Client{Timeout: 10 * time.Minute},
 	}
+	serverProfiles := requirementServerProfiles{home: dependencies.AIHomeDir}
+	dispatcher.RemoteChats = &requirementruntime.RemoteChatFactory{
+		Profiles:   serverProfiles,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+	}
 	scheduler := requirementruntime.NewScheduler(service, dispatcher, time.Now)
 	scheduler.Inspector = chat
+	scheduler.RemoteInspector = func(ctx context.Context, profileID string) (requirementruntime.SessionInspector, error) {
+		return dispatcher.RemoteChats.For(ctx, profileID)
+	}
 	handler, handlerErr := webuirequirementsapi.NewHandler(dependencies.Authorizer, service, scheduler, dispatcher)
+	handler.Servers = serverProfiles.List
 	if handlerErr != nil {
 		_ = store.Close()
 		return nil, nil, handlerErr

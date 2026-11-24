@@ -41,12 +41,22 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+// ServerProfileView is the sanitized execution-server catalog returned to the
+// browser. It never contains a management key.
+type ServerProfileView struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Endpoint string `json:"endpoint"`
+	Active   bool   `json:"active"`
+}
+
 // Handler 处理需求管理请求。
 type Handler struct {
 	Authorizer Authorizer
 	Service    *requirements.Service
 	Scheduler  requirements.Scheduler
 	Dispatcher requirements.Dispatcher
+	Servers    func(context.Context) ([]ServerProfileView, error)
 	MaxBody    int64
 }
 
@@ -84,6 +94,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.handleImport(response, request)
 	case rest == "reorder":
 		handler.handleReorder(response, request)
+	case rest == "servers":
+		handler.handleServers(response, request)
 	case rest == "scheduler":
 		handler.handleScheduler(response, request)
 	case rest == "scheduler/run":
@@ -252,6 +264,26 @@ func (handler *Handler) handleReorder(response http.ResponseWriter, request *htt
 		return
 	}
 	handler.writeSnapshot(response, request.Context(), http.StatusOK)
+}
+
+func (handler *Handler) handleServers(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		methodNotAllowed(response, http.MethodGet)
+		return
+	}
+	if handler.Servers == nil {
+		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "servers": []ServerProfileView{}})
+		return
+	}
+	servers, err := handler.Servers(request.Context())
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "server_profiles_unavailable", "无法读取 Server 列表")
+		return
+	}
+	if servers == nil {
+		servers = []ServerProfileView{}
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "servers": servers})
 }
 
 func (handler *Handler) handleScheduler(response http.ResponseWriter, request *http.Request) {

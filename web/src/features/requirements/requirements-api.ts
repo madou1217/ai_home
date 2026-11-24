@@ -32,6 +32,8 @@ export interface Requirement {
 	assignedProvider: string;
 	assignedHarness: string;
 	assignedExecution: string;
+	assignedServerProfileId: string;
+	assignedServerLabel: string;
 	assignedAccountRef: string;
 	assignedModel: string;
 	assignedEffort: string;
@@ -56,6 +58,8 @@ export interface Requirement {
 
 export interface RequirementSchedulerSettings {
   enabled: boolean;
+  serverProfileId: string;
+  serverLabel: string;
   provider: string;
   model: string;
 	accountRef: string;
@@ -66,6 +70,8 @@ export interface RequirementSchedulerSettings {
 
 export interface RequirementSchedulerStatus {
   enabled: boolean;
+  serverProfileId: string;
+  serverLabel: string;
   provider: string;
   model: string;
 	accountRef: string;
@@ -76,6 +82,13 @@ export interface RequirementSchedulerStatus {
   ready: number;
   lastRun: number;
   lastError: string;
+}
+
+export interface ServerProfileView {
+  id: string;
+  label: string;
+  endpoint: string;
+  active: boolean;
 }
 
 export interface RequirementSnapshot {
@@ -142,8 +155,8 @@ function snapshotFrom(payload: any): RequirementSnapshot {
   const data = payload?.snapshot || payload || {};
   return {
     requirements: Array.isArray(data.requirements) ? data.requirements : [],
-		settings: data.settings || { enabled: true, provider: '', model: '', accountRef: '', reasoningEffort: '', maxParallel: 2, updatedAt: 0 },
-		scheduler: data.scheduler || { enabled: true, provider: 'agy', model: 'gemini-4-neon-xhigh', accountRef: '', reasoningEffort: 'xhigh', maxParallel: 2, running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
+		settings: data.settings || { enabled: true, serverProfileId: '', serverLabel: '', provider: '', model: '', accountRef: '', reasoningEffort: '', maxParallel: 2, updatedAt: 0 },
+		scheduler: data.scheduler || { enabled: true, serverProfileId: '', serverLabel: '', provider: '', model: '', accountRef: '', reasoningEffort: '', maxParallel: 2, running: 0, queued: 0, ready: 0, lastRun: 0, lastError: '' },
     generatedAt: Number(data.generatedAt) || Date.now()
   };
 }
@@ -152,6 +165,10 @@ export const requirementsAPI = {
   load: async (): Promise<RequirementSnapshot> => {
     const response = await api.get(BASE);
     return snapshotFrom(response.data);
+  },
+  listServers: async (): Promise<ServerProfileView[]> => {
+    const response = await api.get(`${BASE}/servers`);
+    return Array.isArray(response.data?.servers) ? response.data.servers : [];
   },
   create: async (input: RequirementInput): Promise<Requirement> => {
     const response = await api.post(BASE, input);

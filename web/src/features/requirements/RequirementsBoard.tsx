@@ -38,6 +38,7 @@ import {
   type RequirementSnapshot,
   type RequirementStatus,
   type RequirementStep,
+  type ServerProfileView,
   type WorkWorkspaceOption
 } from './requirements-api';
 import styles from './requirements.module.css';
@@ -131,13 +132,16 @@ export default function RequirementsBoard() {
   const [schedulerAccounts, setSchedulerAccounts] = useState<Array<{ provider: string; accountRef: string; label: string; status: string }>>([]);
   const [schedulerOptionsLoading, setSchedulerOptionsLoading] = useState(false);
   const [schedulerOptionsError, setSchedulerOptionsError] = useState('');
+  const [serverProfiles, setServerProfiles] = useState<ServerProfileView[]>([]);
   const [form] = Form.useForm<RequirementFormValues>();
   const [importForm] = Form.useForm<{ format: string; workspacePath?: string; content: string }>();
-  const [schedulerForm] = Form.useForm<{ enabled: boolean; provider: string; model: string; accountRef?: string; reasoningEffort?: string; maxParallel?: number }>();
+  const [schedulerForm] = Form.useForm<{ enabled: boolean; serverProfileId?: string; serverLabel?: string; provider: string; model: string; accountRef?: string; reasoningEffort?: string; maxParallel?: number }>();
   const detailRef = useRef<string>('');
   const schedulerProvider = Form.useWatch('provider', schedulerForm);
   const schedulerModel = Form.useWatch('model', schedulerForm);
   const schedulerAccountRef = Form.useWatch('accountRef', schedulerForm);
+  const schedulerServerProfileId = Form.useWatch('serverProfileId', schedulerForm) || '';
+  const activeServerProfileId = schedulerOpen ? schedulerServerProfileId : (snapshot?.settings?.serverProfileId || '');
 
   const applySnapshot = useCallback((next: RequirementSnapshot) => { setSnapshot(next); setError(''); }, []);
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
@@ -146,13 +150,13 @@ export default function RequirementsBoard() {
     catch (loadError) { setError(loadError instanceof Error ? loadError.message : '需求数据加载失败'); }
     finally { setLoading(false); }
   }, [applySnapshot]);
-  const loadWorkWorkspaces = useCallback(async () => {
+  const loadWorkWorkspaces = useCallback(async (serverProfileId = '') => {
     setWorkspacesLoading(true);
     try {
       const [projectList, sshList, connectorList] = await Promise.all([
-        sessionsAPI.getAllProjects(),
-        sshHostsAPI.listWorkspaces(),
-        workspaceConnectorsAPI.list().catch(() => ({ ok: false, count: 0, workspaces: [] as WorkspaceConnector[] }))
+        sessionsAPI.getAllProjects({ serverProfileId }),
+        sshHostsAPI.listWorkspaces({ serverProfileId }),
+        workspaceConnectorsAPI.list({ serverProfileId }).catch(() => ({ ok: false, count: 0, workspaces: [] as WorkspaceConnector[] }))
       ]);
       setProjects(Array.isArray(projectList) ? projectList : []);
       setSshWorkspaces(Array.isArray(sshList) ? sshList as SshWorkspace[] : []);
@@ -161,11 +165,14 @@ export default function RequirementsBoard() {
     finally { setWorkspacesLoading(false); }
   }, []);
 
-  const loadSchedulerOptions = useCallback(async () => {
+  const loadSchedulerOptions = useCallback(async (serverProfileId = '') => {
     setSchedulerOptionsLoading(true);
     setSchedulerOptionsError('');
     try {
-      const [accountResult, catalog] = await Promise.all([accountsAPI.list(), modelsAPI.listCatalog()]);
+      const [accountResult, catalog] = await Promise.all([
+        accountsAPI.list({ serverProfileId }),
+        modelsAPI.listCatalog({ serverProfileId })
+      ]);
       const supported = new Set(chatRuntimeProviders.providers().map(String));
       const providers = new Set<string>();
       const accounts: Array<{ provider: string; accountRef: string; label: string; status: string }> = [];
@@ -201,7 +208,13 @@ export default function RequirementsBoard() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { void loadWorkWorkspaces(); }, [loadWorkWorkspaces]);
+  useEffect(() => {
+    void requirementsAPI.listServers().then(setServerProfiles).catch(() => setServerProfiles([]));
+  }, []);
+  useEffect(() => { void loadWorkWorkspaces(activeServerProfileId); }, [activeServerProfileId, loadWorkWorkspaces]);
+  useEffect(() => {
+    if (schedulerOpen) void loadSchedulerOptions(activeServerProfileId);
+  }, [activeServerProfileId, schedulerOpen, loadSchedulerOptions]);
   useEffect(() => {
     const source = requirementsAPI.watch({
       onSnapshot: (next) => { applySnapshot(next); setLive(true); },
@@ -212,7 +225,7 @@ export default function RequirementsBoard() {
   }, [applySnapshot]);
   useEffect(() => {
     const onFocus = () => {
-      void refresh({ silent: true }); void loadWorkWorkspaces();
+      void refresh({ silent: true }); void loadWorkWorkspaces(activeServerProfileId);
       if (detailRef.current) void loadEvents(detailRef.current);
     };
     window.addEventListener('focus', onFocus);
@@ -307,6 +320,14 @@ export default function RequirementsBoard() {
     if (current) providers.add(current);
     return Array.from(providers).sort().map((provider) => ({ label: provider, value: provider }));
   }, [schedulerProviders, snapshot?.settings?.provider]);
+
+  const schedulerServerOptions = useMemo(() => [
+    { label: '本地（当前 Server）', value: '' },
+    ...serverProfiles.map((profile) => ({
+      label: `${profile.label}${profile.active ? ' · 当前' : ''} · ${profile.endpoint}`,
+      value: profile.id
+    }))
+  ], [serverProfiles]);
 
   const schedulerModelOptions = useMemo(() => {
     const provider = String(schedulerProvider || '');
@@ -473,12 +494,26 @@ export default function RequirementsBoard() {
     try { await requirementsAPI.updateScheduler({ ...(snapshot?.settings || {}), enabled }); message.success(enabled ? '调度器已启用' : '调度器已暂停'); await refresh({ silent: true }); }
     catch (toggleError) { message.error(toggleError instanceof Error ? toggleError.message : '调度器设置失败'); }
   }
+  function handleSchedulerServerChange(serverProfileId?: string) {
+    const selected = serverProfiles.find((profile) => profile.id === serverProfileId);
+    schedulerForm.setFieldsValue({
+      serverLabel: selected?.label || '',
+      provider: undefined,
+      model: undefined,
+      accountRef: '',
+      reasoningEffort: ''
+    });
+    void loadSchedulerOptions(serverProfileId || '');
+    void loadWorkWorkspaces(serverProfileId || '');
+  }
   function openSchedulerSettings() {
     const settings = snapshot?.settings;
     const provider = settings?.provider || '';
     const model = settings?.model || '';
     schedulerForm.setFieldsValue({
       enabled: settings?.enabled ?? true,
+      serverProfileId: settings?.serverProfileId || '',
+      serverLabel: settings?.serverLabel || '',
       provider: provider || undefined,
       model: model || undefined,
       accountRef: settings?.accountRef || '',
@@ -486,7 +521,7 @@ export default function RequirementsBoard() {
       maxParallel: settings?.maxParallel || 2
     });
     setSchedulerOpen(true);
-    void loadSchedulerOptions().then((options) => {
+    void loadSchedulerOptions(settings?.serverProfileId || '').then((options) => {
       if (!options) return;
       const currentProvider = String(schedulerForm.getFieldValue('provider') || '');
       const currentModel = String(schedulerForm.getFieldValue('model') || '');
@@ -510,8 +545,15 @@ export default function RequirementsBoard() {
     });
   }
   async function saveSchedulerSettings() {
-    try { await requirementsAPI.updateScheduler(await schedulerForm.validateFields()); setSchedulerOpen(false); message.success('调度器配置已保存'); await refresh({ silent: true }); }
-    catch (saveError) { if (saveError instanceof Error) message.error(saveError.message); }
+    try {
+      const values = await schedulerForm.validateFields();
+      const selected = serverProfiles.find((profile) => profile.id === values.serverProfileId);
+      await requirementsAPI.updateScheduler({ ...values, serverLabel: selected?.label || '' });
+      setSchedulerOpen(false);
+      message.success('调度器配置已保存');
+      await refresh({ silent: true });
+      void loadWorkWorkspaces(values.serverProfileId || '');
+    } catch (saveError) { if (saveError instanceof Error) message.error(saveError.message); }
   }
   async function submitImport() {
     try {
@@ -579,6 +621,7 @@ export default function RequirementsBoard() {
         {requirement.assignedAt ? (
           <div className={styles.cardAssignment} title={`harness: ${requirement.assignedHarness || requirement.assignedProvider}`}>
             <span className={styles.assignmentArrow}>→</span>
+            <Tag color="purple">{requirement.assignedServerLabel || '本地'}</Tag>
             <Tag color="geekblue">{requirement.assignedProvider || '—'}</Tag>
             <Tag>{requirement.assignedModel || '—'}</Tag>
             <Tag color="cyan">{requirement.assignedEffort || '默认'}</Tag>
@@ -617,7 +660,7 @@ export default function RequirementsBoard() {
         <div className={styles.heroActions}>
           <div className={styles.schedulerCard}>
             <div className={styles.schedulerHead}><span className={styles.schedulerTitle}><RobotOutlined /> 调度器</span><Switch size="small" checked={Boolean(snapshot?.settings?.enabled)} onChange={(checked) => void toggleScheduler(checked)} /></div>
-            <div className={styles.schedulerMeta}><Tag color="geekblue">{scheduler?.provider || '未配置'} / {scheduler?.model || '未配置'} / {scheduler?.reasoningEffort || '—'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
+            <div className={styles.schedulerMeta}><Tag color="purple">{scheduler?.serverLabel || '本地'}</Tag><Tag color="geekblue">{scheduler?.provider || '未配置'} / {scheduler?.model || '未配置'} / {scheduler?.reasoningEffort || '—'}</Tag><span className={styles.liveDot} data-live={live ? 'on' : 'off'}>{live ? '实时同步' : '连接断开'}</span></div>
             <div className={styles.schedulerStats}><span>运行 {scheduler?.running ?? 0}</span><span>并行 {scheduler?.maxParallel ?? 2}</span><span>上次 {scheduler?.lastRun ? new Date(scheduler.lastRun).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</span></div>
             <Space size={4} wrap><Button size="small" icon={<ThunderboltOutlined />} onClick={() => void runScheduler()}>运行调度</Button><Button size="small" icon={<SettingOutlined />} onClick={openSchedulerSettings}>配置</Button></Space>
           </div>
@@ -639,7 +682,7 @@ export default function RequirementsBoard() {
         <Segmented value={view} onChange={(value) => setView(value as ViewMode)} options={[
           { label: '看板', value: 'kanban', icon: <AppstoreOutlined /> }, { label: '列表', value: 'list', icon: <UnorderedListOutlined /> }
         ]} />
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { void refresh(); void loadWorkWorkspaces(); }}>刷新</Button>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { void refresh(); void loadWorkWorkspaces(activeServerProfileId); }}>刷新</Button>
       </section>
 
       {view === 'kanban' ? (
@@ -688,6 +731,7 @@ export default function RequirementsBoard() {
               <h3>调度安排</h3>
               {detail.assignedAt ? (
                 <div className={styles.assignmentGrid}>
+                  <div><span>执行 Server</span><strong>{detail.assignedServerLabel || '本地（当前 Server）'}</strong></div>
                   <div><span>Provider</span><strong>{detail.assignedProvider || '—'}</strong></div>
                   <div><span>Harness</span><strong>{detail.assignedHarness || detail.assignedProvider || '—'}</strong></div>
                   <div><span>执行方式</span><strong>{executionLabel(detail.assignedExecution)}</strong></div>
@@ -789,6 +833,10 @@ export default function RequirementsBoard() {
             <div className={styles.inlineNote} role="status"><ExclamationCircleOutlined /> 尚未选择 Provider/Model；保存前请从可用账号中选择。</div>
           ) : null}
           <Form.Item name="enabled" label="自动调度" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="暂停" /></Form.Item>
+          <Form.Item name="serverProfileId" label="执行 Server" extra="留空在当前 Server 执行；选择远端 Server 时，工作区、账号与模型目录都按目标 Server 加载。">
+            <Select options={schedulerServerOptions} onChange={handleSchedulerServerChange} placeholder="本地（当前 Server）" />
+          </Form.Item>
+          <Form.Item name="serverLabel" hidden><Input /></Form.Item>
           {schedulerOptionsError ? <div className={styles.inlineError} role="status"><ExclamationCircleOutlined /> {schedulerOptionsError}</div> : null}
           <div className={styles.formRow}>
             <Form.Item name="provider" label="Provider">

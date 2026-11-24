@@ -404,6 +404,8 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 	requirement.AssignedProvider = provider
 	requirement.AssignedHarness = provider
 	requirement.AssignedExecution = assignmentExecution
+	requirement.AssignedServerProfileID = settings.ServerProfileID
+	requirement.AssignedServerLabel = settings.ServerLabel
 	requirement.AssignedAccountRef = accountRef
 	requirement.AssignedModel = model
 	requirement.AssignedEffort = effort
@@ -416,18 +418,19 @@ func (service *Service) Dispatch(ctx context.Context, dispatcher Dispatcher, id,
 	service.Notify()
 
 	handle, startErr := dispatcher.Start(ctx, WorkRequest{
-		RequirementID:  requirement.ID,
-		Title:          requirement.Title,
-		Prompt:         BuildWorkPrompt(requirement),
-		Mode:           requirement.Mode,
-		WorkspacePath:  requirement.WorkspacePath,
-		WorkspaceLabel: requirement.WorkspaceLabel,
-		WorkspaceKind:  requirement.WorkspaceKind,
-		Provider:       provider,
-		Model:          model,
-		AccountRef:     accountRef,
-		Effort:         effort,
-		GoalObjective:  requirement.GoalObjective(),
+		RequirementID:   requirement.ID,
+		Title:           requirement.Title,
+		Prompt:          BuildWorkPrompt(requirement),
+		Mode:            requirement.Mode,
+		WorkspacePath:   requirement.WorkspacePath,
+		WorkspaceLabel:  requirement.WorkspaceLabel,
+		WorkspaceKind:   requirement.WorkspaceKind,
+		ServerProfileID: settings.ServerProfileID,
+		Provider:        provider,
+		Model:           model,
+		AccountRef:      accountRef,
+		Effort:          effort,
+		GoalObjective:   requirement.GoalObjective(),
 	})
 	if startErr != nil {
 		requirement.Status = StatusBlocked

@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS requirements (
     assigned_provider TEXT NOT NULL DEFAULT '',
     assigned_harness TEXT NOT NULL DEFAULT '',
     assigned_execution TEXT NOT NULL DEFAULT '',
+    assigned_server_profile_id TEXT NOT NULL DEFAULT '',
+    assigned_server_label TEXT NOT NULL DEFAULT '',
     assigned_account_ref TEXT NOT NULL DEFAULT '',
     assigned_model TEXT NOT NULL DEFAULT '',
     assigned_effort TEXT NOT NULL DEFAULT '',
@@ -145,6 +147,8 @@ func (store *Store) migrateLegacyWorkspace(ctx context.Context) error {
 		{"assigned_provider", "assigned_provider TEXT NOT NULL DEFAULT ''"},
 		{"assigned_harness", "assigned_harness TEXT NOT NULL DEFAULT ''"},
 		{"assigned_execution", "assigned_execution TEXT NOT NULL DEFAULT ''"},
+		{"assigned_server_profile_id", "assigned_server_profile_id TEXT NOT NULL DEFAULT ''"},
+		{"assigned_server_label", "assigned_server_label TEXT NOT NULL DEFAULT ''"},
 		{"assigned_account_ref", "assigned_account_ref TEXT NOT NULL DEFAULT ''"},
 		{"assigned_model", "assigned_model TEXT NOT NULL DEFAULT ''"},
 		{"assigned_effort", "assigned_effort TEXT NOT NULL DEFAULT ''"},
@@ -226,7 +230,8 @@ func (store *Store) ListRequirements(ctx context.Context) ([]requirements.Requir
 
 const requirementSelect = `
 	SELECT id, title, description, status, priority, position, workspace_path, workspace_label, workspace_kind,
-	       assigned_provider, assigned_harness, assigned_execution, assigned_account_ref, assigned_model, assigned_effort, assigned_at_ms,
+	       assigned_provider, assigned_harness, assigned_execution, assigned_server_profile_id, assigned_server_label,
+	       assigned_account_ref, assigned_model, assigned_effort, assigned_at_ms,
 	       mode, parallel, steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
 	       loop_count, last_error, source, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
 	FROM requirements`
@@ -241,8 +246,9 @@ func scanRequirement(row scanner) (requirements.Requirement, error) {
 	var parallel int
 	err := row.Scan(&requirement.ID, &requirement.Title, &requirement.Description, &requirement.Status,
 		&requirement.Priority, &requirement.Position, &requirement.WorkspacePath, &requirement.WorkspaceLabel, &requirement.WorkspaceKind,
-		&requirement.AssignedProvider, &requirement.AssignedHarness, &requirement.AssignedExecution, &requirement.AssignedAccountRef,
-		&requirement.AssignedModel, &requirement.AssignedEffort, &requirement.AssignedAt,
+		&requirement.AssignedProvider, &requirement.AssignedHarness, &requirement.AssignedExecution,
+		&requirement.AssignedServerProfileID, &requirement.AssignedServerLabel,
+		&requirement.AssignedAccountRef, &requirement.AssignedModel, &requirement.AssignedEffort, &requirement.AssignedAt,
 		&requirement.Mode, &parallel, &steps, &requirement.RefinedAt, &requirement.Progress, &requirement.ProgressNote, &requirement.SessionID,
 		&requirement.PeerMessageID, &requirement.TurnID, &requirement.LoopCount, &requirement.LastError,
 		&requirement.Source, &requirement.CreatedAt, &requirement.UpdatedAt, &requirement.StartedAt, &requirement.CompletedAt)
@@ -279,16 +285,19 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 	_, err = store.db.ExecContext(ctx, `
 		INSERT INTO requirements (
 			id, title, description, status, priority, position, workspace_path, workspace_label, workspace_kind,
-			assigned_provider, assigned_harness, assigned_execution, assigned_account_ref, assigned_model, assigned_effort, assigned_at_ms,
+			assigned_provider, assigned_harness, assigned_execution, assigned_server_profile_id, assigned_server_label,
+			assigned_account_ref, assigned_model, assigned_effort, assigned_at_ms,
 			mode, parallel, steps_json, refined_at_ms, progress, progress_note, session_id, peer_message_id, turn_id,
 			loop_count, last_error, source, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title=excluded.title, description=excluded.description, status=excluded.status,
 			priority=excluded.priority, position=excluded.position, workspace_path=excluded.workspace_path,
 			workspace_label=excluded.workspace_label, workspace_kind=excluded.workspace_kind,
 			assigned_provider=excluded.assigned_provider, assigned_harness=excluded.assigned_harness,
-			assigned_execution=excluded.assigned_execution, assigned_account_ref=excluded.assigned_account_ref,
+			assigned_execution=excluded.assigned_execution,
+			assigned_server_profile_id=excluded.assigned_server_profile_id, assigned_server_label=excluded.assigned_server_label,
+			assigned_account_ref=excluded.assigned_account_ref,
 			assigned_model=excluded.assigned_model, assigned_effort=excluded.assigned_effort, assigned_at_ms=excluded.assigned_at_ms,
 			mode=excluded.mode, parallel=excluded.parallel, steps_json=excluded.steps_json,
 			refined_at_ms=excluded.refined_at_ms, progress=excluded.progress, progress_note=excluded.progress_note,
@@ -297,8 +306,9 @@ func (store *Store) SaveRequirement(ctx context.Context, requirement requirement
 			updated_at_ms=excluded.updated_at_ms, started_at_ms=excluded.started_at_ms, completed_at_ms=excluded.completed_at_ms`,
 		requirement.ID, requirement.Title, requirement.Description, requirement.Status, requirement.Priority,
 		requirement.Position, requirement.WorkspacePath, requirement.WorkspaceLabel, requirement.WorkspaceKind,
-		requirement.AssignedProvider, requirement.AssignedHarness, requirement.AssignedExecution, requirement.AssignedAccountRef,
-		requirement.AssignedModel, requirement.AssignedEffort, requirement.AssignedAt,
+		requirement.AssignedProvider, requirement.AssignedHarness, requirement.AssignedExecution,
+		requirement.AssignedServerProfileID, requirement.AssignedServerLabel,
+		requirement.AssignedAccountRef, requirement.AssignedModel, requirement.AssignedEffort, requirement.AssignedAt,
 		requirement.Mode, parallel, string(steps),
 		requirement.RefinedAt, requirement.Progress, requirement.ProgressNote, requirement.SessionID,
 		requirement.PeerMessageID, requirement.TurnID, requirement.LoopCount, requirement.LastError,
@@ -316,6 +326,8 @@ func (store *Store) AttachWorkSession(ctx context.Context, id, sessionID, peerMe
 			assigned_provider = ?,
 			assigned_harness = ?,
 			assigned_execution = ?,
+			assigned_server_profile_id = ?,
+			assigned_server_label = ?,
 			assigned_account_ref = ?,
 			assigned_model = ?,
 			assigned_effort = ?,
@@ -327,7 +339,8 @@ func (store *Store) AttachWorkSession(ctx context.Context, id, sessionID, peerMe
 			updated_at_ms = ?
 		WHERE id = ?`,
 		strings.TrimSpace(sessionID), strings.TrimSpace(peerMessageID),
-		assignment.Provider, assignment.Harness, assignment.Execution, assignment.AccountRef,
+		assignment.Provider, assignment.Harness, assignment.Execution,
+		assignment.ServerProfileID, assignment.ServerLabel, assignment.AccountRef,
 		assignment.Model, assignment.Effort, at, at, at, strings.TrimSpace(id))
 	if err != nil {
 		return requirements.Requirement{}, err

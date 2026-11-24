@@ -125,7 +125,7 @@
 | `gateway.request` | waterfall | `protocol/path/model/body` | 改写或拒绝请求；冻结身份字段不可改 |
 | `gateway.account` | serial | `provider/model/candidates` | 只能排序/挑选候选账号，越界即 `plugin_scope_violation` |
 | `gateway.attempt` | middleware | `provider/model/accountRef/authType/attempt` + `next()` | 包裹真实尝试；`next()` 至多一次 |
-| `gateway.route` | serial | — | 合同已声明；**截至 2026-11-24 仓库内没有调用点** |
+| `gateway.route` | serial | — | **预留（reserved）**：运行时没有调用点；Doctor 会对贡献者发 `plugin_capability_reserved` 警告 |
 
 ### Provider / 模型 / 计费
 
@@ -244,17 +244,15 @@ ctx.aih.register('acme.gateway.account', async ({ provider, model, candidates })
 
 ## 7. 仍然存在的弱点
 
-已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面、清单顶层 `kind` 平面标识与错平面预检、贡献项调用次数 / 失败 / 拒绝 / 耗时 / 最近错误、AIH 能力插件网页安装。
+已解决：声明式作用域、安装目标与声明联动、手写路径预检、能力槽与贡献项目录、AIH 插件按 pluginId 聚合与旧版本折叠、统一插件页面、清单顶层 `kind` 平面标识与错平面预检、贡献项调用次数 / 失败 / 拒绝 / 耗时 / 最近错误、AIH 能力插件网页安装、三套作者样例（`docs/plugins/examples`）、`gateway.route` 预留标记与 Doctor 警告。
 
-按影响排序，仍待处理：
+仍待处理（优先级较低）：
 
-1. **缺少作者样例与一致性测试。** 仓库内只有 `network.connector` 一个完整样例；账号 / Provider 插件没有可复制模板。
-2. **`gateway.route` 是空声明。** 合同里有，运行时没有调用点，容易误导插件作者。
+1. **每个能力的自动化 smoke 还没有统一入口。** 样例可手工校验，但还没有 `plugin doctor --smoke` 这类一键检查。
 
 ## 8. 下一步建议（按收益/成本）
 
-1. **模板与 doctor**：`account` / `provider` / `harness` 三个最小样例 + 每个能力的 smoke 检查。
-2. **补齐 `gateway.route` 或从合同移除**，避免空声明。
+1. **能力 smoke 自动化**：用 `docs/plugins/examples` 三个样例跑通安装、调用、拒绝与卸载。
 
 ## 9. 验证边界
 

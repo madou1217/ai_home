@@ -1,0 +1,13 @@
+{
+  "name": "@example/harness-claude",
+  "version": "0.1.0",
+  "description": "Example Harness-native plugin package",
+  "main": "index.js",
+  "exports": { "./claude": "./index.js" },
+  "agentPlugin": {
+    "pluginId": "example-harness-claude",
+    "kind": "harness",
+    "manifestVersion": 1,
+    "engines": { "claude": ">=0.0.0" }
+  }
+}

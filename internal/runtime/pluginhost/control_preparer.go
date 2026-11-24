@@ -222,6 +222,7 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 	}
 	report.Revision = doc.revision
 	invocationStats := p.runtime.InvocationStats()
+	reservedWarned := map[string]bool{}
 	activeArtifacts := map[string]bool{}
 	for _, instance := range doc.instances {
 		enabled, _ := instance["enabled"].(bool)
@@ -285,6 +286,16 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 				scope, _ := contrib["scope"].(map[string]any)
 				contributionID := stringField(contrib, "id")
 				stat := invocationStats[contributionID]
+				reserved := pluginartifact.CapabilityReserved(capName)
+				warnKey := pluginID + ":" + capName
+				if reserved && !reservedWarned[warnKey] {
+					reservedWarned[warnKey] = true
+					report.Warnings = append(report.Warnings, DoctorIssue{
+						Code:     "plugin_capability_reserved",
+						PluginID: pluginID,
+						Detail:   capName + " 是预留能力，当前运行时不会调用",
+					})
+				}
 				report.Contributions = append(report.Contributions, DoctorContribution{
 					PluginID:         pluginID,
 					ContributionID:   contributionID,
@@ -292,6 +303,7 @@ func (p *ControlPreparer) Doctor(ctx context.Context) DoctorReport {
 					Order:            order,
 					FailurePolicy:    policy,
 					Active:           activeArtifacts[pluginID+"@"+version],
+					Reserved:         reserved,
 					Calls:            stat.Calls,
 					Failures:         stat.Failures,
 					Rejections:       stat.Rejections,

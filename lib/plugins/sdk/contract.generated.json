@@ -124,7 +124,8 @@
     {
       "id": "gateway.route",
       "version": 1,
-      "mode": "serial"
+      "mode": "serial",
+      "reserved": true
     },
     {
       "id": "gateway.account",

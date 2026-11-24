@@ -161,6 +161,7 @@ type DoctorContribution struct {
 	Order            int            `json:"order"`
 	FailurePolicy    string         `json:"failurePolicy"`
 	Active           bool           `json:"active"`
+	Reserved         bool           `json:"reserved"`
 	Calls            int64          `json:"calls"`
 	Failures         int64          `json:"failures"`
 	Rejections       int64          `json:"rejections"`

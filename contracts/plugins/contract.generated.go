@@ -82,16 +82,17 @@ type Message struct {
 }
 
 type Capability struct {
-	ID      string `json:"id"`
-	Version int    `json:"version"`
-	Mode    string `json:"mode"`
+	ID       string `json:"id"`
+	Version  int    `json:"version"`
+	Mode     string `json:"mode"`
+	Reserved bool   `json:"reserved,omitempty"`
 }
 
 var Capabilities = []Capability{
 	{ID: "observe", Version: 1, Mode: "observer"},
 	{ID: "command", Version: 1, Mode: "terminal"},
 	{ID: "gateway.request", Version: 1, Mode: "waterfall"},
-	{ID: "gateway.route", Version: 1, Mode: "serial"},
+	{ID: "gateway.route", Version: 1, Mode: "serial", Reserved: true},
 	{ID: "gateway.account", Version: 1, Mode: "serial"},
 	{ID: "gateway.attempt", Version: 1, Mode: "middleware"},
 	{ID: "model.catalog", Version: 1, Mode: "terminal"},

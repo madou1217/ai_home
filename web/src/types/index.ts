@@ -3588,6 +3588,13 @@ export interface AihPluginReport {
   runtime?: Record<string, unknown> | null;
 }
 
+export interface AihPluginDoctorIssue {
+  code: string;
+  pluginId?: string;
+  instanceId?: string;
+  detail?: string;
+}
+
 export interface AihPluginDoctorContribution {
   pluginId: string;
   contributionId: string;
@@ -3595,6 +3602,7 @@ export interface AihPluginDoctorContribution {
   order: number;
   failurePolicy: string;
   active: boolean;
+  reserved: boolean;
   calls: number;
   failures: number;
   rejections: number;
@@ -3607,8 +3615,8 @@ export interface AihPluginDoctorContribution {
 }
 
 export interface AihPluginDoctorReport extends AihPluginReport {
-  issues?: Array<Record<string, unknown>>;
-  warnings?: Array<Record<string, unknown>>;
+  issues?: AihPluginDoctorIssue[];
+  warnings?: AihPluginDoctorIssue[];
   capabilities?: Record<string, number>;
   contributions?: AihPluginDoctorContribution[];
 }

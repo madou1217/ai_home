@@ -220,6 +220,7 @@ export default function AihPluginPanel() {
               return (
                 <Space wrap key={`${item.pluginId}:${item.contributionId}`} size={6}>
                   <Tag color="processing">{item.capability}</Tag>
+                  {item.reserved ? <Tag color="warning">预留</Tag> : null}
                   <Tag color={item.active ? 'success' : 'default'}>{item.active ? '活跃' : '未激活'}</Tag>
                   <Typography.Text code>{item.contributionId}</Typography.Text>
                   <Typography.Text type="secondary">
@@ -234,6 +235,19 @@ export default function AihPluginPanel() {
                 </Space>
               );
             })}
+          </Space>
+        </Card>
+      ) : null}
+      {doctor?.warnings?.length ? (
+        <Card size="small" title="Doctor 警告">
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {doctor.warnings.map((warning, index) => (
+              <Typography.Text type="secondary" key={`${warning.code}:${warning.pluginId || ''}:${index}`}>
+                {warning.code}
+                {warning.pluginId ? ` · ${warning.pluginId}` : ''}
+                {warning.detail ? ` · ${warning.detail}` : ''}
+              </Typography.Text>
+            ))}
           </Space>
         </Card>
       ) : null}

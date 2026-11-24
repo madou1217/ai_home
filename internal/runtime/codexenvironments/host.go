@@ -25,6 +25,13 @@ type HostOptions struct {
 	BearerToken string
 	// Cwd 是远端默认工作目录，可空。
 	Cwd string
+	// SkipRemoteStart 为真时不在远端拉起 exec-server（假定已由外部启动）。
+	SkipRemoteStart bool
+	// RemotePort 是远端 exec-server 监听端口；0 表示用默认值。
+	RemotePort int
+	// CodexPath 是远端 codex 可执行文件绝对路径。
+	// 必须传探测结果：PATH 里第一个 codex 未必能跑（Windows 上实测过不兼容旧 exe）。
+	CodexPath string
 }
 
 // Host 是一条 url 模式环境的运行态：本地回环监听 + 经 SSH 的字节转发。
@@ -51,7 +58,23 @@ func OpenHost(ctx context.Context, options HostOptions) (*Host, error) {
 	}
 	remote := strings.TrimSpace(options.RemoteAddress)
 	if remote == "" {
-		remote = DefaultRemoteExecServerAddress
+		port := options.RemotePort
+		if port <= 0 {
+			port = DefaultRemoteExecServerPort
+		}
+		remote = "127.0.0.1:" + strconv.Itoa(port)
+	}
+	// 远端若没有 exec-server 在监听，本机监听会「通但无响应」——最难排查的一种状态。
+	// 所以在建隧道前先确保它跑起来（幂等，已在跑就直接返回）。
+	if !options.SkipRemoteStart {
+		if _, err := EnsureRemoteExecServer(ctx, RemoteExecServerOptions{
+			Connection: options.Connection,
+			HomeDir:    options.HomeDir,
+			Port:       remotePort(remote),
+			CodexPath:  options.CodexPath,
+		}); err != nil {
+			return nil, fmt.Errorf("远端 exec-server 未就绪: %w", err)
+		}
 	}
 	config, err := toSSHConfig(options.Connection, options.HomeDir)
 	if err != nil {
@@ -139,4 +162,17 @@ func portFromBaseURL(baseURL string) (int, error) {
 		return 0, fmt.Errorf("通道宿主监听端口无效: %q", portText)
 	}
 	return port, nil
+}
+
+// remotePort 从 host:port 里取端口；解析失败时用默认值。
+func remotePort(address string) int {
+	_, portText, err := net.SplitHostPort(strings.TrimSpace(address))
+	if err != nil {
+		return DefaultRemoteExecServerPort
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return DefaultRemoteExecServerPort
+	}
+	return port
 }

@@ -36,6 +36,8 @@ type HostSpec struct {
 	ListenPort    int
 	BearerToken   string
 	Cwd           string
+	// CodexPath 是远端 codex 的可执行文件绝对路径（探测结果）。
+	CodexPath string
 }
 
 // HostStatus 是可对外展示的宿主状态；不含凭据。
@@ -137,6 +139,7 @@ func (supervisor *HostSupervisor) run(ctx context.Context, spec HostSpec, status
 			ListenPort:    spec.ListenPort,
 			BearerToken:   spec.BearerToken,
 			Cwd:           spec.Cwd,
+			CodexPath:     spec.CodexPath,
 		})
 		if err != nil {
 			attempt++

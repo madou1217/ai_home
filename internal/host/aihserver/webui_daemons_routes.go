@@ -22,6 +22,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/runtime/codexenvironments"
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/pricingcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/retention"
@@ -92,6 +93,7 @@ type backgroundDaemonsRuntime struct {
 	usageScan       *usagedaemons.UsageScanScheduler
 	providerRefresh *usagedaemons.ProviderRefreshCoordinator
 	tokenRefresh    *tokenrefreshdaemon.Daemon
+	codexHosts      *codexenvironments.HostSupervisor
 	ownedOwnerStore zcodeOwnerStore
 
 	closeOnce sync.Once
@@ -284,7 +286,23 @@ func startBackgroundDaemonsWithPorts(
 	})
 	rt.tokenRefresh.Start(ctx)
 
+	// 6) Codex url 模式通道宿主：program 模式表达不了的连接（密码认证、
+	//    跳板需专用私钥）只能由 AIH 自己拨号并暴露成本机 ws 端口。
+	//    这里只负责「维持已有宿主」；具体哪些连接需要 url 模式由
+	//    SyncProbed 按需调用 Apply 决定。
+	if aiHomeDir != "" {
+		rt.codexHosts = codexenvironments.NewHostSupervisor(nil)
+	}
+
 	return rt, nil
+}
+
+// CodexHosts 返回 url 模式通道宿主监督器；未启用时为 nil。
+func (r *backgroundDaemonsRuntime) CodexHosts() *codexenvironments.HostSupervisor {
+	if r == nil {
+		return nil
+	}
+	return r.codexHosts
 }
 
 // buildWebUIDaemonsRoutes 装配后台守护状态与触发控制路由，供 webuiroutes.go 直接接入。
@@ -368,6 +386,9 @@ func (r *backgroundDaemonsRuntime) Status(context.Context) webuidaemonsapi.Statu
 	if r.tokenRefresh != nil {
 		st := r.tokenRefresh.State()
 		report.TokenRefresh = &st
+	}
+	if r.codexHosts != nil {
+		report.CodexURLHosts = r.codexHosts.Status()
 	}
 	return report
 }

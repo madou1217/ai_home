@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/codexenvironments"
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 	"github.com/madou1217/ai_home/internal/runtime/retention"
 	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
@@ -48,6 +49,8 @@ type StatusReport struct {
 	UsageScan       *usagedaemons.UsageScanState       `json:"usageScan,omitempty"`
 	ProviderRefresh *usagedaemons.ProviderRefreshState `json:"providerRefresh,omitempty"`
 	TokenRefresh    *tokenrefreshdaemon.DaemonState    `json:"tokenRefresh,omitempty"`
+	// CodexURLHosts 是 codex url 模式通道宿主的运行状态。
+	CodexURLHosts []codexenvironments.HostStatus `json:"codexUrlHosts,omitempty"`
 }
 
 // TriggerRequest 指定手动触发的守护目标与可选 provider 过滤。

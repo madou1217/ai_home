@@ -20,6 +20,9 @@ type ProbeOptions struct {
 	// URLHosts 为空时 url 模式条目不写入（表示没有通道宿主在跑）。
 	// 非空时 key 是连接 ID，值是该连接实际监听的本机端口。
 	URLHosts map[string]int
+	// HostSupervisor 非空时会先把需要 url 模式的连接交给它常驻，
+	// 再按它的实际端口写入条目。这样调用方不需要自己管端口分配。
+	HostSupervisor *HostSupervisor
 }
 
 // SyncProbed 探测全部连接，只把可用的写进 environments.toml。
@@ -34,6 +37,9 @@ func SyncProbed(ctx context.Context, options ProbeOptions) (SyncReport, error) {
 	report.CacheHit = false
 	connections := LoadConnectionsForProbe(ctx, options.AIHomeDir)
 	report.URLReasons = map[string]Reason{}
+	if options.HostSupervisor != nil {
+		options.URLHosts = ensureURLHosts(ctx, options, connections)
+	}
 
 	entries := make([]Entry, 0, len(connections))
 	candidates := make([]Connection, 0, len(connections))
@@ -124,4 +130,48 @@ func urlReasonMessage(reason Reason) string {
 	default:
 		return "该连接需要 url 模式"
 	}
+}
+
+// ensureURLHosts 把需要 url 模式的连接交给监督器，并返回稳定端口映射。
+//
+// 端口由连接 ID 决定，因此重复调用得到同一组端口；监督器内部按「已存在的
+// 不再重启」处理，代价只是一次本地判断。
+func ensureURLHosts(ctx context.Context, options ProbeOptions, connections []Connection) map[string]int {
+	_, urlConnections, _ := SplitByMode(connections)
+	if len(urlConnections) == 0 {
+		options.HostSupervisor.Apply(ctx, nil, options.HomeDir)
+		return nil
+	}
+	ids := make([]string, 0, len(urlConnections))
+	for _, connection := range urlConnections {
+		ids = append(ids, connection.ID)
+	}
+	ports := AllocateHostPorts(ids)
+	// url 型连接同样要先探测出远端 codex 路径，否则会在远端跑 PATH 里第一个
+	// 同名程序——Windows 上实测那可能是不兼容的旧 exe。
+	codexPaths := make(map[string]string, len(urlConnections))
+	if options.Dialer != nil || len(urlConnections) > 0 {
+		dialer := options.Dialer
+		if dialer == nil {
+			dialer = SSHRemoteExecutor{HomeDir: options.HomeDir}
+		}
+		for _, probe := range ProbeAll(ctx, dialer, urlConnections) {
+			if probe.Available() {
+				codexPaths[probe.ConnectionID] = probe.CodexPath
+			}
+		}
+	}
+	specs := make([]HostSpec, 0, len(urlConnections))
+	hosts := make(map[string]int, len(urlConnections))
+	for _, connection := range urlConnections {
+		port := ports[connection.ID]
+		specs = append(specs, HostSpec{
+			Connection: connection,
+			ListenPort: port,
+			CodexPath:  codexPaths[connection.ID],
+		})
+		hosts[connection.ID] = port
+	}
+	options.HostSupervisor.Apply(ctx, specs, options.HomeDir)
+	return hosts
 }

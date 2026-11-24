@@ -34,15 +34,21 @@ import {
 /**
  * Minecraft 体素办公室房间与室外景观构建器：
  * - 室内地板顶面严格对齐 y = 0（地板方块位于整数网格 gy = -1），四周扩展 5 格室外草坪与草-土-石浮空崖壁。
- * - 使用 VoxelGrid 自动隐藏面剔除、四档 AO 与方向明暗分层，并按渲染层合批以将 Draw Call 降至最低。
- * - 独立维护 roofGroup 屋顶层，支持全景俯瞰（overview）模式即时隐藏/恢复而不重建场景或破坏阴影。
- * - 铭牌与房间邮件终端均紧贴后墙内表面（厚度 ≤ 0.0625，尺寸 ≤ 2×1 体素），高挂于工位视线之上。
+ * - 四面墙体按 ±X / ±Z 拆分为 4 组独立合批网格（各自保留门/窗缺口与材质分层），屋顶与檐口归入独立 roofGroup。
+ * - 支持按相机方位角与仰角（> 55° 隐藏屋顶）每帧零重建动态剖切，始终保留阴影、按需渲染与地面/家具/树/水池常驻可见。
+ * - 铭牌与房间邮件终端紧贴后墙（-Z 墙）内表面，随 -Z 墙同步显隐且隐藏时不参与 raycast 拾取。
  */
+
+export type OfficeWallDirection = 'px' | 'nx' | 'pz' | 'nz';
+
+export type OfficeRoomWallGroups = Record<OfficeWallDirection, THREE.Group>;
 
 export interface OfficeRoomRig {
   root: THREE.Group;
   dynamicWorldGroup: THREE.Group;
+  wallGroups: OfficeRoomWallGroups;
   roofGroup: THREE.Group;
+  roofEaveGroups: OfficeRoomWallGroups;
   plaqueGroup: THREE.Group;
   roomTerminalGroup: THREE.Group;
   roomTerminalScreen: THREE.Mesh;
@@ -56,7 +62,14 @@ export interface OfficeRoomRig {
   currentDepth: number;
   outerHalfWidth: number;
   outerHalfDepth: number;
+  hiddenWallX: 'px' | 'nx';
+  hiddenWallZ: 'pz' | 'nz';
 }
+
+const WALL_DIRECTIONS: readonly OfficeWallDirection[] = ['px', 'nx', 'pz', 'nz'];
+const ROOM_CENTER_Y = 0.75;
+const WALL_AXIS_HYSTERESIS = 0.12;
+const ROOF_HIDE_ELEVATION_RAD = THREE.MathUtils.degToRad(55);
 
 const MIN_HALF_W = 4;
 const MIN_HALF_D = 3;
@@ -198,13 +211,17 @@ function addTiledSlab(
   }
 }
 
-/** 释放动态世界容器中的几何体与非共享材质（绝不销毁共享图集材质） */
-function clearDynamicWorldGroup(group: THREE.Group): void {
+/** 释放动态世界容器中的几何体与非共享材质（绝不销毁共享图集材质与保留的持久子节点） */
+function clearDynamicWorldGroup(
+  group: THREE.Group,
+  preserveChildren?: ReadonlySet<THREE.Object3D>
+): void {
   const disposedGeometries = new Set<THREE.BufferGeometry>();
   const disposedMaterials = new Set<THREE.Material>();
 
   const children = [...group.children];
   for (const child of children) {
+    if (preserveChildren?.has(child)) continue;
     group.remove(child);
     child.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
@@ -288,23 +305,28 @@ function buildRoomTerminalGroup(
   return { group, screenMesh };
 }
 
-/** 填充浮空岛地形、室内木板地面、四面墙体、书架、水池与 4 棵橡树至整数体素网格 */
-function populateRoomVoxelGrid(grid: VoxelGrid, halfW: number, halfD: number): void {
+/** 填充常驻地形、室内地板、室内书架、水池、4 棵橡树及 4 组独立朝向墙体（±X / ±Z） */
+function populateRoomVoxelGrids(
+  baseGrid: VoxelGrid,
+  wallGrids: Record<OfficeWallDirection, VoxelGrid>,
+  halfW: number,
+  halfD: number
+): void {
   const yardMinX = -halfW - (YARD_EXTEND + 1);
   const yardMaxX = halfW + YARD_EXTEND;
   const yardMinZ = -halfD - (YARD_EXTEND + 1);
   const yardMaxZ = halfD + YARD_EXTEND;
 
-  // 1. 浮空岛底层：gy = -3 石头崖底，gy = -2 泥土层，gy = -1 默认室外草方块
-  grid.fill(yardMinX, -3, yardMinZ, yardMaxX, -3, yardMaxZ, STONE_BLOCK);
-  grid.fill(yardMinX, -2, yardMinZ, yardMaxX, -2, yardMaxZ, DIRT_BLOCK);
-  grid.fill(yardMinX, -1, yardMinZ, yardMaxX, -1, yardMaxZ, GRASS_BLOCK);
+  // 1. 浮空岛底层：gy = -3 石头崖底，gy = -2 泥土层，gy = -1 默认室外草方块（永远可见）
+  baseGrid.fill(yardMinX, -3, yardMinZ, yardMaxX, -3, yardMaxZ, STONE_BLOCK);
+  baseGrid.fill(yardMinX, -2, yardMinZ, yardMaxX, -2, yardMaxZ, DIRT_BLOCK);
+  baseGrid.fill(yardMinX, -1, yardMinZ, yardMaxX, -1, yardMaxZ, GRASS_BLOCK);
 
-  // 2. 建筑外墙地基（gy = -1）
-  grid.fill(-halfW - 1, -1, -halfD - 1, halfW, -1, -halfD - 1, STONE_BRICK_BLOCK);
-  grid.fill(-halfW - 1, -1, halfD, halfW, -1, halfD, STONE_BRICK_BLOCK);
-  grid.fill(-halfW - 1, -1, -halfD, -halfW - 1, -1, halfD - 1, STONE_BRICK_BLOCK);
-  grid.fill(halfW, -1, -halfD, halfW, -1, halfD - 1, STONE_BRICK_BLOCK);
+  // 2. 建筑外墙地基（gy = -1，墙体动态隐藏后地面依然保持完整石砖底座无空洞）
+  baseGrid.fill(-halfW - 1, -1, -halfD - 1, halfW, -1, -halfD - 1, STONE_BRICK_BLOCK);
+  baseGrid.fill(-halfW - 1, -1, halfD, halfW, -1, halfD, STONE_BRICK_BLOCK);
+  baseGrid.fill(-halfW - 1, -1, -halfD, -halfW - 1, -1, halfD - 1, STONE_BRICK_BLOCK);
+  baseGrid.fill(halfW, -1, -halfD, halfW, -1, halfD - 1, STONE_BRICK_BLOCK);
 
   // 3. 室内木板地板（gy = -1）：云杉边框 + 中央棋盘格走廊 + 橡木/云杉镶嵌工区地板
   for (let z = -halfD; z <= halfD - 1; z += 1) {
@@ -312,138 +334,174 @@ function populateRoomVoxelGrid(grid: VoxelGrid, halfW: number, halfD: number): v
       const isBorder = x === -halfW || x === halfW - 1 || z === -halfD || z === halfD - 1;
       const isAisle = x === -1 || x === 0;
       if (isBorder) {
-        grid.set(x, -1, z, SPRUCE_PLANKS_BLOCK);
+        baseGrid.set(x, -1, z, SPRUCE_PLANKS_BLOCK);
       } else if (isAisle) {
         const checker = ((x + z) & 1) === 0;
-        grid.set(x, -1, z, checker ? SPRUCE_PLANKS_BLOCK : OAK_PLANKS_BLOCK);
+        baseGrid.set(x, -1, z, checker ? SPRUCE_PLANKS_BLOCK : OAK_PLANKS_BLOCK);
       } else {
         const isInlay = (Math.abs(x) % 2 === 0) && (Math.abs(z) % 2 === 0);
-        grid.set(x, -1, z, isInlay ? SPRUCE_PLANKS_BLOCK : OAK_PLANKS_BLOCK);
+        baseGrid.set(x, -1, z, isInlay ? SPRUCE_PLANKS_BLOCK : OAK_PLANKS_BLOCK);
       }
     }
   }
 
-  // 4. 后墙（z = -halfD - 1，完整 4 格高 gy = 0..3）
-  const backZ = -halfD - 1;
-  grid.fill(-halfW, 0, backZ, halfW - 1, 3, backZ, STONE_BRICK_BLOCK);
-  // 后左、后右橡木原木角柱
-  grid.fill(-halfW - 1, 0, backZ, -halfW - 1, 3, backZ, OAK_LOG_VERTICAL);
-  grid.fill(halfW, 0, backZ, halfW, 3, backZ, OAK_LOG_VERTICAL);
+  // 室内常驻家具：后左内侧书架（高度 2，不随墙体隐藏）
+  addBookshelfColumnToGrid(baseGrid, -halfW + 1, 0, -halfD, 2);
+  addBookshelfColumnToGrid(baseGrid, -halfW + 2, 0, -halfD, 2);
 
-  // 后墙中央 2×2 玻璃窗（世界 x ∈ [-1, +1]），将左右两面实心石砖墙体清晰分隔给铭牌与邮件终端
-  grid.fill(-1, 1, backZ, 0, 2, backZ, GLASS_BLOCK);
-
-  // 后左内侧书架（高度 2，紧贴后墙内侧，位于左墙铭牌下方且不遮挡铭牌）
-  addBookshelfColumnToGrid(grid, -halfW + 1, 0, -halfD, 2);
-  addBookshelfColumnToGrid(grid, -halfW + 2, 0, -halfD, 2);
-
-  // 5. 左墙（x = -halfW - 1，完整 4 格高 gy = 0..3）：石砖窗台 + 高玻璃窗 + 原木窗棂 + 石砖顶梁
-  const leftX = -halfW - 1;
-  const leftWallLen = halfD * 2;
-  for (let idx = 0; idx < leftWallLen; idx += 1) {
-    const z = -halfD + idx;
-    grid.set(leftX, 0, z, STONE_BRICK_BLOCK);
-    grid.set(leftX, 3, z, STONE_BRICK_BLOCK);
-    if (isLeftWallMullion(idx, leftWallLen)) {
-      grid.set(leftX, 1, z, OAK_LOG_VERTICAL);
-      grid.set(leftX, 2, z, OAK_LOG_VERTICAL);
-    } else {
-      grid.set(leftX, 1, z, GLASS_BLOCK);
-      grid.set(leftX, 2, z, GLASS_BLOCK);
-    }
-  }
-  // 前左角柱（4 格高，与左墙无缝衔接）
-  grid.fill(leftX, 0, halfD, leftX, 3, halfD, OAK_LOG_VERTICAL);
-
-  // 6. 前墙切面（z = halfD）：前左入户门框 + 圆石门廊 + 右侧低矮石砖矮墙与通道缺口
+  // 前墙门廊与通行口圆石铺地（gy = -1，常驻可见）
   const frontZ = halfD;
-  // 门框左右 3 格高石砖门柱（-halfW 与 -halfW + 2），门洞顶部水平原木门楣（-halfW + 1, gy = 2）
-  grid.fill(-halfW, 0, frontZ, -halfW, 2, frontZ, STONE_BRICK_BLOCK);
-  grid.set(-halfW + 1, 2, frontZ, OAK_LOG_HORIZONTAL_X);
-  grid.set(-halfW + 1, -1, frontZ, COBBLESTONE_BLOCK);
-  grid.fill(-halfW + 2, 0, frontZ, -halfW + 2, 2, frontZ, STONE_BRICK_BLOCK);
-  // 门框右侧过渡低矮石砖矮墙
-  grid.set(-halfW + 3, 0, frontZ, STONE_BRICK_BLOCK);
-
-  // 前右矮墙（gy = 0）并留出 2 格宽开放通行口，保证等距与走廊视角通透
   const gapStart = Math.max(-halfW + 4, -1);
   const gapEnd = Math.min(halfW - 1, gapStart + 1);
-  for (let x = -halfW + 4; x <= halfW - 1; x += 1) {
-    if (x >= gapStart && x <= gapEnd) {
-      grid.set(x, -1, frontZ, COBBLESTONE_BLOCK);
-    } else {
-      grid.set(x, 0, frontZ, STONE_BRICK_BLOCK);
-    }
+  baseGrid.set(-halfW + 1, -1, frontZ, COBBLESTONE_BLOCK);
+  for (let x = gapStart; x <= gapEnd; x += 1) {
+    baseGrid.set(x, -1, frontZ, COBBLESTONE_BLOCK);
   }
+  baseGrid.fill(-halfW, -1, frontZ + 1, -halfW + 3, -1, frontZ + 2, COBBLESTONE_BLOCK);
+  baseGrid.fill(gapStart, -1, frontZ + 1, gapEnd, -1, frontZ + 2, COBBLESTONE_BLOCK);
 
-  // 圆石入户门廊（z = halfD + 1..2）与开放通道石阶连接
-  grid.fill(-halfW, -1, frontZ + 1, -halfW + 3, -1, frontZ + 2, COBBLESTONE_BLOCK);
-  grid.fill(gapStart, -1, frontZ + 1, gapEnd, -1, frontZ + 2, COBBLESTONE_BLOCK);
-
-  // 7. 右墙切面（x = halfW）：仅 1 格高石砖矮墙 + 前右 2 格角柱，100% 不遮挡等距视角
-  grid.fill(halfW, 0, -halfD, halfW, 0, halfD - 1, STONE_BRICK_BLOCK);
-  grid.fill(halfW, 0, halfD, halfW, 1, halfD, OAK_LOG_VERTICAL);
-
-  // 8. 前右草坪 3×2 浅水池（沙边围岸，底面保持 gy = -2 泥土形成清晰池底）
+  // 室外前右草坪 3×2 浅水池（沙边围岸，底面 gy = -2 泥土，常驻可见）
   const poolMinX = halfW + 2;
   const poolMaxX = halfW + 4;
   const poolMinZ = halfD + 1;
   const poolMaxZ = halfD + 2;
-  grid.fill(poolMinX - 1, -1, poolMinZ - 1, poolMaxX + 1, -1, poolMaxZ + 1, SAND_BLOCK);
-  grid.fill(poolMinX, -1, poolMinZ, poolMaxX, -1, poolMaxZ, WATER_BLOCK);
+  baseGrid.fill(poolMinX - 1, -1, poolMinZ - 1, poolMaxX + 1, -1, poolMaxZ + 1, SAND_BLOCK);
+  baseGrid.fill(poolMinX, -1, poolMinZ, poolMaxX, -1, poolMaxZ, WATER_BLOCK);
 
-  // 9. 室外 4 棵 Minecraft 经典橡树（避开墙体、屋檐、水池及等距镜头视线）
-  addOakTreeToGrid(grid, -halfW - 4, 0, -halfD - 4, 4, 101);
-  addOakTreeToGrid(grid, -halfW - 4, 0, halfD + 2, 3, 207);
-  addOakTreeToGrid(grid, halfW + 3, 0, -halfD - 4, 4, 313);
-  addOakTreeToGrid(grid, halfW + 3, 0, -1, 3, 419);
+  // 室外 4 棵 Minecraft 经典橡树（常驻可见）
+  addOakTreeToGrid(baseGrid, -halfW - 4, 0, -halfD - 4, 4, 101);
+  addOakTreeToGrid(baseGrid, -halfW - 4, 0, halfD + 2, 3, 207);
+  addOakTreeToGrid(baseGrid, halfW + 3, 0, -halfD - 4, 4, 313);
+  addOakTreeToGrid(baseGrid, halfW + 3, 0, -1, 3, 419);
+
+  // 4. 后墙（-Z 墙，z = -halfD - 1，完整 4 格高 gy = 0..3，含左右角柱与中央 2×2 玻璃窗缺口）
+  const backZ = -halfD - 1;
+  wallGrids.nz.fill(-halfW, 0, backZ, halfW - 1, 3, backZ, STONE_BRICK_BLOCK);
+  wallGrids.nz.fill(-halfW - 1, 0, backZ, -halfW - 1, 3, backZ, OAK_LOG_VERTICAL);
+  wallGrids.nz.fill(halfW, 0, backZ, halfW, 3, backZ, OAK_LOG_VERTICAL);
+  wallGrids.nz.fill(-1, 1, backZ, 0, 2, backZ, GLASS_BLOCK);
+
+  // 5. 左墙（-X 墙，x = -halfW - 1，完整 4 格高 gy = 0..3）：石砖窗台 + 高玻璃窗 + 原木窗棂 + 石砖顶梁
+  const leftX = -halfW - 1;
+  const sideWallLen = halfD * 2;
+  for (let idx = 0; idx < sideWallLen; idx += 1) {
+    const z = -halfD + idx;
+    wallGrids.nx.set(leftX, 0, z, STONE_BRICK_BLOCK);
+    wallGrids.nx.set(leftX, 3, z, STONE_BRICK_BLOCK);
+    if (isLeftWallMullion(idx, sideWallLen)) {
+      wallGrids.nx.set(leftX, 1, z, OAK_LOG_VERTICAL);
+      wallGrids.nx.set(leftX, 2, z, OAK_LOG_VERTICAL);
+    } else {
+      wallGrids.nx.set(leftX, 1, z, GLASS_BLOCK);
+      wallGrids.nx.set(leftX, 2, z, GLASS_BLOCK);
+    }
+  }
+
+  // 6. 右墙（+X 墙，x = halfW，对称 4 格高玻璃窗墙；默认等距视口下由动态剖切隐藏，绕到 -X 侧时显示）
+  const rightX = halfW;
+  for (let idx = 0; idx < sideWallLen; idx += 1) {
+    const z = -halfD + idx;
+    wallGrids.px.set(rightX, 0, z, STONE_BRICK_BLOCK);
+    wallGrids.px.set(rightX, 3, z, STONE_BRICK_BLOCK);
+    if (isLeftWallMullion(idx, sideWallLen)) {
+      wallGrids.px.set(rightX, 1, z, OAK_LOG_VERTICAL);
+      wallGrids.px.set(rightX, 2, z, OAK_LOG_VERTICAL);
+    } else {
+      wallGrids.px.set(rightX, 1, z, GLASS_BLOCK);
+      wallGrids.px.set(rightX, 2, z, GLASS_BLOCK);
+    }
+  }
+
+  // 7. 前墙（+Z 墙，z = halfD，完整 4 格高含前左入户门洞、2 格通行拱口与右侧玻璃窗；面向相机时动态隐藏）
+  wallGrids.pz.fill(-halfW - 1, 0, frontZ, -halfW - 1, 3, frontZ, OAK_LOG_VERTICAL);
+  wallGrids.pz.fill(halfW, 0, frontZ, halfW, 3, frontZ, OAK_LOG_VERTICAL);
+  for (let x = -halfW; x <= halfW - 1; x += 1) {
+    if (x === -halfW + 1) {
+      // 入户门洞（gy = 0..1 留空容纳子体素橡木门，gy = 2 原木门楣，gy = 3 石砖过梁）
+      wallGrids.pz.set(x, 2, frontZ, OAK_LOG_HORIZONTAL_X);
+      wallGrids.pz.set(x, 3, frontZ, STONE_BRICK_BLOCK);
+    } else if (x >= gapStart && x <= gapEnd) {
+      // 开放通行拱口（gy = 0..1 留空，gy = 2 原木门楣，gy = 3 石砖过梁）
+      wallGrids.pz.set(x, 2, frontZ, OAK_LOG_HORIZONTAL_X);
+      wallGrids.pz.set(x, 3, frontZ, STONE_BRICK_BLOCK);
+    } else if (
+      x === -halfW
+      || x === -halfW + 2
+      || x === halfW - 1
+    ) {
+      wallGrids.pz.fill(x, 0, frontZ, x, 3, frontZ, STONE_BRICK_BLOCK);
+    } else {
+      // 其余前墙开间做成石砖窗台 + 2 格高玻璃窗 + 石砖顶梁
+      wallGrids.pz.set(x, 0, frontZ, STONE_BRICK_BLOCK);
+      wallGrids.pz.set(x, 1, frontZ, GLASS_BLOCK);
+      wallGrids.pz.set(x, 2, frontZ, GLASS_BLOCK);
+      wallGrids.pz.set(x, 3, frontZ, STONE_BRICK_BLOCK);
+    }
+  }
 }
 
-/** 构建子体素建筑细部：拆分为常驻层（门/雨棚/室外灯柱与灯笼/花丛）与屋顶层（L 形屋面/横梁/吊挂红石灯与室内灯笼） */
+/** 构建子体素建筑细部：拆分为常驻室外层、+Z 墙附属门与雨棚、四向屋檐与天花核心横梁/灯具 */
 function buildSubVoxelDetails(
   halfW: number,
   halfD: number
 ): {
   baseOpaqueGeo: THREE.BufferGeometry;
   baseEmissiveGeo: THREE.BufferGeometry;
-  roofOpaqueGeo: THREE.BufferGeometry;
-  roofEmissiveGeo: THREE.BufferGeometry;
+  wallPzDetailGeo: THREE.BufferGeometry;
+  roofEaveGeos: Record<OfficeWallDirection, THREE.BufferGeometry>;
+  roofCoreOpaqueGeo: THREE.BufferGeometry;
+  roofCoreEmissiveGeo: THREE.BufferGeometry;
   lanternLightPositions: [THREE.Vector3, THREE.Vector3];
 } {
-  const roofBuilder = new VoxelBoxBuilder();
+  const eaveBuilders: Record<OfficeWallDirection, VoxelBoxBuilder> = {
+    px: new VoxelBoxBuilder(),
+    nx: new VoxelBoxBuilder(),
+    pz: new VoxelBoxBuilder(),
+    nz: new VoxelBoxBuilder(),
+  };
+  const roofCoreBuilder = new VoxelBoxBuilder();
   const roofDetailBuilder = new VoxelBoxBuilder();
   const roofEmissiveBuilder = new VoxelBoxBuilder();
+  const wallPzDetailBuilder = new VoxelBoxBuilder();
   const baseDetailBuilder = new VoxelBoxBuilder();
 
-  // 1. L 形悬挑切面屋顶（y = 4.0..4.5 橡木半砖 + 外圈云杉屋檐 + 顶脊收边 -> 归入 roofGroup）
-  addTiledSlab(roofBuilder, -halfW - 1.5, halfW + 1.5, 4.0, 4.375, -halfD - 1.5, -halfD - 1.0, 'spruce_planks');
-  addTiledSlab(roofBuilder, -halfW - 1.5, -halfW - 1.0, 4.0, 4.375, -halfD - 1.0, halfD + 1.5, 'spruce_planks');
-  addTiledSlab(roofBuilder, halfW + 1.0, halfW + 1.5, 4.0, 4.375, -halfD - 1.0, -halfD + 1.5, 'spruce_planks');
-  addTiledSlab(roofBuilder, -halfW - 1.0, -halfW + 1.5, 4.0, 4.375, halfD + 1.0, halfD + 1.5, 'spruce_planks');
+  // 1. 四向悬挑屋檐（互不重叠，按墙体可见性同步显隐，仰角 > 55° 时随 roofGroup 整体隐藏）
+  // -Z 屋檐（全宽，含后角悬挑）
+  addTiledSlab(eaveBuilders.nz, -halfW - 1.5, halfW + 1.5, 4.0, 4.375, -halfD - 1.5, -halfD - 1.0, 'spruce_planks');
+  addTiledSlab(eaveBuilders.nz, -halfW - 1.0, halfW + 1.0, 4.0, 4.5, -halfD - 1.0, -halfD + 0.5, 'oak_planks');
+  addTiledSlab(eaveBuilders.nz, -halfW - 1.0, halfW + 1.0, 4.5, 4.75, -halfD - 1.0, -halfD, 'spruce_planks', { ny: true });
 
-  addTiledSlab(roofBuilder, -halfW - 1.0, halfW + 1.0, 4.0, 4.5, -halfD - 1.0, -halfD + 1.5, 'oak_planks');
-  addTiledSlab(roofBuilder, -halfW - 1.0, -halfW + 1.5, 4.0, 4.5, -halfD + 1.5, halfD + 1.0, 'oak_planks');
+  // +Z 屋檐（全宽，含前角悬挑）
+  addTiledSlab(eaveBuilders.pz, -halfW - 1.5, halfW + 1.5, 4.0, 4.375, halfD + 1.0, halfD + 1.5, 'spruce_planks');
+  addTiledSlab(eaveBuilders.pz, -halfW - 1.0, halfW + 1.0, 4.0, 4.5, halfD - 0.5, halfD + 1.0, 'oak_planks');
+  addTiledSlab(eaveBuilders.pz, -halfW - 1.0, halfW + 1.0, 4.5, 4.75, halfD, halfD + 1.0, 'spruce_planks', { ny: true });
 
-  addTiledSlab(roofBuilder, -halfW - 1.0, halfW + 1.0, 4.5, 4.75, -halfD - 1.0, -halfD, 'spruce_planks', { ny: true });
-  addTiledSlab(roofBuilder, -halfW - 1.0, -halfW, 4.5, 4.75, -halfD, halfD + 1.0, 'spruce_planks', { ny: true });
+  // -X 屋檐（夹在 -Z 与 +Z 屋檐之间，零重叠）
+  addTiledSlab(eaveBuilders.nx, -halfW - 1.5, -halfW - 1.0, 4.0, 4.375, -halfD - 1.0, halfD + 1.0, 'spruce_planks');
+  addTiledSlab(eaveBuilders.nx, -halfW - 1.0, -halfW + 0.5, 4.0, 4.5, -halfD + 0.5, halfD - 0.5, 'oak_planks');
+  addTiledSlab(eaveBuilders.nx, -halfW - 1.0, -halfW, 4.5, 4.75, -halfD, halfD, 'spruce_planks', { ny: true });
 
-  // 前左入户门雨棚小檐（常驻外墙，俯视时位于外侧不遮挡工位）
-  addTiledSlab(baseDetailBuilder, -halfW, -halfW + 3, 3.0, 3.25, halfD, halfD + 1.5, 'spruce_planks');
+  // +X 屋檐（对称夹在 -Z 与 +Z 屋檐之间，零重叠）
+  addTiledSlab(eaveBuilders.px, halfW + 1.0, halfW + 1.5, 4.0, 4.375, -halfD - 1.0, halfD + 1.0, 'spruce_planks');
+  addTiledSlab(eaveBuilders.px, halfW - 0.5, halfW + 1.0, 4.0, 4.5, -halfD + 0.5, halfD - 0.5, 'oak_planks');
+  addTiledSlab(eaveBuilders.px, halfW, halfW + 1.0, 4.5, 4.75, -halfD, halfD, 'spruce_planks', { ny: true });
 
-  // 2. 横跨房间的橡木天花横梁（归入 roofGroup，俯瞰模式随屋顶一并隐藏）
-  const beamSpecs: Array<{ zCenter: number; rightX: number }> = [
-    { zCenter: -halfD + 1.625, rightX: halfW },
-    { zCenter: halfD >= 4 ? -0.125 : 0.625, rightX: halfW - 1.0 },
+  // 前左入户门雨棚小檐（归入 +Z 墙体组，随 +Z 墙同步剖切）
+  addTiledSlab(wallPzDetailBuilder, -halfW, -halfW + 3, 3.0, 3.25, halfD, halfD + 1.5, 'spruce_planks');
+
+  // 2. 横跨房间的橡木天花横梁（归入 roofGroup，俯视仰角 > 55° 时整体隐藏）
+  const beamSpecs: Array<{ zCenter: number }> = [
+    { zCenter: -halfD + 1.625 },
+    { zCenter: halfD >= 4 ? -0.125 : 0.625 },
   ];
   if (halfD >= 4) {
-    beamSpecs.push({ zCenter: halfD - 1.875, rightX: 0.5 });
+    beamSpecs.push({ zCenter: halfD - 1.875 });
   }
 
   for (const beam of beamSpecs) {
     const z0 = beam.zCenter - 0.125;
     const z1 = beam.zCenter + 0.125;
-    addTiledSlab(roofBuilder, -halfW, -halfW + 1.5, 3.75, 4.0, z0, z1, 'spruce_planks', { py: true });
-    addTiledSlab(roofBuilder, -halfW + 1.5, beam.rightX, 3.875, 4.125, z0, z1, 'oak_planks');
+    addTiledSlab(roofCoreBuilder, -halfW, halfW, 3.875, 4.125, z0, z1, 'oak_planks');
   }
 
   // 3. 从天花横梁垂吊的发光红石灯（归入 roofGroup）
@@ -477,12 +535,12 @@ function buildSubVoxelDetails(
     });
   }
 
-  // 4. 经典 Minecraft 2 格高微内凹橡木门（常驻建筑层）
+  // 4. 经典 Minecraft 2 格高微内凹橡木门（归入 +Z 墙体组）
   const doorMinX = -halfW + 1;
   const doorMaxX = -halfW + 2;
   const doorMinZ = halfD + 0.28125;
   const doorMaxZ = halfD + 0.46875;
-  baseDetailBuilder.addBox({
+  wallPzDetailBuilder.addBox({
     minX: doorMinX,
     minY: 0,
     minZ: doorMinZ,
@@ -500,7 +558,7 @@ function buildSubVoxelDetails(
     hiddenFaces: { py: true, ny: true },
     floorY: 0,
   });
-  baseDetailBuilder.addBox({
+  wallPzDetailBuilder.addBox({
     minX: doorMinX,
     minY: 1,
     minZ: doorMinZ,
@@ -553,9 +611,9 @@ function buildSubVoxelDetails(
 
   // 6. 两盏 Minecraft 吊挂灯笼：室内吊挂灯笼归入 roofGroup，室外门廊灯笼归入常驻层
   const indoorLanternX = snapToVoxel(Math.max(0.75, halfW - 2.25));
-  const indoorLanternZ = -halfD + 0.875;
-  const indoorLanternHangY = 4.0;
-  const indoorLantern = createVoxelLanternGeometry(0.5);
+  const indoorLanternZ = beamSpecs[0].zCenter;
+  const indoorLanternHangY = 3.875;
+  const indoorLantern = createVoxelLanternGeometry(0.45);
   indoorLantern.frameGeo.translate(indoorLanternX, indoorLanternHangY, indoorLanternZ);
   indoorLantern.glowGeo.translate(indoorLanternX, indoorLanternHangY, indoorLanternZ);
 
@@ -601,11 +659,19 @@ function buildSubVoxelDetails(
     });
   }
 
-  const roofSlabGeo = roofBuilder.build(false);
+  const roofCoreBeamGeo = roofCoreBuilder.build(false);
   const roofDetailGeo = roofDetailBuilder.build(false);
   const roofLampGeo = roofEmissiveBuilder.build(false);
+  const wallPzDetailGeo = wallPzDetailBuilder.build(true);
   const baseDetailGeo = baseDetailBuilder.build(true);
   const flowerGeo = flowerBuilder.build(false);
+
+  const roofEaveGeos: Record<OfficeWallDirection, THREE.BufferGeometry> = {
+    px: eaveBuilders.px.build(false),
+    nx: eaveBuilders.nx.build(false),
+    pz: eaveBuilders.pz.build(false),
+    nz: eaveBuilders.nz.build(false),
+  };
 
   const baseOpaqueGeo = mergeVoxelGeometries([
     baseDetailGeo,
@@ -614,17 +680,17 @@ function buildSubVoxelDetails(
   ]);
   const baseEmissiveGeo = porchLantern.glowGeo;
 
-  const roofOpaqueGeo = mergeVoxelGeometries([
-    roofSlabGeo,
+  const roofCoreOpaqueGeo = mergeVoxelGeometries([
+    roofCoreBeamGeo,
     roofDetailGeo,
     indoorLantern.frameGeo,
   ]);
-  const roofEmissiveGeo = mergeVoxelGeometries([
+  const roofCoreEmissiveGeo = mergeVoxelGeometries([
     roofLampGeo,
     indoorLantern.glowGeo,
   ]);
 
-  roofSlabGeo.dispose();
+  roofCoreBeamGeo.dispose();
   roofDetailGeo.dispose();
   roofLampGeo.dispose();
   baseDetailGeo.dispose();
@@ -636,13 +702,24 @@ function buildSubVoxelDetails(
   return {
     baseOpaqueGeo,
     baseEmissiveGeo,
-    roofOpaqueGeo,
-    roofEmissiveGeo,
+    wallPzDetailGeo,
+    roofEaveGeos,
+    roofCoreOpaqueGeo,
+    roofCoreEmissiveGeo,
     lanternLightPositions,
   };
 }
 
-/** 根据房间尺寸重建体素世界网格，并同步屋顶层、贴墙铭牌、贴墙邮件终端与灯笼点光源位置 */
+/** 同步四面墙体与对应檐口的当前隐藏状态（供重建几何后立即复原） */
+function applyStoredWallVisibility(rig: OfficeRoomRig): void {
+  for (const dir of WALL_DIRECTIONS) {
+    const visible = dir !== rig.hiddenWallX && dir !== rig.hiddenWallZ;
+    rig.wallGroups[dir].visible = visible;
+    rig.roofEaveGroups[dir].visible = visible;
+  }
+}
+
+/** 根据房间尺寸重建体素世界网格，并同步 4 组独立墙体、屋顶层、贴墙铭牌/终端与灯笼点光源位置 */
 function rebuildRoomWorldGeometry(
   rig: OfficeRoomRig,
   roomWidth: number,
@@ -656,72 +733,133 @@ function rebuildRoomWorldGeometry(
   rig.outerHalfWidth = halfW + YARD_EXTEND + 1;
   rig.outerHalfDepth = halfD + YARD_EXTEND + 1;
 
+  const preserveNz = new Set<THREE.Object3D>([rig.plaqueGroup, rig.roomTerminalGroup]);
+  const preserveRoof = new Set<THREE.Object3D>([
+    rig.roofEaveGroups.px,
+    rig.roofEaveGroups.nx,
+    rig.roofEaveGroups.pz,
+    rig.roofEaveGroups.nz,
+  ]);
+
   clearDynamicWorldGroup(rig.dynamicWorldGroup);
-  clearDynamicWorldGroup(rig.roofGroup);
+  clearDynamicWorldGroup(rig.wallGroups.px);
+  clearDynamicWorldGroup(rig.wallGroups.nx);
+  clearDynamicWorldGroup(rig.wallGroups.pz);
+  clearDynamicWorldGroup(rig.wallGroups.nz, preserveNz);
+  clearDynamicWorldGroup(rig.roofGroup, preserveRoof);
+  for (const dir of WALL_DIRECTIONS) {
+    clearDynamicWorldGroup(rig.roofEaveGroups[dir]);
+  }
 
   const voxelMaterials = getSharedVoxelMaterialSet();
-  const grid = new VoxelGrid();
-  populateRoomVoxelGrid(grid, halfW, halfD);
-  const gridGeos = grid.buildGeometries();
+  const baseGrid = new VoxelGrid();
+  const wallGrids: Record<OfficeWallDirection, VoxelGrid> = {
+    px: new VoxelGrid(),
+    nx: new VoxelGrid(),
+    pz: new VoxelGrid(),
+    nz: new VoxelGrid(),
+  };
+  populateRoomVoxelGrids(baseGrid, wallGrids, halfW, halfD);
 
+  const baseGeos = baseGrid.buildGeometries();
+  const baseAoOccluder = (x: number, y: number, z: number): boolean => baseGrid.hasOccluding(x, y, z);
   const subDetails = buildSubVoxelDetails(halfW, halfD);
 
-  // 1. 常驻不透明建筑层（地形 + 墙体 + 地板 + 门廊 + 室外灯柱 + 花丛 -> 单次 Draw Call）
+  // 1. 常驻不透明建筑与景观层（地形 + 地板 + 书架 + 树干 + 室外灯柱 + 花丛，永远可见）
   const opaqueParts: THREE.BufferGeometry[] = [];
-  if (gridGeos.opaque) opaqueParts.push(gridGeos.opaque);
+  if (baseGeos.opaque) opaqueParts.push(baseGeos.opaque);
   opaqueParts.push(subDetails.baseOpaqueGeo);
   const mergedOpaque = mergeVoxelGeometries(opaqueParts);
   for (const part of opaqueParts) {
     part.dispose();
   }
   const opaqueMesh = new THREE.Mesh(mergedOpaque, voxelMaterials.opaque);
+  opaqueMesh.name = 'room-base-opaque';
   opaqueMesh.castShadow = true;
   opaqueMesh.receiveShadow = true;
   rig.dynamicWorldGroup.add(opaqueMesh);
 
-  // 2. 树叶镂空层（cutout）
-  if (gridGeos.cutout) {
-    const cutoutMesh = new THREE.Mesh(gridGeos.cutout, voxelMaterials.cutout);
+  // 2. 树叶镂空层（cutout，永远可见）
+  if (baseGeos.cutout) {
+    const cutoutMesh = new THREE.Mesh(baseGeos.cutout, voxelMaterials.cutout);
+    cutoutMesh.name = 'room-trees-cutout';
     cutoutMesh.castShadow = true;
     cutoutMesh.receiveShadow = true;
     rig.dynamicWorldGroup.add(cutoutMesh);
   }
 
-  // 3. 半透明水池（水面下沉 0.125 格呈现经典 Minecraft 凹陷池岸质感）
-  if (gridGeos.water) {
-    gridGeos.water.translate(0, -0.125, 0);
-    const waterMesh = new THREE.Mesh(gridGeos.water, voxelMaterials.water);
+  // 3. 半透明水池（水面下沉 0.125 格呈现经典 Minecraft 凹陷池岸质感，永远可见）
+  if (baseGeos.water) {
+    baseGeos.water.translate(0, -0.125, 0);
+    const waterMesh = new THREE.Mesh(baseGeos.water, voxelMaterials.water);
+    waterMesh.name = 'room-pond-water';
     waterMesh.receiveShadow = true;
     waterMesh.renderOrder = 1;
     rig.dynamicWorldGroup.add(waterMesh);
   }
 
-  // 4. 窗户半透明玻璃层
-  if (gridGeos.glass) {
-    const glassMesh = new THREE.Mesh(gridGeos.glass, voxelMaterials.glass);
-    glassMesh.renderOrder = 2;
-    rig.dynamicWorldGroup.add(glassMesh);
-  }
-
-  // 5. 常驻室外自发光体素（门廊灯笼暖光芯）
+  // 4. 常驻室外自发光体素（门廊灯笼暖光芯）
   const baseEmissiveParts: THREE.BufferGeometry[] = [];
-  if (gridGeos.emissive) baseEmissiveParts.push(gridGeos.emissive);
+  if (baseGeos.emissive) baseEmissiveParts.push(baseGeos.emissive);
   baseEmissiveParts.push(subDetails.baseEmissiveGeo);
   const mergedBaseEmissive = mergeVoxelGeometries(baseEmissiveParts);
   for (const part of baseEmissiveParts) {
     part.dispose();
   }
   const baseEmissiveMesh = new THREE.Mesh(mergedBaseEmissive, voxelMaterials.emissive);
+  baseEmissiveMesh.name = 'room-base-emissive';
   rig.dynamicWorldGroup.add(baseEmissiveMesh);
 
-  // 6. 独立屋顶层（overview 俯瞰时可直接整体隐藏，切回等距/走廊立即恢复，无需重建几何）
-  const roofOpaqueMesh = new THREE.Mesh(subDetails.roofOpaqueGeo, voxelMaterials.opaque);
-  roofOpaqueMesh.castShadow = true;
-  roofOpaqueMesh.receiveShadow = true;
-  rig.roofGroup.add(roofOpaqueMesh);
+  // 5. 四向独立墙体（±X / ±Z），每组按材质层合批（不透明石砖/原木 + 玻璃窗），各自保留门/窗缺口
+  for (const dir of WALL_DIRECTIONS) {
+    const wallGeos = wallGrids[dir].buildGeometries({ x: 0, y: 0, z: 0 }, baseAoOccluder);
+    const wallGroup = rig.wallGroups[dir];
 
-  const roofEmissiveMesh = new THREE.Mesh(subDetails.roofEmissiveGeo, voxelMaterials.emissive);
-  rig.roofGroup.add(roofEmissiveMesh);
+    let wallOpaqueGeo = wallGeos.opaque;
+    if (dir === 'pz') {
+      const pzParts: THREE.BufferGeometry[] = [];
+      if (wallOpaqueGeo) pzParts.push(wallOpaqueGeo);
+      pzParts.push(subDetails.wallPzDetailGeo);
+      wallOpaqueGeo = mergeVoxelGeometries(pzParts);
+      for (const part of pzParts) {
+        part.dispose();
+      }
+    }
+
+    if (wallOpaqueGeo) {
+      const wallOpaqueMesh = new THREE.Mesh(wallOpaqueGeo, voxelMaterials.opaque);
+      wallOpaqueMesh.name = `room-wall-${dir}-opaque`;
+      wallOpaqueMesh.castShadow = true;
+      wallOpaqueMesh.receiveShadow = true;
+      wallGroup.add(wallOpaqueMesh);
+    }
+
+    if (wallGeos.glass) {
+      const wallGlassMesh = new THREE.Mesh(wallGeos.glass, voxelMaterials.glass);
+      wallGlassMesh.name = `room-wall-${dir}-glass`;
+      wallGlassMesh.renderOrder = 2;
+      wallGroup.add(wallGlassMesh);
+    }
+  }
+
+  // 6. 独立屋顶层（四向檐口 + 天花横梁/红石灯/室内灯笼，仰角 > 55° 时整体零重建隐藏）
+  for (const dir of WALL_DIRECTIONS) {
+    const eaveMesh = new THREE.Mesh(subDetails.roofEaveGeos[dir], voxelMaterials.opaque);
+    eaveMesh.name = `room-roof-eave-${dir}`;
+    eaveMesh.castShadow = true;
+    eaveMesh.receiveShadow = true;
+    rig.roofEaveGroups[dir].add(eaveMesh);
+  }
+
+  const roofCoreOpaqueMesh = new THREE.Mesh(subDetails.roofCoreOpaqueGeo, voxelMaterials.opaque);
+  roofCoreOpaqueMesh.name = 'room-roof-core-opaque';
+  roofCoreOpaqueMesh.castShadow = true;
+  roofCoreOpaqueMesh.receiveShadow = true;
+  rig.roofGroup.add(roofCoreOpaqueMesh);
+
+  const roofCoreEmissiveMesh = new THREE.Mesh(subDetails.roofCoreEmissiveGeo, voxelMaterials.emissive);
+  roofCoreEmissiveMesh.name = 'room-roof-core-emissive';
+  rig.roofGroup.add(roofCoreEmissiveMesh);
 
   // 同步两处室内暖色灯笼点光源世界坐标
   rig.lanternLightPositions.length = 0;
@@ -730,16 +868,68 @@ function rebuildRoomWorldGeometry(
     subDetails.lanternLightPositions[1]
   );
 
-  // 同步两块贴墙面板位置（分别落在中央窗左右两侧的实心石砖墙面上，z = -halfD，高度 2.6875 不挡工位）
+  // 同步两块贴墙面板位置（挂在 -Z 后墙中央窗左右两侧实心石砖墙面上，z = -halfD，高度 2.6875 不挡工位）
   const leftBayCenterX = snapToVoxel((-halfW - 1.0) * 0.5);
   const rightBayCenterX = snapToVoxel((1.0 + halfW) * 0.5);
   rig.plaqueGroup.position.set(leftBayCenterX, 2.6875, -halfD);
   rig.roomTerminalGroup.position.set(rightBayCenterX, 2.6875, -halfD);
+
+  applyStoredWallVisibility(rig);
 }
 
-/** 切换屋顶与吊灯层可见性（零场景重建，专用于全景俯瞰预设透视室内） */
+/** 切换屋顶与吊灯层可见性（零场景重建） */
 export function setOfficeRoomRoofVisible(rig: OfficeRoomRig, visible: boolean): void {
   rig.roofGroup.visible = visible;
+}
+
+/**
+ * 按相机相对房间中心的方位角与仰角动态剖切墙体与屋顶（零几何重建、保留阴影与按需渲染）：
+ * - 隐藏朝向相机的两面墙（+X/-X 中近侧一面，+Z/-Z 中近侧一面）及对应悬挑屋檐；
+ * - 相机相对中心仰角 > 55° 时隐藏屋顶组，其余朝向恢复显示。
+ * 返回值表示本次更新是否改变了任意可见性状态。
+ */
+export function updateOfficeRoomDynamicCulling(
+  rig: OfficeRoomRig,
+  cameraPosition: THREE.Vector3
+): boolean {
+  const dx = cameraPosition.x;
+  const dz = cameraPosition.z;
+
+  if (dx > WALL_AXIS_HYSTERESIS) {
+    rig.hiddenWallX = 'px';
+  } else if (dx < -WALL_AXIS_HYSTERESIS) {
+    rig.hiddenWallX = 'nx';
+  }
+
+  if (dz > WALL_AXIS_HYSTERESIS) {
+    rig.hiddenWallZ = 'pz';
+  } else if (dz < -WALL_AXIS_HYSTERESIS) {
+    rig.hiddenWallZ = 'nz';
+  }
+
+  const horizDist = Math.hypot(dx, dz);
+  const elevationRad = Math.atan2(cameraPosition.y - ROOM_CENTER_Y, horizDist);
+  const roofVisible = elevationRad <= ROOF_HIDE_ELEVATION_RAD;
+
+  let changed = false;
+  for (const dir of WALL_DIRECTIONS) {
+    const visible = dir !== rig.hiddenWallX && dir !== rig.hiddenWallZ;
+    if (rig.wallGroups[dir].visible !== visible) {
+      rig.wallGroups[dir].visible = visible;
+      changed = true;
+    }
+    if (rig.roofEaveGroups[dir].visible !== visible) {
+      rig.roofEaveGroups[dir].visible = visible;
+      changed = true;
+    }
+  }
+
+  if (rig.roofGroup.visible !== roofVisible) {
+    rig.roofGroup.visible = roofVisible;
+    changed = true;
+  }
+
+  return changed;
 }
 
 export function createOfficeRoomRig(
@@ -748,8 +938,38 @@ export function createOfficeRoomRig(
 ): OfficeRoomRig {
   const root = new THREE.Group();
   const dynamicWorldGroup = new THREE.Group();
+  dynamicWorldGroup.name = 'room-dynamic-world';
+
+  const wallGroups: OfficeRoomWallGroups = {
+    px: new THREE.Group(),
+    nx: new THREE.Group(),
+    pz: new THREE.Group(),
+    nz: new THREE.Group(),
+  };
+  wallGroups.px.name = 'room-wall-group-px';
+  wallGroups.nx.name = 'room-wall-group-nx';
+  wallGroups.pz.name = 'room-wall-group-pz';
+  wallGroups.nz.name = 'room-wall-group-nz';
+
   const roofGroup = new THREE.Group();
+  roofGroup.name = 'room-roof-group';
+
+  const roofEaveGroups: OfficeRoomWallGroups = {
+    px: new THREE.Group(),
+    nx: new THREE.Group(),
+    pz: new THREE.Group(),
+    nz: new THREE.Group(),
+  };
+  roofEaveGroups.px.name = 'room-roof-eave-group-px';
+  roofEaveGroups.nx.name = 'room-roof-eave-group-nx';
+  roofEaveGroups.pz.name = 'room-roof-eave-group-pz';
+  roofEaveGroups.nz.name = 'room-roof-eave-group-nz';
+
   root.add(dynamicWorldGroup);
+  for (const dir of WALL_DIRECTIONS) {
+    root.add(wallGroups[dir]);
+    roofGroup.add(roofEaveGroups[dir]);
+  }
   root.add(roofGroup);
 
   const voxelMaterials = getSharedVoxelMaterialSet();
@@ -776,20 +996,23 @@ export function createOfficeRoomRig(
     color: palette.accentHex,
   });
 
+  // 铭牌与房间终端贴挂在 -Z 后墙内侧，随 -Z 墙同步隐藏并自动退出拾取
   const plaqueGroup = buildPlaqueGroup(plaqueScreenMaterial, voxelMaterials.opaque);
-  root.add(plaqueGroup);
+  wallGroups.nz.add(plaqueGroup);
 
   const terminalBuilt = buildRoomTerminalGroup(
     terminalScreenMaterial,
     terminalStatusMaterial,
     voxelMaterials.opaque
   );
-  root.add(terminalBuilt.group);
+  wallGroups.nz.add(terminalBuilt.group);
 
   const rig: OfficeRoomRig = {
     root,
     dynamicWorldGroup,
+    wallGroups,
     roofGroup,
+    roofEaveGroups,
     plaqueGroup,
     roomTerminalGroup: terminalBuilt.group,
     roomTerminalScreen: terminalBuilt.screenMesh,
@@ -803,6 +1026,8 @@ export function createOfficeRoomRig(
     currentDepth: 0,
     outerHalfWidth: 0,
     outerHalfDepth: 0,
+    hiddenWallX: 'px',
+    hiddenWallZ: 'pz',
   };
 
   rebuildRoomWorldGeometry(rig, DEFAULT_INIT_WIDTH, DEFAULT_INIT_DEPTH);
@@ -839,9 +1064,6 @@ export function syncOfficeRoomRig(
     rig.currentDepth = resolvedDepth;
   }
 
-  // 全景俯瞰时即时隐藏屋顶层，等距与走廊模式恢复显示
-  rig.roofGroup.visible = state.cameraPreset !== 'overview';
-
   getSharedVoxelMaterialSet().syncTheme(resolvedPalette.mode);
 
   rig.plaqueScreenMaterial.emissiveIntensity = resolvedPalette.mode === 'dark' ? 0.92 : 0.72;
@@ -868,6 +1090,10 @@ export function disposeOfficeRoomRig(rig: OfficeRoomRig): void {
   const disposedMaterials = new Set<THREE.Material>();
 
   clearDynamicWorldGroup(rig.dynamicWorldGroup);
+  for (const dir of WALL_DIRECTIONS) {
+    clearDynamicWorldGroup(rig.wallGroups[dir]);
+    clearDynamicWorldGroup(rig.roofEaveGroups[dir]);
+  }
   clearDynamicWorldGroup(rig.roofGroup);
 
   rig.root.traverse((obj) => {

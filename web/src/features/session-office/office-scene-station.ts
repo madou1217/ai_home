@@ -184,12 +184,13 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     occludes: false,
   });
 
-  // 2. 橡木书桌桌面（3 条拼板，顶面精确保持 DESK_SURFACE_Y = 0.746，厚 0.0625）
+  // 2. 橡木书桌桌面（4 条拼板，顶面精确保持 DESK_SURFACE_Y = 0.746，后沿延展至 -0.6875 稳妥承托放大后的单/双屏）
   const deskBottomY = DESK_SURFACE_Y - 0.0625; // 0.6835
   const plankStrips: Array<[number, number, VoxelTileId]> = [
-    [-0.50, -0.1875, 'oak_planks'],
-    [-0.1875, 0.1875, 'oak_planks'],
-    [0.1875, 0.50, 'oak_planks'],
+    [-0.6875, -0.375, 'oak_planks'],
+    [-0.375, -0.0625, 'oak_planks'],
+    [-0.0625, 0.21875, 'oak_planks'],
+    [0.21875, 0.50, 'oak_planks'],
   ];
   for (const [z0, z1, tile] of plankStrips) {
     builder.addBox({
@@ -211,17 +212,17 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
   builder.addBox({
     minX: -0.875,
     minY: deskBottomY - 0.125,
-    minZ: -0.46875,
+    minZ: -0.65625,
     maxX: 0.1875,
     maxY: deskBottomY,
-    maxZ: -0.40625,
+    maxZ: -0.59375,
     tiles: 'spruce_planks',
   });
 
   // 书桌 4 根方形原木桌腿（0.125 × 0.65225 × 0.125，落于地毯顶面之上）
   const legCorners: Array<[number, number]> = [
-    [-1.00, -0.50],
-    [0.1875, -0.50],
+    [-1.00, -0.6875],
+    [0.1875, -0.6875],
     [-1.00, 0.375],
     [0.1875, 0.375],
   ];
@@ -242,12 +243,12 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     });
   }
 
-  // 桌面正前方的深色橡木铭牌底框
+  // 桌面正前方的深色橡木铭牌底框（同步放大以匹配 48px 铭牌字号）
   builder.addBox({
-    minX: -0.50,
-    minY: deskBottomY - 0.015625,
+    minX: -0.5625,
+    minY: deskBottomY - 0.03125,
     minZ: 0.50,
-    maxX: -0.25,
+    maxX: -0.1875,
     maxY: DESK_SURFACE_Y,
     maxZ: 0.53125,
     tiles: 'dark_oak_planks',
@@ -480,21 +481,20 @@ export function createWorkstationPod(
   furnitureMesh.userData.hitKind = 'station';
   root.add(furnitureMesh);
 
-  // 桌面正前方的像素工位铭牌面
+  // 桌面正前方的像素工位铭牌面（尺寸 0.34 × 0.084，同步放大字号且保持从属于主显示器）
   const badgeBundle = createDeskBadgeBundle(anisotropy);
   const badgeFaceMat = new THREE.MeshBasicMaterial({ map: badgeBundle.texture });
-  const badgeFace = new THREE.Mesh(new THREE.PlaneGeometry(0.23, 0.068), badgeFaceMat);
-  badgeFace.position.set(-0.375, DESK_SURFACE_Y - 0.039, 0.533);
+  const badgeFace = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.084), badgeFaceMat);
+  badgeFace.position.set(-0.375, DESK_SURFACE_Y - 0.047, 0.533);
   badgeFace.userData.sessionKey = session.sessionKey;
   badgeFace.userData.hitKind = 'station';
   badgeFace.userData.noShadow = true;
   root.add(badgeFace);
 
-  // 2. 选中态发光描边方框（12 根细棱条紧凑贴合「桌面 + 显示器」，不包裹椅子与角色头顶空间）
-  // 桌面范围 x ∈ [-1.00, 0.3125]（宽 1.3125）、z ∈ [-0.50, 0.50]（深 1.00），y ∈ [0.66, 1.40]
-  const selectionFrameGeo = createWireframeBoxGeometry(1.40, 0.74, 1.08, 0.012, false);
+  // 2. 选中态发光描边方框（12 根细棱条紧凑包覆放大后的桌面与显示器，不裁剪屏幕顶边与摄像头）
+  const selectionFrameGeo = createWireframeBoxGeometry(1.44, 1.14, 1.26, 0.014, false);
   const selectionFrameMesh = new THREE.Mesh(selectionFrameGeo, selectionFrameMaterial);
-  selectionFrameMesh.position.set(-0.34375, 0.66, 0);
+  selectionFrameMesh.position.set(-0.34375, 0.64, -0.09375);
   selectionFrameMesh.visible = false;
   selectionFrameMesh.userData.noShadow = true;
   selectionFrameMesh.userData.sessionKey = session.sessionKey;

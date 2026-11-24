@@ -226,23 +226,30 @@ export function createVoxelLanternGeometry(chainLength = 0.5): {
   };
 }
 
-/** 构建漂浮在天空中的 Minecraft 方块云群（单次合批 Draw Call） */
-export function createBlockyCloudGeometry(
-  spanX = 56,
-  spanZ = 56,
-  cloudCount = 16,
+/** 构建漂浮在岛屿外侧环带中的紧凑 Minecraft 方块云群（单次合批 Draw Call，绝不覆盖岛屿正上方） */
+export function createBlockyCloudRingGeometry(
+  minVertexRadius: number,
+  maxVertexRadius: number,
+  cloudCount = 12,
   seed = 2026
 ): THREE.BufferGeometry {
   const rng = { value: seed >>> 0 };
   const boxes: SolidColorBoxInput[] = [];
+  const safeMinCenterR = Math.max(8, minVertexRadius + 2.6);
+  const safeMaxCenterR = Math.max(safeMinCenterR + 4, maxVertexRadius - 2.2);
+  const radiusSpan = safeMaxCenterR - safeMinCenterR;
+  const count = Math.max(1, cloudCount);
+  const sectorStep = (Math.PI * 2) / count;
 
-  for (let i = 0; i < cloudCount; i += 1) {
-    const cx = (seededNext(rng) - 0.5) * spanX;
-    const cz = (seededNext(rng) - 0.5) * spanZ;
-    const cy = Math.floor(seededNext(rng) * 3) * 0.5;
-    const w = 3 + Math.floor(seededNext(rng) * 5);
-    const d = 2 + Math.floor(seededNext(rng) * 3);
-    const h = 0.75;
+  for (let i = 0; i < count; i += 1) {
+    const angle = i * sectorStep + (seededNext(rng) - 0.5) * sectorStep * 0.62;
+    const radial = safeMinCenterR + seededNext(rng) * radiusSpan;
+    const cx = Math.cos(angle) * radial;
+    const cz = Math.sin(angle) * radial;
+    const cy = (seededNext(rng) - 0.5) * 1.4;
+    const w = 1.75 + seededNext(rng) * 1.5;
+    const d = 1.05 + seededNext(rng) * 0.95;
+    const h = 0.44;
 
     boxes.push({
       minX: cx - w * 0.5,
@@ -255,12 +262,12 @@ export function createBlockyCloudGeometry(
       shadeFaces: true,
     });
 
-    // 附加侧翼方块，还原经典不规则长条方块云造型
-    if (seededNext(rng) > 0.3) {
-      const wingW = Math.max(2, Math.floor(w * 0.6));
-      const wingD = Math.max(1, Math.floor(d * 0.7));
-      const offX = (seededNext(rng) > 0.5 ? 1 : -1) * (w * 0.25);
-      const offZ = (seededNext(rng) > 0.5 ? 1 : -1) * (d * 0.5);
+    // 附加小巧侧翼方块，保留经典方块云轮廓同时严格限制单块体积
+    if (seededNext(rng) > 0.35) {
+      const wingW = Math.max(0.95, w * (0.42 + seededNext(rng) * 0.16));
+      const wingD = Math.max(0.75, d * (0.5 + seededNext(rng) * 0.18));
+      const offX = (seededNext(rng) > 0.5 ? 1 : -1) * (w * 0.22);
+      const offZ = (seededNext(rng) > 0.5 ? 1 : -1) * (d * 0.38);
       boxes.push({
         minX: cx + offX - wingW * 0.5,
         minY: cy,
@@ -275,6 +282,18 @@ export function createBlockyCloudGeometry(
   }
 
   return createSolidColorVoxelGeometry(boxes);
+}
+
+/** 兼容入口：按外侧环带规则生成方块云几何 */
+export function createBlockyCloudGeometry(
+  spanX = 56,
+  spanZ = 56,
+  cloudCount = 16,
+  seed = 2026
+): THREE.BufferGeometry {
+  const outer = Math.max(24, Math.max(spanX, spanZ) * 0.65);
+  const inner = Math.max(16, outer * 0.5);
+  return createBlockyCloudRingGeometry(inner, outer, cloudCount, seed);
 }
 
 /** 构建夜晚高空方块星点群（单次合批 Draw Call） */

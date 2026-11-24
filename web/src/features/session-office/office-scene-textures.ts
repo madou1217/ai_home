@@ -8,14 +8,12 @@ import {
 } from './office-computer-state';
 import {
   drawMonitorWallpaperBackdrop,
-  MONITOR_TEXTURE_HEIGHT,
-  MONITOR_TEXTURE_WIDTH,
 } from './office-computer-wallpapers';
 
 /**
  * 像素风 2D Canvas 纹理生成器（显示器实时会话预览、墙面铭牌、房间终端、桌面工位牌）。
- * 所有贴图严格启用 NearestFilter、禁用 mipmap、SRGBColorSpace，移除圆角与模糊渐变，
- * 采用高对比深底亮字与 >= 16px 等宽/中文字体保证可读性。
+ * 所有贴图严格启用 NearestFilter、禁用 mipmap、SRGBColorSpace 与各向异性过滤（>= 4），
+ * 显示器采用 1024×640 高清画布、大号等宽像素字体（标题 >= 26px、正文 >= 20px）与 >= 7:1 深底亮字高对比排版。
  */
 
 export interface CanvasTextureBundle {
@@ -33,8 +31,11 @@ export interface MonitorScreenTextureOptions {
   rasterVersion: number;
 }
 
-const SCREEN_W = MONITOR_TEXTURE_WIDTH;
-const SCREEN_H = MONITOR_TEXTURE_HEIGHT;
+export const OFFICE_MONITOR_CANVAS_WIDTH = 1024;
+export const OFFICE_MONITOR_CANVAS_HEIGHT = 640;
+
+const SCREEN_W = OFFICE_MONITOR_CANVAS_WIDTH;
+const SCREEN_H = OFFICE_MONITOR_CANVAS_HEIGHT;
 
 const DEFAULT_SCREEN_OPTIONS: MonitorScreenTextureOptions = {
   power: 'on',
@@ -44,12 +45,24 @@ const DEFAULT_SCREEN_OPTIONS: MonitorScreenTextureOptions = {
   rasterVersion: 0,
 };
 
-const PIXEL_FONT_STACK = '"JetBrains Mono", "PingFang SC", "Microsoft YaHei", monospace';
+const PIXEL_FONT_STACK = '"JetBrains Mono", "Fira Code", "Consolas", "PingFang SC", "Microsoft YaHei", monospace';
+
+// 高对比深底亮字色板（在 #070c16 面板底色上全部满足 WCAG AAA 对比度 >= 7:1）
+const SCREEN_PANEL_BG = 'rgba(7, 12, 22, 0.95)';
+const SCREEN_HEADER_BG = '#070c16';
+const SCREEN_TEXT_BRIGHT = '#f8fbff';
+const SCREEN_TEXT_LABEL = '#c8dcf2';
+const SCREEN_CYAN_BRIGHT = '#67f3ff';
+const SCREEN_GREEN_BRIGHT = '#63f592';
+const SCREEN_AMBER_BRIGHT = '#ffd25a';
+const SCREEN_DANGER_BRIGHT = '#ff8ca3';
+const SCREEN_VIOLET_BRIGHT = '#d8b4fe';
+const SCREEN_EXITED_BRIGHT = '#cddcf0';
 
 function createPixelCanvasBundle(
   width: number,
   height: number,
-  _anisotropy: number
+  anisotropy: number
 ): CanvasTextureBundle {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -67,6 +80,7 @@ function createPixelCanvasBundle(
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
   texture.generateMipmaps = false;
+  texture.anisotropy = Math.max(4, Math.floor(anisotropy || 4));
 
   return {
     canvas,
@@ -183,74 +197,17 @@ function formatCompactPath(cwd: string): string {
 }
 
 function getAvailabilityBadge(
-  availability: SessionAvailability,
-  palette: OfficeScenePalette
+  availability: SessionAvailability
 ): { label: string; color: string; bg: string } {
   switch (availability) {
     case 'interactive':
-      return { label: '运行中', color: palette.successHex, bg: '#103020' };
+      return { label: '运行中', color: SCREEN_GREEN_BRIGHT, bg: '#092416' };
     case 'directory-only':
-      return { label: '目录在线', color: palette.accentHex, bg: '#0e2d3b' };
+      return { label: '目录在线', color: SCREEN_CYAN_BRIGHT, bg: '#082230' };
     case 'unavailable':
-      return { label: '标识保留', color: palette.warningHex, bg: '#38290d' };
+      return { label: '标识保留', color: SCREEN_AMBER_BRIGHT, bg: '#261a05' };
     case 'exited':
-      return { label: '已退出', color: palette.screenMutedHex, bg: '#1e2736' };
-  }
-}
-
-function resolveScreenPreview(session: OfficeSessionItem): {
-  kind: 'preview' | 'mail' | 'meta';
-  tag: string;
-  text: string;
-  subline: string;
-} {
-  const contentPreview = (session.contentPreview || '').trim();
-  const latestSnippet = (session.activity.latestSnippet || '').trim();
-  const identityLine = session.nativeSessionId || session.sessionKey;
-  const compactPath = formatCompactPath(session.cwd);
-
-  if (contentPreview) {
-    return {
-      kind: 'preview',
-      tag: 'LIVE PREVIEW',
-      text: contentPreview,
-      subline: compactPath || identityLine,
-    };
-  }
-  if (latestSnippet) {
-    return {
-      kind: 'mail',
-      tag: 'PEER MAIL',
-      text: latestSnippet,
-      subline: compactPath || identityLine,
-    };
-  }
-  return {
-    kind: 'meta',
-    tag: session.availability === 'unavailable'
-      ? 'PRESERVED ID'
-      : session.source === 'native'
-        ? 'NATIVE SESSION'
-        : 'WEB SHELL',
-    text: compactPath || '未登记工作目录',
-    subline: identityLine,
-  };
-}
-
-function getActivityLabel(session: OfficeSessionItem): string {
-  const { activity, inboxCount, sentCount } = session;
-  switch (activity.kind) {
-    case 'incoming':
-      return `收件 ${inboxCount}`;
-    case 'outgoing':
-      return `发件 ${sentCount}`;
-    case 'both':
-      return `收${inboxCount} / 发${sentCount}`;
-    case 'idle':
-      if (inboxCount > 0 || sentCount > 0) {
-        return `MAIL ${inboxCount}/${sentCount}`;
-      }
-      return session.source === 'native' ? 'NATIVE IDLE' : 'SHELL READY';
+      return { label: '已退出', color: SCREEN_EXITED_BRIGHT, bg: '#131c2b' };
   }
 }
 
@@ -260,57 +217,54 @@ function resolveWallpaperMetadata(wallpaperId: OfficeWallpaperId) {
     : OFFICE_WALLPAPER_META.aurora;
 }
 
-/** 绘制低分辨率像素化壁纸背景，保留真实壁纸配色与光栅订阅语义 */
+/** 绘制 1024×640 像素化壁纸背景（兼容光栅化接口），叠加深色遮罩确保高对比可读 */
 function paintPixelatedWallpaper(
   ctx: CanvasRenderingContext2D,
   wallpaperId: OfficeWallpaperId
 ): void {
   drawMonitorWallpaperBackdrop(ctx, wallpaperId, SCREEN_W, SCREEN_H);
-  // 叠加硬边深色像素遮罩提升前景文字对比度
-  ctx.fillStyle = 'rgba(8, 13, 24, 0.34)';
+  ctx.fillStyle = 'rgba(5, 9, 18, 0.56)';
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
-  // 像素网格扫描点缀
   ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
-  for (let y = 0; y < SCREEN_H; y += 8) {
+  for (let y = 0; y < SCREEN_H; y += 12) {
     ctx.fillRect(0, y, SCREEN_W, 2);
   }
 }
 
 function renderPoweredOffScreen(
   ctx: CanvasRenderingContext2D,
-  isSelected: boolean,
-  palette: OfficeScenePalette
+  isSelected: boolean
 ): void {
-  ctx.fillStyle = '#0c1018';
+  ctx.fillStyle = '#090e17';
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
   // 像素棋盘暗纹
-  ctx.fillStyle = '#111724';
-  for (let y = 16; y < SCREEN_H - 16; y += 32) {
-    for (let x = 16; x < SCREEN_W - 16; x += 32) {
-      ctx.fillRect(x, y, 16, 16);
+  ctx.fillStyle = '#0f1624';
+  for (let y = 24; y < SCREEN_H - 24; y += 48) {
+    for (let x = 24; x < SCREEN_W - 24; x += 48) {
+      ctx.fillRect(x, y, 24, 24);
     }
   }
 
   // 外框像素边框
-  ctx.strokeStyle = isSelected ? palette.accentHex : '#2d3b52';
-  ctx.lineWidth = isSelected ? 4 : 2;
-  ctx.strokeRect(8, 8, SCREEN_W - 16, SCREEN_H - 16);
+  ctx.strokeStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#354966';
+  ctx.lineWidth = isSelected ? 6 : 4;
+  ctx.strokeRect(10, 10, SCREEN_W - 20, SCREEN_H - 20);
 
   // 像素风格电源方块图标（全矩形，无圆弧）
   const cx = Math.floor(SCREEN_W / 2);
-  const cy = Math.floor(SCREEN_H / 2) - 18;
-  ctx.fillStyle = isSelected ? palette.accentHex : '#5d728f';
-  ctx.fillRect(cx - 20, cy - 12, 6, 32);
-  ctx.fillRect(cx + 14, cy - 12, 6, 32);
-  ctx.fillRect(cx - 20, cy + 14, 40, 6);
-  ctx.fillRect(cx - 3, cy - 22, 6, 22);
+  const cy = Math.floor(SCREEN_H / 2) - 34;
+  ctx.fillStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#8fa9c7';
+  ctx.fillRect(cx - 34, cy - 20, 10, 52);
+  ctx.fillRect(cx + 24, cy - 20, 10, 52);
+  ctx.fillRect(cx - 34, cy + 22, 68, 10);
+  ctx.fillRect(cx - 5, cy - 38, 10, 38);
 
-  ctx.font = `700 18px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = isSelected ? palette.accentHex : '#8ea5c2';
+  ctx.font = `700 36px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#c4d6ec';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('POWER OFF · CLICK TO BOOT', SCREEN_W / 2, cy + 52);
+  ctx.fillText('POWER OFF · CLICK TO BOOT', SCREEN_W / 2, cy + 88);
   ctx.textAlign = 'left';
 }
 
@@ -318,102 +272,98 @@ function renderSecondaryCompanionScreen(
   ctx: CanvasRenderingContext2D,
   session: OfficeSessionItem,
   isSelected: boolean,
-  palette: OfficeScenePalette,
   options: MonitorScreenTextureOptions
 ): void {
   const wpMeta = resolveWallpaperMetadata(options.wallpaper);
-  const availBadge = getAvailabilityBadge(session.availability, palette);
-  const providerLabel = session.provider || (session.kind === 'shell' ? 'shell' : 'cli');
+  const availBadge = getAvailabilityBadge(session.availability);
+  const displayCwd = formatCompactPath(session.cwd) || '未登记工作目录';
 
   // 外边框
-  ctx.strokeStyle = isSelected ? palette.accentHex : '#4b6588';
-  ctx.lineWidth = 4;
+  ctx.strokeStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#4c6d94';
+  ctx.lineWidth = 6;
   ctx.strokeRect(6, 6, SCREEN_W - 12, SCREEN_H - 12);
 
-  // 顶栏
-  drawPixelPanel(ctx, 10, 10, SCREEN_W - 20, 44, '#0b1220', '#2b4263', '#05080f', 2);
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = wpMeta.accentHex;
+  // 顶栏（副屏标题 + 会话名）
+  drawPixelPanel(ctx, 20, 20, SCREEN_W - 40, 114, SCREEN_HEADER_BG, '#3d5f8a', '#03060c', 4);
   ctx.textBaseline = 'middle';
-  ctx.fillText(`DISPLAY 2 // ${wpMeta.subtitle.toUpperCase()}`, 22, 32);
 
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = palette.screenTextHex;
+  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
+  ctx.fillText('DISPLAY 2', 42, 77);
+
+  ctx.font = `700 44px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
   ctx.textAlign = 'right';
-  ctx.fillText(truncateToWidth(ctx, session.shortLabel, 230), SCREEN_W - 22, 32);
+  ctx.fillText(truncateToWidth(ctx, session.shortLabel, SCREEN_W - 300), SCREEN_W - 42, 77);
   ctx.textAlign = 'left';
 
-  // 下半双信息方块卡片（保留上部壁纸视野）
-  const cardY = 148;
-  const cardH = 194;
-  const leftW = 340;
-  const rightX = 368;
-  const rightW = SCREEN_W - rightX - 18;
+  // 中部状态与工作目录卡
+  drawPixelPanel(ctx, 20, 156, SCREEN_W - 40, 214, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
 
-  drawPixelPanel(ctx, 18, cardY, leftW, cardH, 'rgba(9, 15, 28, 0.90)', '#345278', '#060a14', 2);
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = wpMeta.accentHex;
-  ctx.fillText('SESSION IDENTITY', 32, cardY + 26);
+  // 状态徽章
+  const statusPillW = 240;
+  drawPixelPanel(ctx, 42, 178, statusPillW, 56, availBadge.bg, availBadge.color, '#03060c', 3);
+  ctx.fillStyle = availBadge.color;
+  ctx.fillRect(58, 196, 18, 18);
+  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
+  ctx.fillText(availBadge.label, 88, 207);
 
-  const drawKv = (label: string, val: string, y: number, color: string) => {
-    ctx.font = `700 14px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = palette.screenMutedHex;
-    ctx.fillText(label, 32, y);
-    ctx.font = `600 16px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = color;
-    ctx.fillText(truncateToWidth(ctx, val, leftW - 94), 98, y);
-  };
+  ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_LABEL;
+  ctx.textAlign = 'right';
+  ctx.fillText(truncateToWidth(ctx, wpMeta.label, 300), SCREEN_W - 42, 207);
+  ctx.textAlign = 'left';
 
-  drawKv('KEY', session.sessionKey, cardY + 62, palette.screenTextHex);
-  drawKv(
-    'ID',
-    session.nativeSessionId || (session.source === 'web' ? 'Web Shell' : '—'),
-    cardY + 96,
-    palette.screenTextHex
-  );
-  drawKv('DIR', formatCompactPath(session.cwd) || '未指定目录', cardY + 130, palette.screenMutedHex);
-  drawKv('TYPE', `${providerLabel.toUpperCase()} · ${availBadge.label}`, cardY + 164, availBadge.color);
+  // CWD 正文
+  ctx.font = `700 26px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
+  ctx.fillText('CWD', 42, 266);
 
-  drawPixelPanel(ctx, rightX, cardY, rightW, cardH, 'rgba(9, 15, 28, 0.90)', '#345278', '#060a14', 2);
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = palette.accentHex;
-  ctx.fillText('PEER MAILBOX', rightX + 14, cardY + 26);
+  ctx.font = `700 34px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
+  const cwdLines = wrapCanvasLines(ctx, displayCwd, SCREEN_W - 140, 2);
+  let cwdY = 308;
+  for (const line of cwdLines) {
+    ctx.fillText(line, 42, cwdY);
+    cwdY += 44;
+  }
 
-  const drawStatLine = (label: string, val: string, y: number, color: string) => {
-    ctx.font = `600 16px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = palette.screenMutedHex;
-    ctx.fillText(label, rightX + 14, y);
-    ctx.font = `700 18px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = color;
+  // 下部双列收件 / 发件计数卡
+  const cardY = 392;
+  const cardH = 224;
+  const gap = 22;
+  const halfCardW = Math.floor((SCREEN_W - 40 - gap) / 2);
+
+  drawPixelPanel(ctx, 20, cardY, halfCardW, cardH, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
+  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_LABEL;
+  ctx.fillText('收件 INBOX', 44, cardY + 46);
+  ctx.font = `700 74px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = session.inboxCount > 0 ? SCREEN_CYAN_BRIGHT : SCREEN_TEXT_BRIGHT;
+  ctx.fillText(String(session.inboxCount), 44, cardY + 136);
+  if (session.pendingCount > 0) {
+    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
+    ctx.fillStyle = SCREEN_AMBER_BRIGHT;
     ctx.textAlign = 'right';
-    ctx.fillText(val, rightX + rightW - 14, y);
+    ctx.fillText(`待投 +${session.pendingCount}`, 20 + halfCardW - 24, cardY + 144);
     ctx.textAlign = 'left';
-  };
+  }
 
-  drawStatLine('收件', String(session.inboxCount), cardY + 62, palette.screenTextHex);
-  drawStatLine('发件', String(session.sentCount), cardY + 96, palette.screenTextHex);
-  drawStatLine(
-    '待投',
-    String(session.pendingCount),
-    cardY + 130,
-    session.pendingCount > 0 ? palette.warningHex : palette.screenMutedHex
-  );
-  drawStatLine(
-    '跨室',
-    String(session.crossProjectCount),
-    cardY + 164,
-    session.crossProjectCount > 0 ? palette.violetHex : palette.screenMutedHex
-  );
-
-  // 底栏
-  drawPixelPanel(ctx, 10, 352, SCREEN_W - 20, 38, '#0b1220', '#2b4263', '#05080f', 2);
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = wpMeta.accentHex;
-  ctx.fillText(`壁纸 ${wpMeta.label}`, 22, 371);
-  ctx.fillStyle = palette.screenTextHex;
-  ctx.textAlign = 'right';
-  ctx.fillText(getActivityLabel(session), SCREEN_W - 22, 371);
-  ctx.textAlign = 'left';
+  const rightX = 20 + halfCardW + gap;
+  drawPixelPanel(ctx, rightX, cardY, halfCardW, cardH, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
+  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_LABEL;
+  ctx.fillText('发件 SENT', rightX + 24, cardY + 46);
+  ctx.font = `700 74px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = session.activity.kind === 'outgoing' ? SCREEN_VIOLET_BRIGHT : SCREEN_TEXT_BRIGHT;
+  ctx.fillText(String(session.sentCount), rightX + 24, cardY + 136);
+  if (session.activity.failedCount > 0) {
+    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
+    ctx.fillStyle = SCREEN_DANGER_BRIGHT;
+    ctx.textAlign = 'right';
+    ctx.fillText(`失败 ${session.activity.failedCount}`, rightX + halfCardW - 24, cardY + 144);
+    ctx.textAlign = 'left';
+  }
 }
 
 export function createMonitorScreenBundle(anisotropy: number): CanvasTextureBundle {
@@ -435,16 +385,14 @@ export function updateMonitorScreenTexture(
     bundle.lastSignature = offSignature;
     const { ctx } = bundle;
     ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
-    renderPoweredOffScreen(ctx, isSelected, palette);
+    renderPoweredOffScreen(ctx, isSelected);
     bundle.texture.needsUpdate = true;
     return true;
   }
 
-  const modelLabel = (session.previewModel || session.model || '').trim();
-  const providerLabel = session.provider || (session.kind === 'shell' ? 'shell' : 'cli');
-  const preview = resolveScreenPreview(session);
+  const displayCwd = formatCompactPath(session.cwd) || '未登记工作目录';
   const signature = [
-    'on',
+    'on-v3',
     options.wallpaper,
     String(options.monitorIndex),
     options.dualMonitor ? '2' : '1',
@@ -453,22 +401,12 @@ export function updateMonitorScreenTexture(
     isSelected ? '1' : '0',
     session.shortLabel,
     session.availability,
-    providerLabel,
-    modelLabel,
-    session.sessionKey,
-    session.nativeSessionId || '',
-    session.cwd,
-    preview.kind,
-    preview.tag,
-    preview.text,
-    preview.subline,
+    displayCwd,
     String(session.inboxCount),
     String(session.sentCount),
     String(session.pendingCount),
     String(session.activity.failedCount),
-    String(session.crossProjectCount),
     session.activity.kind,
-    session.activity.recentPulse ? '1' : '0',
   ].join('|');
 
   if (bundle.lastSignature === signature) {
@@ -479,156 +417,136 @@ export function updateMonitorScreenTexture(
   const { ctx } = bundle;
   ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
 
-  // 绘制壁纸底图（支持光栅资产热刷新）
+  // 绘制 1024×640 壁纸底图（支持光栅资产热刷新）
   paintPixelatedWallpaper(ctx, options.wallpaper);
 
   if (options.monitorIndex === 1) {
-    renderSecondaryCompanionScreen(ctx, session, isSelected, palette, options);
+    renderSecondaryCompanionScreen(ctx, session, isSelected, options);
     bundle.texture.needsUpdate = true;
     return true;
   }
 
-  const wpMeta = resolveWallpaperMetadata(options.wallpaper);
-  const availBadge = getAvailabilityBadge(session.availability, palette);
+  const availBadge = getAvailabilityBadge(session.availability);
 
   // 像素外框
-  ctx.strokeStyle = isSelected ? palette.accentHex : '#4b6588';
-  ctx.lineWidth = isSelected ? 4 : 2;
+  ctx.strokeStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#4c6d94';
+  ctx.lineWidth = isSelected ? 6 : 4;
   ctx.strokeRect(6, 6, SCREEN_W - 12, SCREEN_H - 12);
 
-  // 顶部系统状态条
-  drawPixelPanel(ctx, 10, 10, SCREEN_W - 20, 48, '#0b1220', '#314c70', '#05080f', 2);
-
-  // 像素状态方块灯
-  ctx.fillStyle = availBadge.color;
-  ctx.fillRect(22, 26, 14, 14);
-
+  // 1. 顶部标题栏：会话名（54px 亮白粗体）+ 状态徽章（32px）
+  drawPixelPanel(ctx, 20, 20, SCREEN_W - 40, 124, SCREEN_HEADER_BG, isSelected ? SCREEN_CYAN_BRIGHT : '#3d5f8a', '#03060c', 4);
   ctx.textBaseline = 'middle';
-  const mailPillText = session.pendingCount > 0
-    ? `MAIL ${session.inboxCount}+${session.pendingCount}`
-    : `MAIL ${session.inboxCount}`;
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  const mailPillW = Math.max(108, Math.ceil(ctx.measureText(mailPillText).width) + 22);
-  const titleMaxW = SCREEN_W - 64 - mailPillW - 24;
 
-  ctx.font = `700 22px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = palette.screenTextHex;
-  ctx.fillText(truncateToWidth(ctx, session.shortLabel, titleMaxW), 46, 34);
+  // 状态指示方块灯
+  ctx.fillStyle = availBadge.color;
+  ctx.fillRect(42, 68, 24, 24);
 
-  // 右侧邮件像素徽章
-  const mailX = SCREEN_W - 20 - mailPillW;
-  const hasActiveMail = session.pendingCount > 0 || session.activity.unreadOrDeliveredCount > 0;
+  // 右侧状态徽章
+  ctx.font = `700 32px ${PIXEL_FONT_STACK}`;
+  const statusPillW = Math.max(196, Math.ceil(ctx.measureText(availBadge.label).width) + 48);
+  const statusPillX = SCREEN_W - 38 - statusPillW;
+  drawPixelPanel(ctx, statusPillX, 46, statusPillW, 70, availBadge.bg, availBadge.color, '#03060c', 3);
+  ctx.fillStyle = availBadge.color;
+  ctx.textAlign = 'center';
+  ctx.fillText(availBadge.label, statusPillX + statusPillW / 2, 82);
+  ctx.textAlign = 'left';
+
+  // 会话名主标题（54px 等宽像素粗体，深底亮白高对比）
+  const titleMaxW = statusPillX - 102;
+  ctx.font = `700 54px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
+  ctx.fillText(truncateToWidth(ctx, session.shortLabel, titleMaxW), 84, 82);
+
+  // 2. 中部工作目录卡（CWD 38px 亮字，最多 2 行清晰排版）
+  const cwdCardY = 166;
+  const cwdCardH = 228;
+  drawPixelPanel(ctx, 20, cwdCardY, SCREEN_W - 40, cwdCardH, SCREEN_PANEL_BG, '#486f9e', '#03060c', 4);
+
+  ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
+  ctx.fillText('CWD', 46, cwdCardY + 42);
+
+  ctx.fillStyle = '#2e4a6e';
+  ctx.fillRect(42, cwdCardY + 70, SCREEN_W - 84, 4);
+
+  ctx.font = `700 38px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = session.availability === 'exited' ? SCREEN_EXITED_BRIGHT : SCREEN_TEXT_BRIGHT;
+  const cwdLines = wrapCanvasLines(ctx, displayCwd, SCREEN_W - 92, 2);
+  let lineY = cwdCardY + 122;
+  for (const line of cwdLines) {
+    ctx.fillText(line, 46, lineY);
+    lineY += 54;
+  }
+
+  // 3. 底部收件 / 发件大号计数面板（无杂乱小字，仅保留可读字段）
+  const statY = 416;
+  const statH = 200;
+  const statGap = 22;
+  const statW = Math.floor((SCREEN_W - 40 - statGap) / 2);
+
+  // 收件卡
+  const hasInboxAlert = session.pendingCount > 0;
   drawPixelPanel(
     ctx,
-    mailX,
-    18,
-    mailPillW,
-    32,
-    hasActiveMail ? '#103547' : '#141e30',
-    hasActiveMail ? palette.accentHex : '#3a5478',
-    '#070c14',
-    2
+    20,
+    statY,
+    statW,
+    statH,
+    SCREEN_PANEL_BG,
+    hasInboxAlert ? SCREEN_AMBER_BRIGHT : '#486f9e',
+    '#03060c',
+    4
   );
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = hasActiveMail ? palette.accentHex : palette.screenTextHex;
-  ctx.textAlign = 'center';
-  ctx.fillText(mailPillText, mailX + mailPillW / 2, 35);
-  ctx.textAlign = 'left';
+  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_LABEL;
+  ctx.fillText('收件 INBOX', 46, statY + 46);
 
-  // 中央像素终端主窗口
-  const winX = 18;
-  const winY = 68;
-  const winW = SCREEN_W - 36;
-  const winH = 274;
-  const winAccent = preview.kind === 'preview'
-    ? palette.accentHex
-    : preview.kind === 'mail'
-      ? palette.violetHex
-      : '#4b6588';
-  drawPixelPanel(ctx, winX, winY, winW, winH, 'rgba(9, 15, 28, 0.90)', winAccent, '#050912', 2);
+  ctx.font = `700 72px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = session.inboxCount > 0 ? SCREEN_CYAN_BRIGHT : SCREEN_TEXT_BRIGHT;
+  ctx.fillText(String(session.inboxCount), 46, statY + 132);
 
-  // 标签行（全部硬边矩形）
-  let chipX = winX + 14;
-  const chipY = winY + 12;
-  const chipH = 30;
-  const drawChip = (text: string, fg: string, bg: string, border: string, maxW: number) => {
-    ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-    const label = truncateToWidth(ctx, text, maxW - 18);
-    const w = Math.min(maxW, Math.ceil(ctx.measureText(label).width) + 18);
-    if (chipX + w > winX + winW - 14) return;
-    drawPixelPanel(ctx, chipX, chipY, w, chipH, bg, border, '#060a14', 2);
-    ctx.fillStyle = fg;
-    ctx.fillText(label, chipX + 9, chipY + chipH / 2 + 1);
-    chipX += w + 8;
-  };
-
-  drawChip(providerLabel.toUpperCase(), palette.accentHex, '#0e2c3d', palette.accentHex, 150);
-  if (modelLabel) {
-    drawChip(modelLabel, palette.screenTextHex, '#182438', '#46648a', 220);
-  }
-  drawChip(availBadge.label, availBadge.color, availBadge.bg, availBadge.color, 130);
-
-  // 预览类别 + 路径
-  const tagY = winY + 62;
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = winAccent;
-  ctx.fillText(preview.tag, winX + 14, tagY);
-
-  if (preview.subline) {
-    ctx.font = `600 16px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = palette.screenMutedHex;
-    const tagW = ctx.measureText(preview.tag).width;
-    const subMaxW = winW - 44 - tagW;
-    if (subMaxW > 80) {
-      ctx.textAlign = 'right';
-      ctx.fillText(truncateToWidth(ctx, preview.subline, subMaxW), winX + winW - 14, tagY);
-      ctx.textAlign = 'left';
-    }
+  if (session.pendingCount > 0) {
+    const pendText = `待投 +${session.pendingCount}`;
+    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
+    const pendW = Math.ceil(ctx.measureText(pendText).width) + 32;
+    const pendX = 20 + statW - 22 - pendW;
+    drawPixelPanel(ctx, pendX, statY + 104, pendW, 56, '#261a05', SCREEN_AMBER_BRIGHT, '#03060c', 3);
+    ctx.fillStyle = SCREEN_AMBER_BRIGHT;
+    ctx.textAlign = 'center';
+    ctx.fillText(pendText, pendX + pendW / 2, statY + 133);
+    ctx.textAlign = 'left';
   }
 
-  // 分隔线
-  ctx.fillStyle = '#2b4263';
-  ctx.fillRect(winX + 12, tagY + 16, winW - 24, 2);
-
-  // 会话真实内容正文（清晰 18px 亮字）
-  ctx.font = `600 18px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = session.availability === 'exited' ? palette.screenMutedHex : palette.screenTextHex;
-  const bodyLines = wrapCanvasLines(ctx, preview.text, winW - 32, 5);
-  let lineY = tagY + 42;
-  for (const line of bodyLines) {
-    ctx.fillText(line, winX + 16, lineY);
-    lineY += 32;
-  }
-
-  // 底部任务栏
-  drawPixelPanel(ctx, 10, 352, SCREEN_W - 20, 38, '#0b1220', '#314c70', '#05080f', 2);
-  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = palette.screenTextHex;
-  ctx.fillText(getActivityLabel(session), 22, 371);
-
-  ctx.fillStyle = wpMeta.accentHex;
-  ctx.textAlign = 'center';
-  ctx.fillText(
-    `${wpMeta.label}${options.dualMonitor ? ' · 双屏' : ''}`,
-    SCREEN_W / 2,
-    371
+  // 发件卡
+  const rightStatX = 20 + statW + statGap;
+  drawPixelPanel(
+    ctx,
+    rightStatX,
+    statY,
+    statW,
+    statH,
+    SCREEN_PANEL_BG,
+    session.activity.failedCount > 0 ? SCREEN_DANGER_BRIGHT : '#486f9e',
+    '#03060c',
+    4
   );
-  ctx.textAlign = 'left';
+  ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_LABEL;
+  ctx.fillText('发件 SENT', rightStatX + 26, statY + 46);
+
+  ctx.font = `700 72px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = session.activity.kind === 'outgoing' ? SCREEN_VIOLET_BRIGHT : SCREEN_TEXT_BRIGHT;
+  ctx.fillText(String(session.sentCount), rightStatX + 26, statY + 132);
 
   if (session.activity.failedCount > 0) {
-    ctx.fillStyle = palette.dangerHex;
-    ctx.textAlign = 'right';
-    ctx.fillText(`失败 ${session.activity.failedCount}`, SCREEN_W - 22, 371);
-    ctx.textAlign = 'left';
-  } else if (session.crossProjectCount > 0) {
-    ctx.fillStyle = palette.violetHex;
-    ctx.textAlign = 'right';
-    ctx.fillText(`跨室 ${session.crossProjectCount}`, SCREEN_W - 22, 371);
-    ctx.textAlign = 'left';
-  } else {
-    ctx.fillStyle = isSelected ? palette.accentHex : palette.screenMutedHex;
-    ctx.textAlign = 'right';
-    ctx.fillText(isSelected ? 'ACTIVE' : 'CLICK OPEN', SCREEN_W - 22, 371);
+    const failText = `失败 ${session.activity.failedCount}`;
+    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
+    const failW = Math.ceil(ctx.measureText(failText).width) + 32;
+    const failX = rightStatX + statW - 22 - failW;
+    drawPixelPanel(ctx, failX, statY + 104, failW, 56, '#290d16', SCREEN_DANGER_BRIGHT, '#03060c', 3);
+    ctx.fillStyle = SCREEN_DANGER_BRIGHT;
+    ctx.textAlign = 'center';
+    ctx.fillText(failText, failX + failW / 2, statY + 133);
     ctx.textAlign = 'left';
   }
 
@@ -636,9 +554,9 @@ export function updateMonitorScreenTexture(
   return true;
 }
 
-/** 桌面工位像素铭牌 */
+/** 桌面工位像素铭牌（同步放大画布与字号，保持清晰协调且不压过主显示器） */
 export function createDeskBadgeBundle(anisotropy: number): CanvasTextureBundle {
-  return createPixelCanvasBundle(256, 80, anisotropy);
+  return createPixelCanvasBundle(384, 120, anisotropy);
 }
 
 export function updateDeskBadgeTexture(
@@ -647,22 +565,22 @@ export function updateDeskBadgeTexture(
   accentHex: string,
   palette: OfficeScenePalette
 ): boolean {
-  const sig = `${palette.mode}|${badgeCode}|${accentHex}`;
+  const sig = `v3|${palette.mode}|${badgeCode}|${accentHex}`;
   if (bundle.lastSignature === sig) return false;
   bundle.lastSignature = sig;
 
   const { ctx } = bundle;
   // 深色橡木告示牌底色 + 像素描边
-  drawPixelPanel(ctx, 0, 0, 256, 80, '#2a1c10', '#8c643b', '#170f08', 6);
+  drawPixelPanel(ctx, 0, 0, 384, 120, '#24170c', '#8c643b', '#140c06', 8);
   ctx.strokeStyle = accentHex;
-  ctx.lineWidth = 4;
-  ctx.strokeRect(10, 10, 236, 60);
+  ctx.lineWidth = 5;
+  ctx.strokeRect(14, 14, 356, 92);
 
-  ctx.font = `700 32px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = '#fff8e6';
+  ctx.font = `700 48px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = '#fff9eb';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(badgeCode || 'BAY', 128, 42);
+  ctx.fillText(truncateToWidth(ctx, badgeCode || 'BAY', 324), 192, 62);
   ctx.textAlign = 'left';
 
   bundle.texture.needsUpdate = true;

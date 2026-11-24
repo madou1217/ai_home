@@ -323,7 +323,8 @@ export class VoxelGrid {
   }
 
   public buildGeometries(
-    origin: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 }
+    origin: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 },
+    externalAoOccluder?: (x: number, y: number, z: number) => boolean
   ): Record<VoxelRenderLayer, THREE.BufferGeometry | null> {
     const layerBuffers: Record<VoxelRenderLayer, RawBuffers> = {
       opaque: createRawBuffers(),
@@ -332,6 +333,8 @@ export class VoxelGrid {
       water: createRawBuffers(),
       emissive: createRawBuffers(),
     };
+    const isAoOccluded = (x: number, y: number, z: number): boolean =>
+      this.hasOccluding(x, y, z) || (externalAoOccluder ? externalAoOccluder(x, y, z) : false);
 
     for (const cell of this.cells.values()) {
       const buf = layerBuffers[cell.layer];
@@ -400,17 +403,17 @@ export class VoxelGrid {
           if (cell.layer === 'emissive' || cell.layer === 'water') {
             ao[c] = 1.0;
           } else {
-            const s1 = this.hasOccluding(
+            const s1 = isAoOccluded(
               cell.x + corner.side1[0],
               cell.y + corner.side1[1],
               cell.z + corner.side1[2]
             );
-            const s2 = this.hasOccluding(
+            const s2 = isAoOccluded(
               cell.x + corner.side2[0],
               cell.y + corner.side2[1],
               cell.z + corner.side2[2]
             );
-            const cn = this.hasOccluding(
+            const cn = isAoOccluded(
               cell.x + corner.corner[0],
               cell.y + corner.corner[1],
               cell.z + corner.corner[2]

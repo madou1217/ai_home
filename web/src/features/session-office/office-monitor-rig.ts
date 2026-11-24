@@ -26,17 +26,27 @@ import { createWireframeBoxGeometry } from './office-voxel-kit';
 
 export const DESK_SURFACE_Y = 0.746;
 
-const MONITOR_SCREEN_CENTER_OFFSET_Y = 0.34;
-const ARM_HUB_X = -0.46;
-const ARM_HUB_Z = -0.42;
+/** 单屏显示平面尺寸（1.05 × 0.65625 ≈ 1.05 × 0.66，严格 16:10 对应 1024×640） */
+export const MONITOR_SCREEN_WIDTH = 1.05;
+export const MONITOR_SCREEN_HEIGHT = 0.65625;
+export const MONITOR_SCREEN_CENTER_OFFSET_Y = 0.53125;
+/** 双屏并排缩放系数：保持每块屏面积仍大于旧单屏，且兼容历史 OfficeMonitorTransform(x,y,z,yaw) 坐标语义 */
+export const DUAL_MONITOR_SCALE = 0.66;
 
-/** 垂直立柱夹持范围（相对 DESK_SURFACE_Y），覆盖全部 y ∈ [-0.06, 0.24] + 0.34 = [0.28, 0.58] */
-const MAST_TOP_Y = 0.625;
-const COLLAR_MIN_LOCAL_Y = 0.09375;
-const COLLAR_MAX_LOCAL_Y = 0.59375;
+const MONITOR_BEZEL_RIM = 0.0625;
+const MONITOR_HOUSING_HALF_W = MONITOR_SCREEN_WIDTH * 0.5 + MONITOR_BEZEL_RIM; // 0.5875 (总宽 1.175)
+const MONITOR_HOUSING_HALF_H = MONITOR_SCREEN_HEIGHT * 0.5 + MONITOR_BEZEL_RIM; // 0.390625 (总高 0.78125)
+
+const ARM_HUB_X = -0.46;
+const ARM_HUB_Z = -0.58;
+
+/** 垂直立柱夹持范围（相对 DESK_SURFACE_Y），覆盖全部 y ∈ [-0.06, 0.24] + 0.53125 = [0.47125, 0.77125] */
+const MAST_TOP_Y = 0.84375;
+const COLLAR_MIN_LOCAL_Y = 0.125;
+const COLLAR_MAX_LOCAL_Y = 0.8125;
 
 /** VESA 接驳锚点位于后背凸包与铁块 VESA 座交界处 */
-const VESA_BACK_OFFSET_Z = -0.15625;
+const VESA_BACK_OFFSET_Z = -0.203125;
 const ARM_SEGMENT_EPS = 0.01;
 const COLLAR_DEDUP_EPS = 0.002;
 
@@ -92,33 +102,33 @@ function tagStationTree(object: THREE.Object3D, sessionKey: string): void {
   });
 }
 
-/** 构建单个显示器的合批体素外壳（背板、4 条内凹前边框、后背凸包、VESA 铁块及主屏方块摄像头） */
+/** 构建单个显示器的合批体素外壳（按比例加粗背板、4 条内凹前边框、后背凸包、VESA 铁块及主屏方块摄像头） */
 function createMonitorHousingGeometry(index: OfficeMonitorIndex): THREE.BufferGeometry {
   const builder = new VoxelBoxBuilder();
   const cy = MONITOR_SCREEN_CENTER_OFFSET_Y;
-  const halfW = 0.34375; // 总宽 0.6875
-  const halfH = 0.234375; // 总高 0.46875
-  const rim = 0.046875;
+  const halfW = MONITOR_HOUSING_HALF_W;
+  const halfH = MONITOR_HOUSING_HALF_H;
+  const rim = MONITOR_BEZEL_RIM;
 
-  // 主背板：0.6875 × 0.46875 × 0.078125（z ∈ [-0.09375, -0.015625]）
+  // 主背板：1.175 × 0.78125 × 0.109375（z ∈ [-0.125, -0.015625]）
   builder.addBox({
     minX: -halfW,
     minY: cy - halfH,
-    minZ: -0.09375,
+    minZ: -0.125,
     maxX: halfW,
     maxY: cy + halfH,
     maxZ: -0.015625,
     tiles: { pz: 'screen_off', all: 'dark_iron' },
   });
 
-  // 上/下/左/右 4 条内凹前边框（延伸至 z = +0.015625，形成厚实像素显示框）
+  // 上/下/左/右 4 条加粗内凹前边框（延伸至 z = +0.0234375）
   builder.addBox({
     minX: -halfW,
     minY: cy + halfH - rim,
     minZ: -0.015625,
     maxX: halfW,
     maxY: cy + halfH,
-    maxZ: 0.015625,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true },
   });
@@ -128,7 +138,7 @@ function createMonitorHousingGeometry(index: OfficeMonitorIndex): THREE.BufferGe
     minZ: -0.015625,
     maxX: halfW,
     maxY: cy - halfH + rim,
-    maxZ: 0.015625,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true },
   });
@@ -138,7 +148,7 @@ function createMonitorHousingGeometry(index: OfficeMonitorIndex): THREE.BufferGe
     minZ: -0.015625,
     maxX: -halfW + rim,
     maxY: cy + halfH - rim,
-    maxZ: 0.015625,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true, py: true, ny: true },
   });
@@ -148,31 +158,31 @@ function createMonitorHousingGeometry(index: OfficeMonitorIndex): THREE.BufferGe
     minZ: -0.015625,
     maxX: halfW,
     maxY: cy + halfH - rim,
-    maxZ: 0.015625,
+    maxZ: 0.0234375,
     tiles: 'dark_iron',
     hiddenFaces: { nz: true, py: true, ny: true },
   });
 
-  // 后背电子凸包：0.3125 × 0.25 × 0.0625（z ∈ [-0.15625, -0.09375]）
+  // 后背电子凸包：0.46875 × 0.34375 × 0.078125（z ∈ [-0.203125, -0.125]）
   builder.addBox({
-    minX: -0.15625,
-    minY: cy - 0.125,
-    minZ: -0.15625,
-    maxX: 0.15625,
-    maxY: cy + 0.125,
-    maxZ: -0.09375,
+    minX: -0.234375,
+    minY: cy - 0.171875,
+    minZ: -0.203125,
+    maxX: 0.234375,
+    maxY: cy + 0.171875,
+    maxZ: -0.125,
     tiles: 'dark_iron',
     hiddenFaces: { pz: true },
   });
 
-  // 铁块 VESA 安装座：0.125 × 0.125 × 0.03125
+  // 铁块 VESA 安装座：0.1875 × 0.1875 × 0.046875
   builder.addBox({
-    minX: -0.0625,
-    minY: cy - 0.0625,
-    minZ: -0.1875,
-    maxX: 0.0625,
-    maxY: cy + 0.0625,
-    maxZ: -0.15625,
+    minX: -0.09375,
+    minY: cy - 0.09375,
+    minZ: -0.25,
+    maxX: 0.09375,
+    maxY: cy + 0.09375,
+    maxZ: -0.203125,
     tiles: 'iron_block',
     hiddenFaces: { pz: true },
   });
@@ -180,22 +190,22 @@ function createMonitorHousingGeometry(index: OfficeMonitorIndex): THREE.BufferGe
   // 主屏顶部居中方块摄像头砖块
   if (index === 0) {
     builder.addBox({
-      minX: -0.0625,
+      minX: -0.078125,
       minY: cy + halfH,
-      minZ: -0.046875,
-      maxX: 0.0625,
-      maxY: cy + halfH + 0.0625,
-      maxZ: 0.015625,
+      minZ: -0.0625,
+      maxX: 0.078125,
+      maxY: cy + halfH + 0.078125,
+      maxZ: 0.0234375,
       tiles: 'dark_iron',
       hiddenFaces: { ny: true },
     });
     builder.addBox({
-      minX: -0.015625,
+      minX: -0.0234375,
       minY: cy + halfH + 0.015625,
-      minZ: 0.015625,
-      maxX: 0.015625,
-      maxY: cy + halfH + 0.046875,
-      maxZ: 0.03125,
+      minZ: 0.0234375,
+      maxX: 0.0234375,
+      maxY: cy + halfH + 0.0625,
+      maxZ: 0.046875,
       tiles: { pz: 'screen_off', all: 'iron_block' },
       occludes: false,
       hiddenFaces: { nz: true },
@@ -205,66 +215,69 @@ function createMonitorHousingGeometry(index: OfficeMonitorIndex): THREE.BufferGe
   return builder.build(true);
 }
 
-/** 将桌沿夹具、立柱与全部激活显示器的严格 0° 轴对齐曼哈顿支臂合批为单一 BufferGeometry */
+/** 将加粗桌沿夹具、立柱与全部激活显示器的严格 0° 轴对齐曼哈顿支臂合批为单一 BufferGeometry */
 function buildMergedArmStructureGeometry(
   transforms: readonly [OfficeMonitorTransform, OfficeMonitorTransform],
   dualMonitor: boolean
 ): THREE.BufferGeometry {
   const builder = new VoxelBoxBuilder();
 
-  // 1. 桌沿 C 型方块夹具与方形立柱（位于 (ARM_HUB_X, DESK_SURFACE_Y, ARM_HUB_Z)）
+  // 1. 按比例加粗的桌沿 C 型方块夹具与方形立柱（位于 (ARM_HUB_X, DESK_SURFACE_Y, ARM_HUB_Z)）
   builder.addBox({
-    minX: ARM_HUB_X - 0.0625,
+    minX: ARM_HUB_X - 0.09375,
     minY: DESK_SURFACE_Y,
-    minZ: ARM_HUB_Z - 0.0625,
-    maxX: ARM_HUB_X + 0.0625,
-    maxY: DESK_SURFACE_Y + 0.03125,
-    maxZ: ARM_HUB_Z + 0.0625,
+    minZ: ARM_HUB_Z - 0.09375,
+    maxX: ARM_HUB_X + 0.09375,
+    maxY: DESK_SURFACE_Y + 0.046875,
+    maxZ: ARM_HUB_Z + 0.09375,
     tiles: 'iron_block',
     floorY: DESK_SURFACE_Y,
   });
   builder.addBox({
-    minX: ARM_HUB_X - 0.046875,
-    minY: DESK_SURFACE_Y - 0.09375,
-    minZ: ARM_HUB_Z - 0.0625,
-    maxX: ARM_HUB_X + 0.046875,
+    minX: ARM_HUB_X - 0.0625,
+    minY: DESK_SURFACE_Y - 0.109375,
+    minZ: ARM_HUB_Z - 0.09375,
+    maxX: ARM_HUB_X + 0.0625,
     maxY: DESK_SURFACE_Y,
-    maxZ: ARM_HUB_Z - 0.03125,
+    maxZ: ARM_HUB_Z - 0.046875,
     tiles: 'dark_iron',
     hiddenFaces: { py: true },
   });
   builder.addBox({
-    minX: ARM_HUB_X - 0.046875,
-    minY: DESK_SURFACE_Y - 0.09375,
-    minZ: ARM_HUB_Z - 0.03125,
-    maxX: ARM_HUB_X + 0.046875,
+    minX: ARM_HUB_X - 0.0625,
+    minY: DESK_SURFACE_Y - 0.109375,
+    minZ: ARM_HUB_Z - 0.046875,
+    maxX: ARM_HUB_X + 0.0625,
     maxY: DESK_SURFACE_Y - 0.0625,
-    maxZ: ARM_HUB_Z + 0.03125,
+    maxZ: ARM_HUB_Z + 0.046875,
     tiles: 'iron_block',
     hiddenFaces: { nz: true },
   });
   builder.addBox({
-    minX: ARM_HUB_X - 0.03125,
-    minY: DESK_SURFACE_Y + 0.03125,
-    minZ: ARM_HUB_Z - 0.03125,
-    maxX: ARM_HUB_X + 0.03125,
+    minX: ARM_HUB_X - 0.046875,
+    minY: DESK_SURFACE_Y + 0.046875,
+    minZ: ARM_HUB_Z - 0.046875,
+    maxX: ARM_HUB_X + 0.046875,
     maxY: DESK_SURFACE_Y + MAST_TOP_Y,
-    maxZ: ARM_HUB_Z + 0.03125,
+    maxZ: ARM_HUB_Z + 0.046875,
     tiles: 'dark_iron',
     hiddenFaces: { ny: true, py: true },
   });
   builder.addBox({
-    minX: ARM_HUB_X - 0.046875,
+    minX: ARM_HUB_X - 0.0625,
     minY: DESK_SURFACE_Y + MAST_TOP_Y,
-    minZ: ARM_HUB_Z - 0.046875,
-    maxX: ARM_HUB_X + 0.046875,
-    maxY: DESK_SURFACE_Y + MAST_TOP_Y + 0.03125,
-    maxZ: ARM_HUB_Z + 0.046875,
+    minZ: ARM_HUB_Z - 0.0625,
+    maxX: ARM_HUB_X + 0.0625,
+    maxY: DESK_SURFACE_Y + MAST_TOP_Y + 0.046875,
+    maxZ: ARM_HUB_Z + 0.0625,
     tiles: 'iron_block',
   });
 
-  // 2. 逐屏追加正交曼哈顿支臂（自动选择位于屏幕背侧的拐角，避免穿模）
+  // 2. 逐屏追加正交曼哈顿支臂（按单/双屏缩放系数精准对齐 VESA 锚点，自动避开屏幕正面）
   const activeCount = dualMonitor ? 2 : 1;
+  const activeScale = dualMonitor ? DUAL_MONITOR_SCALE : 1.0;
+  const armBarThickness = dualMonitor ? 0.075 : 0.0875;
+  const elbowSize = dualMonitor ? 0.109375 : 0.125;
   let primaryCollarY = 0;
 
   for (let i = 0; i < activeCount; i += 1) {
@@ -272,9 +285,10 @@ function buildMergedArmStructureGeometry(
     const worldMonitorY = DESK_SURFACE_Y + transform.y;
     const sinY = Math.sin(transform.yaw);
     const cosY = Math.cos(transform.yaw);
-    const vesaX = transform.x + sinY * VESA_BACK_OFFSET_Z;
-    const vesaZ = transform.z + cosY * VESA_BACK_OFFSET_Z;
-    const vesaY = worldMonitorY + MONITOR_SCREEN_CENTER_OFFSET_Y;
+    const scaledVesaOffset = VESA_BACK_OFFSET_Z * activeScale;
+    const vesaX = transform.x + sinY * scaledVesaOffset;
+    const vesaZ = transform.z + cosY * scaledVesaOffset;
+    const vesaY = worldMonitorY + MONITOR_SCREEN_CENTER_OFFSET_Y * activeScale;
 
     const collarY = Math.max(
       DESK_SURFACE_Y + COLLAR_MIN_LOCAL_Y,
@@ -286,8 +300,8 @@ function buildMergedArmStructureGeometry(
 
     // 同高度双屏复用主屏抱箍避免 Z 闪烁
     if (i === 0 || Math.abs(collarY - primaryCollarY) >= COLLAR_DEDUP_EPS) {
-      const collarW = i === 0 ? 0.09375 : 0.09175;
-      builder.addCenteredBox(ARM_HUB_X, collarY, ARM_HUB_Z, collarW, 0.09375, collarW, 'iron_block');
+      const collarW = i === 0 ? 0.140625 : 0.138;
+      builder.addCenteredBox(ARM_HUB_X, collarY, ARM_HUB_Z, collarW, 0.125, collarW, 'iron_block');
     }
 
     const spanX = Math.abs(vesaX - ARM_HUB_X);
@@ -303,29 +317,29 @@ function buildMergedArmStructureGeometry(
 
     if (useXFirst) {
       if (showArmX) {
-        builder.addCenteredBox(midX, collarY, ARM_HUB_Z, spanX, 0.0625, 0.0625, 'dark_iron');
+        builder.addCenteredBox(midX, collarY, ARM_HUB_Z, spanX, armBarThickness, armBarThickness, 'dark_iron');
       }
       if (showArmX && showArmZ) {
-        builder.addCenteredBox(vesaX, collarY, ARM_HUB_Z, 0.09375, 0.09375, 0.09375, 'iron_block');
+        builder.addCenteredBox(vesaX, collarY, ARM_HUB_Z, elbowSize, elbowSize, elbowSize, 'iron_block');
       }
       if (showArmZ) {
-        builder.addCenteredBox(vesaX, collarY, midZ, 0.0625, 0.0625, spanZ, 'dark_iron');
+        builder.addCenteredBox(vesaX, collarY, midZ, armBarThickness, armBarThickness, spanZ, 'dark_iron');
       }
     } else {
       if (showArmZ) {
-        builder.addCenteredBox(ARM_HUB_X, collarY, midZ, 0.0625, 0.0625, spanZ, 'dark_iron');
+        builder.addCenteredBox(ARM_HUB_X, collarY, midZ, armBarThickness, armBarThickness, spanZ, 'dark_iron');
       }
       if (showArmX && showArmZ) {
-        builder.addCenteredBox(ARM_HUB_X, collarY, vesaZ, 0.09375, 0.09375, 0.09375, 'iron_block');
+        builder.addCenteredBox(ARM_HUB_X, collarY, vesaZ, elbowSize, elbowSize, elbowSize, 'iron_block');
       }
       if (showArmX) {
-        builder.addCenteredBox(midX, collarY, vesaZ, spanX, 0.0625, 0.0625, 'dark_iron');
+        builder.addCenteredBox(midX, collarY, vesaZ, spanX, armBarThickness, armBarThickness, 'dark_iron');
       }
     }
 
     const dropY = Math.abs(vesaY - collarY);
     if (dropY >= ARM_SEGMENT_EPS) {
-      builder.addCenteredBox(vesaX, (collarY + vesaY) * 0.5, vesaZ, 0.0625, dropY, 0.0625, 'dark_iron');
+      builder.addCenteredBox(vesaX, (collarY + vesaY) * 0.5, vesaZ, armBarThickness, dropY, armBarThickness, 'dark_iron');
     }
   }
 
@@ -353,7 +367,7 @@ function buildSingleMonitorUnit(
     map: screenBundle.texture,
     emissive: new THREE.Color('#ffffff'),
     emissiveMap: screenBundle.texture,
-    emissiveIntensity: 0.92,
+    emissiveIntensity: palette.mode === 'dark' ? 1.15 : 0.96,
   });
 
   const powerLedMaterial = new THREE.MeshBasicMaterial({
@@ -375,9 +389,9 @@ function buildSingleMonitorUnit(
   );
   monitorGroup.add(housingMesh);
 
-  // 2. 实时 2D Canvas 像素风屏幕平面（内嵌于前边框凹槽中）
+  // 2. 实时 2D Canvas 1024×640 像素风屏幕平面（1.05 × 0.65625 内嵌于前边框凹槽中）
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.59375, 0.375),
+    new THREE.PlaneGeometry(MONITOR_SCREEN_WIDTH, MONITOR_SCREEN_HEIGHT),
     screenMaterial
   );
   screenMesh.position.set(0, MONITOR_SCREEN_CENTER_OFFSET_Y, -0.008);
@@ -386,19 +400,29 @@ function buildSingleMonitorUnit(
 
   // 3. 右下边框方块电源指示灯
   const powerLedMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.046875, 0.025, 0.016),
+    new THREE.BoxGeometry(0.0625, 0.03125, 0.018),
     powerLedMaterial
   );
-  powerLedMesh.position.set(0.25, MONITOR_SCREEN_CENTER_OFFSET_Y - 0.2109375, 0.019625);
+  powerLedMesh.position.set(
+    MONITOR_HOUSING_HALF_W - 0.140625,
+    MONITOR_SCREEN_CENTER_OFFSET_Y - MONITOR_HOUSING_HALF_H + MONITOR_BEZEL_RIM * 0.5,
+    0.028
+  );
   powerLedMesh.userData.noShadow = true;
   monitorGroup.add(powerLedMesh);
 
   // 4. 编辑态 12 根棱条合批高亮线框（单 Mesh，默认隐藏）
   const editFrameMesh = new THREE.Mesh(
-    createWireframeBoxGeometry(0.75, 0.53125, 0.1875, 0.02, true),
+    createWireframeBoxGeometry(
+      MONITOR_HOUSING_HALF_W * 2 + 0.08,
+      MONITOR_HOUSING_HALF_H * 2 + 0.08,
+      0.28,
+      0.024,
+      true
+    ),
     editFrameMaterial
   );
-  editFrameMesh.position.set(0, MONITOR_SCREEN_CENTER_OFFSET_Y, -0.03125);
+  editFrameMesh.position.set(0, MONITOR_SCREEN_CENTER_OFFSET_Y, -0.0625);
   editFrameMesh.visible = false;
   editFrameMesh.userData.noShadow = true;
   monitorGroup.add(editFrameMesh);
@@ -474,6 +498,7 @@ export function applyDualMonitorTransforms(
   dualMonitor: boolean
 ): void {
   rig.dualMonitor = dualMonitor;
+  const unitScale = dualMonitor ? DUAL_MONITOR_SCALE : 1.0;
 
   rig.monitors[0].currentTransform = { ...transforms[0] };
   rig.monitors[0].monitorGroup.position.set(
@@ -482,6 +507,7 @@ export function applyDualMonitorTransforms(
     transforms[0].z
   );
   rig.monitors[0].monitorGroup.rotation.set(0, transforms[0].yaw, 0);
+  rig.monitors[0].monitorGroup.scale.setScalar(unitScale);
   rig.monitors[0].monitorGroup.visible = true;
   rig.monitors[0].armGroup.visible = true;
 
@@ -492,6 +518,7 @@ export function applyDualMonitorTransforms(
     transforms[1].z
   );
   rig.monitors[1].monitorGroup.rotation.set(0, transforms[1].yaw, 0);
+  rig.monitors[1].monitorGroup.scale.setScalar(unitScale);
   rig.monitors[1].monitorGroup.visible = dualMonitor;
   rig.monitors[1].armGroup.visible = dualMonitor;
 
@@ -501,6 +528,27 @@ export function applyDualMonitorTransforms(
     rig.armStructureMesh.geometry.dispose();
     rig.armStructureMesh.geometry = buildMergedArmStructureGeometry(transforms, dualMonitor);
   }
+}
+
+/** 计算指定显示器在世界空间中的屏幕上沿目标点与正面朝向法线（供 focusStation 精准对准） */
+export function computeMonitorFocusAnchor(
+  rig: DualMonitorAssemblyRig,
+  stationWorldPos: THREE.Vector3,
+  monitorIndex: OfficeMonitorIndex = 0
+): { screenTopTarget: THREE.Vector3; screenForward: THREE.Vector3 } {
+  const idx: OfficeMonitorIndex = monitorIndex === 1 && rig.dualMonitor ? 1 : 0;
+  const t = rig.monitors[idx].currentTransform;
+  const scale = rig.dualMonitor ? DUAL_MONITOR_SCALE : 1.0;
+  const centerY = DESK_SURFACE_Y + t.y + MONITOR_SCREEN_CENTER_OFFSET_Y * scale;
+  const topY = centerY + MONITOR_SCREEN_HEIGHT * 0.5 * scale;
+  return {
+    screenTopTarget: new THREE.Vector3(
+      stationWorldPos.x + t.x,
+      stationWorldPos.y + topY,
+      stationWorldPos.z + t.z
+    ),
+    screenForward: new THREE.Vector3(Math.sin(t.yaw), 0, Math.cos(t.yaw)).normalize(),
+  };
 }
 
 export function syncDualMonitorAssemblyRig(
@@ -519,6 +567,7 @@ export function syncDualMonitorAssemblyRig(
   }
 ): void {
   applyDualMonitorTransforms(rig, options.transforms, options.dualMonitor);
+  const isDark = palette.mode === 'dark';
 
   for (const unit of rig.monitors) {
     if (unit.index === 1 && !options.dualMonitor) {
@@ -535,17 +584,20 @@ export function syncDualMonitorAssemblyRig(
     });
 
     if (options.power === 'off') {
-      unit.screenMaterial.emissiveIntensity = 0.08;
+      unit.screenMaterial.emissiveIntensity = isDark ? 0.12 : 0.1;
       unit.powerLedMaterial.color.set(LED_STANDBY_HEX);
     } else {
       if (session.availability === 'exited') {
-        unit.screenMaterial.emissiveIntensity = 0.35;
+        unit.screenMaterial.emissiveIntensity = isDark ? 1.0 : 0.68;
         unit.powerLedMaterial.color.set(LED_EXITED_HEX);
       } else if (session.availability === 'unavailable') {
-        unit.screenMaterial.emissiveIntensity = 0.65;
+        unit.screenMaterial.emissiveIntensity = isDark ? 1.05 : 0.84;
         unit.powerLedMaterial.color.set(palette.warningHex);
       } else {
-        unit.screenMaterial.emissiveIntensity = isSelected ? 1.0 : 0.9;
+        // 夜间自发光强度严格 >= 1.0，保证默认等距视角 + 夜间模式也能直接读出会话名与 CWD
+        unit.screenMaterial.emissiveIntensity = isDark
+          ? (isSelected ? 1.25 : 1.12)
+          : (isSelected ? 1.08 : 0.96);
         const ledHex = session.availability === 'interactive'
           ? palette.successHex
           : palette.accentHex;

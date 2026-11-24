@@ -95,7 +95,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
   const location = useLocation();
   const handlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const snapshot = useAccountsSnapshot(handlersRef);
-  const { accounts, hydratingDetails, removingAccountRefs, loading, refreshing } = snapshot;
+  const { accounts, hydratingDetails, removingAccountRefs, loading, loaded, refreshing } = snapshot;
   const tokenDrops = useTokenDropEvents(accounts);
   const accountOutcomes = useAccountOutcomes();
   const {
@@ -165,6 +165,14 @@ export default function MobileAccounts(_props: MobilePageProps) {
 
   const providerStats = useMemo(() => buildProviderStats(accounts), [accounts]);
   const activeStats = providerStats[activeProvider] || providerStats.all;
+
+  // 与桌面账号页一致：0 账号的 Provider 族不占筛选芯片；已存的空族回落到全部。
+  useEffect(() => {
+    if (!loaded) return;
+    if (activeProvider === 'all') return;
+    if ((providerStats[activeProvider]?.total || 0) > 0) return;
+    setActiveProvider('all');
+  }, [activeProvider, loaded, providerStats]);
   const filteredAccounts = useMemo(
     () => filterAccountsByView(accounts, activeProvider, filterStatus),
     [accounts, activeProvider, filterStatus]
@@ -189,7 +197,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
 
   const providerChips: HudChipItem[] = [
     { key: 'all', label: '全部', count: providerStats.all.total },
-    ...PROVIDER_FAMILY_GROUPS.map((group) => ({
+    ...PROVIDER_FAMILY_GROUPS.filter((group) => (providerStats[group.family]?.total || 0) > 0).map((group) => ({
       key: group.family,
       label: group.label,
       count: providerStats[group.family]?.total || 0,

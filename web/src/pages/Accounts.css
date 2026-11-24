@@ -74,6 +74,22 @@
   }
 }
 
+/* 再窄一档：去掉标签内边距，保证 11 个紧凑标签在 768–1160 也能整行放下，
+ * 避免 Ant 的最后一项被省略号按钮半截裁切。 */
+@media (max-width: 1160px) {
+  .accounts-provider-tabs .accounts-provider-tab-label {
+    padding: 0;
+  }
+
+  .accounts-provider-tabs .ant-tabs-tab {
+    padding-inline: 2px;
+  }
+
+  .accounts-provider-tabs .ant-tabs-tab + .ant-tabs-tab {
+    margin-left: 4px;
+  }
+}
+
 /* 超宽屏恢复完整标签时收紧间距，避免最后一项仍被挤到第二行。 */
 @media (min-width: 2101px) {
   .accounts-provider-tabs .ant-tabs-tab + .ant-tabs-tab {

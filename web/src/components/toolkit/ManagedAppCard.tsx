@@ -1,11 +1,11 @@
 import { EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import { Badge, Popconfirm, Space, Tooltip } from 'antd';
+import { Badge, Popconfirm, Space, Tag, Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { Account, ManagedAppItem } from '@/types';
 import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedAppIcon from './ManagedAppIcon';
 import ManagedAppAccountActions, { type ManagedAppLaunchTarget } from './ManagedAppAccountActions';
-import ManagedResourceCard from './ManagedResourceCard';
+import ManagedResourceCard, { type ManagedResourceStatusBadge } from './ManagedResourceCard';
 import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
 import {
   getAppAdvancedEntryLabel,
@@ -14,10 +14,6 @@ import {
   hasExistingAppConfig as hasExistingConfig
 } from './managed-app-presentation';
 
-/**
- * 有新版时更新图标右上角的小黄点。用主题的 warning 色而不是 antd 默认红点：
- * 红点是「出错了」，有新版是正常且值得做的事，不该被读成故障。
- */
 const UPGRADE_DOT_COLOR = 'var(--color-warning)';
 
 export interface ManagedAppCardProps {
@@ -36,6 +32,23 @@ export interface ManagedAppCardProps {
   onCloseApp: (app: ManagedAppLaunchTarget, accountRef: string) => void;
   onClearUpgradeBroken?: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
+}
+
+function resolveAppStatusBadge(
+  app: ManagedAppItem,
+  busyAction: ManagedAppCardProps['busyAction'],
+  upgrade?: ManagedAppUpgradeView | null
+): ManagedResourceStatusBadge {
+  if (busyAction === 'install') return { status: 'saving', label: '安装中' };
+  if (busyAction === 'update' || upgrade?.applying) return { status: 'saving', label: '更新中' };
+  if (busyAction === 'uninstall') return { status: 'saving', label: '卸载中' };
+  if (upgrade?.attention || upgrade?.statusTone === 'error') {
+    return { status: 'error', label: '失败', detail: upgrade.reasonText || upgrade.statusLabel };
+  }
+  if (app.installed) {
+    return { status: 'saved', label: '已安装' };
+  }
+  return { status: 'unset', label: '未安装' };
 }
 
 export default function ManagedAppCard({
@@ -60,6 +73,21 @@ export default function ManagedAppCard({
   const canOpenAdvanced = app.permissionSupported === true || configFileCount > 0;
   const warning = getManagedAppWarning(app, upgrade);
   const currentVersion = getAppCurrentVersion(app);
+  const statusBadge = resolveAppStatusBadge(app, busyAction, upgrade);
+
+  const badges = (
+    <>
+      {app.installed && upgrade?.hasUpdate && !upgrade?.applying ? (
+        <Tag color="warning">有新版</Tag>
+      ) : null}
+      {app.installed && app.hookSupported ? (
+        <Tag color={app.hookInstalled ? 'success' : 'default'}>
+          {app.hookInstalled ? '即时刷新已启用' : '即时刷新未启用'}
+        </Tag>
+      ) : null}
+    </>
+  );
+
   const details = [
     {
       label: '当前版本',
@@ -86,6 +114,8 @@ export default function ManagedAppCard({
       resourceId={app.id}
       name={app.name}
       installed={app.installed}
+      statusBadge={statusBadge}
+      badges={badges}
       icon={<ManagedAppIcon app={app} />}
       warning={warning}
       details={details}
@@ -116,7 +146,6 @@ export default function ManagedAppCard({
           ) : null}
           {app.installed ? (
             <>
-              {/* 自动升级在装这个 provider 时，转圈就是进度本身；有新版则挂黄点。 */}
               <Badge
                 dot={Boolean(upgrade?.hasUpdate) && !upgrade?.applying}
                 color={UPGRADE_DOT_COLOR}
@@ -147,11 +176,10 @@ export default function ManagedAppCard({
               />
             </>
           ) : null}
-          {/* 熔断只能人工解除，且服务端会先用升级同一套判据验证当前 CLI，所以入口放在 providers 卡片上。 */}
           {upgrade?.canClearBroken && onClearUpgradeBroken ? (
             <Popconfirm
               title={`验证并解除 ${app.name} 的熔断？`}
-              description="会用升级同一套验证检查当前安装的版本（可能需要十几秒），通过才解除并恢复自动升级；不会安装任何东西。"
+              description="验证当前安装版本（约十几秒），通过后恢复自动升级。"
               okText="验证并解除"
               cancelText="取消"
               onConfirm={() => onClearUpgradeBroken(app.provider)}

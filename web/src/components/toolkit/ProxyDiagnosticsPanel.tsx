@@ -1,23 +1,31 @@
-import { Input, Segmented, Select, Tag, Tooltip } from 'antd';
-import HudStateView from '@/components/hud/HudStateView';
-import InlineNote from '@/components/ui/InlineNote';
+import { useMemo } from 'react';
+import { Input, Segmented, Select, Space, Tag, Tooltip } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
+  DeleteOutlined,
   LinkOutlined,
   ReloadOutlined,
+  SaveOutlined,
   ThunderboltOutlined
 } from '@ant-design/icons';
+import HudStateView from '@/components/hud/HudStateView';
 import Button from '@/components/ui/AppButton';
-import ToolkitStatusTrack from './ToolkitStatusTrack';
+import InlineNote from '@/components/ui/InlineNote';
 import Reveal from '@/components/ui/Reveal';
+import { SettingRow, SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
+import ToolkitEmptyState from './ToolkitEmptyState';
+import ToolkitPanelHeader from './ToolkitPanelHeader';
+import ToolkitStatusTrack from './ToolkitStatusTrack';
 import { effectiveRouteLabel, useProxyDiagnostics, type ProbeRoute } from './use-proxy-diagnostics';
+import './ToolkitPanels.css';
 
 function proxyValue(value: string | undefined) {
   return value
     ? <code>{value}</code>
-    : <span className="toolkit-observation-empty">接口已返回，未检测到配置</span>;
+    : <span className="toolkit-observation-empty">未设定</span>;
 }
 
 export default function ProxyDiagnosticsPanel() {
@@ -46,220 +54,396 @@ export default function ProxyDiagnosticsPanel() {
   } = useProxyDiagnostics();
   const { surfaceRef: probeSurfaceRef, switchSurface: switchProbeSurface } = useSurfaceSwitch<HTMLDivElement>();
 
+  const persistedToolValues = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (!proxyData) return map;
+    for (const target of toolTargets) {
+      const info = proxyData.tools[target.id];
+      map[target.id] = (info?.httpProxy || info?.httpsProxy || '').trim();
+    }
+    return map;
+  }, [proxyData, toolTargets]);
+
+  const selectedSourceMeta = useMemo(
+    () => detectedSources.find((source) => source.value === selectedSource),
+    [detectedSources, selectedSource]
+  );
+
+  const probeStatusTag = connectivityLoading
+    ? <SettingStatusTag status="saving" label="连接中" compact />
+    : connectivityError
+      ? <SettingStatusTag status="error" label="连接失败" compact />
+      : connectivityData
+        ? (
+          <SettingStatusTag
+            status={reachableCount === connectivityData.results.length ? 'saved' : 'dirty'}
+            label={`${reachableCount} / ${connectivityData.results.length} 可达`}
+            compact
+          />
+        )
+        : <SettingStatusTag status="unset" label="未测试" compact />;
+
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-proxy-title">
-      <header className="toolkit-panel-header">
-        <div>
-          <div className="toolkit-panel-kicker">NETWORK OBSERVABILITY</div>
-          <h2 id="toolkit-proxy-title">网络与代理诊断</h2>
-          <p>明确区分系统探测、AIH 进程环境和工具配置；任何“一键应用”都只使用真实返回值。</p>
-        </div>
-        <div className="toolkit-header-actions">
-          <Button icon={<ReloadOutlined />} loading={proxyLoading} onClick={fetchProxy}>重读配置</Button>
-          <Button icon={<ThunderboltOutlined />} loading={connectivityLoading} onClick={() => void testConnectivity(probeRoute)}>重测端点</Button>
-        </div>
-      </header>
+      <ToolkitPanelHeader
+        titleId="toolkit-proxy-title"
+        title="网络与代理诊断"
+        subtitle="查看系统与进程代理探测结果，写入工具代理并测试外部端点连通性。"
+        extra={(
+          <>
+            <Button icon={<ReloadOutlined />} loading={proxyLoading} onClick={fetchProxy}>
+              重读配置
+            </Button>
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              loading={connectivityLoading}
+              onClick={() => void testConnectivity(probeRoute)}
+            >
+              重测端点
+            </Button>
+          </>
+        )}
+      />
 
-      {proxyError && <InlineNote tone="error" description={proxyError}>代理状态读取失败</InlineNote>}
+      {proxyError ? (
+        <InlineNote
+          tone="error"
+          description={proxyError}
+          action={<Button size="small" onClick={fetchProxy}>重试</Button>}
+        >
+          代理状态读取失败
+        </InlineNote>
+      ) : null}
+
       {proxyLoading && !proxyData ? (
         <HudStateView variant="loading" code="NETWORK // PROXY" title="正在读取网络代理配置..." compact />
       ) : proxyData ? (
-        <>
+        <div className="toolkit-panel-stack">
           <ToolkitStatusTrack
             ariaLabel="网络代理状态轨道"
             items={[
-              { label: '实测', value: observation.value, detail: observation.detail, tone: observation.tone },
+              { label: '系统代理', value: observation.value, detail: observation.detail, tone: observation.tone },
               {
-                label: '配置',
-                value: `${detectedSources.length} 个真实来源可用`,
-                detail: '只统计接口返回的非空系统或进程代理地址',
+                label: '可用探测源',
+                value: detectedSources.length ? `${detectedSources.length} 个已设定` : '未设定',
+                detail: '仅统计接口返回的真实非空地址',
                 tone: detectedSources.length ? 'info' : 'warning'
               },
               {
-                label: '指南',
-                value: '先选择来源，再应用到工具',
-                detail: '无探测来源时不会猜测 localhost 端口',
-                tone: 'neutral'
+                label: '端点探测',
+                value: connectivityLoading
+                  ? '连接中'
+                  : connectivityData
+                    ? `${reachableCount} / ${connectivityData.results.length} 可达`
+                    : '未测试',
+                detail: effectiveRouteLabel(connectivityData?.networkLayer),
+                tone: connectivityError
+                  ? 'danger'
+                  : connectivityData && reachableCount === connectivityData.results.length
+                    ? 'success'
+                    : 'neutral'
               }
             ]}
           />
 
-          <div className="toolkit-observation-grid">
-            <article className="toolkit-observation-card">
-              <span className="toolkit-panel-kicker">SYSTEM</span>
-              <h3>操作系统代理</h3>
-              {proxyData.system ? (
-                <dl className="toolkit-inspection-list">
-                  <div><dt>平台 / 状态</dt><dd>{proxyData.system.platform} · {proxyData.system.probeStatus || '未标注'}</dd></div>
-                  <div><dt>探测来源</dt><dd>{proxyData.system.source || '未标注'}</dd></div>
-                  <div><dt>HTTP</dt><dd>{proxyValue(proxyData.system.httpProxy)}</dd></div>
-                  <div><dt>HTTPS</dt><dd>{proxyValue(proxyData.system.httpsProxy)}</dd></div>
-                  <div><dt>SOCKS</dt><dd>{proxyValue(proxyData.system.socksProxy)}</dd></div>
-                  <div><dt>绕过列表</dt><dd>{proxyData.system.bypassList?.join(', ') || '未返回'}</dd></div>
-                </dl>
-              ) : (
-                <InlineNote tone="warning">当前接口未返回系统代理探测能力</InlineNote>
-              )}
-            </article>
-
-            <article className="toolkit-observation-card">
-              <span className="toolkit-panel-kicker">AIH PROCESS</span>
-              <h3>服务进程代理</h3>
-              <dl className="toolkit-inspection-list">
-                <div><dt>网关上游</dt><dd>{proxyValue(proxyData.gateway?.proxyUrl || '')}</dd></div>
-                <div><dt>网关绕过</dt><dd>{proxyValue(proxyData.gateway?.noProxy || '')}</dd></div>
-                <div><dt>HTTP_PROXY</dt><dd>{proxyValue(proxyData.env.httpProxy)}</dd></div>
-                <div><dt>HTTPS_PROXY</dt><dd>{proxyValue(proxyData.env.httpsProxy)}</dd></div>
-                <div><dt>ALL_PROXY</dt><dd>{proxyValue(proxyData.env.allProxy)}</dd></div>
-                <div><dt>NO_PROXY</dt><dd>{proxyValue(proxyData.env.noProxy)}</dd></div>
-                <div><dt>作用域</dt><dd>{proxyData.env.scope || 'aih-server-process'}</dd></div>
-              </dl>
-            </article>
-          </div>
-
-          <section className="toolkit-proxy-apply" aria-labelledby="toolkit-proxy-apply-title">
-            <div className="toolkit-detail-heading">
-              <div>
-                <span>VERIFIED SOURCE</span>
-                <h3 id="toolkit-proxy-apply-title">应用真实探测值</h3>
-              </div>
-              <Tooltip title={detectedSources.length ? '来源均来自上方系统或进程探测结果' : '当前没有可应用的真实代理地址'}>
-                <Select
-                  value={selectedSource || undefined}
-                  disabled={!detectedSources.length}
-                  placeholder="没有真实探测来源"
-                  onChange={setSelectedSource}
-                  options={detectedSources.map((source) => ({
-                    value: source.value,
-                    label: `${source.label} · ${source.value}`
-                  }))}
-                  aria-label="选择真实代理来源"
-                />
-              </Tooltip>
-            </div>
-            <Reveal open={Boolean(selectedSource)}>
-              <div className="toolkit-source-note">
-                <strong>当前选择</strong>
-                <code>{selectedSource}</code>
-                <span>{detectedSources.find((source) => source.value === selectedSource)?.origin}</span>
-              </div>
-            </Reveal>
-            <div className="toolkit-proxy-source-actions">
-              {toolTargets.map((target) => (
-                <Button
-                  key={target.id}
-                  icon={<LinkOutlined />}
-                  disabled={!selectedSource}
-                  loading={savingTarget === target.id}
-                  onClick={() => saveProxy(target.id, selectedSource, '已应用真实探测值')}
-                >
-                  应用到 {target.name}
-                </Button>
-              ))}
-            </div>
-          </section>
-
-          <div className="toolkit-tool-config-grid">
-            {toolTargets.map((target) => {
-              const value = proxyInputs[target.id] || '';
-              return (
-                <article className="toolkit-tool-config-card" key={target.id}>
-                  <div>
-                    <span className="toolkit-panel-kicker">{target.scopeLabel}</span>
-                    <h3>{target.name} 代理</h3>
-                    <p>手动值是用户明确输入，不会自动回退到本地默认端口；保存后重新读取实际配置。</p>
-                  </div>
-                  <Input
-                    value={value}
-                    placeholder="例如 http://proxy.example:8080"
-                    onChange={(event) => setProxyInput(target.id, event.target.value)}
-                    aria-label={`${target.name} 代理地址`}
+          <SettingSection
+            title="代理观测"
+            description="对比操作系统代理与 AIH 服务进程环境中的实际配置。"
+            status={(
+              <SettingStatusTag
+                status={proxyData.system?.enabled ? 'saved' : 'unset'}
+                label={proxyData.system?.enabled ? '已启用' : '未启用'}
+                compact
+              />
+            )}
+          >
+            <div className="toolkit-observation-grid" style={{ padding: '12px 0' }}>
+              <article className="toolkit-observation-card">
+                <div className="toolkit-proxy-tool-head">
+                  <h3 className="toolkit-proxy-tool-title">操作系统代理</h3>
+                  <SettingStatusTag
+                    status={proxyData.system?.enabled ? 'saved' : proxyData.system?.probeStatus === 'error' ? 'error' : 'unset'}
+                    label={proxyData.system?.enabled ? '已设定' : proxyData.system?.probeStatus === 'error' ? '失败' : '未设定'}
+                    compact
                   />
-                  <div className="toolkit-card-button-row">
-                    <Button type="primary" disabled={!value.trim()} loading={savingTarget === target.id} onClick={() => saveProxy(target.id, value, '代理已保存')}>保存</Button>
-                    <Button loading={savingTarget === target.id} onClick={() => saveProxy(target.id, '', '代理已清除')}>清除</Button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                </div>
+                {proxyData.system ? (
+                  <dl className="toolkit-inspection-list">
+                    <div><dt>平台 / 状态</dt><dd>{proxyData.system.platform} · {proxyData.system.probeStatus || '未标注'}</dd></div>
+                    <div><dt>探测来源</dt><dd>{proxyData.system.source || '未标注'}</dd></div>
+                    <div><dt>HTTP</dt><dd>{proxyValue(proxyData.system.httpProxy)}</dd></div>
+                    <div><dt>HTTPS</dt><dd>{proxyValue(proxyData.system.httpsProxy)}</dd></div>
+                    <div><dt>SOCKS</dt><dd>{proxyValue(proxyData.system.socksProxy)}</dd></div>
+                    <div><dt>绕过列表</dt><dd>{proxyData.system.bypassList?.join(', ') || '未设定'}</dd></div>
+                  </dl>
+                ) : (
+                  <InlineNote tone="warning">当前接口未返回系统代理探测能力</InlineNote>
+                )}
+              </article>
 
-          {proxyData.tools.git?.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 && (
-            <section className="toolkit-scoped-proxies" aria-labelledby="toolkit-scoped-proxies-title">
-              <h3 id="toolkit-scoped-proxies-title">Git 特定作用域配置</h3>
-              {proxyData.tools.git.scopedProxies.map((proxy) => (
-                <div key={`${proxy.key}-${proxy.value}`}><code>{proxy.key}</code><strong>{proxy.value}</strong></div>
-              ))}
-            </section>
-          )}
-        </>
+              <article className="toolkit-observation-card">
+                <div className="toolkit-proxy-tool-head">
+                  <h3 className="toolkit-proxy-tool-title">AIH 进程代理</h3>
+                  <SettingStatusTag
+                    status={proxyData.gateway?.proxyUrl || proxyData.env.httpProxy || proxyData.env.httpsProxy || proxyData.env.allProxy ? 'saved' : 'unset'}
+                    label={proxyData.gateway?.proxyUrl || proxyData.env.httpProxy || proxyData.env.httpsProxy || proxyData.env.allProxy ? '已设定' : '未设定'}
+                    compact
+                  />
+                </div>
+                <dl className="toolkit-inspection-list">
+                  <div><dt>网关上游</dt><dd>{proxyValue(proxyData.gateway?.proxyUrl || '')}</dd></div>
+                  <div><dt>网关绕过</dt><dd>{proxyValue(proxyData.gateway?.noProxy || '')}</dd></div>
+                  <div><dt>HTTP_PROXY</dt><dd>{proxyValue(proxyData.env.httpProxy)}</dd></div>
+                  <div><dt>HTTPS_PROXY</dt><dd>{proxyValue(proxyData.env.httpsProxy)}</dd></div>
+                  <div><dt>ALL_PROXY</dt><dd>{proxyValue(proxyData.env.allProxy)}</dd></div>
+                  <div><dt>NO_PROXY</dt><dd>{proxyValue(proxyData.env.noProxy)}</dd></div>
+                  <div><dt>作用域</dt><dd>{proxyData.env.scope || 'aih-server-process'}</dd></div>
+                </dl>
+              </article>
+            </div>
+          </SettingSection>
+
+          <SettingSection
+            title="工具代理配置"
+            description="可选用上方真实探测源一键写入，或为单个工具手动保存与清除。"
+            status={(
+              <SettingStatusTag
+                status={detectedSources.length ? 'saved' : 'unset'}
+                label={detectedSources.length ? `${detectedSources.length} 个来源可用` : '无探测来源'}
+                compact
+              />
+            )}
+          >
+            <SettingRow
+              title="应用真实探测值"
+              description="仅使用系统或进程返回的非空代理地址，不猜测默认端口。"
+              layout="stacked"
+              control={(
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <Tooltip title={detectedSources.length ? '来源来自上方系统或进程探测' : '暂无可应用的真实探测来源'}>
+                    <Select
+                      className="toolkit-proxy-select"
+                      value={selectedSource || undefined}
+                      disabled={!detectedSources.length}
+                      placeholder="暂无真实探测来源"
+                      onChange={setSelectedSource}
+                      options={detectedSources.map((source) => ({
+                        value: source.value,
+                        label: `${source.label} · ${source.value}`
+                      }))}
+                      aria-label="选择真实代理来源"
+                    />
+                  </Tooltip>
+                  <Reveal open={Boolean(selectedSource)}>
+                    <div className="toolkit-source-note">
+                      <strong>当前来源</strong>
+                      <code>{selectedSource}</code>
+                      <span>{selectedSourceMeta?.origin}</span>
+                    </div>
+                  </Reveal>
+                  <Space wrap size={8}>
+                    {toolTargets.map((target) => {
+                      const alreadySame = Boolean(selectedSource) && persistedToolValues[target.id] === selectedSource.trim();
+                      return (
+                        <Button
+                          key={target.id}
+                          size="small"
+                          icon={<LinkOutlined />}
+                          disabled={!selectedSource || alreadySame}
+                          loading={savingTarget === target.id}
+                          onClick={() => saveProxy(target.id, selectedSource, '已应用真实探测值')}
+                        >
+                          {alreadySame ? `${target.name} 已同步` : `应用到 ${target.name}`}
+                        </Button>
+                      );
+                    })}
+                  </Space>
+                </Space>
+              )}
+            />
+
+            <SettingRow
+              title="单工具代理地址"
+              description="变更后点击保存；未改动或未设定时自动禁用无效操作。"
+              layout="stacked"
+              control={(
+                <div className="toolkit-tool-config-grid">
+                  {toolTargets.map((target) => {
+                    const draft = proxyInputs[target.id] || '';
+                    const trimmedDraft = draft.trim();
+                    const persisted = persistedToolValues[target.id] || '';
+                    const isDirty = trimmedDraft !== persisted;
+                    const isSaving = savingTarget === target.id;
+                    const rowStatus = isSaving
+                      ? <SettingStatusTag status="saving" label="保存中" compact />
+                      : isDirty
+                        ? <SettingStatusTag status="dirty" label="未保存" compact />
+                        : persisted
+                          ? <SettingStatusTag status="saved" label="已设定" compact />
+                          : <SettingStatusTag status="unset" label="未设定" compact />;
+
+                    return (
+                      <article className="toolkit-tool-config-card" key={target.id}>
+                        <div className="toolkit-proxy-tool-head">
+                          <div>
+                            <h3 className="toolkit-proxy-tool-title">{target.name} 代理</h3>
+                            <span className="toolkit-proxy-tool-scope">{target.scopeLabel}</span>
+                          </div>
+                          {rowStatus}
+                        </div>
+                        <span className="toolkit-proxy-tool-persisted">
+                          当前生效：{persisted || '未设定'}
+                        </span>
+                        <Input
+                          value={draft}
+                          placeholder="例如 http://proxy.example:8080"
+                          onChange={(event) => setProxyInput(target.id, event.target.value)}
+                          aria-label={`${target.name} 代理地址`}
+                        />
+                        <div className="toolkit-card-button-row">
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<SaveOutlined />}
+                            disabled={!trimmedDraft || !isDirty || Boolean(savingTarget)}
+                            loading={isSaving}
+                            onClick={() => saveProxy(target.id, trimmedDraft, '代理已保存')}
+                          >
+                            {isDirty ? '保存' : '已保存'}
+                          </Button>
+                          {isDirty ? (
+                            <Button
+                              size="small"
+                              disabled={Boolean(savingTarget)}
+                              onClick={() => setProxyInput(target.id, persisted)}
+                            >
+                              恢复
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            disabled={!persisted || Boolean(savingTarget)}
+                            loading={isSaving}
+                            onClick={() => saveProxy(target.id, '', '代理已清除')}
+                          >
+                            清除
+                          </Button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            />
+
+            {proxyData.tools.git?.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 ? (
+              <SettingRow
+                title="Git 特定作用域配置"
+                description="仅展示本机 Git 配置中带域名前缀的代理规则。"
+                layout="stacked"
+                control={(
+                  <div className="toolkit-scoped-proxies">
+                    {proxyData.tools.git.scopedProxies.map((proxy) => (
+                      <div key={`${proxy.key}-${proxy.value}`}>
+                        <code>{proxy.key}</code>
+                        <strong>{proxy.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            ) : null}
+          </SettingSection>
+        </div>
       ) : null}
 
-      <section className="toolkit-connectivity" aria-labelledby="toolkit-connectivity-title">
-        <div className="toolkit-detail-heading">
-          <div>
-            <span>{probeRoute === 'proxy' ? 'GATEWAY PROXY HTTP PROBE' : 'DIRECT HTTP PROBE'}</span>
-            <h3 id="toolkit-connectivity-title">外部端点响应测试</h3>
-          </div>
-          <div className="toolkit-header-actions">
-            <Segmented
-              value={probeRoute}
-              onChange={(value) => {
-                const nextRoute = value as ProbeRoute;
-                switchProbeSurface(() => setProbeRoute(nextRoute), {
-                  current: probeRoute,
-                  next: nextRoute,
-                  direction: nextRoute === 'proxy' ? 'forward' : 'backward'
-                });
-              }}
-              options={[
-                { label: '直连', value: 'direct' },
-                { label: '网关上游代理', value: 'proxy', disabled: !gatewayProxyUrl }
-              ]}
-            />
-            {connectivityData && <Tag color={reachableCount === connectivityData.results.length ? 'success' : 'warning'}>{reachableCount} / {connectivityData.results.length} 可达</Tag>}
-          </div>
-        </div>
-        <p className="toolkit-section-note">
-          当前路由：{connectivityData?.route || probeRoute}
-          {connectivityData?.proxyUsed ? ` · 显式代理 ${connectivityData.proxyUsed}` : ` · ${effectiveRouteLabel(connectivityData?.networkLayer)}`}。结果只表示收到 HTTP 响应，不代表 API 鉴权成功或下载吞吐量。
-        </p>
-        {connectivityData?.route === 'direct' && connectivityData.networkLayer?.effectiveRoute === 'tun' && (
-          <InlineNote
-            tone="info"
-            description="直连仅表示本次请求没有显式使用 AIH HTTP 代理；系统 TUN、VPN 或透明代理仍可能接管实际网络路径。"
-            className="toolkit-note-spaced"
-          >
-            直连探测仍可能经过 TUN
-          </InlineNote>
+      <SettingSection
+        title="外部端点响应测试"
+        description={`当前路由：${connectivityData?.route || probeRoute}${connectivityData?.proxyUsed ? ` · 显式代理 ${connectivityData.proxyUsed}` : ` · ${effectiveRouteLabel(connectivityData?.networkLayer)}`}。仅验证 HTTP 响应可达性。`}
+        status={probeStatusTag}
+        extra={(
+          <Segmented
+            aria-label="探测路由"
+            value={probeRoute}
+            onChange={(value) => {
+              const nextRoute = value as ProbeRoute;
+              switchProbeSurface(() => setProbeRoute(nextRoute), {
+                current: probeRoute,
+                next: nextRoute,
+                direction: nextRoute === 'proxy' ? 'forward' : 'backward'
+              });
+            }}
+            options={[
+              { label: '直连', value: 'direct' },
+              { label: '网关上游代理', value: 'proxy', disabled: !gatewayProxyUrl }
+            ]}
+          />
         )}
-        {connectivityError && <InlineNote tone="error" description={connectivityError}>连通性测试失败</InlineNote>}
-        <div ref={probeSurfaceRef}>
-          {connectivityLoading && !connectivityData ? (
-            <HudStateView variant="loading" code="PROBE // HTTP" title="正在测试外部端点响应..." compact />
-          ) : connectivityData?.results.length ? (
-            <div className="toolkit-connectivity-grid">
-              {connectivityData.results.map((result) => (
-                <article key={result.id} data-reachable={result.reachable || undefined}>
-                  <div>
-                    <span className="toolkit-connectivity-name">
-                      <span className={`hud-led ${result.reachable ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
-                      <strong>{result.name}</strong>
+      >
+        <div style={{ padding: '12px 0' }} className="toolkit-panel-stack">
+          {connectivityData?.route === 'direct' && connectivityData.networkLayer?.effectiveRoute === 'tun' ? (
+            <InlineNote tone="info">
+              直连仅代表未使用 AIH 显式代理，系统 TUN / VPN 仍可能接管实际流量。
+            </InlineNote>
+          ) : null}
+
+          {connectivityError ? (
+            <InlineNote
+              tone="error"
+              description={connectivityError}
+              action={<Button size="small" onClick={() => void testConnectivity(probeRoute)}>重试</Button>}
+            >
+              连通性测试失败
+            </InlineNote>
+          ) : null}
+
+          <div ref={probeSurfaceRef}>
+            {connectivityLoading && !connectivityData ? (
+              <HudStateView variant="loading" code="PROBE // HTTP" title="正在测试外部端点响应..." compact />
+            ) : connectivityData?.results.length ? (
+              <div className="toolkit-connectivity-grid">
+                {connectivityData.results.map((result) => (
+                  <article key={result.id} data-reachable={result.reachable || undefined}>
+                    <div>
+                      <span className="toolkit-connectivity-name">
+                        <span className={`hud-led ${result.reachable ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
+                        <strong>{result.name}</strong>
+                      </span>
+                      {result.reachable
+                        ? <Tag color="success"><CheckCircleOutlined /> 已连接</Tag>
+                        : <Tag color="error"><CloseCircleOutlined /> 连接失败</Tag>}
+                    </div>
+                    <code>{result.host}</code>
+                    <span>
+                      {result.reachable
+                        ? `HTTP ${result.statusCode || '响应'} · ${result.latencyMs} ms · ${result.route || connectivityData.route}`
+                        : (result.error || '未收到响应')}
                     </span>
-                    {result.reachable
-                      ? <Tag color="success"><CheckCircleOutlined /> HTTP 可达</Tag>
-                      : <Tag color="error"><CloseCircleOutlined /> 未收到响应</Tag>}
-                  </div>
-                  <code>{result.host}</code>
-                  <span>{result.reachable
-                    ? `HTTP ${result.statusCode || '响应'} · ${result.latencyMs} ms · ${result.route || connectivityData.route}`
-                    : (result.error || '连接失败')}</span>
-                </article>
-              ))}
-            </div>
-          ) : <HudStateView code="PROBE // EMPTY" title="没有端点测试结果" compact />}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <ToolkitEmptyState
+                title="暂无端点测试结果"
+                description="点击下方按钮对常用外部端点发起一次 HTTP 可达性测试。"
+                action={(
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    onClick={() => void testConnectivity(probeRoute)}
+                  >
+                    立即测试
+                  </Button>
+                )}
+              />
+            )}
+          </div>
         </div>
-      </section>
+      </SettingSection>
     </section>
   );
 }

@@ -1,14 +1,21 @@
 import { Form, Input, Modal, Select, Space, Tag, Typography, message } from 'antd';
-import InlineNote from '@/components/ui/InlineNote';
-import { PlayCircleOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import {
+  CodeOutlined,
+  PlayCircleOutlined,
+  SafetyCertificateOutlined
+} from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import { SettingRow, SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { toolkitAPI } from '@/services/api';
 import type {
   EnvironmentActionInput,
   EnvironmentActionPlan,
   EnvironmentActionResponse
 } from '@/types';
+import './ToolkitPanels.css';
 
 const { Text } = Typography;
 
@@ -70,6 +77,7 @@ export default function EnvironmentActionPanel({
   const [plannedInput, setPlannedInput] = useState<EnvironmentActionInput | null>(null);
   const [planning, setPlanning] = useState(false);
   const [executing, setExecuting] = useState(false);
+  const [planError, setPlanError] = useState('');
   const [result, setResult] = useState<EnvironmentActionResponse | null>(null);
   const action = Form.useWatch('action', form) as EnvironmentActionInput['action'] | undefined;
 
@@ -78,6 +86,7 @@ export default function EnvironmentActionPanel({
     form.setFieldsValue({ action: actions?.[0]?.value, path: '.venv' });
     setPlan(null);
     setPlannedInput(null);
+    setPlanError('');
     setResult(null);
   }, [actions, form, managerId]);
 
@@ -95,6 +104,7 @@ export default function EnvironmentActionPanel({
 
   const requestPlan = async () => {
     setPlanning(true);
+    setPlanError('');
     setResult(null);
     try {
       const input = await buildInput();
@@ -104,7 +114,9 @@ export default function EnvironmentActionPanel({
       setPlannedInput(input);
     } catch (error) {
       if ((error as { errorFields?: unknown[] })?.errorFields) return;
-      message.error(apiError(error, '生成执行计划失败'));
+      const detail = apiError(error, '生成执行计划失败');
+      setPlanError(detail);
+      message.error(detail);
     } finally {
       setPlanning(false);
     }
@@ -118,8 +130,8 @@ export default function EnvironmentActionPanel({
       content: (
         <Space direction="vertical">
           <Text>{plan.effect}</Text>
-          <Text type="secondary">执行范围：{plan.scope}。该操作不会改变已经打开的终端 Shell。</Text>
-          {selectedAction?.danger && <Text type="danger">这是卸载或删除操作，请确认目标版本/环境无误。</Text>}
+          <Text type="secondary">执行范围：{plan.scope}。不会影响已打开的终端 Shell。</Text>
+          {selectedAction?.danger && <Text type="danger">此操作会卸载或删除目标，请确认无误。</Text>}
         </Space>
       ),
       okText: '确认执行',
@@ -143,88 +155,126 @@ export default function EnvironmentActionPanel({
     });
   };
 
+  const statusTag = executing
+    ? <SettingStatusTag status="saving" label="执行中" compact />
+    : result
+      ? <SettingStatusTag status={result.ok ? 'applied' : 'error'} label={result.ok ? '已执行' : '失败'} compact />
+      : detected
+        ? <SettingStatusTag status="saved" label="已安装" compact />
+        : <SettingStatusTag status="unset" label="未安装" compact />;
+
   return (
-    <section className="toolkit-environment-action" aria-labelledby="toolkit-environment-action-title">
-      <div className="toolkit-panel-kicker">STRUCTURED ACTION</div>
-      <h3 id="toolkit-environment-action-title">受控执行</h3>
-      <InlineNote
-        tone={detected ? 'info' : 'warning'}
-        description={detected
-          ? '服务端只接受结构化参数和固定命令白名单，不接受任意 Shell。安装脚本类指南仍只允许复制。'
-          : '可以继续查看和复制安装指南，但在管理器可被 PATH/用户目录探测到之前不会开放执行按钮。'}
-      >
-        {detected ? '先生成计划，再显式确认执行' : `${managerId} 未被当前 AIH 进程检测到`}
-      </InlineNote>
-      <Form
-        form={form}
-        layout="inline"
-        className="toolkit-environment-action-form"
-        onValuesChange={() => {
-          setPlan(null);
-          setPlannedInput(null);
-          setResult(null);
-        }}
-      >
-        <Form.Item label="操作" name="action" rules={[{ required: true }]}>
-          <Select style={{ minWidth: 180 }} options={actions} />
-        </Form.Item>
-        {manager !== 'conda' && manager !== 'venv' && (
-          <Form.Item label="版本" name="version" rules={[{ required: true, message: '请输入版本' }]}>
-            <Input placeholder={manager === 'pyenv' ? '3.12.7' : '22'} />
-          </Form.Item>
-        )}
-        {manager === 'conda' && (
-          <>
-            <Form.Item label="环境名" name="name" rules={[{ required: true, message: '请输入环境名' }]}>
-              <Input placeholder="analytics" />
-            </Form.Item>
-            {action === 'create' && (
-              <Form.Item label="Python" name="pythonVersion" rules={[{ required: true, message: '请输入 Python 版本' }]}>
-                <Input placeholder="3.12" />
-              </Form.Item>
-            )}
-          </>
-        )}
-        {manager === 'venv' && (
-          <Form.Item label="当前项目内目录" name="path" rules={[{ required: true, message: '请输入目录' }]}>
-            <Input placeholder=".venv" />
-          </Form.Item>
-        )}
-        <Form.Item>
-          <Button loading={planning} onClick={() => void requestPlan()}>生成计划</Button>
-        </Form.Item>
-      </Form>
+    <SettingSection
+      title="受控执行"
+      description="按结构化参数生成计划，经确认后仅执行白名单命令。"
+      status={statusTag}
+    >
+      {!detected ? (
+        <InlineNote tone="warning">
+          {managerId} 未在当前 PATH 或用户目录中探测到，仅可预演计划，暂不可执行。
+        </InlineNote>
+      ) : null}
 
-      {plan && (
-        <div className="toolkit-action-plan">
-          <Space wrap>
-            <Tag color="blue">{plan.manager}</Tag>
-            <Tag>{plan.action}</Tag>
-            <Tag color={selectedAction?.danger ? 'error' : 'warning'}>会修改本机环境</Tag>
-          </Space>
-          <p>{plan.effect}</p>
-          <pre tabIndex={0}><code>{planPreview(plan)}</code></pre>
-          <Button
-            type="primary"
-            danger={selectedAction?.danger}
-            icon={<PlayCircleOutlined />}
-            loading={executing}
-            disabled={!detected}
-            onClick={execute}
+      <SettingRow
+        title="参数配置"
+        description="修改参数后需重新生成执行计划。"
+        layout="stacked"
+        control={(
+          <Form
+            form={form}
+            layout="vertical"
+            requiredMark={false}
+            onValuesChange={() => {
+              setPlan(null);
+              setPlannedInput(null);
+              setPlanError('');
+              setResult(null);
+            }}
           >
-            审阅后执行
-          </Button>
-        </div>
-      )}
+            <div className="toolkit-env-action-grid">
+              <Form.Item label="操作" name="action" rules={[{ required: true }]}>
+                <Select options={actions} />
+              </Form.Item>
+              {manager !== 'conda' && manager !== 'venv' ? (
+                <Form.Item label="版本" name="version" rules={[{ required: true, message: '请输入版本' }]}>
+                  <Input placeholder={manager === 'pyenv' ? '3.12.7' : '22'} />
+                </Form.Item>
+              ) : null}
+              {manager === 'conda' ? (
+                <>
+                  <Form.Item label="环境名" name="name" rules={[{ required: true, message: '请输入环境名' }]}>
+                    <Input placeholder="analytics" />
+                  </Form.Item>
+                  {action === 'create' ? (
+                    <Form.Item label="Python 版本" name="pythonVersion" rules={[{ required: true, message: '请输入 Python 版本' }]}>
+                      <Input placeholder="3.12" />
+                    </Form.Item>
+                  ) : null}
+                </>
+              ) : null}
+              {manager === 'venv' ? (
+                <Form.Item label="项目目录" name="path" rules={[{ required: true, message: '请输入目录' }]}>
+                  <Input placeholder=".venv" />
+                </Form.Item>
+              ) : null}
+            </div>
+            <Space wrap style={{ marginTop: 12 }}>
+              <Button icon={<CodeOutlined />} loading={planning} onClick={() => void requestPlan()}>
+                生成计划
+              </Button>
+              {plan ? (
+                <Button
+                  type="primary"
+                  danger={selectedAction?.danger}
+                  icon={<PlayCircleOutlined />}
+                  loading={executing}
+                  disabled={!detected}
+                  onClick={execute}
+                >
+                  审阅后执行
+                </Button>
+              ) : null}
+            </Space>
+          </Form>
+        )}
+      />
 
-      {result && (
+      {planError ? (
+        <InlineNote tone="error" description={planError}>
+          生成计划失败
+        </InlineNote>
+      ) : null}
+
+      {plan ? (
+        <SettingRow
+          title="计划预览"
+          description={plan.effect}
+          layout="stacked"
+          status={(
+            <Space size={4} wrap>
+              <Tag color="blue">{plan.manager}</Tag>
+              <Tag>{plan.action}</Tag>
+              <Tag color={selectedAction?.danger ? 'error' : 'warning'}>
+                {selectedAction?.danger ? '将移除环境' : '将修改环境'}
+              </Tag>
+            </Space>
+          )}
+          control={(
+            <pre className="toolkit-env-plan-pre" tabIndex={0}>
+              <code>{planPreview(plan)}</code>
+            </pre>
+          )}
+        />
+      ) : null}
+
+      {result ? (
         <InlineNote
           tone={result.ok ? 'success' : 'error'}
           description={(result.stdout || result.stderr || result.message || result.error || '').slice(0, 4000)}
         >
           {result.ok ? '执行完成' : '执行失败'}
         </InlineNote>
-      )}
-    </section>
+      ) : null}
+    </SettingSection>
   );
 }

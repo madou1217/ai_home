@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import {
-  message,
-  Segmented
-} from 'antd';
-import HudStateView from '@/components/hud/HudStateView';
+import { message, Segmented } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import HudStateView from '@/components/hud/HudStateView';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import { SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { toolkitAPI } from '@/services/api';
+import ToolkitEmptyState from './ToolkitEmptyState';
+import ToolkitPanelHeader from './ToolkitPanelHeader';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ManagedAppCard from './ManagedAppCard';
 import type { ManagedAppLaunchTarget } from './ManagedAppAccountActions';
@@ -49,7 +51,6 @@ export default function AppManagerPanel() {
     installHooks,
     uninstallHooks
   } = useManagedApps();
-  // 自动升级结论挂在应用卡片上（同 provider 只给一处结论），不再有独立的升级面板。
   const {
     loading: upgradeLoading,
     error: upgradeError,
@@ -80,6 +81,11 @@ export default function AppManagerPanel() {
       ? data.apps
       : data.apps.filter((app) => app.categories.includes(category));
   }, [category, data]);
+
+  const refreshAll = () => {
+    void fetchApps();
+    void fetchUpgradeStatus();
+  };
 
   const openManagedApp = async (app: ManagedAppLaunchTarget, accountRef?: string, unscoped = false) => {
     const kind = app.type === 'desktop' ? 'desktop' : 'cli';
@@ -134,106 +140,140 @@ export default function AppManagerPanel() {
 
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-apps-title">
-      <header className="toolkit-panel-header">
-        <div>
-          <div className="toolkit-panel-kicker">APPLICATION INVENTORY</div>
-          <h2 id="toolkit-apps-title">应用管理</h2>
-          <p>应用清单与 provider CLI 的自动升级结论在同一张卡片上：新版本只在该 CLI 空闲时生效，不会打断进行中的会话。</p>
-        </div>
-        <div className="toolkit-header-actions">
+      <ToolkitPanelHeader
+        titleId="toolkit-apps-title"
+        title="应用管理"
+        subtitle="管理本机 CLI 与桌面应用安装、启停及空闲自动升级状态。"
+        extra={(
           <Button
             icon={<ReloadOutlined />}
             loading={loading || upgradeLoading}
-            onClick={() => { void fetchApps(); void fetchUpgradeStatus(); }}
+            onClick={refreshAll}
           >
             重新探测
           </Button>
-        </div>
-      </header>
+        )}
+      />
 
-      {error && (
-        <div className="toolkit-inline-error" role="alert">
-          <span className="hud-led hud-led--err" aria-hidden="true" />
-          <strong>应用清单读取失败</strong>
-          <span>{error}</span>
-        </div>
-      )}
-      {upgradeError && (
-        <div className="toolkit-inline-error" role="alert">
-          <span className="hud-led hud-led--err" aria-hidden="true" />
-          <strong>升级状态读取失败</strong>
-          <span>{upgradeError}</span>
-        </div>
-      )}
+      {error ? (
+        <InlineNote
+          tone="error"
+          description={error}
+          action={<Button size="small" onClick={() => void fetchApps()}>重试</Button>}
+        >
+          应用清单读取失败
+        </InlineNote>
+      ) : null}
+      {upgradeError ? (
+        <InlineNote
+          tone="error"
+          description={upgradeError}
+          action={<Button size="small" onClick={() => void fetchUpgradeStatus()}>重试</Button>}
+        >
+          升级状态读取失败
+        </InlineNote>
+      ) : null}
+
       {loading && !data ? (
         <HudStateView variant="loading" code="APPS // INVENTORY" title="正在探测主机应用清单..." compact />
       ) : data ? (
-        <>
+        <div className="toolkit-panel-stack">
           <ToolkitStatusTrack
             ariaLabel="应用集成状态轨道"
             items={[
-              { label: '实测', value: `${data.total} 个应用`, detail: '来自当前主机的应用清单', tone: 'info' },
-              { label: '配置', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
-              { label: '即时刷新', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个 CLI 已启用` : '无需启用', detail: '新回合写入本地会话后可立即在 WebUI 看到', tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' },
+              { label: '已发现', value: `${data.total} 个应用`, detail: '本机受管清单', tone: 'info' },
+              { label: '安装状态', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
+              {
+                label: '即时刷新',
+                value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 已启用` : '未涉及',
+                detail: hookSupportedCount ? '本地新回合即时同步到 WebUI' : '当前清单无支持项',
+                tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning'
+              },
               {
                 label: 'CLI 自动升级',
                 value: upgradeMode.label,
                 detail: upgradeAttention
-                  ? `${upgradeAttention} 个异常需要人工确认 · ${upgradeMode.detail}`
+                  ? `${upgradeAttention} 个失败待确认`
                   : upgradeUpdatable
-                    ? `${upgradeUpdatable} 个有新版 · ${upgradeMode.detail}`
+                    ? `${upgradeUpdatable} 个有新版`
                     : upgradeMode.detail,
                 tone: upgradeAttention ? 'danger' : UPGRADE_TRACK_TONES[upgradeMode.tone]
               }
             ]}
           />
 
-          <div className="toolkit-category-bar aih-fade-in">
-            <div className="toolkit-filter-scroll">
-              <Segmented
-                aria-label="应用分类"
-                value={category}
-                onChange={(value) => {
-                  const next = String(value);
-                  const order = APP_CATEGORIES.map((item) => item.value);
-                  switchAppGrid(() => setCategory(next), {
-                    current: category,
-                    next,
-                    direction: resolveOrderedDirection(order, category, next)
-                  });
-                }}
-                options={APP_CATEGORIES}
+          <SettingSection
+            title="应用清单"
+            description="按类别筛选并执行安装、更新、卸载或打开高级设置。"
+            status={(
+              <SettingStatusTag
+                status={filteredApps.length ? 'saved' : 'unset'}
+                label={`显示 ${filteredApps.length} / ${data.total}`}
+                compact
               />
-            </div>
-            <span className="toolkit-result-count">当前显示 {filteredApps.length} 项</span>
-          </div>
-
-          <div ref={appGridRef}>
-            {filteredApps.length ? (
-              <div className="toolkit-grid aih-fade-in">
-                {filteredApps.map((app) => (
-                  <ManagedAppCard
-                    key={app.id}
-                    app={app}
-                    busyAction={busyActionFor(app)}
-                    checkingUpdate={Boolean(checkingUpdates[app.id])}
-                    accounts={accounts}
-                    runningAccountPids={runningAccountPids}
-                    runningCliAccountPids={runningCliAccountPids}
-                    upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
-                    clearingUpgrade={clearingProvider === app.provider}
-                    onAction={(target, action) => void runAppAction(target, action)}
-                    onCheckUpdate={(target) => void checkAppUpdate(target)}
-                    onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
-                    onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
-                    onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
-                    onEditConfig={(target) => setAdvancedAppId(target.id)}
-                  />
-                ))}
+            )}
+          >
+            <div className="toolkit-panel-section-toolbar" style={{ paddingTop: 12 }}>
+              <div className="toolkit-filter-scroll">
+                <Segmented
+                  aria-label="应用分类"
+                  value={category}
+                  onChange={(value) => {
+                    const next = String(value);
+                    const order = APP_CATEGORIES.map((item) => item.value);
+                    switchAppGrid(() => setCategory(next), {
+                      current: category,
+                      next,
+                      direction: resolveOrderedDirection(order, category, next)
+                    });
+                  }}
+                  options={APP_CATEGORIES}
+                />
               </div>
-            ) : <HudStateView code="APPS // EMPTY" title="当前分类没有应用" compact />}
-          </div>
-        </>
+              <span className="toolkit-result-count">共 {filteredApps.length} 项</span>
+            </div>
+
+            <div ref={appGridRef} style={{ paddingBottom: 12 }}>
+              {filteredApps.length ? (
+                <div className="toolkit-grid aih-fade-in">
+                  {filteredApps.map((app) => (
+                    <ManagedAppCard
+                      key={app.id}
+                      app={app}
+                      busyAction={busyActionFor(app)}
+                      checkingUpdate={Boolean(checkingUpdates[app.id])}
+                      accounts={accounts}
+                      runningAccountPids={runningAccountPids}
+                      runningCliAccountPids={runningCliAccountPids}
+                      upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
+                      clearingUpgrade={clearingProvider === app.provider}
+                      onAction={(target, action) => void runAppAction(target, action)}
+                      onCheckUpdate={(target) => void checkAppUpdate(target)}
+                      onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
+                      onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
+                      onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
+                      onEditConfig={(target) => setAdvancedAppId(target.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <ToolkitEmptyState
+                  title="当前分类下没有应用"
+                  description="切换回全部分类可查看所有已探测到的本机应用。"
+                  action={category !== 'ALL' ? (
+                    <Button type="primary" size="small" onClick={() => setCategory('ALL')}>
+                      查看全部应用
+                    </Button>
+                  ) : (
+                    <Button icon={<ReloadOutlined />} size="small" onClick={refreshAll}>
+                      重新探测
+                    </Button>
+                  )}
+                />
+              )}
+            </div>
+          </SettingSection>
+        </div>
       ) : null}
 
       <KimiDesktopLoginModal

@@ -1,40 +1,43 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, Empty, Popconfirm, Space, Spin, Tabs, Tag, Typography, message } from 'antd';
+import { Space, Tabs, Tag, message } from 'antd';
 import {
   ApiOutlined,
   BookOutlined,
   CodeOutlined,
-  DeleteOutlined,
   ExperimentOutlined,
-  InfoCircleOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
+import HudStateView from '@/components/hud/HudStateView';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
+import { SettingSection } from '@/components/ui/SettingSection';
+import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import { toolkitAPI } from '@/services/api';
 import type {
-  NativeResourceAction,
   NativeResourceKind,
   NativeResourceManagedRecord,
   NativeResourceReport
 } from '@/types';
 import AihPluginPanel from './AihPluginPanel';
 import NativeResourceDetailModal from './NativeResourceDetailModal';
+import NativeResourceGroupCard, {
+  nativeActionLabel,
+  nativeActionTargets,
+  type ManagedNativeAction
+} from './NativeResourceGroupCard';
 import NativeResourceInstallModal from './NativeResourceInstallModal';
+import ToolkitEmptyState from './ToolkitEmptyState';
+import ToolkitPanelHeader from './ToolkitPanelHeader';
 import {
   KIND_LABELS,
   RESOURCE_KINDS,
   groupNativeResources,
-  isEnabled,
   resourceKey,
-  resourceOwner,
-  resourceSummary
+  resourceOwner
 } from './native-resource-grouping';
 import type { NativeResourceGroup } from './native-resource-grouping';
 
-type ManagedAction = Extract<NativeResourceAction, 'enable' | 'disable' | 'remove' | 'test'>;
 type ResourceTab = NativeResourceKind | 'aih';
 
 const KIND_ICONS: Record<NativeResourceKind, React.ReactNode> = {
@@ -43,22 +46,10 @@ const KIND_ICONS: Record<NativeResourceKind, React.ReactNode> = {
   mcp: <ApiOutlined />
 };
 
-function actionTargets(group: NativeResourceGroup, action: ManagedAction): NativeResourceManagedRecord[] {
-  if (action === 'enable') return group.records.filter((record) => !isEnabled(record));
-  if (action === 'disable') return group.records.filter(isEnabled);
-  return group.records;
-}
-
-function actionLabel(action: ManagedAction, count: number): string {
-  const prefix = count > 1 ? '全部' : '';
-  if (action === 'enable') return `${prefix}启用`;
-  if (action === 'disable') return `${prefix}停用`;
-  return `${prefix}移除`;
-}
-
 export default function NativeResourcesPanel() {
   const [report, setReport] = useState<NativeResourceReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeKind, setActiveKind] = useState<ResourceTab>('plugin');
   const [busy, setBusy] = useState('');
   const [bulkBusy, setBulkBusy] = useState('');
@@ -67,12 +58,26 @@ export default function NativeResourcesPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setReport(await toolkitAPI.getNativeResources()); }
-    catch (error) { message.error(error instanceof Error ? error.message : '原生资源读取失败'); }
-    finally { setLoading(false); }
+    setLoadError('');
+    try {
+      setReport(await toolkitAPI.getNativeResources());
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '原生资源读取失败';
+      setLoadError(detail);
+      message.error(detail);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const groups = useMemo(() => groupNativeResources(report), [report]);
+  const counts = useMemo(() => {
+    const next: Record<NativeResourceKind, number> = { plugin: 0, skill: 0, mcp: 0 };
+    for (const group of groups) next[group.kind] += 1;
+    return next;
+  }, [groups]);
 
   // 详情弹窗持有分组快照；操作后报告刷新时同步到新状态，避免弹窗内状态不更新。
   useEffect(() => {
@@ -85,12 +90,6 @@ export default function NativeResourcesPanel() {
     if (next !== detailGroup) setDetailGroup(next);
   }, [groups, detailGroup]);
 
-  const groups = useMemo(() => groupNativeResources(report), [report]);
-  const counts = useMemo(() => {
-    const next: Record<NativeResourceKind, number> = { plugin: 0, skill: 0, mcp: 0 };
-    for (const group of groups) next[group.kind] += 1;
-    return next;
-  }, [groups]);
   const visibleGroups = useMemo(
     () => groups.filter((group) => activeKind !== 'aih' && group.kind === activeKind),
     [groups, activeKind]
@@ -98,7 +97,7 @@ export default function NativeResourcesPanel() {
 
   const operate = useCallback(async (
     record: NativeResourceManagedRecord,
-    action: ManagedAction
+    action: ManagedNativeAction
   ): Promise<boolean> => {
     setBusy(`${resourceKey(record)}:${action}`);
     try {
@@ -118,16 +117,17 @@ export default function NativeResourcesPanel() {
     }
   }, [load]);
 
-  const runSingle = useCallback(async (record: NativeResourceManagedRecord, action: ManagedAction) => {
+  const runSingle = useCallback(async (record: NativeResourceManagedRecord, action: ManagedNativeAction) => {
     const ok = await operate(record, action);
     if (ok) {
       message.success(`${record.id} · ${resourceOwner(record)} ${action === 'enable' ? '已启用' : action === 'disable' ? '已停用' : action === 'remove' ? '已移除' : '连接检查完成'}`);
       if (action === 'remove') setDetailGroup(null);
     }
+    return ok;
   }, [operate]);
 
-  const runBulk = useCallback(async (group: NativeResourceGroup, action: ManagedAction) => {
-    const targets = actionTargets(group, action);
+  const runBulk = useCallback(async (group: NativeResourceGroup, action: ManagedNativeAction) => {
+    const targets = nativeActionTargets(group, action);
     if (!targets.length) return;
     setBulkBusy(group.key);
     try {
@@ -140,9 +140,9 @@ export default function NativeResourcesPanel() {
       const failed = results.filter((result) => result.status === 'rejected');
       if (failed.length) {
         const reason = failed[0] as PromiseRejectedResult;
-        message.warning(`${actionLabel(action, targets.length)}完成 ${targets.length - failed.length}/${targets.length}；${reason.reason instanceof Error ? reason.reason.message : '部分宿主失败'}`);
+        message.warning(`${nativeActionLabel(action, targets.length)}完成 ${targets.length - failed.length}/${targets.length}；${reason.reason instanceof Error ? reason.reason.message : '部分宿主失败'}`);
       } else {
-        message.success(`${group.id} ${actionLabel(action, targets.length)}完成`);
+        message.success(`${group.id} ${nativeActionLabel(action, targets.length)}完成`);
       }
       await load();
     } finally {
@@ -150,135 +150,101 @@ export default function NativeResourcesPanel() {
     }
   }, [load]);
 
-  const renderGroup = (group: NativeResourceGroup) => {
-    const enabledCount = group.records.filter(isEnabled).length;
-    const allEnabled = enabledCount === group.records.length;
-    const multi = group.records.length > 1;
-    const summary = group.description
-      || (group.kind === 'mcp'
-        ? Array.from(new Set(group.records.map(resourceSummary))).join(' · ')
-        : '未提供描述');
-    return (
-      <Card
-        key={group.key}
-        size="small"
-        className="toolkit-native-resource-card"
-        title={(
-          <Space wrap size={8}>
-            {KIND_ICONS[group.kind]}
-            <strong>{group.id}</strong>
-            <Tag>{KIND_LABELS[group.kind]}</Tag>
-            {group.version ? <Tag>{group.version}</Tag> : null}
-            <Tag color={enabledCount ? 'success' : 'default'}>{enabledCount}/{group.records.length} 启用</Tag>
-          </Space>
-        )}
-        extra={(
-          <Button size="small" icon={<InfoCircleOutlined />} onClick={() => setDetailGroup(group)}>
-            详情
-          </Button>
-        )}
-      >
-        <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Typography.Paragraph
-            type="secondary"
-            style={{ margin: 0 }}
-            ellipsis={{ rows: 2, tooltip: summary }}
-          >
-            {summary}
-          </Typography.Paragraph>
-          <Space wrap size={[6, 6]}>
-            {group.records.map((record) => (
-              <Tag key={resourceKey(record)} color={isEnabled(record) ? 'success' : 'default'}>
-                {resourceOwner(record)}
-              </Tag>
-            ))}
-          </Space>
-          <Space wrap size={6}>
-            {!allEnabled ? (
-              <Button
-                size="small"
-                icon={<PlayCircleOutlined />}
-                disabled={Boolean(bulkBusy)}
-                loading={bulkBusy === group.key}
-                onClick={() => void runBulk(group, 'enable')}
-              >{actionLabel('enable', actionTargets(group, 'enable').length)}</Button>
-            ) : null}
-            {enabledCount ? (
-              <Button
-                size="small"
-                icon={<PauseCircleOutlined />}
-                disabled={Boolean(bulkBusy)}
-                loading={bulkBusy === group.key}
-                onClick={() => void runBulk(group, 'disable')}
-              >{actionLabel('disable', actionTargets(group, 'disable').length)}</Button>
-            ) : null}
-            <Popconfirm
-              title={`移除 ${group.id} 的全部 ${group.records.length} 个投影？`}
-              description={multi ? '将逐个宿主执行，已修改的投影会保留并报错。' : undefined}
-              okText="移除"
-              cancelText="取消"
-              danger
-              onConfirm={() => void runBulk(group, 'remove')}
-            >
-              <Button
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                disabled={Boolean(busy) || Boolean(bulkBusy)}
-              >{actionLabel('remove', group.records.length)}</Button>
-            </Popconfirm>
-          </Space>
-        </Space>
-      </Card>
-    );
-  };
-
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-native-resources">
-      <header className="toolkit-panel-header">
-        <div>
-          <div className="toolkit-panel-kicker">PLUGIN CONTROL SURFACE</div>
-          <h2 id="toolkit-native-resources">插件与资源</h2>
-          <Typography.Text type="secondary">
-            AIH 能力插件运行在 AIH 宿主；原生插件、Skill、MCP 由 Provider / Harness 加载。四类资源在同一页按平面分组。
-          </Typography.Text>
-        </div>
-        {activeKind !== 'aih' ? (
-          <Space>
-            <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>安装</Button>
-            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>重新探测</Button>
+      <ToolkitPanelHeader
+        titleId="toolkit-native-resources"
+        title="插件与资源"
+        subtitle="按类型管理原生插件、Skill、MCP 及 AIH 能力插件的安装与启停。"
+        extra={activeKind !== 'aih' ? (
+          <Space wrap size={8}>
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => setInstallOpen(true)}>
+              安装资源
+            </Button>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
+              重新探测
+            </Button>
           </Space>
         ) : null}
-      </header>
-      {loading && !report ? <div className="toolkit-loading"><Spin size="large" /></div> : null}
-      <Tabs
-        className="toolkit-native-resource-tabs"
-        activeKey={activeKind}
-        onChange={(value) => setActiveKind(value as ResourceTab)}
-        items={[
-          ...RESOURCE_KINDS.map((kind) => ({
-            key: kind,
-            label: <span>{KIND_ICONS[kind]} {KIND_LABELS[kind]}<Tag className="toolkit-native-resource-count">{counts[kind]}</Tag></span>,
-            children: (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                {visibleGroups.length
-                  ? visibleGroups.map(renderGroup)
-                  : <Empty description={`当前没有已安装的${KIND_LABELS[kind]}`} />}
-              </Space>
-            )
-          })),
-          {
-            key: 'aih',
-            label: <span><ExperimentOutlined /> AIH 能力插件</span>,
-            children: <AihPluginPanel />
-          }
-        ]}
       />
-      {report && activeKind !== 'aih' ? (
-        <Typography.Text type="secondary" style={{ display: 'block' }}>
-          此页仅反映安装与启停状态，不作为插件已真实执行的证明。
-        </Typography.Text>
+
+      {loadError ? (
+        <InlineNote
+          tone="error"
+          description={loadError}
+          action={<Button size="small" onClick={() => void load()}>重试</Button>}
+        >
+          原生资源读取失败
+        </InlineNote>
       ) : null}
+
+      {loading && !report ? (
+        <HudStateView variant="loading" code="RESOURCES // PROBE" title="正在探测已安装资源..." compact />
+      ) : (
+        <Tabs
+          className="toolkit-native-resource-tabs"
+          activeKey={activeKind}
+          onChange={(value) => setActiveKind(value as ResourceTab)}
+          items={[
+            ...RESOURCE_KINDS.map((kind) => ({
+              key: kind,
+              label: (
+                <span>
+                  {KIND_ICONS[kind]} {KIND_LABELS[kind]}
+                  <Tag className="toolkit-native-resource-count">{counts[kind]}</Tag>
+                </span>
+              ),
+              children: (
+                <SettingSection
+                  title={`${KIND_LABELS[kind]}列表`}
+                  description="按资源汇总各宿主投影，支持批量启停或进入详情逐项管理。"
+                  status={(
+                    <SettingStatusTag
+                      status={counts[kind] ? 'saved' : 'unset'}
+                      label={counts[kind] ? `已安装 ${counts[kind]} 项` : '未安装'}
+                      compact
+                    />
+                  )}
+                >
+                  <div style={{ padding: '12px 0' }}>
+                    {visibleGroups.length ? (
+                      <div className="toolkit-native-grid">
+                        {visibleGroups.map((group) => (
+                          <NativeResourceGroupCard
+                            key={group.key}
+                            group={group}
+                            icon={KIND_ICONS[group.kind]}
+                            busy={busy}
+                            bulkBusy={bulkBusy}
+                            onOpenDetail={setDetailGroup}
+                            onBulkAction={(target, action) => void runBulk(target, action)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <ToolkitEmptyState
+                        title={`当前没有已安装的${KIND_LABELS[kind]}`}
+                        description="从内置源、本地目录或 URL 导入安装到指定 Provider / 宿主。"
+                        action={(
+                          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setInstallOpen(true)}>
+                            安装{KIND_LABELS[kind]}
+                          </Button>
+                        )}
+                      />
+                    )}
+                  </div>
+                </SettingSection>
+              )
+            })),
+            {
+              key: 'aih',
+              label: <span><ExperimentOutlined /> AIH 能力插件</span>,
+              children: <AihPluginPanel />
+            }
+          ]}
+        />
+      )}
+
       <NativeResourceDetailModal
         group={detailGroup}
         busy={busy}

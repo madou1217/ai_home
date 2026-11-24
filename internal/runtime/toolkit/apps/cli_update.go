@@ -17,8 +17,8 @@ type CLIUpdateResult struct {
 // UpdateCLI runs the existing official lifecycle plans synchronously. Unlike a
 // WebUI job, the invoking terminal owns cancellation and waits for its children.
 // No account projection, gateway connection or server config is required.
-func UpdateCLI(ctx context.Context, provider string, opts Options, explicitProxy bool, progress func(string)) (CLIUpdateResult, error) {
-	return runCLILifecycle(ctx, provider, "update", opts, explicitProxy, progress)
+func UpdateCLI(ctx context.Context, provider string, opts Options, proxyActive bool, progress func(string)) (CLIUpdateResult, error) {
+	return runCLILifecycle(ctx, provider, "update", opts, proxyActive, progress)
 }
 
 // Keep the selected Claude install channel. Unknown launchers are not permission

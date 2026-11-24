@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -603,12 +604,31 @@ func (m *JobManager) runLifecyclePlans(
 	}
 	// 与 CLI 的 --proxy 契约一致：Windows 官方安装器无法保证全部下载走代理时
 	// 直接失败，不能把「设置了代理」静默变成直连。
-	if proxyActive && target.Kind == "cli" && resolvePlatform(opts) == platformWindows {
+	// Windows 上「设了代理」必须真的走代理。判定按计划类型而不是 kind——
+	// 先前只看 kind=cli，桌面端与 winget 全部漏掉。
+	//
+	// 语义是「跳过不可代理的计划」而不是整体拒绝：同一个 provider 的 Windows
+	// 计划常是 PowerShell / cmd / winget 混合列表，逐条尝试。把 winget 剔掉后
+	// 剩下的计划仍能完成安装；若全被剔掉才如实失败。
+	// 真机实测：winget 既不读 HTTP(S)_PROXY 也不读 DefaultWebProxy，死代理下
+	// 仍能访问源——它是唯一不可代理的一类。
+	if proxyActive && resolvePlatform(opts) == platformWindows {
+		kept := make([]LifecyclePlan, 0, len(plans))
+		var skipped []string
 		for _, plan := range plans {
-			if !isNPMCommand(plan.Command) {
-				return lifecycleOutcome{err: fmt.Sprintf("%v: 此 Windows 官方安装器不能保证所有下载使用代理；请使用支持代理的官方原生命令，不会修改系统代理或回落直连", ErrEgressUnsupported)}
+			if planHonorsProxy(plan) {
+				kept = append(kept, plan)
+				continue
 			}
+			skipped = append(skipped, nonEmpty(plan.Label, plan.ID))
 		}
+		if len(kept) == 0 {
+			return lifecycleOutcome{err: fmt.Sprintf("%v: 此 Windows 安装器（%s）不能保证所有下载使用代理；请改用支持代理的官方原生命令，不会修改系统代理或回落直连", ErrEgressUnsupported, strings.Join(skipped, "、"))}
+		}
+		if len(skipped) > 0 {
+			m.updateProgress(jobID, 10, "已跳过不支持代理的安装器："+strings.Join(skipped, "、"))
+		}
+		plans = kept
 	}
 
 	var errs []string
@@ -1157,6 +1177,40 @@ func planExecOptions(timeout time.Duration, baseEnv, planEnv map[string]string) 
 		Timeout:  timeout,
 		Env:      merged,
 		UnsetEnv: updateproxy.UnsetForTask(merged),
+	}
+}
+
+// planHonorsProxy 判断一条 Windows 计划能否保证所有下载走任务期代理。
+//
+// 分三类（真机实测结论）：
+//   - npm.cmd        ：读 npm_config_proxy / HTTP(S)_PROXY —— 可代理
+//   - cmd.exe + curl ：curl 读 HTTPS_PROXY —— 可代理（ALL_PROXY 已按平台移除）
+//   - powershell.exe ：计划里已注入 DefaultWebProxy + Credentials —— 可代理
+//   - winget.exe     ：两者都不读，死代理下仍直连 —— 不可代理
+//
+// 其它（原生 exe 安装器、msiexec 等）一律按不可代理处理：宁可明确拒绝，
+// 也不能让用户以为走了代理。
+func planHonorsProxy(plan LifecyclePlan) bool {
+	switch strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command))) {
+	case "npm", "npm.cmd":
+		return true
+	case "cmd", "cmd.exe":
+		// 我们的 cmd 计划用 curl 下载；凭据在 HTTPS_PROXY 里，curl 认。
+		for _, arg := range plan.Args {
+			if strings.Contains(arg, "curl") {
+				return true
+			}
+		}
+		return false
+	case "powershell", "powershell.exe", "pwsh", "pwsh.exe":
+		for _, arg := range plan.Args {
+			if strings.Contains(arg, "DefaultWebProxy") {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
 	}
 }
 

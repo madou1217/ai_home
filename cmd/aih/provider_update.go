@@ -235,11 +235,25 @@ func (cycle *providerLifecycleCycle) taskEnv(proxyURL string) (map[string]string
 }
 
 func (cycle *providerLifecycleCycle) invoke(lifecycle apps.CLILifecycleFunc, env map[string]string) (apps.CLIUpdateResult, error) {
+	// 第三个参数告诉安装层「本轮是否真的配了代理」：自动代理轮换时它不是用户
+	// 显式指定的，但同样会让安装器走代理，Windows 上必须据此剔除不可代理的
+	// 计划。先前传 cycle.options.explicitProxy，于是自动代理那一轮等于没配。
+	proxyActive := taskProxyActive(env)
 	return lifecycle(cycle.ctx, cycle.provider, apps.Options{
 		AIHomeDir: cycle.aiHome, HostHomeDir: cycle.hostHome, Env: env,
-	}, cycle.options.explicitProxy, func(step string) {
+	}, proxyActive, func(step string) {
 		_, _ = fmt.Fprintf(cycle.runtime.stderr, "[aih] %s\n", step)
 	})
+}
+
+// taskProxyActive 判断本轮环境里是否真的设置了任务期代理。
+func taskProxyActive(env map[string]string) bool {
+	for _, key := range []string{"AIH_TASK_PROXY", "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"} {
+		if value, ok := env[key]; ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (cycle *providerLifecycleCycle) redactError(err error, proxyURL string) error {

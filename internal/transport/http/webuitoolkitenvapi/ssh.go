@@ -274,7 +274,16 @@ func (executor *sshExecutor) Run(ctx context.Context, command string, args []str
 	if directory == "" {
 		directory = executor.homeDir
 	}
-	exports := make([]string, 0, len(options.Env))
+	// 远端宿主环境变量必须先移除再导出：只 export 不会去掉远端已有的同名
+	// 变量，而 Windows 目标上残留的 ALL_PROXY 会让远端 curl 直接失败。
+	// 顺序是 unset → export，保证导出值覆盖清理结果。
+	var exports []string
+	for _, key := range options.UnsetEnv {
+		if !environmentNamePattern.MatchString(key) {
+			continue
+		}
+		exports = append(exports, "unset "+key)
+	}
 	for key, value := range options.Env {
 		if !environmentNamePattern.MatchString(key) {
 			continue

@@ -156,10 +156,19 @@ func buildShellPlan(id, label, script string) LifecyclePlan {
 	}
 }
 
+// buildPowerShellPlan 是所有 Windows PowerShell 计划的唯一出口。
+//
+// 代理装配放在这里而不是某个具体 plan builder：凡是 PowerShell 计划都可能
+// 联网（下载脚本、下载 exe、查官方页面），而代理是否设置取决于**本轮任务**
+// 而不是计划种类。放在这里，新增计划自动继承正确行为——先前放在
+// buildPowerShellScriptPlan 里，结果是 6 个桌面端计划全部绕过了代理。
 func buildPowerShellPlan(id, label, script string, opts Options) LifecyclePlan {
 	cmd := windowsPowerShell
 	if resolvePlatform(opts) != platformWindows {
 		cmd = windowsPowerShell
+	}
+	if taskProxyURL(mergePlanEnv(opts.Env, nil)) != "" {
+		script = powershellProxyPrepend() + script
 	}
 	return LifecyclePlan{
 		ID:      id,
@@ -211,10 +220,9 @@ func buildPowerShellScriptPlan(id, label, rawURL string, hosts []string, opts Op
 	if err != nil {
 		return LifecyclePlan{}
 	}
+	// 代理不由这里注入：buildPowerShellPlan 是唯一出口，注入在那里完成，
+	// 否则本计划与其它 PowerShell 计划会各注入一次或谁都漏掉。
 	script := fmt.Sprintf("irm %s | iex", powershellQuote(official))
-	if taskProxyURL(mergePlanEnv(opts.Env, nil)) != "" {
-		script = powershellProxyPrepend() + script
-	}
 	return buildPowerShellPlan(id, label, script, opts)
 }
 

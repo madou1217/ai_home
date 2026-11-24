@@ -401,7 +401,9 @@ func buildBrewFormulaUninstallPlan(formula, label string) LifecyclePlan {
 //
 // winget 不读 HTTP(S)_PROXY，也不读 DefaultWebProxy；它只认 --proxy 和
 // --no-proxy，且该功能默认关闭，需管理员先执行
-//   winget settings --enable ProxyCommandLineOptions
+//
+//	winget settings --enable ProxyCommandLineOptions
+//
 // 未启用时 winget 会以 exit=-1978335230 报「This feature needs to be enabled」。
 //
 // 只能用**匿名**入口：实测 --proxy 带 userinfo 时请求不带 Proxy-Authorization，

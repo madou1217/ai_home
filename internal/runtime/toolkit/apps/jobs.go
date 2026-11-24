@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 	"github.com/madou1217/ai_home/internal/runtime/codexruntime"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
@@ -21,9 +22,9 @@ const (
 	defaultPlanExecTimeout = 5 * time.Minute
 	// defaultAutoEgressAttempts 是自动代理在作业路径上最多尝试的出口数。
 	defaultAutoEgressAttempts = 4
-	minVerifyRetries       = 1
-	maxVerifyRetries       = 12
-	maxVerifyDelay         = 5 * time.Second
+	minVerifyRetries          = 1
+	maxVerifyRetries          = 12
+	maxVerifyDelay            = 5 * time.Second
 )
 
 type appJobEntry struct {
@@ -211,9 +212,15 @@ func (m *JobManager) effectiveOpts(input InstallInput) Options {
 
 // CanInstall 返回目标应用在当前平台是否具备可执行的生命周期计划。
 func (m *JobManager) CanInstall(input InstallInput) bool {
-	target := ResolveInstallTarget(input)
+	target := m.resolveTarget(input)
 	if target == nil {
 		return false
+	}
+	if app := findPluginApp(m.effectiveOpts(input), target.AppID); app != nil {
+		if !app.SupportsPlatform(appinstall.CurrentPlatform()) {
+			return false
+		}
+		return app.SupportsAction(target.Action)
 	}
 	spec := getInstaller(target.Provider)
 	if spec == nil {
@@ -234,9 +241,24 @@ func (m *JobManager) Plan(input InstallInput) PlanResponse {
 	if input.Action == " " || normalizeLifecycleAction(input.Action, input.Action != "") == "" {
 		return PlanResponse{OK: false, Error: "invalid_lifecycle_action"}
 	}
-	target := ResolveInstallTarget(input)
+	target := m.resolveTarget(input)
 	if target == nil {
 		return PlanResponse{OK: false, Error: "invalid_install_target"}
+	}
+	if app := findPluginApp(m.effectiveOpts(input), target.AppID); app != nil {
+		if !m.CanInstall(input) {
+			return PlanResponse{OK: false, Error: target.Action + "_not_supported"}
+		}
+		return PlanResponse{
+			OK:       true,
+			AppID:    target.AppID,
+			Provider: target.Provider,
+			Kind:     target.Kind,
+			Action:   target.Action,
+			Key:      target.Key,
+			Label:    "插件执行" + lifecycleActionLabel(target.Action) + "：" + app.Name,
+			Message:  "安装逻辑由插件 " + app.PluginID + " 执行",
+		}
 	}
 	spec := getInstaller(target.Provider)
 	if spec == nil {
@@ -303,16 +325,18 @@ func (m *JobManager) Start(ctx context.Context, input InstallInput) JobStartResu
 	if input.Action == " " || normalizeLifecycleAction(input.Action, input.Action != "") == "" {
 		return JobStartResult{OK: false, Error: "invalid_lifecycle_action"}
 	}
-	target := ResolveInstallTarget(input)
+	target := m.resolveTarget(input)
 	if target == nil {
 		return JobStartResult{OK: false, Error: "invalid_install_target"}
 	}
-	spec := getInstaller(target.Provider)
-	if spec == nil {
-		return JobStartResult{OK: false, Error: "provider_installer_unavailable"}
-	}
-	if target.Kind == "cli" && !isCLIInstallSupported(target.Provider) {
-		return JobStartResult{OK: false, Error: "cli_not_supported"}
+	if findPluginApp(m.effectiveOpts(input), target.AppID) == nil {
+		spec := getInstaller(target.Provider)
+		if spec == nil {
+			return JobStartResult{OK: false, Error: "provider_installer_unavailable"}
+		}
+		if target.Kind == "cli" && !isCLIInstallSupported(target.Provider) {
+			return JobStartResult{OK: false, Error: "cli_not_supported"}
+		}
 	}
 	if !m.CanInstall(input) {
 		return JobStartResult{OK: false, Error: target.Action + "_not_supported"}
@@ -586,6 +610,14 @@ func (m *JobManager) runLifecyclePlans(
 	opts Options,
 	proxyActive bool,
 ) lifecycleOutcome {
+	// 插件应用在代理轮换**之内**执行：它需要拿到无认证 loopback 出口
+	// （opts.AnonymousProxyURL）。先前把它放在 runJob 最外层，既绕过了自动
+	// 代理轮换，又把带凭据的 input.ProxyURL 交给插件——而契约校验会拒绝
+	// 带 userinfo 的地址，等于有代理时插件应用必然失败。
+	if findPluginApp(opts, target.AppID) != nil {
+		ok, result, errMessage := m.runPluginJob(ctx, jobID, target, opts)
+		return lifecycleOutcome{ok: ok, err: errMessage, result: result}
+	}
 	var installedPath string
 	var installedRecord *DesktopRecord
 	if target.Action != "install" {
@@ -1294,7 +1326,6 @@ func wingetProxyEnabled(ctx context.Context, opts Options) bool {
 	return strings.HasPrefix(rest, "true")
 }
 
-
 // rebuildPlansWithProxy 给列表里的 winget 计划补上 --proxy。
 //
 // 不重新解析整份计划：解析需要 provider/kind/action 等上下文，而这些在调用
@@ -1334,9 +1365,9 @@ func rebuildPlansWithProxy(plans []LifecyclePlan, opts Options) []LifecyclePlan 
 //   - winget.exe：死代理下仍能访问源，既不读环境变量也不读 DefaultWebProxy
 //
 // 其余 OEM 安装器（msiexec、Inno Setup、NSIS 的 exe）分两种情形：
-//   * 若计划由我们下载再执行（buildWindowsExecutableInstallPlan），下载那步
+//   - 若计划由我们下载再执行（buildWindowsExecutableInstallPlan），下载那步
 //     走 curl/Invoke-WebRequest，已受控——按可代理处理；
-//   * 若是裸调用安装器让它自己联网，则无法保证，按不可代理处理。
+//   - 若是裸调用安装器让它自己联网，则无法保证，按不可代理处理。
 func planHonorsProxy(plan LifecyclePlan) bool {
 	command := strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command)))
 	switch command {

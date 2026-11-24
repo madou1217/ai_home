@@ -10,6 +10,7 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/environment"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
@@ -30,7 +31,9 @@ const (
 
 // Options 描述 apps 包所有操作的运行时依赖与测试替身。
 type Options struct {
-	Catalog           *providers.Catalog
+	Catalog *providers.Catalog
+	// PluginApps 是插件式应用安装端口；nil 表示当前宿主未启用插件应用。
+	PluginApps        appinstall.Source
 	AIHomeDir         string
 	HostHomeDir       string
 	Platform          string
@@ -212,6 +215,9 @@ type AppView struct {
 	CanUninstall         bool           `json:"canUninstall"`
 	HostLaunchLabel      string         `json:"hostLaunchLabel,omitempty"`
 	IntegrationProviders []string       `json:"integrationProviders,omitempty"`
+	// Source 区分内置应用与插件应用；内置保持空串（前端默认 builtin）。
+	Source   string `json:"source,omitempty"`
+	PluginID string `json:"pluginId,omitempty"`
 }
 
 // ListResult 是 GET /toolkit/apps 的返回结构。
@@ -361,7 +367,6 @@ type InstallProxyResolver func(ctx context.Context, selector string) (InstallPro
 // 返回 nil 表示当前没有可用出口，调用方应保持直连语义而不是失败。
 // 轮换器内部已持有「试过哪些出口」，因此每次作业调用一次、用后释放。
 type EgressAutoProxyProvider func(notify func(string)) *updateproxy.EgressRotation
-
 
 // InstallTarget 是归一化后的安装目标。
 type InstallTarget struct {

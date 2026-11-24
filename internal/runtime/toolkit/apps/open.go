@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/runtime/appinstall"
 	"github.com/madou1217/ai_home/internal/runtime/claudedesktopconfig"
 	"github.com/madou1217/ai_home/internal/runtime/claudedesktopcredential"
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
@@ -18,6 +19,34 @@ import (
 // 打开 Claude Desktop 时会自动准备 Claude-3p 本地网关配置。
 func OpenManagedDesktopApp(ctx context.Context, appID string, opts Options) OpenResult {
 	norm := strings.ToLower(strings.TrimSpace(appID))
+	if opts.PluginApps != nil {
+		for _, app := range opts.PluginApps.Apps() {
+			if app.AppID != norm {
+				continue
+			}
+			if !app.Capabilities.Open || !app.SupportsPlatform(appinstall.CurrentPlatform()) {
+				return OpenResult{OK: false, Error: "unsupported_app", AppID: norm, Provider: app.Provider}
+			}
+			result, err := opts.PluginApps.Operate(ctx, appinstall.OperateRequest{
+				AppID:     app.AppID,
+				Action:    "open",
+				Platform:  appinstall.CurrentPlatform(),
+				Arch:      appinstall.CurrentArch(),
+				Confirmed: true,
+			})
+			if err != nil {
+				return OpenResult{OK: false, Error: "desktop_launch_failed", Message: err.Error(), AppID: norm, Provider: app.Provider}
+			}
+			if !result.OK {
+				return OpenResult{OK: false, Error: "desktop_launch_failed", Message: result.Message, AppID: norm, Provider: app.Provider}
+			}
+			executable := ""
+			if result.Status != nil {
+				executable = pluginAppDisplayPath(result.Status.Executable)
+			}
+			return OpenResult{OK: true, Status: "launched", AppID: norm, Provider: app.Provider, Executable: executable}
+		}
+	}
 	if !strings.HasSuffix(norm, "-desktop") {
 		return OpenResult{OK: false, Error: "unsupported_app"}
 	}

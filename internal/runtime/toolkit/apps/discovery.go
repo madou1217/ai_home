@@ -1062,6 +1062,9 @@ func (m *Manager) buildManagedApps(ctx context.Context, opts Options) ListResult
 		})
 	}
 
+	// 插件应用是增量：与内置 appId 冲突时由 pluginAppViews 跳过，不覆盖内置。
+	resultApps = append(resultApps, m.pluginAppViews(opts, resultApps)...)
+
 	installedCount := 0
 	for _, item := range resultApps {
 		if item.Installed {

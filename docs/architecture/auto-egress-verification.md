@@ -253,6 +253,30 @@ winget 会以自己的退出码和提示说明，用户可自行开启。
 - Windows 代理检查只看 `kind=cli`，且自动代理轮传 `proxyActive=false`
 - 检查遇第一个不可代理计划就整体拒绝（winget 让 claude 整条链路失败）
 
+### 9. winget 代理开关：通过 UAC 征得同意后启用
+
+`--proxy` 需要管理员执行 `winget settings --enable ProxyCommandLineOptions`。
+现在当计划里有 winget 且读到的开关是关的，`EnsureWingetProxy` 会：
+
+1. 用 `configedit.RunElevatedCommand` 请求提权（Windows 走 `-Verb RunAs`，
+   即标准 UAC 对话框）；
+2. 成功则就地给 winget 计划补上 `--proxy <匿名入口>`；
+3. 失败/拒绝则**保持原计划并说明原因**，不报错——装个 CLI 不该因为一个可选
+   开关而整体失败。后续过滤会把确实无法代理的计划剔除并点名。
+
+刻意不自行改写机器级设置：它是管理员设置，必须经过用户的授权对话框。
+
+**真机验证**
+
+| 场景 | 结果 |
+| --- | --- |
+| 开关已开 + `--proxy auto` | 出口 `local-clash-verge`，`2.1.331 -> 2.1.331`，exit=0 |
+| 开关关闭 + 计划含 winget | 到达提权分支，输出「正在请求管理员权限…」 |
+| SSH 非交互会话 | UAC 无法显示 → 如实报「未获得管理员授权」并降级，不挂起 |
+
+**限制**：SSH 会话没有交互桌面，UAC 弹不出来，因此该路径在远程会话里必然
+降级。桌面/终端里正常运行时可正常弹窗。
+
 ### 仍未验证
 
 - **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前

@@ -6,6 +6,16 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/mcpselection"
 )
 
+// gatewayActions 是网关档入口：只有 Go 能规划网关启动的 Provider 才有。
+var gatewayActions = []namedSummary{
+	{Name: "relay", Summary: "经 AIH Server 网关启动（可再跟固定账号 / 跨 Provider 账号）"},
+}
+
+// providerEntryActions 是每个 CLI Provider 都有的入口动作。
+var providerEntryActions = []namedSummary{
+	{Name: "models", Summary: "查看该 Provider 的账号模型目录（--json 可机读）"},
+}
+
 // sessionFlags 是 aih 自己的持久会话旗标（在 Provider 参数之前被摘走）。
 var sessionFlags = []namedSummary{
 	{Name: "-S", Summary: "本次启动的持久会话标签（等价 --session <标签>）"},
@@ -17,6 +27,8 @@ var sessionFlags = []namedSummary{
 	{Name: "--remote", Summary: "指定远程主机名（远程粘贴通道）"},
 	{Name: "--model", Summary: "本次启动请求的模型名"},
 	{Name: "--model-alias", Summary: "本次启动的临时转发：A 请求实际用 B（不落库）"},
+	{Name: "--help", Summary: "打印该 Provider 的用法"},
+	{Name: "-h", Summary: "打印该 Provider 的用法（简写）"},
 }
 
 // mcpSessionFlags 只在实现了 MCP 选择入口的 Provider 上出现。
@@ -69,6 +81,8 @@ var providerActionExtras = map[string][]namedSummary{
 		{Name: "unset-mobile", Summary: "清除 Codex App 账号指针"},
 		{Name: "effort", Summary: "设置推理强度或 fast 快速模式"},
 		{Name: "policy", Summary: "查看/设置 exec 沙箱策略"},
+		{Name: "gateway-auth", Summary: "管理 Codex 网关认证配置"},
+		{Name: "model", Summary: "查看/设置 Codex 默认模型"},
 	},
 }
 
@@ -96,8 +110,11 @@ var providerActionFlags = map[string][]string{
 // 可用性判据来自 Go 合同（loginArgs / desktopClient / gatewayProfile / 会话边界）。
 func listProviderActions(provider string) []namedSummary {
 	id := normalizeProviderID(provider)
-	loginArgs := providerLoginArgs(id)
-	actions := make([]namedSummary, 0, len(providerActions)+len(providerActionExtras[id]))
+	actions := make([]namedSummary, 0, 2+len(providerActions)+len(providerActionExtras[id]))
+	if providerSupportsGatewayRelay(id) {
+		actions = append(actions, gatewayActions...)
+	}
+	actions = append(actions, providerEntryActions...)
 	for _, action := range providerActions {
 		switch action.Name {
 		case "resume", "fork":
@@ -105,7 +122,7 @@ func listProviderActions(provider string) []namedSummary {
 				continue
 			}
 		case "login":
-			if len(loginArgs) == 0 {
+			if !providerSupportsCLILogin(id) {
 				continue
 			}
 		case "set-default", "unset-default":

@@ -182,6 +182,13 @@ func RunComplete(argv []string, environment Environment) {
 			_, _ = fmt.Fprintf(environment.stderr(), "[aih] __complete failed: %v\n", recovered)
 		}
 	}()
+	// 内部刷新入口由同一个进程边界复用：只写缓存，不产生候选。
+	if len(argv) > 0 && argv[0] == nativeFlagRefreshVerb {
+		if len(argv) > 1 {
+			refreshNativeFlags(argv[1], environment)
+		}
+		return
+	}
 	options = parseCompleteProtocol(argv)
 	if len(options.words) == 0 {
 		return
@@ -430,6 +437,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		},
 		workspaceLister: func(request workspaceRequest) []remoteTargetChoice {
 			return listWorkspaceCandidates(aiHome, request)
+		},
+		nativeFlagLister: func(provider, current string) []nativeFlagEntry {
+			return filterNativeFlags(listNativeFlags(environment, provider), current)
 		},
 		aihServerProfileID: aihServerProfileID,
 		now:                environment.now(),

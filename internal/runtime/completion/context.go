@@ -88,6 +88,7 @@ type resolverContext struct {
 	mcpLister          func(provider, accountToken string) []mcpChoice
 	remoteTargetLister func(request remoteTargetRequest) []remoteTargetChoice
 	workspaceLister    func(request workspaceRequest) []remoteTargetChoice
+	nativeFlagLister   func(provider, current string) []nativeFlagEntry
 	aihServerProfileID string
 	now                time.Time
 }

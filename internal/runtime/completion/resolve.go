@@ -15,6 +15,7 @@ var (
 
 var accountPositionActions = map[string]bool{
 	"usage": true, "home": true, "delete": true, "sessions": true, "set-default": true, "set-mobile": true,
+	"relay": true, "models": true,
 }
 
 var sessionPositionActions = map[string]bool{"resume": true, "fork": true}
@@ -188,9 +189,16 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	prior := normalizePriorValues(words[:len(words)-1])
 	target := newCollector(current)
 
-	// `--` 之后是原生 CLI 的世界：一律不给候选。
+	// `--` 之后是原生 CLI 的世界：旗标来自该 CLI 自己的 --help 缓存。
+	// 当前词不是旗标时返回空，让 shell 继续做路径补全（prompt 里的文件参数）。
 	if containsString(prior, "--") {
-		return nil
+		head := at(prior, 0)
+		if isProviderName(head) && context.nativeFlagLister != nil && strings.HasPrefix(current, "-") {
+			for _, flag := range context.nativeFlagLister(head, current) {
+				target.add(flag.Value, flag.Description, groupFlag, "")
+			}
+		}
+		return target.items
 	}
 
 	// Shells disagree on whether '=' is a word break; normalize the inline value here.
@@ -437,6 +445,13 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 		for _, flag := range node.Flags {
 			target.add(flag, describeFlag(flag), groupFlag, "")
 		}
+		return target.items
+	}
+
+	// 账号 / 限额 / 失败策略的 provider 位：所有注册 Provider 都是合法取值，
+	// 不只原生 CLI 那 14 个。
+	if len(prior) == 2 && providerPositionCommands[node.Name][at(prior, 1)] {
+		addRegisteredProviders(target)
 		return target.items
 	}
 

@@ -7,5 +7,7 @@
 //   - 退出码永远为 0；
 //   - stdout 只写协议行，诊断只在 --debug 时写 stderr；
 //   - 不启动 Node，不触碰网络（代理候选除外，且有 650ms 上限与本地缓存）；
-//   - 唯一的子进程是 `codex mcp list --json`（--mcp 取值候选，2s 上限，失败即空）。
+//   - 同步子进程只有 `codex mcp list --json`（--mcp 取值候选，2s 上限，失败即空）；
+//   - 逃生门 `--` 之后的原生旗标来自 `<cli> --help` 的按 Provider 缓存，TAB 只读
+//     缓存，缺失时拉起脱离进程组的后台刷新，下一次 TAB 生效。
 package completion

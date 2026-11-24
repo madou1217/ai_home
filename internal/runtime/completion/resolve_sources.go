@@ -203,6 +203,20 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 		}
 		return target.items
 	}
+	// relay 的第一个位置既可以是账号，也可以是跨 Provider 的目标 Provider；
+	// 选定 Provider 后再补它的账号。
+	if action == "relay" && len(prior) == 2 {
+		addAccounts(target, context, head, false)
+		addRegisteredProviders(target)
+		for _, flag := range listProviderActionFlags(action) {
+			target.add(flag, describeFlag(flag), groupFlag, "")
+		}
+		return target.items
+	}
+	if action == "relay" && len(prior) == 3 && knownProvider(prior[2]) {
+		addAccounts(target, context, prior[2], false)
+		return target.items
+	}
 	if accountPositionActions[action] && len(prior) == 2 {
 		includeProfile := (action == "set-default" || action == "sessions") && supportsAihServerProfile(head)
 		addAccounts(target, context, head, includeProfile)
@@ -241,6 +255,19 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 	}
 	addSessionFlags(target, head)
 	return target.items
+}
+
+// providerPositionCommands 声明「第二个词之后需要 Provider 名」的子命令。
+var providerPositionCommands = map[string]map[string]bool{
+	"account":        {"add": true, "import": true},
+	"limits":         {"set-provider": true, "unset-provider": true},
+	"failure-policy": {"explain": true, "set": true},
+}
+
+func addRegisteredProviders(target *collector) {
+	for _, definition := range loadProviderSnapshot().definitions {
+		target.add(definition.ID, describeProvider(definition.ID), groupProvider, "")
+	}
 }
 
 func isAllDigits(value string) bool {

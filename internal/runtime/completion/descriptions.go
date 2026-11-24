@@ -137,4 +137,9 @@ var nestedSubcommandTables = map[string][]string{
 	"edge plan":           {"frpc", "nginx", "caddy"},
 	"edge apply":          {"frpc", "nginx", "caddy"},
 	"edge remove":         {"frpc"},
+	"account credential":  {"update"},
+	"account default":     {"show", "set", "clear"},
+	"account models":      {"list", "refresh", "set-policy"},
+	"account usage":       {"show", "refresh"},
+	"account transfer":    {"export", "import"},
 }

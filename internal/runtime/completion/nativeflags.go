@@ -1,0 +1,312 @@
+package completion
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
+)
+
+// 逃生门 -- 之后是原生 CLI 的世界。AIH 不复制各厂商的旗标表，而是把
+// <bin> --help 的输出解析成一份按 Provider 缓存的候选：
+//   - TAB 只读缓存，不等待子进程（codebuddy --help 实测 1s+）；
+//   - 缓存缺失/过期时，后台拉起自身刷新，下一次 TAB 就能用上；
+//   - 二进制路径 + size + mtime 是缓存的有效性键，升级 CLI 自动失效。
+const (
+	nativeFlagRefreshVerb    = "--refresh-native-flags"
+	nativeFlagCacheTTL       = 24 * time.Hour
+	nativeFlagPendingTTL     = 10 * time.Minute
+	nativeFlagHelpTimeout    = 20 * time.Second
+	nativeFlagCacheDepth     = 200
+	nativeFlagDescriptionMax = 200
+)
+
+var (
+	nativeFlagTokenPattern  = regexp.MustCompile(`--[A-Za-z0-9][A-Za-z0-9_-]*`)
+	nativeFlagColumnPattern = regexp.MustCompile(`\s{2,}`)
+	nativeFlagAnsiPattern   = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+)
+
+type nativeFlagEntry struct {
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
+}
+
+type nativeFlagCache struct {
+	Binary            string            `json:"binary"`
+	BinarySize        int64             `json:"binarySize"`
+	BinaryModUnixNano int64             `json:"binaryModUnixNano"`
+	RefreshedAt       int64             `json:"refreshedAt"`
+	Flags             []nativeFlagEntry `json:"flags"`
+}
+
+func nativeFlagCacheFile(aiHome, provider string) string {
+	home := strings.TrimSpace(aiHome)
+	name := sanitizeCacheToken(provider)
+	if home == "" || name == "" {
+		return ""
+	}
+	return filepath.Join(home, "run", "cache", "complete", "native-flags-"+name+".json")
+}
+
+// sanitizeCacheToken 只保留安全的文件名字符；Provider 名不需要更复杂的转义。
+func sanitizeCacheToken(value string) string {
+	var builder strings.Builder
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		switch {
+		case char >= 'a' && char <= 'z', char >= '0' && char <= '9', char == '_', char == '-':
+			builder.WriteRune(char)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+	return builder.String()
+}
+
+// nativeFlagBinaryName 对齐启动路径的二进制名：家族四支共用 codebuddy。
+func nativeFlagBinaryName(provider string) string {
+	id := normalizeProviderID(provider)
+	if id == "" {
+		return ""
+	}
+	if providers.IsCodeBuddyFamilyProvider(id) {
+		return "codebuddy"
+	}
+	definition, found := providerDefinition(id)
+	if !found || definition.CLI == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(definition.CLI.BinaryName); name != "" {
+		return name
+	}
+	return definition.ID
+}
+
+func resolveNativeFlagBinary(provider string) (string, int64, int64) {
+	name := nativeFlagBinaryName(provider)
+	if name == "" {
+		return "", 0, 0
+	}
+	path, err := providercli.ResolveBinary(normalizeProviderID(provider), name)
+	if err != nil || strings.TrimSpace(path) == "" {
+		// 受管运行时未激活（例如 Codex 的 runtime 目录尚未安装）时仍然可以用
+		// PATH 上的官方 CLI 生成帮助候选；这里只是补全，不改变启动选择。
+		resolved, lookErr := exec.LookPath(name)
+		if lookErr != nil {
+			return "", 0, 0
+		}
+		path = resolved
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", 0, 0
+	}
+	return path, info.Size(), info.ModTime().UnixNano()
+}
+
+func readNativeFlagCache(file, binary string, size, mod int64, now time.Time) ([]nativeFlagEntry, bool) {
+	if file == "" || binary == "" {
+		return nil, false
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, false
+	}
+	var document nativeFlagCache
+	if json.Unmarshal(raw, &document) != nil || document.RefreshedAt <= 0 {
+		return nil, false
+	}
+	if now.Sub(time.UnixMilli(document.RefreshedAt)) > nativeFlagCacheTTL {
+		return nil, false
+	}
+	if document.Binary != binary || document.BinarySize != size || document.BinaryModUnixNano != mod {
+		return nil, false
+	}
+	return document.Flags, true
+}
+
+func writeNativeFlagCache(file string, document nativeFlagCache) {
+	if file == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return
+	}
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return
+	}
+	temp, err := os.CreateTemp(filepath.Dir(file), ".native-flags-*.tmp")
+	if err != nil {
+		return
+	}
+	tempName := temp.Name()
+	if _, err := temp.Write(raw); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempName)
+		return
+	}
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempName)
+		return
+	}
+	if err := os.Rename(tempName, file); err != nil {
+		_ = os.Remove(tempName)
+	}
+}
+
+// listNativeFlags 读取缓存；缓存不可用时只登记一次后台刷新，绝不阻塞 TAB。
+func listNativeFlags(environment Environment, provider string) []nativeFlagEntry {
+	aiHome := environment.aiHomeDir()
+	file := nativeFlagCacheFile(aiHome, provider)
+	binary, size, mod := resolveNativeFlagBinary(provider)
+	if flags, ok := readNativeFlagCache(file, binary, size, mod, environment.now()); ok {
+		return flags
+	}
+	if binary == "" {
+		return nil
+	}
+	requestNativeFlagRefresh(aiHome, provider)
+	return nil
+}
+
+func pendingNativeFlagFile(cacheFile string) string {
+	if cacheFile == "" {
+		return ""
+	}
+	return cacheFile + ".pending"
+}
+
+func requestNativeFlagRefresh(aiHome, provider string) {
+	cacheFile := nativeFlagCacheFile(aiHome, provider)
+	pending := pendingNativeFlagFile(cacheFile)
+	if pending == "" {
+		return
+	}
+	if info, err := os.Stat(pending); err == nil {
+		if time.Since(info.ModTime()) < nativeFlagPendingTTL {
+			return
+		}
+		_ = os.Remove(pending)
+	}
+	handle, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	_ = handle.Close()
+	executable, err := os.Executable()
+	if err != nil || strings.TrimSpace(executable) == "" {
+		_ = os.Remove(pending)
+		return
+	}
+	command := exec.Command(executable, "__complete", nativeFlagRefreshVerb, provider)
+	command.Stdin = nil
+	command.Stdout = nil
+	command.Stderr = nil
+	detachCompletionProcess(command)
+	if err := command.Start(); err != nil {
+		_ = os.Remove(pending)
+		return
+	}
+	_ = command.Process.Release()
+}
+
+// refreshNativeFlags 由后台子进程执行：跑一次 <bin> --help 并落缓存。
+func refreshNativeFlags(provider string, environment Environment) {
+	id := normalizeProviderID(provider)
+	cacheFile := nativeFlagCacheFile(environment.aiHomeDir(), id)
+	if cacheFile == "" {
+		return
+	}
+	pending := pendingNativeFlagFile(cacheFile)
+	defer func() { _ = os.Remove(pending) }()
+	binary, size, mod := resolveNativeFlagBinary(id)
+	if binary == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), nativeFlagHelpTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, binary, "--help")
+	output, _ := command.CombinedOutput()
+	// 即使 --help 失败或超时也写一条空缓存：避免每次 TAB 都重复拉起子进程；
+	// CLI 升级会改变二进制 mtime，缓存自动失效并重试。
+	flags := parseNativeHelpFlags(string(output))
+	writeNativeFlagCache(cacheFile, nativeFlagCache{
+		Binary:            binary,
+		BinarySize:        size,
+		BinaryModUnixNano: mod,
+		RefreshedAt:       environment.now().UnixMilli(),
+		Flags:             flags,
+	})
+}
+
+// filterNativeFlags 只在当前词是旗标时才给原生候选：其它形态交回 shell 的
+// 路径补全（prompt 里的文件参数仍然可用）。
+func filterNativeFlags(entries []nativeFlagEntry, current string) []nativeFlagEntry {
+	if !strings.HasPrefix(current, "-") {
+		return nil
+	}
+	result := make([]nativeFlagEntry, 0, len(entries))
+	for _, entry := range entries {
+		if matchesPrefix(entry.Value, current) {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+// parseNativeHelpFlags 从 help 文本里抽取长旗标与紧随其后的说明。
+func parseNativeHelpFlags(text string) []nativeFlagEntry {
+	lines := strings.Split(nativeFlagAnsiPattern.ReplaceAllString(text, ""), "\n")
+	seen := make(map[string]struct{}, 64)
+	entries := make([]nativeFlagEntry, 0, 64)
+	for index := 0; index < len(lines); index++ {
+		trimmed := strings.TrimSpace(lines[index])
+		if !strings.HasPrefix(trimmed, "-") {
+			continue
+		}
+		spec := trimmed
+		description := ""
+		if location := nativeFlagColumnPattern.FindStringIndex(trimmed); location != nil {
+			spec = strings.TrimSpace(trimmed[:location[0]])
+			description = strings.TrimSpace(trimmed[location[1]:])
+		}
+		if description == "" {
+			for lookahead := index + 1; lookahead < len(lines) && lookahead <= index+3; lookahead++ {
+				next := strings.TrimSpace(lines[lookahead])
+				if next == "" {
+					continue
+				}
+				if strings.HasPrefix(next, "-") || strings.HasSuffix(next, ":") {
+					break
+				}
+				description = next
+				break
+			}
+		}
+		for _, token := range nativeFlagTokenPattern.FindAllString(spec, -1) {
+			if token == "--" {
+				continue
+			}
+			if _, exists := seen[token]; exists {
+				continue
+			}
+			seen[token] = struct{}{}
+			entries = append(entries, nativeFlagEntry{
+				Value:       token,
+				Description: clipText(description, nativeFlagDescriptionMax),
+			})
+			if len(entries) >= nativeFlagCacheDepth {
+				return entries
+			}
+		}
+	}
+	return entries
+}

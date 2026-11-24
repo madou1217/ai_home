@@ -145,6 +145,27 @@ func supportsAihServerProfile(id string) bool {
 	return false
 }
 
+// providerSupportsGatewayRelay 对齐 aihcli.supportedGatewayCLIProvider：
+// 只有 Codex / Claude / CodeBuddy 家族能由 Go 规划网关启动。
+func providerSupportsGatewayRelay(id string) bool {
+	normalized := normalizeProviderID(id)
+	if normalized == "codex" || normalized == "claude" {
+		return true
+	}
+	return providers.IsCodeBuddyFamilyProvider(normalized)
+}
+
+// providerSupportsCLILogin 判断 Provider 是否有可用的登录入口：
+// 家族走 aihlogin，agy 走 clilogin；其余按合同的 loginArgs 声明。
+// 空 loginArgs 不等于没有 AIH 登录（F10），不能只看这一个字段。
+func providerSupportsCLILogin(id string) bool {
+	normalized := normalizeProviderID(id)
+	if providers.IsCodeBuddyFamilyProvider(normalized) || normalized == "agy" {
+		return true
+	}
+	return len(providerLoginArgs(normalized)) > 0
+}
+
 func providerLoginArgs(id string) []string {
 	definition, found := providerDefinition(id)
 	if !found || definition.CLI == nil {

@@ -12,6 +12,12 @@ import {
   MONITOR_TEXTURE_WIDTH,
 } from './office-computer-wallpapers';
 
+/**
+ * 像素风 2D Canvas 纹理生成器（显示器实时会话预览、墙面铭牌、房间终端、桌面工位牌）。
+ * 所有贴图严格启用 NearestFilter、禁用 mipmap、SRGBColorSpace，移除圆角与模糊渐变，
+ * 采用高对比深底亮字与 >= 16px 等宽/中文字体保证可读性。
+ */
+
 export interface CanvasTextureBundle {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -38,11 +44,12 @@ const DEFAULT_SCREEN_OPTIONS: MonitorScreenTextureOptions = {
   rasterVersion: 0,
 };
 
-function createCanvasBundle(
+const PIXEL_FONT_STACK = '"JetBrains Mono", "PingFang SC", "Microsoft YaHei", monospace';
+
+function createPixelCanvasBundle(
   width: number,
   height: number,
-  anisotropy: number,
-  repeat = false
+  _anisotropy: number
 ): CanvasTextureBundle {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -51,18 +58,16 @@ function createCanvasBundle(
   if (!ctx) {
     throw new Error('2D canvas context unavailable for 3D scene textures');
   }
+  ctx.imageSmoothingEnabled = false;
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = Math.min(8, Math.max(1, anisotropy));
-  if (repeat) {
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-  } else {
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-  }
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+
   return {
     canvas,
     ctx,
@@ -71,26 +76,26 @@ function createCanvasBundle(
   };
 }
 
-function drawRoundedRect(
+/** 绘制 Minecraft GUI 风格的硬边像素边框面板（无圆角、无渐变） */
+function drawPixelPanel(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
   h: number,
-  r: number
+  fill: string,
+  borderLight: string,
+  borderDark: string,
+  borderPx = 2
 ): void {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-  ctx.lineTo(x + w, y + h - radius);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-  ctx.lineTo(x + radius, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = borderLight;
+  ctx.fillRect(x, y, w, borderPx);
+  ctx.fillRect(x, y, borderPx, h);
+  ctx.fillStyle = borderDark;
+  ctx.fillRect(x, y + h - borderPx, w, borderPx);
+  ctx.fillRect(x + w - borderPx, y, borderPx, h);
 }
 
 function truncateToWidth(
@@ -141,7 +146,11 @@ function wrapCanvasLines(
         if (lines.length >= maxLines) {
           const remaining = paragraph.slice(i);
           if (remaining.trim()) {
-            lines[maxLines - 1] = truncateToWidth(ctx, `${lines[maxLines - 1]} ${remaining.trim()}`, maxWidth);
+            lines[maxLines - 1] = truncateToWidth(
+              ctx,
+              `${lines[maxLines - 1]} ${remaining.trim()}`,
+              maxWidth
+            );
           }
           return lines;
         }
@@ -167,7 +176,7 @@ function wrapCanvasLines(
 function formatCompactPath(cwd: string): string {
   const trimmed = cwd.trim();
   if (!trimmed || trimmed === '__no_cwd__') return '';
-  if (trimmed.length <= 44) return trimmed;
+  if (trimmed.length <= 36) return trimmed;
   const parts = trimmed.split('/').filter(Boolean);
   if (parts.length <= 3) return trimmed;
   return `…/${parts.slice(-3).join('/')}`;
@@ -179,13 +188,13 @@ function getAvailabilityBadge(
 ): { label: string; color: string; bg: string } {
   switch (availability) {
     case 'interactive':
-      return { label: '运行中', color: palette.successHex, bg: 'rgba(18, 235, 116, 0.14)' };
+      return { label: '运行中', color: palette.successHex, bg: '#103020' };
     case 'directory-only':
-      return { label: '目录在线', color: palette.accentHex, bg: 'rgba(0, 229, 255, 0.14)' };
+      return { label: '目录在线', color: palette.accentHex, bg: '#0e2d3b' };
     case 'unavailable':
-      return { label: '标识保留', color: palette.warningHex, bg: 'rgba(255, 170, 29, 0.16)' };
+      return { label: '标识保留', color: palette.warningHex, bg: '#38290d' };
     case 'exited':
-      return { label: '已退出', color: palette.screenMutedHex, bg: 'rgba(132, 162, 188, 0.14)' };
+      return { label: '已退出', color: palette.screenMutedHex, bg: '#1e2736' };
   }
 }
 
@@ -232,11 +241,11 @@ function getActivityLabel(session: OfficeSessionItem): string {
   const { activity, inboxCount, sentCount } = session;
   switch (activity.kind) {
     case 'incoming':
-      return `↙ 收件 ${inboxCount}`;
+      return `收件 ${inboxCount}`;
     case 'outgoing':
-      return `↗ 发件 ${sentCount}`;
+      return `发件 ${sentCount}`;
     case 'both':
-      return `⇄ 收${inboxCount} / 发${sentCount}`;
+      return `收${inboxCount} / 发${sentCount}`;
     case 'idle':
       if (inboxCount > 0 || sentCount > 0) {
         return `MAIL ${inboxCount}/${sentCount}`;
@@ -245,8 +254,26 @@ function getActivityLabel(session: OfficeSessionItem): string {
   }
 }
 
-export function createMonitorScreenBundle(anisotropy: number): CanvasTextureBundle {
-  return createCanvasBundle(SCREEN_W, SCREEN_H, anisotropy, false);
+function resolveWallpaperMetadata(wallpaperId: OfficeWallpaperId) {
+  return wallpaperId === 'sunset' || wallpaperId === 'midnight' || wallpaperId === 'aurora'
+    ? OFFICE_WALLPAPER_META[wallpaperId]
+    : OFFICE_WALLPAPER_META.aurora;
+}
+
+/** 绘制低分辨率像素化壁纸背景，保留真实壁纸配色与光栅订阅语义 */
+function paintPixelatedWallpaper(
+  ctx: CanvasRenderingContext2D,
+  wallpaperId: OfficeWallpaperId
+): void {
+  drawMonitorWallpaperBackdrop(ctx, wallpaperId, SCREEN_W, SCREEN_H);
+  // 叠加硬边深色像素遮罩提升前景文字对比度
+  ctx.fillStyle = 'rgba(8, 13, 24, 0.34)';
+  ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  // 像素网格扫描点缀
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+  for (let y = 0; y < SCREEN_H; y += 8) {
+    ctx.fillRect(0, y, SCREEN_W, 2);
+  }
 }
 
 function renderPoweredOffScreen(
@@ -254,53 +281,37 @@ function renderPoweredOffScreen(
   isSelected: boolean,
   palette: OfficeScenePalette
 ): void {
-  const darkGrad = ctx.createLinearGradient(0, 0, SCREEN_W, SCREEN_H);
-  darkGrad.addColorStop(0, '#04060a');
-  darkGrad.addColorStop(0.55, '#070b12');
-  darkGrad.addColorStop(1, '#030508');
-  ctx.fillStyle = darkGrad;
+  ctx.fillStyle = '#0c1018';
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
-  // Subtle dark glass reflection sweep (no preview or wallpaper shown)
-  ctx.save();
-  ctx.fillStyle = 'rgba(148, 175, 205, 0.035)';
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(SCREEN_W * 0.48, 0);
-  ctx.lineTo(SCREEN_W * 0.22, SCREEN_H);
-  ctx.lineTo(0, SCREEN_H);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  // 像素棋盘暗纹
+  ctx.fillStyle = '#111724';
+  for (let y = 16; y < SCREEN_H - 16; y += 32) {
+    for (let x = 16; x < SCREEN_W - 16; x += 32) {
+      ctx.fillRect(x, y, 16, 16);
+    }
+  }
 
-  // Subtle standby border highlight when station is selected
-  ctx.strokeStyle = isSelected ? palette.accentHex : 'rgba(60, 82, 108, 0.28)';
-  ctx.lineWidth = isSelected ? 2 : 1;
+  // 外框像素边框
+  ctx.strokeStyle = isSelected ? palette.accentHex : '#2d3b52';
+  ctx.lineWidth = isSelected ? 4 : 2;
   ctx.strokeRect(8, 8, SCREEN_W - 16, SCREEN_H - 16);
 
-  // Small muted standby ring at center-bottom
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(SCREEN_W / 2, SCREEN_H / 2, 16, -Math.PI * 0.3, Math.PI * 1.3);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(SCREEN_W / 2, SCREEN_H / 2 - 20);
-  ctx.lineTo(SCREEN_W / 2, SCREEN_H / 2 - 4);
-  ctx.stroke();
+  // 像素风格电源方块图标（全矩形，无圆弧）
+  const cx = Math.floor(SCREEN_W / 2);
+  const cy = Math.floor(SCREEN_H / 2) - 18;
+  ctx.fillStyle = isSelected ? palette.accentHex : '#5d728f';
+  ctx.fillRect(cx - 20, cy - 12, 6, 32);
+  ctx.fillRect(cx + 14, cy - 12, 6, 32);
+  ctx.fillRect(cx - 20, cy + 14, 40, 6);
+  ctx.fillRect(cx - 3, cy - 22, 6, 22);
 
-  ctx.font = '600 13px "JetBrains Mono", "PingFang SC", monospace';
-  ctx.fillStyle = isSelected ? palette.accentHex : 'rgba(148, 163, 184, 0.45)';
+  ctx.font = `700 18px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = isSelected ? palette.accentHex : '#8ea5c2';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('POWER OFF · CLICK TO BOOT', SCREEN_W / 2, SCREEN_H / 2 + 34);
+  ctx.fillText('POWER OFF · CLICK TO BOOT', SCREEN_W / 2, cy + 52);
   ctx.textAlign = 'left';
-}
-
-function resolveWallpaperMetadata(wallpaperId: OfficeWallpaperId) {
-  return wallpaperId === 'sunset' || wallpaperId === 'midnight' || wallpaperId === 'aurora'
-    ? OFFICE_WALLPAPER_META[wallpaperId]
-    : OFFICE_WALLPAPER_META.aurora;
 }
 
 function renderSecondaryCompanionScreen(
@@ -314,123 +325,99 @@ function renderSecondaryCompanionScreen(
   const availBadge = getAvailabilityBadge(session.availability, palette);
   const providerLabel = session.provider || (session.kind === 'shell' ? 'shell' : 'cli');
 
-  // Outer highlight frame
-  ctx.strokeStyle = isSelected ? palette.accentHex : 'rgba(255, 255, 255, 0.16)';
-  ctx.lineWidth = isSelected ? 3 : 1.5;
-  ctx.strokeRect(8, 8, SCREEN_W - 16, SCREEN_H - 16);
+  // 外边框
+  ctx.strokeStyle = isSelected ? palette.accentHex : '#4b6588';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(6, 6, SCREEN_W - 12, SCREEN_H - 12);
 
-  // Top translucent OS bar
-  ctx.fillStyle = 'rgba(5, 11, 20, 0.72)';
-  ctx.fillRect(10, 10, SCREEN_W - 20, 40);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(10, 50);
-  ctx.lineTo(SCREEN_W - 10, 50);
-  ctx.stroke();
-
-  ctx.font = '700 13px "JetBrains Mono", monospace';
+  // 顶栏
+  drawPixelPanel(ctx, 10, 10, SCREEN_W - 20, 44, '#0b1220', '#2b4263', '#05080f', 2);
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = wpMeta.accentHex;
   ctx.textBaseline = 'middle';
-  ctx.fillText(`DISPLAY 2 // ${wpMeta.subtitle.toUpperCase()}`, 22, 30);
+  ctx.fillText(`DISPLAY 2 // ${wpMeta.subtitle.toUpperCase()}`, 22, 32);
 
-  ctx.font = '600 13px "JetBrains Mono", "PingFang SC", monospace';
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = palette.screenTextHex;
   ctx.textAlign = 'right';
-  ctx.fillText(truncateToWidth(ctx, session.shortLabel, 240), SCREEN_W - 22, 30);
+  ctx.fillText(truncateToWidth(ctx, session.shortLabel, 230), SCREEN_W - 22, 32);
   ctx.textAlign = 'left';
 
-  // Keep upper-middle band open so the wallpaper shows through clearly,
-  // and render two crisp bottom translucent workspace HUD widgets with real session data.
-  const cardY = 176;
-  const cardH = 166;
-  const leftW = 330;
+  // 下半双信息方块卡片（保留上部壁纸视野）
+  const cardY = 148;
+  const cardH = 194;
+  const leftW = 340;
   const rightX = 368;
-  const rightW = SCREEN_W - rightX - 22;
+  const rightW = SCREEN_W - rightX - 18;
 
-  // Left Card: Session Identity & Directory
-  drawRoundedRect(ctx, 22, cardY, leftW, cardH, 6);
-  ctx.fillStyle = 'rgba(5, 11, 20, 0.76)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  ctx.font = '700 12px "JetBrains Mono", monospace';
+  drawPixelPanel(ctx, 18, cardY, leftW, cardH, 'rgba(9, 15, 28, 0.90)', '#345278', '#060a14', 2);
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = wpMeta.accentHex;
-  ctx.fillText('SESSION IDENTITY', 36, cardY + 22);
+  ctx.fillText('SESSION IDENTITY', 32, cardY + 26);
 
   const drawKv = (label: string, val: string, y: number, color: string) => {
-    ctx.font = '600 11px "JetBrains Mono", monospace';
+    ctx.font = `700 14px ${PIXEL_FONT_STACK}`;
     ctx.fillStyle = palette.screenMutedHex;
-    ctx.fillText(label, 36, y);
-    ctx.font = '500 13px "JetBrains Mono", "PingFang SC", monospace';
+    ctx.fillText(label, 32, y);
+    ctx.font = `600 16px ${PIXEL_FONT_STACK}`;
     ctx.fillStyle = color;
-    ctx.fillText(truncateToWidth(ctx, val, leftW - 92), 104, y);
+    ctx.fillText(truncateToWidth(ctx, val, leftW - 94), 98, y);
   };
 
-  drawKv('KEY', session.sessionKey, cardY + 52, palette.screenTextHex);
+  drawKv('KEY', session.sessionKey, cardY + 62, palette.screenTextHex);
   drawKv(
     'ID',
     session.nativeSessionId || (session.source === 'web' ? 'Web Shell' : '—'),
-    cardY + 80,
+    cardY + 96,
     palette.screenTextHex
   );
-  drawKv('DIR', formatCompactPath(session.cwd) || '未指定目录', cardY + 108, palette.screenMutedHex);
-  drawKv(
-    'TYPE',
-    `${providerLabel.toUpperCase()} · ${availBadge.label}`,
-    cardY + 136,
-    availBadge.color
-  );
+  drawKv('DIR', formatCompactPath(session.cwd) || '未指定目录', cardY + 130, palette.screenMutedHex);
+  drawKv('TYPE', `${providerLabel.toUpperCase()} · ${availBadge.label}`, cardY + 164, availBadge.color);
 
-  // Right Card: Mail & Sync Counters
-  drawRoundedRect(ctx, rightX, cardY, rightW, cardH, 6);
-  ctx.fillStyle = 'rgba(5, 11, 20, 0.76)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-  ctx.stroke();
-
-  ctx.font = '700 12px "JetBrains Mono", monospace';
+  drawPixelPanel(ctx, rightX, cardY, rightW, cardH, 'rgba(9, 15, 28, 0.90)', '#345278', '#060a14', 2);
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = palette.accentHex;
-  ctx.fillText('PEER MAILBOX', rightX + 14, cardY + 22);
+  ctx.fillText('PEER MAILBOX', rightX + 14, cardY + 26);
 
   const drawStatLine = (label: string, val: string, y: number, color: string) => {
-    ctx.font = '500 13px "JetBrains Mono", "PingFang SC", monospace';
+    ctx.font = `600 16px ${PIXEL_FONT_STACK}`;
     ctx.fillStyle = palette.screenMutedHex;
     ctx.fillText(label, rightX + 14, y);
-    ctx.font = '700 15px "JetBrains Mono", monospace';
+    ctx.font = `700 18px ${PIXEL_FONT_STACK}`;
     ctx.fillStyle = color;
     ctx.textAlign = 'right';
     ctx.fillText(val, rightX + rightW - 14, y);
     ctx.textAlign = 'left';
   };
 
-  drawStatLine('收件 INBOX', String(session.inboxCount), cardY + 54, palette.screenTextHex);
-  drawStatLine('发件 SENT', String(session.sentCount), cardY + 82, palette.screenTextHex);
+  drawStatLine('收件', String(session.inboxCount), cardY + 62, palette.screenTextHex);
+  drawStatLine('发件', String(session.sentCount), cardY + 96, palette.screenTextHex);
   drawStatLine(
-    '待投 PENDING',
+    '待投',
     String(session.pendingCount),
-    cardY + 110,
+    cardY + 130,
     session.pendingCount > 0 ? palette.warningHex : palette.screenMutedHex
   );
   drawStatLine(
-    '跨室 CROSS',
+    '跨室',
     String(session.crossProjectCount),
-    cardY + 138,
+    cardY + 164,
     session.crossProjectCount > 0 ? palette.violetHex : palette.screenMutedHex
   );
 
-  // Bottom translucent dock strip
-  ctx.fillStyle = 'rgba(5, 11, 20, 0.72)';
-  ctx.fillRect(10, 356, SCREEN_W - 20, 34);
-  ctx.font = '600 12px "JetBrains Mono", "PingFang SC", monospace';
+  // 底栏
+  drawPixelPanel(ctx, 10, 352, SCREEN_W - 20, 38, '#0b1220', '#2b4263', '#05080f', 2);
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = wpMeta.accentHex;
-  ctx.fillText(`壁纸 ${wpMeta.label}`, 22, 373);
-  ctx.fillStyle = palette.screenMutedHex;
+  ctx.fillText(`壁纸 ${wpMeta.label}`, 22, 371);
+  ctx.fillStyle = palette.screenTextHex;
   ctx.textAlign = 'right';
-  ctx.fillText(getActivityLabel(session), SCREEN_W - 22, 373);
+  ctx.fillText(getActivityLabel(session), SCREEN_W - 22, 371);
   ctx.textAlign = 'left';
+}
+
+export function createMonitorScreenBundle(anisotropy: number): CanvasTextureBundle {
+  return createPixelCanvasBundle(SCREEN_W, SCREEN_H, anisotropy);
 }
 
 export function updateMonitorScreenTexture(
@@ -492,8 +479,8 @@ export function updateMonitorScreenTexture(
   const { ctx } = bundle;
   ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
 
-  // Paint selected wallpaper across entire screen so wallpaper colors show clearly in 3D
-  drawMonitorWallpaperBackdrop(ctx, options.wallpaper, SCREEN_W, SCREEN_H);
+  // 绘制壁纸底图（支持光栅资产热刷新）
+  paintPixelatedWallpaper(ctx, options.wallpaper);
 
   if (options.monitorIndex === 1) {
     renderSecondaryCompanionScreen(ctx, session, isSelected, palette, options);
@@ -502,182 +489,146 @@ export function updateMonitorScreenTexture(
   }
 
   const wpMeta = resolveWallpaperMetadata(options.wallpaper);
-
-  // Outer 1px frame
   const availBadge = getAvailabilityBadge(session.availability, palette);
-  const borderColor = isSelected ? palette.accentHex : 'rgba(255, 255, 255, 0.18)';
-  ctx.strokeStyle = borderColor;
-  ctx.lineWidth = isSelected ? 3 : 2;
-  ctx.strokeRect(8, 8, SCREEN_W - 16, SCREEN_H - 16);
 
-  // Top Header Bar (frosted dark glass letting wallpaper glow behind)
-  ctx.fillStyle = 'rgba(6, 13, 24, 0.74)';
-  ctx.fillRect(10, 10, SCREEN_W - 20, 48);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(10, 58);
-  ctx.lineTo(SCREEN_W - 10, 58);
-  ctx.stroke();
+  // 像素外框
+  ctx.strokeStyle = isSelected ? palette.accentHex : '#4b6588';
+  ctx.lineWidth = isSelected ? 4 : 2;
+  ctx.strokeRect(6, 6, SCREEN_W - 12, SCREEN_H - 12);
 
-  // Status LED circle
+  // 顶部系统状态条
+  drawPixelPanel(ctx, 10, 10, SCREEN_W - 20, 48, '#0b1220', '#314c70', '#05080f', 2);
+
+  // 像素状态方块灯
   ctx.fillStyle = availBadge.color;
-  ctx.beginPath();
-  ctx.arc(30, 34, 6.5, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillRect(22, 26, 14, 14);
 
-  // Session short label
   ctx.textBaseline = 'middle';
   const mailPillText = session.pendingCount > 0
-    ? `MAIL ${session.inboxCount} +${session.pendingCount}`
+    ? `MAIL ${session.inboxCount}+${session.pendingCount}`
     : `MAIL ${session.inboxCount}`;
-  ctx.font = '600 15px "JetBrains Mono", monospace';
-  const mailPillW = Math.max(92, ctx.measureText(mailPillText).width + 22);
-  const titleMaxW = SCREEN_W - 60 - mailPillW - 26;
-  ctx.font = '600 20px "JetBrains Mono", "PingFang SC", "Microsoft YaHei", monospace';
-  const titleText = truncateToWidth(ctx, session.shortLabel, titleMaxW);
-  ctx.fillStyle = palette.screenTextHex;
-  ctx.fillText(titleText, 48, 35);
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
+  const mailPillW = Math.max(108, Math.ceil(ctx.measureText(mailPillText).width) + 22);
+  const titleMaxW = SCREEN_W - 64 - mailPillW - 24;
 
-  // Right Mail Pill
+  ctx.font = `700 22px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = palette.screenTextHex;
+  ctx.fillText(truncateToWidth(ctx, session.shortLabel, titleMaxW), 46, 34);
+
+  // 右侧邮件像素徽章
   const mailX = SCREEN_W - 20 - mailPillW;
   const hasActiveMail = session.pendingCount > 0 || session.activity.unreadOrDeliveredCount > 0;
-  drawRoundedRect(ctx, mailX, 18, mailPillW, 32, 4);
-  ctx.fillStyle = hasActiveMail ? 'rgba(0, 229, 255, 0.18)' : 'rgba(255, 255, 255, 0.06)';
-  ctx.fill();
-  ctx.strokeStyle = hasActiveMail ? palette.accentHex : palette.screenBorderHex;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.font = '600 14px "JetBrains Mono", monospace';
-  ctx.fillStyle = hasActiveMail ? palette.accentHex : palette.screenMutedHex;
+  drawPixelPanel(
+    ctx,
+    mailX,
+    18,
+    mailPillW,
+    32,
+    hasActiveMail ? '#103547' : '#141e30',
+    hasActiveMail ? palette.accentHex : '#3a5478',
+    '#070c14',
+    2
+  );
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = hasActiveMail ? palette.accentHex : palette.screenTextHex;
   ctx.textAlign = 'center';
   ctx.fillText(mailPillText, mailX + mailPillW / 2, 35);
   ctx.textAlign = 'left';
 
-  // Floating Desktop Window Frame (inset over wallpaper so wallpaper perimeter & horizon stay visible)
-  const winX = 24;
-  const winY = 74;
-  const winW = SCREEN_W - 48;
-  const winH = 266;
-  drawRoundedRect(ctx, winX, winY, winW, winH, 8);
-  ctx.fillStyle = 'rgba(6, 13, 24, 0.78)';
-  ctx.fill();
-  ctx.strokeStyle = preview.kind === 'preview'
-    ? 'rgba(0, 229, 255, 0.36)'
+  // 中央像素终端主窗口
+  const winX = 18;
+  const winY = 68;
+  const winW = SCREEN_W - 36;
+  const winH = 274;
+  const winAccent = preview.kind === 'preview'
+    ? palette.accentHex
     : preview.kind === 'mail'
-      ? 'rgba(168, 85, 247, 0.42)'
-      : 'rgba(255, 255, 255, 0.16)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+      ? palette.violetHex
+      : '#4b6588';
+  drawPixelPanel(ctx, winX, winY, winW, winH, 'rgba(9, 15, 28, 0.90)', winAccent, '#050912', 2);
 
-  // Metadata Chips Row inside floating desktop window (y = 84..112)
+  // 标签行（全部硬边矩形）
   let chipX = winX + 14;
   const chipY = winY + 12;
-  const chipH = 28;
+  const chipH = 30;
   const drawChip = (text: string, fg: string, bg: string, border: string, maxW: number) => {
-    ctx.font = '600 13px "JetBrains Mono", "PingFang SC", monospace';
+    ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
     const label = truncateToWidth(ctx, text, maxW - 18);
-    const w = Math.min(maxW, ctx.measureText(label).width + 18);
+    const w = Math.min(maxW, Math.ceil(ctx.measureText(label).width) + 18);
     if (chipX + w > winX + winW - 14) return;
-    drawRoundedRect(ctx, chipX, chipY, w, chipH, 4);
-    ctx.fillStyle = bg;
-    ctx.fill();
-    ctx.strokeStyle = border;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    drawPixelPanel(ctx, chipX, chipY, w, chipH, bg, border, '#060a14', 2);
     ctx.fillStyle = fg;
     ctx.fillText(label, chipX + 9, chipY + chipH / 2 + 1);
     chipX += w + 8;
   };
 
-  drawChip(providerLabel.toUpperCase(), palette.accentHex, 'rgba(0, 229, 255, 0.12)', 'rgba(0, 229, 255, 0.38)', 130);
+  drawChip(providerLabel.toUpperCase(), palette.accentHex, '#0e2c3d', palette.accentHex, 150);
   if (modelLabel) {
-    drawChip(modelLabel, palette.screenTextHex, 'rgba(255, 255, 255, 0.08)', palette.screenBorderHex, 210);
+    drawChip(modelLabel, palette.screenTextHex, '#182438', '#46648a', 220);
   }
-  drawChip(availBadge.label, availBadge.color, availBadge.bg, availBadge.color, 120);
+  drawChip(availBadge.label, availBadge.color, availBadge.bg, availBadge.color, 130);
 
-  // Preview Tag Badge + Subline
-  const tagY = winY + 58;
-  const tagColor = preview.kind === 'preview'
-    ? palette.accentHex
-    : preview.kind === 'mail'
-      ? palette.violetHex
-      : palette.screenMutedHex;
-  ctx.font = '700 12px "JetBrains Mono", monospace';
-  ctx.fillStyle = tagColor;
-  ctx.fillText(preview.tag, winX + 16, tagY);
+  // 预览类别 + 路径
+  const tagY = winY + 62;
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = winAccent;
+  ctx.fillText(preview.tag, winX + 14, tagY);
 
   if (preview.subline) {
-    ctx.font = '400 12px "JetBrains Mono", monospace';
+    ctx.font = `600 16px ${PIXEL_FONT_STACK}`;
     ctx.fillStyle = palette.screenMutedHex;
     const tagW = ctx.measureText(preview.tag).width;
-    const subMaxW = winW - 48 - tagW;
-    if (subMaxW > 60) {
-      const subText = truncateToWidth(ctx, preview.subline, subMaxW);
+    const subMaxW = winW - 44 - tagW;
+    if (subMaxW > 80) {
       ctx.textAlign = 'right';
-      ctx.fillText(subText, winX + winW - 16, tagY);
+      ctx.fillText(truncateToWidth(ctx, preview.subline, subMaxW), winX + winW - 14, tagY);
       ctx.textAlign = 'left';
     }
   }
 
-  // Divider below tag
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(winX + 14, tagY + 14);
-  ctx.lineTo(winX + winW - 14, tagY + 14);
-  ctx.stroke();
+  // 分隔线
+  ctx.fillStyle = '#2b4263';
+  ctx.fillRect(winX + 12, tagY + 16, winW - 24, 2);
 
-  // Real bounded preview text lines
-  ctx.font = preview.kind === 'meta'
-    ? '500 17px "JetBrains Mono", "PingFang SC", monospace'
-    : '400 18px "JetBrains Mono", "PingFang SC", "Microsoft YaHei", monospace';
+  // 会话真实内容正文（清晰 18px 亮字）
+  ctx.font = `600 18px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = session.availability === 'exited' ? palette.screenMutedHex : palette.screenTextHex;
-  const bodyLines = wrapCanvasLines(ctx, preview.text, winW - 34, 5);
-  let lineY = tagY + 38;
+  const bodyLines = wrapCanvasLines(ctx, preview.text, winW - 32, 5);
+  let lineY = tagY + 42;
   for (const line of bodyLines) {
     ctx.fillText(line, winX + 16, lineY);
-    lineY += 28;
+    lineY += 32;
   }
 
-  // Bottom Translucent Taskbar (y = 352..390)
-  ctx.fillStyle = 'rgba(6, 13, 24, 0.76)';
-  ctx.fillRect(10, 352, SCREEN_W - 20, 38);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.beginPath();
-  ctx.moveTo(10, 352);
-  ctx.lineTo(SCREEN_W - 10, 352);
-  ctx.stroke();
+  // 底部任务栏
+  drawPixelPanel(ctx, 10, 352, SCREEN_W - 20, 38, '#0b1220', '#314c70', '#05080f', 2);
+  ctx.font = `700 16px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = palette.screenTextHex;
+  ctx.fillText(getActivityLabel(session), 22, 371);
 
-  ctx.font = '600 13px "JetBrains Mono", "PingFang SC", monospace';
-  ctx.fillStyle = palette.screenMutedHex;
-  const activityLabel = getActivityLabel(session);
-  ctx.fillText(activityLabel, 22, 372);
-
-  // Subtle wallpaper tag at center of taskbar
   ctx.fillStyle = wpMeta.accentHex;
   ctx.textAlign = 'center';
   ctx.fillText(
     `${wpMeta.label}${options.dualMonitor ? ' · 双屏' : ''}`,
     SCREEN_W / 2,
-    372
+    371
   );
   ctx.textAlign = 'left';
 
   if (session.activity.failedCount > 0) {
     ctx.fillStyle = palette.dangerHex;
     ctx.textAlign = 'right';
-    ctx.fillText(`失败 ${session.activity.failedCount}`, SCREEN_W - 22, 372);
+    ctx.fillText(`失败 ${session.activity.failedCount}`, SCREEN_W - 22, 371);
     ctx.textAlign = 'left';
   } else if (session.crossProjectCount > 0) {
     ctx.fillStyle = palette.violetHex;
     ctx.textAlign = 'right';
-    ctx.fillText(`跨室协作 ${session.crossProjectCount}`, SCREEN_W - 22, 372);
+    ctx.fillText(`跨室 ${session.crossProjectCount}`, SCREEN_W - 22, 371);
     ctx.textAlign = 'left';
   } else {
     ctx.fillStyle = isSelected ? palette.accentHex : palette.screenMutedHex;
     ctx.textAlign = 'right';
-    ctx.fillText(isSelected ? 'ACTIVE STATION' : 'CLICK MONITOR', SCREEN_W - 22, 372);
+    ctx.fillText(isSelected ? 'ACTIVE' : 'CLICK OPEN', SCREEN_W - 22, 371);
     ctx.textAlign = 'left';
   }
 
@@ -685,100 +636,9 @@ export function updateMonitorScreenTexture(
   return true;
 }
 
-export function createFloorTileBundle(anisotropy: number): CanvasTextureBundle {
-  return createCanvasBundle(512, 512, anisotropy, true);
-}
-
-export function updateFloorTileTexture(
-  bundle: CanvasTextureBundle,
-  palette: OfficeScenePalette
-): boolean {
-  const sig = `${palette.mode}|${palette.floorBaseHex}|${palette.floorGridHex}`;
-  if (bundle.lastSignature === sig) return false;
-  bundle.lastSignature = sig;
-
-  const { ctx } = bundle;
-  ctx.fillStyle = palette.floorBaseHex;
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Subtle architectural tile seams
-  ctx.strokeStyle = palette.floorGridHex;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, 510, 510);
-
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.55;
-  for (let i = 128; i < 512; i += 128) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i, 512);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(512, i);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-
-  // Subtle corner ticks
-  ctx.fillStyle = palette.accentHex;
-  ctx.globalAlpha = palette.mode === 'dark' ? 0.25 : 0.18;
-  ctx.fillRect(0, 0, 10, 3);
-  ctx.fillRect(0, 0, 3, 10);
-  ctx.globalAlpha = 1;
-
-  bundle.texture.needsUpdate = true;
-  return true;
-}
-
-export function createWindowSkyBundle(anisotropy: number): CanvasTextureBundle {
-  return createCanvasBundle(512, 256, anisotropy, false);
-}
-
-export function updateWindowSkyTexture(
-  bundle: CanvasTextureBundle,
-  palette: OfficeScenePalette
-): boolean {
-  const sig = `${palette.mode}|${palette.windowSkyTopHex}|${palette.windowSkyBottomHex}`;
-  if (bundle.lastSignature === sig) return false;
-  bundle.lastSignature = sig;
-
-  const { ctx } = bundle;
-  const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, palette.windowSkyTopHex);
-  grad.addColorStop(1, palette.windowSkyBottomHex);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 512, 256);
-
-  // Subtle architectural skyline silhouette
-  ctx.fillStyle = palette.mode === 'dark' ? 'rgba(6, 12, 22, 0.52)' : 'rgba(130, 165, 198, 0.35)';
-  const towers = [
-    [12, 130, 44, 126],
-    [62, 96, 52, 160],
-    [124, 142, 38, 114],
-    [172, 82, 58, 174],
-    [244, 118, 48, 138],
-    [304, 72, 62, 184],
-    [378, 110, 50, 146],
-    [438, 92, 60, 164],
-  ];
-  for (const [x, y, w, h] of towers) {
-    ctx.fillRect(x, y, w, h);
-  }
-
-  // Horizon light band
-  const glow = ctx.createLinearGradient(0, 170, 0, 256);
-  glow.addColorStop(0, 'rgba(0, 229, 255, 0)');
-  glow.addColorStop(1, palette.mode === 'dark' ? 'rgba(0, 229, 255, 0.16)' : 'rgba(255, 255, 255, 0.45)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 170, 512, 86);
-
-  bundle.texture.needsUpdate = true;
-  return true;
-}
-
+/** 桌面工位像素铭牌 */
 export function createDeskBadgeBundle(anisotropy: number): CanvasTextureBundle {
-  return createCanvasBundle(192, 64, anisotropy, false);
+  return createPixelCanvasBundle(256, 80, anisotropy);
 }
 
 export function updateDeskBadgeTexture(
@@ -792,26 +652,26 @@ export function updateDeskBadgeTexture(
   bundle.lastSignature = sig;
 
   const { ctx } = bundle;
-  ctx.fillStyle = palette.screenBgHex;
-  ctx.fillRect(0, 0, 192, 64);
-
+  // 深色橡木告示牌底色 + 像素描边
+  drawPixelPanel(ctx, 0, 0, 256, 80, '#2a1c10', '#8c643b', '#170f08', 6);
   ctx.strokeStyle = accentHex;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(4, 4, 184, 56);
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, 10, 236, 60);
 
-  ctx.font = '700 24px "JetBrains Mono", monospace';
-  ctx.fillStyle = palette.screenTextHex;
+  ctx.font = `700 32px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = '#fff8e6';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(badgeCode || 'BAY', 96, 33);
+  ctx.fillText(badgeCode || 'BAY', 128, 42);
   ctx.textAlign = 'left';
 
   bundle.texture.needsUpdate = true;
   return true;
 }
 
+/** 墙面项目房间铭牌（嵌墙方块告示牌，像素清晰中文与数字） */
 export function createWallPlaqueBundle(anisotropy: number): CanvasTextureBundle {
-  return createCanvasBundle(768, 192, anisotropy, false);
+  return createPixelCanvasBundle(768, 224, anisotropy);
 }
 
 export function updateWallPlaqueTexture(
@@ -832,39 +692,48 @@ export function updateWallPlaqueTexture(
   bundle.lastSignature = sig;
 
   const { ctx } = bundle;
-  ctx.fillStyle = palette.screenBgHex;
-  ctx.fillRect(0, 0, 768, 192);
-
+  // 贴墙深橡木告示牌风格（暖木色边框与深棕牌面，避免在走廊视角显得像漂浮黑块）
+  const bgFill = palette.mode === 'light' ? '#36271b' : '#261d15';
+  const rimLight = palette.mode === 'light' ? '#a67b4b' : '#805d38';
+  drawPixelPanel(ctx, 0, 0, 768, 224, bgFill, rimLight, '#140e09', 8);
   ctx.strokeStyle = palette.accentHex;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(6, 6, 756, 180);
+  ctx.lineWidth = 4;
+  ctx.strokeRect(12, 12, 744, 200);
 
-  ctx.font = '700 18px "JetBrains Mono", monospace';
-  ctx.fillStyle = palette.accentHex;
+  // 四角金块铆钉装饰
+  ctx.fillStyle = '#f5cc2c';
+  ctx.fillRect(20, 20, 10, 10);
+  ctx.fillRect(738, 20, 10, 10);
+  ctx.fillRect(20, 194, 10, 10);
+  ctx.fillRect(738, 194, 10, 10);
+
   ctx.textBaseline = 'middle';
-  ctx.fillText('SECTOR // PROJECT ROOM', 30, 38);
+  ctx.font = `700 24px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = palette.accentHex;
+  ctx.fillText('PROJECT ROOM', 40, 48);
 
-  ctx.font = '700 38px "Orbitron", "JetBrains Mono", "PingFang SC", sans-serif';
-  ctx.fillStyle = palette.screenTextHex;
-  ctx.fillText(truncateToWidth(ctx, state.roomName.toUpperCase(), 700), 30, 92);
+  ctx.font = `700 48px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = '#fff9ed';
+  ctx.fillText(truncateToWidth(ctx, state.roomName.toUpperCase(), 686), 40, 112);
 
   const subParts = [
     `${state.totalSessionCount} 工位`,
-    `${state.runningCount} 活跃`,
-    state.crossProjectMailCount > 0 ? `跨室联络 ${state.crossProjectMailCount}` : '',
+    `${state.runningCount} 运行`,
+    state.crossProjectMailCount > 0 ? `跨室 ${state.crossProjectMailCount}` : '',
     state.isFallbackRoom ? '通用工区' : formatCompactPath(state.projectPath),
   ].filter(Boolean);
 
-  ctx.font = '500 18px "JetBrains Mono", "PingFang SC", monospace';
-  ctx.fillStyle = palette.screenMutedHex;
-  ctx.fillText(truncateToWidth(ctx, subParts.join(' · '), 708), 30, 146);
+  ctx.font = `700 24px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = '#e0d3bd';
+  ctx.fillText(truncateToWidth(ctx, subParts.join(' · '), 686), 40, 174);
 
   bundle.texture.needsUpdate = true;
   return true;
 }
 
+/** 房间邮件终端贴墙方块屏幕（紧凑高对比像素面板，适合 ≤ 2×1 体素贴墙尺寸） */
 export function createRoomTerminalBundle(anisotropy: number): CanvasTextureBundle {
-  return createCanvasBundle(384, 256, anisotropy, false);
+  return createPixelCanvasBundle(448, 304, anisotropy);
 }
 
 export function updateRoomTerminalTexture(
@@ -883,49 +752,51 @@ export function updateRoomTerminalTexture(
   bundle.lastSignature = sig;
 
   const { ctx } = bundle;
-  ctx.fillStyle = palette.screenBgHex;
-  ctx.fillRect(0, 0, 384, 256);
+  const frameColor = state.hasRecentPulse ? palette.successHex : palette.accentHex;
+  const panelBg = palette.mode === 'light' ? '#1c2b42' : '#142033';
+  const rowBg = palette.mode === 'light' ? '#253854' : '#1d2d47';
+  drawPixelPanel(ctx, 0, 0, 448, 304, panelBg, frameColor, '#0b1220', 8);
 
-  ctx.strokeStyle = state.hasRecentPulse ? palette.successHex : palette.accentHex;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(8, 8, 368, 240);
-
-  ctx.font = '700 18px "JetBrains Mono", monospace';
-  ctx.fillStyle = palette.accentHex;
   ctx.textBaseline = 'middle';
-  ctx.fillText('ROOM MAIL TERMINAL', 24, 38);
+  ctx.font = `700 24px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = frameColor;
+  ctx.fillText('ROOM MAIL', 26, 40);
 
+  // 状态方块灯
   ctx.fillStyle = state.hasRecentPulse ? palette.successHex : palette.accentHex;
-  ctx.beginPath();
-  ctx.arc(348, 38, 8, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillRect(398, 28, 22, 22);
 
   const drawStat = (label: string, val: string, y: number, color: string) => {
-    drawRoundedRect(ctx, 24, y, 336, 44, 5);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-    ctx.fill();
-    ctx.strokeStyle = palette.screenBorderHex;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    drawPixelPanel(ctx, 24, y, 400, 52, rowBg, '#4a6b94', '#0e1726', 2);
 
-    ctx.font = '500 17px "JetBrains Mono", "PingFang SC", monospace';
-    ctx.fillStyle = palette.screenMutedHex;
-    ctx.fillText(label, 40, y + 23);
+    ctx.font = `700 22px ${PIXEL_FONT_STACK}`;
+    ctx.fillStyle = '#dceaff';
+    ctx.fillText(label, 40, y + 27);
 
-    ctx.font = '700 22px "JetBrains Mono", monospace';
+    ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
     ctx.fillStyle = color;
     ctx.textAlign = 'right';
-    ctx.fillText(val, 344, y + 23);
+    ctx.fillText(val, 406, y + 27);
     ctx.textAlign = 'left';
   };
 
-  drawStat('房间邮件总计', String(state.roomMessageCount), 66, palette.screenTextHex);
-  drawStat('待投递队列', String(state.pendingMailCount), 120, state.pendingMailCount > 0 ? palette.warningHex : palette.screenTextHex);
-  drawStat('跨项目协作', String(state.crossProjectMailCount), 174, state.crossProjectMailCount > 0 ? palette.violetHex : palette.screenTextHex);
+  drawStat('房间邮件', String(state.roomMessageCount), 72, '#ffffff');
+  drawStat(
+    '待投队列',
+    String(state.pendingMailCount),
+    134,
+    state.pendingMailCount > 0 ? palette.warningHex : '#ffffff'
+  );
+  drawStat(
+    '跨室协作',
+    String(state.crossProjectMailCount),
+    196,
+    state.crossProjectMailCount > 0 ? palette.violetHex : '#ffffff'
+  );
 
-  ctx.font = '600 13px "JetBrains Mono", "PingFang SC", monospace';
+  ctx.font = `700 20px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = palette.accentHex;
-  ctx.fillText('点击终端打开房间协作邮箱', 24, 232);
+  ctx.fillText('点击打开房间协作邮箱', 26, 274);
 
   bundle.texture.needsUpdate = true;
   return true;

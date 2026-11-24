@@ -5,62 +5,260 @@ import type {
   SessionAvailability,
 } from './session-office-types';
 import type { OfficeScenePalette } from './office-scene-types';
+import {
+  createSolidColorVoxelGeometry,
+  FACE_SHADE,
+  mergeVoxelGeometries,
+  type SolidColorBoxInput,
+  type VoxelFaceDir,
+} from './office-voxel-builder';
+
+/**
+ * Minecraft Steve 体素角色模块：
+ * 1. 严格轴对齐方块构成（总站立高度 1.75 世界单位，全尺寸为 0.0625 像素整数倍）。
+ * 2. 64×64 程序化像素皮肤贴图（NearestFilter、无 mipmap、SRGBColorSpace、确定性 ±8% 像素亮度抖动）。
+ * 3. 逐面烘焙 Minecraft 经典亮度（顶面 1.00 / ±X 0.80 / ±Z 0.65 / 底面 0.52）。
+ * 4. 坐姿精准对齐椅面（y = 0.375）与桌面（y = 0.746），零穿模且每角色可见 Draw Call ≤ 7。
+ */
+
+const SKIN_SIZE = 64;
+const SKIN_UV_INSET = 0.02;
+
+/** 坐姿旋转 -90° 朝向 +Z 后的世界朝向面亮度映射（局部 +Z 朝上变为顶面 1.0） */
+const SEATED_FORWARD_FACE_SHADE: Readonly<Record<VoxelFaceDir, number>> = {
+  py: FACE_SHADE.nz,
+  ny: FACE_SHADE.pz,
+  px: FACE_SHADE.px,
+  nx: FACE_SHADE.nx,
+  pz: FACE_SHADE.py,
+  nz: FACE_SHADE.ny,
+};
+
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+interface SkinUvRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+type BoxUvRegions = Readonly<Record<VoxelFaceDir, SkinUvRect>>;
+
+interface SkinnedVoxelBoxOptions {
+  faceShadeOverride?: Readonly<Record<VoxelFaceDir, number>>;
+  hiddenFaces?: Partial<Record<VoxelFaceDir, boolean>>;
+}
+
+interface FaceCornerTemplate {
+  pos: readonly [number, number, number];
+  uv: readonly [0 | 1, 0 | 1];
+}
+
+interface FaceTemplate {
+  dir: VoxelFaceDir;
+  normal: readonly [number, number, number];
+  corners: readonly [
+    FaceCornerTemplate,
+    FaceCornerTemplate,
+    FaceCornerTemplate,
+    FaceCornerTemplate,
+  ];
+}
+
+// 严格逆时针（CCW）向外绕序的六面模板，与 office-voxel-builder 保持一致
+const BOX_FACE_TEMPLATES: readonly FaceTemplate[] = [
+  {
+    dir: 'py',
+    normal: [0, 1, 0],
+    corners: [
+      { pos: [0, 1, 1], uv: [0, 0] },
+      { pos: [1, 1, 1], uv: [1, 0] },
+      { pos: [1, 1, 0], uv: [1, 1] },
+      { pos: [0, 1, 0], uv: [0, 1] },
+    ],
+  },
+  {
+    dir: 'ny',
+    normal: [0, -1, 0],
+    corners: [
+      { pos: [0, 0, 0], uv: [0, 0] },
+      { pos: [1, 0, 0], uv: [1, 0] },
+      { pos: [1, 0, 1], uv: [1, 1] },
+      { pos: [0, 0, 1], uv: [0, 1] },
+    ],
+  },
+  {
+    dir: 'px',
+    normal: [1, 0, 0],
+    corners: [
+      { pos: [1, 0, 1], uv: [0, 0] },
+      { pos: [1, 0, 0], uv: [1, 0] },
+      { pos: [1, 1, 0], uv: [1, 1] },
+      { pos: [1, 1, 1], uv: [0, 1] },
+    ],
+  },
+  {
+    dir: 'nx',
+    normal: [-1, 0, 0],
+    corners: [
+      { pos: [0, 0, 0], uv: [0, 0] },
+      { pos: [0, 0, 1], uv: [1, 0] },
+      { pos: [0, 1, 1], uv: [1, 1] },
+      { pos: [0, 1, 0], uv: [0, 1] },
+    ],
+  },
+  {
+    dir: 'pz',
+    normal: [0, 0, 1],
+    corners: [
+      { pos: [0, 0, 1], uv: [0, 0] },
+      { pos: [1, 0, 1], uv: [1, 0] },
+      { pos: [1, 1, 1], uv: [1, 1] },
+      { pos: [0, 1, 1], uv: [0, 1] },
+    ],
+  },
+  {
+    dir: 'nz',
+    normal: [0, 0, -1],
+    corners: [
+      { pos: [1, 0, 0], uv: [0, 0] },
+      { pos: [0, 0, 0], uv: [1, 0] },
+      { pos: [0, 1, 0], uv: [1, 1] },
+      { pos: [1, 1, 0], uv: [0, 1] },
+    ],
+  },
+];
+
+// 64×64 Minecraft 皮肤图集无重叠像素区域定义
+const HEAD_UV: BoxUvRegions = {
+  py: { x: 8, y: 0, w: 8, h: 8 },
+  ny: { x: 16, y: 0, w: 8, h: 8 },
+  nx: { x: 0, y: 8, w: 8, h: 8 },
+  pz: { x: 8, y: 8, w: 8, h: 8 },
+  px: { x: 16, y: 8, w: 8, h: 8 },
+  nz: { x: 24, y: 8, w: 8, h: 8 },
+};
+
+const TORSO_UV: BoxUvRegions = {
+  py: { x: 8, y: 16, w: 8, h: 4 },
+  ny: { x: 16, y: 16, w: 8, h: 4 },
+  nx: { x: 4, y: 20, w: 4, h: 10 },
+  pz: { x: 8, y: 20, w: 8, h: 10 },
+  px: { x: 16, y: 20, w: 4, h: 10 },
+  nz: { x: 20, y: 20, w: 8, h: 10 },
+};
+
+const RIGHT_ARM_UV: BoxUvRegions = {
+  py: { x: 36, y: 16, w: 4, h: 4 },
+  ny: { x: 40, y: 16, w: 4, h: 4 },
+  nx: { x: 32, y: 20, w: 4, h: 10 },
+  pz: { x: 36, y: 20, w: 4, h: 10 },
+  px: { x: 40, y: 20, w: 4, h: 10 },
+  nz: { x: 44, y: 20, w: 4, h: 10 },
+};
+
+const LEFT_ARM_UV: BoxUvRegions = {
+  py: { x: 52, y: 16, w: 4, h: 4 },
+  ny: { x: 56, y: 16, w: 4, h: 4 },
+  nx: { x: 48, y: 20, w: 4, h: 10 },
+  pz: { x: 52, y: 20, w: 4, h: 10 },
+  px: { x: 56, y: 20, w: 4, h: 10 },
+  nz: { x: 60, y: 20, w: 4, h: 10 },
+};
+
+const RIGHT_LEG_UV: BoxUvRegions = {
+  py: { x: 4, y: 36, w: 4, h: 4 },
+  ny: { x: 8, y: 36, w: 4, h: 4 },
+  nx: { x: 0, y: 40, w: 4, h: 10 },
+  pz: { x: 4, y: 40, w: 4, h: 10 },
+  px: { x: 8, y: 40, w: 4, h: 10 },
+  nz: { x: 12, y: 40, w: 4, h: 10 },
+};
+
+const LEFT_LEG_UV: BoxUvRegions = {
+  py: { x: 20, y: 36, w: 4, h: 4 },
+  ny: { x: 24, y: 36, w: 4, h: 4 },
+  nx: { x: 16, y: 40, w: 4, h: 10 },
+  pz: { x: 20, y: 40, w: 4, h: 10 },
+  px: { x: 24, y: 40, w: 4, h: 10 },
+  nz: { x: 28, y: 40, w: 4, h: 10 },
+};
+
+// 经典 Minecraft 角色肤色、发色、瞳色、裤装与鞋色表
+const SKIN_TONES = [
+  '#e8b892',
+  '#d89d74',
+  '#c48860',
+  '#f0c7a8',
+  '#a66e49',
+  '#7a4e32',
+] as const;
+
+const HAIR_TONES = [
+  '#2f2014',
+  '#1e1d24',
+  '#4c321e',
+  '#6e4b2a',
+  '#8f6a3c',
+  '#353e4f',
+] as const;
+
+const EYE_TONES = [
+  '#2e3c8a',
+  '#2c6336',
+  '#4d321c',
+  '#1f5f7a',
+  '#523378',
+] as const;
+
+const TROUSER_TONES = [
+  '#3a4f8a',
+  '#2c3442',
+  '#5a5640',
+  '#293d61',
+] as const;
+
+const SHOE_TONES = [
+  '#2b3038',
+  '#4a3423',
+  '#222832',
+  '#3d2b24',
+] as const;
 
 export interface OfficeCharacterRig {
   root: THREE.Group;
-  pelvis: THREE.Group;
-  spine: THREE.Group;
-  neck: THREE.Group;
-  head: THREE.Group;
-  eyelidLeft: THREE.Mesh;
-  eyelidRight: THREE.Mesh;
-  leftShoulder: THREE.Group;
-  leftElbow: THREE.Group;
-  leftWrist: THREE.Group;
-  rightShoulder: THREE.Group;
-  rightElbow: THREE.Group;
-  rightWrist: THREE.Group;
-  leftUpperLeg: THREE.Group;
-  leftLowerLeg: THREE.Group;
-  rightUpperLeg: THREE.Group;
-  rightLowerLeg: THREE.Group;
-  visorGroup: THREE.Group;
-  glassesGroup: THREE.Group;
-  headsetGroup: THREE.Group;
-  jacketMaterial: THREE.MeshStandardMaterial;
-  shirtMaterial: THREE.MeshStandardMaterial;
-  trouserMaterial: THREE.MeshStandardMaterial;
-  shoeMaterial: THREE.MeshStandardMaterial;
-  skinMaterial: THREE.MeshStandardMaterial;
-  hairMaterial: THREE.MeshStandardMaterial;
-  visorGlowMaterial: THREE.MeshStandardMaterial;
-  badgeLedMaterial: THREE.MeshStandardMaterial;
-  baseJacketColor: THREE.Color;
-  baseTrouserColor: THREE.Color;
-  baseAccentColor: THREE.Color;
+  torsoGroup: THREE.Group;
+  headGroup: THREE.Group;
+  leftArmGroup: THREE.Group;
+  rightArmGroup: THREE.Group;
+  legsGroup: THREE.Group;
+  torsoMesh: THREE.Mesh;
+  headMesh: THREE.Mesh;
+  leftArmMesh: THREE.Mesh;
+  rightArmMesh: THREE.Mesh;
+  legsMesh: THREE.Mesh;
+  visorMesh: THREE.Mesh;
+  glassesMesh: THREE.Mesh;
+  headsetMesh: THREE.Mesh;
+  badgeLedMesh: THREE.Mesh;
+  skinCanvas: HTMLCanvasElement;
+  skinTexture: THREE.CanvasTexture;
+  skinMaterial: THREE.MeshLambertMaterial;
+  accessoryMaterial: THREE.MeshLambertMaterial;
+  visorMaterial: THREE.MeshBasicMaterial;
+  badgeLedMaterial: THREE.MeshLambertMaterial;
   phaseOffset: number;
   availability: SessionAvailability;
   posture: EmployeeVisualPersona['posture'];
   recentPulse: boolean;
+  lastSkinSignature: string;
+  lastAccentHex: string;
 }
-
-const SKIN_TONES = [
-  '#f0c7a8',
-  '#e4b18e',
-  '#d29972',
-  '#b87d56',
-  '#8b5a3c',
-  '#f4d2ba',
-] as const;
-
-const HAIR_TONES = [
-  '#1b1d24',
-  '#2d221c',
-  '#453124',
-  '#61442c',
-  '#2c3442',
-  '#8c6b48',
-] as const;
 
 function hashText(value: string): number {
   let hash = 2166136261;
@@ -71,7 +269,531 @@ function hashText(value: string): number {
   return hash >>> 0;
 }
 
-function tagTree(object: THREE.Object3D, sessionKey: string): void {
+/** 确定性像素噪点，返回 [-1, 1] */
+function pixelNoise(seed: number, x: number, y: number): number {
+  let h = (seed * 374761393 + x * 668265263 + y * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = h ^ (h >>> 16);
+  return ((h >>> 0) / 4294967295) * 2 - 1;
+}
+
+function clampByte(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+/** 解析 #rrggbb / #rgb / rgb(...) 为 0..255 sRGB，非法值返回 null */
+function tryParseSrgb(input: string): Rgb | null {
+  const trimmed = (input || '').trim();
+  const hex6 = /^#([0-9a-fA-F]{6})$/.exec(trimmed);
+  if (hex6) {
+    const num = parseInt(hex6[1], 16);
+    return {
+      r: (num >> 16) & 255,
+      g: (num >> 8) & 255,
+      b: num & 255,
+    };
+  }
+  const hex3 = /^#([0-9a-fA-F]{3})$/.exec(trimmed);
+  if (hex3) {
+    const s = hex3[1];
+    return {
+      r: parseInt(s[0] + s[0], 16),
+      g: parseInt(s[1] + s[1], 16),
+      b: parseInt(s[2] + s[2], 16),
+    };
+  }
+  const rgbMatch = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(trimmed);
+  if (rgbMatch) {
+    return {
+      r: clampByte(Number(rgbMatch[1])),
+      g: clampByte(Number(rgbMatch[2])),
+      b: clampByte(Number(rgbMatch[3])),
+    };
+  }
+  return null;
+}
+
+/** 安全解析颜色为 0..255 sRGB，避免非法色值产生 NaN 或控制台告警 */
+function parseSrgb(input: string, fallbackHex: string): Rgb {
+  return tryParseSrgb(input) ?? tryParseSrgb(fallbackHex) ?? { r: 56, g: 232, b: 255 };
+}
+
+function scaleRgb(rgb: Rgb, factor: number): Rgb {
+  return {
+    r: clampByte(rgb.r * factor),
+    g: clampByte(rgb.g * factor),
+    b: clampByte(rgb.b * factor),
+  };
+}
+
+function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return {
+    r: clampByte(a.r + (b.r - a.r) * t),
+    g: clampByte(a.g + (b.g - a.g) * t),
+    b: clampByte(a.b + (b.b - a.b) * t),
+  };
+}
+
+/**
+ * 构建带 64×64 皮肤 UV 与逐面亮度烘焙的轴对齐体素盒几何。
+ */
+function createSkinnedVoxelBox(
+  w: number,
+  h: number,
+  d: number,
+  uvRegions: BoxUvRegions,
+  pivotOffset: readonly [number, number, number],
+  options?: SkinnedVoxelBoxOptions
+): THREE.BufferGeometry {
+  const minX = pivotOffset[0] - w * 0.5;
+  const minY = pivotOffset[1] - h * 0.5;
+  const minZ = pivotOffset[2] - d * 0.5;
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+
+  const shadeMap = options?.faceShadeOverride ?? FACE_SHADE;
+  const hiddenFaces = options?.hiddenFaces;
+
+  for (let f = 0; f < BOX_FACE_TEMPLATES.length; f += 1) {
+    const tpl = BOX_FACE_TEMPLATES[f];
+    if (hiddenFaces?.[tpl.dir]) continue;
+
+    const rect = uvRegions[tpl.dir];
+    const u0 = (rect.x + SKIN_UV_INSET) / SKIN_SIZE;
+    const u1 = (rect.x + rect.w - SKIN_UV_INSET) / SKIN_SIZE;
+    const v1 = 1 - (rect.y + SKIN_UV_INSET) / SKIN_SIZE;
+    const v0 = 1 - (rect.y + rect.h - SKIN_UV_INSET) / SKIN_SIZE;
+    const shade = shadeMap[tpl.dir];
+    const baseIndex = positions.length / 3;
+
+    for (let c = 0; c < 4; c += 1) {
+      const corner = tpl.corners[c];
+      positions.push(
+        minX + corner.pos[0] * w,
+        minY + corner.pos[1] * h,
+        minZ + corner.pos[2] * d
+      );
+      normals.push(tpl.normal[0], tpl.normal[1], tpl.normal[2]);
+      uvs.push(
+        corner.uv[0] === 0 ? u0 : u1,
+        corner.uv[1] === 0 ? v0 : v1
+      );
+      colors.push(shade, shade, shade);
+    }
+
+    indices.push(
+      baseIndex,
+      baseIndex + 1,
+      baseIndex + 2,
+      baseIndex,
+      baseIndex + 2,
+      baseIndex + 3
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/**
+ * 逐像素绘制 64×64 Minecraft Steve 皮肤贴图（全区域带 ±8% 像素亮度抖动）。
+ */
+function paintMinecraftSkin(
+  canvas: HTMLCanvasElement,
+  sessionKey: string,
+  shirtHex: string,
+  accentHex: string
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('无法创建 2D Canvas 上下文以生成 Minecraft 角色皮肤');
+  }
+  ctx.imageSmoothingEnabled = false;
+
+  const hash = hashText(sessionKey);
+  const seed = (hash & 0x7fffffff) || 1337;
+
+  const skinRgb = parseSrgb(SKIN_TONES[hash % SKIN_TONES.length], '#e8b892');
+  const skinNoseRgb = scaleRgb(skinRgb, 0.87);
+  const hairRgb = parseSrgb(HAIR_TONES[(hash >>> 4) % HAIR_TONES.length], '#2f2014');
+  const hairHighlightRgb = scaleRgb(hairRgb, 1.14);
+  const eyeRgb = parseSrgb(EYE_TONES[(hash >>> 8) % EYE_TONES.length], '#2e3c8a');
+  const scleraRgb: Rgb = { r: 244, g: 247, b: 252 };
+  const browRgb = lerpRgb(skinRgb, hairRgb, 0.36);
+  const mouthRgb = lerpRgb(scaleRgb(skinRgb, 0.62), hairRgb, 0.35);
+  const beardRgb = lerpRgb(hairRgb, scaleRgb(skinRgb, 0.72), 0.28);
+
+  const hairStyle = (hash >>> 12) % 4;
+  const mouthStyle = (hash >>> 15) % 3;
+
+  const shirtRgb = parseSrgb(shirtHex, '#38e8ff');
+  const shirtDarkRgb = scaleRgb(shirtRgb, 0.78);
+  const collarRgb: Rgb = { r: 236, g: 242, b: 248 };
+  const tieRgb = lerpRgb(parseSrgb(accentHex, '#38e8ff'), shirtDarkRgb, 0.35);
+  const beltRgb: Rgb = { r: 46, g: 38, b: 32 };
+  const buckleRgb: Rgb = { r: 204, g: 210, b: 218 };
+  const badgePlateRgb: Rgb = { r: 30, g: 38, b: 50 };
+  const watchRgb: Rgb = { r: 232, g: 196, b: 78 };
+
+  const trouserRgb = parseSrgb(TROUSER_TONES[(hash >>> 18) % TROUSER_TONES.length], '#3a4f8a');
+  const trouserDarkRgb = scaleRgb(trouserRgb, 0.82);
+  const shoeRgb = parseSrgb(SHOE_TONES[(hash >>> 21) % SHOE_TONES.length], '#2b3038');
+  const shoeSoleRgb: Rgb = { r: 30, g: 34, b: 40 };
+  const shoeLaceRgb: Rgb = { r: 218, g: 224, b: 232 };
+
+  const imageData = ctx.createImageData(SKIN_SIZE, SKIN_SIZE);
+  const data = imageData.data;
+
+  const putPixel = (px: number, py: number, rgb: Rgb, jitter = 0.08): void => {
+    if (px < 0 || px >= SKIN_SIZE || py < 0 || py >= SKIN_SIZE) return;
+    const factor = 1 + pixelNoise(seed, px, py) * jitter;
+    const idx = (py * SKIN_SIZE + px) * 4;
+    data[idx] = clampByte(rgb.r * factor);
+    data[idx + 1] = clampByte(rgb.g * factor);
+    data[idx + 2] = clampByte(rgb.b * factor);
+    data[idx + 3] = 255;
+  };
+
+  const fillRect = (
+    rect: SkinUvRect,
+    painter: (lx: number, ly: number) => { rgb: Rgb; jitter?: number }
+  ): void => {
+    for (let ly = 0; ly < rect.h; ly += 1) {
+      for (let lx = 0; lx < rect.w; lx += 1) {
+        const res = painter(lx, ly);
+        putPixel(rect.x + lx, rect.y + ly, res.rgb, res.jitter ?? 0.08);
+      }
+    }
+  };
+
+  // === 1. 头部 8×8×8 ===
+  // 顶面：头发（带确定性发丝亮暗纹理）
+  fillRect(HEAD_UV.py, (lx, ly) => ({
+    rgb: (lx + ly * 3) % 5 === 0 ? hairHighlightRgb : hairRgb,
+  }));
+
+  // 底面：下巴肤色
+  fillRect(HEAD_UV.ny, () => ({ rgb: scaleRgb(skinRgb, 0.94) }));
+
+  // 正面（+Z）：经典 Minecraft 像素脸（顶部 2 行刘海、鬓角、双像素眼、鼻梁、嘴/胡须）
+  fillRect(HEAD_UV.pz, (lx, ly) => {
+    // 顶 2 行头发刘海
+    if (ly <= 1) {
+      return { rgb: ly === 0 && (lx === 2 || lx === 5) ? hairHighlightRgb : hairRgb };
+    }
+    // 第 3 行：两侧鬓角与不同发型的斜刘海
+    if (ly === 2) {
+      const isSideburn = lx === 0 || lx === 7;
+      const isFringe =
+        (hairStyle === 1 && lx <= 3)
+        || (hairStyle === 2 && (lx <= 1 || lx >= 6));
+      if (isSideburn || isFringe) return { rgb: hairRgb };
+      return { rgb: skinRgb };
+    }
+    // 第 4 行：眉弓与长发侧鬓
+    if (ly === 3) {
+      if (hairStyle === 2 && (lx === 0 || lx === 7)) return { rgb: hairRgb };
+      if (lx === 1 || lx === 2 || lx === 5 || lx === 6) return { rgb: browRgb };
+      return { rgb: skinRgb };
+    }
+    // 第 5 行：清晰 2×1 像素双眼（白眼白 + 彩色瞳孔）
+    if (ly === 4) {
+      if (lx === 1 || lx === 6) return { rgb: scleraRgb, jitter: 0.04 };
+      if (lx === 2 || lx === 5) return { rgb: eyeRgb, jitter: 0.05 };
+      if (hairStyle === 2 && (lx === 0 || lx === 7)) return { rgb: hairRgb };
+      return { rgb: skinRgb };
+    }
+    // 第 6 行：中央 2 像素鼻梁
+    if (ly === 5) {
+      if (lx === 3 || lx === 4) return { rgb: skinNoseRgb };
+      return { rgb: skinRgb };
+    }
+    // 第 7 行：嘴部 / 经典 Steve 络腮微笑
+    if (ly === 6) {
+      if (lx === 3 || lx === 4) return { rgb: mouthRgb, jitter: 0.06 };
+      if (mouthStyle === 0 && (lx === 2 || lx === 5)) return { rgb: beardRgb };
+      if (mouthStyle === 2 && (lx === 2 || lx === 5)) return { rgb: lerpRgb(skinRgb, mouthRgb, 0.55) };
+      return { rgb: skinRgb };
+    }
+    // 第 8 行：下巴 / 经典下颌胡须
+    if (mouthStyle === 0 && lx >= 2 && lx <= 5) {
+      return { rgb: beardRgb };
+    }
+    return { rgb: skinRgb };
+  });
+
+  // 左右侧面（nx 靠右缘为前脸，px 靠左缘为前脸）
+  const paintHeadSide = (rect: SkinUvRect, frontAtLeft: boolean): void => {
+    fillRect(rect, (lx, ly) => {
+      const distFromFront = frontAtLeft ? lx : 7 - lx;
+      if (ly <= 1) return { rgb: hairRgb };
+      if (hairStyle === 2) {
+        // 长发包耳造型
+        if (distFromFront >= 1 && ly <= 6) return { rgb: hairRgb };
+        if (distFromFront === 0 && ly <= 4) return { rgb: hairRgb };
+        return { rgb: skinRgb };
+      }
+      if (hairStyle === 3) {
+        // 利落短寸渐变
+        if (ly === 2 && distFromFront >= 1) return { rgb: hairRgb };
+        if (ly === 3 && distFromFront >= 4) return { rgb: hairRgb };
+        return { rgb: skinRgb };
+      }
+      // 经典 Steve 阶梯鬓角与后脑发线
+      if (ly === 2) return { rgb: hairRgb };
+      if (ly === 3 && (distFromFront === 0 || distFromFront >= 3)) return { rgb: hairRgb };
+      if (ly === 4 && distFromFront >= 4) return { rgb: hairRgb };
+      if (ly === 5 && distFromFront >= 5) return { rgb: hairRgb };
+      return { rgb: skinRgb };
+    });
+  };
+  paintHeadSide(HEAD_UV.nx, false);
+  paintHeadSide(HEAD_UV.px, true);
+
+  // 背面（-Z）：完整后脑头发 + 底部后颈肤色
+  fillRect(HEAD_UV.nz, (lx, ly) => {
+    const backHairRows = hairStyle === 2 ? 7 : hairStyle === 3 ? 4 : 6;
+    if (ly < backHairRows) {
+      return { rgb: ly === 1 && (lx === 2 || lx === 5) ? hairHighlightRgb : hairRgb };
+    }
+    return { rgb: skinRgb };
+  });
+
+  // === 2. 躯干 8×10×4 ===
+  fillRect(TORSO_UV.py, (lx, ly) => {
+    if (lx >= 2 && lx <= 5 && ly >= 1 && ly <= 2) {
+      return { rgb: collarRgb };
+    }
+    return { rgb: shirtRgb };
+  });
+  fillRect(TORSO_UV.ny, () => ({ rgb: trouserDarkRgb }));
+
+  // 胸前（+Z）：衬衫领口、领带/门襟、胸牌底板、腰带与皮带扣
+  fillRect(TORSO_UV.pz, (lx, ly) => {
+    if (ly === 9) {
+      return { rgb: lx === 3 || lx === 4 ? buckleRgb : beltRgb };
+    }
+    if (ly === 0 && lx >= 2 && lx <= 5) {
+      return { rgb: collarRgb };
+    }
+    if (ly === 1 && (lx === 3 || lx === 4)) {
+      return { rgb: collarRgb };
+    }
+    // 胸口状态灯后方的 2×2 深色像素工牌底板
+    if ((ly === 2 || ly === 3) && (lx === 5 || lx === 6)) {
+      return { rgb: badgePlateRgb };
+    }
+    // 中央领带 / 门襟点缀
+    if (ly >= 2 && ly <= 7 && (lx === 3 || lx === 4)) {
+      return { rgb: ly % 2 === 0 ? tieRgb : lerpRgb(tieRgb, shirtDarkRgb, 0.35) };
+    }
+    if (lx === 0 || lx === 7 || ly === 8) {
+      return { rgb: shirtDarkRgb };
+    }
+    return { rgb: shirtRgb };
+  });
+
+  // 后背（-Z）：简洁衬衫接缝与腰带
+  fillRect(TORSO_UV.nz, (lx, ly) => {
+    if (ly === 9) return { rgb: beltRgb };
+    if (ly === 0 && lx >= 2 && lx <= 5) return { rgb: collarRgb };
+    if (ly === 1 || lx === 0 || lx === 7 || ly === 8) return { rgb: shirtDarkRgb };
+    return { rgb: shirtRgb };
+  });
+
+  // 躯干左右侧
+  const paintTorsoSide = (rect: SkinUvRect): void => {
+    fillRect(rect, (_lx, ly) => {
+      if (ly === 9) return { rgb: beltRgb };
+      if (ly === 8) return { rgb: shirtDarkRgb };
+      return { rgb: shirtRgb };
+    });
+  };
+  paintTorsoSide(TORSO_UV.nx);
+  paintTorsoSide(TORSO_UV.px);
+
+  // === 3. 左右双臂 4×10×4（上袖子 + 白袖口 + 下方肤色手掌） ===
+  const paintArm = (uv: BoxUvRegions, hasWatch: boolean): void => {
+    fillRect(uv.py, () => ({ rgb: shirtRgb }));
+    // 拳头前端（ny）：肤色 + 指缝暗像素
+    fillRect(uv.ny, (_lx, ly) => ({
+      rgb: ly === 2 ? scaleRgb(skinRgb, 0.86) : skinRgb,
+    }));
+
+    const sideFaces: readonly VoxelFaceDir[] = ['pz', 'nz', 'px', 'nx'];
+    for (let i = 0; i < sideFaces.length; i += 1) {
+      const dir = sideFaces[i];
+      fillRect(uv[dir], (lx, ly) => {
+        if (ly <= 5) {
+          return { rgb: ly === 5 ? shirtDarkRgb : shirtRgb };
+        }
+        if (ly === 6) {
+          return { rgb: collarRgb };
+        }
+        // 左腕手表像素点缀
+        if (hasWatch && ly === 7 && (dir === 'pz' || dir === 'px') && (lx === 1 || lx === 2)) {
+          return { rgb: watchRgb };
+        }
+        return { rgb: ly === 9 ? scaleRgb(skinRgb, 0.92) : skinRgb };
+      });
+    }
+  };
+  paintArm(RIGHT_ARM_UV, false);
+  paintArm(LEFT_ARM_UV, true);
+
+  // === 4. 左右双腿 4×10×4（牛仔长裤 + 裤脚 + 方块鞋） ===
+  const paintLeg = (uv: BoxUvRegions, outerDir: 'px' | 'nx'): void => {
+    fillRect(uv.py, () => ({ rgb: trouserDarkRgb }));
+    // 鞋底（ny）：深色鞋底与纹路
+    fillRect(uv.ny, (lx, ly) => ({
+      rgb: (lx === 1 || lx === 2) && (ly === 1 || ly === 2) ? shoeRgb : shoeSoleRgb,
+    }));
+
+    const sideFaces: readonly VoxelFaceDir[] = ['pz', 'nz', 'px', 'nx'];
+    for (let i = 0; i < sideFaces.length; i += 1) {
+      const dir = sideFaces[i];
+      fillRect(uv[dir], (lx, ly) => {
+        if (ly <= 6) {
+          const isOuterSeam = dir === outerDir && (lx === 1 || lx === 2) && ly >= 2;
+          const isPocket = dir === 'pz' && ly === 0 && (lx === 0 || lx === 3);
+          return { rgb: isOuterSeam || isPocket ? trouserDarkRgb : trouserRgb };
+        }
+        if (ly === 7) {
+          return { rgb: trouserDarkRgb };
+        }
+        if (ly === 8) {
+          // 鞋面与正面鞋带像素高光
+          if (dir === 'pz' && (lx === 1 || lx === 2)) {
+            return { rgb: shoeLaceRgb };
+          }
+          return { rgb: shoeRgb };
+        }
+        // 底部鞋边
+        return { rgb: shoeSoleRgb };
+      });
+    }
+  };
+  paintLeg(RIGHT_LEG_UV, 'nx');
+  paintLeg(LEFT_LEG_UV, 'px');
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+/** 构建发光护目镜几何（单次合批，严格轴对齐盒） */
+function createVisorGeometry(accentHex: string): THREE.BufferGeometry {
+  const frameHex = '#222936';
+  const boxes: SolidColorBoxInput[] = [
+    // 跨眼发光像素条（不叠加暗面，保持清晰自发光感）
+    {
+      minX: -0.25,
+      minY: 0.1875,
+      minZ: 0.25,
+      maxX: 0.25,
+      maxY: 0.25,
+      maxZ: 0.28125,
+      color: accentHex,
+      shadeFaces: false,
+    },
+    // 上沿深色像素边框
+    {
+      minX: -0.28125,
+      minY: 0.25,
+      minZ: 0.25,
+      maxX: 0.28125,
+      maxY: 0.28125,
+      maxZ: 0.28125,
+      color: frameHex,
+      shadeFaces: true,
+    },
+    // 右侧镜腿（-X）
+    {
+      minX: -0.28125,
+      minY: 0.1875,
+      minZ: -0.0625,
+      maxX: -0.25,
+      maxY: 0.25,
+      maxZ: 0.28125,
+      color: frameHex,
+      shadeFaces: true,
+    },
+    // 左侧镜腿（+X）
+    {
+      minX: 0.25,
+      minY: 0.1875,
+      minZ: -0.0625,
+      maxX: 0.28125,
+      maxY: 0.25,
+      maxZ: 0.28125,
+      color: frameHex,
+      shadeFaces: true,
+    },
+  ];
+  return createSolidColorVoxelGeometry(boxes);
+}
+
+/** 构建方块像素眼镜几何（双镂空方框 + 鼻梁 + 双镜腿，露出双眼像素） */
+function createGlassesGeometry(): THREE.BufferGeometry {
+  const frameHex = '#202733';
+  const boxes: SolidColorBoxInput[] = [
+    // 右眼镜框四边（-X，精准框住 [-0.1875, -0.0625] × [0.1875, 0.25]）
+    { minX: -0.21875, minY: 0.25, minZ: 0.25, maxX: -0.03125, maxY: 0.28125, maxZ: 0.28125, color: frameHex },
+    { minX: -0.21875, minY: 0.15625, minZ: 0.25, maxX: -0.03125, maxY: 0.1875, maxZ: 0.28125, color: frameHex },
+    { minX: -0.21875, minY: 0.1875, minZ: 0.25, maxX: -0.1875, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    { minX: -0.0625, minY: 0.1875, minZ: 0.25, maxX: -0.03125, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 左眼镜框四边（+X，精准框住 [+0.0625, +0.1875] × [0.1875, 0.25]）
+    { minX: 0.03125, minY: 0.25, minZ: 0.25, maxX: 0.21875, maxY: 0.28125, maxZ: 0.28125, color: frameHex },
+    { minX: 0.03125, minY: 0.15625, minZ: 0.25, maxX: 0.21875, maxY: 0.1875, maxZ: 0.28125, color: frameHex },
+    { minX: 0.03125, minY: 0.1875, minZ: 0.25, maxX: 0.0625, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    { minX: 0.1875, minY: 0.1875, minZ: 0.25, maxX: 0.21875, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 鼻梁连接桥
+    { minX: -0.03125, minY: 0.21875, minZ: 0.25, maxX: 0.03125, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 两侧外角连接段
+    { minX: -0.28125, minY: 0.21875, minZ: 0.25, maxX: -0.21875, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    { minX: 0.21875, minY: 0.21875, minZ: 0.25, maxX: 0.28125, maxY: 0.25, maxZ: 0.28125, color: frameHex },
+    // 左右镜腿
+    { minX: -0.28125, minY: 0.21875, minZ: -0.0625, maxX: -0.25, maxY: 0.25, maxZ: 0.25, color: frameHex },
+    { minX: 0.25, minY: 0.21875, minZ: -0.0625, maxX: 0.28125, maxY: 0.25, maxZ: 0.25, color: frameHex },
+  ];
+  return createSolidColorVoxelGeometry(boxes);
+}
+
+/** 构建方块头戴耳机 + L 形体素麦杆几何（单次合批） */
+function createHeadsetGeometry(accentHex: string): THREE.BufferGeometry {
+  const bandHex = '#262e3b';
+  const cupHex = '#1b2029';
+  const micArmHex = '#313a4a';
+  const boxes: SolidColorBoxInput[] = [
+    // 头顶横梁
+    { minX: -0.3125, minY: 0.5, minZ: -0.0625, maxX: 0.3125, maxY: 0.5625, maxZ: 0.0625, color: bandHex },
+    // 左右竖梁
+    { minX: -0.3125, minY: 0.28125, minZ: -0.0625, maxX: -0.25, maxY: 0.5, maxZ: 0.0625, color: bandHex },
+    { minX: 0.25, minY: 0.28125, minZ: -0.0625, maxX: 0.3125, maxY: 0.5, maxZ: 0.0625, color: bandHex },
+    // 右方形耳罩 + 外侧亮点饰板
+    { minX: -0.3125, minY: 0.125, minZ: -0.09375, maxX: -0.25, maxY: 0.3125, maxZ: 0.09375, color: cupHex },
+    { minX: -0.34375, minY: 0.15625, minZ: -0.0625, maxX: -0.3125, maxY: 0.28125, maxZ: 0.0625, color: accentHex },
+    // 左方形耳罩 + 外侧亮点饰板
+    { minX: 0.25, minY: 0.125, minZ: -0.09375, maxX: 0.3125, maxY: 0.3125, maxZ: 0.09375, color: cupHex },
+    { minX: 0.3125, minY: 0.15625, minZ: -0.0625, maxX: 0.34375, maxY: 0.28125, maxZ: 0.0625, color: accentHex },
+    // L 形体素麦克风杆（前伸段 + 嘴前折入段 + 方块麦头）
+    { minX: -0.3125, minY: 0.09375, minZ: 0.03125, maxX: -0.28125, maxY: 0.125, maxZ: 0.3125, color: micArmHex },
+    { minX: -0.28125, minY: 0.09375, minZ: 0.28125, maxX: -0.09375, maxY: 0.125, maxZ: 0.3125, color: micArmHex },
+    { minX: -0.09375, minY: 0.078125, minZ: 0.265625, maxX: -0.03125, maxY: 0.140625, maxZ: 0.328125, color: accentHex },
+  ];
+  return createSolidColorVoxelGeometry(boxes);
+}
+
+function tagCharacterTree(object: THREE.Object3D, sessionKey: string): void {
   object.traverse((child) => {
     child.userData.sessionKey = sessionKey;
     child.userData.hitKind = 'station';
@@ -82,556 +804,169 @@ function tagTree(object: THREE.Object3D, sessionKey: string): void {
   });
 }
 
-function buildLimbCylinder(
-  radiusTop: number,
-  radiusBottom: number,
-  length: number,
-  material: THREE.Material
-): THREE.Mesh {
-  const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, length, 12);
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.y = -length / 2;
-  return mesh;
-}
-
-function buildShoe(
-  shoeMaterial: THREE.MeshStandardMaterial,
-  soleMaterial: THREE.MeshStandardMaterial
-): THREE.Group {
-  const shoe = new THREE.Group();
-
-  const sole = new THREE.Mesh(new THREE.BoxGeometry(0.096, 0.02, 0.21), soleMaterial);
-  sole.position.set(0, -0.052, 0.048);
-  shoe.add(sole);
-
-  const upper = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.042, 0.175), shoeMaterial);
-  upper.position.set(0, -0.024, 0.038);
-  shoe.add(upper);
-
-  const toeCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.044, 10, 8),
-    shoeMaterial
-  );
-  toeCap.scale.set(1.0, 0.56, 1.35);
-  toeCap.position.set(0, -0.029, 0.118);
-  shoe.add(toeCap);
-
-  return shoe;
-}
-
-function buildHand(skinMaterial: THREE.MeshStandardMaterial): THREE.Group {
-  const hand = new THREE.Group();
-
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.022, 0.068), skinMaterial);
-  palm.position.set(0, 0, 0.032);
-  hand.add(palm);
-
-  const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.018, 0.042), skinMaterial);
-  fingers.position.set(0, -0.004, 0.078);
-  fingers.rotation.x = 0.22;
-  hand.add(fingers);
-
-  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.018, 0.036), skinMaterial);
-  thumb.position.set(0.032, -0.002, 0.036);
-  thumb.rotation.y = 0.35;
-  hand.add(thumb);
-
-  return hand;
-}
-
-function buildHairGroup(
-  variant: number,
-  hairMaterial: THREE.MeshStandardMaterial
-): THREE.Group {
-  const group = new THREE.Group();
-
-  // Base cranium cap
-  const cap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.114, 16, 14, 0, Math.PI * 2, 0, Math.PI * 0.58),
-    hairMaterial
-  );
-  cap.scale.set(0.92, 1.03, 0.98);
-  cap.position.set(0, 0.012, -0.01);
-  cap.rotation.x = -0.18;
-  group.add(cap);
-
-  // Back hair layer
-  const backHair = new THREE.Mesh(new THREE.BoxGeometry(0.185, 0.125, 0.085), hairMaterial);
-  backHair.position.set(0, -0.018, -0.072);
-  group.add(backHair);
-
-  if (variant === 0) {
-    // Side-parted swept crop
-    const crownSweep = new THREE.Mesh(new THREE.BoxGeometry(0.165, 0.048, 0.145), hairMaterial);
-    crownSweep.position.set(0.014, 0.094, 0.016);
-    crownSweep.rotation.z = -0.14;
-    crownSweep.rotation.x = 0.1;
-    group.add(crownSweep);
-
-    const sideLeft = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.082, 0.065), hairMaterial);
-    sideLeft.position.set(-0.094, 0.015, 0.005);
-    group.add(sideLeft);
-    const sideRight = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.082, 0.065), hairMaterial);
-    sideRight.position.set(0.094, 0.015, 0.005);
-    group.add(sideRight);
-  } else if (variant === 1) {
-    // Textured bangs & fuller crown
-    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.175, 0.044, 0.064), hairMaterial);
-    bangs.position.set(0, 0.074, 0.076);
-    bangs.rotation.x = 0.25;
-    group.add(bangs);
-
-    const topVolume = new THREE.Mesh(new THREE.SphereGeometry(0.096, 12, 10), hairMaterial);
-    topVolume.scale.set(0.98, 0.48, 1.05);
-    topVolume.position.set(0, 0.092, 0.0);
-    group.add(topVolume);
-  } else {
-    // Sleek bob with back bun
-    const sideBobL = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.125, 0.105), hairMaterial);
-    sideBobL.position.set(-0.095, -0.008, -0.006);
-    group.add(sideBobL);
-    const sideBobR = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.125, 0.105), hairMaterial);
-    sideBobR.position.set(0.095, -0.008, -0.006);
-    group.add(sideBobR);
-
-    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), hairMaterial);
-    bun.position.set(0, 0.032, -0.125);
-    group.add(bun);
-  }
-
-  return group;
-}
-
-function buildEyewearGroups(
-  frameMaterial: THREE.MeshStandardMaterial,
-  visorGlowMaterial: THREE.MeshStandardMaterial,
-  padMaterial: THREE.MeshStandardMaterial
-): {
-  visorGroup: THREE.Group;
-  glassesGroup: THREE.Group;
-  headsetGroup: THREE.Group;
-} {
-  // 1. AR Visor
-  const visorGroup = new THREE.Group();
-  const visorShield = new THREE.Mesh(new THREE.BoxGeometry(0.186, 0.046, 0.026), visorGlowMaterial);
-  visorShield.position.set(0, 0.015, 0.104);
-  visorGroup.add(visorShield);
-
-  const visorBridge = new THREE.Mesh(new THREE.BoxGeometry(0.194, 0.012, 0.022), frameMaterial);
-  visorBridge.position.set(0, 0.039, 0.102);
-  visorGroup.add(visorBridge);
-
-  const templeL = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.014, 0.115), frameMaterial);
-  templeL.position.set(-0.098, 0.02, 0.044);
-  visorGroup.add(templeL);
-  const templeR = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.014, 0.115), frameMaterial);
-  templeR.position.set(0.098, 0.02, 0.044);
-  visorGroup.add(templeR);
-
-  // 2. Optical Glasses
-  const glassesGroup = new THREE.Group();
-  const lensMat = new THREE.MeshStandardMaterial({
-    color: '#9adbf2',
-    transparent: true,
-    opacity: 0.28,
-    roughness: 0.1,
-    metalness: 0.2,
-  });
-  const makeLens = (x: number) => {
-    const rim = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.036, 0.012), frameMaterial);
-    rim.position.set(x, 0.014, 0.106);
-    glassesGroup.add(rim);
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.048, 0.026), lensMat);
-    glass.position.set(x, 0.014, 0.113);
-    glassesGroup.add(glass);
-  };
-  makeLens(-0.038);
-  makeLens(0.038);
-  const noseBridge = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.008, 0.012), frameMaterial);
-  noseBridge.position.set(0, 0.018, 0.107);
-  glassesGroup.add(noseBridge);
-  const gTempleL = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.11), frameMaterial);
-  gTempleL.position.set(-0.092, 0.018, 0.048);
-  glassesGroup.add(gTempleL);
-  const gTempleR = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.11), frameMaterial);
-  gTempleR.position.set(0.092, 0.018, 0.048);
-  glassesGroup.add(gTempleR);
-
-  // 3. Studio Headset + Boom Mic
-  const headsetGroup = new THREE.Group();
-  const headband = new THREE.Mesh(
-    new THREE.TorusGeometry(0.114, 0.012, 8, 20, Math.PI),
-    frameMaterial
-  );
-  headband.position.set(0, 0.018, -0.004);
-  headsetGroup.add(headband);
-
-  const earcupL = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.034, 14), padMaterial);
-  earcupL.rotation.z = Math.PI / 2;
-  earcupL.position.set(-0.112, -0.002, -0.004);
-  headsetGroup.add(earcupL);
-
-  const earcupR = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.034, 14), padMaterial);
-  earcupR.rotation.z = Math.PI / 2;
-  earcupR.position.set(0.112, -0.002, -0.004);
-  headsetGroup.add(earcupR);
-
-  const micArm = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.125, 8), frameMaterial);
-  micArm.rotation.x = Math.PI / 2.2;
-  micArm.rotation.z = -0.35;
-  micArm.position.set(-0.088, -0.034, 0.056);
-  headsetGroup.add(micArm);
-
-  const micTip = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 8), visorGlowMaterial);
-  micTip.position.set(-0.046, -0.048, 0.112);
-  headsetGroup.add(micTip);
-
-  return { visorGroup, glassesGroup, headsetGroup };
-}
-
 export function createOfficeCharacter(
   session: OfficeSessionItem,
   palette: OfficeScenePalette
 ): OfficeCharacterRig {
   const hash = hashText(session.sessionKey);
-  const skinTone = SKIN_TONES[hash % SKIN_TONES.length];
-  const hairTone = HAIR_TONES[(hash >>> 4) % HAIR_TONES.length];
-  const hairVariant = (hash >>> 8) % 3;
+  const shirtHex = session.persona.avatarTone || palette.accentHex;
+  const accentHex = session.persona.deskAccent || palette.accentHex;
 
-  const baseJacketColor = new THREE.Color(session.persona.avatarTone || palette.accentHex);
-  const baseTrouserColor = baseJacketColor.clone().multiplyScalar(0.32).lerp(new THREE.Color('#192231'), 0.65);
-  const baseAccentColor = new THREE.Color(session.persona.deskAccent || palette.accentHex);
+  // 1. 生成 64×64 Minecraft 像素皮肤纹理（严格 NearestFilter + 无 mipmap + SRGBColorSpace）
+  const skinCanvas = document.createElement('canvas');
+  skinCanvas.width = SKIN_SIZE;
+  skinCanvas.height = SKIN_SIZE;
+  paintMinecraftSkin(skinCanvas, session.sessionKey, shirtHex, accentHex);
 
-  const jacketMaterial = new THREE.MeshStandardMaterial({
-    color: baseJacketColor,
-    roughness: 0.62,
-    metalness: 0.08,
+  const skinTexture = new THREE.CanvasTexture(skinCanvas);
+  skinTexture.magFilter = THREE.NearestFilter;
+  skinTexture.minFilter = THREE.NearestFilter;
+  skinTexture.generateMipmaps = false;
+  skinTexture.colorSpace = THREE.SRGBColorSpace;
+  skinTexture.wrapS = THREE.ClampToEdgeWrapping;
+  skinTexture.wrapT = THREE.ClampToEdgeWrapping;
+  skinTexture.needsUpdate = true;
+
+  // 2. 共享哑光体素材质（头、躯干、双臂、双腿共用 1 份材质与 1 张贴图）
+  const skinMaterial = new THREE.MeshLambertMaterial({
+    map: skinTexture,
+    vertexColors: true,
   });
-  const shirtMaterial = new THREE.MeshStandardMaterial({
-    color: '#e5eef6',
-    roughness: 0.72,
-    metalness: 0.02,
+  const accessoryMaterial = new THREE.MeshLambertMaterial({
+    vertexColors: true,
   });
-  const trouserMaterial = new THREE.MeshStandardMaterial({
-    color: baseTrouserColor,
-    roughness: 0.74,
-    metalness: 0.05,
+  const visorMaterial = new THREE.MeshBasicMaterial({
+    vertexColors: true,
   });
-  const shoeMaterial = new THREE.MeshStandardMaterial({
-    color: '#1e2736',
-    roughness: 0.52,
-    metalness: 0.15,
-  });
-  const soleMaterial = new THREE.MeshStandardMaterial({
-    color: '#cbd7e3',
-    roughness: 0.78,
-    metalness: 0.04,
-  });
-  const skinMaterial = new THREE.MeshStandardMaterial({
-    color: skinTone,
-    roughness: 0.68,
-    metalness: 0.02,
-  });
-  const hairMaterial = new THREE.MeshStandardMaterial({
-    color: hairTone,
-    roughness: 0.75,
-    metalness: 0.08,
-  });
-  const scleraMaterial = new THREE.MeshStandardMaterial({
-    color: '#f7fbff',
-    roughness: 0.35,
-  });
-  const irisMaterial = new THREE.MeshStandardMaterial({
-    color: '#172230',
-    roughness: 0.25,
-  });
-  const frameMaterial = new THREE.MeshStandardMaterial({
-    color: '#1f2b3c',
-    roughness: 0.35,
-    metalness: 0.55,
-  });
-  const padMaterial = new THREE.MeshStandardMaterial({
-    color: '#253347',
-    roughness: 0.65,
-    metalness: 0.15,
-  });
-  const visorGlowMaterial = new THREE.MeshStandardMaterial({
-    color: baseAccentColor,
-    emissive: baseAccentColor,
-    emissiveIntensity: 0.85,
-    transparent: true,
-    opacity: 0.78,
-    roughness: 0.18,
-    metalness: 0.35,
-  });
-  const badgePlateMaterial = new THREE.MeshStandardMaterial({
-    color: '#121b29',
-    roughness: 0.4,
-    metalness: 0.4,
-  });
-  const badgeLedMaterial = new THREE.MeshStandardMaterial({
+  const badgeLedMaterial = new THREE.MeshLambertMaterial({
     color: palette.successHex,
     emissive: palette.successHex,
-    emissiveIntensity: 1.4,
-    roughness: 0.25,
+    emissiveIntensity: 0.9,
   });
 
+  // 3. 角色层级与坐姿关节（原点位于椅面中心地面，站立总高 1.75）
   const root = new THREE.Group();
-  const pelvis = new THREE.Group();
-  pelvis.position.set(0, 0.48, 0);
-  root.add(pelvis);
 
-  // Pelvis / Hips
-  const hipBlock = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.115, 0.185), trouserMaterial);
-  pelvis.add(hipBlock);
+  // 躯干组：枢轴位于椅面顶 y = 0.375，躯干覆盖 y = 0.375..1.00
+  const torsoGroup = new THREE.Group();
+  torsoGroup.position.set(0, 0.375, 0);
+  root.add(torsoGroup);
 
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.268, 0.026, 0.192), frameMaterial);
-  belt.position.y = 0.056;
-  pelvis.add(belt);
+  const torsoGeo = createSkinnedVoxelBox(0.5, 0.625, 0.25, TORSO_UV, [0, 0.3125, 0]);
+  const torsoMesh = new THREE.Mesh(torsoGeo, skinMaterial);
+  torsoGroup.add(torsoMesh);
 
-  // Legs + Knees + Shoes
-  const buildLeg = (sideSign: number) => {
-    const upperLeg = new THREE.Group();
-    upperLeg.position.set(sideSign * 0.084, -0.015, 0.02);
-    pelvis.add(upperLeg);
+  // 胸口状态指示灯方块（0.0625 × 0.0625 × 0.03125）
+  const badgeLedGeo = createSolidColorVoxelGeometry([
+    {
+      minX: -0.03125,
+      minY: -0.03125,
+      minZ: -0.015625,
+      maxX: 0.03125,
+      maxY: 0.03125,
+      maxZ: 0.015625,
+      shadeFaces: false,
+    },
+  ]);
+  const badgeLedMesh = new THREE.Mesh(badgeLedGeo, badgeLedMaterial);
+  badgeLedMesh.position.set(0.125, 0.4375, 0.140625);
+  torsoGroup.add(badgeLedMesh);
 
-    const thigh = buildLimbCylinder(0.066, 0.054, 0.35, trouserMaterial);
-    upperLeg.add(thigh);
+  // 头部组：枢轴位于颈部 (0, 0.625, 0)（世界 y = 1.00），头方块覆盖 y = 1.00..1.50
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 0.625, 0);
+  torsoGroup.add(headGroup);
 
-    const knee = new THREE.Mesh(new THREE.SphereGeometry(0.054, 10, 8), trouserMaterial);
-    knee.position.y = -0.35;
-    upperLeg.add(knee);
+  const headGeo = createSkinnedVoxelBox(0.5, 0.5, 0.5, HEAD_UV, [0, 0.25, 0]);
+  const headMesh = new THREE.Mesh(headGeo, skinMaterial);
+  headGroup.add(headMesh);
 
-    const lowerLeg = new THREE.Group();
-    lowerLeg.position.set(0, -0.35, 0);
-    upperLeg.add(lowerLeg);
+  // 三种体素头饰（每种合批为 1 个 Mesh，运行期仅显示 1 个）
+  const visorMesh = new THREE.Mesh(createVisorGeometry(accentHex), visorMaterial);
+  const glassesMesh = new THREE.Mesh(createGlassesGeometry(), accessoryMaterial);
+  const headsetMesh = new THREE.Mesh(createHeadsetGeometry(accentHex), accessoryMaterial);
+  headGroup.add(visorMesh);
+  headGroup.add(glassesMesh);
+  headGroup.add(headsetMesh);
 
-    const shin = buildLimbCylinder(0.052, 0.041, 0.37, trouserMaterial);
-    lowerLeg.add(shin);
+  // 左右双臂：枢轴位于肩部 (±0.375, 0.50, 0)（世界 y = 0.875），各 0.25 × 0.625 × 0.25
+  const leftArmGroup = new THREE.Group();
+  leftArmGroup.position.set(0.375, 0.5, 0);
+  torsoGroup.add(leftArmGroup);
 
-    const shoe = buildShoe(shoeMaterial, soleMaterial);
-    shoe.position.set(0, -0.37, 0);
-    lowerLeg.add(shoe);
+  const leftArmGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, LEFT_ARM_UV, [0, -0.1875, 0], {
+    faceShadeOverride: SEATED_FORWARD_FACE_SHADE,
+  });
+  const leftArmMesh = new THREE.Mesh(leftArmGeo, skinMaterial);
+  leftArmGroup.add(leftArmMesh);
 
-    return { upperLeg, lowerLeg };
-  };
+  const rightArmGroup = new THREE.Group();
+  rightArmGroup.position.set(-0.375, 0.5, 0);
+  torsoGroup.add(rightArmGroup);
 
-  const leftLeg = buildLeg(-1);
-  const rightLeg = buildLeg(1);
+  const rightArmGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, RIGHT_ARM_UV, [0, -0.1875, 0], {
+    faceShadeOverride: SEATED_FORWARD_FACE_SHADE,
+  });
+  const rightArmMesh = new THREE.Mesh(rightArmGeo, skinMaterial);
+  rightArmGroup.add(rightArmMesh);
 
-  // Spine & Torso
-  const spine = new THREE.Group();
-  spine.position.set(0, 0.055, -0.01);
-  pelvis.add(spine);
+  // 坐姿双腿合批：枢轴位于 (0, 0.50, 0.0625) 并精确旋转 -Math.PI / 2 沿 +Z 前伸，
+  // 垂直覆盖 y = 0.375..0.625（紧贴椅面且完全低于桌面底沿 y = 0.6835，零穿模）
+  const legsGroup = new THREE.Group();
+  legsGroup.position.set(0, 0.5, 0.0625);
+  legsGroup.rotation.set(-Math.PI / 2, 0, 0);
+  root.add(legsGroup);
 
-  const waist = new THREE.Mesh(new THREE.BoxGeometry(0.255, 0.13, 0.172), jacketMaterial);
-  waist.position.y = 0.065;
-  spine.add(waist);
+  const leftLegGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, LEFT_LEG_UV, [0.125, -0.1875, 0], {
+    faceShadeOverride: SEATED_FORWARD_FACE_SHADE,
+    hiddenFaces: { nx: true },
+  });
+  const rightLegGeo = createSkinnedVoxelBox(0.25, 0.625, 0.25, RIGHT_LEG_UV, [-0.125, -0.1875, 0], {
+    faceShadeOverride: SEATED_FORWARD_FACE_SHADE,
+    hiddenFaces: { px: true },
+  });
+  const mergedLegsGeo = mergeVoxelGeometries([leftLegGeo, rightLegGeo]);
+  leftLegGeo.dispose();
+  rightLegGeo.dispose();
 
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.328, 0.275, 0.186), jacketMaterial);
-  chest.position.y = 0.255;
-  spine.add(chest);
+  const legsMesh = new THREE.Mesh(mergedLegsGeo, skinMaterial);
+  legsGroup.add(legsMesh);
 
-  const shoulderSlope = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.065, 0.168), jacketMaterial);
-  shoulderSlope.position.y = 0.375;
-  spine.add(shoulderSlope);
-
-  // Shirt inner placket + collar
-  const innerShirt = new THREE.Mesh(new THREE.BoxGeometry(0.102, 0.23, 0.022), shirtMaterial);
-  innerShirt.position.set(0, 0.275, 0.086);
-  spine.add(innerShirt);
-
-  const collarL = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.058, 0.045), jacketMaterial);
-  collarL.position.set(-0.062, 0.388, 0.078);
-  collarL.rotation.z = -0.35;
-  spine.add(collarL);
-
-  const collarR = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.058, 0.045), jacketMaterial);
-  collarR.position.set(0.062, 0.388, 0.078);
-  collarR.rotation.z = 0.35;
-  spine.add(collarR);
-
-  // Chest ID Badge & live status LED
-  const badgePlate = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.036, 0.012), badgePlateMaterial);
-  badgePlate.position.set(0.095, 0.285, 0.096);
-  spine.add(badgePlate);
-
-  const badgeLed = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.014, 0.008), badgeLedMaterial);
-  badgeLed.position.set(0.112, 0.285, 0.103);
-  spine.add(badgeLed);
-
-  // Arms (Shoulder -> Upper Arm -> Elbow -> Forearm -> Wrist -> Hand)
-  const buildArm = (sideSign: number) => {
-    const shoulder = new THREE.Group();
-    shoulder.position.set(sideSign * 0.205, 0.365, 0.0);
-    spine.add(shoulder);
-
-    const shoulderCap = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), jacketMaterial);
-    shoulder.add(shoulderCap);
-
-    const upperArm = buildLimbCylinder(0.044, 0.038, 0.24, jacketMaterial);
-    shoulder.add(upperArm);
-
-    const elbow = new THREE.Group();
-    elbow.position.set(0, -0.24, 0);
-    shoulder.add(elbow);
-
-    const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 8), jacketMaterial);
-    elbow.add(elbowJoint);
-
-    const forearm = buildLimbCylinder(0.037, 0.029, 0.225, jacketMaterial);
-    elbow.add(forearm);
-
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.031, 0.024, 10), shirtMaterial);
-    cuff.position.y = -0.218;
-    elbow.add(cuff);
-
-    const wrist = new THREE.Group();
-    wrist.position.set(0, -0.232, 0);
-    elbow.add(wrist);
-
-    const hand = buildHand(skinMaterial);
-    wrist.add(hand);
-
-    return { shoulder, elbow, wrist };
-  };
-
-  const leftArm = buildArm(-1);
-  const rightArm = buildArm(1);
-
-  // Neck & Head
-  const neck = new THREE.Group();
-  neck.position.set(0, 0.405, 0.008);
-  spine.add(neck);
-
-  const neckCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.048, 0.078, 12), skinMaterial);
-  neckCyl.position.y = 0.035;
-  neck.add(neckCyl);
-
-  const head = new THREE.Group();
-  head.position.set(0, 0.145, 0.012);
-  neck.add(head);
-
-  const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.106, 18, 16), skinMaterial);
-  cranium.scale.set(0.9, 1.04, 0.96);
-  head.add(cranium);
-
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.068, 0.115), skinMaterial);
-  jaw.position.set(0, -0.056, 0.018);
-  head.add(jaw);
-
-  const earL = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), skinMaterial);
-  earL.scale.set(0.45, 1.0, 0.8);
-  earL.position.set(-0.095, -0.004, -0.004);
-  head.add(earL);
-
-  const earR = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), skinMaterial);
-  earR.scale.set(0.45, 1.0, 0.8);
-  earR.position.set(0.095, -0.004, -0.004);
-  head.add(earR);
-
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.034, 0.024), skinMaterial);
-  nose.position.set(0, -0.012, 0.098);
-  nose.rotation.x = -0.15;
-  head.add(nose);
-
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.007, 0.008), hairMaterial);
-  mouth.position.set(0, -0.052, 0.088);
-  head.add(mouth);
-
-  // Eyes + Eyebrows + Eyelids
-  const makeEye = (sideSign: number) => {
-    const x = sideSign * 0.036;
-    const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), scleraMaterial);
-    sclera.scale.set(1.0, 0.85, 0.6);
-    sclera.position.set(x, 0.015, 0.089);
-    head.add(sclera);
-
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.009, 10, 8), irisMaterial);
-    iris.scale.set(1.0, 1.0, 0.55);
-    iris.position.set(x, 0.015, 0.096);
-    head.add(iris);
-
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.008, 0.01), hairMaterial);
-    brow.position.set(x, 0.036, 0.094);
-    brow.rotation.z = sideSign * -0.08;
-    head.add(brow);
-
-    const eyelid = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.026, 0.014), skinMaterial);
-    eyelid.position.set(x, 0.022, 0.095);
-    eyelid.scale.y = 0.08;
-    head.add(eyelid);
-    return eyelid;
-  };
-
-  const eyelidLeft = makeEye(-1);
-  const eyelidRight = makeEye(1);
-
-  // Sculpted 3D Hair
-  const hair = buildHairGroup(hairVariant, hairMaterial);
-  head.add(hair);
-
-  // Eyewear / Headgear Accessories
-  const { visorGroup, glassesGroup, headsetGroup } = buildEyewearGroups(
-    frameMaterial,
-    visorGlowMaterial,
-    padMaterial
-  );
-  head.add(visorGroup);
-  head.add(glassesGroup);
-  head.add(headsetGroup);
-
-  tagTree(root, session.sessionKey);
+  // 统一打标命中元数据与阴影开关
+  tagCharacterTree(root, session.sessionKey);
 
   const rig: OfficeCharacterRig = {
     root,
-    pelvis,
-    spine,
-    neck,
-    head,
-    eyelidLeft,
-    eyelidRight,
-    leftShoulder: leftArm.shoulder,
-    leftElbow: leftArm.elbow,
-    leftWrist: leftArm.wrist,
-    rightShoulder: rightArm.shoulder,
-    rightElbow: rightArm.elbow,
-    rightWrist: rightArm.wrist,
-    leftUpperLeg: leftLeg.upperLeg,
-    leftLowerLeg: leftLeg.lowerLeg,
-    rightUpperLeg: rightLeg.upperLeg,
-    rightLowerLeg: rightLeg.lowerLeg,
-    visorGroup,
-    glassesGroup,
-    headsetGroup,
-    jacketMaterial,
-    shirtMaterial,
-    trouserMaterial,
-    shoeMaterial,
+    torsoGroup,
+    headGroup,
+    leftArmGroup,
+    rightArmGroup,
+    legsGroup,
+    torsoMesh,
+    headMesh,
+    leftArmMesh,
+    rightArmMesh,
+    legsMesh,
+    visorMesh,
+    glassesMesh,
+    headsetMesh,
+    badgeLedMesh,
+    skinCanvas,
+    skinTexture,
     skinMaterial,
-    hairMaterial,
-    visorGlowMaterial,
+    accessoryMaterial,
+    visorMaterial,
     badgeLedMaterial,
-    baseJacketColor,
-    baseTrouserColor,
-    baseAccentColor,
-    phaseOffset: ((hash % 628) / 100),
+    phaseOffset: (hash % 628) / 100,
     availability: session.availability,
     posture: session.persona.posture,
     recentPulse: session.activity.recentPulse,
+    lastSkinSignature: `${session.sessionKey}|${shirtHex}|${accentHex}`,
+    lastAccentHex: accentHex,
   };
 
-  applySeatedBasePose(rig);
   updateOfficeCharacter(rig, session, palette);
   return rig;
-}
-
-function applySeatedBasePose(rig: OfficeCharacterRig): void {
-  // Seated thighs forward (+Z -> negative rx), shins straight down
-  rig.leftUpperLeg.rotation.set(-1.46, 0.08, 0);
-  rig.leftLowerLeg.rotation.set(1.46, 0, 0);
-  rig.rightUpperLeg.rotation.set(-1.46, -0.08, 0);
-  rig.rightLowerLeg.rotation.set(1.46, 0, 0);
 }
 
 export function updateOfficeCharacter(
@@ -643,43 +978,58 @@ export function updateOfficeCharacter(
   rig.posture = session.persona.posture;
   rig.recentPulse = session.activity.recentPulse;
 
-  // Eyewear / headset state
-  const visorStyle = session.persona.visorStyle;
-  rig.visorGroup.visible = visorStyle === 'visor';
-  rig.glassesGroup.visible = visorStyle === 'glasses';
-  rig.headsetGroup.visible = visorStyle === 'headset';
+  // 若衬衫或主题强调色变化，原地重绘 64×64 像素皮肤并更新头饰强调色
+  const shirtHex = session.persona.avatarTone || palette.accentHex;
+  const accentHex = session.persona.deskAccent || palette.accentHex;
+  const skinSignature = `${session.sessionKey}|${shirtHex}|${accentHex}`;
+  if (rig.lastSkinSignature !== skinSignature) {
+    rig.lastSkinSignature = skinSignature;
+    paintMinecraftSkin(rig.skinCanvas, session.sessionKey, shirtHex, accentHex);
+    rig.skinTexture.needsUpdate = true;
+  }
+  if (rig.lastAccentHex !== accentHex) {
+    rig.lastAccentHex = accentHex;
+    rig.visorMesh.geometry.dispose();
+    rig.visorMesh.geometry = createVisorGeometry(accentHex);
+    rig.headsetMesh.geometry.dispose();
+    rig.headsetMesh.geometry = createHeadsetGeometry(accentHex);
+  }
 
-  // Clothing and LED state differentiation
-  const mutedColor = new THREE.Color('#445364');
+  // 头饰三选一，始终仅有 1 个可见 Draw Call
+  const visorStyle = session.persona.visorStyle;
+  rig.visorMesh.visible = visorStyle === 'visor';
+  rig.glassesMesh.visible = visorStyle === 'glasses';
+  rig.headsetMesh.visible = visorStyle === 'headset';
+
+  // 根据会话可用状态同步皮肤色调与胸口 LED 状态灯
   if (session.availability === 'exited') {
-    rig.jacketMaterial.color.copy(rig.baseJacketColor).lerp(mutedColor, 0.72);
-    rig.trouserMaterial.color.copy(rig.baseTrouserColor).lerp(mutedColor, 0.55);
-    rig.badgeLedMaterial.color.set('#586b80');
-    rig.badgeLedMaterial.emissive.set('#2b3645');
+    rig.skinMaterial.color.set('#9aa5b4');
+    rig.accessoryMaterial.color.set('#9aa5b4');
+    rig.visorMaterial.color.set('#738091');
+    rig.badgeLedMaterial.color.set('#64748b');
+    rig.badgeLedMaterial.emissive.set('#334155');
     rig.badgeLedMaterial.emissiveIntensity = 0.25;
-    rig.visorGlowMaterial.emissiveIntensity = 0.12;
   } else if (session.availability === 'unavailable') {
-    rig.jacketMaterial.color.copy(rig.baseJacketColor).lerp(mutedColor, 0.38);
-    rig.trouserMaterial.color.copy(rig.baseTrouserColor);
+    rig.skinMaterial.color.set('#ffe6bd');
+    rig.accessoryMaterial.color.set('#f2dcba');
+    rig.visorMaterial.color.set('#d9c298');
     rig.badgeLedMaterial.color.set(palette.warningHex);
     rig.badgeLedMaterial.emissive.set(palette.warningHex);
     rig.badgeLedMaterial.emissiveIntensity = 0.95;
-    rig.visorGlowMaterial.emissiveIntensity = 0.4;
   } else if (session.availability === 'directory-only') {
-    rig.jacketMaterial.color.copy(rig.baseJacketColor);
-    rig.trouserMaterial.color.copy(rig.baseTrouserColor);
+    rig.skinMaterial.color.set('#ffffff');
+    rig.accessoryMaterial.color.set('#ffffff');
+    rig.visorMaterial.color.set('#ffffff');
     rig.badgeLedMaterial.color.set(palette.accentHex);
     rig.badgeLedMaterial.emissive.set(palette.accentHex);
-    rig.badgeLedMaterial.emissiveIntensity = 1.25;
-    rig.visorGlowMaterial.emissiveIntensity = 0.75;
+    rig.badgeLedMaterial.emissiveIntensity = 1.05;
   } else {
-    // interactive
-    rig.jacketMaterial.color.copy(rig.baseJacketColor);
-    rig.trouserMaterial.color.copy(rig.baseTrouserColor);
+    rig.skinMaterial.color.set('#ffffff');
+    rig.accessoryMaterial.color.set('#ffffff');
+    rig.visorMaterial.color.set('#ffffff');
     rig.badgeLedMaterial.color.set(palette.successHex);
     rig.badgeLedMaterial.emissive.set(palette.successHex);
-    rig.badgeLedMaterial.emissiveIntensity = session.activity.recentPulse ? 2.0 : 1.35;
-    rig.visorGlowMaterial.emissiveIntensity = session.activity.recentPulse ? 1.25 : 0.9;
+    rig.badgeLedMaterial.emissiveIntensity = session.activity.recentPulse ? 1.45 : 1.0;
   }
 
   animateOfficeCharacter(rig, 0, true);
@@ -690,90 +1040,96 @@ export function animateOfficeCharacter(
   elapsedSec: number,
   reducedMotion: boolean
 ): void {
-  const t = reducedMotion ? 0 : elapsedSec + rig.phaseOffset;
-  const active = rig.availability === 'interactive' || rig.availability === 'directory-only';
+  // 坐姿双腿始终保持精确 -90° 前伸
+  rig.legsGroup.rotation.set(-Math.PI / 2, 0, 0);
 
   if (rig.availability === 'exited') {
-    rig.spine.rotation.set(-0.08, 0, 0);
-    rig.head.rotation.set(0.22, 0, 0);
-    rig.leftShoulder.rotation.set(-0.08, 0.05, 0.08);
-    rig.leftElbow.rotation.set(-1.12, 0, 0);
-    rig.leftWrist.rotation.set(0.35, 0, 0);
-    rig.rightShoulder.rotation.set(-0.08, -0.05, -0.08);
-    rig.rightElbow.rotation.set(-1.12, 0, 0);
-    rig.rightWrist.rotation.set(0.35, 0, 0);
-    rig.eyelidLeft.scale.y = 0.95;
-    rig.eyelidRight.scale.y = 0.95;
+    // 退出状态：微微低头、双手静置桌面边缘上方（严格高于桌面 y = 0.746，零穿模）
+    rig.torsoGroup.rotation.set(0.06, 0, 0);
+    rig.headGroup.rotation.set(0.28, 0, 0);
+    rig.leftArmGroup.rotation.set(-1.64, 0, 0);
+    rig.rightArmGroup.rotation.set(-1.64, 0, 0);
     return;
   }
 
   if (rig.availability === 'unavailable') {
-    rig.spine.rotation.set(0.02, 0, 0);
-    rig.head.rotation.set(0.08, 0.04, 0);
-    rig.leftShoulder.rotation.set(-0.14, 0.12, 0.12);
-    rig.leftElbow.rotation.set(-1.42, 0, 0);
-    rig.leftWrist.rotation.set(0.28, 0, 0);
-    rig.rightShoulder.rotation.set(-0.14, -0.12, -0.12);
-    rig.rightElbow.rotation.set(-1.42, 0, 0);
-    rig.rightWrist.rotation.set(0.28, 0, 0);
-    rig.eyelidLeft.scale.y = 0.12;
-    rig.eyelidRight.scale.y = 0.12;
+    // 不可用/保留标识状态：微低头待机
+    rig.torsoGroup.rotation.set(0, 0, 0);
+    rig.headGroup.rotation.set(0.1, 0, 0);
+    rig.leftArmGroup.rotation.set(-Math.PI / 2, 0, 0);
+    rig.rightArmGroup.rotation.set(-Math.PI / 2, 0, 0);
     return;
   }
 
-  // Periodic natural blink
-  const blinkCycle = t % 4.6;
-  const blinkScale = !reducedMotion && active && blinkCycle > 4.44 ? 0.92 : 0.08;
-  rig.eyelidLeft.scale.y = blinkScale;
-  rig.eyelidRight.scale.y = blinkScale;
+  if (reducedMotion) {
+    // 减弱动态模式：严格静止，全肢体保持精确 90° 轴对齐坐姿
+    rig.torsoGroup.rotation.set(0, 0, 0);
+    rig.headGroup.rotation.set(0, 0, 0);
+    rig.leftArmGroup.rotation.set(-Math.PI / 2, 0, 0);
+    rig.rightArmGroup.rotation.set(-Math.PI / 2, 0, 0);
+    return;
+  }
 
-  const breath = reducedMotion ? 0 : Math.sin(t * 2.1) * 0.016;
-  const pulseLift = !reducedMotion && rig.recentPulse ? Math.sin(t * 7.2) * 0.04 : 0;
+  const t = elapsedSec + rig.phaseOffset;
+  const breath = Math.sin(t * 2.0) * 0.015;
+  const pulseNod = rig.recentPulse ? Math.sin(t * 6.4) * 0.035 : 0;
 
   if (rig.posture === 'typing') {
-    const typeL = reducedMotion ? 0 : Math.sin(t * 10.5) * 0.055;
-    const typeR = reducedMotion ? 0 : Math.sin(t * 10.5 + 2.4) * 0.055;
-    const headScan = reducedMotion ? 0 : Math.sin(t * 1.4) * 0.055;
+    const isInteractive = rig.availability === 'interactive';
+    const speed = isInteractive ? 9.5 : 6.5;
+    const amp = isInteractive ? 0.055 : 0.04;
+    // 以 -1.67 rad 为基准上下交替敲击键盘，叠加躯干前倾后最低点仍高于桌面 y = 0.746（零穿模）
+    const leftArmX = -1.67 + Math.sin(t * speed) * amp;
+    const rightArmX = -1.67 + Math.sin(t * speed + Math.PI) * amp;
+    const headYaw = Math.sin(t * 1.35) * 0.07;
+    const headPitch = 0.04 + Math.sin(t * 2.7) * 0.025 + pulseNod;
 
-    rig.spine.rotation.set(0.11 + breath, headScan * 0.25, 0);
-    rig.head.rotation.set(0.06 + pulseLift, headScan, 0);
-
-    rig.leftShoulder.rotation.set(-0.24, 0.16, 0.11);
-    rig.leftElbow.rotation.set(-1.66 + typeL, 0, 0);
-    rig.leftWrist.rotation.set(0.28 - typeL * 0.8, 0, 0);
-
-    rig.rightShoulder.rotation.set(-0.24, -0.16, -0.11);
-    rig.rightElbow.rotation.set(-1.66 + typeR, 0, 0);
-    rig.rightWrist.rotation.set(0.28 - typeR * 0.8, 0, 0);
+    rig.torsoGroup.rotation.set(0.03 + breath, headYaw * 0.18, 0);
+    rig.headGroup.rotation.set(headPitch, headYaw, 0);
+    rig.leftArmGroup.rotation.set(leftArmX, 0, 0);
+    rig.rightArmGroup.rotation.set(rightArmX, 0, 0);
   } else if (rig.posture === 'reading') {
-    // Leaning slightly back/alert reading monitor or incoming mail
-    const headNod = reducedMotion ? 0 : Math.sin(t * 2.6) * 0.035;
-    rig.spine.rotation.set(-0.04 + breath, -0.05, 0);
-    rig.head.rotation.set(-0.04 + headNod + pulseLift, 0.08, 0.03);
+    const headNod = Math.sin(t * 2.2) * 0.04 + pulseNod;
+    const headYaw = Math.sin(t * 0.85) * 0.08;
 
-    rig.leftShoulder.rotation.set(-0.18, 0.14, 0.1);
-    rig.leftElbow.rotation.set(-1.58, 0, 0);
-    rig.leftWrist.rotation.set(0.24, 0, 0);
-
-    rig.rightShoulder.rotation.set(-0.34, -0.22, -0.08);
-    rig.rightElbow.rotation.set(-1.72, 0, 0);
-    rig.rightWrist.rotation.set(0.18, 0, 0);
+    rig.torsoGroup.rotation.set(-0.02 + breath, 0, 0);
+    rig.headGroup.rotation.set(-0.02 + headNod, headYaw, 0);
+    rig.leftArmGroup.rotation.set(-1.6 + Math.sin(t * 1.8) * 0.02, 0, 0);
+    rig.rightArmGroup.rotation.set(-1.62 + Math.sin(t * 2.4 + 1.2) * 0.03, 0, 0);
   } else {
-    // monitoring
-    const glance = reducedMotion ? 0 : Math.sin(t * 0.9) * 0.04;
-    rig.spine.rotation.set(0.04 + breath, 0, 0);
-    rig.head.rotation.set(0.02 + pulseLift, glance, 0);
+    // monitoring：平缓扫视屏幕与柔和手部起伏
+    const glance = Math.sin(t * 0.95) * 0.09;
 
-    rig.leftShoulder.rotation.set(-0.18, 0.15, 0.12);
-    rig.leftElbow.rotation.set(-1.56, 0, 0);
-    rig.leftWrist.rotation.set(0.24, 0, 0);
-
-    rig.rightShoulder.rotation.set(-0.22, -0.12, -0.1);
-    rig.rightElbow.rotation.set(-1.58, 0, 0);
-    rig.rightWrist.rotation.set(0.24, 0, 0);
+    rig.torsoGroup.rotation.set(0.01 + breath, glance * 0.12, 0);
+    rig.headGroup.rotation.set(0.01 + pulseNod, glance, 0);
+    rig.leftArmGroup.rotation.set(-1.62 + Math.sin(t * 2.0) * 0.018, 0, 0);
+    rig.rightArmGroup.rotation.set(-1.62 + Math.sin(t * 2.0 + 1.8) * 0.018, 0, 0);
   }
 
-  if (rig.recentPulse && !reducedMotion) {
-    rig.visorGlowMaterial.emissiveIntensity = 1.0 + Math.abs(Math.sin(t * 5.2)) * 0.65;
+  if (rig.recentPulse && rig.availability === 'interactive') {
+    rig.badgeLedMaterial.emissiveIntensity = 1.0 + Math.abs(Math.sin(t * 5.0)) * 0.7;
   }
+}
+
+export function disposeOfficeCharacter(rig: OfficeCharacterRig): void {
+  const geometries = new Set<THREE.BufferGeometry>([
+    rig.torsoMesh.geometry,
+    rig.headMesh.geometry,
+    rig.leftArmMesh.geometry,
+    rig.rightArmMesh.geometry,
+    rig.legsMesh.geometry,
+    rig.visorMesh.geometry,
+    rig.glassesMesh.geometry,
+    rig.headsetMesh.geometry,
+    rig.badgeLedMesh.geometry,
+  ]);
+  for (const geo of geometries) {
+    geo.dispose();
+  }
+
+  rig.skinMaterial.dispose();
+  rig.accessoryMaterial.dispose();
+  rig.visorMaterial.dispose();
+  rig.badgeLedMaterial.dispose();
+  rig.skinTexture.dispose();
 }

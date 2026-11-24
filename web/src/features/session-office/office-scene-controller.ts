@@ -27,7 +27,13 @@ import {
   subscribeOfficeWallpaperRasterReady,
 } from './office-computer-wallpapers';
 import { applyDualMonitorTransforms } from './office-monitor-rig';
-import { createOfficeRoomRig, syncOfficeRoomRig, type OfficeRoomRig } from './office-scene-room';
+import {
+  createOfficeRoomRig,
+  disposeOfficeRoomRig,
+  setOfficeRoomRoofVisible,
+  syncOfficeRoomRig,
+  type OfficeRoomRig,
+} from './office-scene-room';
 import {
   animateWorkstationPod,
   createWorkstationPod,
@@ -36,6 +42,15 @@ import {
   syncWorkstationPod,
   type OfficeStationRig,
 } from './office-scene-station';
+import {
+  acquireVoxelMaterialSet,
+  isSharedVoxelMaterial,
+  isSharedVoxelTexture,
+  releaseVoxelMaterialSet,
+  type VoxelMaterialSet,
+} from './office-voxel-atlas';
+import { createSolidColorVoxelGeometry } from './office-voxel-builder';
+import { createBlockyCloudGeometry, createStarFieldGeometry } from './office-voxel-kit';
 
 interface CameraGoal {
   position: THREE.Vector3;
@@ -69,20 +84,35 @@ interface MonitorDragSession {
   planeStartHit: THREE.Vector3;
 }
 
-const CLICK_DRAG_THRESHOLD_SQ = 36; // 6px radius
+interface SkyRig {
+  root: THREE.Group;
+  cloudMesh: THREE.Mesh;
+  cloudMaterial: THREE.MeshBasicMaterial;
+  sunMesh: THREE.Mesh;
+  moonMesh: THREE.Mesh;
+  starsMesh: THREE.Mesh;
+}
+
+const CLICK_DRAG_THRESHOLD_SQ = 36; // 6px 拖拽判定半径
+const CLOUD_DRIFT_SPAN = 28;
+const CLOUD_DRIFT_SPEED = 0.28;
 
 function isOfficeHitKind(value: unknown): value is OfficeHitKind {
-  return value === 'station' || value === 'monitor' || value === 'mail-tray' || value === 'room-mailbox';
+  return (
+    value === 'station'
+    || value === 'monitor'
+    || value === 'mail-tray'
+    || value === 'room-mailbox'
+  );
 }
 
 function disposeTextureIfPresent(
   texture: THREE.Texture | null | undefined,
   disposedTextures: Set<THREE.Texture>
 ): void {
-  if (texture && !disposedTextures.has(texture)) {
-    disposedTextures.add(texture);
-    texture.dispose();
-  }
+  if (!texture || disposedTextures.has(texture) || isSharedVoxelTexture(texture)) return;
+  disposedTextures.add(texture);
+  texture.dispose();
 }
 
 function disposeMaterialAndTextures(
@@ -90,7 +120,7 @@ function disposeMaterialAndTextures(
   disposedTextures: Set<THREE.Texture>,
   disposedMaterials: Set<THREE.Material>
 ): void {
-  if (disposedMaterials.has(material)) return;
+  if (disposedMaterials.has(material) || isSharedVoxelMaterial(material)) return;
   disposedMaterials.add(material);
 
   if (material instanceof THREE.MeshStandardMaterial) {
@@ -102,6 +132,11 @@ function disposeMaterialAndTextures(
     disposeTextureIfPresent(material.aoMap, disposedTextures);
     disposeTextureIfPresent(material.bumpMap, disposedTextures);
     disposeTextureIfPresent(material.normalMap, disposedTextures);
+  } else if (material instanceof THREE.MeshLambertMaterial) {
+    disposeTextureIfPresent(material.map, disposedTextures);
+    disposeTextureIfPresent(material.emissiveMap, disposedTextures);
+    disposeTextureIfPresent(material.alphaMap, disposedTextures);
+    disposeTextureIfPresent(material.aoMap, disposedTextures);
   } else if (material instanceof THREE.MeshBasicMaterial) {
     disposeTextureIfPresent(material.map, disposedTextures);
     disposeTextureIfPresent(material.alphaMap, disposedTextures);
@@ -137,37 +172,123 @@ function disposeObjectSubtree(root: THREE.Object3D): void {
   });
 }
 
+/** 构建 Minecraft 天空元素：漂浮方块云、方块太阳、方块月亮与夜空星点 */
+function createMinecraftSkyRig(): SkyRig {
+  const root = new THREE.Group();
+
+  // 1. 方块云群（单次合批 Draw Call，缓慢漂移）
+  const cloudGeo = createBlockyCloudGeometry(56, 56, 18, 2026);
+  const cloudMaterial = new THREE.MeshBasicMaterial({
+    color: '#ffffff',
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.92,
+  });
+  const cloudMesh = new THREE.Mesh(cloudGeo, cloudMaterial);
+  cloudMesh.position.set(0, 12.0, 0);
+  cloudMesh.frustumCulled = false;
+  root.add(cloudMesh);
+
+  // 2. 白天方块太阳（外层暖金光框 + 内层亮黄方块核）
+  const sunGeo = createSolidColorVoxelGeometry([
+    { minX: -2.0, minY: -2.0, minZ: -0.25, maxX: 2.0, maxY: 2.0, maxZ: 0.25, color: '#ffd94a', shadeFaces: false },
+    { minX: -1.35, minY: -1.35, minZ: -0.32, maxX: 1.35, maxY: 1.35, maxZ: 0.32, color: '#fff8b8', shadeFaces: false },
+  ]);
+  const sunMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+  sunMesh.position.set(22, 27, 16);
+  root.add(sunMesh);
+
+  // 3. 夜晚方块月亮（银白方块 + 经典灰像素月坑）
+  const moonGeo = createSolidColorVoxelGeometry([
+    { minX: -1.6, minY: -1.6, minZ: -0.25, maxX: 1.6, maxY: 1.6, maxZ: 0.25, color: '#e8f0ff', shadeFaces: false },
+    { minX: -1.1, minY: 0.2, minZ: -0.3, maxX: -0.3, maxY: 1.0, maxZ: 0.3, color: '#b7c7e6', shadeFaces: false },
+    { minX: 0.3, minY: -0.9, minZ: -0.3, maxX: 1.1, maxY: -0.2, maxZ: 0.3, color: '#b7c7e6', shadeFaces: false },
+    { minX: -0.5, minY: -1.1, minZ: -0.3, maxX: 0.1, maxY: -0.6, maxZ: 0.3, color: '#cad7f0', shadeFaces: false },
+  ]);
+  const moonMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+  moonMesh.position.set(-20, 25, 14);
+  root.add(moonMesh);
+
+  // 4. 夜空方块星点群（单次合批 Draw Call）
+  const starsGeo = createStarFieldGeometry(28, 42, 88, 9001);
+  const starsMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const starsMesh = new THREE.Mesh(starsGeo, starsMat);
+  root.add(starsMesh);
+
+  return {
+    root,
+    cloudMesh,
+    cloudMaterial,
+    sunMesh,
+    moonMesh,
+    starsMesh,
+  };
+}
+
+const CAMERA_FOV_DEG = 42;
+const TAN_HALF_VFOV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG * 0.5));
+
+/** 计算 Minecraft 视角预设：按画布宽高比与室外草坪/树木尺度精准标定视距，避免裁切 */
 function computePresetGoal(
   preset: OfficeCameraPreset,
   metrics: BayGridMetrics,
   aspect: number
 ): CameraGoal {
-  const safeAspect = Math.max(0.95, Math.min(2.2, aspect || 1.6));
-  const widthFactor = Math.max(1.0, metrics.roomWidth / 7.2);
-  const depthFactor = Math.max(1.0, metrics.roomDepth / 5.8);
-  const aspectZoom = safeAspect < 1.35 ? 1.35 / safeAspect : 1.0;
-  const span = Math.max(widthFactor, depthFactor) * aspectZoom;
+  const safeAspect = Math.max(0.75, Math.min(2.6, aspect || 1.6));
+  const tanHalfH = TAN_HALF_VFOV * safeAspect;
+  const halfW = Math.max(4, Math.ceil(metrics.roomWidth / 2));
+  const halfD = Math.max(3, Math.ceil(metrics.roomDepth / 2));
 
   switch (preset) {
-    case 'isometric':
-      return {
-        position: new THREE.Vector3(2.85 * span, 3.6 * span, 5.55 * span),
-        target: new THREE.Vector3(0, 0.72, 0.1),
-      };
-    case 'corridor':
+    case 'isometric': {
+      // 45° 等距斜俯视：确保「整间房 + 四周草地 + 至少 2 棵树与水池」完整入画并留出边距
+      const spanX = halfW + 4.0;
+      const spanZ = halfD + 4.0;
+      const halfH = 2.6;
+      const horizHalf = (spanX + spanZ) * 0.7071;
+      const vertHalf = horizHalf * 0.54 + halfH * 0.84;
+      const distV = (vertHalf / TAN_HALF_VFOV) * 1.12;
+      const distH = (horizHalf / tanHalfH) * 1.12;
+      const dist = Math.max(distV, distH);
+      const target = new THREE.Vector3(0, 0.72, 0.35);
+      // 单位方向向量 (0.59, 0.55, 0.59)，方位角 45°、俯角约 33.4°
       return {
         position: new THREE.Vector3(
-          1.35 * span,
-          2.15 * Math.min(1.4, span),
-          metrics.roomDepth * 0.5 + 2.75 * span
+          target.x + dist * 0.59,
+          target.y + dist * 0.55,
+          target.z + dist * 0.59
         ),
-        target: new THREE.Vector3(-0.15, 0.88, -0.25),
+        target,
       };
-    case 'overview':
+    }
+    case 'corridor': {
+      // 低角度走廊视角：覆盖整间房宽度、前门廊、两侧树影与后墙面板，不裁切左右边缘
+      const target = new THREE.Vector3(0, 1.15, -0.35);
+      const needDistH = ((halfW + 3.2) / tanHalfH) * 1.08;
+      const needDistV = (4.2 / TAN_HALF_VFOV) * 1.08;
+      const distZ = Math.max(halfD + 6.4, Math.max(needDistH, needDistV));
       return {
-        position: new THREE.Vector3(0, 6.8 * span + 1.0, 3.35 * span),
-        target: new THREE.Vector3(0, 0.45, 0.05),
+        position: new THREE.Vector3(
+          Math.max(1.2, halfW * 0.24),
+          3.15,
+          distZ
+        ),
+        target,
       };
+    }
+    case 'overview': {
+      // 全景正俯视（自动隐藏屋顶层）：完整收纳全部室内工位、外围草地、树木与水池
+      const target = new THREE.Vector3(0, 0.35, 0);
+      const needHByDepth = ((halfD + 4.8) / TAN_HALF_VFOV) * 1.12;
+      const needHByWidth = ((halfW + 4.8) / tanHalfH) * 1.12;
+      const height = Math.max(needHByDepth, needHByWidth);
+      return {
+        position: new THREE.Vector3(0, height, 2.6),
+        target,
+      };
+    }
   }
 }
 
@@ -182,11 +303,13 @@ export class OfficeSceneController {
   private readonly pointerNdc = new THREE.Vector2();
   private readonly dragHitPoint = new THREE.Vector3();
 
-  private readonly ambientLight: THREE.HemisphereLight;
-  private readonly keyLight: THREE.DirectionalLight;
-  private readonly rimLight: THREE.DirectionalLight;
-  private readonly selectionLight: THREE.PointLight;
+  private readonly hemiLight: THREE.HemisphereLight;
+  private readonly sunLight: THREE.DirectionalLight;
+  private readonly lanternLightA: THREE.PointLight;
+  private readonly lanternLightB: THREE.PointLight;
+  private readonly skyRig: SkyRig;
   private readonly roomRig: OfficeRoomRig;
+  private readonly voxelMaterials: VoxelMaterialSet;
   private readonly stations = new Map<string, OfficeStationRig>();
 
   private currentState: OfficeSceneSyncState | null = null;
@@ -230,6 +353,7 @@ export class OfficeSceneController {
   private readonly resizeObserver: ResizeObserver;
   private readonly unsubscribeWallpaperRaster: () => void;
   private readonly acquiredWallpaperCacheRef: boolean;
+  private readonly acquiredVoxelMaterialsRef: boolean;
 
   constructor(
     container: HTMLElement,
@@ -242,56 +366,64 @@ export class OfficeSceneController {
     this.currentPalette = getOfficeScenePalette(initialTheme);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(this.currentPalette.backgroundHex);
-    this.scene.fog = new THREE.Fog(this.currentPalette.fogHex, 16, 36);
+    const initialSkyHex = this.currentPalette.skyHex ?? this.currentPalette.backgroundHex;
+    this.scene.background = new THREE.Color(initialSkyHex);
+    this.scene.fog = new THREE.Fog(this.currentPalette.fogHex, 26, 68);
 
     const rect = container.getBoundingClientRect();
     this.viewportWidth = Math.max(320, Math.round(rect.width || 1200));
     this.viewportHeight = Math.max(260, Math.round(rect.height || 680));
 
     this.camera = new THREE.PerspectiveCamera(
-      40,
+      CAMERA_FOV_DEG,
       this.viewportWidth / this.viewportHeight,
-      0.1,
-      80
+      0.15,
+      160
     );
 
-    // Studio & Window Daylight Lighting (strictly bounded 4-light rig)
-    this.ambientLight = new THREE.HemisphereLight('#b5dcff', '#1b2638', 0.95);
-    this.scene.add(this.ambientLight);
+    // Minecraft 日夜四光源管线：天空/地面半球光 + 2048 硬阴影太阳/月亮平行光 + 2 盏暖色灯笼点光源
+    this.hemiLight = new THREE.HemisphereLight('#d6eeff', '#7da658', 0.82);
+    this.scene.add(this.hemiLight);
 
-    this.keyLight = new THREE.DirectionalLight('#f4f9ff', 2.05);
-    this.keyLight.position.set(-7.5, 9.2, 5.2);
-    this.keyLight.castShadow = true;
-    this.keyLight.shadow.mapSize.set(2048, 2048);
-    this.keyLight.shadow.camera.near = 1.0;
-    this.keyLight.shadow.camera.far = 32;
-    this.keyLight.shadow.camera.left = -11;
-    this.keyLight.shadow.camera.right = 11;
-    this.keyLight.shadow.camera.top = 11;
-    this.keyLight.shadow.camera.bottom = -11;
-    this.keyLight.shadow.bias = -0.0005;
-    this.keyLight.shadow.normalBias = 0.02;
-    this.scene.add(this.keyLight);
+    this.sunLight = new THREE.DirectionalLight('#fffbeb', 1.05);
+    this.sunLight.position.set(15, 22, 12);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.set(2048, 2048);
+    this.sunLight.shadow.camera.near = 2;
+    this.sunLight.shadow.camera.far = 68;
+    this.sunLight.shadow.camera.left = -16;
+    this.sunLight.shadow.camera.right = 16;
+    this.sunLight.shadow.camera.top = 16;
+    this.sunLight.shadow.camera.bottom = -16;
+    this.sunLight.shadow.bias = -0.0004;
+    this.sunLight.shadow.normalBias = 0.015;
+    this.scene.add(this.sunLight);
 
-    this.rimLight = new THREE.DirectionalLight('#60d5ff', 0.72);
-    this.rimLight.position.set(6.5, 5.2, -5.5);
-    this.scene.add(this.rimLight);
+    this.lanternLightA = new THREE.PointLight('#ffb95e', 4.6, 20, 1.15);
+    this.lanternLightA.position.set(-1.5, 3.05, -0.25);
+    this.scene.add(this.lanternLightA);
 
-    this.selectionLight = new THREE.PointLight('#00e5ff', 0, 4.5, 1.5);
-    this.selectionLight.position.set(0, 2.2, 0);
-    this.scene.add(this.selectionLight);
+    this.lanternLightB = new THREE.PointLight('#ffb95e', 4.6, 20, 1.15);
+    this.lanternLightB.position.set(1.5, 3.05, 0.35);
+    this.scene.add(this.lanternLightB);
 
     let renderer: THREE.WebGLRenderer | null = null;
     let canvas: HTMLCanvasElement | null = null;
     let controls: OrbitControls | null = null;
     let roomRig: OfficeRoomRig | null = null;
+    let skyRig: SkyRig | null = null;
+    let voxelMaterials: VoxelMaterialSet | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let acquiredWallpaperRef = false;
+    let acquiredVoxelRef = false;
     let unsubscribeWallpaperRaster: (() => void) | null = null;
     let listenersAttached = false;
 
     try {
+      voxelMaterials = acquireVoxelMaterialSet();
+      acquiredVoxelRef = true;
+      voxelMaterials.syncTheme(initialTheme);
+
       renderer = new THREE.WebGLRenderer({
         antialias: true,
         powerPreference: 'high-performance',
@@ -300,8 +432,9 @@ export class OfficeSceneController {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(this.viewportWidth, this.viewportHeight, false);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.1;
+      // Minecraft 饱和明亮直出：禁用偏暗电影感 ACES，采用 NoToneMapping + 1.08 曝光
+      renderer.toneMapping = THREE.NoToneMapping;
+      renderer.toneMappingExposure = 1.08;
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -321,14 +454,26 @@ export class OfficeSceneController {
       controls.rotateSpeed = 0.78;
       controls.zoomSpeed = 0.9;
       controls.panSpeed = 0.75;
-      controls.minDistance = 1.45;
-      controls.maxDistance = 24;
-      controls.minPolarAngle = 0.14;
-      controls.maxPolarAngle = Math.PI * 0.46;
+      controls.minDistance = 1.8;
+      controls.maxDistance = 56;
+      controls.minPolarAngle = 0.12;
+      controls.maxPolarAngle = Math.PI * 0.47;
+
+      skyRig = createMinecraftSkyRig();
+      this.scene.add(skyRig.root);
 
       const anisotropy = renderer.capabilities.getMaxAnisotropy();
       roomRig = createOfficeRoomRig(this.currentPalette, anisotropy);
       this.scene.add(roomRig.root);
+
+      this.renderer = renderer;
+      this.controls = controls;
+      this.roomRig = roomRig;
+      this.skyRig = skyRig;
+      this.voxelMaterials = voxelMaterials;
+
+      this.applyThemeLightingAndSky(initialTheme);
+      this.syncShadowAndLanternBounds();
 
       const initialGoal = computePresetGoal(
         'isometric',
@@ -341,10 +486,6 @@ export class OfficeSceneController {
 
       resizeObserver = new ResizeObserver(this.handleResize);
       resizeObserver.observe(this.container);
-
-      this.renderer = renderer;
-      this.controls = controls;
-      this.roomRig = roomRig;
       this.resizeObserver = resizeObserver;
 
       this.attachEventListeners(canvas, controls);
@@ -357,6 +498,7 @@ export class OfficeSceneController {
       );
       this.unsubscribeWallpaperRaster = unsubscribeWallpaperRaster;
       this.acquiredWallpaperCacheRef = true;
+      this.acquiredVoxelMaterialsRef = true;
 
       this.syncAnimationSchedule();
     } catch (error: unknown) {
@@ -372,24 +514,119 @@ export class OfficeSceneController {
       }
       controls?.dispose();
       if (roomRig) {
-        roomRig.floorBundle.texture.dispose();
-        roomRig.skyBundle.texture.dispose();
-        roomRig.plaqueBundle.texture.dispose();
-        roomRig.terminalBundle.texture.dispose();
+        disposeOfficeRoomRig(roomRig);
       }
       disposeObjectSubtree(this.scene);
+      if (acquiredVoxelRef) {
+        releaseVoxelMaterialSet();
+      }
       renderer?.dispose();
       if (canvas && canvas.parentElement === this.container) {
         this.container.removeChild(canvas);
       }
+      const msg = error instanceof Error ? error.message : '无法初始化 WebGL 3D 渲染器';
+      this.callbacks.onInitError?.(msg);
       throw error;
+    }
+  }
+
+  private applyThemeLightingAndSky(theme: 'dark' | 'light'): void {
+    const palette = this.currentPalette;
+    const skyHex = palette.skyHex ?? palette.backgroundHex;
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.set(skyHex);
+    } else {
+      this.scene.background = new THREE.Color(skyHex);
+    }
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.set(palette.fogHex);
+    }
+
+    this.voxelMaterials.syncTheme(theme);
+
+    const isLight = theme === 'light';
+    if (isLight) {
+      // 明亮饱和的 Minecraft 白天：晴朗蓝天白云 + 暖金太阳硬阴影 + 灯笼实体辨识不喧宾夺主
+      this.hemiLight.color.set('#d6eeff');
+      this.hemiLight.groundColor.set('#7da658');
+      this.hemiLight.intensity = 0.82;
+
+      this.sunLight.color.set('#fffbeb');
+      this.sunLight.intensity = 1.05;
+      this.sunLight.position.set(15, 22, 12);
+
+      this.lanternLightA.color.set(palette.lanternGlowHex ?? '#ffc45e');
+      this.lanternLightB.color.set(palette.lanternGlowHex ?? '#ffc45e');
+      this.lanternLightA.intensity = 0.25;
+      this.lanternLightB.intensity = 0.25;
+
+      this.skyRig.cloudMaterial.color.set(palette.cloudHex ?? '#ffffff');
+      this.skyRig.cloudMaterial.opacity = 0.96;
+      this.skyRig.sunMesh.visible = true;
+      this.skyRig.moonMesh.visible = false;
+      this.skyRig.starsMesh.visible = false;
+    } else {
+      // 清澈可读的 Minecraft 夜晚：深蓝夜空 + 月光与星点 + 充足室内暖光，确保桌面/键盘/边框/角色清晰无死黑
+      this.hemiLight.color.set('#6b90d6');
+      this.hemiLight.groundColor.set('#3c4b68');
+      this.hemiLight.intensity = 0.72;
+
+      this.sunLight.color.set('#bad6ff');
+      this.sunLight.intensity = 0.58;
+      this.sunLight.position.set(-12, 18, 10);
+
+      this.lanternLightA.color.set(palette.lanternGlowHex ?? '#ffb95e');
+      this.lanternLightB.color.set(palette.lanternGlowHex ?? '#ffb95e');
+      this.lanternLightA.intensity = 4.6;
+      this.lanternLightB.intensity = 4.6;
+
+      this.skyRig.cloudMaterial.color.set(palette.cloudHex ?? '#526899');
+      this.skyRig.cloudMaterial.opacity = 0.72;
+      this.skyRig.sunMesh.visible = false;
+      this.skyRig.moonMesh.visible = true;
+      this.skyRig.starsMesh.visible = true;
+    }
+  }
+
+  private syncShadowAndLanternBounds(): void {
+    const outerSpan = Math.max(this.roomRig.outerHalfWidth, this.roomRig.outerHalfDepth);
+    const extent = Math.max(12, outerSpan + 2.5);
+    const shadowCam = this.sunLight.shadow.camera;
+    if (
+      Math.abs(shadowCam.right - extent) > 0.25
+      || Math.abs(shadowCam.top - extent) > 0.25
+    ) {
+      shadowCam.left = -extent;
+      shadowCam.right = extent;
+      shadowCam.top = extent;
+      shadowCam.bottom = -extent;
+      shadowCam.near = 2;
+      shadowCam.far = extent * 3.8 + 16;
+      shadowCam.updateProjectionMatrix();
+    }
+
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.near = Math.max(44, outerSpan * 3.6);
+      this.scene.fog.far = Math.max(96, outerSpan * 8.2);
+    }
+
+    const lanternRadius = Math.max(18, outerSpan * 1.9);
+    this.lanternLightA.distance = lanternRadius;
+    this.lanternLightB.distance = lanternRadius;
+
+    const lanternPos = this.roomRig.lanternLightPositions;
+    if (lanternPos[0]) {
+      this.lanternLightA.position.copy(lanternPos[0]);
+    }
+    if (lanternPos[1]) {
+      this.lanternLightB.position.copy(lanternPos[1]);
     }
   }
 
   private attachEventListeners(canvas: HTMLCanvasElement, controls: OrbitControls): void {
     controls.addEventListener('change', this.handleControlsChange);
     controls.addEventListener('start', this.handleControlsStart);
-    // Capture phase ensures edit-mode monitor drag claims ownership before OrbitControls bubble-phase pointerdown
+    // 捕获阶段优先接管编辑模式下的显示器拖拽，抢先于 OrbitControls 的冒泡阶段 pointerdown
     canvas.addEventListener('pointerdown', this.handlePointerDown, true);
     canvas.addEventListener('pointermove', this.handlePointerMove);
     canvas.addEventListener('pointerup', this.handlePointerUp);
@@ -422,14 +659,14 @@ export class OfficeSceneController {
   public syncState(state: OfficeSceneSyncState): void {
     if (this.disposed) return;
 
-    // Fence any active drag BEFORE adopting new server/room/selection/preference state
-    // so server switches or removals roll back without persisting across server scopes.
+    // 切换服务器/房间/选中目标或关闭双屏前先围栏回滚进行中的显示器拖拽，防止跨作用域误提交
     if (this.monitorDrag?.active) {
       const drag = this.monitorDrag;
       const nextSessionStillPresent = state.sessions.some(
         (item) => item.sessionKey === drag.sessionKey
       );
-      const nextPrefs = state.computerPreferences[drag.sessionKey] ?? DEFAULT_OFFICE_COMPUTER_PREFERENCES;
+      const nextPrefs =
+        state.computerPreferences[drag.sessionKey] ?? DEFAULT_OFFICE_COMPUTER_PREFERENCES;
       const roomWillChange = this.lastRoomKey !== '' && state.roomKey !== this.lastRoomKey;
       const dragTargetInvalidated =
         drag.serverId !== state.serverId
@@ -446,31 +683,13 @@ export class OfficeSceneController {
     this.currentState = state;
     this.currentPalette = getOfficeScenePalette(state.theme);
 
-    this.scene.background = new THREE.Color(this.currentPalette.backgroundHex);
-    if (this.scene.fog instanceof THREE.Fog) {
-      this.scene.fog.color.set(this.currentPalette.fogHex);
-    }
-
-    if (state.theme === 'light') {
-      this.ambientLight.color.set('#e8f4ff');
-      this.ambientLight.groundColor.set('#8ca0b5');
-      this.ambientLight.intensity = 1.15;
-      this.keyLight.intensity = 2.2;
-      this.rimLight.intensity = 0.55;
-    } else {
-      this.ambientLight.color.set('#b5dcff');
-      this.ambientLight.groundColor.set('#141e2e');
-      this.ambientLight.intensity = 0.92;
-      this.keyLight.intensity = 1.95;
-      this.rimLight.intensity = 0.78;
-    }
-
+    this.applyThemeLightingAndSky(state.theme);
     this.controls.enableDamping = !state.reducedMotion;
 
     const metrics = computeBayGridMetrics(state.sessions.length);
     this.currentMetrics = metrics;
 
-    // Reconcile stations by stable sessionKey without recreating existing station meshes
+    // 按稳定 sessionKey 增量复用工位网格，不因状态刷新重建场景
     const activeKeys = new Set<string>();
     const anisotropy = this.renderer.capabilities.getMaxAnisotropy();
 
@@ -507,33 +726,17 @@ export class OfficeSceneController {
       });
     });
 
-    // Dispose and remove stations that left the visible zone/room
+    // 卸载离开当前房间/分区的工位并彻底释放 GPU 资源
     for (const [key, rig] of this.stations.entries()) {
       if (!activeKeys.has(key)) {
         if (this.monitorDrag?.sessionKey === key) {
           this.cancelMonitorDrag();
         }
         this.scene.remove(rig.root);
-        disposeObjectSubtree(rig.root);
         disposeStationTextureBundles(rig);
+        disposeObjectSubtree(rig.root);
         this.stations.delete(key);
       }
-    }
-
-    // Highlight selected station gently with point light
-    const selectedStation = state.selectedSessionKey
-      ? this.stations.get(state.selectedSessionKey)
-      : undefined;
-    if (selectedStation) {
-      this.selectionLight.position.set(
-        selectedStation.targetPosition.x,
-        2.15,
-        selectedStation.targetPosition.z + 0.15
-      );
-      this.selectionLight.color.set(this.currentPalette.accentHex);
-      this.selectionLight.intensity = state.theme === 'dark' ? 2.4 : 1.25;
-    } else {
-      this.selectionLight.intensity = 0;
     }
 
     syncOfficeRoomRig(
@@ -544,6 +747,7 @@ export class OfficeSceneController {
       metrics.roomDepth,
       this.hoveredTarget?.kind === 'room-mailbox'
     );
+    this.syncShadowAndLanternBounds();
 
     const roomChanged = state.roomKey !== this.lastRoomKey;
     const presetChanged = state.cameraPreset !== this.lastPreset;
@@ -561,7 +765,11 @@ export class OfficeSceneController {
       this.userMovedCamera = false;
     }
 
-    if (roomChanged || presetChanged || (countChanged && !this.userMovedCamera && !this.monitorDrag?.active)) {
+    if (
+      roomChanged
+      || presetChanged
+      || (countChanged && !this.userMovedCamera && !this.monitorDrag?.active)
+    ) {
       this.applyCameraPreset(state.cameraPreset, roomChanged || state.reducedMotion);
     }
 
@@ -570,6 +778,8 @@ export class OfficeSceneController {
       this.syncAnimationSchedule();
     } else if (state.reducedMotion) {
       this.renderSingleFrame();
+    } else {
+      this.syncAnimationSchedule();
     }
   }
 
@@ -650,8 +860,8 @@ export class OfficeSceneController {
     if (!rig) return;
     const pos = rig.targetPosition;
     const goal: CameraGoal = {
-      position: new THREE.Vector3(pos.x + 1.25, 1.72, pos.z + 2.15),
-      target: new THREE.Vector3(pos.x - 0.18, 0.96, pos.z + 0.02),
+      position: new THREE.Vector3(pos.x + 1.45, 1.85, pos.z + 2.25),
+      target: new THREE.Vector3(pos.x - 0.15, 0.98, pos.z + 0.02),
     };
     this.userMovedCamera = true;
     if (this.currentState?.reducedMotion) {
@@ -673,6 +883,8 @@ export class OfficeSceneController {
     const targetObj = part === 'monitor'
       ? getStationMonitorScreenMesh(rig, monitorIndex)
       : rig.mailTrayGroup;
+    if (!targetObj) return undefined;
+
     const box = new THREE.Box3().setFromObject(targetObj);
     if (box.isEmpty()) return undefined;
 
@@ -734,12 +946,13 @@ export class OfficeSceneController {
     }
     this.stations.clear();
 
-    this.roomRig.floorBundle.texture.dispose();
-    this.roomRig.skyBundle.texture.dispose();
-    this.roomRig.plaqueBundle.texture.dispose();
-    this.roomRig.terminalBundle.texture.dispose();
-
+    disposeOfficeRoomRig(this.roomRig);
     disposeObjectSubtree(this.scene);
+
+    if (this.acquiredVoxelMaterialsRef) {
+      releaseVoxelMaterialSet();
+    }
+
     this.renderer.dispose();
 
     const canvas = this.renderer.domElement;
@@ -749,7 +962,9 @@ export class OfficeSceneController {
   }
 
   private getStationPreferences(sessionKey: string): OfficeComputerPreferences {
-    return this.currentState?.computerPreferences[sessionKey] ?? DEFAULT_OFFICE_COMPUTER_PREFERENCES;
+    return (
+      this.currentState?.computerPreferences[sessionKey] ?? DEFAULT_OFFICE_COMPUTER_PREFERENCES
+    );
   }
 
   private getEffectiveStationPreferences(sessionKey: string): OfficeComputerPreferences {
@@ -804,6 +1019,10 @@ export class OfficeSceneController {
     if (this.monitorDrag?.active) {
       this.cancelMonitorDrag();
     }
+    // 全景俯瞰时即时隐藏屋顶层，切回等距/走廊立即恢复（不重建场景、保留阴影与按需渲染）
+    setOfficeRoomRoofVisible(this.roomRig, preset !== 'overview');
+    this.needsStaticRender = true;
+
     const aspect = this.viewportWidth / Math.max(1, this.viewportHeight);
     const goal = computePresetGoal(preset, this.currentMetrics, aspect);
     if (immediate) {
@@ -835,12 +1054,12 @@ export class OfficeSceneController {
   };
 
   private readonly handleControlsChange = (): void => {
-    // Clamp OrbitControls pan target within comfortable room bounds
-    const maxPanX = this.currentMetrics.roomWidth * 0.55;
-    const maxPanZ = this.currentMetrics.roomDepth * 0.55;
+    // 限制平移目标在房间与室外草坪舒适范围内
+    const maxPanX = Math.max(this.currentMetrics.roomWidth * 0.55, this.roomRig.outerHalfWidth * 0.65);
+    const maxPanZ = Math.max(this.currentMetrics.roomDepth * 0.55, this.roomRig.outerHalfDepth * 0.65);
     this.controls.target.x = Math.max(-maxPanX, Math.min(maxPanX, this.controls.target.x));
     this.controls.target.z = Math.max(-maxPanZ, Math.min(maxPanZ, this.controls.target.z));
-    this.controls.target.y = Math.max(0.15, Math.min(2.8, this.controls.target.y));
+    this.controls.target.y = Math.max(0.15, Math.min(3.6, this.controls.target.y));
 
     if (!this.applyingCameraTransition && this.currentState?.reducedMotion) {
       this.needsStaticRender = true;
@@ -1119,7 +1338,7 @@ export class OfficeSceneController {
         canvas.releasePointerCapture(pointerId);
       }
     } catch {
-      // Ignore release failures when element is detached
+      // 忽略元素卸载时的指针释放异常
     }
   }
 
@@ -1129,7 +1348,6 @@ export class OfficeSceneController {
     const prevApplying = this.applyingCameraTransition;
     this.applyingCameraTransition = true;
     try {
-      // Snapshot current camera pose before flushing residual damping deltas, then restore pose cleanly.
       this.controls.saveState();
       this.controls.enableDamping = false;
       this.controls.update();
@@ -1218,7 +1436,7 @@ export class OfficeSceneController {
       return;
     }
 
-    // Clear active drag BEFORE releasing capture so trailing lostpointercapture cannot roll back a commit.
+    // 释放捕获前先清空拖拽句柄，防止 lostpointercapture 误回滚已提交变换
     this.monitorDrag = null;
     this.controls.enabled = true;
     this.controls.enableDamping = !this.currentState?.reducedMotion;
@@ -1260,7 +1478,7 @@ export class OfficeSceneController {
       ) {
         const rig = this.stations.get(target.sessionKey);
         if (rig) {
-          // Claim exclusive pointer ownership BEFORE bubble-phase OrbitControls handles pointerdown.
+          // 捕获阶段抢占指针，阻止 OrbitControls 接管拖拽
           event.stopPropagation();
           event.stopImmediatePropagation();
           event.preventDefault();
@@ -1288,7 +1506,7 @@ export class OfficeSceneController {
           try {
             this.renderer.domElement.setPointerCapture(event.pointerId);
           } catch {
-            // Pointer capture unavailable in synthetic/fallback environments
+            // 合成事件环境下忽略指针捕获异常
           }
 
           this.monitorDrag = {
@@ -1416,7 +1634,6 @@ export class OfficeSceneController {
 
     this.callbacks.onSelectStation(target.sessionKey);
     if (this.monitorEditState.enabled) {
-      // Never open terminal while dragging/editing monitor positions
       return;
     }
     if (target.kind === 'monitor') {
@@ -1454,7 +1671,8 @@ export class OfficeSceneController {
     this.cancelPointerTrack();
     if (this.monitorDrag?.active) {
       const canvas = this.renderer.domElement;
-      const hasCapture = typeof canvas.hasPointerCapture === 'function'
+      const hasCapture =
+        typeof canvas.hasPointerCapture === 'function'
         && canvas.hasPointerCapture(this.monitorDrag.pointerId);
       if (!hasCapture) {
         this.cancelMonitorDrag();
@@ -1469,7 +1687,12 @@ export class OfficeSceneController {
   };
 
   private readonly handleDoubleClick = (event: MouseEvent): void => {
-    if (this.disposed || this.contextLost || this.monitorEditState.enabled || this.monitorDrag?.active) {
+    if (
+      this.disposed
+      || this.contextLost
+      || this.monitorEditState.enabled
+      || this.monitorDrag?.active
+    ) {
       return;
     }
     if (this.pointerTrack.active || this.lastClickMaxDistSq > CLICK_DRAG_THRESHOLD_SQ) return;
@@ -1489,6 +1712,7 @@ export class OfficeSceneController {
     }
   };
 
+  /** 按需渲染调度：reducedMotion 且无相机缓动时停止常驻 RAF，仅在变化时单帧重绘 */
   private syncAnimationSchedule(): void {
     if (this.disposed || this.contextLost || document.hidden) {
       this.stopAnimationLoop();
@@ -1519,6 +1743,9 @@ export class OfficeSceneController {
     this.singleFrameRendering = true;
     try {
       const reduced = Boolean(this.currentState?.reducedMotion);
+      if (reduced) {
+        this.skyRig.cloudMesh.position.x = 0;
+      }
       for (const rig of this.stations.values()) {
         animateWorkstationPod(rig, this.elapsedActiveSec, 0.016, reduced);
       }
@@ -1544,6 +1771,9 @@ export class OfficeSceneController {
 
     if (!reduced) {
       this.elapsedActiveSec += dtSec;
+      // 方块云缓慢横移漂浮
+      const drift = ((this.elapsedActiveSec * CLOUD_DRIFT_SPEED) % CLOUD_DRIFT_SPAN) - CLOUD_DRIFT_SPAN * 0.5;
+      this.skyRig.cloudMesh.position.x = drift;
     }
 
     if (this.activeCameraGoal && !draggingMonitor) {

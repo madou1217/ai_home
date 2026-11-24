@@ -137,19 +137,20 @@ func (lifecycle appsCLILifecycle) Install(
 	result, _, err := updateproxy.RetryWithEgress(
 		ctx, rotation, installEgressMaxAttempts,
 		func(err error) (string, bool) { return providercliupgrade.EgressFailureReason(err.Error()) },
-		func(proxyURL string) (apps.CLIUpdateResult, error) {
-			lastProxyURL = proxyURL
+		func(endpoint updateproxy.EgressEndpoint) (apps.CLIUpdateResult, error) {
+			lastProxyURL = endpoint.URL
 			options := lifecycle.options
-			if proxyURL != "" {
-				env, envErr := updateproxy.Environment(options.Env, proxyURL)
+			if endpoint.URL != "" {
+				env, envErr := updateproxy.Environment(options.Env, endpoint.URL)
 				if envErr != nil {
 					return apps.CLIUpdateResult{}, envErr
 				}
 				options.Env = env
 			}
-			// explicitProxy 必须跟随本轮是否真的配了代理：Windows 上它决定
+			options.AnonymousProxyURL = endpoint.AnonymousURL
+			// proxyActive 必须跟随本轮是否真的配了代理：Windows 上它决定
 			// 「官方安装器能否保证所有下载都走代理」，漏掉就会静默直连。
-			return apps.InstallCLI(ctx, providerID, options, proxyURL != "", progress)
+			return apps.InstallCLI(ctx, providerID, options, endpoint.URL != "", progress)
 		},
 	)
 	if err != nil {

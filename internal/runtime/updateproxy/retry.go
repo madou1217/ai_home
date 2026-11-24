@@ -5,6 +5,16 @@ import (
 	"fmt"
 )
 
+// EgressEndpoint 是一轮执行可用的出口入口集合。
+//
+// URL 需要认证；AnonymousURL 不需要（只 loopback）。后者给那些会把代理 URL
+// 里的 userinfo 丢掉、又不支持显式凭据的客户端——winget 的 --proxy 就是这样。
+type EgressEndpoint struct {
+	URL          string
+	AnonymousURL string
+	Name         string
+}
+
 // EgressClassifier 判断一次失败是否值得换出口重试，并给出面向用户的原因。
 // 由调用方提供（例如 provider CLI 安装器的网络错误分类），本包不猜。
 type EgressClassifier func(err error) (reason string, retryable bool)
@@ -32,11 +42,13 @@ func RetryWithEgress[T any](
 	rotation *EgressRotation,
 	maxAttempts int,
 	classify EgressClassifier,
-	run func(proxyURL string) (T, error),
+	// run 拿到本轮出口的完整信息（含匿名入口），而不是只有代理 URL：
+	// 有些客户端只能用匿名入口（winget 已实测），只传 URL 会让它们无法配置。
+	run func(EgressEndpoint) (T, error),
 ) (T, UsedEgress, error) {
 	var zero T
 	var used UsedEgress
-	result, err := run("")
+	result, err := run(EgressEndpoint{})
 	if err == nil {
 		return result, used, nil
 	}
@@ -59,7 +71,11 @@ func RetryWithEgress[T any](
 			return zero, used, fmt.Errorf("%w；%s", err, next.Message)
 		}
 		used = UsedEgress{URL: next.Lease.URL, Name: next.Lease.Name, Identity: next.Lease.Identity, Auto: true}
-		result, err = run(next.Lease.URL)
+		result, err = run(EgressEndpoint{
+			URL:          next.Lease.URL,
+			AnonymousURL: next.Lease.AnonymousURL,
+			Name:         next.Lease.Name,
+		})
 		if err == nil {
 			return result, used, nil
 		}

@@ -20,6 +20,15 @@ import (
 // Environment copies base and overrides curl, native installer and npm proxy
 // settings together. An inherited NO_PROXY must not bypass an explicit proxy.
 func Environment(base map[string]string, raw string) (map[string]string, error) {
+	return EnvironmentWithAnonymous(base, raw, "")
+}
+
+// EnvironmentWithAnonymous 与 Environment 相同，额外写入一个匿名入口地址。
+//
+// anonymous 为空时行为完全等同于 Environment。非空时写入
+// AIH_TASK_PROXY_ANONYMOUS：那些会把代理 URL 里 userinfo 丢掉、又不支持
+// 显式凭据的客户端（winget 已实测）必须用这个入口，否则一律 407。
+func EnvironmentWithAnonymous(base map[string]string, raw string, anonymous string) (map[string]string, error) {
 	proxy, err := parse(raw)
 	if err != nil {
 		return nil, err
@@ -33,6 +42,9 @@ func Environment(base map[string]string, raw string) (map[string]string, error) 
 		"no_proxy": "", "npm_config_proxy": proxy.String(), "npm_config_https_proxy": proxy.String(),
 		"npm_config_noproxy": "", "node_use_env_proxy": "1",
 		"AIH_TASK_PROXY": proxy.String(),
+	}
+	if strings.TrimSpace(anonymous) != "" {
+		values["AIH_TASK_PROXY_ANONYMOUS"] = strings.TrimSpace(anonymous)
 	}
 	// all_proxy 在 Windows 上必须留空。
 	//

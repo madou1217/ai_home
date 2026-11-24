@@ -12,6 +12,18 @@ import (
 type EgressLease struct {
 	URL  string
 	Name string
+	// AnonymousURL 是不要求 Proxy-Authorization 的 loopback 入口；为空表示
+	// 当前来源没有提供。
+	//
+	// 为什么需要第二个入口：一部分 Windows 客户端**只接受无认证代理**。
+	// 实测 winget 的 --proxy 会把 URL 里的 userinfo 丢掉，请求不带
+	// Proxy-Authorization，带认证的入口一律 407；而配上匿名入口后
+	// （--proxy http://127.0.0.1:<port>）源、清单与实际安装包下载都走了代理。
+	// PowerShell 的 WebProxy 同理——它需要显式 Credentials，另一条分支处理。
+	//
+	// 安全边界：只监听 loopback，作用域与系统代理入口相同（系统代理同样无法
+	// 携带凭据，仓库里早有 AllowAnonymous 先例）。
+	AnonymousURL string
 	// Identity 是该出口在健康账本中的键；为空表示该来源没有账本条目。
 	Identity string
 	Release  func()

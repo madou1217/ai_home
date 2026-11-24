@@ -68,6 +68,13 @@ type Options struct {
 	// 为空时作业只接受 HTTP(S) URL；命名节点由调用方在进入作业前解析。
 	ProxyResolver InstallProxyResolver
 
+	// AnonymousProxyURL 是本轮出口的**匿名** loopback 入口；为空表示没有。
+	//
+	// 给只接受无认证代理的客户端用（winget 已实测：--proxy 丢掉 userinfo，
+	// 带认证入口一律 407）。调用方在拿到租约后填入，计划构建时据此注入
+	// winget --proxy。
+	AnonymousProxyURL string
+
 	// RecordEgressOutcome 把任务级出口结果回写健康账本（成功/失败）。
 	// 为空表示没有账本：自动代理仍按候选顺序工作，只是不记忆结果。
 	RecordEgressOutcome func(name string, identity string, ok bool, reason string)

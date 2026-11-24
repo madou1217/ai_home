@@ -169,7 +169,7 @@ func buildInstallerRegistry() map[string]*providerInstallerSpec {
 					return filterValidPlans([]LifecyclePlan{
 						buildPowerShellScriptPlan("claude_windows_official", "Claude Code 官方 Windows PowerShell 安装器", "https://claude.ai/install.ps1", []string{"claude.ai"}, opts),
 						buildCmdScriptPlan("claude_windows_cmd_official", "Claude Code 官方 Windows CMD 安装器", "https://claude.ai/install.cmd", []string{"claude.ai"}),
-						buildWingetPlan("Anthropic.ClaudeCode", "WinGet 安装 Claude Code", ""),
+						buildWingetPlan("Anthropic.ClaudeCode", "WinGet 安装 Claude Code", "", opts),
 					})
 				}
 				plans := []LifecyclePlan{
@@ -971,7 +971,7 @@ func ResolveDesktopInstallPlans(provider string, opts Options) []LifecyclePlan {
 		plans = append(plans, buildCaskPlan(desc.Cask, "Homebrew 安装 "+spec.Provider+" Desktop"))
 	}
 	if desc.WingetID != "" {
-		plans = append(plans, buildWingetPlan(desc.WingetID, "winget 安装 "+spec.Provider+" Desktop", desc.WingetSource))
+		plans = append(plans, buildWingetPlan(desc.WingetID, "winget 安装 "+spec.Provider+" Desktop", desc.WingetSource, opts))
 	}
 	return filterValidPlans(plans)
 }
@@ -1065,7 +1065,7 @@ func ResolveLifecyclePlans(provider, kind, action string, opts Options, installe
 		}
 		if desc.WingetID != "" {
 			if normAction == "update" {
-				inferred = append(inferred, buildWingetUpdatePlan(desc.WingetID, "winget 更新 "+normProvider+" Desktop", desc.WingetSource))
+				inferred = append(inferred, buildWingetUpdatePlan(desc.WingetID, "winget 更新 "+normProvider+" Desktop", desc.WingetSource, opts))
 			} else if normAction == "uninstall" {
 				inferred = append(inferred, buildWingetUninstallPlan(desc.WingetID, "winget 卸载 "+normProvider+" Desktop"))
 			}

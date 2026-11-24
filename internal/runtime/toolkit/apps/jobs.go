@@ -683,16 +683,18 @@ func (m *JobManager) runWithAutoEgress(
 		func(runErr error) (string, bool) {
 			return providercliupgrade.EgressFailureReason(runErr.Error())
 		},
-		func(proxyURL string) (lifecycleOutcome, error) {
+		func(endpoint updateproxy.EgressEndpoint) (lifecycleOutcome, error) {
 			runOpts := opts
-			if proxyURL != "" {
-				proxyEnv, envErr := updateproxy.Environment(runOpts.Env, proxyURL)
+			if endpoint.URL != "" {
+				proxyEnv, envErr := updateproxy.Environment(runOpts.Env, endpoint.URL)
 				if envErr != nil {
 					return lifecycleOutcome{}, envErr
 				}
 				runOpts.Env = proxyEnv
 			}
-			result := m.runLifecyclePlans(ctx, jobID, target, runOpts, proxyURL != "")
+			// 匿名入口交给计划构建：winget 一类客户端只能用无认证代理。
+			runOpts.AnonymousProxyURL = endpoint.AnonymousURL
+			result := m.runLifecyclePlans(ctx, jobID, target, runOpts, endpoint.URL != "")
 			if result.ok {
 				return result, nil
 			}
@@ -1214,7 +1216,9 @@ func planHonorsProxy(plan LifecyclePlan) bool {
 	command := strings.ToLower(filepath.Base(strings.TrimSpace(plan.Command)))
 	switch command {
 	case "winget", "winget.exe":
-		return false
+		// winget 只认 --proxy（且需管理员先启用 ProxyCommandLineOptions），
+		// 不读环境变量也不读 DefaultWebProxy。计划里带上了 --proxy 才算受控。
+		return argsMention(plan.Args, "--proxy")
 	case "npm", "npm.cmd", "uv", "uv.exe":
 		return true
 	case "cmd", "cmd.exe":

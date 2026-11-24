@@ -397,21 +397,43 @@ func buildBrewFormulaUninstallPlan(formula, label string) LifecyclePlan {
 	return LifecyclePlan{ID: "homebrew_formula_uninstall", Label: nonEmpty(label, "Homebrew 卸载 "+formula), Command: "brew", Args: []string{"uninstall", strings.TrimSpace(formula)}, Timeout: packagePlanTimeout}
 }
 
-func buildWingetPlan(pkgID, label, source string) LifecyclePlan {
+// wingetProxyFlags 返回 winget 的代理参数。
+//
+// winget 不读 HTTP(S)_PROXY，也不读 DefaultWebProxy；它只认 --proxy 和
+// --no-proxy，且该功能默认关闭，需管理员先执行
+//   winget settings --enable ProxyCommandLineOptions
+// 未启用时 winget 会以 exit=-1978335230 报「This feature needs to be enabled」。
+//
+// 只能用**匿名**入口：实测 --proxy 带 userinfo 时请求不带 Proxy-Authorization，
+// 认证入口一律 407；换成匿名 loopback 入口后源、清单与安装包下载全部走代理。
+func wingetProxyFlags(opts Options) []string {
+	anonymous := strings.TrimSpace(opts.AnonymousProxyURL)
+	if anonymous == "" {
+		anonymous = strings.TrimSpace(resolveEnvMap(opts)["AIH_TASK_PROXY_ANONYMOUS"])
+	}
+	if anonymous == "" {
+		return nil
+	}
+	return []string{"--proxy", anonymous}
+}
+
+func buildWingetPlan(pkgID, label, source string, opts Options) LifecyclePlan {
 	args := []string{"install", "--id", strings.TrimSpace(pkgID), "--exact"}
 	if strings.TrimSpace(source) != "" {
 		args = append(args, "--source", strings.TrimSpace(source))
 	}
 	args = append(args, "--accept-package-agreements", "--accept-source-agreements")
+	args = append(args, wingetProxyFlags(opts)...)
 	return LifecyclePlan{ID: "winget", Label: nonEmpty(label, "winget 安装 "+pkgID), Command: "winget.exe", Args: args, Timeout: packagePlanTimeout}
 }
 
-func buildWingetUpdatePlan(pkgID, label, source string) LifecyclePlan {
+func buildWingetUpdatePlan(pkgID, label, source string, opts Options) LifecyclePlan {
 	args := []string{"upgrade", "--id", strings.TrimSpace(pkgID), "--exact"}
 	if strings.TrimSpace(source) != "" {
 		args = append(args, "--source", strings.TrimSpace(source))
 	}
 	args = append(args, "--accept-package-agreements", "--accept-source-agreements")
+	args = append(args, wingetProxyFlags(opts)...)
 	return LifecyclePlan{ID: "winget_update", Label: nonEmpty(label, "winget 更新 "+pkgID), Command: "winget.exe", Args: args, Timeout: packagePlanTimeout}
 }
 
@@ -787,7 +809,7 @@ func inferLifecyclePlansFromInstallPlans(action string, installPlans []Lifecycle
 			}
 			if pkgID != "" {
 				if action == "update" {
-					out = append(out, buildWingetUpdatePlan(pkgID, "", sourceVal))
+					out = append(out, buildWingetUpdatePlan(pkgID, "", sourceVal, opts))
 				} else {
 					out = append(out, buildWingetUninstallPlan(pkgID, ""))
 				}

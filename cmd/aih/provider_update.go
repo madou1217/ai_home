@@ -171,7 +171,7 @@ func (cycle *providerLifecycleCycle) runWithExplicitEgress(lifecycle apps.CLILif
 		return apps.CLIUpdateResult{}, err
 	}
 	_, _ = fmt.Fprintln(cycle.runtime.stderr, "[aih] 使用本次任务专用代理；不修改全局配置。")
-	return cycle.invoke(lifecycle, env)
+	return cycle.invoke(lifecycle, env, lease.AnonymousURL)
 }
 
 // runWithAutoEgress 先直连；只有网络类失败才启用受管代理，出口失败时再换下一个。
@@ -186,13 +186,17 @@ func (cycle *providerLifecycleCycle) runWithAutoEgress(lifecycle apps.CLILifecyc
 	result, used, err := updateproxy.RetryWithEgress(
 		cycle.ctx, rotation, providerLifecycleMaxEgressAttempts,
 		func(err error) (string, bool) { return providercliupgrade.EgressFailureReason(err.Error()) },
-		func(proxyURL string) (apps.CLIUpdateResult, error) {
-			lastURL = proxyURL
-			env, envErr := cycle.taskEnv(proxyURL)
+		func(endpoint updateproxy.EgressEndpoint) (apps.CLIUpdateResult, error) {
+			lastURL = endpoint.URL
+			env, envErr := cycle.taskEnv(endpoint.URL)
 			if envErr != nil {
 				return apps.CLIUpdateResult{}, envErr
 			}
-			return cycle.invoke(lifecycle, env)
+			// proxyActive 必须由**本轮出口**决定，而不是环境里恰好有没有代理变量：
+			// 直连轮（endpoint.URL 为空）即便继承到宿主 HTTPS_PROXY，也不该按
+			// 「已配置代理」剔除安装器——那会把 winget 误跳过，而这一轮本来就
+			// 没打算走代理。
+			return cycle.invokeWithEgress(lifecycle, env, endpoint)
 		},
 	)
 	if rotation != nil {
@@ -234,14 +238,30 @@ func (cycle *providerLifecycleCycle) taskEnv(proxyURL string) (map[string]string
 	return updateproxy.Environment(env, proxyURL)
 }
 
-func (cycle *providerLifecycleCycle) invoke(lifecycle apps.CLILifecycleFunc, env map[string]string) (apps.CLIUpdateResult, error) {
-	// 第三个参数告诉安装层「本轮是否真的配了代理」：自动代理轮换时它不是用户
-	// 显式指定的，但同样会让安装器走代理，Windows 上必须据此剔除不可代理的
-	// 计划。先前传 cycle.options.explicitProxy，于是自动代理那一轮等于没配。
-	proxyActive := taskProxyActive(env)
+// invokeWithEgress 按本轮出口执行一次安装。
+//
+// proxyActive 只看 endpoint.URL：有出口才算「本轮配了代理」。先前用环境变量
+// 判断，于是直连轮（endpoint 为空、但宿主恰好有 HTTPS_PROXY）也会按已配置代理
+// 处理，把 winget 这类需要 --proxy 的计划误剔除。
+func (cycle *providerLifecycleCycle) invokeWithEgress(
+	lifecycle apps.CLILifecycleFunc,
+	env map[string]string,
+	endpoint updateproxy.EgressEndpoint,
+) (apps.CLIUpdateResult, error) {
 	return lifecycle(cycle.ctx, cycle.provider, apps.Options{
 		AIHomeDir: cycle.aiHome, HostHomeDir: cycle.hostHome, Env: env,
-	}, proxyActive, func(step string) {
+		AnonymousProxyURL: endpoint.AnonymousURL,
+	}, endpoint.URL != "", func(step string) {
+		_, _ = fmt.Fprintf(cycle.runtime.stderr, "[aih] %s\n", step)
+	})
+}
+
+// invoke 是显式 --proxy 路径的入口：那里出口总是非空。
+func (cycle *providerLifecycleCycle) invoke(lifecycle apps.CLILifecycleFunc, env map[string]string, anonymousURL string) (apps.CLIUpdateResult, error) {
+	return lifecycle(cycle.ctx, cycle.provider, apps.Options{
+		AIHomeDir: cycle.aiHome, HostHomeDir: cycle.hostHome, Env: env,
+		AnonymousProxyURL: anonymousURL,
+	}, true, func(step string) {
 		_, _ = fmt.Fprintf(cycle.runtime.stderr, "[aih] %s\n", step)
 	})
 }

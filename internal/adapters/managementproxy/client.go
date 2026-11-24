@@ -206,14 +206,28 @@ func (client *Client) Acquire(ctx context.Context, selector string) (updateproxy
 		client.Release(lease.ID)
 		return updateproxy.EgressLease{}, err
 	}
+	dial := func(dialCtx context.Context) (io.ReadWriteCloser, error) { return client.Connect(dialCtx, lease.ID) }
 	ingress, err := proxyingress.Start(ctx, proxyingress.Config{
 		Credentials: credentials,
 		HTTP:        true,
-		Dial:        func(dialCtx context.Context) (io.ReadWriteCloser, error) { return client.Connect(dialCtx, lease.ID) },
+		Dial:        dial,
 	})
 	if err != nil {
 		client.Release(lease.ID)
 		return updateproxy.EgressLease{}, errors.New("无法建立本机代理入口")
+	}
+	// 第二个入口：loopback、匿名。给那些把代理 URL 里的 userinfo 丢掉、
+	// 又不支持显式凭据的客户端（winget 已实测）。上游仍用租约令牌认证。
+	anonymous, err := proxyingress.Start(ctx, proxyingress.Config{
+		Credentials:    credentials,
+		HTTP:           true,
+		AllowAnonymous: true,
+		Dial:           dial,
+	})
+	if err != nil {
+		_ = ingress.Close()
+		client.Release(lease.ID)
+		return updateproxy.EgressLease{}, errors.New("无法建立本机匿名代理入口")
 	}
 	once := false
 	release := func() {
@@ -222,9 +236,19 @@ func (client *Client) Acquire(ctx context.Context, selector string) (updateproxy
 		}
 		once = true
 		_ = ingress.Close()
+		_ = anonymous.Close()
 		client.Release(lease.ID)
 	}
-	return updateproxy.EgressLease{URL: ingress.HTTPURL(), Name: lease.Name, Release: release}, nil
+	return updateproxy.EgressLease{
+		URL:          ingress.HTTPURL(),
+		// 匿名入口必须给**不带 userinfo** 的地址：winget 的 --proxy 会把
+		// userinfo 原样塞进请求，代理侧看到 Basic 头后按凭据校验，而它给的是
+		// 我们自己的租约令牌——匿名入口不校验凭据，但带着 userinfo 的 URL 会
+		// 让客户端误以为需要认证。用裸 host:port 最干净。
+		AnonymousURL: "http://" + anonymous.HTTPAddress(),
+		Name:         lease.Name,
+		Release:      release,
+	}, nil
 }
 
 // Rotation 把本客户端装成 updateproxy 的轮换状态机。

@@ -145,6 +145,42 @@ URL 里的 userinfo 当凭据，`New-Object System.Net.WebProxy($url)` 和 `-Pro
 `.Credentials`；用真实受管租约（端口 9618）在该主机上跑通 irm 下载，curl
 路径同样跑通。
 
+### 4. 覆盖面的补充修复（逐路径复核后发现）
+
+前几轮只修了「我恰好测过的那条路径」。按「所有能执行安装器的路径」复核后补了四处：
+
+| 遗漏 | 后果 |
+| --- | --- |
+| `sshExecutor`（WebUI 作业派发到远端）忽略 `UnsetEnv` | 远端残留 `ALL_PROXY`，BUG2 在远端主机上依旧 |
+| 代理注入只写在 `buildPowerShellScriptPlan` | 另外 8 个 PowerShell 计划（opencode/qoder 桌面端下载、kimi/kiro/agy/zcode 桌面端）全部绕过；已下沉到 `buildPowerShellPlan` 这一唯一出口 |
+| Windows 代理检查只看 `kind=cli`，且只在用户显式 `--proxy` 时 | 桌面端从不检查；**自动代理那一轮传的是 `proxyActive=false`，检查等于没跑** |
+| 检查遇到第一个不可代理计划就整体拒绝 | claude 的 Windows 计划是 PowerShell + cmd + winget 顺序尝试，winget 让整条链路失败；改为剔除并点名 |
+
+### 5. winget：唯一确认无法代理的安装器
+
+死代理（`HTTP_PROXY`/`HTTPS_PROXY`/`DefaultWebProxy` 全部指向 `127.0.0.1:9`）下：
+
+```
+winget install --id ...  →  "No package found matching input criteria"
+```
+
+它没有报连接错误，而是正常访问了源并给出业务结论 —— 证明完全无视代理。现在在
+`proxyActive` 时显式跳过并告知：
+
+```
+[aih] 已跳过不支持代理的安装器：WinGet 安装 Claude Code
+```
+
+### 6. 真实租约端到端（最终确认）
+
+Windows 主机上用真实受管租约（入口带 `aih:<token>@` 凭据）跑完整安装：
+
+```
+LEASE port=44700 userinfo=True
+[aih] grok CLI 安装验证通过: 1.0.92 -> 1.0.92
+exit=0
+```
+
 ### 仍未验证
 
 - **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前

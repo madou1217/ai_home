@@ -41,10 +41,10 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>120 条已完成</b>、12 条部分、4 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>86%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、Codex Work 原生 401。</p><div class="legend">
-<span class="chip s-已完成">已完成 120</span>
-<span class="chip s-部分">部分 12</span>
-<span class="chip s-未完成">未完成 4</span>
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>123 条已完成</b>、10 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>88%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D/终端 UI。</p><div class="legend">
+<span class="chip s-已完成">已完成 123</span>
+<span class="chip s-部分">部分 10</span>
+<span class="chip s-未完成">未完成 3</span>
 <span class="chip s-未核实">未核实 3</span>
 <span class="chip s-约束">约束 11</span>
 </div></header>
@@ -250,8 +250,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td class="ev">垃圾回复过滤已在安装件上验证</td><td class="sess">—</td></tr>
 <tr>
 <td>aih ls 首屏楼梯错位、中文/emoji/ANSI 续行</td><td class="meta">11-15</td>
-<td><span class="chip s-部分">部分</span></td>
-<td class="ev">真实 PTY 40/60/80 列复验无超宽、续行统一、emoji 未拆；内容超过终端高度时首屏仍落在列表尾部，无应用内滚动</td><td class="sess">—</td></tr>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">86408b5d：TTY 视口从顶部开始，↑/↓ 逐行、PgUp/PgDn 翻页、Home/End 到顶/到底；10 行 PTY 实测 1-9/62；管道与 --json 不变；40/60/80 列无超宽/emoji 未拆</td><td class="sess">—</td></tr>
 <tr>
 <td>长内容换行优先最近空格</td><td class="meta">11-15</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -338,8 +338,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td class="ev">a7109587：Chat Completions 渲染器跳过 encrypted/redacted reasoning delta/completed；gpt-6-luna low→high→low 正常</td><td class="sess">01a20b43</td></tr>
 <tr>
 <td>Codex Work（原生 CLI）无原生 bearer 时不应返回 401</td><td class="meta">11-24</td>
-<td><span class="chip s-未完成">未完成</span></td>
-<td class="ev">原生 Codex Work 走 codex:&lt;scope&gt;，需要原生登录账号；当前以 gateway chat 路径可用，Codex Work 未设计 gateway work 路径</td><td class="sess">01a20b43</td></tr>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">a9a47a0b：Codex Work 自动选号默认 gateway；app-server 注入 model_provider + OPENAI_API_KEY；真实会话创建 CODEX_WORK_GATEWAY_OK.txt 并回复 DONE；显式原生账号仍走原生路径</td><td class="sess">01a20b43</td></tr>
 <tr>
 <td>Image Studio：单帧删除、纵向预览不裁切、悬停预览按钮</td><td class="meta">11-20</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -430,8 +430,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td class="ev">部署侧参数，未形成检查</td><td class="sess">—</td></tr>
 <tr>
 <td>Windows 升级指纹被 wal/shm 打断回滚</td><td class="meta">11-17</td>
-<td><span class="chip s-部分">部分</span></td>
-<td class="ev">distributiondata.VerifySource 只比较 durable db + journal，忽略 -wal/-shm（fingerprint.go:31-40）；并发热修不再因瞬态文件中断；Windows 真机升级未复验</td><td class="sess">—</td></tr>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">2026-11-25 Windows 11 真机：sidecar 改写后 VerifySource=nil，db 改写后返回 source_changed_since_preparation；代码只比较 durable db + journal（fingerprint.go:31-40）</td><td class="sess">—</td></tr>
 <tr>
 <td>AWS metadata 与二进制 hash 不符：只改 metadata 不重启</td><td class="meta">11-18</td>
 <td><span class="chip s-约束">约束</span></td>
@@ -663,7 +663,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <tr>
 <td>Cloudflare 隧道可视化与厂商连接器插件</td><td class="meta">11-23</td>
 <td><span class="chip s-已完成">已完成</span></td>
-<td class="ev">仓外插件 network.cloudflared v0.1.5 已发布：具名隧道 + quickTunnel + serviceUrl，install/uninstall/configure/enable/disable/probe；公网回源未在本轮复验</td><td class="sess">01a202ad</td></tr>
+<td class="ev">仓外插件 network.cloudflared v0.1.5 已发布；2026-11-25 真机 Quick Tunnel 回源 127.0.0.1:18080，从 AWS curl 公网 URL 得 HTTP/2 200 + AIH_QUICK_TUNNEL_OK，随后停用并清空配置</td><td class="sess">01a202ad</td></tr>
 <tr>
 <td>Tailscale / WireGuard 连接器可视化与真机验收</td><td class="meta">11-23</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -728,11 +728,9 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <section id="open"><h2>未完成与明确边界</h2><p class="note">这些不是“没做”，而是当前仍未闭环、需要外部条件或用户决策的事项。</p><ul class="openlist">
 <li><b>AGY 结构化远程工具循环</b>：未实现。AGY 只有 PTY，没有工具/审批协议；远程入口明确返回 <code>agy_remote_workspace_unsupported</code>。需求办公室用的是 Connector 工作区镜像 + AGY 原生 CLI，不是这条工具通道。</li>
 <li><b>安装包 ≤80MiB</b>：实测 80MiB 必须去掉内置 Node（119.5→79.9MiB）；用户选择“先不去”，当前 91.9–100.6MiB，三平台可用。20/50MiB 不可行。</li>
-<li><b>Codex Work 原生 401</b>：Codex Work 走 <code>codex:&lt;scope&gt;</code> 原生 CLI，这些账号没有原生 bearer，需要原生登录账号，或单独设计 gateway work 路径。</li>
-<li><b>aih ls 首屏尾部</b>：内容超过终端高度时首屏落在列表尾部，无应用内滚动；是否改为视口滚动待产品决定。</li>
 <li><b>项目办公室 3D 精细度</b>：Office 页面与终端路由在 Go；机箱/双屏建模与可转视角未验收。</li>
 <li><b>未提交的 composition/pricingcatalog 收尾</b>：并行会话仍持有未提交改动；当前工作区 <code>composition_auth.go</code>、<code>public_add_account.go</code>、<code>webui_scheduler_routes.go</code> 等仍有 M 状态。</li>
-<li><b>需要真机/外部条件</b>：Cloudflare Quick Tunnel 公网回源（插件 v0.1.5 已含代码）、Windows 升级指纹 wal/shm（代码已忽略瞬态侧车）、资源下限 ≥15G、zcode 3.18.x chunk 路径、办公室 zsh 窗口关闭、Resume paused goal。</li>
+<li><b>需要真机/外部条件</b>：资源下限 ≥15G、zcode 3.18.x chunk 路径、办公室 zsh 窗口 UI 复验、Resume paused goal。</li>
 </ul></section>
 <section id="sessions"><h2>会话索引 <span class="count">36 个 /goal 会话</span></h2><p class="note">同一 8 位 ID 出现两次表示该会话设置了多个阶段目标；未设置 /goal 但有明确需求的会话（01a1c4d6、01a1f4be、01a1de78 等）已并入上方主题。</p><div class="board"><table><thead><tr><th>会话</th><th>日期</th><th>目标 / 主题</th><th>状态</th><th>结果</th></tr></thead><tbody>
 <tr><td class="sess">01a1a645</td><td class="meta">11-04→11-13</td><td>编辑账号 URL 不派生；Node→Go/单库；多 agent 迁移；sessions 端点</td><td><span class="chip s-部分">部分</span></td><td class="ev">编辑修复并验证；迁移持续，仍有未提交收尾</td></tr>

@@ -79,6 +79,23 @@
   overflow-wrap: anywhere;
 }
 
+.probeDetails {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.probeDetails summary {
+  cursor: pointer;
+  color: var(--color-accent);
+}
+
+.probeDetails p {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .probeCode {
   font-family: var(--font-mono);
   font-size: 12px;

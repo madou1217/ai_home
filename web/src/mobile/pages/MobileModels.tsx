@@ -163,7 +163,11 @@ export default function MobileModels(_props: MobilePageProps) {
         <HudCard code="PROBE" title="部分账号模型探测失败" tone={catalog?.source === 'remote' ? 'warn' : 'err'} className="aih-fade-in">
           <div className={styles.probeBody} role="status">
             {probeError.statusCode ? <span className={styles.probeCode}>HTTP {probeError.statusCode}</span> : null}
-            <p className={styles.probeMessage}>{probeError.message}</p>
+            <p className={styles.probeMessage}>部分账号授权或目录源异常，模型目录可能不完整。</p>
+            <details className={styles.probeDetails}>
+              <summary>查看探测详情</summary>
+              <p>{probeError.message}</p>
+            </details>
             <div className={styles.cardActions}>
               {probeError.url ? (
                 <HudIconButton

@@ -54,6 +54,7 @@ type Dependencies struct {
 	Now              func() time.Time
 	AccountActivity  AccountActivityTracker
 	OutcomeRecorder  OutcomeRecorder
+	OwnerRecorder    SessionOwnershipRecorder
 	RuntimeRecoverer RuntimeRecoverer
 	// SessionObserver wakes peer target probes after accepted lifecycle events; it never injects.
 	SessionObserver func(sessionevents.Session, sessionevents.Event) (int, error)
@@ -69,6 +70,7 @@ type Handler struct {
 	now              func() time.Time
 	accountActivity  AccountActivityTracker
 	outcomeRecorder  OutcomeRecorder
+	ownerRecorder    SessionOwnershipRecorder
 	runtimeRecoverer RuntimeRecoverer
 	sessionObserver  func(sessionevents.Session, sessionevents.Event) (int, error)
 }
@@ -91,6 +93,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		now:              nowFn,
 		accountActivity:  dependencies.AccountActivity,
 		outcomeRecorder:  dependencies.OutcomeRecorder,
+		ownerRecorder:    dependencies.OwnerRecorder,
 		runtimeRecoverer: dependencies.RuntimeRecoverer,
 		sessionObserver:  dependencies.SessionObserver,
 	}, nil
@@ -221,7 +224,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 
 	accountRef := NormalizeProviderAccountRef(anyText(body["accountRef"]))
-	handler.applyAccountSideEffects(request, normalized, accountRef)
+	gateway, _ := body["gateway"].(bool)
+	handler.applyAccountSideEffects(request, normalized, accountRef, gateway)
 
 	published := handler.bus.Publish(sessionevents.Session{
 		Provider:       normalized.Session.Provider,
@@ -461,9 +465,24 @@ func (handler *Handler) applyAccountSideEffects(
 	request *http.Request,
 	normalized NormalizeResult,
 	accountRef string,
+	gateway bool,
 ) {
 	if accountRef == "" {
 		return
+	}
+	if handler.ownerRecorder != nil && strings.TrimSpace(normalized.Session.SessionID) != "" {
+		at := time.UnixMilli(normalized.Event.At)
+		if normalized.Event.At <= 0 {
+			at = handler.now()
+		}
+		handler.ownerRecorder.RecordSessionOwner(
+			request.Context(),
+			normalized.Session.Provider,
+			normalized.Session.SessionID,
+			accountRef,
+			gateway,
+			at,
+		)
 	}
 	if handler.accountActivity != nil {
 		switch ResolveSessionTurnAction(normalized.Event.Type, normalized.Event.EventName) {

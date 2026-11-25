@@ -27,6 +27,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
+	"github.com/madou1217/ai_home/internal/runtime/sessionownership"
 )
 
 const (
@@ -167,8 +168,10 @@ func ScanModelUsageSources(ctx context.Context, opts ScanUsageOptions) (UsageSca
 		files := listFilesRecursive(claudeRoot, func(_ string, name string) bool {
 			return strings.HasSuffix(name, ".jsonl")
 		})
+		// 原生直连会话的账号归属来自 provider hook；网关会话不在此表内（账本已记账）。
+		owners := sessionownership.LoadNative(opts.AIHomeDir, "claude")
 		rawProviders["claude"] = scanProviderFiles(files, -1, func(filePath string, _ int64) (fileScanOutcome, error) {
-			return scanClaudeFile(ctx, opts.Store, filePath)
+			return scanClaudeFile(ctx, opts.Store, filePath, owners)
 		})
 	}
 
@@ -1969,7 +1972,12 @@ func claudeUsageObservationMoreComplete(next, current UsageRecordInput) bool {
 	return next.TimestampMS >= current.TimestampMS
 }
 
-func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fileScanOutcome, error) {
+func scanClaudeFile(
+	ctx context.Context,
+	store *UsageStore,
+	filePath string,
+	owners map[string]string,
+) (fileScanOutcome, error) {
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return fileScanOutcome{}, err
@@ -2067,6 +2075,7 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 		record := UsageRecordInput{
 			EventKey:                 ek,
 			Provider:                 "claude",
+			AccountRef:               owners[sessionID],
 			SourceKind:               "session_jsonl",
 			SessionID:                sessionID,
 			Model:                    model,
@@ -2099,6 +2108,13 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 	ins, err := store.UpsertUsageBatch(ctx, records)
 	if err != nil {
 		return fileScanOutcome{}, err
+	}
+	// 归属可能晚于首批行到达（hook 先到、扫描后到，或反之）：把该会话历史上
+	// 已入库但未归属的行补上账号，账号卡片才能看到 Native Direct 用量。
+	if owner := owners[sessionID]; owner != "" {
+		if _, err := store.ReconcileSessionAccountRef(ctx, "claude", sessionID, owner); err != nil {
+			return fileScanOutcome{}, err
+		}
 	}
 	pIns, err := store.InsertPromptEvents(ctx, promptEvents)
 	if err != nil {

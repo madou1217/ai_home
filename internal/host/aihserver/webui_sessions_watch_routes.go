@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/sessionactivity"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
+	"github.com/madou1217/ai_home/internal/runtime/sessionownership"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
 	"github.com/madou1217/ai_home/internal/transport/http/webuirestoreschedulingapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisessionhookapi"
@@ -69,7 +70,7 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		AIHomeDir: dependencies.AIHomeDir,
 	})
 
-	sideEffects := newHookAccountSideEffects(dependencies.Store, dependencies.AccountRuntime)
+	sideEffects := newHookAccountSideEffects(dependencies.AIHomeDir, dependencies.Store, dependencies.AccountRuntime)
 
 	watchHandler, err := webuisessionwatchapi.NewHandler(webuisessionwatchapi.Dependencies{
 		Authorizer:  dependencies.Authorizer,
@@ -91,6 +92,7 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 		AIHomeDir:       dependencies.AIHomeDir,
 		AccountActivity: dependencies.AccountActivity,
 		OutcomeRecorder: sideEffects,
+		OwnerRecorder:   sideEffects,
 		SessionObserver: peerStore.HandleSessionEvent,
 		// Hook 成功不证明凭据或阻塞代次，暂不接自动恢复。
 	})
@@ -129,16 +131,36 @@ func buildWebUISessionsWatchRoutes(dependencies webuiRouteDependencies) ([]webui
 }
 
 type hookAccountSideEffects struct {
-	store    *sqliteaccount.Store
-	restorer webuirestoreschedulingapi.RuntimeRestorer
+	aiHomeDir string
+	store     *sqliteaccount.Store
+	restorer  webuirestoreschedulingapi.RuntimeRestorer
 }
 
-func newHookAccountSideEffects(store *sqliteaccount.Store, runtime any) *hookAccountSideEffects {
+func newHookAccountSideEffects(aiHomeDir string, store *sqliteaccount.Store, runtime any) *hookAccountSideEffects {
 	restorer, _ := runtime.(webuirestoreschedulingapi.RuntimeRestorer)
 	return &hookAccountSideEffects{
-		store:    store,
-		restorer: restorer,
+		aiHomeDir: strings.TrimSpace(aiHomeDir),
+		store:     store,
+		restorer:  restorer,
 	}
+}
+
+// RecordSessionOwner 把原生会话的账号归属落盘，供用量扫描器归因。
+//
+// 写失败只影响账号用量展示，不阻断 hook 主流程；网关会话也记录（gateway=true），
+// 扫描器读取时会排除。
+func (effects *hookAccountSideEffects) RecordSessionOwner(
+	_ context.Context,
+	provider string,
+	sessionID string,
+	accountRef string,
+	gateway bool,
+	at time.Time,
+) {
+	if effects == nil || effects.aiHomeDir == "" {
+		return
+	}
+	_ = sessionownership.Write(effects.aiHomeDir, provider, sessionID, accountRef, gateway, at)
 }
 
 func (effects *hookAccountSideEffects) RecordHookOutcome(

@@ -926,6 +926,43 @@ func upsertNormalizedUsageTx(ctx context.Context, tx *sql.Tx, items []*normalize
 	return written, nil
 }
 
+// ReconcileSessionAccountRef 把某个原生会话里「缺账号归属」的扫描行补上账号。
+//
+// 只填空值，不覆盖已入库的归属：归因对账可能已经写入更可靠的账号，扫描器不能
+// 用 hook 的粗粒度归属把它改掉。用量事实不变，只更新 account_ref。
+func (s *UsageStore) ReconcileSessionAccountRef(
+	ctx context.Context,
+	provider, sessionID, accountRef string,
+) (int, error) {
+	prov := strings.ToLower(strings.TrimSpace(provider))
+	session := strings.TrimSpace(sessionID)
+	ref := strings.TrimSpace(accountRef)
+	if s == nil || s.db == nil || prov == "" || session == "" || !isValidAccountRef(ref) {
+		return 0, nil
+	}
+	var updated int
+	if err := s.runImmediateTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE model_usage_records SET account_ref = ?
+			WHERE provider = ? AND session_id = ?
+				AND source_kind IN ('session_jsonl', 'session_json')
+				AND (account_ref IS NULL OR account_ref = '')`,
+			ref, prov, session)
+		if err != nil {
+			return err
+		}
+		rows, _ := res.RowsAffected()
+		updated = int(rows)
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	if updated > 0 {
+		s.InvalidateStatsCache()
+	}
+	return updated, nil
+}
+
 // UpsertSessions 增量合并或更新会话元数据。
 func (s *UsageStore) UpsertSessions(ctx context.Context, records []UsageSessionInput) (int, error) {
 	if s == nil || s.db == nil || len(records) == 0 {

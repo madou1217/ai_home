@@ -35,6 +35,15 @@ func (store *Store) QueryAccountTokenUsage(
 	if err != nil {
 		return usageledger.AccountTokenUsage{}, err
 	}
+	// Native Direct 会话只在本地 transcript 里，网关账本没有它的行；扫描器已按
+	// provider hook 的会话归属给这些行补了 account_ref，这里并入同一份聚合。
+	native, err := store.readScannedAccountUsageRecords(ctx, query)
+	if err != nil {
+		return usageledger.AccountTokenUsage{}, err
+	}
+	if len(native) > 0 {
+		records = append(records, native...)
+	}
 	windows, err := usageledger.ResolveAccountTokenUsageWindows(query.To, tzOffsetMinutes)
 	if err != nil {
 		return usageledger.AccountTokenUsage{}, err

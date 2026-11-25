@@ -32,6 +32,14 @@ type OutcomeRecorder interface {
 	RecordHookOutcome(ctx context.Context, provider, accountRef, outcome string, at time.Time)
 }
 
+// SessionOwnershipRecorder 记录「原生 CLI 会话 → 账号」归属。
+//
+// 会话 token 只在本地 transcript 里；用量扫描器靠这份归属把 Native Direct 的
+// 用量记到账号名下。gateway=true 的会话不参与归属（网关账本已按账号记账）。
+type SessionOwnershipRecorder interface {
+	RecordSessionOwner(ctx context.Context, provider, sessionID, accountRef string, gateway bool, at time.Time)
+}
+
 // RuntimeRecoverer 在收到已验证成功的 official hook 时清除对应账号的活动阻塞。
 type RuntimeRecoverer interface {
 	RecoverOnHookSuccess(ctx context.Context, provider, accountRef string, happenedAtMs int64) bool

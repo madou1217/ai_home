@@ -11,7 +11,7 @@
   <a href="#快速开始">快速开始</a> ·
   <a href="#它是怎么工作的">架构</a> ·
   <a href="#mcp-选择">MCP</a> ·
-  <a href="docs/packaging.md">打包与安装</a>
+  <a href="#安装">安装</a>
 </p>
 
 <p align="center">

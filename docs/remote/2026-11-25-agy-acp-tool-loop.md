@@ -116,6 +116,46 @@ Connector 管理的项目根目录内。Provider 凭据不进入 Connector，Con
   签发、单 workspace、可撤销。
 - 不把 `allow_always` 当作跨会话持久授权。
 
+## 6.1 WebUI + Connector 真机结果（2026-11-25）
+
+环境：AWS AGY 1.5.16；测试 server 独立端口；本地 Workspace Connector 指向临时
+workspace；WebUI 通过 ACP 抽屉启动会话。
+
+通过的控制面：
+
+1. `POST .../acp-sessions` 返回 ready 会话；
+2. SSE 收到 `tool_call` / `tool_update` / `approval` / `message`；
+3. 三次 `allow_once` 审批都从 WebUI API 返回 200，agent 继续执行；
+4. prompt 最终 `stop=end_turn`。
+
+未通过的工具面：
+
+- AGY 的 `File input.txt` / `File output.txt` / `pwd && ls -la` 工具直接在
+  **Server 侧 shadow cwd** 执行，没有调用 ACP `fs/*` 或 `terminal/*`；
+- `output.txt` 只出现在 shadow，Connector root 的 `ws` 中没有；
+- `pwd && ls -la` 看到的是空 shadow，而不是 Connector 的
+  `input.txt`；
+- 因此 WebUI + Connector 只完成了审批/事件控制面，文件/命令实际没有落到
+  Connector，闭环不成立。
+
+原因：AGY 1.5.16 的 ACP server 使用内置文件/终端工具，即使客户端声明了
+`fs.readTextFile` / `fs.writeTextFile` / `terminal`，它仍不把执行委托给
+ACP client。ACP 协议本身允许 agent 自带工具，不能强制。
+
+可行修复方向：
+
+1. **镜像 + 回写**：启动前 `StartMirror` 拉取 Connector 工作区，AGY 在 mirror
+   directory 上运行；每轮结束 `SyncMirror` 回写文件。文件可闭环，但命令仍在
+   Server 执行，副作用不回 Connector。
+2. **把 AGY 跑在 Connector 主机**：通过本地 ACP stdio 或反向隧道让 Agent 与
+   真实工作区同机，这是语义上正确的远程执行。
+3. **等待 AGY 支持 ACP client 工具**或提供“use client fs/terminal”开关。
+
+认证/路径前置条件：server 必须用 AGY 账号投影作为 `HOME`，且 PATH 包含
+`agy`；当前 WebUI 进程没有按账号选择 HOME，需要后续按会话注入。
+
+结论：不能把这次 WebUI+Connector 结果标为通过。
+
 ## 7. 实现进度（2026-11-25）
 
 已落地：

@@ -494,21 +494,25 @@ func (s *Service) Operate(ctx context.Context, request appinstall.OperateRequest
 	raw, invokeErr := s.runtime.Invoke(ctx, app.Generation, app.ContributionID, payload, appInstallActionTimeout(action))
 	durationMs := time.Since(started).Milliseconds()
 	if invokeErr != nil {
-		s.Audit("app.install.operate", map[string]any{
-			"appId": app.AppID, "action": action, "ok": false,
-			"durationMs": durationMs, "error": firstNonEmpty(errorCode(invokeErr), "invoke_failed"),
-		})
+		details := appInstallAuditBase(app, action, proxyURL != "", durationMs, request.JobID)
+		details["ok"] = false
+		details["error"] = firstNonEmpty(errorCode(invokeErr), "invoke_failed")
+		s.Audit("app.install.operate", details)
 		return appinstall.OperateResult{}, invokeErr
 	}
 	if len(raw) > maxAppInstallPayload {
+		details := appInstallAuditBase(app, action, proxyURL != "", durationMs, request.JobID)
+		details["ok"] = false
+		details["error"] = "app_install_payload_too_large"
+		s.Audit("app.install.operate", details)
 		return appinstall.OperateResult{}, pluginerr.New("app_install_payload_too_large", "应用操作结果超过大小限制")
 	}
 	result, decodeErr := decodeAppInstallOperateResult(raw)
 	if decodeErr != nil {
-		s.Audit("app.install.operate", map[string]any{
-			"appId": app.AppID, "action": action, "ok": false,
-			"durationMs": durationMs, "error": firstNonEmpty(errorCode(decodeErr), "invalid_result"),
-		})
+		details := appInstallAuditBase(app, action, proxyURL != "", durationMs, request.JobID)
+		details["ok"] = false
+		details["error"] = firstNonEmpty(errorCode(decodeErr), "invalid_result")
+		s.Audit("app.install.operate", details)
 		return appinstall.OperateResult{}, decodeErr
 	}
 	if result.Status != nil {
@@ -520,11 +524,60 @@ func (s *Service) Operate(ctx context.Context, request appinstall.OperateRequest
 		s.appInstallStatusAt = time.Now()
 		s.appInstallMu.Unlock()
 	}
-	s.Audit("app.install.operate", map[string]any{
-		"appId": app.AppID, "action": action, "ok": result.OK,
-		"changed": result.Changed, "durationMs": durationMs,
-	})
+	details := appInstallAuditBase(app, action, proxyURL != "", durationMs, request.JobID)
+	details["ok"] = result.OK
+	details["changed"] = result.Changed
+	if !result.OK {
+		details["error"] = sanitizeAppInstallAuditError(firstNonEmpty(result.Message, "app_install_failed"))
+		if step := firstFailedAppInstallStep(result.Steps); step != "" {
+			details["failedStep"] = step
+		}
+	}
+	s.Audit("app.install.operate", details)
 	return result, nil
+}
+
+func appInstallAuditBase(app *appinstall.App, action string, proxyUsed bool, durationMs int64, jobID string) map[string]any {
+	details := map[string]any{
+		"appId":      app.AppID,
+		"action":     action,
+		"proxyUsed":  proxyUsed,
+		"durationMs": durationMs,
+	}
+	if pluginID := strings.TrimSpace(app.PluginID); pluginID != "" {
+		details["pluginId"] = pluginID
+	}
+	if jobID = strings.TrimSpace(jobID); jobID != "" {
+		details["jobId"] = jobID
+	}
+	return details
+}
+
+func firstFailedAppInstallStep(steps []appinstall.Step) string {
+	for _, step := range steps {
+		if step.OK {
+			continue
+		}
+		if id := sanitizeAppInstallText(step.ID, 96); id != "" {
+			return id
+		}
+		if label := sanitizeAppInstallText(step.Label, 96); label != "" {
+			return label
+		}
+	}
+	return ""
+}
+
+func sanitizeAppInstallAuditError(value string) string {
+	text := sanitizeAppInstallOutput(value)
+	text = networkConnectorURLRE.ReplaceAllString(text, "[地址已隐藏]")
+	text = networkConnectorPathRE.ReplaceAllString(text, "[路径已隐藏]")
+	text = strings.TrimSpace(text)
+	runes := []rune(text)
+	if len(runes) > 300 {
+		return string(runes[:300])
+	}
+	return text
 }
 
 func decodeAppInstallOperateResult(raw json.RawMessage) (appinstall.OperateResult, error) {

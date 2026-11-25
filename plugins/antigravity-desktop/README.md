@@ -22,6 +22,12 @@ aih plugin enable antigravity.desktop --accept-permissions
 - Accounts → Antigravity 空 tab 会出现桌面端安装/打开条；
 - 安装/卸载会创建 `app-install` 作业，进度显示在任务队列。
 
+## 与 IDE / CLI 的关系
+
+Antigravity 的桌面应用（`Antigravity.app`）本身就是 IDE，Provider 合同
+（`agyDesktopClient`）把它归类为桌面客户端；因此插件声明 `kind: "desktop"`，
+不另造一个 IDE appId。`agy` CLI 是另一个客户端，不在这个插件的范围内。
+
 ## 与内置安装计划的关系
 
 内置的 `agy-desktop` 安装计划仍然保留，用于没有安装插件的部署。插件应用

@@ -78,9 +78,12 @@
      `gemini skills list --all` 列出 `remote-realmachine`。
      从 elevated SSH 直接访问同一个 Junction 会报 `untrusted mount point`；
      这是 Windows 完整性边界，不是链接失效。
-   - 发现：现有 `run.cmd` 没有设置 `AIH_PACKAGE_ROOT`，导致内置源安装返回
-     `native_resource_source_missing`；本轮为测试临时补了 package root，测试后已恢复。
-     安装器/run.cmd 生成侧需要补这个环境变量（或从 package root 启动）。
+   - 发现并修复：现有 `run.cmd` 没有设置 `AIH_PACKAGE_ROOT`，内置源安装会返回
+     `native_resource_source_missing`。修复在 server 侧：`resolveSourceRoot` 在环境变量和
+     cwd/exe 祖先都找不到 package root 时，扫描 `<AIH_HOME_DIR>/pkg`，优先选择带 `assets`
+     的最新完整发行包。无需修改版本化的 `run.cmd`。
+   - 未设置 `AIH_PACKAGE_ROOT` 的已安装服务实测：`aih-collab` link 安装成功（Junction），
+     Limited 完整性任务中的 Gemini 能发现；测试 Skill 已移除。
    - 清理：API remove 后链接消失；停止服务、禁用任务、恢复 run.cmd、删除临时 package root /
      快照 / 暂存；真实 DB 为 `(no managed skills)`。
    - 安装后的 server / web 保留新构建；任务恢复为原本的 `Disabled`。

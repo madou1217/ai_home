@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
@@ -64,7 +66,7 @@ func NewService(cfg Config) (*Service, error) {
 		sourceRoot = strings.TrimSpace(cfg.DemoRoot)
 	}
 	if sourceRoot == "" {
-		sourceRoot = resolveSourceRoot(env)
+		sourceRoot = resolveSourceRoot(env, cfg.AIHomeDir)
 	}
 
 	store, err := newManagedStore(cfg.AIHomeDir)
@@ -123,7 +125,7 @@ func envFromOS() map[string]string {
 	return out
 }
 
-func resolveSourceRoot(env map[string]string) string {
+func resolveSourceRoot(env map[string]string, aiHomeDir string) string {
 	if root := strings.TrimSpace(env["AIH_PACKAGE_ROOT"]); root != "" {
 		if abs, err := filepath.Abs(root); err == nil {
 			return abs
@@ -153,10 +155,94 @@ func resolveSourceRoot(env map[string]string) string {
 			cur = parent
 		}
 	}
+	if root := installedPackageRoot(aiHomeDir); root != "" {
+		return root
+	}
 	if len(starts) > 0 {
 		return starts[0]
 	}
 	return "."
+}
+
+// installedPackageRoot finds the newest complete distribution under
+// <AIH_HOME_DIR>/pkg. Windows service launchers historically started the
+// server from bin without AIH_PACKAGE_ROOT, which left bundled sources
+// (assets/provider-skills, assets/native-plugins) unreachable.
+func installedPackageRoot(aiHomeDir string) string {
+	root := strings.TrimSpace(aiHomeDir)
+	if root == "" {
+		return ""
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "pkg"))
+	if err != nil {
+		return ""
+	}
+	type candidate struct {
+		dir       string
+		version   [3]int
+		hasAssets bool
+	}
+	candidates := make([]candidate, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, "pkg", entry.Name())
+		if info, statErr := os.Stat(filepath.Join(dir, "package.json")); statErr != nil || info.IsDir() {
+			continue
+		}
+		if info, statErr := os.Stat(filepath.Join(dir, "lib")); statErr != nil || !info.IsDir() {
+			continue
+		}
+		hasAssets := false
+		if info, statErr := os.Stat(filepath.Join(dir, "assets")); statErr == nil && info.IsDir() {
+			hasAssets = true
+		}
+		candidates = append(candidates, candidate{
+			dir:       dir,
+			version:   packageVersion(entry.Name()),
+			hasAssets: hasAssets,
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].hasAssets != candidates[j].hasAssets {
+			return candidates[i].hasAssets
+		}
+		for index := 0; index < 3; index++ {
+			if candidates[i].version[index] != candidates[j].version[index] {
+				return candidates[i].version[index] > candidates[j].version[index]
+			}
+		}
+		return candidates[i].dir > candidates[j].dir
+	})
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidates[0].dir
+}
+
+func packageVersion(name string) [3]int {
+	var version [3]int
+	start := -1
+	for index := 0; index < len(name); index++ {
+		if name[index] >= '0' && name[index] <= '9' {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		return version
+	}
+	head := strings.SplitN(name[start:], "-", 2)[0]
+	parts := strings.Split(head, ".")
+	for index := 0; index < len(parts) && index < 3; index++ {
+		value, err := strconv.Atoi(parts[index])
+		if err != nil {
+			return version
+		}
+		version[index] = value
+	}
+	return version
 }
 
 // ProviderResourceReport 描述报告中单类资源的完整状态（能力 + 已托管记录）。

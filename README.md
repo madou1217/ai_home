@@ -319,7 +319,8 @@ Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp
 
 > 资源去重：默认仍是目录复制，可选择 link 投影。macOS 上 Claude / Codex / CodeBuddy / CodeBuddy CN / Gemini
 > 已实测可加载软链接 Skill；Windows 复用 `artifactstore` 的 junction 实现，CLI、临时 server/WebUI
-> 与已安装 `AihServerWindows` 任务端到端已实测（现有 run.cmd 需补 `AIH_PACKAGE_ROOT`）。
+> 与已安装 `AihServerWindows` 任务端到端已实测。未设置 `AIH_PACKAGE_ROOT` 的旧 run.cmd
+> 由 server 自动发现 `<AIH_HOME_DIR>/pkg` 下的完整发行包。
 > 详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
 
 ## Web UI

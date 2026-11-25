@@ -8,7 +8,6 @@ import {
   ExclamationCircleOutlined,
   EyeOutlined,
   FolderOutlined,
-  InboxOutlined,
   MailOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -936,7 +935,7 @@ export default function SessionOffice({
           className="session-office-mailbox-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="项目办公室协作消息"
+          aria-label={MAILBOX_SCOPE_TITLES[mailboxScope]}
         >
           <div
             className="session-office-mailbox-scrim"
@@ -944,26 +943,16 @@ export default function SessionOffice({
             aria-hidden="true"
           />
           <div className="session-office-mailbox-drawer">
-            <div className="session-office-mailbox-head">
-              <div className="session-office-mailbox-heading">
-                <InboxOutlined className="session-office-mailbox-head-icon" aria-hidden="true" />
-                <div className="session-office-mailbox-title-group">
-                  <h2>{MAILBOX_SCOPE_TITLES[mailboxScope]}</h2>
-                  <span className="session-office-mailbox-subtitle">
-                    {mailboxScope === 'room' && unfilteredActiveRoom
-                      ? `${resolveRoomDisplayTitle(unfilteredActiveRoom)} · 只读消息队列`
-                      : '跨会话协作消息 · 只读查阅'}
-                  </span>
-                </div>
-              </div>
+            <Tooltip title="关闭面板 (Esc)">
               <AppButton
-                appVariant="secondary"
+                size="small"
+                appVariant="icon"
+                className="session-office-mailbox-close"
+                aria-label="关闭消息面板"
                 icon={<CloseOutlined />}
                 onClick={() => setMailboxOverlayOpen(false)}
-              >
-                返回房间
-              </AppButton>
-            </div>
+              />
+            </Tooltip>
 
             <div className="session-office-mailbox-body">
               <OfficeMailbox
@@ -980,7 +969,6 @@ export default function SessionOffice({
                 error={peerError}
                 onRefresh={() => void refreshAll()}
                 onJumpToSession={handleJumpToSession}
-                compactHeader
               />
             </div>
           </div>

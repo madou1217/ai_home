@@ -28,6 +28,7 @@ import (
 	capabilitybaseline "github.com/madou1217/ai_home/contracts/model-capabilities"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountremoval"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
@@ -1113,18 +1114,21 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		delegateCredentialRefresh: delegateCredentialRefresh,
 		ownsCredentialRefresh:     ownsCredentialRefresh,
 		authorizer:                clientAuthorizer,
-		httpClient:                inferenceClient,
-		decodeErrors:              decodeErrors,
-		upstreamDecodeErrors:      upstreamDecodeErrors,
-		errorLog:                  errorLog,
-		requestRewriter:           visionGuard,
-		effortLadders:             modelModalities,
-		codexVersions:             codexVersions,
-		claudeVersions:            claudeVersions,
-		agyModelWires:             agyModelWires,
-		upstreamRules:             upstreamRuleEvaluator,
-		upstream429Retries:        upstream429Controller,
-		egressManager:             func() *runtimeegress.Manager { return egressManager },
+		clientKeyLimits: func(keyID string) (coreclientkeys.Limits, bool) {
+			return clientKeyService.Limits(keyID)
+		},
+		httpClient:           inferenceClient,
+		decodeErrors:         decodeErrors,
+		upstreamDecodeErrors: upstreamDecodeErrors,
+		errorLog:             errorLog,
+		requestRewriter:      visionGuard,
+		effortLadders:        modelModalities,
+		codexVersions:        codexVersions,
+		claudeVersions:       claudeVersions,
+		agyModelWires:        agyModelWires,
+		upstreamRules:        upstreamRuleEvaluator,
+		upstream429Retries:   upstream429Controller,
+		egressManager:        func() *runtimeegress.Manager { return egressManager },
 	})
 	if err != nil {
 		return serverHandlers{}, nil, err
@@ -1308,7 +1312,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}
 	codexHTTPHandler, err := codexresponseshttp.NewHandler(codexresponseshttp.Dependencies{
 		Authorizer:         clientAuthorizer,
-		Accounts:           codexHTTPAccountSource{catalog: catalog, routes: inference.models, recruiter: inference.recruiter, transport: inference.codexUpstream},
+		Accounts:           codexHTTPAccountSource{catalog: catalog, routes: inference.Routes(), recruiter: inference.recruiter, transport: inference.codexUpstream},
 		Upstream:           inference.codexUpstream,
 		Fallback:           inference.handler,
 		Attempts:           accountRuntime,
@@ -1611,7 +1615,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	webSocketSelector, err := codexwebsocket.NewSelector(
 		codexwebsocket.Dependencies{
 			Catalog:    catalog,
-			Routes:     inference.models,
+			Routes:     inference.Routes(),
 			Recruiter:  inference.recruiter,
 			Transports: webSocketDialer,
 			// 钉选账号进入 (账号,模型) 冷却时回落到整个池，而不是死守单候选。

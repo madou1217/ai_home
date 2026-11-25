@@ -4713,7 +4713,7 @@ export interface AccountConfigFilesResponse {
   files: AccountConfigFile[];
 }
 
-/** 客户端 API Key 的限流字段（本轮只展示，不执行）。 */
+/** 客户端 API Key 的限流与账号池/模型池白名单；空数组表示不限制。 */
 export interface ClientKeyLimits {
   maxConcurrency: number;
   rpmLimit: number;

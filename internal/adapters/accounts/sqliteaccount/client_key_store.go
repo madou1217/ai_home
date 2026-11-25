@@ -225,7 +225,8 @@ func (store *Store) LoadActiveClientKeys(ctx context.Context) ([]ClientKeyAuthRe
 		return nil, errors.New("账号数据库不可用")
 	}
 	rows, err := store.db.QueryContext(ctx, `SELECT key_id, name, key_prefix, key_hash,
-		max_concurrency, rpm_limit, tpm_limit, daily_token_limit
+		max_concurrency, rpm_limit, tpm_limit, daily_token_limit,
+		allowed_providers_json, allowed_models_json
 		FROM client_api_keys WHERE enabled = 1 AND revoked_at_ms = 0`)
 	if err != nil {
 		return nil, err
@@ -235,10 +236,12 @@ func (store *Store) LoadActiveClientKeys(ctx context.Context) ([]ClientKeyAuthRe
 	for rows.Next() {
 		var record ClientKeyAuthRecord
 		var hash []byte
+		var providersJSON, modelsJSON string
 		if err := rows.Scan(
 			&record.KeyID, &record.Name, &record.Prefix, &hash,
 			&record.Limits.MaxConcurrency, &record.Limits.RPMLimit,
 			&record.Limits.TPMLimit, &record.Limits.DailyTokenLimit,
+			&providersJSON, &modelsJSON,
 		); err != nil {
 			return nil, err
 		}
@@ -246,6 +249,8 @@ func (store *Store) LoadActiveClientKeys(ctx context.Context) ([]ClientKeyAuthRe
 			continue
 		}
 		copy(record.Hash[:], hash)
+		record.Limits.AllowedProviders = decodeStringList(providersJSON)
+		record.Limits.AllowedModels = decodeStringList(modelsJSON)
 		records = append(records, record)
 	}
 	return records, rows.Err()

@@ -40,6 +40,7 @@ type inferenceRuntimeInputs struct {
 	delegateCredentialRefresh bool
 	ownsCredentialRefresh     func(accountcore.AccountRef) bool
 	authorizer                inferencehttp.Authorizer
+	clientKeyLimits           inferencegateway.ClientKeyLimitsSource
 	httpClient                InferenceHTTPClient
 	decodeErrors              func(error)
 	upstreamDecodeErrors      func(error)
@@ -75,6 +76,7 @@ func newInferenceRuntime(inputs inferenceRuntimeInputs) (*inferenceComposition, 
 			delegateCredentialRefresh: inputs.delegateCredentialRefresh,
 			ownsCredentialRefresh:     inputs.ownsCredentialRefresh,
 			authorizer:                inputs.authorizer,
+			clientKeyLimits:           inputs.clientKeyLimits,
 			httpClient:                inputs.httpClient,
 			decodeErrors:              inputs.decodeErrors,
 			responsesDecodeErrors:     newResponsesDecodeErrorObserver(inputs.errorLog),

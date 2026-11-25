@@ -57,9 +57,11 @@ var agyFirstByteTimeout = 12 * time.Second
 
 // inferenceComposition 保存推理 HTTP、原子模型目录及其内部生命周期。
 type inferenceComposition struct {
-	handler   http.Handler
-	gemini    http.Handler
-	models    *inferencecatalog.AtomicCatalog
+	handler http.Handler
+	gemini  http.Handler
+	models  *inferencecatalog.AtomicCatalog
+	// routes 是叠加客户端 Key 账号池/模型池过滤后的路由解析器。
+	routes    inferencegateway.ProtocolRouteResolver
 	recruiter *accountrouting.Recruiter
 	// runtime 是征召与推理终态共享的账号运行态；钉选回落判定复用它，避免另开读取路径。
 	runtime        inferenceruntime.AccountRuntime
@@ -82,6 +84,14 @@ func (composition *inferenceComposition) Runtime() inferenceruntime.AccountRunti
 	return composition.runtime
 }
 
+// Routes 返回叠加客户端 Key 白名单后的原生路由解析器。
+func (composition *inferenceComposition) Routes() inferencegateway.ProtocolRouteResolver {
+	if composition == nil {
+		return nil
+	}
+	return composition.routes
+}
+
 // inferenceCompositionDependencies 集中声明生产推理组合所需的窄端口。
 type inferenceCompositionDependencies struct {
 	catalog *providers.Catalog
@@ -101,6 +111,8 @@ type inferenceCompositionDependencies struct {
 	// 由 Go 负责刷新（委托模式下也一样）。
 	ownsCredentialRefresh func(accountcore.AccountRef) bool
 	authorizer            inferencehttp.Authorizer
+	// clientKeyLimits 是托管客户端 Key 的账号池/模型池白名单来源；nil 表示不限制。
+	clientKeyLimits       inferencegateway.ClientKeyLimitsSource
 	httpClient            InferenceHTTPClient
 	decodeErrors          func(error)
 	responsesDecodeErrors func(error)
@@ -213,6 +225,15 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	// 账号池/模型池白名单在路由解析层统一执行；未配置托管 Key 限制时保持原目录。
+	var activeRoutes interface {
+		inferencegateway.RouteResolver
+		inferencegateway.ProtocolRouteResolver
+	} = activeCatalog
+	if scoped := inferencegateway.NewScopedRoutes(activeCatalog, dependencies.clientKeyLimits); scoped != nil {
+		activeRoutes = scoped
+	}
+	composition.routes = activeRoutes
 	// Go owns legacy first-read migration and canonical alias restoration.
 	// A failed read must not become an empty catalog or wait for a Node seed.
 	modelAliases := modelalias.NewStoreWithRepository(dependencies.store)
@@ -273,7 +294,7 @@ func newInferenceComposition(
 		UsageGate:                 dependencies.usageGate,
 		Scheduling:                newSchedulingEvaluator(),
 		Strategy:                  dependencies.strategy,
-		Routes:                    activeCatalog,
+		Routes:                    activeRoutes,
 		CredentialStrategies:      dependencies.credentialRefresh,
 		Credentials:               dependencies.credentials,
 		DelegateCredentialRefresh: dependencies.delegateCredentialRefresh,

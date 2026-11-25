@@ -102,6 +102,10 @@ func writeExecutionError(response http.ResponseWriter, ctx context.Context, err 
 		writeAPIError(response, http.StatusBadRequest, "invalid_request_error", "unsupported_parameter", "Request contains a parameter the upstream protocol does not support")
 		return
 	}
+	if rejection, ok := inferenceapi.ClientKeyScopeRejectionOf(err); ok {
+		writeAPIError(response, rejection.Status, "invalid_request_error", rejection.Code, rejection.Message)
+		return
+	}
 	if inferenceapi.ApplyAdmissionRetryAfter(response.Header(), err) {
 		writeAPIError(
 			response,

@@ -1,7 +1,9 @@
 package completion
 
 import (
+	"bytes"
 	"database/sql"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -386,4 +388,158 @@ func TestSubcommandPositionKeepsHistoryWhenNoChildMatches(t *testing.T) {
 	if len(candidates) != 1 || candidates[0].Group != groupHistory || candidates[0].Value != "zzz --limit 5" {
 		t.Fatalf("应保留历史候选：%+v", candidates)
 	}
+}
+
+// 根命令位（只敲了 aih）不注入历史：避免整份历史摊进命令菜单。
+func TestRootPositionHasNoHistory(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "account list --limit 5", Count: 9}}
+	for _, candidate := range resolveCompletion([]string{""}, context) {
+		if candidate.Group == groupHistory {
+			t.Fatalf("根命令位不应出现历史：%+v", candidate)
+		}
+	}
+}
+
+// 精确命中 Provider 时历史同样降级为提示，不能变成可插入候选。
+func TestProviderExactPositionDemotesHistoryToHint(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "codex login --help", Count: 4}}
+	var real, hints []string
+	for _, candidate := range resolveCompletion([]string{"codex"}, context) {
+		if candidate.Group == groupHint {
+			hints = append(hints, candidate.Value)
+			continue
+		}
+		if candidate.Group == groupHistory {
+			t.Fatalf("Provider 精确位不应有可插入历史：%+v", candidate)
+		}
+		real = append(real, candidate.Value)
+	}
+	if len(real) != 1 || real[0] != "codex" {
+		t.Fatalf("应只留 codex：%v", real)
+	}
+	if !strings.Contains(strings.Join(hints, " | "), "历史 · aih codex login --help") {
+		t.Fatalf("历史应以提示出现：%v", hints)
+	}
+}
+
+// 与当前词完全相同的历史整行没有补全价值，不应重复出现在提示里。
+func TestHistoryHintSkipsSelfEqualEntry(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "codex", Count: 155}, {Suffix: "codex ls", Count: 2}}
+	hints := []string{}
+	for _, candidate := range resolveCompletion([]string{"codex"}, context) {
+		if candidate.Group == groupHint {
+			hints = append(hints, candidate.Value)
+		}
+	}
+	joined := strings.Join(hints, " | ")
+	if strings.Contains(joined, "历史 · aih codex（") {
+		t.Fatalf("不应提示与当前词相同的整行：%v", hints)
+	}
+	if !strings.Contains(joined, "历史 · aih codex ls") {
+		t.Fatalf("应保留其它历史提示：%v", hints)
+	}
+}
+
+// 文件/自由文本位不注入历史，否则会抢掉真正的文件补全。
+func TestFilePathPositionsDoNotInjectHistory(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "native plugin install ./local.zip", Count: 5}}
+	for _, words := range [][]string{
+		{"native", "plugin", "install", ""},
+		{"skill", "install", ""},
+		{"plugin", "validate", ""},
+	} {
+		for _, candidate := range resolveCompletion(words, context) {
+			if candidate.Group == groupHistory {
+				t.Fatalf("%v 是文件位，不应出现历史候选：%+v", words, candidate)
+			}
+		}
+	}
+}
+
+// 子命令位的空词：真实子命令全部在前，历史整行集中在最后一组。
+func TestSubcommandEmptyPositionRanksAllChildrenAboveHistory(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "account list --limit 5", Count: 3}}
+	candidates := resolveCompletion([]string{"account", ""}, context)
+	lastChild, firstHistory := -1, -1
+	for index, candidate := range candidates {
+		switch candidate.Group {
+		case groupSubcommand:
+			lastChild = index
+		case groupHistory:
+			if firstHistory < 0 {
+				firstHistory = index
+			}
+		}
+	}
+	if lastChild < 0 || firstHistory < 0 {
+		t.Fatalf("子命令与历史都应存在：%+v", candidates)
+	}
+	if firstHistory < lastChild {
+		t.Fatalf("历史必须排在所有子命令之后：%+v", candidates)
+	}
+}
+
+// 历史整行与真实子命令同名时只保留一个候选，且仍是真实子命令分组。
+func TestSubcommandHistoryDoesNotDuplicateChild(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "account list", Count: 7}}
+	count := 0
+	for _, candidate := range resolveCompletion([]string{"account", ""}, context) {
+		if candidate.Value != "list" {
+			continue
+		}
+		count++
+		if candidate.Group != groupSubcommand {
+			t.Fatalf("list 应保持子命令分组：%+v", candidate)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("list 应只出现一次，实际 %d 次", count)
+	}
+}
+
+// 不存在的命令即便历史里有同前缀整行，也只给可执行建议，不回退文件或历史。
+func TestUnknownCommandDoesNotFallBackToHistory(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "code somefile.txt", Count: 6}}
+	candidates := resolveCompletion([]string{"code", ""}, context)
+	if len(candidates) != 1 || candidates[0].Group != groupHint {
+		t.Fatalf("应只有提示：%+v", candidates)
+	}
+}
+
+// 旧分片不带 --hints：提示行不能作为候选输出，否则会被当成可插入文本。
+func TestHintLinesRequireExplicitFlag(t *testing.T) {
+	const stdio = "aih account zzz --limit 5\n"
+	withoutHints := runCompleteOutput(t, []string{"--history-stdin", "--", "account"}, stdio)
+	if strings.Contains(withoutHints, "历史") || strings.Contains(withoutHints, "下一层") {
+		t.Fatalf("未开启 --hints 时不应输出提示：%q", withoutHints)
+	}
+	if !strings.Contains(withoutHints, "account") {
+		t.Fatalf("缺少 account 候选：%q", withoutHints)
+	}
+	withHints := runCompleteOutput(t, []string{"--history-stdin", "--hints", "--", "account"}, stdio)
+	if !strings.Contains(withHints, "历史 · aih account zzz --limit 5") {
+		t.Fatalf("开启 --hints 后应输出历史提示：%q", withHints)
+	}
+}
+
+func runCompleteOutput(t *testing.T, argv []string, stdin string) string {
+	t.Helper()
+	var output bytes.Buffer
+	environment := Environment{
+		Getenv:      func(string) string { return "" },
+		UserHomeDir: func() (string, error) { return t.TempDir(), nil },
+		Stdin:       strings.NewReader(stdin),
+		StdinIsTTY:  false,
+		Stdout:      &output,
+		Stderr:      io.Discard,
+	}
+	RunComplete(argv, environment)
+	return output.String()
 }

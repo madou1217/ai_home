@@ -47,7 +47,12 @@
    - Windows 复用 `artifactstore.CreateDirLink`（FSCTL junction）；交叉编译的 Windows
      artifactstore 测试在真机通过：CreationAndPassthrough / RemoveAllKeepsTarget /
      RenameSemantics / Dangling。
-   - Windows 的 link 投影还没有在 AIH Server 层做端到端安装；Junction 基础行为已验证。
+   - Windows 端到端（CLI + Gemini，Windows 10.0.26300）：
+     `aih-go.exe skill install ... --provider gemini --link` 生成 Junction，
+     `gemini skills list --all` 列出 `remote-realmachine`；disable / enable / remove
+     均正常，remove 后链接消失、快照保留。
+   - 现有 codex/claude 的 `remote-realmachine` 已从复制迁移为 link；两者的真实 TUI
+     `/skills` 均能看到 `remote-realmachine`。
 
 ## 测试方法
 

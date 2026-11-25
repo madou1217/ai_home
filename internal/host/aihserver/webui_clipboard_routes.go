@@ -111,6 +111,7 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		{Pattern: webuiclipboardapi.Path + "/settings", Handler: handler},
 		{Pattern: webuiclipboardapi.Path + "/status", Handler: handler},
 		{Pattern: webuiclipboardapi.Path + "/servers", Handler: handler},
+		{Pattern: webuiclipboardapi.Path + "/sync-run", Handler: handler},
 		{Pattern: webuiclipboardapi.Path + "/sync/", Handler: handler, SkipPublicAlias: true},
 	}
 	return runtime, routes, nil

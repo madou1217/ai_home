@@ -10,6 +10,7 @@
 //	PATCH  /v1/management/webui/clipboard/settings
 //	GET    /v1/management/webui/clipboard/status
 //	GET    /v1/management/webui/clipboard/servers
+//	POST   /v1/management/webui/clipboard/sync-run   (public alias /v0/webui/clipboard/sync-run)
 //	POST   /v1/management/webui/clipboard/sync/run   (management-only, SkipPublicAlias)
 //	GET    /v1/management/webui/clipboard/sync/key   (management-only, SkipPublicAlias)
 //	POST   /v1/management/webui/clipboard/sync/key   (management-only, SkipPublicAlias)
@@ -106,7 +107,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleSyncKey(w, r)
 	case rest == "sync/items":
 		h.handleSyncItems(w, r)
-	case rest == "sync/run":
+	case rest == "sync/run", rest == "sync-run":
 		h.handleSyncRun(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "没有这个剪贴板路由")

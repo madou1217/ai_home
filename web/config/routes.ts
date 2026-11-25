@@ -95,6 +95,12 @@ const nodeRoutes = [
     icon: "tool",
   },
   {
+    name: "剪贴板",
+    path: "/clipboard",
+    component: "./Clipboard",
+    icon: "copy",
+  },
+  {
     name: "灵感工坊",
     path: "/studio",
     icon: "experiment",

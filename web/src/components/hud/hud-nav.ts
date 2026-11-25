@@ -26,12 +26,13 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/models': { no: '06', code: 'MODELS', order: 6 },
   '/scheduled-tasks': { no: '07', code: 'SCHEDULE', order: 7 },
   '/toolkit': { no: '08', code: 'TOOLKIT', order: 8 },
-  '/studio': { no: '09', code: 'STUDIO', order: 9 },
-  '/studio/image': { no: '09.01', code: 'IMAGE', parentPath: '/studio', order: 9.01 },
-  '/studio/translation': { no: '09.02', code: 'TRANSLATE', parentPath: '/studio', order: 9.02 },
-  '/servers': { no: '10', code: 'SERVER', order: 10 },
-  '/ssh-hosts': { no: '11', code: 'SSH', order: 11 },
-  '/settings': { no: '12', code: 'CONFIG', order: 12 },
+  '/clipboard': { no: '09', code: 'CLIPBOARD', order: 9 },
+  '/studio': { no: '10', code: 'STUDIO', order: 10 },
+  '/studio/image': { no: '10.01', code: 'IMAGE', parentPath: '/studio', order: 10.01 },
+  '/studio/translation': { no: '10.02', code: 'TRANSLATE', parentPath: '/studio', order: 10.02 },
+  '/servers': { no: '11', code: 'SERVER', order: 11 },
+  '/ssh-hosts': { no: '12', code: 'SSH', order: 12 },
+  '/settings': { no: '13', code: 'CONFIG', order: 13 },
 };
 
 function normalizeNavPath(path: string | undefined): string {
@@ -75,6 +76,6 @@ export function resolveHudRouteOrder(pathname: string | undefined): number | nul
   if (/^\/accounts\/[^/]+\/[^/]+\/models$/.test(normalized)) return 2.01;
   if (/^\/accounts\/[^/]+\/[^/]+\/quota$/.test(normalized)) return 2.02;
   if (normalized === '/toolkit/install-guide') return 8.01;
-  if (normalized === '/server-setup') return 10.01;
+  if (normalized === '/server-setup') return 11.01;
   return null;
 }

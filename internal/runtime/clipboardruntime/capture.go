@@ -184,34 +184,16 @@ func (c *Capture) canPoll() bool {
 	return c.active && c.enabled && c.capability.Supported && c.io != nil
 }
 
-// pollOnce follows the fast-path priority:
-//  1. Text-first: if non-empty text exists, ingest as text/link and skip file/image.
-//  2. Files: if text is empty and file refs exist, ingest file and skip image.
-//  3. Image: if neither text nor files exist, try reading image.
+// pollOnce prefers richer payloads: file references, then images, then text.
+// Text-first misclassified Finder/Linux file copies and browser "copy image"
+// because those pasteboards also carry a filename/URL string.
 func (c *Capture) pollOnce(ctx context.Context) {
 	if c.io == nil {
 		return
 	}
 	now := c.clock()
 
-	// 1. Text-first fast path.
-	text, ok, err := c.io.ReadText(ctx, clipboard.MaxTextBytes)
-	if err != nil {
-		// Too large or transient IO failure on text: skip this tick.
-		return
-	}
-	if ok && strings.TrimSpace(text) != "" {
-		hash := hashBytes([]byte(text))
-		if c.shouldSkip(hash, now) {
-			return
-		}
-		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{Text: text}); ingestErr == nil {
-			c.recordSeen(hash, now)
-		}
-		return
-	}
-
-	// 2. File refs when text is empty.
+	// 1. File references (multi-file aware) win over their text shadow.
 	files, ok, err := c.io.ReadFiles(ctx)
 	if err == nil && ok && len(files) > 0 {
 		canonical := canonicalFilesBytes(files)
@@ -230,21 +212,36 @@ func (c *Capture) pollOnce(ctx context.Context) {
 		}
 	}
 
-	// 3. Image fallback when both text and files are empty.
+	// 2. Image bytes when no file reference exists.
 	data, mime, ok, err := c.io.ReadImage(ctx, clipboard.MaxImageBytes)
-	if err != nil || !ok || len(data) == 0 {
+	if err == nil && ok && len(data) > 0 {
+		hash := hashBytes(data)
+		if c.shouldSkip(hash, now) {
+			return
+		}
+		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{
+			Kind: clipboard.KindImage,
+			MIME: mime,
+			Data: data,
+		}); ingestErr == nil {
+			c.recordSeen(hash, now)
+		}
 		return
 	}
-	hash := hashBytes(data)
-	if c.shouldSkip(hash, now) {
+
+	// 3. Plain text/link last.
+	text, ok, err := c.io.ReadText(ctx, clipboard.MaxTextBytes)
+	if err != nil {
 		return
 	}
-	if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{
-		Kind: clipboard.KindImage,
-		MIME: mime,
-		Data: data,
-	}); ingestErr == nil {
-		c.recordSeen(hash, now)
+	if ok && strings.TrimSpace(text) != "" {
+		hash := hashBytes([]byte(text))
+		if c.shouldSkip(hash, now) {
+			return
+		}
+		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{Text: text}); ingestErr == nil {
+			c.recordSeen(hash, now)
+		}
 	}
 }
 

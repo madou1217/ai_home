@@ -81,11 +81,22 @@ func (d *darwinIO) ReadFiles(ctx context.Context) ([]string, bool, error) {
 	defer cancel()
 
 	script := []string{
+		"set outText to \"\"",
 		"try",
-		"  return POSIX path of (the clipboard as «class furl»)",
+		"  set itemList to the clipboard as list",
+		"  repeat with itemRef in itemList",
+		"    try",
+		"      set outText to outText & (POSIX path of (itemRef as alias)) & linefeed",
+		"    end try",
+		"  end repeat",
 		"on error",
-		"  error number -128",
+		"  try",
+		"    set outText to POSIX path of (the clipboard as «class furl»)",
+		"  on error",
+		"    error number -128",
+		"  end try",
 		"end try",
+		"return outText",
 	}
 	args := make([]string, 0, len(script)*2)
 	for _, line := range script {
@@ -100,7 +111,17 @@ func (d *darwinIO) ReadFiles(ctx context.Context) ([]string, bool, error) {
 	if trimmed == "" {
 		return nil, false, nil
 	}
-	return []string{filepath.Clean(trimmed)}, true, nil
+	files := make([]string, 0, 4)
+	for _, line := range strings.Split(trimmed, "\n") {
+		path := strings.TrimSpace(line)
+		if path != "" {
+			files = append(files, filepath.Clean(path))
+		}
+	}
+	if len(files) == 0 {
+		return nil, false, nil
+	}
+	return files, true, nil
 }
 
 func (d *darwinIO) ReadImage(ctx context.Context, maxBytes int) ([]byte, string, bool, error) {
@@ -211,14 +232,17 @@ func (d *darwinIO) WriteFiles(ctx context.Context, files []string) error {
 	if len(files) == 0 {
 		return clipboard.ErrEmptyContent
 	}
-	abs, err := filepath.Abs(strings.TrimSpace(files[0]))
-	if err != nil || abs == "" {
-		return errors.New("invalid file path")
+	refs := make([]string, 0, len(files))
+	for _, file := range files {
+		abs, err := filepath.Abs(strings.TrimSpace(file))
+		if err != nil || abs == "" {
+			return errors.New("invalid file path")
+		}
+		refs = append(refs, `(POSIX file "`+escapeAppleScriptString(abs)+`")`)
 	}
-	quotedPath := escapeAppleScriptString(abs)
 	cmdCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, "osascript", "-e", `set the clipboard to (POSIX file "`+quotedPath+`")`)
+	cmd := exec.CommandContext(cmdCtx, "osascript", "-e", `set the clipboard to {`+strings.Join(refs, ", ")+`}`)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run()

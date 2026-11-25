@@ -30,6 +30,11 @@ type Candidate struct {
 	Configured   bool     `json:"configured"`
 	Status       string   `json:"status"`
 	RemainingPct *float64 `json:"remainingPct"`
+	// SchedulableStatus / QuotaStatus 是账号页同源的可调度事实。
+	// 管理面里 Status 只有 up/down（启停），不能当健康度：把 up 当成病态会让
+	// 「健康优先」永远失效，只能退化成余量/最近使用排序。
+	SchedulableStatus string `json:"schedulableStatus"`
+	QuotaStatus       string `json:"quotaStatus"`
 }
 
 // Options 描述一次选号请求。
@@ -112,8 +117,20 @@ func Pick(ctx context.Context, options Options) (Candidate, bool, error) {
 	return chosen, true, nil
 }
 
+// isHealthy 判定裸启动口径的「健康」：启用、未被调度阻塞、额度未耗尽。
+//
+// Status 是启停事实（up/down），永远非空；用它判健康会让所有账号都被当成不健康，
+// 健康优先形同虚设。真正的运行/额度阻塞由 schedulableStatus 与 quotaStatus 表达，
+// 缺字段（旧服务端）时按健康处理，保持与历史选号一致的降级。
 func isHealthy(candidate Candidate) bool {
-	return strings.TrimSpace(candidate.Status) == ""
+	if strings.EqualFold(strings.TrimSpace(candidate.Status), "down") {
+		return false
+	}
+	schedulable := strings.TrimSpace(candidate.SchedulableStatus)
+	if schedulable != "" && !strings.EqualFold(schedulable, "schedulable") {
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(candidate.QuotaStatus), "exhausted")
 }
 
 func remaining(candidate Candidate) float64 {

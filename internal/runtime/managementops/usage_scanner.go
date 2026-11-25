@@ -30,9 +30,12 @@ import (
 )
 
 const (
-	codexUsageStreamLimit      = 16
-	codexUsageEventLimit       = 32
-	codexScanContextVersion    = 2
+	codexUsageStreamLimit   = 16
+	codexUsageEventLimit    = 32
+	codexScanContextVersion = 2
+	// claudeScanContextVersion 提升时触发 Claude 会话文件全量重读：低版本扫描
+	// 会把流式 partial 帧当成调用入库（见 claudeUsageFrameSettled），必须重扫修正。
+	claudeScanContextVersion   = 2
 	codexDefaultScanByteBudget = 4 * 1024 * 1024
 	firstJSONLEntryChunkBytes  = 8 * 1024
 	firstJSONLEntryMaxBytes    = 256 * 1024
@@ -1936,6 +1939,36 @@ func isClaudeRealUserPrompt(message map[string]any) bool {
 	return false
 }
 
+// claudeUsageFrameSettled 判断一条 assistant 记录是否携带服务端结算后的 usage。
+//
+// Claude Code 在流式回复期间会先落若干 partial 帧：同一个 message.id、stop_reason
+// 为空、output_tokens 为 0，input_tokens 却是请求前的上下文体量估计（常见 60 万～
+// 100 万），且 usage 字段形状与服务端不同（如 claude_cache_creation_5_m_tokens）。
+// 真正结算的 usage 只出现在带 stop_reason 的最终块里；把 partial 帧当成一次调用，
+// 输入会被放大数倍、缓存与输出被抹成 0。
+//
+// 判定只用 stop_reason/output_tokens 两个语义字段：空响应（stop_reason 有值、
+// output_tokens=0）仍然入账；只有两者都缺失的帧才视为未结算，等最终块覆盖。
+func claudeUsageFrameSettled(message, usage map[string]any) bool {
+	if strVal(message, "stop_reason") != "" {
+		return true
+	}
+	return int64FromMap(usage, "output_tokens") > 0
+}
+
+// claudeUsageObservationMoreComplete 决定同一 message.id 的多个观察里保留哪一个：
+// 输出 token 优先，其次总 token，最后取更晚的时间戳。结算帧的输出总是大于
+// partial 帧的 0，因此重读/增量扫描都会收敛到最终块。
+func claudeUsageObservationMoreComplete(next, current UsageRecordInput) bool {
+	if next.OutputTokens != current.OutputTokens {
+		return next.OutputTokens > current.OutputTokens
+	}
+	if next.TotalTokens != current.TotalTokens {
+		return next.TotalTokens > current.TotalTokens
+	}
+	return next.TimestampMS >= current.TimestampMS
+}
+
 func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fileScanOutcome, error) {
 	stat, err := os.Stat(filePath)
 	if err != nil {
@@ -1946,6 +1979,11 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 		return fileScanOutcome{}, err
 	}
 	startOffset := currentState.Offset
+	// 旧版本扫描把 partial 帧入了库，且游标已越过这些行；只靠增量扫描无法修正，
+	// 所以首次见到旧上下文版本时从文件头重读，由 UpsertUsageBatch 覆盖错误行。
+	if int64(contextFloat64(currentState.ScanContext, "scannerVersion")) < claudeScanContextVersion {
+		startOffset = 0
+	}
 	if stat.Size() < currentState.Offset {
 		startOffset = 0
 	}
@@ -1955,6 +1993,7 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 	var startedAtMS, updatedAtMS int64
 	promptCount := 0
 	var records []UsageRecordInput
+	recordIndex := make(map[string]int)
 	var promptEvents []UsagePromptEventInput
 
 	_, err = readJSONLFromOffset(filePath, startOffset, -1, func(line string, lineOffset int64) {
@@ -2009,6 +2048,10 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 		if model == "" || model == "<synthetic>" || model == "delivery-mirror" {
 			return
 		}
+		if !claudeUsageFrameSettled(msg, usage) {
+			// 流式 partial 帧：等最终块携带结算后的 usage 再入账。
+			return
+		}
 		input := int64FromMap(usage, "input_tokens")
 		output := int64FromMap(usage, "output_tokens")
 		cacheCreate := int64FromMap(usage, "cache_creation_input_tokens")
@@ -2021,7 +2064,7 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 		if msgID != "" {
 			ek = "claude:message:" + msgID
 		}
-		records = append(records, UsageRecordInput{
+		record := UsageRecordInput{
 			EventKey:                 ek,
 			Provider:                 "claude",
 			SourceKind:               "session_jsonl",
@@ -2036,13 +2079,24 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 			Project:                  inferProjectFromCwd(cwd, projectDir),
 			CWD:                      cwd,
 			GitBranch:                gitBranch,
-		})
+		}
+		// 同一 message.id 会按内容块重复出现（thinking/text/tool_use），只保留最完整
+		// 的一次观察，避免同批次内先入的块拿到 INSERT OR IGNORE 的优先权。
+		if index, found := recordIndex[ek]; found {
+			if claudeUsageObservationMoreComplete(record, records[index]) {
+				records[index] = record
+			}
+			return
+		}
+		recordIndex[ek] = len(records)
+		records = append(records, record)
 	})
 	if err != nil {
 		return fileScanOutcome{}, err
 	}
 
-	ins, err := store.InsertUsageBatch(ctx, records)
+	// 用 upsert：旧版本扫描可能已把 partial 帧写进库，后到的结算帧必须能覆盖。
+	ins, err := store.UpsertUsageBatch(ctx, records)
 	if err != nil {
 		return fileScanOutcome{}, err
 	}
@@ -2068,12 +2122,13 @@ func scanClaudeFile(ctx context.Context, store *UsageStore, filePath string) (fi
 		Size:   stat.Size(),
 		Offset: stat.Size(),
 		ScanContext: map[string]any{
-			"sessionId":   sessionID,
-			"cwd":         cwd,
-			"gitBranch":   gitBranch,
-			"version":     version,
-			"startedAtMs": startedAtMS,
-			"updatedAtMs": updatedAtMS,
+			"sessionId":      sessionID,
+			"cwd":            cwd,
+			"gitBranch":      gitBranch,
+			"version":        version,
+			"startedAtMs":    startedAtMS,
+			"updatedAtMs":    updatedAtMS,
+			"scannerVersion": claudeScanContextVersion,
 		},
 	}); err != nil {
 		return fileScanOutcome{}, err

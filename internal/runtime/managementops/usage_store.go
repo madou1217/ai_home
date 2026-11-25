@@ -764,22 +764,9 @@ func (s *UsageStore) runImmediateTx(ctx context.Context, fn func(*sql.Tx) error)
 
 // InsertUsageBatch 幂等批量写入模型用量行。
 func (s *UsageStore) InsertUsageBatch(ctx context.Context, records []UsageRecordInput) (int, error) {
-	if s == nil || s.db == nil || len(records) == 0 {
-		return 0, nil
-	}
-	pricing, err := s.loadPricingSnapshot(ctx, nil)
+	normalized, err := s.normalizeUsageRecordBatch(ctx, records)
 	if err != nil {
 		return 0, err
-	}
-	normalized := make([]*normalizedUsageRecord, 0, len(records))
-	for _, raw := range records {
-		item, normErr := normalizeUsageRecordInput(raw, s.attribution, pricing)
-		if normErr != nil {
-			return 0, normErr
-		}
-		if item != nil {
-			normalized = append(normalized, item)
-		}
 	}
 	if len(normalized) == 0 {
 		return 0, nil
@@ -796,6 +783,60 @@ func (s *UsageStore) InsertUsageBatch(ctx context.Context, records []UsageRecord
 		s.InvalidateStatsCache()
 	}
 	return written, nil
+}
+
+// UpsertUsageBatch 在「后到的观察更完整」时修正既有用量行，否则保持原样。
+//
+// 只有 Claude Code 扫描需要它：流式回复期间会先写 partial 帧（上下文体量估计、
+// 输出为 0），旧版本或更早的扫描可能已按 partial 帧入库；重扫读到结算帧时必须
+// 覆盖。修正只更新用量事实与归属元数据，不覆盖 account_ref/request_id——账号归属
+// 可能已被归因对账写入，修正 token 不能把它抹掉。
+func (s *UsageStore) UpsertUsageBatch(ctx context.Context, records []UsageRecordInput) (int, error) {
+	normalized, err := s.normalizeUsageRecordBatch(ctx, records)
+	if err != nil {
+		return 0, err
+	}
+	if len(normalized) == 0 {
+		return 0, nil
+	}
+	var written int
+	if err := s.runImmediateTx(ctx, func(tx *sql.Tx) error {
+		var txErr error
+		written, txErr = upsertNormalizedUsageTx(ctx, tx, normalized, s.now().UnixMilli())
+		return txErr
+	}); err != nil {
+		return 0, err
+	}
+	if written > 0 {
+		s.InvalidateStatsCache()
+	}
+	return written, nil
+}
+
+// normalizeUsageRecordBatch 是写入前的公共归一化步骤：定价快照只读一次，
+// 缺键或非法行被丢弃。
+func (s *UsageStore) normalizeUsageRecordBatch(
+	ctx context.Context,
+	records []UsageRecordInput,
+) ([]*normalizedUsageRecord, error) {
+	if s == nil || s.db == nil || len(records) == 0 {
+		return nil, nil
+	}
+	pricing, err := s.loadPricingSnapshot(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	normalized := make([]*normalizedUsageRecord, 0, len(records))
+	for _, raw := range records {
+		item, normErr := normalizeUsageRecordInput(raw, s.attribution, pricing)
+		if normErr != nil {
+			return nil, normErr
+		}
+		if item != nil {
+			normalized = append(normalized, item)
+		}
+	}
+	return normalized, nil
 }
 
 func insertNormalizedUsageTx(ctx context.Context, tx *sql.Tx, items []*normalizedUsageRecord, createdAtMS int64) (int, error) {
@@ -829,6 +870,60 @@ func insertNormalizedUsageTx(ctx context.Context, tx *sql.Tx, items []*normalize
 		}
 	}
 	return inserted, nil
+}
+
+// upsertNormalizedUsageTx 写入用量行；同一 event_key 只在新的输出 token 更多
+// （或输出相同但总量更大）时覆盖，避免 partial 帧的陈旧值反过来盖掉结算帧。
+// 账号归属/请求身份保持已入库值，修正 token 不重置归因。
+func upsertNormalizedUsageTx(ctx context.Context, tx *sql.Tx, items []*normalizedUsageRecord, createdAtMS int64) (int, error) {
+	if len(items) == 0 {
+		return 0, nil
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO model_usage_records (
+			event_key, provider, account_ref, session_id, request_id, source_kind, model,
+			input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
+			reasoning_output_tokens, total_tokens, cost_usd, timestamp_ms,
+			project, cwd, git_branch, created_at_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(event_key) DO UPDATE SET
+			model = excluded.model,
+			session_id = excluded.session_id,
+			source_kind = excluded.source_kind,
+			input_tokens = excluded.input_tokens,
+			output_tokens = excluded.output_tokens,
+			cache_read_input_tokens = excluded.cache_read_input_tokens,
+			cache_creation_input_tokens = excluded.cache_creation_input_tokens,
+			reasoning_output_tokens = excluded.reasoning_output_tokens,
+			total_tokens = excluded.total_tokens,
+			cost_usd = excluded.cost_usd,
+			timestamp_ms = excluded.timestamp_ms,
+			project = excluded.project,
+			cwd = excluded.cwd,
+			git_branch = excluded.git_branch
+		WHERE excluded.output_tokens > model_usage_records.output_tokens
+			OR (excluded.output_tokens = model_usage_records.output_tokens
+				AND excluded.total_tokens > model_usage_records.total_tokens)`)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = stmt.Close() }()
+	written := 0
+	for _, r := range items {
+		res, execErr := stmt.ExecContext(ctx,
+			r.EventKey, r.Provider, r.AccountRef, r.SessionID, r.RequestID, r.SourceKind, r.Model,
+			r.InputTokens, r.OutputTokens, r.CacheReadInputTokens, r.CacheCreationInputTokens,
+			r.ReasoningOutputTokens, r.TotalTokens, r.CostUSD, r.TimestampMS,
+			r.Project, r.CWD, r.GitBranch, createdAtMS,
+		)
+		if execErr != nil {
+			return written, execErr
+		}
+		if rows, _ := res.RowsAffected(); rows > 0 {
+			written++
+		}
+	}
+	return written, nil
 }
 
 // UpsertSessions 增量合并或更新会话元数据。

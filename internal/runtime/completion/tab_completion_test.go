@@ -268,8 +268,9 @@ func TestNativePluginCandidatesComeFromManagedState(t *testing.T) {
 	}
 }
 
-// 命令位不再被历史整句占用：精确命令只留一个候选，并附下一层提示。
-func TestCommandPositionExactSuppressesHistoryAndHintsNextLevel(t *testing.T) {
+// 精确命中命令时，历史仍然出现，但降级成提示：可插入候选必须唯一，
+// shell 才会补空格；历史在下一层位置仍可选中。
+func TestCommandPositionExactKeepsHistoryAsHint(t *testing.T) {
 	context := resolverForTest()
 	context.historyEntries = []historyEntry{{Suffix: "account show codex:41", Count: 3}, {Suffix: "account list --limit 5", Count: 2}}
 	candidates := resolveCompletion([]string{"account"}, context)
@@ -284,8 +285,56 @@ func TestCommandPositionExactSuppressesHistoryAndHintsNextLevel(t *testing.T) {
 	if len(real) != 1 || real[0] != "account" {
 		t.Fatalf("命令位应只留 account，实际 %v", real)
 	}
-	if len(hints) != 1 || !strings.Contains(hints[0], "list") || !strings.Contains(hints[0], "show") {
-		t.Fatalf("缺少下一层提示：%v", hints)
+	joinedHints := strings.Join(hints, " | ")
+	for _, wanted := range []string{"下一层", "list", "show", "历史 · aih account list --limit 5"} {
+		if !strings.Contains(joinedHints, wanted) {
+			t.Fatalf("提示缺少 %q：%v", wanted, hints)
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Group != groupHint && strings.Contains(candidate.Value, " ") {
+			t.Fatalf("命令位不应有可插入的整行历史：%+v", candidate)
+		}
+	}
+}
+
+// 命令只是前缀时，历史整行仍是候选，但必须排在真实命令之后。
+func TestCommandPositionPrefixRanksHistoryBelowCommands(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "account show codex:41", Count: 2}, {Suffix: "account list --limit 5", Count: 3}}
+	candidates := resolveCompletion([]string{"acc"}, context)
+	commandIndex, historyIndex := -1, -1
+	for index, candidate := range candidates {
+		if candidate.Group == groupHistory && historyIndex < 0 {
+			historyIndex = index
+		}
+		if candidate.Value == "account" && candidate.Group == groupCommand {
+			commandIndex = index
+		}
+	}
+	if commandIndex < 0 {
+		t.Fatalf("缺少 account 命令候选：%+v", candidates)
+	}
+	if historyIndex < 0 {
+		t.Fatalf("前缀位应保留历史候选：%+v", candidates)
+	}
+	if commandIndex > historyIndex {
+		t.Fatalf("命令必须排在历史之前：%+v", candidates)
+	}
+	if candidates[historyIndex].Value != "account list --limit 5" {
+		t.Fatalf("历史候选应按使用次数排序：%+v", candidates[historyIndex])
+	}
+}
+
+// 反复出现的历史命令优先于只跑过一次的。
+func TestHistoryRankingPrefersFrequent(t *testing.T) {
+	entries := []historyEntry{
+		{Suffix: "ls codex", Count: 1, LastIndex: 9},
+		{Suffix: "ls claude", Count: 8, LastIndex: 2},
+	}
+	ranked := listHistoryRemainders(entries, "", "l", 5)
+	if len(ranked) != 2 || ranked[0].Suffix != "ls claude" {
+		t.Fatalf("使用次数应优先于最近使用：%+v", ranked)
 	}
 }
 

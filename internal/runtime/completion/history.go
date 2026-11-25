@@ -127,7 +127,10 @@ func collectAihHistory(commands []string) []historyEntry {
 	return entries
 }
 
-// rankHistoryCandidates 按前缀 + 最新 + 最常用排序。
+// rankHistoryCandidates 按前缀 + 最常用 + 最新排序。
+//
+// 反复出现的历史命令比只跑过一次的更可能是"正确的那条"，所以次数优先；
+// 次数相同再按最近使用排序。
 func rankHistoryCandidates(entries []historyEntry, prefix string, limit int) []historyEntry {
 	prefix = strings.TrimSpace(prefix)
 	if limit < 1 {
@@ -141,10 +144,10 @@ func rankHistoryCandidates(entries []historyEntry, prefix string, limit int) []h
 		filtered = append(filtered, entry)
 	}
 	sort.SliceStable(filtered, func(left, right int) bool {
-		if filtered[left].LastIndex != filtered[right].LastIndex {
-			return filtered[left].LastIndex > filtered[right].LastIndex
+		if filtered[left].Count != filtered[right].Count {
+			return filtered[left].Count > filtered[right].Count
 		}
-		return filtered[left].Count > filtered[right].Count
+		return filtered[left].LastIndex > filtered[right].LastIndex
 	})
 	if len(filtered) > limit {
 		filtered = filtered[:limit]

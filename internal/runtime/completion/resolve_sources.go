@@ -16,7 +16,12 @@ func addHistoryCandidates(target *collector, context *resolverContext, current, 
 	if limit <= 0 {
 		limit = 8
 	}
+	trimmed := strings.TrimSpace(current)
 	for _, entry := range listHistoryRemainders(context.historyEntries, priorText, current, limit) {
+		// 和当前词一模一样的整行没有补全价值，只会占位置。
+		if entry.Suffix == trimmed {
+			continue
+		}
 		target.add(entry.Suffix, fmt.Sprintf("用过 %d 次", entry.Count), groupHistory, "")
 	}
 }
@@ -343,25 +348,29 @@ func listCompletionServerProfiles(context *resolverContext, current string) []re
 	return context.remoteTargetLister(remoteTargetRequest{Action: "profiles", Current: current})
 }
 
-// addCommandPositionCandidates 处理命令位（还没敲空格）：
-//   - 精确命中一个命令/Provider 时只给这一个候选，让 shell 自动补空格，
-//     同时用提示列出下一层，避免再按一次 TAB 才发现有什么；
-//   - 否则按前缀给出顶层命令/Provider；
-//   - 都没有时给"没有这条命令，你可能要 …"的提示。
+// addCommandPositionCandidates 处理命令位（还没敲空格），按优先级分层：
 //
-// 命令位不再注入历史整句：历史残句会和子命令抢位置，且插进来会跳过子命令展开。
-func addCommandPositionCandidates(target *collector, current string) {
+//  1. 精确命中一个命令/Provider：它必须是唯一的可插入候选，shell 才会自动补空格；
+//     下一层用提示列出，历史命中也降级成提示（看得见，但不和命令抢位置）。
+//  2. 只是前缀命中：真实命令排在前面，历史整句作为低优先级候选跟在其后，
+//     仍然可以选中并补完整行。
+//  3. 什么都没命中：给出"没有这条命令，你可能要 …"的可执行建议。
+//
+// 只打了 aih 还没敲任何字符时不注入历史：那会把整份历史摊到命令菜单里。
+func addCommandPositionCandidates(target *collector, context *resolverContext, current string) {
 	trimmed := strings.TrimSpace(current)
 	if trimmed != "" {
 		if node, ok := findTopLevelCommand(trimmed); ok {
 			target.add(node.Name, node.Summary, groupCommand, "")
 			target.addHint(nextLevelHintForNode(&node))
+			addHistoryHints(target, context, trimmed)
 			return
 		}
 		if isProviderName(trimmed) {
 			provider := normalizeProviderID(trimmed)
 			target.add(provider, describeProvider(provider), groupProvider, "")
 			target.addHint(nextLevelHintForProvider(provider))
+			addHistoryHints(target, context, trimmed)
 			return
 		}
 	}
@@ -375,8 +384,28 @@ func addCommandPositionCandidates(target *collector, current string) {
 	for _, provider := range providerNames() {
 		target.add(provider, describeProvider(provider), groupProvider, "")
 	}
+	if trimmed != "" {
+		// 历史放在真实命令之后：同一个词既能补成命令，也能补成用过的整行，
+		// 但命令永远先出现（zsh 按分组顺序展示，组内再按字母序）。
+		addHistoryCandidates(target, context, trimmed, "")
+	}
 	if len(target.items) == 0 && trimmed != "" {
 		addUnknownCommandHint(target, trimmed)
+	}
+}
+
+// addHistoryHints 把历史命中降级成"看得见、插不进"的提示。
+// 只用于精确命中命令的位置：那里必须只有唯一可插入候选，否则 shell 不会补空格。
+func addHistoryHints(target *collector, context *resolverContext, current string) {
+	if context == nil || len(context.historyEntries) == 0 {
+		return
+	}
+	trimmed := strings.TrimSpace(current)
+	for _, entry := range listHistoryRemainders(context.historyEntries, "", current, 3) {
+		if entry.Suffix == trimmed {
+			continue
+		}
+		target.addHint(fmt.Sprintf("历史 · aih %s（用过 %d 次）", entry.Suffix, entry.Count))
 	}
 }
 

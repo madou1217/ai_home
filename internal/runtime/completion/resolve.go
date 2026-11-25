@@ -261,7 +261,7 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	}
 
 	if len(prior) == 0 {
-		addCommandPositionCandidates(target, current)
+		addCommandPositionCandidates(target, context, current)
 		return target.items
 	}
 

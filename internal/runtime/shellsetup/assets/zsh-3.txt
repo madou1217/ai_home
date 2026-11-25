@@ -138,6 +138,23 @@ _aih_complete() {
       (( ${#_aih_multi} )) && compadd -V "$_aih_group" -X "$_aih_group" -Q -S '' -d _aih_multi_descs -- "${_aih_multi[@]}"
       continue
     fi
+    if [[ "$_aih_group" == "历史（你用过）" ]]; then
+      # 历史是一条完整命令：单词/多词混排成一次 compadd，顺序即后端给的优先级；
+      # 统一 -S '' 不补空格，避免把 “aih account list” 变成多一个空格的脏命令。
+      local -a _aih_hist_values _aih_hist_descs
+      local _aih_hist_line _aih_hist_display
+      for _aih_hist_line in "${(@)_aih_lines}"; do
+        [[ -z "$_aih_hist_line" ]] && continue
+        _aih_parse_line "$_aih_hist_line"
+        [[ "$_aih_p_group" == "历史（你用过）" ]] || continue
+        _aih_hist_display="$_aih_p_value"
+        [[ -n "$_aih_p_desc" ]] && _aih_hist_display="${_aih_p_value}  ${_aih_p_desc}"
+        _aih_hist_values+=("$_aih_p_value")
+        _aih_hist_descs+=("$_aih_hist_display")
+      done
+      (( ${#_aih_hist_values} )) && compadd -V "$_aih_group" -X "$_aih_group" -Q -S '' -d _aih_hist_descs -- "${_aih_hist_values[@]}"
+      continue
+    fi
     (( ${#_aih_values} )) && compadd -J "$_aih_group" -X "$_aih_group" -d _aih_descs -- "${_aih_values[@]}"
     (( ${#_aih_multi} )) && compadd -J "$_aih_group" -X "$_aih_group" -Q -S '' -d _aih_multi_descs -- "${_aih_multi[@]}"
   done

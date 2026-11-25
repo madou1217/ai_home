@@ -127,8 +127,10 @@ func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) 
 		if trimmed != "" {
 			var record claudeRecord
 			if json.Unmarshal([]byte(trimmed), &record) == nil {
-				if cwd == "" && record.Cwd != "" && isDirectory(record.Cwd) {
-					cwd = record.Cwd
+				// 会话记录里的 cwd 是当时的事实；目录可能已被删除，但显示历史项目时
+				// 仍然比按 sanitized 目录名猜测准确。
+				if cwd == "" && record.Cwd != "" && filepath.IsAbs(record.Cwd) {
+					cwd = filepath.Clean(record.Cwd)
 				}
 				if !record.IsSidechain {
 					sawMainThread = true
@@ -219,12 +221,65 @@ func sanitizePath(name string) string {
 	return builder.String()
 }
 
+// resolveClaudePathFromRoot 从绝对路径根开始反查 sanitized 路径。
+//
+// sanitized 的 '-' 同时代表 '/'、'.'、'_' 和原本的 '-'，单靠字符串无法
+// 区分；这里逐级读取真实目录，用 sanitizePath(entry.Name()) 去消费编码串。
+// 找不到时由调用方回退到旧算法。
+func resolveClaudePathFromRoot(remaining string) (string, bool) {
+	return resolveClaudePathFromDir("/", remaining)
+}
+
+func resolveClaudePathFromDir(dir, remaining string) (string, bool) {
+	if remaining == "" {
+		return dir, true
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "." || name == ".." {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		if !isDirectory(candidate) {
+			continue
+		}
+		encoded := sanitizePath(name)
+		if encoded == "" || !strings.HasPrefix(remaining, encoded) {
+			continue
+		}
+		rest := remaining[len(encoded):]
+		if rest == "" {
+			return candidate, true
+		}
+		if !strings.HasPrefix(rest, "-") {
+			continue
+		}
+		if resolved, ok := resolveClaudePathFromDir(candidate, rest[1:]); ok {
+			return resolved, true
+		}
+	}
+	return "", false
+}
+
 // resolveClaudeProjectPath 复刻 Node 的三级回退：
-// 已知路径正向匹配 → 逐段贪心尝试 / . - _ → sanitized 名字按 '-' 摊平成 '/'.
+// 已知路径正向匹配 → 按真实目录树反查 → 逐段贪心尝试 / . - _ → sanitized 名字按 '-' 摊平成 '/'。
 func resolveClaudeProjectPath(dirName string, knownPaths []string) string {
 	for _, knownPath := range knownPaths {
 		if knownPath != "" && sanitizePath(knownPath) == dirName {
 			return knownPath
+		}
+	}
+
+	// sanitized 名字把所有非字母数字都压成 '-'，无法直接还原；按真实目录树
+	// 反查（目录名本身也走 sanitizePath 比较），可以正确处理 aih-acp-probe...
+	// 这类带连字符的目录名和 .claude 这类带点的目录名。
+	if strings.HasPrefix(dirName, "-") {
+		if resolved, ok := resolveClaudePathFromRoot(dirName[1:]); ok {
+			return resolved
 		}
 	}
 

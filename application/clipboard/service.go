@@ -471,6 +471,11 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 			settings.MaxItemBytes = parsed
 		}
 	}
+	if v, ok := raw[SettingQuickOrbitPosition]; ok {
+		if normalized, valid := NormalizeQuickOrbitPosition(v); valid {
+			settings.QuickOrbitPosition = normalized
+		}
+	}
 	return settings, nil
 }
 
@@ -487,6 +492,14 @@ func (s *Service) UpdateSettings(ctx context.Context, patch SettingsPatch) (Sett
 	}
 	if patch.MaxItemBytes != nil && (*patch.MaxItemBytes < 1024 || *patch.MaxItemBytes > MaxImageBytes) {
 		return Settings{}, fmt.Errorf("%w: maxItemBytes must be between 1024 and %d", ErrInvalidInput, MaxImageBytes)
+	}
+	var quickOrbitPosition string
+	if patch.QuickOrbitPosition != nil {
+		normalized, valid := NormalizeQuickOrbitPosition(*patch.QuickOrbitPosition)
+		if !valid {
+			return Settings{}, fmt.Errorf("%w: quickOrbitPosition must be bottom, left, or right", ErrInvalidInput)
+		}
+		quickOrbitPosition = normalized
 	}
 	if patch.RetentionDays != nil {
 		if err := s.store.SetSetting(ctx, SettingRetentionDays, strconv.Itoa(*patch.RetentionDays), nowMs); err != nil {
@@ -515,6 +528,11 @@ func (s *Service) UpdateSettings(ctx context.Context, patch SettingsPatch) (Sett
 	}
 	if patch.SyncTargetProfileID != nil {
 		if err := s.store.SetSetting(ctx, SettingSyncTargetProfileID, strings.TrimSpace(*patch.SyncTargetProfileID), nowMs); err != nil {
+			return Settings{}, err
+		}
+	}
+	if patch.QuickOrbitPosition != nil {
+		if err := s.store.SetSetting(ctx, SettingQuickOrbitPosition, quickOrbitPosition, nowMs); err != nil {
 			return Settings{}, err
 		}
 	}
@@ -582,16 +600,17 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	}
 
 	return Status{
-		Platform:       s.platform,
-		Capture:        captureStatus,
-		Sync:           syncStatus,
-		DeviceID:       device.ID,
-		DeviceName:     device.Name,
-		KeyFingerprint: fingerprint,
-		Transports:     transports,
-		ItemCount:      total,
-		PinnedCount:    pinned,
-		Devices:        devices,
+		Platform:           s.platform,
+		Capture:            captureStatus,
+		Sync:               syncStatus,
+		DeviceID:           device.ID,
+		DeviceName:         device.Name,
+		KeyFingerprint:     fingerprint,
+		Transports:         transports,
+		ItemCount:          total,
+		PinnedCount:        pinned,
+		Devices:            devices,
+		QuickOrbitPosition: settings.QuickOrbitPosition,
 	}, nil
 }
 

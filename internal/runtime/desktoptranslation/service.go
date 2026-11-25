@@ -31,6 +31,8 @@ type Options struct {
 	// clipboard runtime is unavailable, and read on every configure send so WebUI
 	// toggles take effect without restarting the helper.
 	ClipboardEnabled func() bool
+	// QuickOrbitPosition reports the configured Quick Orbit anchor (bottom|left|right).
+	QuickOrbitPosition func() string
 }
 type focusLease struct{ Revision, Observed, Until int64 }
 type operation struct {

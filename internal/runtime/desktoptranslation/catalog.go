@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/translation"
@@ -106,6 +107,13 @@ func (s *Service) Configure() {
 	config["clipboardKey"] = ""
 	clipboardEnabled := s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()
 	config["clipboardEnabled"] = clipboardEnabled
+	quickOrbitPosition := "bottom"
+	if s.options.QuickOrbitPosition != nil {
+		if pos := strings.TrimSpace(s.options.QuickOrbitPosition()); pos != "" {
+			quickOrbitPosition = pos
+		}
+	}
+	config["quickOrbitPosition"] = quickOrbitPosition
 	// Never hand the management key to a helper that has no clipboard access.
 	if clipboardEnabled && s.options.ManagementKey != nil && localOrigin != "" {
 		config["clipboardKey"] = s.options.ManagementKey()

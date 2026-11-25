@@ -24,9 +24,10 @@ type clipboardRuntime struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 
-	desktopEnabled atomic.Bool
-	hooksMu        sync.Mutex
-	settingsHooks  []func()
+	desktopEnabled     atomic.Bool
+	quickOrbitPosition atomic.Value
+	hooksMu            sync.Mutex
+	settingsHooks      []func()
 }
 
 // DesktopEnabled reports capture||sync for the native desktop shortcut.
@@ -35,6 +36,17 @@ func (r *clipboardRuntime) DesktopEnabled() bool {
 		return false
 	}
 	return r.desktopEnabled.Load()
+}
+
+// QuickOrbitPosition returns the configured Quick Orbit anchor (bottom|left|right).
+func (r *clipboardRuntime) QuickOrbitPosition() string {
+	if r == nil {
+		return clipboard.DefaultQuickOrbitPosition
+	}
+	if pos, ok := r.quickOrbitPosition.Load().(string); ok && pos != "" {
+		return pos
+	}
+	return clipboard.DefaultQuickOrbitPosition
 }
 
 // AddSettingsHook registers a callback for clipboard settings changes, whether
@@ -53,8 +65,15 @@ func (r *clipboardRuntime) notifySettings(settings clipboard.Settings) {
 		return
 	}
 	// HTTP PATCH and the 2s watcher both observe the same write; only notify
-	// lifecycle hooks on an actual on/off transition to avoid racing toggles.
-	if r.desktopEnabled.Swap(settings.CaptureEnabled || settings.SyncEnabled) == (settings.CaptureEnabled || settings.SyncEnabled) {
+	// lifecycle hooks when desktop-relevant settings actually change.
+	enabled := settings.CaptureEnabled || settings.SyncEnabled
+	pos, valid := clipboard.NormalizeQuickOrbitPosition(settings.QuickOrbitPosition)
+	if !valid {
+		pos = clipboard.DefaultQuickOrbitPosition
+	}
+	enabledChanged := r.desktopEnabled.Swap(enabled) != enabled
+	prevPos, _ := r.quickOrbitPosition.Swap(pos).(string)
+	if !enabledChanged && prevPos == pos {
 		return
 	}
 	r.hooksMu.Lock()
@@ -114,9 +133,13 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		syncer:  syncer,
 		cancel:  runCancel,
 	}
+	runtime.quickOrbitPosition.Store(clipboard.DefaultQuickOrbitPosition)
 	if settings, err := service.GetSettings(ctx); err == nil {
 		capture.SetEnabled(settings.CaptureEnabled)
 		runtime.desktopEnabled.Store(settings.CaptureEnabled || settings.SyncEnabled)
+		if pos, valid := clipboard.NormalizeQuickOrbitPosition(settings.QuickOrbitPosition); valid {
+			runtime.quickOrbitPosition.Store(pos)
+		}
 	}
 	// Enforce retention on startup: short-lived/CLI-only hosts never hit the hourly tick.
 	if pruneCtx, cancel := context.WithTimeout(ctx, 15*time.Second); true {
@@ -174,7 +197,8 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 				}
 				if settings.CaptureEnabled == last.CaptureEnabled &&
 					settings.SyncEnabled == last.SyncEnabled &&
-					settings.SyncTargetProfileID == last.SyncTargetProfileID {
+					settings.SyncTargetProfileID == last.SyncTargetProfileID &&
+					settings.QuickOrbitPosition == last.QuickOrbitPosition {
 					last = settings
 					continue
 				}

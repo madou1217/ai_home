@@ -46,6 +46,12 @@
   align-items: center;
 }
 
+/* 头部没有图标时（标题 + 操作按钮），去掉图标占位列：
+   否则正文会落进 22px 的第一列，被压成每行一两个字的纵向折行。 */
+.aas-section-head:not(:has(> .anticon)) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .aas-section-head > .anticon {
   color: var(--color-accent);
   font-size: 18px;

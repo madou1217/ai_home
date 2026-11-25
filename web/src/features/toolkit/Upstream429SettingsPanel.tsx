@@ -127,10 +127,8 @@ export default function Upstream429SettingsPanel({ provider }: Upstream429Settin
           <div className="aas-section-head aas-section-head--plain">
             <div>
               <strong>账号级覆盖（{provider}）</strong>
-              <span>
-                账号配置优先于全局：继承全局 / 自定义启用（必须填写非空退避队列）/ 强制关闭。
-                并发受限时每个请求按各自退避重试；谁先拿到并发名额谁继续。
-              </span>
+              <span>账号配置优先于全局：继承全局 / 自定义启用（必须填写非空退避队列）/ 强制关闭。</span>
+              <span>并发受限时每个请求按各自退避重试；谁先拿到并发名额谁继续。</span>
             </div>
             <Button size="small" onClick={() => void load()} disabled={loading}>
               刷新

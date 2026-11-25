@@ -289,13 +289,38 @@ after=true
 
 （早先一次失败是因为跑了加过诊断的旧二进制，不是代码问题。）
 
+### 10. 插件式应用：Antigravity Desktop / IDE 真实安装与卸载（Windows）
+
+`antigravity` 插件（`antigravity.apps`）通过 `app.install` 能力提供两个独立产品
+（Desktop 2.35.x / IDE 2.8.x）。插件作业现在也在自动出口轮换内部执行——此前
+留在轮换之外，网络失败不会触发换出口。
+
+真机证据（Windows 11，安装到 `%LOCALAPPDATA%\Programs`）：
+
+| 动作 | 结果 |
+| --- | --- |
+| 安装 Desktop | `Antigravity 2.35.1`，主程序 246,599,680 字节 |
+| 安装 IDE | `Antigravity IDE 2.8.0`，Electron 结构，主程序 210,848,768 字节 |
+| 二者共存 | 独立目录、独立卸载项，互不覆盖 |
+| 卸载（Tools 作业） | `删除 Antigravity IDE ok=True`、`删除 Antigravity ok=True`，两次 `status=succeeded` |
+| 卸载后文件系统 | 两个安装目录均不存在 |
+| 卸载后清单 | `GET /v1/management/webui/toolkit/apps` 对两个 appId 均返回 `installed=false` |
+
+卸载一律走工具箱作业（`POST /v1/management/webui/toolkit/apps/install`，
+`action=uninstall`），不用文件系统删除代替。
+
+顺带修掉的真机缺陷：`plugin_generation_unknown`。`HybridHost.Prepare` 之前把
+状态硬编码为 `prepared`，node 侧拒绝时（旧插件没有 `apply` 导出）不透传，
+`Activate` 随后指向一个从未注册的 generation；现在拒绝态如实上抛，错误信息
+回到真正的根因，而不是被空 generation 覆盖。
+
 ### 仍未验证
 
-- **WinGet 计划的代理语义**：真机上 WinGet 直接下载成功、无视代理。当前
-  `proxyActive` 的 Windows 检查只覆盖 `kind=cli` 且计划为 npm 的情况，
-  WinGet/原生安装器需要单独确认是否应当拒绝——**待定，属于设计决策**。
-- **真实租约端到端**：Windows 上只用伪造的死代理验证了「代理被正确应用/拒绝」，
-  没有用真实受管出口跑完整安装（那需要 Windows 上可达的 Server 配置）。
+- **非管理员 / UAC 需人工确认的账户**：当前主机管理员账户已获准提权，SSH 无交互
+  会话也能成功拉起 UAC；需要人工点确认的账户在无桌面场景大概率拿不到授权，
+  按降级语义处理（计划照跑、点名跳过），未实机复现。
+- **其它插件应用**：插件安装契约（describe/status/operate）已在 antigravity 上
+  端到端跑通，其余插件应用尚未逐个真机安装/卸载。
 
 ## 相关源码
 

@@ -14,6 +14,7 @@ struct ClipboardPanelRow {
   let width: Int
   let height: Int
   let createdAtMs: Int64
+  let lastSeenAtMs: Int64
   let pinned: Bool
   let thumbnail: NSImage?
 
@@ -28,6 +29,7 @@ struct ClipboardPanelRow {
     width = Int(Self.int64(json["width"]))
     height = Int(Self.int64(json["height"]))
     createdAtMs = Self.int64(json["createdAtMs"])
+    lastSeenAtMs = Self.int64(json["lastSeenAtMs"])
     pinned = json["pinned"] as? Bool ?? false
     thumbnail = Self.decodeThumbnail(json["thumbnailDataUrl"] as? String)
   }
@@ -44,6 +46,9 @@ struct ClipboardPanelRow {
     guard let data = Data(base64Encoded: encoded) else { return nil }
     return NSImage(data: data)
   }
+
+  /// Server ordering is last_seen_at_ms; created_at would show stale ages for re-copied items.
+  var effectiveTimeMs: Int64 { lastSeenAtMs > 0 ? lastSeenAtMs : createdAtMs }
 
   var kindLabel: String {
     switch kind {

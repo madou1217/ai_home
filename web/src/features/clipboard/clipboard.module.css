@@ -3,6 +3,11 @@
  * color bars and no oversized alert blocks (repo UI constraint). */
 
 .workspace {
+  /* Paste Nexus accents, layered on the shared HUD tokens. */
+  --nx-cyan: #62edff;
+  --nx-purple: #b18bff;
+  --nx-line: #26364c;
+  --nx-muted: #8493ae;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -23,14 +28,15 @@
   overflow: hidden;
 }
 
-.hero::after {
-  content: '';
+/* Dedicated glow layer: a .hud-panel owns ::before/::after corner ticks. */
+.heroGlow {
   position: absolute;
   inset: 0;
+  z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(60% 120% at 0% 0%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 60%),
-    radial-gradient(40% 90% at 100% 0%, color-mix(in srgb, var(--hud-violet, #a855f7) 8%, transparent), transparent 65%);
+    radial-gradient(60% 120% at 0% 0%, color-mix(in srgb, var(--nx-cyan) 12%, transparent), transparent 60%),
+    radial-gradient(40% 90% at 100% 0%, color-mix(in srgb, var(--nx-purple) 10%, transparent), transparent 65%);
 }
 
 .heroMain {
@@ -151,6 +157,38 @@
 @keyframes clipPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+.activityRow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.activity {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+  flex: 1;
+  max-width: 520px;
+  padding: 2px 0;
+}
+
+.activity b {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, var(--nx-cyan), color-mix(in srgb, var(--nx-purple) 70%, transparent));
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.activity b:hover {
+  opacity: 1;
 }
 
 /* ------------------------------------------------------------ controls ---- */

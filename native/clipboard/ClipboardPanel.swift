@@ -14,7 +14,9 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
   )
 
   private let background = NSVisualEffectView()
+  private let brackets = ClipboardBracketView()
   private let headerIcon = ClipboardGlyphTile()
+  private let eyebrowLabel = NSTextField(labelWithString: "PASTE // NEXUS")
   private let titleLabel = NSTextField(labelWithString: "剪贴板")
   private let subtitleLabel = NSTextField(labelWithString: "")
   private let searchField = NSSearchField()
@@ -34,15 +36,21 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
   private var rows: [ClipboardPanelRow] = []
   private var visibleRows: [ClipboardPanelRow] = []
   private var selectedID = ""
-  private var contentCache: [String: Data] = [:]
+  private let contentCache: NSCache<NSString, NSData> = {
+    let cache = NSCache<NSString, NSData>()
+    cache.totalCostLimit = 32 * 1024 * 1024
+    return cache
+  }()
   private var previewGeneration = 0
   private var listGeneration = 0
   private var firstShow = true
+  private var suppressSelectionPreview = false
 
   init(emit: @escaping ([String: Any]) -> Void) {
     self.emit = emit
     super.init()
     panel.title = "AIH 剪贴板"
+    panel.appearance = NSAppearance(named: .darkAqua)
     panel.titleVisibility = .hidden
     panel.titlebarAppearsTransparent = true
     panel.isMovableByWindowBackground = true
@@ -67,10 +75,14 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     managementKey = nextKey
     enabled = nextEnabled
     updateSubtitle()
-    if changed && panel.isVisible {
-      rows = []
-      selectedID = ""
-      reloadList()
+    if !nextEnabled { hide() }
+    if changed {
+      contentCache.removeAllObjects()
+      if panel.isVisible {
+        rows = []
+        selectedID = ""
+        reloadList()
+      }
     }
   }
 
@@ -122,7 +134,9 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
 
     headerIcon.apply(symbol: "doc.on.clipboard.fill", tint: .controlAccentColor)
     headerIcon.layer?.cornerRadius = 8
-    titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+    eyebrowLabel.font = .monospacedSystemFont(ofSize: 9, weight: .medium)
+    eyebrowLabel.textColor = NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0.9)
+    titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
     subtitleLabel.font = .systemFont(ofSize: 11)
     subtitleLabel.textColor = .secondaryLabelColor
 
@@ -197,18 +211,20 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     statusLabel.alignment = .right
     statusLabel.lineBreakMode = .byTruncatingTail
 
-    for view in [headerIcon, titleLabel, subtitleLabel, searchField, splitView, footerSeparator, hintsLabel, statusLabel] {
+    for view in [headerIcon, eyebrowLabel, titleLabel, subtitleLabel, searchField, splitView, footerSeparator, hintsLabel, statusLabel] {
       view.translatesAutoresizingMaskIntoConstraints = false
       background.addSubview(view)
     }
     NSLayoutConstraint.activate([
       headerIcon.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 18),
-      headerIcon.topAnchor.constraint(equalTo: background.topAnchor, constant: 36),
+      headerIcon.topAnchor.constraint(equalTo: background.topAnchor, constant: 38),
       headerIcon.widthAnchor.constraint(equalToConstant: 30),
       headerIcon.heightAnchor.constraint(equalToConstant: 30),
 
-      titleLabel.leadingAnchor.constraint(equalTo: headerIcon.trailingAnchor, constant: 9),
-      titleLabel.topAnchor.constraint(equalTo: headerIcon.topAnchor, constant: 5),
+      eyebrowLabel.leadingAnchor.constraint(equalTo: headerIcon.trailingAnchor, constant: 10),
+      eyebrowLabel.topAnchor.constraint(equalTo: headerIcon.topAnchor, constant: -1),
+      titleLabel.leadingAnchor.constraint(equalTo: eyebrowLabel.leadingAnchor),
+      titleLabel.topAnchor.constraint(equalTo: eyebrowLabel.bottomAnchor, constant: 1),
       subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
       subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
       subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: searchField.leadingAnchor, constant: -12),
@@ -231,6 +247,14 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
       statusLabel.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -18),
       statusLabel.centerYAnchor.constraint(equalTo: hintsLabel.centerYAnchor),
       statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: hintsLabel.trailingAnchor, constant: 12)
+    ])
+    brackets.translatesAutoresizingMaskIntoConstraints = false
+    background.addSubview(brackets)
+    NSLayoutConstraint.activate([
+      brackets.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 1),
+      brackets.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -1),
+      brackets.topAnchor.constraint(equalTo: background.topAnchor, constant: 1),
+      brackets.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -1)
     ])
     updateSubtitle()
   }
@@ -294,8 +318,6 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
         self.preview.showPlaceholder(self.rows.isEmpty ? "剪贴板为空\n复制任意文本、图片或文件后会出现在这里" : "没有匹配的记录")
       } else {
         self.statusLabel.stringValue = ""
-        let index = self.visibleRows.firstIndex { $0.id == self.selectedID } ?? 0
-        self.selectRow(index, notify: true)
       }
     }
   }
@@ -306,7 +328,7 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
         guard let self, generation == self.previewGeneration else { return }
         if let data, let image = NSImage(data: data) {
           let dimensions = row.width > 0 && row.height > 0 ? "\(row.width)×\(row.height) · " : ""
-          let meta = "\(dimensions)\(ClipboardPanelFormat.bytes(row.byteSize)) · \(ClipboardPanelFormat.relative(row.createdAtMs) ?? "")"
+          let meta = "\(dimensions)\(ClipboardPanelFormat.bytes(row.byteSize)) · \(ClipboardPanelFormat.relative(row.effectiveTimeMs) ?? "")"
           self.preview.showImage(image, kind: row.kind, meta: meta, footer: "↵ 粘贴图片到当前应用", pinned: row.pinned)
         } else {
           self.preview.showPlaceholder("图片内容不可用")
@@ -315,7 +337,7 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
       return
     }
     if row.kind == "file" {
-      let meta = "\(row.files.count) 个文件 · \(ClipboardPanelFormat.relative(row.createdAtMs) ?? "")"
+      let meta = "\(row.files.count) 个文件 · \(ClipboardPanelFormat.relative(row.effectiveTimeMs) ?? "")"
       let body = row.files.map { "▸ " + $0 }.joined(separator: "\n")
       preview.showText(kind: row.kind, text: body, meta: meta, footer: "↵ 复制文件路径", pinned: row.pinned)
       return
@@ -330,15 +352,15 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
         self.preview.showPlaceholder("无法读取条目详情")
         return
       }
-      let meta = "\(ClipboardPanelFormat.bytes(row.byteSize)) · \(ClipboardPanelFormat.relative(row.createdAtMs) ?? "")"
+      let meta = "\(ClipboardPanelFormat.bytes(row.byteSize)) · \(ClipboardPanelFormat.relative(row.effectiveTimeMs) ?? "")"
       let note = detail.textTruncated ? "预览前 64 KiB · ↵ 复制完整内容" : "↵ 复制到剪贴板"
       self.preview.showText(kind: row.kind, text: detail.text, meta: meta, footer: note, pinned: row.pinned)
     }
   }
 
   private func loadContent(_ row: ClipboardPanelRow, completion: @escaping (Data?) -> Void) {
-    if let cached = contentCache[row.id] {
-      completion(cached)
+    if let cached = contentCache.object(forKey: row.id as NSString) {
+      completion(cached as Data)
       return
     }
     guard let encoded = row.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
@@ -350,7 +372,7 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
         completion(nil)
         return
       }
-      self.contentCache[row.id] = data
+      self.contentCache.setObject(data as NSData, forKey: row.id as NSString, cost: data.count)
       completion(data)
     }
   }
@@ -392,7 +414,9 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
   private func selectRow(_ index: Int, notify: Bool) {
     guard index >= 0, index < visibleRows.count else { return }
     if tableView.selectedRow != index {
+      suppressSelectionPreview = true
       tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+      suppressSelectionPreview = false
     }
     tableView.scrollRowToVisible(index)
     refreshChosenRows()
@@ -480,16 +504,19 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     alert.alertStyle = .warning
     alert.addButton(withTitle: "删除")
     alert.addButton(withTitle: "取消")
-    guard alert.runModal() == .alertFirstButtonReturn else { return }
     guard let encoded = row.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
-    request("/v1/management/webui/clipboard/items/\(encoded)", method: "DELETE") { [weak self] _, status, _ in
-      guard let self else { return }
-      if status == 200 {
-        self.statusLabel.stringValue = "已删除"
-        self.selectedID = ""
-        self.reloadList()
-      } else {
-        self.statusLabel.stringValue = "删除失败（HTTP \(status)）"
+    alert.beginSheetModal(for: panel) { [weak self] response in
+      guard response == .alertFirstButtonReturn, let self else { return }
+      self.contentCache.removeObject(forKey: row.id as NSString)
+      self.request("/v1/management/webui/clipboard/items/\(encoded)", method: "DELETE") { [weak self] _, status, _ in
+        guard let self else { return }
+        if status == 200 {
+          self.statusLabel.stringValue = "已删除"
+          self.selectedID = ""
+          self.reloadList()
+        } else {
+          self.statusLabel.stringValue = "删除失败（HTTP \(status)）"
+        }
       }
     }
   }
@@ -546,6 +573,10 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
   // MARK: Keyboard
 
   private func handleTableKey(_ event: NSEvent) -> Bool {
+    // Let the field editor/IME consume keys while composing (Pinyin candidates etc.).
+    if let input = panel.firstResponder as? NSTextInputClient, input.hasMarkedText() {
+      return false
+    }
     let command = event.modifierFlags.contains(.command)
     switch event.keyCode {
     case 36, 76:
@@ -562,6 +593,8 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
       return true
     case 51, 117:
       if command {
+        // While editing a non-empty search query, ⌘⌫ belongs to the text field.
+        if searchField.currentEditor() != nil && !searchField.stringValue.isEmpty { return false }
         confirmDeleteSelected()
         return true
       }
@@ -611,6 +644,7 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
 
   func tableViewSelectionDidChange(_ notification: Notification) {
     refreshChosenRows()
+    guard !suppressSelectionPreview else { return }
     updatePreviewForSelection()
   }
 

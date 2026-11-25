@@ -20,6 +20,7 @@ import {
   PictureOutlined,
   PushpinFilled,
   PushpinOutlined,
+  ReloadOutlined,
   SearchOutlined,
   SnippetsOutlined,
   StarFilled,
@@ -36,6 +37,7 @@ import {
   type ClipboardSettingsPatch,
   type ClipboardStatus
 } from './clipboard-api';
+import { subscribeTransportTargetChange } from '@/services/webui-auth-transport';
 import styles from './clipboard.module.css';
 
 type KindFilter = 'all' | ClipboardKind;
@@ -174,6 +176,8 @@ export default function ClipboardWorkspace() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const searchRef = useRef<{ focus: () => void } | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [acting, setActing] = useState(false);
@@ -255,6 +259,26 @@ export default function ClipboardWorkspace() {
     }
   }, []);
 
+  const handleLoadMore = useCallback(async () => {
+    if (items.length === 0) return;
+    const last = items[items.length - 1];
+    setLoadingMore(true);
+    try {
+      const more = await clipboardAPI.listItems({ limit: 100, before: last.lastSeenAtMs });
+      setItems((prev) => {
+        const known = new Set(prev.map((entry) => entry.id));
+        return [...prev, ...more.filter((entry) => !known.has(entry.id))];
+      });
+    } catch (error) {
+      setFeedback({
+        tone: 'danger',
+        text: extractClipboardErrorMessage(error, '加载更多失败')
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [items]);
+
   const refreshItemsAndStatus = useCallback(async () => {
     try {
       const [nextItems, nextStatus] = await Promise.all([
@@ -280,6 +304,11 @@ export default function ClipboardWorkspace() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  // Switching the active control-plane server must not keep another server's history.
+  useEffect(() => subscribeTransportTargetChange(() => void loadAll(true)), [loadAll]);
+
+
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -611,11 +640,70 @@ export default function ClipboardWorkspace() {
       ? isSafeHttpUrl(displayText || selectedItem.preview)
       : null;
 
-  const captureOn = Boolean(status?.capture.running || settings?.captureEnabled);
+  // Keyboard navigation mirrors the desktop panel: / search, arrows, Enter copy,
+  // P pin, R refresh. Never steal keys while an input or IME composition is active.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase() ?? '';
+      const editing = tag === 'input' || tag === 'textarea' || tag === 'select' || Boolean(target?.isContentEditable);
+      if (event.key === '/' && !editing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (event.key === 'Escape' && editing) {
+        target?.blur();
+        return;
+      }
+      if (editing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        void loadAll();
+        return;
+      }
+      if (filteredItems.length === 0) return;
+      const current = Math.max(0, filteredItems.findIndex((entry) => entry.id === selectedItem?.id));
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        const next = Math.max(0, Math.min(filteredItems.length - 1, current + delta));
+        setSelectedId(filteredItems[next].id);
+        return;
+      }
+      if (!selectedItem) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void handleCopyItem(selectedItem);
+      } else if (event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        void handleTogglePin(selectedItem);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filteredItems, selectedItem, handleCopyItem, handleTogglePin, loadAll]);
+
+  const activity = useMemo(() => {
+    const buckets = new Array(24).fill(0);
+    const now = Date.now();
+    for (const item of items) {
+      const age = now - item.lastSeenAtMs;
+      if (age >= 0 && age < 24 * 3600 * 1000) {
+        const index = 23 - Math.floor(age / 3600000);
+        buckets[index] += 1;
+      }
+    }
+    return buckets;
+  }, [items]);
+  const activityMax = Math.max(1, ...activity);
+
+  const captureOn = Boolean(status?.capture.running);
 
   return (
     <div className={styles.workspace}>
       <section className={`${styles.hero} hud-panel`} aria-label="剪贴板概览">
+        <span className={styles.heroGlow} aria-hidden />
         <div className={styles.heroMain}>
           <div className={styles.heroLead}>
             <span className={styles.heroGlyph} aria-hidden>
@@ -649,8 +737,19 @@ export default function ClipboardWorkspace() {
             </Tooltip>
             <span className={`${styles.stateChip} ${captureOn ? styles.stateChipOn : ''}`}>
               <span className={styles.stateDot} />
-              {captureOn ? '采集运行中' : '采集已停止'}
+              {status && !status.capture.supported
+                ? '采集不可用'
+                : captureOn
+                  ? '采集运行中'
+                  : '采集已停止'}
             </span>
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={loading}
+              aria-label="刷新剪贴板"
+              onClick={() => void loadAll(true)}
+            />
             {(status?.transports ?? [])
               .filter((transport) => transport.available)
               .map((transport) => (
@@ -662,6 +761,19 @@ export default function ClipboardWorkspace() {
                   {transport.name}
                 </span>
               ))}
+          </div>
+        </div>
+
+        <div className={styles.activityRow} aria-label="过去 24 小时采集量">
+          <span className={styles.eyebrow}>24H ACTIVITY</span>
+          <div className={styles.activity}>
+            {activity.map((count, index) => (
+              <b
+                key={index}
+                title={`${23 - index} 小时前：${count} 条`}
+                style={{ height: `${Math.max(8, Math.round((count / activityMax) * 100))}%` }}
+              />
+            ))}
           </div>
         </div>
 
@@ -756,6 +868,7 @@ export default function ClipboardWorkspace() {
         <section className={`${styles.listPanel} hud-panel`} aria-label="剪贴板历史列表">
           <div className={styles.listToolbar}>
             <Input
+              ref={searchRef as never}
               className={styles.searchInput}
               allowClear
               prefix={<SearchOutlined />}
@@ -855,7 +968,19 @@ export default function ClipboardWorkspace() {
             <span>
               显示 {filteredItems.length} / {items.length}
             </span>
-            <span>{captureOn ? '实时采集中' : '采集已暂停'}</span>
+            {items.length >= 100 ? (
+              <Button size="small" type="link" loading={loadingMore} onClick={() => void handleLoadMore()}>
+                加载更多
+              </Button>
+            ) : null}
+            <span>
+              {status && !status.capture.supported
+                ? '采集不可用'
+                : captureOn
+                  ? '实时采集中'
+                  : '采集已暂停'}
+              {' · '}/ 搜索 · P 置顶
+            </span>
           </div>
         </section>
 

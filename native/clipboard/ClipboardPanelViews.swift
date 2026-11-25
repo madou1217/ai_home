@@ -147,7 +147,7 @@ final class ClipboardPanelRowView: NSTableCellView {
     titleLabel.stringValue = singleLine.isEmpty ? ClipboardKindStyle.info(for: row.kind).label : singleLine
     let style = ClipboardKindStyle.info(for: row.kind)
     var parts = [style.label]
-    if let relative = ClipboardPanelFormat.relative(row.createdAtMs) { parts.append(relative) }
+    if let relative = ClipboardPanelFormat.relative(row.effectiveTimeMs) { parts.append(relative) }
     if row.kind == "image", row.width > 0, row.height > 0 { parts.append("\(row.width)×\(row.height)") }
     else if row.byteSize > 0 { parts.append(ClipboardPanelFormat.bytes(row.byteSize)) }
     let meta = NSMutableAttributedString(
@@ -163,6 +163,26 @@ final class ClipboardPanelRowView: NSTableCellView {
     }
     metaLabel.attributedStringValue = meta
     pinView.isHidden = !row.pinned
+  }
+}
+
+/// Two hairline corner brackets in the Paste Nexus cyan, matching the WebUI HUD.
+final class ClipboardBracketView: NSView {
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0.55).setStroke()
+    let path = NSBezierPath()
+    let arm: CGFloat = 18
+    let tick: CGFloat = 10
+    path.move(to: NSPoint(x: 0.5, y: bounds.height - 0.5))
+    path.line(to: NSPoint(x: 0.5, y: bounds.height - tick))
+    path.line(to: NSPoint(x: arm, y: bounds.height - tick))
+    path.move(to: NSPoint(x: bounds.width - arm, y: 0.5))
+    path.line(to: NSPoint(x: bounds.width - 0.5, y: 0.5))
+    path.line(to: NSPoint(x: bounds.width - 0.5, y: tick))
+    path.lineWidth = 1
+    path.stroke()
   }
 }
 

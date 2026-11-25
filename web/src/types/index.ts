@@ -1286,6 +1286,8 @@ export interface ServerConfig {
   upstreamFailurePolicy?: object;
   /** 并发/速率上限（系统、Provider、账号）；本轮只存储与预览，不执行拦截。 */
   concurrency?: GatewayConcurrencyConfig;
+  /** MCP 桥共享模式：global 全局一个 / workspace 每工作区一个 / off 每会话一个。 */
+  mcpBridgeSharing?: 'global' | 'workspace' | 'off';
 }
 
 /** server 配置里的 concurrency 对象；数值 0 表示不设上限。 */

@@ -24,6 +24,7 @@ import ProviderNetworkSettings from '@/features/provider-config/ProviderNetworkS
 import { supportsClaudePreflight } from '@/components/toolkit/managed-app-capabilities';
 import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
 import ClaudePreflightSettings from './ClaudePreflightSettings';
+import MCPBridgeSettings from './MCPBridgeSettings';
 import Upstream429SettingsPanel from './Upstream429SettingsPanel';
 import {
   blockingSubcommands,
@@ -94,6 +95,8 @@ export default function AppAdvancedSettingsModal({
   const showPermissionTab = app?.type === 'cli' && app?.permissionSupported === true;
   // 首屏检查与启动权限、配置文件一起收在同一个应用高级设置里。
   const showPreflightTab = supportsClaudePreflight(app);
+  // 共享桥是服务器级设置；按用户约定只挂在 Codex 的应用高级设置里。
+  const showMCPBridgeTab = provider === 'codex';
   const showConfigTab = Boolean(provider && (app?.configFileCount || 0) > 0);
   const tabs = useMemo(() => {
     const items = [];
@@ -113,8 +116,11 @@ export default function AppAdvancedSettingsModal({
     if (provider) {
       items.push({ key: 'upstream429', label: '429 重试' });
     }
+    if (showMCPBridgeTab) {
+      items.push({ key: 'mcp', label: 'MCP' });
+    }
     return items;
-  }, [provider, showConfigTab, showPermissionTab, showPreflightTab]);
+  }, [provider, showConfigTab, showMCPBridgeTab, showPermissionTab, showPreflightTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -630,6 +636,10 @@ export default function AppAdvancedSettingsModal({
             </div>
           ) : activeTab === 'upstream429' && provider ? (
             <Upstream429SettingsPanel provider={provider} />
+          ) : activeTab === 'mcp' && showMCPBridgeTab ? (
+            <div className="aas-config-pane">
+              <MCPBridgeSettings />
+            </div>
           ) : null}
           </div>
         </div>

@@ -199,6 +199,9 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 		if len(text) == 0 {
 			return IngestResult{}, ErrEmptyContent
 		}
+		// Legacy clipboard bridges can hand over CP1252 bytes; normalize before
+		// hashing so stored text is valid UTF-8 and survives JSON sync unchanged.
+		text = NormalizeText(text)
 		rawBytes := []byte(text)
 		textLimit := minInt64(MaxTextBytes, maxItemBytes)
 		if int64(len(rawBytes)) > textLimit {

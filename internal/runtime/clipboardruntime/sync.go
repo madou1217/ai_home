@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/clipboard"
 )
@@ -42,6 +43,8 @@ const (
 var (
 	ErrSyncDecryptFailed = errors.New("clipboard_sync_decrypt_failed")
 	ErrSyncSHAMismatch   = errors.New("clipboard_sync_sha_mismatch")
+	// ErrSyncTextEncoding marks legacy items whose bytes cannot round-trip through JSON.
+	ErrSyncTextEncoding = errors.New("clipboard_sync_text_encoding")
 )
 
 // SyncPayload is the plaintext JSON encrypted inside SealedSyncItem.Sealed.
@@ -182,6 +185,11 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 		}
 		if len([]byte(text)) > clipboard.MaxTextBytes {
 			return SyncPayload{}, clipboard.ErrItemTooLarge
+		}
+		if !utf8.ValidString(text) {
+			// JSON replaces invalid bytes with U+FFFD, so the sealed payload could
+			// never satisfy its recorded SHA. Skip instead of pushing a mismatch.
+			return SyncPayload{}, ErrSyncTextEncoding
 		}
 		payload.Text = text
 	}
@@ -571,6 +579,29 @@ func (s *Syncer) pushUnsynced(ctx context.Context, endpoint, mgmtKey string, key
 	return nil
 }
 
+// syncResponseError preserves the remote error code/message so sync failures stay
+// diagnosable without reading the other server's logs.
+func syncResponseError(prefix string, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	detail := strings.TrimSpace(string(body))
+	var payload struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) == nil && payload.Error.Code != "" {
+		detail = payload.Error.Code
+		if payload.Error.Message != "" {
+			detail += ": " + payload.Error.Message
+		}
+	}
+	if detail == "" {
+		return fmt.Errorf("%s: HTTP %d", prefix, resp.StatusCode)
+	}
+	return fmt.Errorf("%s: HTTP %d %s", prefix, resp.StatusCode, detail)
+}
+
 func (s *Syncer) postSyncBatch(ctx context.Context, itemsURL, mgmtKey string, batch []SealedSyncItem) error {
 	raw, err := json.Marshal(map[string]any{"items": batch})
 	if err != nil {
@@ -592,7 +623,7 @@ func (s *Syncer) postSyncBatch(ctx context.Context, itemsURL, mgmtKey string, ba
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("push sync items failed: HTTP %d", resp.StatusCode)
+		return syncResponseError("push sync items failed", resp)
 	}
 	var out struct {
 		IDs map[string]string `json:"ids"`
@@ -647,11 +678,14 @@ func (s *Syncer) pullRemote(ctx context.Context, endpoint, mgmtKey, profileID st
 		for _, sealed := range pulled.Items {
 			payload, openErr := OpenSyncPayload(key, sealed)
 			if openErr != nil {
-				return openErr
+				// One corrupt envelope must not block every later item.
+				log.Printf("[clipboard-sync] skip unreadable item sha=%s: %v", sealed.SHA256, openErr)
+				continue
 			}
 			input, verifyErr := VerifyAndDecodePayload(sealed.SHA256, payload, nowMs)
 			if verifyErr != nil {
-				return verifyErr
+				log.Printf("[clipboard-sync] skip mismatched item sha=%s: %v", sealed.SHA256, verifyErr)
+				continue
 			}
 			if _, ingestErr := s.Service.Ingest(ctx, input); ingestErr != nil {
 				if errors.Is(ingestErr, clipboard.ErrItemTooLarge) || errors.Is(ingestErr, clipboard.ErrEmptyContent) {

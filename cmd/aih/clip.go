@@ -167,7 +167,9 @@ func runClipList(ctx context.Context, service *clipboard.Service, args []string,
 	}
 	if jsonOutput {
 		type cliListItem struct {
-			Index        int            `json:"index"`
+			// Index is only meaningful for the unfiltered recency list; kind-filtered
+			// output omits it so `#N` never disagrees with `aih clip paste #N`.
+			Index        int            `json:"index,omitempty"`
 			ID           string         `json:"id"`
 			SHA256       string         `json:"sha256"`
 			Kind         clipboard.Kind `json:"kind"`
@@ -186,8 +188,7 @@ func runClipList(ctx context.Context, service *clipboard.Service, args []string,
 		}
 		out := make([]cliListItem, 0, len(items))
 		for i, item := range items {
-			out = append(out, cliListItem{
-				Index:        i + 1,
+			entry := cliListItem{
 				ID:           item.ID,
 				SHA256:       item.SHA256,
 				Kind:         item.Kind,
@@ -203,7 +204,11 @@ func runClipList(ctx context.Context, service *clipboard.Service, args []string,
 				SeenCount:    item.SeenCount,
 				CreatedAtMs:  item.CreatedAtMs,
 				LastSeenAtMs: item.LastSeenAtMs,
-			})
+			}
+			if kind == "" {
+				entry.Index = i + 1
+			}
+			out = append(out, entry)
 		}
 		return writeClipJSON(runtime.stdout, out)
 	}
@@ -222,13 +227,17 @@ func runClipList(ctx context.Context, service *clipboard.Service, args []string,
 			shortID = shortID[:8]
 		}
 		preview := truncateRunes(item.Preview, 80)
+		label := "#" + strconv.Itoa(i+1)
+		if kind != "" {
+			// Filtered rows do not have a stable global rank; select by ID/prefix.
+			label = shortID
+		}
 		_, _ = fmt.Fprintf(
 			runtime.stdout,
-			"#%-3d %s %-5s %-8s %-10s %-8s %s\n",
-			i+1,
+			"%-9s %s %-5s %-10s %-8s %s\n",
+			label,
 			pinMark,
 			item.Kind,
-			shortID,
 			formatRelativeTime(now, item.LastSeenAtMs),
 			formatClipBytes(item.ByteSize),
 			preview,

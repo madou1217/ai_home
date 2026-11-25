@@ -33,10 +33,10 @@
    - `gemini skills list --all` 列出 `symlink-probe`；卸载后 Junction 删除，目标目录不受影响。
 
 4. **Windows 其余 Provider 未完成验证。**
-   - Claude：CLI 未登录，Windows 上的 AIH Server 未运行，无法启动真实会话。
+   - Claude：CLI 未登录；本轮没有启动已安装的 Windows 服务，另用临时 server 验证了资源层（见 6）。
    - Codex：`codex.exe` 提示与当前 Windows 版本不兼容，无法运行。
    - CodeBuddy / CodeBuddy CN：未安装。
-   - 因此 Windows 结论只覆盖 Gemini 的 Junction；不能外推到所有 Provider。
+   - 因此 Windows 的 Provider 结论只覆盖 Gemini 的 Junction；不能外推到所有 Provider。
 
 5. **默认仍复制，新增可选 link 投影。**
    - `skillDirProjection` 保留为默认；`skillLinkProjection` 把 Provider 目录指向
@@ -53,6 +53,19 @@
      均正常，remove 后链接消失、快照保留。
    - 现有 codex/claude 的 `remote-realmachine` 已从复制迁移为 link；两者的真实 TUI
      `/skills` 均能看到 `remote-realmachine`。
+
+6. **Windows Server / WebUI 端到端已验证（临时 server）。**
+   - 新构建 Windows `aih-server.exe`，使用临时 AIH_HOME + 复制的 DB，监听 9530，
+     `--web-dir` 指向当前 WebUI 构建产物。
+   - Server API：`POST /v1/management/webui/toolkit/native-resources`
+     `{kind:"skill",action:"install",source:"assets/provider-skills/remote-realmachine",
+     provider:"gemini",link:true}` 返回 `mode:"link"`；目标为 Junction，
+     `gemini skills list --all` 能列出。
+   - WebUI：通过 SSH 隧道打开 9530 的 `/ui`，在「开发工具 → 插件与资源 → Skill →
+     安装资源」选择源与 Gemini，勾选「使用链接投影」并安装；卡片显示 `gemini · 已启用`，
+     目标仍是 Junction，Gemini 能发现。
+   - 清理：API remove 后链接消失，Gemini 列表只剩原有 `codex`；临时 server 和临时根目录已删除。
+   - 范围：这是临时 server + 当前 dist 的端到端验证，不是 Windows 已安装服务/开机自启实例。
 
 ## 测试方法
 

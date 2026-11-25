@@ -318,8 +318,8 @@ Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp
   停用只移除链接、快照保留；已托管的复制目录在 digest 一致时可迁移为链接。
 
 > 资源去重：默认仍是目录复制，可选择 link 投影。macOS 上 Claude / Codex / CodeBuddy / CodeBuddy CN / Gemini
-> 已实测可加载软链接 Skill；Windows 复用 `artifactstore` 的 junction 实现，CLI + Gemini 端到端
-> 安装/启停已实测。详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
+> 已实测可加载软链接 Skill；Windows 复用 `artifactstore` 的 junction 实现，CLI 与临时
+> server/WebUI 端到端安装/启停已实测。详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
 
 ## Web UI
 

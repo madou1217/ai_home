@@ -187,6 +187,10 @@ jobs:
       - name: Test
         run: go test -count=1 -timeout 5m ./internal/runtime/artifactstore/...
 
+      # 会话发现要同时读当前配置根和迁移前的位置；这里固定 relocated dirs 的回归。
+      - name: Test relocated session directories
+        run: go test -count=1 -timeout 5m ./internal/sessionscan/...
+
       # HostSupervisor 的配置替换/Close 并发只有 race detector 能覆盖。
       # job 级 CGO_ENABLED=0 是为了可复现构建；-race 这一步必须单独打开 CGO。
       - name: Race tests (codex environments)

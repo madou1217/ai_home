@@ -12,7 +12,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,6 +20,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdetectapi"
 	"golang.org/x/crypto/pbkdf2"
 	_ "modernc.org/sqlite"
@@ -172,7 +172,7 @@ func writeDesktopStateDB(t *testing.T, dbPath string, key string, blob []byte) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
 		t.Fatalf("MkdirAll error = %v", err)
 	}
-	dsn := (&url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath)}).String()
+	dsn := sqlitefile.URL(dbPath).String()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("sql.Open error = %v", err)

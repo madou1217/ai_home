@@ -215,3 +215,55 @@ func TestAccountTreeHasNoGhostTransfer(t *testing.T) {
 		}
 	}
 }
+
+func TestDocumentationEntriesCoverage(t *testing.T) {
+	entries := DocumentationEntries()
+	if len(entries) < 200 {
+		t.Fatalf("文档条目过少：%d", len(entries))
+	}
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry.Path == "" || entry.Description == "" {
+			t.Fatalf("条目缺少路径或说明：%+v", entry)
+		}
+		seen[entry.Path] = true
+	}
+	for _, wanted := range []string{
+		"aih man",
+		"aih ls",
+		"aih usage stats",
+		"aih native plugin enable",
+		"aih codex relay",
+		"aih agy session",
+	} {
+		if !seen[wanted] {
+			t.Fatalf("文档缺少命令 %q", wanted)
+		}
+	}
+}
+
+func TestNativePluginCandidatesComeFromManagedState(t *testing.T) {
+	home := t.TempDir()
+	database, err := sql.Open("sqlite", filepath.Join(home, "aih.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := database.Exec("CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT)"); err != nil {
+		t.Fatalf("create app_kv: %v", err)
+	}
+	state := `{"resources":[{"id":"demo-plugin","kind":"native-plugin","host":"pi","version":"1.0.0","enabled":true},{"id":"demo-skill","kind":"skill","enabled":true},{"id":"gone","kind":"native-plugin","removed":true}]}`
+	if _, err := database.Exec("INSERT INTO app_kv (key, value) VALUES (?, ?)", "native-resources.managed.v1", state); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	plugins := listNativePlugins(home)
+	if len(plugins) != 1 || plugins[0].Value != "demo-plugin" {
+		t.Fatalf("原生插件候选不正确：%+v", plugins)
+	}
+	skills := listSkills(home)
+	if len(skills) != 1 || skills[0].Value != "demo-skill" {
+		t.Fatalf("skill 候选不正确：%+v", skills)
+	}
+}

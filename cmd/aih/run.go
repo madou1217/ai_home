@@ -128,6 +128,12 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		}
 		return runUnknownRootCommand(providerID, runtime)
 	}
+	if providerID == "man" {
+		if _, err := runMan(arguments, runtime); err != nil {
+			return err
+		}
+		return nil
+	}
 	if providerID == "plugin" {
 		return runPlugin(ctx, arguments[1:], runtime)
 	}

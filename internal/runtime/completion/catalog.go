@@ -153,6 +153,11 @@ func buildCommandCatalog() []commandNode {
 			n("recalculate-costs", "用当前定价重算历史成本").plusOptions(usageOptions...),
 		).withOptions(usageOptions...),
 		n("summary", "模型用量总览（等价 aih usage stats）").plusOptions(usageOptions...),
+		n("man", "在浏览器打开离线命令手册（命令 + 说明，可搜索）").withOptions(
+			vf("--out", "输出文件路径", kindFile),
+			f("--no-open", "只生成文件，不打开浏览器"),
+			jsonFlag,
+		).withPositionals(p(kindFree)),
 		n("update", "检查更新或通过 npm 更新 ai-home").withOptions(f("--check", "只检查是否有更新"), f("--dry-run", "只打印将要做的改动"), f("--force", "跳过确认强制执行")),
 		n("install", "安装 / 升级 aih 发行包与托管服务").withOptions(
 			vf("--home", "AIH 数据目录", kindFile),
@@ -365,12 +370,12 @@ func buildCommandCatalog() []commandNode {
 		),
 		n("native", "原生宿主投影（plugin）").withChildren(n("plugin", "Codex/Claude/OpenCode 原生插件投影").withChildren(
 			n("list", "列出原生插件"),
-			n("install", "安装投影"),
-			n("enable", "启用"),
-			n("disable", "停用"),
-			n("remove", "移除"),
-			n("inspect", "查看详情"),
-			n("project", "重新投影"),
+			n("install", "安装投影").withPositionals(p(kindFile)),
+			n("enable", "启用").withPositionals(p(kindNativePlugin)),
+			n("disable", "停用").withPositionals(p(kindNativePlugin)),
+			n("remove", "移除").withPositionals(p(kindNativePlugin)),
+			n("inspect", "查看详情").withPositionals(p(kindFile)),
+			n("project", "重新投影").withPositionals(p(kindFile)),
 			n("doctor", "检查一致性"),
 		).withOptions(vf("--provider", "指定 Provider", kindProvider), jsonFlag)),
 		n("mcp", "管理并测试原生 MCP 投影").withOptions(mcpOptions...).withChildren(
@@ -386,10 +391,10 @@ func buildCommandCatalog() []commandNode {
 		),
 		n("skill", "管理原生 skill 与指令投影").withOptions(skillOptions...).withChildren(
 			n("list", "列出 skill").plusOptions(skillOptions...),
-			n("install", "安装并启用").withPositionals(p(kindFree)).plusOptions(skillOptions...),
-			n("enable", "启用").withPositionals(p(kindFree)).plusOptions(skillOptions...),
-			n("disable", "停用").withPositionals(p(kindFree)).plusOptions(skillOptions...),
-			n("remove", "移除").withPositionals(p(kindFree)).plusOptions(skillOptions...),
+			n("install", "安装并启用").withPositionals(p(kindFile)).plusOptions(skillOptions...),
+			n("enable", "启用").withPositionals(p(kindSkill)).plusOptions(skillOptions...),
+			n("disable", "停用").withPositionals(p(kindSkill)).plusOptions(skillOptions...),
+			n("remove", "移除").withPositionals(p(kindSkill)).plusOptions(skillOptions...),
 			n("doctor", "检查投影一致性").plusOptions(skillOptions...),
 		),
 		n("plugin", "AIH 插件包与实例").withOptions(pluginOptions...).withChildren(

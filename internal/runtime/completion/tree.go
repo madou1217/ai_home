@@ -35,6 +35,8 @@ const (
 	kindFailureSignal   valueKind = "failure_signal"
 	kindFailureKind     valueKind = "failure_kind"
 	kindTypo            valueKind = "typo_correction"
+	kindNativePlugin    valueKind = "native_plugin"
+	kindSkill           valueKind = "skill"
 	kindFile            valueKind = "file"
 	kindFree            valueKind = "free"
 )
@@ -420,6 +422,18 @@ func emitTreeValues(target *collector, context *resolverContext, state *treeStat
 	case kindTypo:
 		if context.typoLister != nil {
 			for _, item := range context.typoLister() {
+				target.add(item.Value, item.Description, groupOther, item.Description)
+			}
+		}
+	case kindNativePlugin:
+		if context.nativePluginLister != nil {
+			for _, item := range context.nativePluginLister() {
+				target.add(item.Value, item.Description, groupOther, item.Description)
+			}
+		}
+	case kindSkill:
+		if context.skillLister != nil {
+			for _, item := range context.skillLister() {
 				target.add(item.Value, item.Description, groupOther, item.Description)
 			}
 		}

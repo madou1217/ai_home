@@ -7,6 +7,7 @@ package completion
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,5 +149,57 @@ func listLearnedCorrections(aiHome string) []namedChoice {
 			Description: strings.Join(correction.Argv, " "),
 		})
 	}
+	return choices
+}
+
+// listNativePlugins 读取托管原生插件的 id。
+func listNativePlugins(aiHome string) []namedChoice {
+	return listManagedResources(aiHome, "native-plugin")
+}
+
+// listSkills 读取托管的原生 skill id。
+func listSkills(aiHome string) []namedChoice {
+	return listManagedResources(aiHome, "skill")
+}
+
+// listManagedResources 读取 app_kv 的 native-resources.managed.v1。
+// 与 aih native plugin list / aih skill list 同源；removed=true 的资源不参与补全。
+func listManagedResources(aiHome, kind string) []namedChoice {
+	choices := make([]namedChoice, 0, 8)
+	withReadDB(aiHome, func(database *sql.DB) {
+		var raw string
+		if err := database.QueryRow(
+			"SELECT value FROM app_kv WHERE key = ?", "native-resources.managed.v1").Scan(&raw); err != nil {
+			return
+		}
+		var state struct {
+			Resources []struct {
+				ID      string `json:"id"`
+				Kind    string `json:"kind"`
+				Host    string `json:"host"`
+				Version string `json:"version"`
+				Enabled bool   `json:"enabled"`
+				Removed bool   `json:"removed"`
+			} `json:"resources"`
+		}
+		if err := json.Unmarshal([]byte(raw), &state); err != nil {
+			return
+		}
+		for _, resource := range state.Resources {
+			id := strings.TrimSpace(resource.ID)
+			if id == "" || resource.Removed || strings.TrimSpace(resource.Kind) != kind {
+				continue
+			}
+			parts := make([]string, 0, 3)
+			if resource.Host != "" {
+				parts = append(parts, resource.Host)
+			}
+			if resource.Version != "" {
+				parts = append(parts, resource.Version)
+			}
+			parts = append(parts, map[bool]string{true: "enabled", false: "disabled"}[resource.Enabled])
+			choices = append(choices, namedChoice{Value: id, Description: strings.Join(parts, " · ")})
+		}
+	})
 	return choices
 }

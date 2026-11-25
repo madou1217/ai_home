@@ -107,6 +107,8 @@ type resolverContext struct {
 	failureSignalLister   func() []namedChoice
 	failureKindLister     func() []string
 	typoLister            func() []namedChoice
+	nativePluginLister    func() []namedChoice
+	skillLister           func() []namedChoice
 	nativeFlagLister      func(provider, current string) []nativeFlagEntry
 	nativeFlagValueLister func(provider, flag string) []string
 	aihServerProfileID    string

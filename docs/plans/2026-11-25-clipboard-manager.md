@@ -246,3 +246,22 @@ Phase 1 六个切片均已落地，并合并了 AWS 侧先行的 macOS 面板提
 - Windows/Linux 桌面没有原生窗口面板：使用 `aih clip ui`（终端选择器）或由桌面环境把快捷键绑到它；采集与 WebUI 均可用。
 - Linux headless 无 DISPLAY/WAYLAND_DISPLAY 时采集不可用（如实报告）。
 - PDF/Office 正文抽取、富文本保真、端到端（Server 不可读）加密仍按第 13 节留到 Phase 2。
+
+## 15. 评审闭环（2026-11-25，AWS agy gemini-4-neon-xhigh）
+
+第一次 xhigh 评审提出 6 个 blocker；修复后第二次评审确认多数已解决，并指出剩余项。最终修复包括：
+
+- 同步线路上限提高到 20 MiB，拉取时跳过单条超限封包，限制 sourceApp/device/MIME 长度；
+- 跨 OS 文件条目统一使用 `NormalizeSyncedFilePaths` 计算封包 SHA，发送端不再套用本机 `filepath.Abs`；
+- 空页/短页游标持久化并继续翻页，接收条目用接收时间作为 last_seen；
+- 超限剪贴板读取先取消子进程再 Wait（三个平台），ReadFiles 不再吞掉 ErrItemTooLarge；
+- pbpaste/pbcopy 强制 LC_ALL/LC_CTYPE/LANG UTF-8；
+- aih.db 建表后 chmod 0600（含 WAL/SHM），启动即 Prune，软删除条目不可再读详情/内容；
+- 管理 API 缺 Authorizer 时失败关闭；关闭剪贴板时不向 helper 下发管理密钥；同步客户端拒绝重定向；
+- helper 生命周期与剪贴板开关双向同步并串行化，关闭“系统翻译”不再误杀剪贴板 helper；
+- 面板 IME/Esc/删除弹层处理、NSCache 上限、last_seen 时间、异步删除；
+- WebUI 采集状态只信 running，活动直方图/快捷键/加载更多/服务切换重载，并避免抢走按钮与弹窗的 Enter。
+
+真机复验补充：在 AWS 侧创建 `C:\Users\a.txt` 文件条目，本地拉取后 SHA-256 与 AWS 完全一致（`832e2c0d…`），证明跨 OS 文件同步不再触发 `clipboard_sync_sha_mismatch`；伪装 60000×60000 的 PNG 现在返回 413 `clipboard_item_too_large`。
+
+测试中产生的探测条目已从本机与 AWS 两侧删除，同步开关恢复为关闭。

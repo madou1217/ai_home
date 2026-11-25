@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CloseOutlined,
-  CodeOutlined,
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -12,12 +11,10 @@ import {
   InboxOutlined,
   MailOutlined,
   PlusOutlined,
-  PoweroffOutlined,
   ReloadOutlined,
   RightOutlined,
-  ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
+import { Button, Dropdown, Input, Modal, Select, Tooltip, message, type MenuProps } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
 import AppButton from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
@@ -26,10 +23,8 @@ import OfficeMailbox from './OfficeMailbox';
 import OfficeRoom from './OfficeRoom';
 import SessionDesktop from './SessionDesktop';
 import {
-  buildStationPowerMap,
   isSessionServerScopeAdmitted,
   readStationPowerState,
-  useOfficeComputerStoreRevision,
 } from './office-computer-power';
 import { updateOfficeComputerPreferences } from './office-computer-state';
 import type {
@@ -360,13 +355,6 @@ export default function SessionOffice({
     return activeRoom.projectPath;
   }, [activeRoom]);
 
-  const computerStoreRevision = useOfficeComputerStoreRevision();
-
-  const stationPowerMap = useMemo(
-    () => buildStationPowerMap(serverId, activeRoom?.sessions ?? [], computerStoreRevision),
-    [activeRoom?.sessions, computerStoreRevision, serverId],
-  );
-
   const handleToggleStationPower = useCallback((station: OfficeSessionItem) => {
     if (isSessionTerminating(station.sessionKey) || !isSessionServerScopeAdmitted(serverId, station)) {
       return;
@@ -456,6 +444,20 @@ export default function SessionOffice({
   const handleOpenNewTerminal = useCallback((cwd?: string) => {
     void openNewProjectTerminal(cwd ?? activeRoomCwd);
   }, [activeRoomCwd, openNewProjectTerminal]);
+
+  const mailboxMenuItems: MenuProps['items'] = [
+    {
+      key: 'room',
+      icon: <InboxOutlined />,
+      label: activeRoom ? `房间邮箱 (${activeRoom.roomMessages.length})` : '房间邮箱',
+      disabled: !activeRoom,
+    },
+    {
+      key: 'unassigned',
+      icon: <MailOutlined />,
+      label: `未归属邮箱 (${unassignedMessages.length})`,
+    },
+  ];
 
   const handleRequestTerminateSession = useCallback((session: OfficeSessionItem) => {
     if (!isTerminableWebSession(session)) {
@@ -621,7 +623,6 @@ export default function SessionOffice({
   }, [selectedSessionId]);
 
   const hasFilter = Boolean(query.trim()) || providerFilter !== 'all';
-  const unassignedBadgeCount = unassignedMessages.length;
 
   return (
     <main className="session-office aih-panel-enter">
@@ -689,19 +690,15 @@ export default function SessionOffice({
               显示已隐藏 ({hiddenCount})
             </Button>
           ) : null}
-          <Button
-            icon={<MailOutlined />}
-            onClick={() => openStandaloneMailbox('unassigned')}
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: mailboxMenuItems,
+              onClick: ({ key }) => openStandaloneMailbox(key as 'room' | 'unassigned'),
+            }}
           >
-            未归属邮箱 ({unassignedBadgeCount})
-          </Button>
-          <Button
-            icon={<InboxOutlined />}
-            disabled={!activeRoom}
-            onClick={() => openStandaloneMailbox('room')}
-          >
-            打开房间邮箱
-          </Button>
+            <Button icon={<MailOutlined />}>邮箱</Button>
+          </Dropdown>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -811,156 +808,8 @@ export default function SessionOffice({
             )}
           </div>
 
-          {activeRoom && activeRoom.sessions.length > 0 ? (
-            <section className="session-office-stations" aria-label="当前房间工位列表">
-              <div className="session-office-stations-head">
-                <span className="session-office-stations-title">
-                  <CodeOutlined />
-                  <span>当前房间工位</span>
-                </span>
-                <span className="session-office-sidebar-count hud-display">
-                  {activeRoom.sessions.length}
-                </span>
-              </div>
-
-              <ul className="session-office-station-list">
-                {activeRoom.sessions.map((station) => {
-                  const isSelected = roomSelectedSessionId === station.id;
-                  const canTerminate = isTerminableWebSession(station);
-                  const isTerminatingThis = isSessionTerminating(station.sessionKey);
-                  const isOtherTerminating = Boolean(terminatingSessionKey && !isTerminatingThis);
-                  const stationPower = stationPowerMap.get(station.sessionKey) ?? 'on';
-                  const isPoweredOff = stationPower === 'off';
-                  const ledClass = station.availability === 'interactive'
-                    ? 'hud-led hud-led--ok hud-led--live'
-                    : station.availability === 'directory-only'
-                      ? 'hud-led hud-led--info'
-                      : station.availability === 'unavailable'
-                        ? 'hud-led hud-led--warn'
-                        : 'hud-led';
-
-                  return (
-                    <li
-                      key={station.id}
-                      className={`session-office-station-item${isSelected ? ' is-selected' : ''}`}
-                      onClick={() => handleSelectRoomSession(station)}
-                    >
-                      <div className="session-office-station-top">
-                        <span className="session-office-station-name-wrap">
-                          <span className={ledClass} aria-hidden="true" />
-                          <strong className="session-office-station-name" title={station.label}>
-                            {station.shortLabel || station.label}
-                          </strong>
-                        </span>
-                        <span className="session-office-station-badges">
-                          {isPoweredOff ? (
-                            <span className="session-office-station-poweroff">虚拟关机</span>
-                          ) : null}
-                          <span className="session-office-station-source">
-                            {canTerminate ? 'Web Shell' : '原生 CLI'}
-                          </span>
-                        </span>
-                      </div>
-
-                      <div className="session-office-station-cwd" title={station.cwd || '未指定目录'}>
-                        {station.cwd || '未指定目录'}
-                      </div>
-
-                      <div className="session-office-station-actions">
-                        <Button
-                          size="small"
-                          icon={<DesktopOutlined />}
-                          disabled={isTerminatingThis}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleOpenMonitor(station);
-                          }}
-                        >
-                          桌面
-                        </Button>
-
-                        <Tooltip
-                          title={
-                            isPoweredOff
-                              ? '开启该工位虚拟电脑（恢复按原标识连接）'
-                              : '虚拟电脑关机：仅熄屏并断开前端附着，保留后台持久会话'
-                          }
-                          placement="right"
-                        >
-                          <Button
-                            size="small"
-                            icon={isPoweredOff ? <ThunderboltOutlined /> : <PoweroffOutlined />}
-                            disabled={isTerminatingThis}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleToggleStationPower(station);
-                            }}
-                          >
-                            {isPoweredOff ? '开机' : '虚拟关机'}
-                          </Button>
-                        </Tooltip>
-
-                        {canTerminate ? (
-                          <Button
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            loading={isTerminatingThis}
-                            disabled={isOtherTerminating}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRequestTerminateSession(station);
-                            }}
-                          >
-                            {isTerminatingThis ? '关闭中…' : '关闭会话'}
-                          </Button>
-                        ) : (
-                          <Tooltip title={NATIVE_CLOSE_DISABLED_REASON} placement="right">
-                            <span
-                              className="session-office-disabled-action"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <Button
-                                size="small"
-                                disabled
-                                icon={<DeleteOutlined />}
-                              >
-                                关闭会话
-                              </Button>
-                            </span>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
-
-          <div className="session-office-sidebar-footer">
-            <button
-              type="button"
-              className={`session-office-unassigned-card${mailboxOverlayOpen && mailboxScope === 'unassigned' ? ' is-active' : ''}`}
-              onClick={() => openStandaloneMailbox('unassigned')}
-            >
-              <span className="session-office-unassigned-title">
-                <MailOutlined />
-                <span>未归属 / 历史邮箱</span>
-              </span>
-              <span className="session-office-unassigned-meta">
-                {fullyUnassignedCount > 0 ? (
-                  <span className="session-office-pill session-office-pill--warn">
-                    纯未归属 {fullyUnassignedCount}
-                  </span>
-                ) : null}
-                <span className="session-office-unassigned-count hud-display">
-                  {unassignedMessages.length}
-                </span>
-              </span>
-            </button>
-
-            {unavailableSessions.length > 0 ? (
+          {unavailableSessions.length > 0 ? (
+            <div className="session-office-sidebar-footer">
               <section className="session-office-unavailable" aria-label="暂不可接入的原会话">
                 <button
                   type="button"
@@ -1006,8 +855,8 @@ export default function SessionOffice({
                   </div>
                 ) : null}
               </section>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </aside>
 
         <section className="session-office-stage" aria-label="项目三维办公空间">
@@ -1086,6 +935,7 @@ export default function SessionOffice({
               onOpenNewTerminal={handleOpenNewTerminal}
               directoryLoading={directoryLoading}
               onTerminateSession={handleRequestTerminateSession}
+              onToggleStationPower={handleToggleStationPower}
               terminatingSessionKey={terminatingSessionKey}
             />
           )}

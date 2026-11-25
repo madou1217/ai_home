@@ -21,12 +21,15 @@ import {
   InboxOutlined,
   LeftOutlined,
   MailOutlined,
+  MoreOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   RightOutlined,
   StopOutlined,
+  ThunderboltOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
-import { Button, Tooltip } from 'antd';
+import { Button, Dropdown, type MenuProps } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
 import { useThemeMode } from '@/hooks/use-theme-mode';
 import type {
@@ -74,6 +77,7 @@ export interface OfficeRoomProps {
   onOpenNewTerminal: (cwd?: string) => void;
   directoryLoading: boolean;
   onTerminateSession?: (session: OfficeSessionItem) => void | Promise<void>;
+  onToggleStationPower?: (session: OfficeSessionItem) => void;
   terminatingSessionKey?: string | null;
 }
 
@@ -187,6 +191,7 @@ export function OfficeRoom({
   onOpenNewTerminal,
   directoryLoading,
   onTerminateSession,
+  onToggleStationPower,
   terminatingSessionKey = null,
 }: OfficeRoomProps) {
   const themeMode = useThemeMode();
@@ -632,6 +637,76 @@ export function OfficeRoom({
     void onTerminateSession(activeSession);
   }, [activeSession, onTerminateSession]);
 
+  const cameraMenuItems: MenuProps['items'] = [
+    ...CAMERA_OPTIONS.map((opt) => ({
+      key: opt.preset,
+      icon: renderCameraIcon(opt.preset),
+      label: cameraPreset === opt.preset ? `${opt.label} · 当前` : opt.label,
+    })),
+    { type: 'divider' as const },
+    { key: 'reset', icon: <UndoOutlined />, label: '重置视角' },
+    ...(activeSession
+      ? [{ key: 'focus', icon: <AimOutlined />, label: `聚焦 ${activeSession.shortLabel}` }]
+      : []),
+  ];
+
+  const handleCameraMenuClick: MenuProps['onClick'] = ({ key }) => {
+    if (key === 'reset') {
+      handleResetCamera();
+      return;
+    }
+    if (key === 'focus') {
+      handleFocusSelectedStation();
+      return;
+    }
+    handleCameraPresetSelect(key as OfficeCameraPreset);
+  };
+
+  const mailCount = activeSession
+    ? activeSession.inboxCount + activeSession.pendingCount
+    : 0;
+  const moreMenuItems: MenuProps['items'] = [
+    {
+      key: 'monitor',
+      icon: isMonitorEditActive ? <CheckOutlined /> : <DragOutlined />,
+      label: isMonitorEditActive ? '完成显示器调整' : '调整显示器',
+    },
+    {
+      key: 'mail',
+      icon: <MailOutlined />,
+      label: mailCount > 0 ? `会话邮件 (${mailCount})` : '会话邮件',
+    },
+    { key: 'copy', icon: <CopyOutlined />, label: '复制标识' },
+    ...(onToggleStationPower
+      ? [
+        { type: 'divider' as const },
+        {
+          key: 'power',
+          icon: activeComputerPrefs?.power === 'off' ? <ThunderboltOutlined /> : <PoweroffOutlined />,
+          label: activeComputerPrefs?.power === 'off' ? '虚拟开机' : '虚拟关机',
+        },
+      ]
+      : []),
+  ];
+
+  const handleMoreMenuClick: MenuProps['onClick'] = ({ key }) => {
+    if (key === 'monitor') {
+      setMonitorEditMode((prev) => !prev);
+      return;
+    }
+    if (key === 'mail') {
+      handleOpenSelectedMail();
+      return;
+    }
+    if (key === 'copy') {
+      handleCopySelectedIdentity();
+      return;
+    }
+    if (key === 'power' && activeSession) {
+      onToggleStationPower?.(activeSession);
+    }
+  };
+
   const handleToggleDualMonitor = useCallback((nextDual: boolean) => {
     if (!activeSession) return;
     const targetSid = serverId || activeSession.serverId || 'local';
@@ -863,77 +938,19 @@ export function OfficeRoom({
             </div>
           ) : null}
 
-          <div className="office-camera-switch" role="group" aria-label="3D 视角预设">
-            {CAMERA_OPTIONS.map((opt) => {
-              const active = cameraPreset === opt.preset;
-              return (
-                <button
-                  key={opt.preset}
-                  type="button"
-                  className={`office-camera-btn${active ? ' is-active' : ''}`}
-                  aria-pressed={active}
-                  title={opt.title}
-                  onClick={() => handleCameraPresetSelect(opt.preset)}
-                >
-                  {renderCameraIcon(opt.preset)}
-                  <span>{opt.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <Tooltip title="重置当前 3D 视角">
+          <Dropdown
+            trigger={['click']}
+            menu={{ items: cameraMenuItems, onClick: handleCameraMenuClick }}
+          >
             <Button
               size="small"
-              icon={<UndoOutlined />}
-              onClick={handleResetCamera}
-              aria-label="重置 3D 视角"
+              icon={renderCameraIcon(cameraPreset)}
+              aria-label="切换 3D 视角"
+              title="切换 / 重置 / 聚焦 3D 视角"
             >
-              重置视角
+              视角
             </Button>
-          </Tooltip>
-
-          {activeSession ? (
-            <Tooltip title={`镜头聚焦到 ${activeSession.shortLabel}`}>
-              <Button
-                size="small"
-                icon={<AimOutlined />}
-                onClick={handleFocusSelectedStation}
-                aria-label="聚焦选中工位"
-              >
-                聚焦
-              </Button>
-            </Tooltip>
-          ) : null}
-
-          <Button
-            size="small"
-            icon={<MailOutlined />}
-            onClick={onOpenRoomMailbox}
-          >
-            房间邮件 {room.roomMessages.length}
-            {room.pendingMailCount > 0 ? (
-              <span className="office-btn-badge office-btn-badge--warn">+{room.pendingMailCount}</span>
-            ) : null}
-          </Button>
-
-          <Button
-            size="small"
-            icon={<InboxOutlined />}
-            onClick={onOpenUnassignedMailbox}
-          >
-            未归属 {unassignedCount}
-          </Button>
-
-          <Button
-            className="office-room-new-terminal"
-            size="small"
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleOpenRoomTerminal}
-          >
-            新建终端
-          </Button>
+          </Dropdown>
         </div>
       </header>
 
@@ -1090,40 +1107,19 @@ export function OfficeRoom({
                 >
                   {activeComputerPrefs?.power === 'off' ? '开机桌面' : '打开桌面'}
                 </Button>
-                <Tooltip title="拖拽或精调当前选中工位的 3D 显示器位置与单双屏模式">
+                <Dropdown
+                  trigger={['click']}
+                  menu={{ items: moreMenuItems, onClick: handleMoreMenuClick }}
+                >
                   <Button
                     size="small"
                     type={isMonitorEditActive ? 'primary' : 'default'}
-                    icon={isMonitorEditActive ? <CheckOutlined /> : <DragOutlined />}
-                    aria-pressed={isMonitorEditActive}
-                    onClick={() => setMonitorEditMode((prev) => !prev)}
+                    icon={<MoreOutlined />}
+                    aria-label="更多工位操作"
                   >
-                    {isMonitorEditActive ? '完成调整' : '调整显示器'}
+                    更多
                   </Button>
-                </Tooltip>
-                <Button
-                  size="small"
-                  icon={<MailOutlined />}
-                  onClick={handleOpenSelectedMail}
-                >
-                  会话邮件
-                  {activeSession.inboxCount > 0 || activeSession.pendingCount > 0 ? (
-                    <span className="office-action-count">
-                      {activeSession.inboxCount}
-                      {activeSession.pendingCount > 0 ? `+${activeSession.pendingCount}` : ''}
-                    </span>
-                  ) : null}
-                </Button>
-                <Tooltip title="复制会话标识">
-                  <Button
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={handleCopySelectedIdentity}
-                    aria-label={`复制 ${activeSession.shortLabel} 会话标识`}
-                  >
-                    复制标识
-                  </Button>
-                </Tooltip>
+                </Dropdown>
                 {canTerminateActive ? (
                   <Button
                     size="small"

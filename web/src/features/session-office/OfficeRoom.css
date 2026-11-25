@@ -164,66 +164,6 @@
   white-space: nowrap;
 }
 
-.office-camera-switch {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  gap: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-sunken);
-}
-
-.office-camera-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 3px var(--space-4);
-  border: 1px solid transparent;
-  border-radius: var(--hos-radius-xs, 2px);
-  background: transparent;
-  color: var(--color-muted);
-  font-family: var(--font-body);
-  font-size: var(--hos-text-micro);
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard);
-}
-
-.office-camera-btn:hover {
-  color: var(--color-heading);
-  background: var(--color-surface);
-}
-
-.office-camera-btn.is-active {
-  border-color: color-mix(in srgb, var(--color-accent) 48%, var(--color-border));
-  background: var(--color-surface);
-  color: var(--color-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 16%, transparent);
-}
-
-.office-btn-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: var(--space-2);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.office-btn-badge--warn {
-  border-color: color-mix(in srgb, var(--color-warning) 44%, var(--color-border));
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-}
-
 /* ── Main WebGL 3D Viewport ──────────────────────────────────────────────── */
 
 .office-webgl-viewport {
@@ -552,7 +492,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .office-webgl-viewport,
-  .office-camera-btn,
   .office-station-chip {
     transition: none !important;
   }
@@ -563,26 +502,6 @@
 @media (max-height: 820px) {
   .office-webgl-viewport {
     min-height: 240px;
-  }
-}
-
-/* 1280 等窄桌面：页头已有“项目终端”入口，房间工具条隐藏重复按钮，
- * 避免它单独折到第二行。 */
-@media (max-width: 1400px) {
-  .office-room-new-terminal {
-    display: none;
-  }
-}
-
-/* 1200 左右的窄桌面：视角按钮只留图标（title 仍给出名称），
- * 避免相机组与操作按钮把工具栏折成三行。 */
-@media (max-width: 1240px) {
-  .office-camera-btn {
-    padding-inline: 6px;
-  }
-
-  .office-camera-btn > span {
-    display: none;
   }
 }
 

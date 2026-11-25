@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clipboardstore"
 	"github.com/madou1217/ai_home/internal/runtime/aihhome"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
+	"github.com/madou1217/ai_home/internal/runtime/clippicker"
 )
 
 type cliClipboardProbe struct {
@@ -47,6 +48,9 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 		writeClipUsage(runtime.stdout)
 		return nil
 	}
+	if subcommand == "vim" {
+		return runClipVim(rest, runtime)
+	}
 
 	homeDir, err := resolveClipboardAIHomeDir(runtime)
 	if err != nil {
@@ -74,6 +78,8 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 		return runClipPaste(ctx, service, rest, runtime)
 	case "copy":
 		return runClipCopy(ctx, service, sysIO, rest, runtime)
+	case "pick", "ui":
+		return runClipPick(ctx, service, sysIO, rest, runtime)
 	case "pin":
 		return runClipPin(ctx, service, rest, runtime)
 	case "rm", "remove", "delete":
@@ -449,6 +455,70 @@ func runClipSetCapture(ctx context.Context, service *clipboard.Service, sysIO cl
 	return nil
 }
 
+func runClipPick(ctx context.Context, service *clipboard.Service, sysIO clipboardio.Writer, args []string, runtime commandRuntime) error {
+	var kind clipboard.Kind
+	query := ""
+	limit := 200
+	printStdout := false
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--stdout":
+			printStdout = true
+		case arg == "--kind" && i+1 < len(args):
+			i++
+			parsed, err := clipboard.ParseKind(args[i])
+			if err != nil {
+				return fmt.Errorf("invalid --kind: %s", args[i])
+			}
+			kind = parsed
+		case strings.HasPrefix(arg, "--kind="):
+			parsed, err := clipboard.ParseKind(strings.TrimPrefix(arg, "--kind="))
+			if err != nil {
+				return fmt.Errorf("invalid --kind: %s", arg)
+			}
+			kind = parsed
+		case arg == "--query" && i+1 < len(args):
+			i++
+			query = args[i]
+		case strings.HasPrefix(arg, "--query="):
+			query = strings.TrimPrefix(arg, "--query=")
+		case arg == "--limit" && i+1 < len(args):
+			i++
+			parsed, err := strconv.Atoi(strings.TrimSpace(args[i]))
+			if err != nil || parsed <= 0 {
+				return fmt.Errorf("invalid --limit: %s", args[i])
+			}
+			limit = parsed
+		case strings.HasPrefix(arg, "--limit="):
+			parsed, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(arg, "--limit=")))
+			if err != nil || parsed <= 0 {
+				return fmt.Errorf("invalid --limit: %s", arg)
+			}
+			limit = parsed
+		default:
+			return fmt.Errorf("unknown flag for `aih clip pick`: %s", arg)
+		}
+	}
+
+	noColorVal, noColorSet := runtime.lookupEnv("NO_COLOR")
+	noColor := noColorSet && strings.TrimSpace(noColorVal) != ""
+
+	return clippicker.Run(ctx, clippicker.Options{
+		Service:     service,
+		Writer:      sysIO,
+		Stdin:       runtime.stdin,
+		Stdout:      runtime.stdout,
+		Stderr:      runtime.stderr,
+		Kind:        kind,
+		Query:       query,
+		Limit:       limit,
+		PrintStdout: printStdout,
+		NoColor:     noColor,
+	})
+}
+
 func runClipPin(ctx context.Context, service *clipboard.Service, args []string, runtime commandRuntime) error {
 	pinned := true
 	selector := ""
@@ -581,10 +651,12 @@ func writeClipUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  aih clip show <id|#序号> [--json] [--raw]")
 	_, _ = fmt.Fprintln(w, "  aih clip paste [<id|#序号>] [--stdout] [--json]")
 	_, _ = fmt.Fprintln(w, "  aih clip copy [<id|#序号>]")
+	_, _ = fmt.Fprintln(w, "  aih clip pick|ui [--kind text|link|image|file] [--query <q>] [--limit 200] [--stdout]")
 	_, _ = fmt.Fprintln(w, "  aih clip pin <id|#序号> [--off]")
 	_, _ = fmt.Fprintln(w, "  aih clip rm <id|#序号>...")
 	_, _ = fmt.Fprintln(w, "  aih clip clear --yes [--all]")
 	_, _ = fmt.Fprintln(w, "  aih clip enable | disable")
+	_, _ = fmt.Fprintln(w, "  aih clip vim install | print")
 	_, _ = fmt.Fprintln(w, "  aih clip status [--json]")
 }
 

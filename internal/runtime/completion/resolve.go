@@ -88,6 +88,9 @@ func isManagedValueFlag(flag string, prior []string) bool {
 	if head == "workspace" && flag == "--server" {
 		return true
 	}
+	if head == "clip" && flag == "--kind" {
+		return true
+	}
 	if head == "peer" {
 		switch flag {
 		case "--channel", "--target", "--reply-to", "--state", "--mode":

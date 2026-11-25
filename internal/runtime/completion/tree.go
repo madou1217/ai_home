@@ -29,6 +29,7 @@ const (
 	kindHarness         valueKind = "harness"
 	kindRemoteServer    valueKind = "remote_server"
 	kindRemoteWorkspace valueKind = "remote_workspace"
+	kindClipboardItem   valueKind = "clipboard_item"
 	kindFile            valueKind = "file"
 	kindFree            valueKind = "free"
 )
@@ -379,6 +380,12 @@ func emitTreeValues(target *collector, context *resolverContext, state *treeStat
 		if context.workspaceLister != nil {
 			for _, choice := range context.workspaceLister(workspaceRequest{Action: "list", Server: state.server, Current: current}) {
 				target.add(choice.Value, choice.Description, groupOther, choice.Description)
+			}
+		}
+	case kindClipboardItem:
+		if context.clipboardLister != nil {
+			for _, item := range context.clipboardLister(current) {
+				target.add(item.Value, item.Description, groupOther, item.Description)
 			}
 		}
 	case kindFile, kindFree, kindNone:

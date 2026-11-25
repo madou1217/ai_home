@@ -175,6 +175,12 @@ func Snippet(shell string, options SnippetOptions) (string, bool) {
 	body := text[headerEnd+1:]
 	body = replaceHistoryTailDeclaration(normalizedShell, body, options.HistoryTail)
 	body = strings.ReplaceAll(body, binToken, escapeSingleQuotes(normalizedShell, options.AihBinPath))
+	if widget := clipboardWidget(normalizedShell); widget != "" {
+		if !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		body += widget
+	}
 	header := fmt.Sprintf("%s{\"completion\":%t,\"typo\":%t,\"wrapper\":%t,\"historyTail\":%d}\n",
 		optionsPrefix, options.Completion, options.Typo, options.Wrapper, options.HistoryTail)
 	if bom {

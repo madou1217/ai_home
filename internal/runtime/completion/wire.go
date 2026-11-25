@@ -441,6 +441,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		workspaceLister: func(request workspaceRequest) []remoteTargetChoice {
 			return listWorkspaceCandidates(aiHome, request)
 		},
+		clipboardLister: func(_ string) []clipboardChoice {
+			return listClipboardCandidates(aiHome, hostAIHome)
+		},
 		nativeFlagLister: func(provider, current string) []nativeFlagEntry {
 			return filterNativeFlags(listNativeFlags(environment, provider), current)
 		},

@@ -260,6 +260,38 @@ func buildCommandCatalog() []commandNode {
 		),
 		n("export", "导出账号（aih 原生 JSON，含明文凭据）").withPositionals(p(kindFile), pr(kindFile)),
 		n("import", "导入 aih 账号文件").withOptions(f("--dry-run", "只打印将要做的改动")).withPositionals(pr(kindFile)),
+		n("clip", "跨设备剪贴板历史、终端选择器、采集与 Vim 粘贴").withChildren(
+			n("ls", "列出最近的剪贴板历史").withAliases("list").withOptions(
+				f("--limit", "最多返回多少条"),
+				vf("--kind", "按内容类型过滤", kindEnum, "text", "link", "image", "file"),
+				jsonFlag,
+			),
+			n("show", "查看单条剪贴板详情").withOptions(jsonFlag, f("--raw", "输出原始字节")).withPositionals(p(kindClipboardItem)),
+			n("paste", "输出剪贴板原始内容到标准输出（默认最新一条）").withOptions(f("--stdout", "输出到标准输出"), jsonFlag).withPositionals(p(kindClipboardItem)),
+			n("copy", "将历史条目写回本机系统剪贴板").withPositionals(p(kindClipboardItem)),
+			n("pin", "置顶或取消置顶条目").withOptions(f("--off", "取消置顶")).withPositionals(p(kindClipboardItem)),
+			n("rm", "软删除一条或多条历史").withAliases("remove", "delete").withPositionals(pr(kindClipboardItem)),
+			n("clear", "清空剪贴板历史（默认保留置顶）").withOptions(f("--yes", "确认清空"), f("--all", "连同置顶条目一并清空")),
+			n("status", "查看本机剪贴板采集、同步与设备状态").withOptions(jsonFlag),
+			n("pick", "打开终端交互选择器").withOptions(
+				vf("--kind", "按内容类型过滤", kindEnum, "text", "link", "image", "file"),
+				f("--query", "初始搜索词"),
+				f("--limit", "最多加载条数"),
+				f("--stdout", "选中后将内容输出到标准输出"),
+			),
+			n("ui", "pick 的别名：打开终端交互选择器").withOptions(
+				vf("--kind", "按内容类型过滤", kindEnum, "text", "link", "image", "file"),
+				f("--query", "初始搜索词"),
+				f("--limit", "最多加载条数"),
+				f("--stdout", "选中后将内容输出到标准输出"),
+			),
+			n("enable", "启用本机剪贴板采集"),
+			n("disable", "停用本机剪贴板采集"),
+			n("vim", "安装或打印 Vim 粘贴插件").withChildren(
+				n("install", "幂等写入 ~/.vim/plugin/aih_clipboard.vim"),
+				n("print", "打印 Vim 插件脚本"),
+			),
+		),
 		n("backup", "导出 / 导入 / 远程自动备份").withOptions(f("--name", "目标名称"), f("--port", "SSH 端口"), f("--key", "SSH 私钥"), f("--remote-dir", "远端目录"), f("--password-env", "密码环境变量"), f("--strategy", "备份策略"), f("--interval", "备份间隔"), f("--debounce", "防抖秒数"), vf("--enabled", "是否启用", kindEnum, "on", "off"), f("--full", "全量备份"), f("--dry-run", "只打印将要做的改动"), f("--remote", "读取远端清单"), jsonFlag).withChildren(
 			n("add", "添加 SSH 备份目标").withOptions(f("--name", ""), f("--port", ""), f("--key", ""), f("--remote-dir", ""), f("--password-env", ""), f("--strategy", "")).withPositionals(p(kindFree)),
 			n("list", "列出目标与最近结果").withAliases("ls"),

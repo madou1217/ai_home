@@ -73,6 +73,12 @@ type mcpChoice struct {
 	Description string
 }
 
+// clipboardChoice is one selectable clipboard item id prefix and preview summary.
+type clipboardChoice struct {
+	Value       string
+	Description string
+}
+
 // resolverContext 注入所有动态候选来源；每项都允许为空，解析器按位置惰性调用。
 type resolverContext struct {
 	historyEntries        []historyEntry
@@ -89,6 +95,7 @@ type resolverContext struct {
 	mcpLister             func(provider, accountToken string) []mcpChoice
 	remoteTargetLister    func(request remoteTargetRequest) []remoteTargetChoice
 	workspaceLister       func(request workspaceRequest) []remoteTargetChoice
+	clipboardLister       func(current string) []clipboardChoice
 	nativeFlagLister      func(provider, current string) []nativeFlagEntry
 	nativeFlagValueLister func(provider, flag string) []string
 	aihServerProfileID    string

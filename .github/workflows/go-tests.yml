@@ -102,23 +102,36 @@ jobs:
 
       - name: Vet
         if: steps.scope.outputs.go == 'true'
-        run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/... ./internal/runtime/distributioninstall/...
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\aih-logs" | Out-Null
+          go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/... ./internal/runtime/distributioninstall/... 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\aih-logs\vet-windows.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test junction semantics
         if: steps.scope.outputs.go == 'true'
-        run: go test -count=1 -v -timeout 5m ./internal/runtime/artifactstore/...
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\aih-logs" | Out-Null
+          go test -count=1 -v -timeout 5m ./internal/runtime/artifactstore/... 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\aih-logs\artifactstore-windows.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Windows installer sync
         if: steps.scope.outputs.go == 'true'
-        run: go test -count=1 -v -timeout 5m ./internal/runtime/distributioninstall/...
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\aih-logs" | Out-Null
+          go test -count=1 -v -timeout 5m ./internal/runtime/distributioninstall/... 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\aih-logs\installer-sync-windows.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # 生产二进制也要在 Windows 上编译通过：artifactstore/spacegc 被 server 引用，
       # 只测包不编译入口会漏掉"测试过、产品编不过"的情况。
       - name: Build CLI and server for windows
         if: steps.scope.outputs.go == 'true'
         run: |
-          go build -trimpath -o "$env:RUNNER_TEMP\aih.exe" ./cmd/aih
-          go build -trimpath -o "$env:RUNNER_TEMP\aih-server.exe" ./internal/host/aihserver
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\aih-logs" | Out-Null
+          $log = "$env:RUNNER_TEMP\aih-logs\build-windows.log"
+          go build -trimpath -o "$env:RUNNER_TEMP\aih.exe" ./cmd/aih 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -o "$env:RUNNER_TEMP\aih-server.exe" ./internal/host/aihserver 2>&1 | Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Setup .NET for browser helper
         if: steps.scope.outputs.browser == 'true'
@@ -162,6 +175,29 @@ jobs:
         if: steps.scope.outputs.go != 'true'
         run: Write-Output 'no Go-related changes; Windows checks skipped'
 
+      - name: Collect failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          {
+            echo "workflow=$GITHUB_WORKFLOW job=$GITHUB_JOB run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
+            echo "sha=$GITHUB_SHA ref=$GITHUB_REF"
+            git status --short || true
+            git log -3 --oneline || true
+            go version || true
+            go env || true
+          } > "$RUNNER_TEMP/aih-logs/diagnostics.txt" 2>&1
+
+      - name: Archive failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-tests-failure-${{ github.job }}-${{ runner.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aih-logs
+          if-no-files-found: warn
+          retention-days: 14
+
   # 非 Windows 侧不设门：冷启动约 1 分钟，且能第一时间暴露"只有 Linux 才编不过"
   # 的改动（例如新代码用了 darwin 专属 syscall 却漏了 build tag）。
   linux:
@@ -191,32 +227,70 @@ jobs:
       # 执行仍由 windows job 负责。
       - name: Verify Windows service sync build tags
         run: |
-          files="$(GOOS=windows GOARCH=amd64 go list -f '{{join .TestGoFiles " "}}' ./internal/runtime/distributioninstall)"
-          echo "GOOS=windows TestGoFiles: $files"
-          case "$files" in
-            *service_sync_windows_test.go*) ;;
-            *) echo "service_sync_windows_test.go not selected by GOOS=windows" >&2; exit 1 ;;
-          esac
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./internal/runtime/distributioninstall
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/runtime/distributioninstall -o "$RUNNER_TEMP/service-sync-windows.test.exe"
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          {
+            files="$(GOOS=windows GOARCH=amd64 go list -f '{{join .TestGoFiles " "}}' ./internal/runtime/distributioninstall)"
+            echo "GOOS=windows TestGoFiles: $files"
+            case "$files" in
+              *service_sync_windows_test.go*) ;;
+              *) echo "service_sync_windows_test.go not selected by GOOS=windows" >&2; exit 1 ;;
+            esac
+            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./internal/runtime/distributioninstall
+            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/runtime/distributioninstall -o "$RUNNER_TEMP/service-sync-windows.test.exe"
+          } 2>&1 | tee "$RUNNER_TEMP/aih-logs/build-tags-linux.log"
 
       - name: Vet
-        run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/...
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/... 2>&1 | tee "$RUNNER_TEMP/aih-logs/vet-linux.log"
 
       - name: Test
-        run: go test -count=1 -timeout 5m ./internal/runtime/artifactstore/...
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          go test -count=1 -timeout 5m ./internal/runtime/artifactstore/... 2>&1 | tee "$RUNNER_TEMP/aih-logs/test-linux.log"
 
       # HostSupervisor 的配置替换/Close 并发只有 race detector 能覆盖。
       # job 级 CGO_ENABLED=0 是为了可复现构建；-race 这一步必须单独打开 CGO。
       - name: Race tests (codex environments)
         env:
           CGO_ENABLED: '1'
-        run: go test -count=1 -race -timeout 5m ./internal/runtime/codexenvironments/
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          go test -count=1 -race -timeout 5m ./internal/runtime/codexenvironments/ 2>&1 | tee "$RUNNER_TEMP/aih-logs/race-linux.log"
 
       - name: Build CLI and server
         run: |
-          go build -trimpath -o "$RUNNER_TEMP/aih" ./cmd/aih
-          go build -trimpath -o "$RUNNER_TEMP/aih-server" ./internal/host/aihserver
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          go build -trimpath -o "$RUNNER_TEMP/aih" ./cmd/aih 2>&1 | tee "$RUNNER_TEMP/aih-logs/build-linux.log"
+          go build -trimpath -o "$RUNNER_TEMP/aih-server" ./internal/host/aihserver 2>&1 | tee -a "$RUNNER_TEMP/aih-logs/build-linux.log"
+
+      - name: Collect failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          {
+            echo "workflow=$GITHUB_WORKFLOW job=$GITHUB_JOB run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
+            echo "sha=$GITHUB_SHA ref=$GITHUB_REF"
+            git status --short || true
+            git log -3 --oneline || true
+            go version || true
+            go env || true
+          } > "$RUNNER_TEMP/aih-logs/diagnostics.txt" 2>&1
+
+      - name: Archive failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-tests-failure-${{ github.job }}-${{ runner.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aih-logs
+          if-no-files-found: warn
+          retention-days: 14
 
   # 会话发现要同时读当前配置根和迁移前的位置。路径/文件系统语义与平台有关，
   # 因此三个平台都跑同一组 relocated session directory 测试。
@@ -247,4 +321,31 @@ jobs:
           go env GOOS GOARCH
 
       - name: Test relocated session directories
-        run: go test -count=1 -timeout 5m ./internal/sessionscan/...
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          go test -count=1 -timeout 5m ./internal/sessionscan/... 2>&1 | tee "$RUNNER_TEMP/aih-logs/test-relocated-${{ matrix.os }}.log"
+
+      - name: Collect failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/aih-logs"
+          {
+            echo "workflow=$GITHUB_WORKFLOW job=$GITHUB_JOB run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
+            echo "sha=$GITHUB_SHA ref=$GITHUB_REF"
+            git status --short || true
+            git log -3 --oneline || true
+            go version || true
+            go env || true
+          } > "$RUNNER_TEMP/aih-logs/diagnostics.txt" 2>&1
+
+      - name: Archive failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-tests-failure-${{ github.job }}-${{ runner.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aih-logs
+          if-no-files-found: warn
+          retention-days: 14

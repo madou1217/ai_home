@@ -41,8 +41,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>132 条已完成</b>、9 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>90%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D 建模精细度。</p><div class="legend">
-<span class="chip s-已完成">已完成 132</span>
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>133 条已完成</b>、9 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>90%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB、项目办公室 3D 建模精细度。</p><div class="legend">
+<span class="chip s-已完成">已完成 133</span>
 <span class="chip s-部分">部分 9</span>
 <span class="chip s-未完成">未完成 3</span>
 <span class="chip s-未核实">未核实 3</span>
@@ -269,7 +269,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td><span class="chip s-已完成">已完成</span></td>
 <td class="ev">Go 终端路由 + 兼容别名</td><td class="sess">—</td></tr>
 </tbody></table></div></section>
-<section id="t6"><h2>WebUI、性能与需求管理 <span class="count">27 条</span></h2>
+<section id="t6"><h2>WebUI、性能与需求管理 <span class="count">28 条</span></h2>
 <p class="note">HUD、用量看板、TCC 授权、需求办公室与调度器。</p>
 <div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
 <tr>
@@ -349,13 +349,17 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td><span class="chip s-已完成">已完成</span></td>
 <td class="ev">MobileAccounts 按 providerStats 过滤；390/430 下 11 个 chip（Antigravity/Kimi/Kiro 0 账号已隐藏），横向滚动容器 1254/390，页面无横向溢出</td><td class="sess">01a20e40</td></tr>
 <tr>
+<td>项目办公室操作入口精简</td><td class="meta">11-25</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">a4cb2844：页头邮箱合并为下拉（房间/未归属），移除重复未归属/房间邮箱/新建终端；房间工具栏仅“视角”下拉；侧栏移除工位操作与未归属卡片，只保留房间列表；停靠栏只留打开桌面/更多/结束终端，显示器/会话邮件/复制/虚拟关机收进更多；1280/1440/4K 无溢出</td><td class="sess">01a20e40</td></tr>
+<tr>
 <td>4K 视口下办公室布局</td><td class="meta">11-25</td>
 <td><span class="chip s-已完成">已完成</span></td>
-<td class="ev">3840×2160（DPR1）实测：文档无横向/纵向溢出；舞台 3148×1997，3D 画布 3146×1853，停靠栏 95px、底部 2143&lt;舞台 2144；顶栏 48px 单行，视角标签与新建终端均显示，动作区 474px 右对齐；侧栏固定 304px，重复的新建终端/未归属入口仅记录为设计冗余</td><td class="sess">01a20e40</td></tr>
+<td class="ev">3840×2160（DPR1）实测：文档无横向/纵向溢出；舞台 3148×1997，3D 画布 3146×1853，停靠栏 95px、底部 2143&lt;舞台 2144；精简后顶栏 42px 单行（仅“视角”下拉），停靠栏仅“打开桌面/更多/结束终端”，动作区 249px；侧栏固定 304px、仅项目房间</td><td class="sess">01a20e40</td></tr>
 <tr>
 <td>1200 办公室工具栏不再折成三行</td><td class="meta">11-25</td>
 <td><span class="chip s-已完成">已完成</span></td>
-<td class="ev">≤1240 视角按钮只留图标（title 保留名称），控制条 440px 单行；1280/1366 恢复文字标签仍单行；≤1400 房间新建终端隐层，页头项目终端保留</td><td class="sess">01a20e40</td></tr>
+<td class="ev">a4cb2844 最终把视角预设/重置/聚焦合并为“视角”下拉；1200/1280/1440/4K 房间顶栏均 42px 单行，不再出现三行</td><td class="sess">01a20e40</td></tr>
 <tr>
 <td>Provider 标签支持图标+数量紧凑单行</td><td class="meta">11-25</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -367,7 +371,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <tr>
 <td>1280 办公室房间工具栏不单独折行</td><td class="meta">11-25</td>
 <td><span class="chip s-已完成">已完成</span></td>
-<td class="ev">c522b5d8：≤1400 隐藏房间内重复“新建终端”（页头“项目终端”保留）；1280 topbar 81px 单行，1440 恢复按钮仍单行</td><td class="sess">01a20e40</td></tr>
+<td class="ev">c522b5d8 先隐藏窄屏重复按钮；a4cb2844 最终直接移除房间内“新建终端”，1280/1440 顶栏 42px 单行，只保留“视角”下拉</td><td class="sess">01a20e40</td></tr>
 <tr>
 <td>Codex Work（原生 CLI）无原生 bearer 时不应返回 401</td><td class="meta">11-24</td>
 <td><span class="chip s-已完成">已完成</span></td>

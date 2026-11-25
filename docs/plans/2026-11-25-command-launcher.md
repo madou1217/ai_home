@@ -46,8 +46,7 @@ cmd/aih/launch.go                     CLI（apps/open/catalog/toggle/ui/enable/d
 native/launcher/LauncherPanel.swift   macOS 原生面板（编入现有 AIH Translation.app）
 native/launcher/LauncherPanelModel.swift
 native/launcher/LauncherPanelViews.swift
-native/launcher/linux/main.c          Linux GTK4 启动器（纯视图，目录/打开走 aih CLI）
-native/launcher/linux/launcher.css
+internal/runtime/launcherd/ui/main.c  Linux GTK4 启动器（//go:embed 嵌入，内联 CSS，走 stdio 协议）
 internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GTK 进程、X11/Wayland 能力探测）
 ~~~
 
@@ -90,7 +89,8 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 ~~~json
 {"id":"…","name":"Visual Studio Code","subtitle":"/Applications/Visual Studio Code.app",
  "path":"/Applications/Visual Studio Code.app","kind":"app|uwp|flatpak|snap|desktop",
- "icon":"/Applications/Visual Studio Code.app","terminal":false}
+ "icon":"/Applications/Visual Studio Code.app","terminal":false,
+ "aliases":["Code"]}
 ~~~
 
 - `icon`：macOS 为 .app 路径；Windows 为 .lnk/.exe 路径（UWP 为空，UI 用通用图标）；Linux 为 `Icon=` 值（主题名或绝对路径）。
@@ -109,6 +109,7 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 - 词首缩写（`vsc` → Visual Studio Code）：750
 - 名称子串：700 − 位置（上限 100）
 - 名称子序列（按序、不连续）：600 − 间隔总数（上限 150）
+- 任一 alias（`Aliases`，仅 macOS 有）前缀/词前缀/缩写/子串/子序列命中：650（不与名称分叠加，取最大值）
 - 仅副标题命中：300
 
 CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
@@ -123,7 +124,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 ### macOS（appcatalog darwin）
 
 - 扫描：`/Applications`、`/System/Applications`、`/System/Applications/Utilities`、`~/Applications`（递归 3 层），收集 `*.app`。
-- 名称：读 `Contents/Info.plist`。若是 XML plist，解析 `CFBundleDisplayName` 优先、`CFBundleName` 次之；`bplist00`（二进制）或解析失败时用目录名去 `.app`。
+- 名称：**目录名去 `.app`** 作为主名称（用户在 Finder/终端里看到的就是它，例如 `Visual Studio Code` 而不是 plist 里的 `Code`）；解析 `Contents/Info.plist`（XML）得到的 `CFBundleDisplayName`/`CFBundleName` 作为 `aliases`（最多 4 个），仅用于搜索匹配。
 - 去重：同一真实路径只保留一条（`filepath.EvalSymlinks`，失败用原路径）。
 - 打开：`open -a <path>`（`exec.Command`，无 shell）。
 - 备注：系统应用（Safari 等）名称可能为英文目录名，属可接受回退。
@@ -194,7 +195,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
   - `RegisterHotKey` 失败（Alt+Space 可能被系统菜单占用）时安装 `WH_KEYBOARD_LL` 低级键盘钩子拦截 Alt+Space（吞掉事件）并回报状态；钩子失败则报告明确状态，不影响翻译快捷键。
 - `TranslationApplicationContext`：新增 LauncherWindow 生命周期；`Configure` 中处理 launcher 字段；helper 退出时释放钩子。
 
-### 8.4 Linux 运行时（internal/runtime/launcherd + native/launcher/linux）
+### 8.4 Linux 运行时（internal/runtime/launcherd + embedded ui/main.c）
 
 - GTK4 纯视图进程（C，`gcc $(pkg-config --cflags --libs gtk4)`）：
   - 无边框窗口 720×540，CSS 主题（第 2 节色板），`GtkRevealer` 进场（slide-down + crossfade）、`GtkSearchEntry`、`GtkListBox` 行（图标 + 名称 + 副标题）、选中行 CSS 渐变高亮、底部 kbd 提示；

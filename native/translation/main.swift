@@ -96,6 +96,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var quickChatAvailable = false
   let quickOrbit = QuickOrbitWindow()
   let workspaceWindow = ClipboardWorkspaceWindow()
+  let launcherPanel = LauncherPanel(emit: emit)
   private var clipboardOrigin = ""
   private var clipboardKey = ""
   private var clipboardEnabled = false
@@ -121,6 +122,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
 
   // Reopening the bundle is an explicit user action, unlike the server-owned
   // background launch. Give the hidden helper a discoverable window entry.
+  func applicationWillTerminate(_ notification: Notification) {
+    launcherPanel.destroyEventTap()
+  }
+
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if fullApp { panel.openSettings() }
     else if workspaceWindow.isAvailable { workspaceWindow.show() }
@@ -311,7 +316,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
                          translationEnabled: Bool = true,
                          chatEnabled: Bool = true,
                          clipboard: String = ShortcutRegistry.defaultClipboardShortcut,
-                         clipboardEnabled: Bool = false) {
+                         clipboardEnabled: Bool = false,
+                         launcher: String = ShortcutRegistry.defaultLauncherShortcut,
+                         launcherEnabled: Bool = false) {
     _ = shortcutRegistry.update([
       ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
         self?.panel.openSettings()
@@ -330,6 +337,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       },
       ShortcutDescriptor(id: "clipboard", label: "剪贴板", shortcut: clipboard, enabled: clipboardEnabled && quickOrbit.isAvailable) { [weak self] in
         self?.quickOrbit.toggle()
+      },
+      ShortcutDescriptor(id: "launcher", label: "启动器", shortcut: launcher, enabled: launcherEnabled && launcherPanel.isAvailable) { [weak self] in
+        guard let self, !self.launcherPanel.isEventTapActive else { return }
+        self.launcherPanel.toggle()
       }
     ])  }
 
@@ -340,8 +351,13 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       emit(["type": "status", "trusted": trusted])
       monitors.forEach { NSEvent.removeMonitor($0) }
       monitors = []
-      if trusted { installMonitors() }
-      else { panel.close() }
+      if trusted {
+        installMonitors()
+        launcherPanel.reconcileEventTap()
+      } else {
+        launcherPanel.destroyEventTap()
+        panel.close()
+      }
     }
   }
 
@@ -426,6 +442,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }) { monitors.append(monitor) }
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
       if event.type == .keyDown && event.keyCode == 53 {
+        if self?.launcherPanel.shouldLetEscapeThrough() == true { return event }
+        if self?.launcherPanel.handleGlobalEscape() == true { return nil }
         if self?.quickOrbit.isVisibleAndKey == true {
           self?.quickOrbit.hide()
           return nil
@@ -518,13 +536,23 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         managementKey: clipKey,
         enabled: clipEnabled
       )
+      let launcherShortcut = event["launcherShortcut"] as? String ?? ShortcutRegistry.defaultLauncherShortcut
+      let launcherEnabled = event["launcherEnabled"] as? Bool ?? false
+      launcherPanel.configure(
+        origin: event["launcherOrigin"] as? String ?? "",
+        managementKey: event["launcherKey"] as? String ?? "",
+        shortcut: launcherShortcut,
+        enabled: launcherEnabled
+      )
       registerShortcuts(
         translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
         chat: event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut,
         translationEnabled: event["shortcutEnabled"] as? Bool ?? true,
         chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true,
         clipboard: event["clipboardShortcut"] as? String ?? ShortcutRegistry.defaultClipboardShortcut,
-        clipboardEnabled: clipEnabled
+        clipboardEnabled: clipEnabled,
+        launcher: launcherShortcut,
+        launcherEnabled: launcherEnabled
       )
       reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":
@@ -551,6 +579,12 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       quickOrbit.toggle()
     case "clipboard-pasted":
       break
+    case "launcher-show":
+      if launcherPanel.isAvailable {
+        launcherPanel.show()
+      } else {
+        emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": "启动器未启用或本机管理密钥未就绪，无法显示面板"])
+      }
     default: panel.receive(event)
     }
   }

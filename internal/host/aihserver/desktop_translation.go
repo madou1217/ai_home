@@ -62,6 +62,9 @@ func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, cha
 		},
 		ClipboardEnabled:   clipboard.DesktopEnabled,
 		QuickOrbitPosition: clipboard.QuickOrbitPosition,
+		LauncherEnabled: func() bool {
+			return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+		},
 	})
 	if err != nil {
 		return nil, nil, err

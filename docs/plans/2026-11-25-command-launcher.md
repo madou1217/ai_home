@@ -48,8 +48,7 @@ cmd/aih/launch.go                     CLI（apps/open/catalog/toggle/ui/enable/d
 native/launcher/LauncherPanel.swift   macOS 原生面板（编入现有 AIH Translation.app）
 native/launcher/LauncherPanelModel.swift
 native/launcher/LauncherPanelViews.swift
-native/launcher/linux/main.c          Linux GTK4 启动器（纯视图，目录/打开走 aih CLI）
-native/launcher/linux/launcher.css
+internal/runtime/launcherd/ui/main.c  Linux GTK4 启动器（//go:embed 嵌入，内联 CSS，走 stdio 协议）
 internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GTK 进程、X11/Wayland 能力探测）
 ~~~
 
@@ -82,10 +81,12 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/apps?q=&refresh=1&limit=` | 返回 `{platform, generatedAt, apps:[...], truncated}`；`q` 为空时按「最近使用 → 名称」排序，`q` 非空时按第 6 节排序；`refresh=1` 强制重扫 |
+| GET | `/apps?q=&refresh=1&limit=` | 返回 `{platform, generatedAt, apps:[...], truncated}`；`q` 最多 256 个字符（超出返回 400 `invalid_query`）；`q` 为空时按「最近使用 → 名称」排序，`q` 非空时按第 6 节排序；`limit` 钳制在 `1..2000`（默认 2000）；`refresh=1` 强制重扫 |
 | POST | `/open` | body `{id}`；打开成功记录 usage 并返回 `{ok:true}`；失败返回 4xx/5xx 与 `{error, message}` |
 | POST | `/show` | 让桌面面板显示（Server 向 helper 下发 `{"type":"launcher-show"}`；Linux 走 launcherd socket）；无桌面面板时 501 |
-| GET | `/status` | `{platform, supported, count, generatedAt, lastError}` |
+| GET | `/status` | `{platform, supported, count, generatedAt, lastError, desktop?}`；Linux 桌面附带 `desktop:{supported, built, binaryPath, pid, desktopError, autostart}` |
+
+> 非桌面系统（如 headless Linux 服务器，无 `DISPLAY`/`WAYLAND_DISPLAY`）在 Server 装配阶段直接跳过启动器，不注册 `/v1/management/launcher/*`（请求返回 404），不构建也不拉起 UI 进程；`darwin`/`windows` 构建仅编译 `launcherd` stub，不嵌入 GTK C 源码。
 
 `App` JSON 字段：
 
@@ -93,12 +94,12 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 {"id":"…","name":"Visual Studio Code","subtitle":"/Applications/Visual Studio Code.app",
  "path":"/Applications/Visual Studio Code.app","kind":"app|uwp|flatpak|snap|desktop",
  "icon":"/Applications/Visual Studio Code.app","terminal":false,
- "aliases":["Code"]}
+ "aliases":["Code"],"boost":35}
 ~~~
 
 - `icon`：macOS 为 .app 路径；Windows 为 .lnk/.exe 路径（UWP 为空，UI 用通用图标）；Linux 为 `Icon=` 值（主题名或绝对路径）。
-- `subtitle` 截断 160 字符；`name` 截断 120 字符。
-- 列表上限默认 2000，超出时 `truncated=true`。
+- `subtitle` 截断 160 字符；`name` 截断 120 字符；`boost` 为查询时动态计算的 §6 使用加成（7 天内 +30 与 `min(count,10)`），仅用于三端本地打分对齐，不参与 ID 计算或持久化。
+- 列表上限默认且最大为 2000，超出时 `truncated=true`。
 
 ## 6. 搜索与排序（唯一规格）
 
@@ -117,7 +118,7 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 
 CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
-加成：`recencyBoost = 30`（7 天内打开过）+ `min(count,10)`；与基础分相加后排序。分数相同按名称小写字典序，再按 ID。
+加成：`recencyBoost = 30`（7 天内打开过）+ `min(count,10)`；与基础分相加后排序。分数相同按名称小写字典序，再按 ID。Server 在 `/apps` 的 `boost` 字段与 Linux `LAUNCH1` 第 10 列透传该值，使三端本地过滤与 Go 排序完全一致。
 空查询：最近打开优先（无记录排后），然后名称字典序。
 
 以上常量只出现在 Go 的一处（`application/launcher/rank.go`）；三端 UI 的本地区间过滤必须按相同规则实现，常量在各自源码中明确注明「与 rank.go 同步」。
@@ -198,24 +199,24 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
   - `RegisterHotKey` 失败（Alt+Space 可能被系统菜单占用）时安装 `WH_KEYBOARD_LL` 低级键盘钩子拦截 Alt+Space（吞掉事件）并回报状态；钩子失败则报告明确状态，不影响翻译快捷键。
 - `TranslationApplicationContext`：新增 LauncherWindow 生命周期；`Configure` 中处理 launcher 字段；helper 退出时释放钩子。
 
-### 8.4 Linux 运行时（internal/runtime/launcherd + native/launcher/linux）
+### 8.4 Linux 运行时（internal/runtime/launcherd + embedded ui/main.c）
 
 - GTK4 纯视图进程（C，`gcc $(pkg-config --cflags --libs gtk4)`）：
   - 无边框窗口 720×540，CSS 主题（第 2 节色板），`GtkRevealer` 进场（slide-down + crossfade）、`GtkSearchEntry`、`GtkListBox` 行（图标 + 名称 + 副标题）、选中行 CSS 渐变高亮、底部 kbd 提示；
   - 图标：`Icon=` 绝对路径 → `gtk_image_new_from_file`；主题名 → `gtk_icon_theme_load_icon`（48px）；失败用 `application-x-executable`；
   - 目录与打开走 **stdio 协议**（与 macOS/Windows helper 同构，GTK 进程只由 launcherd 拉起）：
     - app→launcherd：`refresh\n`、`open\t<id>\n`、`hide\n`、`quit\n`；
-    - launcherd→app：`LAUNCH1\t<base64 id>\t<base64 name>\t<base64 subtitle>\t<base64 icon>\t<base64 kind>\t<0|1 terminal>\t<base64 path>\n…END\n`；
-    - 启动时与每次 show 前发 `refresh`；`open` 由 Go 打开并记录 usage，失败回 `open-error\t<base64 message>`；
+    - launcherd→app：`LAUNCH1\t<base64 id>\t<base64 name>\t<base64 subtitle>\t<base64 icon>\t<base64 kind>\t<0|1 terminal>\t<base64 path>[\t<base64 aliases>[\t<boost>]]\n…END\n`；
+    - 启动时与每次 show 前发 `refresh`；`open` 由 Go 打开并记录 usage，成功回 `open-ok\t<base64 id>`、失败回 `open-error\t<base64 message>`（GTK 等待回复并设 8s 安全超时）；
     - `aih launch catalog --wire` 输出同一 TSV 格式，仅供调试/脚本使用；GTK 进程不依赖 PATH 里的 `aih`。
   - 打开失败时 GTK 显示行内错误，面板不关闭；
-  - 快捷键：X11 用 `gdk_x11_display_get_xdisplay` + `XGrabKey(Alt+Space)`，抓取失败（WM 已占用）在网络状态里回报，并保留 socket 触发；Wayland 下不做 XGrabKey；
-  - 控制 socket：`$XDG_RUNTIME_DIR/aih-launch.sock`（缺省 `/tmp/aih-launch-<uid>.sock`），接收 `toggle|show|hide` 一行命令；`aih launch toggle` 连接并发送；用于桌面环境自行绑定 Alt+Space 的兜底。
+  - 快捷键：X11 用 `gdk_x11_display_get_xdisplay` + `XGrabKey(Alt+Space)`，抓取失败（WM 已占用）在状态里回报，并保留 socket 触发；Wayland 下不做 XGrabKey；
+  - 控制 socket：`$AIH_LAUNCH_SOCKET` → 归属当前用户的 `$XDG_RUNTIME_DIR/aih-launch.sock` → `<aiHome>/run/launcher/linux/aih-launch.sock`（不落 `/tmp`，`umask(0077)` + `0600`，非阻塞 `accept4`），接收 `toggle|show|hide|ping` 一行命令；`aih launch toggle` 连接并发送；用于桌面环境自行绑定 Alt+Space 的兜底。
 - `launcherd`（Go，linux）：
-  - 探测 `DISPLAY`/`WAYLAND_DISPLAY`，无桌面 → `supported=false`；
-  - 首次运行用 `desktopbuild` 风格缓存构建 GTK 源码到 `~/.ai_home/run/launcher/gtk/<fingerprint>/aih-launch-ui`（`gcc` + `pkg-config --exists gtk4`；缺失时 status 给出安装提示，不阻塞 Server）；
-  - 启动进程（`env AIH_LAUNCHER=1`），进程退出记录状态；Server 关闭时终止；
-  - `aih launch ui` 手动启动（前台调试）；`aih launch enable|disable` 写 `~/.config/autostart/aih-launch.desktop`（`Exec=<aih> launch ui`）。
+  - 探测 `DISPLAY`/`WAYLAND_DISPLAY`，无桌面 → `DesktopAvailable()=false`（Server 不装配启动器）；
+  - 首次运行缓存构建嵌入的 `ui/main.c` 到 `~/.ai_home/run/launcher/linux/<fingerprint>/aih-launch-ui`（`gcc` + `pkg-config --exists gtk4`；缺失时 status 给出安装提示，不阻塞 Server）；
+  - 启动进程（`env AIH_LAUNCHER=1`），进程退出记录状态并按 `1s→5s→15s→30s` 退避重启；Server 关闭时终止；
+  - `aih launch ui [--daemon]` 手动启动（前台/后台）；`aih launch enable|disable` 写 `~/.config/autostart/aih-launch.desktop`（`Exec=<aih> launch ui --daemon`）。
 - Server 装配：平台为 linux 且 `LauncherEnabled` 且存在桌面会话时启动 launcherd；失败只记 status，不影响 Server。
 
 ## 9. CLI

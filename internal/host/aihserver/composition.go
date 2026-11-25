@@ -1565,6 +1565,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("装配剪贴板服务失败: %w", clipboardErr)
 	}
 	webuiRoutes = append(webuiRoutes, clipboardRoutes...)
+	launcherRuntimeService, launcherRoutes, launcherErr := newLauncherRuntime(ctx, webuiDeps)
+	if launcherErr != nil {
+		return serverHandlers{}, nil, fmt.Errorf("装配应用启动器服务失败: %w", launcherErr)
+	}
+	webuiRoutes = append(webuiRoutes, launcherRoutes...)
 	var desktopTranslationService *desktoptranslation.Service
 	if !dependencies.DesktopManagedByHost {
 		var desktopRoutes []webuiRoute
@@ -1573,10 +1578,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		if desktopErr != nil {
 			return serverHandlers{}, nil, fmt.Errorf("装配桌面翻译宿主失败: %w", desktopErr)
 		}
+		launcherRuntimeService.bindDesktopShow(desktopTranslationService)
 		// Clipboard settings changes (WebUI or CLI) re-send configure so the native
 		// ⌘⌥V shortcut follows capture/sync without restarting the helper.
 		clipboardRuntimeService.AddSettingsHook(func() {
-			go desktopTranslationService.ReconcileClipboard(context.Background())
+			go desktopTranslationService.ReconcileDesktopFeatures(context.Background())
 		})
 		desktopChanged.attach(desktopTranslationService)
 		webuiRoutes = append(webuiRoutes, desktopRoutes...)
@@ -1903,6 +1909,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if clipboardRuntimeService != nil {
 			closers = append(closers, clipboardRuntimeService)
+		}
+		if launcherRuntimeService != nil {
+			closers = append(closers, launcherRuntimeService)
 		}
 		if requirementsRuntimeService != nil {
 			closers = append(closers, requirementsRuntimeService)

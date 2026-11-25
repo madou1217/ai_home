@@ -33,6 +33,9 @@ type Options struct {
 	ClipboardEnabled func() bool
 	// QuickOrbitPosition reports the configured Quick Orbit anchor (bottom|left|right).
 	QuickOrbitPosition func() string
+	// LauncherEnabled drives the native Alt+Space / ⌥Space application launcher.
+	// Nil defaults to true on supported desktop platforms (darwin/win32).
+	LauncherEnabled func() bool
 }
 type focusLease struct{ Revision, Observed, Until int64 }
 type operation struct {
@@ -91,6 +94,11 @@ func New(ctx context.Context, options Options) (*Service, error) {
 		platform = "win32"
 	}
 	options.Platform = platform
+	if options.LauncherEnabled == nil {
+		options.LauncherEnabled = func() bool {
+			return platform == "darwin" || platform == "win32"
+		}
+	}
 	target := translation.SystemServerTarget{Kind: "aih-server", Label: "本机 AIH Server", Origin: strings.TrimRight(options.Origin, "/")}
 	if settings.SystemServerTarget != nil {
 		target = *settings.SystemServerTarget
@@ -134,24 +142,36 @@ func New(ctx context.Context, options Options) (*Service, error) {
 }
 func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
-	// The helper is shared by translation and clipboard; either capability keeps
-	// it alive so ⌘⌥V works even when System Translation is off.
-	enabled := (s.enabled || s.clipboardDesiredLocked()) && !s.closed
+	closed := s.closed
+	translate := s.enabled
 	s.mu.Unlock()
-	if !enabled {
+	// Evaluate helperDesired outside s.mu to avoid lock inversion with clipboard/launcher callbacks.
+	if closed || !s.helperDesired(translate) {
 		return nil
 	}
 	return s.launcher.Start(ctx)
 }
 
-// clipboardDesiredLocked is called with s.mu held.
-func (s *Service) clipboardDesiredLocked() bool {
+func (s *Service) clipboardDesired() bool {
 	return s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()
 }
 
-// ReconcileClipboard aligns the helper lifecycle with the clipboard toggle. It is
-// called after clipboard settings change, including changes written by the CLI.
+func (s *Service) launcherDesired() bool {
+	return s.options.LauncherEnabled != nil && s.options.LauncherEnabled()
+}
+
+func (s *Service) helperDesired(translate bool) bool {
+	return translate || s.clipboardDesired() || s.launcherDesired()
+}
+
+// ReconcileClipboard aligns the helper lifecycle with desktop feature toggles.
 func (s *Service) ReconcileClipboard(ctx context.Context) {
+	s.ReconcileDesktopFeatures(ctx)
+}
+
+// ReconcileDesktopFeatures keeps the native helper running while any of
+// translation, clipboard, or launcher is enabled, and stops it when all are off.
+func (s *Service) ReconcileDesktopFeatures(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -164,7 +184,7 @@ func (s *Service) ReconcileClipboard(ctx context.Context) {
 	}
 	translate := s.enabled
 	s.mu.Unlock()
-	if translate || (s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()) {
+	if s.helperDesired(translate) {
 		if err := s.launcher.Start(ctx); err == nil {
 			s.Configure()
 		}
@@ -279,12 +299,12 @@ func (s *Service) Reload(ctx context.Context) error {
 	default:
 	}
 	if wasEnabled != enabled {
-		if enabled || (s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()) {
+		if s.helperDesired(enabled) {
 			return s.Start(ctx)
 		}
 		return s.launcher.Stop(ctx)
 	}
-	s.ReconcileClipboard(ctx)
+	s.ReconcileDesktopFeatures(ctx)
 	return nil
 }
 func (s *Service) LocalOrigin() string { s.mu.Lock(); defer s.mu.Unlock(); return s.options.Origin }
@@ -306,11 +326,7 @@ func (s *Service) SetEnabled(ctx context.Context, enabled bool) error {
 	s.snapshot["enabled"] = enabled
 	s.cancelLocked()
 	s.mu.Unlock()
-	if enabled {
-		return s.Start(ctx)
-	}
-	if s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled() {
-		// Translation is off but clipboard still needs the helper.
+	if s.helperDesired(enabled) {
 		return s.Start(ctx)
 	}
 	return s.launcher.Stop(ctx)

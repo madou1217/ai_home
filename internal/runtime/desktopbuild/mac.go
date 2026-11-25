@@ -27,6 +27,9 @@ var macSources = []string{
 	"native/chat/QuickChatWindow.swift",
 	"native/clipboard/ClipboardWorkspaceWindow.swift",
 	"native/clipboard/QuickOrbitWindow.swift",
+	"native/launcher/LauncherPanelModel.swift",
+	"native/launcher/LauncherPanelViews.swift",
+	"native/launcher/LauncherPanel.swift",
 	"native/desktop/ShortcutRegistry.swift",
 	"native/translation/main.swift",
 }
@@ -139,7 +142,7 @@ func macVersion(ctx context.Context, repo string) (string, string) {
 		}
 	}
 	build := version
-	raw, err := runTool(ctx, 5*time.Second, repo, nil, "git", "-C", repo, "log", "-1", "--format=%cd", "--date=format:%Y%m%d.%H%M", "--", "native/translation", "native/chat", "native/clipboard", "native/desktop", "lib/desktop/translation")
+	raw, err := runTool(ctx, 5*time.Second, repo, nil, "git", "-C", repo, "log", "-1", "--format=%cd", "--date=format:%Y%m%d.%H%M", "--", "native/translation", "native/chat", "native/clipboard", "native/launcher", "native/desktop", "lib/desktop/translation")
 	stamp := strings.TrimSpace(string(raw))
 	if err == nil && regexp.MustCompile(`^\d{8}\.\d{4}$`).MatchString(stamp) {
 		build = stamp

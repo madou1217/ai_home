@@ -187,6 +187,13 @@ jobs:
       - name: Test
         run: go test -count=1 -timeout 5m ./internal/runtime/artifactstore/...
 
+      # HostSupervisor 的配置替换/Close 并发只有 race detector 能覆盖。
+      # job 级 CGO_ENABLED=0 是为了可复现构建；-race 这一步必须单独打开 CGO。
+      - name: Race tests (codex environments)
+        env:
+          CGO_ENABLED: '1'
+        run: go test -count=1 -race -timeout 5m ./internal/runtime/codexenvironments/
+
       - name: Build CLI and server
         run: |
           go build -trimpath -o "$RUNNER_TEMP/aih" ./cmd/aih

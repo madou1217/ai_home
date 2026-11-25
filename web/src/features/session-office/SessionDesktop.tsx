@@ -161,7 +161,7 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
         ledClass: '',
         tone: 'muted',
         title: '未选定活动工位',
-        description: '请从下方任务栏选择同房间工位，或打开协作邮箱查看消息。',
+        description: '请从下方任务栏选择同房间工位，或打开协作消息查看消息。',
       };
   }
 }
@@ -790,7 +790,7 @@ export function SessionDesktop({
               onClick={() => applyLayout('mail-focus')}
             >
               <MailOutlined />
-              <span>邮件客户端</span>
+              <span>消息客户端</span>
               {mailBadgeCount > 0 ? (
                 <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
               ) : null}
@@ -834,7 +834,7 @@ export function SessionDesktop({
               className="session-desktop-btn"
               disabled={isTerminating}
               onClick={onRefreshAll}
-              title="刷新目录与协作邮件状态"
+              title="刷新目录与协作消息状态"
             >
               <ReloadOutlined />
               <span>刷新</span>
@@ -938,7 +938,7 @@ export function SessionDesktop({
               <strong>DISPLAY 02 · 扩展副显示器</strong>
               <span>
                 {isPoweredOn
-                  ? (settingsOpen ? '设置与配置视图' : (mailVisible && terminalWanted ? '协作邮箱视图' : '扩展壁纸桌面'))
+                  ? (settingsOpen ? '设置与配置视图' : (mailVisible && terminalWanted ? '协作消息视图' : '扩展壁纸桌面'))
                   : 'STANDBY · 同步待机'}
               </span>
               {isPoweredOn && (terminalWanted || mailVisible) && !settingsOpen && !(terminalWanted && mailVisible) ? (
@@ -1006,7 +1006,7 @@ export function SessionDesktop({
                       <span className="session-desktop-app-badge">{mailBadgeCount}</span>
                     ) : null}
                   </span>
-                  <span className="session-desktop-app-title">协作邮箱</span>
+                  <span className="session-desktop-app-title">协作消息</span>
                   <span className="session-desktop-app-meta">
                     收件 {sessionInbox} · 待投 {sessionPending}
                     {roomPending > sessionPending ? ` · 房间待投 ${roomPending}` : ''}
@@ -1255,7 +1255,7 @@ export function SessionDesktop({
                     onClick={handleRestoreMail}
                   >
                     <MailOutlined />
-                    <span>查看协作邮箱</span>
+                    <span>查看协作消息</span>
                     {mailBadgeCount > 0 ? (
                       <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
                     ) : null}
@@ -1357,7 +1357,7 @@ export function SessionDesktop({
                     <span className="office-cs-pill">{wallpaperSpec.label}</span>
                   </div>
                   <p className="session-desktop-secondary-desc">
-                    当前终端与邮箱已收起至任务栏，副屏正在展示电脑设置或配置信息。
+                    当前终端与消息已收起至任务栏，副屏正在展示电脑设置或配置信息。
                   </p>
                   <div className="session-desktop-secondary-actions">
                     <button
@@ -1374,7 +1374,7 @@ export function SessionDesktop({
                       onClick={handleRestoreMail}
                     >
                       <MailOutlined />
-                      <span>打开协作邮箱</span>
+                      <span>打开协作消息</span>
                     </button>
                   </div>
                 </div>
@@ -1401,8 +1401,8 @@ export function SessionDesktop({
                     type="button"
                     className="session-desktop-win-btn"
                     onClick={handleRestoreMail}
-                    title="打开或切换到协作邮箱窗口（终端保持后台运行）"
-                    aria-label="打开协作邮箱窗口"
+                    title="打开或切换到协作消息窗口（终端保持后台运行）"
+                    aria-label="打开协作消息窗口"
                   >
                     <MailOutlined />
                   </button>
@@ -1629,7 +1629,7 @@ export function SessionDesktop({
                           onClick={handleRestoreMail}
                         >
                           <MailOutlined />
-                          <span>查看协作邮箱</span>
+                          <span>查看协作消息</span>
                         </button>
                         {session ? (
                           isWebShell ? (
@@ -1668,14 +1668,14 @@ export function SessionDesktop({
             {/* Mailbox OS Window */}
             <section
               className={`session-desktop-window session-desktop-window--mail${mailVisible ? '' : ' session-desktop-window--hidden'}`}
-              aria-label="协作邮箱窗口"
+              aria-label="协作消息窗口"
               aria-hidden={!mailVisible}
             >
               <div className="session-desktop-window-bar">
                 <div className="session-desktop-window-title">
                   <MailOutlined />
                   <span className="session-desktop-window-name">
-                    协作邮箱 — {getMailboxScopeTitle(mailboxScope, room, session)}
+                    协作消息 — {getMailboxScopeTitle(mailboxScope, room, session)}
                   </span>
                   {peerCounts.pending > 0 ? (
                     <span className="session-desktop-inline-badge">待投 {peerCounts.pending}</span>
@@ -1707,8 +1707,8 @@ export function SessionDesktop({
                       type="button"
                       className="session-desktop-win-btn"
                       onClick={() => applyLayout(layoutMode === 'split' ? 'mail-focus' : 'split')}
-                      title={layoutMode === 'split' ? '独占邮箱窗口' : '分屏协同'}
-                      aria-label={layoutMode === 'split' ? '独占邮箱窗口' : '分屏协同'}
+                      title={layoutMode === 'split' ? '独占消息窗口' : '分屏协同'}
+                      aria-label={layoutMode === 'split' ? '独占消息窗口' : '分屏协同'}
                     >
                       {layoutMode === 'split' ? <CompressOutlined /> : <SplitCellsOutlined />}
                     </button>
@@ -1717,7 +1717,7 @@ export function SessionDesktop({
                     type="button"
                     className="session-desktop-win-btn"
                     onClick={handleMinimizeMail}
-                    aria-label="最小化邮箱窗口"
+                    aria-label="最小化消息窗口"
                     title="最小化到任务栏"
                   >
                     <MinusOutlined />
@@ -1788,7 +1788,7 @@ export function SessionDesktop({
                   </div>
 
                   <p className="session-desktop-secondary-desc">
-                    双显示器模式已开启，与 3D 工位双联屏支架实时联动。可在副屏展开协作邮箱、调节电脑设置或核对工位配置事实。
+                    双显示器模式已开启，与 3D 工位双联屏支架实时联动。可在副屏展开协作消息、调节电脑设置或核对工位配置事实。
                   </p>
 
                   {session ? (
@@ -1824,7 +1824,7 @@ export function SessionDesktop({
                       onClick={handleRestoreMail}
                     >
                       <MailOutlined />
-                      <span>在副屏展开协作邮箱</span>
+                      <span>在副屏展开协作消息</span>
                       {mailBadgeCount > 0 ? (
                         <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
                       ) : null}
@@ -1887,10 +1887,10 @@ export function SessionDesktop({
               data-minimized={!mailVisible ? 'true' : undefined}
               data-pulse={hasMailPulse ? 'true' : undefined}
               onClick={handleToggleMailDock}
-              title={mailVisible ? '最小化邮箱窗口' : '打开协作邮箱'}
+              title={mailVisible ? '最小化消息窗口' : '打开协作消息'}
             >
               <MailOutlined />
-              <span>协作邮箱</span>
+              <span>协作消息</span>
               {mailBadgeCount > 0 ? (
                 <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
               ) : null}

@@ -253,6 +253,18 @@ function isRecordActivelyPending(msg: PeerMessageRecord): boolean {
   return msg.state === 'pending' || notif === 'waiting' || notif === 'ready';
 }
 
+/** 需要人工关注的消息数（未送达、待人工、异常），用于「消息」入口的轻量徽标。 */
+export function countAttentionPeerMessages(
+  messages: EnrichedPeerMessage[],
+  nowMs: number = Date.now(),
+): number {
+  let count = 0;
+  for (const msg of messages) {
+    if (evaluateMailLifecycle(msg, nowMs).isAttention) count += 1;
+  }
+  return count;
+}
+
 export function computePeerCounts(messages: PeerMessageRecord[]): PeerCounts {
   const counts: PeerCounts = {
     total: messages.length,

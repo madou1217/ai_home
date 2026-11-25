@@ -14,7 +14,7 @@ import {
   ReloadOutlined,
   RightOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Input, Modal, Select, Tooltip, message, type MenuProps } from 'antd';
+import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
 import AppButton from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
@@ -35,6 +35,7 @@ import type {
   OfficeProjectRoom,
   OfficeSessionItem,
 } from './session-office-types';
+import { countAttentionPeerMessages } from './session-office-model';
 import { useSessionOfficeData } from './use-session-office-data';
 import './SessionOffice.css';
 
@@ -48,10 +49,10 @@ export interface SessionOfficeProps {
 const ZOOM_CUE_MS = 260;
 
 const MAILBOX_SCOPE_TITLES: Record<MailboxScope, string> = {
-  session: '当前会话邮箱',
-  room: '房间协作邮箱',
-  unassigned: '未归属 / 历史邮箱',
-  all: '全局协作邮箱',
+  session: '当前会话消息',
+  room: '房间协作消息',
+  unassigned: '未归属消息',
+  all: '全部协作消息',
 };
 
 const NATIVE_CLOSE_DISABLED_REASON =
@@ -355,6 +356,15 @@ export default function SessionOffice({
     return activeRoom.projectPath;
   }, [activeRoom]);
 
+  const peerAttentionCount = useMemo(
+    () => countAttentionPeerMessages(peerMessages),
+    [peerMessages],
+  );
+  const unassignedAttentionCount = useMemo(
+    () => countAttentionPeerMessages(unassignedMessages),
+    [unassignedMessages],
+  );
+
   const handleToggleStationPower = useCallback((station: OfficeSessionItem) => {
     if (isSessionTerminating(station.sessionKey) || !isSessionServerScopeAdmitted(serverId, station)) {
       return;
@@ -444,20 +454,6 @@ export default function SessionOffice({
   const handleOpenNewTerminal = useCallback((cwd?: string) => {
     void openNewProjectTerminal(cwd ?? activeRoomCwd);
   }, [activeRoomCwd, openNewProjectTerminal]);
-
-  const mailboxMenuItems: MenuProps['items'] = [
-    {
-      key: 'room',
-      icon: <InboxOutlined />,
-      label: activeRoom ? `房间邮箱 (${activeRoom.roomMessages.length})` : '房间邮箱',
-      disabled: !activeRoom,
-    },
-    {
-      key: 'unassigned',
-      icon: <MailOutlined />,
-      label: `未归属邮箱 (${unassignedMessages.length})`,
-    },
-  ];
 
   const handleRequestTerminateSession = useCallback((session: OfficeSessionItem) => {
     if (!isTerminableWebSession(session)) {
@@ -604,7 +600,7 @@ export default function SessionOffice({
       return true;
     }
 
-    message.info('目标会话当前未在线，可在邮箱中继续查看消息上下文');
+    message.info('目标会话当前未在线，可在协作消息中继续查看上下文');
     return false;
   }, [
     activateManagerSession,
@@ -648,17 +644,9 @@ export default function SessionOffice({
               <strong className="hud-display">{rooms.length}</strong>
             </span>
             <span className="session-office-metric">
-              <span className="hud-label">邮件</span>
-              <strong className="hud-display">{peerCounts.total}</strong>
+              <span className="hud-label">待处理消息</span>
+              <strong className="hud-display">{peerAttentionCount}</strong>
             </span>
-            {peerCounts.pending > 0 ? (
-              <SettingStatusTag
-                status="dirty"
-                label={`待处理 ${peerCounts.pending}`}
-                compact
-                live="off"
-              />
-            ) : null}
           </div>
         </div>
 
@@ -690,15 +678,15 @@ export default function SessionOffice({
               显示已隐藏 ({hiddenCount})
             </Button>
           ) : null}
-          <Dropdown
-            trigger={['click']}
-            menu={{
-              items: mailboxMenuItems,
-              onClick: ({ key }) => openStandaloneMailbox(key as 'room' | 'unassigned'),
-            }}
+          <Button
+            icon={<MailOutlined />}
+            onClick={() => openStandaloneMailbox(activeRoom ? 'room' : 'unassigned')}
           >
-            <Button icon={<MailOutlined />}>邮箱</Button>
-          </Dropdown>
+            消息
+            {peerAttentionCount > 0 ? (
+              <span className="session-office-message-count">{peerAttentionCount}</span>
+            ) : null}
+          </Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -714,7 +702,7 @@ export default function SessionOffice({
               <InlineNote tone="error">会话目录：{directoryError}</InlineNote>
             ) : null}
             {peerError ? (
-              <InlineNote tone="error">协作邮箱：{peerError}</InlineNote>
+              <InlineNote tone="error">协作消息：{peerError}</InlineNote>
             ) : null}
           </div>
         ) : null}
@@ -867,7 +855,7 @@ export default function SessionOffice({
                   variant="loading"
                   code="SYS // DISCOVERING"
                   title="正在发现项目房间与运行会话"
-                  description="正在同步当前 Server 上的活跃终端、原生 CLI 会话与协作邮箱"
+                  description="正在同步当前 Server 上的活跃终端、原生 CLI 会话与协作消息"
                 />
               ) : (
                 <HudStateView
@@ -875,7 +863,7 @@ export default function SessionOffice({
                   title="当前服务器没有活跃项目房间"
                   description={
                     peerMessages.length > 0
-                      ? '暂无运行中的终端会话，但仍可查看未归属 / 历史邮箱或打开项目终端'
+                      ? '暂无运行中的终端会话，但仍可查看未归属消息或打开项目终端'
                       : '打开项目终端，或在账号管理 / AI 会话页启动 CLI 后会自动按项目房间汇聚在此'
                   }
                   extra={(
@@ -892,7 +880,7 @@ export default function SessionOffice({
                           icon={<MailOutlined />}
                           onClick={() => openStandaloneMailbox('unassigned')}
                         >
-                          查看未归属邮箱 ({unassignedMessages.length || peerMessages.length})
+                          查看未归属消息{unassignedAttentionCount > 0 ? ` (${unassignedAttentionCount})` : ''}
                         </Button>
                       ) : null}
                     </>
@@ -942,13 +930,13 @@ export default function SessionOffice({
         </section>
       </div>
 
-      {/* 独立办公邮箱浮层：挂在任何 3D 透视/transform 容器之外 */}
+      {/* 独立协作消息浮层：挂在任何 3D 透视/transform 容器之外 */}
       {mailboxOverlayOpen && !desktopOpen ? (
         <div
           className="session-office-mailbox-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="项目办公室协作邮箱"
+          aria-label="项目办公室协作消息"
         >
           <div
             className="session-office-mailbox-scrim"

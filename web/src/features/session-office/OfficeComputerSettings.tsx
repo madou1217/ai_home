@@ -583,8 +583,8 @@ export default function OfficeComputerSettings({
               type="button"
               className="session-desktop-win-btn"
               onClick={onFocusMail}
-              title="查看协作邮箱窗口"
-              aria-label="查看协作邮箱窗口"
+              title="查看协作消息窗口"
+              aria-label="查看协作消息窗口"
             >
               <MailOutlined />
             </button>

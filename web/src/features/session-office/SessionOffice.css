@@ -97,6 +97,23 @@
   flex-wrap: wrap;
 }
 
+.session-office-message-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
+  border-radius: 999px;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
 .session-office-metric {
   display: inline-flex;
   align-items: center;
@@ -714,15 +731,15 @@
   inset: 0;
   z-index: 990;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-end;
-  padding: var(--space-6);
+  padding: 0;
 }
 
 .session-office-mailbox-scrim {
   position: absolute;
   inset: 0;
-  background: var(--color-scrim);
+  background: color-mix(in srgb, var(--color-scrim) 42%, transparent);
 }
 
 .session-office-mailbox-drawer {
@@ -730,15 +747,16 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
-  width: min(1160px, calc(100vw - 32px));
-  height: calc(100vh - 32px);
-  max-height: 920px;
+  width: min(760px, 100vw);
+  height: 100vh;
+  max-height: none;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-md);
-  box-shadow: var(--elevation-5);
+  border: 0;
+  border-left: 1px solid var(--color-border);
+  border-radius: 0;
+  box-shadow: -24px 0 48px color-mix(in srgb, #000 28%, transparent);
   background: var(--color-surface);
 }
 
@@ -806,12 +824,12 @@
 
 @media (max-width: 640px) {
   .session-office-mailbox-overlay {
-    padding: var(--space-2);
+    padding: 0;
   }
 
   .session-office-mailbox-drawer {
     width: 100%;
-    height: calc(100vh - 16px);
+    height: 100vh;
   }
 }
 
@@ -936,11 +954,11 @@
   }
 
   .session-office-mailbox-overlay {
-    padding: var(--space-4);
+    padding: 0;
   }
 
   .session-office-mailbox-drawer {
-    width: calc(100vw - 16px);
-    height: calc(100vh - 16px);
+    width: 100%;
+    height: 100vh;
   }
 }

@@ -178,7 +178,7 @@
   min-height: 0;
   min-width: 0;
   display: grid;
-  grid-template-columns: 176px minmax(264px, 336px) minmax(0, 1fr);
+  grid-template-columns: minmax(264px, 336px) minmax(0, 1fr);
 }
 
 /* ---------------------------------------------------------------------------

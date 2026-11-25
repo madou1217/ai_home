@@ -674,7 +674,7 @@ export function OfficeRoom({
     {
       key: 'mail',
       icon: <MailOutlined />,
-      label: mailCount > 0 ? `会话邮件 (${mailCount})` : '会话邮件',
+      label: mailCount > 0 ? `会话消息 (${mailCount})` : '会话消息',
     },
     { key: 'copy', icon: <CopyOutlined />, label: '复制标识' },
     ...(onToggleStationPower
@@ -799,7 +799,7 @@ export function OfficeRoom({
           variant="loading"
           code="SYS // BUILDING ROOM"
           title="正在构建 3D 项目办公室"
-          description="正在同步当前服务器上的项目目录会话与实时邮件信号"
+          description="正在同步当前服务器上的项目目录会话与实时消息"
         />
       </section>
     );
@@ -820,7 +820,7 @@ export function OfficeRoom({
               </Button>
               {unassignedCount > 0 ? (
                 <Button icon={<InboxOutlined />} onClick={onOpenUnassignedMailbox}>
-                  未归属邮件 ({unassignedCount})
+                  未归属消息 ({unassignedCount})
                 </Button>
               ) : null}
             </div>
@@ -985,14 +985,14 @@ export function OfficeRoom({
               compact
               code="BAY // EMPTY"
               title="当前项目房间暂无工位"
-              description="可在当前目录打开新终端，或打开房间邮件终端查看历史跨会话通信"
+              description="可在当前目录打开新终端，或打开房间消息查看历史跨会话通信"
               extra={(
                 <div className="office-room-state-actions">
                   <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenRoomTerminal}>
                     新建终端
                   </Button>
                   <Button icon={<MailOutlined />} onClick={onOpenRoomMailbox}>
-                    房间邮件 ({room.roomMessages.length})
+                    房间消息 ({room.roomMessages.length})
                   </Button>
                 </div>
               )}

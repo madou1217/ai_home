@@ -1567,7 +1567,15 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     unassignedMessages.length,
   ]);
 
-  const activeFolderLabel = stateFilter === 'attention' ? '待处理消息' : '全部消息';
+  const activeFolderLabel = stateFilter === 'attention'
+    ? '待处理消息'
+    : scope === 'unassigned'
+      ? '未归属历史'
+      : scope === 'room'
+        ? '房间消息'
+        : scope === 'session'
+          ? '当前会话消息'
+          : '全部消息';
 
   const headerSubtitle = useMemo(() => {
     let scopePart = '全部消息';

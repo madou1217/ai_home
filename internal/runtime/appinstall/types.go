@@ -40,14 +40,17 @@ type InstallHint struct {
 
 // App 是一个插件贡献的应用。
 type App struct {
-	AppID        string       `json:"appId"`
-	Provider     string       `json:"provider,omitempty"`
-	Name         string       `json:"name"`
-	Kind         Kind         `json:"kind"`
-	Platforms    []string     `json:"platforms,omitempty"`
-	Order        int          `json:"order,omitempty"`
-	Capabilities Capabilities `json:"capabilities"`
-	Install      InstallHint  `json:"install,omitempty"`
+	AppID     string   `json:"appId"`
+	Provider  string   `json:"provider,omitempty"`
+	Name      string   `json:"name"`
+	Kind      Kind     `json:"kind"`
+	Platforms []string `json:"platforms,omitempty"`
+	Order     int      `json:"order,omitempty"`
+	// AccountKind 显式指定账号入口的 desktop / cli / none；空值按 Kind 推导。
+	// ide 默认 none：IDE 是独立产品，不能把它的安装状态算到 Provider 的 Desktop 入口。
+	AccountKindValue string       `json:"accountKind,omitempty"`
+	Capabilities     Capabilities `json:"capabilities"`
+	Install          InstallHint  `json:"install,omitempty"`
 	// UninstallRemovesUserData 表示卸载会删除用户数据，UI 需要额外确认。
 	UninstallRemovesUserData bool `json:"uninstallRemovesUserData,omitempty"`
 	// PluginID / ContributionID / Generation 由宿主填充，插件不返回。
@@ -146,12 +149,23 @@ func (app App) SupportsPlatform(platform string) bool {
 	return false
 }
 
-// AccountKind 把应用类型映射为账号入口的 desktop / cli 两类。
+// AccountKind 返回应用对应的账号入口类型（desktop / cli / none）。
+//
+// 显式 accountKind 优先；空值时 desktop→desktop、cli→cli、ide→none。
+// IDE 默认不进入账号入口：它与 Desktop 是不同产品，安装状态不能互相冒充。
 func (app App) AccountKind() string {
-	if app.Kind == KindCLI {
-		return "cli"
+	switch value := strings.ToLower(strings.TrimSpace(app.AccountKindValue)); value {
+	case "desktop", "cli", "none":
+		return value
 	}
-	return "desktop"
+	switch app.Kind {
+	case KindCLI:
+		return "cli"
+	case KindDesktop:
+		return "desktop"
+	default:
+		return "none"
+	}
 }
 
 // SupportsAction 判断插件是否声明了某个生命周期动作。

@@ -1,8 +1,20 @@
-# Antigravity 桌面端（IDE）WebUI 账号入口
+# Antigravity 桌面端（App）WebUI 账号入口
 
 日期：2026-11-25
 
 范围：Accounts 页的 Provider 级桌面端入口、Windows 桌面端发现、无桌面 Server 的隐藏规则。
+
+## 三产品边界
+
+Antigravity 有 **Desktop（App）/ IDE / CLI** 三个独立产品，不能互相替代：
+
+| 产品 | 应用 | 本仓库归属 |
+|---|---|---|
+| Desktop | `Antigravity.app` / `Antigravity.exe`，bundle `com.google.antigravity` | Provider 的 `agyDesktopClient` + Toolkit 桌面卡 |
+| IDE | `Antigravity IDE.app` / `Antigravity IDE.exe`，bundle `com.google.antigravity-ide` | 独立 Toolkit IDE 卡（`app.install` 插件） |
+| CLI | `agy` | Provider CLI 安装计划/终端 |
+
+本文只覆盖 Desktop；把 IDE 当成 Desktop 会导致安装落点、账号入口和审计 appId 全部错位。
 
 ## 行为
 

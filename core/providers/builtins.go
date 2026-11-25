@@ -415,7 +415,11 @@ func builtinAntigravity() Definition {
 	}
 }
 
-// agyDesktopClient 声明 Antigravity 桌面端（IDE）的跨平台查找信息。
+// agyDesktopClient 声明 Antigravity 桌面端（Antigravity App，不是 IDE）的跨平台查找信息。
+//
+// Antigravity 的 Desktop / IDE / CLI 是三个独立产品：本函数只覆盖 Desktop App
+// （bundle com.google.antigravity）；Antigravity IDE 是独立应用
+// （bundle com.google.antigravity-ide），CLI 是 agy，均不在此声明内。
 //
 // Windows 安装器（Electron NSIS）默认装到 %LOCALAPPDATA%\Programs\Antigravity，
 // 卸载注册表里的 DisplayName 是 "Antigravity"；只按 PATH 找 Antigravity.exe 会

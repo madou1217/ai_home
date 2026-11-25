@@ -172,6 +172,7 @@ type rawAppInstallApp struct {
 	Kind         string   `json:"kind"`
 	Platforms    []string `json:"platforms"`
 	Order        int      `json:"order"`
+	AccountKind  string   `json:"accountKind"`
 	Capabilities struct {
 		Install      bool   `json:"install"`
 		Update       bool   `json:"update"`
@@ -276,6 +277,10 @@ func normalizeAppInstallDescriptor(raw rawAppInstallApp) (appinstall.App, error)
 	default:
 		return appinstall.App{}, pluginerr.New("app_install_descriptor_invalid", "应用类型非法："+raw.Kind)
 	}
+	accountKind := strings.ToLower(strings.TrimSpace(raw.AccountKind))
+	if accountKind != "" && accountKind != "desktop" && accountKind != "cli" && accountKind != "none" {
+		return appinstall.App{}, pluginerr.New("app_install_descriptor_invalid", "accountKind 必须是 desktop / cli / none")
+	}
 	platforms := make([]string, 0, len(raw.Platforms))
 	seenPlatform := map[string]bool{}
 	for _, value := range raw.Platforms {
@@ -309,13 +314,14 @@ func normalizeAppInstallDescriptor(raw rawAppInstallApp) (appinstall.App, error)
 		downloadBytes = 0
 	}
 	return appinstall.App{
-		AppID:        appID,
-		Provider:     provider,
-		Name:         firstNonEmpty(sanitizeAppInstallText(raw.Name, 160), appID),
-		Kind:         kind,
-		Platforms:    platforms,
-		Order:        raw.Order,
-		Capabilities: capabilities,
+		AppID:            appID,
+		Provider:         provider,
+		Name:             firstNonEmpty(sanitizeAppInstallText(raw.Name, 160), appID),
+		Kind:             kind,
+		Platforms:        platforms,
+		Order:            raw.Order,
+		AccountKindValue: accountKind,
+		Capabilities:     capabilities,
 		Install: appinstall.InstallHint{
 			RequiresConfirmation: raw.Install.RequiresConfirmation,
 			RequiresAdmin:        raw.Install.RequiresAdmin,

@@ -31,15 +31,14 @@
 {
   "manifestVersion": 1,
   "kind": "capability",
-  "protocolVersion": 2,
-  "pluginId": "antigravity.desktop",
-  "version": "1.0.0",
+  "protocolVersion": 1,
+  "pluginId": "antigravity.apps",
+  "version": "1.2.0",
   "engines": { "aih": ">=1.0.0" },
-  "runtime": "process",
-  "entry": "desktop.py",
-  "exec": { "argv": ["python3", "desktop.py"] },
+  "runtime": "node",
+  "entry": "index.js",
   "permissions": {
-    "network": ["https://antigravity.google", "https://storage.googleapis.com"],
+    "network": ["https://antigravity.google", "https://storage.googleapis.com", "https://edgedl.me.gvt1.com"],
     "filesystem": { "read": ["state"], "write": ["state"] },
     "secrets": [],
     "environment": [],
@@ -47,7 +46,7 @@
   },
   "contributes": [
     {
-      "id": "antigravity.desktop.apps",
+      "id": "antigravity.apps.install",
       "capability": "app.install",
       "version": 1,
       "failurePolicy": "delegate",
@@ -124,7 +123,10 @@
 - `provider`：现有 Provider ID 或空串（纯工具应用）。空串时只进 Toolkit，
   不进账号页。
 - `kind`：`desktop` | `ide` | `cli`。`ide` 在作业层归一到 `desktop`，
-  与现有 `normalizeLifecycleKind` 一致。
+  与现有 `normalizeLifecycleKind` 一致；它只影响 Toolkit 分类，不自动进入账号入口。
+- `accountKind`：`desktop` | `cli` | `none`，可选。空值时 desktop→desktop、
+  cli→cli、ide→none。IDE 默认不映射到 Provider 的 Desktop 入口；需要账号入口时
+  必须显式声明。
 - `platforms`：`macos` | `windows` | `linux`；空数组表示全平台。
 - `open.mode`：`plugin`（默认，插件自己拉起）或 `host`
   （宿主按 `executable` 拉起；v1 仅允许无账号投影的应用）。
@@ -324,11 +326,15 @@ type PluginAppSource interface {
 ### 4.5 账号入口
 
 `app-entries` 的 `capabilities[provider][kind]` 与
-`entries[provider][kind]` 改为内置 ∪ 插件：
+`entries[provider][kind]` 改为内置 ∪ 插件，**只合并 `accountKind` 为
+desktop / cli 的插件应用**：
 
 - capability：任一插件应用声明该 provider+kind 且平台匹配；
 - installed：内置探测为真，或插件 `Snapshot` 中该 provider+kind 任一为真；
 - 插件状态未知时 installed=false，不阻塞 capability，UI 显示“安装”；
+- `kind:ide` 且未显式 `accountKind:desktop` 的应用只进 Toolkit IDE 分类，
+  不影响 Provider 的 Desktop 入口（Antigravity Desktop 与 Antigravity IDE 是
+  两个独立产品，不能互相冒充）；
 - `serverRuntime` 逻辑不变：无桌面系统不出现安装/打开。
 
 Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
@@ -367,10 +373,12 @@ Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
 1. **增量**：内置应用不迁移，插件应用不能覆盖内置 appId；同 provider+kind
    允许多个插件应用，账号入口取 OR。
 2. **Antigravity 参考插件**：
-   - Phase 1：`plugins/antigravity-desktop` 只实现 `status`/`open`，与内置
-     安装计划并行，验证注册、缓存、账号入口、Server 隐藏。
-   - Phase 2：实现 install/uninstall/update，用真实 DMG/NSIS 在 Mac/Windows
-     验证；内置计划继续兜底。
+   - Phase 1：`plugins/antigravity-apps`（原 `antigravity-desktop`）先实现
+     `status`/`open`，与内置安装计划并行，验证注册、缓存、账号入口、Server
+     隐藏。
+   - Phase 2：实现 install/uninstall/update，覆盖 Desktop 与 IDE 两个独立产品
+     （不同 CDN/安装器），用真实 DMG/NSIS/Inno 在 Mac/Windows 验证；内置计划
+     继续兜底。
    - Phase 3（可选）：在插件稳定后移除 `catalog_installers.go` 里的 agy 桌面
      安装计划；Provider 合同里的 DesktopClient 保留给账号级启动投影。
 3. **插件代次**：插件卸载/禁用 → describe/status 缓存整体失效；应用清单与
@@ -404,8 +412,9 @@ Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
 
 - 一个 provider+kind 有多个插件应用时，账号行只显示一个图标；是否需要选择器？
   倾向 v1 取 OR、不提供选择器，避免 UI 复杂度。
-- `kind:ide` 是否应进入 Toolkit 的 IDE 扩展页，而不是 Desktop 分类？倾向
-  与内置 IDE 客户端一致，进入 IDE 页。
+- `kind:ide` 进入 Toolkit IDE 分类；账号入口由 `accountKind` 决定，默认 `none`。
+  Antigravity 的 Desktop / IDE / CLI 是三个独立产品，参考实现拆成两个插件：
+  `antigravity-desktop` 与 `antigravity-ide`。
 - 插件安装的 CLI 是否允许被账号命令行直接使用（例如 PATH 注入）？v1 只保证
   应用清单可见与打开，PATH 注入仍由内置安装器负责。
 
@@ -449,6 +458,9 @@ Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
   缓存未就绪时后台刷新，页面不等待插件 RPC；无桌面 Server 的 `serverRuntime`
   规则不变。
 - `internal/host/aihserver`：app-entries 与 Toolkit 共用 `PluginHostService`。
-- 参考插件 `plugins/antigravity-desktop`：status/open/install/uninstall/update，
-  Mac 与 Windows 真机验证通过；安装计划由插件执行。
+- 参考插件 `plugins/antigravity-apps`：同时声明 Desktop（`antigravity-desktop`）
+  与 IDE（`antigravity-ide`）两个独立产品，分别使用 storage.googleapis.com 与
+  edgedl.me.gvt1.com；status/open/install/uninstall/update。Desktop 在 Mac /
+  Windows 走完整宿主作业验证；IDE 在 Windows 完成下载、Inno 静默安装、状态与
+  卸载验证，macOS IDE 安装路径按官方 DMG（`Antigravity IDE.app`）实现。
 - `app.install` 的 `reserved` 标记已移除；Doctor 不再报预留能力。

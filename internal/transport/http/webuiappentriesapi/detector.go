@@ -239,13 +239,18 @@ func (detector *detector) mergePluginApps(entries map[string]entryView, capabili
 		if app.Provider == "" || !known[app.Provider] || !app.SupportsPlatform(appinstall.CurrentPlatform()) {
 			continue
 		}
+		accountKind := app.AccountKind()
+		if accountKind != "desktop" && accountKind != "cli" {
+			// IDE 等独立产品默认不进入账号入口，不能把安装状态算到 Desktop 上。
+			continue
+		}
 		entry := entries[app.Provider]
 		capability := capabilities[app.Provider]
 		if capability.Label == "" {
 			capability.Label = app.Name
 		}
 		status := statuses[app.AppID]
-		if app.AccountKind() == "cli" {
+		if accountKind == "cli" {
 			capability.CLI = true
 			entry.CLI = entry.CLI || status.Installed
 		} else {

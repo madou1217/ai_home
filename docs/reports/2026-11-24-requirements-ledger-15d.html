@@ -41,8 +41,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>137 条已完成</b>、10 条部分、1 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>91%</b>。未完成与边界集中在 AGY 真实 AGY 1.5+ 验收、安装包 50/20MiB 拉伸目标。</p><div class="legend">
-<span class="chip s-已完成">已完成 137</span>
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>138 条已完成</b>、10 条部分、1 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>91%</b>。未完成与边界集中在 AGY WebUI/Connector 真机验收、安装包 50/20MiB 拉伸目标。</p><div class="legend">
+<span class="chip s-已完成">已完成 138</span>
 <span class="chip s-部分">部分 10</span>
 <span class="chip s-未完成">未完成 1</span>
 <span class="chip s-未核实">未核实 3</span>
@@ -657,7 +657,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td><span class="chip s-约束">约束</span></td>
 <td class="ev">提交前字节级扫描；本报告已检查</td><td class="sess">—</td></tr>
 </tbody></table></div></section>
-<section id="t13"><h2>远程执行、Connector 与插件 <span class="count">16 条</span></h2>
+<section id="t13"><h2>远程执行、Connector 与插件 <span class="count">17 条</span></h2>
 <p class="note">Workspace Connector、run_command、持久 job、审批、插件与 MCP。</p>
 <div class="board"><table><thead><tr><th>需求</th><th>首次</th><th>状态</th><th>证据 / 边界</th><th>会话</th></tr></thead><tbody>
 <tr>
@@ -685,9 +685,13 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td><span class="chip s-已完成">已完成</span></td>
 <td class="ev">rx-… 台账 app_kv remote:execution-sessions；started/exited/stopped 事件；AWS 真机创建、列表、stop 验证</td><td class="sess">01a202ae</td></tr>
 <tr>
+<td>AGY ACP 真机会话（AWS）</td><td class="meta">11-25</td>
+<td><span class="chip s-已完成">已完成</span></td>
+<td class="ev">AWS AGY 1.5.16 + 账号投影 HOME：aih agy acp 真机会话 PASS；读取 input.txt、写入 output.txt（ACP_OK seed-content）、执行 printf RUN_OK；审批流程两次 allow_once 后写入 approval.txt=APPROVAL_OK、输出 APPROVAL_RUN；stop=end_turn；验证的是 CLI + 本地工作区，WebUI/Connector 真机待验</td><td class="sess">88c0e14d</td></tr>
+<tr>
 <td>AGY 结构化远程工具循环（read/write/run_command/审批）</td><td class="meta">11-23</td>
 <td><span class="chip s-部分">部分</span></td>
-<td class="ev">198cc0f2 + 42ac89e2 + 33f264b9 + 88c0e14d：ACP 客户端 + aih agy acp，覆盖 initialize/session/new/prompt/update、fs read/write、terminal create/output/wait/kill/release、审批；本地工作区与 Workspace Connector 两种 Host；WebUI ACP 抽屉含事件流、工具卡片、审批按钮与 prompt；路径约束、环境脱敏、协议/Connector 测试 PASS；真实 AGY 1.5+ 验收未完成</td><td class="sess">01a202ae</td></tr>
+<td class="ev">198cc0f2 + 42ac89e2 + 33f264b9 + 88c0e14d：ACP 客户端 + aih agy acp，覆盖 initialize/session/new/prompt/update、fs read/write、terminal create/output/wait/kill/release、审批；本地工作区与 Workspace Connector 两种 Host；WebUI ACP 抽屉含事件流、工具卡片、审批按钮与 prompt；AWS 真机 AGY 1.5.16 CLI 会话/工具/审批 PASS；WebUI + Connector 真机验收未完成</td><td class="sess">01a202ae</td></tr>
 <tr>
 <td>按会话归属 usage（Codex/Claude HTTP+WS）</td><td class="meta">11-23</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -774,7 +778,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td class="ev">66d2c018 单条坏 ID 不作废整目录；3b5491c 状态/退避 + 失效键；缓存 TTL 3s/5min</td><td class="sess">01a1ef76</td></tr>
 </tbody></table></div></section>
 <section id="open"><h2>未完成与明确边界</h2><p class="note">这些不是“没做”，而是当前仍未闭环、需要外部条件或用户决策的事项。</p><ul class="openlist">
-<li><b>AGY 真实 AGY 1.5+ 验收</b>：WebUI ACP 抽屉已接入（事件流、工具卡片、审批按钮、prompt）；尚未在装有 AGY 1.5+ 的真机上完成 read/write/run_command/审批验收。</li>
+<li><b>AGY WebUI/Connector 真机验收</b>：AWS 真机 AGY 1.5.16 的 CLI ACP 会话、read/write/run_command 与两次 allow_once 审批已 PASS；尚未通过 WebUI 抽屉 + Workspace Connector 跑同一闭环。</li>
 <li><b>安装包 50/20MiB 拉伸目标</b>：80MiB 已达成：tar.xz 单文件 53.5–59.2MiB（darwin 53.5 / win 53.8 / linux 59.2），darwin smoke PASS。50MiB 需移除 npm 或合并 Go 二进制；20MiB 不可行。</li>
 <li><b>未提交的 composition/pricingcatalog 收尾</b>：并行会话仍持有未提交改动；当前工作区 <code>composition_auth.go</code>、<code>public_add_account.go</code>、<code>webui_scheduler_routes.go</code> 等仍有 M 状态。</li>
 <li><b>需要真机/外部条件</b>：资源下限 ≥15G、zcode 3.18.x chunk 路径、Resume paused goal。</li>

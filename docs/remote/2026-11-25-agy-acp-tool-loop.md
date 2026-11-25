@@ -129,11 +129,14 @@ Connector 管理的项目根目录内。Provider 凭据不进入 Connector，Con
   `start_job` / `watch_job` / `interrupt_job`，工具 token 只走 header；
 - WebUI ACP 会话抽屉：SSE 事件流、工具卡片、审批按钮、prompt 输入；
 - 测试：ACP JSON-RPC 往返、子进程 agent 真实启动、文件越界/终端 kill、Connector 映射；
+- AWS 真机 AGY 1.5.16：`aih agy acp` 真实会话读取 `input.txt`、写入
+  `output.txt`、执行 `printf RUN_OK`；两次 `allow_once` 审批后写入
+  `approval.txt` 并返回 `end_turn`。
 - 依赖：`github.com/coder/acp-go-sdk v0.20.0`。
 
 仍未完成：
 
-- 真实 AGY 1.5+（`agy --version`、`agy acp --help`）在 AWS 上的 read/write/run_command/审批验收；
+- 通过 WebUI 抽屉 + Workspace Connector 跑同一条 read/write/run/审批闭环（真机 CLI 路径已 PASS）；
 - 现有 `agent-terminal` 对 AGY 仍返回 409；ACP 走独立的 WebUI 抽屉，不占用终端会话。
 
 ## 8. 当前结论

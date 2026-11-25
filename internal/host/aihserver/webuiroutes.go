@@ -424,18 +424,15 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建工作区 Connector Agent 入口失败: %w", err)
 	}
-	acpSessionManager, err := acpsession.NewManager(acpsession.NewConnectorRunner("agy"))
+	acpSessionManager, err := acpsession.NewManager(acpsession.NewConnectorRunner(workspaceHub))
 	if err != nil {
 		return nil, fmt.Errorf("创建 ACP 会话管理器失败: %w", err)
 	}
 	acpSessions, err := webuiacpsessionapi.NewHandler(webuiacpsessionapi.Dependencies{
-		Authorizer:     authorizer,
-		Manager:        acpSessionManager,
-		Workspaces:     workspaceStore,
-		Online:         workspaceHub.Online,
-		IssueToolToken: workspaceStore.IssueToolToken,
-		AIHomeDir:      dependencies.AIHomeDir,
-		SelfBaseURL:    dependencies.SelfBaseURL,
+		Authorizer: authorizer,
+		Manager:    acpSessionManager,
+		Workspaces: workspaceStore,
+		Online:     workspaceHub.Online,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 ACP 会话接口失败: %w", err)

@@ -3,6 +3,7 @@ package acpclient
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"sync"
@@ -30,6 +31,15 @@ type Config struct {
 	Handshake     time.Duration
 }
 
+// Transport lets the ACP JSON-RPC stream come from a remote connector instead
+// of a child process while keeping the same session lifecycle.
+type Transport interface {
+	Reader() io.Reader
+	Writer() io.Writer
+	Close() error
+	Stderr() string
+}
+
 // Session is one initialized ACP session. It is safe for one active Prompt;
 // concurrent prompts are rejected by the ACP SDK/session and should be
 // serialized by the owner.
@@ -38,6 +48,7 @@ type Session struct {
 	command   *exec.Cmd
 	sessionID string
 	stderr    *boundedBuffer
+	transport Transport
 
 	closeOnce sync.Once
 	closeErr  error
@@ -48,11 +59,6 @@ func Start(ctx context.Context, config Config) (*Session, error) {
 	if strings.TrimSpace(config.Command) == "" {
 		return nil, fmt.Errorf("ACP command is required")
 	}
-	handshake := config.Handshake
-	if handshake <= 0 {
-		handshake = defaultHandshakeTimeout
-	}
-
 	command := exec.Command(config.Command, config.Args...)
 	if config.Dir != "" {
 		command.Dir = config.Dir
@@ -76,7 +82,37 @@ func Start(ctx context.Context, config Config) (*Session, error) {
 	client := NewClient(config.Files, config.Terminals, config.Permissions, config.Events)
 	conn := acp.NewClientSideConnection(client, stdin, stdout)
 	session := &Session{conn: conn, command: command, stderr: stderr}
+	if err := initializeSession(ctx, config, session, conn); err != nil {
+		_ = session.Close()
+		return nil, err
+	}
+	return session, nil
+}
 
+// StartTransport initializes the same ACP session over an injected stream.
+// The remote connector owns the agent process; this process only speaks ACP.
+func StartTransport(ctx context.Context, config Config, transport Transport) (*Session, error) {
+	if transport == nil {
+		return nil, fmt.Errorf("ACP transport is required")
+	}
+	if strings.TrimSpace(config.Dir) == "" {
+		return nil, fmt.Errorf("ACP session cwd is required")
+	}
+	client := NewClient(config.Files, config.Terminals, config.Permissions, config.Events)
+	conn := acp.NewClientSideConnection(client, transport.Writer(), transport.Reader())
+	session := &Session{conn: conn, transport: transport}
+	if err := initializeSession(ctx, config, session, conn); err != nil {
+		_ = session.Close()
+		return nil, err
+	}
+	return session, nil
+}
+
+func initializeSession(ctx context.Context, config Config, session *Session, conn *acp.ClientSideConnection) error {
+	handshake := config.Handshake
+	if handshake <= 0 {
+		handshake = defaultHandshakeTimeout
+	}
 	handshakeCtx, cancel := context.WithTimeout(ctx, handshake)
 	defer cancel()
 	if _, err := conn.Initialize(handshakeCtx, acp.InitializeRequest{
@@ -90,24 +126,20 @@ func Start(ctx context.Context, config Config) (*Session, error) {
 			Version: firstNonEmpty(config.ClientVersion, "1"),
 		},
 	}); err != nil {
-		_ = session.Close()
-		return nil, fmt.Errorf("ACP initialize: %w%s", err, stderrSuffix(stderr))
+		return fmt.Errorf("ACP initialize: %w%s", err, session.errorSuffix())
 	}
-
 	created, err := conn.NewSession(handshakeCtx, acp.NewSessionRequest{
 		Cwd:        config.Dir,
 		McpServers: []acp.McpServer{},
 	})
 	if err != nil {
-		_ = session.Close()
-		return nil, fmt.Errorf("ACP session/new: %w%s", err, stderrSuffix(stderr))
+		return fmt.Errorf("ACP session/new: %w%s", err, session.errorSuffix())
 	}
 	if strings.TrimSpace(string(created.SessionId)) == "" {
-		_ = session.Close()
-		return nil, fmt.Errorf("ACP session/new returned an empty session id")
+		return fmt.Errorf("ACP session/new returned an empty session id")
 	}
 	session.sessionID = string(created.SessionId)
-	return session, nil
+	return nil
 }
 
 func (session *Session) SessionID() string { return session.sessionID }
@@ -126,7 +158,7 @@ func (session *Session) Prompt(ctx context.Context, text string) (string, error)
 		Prompt:    []acp.ContentBlock{acp.TextBlock(text)},
 	})
 	if err != nil {
-		return "", fmt.Errorf("ACP session/prompt: %w%s", err, stderrSuffix(session.stderr))
+		return "", fmt.Errorf("ACP session/prompt: %w%s", err, session.errorSuffix())
 	}
 	return string(response.StopReason), nil
 }
@@ -144,9 +176,30 @@ func (session *Session) Close() error {
 		return nil
 	}
 	session.closeOnce.Do(func() {
+		if session.transport != nil {
+			session.closeErr = session.transport.Close()
+			return
+		}
 		session.closeErr = terminateCommand(session.command)
 	})
 	return session.closeErr
+}
+
+func (session *Session) errorSuffix() string {
+	if session == nil {
+		return ""
+	}
+	if session.transport != nil {
+		text := strings.TrimSpace(session.transport.Stderr())
+		if text == "" {
+			return ""
+		}
+		if len(text) > 2000 {
+			text = text[len(text)-2000:]
+		}
+		return ": " + text
+	}
+	return stderrSuffix(session.stderr)
 }
 
 func firstNonEmpty(values ...string) string {

@@ -47,11 +47,6 @@ type SessionView struct {
 
 type StartRequest struct {
 	WorkspaceID string
-	Root        string
-	ToolsURL    string
-	Token       string
-	Command     string
-	Args        []string
 }
 
 type Handle interface {

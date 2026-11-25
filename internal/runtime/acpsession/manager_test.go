@@ -42,7 +42,7 @@ func TestManagerStartPromptAndEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
-	view, err := manager.Start(context.Background(), StartRequest{WorkspaceID: "ws-1", Root: "/tmp/ws"})
+	view, err := manager.Start(context.Background(), StartRequest{WorkspaceID: "ws-1"})
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestManagerApprovalBlocksUntilDecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
-	view, err := manager.Start(context.Background(), StartRequest{WorkspaceID: "ws-1", Root: "/tmp/ws"})
+	view, err := manager.Start(context.Background(), StartRequest{WorkspaceID: "ws-1"})
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}

@@ -120,6 +120,8 @@ func NormalizeCapabilities(capabilities Capabilities) Capabilities {
 			capabilities.WatchJob = true
 		case CapabilityInterruptJob:
 			capabilities.InterruptJob = true
+		case CapabilityAgentACP:
+			capabilities.AgentACP = true
 		}
 	}
 	capabilities.Names = capabilities.NamesOrDerived()
@@ -141,6 +143,7 @@ func IntersectCapabilities(allowed, declared Capabilities) Capabilities {
 		StartJob:      allowed.StartJob && declared.StartJob,
 		WatchJob:      allowed.WatchJob && declared.WatchJob,
 		InterruptJob:  allowed.InterruptJob && declared.InterruptJob,
+		AgentACP:      allowed.AgentACP && declared.AgentACP,
 	}
 	result.Names = result.NamesOrDerived()
 	return result
@@ -169,6 +172,8 @@ func SupportsOperation(capabilities Capabilities, operation string) bool {
 		return capabilities.WatchJob
 	case OperationInterruptJob:
 		return capabilities.InterruptJob
+	case OperationStartAgentACP, OperationWriteAgentACP, OperationReadAgentACP, OperationCloseAgentACP:
+		return capabilities.AgentACP
 	default:
 		return false
 	}
@@ -449,4 +454,36 @@ func CommandTimeout(timeoutMS int) time.Duration {
 		timeout = MaxCommandTimeout
 	}
 	return timeout
+}
+
+// StartAgentACPRequest starts one ACP stdio agent inside the connector's
+// workspace. Cwd is relative to the workspace root; the connector returns the
+// resolved absolute cwd for ACP session/new.
+type StartAgentACPRequest struct {
+	Cwd string `json:"cwd,omitempty"`
+}
+
+type StartAgentACPResult struct {
+	SessionID string `json:"sessionId"`
+	Cwd       string `json:"cwd,omitempty"`
+}
+
+type WriteAgentACPRequest struct {
+	SessionID string `json:"sessionId"`
+	Data      string `json:"data"`
+}
+
+type ReadAgentACPRequest struct {
+	SessionID string `json:"sessionId"`
+	WaitMS    int    `json:"waitMs,omitempty"`
+}
+
+type ReadAgentACPResult struct {
+	Data  string `json:"data,omitempty"`
+	EOF   bool   `json:"eof,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+type CloseAgentACPRequest struct {
+	SessionID string `json:"sessionId"`
 }

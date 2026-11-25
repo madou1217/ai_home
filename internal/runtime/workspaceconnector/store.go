@@ -578,6 +578,7 @@ func defaultCapabilities() remoteconnector.Capabilities {
 	return remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
 		RunCommand: true, Approval: true, StartJob: true, WatchJob: true, InterruptJob: true,
+		AgentACP: true,
 	})
 }
 

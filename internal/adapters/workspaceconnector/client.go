@@ -48,7 +48,11 @@ type Config struct {
 	// execution is enabled by default because the connector process is started
 	// by the local machine owner and runs with that user's own authority.
 	DisableCommand bool
-	OnSession      func(Session) error
+	// AgentACP enables workspace.agent_acp. The connector, not the Server,
+	// chooses AgentCommand; the Server may only ask for a cwd inside Root.
+	AgentACP     bool
+	AgentCommand string
+	OnSession    func(Session) error
 }
 
 type Session struct {
@@ -68,6 +72,7 @@ type Connector struct {
 	fs        *filesystem
 	jobs      *jobManager
 	approvals *approvalManager
+	agentACP  *agentACPManager
 	config    Config
 	session   Session
 
@@ -123,10 +128,12 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 	closeOnError := func() { _ = ws.CloseNow() }
 
 	commands := !config.DisableCommand
+	agentACPEnabled := config.AgentACP && strings.TrimSpace(config.AgentCommand) != ""
 	capabilities := remoteconnector.NormalizeCapabilities(remoteconnector.Capabilities{
 		ReadFile: true, WriteFile: true, ListDirectory: true, Search: true,
 		RunCommand: commands, Approval: commands,
 		StartJob: commands, WatchJob: commands, InterruptJob: commands,
+		AgentACP: agentACPEnabled,
 	})
 	hello := remoteconnector.Hello{
 		Type:         remoteconnector.MessageHello,
@@ -188,9 +195,14 @@ func Dial(ctx context.Context, config Config) (*Connector, error) {
 		}
 	}
 	executable, _ := os.Executable()
+	var agentACP *agentACPManager
+	if agentACPEnabled {
+		agentACP = newAgentACPManager(files.sandbox.root, config.AgentCommand)
+	}
 	return &Connector{
 		ws: ws, fs: files, jobs: newJobManager(files, config.StateDir, executable),
-		approvals: newApprovalManager(config.ApprovalMode), config: config, session: session,
+		approvals: newApprovalManager(config.ApprovalMode), agentACP: agentACP,
+		config: config, session: session,
 	}, nil
 }
 
@@ -251,6 +263,9 @@ func (connector *Connector) Serve(ctx context.Context) error {
 	defer func() {
 		cancel()
 		workers.Wait()
+		if connector.agentACP != nil {
+			connector.agentACP.closeAll()
+		}
 		<-heartbeatDone
 		_ = connector.ws.CloseNow()
 	}()
@@ -312,6 +327,8 @@ func (connector *Connector) requestBudget(message remoteconnector.Message, fallb
 			_ = json.Unmarshal(message.Payload, &request)
 		}
 		return remoteconnector.JobWait(request.WaitMS) + 10*time.Second
+	case remoteconnector.OperationReadAgentACP:
+		return 35 * time.Second
 	default:
 		return fallback
 	}
@@ -382,6 +399,21 @@ func (connector *Connector) dispatch(ctx context.Context, request remoteconnecto
 		return remoteconnector.DecideApprovalResult{Approval: view}, nil
 	case remoteconnector.OperationStartJob, remoteconnector.OperationWatchJob, remoteconnector.OperationInterruptJob:
 		return connector.jobs.execute(ctx, request.Operation, request.Payload)
+	case remoteconnector.OperationStartAgentACP, remoteconnector.OperationWriteAgentACP,
+		remoteconnector.OperationReadAgentACP, remoteconnector.OperationCloseAgentACP:
+		if connector.agentACP == nil {
+			return nil, remoteconnector.NewProtocolError(remoteconnector.CodeCapabilityNotAllowed, "agent_acp is not enabled")
+		}
+		switch request.Operation {
+		case remoteconnector.OperationStartAgentACP:
+			return connector.agentACP.start(ctx, request.Payload)
+		case remoteconnector.OperationWriteAgentACP:
+			return nil, connector.agentACP.write(request.Payload)
+		case remoteconnector.OperationReadAgentACP:
+			return connector.agentACP.read(ctx, request.Payload)
+		default:
+			return nil, connector.agentACP.close(request.Payload)
+		}
 	default:
 		return connector.fs.execute(ctx, request.Operation, request.Payload)
 	}

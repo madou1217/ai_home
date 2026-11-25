@@ -121,7 +121,7 @@ export default function WorkspaceAcpSessionDrawer({ workspace, onClose }: Worksp
     closeSource();
     setSession(null);
     sessionRef.current = null;
-    setTimeline([{ kind: 'status', text: '正在启动 AGY ACP 会话' }]);
+    setTimeline([]);
     setPrompt('');
     setError('');
     setStarting(true);
@@ -129,7 +129,7 @@ export default function WorkspaceAcpSessionDrawer({ workspace, onClose }: Worksp
 
     const attach = (next: WorkspaceAcpSession) => {
       const source = workspaceConnectorsAPI.acpSessionEvents(workspace.id, next.id, 0);
-      source.addEventListener('acp', (message) => {
+      const handleMessage = (message: Event) => {
         try {
           const event = JSON.parse((message as MessageEvent).data) as WorkspaceAcpEvent;
           if (!event || typeof event.seq !== 'number' || event.seq <= seenSeq.current) return;
@@ -141,7 +141,12 @@ export default function WorkspaceAcpSessionDrawer({ workspace, onClose }: Worksp
         } catch {
           // Ignore malformed frames; EventSource will keep the stream alive.
         }
-      });
+      };
+      // The guarded WebUI EventSource emits unnamed frames as onmessage even
+      // when the server uses "event: acp"; native EventSource needs the named
+      // listener. Install both and dedupe by seq.
+      source.onmessage = handleMessage;
+      source.addEventListener('acp', handleMessage);
       source.onerror = () => setError('ACP 事件流已断开，浏览器会自动重连');
       sourceRef.current = source;
     };

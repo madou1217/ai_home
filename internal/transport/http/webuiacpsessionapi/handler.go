@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +20,6 @@ const (
 	EventsPath   = DetailPath + "/events"
 	PromptPath   = DetailPath + "/prompt"
 	ApprovalPath = DetailPath + "/approvals/{approvalId}"
-	toolTokenTTL = 12 * time.Hour
 	maxBodyBytes = 1 << 20
 )
 
@@ -35,37 +32,28 @@ type WorkspaceReader interface {
 }
 
 type Dependencies struct {
-	Authorizer     Authorizer
-	Manager        *acpsession.Manager
-	Workspaces     WorkspaceReader
-	Online         func(string) bool
-	IssueToolToken func(context.Context, string, time.Duration) (string, int64, error)
-	AIHomeDir      string
-	SelfBaseURL    string
+	Authorizer Authorizer
+	Manager    *acpsession.Manager
+	Workspaces WorkspaceReader
+	Online     func(string) bool
 }
 
 type Handler struct {
-	authorizer     Authorizer
-	manager        *acpsession.Manager
-	workspaces     WorkspaceReader
-	online         func(string) bool
-	issueToolToken func(context.Context, string, time.Duration) (string, int64, error)
-	aiHomeDir      string
-	selfBaseURL    string
+	authorizer Authorizer
+	manager    *acpsession.Manager
+	workspaces WorkspaceReader
+	online     func(string) bool
 }
 
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Authorizer == nil || dependencies.Manager == nil || dependencies.Workspaces == nil || dependencies.IssueToolToken == nil {
+	if dependencies.Authorizer == nil || dependencies.Manager == nil || dependencies.Workspaces == nil {
 		return nil, fmt.Errorf("acp session handler dependencies are invalid")
 	}
 	return &Handler{
-		authorizer:     dependencies.Authorizer,
-		manager:        dependencies.Manager,
-		workspaces:     dependencies.Workspaces,
-		online:         dependencies.Online,
-		issueToolToken: dependencies.IssueToolToken,
-		aiHomeDir:      strings.TrimSpace(dependencies.AIHomeDir),
-		selfBaseURL:    strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/"),
+		authorizer: dependencies.Authorizer,
+		manager:    dependencies.Manager,
+		workspaces: dependencies.Workspaces,
+		online:     dependencies.Online,
 	}, nil
 }
 
@@ -117,26 +105,7 @@ func (handler *Handler) start(response http.ResponseWriter, request *http.Reques
 		writeError(response, http.StatusConflict, "workspace_offline", "workspace connector is offline")
 		return
 	}
-	if handler.aiHomeDir == "" || handler.selfBaseURL == "" {
-		writeError(response, http.StatusServiceUnavailable, "acp_unavailable", "ACP session service is not configured")
-		return
-	}
-	shadowDir := filepath.Join(handler.aiHomeDir, "run", "connector-workspaces", workspaceID)
-	if err := os.MkdirAll(shadowDir, 0o700); err != nil {
-		writeError(response, http.StatusInternalServerError, "workspace_anchor_failed", "cannot create workspace anchor")
-		return
-	}
-	token, _, err := handler.issueToolToken(request.Context(), workspaceID, toolTokenTTL)
-	if err != nil {
-		writeError(response, http.StatusServiceUnavailable, "tool_token_failed", "cannot issue tool token")
-		return
-	}
-	view, err := handler.manager.Start(request.Context(), acpsession.StartRequest{
-		WorkspaceID: workspaceID,
-		Root:        shadowDir,
-		ToolsURL:    handler.selfBaseURL + remoteconnector.ToolPathFor(workspaceID),
-		Token:       token,
-	})
+	view, err := handler.manager.Start(request.Context(), acpsession.StartRequest{WorkspaceID: workspaceID})
 	if err != nil {
 		writeError(response, http.StatusUnprocessableEntity, "acp_start_failed", err.Error())
 		return

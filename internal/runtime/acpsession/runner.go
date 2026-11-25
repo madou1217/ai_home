@@ -2,52 +2,36 @@ package acpsession
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/madou1217/ai_home/internal/adapters/agy/acpclient"
+	"github.com/madou1217/ai_home/internal/runtime/workspaceconnector"
 )
 
-// ConnectorRunner starts AGY's ACP server against a Workspace Connector host.
+// ConnectorRunner runs the ACP agent inside the Workspace Connector host.
+// The agent therefore sees the real workspace; the Server only carries JSON-RPC
+// and approval decisions.
 type ConnectorRunner struct {
-	Command string
+	hub *workspaceconnector.Hub
 }
 
-func NewConnectorRunner(command string) *ConnectorRunner {
-	if command == "" {
-		command = "agy"
-	}
-	return &ConnectorRunner{Command: command}
+func NewConnectorRunner(hub *workspaceconnector.Hub) *ConnectorRunner {
+	return &ConnectorRunner{hub: hub}
 }
 
 func (runner *ConnectorRunner) Start(ctx context.Context, request StartRequest, events acpclient.EventSink, permissions acpclient.PermissionBroker) (Handle, error) {
-	if request.ToolsURL == "" || request.Token == "" {
-		return nil, fmt.Errorf("workspace connector tool token is required")
-	}
-	client := acpclient.NewHTTPToolClient(request.ToolsURL, request.Token, nil)
-	host, err := acpclient.NewConnectorHost(request.Root, client)
+	transport, cwd, err := StartConnectorTransport(ctx, runner.hub, request.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
-	command := request.Command
-	if command == "" {
-		command = runner.Command
-	}
-	args := request.Args
-	if len(args) == 0 {
-		args = []string{"acp"}
-	}
-	session, err := acpclient.Start(ctx, acpclient.Config{
-		Command:       command,
-		Args:          args,
-		Dir:           host.Root(),
-		Files:         host,
-		Terminals:     host,
+	session, err := acpclient.StartTransport(ctx, acpclient.Config{
+		Dir:           cwd,
 		Permissions:   permissions,
 		Events:        events,
 		ClientName:    "aih-webui",
 		ClientVersion: "1",
-	})
+	}, transport)
 	if err != nil {
+		_ = transport.Close()
 		return nil, err
 	}
 	return &acpHandle{session: session}, nil

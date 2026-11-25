@@ -72,15 +72,17 @@ func runWorkspaceCommand(ctx context.Context, arguments []string, runtime comman
 }
 
 type workspaceOptions struct {
-	server      string
-	root        string
-	label       string
-	code        string
-	approval    string
-	jsonOutput  bool
-	noReconnect bool
-	noCommand   bool
-	help        bool
+	server       string
+	root         string
+	label        string
+	code         string
+	approval     string
+	jsonOutput   bool
+	noReconnect  bool
+	noCommand    bool
+	agentACP     bool
+	agentCommand string
+	help         bool
 }
 
 func parseWorkspaceOptions(args []string) (workspaceOptions, []string, error) {
@@ -95,6 +97,8 @@ func parseWorkspaceOptions(args []string) (workspaceOptions, []string, error) {
 			options.noReconnect = true
 		case token == "--no-command":
 			options.noCommand = true
+		case token == "--agent-acp":
+			options.agentACP = true
 		case token == "--help" || token == "-h":
 			options.help = true
 		case strings.HasPrefix(token, "--"):
@@ -114,6 +118,8 @@ func parseWorkspaceOptions(args []string) (workspaceOptions, []string, error) {
 				options.code = value
 			case "--approval":
 				options.approval = strings.ToLower(value)
+			case "--agent-command":
+				options.agentCommand = value
 			default:
 				return workspaceOptions{}, nil, fmt.Errorf("unknown option: %s", name)
 			}
@@ -218,12 +224,19 @@ func runWorkspaceConnect(ctx context.Context, client *connectorapi.Client, profi
 		_, _ = fmt.Fprintf(runtime.stdout, "[aih] workspace enrollment created for %s (expires %s)\n",
 			label, time.UnixMilli(enrollment.ExpiresAt).Format(time.RFC3339))
 	}
+	agentCommand := strings.TrimSpace(options.agentCommand)
+	if agentCommand == "" && options.agentACP {
+		agentCommand = "agy"
+	}
 	config := connectorclient.Config{
 		Endpoint: endpoint, Root: absoluteRoot, Label: label,
 		Token: token, WorkspaceID: workspaceID, ConnectorID: connectorID,
 		StateDir:       filepath.Join(home, "run", "workspace-jobs"),
 		ApprovalMode:   options.approval,
 		DisableCommand: options.noCommand,
+		// Agent ACP is opt-in; when enabled without a custom binary, use agy.
+		AgentACP:     options.agentACP,
+		AgentCommand: agentCommand,
 		OnSession: func(session connectorclient.Session) error {
 			return sessions.Save(workspaceSession{
 				ServerProfileID: profileID, Endpoint: endpoint, Root: absoluteRoot,
@@ -450,7 +463,7 @@ func writeWorkspaceJSON(runtime commandRuntime, payload any) error {
 
 func writeWorkspaceUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
-	_, _ = fmt.Fprintln(output, "  aih workspace connect [--server <profile>] [--root <dir>] [--label <name>] [--code <code>] [--no-reconnect] [--no-command] [--approval=destructive|never|all]")
+	_, _ = fmt.Fprintln(output, "  aih workspace connect [--server <profile>] [--root <dir>] [--label <name>] [--code <code>] [--no-reconnect] [--no-command] [--approval=destructive|never|all] [--agent-acp] [--agent-command <agy>]")
 	_, _ = fmt.Fprintln(output, "  aih workspace ls [--server <profile>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih workspace enroll [--server <profile>] [--label <name>] [--json]")
 	_, _ = fmt.Fprintln(output, "  aih workspace revoke <workspaceId> [--server <profile>]")

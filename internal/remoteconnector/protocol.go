@@ -28,6 +28,10 @@ const (
 	OperationStartJob       = "workspace.start_job"
 	OperationWatchJob       = "workspace.watch_job"
 	OperationInterruptJob   = "workspace.interrupt_job"
+	OperationStartAgentACP  = "workspace.agent_acp.start"
+	OperationWriteAgentACP  = "workspace.agent_acp.write"
+	OperationReadAgentACP   = "workspace.agent_acp.read"
+	OperationCloseAgentACP  = "workspace.agent_acp.close"
 )
 
 const (
@@ -40,6 +44,7 @@ const (
 	CapabilityStartJob      = "workspace.start_job"
 	CapabilityWatchJob      = "workspace.watch_job"
 	CapabilityInterruptJob  = "workspace.interrupt_job"
+	CapabilityAgentACP      = "workspace.agent_acp"
 )
 
 // Capabilities is a positive declaration. The server must still enforce the
@@ -54,6 +59,7 @@ type Capabilities struct {
 	StartJob      bool     `json:"startJob"`
 	WatchJob      bool     `json:"watchJob"`
 	InterruptJob  bool     `json:"interruptJob"`
+	AgentACP      bool     `json:"agentAcp"`
 	Names         []string `json:"names,omitempty"`
 }
 
@@ -88,6 +94,9 @@ func (capabilities Capabilities) NamesOrDerived() []string {
 	}
 	if capabilities.InterruptJob {
 		result = append(result, CapabilityInterruptJob)
+	}
+	if capabilities.AgentACP {
+		result = append(result, CapabilityAgentACP)
 	}
 	return result
 }

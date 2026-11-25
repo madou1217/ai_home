@@ -343,7 +343,7 @@ func runLaunchUI(ctx context.Context, homeDir string, service *launcher.Service,
 		return errors.New("未检测到 Linux 桌面会话（DISPLAY 和 WAYLAND_DISPLAY 均为空）")
 	}
 	if socketPath == "" {
-		socketPath = launcherd.DefaultSocketPath()
+		socketPath = launcherd.DefaultSocketPathForHome(homeDir)
 	}
 
 	if daemonMode {
@@ -353,6 +353,10 @@ func runLaunchUI(ctx context.Context, homeDir string, service *launcher.Service,
 		}
 		pid, logPath, err := launcherd.StartDetached(ctx, exePath, homeDir, socketPath)
 		if err != nil {
+			if errors.Is(err, launcherd.ErrAlreadyRunning) {
+				_, _ = fmt.Fprintf(runtime.stdout, "launcher ui 已在运行 (socket=%s)\n", socketPath)
+				return nil
+			}
 			return err
 		}
 		_, _ = fmt.Fprintf(runtime.stdout, "launcher ui started in background (pid=%d, socket=%s, log=%s)\n", pid, socketPath, logPath)
@@ -395,7 +399,8 @@ func runLaunchToggle(ctx context.Context, args []string, runtime commandRuntime)
 		return fmt.Errorf("`aih launch toggle` 仅支持 Linux（macOS/Windows 请使用 `aih launch show`）")
 	}
 	if socketPath == "" {
-		socketPath = launcherd.DefaultSocketPath()
+		homeDir, _ := resolveLauncherAIHomeDir(runtime)
+		socketPath = launcherd.DefaultSocketPathForHome(homeDir)
 	}
 	if err := launcherd.SendCommand(ctx, socketPath, "toggle"); err != nil {
 		return fmt.Errorf("%w（请先运行 `aih launch ui` 或 `aih launch ui --daemon`）", err)
@@ -484,7 +489,8 @@ func runLaunchStatus(ctx context.Context, service *launcher.Service, args []stri
 	}
 	status := service.Status(ctx)
 	if goruntime.GOOS == "linux" {
-		sockPath := launcherd.DefaultSocketPath()
+		homeDir, _ := resolveLauncherAIHomeDir(runtime)
+		sockPath := launcherd.DefaultSocketPathForHome(homeDir)
 		desktop := launcherd.Status{
 			Supported: launcherd.HasDesktopSession(),
 			Autostart: launcherd.AutostartEnabled(),

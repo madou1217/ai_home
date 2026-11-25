@@ -13,7 +13,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +27,9 @@ const (
 
 	socketDialTimeout = 2 * time.Second
 )
+
+// ErrAlreadyRunning is returned when another launcher UI instance is already listening on the socket.
+var ErrAlreadyRunning = errors.New("launcher_ui_already_running")
 
 // Status reports the Linux desktop launcher supervisor and GTK panel state.
 type Status struct {
@@ -47,16 +49,33 @@ type Options struct {
 	LogOutput  io.Writer
 }
 
-// DefaultSocketPath returns the control Unix socket path:
-// $AIH_LAUNCH_SOCKET -> $XDG_RUNTIME_DIR/aih-launch.sock -> /tmp/aih-launch-<uid>.sock.
+// DefaultSocketPath returns the control Unix socket path without an explicit aiHomeDir.
 func DefaultSocketPath() string {
+	return DefaultSocketPathForHome("")
+}
+
+// DefaultSocketPathForHome resolves the control Unix socket path:
+// 1) $AIH_LAUNCH_SOCKET if set;
+// 2) $XDG_RUNTIME_DIR/aih-launch.sock only when $XDG_RUNTIME_DIR exists and is owned by the current user;
+// 3) <aiHomeDir>/run/launcher/linux/aih-launch.sock (falling back to ~/.ai_home/run/launcher/linux/aih-launch.sock).
+// Never falls back to world-writable /tmp.
+func DefaultSocketPathForHome(aiHomeDir string) string {
 	if env := strings.TrimSpace(os.Getenv(EnvSocketPath)); env != "" {
 		return env
 	}
-	if xdg := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); xdg != "" {
+	if xdg := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); xdg != "" && isOwnedRuntimeDir(xdg) {
 		return filepath.Join(xdg, "aih-launch.sock")
 	}
-	return filepath.Join(os.TempDir(), "aih-launch-"+strconv.Itoa(os.Getuid())+".sock")
+	home := strings.TrimSpace(aiHomeDir)
+	if home == "" {
+		home = strings.TrimSpace(os.Getenv("AIH_HOME_DIR"))
+	}
+	if home == "" {
+		if userHome, err := os.UserHomeDir(); err == nil && strings.TrimSpace(userHome) != "" {
+			home = filepath.Join(userHome, ".ai_home")
+		}
+	}
+	return filepath.Join(home, "run", "launcher", "linux", "aih-launch.sock")
 }
 
 // SendCommand sends a single control command ("toggle", "show", "hide", "ping")

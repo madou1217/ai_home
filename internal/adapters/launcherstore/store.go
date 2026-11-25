@@ -5,13 +5,25 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/madou1217/ai_home/application/launcher"
+)
+
+const (
+	lockRetryInterval = 50 * time.Millisecond
+	lockAcquireLimit  = 2 * time.Second
+	staleLockAge      = 30 * time.Second
+	renameRetryCount  = 3
+	renameRetryDelay  = 50 * time.Millisecond
 )
 
 // Store manages ~/.ai_home/run/launcher/usage.json with atomic temp-file renames.
@@ -50,7 +62,7 @@ func (s *Store) Load(_ context.Context) (launcher.UsageSnapshot, error) {
 }
 
 // RecordOpen increments count and updates openedAtMs for appID, retaining the 500 most recent entries.
-func (s *Store) RecordOpen(_ context.Context, appID string, openedAtMs int64) error {
+func (s *Store) RecordOpen(ctx context.Context, appID string, openedAtMs int64) error {
 	if s == nil || s.path == "" {
 		return errors.New("launcher_store_uninitialized")
 	}
@@ -58,8 +70,17 @@ func (s *Store) RecordOpen(_ context.Context, appID string, openedAtMs int64) er
 	if id == "" {
 		return launcher.ErrInvalidInput
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	release, err := s.acquireFileLock(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	snap, err := s.readLocked()
 	if err != nil {
@@ -73,6 +94,38 @@ func (s *Store) RecordOpen(_ context.Context, appID string, openedAtMs int64) er
 
 	pruneUsage(&snap, launcher.MaxUsageEntries)
 	return s.writeAtomicLocked(snap)
+}
+
+func (s *Store) acquireFileLock(ctx context.Context) (func(), error) {
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	lockPath := s.path + ".lock"
+	deadline := time.Now().Add(lockAcquireLimit)
+	for {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = f.WriteString(strconv.Itoa(os.Getpid()) + "\n")
+			_ = f.Close()
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > staleLockAge {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("acquire usage lock %s timed out after %s", lockPath, lockAcquireLimit)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(lockRetryInterval):
+		}
+	}
 }
 
 func (s *Store) readLocked() (launcher.UsageSnapshot, error) {
@@ -139,11 +192,30 @@ func (s *Store) writeAtomicLocked(snap launcher.UsageSnapshot) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, s.path); err != nil {
+	if err := renameWithRetry(tmpPath, s.path); err != nil {
 		return err
 	}
 	cleanup = false
 	return nil
+}
+
+func renameWithRetry(src, dst string) error {
+	attempts := 1
+	if runtime.GOOS == "windows" {
+		attempts = renameRetryCount
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		if err := os.Rename(src, dst); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if i+1 < attempts {
+			time.Sleep(renameRetryDelay)
+		}
+	}
+	return lastErr
 }
 
 func emptyUsageSnapshot() launcher.UsageSnapshot {

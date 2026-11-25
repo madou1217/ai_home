@@ -50,11 +50,31 @@ func WithShutdownSignals(ctx context.Context) (context.Context, context.CancelFu
 	return signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 }
 
+// isOwnedRuntimeDir reports whether dir exists, is a directory, and is owned by the current user.
+func isOwnedRuntimeDir(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	return st.Uid == uint32(os.Getuid())
+}
+
 // StartDetached pre-builds the GTK4 UI binary and spawns `<exePath> launch ui`
 // detached in a new session, logging output to <aiHomeDir>/run/launcher/linux/daemon.log.
 func StartDetached(ctx context.Context, exePath string, aiHomeDir string, socketPath string) (int, string, error) {
 	if !HasDesktopSession() {
 		return 0, "", fmt.Errorf("%w: 未检测到 Linux 桌面会话（DISPLAY 和 WAYLAND_DISPLAY 均为空）", launcher.ErrUnsupported)
+	}
+	sock := strings.TrimSpace(socketPath)
+	if sock == "" {
+		sock = DefaultSocketPathForHome(aiHomeDir)
+	}
+	if ProbeSocket(ctx, sock) {
+		return 0, "", fmt.Errorf("%w: socket=%s", ErrAlreadyRunning, sock)
 	}
 	if _, err := Build(ctx, aiHomeDir); err != nil {
 		return 0, "", err
@@ -66,10 +86,6 @@ func StartDetached(ctx context.Context, exePath string, aiHomeDir string, socket
 			return 0, "", fmt.Errorf("无法定位当前 aih 可执行文件: %w", err)
 		}
 		bin = resolved
-	}
-	sock := strings.TrimSpace(socketPath)
-	if sock == "" {
-		sock = DefaultSocketPath()
 	}
 
 	logDir := filepath.Join(aiHomeDir, "run", "launcher", "linux")
@@ -95,19 +111,19 @@ func StartDetached(ctx context.Context, exePath string, aiHomeDir string, socket
 	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
 
-	// Briefly wait for control socket readiness so callers know startup succeeded.
+	// Verify the control socket becomes reachable within 2s; fail explicitly if startup failed.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if ProbeSocket(ctx, sock) {
-			break
+			return pid, logPath, nil
 		}
 		select {
 		case <-ctx.Done():
-			return pid, logPath, nil
+			return pid, logPath, ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	return pid, logPath, nil
+	return pid, logPath, fmt.Errorf("启动器后台进程已拉起（pid=%d），但 2s 内控制 socket (%s) 未就绪；请查看日志 %s", pid, sock, logPath)
 }
 
 // Daemon supervises the embedded Linux GTK4 launcher UI process.
@@ -139,7 +155,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	sock := strings.TrimSpace(opts.SocketPath)
 	if sock == "" {
-		sock = DefaultSocketPath()
+		sock = DefaultSocketPathForHome(home)
 	}
 	return &Daemon{
 		aiHomeDir:  home,

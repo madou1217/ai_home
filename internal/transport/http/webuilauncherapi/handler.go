@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/launcher"
 )
@@ -89,8 +90,13 @@ func (h *Handler) handleApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	rawQuery := q.Get("q")
+	if utf8.RuneCountInString(rawQuery) > launcher.MaxQueryRunes {
+		writeError(w, http.StatusBadRequest, "invalid_query", "查询关键词过长（最多 256 个字符）")
+		return
+	}
 	opts := launcher.ListOptions{
-		Query: q.Get("q"),
+		Query: rawQuery,
 	}
 	if rawRefresh := strings.TrimSpace(q.Get("refresh")); rawRefresh != "" {
 		switch strings.ToLower(rawRefresh) {
@@ -108,6 +114,9 @@ func (h *Handler) handleApps(w http.ResponseWriter, r *http.Request) {
 		if err != nil || parsed <= 0 {
 			writeError(w, http.StatusBadRequest, "invalid_limit", "limit 必须是正整数")
 			return
+		}
+		if parsed > launcher.MaxLimit {
+			parsed = launcher.MaxLimit
 		}
 		opts.Limit = parsed
 	}

@@ -53,6 +53,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   private var configuredShortcut = ShortcutRegistry.defaultLauncherShortcut
   private var tapKeyCode: UInt16 = 49
   private var tapModifiers: CGEventFlags = .maskAlternate
+  private var hasValidTapShortcut = true
   private var eventTap: CFMachPort?
   private var eventTapSource: CFRunLoopSource?
   private(set) var isEventTapActive = false
@@ -117,9 +118,17 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     if let parsed = Self.parseShortcut(resolvedShortcut) {
       tapKeyCode = parsed.keyCode
       tapModifiers = parsed.modifiers
+      hasValidTapShortcut = true
     } else {
-      tapKeyCode = 49
-      tapModifiers = .maskAlternate
+      hasValidTapShortcut = false
+      destroyEventTap()
+      if nextEnabled {
+        emit([
+          "type": "status",
+          "trusted": AXIsProcessTrusted(),
+          "detail": "启动器快捷键「\(resolvedShortcut)」缺少修饰键或不受支持，已停用 CGEventTap（防止吞噬普通按键）"
+        ])
+      }
     }
 
     footer.hintsLabel.stringValue = "↑↓ 选择    ↵ 打开    esc 关闭    \(resolvedShortcut) 切换"
@@ -138,7 +147,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       return
     }
 
-    if shortcutChanged || !isEventTapActive {
+    if hasValidTapShortcut && (shortcutChanged || !isEventTapActive) {
       reconcileEventTap()
     }
     if panel.isVisible && endpointChanged {
@@ -149,7 +158,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   // MARK: CGEventTap (swallows ⌥Space so NBSP is never typed into active inputs)
 
   func reconcileEventTap() {
-    guard isAvailable else {
+    guard isAvailable, hasValidTapShortcut else {
       destroyEventTap()
       return
     }
@@ -259,7 +268,8 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       default: break
       }
     }
-    guard let keyCode = Self.keyCodeMap[keyToken] else { return nil }
+    // Reject modifier-less shortcuts (e.g. bare "space") so CGEventTap never swallows normal typing.
+    guard !modifiers.isEmpty, let keyCode = Self.keyCodeMap[keyToken] else { return nil }
     return (keyCode, modifiers)
   }
 

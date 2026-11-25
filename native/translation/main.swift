@@ -253,6 +253,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         installMonitors()
         launcherPanel.reconcileEventTap()
       } else {
+        launcherPanel.destroyEventTap()
         panel.close()
       }
     }
@@ -454,7 +455,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     case "clipboard-pasted":
       break
     case "launcher-show":
-      launcherPanel.show()
+      if launcherPanel.isAvailable {
+        launcherPanel.show()
+      } else {
+        emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": "启动器未启用或本机管理密钥未就绪，无法显示面板"])
+      }
     default: panel.receive(event)
     }
   }

@@ -28,6 +28,11 @@ func WithShutdownSignals(ctx context.Context) (context.Context, context.CancelFu
 	return signal.NotifyContext(ctx, os.Interrupt)
 }
 
+// isOwnedRuntimeDir always returns false on non-Linux platforms.
+func isOwnedRuntimeDir(_ string) bool {
+	return false
+}
+
 // StartDetached is only supported on Linux.
 func StartDetached(_ context.Context, _ string, _ string, _ string) (int, string, error) {
 	return 0, "", fmt.Errorf("%w: launcherd daemon mode is only supported on Linux", launcher.ErrUnsupported)

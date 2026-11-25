@@ -16,8 +16,12 @@ const (
 	MaxSubtitleRunes = 160
 	// MaxAliases caps the number of alternate search names per app.
 	MaxAliases = 4
-	// DefaultLimit is the default maximum number of apps returned by List.
+	// MaxQueryRunes caps search query length for API and ranker safety.
+	MaxQueryRunes = 256
+	// DefaultLimit is the default and maximum number of apps returned by List (§5).
 	DefaultLimit = 2000
+	// MaxLimit caps the limit parameter accepted by List and management API.
+	MaxLimit = DefaultLimit
 
 	// UsageVersion is the on-disk schema version for usage.json.
 	UsageVersion = 1

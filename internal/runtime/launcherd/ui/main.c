@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 
 #include <errno.h>
 #include <fcntl.h>
@@ -43,7 +43,9 @@
 #define EXIT_DURATION_MS 110
 #define ERROR_DURATION_MS 1800
 #define FOCUS_GRACE_US (300 * 1000)
-#define OPEN_HIDE_FALLBACK_MS 350
+#define OPEN_SAFETY_TIMEOUT_MS 8000
+#define SOCKET_CLIENT_TIMEOUT_MS 500
+#define MAX_ACCEPTS_PER_TICK 16
 
 /* 与 application/launcher/rank.go 同步 (§6) */
 #define SCORE_EXACT_NAME 1000
@@ -1501,11 +1503,18 @@ static void cancel_pending_open(LauncherState *st) {
   g_clear_pointer(&st->pending_open_name, g_free);
 }
 
-static gboolean pending_open_fallback_hide_cb(gpointer user_data) {
+static gboolean pending_open_timeout_cb(gpointer user_data) {
   LauncherState *st = (LauncherState *)user_data;
   st->pending_open_timer_id = 0;
+  char *msg = NULL;
+  if (st->pending_open_name && st->pending_open_name[0] != '\0') {
+    msg = g_strdup_printf("打开 %s 超时", st->pending_open_name);
+  } else {
+    msg = g_strdup("打开应用超时");
+  }
   g_clear_pointer(&st->pending_open_name, g_free);
-  launcher_hide(st, TRUE);
+  show_inline_error(st, msg);
+  g_free(msg);
   return G_SOURCE_REMOVE;
 }
 
@@ -1525,10 +1534,10 @@ static void open_item_at_index(LauncherState *st, int index) {
   write_daemon_line(line);
   g_free(line);
 
-  /* launcherd replies with open-ok or open-error; fallback timer handles
-   * minimal test harnesses that do not echo open-ok. */
+  /* Wait for launcherd's open-ok or open-error; 8s safety timeout prevents
+   * leaving pending state stuck if the daemon fails to respond. */
   st->pending_open_timer_id = g_timeout_add(
-      OPEN_HIDE_FALLBACK_MS, pending_open_fallback_hide_cb, st);
+      OPEN_SAFETY_TIMEOUT_MS, pending_open_timeout_cb, st);
 }
 
 /* =========================================================================
@@ -1784,16 +1793,135 @@ static void setup_stdin_watch(LauncherState *st) {
  * Control Unix Socket ($AIH_LAUNCH_SOCKET)
  * ========================================================================= */
 
+static gboolean is_owned_runtime_dir(const char *path) {
+  if (!path || path[0] == '\0') {
+    return FALSE;
+  }
+  struct stat sb;
+  if (stat(path, &sb) != 0) {
+    return FALSE;
+  }
+  return S_ISDIR(sb.st_mode) && sb.st_uid == getuid();
+}
+
 static char *resolve_socket_path(void) {
   const char *env_sock = g_getenv("AIH_LAUNCH_SOCKET");
   if (env_sock && env_sock[0] != '\0') {
     return g_strdup(env_sock);
   }
   const char *xdg_rt = g_getenv("XDG_RUNTIME_DIR");
-  if (xdg_rt && xdg_rt[0] != '\0') {
+  if (is_owned_runtime_dir(xdg_rt)) {
     return g_build_filename(xdg_rt, "aih-launch.sock", NULL);
   }
-  return g_strdup_printf("/tmp/aih-launch-%u.sock", (unsigned int)getuid());
+  const char *ai_home = g_getenv("AIH_HOME_DIR");
+  if (ai_home && ai_home[0] != '\0') {
+    return g_build_filename(ai_home, "run", "launcher", "linux",
+                            "aih-launch.sock", NULL);
+  }
+  const char *home = g_get_home_dir();
+  return g_build_filename(home, ".ai_home", "run", "launcher", "linux",
+                          "aih-launch.sock", NULL);
+}
+
+typedef struct {
+  LauncherState *st;
+  int fd;
+  GIOChannel *channel;
+  guint watch_id;
+  guint timeout_id;
+  char buf[256];
+  gsize len;
+} SocketClientCtx;
+
+static void socket_client_close(SocketClientCtx *cctx) {
+  if (!cctx) {
+    return;
+  }
+  if (cctx->timeout_id != 0) {
+    g_source_remove(cctx->timeout_id);
+    cctx->timeout_id = 0;
+  }
+  if (cctx->watch_id != 0) {
+    g_source_remove(cctx->watch_id);
+    cctx->watch_id = 0;
+  }
+  if (cctx->channel) {
+    g_io_channel_unref(cctx->channel);
+    cctx->channel = NULL;
+  }
+  if (cctx->fd >= 0) {
+    close(cctx->fd);
+    cctx->fd = -1;
+  }
+  g_free(cctx);
+}
+
+static void socket_client_dispatch_and_close(SocketClientCtx *cctx) {
+  cctx->buf[cctx->len] = '\0';
+  g_strstrip(cctx->buf);
+  const char *reply = "ok\n";
+  if (strcmp(cctx->buf, "toggle") == 0) {
+    launcher_toggle(cctx->st);
+  } else if (strcmp(cctx->buf, "show") == 0) {
+    launcher_show(cctx->st);
+  } else if (strcmp(cctx->buf, "hide") == 0) {
+    launcher_hide(cctx->st, TRUE);
+  } else if (strcmp(cctx->buf, "ping") == 0) {
+    reply = "pong\n";
+  } else {
+    reply = "err\n";
+  }
+  ssize_t ignored = write(cctx->fd, reply, strlen(reply));
+  (void)ignored;
+  socket_client_close(cctx);
+}
+
+static gboolean socket_client_timeout_cb(gpointer user_data) {
+  SocketClientCtx *cctx = (SocketClientCtx *)user_data;
+  cctx->timeout_id = 0;
+  socket_client_close(cctx);
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean socket_client_io_cb(GIOChannel *source, GIOCondition cond,
+                                    gpointer user_data) {
+  (void)source;
+  SocketClientCtx *cctx = (SocketClientCtx *)user_data;
+  if (cond & G_IO_IN) {
+    gsize space = (sizeof(cctx->buf) - 1) - cctx->len;
+    if (space > 0) {
+      ssize_t n = read(cctx->fd, cctx->buf + cctx->len, space);
+      if (n > 0) {
+        cctx->len += (gsize)n;
+        cctx->buf[cctx->len] = '\0';
+        if (strchr(cctx->buf, '\n') != NULL || cctx->len >= sizeof(cctx->buf) - 1) {
+          cctx->watch_id = 0;
+          socket_client_dispatch_and_close(cctx);
+          return G_SOURCE_REMOVE;
+        }
+        return G_SOURCE_CONTINUE;
+      }
+      if (n == 0) {
+        cctx->watch_id = 0;
+        if (cctx->len > 0) {
+          socket_client_dispatch_and_close(cctx);
+        } else {
+          socket_client_close(cctx);
+        }
+        return G_SOURCE_REMOVE;
+      }
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+        return G_SOURCE_CONTINUE;
+      }
+    }
+  }
+  cctx->watch_id = 0;
+  if (cctx->len > 0) {
+    socket_client_dispatch_and_close(cctx);
+  } else {
+    socket_client_close(cctx);
+  }
+  return G_SOURCE_REMOVE;
 }
 
 static gboolean socket_accept_cb(GIOChannel *source, GIOCondition cond,
@@ -1803,8 +1931,8 @@ static gboolean socket_accept_cb(GIOChannel *source, GIOCondition cond,
   if (cond & (G_IO_ERR | G_IO_HUP)) {
     return G_SOURCE_REMOVE;
   }
-  for (;;) {
-    int cfd = accept(st->sock_fd, NULL, NULL);
+  for (int count = 0; count < MAX_ACCEPTS_PER_TICK; count++) {
+    int cfd = accept4(st->sock_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (cfd < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         break;
@@ -1814,33 +1942,16 @@ static gboolean socket_accept_cb(GIOChannel *source, GIOCondition cond,
       }
       break;
     }
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 200000;
-    setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-
-    char buf[256];
-    ssize_t n = read(cfd, buf, sizeof(buf) - 1);
-    if (n > 0) {
-      buf[n] = '\0';
-      g_strstrip(buf);
-      const char *reply = "ok\n";
-      if (strcmp(buf, "toggle") == 0) {
-        launcher_toggle(st);
-      } else if (strcmp(buf, "show") == 0) {
-        launcher_show(st);
-      } else if (strcmp(buf, "hide") == 0) {
-        launcher_hide(st, TRUE);
-      } else if (strcmp(buf, "ping") == 0) {
-        reply = "pong\n";
-      } else {
-        reply = "err\n";
-      }
-      ssize_t ignored = write(cfd, reply, strlen(reply));
-      (void)ignored;
-    }
-    close(cfd);
+    SocketClientCtx *cctx = g_new0(SocketClientCtx, 1);
+    cctx->st = st;
+    cctx->fd = cfd;
+    cctx->channel = g_io_channel_unix_new(cfd);
+    g_io_channel_set_encoding(cctx->channel, NULL, NULL);
+    g_io_channel_set_buffered(cctx->channel, FALSE);
+    cctx->watch_id = g_io_add_watch(
+        cctx->channel, G_IO_IN | G_IO_HUP | G_IO_ERR, socket_client_io_cb, cctx);
+    cctx->timeout_id =
+        g_timeout_add(SOCKET_CLIENT_TIMEOUT_MS, socket_client_timeout_cb, cctx);
   }
   return G_SOURCE_CONTINUE;
 }
@@ -1863,24 +1974,19 @@ static void setup_control_socket(LauncherState *st) {
     return;
   }
 
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
     return;
-  }
-  int flags = fcntl(fd, F_GETFL, 0);
-  if (flags >= 0) {
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-  }
-  int fdflags = fcntl(fd, F_GETFD, 0);
-  if (fdflags >= 0) {
-    fcntl(fd, F_SETFD, fdflags | FD_CLOEXEC);
   }
 
   unlink(st->sock_path);
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, st->sock_path, sizeof(addr.sun_path) - 1);
 
-  if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+  mode_t prev_umask = umask(0077);
+  int bind_rc = bind(fd, (struct sockaddr *)&addr, sizeof(addr));
+  umask(prev_umask);
+  if (bind_rc != 0) {
     close(fd);
     return;
   }

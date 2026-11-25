@@ -270,7 +270,24 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                     window.SetStatus(GetString(root, "message") ?? "翻译失败");
                     break;
                 case "launcher-show":
-                    launcherWindow.ShowLauncher();
+                    if (launcherWindow.IsAvailable)
+                    {
+                        launcherWindow.ShowLauncher();
+                    }
+                    else
+                    {
+                        Emit(new DesktopEvent
+                        {
+                            Version = 1,
+                            Type = "status",
+                            Trusted = true,
+                            Platform = "win32",
+                            CaptureModes = new[] { "shortcut-clipboard" },
+                            Permission = "clipboard-shortcut",
+                            Shortcut = shortcut,
+                            Detail = "启动器未启用或本机管理密钥未就绪，无法显示面板"
+                        });
+                    }
                     break;
             }
         }
@@ -739,8 +756,11 @@ internal sealed class LowLevelLauncherHook : IDisposable
     private const int VK_SHIFT = 0x10;
     private const int VK_CONTROL = 0x11;
     private const int VK_MENU = 0x12;
+    private const int VK_LMENU = 0xA4;
+    private const int VK_RMENU = 0xA5;
     private const int VK_LWIN = 0x5B;
     private const int VK_RWIN = 0x5C;
+    private const long KeyHeldTimeoutMs = 2000;
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
     private static readonly LowLevelKeyboardProc StaticHookProc = HookCallback;
@@ -752,6 +772,9 @@ internal sealed class LowLevelLauncherHook : IDisposable
     private uint targetModifiers = 0x0001;
     private uint targetVk = 0x20;
     private bool keyHeld;
+    private long keyHeldSinceMs;
+    private bool suppressNextAltUp;
+    private long suppressAltUntilMs;
 
     public bool IsInstalled => hookHandle != IntPtr.Zero;
 
@@ -768,6 +791,9 @@ internal sealed class LowLevelLauncherHook : IDisposable
         marshallControl = uiControl;
         onTrigger = callback;
         keyHeld = false;
+        keyHeldSinceMs = 0;
+        suppressNextAltUp = false;
+        suppressAltUntilMs = 0;
         activeInstance = this;
 
         var moduleHandle = GetModuleHandle(null);
@@ -797,6 +823,9 @@ internal sealed class LowLevelLauncherHook : IDisposable
         marshallControl = null;
         onTrigger = null;
         keyHeld = false;
+        keyHeldSinceMs = 0;
+        suppressNextAltUp = false;
+        suppressAltUntilMs = 0;
     }
 
     public void Dispose()
@@ -810,13 +839,30 @@ internal sealed class LowLevelLauncherHook : IDisposable
         var inst = activeInstance;
         if (nCode >= 0 && inst is not null && lParam != IntPtr.Zero)
         {
+            var now = Environment.TickCount64;
+            if (inst.keyHeld && now - inst.keyHeldSinceMs >= KeyHeldTimeoutMs)
+            {
+                inst.keyHeld = false;
+            }
+            if (inst.suppressNextAltUp && now >= inst.suppressAltUntilMs)
+            {
+                inst.suppressNextAltUp = false;
+            }
+
             var msg = wParam.ToInt32();
             var kb = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
             if (msg == WM_KEYUP || msg == WM_SYSKEYUP)
             {
+                // Unconditionally clear keyHeld on target key release regardless of modifiers.
                 if (kb.vkCode == inst.targetVk)
                 {
                     inst.keyHeld = false;
+                }
+                else if (inst.suppressNextAltUp && (kb.vkCode == VK_LMENU || kb.vkCode == VK_RMENU || kb.vkCode == VK_MENU))
+                {
+                    // Swallow the matching Alt release so the foreground app does not activate its menu bar.
+                    inst.suppressNextAltUp = false;
+                    return (IntPtr)1;
                 }
             }
             else if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
@@ -826,6 +872,12 @@ internal sealed class LowLevelLauncherHook : IDisposable
                     if (!inst.keyHeld)
                     {
                         inst.keyHeld = true;
+                        inst.keyHeldSinceMs = now;
+                        if ((inst.targetModifiers & 0x0001) != 0)
+                        {
+                            inst.suppressNextAltUp = true;
+                            inst.suppressAltUntilMs = now + KeyHeldTimeoutMs;
+                        }
                         var ctrl = inst.marshallControl;
                         var action = inst.onTrigger;
                         if (ctrl is not null && action is not null && !ctrl.IsDisposed && ctrl.IsHandleCreated)
@@ -1321,11 +1373,48 @@ internal static class LauncherRanker
 internal sealed class LauncherSearchTextBox : TextBox
 {
     private const int WM_PAINT = 0x000F;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_CHAR = 0x0102;
+    private const int WM_IME_STARTCOMPOSITION = 0x010D;
+    private const int WM_IME_ENDCOMPOSITION = 0x010E;
+
     public string Placeholder { get; set; } = "搜索应用…";
     public Color PlaceholderColor { get; set; } = Color.FromArgb(132, 147, 174);
+    public bool IsComposing { get; private set; }
+    public Func<Keys, bool>? OnNavigationKey { get; set; }
+
+    public void ResetComposition()
+    {
+        IsComposing = false;
+    }
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == WM_IME_STARTCOMPOSITION)
+        {
+            IsComposing = true;
+        }
+        else if (m.Msg == WM_IME_ENDCOMPOSITION)
+        {
+            IsComposing = false;
+        }
+        else if (m.Msg == WM_KEYDOWN && !IsComposing)
+        {
+            var key = (Keys)(m.WParam.ToInt32() & 0xFFFF);
+            if (key != Keys.ProcessKey && OnNavigationKey is not null && OnNavigationKey(key))
+            {
+                return;
+            }
+        }
+        else if (m.Msg == WM_CHAR && !IsComposing)
+        {
+            var ch = (char)(m.WParam.ToInt32() & 0xFFFF);
+            if (ch == '\r' || ch == '\x1b')
+            {
+                return;
+            }
+        }
+
         base.WndProc(ref m);
         if (m.Msg == WM_PAINT && string.IsNullOrEmpty(Text) && !string.IsNullOrEmpty(Placeholder))
         {
@@ -1436,7 +1525,7 @@ internal sealed class LauncherWindow : Form
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         DoubleBuffered = true;
-        KeyPreview = true;
+        KeyPreview = false;
         BackColor = Color.FromArgb(11, 18, 32);
         ForeColor = TextPrimary;
 
@@ -1449,6 +1538,7 @@ internal sealed class LauncherWindow : Form
         searchBox.ForeColor = TextPrimary;
         searchBox.Placeholder = "搜索应用…";
         searchBox.PlaceholderColor = TextMuted;
+        searchBox.OnNavigationKey = HandleNavigationKey;
         searchBox.TextChanged += OnSearchTextChanged;
         Controls.Add(searchBox);
 
@@ -1596,6 +1686,8 @@ internal sealed class LauncherWindow : Form
 
     // MARK: Configuration & Data
 
+    public bool IsAvailable => launcherAvailable && !string.IsNullOrWhiteSpace(origin) && !string.IsNullOrWhiteSpace(managementKey);
+
     public void Configure(string nextOrigin, string nextKey, string nextShortcut, bool available)
     {
         var normalized = nextOrigin.Trim().TrimEnd('/');
@@ -1669,6 +1761,7 @@ internal sealed class LauncherWindow : Form
         EnsureFonts();
         LayoutSearchBox();
 
+        searchBox.ResetComposition();
         searchBox.TextChanged -= OnSearchTextChanged;
         searchBox.Text = string.Empty;
         searchBox.TextChanged += OnSearchTextChanged;
@@ -1704,6 +1797,7 @@ internal sealed class LauncherWindow : Form
 
     public void HideImmediately()
     {
+        searchBox.ResetComposition();
         animTimer.Stop();
         errorTimer.Stop();
         animPhase = AnimPhase.Idle;
@@ -1962,53 +2056,47 @@ internal sealed class LauncherWindow : Form
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (!e.Handled)
+        if (!e.Handled && !searchBox.IsComposing && e.KeyCode != Keys.ProcessKey)
         {
-            OnLauncherKeyDown(this, e);
+            if (HandleNavigationKey(e.KeyCode))
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
         }
         base.OnKeyDown(e);
     }
 
-    private void OnLauncherKeyDown(object? sender, KeyEventArgs e)
+    private bool HandleNavigationKey(Keys keyCode)
     {
-        // Let IME composition consume keys without intercepting them.
-        if (e.KeyCode == Keys.ProcessKey) return;
+        // Let IME composition consume Esc/Enter/Up/Down without intercepting them.
+        if (searchBox.IsComposing || keyCode == Keys.ProcessKey) return false;
 
-        switch (e.KeyCode)
+        switch (keyCode)
         {
             case Keys.Escape:
-                e.Handled = true;
-                e.SuppressKeyPress = true;
                 HideAnimated(restoreFocus: true);
-                break;
+                return true;
             case Keys.Up:
-                e.Handled = true;
-                e.SuppressKeyPress = true;
                 MoveSelection(-1);
-                break;
+                return true;
             case Keys.Down:
-                e.Handled = true;
-                e.SuppressKeyPress = true;
                 MoveSelection(1);
-                break;
+                return true;
             case Keys.PageUp:
-                e.Handled = true;
-                e.SuppressKeyPress = true;
                 MoveSelection(-VisibleRowsMax);
-                break;
+                return true;
             case Keys.PageDown:
-                e.Handled = true;
-                e.SuppressKeyPress = true;
                 MoveSelection(VisibleRowsMax);
-                break;
+                return true;
             case Keys.Enter:
-                e.Handled = true;
-                e.SuppressKeyPress = true;
                 if (selectedIndex >= 0 && selectedIndex < visibleResults.Count)
                 {
                     _ = OpenAppAsync(visibleResults[selectedIndex].App);
                 }
-                break;
+                return true;
+            default:
+                return false;
         }
     }
 

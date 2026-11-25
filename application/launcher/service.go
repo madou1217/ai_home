@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,6 +16,9 @@ type Service struct {
 	launcher Launcher
 	usage    UsageStore
 	clock    func() time.Time
+
+	usageErrMu     sync.RWMutex
+	lastUsageError string
 }
 
 // NewService constructs a launcher application service.
@@ -43,10 +47,11 @@ func (s *Service) List(ctx context.Context, opts ListOptions) (ListResult, error
 		return ListResult{}, err
 	}
 	usageApps := s.loadUsageApps(ctx)
-	ranked := Rank(snap.Apps, opts.Query, usageApps, s.clock())
+	query := TruncateRunes(opts.Query, MaxQueryRunes)
+	ranked := Rank(snap.Apps, query, usageApps, s.clock())
 
 	limit := opts.Limit
-	if limit <= 0 {
+	if limit <= 0 || limit > MaxLimit {
 		limit = DefaultLimit
 	}
 	truncated := false
@@ -94,7 +99,11 @@ func (s *Service) Open(ctx context.Context, id string) (App, error) {
 		return App{}, err
 	}
 	if s.usage != nil {
-		_ = s.usage.RecordOpen(ctx, target.ID, s.clock().UnixMilli())
+		if recErr := s.usage.RecordOpen(ctx, target.ID, s.clock().UnixMilli()); recErr != nil {
+			s.setLastUsageError(fmt.Sprintf("usage record failed: %v", recErr))
+		} else {
+			s.setLastUsageError("")
+		}
 	}
 	return target, nil
 }
@@ -160,13 +169,33 @@ func (s *Service) Status(ctx context.Context) Status {
 			snap = s.catalog.Status(ctx)
 		}
 	}
+	lastError := snap.LastError
+	if usageErr := s.getLastUsageError(); usageErr != "" {
+		if lastError == "" {
+			lastError = usageErr
+		} else {
+			lastError = lastError + "; " + usageErr
+		}
+	}
 	return Status{
 		Platform:    snap.Platform,
 		Supported:   snap.Supported,
 		Count:       len(snap.Apps),
 		GeneratedAt: snap.GeneratedAt,
-		LastError:   snap.LastError,
+		LastError:   lastError,
 	}
+}
+
+func (s *Service) setLastUsageError(msg string) {
+	s.usageErrMu.Lock()
+	s.lastUsageError = msg
+	s.usageErrMu.Unlock()
+}
+
+func (s *Service) getLastUsageError() string {
+	s.usageErrMu.RLock()
+	defer s.usageErrMu.RUnlock()
+	return s.lastUsageError
 }
 
 func (s *Service) loadUsageApps(ctx context.Context) map[string]UsageEntry {

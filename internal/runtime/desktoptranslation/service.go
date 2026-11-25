@@ -140,11 +140,11 @@ func New(ctx context.Context, options Options) (*Service, error) {
 }
 func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
-	// The helper is shared by translation, clipboard, and launcher; any enabled
-	// capability keeps it alive even when System Translation is off.
-	enabled := s.helperDesired(s.enabled) && !s.closed
+	closed := s.closed
+	translate := s.enabled
 	s.mu.Unlock()
-	if !enabled {
+	// Evaluate helperDesired outside s.mu to avoid lock inversion with clipboard/launcher callbacks.
+	if closed || !s.helperDesired(translate) {
 		return nil
 	}
 	return s.launcher.Start(ctx)

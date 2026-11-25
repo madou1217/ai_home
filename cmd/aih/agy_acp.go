@@ -5,13 +5,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/agy/acpclient"
 )
 
-const agyACPUsage = "aih agy acp [--cwd <目录>] [--command <agy>] [--timeout <时长>] [--auto-approve] \"<提示词>\"\n"
+const agyACPUsage = "aih agy acp [--cwd <目录>] [--command <agy>] [--timeout <时长>] [--auto-approve] \"<提示词>\"\n" +
+	"远程 Connector: --connector-url <url> --workspace-root <shadow> [--connector-token-env AIH_REMOTE_TOOLS_TOKEN]\n"
 
 func runAGYACPCommand(ctx context.Context, args []string, runtime commandRuntime) error {
 	for _, arg := range args {
@@ -27,18 +29,18 @@ func runAGYACPCommand(ctx context.Context, args []string, runtime commandRuntime
 	if strings.TrimSpace(options.prompt) == "" {
 		return fmt.Errorf("用法：%s", agyACPUsage)
 	}
-	host, err := acpclient.NewLocalWorkspaceHost(options.cwd)
+	sink := &agyACPEventSink{stdout: runtime.stdout, stderr: runtime.stderr}
+	broker := &agyACPPermissionBroker{input: runtime.stdin, output: runtime.stderr, auto: options.autoApprove}
+	files, terminals, root, err := resolveAGYACPHost(options)
 	if err != nil {
 		return err
 	}
-	sink := &agyACPEventSink{stdout: runtime.stdout, stderr: runtime.stderr}
-	broker := &agyACPPermissionBroker{input: runtime.stdin, output: runtime.stderr, auto: options.autoApprove}
 	config := acpclient.Config{
 		Command:       options.command,
 		Args:          []string{"acp"},
-		Dir:           host.Root(),
-		Files:         host,
-		Terminals:     host,
+		Dir:           root,
+		Files:         files,
+		Terminals:     terminals,
 		Permissions:   broker,
 		Events:        sink,
 		ClientName:    "aih",
@@ -66,15 +68,18 @@ func runAGYACPCommand(ctx context.Context, args []string, runtime commandRuntime
 }
 
 type agyACPOptions struct {
-	cwd         string
-	prompt      string
-	command     string
-	timeout     time.Duration
-	autoApprove bool
+	cwd               string
+	prompt            string
+	command           string
+	timeout           time.Duration
+	autoApprove       bool
+	connectorURL      string
+	connectorTokenEnv string
+	workspaceRoot     string
 }
 
 func parseAGYACPArgs(args []string) (agyACPOptions, error) {
-	options := agyACPOptions{cwd: ".", command: "agy"}
+	options := agyACPOptions{cwd: ".", command: "agy", connectorTokenEnv: "AIH_REMOTE_TOOLS_TOKEN"}
 	positionals := make([]string, 0, len(args))
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
@@ -116,6 +121,24 @@ func parseAGYACPArgs(args []string) (agyACPOptions, error) {
 			options.timeout = duration
 		case "--auto-approve":
 			options.autoApprove = true
+		case "--connector-url":
+			value, err := next()
+			if err != nil {
+				return agyACPOptions{}, err
+			}
+			options.connectorURL = value
+		case "--connector-token-env":
+			value, err := next()
+			if err != nil {
+				return agyACPOptions{}, err
+			}
+			options.connectorTokenEnv = value
+		case "--workspace-root":
+			value, err := next()
+			if err != nil {
+				return agyACPOptions{}, err
+			}
+			options.workspaceRoot = value
 		case "-h", "--help":
 			return agyACPOptions{}, nil
 		default:
@@ -219,4 +242,30 @@ func (sink *agyACPEventSink) Finish() {
 	if sink != nil && sink.stdout != nil {
 		_, _ = io.WriteString(sink.stdout, "\n")
 	}
+}
+
+func resolveAGYACPHost(options agyACPOptions) (acpclient.FileSystem, acpclient.TerminalHost, string, error) {
+	if strings.TrimSpace(options.connectorURL) == "" {
+		host, err := acpclient.NewLocalWorkspaceHost(options.cwd)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return host, host, host.Root(), nil
+	}
+	if strings.TrimSpace(options.workspaceRoot) == "" {
+		return nil, nil, "", fmt.Errorf("--connector-url 需要同时指定 --workspace-root（Server 侧的 shadow 目录）")
+	}
+	token := ""
+	if options.connectorTokenEnv != "" {
+		token = os.Getenv(options.connectorTokenEnv)
+	}
+	if token == "" {
+		return nil, nil, "", fmt.Errorf("远程 Connector 需要工具令牌：请在 %s 中提供", options.connectorTokenEnv)
+	}
+	client := acpclient.NewHTTPToolClient(options.connectorURL, token, nil)
+	host, err := acpclient.NewConnectorHost(options.workspaceRoot, client)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return host, host, host.Root(), nil
 }

@@ -41,7 +41,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>139 条已完成</b>、9 条部分、1 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>91%</b>。未完成与边界集中在安装包 50/20MiB 拉伸目标、并行 composition 收尾。</p><div class="legend">
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>139 条已完成</b>、9 条部分、1 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>91%</b>。未完成与边界集中在安装包 50/20MiB 拉伸目标、并行剪贴板/桌面翻译收尾。</p><div class="legend">
 <span class="chip s-已完成">已完成 139</span>
 <span class="chip s-部分">部分 9</span>
 <span class="chip s-未完成">未完成 1</span>
@@ -107,7 +107,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <tr>
 <td>未提交的 composition/pricingcatalog 收尾</td><td class="meta">11-20</td>
 <td><span class="chip s-未完成">未完成</span></td>
-<td class="ev">并行会话仍持有未提交改动；当前工作区 composition_auth.go / public_add_account.go / webui_scheduler_routes.go 等仍有 M 状态</td><td class="sess">—</td></tr>
+<td class="ev">另一会话持有，工作区未提交</td><td class="sess">—</td></tr>
 </tbody></table></div></section>
 <section id="t1"><h2>模型目录与供应商 <span class="count">6 条</span></h2>
 <p class="note">目录、协议切换、缓存失效与别名规则。</p>
@@ -779,7 +779,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 </tbody></table></div></section>
 <section id="open"><h2>未完成与明确边界</h2><p class="note">这些不是“没做”，而是当前仍未闭环、需要外部条件或用户决策的事项。</p><ul class="openlist">
 <li><b>安装包 50/20MiB 拉伸目标</b>：80MiB 已达成：tar.xz 单文件 53.5–59.2MiB（darwin 53.5 / win 53.8 / linux 59.2），darwin smoke PASS。50MiB 需移除 npm 或合并 Go 二进制；20MiB 不可行。</li>
-<li><b>未提交的 composition/pricingcatalog 收尾</b>：并行会话仍持有未提交改动；当前工作区 <code>composition_auth.go</code>、<code>public_add_account.go</code>、<code>webui_scheduler_routes.go</code> 等仍有 M 状态。</li>
+<li><b>未提交的剪贴板/桌面翻译收尾</b>：composition_auth.go/public_add_account.go/webui_scheduler_routes.go 仅格式差异；无 pricingcatalog 未提交。实际剩余为并行剪贴板/桌面翻译：ClipboardWorkspace、webui_clipboard_routes.go、desktoptranslation、pluginhost、setup.yaml、native/clipboard/*.swift；Go/Web 可构建，Swift 未验证，测试快照未清理。</li>
 <li><b>需要真机/外部条件</b>：资源下限 ≥15G、zcode 3.18.x chunk 路径、Resume paused goal。</li>
 </ul></section>
 <section id="sessions"><h2>会话索引 <span class="count">36 个 /goal 会话</span></h2><p class="note">同一 8 位 ID 出现两次表示该会话设置了多个阶段目标；未设置 /goal 但有明确需求的会话（01a1c4d6、01a1f4be、01a1de78 等）已并入上方主题。</p><div class="board"><table><thead><tr><th>会话</th><th>日期</th><th>目标 / 主题</th><th>状态</th><th>结果</th></tr></thead><tbody>

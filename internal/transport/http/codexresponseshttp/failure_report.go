@@ -29,6 +29,10 @@ type FailureReport struct {
 	// Candidate 是候选游标给出的低敏扫描诊断（检查数、模型冷却/并发/其它阻塞计数）。
 	// 与 Selection 一起覆盖 503 no_available_account 的两种成因：开游标失败与扫空。
 	Candidate string
+	// FinalAccount 是最终成功交付的账号；请求带换号链成功时用于日志归因。
+	FinalAccount string
+	// PinFallback 记录钉选账号不可用时实际服务的账号；空表示未发生回落。
+	PinFallback string
 }
 
 // AttemptReport 描述一次失败的上游尝试。
@@ -53,13 +57,15 @@ const maxFailureDetail = 200
 
 // failureTrail 在一次请求内累积失败尝试；没有 FailureLog 时所有方法都是空操作。
 type failureTrail struct {
-	sink      func(FailureReport)
-	clock     func() time.Time
-	model     string
-	started   time.Time
-	attempts  []AttemptReport
-	selectErr string
-	candidate string
+	sink            func(FailureReport)
+	clock           func() time.Time
+	model           string
+	started         time.Time
+	attempts        []AttemptReport
+	selectErr       string
+	candidate       string
+	finalAccount    string
+	pinFallbackNote string
 }
 
 func (handler *Handler) newFailureTrail(model string) *failureTrail {
@@ -114,18 +120,47 @@ func (trail *failureTrail) explain(reason string) {
 	trail.candidate = sanitizeDetail(reason)
 }
 
+// failedAttempts 返回已记录的失败尝试数；成功换号时据此决定是否输出恢复摘要。
+func (trail *failureTrail) failedAttempts() int {
+	if trail == nil {
+		return 0
+	}
+	return len(trail.attempts)
+}
+
+// succeededOn 记录最终成功交付的账号，只用于日志归因。
+func (trail *failureTrail) succeededOn(accountRef accountcore.AccountRef) {
+	if trail == nil || !accountRef.IsValid() {
+		return
+	}
+	trail.finalAccount = string(accountRef)
+}
+
+// pinFallback 记录钉选账号没有实际服务、请求改由另一个账号承接。
+//
+// 这类回落过去完全静默：显式钉选的账号因池排除/冷却不可用时，请求会直接
+// 落到普通池并成功，日志与响应头之外没有任何痕迹（实测连续 20 次）。
+func (trail *failureTrail) pinFallback(pinned, served accountcore.AccountRef) {
+	if trail == nil || !pinned.IsValid() || !served.IsValid() || pinned == served {
+		return
+	}
+	trail.pinFallbackNote = string(pinned) + "->" + string(served)
+}
+
 func (trail *failureTrail) finish(status int, code string) {
 	if trail.sink == nil {
 		return
 	}
 	trail.sink(FailureReport{
-		Model:     trail.model,
-		Status:    status,
-		Code:      code,
-		Elapsed:   trail.clock().Sub(trail.started),
-		Attempts:  append([]AttemptReport(nil), trail.attempts...),
-		Selection: trail.selectErr,
-		Candidate: trail.candidate,
+		Model:        trail.model,
+		Status:       status,
+		Code:         code,
+		Elapsed:      trail.clock().Sub(trail.started),
+		Attempts:     append([]AttemptReport(nil), trail.attempts...),
+		Selection:    trail.selectErr,
+		Candidate:    trail.candidate,
+		FinalAccount: trail.finalAccount,
+		PinFallback:  trail.pinFallbackNote,
 	})
 }
 

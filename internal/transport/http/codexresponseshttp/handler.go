@@ -264,6 +264,10 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				}
 				continue
 			}
+			// 钉选账号不可用时请求会回落到普通池并成功；不记录就只剩响应头可查。
+			if requestPinned && selection.AccountRef != pinnedRef {
+				trail.pinFallback(pinnedRef, selection.AccountRef)
+			}
 			contacted = true
 			// 传输失败且上游一个字节都没返回时，先在同一账号上有界重试，再考虑换号。
 			timing.markUpstreamStart()

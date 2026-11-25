@@ -125,13 +125,14 @@ Connector 管理的项目根目录内。Provider 凭据不进入 Connector，Con
 - `LocalWorkspaceHost`：工作区内读写、路径/符号链接越界拒绝、终端进程组与
   output/wait/kill/release；
 - `aih agy acp`：用 `agy acp` 启动一轮 ACP 会话，支持交互审批和 `--auto-approve`；
-- 测试：ACP JSON-RPC 往返、子进程 agent 真实启动、文件越界/终端 kill；
+- `ConnectorHost` + `HTTPToolClient`：把 fs/terminal 映射到 `read_file` / `write_file` /
+  `start_job` / `watch_job` / `interrupt_job`，工具 token 只走 header；
+- 测试：ACP JSON-RPC 往返、子进程 agent 真实启动、文件越界/终端 kill、Connector 映射；
 - 依赖：`github.com/coder/acp-go-sdk v0.20.0`。
 
 仍未完成：
 
-- 把 `FileSystem` / `TerminalHost` 换成 Workspace Connector 适配器（当前是本地工作区）；
-- WebUI 的 ACP 会话视图与审批面板；
+- WebUI 的 ACP 会话视图与审批面板（Connector 映射本身已落地）；
 - 真实 AGY 1.5+（`agy --version`、`agy acp --help`）在 AWS 上的 read/write/run_command/审批验收；
 - 现有 `agent-terminal` 对 AGY 仍返回 409；在 UI 接线前保持显式拒绝。
 

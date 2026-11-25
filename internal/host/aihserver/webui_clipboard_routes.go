@@ -52,7 +52,11 @@ func (r *clipboardRuntime) notifySettings(settings clipboard.Settings) {
 	if r == nil {
 		return
 	}
-	r.desktopEnabled.Store(settings.CaptureEnabled || settings.SyncEnabled)
+	// HTTP PATCH and the 2s watcher both observe the same write; only notify
+	// lifecycle hooks on an actual on/off transition to avoid racing toggles.
+	if r.desktopEnabled.Swap(settings.CaptureEnabled || settings.SyncEnabled) == (settings.CaptureEnabled || settings.SyncEnabled) {
+		return
+	}
 	r.hooksMu.Lock()
 	hooks := append([]func(){}, r.settingsHooks...)
 	r.hooksMu.Unlock()

@@ -87,9 +87,6 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 	if err := businessdb.CheckReady(ctx, dbPath); err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(dbPath, 0o600); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("收紧剪贴板数据库权限失败: %w", err)
-	}
 	fileURL := sqlitefile.URL(dbPath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
@@ -111,6 +108,13 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("初始化剪贴板表失败: %w", err)
+	}
+	// The DB (and any WAL sidecar already present) holds plaintext and the sync
+	// key; tighten after creation so a CLI-first open cannot leave 0644.
+	for _, path := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if _, statErr := os.Stat(path); statErr == nil {
+			_ = os.Chmod(path, 0o600)
+		}
 	}
 	store := &Store{db: db, blobs: blobs}
 	if err := store.ensureColumns(ctx); err != nil {

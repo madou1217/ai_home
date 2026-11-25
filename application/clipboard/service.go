@@ -118,8 +118,8 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 
 	item := Item{
 		ID:           uuid.NewString(),
-		SourceDevice: sourceDevice,
-		SourceApp:    strings.TrimSpace(input.SourceApp),
+		SourceDevice: limitClipText(sourceDevice, 200),
+		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
 		RemoteID:     strings.TrimSpace(input.RemoteID),
 		SyncedAtMs:   input.SyncedAtMs,
 		CreatedAtMs:  nowMs,
@@ -127,7 +127,7 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 		SeenCount:    1,
 	}
 
-	mime := strings.TrimSpace(input.MIME)
+	mime := limitClipText(strings.TrimSpace(input.MIME), 200)
 	lowerMIME := strings.ToLower(mime)
 
 	switch {
@@ -764,6 +764,19 @@ func normalizeFilePaths(files []string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// limitClipText bounds metadata so a caller cannot inflate envelope size through
+// sourceApp/sourceDevice/MIME and bypass the sync wire budget.
+func limitClipText(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 func deriveTextKind(explicit Kind, lowerMIME string, text string) Kind {

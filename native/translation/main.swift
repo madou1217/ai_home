@@ -324,7 +324,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }) { monitors.append(monitor) }
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
       if event.type == .keyDown && event.keyCode == 53 {
-        if self?.clipboardPanel.closeIfKey() == true { return nil }
+        if self?.clipboardPanel.shouldLetEscapeThrough() == true { return event }
+        if self?.clipboardPanel.handleGlobalEscape() == true { return nil }
         self?.selectionToken += 1
         self?.panel.close()
         return nil

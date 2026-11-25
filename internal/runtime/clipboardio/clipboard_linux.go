@@ -114,7 +114,13 @@ func (l *linuxIO) ReadFiles(ctx context.Context) ([]string, bool, error) {
 		args = []string{"-selection", "clipboard", "-t", "text/uri-list", "-o"}
 	}
 	raw, ok, err := runLinuxRead(ctx, cmdName, args, clipboard.MaxTextBytes)
-	if err != nil || !ok || len(raw) == 0 {
+	if err != nil {
+		if errors.Is(err, clipboard.ErrItemTooLarge) {
+			return nil, false, err
+		}
+		return nil, false, nil
+	}
+	if !ok || len(raw) == 0 {
 		return nil, false, nil
 	}
 	files := parseURIList(string(raw))

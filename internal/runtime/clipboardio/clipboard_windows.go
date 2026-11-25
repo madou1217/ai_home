@@ -81,7 +81,13 @@ func (w *windowsIO) ReadFiles(ctx context.Context) ([]string, bool, error) {
 		"foreach ($item in $list) { if ($item.FullName) { [Console]::Out.WriteLine($item.FullName) } else { [Console]::Out.WriteLine($item.ToString()) } }",
 	}, "; ")
 	raw, ok, err := runPowerShellCapture(ctx, ps, script, clipboard.MaxTextBytes)
-	if err != nil || !ok || len(raw) == 0 {
+	if err != nil {
+		if errors.Is(err, clipboard.ErrItemTooLarge) {
+			return nil, false, err
+		}
+		return nil, false, nil
+	}
+	if !ok || len(raw) == 0 {
 		return nil, false, nil
 	}
 	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")

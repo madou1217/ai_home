@@ -65,6 +65,7 @@ type Service struct {
 	configCtx       context.Context
 	configCancel    context.CancelFunc
 	controlMu       sync.Mutex
+	lifecycleMu     sync.Mutex
 }
 
 func New(ctx context.Context, options Options) (*Service, error) {
@@ -152,6 +153,8 @@ func (s *Service) ReconcileClipboard(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -274,11 +277,12 @@ func (s *Service) Reload(ctx context.Context) error {
 	default:
 	}
 	if wasEnabled != enabled {
-		if enabled {
+		if enabled || (s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()) {
 			return s.Start(ctx)
 		}
 		return s.launcher.Stop(ctx)
 	}
+	s.ReconcileClipboard(ctx)
 	return nil
 }
 func (s *Service) LocalOrigin() string { s.mu.Lock(); defer s.mu.Unlock(); return s.options.Origin }

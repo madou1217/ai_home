@@ -105,6 +105,7 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     reloadList()
     panel.makeKeyAndOrderFront(nil)
     panel.orderFrontRegardless()
+    panel.makeKey()
     NSApp.activate(ignoringOtherApps: true)
     _ = NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
     panel.layoutIfNeeded()
@@ -117,9 +118,17 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     panel.orderOut(nil)
   }
 
-  /// Called from the global key monitor: only claims Escape when this panel is key.
-  func closeIfKey() -> Bool {
+  /// Escape belongs to the IME candidate window or an attached sheet; the global
+  /// monitor must let those consume it instead of closing the panel.
+  func shouldLetEscapeThrough() -> Bool {
+    if panel.attachedSheet != nil { return true }
     guard panel.isKeyWindow else { return false }
+    return (panel.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
+  }
+
+  /// Called from the global key monitor: only claims Escape when this panel is key.
+  func handleGlobalEscape() -> Bool {
+    guard !shouldLetEscapeThrough(), panel.isKeyWindow else { return false }
     hide()
     return true
   }

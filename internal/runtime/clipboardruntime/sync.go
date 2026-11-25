@@ -155,10 +155,10 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 		if len(item.Files) == 0 {
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
-		// Send the exact canonical strings hashed by ingest; the receiver must not
-		// re-apply its own filepath.Abs to these paths.
-		canonical, normalized, err := canonicalizeFilesForSync(item.Files)
-		if err != nil || len(canonical) == 0 {
+		// Hash exactly what the receiver will hash: raw trimmed/sorted paths,
+		// never this host's filepath.Abs (a relay must not rewrite C:\ or / paths).
+		normalized, canonical := clipboard.NormalizeSyncedFilePaths(item.Files)
+		if len(canonical) == 0 {
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
 		payload.Files = normalized

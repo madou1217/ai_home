@@ -663,6 +663,14 @@ func (h *Handler) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 			h.writeDomainError(w, sealErr)
 			return
 		}
+		sealedSize := len(sealed.Sealed) + len(sealed.SHA256) + 64
+		if sealedSize > clipboard.MaxRequestBytes-1024 {
+			// One oversized envelope must not make the whole pull undecodable.
+			if item.LastSeenAtMs > cursor {
+				cursor = item.LastSeenAtMs
+			}
+			continue
+		}
 		estSize := len(sealed.SHA256) + len(sealed.Sealed) + 40
 		if len(sealedItems) > 0 && accBytes+estSize > clipboard.MaxRequestBytes {
 			break

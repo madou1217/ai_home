@@ -177,6 +177,7 @@ export default function ClipboardWorkspace() {
 
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const searchRef = useRef<{ focus: () => void } | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -243,6 +244,7 @@ export default function ClipboardWorkspace() {
       setSettings(nextSettings);
       setServers(nextServers);
       setItems(nextItems);
+      setHasMore(nextItems.length >= 100);
       setSelectedId((prev) => {
         if (prev && nextItems.some((it) => it.id === prev)) {
           return prev;
@@ -265,10 +267,14 @@ export default function ClipboardWorkspace() {
     setLoadingMore(true);
     try {
       const more = await clipboardAPI.listItems({ limit: 100, before: last.lastSeenAtMs });
+      let added = 0;
       setItems((prev) => {
         const known = new Set(prev.map((entry) => entry.id));
-        return [...prev, ...more.filter((entry) => !known.has(entry.id))];
+        const fresh = more.filter((entry) => !known.has(entry.id));
+        added = fresh.length;
+        return [...prev, ...fresh];
       });
+      setHasMore(more.length >= 100 && added > 0);
     } catch (error) {
       setFeedback({
         tone: 'danger',
@@ -644,10 +650,18 @@ export default function ClipboardWorkspace() {
   // P pin, R refresh. Never steal keys while an input or IME composition is active.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing || originalModalOpen) return;
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase() ?? '';
       const editing = tag === 'input' || tag === 'textarea' || tag === 'select' || Boolean(target?.isContentEditable);
-      if (event.key === '/' && !editing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // Buttons, links, switches and open popovers own Enter/Space; only arrows are
+      // shared so keyboard navigation still works after clicking a row.
+      const interactive = Boolean(
+        target?.closest(
+          'button, a, [role="switch"], [role="tab"], [role="button"], .ant-modal, .ant-popover'
+        )
+      );
+      if (event.key === '/' && !editing && !interactive && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         searchRef.current?.focus();
         return;
@@ -657,6 +671,7 @@ export default function ClipboardWorkspace() {
         return;
       }
       if (editing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (interactive && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       if (event.key.toLowerCase() === 'r') {
         event.preventDefault();
         void loadAll();
@@ -682,7 +697,7 @@ export default function ClipboardWorkspace() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [filteredItems, selectedItem, handleCopyItem, handleTogglePin, loadAll]);
+  }, [filteredItems, selectedItem, handleCopyItem, handleTogglePin, loadAll, originalModalOpen]);
 
   const activity = useMemo(() => {
     const buckets = new Array(24).fill(0);
@@ -968,7 +983,7 @@ export default function ClipboardWorkspace() {
             <span>
               显示 {filteredItems.length} / {items.length}
             </span>
-            {items.length >= 100 ? (
+            {hasMore ? (
               <Button size="small" type="link" loading={loadingMore} onClick={() => void handleLoadMore()}>
                 加载更多
               </Button>

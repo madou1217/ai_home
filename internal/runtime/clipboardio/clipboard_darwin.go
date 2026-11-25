@@ -37,7 +37,7 @@ func (d *darwinIO) Probe() Capability {
 // darwinClipboardEnv forces the UTF-8 locale that launchd omits; without it
 // pbpaste/pbcopy fall back to MacRoman and corrupt non-ASCII text.
 func darwinClipboardEnv() []string {
-	return append(os.Environ(), "LC_CTYPE=UTF-8", "LANG=en_US.UTF-8")
+	return append(os.Environ(), "LC_ALL=en_US.UTF-8", "LC_CTYPE=UTF-8", "LANG=en_US.UTF-8")
 }
 
 func (d *darwinIO) ReadText(ctx context.Context, maxBytes int) (string, bool, error) {

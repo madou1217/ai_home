@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/upstreamretry"
+	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
 	"github.com/madou1217/ai_home/internal/adapters/images"
@@ -249,6 +250,16 @@ func (handler *Handler) ServeHTTP(
 			return
 		}
 		parsed = lenient
+	}
+
+	if limits, ok := coreclientkeys.LimitsFromContext(request.Context()); ok &&
+		limits.Restricted() && !limits.AllowsModel(parsed.Model) {
+		writeError(response, &images.Error{
+			StatusCode: http.StatusForbidden,
+			Code:       "model_not_allowed",
+			Detail:     "This API key is not allowed to use the requested model",
+		})
+		return
 	}
 
 	provider, providerErr := handler.providers.ResolveProvider(

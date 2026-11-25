@@ -872,9 +872,21 @@ func (r *Runtime) ensureSupervisorLocked(ctx context.Context) (HostClient, error
 		client, err = r.options.SupervisorFactory(seq)
 	} else {
 		socketPath := r.options.SocketPath
-		if socketPath == "" && seq > 1 && r.options.AIHomeDir != "" && runtime.GOOS != "windows" {
+		// 第 2 个及以后的宿主必须用不同的 IPC 地址。
+		//
+		// POSIX 上是 unix socket：旧进程还持有时新进程 bind 会失败，所以必须换名。
+		// Windows 上是 named pipe，而 **多个进程可以监听同一个 pipe 名**，连接会被
+		// 轮询分给其中一个。宿主重启（崩溃恢复、代次回收）后如果沿用同名 pipe，
+		// prepare 与 activate 可能落到不同进程——后者没有前者的 candidates，
+		// 于是报 plugin_generation_unknown（真机实测就是这个症状）。
+		// 因此 Windows 同样要加序号后缀，确保一次运行只有一个宿主持有该地址。
+		if socketPath == "" && seq > 1 && r.options.AIHomeDir != "" {
 			defaultSock := ResolvePluginSocket(r.options.AIHomeDir, runtime.GOOS)
-			socketPath = strings.TrimSuffix(defaultSock, ".sock") + fmt.Sprintf("-r%d.sock", seq)
+			if runtime.GOOS == "windows" {
+				socketPath = defaultSock + fmt.Sprintf("-r%d", seq)
+			} else {
+				socketPath = strings.TrimSuffix(defaultSock, ".sock") + fmt.Sprintf("-r%d.sock", seq)
+			}
 		}
 		nodeHost, nodeErr := NewSupervisor(SupervisorOptions{
 			AIHomeDir:   r.options.AIHomeDir,
@@ -892,7 +904,9 @@ func (r *Runtime) ensureSupervisorLocked(ctx context.Context) (HostClient, error
 			return nil, nodeErr
 		}
 		// Node 后端继续承载 JS 插件并提供数据面 socket；process 后端承载任意语言插件。
-		client = NewHybridHost(nodeHost, NewProcessHost(r.options.OnLog))
+		hybrid := NewHybridHost(nodeHost, NewProcessHost(r.options.OnLog))
+		hybrid.SetLog(r.options.OnLog)
+		client = hybrid
 	}
 	if err != nil {
 		return nil, err

@@ -23,6 +23,10 @@ type HybridHost struct {
 	mu                   sync.RWMutex
 	nodeStarted          bool
 	processContributions map[string]bool
+	// nodePreparedGeneration 是最近一次真正交给 node 宿主 prepare 的代次；
+	// 0 表示该代次没有 node 插件参与，Activate 不应调用 node。
+	nodePreparedGeneration int64
+	log                    func(string)
 }
 
 func NewHybridHost(node HostClient, process *ProcessHost) *HybridHost {
@@ -30,6 +34,16 @@ func NewHybridHost(node HostClient, process *ProcessHost) *HybridHost {
 		process = NewProcessHost(nil)
 	}
 	return &HybridHost{node: node, process: process, processContributions: map[string]bool{}}
+}
+
+// SetLog 注入宿主日志出口（仅用于诊断；为空时不输出）。
+func (host *HybridHost) SetLog(log func(string)) {
+	if host == nil {
+		return
+	}
+	host.mu.Lock()
+	host.log = log
+	host.mu.Unlock()
 }
 
 func (host *HybridHost) Start(ctx context.Context) error {
@@ -93,15 +107,42 @@ func (host *HybridHost) Prepare(ctx context.Context, generation int64, plugins [
 		result.Contributions = append(result.Contributions, nodeResult.Contributions...)
 		result.Diagnostics = append(result.Diagnostics, nodeResult.Diagnostics...)
 		result.Errors = append(result.Errors, nodeResult.Errors...)
+		// 必须把 node 侧的拒绝透传上来。
+		//
+		// Node 在插件加载失败时返回 state="rejected" 且**不登记该代次**，
+		// 但这里若不采纳它的 State，调用方会以为准备成功、接着 activate
+		// 一个不存在的代次，最终只得到 plugin_generation_unknown——真正的原因
+		// （哪个插件、为什么加载失败）被完全掩盖。真机实测：一个旧格式插件
+		// 导致整台机器的插件宿主无法启动，日志里却只有这一行空泛错误。
+		if nodeResult.State != "prepared" {
+			result.State = nodeResult.State
+			host.mu.Lock()
+			host.nodePreparedGeneration = 0
+			host.mu.Unlock()
+			_ = host.process.Stop(context.Background())
+			return result, nil
+		}
 	}
 	host.mu.Lock()
 	host.processContributions = processContributions
+	// 记录本次 prepare 是否真的把这一代交给了 node 宿主。Activate 必须据此
+	// 决定要不要调 node：node 宿主进程可能仍在运行（之前跑过 node 插件），
+	// 但这一代只有 process 插件参与 prepare，node 侧没有该 generation 的
+	// candidate，盲目 activate 会得到 plugin_generation_unknown
+	// （真机实测：装载 2 个 process 插件时稳定复现）。
+	host.nodePreparedGeneration = 0
+	if host.node != nil && len(nodePlugins) > 0 {
+		host.nodePreparedGeneration = generation
+	}
 	host.mu.Unlock()
 	return result, nil
 }
 
 func (host *HybridHost) Activate(ctx context.Context, generation int64, retainPrevious bool) (HostActivateResult, error) {
-	if host.node != nil && host.nodeRunning() {
+	host.mu.RLock()
+	nodePrepared := host.nodePreparedGeneration == generation
+	host.mu.RUnlock()
+	if host.node != nil && nodePrepared && host.nodeRunning() {
 		if _, err := host.node.Activate(ctx, generation, retainPrevious); err != nil {
 			return HostActivateResult{}, err
 		}

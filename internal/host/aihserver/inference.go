@@ -111,8 +111,6 @@ type inferenceCompositionDependencies struct {
 	// 由 Go 负责刷新（委托模式下也一样）。
 	ownsCredentialRefresh func(accountcore.AccountRef) bool
 	authorizer            inferencehttp.Authorizer
-	// clientKeyLimits 是托管客户端 Key 的账号池/模型池白名单来源；nil 表示不限制。
-	clientKeyLimits       inferencegateway.ClientKeyLimitsSource
 	httpClient            InferenceHTTPClient
 	decodeErrors          func(error)
 	responsesDecodeErrors func(error)
@@ -225,12 +223,12 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
-	// 账号池/模型池白名单在路由解析层统一执行；未配置托管 Key 限制时保持原目录。
+	// 账号池/模型池白名单在路由解析层统一执行；限制来自请求上下文，未配置时原样透传。
 	var activeRoutes interface {
 		inferencegateway.RouteResolver
 		inferencegateway.ProtocolRouteResolver
 	} = activeCatalog
-	if scoped := inferencegateway.NewScopedRoutes(activeCatalog, dependencies.clientKeyLimits); scoped != nil {
+	if scoped := inferencegateway.NewScopedRoutes(activeCatalog); scoped != nil {
 		activeRoutes = scoped
 	}
 	composition.routes = activeRoutes

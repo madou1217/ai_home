@@ -102,6 +102,20 @@ func (authorizer *Authorizer) Authorized(request *http.Request) bool {
 	return ok
 }
 
+// Limits 返回托管 Key 的生效限制；总 key 或未接入托管 Key 时返回 false。
+func (authorizer *Authorizer) Limits(keyID string) (coreclientkeys.Limits, bool) {
+	if authorizer == nil || authorizer.managed == nil {
+		return coreclientkeys.Limits{}, false
+	}
+	source, ok := authorizer.managed.(interface {
+		Limits(string) (coreclientkeys.Limits, bool)
+	})
+	if !ok {
+		return coreclientkeys.Limits{}, false
+	}
+	return source.Limits(keyID)
+}
+
 // clientKeyFromRequest 接受多种传递方式，但要求它们携带**完全相同**的密钥。
 //
 // x-goog-api-key 是 Gemini / Vertex 客户端（gemini CLI 的 vertex-ai 认证）的密钥头，

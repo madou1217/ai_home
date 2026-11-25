@@ -138,6 +138,9 @@ func (source codexHTTPAccountSource) OpenFallbackPool(
 	model string,
 	excluded accountcore.AccountRef,
 ) (codexresponseshttp.Cursor, error) {
+	if !providerAllowedForClientKey(ctx, "codex") {
+		return nil, nil
+	}
 	request, err := accountrouting.NewRequestExcluding(source.catalog, "codex", model, []accountcore.AccountRef{excluded})
 	if err != nil {
 		return nil, err
@@ -160,6 +163,9 @@ func (source codexHTTPAccountSource) ReacquireFor429Retry(
 	cooldownReceipt runtimecore.CooldownReceipt,
 	originObservation accountcredentials.CredentialObservation,
 ) (codexresponseshttp.Selection, bool, bool, error) {
+	if !providerAllowedForClientKey(ctx, "codex") {
+		return codexresponseshttp.Selection{}, false, false, nil
+	}
 	if !pinned {
 		if poolReq, err := accountrouting.NewRequest(source.catalog, "codex", model); err == nil {
 			if session, beginErr := source.recruiter.Begin(ctx, poolReq, source.transport); beginErr == nil {

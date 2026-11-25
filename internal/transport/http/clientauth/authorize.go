@@ -50,6 +50,15 @@ func Authorize(
 		scope = scoper.BeginRequest(identity, surface)
 	}
 	ctx := coreclientkeys.WithIdentity(request.Context(), identity)
+	if !identity.Master {
+		if limitsSource, ok := authenticator.(interface {
+			Limits(string) (coreclientkeys.Limits, bool)
+		}); ok {
+			if limits, found := limitsSource.Limits(identity.KeyID); found {
+				ctx = coreclientkeys.WithLimits(ctx, limits)
+			}
+		}
+	}
 	if scope != nil {
 		ctx = clientkeystats.WithScope(ctx, scope)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
@@ -267,6 +268,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.delegate(response, request, body)
 		return
 	}
+	requestedModel := modelID.String()
 	aliasMatched := false
 	if handler.aliases != nil {
 		if target, matched := handler.aliases.ResolveRelayModel(request.Context(), modelID.String()); matched && target != "" {
@@ -304,6 +306,17 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				request.ContentLength = int64(len(body))
 				request = request.WithContext(WithProviderPin(request.Context(), provider))
 			}
+		}
+	}
+	if limits, restricted := clientKeyLimits(request.Context()); restricted {
+		if !limits.AllowsModel(requestedModel) && !limits.AllowsModel(modelID.String()) {
+			writeRelayError(
+				response,
+				http.StatusForbidden,
+				"model_not_allowed",
+				"This API key is not allowed to use the requested model",
+			)
+			return
 		}
 	}
 	source := handler.resolveAccountSource(request)
@@ -392,6 +405,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.upstream429Retries.ReportOutcome(reqState, "family_relay:"+outcome.provider, outcome.provider, outcome.route.AccountRef().String(), outcomeLabel, upstreamretry.AbortNone)
 	}
 	handler.writeResponse(response, request, outcome, stream)
+}
+
+// clientKeyLimits 返回当前请求携带的 Key 白名单；未配置时 restricted=false。
+func clientKeyLimits(ctx context.Context) (coreclientkeys.Limits, bool) {
+	limits, ok := coreclientkeys.LimitsFromContext(ctx)
+	if !ok || !limits.Restricted() {
+		return coreclientkeys.Limits{}, false
+	}
+	return limits, true
 }
 
 func (handler *Handler) unavailableMessageText() string {

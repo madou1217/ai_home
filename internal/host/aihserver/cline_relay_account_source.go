@@ -74,6 +74,9 @@ func (source *providerRelayAccountSource) Accounts(
 	if source == nil || source.catalog == nil || source.recruiter == nil {
 		return nil, ErrInvalidProviderRelayAccountSource
 	}
+	if !providerAllowedForClientKey(ctx, source.providerID) {
+		return &providerExhaustedCursor{}, nil
+	}
 	request, err := accountrouting.NewRequest(
 		source.catalog,
 		source.providerID,
@@ -105,6 +108,9 @@ func (source *providerRelayAccountSource) ReacquireFor429Retry(
 		return "", false, false, nil
 	}
 	if trimmed := strings.TrimSpace(providerID); trimmed != "" && !strings.EqualFold(trimmed, source.providerID) {
+		return "", false, false, nil
+	}
+	if !providerAllowedForClientKey(ctx, source.providerID) {
 		return "", false, false, nil
 	}
 	request, err := accountrouting.NewPinnedRequest(

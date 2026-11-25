@@ -89,6 +89,9 @@ func (source *familyRelayAccountSource) ReacquireFor429Retry(
 		Observation: originObservation,
 	}
 	for _, candidateProvider := range candidates {
+		if !providerAllowedForClientKey(ctx, candidateProvider) {
+			continue
+		}
 		request, err := accountrouting.NewPinnedRequest(
 			source.catalog,
 			candidateProvider,
@@ -147,6 +150,9 @@ func (cursor *familyRelayAccountCursor) Next(
 			}
 			providerID := codebuddyfamilyrelay.FamilyProviders[cursor.index]
 			cursor.index++
+			if !providerAllowedForClientKey(ctx, providerID) {
+				continue
+			}
 			request, err := accountrouting.NewRequest(
 				cursor.source.catalog,
 				providerID,

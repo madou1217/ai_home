@@ -104,6 +104,9 @@ func (source *relayAccountSource) ReacquireFor429Retry(
 		Observation: originObservation,
 	}
 	for _, provider := range candidates {
+		if !providerAllowedForClientKey(ctx, string(provider)) {
+			continue
+		}
 		request, err := accountrouting.NewPinnedRequest(
 			source.catalog,
 			string(provider),
@@ -160,6 +163,9 @@ func (cursor *relayAccountCursor) Next(
 			}
 			provider := cursor.source.providers[cursor.providerIndex]
 			cursor.providerIndex++
+			if !providerAllowedForClientKey(ctx, string(provider)) {
+				continue
+			}
 			request, err := accountrouting.NewRequest(
 				cursor.source.catalog,
 				string(provider),

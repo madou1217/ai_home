@@ -42,6 +42,59 @@ type Limits struct {
 	AllowedModels    []string
 }
 
+// Restricted 判断这把 Key 是否配置了账号池或模型池白名单。
+func (limits Limits) Restricted() bool {
+	return len(limits.AllowedProviders) > 0 || len(limits.AllowedModels) > 0
+}
+
+// AllowsProvider 判断账号池白名单是否放行指定 Provider；空列表放行全部。
+func (limits Limits) AllowsProvider(providerID string) bool {
+	if len(limits.AllowedProviders) == 0 {
+		return true
+	}
+	target := strings.TrimSpace(providerID)
+	for _, value := range limits.AllowedProviders {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsModel 判断模型池白名单是否放行指定模型；空列表放行全部。
+func (limits Limits) AllowsModel(model string) bool {
+	if len(limits.AllowedModels) == 0 {
+		return true
+	}
+	target := strings.TrimSpace(model)
+	for _, value := range limits.AllowedModels {
+		if strings.TrimSpace(value) == target {
+			return true
+		}
+	}
+	return false
+}
+
+// limitsContextKey 使用私有零尺寸类型隔离请求级 Key 限制。
+type limitsContextKey struct{}
+
+// WithLimits 把已鉴权 Key 的生效限制写入请求上下文。
+func WithLimits(ctx context.Context, limits Limits) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, limitsContextKey{}, limits)
+}
+
+// LimitsFromContext 读取请求上下文里的 Key 限制；未携带时返回 false。
+func LimitsFromContext(ctx context.Context) (Limits, bool) {
+	if ctx == nil {
+		return Limits{}, false
+	}
+	limits, ok := ctx.Value(limitsContextKey{}).(Limits)
+	return limits, ok
+}
+
 // Key 是一把托管客户端 Key 的持久化投影（不含明文）。
 type Key struct {
 	ID           string

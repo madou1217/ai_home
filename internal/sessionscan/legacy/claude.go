@@ -112,7 +112,7 @@ func readClaudeProject(hostHome, projectDirName string, knownPaths []string, his
 }
 
 // scanClaudeSession 复刻 Node：16KB 头内逐行解析，取第一条主线程 user 文本作为标题。
-// cwd 来自任意记录（含 sidechain），但必须是真实存在的目录。
+// cwd 优先取真实存在的目录；全都已删除时保留第一个绝对 cwd，作为精确历史路径。
 func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -120,6 +120,7 @@ func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) 
 	}
 	defer file.Close()
 
+	var existingCwd, fallbackCwd string
 	reader := bufio.NewReaderSize(io.LimitReader(file, claudeMetaMaxBytes), 32*1024)
 	for {
 		line, readErr := reader.ReadString('\n')
@@ -127,10 +128,17 @@ func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) 
 		if trimmed != "" {
 			var record claudeRecord
 			if json.Unmarshal([]byte(trimmed), &record) == nil {
-				// 会话记录里的 cwd 是当时的事实；目录可能已被删除，但显示历史项目时
-				// 仍然比按 sanitized 目录名猜测准确。
-				if cwd == "" && record.Cwd != "" && filepath.IsAbs(record.Cwd) {
-					cwd = filepath.Clean(record.Cwd)
+				// 先找存在的目录；找不到时再退回第一个绝对 cwd。后者可能已删除，
+				// 但仍是当时的事实，比按 sanitized 目录名猜测准确。
+				if record.Cwd != "" && filepath.IsAbs(record.Cwd) {
+					cleaned := filepath.Clean(record.Cwd)
+					if isDirectory(cleaned) {
+						if existingCwd == "" {
+							existingCwd = cleaned
+						}
+					} else if fallbackCwd == "" {
+						fallbackCwd = cleaned
+					}
 				}
 				if !record.IsSidechain {
 					sawMainThread = true
@@ -142,12 +150,18 @@ func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) 
 				}
 			}
 		}
-		if title != "" || readErr != nil {
+		// 标题已拿到时仍要继续找存在的 cwd；只有两者都拿到才提前结束。
+		if (title != "" && existingCwd != "") || readErr != nil {
 			break
 		}
 	}
 	if title == "" {
 		title = UnnamedTitle
+	}
+	if existingCwd != "" {
+		cwd = existingCwd
+	} else {
+		cwd = fallbackCwd
 	}
 	return title, cwd, sawMainThread
 }

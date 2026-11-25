@@ -95,3 +95,22 @@ func TestReadClaudeProjectUsesRecordedDeletedCwd(t *testing.T) {
 		t.Fatalf("project.Path = %q, want recorded cwd %q", project.Path, cwd)
 	}
 }
+func TestReadClaudeProjectPrefersExistingCwdOverDeletedFirst(t *testing.T) {
+	home := t.TempDir()
+	workDir := filepath.Join(home, "alpha")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, filepath.Join(home, ".claude", "projects", "-work-alpha", "s1.jsonl"),
+		fmt.Sprintf("{\"type\":\"user\",\"cwd\":\"/private/tmp/aih-deleted-first-does-not-exist\",\"message\":{\"content\":\"First title\"}}\n"+
+			"{\"type\":\"assistant\",\"cwd\":%q,\"message\":{\"content\":\"ignored\"}}\n", workDir),
+		time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC))
+
+	project, ok := ReadClaudeProject(home, "-work-alpha", nil)
+	if !ok {
+		t.Fatal("ReadClaudeProject returned ok=false")
+	}
+	if project.Path != workDir {
+		t.Fatalf("project.Path = %q, want existing cwd %q", project.Path, workDir)
+	}
+}

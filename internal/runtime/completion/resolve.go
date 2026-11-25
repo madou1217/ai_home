@@ -261,8 +261,7 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	}
 
 	if len(prior) == 0 {
-		addTopLevelCommands(target)
-		addHistoryCandidates(target, context, current, "")
+		addCommandPositionCandidates(target, current)
 		return target.items
 	}
 
@@ -409,7 +408,15 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 
 	node, found := findTopLevelCommand(head)
 	if !found {
-		return nil
+		// 不把合法的别名义项误判成"未知命令"：数字账号、harness 简写、
+		// 内部入口都交给各自的解析路径，保持静默。
+		if isAllDigits(head) || isHarnessShorthand(head) || strings.HasPrefix(head, "__") {
+			return nil
+		}
+		// 命令后跟了空格但根本没有这个命令：给可执行的近似建议，
+		// 不要再回退成文件补全。
+		addUnknownCommandHint(target, head)
+		return target.items
 	}
 	return resolveCommandTree(&node, prior[1:], current, context, target)
 }

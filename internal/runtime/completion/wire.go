@@ -145,7 +145,10 @@ type completeProtocolOptions struct {
 	historyFile  string
 	stdinHistory bool
 	debug        bool
-	words        []string
+	// hints 表示 shell 集成能渲染"只显示、不插入"的提示行；
+	// 旧片段不传这个旗标时，提示行不会出现在协议输出里。
+	hints bool
+	words []string
 }
 
 // parseCompleteProtocol 只从左半侧解析协议旗标：右半侧是用户正在敲的命令行。
@@ -162,6 +165,7 @@ func parseCompleteProtocol(argv []string) completeProtocolOptions {
 	protocol, options.current, options.currentSet = takeCurrentOption(protocol)
 	protocol, options.historyFile = splitOnSeparator(protocol, "--history-file")
 	protocol, options.stdinHistory = takeFlag(protocol, "--history-stdin")
+	protocol, options.hints = takeFlag(protocol, "--hints")
 	protocol, options.debug = takeFlag(protocol, "--debug")
 	if separator >= 0 {
 		options.words = append([]string(nil), argv[separator+1:]...)
@@ -198,6 +202,9 @@ func RunComplete(argv []string, environment Environment) {
 	fishFormat := options.shell == "fish"
 	for _, candidate := range candidates {
 		if containsControlBytes(candidate.Value) {
+			continue
+		}
+		if candidate.Group == groupHint && !options.hints {
 			continue
 		}
 		if options.plain {

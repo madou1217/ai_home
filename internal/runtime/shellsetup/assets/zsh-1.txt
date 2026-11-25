@@ -80,7 +80,7 @@ _aih_complete() {
     _aih_words[-1]="${IPREFIX}${PREFIX}"
   fi
   local _aih_out
-  _aih_out="$(_aih_shell_history | "$AIH_SHELL_BIN" __complete --history-stdin -- "${_aih_words[@]}" 2>/dev/null)"
+  _aih_out="$(_aih_shell_history | "$AIH_SHELL_BIN" __complete --history-stdin --hints -- "${_aih_words[@]}" 2>/dev/null)"
   if [[ -z "$_aih_out" ]]; then
     (( _aih_at_command_position )) && return 0
     # 返回 1 不会自动触发 zsh 的路径补全；显式交回原生 _files。
@@ -88,6 +88,7 @@ _aih_complete() {
     return $?
   fi
   local -a _aih_lines _aih_groups _aih_values _aih_descs _aih_multi _aih_multi_descs
+  local _aih_hint=""
   local _aih_line _aih_group _aih_display _aih_group_index _aih_entry
   local _aih_p_value _aih_p_desc _aih_p_group
   _aih_lines=("${(@f)_aih_out}")
@@ -95,6 +96,10 @@ _aih_complete() {
   for _aih_line in "${(@)_aih_lines}"; do
     [[ -z "$_aih_line" ]] && continue
     _aih_parse_line "$_aih_line"
+    if [[ "$_aih_p_group" == "提示" ]]; then
+      _aih_hint+="${_aih_p_value}"$'\n'
+      continue
+    fi
     _aih_group="$_aih_p_group"
     [[ -z "$_aih_group" ]] && _aih_group="其它"
     (( ${_aih_groups[(Ie)$_aih_group]} )) || _aih_groups+=("$_aih_group")
@@ -104,6 +109,7 @@ _aih_complete() {
     for _aih_line in "${(@)_aih_lines}"; do
       [[ -z "$_aih_line" ]] && continue
       _aih_parse_line "$_aih_line"
+      [[ "$_aih_p_group" == "提示" ]] && continue
       _aih_group_index="$_aih_p_group"
       [[ -z "$_aih_group_index" ]] && _aih_group_index="其它"
       [[ "$_aih_group_index" == "$_aih_group" ]] || continue
@@ -135,7 +141,27 @@ _aih_complete() {
     (( ${#_aih_values} )) && compadd -J "$_aih_group" -X "$_aih_group" -d _aih_descs -- "${_aih_values[@]}"
     (( ${#_aih_multi} )) && compadd -J "$_aih_group" -X "$_aih_group" -Q -S '' -d _aih_multi_descs -- "${_aih_multi[@]}"
   done
+  if [[ -n "$_aih_hint" ]]; then
+    _aih_hint="${_aih_hint%$'\n'}"
+    if (( ${#_aih_groups} )); then
+      compstate[list]='list force'
+      compadd -x "$_aih_hint"
+    else
+      autoload -Uz _message 2>/dev/null
+      _message -r "$_aih_hint"
+      return 0
+    fi
+  fi
   return 0
 }
 compdef _aih_complete aih
-
+# 有些 rc 在 shell 集成分片之后才运行 compinit，compinit 会重建 _comps 并清掉这里的绑定。
+# 在首个提示符前补绑一次，之后从 precmd 钩子里移除，避免每个提示符都做一次 compdef。
+if (( $+functions[compdef] )) && (( ${precmd_functions[(Ie)_aih_rebind_compdef]:-0} == 0 )); then
+  typeset -ga precmd_functions
+  _aih_rebind_compdef() {
+    (( $+functions[compdef] )) && compdef _aih_complete aih 2>/dev/null
+    precmd_functions=(${precmd_functions:#_aih_rebind_compdef})
+  }
+  precmd_functions+=(_aih_rebind_compdef)
+fi

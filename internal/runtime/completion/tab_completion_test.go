@@ -267,3 +267,64 @@ func TestNativePluginCandidatesComeFromManagedState(t *testing.T) {
 		t.Fatalf("skill 候选不正确：%+v", skills)
 	}
 }
+
+// 命令位不再被历史整句占用：精确命令只留一个候选，并附下一层提示。
+func TestCommandPositionExactSuppressesHistoryAndHintsNextLevel(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "account show codex:41", Count: 3}, {Suffix: "account list --limit 5", Count: 2}}
+	candidates := resolveCompletion([]string{"account"}, context)
+	var real, hints []string
+	for _, candidate := range candidates {
+		if candidate.Group == groupHint {
+			hints = append(hints, candidate.Value)
+			continue
+		}
+		real = append(real, candidate.Value)
+	}
+	if len(real) != 1 || real[0] != "account" {
+		t.Fatalf("命令位应只留 account，实际 %v", real)
+	}
+	if len(hints) != 1 || !strings.Contains(hints[0], "list") || !strings.Contains(hints[0], "show") {
+		t.Fatalf("缺少下一层提示：%v", hints)
+	}
+}
+
+func TestCommandPositionPrefixReturnsAllMatches(t *testing.T) {
+	candidates := resolveCompletion([]string{"code"}, resolverForTest())
+	values := candidateValues(candidates)
+	joined := strings.Join(values, ",")
+	for _, wanted := range []string{"codex", "codebuddy", "codebuddycn"} {
+		if !strings.Contains(joined, wanted) {
+			t.Fatalf("缺少 %s：%v", wanted, values)
+		}
+	}
+}
+
+// 不存在的命令给了空格后，只返回提示，不再回退成文件候选。
+func TestUnknownCommandAfterSpaceReturnsHintOnly(t *testing.T) {
+	candidates := resolveCompletion([]string{"code", ""}, resolverForTest())
+	if len(candidates) != 1 || candidates[0].Group != groupHint {
+		t.Fatalf("应只有一条提示，实际 %+v", candidates)
+	}
+	if !strings.Contains(candidates[0].Value, "aih codex") {
+		t.Fatalf("提示缺少可执行建议：%q", candidates[0].Value)
+	}
+}
+
+func TestProviderExactHintsActions(t *testing.T) {
+	candidates := resolveCompletion([]string{"codex"}, resolverForTest())
+	var real, hints []string
+	for _, candidate := range candidates {
+		if candidate.Group == groupHint {
+			hints = append(hints, candidate.Value)
+			continue
+		}
+		real = append(real, candidate.Value)
+	}
+	if len(real) != 1 || real[0] != "codex" {
+		t.Fatalf("Provider 精确命中应只留一个候选：%v", real)
+	}
+	if len(hints) != 1 || !strings.Contains(hints[0], "relay") {
+		t.Fatalf("缺少动作提示：%v", hints)
+	}
+}

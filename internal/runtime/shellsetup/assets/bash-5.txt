@@ -32,7 +32,8 @@ _aih_shell_reason_label() {
 # ---- TAB 补全 ----
 _aih_complete() {
   _aih_shell_ready || return 1
-  local _aih_cur _aih_i _aih_line _aih_out _aih_value _aih_prefix _aih_quote
+  local _aih_cur _aih_i _aih_line _aih_out _aih_value _aih_prefix _aih_quote _aih_hint
+  _aih_hint=0
   local -a _aih_words
   COMPREPLY=()
   type compopt >/dev/null 2>&1 && compopt +o default
@@ -48,10 +49,15 @@ _aih_complete() {
     _aih_words[${#_aih_words[@]}-1]="$_aih_value"
   fi
   [ "${#_aih_words[@]}" -eq 0 ] && _aih_words=("")
-  _aih_out="$(_aih_shell_history | "$AIH_SHELL_BIN" __complete --history-stdin -- "${_aih_words[@]}" 2>/dev/null)"
+  _aih_out="$(_aih_shell_history | "$AIH_SHELL_BIN" __complete --history-stdin --hints -- "${_aih_words[@]}" 2>/dev/null)"
   while IFS= read -r _aih_line; do
     [ -z "$_aih_line" ] && continue
     _aih_value="${_aih_line%%$'\x1f'*}"
+    _aih_group="${_aih_line##*$'\x1f'}"
+    if [ "$_aih_group" = "提示" ]; then
+      _aih_hint=1
+      continue
+    fi
     # Bash 3.2 keeps --flag=value in COMP_WORDS but readline replaces only
     # the value after its = word break. Do not insert the flag twice.
     if [[ "$COMP_WORDBREAKS" == *"="* && "${COMP_WORDS[COMP_CWORD]}" == --*=* ]]; then
@@ -61,7 +67,7 @@ _aih_complete() {
     COMPREPLY+=("$_aih_value")
   done <<< "$_aih_out"
   # 无 AIH 候选时交回 readline；命令位仍不混入文件名。
-  if (( ${#COMPREPLY[@]} == 0 && COMP_CWORD > 1 )); then
+  if (( ${#COMPREPLY[@]} == 0 && COMP_CWORD > 1 )) && [ "$_aih_hint" -eq 0 ]; then
     if type compopt >/dev/null 2>&1; then
       compopt -o default
     else

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/core/harnesses"
 )
 
 func addHistoryCandidates(target *collector, context *resolverContext, current, priorText string) {
@@ -339,4 +341,125 @@ func listCompletionServerProfiles(context *resolverContext, current string) []re
 		return nil
 	}
 	return context.remoteTargetLister(remoteTargetRequest{Action: "profiles", Current: current})
+}
+
+// addCommandPositionCandidates 处理命令位（还没敲空格）：
+//   - 精确命中一个命令/Provider 时只给这一个候选，让 shell 自动补空格，
+//     同时用提示列出下一层，避免再按一次 TAB 才发现有什么；
+//   - 否则按前缀给出顶层命令/Provider；
+//   - 都没有时给"没有这条命令，你可能要 …"的提示。
+//
+// 命令位不再注入历史整句：历史残句会和子命令抢位置，且插进来会跳过子命令展开。
+func addCommandPositionCandidates(target *collector, current string) {
+	trimmed := strings.TrimSpace(current)
+	if trimmed != "" {
+		if node, ok := findTopLevelCommand(trimmed); ok {
+			target.add(node.Name, node.Summary, groupCommand, "")
+			target.addHint(nextLevelHintForNode(&node))
+			return
+		}
+		if isProviderName(trimmed) {
+			provider := normalizeProviderID(trimmed)
+			target.add(provider, describeProvider(provider), groupProvider, "")
+			target.addHint(nextLevelHintForProvider(provider))
+			return
+		}
+	}
+	for index := range topLevelCommands {
+		command := &topLevelCommands[index]
+		target.add(command.Name, command.Summary, groupCommand, "")
+		for _, alias := range command.Aliases {
+			target.add(alias, command.Summary, groupCommand, "")
+		}
+	}
+	for _, provider := range providerNames() {
+		target.add(provider, describeProvider(provider), groupProvider, "")
+	}
+	if len(target.items) == 0 && trimmed != "" {
+		addUnknownCommandHint(target, trimmed)
+	}
+}
+
+// nextLevelHintForNode 汇总一个命令的下一层子命令。
+func nextLevelHintForNode(node *commandNode) string {
+	if node == nil || len(node.Children) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(node.Children))
+	for _, child := range node.Children {
+		names = append(names, child.Name)
+	}
+	return "下一层：" + joinLimited(names, 12) + "（再按 TAB 展开）"
+}
+
+// nextLevelHintForProvider 汇总 Provider 的可用动作。
+func nextLevelHintForProvider(provider string) string {
+	actions := listProviderActions(provider)
+	if len(actions) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(actions))
+	for _, action := range actions {
+		names = append(names, action.Name)
+	}
+	return "可用动作：" + joinLimited(names, 12) + "（再按 TAB 展开）"
+}
+
+func joinLimited(values []string, limit int) string {
+	if limit > 0 && len(values) > limit {
+		return strings.Join(values[:limit], " / ") + " / …"
+	}
+	return strings.Join(values, " / ")
+}
+
+// addUnknownCommandHint 在命令位或命令后给出可执行的近似建议。
+func addUnknownCommandHint(target *collector, input string) {
+	suggestions := suggestCommandNames(input, 3)
+	if len(suggestions) == 0 {
+		target.addHint("没有 aih " + input + " 这条命令；输入 aih help 查看全部命令")
+		return
+	}
+	prefixed := make([]string, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		prefixed = append(prefixed, "aih "+suggestion)
+	}
+	target.addHint("没有 aih " + input + " 这条命令；你可能要：" + strings.Join(prefixed, " / "))
+}
+
+// suggestCommandNames 优先取前缀命中，其次按编辑距离取近似命令。
+// isHarnessShorthand 判断 aih <id> 是否是外部 harness 简写（pi / dsh / dsh-tui）。
+func isHarnessShorthand(value string) bool {
+	_, found := harnesses.Get(strings.ToLower(strings.TrimSpace(value)))
+	return found
+}
+
+func suggestCommandNames(input string, limit int) []string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return nil
+	}
+	names := listTopLevelCommandNames()
+	names = append(names, providerNames()...)
+	seen := make(map[string]bool, len(names))
+	prefixMatches := make([]string, 0, 4)
+	others := make([]string, 0, 4)
+	allowed := allowedDistance(len([]rune(trimmed)))
+	for _, name := range names {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(trimmed)) {
+			prefixMatches = append(prefixMatches, name)
+			continue
+		}
+		if allowed > 0 && damerauLevenshtein(strings.ToLower(trimmed), strings.ToLower(name)) <= allowed {
+			others = append(others, name)
+		}
+	}
+	result := append(prefixMatches, others...)
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result
 }

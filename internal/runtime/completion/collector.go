@@ -29,6 +29,8 @@ const (
 	groupModel      = "模型"
 	groupMCP        = "MCP"
 	groupOther      = "其它"
+	// groupHint 不是可插入候选：shell 集成只把它当提示显示，不能 compadd。
+	groupHint = "提示"
 )
 
 type collector struct {
@@ -42,6 +44,15 @@ func newCollector(current string) *collector {
 }
 
 // add 按前缀/片段命中过滤后追加；重复值只保留第一次。
+// addHint 追加一条只显示、不插入的提示（如“没有这条命令，你可能要 …”）。
+func (c *collector) addHint(text string) {
+	text = collapseWhitespace(text)
+	if text == "" {
+		return
+	}
+	c.items = append(c.items, Candidate{Value: text, Description: "", Group: groupHint})
+}
+
 func (c *collector) add(value, description, group, matchText string) {
 	text := value
 	if text == "" {

@@ -41,10 +41,10 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <div class="stat"><b>150</b><span>台账条目</span></div>
 <div class="stat"><b>2,284</b><span>同期提交</span></div>
 <div class="stat"><b>114</b><span>已完成</span></div>
-</div><p class="note" style="margin-top:12px">按可核对证据：<b>137 条已完成</b>、8 条部分、3 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>91%</b>。未完成与边界集中在 AGY 结构化工具、安装包 ≤80MiB。</p><div class="legend">
+</div><p class="note" style="margin-top:12px">按可核对证据：<b>137 条已完成</b>、9 条部分、2 条未完成、3 条未核实、11 条工作约束；按全部可判定条目计，已核实完成率约 <b>91%</b>。未完成与边界集中在 AGY 结构化工具、安装包 50/20MiB 拉伸目标。</p><div class="legend">
 <span class="chip s-已完成">已完成 137</span>
-<span class="chip s-部分">部分 8</span>
-<span class="chip s-未完成">未完成 3</span>
+<span class="chip s-部分">部分 9</span>
+<span class="chip s-未完成">未完成 2</span>
 <span class="chip s-未核实">未核实 3</span>
 <span class="chip s-约束">约束 11</span>
 </div></header>
@@ -506,8 +506,8 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 <td class="ev">714a61fb 统一 -s -w，安装包 117.0→100.6MiB；linux-x64 / win32-x64 / darwin-arm64 三平台 smoke PASS，Windows 无残留进程</td><td class="sess">01a1f824</td></tr>
 <tr>
 <td>安装包压到 20/50/80MiB</td><td class="meta">11-20</td>
-<td><span class="chip s-未完成">未完成</span></td>
-<td class="ev">实测 80MiB 必须去掉内置 Node（119.5→79.9MiB）；用户选择“先不去”，当前停在 91.9–100.6MiB，三平台可用</td><td class="sess">01a1f824</td></tr>
+<td><span class="chip s-部分">部分</span></td>
+<td class="ev">1b8d0a75：单文件载荷 zip deflate→tar.xz；darwin-arm64 53.5MiB / linux-x64 59.2MiB / win32-x64 53.8MiB，三平台 ≤80 达成；darwin smoke PASS（CLI 无系统 Node、WebUI、gateway）；≤50 未达（Linux 59.2，需移除 npm/合并 Go 二进制），20 不可行</td><td class="sess">01a1f824</td></tr>
 <tr>
 <td>Windows 安装/升级走代理（PowerShell 凭据与 ALL_PROXY）</td><td class="meta">11-24</td>
 <td><span class="chip s-已完成">已完成</span></td>
@@ -775,7 +775,7 @@ code{font:12px ui-monospace,monospace;background:var(--sunken);padding:1px 5px;b
 </tbody></table></div></section>
 <section id="open"><h2>未完成与明确边界</h2><p class="note">这些不是“没做”，而是当前仍未闭环、需要外部条件或用户决策的事项。</p><ul class="openlist">
 <li><b>AGY 结构化远程工具循环</b>：未实现。AGY 只有 PTY，没有工具/审批协议；远程入口明确返回 <code>agy_remote_workspace_unsupported</code>。需求办公室用的是 Connector 工作区镜像 + AGY 原生 CLI，不是这条工具通道。</li>
-<li><b>安装包 ≤80MiB</b>：实测 80MiB 必须去掉内置 Node（119.5→79.9MiB）；用户选择“先不去”，当前 91.9–100.6MiB，三平台可用。20/50MiB 不可行。</li>
+<li><b>安装包 50/20MiB 拉伸目标</b>：80MiB 已达成：tar.xz 单文件 53.5–59.2MiB（darwin 53.5 / win 53.8 / linux 59.2），darwin smoke PASS。50MiB 需移除 npm 或合并 Go 二进制；20MiB 不可行。</li>
 <li><b>未提交的 composition/pricingcatalog 收尾</b>：并行会话仍持有未提交改动；当前工作区 <code>composition_auth.go</code>、<code>public_add_account.go</code>、<code>webui_scheduler_routes.go</code> 等仍有 M 状态。</li>
 <li><b>需要真机/外部条件</b>：资源下限 ≥15G、zcode 3.18.x chunk 路径、Resume paused goal。</li>
 </ul></section>

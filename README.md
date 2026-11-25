@@ -519,9 +519,18 @@ aih shell status                 # 当前 shell + 各 shell 的安装状态
 aih shell plan                   # 只打印将要写入的片段（不写文件）
 aih shell apply                  # 写入当前 shell 的 rc，带备份
 aih shell apply --all            # 本机装了的每个 rc 型 shell 都写一遍（不含 cmd/Clink）
-aih shell apply --shell cmd      # cmd：需先安装 Clink
 aih shell doctor                 # 逐项体检（语法 / 是否最新 / 入口真能出候选）
 aih shell remove                 # 摘掉 aih 写入的那一段
+```
+
+cmd 用户（需先安装 [Clink](https://chrisant996.github.io/clink/)）：
+
+```bat
+:: 安装 / 查看 / 体检 / 移除
+aih shell apply  --shell cmd
+aih shell status --shell cmd
+aih shell doctor --shell cmd
+aih shell remove --shell cmd
 ```
 
 支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）/ cmd（Clink）**。装上之后：

@@ -33,6 +33,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const (
@@ -684,6 +685,10 @@ func (handler *Handler) writeSelectionError(
 		code = "model_not_found"
 		message = "当前没有对应的 Codex WebSocket 模型路由"
 		handler.routeMisses.ReportRouteMiss(string(inference.ProviderCodex))
+	} else if rejection, ok := inferenceapi.ClientKeyScopeRejectionOf(err); ok {
+		status = rejection.Status
+		code = rejection.Code
+		message = rejection.Message
 	} else if errors.Is(err, accountrouting.ErrConcurrencyExhausted) {
 		// 账号存在，只是整轮候选都被自己的并发天花板占满：与准入拒绝同形，
 		// 让客户端稍后重试，而不是让用户以为没有 Codex 账号。

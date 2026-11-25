@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 真实页面 E2E：验证「扫描本机账号」的 skipped 摘要 toast。
 //
+// 说明：docs/testing/account-scan-toast-e2e.md
 // 为什么用 E2E 而不是单测：仓库约定「要测就真实测试」。这里驱动线上构建的
 // WebUI，只对 /v0/webui/accounts/detect 做响应 mock，从而稳定复现 skipped
 // 分支，不触碰真实账号数据。

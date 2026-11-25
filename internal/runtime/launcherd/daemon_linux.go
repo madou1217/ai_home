@@ -39,6 +39,12 @@ func HasDesktopSession() bool {
 		strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != ""
 }
 
+// DesktopAvailable reports whether the current host has a desktop session eligible
+// for AIH Launch assembly. On Linux this requires DISPLAY or WAYLAND_DISPLAY.
+func DesktopAvailable() bool {
+	return HasDesktopSession()
+}
+
 // WithShutdownSignals wraps ctx to cancel on SIGINT or SIGTERM.
 func WithShutdownSignals(ctx context.Context) (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

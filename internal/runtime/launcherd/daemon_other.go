@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 
 	"github.com/madou1217/ai_home/application/launcher"
 )
@@ -14,6 +15,12 @@ import (
 // HasDesktopSession always returns false on non-Linux platforms (launcherd is Linux-only).
 func HasDesktopSession() bool {
 	return false
+}
+
+// DesktopAvailable reports whether the current host is a desktop platform eligible
+// for AIH Launch assembly (true on macOS/Windows, false on other non-Linux OSes).
+func DesktopAvailable() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
 }
 
 // WithShutdownSignals wraps ctx to cancel on os.Interrupt.

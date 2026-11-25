@@ -54,7 +54,12 @@ func (r *launcherRuntime) bindDesktopShow(desktop *desktoptranslation.Service) {
 
 // newLauncherRuntime wires the platform app catalog, launcher opener, usage store,
 // Linux launcherd (when running on a Linux desktop session), and HTTP routes.
+// On non-desktop hosts (e.g. headless Linux servers without DISPLAY/WAYLAND_DISPLAY),
+// it returns (nil, nil, nil) without constructing any launcher state or routes.
 func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies) (*launcherRuntime, []webuiRoute, error) {
+	if !launcherd.DesktopAvailable() {
+		return nil, nil, nil
+	}
 	store, err := launcherstore.New(dependencies.AIHomeDir)
 	if err != nil {
 		return nil, nil, err
@@ -84,13 +89,9 @@ func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies
 			handler.DesktopStatus = func(_ context.Context) any {
 				return daemon.Status()
 			}
-			// Headless Linux (e.g. AWS server without DISPLAY/WAYLAND_DISPLAY) keeps
-			// supported=false and does not start a GTK child process.
-			if launcherd.HasDesktopSession() {
-				_ = daemon.Start(ctx)
-				handler.Show = func(showCtx context.Context) error {
-					return daemon.Show(showCtx)
-				}
+			_ = daemon.Start(ctx)
+			handler.Show = func(showCtx context.Context) error {
+				return daemon.Show(showCtx)
 			}
 		}
 	}

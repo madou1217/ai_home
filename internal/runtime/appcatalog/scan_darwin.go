@@ -75,7 +75,11 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 				seenRealApp[realPath] = struct{}{}
 
 				displayName := darwinBundleBaseName(name)
-				aliases := readDarwinAppAliases(fullPath, displayName)
+				meta := readDarwinAppPlist(fullPath)
+				if meta.isBackgroundHelper() {
+					continue
+				}
+				aliases := filterDarwinAppAliases(meta.Names, displayName)
 				apps = append(apps, launcher.App{
 					ID:       launcher.AppID(darwinPlatformString, realPath),
 					Name:     displayName,
@@ -127,18 +131,21 @@ func darwinBundleBaseName(dirName string) string {
 	return dirName
 }
 
-func readDarwinAppAliases(bundlePath, primaryName string) []string {
+func readDarwinAppPlist(bundlePath string) infoPlistMeta {
 	plistPath := filepath.Join(bundlePath, "Contents", "Info.plist")
 	f, err := os.Open(plistPath)
 	if err != nil {
-		return nil
+		return infoPlistMeta{}
 	}
 	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, darwinMaxPlistBytes))
 	if err != nil {
-		return nil
+		return infoPlistMeta{}
 	}
-	raw := parseInfoPlistNames(data)
+	return parseInfoPlist(data)
+}
+
+func filterDarwinAppAliases(raw []string, primaryName string) []string {
 	if len(raw) == 0 {
 		return nil
 	}

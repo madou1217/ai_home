@@ -7,11 +7,23 @@ import (
 	"strings"
 )
 
-// parseInfoPlistNames extracts non-empty CFBundleDisplayName and CFBundleName from an XML Info.plist.
-// Binary plists (bplist00) or malformed documents return nil so callers keep only the bundle basename.
-func parseInfoPlistNames(data []byte) []string {
+type infoPlistMeta struct {
+	Names          []string
+	UIElement      bool
+	BackgroundOnly bool
+}
+
+func (m infoPlistMeta) isBackgroundHelper() bool {
+	return m.UIElement || m.BackgroundOnly
+}
+
+// parseInfoPlist extracts CFBundleDisplayName, CFBundleName, LSUIElement, and LSBackgroundOnly
+// from the top-level <dict> of an XML Info.plist. Binary plists (bplist00) return zero metadata
+// so callers retain the bundle with its directory basename.
+func parseInfoPlist(data []byte) infoPlistMeta {
+	var meta infoPlistMeta
 	if len(data) == 0 || bytes.HasPrefix(data, []byte("bplist00")) {
-		return nil
+		return meta
 	}
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dictDepth := 0
@@ -20,13 +32,18 @@ func parseInfoPlistNames(data []byte) []string {
 	displayName := ""
 	bundleName := ""
 
+	finish := func() infoPlistMeta {
+		meta.Names = collectPlistNames(displayName, bundleName)
+		return meta
+	}
+
 	for {
 		tok, err := dec.Token()
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			return collectPlistNames(displayName, bundleName)
+			return finish()
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
@@ -45,22 +62,67 @@ func parseInfoPlistNames(data []byte) []string {
 				if dictDepth == 1 && arrayDepth == 0 {
 					var key string
 					if err := dec.DecodeElement(&key, &t); err != nil {
-						return collectPlistNames(displayName, bundleName)
+						return finish()
 					}
 					pendingKey = strings.TrimSpace(key)
 				}
+			case "true":
+				if dictDepth == 1 && arrayDepth == 0 {
+					switch pendingKey {
+					case "LSUIElement":
+						meta.UIElement = true
+					case "LSBackgroundOnly":
+						meta.BackgroundOnly = true
+					}
+					pendingKey = ""
+				}
+			case "false":
+				if dictDepth == 1 && arrayDepth == 0 {
+					pendingKey = ""
+				}
 			case "string":
 				if dictDepth == 1 && arrayDepth == 0 {
-					if pendingKey == "CFBundleDisplayName" || pendingKey == "CFBundleName" {
+					switch pendingKey {
+					case "CFBundleDisplayName", "CFBundleName", "LSUIElement", "LSBackgroundOnly":
 						var val string
 						if err := dec.DecodeElement(&val, &t); err != nil {
-							return collectPlistNames(displayName, bundleName)
+							return finish()
 						}
 						val = strings.TrimSpace(val)
-						if pendingKey == "CFBundleDisplayName" && displayName == "" && val != "" {
-							displayName = val
-						} else if pendingKey == "CFBundleName" && bundleName == "" && val != "" {
-							bundleName = val
+						switch pendingKey {
+						case "CFBundleDisplayName":
+							if displayName == "" && val != "" {
+								displayName = val
+							}
+						case "CFBundleName":
+							if bundleName == "" && val != "" {
+								bundleName = val
+							}
+						case "LSUIElement":
+							if isPlistTruthy(val) {
+								meta.UIElement = true
+							}
+						case "LSBackgroundOnly":
+							if isPlistTruthy(val) {
+								meta.BackgroundOnly = true
+							}
+						}
+					}
+					pendingKey = ""
+				}
+			case "integer":
+				if dictDepth == 1 && arrayDepth == 0 {
+					if pendingKey == "LSUIElement" || pendingKey == "LSBackgroundOnly" {
+						var val string
+						if err := dec.DecodeElement(&val, &t); err != nil {
+							return finish()
+						}
+						if isPlistTruthy(strings.TrimSpace(val)) {
+							if pendingKey == "LSUIElement" {
+								meta.UIElement = true
+							} else {
+								meta.BackgroundOnly = true
+							}
 						}
 					}
 					pendingKey = ""
@@ -83,7 +145,11 @@ func parseInfoPlistNames(data []byte) []string {
 			}
 		}
 	}
-	return collectPlistNames(displayName, bundleName)
+	return finish()
+}
+
+func isPlistTruthy(val string) bool {
+	return val == "1" || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes")
 }
 
 func collectPlistNames(displayName, bundleName string) []string {

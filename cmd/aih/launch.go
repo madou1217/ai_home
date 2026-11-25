@@ -262,7 +262,15 @@ func runLaunchShow(ctx context.Context, args []string, runtime commandRuntime) e
 	}
 	configured := withLocalGatewayDefaults(ctx, runtime)
 	baseURL := strings.TrimRight(strings.TrimSpace(lookupOrDefault(configured.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)), "/")
+	if baseURL == "" {
+		baseURL = defaultGatewayBaseURL
+	}
 	managementKey := strings.TrimSpace(lookupOrDefault(configured.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", ""))
+	if managementKey == "" {
+		if homeDir, err := resolveLauncherAIHomeDir(runtime); err == nil && homeDir != "" {
+			managementKey = resolveManagementKey(homeDir)
+		}
+	}
 	if managementKey == "" {
 		return errors.New("management key not configured (set AIH_SERVER_MANAGEMENT_KEY or configure local server)")
 	}

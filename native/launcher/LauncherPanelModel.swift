@@ -49,10 +49,19 @@ struct LauncherAppsResponse: Decodable {
   }
 }
 
+/// Which field won the ranking evaluation; only `.name` matches highlight ranges in `app.name`.
+enum LauncherMatchSource {
+  case none
+  case name
+  case alias
+  case subtitle
+}
+
 /// Filtered search result pairing an app with its ranking score and UTF-16 highlight ranges in `app.name`.
 struct LauncherMatchResult {
   let app: LauncherApp
   let score: Int
+  let matchSource: LauncherMatchSource
   let matchedRanges: [NSRange]
 }
 
@@ -81,7 +90,7 @@ enum LauncherRanker {
   static func filter(_ apps: [LauncherApp], query rawQuery: String) -> [LauncherMatchResult] {
     let query = normalizeQuery(rawQuery)
     if query.isEmpty {
-      return apps.map { LauncherMatchResult(app: $0, score: 0, matchedRanges: []) }
+      return apps.map { LauncherMatchResult(app: $0, score: 0, matchSource: .none, matchedRanges: []) }
     }
     let queryChars = Array(query)
     var results: [(result: LauncherMatchResult, nameLower: String, serverIndex: Int)] = []
@@ -91,7 +100,12 @@ enum LauncherRanker {
       let evaluation = evaluate(app: app, query: query, queryChars: queryChars)
       guard evaluation.score > 0 else { continue }
       results.append((
-        result: LauncherMatchResult(app: app, score: evaluation.score, matchedRanges: evaluation.ranges),
+        result: LauncherMatchResult(
+          app: app,
+          score: evaluation.score,
+          matchSource: evaluation.source,
+          matchedRanges: evaluation.ranges
+        ),
         nameLower: normalizeQuery(app.name),
         serverIndex: idx
       ))
@@ -122,15 +136,17 @@ enum LauncherRanker {
     let chars: [Character]
   }
 
-  private static func evaluate(app: LauncherApp, query: String, queryChars: [Character]) -> (score: Int, ranges: [NSRange]) {
+  private static func evaluate(app: LauncherApp, query: String, queryChars: [Character]) -> (score: Int, source: LauncherMatchSource, ranges: [NSRange]) {
     let indexed = buildIndexedChars(app.name)
     let lowerChars = indexed.map(\.lower)
     var bestScore = 0
+    var bestSource: LauncherMatchSource = .none
     var bestIndices: [Int] = []
 
     func consider(_ score: Int, _ indices: [Int]) {
       if score > bestScore {
         bestScore = score
+        bestSource = .name
         bestIndices = indices
       }
     }
@@ -179,7 +195,8 @@ enum LauncherRanker {
       if aliasMatches(Array(aliasNorm), queryChars) {
         if scoreAlias > bestScore {
           bestScore = scoreAlias
-          // Keep existing name highlight if name already partially matched; otherwise clear.
+          bestSource = .alias
+          bestIndices = []
         }
         break
       }
@@ -189,15 +206,18 @@ enum LauncherRanker {
     if bestScore == 0 {
       let subNorm = normalizeQuery(app.subtitle)
       if !subNorm.isEmpty && subNorm.contains(query) {
-        return (scoreSubtitleOnly, [])
+        return (scoreSubtitleOnly, .subtitle, [])
       }
     }
 
+    guard bestSource == .name else {
+      return (bestScore, bestSource, [])
+    }
     let ranges = bestIndices.compactMap { idx -> NSRange? in
       guard idx >= 0, idx < indexed.count else { return nil }
       return indexed[idx].nsRange
     }
-    return (bestScore, ranges)
+    return (bestScore, .name, ranges)
   }
 
   private static func buildIndexedChars(_ text: String) -> [IndexedChar] {

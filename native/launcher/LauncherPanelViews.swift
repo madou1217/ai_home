@@ -303,12 +303,14 @@ final class LauncherRowView: NSTableCellView {
         .foregroundColor: LauncherPalette.textPrimary
       ]
     )
-    let utf16Length = (app.name as NSString).length
-    for range in match.matchedRanges where range.location >= 0 && NSMaxRange(range) <= utf16Length {
-      attributed.addAttributes([
-        .foregroundColor: LauncherPalette.cyan,
-        .font: NSFont.systemFont(ofSize: 15, weight: .bold)
-      ], range: range)
+    if match.matchSource == .name {
+      let utf16Length = (app.name as NSString).length
+      for range in match.matchedRanges where range.location >= 0 && NSMaxRange(range) <= utf16Length {
+        attributed.addAttributes([
+          .foregroundColor: LauncherPalette.cyan,
+          .font: NSFont.systemFont(ofSize: 15, weight: .bold)
+        ], range: range)
+      }
     }
     nameLabel.attributedStringValue = attributed
     subtitleLabel.stringValue = app.subtitle.isEmpty ? "应用程序" : app.subtitle

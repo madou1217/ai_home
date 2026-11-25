@@ -48,6 +48,7 @@ import {
 } from '@/features/accounts/account-import-export';
 import type { ImportMode } from '@/features/accounts/account-import-export';
 import { getAccountLaunchBlockReason } from '@/features/accounts/account-view-model';
+import { formatDetectSkipSummary } from '@/features/accounts/detect-skip-summary';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import type {
   UseAccountsSnapshotHandlers,
@@ -946,7 +947,9 @@ export function useAccountActions({
         message.error('扫描本机账号失败');
         return;
       }
-      message.success(registered > 0 ? `扫描完成：新增/更新 ${registered} 个账号` : '扫描完成：没有新增账号');
+      const skipped = formatDetectSkipSummary(result?.skipped);
+      const base = registered > 0 ? `扫描完成：新增/更新 ${registered} 个账号` : '扫描完成：没有新增账号';
+      message.success(skipped ? `${base}；${skipped}` : base);
       await refreshAuthLocalSources(addJob);
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '扫描本机账号失败');

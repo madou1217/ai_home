@@ -57,6 +57,7 @@ import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import { RotatingAccountTitle } from '@/features/accounts/RotatingAccountTitle';
 import { AccountCliId } from '@/features/accounts/AccountCliId';
+import { formatDetectSkipSummary } from '@/features/accounts/detect-skip-summary';
 import {
   useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
@@ -1112,11 +1113,13 @@ export default function Accounts() {
         .map(([provider, count]) => `${provider} ${count}`)
         .join('、');
       const summary = inventory ? `本机已入库：${inventory}` : '本机暂无可识别的已登录账号';
+      const skipped = formatDetectSkipSummary(result.skipped);
+      const suffix = skipped ? `；${skipped}` : '';
       if (registered > 0) {
-        message.success(`扫描完成：新增/更新 ${registered} 个账号（${summary}）`);
+        message.success(`扫描完成：新增/更新 ${registered} 个账号（${summary}）${suffix}`);
         accountsSnapshot.requestAccountsSnapshotUpdate();
       } else {
-        message.info(`扫描完成：没有新增账号（${summary}）`);
+        message.info(`扫描完成：没有新增账号（${summary}）${suffix}`);
       }
     } catch {
       message.error('扫描本机账号失败');

@@ -543,6 +543,17 @@ aih shell doctor --shell powershell
 aih shell remove --shell powershell
 ```
 
+示例验证（2026-11-25）：
+
+| 环境 | 结果 |
+|---|---|
+| bash 3.2.57 / 5.3.20 | `status / plan / apply / apply --all / doctor / remove` 全部 exit 0；`apply --all` 在隔离 HOME 中写入 zsh/bash/fish/sh，doctor 全绿 |
+| zsh 5.9 | `aih ls buddy`、`aih ls budd`、`aih ls '*buddy*'`、`aih ls --scope codebuddy workbuddy` 全部 exit 0；6 条 shell 命令同样全部 exit 0；`aih ls *buddy*` 不加引号会 `no matches found` |
+| PowerShell 5.1 / 7.7（便携） | `apply / status / doctor / remove` 全部 exit 0，remove 后重新 apply 正常；5.1 与 7 分别写入各自 profile；`--check` / `--session` 候选正常 |
+| cmd + Clink 1.9.37 | `apply / status / doctor / remove` 全部 exit 0，remove 后重新 apply 正常；普通 cmd 的 Tab 补全已实机验证 |
+
+bash / zsh 的验证使用隔离 HOME；PowerShell 与 cmd 为真机 profile 实际应用。Clink 细节见 [Clink 支持](docs/product-integrity/clink-cmd-completion-2026-11-25.md)。
+
 支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）/ cmd（Clink）**。装上之后：
 
 - `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。

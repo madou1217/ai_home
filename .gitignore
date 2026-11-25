@@ -21,6 +21,10 @@ tmp/
 !/AGENTS.md
 !/README.md
 !/web/DESIGN.md
+# 包内入口文档：*.md 默认忽略，但随插件/扩展/设计系统一起发布的说明要入库。
+!/plugins/**/README.md
+!/web/public/**/README.md
+!/web/DESIGN_SYSTEM.md
 !/docs/
 !/docs/**
 # aih-collab built-in skill: runtime asset shipped with the CLI, not documentation.

@@ -52,19 +52,19 @@
 
   function renderSidebar() {
     sidebar.innerHTML = '';
-    for (const group of groups) {
+    groups.forEach((group, index) => {
       const link = document.createElement('a');
       link.className = 'side-link';
-      link.href = '#g-' + encodeURIComponent(group);
+      link.href = '#g-' + (index + 1);
       link.dataset.group = group;
       link.innerHTML = '<span class="dot"></span><span class="name">' + esc(group) + '</span><span class="n">' + byGroup.get(group).length + '</span>';
       link.addEventListener('click', (event) => {
         event.preventDefault();
-        const target = document.getElementById('g-' + encodeURIComponent(group));
+        const target = document.getElementById('g-' + (index + 1));
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
       sidebar.appendChild(link);
-    }
+    });
   }
 
   function cardTemplate(entry) {
@@ -94,7 +94,7 @@
       index += 1;
       const section = document.createElement('section');
       section.className = 'group';
-      section.id = 'g-' + encodeURIComponent(group);
+      section.id = 'g-' + index;
       section.dataset.group = group;
       const note = notes[group];
       section.innerHTML = '<div class="group-head"><span class="group-index">' + String(index).padStart(2, '0') + '</span>' +

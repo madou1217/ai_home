@@ -47,6 +47,29 @@
   --shadow-hover: 0 1px 0 rgba(255,255,255,0.05), 0 22px 60px rgba(0, 0, 0, 0.55);
 }
 
+/* auto：未显式选主题时跟随系统 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #070a12;
+    --bg-elev: rgba(13, 18, 30, 0.82);
+    --bg-card: #0d1220;
+    --bg-code: #070b14;
+    --grid: rgba(120, 170, 255, 0.07);
+    --text: #e8edf7;
+    --text-dim: #9aa6bd;
+    --text-faint: #6b7691;
+    --line: rgba(140, 170, 220, 0.14);
+    --line-strong: rgba(140, 170, 220, 0.26);
+    --accent: #4c9dff;
+    --accent-2: #a78bfa;
+    --accent-3: #2ee6c5;
+    --accent-soft: rgba(76, 157, 255, 0.14);
+    --shadow: 0 1px 0 rgba(255,255,255,0.03), 0 12px 32px rgba(0, 0, 0, 0.38);
+    --shadow-hover: 0 1px 0 rgba(255,255,255,0.05), 0 22px 60px rgba(0, 0, 0, 0.55);
+  }
+}
+
 html, body { margin: 0; padding: 0; }
 body {
   background: var(--bg);

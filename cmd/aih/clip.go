@@ -13,7 +13,28 @@ import (
 	"github.com/madou1217/ai_home/application/clipboard"
 	"github.com/madou1217/ai_home/internal/adapters/clipboardstore"
 	"github.com/madou1217/ai_home/internal/runtime/aihhome"
+	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
 )
+
+type cliClipboardProbe struct {
+	capability clipboardio.Capability
+}
+
+func (p cliClipboardProbe) CaptureStatus() clipboard.CaptureStatus {
+	return clipboard.CaptureStatus{
+		Supported: p.capability.Supported,
+		Running:   false,
+		Reason:    p.capability.Reason,
+	}
+}
+
+func (p cliClipboardProbe) SyncStatus() clipboard.SyncStatus {
+	return clipboard.SyncStatus{}
+}
+
+func (p cliClipboardProbe) Transports() []clipboard.TransportStatus {
+	return []clipboard.TransportStatus{}
+}
 
 func runClip(ctx context.Context, arguments []string, runtime commandRuntime) error {
 	if len(arguments) == 0 || isClipHelp(arguments[0]) {
@@ -25,10 +46,6 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 	if hasHelpToken(rest) {
 		writeClipUsage(runtime.stdout)
 		return nil
-	}
-	if subcommand == "copy" {
-		_, _ = fmt.Fprintln(runtime.stderr, "[aih clip] `aih clip copy` requires platform clipboard I/O and will be enabled in Slice 2.")
-		return cliExitCode{code: 1}
 	}
 
 	homeDir, err := resolveClipboardAIHomeDir(runtime)
@@ -45,6 +62,8 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 	if err != nil {
 		return err
 	}
+	sysIO := clipboardio.NewSystem()
+	service.SetRuntimeProbe(cliClipboardProbe{capability: sysIO.Probe()})
 
 	switch subcommand {
 	case "ls", "list":
@@ -53,12 +72,18 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 		return runClipShow(ctx, service, rest, runtime)
 	case "paste":
 		return runClipPaste(ctx, service, rest, runtime)
+	case "copy":
+		return runClipCopy(ctx, service, sysIO, rest, runtime)
 	case "pin":
 		return runClipPin(ctx, service, rest, runtime)
 	case "rm", "remove", "delete":
 		return runClipRemove(ctx, service, rest, runtime)
 	case "clear":
 		return runClipClear(ctx, service, rest, runtime)
+	case "enable":
+		return runClipSetCapture(ctx, service, sysIO, true, rest, runtime)
+	case "disable":
+		return runClipSetCapture(ctx, service, sysIO, false, rest, runtime)
 	case "status":
 		return runClipStatus(ctx, service, rest, runtime)
 	default:
@@ -357,6 +382,73 @@ func runClipPaste(ctx context.Context, service *clipboard.Service, args []string
 	}
 }
 
+func runClipCopy(ctx context.Context, service *clipboard.Service, sysIO clipboardio.Writer, args []string, runtime commandRuntime) error {
+	selector := "#1"
+	hasSelector := false
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return fmt.Errorf("unknown flag for `aih clip copy`: %s", arg)
+		}
+		if hasSelector {
+			return errors.New("`aih clip copy` accepts at most one <id|#index>")
+		}
+		selector = arg
+		hasSelector = true
+	}
+	cap := sysIO.Probe()
+	if !cap.Supported {
+		reason := cap.Reason
+		if reason == "" {
+			reason = "unsupported environment"
+		}
+		return fmt.Errorf("clipboard copy unavailable: %s", reason)
+	}
+	item, err := service.ResolveSelector(ctx, selector)
+	if err != nil {
+		return err
+	}
+	content, err := service.ReadContent(ctx, item)
+	if err != nil {
+		return err
+	}
+	switch item.Kind {
+	case clipboard.KindImage:
+		if err := sysIO.WriteImage(ctx, content.Data, content.MIME); err != nil {
+			return err
+		}
+	case clipboard.KindFile:
+		if err := sysIO.WriteFiles(ctx, item.Files); err != nil {
+			return err
+		}
+	default:
+		if err := sysIO.WriteText(ctx, string(content.Data)); err != nil {
+			return err
+		}
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "copied %s (%s, %s)\n", item.ID, item.Kind, formatClipBytes(item.ByteSize))
+	return nil
+}
+
+func runClipSetCapture(ctx context.Context, service *clipboard.Service, sysIO clipboardio.Reader, enabled bool, args []string, runtime commandRuntime) error {
+	if len(args) > 0 {
+		return fmt.Errorf("unexpected arguments: %s", strings.Join(args, " "))
+	}
+	if _, err := service.UpdateSettings(ctx, clipboard.SettingsPatch{CaptureEnabled: &enabled}); err != nil {
+		return err
+	}
+	if enabled {
+		cap := sysIO.Probe()
+		if !cap.Supported && cap.Reason != "" {
+			_, _ = fmt.Fprintf(runtime.stdout, "capture enabled (note: local capture unsupported: %s)\n", cap.Reason)
+			return nil
+		}
+		_, _ = fmt.Fprintln(runtime.stdout, "capture enabled")
+		return nil
+	}
+	_, _ = fmt.Fprintln(runtime.stdout, "capture disabled")
+	return nil
+}
+
 func runClipPin(ctx context.Context, service *clipboard.Service, args []string, runtime commandRuntime) error {
 	pinned := true
 	selector := ""
@@ -466,7 +558,11 @@ func runClipStatus(ctx context.Context, service *clipboard.Service, args []strin
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "Platform: %s\n", status.Platform)
 	_, _ = fmt.Fprintf(runtime.stdout, "Device:   %s (%s)\n", status.DeviceName, status.DeviceID)
-	_, _ = fmt.Fprintf(runtime.stdout, "Capture:  enabled=%t supported=%t running=%t\n", status.Capture.Enabled, status.Capture.Supported, status.Capture.Running)
+	if status.Capture.Reason != "" {
+		_, _ = fmt.Fprintf(runtime.stdout, "Capture:  enabled=%t supported=%t running=%t (%s)\n", status.Capture.Enabled, status.Capture.Supported, status.Capture.Running, status.Capture.Reason)
+	} else {
+		_, _ = fmt.Fprintf(runtime.stdout, "Capture:  enabled=%t supported=%t running=%t\n", status.Capture.Enabled, status.Capture.Supported, status.Capture.Running)
+	}
 	_, _ = fmt.Fprintf(runtime.stdout, "Sync:     enabled=%t target=%s\n", status.Sync.Enabled, status.Sync.TargetProfileID)
 	_, _ = fmt.Fprintf(runtime.stdout, "Items:    %d total (%d pinned)\n", status.ItemCount, status.PinnedCount)
 	if status.KeyFingerprint != "" {
@@ -484,9 +580,11 @@ func writeClipUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  aih clip ls [--limit 20] [--kind text|link|image|file] [--json]")
 	_, _ = fmt.Fprintln(w, "  aih clip show <id|#序号> [--json] [--raw]")
 	_, _ = fmt.Fprintln(w, "  aih clip paste [<id|#序号>] [--stdout] [--json]")
+	_, _ = fmt.Fprintln(w, "  aih clip copy [<id|#序号>]")
 	_, _ = fmt.Fprintln(w, "  aih clip pin <id|#序号> [--off]")
 	_, _ = fmt.Fprintln(w, "  aih clip rm <id|#序号>...")
 	_, _ = fmt.Fprintln(w, "  aih clip clear --yes [--all]")
+	_, _ = fmt.Fprintln(w, "  aih clip enable | disable")
 	_, _ = fmt.Fprintln(w, "  aih clip status [--json]")
 }
 

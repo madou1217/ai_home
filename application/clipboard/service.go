@@ -169,7 +169,20 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 		item.Width = input.Width
 		item.Height = input.Height
 		item.Thumbnail = input.Thumbnail
-		item.Preview = buildImagePreview(mime, input.Width, input.Height, item.ByteSize)
+		if len(item.Thumbnail) == 0 || item.Width == 0 || item.Height == 0 {
+			if thumb, w, h, thumbErr := GenerateThumbnail(input.Data); thumbErr == nil {
+				if item.Width == 0 {
+					item.Width = w
+				}
+				if item.Height == 0 {
+					item.Height = h
+				}
+				if len(item.Thumbnail) == 0 {
+					item.Thumbnail = thumb
+				}
+			}
+		}
+		item.Preview = buildImagePreview(mime, item.Width, item.Height, item.ByteSize)
 		relPath, writeErr := s.blobs.Write(item.SHA256, input.Data)
 		if writeErr != nil {
 			return IngestResult{}, writeErr

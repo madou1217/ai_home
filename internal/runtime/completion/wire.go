@@ -444,6 +444,18 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		clipboardLister: func(_ string) []clipboardChoice {
 			return listClipboardCandidates(aiHome, hostAIHome)
 		},
+		clientKeyLister: func() []namedChoice {
+			return listClientKeys(aiHome)
+		},
+		backupTargetLister: func() []namedChoice {
+			return listBackupTargets(aiHome)
+		},
+		failureSignalLister: func() []namedChoice {
+			return listFailureSignals(aiHome)
+		},
+		failureKindLister: func() []string {
+			return listFailurePolicyKinds(aiHome)
+		},
 		nativeFlagLister: func(provider, current string) []nativeFlagEntry {
 			return filterNativeFlags(listNativeFlags(environment, provider), current)
 		},

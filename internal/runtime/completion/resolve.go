@@ -19,7 +19,7 @@ var accountPositionActions = map[string]bool{
 
 var sessionPositionActions = map[string]bool{"resume": true, "fork": true}
 
-var modelValueFlags = map[string]string{"--model": "model", "--model-alias": "alias"}
+var modelValueFlags = map[string]string{"--model": "model", "-m": "model", "--model-alias": "alias"}
 
 var peerStateCandidates = []namedSummary{
 	{Name: "pending", Summary: "待投递"},
@@ -76,7 +76,7 @@ func isManagedValueFlag(flag string, prior []string) bool {
 		}
 	}
 	switch flag {
-	case "--provider", "--scope", "--account", "--model", "--model-alias":
+	case "--provider", "--scope", "--account", "--model", "-m", "--model-alias":
 		return true
 	case "--mcp":
 		// 只有 Provider 启动位上的 --mcp 是 aih 自己解析的名单。

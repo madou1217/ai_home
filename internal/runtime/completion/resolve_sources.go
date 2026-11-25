@@ -258,6 +258,21 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 			target.add(flag, describeFlag(flag), groupFlag, "")
 		}
 	}
+	// codex takeover 的参数是 thread id（原生会话 id），不是账号。
+	if head == "codex" && action == "takeover" && len(prior) == 2 {
+		addSessionIds(target, context, head, "", current)
+		for _, flag := range listProviderActionFlags(action) {
+			target.add(flag, describeFlag(flag), groupFlag, "")
+		}
+		return target.items
+	}
+	// agy acp / session 有自己的旗标面，不能被 Provider 启动旗标覆盖。
+	if head == "agy" && (action == "acp" || action == "session") && len(prior) >= 3 {
+		for _, flag := range listProviderActionFlags(action) {
+			target.add(flag, describeFlag(flag), groupFlag, "")
+		}
+		return target.items
+	}
 	addSessionFlags(target, head)
 	return target.items
 }

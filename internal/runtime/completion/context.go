@@ -73,6 +73,12 @@ type mcpChoice struct {
 	Description string
 }
 
+// namedChoice is a generic value + description pair for locally stored ids.
+type namedChoice struct {
+	Value       string
+	Description string
+}
+
 // clipboardChoice is one selectable clipboard item id prefix and preview summary.
 type clipboardChoice struct {
 	Value       string
@@ -96,6 +102,10 @@ type resolverContext struct {
 	remoteTargetLister    func(request remoteTargetRequest) []remoteTargetChoice
 	workspaceLister       func(request workspaceRequest) []remoteTargetChoice
 	clipboardLister       func(current string) []clipboardChoice
+	clientKeyLister       func() []namedChoice
+	backupTargetLister    func() []namedChoice
+	failureSignalLister   func() []namedChoice
+	failureKindLister     func() []string
 	nativeFlagLister      func(provider, current string) []nativeFlagEntry
 	nativeFlagValueLister func(provider, flag string) []string
 	aihServerProfileID    string

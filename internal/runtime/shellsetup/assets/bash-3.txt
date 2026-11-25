@@ -67,6 +67,7 @@ _aih_complete() {
     else
       # macOS 自带 Bash 3.2 没有 compopt，保留路径及空格转义。
       while IFS= read -r _aih_line; do
+        [ -z "$_aih_line" ] && continue
         [[ -d "$_aih_line" ]] && _aih_line="${_aih_line%/}/"
         case "${COMP_WORDS[COMP_CWORD]}" in
           \"*)

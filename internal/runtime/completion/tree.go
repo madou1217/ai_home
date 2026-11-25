@@ -30,6 +30,10 @@ const (
 	kindRemoteServer    valueKind = "remote_server"
 	kindRemoteWorkspace valueKind = "remote_workspace"
 	kindClipboardItem   valueKind = "clipboard_item"
+	kindClientKey       valueKind = "client_key"
+	kindBackupTarget    valueKind = "backup_target"
+	kindFailureSignal   valueKind = "failure_signal"
+	kindFailureKind     valueKind = "failure_kind"
 	kindFile            valueKind = "file"
 	kindFree            valueKind = "free"
 )
@@ -386,6 +390,30 @@ func emitTreeValues(target *collector, context *resolverContext, state *treeStat
 		if context.clipboardLister != nil {
 			for _, item := range context.clipboardLister(current) {
 				target.add(item.Value, item.Description, groupOther, item.Description)
+			}
+		}
+	case kindClientKey:
+		if context.clientKeyLister != nil {
+			for _, item := range context.clientKeyLister() {
+				target.add(item.Value, item.Description, groupOther, item.Description)
+			}
+		}
+	case kindBackupTarget:
+		if context.backupTargetLister != nil {
+			for _, item := range context.backupTargetLister() {
+				target.add(item.Value, item.Description, groupOther, item.Description)
+			}
+		}
+	case kindFailureSignal:
+		if context.failureSignalLister != nil {
+			for _, item := range context.failureSignalLister() {
+				target.add(item.Value, item.Description, groupOther, item.Description)
+			}
+		}
+	case kindFailureKind:
+		if context.failureKindLister != nil {
+			for _, kind := range context.failureKindLister() {
+				target.add(kind, "失败分类", groupOther, "")
 			}
 		}
 	case kindFile, kindFree, kindNone:

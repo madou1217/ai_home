@@ -25,6 +25,7 @@ var sessionFlags = []namedSummary{
 	{Name: "-M", Summary: "共享本项目最近的持久会话（--aih-mirror）"},
 	{Name: "--aih-mirror", Summary: "共享本项目最近的持久会话"},
 	{Name: "--remote", Summary: "指定远程主机名（远程粘贴通道）"},
+	{Name: "-m", Summary: "本次启动请求的模型名（--model 简写）"},
 	{Name: "--model", Summary: "本次启动请求的模型名"},
 	{Name: "--model-alias", Summary: "本次启动的临时转发：A 请求实际用 B（不落库）"},
 	{Name: "--help", Summary: "打印该 Provider 的用法"},
@@ -83,12 +84,18 @@ var providerActionExtras = map[string][]namedSummary{
 		{Name: "policy", Summary: "查看/设置 exec 沙箱策略"},
 		{Name: "gateway-auth", Summary: "管理 Codex 网关认证配置"},
 		{Name: "model", Summary: "查看/设置 Codex 默认模型"},
+		{Name: "takeover", Summary: "接管卡住的 Codex thread（结束持锁进程）"},
+	},
+	"agy": {
+		{Name: "acp", Summary: "一次性 ACP 提示词交互（可经远程 Connector）"},
+		{Name: "session", Summary: "常驻 AGY 会话：open/ls/show/say/tail/resume/close"},
 	},
 }
 
 // providerActionSubcommands 是动作自己的固定取值层。
 var providerActionSubcommands = map[string][]string{
 	"auto-switch": {"on", "off", "status"},
+	"session":     {"open", "ls", "list", "show", "say", "send", "tail", "resume", "close"},
 }
 
 // providerActionFlags 按动作名声明通用选项。
@@ -109,6 +116,12 @@ var providerActionFlags = map[string][]string{
 	"detect":        {"--json"},
 	"delete":        {"--yes"},
 	"deleteall":     {"--yes"},
+	"takeover":      {"--force"},
+	"acp":           {"--cwd", "--command", "--timeout", "--auto-approve", "--connector-url", "--workspace-root", "--connector-token-env"},
+	"session": {
+		"--json", "--no-wait", "--follow", "--after", "--title", "--effort",
+		"--connection", "--root", "--model", "--account-home", "--binary", "--local",
+	},
 }
 
 // listProviderActions 返回某个 Provider 的动作候选：通用动作 + 该 CLI 的界面动作。

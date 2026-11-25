@@ -67,6 +67,24 @@
    - 清理：API remove 后链接消失，Gemini 列表只剩原有 `codex`；临时 server 和临时根目录已删除。
    - 范围：这是临时 server + 当前 dist 的端到端验证，不是 Windows 已安装服务/开机自启实例。
 
+7. **Windows 已安装服务端到端已验证（AihServerWindows 计划任务）。**
+   - 已安装任务 `AihServerWindows` 原本为 `Disabled`；`run.cmd` 启动
+     `.ai_home\bin\aih-server.exe`，WebUI 目录为 `.ai_home\web\dist`。
+   - 替换为本次构建的 server 和当前 dist，手动启用/运行任务；服务在 9527 ready。
+   - Server API：link 安装成功，返回 `mode:"link"`；目标为 Junction。
+   - WebUI：服务自身托管的 `/ui` 已授权，Skill 页显示 `remote-realmachine · gemini · 已启用`，
+     安装弹窗包含「使用链接投影」复选框。
+   - Provider 发现：在 **Limited 完整性**的一次性计划任务（与桌面用户语义一致）里，
+     `gemini skills list --all` 列出 `remote-realmachine`。
+     从 elevated SSH 直接访问同一个 Junction 会报 `untrusted mount point`；
+     这是 Windows 完整性边界，不是链接失效。
+   - 发现：现有 `run.cmd` 没有设置 `AIH_PACKAGE_ROOT`，导致内置源安装返回
+     `native_resource_source_missing`；本轮为测试临时补了 package root，测试后已恢复。
+     安装器/run.cmd 生成侧需要补这个环境变量（或从 package root 启动）。
+   - 清理：API remove 后链接消失；停止服务、禁用任务、恢复 run.cmd、删除临时 package root /
+     快照 / 暂存；真实 DB 为 `(no managed skills)`。
+   - 安装后的 server / web 保留新构建；任务恢复为原本的 `Disabled`。
+
 ## 测试方法
 
 - macOS：在项目或用户 skills 目录放一个真实目录和一个符号链接，启动对应 AIH relay TUI，

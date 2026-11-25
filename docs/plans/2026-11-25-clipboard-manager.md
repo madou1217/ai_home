@@ -306,3 +306,29 @@ macOS 原生 Quick Orbit 之外，补齐 Windows/Linux 的桌面入口，不依�
 - WebUI 同步：Paste Nexus 设置对话框读取真实 capture/sync/目标/指纹/设备/transports，开关 PATCH 到 `/v1/management/webui/clipboard/settings`；AES-256-GCM 同步此前已与 AWS 双向验证。
 
 边界：Windows/Linux 的桌面入口是浏览器 app 窗口 + 系统启动器，不是 AppKit/WinForms 原生浮层；原生 HUD 浮层目前仅 macOS。账号凭据沿用浏览器同源 profile，CLI 不把管理密钥写入 URL。
+
+## 18. 文档预览与直接 P2P 验证（2026-11-25）
+
+### 常见文档预览
+
+新增 `internal/runtime/clipboardpreview` 与两个只读接口：
+
+- `GET /v1/management/webui/clipboard/items/{id}/preview`：文件引用返回 `text|image|pdf|none`；
+- `GET /v1/management/webui/clipboard/items/{id}/file?index=N`：仅流式返回图片/PDF/文本文件（≤16 MiB，inline，nosniff）。
+
+支持：纯文本/代码/Markdown/JSON/CSV/日志/YAML/TOML/XML/HTML/CSS/JS/TS/Python/Go/Shell/SQL；DOCX/XLSX/PPTX 用 Go 标准库解包 XML 提取正文（每段有大小上限）；PDF 由浏览器/WKWebView 内嵌渲染并提供「Open PDF」回退；图片文件直接预览。旧式 `.doc/.xls/.ppt` 与 PDF 正文抽取不做，展示元数据。
+
+页面在选中文件条目时按需拉取 preview；文本卡片和右侧 Preview 显示提取内容，DOCX 实测输出：
+
+```
+AIH DOCX preview probe
+Second paragraph 中文内容
+```
+
+### 直接 P2P（Server ↔ Server）
+
+在同一台机器启动第二个 `aih-server`（127.0.0.1:19529，独立 `AIH_HOME_DIR`），主 Server 的 control-plane profile 指向它的直连地址与密钥，不经过任何中继；同步 36 条真实条目，主端探测文本 `direct p2p probe …` 在 peer 端可检索到，SHA/封包一致。说明 server-relay、局域网直连、WireGuard/Tailscale 地址都走同一条 `POST /sync/items` 加密通道；只有自动发现/配对仍是后续工作。
+
+### Windows/Linux 捕获代码
+
+`clipboard_windows.go`（PowerShell/STA）与 `clipboard_linux.go`（wl-paste/xclip）随 `aih-server` 交叉编译：Windows amd64、Linux amd64/arm64 均构建通过；Linux arm64 二进制在 AWS 执行 `clip orbit --print` 成功。Windows 真机剪贴板读写尚未在本轮执行（需 Windows 主机上的真实剪贴板）。

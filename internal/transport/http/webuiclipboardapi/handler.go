@@ -25,12 +25,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/clipboard"
+	"github.com/madou1217/ai_home/internal/runtime/clipboardpreview"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardruntime"
 )
 
@@ -306,6 +308,32 @@ func (h *Handler) handleItemSubroute(w http.ResponseWriter, r *http.Request, tai
 		}
 		h.handleItemContent(w, r, id)
 
+	case strings.HasSuffix(tail, "/preview"):
+		id := strings.TrimSuffix(tail, "/preview")
+		if id == "" || strings.Contains(id, "/") {
+			writeError(w, http.StatusNotFound, "not_found", "没有这个剪贴板路由")
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+			return
+		}
+		h.handleItemPreview(w, r, id)
+
+	case strings.HasSuffix(tail, "/file"):
+		id := strings.TrimSuffix(tail, "/file")
+		if id == "" || strings.Contains(id, "/") {
+			writeError(w, http.StatusNotFound, "not_found", "没有这个剪贴板路由")
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+			return
+		}
+		h.handleItemFile(w, r, id)
+
 	case strings.HasSuffix(tail, "/pin"):
 		id := strings.TrimSuffix(tail, "/pin")
 		if id == "" || strings.Contains(id, "/") {
@@ -398,6 +426,57 @@ func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id s
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content.Data)
+}
+
+func (h *Handler) handleItemPreview(w http.ResponseWriter, r *http.Request, id string) {
+	item, err := h.Service.Get(r.Context(), id)
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	if item.Kind != clipboard.KindFile {
+		writeError(w, http.StatusBadRequest, "clipboard_preview_not_file", "只有文件引用支持文档预览")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"preview": clipboardpreview.Describe(item.Files)})
+}
+
+func (h *Handler) handleItemFile(w http.ResponseWriter, r *http.Request, id string) {
+	item, err := h.Service.Get(r.Context(), id)
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	if item.Kind != clipboard.KindFile {
+		writeError(w, http.StatusBadRequest, "clipboard_file_not_file", "只有文件引用支持文件流")
+		return
+	}
+	index := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("index")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_index", "index 必须是非负整数")
+			return
+		}
+		index = parsed
+	}
+	path, mime, ok := clipboardpreview.Streamable(item.Files, index)
+	if !ok {
+		writeError(w, http.StatusNotFound, "clipboard_file_unavailable", "文件不可用或类型不支持流式预览")
+		return
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "clipboard_file_unavailable", "文件不可读")
+		return
+	}
+	defer func() { _ = file.Close() }()
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.CopyN(w, file, clipboardpreview.MaxFileBytes)
 }
 
 func (h *Handler) handleDeleteItem(w http.ResponseWriter, r *http.Request, id string) {

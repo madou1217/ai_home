@@ -345,8 +345,9 @@ Accounts 页现有的 Provider 级条与账号行按钮无需改代码。
    非 http(s)。插件网络目标必须在 `permissions.network` 内。
 5. **输出脱敏**：`output` 去掉 URL 凭据、把宿主 HOME 替换为 `~`、截断长度；
    不返回原始 stdout/stderr。
-6. **审计**：每次 operate 写 `plugins/audit.log`：pluginId、appId、action、
-   ok、耗时、错误码；不写代理 URL、不写凭据。
+6. **审计**：每次 operate 写 `plugins/audit.log`：pluginId、jobId、appId、
+   action、ok、changed、proxyUsed、durationMs；失败时追加脱敏截断的 error 与
+   failedStep。不写代理 URL、不写凭据。
 7. **不执行插件命令**：宿主只调用插件 RPC，不把 `steps`/`output` 当命令。
 8. **超时**：describe/status 快速失败；install/update 30 分钟，uninstall 5 分钟；
    超时即失败并释放代理租约。

@@ -9,7 +9,8 @@
 //  3. 只有合同声明层（core/providers/）与本命令自身可以写这些根；其它 Go
 //     代码必须查 providerroot.ConfigDir / ConfigPath / NativePath。
 //
-// 不扫描 _test.go、注释与非 Go 文件，也不做动态拼接分析。
+// 只折叠由字符串字面量、括号和 + 组成的常量拼接；变量/函数结果不做数据流分析。
+// 不扫描 _test.go、注释与非 Go 文件。
 package main
 
 import (
@@ -95,23 +96,53 @@ func run(root string) error {
 		if parseErr != nil {
 			return fmt.Errorf("%s: %w", rel, parseErr)
 		}
+		parents := map[ast.Node]ast.Node{}
+		ast.Walk(&parentVisitor{parents: parents}, file)
 		ast.Inspect(file, func(node ast.Node) bool {
-			literal, ok := node.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				return true
-			}
-			value, unquoteErr := strconv.Unquote(literal.Value)
-			if unquoteErr != nil {
-				return true
-			}
-			line := fileSet.Position(literal.Pos()).Line
-			if _, invalid := invalidRootNames[value]; invalid {
-				problems = append(problems, fmt.Sprintf("%s:%d: 已知错误的配置根 %q", rel, line, value))
-				return true
-			}
-			if matched := matchedRoot(value, roots); matched != "" {
-				problems = append(problems, fmt.Sprintf(
-					"%s:%d: Provider 配置根 %q 必须查 providerroot（合同根 %q）", rel, line, value, matched))
+			switch typed := node.(type) {
+			case *ast.BasicLit:
+				if typed.Kind != token.STRING {
+					return true
+				}
+				value, unquoteErr := strconv.Unquote(typed.Value)
+				if unquoteErr != nil {
+					return true
+				}
+				line := fileSet.Position(typed.Pos()).Line
+				if _, invalid := invalidRootNames[value]; invalid {
+					problems = append(problems, fmt.Sprintf("%s:%d: 已知错误的配置根 %q", rel, line, value))
+					return true
+				}
+				if matched := matchedRoot(value, roots); matched != "" {
+					problems = append(problems, fmt.Sprintf(
+						"%s:%d: Provider 配置根 %q 必须查 providerroot（合同根 %q）", rel, line, value, matched))
+				}
+			case *ast.BinaryExpr:
+				if typed.Op != token.ADD {
+					return true
+				}
+				if top := topAdditive(typed, parents); top != typed {
+					if expr, ok := top.(ast.Expr); ok {
+						if _, foldable := foldStringLiteral(expr); foldable {
+							return true
+						}
+					}
+				}
+				// 先把常量字符串拼接折叠成最终值；如果表达式里已经有会被
+				// BasicLit 规则单独报告的字面量，就不再重复报一次。
+				value, ok := foldStringLiteral(typed)
+				if !ok || containsProtectedLiteral(typed, roots) {
+					return true
+				}
+				line := fileSet.Position(typed.Pos()).Line
+				if _, invalid := invalidRootNames[value]; invalid {
+					problems = append(problems, fmt.Sprintf("%s:%d: 已知错误的配置根 %q（字符串拼接）", rel, line, value))
+					return true
+				}
+				if matched := matchedRoot(value, roots); matched != "" {
+					problems = append(problems, fmt.Sprintf(
+						"%s:%d: Provider 配置根 %q 必须查 providerroot（合同根 %q；字符串拼接）", rel, line, value, matched))
+				}
 			}
 			return true
 		})
@@ -146,6 +177,29 @@ func runSelfTest() error {
 			source:     "package fixture\n\nvar bad = \".claude/settings.json\"\n",
 			wantError:  true,
 			wantSubstr: "Provider 配置根 \".claude/settings.json\"",
+		},
+		{
+			name:       "dynamic_concat_root",
+			source:     "package fixture\n\nvar bad = \".\" + \"claude\"\n",
+			wantError:  true,
+			wantSubstr: "字符串拼接",
+		},
+		{
+			name:       "dynamic_concat_prefix",
+			source:     "package fixture\n\nvar bad = \".\" + \"claude\" + \"/settings.json\"\n",
+			wantError:  true,
+			wantSubstr: "字符串拼接",
+		},
+		{
+			name:      "dynamic_concat_clean",
+			source:    "package fixture\n\nvar ok = \".\" + \"claude\" + \".json\"\n",
+			wantError: false,
+		},
+		{
+			name:       "dynamic_concat_nested",
+			source:     "package fixture\n\nvar prefix = \".\"\nvar bad = prefix + (\".\" + \"claude\")\n",
+			wantError:  true,
+			wantSubstr: "字符串拼接",
 		},
 		{
 			name:       "known_invalid_root",
@@ -185,6 +239,103 @@ func runSelfTest() error {
 		}
 	}
 	return nil
+}
+
+// parentVisitor 记录 AST 父节点，用于判断一个 + 表达式是否只是外层拼接的子表达式。
+type parentVisitor struct {
+	parents map[ast.Node]ast.Node
+	stack   []ast.Node
+}
+
+func (visitor *parentVisitor) Visit(node ast.Node) ast.Visitor {
+	if node == nil {
+		if len(visitor.stack) > 0 {
+			visitor.stack = visitor.stack[:len(visitor.stack)-1]
+		}
+		return visitor
+	}
+	if len(visitor.stack) > 0 {
+		visitor.parents[node] = visitor.stack[len(visitor.stack)-1]
+	}
+	visitor.stack = append(visitor.stack, node)
+	return visitor
+}
+
+// topAdditive 返回包住 node 的最外层 + 拼接（允许跨括号）。
+func topAdditive(node ast.Node, parents map[ast.Node]ast.Node) ast.Node {
+	top := node
+	for parent := parents[node]; parent != nil; parent = parents[parent] {
+		switch typed := parent.(type) {
+		case *ast.ParenExpr:
+			node = parent
+		case *ast.BinaryExpr:
+			if typed.Op != token.ADD {
+				return top
+			}
+			top = typed
+			node = parent
+		default:
+			return top
+		}
+	}
+	return top
+}
+
+// foldStringLiteral 折叠由字符串字面量、括号和 + 组成的常量表达式。
+func foldStringLiteral(expr ast.Expr) (string, bool) {
+	switch typed := expr.(type) {
+	case *ast.BasicLit:
+		if typed.Kind != token.STRING {
+			return "", false
+		}
+		value, err := strconv.Unquote(typed.Value)
+		if err != nil {
+			return "", false
+		}
+		return value, true
+	case *ast.ParenExpr:
+		return foldStringLiteral(typed.X)
+	case *ast.BinaryExpr:
+		if typed.Op != token.ADD {
+			return "", false
+		}
+		left, ok := foldStringLiteral(typed.X)
+		if !ok {
+			return "", false
+		}
+		right, ok := foldStringLiteral(typed.Y)
+		if !ok {
+			return "", false
+		}
+		return left + right, true
+	}
+	return "", false
+}
+
+// containsProtectedLiteral 判断表达式内是否已有会被 BasicLit 规则单独报告的根，
+// 避免同一个表达式在字面量和拼接两条路径上重复报错。
+func containsProtectedLiteral(expr ast.Expr, roots []string) bool {
+	found := false
+	ast.Inspect(expr, func(node ast.Node) bool {
+		literal, ok := node.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+		value, err := strconv.Unquote(literal.Value)
+		if err != nil {
+			return true
+		}
+		if _, invalid := invalidRootNames[value]; invalid {
+			found = true
+			return false
+		}
+		if matchedRoot(value, roots) != "" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // protectedRoots 从 Provider 合同派生所有受保护的配置/数据根。

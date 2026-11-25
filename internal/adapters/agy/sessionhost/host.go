@@ -625,6 +625,13 @@ func (p *Process) Close() {
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 	}
+	if p.remote != nil {
+		if p.followerCtx != nil {
+			p.followerCtx()
+			p.followerCtx = nil
+		}
+		p.remote.killRemote(context.Background())
+	}
 }
 
 // EventsAfter 返回指定游标之后的事件副本；events 只保留最近一段。

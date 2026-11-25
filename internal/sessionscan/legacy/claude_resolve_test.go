@@ -78,7 +78,7 @@ func TestResolveClaudeProjectPathBacktracksPastShorterPrefix(t *testing.T) {
 
 func TestReadClaudeProjectUsesRecordedDeletedCwd(t *testing.T) {
 	home := t.TempDir()
-	cwd := "/private/tmp/aih-acp-probe-test-does-not-exist/e2e-work"
+	cwd := filepath.Join(home, "deleted-work")
 	if isDirectory(cwd) {
 		t.Fatalf("test cwd unexpectedly exists: %s", cwd)
 	}

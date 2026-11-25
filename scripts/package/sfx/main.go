@@ -1,7 +1,7 @@
 package main
 
 import (
-	"archive/zip"
+	"archive/tar"
 	"bytes"
 	_ "embed"
 	"encoding/json"
@@ -15,9 +15,11 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/ulikunitz/xz"
 )
 
-//go:embed payload.zip
+//go:embed payload.tar.xz
 var payload []byte
 
 const (
@@ -132,51 +134,56 @@ func extractWithLock(dest string) error {
 	}
 	defer os.RemoveAll(staging)
 
-	reader, err := zip.NewReader(bytes.NewReader(payload), int64(len(payload)))
+	xzReader, err := xz.NewReader(bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("内嵌安装包损坏: %w", err)
 	}
-	for _, file := range reader.File {
-		name := path.Clean(strings.TrimPrefix(file.Name, "./"))
+	reader := tar.NewReader(xzReader)
+	for {
+		header, nextErr := reader.Next()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			return fmt.Errorf("内嵌安装包损坏: %w", nextErr)
+		}
+		name := path.Clean(strings.TrimPrefix(header.Name, "./"))
 		if name == "." || name == "" {
 			continue
 		}
 		if strings.HasPrefix(name, "../") || path.IsAbs(name) {
-			return fmt.Errorf("安装包包含非法路径: %s", file.Name)
+			return fmt.Errorf("安装包包含非法路径: %s", header.Name)
 		}
 		target := filepath.Join(staging, filepath.FromSlash(name))
 		if !strings.HasPrefix(target, staging+string(os.PathSeparator)) && target != staging {
-			return fmt.Errorf("安装包包含越界路径: %s", file.Name)
+			return fmt.Errorf("安装包包含越界路径: %s", header.Name)
 		}
-		mode := file.Mode()
+		mode := os.FileMode(header.Mode) & os.ModePerm
 		if mode == 0 {
-			if file.FileInfo().IsDir() {
+			if header.Typeflag == tar.TypeDir {
 				mode = 0o755
 			} else {
 				mode = 0o644
 			}
 		}
-		if file.FileInfo().IsDir() {
+		if header.Typeflag == tar.TypeDir {
 			if err := os.MkdirAll(target, mode); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			return fmt.Errorf("安装包包含不支持的条目类型: %s", header.Name)
 		}
-		source, err := file.Open()
-		if err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
 		output, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		if err != nil {
-			source.Close()
 			return err
 		}
-		_, copyErr := io.Copy(output, source)
+		_, copyErr := io.Copy(output, reader)
 		closeErr := output.Close()
-		source.Close()
 		if copyErr != nil {
 			return copyErr
 		}

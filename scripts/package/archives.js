@@ -51,13 +51,20 @@ function createZip(bundleRoot, outputPath) {
 }
 
 /**
- * 生成 SFX 的内嵌载荷：zip 的条目必须是 bundle 内的相对路径，
- * Go 端解包后直接得到 runtime/、bin/、web/ 布局。
+ * 生成 SFX 的内嵌载荷：tar.xz 保留目录/权限且比 zip deflate 小约 25%。
+ * 统一走 7za，避免构建机是否预装 xz/tar 影响发布。
  */
-function createPayloadZip(bundleRoot, outputPath) {
+function createPayloadTarXz(bundleRoot, outputPath) {
   ensureDir(path.dirname(outputPath));
   removeIfExists(outputPath);
-  run(sevenZipPath(), ['a', '-tzip', '-mx=7', outputPath, '.'], { cwd: bundleRoot });
+  const tarPath = path.join(path.dirname(outputPath), 'payload.tar');
+  removeIfExists(tarPath);
+  run(sevenZipPath(), ['a', '-ttar', tarPath, '.'], { cwd: bundleRoot });
+  try {
+    run(sevenZipPath(), ['a', '-txz', '-mx=9', outputPath, tarPath]);
+  } finally {
+    removeIfExists(tarPath);
+  }
   return outputPath;
 }
 
@@ -69,7 +76,7 @@ function writeChecksum(filePath) {
 }
 
 module.exports = {
-  createPayloadZip,
+  createPayloadTarXz,
   createTarGz,
   createZip,
   sevenZipPath,

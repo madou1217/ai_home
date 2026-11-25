@@ -5,7 +5,7 @@
  * 构建可分发的 AI Home 安装包。
  *
  * 两种产物（每个平台各一份）：
- *   1. aih-<version>-<target>.run / .exe  单文件自解压启动器（Go + 内嵌 zip）
+ *   1. aih-<version>-<target>.run / .exe  单文件自解压启动器（Go + 内嵌 tar.xz）
  *   2. aih-<version>-<target>.tar.gz/.zip  便携目录归档（解压即用）
  *
  * 分发包自带 Node 22 运行时（含 npm）、构建好的 WebUI 和生产依赖，

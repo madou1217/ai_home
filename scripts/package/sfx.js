@@ -17,7 +17,7 @@ function renderSource(source, values) {
 }
 
 /**
- * 把 bundle 打成单个自解压可执行文件：Go 启动器 + 内嵌 zip 载荷。
+ * 把 bundle 打成单个自解压可执行文件：Go 启动器 + 内嵌 tar.xz 载荷。
  * 首次运行解包到 <AIH_HOME_DIR>/pkg/<version>-<target>-<sha8>/，之后直接 exec。
  */
 function buildSelfExtractingExecutable(options = {}) {
@@ -31,12 +31,12 @@ function buildSelfExtractingExecutable(options = {}) {
   removeIfExists(buildDir);
   ensureDir(buildDir);
 
-  const payload = path.join(buildDir, 'payload.zip');
-  require('./archives').createPayloadZip(bundleRoot, payload);
+  const payload = path.join(buildDir, 'payload.tar.xz');
+  require('./archives').createPayloadTarXz(bundleRoot, payload);
   const payloadSha = sha256File(payload);
   log(`[pkg] SFX payload ${(fs.statSync(payload).size / 1024 / 1024).toFixed(1)} MiB (${payloadSha.slice(0, 12)})`);
 
-  for (const name of ['main.go', 'run_unix.go', 'run_windows.go', 'go.mod']) {
+  for (const name of ['main.go', 'run_unix.go', 'run_windows.go', 'go.mod', 'go.sum']) {
     fs.copyFileSync(path.join(SFX_SOURCE_DIR, name), path.join(buildDir, name));
   }
   const mainSource = fs.readFileSync(path.join(buildDir, 'main.go'), 'utf8');

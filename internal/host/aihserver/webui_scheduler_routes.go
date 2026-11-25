@@ -105,7 +105,6 @@ func buildWebUISchedulerRoutesWithPorts(
 		// 浏览器同构别名由 router 统一生成。
 		{Pattern: "GET " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
 		{Pattern: "POST " + webuiwindowactivationapi.Path + "/{provider}/{accountRef}/window-activation", Handler: windowActivation},
-
 	}, nil
 }
 

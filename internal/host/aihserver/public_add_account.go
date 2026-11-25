@@ -12,9 +12,9 @@ import (
 // staticAddAuthModes 是「立即建号」的认证方式：Node 的 add 入口曾把这三类分流到
 // 静态凭据入库，其余才启动 OAuth 作业。分流放在 Go，避免浏览器感知两种语义。
 var staticAddAuthModes = map[string]struct{}{
-	"api-key":     {},
-	"auth-token":  {},
-	"vertex-ai":   {},
+	"api-key":    {},
+	"auth-token": {},
+	"vertex-ai":  {},
 }
 
 const addAccountBodyLimit = 1 << 20

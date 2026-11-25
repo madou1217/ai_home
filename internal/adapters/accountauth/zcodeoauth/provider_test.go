@@ -240,7 +240,6 @@ func TestBuildArtifactsUseRegionKeyPrefix(t *testing.T) {
 	}
 }
 
-
 func TestBeginWithOptionsSwitchesRegionAndExposesState(t *testing.T) {
 	for _, tc := range []struct {
 		name         string

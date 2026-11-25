@@ -680,7 +680,6 @@ func TestCompleteIsIdempotentForConcurrentCalls(t *testing.T) {
 	}
 }
 
-
 type optionsStateStubProvider struct {
 	id          string
 	lastOptions accountauth.BeginOptions
@@ -779,7 +778,6 @@ func TestStartWithOptionsAndCompleteByState(t *testing.T) {
 		t.Fatalf("registrar.calls = %d, want 1", registrar.calls)
 	}
 }
-
 
 func TestCompleteWithArtifactsCompletesPendingJob(t *testing.T) {
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())

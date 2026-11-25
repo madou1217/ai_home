@@ -242,7 +242,6 @@ func TestImportIDELocalAndRefreshToken(t *testing.T) {
 	}
 }
 
-
 func TestBeginWithOptionsRefreshTokenFlow(t *testing.T) {
 	desktopSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{

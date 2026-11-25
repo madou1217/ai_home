@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/remotebackup"
+	"github.com/madou1217/ai_home/internal/runtime/shellsetup"
 	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 )
 
@@ -131,4 +132,21 @@ func listFailurePolicyKinds(aiHome string) []string {
 	}
 	sort.Strings(kinds)
 	return kinds
+}
+
+// listLearnedCorrections 返回已学习的拼写纠正（aih shell typo forget 的取值）。
+func listLearnedCorrections(aiHome string) []namedChoice {
+	corrections := shellsetup.NewCorrectionsStore(aiHome).List()
+	choices := make([]namedChoice, 0, len(corrections))
+	for _, correction := range corrections {
+		typo := strings.TrimSpace(correction.Typo)
+		if typo == "" {
+			continue
+		}
+		choices = append(choices, namedChoice{
+			Value:       typo,
+			Description: strings.Join(correction.Argv, " "),
+		})
+	}
+	return choices
 }

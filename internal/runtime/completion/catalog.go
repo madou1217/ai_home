@@ -137,7 +137,7 @@ func buildCommandCatalog() []commandNode {
 	return []commandNode{
 		n("ls", "列出所有工具、账号与状态（provider 位支持通配，也可 --scope）").withAliases("list").
 			withOptions(mf("--scope", "按 provider 过滤（支持 * 与 ? 通配）"), jsonFlag).
-			withPositionals(p(kindProvider), p(kindFree)),
+			withPositionals(p(kindProvider), p(kindAccount)),
 		n("resume", "跨 provider 选择一段会话并续聊（不记得 id 时用这个）").
 			withOptions(vf("--provider", "只看某个 Provider", kindProvider), vf("--account", "指定账号", kindAccount), f("--limit", "最多返回多少条"), jsonFlag).
 			withPositionals(p(kindResume)),
@@ -170,7 +170,6 @@ func buildCommandCatalog() []commandNode {
 			n("enable", "启用账号并加入 Server 路由").withPositionals(p(kindAccountTarget)),
 			n("disable", "停用账号并移出 Server 路由").withPositionals(p(kindAccountTarget)),
 			n("delete", "删除账号及全部从属状态").withOptions(f("--yes", "跳过确认")).withPositionals(p(kindAccountTarget)),
-			n("transfer", "单账号标准迁移（export / import）").withChildren(n("export", "导出单账号"), n("import", "导入单账号")),
 			n("credential", "原地更新静态凭据").withChildren(n("update", "更新静态凭据").withOptions(f("--from-env", "从官方环境变量读取凭据")).withPositionals(p(kindAccountTarget))),
 			n("default", "管理 Provider 默认启动账号").withChildren(
 				n("show", "查看 Provider 默认账号").withPositionals(p(kindProvider)),
@@ -289,7 +288,7 @@ func buildCommandCatalog() []commandNode {
 			n("remove", "移除 aih 写入的片段").withOptions(vf("--shell", "目标 shell", kindShell), f("--rc-file", ""), f("--all", ""), f("--dry-run", ""), jsonFlag),
 			n("snippet", "只打印片段（可 eval）").withOptions(vf("--shell", "目标 shell", kindShell), f("--rc-file", ""), jsonFlag),
 			n("doctor", "检查实际安装、语法与补全入口").withOptions(vf("--shell", "目标 shell", kindShell), jsonFlag),
-			n("typo", "查看/遗忘已学习的拼写纠正").withChildren(n("list", "列出已学习纠正"), n("forget", "遗忘一条纠正").withPositionals(p(kindFree))),
+			n("typo", "查看/遗忘已学习的拼写纠正").withChildren(n("list", "列出已学习纠正"), n("forget", "遗忘一条纠正").withPositionals(p(kindTypo))),
 		),
 		n("agent", "TUI harness 的会话适配层：用哪个 adapter、三种交互从哪来").withOptions(jsonFlag).withChildren(
 			n("adapters", "每个 harness 的 adapter 候选与实现状态").withOptions(jsonFlag),

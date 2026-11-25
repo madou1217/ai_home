@@ -160,7 +160,6 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account enable <account_ref|provider:id>        # 启用账号并加入 Server 路由")
 	_, _ = fmt.Fprintln(output, "  aih account disable <account_ref|provider:id>       # 停用账号并移出 Server 路由")
 	_, _ = fmt.Fprintln(output, "  aih account delete <account_ref|provider:id> --yes  # 删除账号及全部从属状态")
-	_, _ = fmt.Fprintln(output, "  aih account transfer <export|import> [args...]       # 单账号标准迁移")
 	_, _ = fmt.Fprintln(output, "  aih account credential update <target> --from-env   # 原地更新静态凭据")
 	_, _ = fmt.Fprintln(output, "  aih account default <show|set|clear> [args...]       # 管理 Provider 默认启动账号")
 	_, _ = fmt.Fprintln(output, "  aih account models list <account_ref|provider:id>   # 查看已物化账号模型")
@@ -176,7 +175,6 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account show --help")
 	_, _ = fmt.Fprintln(output, "  aih account enable --help")
 	_, _ = fmt.Fprintln(output, "  aih account delete --help")
-	_, _ = fmt.Fprintln(output, "  aih account transfer --help")
 	_, _ = fmt.Fprintln(output, "  aih account credential --help")
 	_, _ = fmt.Fprintln(output, "  aih account default --help")
 	_, _ = fmt.Fprintln(output, "  aih account models --help")
@@ -193,6 +191,6 @@ func writeAccountUsage(output io.Writer) {
 // accountUsageLine 供根帮助复用，保持两处命令描述一致。
 func accountUsageLine() string {
 	return strings.TrimSpace(
-		"aih account <add|list|show|enable|disable|delete|transfer|credential|default|models|usage|import> [args...] # Go 账号管理",
+		"aih account <add|list|show|enable|disable|delete|credential|default|models|usage|import> [args...] # Go 账号管理",
 	)
 }

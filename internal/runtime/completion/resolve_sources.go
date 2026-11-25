@@ -186,6 +186,43 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 		return target.items
 	}
 	action := at(prior, 1)
+	// Codex 专属动作的取值面：模型名、推理强度、沙箱策略、machine-only 旗标。
+	if head == "codex" {
+		switch action {
+		case "model":
+			target.add("show", "查看当前默认模型", groupSubcommand, "")
+			if context.modelLister != nil {
+				for _, model := range context.modelLister(modelRequest{Provider: "codex", Current: current, Mode: "model"}) {
+					target.add(model.Value, model.Description, groupModel, model.Value)
+				}
+			}
+			return target.items
+		case "effort":
+			for _, value := range []string{"show", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "fast"} {
+				target.add(value, "推理强度 / fast 快速模式", groupSubcommand, "")
+			}
+			if len(prior) == 3 && at(prior, 2) == "fast" {
+				target.add("on", "开启 fast", groupSubcommand, "")
+				target.add("off", "关闭 fast", groupSubcommand, "")
+			}
+			return target.items
+		case "policy":
+			if len(prior) == 2 {
+				target.add("show", "查看 exec 沙箱策略", groupSubcommand, "")
+				target.add("set", "设置 exec 沙箱策略", groupSubcommand, "")
+				return target.items
+			}
+			if at(prior, 2) == "set" {
+				for _, value := range []string{"workspace-write", "read-only", "danger-full-access"} {
+					target.add(value, "沙箱策略", groupSubcommand, "")
+				}
+				return target.items
+			}
+		case "gateway-auth":
+			target.add("--ai-home", "本机 AIH 数据目录（绝对路径）", groupFlag, "")
+			return target.items
+		}
+	}
 	if action == "install" || action == "update" {
 		for _, flag := range listProviderActionFlags(action) {
 			target.add(flag, describeFlag(flag), groupFlag, "")

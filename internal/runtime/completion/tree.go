@@ -34,6 +34,7 @@ const (
 	kindBackupTarget    valueKind = "backup_target"
 	kindFailureSignal   valueKind = "failure_signal"
 	kindFailureKind     valueKind = "failure_kind"
+	kindTypo            valueKind = "typo_correction"
 	kindFile            valueKind = "file"
 	kindFree            valueKind = "free"
 )
@@ -414,6 +415,12 @@ func emitTreeValues(target *collector, context *resolverContext, state *treeStat
 		if context.failureKindLister != nil {
 			for _, kind := range context.failureKindLister() {
 				target.add(kind, "失败分类", groupOther, "")
+			}
+		}
+	case kindTypo:
+		if context.typoLister != nil {
+			for _, item := range context.typoLister() {
+				target.add(item.Value, item.Description, groupOther, item.Description)
 			}
 		}
 	case kindFile, kindFree, kindNone:

@@ -176,3 +176,42 @@ func TestBackupTargetCandidates(t *testing.T) {
 		t.Fatalf("备份目标候选不正确：%+v", choices)
 	}
 }
+
+// Codex 专属动作的取值面：默认模型、推理强度、沙箱策略。
+func TestCodexActionValueCandidates(t *testing.T) {
+	context := resolverForTest()
+	modelValues := resolveCompletion([]string{"codex", "model", ""}, context)
+	assertCandidate(t, modelValues, "show")
+	assertCandidate(t, modelValues, "gpt-6.2-sol")
+
+	effort := resolveCompletion([]string{"codex", "effort", ""}, context)
+	assertCandidate(t, effort, "xhigh")
+	assertCandidate(t, effort, "fast")
+	fast := resolveCompletion([]string{"codex", "effort", "fast", ""}, context)
+	assertCandidate(t, fast, "on")
+	assertCandidate(t, fast, "off")
+
+	policy := resolveCompletion([]string{"codex", "policy", ""}, context)
+	assertCandidate(t, policy, "show")
+	assertCandidate(t, policy, "set")
+	sandbox := resolveCompletion([]string{"codex", "policy", "set", ""}, context)
+	assertCandidate(t, sandbox, "danger-full-access")
+
+	gatewayAuth := resolveCompletion([]string{"codex", "gateway-auth", ""}, context)
+	assertCandidate(t, gatewayAuth, "--ai-home")
+}
+
+func TestLsProviderCompletesAccounts(t *testing.T) {
+	context := resolverForTest()
+	candidates := resolveCompletion([]string{"ls", "codex", ""}, context)
+	assertCandidate(t, candidates, "41")
+}
+
+func TestAccountTreeHasNoGhostTransfer(t *testing.T) {
+	context := resolverForTest()
+	for _, candidate := range resolveCompletion([]string{"account", ""}, context) {
+		if candidate.Value == "transfer" {
+			t.Fatal("account transfer 未实现，不应出现在补全树里")
+		}
+	}
+}

@@ -456,6 +456,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		failureKindLister: func() []string {
 			return listFailurePolicyKinds(aiHome)
 		},
+		typoLister: func() []namedChoice {
+			return listLearnedCorrections(aiHome)
+		},
 		nativeFlagLister: func(provider, current string) []nativeFlagEntry {
 			return filterNativeFlags(listNativeFlags(environment, provider), current)
 		},

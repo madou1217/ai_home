@@ -569,10 +569,26 @@ bash / zsh 的验证使用隔离 HOME；PowerShell 与 cmd 为真机 profile 实
 
 ## 开发
 
+环境：Go 1.26+、Node 22（`package.json` 约束 `>=22 <23`）。
+
+测试：
+
 ```bash
-node --test          # Node 测试（全量；仓库没有 npm test 脚本）
-npm run build        # 构建 WebUI
+go test ./...                 # Go 主测试
+cd web && npm run test:unit   # WebUI 现有单测（chat-runtime）
 ```
+
+构建与运行：
+
+```bash
+npm run web:install   # 首次构建 WebUI 前安装 web/ 依赖（pnpm install）
+npm run go:build      # 构建 Go Server + CLI -> bin/native/<platform>-<arch>/
+npm run build         # 构建 WebUI -> web/dist
+npm run web:dev       # WebUI 开发服务（PORT=5180）
+aih server start      # 启动本机 Server（127.0.0.1:9527）；aih serve 等同
+```
+
+WebUI 改动后重新 `npm run build`，再 `aih server restart` 生效。
 
 Web Terminal 缩放性能可用隔离的全屏 PTY 和 Chromium 测量，不会连接或重启正在运行的 Server：
 
@@ -582,12 +598,14 @@ npm run web:terminal-bench -- --browser /path/to/chromium --runs 3
 
 输出包含手柄按下处理时间、首帧及 1.5 秒模拟拖拽的帧间隔（毫秒）、浏览器布局工作时间（秒）和最终终端行列数；基准还通过浏览器鼠标输入检查八个缩放手柄、拖动跟随及 PTY 收敛。真实鼠标测试分别记录全程及浏览器收到第一个拖动事件后 300 ms 内的帧间隔，也记录窗口样式与最近一次已接收指针的位置差（像素）和 CDP 调用耗时；这些均非屏幕呈现延迟，短时段的样本数也可能很少。`--continuous-output` 在拖动时持续输出并检查更新，`--compare-styles` 在同一页面交替测试样式写入优化，`--compare-blur` 比较拖拽期间暂停背景模糊的效果。结果受设备和系统负载影响，比较时应使用相同浏览器、窗口尺寸和参数。更多选项见 `npm run web:terminal-bench -- --help`。
 
-账号扫描「跳过摘要」toast 的真实浏览器 E2E：
+账号扫描「跳过摘要」toast 的真实浏览器 E2E（需要已启动 Server、已构建 WebUI，并安装全局 `playwright-cli`）：
 
 ```bash
-AIH_MANAGEMENT_KEY=... node scripts/verify-account-scan-toast.mjs
+npm install -g @playwright/cli
+AIH_MANAGEMENT_KEY="$(aih server config get managementKey --show-secrets)" \
+  node scripts/verify-account-scan-toast.mjs
 ```
 
-说明见 [docs/testing/account-scan-toast-e2e.md](docs/testing/account-scan-toast-e2e.md)。
+可选 `AIH_WEBUI_URL`（默认 `http://127.0.0.1:9527/ui/`）与 `AIH_TOAST_SCREENSHOT`（保存截图）；说明见 [docs/testing/account-scan-toast-e2e.md](docs/testing/account-scan-toast-e2e.md)。
 
 贡献者与 agent 的工作约定见 [AGENTS.md](./AGENTS.md)。

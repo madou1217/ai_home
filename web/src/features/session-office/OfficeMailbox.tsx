@@ -1580,7 +1580,7 @@ export const OfficeMailbox: FC<OfficeMailboxProps> = ({
     } else if (scope === 'unassigned') {
       scopePart = '未归属消息';
     }
-    return `${scopePart} · ${stateFilter === 'attention' ? '只看待处理' : '全部消息'}`;
+    return stateFilter === 'attention' ? `${scopePart} · 只看待处理` : scopePart;
   }, [activeRoom, focusedSession, scope, stateFilter]);
 
   const visibleCount = mailboxView.filteredMessages.length;

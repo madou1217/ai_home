@@ -25,7 +25,8 @@ const agySessionUsage = `aih agy session — 一条需求一个常驻 AGY 会话
   aih agy session resume <会话ID>
   aih agy session close <会话ID>
 
-  aih agy acp [--cwd <目录>] [--command <agy>] [--timeout <时长>] [--auto-approve] "<提示词>"
+  aih agy acp [--cwd <目录>] [--command <agy>] [--model <模型>] [--effort low|medium|high|xhigh]
+              [--timeout <时长>] [--auto-approve] "<提示词>"
                            用 ACP 直接驱动 AGY，暴露 read/write/run_command/审批
 
 说明：

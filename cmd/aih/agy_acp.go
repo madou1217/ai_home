@@ -12,7 +12,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/agy/acpclient"
 )
 
-const agyACPUsage = "aih agy acp [--cwd <目录>] [--command <agy>] [--timeout <时长>] [--auto-approve] \"<提示词>\"\n" +
+const agyACPUsage = "aih agy acp [--cwd <目录>] [--command <agy>] [--model <模型>] [--effort low|medium|high|xhigh]\n" +
+	"            [--timeout <时长>] [--auto-approve] \"<提示词>\"\n" +
 	"远程 Connector: --connector-url <url> --workspace-root <shadow> [--connector-token-env AIH_REMOTE_TOOLS_TOKEN]\n"
 
 func runAGYACPCommand(ctx context.Context, args []string, runtime commandRuntime) error {
@@ -43,6 +44,8 @@ func runAGYACPCommand(ctx context.Context, args []string, runtime commandRuntime
 		Terminals:     terminals,
 		Permissions:   broker,
 		Events:        sink,
+		Model:         options.model,
+		Effort:        options.effort,
 		ClientName:    "aih",
 		ClientVersion: "1",
 	}
@@ -71,6 +74,8 @@ type agyACPOptions struct {
 	cwd               string
 	prompt            string
 	command           string
+	model             string
+	effort            string
 	timeout           time.Duration
 	autoApprove       bool
 	connectorURL      string
@@ -109,6 +114,18 @@ func parseAGYACPArgs(args []string) (agyACPOptions, error) {
 				return agyACPOptions{}, err
 			}
 			options.command = value
+		case "--model":
+			value, err := next()
+			if err != nil {
+				return agyACPOptions{}, err
+			}
+			options.model = value
+		case "--effort":
+			value, err := next()
+			if err != nil {
+				return agyACPOptions{}, err
+			}
+			options.effort = value
 		case "--timeout":
 			value, err := next()
 			if err != nil {

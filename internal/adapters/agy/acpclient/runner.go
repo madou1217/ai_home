@@ -26,6 +26,13 @@ type Config struct {
 	Permissions PermissionBroker
 	Events      EventSink
 
+	// Model selects the agent's advertised model config option and Effort the
+	// thinking-level option after session/new. Empty leaves the agent default
+	// untouched; a value the agent does not advertise fails the handshake
+	// instead of silently running a different model.
+	Model  string
+	Effort string
+
 	ClientName    string
 	ClientVersion string
 	Handshake     time.Duration
@@ -139,6 +146,9 @@ func initializeSession(ctx context.Context, config Config, session *Session, con
 		return fmt.Errorf("ACP session/new returned an empty session id")
 	}
 	session.sessionID = string(created.SessionId)
+	if err := applyModelSelection(handshakeCtx, conn, session.sessionID, created.ConfigOptions, config.Model, config.Effort); err != nil {
+		return fmt.Errorf("%w%s", err, session.errorSuffix())
+	}
 	return nil
 }
 

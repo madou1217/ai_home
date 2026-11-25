@@ -1,14 +1,12 @@
 // Package manual 渲染 `aih man` 的离线命令手册页。
 //
-// 页面模板由 AWS Server 的 agy/gemini-4-neon-xhigh 生成并作为静态资产内嵌；
-// 运行时只注入命令树导出的条目，页面内容随命令面自动更新。
+// 页面不是手写 HTML 资产：结构由 render.go 的编译期模板生成，样式/交互来自
+// assets 下的 CSS/JS，命令数据由补全命令树导出；构建脚本与 aih install 会把
+// 生成结果放到发布包和安装目录。
 package manual
 
 import (
-	_ "embed"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,42 +16,9 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/completion"
 )
 
-//go:embed page.html
-var pageTemplate string
-
-const (
-	manifestPlaceholder = "__AIH_MANIFEST__"
-	modelPlaceholder    = "__AIH_MODEL__"
-	serverPlaceholder   = "__AIH_SERVER__"
-)
-
-// Meta 是页脚展示的生成来源。
-type Meta struct {
-	Model  string
-	Server string
-}
-
-// Render 把条目注入内嵌模板；占位符缺失视为模板损坏，避免产出空白页。
-func Render(entries []completion.DocEntry, meta Meta) ([]byte, error) {
-	if !strings.Contains(pageTemplate, manifestPlaceholder) {
-		return nil, errors.New("manual_template_missing_manifest")
-	}
-	if entries == nil {
-		entries = []completion.DocEntry{}
-	}
-	manifest, err := json.Marshal(entries)
-	if err != nil {
-		return nil, fmt.Errorf("manual_manifest_encode: %w", err)
-	}
-	page := strings.ReplaceAll(pageTemplate, manifestPlaceholder, string(manifest))
-	page = strings.ReplaceAll(page, modelPlaceholder, meta.Model)
-	page = strings.ReplaceAll(page, serverPlaceholder, meta.Server)
-	return []byte(page), nil
-}
-
-// Write 把渲染结果写到指定文件（0600 目录、0644 文件）。
-func Write(entries []completion.DocEntry, meta Meta, path string) error {
-	page, err := Render(entries, meta)
+// Write 渲染并写入指定文件（目录 0700、文件 0644）。
+func Write(entries []completion.DocEntry, notes map[string]string, meta Meta, path string) error {
+	page, err := Render(entries, notes, meta)
 	if err != nil {
 		return err
 	}

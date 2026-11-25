@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/completion"
 	"github.com/madou1217/ai_home/internal/runtime/manual"
@@ -63,8 +64,8 @@ func runMan(arguments []string, runtime commandRuntime) (bool, error) {
 	if path == "" {
 		path = filepath.Join(home, "man", "aih.html")
 	}
-	meta := manual.Meta{Model: *model, Server: *server}
-	if err := manual.Write(entries, meta, path); err != nil {
+	meta := manual.Meta{Model: *model, Server: *server, GeneratedAt: time.Now().Format("2006-01-02 15:04")}
+	if err := manual.Write(entries, completion.DocumentationGroupNotes(), meta, path); err != nil {
 		return true, fmt.Errorf("生成命令手册失败: %w", err)
 	}
 	if !*noOpen {

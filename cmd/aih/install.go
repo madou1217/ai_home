@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/completion"
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
+	"github.com/madou1217/ai_home/internal/runtime/manual"
 )
 
 const installUsage = `用法: aih install [--bin-dir DIR] [--no-service] [--json]
@@ -61,6 +65,20 @@ func runInstallCommand(ctx context.Context, arguments []string, runtime commandR
 			Output:      runtime.stderr,
 		},
 	)
+	// 安装成功后把命令手册落到安装目录；它不是发布包里手写的 HTML，
+	// 而是由补全命令树在安装现场生成的构建产物。
+	if err == nil && strings.TrimSpace(result.Receipt.Home) != "" {
+		meta := manual.Meta{
+			Model:       "agy/gemini-4-neon-xhigh",
+			Server:      "aws",
+			Version:     result.Receipt.ReleaseVersion,
+			GeneratedAt: time.Now().Format("2006-01-02 15:04"),
+		}
+		pagePath := filepath.Join(result.Receipt.Home, "man", "aih.html")
+		if pageErr := manual.Write(completion.DocumentationEntries(), completion.DocumentationGroupNotes(), meta, pagePath); pageErr != nil {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 命令手册生成失败（%v），可稍后运行 aih man\n", pageErr)
+		}
+	}
 	if *asJSON {
 		_ = json.NewEncoder(runtime.stdout).Encode(result)
 	} else if err == nil {

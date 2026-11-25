@@ -50,7 +50,27 @@ function buildGoCLI(options = {}) {
     throw new Error(`go build exited with ${result.status}`);
   }
   fs.renameSync(plan.temporaryOutput, plan.output);
+  buildManPage(plan.repositoryRoot);
   return { output: plan.output, target: `${options.platform || process.platform}-${options.arch || process.arch}` };
+}
+
+// buildManPage 把命令手册生成为发布产物 dist/man/index.html。
+// 页面是编译结果，不是手写 HTML：数据来自 cmd/aih-manpage 读取的补全命令树。
+function buildManPage(repositoryRoot) {
+  if (process.env.AIH_SKIP_MANPAGE === '1') return;
+  const packageJSON = path.join(repositoryRoot, 'package.json');
+  let version = '';
+  try {
+    version = JSON.parse(fs.readFileSync(packageJSON, 'utf8')).version || '';
+  } catch (_) {}
+  const output = path.join(repositoryRoot, 'dist', 'man', 'index.html');
+  const args = ['run', './cmd/aih-manpage', '--', '--out', output];
+  if (version) args.push('--version', version);
+  const result = spawnSync('go', args, { cwd: repositoryRoot, stdio: 'inherit' });
+  if (result.error || result.status !== 0) {
+    throw new Error('aih-manpage generation failed');
+  }
+  return output;
 }
 
 if (require.main === module) {

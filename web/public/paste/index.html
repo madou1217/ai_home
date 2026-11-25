@@ -4,71 +4,825 @@
 
 /* HUD light language: luminous corners, restrained spectral accents. */
 .top{box-shadow:0 12px 40px #0006, inset 0 1px 0 #79d6f51c;background:linear-gradient(100deg,#102337,#101728 45%,#1b1931)}.top:before,.dock:before,.quickwindow:before{width:80px;border-color:#78eaff;filter:drop-shadow(0 0 5px #65d8ff)}.top:after,.stack:after,.quickwindow:after{width:75px;border-color:#c29bff;filter:drop-shadow(0 0 6px #a47aff)}.dock{background:radial-gradient(ellipse at 53% 105%,#356f9d52,transparent 62%),linear-gradient(115deg,#102132,#17152d)}.docktrack:after{content:'';position:absolute;pointer-events:none;bottom:1px;left:10%;width:80%;height:13px;border-bottom:1px solid #6bd5f688;border-radius:50%;box-shadow:0 5px 10px -6px #6bd5f6}.quickwindow.ribbon{background:radial-gradient(ellipse at 40% 100%,#2b558a55,transparent 70%),radial-gradient(ellipse at 100% 0,#56316a55,transparent 50%),#111a2d}.quickwindow.ribbon .quickgallery{border-bottom:1px solid #3a587780;box-shadow:0 12px 20px -20px #75e6ff}.quickwindow.ribbon .quickgallery .clip.selected{box-shadow:0 0 24px color-mix(in srgb,var(--t) 25%,transparent),inset 0 0 36px color-mix(in srgb,var(--t) 10%,transparent)}.previewcontent{background:radial-gradient(ellipse at 100% 100%,#6c50bd46,transparent 75%),linear-gradient(145deg,#1c2541,#121a2e)}.clipbody .swatch small{color:inherit}.clipbody pre{overflow-wrap:anywhere;word-break:break-word}.clipfoot{padding-right:3px}.docktrack .clipfoot,.quickgallery .clipfoot{padding-right:20px}
+
+/* Settings dialog controls & desktop Quick Orbit mode */
+.btn:disabled{opacity:.42;cursor:not-allowed}.btn:disabled:hover{background:#151e30;border-color:#34435c;color:#c9d5e9}
+.dot{flex-shrink:0}.dot.warn{background:#f5c26b;box-shadow:0 0 9px #f5c26b}.dot.off{background:#667892;box-shadow:none}
+.previewcontent .art{object-fit:contain}#dialogModal{z-index:30}.dialog{max-height:min(86vh,calc(100vh - 24px));overflow-y:auto}.switch{flex-shrink:0}
+.settingcontrol{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.settingrow select{background:#0d1423;border:1px solid #3c4964;border-radius:6px;color:#c7d3e7;padding:6px 8px;font-size:11px;max-width:240px}
+.settingblock{padding:10px 0;border-bottom:1px solid #26344a;display:flex;flex-direction:column;gap:8px}
+.pillrow{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border:1px solid #2d3e56;border-radius:999px;background:#0d1525;font-size:11px;color:#b8c8df}
+.devicelist{display:flex;flex-direction:column;gap:6px}
+.devicerow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 9px;border:1px solid #25344b;border-radius:7px;background:#0c1322;font-size:11px}
+.devicerow span{color:#dce7f7}.devicerow small{color:#8496b0}
+html.mode-quick,body.mode-quick{background:transparent!important;overflow:hidden}
+body.mode-quick .shell{display:none!important}
+body.mode-quick #quickModal{display:flex;background:transparent;backdrop-filter:none;padding:18px;align-items:flex-end;justify-content:center}
+body.mode-quick[data-position=left] #quickModal{justify-content:flex-start}
+body.mode-quick[data-position=right] #quickModal{justify-content:flex-end}
+body.mode-quick #quickWindow{position:relative;inset:auto;bottom:auto;width:min(1240px,calc(100vw - 36px));max-width:none;height:min(430px,calc(100vh - 36px));max-height:calc(100vh - 36px);padding:16px 20px;gap:10px;border-radius:14px}
+body.mode-quick[data-embed=desktop] #quickModal{padding:0;align-items:stretch;justify-content:stretch}
+body.mode-quick[data-embed=desktop] #quickWindow{width:100%;height:100vh;max-height:100vh;box-shadow:none}
+body.mode-quick #quickWindow .quickgallery{flex:1;min-height:0;max-height:none}
+body.mode-quick #quickWindow.ribbon .quickgallery{min-height:0;padding:8px 4px 12px}
+body.mode-quick .dialog .previewcontent{min-height:140px;max-height:calc(100vh - 150px)}
 </style></head><body><div class="shell" id="shell">
 <header class="top panel"><div class="brand"><div class="brandmark"><svg viewBox="0 0 48 48" fill="none"><defs><linearGradient id="logo"><stop stop-color="#68e7ff"/><stop offset="1" stop-color="#b18bff"/></linearGradient></defs><path d="M24 3 42 13 42 35 24 45 6 35 6 13Z" stroke="url(#logo)" stroke-width="1.4"/><path d="m24 10 12 7v14l-12 7-12-7V17Z" stroke="url(#logo)" stroke-width="2.5"/><path d="m12 17 12 7 12-7M24 24v14" stroke="#9ce9ff" stroke-width="1.5"/><circle cx="24" cy="24" r="3" fill="#e2faff"/></svg></div><div><strong>paste<span> / nexus</span></strong><div class="eyebrow">Clipboard operating layer</div></div></div><label class="search"><span data-icon="search"></span><input id="search" placeholder="Search clips, code, links, ideas…" autocomplete="off"><kbd>/</kbd></label><div class="topactions"><button class="btn" id="command"><span data-icon="command"></span><span>Command</span><kbd>Ctrl K</kbd></button><button class="btn active" id="quickOpen"><span data-icon="bolt"></span><span>Quick Paste</span><kbd>Alt V</kbd></button><button class="btn iconbtn settings" id="settings" title="Settings"><span data-icon="settings"></span></button></div></header>
-<main class="main"><aside class="side panel"><h3><span data-icon="clock"></span> Timeline</h3><div class="eyebrow">History / index</div><div id="timeline" class="timeline"></div><div class="sidefoot"><div class="eyebrow" style="margin:0">Capture activity</div><div class="histogram" id="histogram"></div><div class="micro">DEMO SESSION · 24H</div><div class="status"><i class="dot"></i> Local demo storage</div></div></aside>
-<section class="workspace"><div class="workhead"><div><div class="eyebrow">Workspace / 01</div><h1>My clipboard <small id="count"></small></h1></div><div class="modules"><button class="module" id="context"><span data-icon="cube"></span><div><span>Context lens</span><small>ALL SOURCES</small></div></button><button class="module" id="privacy"><span data-icon="shield"></span><div><span>Privacy shield</span><small>LOCAL DEMO</small></div></button><button class="module violet" id="semantic"><span data-icon="spark"></span><div><span>Smart search</span><small>KEYWORDS</small></div></button></div></div><div class="filterbar"><div class="filters" id="filters"></div><select class="sort" id="sort"><option value="new">Newest</option><option value="old">Oldest</option><option value="name">Name</option></select><button class="btn iconbtn active" id="gridBtn" title="Grid"><span data-icon="grid"></span></button><button class="btn iconbtn" id="listBtn" title="List"><span data-icon="list"></span></button></div><div class="gallery" id="gallery"></div></section>
-<aside class="preview panel"><div class="previewtop"><h3><span data-icon="eye"></span> Preview</h3><span class="micro" id="previewID"></span><button class="btn iconbtn" id="expand" title="Full preview"><span data-icon="expand"></span></button></div><div class="previewcontent" id="previewContent"></div><div class="tabs" id="tabs"></div><div id="detail"></div><div class="previewactions"><button class="btn primary" id="paste"><span data-icon="play"></span> Paste <kbd>↵</kbd></button><button class="btn iconbtn" id="pin" title="Pin"><span data-icon="pin"></span></button><button class="btn iconbtn" id="stackAdd" title="Add to stack"><span data-icon="layers"></span></button><button class="btn iconbtn" id="edit" title="Edit"><span data-icon="edit"></span></button><button class="btn iconbtn" id="delete" title="Delete"><span data-icon="trash"></span></button></div></aside></main>
+<main class="main"><aside class="side panel"><h3><span data-icon="clock"></span> Timeline</h3><div class="eyebrow">History / index</div><div id="timeline" class="timeline"></div><div class="sidefoot"><div class="eyebrow" style="margin:0">Capture activity</div><div class="histogram" id="histogram"></div><div class="micro" id="activityMeta">LOCAL · 24H</div><div class="status" id="captureStatus"><i class="dot off"></i><span>Connecting…</span></div></div></aside>
+<section class="workspace"><div class="workhead"><div><div class="eyebrow">Workspace / 01</div><h1>My clipboard <small id="count"></small></h1></div><div class="modules"><button class="module" id="context"><span data-icon="cube"></span><div><span>Context lens</span><small>ALL SOURCES</small></div></button><button class="module" id="privacy"><span data-icon="shield"></span><div><span>Privacy shield</span><small id="privacyLabel">LOCAL STORE</small></div></button><button class="module violet" id="semantic"><span data-icon="spark"></span><div><span>Smart search</span><small>KEYWORDS</small></div></button></div></div><div class="filterbar"><div class="filters" id="filters"></div><select class="sort" id="sort"><option value="new">Newest</option><option value="old">Oldest</option><option value="name">Name</option></select><button class="btn iconbtn active" id="gridBtn" title="Grid"><span data-icon="grid"></span></button><button class="btn iconbtn" id="listBtn" title="List"><span data-icon="list"></span></button></div><div class="gallery" id="gallery"></div></section>
+<aside class="preview panel"><div class="previewtop"><h3><span data-icon="eye"></span> Preview</h3><span class="micro" id="previewID"></span><button class="btn iconbtn" id="expand" title="Full preview"><span data-icon="expand"></span></button></div><div class="previewcontent" id="previewContent"></div><div class="tabs" id="tabs"></div><div id="detail"></div><div class="previewactions"><button class="btn primary" id="paste"><span data-icon="play"></span> Paste <kbd>↵</kbd></button><button class="btn iconbtn" id="pin" title="Pin"><span data-icon="pin"></span></button><button class="btn iconbtn" id="stackAdd" title="Add to stack"><span data-icon="layers"></span></button><button class="btn iconbtn" id="edit" title="Read-only" disabled aria-disabled="true"><span data-icon="edit"></span></button><button class="btn iconbtn" id="delete" title="Delete"><span data-icon="trash"></span></button></div></aside></main>
 <section class="stack panel"><div class="stacktitle"><span data-icon="layers"></span><div><strong>Fusion stack</strong><div class="eyebrow">Compose / combine</div></div></div><div class="stackitems" id="stackItems"></div><span class="micro" id="stackCount"></span><button class="btn primary" id="fusion"><span data-icon="layers"></span> Fusion Paste <kbd>Ctrl Shift V</kbd></button></section>
 <section class="dock panel"><div class="docktitle"><div class="orbitlogo"><span data-icon="bolt"></span></div><div class="eyebrow">Instant access</div><h2>Quick orbit</h2><button class="btn" id="dockOpen" style="font-size:10px;padding:4px 7px">Expand <kbd>Alt V</kbd></button></div><div class="docknav"><button class="btn" id="dockPrev" title="Previous">‹</button><button class="btn" id="dockNext" title="Next">›</button></div><div class="docktrack" id="dockTrack"></div><div class="transform"><div class="eyebrow">Utility / 04</div><h3><span data-icon="spark"></span> Transform</h3><select id="transformType"><option value="trim">Clean whitespace</option><option value="json">Format JSON</option><option value="upper">Uppercase</option><option value="lower">Lowercase</option><option value="url">URL encode</option><option value="lines">Remove blank lines</option></select><button class="btn" id="transformRun"><span data-icon="bolt"></span> Apply to selection</button></div></section>
-<footer class="statusbar"><span><i class="dot"></i> NEXUS ONLINE <span>·</span> PROTOTYPE 01</span><span id="statusSelection">READY</span><span><kbd>↑ ↓ ← →</kbd> NAVIGATE <kbd>SPACE</kbd> PEEK <kbd>ESC</kbd> CLOSE</span></footer></div>
+<footer class="statusbar"><span id="statusSystem"><i class="dot off" id="statusDot"></i> NEXUS <span>·</span> CONNECTING</span><span id="statusSelection">READY</span><span><kbd>↑ ↓ ← →</kbd> NAVIGATE <kbd>SPACE</kbd> PEEK <kbd>ESC</kbd> CLOSE</span></footer></div>
 <div class="modal" id="quickModal"><section class="quickwindow panel ribbon" id="quickWindow"><div class="quickhead"><div class="orbitlogo"><span data-icon="bolt"></span></div><div><div class="eyebrow">Nexus / instant access</div><h2>Quick orbit</h2></div><label class="search"><span data-icon="search"></span><input id="quickSearch" placeholder="Find a clip…"><kbd>/</kbd></label><button class="btn iconbtn" id="quickLayout" title="Toggle card layout"><span data-icon="grid"></span></button><button class="btn iconbtn" id="quickClose" title="Close"><span data-icon="x"></span></button></div><div class="filters" id="quickFilters"></div><div class="quickgallery" id="quickGallery"></div><div class="quickfooter"><div><kbd>1–9</kbd> Direct paste <kbd>Space</kbd> Peek <kbd>G</kbd> Layout</div><div class="quickrail" id="quickRail"></div><div><span id="quickPosition"></span><button class="btn primary" id="quickPaste">Paste <kbd>↵</kbd></button></div></div></section></div>
 <div class="modal" id="dialogModal"><section class="dialog panel" id="dialog"></section></div><div class="toast" id="toast" role="status"></div>
 <script>
-const $=id=>document.getElementById(id), paths={search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',command:'<path d="M8 8h8v8H8zM8 8H6a2 2 0 1 1 2-2v2m8 0V6a2 2 0 1 1 2 2h-2m0 8h2a2 2 0 1 1-2 2v-2m-8 0v2a2 2 0 1 1-2-2h2"/>',bolt:'<path d="m13 2-9 12h7l-1 8 10-12h-8z"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="m10 3 4 0 1 3 3 1 3 0 1 4-3 2v3l1 3-4 2-2-2h-3l-2 2-4-2 1-3v-3l-3-2 1-4h3l3-1z"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',cube:'<path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10"/>',shield:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5zM19 2v5m-2.5-2.5h5"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',list:'<path d="M4 6h16M4 12h16M4 18h16"/>',eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',play:'<path d="m7 4 14 8-14 8z"/>',pin:'<path d="m16 3 5 5-4 2-2 6-3-3-7 7 7-7-3-3 6-2z"/>',layers:'<path d="m12 3 10 5-10 5L2 8zM2 12l10 5 10-5M2 16l10 5 10-5"/>',edit:'<path d="m14 5 5 5M4 20l5-1L21 7l-5-5L4 14z"/>',trash:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',x:'<path d="m6 6 12 12M18 6 6 18"/>',text:'<path d="M4 5h16M12 5v15M8 20h8M4 5v3m16-3v3"/>',code:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18"/>',url:'<path d="m10 14 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 1 2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 0)"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',color:'<path d="M12 2S5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z"/>',file:'<path d="M5 3h9l5 5v13H5zM14 3v6h5M8 14h8m-8 3h6"/>',check:'<path d="m4 12 5 5L20 6"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',plus:'<path d="M12 4v16M4 12h16"/>'};const icon=n=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${paths[n]||paths.spark}</svg>`;document.querySelectorAll('[data-icon]').forEach(e=>e.innerHTML=icon(e.dataset.icon));const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let data=[
-['ai','Notes','2s','Product direction','Make the useful things effortless. Every interaction should feel like it was already one step ahead of you.'],
-['code','VS Code','1m','TypeScript snippet','const paste = async (clip: Clip) => {\n  await clipboard.write(clip.data);\n  return focus.restore();\n};'],
-['url','Chrome','4m','Linear — Method','https://linear.app/method','Linear Method','linear.app / method'],
-['image','Figma','8m','Landscape reference','Landscape reference — sample illustration'],
-['color','Figma','12m','Accent / Lime','#D9FA76'],
-['file','Finder','18m','Brand guidelines.pdf','Brand guidelines.pdf · 2.4 MB'],
-['text','Slack','23m','Design feedback','The compact mode feels much better. Keep the search visible and avoid adding another toolbar.'],
-['code','Terminal','31m','Docker command','docker compose up -d --build\ndocker compose logs -f app'],
-['url','Chrome','42m','MDN Clipboard API','https://developer.mozilla.org/en-US/docs/Web/API/Clipboard_API','Clipboard API','developer.mozilla.org'],
-['text','Notes','1h','Meeting summary','Next steps: simplify onboarding, review keyboard accessibility, and ship the prototype this week.'],
-['color','Figma','1h','Ink / Charcoal','#252A22'],
-['code','VS Code','2h','JSON config','{\n  "shortcut": "Alt+V",\n  "maxHistory": 500,\n  "localOnly": true\n}'],
-['text','Mail','2h','Email draft','Thanks for the update. I’ll review the latest build and send the consolidated feedback.'],
-['file','Finder','3h','Design tokens.json','Design tokens.json · 14 KB'],
-['url','Chrome','3h','GitHub','https://github.com','GitHub','github.com'],
-['text','Notes','4h','Keyboard-first UX','Search → Select → Paste. Three actions, no context switching.'],
-['code','Terminal','5h','Git command','git status --short\ngit diff --stat'],
-['color','Figma','6h','Surface / Mist','#E8EAE6'],
-['text','Slack','8h','Launch checklist','Check performance, test shortcuts, verify empty states, prepare release notes.'],
-['file','Finder','Yesterday','Prototype.fig','Prototype.fig · 8.7 MB'],
-['url','Chrome','Yesterday','Web.dev','https://web.dev','web.dev','web.dev'],
-['text','Notes','Yesterday','Idea backlog','Clipboard as a temporary workspace. Keep context close, not buried in menus.'],
-['code','VS Code','Yesterday','CSS variables',':root {\n  --accent: #d9fa76;\n  --radius: 12px;\n}'],
-['text','Mail','2d','Project reference','Project Orbit — quick clipboard interaction study.']
-].map((x,i)=>({id:i,type:x[0],app:x[1],time:x[2],title:x[3],value:x[4],site:x[5],domain:x[6],pinned:[2,8,11].includes(i)}));
-// Self-contained demo assets, drawn as SVG rather than fetched from the web.
-const art1=`<svg class="art" viewBox="0 0 300 155" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#485b9d"/><stop offset="1" stop-color="#f0b9b0"/></linearGradient><linearGradient id="lake" x2="0" y2="1"><stop stop-color="#4b6996"/><stop offset="1" stop-color="#1b324f"/></linearGradient></defs><rect width="300" height="155" fill="url(#sky)"/><circle cx="235" cy="42" r="22" fill="#ffdfb9"/><path d="m0 94 57-58 38 40 43-53 67 70 36-36 59 52v46H0" fill="#3c5f89"/><path d="m0 105 75-54 32 36 35-30 62 48 47-25 49 31v44H0" fill="#23486c"/><path d="M0 111h300v44H0z" fill="url(#lake)"/><path d="M0 125q110-11 300 2M0 140q150-8 300 0" stroke="#aab8db" opacity=".6" fill="none"/><path d="M200 117h70m-57 7h44m-32 7h19" stroke="#e0bfc0" opacity=".6"/></svg>`;
-const art2=`<svg class="art" viewBox="0 0 300 155" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="city" x2="0" y2="1"><stop stop-color="#202952"/><stop offset="1" stop-color="#090d22"/></linearGradient><linearGradient id="road" x2="0" y2="1"><stop stop-color="#224f70"/><stop offset="1" stop-color="#140c2e"/></linearGradient></defs><rect width="300" height="155" fill="url(#city)"/><path d="M0 0h49v115H0zm59 18h36v94H59zM105 40h25v65h-25zM300 0h-49v115h49zM241 16h-35v96h35zM195 39h-25v67h25z" fill="#121a30"/><g stroke="#e87bd4" stroke-width="3"><path d="M15 8v62M29 20v47M70 31v41M272 12v61M223 29v43"/></g><g stroke="#53e3ff" stroke-width="2"><path d="M39 10v76M83 30v56M261 12v75M211 35v49M117 53v27M181 47v34"/></g><path d="m125 95-100 60h250L175 95z" fill="url(#road)"/><g stroke="#6fdfff" opacity=".65"><path d="M125 108 78 155m97-47 47 47M135 109l-20 46m50-46 20 46"/></g><g stroke="#d477e7" opacity=".65"><path d="m81 124-36 26m173-27 38 26"/></g><circle cx="150" cy="75" r="9" fill="#ffb4d6" opacity=".75"/><path d="M150 90v65" stroke="#9befff" opacity=".25"/></svg>`;
-data[3].art=art1;data.splice(10,0,{id:24,type:'image',app:'Figma',time:'1h',title:'Neon city study',value:'Neon city study — sample illustration',art:art2});data.splice(13,0,{id:25,type:'ai',app:'Notes',time:'2h',title:'Rewrite prompt',value:'Rewrite this note into a concise product update, highlighting user value and next steps.'});const labels={all:'All',text:'Text',code:'Code',url:'Link',image:'Image',color:'Color',file:'File',ai:'AI Prompt',pin:'Pinned'}, typeIcon=t=>t==='ai'?'spark':t;let selected=0,filter='all',query='',timeFilter='all',sort='new',layout='grid',quickMode='ribbon',tab='Details',stack=[0,1],context=false,smart=false,privacy=true,visible=[],quickOpened=false,dialogOpened=false,toastTimer,undo=null;try{let saved=JSON.parse(localStorage.getItem('nexus-demo-state-v1')||'null');if(saved){data=saved.data.map(c=>({...c,art:c.id===3?art1:c.id===24?art2:undefined}));stack=saved.stack.filter(id=>data.some(c=>c.id===id))}}catch(e){}const save=()=>{try{localStorage.setItem('nexus-demo-state-v1',JSON.stringify({data:data.map(({art,...c})=>c),stack}))}catch(e){}};const current=()=>data.find(c=>c.id===selected);const minutes=c=>c.time==='Yesterday'?1440:c.time.endsWith('d')?parseFloat(c.time)*1440:c.time.endsWith('h')?parseFloat(c.time)*60:c.time.endsWith('m')?parseFloat(c.time):0;const ranges=[['all','All history',Infinity],['10','Last 10 min',10],['30','Last 30 min',30],['60','Last hour',60],['today','Today',1439],['yesterday','Yesterday',2879],['older','Older',Infinity]];function inTime(c,key){const m=minutes(c);if(key==='all')return true;if(key==='yesterday')return m>=1440&&m<2880;if(key==='older')return m>=2880;return m<=ranges.find(r=>r[0]===key)[2]}
-function highlight(s){return esc(s).replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g,'<span class="str">$1</span>').replace(/\b(const|async|await|return|true|false|let|function)\b/g,'<span class="kw">$1</span>')}
-function body(c){if(c.type==='code')return `<pre>${highlight(c.value)}</pre>`;if(c.type==='color')return `<div class="swatch" style="background:${/^#[0-9a-f]{6}$/i.test(c.value)?c.value:'#8298bd'};color:${/^#[0-9a-f]{6}$/i.test(c.value)&&parseInt(c.value.slice(1,3),16)<95?'#f2f6ff':'#172030'}">${esc(c.value)}<small>HEX / COLOR SWATCH</small></div>`;if(c.type==='image')return c.art||art1;if(c.type==='url')return `<div class="site"><b>${esc((c.site||c.title)[0])}</b>${esc(c.domain||'URL')}</div><strong>${esc(c.site||c.title)}</strong><small>${esc(c.value)}</small>`;if(c.type==='file')return `<div class="fileicon">${icon('file')}</div><strong>${esc(c.title)}</strong><small>${esc(c.value.split(' · ')[1]||'Demo file')}</small>`;return `<p>${esc(c.value)}</p>`}
-function card(c,i,keys=false){return `<article tabindex="0" role="option" aria-selected="${c.id===selected}" data-id="${c.id}" data-type="${c.type}" class="clip ${c.id===selected?'selected':''}"><div class="cliphead">${icon(typeIcon(c.type))}${labels[c.type]}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div><div class="clipfoot">${icon('cube')}<span>${esc(c.app)} · ${esc(c.title)}</span>${c.pinned?`<i class="pin">${icon('pin')}</i>`:''}</div>${keys&&i<9?`<span class="keynum">${i+1}</span>`:''}</article>`}
+const $=id=>document.getElementById(id), paths={search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',command:'<path d="M8 8h8v8H8zM8 8H6a2 2 0 1 1 2-2v2m8 0V6a2 2 0 1 1 2 2h-2m0 8h2a2 2 0 1 1-2 2v-2m-8 0v2a2 2 0 1 1-2-2h2"/>',bolt:'<path d="m13 2-9 12h7l-1 8 10-12h-8z"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="m10 3 4 0 1 3 3 1 3 0 1 4-3 2v3l1 3-4 2-2-2h-3l-2 2-4-2 1-3v-3l-3-2 1-4h3l3-1z"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',cube:'<path d="m12 2 9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10"/>',shield:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>',spark:'<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5zM19 2v5m-2.5-2.5h5"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',list:'<path d="M4 6h16M4 12h16M4 18h16"/>',eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',play:'<path d="m7 4 14 8-14 8z"/>',pin:'<path d="m16 3 5 5-4 2-2 6-3-3-7 7 7-7-3-3 6-2z"/>',layers:'<path d="m12 3 10 5-10 5L2 8zM2 12l10 5 10-5M2 16l10 5 10-5"/>',edit:'<path d="m14 5 5 5M4 20l5-1L21 7l-5-5L4 14z"/>',trash:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',x:'<path d="m6 6 12 12M18 6 6 18"/>',text:'<path d="M4 5h16M12 5v15M8 20h8M4 5v3m16-3v3"/>',code:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18"/>',url:'<path d="m10 14 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 1 2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 0)"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',color:'<path d="M12 2S5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z"/>',file:'<path d="M5 3h9l5 5v13H5zM14 3v6h5M8 14h8m-8 3h6"/>',check:'<path d="m4 12 5 5L20 6"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',plus:'<path d="M12 4v16M4 12h16"/>'};
+const icon=n=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${paths[n]||paths.spark}</svg>`;
+document.querySelectorAll('[data-icon]').forEach(e=>e.innerHTML=icon(e.dataset.icon));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const urlParams=new URLSearchParams(location.search);
+const isQuickPage=urlParams.get('mode')==='quick';
+const embedMode=urlParams.get('embed')||'';
+const validPosition=p=>['bottom','left','right'].includes(String(p||'').toLowerCase())?String(p).toLowerCase():'bottom';
+let quickPosition=validPosition(urlParams.get('position')||'bottom');
+if(isQuickPage){
+  document.documentElement.classList.add('mode-quick');
+  document.body.classList.add('mode-quick');
+  document.body.dataset.position=quickPosition;
+  if(embedMode)document.body.dataset.embed=embedMode;
+}
+
+const API_BASE='/v1/management/webui/clipboard';
+const PROFILES_KEY='aih:control-plane-profiles:v1';
+const ACTIVE_PROFILE_KEY='aih:active-control-plane-profile:v1';
+
+function normalizeHost(h){const v=String(h||'').toLowerCase();return v==='localhost'||v==='[::1]'||v==='::1'?'127.0.0.1':v}
+function effectivePort(u){return u.port||(u.protocol==='https:'?'443':'80')}
+function sameOriginEndpoint(a,b){try{const l=new URL(String(a||'')),r=new URL(String(b||''));return l.protocol===r.protocol&&normalizeHost(l.hostname)===normalizeHost(r.hostname)&&effectivePort(l)===effectivePort(r)}catch(e){return false}}
+function resolveCredentials(){
+  const locOrigin=(location.origin&&location.origin!=='null'?location.origin:'').replace(/\/+$/,'');
+  const injected=window.__AIH_CLIPBOARD__;
+  if(injected&&typeof injected==='object'){
+    const origin=String(injected.origin||locOrigin).trim().replace(/\/+$/,'');
+    const key=String(injected.managementKey||'').trim();
+    if(key||injected.origin)return {origin:origin||locOrigin,managementKey:key};
+  }
+  try{
+    const profiles=JSON.parse(localStorage.getItem(PROFILES_KEY)||'[]');
+    const activeId=String(localStorage.getItem(ACTIVE_PROFILE_KEY)||'').trim();
+    if(Array.isArray(profiles)&&locOrigin){
+      if(activeId){
+        const active=profiles.find(p=>p&&p.id===activeId&&String(p.managementKey||'').trim()&&sameOriginEndpoint(p.endpoint,locOrigin));
+        if(active)return {origin:locOrigin,managementKey:String(active.managementKey).trim()};
+      }
+      for(const p of profiles){
+        const k=String(p?.managementKey||'').trim();
+        if(k&&sameOriginEndpoint(p?.endpoint,locOrigin))return {origin:locOrigin,managementKey:k};
+      }
+    }
+  }catch(e){}
+  return {origin:locOrigin,managementKey:''};
+}
+let credentials=resolveCredentials();
+
+async function apiFetch(path,opts={}){
+  const headers=Object.assign({'Accept':'application/json'},opts.headers||{});
+  if(credentials.managementKey)headers['Authorization']='Bearer '+credentials.managementKey;
+  if(opts.body&&typeof opts.body==='string'&&!headers['Content-Type'])headers['Content-Type']='application/json';
+  const res=await fetch(credentials.origin+path,Object.assign({cache:'no-store'},opts,{headers}));
+  if(!res.ok){
+    let msg='HTTP '+res.status;
+    try{const j=await res.json();msg=j?.error?.message||j?.error?.code||msg}catch(e){}
+    const err=new Error(msg);err.status=res.status;throw err;
+  }
+  return res;
+}
+async function apiJSON(path,opts={}){const res=await apiFetch(path,opts);return res.json()}
+
+const labels={all:'All',text:'Text',code:'Code',url:'Link',image:'Image',color:'Color',file:'File',pin:'Pinned'};
+const typeIcon=t=>t==='ai'?'spark':t;
+const ranges=[['all','All history'],['10','Last 10 min'],['30','Last 30 min'],['60','Last hour'],['today','Today'],['yesterday','Yesterday'],['older','Older']];
+const IDE_PATTERN=/\b(vs\s?code|code|cursor|zed|xcode|terminal|iterm|warp|alacritty|kitty|wezterm|ghostty|intellij|goland|webstorm|pycharm|neovim|vim|tmux|ssh|powershell|cmd)\b/i;
+
+let data=[],selected=null,filter='all',query='',timeFilter='all',sort='new',layout='grid',quickMode='ribbon',tab='Details',stack=[],context=false,smart=false,visible=[],quickOpened=isQuickPage,dialogOpened=false,dialogKind='',toastTimer;
+let statusInfo=null,settingsInfo=null,serversList=[],serversLoaded=false,lastError=null,loading=true,refreshInFlight=false,lastRefreshAt=0;
+let hydratedCache=new Map(),imageUrlCache=new Map(),hydrateToken=0,renderQueued=false,previewImageGen=0;
+
+function formatBytes(n){n=Number(n||0);if(n>=1048576)return (n/1048576).toFixed(1)+' MiB';if(n>=1024)return (n/1024).toFixed(1)+' KiB';return n+' B'}
+function formatRelative(tsMs){
+  if(!tsMs||tsMs<=0)return '-';
+  const now=Date.now(),diff=Math.max(0,Math.floor((now-tsMs)/1000));
+  if(diff<60)return diff+'s';
+  if(diff<3600)return Math.floor(diff/60)+'m';
+  const d=new Date(now);
+  const startToday=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+  const startYesterday=startToday-86400000;
+  if(tsMs>=startToday)return Math.floor(diff/3600)+'h';
+  if(tsMs>=startYesterday)return 'Yesterday';
+  return Math.max(2,Math.floor(diff/86400))+'d';
+}
+function formatCaptured(tsMs){
+  const rel=formatRelative(tsMs);
+  if(rel==='-'||rel==='Yesterday')return rel;
+  return rel+' ago';
+}
+function inTime(c,key){
+  if(key==='all')return true;
+  const ts=c.lastSeenAtMs||c.createdAtMs||0;
+  if(!ts)return key==='older';
+  const now=Date.now(),ageMin=Math.max(0,(now-ts)/60000);
+  if(key==='10')return ageMin<=10;
+  if(key==='30')return ageMin<=30;
+  if(key==='60')return ageMin<=60;
+  const d=new Date(now);
+  const startToday=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+  const startYesterday=startToday-86400000;
+  if(key==='today')return ts>=startToday;
+  if(key==='yesterday')return ts>=startYesterday&&ts<startToday;
+  if(key==='older')return ts<startYesterday;
+  return true;
+}
+function classifyType(rawKind,text){
+  if(rawKind==='image')return 'image';
+  if(rawKind==='file')return 'file';
+  const raw=String(text||''),t=raw.trim();
+  if(rawKind==='link'||/^https?:\/\//i.test(t))return 'url';
+  if(/^#[0-9a-f]{6}$/i.test(t))return 'color';
+  if(/[\r\n]/.test(raw)||/(?:=>|===|!==|:=|::|\b(?:const|let|var|function|async|await|return|import|export|func|package|class|def|struct|interface|SELECT|INSERT|UPDATE|DELETE|FROM|WHERE)\b|^\s*(?:[$#]\s|<!|<\/?[a-z][\w-]*[\s>]|```|\{|\})|\(\)\s*\{|;\s*$)/m.test(t))return 'code';
+  return 'text';
+}
+function extractUrlMeta(text,fallback){
+  const first=String(text||'').trim().split(/\s+/)[0]||'';
+  try{
+    const u=new URL(first);
+    const host=u.hostname.replace(/^www\./i,'');
+    const path=u.pathname&&u.pathname!=='/'?' '+u.pathname.slice(0,28):'';
+    return {site:host||fallback||'Link',domain:(host+path).trim()};
+  }catch(e){
+    return {site:fallback||'Link',domain:'URL'};
+  }
+}
+function deviceLabel(deviceId){
+  if(!deviceId)return '';
+  if(statusInfo&&Array.isArray(statusInfo.devices)){
+    const dev=statusInfo.devices.find(d=>d&&d.id===deviceId);
+    if(dev&&dev.name)return dev.name;
+  }
+  if(statusInfo&&statusInfo.deviceId===deviceId&&statusInfo.deviceName)return statusInfo.deviceName;
+  return deviceId.slice(0,8);
+}
+function mapServerItem(item){
+  const files=Array.isArray(item.files)?item.files.filter(Boolean):[];
+  const cached=hydratedCache.get(item.id);
+  const hasCached=cached&&cached.lastSeenAtMs===(item.lastSeenAtMs||item.createdAtMs||0);
+  const rawPreview=String(item.preview||'').trim();
+  const baseText=item.kind==='file'?files.join('\n'):item.kind==='image'?rawPreview:(hasCached?cached.text:rawPreview);
+  const type=classifyType(item.kind,baseText);
+  const devName=deviceLabel(item.sourceDevice);
+  const app=String(item.sourceApp||'').trim()||devName||'Local';
+  const title=rawPreview||(item.kind==='file'?(files[0]?.split(/[\\/]/).pop()||'File'):item.kind==='image'?'Image':'Untitled');
+  const urlMeta=type==='url'?extractUrlMeta(baseText,title):{};
+  return {
+    id:String(item.id),
+    rawKind:item.kind||'text',
+    type,
+    mime:item.mime||'',
+    app,
+    device:devName||item.sourceDevice||'Local',
+    time:formatRelative(item.lastSeenAtMs||item.createdAtMs),
+    title,
+    value:baseText,
+    site:urlMeta.site||'',
+    domain:urlMeta.domain||'',
+    thumbnailDataUrl:item.thumbnailDataUrl||'',
+    files,
+    width:Number(item.width||0),
+    height:Number(item.height||0),
+    byteSize:Number(item.byteSize||0),
+    seenCount:Number(item.seenCount||1),
+    createdAtMs:Number(item.createdAtMs||0),
+    lastSeenAtMs:Number(item.lastSeenAtMs||item.createdAtMs||0),
+    pinned:Boolean(item.pinned),
+    hydrated:item.kind==='image'||item.kind==='file'||Boolean(hasCached),
+    textTruncated:hasCached?Boolean(cached.textTruncated):false
+  };
+}
+
+const current=()=>data.find(c=>c.id===selected)||null;
+function highlight(s){return esc(s).replace(/(&quot;.*?&quot;|&#39;.*?&#39;)/g,'<span class="str">$1</span>').replace(/\b(const|async|await|return|true|false|let|var|function|func|package|import|export|class|def)\b/g,'<span class="kw">$1</span>')}
+function body(c,full=false){
+  if(c.type==='code')return `<pre>${highlight(c.value)}</pre>`;
+  if(c.type==='color'){
+    const hex=c.value.trim(),ok=/^#[0-9a-f]{6}$/i.test(hex);
+    const r=ok?parseInt(hex.slice(1,3),16):130,g=ok?parseInt(hex.slice(3,5),16):152,b=ok?parseInt(hex.slice(5,7),16):189;
+    const lum=(r*299+g*587+b*114)/1000;
+    return `<div class="swatch" style="background:${ok?hex:'#8298bd'};color:${lum<135?'#f2f6ff':'#172030'}">${esc(hex)}<small>HEX / COLOR SWATCH</small></div>`;
+  }
+  if(c.type==='image'){
+    const src=(full&&imageUrlCache.get(c.id))||c.thumbnailDataUrl;
+    if(src)return `<img class="art" data-img-id="${esc(c.id)}" src="${esc(src)}" alt="${esc(c.title)}">`;
+    return `<div class="fileicon">${icon('image')}</div><strong>${esc(c.title)}</strong><small>${esc((c.width&&c.height?`${c.width}×${c.height} · `:'')+formatBytes(c.byteSize))}</small>`;
+  }
+  if(c.type==='url')return `<div class="site"><b>${esc((c.site||c.title||'L')[0].toUpperCase())}</b>${esc(c.domain||'URL')}</div><strong>${esc(c.site||c.title)}</strong><small>${esc(c.value)}</small>`;
+  if(c.type==='file'){
+    const sub=c.files.length>1?`${c.files.length} files · ${formatBytes(c.byteSize)}`:(c.files[0]||formatBytes(c.byteSize));
+    return `<div class="fileicon">${icon('file')}</div><strong>${esc(c.title)}</strong><small>${esc(sub)}</small>`;
+  }
+  return `<p>${esc(c.value)}</p>`;
+}
+function card(c,i,keys=false){return `<article tabindex="0" role="option" aria-selected="${c.id===selected}" data-id="${esc(c.id)}" data-type="${esc(c.type)}" class="clip ${c.id===selected?'selected':''}"><div class="cliphead">${icon(typeIcon(c.type))}${labels[c.type]||c.type}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div><div class="clipfoot">${icon('cube')}<span>${esc(c.app)} · ${esc(c.title)}</span>${c.pinned?`<i class="pin">${icon('pin')}</i>`:''}</div>${keys&&i<9?`<span class="keynum">${i+1}</span>`:''}</article>`}
 function filterButtons(id){$(id).innerHTML=Object.entries(labels).map(([k,v])=>`<button class="filter ${filter===k?'active':''}" data-filter="${k}">${icon(k==='all'?'grid':typeIcon(k))}${v}${k==='all'?` <b>${data.length}</b>`:''}</button>`).join('');$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()})}
-function getVisible(){let q=query.toLowerCase().trim();let a=data.filter(c=>{let s=[c.title,c.value,c.app,c.type,labels[c.type]].join(' ').toLowerCase();return (filter==='all'||(filter==='pin'?c.pinned:c.type===filter))&&inTime(c,timeFilter)&&(!context||['VS Code','Terminal'].includes(c.app))&&(!q||(smart?q.split(/\s+/).every(w=>s.includes(w)):s.includes(q)))});if(sort==='old')a.reverse();if(sort==='name')a.sort((a,b)=>a.title.localeCompare(b.title));return a}
-function render(){visible=getVisible();if(!visible.some(c=>c.id===selected))selected=visible[0]?.id??null;$('count').textContent=`// ${visible.length} clips`;$('timeline').innerHTML=ranges.map(([k,l])=>`<button class="time ${timeFilter===k?'active':''}" data-time="${k}"><i></i><span>${l}</span><em>${data.filter(c=>inTime(c,k)).length}</em></button>`).join('');$('timeline').querySelectorAll('button').forEach(b=>b.onclick=()=>{timeFilter=b.dataset.time;render()});filterButtons('filters');filterButtons('quickFilters');$('gallery').classList.toggle('list',layout==='list');$('gridBtn').classList.toggle('active',layout==='grid');$('listBtn').classList.toggle('active',layout==='list');$('gallery').innerHTML=visible.map((c,i)=>card(c,i)).join('')||'<div class="empty">No clips match your search.<br><button class="btn" id="resetFilters" style="margin-top:12px">Reset filters</button></div>';if($('resetFilters'))$('resetFilters').onclick=()=>{query='';filter='all';timeFilter='all';context=false;syncSearch();render()};$('dockTrack').innerHTML=visible.map((c,i)=>card(c,i,true)).join('');$('quickGallery').innerHTML=visible.map((c,i)=>card(c,i,true)).join('')||'<div class="empty">No matching clips</div>';$('quickRail').innerHTML=visible.map(c=>`<button data-id="${c.id}" title="${esc(c.title)}" class="${c.id===selected?'active':''}"></button>`).join('');$('quickRail').querySelectorAll('button').forEach(b=>b.onclick=()=>select(+b.dataset.id));['gallery','dockTrack','quickGallery'].forEach(id=>$(id).querySelectorAll('.clip').forEach(e=>{e.onclick=ev=>{if(ev.shiftKey){select(+e.dataset.id);addStack();return}select(+e.dataset.id,false)};e.ondblclick=()=>paste(data.find(c=>c.id===+e.dataset.id));e.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();ev.stopPropagation();paste(data.find(c=>c.id===+e.dataset.id))}}}));updatePreview();renderStack();updateFocus(false);$('context').classList.toggle('off',!context);$('context').querySelector('small').textContent=context?'IDE / TERMINAL':'ALL SOURCES';$('semantic').classList.toggle('active',smart);$('semantic').querySelector('small').textContent=smart?'MULTI-KEYWORD':'KEYWORDS';}
-function updateFocus(scroll=true){document.querySelectorAll('.clip').forEach(e=>{let yes=+e.dataset.id===selected;e.classList.toggle('selected',yes);e.setAttribute('aria-selected',yes);if(yes&&scroll){let p=e.parentElement;if(p.id==='quickGallery'&&!quickOpened)return;if(p.id==='gallery'&&quickOpened)return;e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'})}});$('quickRail').querySelectorAll('button').forEach(b=>b.classList.toggle('active',+b.dataset.id===selected));let n=visible.findIndex(c=>c.id===selected);$('quickPosition').textContent=n<0?'0 / 0':`${n+1} / ${visible.length}`;$('statusSelection').textContent=current()?`SELECTED / ${current().title.toUpperCase()}`:'NO SELECTION';updatePreview()}
-function select(id,scroll=true){if(!data.some(c=>c.id===id))return;selected=id;updateFocus(scroll)}
-function updatePreview(){let c=current();$('previewID').textContent=c?`ID / ${String(c.id+1).padStart(4,'0')}`:'';$('previewContent').innerHTML=c?`<div class="cliphead" style="--t:#c0a2ff">${icon(typeIcon(c.type))}${esc(labels[c.type])}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div>`:'<div class="empty">Select a clip</div>';$('tabs').innerHTML=['Details','Source','Actions'].map(t=>`<button class="tab ${t===tab?'active':''}">${t}</button>`).join('');$('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.textContent;updatePreview()});if(c){let entries=tab==='Details'?[['Type',labels[c.type]],['Captured',c.time+' ago'],['Size',new TextEncoder().encode(c.value).length+' B'],['Source',c.app]]:tab==='Source'?[['Application',c.app],['Title',c.title],['Storage','Browser local demo']]:[['Pinned',c.pinned?'Yes':'No'],['In stack',stack.includes(c.id)?'Yes':'No'],['Shortcut','Enter to paste']];$('detail').innerHTML=`<dl class="details">${entries.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`}else $('detail').innerHTML='';$('pin').classList.toggle('active',!!c?.pinned);$('stackAdd').classList.toggle('active',!!c&&stack.includes(c.id));['paste','pin','stackAdd','edit','delete','expand','transformRun'].forEach(id=>$(id).disabled=!c)}
-function syncSearch(){$('search').value=query;$('quickSearch').value=query}function notify(msg,action){clearTimeout(toastTimer);$('toast').innerHTML=icon('check')+esc(msg)+(action?'<button class="btn" id="toastUndo">Undo</button>':'');$('toast').classList.add('show');if(action)$('toastUndo').onclick=action;toastTimer=setTimeout(()=>$('toast').classList.remove('show'),action?6500:2400)}async function copyText(s){try{await navigator.clipboard.writeText(s);return true}catch(e){let t=document.createElement('textarea');t.value=s;t.style.position='fixed';t.style.opacity='0';document.body.append(t);t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}t.remove();return ok}}async function paste(c){if(!c)return;let ok=await copyText(c.value);if(ok){notify(c.type==='file'||c.type==='image'?'Demo descriptor copied':'Copied · '+c.title);if(quickOpened)openQuick(false)}else showDialog('Copy manually',`<textarea readonly>${esc(c.value)}</textarea>`, '<button class="btn primary" data-close>Done</button>')}
-function renderStack(){let arr=stack.map(id=>data.find(c=>c.id===id)).filter(Boolean);$('stackItems').innerHTML=arr.map(c=>`<div class="chip" draggable="true" data-id="${c.id}">${icon(typeIcon(c.type))}${esc(c.title)}<button title="Remove">${icon('x')}</button></div>`).join('')+'<button class="addchip" id="addChip">+ Add selection</button>';$('stackCount').textContent=`${arr.length} ITEMS · ${new TextEncoder().encode(arr.map(c=>c.value).join('\n\n')).length} B`;$('addChip').onclick=addStack;$('stackItems').querySelectorAll('.chip').forEach(e=>{e.querySelector('button').onclick=()=>{stack=stack.filter(id=>id!==+e.dataset.id);save();renderStack();updatePreview()};e.ondragstart=ev=>ev.dataTransfer.setData('text/plain',e.dataset.id);e.ondragover=ev=>ev.preventDefault();e.ondrop=ev=>{ev.preventDefault();let from=+ev.dataTransfer.getData('text/plain'),to=+e.dataset.id;if(from!==to&&stack.includes(from)){stack.splice(stack.indexOf(from),1);stack.splice(stack.indexOf(to),0,from);save();renderStack()}}})}
-function addStack(){let c=current();if(!c)return;if(stack.includes(c.id)){notify('Already in fusion stack');return}stack.push(c.id);save();renderStack();updatePreview();notify('Added to fusion stack')}
-async function fusion(){if(!stack.length){notify('Fusion stack is empty');return}let s=stack.map(id=>data.find(c=>c.id===id)?.value).filter(Boolean).join('\n\n');if(await copyText(s))notify('Fusion stack copied · '+stack.length+' clips');else showDialog('Fusion paste',`<textarea readonly>${esc(s)}</textarea>`,'<button class="btn primary" data-close>Done</button>')}
-function togglePin(){let c=current();if(!c)return;c.pinned=!c.pinned;save();render();notify(c.pinned?'Clip pinned':'Clip unpinned')}
-function openQuick(open=true){quickOpened=open;$('quickModal').classList.toggle('open',open);$('quickModal').setAttribute('aria-hidden',!open);if(open){syncSearch();updateFocus();$('quickSearch').blur()}else $('quickSearch').blur()}
-function setQuickMode(){quickMode=quickMode==='ribbon'?'grid':'ribbon';$('quickWindow').classList.toggle('ribbon',quickMode==='ribbon');$('quickLayout').innerHTML=icon(quickMode==='ribbon'?'grid':'list');updateFocus()}
+function getVisible(){
+  let q=query.toLowerCase().trim();
+  let a=data.filter(c=>{
+    let s=[c.title,c.value,c.app,c.device,c.type,labels[c.type]||''].join(' ').toLowerCase();
+    return (filter==='all'||(filter==='pin'?c.pinned:c.type===filter))&&inTime(c,timeFilter)&&(!context||IDE_PATTERN.test(c.app))&&(!q||(smart?q.split(/\s+/).every(w=>s.includes(w)):s.includes(q)));
+  });
+  if(sort==='old')a=[...a].reverse();
+  if(sort==='name')a=[...a].sort((x,y)=>x.title.localeCompare(y.title));
+  return a;
+}
+function renderHistogram(){
+  const buckets=new Array(34).fill(0),now=Date.now(),windowMs=86400000,step=windowMs/34;
+  for(const c of data){
+    const age=now-(c.lastSeenAtMs||c.createdAtMs||0);
+    if(age>=0&&age<=windowMs){
+      const idx=Math.min(33,Math.max(0,33-Math.floor(age/step)));
+      buckets[idx]++;
+    }
+  }
+  const max=Math.max(0,...buckets);
+  $('histogram').innerHTML=buckets.map(v=>`<b style="height:${max?Math.max(14,Math.round((v/max)*96)):12}%"></b>`).join('');
+}
+function renderStatusIndicators(){
+  const cap=statusInfo?.capture,syn=statusInfo?.sync;
+  const devName=(statusInfo?.deviceName||'LOCAL').toUpperCase();
+  $('activityMeta').textContent=`${devName} · 24H`;
+  if(lastError){
+    const msg=lastError.status===401?'Auth key required':'Server unreachable';
+    $('captureStatus').innerHTML=`<i class="dot warn"></i><span>${esc(msg)}</span>`;
+    $('statusSystem').innerHTML=`<i class="dot warn" id="statusDot"></i> NEXUS OFFLINE <span>·</span> ${esc(msg.toUpperCase())}`;
+    $('privacyLabel').textContent='OFFLINE';
+    return;
+  }
+  if(!statusInfo){
+    $('captureStatus').innerHTML='<i class="dot off"></i><span>Connecting…</span>';
+    $('statusSystem').innerHTML='<i class="dot off" id="statusDot"></i> NEXUS <span>·</span> CONNECTING';
+    return;
+  }
+  let dotCls='off',capText='Capture paused';
+  if(cap?.running){dotCls='';capText=syn?.enabled?'Capture live · Sync on':'Capture running'}
+  else if(cap?.enabled&&!cap?.supported){dotCls='warn';capText='Capture unsupported'}
+  else if(cap?.enabled){dotCls='warn';capText=cap.reason?`Capture idle · ${cap.reason}`:'Capture starting'}
+  else if(!cap?.supported){dotCls='off';capText=syn?.enabled?'Sync only · Unsupported':'Capture unsupported'}
+  else if(syn?.enabled){dotCls='';capText='Capture paused · Sync on'}
+  $('captureStatus').innerHTML=`<i class="dot ${dotCls}"></i><span>${esc(capText)}</span>`;
+  const sysRight=cap?.running?(syn?.enabled?'CAPTURE LIVE · E2E SYNC':'CAPTURE LIVE'):(syn?.enabled?'SYNC READY':'CAPTURE PAUSED');
+  $('statusSystem').innerHTML=`<i class="dot ${dotCls}" id="statusDot"></i> NEXUS ONLINE <span>·</span> ${esc(sysRight)}`;
+  $('privacyLabel').textContent=syn?.enabled?'E2E SYNC':'LOCAL ONLY';
+}
+function scheduleRender(){if(renderQueued)return;renderQueued=true;requestAnimationFrame(()=>{renderQueued=false;render()})}
+function render(){
+  for(const c of data)c.time=formatRelative(c.lastSeenAtMs||c.createdAtMs);
+  visible=getVisible();
+  if(!visible.some(c=>c.id===selected))selected=visible[0]?.id??null;
+  $('count').textContent=`// ${visible.length} clips`;
+  $('timeline').innerHTML=ranges.map(([k,l])=>`<button class="time ${timeFilter===k?'active':''}" data-time="${k}"><i></i><span>${l}</span><em>${data.filter(c=>inTime(c,k)).length}</em></button>`).join('');
+  $('timeline').querySelectorAll('button').forEach(b=>b.onclick=()=>{timeFilter=b.dataset.time;render()});
+  filterButtons('filters');filterButtons('quickFilters');
+  $('gallery').classList.toggle('list',layout==='list');
+  $('gridBtn').classList.toggle('active',layout==='grid');
+  $('listBtn').classList.toggle('active',layout==='list');
+  const emptyMsg=loading?'Loading clipboard history…':lastError?(lastError.status===401?'Management key required. Open from WebUI or desktop wrapper.':'Unable to reach clipboard service: '+esc(lastError.message)):(data.length?'No clips match your search.<br><button class="btn" id="resetFilters" style="margin-top:12px">Reset filters</button>':'No clipboard items yet. Copy text, links, images, or files to capture.');
+  $('gallery').innerHTML=visible.map((c,i)=>card(c,i)).join('')||`<div class="empty">${emptyMsg}</div>`;
+  if($('resetFilters'))$('resetFilters').onclick=()=>{query='';filter='all';timeFilter='all';context=false;syncSearch();render()};
+  $('dockTrack').innerHTML=visible.map((c,i)=>card(c,i,true)).join('');
+  $('quickGallery').innerHTML=visible.map((c,i)=>card(c,i,true)).join('')||`<div class="empty">${loading?'Loading…':lastError?esc(lastError.message):'No matching clips'}</div>`;
+  $('quickRail').innerHTML=visible.map(c=>`<button data-id="${esc(c.id)}" title="${esc(c.title)}" class="${c.id===selected?'active':''}"></button>`).join('');
+  $('quickRail').querySelectorAll('button').forEach(b=>b.onclick=()=>select(b.dataset.id));
+  ['gallery','dockTrack','quickGallery'].forEach(id=>$(id).querySelectorAll('.clip').forEach(e=>{
+    e.onclick=ev=>{if(ev.shiftKey){select(e.dataset.id);addStack();return}select(e.dataset.id,false)};
+    e.ondblclick=()=>paste(data.find(c=>c.id===e.dataset.id));
+    e.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();ev.stopPropagation();paste(data.find(c=>c.id===e.dataset.id))}};
+  }));
+  renderHistogram();renderStatusIndicators();updatePreview();renderStack();updateFocus(false);
+  $('context').classList.toggle('off',!context);
+  $('context').querySelector('small').textContent=context?'IDE / TERMINAL':'ALL SOURCES';
+  $('semantic').classList.toggle('active',smart);
+  $('semantic').querySelector('small').textContent=smart?'MULTI-KEYWORD':'KEYWORDS';
+}
+function updateFocus(scroll=true){
+  document.querySelectorAll('.clip').forEach(e=>{
+    let yes=e.dataset.id===selected;
+    e.classList.toggle('selected',yes);
+    e.setAttribute('aria-selected',yes);
+    if(yes&&scroll){
+      let p=e.parentElement;
+      if(p.id==='quickGallery'&&!quickOpened)return;
+      if(p.id==='gallery'&&quickOpened)return;
+      e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'});
+    }
+  });
+  $('quickRail').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.id===selected));
+  let n=visible.findIndex(c=>c.id===selected);
+  $('quickPosition').textContent=n<0?'0 / 0':`${n+1} / ${visible.length}`;
+  const cur=current();
+  $('statusSelection').textContent=cur?`SELECTED / ${cur.title.slice(0,48).toUpperCase()}`:'NO SELECTION';
+  updatePreview();
+}
+function select(id,scroll=true){if(!data.some(c=>c.id===id))return;selected=id;updateFocus(scroll);const c=current();if(c&&!c.hydrated)hydrateOne(c)}
+async function ensureFullImage(c,container){
+  if(!c||c.type!=='image')return;
+  if(imageUrlCache.has(c.id))return;
+  const gen=++previewImageGen;
+  try{
+    const res=await apiFetch(`${API_BASE}/items/${encodeURIComponent(c.id)}/content`,{headers:{'Accept':'image/*,*/*'}});
+    const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    imageUrlCache.set(c.id,url);
+    if(gen===previewImageGen&&current()?.id===c.id){
+      const img=container?.querySelector(`img[data-img-id="${CSS.escape(c.id)}"]`);
+      if(img)img.src=url;
+    }
+  }catch(e){}
+}
+function updatePreview(){
+  let c=current();
+  $('previewID').textContent=c?`ID / ${c.id.slice(0,8).toUpperCase()}`:'';
+  $('previewContent').innerHTML=c?`<div class="cliphead" style="--t:#c0a2ff">${icon(typeIcon(c.type))}${esc(labels[c.type]||c.type)}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c,true)}</div>`:'<div class="empty">Select a clip</div>';
+  if(c&&c.type==='image')ensureFullImage(c,$('previewContent'));
+  $('tabs').innerHTML=['Details','Source','Actions'].map(t=>`<button class="tab ${t===tab?'active':''}">${t}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.textContent;updatePreview()});
+  if(c){
+    const sizeText=c.type==='image'&&c.width&&c.height?`${c.width}×${c.height} · ${formatBytes(c.byteSize)}`:formatBytes(c.byteSize);
+    let entries=tab==='Details'?[['Type',labels[c.type]||c.type],['Captured',formatCaptured(c.lastSeenAtMs||c.createdAtMs)],['Size',sizeText],['Source',c.app]]:tab==='Source'?[['Application',c.app],['Device',c.device],['MIME',c.mime||'text/plain'],['Seen',String(c.seenCount)+'×']]:[['Pinned',c.pinned?'Yes':'No'],['In stack',stack.includes(c.id)?'Yes':'No'],['Shortcut','Enter to paste']];
+    $('detail').innerHTML=`<dl class="details">${entries.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+  }else $('detail').innerHTML='';
+  $('pin').classList.toggle('active',!!c?.pinned);
+  $('stackAdd').classList.toggle('active',!!c&&stack.includes(c.id));
+  ['paste','pin','stackAdd','delete','expand','transformRun'].forEach(id=>$(id).disabled=!c);
+  $('edit').disabled=true;
+}
+function syncSearch(){$('search').value=query;$('quickSearch').value=query}
+function notify(msg){clearTimeout(toastTimer);$('toast').innerHTML=icon('check')+esc(msg);$('toast').classList.add('show');toastTimer=setTimeout(()=>$('toast').classList.remove('show'),2400)}
+
+async function copyText(s){
+  try{await navigator.clipboard.writeText(s);return true}catch(e){}
+  let t=document.createElement('textarea');t.value=s;t.style.position='fixed';t.style.opacity='0';document.body.append(t);t.select();
+  let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+  t.remove();return ok;
+}
+async function fetchContentBlob(id){
+  const res=await apiFetch(`${API_BASE}/items/${encodeURIComponent(id)}/content`,{headers:{'Accept':'*/*'}});
+  const ct=(res.headers.get('content-type')||'').split(';')[0].trim();
+  const raw=await res.blob();
+  const type=ct||raw.type||'application/octet-stream';
+  return {blob:raw.type===type?raw:new Blob([raw],{type}),contentType:type};
+}
+async function fetchContentText(id){
+  const res=await apiFetch(`${API_BASE}/items/${encodeURIComponent(id)}/content`,{headers:{'Accept':'text/plain,*/*'}});
+  return res.text();
+}
+function blobToPng(source){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(source);
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const cv=document.createElement('canvas');
+        cv.width=img.naturalWidth||img.width;cv.height=img.naturalHeight||img.height;
+        const ctx=cv.getContext('2d');if(!ctx){URL.revokeObjectURL(url);reject(new Error('canvas unavailable'));return}
+        ctx.drawImage(img,0,0);
+        cv.toBlob(out=>{URL.revokeObjectURL(url);if(out)resolve(out);else reject(new Error('png encode failed'))},'image/png');
+      }catch(err){URL.revokeObjectURL(url);reject(err)}
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('image decode failed'))};
+    img.src=url;
+  });
+}
+function extForMime(mime){const m=String(mime||'').split(';')[0].trim().toLowerCase();return m==='image/jpeg'?'jpg':m==='image/webp'?'webp':m==='image/gif'?'gif':'png'}
+function downloadBlob(blob,filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;a.style.display='none';
+  document.body.append(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),15000);
+}
+function closeQuickSurface(){
+  if(isQuickPage&&window.webkit?.messageHandlers?.aihClipboard){
+    try{window.webkit.messageHandlers.aihClipboard.postMessage({type:'close'})}catch(e){}
+    return;
+  }
+  if(!isQuickPage&&quickOpened)openQuick(false);
+}
+
+async function paste(c){
+  if(!c)return;
+  try{
+    if(c.type==='image'){
+      let copied=false,blobPromise=fetchContentBlob(c.id);
+      if(navigator.clipboard?.write&&typeof ClipboardItem!=='undefined'){
+        try{
+          const pngPromise=blobPromise.then(({blob,contentType})=>contentType==='image/png'?blob:blobToPng(blob));
+          await navigator.clipboard.write([new ClipboardItem({'image/png':pngPromise})]);
+          copied=true;
+        }catch(e){
+          try{
+            const {blob,contentType}=await blobPromise;
+            const png=contentType==='image/png'?blob:await blobToPng(blob);
+            await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
+            copied=true;
+          }catch(e2){}
+        }
+      }
+      if(copied){notify('Image copied · '+c.title);closeQuickSurface();return}
+      const {blob,contentType}=await blobPromise;
+      downloadBlob(blob,`clipboard-${c.id.slice(0,8)}.${extForMime(contentType||c.mime)}`);
+      notify('Image downloaded · clipboard write unavailable');
+      return;
+    }
+    if(c.type==='file'){
+      let text=c.files.length?c.files.join('\n'):await fetchContentText(c.id);
+      if(await copyText(text)){notify('Copied paths · '+c.title);closeQuickSurface()}
+      else showDialog('Copy manually',`<textarea readonly>${esc(text)}</textarea>`,'<button class="btn primary" data-close>Done</button>');
+      return;
+    }
+    const textPromise=fetchContentText(c.id);
+    if(navigator.clipboard?.write&&typeof ClipboardItem!=='undefined'){
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'text/plain':textPromise.then(t=>new Blob([t],{type:'text/plain'}))})]);
+        notify('Copied · '+c.title);closeQuickSurface();return;
+      }catch(e){}
+    }
+    const fullText=await textPromise;
+    if(await copyText(fullText)){notify('Copied · '+c.title);closeQuickSurface()}
+    else showDialog('Copy manually',`<textarea readonly>${esc(fullText)}</textarea>`,'<button class="btn primary" data-close>Done</button>');
+  }catch(e){
+    notify('Copy failed · '+(e?.message||'error'));
+  }
+}
+
+function renderStack(){
+  stack=stack.filter(id=>data.some(c=>c.id===id));
+  let arr=stack.map(id=>data.find(c=>c.id===id)).filter(Boolean);
+  $('stackItems').innerHTML=arr.map(c=>`<div class="chip" draggable="true" data-id="${esc(c.id)}">${icon(typeIcon(c.type))}${esc(c.title.slice(0,32))}<button title="Remove">${icon('x')}</button></div>`).join('')+'<button class="addchip" id="addChip">+ Add selection</button>';
+  $('stackCount').textContent=`${arr.length} ITEMS · ${formatBytes(new TextEncoder().encode(arr.map(c=>c.value).join('\n\n')).length)}`;
+  $('addChip').onclick=addStack;
+  $('stackItems').querySelectorAll('.chip').forEach(e=>{
+    e.querySelector('button').onclick=()=>{stack=stack.filter(id=>id!==e.dataset.id);renderStack();updatePreview()};
+    e.ondragstart=ev=>ev.dataTransfer.setData('text/plain',e.dataset.id);
+    e.ondragover=ev=>ev.preventDefault();
+    e.ondrop=ev=>{
+      ev.preventDefault();
+      let from=ev.dataTransfer.getData('text/plain'),to=e.dataset.id;
+      if(from&&from!==to&&stack.includes(from)){
+        stack.splice(stack.indexOf(from),1);
+        stack.splice(stack.indexOf(to),0,from);
+        renderStack();
+      }
+    };
+  });
+}
+function addStack(){
+  let c=current();if(!c)return;
+  if(c.type==='image'){notify('Fusion stack supports text & file clips');return}
+  if(stack.includes(c.id)){notify('Already in fusion stack');return}
+  stack.push(c.id);renderStack();updatePreview();notify('Added to fusion stack');
+}
+async function fusion(){
+  if(!stack.length){notify('Fusion stack is empty');return}
+  const clips=stack.map(id=>data.find(c=>c.id===id)).filter(Boolean);
+  const parts=[];
+  for(const c of clips){
+    if(c.type==='image')continue;
+    if(c.type==='file'){parts.push(c.files.length?c.files.join('\n'):c.value);continue}
+    if(c.textTruncated||!c.hydrated){
+      try{parts.push(await fetchContentText(c.id))}catch(e){parts.push(c.value)}
+    }else parts.push(c.value);
+  }
+  const s=parts.filter(Boolean).join('\n\n');
+  if(!s){notify('No text values in fusion stack');return}
+  if(await copyText(s))notify('Fusion stack copied · '+parts.length+' clips');
+  else showDialog('Fusion paste',`<textarea readonly>${esc(s)}</textarea>`,'<button class="btn primary" data-close>Done</button>');
+}
+async function togglePin(){
+  let c=current();if(!c)return;
+  const nextPinned=!c.pinned;
+  try{
+    await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}/pin`,{method:'POST',body:JSON.stringify({pinned:nextPinned})});
+    notify(nextPinned?'Clip pinned':'Clip unpinned');
+    await refreshAll({force:true});
+  }catch(e){notify('Pin failed · '+e.message)}
+}
+function openQuick(open=true){
+  if(isQuickPage){if(!open)closeQuickSurface();return}
+  quickOpened=open;
+  $('quickModal').classList.toggle('open',open);
+  $('quickModal').setAttribute('aria-hidden',!open);
+  if(open){syncSearch();updateFocus();$('quickSearch').blur()}else $('quickSearch').blur();
+}
+function setQuickMode(){
+  quickMode=quickMode==='ribbon'?'grid':'ribbon';
+  $('quickWindow').classList.toggle('ribbon',quickMode==='ribbon');
+  $('quickLayout').innerHTML=icon(quickMode==='ribbon'?'grid':'list');
+  updateFocus();
+}
 function move(delta){let i=visible.findIndex(c=>c.id===selected);if(visible.length)select(visible[Math.max(0,Math.min(visible.length-1,i+delta))].id)}
-function showDialog(title,html,foot=''){dialogOpened=true;$('dialog').innerHTML=`<div class="screenhead"><h2>${esc(title)}</h2><button class="btn iconbtn" data-close aria-label="Close">${icon('x')}</button></div>${html}<div class="dialogfoot">${foot}</div>`;$('dialogModal').classList.add('open');$('dialog').querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog)}function closeDialog(){dialogOpened=false;$('dialogModal').classList.remove('open')}
-function peek(){let c=current();if(!c)return;showDialog(c.title,`<div class="previewcontent"><div class="cliphead" style="--t:#a6d9ff">${icon(typeIcon(c.type))}${labels[c.type]} · ${esc(c.app)}</div><div class="clipbody">${body(c)}</div></div>`,'<button class="btn" id="peekPin">Pin / unpin</button><button class="btn primary" id="peekPaste">Copy clip</button>');$('peekPin').onclick=togglePin;$('peekPaste').onclick=()=>{paste(c);closeDialog()}}
-function editClip(){let c=current();if(!c)return;showDialog('Edit clip',`<textarea id="editValue">${esc(c.value)}</textarea>`,'<button class="btn" data-close>Cancel</button><button class="btn primary" id="editSave">Save changes</button>');$('editSave').onclick=()=>{c.value=$('editValue').value;save();closeDialog();render();notify('Clip updated')}}
-function deleteClip(){let c=current();if(!c)return;let i=data.indexOf(c),wasStack=stack.includes(c.id);data.splice(i,1);stack=stack.filter(id=>id!==c.id);save();render();notify('Clip deleted',()=>{data.splice(i,0,c);if(wasStack)stack.push(c.id);selected=c.id;save();render();notify('Clip restored')})}
-function transform(){let c=current();if(!c)return;let s=c.value;try{switch($('transformType').value){case'trim':s=s.trim().replace(/[\t ]+/g,' ');break;case'json':s=JSON.stringify(JSON.parse(s),null,2);break;case'upper':s=s.toUpperCase();break;case'lower':s=s.toLowerCase();break;case'url':s=encodeURIComponent(s);break;case'lines':s=s.split('\n').filter(l=>l.trim()).join('\n');break}}catch(e){notify('Invalid JSON · select a valid JSON clip');return}showDialog('Transform result',`<textarea id="transformValue">${esc(s)}</textarea>`,'<button class="btn" id="transformSave">Save as new clip</button><button class="btn primary" id="transformCopy">Copy result</button>');$('transformCopy').onclick=async()=>{if(await copyText($('transformValue').value)){closeDialog();notify('Transformed text copied')}else notify('Clipboard unavailable · copy manually')};$('transformSave').onclick=()=>{let id=Math.max(-1,...data.map(x=>x.id))+1;data.unshift({id,type:'text',title:c.title+' / transformed',app:'Nexus',time:'0s',value:$('transformValue').value});filter='all';query='';timeFilter='all';context=false;selected=id;syncSearch();save();closeDialog();render();notify('New clip saved')}}
-function settings(){showDialog('Nexus settings',`<div class="settingrow"><div>Local demo mode<small>Only browser storage; no system clipboard capture.</small></div><span class="switch on"></span></div><div class="settingrow"><div>Quick orbit layout<small>Switch between ribbon and card grid.</small></div><button class="btn" id="settingLayout">${quickMode}</button></div><div class="settingrow"><div>Reset demo state<small>Restore data on next reload.</small></div><button class="btn" id="resetDemo">Reset</button></div>`,'<button class="btn primary" data-close>Done</button>');$('settingLayout').onclick=()=>{setQuickMode();$('settingLayout').textContent=quickMode};$('resetDemo').onclick=()=>{localStorage.removeItem('nexus-demo-state-v1');location.reload()}}
-function commands(){showDialog('Command palette',`<div class="settingrow">Quick orbit <button class="btn" id="cmdQuick">Open · Alt V</button></div><div class="settingrow">Search <button class="btn" id="cmdSearch">Focus · /</button></div><div class="settingrow">Preview <button class="btn" id="cmdPeek">Open · Space</button></div><div class="settingrow">Fusion stack <button class="btn" id="cmdFusion">Copy · Ctrl Shift V</button></div>`);$('cmdQuick').onclick=()=>{closeDialog();openQuick()};$('cmdSearch').onclick=()=>{closeDialog();$('search').focus()};$('cmdPeek').onclick=()=>{closeDialog();peek()};$('cmdFusion').onclick=()=>{closeDialog();fusion()}}
-$('search').oninput=e=>{query=e.target.value;syncSearch();render()};$('quickSearch').oninput=e=>{query=e.target.value;syncSearch();render()};$('sort').onchange=e=>{sort=e.target.value;render()};$('gridBtn').onclick=()=>{layout='grid';render()};$('listBtn').onclick=()=>{layout='list';render()};$('context').onclick=()=>{context=!context;render();notify(context?'IDE source filter enabled':'All sources enabled')};$('privacy').onclick=()=>notify('Local-only prototype · no network requests');$('semantic').onclick=()=>{smart=!smart;render();notify(smart?'Multi-keyword search enabled':'Exact substring search enabled')};$('quickOpen').onclick=$('dockOpen').onclick=()=>openQuick();$('quickClose').onclick=()=>openQuick(false);$('quickLayout').onclick=setQuickMode;$('quickPaste').onclick=$('paste').onclick=()=>paste(current());$('pin').onclick=togglePin;$('stackAdd').onclick=addStack;$('edit').onclick=editClip;$('delete').onclick=deleteClip;$('expand').onclick=peek;$('fusion').onclick=fusion;$('transformRun').onclick=transform;$('dockPrev').onclick=()=>move(-1);$('dockNext').onclick=()=>move(1);$('dockTrack').onwheel=e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();$('dockTrack').scrollLeft+=e.deltaY}};$('quickGallery').onwheel=e=>{if(quickMode==='ribbon'&&Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();$('quickGallery').scrollLeft+=e.deltaY}};$('settings').onclick=settings;$('command').onclick=commands;$('quickModal').onclick=e=>{if(e.target===$('quickModal'))openQuick(false)};$('dialogModal').onclick=e=>{if(e.target===$('dialogModal'))closeDialog()};document.addEventListener('keydown',e=>{let typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);if(e.altKey&&e.key.toLowerCase()==='v'){e.preventDefault();openQuick(!quickOpened);return}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();commands();return}if(e.key==='Escape'){e.preventDefault();if(dialogOpened)closeDialog();else if(quickOpened)openQuick(false);else document.activeElement?.blur();return}if(dialogOpened)return;if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='v'){e.preventDefault();fusion();return}if(typing){if(e.key==='Enter'&&document.activeElement.tagName==='INPUT'){e.preventDefault();paste(current())}return}let key=e.key.toLowerCase();if(key==='/'){e.preventDefault();(quickOpened?$('quickSearch'):$('search')).focus()}else if(key==='g'){e.preventDefault();if(quickOpened)setQuickMode();else{layout=layout==='grid'?'list':'grid';render()}}else if(key==='p'){e.preventDefault();togglePin()}else if(key===' '){e.preventDefault();peek()}else if(key==='enter'){e.preventDefault();paste(current())}else if(['arrowleft','arrowright','arrowup','arrowdown'].includes(key)){e.preventDefault();let box=quickOpened?$('quickGallery'):$('gallery');let first=box.querySelector('.clip');let cols=first?Math.max(1,Math.round(box.clientWidth/(first.offsetWidth+10))):1;if((quickOpened&&quickMode==='ribbon')||(!quickOpened&&layout==='list'))cols=1;move(key==='arrowleft'?-1:key==='arrowright'?1:key==='arrowup'?-cols:cols)}else if(quickOpened&&/^[1-9]$/.test(key)){e.preventDefault();let c=visible[+key-1];if(c){select(c.id);paste(c)}}});$('histogram').innerHTML=Array.from({length:34},(_,i)=>`<b style="height:${15+((i*17+i*i*7)%84)}%"></b>`).join('');render();
+function showDialog(title,html,foot='',kind=''){
+  dialogOpened=true;dialogKind=kind;
+  $('dialog').innerHTML=`<div class="screenhead"><h2>${esc(title)}</h2><button class="btn iconbtn" data-close aria-label="Close">${icon('x')}</button></div>${html}<div class="dialogfoot">${foot}</div>`;
+  $('dialogModal').classList.add('open');
+  $('dialog').querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog);
+}
+function closeDialog(){dialogOpened=false;dialogKind='';$('dialogModal').classList.remove('open')}
+function peek(){
+  let c=current();if(!c)return;
+  showDialog(c.title,`<div class="previewcontent" id="peekPreview"><div class="cliphead" style="--t:#a6d9ff">${icon(typeIcon(c.type))}${esc(labels[c.type]||c.type)} · ${esc(c.app)}</div><div class="clipbody">${body(c,true)}</div></div>`,'<button class="btn" id="peekPin">Pin / unpin</button><button class="btn primary" id="peekPaste">Copy clip</button>');
+  if(c.type==='image')ensureFullImage(c,$('peekPreview'));
+  $('peekPin').onclick=async()=>{await togglePin();closeDialog()};
+  $('peekPaste').onclick=()=>{paste(c);closeDialog()};
+}
+async function deleteClip(){
+  let c=current();if(!c)return;
+  try{
+    await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}`,{method:'DELETE'});
+    hydratedCache.delete(c.id);
+    if(imageUrlCache.has(c.id)){URL.revokeObjectURL(imageUrlCache.get(c.id));imageUrlCache.delete(c.id)}
+    stack=stack.filter(id=>id!==c.id);
+    notify('Clip deleted');
+    await refreshAll({force:true});
+  }catch(e){notify('Delete failed · '+e.message)}
+}
+async function transform(){
+  let c=current();if(!c)return;
+  if(c.type==='image'){notify('Select a text clip to transform');return}
+  let raw=c.value;
+  if(c.rawKind!=='file'&&(c.textTruncated||!c.hydrated)){
+    try{raw=await fetchContentText(c.id)}catch(e){}
+  }
+  let s=raw;
+  try{
+    switch($('transformType').value){
+      case'trim':s=s.trim().replace(/[\t ]+/g,' ');break;
+      case'json':s=JSON.stringify(JSON.parse(s),null,2);break;
+      case'upper':s=s.toUpperCase();break;
+      case'lower':s=s.toLowerCase();break;
+      case'url':s=encodeURIComponent(s);break;
+      case'lines':s=s.split('\n').filter(l=>l.trim()).join('\n');break;
+    }
+  }catch(e){notify('Invalid JSON · select a valid JSON clip');return}
+  const copied=await copyText(s);
+  if(copied)notify('Transformed text copied');
+  showDialog('Transform result',`<textarea id="transformValue" readonly>${esc(s)}</textarea>`,'<button class="btn" data-close>Close</button><button class="btn primary" id="transformCopy">Copy result</button>');
+  $('transformCopy').onclick=async()=>{if(await copyText($('transformValue').value)){closeDialog();notify('Transformed text copied')}else notify('Clipboard unavailable · copy manually')};
+}
+
+function renderSettingsDialog(){
+  const st=settingsInfo||{captureEnabled:false,syncEnabled:false,syncTargetProfileId:'',quickOrbitPosition:quickPosition};
+  const cap=statusInfo?.capture;
+  const syn=statusInfo?.sync;
+  const pos=validPosition(st.quickOrbitPosition||statusInfo?.quickOrbitPosition||quickPosition);
+  const capNote=!cap?'Status unavailable':cap.running?'Running':(!cap.supported?'Not supported on this platform':(cap.enabled?(cap.reason||'Idle'):'Paused'));
+  const syncNote=!syn?'Status unavailable':syn.lastError?`Last error: ${syn.lastError}`:(syn.lastSyncAtMs?`Last sync: ${formatCaptured(syn.lastSyncAtMs)}`:(st.syncEnabled?'Enabled':'Disabled'));
+  const serverOpts=['<option value="">No target selected</option>'].concat(serversList.map(sv=>`<option value="${esc(sv.id)}" ${sv.id===st.syncTargetProfileId?'selected':''}>${esc(sv.label||sv.id)} (${esc(sv.endpoint)})</option>`)).join('');
+  const transports=Array.isArray(statusInfo?.transports)?statusInfo.transports:[];
+  const transportHtml=transports.length?transports.map(t=>`<span class="pill" title="${esc(t.detail||'')}"><i class="dot ${t.available?'':'off'}"></i>${esc(t.name)}${t.detail?` · ${esc(t.detail)}`:''}</span>`).join(''):'<span class="micro">None detected</span>';
+  const devices=Array.isArray(statusInfo?.devices)?statusInfo.devices:[];
+  const devicesHtml=devices.length?devices.map(d=>`<div class="devicerow"><span>${esc(d.name||d.id)}${d.id===statusInfo?.deviceId?' · this device':''}</span><small class="mono">${esc(d.platform||'-')} · ${esc(formatCaptured(d.lastSeenAtMs))}</small></div>`).join(''):'<div class="micro">No devices recorded</div>';
+  showDialog('Nexus settings',
+    `<div class="settingrow"><div>Capture clipboard<small>${esc(capNote)}</small></div><button class="switch ${st.captureEnabled?'on':''}" id="setCapture" aria-pressed="${Boolean(st.captureEnabled)}" title="Toggle capture"></button></div>`+
+    `<div class="settingrow"><div>Encrypted sync<small>${esc(syncNote)}</small></div><button class="switch ${st.syncEnabled?'on':''}" id="setSync" aria-pressed="${Boolean(st.syncEnabled)}" title="Toggle sync"></button></div>`+
+    `<div class="settingrow"><div>Sync target server<small>Select remote AIH server profile</small></div><div class="settingcontrol"><select id="setSyncTarget">${serverOpts}</select><button class="btn" id="setSyncRun">Sync now</button></div></div>`+
+    `<div class="settingrow"><div>Quick orbit position<small>Desktop overlay anchor position</small></div><div class="settingcontrol">${['bottom','left','right'].map(p=>`<button class="btn ${pos===p?'active':''}" data-pos="${p}">${p[0].toUpperCase()+p.slice(1)}</button>`).join('')}</div></div>`+
+    `<div class="settingrow"><div>Quick orbit layout<small>Switch between ribbon and card grid</small></div><button class="btn" id="settingLayout">${esc(quickMode)}</button></div>`+
+    `<div class="settingrow"><div>Key fingerprint<small>End-to-end sync key SHA-256 prefix</small></div><span class="mono">${esc(statusInfo?.keyFingerprint||'Not configured')}</span></div>`+
+    `<div class="settingblock"><div class="eyebrow">Transports</div><div class="pillrow">${transportHtml}</div></div>`+
+    `<div class="settingblock"><div class="eyebrow">Devices (${devices.length})</div><div class="devicelist">${devicesHtml}</div></div>`,
+    '<button class="btn" id="setRefresh">Refresh</button><button class="btn primary" data-close>Done</button>',
+    'settings'
+  );
+  $('setCapture').onclick=()=>patchSettings({captureEnabled:!st.captureEnabled});
+  $('setSync').onclick=()=>patchSettings({syncEnabled:!st.syncEnabled});
+  $('setSyncTarget').onchange=e=>patchSettings({syncTargetProfileId:e.target.value});
+  $('setSyncRun').onclick=async()=>{
+    $('setSyncRun').disabled=true;
+    try{
+      await apiJSON('/v0/webui/clipboard/sync-run',{method:'POST',body:'{}'});
+      notify('Sync completed');
+      await refreshAll({force:true,includeMeta:true});
+      if(dialogOpened&&dialogKind==='settings')renderSettingsDialog();
+    }catch(e){notify('Sync failed · '+e.message)}finally{if($('setSyncRun'))$('setSyncRun').disabled=false}
+  };
+  $('dialog').querySelectorAll('[data-pos]').forEach(btn=>btn.onclick=()=>patchSettings({quickOrbitPosition:btn.dataset.pos}));
+  $('settingLayout').onclick=()=>{setQuickMode();$('settingLayout').textContent=quickMode};
+  $('setRefresh').onclick=async()=>{await refreshAll({force:true,includeMeta:true});if(dialogOpened&&dialogKind==='settings')renderSettingsDialog()};
+}
+async function patchSettings(patch){
+  try{
+    const res=await apiJSON(`${API_BASE}/settings`,{method:'PATCH',body:JSON.stringify(patch)});
+    if(res?.settings){
+      settingsInfo=res.settings;
+      if(res.settings.quickOrbitPosition){
+        quickPosition=validPosition(res.settings.quickOrbitPosition);
+        if(isQuickPage)document.body.dataset.position=quickPosition;
+      }
+    }
+    notify('Settings updated');
+    await refreshAll({force:true,includeMeta:true});
+    if(dialogOpened&&dialogKind==='settings')renderSettingsDialog();
+  }catch(e){notify('Update failed · '+e.message)}
+}
+async function settings(){
+  renderSettingsDialog();
+  await refreshAll({force:true,includeMeta:true});
+  if(dialogOpened&&dialogKind==='settings')renderSettingsDialog();
+}
+function commands(){
+  showDialog('Command palette',
+    `<div class="settingrow">Quick orbit <button class="btn" id="cmdQuick">Open · Alt V</button></div>`+
+    `<div class="settingrow">Search <button class="btn" id="cmdSearch">Focus · /</button></div>`+
+    `<div class="settingrow">Preview <button class="btn" id="cmdPeek">Open · Space</button></div>`+
+    `<div class="settingrow">Fusion stack <button class="btn" id="cmdFusion">Copy · Ctrl Shift V</button></div>`+
+    `<div class="settingrow">Refresh history <button class="btn" id="cmdRefresh">Reload</button></div>`+
+    `<div class="settingrow">Settings <button class="btn" id="cmdSettings">Open</button></div>`
+  );
+  $('cmdQuick').onclick=()=>{closeDialog();openQuick()};
+  $('cmdSearch').onclick=()=>{closeDialog();$('search').focus()};
+  $('cmdPeek').onclick=()=>{closeDialog();peek()};
+  $('cmdFusion').onclick=()=>{closeDialog();fusion()};
+  $('cmdRefresh').onclick=()=>{closeDialog();refreshAll({force:true,includeMeta:true})};
+  $('cmdSettings').onclick=()=>{closeDialog();settings()};
+}
+
+async function hydrateOne(clip){
+  if(!clip||clip.hydrated||clip.rawKind==='image'||clip.rawKind==='file')return;
+  try{
+    const res=await apiJSON(`${API_BASE}/items/${encodeURIComponent(clip.id)}`);
+    const detail=res?.item;
+    if(!detail||typeof detail.text!=='string')return;
+    hydratedCache.set(clip.id,{text:detail.text,textTruncated:Boolean(detail.textTruncated),lastSeenAtMs:clip.lastSeenAtMs});
+    const target=data.find(c=>c.id===clip.id);
+    if(!target)return;
+    target.value=detail.text;
+    target.textTruncated=Boolean(detail.textTruncated);
+    target.hydrated=true;
+    target.type=classifyType(target.rawKind,detail.text);
+    if(target.type==='url'){
+      const meta=extractUrlMeta(detail.text,target.title);
+      target.site=meta.site;target.domain=meta.domain;
+    }
+    scheduleRender();
+  }catch(e){}
+}
+async function hydrateItems(token){
+  const queue=[];
+  const cur=current();
+  if(cur&&!cur.hydrated&&(cur.rawKind==='text'||cur.rawKind==='link'))queue.push(cur);
+  for(const c of data){
+    if(queue.length>=100)break;
+    if(c.hydrated||(c.rawKind!=='text'&&c.rawKind!=='link'))continue;
+    if(cur&&c.id===cur.id)continue;
+    queue.push(c);
+  }
+  if(!queue.length)return;
+  let idx=0;
+  const worker=async()=>{
+    while(idx<queue.length&&token===hydrateToken){
+      const clip=queue[idx++];
+      await hydrateOne(clip);
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(6,queue.length)},worker));
+}
+
+async function refreshAll(opts={}){
+  const now=Date.now();
+  if(refreshInFlight)return;
+  if(!opts.force&&now-lastRefreshAt<400)return;
+  refreshInFlight=true;
+  credentials=resolveCredentials();
+  try{
+    const wantSettings=Boolean(opts.includeMeta||!settingsInfo);
+    const wantServers=Boolean(opts.includeMeta||!serversLoaded);
+    const [itemsRes,statusRes,settingsRes,serversRes]=await Promise.all([
+      apiJSON(`${API_BASE}/items?limit=200`),
+      apiJSON(`${API_BASE}/status`),
+      wantSettings?apiJSON(`${API_BASE}/settings`):Promise.resolve(null),
+      wantServers?apiJSON(`${API_BASE}/servers`):Promise.resolve(null)
+    ]);
+    statusInfo=statusRes||null;
+    if(settingsRes?.settings)settingsInfo=settingsRes.settings;
+    if(serversRes){serversList=Array.isArray(serversRes.servers)?serversRes.servers:[];serversLoaded=true}
+    if(!urlParams.get('position')){
+      const serverPos=settingsInfo?.quickOrbitPosition||statusInfo?.quickOrbitPosition;
+      if(serverPos){quickPosition=validPosition(serverPos);if(isQuickPage)document.body.dataset.position=quickPosition}
+    }
+    const rawItems=Array.isArray(itemsRes?.items)?itemsRes.items:[];
+    data=rawItems.map(mapServerItem);
+    const activeIds=new Set(data.map(c=>c.id));
+    for(const key of Array.from(hydratedCache.keys())){if(!activeIds.has(key))hydratedCache.delete(key)}
+    for(const [key,url] of Array.from(imageUrlCache.entries())){if(!activeIds.has(key)){URL.revokeObjectURL(url);imageUrlCache.delete(key)}}
+    lastError=null;
+    loading=false;
+    lastRefreshAt=Date.now();
+    render();
+    const token=++hydrateToken;
+    hydrateItems(token);
+  }catch(e){
+    lastError=e;
+    loading=false;
+    render();
+  }finally{
+    refreshInFlight=false;
+  }
+}
+
+window.__AIH_CLIPBOARD_REFRESH__=()=>refreshAll({force:true});
+window.__AIH_CLIPBOARD_SET_POSITION__=pos=>{quickPosition=validPosition(pos);if(isQuickPage)document.body.dataset.position=quickPosition};
+
+$('search').oninput=e=>{query=e.target.value;syncSearch();render()};
+$('quickSearch').oninput=e=>{query=e.target.value;syncSearch();render()};
+$('sort').onchange=e=>{sort=e.target.value;render()};
+$('gridBtn').onclick=()=>{layout='grid';render()};
+$('listBtn').onclick=()=>{layout='list';render()};
+$('context').onclick=()=>{context=!context;render();notify(context?'IDE source filter enabled':'All sources enabled')};
+$('privacy').onclick=()=>{
+  const syn=statusInfo?.sync;
+  notify(syn?.enabled?`E2E encrypted sync active${statusInfo?.keyFingerprint?' · '+statusInfo.keyFingerprint:''}`:'Local SQLite storage · sync disabled');
+};
+$('semantic').onclick=()=>{smart=!smart;render();notify(smart?'Multi-keyword search enabled':'Exact substring search enabled')};
+$('quickOpen').onclick=$('dockOpen').onclick=()=>openQuick(true);
+$('quickClose').onclick=()=>closeQuickSurface();
+$('quickLayout').onclick=setQuickMode;
+$('quickPaste').onclick=$('paste').onclick=()=>paste(current());
+$('pin').onclick=togglePin;
+$('stackAdd').onclick=addStack;
+$('delete').onclick=deleteClip;
+$('expand').onclick=peek;
+$('fusion').onclick=fusion;
+$('transformRun').onclick=transform;
+$('dockPrev').onclick=()=>move(-1);
+$('dockNext').onclick=()=>move(1);
+$('dockTrack').onwheel=e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();$('dockTrack').scrollLeft+=e.deltaY}};
+$('quickGallery').onwheel=e=>{if(quickMode==='ribbon'&&Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();$('quickGallery').scrollLeft+=e.deltaY}};
+$('settings').onclick=settings;
+$('command').onclick=commands;
+$('quickModal').onclick=e=>{if(e.target===$('quickModal'))closeQuickSurface()};
+$('dialogModal').onclick=e=>{if(e.target===$('dialogModal'))closeDialog()};
+
+document.addEventListener('keydown',e=>{
+  let typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
+  if(e.altKey&&e.key.toLowerCase()==='v'){
+    e.preventDefault();
+    if(isQuickPage)closeQuickSurface();else openQuick(!quickOpened);
+    return;
+  }
+  if(!isQuickPage&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();commands();return}
+  if(e.key==='Escape'){
+    e.preventDefault();
+    if(dialogOpened)closeDialog();
+    else if(isQuickPage)closeQuickSurface();
+    else if(quickOpened)openQuick(false);
+    else document.activeElement?.blur();
+    return;
+  }
+  if(dialogOpened)return;
+  if(!isQuickPage&&(e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='v'){e.preventDefault();fusion();return}
+  if(typing){
+    if(e.key==='Enter'&&document.activeElement.tagName==='INPUT'){e.preventDefault();paste(current())}
+    return;
+  }
+  let key=e.key.toLowerCase();
+  if(key==='/'){e.preventDefault();(quickOpened?$('quickSearch'):$('search')).focus()}
+  else if(key==='g'){e.preventDefault();if(quickOpened)setQuickMode();else{layout=layout==='grid'?'list':'grid';render()}}
+  else if(key==='p'){e.preventDefault();togglePin()}
+  else if(key===' '){e.preventDefault();peek()}
+  else if(key==='enter'){e.preventDefault();paste(current())}
+  else if(['arrowleft','arrowright','arrowup','arrowdown'].includes(key)){
+    e.preventDefault();
+    let box=quickOpened?$('quickGallery'):$('gallery');
+    let first=box.querySelector('.clip');
+    let cols=first?Math.max(1,Math.round(box.clientWidth/(first.offsetWidth+10))):1;
+    if((quickOpened&&quickMode==='ribbon')||(!quickOpened&&layout==='list'))cols=1;
+    move(key==='arrowleft'?-1:key==='arrowright'?1:key==='arrowup'?-cols:cols);
+  }else if(quickOpened&&/^[1-9]$/.test(key)){
+    e.preventDefault();
+    let c=visible[+key-1];
+    if(c){select(c.id);paste(c)}
+  }
+});
+
+window.addEventListener('focus',()=>refreshAll());
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAll()});
+window.addEventListener('beforeunload',()=>{for(const url of imageUrlCache.values())URL.revokeObjectURL(url)});
+
+if(isQuickPage){
+  $('quickModal').classList.add('open');
+  $('quickModal').setAttribute('aria-hidden','false');
+}
+render();
+refreshAll({force:true,includeMeta:true});
 </script></body></html>

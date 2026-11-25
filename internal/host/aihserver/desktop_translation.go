@@ -60,7 +60,8 @@ func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, cha
 			}
 			return translation.BuildTranslationModelCatalog(ctx, buildTranslationCatalogDependencies(deps, deps.AIHomeDir), saved)
 		},
-		ClipboardEnabled: clipboard.DesktopEnabled,
+		ClipboardEnabled:   clipboard.DesktopEnabled,
+		QuickOrbitPosition: clipboard.QuickOrbitPosition,
 	})
 	if err != nil {
 		return nil, nil, err

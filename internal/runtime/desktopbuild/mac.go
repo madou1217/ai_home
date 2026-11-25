@@ -25,9 +25,8 @@ var macSources = []string{
 	"native/chat/ChatPanelContent.swift",
 	"native/chat/ChatPanel.swift",
 	"native/chat/QuickChatWindow.swift",
-	"native/clipboard/ClipboardPanelModel.swift",
-	"native/clipboard/ClipboardPanelViews.swift",
-	"native/clipboard/ClipboardPanel.swift",
+	"native/clipboard/ClipboardWorkspaceWindow.swift",
+	"native/clipboard/QuickOrbitWindow.swift",
 	"native/desktop/ShortcutRegistry.swift",
 	"native/translation/main.swift",
 }

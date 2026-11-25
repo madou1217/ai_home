@@ -94,7 +94,14 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // ChatPanel 仅在拿不到本机 server 地址时兜底。
   let quickChat = QuickChatWindow()
   var quickChatAvailable = false
-  let clipboardPanel = ClipboardPanel(emit: emit)
+  let quickOrbit = QuickOrbitWindow()
+  let workspaceWindow = ClipboardWorkspaceWindow()
+  private var clipboardOrigin = ""
+  private var clipboardKey = ""
+  private var clipboardEnabled = false
+  private var quickOrbitPosition = "bottom"
+  private var statusItem: NSStatusItem?
+  private var positionMenuItems: [String: NSMenuItem] = [:]
   lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
     guard let self = self else { return }
     emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": message])
@@ -116,6 +123,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // background launch. Give the hidden helper a discoverable window entry.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if fullApp { panel.openSettings() }
+    else if workspaceWindow.isAvailable { workspaceWindow.show() }
     else if quickChatAvailable { quickChat.show() }
     else { chatPanel.openFromShortcut() }
     return true
@@ -148,9 +156,103 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     NSApp.mainMenu = menu
   }
 
+  private func installClipboardStatusItem() {
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    if let button = item.button {
+      let image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "AIH 剪贴板")
+      image?.isTemplate = true
+      button.image = image
+      button.toolTip = "AIH 剪贴板"
+    }
+    let menu = NSMenu(title: "AIH 剪贴板")
+    let openWorkspace = NSMenuItem(title: "打开剪贴板工作区", action: #selector(openClipboardWorkspaceFromMenu), keyEquivalent: "")
+    openWorkspace.target = self
+    menu.addItem(openWorkspace)
+
+    let toggleOrbit = NSMenuItem(title: "Quick Orbit ⌘⌥V", action: #selector(toggleQuickOrbitFromMenu), keyEquivalent: "")
+    toggleOrbit.target = self
+    menu.addItem(toggleOrbit)
+
+    menu.addItem(NSMenuItem.separator())
+
+    let positionRoot = NSMenuItem(title: "位置", action: nil, keyEquivalent: "")
+    let positionMenu = NSMenu(title: "位置")
+    positionMenuItems = [:]
+    for (value, label) in [("bottom", "底部"), ("left", "左侧"), ("right", "右侧")] {
+      let posItem = NSMenuItem(title: label, action: #selector(selectQuickOrbitPositionFromMenu(_:)), keyEquivalent: "")
+      posItem.target = self
+      posItem.representedObject = value
+      posItem.state = (value == quickOrbitPosition) ? .on : .off
+      positionMenu.addItem(posItem)
+      positionMenuItems[value] = posItem
+    }
+    positionRoot.submenu = positionMenu
+    menu.addItem(positionRoot)
+
+    item.menu = menu
+    statusItem = item
+  }
+
+  private func updatePositionMenuChecks() {
+    for (value, item) in positionMenuItems {
+      item.state = (value == quickOrbitPosition) ? .on : .off
+    }
+  }
+
+  @objc private func openClipboardWorkspaceFromMenu() {
+    workspaceWindow.show()
+  }
+
+  @objc private func toggleQuickOrbitFromMenu() {
+    quickOrbit.toggle()
+  }
+
+  @objc private func selectQuickOrbitPositionFromMenu(_ sender: NSMenuItem) {
+    guard let nextPosition = sender.representedObject as? String else { return }
+    patchQuickOrbitPosition(nextPosition)
+  }
+
+  private func patchQuickOrbitPosition(_ nextPosition: String) {
+    let normalized: String
+    switch nextPosition.lowercased() {
+    case "left": normalized = "left"
+    case "right": normalized = "right"
+    default: normalized = "bottom"
+    }
+    guard !clipboardOrigin.isEmpty,
+          let url = URL(string: "\(clipboardOrigin)/v1/management/webui/clipboard/settings"),
+          let body = try? JSONSerialization.data(withJSONObject: ["quickOrbitPosition": normalized]) else {
+      return
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "PATCH"
+    request.timeoutInterval = 6
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    if !clipboardKey.isEmpty {
+      request.setValue("Bearer \(clipboardKey)", forHTTPHeaderField: "Authorization")
+    }
+    request.httpBody = body
+    URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+      guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        self.quickOrbitPosition = normalized
+        self.updatePositionMenuChecks()
+        self.quickOrbit.configure(
+          origin: self.clipboardOrigin,
+          managementKey: self.clipboardKey,
+          enabled: self.clipboardEnabled,
+          position: normalized
+        )
+      }
+    }.resume()
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(fullApp ? .regular : .accessory)
     installApplicationMenu()
+    installClipboardStatusItem()
     if fullApp {
       panel.configure([
         "target": "zh-Hans",
@@ -226,8 +328,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         guard let self else { return }
         if self.quickChatAvailable { self.quickChat.toggle() } else { self.chatPanel.openFromShortcut() }
       },
-      ShortcutDescriptor(id: "clipboard", label: "剪贴板", shortcut: clipboard, enabled: clipboardEnabled && clipboardPanel.isAvailable) { [weak self] in
-        self?.clipboardPanel.toggle()
+      ShortcutDescriptor(id: "clipboard", label: "剪贴板", shortcut: clipboard, enabled: clipboardEnabled && quickOrbit.isAvailable) { [weak self] in
+        self?.quickOrbit.toggle()
       }
     ])  }
 
@@ -324,8 +426,13 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }) { monitors.append(monitor) }
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
       if event.type == .keyDown && event.keyCode == 53 {
-        if self?.clipboardPanel.shouldLetEscapeThrough() == true { return event }
-        if self?.clipboardPanel.handleGlobalEscape() == true { return nil }
+        if self?.quickOrbit.isVisibleAndKey == true {
+          self?.quickOrbit.hide()
+          return nil
+        }
+        if self?.workspaceWindow.isKeyWindow == true {
+          return event
+        }
         self?.selectionToken += 1
         self?.panel.close()
         return nil
@@ -388,10 +495,28 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       let quickOrigin = event["quickChatOrigin"] as? String ?? ""
       quickChatAvailable = !quickOrigin.isEmpty
       quickChat.configure(origin: quickOrigin, managementKey: event["quickChatKey"] as? String ?? "")
-      clipboardPanel.configure(
-        origin: event["clipboardOrigin"] as? String ?? "",
-        managementKey: event["clipboardKey"] as? String ?? "",
-        enabled: event["clipboardEnabled"] as? Bool ?? false
+      let clipOrigin = (event["clipboardOrigin"] as? String ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+      let clipKey = event["clipboardKey"] as? String ?? ""
+      let clipEnabled = event["clipboardEnabled"] as? Bool ?? false
+      let rawPos = (event["quickOrbitPosition"] as? String ?? "bottom").lowercased()
+      let clipPos = (rawPos == "left" || rawPos == "right") ? rawPos : "bottom"
+      clipboardOrigin = clipOrigin
+      clipboardKey = clipKey
+      clipboardEnabled = clipEnabled
+      quickOrbitPosition = clipPos
+      updatePositionMenuChecks()
+      quickOrbit.configure(
+        origin: clipOrigin,
+        managementKey: clipKey,
+        enabled: clipEnabled,
+        position: clipPos
+      )
+      workspaceWindow.configure(
+        origin: clipOrigin,
+        managementKey: clipKey,
+        enabled: clipEnabled
       )
       registerShortcuts(
         translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
@@ -399,7 +524,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         translationEnabled: event["shortcutEnabled"] as? Bool ?? true,
         chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true,
         clipboard: event["clipboardShortcut"] as? String ?? ShortcutRegistry.defaultClipboardShortcut,
-        clipboardEnabled: event["clipboardEnabled"] as? Bool ?? false
+        clipboardEnabled: clipEnabled
       )
       reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":
@@ -423,7 +548,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     case "chat.open", "chat.submit", "chat.stop", "chat.close", "chat.event", "chat.error":
       chatPanel.receive(event)
     case "clipboard.open":
-      clipboardPanel.toggle()
+      quickOrbit.toggle()
     case "clipboard-pasted":
       break
     default: panel.receive(event)

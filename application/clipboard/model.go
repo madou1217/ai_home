@@ -33,14 +33,19 @@ const (
 	// DetailTextPreviewBytes caps text returned by GET /items/{id}; full text is fetched via /content.
 	DetailTextPreviewBytes = 64 * 1024
 
-	DefaultRetentionDays    = 30
-	DefaultMaxItems         = 500
-	DefaultMaxItemBytes     = MaxImageBytes
-	SoftDeleteRetentionDays = 7
-	DefaultListLimit        = 50
-	MaxListLimit            = 200
-	SyncKeyBytes            = 32
-	SyncBatchMaxItems       = 50
+	DefaultRetentionDays      = 30
+	DefaultMaxItems           = 500
+	DefaultMaxItemBytes       = MaxImageBytes
+	DefaultQuickOrbitPosition = "bottom"
+	SoftDeleteRetentionDays   = 7
+	DefaultListLimit          = 50
+	MaxListLimit              = 200
+	SyncKeyBytes              = 32
+	SyncBatchMaxItems         = 50
+
+	QuickOrbitPositionBottom = "bottom"
+	QuickOrbitPositionLeft   = "left"
+	QuickOrbitPositionRight  = "right"
 )
 
 // Setting keys stored in clipboard_settings.
@@ -51,6 +56,7 @@ const (
 	SettingRetentionDays       = "retentionDays"
 	SettingMaxItems            = "maxItems"
 	SettingMaxItemBytes        = "maxItemBytes"
+	SettingQuickOrbitPosition  = "quickOrbitPosition"
 	SettingDeviceID            = "deviceId"
 	SettingSyncKey             = "syncKey"
 )
@@ -119,6 +125,20 @@ type Device struct {
 	LastSeenAtMs int64  `json:"lastSeenAtMs"`
 }
 
+// NormalizeQuickOrbitPosition validates and canonicalizes the Quick Orbit anchor position.
+func NormalizeQuickOrbitPosition(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case QuickOrbitPositionBottom:
+		return QuickOrbitPositionBottom, true
+	case QuickOrbitPositionLeft:
+		return QuickOrbitPositionLeft, true
+	case QuickOrbitPositionRight:
+		return QuickOrbitPositionRight, true
+	default:
+		return "", false
+	}
+}
+
 // Settings holds persisted user configuration for the clipboard subsystem.
 type Settings struct {
 	CaptureEnabled      bool   `json:"captureEnabled"`
@@ -127,6 +147,7 @@ type Settings struct {
 	RetentionDays       int    `json:"retentionDays"`
 	MaxItems            int    `json:"maxItems"`
 	MaxItemBytes        int64  `json:"maxItemBytes"`
+	QuickOrbitPosition  string `json:"quickOrbitPosition"`
 }
 
 // DefaultSettings returns the canonical opt-in defaults.
@@ -138,6 +159,7 @@ func DefaultSettings() Settings {
 		RetentionDays:       DefaultRetentionDays,
 		MaxItems:            DefaultMaxItems,
 		MaxItemBytes:        DefaultMaxItemBytes,
+		QuickOrbitPosition:  DefaultQuickOrbitPosition,
 	}
 }
 
@@ -149,6 +171,7 @@ type SettingsPatch struct {
 	RetentionDays       *int    `json:"retentionDays,omitempty"`
 	MaxItems            *int    `json:"maxItems,omitempty"`
 	MaxItemBytes        *int64  `json:"maxItemBytes,omitempty"`
+	QuickOrbitPosition  *string `json:"quickOrbitPosition,omitempty"`
 }
 
 // CaptureStatus reports local OS clipboard capture readiness.
@@ -176,16 +199,17 @@ type TransportStatus struct {
 
 // Status aggregates device, capture, sync, and store state.
 type Status struct {
-	Platform       string            `json:"platform"`
-	Capture        CaptureStatus     `json:"capture"`
-	Sync           SyncStatus        `json:"sync"`
-	DeviceID       string            `json:"deviceId"`
-	DeviceName     string            `json:"deviceName"`
-	KeyFingerprint string            `json:"keyFingerprint"`
-	Transports     []TransportStatus `json:"transports"`
-	ItemCount      int               `json:"itemCount"`
-	PinnedCount    int               `json:"pinnedCount"`
-	Devices        []Device          `json:"devices,omitempty"`
+	Platform           string            `json:"platform"`
+	Capture            CaptureStatus     `json:"capture"`
+	Sync               SyncStatus        `json:"sync"`
+	DeviceID           string            `json:"deviceId"`
+	DeviceName         string            `json:"deviceName"`
+	KeyFingerprint     string            `json:"keyFingerprint"`
+	Transports         []TransportStatus `json:"transports"`
+	ItemCount          int               `json:"itemCount"`
+	PinnedCount        int               `json:"pinnedCount"`
+	Devices            []Device          `json:"devices,omitempty"`
+	QuickOrbitPosition string            `json:"quickOrbitPosition"`
 }
 
 // IngestInput is the normalized ingestion request shared by capture, API, and sync.

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,7 +148,7 @@ func runClipVim(args []string, runtime commandRuntime) error {
 	}
 	switch sub {
 	case "print":
-		_, err := fmt.Fprint(runtime.stdout, vimClipboardPluginScript)
+		_, err := io.WriteString(runtime.stdout, vimClipboardPluginScript)
 		return err
 	case "install":
 		return installClipVimPlugin(runtime)

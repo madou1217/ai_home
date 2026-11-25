@@ -533,6 +533,16 @@ aih shell doctor --shell cmd
 aih shell remove --shell cmd
 ```
 
+PowerShell 5.1 / 7 用户：
+
+```powershell
+# 安装 / 查看 / 体检 / 移除
+aih shell apply  --shell powershell
+aih shell status --shell powershell
+aih shell doctor --shell powershell
+aih shell remove --shell powershell
+```
+
 支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）/ cmd（Clink）**。装上之后：
 
 - `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。

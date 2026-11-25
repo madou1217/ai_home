@@ -61,6 +61,9 @@ func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, cha
 			return translation.BuildTranslationModelCatalog(ctx, buildTranslationCatalogDependencies(deps, deps.AIHomeDir), saved)
 		},
 		ClipboardEnabled: clipboard.DesktopEnabled,
+		LauncherEnabled: func() bool {
+			return runtime.GOOS == "darwin" || runtime.GOOS == "windows"
+		},
 	})
 	if err != nil {
 		return nil, nil, err

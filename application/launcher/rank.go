@@ -17,6 +17,7 @@ const (
 	ScoreAcronym          = 750
 	ScoreSubstringBase    = 700
 	ScoreSubstringMaxPen  = 100
+	ScoreAlias            = 650
 	ScoreSubsequenceBase  = 600
 	ScoreSubseqMaxPen     = 150
 	ScoreSubtitleOnly     = 300
@@ -90,6 +91,18 @@ func ScoreApp(app App, normalizedQuery string) int {
 		}
 	}
 
+	// 6b. Alias match (prefix/word-prefix/acronym/substring/subsequence): flat 650, max with name score.
+	for _, alias := range app.Aliases {
+		aliasNorm := NormalizeQuery(alias)
+		if aliasNorm == "" {
+			continue
+		}
+		if aliasMatches([]rune(aliasNorm), qRunes) {
+			best = maxInt(best, ScoreAlias)
+			break
+		}
+	}
+
 	// 7. Subtitle-only match: 300.
 	if best == 0 {
 		subNorm := NormalizeQuery(app.Subtitle)
@@ -98,6 +111,30 @@ func ScoreApp(app App, normalizedQuery string) int {
 		}
 	}
 	return best
+}
+
+func aliasMatches(aliasRunes, qRunes []rune) bool {
+	if len(aliasRunes) == 0 || len(qRunes) == 0 {
+		return false
+	}
+	if hasRunePrefix(aliasRunes, qRunes) || indexRunes(aliasRunes, qRunes) >= 0 {
+		return true
+	}
+	words := splitWords(aliasRunes)
+	if len(words) > 0 {
+		initials := make([]rune, 0, len(words))
+		for _, w := range words {
+			if hasRunePrefix(w, qRunes) {
+				return true
+			}
+			initials = append(initials, w[0])
+		}
+		if indexRunes(initials, qRunes) >= 0 {
+			return true
+		}
+	}
+	_, ok := subsequenceGaps(aliasRunes, qRunes)
+	return ok
 }
 
 // RecencyBoost computes the usage bonus: 30 (if opened within 7 days) + min(count, 10).

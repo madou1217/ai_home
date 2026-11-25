@@ -2,10 +2,12 @@
 //
 //	GET  /v1/management/launcher/apps?q=&refresh=1&limit=
 //	POST /v1/management/launcher/open
+//	POST /v1/management/launcher/show
 //	GET  /v1/management/launcher/status
 package webuilauncherapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -32,6 +34,7 @@ type Authorizer interface {
 type Handler struct {
 	Authorizer Authorizer
 	Service    *launcher.Service
+	Show       func(context.Context) error
 	MaxBody    int64
 }
 
@@ -69,6 +72,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleApps(w, r)
 	case "open":
 		h.handleOpen(w, r)
+	case "show":
+		h.handleShow(w, r)
 	case "status":
 		h.handleStatus(w, r)
 	default:
@@ -132,6 +137,23 @@ func (h *Handler) handleOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.Service.Open(r.Context(), body.ID); err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) handleShow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	if h.Show == nil {
+		writeError(w, http.StatusNotImplemented, "launcher_unsupported", "当前环境没有可用的桌面启动器面板")
+		return
+	}
+	if err := h.Show(r.Context()); err != nil {
 		h.writeDomainError(w, err)
 		return
 	}

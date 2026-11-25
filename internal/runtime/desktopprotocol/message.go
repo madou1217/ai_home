@@ -16,7 +16,7 @@ const MaxTextUnits = 8000
 
 var ErrInvalid = errors.New("desktop_protocol_invalid")
 var ErrVersion = errors.New("desktop_protocol_version_unsupported")
-var allowed = map[string]bool{"hello": true, "ready": true, "configure": true, "status": true, "selection-state": true, "translate": true, "translate-intent": true, "cancel": true, "settings": true, "confirmation": true, "start": true, "attempt_start": true, "delta": true, "done": true, "error": true, "server-target": true, "server-target-error": true, "webui-focus": true, "request-permission": true, "host-translate": true, "shutdown": true, "chat.open": true, "chat.submit": true, "chat.stop": true, "chat.close": true, "chat.event": true, "chat.error": true, "clipboard.open": true, "clipboard-pasted": true}
+var allowed = map[string]bool{"hello": true, "ready": true, "configure": true, "status": true, "selection-state": true, "translate": true, "translate-intent": true, "cancel": true, "settings": true, "confirmation": true, "start": true, "attempt_start": true, "delta": true, "done": true, "error": true, "server-target": true, "server-target-error": true, "webui-focus": true, "request-permission": true, "host-translate": true, "shutdown": true, "chat.open": true, "chat.submit": true, "chat.stop": true, "chat.close": true, "chat.event": true, "chat.error": true, "clipboard.open": true, "clipboard-pasted": true, "launcher-show": true}
 
 func Decode(line []byte) (map[string]any, error) {
 	if len(line) == 0 || len(line) > MaxFrameBytes {
@@ -200,7 +200,7 @@ func Normalize(input map[string]any) (map[string]any, error) {
 			result["patch"] = SettingsPatch(patch)
 		}
 	case "configure":
-		for _, k := range []string{"target", "autoCopy", "copyScope", "executionTarget", "shortcut", "shortcutEnabled", "chatShortcut", "chatShortcutEnabled", "clipboardShortcut", "clipboardEnabled", "clipboardOrigin", "clipboardKey", "serverTarget", "serverTargets", "chatTarget", "chatModel", "defaultModel", "defaultProvider", "model", "provider", "port", "platform", "captureModes", "permission", "nativeShortcut", "largePasteChars", "readingTheme", "quickChatOrigin", "quickChatKey"} {
+		for _, k := range []string{"target", "autoCopy", "copyScope", "executionTarget", "shortcut", "shortcutEnabled", "chatShortcut", "chatShortcutEnabled", "clipboardShortcut", "clipboardEnabled", "clipboardOrigin", "clipboardKey", "launcherShortcut", "launcherEnabled", "launcherOrigin", "launcherKey", "serverTarget", "serverTargets", "chatTarget", "chatModel", "defaultModel", "defaultProvider", "model", "provider", "port", "platform", "captureModes", "permission", "nativeShortcut", "largePasteChars", "readingTheme", "quickChatOrigin", "quickChatKey"} {
 			if v, ok := input[k]; ok {
 				switch value := v.(type) {
 				case string:

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/aihhome"
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/transport/http/webuilauncherapi"
 )
 
 func runLaunch(ctx context.Context, arguments []string, runtime commandRuntime) error {
@@ -28,6 +30,9 @@ func runLaunch(ctx context.Context, arguments []string, runtime commandRuntime) 
 	if hasHelpToken(rest) {
 		writeLaunchUsage(runtime.stdout)
 		return nil
+	}
+	if subcommand == "show" {
+		return runLaunchShow(ctx, rest, runtime)
 	}
 
 	homeDir, err := resolveLauncherAIHomeDir(runtime)
@@ -245,6 +250,55 @@ func runLaunchCatalog(ctx context.Context, service *launcher.Service, args []str
 	return nil
 }
 
+func runLaunchShow(ctx context.Context, args []string, runtime commandRuntime) error {
+	jsonOutput := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			jsonOutput = true
+		default:
+			return fmt.Errorf("unknown flag for `aih launch show`: %s", arg)
+		}
+	}
+	configured := withLocalGatewayDefaults(ctx, runtime)
+	baseURL := strings.TrimRight(strings.TrimSpace(lookupOrDefault(configured.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)), "/")
+	managementKey := strings.TrimSpace(lookupOrDefault(configured.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", ""))
+	if managementKey == "" {
+		return errors.New("management key not configured (set AIH_SERVER_MANAGEMENT_KEY or configure local server)")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+webuilauncherapi.Path+"/show", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+managementKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := configured.managementAPI.Do(req)
+	if err != nil {
+		return fmt.Errorf("request %s failed: %w", req.URL.String(), err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if resp.StatusCode != http.StatusOK {
+		var errPayload struct {
+			Error   string `json:"error"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(raw, &errPayload) == nil && (errPayload.Message != "" || errPayload.Error != "") {
+			msg := errPayload.Message
+			if msg == "" {
+				msg = errPayload.Error
+			}
+			return fmt.Errorf("HTTP %d (%s): %s", resp.StatusCode, errPayload.Error, msg)
+		}
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	if jsonOutput {
+		return writeLaunchJSON(runtime.stdout, map[string]any{"ok": true})
+	}
+	_, _ = fmt.Fprintln(runtime.stdout, "launcher shown")
+	return nil
+}
+
 func runLaunchStatus(ctx context.Context, service *launcher.Service, args []string, runtime commandRuntime) error {
 	jsonOutput := false
 	for _, arg := range args {
@@ -286,6 +340,7 @@ func writeLaunchUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  aih launch apps [--json] [--q <关键词>] [--refresh] [--limit <N>]")
 	_, _ = fmt.Fprintln(w, "  aih launch open <id|#序号> [--json]")
 	_, _ = fmt.Fprintln(w, "  aih launch catalog [--wire] [--q <关键词>] [--refresh] [--limit <N>]")
+	_, _ = fmt.Fprintln(w, "  aih launch show [--json]")
 	_, _ = fmt.Fprintln(w, "  aih launch status [--json]")
 }
 

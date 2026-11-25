@@ -14,6 +14,8 @@ const (
 	MaxNameRunes = 120
 	// MaxSubtitleRunes bounds an application's subtitle length.
 	MaxSubtitleRunes = 160
+	// MaxAliases caps the number of alternate search names per app.
+	MaxAliases = 4
 	// DefaultLimit is the default maximum number of apps returned by List.
 	DefaultLimit = 2000
 
@@ -43,13 +45,14 @@ const (
 
 // App describes an installed desktop application exposed by AIH Launch.
 type App struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Subtitle string `json:"subtitle"`
-	Path     string `json:"path"`
-	Kind     Kind   `json:"kind"`
-	Icon     string `json:"icon"`
-	Terminal bool   `json:"terminal"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Subtitle string   `json:"subtitle"`
+	Path     string   `json:"path"`
+	Kind     Kind     `json:"kind"`
+	Icon     string   `json:"icon"`
+	Terminal bool     `json:"terminal"`
+	Aliases  []string `json:"aliases,omitempty"`
 
 	// Platform-internal launch metadata omitted from wire JSON.
 	DesktopID string `json:"-"`
@@ -107,7 +110,7 @@ func AppID(platform, sourceKey string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// NormalizeApp trims control whitespace and enforces name/subtitle length caps.
+// NormalizeApp trims control whitespace and enforces name/subtitle/alias length caps.
 func NormalizeApp(app App) App {
 	app.ID = strings.TrimSpace(app.ID)
 	app.Name = TruncateRunes(sanitizeInlineText(app.Name), MaxNameRunes)
@@ -116,7 +119,39 @@ func NormalizeApp(app App) App {
 	app.Icon = strings.TrimSpace(app.Icon)
 	app.DesktopID = strings.TrimSpace(app.DesktopID)
 	app.Exec = strings.TrimSpace(app.Exec)
+	app.Aliases = normalizeAliases(app.Name, app.Aliases)
 	return app
+}
+
+func normalizeAliases(name string, raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	nameKey := strings.ToLower(strings.TrimSpace(name))
+	seen := make(map[string]struct{}, len(raw)+1)
+	if nameKey != "" {
+		seen[nameKey] = struct{}{}
+	}
+	out := make([]string, 0, min(len(raw), MaxAliases))
+	for _, entry := range raw {
+		clean := TruncateRunes(sanitizeInlineText(entry), MaxNameRunes)
+		if clean == "" {
+			continue
+		}
+		key := strings.ToLower(clean)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, clean)
+		if len(out) >= MaxAliases {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // TruncateRunes caps s to at most maxRunes Unicode code points.

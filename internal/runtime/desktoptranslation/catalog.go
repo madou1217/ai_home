@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/translation"
@@ -109,6 +110,23 @@ func (s *Service) Configure() {
 	// Never hand the management key to a helper that has no clipboard access.
 	if clipboardEnabled && s.options.ManagementKey != nil && localOrigin != "" {
 		config["clipboardKey"] = s.options.ManagementKey()
+	}
+	// AIH Launch always talks to the local server; disable when management key or origin is absent (§10).
+	launcherShortcut := "Alt+Space"
+	if s.options.Platform == "darwin" {
+		launcherShortcut = "⌥Space"
+	}
+	config["launcherShortcut"] = launcherShortcut
+	config["launcherOrigin"] = localOrigin
+	config["launcherKey"] = ""
+	launcherKey := ""
+	if s.launcherDesired() && s.options.ManagementKey != nil && localOrigin != "" {
+		launcherKey = strings.TrimSpace(s.options.ManagementKey())
+	}
+	launcherEnabled := s.launcherDesired() && localOrigin != "" && launcherKey != ""
+	config["launcherEnabled"] = launcherEnabled
+	if launcherEnabled {
+		config["launcherKey"] = launcherKey
 	}
 	local, _ := normalizeOrigin(localOrigin)
 	actual, _ := normalizeOrigin(target.Origin)

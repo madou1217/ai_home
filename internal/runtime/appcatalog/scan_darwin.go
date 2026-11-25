@@ -74,7 +74,8 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 				}
 				seenRealApp[realPath] = struct{}{}
 
-				displayName := readDarwinAppName(fullPath, name)
+				displayName := darwinBundleBaseName(name)
+				aliases := readDarwinAppAliases(fullPath, displayName)
 				apps = append(apps, launcher.App{
 					ID:       launcher.AppID(darwinPlatformString, realPath),
 					Name:     displayName,
@@ -83,6 +84,7 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 					Kind:     launcher.KindApp,
 					Icon:     fullPath,
 					Terminal: false,
+					Aliases:  aliases,
 				})
 				// Never recurse inside a .app bundle.
 				continue
@@ -118,23 +120,49 @@ func hasAppBundleSuffix(name string) bool {
 	return len(name) > 4 && strings.EqualFold(name[len(name)-4:], ".app")
 }
 
-func readDarwinAppName(bundlePath, dirName string) string {
-	fallback := dirName
+func darwinBundleBaseName(dirName string) string {
 	if hasAppBundleSuffix(dirName) {
-		fallback = dirName[:len(dirName)-4]
+		return dirName[:len(dirName)-4]
 	}
+	return dirName
+}
+
+func readDarwinAppAliases(bundlePath, primaryName string) []string {
 	plistPath := filepath.Join(bundlePath, "Contents", "Info.plist")
 	f, err := os.Open(plistPath)
 	if err != nil {
-		return fallback
+		return nil
 	}
 	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, darwinMaxPlistBytes))
 	if err != nil {
-		return fallback
+		return nil
 	}
-	if parsed := parseInfoPlistName(data); parsed != "" {
-		return parsed
+	raw := parseInfoPlistNames(data)
+	if len(raw) == 0 {
+		return nil
 	}
-	return fallback
+	seen := map[string]struct{}{
+		strings.ToLower(strings.TrimSpace(primaryName)): {},
+	}
+	aliases := make([]string, 0, min(len(raw), launcher.MaxAliases))
+	for _, candidate := range raw {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		aliases = append(aliases, trimmed)
+		if len(aliases) >= launcher.MaxAliases {
+			break
+		}
+	}
+	if len(aliases) == 0 {
+		return nil
+	}
+	return aliases
 }

@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// parseInfoPlistName extracts CFBundleDisplayName (preferred) or CFBundleName from an XML Info.plist.
-// Binary plists (bplist00) or malformed documents return an empty string so callers fall back to bundle name.
-func parseInfoPlistName(data []byte) string {
+// parseInfoPlistNames extracts non-empty CFBundleDisplayName and CFBundleName from an XML Info.plist.
+// Binary plists (bplist00) or malformed documents return nil so callers keep only the bundle basename.
+func parseInfoPlistNames(data []byte) []string {
 	if len(data) == 0 || bytes.HasPrefix(data, []byte("bplist00")) {
-		return ""
+		return nil
 	}
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dictDepth := 0
@@ -26,7 +26,7 @@ func parseInfoPlistName(data []byte) string {
 			if err == io.EOF {
 				break
 			}
-			return pickPlistName(displayName, bundleName)
+			return collectPlistNames(displayName, bundleName)
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
@@ -45,7 +45,7 @@ func parseInfoPlistName(data []byte) string {
 				if dictDepth == 1 && arrayDepth == 0 {
 					var key string
 					if err := dec.DecodeElement(&key, &t); err != nil {
-						return pickPlistName(displayName, bundleName)
+						return collectPlistNames(displayName, bundleName)
 					}
 					pendingKey = strings.TrimSpace(key)
 				}
@@ -54,7 +54,7 @@ func parseInfoPlistName(data []byte) string {
 					if pendingKey == "CFBundleDisplayName" || pendingKey == "CFBundleName" {
 						var val string
 						if err := dec.DecodeElement(&val, &t); err != nil {
-							return pickPlistName(displayName, bundleName)
+							return collectPlistNames(displayName, bundleName)
 						}
 						val = strings.TrimSpace(val)
 						if pendingKey == "CFBundleDisplayName" && displayName == "" && val != "" {
@@ -83,12 +83,16 @@ func parseInfoPlistName(data []byte) string {
 			}
 		}
 	}
-	return pickPlistName(displayName, bundleName)
+	return collectPlistNames(displayName, bundleName)
 }
 
-func pickPlistName(displayName, bundleName string) string {
+func collectPlistNames(displayName, bundleName string) []string {
+	var names []string
 	if displayName != "" {
-		return displayName
+		names = append(names, displayName)
 	}
-	return bundleName
+	if bundleName != "" && !strings.EqualFold(bundleName, displayName) {
+		names = append(names, bundleName)
+	}
+	return names
 }

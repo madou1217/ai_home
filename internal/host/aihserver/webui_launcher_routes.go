@@ -1,18 +1,44 @@
 package aihserver
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/madou1217/ai_home/application/launcher"
 	"github.com/madou1217/ai_home/internal/adapters/launcherstore"
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/runtime/desktoplauncher"
+	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	"github.com/madou1217/ai_home/internal/transport/http/webuilauncherapi"
 )
 
-// launcherRuntime owns the AIH Launch application service wired into aihserver.
+// launcherRuntime owns the AIH Launch application service and HTTP handler wired into aihserver.
 type launcherRuntime struct {
 	service *launcher.Service
+	handler *webuilauncherapi.Handler
+}
+
+// bindDesktopShow connects POST /v1/management/launcher/show to the native desktop helper.
+func (r *launcherRuntime) bindDesktopShow(desktop *desktoptranslation.Service) {
+	if r == nil || r.handler == nil || desktop == nil {
+		return
+	}
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return
+	}
+	r.handler.Show = func(_ context.Context) error {
+		if err := desktop.Send(map[string]any{"type": "launcher-show"}); err != nil {
+			if errors.Is(err, desktoplauncher.ErrUnavailable) || errors.Is(err, desktoplauncher.ErrClosed) {
+				return fmt.Errorf("%w: desktop helper unavailable", launcher.ErrUnsupported)
+			}
+			return err
+		}
+		return nil
+	}
 }
 
 // newLauncherRuntime wires the platform app catalog, launcher opener, usage store, and HTTP routes.
@@ -34,7 +60,8 @@ func newLauncherRuntime(dependencies webuiRouteDependencies) (*launcherRuntime, 
 	routes := []webuiRoute{
 		{Pattern: webuilauncherapi.Path + "/apps", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/open", Handler: handler, SkipPublicAlias: true},
+		{Pattern: webuilauncherapi.Path + "/show", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/status", Handler: handler, SkipPublicAlias: true},
 	}
-	return &launcherRuntime{service: service}, routes, nil
+	return &launcherRuntime{service: service, handler: handler}, routes, nil
 }

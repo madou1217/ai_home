@@ -112,6 +112,9 @@ func (h platformHooks) Stop(ctx context.Context, o Options, s serviceSnapshot) e
 	return stopOwnedListener(ctx, o, s)
 }
 func (h platformHooks) Install(ctx context.Context, o Options) error {
+	if err := syncLegacyServiceFiles(o); err != nil {
+		return err
+	}
 	if err := installStableLauncher(o); err != nil {
 		return err
 	}

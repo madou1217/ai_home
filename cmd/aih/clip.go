@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,9 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clipboardstore"
 	"github.com/madou1217/ai_home/internal/runtime/aihhome"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
+	"github.com/madou1217/ai_home/internal/runtime/clipboardruntime"
 	"github.com/madou1217/ai_home/internal/runtime/clippicker"
+	"github.com/madou1217/ai_home/internal/transport/http/webuicontrolplaneapi"
 )
 
 type cliClipboardProbe struct {
@@ -34,7 +37,7 @@ func (p cliClipboardProbe) SyncStatus() clipboard.SyncStatus {
 }
 
 func (p cliClipboardProbe) Transports() []clipboard.TransportStatus {
-	return []clipboard.TransportStatus{}
+	return clipboardruntime.DetectTransports()
 }
 
 func runClip(ctx context.Context, arguments []string, runtime commandRuntime) error {
@@ -90,6 +93,8 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 		return runClipSetCapture(ctx, service, sysIO, true, rest, runtime)
 	case "disable":
 		return runClipSetCapture(ctx, service, sysIO, false, rest, runtime)
+	case "sync":
+		return runClipSync(ctx, homeDir, service, rest, runtime)
 	case "status":
 		return runClipStatus(ctx, service, rest, runtime)
 	default:
@@ -609,6 +614,133 @@ func runClipClear(ctx context.Context, service *clipboard.Service, args []string
 	return nil
 }
 
+func runClipSync(ctx context.Context, homeDir string, service *clipboard.Service, args []string, runtime commandRuntime) error {
+	watch := false
+	serverSelector := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--once":
+			watch = false
+		case arg == "--watch":
+			watch = true
+		case arg == "--server" && i+1 < len(args):
+			i++
+			serverSelector = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, "--server="):
+			serverSelector = strings.TrimSpace(strings.TrimPrefix(arg, "--server="))
+		default:
+			return fmt.Errorf("unknown flag for `aih clip sync`: %s", arg)
+		}
+	}
+
+	targetID := serverSelector
+	if targetID == "" {
+		settings, err := service.GetSettings(ctx)
+		if err != nil {
+			return err
+		}
+		targetID = strings.TrimSpace(settings.SyncTargetProfileID)
+	}
+	if targetID == "" {
+		return errors.New("no sync target configured; pass --server <profileId|name> or configure syncTargetProfileId")
+	}
+
+	resolvedID, _, _, err := resolveCLIControlPlaneProfile(ctx, homeDir, targetID)
+	if err != nil {
+		return err
+	}
+
+	syncer := clipboardruntime.NewSyncer(
+		service,
+		func(rCtx context.Context, id string) (string, string, error) {
+			_, endpoint, key, rErr := resolveCLIControlPlaneProfile(rCtx, homeDir, id)
+			return endpoint, key, rErr
+		},
+		&http.Client{Timeout: 30 * time.Second},
+		time.Now,
+	)
+
+	runPass := func() error {
+		if err := syncer.SyncTarget(ctx, resolvedID); err != nil {
+			return err
+		}
+		_, fp, _, _ := service.GetSyncKey(ctx)
+		_, _ = fmt.Fprintf(runtime.stdout, "synced target=%s fingerprint=%s\n", resolvedID, fp)
+		return nil
+	}
+
+	if !watch {
+		return runPass()
+	}
+	if err := runPass(); err != nil {
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih clip sync] %v\n", err)
+	}
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := runPass(); err != nil {
+				_, _ = fmt.Fprintf(runtime.stderr, "[aih clip sync] %v\n", err)
+			}
+		}
+	}
+}
+
+func resolveCLIControlPlaneProfile(ctx context.Context, homeDir, selector string) (id, endpoint, managementKey string, err error) {
+	target := strings.TrimSpace(selector)
+	if target == "" {
+		return "", "", "", errors.New("server_profile_id_required")
+	}
+	store, err := webuicontrolplaneapi.ListProfiles(ctx, homeDir)
+	if err != nil {
+		return "", "", "", err
+	}
+	var list []map[string]any
+	switch raw := store["profiles"].(type) {
+	case []map[string]any:
+		list = raw
+	case []any:
+		for _, entry := range raw {
+			if m, ok := entry.(map[string]any); ok {
+				list = append(list, m)
+			}
+		}
+	}
+	textOf := func(m map[string]any, key string) string {
+		v, _ := m[key].(string)
+		return strings.TrimSpace(v)
+	}
+	var matched map[string]any
+	for _, profile := range list {
+		if textOf(profile, "id") == target {
+			matched = profile
+			break
+		}
+	}
+	if matched == nil {
+		for _, profile := range list {
+			if strings.EqualFold(textOf(profile, "name"), target) {
+				matched = profile
+				break
+			}
+		}
+	}
+	if matched == nil {
+		return "", "", "", fmt.Errorf("server profile %q not found", target)
+	}
+	id = textOf(matched, "id")
+	endpoint = strings.TrimRight(textOf(matched, "endpoint"), "/")
+	managementKey = textOf(matched, "managementKey")
+	if endpoint == "" || managementKey == "" {
+		return "", "", "", fmt.Errorf("server profile %q is missing endpoint or managementKey", target)
+	}
+	return id, endpoint, managementKey, nil
+}
+
 func runClipStatus(ctx context.Context, service *clipboard.Service, args []string, runtime commandRuntime) error {
 	jsonOutput := false
 	for _, arg := range args {
@@ -656,6 +788,7 @@ func writeClipUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  aih clip rm <id|#序号>...")
 	_, _ = fmt.Fprintln(w, "  aih clip clear --yes [--all]")
 	_, _ = fmt.Fprintln(w, "  aih clip enable | disable")
+	_, _ = fmt.Fprintln(w, "  aih clip sync [--once|--watch] [--server <profileId|名称>]")
 	_, _ = fmt.Fprintln(w, "  aih clip vim install | print")
 	_, _ = fmt.Fprintln(w, "  aih clip status [--json]")
 }

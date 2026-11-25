@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"io"
+	"net/http"
 	"sync"
 	"time"
 
@@ -13,16 +14,17 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiclipboardapi"
 )
 
-// clipboardRuntime owns the clipboard store, service, and background capture loop.
+// clipboardRuntime owns the clipboard store, service, capture loop, and syncer.
 type clipboardRuntime struct {
 	store   *clipboardstore.Store
 	service *clipboard.Service
 	capture *clipboardruntime.Capture
+	syncer  *clipboardruntime.Syncer
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 }
 
-// Close stops the capture loop before closing the SQLite database pool.
+// Close stops background loops before closing the SQLite database pool.
 func (r *clipboardRuntime) Close() error {
 	if r == nil {
 		return nil
@@ -37,7 +39,7 @@ func (r *clipboardRuntime) Close() error {
 	return r.store.Close()
 }
 
-// newClipboardRuntime wires clipboard storage, service, capture runtime, and HTTP routes.
+// newClipboardRuntime wires clipboard storage, service, capture, syncer, and HTTP routes.
 func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencies) (*clipboardRuntime, []webuiRoute, error) {
 	store, err := clipboardstore.Open(ctx, dependencies.AIHomeDir)
 	if err != nil {
@@ -52,8 +54,16 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		_ = store.Close()
 		return nil, nil, err
 	}
+
+	serverProfiles := clipboardServerProfiles{home: dependencies.AIHomeDir}
 	capture := clipboardruntime.NewCapture(service, clipboardio.NewSystem())
-	service.SetRuntimeProbe(capture)
+	syncer := clipboardruntime.NewSyncer(
+		service,
+		serverProfiles.Resolve,
+		&http.Client{Timeout: 30 * time.Second, CheckRedirect: rejectOAuthRedirect},
+		time.Now,
+	)
+	service.SetRuntimeProbe(clipboardruntime.NewProbe(capture, syncer))
 
 	if settings, err := service.GetSettings(ctx); err == nil {
 		capture.SetEnabled(settings.CaptureEnabled)
@@ -64,21 +74,33 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		_ = store.Close()
 		return nil, nil, err
 	}
+	handler.Servers = serverProfiles.List
+	handler.SyncRun = func(runCtx context.Context) error {
+		return syncer.SyncOnce(runCtx)
+	}
 	handler.OnSettingsChanged = func(settings clipboard.Settings) {
 		capture.SetEnabled(settings.CaptureEnabled)
+		if settings.SyncEnabled && settings.SyncTargetProfileID != "" {
+			syncer.Trigger()
+		}
 	}
 
-	captureCtx, captureCancel := context.WithCancel(ctx)
+	runCtx, runCancel := context.WithCancel(ctx)
 	runtime := &clipboardRuntime{
 		store:   store,
 		service: service,
 		capture: capture,
-		cancel:  captureCancel,
+		syncer:  syncer,
+		cancel:  runCancel,
 	}
-	runtime.wg.Add(1)
+	runtime.wg.Add(2)
 	go func() {
 		defer runtime.wg.Done()
-		capture.Run(captureCtx)
+		capture.Run(runCtx)
+	}()
+	go func() {
+		defer runtime.wg.Done()
+		syncer.Run(runCtx)
 	}()
 
 	// Management routes under /v1/management/webui/clipboard automatically get /v0/webui/clipboard
@@ -88,6 +110,7 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		{Pattern: webuiclipboardapi.Path + "/items/", Handler: handler},
 		{Pattern: webuiclipboardapi.Path + "/settings", Handler: handler},
 		{Pattern: webuiclipboardapi.Path + "/status", Handler: handler},
+		{Pattern: webuiclipboardapi.Path + "/servers", Handler: handler},
 		{Pattern: webuiclipboardapi.Path + "/sync/", Handler: handler, SkipPublicAlias: true},
 	}
 	return runtime, routes, nil

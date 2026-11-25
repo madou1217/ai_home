@@ -28,6 +28,9 @@ type Store interface {
 	GetAllSettings(ctx context.Context) (map[string]string, error)
 	GetSyncState(ctx context.Context, key string) (string, bool, error)
 	SetSyncState(ctx context.Context, key string, value string, updatedAtMs int64) error
+	ListUnsyncedItems(ctx context.Context, limit int) ([]Item, error)
+	MarkItemsSynced(ctx context.Context, ids []string, atMs int64) error
+	ListItemsSince(ctx context.Context, sinceMs int64, limit int) ([]Item, error)
 }
 
 // BlobStore manages on-disk clipboard blobs under ~/.ai_home/clipboard/blobs/.

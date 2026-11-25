@@ -192,7 +192,7 @@ ON CONFLICT(sha256) DO UPDATE SET
   height = CASE WHEN clipboard_items.height = 0 THEN excluded.height ELSE clipboard_items.height END,
   source_device = CASE WHEN excluded.source_device <> '' THEN excluded.source_device ELSE clipboard_items.source_device END,
   source_app = CASE WHEN excluded.source_app <> '' THEN excluded.source_app ELSE clipboard_items.source_app END,
-  synced_at_ms = CASE WHEN excluded.synced_at_ms > 0 THEN excluded.synced_at_ms ELSE clipboard_items.synced_at_ms END,
+  synced_at_ms = CASE WHEN clipboard_items.synced_at_ms > 0 THEN clipboard_items.synced_at_ms ELSE excluded.synced_at_ms END,
   remote_id = CASE WHEN excluded.remote_id <> '' THEN excluded.remote_id ELSE clipboard_items.remote_id END
 `
 	if _, err := tx.ExecContext(ctx, upsertSQL,
@@ -590,6 +590,83 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.
 		key, value, updatedAtMs,
 	)
 	return err
+}
+
+// ListUnsyncedItems returns full rows where synced_at_ms = 0 and deleted = 0, ordered oldest first.
+func (s *Store) ListUnsyncedItems(ctx context.Context, limit int) ([]clipboard.Item, error) {
+	if limit <= 0 {
+		limit = clipboard.SyncBatchMaxItems
+	}
+	const query = fullItemSelect + ` WHERE synced_at_ms = 0 AND deleted = 0 ORDER BY last_seen_at_ms ASC, id ASC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]clipboard.Item, 0, minInt(limit, 32))
+	for rows.Next() {
+		item, scanErr := scanFullItem(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// MarkItemsSynced sets synced_at_ms on unsynced rows matching ids.
+func (s *Store) MarkItemsSynced(ctx context.Context, ids []string, atMs int64) error {
+	cleaned := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.PrepareContext(ctx, `UPDATE clipboard_items SET synced_at_ms = ? WHERE id = ? AND synced_at_ms = 0`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, id := range cleaned {
+		if _, execErr := stmt.ExecContext(ctx, atMs, id); execErr != nil {
+			return execErr
+		}
+	}
+	return tx.Commit()
+}
+
+// ListItemsSince returns full active rows with last_seen_at_ms > sinceMs, ordered oldest first.
+func (s *Store) ListItemsSince(ctx context.Context, sinceMs int64, limit int) ([]clipboard.Item, error) {
+	if limit <= 0 {
+		limit = clipboard.SyncBatchMaxItems
+	}
+	const query = fullItemSelect + ` WHERE deleted = 0 AND last_seen_at_ms > ? ORDER BY last_seen_at_ms ASC, id ASC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, sinceMs, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]clipboard.Item, 0, minInt(limit, 32))
+	for rows.Next() {
+		item, scanErr := scanFullItem(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 type rowQuerier interface {

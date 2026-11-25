@@ -2,7 +2,9 @@ package clipboard
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -581,6 +583,133 @@ func ThumbnailDataURL(thumbnail []byte) string {
 	}
 	mime := detectImageMIME(thumbnail)
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(thumbnail)
+}
+
+// SyncKeyFingerprint returns the lowercase hex of the first 8 bytes of SHA-256(key).
+func SyncKeyFingerprint(key []byte) string {
+	if len(key) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(key)
+	return hex.EncodeToString(sum[:8])
+}
+
+// GetSyncKey retrieves the persisted 32-byte sync key if configured.
+func (s *Service) GetSyncKey(ctx context.Context) ([]byte, string, bool, error) {
+	raw, found, err := s.store.GetSetting(ctx, SettingSyncKey)
+	if err != nil {
+		return nil, "", false, err
+	}
+	trimmed := strings.TrimSpace(raw)
+	if !found || trimmed == "" {
+		return nil, "", false, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(trimmed)
+	if err != nil || len(key) != SyncKeyBytes {
+		return nil, "", false, ErrInvalidSyncKey
+	}
+	return key, SyncKeyFingerprint(key), true, nil
+}
+
+// EnsureSyncKey returns the existing 32-byte sync key or generates and stores one atomically.
+func (s *Service) EnsureSyncKey(ctx context.Context) ([]byte, string, error) {
+	key, fp, found, err := s.GetSyncKey(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if found {
+		return key, fp, nil
+	}
+	generated := make([]byte, SyncKeyBytes)
+	if _, err := rand.Read(generated); err != nil {
+		return nil, "", fmt.Errorf("generate sync key: %w", err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(generated)
+	persistedEncoded, err := s.store.SetSettingIfAbsent(ctx, SettingSyncKey, encoded, s.clock().UnixMilli())
+	if err != nil {
+		return nil, "", err
+	}
+	persisted, err := base64.StdEncoding.DecodeString(strings.TrimSpace(persistedEncoded))
+	if err != nil || len(persisted) != SyncKeyBytes {
+		return nil, "", ErrInvalidSyncKey
+	}
+	return persisted, SyncKeyFingerprint(persisted), nil
+}
+
+// SetSyncKeyIfAbsent stores key when absent; returns nil error if stored or equal,
+// or ErrSyncKeyConflict alongside the existing key and fingerprint when a different key exists.
+func (s *Service) SetSyncKeyIfAbsent(ctx context.Context, key []byte) ([]byte, string, error) {
+	if len(key) != SyncKeyBytes {
+		return nil, "", ErrInvalidSyncKey
+	}
+	encoded := base64.StdEncoding.EncodeToString(key)
+	persistedEncoded, err := s.store.SetSettingIfAbsent(ctx, SettingSyncKey, encoded, s.clock().UnixMilli())
+	if err != nil {
+		return nil, "", err
+	}
+	persisted, err := base64.StdEncoding.DecodeString(strings.TrimSpace(persistedEncoded))
+	if err != nil || len(persisted) != SyncKeyBytes {
+		return nil, "", ErrInvalidSyncKey
+	}
+	fp := SyncKeyFingerprint(persisted)
+	if subtle.ConstantTimeCompare(persisted, key) != 1 {
+		return persisted, fp, ErrSyncKeyConflict
+	}
+	return persisted, fp, nil
+}
+
+// AdoptSyncKey replaces the local sync key with key and returns its fingerprint.
+func (s *Service) AdoptSyncKey(ctx context.Context, key []byte) (string, error) {
+	if len(key) != SyncKeyBytes {
+		return "", ErrInvalidSyncKey
+	}
+	encoded := base64.StdEncoding.EncodeToString(key)
+	if err := s.store.SetSetting(ctx, SettingSyncKey, encoded, s.clock().UnixMilli()); err != nil {
+		return "", err
+	}
+	return SyncKeyFingerprint(key), nil
+}
+
+// ListUnsynced returns active items not yet synced, oldest first.
+func (s *Service) ListUnsynced(ctx context.Context, limit int) ([]Item, error) {
+	if limit <= 0 || limit > SyncBatchMaxItems {
+		limit = SyncBatchMaxItems
+	}
+	return s.store.ListUnsyncedItems(ctx, limit)
+}
+
+// MarkSynced records synced_at_ms on unsynced items.
+func (s *Service) MarkSynced(ctx context.Context, ids []string, atMs int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if atMs <= 0 {
+		atMs = s.clock().UnixMilli()
+	}
+	return s.store.MarkItemsSynced(ctx, ids, atMs)
+}
+
+// ItemsSince returns active full items with last_seen_at_ms > sinceMs, oldest first.
+func (s *Service) ItemsSince(ctx context.Context, sinceMs int64, limit int) ([]Item, error) {
+	if limit <= 0 || limit > SyncBatchMaxItems {
+		limit = SyncBatchMaxItems
+	}
+	return s.store.ListItemsSince(ctx, sinceMs, limit)
+}
+
+// ReadContentForItem loads raw payload bytes for an item.
+func (s *Service) ReadContentForItem(ctx context.Context, item Item) (Content, error) {
+	return s.ReadContent(ctx, item)
+}
+
+// GetSyncState reads a value from clipboard_sync_state.
+func (s *Service) GetSyncState(ctx context.Context, key string) (string, bool, error) {
+	return s.store.GetSyncState(ctx, key)
+}
+
+// SetSyncState writes a value into clipboard_sync_state.
+func (s *Service) SetSyncState(ctx context.Context, key string, value string) error {
+	return s.store.SetSyncState(ctx, key, value, s.clock().UnixMilli())
 }
 
 func sha256Hex(data []byte) string {

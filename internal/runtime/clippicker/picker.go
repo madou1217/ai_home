@@ -244,7 +244,7 @@ func Run(ctx context.Context, opts Options) error {
 			return readErr
 		}
 		if n == 0 {
-			continue
+			return nil
 		}
 
 		action := handleInput(state, buf[:n])

@@ -287,6 +287,11 @@ func buildCommandCatalog() []commandNode {
 			),
 			n("enable", "启用本机剪贴板采集"),
 			n("disable", "停用本机剪贴板采集"),
+			n("sync", "与远端 Server 加密同步剪贴板").withOptions(
+				f("--once", "只同步一次（默认）"),
+				f("--watch", "持续循环同步"),
+				vf("--server", "目标 Server profile", kindRemoteServer),
+			),
 			n("vim", "安装或打印 Vim 粘贴插件").withChildren(
 				n("install", "幂等写入 ~/.vim/plugin/aih_clipboard.vim"),
 				n("print", "打印 Vim 插件脚本"),

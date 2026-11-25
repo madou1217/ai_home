@@ -9,9 +9,16 @@
 //	GET    /v1/management/webui/clipboard/settings
 //	PATCH  /v1/management/webui/clipboard/settings
 //	GET    /v1/management/webui/clipboard/status
+//	GET    /v1/management/webui/clipboard/servers
+//	POST   /v1/management/webui/clipboard/sync/run   (management-only, SkipPublicAlias)
+//	GET    /v1/management/webui/clipboard/sync/key   (management-only, SkipPublicAlias)
+//	POST   /v1/management/webui/clipboard/sync/key   (management-only, SkipPublicAlias)
+//	POST   /v1/management/webui/clipboard/sync/items (management-only, SkipPublicAlias)
+//	GET    /v1/management/webui/clipboard/sync/items (management-only, SkipPublicAlias)
 package webuiclipboardapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,9 +26,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/madou1217/ai_home/application/clipboard"
+	"github.com/madou1217/ai_home/internal/runtime/clipboardruntime"
 )
 
 const (
@@ -35,10 +44,20 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+// ServerProfileView is the sanitized sync-target server catalog returned to WebUI (no keys).
+type ServerProfileView struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Endpoint string `json:"endpoint"`
+	Active   bool   `json:"active"`
+}
+
 // Handler serves clipboard management API requests.
 type Handler struct {
 	Authorizer        Authorizer
 	Service           *clipboard.Service
+	Servers           func(context.Context) ([]ServerProfileView, error)
+	SyncRun           func(context.Context) error
 	MaxBody           int64
 	OnSettingsChanged func(clipboard.Settings)
 }
@@ -81,8 +100,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleSettings(w, r)
 	case rest == "status":
 		h.handleStatus(w, r)
-	case rest == "sync" || strings.HasPrefix(rest, "sync/"):
-		writeError(w, http.StatusNotImplemented, "clipboard_sync_not_implemented", "剪贴板同步尚未启用")
+	case rest == "servers":
+		h.handleServers(w, r)
+	case rest == "sync/key":
+		h.handleSyncKey(w, r)
+	case rest == "sync/items":
+		h.handleSyncItems(w, r)
+	case rest == "sync/run":
+		h.handleSyncRun(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "没有这个剪贴板路由")
 	}
@@ -322,7 +347,7 @@ func (h *Handler) handleGetItem(w http.ResponseWriter, r *http.Request, id strin
 	if item.Kind == clipboard.KindText || item.Kind == clipboard.KindLink {
 		text := item.Text
 		if text == "" && item.BlobPath != "" {
-			if content, readErr := h.Service.ReadContent(r.Context(), item); readErr == nil {
+			if content, readErr := h.Service.ReadContentForItem(r.Context(), item); readErr == nil {
 				text = string(content.Data)
 			}
 		}
@@ -337,7 +362,7 @@ func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id s
 		h.writeDomainError(w, err)
 		return
 	}
-	content, err := h.Service.ReadContent(r.Context(), item)
+	content, err := h.Service.ReadContentForItem(r.Context(), item)
 	if err != nil {
 		h.writeDomainError(w, err)
 		return
@@ -417,6 +442,234 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
+func (h *Handler) handleServers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	if h.Servers == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"servers": []ServerProfileView{}})
+		return
+	}
+	servers, err := h.Servers(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "clipboard_servers_failed", "读取远端服务器配置失败")
+		return
+	}
+	if servers == nil {
+		servers = []ServerProfileView{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"servers": servers})
+}
+
+func (h *Handler) handleSyncKey(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		key, fp, found, err := h.Service.GetSyncKey(r.Context())
+		if err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+		if !found {
+			writeError(w, http.StatusNotFound, "clipboard_sync_key_missing", "尚未配置同步密钥")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"key":         base64.StdEncoding.EncodeToString(key),
+			"fingerprint": fp,
+		})
+
+	case http.MethodPost:
+		var body struct {
+			Key string `json:"key"`
+		}
+		if err := h.decodeJSON(w, r, &body); err != nil {
+			h.writeDecodeError(w, err)
+			return
+		}
+		rawKey, err := base64.StdEncoding.DecodeString(strings.TrimSpace(body.Key))
+		if err != nil || len(rawKey) != clipboard.SyncKeyBytes {
+			writeError(w, http.StatusBadRequest, "clipboard_invalid_sync_key", "同步密钥必须是 32 字节 base64")
+			return
+		}
+		existingKey, fp, err := h.Service.SetSyncKeyIfAbsent(r.Context(), rawKey)
+		if errors.Is(err, clipboard.ErrSyncKeyConflict) {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": map[string]string{
+					"code":    "clipboard_sync_key_conflict",
+					"message": "目标端已存在不同的同步密钥",
+				},
+				"key":         base64.StdEncoding.EncodeToString(existingKey),
+				"fingerprint": fp,
+			})
+			return
+		}
+		if err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"key":         base64.StdEncoding.EncodeToString(existingKey),
+			"fingerprint": fp,
+		})
+
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+	}
+}
+
+func (h *Handler) handleSyncItems(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		h.handleSyncPush(w, r)
+	case http.MethodGet:
+		h.handleSyncPull(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+	}
+}
+
+func (h *Handler) handleSyncPush(w http.ResponseWriter, r *http.Request) {
+	key, _, found, err := h.Service.GetSyncKey(r.Context())
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "clipboard_sync_key_missing", "尚未配置同步密钥")
+		return
+	}
+	var body struct {
+		Items []clipboardruntime.SealedSyncItem `json:"items"`
+	}
+	if err := h.decodeJSON(w, r, &body); err != nil {
+		h.writeDecodeError(w, err)
+		return
+	}
+	if len(body.Items) > clipboard.SyncBatchMaxItems {
+		writeError(w, http.StatusBadRequest, "clipboard_sync_batch_too_large", "单批最多 50 条同步条目")
+		return
+	}
+
+	nowMs := time.Now().UnixMilli()
+	ids := make(map[string]string, len(body.Items))
+	dedup := make(map[string]bool, len(body.Items))
+	for _, sealed := range body.Items {
+		payload, openErr := clipboardruntime.OpenSyncPayload(key, sealed)
+		if openErr != nil {
+			writeError(w, http.StatusBadRequest, "clipboard_sync_decrypt_failed", "同步负载解密失败")
+			return
+		}
+		ingestInput, verifyErr := clipboardruntime.VerifyAndDecodePayload(sealed.SHA256, payload, nowMs)
+		if verifyErr != nil {
+			h.writeDomainError(w, verifyErr)
+			return
+		}
+		res, ingestErr := h.Service.Ingest(r.Context(), ingestInput)
+		if ingestErr != nil {
+			h.writeDomainError(w, ingestErr)
+			return
+		}
+		shaKey := strings.ToLower(strings.TrimSpace(sealed.SHA256))
+		ids[shaKey] = res.Item.ID
+		dedup[shaKey] = res.Deduplicated
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ids":   ids,
+		"dedup": dedup,
+	})
+}
+
+func (h *Handler) handleSyncPull(w http.ResponseWriter, r *http.Request) {
+	key, _, found, err := h.Service.GetSyncKey(r.Context())
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "clipboard_sync_key_missing", "尚未配置同步密钥")
+		return
+	}
+	q := r.URL.Query()
+	var sinceMs int64
+	if rawSince := strings.TrimSpace(q.Get("since")); rawSince != "" {
+		parsed, parseErr := strconv.ParseInt(rawSince, 10, 64)
+		if parseErr != nil || parsed < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_since", "since 必须是非负毫秒时间戳")
+			return
+		}
+		sinceMs = parsed
+	}
+	limit := clipboard.SyncBatchMaxItems
+	if rawLimit := strings.TrimSpace(q.Get("limit")); rawLimit != "" {
+		parsed, parseErr := strconv.Atoi(rawLimit)
+		if parseErr != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_limit", "limit 必须是正整数")
+			return
+		}
+		if parsed < limit {
+			limit = parsed
+		}
+	}
+
+	items, err := h.Service.ItemsSince(r.Context(), sinceMs, limit)
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	sealedItems := make([]clipboardruntime.SealedSyncItem, 0, len(items))
+	cursor := sinceMs
+	accBytes := 64
+	for _, item := range items {
+		payload, buildErr := clipboardruntime.BuildSyncPayload(r.Context(), h.Service, item)
+		if buildErr != nil {
+			// Skip un-buildable item (e.g. missing blob or >1 MiB text) without breaking pull.
+			if item.LastSeenAtMs > cursor {
+				cursor = item.LastSeenAtMs
+			}
+			continue
+		}
+		sealed, sealErr := clipboardruntime.SealSyncPayload(key, item.SHA256, payload)
+		if sealErr != nil {
+			h.writeDomainError(w, sealErr)
+			return
+		}
+		estSize := len(sealed.SHA256) + len(sealed.Sealed) + 40
+		if len(sealedItems) > 0 && accBytes+estSize > clipboard.MaxRequestBytes {
+			break
+		}
+		sealedItems = append(sealedItems, sealed)
+		accBytes += estSize
+		if item.LastSeenAtMs > cursor {
+			cursor = item.LastSeenAtMs
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":  sealedItems,
+		"cursor": cursor,
+	})
+}
+
+func (h *Handler) handleSyncRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	if h.SyncRun == nil {
+		writeError(w, http.StatusServiceUnavailable, "clipboard_sync_unavailable", "剪贴板同步器未就绪")
+		return
+	}
+	if err := h.SyncRun(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, "clipboard_sync_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (h *Handler) decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	maxBody := h.MaxBody
 	if maxBody <= 0 {
@@ -452,6 +705,14 @@ func (h *Handler) writeDomainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "clipboard_invalid_kind", "无效的剪贴板类型")
 	case errors.Is(err, clipboard.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "clipboard_invalid_input", err.Error())
+	case errors.Is(err, clipboard.ErrInvalidSyncKey):
+		writeError(w, http.StatusBadRequest, "clipboard_invalid_sync_key", "同步密钥无效")
+	case errors.Is(err, clipboard.ErrSyncKeyMissing):
+		writeError(w, http.StatusNotFound, "clipboard_sync_key_missing", "尚未配置同步密钥")
+	case errors.Is(err, clipboardruntime.ErrSyncDecryptFailed):
+		writeError(w, http.StatusBadRequest, "clipboard_sync_decrypt_failed", "同步负载解密失败")
+	case errors.Is(err, clipboardruntime.ErrSyncSHAMismatch):
+		writeError(w, http.StatusBadRequest, "clipboard_sync_sha_mismatch", "同步内容校验和不匹配")
 	case errors.Is(err, clipboard.ErrItemTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "clipboard_item_too_large", "剪贴板条目超过大小限制")
 	default:

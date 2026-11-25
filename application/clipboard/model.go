@@ -36,6 +36,8 @@ const (
 	SoftDeleteRetentionDays = 7
 	DefaultListLimit        = 50
 	MaxListLimit            = 200
+	SyncKeyBytes            = 32
+	SyncBatchMaxItems       = 50
 )
 
 // Setting keys stored in clipboard_settings.
@@ -51,11 +53,14 @@ const (
 )
 
 var (
-	ErrInvalidInput = errors.New("clipboard_invalid_input")
-	ErrEmptyContent = errors.New("clipboard_empty_content")
-	ErrItemTooLarge = errors.New("clipboard_item_too_large")
-	ErrInvalidKind  = errors.New("clipboard_invalid_kind")
-	ErrNotFound     = errors.New("clipboard_item_not_found")
+	ErrInvalidInput    = errors.New("clipboard_invalid_input")
+	ErrEmptyContent    = errors.New("clipboard_empty_content")
+	ErrItemTooLarge    = errors.New("clipboard_item_too_large")
+	ErrInvalidKind     = errors.New("clipboard_invalid_kind")
+	ErrNotFound        = errors.New("clipboard_item_not_found")
+	ErrSyncKeyMissing  = errors.New("clipboard_sync_key_missing")
+	ErrSyncKeyConflict = errors.New("clipboard_sync_key_conflict")
+	ErrInvalidSyncKey  = errors.New("clipboard_invalid_sync_key")
 )
 
 // Valid reports whether the kind is a known canonical value.

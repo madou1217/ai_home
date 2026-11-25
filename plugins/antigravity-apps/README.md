@@ -57,5 +57,7 @@ appId；同时存在时会看到内置桌面卡 + 两张插件卡，这是过渡
 - macOS 安装到 `~/Applications`；Windows 安装到 `%LOCALAPPDATA%\Programs`；
   卸载只删除这些 per-user 路径，不动 `/Applications` 或 Program Files。
 - Desktop 使用 NSIS 静默参数 `/S`；IDE 使用 Inno Setup 的
-  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`。
+  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`，并以 Inno 安装日志的完成标记
+  判定结束，避免把仍在写文件的半安装当成成功。
+- IDE 完整安装约 0.9 GB；慢盘或杀毒扫描下可能超过 8 分钟。
 - 账号级投影打开（`accountScope`）尚未接线；当前 open 是无账号启动。

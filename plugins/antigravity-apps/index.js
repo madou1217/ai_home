@@ -239,14 +239,16 @@ function stopInstaller(exe, pid) {
   }
 }
 
-// waitForInstaller 启动安装器后轮询安装落点，而不是等安装器进程退出。
+// waitForInstaller 以 Inno 的安装完成日志判断结束，而不是看 exe 是否出现。
 //
-// IDE 的 Inno 安装器会拉起 IDE 本体，直接 spawnSync 可能一直等到用户关闭
-// 应用，安装作业看起来像卡死。以「可执行文件出现」作为完成信号更可靠。
+// Inno 先写 exe，再写 resources 等大量文件；以「exe 出现」为完成信号会
+// 在安装中途结束安装器，留下启动即退出的半安装（缺 resources/app/out/main.js）。
+// 反过来也不能无限等安装器退出：它可能拉起 IDE 并等待应用关闭。
 function waitForInstaller(exe, args, appId, timeoutMs) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
+    const logPath = path.join(os.tmpdir(), 'aih-' + appId + '-install-' + process.pid + '-' + Date.now() + '.log');
     const finish = (error) => {
       if (settled) return;
       settled = true;
@@ -255,24 +257,32 @@ function waitForInstaller(exe, args, appId, timeoutMs) {
         reject(error);
         return;
       }
-      // 安装器可能仍在驻留；先收尾再让宿主继续。
+      // 安装已完成；安装器可能仍在等待它拉起的 IDE，收尾。
       stopInstaller(exe, child.pid);
+      try { fs.rmSync(logPath, { force: true }); } catch (_error) { /* ignore */ }
       resolve();
     };
-    const child = spawn(exe, args, { stdio: 'ignore', windowsHide: true });
+    const child = spawn(exe, args.concat(['/LOG=' + logPath]), { stdio: 'ignore', windowsHide: true });
     child.on('error', (error) => finish(new Error(error.message)));
     child.on('exit', (code) => {
       if (code === 0 || code === null) {
-        // 安装器已退出，但文件落盘可能晚一拍；再给 3 秒。
-        setTimeout(() => finish(), 3000);
+        // 安装器已退出，但文件落盘可能晚一拍；再给 2 秒。
+        setTimeout(() => finish(), 2000);
       } else {
         finish(new Error('安装器退出码 ' + code));
       }
     });
+    const installed = () => {
+      try {
+        return fs.readFileSync(logPath, 'utf8').includes('Installation process succeeded.');
+      } catch (_error) {
+        return false;
+      }
+    };
     const started = Date.now();
     timer = setInterval(() => {
-      if (findExecutable(appId)) {
-        setTimeout(() => finish(), 3000);
+      if (installed()) {
+        setTimeout(() => finish(), 2000);
         return;
       }
       if (Date.now() - started > timeoutMs) {
@@ -302,7 +312,8 @@ async function windowsInstaller(appId, proxyUrl) {
     download(url, tmp, proxyUrl);
     // Desktop 是 NSIS（/S）；IDE 是 Inno Setup（/VERYSILENT），两者不能共用参数。
     if (isIDE) {
-      await waitForInstaller(tmp, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-'], appId, 10 * 60 * 1000);
+      // IDE 安装包含数十万个文件，慢盘/杀毒扫描下实测约 8 分钟；给足余量。
+      await waitForInstaller(tmp, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-'], appId, 30 * 60 * 1000);
     } else {
       const result = spawnSync(tmp, ['/S'], {
         encoding: 'utf8',
@@ -343,6 +354,26 @@ function linuxInstaller(appId, proxyUrl) {
   }
 }
 
+// assertCompleteInstall 兜底识别被中断的 Inno 安装。
+//
+// 安装器被中途结束时会留下 is-*.tmp 和缺失的 resources；exe 已存在，
+// 只看 findExecutable 会误报成功。发现残留临时文件就按安装失败处理。
+function assertCompleteInstall(appId) {
+  if (currentPlatform() !== 'windows') return;
+  const product = PRODUCTS[appId];
+  const local = process.env.LOCALAPPDATA || path.join(homeDir(), 'AppData', 'Local');
+  const dir = path.join(local, 'Programs', product.binaryName);
+  let partial = [];
+  try {
+    partial = fs.readdirSync(dir).filter((name) => /^is-.*\.tmp$/i.test(name));
+  } catch (_error) {
+    return;
+  }
+  if (partial.length > 0) {
+    throw new Error('安装未完成，安装器被中断：' + partial.join(', '));
+  }
+}
+
 async function install(appId, proxyUrl) {
   const platform = currentPlatform();
   const steps = platform === 'macos'
@@ -353,6 +384,7 @@ async function install(appId, proxyUrl) {
   if (!findExecutable(appId)) {
     throw new Error('安装完成但未找到 ' + PRODUCTS[appId].name + ' 可执行文件');
   }
+  assertCompleteInstall(appId);
   return steps;
 }
 

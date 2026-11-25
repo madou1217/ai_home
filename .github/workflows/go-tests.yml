@@ -3,10 +3,11 @@ name: go-tests
 # Go 的多平台验证。
 #
 # 两个 job 分工：
-#   - windows：`internal/runtime/artifactstore/junction_windows_test.go` 带
+#   - windows：`internal/runtime/artifactstore/junction_windows_test.go` 和
+#     `internal/runtime/distributioninstall/service_sync_windows_test.go` 带
 #     `//go:build windows`，在 macOS/Linux 上整文件被排除（`go test` 只报
-#     `no test files`），必须由真正的 Windows runner 跑，才能固定住"共享目录只读、
-#     账号侧可删"依赖的 junction 删除/重命名语义。
+#     `no test files`），必须由真正的 Windows runner 跑，才能固定住
+#     junction 删除/重命名语义与安装器同步旧 `.ai_home/bin` 的行为。
 #   - linux：补上非 Windows 侧的 vet + 编译，防止 `//go:build !windows` 分支漂移
 #     或包里只有某个平台能编。Linux 也是发行目标之一，但只在打 tag 时才构建。
 #
@@ -32,7 +33,7 @@ permissions:
 
 jobs:
   windows:
-    name: windows junction + artifact store
+    name: windows junction + installer sync + artifact store
     runs-on: windows-latest
     timeout-minutes: 15
     env:
@@ -101,11 +102,15 @@ jobs:
 
       - name: Vet
         if: steps.scope.outputs.go == 'true'
-        run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/...
+        run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/... ./internal/runtime/distributioninstall/...
 
       - name: Test junction semantics
         if: steps.scope.outputs.go == 'true'
         run: go test -count=1 -v -timeout 5m ./internal/runtime/artifactstore/...
+
+      - name: Test Windows installer sync
+        if: steps.scope.outputs.go == 'true'
+        run: go test -count=1 -v -timeout 5m ./internal/runtime/distributioninstall/...
 
       # 生产二进制也要在 Windows 上编译通过：artifactstore/spacegc 被 server 引用，
       # 只测包不编译入口会漏掉"测试过、产品编不过"的情况。
@@ -180,6 +185,20 @@ jobs:
         run: |
           go version
           go env GOOS GOARCH
+
+      # 构建标签是"测试被静默跳过"的高发点：在 Linux 上检查 GOOS=windows 时
+      # 该测试文件确实进入 TestGoFiles，并完成 vet + 测试二进制编译。真正的
+      # 执行仍由 windows job 负责。
+      - name: Verify Windows service sync build tags
+        run: |
+          files="$(GOOS=windows GOARCH=amd64 go list -f '{{join .TestGoFiles " "}}' ./internal/runtime/distributioninstall)"
+          echo "GOOS=windows TestGoFiles: $files"
+          case "$files" in
+            *service_sync_windows_test.go*) ;;
+            *) echo "service_sync_windows_test.go not selected by GOOS=windows" >&2; exit 1 ;;
+          esac
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./internal/runtime/distributioninstall
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/runtime/distributioninstall -o "$RUNNER_TEMP/service-sync-windows.test.exe"
 
       - name: Vet
         run: go vet ./internal/runtime/artifactstore/... ./internal/runtime/spacegc/...

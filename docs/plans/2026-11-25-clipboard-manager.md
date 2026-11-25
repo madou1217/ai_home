@@ -285,3 +285,24 @@ AGY 产出提交（AWS `feature/paste-nexus`）：`ca259b99`（quickOrbitPositio
 - `?mode=quick&embed=desktop` 在 1520×438 下显示 7 张卡片、过滤器单行、页脚与 Paste 按钮完整，和参考截图同构；
 - 设置对话框读取真实 capture/sync/位置/指纹/设备/传输状态，位置切换写入后端；
 - 状态栏菜单可打开工作区、切换 Quick Orbit、选择底部/左侧/右侧；QuickOrbit 面板 1520×438 透明浮动。
+
+## 17. 跨平台桌面入口与终端验收（2026-11-25）
+
+macOS 原生 Quick Orbit 之外，补齐 Windows/Linux 的桌面入口，不依赖新的 GUI 工具链：
+
+- `aih clip orbit [--workspace] [--position bottom|left|right] [--print]`：检测 Microsoft Edge / Chrome / Chromium / Brave，以 `--app=<origin>/ui/paste/?mode=quick&embed=browser` 打开 1520×438 的无标签应用窗口；无 Chromium 时回退系统浏览器。`--workspace` 打开 1440×900 完整工作区。
+- `aih clip shortcut install`：Windows 在桌面写入 `AIH Quick Orbit.lnk` 并设置 `Ctrl+Alt+V`；Linux 写入 `~/.local/share/applications/aih-clip-orbit.desktop`，由桌面环境绑定快捷键；macOS 提示使用内置 ⌘⌥V。`print` 只输出计划。
+- 页面新增 `embed=browser`：铺满应用窗口、深色底、无圆角/阴影，视觉与原生 Quick Orbit 一致。
+- 两个新子命令已加入 `aih clip <Tab>` 补全（`orbit/quick/workspace/shortcut` 及 `--workspace/--position/--print/--browser`）。
+
+真实验收：
+
+- `aih clip orbit --print` 输出 Edge `--app` 命令；`--workspace` 输出工作区命令；`--position right` 输出 right URL。
+- Windows amd64 与 Linux arm64 交叉编译通过；Linux 二进制在 AWS 执行 `clip orbit --print` 输出 `xdg-open .../ui/paste/?embed=browser&mode=quick&position=bottom`。
+- Tab 补全：`__complete clip ""` 列出 `orbit/quick/workspace/shortcut` 等；`__complete clip paste ""` 返回最近条目的 8 位 ID + `#N preview`。
+- 终端选择器：PTY 内 `aih clip pick --stdout` 回车选中 #1，stdout 精确输出 `vim clipboard probe 42`，界面走 stderr。
+- Vim：临时 HOME 安装插件后，`vim -es` 执行 `:AIHClipPaste` 写入文件为 `vim clipboard probe 42`。
+- Shell：`aih shell snippet --shell zsh` 含 Ctrl-X Ctrl-V 组件。
+- WebUI 同步：Paste Nexus 设置对话框读取真实 capture/sync/目标/指纹/设备/transports，开关 PATCH 到 `/v1/management/webui/clipboard/settings`；AES-256-GCM 同步此前已与 AWS 双向验证。
+
+边界：Windows/Linux 的桌面入口是浏览器 app 窗口 + 系统启动器，不是 AppKit/WinForms 原生浮层；原生 HUD 浮层目前仅 macOS。账号凭据沿用浏览器同源 profile，CLI 不把管理密钥写入 URL。

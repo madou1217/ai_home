@@ -54,6 +54,15 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 	if subcommand == "vim" {
 		return runClipVim(rest, runtime)
 	}
+	if subcommand == "orbit" || subcommand == "quick" {
+		return runClipOrbit(rest, runtime)
+	}
+	if subcommand == "workspace" {
+		return runClipOrbit(append([]string{"--workspace"}, rest...), runtime)
+	}
+	if subcommand == "shortcut" || subcommand == "hotkey" {
+		return runClipShortcut(rest, runtime)
+	}
 
 	homeDir, err := resolveClipboardAIHomeDir(runtime)
 	if err != nil {
@@ -801,6 +810,8 @@ func writeClipUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  aih clip clear --yes [--all]")
 	_, _ = fmt.Fprintln(w, "  aih clip enable | disable")
 	_, _ = fmt.Fprintln(w, "  aih clip sync [--once|--watch] [--server <profileId|名称>]")
+	_, _ = fmt.Fprintln(w, "  aih clip orbit [--workspace] [--position bottom|left|right] [--print]")
+	_, _ = fmt.Fprintln(w, "  aih clip shortcut install | print")
 	_, _ = fmt.Fprintln(w, "  aih clip vim install | print")
 	_, _ = fmt.Fprintln(w, "  aih clip status [--json]")
 }

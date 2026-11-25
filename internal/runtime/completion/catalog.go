@@ -343,6 +343,17 @@ func buildCommandCatalog() []commandNode {
 				f("--watch", "持续循环同步"),
 				vf("--server", "目标 Server profile", kindRemoteServer),
 			),
+			n("orbit", "在工作区或桌面 Quick Orbit 中打开 Paste Nexus").withAliases("quick").withOptions(
+				f("--workspace", "打开完整工作区而不是 Quick Orbit"),
+				vf("--position", "Quick Orbit 锚点位置", kindEnum, "bottom", "left", "right"),
+				f("--print", "只打印将要运行的命令"),
+				f("--browser", "指定 Chromium 浏览器路径"),
+			),
+			n("workspace", "打开 Paste Nexus 完整工作区").withOptions(f("--print", "只打印将要运行的命令"), f("--browser", "指定 Chromium 浏览器路径")),
+			n("shortcut", "安装桌面 Quick Orbit 启动器").withAliases("hotkey").withChildren(
+				n("install", "写入 Windows .lnk 或 Linux .desktop 启动器"),
+				n("print", "打印启动器内容而不写入"),
+			),
 			n("vim", "安装或打印 Vim 粘贴插件").withChildren(
 				n("install", "幂等写入 ~/.vim/plugin/aih_clipboard.vim"),
 				n("print", "打印 Vim 插件脚本"),

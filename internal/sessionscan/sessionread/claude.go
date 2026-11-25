@@ -35,21 +35,39 @@ type claudeRecord struct {
 }
 
 func readClaudeKnownPaths(hostHome string) []string {
-	raw, err := os.ReadFile(filepath.Join(hostHome, ".claude.json"))
-	if err != nil {
-		return nil
+	// Claude 的全局配置有两种放置方式：
+	//   - <CLAUDE_CONFIG_DIR>/.claude.json（AIH 启动时把 CLAUDE_CONFIG_DIR 指向 ~/.claude，
+	//     所以当前文件在 ~/.claude/.claude.json）；
+	//   - $HOME/.claude.json（未设置 CLAUDE_CONFIG_DIR 的普通 CLI / 旧版本）。
+	// 两边都读，按项目路径去重，避免只读旧文件导致新项目的 cwd 反解不出来。
+	candidates := []string{
+		filepath.Join(append([]string{hostHome}, providerroot.ConfigPath("claude", ".claude.json")...)...),
+		filepath.Join(hostHome, ".claude.json"),
 	}
-	var payload struct {
-		Projects map[string]any `json:"projects"`
-	}
-	if json.Unmarshal(raw, &payload) != nil || len(payload.Projects) == 0 {
-		return nil
-	}
-	paths := make([]string, 0, len(payload.Projects))
-	for projectPath := range payload.Projects {
-		if trimmed := strings.TrimSpace(projectPath); trimmed != "" {
-			paths = append(paths, trimmed)
+	seen := make(map[string]struct{})
+	for _, path := range candidates {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
 		}
+		var payload struct {
+			Projects map[string]any `json:"projects"`
+		}
+		if json.Unmarshal(raw, &payload) != nil {
+			continue
+		}
+		for projectPath := range payload.Projects {
+			if trimmed := strings.TrimSpace(projectPath); trimmed != "" {
+				seen[trimmed] = struct{}{}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(seen))
+	for projectPath := range seen {
+		paths = append(paths, projectPath)
 	}
 	sort.Strings(paths)
 	return paths

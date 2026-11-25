@@ -209,3 +209,16 @@ func TestRunnerStartsAgentAndExchangesTools(t *testing.T) {
 		t.Fatalf("events = %+v", events)
 	}
 }
+
+func TestAgentEnvironmentStripsManagementSecrets(t *testing.T) {
+	t.Setenv("AIH_MANAGEMENT_KEY", "secret")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	env := agentEnvironment([]string{"ACP_TEST_ROOT=/tmp/work"})
+	joined := strings.Join(env, "\n")
+	if strings.Contains(joined, "AIH_MANAGEMENT_KEY") || strings.Contains(joined, "AWS_SECRET_ACCESS_KEY") {
+		t.Fatalf("agent environment leaked secrets: %v", env)
+	}
+	if !strings.Contains(joined, "ACP_TEST_ROOT=/tmp/work") {
+		t.Fatalf("explicit env was dropped: %v", env)
+	}
+}

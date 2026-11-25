@@ -3,7 +3,6 @@ package acpclient
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -58,7 +57,7 @@ func Start(ctx context.Context, config Config) (*Session, error) {
 	if config.Dir != "" {
 		command.Dir = config.Dir
 	}
-	command.Env = append(os.Environ(), config.Env...)
+	command.Env = agentEnvironment(config.Env)
 	configureCommand(command)
 	stdin, err := command.StdinPipe()
 	if err != nil {

@@ -172,7 +172,9 @@ func (p *Process) EnsureStarted(ctx context.Context) error {
 		p.mu.Unlock()
 		return errors.New("agy_session_closed")
 	}
-	if p.starting || (p.alive && (p.remote == nil || p.followerCtx != nil)) {
+	// 管道模式保持原短路；远端模式的 alive 只代表「上次探测结论」，必须重新探测，
+	// 否则远端 tmux 已被杀掉时这里会误判为健康、跳过后面的重启。
+	if p.starting || (p.alive && p.remote == nil) {
 		p.mu.Unlock()
 		return nil
 	}
@@ -506,8 +508,22 @@ func (p *Process) AdoptPendingTurn(turnID int64, prompt, peerMessageID string) {
 
 // ensureRemoteStarted 保证远端管道与本地跟随协程都在位；Server 重启后从偏移续接。
 func (p *Process) ensureRemoteStarted(ctx context.Context, remote *remoteSession, conversation string) error {
+	remote.mu.Lock()
+	recent := !remote.probedAt.IsZero() && time.Since(remote.probedAt) < 2*time.Second
+	remote.mu.Unlock()
+	alive := false
+	if recent {
+		p.mu.Lock()
+		alive = p.alive
+		p.mu.Unlock()
+	} else {
+		alive = remote.aliveRemote(ctx)
+		remote.mu.Lock()
+		remote.probedAt = time.Now()
+		remote.mu.Unlock()
+	}
 	pipelineStarted := false
-	if !remote.aliveRemote(ctx) {
+	if !alive {
 		p.mu.Lock()
 		interrupted := p.current != nil
 		p.mu.Unlock()

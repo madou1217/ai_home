@@ -93,6 +93,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // ⌘⌥C / 「AIH Chat 选中内容」打开的是 WebUI chat/work 的快捷唤起壳；旧的原生
   // ChatPanel 仅在拿不到本机 server 地址时兜底。
   let quickChat = QuickChatWindow()
+  let clipboardPanel = ClipboardPanel()
   var quickChatAvailable = false
   lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
     guard let self = self else { return }
@@ -206,7 +207,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   func registerShortcuts(translation: String = ShortcutRegistry.defaultTranslationShortcut,
                          chat: String = ShortcutRegistry.defaultChatShortcut,
                          translationEnabled: Bool = true,
-                         chatEnabled: Bool = true) {
+                         chatEnabled: Bool = true,
+                         clipboard: String = "⌘⌥V",
+                         clipboardEnabled: Bool = true) {
     _ = shortcutRegistry.update([
       ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
         self?.panel.openSettings()
@@ -222,6 +225,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       ShortcutDescriptor(id: "chat", label: "Chat", shortcut: chat, enabled: chatEnabled) { [weak self] in
         guard let self else { return }
         if self.quickChatAvailable { self.quickChat.toggle() } else { self.chatPanel.openFromShortcut() }
+      },
+      ShortcutDescriptor(id: "clipboard", label: "剪贴板", shortcut: clipboard, enabled: clipboardEnabled) { [weak self] in
+        self?.clipboardPanel.toggle()
       }
     ])
   }
@@ -319,6 +325,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }) { monitors.append(monitor) }
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
       if event.type == .keyDown && event.keyCode == 53 {
+        if self?.clipboardPanel.closeIfKey() == true {
+          return nil
+        }
         self?.selectionToken += 1
         self?.panel.close()
         return nil
@@ -379,13 +388,17 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       panel.configure(event)
       chatPanel.configure(event)
       let quickOrigin = event["quickChatOrigin"] as? String ?? ""
+      let quickKey = event["quickChatKey"] as? String ?? ""
       quickChatAvailable = !quickOrigin.isEmpty
-      quickChat.configure(origin: quickOrigin, managementKey: event["quickChatKey"] as? String ?? "")
+      quickChat.configure(origin: quickOrigin, managementKey: quickKey)
+      clipboardPanel.configure(origin: event["quickChatOrigin"] as? String ?? quickOrigin, managementKey: quickKey)
       registerShortcuts(
         translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
         chat: event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut,
         translationEnabled: event["shortcutEnabled"] as? Bool ?? true,
-        chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true
+        chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true,
+        clipboard: event["clipboardShortcut"] as? String ?? "⌘⌥V",
+        clipboardEnabled: event["clipboardEnabled"] as? Bool ?? true
       )
       reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":

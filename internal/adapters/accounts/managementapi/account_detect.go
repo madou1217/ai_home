@@ -19,9 +19,10 @@ type DetectedAccount struct {
 	Source       string `json:"source,omitempty"`
 }
 
-// SkippedAccount 是被跳过来源的原因。
+// SkippedAccount 是被跳过来源的原因；Detail 携带可诊断的底层错误。
 type SkippedAccount struct {
 	Reason     string `json:"reason"`
+	Detail     string `json:"detail,omitempty"`
 	Provider   string `json:"provider,omitempty"`
 	Source     string `json:"source,omitempty"`
 	AccountRef string `json:"accountRef,omitempty"`

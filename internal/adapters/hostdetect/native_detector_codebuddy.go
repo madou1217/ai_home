@@ -72,6 +72,7 @@ type codebuddyScanSource struct {
 type codebuddyInspection struct {
 	ok          bool
 	reason      string
+	detail      string
 	uid         string
 	issuer      string
 	domain      string
@@ -174,7 +175,7 @@ func (s *detectSession) detectCodebuddyFamily() bool {
 		s.result.Scanned++
 		if !inspection.ok {
 			if inspection.reason != "credential_file_missing" && inspection.reason != "desktop_credential_unavailable" {
-				s.addSkip(inspection.reason, source.provider, label, source.accountRef.String())
+				s.addSkipDetail(inspection.reason, inspection.detail, source.provider, label, source.accountRef.String())
 			}
 			continue
 		}
@@ -466,31 +467,41 @@ func (detector *NativeDetector) mountedVolumeRoots(platform string) []string {
 func (s *detectSession) readCodebuddyDesktopSource(homeDir, provider, platform string) codebuddyInspection {
 	dbCandidates := s.detector.desktopStateDBPaths(homeDir, provider, platform)
 	lastReason := "desktop_credential_unavailable"
+	lastDetail := ""
 	for _, candidate := range dbCandidates {
 		info, err := os.Lstat(candidate.dbPath)
 		if err != nil || !info.Mode().IsRegular() || (info.Mode()&os.ModeSymlink != 0) {
 			continue
 		}
 		blob, found, readErr := readDesktopEncryptedBlob(s.ctx, candidate.dbPath)
-		if readErr != nil || !found {
+		if readErr != nil {
+			lastReason = "desktop_credential_read_failed"
+			lastDetail = readErr.Error()
+			continue
+		}
+		if !found {
 			continue
 		}
 		if len(blob) < 3 {
 			lastReason = "desktop_credential_unsupported_format"
+			lastDetail = ""
 			continue
 		}
 		version := string(blob[:3])
 		if version == "v11" {
 			lastReason = "desktop_credential_keyring_unavailable"
+			lastDetail = ""
 			continue
 		}
 		if version != "v10" {
 			lastReason = "desktop_credential_unsupported_format"
+			lastDetail = ""
 			continue
 		}
 		plaintext, decReason := s.detector.decryptDesktopBlob(s.ctx, blob[3:], candidate.serviceName, platform)
 		if decReason != "" {
 			lastReason = decReason
+			lastDetail = ""
 			continue
 		}
 		var doc map[string]any
@@ -498,6 +509,7 @@ func (s *detectSession) readCodebuddyDesktopSource(homeDir, provider, platform s
 		clear(plaintext)
 		if err != nil || doc == nil {
 			lastReason = "desktop_credential_unreadable"
+			lastDetail = ""
 			continue
 		}
 		inspected := inspectCodebuddyCredential(doc, provider, s.detector.clock().UnixMilli())
@@ -508,8 +520,9 @@ func (s *detectSession) readCodebuddyDesktopSource(homeDir, provider, platform s
 			return inspected
 		}
 		lastReason = inspected.reason
+		lastDetail = ""
 	}
-	return codebuddyInspection{reason: lastReason}
+	return codebuddyInspection{reason: lastReason, detail: lastDetail}
 }
 
 type desktopDBCandidate struct {

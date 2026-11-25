@@ -806,7 +806,7 @@ export const accountsAPI = {
     scanned: number;
     updated: number;
     registered: Array<{ accountRef: string; cliAccountId: string; created: boolean }>;
-    skipped: Array<{ reason: string }>;
+    skipped: Array<{ reason: string; detail?: string }>;
     accounts: Record<string, number>;
   }> => {
     const response = await api.post('/webui/accounts/detect');

@@ -101,8 +101,12 @@ type RegisteredAccount struct {
 }
 
 // SkippedAccount 描述被跳过来源的原因、Provider 与位置标签。
+//
+// Detail 只在能拿到具体底层错误时填充（例如桌面凭据库读取失败），
+// 用于让 WebUI/CLI 看到可诊断的原因，而不是只有泛化的 reason。
 type SkippedAccount struct {
 	Reason     string `json:"reason"`
+	Detail     string `json:"detail,omitempty"`
 	Provider   string `json:"provider,omitempty"`
 	Source     string `json:"source,omitempty"`
 	AccountRef string `json:"accountRef,omitempty"`
@@ -287,8 +291,13 @@ func (s *detectSession) addRegistered(accountRef, cliAccountID string, created b
 }
 
 func (s *detectSession) addSkip(reason, provider, source, accountRef string) {
+	s.addSkipDetail(reason, "", provider, source, accountRef)
+}
+
+func (s *detectSession) addSkipDetail(reason, detail, provider, source, accountRef string) {
 	s.result.Skipped = append(s.result.Skipped, SkippedAccount{
 		Reason:     reason,
+		Detail:     detail,
 		Provider:   provider,
 		Source:     source,
 		AccountRef: accountRef,

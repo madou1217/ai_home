@@ -518,12 +518,13 @@ AIH 签名插件宿主与各 Provider 原生资源分别管理；宿主适配能
 aih shell status                 # 当前 shell + 各 shell 的安装状态
 aih shell plan                   # 只打印将要写入的片段（不写文件）
 aih shell apply                  # 写入当前 shell 的 rc，带备份
-aih shell apply --all            # 本机装了的每个 shell 都写一遍
+aih shell apply --all            # 本机装了的每个 rc 型 shell 都写一遍（不含 cmd/Clink）
+aih shell apply --shell cmd      # cmd：需先安装 Clink
 aih shell doctor                 # 逐项体检（语法 / 是否最新 / 入口真能出候选）
 aih shell remove                 # 摘掉 aih 写入的那一段
 ```
 
-支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）**。装上之后：
+支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）/ cmd（Clink）**。装上之后：
 
 - `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。
 - 位置感知的深一层补全：`aih codex resume <TAB>` 直接给**该 CLI 自己最近 10 条会话**（id + 标题 + 时间，zsh 一次 TAB 进入菜单，↑/↓ 挑；fish/pwsh 用各自的候选 UI），`aih codex set-default <TAB>` 给账号 id 与 `.aih-server` 档，`aih server config set --<TAB>` 给服务端配置选项（由 Go 的共享 config schema 生成，和 `config list` / `--help` 同源）。
@@ -533,6 +534,8 @@ aih shell remove                 # 摘掉 aih 写入的那一段
 - 写入前先让**该 shell 自己的解析器**验一遍片段语法（`zsh -n` / `bash -n` / `fish -n` / PowerShell Parser），语法不过就拒绝写入——宁可失败，也不给一个打不开的 rc。
 
 只动 rc 里 `# >>> aih:shell >>>` 标记之间的一段，其余内容逐字节保留；写入前备份到 `<rc>.aih-backup-<时间戳>`，并原子替换。rc 目标固定落在宿主家目录（沙箱会话里不会写进投影目录）。
+
+**cmd.exe** 原生没有参数级 Tab 补全；安装 [Clink](https://chrisant996.github.io/clink/) 后执行 `aih shell apply --shell cmd`，会在 `%LOCALAPPDATA%\clink\aih.lua` 写入 Lua 生成器，普通 cmd 新窗口由 Clink AutoRun 自动加载。默认只补纯值（cmd 常见 936 代码页），设置 `AIH_CLINK_DESCRIPTIONS=1` 可带说明；详见 [Clink 支持](docs/product-integrity/clink-cmd-completion-2026-11-25.md)。
 
 ## 开发
 

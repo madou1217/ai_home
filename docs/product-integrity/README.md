@@ -7,7 +7,7 @@
 | 阶段 | 状态 | 证据边界 |
 |---|---|---|
 | M0 全功能总账 | 进行中 | 已采集入口/合同快照；还需路由交叉核对、叶子操作/初衷/归属与动态入口补齐 |
-| M1 CLI TAB 样板 | 进行中 | 已真实复现并修复一批路径补全及 rc 生命周期问题；尚未完成全矩阵/Windows |
+| M1 CLI TAB 样板 | 进行中 | 已真实复现并修复一批路径补全及 rc 生命周期问题；全矩阵仍待，Windows PS5/PS7 与 Clink 已于 2026-11-25 真机验证 |
 | M2 原生适配与生命周期 | 源码边界审查进行中 | runtime-protocol-map 覆盖 16 Provider/14 CLI，11 项静态差异；待真实验证，不定制官方客户端 |
 | M3 账号/推理主链路 | 未完整审查 | 多处有并行会话修改；不能擅自接管或覆盖 |
 | M4 管理/扩展功能 | 未完整审查 | 22 个 feature 目录只是入口线索；不能代替页面/业务验收 |
@@ -44,6 +44,12 @@
 - 独立 review 的 EOF 拼接/Bash 引号注入/inline 账号与 config 值位问题已逐项修复并补真实验证，见 findings；review 已对这四个报告项定点关闭，不代表 M1 完成。
 - 历史读取改为最近行数+字节上限；真实 34.8 MB 隔离 history 中候选相同，单次 RSS 270 MB → 55 MB，后续 30 次 warm p95 42.09ms；不是冷启动或 UI 全链路。
 - 并行迁移会话文档见 `docs/migration/2026-11-14-node-go-execution-ledger.md`，其 W0–W6、源码和提交不冒充本计划完成。当时不接管其在途账号、server生命周期和协议文件；后续已提交且干净的凭据组合根另开局部工作包，详见后文，不覆盖peer修改。
+
+## 2026-11-25 Clink（cmd）补全
+
+- 新增 `aih shell apply --shell cmd`：检测 Clink、解析 `clink info` 的 state/scripts 目录，写入 `aih.lua`；`status/plan/apply/remove/snippet/doctor` 和 `--shell clink` 别名均可用。
+- Windows 11 + Clink 1.9.37 真机：普通 cmd 经用户级 AutoRun 自动加载，`--se`→`--session`、`--ch`→`--check`、provider 列表、`--permission-mode` 枚举、根命令列表全部通过；非交互 `cmd /c` 正常。
+- 证据、编码边界与卸载方式见 [clink-cmd-completion-2026-11-25.md](clink-cmd-completion-2026-11-25.md)。
 
 ## 待集成的跨线发现（不擅改并行代码）
 

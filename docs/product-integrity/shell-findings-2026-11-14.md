@@ -94,3 +94,12 @@
 - **SH-017 / P2：zsh 活历史读取为空**。真 zsh -f，HISTSIZE=1000 与 print -s 插入两条实际历史，原 `_aih_shell_history` 仅输出空行；`fc -ln` 能看到新记录。原实现把可选关联参数 $history 当负索引数组。改用原生 `fc -ln -N`，真实 source 后按时间顺序返回记录，不读取/修改宿主 HISTFILE。
 
 - Fish 历史顺序真实验证：隔离 history append 两条记录，默认 newest→oldest 与引擎“后者更新”相反；改用 builtin history search --reverse 后 old→new，避免把旧操作排成最新。
+
+## 2026-11-25 Clink（cmd）补全
+
+- cmd.exe 原生没有可编程参数补全接口；新增 Clink Lua 生成器支持。
+- `aih shell apply --shell cmd` 检测 Clink、写 `%LOCALAPPDATA%\clink\aih.lua`，提供 status/plan/apply/remove/snippet/doctor；`--shell clink` 为别名。
+- 真机 Windows 11 + Clink 1.9.37：普通 cmd 由用户级 AutoRun 自动加载；`--se`→`--session`、`--ch`→`--check`、provider 列表、permission-mode 枚举、根命令列表全部通过；非交互 `cmd /c` 正常。
+- 编码边界：默认 `--plain` 纯值，避免 936 代码页乱码；`AIH_CLINK_DESCRIPTIONS=1` + UTF-8 才带说明。
+- 完整记录与卸载方式见 `clink-cmd-completion-2026-11-25.md`。
+- 旧条目中的 Windows 运行时缺口：2026-11-25 已补 PS 5.1 / 便携 PS 7.7 / Clink 1.9.37 真机验证；PS 7 系统级安装仍未验证。

@@ -23,6 +23,7 @@ import SshHostsPanel from './SshHostsPanel';
 import FailureSemantics from './FailureSemantics';
 import ClientKeysPanel from './ClientKeys';
 import ConcurrencyLimitsPanel from './ConcurrencyLimits';
+import SwapSettingsCard from '@/features/settings/SwapSettingsCard';
 
 export type SettingsSectionKey =
   | 'basic'
@@ -266,6 +267,7 @@ const Settings = ({ section }: SettingsProps) => {
       label: 'Server',
       forceRender: true,
       children: (
+        <>
         <ControlPlaneSettingsSection
           profiles={controlPlanes.profiles}
           logicalProfiles={controlPlanes.logicalProfiles}
@@ -286,7 +288,10 @@ const Settings = ({ section }: SettingsProps) => {
           onRemoveProfile={controlPlanes.removeProfile}
           onSelectProfile={controlPlanes.selectProfile}
         />
-      ),
+      
+        <SwapSettingsCard />
+        </>
+        ),
       actions: controlPlanesActions
     },
     {

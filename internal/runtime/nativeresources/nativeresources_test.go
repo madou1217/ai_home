@@ -177,7 +177,7 @@ func TestSkillNativeAndProjectionLifecycle(t *testing.T) {
 	if err := os.WriteFile(geminiMD, []byte(legacyContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.skills.install(ctx, skillSrc, "agy", skillSrc, false); err != nil {
+	if _, err := svc.skills.install(ctx, skillSrc, "agy", skillSrc, false, false); err != nil {
 		t.Fatalf("antigravity legacy adopt 失败: %v", err)
 	}
 	updatedMD, _ := os.ReadFile(geminiMD)

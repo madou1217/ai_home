@@ -69,6 +69,7 @@ type Record struct {
 	PendingTurnID int64  `json:"pendingTurnId,omitempty"`
 	PendingPrompt string `json:"pendingPrompt,omitempty"`
 	PendingPeerID string `json:"pendingPeerId,omitempty"`
+	PendingAtMs   int64  `json:"pendingAtMs,omitempty"`
 	CreatedAt     int64  `json:"createdAt"`
 	UpdatedAt     int64  `json:"updatedAt"`
 }
@@ -295,6 +296,7 @@ func (manager *Manager) handleEvent(sess *session, event sessionhost.Event) {
 		sess.record.PendingTurnID = 0
 		sess.record.PendingPrompt = ""
 		sess.record.PendingPeerID = ""
+		sess.record.PendingAtMs = 0
 		if offset := sess.proc.RemoteOffset(); offset > 0 {
 			sess.record.RemoteOffset = offset
 		}
@@ -356,6 +358,7 @@ func (manager *Manager) Submit(ctx context.Context, id, content, peerMessageID s
 		sess.record.PendingTurnID = turnID
 		sess.record.PendingPrompt = content
 		sess.record.PendingPeerID = peerMessageID
+		sess.record.PendingAtMs = time.Now().UnixMilli()
 		manager.mu.Unlock()
 	}
 	if err != nil {
@@ -608,7 +611,7 @@ func (manager *Manager) load() error {
 		// 重启后恢复的会话同样必须装回事件回调与主循环，否则结果回来了也没人更新状态/回执。
 		sess.cancel = manager.attach(context.Background(), sess)
 		if record.PendingTurnID > 0 && sess.proc.IsRemote() {
-			sess.proc.AdoptPendingTurn(record.PendingTurnID, record.PendingPrompt, record.PendingPeerID)
+			sess.proc.AdoptPendingTurn(record.PendingTurnID, record.PendingPrompt, record.PendingPeerID, record.PendingAtMs)
 			record.Status = StatusRunning
 			// 远端在途回合的结果还在 out.ndjson：重启后立刻接上跟随，不依赖下一次 say。
 			proc := sess.proc

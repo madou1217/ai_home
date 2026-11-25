@@ -72,11 +72,16 @@ func (remote *remoteSession) sshArgs(command string) []string {
 
 // runRemote 执行一条远端命令；stdin 为 nil 时从 /dev/null 读。
 func (remote *remoteSession) runRemote(ctx context.Context, stdin io.Reader, command string) (string, error) {
+	started := time.Now()
 	cmd := exec.CommandContext(ctx, "ssh", remote.sshArgs(command)...)
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
 	output, err := cmd.CombinedOutput()
+	if file, fileErr := os.OpenFile(os.ExpandEnv("$HOME/.ai_home/run/agy-remote.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); fileErr == nil {
+		fmt.Fprintf(file, "%s %6dms %s err=%v\n", remote.spec.SessionID, time.Since(started).Milliseconds(), truncate(command, 110), err)
+		_ = file.Close()
+	}
 	return string(output), err
 }
 
@@ -113,81 +118,155 @@ func (remote *remoteSession) ensureHome(ctx context.Context) (string, error) {
 	return home, nil
 }
 
-// startPipeline 在远端拉起「tail 输入 → agy → 输出」的常驻管道。
-// 已在跑时不重启；reuse=true 时按 conversation 续接。
-func (remote *remoteSession) startPipeline(ctx context.Context, conversation string) error {
+// ensureScripts 把启动逻辑落到远端：meta.json（审计）+ start.sh（唯一启动真源）。
+// 本地调用与主机重启后的 systemd 自启都执行同一个 start.sh。
+func (remote *remoteSession) ensureScripts(ctx context.Context, conversation string) (string, error) {
 	if _, err := remote.ensureHome(ctx); err != nil {
-		return err
+		return "", err
 	}
 	dir := remote.dirName()
 	argv := buildAGYArgs(remote.spec, conversation)
 	quoted := make([]string, 0, len(argv))
 	for _, arg := range argv {
-		quoted = append(quoted, sshhost.ShellQuote(arg))
+		quoted = append(quoted, "'"+strings.ReplaceAll(arg, "'", `'\''`)+"'")
 	}
 	binary := strings.TrimSpace(remote.spec.Binary)
 	if binary == "" {
 		binary = "$HOME/.local/bin/agy"
 	}
-	// HOME 前缀只作用于 agy 本身（tail 不关心）；数据目录始终在远端真实家目录下。
-	envPrefix := ""
-	if accountHome := strings.TrimSpace(remote.spec.HomeDir); accountHome != "" {
-		envPrefix = "HOME=" + sshhost.ShellQuote(accountHome) + " "
+	acctHome := strings.TrimSpace(remote.spec.HomeDir)
+	workDir := strings.TrimSpace(remote.spec.WorkDir)
+	meta := fmt.Sprintf(
+		"{\"sessionId\":%q,\"model\":%q,\"effort\":%q,\"conversationId\":%q,\"workDir\":%q,\"accountHome\":%q,\"socket\":%q}\n",
+		remote.spec.SessionID, remote.spec.Model, remote.spec.Effort, conversation, workDir, acctHome, remote.socket,
+	)
+	q := func(value string) string { return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'" }
+	homePrefix := ""
+	if acctHome != "" {
+		homePrefix = "HOME=" + q(acctHome) + " "
 	}
-	// -n +1：从文件开头读；输入文件在启动时被截断，所以不会重放历史提示。
-	pipeline := "tail -f -n +1 " + sshhost.ShellQuote(dir+"/in.ndjson")
-	pipeline += " | " + envPrefix + binary
+	pipeline := "tail -f -n +1 " + q(dir+"/in.ndjson")
+	pipeline += " | " + homePrefix + binary
 	if len(quoted) > 0 {
 		pipeline += " " + strings.Join(quoted, " ")
 	}
-	pipeline += " >> " + sshhost.ShellQuote(dir+"/out.ndjson")
-	pipeline += " 2>> " + sshhost.ShellQuote(dir+"/err.log")
-	// 诊断：记录管道退出码与时间，便于定位“启动后立刻消失”。
-	pipeline = "{ " + pipeline + " ; rc=$?; echo \"$(date +%T) exit=$rc home=$HOME\" >> " + sshhost.ShellQuote(dir+"/runner.log") + " ; }"
-	if workDir := strings.TrimSpace(remote.spec.WorkDir); workDir != "" {
-		pipeline = "cd " + sshhost.ShellQuote(workDir) + " && " + pipeline
+	pipeline += " >> " + q(dir+"/out.ndjson")
+	pipeline += " 2>> " + q(dir+"/err.log")
+	pipeline = "{ " + pipeline + " ; rc=$?; echo \"$(date +%F_%T) exit=$rc\" >> " + q(dir+"/runner.log") + " ; }"
+	if workDir != "" {
+		pipeline = "cd " + q(workDir) + " && " + pipeline
 	}
 	script := strings.Join([]string{
+		"#!/bin/sh",
+		"# 由 AIH 生成：远端 agy 会话启动脚本。参数 boot 表示主机/服务重启后自启。",
 		"set -u",
-		"mkdir -p " + sshhost.ShellQuote(dir),
-		": >> " + sshhost.ShellQuote(dir+"/out.ndjson"),
-		// 必须存在且为空：tail -f 打开不存在的文件会立刻退出（agy 读到 EOF 就结束）；
-		// 截断保证重启时不会重放已经执行过的提示。
-		": > " + sshhost.ShellQuote(dir+"/in.ndjson"),
-		// 先尝试 tmux（可观测、可 kill）；没有 tmux 时退回 setsid，进程同样脱离 SSH。
+		"D=" + q(dir),
+		`[ -f "$D/meta.json" ] || exit 0`,
+		`[ -f "$D/closed" ] && exit 0`,
+		`if [ "${1:-}" = "boot" ]; then date +%s%3N > "$D/boot.at" 2>/dev/null || date +%s > "$D/boot.at"; fi`,
+		// 输出超过 32MB 在启动点轮转，避免长期会话写满磁盘。
+		`if [ -f "$D/out.ndjson" ] && [ "$(stat -c %s "$D/out.ndjson" 2>/dev/null || echo 0)" -gt 33554432 ]; then mv "$D/out.ndjson" "$D/out.ndjson.$(date +%s)"; echo ROTATED; fi`,
+		`: >> "$D/out.ndjson"`,
+		// 必须存在且为空：tail -f 打开不存在的文件会立刻退出；截断避免重放旧提示。
+		`: > "$D/in.ndjson"`,
+		"PIPE=" + q(pipeline),
 		"if command -v tmux >/dev/null 2>&1; then",
-		"  tmux -L " + sshhost.ShellQuote(remote.socket) + " kill-session -t =web 2>/dev/null || true",
-		"  tmux -L " + sshhost.ShellQuote(remote.socket) + " new-session -d -s web " + sshhost.ShellQuote(pipeline),
+		"  tmux -L " + q(remote.socket) + " kill-session -t =web 2>/dev/null || true",
+		`  tmux -L ` + q(remote.socket) + ` new-session -d -s web "$PIPE"`,
 		"else",
-		"  setsid nohup sh -c " + sshhost.ShellQuote(pipeline) + " >/dev/null 2>&1 </dev/null &",
+		`  setsid nohup sh -c "$PIPE" >/dev/null 2>&1 </dev/null &`,
 		"fi",
+		"",
 	}, "\n")
-	if os.Getenv("AIH_AGY_DEBUG") != "" {
-		_ = os.WriteFile("/tmp/agy-remote-debug.txt", []byte(script), 0o644)
+
+	// 上传 meta.json 与 start.sh（先写临时名再 mv，避免读到半个脚本）。
+	if _, err := remote.runRemote(ctx, strings.NewReader(meta),
+		"sh -c "+sshhost.ShellQuote("mkdir -p "+q(dir)+" && rm -f "+q(dir+"/closed")+" && cat > "+q(dir+"/meta.json"))); err != nil {
+		return "", fmt.Errorf("agy_remote_meta: %w", err)
 	}
-	output, err := remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote(script))
-	if err != nil {
-		return fmt.Errorf("agy_remote_start: %v %s", err, truncate(strings.TrimSpace(output), 300))
+	if _, err := remote.runRemote(ctx, strings.NewReader(script),
+		"sh -c "+sshhost.ShellQuote("cat > "+q(dir+"/start.sh.tmp")+" && chmod 700 "+q(dir+"/start.sh.tmp")+" && mv -f "+q(dir+"/start.sh.tmp")+" "+q(dir+"/start.sh"))); err != nil {
+		return "", fmt.Errorf("agy_remote_script: %w", err)
 	}
-	return nil
+	return dir, nil
 }
 
-// aliveRemote 判断远端管道是否还在跑。
-func (remote *remoteSession) aliveRemote(ctx context.Context) bool {
+// ensureSupervisor 安装一次性的 systemd user 自启单元（仅 systemd 主机）。
+// 不在 systemd 主机上静默跳过：会话仍可在下一次交互时由本地重新拉起。
+func (remote *remoteSession) ensureSupervisor(ctx context.Context) {
 	if _, err := remote.ensureHome(ctx); err != nil {
-		return false
+		return
+	}
+	unit := strings.Join([]string{
+		"[Unit]",
+		"Description=AIH AGY session supervisor (boot)",
+		"After=default.target",
+		"",
+		"[Service]",
+		"Type=oneshot",
+		// 关闭/删除的会话带 closed 标记：即便目录里残留旧版 start.sh 也不能被复活。
+		`ExecStart=/bin/sh -c 'for d in %h/.ai_home/run/agy-sessions/*/; do [ -f "$d/closed" ] && continue; [ -f "$d/start.sh" ] && sh "$d/start.sh" boot; done'`,
+		"",
+		"[Install]",
+		"WantedBy=default.target",
+		"",
+	}, "\n")
+	script := strings.Join([]string{
+		"[ -d /run/systemd/system ] || exit 0",
+		"command -v systemctl >/dev/null 2>&1 || exit 0",
+		"mkdir -p ~/.config/systemd/user",
+		"cat > ~/.config/systemd/user/aih-agy-supervisor.service <<'AIH_UNIT_EOF'",
+		unit,
+		"AIH_UNIT_EOF",
+		"systemctl --user daemon-reload >/dev/null 2>&1 || exit 0",
+		"systemctl --user enable aih-agy-supervisor.service >/dev/null 2>&1 || true",
+		// 保持 linger，保证主机重启后用户单元会被拉起。
+		"command -v loginctl >/dev/null 2>&1 && sudo -n loginctl enable-linger \"$USER\" >/dev/null 2>&1 || true",
+	}, "\n")
+	_, _ = remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote(script))
+}
+
+// startPipeline 在远端拉起「tail 输入 → agy → 输出」的常驻管道，返回是否发生输出轮转。
+func (remote *remoteSession) startPipeline(ctx context.Context, conversation string) (bool, error) {
+	dir, err := remote.ensureScripts(ctx, conversation)
+	if err != nil {
+		return false, err
+	}
+	remote.ensureSupervisor(ctx)
+	output, err := remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote("sh "+sshhost.ShellQuote(dir+"/start.sh")))
+	if err != nil {
+		return false, fmt.Errorf("agy_remote_start: %v %s", err, truncate(strings.TrimSpace(output), 300))
+	}
+	return strings.Contains(output, "ROTATED"), nil
+}
+
+// aliveRemote 探测远端管道，并顺带返回最近一次 boot 标记（epoch ms）。
+func (remote *remoteSession) aliveRemote(ctx context.Context) (bool, int64) {
+	if _, err := remote.ensureHome(ctx); err != nil {
+		return false, 0
 	}
 	dir := remote.dirName()
 	script := strings.Join([]string{
-		"if command -v tmux >/dev/null 2>&1; then",
-		"  tmux -L " + sshhost.ShellQuote(remote.socket) + " has-session -t =web 2>/dev/null && exit 0",
-		"fi",
-		// 必须锚定 tail 进程本身：脚本文本里也含这个路径，裸 pgrep -f 会匹配到执行探测的 shell 自己。
-		"pgrep -f " + sshhost.ShellQuote("^tail -f -n 0 "+dir+"/in.ndjson") + " >/dev/null 2>&1 && exit 0",
-		"exit 1",
+		"D=" + sshhost.ShellQuote(dir),
+		`BOOT=$(cat "$D/boot.at" 2>/dev/null || echo 0)`,
+		"ALIVE=0",
+		`tmux -L ` + sshhost.ShellQuote(remote.socket) + ` has-session -t =web 2>/dev/null && ALIVE=1`,
+		`pgrep -f ` + sshhost.ShellQuote("^tail -f -n .*"+dir+"/in.ndjson") + ` >/dev/null 2>&1 && ALIVE=1`,
+		`echo "ALIVE=$ALIVE"`,
+		`echo "BOOTAT=$BOOT"`,
 	}, "\n")
-	_, err := remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote(script))
-	return err == nil
+	output, err := remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote(script))
+	if err != nil {
+		return false, 0
+	}
+	alive := strings.Contains(output, "ALIVE=1")
+	var bootAt int64
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, "BOOTAT=") {
+			bootAt, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "BOOTAT=")), 10, 64)
+		}
+	}
+	return alive, bootAt
 }
 
 // writeTurn 把一轮用户输入追加到远端输入文件。
@@ -213,6 +292,14 @@ func (remote *remoteSession) follow(ctx context.Context, offset int64, consume f
 	}
 	dir := remote.dirName()
 	current := offset
+	// 轮转或文件被替换后，旧偏移可能大于文件长度：越界就从头读，绝不静默丢事件。
+	if sizeOutput, sizeErr := remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote(
+		"stat -c %s "+sshhost.ShellQuote(dir+"/out.ndjson")+" 2>/dev/null || echo 0",
+	)); sizeErr == nil {
+		if size, convErr := strconv.ParseInt(strings.TrimSpace(sizeOutput), 10, 64); convErr == nil && current > size {
+			current = 0
+		}
+	}
 	for {
 		if ctx.Err() != nil {
 			return
@@ -262,7 +349,9 @@ func (remote *remoteSession) killRemote(ctx context.Context) {
 	dir := remote.dirName()
 	script := strings.Join([]string{
 		"tmux -L " + sshhost.ShellQuote(remote.socket) + " kill-session -t =web 2>/dev/null || true",
-		"pkill -f " + sshhost.ShellQuote("^tail -f -n 0 "+dir+"/in.ndjson") + " 2>/dev/null || true",
+		"pkill -f " + sshhost.ShellQuote("^tail -f -n .*"+dir+"/in.ndjson") + " 2>/dev/null || true",
+		// 标记关闭：主机重启后的自启脚本会跳过它，不会复活已关闭的会话。
+		": > " + sshhost.ShellQuote(dir+"/closed"),
 	}, "\n")
 	_, _ = remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote(script))
 }

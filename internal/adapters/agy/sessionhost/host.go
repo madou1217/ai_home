@@ -493,13 +493,16 @@ func (p *Process) IsRemote() bool {
 
 // AdoptPendingTurn 在 Server 重启后接管上一进程在途的一轮：
 // 它的输入已经写进远端，结果仍会从 out.ndjson 读回来。
-func (p *Process) AdoptPendingTurn(turnID int64, prompt, peerMessageID string) {
+func (p *Process) AdoptPendingTurn(turnID int64, prompt, peerMessageID string, startedAtMs int64) {
 	if turnID <= 0 {
 		return
 	}
+	if startedAtMs <= 0 {
+		startedAtMs = nowMillis()
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	turn := &Turn{ID: turnID, Prompt: prompt, State: TurnRunning, PeerID: peerMessageID, StartedAt: nowMillis()}
+	turn := &Turn{ID: turnID, Prompt: prompt, State: TurnRunning, PeerID: peerMessageID, StartedAt: startedAtMs}
 	p.current = turn
 	if turnID > p.nextTurnID {
 		p.nextTurnID = turnID
@@ -512,25 +515,46 @@ func (p *Process) ensureRemoteStarted(ctx context.Context, remote *remoteSession
 	recent := !remote.probedAt.IsZero() && time.Since(remote.probedAt) < 2*time.Second
 	remote.mu.Unlock()
 	alive := false
+	var bootAt int64
 	if recent {
 		p.mu.Lock()
 		alive = p.alive
 		p.mu.Unlock()
 	} else {
-		alive = remote.aliveRemote(ctx)
+		alive, bootAt = remote.aliveRemote(ctx)
 		remote.mu.Lock()
 		remote.probedAt = time.Now()
 		remote.mu.Unlock()
+	}
+	// 主机重启过：上一轮的结果不可能再回来，明确失败而不是让它一直 running。
+	if p.current != nil {
+		p.mu.Lock()
+		startedAt := p.current.StartedAt
+		p.mu.Unlock()
+		if bootAt > 0 && startedAt > 0 && startedAt < bootAt {
+			p.finishTurn(map[string]any{"status": "ERROR", "error": "agy_host_rebooted"})
+		}
 	}
 	pipelineStarted := false
 	if !alive {
 		p.mu.Lock()
 		interrupted := p.current != nil
 		p.mu.Unlock()
-		if err := remote.startPipeline(ctx, conversation); err != nil {
+		rotated, err := remote.startPipeline(ctx, conversation)
+		if err != nil {
 			return err
 		}
 		pipelineStarted = true
+		if rotated {
+			// 输出已轮转：旧偏移失效，从新文件头开始跟随。
+			p.mu.Lock()
+			p.remoteOffset = 0
+			if p.followerCtx != nil {
+				p.followerCtx()
+				p.followerCtx = nil
+			}
+			p.mu.Unlock()
+		}
 		// 远端管道已经不在：在途那轮的结果不会再来，明确失败，别让会话永远卡在 running。
 		if interrupted {
 			p.finishTurn(map[string]any{"status": "ERROR", "error": "agy_remote_pipeline_restarted"})

@@ -57,6 +57,9 @@ type App struct {
 	Icon     string   `json:"icon"`
 	Terminal bool     `json:"terminal"`
 	Aliases  []string `json:"aliases,omitempty"`
+	// Boost is the transient §6 usage bonus (7-day recency + min(count, 10)) emitted
+	// at query/list time for native UI parity; never persisted or hashed into ID.
+	Boost int `json:"boost,omitempty"`
 
 	// Platform-internal launch metadata omitted from wire JSON.
 	DesktopID string `json:"-"`

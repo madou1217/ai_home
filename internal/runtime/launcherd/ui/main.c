@@ -250,6 +250,7 @@ typedef struct {
   gboolean terminal;
   char **aliases;
   gsize alias_count;
+  int boost;
   gsize catalog_index;
 } AppItem;
 
@@ -270,6 +271,7 @@ typedef enum {
 typedef struct {
   GtkApplication *app;
   GtkWidget *window;
+  GtkWidget *revealer;
   GtkWidget *frame;
   GtkWidget *search_entry;
   GtkWidget *count_label;
@@ -335,7 +337,8 @@ static void launcher_show(LauncherState *st);
 static void launcher_hide(LauncherState *st, gboolean notify_daemon);
 static void launcher_toggle(LauncherState *st);
 static void launcher_quit(LauncherState *st, gboolean notify_daemon);
-static void rebuild_filtered_list(LauncherState *st, gboolean animate_rows);
+static void rebuild_filtered_list(LauncherState *st, gboolean animate_rows,
+                                  gboolean preserve_selection);
 
 /* =========================================================================
  * Protocol Helpers (stdio)
@@ -758,7 +761,7 @@ static FilteredItem *score_app_item(const AppItem *app, const char *q_norm,
 
   FilteredItem *fi = g_new0(FilteredItem, 1);
   fi->app = app;
-  fi->score = best;
+  fi->score = best + (app->boost > 0 ? app->boost : 0);
   fi->source = best_source;
   if (best_source == MATCH_NAME && best_mask) {
     fi->matched_runes = best_mask;
@@ -907,6 +910,12 @@ static int x11_grab_error_handler(Display *dpy, XErrorEvent *ev) {
   return 0;
 }
 
+static int x11_focus_error_handler(Display *dpy, XErrorEvent *ev) {
+  (void)dpy;
+  (void)ev;
+  return 0;
+}
+
 static void x11_compute_target_position(LauncherState *st) {
   st->has_x11_pos = FALSE;
   if (!st->grab_dpy) {
@@ -1035,11 +1044,16 @@ static void x11_apply_window_position(LauncherState *st, int dy,
     XSendEvent(xdpy, root, False,
                SubstructureRedirectMask | SubstructureNotifyMask, &ev);
 
-    /* Fallback direct focus for WM-less X11 (e.g. bare Xvfb) */
-    XErrorHandler prev = XSetErrorHandler(x11_grab_error_handler);
-    XSetInputFocus(xdpy, xid, RevertToPointerRoot, CurrentTime);
-    XSync(xdpy, False);
-    XSetErrorHandler(prev);
+    XFlush(xdpy);
+
+    /* Fallback direct focus for WM-less X11 (e.g. bare Xvfb) on our dedicated
+     * grab_dpy connection so we never disturb GDK's X11 error trap. */
+    if (st->grab_dpy) {
+      XErrorHandler prev = XSetErrorHandler(x11_focus_error_handler);
+      XSetInputFocus(st->grab_dpy, xid, RevertToPointerRoot, CurrentTime);
+      XSync(st->grab_dpy, False);
+      XSetErrorHandler(prev);
+    }
   }
   XFlush(xdpy);
 }
@@ -1199,11 +1213,9 @@ static gboolean anim_tick_cb(gpointer user_data) {
 #if LAUNCHER_USE_X11
     if (st->has_x11_pos) {
       x11_apply_window_position(st, dy, FALSE);
-    } else {
-      gtk_widget_set_margin_top(st->frame, dy);
     }
 #else
-    gtk_widget_set_margin_top(st->frame, dy);
+    (void)dy;
 #endif
 
     double row_elapsed_ms = (double)(now - st->stagger_start_us) / 1000.0;
@@ -1228,7 +1240,6 @@ static gboolean anim_tick_cb(gpointer user_data) {
 
     if (win_t >= 1.0 && rows_done) {
       gtk_widget_set_opacity(st->window, 1.0);
-      gtk_widget_set_margin_top(st->frame, 0);
 #if LAUNCHER_USE_X11
       if (st->has_x11_pos) {
         x11_apply_window_position(st, 0, FALSE);
@@ -1252,7 +1263,6 @@ static gboolean anim_tick_cb(gpointer user_data) {
     if (t >= 1.0) {
       gtk_widget_set_opacity(st->window, 0.0);
       gtk_widget_set_visible(st->window, FALSE);
-      gtk_widget_set_margin_top(st->frame, 0);
       st->is_visible = FALSE;
       st->anim_timer_id = 0;
       st->anim_mode = ANIM_NONE;
@@ -1264,11 +1274,9 @@ static gboolean anim_tick_cb(gpointer user_data) {
 #if LAUNCHER_USE_X11
     if (st->has_x11_pos) {
       x11_apply_window_position(st, dy, FALSE);
-    } else {
-      gtk_widget_set_margin_top(st->frame, dy);
     }
 #else
-    gtk_widget_set_margin_top(st->frame, dy);
+    (void)dy;
 #endif
     return G_SOURCE_CONTINUE;
   }
@@ -1364,7 +1372,18 @@ static void clear_list_box(LauncherState *st) {
   }
 }
 
-static void rebuild_filtered_list(LauncherState *st, gboolean animate_rows) {
+static void rebuild_filtered_list(LauncherState *st, gboolean animate_rows,
+                                  gboolean preserve_selection) {
+  char *prev_selected_id = NULL;
+  if (preserve_selection && st->selected_index >= 0 &&
+      (guint)st->selected_index < st->filtered->len) {
+    const FilteredItem *cur = (const FilteredItem *)g_ptr_array_index(
+        st->filtered, (guint)st->selected_index);
+    if (cur && cur->app && cur->app->id) {
+      prev_selected_id = g_strdup(cur->app->id);
+    }
+  }
+
   const char *raw_query = gtk_editable_get_text(GTK_EDITABLE(st->search_entry));
   char *q_norm = normalize_query_utf8(raw_query);
 
@@ -1416,15 +1435,25 @@ static void rebuild_filtered_list(LauncherState *st, gboolean animate_rows) {
     }
     gtk_stack_set_visible_child_name(GTK_STACK(st->content_stack), "empty");
     st->selected_index = -1;
+    g_free(prev_selected_id);
     g_free(q_norm);
     return;
   }
 
   gtk_stack_set_visible_child_name(GTK_STACK(st->content_stack), "list");
 
+  int restored_index = 0;
+  gint64 now_us = g_get_monotonic_time();
+  gboolean in_enter_anim = (st->anim_mode == ANIM_ENTER);
+  double row_elapsed_ms = (double)(now_us - st->stagger_start_us) / 1000.0;
+
   for (guint i = 0; i < st->filtered->len; i++) {
     const FilteredItem *fi =
         (const FilteredItem *)g_ptr_array_index(st->filtered, i);
+    if (prev_selected_id && fi->app->id &&
+        strcmp(fi->app->id, prev_selected_id) == 0) {
+      restored_index = (int)i;
+    }
 
     GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     gtk_widget_set_hexpand(row_box, TRUE);
@@ -1479,15 +1508,28 @@ static void rebuild_filtered_list(LauncherState *st, gboolean animate_rows) {
     gtk_list_box_append(GTK_LIST_BOX(st->list_box), row);
 
     if (i < MAX_VISIBLE_STAGGER) {
+      if (in_enter_anim) {
+        /* Sync new row opacity with the in-flight entrance stagger so END
+         * refresh never flashes opaque and then drops back on the next tick. */
+        double delay = (double)(i * STAGGER_STEP_MS);
+        double rt = (row_elapsed_ms - delay) / (double)STAGGER_ROW_FADE_MS;
+        if (rt < 0.0) {
+          rt = 0.0;
+        } else if (rt > 1.0) {
+          rt = 1.0;
+        }
+        gtk_widget_set_opacity(row, ease_out_cubic(rt));
+      }
       st->stagger_rows[st->stagger_count++] = row;
     }
   }
 
-  select_row_index(st, 0);
+  select_row_index(st, restored_index);
 
-  if (animate_rows && st->is_visible) {
+  if (animate_rows && st->is_visible && !in_enter_anim) {
     start_row_stagger(st);
   }
+  g_free(prev_selected_id);
   g_free(q_norm);
 }
 
@@ -1556,12 +1598,22 @@ static void launcher_show(LauncherState *st) {
   st->is_visible = TRUE;
   st->last_show_us = g_get_monotonic_time();
 
-  rebuild_filtered_list(st, FALSE);
+  rebuild_filtered_list(st, FALSE, FALSE);
   write_daemon_line("refresh");
 
 #if LAUNCHER_USE_X11
   x11_compute_target_position(st);
 #endif
+
+  if (st->revealer) {
+    if (st->has_x11_pos) {
+      gtk_revealer_set_transition_duration(GTK_REVEALER(st->revealer), 0);
+      gtk_revealer_set_reveal_child(GTK_REVEALER(st->revealer), TRUE);
+    } else {
+      gtk_revealer_set_transition_duration(GTK_REVEALER(st->revealer), 0);
+      gtk_revealer_set_reveal_child(GTK_REVEALER(st->revealer), FALSE);
+    }
+  }
 
   gtk_widget_set_opacity(st->window, 0.0);
   gtk_widget_set_visible(st->window, TRUE);
@@ -1572,6 +1624,11 @@ static void launcher_show(LauncherState *st) {
     x11_apply_window_position(st, 10, TRUE);
   }
 #endif
+  if (st->revealer && !st->has_x11_pos) {
+    gtk_revealer_set_transition_duration(GTK_REVEALER(st->revealer),
+                                         ENTER_DURATION_MS);
+    gtk_revealer_set_reveal_child(GTK_REVEALER(st->revealer), TRUE);
+  }
 
   gtk_widget_grab_focus(st->search_entry);
 
@@ -1672,6 +1729,14 @@ static void handle_launch1_line(LauncherState *st, const char *line) {
     g_free(decoded_aliases);
   }
 
+  /* Optional 10th column: transient §6 recency boost integer */
+  if (count >= 10 && parts[9][0] != '\0') {
+    gint64 parsed = g_ascii_strtoll(parts[9], NULL, 10);
+    if (parsed > 0 && parsed <= 1000) {
+      item->boost = (int)parsed;
+    }
+  }
+
   g_strfreev(parts);
 
   if (item->id[0] == '\0' || item->name[0] == '\0') {
@@ -1697,9 +1762,10 @@ static void process_stdin_line(LauncherState *st, const char *raw_line) {
     GPtrArray *old = st->apps;
     st->apps = st->staging_apps;
     st->staging_apps = g_ptr_array_new_with_free_func(app_item_free);
+    /* Rebuild BEFORE unreffing old apps so preserve_selection can safely read
+     * the previous FilteredItem->app->id before st->filtered is replaced. */
+    rebuild_filtered_list(st, FALSE, TRUE);
     g_ptr_array_unref(old);
-    /* Re-render without restarting window enter fade */
-    rebuild_filtered_list(st, st->anim_mode == ANIM_NONE);
   } else if (strcmp(line, "open-ok") == 0 ||
              g_str_has_prefix(line, "open-ok\t")) {
     cancel_pending_open(st);
@@ -1846,10 +1912,12 @@ static void socket_client_close(SocketClientCtx *cctx) {
     cctx->watch_id = 0;
   }
   if (cctx->channel) {
+    /* close_on_unref=TRUE ensures GLib closes the fd only after the GSource
+     * finishes releasing its watch reference. */
     g_io_channel_unref(cctx->channel);
     cctx->channel = NULL;
-  }
-  if (cctx->fd >= 0) {
+    cctx->fd = -1;
+  } else if (cctx->fd >= 0) {
     close(cctx->fd);
     cctx->fd = -1;
   }
@@ -1857,23 +1925,37 @@ static void socket_client_close(SocketClientCtx *cctx) {
 }
 
 static void socket_client_dispatch_and_close(SocketClientCtx *cctx) {
+  LauncherState *st = cctx->st;
   cctx->buf[cctx->len] = '\0';
   g_strstrip(cctx->buf);
+
+  int action = 0; /* 1=toggle, 2=show, 3=hide */
   const char *reply = "ok\n";
   if (strcmp(cctx->buf, "toggle") == 0) {
-    launcher_toggle(cctx->st);
+    action = 1;
   } else if (strcmp(cctx->buf, "show") == 0) {
-    launcher_show(cctx->st);
+    action = 2;
   } else if (strcmp(cctx->buf, "hide") == 0) {
-    launcher_hide(cctx->st, TRUE);
+    action = 3;
   } else if (strcmp(cctx->buf, "ping") == 0) {
     reply = "pong\n";
   } else {
     reply = "err\n";
   }
+
+  /* Acknowledge and close the client socket BEFORE presenting GTK window so
+   * first-frame GPU/Mesa initialization never causes caller read timeouts. */
   ssize_t ignored = write(cctx->fd, reply, strlen(reply));
   (void)ignored;
   socket_client_close(cctx);
+
+  if (action == 1) {
+    launcher_toggle(st);
+  } else if (action == 2) {
+    launcher_show(st);
+  } else if (action == 3) {
+    launcher_hide(st, TRUE);
+  }
 }
 
 static gboolean socket_client_timeout_cb(gpointer user_data) {
@@ -1946,6 +2028,7 @@ static gboolean socket_accept_cb(GIOChannel *source, GIOCondition cond,
     cctx->st = st;
     cctx->fd = cfd;
     cctx->channel = g_io_channel_unix_new(cfd);
+    g_io_channel_set_close_on_unref(cctx->channel, TRUE);
     g_io_channel_set_encoding(cctx->channel, NULL, NULL);
     g_io_channel_set_buffered(cctx->channel, FALSE);
     cctx->watch_id = g_io_add_watch(
@@ -2029,7 +2112,7 @@ static void cleanup_control_socket(LauncherState *st) {
 static void on_search_changed(GtkEditable *editable, gpointer user_data) {
   (void)editable;
   LauncherState *st = (LauncherState *)user_data;
-  rebuild_filtered_list(st, TRUE);
+  rebuild_filtered_list(st, TRUE, FALSE);
 }
 
 static void on_search_stop(GtkSearchEntry *entry, gpointer user_data) {
@@ -2187,7 +2270,15 @@ static void build_window(LauncherState *st) {
   gtk_widget_add_css_class(st->frame, "launcher-frame");
   gtk_widget_set_size_request(st->frame, PANEL_WIDTH, PANEL_HEIGHT);
   gtk_widget_set_overflow(st->frame, GTK_OVERFLOW_HIDDEN);
-  gtk_window_set_child(GTK_WINDOW(st->window), st->frame);
+
+  st->revealer = gtk_revealer_new();
+  gtk_revealer_set_transition_type(GTK_REVEALER(st->revealer),
+                                   GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+  gtk_revealer_set_transition_duration(GTK_REVEALER(st->revealer),
+                                       ENTER_DURATION_MS);
+  gtk_revealer_set_reveal_child(GTK_REVEALER(st->revealer), TRUE);
+  gtk_revealer_set_child(GTK_REVEALER(st->revealer), st->frame);
+  gtk_window_set_child(GTK_WINDOW(st->window), st->revealer);
 
   /* Header: eyebrow + result count */
   GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);

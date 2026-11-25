@@ -3,6 +3,7 @@ package appcatalog
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"sync"
 	"time"
@@ -126,6 +127,13 @@ func (c *Catalog) List(ctx context.Context, refresh bool) (launcher.CatalogSnaps
 
 	rawApps, err := c.scanFn(ctx)
 	if err != nil {
+		// Caller cancellation/timeout must not poison lastError and block subsequent initial scans.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			c.stateMu.RLock()
+			snap := c.snapshotLocked()
+			c.stateMu.RUnlock()
+			return snap, err
+		}
 		c.stateMu.Lock()
 		c.hasScanned = true
 		c.lastError = err.Error()

@@ -1072,6 +1072,7 @@ internal sealed class LauncherApp
     [JsonPropertyName("icon")] public string Icon { get; set; } = string.Empty;
     [JsonPropertyName("terminal")] public bool Terminal { get; set; }
     [JsonPropertyName("aliases")] public List<string>? Aliases { get; set; }
+    [JsonPropertyName("boost")] public int Boost { get; set; }
 }
 
 internal sealed class LauncherAppsResponse
@@ -1139,14 +1140,21 @@ internal static class LauncherRanker
             return all;
         }
 
+        var queryRunes = ToLowerRunes(query);
+        if (queryRunes.Length == 0)
+        {
+            return new List<LauncherMatchResult>();
+        }
+
         var scored = new List<(LauncherMatchResult Result, string NameLower, int ServerIndex)>(apps.Count);
         for (var i = 0; i < apps.Count; i++)
         {
             var app = apps[i];
-            var eval = Evaluate(app, query);
+            var eval = Evaluate(app, query, queryRunes);
             if (eval.Score <= 0) continue;
+            var totalScore = eval.Score + Math.Max(0, app.Boost);
             scored.Add((
-                new LauncherMatchResult(app, eval.Score, eval.Source, eval.Indices),
+                new LauncherMatchResult(app, totalScore, eval.Source, eval.Indices),
                 NormalizeQuery(app.Name),
                 i
             ));
@@ -1171,6 +1179,19 @@ internal static class LauncherRanker
         return output;
     }
 
+    private readonly struct IndexedRune
+    {
+        public readonly Rune Lower;
+        public readonly int Utf16Start;
+        public readonly int Utf16Length;
+        public IndexedRune(Rune lower, int utf16Start, int utf16Length)
+        {
+            Lower = lower;
+            Utf16Start = utf16Start;
+            Utf16Length = utf16Length;
+        }
+    }
+
     private readonly struct WordSpan
     {
         public readonly int Start;
@@ -1178,72 +1199,75 @@ internal static class LauncherRanker
         public WordSpan(int start, int length) { Start = start; Length = length; }
     }
 
-    private static (int Score, LauncherMatchSource Source, HashSet<int> Indices) Evaluate(LauncherApp app, string query)
+    private static (int Score, LauncherMatchSource Source, HashSet<int> Indices) Evaluate(LauncherApp app, string query, Rune[] queryRunes)
     {
         var name = app.Name ?? string.Empty;
-        var lowerChars = new char[name.Length];
-        for (var i = 0; i < name.Length; i++)
-        {
-            lowerChars[i] = char.ToLowerInvariant(name[i]);
-        }
-        var lowerName = new string(lowerChars);
+        var indexed = BuildIndexedRunes(name);
+
+        // Trim leading/trailing whitespace runes matching rank.go NormalizeQuery.
+        var startTrim = 0;
+        var endTrim = indexed.Length;
+        while (startTrim < endTrim && Rune.IsWhiteSpace(indexed[startTrim].Lower)) startTrim++;
+        while (endTrim > startTrim && Rune.IsWhiteSpace(indexed[endTrim - 1].Lower)) endTrim--;
+        var trimmedLen = endTrim - startTrim;
+
+        var lowerRunes = new Rune[trimmedLen];
+        for (var i = 0; i < trimmedLen; i++) lowerRunes[i] = indexed[startTrim + i].Lower;
 
         var bestScore = 0;
         var bestSource = LauncherMatchSource.None;
-        List<int>? bestIndices = null;
+        List<int>? bestRuneIndices = null;
 
-        void Consider(int score, List<int> indices)
+        void Consider(int score, List<int> runeIndices)
         {
             if (score > bestScore)
             {
                 bestScore = score;
                 bestSource = LauncherMatchSource.Name;
-                bestIndices = indices;
+                bestRuneIndices = runeIndices;
             }
         }
 
-        if (lowerName.Length > 0)
+        if (trimmedLen > 0)
         {
-            if (string.Equals(lowerName, query, StringComparison.Ordinal))
+            if (trimmedLen == queryRunes.Length && HasRunePrefix(lowerRunes, queryRunes))
             {
-                Consider(ScoreExactName, RangeList(0, lowerName.Length));
+                Consider(ScoreExactName, RangeList(0, trimmedLen));
             }
-            if (lowerName.StartsWith(query, StringComparison.Ordinal))
+            if (HasRunePrefix(lowerRunes, queryRunes))
             {
-                var pen = Math.Min(Math.Max(0, lowerName.Length - query.Length), ScoreNamePrefixMaxPen);
-                Consider(ScoreNamePrefixBase - pen, RangeList(0, query.Length));
+                var pen = Math.Min(Math.Max(0, trimmedLen - queryRunes.Length), ScoreNamePrefixMaxPen);
+                Consider(ScoreNamePrefixBase - pen, RangeList(0, queryRunes.Length));
             }
-            var words = SplitWords(lowerName);
+            var words = SplitWords(lowerRunes);
             if (words.Count > 0)
             {
                 for (var w = 0; w < words.Count; w++)
                 {
                     var span = words[w];
-                    if (span.Length >= query.Length &&
-                        string.CompareOrdinal(lowerName, span.Start, query, 0, query.Length) == 0)
+                    if (HasRunePrefixAt(lowerRunes, span.Start, span.Length, queryRunes))
                     {
-                        Consider(ScoreWordPrefix, RangeList(span.Start, query.Length));
+                        Consider(ScoreWordPrefix, RangeList(span.Start, queryRunes.Length));
                         break;
                     }
                 }
-                var initials = new char[words.Count];
-                for (var w = 0; w < words.Count; w++) initials[w] = lowerName[words[w].Start];
-                var initialsStr = new string(initials);
-                var acroPos = initialsStr.IndexOf(query, StringComparison.Ordinal);
+                var initials = new Rune[words.Count];
+                for (var w = 0; w < words.Count; w++) initials[w] = lowerRunes[words[w].Start];
+                var acroPos = IndexRunes(initials, queryRunes);
                 if (acroPos >= 0)
                 {
-                    var acroIndices = new List<int>(query.Length);
-                    for (var k = 0; k < query.Length; k++) acroIndices.Add(words[acroPos + k].Start);
+                    var acroIndices = new List<int>(queryRunes.Length);
+                    for (var k = 0; k < queryRunes.Length; k++) acroIndices.Add(words[acroPos + k].Start);
                     Consider(ScoreAcronym, acroIndices);
                 }
             }
-            var subPos = lowerName.IndexOf(query, StringComparison.Ordinal);
+            var subPos = IndexRunes(lowerRunes, queryRunes);
             if (subPos >= 0)
             {
                 var pen = Math.Min(subPos, ScoreSubstringMaxPen);
-                Consider(ScoreSubstringBase - pen, RangeList(subPos, query.Length));
+                Consider(ScoreSubstringBase - pen, RangeList(subPos, queryRunes.Length));
             }
-            if (TrySubsequence(lowerName, query, out var gaps, out var seqIndices))
+            if (TrySubsequence(lowerRunes, queryRunes, out var gaps, out var seqIndices))
             {
                 var pen = Math.Min(gaps, ScoreSubseqMaxPen);
                 Consider(ScoreSubsequenceBase - pen, seqIndices);
@@ -1256,13 +1280,14 @@ internal static class LauncherRanker
             {
                 var aliasNorm = NormalizeQuery(app.Aliases[i]);
                 if (aliasNorm.Length == 0) continue;
-                if (AliasMatches(aliasNorm, query))
+                var aliasRunes = ToLowerRunes(aliasNorm);
+                if (AliasMatches(aliasRunes, queryRunes))
                 {
                     if (ScoreAlias > bestScore)
                     {
                         bestScore = ScoreAlias;
                         bestSource = LauncherMatchSource.Alias;
-                        bestIndices = null;
+                        bestRuneIndices = null;
                     }
                     break;
                 }
@@ -1278,50 +1303,126 @@ internal static class LauncherRanker
             }
         }
 
-        var set = bestSource == LauncherMatchSource.Name && bestIndices is not null
-            ? new HashSet<int>(bestIndices)
-            : new HashSet<int>();
-        return (bestScore, bestSource, set);
+        var utf16Set = new HashSet<int>();
+        if (bestSource == LauncherMatchSource.Name && bestRuneIndices is not null)
+        {
+            for (var i = 0; i < bestRuneIndices.Count; i++)
+            {
+                var ri = startTrim + bestRuneIndices[i];
+                if (ri < 0 || ri >= indexed.Length) continue;
+                var entry = indexed[ri];
+                for (var u = 0; u < entry.Utf16Length; u++)
+                {
+                    utf16Set.Add(entry.Utf16Start + u);
+                }
+            }
+        }
+        return (bestScore, bestSource, utf16Set);
     }
 
-    private static bool AliasMatches(string aliasNorm, string query)
+    private static IndexedRune[] BuildIndexedRunes(string text)
     {
-        if (aliasNorm.StartsWith(query, StringComparison.Ordinal) || aliasNorm.Contains(query, StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(text)) return Array.Empty<IndexedRune>();
+        var list = new List<IndexedRune>(text.Length);
+        var utf16Pos = 0;
+        while (utf16Pos < text.Length)
+        {
+            if (Rune.DecodeFromUtf16(text.AsSpan(utf16Pos), out var rune, out var consumed) == System.Buffers.OperationStatus.Done && consumed > 0)
+            {
+                list.Add(new IndexedRune(Rune.ToLowerInvariant(rune), utf16Pos, consumed));
+                utf16Pos += consumed;
+            }
+            else
+            {
+                list.Add(new IndexedRune(Rune.ReplacementChar, utf16Pos, 1));
+                utf16Pos++;
+            }
+        }
+        return list.ToArray();
+    }
+
+    private static Rune[] ToLowerRunes(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return Array.Empty<Rune>();
+        var list = new List<Rune>(text.Length);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            list.Add(Rune.ToLowerInvariant(rune));
+        }
+        return list.ToArray();
+    }
+
+    private static bool AliasMatches(Rune[] aliasRunes, Rune[] queryRunes)
+    {
+        if (aliasRunes.Length == 0 || queryRunes.Length == 0) return false;
+        if (HasRunePrefix(aliasRunes, queryRunes) || IndexRunes(aliasRunes, queryRunes) >= 0)
         {
             return true;
         }
-        var words = SplitWords(aliasNorm);
+        var words = SplitWords(aliasRunes);
         if (words.Count > 0)
         {
-            var initials = new char[words.Count];
+            var initials = new Rune[words.Count];
             for (var i = 0; i < words.Count; i++)
             {
                 var span = words[i];
-                if (span.Length >= query.Length &&
-                    string.CompareOrdinal(aliasNorm, span.Start, query, 0, query.Length) == 0)
+                if (HasRunePrefixAt(aliasRunes, span.Start, span.Length, queryRunes))
                 {
                     return true;
                 }
-                initials[i] = aliasNorm[span.Start];
+                initials[i] = aliasRunes[span.Start];
             }
-            if (new string(initials).Contains(query, StringComparison.Ordinal))
+            if (IndexRunes(initials, queryRunes) >= 0)
             {
                 return true;
             }
         }
-        return TrySubsequence(aliasNorm, query, out _, out _);
+        return TrySubsequence(aliasRunes, queryRunes, out _, out _);
     }
 
-    private static bool IsWordSeparator(char ch)
-        => char.IsWhiteSpace(ch) || ch == '-' || ch == '_' || ch == '/';
+    private static bool IsWordSeparator(Rune r)
+        => Rune.IsWhiteSpace(r) || r.Value == '-' || r.Value == '_' || r.Value == '/';
 
-    private static List<WordSpan> SplitWords(string text)
+    private static bool HasRunePrefix(Rune[] text, Rune[] prefix)
+        => HasRunePrefixAt(text, 0, text.Length, prefix);
+
+    private static bool HasRunePrefixAt(Rune[] text, int start, int length, Rune[] prefix)
+    {
+        if (prefix.Length == 0 || prefix.Length > length) return false;
+        for (var i = 0; i < prefix.Length; i++)
+        {
+            if (text[start + i] != prefix[i]) return false;
+        }
+        return true;
+    }
+
+    private static int IndexRunes(Rune[] text, Rune[] needle)
+    {
+        if (needle.Length == 0 || needle.Length > text.Length) return -1;
+        var limit = text.Length - needle.Length;
+        for (var i = 0; i <= limit; i++)
+        {
+            var ok = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                if (text[i + j] != needle[j])
+                {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) return i;
+        }
+        return -1;
+    }
+
+    private static List<WordSpan> SplitWords(Rune[] runes)
     {
         var words = new List<WordSpan>();
         var start = -1;
-        for (var i = 0; i < text.Length; i++)
+        for (var i = 0; i < runes.Length; i++)
         {
-            if (IsWordSeparator(text[i]))
+            if (IsWordSeparator(runes[i]))
             {
                 if (start >= 0)
                 {
@@ -1336,12 +1437,12 @@ internal static class LauncherRanker
         }
         if (start >= 0)
         {
-            words.Add(new WordSpan(start, text.Length - start));
+            words.Add(new WordSpan(start, runes.Length - start));
         }
         return words;
     }
 
-    private static bool TrySubsequence(string text, string query, out int gaps, out List<int> indices)
+    private static bool TrySubsequence(Rune[] text, Rune[] query, out int gaps, out List<int> indices)
     {
         gaps = 0;
         indices = new List<int>(query.Length);
@@ -2010,14 +2111,15 @@ internal sealed class LauncherWindow : Form
             {
                 animPhase = AnimPhase.Idle;
                 animTimer.Stop();
-                base.Hide();
-                Opacity = 1.0;
                 var prev = previousForegroundWindow;
                 previousForegroundWindow = IntPtr.Zero;
+                // Restore foreground window BEFORE hiding while we still hold foreground rights.
                 if (pendingRestoreFocus && prev != IntPtr.Zero)
                 {
                     SetForegroundWindow(prev);
                 }
+                base.Hide();
+                Opacity = 1.0;
                 return;
             }
         }
@@ -2322,12 +2424,24 @@ internal sealed class LauncherWindow : Form
         var rect = new RectangleF(0, 0, ClientSize.Width, ClientSize.Height);
         var radius = Sf(14f);
 
-        // Panel backdrop gradient (slightly lighter alpha when Acrylic blur is active).
-        var topColor = acrylicEnabled ? Color.FromArgb(204, 16, 23, 39) : BgTop;
-        var bottomColor = acrylicEnabled ? Color.FromArgb(224, 8, 11, 21) : BgBottom;
-        using (var bgBrush = new LinearGradientBrush(rect, topColor, bottomColor, 90f))
+        // Panel backdrop: use SourceCopy with low-alpha tint when Acrylic is active so DWM blur
+        // shows through cleanly; otherwise fill with opaque dark gradient fallback.
+        if (acrylicEnabled)
         {
-            g.FillRectangle(bgBrush, rect);
+            var prevMode = g.CompositingMode;
+            g.CompositingMode = CompositingMode.SourceCopy;
+            using (var bgBrush = new LinearGradientBrush(rect, Color.FromArgb(24, 16, 23, 39), Color.FromArgb(32, 8, 11, 21), 90f))
+            {
+                g.FillRectangle(bgBrush, rect);
+            }
+            g.CompositingMode = prevMode;
+        }
+        else
+        {
+            using (var bgBrush = new LinearGradientBrush(rect, BgTop, BgBottom, 90f))
+            {
+                g.FillRectangle(bgBrush, rect);
+            }
         }
 
         // Subtle top-left cyan ambient glow (no left accent bar).

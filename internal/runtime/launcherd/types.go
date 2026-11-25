@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,7 +128,8 @@ func ProbeSocket(ctx context.Context, socketPath string) bool {
 }
 
 // FormatWireApp encodes a single App into the §8.4/§9 LAUNCH1 wire protocol line.
-// Base fields match the 8-column spec; aliases (when present) are appended as a 9th column.
+// Base fields match the 8-column spec; optional column 9 carries base64 aliases
+// (0x1f-separated) and optional column 10 carries the transient §6 recency boost.
 func FormatWireApp(app launcher.App) string {
 	termFlag := "0"
 	if app.Terminal {
@@ -143,10 +145,17 @@ func FormatWireApp(app launcher.App) string {
 		termFlag,
 		encodeBase64(app.Path),
 	)
-	if len(app.Aliases) == 0 {
+	if len(app.Aliases) == 0 && app.Boost <= 0 {
 		return base
 	}
-	return base + "\t" + encodeBase64(strings.Join(app.Aliases, "\x1f"))
+	aliasField := ""
+	if len(app.Aliases) > 0 {
+		aliasField = encodeBase64(strings.Join(app.Aliases, "\x1f"))
+	}
+	if app.Boost <= 0 {
+		return base + "\t" + aliasField
+	}
+	return base + "\t" + aliasField + "\t" + strconv.Itoa(app.Boost)
 }
 
 func encodeBase64(value string) string {

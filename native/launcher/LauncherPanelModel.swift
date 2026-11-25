@@ -11,9 +11,10 @@ struct LauncherApp: Decodable {
   let icon: String
   let terminal: Bool
   let aliases: [String]
+  let boost: Int
 
   private enum CodingKeys: String, CodingKey {
-    case id, name, subtitle, path, kind, icon, terminal, aliases
+    case id, name, subtitle, path, kind, icon, terminal, aliases, boost
   }
 
   init(from decoder: Decoder) throws {
@@ -26,6 +27,7 @@ struct LauncherApp: Decodable {
     icon = try container.decodeIfPresent(String.self, forKey: .icon) ?? ""
     terminal = try container.decodeIfPresent(Bool.self, forKey: .terminal) ?? false
     aliases = try container.decodeIfPresent([String].self, forKey: .aliases) ?? []
+    boost = max(0, try container.decodeIfPresent(Int.self, forKey: .boost) ?? 0)
   }
 }
 
@@ -102,7 +104,7 @@ enum LauncherRanker {
       results.append((
         result: LauncherMatchResult(
           app: app,
-          score: evaluation.score,
+          score: evaluation.score + max(0, app.boost),
           matchSource: evaluation.source,
           matchedRanges: evaluation.ranges
         ),

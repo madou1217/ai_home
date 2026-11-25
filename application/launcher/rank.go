@@ -171,13 +171,14 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 		}
 		items := make([]emptyItem, 0, len(apps))
 		for _, app := range apps {
-			var opened int64
+			var entry UsageEntry
 			if usage != nil {
-				opened = usage[app.ID].OpenedAtMs
+				entry = usage[app.ID]
 			}
+			app.Boost = RecencyBoost(entry, now)
 			items = append(items, emptyItem{
 				app:        app,
-				openedAtMs: opened,
+				openedAtMs: entry.OpenedAtMs,
 				nameLower:  NormalizeQuery(app.Name),
 			})
 		}
@@ -216,9 +217,11 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 		if usage != nil {
 			entry = usage[app.ID]
 		}
+		boost := RecencyBoost(entry, now)
+		app.Boost = boost
 		scored = append(scored, scoredItem{
 			app:       app,
-			score:     base + RecencyBoost(entry, now),
+			score:     base + boost,
 			nameLower: NormalizeQuery(app.Name),
 		})
 	}

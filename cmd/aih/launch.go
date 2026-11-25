@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -238,24 +237,9 @@ func runLaunchCatalog(ctx context.Context, service *launcher.Service, args []str
 	if !wireOutput {
 		return writeLaunchJSON(runtime.stdout, result)
 	}
-	// Wire format (§9): LAUNCH1\t<b64 id>\t<b64 name>\t<b64 subtitle>\t<b64 icon>\t<b64 kind>\t<0|1 terminal>\t<b64 path>
+	// Wire format (§8.4/§9): LAUNCH1\t<b64 id>\t<b64 name>\t<b64 subtitle>\t<b64 icon>\t<b64 kind>\t<0|1 terminal>\t<b64 path>[\t<b64 aliases>[\t<boost>]]
 	for _, app := range result.Apps {
-		termFlag := "0"
-		if app.Terminal {
-			termFlag = "1"
-		}
-		_, err := fmt.Fprintf(
-			runtime.stdout,
-			"LAUNCH1\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			encodeWireField(app.ID),
-			encodeWireField(app.Name),
-			encodeWireField(app.Subtitle),
-			encodeWireField(app.Icon),
-			encodeWireField(string(app.Kind)),
-			termFlag,
-			encodeWireField(app.Path),
-		)
-		if err != nil {
+		if _, err := fmt.Fprintln(runtime.stdout, launcherd.FormatWireApp(app)); err != nil {
 			return err
 		}
 	}
@@ -541,10 +525,6 @@ func runLaunchStatus(ctx context.Context, service *launcher.Service, args []stri
 		_, _ = fmt.Fprintf(runtime.stdout, "LastError:   %s\n", status.LastError)
 	}
 	return nil
-}
-
-func encodeWireField(value string) string {
-	return base64.StdEncoding.EncodeToString([]byte(value))
 }
 
 func isLaunchHelp(arg string) bool {

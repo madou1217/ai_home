@@ -146,7 +146,7 @@ func scanWindowsStartApps(ctx context.Context) []launcher.App {
 
 		shellPath := `shell:AppsFolder\` + appID
 		result = append(result, launcher.App{
-			ID:       launcher.AppID(windowsPlatformString, appID),
+			ID:       launcher.AppID(windowsPlatformString, normID),
 			Name:     name,
 			Subtitle: shellPath,
 			Path:     shellPath,

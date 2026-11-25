@@ -34,5 +34,8 @@ jobs:
       - name: Check provider manifest and generated projections
         run: go run ./cmd/provider-manifest --check
 
+      - name: Verify provider lint catches regressions
+        run: go run ./cmd/provider-lint --self-test
+
       - name: Lint provider directory literals
         run: go run ./cmd/provider-lint

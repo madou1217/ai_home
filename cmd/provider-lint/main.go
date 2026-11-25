@@ -41,7 +41,16 @@ const contractDir = "core/providers/"
 
 func main() {
 	root := flag.String("root", ".", "仓库根目录")
+	selfTest := flag.Bool("self-test", false, "运行 lint 自身的负向自测")
 	flag.Parse()
+	if *selfTest {
+		if err := runSelfTest(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("provider directory lint self-test: ok")
+		return
+	}
 	if err := run(*root); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -113,6 +122,67 @@ func run(root string) error {
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("provider 配置根 lint 失败:\n%s", strings.Join(problems, "\n"))
+	}
+	return nil
+}
+
+// runSelfTest 用临时 Go 文件验证 lint 本身仍能抓住已知回归：
+// 字面量根、根的路径前缀、历史错误名必须失败；只带后缀的 .claude.json 不能误报。
+func runSelfTest() error {
+	cases := []struct {
+		name       string
+		source     string
+		wantError  bool
+		wantSubstr string
+	}{
+		{
+			name:       "literal_root",
+			source:     "package fixture\n\nvar bad = \".claude\"\n",
+			wantError:  true,
+			wantSubstr: "Provider 配置根 \".claude\"",
+		},
+		{
+			name:       "literal_prefix",
+			source:     "package fixture\n\nvar bad = \".claude/settings.json\"\n",
+			wantError:  true,
+			wantSubstr: "Provider 配置根 \".claude/settings.json\"",
+		},
+		{
+			name:       "known_invalid_root",
+			source:     "package fixture\n\nvar bad = \".codebuddycn\"\n",
+			wantError:  true,
+			wantSubstr: "已知错误的配置根",
+		},
+		{
+			name:      "clean_suffix",
+			source:    "package fixture\n\nvar ok = \".claude.json\"\n",
+			wantError: false,
+		},
+	}
+	for _, testCase := range cases {
+		dir, err := os.MkdirTemp("", "aih-provider-lint-")
+		if err != nil {
+			return err
+		}
+		writeErr := os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(testCase.source), 0o600)
+		if writeErr != nil {
+			_ = os.RemoveAll(dir)
+			return writeErr
+		}
+		runErr := run(dir)
+		_ = os.RemoveAll(dir)
+		if testCase.wantError {
+			if runErr == nil {
+				return fmt.Errorf("self-test %s: 期望 lint 失败，实际通过", testCase.name)
+			}
+			if !strings.Contains(runErr.Error(), testCase.wantSubstr) {
+				return fmt.Errorf("self-test %s: 未命中 %q，实际错误: %w", testCase.name, testCase.wantSubstr, runErr)
+			}
+			continue
+		}
+		if runErr != nil {
+			return fmt.Errorf("self-test %s: 期望通过，实际失败: %w", testCase.name, runErr)
+		}
 	}
 	return nil
 }

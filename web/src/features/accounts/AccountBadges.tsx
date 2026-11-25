@@ -486,7 +486,9 @@ export function renderAccountRoleIcons(record: Pick<Account, 'isDefault' | 'isMo
  * `+` 拼接——用户明确要求拆开。这里改为返回**第一个**套餐名，
  * 需要全部时用 getPlanTagLabels()。
  */
-export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>) {
+export function getPlanTagLabel(
+  record: Pick<Account, 'provider' | 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>
+) {
   return getPlanTagLabels(record)[0] || 'free';
 }
 
@@ -504,7 +506,7 @@ export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' 
  *   3. 把 planType 按分隔符拆开（兜底，兼容没有 planGroups 的快照）。
  */
 export function getPlanTagLabels(
-  record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>
+  record: Pick<Account, 'provider' | 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>
 ): string[] {
   if (record.apiKeyMode) return ['密钥'];
   // 1. 结构化套餐分组。
@@ -524,6 +526,12 @@ export function getPlanTagLabels(
     .filter(Boolean);
   if (groupNames.length > 0) return Array.from(new Set(groupNames));
   // 2. 订阅档（kimi 等）优先于枚举值。
+  // Cline 的套餐名只在额度快照 account.planName 里；行数据没有 profile 时
+  // planType 只是 "oauth"。过期后仍要保留套餐名，但必须同时标出失效。
+  const clineSubscription = getClinePlanSubscription(record);
+  if (clineSubscription?.name) {
+    return clineSubscription.expired ? [clineSubscription.name, '已过期'] : [clineSubscription.name];
+  }
   const planName = String(record.planName || '').trim();
   if (planName) return [planName];
   // 3. 兜底拆分：` + ` 是后端拼多套餐用的分隔符（见 zcode-quota-probe 的 planType 汇总）。
@@ -568,7 +576,10 @@ export function getClinePlanSubscription(record: Pick<Account, 'provider' | 'usa
   const validUntilMs = Number(snapshot.account.periodEndMs) || 0;
   const name = String(snapshot.account.planName || '').trim();
   if (!name && validUntilMs <= 0) return null;
-  return { name, validUntilMs, status: '' };
+  // periodEndMs 是上游给的当前周期结束时间；快照过期后周期早已结束，
+  // 不能再把套餐当成生效中展示。
+  const expired = validUntilMs > 0 && validUntilMs < Date.now();
+  return { name, validUntilMs, status: '', expired };
 }
 
 export function formatPlanValidUntil(validUntilMs: number | null | undefined) {

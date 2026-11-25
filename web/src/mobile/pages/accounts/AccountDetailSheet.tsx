@@ -266,7 +266,7 @@ export default function AccountDetailSheet({
       value: kimiPlan && kimiPlanUntil
         ? `${kimiPlan.name || getPlanTagLabels(record).join(' · ')} · ${kimiPlanUntil}${kimiPlan.status === 'canceled' ? ' · 已取消续费' : ''}`
         : clinePlan && clinePlanUntil
-          ? `${clinePlan.name || getPlanTagLabels(record).join(' · ')} · ${clinePlanUntil}`
+          ? `${clinePlan.name || getPlanTagLabels(record).join(' · ')} · ${clinePlanUntil}${clinePlan.expired ? ' · 已过期' : ''}`
         : codexSubscription
           ? `${getPlanTagLabels(record).join(' · ')} · ${describeCodexSubscription(codexSubscription).label}`
           : getPlanTagLabels(record).join(' · ')

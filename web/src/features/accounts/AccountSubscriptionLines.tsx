@@ -35,9 +35,18 @@ export default function AccountSubscriptionLines({ record, onConfirm, confirming
         </Tooltip>
       ) : null}
       {cline && clineUntil ? (
-        <Tooltip title={`${cline.name || 'Cline Pass'} 本周期至 ${clineUntil}，滚动窗口额度按上游结算时间自动重置`}>
-          <div className="account-subscription-line" style={{ color: 'var(--color-muted)' }}>
-            订阅至 {clineUntil}
+        <Tooltip
+          title={
+            cline.expired
+              ? `${cline.name || 'Cline Pass'} 周期已于 ${clineUntil} 结束；刷新额度确认是否续费`
+              : `${cline.name || 'Cline Pass'} 本周期至 ${clineUntil}，滚动窗口额度按上游结算时间自动重置`
+          }
+        >
+          <div
+            className="account-subscription-line"
+            style={{ color: cline.expired ? 'var(--color-warning)' : 'var(--color-muted)' }}
+          >
+            {cline.expired ? `已过期 · 到期于 ${clineUntil}` : `订阅至 ${clineUntil}`}
           </div>
         </Tooltip>
       ) : null}

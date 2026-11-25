@@ -314,8 +314,8 @@ Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp
 - **未托管目录**：`aih skill adopt <id> --provider <id>`。只认领内容与包一致的目录，不移动、不重写文件；
   用 `install` 指向与目标目录内容一致的源时也会自动接管。
 
-> 资源去重：当前通用 Skill 投影是目录复制；Gemini 0.70.0 已实测支持软链接 Skill（`gemini skills link`），
-> 其余 Provider 待逐项验证。详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
+> 资源去重：当前通用 Skill 投影仍是目录复制；macOS 上 Claude / Codex / CodeBuddy / CodeBuddy CN / Gemini
+> 已实测可加载软链接 Skill，Windows 上 Gemini 的链接为 Junction。详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
 
 ## Web UI
 

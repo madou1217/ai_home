@@ -265,3 +265,23 @@ Phase 1 六个切片均已落地，并合并了 AWS 侧先行的 macOS 面板提
 真机复验补充：在 AWS 侧创建 `C:\Users\a.txt` 文件条目，本地拉取后 SHA-256 与 AWS 完全一致（`832e2c0d…`），证明跨 OS 文件同步不再触发 `clipboard_sync_sha_mismatch`；伪装 60000×60000 的 PNG 现在返回 413 `clipboard_item_too_large`。
 
 测试中产生的探测条目已从本机与 AWS 两侧删除，同步开关恢复为关闭。
+
+## 16. Paste Nexus 重做（2026-11-25，AWS agy gemini-4-neon-xhigh）
+
+用户提供的 `paste-hud.html` 成为唯一视觉基准；第 9/10 节的传统列表页与原生表格面板不再保留。
+
+架构调整：
+
+- **WebUI / 工作区**：`web/public/paste/index.html` 1:1 保留原型的 CSS/DOM/动效，只替换数据层。页面从 `window.__AIH_CLIPBOARD__` 或同源 control-plane profile 取管理密钥，调用真实剪贴板 API；支持工作区与 `?mode=quick` 两种模式。Umi 的 `/clipboard` 路由重定向到 `/ui/paste/`。
+- **桌面工作区窗口**：`native/clipboard/ClipboardWorkspaceWindow.swift` 用 WKWebView 加载 `/ui/paste/?mode=workspace&embed=desktop`，从状态栏菜单「打开剪贴板工作区」或 Dock 重开进入。
+- **Quick Orbit**：`native/clipboard/QuickOrbitWindow.swift` 是透明无边框浮动面板，加载 `?mode=quick&embed=desktop&position=bottom|left|right`，尺寸 1520×438（参考图比例），从左下方向上滑入并淡入；⌘⌥V 或状态栏菜单切换。位置持久化在 `clipboard_settings.quickOrbitPosition`，经 configure 的 `quickOrbitPosition` 下发，也可在页面设置或状态栏「位置」菜单修改。
+- **删除旧实现**：`ClipboardPanel*.swift` 三个文件移除，`desktopbuild/mac.go` 只编译两个新的 WebView 窗口。
+
+AGY 产出提交（AWS `feature/paste-nexus`）：`ca259b99`（quickOrbitPosition + configure）、`90982870`（页面接真实 API + 双模式）、`48d1312d`（WKWebView 桌面窗口替换旧面板）、`00f005aa`（Quick Orbit 过滤器高度修复）。本地合并为 `681d5c39`，随后补了参考尺寸/密钥门槛（`573f8a9c`）与 438px 高度下页脚可见性（`7fc6c195`）。
+
+真机/浏览器验收：
+
+- 工作区 1440×900 显示 126 条真实记录，时间线、类型筛选、预览、Fusion stack、Quick orbit dock 与原型一致；
+- `?mode=quick&embed=desktop` 在 1520×438 下显示 7 张卡片、过滤器单行、页脚与 Paste 按钮完整，和参考截图同构；
+- 设置对话框读取真实 capture/sync/位置/指纹/设备/传输状态，位置切换写入后端；
+- 状态栏菜单可打开工作区、切换 Quick Orbit、选择底部/左侧/右侧；QuickOrbit 面板 1520×438 透明浮动。

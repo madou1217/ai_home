@@ -1565,6 +1565,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("装配剪贴板服务失败: %w", clipboardErr)
 	}
 	webuiRoutes = append(webuiRoutes, clipboardRoutes...)
+	_, launcherRoutes, launcherErr := newLauncherRuntime(webuiDeps)
+	if launcherErr != nil {
+		return serverHandlers{}, nil, fmt.Errorf("装配应用启动器服务失败: %w", launcherErr)
+	}
+	webuiRoutes = append(webuiRoutes, launcherRoutes...)
 	var desktopTranslationService *desktoptranslation.Service
 	if !dependencies.DesktopManagedByHost {
 		var desktopRoutes []webuiRoute

@@ -332,3 +332,7 @@ Second paragraph 中文内容
 ### Windows/Linux 捕获代码
 
 `clipboard_windows.go`（PowerShell/STA）与 `clipboard_linux.go`（wl-paste/xclip）随 `aih-server` 交叉编译：Windows amd64、Linux amd64/arm64 均构建通过；Linux arm64 二进制在 AWS 执行 `clip orbit --print` 成功。Windows 真机剪贴板读写尚未在本轮执行（需 Windows 主机上的真实剪贴板）。
+
+### WebUI 直接配对
+
+Paste Nexus 设置新增 **Direct endpoint pairing**：填写对方 Server 的 LAN/WireGuard/Tailscale endpoint 与管理密钥，页面调用 `POST /v0/webui/control-plane/profiles` 建立 direct profile，并立即把它选为同步目标。实测 UI 填入 `http://127.0.0.1:19529` 后生成 profile `cp-14nzllm` 并写入 `syncTargetProfileId`；随后清理。这样 server-relay、局域网直连、WG/TS 地址都可在 WebUI 内完成配对；自动发现（mDNS）与二维码配对仍是后续。

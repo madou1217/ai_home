@@ -1,7 +1,7 @@
 # MCP 启用范围与共享桥设计
 
-- 状态：Phase 1–3 已实现；Phase 4（跨 harness 聚合）待做
-- 日期：2026-11-23（实现更新 2026-11-24）
+- 状态：Phase 1–3 已实现；WebUI 共享桥三档已补（2026-11-25）；Phase 4（跨 harness 聚合）待做
+- 日期：2026-11-23（实现更新 2026-11-24；UI 与真机计数验证 2026-11-25）
 - 范围：MCP registry、账号与会话级启用策略、共享桥进程模型、跨 harness 复用边界
 
 ## 0. 实现进度
@@ -12,7 +12,26 @@
 - Phase 3：共享桥 daemon + 薄 shim、`config:server.mcpBridgeSharing = global|workspace|off`，
   已实现；Windows 暂回退到每会话一个桥（named pipe 权限模型未验证）。
 - 仍待做：把注册表 MCP 聚合进共享桥（跨 harness 复用，Phase 4）、`--mcp-status` 的
-  daemon 计数观测、Windows named pipe。
+  daemon 计数观测、Windows named pipe；WebUI 的 MCP 注册表编辑页、标准 stdio
+  （command/args/env）安装表单（当前仅 Node 单脚本）。
+
+## 0.1 验证结论（2026-11-25）
+
+1. **共享桥进程计数（真实 Claude 工作区会话，本机 workspace）**
+   - `off`（每会话）：2 个会话 → 2 个 `aih-server __mcp-remote-tools`，无 daemon、无 shim；
+     单桥 RSS 约 27–29 MB。
+   - `global`：1 个会话 → 1 个 `__mcp-bridge-daemon`（约 27 MB）+ 1 个 `aih-mcp-shim`
+     （约 3.4 MB）；2 个会话 → 同一个 daemon + 2 个 shim（约 3.4 / 5.7 MB），无完整桥。
+   - 结论：`off` 按会话线性增长；`global` 只增 shim，daemon 复用。
+2. **WebUI 上在哪里设置 MCP**
+   - 共享桥三档：开发工具 → 应用管理 → Codex → 高级设置 → MCP。
+   - 账号级启用策略：账号 → 某账号「更多」→ 运行设置 → MCP（仅桌面端；
+     auto / 手动选择 / 全部关闭）。
+   - 给单个 Provider 安装原生 MCP：开发工具 → 插件与资源 → MCP → 安装资源
+     （当前只支持 Node 脚本路径）。
+   - 单次会话禁用：工作区连接器 → 打开 agent → 「本次禁用 MCP」。
+   - 注意：账号 MCP 策略只约束注册表 MCP；`插件与资源` 安装到 Provider 原生配置的
+     MCP 不走该策略。
 
 ## 1. 背景
 

@@ -297,6 +297,7 @@ AIH 管理的 MCP 来自统一注册表 `~/.ai_home/mcp/registry.json`：内置 
 - **账号级**：WebUI「账号 → 运行设置 → MCP」，`自动 / 手动选择 / 全部关闭`。账号策略是硬天花板，会话只能收窄。
 - **会话级**：`aih codex --mcp aih_remote,github`、`--no-mcp`、`--mcp-profile work`、`--mcp-status`。选择会校验账号策略；未配置的 id 直接报错。
 - **共享桥**：`aih server config set --mcp-bridge-sharing global|workspace|off`（默认 `global`），也可在 WebUI「开发工具 → 应用管理 → Codex 高级设置 → MCP」切换。`global` / `workspace` 用一个 daemon 服务多个会话，`off` 回到每会话一个桥；Windows 当前回退为每会话一个桥。
+- **原生 MCP 安装**：WebUI「开发工具 → 插件与资源 → MCP → 安装资源」把 MCP 写进指定 Provider 自己的配置（当前只支持 Node 脚本路径）；它不走账号 MCP 策略。
 
 外部注册表 MCP 统一以 `<id>.<tool>` 暴露，避免与原生工具重名；本地 CLI 通过 stdio 前缀代理挂载。配置集格式：
 

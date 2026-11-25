@@ -59,5 +59,8 @@ func formatCodexResponsesFailure(report codexresponseshttp.FailureReport) string
 	if report.FinalAccount != "" {
 		merged += fmt.Sprintf(" account=%s", report.FinalAccount)
 	}
+	if report.PinFallback != "" {
+		merged += fmt.Sprintf(" pin_fallback=%s", report.PinFallback)
+	}
 	return merged
 }

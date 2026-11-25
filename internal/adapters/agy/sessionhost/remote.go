@@ -205,7 +205,8 @@ func (remote *remoteSession) ensureSupervisor(ctx context.Context) {
 		"[Service]",
 		"Type=oneshot",
 		// 关闭/删除的会话带 closed 标记：即便目录里残留旧版 start.sh 也不能被复活。
-		`ExecStart=/bin/sh -c 'for d in %h/.ai_home/run/agy-sessions/*/; do [ -f "$d/closed" ] && continue; [ -f "$d/start.sh" ] && sh "$d/start.sh" boot; done'`,
+		// 用 if/fi 而不是 `a && b`：最后一条测试失败会让 oneshot 单元整体以 1 退出。
+		`ExecStart=/bin/sh -c 'for d in %h/.ai_home/run/agy-sessions/*/; do if [ -f "$d/closed" ]; then continue; fi; if [ -f "$d/start.sh" ]; then sh "$d/start.sh" boot || true; fi; done; true'`,
 		"",
 		"[Install]",
 		"WantedBy=default.target",
@@ -232,7 +233,12 @@ func (remote *remoteSession) startPipeline(ctx context.Context, conversation str
 	if err != nil {
 		return false, err
 	}
-	remote.ensureSupervisor(ctx)
+	// systemd 安装放到后台：它不该决定一次会话创建的成败或延迟。
+	go func() {
+		supervisorCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		remote.ensureSupervisor(supervisorCtx)
+	}()
 	output, err := remote.runRemote(ctx, nil, "sh -c "+sshhost.ShellQuote("sh "+sshhost.ShellQuote(dir+"/start.sh")))
 	if err != nil {
 		return false, fmt.Errorf("agy_remote_start: %v %s", err, truncate(strings.TrimSpace(output), 300))

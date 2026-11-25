@@ -575,7 +575,7 @@ func (p *Process) ensureRemoteStarted(ctx context.Context, remote *remoteSession
 		go remote.follow(followCtx, offset, p.consumeLine, func(error) {})
 		if pipelineStarted && !conversationKnown {
 			// tail -n +1 从文件头读，提示不会落在盲区；只需短暂等 init 以尽早拿到 conversation。
-			waitCtx, waitCancel := context.WithTimeout(ctx, 3*time.Second)
+			waitCtx, waitCancel := context.WithTimeout(ctx, 1200*time.Millisecond)
 			defer waitCancel()
 			for waitCtx.Err() == nil {
 				p.mu.Lock()

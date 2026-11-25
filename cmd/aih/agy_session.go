@@ -40,6 +40,8 @@ type agySessionClient struct {
 	runtime commandRuntime
 	baseURL string
 	key     string
+	// httpClient 给会话创建/对话用更长的超时：远端首连 + 起管道 + 首轮投递可能超过通用 30s。
+	httpClient *http.Client
 }
 
 func newAGYSessionClient(runtime commandRuntime) (*agySessionClient, error) {
@@ -47,10 +49,17 @@ func newAGYSessionClient(runtime commandRuntime) (*agySessionClient, error) {
 	if key == "" {
 		return nil, fmt.Errorf("需要 Management Key；请先在 WebUI 授权本机 Server")
 	}
+	client := &http.Client{Timeout: 150 * time.Second}
+	if shared, ok := runtime.managementAPI.(*http.Client); ok {
+		copy := *shared
+		copy.Timeout = 150 * time.Second
+		client = &copy
+	}
 	return &agySessionClient{
-		runtime: runtime,
-		baseURL: strings.TrimRight(resolveManagementBaseURL(runtime), "/"),
-		key:     key,
+		runtime:    runtime,
+		baseURL:    strings.TrimRight(resolveManagementBaseURL(runtime), "/"),
+		key:        key,
+		httpClient: client,
 	}, nil
 }
 
@@ -71,7 +80,7 @@ func (client *agySessionClient) do(ctx context.Context, method, path string, bod
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	response, err := client.runtime.managementAPI.Do(request)
+	response, err := client.httpClient.Do(request)
 	if err != nil {
 		return err
 	}

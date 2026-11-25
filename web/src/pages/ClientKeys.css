@@ -1,0 +1,298 @@
+/* Settings -> API Keys 表格固定列 containment、池摘要与表单样式（全部使用 design-tokens，禁止大块 Alert 与左侧粗色条） */
+
+.client-keys-panel .hos-setting-section-body {
+  min-width: 0;
+}
+
+.client-keys-table.ant-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.client-keys-table .ant-table-container {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.client-keys-table .ant-table-content {
+  overflow-x: auto !important;
+  overscroll-behavior-x: contain;
+}
+
+.client-keys-table table {
+  table-layout: fixed;
+}
+
+.client-keys-table .ant-table-thead > tr > th,
+.client-keys-table .ant-table-tbody > tr > td {
+  vertical-align: middle;
+}
+
+/* 固定左右列必须保持完全不透明背景，避免横向滚动或行悬停时中间列透穿重叠。 */
+.client-keys-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.client-keys-table .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  background: var(--color-surface-muted) !important;
+  z-index: 3;
+}
+
+[data-theme='dark'] .client-keys-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+[data-theme='dark'] .client-keys-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.dark-theme .client-keys-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.dark-theme .client-keys-table .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  background: var(--color-surface-raised) !important;
+}
+
+.client-keys-table .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+.client-keys-table .ant-table-tbody > tr > td.ant-table-cell-fix-right {
+  background: var(--color-surface) !important;
+  z-index: 2;
+}
+
+.client-keys-table .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-left,
+.client-keys-table .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-right {
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)) !important;
+}
+
+/* 1px 功能性分隔线仅用于固定列与滚动区边界。 */
+.client-keys-table .ant-table-cell-fix-left-last {
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.client-keys-table .ant-table-cell-fix-right-first {
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+/* 名称列：内部独立裁剪容器，保证长名称省略且永不挤占或溢出到前缀/状态列，总 key 标签始终可见。 */
+.client-keys-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.client-keys-name-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-heading);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-master-tag.ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.client-keys-prefix-cell {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-status-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 账号池 / 模型池单元格：单行紧凑展示，主标签可省略，+N 计数固定不收缩。 */
+.client-keys-pool-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.client-keys-pool-unrestricted {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-pool-tag.ant-tag {
+  display: inline-block;
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
+  margin-inline-end: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.client-keys-pool-tag--mono.ant-tag {
+  font-family: var(--font-mono);
+}
+
+.client-keys-pool-count {
+  flex: 0 0 auto;
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.client-keys-limit-cell {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.client-keys-metric-cell {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* Tooltip 清单 */
+.client-keys-tooltip-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 340px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.client-keys-tooltip-title {
+  font-weight: var(--weight-semibold);
+  font-size: var(--hos-text-caption);
+}
+
+.client-keys-tooltip-item {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+  word-break: break-all;
+}
+
+/* 新建 / 编辑弹窗字段与池选择器 */
+.client-keys-modal-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.client-keys-field-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-snug);
+}
+
+.client-keys-pruned-note {
+  margin-top: var(--space-1);
+  color: var(--color-warning);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+}
+
+.client-keys-catalog-error {
+  margin-top: var(--space-1);
+  color: var(--color-danger);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-micro);
+  line-height: var(--leading-snug);
+}
+
+.client-keys-model-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.client-keys-model-option-id {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-model-option-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--hos-text-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--space-4);
+}
+
+.client-keys-edit-modal .ant-modal-title {
+  overflow: hidden;
+  padding-right: var(--space-8);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-keys-edit-modal .ant-modal-body {
+  max-height: 74vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .client-keys-limit-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

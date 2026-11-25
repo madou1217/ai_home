@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 
 	"github.com/madou1217/ai_home/internal/adapters/accountmaintenance"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 )
 
 // ClaimLease identifies one delivery generation. ClaimedAt starts when pending
@@ -40,7 +40,7 @@ func (s *DispatchStore) lockRecords() (func(), error) {
 	file := filepath.Join(s.aiHomeDir, "run", "maintenance", "access.sqlite")
 	// Never open/close a separate descriptor for this inode: POSIX closes
 	// can release another SQLite connection's process-wide file locks.
-	database, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: filepath.ToSlash(file)}).String())
+	database, err := sql.Open("sqlite", sqlitefile.URL(file).String())
 	if err != nil {
 		shared.Close()
 		return nil, err

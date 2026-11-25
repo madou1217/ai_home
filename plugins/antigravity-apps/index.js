@@ -211,6 +211,18 @@ function macInstaller(appId, proxyUrl) {
   }
 }
 
+// stopInstaller 结束安装器及其子进程。
+//
+// Inno 安装器可能拉起 IDE 后继续驻留，锁住安装目录并让后续卸载 EBUSY；
+// 安装完成后必须收尾，不能把安装器留在后台。
+function stopInstaller(exe, pid) {
+  try { run('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 30 * 1000 }); } catch (_error) { /* 已退出 */ }
+  const image = path.basename(exe);
+  for (const name of [image, image + '.tmp']) {
+    try { run('taskkill', ['/IM', name, '/T', '/F'], { timeout: 30 * 1000 }); } catch (_error) { /* 已退出 */ }
+  }
+}
+
 // waitForInstaller 启动安装器后轮询安装落点，而不是等安装器进程退出。
 //
 // IDE 的 Inno 安装器会拉起 IDE 本体，直接 spawnSync 可能一直等到用户关闭
@@ -223,8 +235,13 @@ function waitForInstaller(exe, args, appId, timeoutMs) {
       if (settled) return;
       settled = true;
       if (timer) clearInterval(timer);
-      if (error) reject(error);
-      else resolve();
+      if (error) {
+        reject(error);
+        return;
+      }
+      // 安装器可能仍在驻留；先收尾再让宿主继续。
+      stopInstaller(exe, child.pid);
+      resolve();
     };
     const child = spawn(exe, args, { stdio: 'ignore', windowsHide: true });
     child.on('error', (error) => finish(new Error(error.message)));
@@ -323,23 +340,113 @@ async function install(appId, proxyUrl) {
   return steps;
 }
 
-function removeInstalled(appId) {
+// quitApp 在卸载前关闭目标应用。
+//
+// 卸载必须删除安装目录；Windows 上运行中的 exe 会锁住目录（EBUSY），
+// macOS 上运行中的 .app 也可能阻止删除。先优雅退出，再兜底强制结束。
+function isAppRunning(appId) {
+  const product = PRODUCTS[appId];
+  if (!product) return false;
+  if (currentPlatform() === 'windows') {
+    const result = spawnSync('tasklist', ['/FI', 'IMAGENAME eq ' + product.binaryName + '.exe', '/NH'], {
+      encoding: 'utf8',
+      windowsHide: true
+    });
+    return String(result.stdout || '').toLowerCase().includes((product.binaryName + '.exe').toLowerCase());
+  }
+  if (currentPlatform() === 'macos') {
+    const result = spawnSync('pgrep', ['-f', '/' + product.binaryName + '.app/Contents/MacOS/'], { encoding: 'utf8' });
+    return result.status === 0;
+  }
+  const slug = appId === 'antigravity-ide' ? 'antigravity-ide' : 'antigravity';
+  const result = spawnSync('pgrep', ['-f', path.join(homeDir(), '.local', 'opt', slug)], { encoding: 'utf8' });
+  return result.status === 0;
+}
+
+// quitApp 退出应用并确认进程消失。卸载前如果应用仍在运行，宁可直接报错，
+// 也不能带着运行中的进程删除目录——Electron 会弹出 main.js 缺失的错误框。
+async function quitApp(appId) {
+  const product = PRODUCTS[appId];
+  if (!product) return;
+  if (currentPlatform() === 'windows') {
+    try {
+      run('taskkill', ['/IM', product.binaryName + '.exe', '/T', '/F'], { timeout: 30 * 1000 });
+    } catch (_error) { /* 未运行 */ }
+    // 安装器/更新器的临时进程也可能锁目录。
+    try {
+      run('powershell', ['-NoProfile', '-Command',
+        "Get-Process | Where-Object { $_.ProcessName -like 'aih-antigravity-*' } | Stop-Process -Force"], { timeout: 30 * 1000 });
+    } catch (_error) { /* 未运行 */ }
+  } else if (currentPlatform() === 'macos') {
+    try {
+      run('osascript', ['-e', 'quit app "' + product.binaryName + '"'], { timeout: 30 * 1000 });
+    } catch (_error) { /* 未运行或拒绝退出 */ }
+    try {
+      run('pkill', ['-f', '/' + product.binaryName + '.app/Contents/MacOS/'], { timeout: 10 * 1000 });
+    } catch (_error) { /* 已退出 */ }
+  } else {
+    const slug = appId === 'antigravity-ide' ? 'antigravity-ide' : 'antigravity';
+    try {
+      run('pkill', ['-f', path.join(homeDir(), '.local', 'opt', slug)], { timeout: 10 * 1000 });
+    } catch (_error) { /* 未运行 */ }
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!isAppRunning(appId)) return;
+    await delay(500);
+  }
+  throw new Error('应用仍在运行，请关闭 ' + product.name + ' 后重试卸载');
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// removePath 在应用退出后重试删除：Windows 的文件锁/杀毒扫描可能持续数十秒，
+// 一次 EBUSY 不代表卸载失败。
+async function removePath(target) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 10 && currentPlatform() === 'windows') {
+        try { run('cmd', ['/c', 'rmdir', '/s', '/q', target], { timeout: 60 * 1000 }); } catch (_error) { /* 继续重试 */ }
+      }
+      await delay(1000);
+    }
+  }
+  throw lastError || new Error('无法删除安装目录');
+}
+
+async function removeInstalled(appId) {
   const product = PRODUCTS[appId];
   if (!product) return;
   const home = homeDir();
+  let target = '';
   if (currentPlatform() === 'macos') {
     // 只删插件自己安装的用户目录，不动 /Applications 的系统级安装。
-    fs.rmSync(path.join(home, 'Applications', product.binaryName + '.app'), { recursive: true, force: true });
-    return;
-  }
-  if (currentPlatform() === 'windows') {
+    target = path.join(home, 'Applications', product.binaryName + '.app');
+  } else if (currentPlatform() === 'windows') {
     const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
     // 只删 per-user 安装目录，不动 Program Files。
-    fs.rmSync(path.join(local, 'Programs', product.binaryName), { recursive: true, force: true });
-    return;
+    target = path.join(local, 'Programs', product.binaryName);
+  } else {
+    const slug = appId === 'antigravity-ide' ? 'antigravity-ide' : 'antigravity';
+    target = path.join(home, '.local', 'opt', slug);
   }
-  const slug = appId === 'antigravity-ide' ? 'antigravity-ide' : 'antigravity';
-  fs.rmSync(path.join(home, '.local', 'opt', slug), { recursive: true, force: true });
+  if (!fs.existsSync(target)) return;
+  // 先改名成 tombstone：安装器/自动更新无法再从原路径拉起应用；改名失败时
+  // 说明仍有进程占用，直接报错，不做半删除。
+  const tombstone = target + '.aih-uninstall-' + process.pid;
+  try {
+    fs.rmSync(tombstone, { recursive: true, force: true });
+    fs.renameSync(target, tombstone);
+  } catch (error) {
+    throw new Error('安装目录仍被占用，未删除：' + (error && error.message ? error.message : ''));
+  }
+  await removePath(tombstone);
 }
 
 function openApp(appId) {
@@ -418,7 +525,8 @@ async function handle(value) {
       return { ok: true, changed: true, steps, status: statusOf(appId), message: '安装完成' };
     }
     if (action === 'uninstall') {
-      removeInstalled(appId);
+      await quitApp(appId);
+      await removeInstalled(appId);
       return { ok: true, changed: true, steps: [{ id: 'uninstall', label: '删除 ' + product.name, ok: true }], status: statusOf(appId), message: '已卸载' };
     }
     if (action === 'open') {
@@ -430,10 +538,12 @@ async function handle(value) {
     }
     return { ok: false, changed: false, steps: [], status: statusOf(appId), message: 'unknown action: ' + action };
   } catch (error) {
+    const message = error && error.message ? error.message : '操作失败';
     return {
       ok: false,
       changed: false,
-      steps: [{ id: action || 'operate', label: action, ok: false, error: error && error.message ? error.message : '' }],
+      message,
+      steps: [{ id: action || 'operate', label: action, ok: false, error: message }],
       status: statusOf(appId)
     };
   }

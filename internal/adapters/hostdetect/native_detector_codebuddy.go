@@ -22,6 +22,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"golang.org/x/crypto/pbkdf2"
 	_ "modernc.org/sqlite"
 )
@@ -575,11 +576,9 @@ func (detector *NativeDetector) desktopStateDBPaths(homeDir, provider, platform 
 }
 
 func readDesktopEncryptedBlob(ctx context.Context, dbPath string) ([]byte, bool, error) {
-	dsn := (&url.URL{
-		Scheme:   "file",
-		Path:     filepath.ToSlash(dbPath),
-		RawQuery: "mode=ro",
-	}).String()
+	dsnURL := sqlitefile.URL(dbPath)
+	dsnURL.RawQuery = "mode=ro"
+	dsn := dsnURL.String()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, false, err

@@ -94,6 +94,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // ChatPanel 仅在拿不到本机 server 地址时兜底。
   let quickChat = QuickChatWindow()
   var quickChatAvailable = false
+  let clipboardPanel = ClipboardPanel(emit: emit)
   lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
     guard let self = self else { return }
     emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": message])
@@ -206,7 +207,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   func registerShortcuts(translation: String = ShortcutRegistry.defaultTranslationShortcut,
                          chat: String = ShortcutRegistry.defaultChatShortcut,
                          translationEnabled: Bool = true,
-                         chatEnabled: Bool = true) {
+                         chatEnabled: Bool = true,
+                         clipboard: String = ShortcutRegistry.defaultClipboardShortcut,
+                         clipboardEnabled: Bool = false) {
     _ = shortcutRegistry.update([
       ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
         self?.panel.openSettings()
@@ -222,9 +225,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       ShortcutDescriptor(id: "chat", label: "Chat", shortcut: chat, enabled: chatEnabled) { [weak self] in
         guard let self else { return }
         if self.quickChatAvailable { self.quickChat.toggle() } else { self.chatPanel.openFromShortcut() }
+      },
+      ShortcutDescriptor(id: "clipboard", label: "剪贴板", shortcut: clipboard, enabled: clipboardEnabled && clipboardPanel.isAvailable) { [weak self] in
+        self?.clipboardPanel.toggle()
       }
-    ])
-  }
+    ])  }
 
   func updateTrust() {
     let trusted = AXIsProcessTrusted()
@@ -319,6 +324,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }) { monitors.append(monitor) }
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
       if event.type == .keyDown && event.keyCode == 53 {
+        if self?.clipboardPanel.closeIfKey() == true { return nil }
         self?.selectionToken += 1
         self?.panel.close()
         return nil
@@ -381,11 +387,18 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       let quickOrigin = event["quickChatOrigin"] as? String ?? ""
       quickChatAvailable = !quickOrigin.isEmpty
       quickChat.configure(origin: quickOrigin, managementKey: event["quickChatKey"] as? String ?? "")
+      clipboardPanel.configure(
+        origin: event["clipboardOrigin"] as? String ?? "",
+        managementKey: event["clipboardKey"] as? String ?? "",
+        enabled: event["clipboardEnabled"] as? Bool ?? false
+      )
       registerShortcuts(
         translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
         chat: event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut,
         translationEnabled: event["shortcutEnabled"] as? Bool ?? true,
-        chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true
+        chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true,
+        clipboard: event["clipboardShortcut"] as? String ?? ShortcutRegistry.defaultClipboardShortcut,
+        clipboardEnabled: event["clipboardEnabled"] as? Bool ?? false
       )
       reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":
@@ -408,6 +421,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       panel.beginHostTranslation(text: text, target: event["target"] as? String ?? "zh-Hans", id: id)
     case "chat.open", "chat.submit", "chat.stop", "chat.close", "chat.event", "chat.error":
       chatPanel.receive(event)
+    case "clipboard.open":
+      clipboardPanel.toggle()
+    case "clipboard-pasted":
+      break
     default: panel.receive(event)
     }
   }

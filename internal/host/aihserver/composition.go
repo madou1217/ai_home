@@ -1569,10 +1569,13 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	if !dependencies.DesktopManagedByHost {
 		var desktopRoutes []webuiRoute
 		var desktopErr error
-		desktopTranslationService, desktopRoutes, desktopErr = newDesktopTranslation(ctx, webuiDeps, chatRuntimeService)
+		desktopTranslationService, desktopRoutes, desktopErr = newDesktopTranslation(ctx, webuiDeps, chatRuntimeService, clipboardRuntimeService)
 		if desktopErr != nil {
 			return serverHandlers{}, nil, fmt.Errorf("装配桌面翻译宿主失败: %w", desktopErr)
 		}
+		// Clipboard settings changes (WebUI or CLI) re-send configure so the native
+		// ⌘⌥V shortcut follows capture/sync without restarting the helper.
+		clipboardRuntimeService.AddSettingsHook(desktopTranslationService.Configure)
 		desktopChanged.attach(desktopTranslationService)
 		webuiRoutes = append(webuiRoutes, desktopRoutes...)
 	}

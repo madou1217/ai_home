@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/madou1217/ai_home/application/clipboard"
@@ -22,6 +23,42 @@ type clipboardRuntime struct {
 	syncer  *clipboardruntime.Syncer
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
+
+	desktopEnabled atomic.Bool
+	hooksMu        sync.Mutex
+	settingsHooks  []func()
+}
+
+// DesktopEnabled reports capture||sync for the native desktop shortcut.
+func (r *clipboardRuntime) DesktopEnabled() bool {
+	if r == nil {
+		return false
+	}
+	return r.desktopEnabled.Load()
+}
+
+// AddSettingsHook registers a callback for clipboard settings changes, whether
+// they arrive through the management API or are written by the CLI.
+func (r *clipboardRuntime) AddSettingsHook(hook func()) {
+	if r == nil || hook == nil {
+		return
+	}
+	r.hooksMu.Lock()
+	r.settingsHooks = append(r.settingsHooks, hook)
+	r.hooksMu.Unlock()
+}
+
+func (r *clipboardRuntime) notifySettings(settings clipboard.Settings) {
+	if r == nil {
+		return
+	}
+	r.desktopEnabled.Store(settings.CaptureEnabled || settings.SyncEnabled)
+	r.hooksMu.Lock()
+	hooks := append([]func(){}, r.settingsHooks...)
+	r.hooksMu.Unlock()
+	for _, hook := range hooks {
+		hook()
+	}
 }
 
 // Close stops background loops before closing the SQLite database pool.
@@ -65,26 +102,6 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 	)
 	service.SetRuntimeProbe(clipboardruntime.NewProbe(capture, syncer))
 
-	if settings, err := service.GetSettings(ctx); err == nil {
-		capture.SetEnabled(settings.CaptureEnabled)
-	}
-
-	handler, err := webuiclipboardapi.NewHandler(dependencies.Authorizer, service)
-	if err != nil {
-		_ = store.Close()
-		return nil, nil, err
-	}
-	handler.Servers = serverProfiles.List
-	handler.SyncRun = func(runCtx context.Context) error {
-		return syncer.SyncOnce(runCtx)
-	}
-	handler.OnSettingsChanged = func(settings clipboard.Settings) {
-		capture.SetEnabled(settings.CaptureEnabled)
-		if settings.SyncEnabled && settings.SyncTargetProfileID != "" {
-			syncer.Trigger()
-		}
-	}
-
 	runCtx, runCancel := context.WithCancel(ctx)
 	runtime := &clipboardRuntime{
 		store:   store,
@@ -93,7 +110,32 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		syncer:  syncer,
 		cancel:  runCancel,
 	}
-	runtime.wg.Add(2)
+	if settings, err := service.GetSettings(ctx); err == nil {
+		capture.SetEnabled(settings.CaptureEnabled)
+		runtime.desktopEnabled.Store(settings.CaptureEnabled || settings.SyncEnabled)
+	}
+
+	applySettings := func(settings clipboard.Settings) {
+		capture.SetEnabled(settings.CaptureEnabled)
+		if settings.SyncEnabled && settings.SyncTargetProfileID != "" {
+			syncer.Trigger()
+		}
+		runtime.notifySettings(settings)
+	}
+
+	handler, err := webuiclipboardapi.NewHandler(dependencies.Authorizer, service)
+	if err != nil {
+		runCancel()
+		_ = store.Close()
+		return nil, nil, err
+	}
+	handler.Servers = serverProfiles.List
+	handler.SyncRun = func(runCtx context.Context) error {
+		return syncer.SyncOnce(runCtx)
+	}
+	handler.OnSettingsChanged = applySettings
+
+	runtime.wg.Add(3)
 	go func() {
 		defer runtime.wg.Done()
 		capture.Run(runCtx)
@@ -101,6 +143,36 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 	go func() {
 		defer runtime.wg.Done()
 		syncer.Run(runCtx)
+	}()
+	// `aih clip enable|disable` and other writers bypass the HTTP handler; watch the
+	// persisted flags so the desktop shortcut follows them without a restart.
+	go func() {
+		defer runtime.wg.Done()
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		var last clipboard.Settings
+		if settings, err := service.GetSettings(runCtx); err == nil {
+			last = settings
+		}
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				settings, err := service.GetSettings(runCtx)
+				if err != nil {
+					continue
+				}
+				if settings.CaptureEnabled == last.CaptureEnabled &&
+					settings.SyncEnabled == last.SyncEnabled &&
+					settings.SyncTargetProfileID == last.SyncTargetProfileID {
+					last = settings
+					continue
+				}
+				last = settings
+				runtime.notifySettings(settings)
+			}
+		}
 	}()
 
 	// Management routes under /v1/management/webui/clipboard automatically get /v0/webui/clipboard

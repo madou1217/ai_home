@@ -27,6 +27,10 @@ type Options struct {
 	Executor                                        *Executor
 	Chat                                            ChatPort
 	Catalog                                         func(context.Context) (translation.ModelCatalog, error)
+	// ClipboardEnabled drives the native clipboard shortcut. It is nil when the
+	// clipboard runtime is unavailable, and read on every configure send so WebUI
+	// toggles take effect without restarting the helper.
+	ClipboardEnabled func() bool
 }
 type focusLease struct{ Revision, Observed, Until int64 }
 type operation struct {

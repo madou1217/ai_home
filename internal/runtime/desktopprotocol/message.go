@@ -200,7 +200,7 @@ func Normalize(input map[string]any) (map[string]any, error) {
 			result["patch"] = SettingsPatch(patch)
 		}
 	case "configure":
-		for _, k := range []string{"target", "autoCopy", "copyScope", "executionTarget", "shortcut", "shortcutEnabled", "chatShortcut", "chatShortcutEnabled", "serverTarget", "serverTargets", "chatTarget", "chatModel", "defaultModel", "defaultProvider", "model", "provider", "port", "platform", "captureModes", "permission", "nativeShortcut", "largePasteChars", "readingTheme", "quickChatOrigin", "quickChatKey"} {
+		for _, k := range []string{"target", "autoCopy", "copyScope", "executionTarget", "shortcut", "shortcutEnabled", "chatShortcut", "chatShortcutEnabled", "clipboardShortcut", "clipboardEnabled", "clipboardOrigin", "clipboardKey", "serverTarget", "serverTargets", "chatTarget", "chatModel", "defaultModel", "defaultProvider", "model", "provider", "port", "platform", "captureModes", "permission", "nativeShortcut", "largePasteChars", "readingTheme", "quickChatOrigin", "quickChatKey"} {
 			if v, ok := input[k]; ok {
 				switch value := v.(type) {
 				case string:

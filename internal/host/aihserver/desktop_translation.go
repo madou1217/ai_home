@@ -21,7 +21,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuidesktoptranslationapi"
 )
 
-func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, chat *chatruntime.Service) (*desktoptranslation.Service, []webuiRoute, error) {
+func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, chat *chatruntime.Service, clipboard *clipboardRuntime) (*desktoptranslation.Service, []webuiRoute, error) {
 	database, err := appstate.DatabasePath(deps.AIHomeDir)
 	if err != nil {
 		return nil, nil, err
@@ -60,6 +60,7 @@ func newDesktopTranslation(ctx context.Context, deps webuiRouteDependencies, cha
 			}
 			return translation.BuildTranslationModelCatalog(ctx, buildTranslationCatalogDependencies(deps, deps.AIHomeDir), saved)
 		},
+		ClipboardEnabled: clipboard.DesktopEnabled,
 	})
 	if err != nil {
 		return nil, nil, err

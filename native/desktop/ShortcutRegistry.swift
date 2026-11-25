@@ -32,6 +32,7 @@ final class ShortcutRegistry {
   // The chatShortcut setting is intentionally independent from translation.
   static let defaultTranslationShortcut = "⌘⌥T"
   static let defaultChatShortcut = "⌘⌥C"
+  static let defaultClipboardShortcut = "⌘⌥V"
 
   private struct Binding: Hashable {
     let keyCode: UInt16

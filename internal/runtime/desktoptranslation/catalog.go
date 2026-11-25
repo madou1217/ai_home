@@ -100,6 +100,14 @@ func (s *Service) Configure() {
 		modelViews = append(modelViews, map[string]any{"id": m.ID, "provider": m.Provider, "label": m.ID})
 	}
 	config := map[string]any{"type": "configure", "quickChatKey": "", "model": settings.Model, "provider": settings.Provider, "target": settings.Target, "autoCopy": settings.AutoCopy, "copyScope": settings.CopyScope, "executionTarget": settings.ExecutionTarget, "shortcut": settings.Shortcut, "shortcutEnabled": settings.ShortcutEnabled, "chatShortcut": settings.ChatShortcut, "chatShortcutEnabled": settings.ChatShortcutEnabled, "serverTarget": target, "serverTargets": targets, "chatTarget": target, "chatModel": settings.Model, "languages": translation.ListLanguages(), "platform": s.options.Platform, "captureModes": platformStatus(s.options.Platform)["captureModes"], "permission": platformStatus(s.options.Platform)["permission"], "nativeShortcut": platformStatus(s.options.Platform)["shortcut"], "largePasteChars": paste, "readingTheme": settings.ReadingTheme, "models": modelViews, "defaultModel": models.DefaultModel, "defaultProvider": models.DefaultProvider, "quickChatOrigin": target.Origin}
+	// The clipboard panel always reads the local server: capture and storage run
+	// here, independent of which server the translation target points at.
+	config["clipboardOrigin"] = localOrigin
+	config["clipboardKey"] = ""
+	config["clipboardEnabled"] = s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()
+	if s.options.ManagementKey != nil && localOrigin != "" {
+		config["clipboardKey"] = s.options.ManagementKey()
+	}
 	local, _ := normalizeOrigin(localOrigin)
 	actual, _ := normalizeOrigin(target.Origin)
 	if local != "" && local == actual && target.ServerID == "" && s.options.ManagementKey != nil {

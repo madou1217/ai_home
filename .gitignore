@@ -99,3 +99,14 @@ C:\\*
 /aih-server
 /aih.exe
 /aih-server.exe
+
+# 本地临时验证产物：账号导出、GUI 截图、请求体、临时状态与 Playwright 会话目录。
+# 账号导出可能含明文凭据，任何情况下都不入库。
+/.tmpcheck/
+/state/
+/afterauth.yaml
+/auth1.yaml
+/clipboard.png
+/clipboard2.png
+/in2-body.txt
+**/.playwright-cli/

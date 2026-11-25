@@ -4,6 +4,8 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/aymanbagabas/go-pty v0.2.3 h1:hsqcTIUV8I4iTSh3HQl61CR2wh0YPS6gHOYLhAfWu/E=
 github.com/aymanbagabas/go-pty v0.2.3/go.mod h1:GLkgQovzqN5A1xMB79yHWiG1rhcquZCjkwKQGKFPdPg=
+github.com/coder/acp-go-sdk v0.20.0 h1:nrDOWYLy7a32ZNi6OYqw1oDhr5j34pfKPXmGoxYlvBc=
+github.com/coder/acp-go-sdk v0.20.0/go.mod h1:yKzM/3R9uELp4+nBAwwtkS0aN1FOFjo11CNPy37yFko=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/creack/pty v1.1.21 h1:1/QdRyBaHHJP61QkWMXlOIBfsgdDeeKfK8SYVUWJKf0=

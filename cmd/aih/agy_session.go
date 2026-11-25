@@ -25,6 +25,9 @@ const agySessionUsage = `aih agy session — 一条需求一个常驻 AGY 会话
   aih agy session resume <会话ID>
   aih agy session close <会话ID>
 
+  aih agy acp [--cwd <目录>] [--command <agy>] [--timeout <时长>] [--auto-approve] "<提示词>"
+                           用 ACP 直接驱动 AGY，暴露 read/write/run_command/审批
+
 说明：
   - 会话进程常驻：同一进程连续跑多轮，上下文不靠重启恢复；进程退出后 resume 用
     --conversation 续接。
@@ -120,6 +123,9 @@ type agySessionEvent struct {
 func runAGYCommand(ctx context.Context, args []string, runtime commandRuntime) (bool, error) {
 	if len(args) == 0 || args[0] != "agy" {
 		return false, nil
+	}
+	if len(args) >= 2 && args[1] == "acp" {
+		return true, runAGYACPCommand(ctx, args[2:], runtime)
 	}
 	if len(args) < 3 || args[1] != "session" || args[2] == "--help" || args[2] == "-h" {
 		_, _ = io.WriteString(runtime.stdout, agySessionUsage)

@@ -31,8 +31,8 @@ import (
 const (
 	syncNonceBytes          = 12
 	syncInterval            = 5 * time.Second
-	syncClientBatchMaxBytes = 6 * 1024 * 1024  // client splits push batches at 6 MiB accumulated
-	syncWireMaxBytes        = 12 * 1024 * 1024 // server request/response hard ceiling
+	syncClientBatchMaxBytes = 8 * 1024 * 1024  // client splits push batches at 6 MiB accumulated
+	syncWireMaxBytes        = 20 * 1024 * 1024 // server request/response hard ceiling
 	syncMaxRoundsPerPass    = 20
 	syncHTTPTimeout         = 30 * time.Second
 	syncStateLastSyncAtMs   = "lastSyncAtMs"
@@ -155,7 +155,13 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 		if len(item.Files) == 0 {
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
-		payload.Files = append([]string(nil), item.Files...)
+		// Send the exact canonical strings hashed by ingest; the receiver must not
+		// re-apply its own filepath.Abs to these paths.
+		canonical, normalized, err := canonicalizeFilesForSync(item.Files)
+		if err != nil || len(canonical) == 0 {
+			return SyncPayload{}, clipboard.ErrEmptyContent
+		}
+		payload.Files = normalized
 	case clipboard.KindImage:
 		content, err := service.ReadContentForItem(ctx, item)
 		if err != nil {
@@ -212,14 +218,11 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 		SourceApp:    payload.SourceApp,
 		RemoteID:     payload.OriginID,
 		SyncedAtMs:   syncedAtMs,
-		ObservedAtMs: payload.CreatedAtMs,
+		ObservedAtMs: syncedAtMs,
 	}
 	switch payload.Kind {
 	case clipboard.KindFile:
-		canonical, normalized, err := canonicalizeFilesForSync(payload.Files)
-		if err != nil {
-			return clipboard.IngestInput{}, err
-		}
+		normalized, canonical := clipboard.NormalizeSyncedFilePaths(payload.Files)
 		if len(canonical) == 0 {
 			return clipboard.IngestInput{}, clipboard.ErrEmptyContent
 		}
@@ -282,7 +285,11 @@ type Syncer struct {
 // NewSyncer constructs a Syncer with sensible defaults.
 func NewSyncer(service *clipboard.Service, resolver ProfileResolver, client *http.Client, clock func() time.Time) *Syncer {
 	if client == nil {
-		client = &http.Client{Timeout: syncHTTPTimeout}
+		client = &http.Client{
+			Timeout: syncHTTPTimeout,
+			// A 307/308 would replay the sync-key POST body; never follow.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
 	}
 	if clock == nil {
 		clock = time.Now
@@ -671,6 +678,15 @@ func (s *Syncer) pullRemote(ctx context.Context, endpoint, mgmtKey, profileID st
 			return decodeErr
 		}
 		if len(pulled.Items) == 0 {
+			// The server may skip unbuildable rows yet still advance the cursor;
+			// persist it and keep paging instead of livelocking on the same since.
+			if pulled.Cursor > sinceMs {
+				if err := s.Service.SetSyncState(ctx, cursorKey, strconv.FormatInt(pulled.Cursor, 10)); err != nil {
+					return err
+				}
+				sinceMs = pulled.Cursor
+				continue
+			}
 			return nil
 		}
 
@@ -703,9 +719,8 @@ func (s *Syncer) pullRemote(ctx context.Context, endpoint, mgmtKey, profileID st
 		} else {
 			return nil
 		}
-		if len(pulled.Items) < clipboard.SyncBatchMaxItems {
-			return nil
-		}
+		// Keep paging even when a page is short: the server can break on its byte
+		// budget before reaching the item limit, and more rows may follow.
 	}
 	return nil
 }

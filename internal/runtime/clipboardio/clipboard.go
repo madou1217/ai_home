@@ -127,6 +127,13 @@ func ensurePNG(data []byte) ([]byte, error) {
 	if _, mime, ok := DetectImageMIME(data); ok && mime == "image/png" {
 		return data, nil
 	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > clipboard.MaxImagePixels {
+		return nil, clipboard.ErrItemTooLarge
+	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err

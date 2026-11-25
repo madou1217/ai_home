@@ -104,8 +104,10 @@ func (s *Service) Configure() {
 	// here, independent of which server the translation target points at.
 	config["clipboardOrigin"] = localOrigin
 	config["clipboardKey"] = ""
-	config["clipboardEnabled"] = s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()
-	if s.options.ManagementKey != nil && localOrigin != "" {
+	clipboardEnabled := s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()
+	config["clipboardEnabled"] = clipboardEnabled
+	// Never hand the management key to a helper that has no clipboard access.
+	if clipboardEnabled && s.options.ManagementKey != nil && localOrigin != "" {
 		config["clipboardKey"] = s.options.ManagementKey()
 	}
 	local, _ := normalizeOrigin(localOrigin)

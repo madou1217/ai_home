@@ -1575,7 +1575,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		// Clipboard settings changes (WebUI or CLI) re-send configure so the native
 		// ⌘⌥V shortcut follows capture/sync without restarting the helper.
-		clipboardRuntimeService.AddSettingsHook(desktopTranslationService.Configure)
+		clipboardRuntimeService.AddSettingsHook(func() {
+			go desktopTranslationService.ReconcileClipboard(context.Background())
+		})
 		desktopChanged.attach(desktopTranslationService)
 		webuiRoutes = append(webuiRoutes, desktopRoutes...)
 	}

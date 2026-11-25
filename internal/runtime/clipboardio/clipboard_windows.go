@@ -255,12 +255,15 @@ func runPowerShellCapture(ctx context.Context, ps string, script string, maxByte
 	}
 	limit := int64(maxBytes) + 1
 	raw, readErr := io.ReadAll(io.LimitReader(stdout, limit))
+	if int64(len(raw)) > int64(maxBytes) {
+		cancel()
+		_ = stdout.Close()
+		_ = cmd.Wait()
+		return nil, false, clipboard.ErrItemTooLarge
+	}
 	waitErr := cmd.Wait()
 	if readErr != nil || waitErr != nil {
 		return nil, false, nil
-	}
-	if int64(len(raw)) > int64(maxBytes) {
-		return nil, false, clipboard.ErrItemTooLarge
 	}
 	return raw, true, nil
 }
@@ -268,5 +271,6 @@ func runPowerShellCapture(ctx context.Context, ps string, script string, maxByte
 func escapePowerShellDoubleQuoted(s string) string {
 	s = strings.ReplaceAll(s, "`", "``")
 	s = strings.ReplaceAll(s, `"`, "`\"")
+	s = strings.ReplaceAll(s, "$", "`$")
 	return s
 }

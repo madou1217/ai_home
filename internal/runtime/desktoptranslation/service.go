@@ -131,12 +131,41 @@ func New(ctx context.Context, options Options) (*Service, error) {
 }
 func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
-	enabled := s.enabled && !s.closed
+	// The helper is shared by translation and clipboard; either capability keeps
+	// it alive so ⌘⌥V works even when System Translation is off.
+	enabled := (s.enabled || s.clipboardDesiredLocked()) && !s.closed
 	s.mu.Unlock()
 	if !enabled {
 		return nil
 	}
 	return s.launcher.Start(ctx)
+}
+
+// clipboardDesiredLocked is called with s.mu held.
+func (s *Service) clipboardDesiredLocked() bool {
+	return s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()
+}
+
+// ReconcileClipboard aligns the helper lifecycle with the clipboard toggle. It is
+// called after clipboard settings change, including changes written by the CLI.
+func (s *Service) ReconcileClipboard(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	translate := s.enabled
+	s.mu.Unlock()
+	if translate || (s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled()) {
+		if err := s.launcher.Start(ctx); err == nil {
+			s.Configure()
+		}
+		return
+	}
+	_ = s.launcher.Stop(ctx)
 }
 func (s *Service) Close() error {
 	s.mu.Lock()
@@ -272,6 +301,10 @@ func (s *Service) SetEnabled(ctx context.Context, enabled bool) error {
 	s.cancelLocked()
 	s.mu.Unlock()
 	if enabled {
+		return s.Start(ctx)
+	}
+	if s.options.ClipboardEnabled != nil && s.options.ClipboardEnabled() {
+		// Translation is off but clipboard still needs the helper.
 		return s.Start(ctx)
 	}
 	return s.launcher.Stop(ctx)

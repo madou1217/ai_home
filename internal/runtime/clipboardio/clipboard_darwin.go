@@ -34,6 +34,12 @@ func (d *darwinIO) Probe() Capability {
 	return Capability{Supported: true}
 }
 
+// darwinClipboardEnv forces the UTF-8 locale that launchd omits; without it
+// pbpaste/pbcopy fall back to MacRoman and corrupt non-ASCII text.
+func darwinClipboardEnv() []string {
+	return append(os.Environ(), "LC_CTYPE=UTF-8", "LANG=en_US.UTF-8")
+}
+
 func (d *darwinIO) ReadText(ctx context.Context, maxBytes int) (string, bool, error) {
 	if maxBytes <= 0 {
 		maxBytes = clipboard.MaxTextBytes
@@ -42,6 +48,7 @@ func (d *darwinIO) ReadText(ctx context.Context, maxBytes int) (string, bool, er
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "pbpaste", "-Prefer", "txt")
+	cmd.Env = darwinClipboardEnv()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", false, err
@@ -52,12 +59,16 @@ func (d *darwinIO) ReadText(ctx context.Context, maxBytes int) (string, bool, er
 	}
 	limit := int64(maxBytes) + 1
 	raw, readErr := io.ReadAll(io.LimitReader(stdout, limit))
+	if int64(len(raw)) > int64(maxBytes) {
+		// Stop the producer before Wait: it blocks on the full pipe otherwise.
+		cancel()
+		_ = stdout.Close()
+		_ = cmd.Wait()
+		return "", false, clipboard.ErrItemTooLarge
+	}
 	waitErr := cmd.Wait()
 	if readErr != nil || waitErr != nil {
 		return "", false, nil
-	}
-	if int64(len(raw)) > int64(maxBytes) {
-		return "", false, clipboard.ErrItemTooLarge
 	}
 	if len(raw) == 0 {
 		return "", false, nil
@@ -164,6 +175,7 @@ func (d *darwinIO) WriteText(ctx context.Context, text string) error {
 	cmdCtx, cancel := context.WithTimeout(ctx, darwinCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "pbcopy")
+	cmd.Env = darwinClipboardEnv()
 	cmd.Stdin = strings.NewReader(text)
 	cmd.Stdout = nil
 	cmd.Stderr = nil

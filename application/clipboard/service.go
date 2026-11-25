@@ -131,14 +131,22 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 
 	switch {
 	case input.Kind == KindFile || len(input.Files) > 0:
-		normalized, normErr := normalizeFilePaths(input.Files)
-		if normErr != nil {
-			return IngestResult{}, normErr
+		var normalized []string
+		var canonical []byte
+		if input.SyncedAtMs > 0 {
+			// Synced peers keep their own path syntax; hash the canonical raw list.
+			normalized, canonical = NormalizeSyncedFilePaths(input.Files)
+		} else {
+			var normErr error
+			normalized, normErr = normalizeFilePaths(input.Files)
+			if normErr != nil {
+				return IngestResult{}, normErr
+			}
+			canonical = []byte(strings.Join(normalized, "\n"))
 		}
 		if len(normalized) == 0 {
 			return IngestResult{}, ErrEmptyContent
 		}
-		canonical := []byte(strings.Join(normalized, "\n"))
 		textLimit := minInt64(MaxTextBytes, maxItemBytes)
 		if int64(len(canonical)) > textLimit {
 			return IngestResult{}, ErrItemTooLarge
@@ -153,7 +161,7 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 		item.Files = normalized
 		item.Preview = buildFilePreview(normalized)
 
-	case input.Kind == KindImage || strings.HasPrefix(lowerMIME, "image/") || (len(input.Data) > 0 && input.Text == ""):
+	case input.Kind == KindImage || strings.HasPrefix(lowerMIME, "image/") || (input.Kind == "" && len(input.Data) > 0 && input.Text == ""):
 		if len(input.Data) == 0 {
 			return IngestResult{}, ErrEmptyContent
 		}
@@ -463,26 +471,28 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 // UpdateSettings validates and persists partial settings updates.
 func (s *Service) UpdateSettings(ctx context.Context, patch SettingsPatch) (Settings, error) {
 	nowMs := s.clock().UnixMilli()
+	// Validate every field before the first write: a rejected patch must not leave
+	// earlier fields persisted (partial apply used to survive HTTP 400).
+	if patch.RetentionDays != nil && (*patch.RetentionDays < 1 || *patch.RetentionDays > 3650) {
+		return Settings{}, fmt.Errorf("%w: retentionDays must be between 1 and 3650", ErrInvalidInput)
+	}
+	if patch.MaxItems != nil && (*patch.MaxItems < 10 || *patch.MaxItems > 50000) {
+		return Settings{}, fmt.Errorf("%w: maxItems must be between 10 and 50000", ErrInvalidInput)
+	}
+	if patch.MaxItemBytes != nil && (*patch.MaxItemBytes < 1024 || *patch.MaxItemBytes > MaxImageBytes) {
+		return Settings{}, fmt.Errorf("%w: maxItemBytes must be between 1024 and %d", ErrInvalidInput, MaxImageBytes)
+	}
 	if patch.RetentionDays != nil {
-		if *patch.RetentionDays < 1 || *patch.RetentionDays > 3650 {
-			return Settings{}, fmt.Errorf("%w: retentionDays must be between 1 and 3650", ErrInvalidInput)
-		}
 		if err := s.store.SetSetting(ctx, SettingRetentionDays, strconv.Itoa(*patch.RetentionDays), nowMs); err != nil {
 			return Settings{}, err
 		}
 	}
 	if patch.MaxItems != nil {
-		if *patch.MaxItems < 10 || *patch.MaxItems > 50000 {
-			return Settings{}, fmt.Errorf("%w: maxItems must be between 10 and 50000", ErrInvalidInput)
-		}
 		if err := s.store.SetSetting(ctx, SettingMaxItems, strconv.Itoa(*patch.MaxItems), nowMs); err != nil {
 			return Settings{}, err
 		}
 	}
 	if patch.MaxItemBytes != nil {
-		if *patch.MaxItemBytes < 1024 || *patch.MaxItemBytes > MaxImageBytes {
-			return Settings{}, fmt.Errorf("%w: maxItemBytes must be between 1024 and %d", ErrInvalidInput, MaxImageBytes)
-		}
 		if err := s.store.SetSetting(ctx, SettingMaxItemBytes, strconv.FormatInt(*patch.MaxItemBytes, 10), nowMs); err != nil {
 			return Settings{}, err
 		}

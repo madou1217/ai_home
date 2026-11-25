@@ -114,6 +114,11 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		capture.SetEnabled(settings.CaptureEnabled)
 		runtime.desktopEnabled.Store(settings.CaptureEnabled || settings.SyncEnabled)
 	}
+	// Enforce retention on startup: short-lived/CLI-only hosts never hit the hourly tick.
+	if pruneCtx, cancel := context.WithTimeout(ctx, 15*time.Second); true {
+		_, _ = service.Prune(pruneCtx)
+		cancel()
+	}
 
 	applySettings := func(settings clipboard.Settings) {
 		capture.SetEnabled(settings.CaptureEnabled)

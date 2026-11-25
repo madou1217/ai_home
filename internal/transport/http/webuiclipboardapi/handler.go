@@ -81,7 +81,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "clipboard_unavailable", "剪贴板服务未就绪")
 		return
 	}
-	if h.Authorizer != nil && !h.Authorizer.Authorized(r) {
+	if h.Authorizer == nil || !h.Authorizer.Authorized(r) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(w, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
@@ -357,6 +357,24 @@ func (h *Handler) handleGetItem(w http.ResponseWriter, r *http.Request, id strin
 	writeJSON(w, http.StatusOK, map[string]any{"item": detail})
 }
 
+// safeItemContentType never reflects caller-supplied MIME verbatim: an SVG/HTML
+// payload echoed same-origin would execute in the WebUI. Unknown types download.
+func safeItemContentType(kind clipboard.Kind, mime string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0]))
+	switch kind {
+	case clipboard.KindImage:
+		switch lower {
+		case "image/png", "image/jpeg", "image/gif", "image/webp":
+			return lower, true
+		}
+		return "application/octet-stream", false
+	case clipboard.KindText, clipboard.KindLink, clipboard.KindFile:
+		return "text/plain; charset=utf-8", true
+	default:
+		return "application/octet-stream", false
+	}
+}
+
 func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id string) {
 	item, err := h.Service.Get(r.Context(), id)
 	if err != nil {
@@ -368,7 +386,14 @@ func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id s
 		h.writeDomainError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", content.MIME)
+	contentType, inline := safeItemContentType(item.Kind, content.MIME)
+	w.Header().Set("Content-Type", contentType)
+	if inline {
+		w.Header().Set("Content-Disposition", "inline")
+	} else {
+		w.Header().Set("Content-Disposition", `attachment; filename="clipboard-`+item.ID+`"`)
+	}
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)

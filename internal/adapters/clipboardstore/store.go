@@ -87,9 +87,14 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 	if err := businessdb.CheckReady(ctx, dbPath); err != nil {
 		return nil, err
 	}
+	if err := os.Chmod(dbPath, 0o600); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("收紧剪贴板数据库权限失败: %w", err)
+	}
 	fileURL := sqlitefile.URL(dbPath)
 	query := fileURL.Query()
 	query.Set("mode", "rwc")
+	// Deferred read→write upgrades return SQLITE_BUSY_SNAPSHOT without retry.
+	query.Set("_txlock", "immediate")
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "journal_mode(WAL)")
 	query.Add("_pragma", "synchronous(NORMAL)")
@@ -299,7 +304,9 @@ FROM clipboard_items`)
 
 // GetItemByID loads a full item row by exact ID.
 func (s *Store) GetItemByID(ctx context.Context, id string) (clipboard.Item, bool, error) {
-	return queryFullItem(ctx, s.db, `WHERE id = ?`, id)
+	// Deleted rows stay only as tombstones for a short retention window; they
+	// must not be readable through detail/content or CLI paste.
+	return queryFullItem(ctx, s.db, `WHERE id = ? AND deleted = 0`, id)
 }
 
 // GetItemByPrefix resolves a unique ID prefix across active items first, then all items.

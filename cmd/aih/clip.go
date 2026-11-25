@@ -666,7 +666,10 @@ func runClipSync(ctx context.Context, homeDir string, service *clipboard.Service
 			_, endpoint, key, rErr := resolveCLIControlPlaneProfile(rCtx, homeDir, id)
 			return endpoint, key, rErr
 		},
-		&http.Client{Timeout: 30 * time.Second},
+		&http.Client{
+			Timeout:       30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 		time.Now,
 	)
 

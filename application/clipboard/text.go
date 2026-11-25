@@ -1,6 +1,7 @@
 package clipboard
 
 import (
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -37,4 +38,26 @@ func NormalizeText(raw string) string {
 		}
 	}
 	return builder.String()
+}
+
+// NormalizeSyncedFilePaths canonicalizes a synced file list without the receiving
+// OS's filepath rules: trim, drop empties/duplicates, sort, and join with newlines.
+// The same bytes are hashed by sender and receiver, so Windows/macOS/Linux peers
+// agree even though their absolute path syntax differs.
+func NormalizeSyncedFilePaths(files []string) ([]string, []byte) {
+	seen := make(map[string]struct{}, len(files))
+	out := make([]string, 0, len(files))
+	for _, raw := range files {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		if _, dup := seen[trimmed]; dup {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	sort.Strings(out)
+	return out, []byte(strings.Join(out, "\n"))
 }

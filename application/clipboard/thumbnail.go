@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	thumbnailMaxEdge   = 320
-	thumbnailMaxBytes  = 64 * 1024
-	thumbnailInitQual  = 80
-	thumbnailMinEdge   = 64
+	thumbnailMaxEdge  = 320
+	thumbnailMaxBytes = 64 * 1024
+	thumbnailInitQual = 80
+	thumbnailMinEdge  = 64
 )
 
 // GenerateThumbnail decodes PNG/JPEG/GIF/WebP bytes, resizes using nearest-neighbor to max 320px,
@@ -24,6 +24,13 @@ const (
 func GenerateThumbnail(data []byte) (thumb []byte, width int, height int, err error) {
 	if len(data) == 0 {
 		return nil, 0, 0, ErrEmptyContent
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > MaxImagePixels {
+		return nil, config.Width, config.Height, ErrItemTooLarge
 	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {

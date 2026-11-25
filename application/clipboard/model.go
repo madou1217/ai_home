@@ -23,10 +23,13 @@ const (
 	MaxTextBytes = 1024 * 1024
 	// MaxImageBytes is the maximum accepted binary image payload size (8 MiB).
 	MaxImageBytes = 8 * 1024 * 1024
-	// MaxRequestBytes is the maximum HTTP request body size (12 MiB).
-	MaxRequestBytes = 12 * 1024 * 1024
+	// MaxRequestBytes leaves room for double base64 (payload + sealed envelope)
+	// of an 8 MiB image: ~8 MiB -> ~10.7 MiB JSON -> ~14.2 MiB sealed.
+	MaxRequestBytes = 20 * 1024 * 1024
 	// MaxPreviewRunes is the maximum single-line preview length.
 	MaxPreviewRunes = 240
+	// MaxImagePixels caps decoded dimensions before thumbnailing (decompression bombs).
+	MaxImagePixels = 50_000_000
 	// DetailTextPreviewBytes caps text returned by GET /items/{id}; full text is fetched via /content.
 	DetailTextPreviewBytes = 64 * 1024
 

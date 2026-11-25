@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
 const (
@@ -98,7 +100,7 @@ func ClaudeServers() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	sources := []string{filepath.Join(home, ".claude", ".claude.json")}
+	sources := []string{filepath.Join(append([]string{home}, providerroot.ConfigPath(ProviderClaude, ".claude.json")...)...)}
 	if cwd, err := os.Getwd(); err == nil {
 		sources = append(sources, filepath.Join(cwd, ".mcp.json"))
 	}

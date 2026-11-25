@@ -63,8 +63,14 @@ type Record struct {
 	LastError      string `json:"lastError,omitempty"`
 	LastReply      string `json:"lastReply,omitempty"`
 	TurnCount      int    `json:"turnCount"`
-	CreatedAt      int64  `json:"createdAt"`
-	UpdatedAt      int64  `json:"updatedAt"`
+	// RemoteOffset 是远端 out.ndjson 已消费的字节位置；重启后从这里续接，不丢在途结果。
+	RemoteOffset int64 `json:"remoteOffset,omitempty"`
+	// Pending* 是已写进远端、尚未拿到结果的一轮；Server 重启后据此接管。
+	PendingTurnID int64  `json:"pendingTurnId,omitempty"`
+	PendingPrompt string `json:"pendingPrompt,omitempty"`
+	PendingPeerID string `json:"pendingPeerId,omitempty"`
+	CreatedAt     int64  `json:"createdAt"`
+	UpdatedAt     int64  `json:"updatedAt"`
 }
 
 // TurnView 是给调用方看的一轮。
@@ -201,6 +207,7 @@ func (manager *Manager) startProcess(ctx context.Context, record Record) (*sessi
 		Model:          record.Model,
 		Effort:         record.Effort,
 		ConversationID: record.ConversationID,
+		ResumeOffset:   record.RemoteOffset,
 	}
 	if record.Local {
 		spec.WorkDir = record.RemoteRoot
@@ -285,6 +292,12 @@ func (manager *Manager) handleEvent(sess *session, event sessionhost.Event) {
 			sess.record.ConversationID = conversation
 		}
 		sess.record.TurnCount++
+		sess.record.PendingTurnID = 0
+		sess.record.PendingPrompt = ""
+		sess.record.PendingPeerID = ""
+		if offset := sess.proc.RemoteOffset(); offset > 0 {
+			sess.record.RemoteOffset = offset
+		}
 		if event.Kind == "result" {
 			sess.record.Status = StatusIdle
 			sess.record.LastReply = event.Text
@@ -337,7 +350,14 @@ func (manager *Manager) Submit(ctx context.Context, id, content, peerMessageID s
 	if err != nil {
 		return 0, fmt.Errorf("agy_session_restart: %w", err)
 	}
-	turnID, err := sess.proc.Submit(content, peerMessageID)
+	turnID, err := sess.proc.Submit(ctx, content, peerMessageID)
+	if err == nil && sess.proc.IsRemote() {
+		manager.mu.Lock()
+		sess.record.PendingTurnID = turnID
+		sess.record.PendingPrompt = content
+		sess.record.PendingPeerID = peerMessageID
+		manager.mu.Unlock()
+	}
 	if err != nil {
 		// 进程在长轮之间掉线（例如 SSH 255）时重新拉起一次再投递同一轮，
 		// 不把用户的追问静默丢掉。
@@ -345,7 +365,7 @@ func (manager *Manager) Submit(ctx context.Context, id, content, peerMessageID s
 		restartErr := sess.proc.EnsureStarted(retryCtx)
 		retryCancel()
 		if restartErr == nil {
-			turnID, err = sess.proc.Submit(content, peerMessageID)
+			turnID, err = sess.proc.Submit(ctx, content, peerMessageID)
 		}
 		if err != nil {
 			return 0, err
@@ -577,7 +597,7 @@ func (manager *Manager) load() error {
 		spec := sessionhost.Spec{
 			SessionID: record.ID, Binary: record.Binary, WorkDir: record.RemoteRoot,
 			HomeDir: record.AccountHome, Model: record.Model, Effort: record.Effort,
-			ConversationID: record.ConversationID,
+			ConversationID: record.ConversationID, ResumeOffset: record.RemoteOffset,
 		}
 		if !record.Local {
 			if transport, err := manager.resolveSSH(record.ConnectionID); err == nil {
@@ -585,6 +605,20 @@ func (manager *Manager) load() error {
 			}
 		}
 		sess.proc = sessionhost.New(spec)
+		// 重启后恢复的会话同样必须装回事件回调与主循环，否则结果回来了也没人更新状态/回执。
+		sess.cancel = manager.attach(context.Background(), sess)
+		if record.PendingTurnID > 0 && sess.proc.IsRemote() {
+			sess.proc.AdoptPendingTurn(record.PendingTurnID, record.PendingPrompt, record.PendingPeerID)
+			record.Status = StatusRunning
+			// 远端在途回合的结果还在 out.ndjson：重启后立刻接上跟随，不依赖下一次 say。
+			proc := sess.proc
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				_ = proc.EnsureStarted(ctx)
+			}()
+		}
+		sess.record = record
 		manager.mu.Lock()
 		manager.sessions[record.ID] = sess
 		manager.mu.Unlock()

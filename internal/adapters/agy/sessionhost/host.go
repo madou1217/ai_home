@@ -61,6 +61,8 @@ type Spec struct {
 	ConversationID string
 	// SSH 非空时在远端执行；否则在本机直接执行。
 	SSH *SSHTransport
+	// ResumeOffset 是远端 out.ndjson 的字节偏移；>0 时从该位置继续消费（Server 重启后续接）。
+	ResumeOffset int64
 }
 
 // TurnState 是一轮对话的生命周期状态。
@@ -115,20 +117,27 @@ type Process struct {
 	nextTurnID   int64
 	stderrTail   string
 
-	events     []Event
-	nextEvent  int64
-	sink       Sink
-	writerWake chan struct{}
-	done       chan struct{}
+	events       []Event
+	nextEvent    int64
+	sink         Sink
+	writerWake   chan struct{}
+	done         chan struct{}
+	remote       *remoteSession
+	followerCtx  context.CancelFunc
+	remoteOffset int64
 }
 
 // New 创建一个未启动的会话宿主。
 func New(spec Spec) *Process {
-	return &Process{
+	proc := &Process{
 		spec:       spec,
 		writerWake: make(chan struct{}, 1),
 		done:       make(chan struct{}),
 	}
+	if isRemoteSpec(spec) {
+		proc.remote = newRemoteSession(spec)
+	}
+	return proc
 }
 
 // ConversationID 返回当前 agy conversation id（未初始化时为空）。
@@ -163,15 +172,21 @@ func (p *Process) EnsureStarted(ctx context.Context) error {
 		p.mu.Unlock()
 		return errors.New("agy_session_closed")
 	}
-	if p.alive || p.starting {
+	if p.starting || (p.alive && (p.remote == nil || p.followerCtx != nil)) {
 		p.mu.Unlock()
 		return nil
 	}
 	p.starting = true
 	conversation := p.conversation
+	remote := p.remote
 	p.mu.Unlock()
 
-	err := p.start(conversation)
+	var err error
+	if remote != nil {
+		err = p.ensureRemoteStarted(ctx, remote, conversation)
+	} else {
+		err = p.start(conversation)
+	}
 
 	p.mu.Lock()
 	p.starting = false
@@ -384,7 +399,7 @@ func (p *Process) handleExit(err error) {
 }
 
 // Submit 入队一轮对话。调用方必须先 EnsureStarted。
-func (p *Process) Submit(prompt, peerMessageID string) (int64, error) {
+func (p *Process) Submit(ctx context.Context, prompt, peerMessageID string) (int64, error) {
 	text := strings.TrimSpace(prompt)
 	if text == "" {
 		return 0, errors.New("agy_session_prompt_required")
@@ -404,6 +419,40 @@ func (p *Process) Submit(prompt, peerMessageID string) (int64, error) {
 	}
 	p.nextTurnID++
 	turn := &Turn{ID: p.nextTurnID, Prompt: text, State: TurnQueued, PeerID: peerMessageID}
+	remote := p.remote
+	if remote != nil {
+		// 远端模式：立即写入远端收件行；结果按 FIFO 归属。
+		if p.current == nil {
+			p.current = turn
+			turn.State = TurnRunning
+			turn.StartedAt = nowMillis()
+			turnID := turn.ID
+			p.mu.Unlock()
+			line, encErr := encodeUserMessage(text)
+			if encErr != nil {
+				p.finishTurn(map[string]any{"status": "ERROR", "error": "agy_session_encode_failed"})
+				return 0, encErr
+			}
+			if writeErr := remote.writeTurn(ctx, line); writeErr != nil {
+				p.finishTurn(map[string]any{"status": "ERROR", "error": writeErr.Error()})
+				return 0, writeErr
+			}
+			p.emit(Event{TurnID: turnID, Kind: "turn-start"})
+			return turnID, nil
+		}
+		p.queue = append(p.queue, turn)
+		turnID := turn.ID
+		p.mu.Unlock()
+		line, encErr := encodeUserMessage(text)
+		if encErr != nil {
+			return 0, encErr
+		}
+		if writeErr := remote.writeTurn(ctx, line); writeErr != nil {
+			return 0, writeErr
+		}
+		p.emit(Event{TurnID: turnID, Kind: "process", Status: "queued"})
+		return turnID, nil
+	}
 	p.queue = append(p.queue, turn)
 	turnID := turn.ID
 	p.mu.Unlock()
@@ -435,7 +484,92 @@ func (p *Process) Run(ctx context.Context) {
 	}
 }
 
+// IsRemote 报告该会话是否跑在远端自持模式（tmux + 文件收发）。
+func (p *Process) IsRemote() bool {
+	return p.remote != nil
+}
+
+// AdoptPendingTurn 在 Server 重启后接管上一进程在途的一轮：
+// 它的输入已经写进远端，结果仍会从 out.ndjson 读回来。
+func (p *Process) AdoptPendingTurn(turnID int64, prompt, peerMessageID string) {
+	if turnID <= 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	turn := &Turn{ID: turnID, Prompt: prompt, State: TurnRunning, PeerID: peerMessageID, StartedAt: nowMillis()}
+	p.current = turn
+	if turnID > p.nextTurnID {
+		p.nextTurnID = turnID
+	}
+}
+
+// ensureRemoteStarted 保证远端管道与本地跟随协程都在位；Server 重启后从偏移续接。
+func (p *Process) ensureRemoteStarted(ctx context.Context, remote *remoteSession, conversation string) error {
+	pipelineStarted := false
+	if !remote.aliveRemote(ctx) {
+		p.mu.Lock()
+		interrupted := p.current != nil
+		p.mu.Unlock()
+		if err := remote.startPipeline(ctx, conversation); err != nil {
+			return err
+		}
+		pipelineStarted = true
+		// 远端管道已经不在：在途那轮的结果不会再来，明确失败，别让会话永远卡在 running。
+		if interrupted {
+			p.finishTurn(map[string]any{"status": "ERROR", "error": "agy_remote_pipeline_restarted"})
+		}
+	}
+	p.mu.Lock()
+	p.alive = true
+	offset := p.remoteOffset
+	if offset == 0 {
+		offset = p.spec.ResumeOffset
+	}
+	needFollower := p.followerCtx == nil
+	if needFollower {
+		followCtx, cancel := context.WithCancel(context.Background())
+		p.followerCtx = cancel
+		conversationKnown := p.conversation != ""
+		p.mu.Unlock()
+		go remote.follow(followCtx, offset, p.consumeLine, func(error) {})
+		if pipelineStarted && !conversationKnown {
+			// tail -n +1 从文件头读，提示不会落在盲区；只需短暂等 init 以尽早拿到 conversation。
+			waitCtx, waitCancel := context.WithTimeout(ctx, 3*time.Second)
+			defer waitCancel()
+			for waitCtx.Err() == nil {
+				p.mu.Lock()
+				ready := p.conversation != ""
+				p.mu.Unlock()
+				if ready {
+					break
+				}
+				select {
+				case <-waitCtx.Done():
+				case <-time.After(150 * time.Millisecond):
+				}
+			}
+		}
+		return nil
+	}
+	p.mu.Unlock()
+	return nil
+}
+
+// RemoteOffset 返回远端输出已消费到的字节位置，供上层持久化。
+func (p *Process) RemoteOffset() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.remoteOffset == 0 {
+		return p.spec.ResumeOffset
+	}
+	return p.remoteOffset
+}
+
 func (p *Process) drainQueue() {
+	if p.remote != nil {
+		return
+	}
 	for {
 		p.mu.Lock()
 		if p.closed || !p.alive || p.current != nil || len(p.queue) == 0 {

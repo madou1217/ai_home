@@ -340,7 +340,7 @@ func (handler *Handler) runCodex429RetryLoop(
 				writeResponseHeaders(response, upstream, selection.AccountRef, metadata.Stream)
 				flushResponse(response)
 			}
-			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream, probed.committed, trail)
+			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream, probed.committed, attemptStarted, trail)
 			_ = upstream.Body.Close()
 			handler.Upstream429Retries.ReportOutcome(
 				reqState,

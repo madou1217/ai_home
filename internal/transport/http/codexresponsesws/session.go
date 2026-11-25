@@ -8,6 +8,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
+	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 )
 
 type clientFrame struct {
@@ -450,7 +451,7 @@ func pumpUpstreamToClient(
 			}
 			return
 		}
-		if !terminal && !observer.Committed() && isPreambleEvent(payload) &&
+		if !terminal && !observer.Committed() && codexwire.IsPreambleEvent(payload, "") &&
 			len(held) < maxHeldPreambleFrames {
 			held = append(held, payload)
 			continue

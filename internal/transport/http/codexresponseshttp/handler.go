@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
@@ -57,6 +58,13 @@ type Selection struct {
 
 type Cursor interface {
 	Next(context.Context) (Selection, bool, error)
+}
+
+// CursorDiagnostics 由候选游标可选实现：整轮扫空时给出低敏原因，
+// 让 503 no_available_account 能区分“没有候选”与“候选被额度、模型目录、
+// 冷却或并发全部挡下”。
+type CursorDiagnostics interface {
+	ExhaustedReason() string
 }
 type AccountSource interface {
 	Open(context.Context, string) (Cursor, error)
@@ -189,6 +197,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			return
 		}
 		if err != nil || pinCursor == nil {
+			trail.selection(err)
 			handler.fail(response, trail, "no_available_account")
 			return
 		}
@@ -206,6 +215,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			return
 		}
 		if err != nil || cursor == nil {
+			trail.selection(err)
 			handler.fail(response, trail, "no_available_account")
 			return
 		}
@@ -321,7 +331,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 					flushResponse(response)
 				}
 				timing.markCommitted()
-				handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream, probed.committed, trail)
+				handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream, probed.committed, attemptStarted, trail)
 				_ = upstream.Body.Close()
 				return
 			}
@@ -440,6 +450,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		// 与 Canonical 汇合点和 WS 入口一致，交回可重试的 429，而不是 503。
 		if selectionErr != nil {
 			trail.selection(selectionErr)
+		}
+		if reason := cursorReasons(phaseCursors); reason != "" {
+			trail.explain(reason)
 		}
 		if errors.Is(selectionErr, accountrouting.ErrConcurrencyExhausted) {
 			handler.failAdmission(response, trail, admission.NewSaturationError(admission.ReasonAccountSaturated))
@@ -600,4 +613,22 @@ func writeError(response http.ResponseWriter, code string) {
 func isStatelessCredential(credential accountapp.Credential) bool {
 	_, oauth := credential.(*codexauth.OAuthAuth)
 	return oauth
+}
+
+// cursorReasons 汇总本轮所有候选游标的扫空诊断；无游标或无诊断时返回空。
+//
+// 只用于失败摘要：503 no_available_account 过去只有 attempts=[]，无法区分
+// “没有候选”与“候选被额度门禁/模型目录/冷却全部挡下”。
+func cursorReasons(cursors []Cursor) string {
+	reasons := make([]string, 0, len(cursors))
+	for _, cursor := range cursors {
+		diagnostics, ok := cursor.(CursorDiagnostics)
+		if !ok {
+			continue
+		}
+		if reason := diagnostics.ExhaustedReason(); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	return strings.Join(reasons, "; ")
 }

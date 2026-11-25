@@ -56,6 +56,7 @@ func writeResponseHeaders(response http.ResponseWriter, upstream *http.Response,
 }
 
 // deliver 交付上游响应体；committed 表示响应头已由提前交付写出，这里不能再写。
+// attemptStarted 用于把「已提交后才发现的上游错误」计入失败摘要的耗时。
 func (handler *Handler) deliver(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -64,6 +65,7 @@ func (handler *Handler) deliver(
 	selection Selection,
 	stream bool,
 	committed bool,
+	attemptStarted time.Time,
 	trail *failureTrail,
 ) {
 	if !committed {
@@ -122,6 +124,13 @@ func (handler *Handler) deliver(
 		return
 	} else if observed.failure.IsValid() {
 		handler.recordFailure(request.Context(), route, selection, observed.failure)
+		// 已提交后才发现的上游错误无法再换号：把分类写进失败摘要，否则这类
+		// 「200 + 流内 error」在服务端完全不可见（实际事故中 37 次容量错误
+		// 全部消失，只剩客户端自己重连）。
+		if trail != nil {
+			trail.attempt(selection.AccountRef, "postcommit_failure", observed.failure, "", attemptStarted)
+			trail.finish(http.StatusOK, "upstream_stream_error")
+		}
 	} else if !observed.incomplete {
 		if upstreamErr == nil {
 			upstreamErr = io.ErrUnexpectedEOF

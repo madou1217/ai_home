@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -203,11 +204,27 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		if err != nil {
 			return true, err
 		}
-		if recorded && isRetryableFailoverKind(failure.RuntimeKind()) && !observer.Committed() {
+		committed := observer.Committed()
+		failover := recorded && isRetryableFailoverKind(failure.RuntimeKind()) && !committed
+		action := "forward"
+		if failover {
 			observer.mu.Lock()
 			observer.retryableFailover = true
 			observer.mu.Unlock()
+			action = "failover"
 		}
+		// 上游终态在 WS 入口只有两种去向：未提交时换号（1011），已提交或
+		// 不可重试时原样转发。把分类与去向写进日志，否则 unclassified 的
+		// 容量错误在服务端完全不可见。
+		log.Printf(
+			"codex responses ws upstream failure model=%s account=%s kind=%s code=%s committed=%t action=%s",
+			observer.model,
+			observer.route.AccountRef(),
+			failure.RuntimeKind(),
+			failure.ResponseFailure().Code(),
+			committed,
+			action,
+		)
 		return true, nil
 	case "response.incomplete":
 		_, err := observer.finishTurn()

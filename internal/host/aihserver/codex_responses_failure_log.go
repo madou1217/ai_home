@@ -53,5 +53,8 @@ func formatCodexResponsesFailure(report codexresponseshttp.FailureReport) string
 	if report.Selection != "" {
 		merged += fmt.Sprintf(" selection_error=%q", report.Selection)
 	}
+	if report.Candidate != "" {
+		merged += fmt.Sprintf(" candidates=%q", report.Candidate)
+	}
 	return merged
 }

@@ -3,6 +3,7 @@ package aihserver
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
@@ -48,10 +49,13 @@ type codexHTTPCursor struct {
 	source  codexHTTPAccountSource
 	model   string
 	pinned  accountcore.AccountRef
+	// last 保存最近一次征召扫描的进度，供整轮扫空时输出低敏诊断。
+	last accountrouting.Result
 }
 
 func (cursor *codexHTTPCursor) Next(ctx context.Context) (codexresponseshttp.Selection, bool, error) {
 	result, err := cursor.session.Next(ctx)
+	cursor.last = result
 	// 钉选账号只被自己的并发天花板挡下时，回落池的“空结果”不能覆盖掉这个可重试事实：
 	// 账号存在、只是此刻满了，客户端应收到 429，而不是“没有可用账号”的 503。
 	var saturation error
@@ -69,6 +73,7 @@ func (cursor *codexHTTPCursor) Next(ctx context.Context) (codexresponseshttp.Sel
 			return codexresponseshttp.Selection{}, false, err
 		}
 		result, err = cursor.session.Next(ctx)
+		cursor.last = result
 		if saturation != nil && errors.Is(err, accountrouting.ErrNoRoutableAccount) {
 			return codexresponseshttp.Selection{}, false, saturation
 		}
@@ -83,6 +88,26 @@ func (cursor *codexHTTPCursor) Next(ctx context.Context) (codexresponseshttp.Sel
 		return codexresponseshttp.Selection{}, false, err
 	}
 	return codexresponseshttp.Selection{AccountRef: result.Account().Ref(), Credential: result.Credential(), Observation: result.CredentialObservation()}, true, nil
+}
+
+// ExhaustedReason 返回本轮扫描的低敏进度摘要；游标从未执行时返回空。
+func (cursor *codexHTTPCursor) ExhaustedReason() string {
+	progress := cursor.last
+	if progress.Examined() == 0 &&
+		progress.ModelCooldownBlocked() == 0 &&
+		progress.ConcurrencyBlocked() == 0 &&
+		!progress.OtherBlocked() &&
+		!progress.SourceExhausted() {
+		return ""
+	}
+	return fmt.Sprintf(
+		"examined=%d model_cooldown=%d concurrency=%d other_blocked=%t source_exhausted=%t",
+		progress.Examined(),
+		progress.ModelCooldownBlocked(),
+		progress.ConcurrencyBlocked(),
+		progress.OtherBlocked(),
+		progress.SourceExhausted(),
+	)
 }
 
 // OpenPinnedOnly opens a Phase 0 cursor strictly for the pinned Codex account

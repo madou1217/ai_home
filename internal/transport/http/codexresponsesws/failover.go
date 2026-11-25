@@ -26,31 +26,6 @@ const (
 	retryableFailoverCloseReason = "retryable upstream failure"
 )
 
-// preambleEventTypes 是**不携带任何输出内容**的预备事件：只有它们可以在本轮
-// 尚未交付内容时被扣留、随可重试失败一起丢弃，让 Codex 换号重连。
-//
-// 必须与 internal/adapters/codex/responses/response_state.go 里「无副作用」的那一支保持
-// 同一集合 —— 那边把 created / in_progress / queued / metadata 一视同仁地当作
-// 「不产生输出」（见 responseDecoder.Apply）。漏登记 response.metadata 会直接
-// 关掉换号窗口：上游在 created → in_progress 之后、真正输出之前固定发一帧
-// response.metadata（实测序列 created → in_progress → metadata → error），
-// 它一旦被当成「已交付内容」就会 MarkCommitted，此后的容量不足 / 过载错误
-// 因 !Committed() 不成立而**不再触发 1011 换号关闭**，只能把错误帧原样透传，
-// Codex 侧表现为 "stream disconnected before completion: stream closed before
-// response.completed"。
-var preambleEventTypes = map[string]struct{}{
-	"response.created":     {},
-	"response.in_progress": {},
-	"response.queued":      {},
-	"response.metadata":    {},
-	// Codex 专有的旁路事件：只携带限流快照 / 上游响应头，同样不产生任何输出。
-	// 实测序列里它们排在 response.created 之前（codex.rate_limits →
-	// codex.response.metadata → response.created → …），若不登记就会在第一帧
-	// 就把 MarkCommitted 置位，后面所有可重试失败都失去换号窗口。
-	"codex.rate_limits":       {},
-	"codex.response.metadata": {},
-}
-
 // isRetryableFailoverKind 限定可以在尚未输出内容时安全交给 Codex 重连的失败。
 // 账号凭据、模型目录和策略错误需要把真实终态交给客户端，不能把重连当作修复。
 func isRetryableFailoverKind(kind runtimecore.FailureKind) bool {
@@ -68,20 +43,10 @@ func isRetryableFailoverKind(kind runtimecore.FailureKind) bool {
 	}
 }
 
-// isPreambleEvent 只扣留没有输出项的预备帧，内嵌文字或工具调用必须立即交付。
-func isPreambleEvent(payload []byte) bool {
-	var event struct {
-		Type     string `json:"type"`
-		Response struct {
-			Output []json.RawMessage `json:"output"`
-		} `json:"response"`
-	}
-	if json.Unmarshal(payload, &event) != nil {
-		return false
-	}
-	_, ok := preambleEventTypes[event.Type]
-	return ok && len(event.Response.Output) == 0
-}
+// 扣留哪些帧由 codexwire.IsPreambleEvent 决定 —— 与原生 HTTP 探针共用同一份
+// 「尚未产出内容」契约（见 internal/transport/http/codexwire/preamble.go）。
+// 漏登记 response.metadata 会直接关掉换号窗口（实测序列
+// created → in_progress → metadata → error），因此这里不再维护第二份集合。
 
 // stripForeignReasoning 去掉完整上下文请求里 reasoning 项的 encrypted_content；
 // 带 previous_response_id 的增量请求引用的是本连接（同账号）的响应，原样保留。

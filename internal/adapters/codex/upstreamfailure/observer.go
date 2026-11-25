@@ -280,12 +280,14 @@ func codexInputFromEnvelope(
 	}
 }
 
-// codexErrorCode 优先保留 Provider 的稳定业务 code；只有 code 缺失或只是
-// HTTP 数字、且 400/404 message 完整命中已确认模板时，才合成 model_not_found。
+// codexErrorCode 优先保留 Provider 的稳定业务 code；容量错误原文优先于 code，
+// 只有 400/404 message 完整命中已确认模板时才合成 model_not_found。
 func codexErrorCode(statusCode int, fields codexErrorFields) string {
 	errorCode, _ := sharedfailure.NormalizeErrorToken(fields.Code)
-	if errorCode == "" &&
-		strings.TrimSpace(fields.Message) == modelAtCapacityMessage {
+	// 容量错误原文是已确认的唯一签名。Provider 可能同时带一个通用 code
+	// （例如 server_is_overloaded），若要求 code 为空，整类容量故障就会落到
+	// unclassified：不冷却、不可重试，客户端每次重连都回到同一账号。
+	if strings.TrimSpace(fields.Message) == modelAtCapacityMessage {
 		return "model_at_capacity"
 	}
 	if isMessageOnlyModelMissing(statusCode, errorCode, fields.Message) {

@@ -432,6 +432,22 @@ func (result Result) SourceExhausted() bool {
 	return result.sourceExhausted
 }
 
+// ModelCooldownBlocked 返回仅因 (账号,模型) 软冷却被跳过的候选数。
+func (result Result) ModelCooldownBlocked() int {
+	return result.modelCooldownBlocked
+}
+
+// ConcurrencyBlocked 返回仅因并发上限被跳过的候选数。
+func (result Result) ConcurrencyBlocked() int {
+	return result.concurrencyBlocked
+}
+
+// OtherBlocked 表示扫描中出现了并发或软冷却以外的跳过（额度门禁、模型目录、
+// 凭据、策略等）。只用于低敏诊断，不参与路由判定。
+func (result Result) OtherBlocked() bool {
+	return result.otherBlocked
+}
+
 // UsedRateLimitCooldownWaiver 返回本次征召是否实际依赖了 429 自冷却豁免。
 // 账号已独立可调度（冷却到期/已清除）时为 false，允许正常使用重新认证后的新凭据。
 func (result Result) UsedRateLimitCooldownWaiver() bool {

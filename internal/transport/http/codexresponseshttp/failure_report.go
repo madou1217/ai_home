@@ -26,6 +26,9 @@ type FailureReport struct {
 	// 没有它时，attempts=[] 的 503 无法区分“没有候选账号”和“候选账号全部被并发、
 	// 额度或运行态门禁挡下”。只写错误文本与稳定码，不含凭据。
 	Selection string
+	// Candidate 是候选游标给出的低敏扫描诊断（检查数、模型冷却/并发/其它阻塞计数）。
+	// 与 Selection 一起覆盖 503 no_available_account 的两种成因：开游标失败与扫空。
+	Candidate string
 }
 
 // AttemptReport 描述一次失败的上游尝试。
@@ -56,6 +59,7 @@ type failureTrail struct {
 	started   time.Time
 	attempts  []AttemptReport
 	selectErr string
+	candidate string
 }
 
 func (handler *Handler) newFailureTrail(model string) *failureTrail {
@@ -102,6 +106,14 @@ func (trail *failureTrail) selection(err error) {
 	trail.selectErr = sanitizeDetail(err.Error())
 }
 
+// explain 记录候选游标扫空时的低敏诊断；不含请求体、上游正文或凭据。
+func (trail *failureTrail) explain(reason string) {
+	if trail.sink == nil || reason == "" {
+		return
+	}
+	trail.candidate = sanitizeDetail(reason)
+}
+
 func (trail *failureTrail) finish(status int, code string) {
 	if trail.sink == nil {
 		return
@@ -113,6 +125,7 @@ func (trail *failureTrail) finish(status int, code string) {
 		Elapsed:   trail.clock().Sub(trail.started),
 		Attempts:  append([]AttemptReport(nil), trail.attempts...),
 		Selection: trail.selectErr,
+		Candidate: trail.candidate,
 	})
 }
 

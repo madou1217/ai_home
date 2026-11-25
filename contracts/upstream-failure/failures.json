@@ -249,6 +249,20 @@
       "semantic": "model_overloaded"
     },
     {
+      "id": "builtin.all.model.server_is_overloaded",
+      "provider": "all",
+      "priority": 5,
+      "error_code": "server_is_overloaded",
+      "semantic": "model_overloaded"
+    },
+    {
+      "id": "builtin.all.transient.service_unavailable_error",
+      "provider": "all",
+      "priority": 10,
+      "error_type": "service_unavailable_error",
+      "semantic": "upstream_unavailable"
+    },
+    {
       "id": "builtin.all.safety.content_policy",
       "provider": "all",
       "priority": 5,

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -690,6 +691,9 @@ func (handler *Handler) writeSelectionError(
 		code = admission.CodeAccountTemporarilyUnavailable
 		message = "Inference capacity is temporarily unavailable, retry later"
 	}
+	// 选号阶段失败时把稳定码与错误文本写进服务端日志：WS 客户端只会看到
+	// 一帧错误，服务端过去没有对应记录，无法判断是“没有候选”还是候选被挡下。
+	log.Printf("codex responses ws selection failed code=%s err=%q", code, err.Error())
 	writeWebSocketError(client, status, code, message)
 }
 

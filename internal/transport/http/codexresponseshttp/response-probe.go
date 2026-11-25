@@ -2,7 +2,6 @@ package codexresponseshttp
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -16,6 +15,7 @@ import (
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
+	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 )
 
 // nativeProbeWindow 是流式响应在写响应头之前允许等待首个正文事件的时长。
@@ -226,34 +226,14 @@ func (handler *Handler) probeResponse(
 			failure, _ := attemptfailure.New(classification)
 			return probeResult{failure: failure, buffered: bytes.Clone(prefix.Bytes())}
 		}
-		if !isResponsePreamble(event) {
+		if !codexwire.IsPreambleEvent(event.Data(), event.Type()) {
 			return probeResult{}
 		}
 	}
 	return probeResult{}
 }
 
-func isResponsePreamble(event sharedsse.Event) bool {
-	var envelope struct {
-		Type     string `json:"type"`
-		Response *struct {
-			Output json.RawMessage `json:"output"`
-		} `json:"response"`
-	}
-	if json.Unmarshal(event.Data(), &envelope) != nil {
-		return false
-	}
-	if envelope.Type == "" {
-		envelope.Type = event.Type()
-	}
-	switch envelope.Type {
-	case "response.created", "response.in_progress", "response.queued":
-		if envelope.Response == nil || len(envelope.Response.Output) == 0 || bytes.Equal(envelope.Response.Output, []byte("null")) {
-			return true
-		}
-		var output []json.RawMessage
-		return json.Unmarshal(envelope.Response.Output, &output) == nil && len(output) == 0
-	default:
-		return false
-	}
-}
+// 预备帧集合由 codexwire.IsPreambleEvent 统一维护：原生 HTTP 探针与
+// Responses WebSocket 扣留逻辑必须使用同一份契约，漏登记 response.metadata
+// 会让容量/过载错误在换号窗口之外才被看到（实测 created → in_progress →
+// metadata → error）。

@@ -1,7 +1,7 @@
 # AIH Clipboard：跨设备剪贴板管理器（Phase 1 设计）
 
 日期：2026-11-25
-状态：设计定稿，待实现
+状态：Phase 1 已实现并通过真机验证（2026-11-25）
 范围：macOS / Windows / Linux 桌面采集；Server 终端 TUI 与 Vim 粘贴；WebUI 管理与加密同步。
 
 ## 1. 目标
@@ -214,3 +214,35 @@ aih clip vim install|print
 - 直接 P2P/局域网发现与配对，Phase 2；
 - PDF/Office 正文抽取与缩略图，Phase 2（Phase 1 只存文件引用与元数据）；
 - 富文本保真（HTML/RTF 样式），Phase 2。
+
+## 14. 实现与验收记录（2026-11-25）
+
+Phase 1 六个切片均已落地，并合并了 AWS 侧先行的 macOS 面板提交：
+
+- `361b45a7` feat(clipboard): store and domain
+- `fefc932c` feat(clipboard): capture and platform io
+- `97d66b4b` feat(clipboard): terminal picker and shell/vim
+- `78556abb` feat(clipboard): encrypted sync
+- `0a6bacb1` feat(clipboard): webui
+- `30c8766d` feat(clipboard): native macos panel with live capture toggle
+- `f573b22d` feat(clipboard): redesign webui as a hud workspace
+- `c42988a9` fix(clipboard): keep text utf-8 stable across capture and sync
+- `d059985d` merge(clipboard): land aws macos panel history（AWS `dd89d02c` 作为父提交保留，其单文件面板由三文件面板取代）
+
+本机真实验收：
+
+1. 采集：文本、图片（PNG 1024×1024）、文件（`/etc/hosts`）均入库，图片生成缩略图；本机 headless 探针在 AWS 上报告 `supported=false`，符合预期。
+2. 去重：同一段文本连续复制 3 次，数据库仅 1 行，`seen_count=1`（连续相同内容按防抖跳过）。
+3. CLI：`aih clip ls/show/paste/copy/pin/rm/status` 全部实测；`paste --stdout` 与原文逐字节一致；图片 copy 回剪贴板后系统剪贴板含 PNGf/TIFF。
+4. TUI：PTY 内启动 `aih clip pick --stdout`，回车选中 #1，stdout 仅输出内容、界面走 stderr、退出恢复屏幕。
+5. Shell/Vim：`aih shell snippet --shell zsh` 含 Ctrl-X Ctrl-V 组件；`aih clip vim install` 两次分别返回 installed / up-to-date。
+6. WebUI：真实页面驱动采集开关，`/status` 随开关即时变化；新复制内容出现在列表，文本预览逐字节一致；筛选计数随类型变化。
+7. macOS 面板：⌘⌥V 唤起；筛选/搜索/缩略图/预览/粘贴/置顶/删除可用；Esc 关闭；关闭采集后快捷键立即失效，重新开启后立即恢复。
+8. 加密同步：以 AWS（SSH 隧道 19527，AES-256-GCM 封包）为目标，55 条记录推送成功；在 AWS 侧新建文本后本地 pull 成功且无重复；密钥指纹两端一致。
+9. 修复：跨平台桥接的 CP1252 文本此前在 JSON 封包中变成 U+FFFD 导致 `clipboard_sync_sha_mismatch`；现在入站统一转 UTF-8，旧的非 UTF-8 条目跳过同步而不阻塞批次，单条损坏封包也不会中断整轮拉取。
+
+遗留（非 Phase 1 目标）：
+
+- Windows/Linux 桌面没有原生窗口面板：使用 `aih clip ui`（终端选择器）或由桌面环境把快捷键绑到它；采集与 WebUI 均可用。
+- Linux headless 无 DISPLAY/WAYLAND_DISPLAY 时采集不可用（如实报告）。
+- PDF/Office 正文抽取、富文本保真、端到端（Server 不可读）加密仍按第 13 节留到 Phase 2。

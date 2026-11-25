@@ -149,6 +149,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "ssh" {
 		return runSSH(arguments[1:], runtime)
 	}
+	if providerID == "clip" {
+		return runClip(ctx, arguments[1:], runtime)
+	}
 	if providerID == "ssh-clipboard" {
 		return runSSHClipboard(arguments[1:], runtime)
 	}

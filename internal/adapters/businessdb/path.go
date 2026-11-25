@@ -41,7 +41,7 @@ func IsCompatibilityTable(name string) bool {
 	case "app_kv", "account_refs", "account_cli_aliases", "account_state", "cli_account_id_sequences", "model_aliases", "native_account_outcomes", "codex_reset_credits", "codex_reset_operations", "aih_storage_migrations":
 		return true
 	}
-	for _, prefix := range []string{"compat_account_", "model_usage_", "chat_runtime_", "image_studio_", "plugin_"} {
+	for _, prefix := range []string{"compat_account_", "model_usage_", "chat_runtime_", "image_studio_", "plugin_", "clipboard_"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}

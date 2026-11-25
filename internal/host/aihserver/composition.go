@@ -624,6 +624,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	}, 0)
 	var chatRuntimeService *chatruntime.Service
 	var requirementsRuntimeService *requirementsRuntime
+	var clipboardRuntimeService *clipboardRuntime
 	var chatPrewarmCloser io.Closer
 	var watchWSCloser io.Closer
 	defer func() {
@@ -665,6 +666,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if resultErr != nil && chatPrewarmCloser != nil {
 			_ = chatPrewarmCloser.Close()
+		}
+		if resultErr != nil && clipboardRuntimeService != nil {
+			_ = clipboardRuntimeService.Close()
 		}
 		if resultErr != nil && requirementsRuntimeService != nil {
 			_ = requirementsRuntimeService.Close()
@@ -1556,6 +1560,11 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("装配需求管理调度器失败: %w", requirementErr)
 	}
 	webuiRoutes = append(webuiRoutes, requirementRoutes...)
+	clipboardRuntimeService, clipboardRoutes, clipboardErr := newClipboardRuntime(ctx, webuiDeps)
+	if clipboardErr != nil {
+		return serverHandlers{}, nil, fmt.Errorf("装配剪贴板服务失败: %w", clipboardErr)
+	}
+	webuiRoutes = append(webuiRoutes, clipboardRoutes...)
 	var desktopTranslationService *desktoptranslation.Service
 	if !dependencies.DesktopManagedByHost {
 		var desktopRoutes []webuiRoute
@@ -1886,6 +1895,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if chatPrewarmCloser != nil {
 			closers = append(closers, chatPrewarmCloser)
+		}
+		if clipboardRuntimeService != nil {
+			closers = append(closers, clipboardRuntimeService)
 		}
 		if requirementsRuntimeService != nil {
 			closers = append(closers, requirementsRuntimeService)

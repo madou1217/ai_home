@@ -24,6 +24,7 @@ body.mode-quick[data-position=left] #quickModal{justify-content:flex-start}
 body.mode-quick[data-position=right] #quickModal{justify-content:flex-end}
 body.mode-quick #quickWindow{position:relative;inset:auto;bottom:auto;width:min(1240px,calc(100vw - 36px));max-width:none;height:min(430px,calc(100vh - 36px));max-height:calc(100vh - 36px);padding:14px 20px;gap:10px;border-radius:14px}
 @media(max-height:480px){body.mode-quick #quickModal{padding:0}body.mode-quick #quickWindow{width:min(1240px,100vw);height:min(430px,100vh);max-height:100vh}}
+@media(max-height:480px){body.mode-quick #quickWindow{padding:10px 20px;gap:6px}body.mode-quick #quickWindow.ribbon .quickgallery{padding:4px 4px 6px}body.mode-quick #quickWindow .quickfooter{min-height:30px}}
 body.mode-quick[data-embed=desktop] #quickModal{padding:0;align-items:stretch;justify-content:stretch}
 body.mode-quick[data-embed=desktop] #quickWindow{width:100%;height:100vh;max-height:100vh;box-shadow:none}
 #quickWindow>.quickhead,#quickWindow>.quickfooter{flex:0 0 auto}

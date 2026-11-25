@@ -31,7 +31,7 @@ final class ClipboardWorkspaceWindow: NSObject, NSWindowDelegate, WKNavigationDe
     window.setFrameAutosaveName("AIHClipboardWorkspace")
   }
 
-  var isAvailable: Bool { enabled && !origin.isEmpty }
+  var isAvailable: Bool { enabled && !origin.isEmpty && !managementKey.isEmpty }
   var isKeyWindow: Bool { window.isVisible && window.isKeyWindow }
 
   func configure(origin nextOrigin: String, managementKey nextKey: String, enabled nextEnabled: Bool) {
@@ -51,7 +51,7 @@ final class ClipboardWorkspaceWindow: NSObject, NSWindowDelegate, WKNavigationDe
   }
 
   func show() {
-    guard !origin.isEmpty else { return }
+    guard isAvailable else { return }
     if !hasPositioned {
       hasPositioned = true
       if !window.setFrameUsingName("AIHClipboardWorkspace") {

@@ -36,7 +36,7 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
   override init() {
     panel = QuickOrbitHostPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 1180, height: 430),
+      contentRect: NSRect(x: 0, y: 0, width: 1520, height: 438),
       styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered,
       defer: false
@@ -53,7 +53,7 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     panel.delegate = self
   }
 
-  var isAvailable: Bool { enabled && !origin.isEmpty }
+  var isAvailable: Bool { enabled && !origin.isEmpty && !managementKey.isEmpty }
   var isVisibleAndKey: Bool { isShowing && panel.isVisible && panel.isKeyWindow }
 
   func configure(origin nextOrigin: String, managementKey nextKey: String, enabled nextEnabled: Bool, position nextPosition: String) {
@@ -171,8 +171,8 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
   private func targetFrame() -> NSRect {
     let visible = activeScreen()?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-    let width = min(1240, max(360, visible.width - 48))
-    let height: CGFloat = 430
+    let width = min(1520, max(360, visible.width - 48))
+    let height: CGFloat = 438
     let y = visible.minY + 18
     let x: CGFloat
     switch position {

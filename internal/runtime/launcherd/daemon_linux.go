@@ -196,7 +196,17 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.mu.Unlock()
 
 	go func() {
-		defer close(doneCh)
+		defer func() {
+			cancel()
+			d.mu.Lock()
+			if d.doneCh == doneCh {
+				d.started = false
+				d.cancel = nil
+				d.doneCh = nil
+			}
+			d.mu.Unlock()
+			close(doneCh)
+		}()
 		binPath, err := Build(runCtx, d.aiHomeDir)
 		if err != nil {
 			d.setBuildError(err)
@@ -222,19 +232,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return fmt.Errorf("%w: 未检测到 Linux 桌面会话（DISPLAY 和 WAYLAND_DISPLAY 均为空）", launcher.ErrUnsupported)
 	}
 
-	binPath, err := Build(ctx, d.aiHomeDir)
-	if err != nil {
-		d.setBuildError(err)
-		return err
-	}
-	d.setBuilt(binPath)
-	d.logf("[aih launch] ui binary: %s\n", binPath)
-	d.logf("[aih launch] control socket: %s\n", d.socketPath)
-
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
 		return errors.New("launcherd_closed")
+	}
+	if d.started {
+		d.mu.Unlock()
+		return errors.New("launcherd_already_running")
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	doneCh := make(chan struct{})
@@ -244,7 +249,27 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.doneCh = doneCh
 	d.mu.Unlock()
 
-	defer close(doneCh)
+	defer func() {
+		cancel()
+		d.mu.Lock()
+		if d.doneCh == doneCh {
+			d.started = false
+			d.cancel = nil
+			d.doneCh = nil
+		}
+		d.mu.Unlock()
+		close(doneCh)
+	}()
+
+	binPath, err := Build(runCtx, d.aiHomeDir)
+	if err != nil {
+		d.setBuildError(err)
+		return err
+	}
+	d.setBuilt(binPath)
+	d.logf("[aih launch] ui binary: %s\n", binPath)
+	d.logf("[aih launch] control socket: %s\n", d.socketPath)
+
 	d.superviseLoop(runCtx, binPath)
 	return nil
 }
@@ -305,7 +330,6 @@ func (d *Daemon) Close() error {
 	d.closed = true
 	cancel := d.cancel
 	doneCh := d.doneCh
-	cmd := d.childCmd
 	d.mu.Unlock()
 
 	// Ask GTK child to exit cleanly first so it can ungrab X11 keys and unlink socket.
@@ -318,6 +342,10 @@ func (d *Daemon) Close() error {
 		select {
 		case <-doneCh:
 		case <-time.After(gracefulShutdownWait):
+			// Re-read childCmd under lock rather than using a stale pre-cancel snapshot.
+			d.mu.Lock()
+			cmd := d.childCmd
+			d.mu.Unlock()
 			if cmd != nil && cmd.Process != nil {
 				_ = cmd.Process.Signal(syscall.SIGKILL)
 			}
@@ -390,37 +418,55 @@ func (d *Daemon) runChildOnce(ctx context.Context, binPath string) (bool, error)
 		return false, fmt.Errorf("start %s: %w", binPath, err)
 	}
 
+	d.writeMu.Lock()
 	d.mu.Lock()
 	d.childCmd = cmd
 	d.childIn = stdinPipe
 	d.status.PID = cmd.Process.Pid
 	d.mu.Unlock()
+	d.writeMu.Unlock()
+
+	var closeStdinOnce sync.Once
+	closeStdin := func() {
+		closeStdinOnce.Do(func() {
+			d.detachAndCloseChildStdin(stdinPipe)
+		})
+	}
 
 	defer func() {
+		closeStdin()
 		d.mu.Lock()
 		if d.childCmd == cmd {
 			d.childCmd = nil
-			d.childIn = nil
 			d.status.PID = 0
 		}
 		d.mu.Unlock()
-		_ = stdinPipe.Close()
 	}()
 
-	// Stop child gracefully when ctx is canceled.
+	var procMu sync.Mutex
+	reaped := false
+
+	// Stop child gracefully when ctx is canceled without racing cmd.Wait() or stdin writes.
 	stopWatchDone := make(chan struct{})
+	stopWatcherExited := make(chan struct{})
 	go func() {
+		defer close(stopWatcherExited)
 		select {
 		case <-ctx.Done():
 			_ = d.writeChildLine("quit")
-			_ = stdinPipe.Close()
-			if cmd.Process != nil {
+			closeStdin()
+			procMu.Lock()
+			if !reaped && cmd.Process != nil {
 				_ = cmd.Process.Signal(syscall.SIGTERM)
 			}
+			procMu.Unlock()
 		case <-stopWatchDone:
 		}
 	}()
-	defer close(stopWatchDone)
+	defer func() {
+		close(stopWatchDone)
+		<-stopWatcherExited
+	}()
 
 	// Drain stderr and keep the last meaningful line in case the process crashes.
 	var lastStderrMu sync.Mutex
@@ -443,6 +489,9 @@ func (d *Daemon) runChildOnce(ctx context.Context, binPath string) (bool, error)
 	quitRequested := d.readChildStdout(ctx, stdoutPipe)
 
 	waitErr := cmd.Wait()
+	procMu.Lock()
+	reaped = true
+	procMu.Unlock()
 	<-stderrDone
 	if quitRequested || ctx.Err() != nil {
 		return quitRequested, nil
@@ -534,16 +583,29 @@ func (d *Daemon) writeChildLine(line string) error {
 }
 
 func (d *Daemon) writeChildRaw(payload string) error {
+	d.writeMu.Lock()
+	defer d.writeMu.Unlock()
 	d.mu.Lock()
 	in := d.childIn
 	d.mu.Unlock()
 	if in == nil {
 		return errors.New("child_stdin_closed")
 	}
-	d.writeMu.Lock()
-	defer d.writeMu.Unlock()
 	_, err := io.WriteString(in, payload)
 	return err
+}
+
+func (d *Daemon) detachAndCloseChildStdin(target io.WriteCloser) {
+	d.writeMu.Lock()
+	defer d.writeMu.Unlock()
+	d.mu.Lock()
+	if d.childIn == target {
+		d.childIn = nil
+	}
+	d.mu.Unlock()
+	if target != nil {
+		_ = target.Close()
+	}
 }
 
 func (d *Daemon) setBuilt(binPath string) {

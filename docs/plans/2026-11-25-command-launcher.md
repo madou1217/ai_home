@@ -17,6 +17,8 @@
 
 明确不做（本阶段非目标）：文件/计算器/网页/插件/剪贴板搜索、AI 对话、系统命令、窗口管理、自定义主题编辑器、应用卸载/管理、云同步、拼音首字母匹配（可后续加）。
 
+桌面专属（2026-11-25 用户明确）：AIH Launch 只在桌面系统存在。无桌面会话的主机（如 headless Linux Server）**不装配启动器运行时、不注册启动器路由、不编译 GTK UI、不启动 launcherd/helper**；`aih launch` CLI 仍可在本机按需运行（本地扫描/打开，不依赖 Server）。
+
 ## 2. 交互规格（三平台一致）
 
 1. 快捷键唤起：面板从屏幕上方 ~20% 处淡入 + 轻微上浮 + 0.96→1.0 弹性缩放（150–200ms），背景为暗色毛玻璃，边框带青色微光；无系统标题栏。
@@ -172,7 +174,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 - 面板实现要求：
   - `NSPanel`，`styleMask [.titled, .fullSizeContentView, .nonactivatingPanel]`，`titleVisibility .hidden`，`titlebarAppearsTransparent`，`level .floating`，`collectionBehavior [.canJoinAllSpaces, .fullScreenAuxiliary]`，`hidesOnDeactivate false`；
   - 背景：`NSVisualEffectView`（`.hudWindow`, `.behindWindow`）+ 自定义圆角裁剪 + 1px 青边（用 `CALayer` 组合，不用左侧竖条）；
-  - 顶部 eyebrow `AIH LAUNCH`、右侧结果计数；搜索行 22pt 输入；列表 `NSTableView` 自绘行（不用系统 selection）；底部 kbd 提示；
+  - 顶部 eyebrow `AIH LAUNCH`、右侧结果计数；搜索行 22pt 输入；列表 `NSTableView` 自绘行（不用系统 selection）；底部 kbd 提示；滚动条必须 `.overlay` + 自动隐藏（结果不足一屏时不显示），避免常驻滚动条破坏 HUD 观感；
   - 动画：使用 `NSAnimationContext` + `CALayer`：进场 alpha 0→1、transform.scale 0.96→1（`CASpringAnimation` damping 18/stiffness 220/mass 0.8）、y 偏移 10→0；退场 120ms ease-in；选中行高亮用独立 layer 的圆角背景做位置/透明度动画（`CABasicAnimation` 120ms）；
   - 列表 diff：过滤结果更新时用 `NSAnimationContext` 的 `reloadData` + 首屏行 stagger（每行延迟 12ms、上移 6px 淡入，最多 8 行）；
   - 数据：首次 show 时 GET `launcherOrigin + /v1/management/launcher/apps`（Header `Authorization: Bearer <launcherKey>`，参考 ClipboardPanel 的请求方式），缓存内存；过期 5 分钟在后台刷新；失败时显示行内弱提示并回退上一次缓存；

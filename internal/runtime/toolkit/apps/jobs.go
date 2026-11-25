@@ -344,12 +344,13 @@ func (m *JobManager) Start(ctx context.Context, input InstallInput) JobStartResu
 
 	// 代理租约可能涉及 SSH / 代理内核，必须在作业锁之外获取；否则一次失败的
 	// 选择器会把整个 JobManager 卡在 m.mu 上。
-	proxyURL, proxyName, proxyRelease, proxyErrCode, proxyErrMessage := m.resolveInstallProxy(ctx, input.Proxy)
+	proxyURL, proxyName, proxyRelease, proxyErrCode, proxyErrMessage, proxyAnonymous := m.resolveInstallProxy(ctx, input.Proxy)
 	if proxyErrCode != "" {
 		return JobStartResult{OK: false, Error: proxyErrCode, Message: proxyErrMessage}
 	}
 	input.ProxyURL = proxyURL
 	input.ProxyName = proxyName
+	input.ProxyAnonymousURL = proxyAnonymous
 
 	m.mu.Lock()
 	m.pruneLocked()
@@ -580,6 +581,8 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 	// 显式指定代理的作业只跑一轮：用户选定的出口失败就不能自动换出口，
 	// 那会静默改变出口 IP。只有「没指定代理」的作业才走自动兜底。
 	if input.Proxy != "" {
+		// 显式代理也要把匿名入口交给计划构建：winget 一类客户端只能用无认证代理。
+		opts.AnonymousProxyURL = input.ProxyAnonymousURL
 		outcome := m.runLifecyclePlans(ctx, jobID, target, opts, true)
 		succeeded, finalResult, finalErr = outcome.ok, outcome.result, outcome.err
 		return
@@ -967,32 +970,35 @@ func (m *JobManager) verifyDesktopWithRetry(ctx context.Context, provider string
 //
 // 分类边界：含 "://" 的输入是调用方给出的 URL；其余值必须由 ProxyResolver
 // 在本机换取租约（CLI 用管理面 lease，WebUI 作业用进程内 LeaseManager）。
-func (m *JobManager) resolveInstallProxy(ctx context.Context, selector string) (string, string, func(), string, string) {
+func (m *JobManager) resolveInstallProxy(ctx context.Context, selector string) (string, string, func(), string, string, string) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
-		return "", "", nil, "", ""
+		return "", "", nil, "", "", ""
 	}
 	proxyURL := selector
 	name := ""
+	anonymous := ""
 	var release func()
 	if !strings.Contains(selector, "://") {
 		if m.baseOpts.ProxyResolver == nil {
 			return "", "", nil, "proxy_selector_unsupported",
-				"当前 Server 不支持命名代理选择器；请改用 HTTP(S) 代理 URL 或直连。"
+				"当前 Server 不支持命名代理选择器；请改用 HTTP(S) 代理 URL 或直连。", ""
 		}
 		lease, err := m.baseOpts.ProxyResolver(ctx, selector)
 		if err != nil {
-			return "", "", nil, "proxy_unavailable", err.Error()
+			return "", "", nil, "proxy_unavailable", err.Error(), ""
 		}
 		proxyURL, name, release = lease.URL, lease.Name, lease.Release
+		// 裸 URL 没有匿名入口：调用方给的地址自带凭据与否由它自己决定。
+		anonymous = lease.AnonymousURL
 	}
 	if _, err := updateproxy.Environment(nil, proxyURL); err != nil {
 		if release != nil {
 			release()
 		}
-		return "", "", nil, "invalid_proxy", err.Error()
+		return "", "", nil, "invalid_proxy", err.Error(), ""
 	}
-	return proxyURL, name, release, "", ""
+	return proxyURL, name, release, "", "", anonymous
 }
 
 func (m *JobManager) releaseJobProxy(jobID string) {

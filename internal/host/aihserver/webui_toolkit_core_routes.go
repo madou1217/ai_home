@@ -46,8 +46,9 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 			}
 			id := view.ID
 			return apps.InstallProxyLease{
-				URL:  view.ProxyURL,
-				Name: view.Name,
+				URL:          view.ProxyURL,
+				AnonymousURL: view.AnonymousProxyURL,
+				Name:         view.Name,
 				Release: func() {
 					proxyRuntime.Release(id)
 				},

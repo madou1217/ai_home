@@ -349,13 +349,18 @@ type InstallInput struct {
 	// 以下字段由作业管理器解析后填充，不参与 JSON。
 	ProxyURL  string `json:"-"`
 	ProxyName string `json:"-"`
+	// ProxyAnonymousURL 是本轮出口的匿名 loopback 入口（可能为空）。
+	ProxyAnonymousURL string `json:"-"`
 }
 
 // InstallProxyLease 是安装/更新作业期可用的本机 HTTP 代理。
 type InstallProxyLease struct {
-	URL     string
-	Name    string
-	Release func()
+	URL  string
+	Name string
+	// AnonymousURL 是不要求代理认证的 loopback 入口；空表示该来源没有提供。
+	// 供 winget 一类无法携带凭据的客户端使用。
+	AnonymousURL string
+	Release      func()
 }
 
 // InstallProxyResolver 把代理选择器解析成任务期代理；Release 必须可重复调用。

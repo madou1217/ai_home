@@ -40,11 +40,20 @@ type LeaseView struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	ProxyURL string `json:"proxyUrl"`
+	// AnonymousProxyURL 是不要求 Proxy-Authorization 的 loopback 入口。
+	//
+	// 一部分客户端（winget 的 --proxy 已实测）会把代理 URL 里的 userinfo 丢掉，
+	// 又不支持显式凭据，对认证入口一律 407。给它们一个裸 host:port 才能走代理。
+	// 只监听 127.0.0.1，作用域与系统代理入口相同。
+	AnonymousProxyURL string `json:"-"`
 }
 type lease struct {
 	view     LeaseView
 	listener net.Listener
 	server   *http.Server
+	// 匿名入口与认证入口共享同一个 dial，只是不做 Token 校验。
+	anonListener net.Listener
+	anonServer   *http.Server
 	sockets  map[net.Conn]bool
 	timer    *time.Timer
 	cleanup  func()
@@ -167,9 +176,10 @@ func (m *LeaseManager) Rotation(notify func(string)) *updateproxy.EgressRotation
 			}
 			id := view.ID
 			return updateproxy.EgressLease{
-				URL:      view.ProxyURL,
-				Name:     view.Name,
-				Identity: m.identityOf(selector),
+				URL:          view.ProxyURL,
+				AnonymousURL: view.AnonymousProxyURL,
+				Name:         view.Name,
+				Identity:     m.identityOf(selector),
 				Release: func() {
 					m.Release(id)
 				},
@@ -342,7 +352,7 @@ func (m *LeaseManager) Acquire(ctx context.Context, selector string) (LeaseView,
 	ingressToken := id
 	entry.view.ProxyURL = "http://aih:" + ingressToken + "@" + listener.Addr().String()
 	resolver := managedproxy.NewResolver(dial)
-	entry.server = &http.Server{Handler: managedproxy.Handler{Dial: dial, Resolve: resolver.Resolve, Token: ingressToken, OnTunnelClosed: func(c net.Conn) { m.mu.Lock(); delete(entry.sockets, c); m.mu.Unlock() }}, ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 16 * 1024, ConnState: func(c net.Conn, state http.ConnState) {
+	trackSockets := func(c net.Conn, state http.ConnState) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if state == http.StateClosed {
@@ -352,7 +362,17 @@ func (m *LeaseManager) Acquire(ctx context.Context, selector string) (LeaseView,
 		} else {
 			_ = c.Close()
 		}
-	}}
+	}
+	entry.server = &http.Server{Handler: managedproxy.Handler{Dial: dial, Resolve: resolver.Resolve, Token: ingressToken, OnTunnelClosed: func(c net.Conn) { m.mu.Lock(); delete(entry.sockets, c); m.mu.Unlock() }}, ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 16 * 1024, ConnState: trackSockets}
+
+	// 匿名入口：与认证入口共享 dial，但 Token 留空（不校验 Proxy-Authorization）。
+	// 供那些无法携带代理凭据的客户端使用（winget --proxy 已实测）。
+	anonListener, anonErr := net.Listen("tcp", "127.0.0.1:0")
+	if anonErr == nil {
+		entry.anonListener = anonListener
+		entry.anonServer = &http.Server{Handler: managedproxy.Handler{Dial: dial, Resolve: resolver.Resolve, OnTunnelClosed: func(c net.Conn) { m.mu.Lock(); delete(entry.sockets, c); m.mu.Unlock() }}, ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 16 * 1024, ConnState: trackSockets}
+		entry.view.AnonymousProxyURL = "http://" + anonListener.Addr().String()
+	}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -369,6 +389,9 @@ func (m *LeaseManager) Acquire(ctx context.Context, selector string) (LeaseView,
 	entry.timer = time.AfterFunc(LeaseTTL, func() { m.Release(id) })
 	m.mu.Unlock()
 	go entry.server.Serve(listener)
+	if entry.anonServer != nil && entry.anonListener != nil {
+		go entry.anonServer.Serve(entry.anonListener)
+	}
 	retained = true
 	accepted = true
 	return entry.view, nil
@@ -419,6 +442,9 @@ func (m *LeaseManager) Release(id string) bool {
 	}
 	m.mu.Unlock()
 	entry.server.Close()
+	if entry.anonServer != nil {
+		_ = entry.anonServer.Close()
+	}
 	if entry.cleanup != nil {
 		entry.cleanup()
 	}

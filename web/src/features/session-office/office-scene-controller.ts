@@ -118,8 +118,8 @@ const CLOUD_RING_CLEARANCE = 6.5; // 严格 > outerHalf + 6 的内缘安全距�
 const CLOUD_INNER_BAND_SPAN = 15.5;
 const CLOUD_OUTER_BAND_SPAN = 18.0;
 const CLOUD_ORBIT_SPEED_RAD = 0.014;
-const FOCUS_MONITOR_DISTANCE = 2.1;
-const FOCUS_CAMERA_ELEVATION_OFFSET = 0.28;
+const FOCUS_MONITOR_DISTANCE = 2.7;
+const FOCUS_CAMERA_ELEVATION_OFFSET = 0.98;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function normalizePanKey(event: KeyboardEvent): PanDirectionKey | null {

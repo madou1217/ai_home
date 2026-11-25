@@ -85,10 +85,11 @@ final class ClipboardPanelRowView: NSTableCellView {
     titleLabel.translatesAutoresizingMaskIntoConstraints = false
     titleLabel.lineBreakMode = .byTruncatingTail
     titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+    titleLabel.textColor = NSColor(srgbRed: 0.91, green: 0.93, blue: 0.97, alpha: 1)
     metaLabel.translatesAutoresizingMaskIntoConstraints = false
     metaLabel.lineBreakMode = .byTruncatingTail
     metaLabel.font = .systemFont(ofSize: 11)
-    metaLabel.textColor = .secondaryLabelColor
+    metaLabel.textColor = NSColor(srgbRed: 0.52, green: 0.58, blue: 0.68, alpha: 1)
     pinView.translatesAutoresizingMaskIntoConstraints = false
     pinView.image = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: "置顶")
     pinView.contentTintColor = .systemOrange
@@ -125,9 +126,9 @@ final class ClipboardPanelRowView: NSTableCellView {
     if isChosen {
       let card = bounds.insetBy(dx: 4, dy: 2)
       let path = NSBezierPath(roundedRect: card, xRadius: 10, yRadius: 10)
-      NSColor.controlAccentColor.withAlphaComponent(0.16).setFill()
+      NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0.16).setFill()
       path.fill()
-      NSColor.controlAccentColor.withAlphaComponent(0.22).setStroke()
+      NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0.38).setStroke()
       path.lineWidth = 1
       path.stroke()
     }
@@ -158,11 +159,32 @@ final class ClipboardPanelRowView: NSTableCellView {
     if !rest.isEmpty {
       meta.append(NSAttributedString(
         string: "   " + rest,
-        attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 11)]
+        attributes: [.foregroundColor: NSColor(srgbRed: 0.52, green: 0.58, blue: 0.68, alpha: 1), .font: NSFont.systemFont(ofSize: 11)]
       ))
     }
     metaLabel.attributedStringValue = meta
     pinView.isHidden = !row.pinned
+  }
+}
+
+/// Deep-space backdrop from the Paste Nexus palette. A solid drawn gradient is
+/// used instead of vibrancy so the HUD stays dark under every system appearance.
+final class ClipboardBackdropView: NSView {
+  override var isOpaque: Bool { true }
+
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor(srgbRed: 0.031, green: 0.043, blue: 0.082, alpha: 1).setFill()
+    bounds.fill()
+    let gradient = NSGradient(colors: [
+      NSColor(srgbRed: 0.075, green: 0.13, blue: 0.22, alpha: 1),
+      NSColor(srgbRed: 0.031, green: 0.043, blue: 0.082, alpha: 1)
+    ])
+    gradient?.draw(in: bounds, angle: -35)
+    let glow = NSGradient(colors: [
+      NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0.10),
+      NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0)
+    ])
+    glow?.draw(in: NSRect(x: bounds.minX, y: bounds.maxY - 180, width: min(bounds.width, 520), height: 180), relativeCenterPosition: NSPoint(x: -1, y: 1))
   }
 }
 
@@ -247,7 +269,7 @@ final class ClipboardPanelPreview: NSView {
     badgeBox.addSubview(badge)
 
     metaLabel.font = .systemFont(ofSize: 11)
-    metaLabel.textColor = .secondaryLabelColor
+    metaLabel.textColor = NSColor(srgbRed: 0.52, green: 0.58, blue: 0.68, alpha: 1)
     metaLabel.lineBreakMode = .byTruncatingTail
 
     pasteButton.bezelStyle = .rounded
@@ -276,15 +298,16 @@ final class ClipboardPanelPreview: NSView {
     textCard.wantsLayer = true
     textCard.layer?.cornerRadius = 10
     textCard.layer?.cornerCurve = .continuous
-    textCard.layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.55).cgColor
+    textCard.layer?.backgroundColor = NSColor(srgbRed: 0.035, green: 0.06, blue: 0.105, alpha: 0.72).cgColor
     textCard.layer?.borderWidth = 1
-    textCard.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+    textCard.layer?.borderColor = NSColor(srgbRed: 0.15, green: 0.21, blue: 0.30, alpha: 0.9).cgColor
 
     textView.isEditable = false
     textView.isSelectable = true
     textView.isRichText = false
     textView.drawsBackground = false
     textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+    textView.textColor = NSColor(srgbRed: 0.91, green: 0.93, blue: 0.97, alpha: 1)
     textView.textContainerInset = NSSize(width: 12, height: 12)
     textView.isVerticallyResizable = true
     textView.isHorizontallyResizable = false
@@ -302,7 +325,7 @@ final class ClipboardPanelPreview: NSView {
     imageCard.wantsLayer = true
     imageCard.layer?.cornerRadius = 10
     imageCard.layer?.cornerCurve = .continuous
-    imageCard.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.12).cgColor
+    imageCard.layer?.backgroundColor = NSColor(srgbRed: 0.035, green: 0.06, blue: 0.105, alpha: 0.72).cgColor
     imageView.imageScaling = .scaleProportionallyDown
     imageView.imageAlignment = .alignCenter
     imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -313,14 +336,14 @@ final class ClipboardPanelPreview: NSView {
     placeholderGlyph.imageScaling = .scaleProportionallyDown
     placeholderGlyph.translatesAutoresizingMaskIntoConstraints = false
     placeholder.font = .systemFont(ofSize: 12)
-    placeholder.textColor = .secondaryLabelColor
+    placeholder.textColor = NSColor(srgbRed: 0.52, green: 0.58, blue: 0.68, alpha: 1)
     placeholder.alignment = .center
     placeholder.lineBreakMode = .byWordWrapping
     placeholder.maximumNumberOfLines = 4
     placeholder.translatesAutoresizingMaskIntoConstraints = false
 
     footer.font = .systemFont(ofSize: 10.5)
-    footer.textColor = .tertiaryLabelColor
+    footer.textColor = NSColor(srgbRed: 0.43, green: 0.50, blue: 0.60, alpha: 1)
     footer.lineBreakMode = .byTruncatingTail
 
     for view in [badgeBox, metaLabel, pasteButton, pinButton, deleteButton, separator, textCard, imageCard, placeholder, placeholderGlyph, footer] {

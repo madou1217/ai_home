@@ -13,7 +13,7 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     defer: false
   )
 
-  private let background = NSVisualEffectView()
+  private let background = ClipboardBackdropView()
   private let brackets = ClipboardBracketView()
   private let headerIcon = ClipboardGlyphTile()
   private let eyebrowLabel = NSTextField(labelWithString: "PASTE // NEXUS")
@@ -127,9 +127,8 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
   // MARK: Layout
 
   private func buildContent() {
-    background.material = .popover
-    background.blendingMode = .behindWindow
-    background.state = .active
+    background.appearance = NSAppearance(named: .darkAqua)
+    panel.backgroundColor = NSColor(srgbRed: 0.031, green: 0.043, blue: 0.082, alpha: 1)
     panel.contentView = background
 
     headerIcon.apply(symbol: "doc.on.clipboard.fill", tint: .controlAccentColor)
@@ -137,8 +136,9 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
     eyebrowLabel.font = .monospacedSystemFont(ofSize: 9, weight: .medium)
     eyebrowLabel.textColor = NSColor(srgbRed: 0.384, green: 0.929, blue: 1, alpha: 0.9)
     titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+    titleLabel.textColor = NSColor(srgbRed: 0.91, green: 0.93, blue: 0.97, alpha: 1)
     subtitleLabel.font = .systemFont(ofSize: 11)
-    subtitleLabel.textColor = .secondaryLabelColor
+    subtitleLabel.textColor = NSColor(srgbRed: 0.52, green: 0.58, blue: 0.68, alpha: 1)
 
     searchField.placeholderString = "搜索剪贴板…"
     searchField.delegate = self
@@ -205,9 +205,9 @@ final class ClipboardPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate
 
     footerSeparator.boxType = .separator
     hintsLabel.font = .systemFont(ofSize: 10.5)
-    hintsLabel.textColor = .tertiaryLabelColor
+    hintsLabel.textColor = NSColor(srgbRed: 0.43, green: 0.50, blue: 0.60, alpha: 1)
     statusLabel.font = .systemFont(ofSize: 10.5)
-    statusLabel.textColor = .secondaryLabelColor
+    statusLabel.textColor = NSColor(srgbRed: 0.52, green: 0.58, blue: 0.68, alpha: 1)
     statusLabel.alignment = .right
     statusLabel.lineBreakMode = .byTruncatingTail
 

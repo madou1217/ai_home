@@ -154,6 +154,26 @@ func (store *Store) LoadRoutingCandidates(
 	return store.routes.loadCandidates(ctx, canonicalProviderID, modelID)
 }
 
+// LoadPinnedCandidate 读取显式钉选账号的单账号候选快照。
+//
+// 钉选绕过 alias-pool opt-out 与手动路由排除，但仍要求账号启用、Provider/模型匹配
+// 且未被凭据/能力守卫排除；详情见 routingIndex.pinnedCandidates。
+func (store *Store) LoadPinnedCandidate(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+	accountRef accountcore.AccountRef,
+) (*accountapp.RoutingCandidates, error) {
+	if store == nil || store.routes == nil || store.catalog == nil {
+		return nil, accountapp.ErrInvalidRoutingQuery
+	}
+	canonicalProviderID, found := store.catalog.CanonicalID(providerID)
+	if !found || canonicalProviderID != providerID {
+		return nil, accountapp.ErrInvalidRoutingQuery
+	}
+	return store.routes.pinnedCandidates(ctx, canonicalProviderID, modelID, accountRef)
+}
+
 // SetSynthesizedModelSource 注入 Provider 级合成模型来源（图片模型）。
 //
 // 必须在 Open 之后、开始服务之前调用：注入时会给已构建的索引补一次合成并重新发布快照。

@@ -624,6 +624,44 @@ func (index *routingIndex) loadCandidates(
 	return candidates, nil
 }
 
+// pinnedCandidates 返回显式钉选账号的单账号候选快照。
+//
+// 与 loadCandidates 的唯一区别是忽略 excluded：alias-pool opt-out 和手动路由排除
+// 表达的是“不要自动选我”，不是“禁止显式使用我”。启停（enabled）与凭据/能力硬阻塞
+// （credentialExcluded）仍然生效，避免钉选绕过安全边界。
+func (index *routingIndex) pinnedCandidates(
+	ctx context.Context,
+	providerID string,
+	modelID runtimecore.ModelID,
+	accountRef accountcore.AccountRef,
+) (*accountapp.RoutingCandidates, error) {
+	if index == nil ||
+		ctx == nil ||
+		providerID == "" ||
+		!modelID.IsValid() ||
+		!accountRef.IsValid() {
+		return nil, accountapp.ErrInvalidRoutingQuery
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	index.mu.RLock()
+	entry, found := index.accounts[accountRef]
+	index.mu.RUnlock()
+	if !found ||
+		entry.account.ProviderID() != providerID ||
+		!entry.enabled ||
+		entry.credentialExcluded {
+		return index.empty, nil
+	}
+	for _, candidateModel := range entry.models {
+		if candidateModel == modelID {
+			return accountapp.NewRoutingCandidates([]accountapp.RoutingAccount{entry.account}), nil
+		}
+	}
+	return index.empty, nil
+}
+
 // setRoutableModelObserver 注册唯一的进程内目录变化观察端口。
 func (index *routingIndex) setRoutableModelObserver(
 	observer accountapp.RoutableModelObserver,

@@ -62,6 +62,21 @@ type CandidateSource interface {
 	) (*accountapp.RoutingCandidates, error)
 }
 
+// PinnedCandidateSource 是 CandidateSource 的可选扩展：显式钉选时返回该账号自身的
+// 候选快照。
+//
+// “不参与自动选号池”（alias-pool opt-out）和“手动路由排除”表达的是“不要自动选我”，
+// 不是“禁止显式使用我”。钉选是调用方的显式选择，必须绕过这两类排除；启停（enabled）
+// 与凭据/能力硬阻塞（credentialExcluded）仍然生效。
+type PinnedCandidateSource interface {
+	LoadPinnedCandidate(
+		ctx context.Context,
+		providerID string,
+		modelID runtimecore.ModelID,
+		accountRef accountcore.AccountRef,
+	) (*accountapp.RoutingCandidates, error)
+}
+
 // CredentialResolver 把候选账号凭据解析为当前可直接使用的版本。
 type CredentialResolver interface {
 	// ResolveObservedCredentialBinding 延迟读取凭据，并从同一快照返回低敏观察。
@@ -558,11 +573,31 @@ func (recruiter *Recruiter) Begin(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	candidates, err := recruiter.candidates.LoadRoutingCandidates(
-		ctx,
-		request.ProviderID(),
-		request.ModelID(),
-	)
+	pinnedAccountRef, pinned := request.PinnedAccount()
+	var candidates *accountapp.RoutingCandidates
+	var err error
+	if pinned {
+		if pinnedSource, ok := recruiter.candidates.(PinnedCandidateSource); ok {
+			candidates, err = pinnedSource.LoadPinnedCandidate(
+				ctx,
+				request.ProviderID(),
+				request.ModelID(),
+				pinnedAccountRef,
+			)
+		} else {
+			candidates, err = recruiter.candidates.LoadRoutingCandidates(
+				ctx,
+				request.ProviderID(),
+				request.ModelID(),
+			)
+		}
+	} else {
+		candidates, err = recruiter.candidates.LoadRoutingCandidates(
+			ctx,
+			request.ProviderID(),
+			request.ModelID(),
+		)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("读取账号征召候选失败: %w", err)
 	}
@@ -575,9 +610,9 @@ func (recruiter *Recruiter) Begin(
 		transport:  transport,
 		candidates: candidates,
 	}
-	if accountRef, pinned := request.PinnedAccount(); pinned {
+	if pinned {
 		session.pinned = true
-		session.pinnedCandidate, session.pinnedFound = candidates.FindByRef(accountRef)
+		session.pinnedCandidate, session.pinnedFound = candidates.FindByRef(pinnedAccountRef)
 		return session, nil
 	}
 	session.start = recruiter.startPosition(request, candidates)

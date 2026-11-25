@@ -207,6 +207,53 @@ final class LauncherTableView: NSTableView {
   }
 }
 
+/// Overlay-only scroll view for the dark HUD list that keeps autohiding overlay
+/// scrollbars even when a mouse triggers legacy scrollers, and hides the vertical
+/// scroller completely whenever all rows fit within one viewport.
+final class LauncherScrollView: NSScrollView {
+  private var isTiling = false
+
+  var suppressesVerticalScroller = false {
+    didSet {
+      guard oldValue != suppressesVerticalScroller else { return }
+      if !suppressesVerticalScroller {
+        verticalScroller?.isHidden = false
+        verticalScroller?.alphaValue = 1
+      }
+      tile()
+    }
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if scrollerStyle != .overlay {
+      scrollerStyle = .overlay
+    }
+    applyScrollerSuppression()
+  }
+
+  override func tile() {
+    if isTiling {
+      super.tile()
+      applyScrollerSuppression()
+      return
+    }
+    isTiling = true
+    defer { isTiling = false }
+    if scrollerStyle != .overlay {
+      scrollerStyle = .overlay
+    }
+    super.tile()
+    applyScrollerSuppression()
+  }
+
+  private func applyScrollerSuppression() {
+    guard suppressesVerticalScroller, let scroller = verticalScroller else { return }
+    scroller.isHidden = true
+    scroller.alphaValue = 0
+  }
+}
+
 /// Single application row: 36px rounded icon, 15pt semibold name with cyan match highlights,
 /// 12pt muted subtitle, and right-aligned `↵` indicator shown when selected.
 final class LauncherRowView: NSTableCellView {

@@ -30,7 +30,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
   private let backdrop = LauncherBackdropView()
   private let header = LauncherSearchHeaderView()
-  private let tableScroll = NSScrollView()
+  private let tableScroll = LauncherScrollView()
   private let tableView = LauncherTableView()
   private let emptyState = LauncherEmptyStateView()
   private let footer = LauncherFooterView()
@@ -312,6 +312,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     NSApp.activate(ignoringOtherApps: true)
     _ = NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
     panel.layoutIfNeeded()
+    updateScrollerSuppression()
     updateSelectionHighlight(animated: false)
     panel.makeFirstResponder(header.searchField)
 
@@ -461,6 +462,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     column.width = Self.panelWidth
     column.resizingMask = .autoresizingMask
     tableView.addTableColumn(column)
+    tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     tableView.headerView = nil
     tableView.rowHeight = Self.rowHeight
     tableView.intercellSpacing = NSSize(width: 0, height: 2)
@@ -479,11 +481,14 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     tableScroll.documentView = tableView
     tableScroll.hasVerticalScroller = true
+    tableScroll.hasHorizontalScroller = false
     tableScroll.autohidesScrollers = true
-    tableScroll.drawsBackground = false
-    tableScroll.borderType = .noBorder
     tableScroll.scrollerStyle = .overlay
-    tableScroll.contentInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
+    tableScroll.scrollerKnobStyle = .light
+    tableScroll.appearance = NSAppearance(named: .darkAqua)
+    tableScroll.drawsBackground = false
+    tableScroll.contentView.drawsBackground = false
+    tableScroll.borderType = .noBorder
     tableScroll.automaticallyAdjustsContentInsets = false
 
     emptyState.isHidden = true
@@ -498,10 +503,10 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       header.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
       header.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
 
-      tableScroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+      tableScroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6),
       tableScroll.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
       tableScroll.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-      tableScroll.bottomAnchor.constraint(equalTo: footer.topAnchor),
+      tableScroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6),
 
       emptyState.topAnchor.constraint(equalTo: tableScroll.topAnchor),
       emptyState.leadingAnchor.constraint(equalTo: tableScroll.leadingAnchor),
@@ -557,19 +562,34 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     let query = header.searchField.stringValue
     visibleResults = LauncherRanker.filter(cachedApps, query: query)
     tableView.reloadData()
+    updateScrollerSuppression()
 
     if visibleResults.isEmpty {
       selectedIndex = -1
       tableView.deselectAll(nil)
       updateSelectionHighlight(animated: false)
     } else {
-      selectRow(0, animated: false, scroll: true)
+      if tableScroll.contentView.bounds.origin.y > 0 {
+        tableScroll.contentView.scroll(to: .zero)
+        tableScroll.reflectScrolledClipView(tableScroll.contentView)
+      }
+      selectRow(0, animated: false, scroll: false)
     }
 
     updateEmptyAndCountState()
     if animateRows {
       animateVisibleRowsStagger()
     }
+  }
+
+  private func updateScrollerSuppression() {
+    let rowPitch = Self.rowHeight + tableView.intercellSpacing.height
+    let contentHeight = CGFloat(visibleResults.count) * rowPitch
+    let viewportHeight = tableScroll.contentView.bounds.height
+    let fitsViewport = viewportHeight > 0
+      ? (contentHeight <= viewportHeight + 0.5)
+      : (visibleResults.count <= 7)
+    tableScroll.suppressesVerticalScroller = fitsViewport
   }
 
   private func updateEmptyAndCountState() {
@@ -594,7 +614,10 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
     }
     if scroll {
-      tableView.scrollRowToVisible(index)
+      let rowRect = tableView.rect(ofRow: index)
+      if !rowRect.isEmpty && !tableView.visibleRect.contains(rowRect) {
+        tableView.scrollRowToVisible(index)
+      }
     }
     if previous >= 0, previous < visibleResults.count, previous != index,
        let prevView = tableView.view(atColumn: 0, row: previous, makeIfNecessary: false) as? LauncherRowView {

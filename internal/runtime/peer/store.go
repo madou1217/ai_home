@@ -61,15 +61,18 @@ type Message struct {
 	ReplyTo           string `json:"replyTo"`
 	ReplyToShort      string `json:"replyToShort"`
 	Body              string `json:"body"`
-	State             string `json:"state"`
-	CreatedAt         int64  `json:"createdAt"`
-	DeliveredAt       int64  `json:"deliveredAt"`
-	ReadAt            int64  `json:"readAt"`
-	NextAttemptAt     int64  `json:"nextAttemptAt"`
-	AttemptCount      int    `json:"attemptCount"`
-	Error             string `json:"error"`
-	LastAttemptError  string `json:"lastAttemptError"`
-	ReceiptError      string `json:"receiptError,omitempty"`
+	// Model / ReasoningEffort 是 webui-chat 投递的回合设置，其它通道为空。
+	Model            string `json:"model,omitempty"`
+	ReasoningEffort  string `json:"reasoningEffort,omitempty"`
+	State            string `json:"state"`
+	CreatedAt        int64  `json:"createdAt"`
+	DeliveredAt      int64  `json:"deliveredAt"`
+	ReadAt           int64  `json:"readAt"`
+	NextAttemptAt    int64  `json:"nextAttemptAt"`
+	AttemptCount     int    `json:"attemptCount"`
+	Error            string `json:"error"`
+	LastAttemptError string `json:"lastAttemptError"`
+	ReceiptError     string `json:"receiptError,omitempty"`
 }
 
 // Counts 统计本次返回列表里各状态的消息数。
@@ -133,6 +136,8 @@ type rawRecord struct {
 	To                *rawParty    `json:"to"`
 	ReplyTo           string       `json:"replyTo"`
 	Body              string       `json:"body"`
+	Model             string       `json:"model,omitempty"`
+	ReasoningEffort   string       `json:"reasoningEffort,omitempty"`
 	State             string       `json:"state"`
 	CreatedAt         float64      `json:"createdAt"`
 	DeliveredAt       float64      `json:"deliveredAt"`
@@ -358,6 +363,8 @@ func projectMessage(raw rawRecord, state string) Message {
 		ReplyTo:          raw.ReplyTo,
 		ReplyToShort:     replyToShort,
 		Body:             raw.Body,
+		Model:            raw.Model,
+		ReasoningEffort:  raw.ReasoningEffort,
 		State:            state,
 		CreatedAt:        int64(raw.CreatedAt),
 		DeliveredAt:      int64(raw.DeliveredAt),

@@ -66,6 +66,14 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	if requested := args.values["mode"]; requested != "" && requested != delivery.Mode {
 		return fmt.Errorf("发送权限由实际会话自动识别，不能用 --mode 冒充")
 	}
+	model := strings.TrimSpace(args.values["model"])
+	effort := strings.TrimSpace(args.values["effort"])
+	if effort != "" && model == "" {
+		return fmt.Errorf("--effort 需要同时指定 --model")
+	}
+	if (model != "" || effort != "") && target.Channel != "webui-chat" {
+		return fmt.Errorf("--model/--effort 只用于 webui-chat 会话（目标 %s 不支持）", target.Channel)
+	}
 	from := self
 	if value := args.values["from"]; value != "" && value != self.Name && value != self.Address && value != self.SessionID {
 		return fmt.Errorf("发送身份由实际会话自动识别，不能用 --from 冒充")
@@ -101,7 +109,7 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	if err != nil {
 		return err
 	}
-	input := peer.CreateMessageInput{From: from, To: target.RecordParty, Body: body, ReplyTo: replyTo, Subject: args.values["subject"], Summary: args.values["summary"], Purpose: args.values["purpose"], Action: args.values["action"], ReplyPolicy: policy, Priority: priority, AutoDeliverUntil: until, Supersedes: args.values["supersedes"]}
+	input := peer.CreateMessageInput{From: from, To: target.RecordParty, Body: body, ReplyTo: replyTo, Subject: args.values["subject"], Summary: args.values["summary"], Purpose: args.values["purpose"], Action: args.values["action"], ReplyPolicy: policy, Priority: priority, AutoDeliverUntil: until, Supersedes: args.values["supersedes"], Model: model, ReasoningEffort: effort}
 	if expires != nil {
 		input.ExpiresAt = *expires
 	}

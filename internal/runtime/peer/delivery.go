@@ -561,8 +561,15 @@ func deliverWebuiChat(ctx context.Context, rec Record, text string, opts Deliver
 		base = fmt.Sprintf("peer-%d", time.Now().UnixMilli())
 	}
 
+	payload := map[string]any{"content": text}
+	if model := strings.TrimSpace(rec.Model); model != "" {
+		payload["model"] = model
+	}
+	if effort := strings.TrimSpace(rec.ReasoningEffort); effort != "" {
+		payload["reasoningEffort"] = effort
+	}
 	raw, err := json.Marshal(map[string]any{
-		"commandId": base + "-submit", "type": "turn.submit", "payload": map[string]any{"content": text},
+		"commandId": base + "-submit", "type": "turn.submit", "payload": payload,
 	})
 	if err != nil {
 		return DeliveryResult{Error: "chat_send_failed", Message: err.Error()}

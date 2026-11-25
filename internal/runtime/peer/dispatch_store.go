@@ -89,39 +89,43 @@ type Record struct {
 	SupersedesAppliedAt int64  `json:"supersedesAppliedAt,omitempty"`
 	FailureResetAt      int64  `json:"failureResetAt,omitempty"`
 	autoDeliverUntilSet bool
-	NoEnvelope          bool            `json:"noEnvelope,omitempty"`
-	NativeStatus        string          `json:"nativeStatus,omitempty"`
-	FromMode            string          `json:"fromMode,omitempty"`
-	Subject             string          `json:"subject,omitempty"`
-	Summary             string          `json:"summary,omitempty"`
-	Purpose             string          `json:"purpose,omitempty"`
-	Action              string          `json:"action,omitempty"`
-	ReplyPolicy         string          `json:"replyPolicy,omitempty"`
-	AutoDeliverUntil    int64           `json:"autoDeliverUntil"`
-	ExpiresAt           int64           `json:"expiresAt,omitempty"`
-	CanceledAt          int64           `json:"canceledAt,omitempty"`
-	Supersedes          string          `json:"supersedes,omitempty"`
-	NotificationState   string          `json:"notificationState,omitempty"`
-	WaitingReason       string          `json:"waitingReason,omitempty"`
-	BusySince           int64           `json:"busySince,omitempty"`
-	ProbeCount          int             `json:"probeCount,omitempty"`
-	V                   int             `json:"v"`
-	ID                  string          `json:"id"`
-	From                RecordParty     `json:"from"`
-	To                  RecordParty     `json:"to"`
-	ReplyTo             string          `json:"replyTo"`
-	Body                string          `json:"body"`
-	CreatedAt           int64           `json:"createdAt"`
-	State               string          `json:"state"`
-	Attempts            []AttemptRecord `json:"attempts"`
-	AttemptCount        int             `json:"attemptCount"`
-	NextAttemptAt       int64           `json:"nextAttemptAt"`
-	DeliveredAt         int64           `json:"deliveredAt"`
-	ReadAt              int64           `json:"readAt"`
-	ChannelMessageID    string          `json:"channelMessageId"`
-	Error               string          `json:"error,omitempty"`
-	Claim               *ClaimLease     `json:"claim,omitempty"`
-	ReceiptError        string          `json:"receiptError,omitempty"`
+	NoEnvelope          bool        `json:"noEnvelope,omitempty"`
+	NativeStatus        string      `json:"nativeStatus,omitempty"`
+	FromMode            string      `json:"fromMode,omitempty"`
+	Subject             string      `json:"subject,omitempty"`
+	Summary             string      `json:"summary,omitempty"`
+	Purpose             string      `json:"purpose,omitempty"`
+	Action              string      `json:"action,omitempty"`
+	ReplyPolicy         string      `json:"replyPolicy,omitempty"`
+	AutoDeliverUntil    int64       `json:"autoDeliverUntil"`
+	ExpiresAt           int64       `json:"expiresAt,omitempty"`
+	CanceledAt          int64       `json:"canceledAt,omitempty"`
+	Supersedes          string      `json:"supersedes,omitempty"`
+	NotificationState   string      `json:"notificationState,omitempty"`
+	WaitingReason       string      `json:"waitingReason,omitempty"`
+	BusySince           int64       `json:"busySince,omitempty"`
+	ProbeCount          int         `json:"probeCount,omitempty"`
+	V                   int         `json:"v"`
+	ID                  string      `json:"id"`
+	From                RecordParty `json:"from"`
+	To                  RecordParty `json:"to"`
+	ReplyTo             string      `json:"replyTo"`
+	Body                string      `json:"body"`
+	// Model / ReasoningEffort 只对 webui-chat 目标生效：peer 的首轮投递没有别的
+	// 地方能表达模型，而新会话必须带模型才能起回合。随记录持久化，补投时同值重放。
+	Model            string          `json:"model,omitempty"`
+	ReasoningEffort  string          `json:"reasoningEffort,omitempty"`
+	CreatedAt        int64           `json:"createdAt"`
+	State            string          `json:"state"`
+	Attempts         []AttemptRecord `json:"attempts"`
+	AttemptCount     int             `json:"attemptCount"`
+	NextAttemptAt    int64           `json:"nextAttemptAt"`
+	DeliveredAt      int64           `json:"deliveredAt"`
+	ReadAt           int64           `json:"readAt"`
+	ChannelMessageID string          `json:"channelMessageId"`
+	Error            string          `json:"error,omitempty"`
+	Claim            *ClaimLease     `json:"claim,omitempty"`
+	ReceiptError     string          `json:"receiptError,omitempty"`
 	// Priority 是 -1/0/1 的发送优先级；旧记录缺省为 0。
 	Priority int `json:"priority,omitempty"`
 }
@@ -144,6 +148,9 @@ type CreateMessageInput struct {
 	To               RecordParty
 	ReplyTo          string
 	Body             string
+	// Model / ReasoningEffort 由 webui-chat 投递写入 turn.submit；其它通道必须为空。
+	Model           string
+	ReasoningEffort string
 }
 
 // StoreOptions 配置 DispatchStore 的时钟与阈值参数。

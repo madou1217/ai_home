@@ -120,7 +120,8 @@ func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (
 	}
 	rec := Record{
 		V: RecordVersion, ID: id, Priority: input.Priority, From: normalizeRecordParty(input.From), To: normalizeRecordParty(input.To),
-		ReplyTo: NormalizeID(input.ReplyTo), Body: input.Body, CreatedAt: s.now().UnixMilli(), State: "pending", Attempts: []AttemptRecord{},
+		ReplyTo: NormalizeID(input.ReplyTo), Body: input.Body, Model: input.Model, ReasoningEffort: input.ReasoningEffort,
+		CreatedAt: s.now().UnixMilli(), State: "pending", Attempts: []AttemptRecord{},
 		NoEnvelope: input.NoEnvelope, FromMode: input.FromMode, Subject: input.Subject, Summary: input.Summary, Purpose: input.Purpose, Action: input.Action, ReplyPolicy: input.ReplyPolicy,
 		ExpiresAt: input.ExpiresAt, Supersedes: NormalizeID(input.Supersedes),
 	}

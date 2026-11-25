@@ -1,7 +1,7 @@
 # AGY 结构化远程工具循环：ACP / MCP / Peer 取舍
 
 日期：2026-11-25
-状态：设计与文档修正；ACP 客户端尚未实现。
+状态：ACP 客户端已实现（本地工作区）；远程 Connector 映射与 WebUI 会话视图待接入。
 
 ## 1. 先修正一个过时结论
 
@@ -116,7 +116,26 @@ Connector 管理的项目根目录内。Provider 凭据不进入 Connector，Con
   签发、单 workspace、可撤销。
 - 不把 `allow_always` 当作跨会话持久授权。
 
-## 7. 当前结论
+## 7. 实现进度（2026-11-25）
+
+已落地：
+
+- `internal/adapters/agy/acpclient`：ACP 客户端、领域事件、`FileSystem` / `TerminalHost` /
+  `PermissionBroker` / `EventSink` 接口；
+- `LocalWorkspaceHost`：工作区内读写、路径/符号链接越界拒绝、终端进程组与
+  output/wait/kill/release；
+- `aih agy acp`：用 `agy acp` 启动一轮 ACP 会话，支持交互审批和 `--auto-approve`；
+- 测试：ACP JSON-RPC 往返、子进程 agent 真实启动、文件越界/终端 kill；
+- 依赖：`github.com/coder/acp-go-sdk v0.20.0`。
+
+仍未完成：
+
+- 把 `FileSystem` / `TerminalHost` 换成 Workspace Connector 适配器（当前是本地工作区）；
+- WebUI 的 ACP 会话视图与审批面板；
+- 真实 AGY 1.5+（`agy --version`、`agy acp --help`）在 AWS 上的 read/write/run_command/审批验收；
+- 现有 `agent-terminal` 对 AGY 仍返回 409；在 UI 接线前保持显式拒绝。
+
+## 8. 当前结论
 
 - `AGY 结构化远程工具循环` 应从台账的“协议约束”恢复为“未完成/待接入”。
 - ACP 是主路径；MCP 保留给 Codex/Claude；peer 只做任务与通知，不做工具 RPC。

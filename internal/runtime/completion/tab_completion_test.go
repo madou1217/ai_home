@@ -377,3 +377,13 @@ func TestProviderExactHintsActions(t *testing.T) {
 		t.Fatalf("缺少动作提示：%v", hints)
 	}
 }
+
+// 子命令位只命中历史（没有任何真实子命令匹配当前前缀）时，历史仍要出现。
+func TestSubcommandPositionKeepsHistoryWhenNoChildMatches(t *testing.T) {
+	context := resolverForTest()
+	context.historyEntries = []historyEntry{{Suffix: "account zzz --limit 5", Count: 3}}
+	candidates := resolveCompletion([]string{"account", "z"}, context)
+	if len(candidates) != 1 || candidates[0].Group != groupHistory || candidates[0].Value != "zzz --limit 5" {
+		t.Fatalf("应保留历史候选：%+v", candidates)
+	}
+}

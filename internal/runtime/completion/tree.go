@@ -260,7 +260,7 @@ func resolveCommandTree(root *commandNode, words []string, current string, conte
 	}
 	// 纯子命令位：历史整句作为最低优先级候选排在真实子命令之后。
 	// 路径/自由文本位不注入历史，否则会抢掉真正的文件补全。
-	if len(state.node.Children) > 0 && len(target.items) > 0 {
+	if len(state.node.Children) > 0 {
 		priorText := strings.TrimSpace(root.Name + " " + strings.Join(words, " "))
 		addHistoryCandidates(target, context, current, priorText)
 	}

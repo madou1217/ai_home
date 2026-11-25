@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
-  Empty,
   Input,
   Modal,
   Popconfirm,
-  Segmented,
   Select,
   Spin,
   Switch,
-  Tag,
-  Tooltip,
-  Typography
+  Tooltip
 } from 'antd';
 import {
   CopyOutlined,
@@ -24,8 +20,8 @@ import {
   PictureOutlined,
   PushpinFilled,
   PushpinOutlined,
-  ReloadOutlined,
   SearchOutlined,
+  SnippetsOutlined,
   StarFilled,
   SyncOutlined
 } from '@ant-design/icons';
@@ -41,8 +37,6 @@ import {
   type ClipboardStatus
 } from './clipboard-api';
 import styles from './clipboard.module.css';
-
-const { Text, Title } = Typography;
 
 type KindFilter = 'all' | ClipboardKind;
 
@@ -617,233 +611,286 @@ export default function ClipboardWorkspace() {
       ? isSafeHttpUrl(displayText || selectedItem.preview)
       : null;
 
+  const captureOn = Boolean(status?.capture.running || settings?.captureEnabled);
+
   return (
     <div className={styles.workspace}>
-      <section className={styles.topBar} aria-label="剪贴板控制栏">
-        <div className={styles.topRowMain}>
-          <div className={styles.titleGroup}>
-            <Title level={4} className={styles.pageTitle}>
-              剪贴板
-            </Title>
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              loading={loading}
-              onClick={() => void loadAll(true)}
-            >
-              刷新
-            </Button>
+      <section className={`${styles.hero} hud-panel`} aria-label="剪贴板概览">
+        <div className={styles.heroMain}>
+          <div className={styles.heroLead}>
+            <span className={styles.heroGlyph} aria-hidden>
+              <SnippetsOutlined />
+            </span>
+            <div>
+              <div className={styles.eyebrow}>Clipboard // Local Matrix</div>
+              <h1 className={styles.heroTitle}>剪贴板</h1>
+              <div className={styles.heroSub}>
+                {status
+                  ? `${status.platform} · ${status.deviceName}`
+                  : '正在连接本机 Server…'}
+              </div>
+            </div>
           </div>
 
-          <div className={styles.controlsRow}>
-            <span className={styles.controlItem}>
-              <span className={styles.controlLabel}>本机采集</span>
-              <Switch
-                size="small"
-                checked={Boolean(settings?.captureEnabled)}
-                disabled={savingSettings || captureUnsupported || !settings}
-                onChange={(checked) =>
-                  void applySettingsPatch(
-                    { captureEnabled: checked },
-                    checked ? '已开启本机采集' : '已关闭本机采集'
-                  )
-                }
-              />
-              {captureUnsupported && (
-                <Text type="secondary">
-                  {status?.capture.reason || '当前主机不支持桌面采集'}
-                </Text>
-              )}
+          <div className={styles.heroStats}>
+            <span className={styles.statChip}>
+              <span className={styles.statValue}>{status?.itemCount ?? items.length}</span>
+              <span>记录</span>
             </span>
-
-            <span className={styles.controlItem}>
-              <span className={styles.controlLabel}>同步</span>
-              <Switch
-                size="small"
-                checked={Boolean(settings?.syncEnabled)}
-                disabled={savingSettings || !settings}
-                onChange={(checked) =>
-                  void applySettingsPatch(
-                    { syncEnabled: checked },
-                    checked ? '已开启同步' : '已关闭同步'
-                  )
-                }
-              />
+            <span className={styles.statChip}>
+              <span className={styles.statValue}>{status?.pinnedCount ?? 0}</span>
+              <span>置顶</span>
             </span>
-
-            <span className={styles.controlItem}>
-              <span className={styles.controlLabel}>目标 Server</span>
-              <Select
-                size="small"
-                className={styles.targetSelect}
-                value={settings?.syncTargetProfileId ?? ''}
-                disabled={savingSettings || !settings}
-                options={serverOptions}
-                onChange={(value: string) =>
-                  void applySettingsPatch(
-                    { syncTargetProfileId: value },
-                    value ? '已更新同步目标' : '已清除同步目标'
-                  )
-                }
-              />
-              <Button
-                size="small"
-                icon={<SyncOutlined spin={syncing} />}
-                loading={syncing}
-                disabled={!settings?.syncEnabled || !settings?.syncTargetProfileId}
-                onClick={() => void handleTriggerSync()}
-              >
-                立即同步
-              </Button>
+            <Tooltip title={deviceTooltip}>
+              <span className={styles.statChip}>
+                <span className={styles.statValue}>{devices.length}</span>
+                <span>设备</span>
+              </span>
+            </Tooltip>
+            <span className={`${styles.stateChip} ${captureOn ? styles.stateChipOn : ''}`}>
+              <span className={styles.stateDot} />
+              {captureOn ? '采集运行中' : '采集已停止'}
             </span>
+            {(status?.transports ?? [])
+              .filter((transport) => transport.available)
+              .map((transport) => (
+                <span
+                  key={transport.name}
+                  className={`${styles.transportChip} ${styles.transportReady}`}
+                  title={transport.detail || transport.name}
+                >
+                  {transport.name}
+                </span>
+              ))}
           </div>
         </div>
 
-        <div className={styles.metaRow}>
-          <span className={styles.metaPiece}>
-            <span>密钥指纹</span>
-            <span className={styles.fingerprint}>
-              {status?.keyFingerprint || '未生成'}
-            </span>
+        <div className={styles.heroControls}>
+          <span className={styles.controlCluster}>
+            <span className={styles.controlLabel}>本机采集</span>
+            <Switch
+              size="small"
+              checked={Boolean(settings?.captureEnabled)}
+              disabled={savingSettings || captureUnsupported || !settings}
+              onChange={(checked) =>
+                void applySettingsPatch(
+                  { captureEnabled: checked },
+                  checked ? '已开启本机采集' : '已关闭本机采集'
+                )
+              }
+            />
           </span>
 
-          <Tooltip title={deviceTooltip}>
-            <span className={styles.metaPiece}>
-              <span>设备 {devices.length}</span>
-            </span>
-          </Tooltip>
+          <span className={styles.controlCluster}>
+            <span className={styles.controlLabel}>加密同步</span>
+            <Switch
+              size="small"
+              checked={Boolean(settings?.syncEnabled)}
+              disabled={savingSettings || !settings}
+              onChange={(checked) =>
+                void applySettingsPatch(
+                  { syncEnabled: checked },
+                  checked ? '已开启同步' : '已关闭同步'
+                )
+              }
+            />
+          </span>
 
-          {status && (
-            <span className={styles.metaPiece}>
-              <span>
-                共 {status.itemCount} 条（置顶 {status.pinnedCount}）
-              </span>
+          <span className={styles.controlCluster}>
+            <span className={styles.controlLabel}>目标 Server</span>
+            <Select
+              size="small"
+              className={styles.targetSelect}
+              value={settings?.syncTargetProfileId ?? ''}
+              disabled={savingSettings || !settings}
+              options={serverOptions}
+              onChange={(value: string) =>
+                void applySettingsPatch(
+                  { syncTargetProfileId: value },
+                  value ? '已更新同步目标' : '已清除同步目标'
+                )
+              }
+            />
+            <Button
+              size="small"
+              icon={<SyncOutlined spin={syncing} />}
+              loading={syncing}
+              disabled={!settings?.syncEnabled || !settings?.syncTargetProfileId}
+              onClick={() => void handleTriggerSync()}
+            >
+              立即同步
+            </Button>
+          </span>
+
+          <span className={styles.keyCluster}>
+            <span className={styles.keyLabel}>KEY FP</span>
+            <code className={styles.fingerprint}>{status?.keyFingerprint || '未生成'}</code>
+          </span>
+
+          {captureUnsupported && (
+            <span className={styles.controlHint}>
+              {status?.capture.reason || '当前主机不支持桌面采集'}
             </span>
           )}
-
           {status?.sync.lastSyncAtMs ? (
-            <span className={styles.metaPiece}>
-              <span>上次同步：{formatRelativeTimeZh(status.sync.lastSyncAtMs, nowMs)}</span>
+            <span className={styles.controlHint}>
+              上次同步 {formatRelativeTimeZh(status.sync.lastSyncAtMs, nowMs)}
             </span>
           ) : null}
-
-          {status?.sync.lastError ? (
-            <Text type="danger" className={styles.metaPiece}>
-              同步异常：{status.sync.lastError}
-            </Text>
-          ) : null}
-
           {feedback && (
-            <Text
-              type={feedback.tone === 'danger' ? 'danger' : 'secondary'}
-              className={styles.inlineFeedback}
+            <span
+              className={
+                feedback.tone === 'danger' ? styles.feedbackDanger : styles.feedback
+              }
             >
               {feedback.text}
-            </Text>
+            </span>
+          )}
+          {status?.sync.lastError && (
+            <span className={styles.feedbackDanger}>同步异常：{status.sync.lastError}</span>
           )}
         </div>
       </section>
 
       <div className={styles.bodyGrid}>
-        <section className={styles.listPanel} aria-label="剪贴板历史列表">
-          <Input
-            size="small"
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="搜索预览、路径或 ID..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-
-          <Segmented
-            size="small"
-            block
-            value={kindFilter}
-            options={KIND_OPTIONS}
-            onChange={(val) => setKindFilter(val as KindFilter)}
-          />
+        <section className={`${styles.listPanel} hud-panel`} aria-label="剪贴板历史列表">
+          <div className={styles.listToolbar}>
+            <Input
+              className={styles.searchInput}
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="搜索预览、路径或 ID…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+            <div className={styles.filterRow} role="tablist" aria-label="按类型筛选">
+              {KIND_OPTIONS.map((option) => {
+                const count =
+                  option.value === 'all'
+                    ? items.length
+                    : items.filter((item) => item.kind === option.value).length;
+                const active = kindFilter === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`${styles.filterChip} ${
+                      active ? styles.filterChipActive : ''
+                    }`}
+                    onClick={() => setKindFilter(option.value)}
+                  >
+                    {option.label}
+                    <span className={styles.filterCount}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className={styles.listScroll}>
             {loading && items.length === 0 ? (
-              <div className={styles.emptyWrap}>
+              <div className={styles.listLoading}>
                 <Spin size="small" />
               </div>
             ) : filteredItems.length === 0 ? (
-              <div className={styles.emptyWrap}>
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    items.length === 0
-                      ? '暂无剪贴板记录，开启采集或复制内容后点刷新查看'
-                      : '没有匹配的条目，试试清除筛选条件'
-                  }
-                />
+              <div className={styles.emptyState}>
+                <span className={styles.emptyRing} aria-hidden>
+                  <SnippetsOutlined />
+                </span>
+                <span className={styles.emptyTitle}>
+                  {items.length === 0 ? '还没有剪贴板记录' : '没有匹配的条目'}
+                </span>
+                <span className={styles.emptyHint}>
+                  {items.length === 0
+                    ? '打开本机采集后复制文本、图片或文件，记录会实时出现在这里。'
+                    : '换一个关键词，或切换左侧类型筛选。'}
+                </span>
               </div>
             ) : (
               filteredItems.map((item) => {
                 const isSelected = selectedItem?.id === item.id;
                 return (
-                  <div
+                  <button
                     key={item.id}
-                    role="button"
-                    tabIndex={0}
-                    className={`${styles.listRow} ${isSelected ? styles.listRowSelected : ''}`}
+                    type="button"
+                    aria-pressed={isSelected}
+                    className={`${styles.listRow} ${
+                      isSelected ? styles.listRowSelected : ''
+                    }`}
                     onClick={() => setSelectedId(item.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedId(item.id);
-                      }
-                    }}
                   >
-                    <div className={styles.listRowTop}>
-                      {renderKindIcon(item.kind)}
-                      <span className={styles.listPreview} title={item.preview}>
+                    <span className={styles.rowGlyph} data-kind={item.kind} aria-hidden>
+                      {item.kind === 'image' && item.thumbnailDataUrl ? (
+                        <img
+                          className={styles.rowGlyphImage}
+                          src={item.thumbnailDataUrl}
+                          alt=""
+                        />
+                      ) : (
+                        renderKindIcon(item.kind)
+                      )}
+                    </span>
+                    <span className={styles.rowMain}>
+                      <span className={styles.rowTitle} title={item.preview}>
                         {item.preview || `(${KIND_LABELS[item.kind]})`}
                       </span>
-                      {item.pinned && <StarFilled className={styles.pinnedStar} aria-label="已置顶" />}
-                    </div>
-                    <div className={styles.listRowMeta}>
-                      <span>
-                        {KIND_LABELS[item.kind]} · {formatByteSize(item.byteSize)}
+                      <span className={styles.rowMeta}>
+                        <span className={styles.rowKind}>{KIND_LABELS[item.kind]}</span>
+                        <span>{formatByteSize(item.byteSize)}</span>
+                        <span>{formatRelativeTimeZh(item.lastSeenAtMs, nowMs)}</span>
                       </span>
-                      <span>{formatRelativeTimeZh(item.lastSeenAtMs, nowMs)}</span>
-                    </div>
-                  </div>
+                    </span>
+                    {item.pinned && (
+                      <StarFilled className={styles.rowPin} aria-label="已置顶" />
+                    )}
+                  </button>
                 );
               })
             )}
           </div>
+
+          <div className={styles.listFooter}>
+            <span>
+              显示 {filteredItems.length} / {items.length}
+            </span>
+            <span>{captureOn ? '实时采集中' : '采集已暂停'}</span>
+          </div>
         </section>
 
-        <section className={styles.previewPanel} aria-label="剪贴板内容预览">
+        <section className={`${styles.previewPanel} hud-panel`} aria-label="剪贴板内容预览">
           {!selectedItem ? (
-            <div className={styles.emptyWrap}>
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="选择左侧记录以预览或复制内容"
-              />
+            <div className={styles.emptyState}>
+              <span className={styles.emptyRing} aria-hidden>
+                <EyeOutlined />
+              </span>
+              <span className={styles.emptyTitle}>选择一条记录</span>
+              <span className={styles.emptyHint}>
+                右侧会展示完整文本、图片或文件路径，并提供复制、置顶与删除操作。
+              </span>
             </div>
           ) : (
             <>
-              <div className={styles.previewHeader}>
-                <div className={styles.previewMetaGroup}>
-                  <Tag>{KIND_LABELS[selectedItem.kind]}</Tag>
-                  <Text type="secondary">{formatByteSize(selectedItem.byteSize)}</Text>
-                  {selectedItem.kind === 'image' &&
-                    selectedItem.width &&
-                    selectedItem.height ? (
-                      <Text type="secondary" className={styles.mono}>
-                        {selectedItem.width}×{selectedItem.height}
-                      </Text>
-                    ) : null}
-                  <Text type="secondary">
+              <div className={styles.previewHead}>
+                <div className={styles.previewIdentity}>
+                  <span className={styles.kindBadge} data-kind={selectedItem.kind}>
+                    {renderKindIcon(selectedItem.kind)}
+                    <span>{KIND_LABELS[selectedItem.kind]}</span>
+                  </span>
+                  <span className={styles.previewMeta}>
+                    {formatByteSize(selectedItem.byteSize)}
+                    {' · '}
                     {formatRelativeTimeZh(selectedItem.lastSeenAtMs, nowMs)}
-                  </Text>
-                  <Text type="secondary">采集 {selectedItem.seenCount} 次</Text>
-                  {selectedItem.sourceApp && (
-                    <Text type="secondary">来源：{selectedItem.sourceApp}</Text>
-                  )}
+                    {' · '}
+                    采集 {selectedItem.seenCount} 次
+                    {selectedItem.kind === 'image' &&
+                    selectedItem.width &&
+                    selectedItem.height
+                      ? ` · ${selectedItem.width}×${selectedItem.height}`
+                      : ''}
+                    {selectedItem.sourceApp ? ` · 来源 ${selectedItem.sourceApp}` : ''}
+                  </span>
                 </div>
 
                 <div className={styles.previewActions}>
@@ -856,14 +903,15 @@ export default function ClipboardWorkspace() {
                   >
                     复制
                   </Button>
-                  <Button
-                    size="small"
-                    icon={selectedItem.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-                    loading={acting}
-                    onClick={() => void handleTogglePin(selectedItem)}
-                  >
-                    {selectedItem.pinned ? '取消置顶' : '置顶'}
-                  </Button>
+                  <Tooltip title={selectedItem.pinned ? '取消置顶' : '置顶'}>
+                    <Button
+                      size="small"
+                      icon={selectedItem.pinned ? <PushpinFilled /> : <PushpinOutlined />}
+                      loading={acting}
+                      aria-label={selectedItem.pinned ? '取消置顶' : '置顶'}
+                      onClick={() => void handleTogglePin(selectedItem)}
+                    />
+                  </Tooltip>
                   <Popconfirm
                     title="确认删除这条剪贴板记录？"
                     okText="删除"
@@ -871,105 +919,110 @@ export default function ClipboardWorkspace() {
                     okButtonProps={{ danger: true }}
                     onConfirm={() => void handleDelete(selectedItem)}
                   >
-                    <Button size="small" danger icon={<DeleteOutlined />} disabled={acting}>
-                      删除
-                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      disabled={acting}
+                      aria-label="删除"
+                    />
                   </Popconfirm>
                 </div>
               </div>
 
               <div className={styles.previewBody}>
-                {selectedItem.kind === 'image' ? (
-                  <div className={styles.imagePreviewBox}>
-                    {selectedItem.thumbnailDataUrl ? (
-                      <div className={styles.thumbnailFrame}>
-                        <img
-                          src={selectedItem.thumbnailDataUrl}
-                          alt={selectedItem.preview || '剪贴板图片缩略图'}
-                          className={styles.thumbnailImg}
-                        />
-                      </div>
-                    ) : (
-                      <div className={styles.thumbnailPlaceholder}>
-                        <PictureOutlined style={{ fontSize: 22 }} />
-                        <span>暂无缩略图</span>
-                      </div>
-                    )}
-
-                    <div className={styles.imageActionsRow}>
-                      <Button
-                        size="small"
-                        icon={<EyeOutlined />}
-                        onClick={() => void handleOpenOriginalImage(selectedItem)}
-                      >
-                        查看原图
-                      </Button>
-                      <Button
-                        size="small"
-                        icon={<DownloadOutlined />}
-                        onClick={() => void handleDownloadImage(selectedItem)}
-                      >
-                        下载原图
-                      </Button>
-                      {fallbackDownloadUrl && (
-                        <a
-                          href={fallbackDownloadUrl}
-                          download={fallbackDownloadName}
-                          rel="noopener noreferrer"
+                <div className={styles.contentSurface} data-kind={selectedItem.kind}>
+                  {selectedItem.kind === 'image' ? (
+                    <div className={styles.imagePreviewBox}>
+                      {selectedItem.thumbnailDataUrl ? (
+                        <div className={styles.thumbnailFrame}>
+                          <img
+                            src={selectedItem.thumbnailDataUrl}
+                            alt={selectedItem.preview || '剪贴板图片缩略图'}
+                            className={styles.thumbnailImg}
+                          />
+                        </div>
+                      ) : (
+                        <div className={styles.thumbnailPlaceholder}>
+                          <PictureOutlined style={{ fontSize: 24 }} />
+                          <span>暂无缩略图</span>
+                        </div>
+                      )}
+                      <div className={styles.imageActionsRow}>
+                        <Button
+                          size="small"
+                          icon={<EyeOutlined />}
+                          onClick={() => void handleOpenOriginalImage(selectedItem)}
                         >
-                          直接下载 ({fallbackDownloadName})
-                        </a>
+                          查看原图
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => void handleDownloadImage(selectedItem)}
+                        >
+                          下载原图
+                        </Button>
+                        {fallbackDownloadUrl && (
+                          <a
+                            href={fallbackDownloadUrl}
+                            download={fallbackDownloadName}
+                            rel="noopener noreferrer"
+                          >
+                            直接下载 ({fallbackDownloadName})
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ) : selectedItem.kind === 'file' ? (
+                    <div className={styles.fileList}>
+                      {selectedItem.files && selectedItem.files.length > 0 ? (
+                        selectedItem.files.map((filePath) => (
+                          <div key={filePath} className={styles.fileRow}>
+                            <span className={styles.filePath}>{filePath}</span>
+                            <Button
+                              size="small"
+                              icon={<CopyOutlined />}
+                              disabled={acting}
+                              onClick={() => void handleCopySinglePath(filePath)}
+                            >
+                              复制路径
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <span className={styles.truncationNote}>该条目没有文件路径记录</span>
                       )}
                     </div>
-                  </div>
-                ) : selectedItem.kind === 'file' ? (
-                  <div className={styles.fileList}>
-                    {selectedItem.files && selectedItem.files.length > 0 ? (
-                      selectedItem.files.map((filePath) => (
-                        <div key={filePath} className={styles.fileRow}>
-                          <span className={styles.filePath}>{filePath}</span>
-                          <Button
-                            size="small"
-                            icon={<CopyOutlined />}
-                            disabled={acting}
-                            onClick={() => void handleCopySinglePath(filePath)}
-                          >
-                            复制路径
-                          </Button>
+                  ) : (
+                    <>
+                      {safeLinkHref && (
+                        <div className={styles.linkRow}>
+                          <LinkOutlined />
+                          <a href={safeLinkHref} target="_blank" rel="noopener noreferrer">
+                            {safeLinkHref}
+                          </a>
                         </div>
-                      ))
-                    ) : (
-                      <Text type="secondary">该条目没有文件路径记录</Text>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    {safeLinkHref && (
-                      <div className={styles.linkRow}>
-                        <LinkOutlined />
-                        <a href={safeLinkHref} target="_blank" rel="noopener noreferrer">
-                          {safeLinkHref}
-                        </a>
-                      </div>
-                    )}
-                    {detailLoading ? (
-                      <div className={styles.emptyWrap}>
-                        <Spin size="small" />
-                      </div>
-                    ) : (
-                      <>
-                        <pre className={styles.textPreview}>
-                          {displayText || selectedItem.preview}
-                        </pre>
-                        {detail?.id === selectedItem.id && detail.textTruncated && (
-                          <Text type="secondary">
-                            预览已截断至前 64 KiB；点击「复制」将拉取并复制完整原文。
-                          </Text>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
+                      )}
+                      {detailLoading ? (
+                        <div className={styles.listLoading}>
+                          <Spin size="small" />
+                        </div>
+                      ) : (
+                        <>
+                          <pre className={styles.textPreview}>
+                            {displayText || selectedItem.preview}
+                          </pre>
+                          {detail?.id === selectedItem.id && detail.textTruncated && (
+                            <span className={styles.truncationNote}>
+                              预览已截断至前 64 KiB；点击「复制」会拉取并复制完整原文。
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </>
           )}

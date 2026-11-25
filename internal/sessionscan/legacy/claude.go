@@ -240,6 +240,8 @@ func resolveClaudePathFromDir(dir, remaining string) (string, bool) {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
+		// os.ReadDir 不会返回 "."/".."；保留这个防御分支，避免以后换成
+		// 其它目录枚举实现时把相对路径带进递归。覆盖率上这一行不可达。
 		if name == "." || name == ".." {
 			continue
 		}

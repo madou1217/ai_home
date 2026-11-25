@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -180,7 +181,12 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 		item.Height = input.Height
 		item.Thumbnail = input.Thumbnail
 		if len(item.Thumbnail) == 0 || item.Width == 0 || item.Height == 0 {
-			if thumb, w, h, thumbErr := GenerateThumbnail(input.Data); thumbErr == nil {
+			thumb, w, h, thumbErr := GenerateThumbnail(input.Data)
+			if thumbErr != nil && errors.Is(thumbErr, ErrItemTooLarge) {
+				// Reject decompression bombs instead of silently storing them.
+				return IngestResult{}, thumbErr
+			}
+			if thumbErr == nil {
 				if item.Width == 0 {
 					item.Width = w
 				}

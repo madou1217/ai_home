@@ -17,8 +17,9 @@
   --line: rgba(16, 23, 40, 0.1);
   --line-strong: rgba(16, 23, 40, 0.18);
   --accent: #0a84ff;
-  --accent-2: #7c5cff;
-  --accent-3: #00c2a8;
+  /* 浅色下的小字号 chip 需要 >=4.5:1，#6f4ff2 对白底是 5.15:1 */
+  --accent-2: #6f4ff2;
+  --accent-3: #00a38d;
   --accent-soft: rgba(10, 132, 255, 0.1);
   --shadow: 0 1px 2px rgba(16, 23, 40, 0.04), 0 8px 24px rgba(16, 23, 40, 0.06);
   --shadow-hover: 0 2px 4px rgba(16, 23, 40, 0.06), 0 18px 44px rgba(16, 23, 40, 0.12);

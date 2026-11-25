@@ -28,9 +28,11 @@ func DocumentationEntries() []DocEntry {
 			Path:        "aih " + provider,
 			Description: describeProvider(provider),
 		})
+		// 每个 Provider 单独成组：21 个 Provider 动作放同一节会变成 280 张卡的墙。
+		actionGroup := "Provider · " + provider
 		for _, action := range listProviderActions(provider) {
 			entry := DocEntry{
-				Group:       "Provider 动作",
+				Group:       actionGroup,
 				Path:        "aih " + provider + " " + action.Name,
 				Description: action.Summary,
 				Flags:       listProviderActionFlags(action.Name),
@@ -343,9 +345,15 @@ var docGroupNotes = map[string]string{
 
 // DocumentationGroupNotes 返回页面分组的解读文案。
 func DocumentationGroupNotes() map[string]string {
-	notes := make(map[string]string, len(docGroupNotes))
+	notes := make(map[string]string, len(docGroupNotes)*2)
 	for group, note := range docGroupNotes {
 		notes[group] = note
+	}
+	// Provider 动作按 Provider 拆组后，共用同一条解读。
+	if note, ok := docGroupNotes["Provider 动作"]; ok {
+		for _, provider := range providerNames() {
+			notes["Provider · "+provider] = note
+		}
 	}
 	return notes
 }

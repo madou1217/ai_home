@@ -127,7 +127,9 @@
 - `accountKind`：`desktop` | `cli` | `none`，可选。空值时 desktop→desktop、
   cli→cli、ide→none。IDE 默认不映射到 Provider 的 Desktop 入口；需要账号入口时
   必须显式声明。
-- `platforms`：`macos` | `windows` | `linux`；空数组表示全平台。
+- `platforms`：`macos` | `windows` | `linux`；空数组表示全平台。插件可按运行环境
+  动态收窄（例如无 DISPLAY/WAYLAND 的 Linux Server 不声明 GUI 应用），宿主据此
+  隐藏卡片并拒绝 operate。
 - `open.mode`：`plugin`（默认，插件自己拉起）或 `host`
   （宿主按 `executable` 拉起；v1 仅允许无账号投影的应用）。
 - 每个贡献项最多 32 个应用；文本最长 160 字符；描述最长 512 字符。

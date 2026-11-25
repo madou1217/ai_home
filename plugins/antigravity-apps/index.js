@@ -33,6 +33,7 @@ const PRODUCTS = {
   'antigravity-desktop': {
     name: 'Antigravity',
     kind: 'desktop',
+    gui: true,
     // Desktop 是账号入口对应的产品。
     accountKind: 'desktop',
     order: 10,
@@ -43,6 +44,7 @@ const PRODUCTS = {
   'antigravity-ide': {
     name: 'Antigravity IDE',
     kind: 'ide',
+    gui: true,
     // IDE 是独立产品，不能把安装状态算到 Desktop 账号入口。
     accountKind: 'none',
     order: 11,
@@ -66,6 +68,20 @@ function currentArch() {
 
 function homeDir() {
   return os.homedir();
+}
+
+// 无桌面的 Linux server 不提供 Desktop/IDE 安装面。
+//
+// 平台列表排除 linux 后，宿主既不会在 Toolkit 出卡，也会在 operate 校验阶段
+// 拒绝 install/uninstall；CLI 不在此插件内，仍走 Provider 的 CLI 安装计划。
+function hasDesktopSession() {
+  if (currentPlatform() !== 'linux') return true;
+  return Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+
+function platformsFor(product) {
+  if (!product.gui || hasDesktopSession()) return ['macos', 'windows', 'linux'];
+  return ['macos', 'windows'];
 }
 
 // candidateExecutables 返回该产品在各平台的候选安装路径。
@@ -482,7 +498,7 @@ async function handle(value) {
           name: product.name,
           kind: product.kind,
           accountKind: product.accountKind,
-          platforms: ['macos', 'windows', 'linux'],
+          platforms: platformsFor(product),
           order: product.order,
           capabilities: {
             install: true,

@@ -38,6 +38,13 @@ aih plugin enable antigravity.apps --accept-permissions
 IDE 的安装状态不会让 Desktop 账号入口显示“已安装”，反之亦然。这是刻意的：
 三个产品不是同一个应用的三种叫法。
 
+## 无桌面的 Linux Server
+
+插件在 Linux 上没有 `DISPLAY` / `WAYLAND_DISPLAY` 时，不会为 Desktop/IDE
+声明 `linux` 平台：Toolkit 不出卡、Accounts 不显示桌面入口、宿主 `operate`
+也会拒绝安装/卸载。Antigravity GUI 不属于 headless server 的安装面；CLI
+仍由 Provider 的 CLI 安装计划管理。
+
 ## 与内置安装计划的关系
 
 内置的 `agy-desktop` 安装计划仍然保留，用于没有安装插件的部署。插件使用

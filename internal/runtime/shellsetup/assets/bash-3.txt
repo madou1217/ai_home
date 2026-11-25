@@ -37,6 +37,8 @@ _aih_complete() {
   local -a _aih_words
   COMPREPLY=()
   type compopt >/dev/null 2>&1 && compopt +o default
+  # Bash 4.4+：保持后端给的优先级顺序（命令在前、历史在后）；3.2 没有 compopt，只能按字典序显示。
+  type compopt >/dev/null 2>&1 && compopt -o nosort 2>/dev/null
   for (( _aih_i=1; _aih_i<=COMP_CWORD; _aih_i++ )); do
     _aih_words+=("${COMP_WORDS[_aih_i]}")
   done

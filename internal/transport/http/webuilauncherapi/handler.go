@@ -32,10 +32,11 @@ type Authorizer interface {
 
 // Handler serves AIH Launch management HTTP requests.
 type Handler struct {
-	Authorizer Authorizer
-	Service    *launcher.Service
-	Show       func(context.Context) error
-	MaxBody    int64
+	Authorizer    Authorizer
+	Service       *launcher.Service
+	Show          func(context.Context) error
+	DesktopStatus func(context.Context) any
+	MaxBody       int64
 }
 
 // NewHandler constructs a launcher management API handler.
@@ -167,6 +168,18 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := h.Service.Status(r.Context())
+	if h.DesktopStatus != nil {
+		if desktop := h.DesktopStatus(r.Context()); desktop != nil {
+			writeJSON(w, http.StatusOK, struct {
+				launcher.Status
+				Desktop any `json:"desktop,omitempty"`
+			}{
+				Status:  status,
+				Desktop: desktop,
+			})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, status)
 }
 

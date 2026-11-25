@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/aihhome"
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/runtime/launcherd"
 	"github.com/madou1217/ai_home/internal/transport/http/webuilauncherapi"
 )
 
@@ -31,8 +34,15 @@ func runLaunch(ctx context.Context, arguments []string, runtime commandRuntime) 
 		writeLaunchUsage(runtime.stdout)
 		return nil
 	}
-	if subcommand == "show" {
+	switch subcommand {
+	case "show":
 		return runLaunchShow(ctx, rest, runtime)
+	case "toggle":
+		return runLaunchToggle(ctx, rest, runtime)
+	case "enable":
+		return runLaunchEnable(rest, runtime)
+	case "disable":
+		return runLaunchDisable(rest, runtime)
 	}
 
 	homeDir, err := resolveLauncherAIHomeDir(runtime)
@@ -57,6 +67,8 @@ func runLaunch(ctx context.Context, arguments []string, runtime commandRuntime) 
 		return runLaunchCatalog(ctx, service, rest, runtime)
 	case "status":
 		return runLaunchStatus(ctx, service, rest, runtime)
+	case "ui":
+		return runLaunchUI(ctx, homeDir, service, rest, runtime)
 	default:
 		_, _ = fmt.Fprintf(runtime.stderr, "[aih launch] unknown subcommand: %s\n", subcommand)
 		writeLaunchUsage(runtime.stderr)
@@ -307,6 +319,159 @@ func runLaunchShow(ctx context.Context, args []string, runtime commandRuntime) e
 	return nil
 }
 
+func runLaunchUI(ctx context.Context, homeDir string, service *launcher.Service, args []string, runtime commandRuntime) error {
+	daemonMode := false
+	socketPath := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--daemon":
+			daemonMode = true
+		case arg == "--socket" && i+1 < len(args):
+			i++
+			socketPath = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, "--socket="):
+			socketPath = strings.TrimSpace(strings.TrimPrefix(arg, "--socket="))
+		default:
+			return fmt.Errorf("unknown flag for `aih launch ui`: %s", arg)
+		}
+	}
+	if goruntime.GOOS != "linux" {
+		return fmt.Errorf("`aih launch ui` 仅支持 Linux 桌面（当前平台：%s）", goruntime.GOOS)
+	}
+	if !launcherd.HasDesktopSession() {
+		return errors.New("未检测到 Linux 桌面会话（DISPLAY 和 WAYLAND_DISPLAY 均为空）")
+	}
+	if socketPath == "" {
+		socketPath = launcherd.DefaultSocketPath()
+	}
+
+	if daemonMode {
+		exePath, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("无法定位当前 aih 可执行文件: %w", err)
+		}
+		pid, logPath, err := launcherd.StartDetached(ctx, exePath, homeDir, socketPath)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "launcher ui started in background (pid=%d, socket=%s, log=%s)\n", pid, socketPath, logPath)
+		return nil
+	}
+
+	daemon, err := launcherd.New(launcherd.Options{
+		AIHomeDir:  homeDir,
+		SocketPath: socketPath,
+		Service:    service,
+		LogOutput:  runtime.stderr,
+	})
+	if err != nil {
+		return err
+	}
+	sigCtx, cancel := launcherd.WithShutdownSignals(ctx)
+	defer cancel()
+	defer func() { _ = daemon.Close() }()
+	return daemon.Run(sigCtx)
+}
+
+func runLaunchToggle(ctx context.Context, args []string, runtime commandRuntime) error {
+	socketPath := ""
+	jsonOutput := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--json":
+			jsonOutput = true
+		case arg == "--socket" && i+1 < len(args):
+			i++
+			socketPath = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, "--socket="):
+			socketPath = strings.TrimSpace(strings.TrimPrefix(arg, "--socket="))
+		default:
+			return fmt.Errorf("unknown flag for `aih launch toggle`: %s", arg)
+		}
+	}
+	if goruntime.GOOS != "linux" {
+		return fmt.Errorf("`aih launch toggle` 仅支持 Linux（macOS/Windows 请使用 `aih launch show`）")
+	}
+	if socketPath == "" {
+		socketPath = launcherd.DefaultSocketPath()
+	}
+	if err := launcherd.SendCommand(ctx, socketPath, "toggle"); err != nil {
+		return fmt.Errorf("%w（请先运行 `aih launch ui` 或 `aih launch ui --daemon`）", err)
+	}
+	if jsonOutput {
+		return writeLaunchJSON(runtime.stdout, map[string]any{"ok": true, "socket": socketPath})
+	}
+	_, _ = fmt.Fprintln(runtime.stdout, "launcher toggled")
+	return nil
+}
+
+func runLaunchEnable(args []string, runtime commandRuntime) error {
+	jsonOutput := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			jsonOutput = true
+		default:
+			return fmt.Errorf("unknown flag for `aih launch enable`: %s", arg)
+		}
+	}
+	if goruntime.GOOS != "linux" {
+		return fmt.Errorf("`aih launch enable` 仅支持 Linux XDG autostart（当前平台：%s）", goruntime.GOOS)
+	}
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("无法定位当前 aih 可执行文件: %w", err)
+	}
+	desktopPath, err := launcherd.EnableAutostart(exePath)
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeLaunchJSON(runtime.stdout, map[string]any{
+			"ok":        true,
+			"autostart": true,
+			"path":      desktopPath,
+		})
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "enabled autostart: %s\n", desktopPath)
+	return nil
+}
+
+func runLaunchDisable(args []string, runtime commandRuntime) error {
+	jsonOutput := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			jsonOutput = true
+		default:
+			return fmt.Errorf("unknown flag for `aih launch disable`: %s", arg)
+		}
+	}
+	if goruntime.GOOS != "linux" {
+		return fmt.Errorf("`aih launch disable` 仅支持 Linux XDG autostart（当前平台：%s）", goruntime.GOOS)
+	}
+	desktopPath, removed, err := launcherd.DisableAutostart()
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		return writeLaunchJSON(runtime.stdout, map[string]any{
+			"ok":        true,
+			"autostart": false,
+			"removed":   removed,
+			"path":      desktopPath,
+		})
+	}
+	if removed {
+		_, _ = fmt.Fprintf(runtime.stdout, "disabled autostart (removed %s)\n", desktopPath)
+	} else {
+		_, _ = fmt.Fprintf(runtime.stdout, "autostart already disabled (%s not found)\n", desktopPath)
+	}
+	return nil
+}
+
 func runLaunchStatus(ctx context.Context, service *launcher.Service, args []string, runtime commandRuntime) error {
 	jsonOutput := false
 	for _, arg := range args {
@@ -318,6 +483,43 @@ func runLaunchStatus(ctx context.Context, service *launcher.Service, args []stri
 		}
 	}
 	status := service.Status(ctx)
+	if goruntime.GOOS == "linux" {
+		sockPath := launcherd.DefaultSocketPath()
+		desktop := launcherd.Status{
+			Supported: launcherd.HasDesktopSession(),
+			Autostart: launcherd.AutostartEnabled(),
+		}
+		socketReady := launcherd.ProbeSocket(ctx, sockPath)
+		if jsonOutput {
+			return writeLaunchJSON(runtime.stdout, struct {
+				launcher.Status
+				Desktop launcherd.Status `json:"desktop"`
+				Socket  string           `json:"socket"`
+				Running bool             `json:"running"`
+			}{
+				Status:  status,
+				Desktop: desktop,
+				Socket:  sockPath,
+				Running: socketReady,
+			})
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "Platform:    %s\n", status.Platform)
+		_, _ = fmt.Fprintf(runtime.stdout, "Supported:   %t\n", status.Supported)
+		_, _ = fmt.Fprintf(runtime.stdout, "Apps:        %d\n", status.Count)
+		if status.GeneratedAt > 0 {
+			_, _ = fmt.Fprintf(runtime.stdout, "GeneratedAt: %s\n", time.UnixMilli(status.GeneratedAt).UTC().Format(time.RFC3339))
+		} else {
+			_, _ = fmt.Fprintln(runtime.stdout, "GeneratedAt: -")
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "Desktop:     %t\n", desktop.Supported)
+		_, _ = fmt.Fprintf(runtime.stdout, "Running:     %t\n", socketReady)
+		_, _ = fmt.Fprintf(runtime.stdout, "Socket:      %s\n", sockPath)
+		_, _ = fmt.Fprintf(runtime.stdout, "Autostart:   %t\n", desktop.Autostart)
+		if status.LastError != "" {
+			_, _ = fmt.Fprintf(runtime.stdout, "LastError:   %s\n", status.LastError)
+		}
+		return nil
+	}
 	if jsonOutput {
 		return writeLaunchJSON(runtime.stdout, status)
 	}
@@ -350,6 +552,10 @@ func writeLaunchUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  aih launch catalog [--wire] [--q <关键词>] [--refresh] [--limit <N>]")
 	_, _ = fmt.Fprintln(w, "  aih launch show [--json]")
 	_, _ = fmt.Fprintln(w, "  aih launch status [--json]")
+	_, _ = fmt.Fprintln(w, "  aih launch ui [--daemon] [--socket <path>]")
+	_, _ = fmt.Fprintln(w, "  aih launch toggle [--socket <path>] [--json]")
+	_, _ = fmt.Fprintln(w, "  aih launch enable [--json]")
+	_, _ = fmt.Fprintln(w, "  aih launch disable [--json]")
 }
 
 func writeLaunchJSON(w io.Writer, payload any) error {

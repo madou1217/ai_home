@@ -13,13 +13,24 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
 	"github.com/madou1217/ai_home/internal/runtime/desktoplauncher"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
+	"github.com/madou1217/ai_home/internal/runtime/launcherd"
 	"github.com/madou1217/ai_home/internal/transport/http/webuilauncherapi"
 )
 
-// launcherRuntime owns the AIH Launch application service and HTTP handler wired into aihserver.
+// launcherRuntime owns the AIH Launch application service, optional Linux launcherd,
+// and HTTP handler wired into aihserver.
 type launcherRuntime struct {
-	service *launcher.Service
-	handler *webuilauncherapi.Handler
+	service     *launcher.Service
+	handler     *webuilauncherapi.Handler
+	linuxDaemon *launcherd.Daemon
+}
+
+// Close stops the Linux desktop launcher supervisor if running.
+func (r *launcherRuntime) Close() error {
+	if r == nil || r.linuxDaemon == nil {
+		return nil
+	}
+	return r.linuxDaemon.Close()
 }
 
 // bindDesktopShow connects POST /v1/management/launcher/show to the native desktop helper.
@@ -41,8 +52,9 @@ func (r *launcherRuntime) bindDesktopShow(desktop *desktoptranslation.Service) {
 	}
 }
 
-// newLauncherRuntime wires the platform app catalog, launcher opener, usage store, and HTTP routes.
-func newLauncherRuntime(dependencies webuiRouteDependencies) (*launcherRuntime, []webuiRoute, error) {
+// newLauncherRuntime wires the platform app catalog, launcher opener, usage store,
+// Linux launcherd (when running on a Linux desktop session), and HTTP routes.
+func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies) (*launcherRuntime, []webuiRoute, error) {
 	store, err := launcherstore.New(dependencies.AIHomeDir)
 	if err != nil {
 		return nil, nil, err
@@ -57,11 +69,37 @@ func newLauncherRuntime(dependencies webuiRouteDependencies) (*launcherRuntime, 
 	if err != nil {
 		return nil, nil, err
 	}
+
+	rt := &launcherRuntime{
+		service: service,
+		handler: handler,
+	}
+
+	if runtime.GOOS == "linux" {
+		if daemon, daemonErr := launcherd.New(launcherd.Options{
+			AIHomeDir: dependencies.AIHomeDir,
+			Service:   service,
+		}); daemonErr == nil {
+			rt.linuxDaemon = daemon
+			handler.DesktopStatus = func(_ context.Context) any {
+				return daemon.Status()
+			}
+			// Headless Linux (e.g. AWS server without DISPLAY/WAYLAND_DISPLAY) keeps
+			// supported=false and does not start a GTK child process.
+			if launcherd.HasDesktopSession() {
+				_ = daemon.Start(ctx)
+				handler.Show = func(showCtx context.Context) error {
+					return daemon.Show(showCtx)
+				}
+			}
+		}
+	}
+
 	routes := []webuiRoute{
 		{Pattern: webuilauncherapi.Path + "/apps", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/open", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/show", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/status", Handler: handler, SkipPublicAlias: true},
 	}
-	return &launcherRuntime{service: service, handler: handler}, routes, nil
+	return rt, routes, nil
 }

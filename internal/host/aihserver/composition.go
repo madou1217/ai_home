@@ -1565,7 +1565,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		return serverHandlers{}, nil, fmt.Errorf("装配剪贴板服务失败: %w", clipboardErr)
 	}
 	webuiRoutes = append(webuiRoutes, clipboardRoutes...)
-	launcherRuntimeService, launcherRoutes, launcherErr := newLauncherRuntime(webuiDeps)
+	launcherRuntimeService, launcherRoutes, launcherErr := newLauncherRuntime(ctx, webuiDeps)
 	if launcherErr != nil {
 		return serverHandlers{}, nil, fmt.Errorf("装配应用启动器服务失败: %w", launcherErr)
 	}
@@ -1909,6 +1909,9 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		}
 		if clipboardRuntimeService != nil {
 			closers = append(closers, clipboardRuntimeService)
+		}
+		if launcherRuntimeService != nil {
+			closers = append(closers, launcherRuntimeService)
 		}
 		if requirementsRuntimeService != nil {
 			closers = append(closers, requirementsRuntimeService)

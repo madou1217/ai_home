@@ -142,8 +142,12 @@ type serverHandlers struct {
 	claudeNativeRelay  http.Handler
 	// familyRelay 是 CodeBuddy / WorkBuddy 家族的 chat completions 透传通道，
 	// 挂在 chat completions 入口前面，服务不了的请求由它内部交回 Canonical。
-	familyRelay   http.Handler
-	catalogStatus func() catalogReadiness
+	familyRelay http.Handler
+	// relayMessages / relayResponses 是同一套透传账号在 Anthropic Messages /
+	// OpenAI Responses 入口上的跨协议桥；只有 Canonical 目录没有路由的模型才进桥。
+	relayMessages  http.Handler
+	relayResponses http.Handler
+	catalogStatus  func() catalogReadiness
 	// observeCodexClient 从 Responses 入口的真实 Codex 客户端学习版本，见 client_version.go。
 	observeCodexClient func(*http.Request)
 	// accountOutcomes 是账号请求结果时间桶的只读管理接口。
@@ -1408,6 +1412,12 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		upstream429: upstream429Controller,
 		usage:       attemptUsage,
 		gate:        usageGate,
+		routeChecker: inference.models,
+		messagesFallback: nativeRelayHandler,
+		responsesFallback: responsesDispatcher{
+			canonical:  inference.handler,
+			nativeHTTP: codexHTTPHandler,
+		},
 	})
 	if err != nil {
 		_ = inference.Close()
@@ -1829,6 +1839,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		claudeRelayLeases:     relayLeaseHandler,
 		claudeNativeRelay:     nativeRelayHandler,
 		familyRelay:           familyRelayHandler,
+		relayMessages:         familyRelay.messagesHandler,
+		relayResponses:        familyRelay.responsesHandler,
 		shutdown:              shutdownHandler,
 		modelAliases:          modelAliasesHandler,
 		modelAliasesWebUI:     modelAliasesWebUIHandler,

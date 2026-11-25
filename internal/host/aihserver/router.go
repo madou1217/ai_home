@@ -268,12 +268,21 @@ func newRouter(handlers serverHandlers) http.Handler {
 		handlers.claudeRelayLeases,
 	)
 	// 推理入口先过插件 gateway.request 闸门（只对 Node 带代次头的请求生效；WebSocket 升级直通）。
-	mux.Handle(openairesponsesapi.Path, handlers.plugins.wrap("openai_responses", responsesDispatcher{
+	responsesHandler := http.Handler(responsesDispatcher{
 		canonical:  handlers.inference,
 		nativeHTTP: handlers.codexResponsesHTTP,
 		websocket:  handlers.codexResponsesWS,
 		observe:    handlers.observeCodexClient,
-	}))
+	})
+	// 跨协议桥只服务 relay-only 模型；POST 之外的请求（含 WebSocket 升级）与
+	// 有 Canonical 路由的模型全部交回完整 dispatcher。
+	if handlers.relayResponses != nil {
+		if setter, ok := handlers.relayResponses.(interface{ SetFallback(http.Handler) }); ok {
+			setter.SetFallback(responsesHandler)
+		}
+		responsesHandler = handlers.relayResponses
+	}
+	mux.Handle(openairesponsesapi.Path, handlers.plugins.wrap("openai_responses", responsesHandler))
 	// chat completions 入口先过家族透传通道：能承载的家族请求（钉选 + 家族账号）由它
 	// 直连家族官方端点，其余（非家族模型、钉选到别的 Provider、本通道表达不了的请求）
 	// 由它内部交回 Canonical。未装配（含 router 单测）时保持 Canonical 直挂。
@@ -289,7 +298,11 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 客户端即使上游就是 claude 账号也被迫走 Canonical 重建——那是丢字段
 	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
 	// 的来源，且同协议下这些信息本来是 1:1 的。
-	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
+	messagesHandler := handlers.claudeNativeRelay
+	if handlers.relayMessages != nil {
+		messagesHandler = handlers.relayMessages
+	}
+	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", messagesHandler))
 	// 未命中任何注册路由时统一 404：Go 是唯一入口，未知路径不再转交给其它宿主。
 	// 所有 WebUI / 插件管理 / 推理路由都必须显式注册；缺失即稳定 JSON 404。
 	var fallback http.Handler = http.HandlerFunc(handleRouteNotFound)

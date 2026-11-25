@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
+	"github.com/madou1217/ai_home/internal/transport/http/relaybridge"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
@@ -31,6 +32,11 @@ type familyRelayInputs struct {
 	upstream429 *upstreamretry.Controller
 	usage       relaycore.UsageRecorder
 	gate        *usageSchedulingGate
+	// routeChecker 判断模型是否已有 Canonical 执行路由；有路由的模型不进跨协议桥。
+	routeChecker relaybridge.RouteChecker
+	// messagesFallback / responsesFallback 承接桥不服务的请求（原生 relay / Canonical）。
+	messagesFallback  http.Handler
+	responsesFallback http.Handler
 }
 
 // familyRelayRuntime 是家族透传通道的装配结果。
@@ -39,10 +45,14 @@ type familyRelayInputs struct {
 // modules/accounts/providerRegistry 同时被内部聊天入口与插件描述符回调复用，
 // 因此一并返回，避免调用方再重建一份。
 type familyRelayRuntime struct {
-	handler         *relaycore.Handler
-	modules         []relayModule
-	familyAccounts  *familyRelayAccountSource
-	pluginProviders *pluginProviderRegistry
+	handler *relaycore.Handler
+	// messagesHandler / responsesHandler 是同一套透传账号与 Provider 链在
+	// Anthropic Messages / OpenAI Responses 入口上的跨协议桥。
+	messagesHandler  http.Handler
+	responsesHandler http.Handler
+	modules          []relayModule
+	familyAccounts   *familyRelayAccountSource
+	pluginProviders  *pluginProviderRegistry
 }
 
 func newFamilyRelayRuntime(inputs familyRelayInputs) (*familyRelayRuntime, error) {
@@ -88,43 +98,65 @@ func newFamilyRelayRuntime(inputs familyRelayInputs) (*familyRelayRuntime, error
 		},
 		relayModuleProviders(relayModules)...,
 	)
-	familyRelayHandler, err := relaycore.NewHandler(
-		relaycore.Dependencies{
-			Provider: relaycore.NewProviderChain(familyMembers...),
-			Path:     codebuddyfamilyrelay.Path,
-			Aliases:  newChatAliasResolver(inputs.aliases, inputs.store),
-			// 别名拥有最高解释权；未命中别名时才解析 Provider 显式声明的
-			// `provider/model` 前缀，并把 Provider 钉死（与 Node 前门同一顺序）。
-			ModelPrefixes: newRelayModelPrefixResolver(inputs.catalog, inputs.store),
-			Accounts: relaycore.NewAccountSourceChain(
-				append(append(relayModuleAccounts(relayModules), familyRelayAccounts), pluginAccounts)...,
-			),
-			Fallback:            inputs.fallback,
-			Credentials:         inputs.credentials,
-			Client:              inputs.client,
-			AccountEgress:       inputs.egress,
-			Attempts:            inputs.attempts,
-			Upstream429Retries:  inputs.upstream429,
-			Clock:               time.Now,
-			MaxRequestBodyBytes: codebuddyfamilyrelay.MaxRequestBodyBytes,
-			UnavailableMessage:  "家族透传当前不可用",
-			// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
-			Usage: inputs.usage,
-			// 档位与选号/诊断同源：记账时按策略选出的档位归因。
-			Buckets: relayQuotaBuckets{gate: inputs.gate, evaluator: newSchedulingEvaluator()},
-		},
-	)
+	// Path / Fallback 由每个入口各自声明：chat 入口交回 Canonical，跨协议入口
+	// 交回该入口原有的原生 relay / Canonical 处理器。其余依赖完全共享。
+	relayDependencies := relaycore.Dependencies{
+		Provider: relaycore.NewProviderChain(familyMembers...),
+		Aliases:  newChatAliasResolver(inputs.aliases, inputs.store),
+		// 别名拥有最高解释权；未命中别名时才解析 Provider 显式声明的
+		// `provider/model` 前缀，并把 Provider 钉死（与 Node 前门同一顺序）。
+		ModelPrefixes: newRelayModelPrefixResolver(inputs.catalog, inputs.store),
+		Accounts: relaycore.NewAccountSourceChain(
+			append(append(relayModuleAccounts(relayModules), familyRelayAccounts), pluginAccounts)...,
+		),
+		Credentials:         inputs.credentials,
+		Client:              inputs.client,
+		AccountEgress:       inputs.egress,
+		Attempts:            inputs.attempts,
+		Upstream429Retries:  inputs.upstream429,
+		Clock:               time.Now,
+		MaxRequestBodyBytes: codebuddyfamilyrelay.MaxRequestBodyBytes,
+		UnavailableMessage:  "家族透传当前不可用",
+		// 用量由 relaycore 在流结束时结算（首个字节前无法得知 token 数）。
+		Usage: inputs.usage,
+		// 档位与选号/诊断同源：记账时按策略选出的档位归因。
+		Buckets: relayQuotaBuckets{gate: inputs.gate, evaluator: newSchedulingEvaluator()},
+	}
+	chatDependencies := relayDependencies
+	chatDependencies.Path = codebuddyfamilyrelay.Path
+	chatDependencies.Fallback = inputs.fallback
+	familyRelayHandler, err := relaycore.NewHandler(chatDependencies)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"创建家族透传 Handler 失败: %w",
 			err,
 		)
 	}
+	messagesHandler, err := relaybridge.New(
+		relayDependencies,
+		relaybridge.AnthropicSurface(),
+		inputs.routeChecker,
+		inputs.messagesFallback,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Anthropic 跨协议桥失败: %w", err)
+	}
+	responsesHandler, err := relaybridge.New(
+		relayDependencies,
+		relaybridge.ResponsesSurface(),
+		inputs.routeChecker,
+		inputs.responsesFallback,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Responses 跨协议桥失败: %w", err)
+	}
 
 	return &familyRelayRuntime{
-		handler:         familyRelayHandler,
-		modules:         relayModules,
-		familyAccounts:  familyRelayAccounts,
-		pluginProviders: pluginProviders,
+		handler:          familyRelayHandler,
+		messagesHandler:  messagesHandler,
+		responsesHandler: responsesHandler,
+		modules:          relayModules,
+		familyAccounts:   familyRelayAccounts,
+		pluginProviders:  pluginProviders,
 	}, nil
 }

@@ -3172,6 +3172,8 @@ export const toolkitAPI = {
     uploadId?: string;
     tool?: string;
     args?: Record<string, unknown>;
+    /** Skill link projection (shared snapshot; Windows junction). */
+    link?: boolean;
   }): Promise<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }> => {
     const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }>(
       '/webui/toolkit/native-resources', input

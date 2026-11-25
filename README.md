@@ -313,9 +313,13 @@ Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp
 - **CLI**：`aih skill install <skillDir> --provider <id>`、`aih skill enable|disable <id> --provider <id>`、`aih skill list`、`aih skill doctor`。
 - **未托管目录**：`aih skill adopt <id> --provider <id>`。只认领内容与包一致的目录，不移动、不重写文件；
   用 `install` 指向与目标目录内容一致的源时也会自动接管。
+- **链接投影**：`aih skill install <skillDir> --provider <id> --link`，或在 WebUI 安装时勾选「使用链接投影」。
+  Provider 目录指向 `managed-resources/skills/<digest>` 共享快照；macOS/Linux 用 symlink，Windows 用 junction。
+  停用只移除链接、快照保留；已托管的复制目录在 digest 一致时可迁移为链接。
 
-> 资源去重：当前通用 Skill 投影仍是目录复制；macOS 上 Claude / Codex / CodeBuddy / CodeBuddy CN / Gemini
-> 已实测可加载软链接 Skill，Windows 上 Gemini 的链接为 Junction。详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
+> 资源去重：默认仍是目录复制，可选择 link 投影。macOS 上 Claude / Codex / CodeBuddy / CodeBuddy CN / Gemini
+> 已实测可加载软链接 Skill；Windows 复用 `artifactstore` 的 junction 实现（Windows 真机测试通过）。
+> 详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
 
 ## Web UI
 

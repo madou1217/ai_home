@@ -38,12 +38,16 @@
    - CodeBuddy / CodeBuddy CN：未安装。
    - 因此 Windows 结论只覆盖 Gemini 的 Junction；不能外推到所有 Provider。
 
-5. **当前 AIH 仍使用复制投影。**
-   - `skillDirProjection` 仍把软链接判为 conflict；接管只解决“已有真实目录”的认领。
-   - 要把通用 Skill 改成 link store，需要按 Provider/OS 设计：
-     共享实体 + 每 Provider 链接/junction；停用即移除链接；
-     Windows 需显式创建 Junction（`os.Symlink` 不是 junction）；
-     现有复制投影需要迁移策略。
+5. **默认仍复制，新增可选 link 投影。**
+   - `skillDirProjection` 保留为默认；`skillLinkProjection` 把 Provider 目录指向
+     `managed-resources/skills/<digest>` 共享快照。
+   - 入口：`aih skill install <dir> --provider <id> --link`，或 WebUI 安装时勾选「使用链接投影」。
+   - 生命周期实测（macOS + Gemini）：link 安装 → symlink；disable 只删链接、快照保留；
+     enable 重建链接；remove 删除链接；已有的托管复制目录在 digest 一致时可迁移为链接。
+   - Windows 复用 `artifactstore.CreateDirLink`（FSCTL junction）；交叉编译的 Windows
+     artifactstore 测试在真机通过：CreationAndPassthrough / RemoveAllKeepsTarget /
+     RenameSemantics / Dangling。
+   - Windows 的 link 投影还没有在 AIH Server 层做端到端安装；Junction 基础行为已验证。
 
 ## 测试方法
 

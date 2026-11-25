@@ -216,6 +216,8 @@ type OperateInput struct {
 	ID       string         `json:"id"`
 	Tool     string         `json:"tool"`
 	Args     map[string]any `json:"args"`
+	// Link requests link-based skill projection instead of a per-provider copy.
+	Link bool `json:"link,omitempty"`
 }
 
 // Selector 表示归一化的 provider 或 host 选择器。
@@ -401,7 +403,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
-			result, err = s.skills.install(ctx, src, sel.Provider, "", false)
+			result, err = s.skills.install(ctx, src, sel.Provider, "", false, input.Link)
 		case "adopt":
 			if id == "" {
 				return OperateResponse{}, fail("native_resource_id_required")

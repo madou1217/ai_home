@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/artifactstore"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
 )
 
@@ -27,6 +28,9 @@ type SkillPackage struct {
 	Files        []PackageFile
 	Digest       string
 	Instructions string
+	// SnapshotPath is the managed content-addressed snapshot used by link
+	// projections. It is runtime-only and never part of the digest.
+	SnapshotPath string
 }
 
 // validateSkillID 校验 Skill ID 格式。
@@ -283,6 +287,107 @@ func (p skillDirProjection) remove(record ManagedRecord, pkg SkillPackage) error
 	return os.RemoveAll(record.Target)
 }
 
+type skillLinkProjection struct{}
+
+func (skillLinkProjection) inspect(record ManagedRecord, pkg SkillPackage) string {
+	info, err := lstatMaybe(record.Target)
+	if err != nil {
+		return "conflict"
+	}
+	if info == nil {
+		return "absent"
+	}
+	if !artifactstore.IsDirLink(record.Target) {
+		return "conflict"
+	}
+	target, ok := artifactstore.DirLinkTarget(record.Target)
+	if !ok || strings.TrimSpace(pkg.SnapshotPath) == "" {
+		return "conflict"
+	}
+	expected, err := filepath.Abs(pkg.SnapshotPath)
+	if err != nil {
+		return "conflict"
+	}
+	if filepath.Clean(target) != filepath.Clean(expected) {
+		return "modified"
+	}
+	if info, err := os.Stat(record.Target); err != nil || !info.IsDir() {
+		return "modified"
+	}
+	return "present"
+}
+
+func (p skillLinkProjection) apply(record ManagedRecord, pkg SkillPackage, previous *ManagedRecord, previousPkg *SkillPackage, _ string) error {
+	info, err := lstatMaybe(record.Target)
+	if err != nil {
+		return err
+	}
+	if info != nil {
+		if previous == nil {
+			if !artifactstore.IsDirLink(record.Target) {
+				return fail("skill_target_conflict")
+			}
+			if p.inspect(record, pkg) == "present" {
+				return nil
+			}
+			return fail("skill_target_modified")
+		}
+		oldPkg := pkg
+		if previousPkg != nil {
+			oldPkg = *previousPkg
+		}
+		switch previous.Mode {
+		case "link":
+			if p.inspect(*previous, oldPkg) != "present" {
+				return fail("skill_target_modified")
+			}
+			if previous.Digest == record.Digest {
+				return nil
+			}
+			if err := os.RemoveAll(record.Target); err != nil {
+				return err
+			}
+		case "native":
+			// 把未修改的托管复制目录迁移成链接；只删这份托管复制，不影响其他 Provider。
+			if (skillDirProjection{}).inspect(*previous, oldPkg) != "present" {
+				return fail("skill_target_modified")
+			}
+			if err := os.RemoveAll(record.Target); err != nil {
+				return err
+			}
+		default:
+			return fail("skill_target_modified")
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(record.Target), 0o700); err != nil {
+		return err
+	}
+	if err := artifactstore.CreateDirLink(pkg.SnapshotPath, record.Target); err != nil {
+		return err
+	}
+	if p.inspect(record, pkg) != "present" {
+		return fail("skill_target_modified")
+	}
+	return nil
+}
+
+func (p skillLinkProjection) remove(record ManagedRecord, pkg SkillPackage) error {
+	info, err := lstatMaybe(record.Target)
+	if err != nil {
+		return err
+	}
+	if info == nil {
+		return nil
+	}
+	if !artifactstore.IsDirLink(record.Target) {
+		return fail("skill_target_modified")
+	}
+	if p.inspect(record, pkg) != "present" {
+		return fail("skill_target_modified")
+	}
+	return os.RemoveAll(record.Target)
+}
+
 type skillInstructionProjection struct{}
 
 func readInstructionsFile(file string) (string, error) {
@@ -380,6 +485,7 @@ func (p skillInstructionProjection) remove(record ManagedRecord, pkg SkillPackag
 
 var skillProjections = map[string]skillProjection{
 	"native":          skillDirProjection{},
+	"link":            skillLinkProjection{},
 	"projection-only": skillInstructionProjection{},
 }
 
@@ -442,6 +548,14 @@ func hasParentSegment(p string) bool {
 	return false
 }
 
+func (m *skillManager) snapshotPath(pkg SkillPackage) string {
+	path := filepath.Join(m.packageRoot, pkg.Digest)
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
 func (m *skillManager) snapshot(pkg SkillPackage) error {
 	dir := filepath.Join(m.packageRoot, pkg.Digest)
 	if _, err := os.Stat(dir); err == nil {
@@ -470,6 +584,7 @@ func (m *skillManager) packageFor(rec ManagedRecord) (SkillPackage, error) {
 	if err != nil || pkg.Digest != rec.Digest || pkg.ID != rec.ID {
 		return SkillPackage{}, fail("skill_snapshot_modified")
 	}
+	pkg.SnapshotPath = m.snapshotPath(pkg)
 	return pkg, nil
 }
 
@@ -483,7 +598,7 @@ func findSkillIndex(resources []ManagedRecord, id, provider string) int {
 	return -1
 }
 
-func (m *skillManager) install(ctx context.Context, source, provider, legacySource string, onlyIfDefault bool) (ManagedRecord, error) {
+func (m *skillManager) install(ctx context.Context, source, provider, legacySource string, onlyIfDefault bool, link bool) (ManagedRecord, error) {
 	absSource, err := filepath.Abs(source)
 	if err != nil {
 		return ManagedRecord{}, fail("skill_source_missing")
@@ -495,6 +610,12 @@ func (m *skillManager) install(ctx context.Context, source, provider, legacySour
 	prov, mode, targetPath, err := m.target(pkg.ID, provider)
 	if err != nil {
 		return ManagedRecord{}, err
+	}
+	if link {
+		if mode != "native" {
+			return ManagedRecord{}, fail("skill_link_unsupported")
+		}
+		mode = "link"
 	}
 	res, err := m.store.update(ctx, func(st *ManagedState) (any, error) {
 		idx := findSkillIndex(st.Resources, pkg.ID, prov)
@@ -515,6 +636,7 @@ func (m *skillManager) install(ctx context.Context, source, provider, legacySour
 		if snapErr := m.snapshot(pkg); snapErr != nil {
 			return nil, snapErr
 		}
+		pkg.SnapshotPath = m.snapshotPath(pkg)
 		now := time.Now().UnixMilli()
 		rec := ManagedRecord{
 			Kind:      "skill",

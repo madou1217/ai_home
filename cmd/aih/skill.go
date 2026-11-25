@@ -15,6 +15,7 @@ type skillOptions struct {
 	positional   []string
 	provider     string
 	allSupported bool
+	link         bool
 	jsonOutput   bool
 }
 
@@ -184,6 +185,8 @@ func parseSkillOptions(arguments []string) (skillOptions, error) {
 			options.jsonOutput = true
 		case "--all-supported":
 			options.allSupported = true
+		case "--link":
+			options.link = true
 		case "--provider":
 			if index+1 >= len(arguments) || strings.HasPrefix(arguments[index+1], "-") || options.provider != "" {
 				return options, fmt.Errorf("skill_provider_required")
@@ -258,6 +261,9 @@ func runSkillOperation(
 	providers []string,
 	id string,
 ) error {
+	if options.link && action != "install" {
+		return fmt.Errorf("skill_link_unsupported")
+	}
 	results := make([]map[string]any, 0, len(providers))
 	allOK := true
 	for _, provider := range providers {
@@ -265,6 +271,7 @@ func runSkillOperation(
 		if action == "install" {
 			input.Source = id
 			input.ID = ""
+			input.Link = options.link
 		}
 		response, err := service.Operate(ctx, input)
 		if err != nil {
@@ -327,7 +334,7 @@ func writeSkillUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "Usage: aih skill <command> [options]")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "  list [--provider <id>] [--json]")
-	_, _ = fmt.Fprintln(output, "  install <skillDir> (--provider <id>|--all-supported) [--json]")
+	_, _ = fmt.Fprintln(output, "  install <skillDir> (--provider <id>|--all-supported) [--link] [--json]")
 	_, _ = fmt.Fprintln(output, "  adopt <skillId> --provider <id> [--json]")
 	_, _ = fmt.Fprintln(output, "  enable <skillId> [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  disable <skillId> [--provider <id>] [--json]")

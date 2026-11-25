@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Form, Input, Modal, Segmented, Select, Space, Typography, message } from 'antd';
+import { Button, Checkbox, Form, Input, Modal, Segmented, Select, Space, Typography, message } from 'antd';
 import { FolderOpenOutlined, LinkOutlined } from '@ant-design/icons';
 import { toolkitAPI } from '@/services/api';
 import type {
@@ -28,6 +28,7 @@ interface InstallFormValues {
   owners: string[];
   source: string;
   name?: string;
+  link?: boolean;
 }
 
 type SourceMode = 'path' | 'folder' | 'url';
@@ -105,7 +106,7 @@ export default function NativeResourceInstallModal({
     setSourceMode('path');
     setSourceUrl('');
     setUpload(null);
-    form.setFieldsValue({ kind: initialKind, owners: [], source: '', name: undefined });
+    form.setFieldsValue({ kind: initialKind, owners: [], source: '', name: undefined, link: false });
   }, [open, initialKind, form]);
 
   const importFiles = async (files: FileList | null) => {
@@ -199,6 +200,7 @@ export default function NativeResourceInstallModal({
         action: 'install',
         ...sourcePayload,
         ...(selectedKind === 'mcp' ? { id: values.name?.trim() } : {}),
+        ...(selectedKind === 'skill' && values.link ? { link: true } : {}),
         ...ownerPayload(owner)
       })));
       const failed = results
@@ -242,6 +244,20 @@ export default function NativeResourceInstallModal({
             }}
           />
         </Form.Item>
+        {kind === 'skill' ? (
+          <Form.Item
+            name="link"
+            valuePropName="checked"
+            extra={
+              <Typography.Text type="secondary">
+                使用链接投影：多个 Provider 共享同一份托管快照，不再各复制一份；
+                Windows 使用 junction。禁用时只移除链接，快照保留。
+              </Typography.Text>
+            }
+          >
+            <Checkbox>使用链接投影（节省空间）</Checkbox>
+          </Form.Item>
+        ) : null}
         {kind === 'mcp' ? (
           <Form.Item
             name="name"

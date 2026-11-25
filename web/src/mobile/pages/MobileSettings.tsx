@@ -1,14 +1,15 @@
-import { useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useRef } from 'react';
 import type { MobilePageProps } from '@/mobile/mobile-routes';
 import { HudChips, MobilePage } from '@/mobile/ui';
 import { useSwitchFade } from '@/hooks/use-switch-fade';
+import { useUrlTab } from '@/hooks/use-url-tab';
 import AliasesPanel from './settings/AliasesPanel';
 import BasicSettingsPanel from './settings/BasicSettingsPanel';
 import UpstreamErrorMappingsPanel from './settings/UpstreamErrorMappingsPanel';
 import styles from './settings/MobileSettings.module.css';
 
-type SettingsTab = 'basic' | 'aliases' | 'upstream-errors';
+const SETTINGS_TAB_KEYS = ['basic', 'aliases', 'upstream-errors'] as const;
+type SettingsTab = typeof SETTINGS_TAB_KEYS[number];
 
 const TABS = [
   { key: 'basic', label: '基础设置' },
@@ -21,12 +22,7 @@ const TABS = [
  * Server 管理与 SSH 开发机有独立路由（/servers、/ssh-hosts），经「更多」面板进入。
  */
 export default function MobileSettings(_props: MobilePageProps) {
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<SettingsTab>(() => (
-    (['aliases', 'upstream-errors'] as const).includes(String(searchParams.get('tab') || '').trim() as 'aliases' | 'upstream-errors')
-      ? String(searchParams.get('tab')).trim() as SettingsTab
-      : 'basic'
-  ));
+  const [tab, setTab] = useUrlTab(SETTINGS_TAB_KEYS, 'basic');
   // 基础设置是 hidden 常驻、其余分区按需挂载：切换时整块面板淡入一次（只碰 opacity）。
   const panelBodyRef = useRef<HTMLDivElement | null>(null);
   useSwitchFade(panelBodyRef, tab, { scope: 'mobile-settings-tab' });

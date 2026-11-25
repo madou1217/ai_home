@@ -6,6 +6,7 @@ import { Tabs } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { isControlPlaneProfileRefreshable } from '@/services/control-plane-profiles';
 import type { ControlPlaneProfile } from '@/types';
+import { useUrlTab } from '@/hooks/use-url-tab';
 import PageScaffold from '@/components/ui/PageScaffold';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import BasicSettingsSection from '@/features/settings/BasicSettingsSection';
@@ -107,26 +108,19 @@ const SETTINGS_PAGE_META = {
   }
 } as const;
 
-const URL_TAB_KEYS: ReadonlyArray<SettingsSectionKey> = [
+const SETTINGS_TAB_KEYS: ReadonlyArray<SettingsSectionKey> = [
+  'basic',
   'capture',
   'service',
   'aliases',
   'upstream-errors',
   'failure-semantics',
   'api-keys',
-  'concurrency',
-  'control-planes',
-  'ssh-hosts'
+  'concurrency'
 ];
 
-function getInitialSettingsTab(): SettingsSectionKey {
-  if (typeof window === 'undefined') return 'basic';
-  const params = new URLSearchParams(window.location.search);
-  const tab = String(params.get('tab') || '').trim() as SettingsSectionKey;
-  return URL_TAB_KEYS.includes(tab) ? tab : 'basic';
-}
-
 const Settings = ({ section }: SettingsProps) => {
+  const [activeTab, selectTab] = useUrlTab(SETTINGS_TAB_KEYS, 'basic');
   const [controlPlaneAddModalOpen, setControlPlaneAddModalOpen] = useState(false);
   const [authorizingControlPlaneId, setAuthorizingControlPlaneId] = useState('');
   const [extraActions, setExtraActions] = useState<ReactNode>(null);
@@ -334,7 +328,8 @@ const Settings = ({ section }: SettingsProps) => {
       {/* 移动端（< 768px）由 web/src/mobile/pages/MobileSettings 独立渲染，桌面页不挂载。 */}
       <Tabs
         className="settings-tabs"
-        defaultActiveKey={getInitialSettingsTab()}
+        activeKey={activeTab}
+        onChange={(key) => selectTab(key as SettingsSectionKey)}
         animated={{ inkBar: true, tabPane: true }}
         items={sectionItems.filter((item) => item.key !== 'control-planes' && item.key !== 'ssh-hosts')}
       />

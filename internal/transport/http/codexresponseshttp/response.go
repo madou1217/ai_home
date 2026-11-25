@@ -122,10 +122,15 @@ func (handler *Handler) deliver(
 		}
 		// 换号后成功交付时输出恢复摘要：attempts 里已有失败账号与分类，
 		// 不记录就会变成「静默换号」，只能靠响应头反推（实测 20 次钉选
-		// 全部换号成功却没有任何服务端日志）。
-		if trail != nil && trail.failedAttempts() > 0 {
+		// 全部换号成功却没有任何服务端日志）。仅发生钉选回落时同样输出，
+		// 否则「钉的号没被用」在日志里完全不可见。
+		if trail != nil && trail.hasObservations() {
 			trail.succeededOn(selection.AccountRef)
-			trail.finish(http.StatusOK, "upstream_recovered")
+			code := "upstream_recovered"
+			if trail.failedAttempts() == 0 {
+				code = "pin_fallback"
+			}
+			trail.finish(http.StatusOK, code)
 		}
 	} else if downstreamErr != nil || request.Context().Err() != nil {
 		return

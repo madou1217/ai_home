@@ -128,6 +128,14 @@ func (trail *failureTrail) failedAttempts() int {
 	return len(trail.attempts)
 }
 
+// hasObservations 报告本轮是否记录了失败尝试或钉选回落；两者都需要日志。
+func (trail *failureTrail) hasObservations() bool {
+	if trail == nil {
+		return false
+	}
+	return len(trail.attempts) > 0 || trail.pinFallbackNote != ""
+}
+
 // succeededOn 记录最终成功交付的账号，只用于日志归因。
 func (trail *failureTrail) succeededOn(accountRef accountcore.AccountRef) {
 	if trail == nil || !accountRef.IsValid() {

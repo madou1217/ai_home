@@ -336,3 +336,8 @@ Second paragraph 中文内容
 ### WebUI 直接配对
 
 Paste Nexus 设置新增 **Direct endpoint pairing**：填写对方 Server 的 LAN/WireGuard/Tailscale endpoint 与管理密钥，页面调用 `POST /v0/webui/control-plane/profiles` 建立 direct profile，并立即把它选为同步目标。实测 UI 填入 `http://127.0.0.1:19529` 后生成 profile `cp-14nzllm` 并写入 `syncTargetProfileId`；随后清理。这样 server-relay、局域网直连、WG/TS 地址都可在 WebUI 内完成配对；自动发现（mDNS）与二维码配对仍是后续。
+
+### 跨平台 IO 真机探针（2026-11-25）
+
+- **Windows 10.0.26300 真机**（SSH `Windows - MeaDeo`）：`clipboardio.NewSystem()` Probe supported=true；`WriteText`→`ReadText` 字节完全一致；`WriteFiles`→`ReadFiles` 返回 `C:\Users\madou\AppData\Local\Temp\aih-clipboard-probe.txt` 且匹配；4×4 PNG `WriteImage`→`ReadImage` 得到 `image/png`、125 字节、4×4。探针二进制已删除。
+- **Linux 真机**（`Linux - desired.cn:22008`，headless）：Probe supported=false，reason=`headless linux: neither WAYLAND_DISPLAY nor DISPLAY is set`，与设计一致；有 Wayland/X11 的桌面使用 wl-paste/xclip 路径。

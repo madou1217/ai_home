@@ -139,6 +139,9 @@ func (h *Handler) handleAppOpen(w http.ResponseWriter, r *http.Request) {
 	// 未绑定账号（显式 unscoped 或无默认账号）且目标为 Desktop 时，由 Go 直接完成本机拉起（含 Claude-3p 网关准备）。
 	if selectedAccountRef == "" && kind == "desktop" {
 		res := apps.OpenManagedDesktopApp(r.Context(), normAppID, h.appsOpts)
+		if strings.TrimSpace(res.Provider) != "" {
+			provider = res.Provider
+		}
 		if res.OK {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"ok":         true,

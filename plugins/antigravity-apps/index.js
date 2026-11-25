@@ -350,10 +350,17 @@ function openApp(appId) {
     return;
   }
   if (currentPlatform() === 'windows') {
-    spawnSync('cmd', ['/c', 'start', '', executable], { windowsHide: true });
+    // 不能 spawnSync：start 可能等 GUI 进程，插件 RPC 会超时。
+    const child = spawn('cmd', ['/c', 'start', '', executable], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    });
+    child.unref();
     return;
   }
-  spawnSync(executable, [], { detached: true, stdio: 'ignore' });
+  const child = spawn(executable, [], { detached: true, stdio: 'ignore' });
+  child.unref();
 }
 
 async function handle(value) {

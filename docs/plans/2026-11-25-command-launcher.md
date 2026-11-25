@@ -82,6 +82,7 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 | --- | --- | --- |
 | GET | `/apps?q=&refresh=1&limit=` | 返回 `{platform, generatedAt, apps:[...], truncated}`；`q` 为空时按「最近使用 → 名称」排序，`q` 非空时按第 6 节排序；`refresh=1` 强制重扫 |
 | POST | `/open` | body `{id}`；打开成功记录 usage 并返回 `{ok:true}`；失败返回 4xx/5xx 与 `{error, message}` |
+| POST | `/show` | 让桌面面板显示（Server 向 helper 下发 `{"type":"launcher-show"}`；Linux 走 launcherd socket）；无桌面面板时 501 |
 | GET | `/status` | `{platform, supported, count, generatedAt, lastError}` |
 
 `App` JSON 字段：
@@ -89,7 +90,8 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 ~~~json
 {"id":"…","name":"Visual Studio Code","subtitle":"/Applications/Visual Studio Code.app",
  "path":"/Applications/Visual Studio Code.app","kind":"app|uwp|flatpak|snap|desktop",
- "icon":"/Applications/Visual Studio Code.app","terminal":false}
+ "icon":"/Applications/Visual Studio Code.app","terminal":false,
+ "aliases":["Code"]}
 ~~~
 
 - `icon`：macOS 为 .app 路径；Windows 为 .lnk/.exe 路径（UWP 为空，UI 用通用图标）；Linux 为 `Icon=` 值（主题名或绝对路径）。
@@ -108,6 +110,7 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 - 词首缩写（`vsc` → Visual Studio Code）：750
 - 名称子串：700 − 位置（上限 100）
 - 名称子序列（按序、不连续）：600 − 间隔总数（上限 150）
+- 任一 alias（`Aliases`，仅 macOS 有）前缀/词前缀/缩写/子串/子序列命中：650（不与名称分叠加，取最大值）
 - 仅副标题命中：300
 
 CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
@@ -122,7 +125,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 ### macOS（appcatalog darwin）
 
 - 扫描：`/Applications`、`/System/Applications`、`/System/Applications/Utilities`、`~/Applications`（递归 3 层），收集 `*.app`。
-- 名称：读 `Contents/Info.plist`。若是 XML plist，解析 `CFBundleDisplayName` 优先、`CFBundleName` 次之；`bplist00`（二进制）或解析失败时用目录名去 `.app`。
+- 名称：**目录名去 `.app`** 作为主名称（用户在 Finder/终端里看到的就是它，例如 `Visual Studio Code` 而不是 plist 里的 `Code`）；解析 `Contents/Info.plist`（XML）得到的 `CFBundleDisplayName`/`CFBundleName` 作为 `aliases`（最多 4 个），仅用于搜索匹配。
 - 去重：同一真实路径只保留一条（`filepath.EvalSymlinks`，失败用原路径）。
 - 打开：`open -a <path>`（`exec.Command`，无 shell）。
 - 备注：系统应用（Safari 等）名称可能为英文目录名，属可接受回退。
@@ -159,6 +162,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
   - 新增 `defaultLauncherShortcut = "⌥Space"`；
   - `keyCode(for:)` 支持 `space`（49）；
   - `charactersIgnoringModifiers` 不作为匹配依据，现有 keyCode 方案不变。
+- 事件吞噬：`NSEvent` 全局 monitor **不能**吞掉按键，Option+Space 会把不换行空格（NBSP）打进当前输入框。启动器快捷键必须优先用 `CGEventTap`（`.cgSessionEventTap`，keyDown，匹配 keyCode 49 + option）返回 `nil` 吞掉事件；权限不足或 tap 创建失败时回退到 `ShortcutRegistry` 的全局 monitor（此时允许 NBSP 泄漏，并在 status 里说明）。tap 与启动器生命周期绑定（禁用/关闭时销毁）。
 - `main.swift`：
   - 创建 `LauncherPanel`；
   - `registerShortcuts` 增加 descriptor `id:"launcher"`（显示名「启动器」）；
@@ -197,8 +201,12 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 - GTK4 纯视图进程（C，`gcc $(pkg-config --cflags --libs gtk4)`）：
   - 无边框窗口 720×540，CSS 主题（第 2 节色板），`GtkRevealer` 进场（slide-down + crossfade）、`GtkSearchEntry`、`GtkListBox` 行（图标 + 名称 + 副标题）、选中行 CSS 渐变高亮、底部 kbd 提示；
   - 图标：`Icon=` 绝对路径 → `gtk_image_new_from_file`；主题名 → `gtk_icon_theme_load_icon`（48px）；失败用 `application-x-executable`；
-  - 目录：启动时与每次 show 前执行 `aih launch catalog --wire`（环境 `AIH_EXECUTABLE` 指向宿主 aih 可执行文件，缺省 PATH 中的 `aih`），读取 base64 TSV 行（字段：id/name/subtitle/icon/kind/terminal/path），本地过滤按第 6 节；
-  - 打开：`g_spawn` 执行 `aih launch open <id>`；失败时 `gio launch`；隐藏窗口；
+  - 目录与打开走 **stdio 协议**（与 macOS/Windows helper 同构，GTK 进程只由 launcherd 拉起）：
+    - app→launcherd：`refresh\n`、`open\t<id>\n`、`hide\n`、`quit\n`；
+    - launcherd→app：`LAUNCH1\t<base64 id>\t<base64 name>\t<base64 subtitle>\t<base64 icon>\t<base64 kind>\t<0|1 terminal>\t<base64 path>\n…END\n`；
+    - 启动时与每次 show 前发 `refresh`；`open` 由 Go 打开并记录 usage，失败回 `open-error\t<base64 message>`；
+    - `aih launch catalog --wire` 输出同一 TSV 格式，仅供调试/脚本使用；GTK 进程不依赖 PATH 里的 `aih`。
+  - 打开失败时 GTK 显示行内错误，面板不关闭；
   - 快捷键：X11 用 `gdk_x11_display_get_xdisplay` + `XGrabKey(Alt+Space)`，抓取失败（WM 已占用）在网络状态里回报，并保留 socket 触发；Wayland 下不做 XGrabKey；
   - 控制 socket：`$XDG_RUNTIME_DIR/aih-launch.sock`（缺省 `/tmp/aih-launch-<uid>.sock`），接收 `toggle|show|hide` 一行命令；`aih launch toggle` 连接并发送；用于桌面环境自行绑定 Alt+Space 的兜底。
 - `launcherd`（Go，linux）：
@@ -215,9 +223,10 @@ aih launch apps [--json] [--q <关键词>] [--refresh]
 aih launch open <id|#序号>
 aih launch catalog [--wire]        # --wire：base64 TSV（Linux GTK 消费）；默认 JSON
 aih launch status [--json]
-aih launch ui                      # Linux：构建并前台启动 GTK 面板
+aih launch show                    # 请求桌面面板显示（macOS/Windows 走 Server→helper 事件；Linux 走 launcherd）
+aih launch ui [--daemon]           # Linux：构建并前台运行 launcherd + GTK 面板（--daemon 后台常驻）
 aih launch toggle                  # Linux：通过 socket 切换面板
-aih launch enable|disable          # Linux：XDG autostart 开关
+aih launch enable|disable          # Linux：XDG autostart 开关（Exec=<aih> launch ui --daemon）
 ~~~
 
 - `aih launch open` 直接打开 aih.db（无 Server 依赖）；`apps` 同样本地扫描（Server 与管理 API 是同一份 `internal/runtime/appcatalog`）。

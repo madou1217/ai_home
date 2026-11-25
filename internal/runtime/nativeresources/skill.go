@@ -213,6 +213,14 @@ func (skillDirProjection) inspect(record ManagedRecord, _ SkillPackage) string {
 	return "modified"
 }
 
+func directoryMatchesPackage(target string, pkg SkillPackage) bool {
+	files, err := readTreeFiles(target, "skill_source")
+	if err != nil {
+		return false
+	}
+	return digestFiles(files) == pkg.Digest
+}
+
 func (p skillDirProjection) apply(record ManagedRecord, pkg SkillPackage, previous *ManagedRecord, _ *SkillPackage, legacySource string) error {
 	info, err := lstatMaybe(record.Target)
 	if err != nil {
@@ -220,7 +228,12 @@ func (p skillDirProjection) apply(record ManagedRecord, pkg SkillPackage, previo
 	}
 	if info != nil {
 		if previous == nil {
-			if !isLegacyDirectory(record.Target, pkg, legacySource) {
+			legacy := isLegacyDirectory(record.Target, pkg, legacySource)
+			// 已存在的目录与源包逐字节一致：接管为托管记录，不重写文件。
+			if !legacy && directoryMatchesPackage(record.Target, pkg) {
+				return nil
+			}
+			if !legacy {
 				return fail("skill_target_conflict")
 			}
 		} else {
@@ -533,6 +546,69 @@ func (m *skillManager) install(ctx context.Context, source, provider, legacySour
 		} else {
 			st.Resources = append(st.Resources, rec)
 		}
+		return rec, nil
+	})
+	if err != nil {
+		return ManagedRecord{}, err
+	}
+	return res.(ManagedRecord), nil
+}
+
+func (m *skillManager) adopt(ctx context.Context, id, provider string) (ManagedRecord, error) {
+	prov, mode, targetPath, err := m.target(id, provider)
+	if err != nil {
+		return ManagedRecord{}, err
+	}
+	info, err := lstatMaybe(targetPath)
+	if err != nil {
+		return ManagedRecord{}, err
+	}
+	if info == nil {
+		return ManagedRecord{}, fail("skill_target_missing")
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return ManagedRecord{}, fail("skill_target_conflict")
+	}
+	pkg, err := readSkillPackage(targetPath)
+	if err != nil {
+		return ManagedRecord{}, err
+	}
+	if pkg.ID != id {
+		return ManagedRecord{}, fail("skill_id_mismatch")
+	}
+	if err := m.snapshot(pkg); err != nil {
+		return ManagedRecord{}, err
+	}
+	res, err := m.store.update(ctx, func(st *ManagedState) (any, error) {
+		now := time.Now().UnixMilli()
+		idx := findSkillIndex(st.Resources, id, prov)
+		if idx >= 0 {
+			rec := st.Resources[idx]
+			if rec.Digest != pkg.Digest {
+				return nil, fail("skill_target_modified")
+			}
+			rec.Enabled = true
+			rec.Removed = false
+			rec.Target = targetPath
+			rec.Mode = mode
+			rec.UpdatedAt = now
+			st.Resources[idx] = rec
+			return rec, nil
+		}
+		rec := ManagedRecord{
+			Kind:      "skill",
+			ID:        id,
+			Provider:  prov,
+			Scope:     "host",
+			Mode:      mode,
+			Target:    targetPath,
+			Digest:    pkg.Digest,
+			Enabled:   true,
+			Removed:   false,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		st.Resources = append(st.Resources, rec)
 		return rec, nil
 	})
 	if err != nil {

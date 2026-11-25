@@ -395,13 +395,19 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 			result, err = s.plugins.change(ctx, id, sel.Provider, sel.Host, action)
 		}
 	case "skill":
-		if action == "install" {
+		switch action {
+		case "install":
 			src, sErr := s.installSource(ctx, input)
 			if sErr != nil {
 				return OperateResponse{}, sErr
 			}
 			result, err = s.skills.install(ctx, src, sel.Provider, "", false)
-		} else {
+		case "adopt":
+			if id == "" {
+				return OperateResponse{}, fail("native_resource_id_required")
+			}
+			result, err = s.skills.adopt(ctx, id, sel.Provider)
+		default:
 			result, err = s.skills.change(ctx, id, sel.Provider, action)
 		}
 	case "mcp":

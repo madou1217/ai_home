@@ -307,6 +307,16 @@ AIH 管理的 MCP 来自统一注册表 `~/.ai_home/mcp/registry.json`：内置 
 
 Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp-status` 会打印当前解析结果、共享模式与配置集。
 
+## Skill 安装与接管
+
+- **WebUI**：开发工具 → 插件与资源 → Skill → 安装资源；组卡片按 Provider 显示已启用/未启用，详情里逐项启停。
+- **CLI**：`aih skill install <skillDir> --provider <id>`、`aih skill enable|disable <id> --provider <id>`、`aih skill list`、`aih skill doctor`。
+- **未托管目录**：`aih skill adopt <id> --provider <id>`。只认领内容与包一致的目录，不移动、不重写文件；
+  用 `install` 指向与目标目录内容一致的源时也会自动接管。
+
+> 资源去重：当前通用 Skill 投影是目录复制；Gemini 0.70.0 已实测支持软链接 Skill（`gemini skills link`），
+> 其余 Provider 待逐项验证。详见 `docs/testing/2026-11-25-skill-symlink-and-adopt.md`。
+
 ## Web UI
 
 服务启动后打开 `http://127.0.0.1:9527/ui/`。WebUI 和管理接口即使从本机访问，也需要 Management Key（见下文）。

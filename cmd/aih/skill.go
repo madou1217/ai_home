@@ -27,7 +27,7 @@ func runSkill(ctx context.Context, arguments []string, runtime commandRuntime) e
 	command := strings.ToLower(strings.TrimSpace(args[0]))
 	rest := args[1:]
 	switch command {
-	case "list", "doctor", "install", "enable", "disable", "remove":
+	case "list", "doctor", "install", "adopt", "enable", "disable", "remove":
 	default:
 		writeSkillUsage(runtime.stdout)
 		return nil
@@ -140,6 +140,14 @@ func runSkill(ctx context.Context, arguments []string, runtime commandRuntime) e
 			return selectionErr
 		}
 		return runSkillOperation(ctx, runtime, service, options, "install", providers, options.positional[0])
+	case "adopt":
+		if len(options.positional) != 1 {
+			return fmt.Errorf("skill_argument_required")
+		}
+		if options.provider == "" || options.allSupported {
+			return fmt.Errorf("skill_provider_required")
+		}
+		return runSkillOperation(ctx, runtime, service, options, "adopt", []string{options.provider}, options.positional[0])
 	default:
 		if len(options.positional) != 1 {
 			return fmt.Errorf("skill_argument_required")
@@ -320,6 +328,7 @@ func writeSkillUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "  list [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  install <skillDir> (--provider <id>|--all-supported) [--json]")
+	_, _ = fmt.Fprintln(output, "  adopt <skillId> --provider <id> [--json]")
 	_, _ = fmt.Fprintln(output, "  enable <skillId> [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  disable <skillId> [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  remove <skillId> [--provider <id>] [--json]")

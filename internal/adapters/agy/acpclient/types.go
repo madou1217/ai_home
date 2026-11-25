@@ -29,31 +29,31 @@ type Event struct {
 }
 
 type ToolCall struct {
-	ID        string
-	Title     string
-	Name      string
-	Kind      string
-	Status    string
-	RawInput  json.RawMessage
-	RawOutput json.RawMessage
+	ID        string          `json:"id"`
+	Title     string          `json:"title"`
+	Name      string          `json:"name,omitempty"`
+	Kind      string          `json:"kind,omitempty"`
+	Status    string          `json:"status,omitempty"`
+	RawInput  json.RawMessage `json:"rawInput,omitempty"`
+	RawOutput json.RawMessage `json:"rawOutput,omitempty"`
 }
 
 type PlanEntry struct {
-	Content  string
-	Priority string
-	Status   string
+	Content  string `json:"content"`
+	Priority string `json:"priority,omitempty"`
+	Status   string `json:"status,omitempty"`
 }
 
 type Notice struct {
-	Title       string
-	Description string
-	Severity    string
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Severity    string `json:"severity,omitempty"`
 }
 
 type PermissionOption struct {
-	ID   string
-	Name string
-	Kind string
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 type PermissionRequest struct {

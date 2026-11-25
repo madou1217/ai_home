@@ -11,7 +11,8 @@ import {
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
-  RightOutlined
+  RightOutlined,
+  RobotOutlined
 } from '@ant-design/icons';
 import { remoteExecutionAPI, remoteTargetsAPI, workspaceConnectorsAPI } from '@/services/api';
 import type { RemoteAccountFact, RemoteModelFact, RemoteTargetInventory } from '@/features/remote-targets/remote-targets-model';
@@ -29,6 +30,7 @@ import {
   joinWorkspacePath,
   parentWorkspacePath
 } from './workspace-connectors-model';
+import WorkspaceAcpSessionDrawer from './WorkspaceAcpSessionDrawer';
 import './workspace-connectors.css';
 
 function errorMessage(error: unknown): string {
@@ -108,6 +110,7 @@ export default function WorkspaceConnectorPanel() {
   const [decidingId, setDecidingId] = useState('');
   const [sessions, setSessions] = useState<RemoteExecutionSession[]>([]);
   const [stoppingSession, setStoppingSession] = useState('');
+  const [acpWorkspace, setAcpWorkspace] = useState<WorkspaceConnector | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -324,7 +327,7 @@ export default function WorkspaceConnectorPanel() {
       </div>
 
       <p className="ws-connector-note">
-        目录在本机，模型和 Agent 在 Server；Connector 不持有 Provider 凭据。Codex/Claude 的 AI 终端经 Connector 调用工具；AGY 仍是 PTY-only。
+        目录在本机，模型和 Agent 在 Server；Connector 不持有 Provider 凭据。Codex/Claude 的 AI 终端经 Connector 调用工具；AGY 通过 ACP 会话接入。
       </p>
 
       {enrollOpen ? (
@@ -559,6 +562,16 @@ export default function WorkspaceConnectorPanel() {
                       disabled={workspace.state !== 'online'}
                     />
                   </Popover>
+                  <Tooltip title="打开 AGY ACP 会话（结构化工具与审批）">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<RobotOutlined />}
+                      aria-label="打开 AGY ACP 会话"
+                      disabled={workspace.state !== 'online'}
+                      onClick={() => setAcpWorkspace(workspace)}
+                    />
+                  </Tooltip>
                   <Popconfirm
                     title="撤销这个本地工作区？"
                     description="撤销后远程执行不能再用这个目录，需重新登记。"
@@ -633,6 +646,10 @@ export default function WorkspaceConnectorPanel() {
           ))}
         </ul>
       )}
+      <WorkspaceAcpSessionDrawer
+        workspace={acpWorkspace}
+        onClose={() => setAcpWorkspace(null)}
+      />
     </section>
   );
 }

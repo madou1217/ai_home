@@ -161,3 +161,57 @@ export function parentWorkspacePath(current: string): string {
   const index = base.lastIndexOf('/');
   return index <= 0 ? '' : base.slice(0, index);
 }
+
+export interface WorkspaceAcpPermissionOption {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export interface WorkspaceAcpApproval {
+  id: string;
+  toolCallId: string;
+  title: string;
+  options: WorkspaceAcpPermissionOption[];
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | string;
+}
+
+export interface WorkspaceAcpToolCall {
+  id: string;
+  title: string;
+  name?: string;
+  kind?: string;
+  status?: string;
+  rawInput?: unknown;
+  rawOutput?: unknown;
+}
+
+export interface WorkspaceAcpPlanEntry {
+  content: string;
+  priority?: string;
+  status?: string;
+}
+
+export interface WorkspaceAcpEvent {
+  seq: number;
+  type: 'message' | 'thought' | 'tool_call' | 'tool_update' | 'plan' | 'notice' | 'approval' | 'user' | 'status' | 'error' | string;
+  text?: string;
+  toolCall?: WorkspaceAcpToolCall;
+  plan?: WorkspaceAcpPlanEntry[];
+  notice?: { title: string; description?: string; severity?: string };
+  approval?: WorkspaceAcpApproval;
+  status?: string;
+  error?: string;
+}
+
+export interface WorkspaceAcpSession {
+  id: string;
+  workspaceId: string;
+  status: string;
+  createdAt: number;
+}
+
+export interface WorkspaceAcpSessionResponse {
+  ok: boolean;
+  session: WorkspaceAcpSession;
+}

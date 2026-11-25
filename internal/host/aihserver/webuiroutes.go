@@ -26,10 +26,12 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/hostdetect"
 	"github.com/madou1217/ai_home/internal/adapters/hostexec"
 	"github.com/madou1217/ai_home/internal/adapters/modelcatalogsettings"
+	"github.com/madou1217/ai_home/internal/adapters/swapctl"
 	"github.com/madou1217/ai_home/internal/host/aihloginjob"
 	"github.com/madou1217/ai_home/internal/remoteconnector"
 	"github.com/madou1217/ai_home/internal/remoteexecution"
 	"github.com/madou1217/ai_home/internal/runtime/accountmcps"
+	"github.com/madou1217/ai_home/internal/runtime/acpsession"
 	"github.com/madou1217/ai_home/internal/runtime/agysession"
 	"github.com/madou1217/ai_home/internal/runtime/chatruntime"
 	"github.com/madou1217/ai_home/internal/runtime/imageexecution"
@@ -65,6 +67,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsexportapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountupdateapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiacpsessionapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiagysessionapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuialiaspoolapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiappentriesapi"
@@ -107,6 +110,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuislashcommandsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuisshwriteapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiswapapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiterminalapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolappsettingswriteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitoolkitenvapi"
@@ -378,6 +382,14 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建 AGY 会话接口失败: %w", err)
 	}
 
+	swapHandler, err := webuiswapapi.NewHandler(webuiswapapi.Dependencies{
+		Authorizer: authorizer,
+		Manager:    swapctl.New(nil),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建交换空间接口失败: %w", err)
+	}
+
 	workspaceConnectors, err := webuiworkspaceconnectorapi.NewHandler(webuiworkspaceconnectorapi.Dependencies{
 		Authorizer: authorizer,
 		Store:      workspaceStore,
@@ -411,6 +423,22 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建工作区 Connector Agent 入口失败: %w", err)
+	}
+	acpSessionManager, err := acpsession.NewManager(acpsession.NewConnectorRunner("agy"))
+	if err != nil {
+		return nil, fmt.Errorf("创建 ACP 会话管理器失败: %w", err)
+	}
+	acpSessions, err := webuiacpsessionapi.NewHandler(webuiacpsessionapi.Dependencies{
+		Authorizer:     authorizer,
+		Manager:        acpSessionManager,
+		Workspaces:     workspaceStore,
+		Online:         workspaceHub.Online,
+		IssueToolToken: workspaceStore.IssueToolToken,
+		AIHomeDir:      dependencies.AIHomeDir,
+		SelfBaseURL:    dependencies.SelfBaseURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 ACP 会话接口失败: %w", err)
 	}
 	remoteSessionUsage := dependencies.Store.QueryRemoteSessionUsage
 	remoteSessionUsageBatch := dependencies.Store.QueryRemoteSessionUsageBatch
@@ -1064,6 +1092,13 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET " + webuiagysessionapi.EventPath, Handler: agySessions, SkipPublicAlias: true},
 		{Pattern: "POST " + webuiagysessionapi.ClosePath, Handler: agySessions, SkipPublicAlias: true},
 		{Pattern: "POST " + webuiagysessionapi.ResumePath, Handler: agySessions, SkipPublicAlias: true},
+		{Pattern: "GET " + webuiswapapi.Path, Handler: swapHandler, SkipPublicAlias: true},
+		{Pattern: "POST " + webuiswapapi.Path, Handler: swapHandler, SkipPublicAlias: true},
+		{Pattern: "DELETE " + webuiswapapi.Path, Handler: swapHandler, SkipPublicAlias: true},
+		// WebUI 客户端走受控的 /v0 命名空间（axios 基址），与管理 API 同一处理器。
+		{Pattern: "GET /v0/webui/system/swap", Handler: swapHandler},
+		{Pattern: "POST /v0/webui/system/swap", Handler: swapHandler},
+		{Pattern: "DELETE /v0/webui/system/swap", Handler: swapHandler},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.Path, Handler: workspaceConnectors},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.EnrollmentsPath, Handler: workspaceConnectors},
 		{Pattern: "GET " + webuiworkspaceconnectorapi.ConnectPath, Handler: workspaceConnectors, SkipPublicAlias: true},
@@ -1080,6 +1115,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiremotesessionsapi.StopPath, Handler: remoteSessions},
 		{Pattern: "POST " + webuiworkspaceconnectorapi.ToolPath, Handler: workspaceConnectors, SkipPublicAlias: true},
 		{Pattern: "POST " + remoteconnector.AgentTerminalPath, Handler: connectorAgentTerminal},
+		{Pattern: "POST " + webuiacpsessionapi.BasePath, Handler: acpSessions},
+		{Pattern: "GET " + webuiacpsessionapi.DetailPath, Handler: acpSessions},
+		{Pattern: "DELETE " + webuiacpsessionapi.DetailPath, Handler: acpSessions},
+		{Pattern: "GET " + webuiacpsessionapi.EventsPath, Handler: acpSessions},
+		{Pattern: "POST " + webuiacpsessionapi.PromptPath, Handler: acpSessions},
+		{Pattern: "POST " + webuiacpsessionapi.ApprovalPath, Handler: acpSessions},
 		{Pattern: "GET " + proxyleaseapi.CandidatesPath, Handler: proxyAPI},
 		{Pattern: "POST " + proxyleaseapi.LeasesPath, Handler: proxyAPI},
 		{Pattern: "DELETE " + proxyleaseapi.LeasesPath + "/{id}", Handler: proxyAPI},

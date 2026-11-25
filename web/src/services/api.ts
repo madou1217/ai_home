@@ -169,6 +169,7 @@ import type {
 } from '@/features/remote-targets/remote-targets-model';
 import type {
   WorkspaceAgentTerminalResponse,
+  WorkspaceAcpSessionResponse,
   WorkspaceConnectorEnrollmentResponse,
   WorkspaceConnectorListResponse,
   WorkspaceApprovalListResponse,
@@ -1684,6 +1685,52 @@ export const workspaceCheckpointAPI = {
 };
 
 // 配置管理 API
+export interface SystemSwapStatus {
+  supported: boolean;
+  reason?: string;
+  file?: string;
+  active: boolean;
+  totalMb: number;
+  usedMb: number;
+  freeMb: number;
+  persisted: boolean;
+  canChange: boolean;
+}
+
+function swapRequestError(error: unknown, fallback: string): Error {
+  const data = (error as AxiosError<{ error?: string }>)?.response?.data;
+  const message = typeof data?.error === 'string' && data.error ? data.error : fallback;
+  return new Error(message);
+}
+
+// 服务器交换空间：仅 Linux 可改；其它平台后端返回 supported=false，前端不渲染入口。
+export const systemAPI = {
+  getSwap: async (): Promise<SystemSwapStatus> => {
+    try {
+      const response = await api.get<{ ok: boolean; swap: SystemSwapStatus }>('/webui/system/swap');
+      return response.data.swap;
+    } catch (error) {
+      throw swapRequestError(error, '读取交换空间状态失败');
+    }
+  },
+  applySwap: async (sizeMb: number): Promise<SystemSwapStatus> => {
+    try {
+      const response = await api.post<{ ok: boolean; swap: SystemSwapStatus }>('/webui/system/swap', { sizeMb });
+      return response.data.swap;
+    } catch (error) {
+      throw swapRequestError(error, '设置交换空间失败');
+    }
+  },
+  removeSwap: async (): Promise<SystemSwapStatus> => {
+    try {
+      const response = await api.delete<{ ok: boolean; swap: SystemSwapStatus }>('/webui/system/swap');
+      return response.data.swap;
+    } catch (error) {
+      throw swapRequestError(error, '关闭交换空间失败');
+    }
+  }
+};
+
 export const configAPI = {
   // 获取配置
   get: async (): Promise<UsageConfig> => {
@@ -2920,6 +2967,41 @@ export const workspaceConnectorsAPI = {
     const response = await api.post<WorkspaceApprovalDecisionResponse>(
       `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/approvals`,
       { id, approve }
+    );
+    return response.data;
+  },
+  startAcpSession: async (workspaceId: string): Promise<WorkspaceAcpSessionResponse> => {
+    const response = await api.post<WorkspaceAcpSessionResponse>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/acp-sessions`
+    );
+    return response.data;
+  },
+  acpSessionEvents: (workspaceId: string, sessionId: string, after = 0): EventSource =>
+    guardedWebUiEventSource(
+      `/v0/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/acp-sessions/${encodeURIComponent(sessionId)}/events?after=${after}`
+    ),
+  sendAcpPrompt: async (workspaceId: string, sessionId: string, content: string): Promise<{ ok: boolean }> => {
+    const response = await api.post<{ ok: boolean }>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/acp-sessions/${encodeURIComponent(sessionId)}/prompt`,
+      { content }
+    );
+    return response.data;
+  },
+  decideAcpApproval: async (
+    workspaceId: string,
+    sessionId: string,
+    approvalId: string,
+    approve: boolean
+  ): Promise<{ ok: boolean }> => {
+    const response = await api.post<{ ok: boolean }>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/acp-sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(approvalId)}`,
+      { approve }
+    );
+    return response.data;
+  },
+  closeAcpSession: async (workspaceId: string, sessionId: string): Promise<{ ok: boolean }> => {
+    const response = await api.delete<{ ok: boolean }>(
+      `/webui/workspace-connectors/${encodeURIComponent(workspaceId)}/acp-sessions/${encodeURIComponent(sessionId)}`
     );
     return response.data;
   }

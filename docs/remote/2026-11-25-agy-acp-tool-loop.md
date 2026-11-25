@@ -84,19 +84,21 @@ Connector 管理的项目根目录内。Provider 凭据不进入 Connector，Con
 - 用本地 `ToolExecutor` 实现 read/write/run；
 - 用 fake ACP agent 跑通协议测试，不依赖本机安装 AGY。
 
-### Phase 2：Connector 映射与审批
+### Phase 2：Agent 移到 Connector 主机
 
-- 把 Phase 1 的 ToolExecutor 换成 Workspace Connector 适配器；
-- `terminal/*` 映射到现有 `run_command` / job API；
-- `session/request_permission` 进入现有 approval store，选项只允许
+- Connector 新增 `workspace.agent_acp.start/write/read/close`；
+- Agent 进程在 Connector 的 workspace root 运行，Server 只转发 ACP
+  JSON-RPC，不把文件/命令再映射到 shadow；
+- `session/request_permission` 进入 WebUI 审批，选项只允许
   `allow_once` / `reject_once`；
-- 补路径越界、symlink、超时、进程组清理测试。
+- Connector 必须显式 `--agent-acp --agent-command <agy>`，并使用已登录的
+  AGY 账号 HOME。
 
-### Phase 3：Server/UI 接线
+### Phase 3：WebUI 会话视图
 
-- `agent-terminal` 接受 `agent="agy"`，启动 `agy acp` 而不是 PTY；
-- WebUI 用 ACP 的 message/tool_call 更新渲染会话，不把 JSON-RPC 当终端流；
-- 保留当前 409 路径作为“AGY 版本过旧/ACP 启动失败”的显式回退，不静默降级。
+- WebUI 通过独立 ACP 抽屉展示 message/tool_call/approval，不复用 PTY；
+- SSE 事件流、审批按钮、prompt 输入；
+- `agent-terminal` 对 AGY 保持显式 409，ACP 走独立入口。
 
 ### Phase 4：真实 AGY 验收
 
@@ -118,43 +120,37 @@ Connector 管理的项目根目录内。Provider 凭据不进入 Connector，Con
 
 ## 6.1 WebUI + Connector 真机结果（2026-11-25）
 
-环境：AWS AGY 1.5.16；测试 server 独立端口；本地 Workspace Connector 指向临时
-workspace；WebUI 通过 ACP 抽屉启动会话。
+环境：AWS AGY 1.5.16；测试 server 独立端口；Connector root 为临时 workspace；
+WebUI 通过 ACP 抽屉启动会话。
 
-通过的控制面：
+第一次尝试把 Agent 跑在 Server shadow，确认失败：AGY 的内置工具直接写
+shadow，output.txt 没有落到 Connector root，pwd && ls 看到空 shadow。
+因此改为 Agent 跑在 Connector 主机：
 
-1. `POST .../acp-sessions` 返回 ready 会话；
-2. SSE 收到 `tool_call` / `tool_update` / `approval` / `message`；
-3. 三次 `allow_once` 审批都从 WebUI API 返回 200，agent 继续执行；
-4. prompt 最终 `stop=end_turn`。
+- Connector 新增 workspace.agent_acp.start/write/read/close；
+- Server 只承载 ACP JSON-RPC，stdin/stdout 通过 Connector 长轮询/小请求转发；
+- AGY 进程 cwd 是 Connector 真实 workspace root，内置文件/终端工具直接落到
+  真实目录；
+- 审批仍由 ACP session/request_permission 回到 WebUI。
 
-未通过的工具面：
+真机结果（WebUI 实际点击）：
 
-- AGY 的 `File input.txt` / `File output.txt` / `pwd && ls -la` 工具直接在
-  **Server 侧 shadow cwd** 执行，没有调用 ACP `fs/*` 或 `terminal/*`；
-- `output.txt` 只出现在 shadow，Connector root 的 `ws` 中没有；
-- `pwd && ls -la` 看到的是空 shadow，而不是 Connector 的
-  `input.txt`；
-- 因此 WebUI + Connector 只完成了审批/事件控制面，文件/命令实际没有落到
-  Connector，闭环不成立。
+1. 抽屉打开，会话 ready；
+2. SSE 实时出现 File input.txt、File output.txt、printf UI_E2E_RUN 工具卡片；
+3. 两次审批卡片点击“允许一次”，均返回 approved；
+4. assistant 最终消息 stop=end_turn；
+5. Connector 的真实 workspace 中 output.txt 内容为
+   UI_E2E_OK + seed-content，printf 输出 UI_E2E_RUN。
 
-原因：AGY 1.5.16 的 ACP server 使用内置文件/终端工具，即使客户端声明了
-`fs.readTextFile` / `fs.writeTextFile` / `terminal`，它仍不把执行委托给
-ACP client。ACP 协议本身允许 agent 自带工具，不能强制。
+前置条件：
 
-可行修复方向：
+- Connector 必须显式 --agent-acp --agent-command <agy>；
+- Connector 进程的 HOME 必须是已登录的 AGY 账号投影，否则
+  session/new 返回 Authentication required；
+- 没有启用 --agent-acp 的 Connector 仍然只提供文件/命令工具，不暴露 Agent ACP。
 
-1. **镜像 + 回写**：启动前 `StartMirror` 拉取 Connector 工作区，AGY 在 mirror
-   directory 上运行；每轮结束 `SyncMirror` 回写文件。文件可闭环，但命令仍在
-   Server 执行，副作用不回 Connector。
-2. **把 AGY 跑在 Connector 主机**：通过本地 ACP stdio 或反向隧道让 Agent 与
-   真实工作区同机，这是语义上正确的远程执行。
-3. **等待 AGY 支持 ACP client 工具**或提供“use client fs/terminal”开关。
-
-认证/路径前置条件：server 必须用 AGY 账号投影作为 `HOME`，且 PATH 包含
-`agy`；当前 WebUI 进程没有按账号选择 HOME，需要后续按会话注入。
-
-结论：不能把这次 WebUI+Connector 结果标为通过。
+结论：WebUI + Connector 真机闭环通过；这要求 Agent 与 workspace 同机，
+不是把 AGY 强行塞进 Server 侧 shadow。
 
 ## 7. 实现进度（2026-11-25）
 
@@ -168,6 +164,8 @@ ACP client。ACP 协议本身允许 agent 自带工具，不能强制。
 - `ConnectorHost` + `HTTPToolClient`：把 fs/terminal 映射到 `read_file` / `write_file` /
   `start_job` / `watch_job` / `interrupt_job`，工具 token 只走 header；
 - WebUI ACP 会话抽屉：SSE 事件流、工具卡片、审批按钮、prompt 输入；
+- Connector 主机 Agent ACP（`workspace.agent_acp.*`）：AGY 在真实 workspace
+  运行，Server 只转发 JSON-RPC；WebUI 真机闭环已通过；
 - 测试：ACP JSON-RPC 往返、子进程 agent 真实启动、文件越界/终端 kill、Connector 映射；
 - AWS 真机 AGY 1.5.16：`aih agy acp` 真实会话读取 `input.txt`、写入
   `output.txt`、执行 `printf RUN_OK`；两次 `allow_once` 审批后写入

@@ -414,3 +414,14 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 - WebUI：`--font-mono` / `--font-body` / `--font-display` / `--font-prose` 全部收敛到 JetBrains Mono + 中文等宽字体回落（Sarasa Mono SC、Noto Sans Mono CJK SC、WenQuanYi Zen Hei Mono、MS Gothic），并移除 `@fontsource/orbitron` 的加载；Ant Design 的 `fontFamily` / `fontFamilyCode`、Quick Chat 的局部 `--font-body` 覆盖、聊天终端字体、Paste Nexus 的 body 字体同步为同一套等宽栈。
 - 终端：降级输出只包含 ASCII 字母、数字、标点和方框绘制字符，天然落在等宽终端单元格内；非 TTY 输出保持原始字节。
 - 真实验证：WebUI 构建成功，构建产物与运行中 `/ui/umi.*.css`、`/ui/paste/` 均不再包含 `Orbitron` / `SF Pro Text`，`--font-body` 为等宽栈；源码中的 Orbitron 仅保留在历史注释里，不再有字体声明或字体文件加载。
+
+## 24. 打开中的 HUD 实时刷新与“出浴”动效（2026-11-26）
+
+- 数据面：`clipboard.Service` 增加变更订阅（成功 ingest / pin / delete / clear / prune / materialize 时唤醒），管理 API 新增 `GET /v1/management/webui/clipboard/events` SSE；只发“有变化”信号，客户端仍从权威 items 接口拉取。
+- 页面：Paste Nexus 用带 Bearer 的 `fetch` 流解析 SSE，断线指数退避重连（1.2s→12s），同时保留 10s 兜底轮询和 focus/visibility 刷新；刷新不再整页重载，只 diff 新增 ID。
+- 动效：新增卡片以 940ms `cubic-bezier(.16,1,.3,1)` 从 14px 模糊、28px 位移、0.962 缩放、亮度 1.5 中“浮出”，叠加一次 1.12s 的青色/紫色薄雾扫光；底部 1520 卡片、左侧/右侧 460 竖栏、Quick Orbit 分别使用向上/左/右/横向位移；多张新卡按 55ms 阶梯延迟，最多 330ms。
+- 刷新竞争：同一张卡若在动画中被后续刷新重建，按已播放时间使用负 `animation-delay` 续播，不重置、不闪白；`prefers-reduced-motion` 下关闭位移与扫光。
+- 真机证据：
+  - macOS 原生 Workspace WKWebView 保持打开，写入新内容后第 2 帧截图已出现带模糊光晕的新卡，后续帧落定；页面无 reload。
+  - Windows 11 真机 Edge HUD 保持打开，Mac 先复制、同步后卡片自动出现在首位（time 0s）；连续截帧中第 3 帧捕获到新卡的模糊浮出阶段，第 5 帧落定；Windows SSE 端点实际返回 `event: ready`。
+  - Windows 页面字体已统一为等宽栈；Mac/Windows 两端的 `/ui/paste/` 为同一份 `index.html`。

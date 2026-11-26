@@ -24,6 +24,9 @@ import (
 const (
 	// Path 是 server 配置的只读管理契约。
 	Path = "/v1/management/webui/server-config"
+	// SecretsPath 返回当前生效的 apiKey 与 managementKey 明文，供管理面回显与复制。
+	// 与配置读取分开：普通 GET 不携带密钥，只有显式请求才能拿到。
+	SecretsPath = Path + "/secrets"
 
 	// 监听主机与端口的归一规则只在 application/serverconfig 定义一次。
 	defaultServerHost = serverconfig.DefaultHost
@@ -155,6 +158,44 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	writeJSON(response, http.StatusOK, responseView{OK: true, Config: config})
+}
+
+// ServeSecrets 返回当前配置的 apiKey / managementKey 明文。
+//
+// 管理面用它做「眼睛回显 + 复制」；普通配置 GET 仍然不带密钥，避免配置快照
+// 被日志或页面状态无意收录。
+func (handler *Handler) ServeSecrets(response http.ResponseWriter, request *http.Request) {
+	if handler == nil || handler.authorizer == nil || handler.store == nil {
+		writeError(response, http.StatusServiceUnavailable, "server_config_unavailable", "server 配置服务不可用")
+		return
+	}
+	if !handler.authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
+		return
+	}
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed", "仅支持 GET")
+		return
+	}
+	raw, found, err := handler.store.ReadServerConfig(request.Context())
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "get_server_config_failed", "")
+		return
+	}
+	config, err := sanitizeFullServerConfigFromJSON(raw, found)
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "get_server_config_failed", "config:server 不是合法 JSON")
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{
+		"ok":                      true,
+		"apiKey":                  config.APIKey,
+		"managementKey":           config.ManagementKey,
+		"apiKeyConfigured":        strings.TrimSpace(config.APIKey) != "",
+		"managementKeyConfigured": strings.TrimSpace(config.ManagementKey) != "",
+	})
 }
 
 func sanitizeServerConfigFromJSON(raw string, found bool) (ConfigView, error) {

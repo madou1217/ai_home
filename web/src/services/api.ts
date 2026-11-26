@@ -1841,6 +1841,28 @@ export const configAPI = {
     return response.data.config;
   },
 
+  // 当前生效的 apiKey / managementKey 明文：仅用于设置页的眼睛回显与复制。
+  getSecrets: async (): Promise<{
+    apiKey: string;
+    managementKey: string;
+    apiKeyConfigured: boolean;
+    managementKeyConfigured: boolean;
+  }> => {
+    const response = await api.get<{
+      ok: boolean;
+      apiKey: string;
+      managementKey: string;
+      apiKeyConfigured: boolean;
+      managementKeyConfigured: boolean;
+    }>('/webui/server-config/secrets');
+    return {
+      apiKey: String(response.data.apiKey || ''),
+      managementKey: String(response.data.managementKey || ''),
+      apiKeyConfigured: Boolean(response.data.apiKeyConfigured),
+      managementKeyConfigured: Boolean(response.data.managementKeyConfigured)
+    };
+  },
+
   rotateManagementKey: async (managementKey: string, authorizationKey = '') => {
     const response = await api.post<{
       ok: boolean;

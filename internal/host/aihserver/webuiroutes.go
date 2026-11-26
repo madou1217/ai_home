@@ -1126,6 +1126,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "GET /v1/management/webui/proxy-candidates", Handler: proxyAPI},
 		{Pattern: "GET " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
+		{Pattern: "GET " + webuiserverconfigapi.SecretsPath, Handler: http.HandlerFunc(serverConfig.ServeSecrets)},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},
 		{Pattern: "GET " + webuiaccountconfigapi.Path + "/{provider}/{accountRef}/config-files", Handler: accountConfig},
 		{Pattern: "GET " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},

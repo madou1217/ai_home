@@ -1,7 +1,9 @@
-import { useEffect, type ComponentProps, type ReactNode } from 'react';
-import { Form, Input, InputNumber, Switch } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react';
+import { Form, Input, InputNumber, Space, Switch, message } from 'antd';
+import { CopyOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import { configAPI } from '@/services/api';
+import { writeClipboardText } from '@/utils/clipboard';
 import InlineNote from '@/components/ui/InlineNote';
 import SettingSection, { SettingRow } from '@/components/ui/SettingSection';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
@@ -51,6 +53,35 @@ export interface ServiceSettingsSectionProps {
   onRestartServer: () => void;
 }
 
+interface CurrentSecretControlProps {
+  id: string;
+  value: string;
+  configured: boolean;
+  onCopy: () => void;
+}
+
+/** 当前密钥回显：眼睛切换明文，复制一键写入剪贴板。 */
+function CurrentSecretControl({ id, value, configured, onCopy }: CurrentSecretControlProps) {
+  return (
+    <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
+      <Input.Password
+        id={id}
+        value={value}
+        readOnly
+        placeholder={configured ? '由环境变量提供，无法在此显示' : '未配置'}
+      />
+      <Button icon={<CopyOutlined />} disabled={!value} onClick={onCopy}>
+        复制
+      </Button>
+    </Space.Compact>
+  );
+}
+
+function currentSecretCaveat(configured: boolean, value: string): string {
+  if (value) return '点击眼睛图标显示明文；复制按钮直接写入剪贴板。';
+  return configured ? '当前值由环境变量提供，无法在界面回显。' : '尚未配置。';
+}
+
 function summarizeProxyPool(proxyUrl: string | undefined): string {
   const normalized = String(proxyUrl || '').trim();
   if (!normalized) return '直连（未配置代理）';
@@ -86,6 +117,36 @@ export default function ServiceSettingsSection({
 
   const usageDraft = Form.useWatch([], usageForm);
   const serverDraft = Form.useWatch([], serverForm);
+
+  const [serverSecrets, setServerSecrets] = useState({
+    apiKey: '',
+    managementKey: '',
+    apiKeyConfigured: false,
+    managementKeyConfigured: false
+  });
+
+  // 明文只在显式请求时取回；用于当前值的眼睛回显与复制，不进入普通配置快照。
+  const loadServerSecrets = useCallback(async () => {
+    try {
+      setServerSecrets(await configAPI.getSecrets());
+    } catch {
+      // 回显失败不阻塞配置读写，输入框保持占位提示。
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadServerSecrets();
+  }, [loadServerSecrets, savedServer.apiKeyConfigured, savedServer.managementKeyConfigured]);
+
+  const copyServerSecret = async (label: string, value: string) => {
+    if (!value) return;
+    try {
+      await writeClipboardText(value);
+      message.success(`${label} 已复制`);
+    } catch {
+      message.error('复制失败，请点击眼睛图标后手动复制');
+    }
+  };
 
   useEffect(() => {
     usageForm.setFieldsValue(savedUsage);
@@ -233,7 +294,7 @@ export default function ServiceSettingsSection({
         form={serverForm}
         disabled={loading}
         layout="vertical"
-        onFinish={(values) => { void onSaveServer(values); }}
+        onFinish={(values) => { void onSaveServer(values).then(() => void loadServerSecrets()); }}
         onValuesChange={() => { if (serverFeedback) onClearServerFeedback(); }}
         initialValues={SERVER_FORM_DEFAULTS}
         className="settings-section-form"
@@ -322,10 +383,26 @@ export default function ServiceSettingsSection({
           />
 
           <SettingRow
-            title="API Key"
-            htmlFor="server-api-key"
+            title="当前 API Key"
+            htmlFor="server-api-key-current"
             description="客户端调用 /v1 接口时使用的密钥。"
-            caveat="留空保持当前密钥不变，提交后不回显明文。"
+            caveat={currentSecretCaveat(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
+            layout="stacked"
+            control={(
+              <CurrentSecretControl
+                id="server-api-key-current"
+                value={serverSecrets.apiKey}
+                configured={serverSecrets.apiKeyConfigured}
+                onCopy={() => void copyServerSecret('API Key', serverSecrets.apiKey)}
+              />
+            )}
+          />
+
+          <SettingRow
+            title="设置新 API Key"
+            htmlFor="server-api-key"
+            description="填写后保存即替换当前密钥。"
+            caveat="留空保持当前密钥不变。"
             layout="stacked"
             control={
               <Form.Item name="apiKey">
@@ -339,9 +416,25 @@ export default function ServiceSettingsSection({
           />
 
           <SettingRow
-            title="Management Key"
-            htmlFor="server-management-key"
+            title="当前 Management Key"
+            htmlFor="server-management-key-current"
             description="管理端连接当前 Server 所需的密钥。"
+            caveat={currentSecretCaveat(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
+            layout="stacked"
+            control={(
+              <CurrentSecretControl
+                id="server-management-key-current"
+                value={serverSecrets.managementKey}
+                configured={serverSecrets.managementKeyConfigured}
+                onCopy={() => void copyServerSecret('Management Key', serverSecrets.managementKey)}
+              />
+            )}
+          />
+
+          <SettingRow
+            title="设置新 Management Key"
+            htmlFor="server-management-key"
+            description="填写后保存即轮换当前 Management Key。"
             caveat="留空保持当前密钥不变；轮换后会同步更新当前默认 Server 凭据。"
             layout="stacked"
             control={

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -200,49 +199,8 @@ func removeCacheTree(path string) error {
 // 桌面进程 HOME 指向 account profile，仅靠 env 不能覆盖所有工具；这些叶子与
 // 账号无关，宿主为主。
 func ensureDesktopHomeLinks(hostHomeDir, profileDir string) {
-	host := strings.TrimSpace(hostHomeDir)
-	profile := strings.TrimSpace(profileDir)
-	if host == "" || profile == "" || filepath.Clean(host) == filepath.Clean(profile) {
-		return
-	}
-	links := []struct {
-		rel      string
-		takeover bool
-	}{
-		{".cache", true},
-		{"go", true},
-		{".npm", true},
-		{".bun", true},
-		{".volta", true},
-		{".cargo", true},
-		{".pnpm-store", true},
-		{".local/bin", false},
-		{".local/state", false},
-		{".local/share/uv", true},
-		{".local/share/claude/versions", true},
-		{".local/share/codebuddy/versions", true},
-	}
-	if runtime.GOOS == "darwin" {
-		links = append(links,
-			struct {
-				rel      string
-				takeover bool
-			}{"Library/Caches/go-build", true},
-			struct {
-				rel      string
-				takeover bool
-			}{"Library/Caches/uv", true},
-		)
-	}
-	for _, link := range links {
-		target := filepath.Join(host, filepath.FromSlash(link.rel))
-		if link.takeover {
-			if err := os.MkdirAll(target, 0o700); err != nil {
-				continue
-			}
-		}
-		linkDesktopCacheDir(filepath.Join(profile, filepath.FromSlash(link.rel)), target)
-	}
+	// 清单与接管语义来自 CLI 投影的 sharedcache.Links，桌面入口不再维护副本。
+	_ = accountprojection.LinkToolchainHostDirs(hostHomeDir, profileDir)
 }
 
 func ensureSymlinkIfAbsent(linkPath, target string) {

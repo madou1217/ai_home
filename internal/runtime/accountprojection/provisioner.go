@@ -337,7 +337,7 @@ func (provisioner *Provisioner) applyProjection(
 			}
 		}
 	}
-	if err := provisioner.applyDefaultHostLinks(request, policy, root); err != nil {
+	if err := provisioner.applyDefaultHostSharing(request, policy, root); err != nil {
 		return err
 	}
 	if err := provisioner.applyHostLinks(request, policy, root); err != nil {
@@ -346,12 +346,12 @@ func (provisioner *Provisioner) applyProjection(
 	return nil
 }
 
-// applyDefaultHostLinks 把工具链缓存（.cache/go/.npm/...）统一链回宿主。
-//
-// 这是所有 fake HOME 的默认行为，不依赖 Provider 策略逐项声明：账号只隔离凭据，
-// 缓存与工具链产物全机器一份。纯缓存路径允许接管历史真实目录（Node 原行为），
-// 其余（.local/bin、.local/state）只建链、不删除客户端数据。
-func (provisioner *Provisioner) applyDefaultHostLinks(
+// applyDefaultHostSharing 是 fake HOME 的默认共享层：账号只隔离凭据，其余与
+// 账号无关的宿主状态全机器一份。分三层，顺序即优先级：
+//   - 工具链（.cache/go/.npm…）：纯缓存可接管历史副本，命令/状态目录只建链；
+//   - 跨 CLI 根（.codex/.claude/.local/share/opencode…）：宿主缺的内容先并入；
+//   - 版本戳去重（kimi daimon bundle 等硬链接）。
+func (provisioner *Provisioner) applyDefaultHostSharing(
 	request appprojection.Request,
 	policy appprojection.Policy,
 	root string,
@@ -359,56 +359,8 @@ func (provisioner *Provisioner) applyDefaultHostLinks(
 	if policy.Mode != appprojection.ModeFakeHome {
 		return nil
 	}
-	for _, link := range sharedcache.Links(runtime.GOOS) {
-		target, err := joinUnder(request.HostHomeDir, link.Host)
-		if err != nil {
-			return err
-		}
-		source, err := joinUnder(root, link.Projection)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(target, 0o700); err != nil {
-			return err
-		}
-		// 父目录若已经是宿主共享链接（例如旧 Node 把 .local/share 整体链走），
-		// 叶子天然就共享了；不能再对链接指向的宿主目录做接管/删除。
-		if resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(source)); resolveErr == nil &&
-			!pathWithin(root, resolvedParent) {
-			continue
-		}
-		info, statErr := os.Lstat(source)
-		if statErr == nil {
-			if provisioner.linker.IsManaged(source, target) {
-				continue
-			}
-			if info.Mode()&os.ModeSymlink != 0 {
-				// 无主链接：缓存可安全替换；其余保持现场。
-				if !link.Takeover {
-					continue
-				}
-				if err := os.Remove(source); err != nil {
-					return err
-				}
-			} else if link.Takeover {
-				// 历史真实缓存副本：删除后建链，由宿主一份统一承载。
-				// CLI 自更新目录里是只读的文件/目录，直接 RemoveAll 会 EPERM；
-				// 删除失败只跳过这一条，不能阻断整个启动。
-				if err := removeForTakeover(source); err != nil {
-					continue
-				}
-			} else {
-				continue
-			}
-		} else if !errors.Is(statErr, fs.ErrNotExist) {
-			return statErr
-		}
-		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
-			return err
-		}
-		if err := provisioner.linkShared(source, target, true); err != nil {
-			return err
-		}
+	if err := provisioner.applyToolchainHostLinks(request.HostHomeDir, root); err != nil {
+		return err
 	}
 	if err := provisioner.applyCrossCLIHostLinks(request, policy, root); err != nil {
 		return err
@@ -451,11 +403,8 @@ func (provisioner *Provisioner) applyCrossCLIHostLinks(
 		// 父目录是投影外的共享链接（旧 Node 把 .local/share、.config 整体链走）时，
 		// 叶子会被所有账号共用。链接要落在这个宿主侧父目录里，才能改到唯一的实体；
 		// 父目录本身就指向宿主同名目录时两者是同一位置，建链是幂等空操作。
-		if resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(source)); resolveErr == nil &&
-			!pathWithin(root, resolvedParent) {
-			source = filepath.Join(resolvedParent, filepath.Base(source))
-		}
-		if err := provisioner.ensureHostAuthorityLink(source, target); err != nil {
+		source = resolveSharedParentSource(source, root)
+		if err := provisioner.ensureHostLink(source, target, hostLinkAdopt); err != nil {
 			// 跨 CLI 目录是共享状态的收口，不是本账号启动的必需依赖：合并失败时
 			// 保留投影里的本地副本，下次 Prepare 再试，不能因此挡住 CLI 启动。
 			continue
@@ -527,20 +476,87 @@ func clonePathSegments(input [][]string) [][]string {
 	return cloned
 }
 
-// ensureHostAuthorityLink 让 source 成为指向 target 的托管链接。
+// LinkToolchainHostDirs 把工具链缓存（.cache/go/.npm/.local/share/uv…）链回宿主。
 //
-// source 不存在时预建宿主目录并直接建链（之后 CLI 写入的就是宿主那一份）；
-// 已存在时先把投影内容并进宿主，再替换成链接。
-func (provisioner *Provisioner) ensureHostAuthorityLink(source string, target string) error {
-	info, err := os.Lstat(source)
-	if errors.Is(err, fs.ErrNotExist) {
+// 桌面账号 HOME 与 CLI fake HOME 共用 sharedcache.Links 这一份清单和同一套接管
+// 语义；桌面入口不要再维护第二份目录列表。
+func LinkToolchainHostDirs(hostHomeDir string, projectionRoot string) error {
+	host := strings.TrimSpace(hostHomeDir)
+	root := strings.TrimSpace(projectionRoot)
+	if host == "" || root == "" || samePath(host, root) {
+		return nil
+	}
+	provisioner := &Provisioner{linker: NewLinker()}
+	return provisioner.applyToolchainHostLinks(host, root)
+}
+
+// applyToolchainHostLinks 应用 sharedcache.Links：纯缓存允许接管历史副本，
+// .local/bin、.local/state 这类命令/状态目录只在缺失时建链。
+func (provisioner *Provisioner) applyToolchainHostLinks(hostHomeDir string, root string) error {
+	for _, link := range sharedcache.Links(runtime.GOOS) {
+		source, err := joinUnder(root, link.Projection)
+		if err != nil {
+			return err
+		}
+		// 父目录已经是宿主侧共享链接（旧 Node 把 .local/share 整体链走）时，
+		// 叶子天然落在宿主上；不要再对链接目标做接管/删除。
+		if sharedParentOutside(source, root) {
+			continue
+		}
+		target, err := joinUnder(hostHomeDir, link.Host)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(target, 0o700); err != nil {
 			return err
 		}
+		linkPolicy := hostLinkAbsentOnly
+		if link.Takeover {
+			linkPolicy = hostLinkTakeover
+		}
+		if err := provisioner.ensureHostLink(source, target, linkPolicy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hostLinkPolicy 决定投影里已有条目怎么处理。调用方按“这份目录是谁的数据”
+// 选择，机械动作（判断托管、删除/合并、建链）只在这里实现一次。
+type hostLinkPolicy int
+
+const (
+	// hostLinkAbsentOnly：命令/状态目录，只在缺失时建链，绝不删除现场。
+	hostLinkAbsentOnly hostLinkPolicy = iota
+	// hostLinkTakeover：纯缓存/工具链产物，历史真实副本删掉后建链。
+	hostLinkTakeover
+	// hostLinkAdopt：跨 CLI 共享根，先把宿主缺的内容并进宿主再建链。
+	hostLinkAdopt
+	// hostLinkExisting：Provider 声明的共享数据根，宿主不存在就跳过；
+	// 无主链接视为冲突，保留现场交给上层诊断。
+	hostLinkExisting
+)
+
+// ensureHostLink 让 source 成为指向 target 的托管链接。
+func (provisioner *Provisioner) ensureHostLink(source string, target string, linkPolicy hostLinkPolicy) error {
+	targetInfo, targetErr := os.Stat(target)
+	if errors.Is(targetErr, fs.ErrNotExist) {
+		if linkPolicy == hostLinkExisting {
+			return nil
+		}
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			return err
+		}
+	} else if targetErr != nil {
+		return targetErr
+	}
+	isDir := targetInfo == nil || targetInfo.IsDir()
+	info, err := os.Lstat(source)
+	if errors.Is(err, fs.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
 			return err
 		}
-		return provisioner.linkShared(source, target, true)
+		return provisioner.linkShared(source, target, isDir)
 	}
 	if err != nil {
 		return err
@@ -548,19 +564,36 @@ func (provisioner *Provisioner) ensureHostAuthorityLink(source string, target st
 	if provisioner.linker.IsManaged(source, target) {
 		return nil
 	}
-	resolved, statErr := os.Stat(source)
-	if statErr != nil && info.Mode()&os.ModeSymlink == 0 {
-		// 悬空真实路径不该出现在这里；保留现场交给上层诊断。
-		return statErr
-	}
-	if statErr == nil && !resolved.IsDir() {
-		// 同名文件不是跨 CLI 的根目录，保留现状。
-		return nil
-	}
-	if statErr == nil {
-		if err := adoptIntoHost(source, target, info.Mode()&os.ModeSymlink != 0); err != nil {
-			return err
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		switch linkPolicy {
+		case hostLinkAbsentOnly:
+			return nil
+		case hostLinkExisting:
+			return fmt.Errorf("%w: %s is an unmanaged symlink", appprojection.ErrProjectionConflict, source)
+		case hostLinkAdopt:
+			if err := adoptIntoHost(source, target, true); err != nil {
+				return err
+			}
 		}
+	case info.IsDir():
+		switch linkPolicy {
+		case hostLinkAbsentOnly, hostLinkExisting:
+			return nil
+		case hostLinkTakeover:
+			// CLI 自更新的版本目录通常是只读的，直接 RemoveAll 会 EPERM；
+			// 删除失败只跳过这一条，不能阻断整个启动。
+			if err := removeForTakeover(source); err != nil {
+				return nil
+			}
+		case hostLinkAdopt:
+			if err := adoptIntoHost(source, target, false); err != nil {
+				return err
+			}
+		}
+	default:
+		// 同名普通文件不是这些共享目录的形态，保留现场。
+		return nil
 	}
 	if err := os.RemoveAll(source); err != nil {
 		return err
@@ -568,7 +601,39 @@ func (provisioner *Provisioner) ensureHostAuthorityLink(source string, target st
 	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
 		return err
 	}
-	return provisioner.linkShared(source, target, true)
+	return provisioner.linkShared(source, target, isDir)
+}
+
+// sharedParentTarget 返回 source 父目录解析到投影外时（宿主侧共享链接）的真实路径。
+// 旧 Node 把 .local/share、.config 整体链走时，叶子对所有账号是同一个实体，
+// 必须在父目录目标里改，投影里的相对路径只是经由父链接看到它。
+func sharedParentTarget(source string, root string) (string, bool) {
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(source))
+	if err != nil {
+		return "", false
+	}
+	// 根自身也可能含符号链接（macOS 的 /var → /private/var），两边都解析后再比较。
+	resolvedRoot := root
+	if resolved, resolveErr := filepath.EvalSymlinks(root); resolveErr == nil {
+		resolvedRoot = resolved
+	}
+	if pathWithin(resolvedRoot, resolvedParent) {
+		return "", false
+	}
+	return resolvedParent, true
+}
+
+func sharedParentOutside(source string, root string) bool {
+	_, outside := sharedParentTarget(source, root)
+	return outside
+}
+
+func resolveSharedParentSource(source string, root string) string {
+	parent, outside := sharedParentTarget(source, root)
+	if !outside {
+		return source
+	}
+	return filepath.Join(parent, filepath.Base(source))
 }
 
 // adoptIntoHost 把投影里的跨 CLI 目录内容并进宿主。
@@ -688,7 +753,7 @@ func (provisioner *Provisioner) applyDedupeLinks(
 	root string,
 ) error {
 	for _, link := range policy.SharedHostDedupe {
-		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
+		if !sharedcache.MatchesPlatform(link.Platforms, runtime.GOOS) {
 			continue
 		}
 		source, err := joinUnder(root, link.Projection)
@@ -762,7 +827,7 @@ func (provisioner *Provisioner) applyHostLinks(
 	// 缓存类链接的宿主目录可以先建：缓存为空也可安全共享，不能因为宿主
 	// 尚未生成 .qoder/.cache 就让每个账号各自落一份。
 	for _, link := range policy.SharedHostCaches {
-		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
+		if !sharedcache.MatchesPlatform(link.Platforms, runtime.GOOS) {
 			continue
 		}
 		if len(link.Exclude) > 0 {
@@ -780,7 +845,7 @@ func (provisioner *Provisioner) applyHostLinks(
 	links = append(links, policy.SharedHostCaches...)
 	links = append(links, policy.SharedHostDataRoots...)
 	for _, link := range links {
-		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
+		if !sharedcache.MatchesPlatform(link.Platforms, runtime.GOOS) {
 			continue
 		}
 		if len(link.Exclude) > 0 {
@@ -790,35 +855,15 @@ func (provisioner *Provisioner) applyHostLinks(
 			}
 			continue
 		}
-		target, err := joinUnder(request.HostHomeDir, link.Host)
-		if err != nil {
-			return err
-		}
-		targetInfo, targetErr := os.Stat(target)
-		if errors.Is(targetErr, fs.ErrNotExist) {
-			continue
-		} else if targetErr != nil {
-			return targetErr
-		}
 		source, err := joinUnder(root, link.Projection)
 		if err != nil {
 			return err
 		}
-		if info, sourceErr := os.Lstat(source); sourceErr == nil {
-			if provisioner.linker.IsManaged(source, target) {
-				continue
-			}
-			if info.Mode()&os.ModeSymlink == 0 {
-				continue
-			}
-			return fmt.Errorf("%w: %s is an unmanaged symlink", appprojection.ErrProjectionConflict, source)
-		} else if !errors.Is(sourceErr, fs.ErrNotExist) {
-			return sourceErr
-		}
-		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		target, err := joinUnder(request.HostHomeDir, link.Host)
+		if err != nil {
 			return err
 		}
-		if err := provisioner.linkShared(source, target, targetInfo.IsDir()); err != nil {
+		if err := provisioner.ensureHostLink(source, target, hostLinkExisting); err != nil {
 			return err
 		}
 	}
@@ -875,33 +920,15 @@ func (provisioner *Provisioner) applyDirectoryHostLink(
 		if excluded[entry.Name()] {
 			continue
 		}
-		if err := provisioner.linkManagedChild(
+		if err := provisioner.ensureHostLink(
 			filepath.Join(source, entry.Name()),
 			filepath.Join(target, entry.Name()),
-			entry.IsDir(),
+			hostLinkExisting,
 		); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// linkManagedChild 建一条宿主子项链接；已存在且受管时幂等通过。
-func (provisioner *Provisioner) linkManagedChild(source string, target string, isDir bool) error {
-	info, err := os.Lstat(source)
-	if err == nil {
-		if provisioner.linker.IsManaged(source, target) {
-			return nil
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			return nil
-		}
-		return fmt.Errorf("%w: %s is an unmanaged symlink", appprojection.ErrProjectionConflict, source)
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return provisioner.linkShared(source, target, isDir)
 }
 
 func (provisioner *Provisioner) ensureSharedEntry(

@@ -13,16 +13,22 @@ type Link struct {
 	Takeover   bool
 }
 
-func platformMatches(link Link, goos string) bool {
-	if len(link.Platforms) == 0 {
+// MatchesPlatform 判断一条平台限定列表是否适用当前 GOOS；空列表表示全平台。
+// 投影执行器与桌面入口共用这一份判断，避免各自再写一遍大小写/空值处理。
+func MatchesPlatform(platforms []string, goos string) bool {
+	if len(platforms) == 0 {
 		return true
 	}
-	for _, item := range link.Platforms {
+	for _, item := range platforms {
 		if strings.EqualFold(strings.TrimSpace(item), goos) {
 			return true
 		}
 	}
 	return false
+}
+
+func platformMatches(link Link, goos string) bool {
+	return MatchesPlatform(link.Platforms, goos)
 }
 
 // Links 返回 fake HOME 默认要链回宿主的工具链/缓存目录。

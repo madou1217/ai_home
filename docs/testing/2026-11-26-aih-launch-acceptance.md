@@ -76,6 +76,14 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
 - Linux 实测（AWS，xvfb+openbox）：`show` 两次窗口 id 均为 `4194309`、count=1；第二次 `aih launch ui --daemon`、前台 `aih launch ui`、手工再起 `aih-launch-ui` 均退出 0 且窗口仍为 1；杀掉主实例后新实例可成为新单例并正常 `show`。
 - 备注：单例实现中 Swift 的 `flock` 与 `struct flock` 同名，实际使用 `fcntl(F_SETLK)` 记录锁（commit `73ecc8d7`）。
 
+## 4.3 Windows 正式 Server 与目录完整性（2026-11-26 追加）
+
+- 部署：用最新 `aih-server.exe` 替换 `%USERPROFILE%\.ai_home\bin\aih-server.exe`（原 1.0.8 包不认识 `launch`），原生源码放在 `%USERPROFILE%\.ai_home\native\translation\`（`main.swift` 标记 + `windows/{Program.cs,AihTranslation.csproj,app.manifest}`）供 server 按指纹构建 helper；`AihServerWindows` 计划任务启动，server/helper 均运行在交互 session 1。
+- 修复的真实 Bug：`Get-StartApps` 的 **子 powershell.exe 在该计划任务上下文会卡住**，导致 `scanWindowsStartApps` 超时后静默返回空，所有 UWP/Store 应用（Calculator、Settings、Terminal、Microsoft Store、截图工具等）缺失。现改为通过临时 VBS + `cscript` 枚举 `shell:AppsFolder`（UTF-16LE 文件输出，无控制台编码依赖），`.lnk` 扫描仅作兜底。
+- 去重：以 AppsFolder 为唯一来源，按显示名与小写可执行路径去重，避免 `.lnk` 与 AppsFolder 合并产生的跨语言重复（如 `Chrome Remote Desktop` / `Chrome 远程桌面`）。
+- 真机结果：`GET /v1/management/launcher/apps` → **199** 条；系统 `Get-StartApps` 199 条；缺失 0、重复 0；`Calculator`（`shell:AppsFolder\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`）通过 `POST /open` 真实拉起（CalculatorApp 进程）。
+- 面板：真实 `Alt+Space` 唤起显示「199 个应用」，排序按 frecency/mtime，非 A–Z；截图见会话记录。
+
 ## 5. 已知限制 / 复验步骤
 
 - Windows 锁屏：解锁后执行

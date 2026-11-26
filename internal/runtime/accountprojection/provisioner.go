@@ -22,6 +22,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
 )
 
 // Options 是投影执行器的依赖。
@@ -129,6 +130,17 @@ func (provisioner *Provisioner) Prepare(
 	env, err := resolveEnv(policy.Env, root, request.HostHomeDir, policy.NativeRoot)
 	if err != nil {
 		return appprojection.Result{}, err
+	}
+	if policy.Mode == appprojection.ModeFakeHome {
+		// 工具链缓存变量与链接同源：策略可覆盖，但默认全部指向宿主。
+		merged := make(map[string]string, len(env)+16)
+		for key, value := range sharedcache.Env(request.HostHomeDir, runtime.GOOS) {
+			merged[key] = value
+		}
+		for key, value := range env {
+			merged[key] = value
+		}
+		env = merged
 	}
 	return appprojection.Result{
 		Root:     root,
@@ -286,9 +298,6 @@ func (provisioner *Provisioner) applyProjection(
 	policy appprojection.Policy,
 	root string,
 ) error {
-	if len(policy.ProjectionRoots) == 0 {
-		return nil
-	}
 	for _, mapping := range policy.ProjectionRoots {
 		sourceRoot, err := joinUnder(root, mapping.From)
 		if err != nil {
@@ -321,10 +330,100 @@ func (provisioner *Provisioner) applyProjection(
 			}
 		}
 	}
+	if err := provisioner.applyDefaultHostLinks(request, policy, root); err != nil {
+		return err
+	}
 	if err := provisioner.applyHostLinks(request, policy, root); err != nil {
 		return err
 	}
 	return nil
+}
+
+// applyDefaultHostLinks 把工具链缓存（.cache/go/.npm/...）统一链回宿主。
+//
+// 这是所有 fake HOME 的默认行为，不依赖 Provider 策略逐项声明：账号只隔离凭据，
+// 缓存与工具链产物全机器一份。纯缓存路径允许接管历史真实目录（Node 原行为），
+// 其余（.local/bin、.local/state）只建链、不删除客户端数据。
+func (provisioner *Provisioner) applyDefaultHostLinks(
+	request appprojection.Request,
+	policy appprojection.Policy,
+	root string,
+) error {
+	if policy.Mode != appprojection.ModeFakeHome {
+		return nil
+	}
+	for _, link := range sharedcache.Links(runtime.GOOS) {
+		target, err := joinUnder(request.HostHomeDir, link.Host)
+		if err != nil {
+			return err
+		}
+		source, err := joinUnder(root, link.Projection)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			return err
+		}
+		// 父目录若已经是宿主共享链接（例如旧 Node 把 .local/share 整体链走），
+		// 叶子天然就共享了；不能再对链接指向的宿主目录做接管/删除。
+		if resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(source)); resolveErr == nil &&
+			!pathWithin(root, resolvedParent) {
+			continue
+		}
+		info, statErr := os.Lstat(source)
+		if statErr == nil {
+			if provisioner.linker.IsManaged(source, target) {
+				continue
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				// 无主链接：缓存可安全替换；其余保持现场。
+				if !link.Takeover {
+					continue
+				}
+				if err := os.Remove(source); err != nil {
+					return err
+				}
+			} else if link.Takeover {
+				// 历史真实缓存副本：删除后建链，由宿主一份统一承载。
+				// CLI 自更新目录里是只读的文件/目录，直接 RemoveAll 会 EPERM；
+				// 删除失败只跳过这一条，不能阻断整个启动。
+				if err := removeForTakeover(source); err != nil {
+					continue
+				}
+			} else {
+				continue
+			}
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return statErr
+		}
+		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+			return err
+		}
+		if err := provisioner.linkShared(source, target, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeForTakeover 删除历史缓存副本；CLI 自更新的版本目录通常是只读的
+// （dr-xr-xr-x / -r--r--r--），RemoveAll 会因父目录不可写而失败。先递归补
+// 写权限再删。
+func removeForTakeover(path string) error {
+	_ = filepath.Walk(path, func(current string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
+		}
+		perm := info.Mode().Perm()
+		if info.IsDir() {
+			perm |= 0o700
+		} else {
+			perm |= 0o600
+		}
+		_ = os.Chmod(current, perm)
+		return nil
+	})
+	return os.RemoveAll(path)
 }
 
 // applyHostLinks 把宿主缓存/共享数据根链接进投影。

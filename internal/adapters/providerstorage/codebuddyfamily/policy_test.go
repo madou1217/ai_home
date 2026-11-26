@@ -3,16 +3,19 @@ package codebuddyfamilystorage
 import (
 	"strings"
 	"testing"
+
+	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
 )
 
-// TestPolicyMatchesNodeToolchainCaches 守住与 Node HOST_TOOLCHAIN_CACHES 的逐项对齐：
+// TestDefaultToolchainCachesCoverFamily 守住 fake HOME 默认层对工具链缓存的覆盖：
 // 少一条就意味着某个账号会重新长出一份工具链缓存。
-func TestPolicyMatchesNodeToolchainCaches(t *testing.T) {
-	policy, ok := Policy("codebuddycn")
-	if !ok {
-		t.Fatal("codebuddycn 缺少投影策略")
+func TestDefaultToolchainCachesCoverFamily(t *testing.T) {
+	got := make(map[string]bool)
+	for _, link := range sharedcache.Links("darwin") {
+		got[strings.Join(link.Projection, "/")] = true
 	}
-	want := []string{
+	for _, want := range []string{
+		".cache",
 		"go",
 		".npm",
 		".bun",
@@ -20,18 +23,12 @@ func TestPolicyMatchesNodeToolchainCaches(t *testing.T) {
 		".local/bin",
 		"Library/Caches/go-build",
 		"Library/Caches/Homebrew",
-		"Library/Caches/bun",
 		"Library/Caches/pip",
-	}
-	got := make([]string, 0, len(policy.SharedHostCaches)-1)
-	for _, link := range policy.SharedHostCaches {
-		if len(link.Exclude) > 0 {
-			continue
+		".local/share/codebuddy/versions",
+	} {
+		if !got[want] {
+			t.Fatalf("默认共享缓存缺少 %q（现有 %v）", want, got)
 		}
-		got = append(got, strings.Join(link.Projection, "/"))
-	}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("shared host caches = %v, want %v", got, want)
 	}
 }
 
@@ -67,9 +64,9 @@ func TestAllFamilyProvidersShareCaches(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s 缺少投影策略", providerID)
 		}
-		// 9 条工具链缓存 + 1 条带排除的桌面 Library/Caches。
-		if len(policy.SharedHostCaches) != 10 {
-			t.Fatalf("%s shared host caches = %d, want 10", providerID, len(policy.SharedHostCaches))
+		// 工具链缓存由 fake HOME 默认层承担；策略只剩带排除的桌面 Library/Caches。
+		if len(policy.SharedHostCaches) != 1 {
+			t.Fatalf("%s shared host caches = %d, want 1", providerID, len(policy.SharedHostCaches))
 		}
 		last := policy.SharedHostCaches[len(policy.SharedHostCaches)-1]
 		if strings.Join(last.Projection, "/") != "Library/Caches" || len(last.Exclude) != 4 {

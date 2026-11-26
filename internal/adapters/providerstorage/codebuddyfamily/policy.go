@@ -151,36 +151,10 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 		},
 		SharedEntries:  familySharedEntries(definition),
 		SessionEntries: []string{"projects"},
-		// 与 Node HOST_TOOLCHAIN_CACHES 逐项对齐：工具链缓存与账号无关，必须链接回
-		// 宿主，否则每个账号各存一份（历史上 zcode 单账号堆到 4GB）。
+		// 工具链缓存走 fake HOME 默认层（sharedcache.Links）；这里只保留桌面端
+		// 整目录缓存共享（Node DESKTOP_SHARED_CACHE_PROVIDERS）：排除各桌面应用
+		// 自己的 Chromium 缓存（可能带凭据响应体），其余 Library/Caches 共享宿主。
 		SharedHostCaches: []accountprojection.SharedLink{
-			{Projection: []string{"go"}, Host: []string{"go"}},
-			{Projection: []string{".npm"}, Host: []string{".npm"}},
-			{Projection: []string{".bun"}, Host: []string{".bun"}},
-			{Projection: []string{".volta"}, Host: []string{".volta"}},
-			{Projection: []string{".local", "bin"}, Host: []string{".local", "bin"}},
-			{
-				Projection: []string{"Library", "Caches", "go-build"},
-				Host:       []string{"Library", "Caches", "go-build"},
-				Platforms:  []string{"darwin"},
-			},
-			{
-				Projection: []string{"Library", "Caches", "Homebrew"},
-				Host:       []string{"Library", "Caches", "Homebrew"},
-				Platforms:  []string{"darwin"},
-			},
-			{
-				Projection: []string{"Library", "Caches", "bun"},
-				Host:       []string{"Library", "Caches", "bun"},
-				Platforms:  []string{"darwin"},
-			},
-			{
-				Projection: []string{"Library", "Caches", "pip"},
-				Host:       []string{"Library", "Caches", "pip"},
-				Platforms:  []string{"darwin"},
-			},
-			// 桌面端整目录缓存共享（Node DESKTOP_SHARED_CACHE_PROVIDERS）：只排除
-			// 桌面应用自己的 Chromium 缓存（可能带凭据响应体）。
 			{
 				Projection: []string{"Library", "Caches"},
 				Host:       []string{"Library", "Caches"},

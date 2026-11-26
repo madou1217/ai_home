@@ -218,7 +218,9 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 		}
 		item.MIME = mime
 		item.SHA256 = sha256Hex(canonical)
-		item.ByteSize = int64(len(canonical))
+		// ByteSize is a display/sync metadata fact: a batch package of N files
+		// should show its real payload size, not the length of its path list.
+		item.ByteSize = fileContentBytes(normalized)
 		item.Files = normalized
 		item.Preview = buildFilePreview(normalized)
 
@@ -1092,6 +1094,20 @@ func buildTextPreview(text string, maxRunes int) string {
 		count++
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// fileContentBytes sums regular-file sizes for a file batch package. Missing or
+// unreadable entries contribute zero and are still kept in the package index.
+func fileContentBytes(files []string) int64 {
+	var total int64
+	for _, path := range files {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		total += info.Size()
+	}
+	return total
 }
 
 func buildFilePreview(files []string) string {

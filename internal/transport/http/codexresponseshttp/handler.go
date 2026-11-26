@@ -27,6 +27,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
@@ -191,7 +192,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
 		return
 	}
-	trail := handler.newFailureTrail(metadata.Model)
+	trail := handler.newFailureTrail(metadata.Model, requestid.FromContext(ctx))
 	ctx, reqState := upstreamretry.EnsureRequestState(ctx)
 	pinnedRef, requestPinned := inferencegateway.PinnedAccount(ctx)
 	reacquirer, supportsSplitPin := handler.Accounts.(RateLimitReacquirer)

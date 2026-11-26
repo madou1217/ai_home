@@ -288,12 +288,29 @@ func (coordinator *Coordinator) Execute(
 	}
 	plan, err := coordinator.routes.Resolve(ctx, request)
 	if err != nil {
+		emitRequestFailure(ctx, RequestFailure{
+			Surface: "canonical:" + string(request.ClientProtocol()),
+			Model:   request.Model(),
+			Error:   err.Error(),
+		})
 		return fmt.Errorf("解析 Canonical 推理路由失败: %w", err)
 	}
 	if !plan.IsValid() {
 		return ErrInvalidRoutePlan
 	}
-	return coordinator.executePlan(ctx, request, plan, emit)
+	if err := coordinator.executePlan(ctx, request, plan, emit); err != nil {
+		// 客户端主动断开（Canceled）不是网关失败：不写失败事件，避免刷屏；
+		// 服务端截止时间（DeadlineExceeded）仍然保留，属于可追查异常。
+		if !errors.Is(err, context.Canceled) {
+			emitRequestFailure(ctx, RequestFailure{
+				Surface: "canonical:" + string(request.ClientProtocol()),
+				Model:   request.Model(),
+				Error:   err.Error(),
+			})
+		}
+		return err
+	}
+	return nil
 }
 
 // executePlan 顺序尝试支持请求能力的候选，并保留最后一个安全失败。

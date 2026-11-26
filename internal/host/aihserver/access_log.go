@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/madou1217/ai_home/core/requestid"
 )
 
 var requestLogEnabled atomic.Bool
@@ -73,7 +75,8 @@ func withAccessLog(next http.Handler, logger *log.Logger) http.Handler {
 		writer := &accessLogResponseWriter{ResponseWriter: response, status: http.StatusOK}
 		next.ServeHTTP(writer, request)
 		logger.Printf(
-			"access method=%s path=%s status=%d duration_ms=%d",
+			"access request_id=%s method=%s path=%s status=%d duration_ms=%d",
+			requestid.FromContext(request.Context()),
 			request.Method,
 			request.URL.Path,
 			writer.status,

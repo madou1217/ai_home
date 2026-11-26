@@ -20,6 +20,7 @@ type upstream429LogObserver struct {
 func (observer upstream429LogObserver) ObserveWait(event upstreamretry.WaitEvent) {
 	// 结构化事件与文本行同源：按天日志里可以直接按账号/模型过滤等待序列。
 	serverlog.Emit("retry_wait", map[string]any{
+		"requestId":    event.RequestID,
 		"surface":      event.Surface,
 		"provider":     event.ProviderID,
 		"account":      event.AccountRef,
@@ -34,7 +35,8 @@ func (observer upstream429LogObserver) ObserveWait(event upstreamretry.WaitEvent
 		return
 	}
 	observer.logger.Printf(
-		"upstream 429 retry wait: surface=%s provider=%s account=%s retry=%d/%d delay_ms=%d source=%s pinned=%t policy_source=%s",
+		"upstream 429 retry wait: request_id=%s surface=%s provider=%s account=%s retry=%d/%d delay_ms=%d source=%s pinned=%t policy_source=%s",
+		event.RequestID,
 		event.Surface,
 		event.ProviderID,
 		event.AccountRef,
@@ -49,6 +51,7 @@ func (observer upstream429LogObserver) ObserveWait(event upstreamretry.WaitEvent
 
 func (observer upstream429LogObserver) ObserveOutcome(event upstreamretry.OutcomeEvent) {
 	serverlog.Emit("retry_outcome", map[string]any{
+		"requestId":   event.RequestID,
 		"surface":     event.Surface,
 		"provider":    event.ProviderID,
 		"account":     event.AccountRef,
@@ -61,7 +64,8 @@ func (observer upstream429LogObserver) ObserveOutcome(event upstreamretry.Outcom
 		return
 	}
 	observer.logger.Printf(
-		"upstream 429 retry finished: surface=%s provider=%s account=%s outcome=%s retries=%d total_wait_ms=%d abort_reason=%s",
+		"upstream 429 retry finished: request_id=%s surface=%s provider=%s account=%s outcome=%s retries=%d total_wait_ms=%d abort_reason=%s",
+		event.RequestID,
 		event.Surface,
 		event.ProviderID,
 		event.AccountRef,

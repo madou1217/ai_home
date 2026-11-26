@@ -14,7 +14,10 @@ import (
 // 上游失败、换号耗尽还是没有可用账号。摘要只含模型、账号引用、状态码、失败分类与
 // 截断后的传输错误描述，不含请求体、上游正文与凭据。
 type FailureReport struct {
-	Model string
+	// RequestID 是网关 Request ID（响应头 X-Request-Id 同值），用于把这次失败
+	// 和按天日志里的 upftream_failure / retry_* 事件串起来。
+	RequestID string
+	Model     string
 	// Status 是写给客户端的 HTTP 状态码。
 	Status int
 	// Code 是网关错误码；上游非 2xx 原样透传时为 "upstream_status"。
@@ -58,6 +61,7 @@ const maxFailureDetail = 200
 // failureTrail 在一次请求内累积失败尝试；没有 FailureLog 时所有方法都是空操作。
 type failureTrail struct {
 	sink            func(FailureReport)
+	requestID       string
 	clock           func() time.Time
 	model           string
 	started         time.Time
@@ -68,11 +72,17 @@ type failureTrail struct {
 	pinFallbackNote string
 }
 
-func (handler *Handler) newFailureTrail(model string) *failureTrail {
+func (handler *Handler) newFailureTrail(model string, requestID string) *failureTrail {
 	if handler.FailureLog == nil {
 		return &failureTrail{}
 	}
-	return &failureTrail{sink: handler.FailureLog, clock: handler.Clock, model: model, started: handler.Clock()}
+	return &failureTrail{
+		sink:      handler.FailureLog,
+		requestID: requestID,
+		clock:     handler.Clock,
+		model:     model,
+		started:   handler.Clock(),
+	}
 }
 
 func (trail *failureTrail) now() time.Time {
@@ -160,6 +170,7 @@ func (trail *failureTrail) finish(status int, code string) {
 		return
 	}
 	trail.sink(FailureReport{
+		RequestID:    trail.requestID,
 		Model:        trail.model,
 		Status:       status,
 		Code:         code,

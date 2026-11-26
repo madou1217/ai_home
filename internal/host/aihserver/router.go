@@ -356,7 +356,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.clientIdentity != nil {
 		base = handlers.clientIdentity(base)
 	}
-	return withRemoteWebUIProxy(handlers.remoteWebUI, withSessionModelAliasPath(base))
+	return withRequestID(withRemoteWebUIProxy(handlers.remoteWebUI, withSessionModelAliasPath(base)))
 }
 
 // handleHealth 返回不依赖账号数量的进程存活状态。

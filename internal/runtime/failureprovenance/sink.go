@@ -6,23 +6,49 @@ package failureprovenance
 // 安装一次。汇点只记录低敏标识，不读取响应正文。
 
 import (
+	"context"
 	"time"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/runtime/serverlog"
 )
 
 // Sink 实现 inferencegateway.FailureProvenanceSink。
 type Sink struct{}
 
-// Install 把进程级汇点指向默认环形缓冲。
+// Install 把账号级与请求级失败汇点都指向默认实现。
 func Install() {
 	inferencegateway.ConfigureFailureProvenanceSink(Sink{})
+	inferencegateway.ConfigureRequestFailureSink(Sink{})
+}
+
+// RecordRequestFailure 写请求级失败事件（没有产生任何上游尝试的失败）。
+func (Sink) RecordRequestFailure(ctx context.Context, failure inferencegateway.RequestFailure) {
+	serverlog.Emit("request_failed", map[string]any{
+		"requestId": requestid.FromContext(ctx),
+		"surface":   failure.Surface,
+		"model":     failure.Model,
+		"error":     truncate(failure.Error, 300),
+	})
+}
+
+// truncate 按字符截断低敏摘要，避免异常长文本撑坏日志行。
+func truncate(value string, limit int) string {
+	if limit <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit]) + "…"
 }
 
 // RecordFailureProvenance 写入一条命中记录。
 func (Sink) RecordFailureProvenance(
+	ctx context.Context,
 	route runtimecore.ModelRoute,
 	failure inferencegateway.AttemptFailure,
 	recorded bool,
@@ -42,6 +68,7 @@ func (Sink) RecordFailureProvenance(
 	}
 	event := Event{
 		AtMS:            time.Now().UnixMilli(),
+		RequestID:       requestid.FromContext(ctx),
 		Provider:        provenance.Provider(),
 		AccountRef:      route.AccountRef().String(),
 		Model:           route.ModelID().String(),

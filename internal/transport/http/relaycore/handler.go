@@ -22,6 +22,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
@@ -401,12 +402,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			accountRef = outcome.route.AccountRef().String()
 		}
 		serverlog.Emit("relay_failure", map[string]any{
-			"source":   "relay",
-			"provider": outcome.provider,
-			"model":    modelID.String(),
-			"account":  accountRef,
-			"status":   failure.status,
-			"code":     failure.code,
+			"requestId": requestid.FromContext(request.Context()),
+			"source":    "relay",
+			"provider":  outcome.provider,
+			"model":     modelID.String(),
+			"account":   accountRef,
+			"status":    failure.status,
+			"code":      failure.code,
 		})
 		writeRelayFailureWith429Headers(response, failure, reqState, handler.clock())
 		return

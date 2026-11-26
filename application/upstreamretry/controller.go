@@ -14,6 +14,7 @@ import (
 	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/core/requestid"
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 )
 
@@ -56,6 +57,7 @@ const (
 // WaitEvent is a low-sensitivity diagnostic event emitted right before sleeping.
 type WaitEvent struct {
 	Surface      string
+	RequestID    string
 	ProviderID   string
 	AccountRef   string
 	RetryNumber  int
@@ -70,6 +72,7 @@ type WaitEvent struct {
 // entered or evaluated upstream 429 waiting.
 type OutcomeEvent struct {
 	Surface     string
+	RequestID   string
 	ProviderID  string
 	AccountRef  string
 	Outcome     string
@@ -199,6 +202,7 @@ func (controller *Controller) Now() time.Time {
 // for a single client HTTP request, shared across phases, routes, and fallback handlers.
 type RequestState struct {
 	mu                   sync.Mutex
+	requestID            string
 	frozen               map[string]corepolicy.EffectivePolicy
 	retriesUsed          int
 	totalWait            time.Duration
@@ -224,11 +228,30 @@ type requestStateContextKey struct{}
 // EnsureRequestState returns an existing request-scoped 429 retry state from ctx
 // or creates and attaches one so relay->canonical fallback never resets retry counts.
 func EnsureRequestState(ctx context.Context) (context.Context, *RequestState) {
+	id := requestid.FromContext(ctx)
 	if existing, ok := RequestStateFromContext(ctx); ok {
+		if id != "" {
+			existing.mu.Lock()
+			if existing.requestID == "" {
+				existing.requestID = id
+			}
+			existing.mu.Unlock()
+		}
 		return ctx, existing
 	}
 	state := NewRequestState()
+	state.requestID = id
 	return context.WithValue(ctx, requestStateContextKey{}, state), state
+}
+
+// RequestID 返回本请求的网关 Request ID；未设置时返回空串。
+func (state *RequestState) RequestID() string {
+	if state == nil {
+		return ""
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.requestID
 }
 
 // RequestStateFromContext retrieves the shared request-scoped retry state if attached.
@@ -526,6 +549,7 @@ func (controller *Controller) Wait(
 	if controller.observer != nil {
 		controller.observer.ObserveWait(WaitEvent{
 			Surface:      evidence.Surface,
+			RequestID:    state.RequestID(),
 			ProviderID:   evidence.ProviderID,
 			AccountRef:   evidence.AccountRef,
 			RetryNumber:  decision.RetryNumber,
@@ -622,6 +646,7 @@ func (controller *Controller) ReportOutcome(
 
 	controller.observer.ObserveOutcome(OutcomeEvent{
 		Surface:     surface,
+		RequestID:   state.RequestID(),
 		ProviderID:  providerID,
 		AccountRef:  accountRef,
 		Outcome:     outcome,

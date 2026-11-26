@@ -43,7 +43,8 @@ func formatCodexResponsesFailure(report codexresponseshttp.FailureReport) string
 		attempts = append(attempts, entry)
 	}
 	merged := fmt.Sprintf(
-		"Codex Responses failed: status=%d code=%s model=%s elapsed_ms=%d attempts=[%s]",
+		"Codex Responses failed: request_id=%s status=%d code=%s model=%s elapsed_ms=%d attempts=[%s]",
+		report.RequestID,
 		report.Status,
 		report.Code,
 		report.Model,

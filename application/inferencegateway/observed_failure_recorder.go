@@ -133,7 +133,7 @@ func (recorder *ObservedAttemptRecorder) RecordFailureWithReceipt(
 		failure = failure.forStaticSecret()
 	}
 	// 必须用闭包：defer 的实参在注册时求值，而 recorded/receipt 只在返回前才有最终值。
-	defer func() { emitFailureProvenance(route, failure, recorded, receipt) }()
+	defer func() { emitFailureProvenance(ctx, route, failure, recorded, receipt) }()
 	defer pluginruntime.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), false, string(failure.RuntimeKind()))
 	eligible := observedCredentialRejection(observation, failure)
 	var write CredentialRejectionWrite

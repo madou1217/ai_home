@@ -7,6 +7,7 @@ package inferencegateway
 // 环形缓冲实现；未注入时记录被静默跳过，不影响任何请求路径。
 
 import (
+	"context"
 	"sync"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
@@ -15,8 +16,10 @@ import (
 // FailureProvenanceSink 接收一次失败终态的来源证据。
 //
 // recorded 表示运行态是否接受了这次写入；receipt 携带本次写入的冷却解除时间。
+// ctx 携带请求级 Request ID 等上下文，汇点实现应从里面取而不是自己去猜。
 type FailureProvenanceSink interface {
 	RecordFailureProvenance(
+		ctx context.Context,
 		route runtimecore.ModelRoute,
 		failure AttemptFailure,
 		recorded bool,
@@ -37,6 +40,7 @@ func ConfigureFailureProvenanceSink(sink FailureProvenanceSink) {
 }
 
 func emitFailureProvenance(
+	ctx context.Context,
 	route runtimecore.ModelRoute,
 	failure AttemptFailure,
 	recorded bool,
@@ -48,5 +52,5 @@ func emitFailureProvenance(
 	if sink == nil {
 		return
 	}
-	sink.RecordFailureProvenance(route, failure, recorded, receipt)
+	sink.RecordFailureProvenance(ctx, route, failure, recorded, receipt)
 }

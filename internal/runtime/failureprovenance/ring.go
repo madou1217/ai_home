@@ -16,6 +16,7 @@ const DefaultCapacity = 512
 // Event 是一次失败分类命中记录。
 type Event struct {
 	AtMS            int64  `json:"atMs"`
+	RequestID       string `json:"requestId,omitempty"`
 	Provider        string `json:"provider"`
 	AccountRef      string `json:"accountRef"`
 	Model           string `json:"model"`

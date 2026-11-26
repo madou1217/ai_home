@@ -1,33 +1,35 @@
 // Package clientkeys 定义客户端 API Key 的纯领域模型。
 //
 // 一把「总 key」仍由 config:server.apiKey 提供；本包描述在其之上新增的
-// 多把托管 Key：身份、密钥格式与请求上下文。密钥只在创建/轮换时以明文出现
-// 一次，持久层只保存 SHA-256 摘要与前缀。本包不依赖数据库、HTTP 或配置。
+// 多把托管 Key：身份、密钥格式与请求上下文。明文遵循与 server api key、
+// management key 相同的生成规则（sk- + 48 hex），key_id 只用于管理与统计，
+// 不嵌进明文；鉴权按摘要查快照，因此旧格式的 Key 仍然兼容。本包不依赖
+// 数据库、HTTP 或配置。
 package clientkeys
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"strings"
+
+	"github.com/madou1217/ai_home/core/secretkey"
 )
 
 const (
-	// SecretPrefix 是托管 Key 的固定前缀，便于日志与界面识别（不含任何秘密熵）。
-	SecretPrefix = "aihk_"
+	// SecretPrefix 是托管 Key 的固定前缀，与 server api key 同一套规则。
+	SecretPrefix = "sk-"
 	// MasterKeyID 是总 key 在统计里的稳定身份。
 	MasterKeyID = "master"
 	keyIDPrefix = "ck_"
 	keyIDHexLen = 12
-	secretBytes = 32
+	// displayPrefixLen 是管理界面记录的可展示前缀长度（不含秘密熵）。
+	displayPrefixLen = 8
 )
 
 var (
-	// ErrInvalidSecret 表示客户端 Key 的字符串形态不合法。
-	ErrInvalidSecret = errors.New("客户端 API Key 格式无效")
 	// ErrNotFound 表示客户端 Key 不存在。适配层与管理层共用同一个哨兵，
 	// 避免「删除不存在的 Key」在各层被误判成 500。
 	ErrNotFound = errors.New("客户端 API Key 不存在")
@@ -251,82 +253,32 @@ func IdentityFromContext(ctx context.Context) (Identity, bool) {
 
 // Generate 生成一把新托管 Key。
 //
-// 返回的 raw 是唯一一次可以拿到的明文；hash 交给持久层；prefix 可安全展示。
-func Generate() (raw string, keyID string, prefix string, hash [32]byte, err error) {
+// 明文遵循统一规则（sk- + 48 hex）；key_id 只用于管理、统计与快照索引，
+// 不再嵌进明文，因此轮换不需要复用 id。返回的 hash 交给持久层。
+func Generate() (raw string, keyID string, hash [32]byte, err error) {
 	idBytes := make([]byte, keyIDHexLen/2)
 	if _, err = rand.Read(idBytes); err != nil {
-		return "", "", "", hash, err
+		return "", "", hash, err
 	}
-	secret := make([]byte, secretBytes)
-	if _, err = rand.Read(secret); err != nil {
-		return "", "", "", hash, err
+	raw, err = secretkey.Generate(SecretPrefix)
+	if err != nil {
+		return "", "", hash, err
 	}
 	keyID = keyIDPrefix + hex.EncodeToString(idBytes)
-	prefix = SecretPrefix + keyID
-	encoded := base64.RawURLEncoding.EncodeToString(secret)
-	raw = prefix + "." + encoded
-	hash = sha256.Sum256([]byte(raw))
-	return raw, keyID, prefix, hash, nil
+	hash = HashSecret(raw)
+	return raw, keyID, hash, nil
 }
 
-// Regenerate 为一把已存在的 Key 重新生成明文，保留原 key_id。
-//
-// 轮换必须复用 key_id：鉴权按明文里解析出的 key_id 查快照，若换成新 id，
-// 新明文会指向一个不存在的 Key，表现为「轮换后新密钥也 401」。
-func Regenerate(keyID string) (raw string, hash [32]byte, err error) {
-	id := strings.TrimSpace(keyID)
-	if !validKeyID(id) {
-		return "", hash, ErrInvalidSecret
+// DisplayPrefix 返回明文里可安全展示的前缀（不含秘密熵）。
+func DisplayPrefix(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if len(trimmed) <= displayPrefixLen {
+		return trimmed
 	}
-	secret := make([]byte, secretBytes)
-	if _, err = rand.Read(secret); err != nil {
-		return "", hash, err
-	}
-	raw = SecretPrefix + id + "." + base64.RawURLEncoding.EncodeToString(secret)
-	hash = sha256.Sum256([]byte(raw))
-	return raw, hash, nil
+	return trimmed[:displayPrefixLen]
 }
 
 // HashSecret 返回密钥明文的 SHA-256 摘要。
 func HashSecret(raw string) [32]byte {
 	return sha256.Sum256([]byte(strings.TrimSpace(raw)))
-}
-
-// ParseSecret 从明文里解析出 key_id，供鉴权按 id 查快照。
-//
-// 只做格式校验，不做保密比较；秘密比较由调用方用常量时间完成。
-func ParseSecret(raw string) (string, bool) {
-	trimmed := strings.TrimSpace(raw)
-	if !strings.HasPrefix(trimmed, SecretPrefix) {
-		return "", false
-	}
-	body := strings.TrimPrefix(trimmed, SecretPrefix)
-	keyID, secret, found := strings.Cut(body, ".")
-	if !found || secret == "" || len(secret) > 64 {
-		return "", false
-	}
-	if !validKeyID(keyID) {
-		return "", false
-	}
-	if _, err := base64.RawURLEncoding.DecodeString(secret); err != nil {
-		return "", false
-	}
-	return keyID, true
-}
-
-func validKeyID(keyID string) bool {
-	if !strings.HasPrefix(keyID, keyIDPrefix) {
-		return false
-	}
-	suffix := strings.TrimPrefix(keyID, keyIDPrefix)
-	if len(suffix) != keyIDHexLen {
-		return false
-	}
-	for index := 0; index < len(suffix); index++ {
-		character := suffix[index]
-		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
-			return false
-		}
-	}
-	return true
 }

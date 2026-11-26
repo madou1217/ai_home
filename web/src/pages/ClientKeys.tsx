@@ -321,7 +321,7 @@ const ClientKeysPanel: React.FC = () => {
       setCreateOpen(false);
       createForm.resetFields();
       setCreatePrunedNotice('');
-      setSecretTitle(`已创建 ${result.key.name}（${result.key.prefix}）`);
+      setSecretTitle(`已创建 ${result.key.name}`);
       setSecretCopied(false);
       setSecret(result.secret);
       setPanelFeedback({ tone: 'success', text: `已创建 ${result.key.name} 并立即生效` });
@@ -422,7 +422,7 @@ const ClientKeysPanel: React.FC = () => {
       onOk: async () => {
         try {
           const next = await clientKeysAPI.rotate(row.id);
-          setSecretTitle(`已轮换 ${row.name}（${row.prefix}）`);
+          setSecretTitle(`已轮换 ${row.name}`);
           setSecretCopied(false);
           setSecret(next);
           setPanelFeedback({ tone: 'success', text: `已轮换 ${row.name} 的密钥` });
@@ -472,12 +472,18 @@ const ClientKeysPanel: React.FC = () => {
     }
   };
 
-  const copyKeyID = useCallback(async (row: ClientKeyRow) => {
+  const copyKeySecret = useCallback(async (row: ClientKeyRow) => {
     try {
-      await writeClipboardText(row.id);
-      message.success(`已复制 Key ID：${row.id}`);
-    } catch {
-      message.error('复制失败，请手动选中文本复制');
+      const value = await clientKeysAPI.secret(row.id);
+      await writeClipboardText(value);
+      message.success(`已复制 ${row.name} 的密钥`);
+    } catch (error: unknown) {
+      const detail = extractApiErrorMessage(error, '复制失败');
+      message.error(
+        detail.includes('secret_unavailable')
+          ? '该 Key 创建于旧版本，明文无法取回；轮换后可复制新密钥'
+          : '复制失败，请打开轮换弹窗手动复制'
+      );
     }
   }, []);
 
@@ -501,33 +507,7 @@ const ClientKeysPanel: React.FC = () => {
         </div>
       )
     },
-    {
-      title: '前缀',
-      dataIndex: 'prefix',
-      width: 208,
-      ellipsis: { showTitle: false },
-      render: (value: string, row: ClientKeyRow) =>
-        value ? (
-          <div className="client-keys-prefix-row">
-            <Tooltip title={value}>
-              <span className="client-keys-prefix-cell">{value}</span>
-            </Tooltip>
-            <Tooltip title="复制 Key ID（CLI 与管理接口使用）">
-              <Button
-                type="text"
-                size="small"
-                className="client-keys-copy-button"
-                icon={<CopyOutlined />}
-                aria-label="复制 Key ID"
-                onClick={() => void copyKeyID(row)}
-              />
-            </Tooltip>
-          </div>
-        ) : (
-          <span className="aih-muted">—</span>
-        )
-    },
-    {
+        {
       title: '状态',
       key: 'enabled',
       width: 136,
@@ -656,7 +636,7 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 216,
+      width: 300,
       fixed: pinRightColumn ? 'right' : undefined,
       render: (_: unknown, row: ClientKeyRow) =>
         row.master ? null : (
@@ -667,13 +647,16 @@ const ClientKeysPanel: React.FC = () => {
             <Button size="small" icon={<SyncOutlined />} onClick={() => rotate(row)}>
               轮换
             </Button>
+            <Button size="small" icon={<CopyOutlined />} onClick={() => void copyKeySecret(row)}>
+              复制
+            </Button>
             <Button size="small" danger icon={<DeleteOutlined />} onClick={() => remove(row)}>
               删除
             </Button>
           </div>
         )
     }
-  ], [copyKeyID, modelLabels, openEditModal, pinLeftColumn, pinRightColumn, remove, rotate, toggle, togglingKeyId]);
+  ], [copyKeySecret, modelLabels, openEditModal, pinLeftColumn, pinRightColumn, remove, rotate, toggle, togglingKeyId]);
 
   const tableScrollX = useMemo(
     () => columns.reduce((sum, column) => sum + (typeof column.width === 'number' ? column.width : 120), 0),

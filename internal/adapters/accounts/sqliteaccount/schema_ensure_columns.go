@@ -166,6 +166,15 @@ var knownAdditiveColumns = []tableAdditiveSpec{
 		},
 	},
 	{
+		table: "client_api_keys",
+		columns: []additiveColumnSpec{
+			{
+				column: "key_secret",
+				alter:  `ALTER TABLE client_api_keys ADD COLUMN key_secret TEXT NOT NULL DEFAULT ''`,
+			},
+		},
+	},
+	{
 		table: "model_alias",
 		columns: []additiveColumnSpec{
 			{

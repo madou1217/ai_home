@@ -627,6 +627,7 @@ CREATE TABLE IF NOT EXISTS client_api_keys (
   key_id TEXT NOT NULL PRIMARY KEY,
   name TEXT NOT NULL,
   key_hash BLOB NOT NULL,
+  key_secret TEXT NOT NULL DEFAULT '',
   key_prefix TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1
     CHECK (enabled IN (0, 1)),

@@ -36,6 +36,7 @@ func buildWebUIClientKeyRoutes(dependencies webuiRouteDependencies) ([]webuiRout
 		{Pattern: "PATCH " + member, Handler: http.HandlerFunc(handler.ServeMember)},
 		{Pattern: "DELETE " + member, Handler: http.HandlerFunc(handler.ServeMember)},
 		{Pattern: "POST " + member + "/rotate", Handler: http.HandlerFunc(handler.ServeRotate)},
+		{Pattern: "GET " + member + "/secret", Handler: http.HandlerFunc(handler.ServeSecret)},
 		{Pattern: "GET " + collection + "/effective-concurrency", Handler: http.HandlerFunc(handler.ServeEffectiveConcurrency)},
 		{Pattern: "GET /v1/management/webui/accounts/{provider}/{accountRef}/concurrency", Handler: http.HandlerFunc(handler.ServeAccountConcurrency)},
 		{Pattern: "PUT /v1/management/webui/accounts/{provider}/{accountRef}/concurrency", Handler: http.HandlerFunc(handler.ServeAccountConcurrency)},

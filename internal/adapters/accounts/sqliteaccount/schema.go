@@ -159,7 +159,7 @@ var requiredTableColumns = map[string][]string{
 		"provider", "account_ref", "scanned_at_ms", "truncated",
 	},
 	"client_api_keys": {
-		"key_id", "name", "key_hash", "key_prefix", "enabled",
+		"key_id", "name", "key_hash", "key_secret", "key_prefix", "enabled",
 		"created_at_ms", "updated_at_ms", "last_used_at_ms", "revoked_at_ms",
 		"allowed_providers_json", "allowed_models_json",
 		"max_concurrency", "rpm_limit", "tpm_limit", "daily_token_limit", "notes",

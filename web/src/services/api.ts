@@ -3696,6 +3696,10 @@ export const clientKeysAPI = {
     const response = await api.post<{ ok: boolean; secret: string }>(`/webui/client-keys/${encodeURIComponent(id)}/rotate`);
     return response.data.secret;
   },
+  secret: async (id: string): Promise<string> => {
+    const response = await api.get<{ ok: boolean; secret: string }>(`/webui/client-keys/${encodeURIComponent(id)}/secret`);
+    return response.data.secret;
+  },
   effectiveConcurrency: async (params: { provider?: string; account?: string; model?: string; key?: string }): Promise<EffectiveConcurrency> => {
     const response = await api.get<EffectiveConcurrency>('/webui/client-keys/effective-concurrency', { params });
     return response.data;

@@ -2,18 +2,16 @@ package main
 
 import (
 	"context"
-
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/application/serverconfig"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/madou1217/ai_home/application/serverconfig"
+	"github.com/madou1217/ai_home/core/secretkey"
 	corepolicy "github.com/madou1217/ai_home/core/upstreamretry"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
@@ -411,9 +409,5 @@ func validServerKeyValue(value string) bool {
 }
 
 func generateManagementKey() (string, error) {
-	raw := make([]byte, 24)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return "mk-" + hex.EncodeToString(raw), nil
+	return secretkey.Generate("mk-")
 }

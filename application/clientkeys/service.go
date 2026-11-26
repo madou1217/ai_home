@@ -25,6 +25,8 @@ var (
 	ErrNotFound = coreclientkeys.ErrNotFound
 	// ErrMasterCollision 表示新生成的密钥与总 key 冲突。
 	ErrMasterCollision = errors.New("客户端 API Key 与总 key 冲突")
+	// ErrSecretUnavailable 表示该 Key 创建于明文回收之前，无法再取回。
+	ErrSecretUnavailable = errors.New("客户端 API Key 明文不可用")
 )
 
 const (
@@ -39,10 +41,11 @@ const (
 type Store interface {
 	ListClientKeys(ctx context.Context) ([]coreclientkeys.Key, error)
 	GetClientKey(ctx context.Context, keyID string) (coreclientkeys.Key, bool, error)
-	CreateClientKey(ctx context.Context, key coreclientkeys.Key, hash [32]byte) error
+	CreateClientKey(ctx context.Context, key coreclientkeys.Key, hash [32]byte, secret string) error
 	UpdateClientKey(ctx context.Context, keyID string, mutate func(*coreclientkeys.Key) error) (coreclientkeys.Key, error)
 	DeleteClientKey(ctx context.Context, keyID string) error
-	RotateClientKeySecret(ctx context.Context, keyID string, hash [32]byte) error
+	RotateClientKeySecret(ctx context.Context, keyID string, hash [32]byte, secret string) error
+	ClientKeySecret(ctx context.Context, keyID string) (string, bool, error)
 	TouchClientKeyLastUsed(ctx context.Context, keyID string, atMS int64) error
 	LoadActiveClientKeys(ctx context.Context) ([]coreclientkeys.AuthRecord, error)
 	ClientKeyRevision(ctx context.Context) (int64, int64, error)
@@ -50,7 +53,8 @@ type Store interface {
 }
 
 type snapshot struct {
-	byID map[string]coreclientkeys.AuthRecord
+	byID   map[string]coreclientkeys.AuthRecord
+	byHash map[[32]byte]coreclientkeys.AuthRecord
 }
 
 // Service 持有鉴权快照与 last_used 缓冲。
@@ -91,7 +95,8 @@ func NewService(store Store, master func() string, now func() time.Time) (*Servi
 
 // Authenticate 校验明文 Key 并返回调用方身份。
 //
-// 总 key 优先按常量时间比较；托管 Key 先按前缀里的 key_id 定位快照，再比较摘要。
+// 总 key 优先按常量时间比较；托管 Key 按明文摘要查快照。明文不再内嵌 key_id，
+// 因此旧格式（含 key_id 的自定义前缀）与新格式（sk-…）都走同一条摘要路径。
 func (service *Service) Authenticate(raw string) (coreclientkeys.Identity, bool) {
 	if service == nil || service.store == nil {
 		return coreclientkeys.Identity{}, false
@@ -110,23 +115,16 @@ func (service *Service) Authenticate(raw string) (coreclientkeys.Identity, bool)
 			}
 		}
 	}
-	keyID, ok := coreclientkeys.ParseSecret(trimmed)
-	if !ok {
-		return coreclientkeys.Identity{}, false
-	}
 	snap := service.current.Load()
 	if snap == nil {
 		return coreclientkeys.Identity{}, false
 	}
-	record, found := snap.byID[keyID]
+	provided := coreclientkeys.HashSecret(trimmed)
+	record, found := snap.byHash[provided]
 	if !found {
 		return coreclientkeys.Identity{}, false
 	}
-	provided := coreclientkeys.HashSecret(trimmed)
-	if subtle.ConstantTimeCompare(record.Hash[:], provided[:]) != 1 {
-		return coreclientkeys.Identity{}, false
-	}
-	service.markUsed(keyID, service.now())
+	service.markUsed(record.KeyID, service.now())
 	return coreclientkeys.Identity{KeyID: record.KeyID, Name: record.Name, Prefix: record.Prefix}, true
 }
 
@@ -170,7 +168,7 @@ func (service *Service) Create(
 	if normalized == "" || len([]rune(normalized)) > maxNameRunes {
 		return coreclientkeys.Key{}, "", ErrInvalidName
 	}
-	raw, keyID, prefix, hash, err := coreclientkeys.Generate()
+	raw, keyID, hash, err := coreclientkeys.Generate()
 	if err != nil {
 		return coreclientkeys.Key{}, "", err
 	}
@@ -183,13 +181,13 @@ func (service *Service) Create(
 	key := coreclientkeys.Key{
 		ID:          keyID,
 		Name:        normalized,
-		Prefix:      prefix,
+		Prefix:      coreclientkeys.DisplayPrefix(raw),
 		Enabled:     true,
 		CreatedAtMS: service.now().UnixMilli(),
 		UpdatedAtMS: service.now().UnixMilli(),
 		Limits:      limits,
 	}
-	if err := service.store.CreateClientKey(ctx, key, hash); err != nil {
+	if err := service.store.CreateClientKey(ctx, key, hash, raw); err != nil {
 		return coreclientkeys.Key{}, "", err
 	}
 	if err := service.Reload(ctx); err != nil {
@@ -258,8 +256,7 @@ func (service *Service) Rotate(ctx context.Context, keyID string) (string, error
 	if service == nil || service.store == nil {
 		return "", ErrUnavailable
 	}
-	// 轮换保留原 key_id：鉴权按明文里的 key_id 查快照，换 id 会让新明文失效。
-	raw, hash, err := coreclientkeys.Regenerate(keyID)
+	raw, _, hash, err := coreclientkeys.Generate()
 	if err != nil {
 		return "", err
 	}
@@ -269,13 +266,31 @@ func (service *Service) Rotate(ctx context.Context, keyID string) (string, error
 			return "", ErrMasterCollision
 		}
 	}
-	if err := service.store.RotateClientKeySecret(ctx, keyID, hash); err != nil {
+	if err := service.store.RotateClientKeySecret(ctx, keyID, hash, raw); err != nil {
 		return "", err
 	}
 	if err := service.Reload(ctx); err != nil {
 		return "", err
 	}
 	return raw, nil
+}
+
+// Secret 返回 Key 的明文；旧版本创建、创建时未存明文的 Key 返回 ErrSecretUnavailable。
+func (service *Service) Secret(ctx context.Context, keyID string) (string, error) {
+	if service == nil || service.store == nil {
+		return "", ErrUnavailable
+	}
+	secret, found, err := service.store.ClientKeySecret(ctx, keyID)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", ErrNotFound
+	}
+	if strings.TrimSpace(secret) == "" {
+		return "", ErrSecretUnavailable
+	}
+	return secret, nil
 }
 
 // Reload 重新加载活动 Key 快照（管理写路径同步调用）。
@@ -293,9 +308,13 @@ func (service *Service) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	next := &snapshot{byID: make(map[string]coreclientkeys.AuthRecord, len(records))}
+	next := &snapshot{
+		byID:   make(map[string]coreclientkeys.AuthRecord, len(records)),
+		byHash: make(map[[32]byte]coreclientkeys.AuthRecord, len(records)),
+	}
 	for _, record := range records {
 		next.byID[record.KeyID] = record
+		next.byHash[record.Hash] = record
 	}
 	service.current.Store(next)
 	service.revisionMax = revisionMax

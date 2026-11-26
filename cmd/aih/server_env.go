@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
+	"github.com/madou1217/ai_home/core/secretkey"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverconfigapi"
 )
 
@@ -69,9 +68,5 @@ func serverEnvUsageError(runtime commandRuntime, message string) (bool, error) {
 }
 
 func generateAPIKey() (string, error) {
-	raw := make([]byte, 24)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return "sk-" + hex.EncodeToString(raw), nil
+	return secretkey.Generate("sk-")
 }

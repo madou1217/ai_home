@@ -5,9 +5,10 @@
 //	PATCH  /v1/management/webui/client-keys/{keyId}
 //	DELETE /v1/management/webui/client-keys/{keyId}
 //	POST   /v1/management/webui/client-keys/{keyId}/rotate
+//	GET    /v1/management/webui/client-keys/{keyId}/secret
 //	GET    /v1/management/webui/client-keys/stats
 //
-// 创建/轮换响应里的 secret 只出现一次；列表只给前缀与摘要无关的展示信息。
+// 创建/轮换响应与 secret 接口都返回明文；列表只给 Key 元数据与统计。
 package webuiclientkeysapi
 
 import (
@@ -199,6 +200,27 @@ func (handler *Handler) ServeRotate(response http.ResponseWriter, request *http.
 	})
 }
 
+// ServeSecret 返回一把托管 Key 的明文，供管理面「复制」使用。
+//
+// 明文由创建/轮换写入；旧版本创建、未存明文的行返回 409 secret_unavailable。
+func (handler *Handler) ServeSecret(response http.ResponseWriter, request *http.Request) {
+	if !handler.authorize(response, request) {
+		return
+	}
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", "GET")
+		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	keyID := strings.TrimSpace(request.PathValue("keyId"))
+	secret, err := handler.keys.Secret(request.Context(), keyID)
+	if err != nil {
+		handler.writeKeyError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "id": keyID, "secret": secret})
+}
+
 // ServeStats 返回统计（可带 keyId 过滤）。
 func (handler *Handler) ServeStats(response http.ResponseWriter, request *http.Request) {
 	if !handler.authorize(response, request) {
@@ -369,6 +391,8 @@ func (handler *Handler) writeKeyError(response http.ResponseWriter, err error) {
 		writeError(response, http.StatusBadRequest, "invalid_client_key_name")
 	case errors.Is(err, clientkeysapp.ErrMasterCollision):
 		writeError(response, http.StatusConflict, "client_key_collision")
+	case errors.Is(err, clientkeysapp.ErrSecretUnavailable):
+		writeError(response, http.StatusConflict, "secret_unavailable")
 	default:
 		writeError(response, http.StatusInternalServerError, "client_key_failed")
 	}

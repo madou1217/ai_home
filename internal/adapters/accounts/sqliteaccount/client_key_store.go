@@ -72,8 +72,8 @@ func (store *Store) GetClientKey(ctx context.Context, keyID string) (clientkeys.
 	return key, true, nil
 }
 
-// CreateClientKey 插入一把新 Key。
-func (store *Store) CreateClientKey(ctx context.Context, key clientkeys.Key, hash [32]byte) error {
+// CreateClientKey 插入一把新 Key；secret 是明文，供管理面再次复制。
+func (store *Store) CreateClientKey(ctx context.Context, key clientkeys.Key, hash [32]byte, secret string) error {
 	if store == nil || store.db == nil {
 		return errors.New("账号数据库不可用")
 	}
@@ -93,11 +93,12 @@ func (store *Store) CreateClientKey(ctx context.Context, key clientkeys.Key, has
 		key.UpdatedAtMS = key.CreatedAtMS
 	}
 	_, err = store.db.ExecContext(ctx, `INSERT INTO client_api_keys (
-		key_id, name, key_hash, key_prefix, enabled, created_at_ms, updated_at_ms,
-		last_used_at_ms, revoked_at_ms, allowed_providers_json, allowed_models_json,
-		max_concurrency, rpm_limit, tpm_limit, daily_token_limit, notes
-	) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)`,
-		key.ID, key.Name, hash[:], key.Prefix, boolInt(key.Enabled),
+		key_id, name, key_hash, key_secret, key_prefix, enabled, created_at_ms,
+		updated_at_ms, last_used_at_ms, revoked_at_ms, allowed_providers_json,
+		allowed_models_json, max_concurrency, rpm_limit, tpm_limit,
+		daily_token_limit, notes
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)`,
+		key.ID, key.Name, hash[:], secret, key.Prefix, boolInt(key.Enabled),
 		key.CreatedAtMS, key.UpdatedAtMS, providers, models,
 		key.Limits.MaxConcurrency, key.Limits.RPMLimit, key.Limits.TPMLimit,
 		key.Limits.DailyTokenLimit, key.Notes)
@@ -186,16 +187,16 @@ func (store *Store) DeleteClientKey(ctx context.Context, keyID string) error {
 	return nil
 }
 
-// RotateClientKeySecret 原子替换密钥摘要。
-func (store *Store) RotateClientKeySecret(ctx context.Context, keyID string, hash [32]byte) error {
+// RotateClientKeySecret 原子替换密钥摘要与明文。
+func (store *Store) RotateClientKeySecret(ctx context.Context, keyID string, hash [32]byte, secret string) error {
 	if store == nil || store.db == nil {
 		return errors.New("账号数据库不可用")
 	}
 	now := time.Now().UnixMilli()
 	result, err := store.db.ExecContext(ctx, `UPDATE client_api_keys
-		SET key_hash = ?, updated_at_ms = ?
+		SET key_hash = ?, key_secret = ?, key_prefix = ?, updated_at_ms = ?
 		WHERE key_id = ? AND revoked_at_ms = 0`,
-		hash[:], now, strings.TrimSpace(keyID))
+		hash[:], secret, clientkeys.DisplayPrefix(secret), now, strings.TrimSpace(keyID))
 	if err != nil {
 		if isUniqueConstraint(err) {
 			return ErrClientKeyCollision
@@ -210,6 +211,26 @@ func (store *Store) RotateClientKeySecret(ctx context.Context, keyID string, has
 		return ErrClientKeyNotFound
 	}
 	return nil
+}
+
+// ClientKeySecret 读取 Key 的明文；found=false 表示 Key 不存在。
+//
+// 旧版本创建的行 key_secret 为空，由上层映射为「明文不可用，请轮换」。
+func (store *Store) ClientKeySecret(ctx context.Context, keyID string) (string, bool, error) {
+	if store == nil || store.db == nil {
+		return "", false, errors.New("账号数据库不可用")
+	}
+	var secret string
+	err := store.db.QueryRowContext(ctx, `SELECT key_secret
+		FROM client_api_keys WHERE key_id = ? AND revoked_at_ms = 0`,
+		strings.TrimSpace(keyID)).Scan(&secret)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return secret, true, nil
 }
 
 // TouchClientKeyLastUsed 更新最后使用时间（只前进不后退）。

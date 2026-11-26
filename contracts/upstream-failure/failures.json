@@ -490,6 +490,63 @@
       ],
       "semantic": "credential_rejected",
       "block_scope": "account"
+    },
+    {
+      "id": "builtin.zcode.plan.quota.code1005",
+      "provider": "zcode",
+      "surface": "zcode/plan",
+      "priority": 0,
+      "statuses": [200],
+      "error_code": "1005",
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.zcode.plan.client_contract.code3012",
+      "provider": "zcode",
+      "surface": "zcode/plan",
+      "priority": 0,
+      "statuses": [200, 405],
+      "error_code": "3012",
+      "semantic": "invalid_request"
+    },
+    {
+      "id": "builtin.zcode.plan.auth.401",
+      "provider": "zcode",
+      "surface": "zcode/plan",
+      "priority": 0,
+      "statuses": [401],
+      "semantic": "credential_rejected",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.zcode.ultra.billing.code1113",
+      "provider": "zcode",
+      "surface": "zcode/ultra",
+      "priority": 0,
+      "statuses": [200, 402, 429],
+      "error_code": "1113",
+      "semantic": "billing_blocked",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.zcode.ultra.quota.code1005",
+      "provider": "zcode",
+      "surface": "zcode/ultra",
+      "priority": 0,
+      "statuses": [200, 429],
+      "error_code": "1005",
+      "semantic": "quota_exhausted",
+      "block_scope": "account"
+    },
+    {
+      "id": "builtin.zcode.ultra.auth.401",
+      "provider": "zcode",
+      "surface": "zcode/ultra",
+      "priority": 0,
+      "statuses": [401],
+      "semantic": "credential_rejected",
+      "block_scope": "account"
     }
   ],
   "rule_kinds": [

@@ -277,6 +277,7 @@ func materializeDesktopAuth(
 			Policies:      registry,
 			Materializers: registry.Materializers(),
 			Linker:        accountprojection.NewLinker(),
+			HomeRoots:     providerstorage.HomeRoots(),
 		})
 		if err == nil {
 			_, err = prov.Prepare(ctx, appprojection.Request{

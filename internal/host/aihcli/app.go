@@ -464,6 +464,7 @@ func newProjectionProvisioner(
 		Materializers: registry.Materializers(),
 		Linker:        runtimeprojection.NewLinker(),
 		Credentials:   store,
+		HomeRoots:     providerstorage.HomeRoots(),
 	})
 }
 

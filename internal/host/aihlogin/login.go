@@ -88,6 +88,7 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 		Materializers: registry.Materializers(),
 		Linker:        runtimeprojection.NewLinker(),
 		Credentials:   store,
+		HomeRoots:     providerstorage.HomeRoots(),
 	})
 	if err != nil {
 		return accountcore.Account{}, fmt.Errorf("创建登录投影失败: %w", err)

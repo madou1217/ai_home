@@ -65,7 +65,7 @@ func New(opts Options) (*Service, error) {
 		return nil, err
 	}
 	registry := providerstorage.New()
-	projection, err := runtimeprojection.New(runtimeprojection.Options{AIHomeDir: opts.AIHomeDir, Policies: registry, Materializers: registry.Materializers(), Linker: runtimeprojection.NewLinker(), Credentials: opts.Store})
+	projection, err := runtimeprojection.New(runtimeprojection.Options{AIHomeDir: opts.AIHomeDir, Policies: registry, Materializers: registry.Materializers(), Linker: runtimeprojection.NewLinker(), Credentials: opts.Store, HomeRoots: providerstorage.HomeRoots()})
 	if err != nil {
 		return nil, err
 	}

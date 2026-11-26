@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -34,6 +35,9 @@ type Options struct {
 	Linker        appprojection.Linker
 	Credentials   accountapp.CredentialVersionStore
 	Now           func() time.Time
+	// HomeRoots 是所有 CLI 在 HOME 下的根目录（Provider 合同推导，HOME 相对段）。
+	// fake HOME 里出现其它 CLI 的根目录时，投影默认把它指回宿主。
+	HomeRoots [][]string
 }
 
 // Provisioner 是 application/accountprojection.Provisioner 的通用实现。
@@ -44,6 +48,7 @@ type Provisioner struct {
 	linker        appprojection.Linker
 	credentials   accountapp.CredentialVersionStore
 	now           func() time.Time
+	homeRoots     [][]string
 }
 
 var _ appprojection.Provisioner = (*Provisioner)(nil)
@@ -75,6 +80,7 @@ func New(options Options) (*Provisioner, error) {
 		linker:        options.Linker,
 		credentials:   options.Credentials,
 		now:           now,
+		homeRoots:     clonePathSegments(options.HomeRoots),
 	}, nil
 }
 
@@ -404,10 +410,273 @@ func (provisioner *Provisioner) applyDefaultHostLinks(
 			return err
 		}
 	}
+	if err := provisioner.applyCrossCLIHostLinks(request, policy, root); err != nil {
+		return err
+	}
 	if err := provisioner.applyDedupeLinks(request, policy, root); err != nil {
 		return err
 	}
 	return nil
+}
+
+// applyCrossCLIHostLinks 把 fake HOME 里「别的 CLI 的 HOME 根目录」默认链回宿主。
+//
+// 账号沙箱只隔离本账号的凭据与会话；.codex、.claude、.gemini、
+// .local/share/opencode 这些目录属于跨 CLI 共享状态，全机只应有宿主这一份。
+// 投影里历史遗留的真实目录先把宿主缺的内容并到宿主（宿主已有的同名条目一律
+// 以宿主为准），再换成宿主链接，避免数据只留在一个账号的投影里。
+func (provisioner *Provisioner) applyCrossCLIHostLinks(
+	request appprojection.Request,
+	policy appprojection.Policy,
+	root string,
+) error {
+	if policy.Mode != appprojection.ModeFakeHome || len(provisioner.homeRoots) == 0 {
+		return nil
+	}
+	own := ownHomeRoots(policy)
+	crossCLILinkMu.Lock()
+	defer crossCLILinkMu.Unlock()
+	for _, segments := range provisioner.homeRoots {
+		if homeRootInsideOwn(segments, own) {
+			continue
+		}
+		source, err := joinUnder(root, segments)
+		if err != nil {
+			return err
+		}
+		target, err := joinUnder(request.HostHomeDir, segments)
+		if err != nil {
+			return err
+		}
+		// 父目录是投影外的共享链接（旧 Node 把 .local/share、.config 整体链走）时，
+		// 叶子会被所有账号共用。链接要落在这个宿主侧父目录里，才能改到唯一的实体；
+		// 父目录本身就指向宿主同名目录时两者是同一位置，建链是幂等空操作。
+		if resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(source)); resolveErr == nil &&
+			!pathWithin(root, resolvedParent) {
+			source = filepath.Join(resolvedParent, filepath.Base(source))
+		}
+		if err := provisioner.ensureHostAuthorityLink(source, target); err != nil {
+			// 跨 CLI 目录是共享状态的收口，不是本账号启动的必需依赖：合并失败时
+			// 保留投影里的本地副本，下次 Prepare 再试，不能因此挡住 CLI 启动。
+			continue
+		}
+	}
+	return nil
+}
+
+// crossCLILinkMu 串行化同一进程内的跨 CLI 链接改写：多个账号并发 Prepare 时
+// 可能同时命中同一个旧运行 home 的叶子，避免「刚合并完又被另一个协程删掉」。
+var crossCLILinkMu sync.Mutex
+
+// ownHomeRoots 返回本账号自己的 HOME 根目录：原生根与投影根映射的 From。
+func ownHomeRoots(policy appprojection.Policy) [][]string {
+	roots := make([][]string, 0, 1+len(policy.ProjectionRoots))
+	if len(policy.NativeRoot) > 0 {
+		roots = append(roots, policy.NativeRoot)
+	}
+	for _, mapping := range policy.ProjectionRoots {
+		if len(mapping.From) > 0 {
+			roots = append(roots, mapping.From)
+		}
+	}
+	return roots
+}
+
+// homeRootInsideOwn 判断某个 CLI 根目录是否与本账号的根目录重叠。
+// 对方根目录是自己的祖先（例如 agy 的 .gemini 之于 .gemini/antigravity-cli）
+// 会吞掉账号沙箱；落在自己根目录里面同理不能替换成宿主链接。
+func homeRootInsideOwn(segments []string, own [][]string) bool {
+	for _, ownRoot := range own {
+		if pathSegmentsPrefix(ownRoot, segments) || pathSegmentsPrefix(segments, ownRoot) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathSegmentsPrefix(prefix []string, value []string) bool {
+	if len(prefix) == 0 || len(prefix) > len(value) {
+		return false
+	}
+	for index := range prefix {
+		if !samePathSegment(prefix[index], value[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func samePathSegment(left string, right string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
+}
+
+func clonePathSegments(input [][]string) [][]string {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make([][]string, 0, len(input))
+	for _, segments := range input {
+		if len(segments) == 0 {
+			continue
+		}
+		cloned = append(cloned, append([]string(nil), segments...))
+	}
+	return cloned
+}
+
+// ensureHostAuthorityLink 让 source 成为指向 target 的托管链接。
+//
+// source 不存在时预建宿主目录并直接建链（之后 CLI 写入的就是宿主那一份）；
+// 已存在时先把投影内容并进宿主，再替换成链接。
+func (provisioner *Provisioner) ensureHostAuthorityLink(source string, target string) error {
+	info, err := os.Lstat(source)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+			return err
+		}
+		return provisioner.linkShared(source, target, true)
+	}
+	if err != nil {
+		return err
+	}
+	if provisioner.linker.IsManaged(source, target) {
+		return nil
+	}
+	resolved, statErr := os.Stat(source)
+	if statErr != nil && info.Mode()&os.ModeSymlink == 0 {
+		// 悬空真实路径不该出现在这里；保留现场交给上层诊断。
+		return statErr
+	}
+	if statErr == nil && !resolved.IsDir() {
+		// 同名文件不是跨 CLI 的根目录，保留现状。
+		return nil
+	}
+	if statErr == nil {
+		if err := adoptIntoHost(source, target, info.Mode()&os.ModeSymlink != 0); err != nil {
+			return err
+		}
+	}
+	if err := os.RemoveAll(source); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		return err
+	}
+	return provisioner.linkShared(source, target, true)
+}
+
+// adoptIntoHost 把投影里的跨 CLI 目录内容并进宿主。
+// 宿主已有的同名条目一律保留；只补宿主缺的目录与普通文件。linked 表示 source
+// 是链接（旧运行 home 的中转链接），此时绝不能 rename 共享目标本身。
+func adoptIntoHost(source string, target string, linked bool) error {
+	resolvedSource, err := filepath.EvalSymlinks(source)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if resolvedTarget, resolveErr := filepath.EvalSymlinks(target); resolveErr == nil {
+		if pathWithin(resolvedSource, resolvedTarget) {
+			return nil
+		}
+	}
+	if !linked {
+		if _, statErr := os.Stat(target); errors.Is(statErr, fs.ErrNotExist) {
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				return err
+			}
+			if renameErr := os.Rename(source, target); renameErr == nil {
+				return nil
+			}
+		}
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			return err
+		}
+	} else if !targetInfo.IsDir() {
+		return nil
+	}
+	return copyMissingTree(resolvedSource, target)
+}
+
+// copyMissingTree 递归复制宿主缺的条目；符号链接与特殊文件跳过，AIH 自己的
+// 运行目录不搬进宿主。
+func copyMissingTree(source string, target string) error {
+	return filepath.WalkDir(source, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, current)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		name := entry.Name()
+		if entry.IsDir() {
+			if name == ".aih-runtime-home" || name == ".aih-runtime" {
+				return fs.SkipDir
+			}
+			return os.MkdirAll(filepath.Join(target, relative), 0o700)
+		}
+		if entry.Type()&os.ModeSymlink != 0 || !entry.Type().IsRegular() || skipCopyEntry(name) {
+			return nil
+		}
+		destination := filepath.Join(target, relative)
+		if _, statErr := os.Lstat(destination); statErr == nil {
+			return nil
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return statErr
+		}
+		return copyRegularFile(destination, current)
+	})
+}
+
+// skipCopyEntry 跳过落盘副作用文件：SQLite 的 -wal/-shm/-journal 会携带
+// 另一个库的事务与盐值，复制到已存在的宿主库旁边可能重放出脏数据；
+// 锁文件复制过去也只会让宿主侧看到别人的锁状态。
+func skipCopyEntry(name string) bool {
+	if name == ".DS_Store" {
+		return true
+	}
+	lower := strings.ToLower(name)
+	for _, suffix := range []string{"-wal", "-shm", "-journal", ".lock", "-lock", ".pid"} {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func copyRegularFile(destination string, source string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(output, input); err != nil {
+		output.Close()
+		_ = os.Remove(destination)
+		return err
+	}
+	return output.Close()
 }
 
 // applyDedupeLinks 处理 SharedHostDedupe：两侧版本戳一致时，把内容完全相同的

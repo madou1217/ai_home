@@ -53,8 +53,9 @@ type PruneOptions struct {
 }
 
 // packageDirPattern matches the managed package directory name produced by the
-// installer: <version>-<os>-<arch>-<sha12>.
-var packageDirPattern = regexp.MustCompile(`^([0-9]+\.[0-9]+\.[0-9]+)-[a-z0-9]+-[a-z0-9]+-[0-9a-f]{12}$`)
+// installer: <version>-<os>-<arch>-<sha8>（单个文件包解包时取 payload sha 的
+// 前 8 位）。只接受 12 位会让所有真实目录都匹配不上，GC 永远清不掉旧版本。
+var packageDirPattern = regexp.MustCompile(`^([0-9]+\.[0-9]+\.[0-9]+)-[a-z0-9]+-[a-z0-9]+-[0-9a-f]{8,64}$`)
 
 // artifactPattern matches downloaded single-file installers under
 // updates/downloads, e.g. aih-1.0.6-linux-x64.run.

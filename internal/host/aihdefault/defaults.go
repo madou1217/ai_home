@@ -1,7 +1,7 @@
 // Package aihdefault 承载 set-default 在宿主侧的 Go 原语。
 //
-// 职责边界（与 Node 的 lib/account/default-account-store.js、host-default-landing.js、
-// host-gateway-profile.js 对齐）：
+// 职责边界（对齐已退役的 Node default-account-store / host-default-landing /
+// host-gateway-profile 三处语义）：
 //
 //   - 「AIH Server 默认档位」指针：app_kv 的 provider:default:<provider> = .aih-server。
 //   - 受管宿主配置文件的网关落点与还原：.aih-server-default-state.json 记录接管前

@@ -23,25 +23,14 @@ func CheckReady(ctx context.Context, path string) error {
 	return nil
 }
 
-// CompatibilityTable separates old native projections from Go's canonical
-// credential/quota schema. It does not merge incompatible credential formats.
-func CompatibilityTable(name string) string {
-	switch name {
-	case "account_credentials", "account_quota_detector_state", "account_quota_reset_events", "account_quota_window_samples":
-		return "compat_" + name
-	default:
-		return name
-	}
-}
-
 // IsCompatibilityTable permits first-install Node configuration before the Go
 // account schema initializes. Unknown databases are never adopted as AIH.
 func IsCompatibilityTable(name string) bool {
 	switch name {
-	case "app_kv", "account_refs", "account_cli_aliases", "account_state", "cli_account_id_sequences", "model_aliases", "native_account_outcomes", "codex_reset_credits", "codex_reset_operations", "aih_storage_migrations":
+	case "app_kv", "cli_account_id_sequences", "model_aliases", "codex_reset_credits", "codex_reset_operations", "aih_storage_migrations":
 		return true
 	}
-	for _, prefix := range []string{"compat_account_", "model_usage_", "chat_runtime_", "image_studio_", "plugin_", "clipboard_"} {
+	for _, prefix := range []string{"model_usage_", "chat_runtime_", "image_studio_", "plugin_", "clipboard_"} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}

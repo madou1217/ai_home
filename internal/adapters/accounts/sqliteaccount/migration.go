@@ -30,6 +30,9 @@ func (store *Store) initialize(ctx context.Context) error {
 		_ = connection.Close()
 	}()
 
+	if err := dropRetiredTables(ctx, connection); err != nil {
+		return err
+	}
 	if err := ensureConnectionSchema(ctx, connection); err != nil {
 		return err
 	}

@@ -70,23 +70,23 @@ func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
 	a := &report.Accounts
 	a.SchemaInitialized = true
 	a.CanonicalAccounts, a.CanonicalCredentials = counts[0], counts[1]
-	a.CompatibilityAccounts, a.CompatibilityCredentials = counts[2], counts[3]
-	a.NodeImportDeferred = counts[2] > 0 || counts[3] > 0
+	a.CompatibilityAccounts, a.CompatibilityCredentials = 0, 0
+	a.NodeImportDeferred = false
 	a.ImportGuidance = []string{
-		"Canonical account schema is initialized; compatibility rows are NOT canonical accounts or fabricated credentials.",
+		"Canonical account schema is initialized; legacy compatibility tables are retired.",
 		"After publication, import compatibility rows with the Go account importer (/v1/management/account-imports for native artifacts, /v1/management/accounts for static credentials); preparation never runs a service or importer.",
 		"The importer preserves identity/generation/deletion checks; do not INSERT guessed Go credentials.",
 	}
 	return nil
 }
 
-func accountCounts(ctx context.Context, path string) (counts [4]int64, resultErr error) {
+func accountCounts(ctx context.Context, path string) (counts [2]int64, resultErr error) {
 	db, err := openDB(ctx, path, true)
 	if err != nil {
 		return counts, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, db.Close()) }()
-	for i, table := range []string{"accounts", "account_credentials", "account_refs", "compat_account_credentials"} {
+	for i, table := range []string{"accounts", "account_credentials"} {
 		found, err := exists(ctx, db, "main", table)
 		if err != nil {
 			return counts, err

@@ -60,12 +60,6 @@ func openResetDatabase(ctx context.Context, aiHomeDir string, createIfMissing bo
 
 func ensureResetCreditTables(ctx context.Context, db *sql.DB) error {
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS account_refs (
-			account_ref TEXT PRIMARY KEY,
-			provider TEXT NOT NULL,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
-		)`,
 		`CREATE TABLE IF NOT EXISTS ` + resetCreditsTable + ` (
 			account_ref TEXT NOT NULL,
 			credit_id TEXT NOT NULL,
@@ -77,8 +71,7 @@ func ensureResetCreditTables(ctx context.Context, db *sql.DB) error {
 			consumed_at INTEGER,
 			consumed_operation_id TEXT,
 			status_source TEXT NOT NULL,
-			PRIMARY KEY(account_ref, credit_id),
-			FOREIGN KEY(account_ref) REFERENCES account_refs(account_ref) ON DELETE CASCADE
+			PRIMARY KEY(account_ref, credit_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS ` + resetOperationsTable + ` (
 			operation_id TEXT PRIMARY KEY,
@@ -92,8 +85,7 @@ func ensureResetCreditTables(ctx context.Context, db *sql.DB) error {
 			completed_at INTEGER,
 			before_count INTEGER NOT NULL,
 			after_count INTEGER,
-			error_code TEXT,
-			FOREIGN KEY(account_ref) REFERENCES account_refs(account_ref) ON DELETE CASCADE
+			error_code TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_codex_reset_credits_account_status_expiry
 			ON ` + resetCreditsTable + `(account_ref, status, expires_at)`,
@@ -109,15 +101,6 @@ func ensureResetCreditTables(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	return nil
-}
-
-func ensureAccountRefInTx(ctx context.Context, tx *sql.Tx, accountRef string, nowMS int64) error {
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO account_refs (account_ref, provider, created_at, updated_at)
-		 VALUES (?, 'codex', ?, ?)
-		 ON CONFLICT(account_ref) DO NOTHING`,
-		accountRef, nowMS, nowMS)
-	return err
 }
 
 func deriveExpiredCreditsInTx(ctx context.Context, tx *sql.Tx, accountRef string, nowMS int64) error {
@@ -239,10 +222,6 @@ func SyncInventory(ctx context.Context, aiHomeDir string, accountRef string, inv
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	if err := ensureAccountRefInTx(ctx, tx, normalizedRef, nowMS); err != nil {
-		return err
-	}
 
 	seen := map[string]struct{}{}
 	for _, credit := range inventory.Credits {
@@ -491,10 +470,6 @@ func ReserveOperation(
 		return false, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	if err := ensureAccountRefInTx(ctx, tx, normalizedRef, nowMS); err != nil {
-		return false, nil, err
-	}
 
 	existing, err := getOperationInTx(ctx, tx, opID)
 	if err != nil {

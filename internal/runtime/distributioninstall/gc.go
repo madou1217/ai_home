@@ -66,6 +66,19 @@ type versionedDir struct {
 // It is safe to call concurrently with a running service: when an install is
 // in progress the pass is skipped instead of racing the installer.
 func PruneArtifacts(options PruneOptions) (PruneReport, error) {
+	return pruneArtifacts(options, false)
+}
+
+// PruneArtifactsLocked 供已经持有 distribution-install.lock 的安装流程调用。
+//
+// Install 在持有安装锁时调用 PruneArtifacts 会因 LOCK_NB 失败而拿回
+// Skipped=install_in_progress 且 err=nil，历史版本目录因此永远不会在安装结束时
+// 回收；重复部署同一版本就会堆出多份 <version>-<os>-<arch>-<sha12> 目录。
+func PruneArtifactsLocked(options PruneOptions) (PruneReport, error) {
+	return pruneArtifacts(options, true)
+}
+
+func pruneArtifacts(options PruneOptions, lockHeld bool) (PruneReport, error) {
 	report := PruneReport{Kept: []string{}, Removed: []string{}, Failed: []string{}}
 	if strings.TrimSpace(options.Home) == "" {
 		return report, errors.New("distribution_prune_home_required")
@@ -92,16 +105,18 @@ func PruneArtifacts(options PruneOptions) (PruneReport, error) {
 	}
 	report.Current = filepath.Base(receipt.PackageRoot)
 
-	release, err := os.OpenFile(filepath.Join(home, "run", "distribution-install.lock"), os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return report, err
+	if !lockHeld {
+		release, err := os.OpenFile(filepath.Join(home, "run", "distribution-install.lock"), os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return report, err
+		}
+		defer release.Close()
+		if err = lockFile(release); err != nil {
+			report.Skipped = "install_in_progress"
+			return report, nil
+		}
+		defer unlockFile(release)
 	}
-	defer release.Close()
-	if err = lockFile(release); err != nil {
-		report.Skipped = "install_in_progress"
-		return report, nil
-	}
-	defer unlockFile(release)
 
 	protect := map[string]bool{}
 	if resolved, err := canonical(receipt.PackageRoot); err == nil {
@@ -221,15 +236,25 @@ func prunePackageVersions(home, current string, keepPrevious bool, minAge time.D
 	}
 }
 
-// neighbourRelease picks the single rollback target kept next to the installed
-// release: the most recently used release that is not the installed one. The
-// installer copies each release into pkg/ at install time, so directory mtime
-// orders releases and identifies the version the operator just left.
+// neighbourRelease 选相邻的上一份发行版本作为唯一回滚目标。
+//
+// 只认同版本不同的目录：重复构建/重复部署同一版本会产出多个
+// <version>-<os>-<arch>-<sha12> 目录，它们不能当回滚目标（版本相同，回滚没有
+// 意义），必须回收，否则“一个版本多个目录”会一直累积。
 func neighbourRelease(candidates []versionedDir, current string) *versionedDir {
+	currentVersion := [3]int{}
+	knownVersion := false
+	if match := packageDirPattern.FindStringSubmatch(current); match != nil {
+		currentVersion = parseVersion(match[1])
+		knownVersion = true
+	}
 	var best *versionedDir
 	for index := range candidates {
 		candidate := &candidates[index]
 		if candidate.name == current {
+			continue
+		}
+		if knownVersion && compareVersions(candidate.version, currentVersion) == 0 {
 			continue
 		}
 		if best == nil || candidate.mod.After(best.mod) {

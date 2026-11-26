@@ -396,7 +396,7 @@ func Install(ctx context.Context, options Options) (result Result, resultErr err
 	// 升级成功后只留本次备份用于回滚，旧的安装前备份自动清理，避免无限占盘。
 	pruneInstallHistory(o.Home, tx)
 	// 发行垃圾回收：只保留当前版本与相邻一份旧版本，更早的版本目录与过期安装包当场删除。
-	if gcReport, gcErr := PruneArtifacts(PruneOptions{Home: o.Home, MinAge: 10 * time.Minute}); gcErr == nil && len(gcReport.Removed) > 0 {
+	if gcReport, gcErr := PruneArtifactsLocked(PruneOptions{Home: o.Home, MinAge: 10 * time.Minute}); gcErr == nil && len(gcReport.Removed) > 0 {
 		fmt.Fprintf(o.Output, "[aih] 已清理 %d 份历史发行文件（释放 %d MB）\n", len(gcReport.Removed), gcReport.FreedBytes/(1<<20))
 	}
 	fmt.Fprintf(o.Output, "[aih] %s（%s）\n", result.Message, build.Version)

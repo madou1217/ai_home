@@ -147,6 +147,9 @@ func (gc *DistributionGC) RunNow(ctx context.Context) (distributioninstall.Prune
 
 func (gc *DistributionGC) loop(ctx context.Context, stopCh chan struct{}) {
 	defer gc.wg.Done()
+	// 启动时先跑一轮：服务重启会重置周期计时器，开发期频繁重启/重复部署时
+	// 6 小时周期可能永远等不到，历史 pkg 目录就会越堆越多。
+	_, _ = gc.RunNow(ctx)
 	timer := time.NewTimer(gc.interval)
 	defer timer.Stop()
 	for {

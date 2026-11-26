@@ -47,3 +47,15 @@
 
 - WorkBuddy codec 的 Go 化：本机无 WorkBuddy App、库中无加密凭据，无法真机对拍；盲移只会把 JS 搬进 Go 字符串。待有真实凭据的机器再评估。
 - 旧 hook 配置自动改写：属于产品行为变更，需要单独授权；当前由显式安装/修复流程改写为 Go sender。
+## Hook 实机验收（2026-11-26）
+
+环境：本机 9527 正在运行，六家 hook 已于 22:35 全部重装为新形状。
+
+| Provider | 结论 | 证据 |
+| --- | --- | --- |
+| claude | 真实会话直接投递成功 | 重装后的多个真实 Claude Code 会话在 `run/provider-session-state/` 产生 `official-hook` 事件（UserPromptSubmit / Notification 等） |
+| codex | 真实会话可投递，但需通过 Codex 的 hook trust | `aih codex --dangerously-bypass-hook-trust exec ...` 输出 `hook: SessionStart/UserPromptSubmit/Stop`，会话快照写入 `turnState=completed` 与 Stop 事件 |
+| gemini / grok / opencode | 未跑 | 本机账号池当前没有健康账号（`没有可用账号`），与 hook 实现无关 |
+| agy | 未跑 | 本机未安装 agy/antigravity CLI |
+
+**Codex trust 注意**：Codex 按自身规范化对每个 handler 计算 `sha256`，写入 `config.toml` 的 `[hooks.state."<hooks.json>:<event>:<matcher>"] trusted_hash`；托管命令一改，旧信任即失效，非交互 `exec` 会静默跳过 hook（交互 TUI 会要求确认）。目前没有受支持的安装器写入信任的入口（上游 issue openai/codex#21615），因此本仓库**不伪造信任哈希**：重装后需用户在 TUI 确认一次，自动化场景才使用 `--dangerously-bypass-hook-trust`。

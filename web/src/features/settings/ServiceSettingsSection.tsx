@@ -68,7 +68,7 @@ function CurrentSecretControl({ id, value, configured, onCopy }: CurrentSecretCo
         id={id}
         value={value}
         readOnly
-        placeholder={configured ? '由环境变量提供，无法在此显示' : '未配置'}
+        placeholder={configured ? '由环境变量提供，无法在此显示' : '配置中未保存（可能由环境变量提供）'}
       />
       <Button icon={<CopyOutlined />} disabled={!value} onClick={onCopy}>
         复制
@@ -79,7 +79,7 @@ function CurrentSecretControl({ id, value, configured, onCopy }: CurrentSecretCo
 
 function currentSecretCaveat(configured: boolean, value: string): string {
   if (value) return '点击眼睛图标显示明文；复制按钮直接写入剪贴板。';
-  return configured ? '当前值由环境变量提供，无法在界面回显。' : '尚未配置。';
+  return configured ? '当前值由环境变量提供，无法在界面回显。' : '配置中未保存密钥；若由环境变量提供，此界面无法回显。';
 }
 
 function summarizeProxyPool(proxyUrl: string | undefined): string {

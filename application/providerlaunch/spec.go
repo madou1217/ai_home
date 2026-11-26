@@ -34,6 +34,9 @@ type LaunchSpec struct {
 	// credential 是已解析的领域凭据，只在 Runtime Adapter 准备账号投影时显式取出；
 	// 不参与格式化，也不进入日志。
 	credential accountapp.Credential
+	// credentialFree 表示这次启动使用 Provider 的匿名免费层：不绑定账号、
+	// 不投影配置根、不携带凭据。免费层模型由 Provider Adapter 判定。
+	credentialFree bool
 }
 
 // newLaunchSpec 合并经过验证的账号选择和 Provider Strategy 结果。
@@ -67,6 +70,30 @@ func newLaunchSpec(
 		credential:                credential,
 	}, nil
 }
+
+// newCredentiallessLaunchSpec 合并 Provider 的匿名免费层启动描述。
+// 它不绑定账号、不要求凭据；结果只允许 Direct Process 且不能要求账号投影。
+func newCredentiallessLaunchSpec(providerID string, result StrategyResult) (LaunchSpec, error) {
+	if !result.IsValid() || result.ProviderID() != providerID ||
+		result.Projection().Required() || result.Credential().Kind() != "none" {
+		return LaunchSpec{}, ErrInvalidLaunchSpec
+	}
+	return LaunchSpec{
+		mode:                      LaunchModeNativeDirect,
+		providerID:                result.providerID,
+		binary:                    result.binary,
+		arguments:                 append([]string(nil), result.arguments...),
+		argumentsAfterSubcommands: append([]string(nil), result.argumentsAfterSubcommands...),
+		environment:               cloneEnvironmentPatch(result.environment),
+		runtime:                   result.runtime,
+		projection:                result.projection,
+		credentialDescriptor:      result.credential,
+		credentialFree:            true,
+	}, nil
+}
+
+// CredentialFree 表示本次启动不绑定账号凭据（Provider 的匿名免费层）。
+func (spec LaunchSpec) CredentialFree() bool { return spec.credentialFree }
 
 // Mode 返回本描述唯一允许的 Native Direct 模式。
 func (spec LaunchSpec) Mode() LaunchMode {
@@ -150,9 +177,6 @@ func (spec LaunchSpec) RevealCredential() accountapp.Credential {
 func (spec LaunchSpec) IsValid() bool {
 	if spec.mode != LaunchModeNativeDirect ||
 		!isDescriptorToken(spec.providerID) ||
-		!spec.accountRef.IsValid() ||
-		!spec.cliAccountID.IsValid() ||
-		!isExplicitSelectionSource(spec.selectionSource) ||
 		!isBinaryName(spec.binary) ||
 		!validSubcommands(spec.argumentsAfterSubcommands) ||
 		(len(spec.arguments) == 0 && len(spec.argumentsAfterSubcommands) > 0) ||
@@ -161,7 +185,20 @@ func (spec LaunchSpec) IsValid() bool {
 		!spec.runtime.IsValid() ||
 		!spec.projection.IsValid() ||
 		(spec.projection.Required() && spec.runtime.Kind() != RuntimeKindDirectProcess) ||
-		!spec.credentialDescriptor.IsValid() ||
+		!spec.credentialDescriptor.IsValid() {
+		return false
+	}
+	if spec.credentialFree {
+		return spec.accountRef.String() == "" &&
+			!spec.cliAccountID.IsValid() &&
+			spec.selectionSource == "" &&
+			spec.credential == nil &&
+			spec.credentialDescriptor.Kind() == "none" &&
+			!spec.projection.Required()
+	}
+	if !spec.accountRef.IsValid() ||
+		!spec.cliAccountID.IsValid() ||
+		!isExplicitSelectionSource(spec.selectionSource) ||
 		spec.credential == nil ||
 		spec.credential.ProviderID() != spec.providerID {
 		return false

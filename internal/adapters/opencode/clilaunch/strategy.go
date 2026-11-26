@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/opencode/freetier"
 )
 
 const (
@@ -50,6 +51,34 @@ func NewStrategy() *Strategy {
 
 // ProviderID 返回策略唯一支持的 Provider。
 func (*Strategy) ProviderID() string { return providerID }
+
+// BuildCredentialless 为 OpenCode 的匿名免费模型生成启动描述。
+//
+// 免费层不读 AIH 账号凭据，因此这里既不投影账号配置根，也不注入任何凭据；
+// 只清掉宿主上可能改变 OpenCode 身份的变量，让它使用自己的默认配置。
+// 非免费模型返回 ok=false，由调用方回到正常账号启动链。
+func (*Strategy) BuildCredentialless(model string) (providerlaunch.StrategyResult, bool, error) {
+	if !freetier.IsFreeModel(model) {
+		return providerlaunch.StrategyResult{}, false, nil
+	}
+	environment, err := providerlaunch.NewEnvironmentPatch(nil, append([]string(nil), unsetKeys...))
+	if err != nil {
+		return providerlaunch.StrategyResult{}, true, fmt.Errorf("%w: 环境补丁无效", ErrBuildLaunchContext)
+	}
+	credential, err := providerlaunch.NewCredentialDescriptor("none", "")
+	if err != nil {
+		return providerlaunch.StrategyResult{}, true, fmt.Errorf("%w: 凭据摘要无效", ErrBuildLaunchContext)
+	}
+	result, err := providerlaunch.NewStrategyResult(providerlaunch.StrategyResultInput{
+		ProviderID:  providerID,
+		Binary:      binaryName,
+		Environment: environment,
+		Runtime:     providerlaunch.NewDirectProcessRuntime(),
+		Projection:  providerlaunch.NoProjection(),
+		Credential:  credential,
+	})
+	return result, true, err
+}
 
 // Build 生成 bridge 投影（OAuth）或在 bridge 上叠加 OPENCODE_API_KEY（API Key）。
 func (*Strategy) Build(

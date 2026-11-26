@@ -170,6 +170,29 @@ func (intent LaunchIntent) Arguments() []string {
 	return append([]string(nil), intent.arguments...)
 }
 
+// Model 返回显式 --model/-m 指定的模型名（含 --model=value 形式）。
+//
+// 只做“调用方明确要求了哪个模型”的读取，不解释模型能力；是否有匿名免费
+// 通道由 Provider Adapter 判断。
+func (intent LaunchIntent) Model() string {
+	arguments := intent.arguments
+	for index := 0; index < len(arguments); index++ {
+		argument := arguments[index]
+		for _, name := range []string{"--model", "-m"} {
+			if argument == name {
+				if index+1 < len(arguments) {
+					return strings.TrimSpace(arguments[index+1])
+				}
+				return ""
+			}
+			if strings.HasPrefix(argument, name+"=") {
+				return strings.TrimSpace(strings.TrimPrefix(argument, name+"="))
+			}
+		}
+	}
+	return ""
+}
+
 // ModelAlias returns the session-only model override; it never changes storage.
 func (intent LaunchIntent) ModelAlias() ModelAlias { return intent.modelAlias }
 

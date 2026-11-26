@@ -601,7 +601,7 @@ func (app *App) Run(
 		return fmt.Errorf("规划 Provider CLI 启动失败: %w", err)
 	}
 	accountOverrides, overrideWarning := app.resolveAccountLaunchOverrides(ctx, plan)
-	if native, ok := plan.Native(); ok && app.accountStore != nil {
+	if native, ok := plan.Native(); ok && !native.CredentialFree() && app.accountStore != nil {
 		lease, admitErr := accountadmission.Launch(app.aiHomeDir, native.ProviderID(), native.AccountRef().String())
 		if admitErr != nil {
 			return admitErr
@@ -784,7 +784,12 @@ func launchAccountIdentity(plan providerlaunch.LaunchPlan) (string, string, bool
 		return "", "", false
 	}
 	if native, ok := plan.Native(); ok {
-		return strings.ToLower(strings.TrimSpace(native.ProviderID())), native.AccountRef().String(), true
+		accountRef := strings.TrimSpace(native.AccountRef().String())
+		if accountRef == "" {
+			// 匿名免费层没有账号身份，不能拿空 ref 去读账号级设置。
+			return "", "", false
+		}
+		return strings.ToLower(strings.TrimSpace(native.ProviderID())), accountRef, true
 	}
 	return "", "", false
 }

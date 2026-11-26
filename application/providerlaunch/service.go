@@ -25,6 +25,11 @@ type NativePlanBuilder interface {
 	) (LaunchSpec, error)
 }
 
+// CredentiallessPlanBuilder 是 Native 规划器可选的匿名免费层通道。
+type CredentiallessPlanBuilder interface {
+	BuildCredentialless(ctx context.Context, providerID string, model string) (LaunchSpec, error)
+}
+
 // GatewayPlanBuilder 是 Gateway Relay 分支只读取 Server 配置和公开账号的端口。
 type GatewayPlanBuilder interface {
 	Build(
@@ -73,6 +78,23 @@ func (service *Service) Plan(
 	}
 	if err := ctx.Err(); err != nil {
 		return LaunchPlan{}, err
+	}
+	// 显式 --model 命中 Provider 的匿名免费层时不需要账号：即使命令里带了
+	// 账号别名，也以免费层为准（该层本来就不读凭据）。
+	if model := intent.Model(); model != "" {
+		if builder, ok := service.native.(CredentiallessPlanBuilder); ok {
+			spec, err := builder.BuildCredentialless(ctx, intent.ClientProviderID(), model)
+			switch {
+			case err == nil:
+				plan := LaunchPlan{mode: LaunchModeNativeDirect, native: spec}
+				if !plan.IsValid() {
+					return LaunchPlan{}, ErrInvalidServiceRequest
+				}
+				return plan, nil
+			case !errors.Is(err, ErrCredentiallessUnavailable):
+				return LaunchPlan{}, err
+			}
+		}
 	}
 	switch intent.Mode() {
 	case LaunchModeNativeDirect:

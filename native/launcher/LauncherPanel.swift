@@ -160,9 +160,16 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     }
     _ = Darwin.fchmod(fd, mode_t(0o600))
 
+    // Darwin imports both the C function and the `struct flock` as `flock`;
+    // use fcntl(F_SETLK) with an explicit record lock instead.
+    var record = Darwin.flock()
+    record.l_type = Int16(F_WRLCK)
+    record.l_whence = Int16(SEEK_SET)
+    record.l_start = 0
+    record.l_len = 0
     var rc: Int32 = -1
     repeat {
-      rc = Darwin.flock(fd, LOCK_EX | LOCK_NB)
+      rc = Darwin.fcntl(fd, F_SETLK, &record)
     } while rc != 0 && errno == EINTR
 
     if rc == 0 {
@@ -171,7 +178,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     }
     let err = errno
     _ = Darwin.close(fd)
-    if err == EWOULDBLOCK || err == EAGAIN {
+    if err == EWOULDBLOCK || err == EAGAIN || err == EACCES {
       return .occupied
     }
     let rawError: UnsafeMutablePointer<CChar>? = Darwin.strerror(err)
@@ -183,7 +190,10 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     guard singletonLockFD >= 0 else { return }
     let fd = singletonLockFD
     singletonLockFD = -1
-    _ = Darwin.flock(fd, LOCK_UN)
+    var record = Darwin.flock()
+    record.l_type = Int16(F_UNLCK)
+    record.l_whence = Int16(SEEK_SET)
+    _ = Darwin.fcntl(fd, F_SETLK, &record)
     _ = Darwin.close(fd)
   }
 

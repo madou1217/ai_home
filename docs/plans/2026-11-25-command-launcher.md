@@ -165,6 +165,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 - Windows：`CreateMutexW(NULL, TRUE, "Local\\AIH-Launcher-Singleton-v1")`；`ERROR_ALREADY_EXISTS` 时立即关闭句柄，首次失败每 250ms 异步重试最多 5s，5s 仍失败才禁用 launcher（不注册热键/钩子）并上报 status，之后每次 `configure(enabled=true)` 再尝试一次（已持有则跳过）；进程退出/禁用时 `ReleaseMutex` + `CloseHandle`。
 - Linux：GTK 进程在 bind socket 前用 `flock` 竞争 `<socket>.lock`；失败则尝试向现有 socket 发送 `show` 后退出 0，绝不 unlink 他人 socket。launcherd 的 `Start/Run/StartDetached` 都先 `ProbeSocket`：已有实例时复用（不 Build、不 spawn），`/show` 直接走 socket。
 - 幂等：`show()` 在面板已可见时只置前/聚焦，不重放进场动画；`launcher-show`/`Alt+Space` 重复触发只 toggle 或保持单窗口。
+- 叠加保证：桌面 helper 本身已有整机单实例（剪贴板 Quick Orbit 的 `~/.ai_home/run/desktop-translation/helper.lock`，第二个 helper 直接退出），因此正常产品路径下不可能出现两个面板；launcher 自己的锁是防御性第二层，覆盖未来 helper 锁被放宽或多 home 并存的场景。
 
 ### 8.1 Go：让启动器独立于翻译开关
 

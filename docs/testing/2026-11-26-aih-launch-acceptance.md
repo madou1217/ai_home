@@ -11,6 +11,7 @@
 | 搜索应用 | 已实现 | Go 唯一排序真值（§6）+ 三端本地过滤（含 aliases 与 usage boost）；macOS 实时截图与离屏渲染、Linux 过滤截图 |
 | 打开应用 | 已实现 | macOS/Windows 走管理 API（失败原生兜底）；Linux `gio launch → gtk-launch → Exec`，真实 fork 子进程（touch 探针） |
 | 越用越好用 + 中英文（2026-11-26 追加） | ✅ 100% | frecency（14 天半衰期）驱动空查询与匹配加成；不再用 A–Z；macOS 读取 zh-Hans/zh_CN `InfoPlist.strings`，`微信`/`wechat` 均可命中（见 §4.1） |
+| 单例（2026-11-26 追加） | ✅ 100% | helper 整机单实例 + 三端独立启动器锁；重复 show 窗口 id 不变、窗口数恒为 1；第二实例被拒（见 §4.2） |
 | macOS / Windows / Linux 桌面 | 已实现 | macOS AppKit 面板、Windows WinForms 面板、Linux GTK4 面板 |
 | UI 动画/交互顶级 | 已实现 | 见截图；弹簧缩放/淡入/stagger/选中高亮/圆角毛玻璃/自动隐藏滚动条 |
 | 仅桌面系统可用 | 已实现 | headless Linux 不装配启动器运行时、不注册路由（实测 404）、不编译 GTK、不启动 launcherd；darwin/windows 的 launcherd 只编译 stub |
@@ -64,6 +65,16 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
 - macOS 增加 `zh_CN.lproj`/`zh-Hans.lproj/InfoPlist.strings`（UTF-16）解析：`WeChat` 的 alias 为 `微信`；`--q 微信` 与 `--q wechat` 都命中。
 - 本机真实结果：临时 home 中 App Store 热度 10、Calculator 热度 3 → 空查询顺序 `App Store → Calculator → 其余（按 mtime）`；`q=app` 时 App Store（名称前缀 900+effectiveBoost 99=999）第一，Calculator（副标题 300+150=450）第二；`q=微信` 命中 WeChat（截图 `docs/assets/launcher/macos-wechat-alias.png`）。
 - v1→v2 迁移验证：旧 `count:25` 读取即 boost 700；`aih launch open` 一次后磁盘升级为 `version:2, score≈21, count:26`；30 天未用 score 10 → boost 70（符合半衰期）。
+
+## 4.2 单例（2026-11-26 追加）
+
+要求：启动器必须单例，不能同时打开多个面板；重复触发只切换/置前。
+
+- 机制：桌面 helper 本身已有整机单实例锁（剪贴板 Quick Orbit 的 `~/.ai_home/run/desktop-translation/helper.lock`，第二个 helper 退出）；启动器再加第二层锁——macOS `~/Library/Application Support/AIH/launcher.lock`（fcntl 记录锁，目录 0700/文件 0600，失败 250ms×5s 重试）、Windows `Local\AIH-Launcher-Singleton-v1` 命名互斥体、Linux `<socket>.lock` + socket probe；`show()` 已可见时仅置前。
+- macOS 实测：唯一 helper（pid 81111）持有 `launcher.lock`（`lsof` 可见 fd）；连续两次 `POST /launcher/show` 后窗口 id 仍为 `17362`、`AIH Launch` 窗口数 = 1；另起私有 home 的第二个 helper 因 helper 单例直接退出，其 `/show` 返回 501，窗口数仍为 1。
+- Windows 实测（session 0）：A 持锁时 B 在 5s 后输出 `启动器已在另一个 AIH 桌面实例中运行（单例）` 且保持翻译 helper 运行；A 退出后新实例 C 正常取得 `Alt+Space`（无单例错误）。
+- Linux 实测（AWS，xvfb+openbox）：`show` 两次窗口 id 均为 `4194309`、count=1；第二次 `aih launch ui --daemon`、前台 `aih launch ui`、手工再起 `aih-launch-ui` 均退出 0 且窗口仍为 1；杀掉主实例后新实例可成为新单例并正常 `show`。
+- 备注：单例实现中 Swift 的 `flock` 与 `struct flock` 同名，实际使用 `fcntl(F_SETLK)` 记录锁（commit `73ecc8d7`）。
 
 ## 5. 已知限制 / 复验步骤
 

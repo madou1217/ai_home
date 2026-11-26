@@ -23,6 +23,8 @@ export type ControlPlaneEventStreamFetch = (input: string, init?: FetchLikeOptio
 export interface ControlPlaneApiClientOptions {
   endpoint: string;
   managementKey?: string;
+  /** 远程 profile 走当前 Server 的同源代理时使用。 */
+  serverId?: string;
   timeoutMs?: number;
   fetchImpl?: FetchLike;
 }
@@ -133,7 +135,7 @@ function resolveEventStreamFetch(options: { fetchImpl?: ControlPlaneEventStreamF
   return fetcher as ControlPlaneEventStreamFetch;
 }
 
-function buildJsonHeaders(managementKey: string, hasBody: boolean) {
+function buildJsonHeaders(managementKey: string, hasBody: boolean, serverId = '') {
   const headers: Record<string, string> = {
     accept: 'application/json'
   };
@@ -143,15 +145,21 @@ function buildJsonHeaders(managementKey: string, hasBody: boolean) {
   if (managementKey) {
     headers.authorization = `Bearer ${managementKey}`;
   }
+  if (serverId) {
+    headers['x-aih-server-id'] = serverId;
+  }
   return headers;
 }
 
-function buildEventStreamHeaders(managementKey: string) {
+function buildEventStreamHeaders(managementKey: string, serverId = '') {
   const headers: Record<string, string> = {
     accept: 'text/event-stream'
   };
   if (managementKey) {
     headers.authorization = `Bearer ${managementKey}`;
+  }
+  if (serverId) {
+    headers['x-aih-server-id'] = serverId;
   }
   return headers;
 }
@@ -240,12 +248,14 @@ export async function consumeControlPlaneEventStream(
 export class ControlPlaneApiClient {
   readonly endpoint: string;
   private readonly managementKey: string;
+  private readonly serverId: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl?: FetchLike;
 
   constructor(options: ControlPlaneApiClientOptions) {
     this.endpoint = normalizeControlPlaneEndpoint(options.endpoint);
     this.managementKey = normalizeText(options.managementKey, 4096);
+    this.serverId = normalizeText(options.serverId, 96);
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs) || DEFAULT_CONTROL_PLANE_TIMEOUT_MS);
     this.fetchImpl = options.fetchImpl;
     if (!this.endpoint) {
@@ -275,7 +285,7 @@ export class ControlPlaneApiClient {
     }
     return {
       url: this.buildEventSourceUrl(path),
-      headers: buildEventStreamHeaders(managementKey)
+      headers: buildEventStreamHeaders(managementKey, this.serverId)
     };
   }
 
@@ -311,7 +321,7 @@ export class ControlPlaneApiClient {
     try {
       const response = await resolveFetch({ fetchImpl: options.fetchImpl || this.fetchImpl })(this.buildHttpUrl(path), {
         method,
-        headers: buildJsonHeaders(managementKey, body !== undefined),
+        headers: buildJsonHeaders(managementKey, body !== undefined, this.serverId),
         credentials: 'omit',
         signal: controller.signal,
         body: body === undefined ? null : JSON.stringify(body)

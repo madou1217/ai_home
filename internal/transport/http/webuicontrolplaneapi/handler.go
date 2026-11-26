@@ -260,13 +260,13 @@ func (handler *Handler) overlayLocalManagementKey(store map[string]any, requestH
 }
 
 func isLocalProfileEndpoint(endpoint string, requestHost string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || parsed.Host == "" {
+	host := strings.TrimSpace(requestHost)
+	if host == "" {
 		return false
 	}
-	host := strings.ToLower(parsed.Hostname())
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return true
-	}
-	return strings.EqualFold(parsed.Host, strings.TrimSpace(requestHost))
+	// 只覆盖与当前请求同一个 host:port 的 profile。loopback 别名归一，
+	// 但不能把 127.0.0.1:19537 的隧道误当成 127.0.0.1:9527 的本机。
+	profileKey := endpointKey(endpoint)
+	requestKey := endpointKey("http://" + host)
+	return profileKey != "" && profileKey == requestKey
 }

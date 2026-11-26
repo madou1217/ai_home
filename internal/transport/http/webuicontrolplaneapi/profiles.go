@@ -112,6 +112,34 @@ func normalizeEndpoint(value any) string {
 	return strings.TrimRight(parsed.String(), "/")
 }
 
+// endpointKey 按 host:port 去重，loopback 的 localhost / ::1 归一为 127.0.0.1。
+// 同一台 AIH Server 不论写成 http(s) 或带不带路径，都只保留一个 profile。
+func endpointKey(value any) string {
+	endpoint := normalizeEndpoint(value)
+	if endpoint == "" {
+		return ""
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		return endpoint
+	}
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "localhost", "::1":
+		host = "127.0.0.1"
+	}
+	host = strings.Trim(host, "[]")
+	port := parsed.Port()
+	if port == "" {
+		if parsed.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return host + ":" + port
+}
+
 func stableProfileID(endpoint string) string {
 	hash := uint32(2166136261)
 	for _, char := range endpoint {
@@ -323,19 +351,35 @@ func normalizeStore(input any) map[string]any {
 	source := object(input)
 	profiles := []map[string]any{}
 	if list := asAnyList(source["profiles"]); list != nil {
+		indexByID := map[string]int{}
+		indexByKey := map[string]int{}
 		for _, item := range list {
 			normalized, ok := normalizeProfile(item, nil)
 			if !ok {
 				continue
 			}
-			filtered := make([]map[string]any, 0, len(profiles)+1)
-			for _, existing := range profiles {
-				if existing["id"] == normalized["id"] || existing["endpoint"] == normalized["endpoint"] {
-					continue
-				}
-				filtered = append(filtered, existing)
+			id := text(normalized["id"], 96)
+			key := endpointKey(normalized["endpoint"])
+			replaceAt := -1
+			if index, exists := indexByID[id]; exists {
+				replaceAt = index
+			} else if index, exists := indexByKey[key]; exists {
+				replaceAt = index
 			}
-			profiles = append(filtered, normalized)
+			if replaceAt >= 0 {
+				existing := profiles[replaceAt]
+				if number(normalized["updatedAt"]) >= number(existing["updatedAt"]) {
+					delete(indexByID, text(existing["id"], 96))
+					delete(indexByKey, endpointKey(existing["endpoint"]))
+					profiles[replaceAt] = normalized
+					indexByID[id] = replaceAt
+					indexByKey[key] = replaceAt
+				}
+				continue
+			}
+			profiles = append(profiles, normalized)
+			indexByID[id] = len(profiles) - 1
+			indexByKey[key] = len(profiles) - 1
 		}
 	}
 	sort.SliceStable(profiles, func(left, right int) bool {
@@ -371,12 +415,24 @@ func decodeStore(raw string, found bool) (map[string]any, error) {
 func saveProfileInStore(store map[string]any, value any, options map[string]any) (map[string]any, map[string]any, error) {
 	profiles := store["profiles"].([]map[string]any)
 	probe := object(value)
+	probeKey := endpointKey(probe["endpoint"])
 	previous := map[string]any(nil)
 	for _, profile := range profiles {
-		if profile["id"] == text(probe["id"], 96) || profile["endpoint"] == normalizeEndpoint(probe["endpoint"]) {
+		if profile["id"] == text(probe["id"], 96) ||
+			profile["endpoint"] == normalizeEndpoint(probe["endpoint"]) ||
+			(probeKey != "" && endpointKey(profile["endpoint"]) == probeKey) {
 			previous = profile
 			break
 		}
+	}
+	// 同一 host:port 的重复添加一律更新已有记录，不生成第二个 id。
+	if previous != nil {
+		cloned := make(map[string]any, len(probe))
+		for key, item := range probe {
+			cloned[key] = item
+		}
+		cloned["id"] = previous["id"]
+		value = cloned
 	}
 	normalized, ok := normalizeProfile(value, previous)
 	if !ok {
@@ -384,8 +440,9 @@ func saveProfileInStore(store map[string]any, value any, options map[string]any)
 	}
 	nextProfiles := make([]map[string]any, 0, len(profiles)+1)
 	nextProfiles = append(nextProfiles, normalized)
+	normalizedKey := endpointKey(normalized["endpoint"])
 	for _, profile := range profiles {
-		if profile["id"] == normalized["id"] || profile["endpoint"] == normalized["endpoint"] {
+		if profile["id"] == normalized["id"] || endpointKey(profile["endpoint"]) == normalizedKey {
 			continue
 		}
 		nextProfiles = append(nextProfiles, profile)

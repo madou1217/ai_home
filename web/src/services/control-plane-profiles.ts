@@ -67,6 +67,20 @@ export type {
 
 
 const STORAGE_KEY = 'aih:control-plane-profiles:v1';
+
+/** 同一 AIH Server 的唯一键：host:port，loopback 别名归一。 */
+export function serverEndpointKey(endpoint: string): string {
+  try {
+    const parsed = new URL(String(endpoint || '').trim());
+    let host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '::1' || host === '[::1]') host = '127.0.0.1';
+    host = host.replace(/^\[|\]$/g, '');
+    const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    return `${host}:${port}`;
+  } catch (_error) {
+    return String(endpoint || '').trim().toLowerCase();
+  }
+}
 export const CONTROL_PLANE_PROFILES_CHANGED_EVENT = 'aih:control-plane-profiles-changed';
 const SHARED_PROFILE_API_PATH = '/v0/webui/control-plane/profiles';
 
@@ -157,15 +171,16 @@ function readProfiles(storage = getStorage()): ControlPlaneProfile[] {
     const normalizedProfiles = source
       .map(normalizeProfile)
       .filter((item): item is ControlPlaneProfile => Boolean(item));
-    const byStableServerId = new Map<string, ControlPlaneProfile>();
+    const byEndpointKey = new Map<string, ControlPlaneProfile>();
     normalizedProfiles.forEach((profile) => {
+      const key = serverEndpointKey(profile.endpoint);
       const merged = mergeLogicalServerProfiles(
-        byStableServerId.get(profile.stableServerId) || null,
+        byEndpointKey.get(key) || null,
         profile
       );
-      if (merged) byStableServerId.set(profile.stableServerId, merged);
+      if (merged) byEndpointKey.set(key, merged);
     });
-    const profiles = Array.from(byStableServerId.values())
+    const profiles = Array.from(byEndpointKey.values())
       .sort((left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name));
     const normalized = JSON.stringify(profiles);
     if (normalized !== JSON.stringify(source)) {
@@ -211,22 +226,30 @@ function mergeControlPlaneProfiles(
   localProfiles: ControlPlaneProfile[],
   sharedProfiles: ControlPlaneProfile[]
 ): ControlPlaneProfile[] {
-  const byStableServerId = new Map<string, ControlPlaneProfile>();
-  localProfiles.forEach((profile) => {
-    const merged = mergeLogicalServerProfiles(
-      byStableServerId.get(profile.stableServerId) || null,
-      profile
-    );
-    if (merged) byStableServerId.set(profile.stableServerId, merged);
-  });
-  sharedProfiles.forEach((profile) => {
-    const merged = mergeLogicalServerProfiles(
-      byStableServerId.get(profile.stableServerId) || null,
-      profile
-    );
-    if (merged) byStableServerId.set(profile.stableServerId, merged);
-  });
-  const merged = Array.from(byStableServerId.values());
+  const byEndpointKey = new Map<string, ControlPlaneProfile>();
+  const mergeProfile = (profile: ControlPlaneProfile, preferSharedKey: boolean) => {
+    const key = serverEndpointKey(profile.endpoint);
+    const merged = mergeLogicalServerProfiles(byEndpointKey.get(key) || null, profile);
+    if (!merged) return;
+    if (preferSharedKey && profile.managementKey) {
+      merged.managementKey = profile.managementKey;
+      merged.managementKeyConfigured = true;
+      merged.authorizationState = resolveServerAuthorizationState(true);
+      if (profile.state === 'ready') {
+        merged.state = 'ready';
+        merged.lastError = '';
+      }
+    }
+    byEndpointKey.set(key, merged);
+  };
+  localProfiles.forEach((profile) => mergeProfile(profile, false));
+  sharedProfiles.forEach((profile) => mergeProfile(profile, true));
+  const sharedKeys = new Set(sharedProfiles.map((profile) => serverEndpointKey(profile.endpoint)));
+  const merged = Array.from(byEndpointKey.values()).filter((profile) => (
+    sharedKeys.size === 0
+      || sharedKeys.has(serverEndpointKey(profile.endpoint))
+      || isAutoCurrentControlPlaneProfile(profile)
+  ));
   const currentEndpoint = getCurrentWebUiControlPlaneEndpoint();
   const hasReadyProfile = merged.some(isReadyProfileCandidate);
   return merged
@@ -303,7 +326,8 @@ export async function syncSharedControlPlaneProfiles(options: { fetchImpl?: type
   if (JSON.stringify(merged) !== JSON.stringify(local)) {
     writeProfiles(merged);
   }
-  local
+  // 只回写合并/去重后的列表。用 local 会把已从共享库删除的陈旧 profile 重新复活。
+  merged
     .filter(isReadyProfileCandidate)
     .forEach((profile) => persistSharedControlPlaneProfile(profile, { fetchImpl: options.fetchImpl }));
   if (merged.some(isReadyProfileCandidate)) {
@@ -746,9 +770,11 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
   const now = Date.now();
   const profiles = readProfiles();
   const suppliedStableServerId = normalizeStableServerId(input.stableServerId);
+  const requestedKey = serverEndpointKey(requestedEndpoint);
   const existing = profiles.find((profile) => (
     (suppliedStableServerId && profile.stableServerId === suppliedStableServerId)
       || profile.endpoint === requestedEndpoint
+      || serverEndpointKey(profile.endpoint) === requestedKey
       || profile.routes.some((route) => route.endpoint === requestedEndpoint)
   )) || null;
   const stableServerId = suppliedStableServerId
@@ -826,10 +852,11 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
     createdAt: existing?.createdAt || now,
     updatedAt: now
   };
+  const profileKey = serverEndpointKey(profile.endpoint);
   const next = profiles.filter((item) => (
     item.id !== profile.id
       && item.stableServerId !== profile.stableServerId
-      && item.endpoint !== profile.endpoint
+      && serverEndpointKey(item.endpoint) !== profileKey
   ));
   next.unshift(profile);
   writeProfiles(next);
@@ -837,13 +864,21 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
   return profile;
 }
 
-function createProfileApiClient(profile: Pick<ControlPlaneProfile, 'endpoint' | 'managementKey'>, options: {
+function createProfileApiClient(profile: ControlPlaneRequestProfile, options: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 } = {}) {
+  const endpoint = normalizeControlPlaneEndpoint(profile.endpoint);
+  const currentOrigin = typeof window !== 'undefined'
+    ? normalizeControlPlaneEndpoint(window.location.origin)
+    : '';
+  const remote = Boolean(currentOrigin && endpoint && endpoint !== currentOrigin && profile.id);
   return createControlPlaneApiClient({
-    endpoint: profile.endpoint,
-    managementKey: profile.managementKey,
+    // 远程 profile 走当前 Server 的同源 /v0 代理，避免浏览器 CORS 预检失败；
+    // 代理用本地 Management Key 鉴权，再用 profile 里保存的远端 Key 转发。
+    endpoint: remote ? currentOrigin : profile.endpoint,
+    managementKey: remote ? resolveWebUiManagementKey() : profile.managementKey,
+    serverId: remote ? profile.id : undefined,
     timeoutMs: options.timeoutMs || DEFAULT_DEVICE_REQUEST_TIMEOUT_MS,
     fetchImpl: options.fetchImpl
   });
@@ -1236,12 +1271,7 @@ export async function refreshControlPlaneDeviceState(profile: ControlPlaneProfil
 } = {}) {
   const endpoint = normalizeControlPlaneEndpoint(profile.endpoint);
   if (!endpoint) throw new Error('invalid_control_plane_endpoint');
-  const client = createControlPlaneApiClient({
-    endpoint,
-    managementKey: profile.managementKey,
-    timeoutMs: options.timeoutMs,
-    fetchImpl: options.fetchImpl
-  });
+  const client = createProfileApiClient(profile, options);
   const status = await client.getJson('/v0/management/status', {
     requireManagementKey: true,
     httpErrorPrefix: 'control_plane_status_http'

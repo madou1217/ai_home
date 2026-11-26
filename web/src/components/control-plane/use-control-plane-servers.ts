@@ -11,7 +11,8 @@ import {
   refreshControlPlaneProfileStates,
   removeControlPlaneProfile,
   saveControlPlaneProfile,
-  summarizeControlPlaneProfiles
+  summarizeControlPlaneProfiles,
+  syncSharedControlPlaneProfiles
 } from '@/services/control-plane-profiles';
 import {
   normalizeEndpointHintWarnings,
@@ -75,6 +76,13 @@ export function useControlPlaneServers() {
         setEndpointWarnings(normalizeEndpointHintWarnings(hints, payload.warnings));
       });
     syncSavedControlPlaneProfiles();
+    // Server 页必须拉取共享 profiles：否则 localStorage 会一直用旧 Key，
+    // 别的 Server 即使在线也会显示 Failed to fetch / offline。
+    syncSharedControlPlaneProfiles()
+      .then(() => {
+        if (!cancelled) syncSavedControlPlaneProfiles();
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

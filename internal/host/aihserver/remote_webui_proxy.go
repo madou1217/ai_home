@@ -53,7 +53,11 @@ func isRemoteWebUIRequest(request *http.Request) bool {
 		return false
 	}
 	path := request.URL.Path
-	if path != "/v0/webui" && !strings.HasPrefix(path, "/v0/webui/") {
+	// /v0/node-rpc 是浏览器控制面（device-status/accounts/sessions）的实际入口；
+	// 远程 profile 必须和 /v0/webui 一样走同源代理，否则浏览器直连会撞 CORS。
+	if path != "/v0/webui" && !strings.HasPrefix(path, "/v0/webui/") &&
+		path != "/v0/node-rpc" && !strings.HasPrefix(path, "/v0/node-rpc/") &&
+		path != "/v0/management" && !strings.HasPrefix(path, "/v0/management/") {
 		return false
 	}
 	if strings.TrimSpace(request.Header.Get(remoteWebUIHeader)) != "" {

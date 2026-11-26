@@ -13,6 +13,7 @@
 //	POST   /v1/management/webui/clipboard/sync-run   (public alias /v0/webui/clipboard/sync-run)
 //	POST   /v1/management/webui/clipboard/sync/run   (management-only, SkipPublicAlias)
 //	GET    /v1/management/webui/clipboard/sync/key   (management-only, SkipPublicAlias)
+//	GET    /v1/management/webui/clipboard/events     (SSE change feed)
 //	POST   /v1/management/webui/clipboard/sync/key   (management-only, SkipPublicAlias)
 //	POST   /v1/management/webui/clipboard/sync/items (management-only, SkipPublicAlias)
 //	GET    /v1/management/webui/clipboard/sync/items (management-only, SkipPublicAlias)
@@ -103,6 +104,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleSettings(w, r)
 	case rest == "status":
 		h.handleStatus(w, r)
+	case rest == "events":
+		h.handleEvents(w, r)
 	case rest == "servers":
 		h.handleServers(w, r)
 	case rest == "sync/key":
@@ -594,6 +597,51 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+// handleEvents streams clipboard change notifications so open HUDs can refresh
+// in place instead of polling or reloading. Each event means "items changed";
+// clients still fetch the authoritative list themselves.
+func (h *Handler) handleEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "clipboard_events_unsupported", "当前连接不支持实时事件")
+		return
+	}
+	changes := h.Service.SubscribeChanges()
+	defer h.Service.UnsubscribeChanges(changes)
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, "retry: 1500\nevent: ready\ndata: {}\n\n")
+	flusher.Flush()
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-changes:
+			if _, err := io.WriteString(w, "event: clipboard\ndata: {}\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-heartbeat.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (h *Handler) handleServers(w http.ResponseWriter, r *http.Request) {

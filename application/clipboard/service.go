@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -31,6 +32,9 @@ type Service struct {
 	probe    RuntimeProbe
 	hostname func() (string, error)
 	platform string
+
+	subscribersMu sync.Mutex
+	subscribers   map[chan struct{}]struct{}
 }
 
 // NewService constructs a clipboard Service.
@@ -42,11 +46,12 @@ func NewService(store Store, blobs BlobStore, clock Clock) (*Service, error) {
 		clock = time.Now
 	}
 	return &Service{
-		store:    store,
-		blobs:    blobs,
-		clock:    clock,
-		hostname: os.Hostname,
-		platform: runtime.GOOS,
+		store:       store,
+		blobs:       blobs,
+		clock:       clock,
+		hostname:    os.Hostname,
+		platform:    runtime.GOOS,
+		subscribers: make(map[chan struct{}]struct{}),
 	}, nil
 }
 
@@ -54,6 +59,49 @@ func NewService(store Store, blobs BlobStore, clock Clock) (*Service, error) {
 func (s *Service) SetRuntimeProbe(probe RuntimeProbe) {
 	if s != nil {
 		s.probe = probe
+	}
+}
+
+// SubscribeChanges returns a buffered signal channel that receives one event
+// after any successful item mutation. Callers must pair it with
+// UnsubscribeChanges so long-lived SSE handlers do not accumulate.
+func (s *Service) SubscribeChanges() chan struct{} {
+	if s == nil {
+		return nil
+	}
+	changes := make(chan struct{}, 1)
+	s.subscribersMu.Lock()
+	if s.subscribers == nil {
+		s.subscribers = make(map[chan struct{}]struct{})
+	}
+	s.subscribers[changes] = struct{}{}
+	s.subscribersMu.Unlock()
+	return changes
+}
+
+// UnsubscribeChanges releases a channel returned by SubscribeChanges.
+func (s *Service) UnsubscribeChanges(changes chan struct{}) {
+	if s == nil || changes == nil {
+		return
+	}
+	s.subscribersMu.Lock()
+	delete(s.subscribers, changes)
+	s.subscribersMu.Unlock()
+}
+
+// notifyChanged coalesces pending changes per subscriber; the SSE handler only
+// needs to know that a refresh is worthwhile, not how many rows changed.
+func (s *Service) notifyChanged() {
+	if s == nil {
+		return
+	}
+	s.subscribersMu.Lock()
+	defer s.subscribersMu.Unlock()
+	for changes := range s.subscribers {
+		select {
+		case changes <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -91,7 +139,12 @@ func (s *Service) EnsureDevice(ctx context.Context) (Device, error) {
 }
 
 // Ingest validates, canonicalizes, hashes, stores blobs when needed, and idempotently upserts an item.
-func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, error) {
+func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestResult, err error) {
+	defer func() {
+		if err == nil {
+			s.notifyChanged()
+		}
+	}()
 	if input.Kind != "" && !input.Kind.Valid() {
 		return IngestResult{}, ErrInvalidKind
 	}
@@ -449,6 +502,7 @@ func (s *Service) RequestMaterialization(ctx context.Context, id string) (Item, 
 	if err := s.store.RequestContent(ctx, item.SHA256, s.clock().UnixMilli()); err != nil {
 		return Item{}, false, err
 	}
+	s.notifyChanged()
 	return item, false, nil
 }
 
@@ -531,6 +585,7 @@ func (s *Service) SetPinned(ctx context.Context, id string, pinned bool) (Item, 
 	if !found {
 		return Item{}, ErrNotFound
 	}
+	s.notifyChanged()
 	return item, nil
 }
 
@@ -543,12 +598,17 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if !deleted {
 		return ErrNotFound
 	}
+	s.notifyChanged()
 	return nil
 }
 
 // Clear soft-deletes active items (unpinned only unless includePinned is true).
 func (s *Service) Clear(ctx context.Context, includePinned bool) (int, error) {
-	return s.store.SoftDeleteAll(ctx, includePinned, s.clock().UnixMilli())
+	removed, err := s.store.SoftDeleteAll(ctx, includePinned, s.clock().UnixMilli())
+	if err == nil && removed > 0 {
+		s.notifyChanged()
+	}
+	return removed, err
 }
 
 // Prune hard-deletes soft-deleted rows older than 7 days plus expired/overflow unpinned rows,
@@ -575,12 +635,16 @@ func (s *Service) Prune(ctx context.Context) (PruneResult, error) {
 			removedBlobs++
 		}
 	}
-	return PruneResult{
+	result := PruneResult{
 		ExpiredItems:      storeRes.ExpiredItems,
 		OverflowItems:     storeRes.OverflowItems,
 		PurgedSoftDeleted: storeRes.PurgedSoftDeleted,
 		RemovedBlobs:      removedBlobs,
-	}, nil
+	}
+	if result.ExpiredItems+result.OverflowItems+result.PurgedSoftDeleted > 0 {
+		s.notifyChanged()
+	}
+	return result, nil
 }
 
 // GetSettings loads clipboard settings merged with defaults.

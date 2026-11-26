@@ -21,7 +21,7 @@ export interface SectionCardProps {
 
 /**
  * 统一卡片包装 —— 全站唯一的 ProCard 用法。
- * 默认 16px padding、headerBordered、bordered、12px 圆角（见 unified.css）。
+ * 默认 16px padding、headerBordered、bordered；容器方角（--unified-card-border-radius: 0），轮廓由 hud.css 切角表达。
  * 禁止直接使用 ProCard。
  */
 export default function SectionCard({

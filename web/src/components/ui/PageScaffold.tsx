@@ -34,7 +34,7 @@ export interface PageScaffoldProps {
  * 标准模式采用与 Settings 相同的布局结构：
  *  - PageContainer 只渲染页头（不包裹 children）
  *  - children 作为页头的兄弟元素渲染在 .unified-page-content wrapper 内
- *  - 外层 .unified-page-wrapper 提供统一的横向内距（桌面 32px / 移动 16px）
+ *  - 外层 .unified-page-wrapper 提供统一的横向内距（桌面 24px / 移动 16px）
  *  - 页头内距归零，改由 wrapper 统一提供，确保页头文字与内容对齐
  */
 export default function PageScaffold({

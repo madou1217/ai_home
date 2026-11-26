@@ -2,13 +2,14 @@
 
 > 视觉方向：**Cyber HUD（极客 / 赛博朋克控制台）**，2026-09 定稿，取代此前的 Calm Operator Console。
 > 唯一 token 来源：[`src/styles/design-tokens.css`](src/styles/design-tokens.css)；HUD 材质层：[`src/styles/hud.css`](src/styles/hud.css)；antd 的 JS 镜像：[`src/theme/antd-theme.ts`](src/theme/antd-theme.ts)。
-> 组件 **禁止** 写死颜色 / 字号 / 间距 / 圆角 / 阴影，一律引用 token。组件 CSS 中出现裸 `#hex` / `rgba()` 视为缺陷（品牌色、xterm / Monaco 调色板除外）。
+> 组件 **禁止** 写死颜色 / 字号 / 间距 / 圆角 / 阴影，一律引用 token。组件 CSS 中出现裸 `#hex` / `rgba()` 视为缺陷（Provider 品牌色、Monaco 调色板、分享卡导出图与独立 HTML 预览窗口除外；xterm 跟随 `--color-*`，不属于例外）。
+> 文内路径除特别说明外均相对 `web/` 目录。
 
 ## 0. 原则
 
 1. **功能必须真实（零虚构）。** 界面上的每个字段、数值、按钮都来自真实代码与接口；HUD 只改变外观，不引入演示数据、虚构指标或不存在的功能。没有后端支撑的动作不做。
 2. **HUD 语言：** Void Black 画布 + 赛博网格；切角面板 + 青色角标；Orbitron 展示字体 + JetBrains Mono 数据字体；关键数值发光；状态用 LED。
-3. **颜色只表达语义。** Electric Cyan = 可交互 / 选中 / 焦点；Matrix Green = 健康；Amber = 冷却 / 警告；Rose = 离线 / 错误。Provider 品牌色只用在其图标上。
+3. **颜色只表达语义。** Electric Cyan = 可交互 / 选中 / 焦点；Matrix Green = 健康；Amber = 冷却 / 警告；Rose = 离线 / 错误。Provider 品牌色只用在其图标上；`--provider-accent` 仅用于会话容器与对应标签。HUD 标题与切角角标使用青色属于装饰性品牌表达，不表示可交互。
 4. **可读性优先于氛围。** 正文次级色、长文阅读字体、`prefers-reduced-motion`、CRT / 音效可关闭，都是硬约束。
 5. **不使用浏览器原生 `alert` / `confirm` / `prompt`。** 确认框用 `utils/confirm-action` 或 antd `Modal.confirm`（已通过 `holderRender` 注入 HUD 主题），提示用 antd `message` / `notification`。
 6. **遵守 AGENTS.md「UI Visual Constraints」**：不用大块 `Alert` 作为页面内容；不用左侧粗彩色竖条（角标与顶部短指示条不属于此类）；账号操作保持语义图标。
@@ -16,11 +17,12 @@
 ## 1. 分层
 
 ```
-Primitive → Semantic → Domain → HUD
---c-*       --color-*   --provider-* --event-*   --hud-*（切角 / 角标 / 网格 / 光效）
+Primitive → Semantic → Domain → Layout → HUD
+--c-* / --space-* / --text-* / --z-* / --hos-*   --color-*   --provider-* / --event-*   --unified-*   --hud-*（切角 / 角标 / 网格 / 光效）
 ```
 
-`--hos-*` 为历史命名，取值已并入语义层；新代码使用 `--color-*` / `--space-*` / `--hud-*`。
+- `--unified-*` 定义在 `unified.css`，只有 5 个布局量（page padding、card padding、card radius、pagination margin、section gap），消费语义 token，是布局封装层，不是第二套视觉 token。
+- `--hos-*` 是仍在使用的底层别名层（96 个定义），语义 token 自身仍引用它；新代码不新增 `--hos-*`，优先用 `--color-*` / `--space-*` / `--text-*` / `--hud-*`。
 
 ## 2. 色系
 
@@ -53,12 +55,12 @@ Primitive → Semantic → Domain → HUD
 
 ## 4. 几何与光效（`--hud-*` + `hud.css`）
 
-- **切角面板**：`clip-path` 四角切 `--hud-chamfer`（10px），左上 / 右下 2px 青色角标（`--hud-tick`）。适用：`.hud-panel`、`.unified-section-card`、`.surface-card`、`.hos-kpi-strip`、弹窗。小卡用 `.hud-panel--sm`（6px，单角标）。
+- **切角面板**：`clip-path` 四角切 `--hud-chamfer`（10px），左上 / 右下青色角标（`--hud-tick` 长 10px、线宽 2px）。适用：`.hud-panel`、`.unified-section-card`、`.surface-card`、`.hos-kpi-strip`、弹窗。小卡用 `.hud-panel--sm`（6px，单角标）。
 - **按钮**：5px 对角切角；主按钮 = 半透明青底 + 青框 + 青字 + 光晕，悬停实底青 + 黑字；默认按钮 = 抬升面 + 描边，悬停青框。
 - **圆角**：基础 2–4px，轮廓由切角表达；圆形只留给 LED、头像、计数。
 - **光效**：`--hud-glow-accent`（面板 / 按钮外发光）、`--hud-text-glow*`（数值与标题发光，仅深色主题生效）。
 - **网格**：`--hud-grid-size` 32px，线色 `--hud-grid-line`。
-- **通用类**：`.hud-display`、`.hud-glow*`、`.hud-label`、`.hud-led(--ok|--warn|--err|--info|--live)`、`.hud-track`。
+- **通用类**：`.hud-display`、`.hud-glow*`、`.hud-label`、`.hud-led(--ok|--warn|--err|--info|--live)`、`.hud-track`。LED 映射：`--ok` → `--color-success`、`--warn` → `--color-warning`、`--err` → `--color-danger`、`--info` → `--color-accent`；`--live` 只叠加呼吸动画，必须搭配一个颜色变体（`--ok|--warn|--err|--info`）使用。
 
 ## 5. 动效与反馈
 
@@ -93,7 +95,7 @@ Primitive → Semantic → Domain → HUD
 - 移动（≤767px）：隐藏顶栏，底部 HUD TabBar；CRT / 音效 / 主题开关在「设置 → 外观」。
 - 会话页保持三栏与移动端 iOS 导航栈。
 
-## 7.2 已知保留项
+## 7.1 已知保留项
 
 - 设置页两列网格的左列随右列行高下移（改为独立两列会改变阅读顺序）。
 - 模型用量页顶部为加载状态预留 30px 状态槽（防跳动，有测试守卫）。
@@ -106,11 +108,11 @@ xs 480 · sm 640 · **md 768（移动 ↔ 桌面）** · lg 1024 · xl 1280（�
 
 ## 9. 层级
 
-`--z-base 0` · `raised 10` · `sticky 100` · `drawer 1000` · `overlay 1100` · `modal 1200` · `popover 1300` · `toast 1400` · CRT 覆盖层 3000（`pointer-events: none`）。
+`--z-base 0` · `--z-raised 10` · `--z-sticky 100` · `--z-drawer 1000` · `--z-overlay 1100` · `--z-modal 1200` · `--z-popover 1300` · `--z-toast 1400` · CRT 覆盖层 3000（字面量，无 token；`pointer-events: none`）。
 
 ## 10. 验收清单
 
-1. `cd web && npm run build`、改动文件 eslint、`npm run test:unit`、相关 node 测试通过。
+1. `cd web && npm run build`、`npx eslint <改动文件> --ext ts,tsx`、`npm run test:unit`、相关 node 测试通过。
 2. 深色 HUD / 日光 HUD 桌面（1440×900）与移动（390×844）真实截图检查。
 3. 界面数据全部来自真实接口；无演示数据、无虚构功能；无浏览器原生 alert / confirm。
 4. CRT、音效、主题三个开关可用且持久化；`prefers-reduced-motion` 生效。
@@ -165,17 +167,17 @@ xs 480 · sm 640 · **md 768（移动 ↔ 桌面）** · lg 1024 · xl 1280（�
 
 ## 12. 迁移清单（渐进）
 
-- [x] 抽离 design-tokens.css，App.css `:root` 收敛为唯一来源
+- [x] 从 App.css `:root` 抽离并收敛到 `src/styles/design-tokens.css`（唯一 token 来源）
 - [x] provider 注册表统一（`provider-registry.ts`：名称/图标/强调色/标签色）
 - [x] 会话容器注入 `data-provider` + `providerAccentStyle`，子组件统一引用 `--provider-accent`
 - [x] EventBlock 共享原语 + StatusBadge（`EventBlock.tsx` / `EventBlock.module.css`）
 - [x] 迁移事件块：Thinking / Memory / UserAnswers / CandidatePlan / TaskNotification / Plan / UserInputRequest / Goal
-- [x] 工具块（ToolBlock / ToolGroup / Shell）**已迁移到 EventBlock**（统一外壳/折叠/强调条，新增 `barePadding` 适配代码与命令输出贴边）
+- [x] 工具块（ToolBlock / ToolGroup / Shell）**已迁移到 EventBlock**（统一外壳与折叠，左侧强调条已移除；新增 `barePadding` 适配代码与命令输出贴边）
 - [x] `--chat-*` 变量对齐设计 token（聊天面与 EventBlock 统一）
 - [x] EventBlock 小屏内边距收敛
 - [x] 移动端会话导航改 iOS 导航栈（取代抽屉）+ 左缘滑动返回
-- [x] 移动端字号刻度统一上调（≤768px）+ 输入框 ≥16px 防缩放
-- [x] **硬编码色清零**：8 个组件/页面 CSS 共 299 处 `#hex` / `rgba()` 全部吸附到 token（灰阶 → neutral ramp，有色语义 → tint/ink/bd 盘，透明色 → `color-mix`）；脚本见 `web/scripts/migrate-colors.pl`
+- [x] 移动端字号刻度统一上调（≤767px）+ 输入框 ≥16px 防缩放
+- [x] **硬编码色清零**：8 个组件/页面 CSS 共 299 处 `#hex` / `rgba()` 全部吸附到 token（灰阶 → neutral ramp，有色语义 → tint/ink/bd 盘，透明色 → `color-mix`）；脚本见 `scripts/migrate-colors.pl`
 - [x] **死代码清理**：chat.module.css 移除 98 个已迁移到 EventBlock 的旧外壳 class（thinking/plan/goal/memory/confirmation/answer/tool/shell 等），文件 70.7KB → 53.2KB；选择器感知移除（逗号分支全死才删，保留 `:global(.ant-*)` 与动态 `taskDockBadge_*`）
 - [x] TagBlock `thinking` 分支已委托 `ThinkingBlock`（无内联）
 - [x] ~~2026-09 Calm Operator Console 重设计~~（已被 Cyber HUD 取代）：token 重定值（中性灰阶 + 单一强调色 + 墨色主按钮）、移除毛玻璃 / 光晕 / 弹性动效、统一字体栈并去掉远程字体、深色主题逐页修复、仪表盘与设置页大块提示改为行内提示、移动端强调色与桌面统一。

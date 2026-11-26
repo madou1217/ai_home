@@ -467,6 +467,14 @@ func isRegisteredProvider(providerID string) bool {
 // runProviderLaunch composes the same native/relay execution path for both the
 // explicit escape and normal parsed commands; it never dispatches management verbs.
 func runProviderLaunch(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	arguments, wantDesktop := stripDesktopFlag(arguments)
+	// 显式 --desktop：任何声明了桌面客户端的 Provider 都走 open-app。
+	if wantDesktop {
+		if !providerHasDesktopClient(providerID) {
+			return fmt.Errorf("%w: %s 没有桌面端；去掉 --desktop 用 CLI 启动", errInvalidCommand, providerID)
+		}
+		return runDesktopOnlyProviderLaunch(ctx, providerID, arguments, runtime)
+	}
 	// 没有原生 CLI 的桌面端 Provider：aih workbuddy [<id>] 直接请求本机 Server 打开 App。
 	if !providerHasNativeCLI(providerID) && (len(arguments) == 0 || isDesktopAccountToken(arguments[0])) {
 		return runDesktopOnlyProviderLaunch(ctx, providerID, arguments, runtime)
@@ -719,6 +727,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		}
 		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)
 		_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
+		_, _ = fmt.Fprintf(output, "  aih %s [<id>] --desktop                      # 打开桌面端（同一账号单例）\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" [原生参数...]                 # 自动择号启动（Native Direct）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> [原生参数...]              # 指定账号启动（伪 HOME 投影）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" relay [原生参数...]              # AIH Server 网关档（models.json 注入）")

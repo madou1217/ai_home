@@ -604,3 +604,15 @@ func TestRootHelpEntriesCoverCommandsAndProviders(t *testing.T) {
 		t.Fatalf("帮助树过少：commands=%d providers=%d", commands, providers)
 	}
 }
+
+// 桌面端 Provider 的启动位应出现 --desktop。
+func TestDesktopFlagListedForDesktopProviders(t *testing.T) {
+	values := strings.Join(candidateValues(resolveCompletion([]string{"codebuddy", "1", ""}, resolverForTest())), ",")
+	if !strings.Contains(values, "--desktop") {
+		t.Fatalf("codebuddy 启动旗标缺少 --desktop：%s", values)
+	}
+	workbuddyValues := strings.Join(candidateValues(resolveCompletion([]string{"workbuddy", "1", ""}, resolverForTest())), ",")
+	if strings.Contains(workbuddyValues, "--desktop") {
+		t.Fatalf("无 CLI 的桌面端不需要 --desktop：%s", workbuddyValues)
+	}
+}

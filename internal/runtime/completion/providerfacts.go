@@ -72,6 +72,12 @@ func providerNames() []string {
 	return names
 }
 
+// providerSupportsDesktop 报告 Provider 是否声明了桌面客户端。
+func providerSupportsDesktop(id string) bool {
+	definition, found := providerDefinition(id)
+	return found && definition.Clients.Desktop
+}
+
 // providerHasCLI 报告 Provider 是否提供可启动的原生 CLI。
 func providerHasCLI(id string) bool {
 	definition, found := providerDefinition(id)

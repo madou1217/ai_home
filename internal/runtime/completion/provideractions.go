@@ -42,6 +42,10 @@ var mcpSessionFlags = []namedSummary{
 // 该 Provider 实际支持的扩展旗标。支持判定来自 mcpselection，避免两处各写一份。
 func providerSessionFlags(provider string) []namedSummary {
 	flags := append([]namedSummary(nil), sessionFlags...)
+	// 只有同时有 CLI 的 Provider 才需要 --desktop 显式切换；纯桌面端默认就是桌面。
+	if providerSupportsDesktop(provider) && providerHasCLI(provider) {
+		flags = append(flags, namedSummary{Name: "--desktop", Summary: "打开桌面端（同一账号单例；不启动 CLI）"})
+	}
 	if mcpselection.Supports(provider) {
 		flags = append(flags, mcpSessionFlags...)
 	}

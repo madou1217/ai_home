@@ -82,3 +82,61 @@ func TestIsDesktopAccountToken(t *testing.T) {
 		}
 	}
 }
+
+func TestStripDesktopFlag(t *testing.T) {
+	result, want := stripDesktopFlag([]string{"1", "--desktop", "--", "--desktop"})
+	if !want || len(result) != 3 || result[0] != "1" || result[1] != "--" || result[2] != "--desktop" {
+		t.Fatalf("stripDesktopFlag 结果错误：want=%v result=%v", want, result)
+	}
+	result, want = stripDesktopFlag([]string{"--model", "x"})
+	if want || len(result) != 2 {
+		t.Fatalf("无 --desktop 时不应改写：want=%v result=%v", want, result)
+	}
+}
+
+// 同账号重复启动：Server 返回 already_running 时不重复拉起。
+func TestDesktopLaunchAlreadyRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/management/accounts":
+			_, _ = response.Write([]byte(`{"data":[{"account_ref":"acct_0123456789abcdef0123","provider_id":"codebuddy","cli_account_id":1,"enabled":true,"has_credential":false,"auth_kind":"","auth_mode":"","has_profile":false,"has_identity":false,"display_name":"","email":"","subscription_kind":"","subscription_raw":"","profile_updated_at":"","created_at":"2026-11-13T00:00:00Z","updated_at":"2026-11-13T00:00:00Z"}],"page":{"limit":200,"has_more":false}}`))
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/open-app"):
+			_, _ = response.Write([]byte(`{"ok":true,"status":"already_running","pids":[4321]}`))
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	runtime, stdout := desktopLaunchRuntime(t, server)
+	if err := runDesktopOnlyProviderLaunch(context.Background(), "codebuddy", []string{"1"}, runtime); err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "已在运行") {
+		t.Fatalf("应提示单例已在运行：%q", stdout.String())
+	}
+}
+
+// 428 install_required：不当作异常退出，提示先安装桌面端。
+func TestDesktopLaunchInstallRequired(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/management/accounts":
+			_, _ = response.Write([]byte(`{"data":[{"account_ref":"acct_0123456789abcdef0123","provider_id":"codebuddy","cli_account_id":1,"enabled":true,"has_credential":false,"auth_kind":"","auth_mode":"","has_profile":false,"has_identity":false,"display_name":"","email":"","subscription_kind":"","subscription_raw":"","profile_updated_at":"","created_at":"2026-11-13T00:00:00Z","updated_at":"2026-11-13T00:00:00Z"}],"page":{"limit":200,"has_more":false}}`))
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/open-app"):
+			response.WriteHeader(http.StatusPreconditionRequired)
+			_, _ = response.Write([]byte(`{"ok":false,"error":"install_required","installRequired":true}`))
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	runtime, stdout := desktopLaunchRuntime(t, server)
+	if err := runDesktopOnlyProviderLaunch(context.Background(), "codebuddy", []string{"1"}, runtime); err != nil {
+		t.Fatalf("install_required 不应返回错误: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "未找到 codebuddy 桌面端") {
+		t.Fatalf("应提示安装桌面端：%q", stdout.String())
+	}
+}

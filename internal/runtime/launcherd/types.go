@@ -36,6 +36,7 @@ var ErrAlreadyRunning = errors.New("launcher_ui_already_running")
 type Status struct {
 	Supported    bool   `json:"supported"`
 	Built        bool   `json:"built"`
+	Attached     bool   `json:"attached,omitempty"`
 	BinaryPath   string `json:"binaryPath,omitempty"`
 	PID          int    `json:"pid"`
 	DesktopError string `json:"desktopError,omitempty"`

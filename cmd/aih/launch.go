@@ -359,7 +359,14 @@ func runLaunchUI(ctx context.Context, homeDir string, service *launcher.Service,
 	sigCtx, cancel := launcherd.WithShutdownSignals(ctx)
 	defer cancel()
 	defer func() { _ = daemon.Close() }()
-	return daemon.Run(sigCtx)
+	if err := daemon.Run(sigCtx); err != nil {
+		if errors.Is(err, launcherd.ErrAlreadyRunning) {
+			_, _ = fmt.Fprintf(runtime.stdout, "launcher ui 已在运行 (socket=%s)\n", socketPath)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func runLaunchToggle(ctx context.Context, args []string, runtime commandRuntime) error {

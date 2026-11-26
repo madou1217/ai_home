@@ -101,6 +101,17 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   private var clipboardKey = ""
   private var clipboardEnabled = false
   private var quickOrbitPosition = "bottom"
+  private struct ShortcutConfig {
+    var translation = ShortcutRegistry.defaultTranslationShortcut
+    var chat = ShortcutRegistry.defaultChatShortcut
+    var translationEnabled = true
+    var chatEnabled = true
+    var clipboard = ShortcutRegistry.defaultClipboardShortcut
+    var clipboardEnabled = false
+    var launcher = ShortcutRegistry.defaultLauncherShortcut
+    var launcherEnabled = false
+  }
+  private var lastShortcutConfig = ShortcutConfig()
   private var statusItem: NSStatusItem?
   private var positionMenuItems: [String: NSMenuItem] = [:]
   lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
@@ -123,7 +134,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // Reopening the bundle is an explicit user action, unlike the server-owned
   // background launch. Give the hidden helper a discoverable window entry.
   func applicationWillTerminate(_ notification: Notification) {
-    launcherPanel.destroyEventTap()
+    launcherPanel.shutdown()
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -268,6 +279,20 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       ])
       panel.openSettings()
     }
+    launcherPanel.onSingletonAcquired = { [weak self] in
+      guard let self else { return }
+      let cfg = self.lastShortcutConfig
+      self.registerShortcuts(
+        translation: cfg.translation,
+        chat: cfg.chat,
+        translationEnabled: cfg.translationEnabled,
+        chatEnabled: cfg.chatEnabled,
+        clipboard: cfg.clipboard,
+        clipboardEnabled: cfg.clipboardEnabled,
+        launcher: cfg.launcher,
+        launcherEnabled: cfg.launcherEnabled
+      )
+    }
     registerShortcuts()
     // Register the same action as a macOS Services provider. This makes
     // “AIH 翻译选中内容” available from Services in TextEdit, browsers and
@@ -319,6 +344,16 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
                          clipboardEnabled: Bool = false,
                          launcher: String = ShortcutRegistry.defaultLauncherShortcut,
                          launcherEnabled: Bool = false) {
+    lastShortcutConfig = ShortcutConfig(
+      translation: translation,
+      chat: chat,
+      translationEnabled: translationEnabled,
+      chatEnabled: chatEnabled,
+      clipboard: clipboard,
+      clipboardEnabled: clipboardEnabled,
+      launcher: launcher,
+      launcherEnabled: launcherEnabled
+    )
     _ = shortcutRegistry.update([
       ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
         self?.panel.openSettings()
@@ -583,7 +618,15 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       if launcherPanel.isAvailable {
         launcherPanel.show()
       } else {
-        emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": "启动器未启用或本机管理密钥未就绪，无法显示面板"])
+        let detail: String
+        if launcherPanel.isSingletonBlocked {
+          detail = "启动器已在另一个 AIH 桌面实例中运行（单例）"
+        } else if launcherPanel.isSingletonRetrying {
+          detail = "启动器正在等待前序实例释放单例锁，暂无法显示面板"
+        } else {
+          detail = "启动器未启用或本机管理密钥未就绪，无法显示面板"
+        }
+        emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": detail])
       }
     default: panel.receive(event)
     }

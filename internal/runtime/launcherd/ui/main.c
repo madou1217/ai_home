@@ -3,11 +3,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -317,7 +319,9 @@ typedef struct {
   guint stdin_watch_id;
   GString *stdin_buf;
 
+  int lock_fd;
   int sock_fd;
+  gboolean sock_bound;
   char *sock_path;
   GIOChannel *sock_channel;
   guint sock_watch_id;
@@ -355,6 +359,7 @@ static void write_daemon_line(const char *line) {
   fflush(stdout);
 }
 
+#if LAUNCHER_USE_X11
 static void write_daemon_status(const char *message) {
   if (!message || message[0] == '\0') {
     write_daemon_line("status\t");
@@ -366,6 +371,7 @@ static void write_daemon_status(const char *message) {
   g_free(line);
   g_free(b64);
 }
+#endif
 
 static char *decode_base64_utf8(const char *b64) {
   if (!b64 || b64[0] == '\0') {
@@ -1608,6 +1614,18 @@ static void launcher_show(LauncherState *st) {
   if (st->shutting_down) {
     return;
   }
+  if (st->is_visible && gtk_widget_get_visible(st->window) &&
+      st->anim_mode != ANIM_EXIT) {
+    st->last_show_us = g_get_monotonic_time();
+    gtk_window_present(GTK_WINDOW(st->window));
+#if LAUNCHER_USE_X11
+    if (st->has_x11_pos) {
+      x11_apply_window_position(st, 0, TRUE);
+    }
+#endif
+    gtk_widget_grab_focus(st->search_entry);
+    return;
+  }
   stop_animation(st);
   cancel_pending_open(st);
   show_inline_error(st, NULL);
@@ -2060,9 +2078,123 @@ static gboolean socket_accept_cb(GIOChannel *source, GIOCondition cond,
   return G_SOURCE_CONTINUE;
 }
 
+static void notify_existing_socket_show(const char *sock_path) {
+  if (!sock_path || sock_path[0] == '\0') {
+    return;
+  }
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  if (strlen(sock_path) >= sizeof(addr.sun_path)) {
+    return;
+  }
+  int cfd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  if (cfd < 0) {
+    return;
+  }
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = SOCKET_CLIENT_TIMEOUT_MS * 1000;
+  if (setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) {
+    /* best effort timeout */
+  }
+  if (setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0) {
+    /* best effort timeout */
+  }
+
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
+  if (connect(cfd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+    static const char msg[] = "show\n";
+    size_t total = sizeof(msg) - 1;
+    size_t sent = 0;
+    while (sent < total) {
+      ssize_t n = send(cfd, msg + sent, total - sent, MSG_NOSIGNAL);
+      if (n > 0) {
+        sent += (size_t)n;
+      } else if (n < 0 && errno == EINTR) {
+        continue;
+      } else {
+        break;
+      }
+    }
+    char reply[32];
+    ssize_t rn = recv(cfd, reply, sizeof(reply), 0);
+    (void)rn;
+  }
+  close(cfd);
+}
+
+/* Acquires exclusive non-blocking flock on <socket>.lock before any unlink/bind.
+ * Returns:
+ *   1 if lock acquired (st->lock_fd >= 0),
+ *   0 if another instance holds the lock (best-effort show sent; caller exits 0),
+ *  -1 on unexpected filesystem/lock error.
+ */
+static int acquire_singleton_lock(LauncherState *st) {
+  st->lock_fd = -1;
+  if (!st->sock_path || st->sock_path[0] == '\0') {
+    st->sock_path = resolve_socket_path();
+  }
+  if (!st->sock_path || st->sock_path[0] == '\0') {
+    return -1;
+  }
+  char *dir = g_path_get_dirname(st->sock_path);
+  if (dir && dir[0] != '\0') {
+    g_mkdir_with_parents(dir, 0700);
+  }
+  g_free(dir);
+
+  char *lock_path = g_strdup_printf("%s.lock", st->sock_path);
+  mode_t prev_umask = umask(0077);
+  int fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+  umask(prev_umask);
+  g_free(lock_path);
+  if (fd < 0) {
+    return -1;
+  }
+  if (fchmod(fd, 0600) != 0) {
+    /* best effort permission tightening */
+  }
+
+  int rc = -1;
+  do {
+    rc = flock(fd, LOCK_EX | LOCK_NB);
+  } while (rc != 0 && errno == EINTR);
+
+  if (rc == 0) {
+    st->lock_fd = fd;
+    return 1;
+  }
+
+  int saved_errno = errno;
+  close(fd);
+  if (saved_errno == EWOULDBLOCK || saved_errno == EAGAIN) {
+    notify_existing_socket_show(st->sock_path);
+    return 0;
+  }
+  return -1;
+}
+
+static void release_singleton_lock(LauncherState *st) {
+  if (st->lock_fd >= 0) {
+    int fd = st->lock_fd;
+    st->lock_fd = -1;
+    if (flock(fd, LOCK_UN) != 0) {
+      /* best effort unlock before close */
+    }
+    close(fd);
+  }
+}
+
 static void setup_control_socket(LauncherState *st) {
   st->sock_fd = -1;
-  st->sock_path = resolve_socket_path();
+  st->sock_bound = FALSE;
+  if (st->lock_fd < 0) {
+    return;
+  }
+  if (!st->sock_path || st->sock_path[0] == '\0') {
+    st->sock_path = resolve_socket_path();
+  }
   if (!st->sock_path || st->sock_path[0] == '\0') {
     return;
   }
@@ -2083,6 +2215,7 @@ static void setup_control_socket(LauncherState *st) {
     return;
   }
 
+  /* Safe to unlink any stale socket path only after holding <socket>.lock. */
   unlink(st->sock_path);
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, st->sock_path, sizeof(addr.sun_path) - 1);
@@ -2094,10 +2227,14 @@ static void setup_control_socket(LauncherState *st) {
     close(fd);
     return;
   }
-  chmod(st->sock_path, 0600);
+  st->sock_bound = TRUE;
+  if (chmod(st->sock_path, 0600) != 0) {
+    /* best effort permission tightening */
+  }
   if (listen(fd, 8) != 0) {
     close(fd);
     unlink(st->sock_path);
+    st->sock_bound = FALSE;
     return;
   }
 
@@ -2121,9 +2258,13 @@ static void cleanup_control_socket(LauncherState *st) {
     st->sock_fd = -1;
   }
   if (st->sock_path) {
-    unlink(st->sock_path);
+    if (st->sock_bound && st->lock_fd >= 0) {
+      unlink(st->sock_path);
+    }
+    st->sock_bound = FALSE;
     g_clear_pointer(&st->sock_path, g_free);
   }
+  release_singleton_lock(st);
 }
 
 /* =========================================================================
@@ -2468,6 +2609,8 @@ int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
 
+  signal(SIGPIPE, SIG_IGN);
+
   /* Force X11 GDK backend when DISPLAY is present so XGrabKey works cleanly */
   const char *display_env = g_getenv("DISPLAY");
   if (display_env && display_env[0] != '\0') {
@@ -2476,8 +2619,24 @@ int main(int argc, char **argv) {
 
   LauncherState st;
   memset(&st, 0, sizeof(st));
+  st.lock_fd = -1;
   st.sock_fd = -1;
+  st.sock_bound = FALSE;
   st.selected_index = -1;
+
+  st.sock_path = resolve_socket_path();
+  int lock_rc = acquire_singleton_lock(&st);
+  if (lock_rc == 0) {
+    g_clear_pointer(&st.sock_path, g_free);
+    return 0;
+  }
+  if (lock_rc < 0) {
+    fprintf(stderr, "aih-launch-ui: failed to acquire singleton lock for %s\n",
+            st.sock_path ? st.sock_path : "(null)");
+    g_clear_pointer(&st.sock_path, g_free);
+    return 1;
+  }
+
   st.apps = g_ptr_array_new_with_free_func(app_item_free);
   st.staging_apps = g_ptr_array_new_with_free_func(app_item_free);
   st.filtered = g_ptr_array_new_with_free_func(filtered_item_free);

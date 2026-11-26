@@ -151,12 +151,22 @@ internal sealed class TranslationApplicationContext : ApplicationContext
 {
     private const int HotKeyId = 0x4149;
     private const int LauncherHotKeyId = 0x414A;
+    private const string LauncherSingletonMutexName = "Local\\AIH-Launcher-Singleton-v1";
+    private const int ERROR_ALREADY_EXISTS = 183;
+    private const int ERROR_ACCESS_DENIED = 5;
+    private const int LauncherSingletonRetryIntervalMs = 250;
+    private const long LauncherSingletonRetryWindowMs = 5000;
     private readonly object outputLock = new();
     private readonly bool fullApp;
     private readonly TranslationWindow window;
     private readonly LauncherWindow launcherWindow;
     private readonly HotKeyWindow hotKeyWindow;
     private readonly LowLevelLauncherHook launcherHook = new();
+    private IntPtr launcherSingletonMutex = IntPtr.Zero;
+    private bool launcherSingletonBlocked;
+    private bool launcherSingletonRetryExhausted;
+    private System.Windows.Forms.Timer? launcherSingletonRetryTimer;
+    private long launcherSingletonRetryDeadlineMs;
     private string target = "zh-Hans";
     private string shortcut = "Ctrl+Alt+T";
     private string launcherShortcut = "Alt+Space";
@@ -285,7 +295,11 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                             CaptureModes = new[] { "shortcut-clipboard" },
                             Permission = "clipboard-shortcut",
                             Shortcut = shortcut,
-                            Detail = "启动器未启用或本机管理密钥未就绪，无法显示面板"
+                            Detail = launcherSingletonBlocked
+                                ? "启动器已在另一个 AIH 桌面实例中运行（单例）"
+                                : (launcherSingletonRetryTimer is not null
+                                    ? "启动器正在等待前序实例释放单例锁，暂无法显示面板"
+                                    : "启动器未启用或本机管理密钥未就绪，无法显示面板")
                         });
                     }
                     break;
@@ -338,6 +352,152 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         }
     }
 
+    private bool TryAcquireLauncherSingleton(out bool alreadyExists, out int win32Error)
+    {
+        alreadyExists = false;
+        win32Error = 0;
+        if (launcherSingletonMutex != IntPtr.Zero)
+        {
+            return true;
+        }
+        var handle = CreateMutexW(IntPtr.Zero, true, LauncherSingletonMutexName);
+        var err = Marshal.GetLastWin32Error();
+        if (handle == IntPtr.Zero)
+        {
+            win32Error = err;
+            alreadyExists = err == ERROR_ALREADY_EXISTS || err == ERROR_ACCESS_DENIED;
+            return false;
+        }
+        if (err == ERROR_ALREADY_EXISTS)
+        {
+            CloseHandle(handle);
+            alreadyExists = true;
+            win32Error = err;
+            return false;
+        }
+        launcherSingletonMutex = handle;
+        return true;
+    }
+
+    private void ReleaseLauncherSingleton()
+    {
+        if (launcherSingletonMutex == IntPtr.Zero) return;
+        var handle = launcherSingletonMutex;
+        launcherSingletonMutex = IntPtr.Zero;
+        ReleaseMutex(handle);
+        CloseHandle(handle);
+    }
+
+    private void StartLauncherSingletonRetry()
+    {
+        StopLauncherSingletonRetry();
+        launcherSingletonRetryDeadlineMs = Environment.TickCount64 + LauncherSingletonRetryWindowMs;
+        launcherSingletonRetryTimer = new System.Windows.Forms.Timer { Interval = LauncherSingletonRetryIntervalMs };
+        launcherSingletonRetryTimer.Tick += OnLauncherSingletonRetryTick;
+        launcherSingletonRetryTimer.Start();
+    }
+
+    private void StopLauncherSingletonRetry()
+    {
+        if (launcherSingletonRetryTimer is null) return;
+        launcherSingletonRetryTimer.Stop();
+        launcherSingletonRetryTimer.Dispose();
+        launcherSingletonRetryTimer = null;
+        launcherSingletonRetryDeadlineMs = 0;
+    }
+
+    private void OnLauncherSingletonRetryTick(object? sender, EventArgs e)
+    {
+        if (window.IsDisposed || launcherWindow.IsDisposed)
+        {
+            StopLauncherSingletonRetry();
+            return;
+        }
+        var wantsAvailable = launcherEnabled && !string.IsNullOrWhiteSpace(launcherOrigin) && !string.IsNullOrWhiteSpace(launcherKey);
+        if (!wantsAvailable)
+        {
+            StopLauncherSingletonRetry();
+            return;
+        }
+        if (TryAcquireLauncherSingleton(out var alreadyExists, out var mutexErr))
+        {
+            StopLauncherSingletonRetry();
+            launcherSingletonBlocked = false;
+            launcherSingletonRetryExhausted = false;
+            var detail = ActivateLauncherAfterSingletonAcquired();
+            Emit(new DesktopEvent
+            {
+                Version = 1,
+                Type = "status",
+                Trusted = true,
+                Platform = "win32",
+                CaptureModes = new[] { "shortcut-clipboard" },
+                Permission = "clipboard-shortcut",
+                Shortcut = shortcut,
+                Detail = string.IsNullOrEmpty(detail) ? null : detail
+            });
+            return;
+        }
+        if (!alreadyExists)
+        {
+            StopLauncherSingletonRetry();
+            launcherSingletonBlocked = true;
+            launcherSingletonRetryExhausted = true;
+            launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, false);
+            Emit(new DesktopEvent
+            {
+                Version = 1,
+                Type = "status",
+                Trusted = true,
+                Platform = "win32",
+                CaptureModes = new[] { "shortcut-clipboard" },
+                Permission = "clipboard-shortcut",
+                Shortcut = shortcut,
+                Detail = $"启动器单例互斥锁创建失败（错误 {mutexErr}），已禁用本实例启动器"
+            });
+            return;
+        }
+        if (Environment.TickCount64 >= launcherSingletonRetryDeadlineMs)
+        {
+            StopLauncherSingletonRetry();
+            launcherSingletonBlocked = true;
+            launcherSingletonRetryExhausted = true;
+            launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, false);
+            Emit(new DesktopEvent
+            {
+                Version = 1,
+                Type = "status",
+                Trusted = true,
+                Platform = "win32",
+                CaptureModes = new[] { "shortcut-clipboard" },
+                Permission = "clipboard-shortcut",
+                Shortcut = shortcut,
+                Detail = "启动器已在另一个 AIH 桌面实例中运行（单例）"
+            });
+        }
+    }
+
+    private string? ActivateLauncherAfterSingletonAcquired()
+    {
+        hotKeyWindow.Unregister(LauncherHotKeyId);
+        launcherHook.Uninstall();
+
+        launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, true);
+        launcherWindow.WarmCatalog();
+
+        if (hotKeyWindow.TryRegister(LauncherHotKeyId, launcherShortcut, OnLauncherHotKey, out var regErr))
+        {
+            return null;
+        }
+
+        if (launcherHook.TryInstall(window, launcherShortcut, OnLauncherHotKey, out var hookErr))
+        {
+            return $"启动器 {launcherShortcut} 注册热键失败（错误 {regErr}），已自动启用低级键盘钩子拦截";
+        }
+
+        return $"启动器快捷键 {launcherShortcut} 不可用（RegisterHotKey={regErr}, Hook={hookErr}），建议改用 Ctrl+Space 或使用 CLI aih launch";
+    }
+
     private string? ConfigureLauncher(JsonElement root)
     {
         var hasLauncherFields = root.TryGetProperty("launcherEnabled", out _)
@@ -358,35 +518,58 @@ internal sealed class TranslationApplicationContext : ApplicationContext
             launcherEnabled = enabledProp.GetBoolean();
         }
 
-        var available = launcherEnabled && !string.IsNullOrWhiteSpace(launcherOrigin) && !string.IsNullOrWhiteSpace(launcherKey);
-        launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, available);
-
         hotKeyWindow.Unregister(LauncherHotKeyId);
         launcherHook.Uninstall();
 
-        if (!available)
+        var wantsAvailable = launcherEnabled && !string.IsNullOrWhiteSpace(launcherOrigin) && !string.IsNullOrWhiteSpace(launcherKey);
+        if (!wantsAvailable)
         {
+            StopLauncherSingletonRetry();
+            launcherSingletonBlocked = false;
+            launcherSingletonRetryExhausted = false;
+            ReleaseLauncherSingleton();
+            launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, false);
             return null;
         }
 
-        launcherWindow.WarmCatalog();
-
-        if (hotKeyWindow.TryRegister(LauncherHotKeyId, launcherShortcut, OnLauncherHotKey, out var regErr))
+        if (TryAcquireLauncherSingleton(out var alreadyExists, out var mutexErr))
         {
+            StopLauncherSingletonRetry();
+            launcherSingletonBlocked = false;
+            launcherSingletonRetryExhausted = false;
+            return ActivateLauncherAfterSingletonAcquired();
+        }
+
+        launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, false);
+
+        if (!alreadyExists)
+        {
+            StopLauncherSingletonRetry();
+            launcherSingletonBlocked = true;
+            launcherSingletonRetryExhausted = true;
+            return $"启动器单例互斥锁创建失败（错误 {mutexErr}），已禁用本实例启动器";
+        }
+
+        if (launcherSingletonRetryTimer is not null)
+        {
+            // Retry window already active; keep retrying until the 5s deadline expires.
             return null;
         }
 
-        if (launcherHook.TryInstall(window, launcherShortcut, OnLauncherHotKey, out var hookErr))
+        if (!launcherSingletonRetryExhausted)
         {
-            return $"启动器 {launcherShortcut} 注册热键失败（错误 {regErr}），已自动启用低级键盘钩子拦截";
+            launcherSingletonBlocked = false;
+            StartLauncherSingletonRetry();
+            return null;
         }
 
-        return $"启动器快捷键 {launcherShortcut} 不可用（RegisterHotKey={regErr}, Hook={hookErr}），建议改用 Ctrl+Space 或使用 CLI aih launch";
+        launcherSingletonBlocked = true;
+        return "启动器已在另一个 AIH 桌面实例中运行（单例）";
     }
 
     private void OnLauncherHotKey()
     {
-        if (!launcherWindow.IsDisposed)
+        if (!launcherWindow.IsDisposed && launcherWindow.IsAvailable)
         {
             launcherWindow.ToggleLauncher();
         }
@@ -551,8 +734,10 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     private void OnWindowClosed()
     {
         FinishCapture();
+        StopLauncherSingletonRetry();
         launcherHook.Dispose();
         hotKeyWindow.Dispose();
+        ReleaseLauncherSingleton();
         launcherWindow.Dispose();
         window.Dispose();
         ExitThread();
@@ -563,8 +748,10 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         if (disposing)
         {
             FinishCapture();
+            StopLauncherSingletonRetry();
             launcherHook.Dispose();
             hotKeyWindow.Dispose();
+            ReleaseLauncherSingleton();
             if (!launcherWindow.IsDisposed) launcherWindow.Dispose();
             if (!window.IsDisposed) window.Dispose();
         }
@@ -635,6 +822,14 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalFree(IntPtr memory);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateMutexW")]
+    private static extern IntPtr CreateMutexW(IntPtr lpMutexAttributes, [MarshalAs(UnmanagedType.Bool)] bool bInitialOwner, string lpName);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReleaseMutex(IntPtr hMutex);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
 }
 
 internal sealed class HotKeyWindow : NativeWindow, IDisposable
@@ -1836,7 +2031,7 @@ internal sealed class LauncherWindow : Form
         {
             HideAnimated(restoreFocus: true);
         }
-        else
+        else if (IsAvailable)
         {
             ShowLauncher();
         }
@@ -1844,6 +2039,14 @@ internal sealed class LauncherWindow : Form
 
     public void ShowLauncher()
     {
+        if (!IsAvailable) return;
+        if (Visible && animPhase != AnimPhase.Hiding)
+        {
+            suppressDeactivateUntilUtc = DateTime.UtcNow.AddMilliseconds(240);
+            ForceForeground();
+            searchBox.Focus();
+            return;
+        }
         errorTimer.Stop();
         statusMessage = string.Empty;
         statusIsError = false;

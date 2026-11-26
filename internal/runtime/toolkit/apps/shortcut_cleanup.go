@@ -9,254 +9,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/winshell"
 )
-
-// ShortcutResidueCriteria holds the client display names and Windows install
-// root directories used to match leftover Start Menu / Desktop shortcuts for a
-// provider after uninstall.
-type ShortcutResidueCriteria struct {
-	Provider     string
-	ClientNames  []string
-	InstallRoots []string
-}
 
 // ShortcutMatchResult partitions enumerated shortcuts into matched residue and
 // unmatched broken shortcuts (reported for visibility, never deleted).
 type ShortcutMatchResult struct {
 	Matched    []winshell.Shortcut
 	KeptBroken []winshell.Shortcut
-}
-
-// ShortcutCleanupResult is the JSON response for
-// POST /v1/management/webui/toolkit/apps/cleanup and the internal cleanup helper.
-type ShortcutCleanupResult struct {
-	OK          bool     `json:"ok"`
-	Provider    string   `json:"provider,omitempty"`
-	Removed     []string `json:"removed"`
-	RemovedDirs []string `json:"removedDirs,omitempty"`
-	KeptBroken  []string `json:"keptBroken"`
-	Warnings    []string `json:"warnings,omitempty"`
-	Error       string   `json:"error,omitempty"`
-	Message     string   `json:"message,omitempty"`
-}
-
-func normalizeShortcutProvider(raw string) string {
-	norm := strings.ToLower(strings.TrimSpace(raw))
-	norm = strings.TrimSuffix(norm, "-desktop")
-	return norm
-}
-
-// ResolveShortcutResidueCriteria derives the client names and expanded Windows
-// install roots for one provider (when provider != "") or all known providers
-// (when provider == ""). The second return value is false only when an explicit
-// non-empty provider is unknown.
-func ResolveShortcutResidueCriteria(provider string, opts Options) ([]ShortcutResidueCriteria, bool) {
-	return resolveShortcutResidueCriteria(provider, opts, false)
-}
-
-func resolveShortcutResidueCriteria(provider string, opts Options, excludeLiveRoots bool) ([]ShortcutResidueCriteria, bool) {
-	cat := resolveCatalog(opts)
-	winOpts := opts
-	winOpts.Platform = platformWindows
-	genericRoots := buildGenericWindowsContainerRoots(winOpts)
-
-	norm := normalizeShortcutProvider(provider)
-	if norm != "" {
-		def, hasDef := resolveProviderDefinition(cat, norm)
-		spec := getInstaller(norm)
-		ide := getIDEClient(norm)
-		if !hasDef && spec == nil && ide == nil {
-			return nil, false
-		}
-		c := buildProviderShortcutCriteria(norm, def, hasDef, spec, ide, winOpts, genericRoots, excludeLiveRoots)
-		if len(c.ClientNames) == 0 && len(c.InstallRoots) == 0 {
-			return nil, true
-		}
-		return []ShortcutResidueCriteria{c}, true
-	}
-
-	seen := make(map[string]struct{})
-	var list []ShortcutResidueCriteria
-	addProvider := func(id string) {
-		pid := strings.ToLower(strings.TrimSpace(id))
-		if pid == "" {
-			return
-		}
-		if _, dup := seen[pid]; dup {
-			return
-		}
-		seen[pid] = struct{}{}
-		def, hasDef := resolveProviderDefinition(cat, pid)
-		c := buildProviderShortcutCriteria(pid, def, hasDef, getInstaller(pid), getIDEClient(pid), winOpts, genericRoots, excludeLiveRoots)
-		if len(c.ClientNames) > 0 || len(c.InstallRoots) > 0 {
-			list = append(list, c)
-		}
-	}
-	if cat != nil {
-		for _, def := range cat.List() {
-			addProvider(def.ID)
-		}
-	}
-	for _, ide := range listIDEClients() {
-		addProvider(ide.ID)
-	}
-	return list, true
-}
-
-func buildProviderShortcutCriteria(
-	provider string,
-	def providers.Definition,
-	hasDef bool,
-	spec *providerInstallerSpec,
-	ide *IDEClientSpec,
-	winOpts Options,
-	genericRoots map[string]struct{},
-	excludeLiveRoots bool,
-) ShortcutResidueCriteria {
-	var names []string
-	var roots []string
-
-	addBundleNames := func(bundles []string) {
-		for _, b := range bundles {
-			trimmed := strings.TrimSpace(b)
-			if trimmed == "" {
-				continue
-			}
-			if strings.HasSuffix(strings.ToLower(trimmed), ".app") {
-				trimmed = strings.TrimSpace(trimmed[:len(trimmed)-4])
-			}
-			if trimmed != "" {
-				names = append(names, trimmed)
-			}
-		}
-	}
-
-	if hasDef && def.CLI != nil && def.CLI.DesktopClient != nil {
-		dc := def.CLI.DesktopClient
-		if dc.Windows != nil {
-			names = append(names, dc.Windows.ClientName)
-			names = append(names, dc.Windows.DisplayNames...)
-			for _, rawInstall := range dc.Windows.InstallPaths {
-				expanded := expandDesktopToken(rawInstall, winOpts)
-				if expanded == "" {
-					continue
-				}
-				if excludeLiveRoots && fileExists(expanded) {
-					continue
-				}
-				root := deriveInstallRoot(expanded, genericRoots)
-				if root != "" {
-					roots = append(roots, root)
-				}
-			}
-		}
-		if dc.MacOS != nil {
-			names = append(names, dc.MacOS.ClientName)
-			addBundleNames(dc.MacOS.BundleNames)
-		}
-	}
-
-	if spec != nil && spec.Desktop != nil {
-		if winDesc := spec.Desktop[platformWindows]; winDesc != nil {
-			names = append(names, winDesc.WindowsDisplayNames...)
-		}
-	}
-
-	if ide != nil {
-		names = append(names, ide.Name)
-		names = append(names, ide.WindowsDisplayNames...)
-		addBundleNames(ide.MacBundleNames)
-		bases := []string{
-			expandDesktopToken("{localAppData}/Programs", winOpts),
-			expandDesktopToken("{programFiles}", winOpts),
-			expandDesktopToken("{programFilesX86}", winOpts),
-		}
-		for _, base := range uniqueStringsCaseInsensitive(bases) {
-			for _, prog := range ide.WindowsProgramNames {
-				prog = strings.TrimSpace(prog)
-				if prog == "" {
-					continue
-				}
-				candidateRoot := joinPlatformPath(platformWindows, base, prog)
-				if excludeLiveRoots && ideRootHasLiveExecutable(candidateRoot, ide.WindowsExecutableNames) {
-					continue
-				}
-				if root := deriveInstallRoot(candidateRoot, genericRoots); root != "" {
-					roots = append(roots, root)
-				}
-			}
-		}
-	}
-
-	return ShortcutResidueCriteria{
-		Provider:     provider,
-		ClientNames:  uniqueStringsCaseInsensitive(names),
-		InstallRoots: uniquePathsCaseInsensitive(roots),
-	}
-}
-
-func ideRootHasLiveExecutable(root string, execNames []string) bool {
-	for _, exe := range execNames {
-		exe = strings.TrimSpace(exe)
-		if exe == "" {
-			continue
-		}
-		if fileExists(joinPlatformPath(platformWindows, root, exe)) {
-			return true
-		}
-	}
-	return false
-}
-
-func buildGenericWindowsContainerRoots(winOpts Options) map[string]struct{} {
-	raw := []string{
-		ResolveHostHome(winOpts),
-		expandDesktopToken("{localAppData}", winOpts),
-		expandDesktopToken("{localAppData}/Programs", winOpts),
-		expandDesktopToken("{appData}", winOpts),
-		expandDesktopToken("{programFiles}", winOpts),
-		expandDesktopToken("{programFilesX86}", winOpts),
-	}
-	set := make(map[string]struct{}, len(raw))
-	for _, item := range raw {
-		if norm := normalizeMatchPath(item); norm != "" {
-			set[norm] = struct{}{}
-		}
-	}
-	return set
-}
-
-func deriveInstallRoot(expanded string, genericRoots map[string]struct{}) string {
-	trimmed := strings.TrimSpace(expanded)
-	if trimmed == "" {
-		return ""
-	}
-	candidate := trimmed
-	if hasExecutableFileExt(trimmed) {
-		parent := windowsParentDir(trimmed)
-		if parent != "" {
-			if normParent := normalizeMatchPath(parent); normParent != "" && !isUnsafeContainerRoot(normParent, genericRoots) {
-				candidate = parent
-			}
-		}
-	}
-	norm := normalizeMatchPath(candidate)
-	if norm == "" || isUnsafeContainerRoot(norm, genericRoots) {
-		return ""
-	}
-	return candidate
-}
-
-func isUnsafeContainerRoot(norm string, genericRoots map[string]struct{}) bool {
-	if norm == "" || norm == "/" || len(norm) <= 2 {
-		return true
-	}
-	if _, ok := genericRoots[norm]; ok {
-		return true
-	}
-	return false
 }
 
 // MatchShortcutResidue evaluates enumerated Windows shortcuts against provider
@@ -267,10 +27,10 @@ func isUnsafeContainerRoot(norm string, genericRoots map[string]struct{}) bool {
 //	(a) TargetPath is located under any InstallRoot (case-insensitive); OR
 //	(b) TargetPath does not exist (broken) AND shortcut display name (without
 //	    .lnk) equals any ClientName or starts with "<ClientName> "
-//	    (case-insensitive).
+//	    (case-insensitive, excluding ExcludeNames).
 //
 // Unmatched broken .lnk shortcuts are returned in KeptBroken for reporting only.
-func MatchShortcutResidue(shortcuts []winshell.Shortcut, criteria []ShortcutResidueCriteria) ShortcutMatchResult {
+func MatchShortcutResidue(shortcuts []winshell.Shortcut, criteria []ProviderResidueCriteria) ShortcutMatchResult {
 	var res ShortcutMatchResult
 	seen := make(map[string]struct{}, len(shortcuts))
 	for _, sc := range shortcuts {
@@ -300,13 +60,13 @@ func MatchShortcutResidue(shortcuts []winshell.Shortcut, criteria []ShortcutResi
 	return res
 }
 
-func matchesAnyCriteria(sc winshell.Shortcut, name string, broken bool, criteria []ShortcutResidueCriteria) bool {
+func matchesAnyCriteria(sc winshell.Shortcut, name string, broken bool, criteria []ProviderResidueCriteria) bool {
 	target := strings.TrimSpace(sc.TargetPath)
 	for _, c := range criteria {
 		if target != "" && isUnderAnyRoot(target, c.InstallRoots, false) {
 			return true
 		}
-		if broken && shortcutNameMatchesAnyClient(name, c.ClientNames) {
+		if broken && shortcutNameMatchesAnyClient(name, c.ClientNames, c.ExcludeNames) {
 			return true
 		}
 	}
@@ -384,24 +144,33 @@ func shortcutDisplayName(sc winshell.Shortcut) string {
 	return name
 }
 
-func shortcutNameMatchesAnyClient(name string, clientNames []string) bool {
+func shortcutNameMatchesAnyClient(name string, clientNames, excludeNames []string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false
 	}
+	for _, excluded := range excludeNames {
+		if shortcutNameMatchesOne(name, excluded) {
+			return false
+		}
+	}
 	for _, client := range clientNames {
-		client = strings.TrimSpace(client)
-		if client == "" {
-			continue
-		}
-		if strings.EqualFold(name, client) {
-			return true
-		}
-		if len(name) > len(client) && strings.EqualFold(name[:len(client)], client) && name[len(client)] == ' ' {
+		if shortcutNameMatchesOne(name, client) {
 			return true
 		}
 	}
 	return false
+}
+
+func shortcutNameMatchesOne(name, client string) bool {
+	client = strings.TrimSpace(client)
+	if client == "" {
+		return false
+	}
+	if strings.EqualFold(name, client) {
+		return true
+	}
+	return len(name) > len(client) && strings.EqualFold(name[:len(client)], client) && name[len(client)] == ' '
 }
 
 func isUnderAnyRoot(target string, roots []string, strict bool) bool {

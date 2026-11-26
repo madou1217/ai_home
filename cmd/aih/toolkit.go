@@ -60,7 +60,7 @@ func runToolkitCleanupResidue(ctx context.Context, arguments []string, runtime c
 		}
 	}
 
-	res := apps.CleanupShortcutResidue(ctx, provider, apps.Options{
+	res := apps.CleanupProviderResidue(ctx, provider, apps.Options{
 		HostHomeDir: hostHome,
 		Env:         env,
 	})
@@ -76,12 +76,26 @@ func runToolkitCleanupResidue(ctx context.Context, arguments []string, runtime c
 	if !res.OK {
 		return fmt.Errorf("%s", nonEmptyToolkitError(res))
 	}
-	if len(res.Removed) == 0 {
-		_, _ = fmt.Fprintln(runtime.stdout, "[aih] 未发现需要清理的残留快捷方式。")
+	if len(res.RemovedShortcuts) == 0 && len(res.RemovedRegistry) == 0 {
+		_, _ = fmt.Fprintln(runtime.stdout, "[aih] 未发现需要清理的残留快捷方式或注册表项。")
 	} else {
-		_, _ = fmt.Fprintf(runtime.stdout, "[aih] 已清理 %d 个残留快捷方式:\n", len(res.Removed))
-		for _, p := range res.Removed {
-			_, _ = fmt.Fprintf(runtime.stdout, "  - %s\n", p)
+		if len(res.RemovedShortcuts) > 0 {
+			_, _ = fmt.Fprintf(runtime.stdout, "[aih] 已清理 %d 个残留快捷方式:\n", len(res.RemovedShortcuts))
+			for _, p := range res.RemovedShortcuts {
+				_, _ = fmt.Fprintf(runtime.stdout, "  - %s\n", p)
+			}
+		}
+		if len(res.RemovedRegistry) > 0 {
+			_, _ = fmt.Fprintf(runtime.stdout, "[aih] 已清理 %d 个残留注册表项:\n", len(res.RemovedRegistry))
+			for _, p := range res.RemovedRegistry {
+				_, _ = fmt.Fprintf(runtime.stdout, "  - %s\n", p)
+			}
+		}
+		if len(res.RemovedDirs) > 0 {
+			_, _ = fmt.Fprintf(runtime.stdout, "[aih] 已清理 %d 个空目录:\n", len(res.RemovedDirs))
+			for _, p := range res.RemovedDirs {
+				_, _ = fmt.Fprintf(runtime.stdout, "  - %s\n", p)
+			}
 		}
 	}
 	if len(res.KeptBroken) > 0 {
@@ -96,20 +110,20 @@ func runToolkitCleanupResidue(ctx context.Context, arguments []string, runtime c
 	return nil
 }
 
-func nonEmptyToolkitError(res apps.ShortcutCleanupResult) string {
+func nonEmptyToolkitError(res apps.ResidueCleanupResult) string {
 	if strings.TrimSpace(res.Message) != "" {
 		return res.Message
 	}
 	if strings.TrimSpace(res.Error) != "" {
 		return res.Error
 	}
-	return "shortcut_cleanup_failed"
+	return "residue_cleanup_failed"
 }
 
 func writeToolkitUsage(runtime commandRuntime) {
 	_, _ = fmt.Fprint(runtime.stdout, `用法: aih toolkit cleanup-residue [--provider <id>] [--json]
 
-清理 Windows 开始菜单/桌面中已卸载应用的残留 .lnk 快捷方式（仅匹配受管应用，保留无关断链）。
+清理 Windows 开始菜单/桌面及当前用户注册表（Uninstall / App Paths / Run / RunOnce）中已卸载应用的残留项（仅匹配受管应用，保留无关断链与无关键；HKLM 项仅提示不提权）。
   --provider <id>  仅清理指定 provider（如 agy）；省略时对所有已知 provider 执行
   --json           以 JSON 输出结果
 `)

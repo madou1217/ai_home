@@ -428,6 +428,7 @@ type JobResultView struct {
 	CLIPath          string   `json:"cliPath"`
 	ExecutablePath   string   `json:"executablePath"`
 	RemovedShortcuts []string `json:"removedShortcuts,omitempty"`
+	RemovedRegistry  []string `json:"removedRegistry,omitempty"`
 	Message          string   `json:"message,omitempty"`
 }
 

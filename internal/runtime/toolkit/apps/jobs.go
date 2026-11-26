@@ -533,11 +533,12 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 	opts := m.effectiveOpts(input)
 	var finalErr string
 	var finalResult *JobResultView
+	var preUninstallPaths []string
 	succeeded := false
 
 	defer func() {
-		if succeeded && target.Action == "uninstall" && target.Kind == "desktop" && resolvePlatform(opts) == platformWindows {
-			finalResult = m.cleanupUninstallShortcuts(ctx, jobID, target, opts, finalResult)
+		if succeeded && target.Action == "uninstall" && (target.Kind == "desktop" || target.Kind == "cli") && resolvePlatform(opts) == platformWindows {
+			finalResult = m.cleanupUninstallResidue(ctx, jobID, target, opts, preUninstallPaths, finalResult)
 		}
 		m.finalizeJob(jobID, target, succeeded, finalResult, finalErr)
 	}()
@@ -562,7 +563,10 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 	}
 
 	if target.Provider == "codex" && target.Kind == "cli" && target.Action == "uninstall" {
-		if _, receipt, err := codexruntime.Current(ResolveHostHome(opts)); receipt != nil || err != nil {
+		if binPath, receipt, err := codexruntime.Current(ResolveHostHome(opts)); receipt != nil || err != nil {
+			if strings.TrimSpace(binPath) != "" {
+				preUninstallPaths = append(preUninstallPaths, strings.TrimSpace(binPath))
+			}
 			attempt, result, ok := executeCodexRuntimeUninstall(opts)
 			m.appendAttempt(jobID, attempt, 85, attempt.Label)
 			succeeded, finalResult, finalErr = ok, result, attempt.Error
@@ -587,11 +591,11 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 		// 显式代理也要把匿名入口交给计划构建：winget 一类客户端只能用无认证代理。
 		opts.AnonymousProxyURL = input.ProxyAnonymousURL
 		outcome := m.runLifecyclePlans(ctx, jobID, target, opts, true)
-		succeeded, finalResult, finalErr = outcome.ok, outcome.result, outcome.err
+		succeeded, finalResult, finalErr, preUninstallPaths = outcome.ok, outcome.result, outcome.err, outcome.preUninstallPaths
 		return
 	}
 	outcome := m.runWithAutoEgress(ctx, jobID, target, opts)
-	succeeded, finalResult, finalErr = outcome.ok, outcome.result, outcome.err
+	succeeded, finalResult, finalErr, preUninstallPaths = outcome.ok, outcome.result, outcome.err, outcome.preUninstallPaths
 }
 
 // lifecycleOutcome 是一轮生命周期计划执行的完整结果。
@@ -599,9 +603,10 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 // 单独成类型而不是散落成多个返回值：自动代理每一轮都要完整复现「计划失败
 // 文案 + 成功结果」，用零散变量会在轮次之间串味。
 type lifecycleOutcome struct {
-	ok     bool
-	err    string
-	result *JobResultView
+	ok                bool
+	err               string
+	result            *JobResultView
+	preUninstallPaths []string
 }
 
 // runLifecyclePlans 解析并执行一次生命周期计划。
@@ -626,11 +631,23 @@ func (m *JobManager) runLifecyclePlans(
 	}
 	var installedPath string
 	var installedRecord *DesktopRecord
+	var preUninstallPaths []string
 	if target.Action != "install" {
 		if target.Kind == "cli" {
 			installedPath = ResolveProviderCLIPath(target.Provider, opts)
+			if strings.TrimSpace(installedPath) != "" {
+				preUninstallPaths = append(preUninstallPaths, strings.TrimSpace(installedPath))
+			}
 		} else {
 			installedRecord = FindDesktopClientRecord(ctx, target.Provider, opts)
+			if installedRecord != nil {
+				if strings.TrimSpace(installedRecord.ExecutablePath) != "" {
+					preUninstallPaths = append(preUninstallPaths, strings.TrimSpace(installedRecord.ExecutablePath))
+				}
+				if strings.TrimSpace(installedRecord.DisplayPath) != "" {
+					preUninstallPaths = append(preUninstallPaths, strings.TrimSpace(installedRecord.DisplayPath))
+				}
+			}
 		}
 	}
 	plans := ResolveLifecyclePlans(target.Provider, target.Kind, target.Action, opts, installedPath, installedRecord)
@@ -690,7 +707,7 @@ func (m *JobManager) runLifecyclePlans(
 		}
 		m.appendAttempt(jobID, attempt, pct, nonEmpty(attempt.Label, plan.Label))
 		if ok {
-			return lifecycleOutcome{ok: true, result: resultView}
+			return lifecycleOutcome{ok: true, result: resultView, preUninstallPaths: preUninstallPaths}
 		}
 		if attempt.Error != "" {
 			errs = append(errs, attempt.Error)
@@ -1038,42 +1055,78 @@ func installProxyLabel(input InstallInput) string {
 	return parsed.String()
 }
 
-func (m *JobManager) cleanupUninstallShortcuts(
+func (m *JobManager) cleanupUninstallResidue(
 	ctx context.Context,
 	jobID string,
 	target *InstallTarget,
 	opts Options,
+	preUninstallPaths []string,
 	result *JobResultView,
 ) *JobResultView {
-	cleanupRes := cleanupProviderShortcutsAfterUninstall(ctx, target.Provider, opts)
+	cleanupRes := cleanupProviderResidueAfterUninstall(ctx, target.Provider, target.Kind, opts, preUninstallPaths)
+	warnings := append([]string(nil), cleanupRes.Warnings...)
 	if !cleanupRes.OK {
 		detail := nonEmpty(cleanupRes.Message, cleanupRes.Error)
-		m.appendAttempt(jobID, AttemptView{
-			ID:    "windows_shortcut_cleanup",
-			Label: "清理残留快捷方式失败（不影响卸载结果）",
-			OK:    true,
-			Error: detail,
-		}, 95, "卸载完成（残留快捷方式清理失败）")
+		if detail != "" {
+			warnings = append(warnings, detail)
+		}
+	}
+
+	hasRemoved := len(cleanupRes.RemovedShortcuts) > 0 || len(cleanupRes.RemovedRegistry) > 0
+	if !hasRemoved && len(warnings) == 0 {
 		return result
 	}
-	if len(cleanupRes.Removed) == 0 {
-		return result
+
+	var detailParts []string
+	var shortParts []string
+	if len(cleanupRes.RemovedShortcuts) > 0 {
+		detailParts = append(detailParts, fmt.Sprintf("已清理 %d 个残留快捷方式：%s", len(cleanupRes.RemovedShortcuts), strings.Join(cleanupRes.RemovedShortcuts, "; ")))
+		shortParts = append(shortParts, fmt.Sprintf("%d 个残留快捷方式", len(cleanupRes.RemovedShortcuts)))
 	}
-	summary := fmt.Sprintf("已清理 %d 个残留快捷方式：%s", len(cleanupRes.Removed), strings.Join(cleanupRes.Removed, "; "))
+	if len(cleanupRes.RemovedRegistry) > 0 {
+		detailParts = append(detailParts, fmt.Sprintf("已清理 %d 个残留注册表项：%s", len(cleanupRes.RemovedRegistry), strings.Join(cleanupRes.RemovedRegistry, "; ")))
+		shortParts = append(shortParts, fmt.Sprintf("%d 个残留注册表项", len(cleanupRes.RemovedRegistry)))
+	}
+
+	summary := strings.Join(detailParts, "；")
+	progressLabel := ""
+	if len(shortParts) > 0 {
+		progressLabel = "已清理 " + strings.Join(shortParts, "、")
+	} else {
+		summary = "卸载后残留清理提醒（不影响卸载结果）"
+		progressLabel = "卸载完成（存在残留清理提醒）"
+	}
+
+	warnText := strings.Join(warnings, "; ")
 	m.appendAttempt(jobID, AttemptView{
-		ID:    "windows_shortcut_cleanup",
+		ID:    "windows_residue_cleanup",
 		Label: summary,
 		OK:    true,
-		Error: strings.Join(cleanupRes.Warnings, "; "),
-	}, 95, fmt.Sprintf("已清理 %d 个残留快捷方式", len(cleanupRes.Removed)))
+		Error: warnText,
+	}, 95, progressLabel)
+
 	if result == nil {
 		result = &JobResultView{Installed: false}
 	}
-	result.RemovedShortcuts = append([]string(nil), cleanupRes.Removed...)
+	if len(cleanupRes.RemovedShortcuts) > 0 {
+		result.RemovedShortcuts = append([]string(nil), cleanupRes.RemovedShortcuts...)
+	}
+	if len(cleanupRes.RemovedRegistry) > 0 {
+		result.RemovedRegistry = append([]string(nil), cleanupRes.RemovedRegistry...)
+	}
+
+	msgSummary := summary
+	if warnText != "" {
+		if hasRemoved {
+			msgSummary += "；提醒：" + warnText
+		} else {
+			msgSummary = "残留清理提醒：" + warnText
+		}
+	}
 	if strings.TrimSpace(result.Message) == "" {
-		result.Message = summary
+		result.Message = msgSummary
 	} else {
-		result.Message += "；" + summary
+		result.Message += "；" + msgSummary
 	}
 	return result
 }
@@ -1210,6 +1263,9 @@ func cloneAppJobView(src JobView) JobView {
 		r := *src.Result
 		if src.Result.RemovedShortcuts != nil {
 			r.RemovedShortcuts = append([]string(nil), src.Result.RemovedShortcuts...)
+		}
+		if src.Result.RemovedRegistry != nil {
+			r.RemovedRegistry = append([]string(nil), src.Result.RemovedRegistry...)
 		}
 		out.Result = &r
 	}

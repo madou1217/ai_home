@@ -412,8 +412,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		}
 	}
 	if providerID == "help" {
-		// 帮助只要求 Provider 已注册：workbuddy 这类桌面端 Provider 也有自己的用法。
-		if len(arguments) == 2 && isRegisteredProvider(arguments[1]) {
+		// 只对“有专用帮助文本”的 Provider 展开：CLI 四支 + 纯桌面端（workbuddy）。
+		// 其它已注册 Provider（gemini / agy / qoder …）没有专用帮助，交给下面的非法命令分支。
+		if len(arguments) == 2 && providerHelpSupported(arguments[1]) {
 			writeProviderUsage(runtime.stdout, arguments[1])
 			return nil
 		}
@@ -604,6 +605,16 @@ func lookupOrDefault(
 // isRootHelp 只识别 aih 根帮助，不吞掉 Provider 自身的 --help。
 func isRootHelp(argument string) bool {
 	return argument == "-h" || argument == "--help"
+}
+
+// providerHelpSupported 报告 aih help <provider> 是否有专用帮助文本。
+// CLI 四支（codex/claude/codebuddy 家族）与纯桌面端 Provider 有；其它已注册
+// Provider（gemini / agy / qoder …）没有，走非法命令分支，避免打印成 Codex 用法。
+func providerHelpSupported(providerID string) bool {
+	if isCLIProvider(providerID) {
+		return true
+	}
+	return isRegisteredProvider(providerID) && !providerHasNativeCLI(providerID)
 }
 
 // isCLIProvider 报告本 CLI 是否为该 Provider 提供「官方客户端命令」。

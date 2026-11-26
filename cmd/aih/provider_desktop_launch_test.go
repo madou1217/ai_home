@@ -159,3 +159,16 @@ func TestProviderUsageDocumentsDesktopFlag(t *testing.T) {
 		t.Fatalf("workbuddy 帮助缺少桌面端说明：%s", workbuddy.String())
 	}
 }
+
+func TestProviderHelpSupported(t *testing.T) {
+	for _, provider := range []string{"codex", "claude", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn"} {
+		if !providerHelpSupported(provider) {
+			t.Fatalf("%s 应有专用帮助", provider)
+		}
+	}
+	for _, provider := range []string{"gemini", "agy", "qoder", "cline", "account", "nope", ""} {
+		if providerHelpSupported(provider) {
+			t.Fatalf("%s 不应有专用帮助", provider)
+		}
+	}
+}

@@ -72,8 +72,12 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     if changed, webView != nil {
       teardownWebView()
       if isShowing && enabled {
-        panel.setFrame(targetFrame(), display: true)
         load()
+        NSAnimationContext.runAnimationGroup({ context in
+          context.duration = 0.36
+          context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+          self.panel.animator().setFrame(self.targetFrame(), display: true)
+        }, completionHandler: nil)
       }
     }
   }
@@ -111,8 +115,8 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     }
 
     NSAnimationContext.runAnimationGroup({ context in
-      context.duration = 0.32
-      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      context.duration = 0.42
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
       self.panel.animator().setFrame(target, display: true)
       self.panel.animator().alphaValue = 1
     }, completionHandler: { [weak self] in
@@ -133,8 +137,8 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
     let end = offscreenFrame(from: targetFrame())
     NSAnimationContext.runAnimationGroup({ context in
-      context.duration = 0.32
-      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+      context.duration = 0.26
+      context.timingFunction = CAMediaTimingFunction(controlPoints: 0.7, 0, 0.84, 0)
       self.panel.animator().setFrame(end, display: true)
       self.panel.animator().alphaValue = 0
     }, completionHandler: { [weak self] in
@@ -171,24 +175,32 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
   private func targetFrame() -> NSRect {
     let visible = activeScreen()?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-    let width = min(1520, max(360, visible.width - 48))
-    let height: CGFloat = 438
-    let y = visible.minY + 18
-    let x: CGFloat
     switch position {
-    case "left":
-      x = visible.minX + 18
-    case "right":
-      x = visible.maxX - width - 18
+    case "left", "right":
+      // Left/right are full-height vertical rails on the screen edge, not the
+      // bottom card anchored to one side.
+      let width = min(460, max(360, visible.width * 0.3))
+      let height = min(780, max(480, visible.height - 36))
+      let y = visible.minY + floor((visible.height - height) / 2)
+      let x = position == "left" ? visible.minX + 18 : visible.maxX - width - 18
+      return NSRect(x: x, y: y, width: width, height: height)
     default:
-      x = visible.minX + floor((visible.width - width) / 2)
+      let width = min(1520, max(360, visible.width - 48))
+      let height: CGFloat = 472
+      let x = visible.minX + floor((visible.width - width) / 2)
+      return NSRect(x: x, y: visible.minY + 18, width: width, height: height)
     }
-    return NSRect(x: x, y: y, width: width, height: height)
   }
 
   private func offscreenFrame(from target: NSRect) -> NSRect {
-    let dx: CGFloat = (position == "right") ? 80 : -80
-    return target.offsetBy(dx: dx, dy: -40)
+    switch position {
+    case "left":
+      return target.offsetBy(dx: -target.width - 28, dy: 0)
+    case "right":
+      return target.offsetBy(dx: target.width + 28, dy: 0)
+    default:
+      return target.offsetBy(dx: -70, dy: -target.height - 26)
+    }
   }
 
   private func teardownWebView() {
@@ -205,6 +217,7 @@ final class QuickOrbitWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
   private func quickURL() -> URL? {
     guard !origin.isEmpty, var components = URLComponents(string: "\(origin)/ui/paste/") else { return nil }
     components.queryItems = [
+      URLQueryItem(name: "v", value: String(Int(Date().timeIntervalSince1970))),
       URLQueryItem(name: "mode", value: "quick"),
       URLQueryItem(name: "embed", value: "desktop"),
       URLQueryItem(name: "position", value: position)

@@ -83,6 +83,7 @@ final class ClipboardWorkspaceWindow: NSObject, NSWindowDelegate, WKNavigationDe
   private func workspaceURL() -> URL? {
     guard !origin.isEmpty, var components = URLComponents(string: "\(origin)/ui/paste/") else { return nil }
     components.queryItems = [
+      URLQueryItem(name: "v", value: String(Int(Date().timeIntervalSince1970))),
       URLQueryItem(name: "mode", value: "workspace"),
       URLQueryItem(name: "embed", value: "desktop")
     ]

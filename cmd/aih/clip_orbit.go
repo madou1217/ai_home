@@ -7,12 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
 	defaultClipOrbitOrigin = "http://127.0.0.1:9527"
-	clipOrbitQuickSize     = "1520,438"
+	clipOrbitQuickSize     = "1520,472"
 	clipOrbitWorkspaceSize = "1440,900"
 )
 
@@ -78,6 +80,16 @@ func runClipOrbit(args []string, cmdRuntime commandRuntime) error {
 		_, _ = fmt.Fprintln(cmdRuntime.stdout, name+" "+strings.Join(launchArgs, " "))
 		return nil
 	}
+	release, locked := acquireOrbitLaunchLock(cmdRuntime)
+	if locked {
+		defer release()
+	} else {
+		_ = activateExistingOrbitWindow(cmdRuntime)
+		return nil
+	}
+	if activateExistingOrbitWindow(cmdRuntime) {
+		return nil
+	}
 	cmd := exec.Command(name, launchArgs...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
@@ -102,6 +114,17 @@ func clipOrbitCommand(options clipOrbitOptions, target string) (string, []string
 	if options.workspace {
 		size = clipOrbitWorkspaceSize
 		position = "200,80"
+	} else if options.position == "left" || options.position == "right" {
+		size = "460,780"
+		if options.position == "right" {
+			x := clipOrbitScreenWidth() - 500
+			if x < 20 {
+				x = 20
+			}
+			position = fmt.Sprintf("%d,110", x)
+		} else {
+			position = "40,110"
+		}
 	}
 	if browser, ok := clipOrbitBrowser(options.browser); ok {
 		return browser, []string{
@@ -172,6 +195,73 @@ func clipOrbitBrowserCandidates() []string {
 			"google-chrome", "google-chrome-stable",
 			"chromium", "chromium-browser", "brave-browser",
 		}
+	}
+}
+
+func clipOrbitScreenWidth() int {
+	if runtime.GOOS != "windows" {
+		return 1920
+	}
+	out, err := exec.Command("powershell", "-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width").Output()
+	if err != nil {
+		return 1920
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil || width < 640 {
+		return 1920
+	}
+	return width
+}
+
+// acquireOrbitLaunchLock prevents a burst of clip orbit invocations from opening
+// several app windows. The lock is released immediately after launch; a stale
+// lock older than 15 seconds is ignored.
+func acquireOrbitLaunchLock(cmdRuntime commandRuntime) (func(), bool) {
+	home, err := resolveAIHomeDir(cmdRuntime)
+	if err != nil {
+		return func() {}, true
+	}
+	dir := filepath.Join(home, "run")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return func() {}, true
+	}
+	lockPath := filepath.Join(dir, "clip-orbit.lock")
+	for attempt := 0; attempt < 2; attempt++ {
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(file, "%d %d", os.Getpid(), time.Now().Unix())
+			_ = file.Close()
+			return func() { _ = os.Remove(lockPath) }, true
+		}
+		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) < 15*time.Second {
+			return func() {}, false
+		}
+		_ = os.Remove(lockPath)
+	}
+	return func() {}, true
+}
+
+// activateExistingOrbitWindow brings an already-open HUD app window to the
+// front instead of opening another one.
+func activateExistingOrbitWindow(cmdRuntime commandRuntime) bool {
+	switch runtime.GOOS {
+	case "windows":
+		command := `$w=New-Object -ComObject WScript.Shell; if($w.AppActivate('Paste // Nexus')){exit 0}; exit 1`
+		return exec.Command("powershell", "-NoProfile", "-Command", command).Run() == nil
+	case "darwin":
+		script := `tell application "System Events" to tell process "Microsoft Edge" to get name of every window`
+		out, err := exec.Command("osascript", "-e", script).Output()
+		if err != nil || !strings.Contains(string(out), "Paste // Nexus") {
+			return false
+		}
+		_ = exec.Command("osascript", "-e", `tell application "Microsoft Edge" to activate`).Run()
+		return true
+	default:
+		path, err := exec.LookPath("wmctrl")
+		if err != nil {
+			return false
+		}
+		return exec.Command(path, "-a", "Paste // Nexus").Run() == nil
 	}
 }
 

@@ -367,3 +367,10 @@ Paste Nexus 设置新增 **Direct endpoint pairing**：填写对方 Server 的 L
 - Mac 连续复制 10 个不同类型内容，Windows 历史出现 10 条 `materialized=false` 的 stub（文本/链接/图片/文件，含中文），没有提前传输正文。
 - Windows 侧 `aih clip copy` 一个文本 stub：源端自动推送后 Windows 剪贴板变为 `MAC-LAZY-TEXT-1`；文件 stub 复制后 Windows 剪贴板得到 `...\materialized\<sha>\doc.docx` 真实文件。
 - 两个本地 Server 的懒同步同样验证：文本、图片（SHA 完全一致）、DOCX（zip 解包落地）均按需 materialize，请求自动清空。
+
+## 20. 单例与屏幕侧边 Quick Orbit（2026-11-26）
+
+- **应用单例**：helper 在启动时对 `~/.ai_home/run/desktop-translation/helper.lock` 做 `flock`，第二个 helper 立即退出（实测第二个进程 exit 0，常驻 helper 仍为 1）；`aih clip orbit` 增加启动锁与已有窗口激活（Windows `WScript.Shell.AppActivate('Paste // Nexus')`、Linux `wmctrl -a`、macOS Edge 窗口检测），不会重复开窗。
+- **位置语义修正**：左侧/右侧是**屏幕左右边缘的纵向面板**，不是底部卡片的左右对齐。macOS 原生面板尺寸 460×780，纵向卡片列表；底部为 1520×472 横向卡片。页面在 `position=left|right` 下切换为 `flex-direction:column`、全宽卡片、隐藏分页条，搜索独占一行。
+- **动画**：底部从下方偏左滑入/滑出；左侧从屏幕左外滑入，右侧从右外滑入；显示 0.42s `cubic-bezier(.16,1,.3,1)`，隐藏 0.26s ease-in；页面叠加 `orbitIn` 位移/缩放淡入；位置切换时原生面板带 0.36s 动画迁移。
+- 真机截图：macOS 原生底部 1520×472、左侧 460×780、右侧 460×780（X=3362，右边缘 18px 内）均正常；Windows 页面 1520×472/460×780 的纵向/横向布局由浏览器截图验证。

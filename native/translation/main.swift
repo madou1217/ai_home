@@ -590,9 +590,29 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   }
 }
 
+/// One desktop helper per AIH home. A second launch (stale server retry,
+/// duplicate shortcut, manual open) exits immediately instead of creating a
+/// second Quick Orbit / workspace window.
+func acquireHelperInstanceLock() -> Bool {
+  // One helper for the whole user session, regardless of which AIH home started
+  // it: the HUD is an app, not a per-server sidecar.
+  let home = (NSHomeDirectory() as NSString).appendingPathComponent(".ai_home")
+  let directory = (home as NSString).appendingPathComponent("run/desktop-translation")
+  try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+  let lockPath = (directory as NSString).appendingPathComponent("helper.lock")
+  let fd = Darwin.open(lockPath, O_CREAT | O_RDWR, 0o600)
+  if fd < 0 { return false }
+  if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+    Darwin.close(fd)
+    return false
+  }
+  return true
+}
+
 if CommandLine.arguments.contains("--protocol-only") {
   runTranslationProtocolOnly()
 } else {
+  guard acquireHelperInstanceLock() else { exit(0) }
   let app = NSApplication.shared
   let delegate = TranslationApp()
   app.delegate = delegate

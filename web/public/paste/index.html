@@ -24,10 +24,27 @@ body.mode-quick[data-position=left] #quickModal{justify-content:flex-start}
 body.mode-quick[data-position=right] #quickModal{justify-content:flex-end}
 body.mode-quick #quickWindow{position:relative;inset:auto;bottom:auto;width:min(1240px,calc(100vw - 36px));max-width:none;height:min(430px,calc(100vh - 36px));max-height:calc(100vh - 36px);padding:14px 20px;gap:10px;border-radius:14px}
 @media(max-height:480px){body.mode-quick #quickModal{padding:0}body.mode-quick #quickWindow{width:min(1240px,100vw);height:min(430px,100vh);max-height:100vh}}
-@media(max-height:480px){body.mode-quick #quickWindow{padding:10px 20px;gap:6px}body.mode-quick #quickWindow.ribbon .quickgallery{padding:4px 4px 6px}body.mode-quick #quickWindow .quickfooter{min-height:30px}}
+@media(max-height:480px){body.mode-quick #quickWindow{padding:10px 20px;gap:6px}body.mode-quick #quickWindow.ribbon .quickgallery{padding:4px 4px 6px}body.mode-quick #quickWindow .quickfooter{min-height:34px;padding-bottom:6px}body.mode-quick #quickWindow{padding-bottom:14px}}
 body.mode-quick[data-embed=desktop] #quickModal{padding:0;align-items:stretch;justify-content:stretch}
 body.mode-quick[data-embed=desktop] #quickWindow{width:100%;height:100vh;max-height:100vh;box-shadow:none}
 body.mode-quick[data-embed=browser]{background:#080b15!important}body.mode-quick[data-embed=browser] #quickModal{padding:0;align-items:stretch;justify-content:stretch}body.mode-quick[data-embed=browser] #quickWindow{width:100%;height:100vh;max-height:100vh;border-radius:0;box-shadow:none}
+body.mode-quick #quickWindow{animation:orbitIn .34s cubic-bezier(.16,1,.3,1)}
+@keyframes orbitIn{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+body.mode-quick[data-position=left] #quickWindow,body.mode-quick[data-position=right] #quickWindow{padding:12px 14px 10px;gap:8px}
+body.mode-quick[data-position=left] .quickhead,body.mode-quick[data-position=right] .quickhead{flex-wrap:wrap;gap:8px}
+body.mode-quick[data-position=left] .quickhead h2,body.mode-quick[data-position=right] .quickhead h2{font-size:20px}
+body.mode-quick[data-position=left] .quickhead .search,body.mode-quick[data-position=right] .quickhead .search{max-width:none;width:100%;flex:0 0 100%;margin-left:0;order:6;height:34px}
+body.mode-quick[data-position=left] #quickFilters,body.mode-quick[data-position=right] #quickFilters{flex-wrap:wrap;overflow:visible;max-height:58px}
+body.mode-quick[data-position=left] .quickgallery,body.mode-quick[data-position=right] .quickgallery{display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;gap:8px;padding:4px}
+body.mode-quick[data-position=left] .quickgallery .clip,body.mode-quick[data-position=right] .quickgallery .clip{width:100%;min-width:0;height:auto;min-height:92px;max-height:138px;transform:none!important;opacity:1!important}
+body.mode-quick[data-position=left] .quickgallery .clip .clipbody,body.mode-quick[data-position=right] .quickgallery .clip .clipbody{max-height:58px;overflow:hidden}
+body.mode-quick[data-position=left] .quickfooter,body.mode-quick[data-position=right] .quickfooter{flex-wrap:wrap;gap:6px}
+body.mode-quick[data-position=left] .quickfooter>div,body.mode-quick[data-position=right] .quickfooter>div{flex-wrap:wrap;gap:6px}
+body.mode-quick[data-position=left] .quickrail,body.mode-quick[data-position=right] .quickrail{display:none}
+body.mode-quick[data-position=left] #quickWindow{animation-name:orbitInLeft}
+@keyframes orbitInLeft{from{opacity:0;transform:translateX(-28px)}to{opacity:1;transform:none}}
+body.mode-quick[data-position=right] #quickWindow{animation-name:orbitInRight}
+@keyframes orbitInRight{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
 .dochead{display:flex;align-items:center;gap:8px;font-size:12px;color:#cfe3f7}.dochead small{margin-left:auto;font:10px Consolas,monospace;color:#8496b0}.docpreview{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.6 "Cascadia Code",Consolas,monospace;color:#c8d8ec;background:#091323;border:1px solid #1d3046;border-radius:8px;padding:10px}.pdfpreview{width:100%;height:min(52vh,420px);border:1px solid #1d3046;border-radius:8px;background:#0b1220}
 .docactions{display:flex;gap:8px;align-items:center}
 .settingcontrol input{background:#0a1220;border:1px solid #2d4058;color:#dce9f8;border-radius:6px;padding:6px 8px;font-size:11px;min-width:170px;outline:none}.settingcontrol input:focus{border-color:#4db9d0}
@@ -243,7 +260,10 @@ function body(c,full=false){
   if(c.type==='file'){
     const sub=c.files.length>1?`${c.files.length} files · ${formatBytes(c.byteSize)}`:(c.files[0]||formatBytes(c.byteSize));
     const p=filePreviewCache.get(c.id),blob=fileBlobCache.get(c.id);
-    if(p?.kind==='text') return `<div class="dochead">${icon('file')}<span>${esc(p.fileName||c.title)}</span><small>TEXT · ${formatBytes(p.text.length)}</small></div><pre class="docpreview">${esc(p.text)}</pre>${p.truncated?'<small class="micro">Preview truncated</small>':''}`;
+    if(p?.kind==='text'){
+      if(!full) return `<div class="fileicon">${icon('file')}</div><strong>${esc(p.fileName||c.title)}</strong><small>TEXT · ${esc(formatBytes(p.text.length))}</small>`;
+      return `<div class="dochead">${icon('file')}<span>${esc(p.fileName||c.title)}</span><small>TEXT · ${formatBytes(p.text.length)}</small></div><pre class="docpreview">${esc(p.text)}</pre>${p.truncated?'<small class="micro">Preview truncated</small>':''}`;
+    }
     if(p?.kind==='image'&&blob) return `<img class="art" src="${esc(blob)}" alt="${esc(c.title)}">`;
     if(p?.kind==='pdf'){
       if(full&&blob) return `<div class="dochead">${icon('file')}<span>${esc(p.fileName||c.title)}</span><small>PDF</small></div><iframe class="pdfpreview" src="${esc(blob)}" title="${esc(c.title)}"></iframe><div class="docactions"><a class="btn" href="${esc(blob)}" target="_blank" rel="noopener">Open PDF</a></div>`;

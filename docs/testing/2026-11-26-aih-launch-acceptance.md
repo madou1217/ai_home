@@ -84,6 +84,15 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
 - 真机结果：`GET /v1/management/launcher/apps` → **199** 条；系统 `Get-StartApps` 199 条；缺失 0、重复 0；`Calculator`（`shell:AppsFolder\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`）通过 `POST /open` 真实拉起（CalculatorApp 进程）。
 - 面板：真实 `Alt+Space` 唤起显示「199 个应用」，排序按 frecency/mtime，非 A–Z；截图见会话记录。
 
+## 4.4 Toolkit 卸载残留快捷方式（2026-11-26 追加）
+
+- 现象：Toolkit 卸载（如 Antigravity）后，开始菜单/桌面仍保留指向已删除目录的 `.lnk`。
+- 修复：新增 `internal/runtime/winshell`（VBS + cscript 枚举 `.lnk` 并解析 WScript.Shell TargetPath，UTF-16LE 文件输出，避免子 powershell 在任务上下文卡住）；`internal/runtime/toolkit/apps/shortcut_cleanup*` 按 provider 的客户端名与安装根匹配：
+  - 目标在安装根下，或目标不存在且快捷方式名等于/以 `<客户端名> ` 开头 → 删除；
+  - 其它断链只放进 `keptBroken` 展示，不删除；只处理 `.lnk`，删除后仅清理 Start Menu 下变空的父目录。
+- 入口：卸载成功后自动执行；另提供 `POST /v1/management/webui/toolkit/apps/cleanup`（`{}` 或 `{"provider":"agy"}`）与 `aih toolkit cleanup-residue [--provider] [--json]`。
+- Windows 真机：清理 agy 删除 3 个残留（`Antigravity.lnk`、`Antigravity IDE\Antigravity IDE.lnk`、OneDrive 桌面 `Antigravity.lnk`）与空目录；`HONOR WorkStation.lnk` 等无关断链保留；二次执行 `removed=[]`；启动器目录回归仍 **199/199，missing=0**。
+
 ## 5. 已知限制 / 复验步骤
 
 - Windows 锁屏：解锁后执行

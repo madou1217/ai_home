@@ -93,6 +93,22 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
 - 入口：卸载成功后自动执行；另提供 `POST /v1/management/webui/toolkit/apps/cleanup`（`{}` 或 `{"provider":"agy"}`）与 `aih toolkit cleanup-residue [--provider] [--json]`。
 - Windows 真机：清理 agy 删除 3 个残留（`Antigravity.lnk`、`Antigravity IDE\Antigravity IDE.lnk`、OneDrive 桌面 `Antigravity.lnk`）与空目录；`HONOR WorkStation.lnk` 等无关断链保留；二次执行 `removed=[]`；启动器目录回归仍 **199/199，missing=0**。
 
+## 4.5 卸载即自动清理（快捷方式 + 注册表，2026-11-27 追加）
+
+- 用户要求：清理必须是**卸载动作内部的自动步骤**，包括注册表，不是手动再点“清理残留”。
+- 实现：`internal/runtime/toolkit/apps` 的 Windows 卸载成功路径（desktop 与 cli）在 finalize 前自动执行组合清理：
+  - 快捷方式：Start Menu\Programs（用户/机器）与 Desktop（用户/公共）；
+  - 注册表：HKCU Uninstall / App Paths / Run / RunOnce（HKLM 只读探测，命中仅提示需管理员）；
+  - 匹配：目标在 Provider 安装根下，或（目标失效且名称等于/以 `<客户端名> ` 开头）；无关断链只报告不删；作业结果含 `removedShortcuts` / `removedRegistry`。
+- 顺带修复检测 Bug：Windows 桌面应用探测原先用子 `powershell.exe` 查询卸载注册表，在服务任务上下文中会卡住，导致已安装应用显示未安装、卸载计划无法解析；改为 `golang.org/x/sys/windows/registry` 直接读取（与清理共用）。
+- Windows 真机端到端（9541 验证 Server + 真实 OpenCode Desktop）：
+  1. 通过 Toolkit 安装 `opencode-desktop`，检测 `installed=true`；
+  2. 通过 Toolkit 卸载，作业 `status=succeeded`，attempts 依次为 `windows_registered_app_uninstall` → `opencode_managed_desktop_uninstall` → `windows_residue_cleanup`；
+  3. 自动删除 3 个快捷方式（`OpenCode Test.lnk`、`OpenCode.lnk`、OneDrive 桌面 `OpenCode.lnk`）与 4 个注册表项（`App Paths\OpenCode.exe`、`Run::OpenCode`、`Uninstall\AIH-OpenCode-Test`、应用自身残留的 `Uninstall\d074f30d-…`）；
+  4. HONOR 的卸载键/App Paths/Run/桌面快捷方式全部保留；
+  5. 清理后启动器目录 `196/196，missing=0`（与系统 Start 项一致）。
+- 发行提示：Windows 真机当前运行的是自动升级后的 **1.0.9 发行包**，不包含本轮之后的提交；需要重新构建发行包并安装，才能让正式卸载路径带上这些修复。
+
 ## 5. 已知限制 / 复验步骤
 
 - Windows 锁屏：解锁后执行

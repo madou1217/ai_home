@@ -13,52 +13,30 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
-// zcode 的错误语义按 **端点** 区分：
+// zcode 的错误语义由稳定 code 决定，与请求走 plan 还是 ultra 端点无关：
 //
-//   - plan（start-plan / 套餐未知）：长期 JWT + 官方 harness；
-//     1005 = 额度用尽，3012 = 客户端/协议不被接受（通常是本机缺 harness 或版本过旧）；
-//   - ultra（zai / bigmodel coding plan）：双鉴权头；
-//     1113 = 余额不足/无可用资源包，1005 = 额度用尽。
+//	1005 → 额度用尽；1113 → 余额不足；3012 → 客户端/协议不匹配（本地 harness/版本）；
+//	3006 → 当前套餐不允许该模型；401 → 凭据失效。
 //
-// 同一个 Provider 下两套端点对同名 code 可能有不同含义，所以分类必须带 surface。
-// 具体「code → 语义」在 contracts/upstream-failure 的 zcode 信号行里，本文件只负责
-// 把 zcode 的信封投影成低敏证据。
-const (
-	// SurfacePlan 是 start-plan/未知套餐端点。
-	SurfacePlan = "zcode/plan"
-	// SurfaceUltra 是 zai/bigmodel coding plan 端点。
-	SurfaceUltra = "zcode/ultra"
-)
+// 端点差异只影响上游地址与鉴权头（见 endpoints.go），不影响「这个错误是什么意思」，
+// 因此错误表按 Provider 维护，不引入端点维度。具体映射在
+// contracts/upstream-failure 的 zcode 信号行里，本文件只负责把 zcode 的信封
+// 投影成低敏证据。
 
-// FailureSurface 返回当前 Provider 变体实际使用的端点键。
-func (provider *Provider) FailureSurface() string {
-	if provider == nil {
-		return ""
-	}
-	if IsUltraEndpoint(provider.baseURL) {
-		return SurfaceUltra
-	}
-	return SurfacePlan
-}
-
-// ClassifyFailure 处理非 2xx 响应：先按 zcode 信封取 code，再查端点策略。
+// ClassifyFailure 处理非 2xx 响应：先按 zcode 信封取 code，再查 Provider 级语义表。
 func (provider *Provider) ClassifyFailure(
 	statusCode int,
 	header http.Header,
 	body []byte,
 	observedAt time.Time,
 ) (sharedfailure.Classification, error) {
-	surface := provider.FailureSurface()
 	if failure, ok := detectBusinessFailure(body); ok {
-		if classification, matched := classifyByContract(surface, statusCode, failure.Code); matched {
+		if classification, matched := classifyByContract(statusCode, failure.Code); matched {
 			return classification, nil
 		}
 	}
-	// 没有结构化 code（例如空正文的 401/5xx）：回落到通用状态码规则，
-	// 但仍带上 surface，便于 Provider 专属信号命中。
-	return sharedfailure.ObserveHTTPForProviderSurface(
-		ProviderID, surface, statusCode, header, body, observedAt,
-	)
+	// 没有结构化 code（例如空正文的 401/5xx）：回落到通用状态码规则。
+	return sharedfailure.ObserveHTTPForProvider(ProviderID, statusCode, header, body, observedAt)
 }
 
 // ClassifyBusinessFailure 处理 HTTP 2xx 但正文是业务错误的响应（例如
@@ -79,8 +57,7 @@ func (provider *Provider) ClassifyBusinessFailure(
 	if !ok {
 		return sharedfailure.Classification{}, false
 	}
-	surface := provider.FailureSurface()
-	if classification, matched := classifyByContract(surface, statusCode, failure.Code); matched {
+	if classification, matched := classifyByContract(statusCode, failure.Code); matched {
 		return classification, true
 	}
 	classification, err := sharedfailure.NewClassification(runtimecore.FailureInvalidRequest, 0)
@@ -95,13 +72,17 @@ func (provider *Provider) ClassifyBusinessFailure(
 }
 
 // PresentBusinessFailure 让 zcode 的业务失败带上可操作的文案与状态。
+//
+// 状态按语义选，而不是按上游原始状态：这样 Anthropic 入口用同一状态映射
+// （429→rate_limit_error、403→permission_error、400→invalid_request_error）也能得到
+// 正确的错误类别；不需要额外的 surface 映射表或自定义 code 字段。
 func (*Provider) PresentBusinessFailure(
 	classification sharedfailure.Classification,
 ) relaycore.BusinessFailurePresentation {
 	switch classification.Kind() {
 	case runtimecore.FailureBillingBlocked:
 		return relaycore.BusinessFailurePresentation{
-			StatusCode: http.StatusTooManyRequests,
+			StatusCode: http.StatusForbidden,
 			Code:       "zcode_billing_blocked",
 			Message:    "ZCode 余额不足或无可用资源包，请充值后重试",
 		}
@@ -142,11 +123,9 @@ func (*Provider) PresentHTTPStatusFailure(
 	return relaycore.BusinessFailurePresentation{}, false
 }
 
-// classifyByContract 用 (provider, surface, status, code) 查失败契约。
-func classifyByContract(surface string, statusCode int, code string) (sharedfailure.Classification, bool) {
-	input := sharedfailure.SignalInputFromSurface(
-		ProviderID, surface, statusCode, "", code, 0, nil,
-	)
+// classifyByContract 用 (provider, status, code) 查失败契约。
+func classifyByContract(statusCode int, code string) (sharedfailure.Classification, bool) {
+	input := sharedfailure.SignalInputFrom(ProviderID, statusCode, "", code, 0, nil)
 	match, matched := failurecontract.Resolve(input)
 	if !matched {
 		return sharedfailure.Classification{}, false

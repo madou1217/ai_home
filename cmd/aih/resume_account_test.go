@@ -10,7 +10,9 @@ import (
 // 原生 --resume、无 id 退回 --continue、fork 走合同声明的 --fork-session。
 func TestRewriteFamilySessionVerb(t *testing.T) {
 	ctx := context.Background()
-	runtime := commandRuntime{}
+	runtime := commandRuntime{
+		userHomeDir: func() (string, error) { return t.TempDir(), nil },
+	}
 	cases := []struct {
 		name        string
 		arguments   []string
@@ -22,7 +24,7 @@ func TestRewriteFamilySessionVerb(t *testing.T) {
 			name:        "resume with account and id",
 			arguments:   []string{"codebuddycn", "2", "resume", "01a1d5c6-f2bd-77c0-bc96-4a3451faff75"},
 			wantHandled: true,
-			wantArgs:    []string{"codebuddycn", "2", "--resume", "01a1d5c6-f2bd-77c0-bc96-4a3451faff75"},
+			wantArgs:    []string{"codebuddycn", "2", "--resume", "01a1d5c6-f2bd-77c0-bc96-4a3451faff75", "continue"},
 		},
 		{
 			name:        "resume keeps extra native args",

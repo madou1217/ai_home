@@ -73,6 +73,15 @@ func AccessTokenFromCredential(credential accountapp.Credential) (string, error)
 	return token, nil
 }
 
+// Resolve 必须返回外层 Provider 本身：BaseProvider.Resolve 返回内嵌值，
+// 会丢失本通道的 AccessToken 覆盖（见 relaycore 基类注释与同形态的 cline）。
+func (provider Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provider, bool) {
+	if strings.EqualFold(strings.TrimSpace(input.ProviderID), ProviderID) {
+		return provider, true
+	}
+	return nil, false
+}
+
 // AccessToken 实现 relaycore.Provider。
 func (provider Provider) AccessToken(credential accountapp.Credential) (string, error) {
 	return AccessTokenFromCredential(credential)

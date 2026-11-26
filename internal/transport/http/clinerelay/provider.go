@@ -19,6 +19,7 @@ package clinerelay
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -77,6 +78,57 @@ func NewProvider(accountBaseURL string) Provider {
 	return Provider{
 		BaseProvider: relaycore.NewBaseProvider(ProviderID, base+ChatCompletionsPath),
 		baseURL:      base,
+	}
+}
+
+// Resolve 必须返回外层 Provider 本身。
+//
+// BaseProvider.Resolve 返回的是内嵌的 BaseProvider 值，调用方随后拿到的
+// AccessToken 是基类默认实现（一律 ErrUnsupportedCredential），本通道的
+// 凭据取法会被静默丢掉——表现就是所有 cline 账号都 422「透传账号必须使用
+// 原生登录态」。覆盖后返回本类型，AccessToken 才生效。
+func (provider Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provider, bool) {
+	if strings.EqualFold(strings.TrimSpace(input.ProviderID), ProviderID) {
+		return provider, true
+	}
+	return nil, false
+}
+
+// DecorateUpstream 补齐 Cline 产品面要求的客户端标识。
+//
+// 事实来自官方 CLI 的请求构造（core dist 内 `oi`/`fn` 常量）：缺少这些头时，
+// 免费模型会返回 403「only available via Cline product surfaces」。
+var clineClientHeaders = map[string]string{
+	"HTTP-Referer":   "https://cline.bot",
+	"X-Title":        "Cline",
+	"X-IS-MULTIROOT": "false",
+	"X-CLIENT-TYPE":  "cline-sdk",
+}
+
+// RewriteRequest 把上游请求强制为流式。
+//
+// 2026-11-26 实测：Cline 的免费模型在 stream=false 时上游返回
+// `{"error":"empty response content"}`；stream=true 才产出 delta。官方 CLI
+// 也始终流式请求。非流式客户端仍由 relaycore 聚合 SSE 后按 JSON 交付。
+func (provider Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, error) {
+	fields, ok := relaycore.DecodeRawObject(body)
+	if !ok {
+		return relaycore.RewriteResult{}, relaycore.ErrInvalidRequestBody
+	}
+	if stream, present := relaycore.RawBool(fields["stream"]); !present || !stream {
+		fields["stream"] = json.RawMessage("true")
+	}
+	rewritten, err := json.Marshal(fields)
+	if err != nil {
+		return relaycore.RewriteResult{}, relaycore.ErrInvalidRequestBody
+	}
+	return relaycore.RewriteResult{Body: rewritten}, nil
+}
+
+func (provider Provider) DecorateUpstream(request *http.Request, accessToken string) {
+	provider.BaseProvider.DecorateUpstream(request, accessToken)
+	for name, value := range clineClientHeaders {
+		request.Header.Set(name, value)
 	}
 }
 

@@ -548,9 +548,12 @@ func buildResponse(
 	}
 }
 
-// applyCLIOnlyProviderModels 把 Provider CLI 可执行、但网关 API 不可路由的免费模型
-// 加进 CLI 选择器。只影响 models[provider] 与 selectableByAccountRef，不动
-// byAccountRef / effective 路由事实，因此不会让网关去调用会 403 的模型。
+// applyCLIOnlyProviderModels 把 Provider 的免费模型预先并入选择器。
+//
+// 免费模型已由 Provider adapter 写入模型发现目录，刷新后本来就会出现在这里；
+// 这层兜底让尚未刷新的账号也能立刻在“打开 CLI”里选到它们。只改
+// models[provider] 与 selectableByAccountRef，不动 byAccountRef / effective
+// 探测事实。
 func applyCLIOnlyProviderModels(
 	providerByRef map[string]string,
 	providerModelSets map[string]map[string]struct{},

@@ -49,13 +49,18 @@ var KnownModels = []string{
 	"cline-pass/qwen3.7-max",
 	"cline-pass/qwen3.7-plus",
 	"cline-pass/qwen3.8-max",
+	// 免费层：原生 workos 登录态可调用，计费为 0。
+	"nvidia/nemotron-3.5-lightning-free",
+	"cline-free/nemotron-3.5-super-vl",
 }
 
-// CLIFreeModels 是 Cline 官方 CLI 的免费模型。
+// CLIFreeModels 是 Cline 的免费模型（pricing 为 0）。
 //
-// 它们只在 CLI 的原生登录态下可用（pricing 为 0，实测能完成回合）；
-// 本网关的 API 面对 cline-free/* 一律 403，所以这些模型只能进入
-// “打开 CLI”的模型选择器，不能进入网关路由目录。
+// 2026-11-26 实测：用账号的原生 workos 登录态（Authorization: Bearer workos:…）
+// 请求 https://api.cline.bot/api/v1/chat/completions 可以正常完成回合，与官方
+// CLI 走同一条通道；此前把它们挡在目录外是因为 relay 的 Resolve 返回了内嵌
+// BaseProvider，令牌覆盖失效后误判成「cline-free 一律 403」。现在它们是正常
+// 的可路由模型，CLI 与网关共用同一份目录。
 var CLIFreeModels = []string{
 	"nvidia/nemotron-3.5-lightning-free",
 	"cline-free/nemotron-3.5-super-vl",

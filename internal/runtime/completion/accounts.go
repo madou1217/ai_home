@@ -17,11 +17,10 @@ func listCLIAccounts(aiHome, provider string) []accountRow {
 	rows := make([]accountRow, 0, 16)
 	withReadDB(aiHome, func(database *sql.DB) {
 		result, err := database.Query(`
-			SELECT a.provider, a.cli_account_id, a.account_ref
-			  FROM account_cli_aliases a
-			  INNER JOIN account_refs r ON r.account_ref = a.account_ref
-			 WHERE a.provider = ?
-			 ORDER BY CAST(a.cli_account_id AS INTEGER), a.updated_at DESC`, normalizedProvider)
+			SELECT provider_id, cli_account_id, account_ref
+			  FROM accounts
+			 WHERE provider_id = ?
+			 ORDER BY cli_account_id`, normalizedProvider)
 		if err != nil {
 			return
 		}
@@ -56,9 +55,9 @@ func listRawCLIAccounts(aiHome string) []accountRow {
 	rows := make([]accountRow, 0, 32)
 	withReadDB(aiHome, func(database *sql.DB) {
 		result, err := database.Query(`
-			SELECT provider, cli_account_id, account_ref
-			  FROM account_cli_aliases
-			 ORDER BY provider, CAST(cli_account_id AS INTEGER)`)
+			SELECT provider_id, cli_account_id, account_ref
+			  FROM accounts
+			 ORDER BY provider_id, cli_account_id`)
 		if err != nil {
 			return
 		}

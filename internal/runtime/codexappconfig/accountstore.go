@@ -40,10 +40,7 @@ func (store *AccountStore) ReadDesktopArtifacts(ctx context.Context, accountRef 
 	}
 	defer func() { _ = db.Close() }()
 
-	provider, nativeJSON, found := readCompatCredential(ctx, db, ref)
-	if !found {
-		provider, nativeJSON, found = readModernCredential(ctx, db, ref)
-	}
+	provider, nativeJSON, found := readModernCredential(ctx, db, ref)
 	if !found {
 		return DesktopArtifacts{}, false, nil
 	}
@@ -55,21 +52,6 @@ func (store *AccountStore) ReadDesktopArtifacts(ctx context.Context, accountRef 
 		return DesktopArtifacts{}, false, nil
 	}
 	return DesktopArtifacts{AccountRef: ref, AuthJSON: auth}, true, nil
-}
-
-func readCompatCredential(ctx context.Context, db *sql.DB, accountRef string) (string, string, bool) {
-	var provider string
-	var nativeJSON string
-	err := db.QueryRowContext(ctx, `
-		SELECT COALESCE(r.provider, ''), c.native_auth_json
-		FROM compat_account_credentials c
-		LEFT JOIN account_refs r ON r.account_ref = c.account_ref
-		WHERE c.account_ref = ?
-		LIMIT 1`, accountRef).Scan(&provider, &nativeJSON)
-	if err != nil {
-		return "", "", false
-	}
-	return strings.TrimSpace(provider), nativeJSON, true
 }
 
 func readModernCredential(ctx context.Context, db *sql.DB, accountRef string) (string, string, bool) {
@@ -102,9 +84,6 @@ func readModernCredential(ctx context.Context, db *sql.DB, accountRef string) (s
 
 func lookupProvider(ctx context.Context, db *sql.DB, accountRef string) string {
 	var provider string
-	if err := db.QueryRowContext(ctx, `SELECT provider FROM account_refs WHERE account_ref = ? LIMIT 1`, accountRef).Scan(&provider); err == nil {
-		return provider
-	}
 	if err := db.QueryRowContext(ctx, `SELECT provider_id FROM accounts WHERE account_ref = ? LIMIT 1`, accountRef).Scan(&provider); err == nil {
 		return provider
 	}
@@ -151,8 +130,6 @@ func (store *AccountStore) ListCodexAccountRefs(ctx context.Context) []string {
 
 func listCodexRefs(ctx context.Context, db *sql.DB) []string {
 	queries := []string{
-		`SELECT account_ref FROM account_refs WHERE provider = 'codex' ORDER BY account_ref`,
-		`SELECT DISTINCT c.account_ref FROM compat_account_credentials c INNER JOIN account_refs r ON r.account_ref = c.account_ref WHERE r.provider = 'codex' ORDER BY c.account_ref`,
 		`SELECT account_ref FROM accounts WHERE provider_id = 'codex' ORDER BY account_ref`,
 	}
 	for _, query := range queries {

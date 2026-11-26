@@ -137,10 +137,9 @@ func lookupCLIRecordByRef(
 	}
 	defer func() { _ = db.Close() }()
 	row := db.QueryRowContext(ctx, `
-		SELECT r.account_ref, r.provider, a.cli_account_id
-		FROM account_refs r
-		INNER JOIN account_cli_aliases a ON a.account_ref = r.account_ref
-		WHERE r.account_ref = ?
+		SELECT account_ref, provider_id, cli_account_id
+		FROM accounts
+		WHERE account_ref = ?
 	`, strings.TrimSpace(accountRef))
 	var ref, provider, cliID string
 	if err := row.Scan(&ref, &provider, &cliID); err != nil {
@@ -162,11 +161,9 @@ func lookupRecordByCLIID(
 	}
 	defer func() { _ = db.Close() }()
 	row := db.QueryRowContext(ctx, `
-		SELECT r.account_ref, r.provider, a.cli_account_id
-		FROM account_cli_aliases a
-		INNER JOIN account_refs r ON r.account_ref = a.account_ref
-		WHERE a.provider = ? AND a.cli_account_id = ?
-		ORDER BY a.updated_at DESC, a.created_at DESC
+		SELECT account_ref, provider_id, cli_account_id
+		FROM accounts
+		WHERE provider_id = ? AND cli_account_id = ?
 		LIMIT 1
 	`, provider, cliAccountID)
 	var ref, storedProvider, storedID string
@@ -188,11 +185,10 @@ func listCLIRecords(
 	}
 	defer func() { _ = db.Close() }()
 	rows, err := db.QueryContext(ctx, `
-		SELECT r.account_ref, r.provider, a.cli_account_id
-		FROM account_cli_aliases a
-		INNER JOIN account_refs r ON r.account_ref = a.account_ref
-		WHERE a.provider = ?
-		ORDER BY CAST(a.cli_account_id AS INTEGER), a.updated_at DESC
+		SELECT account_ref, provider_id, cli_account_id
+		FROM accounts
+		WHERE provider_id = ?
+		ORDER BY cli_account_id
 	`, provider)
 	if err != nil {
 		return nil

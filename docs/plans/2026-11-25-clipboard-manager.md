@@ -426,3 +426,12 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
   - Windows 11 真机 Edge HUD 保持打开，Mac 先复制、同步后卡片自动出现在首位（time 0s）；连续截帧中第 3 帧捕获到新卡的模糊浮出阶段，第 5 帧落定；Windows SSE 端点实际返回 `event: ready`。
   - Windows 真机 Quick Orbit（`?mode=quick`）保持打开，新条目同样自动进入左侧卡片；第 7 帧捕获到横向雾化浮入，第 8 帧落定；同时把一次批量涌入的动效上限设为 16 张，避免大批同步时同时跑数百个 blur filter。
   - Windows 页面字体已统一为等宽栈；Mac/Windows 两端的 `/ui/paste/` 为同一份 `index.html`。
+
+## 25. 哈希优先与批量文件包（2026-11-26）
+
+- 一次复制 N 个文件（Finder/Explorer FileDropList）产生**一个** clipboard item：路径先去重、排序、规范化，对一个 canonical 路径列表求 SHA-256；`files` 保存整包索引，`ByteSize` 为真实文件大小总和（不是路径字符串长度），历史列表只占一个位置。
+- 同步信封是 `lazy=true` 的元数据：SHA、kind/MIME、大小、宽高、预览、缩略图、文件索引；不包含文本正文、图片原图或文件字节。
+- 目标端先落 `materialized=false` 的 stub；卡片只使用 preview/thumbnail/files 元数据。只有显式激活（`paste`/`aih clip copy` 的 `POST /items/{id}/materialize` 或 `GET /items/{id}/content`）才写入 materialize 请求，源端下一轮同步通过 `/sync/requests` 用 `BuildSyncPayload` 回传完整内容；图片回传原图，文件回传一次性 zip 包，落到目标 `materialized/<sha>/`。
+- 批量包内容上限：单文件 16 MiB、整包 32 MiB（受 20 MiB 同步单请求上限约束）；超过时 UI 在包卡片上标注 `Over 32 MiB relay limit`，索引仍只占一个位置。大包需要后续做分片/选择性物化，不在当前切片内。
+- 实测：Mac 复制 3 个 1000B 文件 → 源端 1 个 item（`files=3`、`size=3000`、`materialized=true`）；Windows 拉取后 1 个 stub（`files=3`、`size=3000`、`materialized=false`），未传输文件字节；Windows `aih clip copy <id>` 后变为 `materialized=true`，三个文件落到 `C:\Users\madou\.ai_home\clipboard\materialized\<sha>\song1..3.mp3`。
+- 文本/图片同样先走元数据：目标端文本只收到截断预览，图片只收到缩略图；正文/原图只在激活后回传。源端本地为了能直接粘贴，文本/图片会保存正文/原图，文件包只保存路径索引。

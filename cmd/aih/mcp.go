@@ -16,10 +16,13 @@ type mcpOptions struct {
 	provider     string
 	allSupported bool
 	jsonOutput   bool
+	transport    string
 	command      string
 	args         []string
 	cwd          string
 	envFile      string
+	url          string
+	headers      map[string]string
 	argsJSON     string
 }
 
@@ -59,8 +62,13 @@ func runMCP(ctx context.Context, arguments []string, runtime commandRuntime) err
 			if record.Enabled {
 				state = "enabled"
 			}
-			_, _ = fmt.Fprintf(runtime.stdout, "%s  %s  %s  %s  args=%d  env=%s  %s\n",
-				record.Provider, record.ID, state, record.Command, record.ArgCount, strings.Join(record.EnvKeys, ","), strings.Join(record.Projections, ","))
+			if record.Transport == "" || record.Transport == "stdio" {
+				_, _ = fmt.Fprintf(runtime.stdout, "%s  %s  %s  stdio  %s  args=%d  env=%s  %s\n",
+					record.Provider, record.ID, state, record.Command, record.ArgCount, strings.Join(record.EnvKeys, ","), strings.Join(record.Projections, ","))
+			} else {
+				_, _ = fmt.Fprintf(runtime.stdout, "%s  %s  %s  %s  %s  headers=%s  %s\n",
+					record.Provider, record.ID, state, record.Transport, record.URL, strings.Join(record.HeaderKeys, ","), strings.Join(record.Projections, ","))
+			}
 		}
 		if len(resources) == 0 {
 			_, _ = fmt.Fprintln(runtime.stdout, "(no managed MCP servers)")
@@ -102,8 +110,33 @@ func runMCP(ctx context.Context, arguments []string, runtime commandRuntime) err
 		if len(options.positional) != 1 {
 			return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_argument_required"))
 		}
-		if options.command == "" {
-			return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_command_required"))
+		transport := strings.ToLower(strings.TrimSpace(options.transport))
+		if transport == "" {
+			if options.url != "" {
+				transport = "http"
+			} else {
+				transport = "stdio"
+			}
+		}
+		switch transport {
+		case "stdio", "http", "sse":
+		default:
+			return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_transport_invalid"))
+		}
+		if transport == "stdio" {
+			if options.command == "" {
+				return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_command_required"))
+			}
+			if options.url != "" || len(options.headers) > 0 {
+				return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_transport_conflict"))
+			}
+		} else {
+			if options.url == "" {
+				return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_url_required"))
+			}
+			if options.command != "" || len(options.args) > 0 || options.cwd != "" || options.envFile != "" {
+				return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_transport_conflict"))
+			}
 		}
 		if options.provider == "" && !options.allSupported {
 			return printNativeResourceError(runtime, "mcp", fmt.Errorf("mcp_provider_required"))
@@ -127,7 +160,13 @@ func runMCP(ctx context.Context, arguments []string, runtime commandRuntime) err
 		}
 		return runMCPOperation(ctx, runtime, options, "add", options.positional[0], func(provider string) (any, error) {
 			return service.MCPAdd(ctx, options.positional[0], nativeresources.MCPServerSpec{
-				Command: options.command, Args: options.args, Cwd: options.cwd, Env: env,
+				Transport: transport,
+				Command:   options.command,
+				Args:      options.args,
+				Cwd:       options.cwd,
+				Env:       env,
+				URL:       options.url,
+				Headers:   options.headers,
 			}, provider)
 		}, providers)
 	case "test", "tools":
@@ -168,6 +207,20 @@ func runMCP(ctx context.Context, arguments []string, runtime commandRuntime) err
 	return nil
 }
 
+func parseMCPHeader(raw string) (string, string, error) {
+	value := strings.TrimSpace(raw)
+	index := strings.IndexAny(value, ":=")
+	if index <= 0 {
+		return "", "", fmt.Errorf("mcp_header_invalid")
+	}
+	key := strings.TrimSpace(value[:index])
+	headerValue := strings.TrimSpace(value[index+1:])
+	if key == "" || strings.ContainsAny(headerValue, "\r\n") {
+		return "", "", fmt.Errorf("mcp_header_invalid")
+	}
+	return key, headerValue, nil
+}
+
 func parseMCPOptions(arguments []string, command string) (mcpOptions, error) {
 	options := mcpOptions{}
 	for index := 0; index < len(arguments); index++ {
@@ -192,6 +245,31 @@ func parseMCPOptions(arguments []string, command string) (mcpOptions, error) {
 				return options, fmt.Errorf("mcp_option_value_required")
 			}
 			options.provider = strings.ToLower(value)
+		case "--transport":
+			value, ok := next()
+			if !ok || options.transport != "" {
+				return options, fmt.Errorf("mcp_option_value_required")
+			}
+			options.transport = strings.ToLower(value)
+		case "--url", "--endpoint":
+			value, ok := next()
+			if !ok || options.url != "" {
+				return options, fmt.Errorf("mcp_option_value_required")
+			}
+			options.url = value
+		case "--header":
+			value, ok := next()
+			if !ok {
+				return options, fmt.Errorf("mcp_option_value_required")
+			}
+			key, headerValue, parseErr := parseMCPHeader(value)
+			if parseErr != nil {
+				return options, parseErr
+			}
+			if options.headers == nil {
+				options.headers = map[string]string{}
+			}
+			options.headers[key] = headerValue
 		case "--command":
 			value, ok := next()
 			if !ok || options.command != "" {
@@ -337,6 +415,7 @@ func writeMCPUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  list [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  add <name> --command <file> [--arg <value> ...] (--provider <id>|--all-supported)")
 	_, _ = fmt.Fprintln(output, "             [--cwd <absolute-dir>] [--env-file <private.json>] [--json]")
+	_, _ = fmt.Fprintln(output, "  add <name> --transport http|sse --url <url> [--header \"Key: Value\" ...] (--provider <id>|--all-supported) [--json]")
 	_, _ = fmt.Fprintln(output, "  test <name> [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  tools <name> [--provider <id>] [--json]")
 	_, _ = fmt.Fprintln(output, "  call <name> <tool> [--args-json <json>] [--provider <id>] [--json]")

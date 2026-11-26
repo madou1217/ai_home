@@ -29,11 +29,13 @@ interface InstallFormValues {
   source: string;
   name?: string;
   link?: boolean;
-  mcpMode?: 'command' | 'script';
+  mcpTransport?: 'stdio' | 'http' | 'sse';
   mcpCommand?: string;
   mcpArgs?: string;
   mcpCwd?: string;
   mcpEnv?: { key?: string; value?: string }[];
+  mcpUrl?: string;
+  mcpHeaders?: { key?: string; value?: string }[];
 }
 
 type SourceMode = 'path' | 'folder' | 'url';
@@ -68,7 +70,7 @@ export default function NativeResourceInstallModal({
   const [importing, setImporting] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const kind = Form.useWatch('kind', form) || initialKind;
-  const mcpMode = Form.useWatch('mcpMode', form) || 'command';
+  const mcpTransport = Form.useWatch('mcpTransport', form) || 'stdio';
   const candidates = useMemo(
     () => (report?.installCandidates || []).filter((item) => item.kind === kind),
     [report, kind]
@@ -118,11 +120,13 @@ export default function NativeResourceInstallModal({
       source: '',
       name: undefined,
       link: false,
-      mcpMode: 'command',
+      mcpTransport: 'stdio',
       mcpCommand: '',
       mcpArgs: '',
       mcpCwd: '',
-      mcpEnv: []
+      mcpEnv: [],
+      mcpUrl: '',
+      mcpHeaders: []
     });
   }, [open, initialKind, form]);
 
@@ -192,38 +196,65 @@ export default function NativeResourceInstallModal({
   const submit = async () => {
     const values = await form.validateFields();
     const selectedKind = values.kind;
-    const commandMode = selectedKind === 'mcp' && (values.mcpMode || 'command') === 'command';
+    const mcpKind = selectedKind === 'mcp';
+    const mcpTransportValue = values.mcpTransport || 'stdio';
+    const remoteMCP = mcpKind && mcpTransportValue !== 'stdio';
     const source = values.source?.trim() || '';
     let sourcePayload: Record<string, unknown> = {};
     let mcpPayload: Record<string, unknown> = {};
-    if (commandMode) {
-      const command = values.mcpCommand?.trim() || '';
-      if (!command) {
-        message.warning('请填写 MCP 启动命令');
-        return;
-      }
-      const commandArgs = (values.mcpArgs || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const cwd = values.mcpCwd?.trim() || '';
-      const envPayload: Record<string, string> = {};
-      for (const entry of values.mcpEnv || []) {
-        const key = entry?.key?.trim() || '';
-        if (!key) continue;
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-          message.error(`环境变量名不合法：${key}`);
+    if (mcpKind) {
+      if (remoteMCP) {
+        const url = values.mcpUrl?.trim() || '';
+        if (!url) {
+          message.warning('请填写 MCP URL');
           return;
         }
-        envPayload[key] = entry.value ?? '';
+        const headerPayload: Record<string, string> = {};
+        for (const entry of values.mcpHeaders || []) {
+          const key = entry?.key?.trim() || '';
+          if (!key) continue;
+          if (!/^[A-Za-z0-9-]+$/.test(key)) {
+            message.error(`HTTP Header 名称不合法：${key}`);
+            return;
+          }
+          headerPayload[key] = entry.value ?? '';
+        }
+        mcpPayload = {
+          id: values.name?.trim(),
+          transport: mcpTransportValue,
+          url,
+          ...(Object.keys(headerPayload).length ? { headers: headerPayload } : {})
+        };
+      } else {
+        const command = values.mcpCommand?.trim() || '';
+        if (!command) {
+          message.warning('请填写 MCP 启动命令');
+          return;
+        }
+        const commandArgs = (values.mcpArgs || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const cwd = values.mcpCwd?.trim() || '';
+        const envPayload: Record<string, string> = {};
+        for (const entry of values.mcpEnv || []) {
+          const key = entry?.key?.trim() || '';
+          if (!key) continue;
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            message.error(`环境变量名不合法：${key}`);
+            return;
+          }
+          envPayload[key] = entry.value ?? '';
+        }
+        mcpPayload = {
+          id: values.name?.trim(),
+          transport: 'stdio',
+          command,
+          ...(commandArgs.length ? { commandArgs } : {}),
+          ...(cwd ? { cwd } : {}),
+          ...(Object.keys(envPayload).length ? { env: envPayload } : {})
+        };
       }
-      mcpPayload = {
-        id: values.name?.trim(),
-        command,
-        ...(commandArgs.length ? { commandArgs } : {}),
-        ...(cwd ? { cwd } : {}),
-        ...(Object.keys(envPayload).length ? { env: envPayload } : {})
-      };
     } else {
       if (sourceMode === 'path' && !source) {
         message.warning('请填写安装源路径');
@@ -248,9 +279,8 @@ export default function NativeResourceInstallModal({
       const results = await Promise.allSettled(targets.map((owner) => toolkitAPI.operateNativeResource({
         kind: selectedKind,
         action: 'install',
-        ...(commandMode ? mcpPayload : sourcePayload),
-        ...(!commandMode && selectedKind === 'mcp' ? { id: values.name?.trim() } : {}),
-        ...(!commandMode && selectedKind === 'skill' && values.link ? { link: true } : {}),
+        ...(mcpKind ? mcpPayload : sourcePayload),
+        ...(selectedKind === 'skill' && values.link ? { link: true } : {}),
         ...ownerPayload(owner)
       })));
       const failed = results
@@ -258,8 +288,8 @@ export default function NativeResourceInstallModal({
         .filter((item) => item.result.status === 'rejected');
       const succeeded = targets.length - failed.length;
       if (succeeded > 0) onInstalled(selectedKind);
-      const sourceLabel = commandMode
-        ? values.mcpCommand?.trim() || 'MCP'
+      const sourceLabel = mcpKind
+        ? (remoteMCP ? values.mcpUrl?.trim() || 'MCP' : values.mcpCommand?.trim() || 'MCP')
         : sourceMode === 'path' ? source : upload?.name || '安装源';
       if (!failed.length) {
         message.success(`${KIND_LABELS[selectedKind]} ${sourceLabel} 已安装到 ${targets.length} 个目标`);
@@ -297,11 +327,13 @@ export default function NativeResourceInstallModal({
               form.setFieldsValue({
                 owners: [],
                 name: undefined,
-                mcpMode: 'command',
+                mcpTransport: 'stdio',
                 mcpCommand: '',
                 mcpArgs: '',
                 mcpCwd: '',
-                mcpEnv: []
+                mcpEnv: [],
+                mcpUrl: '',
+                mcpHeaders: []
               });
             }}
           />
@@ -332,16 +364,17 @@ export default function NativeResourceInstallModal({
             >
               <Input placeholder="例如 filesystem" autoComplete="off" />
             </Form.Item>
-            <Form.Item name="mcpMode" label="安装方式">
+            <Form.Item name="mcpTransport" label="传输协议">
               <Segmented
                 block
                 options={[
-                  { value: 'command', label: '命令 / stdio' },
-                  { value: 'script', label: 'Node 脚本' }
+                  { value: 'stdio', label: 'stdio' },
+                  { value: 'http', label: 'HTTP' },
+                  { value: 'sse', label: 'SSE' }
                 ]}
               />
             </Form.Item>
-            {mcpMode === 'command' ? (
+            {mcpTransport === 'stdio' ? (
               <>
                 <Form.Item
                   name="mcpCommand"
@@ -393,10 +426,48 @@ export default function NativeResourceInstallModal({
                   </Form.List>
                 </Form.Item>
               </>
-            ) : null}
+            ) : (
+              <>
+                <Form.Item
+                  name="mcpUrl"
+                  label="MCP URL"
+                  rules={[{ required: true, message: '请填写 MCP URL' }]}
+                  extra={<Typography.Text type="secondary">HTTP 使用 Streamable HTTP；SSE 使用旧版 SSE 端点。URL 必须是 http(s)。</Typography.Text>}
+                >
+                  <Input placeholder="https://example.com/mcp" autoComplete="off" />
+                </Form.Item>
+                <Form.Item label="HTTP Headers（可选）">
+                  <Form.List name="mcpHeaders">
+                    {(fields, { add, remove }) => (
+                      <>
+                        {fields.map(({ key, name, ...restField }) => (
+                          <Space key={key} align="baseline" style={{ display: 'flex' }}>
+                            <Form.Item
+                              {...restField}
+                              name={[name, 'key']}
+                              rules={[{ pattern: /^[A-Za-z0-9-]+$/, message: '仅支持字母、数字与连字符' }]}
+                              style={{ marginBottom: 8 }}
+                            >
+                              <Input placeholder="Authorization" autoComplete="off" />
+                            </Form.Item>
+                            <Form.Item {...restField} name={[name, 'value']} style={{ marginBottom: 8 }}>
+                              <Input placeholder="Bearer ..." autoComplete="off" />
+                            </Form.Item>
+                            <MinusCircleOutlined onClick={() => remove(name)} />
+                          </Space>
+                        ))}
+                        <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add()}>
+                          添加 Header
+                        </Button>
+                      </>
+                    )}
+                  </Form.List>
+                </Form.Item>
+              </>
+            )}
           </>
         ) : null}
-        {kind === 'mcp' && mcpMode === 'command' ? null : (
+        {kind === 'mcp' ? null : (
           <>
         <Form.Item label="安装源">
           <Segmented
@@ -438,7 +509,7 @@ export default function NativeResourceInstallModal({
             ) : null}
             <Form.Item
               name="source"
-              label={kind === 'mcp' ? 'Node 脚本路径' : '安装源路径'}
+              label="安装源路径"
               preserve={false}
               rules={[{ required: true, message: '请填写安装源路径' }]}
               extra={

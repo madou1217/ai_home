@@ -1,12 +1,12 @@
 package nativeresources
 
 import (
-	"github.com/madou1217/ai_home/core/providers"
 	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/core/providers"
 )
 
 const (
@@ -27,6 +29,7 @@ const (
 var (
 	reMCPName    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 	reMCPEnvKey  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	reMCPHeader  = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 	mcpProtocols = map[string]bool{
 		"2024-11-05": true,
 		"2025-03-26": true,
@@ -36,30 +39,40 @@ var (
 )
 
 type mcpConfigAdapter struct {
-	format      string
-	topKey      string
-	isTOML      bool
-	supportsCwd bool
+	format       string
+	topKey       string
+	nestedKey    string
+	isTOML       bool
+	supportsCwd  bool
+	supportsHTTP bool
+	supportsSSE  bool
 }
 
 func newMCPConfigAdapter(format string) (*mcpConfigAdapter, error) {
 	switch format {
 	case "toml-stdio":
-		return &mcpConfigAdapter{format: format, topKey: "mcp_servers", isTOML: true, supportsCwd: true}, nil
+		return &mcpConfigAdapter{format: format, topKey: "mcp_servers", isTOML: true, supportsCwd: true, supportsHTTP: true}, nil
 	case "json-stdio":
-		return &mcpConfigAdapter{format: format, topKey: "mcpServers", supportsCwd: true}, nil
+		return &mcpConfigAdapter{format: format, topKey: "mcpServers", supportsCwd: true, supportsHTTP: true, supportsSSE: true}, nil
 	case "json-command":
-		return &mcpConfigAdapter{format: format, topKey: "mcpServers", supportsCwd: true}, nil
+		return &mcpConfigAdapter{format: format, topKey: "mcpServers", supportsCwd: true, supportsHTTP: true, supportsSSE: true}, nil
 	case "json-cline":
 		return &mcpConfigAdapter{format: format, topKey: "mcpServers", supportsCwd: true}, nil
 	case "json-opencode":
-		return &mcpConfigAdapter{format: format, topKey: "mcp", supportsCwd: false}, nil
+		return &mcpConfigAdapter{format: format, topKey: "mcp", nestedKey: "servers", supportsCwd: false, supportsHTTP: true, supportsSSE: true}, nil
 	default:
 		return nil, fail("mcp_config_format_unsupported")
 	}
 }
 
 func (a *mcpConfigAdapter) encode(server *MCPServerSpec) map[string]any {
+	transport := strings.ToLower(strings.TrimSpace(server.Transport))
+	if transport == "" {
+		transport = "stdio"
+	}
+	if transport != "stdio" {
+		return a.encodeRemote(server, transport)
+	}
 	args := append([]string{}, server.Args...)
 	if a.format == "json-opencode" {
 		cmdList := make([]any, 0, 1+len(args))
@@ -101,6 +114,32 @@ func (a *mcpConfigAdapter) encode(server *MCPServerSpec) map[string]any {
 		return map[string]any{"transport": base}
 	default:
 		return base
+	}
+}
+
+func (a *mcpConfigAdapter) encodeRemote(server *MCPServerSpec, transport string) map[string]any {
+	headers := cloneStringMapToAny(server.Headers)
+	switch a.format {
+	case "toml-stdio":
+		entry := map[string]any{"url": server.URL}
+		if len(headers) > 0 {
+			entry["http_headers"] = headers
+		}
+		return entry
+	case "json-opencode":
+		entry := map[string]any{"type": "remote", "url": server.URL, "enabled": true}
+		if len(headers) > 0 {
+			entry["headers"] = headers
+		}
+		return entry
+	case "json-stdio", "json-command":
+		entry := map[string]any{"type": transport, "url": server.URL}
+		if len(headers) > 0 {
+			entry["headers"] = headers
+		}
+		return entry
+	default:
+		return nil
 	}
 }
 
@@ -161,7 +200,19 @@ func (a *mcpConfigAdapter) read(filePath string) (string, map[string]any, map[st
 	}
 
 	servers := make(map[string]any)
-	if rawSection, exists := doc[a.topKey]; exists && rawSection != nil {
+	if a.nestedKey != "" {
+		top, _ := doc[a.topKey].(map[string]any)
+		if top == nil {
+			top = map[string]any{}
+		}
+		if nested, exists := top[a.nestedKey]; exists && nested != nil {
+			sec, ok := nested.(map[string]any)
+			if !ok {
+				return "", nil, nil, fail("mcp_config_invalid")
+			}
+			servers = sec
+		}
+	} else if rawSection, exists := doc[a.topKey]; exists && rawSection != nil {
 		sec, ok := rawSection.(map[string]any)
 		if !ok {
 			return "", nil, nil, fail("mcp_config_invalid")
@@ -220,6 +271,15 @@ func (a *mcpConfigAdapter) update(filePath, name string, entry map[string]any, p
 			delete(servers, name)
 		} else {
 			servers[name] = entry
+		}
+		if a.nestedKey != "" {
+			top, _ := doc[a.topKey].(map[string]any)
+			if top == nil {
+				top = map[string]any{}
+			}
+			top[a.nestedKey] = servers
+			doc[a.topKey] = top
+		} else {
 			doc[a.topKey] = servers
 		}
 		encoded, err := json.MarshalIndent(doc, "", "  ")
@@ -268,6 +328,20 @@ func formatMCPTOMLBlock(topKey, name string, entry map[string]any) string {
 	}
 	if cwd, ok := entry["cwd"].(string); ok && cwd != "" {
 		fmt.Fprintf(&b, "cwd = %q\n", cwd)
+	}
+	if url, ok := entry["url"].(string); ok && url != "" {
+		fmt.Fprintf(&b, "url = %q\n", url)
+	}
+	if headers, ok := entry["http_headers"].(map[string]any); ok && len(headers) > 0 {
+		fmt.Fprintf(&b, "\n[%s.%s.http_headers]\n", topKey, formatMCPTOMLKey(name))
+		keys := make([]string, 0, len(headers))
+		for k := range headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&b, "%s = %q\n", formatMCPTOMLKey(k), fmt.Sprint(headers[k]))
+		}
 	}
 	if envMap, ok := entry["env"].(map[string]any); ok && len(envMap) > 0 {
 		fmt.Fprintf(&b, "\n[%s.%s.env]\n", topKey, formatMCPTOMLKey(name))
@@ -567,9 +641,12 @@ type PublicMCPRecord struct {
 	ID          string   `json:"id"`
 	Provider    string   `json:"provider"`
 	Scope       string   `json:"scope"`
-	Command     string   `json:"command"`
+	Transport   string   `json:"transport,omitempty"`
+	Command     string   `json:"command,omitempty"`
 	ArgCount    int      `json:"argCount"`
 	EnvKeys     []string `json:"envKeys"`
+	URL         string   `json:"url,omitempty"`
+	HeaderKeys  []string `json:"headerKeys,omitempty"`
 	Enabled     bool     `json:"enabled"`
 	Removed     bool     `json:"removed,omitempty"`
 	Projections []string `json:"projections"`
@@ -578,16 +655,27 @@ type PublicMCPRecord struct {
 }
 
 func toPublicMCPRecord(rec ManagedRecord) PublicMCPRecord {
+	transport := "stdio"
 	var cmd string
 	var argCount int
 	envKeys := []string{}
+	url := ""
+	headerKeys := []string{}
 	if rec.Server != nil {
+		if strings.TrimSpace(rec.Server.Transport) != "" {
+			transport = strings.ToLower(strings.TrimSpace(rec.Server.Transport))
+		}
 		cmd = rec.Server.Command
 		argCount = len(rec.Server.Args)
 		for k := range rec.Server.Env {
 			envKeys = append(envKeys, k)
 		}
 		sort.Strings(envKeys)
+		url = sanitizeMCPURL(rec.Server.URL)
+		for k := range rec.Server.Headers {
+			headerKeys = append(headerKeys, k)
+		}
+		sort.Strings(headerKeys)
 	}
 	projs := append([]string{}, rec.Projections...)
 	return PublicMCPRecord{
@@ -595,15 +683,29 @@ func toPublicMCPRecord(rec ManagedRecord) PublicMCPRecord {
 		ID:          rec.ID,
 		Provider:    rec.Provider,
 		Scope:       rec.Scope,
+		Transport:   transport,
 		Command:     cmd,
 		ArgCount:    argCount,
 		EnvKeys:     envKeys,
+		URL:         url,
+		HeaderKeys:  headerKeys,
 		Enabled:     rec.Enabled,
 		Removed:     rec.Removed,
 		Projections: projs,
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
 	}
+}
+
+func sanitizeMCPURL(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 type mcpManager struct {
@@ -637,34 +739,87 @@ func validateMCPName(name string) error {
 }
 
 func normalizeMCPServer(in MCPServerSpec) (*MCPServerSpec, error) {
-	if strings.TrimSpace(in.Command) == "" || strings.ContainsRune(in.Command, '\x00') {
-		return nil, fail("mcp_command_required")
-	}
-	args := make([]string, len(in.Args))
-	for i, arg := range in.Args {
-		if strings.ContainsRune(arg, '\x00') {
-			return nil, fail("mcp_args_invalid")
+	transport := strings.ToLower(strings.TrimSpace(in.Transport))
+	if transport == "" {
+		if strings.TrimSpace(in.URL) != "" {
+			transport = "http"
+		} else {
+			transport = "stdio"
 		}
-		args[i] = arg
 	}
-	if in.Cwd != "" && !filepath.IsAbs(in.Cwd) {
-		return nil, fail("mcp_cwd_invalid")
+	switch transport {
+	case "stdio", "http", "sse":
+	default:
+		return nil, fail("mcp_transport_invalid")
 	}
-	var cleanEnv map[string]string
-	if len(in.Env) > 0 {
-		cleanEnv = make(map[string]string, len(in.Env))
-		for k, v := range in.Env {
-			if !reMCPEnvKey.MatchString(k) || strings.ContainsRune(v, '\x00') {
-				return nil, fail("mcp_env_invalid")
+	if transport == "stdio" {
+		if strings.TrimSpace(in.URL) != "" || len(in.Headers) > 0 {
+			return nil, fail("mcp_transport_conflict")
+		}
+		if strings.TrimSpace(in.Command) == "" || strings.ContainsRune(in.Command, '\x00') {
+			return nil, fail("mcp_command_required")
+		}
+		args := make([]string, len(in.Args))
+		for i, arg := range in.Args {
+			if strings.ContainsRune(arg, '\x00') {
+				return nil, fail("mcp_args_invalid")
 			}
-			cleanEnv[k] = v
+			args[i] = arg
+		}
+		if in.Cwd != "" && !filepath.IsAbs(in.Cwd) {
+			return nil, fail("mcp_cwd_invalid")
+		}
+		var cleanEnv map[string]string
+		if len(in.Env) > 0 {
+			cleanEnv = make(map[string]string, len(in.Env))
+			for k, v := range in.Env {
+				if !reMCPEnvKey.MatchString(k) || strings.ContainsRune(v, '\x00') {
+					return nil, fail("mcp_env_invalid")
+				}
+				cleanEnv[k] = v
+			}
+		}
+		out := &MCPServerSpec{
+			Transport: "stdio",
+			Command:   in.Command,
+			Args:      args,
+			Cwd:       in.Cwd,
+			Env:       cleanEnv,
+		}
+		raw, _ := json.Marshal(out)
+		if len(raw) > maxMCPDefBytes {
+			return nil, fail("mcp_definition_limit")
+		}
+		return out, nil
+	}
+
+	if strings.TrimSpace(in.Command) != "" || len(in.Args) > 0 ||
+		strings.TrimSpace(in.Cwd) != "" || len(in.Env) > 0 {
+		return nil, fail("mcp_transport_conflict")
+	}
+	rawURL := strings.TrimSpace(in.URL)
+	if rawURL == "" {
+		return nil, fail("mcp_url_required")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" || parsed.User != nil ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fail("mcp_url_invalid")
+	}
+	var cleanHeaders map[string]string
+	if len(in.Headers) > 0 {
+		cleanHeaders = make(map[string]string, len(in.Headers))
+		for k, v := range in.Headers {
+			if !reMCPHeader.MatchString(k) || strings.ContainsAny(v, "\r\n\x00") {
+				return nil, fail("mcp_headers_invalid")
+			}
+			cleanHeaders[k] = v
 		}
 	}
 	out := &MCPServerSpec{
-		Command: in.Command,
-		Args:    args,
-		Cwd:     in.Cwd,
-		Env:     cleanEnv,
+		Transport: transport,
+		URL:       rawURL,
+		Headers:   cleanHeaders,
 	}
 	raw, _ := json.Marshal(out)
 	if len(raw) > maxMCPDefBytes {
@@ -732,7 +887,13 @@ func (m *mcpManager) add(ctx context.Context, name string, input MCPServerSpec, 
 	if err != nil {
 		return PublicMCPRecord{}, err
 	}
-	if server.Cwd != "" && !adapter.supportsCwd {
+	if server.Transport == "http" && !adapter.supportsHTTP {
+		return PublicMCPRecord{}, fail("mcp_transport_unsupported")
+	}
+	if server.Transport == "sse" && !adapter.supportsSSE {
+		return PublicMCPRecord{}, fail("mcp_transport_unsupported")
+	}
+	if server.Transport == "stdio" && server.Cwd != "" && !adapter.supportsCwd {
 		return PublicMCPRecord{}, fail("mcp_cwd_unsupported")
 	}
 
@@ -868,7 +1029,7 @@ func (m *mcpManager) test(ctx context.Context, name, provider string) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	client, err := dialMCPStdio(ctx, rec.Server)
+	client, err := dialMCPClient(ctx, rec.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -901,7 +1062,7 @@ func (m *mcpManager) tools(ctx context.Context, name, provider string) ([]map[st
 	if err != nil {
 		return nil, err
 	}
-	client, err := dialMCPStdio(ctx, rec.Server)
+	client, err := dialMCPClient(ctx, rec.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -914,7 +1075,7 @@ func (m *mcpManager) call(ctx context.Context, name, provider, tool string, args
 	if err != nil {
 		return nil, err
 	}
-	client, err := dialMCPStdio(ctx, rec.Server)
+	client, err := dialMCPClient(ctx, rec.Server)
 	if err != nil {
 		return nil, err
 	}

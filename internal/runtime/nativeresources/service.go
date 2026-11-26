@@ -304,10 +304,13 @@ type OperateInput struct {
 	Args     map[string]any `json:"args"`
 	// MCP stdio definition for the generic install form. CommandArgs is kept
 	// separate from Args because Args carries MCP tool call arguments.
+	Transport   string            `json:"transport,omitempty"`
 	Command     string            `json:"command,omitempty"`
 	CommandArgs []string          `json:"commandArgs,omitempty"`
 	Cwd         string            `json:"cwd,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
 	// Link requests link-based skill projection instead of a per-provider copy.
 	Link bool `json:"link,omitempty"`
 }
@@ -511,12 +514,18 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		switch action {
 		case "install":
 			spec := MCPServerSpec{
-				Command: strings.TrimSpace(input.Command),
-				Args:    append([]string{}, input.CommandArgs...),
-				Cwd:     strings.TrimSpace(input.Cwd),
-				Env:     input.Env,
+				Transport: strings.TrimSpace(input.Transport),
+				Command:   strings.TrimSpace(input.Command),
+				Args:      append([]string{}, input.CommandArgs...),
+				Cwd:       strings.TrimSpace(input.Cwd),
+				Env:       input.Env,
+				URL:       strings.TrimSpace(input.URL),
+				Headers:   input.Headers,
 			}
-			if spec.Command == "" {
+			transport := strings.ToLower(strings.TrimSpace(spec.Transport))
+			legacySource := spec.Command == "" && spec.URL == "" &&
+				(transport == "" || transport == "stdio") && strings.TrimSpace(input.Source) != ""
+			if legacySource {
 				src, sErr := s.installSource(ctx, input)
 				if sErr != nil {
 					return OperateResponse{}, sErr
@@ -529,7 +538,7 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 				if nodeBin == "" {
 					nodeBin = "node"
 				}
-				spec = MCPServerSpec{Command: nodeBin, Args: []string{script}}
+				spec = MCPServerSpec{Transport: "stdio", Command: nodeBin, Args: []string{script}}
 			}
 			if _, addErr := s.mcps.add(ctx, id, spec, sel.Provider); addErr != nil {
 				return OperateResponse{}, addErr

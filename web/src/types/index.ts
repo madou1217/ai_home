@@ -3491,9 +3491,12 @@ export interface NativeResourceManagedRecord {
   description?: string;
   declaration?: string[];
   projection?: string;
+  transport?: string;
   command?: string;
   argCount?: number;
   envKeys?: string[];
+  url?: string;
+  headerKeys?: string[];
 }
 
 export interface NativeResourceCapability {

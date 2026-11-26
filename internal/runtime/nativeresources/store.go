@@ -69,11 +69,14 @@ func requireCond(cond bool, code string) error {
 
 // MCPServerSpec 描述 MCP stdio 服务定义。
 type MCPServerSpec struct {
-	extra   map[string]json.RawMessage
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Cwd     string            `json:"cwd,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	extra     map[string]json.RawMessage
+	Transport string            `json:"transport,omitempty"` // stdio | http | sse
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Cwd       string            `json:"cwd,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 // ManagedRecord 描述 app_kv 中持久化的托管资源记录（plugin / skill / mcp）。

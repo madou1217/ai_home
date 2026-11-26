@@ -25,6 +25,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
+	"github.com/madou1217/ai_home/internal/runtime/serverlog"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/relayegress"
 )
@@ -393,6 +394,20 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			// 内部换号标记只能由当前 Server 生成，不能信任上游同名 Header。
 			response.Header().Set(gatewaycontract.RetryAccountHeader, gatewaycontract.RetryAccountValue)
 		}
+		// 请求级失败落按天日志：账号级的分类事实由 failureprovenance 记录，
+		// 这里补上最终交付给客户端的 status/code 与归属，便于复盘单次请求。
+		accountRef := ""
+		if outcome.route.IsValid() {
+			accountRef = outcome.route.AccountRef().String()
+		}
+		serverlog.Emit("relay_failure", map[string]any{
+			"source":   "relay",
+			"provider": outcome.provider,
+			"model":    modelID.String(),
+			"account":  accountRef,
+			"status":   failure.status,
+			"code":     failure.code,
+		})
 		writeRelayFailureWith429Headers(response, failure, reqState, handler.clock())
 		return
 	}
@@ -633,6 +648,7 @@ func (handler *Handler) businessFailureOutcome(
 	presentation := businessFailurePresentation(provider, classification)
 	return attemptOutcome{
 		route:        route,
+		provider:     provider.ID(),
 		retryAccount: retry,
 		failure: relayFailure{
 			status:  presentation.StatusCode,
@@ -990,7 +1006,8 @@ func (handler *Handler) attemptRelay(
 		// 与账号无关的边缘拒绝：交付网关自己的 502，不透传上游拦截页（与 Node 同语义）。
 		closeUpstreamResponse(upstreamResponse)
 		return attemptOutcome{
-			route: route,
+			route:    route,
+			provider: provider.ID(),
 			failure: relayFailure{
 				status:  http.StatusBadGateway,
 				code:    "upstream_edge_rejected",
@@ -1005,6 +1022,7 @@ func (handler *Handler) attemptRelay(
 			closeUpstreamResponse(upstreamResponse)
 			return attemptOutcome{
 				route:        route,
+				provider:     provider.ID(),
 				retryAccount: failure.retry,
 				failure: relayFailure{
 					status:  presented.StatusCode,

@@ -10,6 +10,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	"github.com/madou1217/ai_home/internal/runtime/serverlog"
 )
 
 // Sink 实现 inferencegateway.FailureProvenanceSink。
@@ -39,7 +40,7 @@ func (Sink) RecordFailureProvenance(
 			cooldownUntilMS = retryAt.UnixMilli()
 		}
 	}
-	Record(Event{
+	event := Event{
 		AtMS:            time.Now().UnixMilli(),
 		Provider:        provenance.Provider(),
 		AccountRef:      route.AccountRef().String(),
@@ -53,5 +54,8 @@ func (Sink) RecordFailureProvenance(
 		Action:          action,
 		Recorded:        recorded,
 		CooldownUntilMS: cooldownUntilMS,
-	})
+	}
+	// 环形缓冲只在进程内存里；失败事实同时写按天日志，重启后仍可追查。
+	Record(event)
+	serverlog.Emit("upstream_failure", event)
 }

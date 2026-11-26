@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
+	"github.com/madou1217/ai_home/internal/runtime/serverlog"
 	"github.com/madou1217/ai_home/internal/runtime/termtext"
 	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 	"github.com/madou1217/ai_home/internal/transport/grpc/xaiapi"
@@ -43,6 +44,17 @@ func watchParent() {
 			}
 		}
 	}()
+}
+
+// stderrMirror 只有在 stderr 是交互终端时才镜像日志。
+//
+// 服务模式（launchd）把 stderr 重定向到固定文件，主日志若继续镜像会让该文件
+// 无界增长；此时主日志只写按天文件，stderr 仍保留启动失败与 panic 输出。
+func stderrMirror(stderr io.Writer) io.Writer {
+	if info, err := os.Stderr.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+		return stderr
+	}
+	return nil
 }
 
 // commandRuntime 集中注入操作系统边界，便于无全局状态测试。
@@ -85,6 +97,16 @@ func run(
 	}
 	if err != nil {
 		return err
+	}
+	// 按天日志是主日志：全部标准日志与结构化失败事件都落到
+	// <AIH_HOME>/logs/server/YYYY-MM-DD.log，默认保留 30 天。
+	// 交互终端的 stderr 只作为镜像；launchd 的重定向文件不再接收主日志。
+	if logErr := serverlog.Install(
+		config.aiHomeDir,
+		serverlog.DefaultRetentionDays,
+		stderrMirror(runtime.stderr),
+	); logErr != nil {
+		_, _ = fmt.Fprintln(runtime.stderr, "aih-server: 按天日志文件不可用，继续只写 stderr: "+logErr.Error())
 	}
 	if config.agyFirstByteTimeoutMs > 0 {
 		if err := aihserver.ConfigureAgyFirstByteTimeout(time.Duration(config.agyFirstByteTimeoutMs) * time.Millisecond); err != nil {
@@ -150,7 +172,7 @@ func run(
 			EntryFilePath:                config.entryFilePath,
 		},
 		ErrorLog: log.New(
-			runtime.stderr,
+			serverlog.Writer(stderrMirror(runtime.stderr)),
 			"aih-server http: ",
 			log.Ldate|log.Ltime|log.LUTC,
 		),

@@ -9,6 +9,7 @@ import (
 	"github.com/madou1217/ai_home/application/upstreamretry"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountdeletionruntime"
+	"github.com/madou1217/ai_home/internal/runtime/serverlog"
 	runtimeupstreamretry "github.com/madou1217/ai_home/internal/runtime/upstreamretry"
 )
 
@@ -17,6 +18,18 @@ type upstream429LogObserver struct {
 }
 
 func (observer upstream429LogObserver) ObserveWait(event upstreamretry.WaitEvent) {
+	// 结构化事件与文本行同源：按天日志里可以直接按账号/模型过滤等待序列。
+	serverlog.Emit("retry_wait", map[string]any{
+		"surface":      event.Surface,
+		"provider":     event.ProviderID,
+		"account":      event.AccountRef,
+		"retry":        event.RetryNumber,
+		"maxRetries":   event.MaxRetries,
+		"delayMs":      event.Delay.Milliseconds(),
+		"source":       string(event.WaitSource),
+		"pinned":       event.Pinned,
+		"policySource": string(event.PolicySource),
+	})
 	if observer.logger == nil {
 		return
 	}
@@ -35,6 +48,15 @@ func (observer upstream429LogObserver) ObserveWait(event upstreamretry.WaitEvent
 }
 
 func (observer upstream429LogObserver) ObserveOutcome(event upstreamretry.OutcomeEvent) {
+	serverlog.Emit("retry_outcome", map[string]any{
+		"surface":     event.Surface,
+		"provider":    event.ProviderID,
+		"account":     event.AccountRef,
+		"outcome":     event.Outcome,
+		"retries":     event.Retries,
+		"totalWaitMs": event.TotalWait.Milliseconds(),
+		"abortReason": string(event.AbortReason),
+	})
 	if observer.logger == nil {
 		return
 	}

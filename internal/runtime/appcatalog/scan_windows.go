@@ -28,7 +28,20 @@ func platformSupported() bool {
 	return true
 }
 
+// scanApps prefers the Shell AppsFolder namespace, which is the Start menu's
+// authoritative list: it returns desktop shortcuts and UWP/Store apps together,
+// with no cross-source duplicates. The .lnk walk remains as a fallback for
+// machines where the Shell enumeration is unavailable.
 func scanApps(ctx context.Context) ([]launcher.App, error) {
+	if shellApps := scanWindowsShellApps(ctx); len(shellApps) > 0 {
+		return shellApps, nil
+	}
+	return scanWindowsShortcutApps(ctx)
+}
+
+// scanWindowsShortcutApps walks the per-user and machine Start Menu shortcuts.
+// It is only used when the Shell AppsFolder enumeration returns nothing.
+func scanWindowsShortcutApps(ctx context.Context) ([]launcher.App, error) {
 	apps := make([]launcher.App, 0, 256)
 	seenLnk := make(map[string]struct{}, 256)
 	seenName := make(map[string]struct{}, 256)
@@ -61,12 +74,19 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 			seenLnk[key] = struct{}{}
 
 			base := d.Name()
-			name := base[:len(base)-len(filepath.Ext(base))]
+			name := strings.TrimSpace(base[:len(base)-len(filepath.Ext(base))])
+			if name == "" {
+				return nil
+			}
+			normName := strings.ToLower(name)
+			if _, dup := seenName[normName]; dup {
+				return nil
+			}
+			seenName[normName] = struct{}{}
 			var modifiedAtMs int64
 			if info, infoErr := d.Info(); infoErr == nil {
 				modifiedAtMs = info.ModTime().UnixMilli()
 			}
-			seenName[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
 			apps = append(apps, launcher.App{
 				ID:           launcher.AppID(windowsPlatformString, key),
 				Name:         name,
@@ -74,14 +94,11 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 				Path:         cleanPath,
 				Kind:         launcher.KindApp,
 				Icon:         cleanPath,
-				Terminal:     false,
 				ModifiedAtMs: modifiedAtMs,
 			})
 			return nil
 		})
 	}
-
-	apps = append(apps, scanWindowsShellApps(ctx, seenName)...)
 	return apps, nil
 }
 
@@ -96,15 +113,16 @@ func windowsStartMenuRoots() []string {
 	return roots
 }
 
-// scanWindowsShellApps enumerates the Start menu through the Shell AppsFolder
-// namespace, which returns desktop shortcuts and UWP/Store apps together.
+// scanWindowsShellApps enumerates shell:AppsFolder, the same namespace the Start
+// menu renders (desktop shortcuts + UWP/Store apps), with duplicate names and
+// duplicate executable targets removed.
 //
 // A temporary VBS executed by cscript is used instead of Get-StartApps: a child
 // powershell.exe can stall under the desktop helper's scheduled-task context on
 // some machines (observed 2026-11-26), which silently dropped every UWP entry.
 // The Shell namespace enumerates reliably there and writes UTF-16LE itself, so
 // no console code page or stdout encoding is involved.
-func scanWindowsShellApps(ctx context.Context, existingNames map[string]struct{}) []launcher.App {
+func scanWindowsShellApps(ctx context.Context) []launcher.App {
 	dir, err := os.MkdirTemp("", "aih-startapps-")
 	if err != nil {
 		return nil
@@ -133,7 +151,8 @@ func scanWindowsShellApps(ctx context.Context, existingNames map[string]struct{}
 	}
 	text := decodeWindowsText(data)
 
-	seenRow := make(map[string]struct{}, 256)
+	seenName := make(map[string]struct{}, 256)
+	seenTarget := make(map[string]struct{}, 256)
 	result := make([]launcher.App, 0, 256)
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
@@ -150,40 +169,42 @@ func scanWindowsShellApps(ctx context.Context, existingNames map[string]struct{}
 			continue
 		}
 		normName := strings.ToLower(name)
-		if _, dup := existingNames[normName]; dup {
+		if _, dup := seenName[normName]; dup {
 			continue
 		}
-		if _, dup := seenRow[normName]; dup {
-			continue
-		}
-		seenRow[normName] = struct{}{}
 
+		app := launcher.App{Name: name}
 		if strings.ContainsAny(target, `:\`) {
 			// Desktop app exposed by the Shell with a real executable path.
+			normTarget := strings.ToLower(filepath.Clean(target))
+			if _, dup := seenTarget[normTarget]; dup {
+				continue
+			}
+			seenTarget[normTarget] = struct{}{}
 			var modifiedAtMs int64
 			if info, statErr := os.Stat(target); statErr == nil {
 				modifiedAtMs = info.ModTime().UnixMilli()
 			}
-			result = append(result, launcher.App{
-				ID:           launcher.AppID(windowsPlatformString, "path:"+strings.ToLower(target)),
-				Name:         name,
-				Subtitle:     target,
-				Path:         target,
-				Kind:         launcher.KindApp,
-				Icon:         target,
-				ModifiedAtMs: modifiedAtMs,
-			})
-			continue
+			app.ID = launcher.AppID(windowsPlatformString, "path:"+normTarget)
+			app.Subtitle = target
+			app.Path = target
+			app.Kind = launcher.KindApp
+			app.Icon = target
+			app.ModifiedAtMs = modifiedAtMs
+		} else {
+			// UWP/Store app or AUMID entry: launch through the AppsFolder shell path.
+			normTarget := strings.ToLower(target)
+			if _, dup := seenTarget[normTarget]; dup {
+				continue
+			}
+			seenTarget[normTarget] = struct{}{}
+			app.ID = launcher.AppID(windowsPlatformString, "uwp:"+normTarget)
+			app.Path = `shell:AppsFolder\` + target
+			app.Subtitle = app.Path
+			app.Kind = launcher.KindUWP
 		}
-		// UWP/Store app or AUMID entry: launch through the AppsFolder shell path.
-		shellPath := `shell:AppsFolder\` + target
-		result = append(result, launcher.App{
-			ID:       launcher.AppID(windowsPlatformString, "uwp:"+strings.ToLower(target)),
-			Name:     name,
-			Subtitle: shellPath,
-			Path:     shellPath,
-			Kind:     launcher.KindUWP,
-		})
+		seenName[normName] = struct{}{}
+		result = append(result, app)
 	}
 	return result
 }

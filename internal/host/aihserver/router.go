@@ -306,6 +306,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 		path: openaichatcompletionsapi.Path,
 		next: chatHandler,
 	})
+	// 火山方舟官方 SDK 默认 base_url 是 /api/v3；方舟的请求/响应是 OpenAI Chat
+	// 合同，因此同样只做路径别名，复用同一个处理链。
+	mux.Handle(openaichatcompletionsapi.ArkCompatPath, compatPathHandler{
+		path: openaichatcompletionsapi.Path,
+		next: chatHandler,
+	})
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
 	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
 	//

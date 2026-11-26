@@ -107,6 +107,8 @@ func SurfaceForPath(path string) string {
 		return "chat"
 	case strings.HasPrefix(trimmed, "/api/paas/v4/chat/completions"):
 		return "chat"
+	case strings.HasPrefix(trimmed, "/api/v3/chat/completions"):
+		return "chat"
 	case strings.HasPrefix(trimmed, "/v1/messages"):
 		return "messages"
 	case strings.HasPrefix(trimmed, "/v1beta/"):

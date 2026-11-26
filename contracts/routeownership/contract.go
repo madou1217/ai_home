@@ -118,6 +118,14 @@ func Current() Manifest {
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/api/paas/v4/chat/completions")},
 			},
 			{
+				// 火山方舟官方 SDK 默认 base_url 的 Chat Completions 路径；
+				// 方舟请求/响应就是 OpenAI Chat 合同，只做路径别名。
+				ID:              "gateway.compat.ark.chat_completions",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/api/v3/chat/completions")},
+			},
+			{
 				ID:              "gateway.anthropic.messages",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

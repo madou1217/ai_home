@@ -44,13 +44,42 @@ func ObserveHTTPForProvider(
 	body []byte,
 	observedAt time.Time,
 ) (Classification, error) {
+	return ObserveHTTPForProviderSurface(provider, "", statusCode, header, body, observedAt)
+}
+
+// ObserveHTTPForProviderSurface 是带 Provider + 端点/协议面的 HTTP 观察入口。
+//
+// surface 为空表示不限端点，行为与 ObserveHTTPForProvider 完全一致。
+func ObserveHTTPForProviderSurface(
+	provider string,
+	surface string,
+	statusCode int,
+	header http.Header,
+	body []byte,
+	observedAt time.Time,
+) (Classification, error) {
+	rawType, rawCode := readOpenAIErrorIdentity(body)
+	return ObserveHTTPWithSurfaceIdentity(provider, surface, statusCode, header, body, rawType, rawCode, observedAt)
+}
+
+// ObserveHTTPWithSurfaceIdentity 供已经按自家信封解析出稳定错误标识的 Provider 使用
+// （例如 zcode 的顶层 {"code":1005,"msg":...}），避免观察器再猜一次正文形状。
+func ObserveHTTPWithSurfaceIdentity(
+	provider string,
+	surface string,
+	statusCode int,
+	header http.Header,
+	body []byte,
+	rawType string,
+	rawCode string,
+	observedAt time.Time,
+) (Classification, error) {
 	if statusCode <= 0 {
 		return Classification{}, ErrInvalidObservation
 	}
 	if classification, rejected := ObserveEdgeRejection(statusCode, header, body); rejected {
 		return classification, nil
 	}
-	rawType, rawCode := readOpenAIErrorIdentity(body)
 	errorType, _ := NormalizeErrorToken(rawType)
 	errorCode, _ := NormalizeErrorToken(rawCode)
 	if statusCode < http.StatusMultipleChoices && rawType == "" && rawCode == "" {
@@ -64,8 +93,9 @@ func ObserveHTTPForProvider(
 		return AttachExplicitRetryAfter(classification, header, observedAt), nil
 	}
 
-	if match, matched := failurecontract.Resolve(SignalInputFrom(
+	if match, matched := failurecontract.Resolve(SignalInputFromSurface(
 		provider,
+		surface,
 		statusCode,
 		errorType,
 		errorCode,

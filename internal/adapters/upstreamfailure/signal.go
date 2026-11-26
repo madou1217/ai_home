@@ -101,12 +101,29 @@ func SignalInputFrom(
 	retryAfter time.Duration,
 	conditions map[string]bool,
 ) failurecontract.SignalInput {
+	return SignalInputFromSurface(provider, "", statusCode, errorType, errorCode, retryAfter, conditions)
+}
+
+// SignalInputFromSurface 在 SignalInputFrom 的基础上带上端点/协议面键。
+//
+// 同一 Provider 的不同上游端点（例如 zcode 的 plan 与 ultra）对同名 code
+// 可能有不同语义；只有调用方明确知道端点时才传 surface，其余调用保持空。
+func SignalInputFromSurface(
+	provider string,
+	surface string,
+	statusCode int,
+	errorType string,
+	errorCode string,
+	retryAfter time.Duration,
+	conditions map[string]bool,
+) failurecontract.SignalInput {
 	millis := int64(0)
 	if retryAfter > 0 {
 		millis = retryAfter.Milliseconds()
 	}
 	return failurecontract.SignalInput{
 		Provider:   provider,
+		Surface:    surface,
 		StatusCode: statusCode,
 		ErrorType:  errorType,
 		ErrorCode:  errorCode,

@@ -49,8 +49,11 @@ type Policy struct {
 
 // Signal 是一条「证据 → 语义」的匹配行。
 type Signal struct {
-	ID                string   `json:"id"`
-	Provider          string   `json:"provider"`
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	// Surface 是可选的端点/协议面键（例如 zcode/plan、zcode/ultra）。
+	// 同一个 Provider 的不同上游端点可以有不同错误码语义；为空表示不限端点。
+	Surface           string   `json:"surface,omitempty"`
 	Priority          int      `json:"priority,omitempty"`
 	Statuses          []int    `json:"statuses,omitempty"`
 	StatusMin         *int     `json:"status_min,omitempty"`
@@ -98,7 +101,9 @@ type Document struct {
 
 // SignalInput 是 Provider 适配器投影出的低敏证据。
 type SignalInput struct {
-	Provider   string
+	Provider string
+	// Surface 是本次请求实际使用的端点/协议面；空表示调用方未声明。
+	Surface    string
 	StatusCode int
 	ErrorType  string
 	ErrorCode  string
@@ -110,6 +115,7 @@ type SignalInput struct {
 type Match struct {
 	SignalID   string
 	Provider   string
+	Surface    string
 	Semantic   string
 	BlockScope string
 	Source     string
@@ -256,6 +262,7 @@ func (document *Document) Resolve(input SignalInput) (Match, bool) {
 		return Match{}, false
 	}
 	provider := normalizeToken(input.Provider)
+	surface := normalizeToken(input.Surface)
 	errorType := normalizeToken(input.ErrorType)
 	errorCode := normalizeToken(input.ErrorCode)
 	for _, index := range document.order {
@@ -264,6 +271,9 @@ func (document *Document) Resolve(input SignalInput) (Match, bool) {
 			continue
 		}
 		if !matchesProvider(signal.Provider, provider) {
+			continue
+		}
+		if !matchesSurface(signal.Surface, surface) {
 			continue
 		}
 		if !matchesStatus(signal, input.StatusCode) {
@@ -281,6 +291,7 @@ func (document *Document) Resolve(input SignalInput) (Match, bool) {
 		return Match{
 			SignalID:   signal.ID,
 			Provider:   signal.Provider,
+			Surface:    signal.Surface,
 			Semantic:   signal.Semantic,
 			BlockScope: signal.BlockScope,
 			Source:     signal.Source,
@@ -373,6 +384,7 @@ func (document *Document) prepareSignals() error {
 		if strings.TrimSpace(signal.Provider) == "" {
 			return fmt.Errorf("%w: signal=%s provider 为空", ErrInvalidContract, signal.ID)
 		}
+		signal.Surface = normalizeToken(signal.Surface)
 		policy, found := document.policyIndex[strings.TrimSpace(signal.Semantic)]
 		if !found {
 			return fmt.Errorf("%w: signal=%s 引用了未知语义 %s", ErrInvalidContract, signal.ID, signal.Semantic)
@@ -420,6 +432,13 @@ func (document *Document) prepareSignals() error {
 		bExact := !strings.EqualFold(strings.TrimSpace(b.Provider), "all")
 		if aExact != bExact {
 			return aExact
+		}
+		// 同一 Provider 下，声明了端点的信号优先于不限端点的通用行：
+		// zcode 的 plan/ultra 对同名 code 可能有完全不同的语义。
+		aSurface := strings.TrimSpace(a.Surface) != ""
+		bSurface := strings.TrimSpace(b.Surface) != ""
+		if aSurface != bSurface {
+			return aSurface
 		}
 		if a.Priority != b.Priority {
 			return a.Priority < b.Priority
@@ -515,6 +534,15 @@ func containsScope(scopes []string, scope string) bool {
 		}
 	}
 	return false
+}
+
+// matchesSurface 只让声明了同一端点的信号命中；空 Surface 表示不限端点。
+func matchesSurface(signalSurface, inputSurface string) bool {
+	signalSurface = normalizeToken(signalSurface)
+	if signalSurface == "" {
+		return true
+	}
+	return signalSurface == inputSurface
 }
 
 func matchesProvider(signalProvider, inputProvider string) bool {

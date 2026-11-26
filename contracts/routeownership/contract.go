@@ -140,6 +140,18 @@ func Current() Manifest {
 				}},
 			},
 			{
+				ID:              "gateway.gemini.models",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{
+					httpRoute([]string{"GET", "HEAD"}, "/v1beta/models"),
+					{
+						Transport: "http", Methods: []string{"GET", "HEAD"}, Path: "/v1beta/models/{model}",
+						Pattern: "^/v1beta/models/([^/:]+)$",
+					},
+				},
+			},
+			{
 				ID:              "gateway.images.generations",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",

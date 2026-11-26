@@ -52,6 +52,7 @@ type catalogDialect interface {
 
 var catalogDialects = []catalogDialect{
 	anthropicCatalogDialect{},
+	googleCatalogDialect{},
 	openAICatalogDialect{},
 }
 

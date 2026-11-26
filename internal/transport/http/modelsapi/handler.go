@@ -30,6 +30,12 @@ const (
 	// 只解析 Go 的字符串字面量常量，拼接式常量会让这条路由在对齐矩阵里凭空消失。
 	// 与 Path 的一致性由 TestPathPrefixMatchesPath 守住。
 	PathPrefix = "/v1/models/"
+	// BetaPath 是 Gemini Models API 的标准集合路径。Google GenAI SDK 在
+	// base_url 指向网关根路径时会请求 /v1/models；显式使用 /v1beta 基址或
+	// 原生 Google REST 客户端则会请求这条路径。
+	BetaPath = "/v1beta/models"
+	// BetaPathPrefix 是 Gemini 单模型查询路径前缀。
+	BetaPathPrefix = "/v1beta/models/"
 )
 
 var (
@@ -140,7 +146,7 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	modelID, isSingleModel := singleModelID(request.URL.Path)
-	if !isSingleModel && request.URL.Path != Path {
+	if !isSingleModel && request.URL.Path != Path && request.URL.Path != BetaPath {
 		dialect.WriteProblem(response, catalogProblemNotFound, nil)
 		return
 	}
@@ -234,22 +240,25 @@ func (handler *Handler) ServeHTTP(
 // 只接受恰好一段路径，因此 /v1/models/ 与 /v1/models/a/b 都不算单模型查询；
 // 提取失败时返回 false，由调用方按未命中路由处理。
 func singleModelID(path string) (string, bool) {
-	if !strings.HasPrefix(path, PathPrefix) {
-		return "", false
+	for _, prefix := range []string{PathPrefix, BetaPathPrefix} {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		remainder := path[len(prefix):]
+		if remainder == "" || strings.Contains(remainder, "/") {
+			return "", false
+		}
+		decoded, err := url.PathUnescape(remainder)
+		if err != nil {
+			return "", false
+		}
+		id := strings.TrimSpace(decoded)
+		if id == "" {
+			return "", false
+		}
+		return id, true
 	}
-	remainder := path[len(PathPrefix):]
-	if remainder == "" || strings.Contains(remainder, "/") {
-		return "", false
-	}
-	decoded, err := url.PathUnescape(remainder)
-	if err != nil {
-		return "", false
-	}
-	id := strings.TrimSpace(decoded)
-	if id == "" {
-		return "", false
-	}
-	return id, true
+	return "", false
 }
 
 // modelView 是不会暴露账号数量或身份的标准模型项。

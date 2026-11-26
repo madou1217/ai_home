@@ -197,8 +197,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 		models: handlers.models,
 		gemini: handlers.gemini,
 	})
-	// /v1beta/models/ 只承载 Gemini：beta 前缀下没有单模型查询能力。
-	mux.Handle(geminiapi.BetaPathPrefix, handlers.gemini)
+	// /v1beta/models 与 /v1beta/models/{model} 是 Gemini Models API 的标准
+	// 集合/单模型查询路径；同一前缀下的 POST {model}:generateContent 仍归
+	// Gemini 推理 Handler，由 dispatcher 按路径形态分流。
+	mux.Handle(modelsapi.BetaPath, handlers.models)
+	mux.Handle(geminiapi.BetaPathPrefix, betaModelsDispatcher{
+		models: handlers.models,
+		gemini: handlers.gemini,
+	})
 	// /v1/blobs/{id}：取回被剥离出请求的图片字节，与其它 /v1 路由共用客户端密钥闸门。
 	//
 	// 挂载写成 `Path + "/"` 而不是直接引用 PathPrefix：路由采集器只把 `Ident.Ident + "/"`
@@ -415,6 +421,33 @@ type modelsDispatcher struct {
 }
 
 func (dispatcher modelsDispatcher) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if _, isGemini := geminiapi.ParseTarget(request.URL.Path); isGemini {
+		if dispatcher.gemini == nil {
+			handleRouteNotFound(response, request)
+			return
+		}
+		dispatcher.gemini.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.models == nil {
+		handleRouteNotFound(response, request)
+		return
+	}
+	dispatcher.models.ServeHTTP(response, request)
+}
+
+// betaModelsDispatcher 让 /v1beta/models/ 子树按路径形态分流：
+// Gemini 的 :generateContent / :streamGenerateContent 走推理 Handler，
+// 其余 GET/HEAD 走标准 Models API Handler。
+type betaModelsDispatcher struct {
+	models http.Handler
+	gemini http.Handler
+}
+
+func (dispatcher betaModelsDispatcher) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {

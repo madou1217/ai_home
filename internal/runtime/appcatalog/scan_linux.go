@@ -203,14 +203,16 @@ func maybeCollectDesktopFile(
 	}
 
 	*apps = append(*apps, launcher.App{
-		ID:        launcher.AppID(linuxPlatformString, desktopID),
-		Name:      displayName,
-		Subtitle:  entry.subtitle(fullPath),
-		Path:      fullPath,
-		Kind:      kind,
-		Icon:      entry.Icon,
-		Terminal:  entry.Terminal,
-		DesktopID: desktopID,
-		Exec:      entry.Exec,
+		ID:           launcher.AppID(linuxPlatformString, desktopID),
+		Name:         displayName,
+		Subtitle:     entry.subtitle(fullPath),
+		Path:         fullPath,
+		Kind:         kind,
+		Icon:         entry.Icon,
+		Terminal:     entry.Terminal,
+		Aliases:      entry.aliases(displayName),
+		ModifiedAtMs: info.ModTime().UnixMilli(),
+		DesktopID:    desktopID,
+		Exec:         entry.Exec,
 	})
 }

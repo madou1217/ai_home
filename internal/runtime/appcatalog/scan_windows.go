@@ -59,14 +59,19 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 
 			base := d.Name()
 			name := base[:len(base)-len(filepath.Ext(base))]
+			var modifiedAtMs int64
+			if info, infoErr := d.Info(); infoErr == nil {
+				modifiedAtMs = info.ModTime().UnixMilli()
+			}
 			apps = append(apps, launcher.App{
-				ID:       launcher.AppID(windowsPlatformString, key),
-				Name:     name,
-				Subtitle: cleanPath,
-				Path:     cleanPath,
-				Kind:     launcher.KindApp,
-				Icon:     cleanPath,
-				Terminal: false,
+				ID:           launcher.AppID(windowsPlatformString, key),
+				Name:         name,
+				Subtitle:     cleanPath,
+				Path:         cleanPath,
+				Kind:         launcher.KindApp,
+				Icon:         cleanPath,
+				Terminal:     false,
+				ModifiedAtMs: modifiedAtMs,
 			})
 			return nil
 		})
@@ -146,13 +151,14 @@ func scanWindowsStartApps(ctx context.Context) []launcher.App {
 
 		shellPath := `shell:AppsFolder\` + appID
 		result = append(result, launcher.App{
-			ID:       launcher.AppID(windowsPlatformString, normID),
-			Name:     name,
-			Subtitle: shellPath,
-			Path:     shellPath,
-			Kind:     launcher.KindUWP,
-			Icon:     "",
-			Terminal: false,
+			ID:           launcher.AppID(windowsPlatformString, normID),
+			Name:         name,
+			Subtitle:     shellPath,
+			Path:         shellPath,
+			Kind:         launcher.KindUWP,
+			Icon:         "",
+			Terminal:     false,
+			ModifiedAtMs: 0,
 		})
 	}
 	return result

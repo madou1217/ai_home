@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/launcher"
 )
 
 type desktopEntry struct {
@@ -13,6 +15,9 @@ type desktopEntry struct {
 	Name            string
 	NameZH          string
 	NameZHCN        string
+	NameZHHans      string
+	NameEN          string
+	NameENUS        string
 	Comment         string
 	CommentZH       string
 	CommentZHCN     string
@@ -71,6 +76,12 @@ func parseDesktopEntry(data []byte) (desktopEntry, bool) {
 			entry.NameZH = val
 		case "Name[zh_CN]":
 			entry.NameZHCN = val
+		case "Name[zh_Hans]":
+			entry.NameZHHans = val
+		case "Name[en]":
+			entry.NameEN = val
+		case "Name[en_US]":
+			entry.NameENUS = val
 		case "Comment":
 			entry.Comment = val
 		case "Comment[zh]":
@@ -98,6 +109,8 @@ func (e desktopEntry) displayName(fallback string) string {
 	switch {
 	case e.NameZHCN != "":
 		return e.NameZHCN
+	case e.NameZHHans != "":
+		return e.NameZHHans
 	case e.NameZH != "":
 		return e.NameZH
 	case e.Name != "":
@@ -105,6 +118,41 @@ func (e desktopEntry) displayName(fallback string) string {
 	default:
 		return fallback
 	}
+}
+
+// aliases returns alternate English/localized names distinct from primaryName, capped at MaxAliases.
+func (e desktopEntry) aliases(primaryName string) []string {
+	candidates := []string{
+		e.Name,
+		e.NameZHCN,
+		e.NameZHHans,
+		e.NameZH,
+		e.NameEN,
+		e.NameENUS,
+	}
+	seen := map[string]struct{}{
+		strings.ToLower(strings.TrimSpace(primaryName)): {},
+	}
+	out := make([]string, 0, launcher.MaxAliases)
+	for _, cand := range candidates {
+		trimmed := strings.TrimSpace(cand)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, trimmed)
+		if len(out) >= launcher.MaxAliases {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (e desktopEntry) subtitle(fallback string) string {

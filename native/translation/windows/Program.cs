@@ -1146,7 +1146,7 @@ internal static class LauncherRanker
             return new List<LauncherMatchResult>();
         }
 
-        var scored = new List<(LauncherMatchResult Result, string NameLower, int ServerIndex)>(apps.Count);
+        var scored = new List<(LauncherMatchResult Result, int ServerIndex)>(apps.Count);
         for (var i = 0; i < apps.Count; i++)
         {
             var app = apps[i];
@@ -1155,18 +1155,14 @@ internal static class LauncherRanker
             var totalScore = eval.Score + Math.Max(0, app.Boost);
             scored.Add((
                 new LauncherMatchResult(app, totalScore, eval.Source, eval.Indices),
-                NormalizeQuery(app.Name),
                 i
             ));
         }
 
+        // Preserve server frecency/mtime/id tiebreak via ServerIndex; never sort by name A–Z.
         scored.Sort((a, b) =>
         {
             var cmp = b.Result.Score.CompareTo(a.Result.Score);
-            if (cmp != 0) return cmp;
-            cmp = string.CompareOrdinal(a.NameLower, b.NameLower);
-            if (cmp != 0) return cmp;
-            cmp = string.CompareOrdinal(a.Result.App.Id, b.Result.App.Id);
             if (cmp != 0) return cmp;
             return a.ServerIndex.CompareTo(b.ServerIndex);
         });

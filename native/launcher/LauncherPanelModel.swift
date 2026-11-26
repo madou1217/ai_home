@@ -88,14 +88,15 @@ enum LauncherRanker {
   }
 
   /// Filters and sorts `apps` for instant zero-latency typing.
-  /// When `query` is empty, preserves server order (which already applies `usage.json` recency).
+  /// When `query` is empty, preserves server order (which already applies `usage.json` frecency).
+  /// When `query` is non-empty, ranks by `score` descending then `serverIndex` ascending (never name A–Z).
   static func filter(_ apps: [LauncherApp], query rawQuery: String) -> [LauncherMatchResult] {
     let query = normalizeQuery(rawQuery)
     if query.isEmpty {
       return apps.map { LauncherMatchResult(app: $0, score: 0, matchSource: .none, matchedRanges: []) }
     }
     let queryChars = Array(query)
-    var results: [(result: LauncherMatchResult, nameLower: String, serverIndex: Int)] = []
+    var results: [(result: LauncherMatchResult, serverIndex: Int)] = []
     results.reserveCapacity(apps.count)
 
     for (idx, app) in apps.enumerated() {
@@ -108,7 +109,6 @@ enum LauncherRanker {
           matchSource: evaluation.source,
           matchedRanges: evaluation.ranges
         ),
-        nameLower: normalizeQuery(app.name),
         serverIndex: idx
       ))
     }
@@ -116,12 +116,6 @@ enum LauncherRanker {
     results.sort { lhs, rhs in
       if lhs.result.score != rhs.result.score {
         return lhs.result.score > rhs.result.score
-      }
-      if lhs.nameLower != rhs.nameLower {
-        return lhs.nameLower < rhs.nameLower
-      }
-      if lhs.result.app.id != rhs.result.app.id {
-        return lhs.result.app.id < rhs.result.app.id
       }
       return lhs.serverIndex < rhs.serverIndex
     }

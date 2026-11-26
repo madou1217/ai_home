@@ -129,7 +129,7 @@ func ProbeSocket(ctx context.Context, socketPath string) bool {
 
 // FormatWireApp encodes a single App into the §8.4/§9 LAUNCH1 wire protocol line.
 // Base fields match the 8-column spec; optional column 9 carries base64 aliases
-// (0x1f-separated) and optional column 10 carries the transient §6 recency boost.
+// (0x1f-separated) and optional column 10 carries the transient §6 frecency boost.
 func FormatWireApp(app launcher.App) string {
 	termFlag := "0"
 	if app.Terminal {

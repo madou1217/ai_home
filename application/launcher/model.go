@@ -23,8 +23,8 @@ const (
 	// MaxLimit caps the limit parameter accepted by List and management API.
 	MaxLimit = DefaultLimit
 
-	// UsageVersion is the on-disk schema version for usage.json.
-	UsageVersion = 1
+	// UsageVersion is the on-disk schema version for usage.json (v2 adds frecency score/updatedAtMs).
+	UsageVersion = 2
 	// MaxUsageEntries caps persisted usage records (most recently opened kept).
 	MaxUsageEntries = 500
 )
@@ -57,19 +57,22 @@ type App struct {
 	Icon     string   `json:"icon"`
 	Terminal bool     `json:"terminal"`
 	Aliases  []string `json:"aliases,omitempty"`
-	// Boost is the transient §6 usage bonus (7-day recency + min(count, 10)) emitted
-	// at query/list time for native UI parity; never persisted or hashed into ID.
+	// Boost is the transient §6 frecency bonus emitted at query/list time
+	// for native UI parity; never persisted or hashed into ID.
 	Boost int `json:"boost,omitempty"`
 
-	// Platform-internal launch metadata omitted from wire JSON.
-	DesktopID string `json:"-"`
-	Exec      string `json:"-"`
+	// Platform-internal metadata omitted from wire JSON.
+	ModifiedAtMs int64  `json:"-"`
+	DesktopID    string `json:"-"`
+	Exec         string `json:"-"`
 }
 
-// UsageEntry tracks open recency and frequency for a single app ID.
+// UsageEntry tracks open recency, frequency, and exponentially decayed frecency for a single app ID.
 type UsageEntry struct {
-	OpenedAtMs int64 `json:"openedAtMs"`
-	Count      int   `json:"count"`
+	OpenedAtMs  int64   `json:"openedAtMs"`
+	Count       int     `json:"count"`
+	Score       float64 `json:"score"`
+	UpdatedAtMs int64   `json:"updatedAtMs"`
 }
 
 // UsageSnapshot is the persisted usage document schema.

@@ -10,7 +10,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/madou1217/ai_home/application/clipboard"
@@ -66,7 +69,7 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 	if archiveBytes > TransferMaxPackageBytes {
 		return clipboard.ErrItemTooLarge
 	}
-	chunkBytes := int64(TransferChunkBytes)
+	chunkBytes := int64(transferChunkBytesFromEnv())
 	chunkCount := int((archiveBytes + chunkBytes - 1) / chunkBytes)
 	if chunkCount < 1 || chunkCount > TransferMaxChunks {
 		return clipboard.ErrItemTooLarge
@@ -77,10 +80,11 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 	if lanes < 1 {
 		lanes = TransferDefaultLanes
 	}
+	endpoints := transferEndpoints(endpoint)
 	if lanes > chunkCount {
 		lanes = chunkCount
 	}
-	log.Printf("[clipboard-transfer] sha=%s start payload=%d archive=%d chunks=%d lanes=%d", itemSHA[:12], payloadBytes, archiveBytes, chunkCount, lanes)
+	log.Printf("[clipboard-transfer] sha=%s start payload=%d archive=%d chunks=%d lanes=%d endpoints=%d", itemSHA[:12], payloadBytes, archiveBytes, chunkCount, lanes, len(endpoints))
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -141,7 +145,7 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 					return
 				}
 				meta.Sealed = sealed
-				if postErr := s.postTransferChunk(ctx, endpoint, managementKey, meta); postErr != nil {
+				if postErr := s.postTransferChunk(ctx, endpoints[index%len(endpoints)], endpoints, managementKey, meta); postErr != nil {
 					select {
 					case errCh <- postErr:
 					default:
@@ -171,7 +175,7 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 	}
 }
 
-func (s *Syncer) postTransferChunk(ctx context.Context, endpoint, managementKey string, chunk TransferChunk) error {
+func (s *Syncer) postTransferChunk(ctx context.Context, preferred string, endpoints []string, managementKey string, chunk TransferChunk) error {
 	raw, err := json.Marshal(chunk)
 	if err != nil {
 		return err
@@ -179,21 +183,82 @@ func (s *Syncer) postTransferChunk(ctx context.Context, endpoint, managementKey 
 	if len(raw) > TransferMaxChunkBytes*2 {
 		return clipboard.ErrItemTooLarge
 	}
-	url := endpoint + syncPathPrefix + "/sync/transfers"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
-	if err != nil {
-		return err
+	attempts := []string{preferred}
+	for _, candidate := range endpoints {
+		if candidate != preferred {
+			attempts = append(attempts, candidate)
+		}
 	}
-	req.Header.Set("Authorization", "Bearer "+managementKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.HTTPClient.Do(req)
-	if err != nil {
-		return err
+	var lastErr error
+	for _, endpoint := range attempts {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+syncPathPrefix+"/sync/transfers", bytes.NewReader(raw))
+		if reqErr != nil {
+			lastErr = reqErr
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+managementKey)
+		req.Header.Set("Content-Type", "application/json")
+		resp, doErr := s.HTTPClient.Do(req)
+		if doErr != nil {
+			lastErr = doErr
+			continue
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusAccepted {
+			return nil
+		}
+		lastErr = fmt.Errorf("transfer chunk %d/%d failed: HTTP %d %s", chunk.ChunkIndex, chunk.ChunkCount, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("transfer chunk %d/%d failed: HTTP %d", chunk.ChunkIndex, chunk.ChunkCount, resp.StatusCode)
+	if lastErr == nil {
+		lastErr = fmt.Errorf("transfer chunk %d/%d failed", chunk.ChunkIndex, chunk.ChunkCount)
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	return nil
+	return lastErr
+}
+
+// transferEndpoints merges the configured profile endpoint with optional
+// additional paths to the same server (SSH/frp/P2P/WireGuard/Tailscale/LAN).
+// Set AIH_CLIPBOARD_TRANSFER_ENDPOINTS to a comma-separated list.
+func transferEndpoints(primary string) []string {
+	primary = strings.TrimRight(strings.TrimSpace(primary), "/")
+	result := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	appendEndpoint := func(raw string) {
+		candidate := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if candidate == "" {
+			return
+		}
+		parsed, err := url.Parse(candidate)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return
+		}
+		if _, exists := seen[candidate]; exists {
+			return
+		}
+		seen[candidate] = struct{}{}
+		result = append(result, candidate)
+	}
+	appendEndpoint(primary)
+	for _, raw := range strings.Split(os.Getenv("AIH_CLIPBOARD_TRANSFER_ENDPOINTS"), ",") {
+		appendEndpoint(raw)
+	}
+	if len(result) == 0 && primary != "" {
+		result = append(result, primary)
+	}
+	return result
+}
+
+func transferChunkBytesFromEnv() int {
+	raw := strings.TrimSpace(os.Getenv("AIH_CLIPBOARD_TRANSFER_CHUNK_BYTES"))
+	if raw == "" {
+		return TransferChunkBytes
+	}
+	size, err := strconv.Atoi(raw)
+	if err != nil || size < 256*1024 {
+		return TransferChunkBytes
+	}
+	if size > TransferMaxChunkBytes {
+		size = TransferMaxChunkBytes
+	}
+	return size
 }

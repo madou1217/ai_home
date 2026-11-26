@@ -262,8 +262,8 @@ function body(c,full=false){
     if(c.files.length>1){
       const names=c.files.slice(0,3).map(f=>String(f).split(/[\\/]/).pop()).filter(Boolean);
       const more=c.files.length>names.length?` +${c.files.length-names.length}`:'';
-      const tooLarge=c.materialized===false&&c.byteSize>32*1024*1024;
-      return `<div class="batchpack">${icon('layers')}<div><strong>${c.files.length} files</strong><small>${esc(formatBytes(c.byteSize))} · package index</small><span>${esc(names.join(' · '))}${esc(more)}</span>${tooLarge?'<em>Over 32 MiB relay limit</em>':''}</div></div>`;
+      const chunked=c.materialized===false&&c.byteSize>32*1024*1024;
+      return `<div class="batchpack">${icon('layers')}<div><strong>${c.files.length} files</strong><small>${esc(formatBytes(c.byteSize))} · package index</small><span>${esc(names.join(' · '))}${esc(more)}</span>${chunked?'<em>Chunked transfer on paste</em>':''}</div></div>`;
     }
     const sub=c.files[0]||formatBytes(c.byteSize);
     const p=filePreviewCache.get(c.id),blob=fileBlobCache.get(c.id);
@@ -507,7 +507,9 @@ async function ensureMaterialized(c){
   if(!c||c.materialized!==false)return true;
   notify('正在从源设备获取…');
   try{await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}/materialize`,{method:'POST',body:'{}'})}catch(e){}
-  for(let i=0;i<20;i++){
+  const waitMs=Math.max(14000,Math.min(30*60*1000,14000+Math.ceil(Number(c.byteSize||0)/(2*1024*1024))*1000));
+  const loops=Math.ceil(waitMs/700);
+  for(let i=0;i<loops;i++){
     await new Promise(r=>setTimeout(r,700));
     try{
       const res=await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}`);

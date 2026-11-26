@@ -434,7 +434,11 @@ func ensureClipMaterialized(ctx context.Context, service *clipboard.Service, ite
 	if resp, requestErr := (&http.Client{Timeout: 10 * time.Second}).Do(req); requestErr == nil {
 		_ = resp.Body.Close()
 	}
-	deadline := time.Now().Add(20 * time.Second)
+	waitBudget := 20*time.Second + time.Duration(item.ByteSize/(2*1024*1024))*time.Second
+	if waitBudget > 30*time.Minute {
+		waitBudget = 30 * time.Minute
+	}
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		getReq, getErr := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/management/webui/clipboard/items/"+idPath, nil)
 		if getErr != nil {

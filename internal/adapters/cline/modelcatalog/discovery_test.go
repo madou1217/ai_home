@@ -30,6 +30,9 @@ var goldenModels = []string{
 	"cline-pass/qwen3.7-max",
 	"cline-pass/qwen3.7-plus",
 	"cline-pass/qwen3.8-max",
+	// 免费层：原生 workos 登录态可调用，计费为 0（a07932fc 起进入可路由目录）。
+	"nvidia/nemotron-3.5-lightning-free",
+	"cline-free/nemotron-3.5-super-vl",
 }
 
 func clineCredential(t *testing.T) *accountcore.NativeCredential {
@@ -54,17 +57,18 @@ func TestKnownModelsMatchGoldenList(t *testing.T) {
 			t.Fatalf("KnownModels[%d] = %q, want %q", index, KnownModels[index], want)
 		}
 	}
+	freeModels := make(map[string]bool, len(CLIFreeModels))
+	for _, model := range CLIFreeModels {
+		freeModels[model] = true
+	}
 	// 顺序也是对外契约的一部分：WebUI 与 CLI 按清单顺序展示，重排会让目录看起来变过。
 	for _, model := range KnownModels {
 		if model != strings.ToLower(strings.TrimSpace(model)) {
 			t.Fatalf("%q 必须是已归一的小写 ID", model)
 		}
-		if !IsRoutableModelID(model) {
-			t.Fatalf("%q 不在 %s 命名空间", model, NamespacePrefix)
-		}
-		// Node 侧刻意排除的命名空间不能再混进来（本网关 API 面上一律 403）。
-		if strings.HasPrefix(model, "cline-free/") {
-			t.Fatalf("不应包含 cline-free 模型: %q", model)
+		// 除显式声明的免费模型外，也必须落在 cline-pass 命名空间。
+		if !IsRoutableModelID(model) && !freeModels[model] {
+			t.Fatalf("%q 既不在 %s 命名空间，也不是声明的免费模型", model, NamespacePrefix)
 		}
 	}
 }

@@ -53,20 +53,25 @@ func (s *Syncer) startChunkedTransfer(endpoint, managementKey string, key []byte
 }
 
 func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKey string, key []byte, itemSHA string, files []string) error {
-	archivePath, total, archiveSHA, err := BuildFileArchiveFile(files)
+	archivePath, payloadBytes, archiveSHA, err := BuildFileArchiveFile(files)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(archivePath) }()
-	if total <= 0 || !isSHA256(archiveSHA) {
+	archiveInfo, statErr := os.Stat(archivePath)
+	if statErr != nil || archiveInfo.Size() <= 0 || !isSHA256(archiveSHA) {
 		return clipboard.ErrEmptyContent
 	}
+	archiveBytes := archiveInfo.Size()
+	if archiveBytes > TransferMaxPackageBytes {
+		return clipboard.ErrItemTooLarge
+	}
 	chunkBytes := int64(TransferChunkBytes)
-	chunkCount := int((total + chunkBytes - 1) / chunkBytes)
+	chunkCount := int((archiveBytes + chunkBytes - 1) / chunkBytes)
 	if chunkCount < 1 || chunkCount > TransferMaxChunks {
 		return clipboard.ErrItemTooLarge
 	}
-	transferHash := sha256.Sum256([]byte(itemSHA + "|" + archiveSHA))
+	transferHash := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d", itemSHA, archiveSHA, archiveBytes)))
 	transferID := hex.EncodeToString(transferHash[:])
 	lanes := s.transferLanes
 	if lanes < 1 {
@@ -75,7 +80,7 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 	if lanes > chunkCount {
 		lanes = chunkCount
 	}
-	log.Printf("[clipboard-transfer] sha=%s start bytes=%d chunks=%d lanes=%d", itemSHA[:12], total, chunkCount, lanes)
+	log.Printf("[clipboard-transfer] sha=%s start payload=%d archive=%d chunks=%d lanes=%d", itemSHA[:12], payloadBytes, archiveBytes, chunkCount, lanes)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -103,7 +108,7 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 				}
 				offset := int64(index) * chunkBytes
 				length := chunkBytes
-				if remaining := total - offset; remaining < length {
+				if remaining := archiveBytes - offset; remaining < length {
 					length = remaining
 				}
 				if length <= 0 {
@@ -124,7 +129,7 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 					ArchiveSHA: archiveSHA,
 					ChunkIndex: index,
 					ChunkCount: chunkCount,
-					TotalBytes: total,
+					TotalBytes: archiveBytes,
 				}
 				sealed, sealErr := SealTransferChunk(key, meta, data)
 				if sealErr != nil {

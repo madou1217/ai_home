@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -193,6 +194,55 @@ func removeCacheTree(path string) error {
 		return nil
 	})
 	return os.RemoveAll(path)
+}
+
+// ensureDesktopHomeLinks 把桌面账号 HOME 里的工具链缓存/CLI 安装版本链回宿主。
+// 桌面进程 HOME 指向 account profile，仅靠 env 不能覆盖所有工具；这些叶子与
+// 账号无关，宿主为主。
+func ensureDesktopHomeLinks(hostHomeDir, profileDir string) {
+	host := strings.TrimSpace(hostHomeDir)
+	profile := strings.TrimSpace(profileDir)
+	if host == "" || profile == "" || filepath.Clean(host) == filepath.Clean(profile) {
+		return
+	}
+	links := []struct {
+		rel      string
+		takeover bool
+	}{
+		{".cache", true},
+		{"go", true},
+		{".npm", true},
+		{".bun", true},
+		{".volta", true},
+		{".cargo", true},
+		{".pnpm-store", true},
+		{".local/bin", false},
+		{".local/state", false},
+		{".local/share/uv", true},
+		{".local/share/claude/versions", true},
+		{".local/share/codebuddy/versions", true},
+	}
+	if runtime.GOOS == "darwin" {
+		links = append(links,
+			struct {
+				rel      string
+				takeover bool
+			}{"Library/Caches/go-build", true},
+			struct {
+				rel      string
+				takeover bool
+			}{"Library/Caches/uv", true},
+		)
+	}
+	for _, link := range links {
+		target := filepath.Join(host, filepath.FromSlash(link.rel))
+		if link.takeover {
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				continue
+			}
+		}
+		linkDesktopCacheDir(filepath.Join(profile, filepath.FromSlash(link.rel)), target)
+	}
 }
 
 func ensureSymlinkIfAbsent(linkPath, target string) {

@@ -212,9 +212,21 @@ func familySharedEntries(definition providers.Definition) []string {
 		"tasks",
 		"shell-snapshots",
 		"blobs",
+		// 诊断与工具体：与账号身份无关，宿主一份（历史上每个账号各写一份 logs/traces）。
+		"logs",
+		"traces",
 	}
 	if definition.Family == "codebuddy" {
 		entries = append(entries, "settings.json", "statusline-command.sh", "argv.json", "plugins")
+	}
+	if definition.Family == "workbuddy" {
+		// WorkBuddy AI 的应用运行时/插件/工具包：宿主为主。凭据类
+		// （credentials/connectors/device-id）与账号审计日志不在此列。
+		entries = append(entries,
+			"binaries", "plugins", "app", "external-packages", "cache",
+			"extension-registry", "security", "storage", "cli-env",
+			"file-tree-manifests",
+		)
 	}
 	return entries
 }

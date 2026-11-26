@@ -223,6 +223,7 @@ func openDesktopInstance(
 		})
 	}
 	ensureDesktopSharedCaches(deps.AIHomeDir, req.Provider, userDataDir)
+	ensureDesktopHomeLinks(hostHomeDir, profileDir)
 	// 物化账号快照回沙箱：保持与 CLI 相同的登录态（失败不覆盖启动，记录提示即可）。
 	if matErr := materializeDesktopAuth(ctx, deps.AIHomeDir, hostHomeDir, profileDir, snapshot, pctx.rollback); matErr != nil {
 		pctx.warn("materialize desktop auth failed: " + matErr.Error())

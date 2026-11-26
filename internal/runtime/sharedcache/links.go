@@ -58,6 +58,15 @@ func Links(goos string) []Link {
 			Link{Projection: []string{"Library", "Caches", "uv"}, Host: []string{"Library", "Caches", "uv"}, Takeover: true},
 		)
 	}
+	if goos == "windows" {
+		// Windows 的 Go/npm/uv/pip 默认位置在 %LOCALAPPDATA%，不在 HOME/.cache。
+		links = append(links,
+			Link{Projection: []string{"AppData", "Local", "go-build"}, Host: []string{"AppData", "Local", "go-build"}, Takeover: true},
+			Link{Projection: []string{"AppData", "Local", "npm-cache"}, Host: []string{"AppData", "Local", "npm-cache"}, Takeover: true},
+			Link{Projection: []string{"AppData", "Local", "uv"}, Host: []string{"AppData", "Local", "uv"}, Takeover: true},
+			Link{Projection: []string{"AppData", "Local", "pip", "Cache"}, Host: []string{"AppData", "Local", "pip", "Cache"}, Takeover: true},
+		)
+	}
 	out := make([]Link, 0, len(links))
 	for _, link := range links {
 		if platformMatches(link, goos) {

@@ -61,6 +61,10 @@ var packageDirPattern = regexp.MustCompile(`^([0-9]+\.[0-9]+\.[0-9]+)-[a-z0-9]+-
 // updates/downloads, e.g. aih-1.0.6-linux-x64.run.
 var artifactPattern = regexp.MustCompile(`^aih-([0-9]+\.[0-9]+\.[0-9]+)-([A-Za-z0-9_.-]+)\.(run|exe|dmg|zip)$`)
 
+// legacyPackageDirPattern matches 1.0.0 时代的 pkg 目录布局
+// （aih-<version>-<os>-<arch>，没有 payload hash），只在确认陈旧后删除。
+var legacyPackageDirPattern = regexp.MustCompile(`^aih-([0-9]+\.[0-9]+\.[0-9]+)-(linux|win32|darwin)-(x64|arm64)$`)
+
 type versionedDir struct {
 	name    string
 	path    string
@@ -156,7 +160,38 @@ type pruneCollector struct {
 func (c *pruneCollector) keep(path string) { c.report.Kept = append(c.report.Kept, path) }
 
 // drop removes a path and accounts for the reclaimed bytes.
+//
+// Windows 上旧版本的常驻助手（例如 codex app-server 的 Node 代理）会锁住包内
+// 文件，直接 RemoveAll 可能删掉一半才失败，留下半残缺的旧包。先原子改名成
+// .trash-* 再删：包目录立刻从 pkg/ 消失，锁住的部分留给下一次 GC 重试。
 func (c *pruneCollector) drop(path string, size int64) {
+	if c.dryRun {
+		c.report.Removed = append(c.report.Removed, path)
+		c.report.FreedBytes += size
+		return
+	}
+	trashed := false
+	trash := filepath.Join(filepath.Dir(path), ".trash-"+filepath.Base(path)+"-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+	if err := os.Rename(path, trash); err == nil {
+		path = trash
+		trashed = true
+	}
+	if err := os.RemoveAll(path); err != nil {
+		if trashed {
+			// 包目录已经换出 pkg/，剩余文件等下次 GC 再删。
+			c.report.Removed = append(c.report.Removed, path)
+			c.report.FreedBytes += size
+			return
+		}
+		c.report.Failed = append(c.report.Failed, path)
+		return
+	}
+	c.report.Removed = append(c.report.Removed, path)
+	c.report.FreedBytes += size
+}
+
+// dropTrash 删除回收站目录本身，不再二次改名。
+func (c *pruneCollector) dropTrash(path string, size int64) {
 	if c.dryRun {
 		c.report.Removed = append(c.report.Removed, path)
 		c.report.FreedBytes += size
@@ -187,12 +222,22 @@ func prunePackageVersions(home, current string, keepPrevious bool, minAge time.D
 		name := entry.Name()
 		match := packageDirPattern.FindStringSubmatch(name)
 		if match == nil {
-			// Interrupted staging directories are garbage once they are cold.
-			if strings.HasPrefix(name, ".portable-install-") {
-				path := filepath.Join(root, name)
-				if info, err := entry.Info(); err == nil && entry.IsDir() && now.Sub(info.ModTime()) >= 6*time.Minute {
-					collector.drop(path, dirSize(path))
+			path := filepath.Join(root, name)
+			info, infoErr := entry.Info()
+			if infoErr != nil || !entry.IsDir() {
+				continue
+			}
+			// Interrupted staging directories and renamed trash are garbage
+			// once they are cold.
+			if strings.HasPrefix(name, ".portable-install-") || strings.HasPrefix(name, ".trash-") {
+				if now.Sub(info.ModTime()) >= 10*time.Minute {
+					collector.dropTrash(path, dirSize(path))
 				}
+				continue
+			}
+			// 1.0.0 时代的目录没有 hash，不会被回滚引用；陈旧即删。
+			if legacyPackageDirPattern.MatchString(name) && now.Sub(info.ModTime()) >= minAge {
+				collector.drop(path, dirSize(path))
 			}
 			continue
 		}

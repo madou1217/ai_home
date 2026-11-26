@@ -120,8 +120,9 @@ func (provider *Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, 
 	}
 	provider.model = request.Model
 	encoded := EncodeConversation(request.Messages, EncodeOptions{
-		ModelID:   request.Model,
-		ToolCount: request.ToolCount,
+		ModelID:           request.Model,
+		ToolCount:         request.ToolCount,
+		UnsupportedParams: request.UnsupportedParams,
 	})
 	if provider.profileArn != "" {
 		encoded.Body["profileArn"] = provider.profileArn
@@ -161,18 +162,47 @@ type chatRequest struct {
 	Model     string
 	Messages  []Message
 	ToolCount int
+	// UnsupportedParams 是 Chat 请求里 Coral conversationState 不承载的参数名。
+	UnsupportedParams []string
+}
+
+// jsonFieldPresent 判断客户端是否真的声明了该字段（null/空串视为未声明）。
+func jsonFieldPresent(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null" && trimmed != `""`
 }
 
 func parseChatRequest(body []byte) (chatRequest, error) {
 	var raw struct {
-		Model    string            `json:"model"`
-		Messages []json.RawMessage `json:"messages"`
-		Tools    []json.RawMessage `json:"tools"`
+		Model           string            `json:"model"`
+		Messages        []json.RawMessage `json:"messages"`
+		Tools           []json.RawMessage `json:"tools"`
+		MaxTokens       json.RawMessage   `json:"max_tokens"`
+		Temperature     json.RawMessage   `json:"temperature"`
+		TopP            json.RawMessage   `json:"top_p"`
+		Stop            json.RawMessage   `json:"stop"`
+		ResponseFormat  json.RawMessage   `json:"response_format"`
+		ReasoningEffort json.RawMessage   `json:"reasoning_effort"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return chatRequest{}, err
 	}
 	request := chatRequest{Model: strings.TrimSpace(raw.Model), ToolCount: len(raw.Tools)}
+	for _, control := range []struct {
+		name  string
+		value json.RawMessage
+	}{
+		{"max_tokens", raw.MaxTokens},
+		{"temperature", raw.Temperature},
+		{"top_p", raw.TopP},
+		{"stop_sequences", raw.Stop},
+		{"response_format", raw.ResponseFormat},
+		{"reasoning_effort", raw.ReasoningEffort},
+	} {
+		if jsonFieldPresent(control.value) {
+			request.UnsupportedParams = append(request.UnsupportedParams, control.name)
+		}
+	}
 	for _, item := range raw.Messages {
 		var message struct {
 			Role    string          `json:"role"`

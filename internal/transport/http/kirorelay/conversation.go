@@ -26,6 +26,9 @@ type EncodeOptions struct {
 	ModelID string
 	// ToolCount 是请求声明的工具数；Go 侧暂不支持工具方言，按降级上报。
 	ToolCount int
+	// UnsupportedParams 是客户端要求但 conversationState 表达不了的参数名。
+	// 每个名字会以 "<param>_unsupported" 记入 Degradations，避免静默丢语义。
+	UnsupportedParams []string
 }
 
 // EncodedConversation 是编码结果。
@@ -107,6 +110,12 @@ func EncodeConversation(messages []Message, options EncodeOptions) EncodedConver
 	}
 	if options.ToolCount > 0 {
 		degradations = append(degradations, "tools_unsupported")
+	}
+	for _, param := range options.UnsupportedParams {
+		param = strings.TrimSpace(param)
+		if param != "" {
+			degradations = append(degradations, param+"_unsupported")
+		}
 	}
 
 	encodeUser := func(turn Message) map[string]any {

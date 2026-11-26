@@ -209,6 +209,14 @@ func (p *desktopPrepContext) decorateIsolatedBaseEnv() {
 	p.setEnv("XDG_CONFIG_HOME", p.profileDir)
 	p.setEnv("XDG_DATA_HOME", filepath.Join(p.profileDir, ".local", "share"))
 	p.setEnv("XDG_STATE_HOME", filepath.Join(p.profileDir, ".local", "state"))
+	if p.platformKey == "windows" {
+		// Electron/VS Code 在 Windows 读 %APPDATA%/%LOCALAPPDATA%；实测把这两个
+		// 变量指向账号目录后，appData 落进账号 profile 且宿主目录不再被写
+		// （Qoder 探针：probe\Qoder 生成、宿主 %APPDATA%\Qoder 时间戳不变）。
+		// 不重定向时 Qoder 的 machine_token、OpenCode 的 Login Data 会写进宿主。
+		p.setEnv("APPDATA", filepath.Join(p.profileDir, "AppData", "Roaming"))
+		p.setEnv("LOCALAPPDATA", filepath.Join(p.profileDir, "AppData", "Local"))
+	}
 	p.applySharedCacheEnv()
 	// 审计表里登记了部分/全部可共享根的 Provider（当前是 opencode）在这里覆盖；
 	// 未登记者（qoder/qodercn 等）保持上面的账号私有路径。

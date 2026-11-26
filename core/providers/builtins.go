@@ -509,20 +509,37 @@ func builtinOpenCode() Definition {
 			// 版本源（更新检查）与 npm 兜底安装计划，指错了就会拿 1.x 线去比 2.x 安装。
 			Package: "@opencode/cli",
 			// 官方安装器把二进制放在 ~/.opencode/bin，与配置根 .config/opencode 分开。
-			InstallRoot: &[]string{".opencode"},
-			EnvKeys:     []string{"OPENCODE_API_KEY", "OPENCODE_BASE_URL"},
-			Headless:    &HeadlessConfig{TriggerSubcommands: []string{"run"}},
-			DesktopClient: desktopClient(
-				"OpenCode",
-				[]string{"OpenCode"},
-				[]string{"/OpenCode.app/Contents/MacOS/"},
-				[]string{"/Applications/OpenCode.app", "{hostHomeDir}/Applications/OpenCode.app"},
-				[]string{"OpenCode.exe"},
-				[]string{"OpenCode.exe"},
-				[]string{"OpenCode", "opencode-desktop"},
-			),
+			InstallRoot:   &[]string{".opencode"},
+			EnvKeys:       []string{"OPENCODE_API_KEY", "OPENCODE_BASE_URL"},
+			Headless:      &HeadlessConfig{TriggerSubcommands: []string{"run"}},
+			DesktopClient: opencodeDesktopClient(),
 		},
 	}
+}
+
+// opencodeDesktopClient 声明 OpenCode 桌面端的跨平台查找信息。
+//
+// Windows 安装器（Electron/NSIS）实测装到 %LOCALAPPDATA%\Programs\@opencodedesktop，
+// 目录名既不是 ClientName 也不在 PATH，因此显式登记安装落点与卸载注册表名；
+// 只靠 ExecNames 会把它误判成未安装。
+func opencodeDesktopClient() *DesktopClient {
+	client := desktopClient(
+		"OpenCode",
+		[]string{"OpenCode"},
+		[]string{"/OpenCode.app/Contents/MacOS/"},
+		[]string{"/Applications/OpenCode.app", "{hostHomeDir}/Applications/OpenCode.app"},
+		[]string{"OpenCode.exe"},
+		[]string{"OpenCode.exe"},
+		[]string{"OpenCode", "opencode-desktop"},
+	)
+	client.Windows.InstallPaths = []string{
+		`{localAppData}\Programs\@opencodedesktop\OpenCode.exe`,
+		`{localAppData}\Programs\OpenCode\OpenCode.exe`,
+		`{localAppData}\Programs\opencode-desktop\OpenCode.exe`,
+		`{programFiles}\OpenCode\OpenCode.exe`,
+	}
+	client.Windows.DisplayNames = []string{"OpenCode", "opencode-desktop"}
+	return client
 }
 
 // builtinGrok 定义 Grok OAuth 和 xAI API Key 两种账号模式。

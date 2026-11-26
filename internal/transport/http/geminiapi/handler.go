@@ -288,6 +288,10 @@ func (handler *Handler) executeStream(
 			execution.Finish(streamFailure{status: rejection.Status, code: "INTERNAL", message: rejection.Message})
 			return
 		}
+		if inferenceapi.IsRouteNotFound(executionErr) {
+			execution.Finish(streamFailure{status: http.StatusNotFound, code: "NOT_FOUND", message: "The requested model is not found"})
+			return
+		}
 		execution.Finish(streamFailure{
 			status:  http.StatusServiceUnavailable,
 			code:    "UNAVAILABLE",

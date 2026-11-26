@@ -273,6 +273,10 @@ func (handler *Handler) executeStream(
 			execution.Finish(streamFailure{status: rejection.Status, code: rejection.Code, message: rejection.Message})
 			return
 		}
+		if inferenceapi.IsRouteNotFound(executionErr) {
+			execution.Finish(streamFailure{status: http.StatusNotFound, code: "model_not_found", message: "The requested model is not available"})
+			return
+		}
 		execution.Finish(streamFailure{
 			status:  http.StatusServiceUnavailable,
 			code:    "upstream_unavailable",

@@ -95,6 +95,10 @@ func writeExecutionError(
 		writeAPIError(response, rejection.Status, "invalid_request_error", rejection.Code, rejection.Message)
 		return
 	}
+	if inferenceapi.IsRouteNotFound(err) {
+		writeAPIError(response, http.StatusNotFound, "invalid_request_error", "model_not_found", "The requested model is not available")
+		return
+	}
 	if inferenceapi.ApplyAdmissionRetryAfter(response.Header(), err) {
 		writeAPIError(
 			response,

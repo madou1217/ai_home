@@ -279,6 +279,10 @@ func (handler *Handler) executeStream(
 			writeStreamFailure(stream, response, rejection.Status, "api_error", rejection.Message)
 			return
 		}
+		if inferenceapi.IsRouteNotFound(executionErr) {
+			writeStreamFailure(stream, response, http.StatusNotFound, "not_found_error", "The requested model is not available")
+			return
+		}
 		if inferenceapi.ApplyAdmissionRetryAfter(response.Header(), executionErr) {
 			writeStreamFailure(
 				stream,

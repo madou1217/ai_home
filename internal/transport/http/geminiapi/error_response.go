@@ -102,6 +102,10 @@ func writeExecutionError(response http.ResponseWriter, ctx context.Context, err 
 		writeError(response, rejection.Status, "PERMISSION_DENIED", rejection.Message)
 		return
 	}
+	if inferenceapi.IsRouteNotFound(err) {
+		writeError(response, http.StatusNotFound, "NOT_FOUND", "The requested model is not found")
+		return
+	}
 	if inferenceapi.ApplyAdmissionRetryAfter(response.Header(), err) {
 		writeError(response, http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "Inference capacity is temporarily unavailable, retry later")
 		return

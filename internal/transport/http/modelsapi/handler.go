@@ -127,25 +127,26 @@ func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	dialect := catalogDialectFor(request)
 	if handler == nil || handler.authorizer == nil {
 		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeUnauthorized(response)
+		dialect.WriteProblem(response, catalogProblemUnauthorized, nil)
 		return
 	}
 	scope, authorized := handler.catalogScope(request)
 	if !authorized {
 		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeUnauthorized(response)
+		dialect.WriteProblem(response, catalogProblemUnauthorized, nil)
 		return
 	}
 	modelID, isSingleModel := singleModelID(request.URL.Path)
 	if !isSingleModel && request.URL.Path != Path {
-		writeError(response, http.StatusNotFound, "route_not_found")
+		dialect.WriteProblem(response, catalogProblemNotFound, nil)
 		return
 	}
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		response.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
-		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
+		dialect.WriteProblem(response, catalogProblemMethodNotAllowed, nil)
 		return
 	}
 	// 受限 Key 的目录必须与真实权限一致：同一份可见集合同时决定列表、单模型
@@ -154,7 +155,7 @@ func (handler *Handler) ServeHTTP(
 	if scope.Restricted() {
 		models, err := handler.routableRows(request.Context())
 		if err != nil {
-			writeError(response, http.StatusInternalServerError, "internal_error")
+			dialect.WriteProblem(response, catalogProblemInternal, err)
 			return
 		}
 		visibility = scope.Apply(models, handler.displayAliases())
@@ -162,18 +163,19 @@ func (handler *Handler) ServeHTTP(
 	if isSingleModel {
 		if scope.Restricted() {
 			if _, allowed := visibility.VisibleIDs[modelID]; !allowed {
-				writeModelForbidden(response)
+				dialect.WriteProblem(response, catalogProblemForbidden, nil)
 				return
 			}
 		}
-		writeSingleModel(response, request, modelID)
+		dialect.RenderModel(response, request, modelID)
 		return
 	}
-	options, valid := parseCatalogOptions(request.URL.RawQuery)
-	if !valid {
-		writeError(response, http.StatusBadRequest, "invalid_query")
+	query, err := dialect.ParseQuery(request.URL.RawQuery)
+	if err != nil {
+		dialect.WriteProblem(response, catalogProblemInvalidQuery, err)
 		return
 	}
+	viewOptions := query.ViewOptions()
 	// created 与 Node 的 `buildOpenAIModelsList` 一致：整个响应共用同一个「当前秒」。
 	// 目录项没有真实创建时间，此前这里固定输出 0，而同文件的单模型回显用的是 now——
 	// 同一个字段在同一个包里两种语义。0 是 JS 的 falsy 值，客户端 `created || fallback`
@@ -183,7 +185,7 @@ func (handler *Handler) ServeHTTP(
 	if handler.catalog != nil {
 		snapshot := handler.catalog.Snapshot()
 		if snapshot.Generation > 0 {
-			views = newProjectedModelViews(snapshot, options.includeModalities, options.capability, now)
+			views = newProjectedModelViews(snapshot, viewOptions.IncludeModalities, viewOptions.Capability, now)
 		}
 	}
 	if views == nil {
@@ -191,7 +193,7 @@ func (handler *Handler) ServeHTTP(
 		if !scope.Restricted() {
 			loaded, err := handler.models.ListRoutableModels(request.Context())
 			if err != nil {
-				writeError(response, http.StatusInternalServerError, "internal_error")
+				dialect.WriteProblem(response, catalogProblemInternal, err)
 				return
 			}
 			models = loaded
@@ -200,15 +202,15 @@ func (handler *Handler) ServeHTTP(
 		views, err = newModelViews(
 			models,
 			handler.modalities,
-			options.includeModalities,
+			viewOptions.IncludeModalities,
 			handler.reasoning,
 			handler.aliases,
-			options.capability,
+			viewOptions.Capability,
 			now,
 			handler.providerCatalog,
 		)
 		if err != nil {
-			writeError(response, http.StatusInternalServerError, "internal_error")
+			dialect.WriteProblem(response, catalogProblemInternal, err)
 			return
 		}
 	}
@@ -219,49 +221,12 @@ func (handler *Handler) ServeHTTP(
 		writeJSONHeaders(response, http.StatusOK)
 		return
 	}
-	switch options.protocol {
-	case catalogProtocolOpenAI:
-		writeJSON(response, http.StatusOK, modelList{
-			Object: "list",
-			Data:   views,
-		})
-	case catalogProtocolCodex:
-		payload := newCodexModelList(views)
-		if err := handler.applyContextWindows(request.Context(), &payload); err != nil {
-			response.Header().Set("X-AIH-Model-Context", "unavailable")
-		}
-		if handler.serviceTiers != nil {
-			for index := range payload.Models {
-				model := &payload.Models[index]
-				tiers := handler.serviceTiers.LookupServiceTiers(request.Context(), "codex", model.Slug)
-				if len(tiers) == 0 {
-					continue
-				}
-				model.ServiceTiers = tiers
-				hasUltrafast := false
-				for _, tier := range tiers {
-					switch tier.ID {
-					case "priority":
-						model.AdditionalSpeedTiers = appendUniqueString(model.AdditionalSpeedTiers, "fast")
-					case "ultrafast":
-						hasUltrafast = true
-						model.AdditionalSpeedTiers = appendUniqueString(model.AdditionalSpeedTiers, "ultrafast")
-					}
-				}
-				// Codex 首方目录当前不给 Sol / Astra 的 ultrafast 条目（官方文档声明两者支持），
-				// 这里按 Fast 的同一形状补齐，避免 TUI 只显示 Fast。
-				if !hasUltrafast && codexSupportsUltrafast(model.Slug) {
-					model.ServiceTiers = append(model.ServiceTiers, modelmetadata.ServiceTier{
-						ID:          "ultrafast",
-						Name:        "Ultrafast",
-						Description: "The fastest available responses for latency-sensitive work.",
-					})
-					model.AdditionalSpeedTiers = appendUniqueString(model.AdditionalSpeedTiers, "ultrafast")
-				}
-			}
-		}
-		writeJSON(response, http.StatusOK, payload)
-	}
+	dialect.RenderList(response, catalogRenderContext{
+		handler: handler,
+		request: request,
+		query:   query,
+		views:   views,
+	})
 }
 
 // singleModelID 从 /v1/models/{model} 提取模型 ID。
@@ -287,109 +252,15 @@ func singleModelID(path string) (string, bool) {
 	return id, true
 }
 
-// writeSingleModel 按 OpenAI 合同回显单个模型对象。
-//
-// 与 Node 的 GET /v1/models/{id} 逐字段一致：不校验本地目录，任何非空 ID 都返回 200，
-// owned_by 固定为 aih-server，created 取当前秒。因此这里不读取 ModelReader，
-// 单模型查询也不会因为目录未就绪而失败。
-func writeSingleModel(
-	response http.ResponseWriter,
-	request *http.Request,
-	modelID string,
-) {
-	if request.Method == http.MethodHead {
-		writeJSONHeaders(response, http.StatusOK)
-		return
-	}
-	writeJSON(response, http.StatusOK, modelView{
-		ID:      modelID,
-		Object:  "model",
-		Created: time.Now().Unix(),
-		OwnedBy: "aih-server",
-	})
-}
-
-// catalogOptions 保存一次请求选择的目录协议和显式扩展。
-type catalogOptions struct {
-	protocol          catalogProtocol
-	includeModalities bool
-	// capability 是按能力过滤的条件；空表示不过滤。
-	//
-	// 取值与 Node 一致：`vision` / `image_out`。未知取值不过滤（与 Node 的
-	// modelMatchesCapability 一样失败开放），避免拼错的能力名把整个目录隐藏掉。
-	capability string
-}
-
-// catalogProtocol 表示同一路径上的客户端目录合同。
-type catalogProtocol uint8
-
-const (
-	// catalogProtocolOpenAI 是标准 object/data 模型列表。
-	catalogProtocolOpenAI catalogProtocol = iota
-	// catalogProtocolCodex 是 Codex ModelsClient 使用的 models 列表。
-	catalogProtocolCodex
-)
-
-// parseCatalogOptions 严格区分标准扩展与 Codex 目录，不接受重复、未知或混合参数。
-// client_version 的值不比较、不参与目录计算，也不会触发上游刷新。
-//
-// `capability` 可以与 `include=modalities` 组合（两者都是显式意图，互不冲突），
-// 但不能与 `client_version` 组合：Codex 目录合同有自己的形状，Node 那条路径会把
-// capability 静默丢掉（`isCodexNativeModelsRequest` 分支不套过滤器），Go 选择报错而不是
-// 假装过滤生效。
-//
-// `capability` 取空值时等同「没有要求过滤」——与 Node 的
-// `if (!capability) return bodyText` 一致：客户端把变量拼进 query 而变量为空是常见形态，
-// 不该因此拿到 400。真正未知的键仍然报错（见下方白名单），这是 Go 侧既有的严格合同。
-func parseCatalogOptions(rawQuery string) (catalogOptions, bool) {
-	// aih_modalities 与 Node 的 buildOpenAIModelsList 一致默认输出；include=modalities
-	// 仍被接受（历史客户端会带），只是不再改变结果。
-	options := catalogOptions{protocol: catalogProtocolOpenAI, includeModalities: true}
-	if rawQuery == "" {
-		return options, true
-	}
-	values, err := url.ParseQuery(rawQuery)
-	if err != nil || len(values) == 0 || len(values) > 2 {
-		return catalogOptions{}, false
-	}
-	if clientVersions, found := values["client_version"]; found {
-		if len(clientVersions) != 1 || len(values) != 1 {
-			return catalogOptions{}, false
-		}
-		return catalogOptions{protocol: catalogProtocolCodex}, true
-	}
-	for key := range values {
-		if key != "include" && key != "capability" {
-			return catalogOptions{}, false
-		}
-	}
-	if includes, found := values["include"]; found {
-		if len(includes) != 1 || includes[0] != "modalities" {
-			return catalogOptions{}, false
-		}
-		options.includeModalities = true
-	}
-	if capabilities, found := values["capability"]; found {
-		if len(capabilities) != 1 {
-			return catalogOptions{}, false
-		}
-		options.capability = strings.ToLower(strings.TrimSpace(capabilities[0]))
-	}
-	return options, true
-}
-
-// modelList 是 OpenAI 兼容模型列表 envelope。
-type modelList struct {
-	Object string      `json:"object"`
-	Data   []modelView `json:"data"`
-}
-
 // modelView 是不会暴露账号数量或身份的标准模型项。
 type modelView struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
 	OwnedBy string `json:"owned_by"`
+	// DisplayName 是模型目录声明的显示名，只服务 Anthropic Models API；
+	// OpenAI 兼容响应不输出这个字段。
+	DisplayName string `json:"-"`
 	// SupportedEndpoints 是该模型可被调用的客户端入口路径。
 	//
 	// 取值是真实 HTTP 路径（/v1/messages 等），与 LiteLLM 的
@@ -454,10 +325,11 @@ func newModelViews(
 			return nil, errInvalidModelSnapshot
 		}
 		view := modelView{
-			ID:      modelID,
-			Object:  "model",
-			Created: created,
-			OwnedBy: resolveModelOwner(model.ProviderID(), modelID),
+			ID:          modelID,
+			Object:      "model",
+			Created:     created,
+			OwnedBy:     resolveModelOwner(model.ProviderID(), modelID),
+			DisplayName: lookupModelDisplayName(modalities, model.ProviderID(), modelID),
 		}
 		if includeModalities {
 			view.AIHModalities = newModelModalitiesView(
@@ -494,7 +366,8 @@ func newModelViews(
 			seenIDs[alias.Alias] = struct{}{}
 			view := modelView{
 				ID: alias.Alias, Object: "model", Created: created,
-				OwnedBy: resolveModelOwner(alias.Provider, alias.Alias),
+				OwnedBy:     resolveModelOwner(alias.Provider, alias.Alias),
+				DisplayName: alias.Alias,
 			}
 			if includeModalities {
 				// Node builds the public model object from the alias ID itself;
@@ -530,7 +403,7 @@ func newModelViews(
 func newProjectedModelViews(snapshot modelcatalog.Snapshot, includeModalities bool, capability string, created int64) []modelView {
 	views := make([]modelView, 0, len(snapshot.Items))
 	for _, item := range snapshot.Items {
-		view := modelView{ID: item.ID, Object: "model", Created: created, OwnedBy: item.OwnedBy}
+		view := modelView{ID: item.ID, Object: "model", Created: created, OwnedBy: item.OwnedBy, DisplayName: item.ID}
 		if includeModalities {
 			view.AIHModalities = &modelModalitiesView{
 				Input:  append([]string(nil), item.InputModalities...),
@@ -554,6 +427,23 @@ func newProjectedModelViews(snapshot modelcatalog.Snapshot, includeModalities bo
 		}
 	}
 	return filtered
+}
+
+// lookupModelDisplayName 优先读取模型目录声明的显示名，未命中时回退到模型 ID。
+// DisplayNameLookup 是可选能力：只实现 Reader 的来源不会因此被拒绝。
+func lookupModelDisplayName(
+	reader modelmetadata.Reader,
+	providerID string,
+	modelID string,
+) string {
+	if lookup, ok := reader.(modelmetadata.DisplayNameLookup); ok {
+		if value, found := lookup.LookupDisplayName(providerID, modelID); found {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return modelID
 }
 
 func reasoningEffortStrings(values []inference.ReasoningEffort) []string {

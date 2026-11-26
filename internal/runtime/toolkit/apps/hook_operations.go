@@ -79,7 +79,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 			}
 			hook["enabled"] = true
 			for _, event := range profile.events {
-				handler := map[string]any{"type": "command", "command": resolveSenderCommand(profile, event, receiver, opts), "timeout": configuredHookTimeout(profile, opts)}
+				handler := map[string]any{"type": "command", "command": resolveSenderCommand(profile, event, opts), "timeout": configuredHookTimeout(profile, opts)}
 				if event == "PreToolUse" || event == "PostToolUse" {
 					hook[event] = []any{map[string]any{"matcher": "*", "hooks": []any{handler}}}
 				} else {
@@ -91,7 +91,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 			hooks, _ := next["hooks"].(map[string]any)
 			cleaned, _ := removeManagedHandlersFromHooksMap(hooks, provider, opts.SenderExecPath)
 			for _, event := range profile.events {
-				handler := map[string]any{"type": "command", "command": resolveSenderCommand(profile, event, receiver, opts), "timeout": configuredHookTimeout(profile, opts)}
+				handler := map[string]any{"type": "command", "command": resolveSenderCommand(profile, event, opts), "timeout": configuredHookTimeout(profile, opts)}
 				group := map[string]any{"hooks": []any{handler}}
 				if matcher := profile.eventMatchers[event]; matcher != "" {
 					group["matcher"] = matcher
@@ -237,7 +237,7 @@ func isManagedCommandString(cmd, provider string, allowed ...string) bool {
 		return false
 	}
 	fields, ok := splitHookCommand(cmd)
-	if !ok || len(fields) < 9 {
+	if !ok || len(fields) < 5 {
 		return false
 	}
 	// Current Go command has a private subcommand. Legacy Node can begin with
@@ -263,7 +263,19 @@ func isManagedCommandString(cmd, provider string, allowed ...string) bool {
 			start = scriptIndex + 1
 		}
 	}
-	if start < 0 || len(fields) != start+7 || fields[start] != managedHookMarker || fields[start+1] != "--provider" || fields[start+3] != "--event" || fields[start+5] != "--url" {
+	if start < 0 || fields[start] != managedHookMarker ||
+		fields[start+1] != "--provider" || fields[start+3] != "--event" {
+		return false
+	}
+	// 当前命令不携带接收端 URL（运行期按 config:server 解析）；旧安装可能仍在
+	// 末尾带 --url，两者都识别为托管 handler，重复安装时统一改写成新形状。
+	switch len(fields) {
+	case start + 5:
+	case start + 7:
+		if fields[start+5] != "--url" {
+			return false
+		}
+	default:
 		return false
 	}
 	return provider == "" || strings.EqualFold(provider, fields[start+2])

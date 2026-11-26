@@ -421,11 +421,10 @@ func resolveRepoFile(opts Options, relParts ...string) string {
 	return rel
 }
 
-func resolveSenderCommand(profile resolvedHookProfile, event, receiverBase string, opts Options) string {
+func resolveSenderCommand(profile resolvedHookProfile, event string, opts Options) string {
 	return providersessionhook.BuildCommand(providersessionhook.CommandOptions{
 		Provider:       profile.provider,
 		EventName:      event,
-		ReceiverURL:    receiverBase,
 		SenderExecPath: opts.SenderExecPath,
 		Platform:       resolvePlatform(opts),
 	})

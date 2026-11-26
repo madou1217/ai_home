@@ -1,7 +1,6 @@
 package providersessionhook
 
 import (
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,52 +14,27 @@ import (
 type CommandOptions struct {
 	Provider       string
 	EventName      string
-	ReceiverURL    string
 	SenderExecPath string
 	Platform       string
 }
 
 // BuildCommand 保留托管标记与 sender CLI 参数，供 JSON / agy Hook 安装器复用。
-// Native 与 Gateway 会话使用同一命令：账号与 correlation 仍由发送时的环境读取，
-// 安装时不固化账号、网关凭据或运行模式。
+//
+// 命令里**不写接收端 URL**：端口属于服务运行态，固化进第三方 provider 配置后
+// 改端口/换机就失效，而且 Windows cmd 还要处理查询串转义。发送器在运行期按
+// config:server 的当前监听地址解析接收端（见 sender.resolveReceiverURL），
+// provider/event 由请求体携带，命令只需要稳定标识。
 func BuildCommand(options CommandOptions) string {
 	platform := commandPlatform(options.Platform)
-	windows := platform == "windows"
 	senderExec := resolveSenderExecutable(options.SenderExecPath, platform)
-
-	receiver := strings.TrimSpace(options.ReceiverURL)
-	if receiver == "" {
-		receiver = DefaultReceiverURL
-	}
 	quote := quotePOSIXToken
-	if windows {
-		// Windows 官方 CLI 经 cmd 执行 Hook。查询串的 & 会被解释为命令分隔符，
-		// 延续原有协议剥离查询串，provider/event 由 sender 写入请求体。
-		if index := strings.IndexByte(receiver, '?'); index >= 0 {
-			receiver = receiver[:index]
-		}
+	if platform == "windows" {
 		quote = quoteWindowsToken
-	} else {
-		separator := "?"
-		if strings.Contains(receiver, "?") {
-			separator = "&"
-		}
-		parts := make([]string, 0, 2)
-		if strings.TrimSpace(options.Provider) != "" {
-			parts = append(parts, "provider="+url.QueryEscape(options.Provider))
-		}
-		if strings.TrimSpace(options.EventName) != "" {
-			parts = append(parts, "event="+url.QueryEscape(options.EventName))
-		}
-		if len(parts) > 0 {
-			receiver += separator + strings.Join(parts, "&")
-		}
 	}
 	return strings.Join([]string{
 		quote(senderExec), "__provider-hook", Marker,
 		"--provider", quote(options.Provider),
 		"--event", quote(options.EventName),
-		"--url", quote(receiver),
 	}, " ")
 }
 

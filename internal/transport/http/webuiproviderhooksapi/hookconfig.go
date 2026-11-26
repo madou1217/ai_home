@@ -144,7 +144,6 @@ func buildProviderSessionHookSenderCommand(provider string, event string, contex
 	return providersessionhook.BuildCommand(providersessionhook.CommandOptions{
 		Provider:       provider,
 		EventName:      event,
-		ReceiverURL:    context.receiverURL,
 		SenderExecPath: context.senderExecPath,
 		Platform:       context.resolvedPlatform(),
 	})

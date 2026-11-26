@@ -14,17 +14,22 @@ package providersessionhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
+	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/aihhome"
 )
 
 const (
@@ -90,7 +95,7 @@ func Run(options Options) Result {
 	parsed := parseArgs(options.Args)
 	stdout := buildNoopOutput(parsed.provider, parsed.eventName)
 	body := buildReceiverBody(parsed, options.Stdin, options.Getenv)
-	delivery := postJSON(parsed.url, body, parsed.timeout)
+	delivery := postJSON(resolveReceiverURL(parsed.url, options.Getenv), body, parsed.timeout)
 	if delivery.ok {
 		return Result{Stdout: stdout}
 	}
@@ -382,6 +387,96 @@ type deliveryOutcome struct {
 	ok         bool
 	statusCode int
 	err        string
+}
+
+// resolveReceiverURL 解析本次投递的接收端。
+//
+// 安装命令不再固化 URL（端口是服务运行态，写进第三方 provider 配置后改端口/
+// 换机就失效）。旧命令带 --url 时仍以它为准；新命令按 config:server 的当前
+// 监听地址解析，读不到配置才回默认。
+func resolveReceiverURL(explicit string, getenv func(string) string) string {
+	if target := strings.TrimSpace(explicit); target != "" {
+		return target
+	}
+	return configuredReceiverURL(getenv)
+}
+
+func configuredReceiverURL(getenv func(string) string) string {
+	home := resolveHookAIHomeDir(getenv)
+	if home == "" {
+		return DefaultReceiverURL
+	}
+	store, err := appstate.OpenServerConfigStore(home)
+	if err != nil {
+		return DefaultReceiverURL
+	}
+	raw, found, err := store.ReadServerConfig(context.Background())
+	if err != nil || !found || strings.TrimSpace(raw) == "" {
+		return DefaultReceiverURL
+	}
+	var input map[string]any
+	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+		return DefaultReceiverURL
+	}
+	values := serverconfig.Sanitize(input)
+	host := serverconfig.NormalizeLoopbackHost(stringValue(values["host"]))
+	port := intValue(values["port"])
+	if port <= 0 {
+		return DefaultReceiverURL
+	}
+	return serverconfig.BaseURL(host, port, ReceiverPath)
+}
+
+func resolveHookAIHomeDir(getenv func(string) string) string {
+	env := getenv
+	if env == nil {
+		env = os.Getenv
+	}
+	home := strings.TrimSpace(env("AIH_HOME_DIR"))
+	if home == "" {
+		root := strings.TrimSpace(env("HOME"))
+		if root == "" {
+			root = strings.TrimSpace(env("USERPROFILE"))
+		}
+		if root != "" {
+			home = filepath.Join(root, ".ai_home")
+		}
+	}
+	if home == "" {
+		return ""
+	}
+	// 账号投影 HOME 里的 .ai_home 只带运行态；网关配置在宿主数据根。
+	if host := aihhome.ProjectedHostAIHome(home); host != "" {
+		return host
+	}
+	return home
+}
+
+func stringValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case string:
+		if number, err := strconv.Atoi(strings.TrimSpace(typed)); err == nil {
+			return number
+		}
+	}
+	return 0
 }
 
 // postJSON 投递事件；与 Node 一致，超时/连接失败都只作为投递失败返回。

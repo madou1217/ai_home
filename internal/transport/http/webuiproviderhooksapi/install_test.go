@@ -170,10 +170,15 @@ func TestInstallCodexWritesHooksAndFeatureFlag(t *testing.T) {
 		managedHookMarker,
 		"--provider 'codex'",
 		"--event 'SessionStart'",
-		"http://127.0.0.1:9999/hook?provider=codex&event=SessionStart",
 	} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command 缺少 %q: %s", want, command)
+		}
+	}
+	// 接收端地址是服务运行态：命令里禁止固化 URL，由发送器在运行期解析。
+	for _, forbidden := range []string{"--url", "http://", "https://"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("command 不应包含 %q: %s", forbidden, command)
 		}
 	}
 	if !strings.Contains(readFileText(t, configPath), "hooks = true") {

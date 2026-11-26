@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | ZCode 进程内钩子 | `lib/runtime/zcode-*-hook.js`、`zcode-session-attribution-runner.js`、`zcode-desktop-protocol-bridge.js` | 必须注入 zcode 自己的 Node 进程（patch agent 源码、包 fetch、tap stdio）；Go 只负责拉起 runner |
 | 厂商 Electron 边界 | `lib/account/workbuddy-credential-codec.js` + `scripts/aih-workbuddy-credential-codec.cjs`、`lib/runtime/codebuddy-ide-bridge-*.{js,cjs}` | at-rest 密钥来自 `process._linkedBinding('electron_browser_workbuddy_storage')`，只有厂商二进制能提供；bridge 同样运行在厂商 Electron 内 |
-| 插件 / hooks | `lib/plugins/**`、`provider-session-hook-*`、旧 `aih-provider-session-hook-sender.js` | 插件运行时本身支持 `node|process`；Go 安装器已改写成 `__provider-hook` 子命令，Node sender 仅服务尚未重装的旧 hook 配置 |
+| 插件 / hooks | `lib/plugins/**`、`provider-session-hook-*`、旧 `aih-provider-session-hook-sender.js` | 插件运行时本身支持 `node|process`；Go 安装器已改写成 `__provider-hook` 子命令，Node sender 仅服务尚未重装的旧 hook 配置。托管命令不再固化接收端 URL（端口属于运行态）：发送器按 `config:server` 的当前 host/port 解析，旧命令的 `--url` 仍兼容 |
 | 构建 / 发布 / 运维 | `scripts/build-go-server.js`、`scripts/package/*`、`collect-*`、`go-accounts-preview.js` | 工具链，不是运行时代码 |
 
 厂商边界内也不再有第一方业务规则：身份、凭据校验、默认账号、状态推导、用量账本都已由 Go 持有。

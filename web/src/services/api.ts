@@ -189,7 +189,6 @@ const WEBUI_AUTH_ERROR_CODES = new Set([
   'management_key_not_configured'
 ]);
 const CONTROL_PLANE_PROFILES_STORAGE_KEY = 'aih:control-plane-profiles:v1';
-const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
 
 function webUiAuthErrorCode(data: unknown): string {
   if (!data || typeof data !== 'object') return '';
@@ -201,45 +200,105 @@ function webUiAuthErrorCode(data: unknown): string {
   return '';
 }
 
-/** 失效的 Key 不能留在 profile 里，否则 setup 页会继续显示“已配置”。 */
-function clearStaleWebUiManagementKey() {
+/**
+ * 鉴权失败只标记目标 profile，绝不删除已保存的 Management Key。
+ * 重启/瞬断/远端 profile 失败时把密钥清掉，会造成“经常性登录失效”。
+ */
+function markWebUiProfileRejected(serverId: string) {
   if (typeof window === 'undefined') return;
   try {
     const raw = window.localStorage.getItem(CONTROL_PLANE_PROFILES_STORAGE_KEY);
     if (!raw) return;
     const profiles = JSON.parse(raw);
     if (!Array.isArray(profiles)) return;
-    const activeId = String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '');
     let changed = false;
     for (const profile of profiles) {
       if (!profile || typeof profile !== 'object') continue;
-      const isActive = Boolean(activeId) && profile.id === activeId;
-      const sameOrigin = Boolean(profile.endpoint)
-        && isSameServerOrigin(String(profile.endpoint), window.location.origin);
-      if (!isActive && !sameOrigin) continue;
-      if (profile.managementKey || profile.managementKeyConfigured) {
-        profile.managementKey = '';
-        profile.managementKeyConfigured = false;
-        profile.authorizationState = 'discovered-pending-auth';
+      const isTarget = serverId
+        ? profile.id === serverId
+        : Boolean(profile.endpoint) && isSameServerOrigin(String(profile.endpoint), window.location.origin);
+      if (!isTarget) continue;
+      if (profile.state !== 'offline' || profile.lastError !== 'management_key_rejected') {
         profile.state = 'offline';
+        profile.lastError = 'management_key_rejected';
         changed = true;
       }
     }
     if (changed) {
       window.localStorage.setItem(CONTROL_PLANE_PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+      window.dispatchEvent(new CustomEvent('aih:control-plane-profiles-changed'));
     }
   } catch (_error) {
-    // Storage 不可用时保持原状，由 gate 页面处理。
+    // Storage 不可用时保持原状，不把用户登出。
   }
+}
+
+let localAuthProbe: Promise<boolean> | null = null;
+
+/** 本地 Server 的鉴权失败必须二次确认：单次 401（重启瞬断/代理抖动）不跳 gate。 */
+function confirmLocalAuthFailure(): Promise<boolean> {
+  if (localAuthProbe) return localAuthProbe;
+  localAuthProbe = (async () => {
+    try {
+      const key = resolveWebUiManagementKey();
+      const response = await fetch('/v0/webui/management/status', {
+        method: 'GET',
+        cache: 'no-store',
+        headers: key ? { Authorization: `Bearer ${key}` } : undefined
+      });
+      if (response.ok) return false;
+      if (![401, 403, 503].includes(response.status)) return false;
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch (_error) {
+        data = null;
+      }
+      return WEBUI_AUTH_ERROR_CODES.has(webUiAuthErrorCode(data));
+    } catch (_error) {
+      // 网络错误不是凭据失效。
+      return false;
+    } finally {
+      window.setTimeout(() => { localAuthProbe = null; }, 3000);
+    }
+  })();
+  return localAuthProbe;
 }
 
 function redirectToWebUiGate() {
   try {
     if (typeof window === 'undefined') return;
     if ((window.location.pathname || '').includes('/server-setup')) return;
-    clearStaleWebUiManagementKey();
-    window.location.href = buildAppHref('/server-setup', 'gate=1');
+    const active = resolveActiveServer();
+    // 远端 profile 失败只标记该 profile，不让整个 WebUI 掉到 setup gate。
+    if (active.isRemote) return;
+    const hasKey = Boolean(resolveWebUiManagementKey());
+    markWebUiProfileRejected(active.serverId);
+    // 保留已保存的密钥：gate 只提示重新认证，不把用户“登出”。
+    window.location.href = buildAppHref('/server-setup', hasKey ? 'gate=1&reauth=1' : 'gate=1');
   } catch (_error) { /* ignore */ }
+}
+
+function requestTargetServerId(config?: { headers?: unknown }): string {
+  const headers = config?.headers as {
+    get?: (name: string) => unknown;
+    [key: string]: unknown;
+  } | undefined;
+  if (!headers) return '';
+  if (typeof headers.get === 'function') return String(headers.get('x-aih-server-id') || '').trim();
+  return String(headers['x-aih-server-id'] || '').trim();
+}
+
+function handleWebUiAuthFailure(targetServerId?: string) {
+  const target = String(targetServerId || '').trim();
+  if (target) {
+    // 远端 profile：只标记该 profile 离线，不跳 gate、不清密钥。
+    markWebUiProfileRejected(target);
+    return;
+  }
+  void confirmLocalAuthFailure().then((confirmed) => {
+    if (confirmed) redirectToWebUiGate();
+  });
 }
 
 const SESSION_HISTORY_PAGE_LIMIT = 50;
@@ -272,7 +331,7 @@ api.interceptors.response.use(
     const status = Number(response?.status);
     if ([401, 403, 503].includes(status)
       && WEBUI_AUTH_ERROR_CODES.has(webUiAuthErrorCode(response?.data))) {
-      redirectToWebUiGate();
+      handleWebUiAuthFailure(requestTargetServerId(error.config));
     }
     return Promise.reject(error);
   }
@@ -342,7 +401,7 @@ async function requestBoundWebUiJson<T>(
       [401, 403, 503].includes(response.status)
       && WEBUI_AUTH_ERROR_CODES.has(webUiAuthErrorCode(data))
     ) {
-      redirectToWebUiGate();
+      handleWebUiAuthFailure(boundTarget?.isRemote ? boundTarget.serverId : '');
     }
     const err = new Error(
       String((data as { message?: unknown; error?: unknown } | null)?.message || `HTTP ${response.status}`)

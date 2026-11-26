@@ -3528,6 +3528,7 @@ export interface NativeResourceInstallCandidate {
   description?: string;
   version?: string;
   targets?: string[];
+  origin?: 'builtin' | 'user' | string;
 }
 
 export interface NativeResourceSourceImport {

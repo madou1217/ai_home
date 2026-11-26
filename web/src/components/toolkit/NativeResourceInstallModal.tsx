@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, Form, Input, Modal, Segmented, Select, Space, Typography, message } from 'antd';
-import { FolderOpenOutlined, LinkOutlined } from '@ant-design/icons';
+import { FolderOpenOutlined, LinkOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { toolkitAPI } from '@/services/api';
 import type {
   NativeResourceKind,
@@ -29,6 +29,11 @@ interface InstallFormValues {
   source: string;
   name?: string;
   link?: boolean;
+  mcpMode?: 'command' | 'script';
+  mcpCommand?: string;
+  mcpArgs?: string;
+  mcpCwd?: string;
+  mcpEnv?: { key?: string; value?: string }[];
 }
 
 type SourceMode = 'path' | 'folder' | 'url';
@@ -63,6 +68,7 @@ export default function NativeResourceInstallModal({
   const [importing, setImporting] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const kind = Form.useWatch('kind', form) || initialKind;
+  const mcpMode = Form.useWatch('mcpMode', form) || 'command';
   const candidates = useMemo(
     () => (report?.installCandidates || []).filter((item) => item.kind === kind),
     [report, kind]
@@ -85,7 +91,7 @@ export default function NativeResourceInstallModal({
   // 切换安装源后，剔除已经不在声明目标里的选择，避免用户以为还能装到不兼容宿主。
   useEffect(() => {
     const allowed = new Set(owners.map((option) => option.value));
-    const current = form.getFieldValue('owners') || [];
+    const current: string[] = form.getFieldValue('owners') || [];
     const next = current.filter((value) => allowed.has(value));
     if (next.length !== current.length) form.setFieldsValue({ owners: next });
   }, [owners, form]);
@@ -106,7 +112,18 @@ export default function NativeResourceInstallModal({
     setSourceMode('path');
     setSourceUrl('');
     setUpload(null);
-    form.setFieldsValue({ kind: initialKind, owners: [], source: '', name: undefined, link: false });
+    form.setFieldsValue({
+      kind: initialKind,
+      owners: [],
+      source: '',
+      name: undefined,
+      link: false,
+      mcpMode: 'command',
+      mcpCommand: '',
+      mcpArgs: '',
+      mcpCwd: '',
+      mcpEnv: []
+    });
   }, [open, initialKind, form]);
 
   const importFiles = async (files: FileList | null) => {
@@ -174,33 +191,66 @@ export default function NativeResourceInstallModal({
 
   const submit = async () => {
     const values = await form.validateFields();
-    const source = values.source?.trim() || '';
-    if (sourceMode === 'path' && !source) {
-      message.warning('请填写安装源路径');
-      return;
-    }
-    if (sourceMode !== 'path' && !upload) {
-      message.warning(sourceMode === 'folder' ? '请选择文件夹' : '请先下载 URL 安装源');
-      return;
-    }
-    const wrongPlane = sourceMode === 'path'
-      ? inspection?.plane === 'capability'
-      : upload?.plane === 'capability';
-    if (wrongPlane) {
-      message.error('这是 AIH 能力插件（capability），请使用 aih plugin install；当前页只安装 Harness 原生插件');
-      return;
-    }
     const selectedKind = values.kind;
+    const commandMode = selectedKind === 'mcp' && (values.mcpMode || 'command') === 'command';
+    const source = values.source?.trim() || '';
+    let sourcePayload: Record<string, unknown> = {};
+    let mcpPayload: Record<string, unknown> = {};
+    if (commandMode) {
+      const command = values.mcpCommand?.trim() || '';
+      if (!command) {
+        message.warning('请填写 MCP 启动命令');
+        return;
+      }
+      const commandArgs = (values.mcpArgs || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const cwd = values.mcpCwd?.trim() || '';
+      const envPayload: Record<string, string> = {};
+      for (const entry of values.mcpEnv || []) {
+        const key = entry?.key?.trim() || '';
+        if (!key) continue;
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+          message.error(`环境变量名不合法：${key}`);
+          return;
+        }
+        envPayload[key] = entry.value ?? '';
+      }
+      mcpPayload = {
+        id: values.name?.trim(),
+        command,
+        ...(commandArgs.length ? { commandArgs } : {}),
+        ...(cwd ? { cwd } : {}),
+        ...(Object.keys(envPayload).length ? { env: envPayload } : {})
+      };
+    } else {
+      if (sourceMode === 'path' && !source) {
+        message.warning('请填写安装源路径');
+        return;
+      }
+      if (sourceMode !== 'path' && !upload) {
+        message.warning(sourceMode === 'folder' ? '请选择文件夹' : '请先下载 URL 安装源');
+        return;
+      }
+      const wrongPlane = sourceMode === 'path'
+        ? inspection?.plane === 'capability'
+        : upload?.plane === 'capability';
+      if (wrongPlane) {
+        message.error('这是 AIH 能力插件（capability），请使用 aih plugin install；当前页只安装 Harness 原生插件');
+        return;
+      }
+      sourcePayload = sourceMode === 'path' ? { source } : { uploadId: upload?.uploadId };
+    }
     const targets = values.owners;
     setSubmitting(true);
     try {
-      const sourcePayload = sourceMode === 'path' ? { source } : { uploadId: upload?.uploadId };
       const results = await Promise.allSettled(targets.map((owner) => toolkitAPI.operateNativeResource({
         kind: selectedKind,
         action: 'install',
-        ...sourcePayload,
-        ...(selectedKind === 'mcp' ? { id: values.name?.trim() } : {}),
-        ...(selectedKind === 'skill' && values.link ? { link: true } : {}),
+        ...(commandMode ? mcpPayload : sourcePayload),
+        ...(!commandMode && selectedKind === 'mcp' ? { id: values.name?.trim() } : {}),
+        ...(!commandMode && selectedKind === 'skill' && values.link ? { link: true } : {}),
         ...ownerPayload(owner)
       })));
       const failed = results
@@ -208,14 +258,18 @@ export default function NativeResourceInstallModal({
         .filter((item) => item.result.status === 'rejected');
       const succeeded = targets.length - failed.length;
       if (succeeded > 0) onInstalled(selectedKind);
-      const sourceLabel = sourceMode === 'path' ? source : upload?.name || '安装源';
+      const sourceLabel = commandMode
+        ? values.mcpCommand?.trim() || 'MCP'
+        : sourceMode === 'path' ? source : upload?.name || '安装源';
       if (!failed.length) {
         message.success(`${KIND_LABELS[selectedKind]} ${sourceLabel} 已安装到 ${targets.length} 个目标`);
         onClose();
         return;
       }
-      const first = failed[0].result as PromiseRejectedResult;
-      const reason = first.reason instanceof Error ? first.reason.message : '安装失败';
+      const first = failed[0];
+      const reason = first.result.status === 'rejected' && first.result.reason instanceof Error
+        ? first.result.reason.message
+        : '安装失败';
       message.warning(`已安装 ${succeeded}/${targets.length}；${first.owner} 失败：${reason}`);
     } finally {
       setSubmitting(false);
@@ -240,7 +294,15 @@ export default function NativeResourceInstallModal({
             options={RESOURCE_KINDS.map((item) => ({ value: item, label: KIND_LABELS[item] }))}
             onChange={() => {
               resetSource('path');
-              form.setFieldsValue({ owners: [], name: undefined });
+              form.setFieldsValue({
+                owners: [],
+                name: undefined,
+                mcpMode: 'command',
+                mcpCommand: '',
+                mcpArgs: '',
+                mcpCwd: '',
+                mcpEnv: []
+              });
             }}
           />
         </Form.Item>
@@ -259,17 +321,83 @@ export default function NativeResourceInstallModal({
           </Form.Item>
         ) : null}
         {kind === 'mcp' ? (
-          <Form.Item
-            name="name"
-            label="MCP 名称"
-            rules={[
-              { required: true, message: '请填写 MCP 名称' },
-              { pattern: /^[a-z0-9][a-z0-9._-]{0,63}$/, message: '仅支持小写字母、数字与 ._-' }
-            ]}
-          >
-            <Input placeholder="例如 filesystem" autoComplete="off" />
-          </Form.Item>
+          <>
+            <Form.Item
+              name="name"
+              label="MCP 名称"
+              rules={[
+                { required: true, message: '请填写 MCP 名称' },
+                { pattern: /^[a-z0-9][a-z0-9._-]{0,63}$/, message: '仅支持小写字母、数字与 ._-' }
+              ]}
+            >
+              <Input placeholder="例如 filesystem" autoComplete="off" />
+            </Form.Item>
+            <Form.Item name="mcpMode" label="安装方式">
+              <Segmented
+                block
+                options={[
+                  { value: 'command', label: '命令 / stdio' },
+                  { value: 'script', label: 'Node 脚本' }
+                ]}
+              />
+            </Form.Item>
+            {mcpMode === 'command' ? (
+              <>
+                <Form.Item
+                  name="mcpCommand"
+                  label="启动命令"
+                  rules={[{ required: true, message: '请填写启动命令' }]}
+                  extra={<Typography.Text type="secondary">例如 npx、node、uvx；参数在下方逐行填写。</Typography.Text>}
+                >
+                  <Input placeholder="npx" autoComplete="off" />
+                </Form.Item>
+                <Form.Item
+                  name="mcpArgs"
+                  label="命令参数"
+                  extra={<Typography.Text type="secondary">每行一个参数，按原样传给命令。</Typography.Text>}
+                >
+                  <Input.TextArea rows={3} placeholder={'-y\n@modelcontextprotocol/server-github'} />
+                </Form.Item>
+                <Form.Item
+                  name="mcpCwd"
+                  label="工作目录（可选）"
+                  extra={<Typography.Text type="secondary">必须是绝对路径；部分 Provider 不支持 cwd。</Typography.Text>}
+                >
+                  <Input placeholder="/path/to/project" autoComplete="off" />
+                </Form.Item>
+                <Form.Item label="环境变量（可选）">
+                  <Form.List name="mcpEnv">
+                    {(fields, { add, remove }) => (
+                      <>
+                        {fields.map(({ key, name, ...restField }) => (
+                          <Space key={key} align="baseline" style={{ display: 'flex' }}>
+                            <Form.Item
+                              {...restField}
+                              name={[name, 'key']}
+                              rules={[{ pattern: /^[A-Za-z_][A-Za-z0-9_]*$/, message: '仅支持字母、数字、下划线' }]}
+                              style={{ marginBottom: 8 }}
+                            >
+                              <Input placeholder="KEY" autoComplete="off" />
+                            </Form.Item>
+                            <Form.Item {...restField} name={[name, 'value']} style={{ marginBottom: 8 }}>
+                              <Input placeholder="value" autoComplete="off" />
+                            </Form.Item>
+                            <MinusCircleOutlined onClick={() => remove(name)} />
+                          </Space>
+                        ))}
+                        <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add()}>
+                          添加环境变量
+                        </Button>
+                      </>
+                    )}
+                  </Form.List>
+                </Form.Item>
+              </>
+            ) : null}
+          </>
         ) : null}
+        {kind === 'mcp' && mcpMode === 'command' ? null : (
+          <>
         <Form.Item label="安装源">
           <Segmented
             block
@@ -311,6 +439,7 @@ export default function NativeResourceInstallModal({
             <Form.Item
               name="source"
               label={kind === 'mcp' ? 'Node 脚本路径' : '安装源路径'}
+              preserve={false}
               rules={[{ required: true, message: '请填写安装源路径' }]}
               extra={
                 <Typography.Text type="secondary">
@@ -425,6 +554,8 @@ export default function NativeResourceInstallModal({
             ) : null}
           </Form.Item>
         ) : null}
+          </>
+        )}
         <Form.Item
           name="owners"
           label={(

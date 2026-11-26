@@ -442,7 +442,7 @@ func (s *Service) InspectSource(kind, rawSource string) (SourceInspection, error
 		}
 		return s.inspectNpmSource(context.Background(), rawSource)
 	}
-	src, err := s.sourceFor(rawSource)
+	src, err := s.sourceForKind(kind, rawSource)
 	if err != nil {
 		return SourceInspection{}, err
 	}

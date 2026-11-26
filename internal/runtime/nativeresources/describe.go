@@ -16,11 +16,29 @@ type InstallCandidate struct {
 	Description string   `json:"description,omitempty"`
 	Version     string   `json:"version,omitempty"`
 	Targets     []string `json:"targets,omitempty"`
+	// Origin distinguishes packaged skills from the user's own repository.
+	Origin string `json:"origin,omitempty"`
 }
 
-// skillCandidatesRoots 是分发包内相对 package root 的 Skill 源目录。
-var skillCandidatesRoots = []string{
-	filepath.Join("assets", "provider-skills"),
+type skillCandidateRoot struct {
+	dir    string
+	source string // relative source prefix; empty means absolute dir
+	origin string
+}
+
+func (s *Service) skillCandidateRoots() []skillCandidateRoot {
+	roots := []skillCandidateRoot{{
+		dir:    filepath.Join(s.sourceRoot, "assets", "provider-skills"),
+		source: filepath.ToSlash(filepath.Join("assets", "provider-skills")),
+		origin: "builtin",
+	}}
+	if strings.TrimSpace(s.aiHomeDir) != "" {
+		roots = append(roots, skillCandidateRoot{
+			dir:    filepath.Join(s.aiHomeDir, "skills"),
+			origin: "user",
+		})
+	}
+	return roots
 }
 
 // pluginCandidatesRoots 是分发包内相对 package root 的插件源目录。
@@ -191,12 +209,13 @@ func permissionSummary(permissions map[string]any) string {
 	return "permissions " + strings.Join(parts, ",")
 }
 
-// installCandidates 扫描分发包内随包交付的 Skill/Plugin 源，回答“从哪里安装”。
+// installCandidates 扫描随包交付与用户 Skill 仓，回答“从哪里安装”。
+// 同一 ID 以内置包为先，用户仓不能覆盖随包资源。
 func (s *Service) installCandidates() []InstallCandidate {
 	out := make([]InstallCandidate, 0)
-	for _, root := range skillCandidatesRoots {
-		dir := filepath.Join(s.sourceRoot, root)
-		entries, err := os.ReadDir(dir)
+	seenSkills := map[string]bool{}
+	for _, root := range s.skillCandidateRoots() {
+		entries, err := os.ReadDir(root.dir)
 		if err != nil {
 			continue
 		}
@@ -204,15 +223,24 @@ func (s *Service) installCandidates() []InstallCandidate {
 			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
-			pkg, readErr := readSkillPackage(filepath.Join(dir, entry.Name()))
+			pkg, readErr := readSkillPackage(filepath.Join(root.dir, entry.Name()))
 			if readErr != nil {
 				continue
+			}
+			if seenSkills[pkg.ID] {
+				continue
+			}
+			seenSkills[pkg.ID] = true
+			source := filepath.ToSlash(filepath.Join(root.dir, entry.Name()))
+			if root.source != "" {
+				source = filepath.ToSlash(filepath.Join(root.source, entry.Name()))
 			}
 			out = append(out, InstallCandidate{
 				Kind:        "skill",
 				ID:          pkg.ID,
-				Source:      filepath.ToSlash(filepath.Join(root, entry.Name())),
+				Source:      source,
 				Description: pkg.Description,
+				Origin:      root.origin,
 			})
 		}
 	}

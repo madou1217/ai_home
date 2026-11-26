@@ -302,6 +302,12 @@ type OperateInput struct {
 	ID       string         `json:"id"`
 	Tool     string         `json:"tool"`
 	Args     map[string]any `json:"args"`
+	// MCP stdio definition for the generic install form. CommandArgs is kept
+	// separate from Args because Args carries MCP tool call arguments.
+	Command     string            `json:"command,omitempty"`
+	CommandArgs []string          `json:"commandArgs,omitempty"`
+	Cwd         string            `json:"cwd,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
 	// Link requests link-based skill projection instead of a per-provider copy.
 	Link bool `json:"link,omitempty"`
 }
@@ -504,19 +510,28 @@ func (s *Service) Operate(ctx context.Context, input OperateInput) (OperateRespo
 		}
 		switch action {
 		case "install":
-			src, sErr := s.installSource(ctx, input)
-			if sErr != nil {
-				return OperateResponse{}, sErr
+			spec := MCPServerSpec{
+				Command: strings.TrimSpace(input.Command),
+				Args:    append([]string{}, input.CommandArgs...),
+				Cwd:     strings.TrimSpace(input.Cwd),
+				Env:     input.Env,
 			}
-			script, scriptErr := singleSourceFile(src)
-			if scriptErr != nil {
-				return OperateResponse{}, scriptErr
+			if spec.Command == "" {
+				src, sErr := s.installSource(ctx, input)
+				if sErr != nil {
+					return OperateResponse{}, sErr
+				}
+				script, scriptErr := singleSourceFile(src)
+				if scriptErr != nil {
+					return OperateResponse{}, scriptErr
+				}
+				nodeBin := s.runner.FindNode()
+				if nodeBin == "" {
+					nodeBin = "node"
+				}
+				spec = MCPServerSpec{Command: nodeBin, Args: []string{script}}
 			}
-			nodeBin := s.runner.FindNode()
-			if nodeBin == "" {
-				nodeBin = "node"
-			}
-			if _, addErr := s.mcps.add(ctx, id, MCPServerSpec{Command: nodeBin, Args: []string{script}}, sel.Provider); addErr != nil {
+			if _, addErr := s.mcps.add(ctx, id, spec, sel.Provider); addErr != nil {
 				return OperateResponse{}, addErr
 			}
 			result, err = s.mcps.change(ctx, id, sel.Provider, "enable")
@@ -574,10 +589,11 @@ func (s *Service) installSource(ctx context.Context, input OperateInput) (string
 	if uploadID := strings.TrimSpace(input.UploadID); uploadID != "" {
 		return s.resolveUploadSource(uploadID)
 	}
-	return s.sourceFor(input.Source)
+	return s.sourceForKind(input.Kind, input.Source)
 }
 
-func (s *Service) sourceFor(rawSource string) (string, error) {
+// sourceForKind 允许内置源根，以及 Skill 专用的用户仓根。其它绝对路径仍被拒绝。
+func (s *Service) sourceForKind(kind, rawSource string) (string, error) {
 	src := strings.TrimSpace(rawSource)
 	if src == "" {
 		return "", fail("native_resource_source_required")
@@ -589,16 +605,27 @@ func (s *Service) sourceFor(rawSource string) (string, error) {
 	if err != nil {
 		return "", fail("native_resource_source_forbidden")
 	}
-	absRoot, err := filepath.Abs(s.sourceRoot)
-	if err != nil {
-		return "", fail("native_resource_source_forbidden")
+	roots := []string{s.sourceRoot}
+	if strings.EqualFold(strings.TrimSpace(kind), "skill") && strings.TrimSpace(s.aiHomeDir) != "" {
+		roots = append(roots, filepath.Join(s.aiHomeDir, "skills"))
 	}
-	rel, err := filepath.Rel(absRoot, candidate)
-	if err != nil || rel == "" || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", fail("native_resource_source_forbidden")
+	for _, root := range roots {
+		absRoot, rootErr := filepath.Abs(root)
+		if rootErr != nil || !pathWithin(candidate, absRoot) {
+			continue
+		}
+		if _, statErr := os.Stat(candidate); statErr != nil {
+			return "", fail("native_resource_source_missing")
+		}
+		return candidate, nil
 	}
-	if _, err := os.Stat(candidate); err != nil {
-		return "", fail("native_resource_source_missing")
+	return "", fail("native_resource_source_forbidden")
+}
+
+func pathWithin(candidate, root string) bool {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == "" || rel == "." || rel == ".." || filepath.IsAbs(rel) {
+		return false
 	}
-	return candidate, nil
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

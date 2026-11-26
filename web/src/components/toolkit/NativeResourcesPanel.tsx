@@ -27,6 +27,7 @@ import NativeResourceGroupCard, {
   type ManagedNativeAction
 } from './NativeResourceGroupCard';
 import NativeResourceInstallModal from './NativeResourceInstallModal';
+import NativeResourceSkillRepo from './NativeResourceSkillRepo';
 import ToolkitEmptyState from './ToolkitEmptyState';
 import ToolkitPanelHeader from './ToolkitPanelHeader';
 import {
@@ -196,8 +197,10 @@ export default function NativeResourcesPanel() {
               ),
               children: (
                 <SettingSection
-                  title={`${KIND_LABELS[kind]}列表`}
-                  description="按资源汇总各宿主投影，支持批量启停或进入详情逐项管理。"
+                  title={kind === 'skill' ? 'Skill 仓与已安装' : `${KIND_LABELS[kind]}列表`}
+                  description={kind === 'skill'
+                    ? '从内置或用户仓安装 Skill，并按 Provider 逐项启停；下方为已安装投影。'
+                    : '按资源汇总各宿主投影，支持批量启停或进入详情逐项管理。'}
                   status={(
                     <SettingStatusTag
                       status={counts[kind] ? 'saved' : 'unset'}
@@ -206,6 +209,9 @@ export default function NativeResourcesPanel() {
                     />
                   )}
                 >
+                  {kind === 'skill' ? (
+                    <NativeResourceSkillRepo report={report} onChanged={load} />
+                  ) : null}
                   <div style={{ padding: '12px 0' }}>
                     {visibleGroups.length ? (
                       <div className="toolkit-native-grid">

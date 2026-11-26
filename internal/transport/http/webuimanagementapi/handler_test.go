@@ -17,7 +17,6 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accountstate"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 )
@@ -119,9 +118,6 @@ func buildTestHandler(t *testing.T, withRestarter bool) (*Handler, *managementop
 		updated_at INTEGER NOT NULL
 	)`); err != nil {
 		t.Fatalf("create account_refs error = %v", err)
-	}
-	if err := accountstate.EnsureSchema(ctx, usageStore.DB()); err != nil {
-		t.Fatalf("accountstate.EnsureSchema() error = %v", err)
 	}
 
 	var restarter managementops.ServerRestarterPort
@@ -229,24 +225,6 @@ func TestHandlerCoreManagementAndStateIndex(t *testing.T) {
 	}
 	if rec := doJSONReq(t, h, http.MethodPost, RestartPath, nil); rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"management_restart_unavailable"`) {
 		t.Fatalf("POST /restart(nil) code=%d body=%s", rec.Code, rec.Body.String())
-	}
-
-	// State index validation & CRUD
-	if rec := doJSONReq(t, h, http.MethodPost, StateIndexUpsertPath, map[string]any{"provider": "codex", "accountRef": "bad"}); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"invalid_state_index_payload"`) {
-		t.Fatalf("POST /state-index/upsert bad code=%d body=%s", rec.Code, rec.Body.String())
-	}
-	ref := "acct_0123456789abcdef0123"
-	if rec := doJSONReq(t, h, http.MethodPost, StateIndexUpsertPath, map[string]any{"provider": "codex", "accountRef": ref, "state": map[string]any{"configured": true}}); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"updated":true`) {
-		t.Fatalf("POST /state-index/upsert code=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if rec := doJSONReq(t, h, http.MethodPost, StateIndexOperationalStatusPath, map[string]any{"provider": "codex", "accountRef": ref, "status": "down"}); rec.Code != http.StatusOK {
-		t.Fatalf("POST /state-index/operational-status code=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if rec := doJSONReq(t, h, http.MethodPost, StateIndexRuntimeStatePath, map[string]any{"provider": "codex", "accountRef": ref, "runtimeState": map[string]any{"status": "cooldown"}}); rec.Code != http.StatusOK {
-		t.Fatalf("POST /state-index/runtime-state code=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if rec := doJSONReq(t, h, http.MethodPost, StateIndexPruneMissingPath, map[string]any{"provider": "codex", "existingRefs": []string{ref}}); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"removed":0`) {
-		t.Fatalf("POST /state-index/prune-missing code=%d body=%s", rec.Code, rec.Body.String())
 	}
 
 	// Watch snapshot + SSE stream via httptest.Server

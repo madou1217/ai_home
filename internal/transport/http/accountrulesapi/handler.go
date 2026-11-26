@@ -13,20 +13,16 @@ package accountrulesapi
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	rulesapp "github.com/madou1217/ai_home/application/upstreamrules"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/appstate/rulesenv"
 )
 
 const (
@@ -319,63 +315,6 @@ func (handler *Handler) parseImportPayload(
 	}
 	writeError(response, http.StatusConflict, "legacy_source_confirmation_required", "Explicit accounts payload required")
 	return nil, false, false
-}
-
-func (handler *Handler) loadAppStateAccountRules(ctx context.Context) ([]importAccountItem, error) {
-	if handler.aiHomeDir == "" {
-		return nil, nil
-	}
-	dbPath, err := appstate.DatabasePath(handler.aiHomeDir)
-	if err != nil {
-		return nil, nil
-	}
-	if _, statErr := os.Stat(dbPath); statErr != nil {
-		return nil, nil
-	}
-	db, err := appstate.OpenReadOnly(ctx, dbPath)
-	if err != nil {
-		return nil, nil
-	}
-	defer func() { _ = db.Close() }()
-
-	rows, err := db.QueryContext(ctx, "SELECT account_ref, env_json FROM compat_account_credentials WHERE env_json != '' ORDER BY account_ref")
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	items := make([]importAccountItem, 0, 16)
-	for rows.Next() {
-		var ref, rawEnv string
-		if err := rows.Scan(&ref, &rawEnv); err != nil {
-			continue
-		}
-		ref = strings.TrimSpace(ref)
-		if ref == "" {
-			continue
-		}
-		var env map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(rawEnv), &env); err != nil || env == nil {
-			continue
-		}
-		rawRules := unwrapEnvJSONValue(env[rulesenv.RulesEnvKey])
-		groupIDs := decodeStringSlice(unwrapEnvJSONValue(env[rulesenv.GroupIDsEnvKey]))
-		if len(rawRules) == 0 && len(groupIDs) == 0 {
-			continue
-		}
-		items = append(items, importAccountItem{
-			AccountRef: ref,
-			GroupIDs:   groupIDs,
-			Rules:      rawRules,
-		})
-	}
-	if err := rows.Err(); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
-	}
-	return items, nil
 }
 
 func unwrapEnvJSONValue(raw json.RawMessage) json.RawMessage {

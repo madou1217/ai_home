@@ -3,7 +3,6 @@ package managementops
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -17,7 +16,6 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accountstate"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/webuimodelssnapshot"
 )
@@ -674,7 +672,7 @@ func (s *ManagementService) Accounts(ctx context.Context) (AccountsResponse, err
 			rows[i].ModelCooldowns = map[string]int64{}
 		}
 		if rows[i].Status == "" {
-			rows[i].Status = accountstate.StatusUp
+			rows[i].Status = "up"
 		}
 		if rows[i].RuntimeStatus == "" {
 			rows[i].RuntimeStatus = "healthy"
@@ -707,7 +705,7 @@ func (s *ManagementService) Accounts(ctx context.Context) (AccountsResponse, err
 				rows[i].SchedulableStatus = "blocked_by_account_status"
 				rows[i].SchedulableReason = "account_unconfigured"
 			}
-		} else if rows[i].Status == accountstate.StatusDown {
+		} else if rows[i].Status == "down" {
 			rows[i].SchedulableStatus = "blocked_by_account_status"
 			rows[i].SchedulableReason = "account_disabled"
 		} else if isBlockingRuntimeStatus(rows[i].RuntimeStatus) {
@@ -761,9 +759,9 @@ func (s *ManagementService) listAllOverviews(ctx context.Context) ([]accountapp.
 
 func accountFromOverview(ov accountapp.AccountOverview) ManagementAccount {
 	acct := ov.Account()
-	status := accountstate.StatusUp
+	status := "up"
 	if !acct.Enabled() {
-		status = accountstate.StatusDown
+		status = "down"
 	}
 	var remainingPct *float64
 	quotaStatus := "unknown"
@@ -1053,165 +1051,6 @@ func (s *ManagementService) Restart(ctx context.Context) (RestartResponse, error
 		s.watchHub.NotifySnapshot(ctx, true)
 	}
 	return resp, nil
-}
-
-// StateIndexOperationalStatus 更新指定账号的操作状态（up/down），必要时自动补齐台账与投影行。
-func (s *ManagementService) StateIndexOperationalStatus(ctx context.Context, input StateIndexOperationalStatusInput) (bool, error) {
-	provider := strings.ToLower(strings.TrimSpace(input.Provider))
-	refStr := strings.TrimSpace(input.AccountRef)
-	status := accountcore.NormalizeAccountStatus(input.Status)
-	if provider == "" || status == "" {
-		return false, ErrInvalidStateIndexPayload
-	}
-	ref, err := accountcore.ParseAccountRef(refStr)
-	if err != nil {
-		return false, ErrInvalidStateIndexPayload
-	}
-	store, err := s.openStateIndexStore(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = store.Close() }()
-
-	if err := store.EnsureAccountRef(ctx, ref.String(), provider); err != nil {
-		return false, err
-	}
-	updated, err := store.SetStatus(ctx, ref.String(), status)
-	if err != nil {
-		return false, err
-	}
-	if !updated {
-		updated, err = store.Upsert(ctx, buildAccountStateUpsertInput(ref.String(), provider, input.BaseState, &status))
-		if err != nil {
-			return false, err
-		}
-	}
-	return updated, nil
-}
-
-// StateIndexRuntimeState 同步账号基础展示投影与 Go 侧运行态文档/阻塞物化。
-func (s *ManagementService) StateIndexRuntimeState(ctx context.Context, input StateIndexRuntimeStateInput) (bool, error) {
-	provider := strings.ToLower(strings.TrimSpace(input.Provider))
-	refStr := strings.TrimSpace(input.AccountRef)
-	if provider == "" {
-		return false, ErrInvalidStateIndexPayload
-	}
-	ref, err := accountcore.ParseAccountRef(refStr)
-	if err != nil {
-		return false, ErrInvalidStateIndexPayload
-	}
-	store, err := s.openStateIndexStore(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = store.Close() }()
-
-	if err := store.EnsureAccountRef(ctx, ref.String(), provider); err != nil {
-		return false, err
-	}
-	updated, err := store.Upsert(ctx, buildAccountStateUpsertInput(ref.String(), provider, input.BaseState, input.BaseState.Status))
-	if err != nil {
-		return false, err
-	}
-	if s.store != nil {
-		if len(input.RuntimeState) == 0 {
-			_ = s.store.DeleteAccountState(ctx, ref)
-		} else {
-			doc, marshalErr := json.Marshal(input.RuntimeState)
-			if marshalErr == nil {
-				if runtimeState, stateErr := runtimecore.NewAccountState(runtimecore.AccountStateInput{
-					AccountRef: ref,
-					Document:   doc,
-					UpdatedAt:  s.now(),
-				}); stateErr == nil {
-					var blockPtr *runtimecore.AccountBlock
-					if block, ok := runtimeState.DeriveBlock(); ok {
-						blockCopy := block
-						blockPtr = &blockCopy
-					}
-					_ = s.store.ReplaceAccountState(ctx, runtimeState, blockPtr)
-				}
-			}
-		}
-	}
-	return updated, nil
-}
-
-// StateIndexUpsert 更新或插入账号在 app-state.db 的基础展示投影。
-func (s *ManagementService) StateIndexUpsert(ctx context.Context, input StateIndexUpsertInput) (bool, error) {
-	provider := strings.ToLower(strings.TrimSpace(input.Provider))
-	refStr := strings.TrimSpace(input.AccountRef)
-	if provider == "" {
-		return false, ErrInvalidStateIndexPayload
-	}
-	ref, err := accountcore.ParseAccountRef(refStr)
-	if err != nil {
-		return false, ErrInvalidStateIndexPayload
-	}
-	store, err := s.openStateIndexStore(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = store.Close() }()
-
-	if err := store.EnsureAccountRef(ctx, ref.String(), provider); err != nil {
-		return false, err
-	}
-	return store.Upsert(ctx, buildAccountStateUpsertInput(ref.String(), provider, input.State, input.State.Status))
-}
-
-// StateIndexPruneMissing 清理指定 Provider 下不再存在于 existingRefs 的陈旧投影行。
-func (s *ManagementService) StateIndexPruneMissing(ctx context.Context, input StateIndexPruneMissingInput) (int, error) {
-	provider := strings.ToLower(strings.TrimSpace(input.Provider))
-	if provider == "" {
-		return 0, ErrInvalidStateIndexPayload
-	}
-	store, err := s.openStateIndexStore(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = store.Close() }()
-
-	return store.PruneMissing(ctx, provider, input.ExistingRefs)
-}
-
-func (s *ManagementService) openStateIndexStore(ctx context.Context) (*accountstate.Store, error) {
-	if s == nil || s.aiHomeDir == "" {
-		return nil, ErrStateIndexUnavailable
-	}
-	store, err := accountstate.Open(ctx, s.aiHomeDir)
-	if err == nil {
-		return store, nil
-	}
-	if errors.Is(err, accountstate.ErrDatabaseMissing) {
-		return nil, ErrStateIndexUnavailable
-	}
-	return nil, err
-}
-
-func buildAccountStateUpsertInput(ref, provider string, base StateIndexBaseState, statusOverride *string) accountstate.UpsertInput {
-	status := statusOverride
-	if status != nil {
-		trimmed := strings.TrimSpace(*status)
-		if trimmed == "" {
-			status = nil
-		} else {
-			norm := accountcore.NormalizeAccountStatus(trimmed)
-			if norm != "" {
-				status = &norm
-			}
-		}
-	}
-	return accountstate.UpsertInput{
-		AccountRef:   ref,
-		Provider:     provider,
-		Status:       status,
-		Configured:   base.Configured,
-		APIKeyMode:   base.APIKeyMode,
-		AuthMode:     base.AuthMode,
-		RemainingPct: base.RemainingPct,
-		DisplayName:  base.DisplayName,
-	}
 }
 
 func firstNonEmpty(values ...string) string {

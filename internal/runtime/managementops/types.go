@@ -216,45 +216,6 @@ type WatchSnapshotPayload struct {
 }
 
 // StateIndexBaseState 描述状态索引的账号展示基础字段。
-type StateIndexBaseState struct {
-	Status       *string  `json:"status,omitempty"`
-	Configured   bool     `json:"configured,omitempty"`
-	APIKeyMode   bool     `json:"apiKeyMode,omitempty"`
-	AuthMode     *string  `json:"authMode,omitempty"`
-	RemainingPct *float64 `json:"remainingPct,omitempty"`
-	DisplayName  *string  `json:"displayName,omitempty"`
-}
-
-// StateIndexOperationalStatusInput 对应 POST /state-index/operational-status。
-type StateIndexOperationalStatusInput struct {
-	Provider   string              `json:"provider"`
-	AccountRef string              `json:"accountRef"`
-	Status     string              `json:"status"`
-	BaseState  StateIndexBaseState `json:"baseState"`
-}
-
-// StateIndexRuntimeStateInput 对应 POST /state-index/runtime-state。
-type StateIndexRuntimeStateInput struct {
-	Provider     string              `json:"provider"`
-	AccountRef   string              `json:"accountRef"`
-	RuntimeState map[string]any      `json:"runtimeState"`
-	BaseState    StateIndexBaseState `json:"baseState"`
-}
-
-// StateIndexUpsertInput 对应 POST /state-index/upsert。
-type StateIndexUpsertInput struct {
-	Provider   string              `json:"provider"`
-	AccountRef string              `json:"accountRef"`
-	State      StateIndexBaseState `json:"state"`
-}
-
-// StateIndexPruneMissingInput 对应 POST /state-index/prune-missing。
-type StateIndexPruneMissingInput struct {
-	Provider     string   `json:"provider"`
-	ExistingRefs []string `json:"existingRefs"`
-}
-
-// UsageRange 描述查询生效的起止日期（YYYY-MM-DD 或 ISO 字符串）。
 type UsageRange struct {
 	From string `json:"from"`
 	To   string `json:"to"`

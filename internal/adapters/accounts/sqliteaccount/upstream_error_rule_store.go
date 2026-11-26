@@ -373,9 +373,6 @@ func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Contex
 	if !repository.available(ctx) {
 		return rulesapp.ImportResult{}, rulesapp.ErrServiceUnavailable
 	}
-	if request.Legacy != nil && (request.Force || len(request.Accounts) != 0) {
-		return rulesapp.ImportResult{}, rulesapp.ErrInvalidImport
-	}
 	repository.store.ruleWrites.Lock()
 	defer repository.store.ruleWrites.Unlock()
 	tx, err := repository.beginRules(ctx)
@@ -383,15 +380,11 @@ func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Contex
 		return rulesapp.ImportResult{}, err
 	}
 	defer tx.Rollback()
-	doc, found, err := readRuleAuthority(ctx, tx)
+	doc, _, err := readRuleAuthority(ctx, tx)
 	if err != nil {
 		return rulesapp.ImportResult{}, err
 	}
 	canonical, err := validatedRuleRecords(ctx, tx)
-	if err != nil {
-		return rulesapp.ImportResult{}, err
-	}
-	source, err := readLegacyRuleSource(ctx, tx)
 	if err != nil {
 		return rulesapp.ImportResult{}, err
 	}
@@ -407,20 +400,6 @@ func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Contex
 		}
 	}
 	items := request.Accounts
-	if request.Legacy != nil {
-		plan, err := ruleSourcePlan(ctx, tx, doc, found, canonical, current, source)
-		if err != nil {
-			return rulesapp.ImportResult{}, err
-		}
-		confirm := request.Legacy
-		if confirm.Source != plan.Source || confirm.SelectorVersion != plan.SelectorVersion || confirm.AuthorityRevision != plan.AuthorityRevision || confirm.Digest != plan.Digest {
-			return rulesapp.ImportResult{}, rulesapp.ErrSourcePlanChanged
-		}
-		items = make([]rulesapp.Record, 0, len(source.records))
-		for _, ref := range sortedRuleRefs(source.records) {
-			items = append(items, source.records[ref])
-		}
-	}
 	result := rulesapp.ImportResult{AcceptedRefs: []string{}, SkippedRefs: []string{}}
 	staged := make([]rulesapp.Record, 0, len(items))
 	mutations := make([]ruleMutation, 0, len(items))
@@ -431,10 +410,7 @@ func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Contex
 		if _, err := accountcore.ParseAccountRef(item.AccountRef); err != nil {
 			return rulesapp.ImportResult{}, rulesapp.ErrInvalidAccountRef
 		}
-		ref := source.links.GoRef(item.AccountRef)
-		if request.Legacy != nil {
-			ref = item.AccountRef
-		} // already resolved exactly once
+		ref := item.AccountRef
 		if _, err := accountcore.ParseAccountRef(ref); err != nil {
 			return rulesapp.ImportResult{}, rulesapp.ErrInvalidAccountRef
 		}
@@ -444,9 +420,6 @@ func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Contex
 		seen[ref] = true
 		provider, exists := current[ref]
 		if !exists {
-			if request.Legacy != nil {
-				return rulesapp.ImportResult{}, rulesapp.ErrLegacySourceConfirmationRequired
-			}
 			result.SkippedRefs = append(result.SkippedRefs, item.AccountRef)
 			continue
 		}
@@ -456,13 +429,13 @@ func (repository *UpstreamErrorRuleRepository) ImportAccounts(ctx context.Contex
 		}
 		// Explicit empty import is a validated no-op, even with force. Only the
 		// existing PUT/DELETE clearing contract creates a cleared tombstone.
-		if request.Legacy == nil && len(item.Rules) == 0 && len(item.GroupIDs) == 0 {
+		if len(item.Rules) == 0 && len(item.GroupIDs) == 0 {
 			result.SkippedRefs = append(result.SkippedRefs, ref)
 			continue
 		}
 		_, nonempty := canonical[ref]
 		state, owned := doc.Accounts[ref]
-		preserve := !request.Force || request.Legacy != nil
+		preserve := !request.Force
 		if preserve && (nonempty || (owned && state.State == "cleared")) {
 			result.SkippedRefs = append(result.SkippedRefs, ref)
 			continue

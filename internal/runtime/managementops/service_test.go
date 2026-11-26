@@ -2,9 +2,7 @@ package managementops
 
 import (
 	"context"
-	"encoding/json"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,7 +10,6 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accountstate"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
@@ -99,17 +96,6 @@ func openTestEnv(t *testing.T) (context.Context, string, *sqliteaccount.Store, *
 		t.Fatalf("NewUsageStore() error = %v", err)
 	}
 	t.Cleanup(func() { _ = usageStore.Close() })
-	if _, err := usageStore.DB().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS account_refs (
-		account_ref TEXT PRIMARY KEY,
-		provider TEXT NOT NULL,
-		created_at INTEGER NOT NULL,
-		updated_at INTEGER NOT NULL
-	)`); err != nil {
-		t.Fatalf("create account_refs error = %v", err)
-	}
-	if err := accountstate.EnsureSchema(ctx, usageStore.DB()); err != nil {
-		t.Fatalf("accountstate.EnsureSchema() error = %v", err)
-	}
 	return ctx, tmpDir, acctStore, usageStore
 }
 
@@ -185,99 +171,5 @@ func TestManagementServiceStatusMetricsModelsReloadRestart(t *testing.T) {
 	restartRes, err := svc.Restart(ctx)
 	if err != nil || !restartRes.OK || restarter.called.Load() != 1 {
 		t.Fatalf("Restart() = %+v, err=%v calls=%d", restartRes, err, restarter.called.Load())
-	}
-}
-
-func TestManagementServiceStateIndexAndWatchHub(t *testing.T) {
-	ctx, tmpDir, acctStore, usageStore := openTestEnv(t)
-	aiHome := filepath.Join(tmpDir, "ai_home")
-	cat, _ := providers.NewCatalog(providers.BuiltinManifest())
-	svc := NewManagementService(ManagementOptions{
-		AIHomeDir:   aiHome,
-		HostHomeDir: tmpDir,
-		Catalog:     cat,
-		Store:       acctStore,
-		UsageStore:  usageStore,
-		AccountRows: fakeAccountRowPort{rows: []ManagementAccount{
-			{AccountRef: "acct_11111111111111111111", Provider: "codex", Status: accountstate.StatusUp, RuntimeStatus: "healthy", Configured: true},
-		}},
-		Now: func() time.Time { return time.UnixMilli(1700000010000) },
-	})
-
-	refA := "acct_11111111111111111111"
-	refB := "acct_22222222222222222222"
-	nameA := "Alpha"
-	changed, err := svc.StateIndexUpsert(ctx, StateIndexUpsertInput{
-		Provider:   "codex",
-		AccountRef: refA,
-		State:      StateIndexBaseState{Configured: true, DisplayName: &nameA},
-	})
-	if err != nil || !changed {
-		t.Fatalf("StateIndexUpsert() = %v, %v", changed, err)
-	}
-	if _, err := svc.StateIndexUpsert(ctx, StateIndexUpsertInput{
-		Provider:   "codex",
-		AccountRef: refB,
-		State:      StateIndexBaseState{Configured: true},
-	}); err != nil {
-		t.Fatalf("StateIndexUpsert(refB) error = %v", err)
-	}
-
-	changed, err = svc.StateIndexOperationalStatus(ctx, StateIndexOperationalStatusInput{
-		Provider:   "codex",
-		AccountRef: refA,
-		Status:     "DOWN",
-		BaseState:  StateIndexBaseState{Configured: true},
-	})
-	if err != nil || !changed {
-		t.Fatalf("StateIndexOperationalStatus() = %v, %v", changed, err)
-	}
-
-	changed, err = svc.StateIndexRuntimeState(ctx, StateIndexRuntimeStateInput{
-		Provider:     "codex",
-		AccountRef:   refA,
-		RuntimeState: map[string]any{"status": "cooldown", "cooldownUntil": 1700000099000},
-		BaseState:    StateIndexBaseState{Configured: true},
-	})
-	if err != nil || !changed {
-		t.Fatalf("StateIndexRuntimeState() = %v, %v", changed, err)
-	}
-
-	removed, err := svc.StateIndexPruneMissing(ctx, StateIndexPruneMissingInput{
-		Provider:     "codex",
-		ExistingRefs: []string{refA},
-	})
-	if err != nil || removed != 1 {
-		t.Fatalf("StateIndexPruneMissing() = %d, %v", removed, err)
-	}
-
-	// WatchHub SSE 验证：首包 connected + snapshot，随后 EmitEvent
-	watch := svc.Watch()
-	ch, cancel := watch.Subscribe(ctx)
-	defer cancel()
-
-	var frames []string
-	for i := 0; i < 2; i++ {
-		select {
-		case raw := <-ch:
-			frames = append(frames, string(raw))
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timed out waiting for initial SSE frame %d", i)
-		}
-	}
-	if !strings.Contains(frames[0], `"connected"`) || !strings.Contains(frames[1], `"snapshot"`) {
-		t.Fatalf("unexpected initial watch frames: %v", frames)
-	}
-	if !watch.EmitEvent(map[string]any{"type": "reload", "ok": true}) {
-		t.Fatalf("EmitEvent returned false")
-	}
-	select {
-	case raw := <-ch:
-		var ev map[string]any
-		if json.Unmarshal(raw, &ev) != nil || ev["type"] != "reload" {
-			t.Fatalf("unexpected emitted frame: %s", raw)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timed out waiting for reload event")
 	}
 }

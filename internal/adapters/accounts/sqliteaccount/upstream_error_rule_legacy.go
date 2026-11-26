@@ -1,7 +1,6 @@
 package sqliteaccount
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -16,7 +15,6 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	mappingcore "github.com/madou1217/ai_home/core/upstreammapping"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
-	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 )
 
 // This slot belongs only to this repository. Existing schema owns app_kv;
@@ -204,160 +202,12 @@ func validatedRuleRecords(ctx context.Context, tx *ruleTransaction) (map[string]
 }
 
 // ruleSource contains only selected rule fields, never credential env documents.
-type ruleSource struct {
-	links    accountrefmap.Table
-	rawLinks string
-	records  map[string]rulesapp.Record
-	selected [][3]string
-}
-
-func readRuleLinks(ctx context.Context, tx *ruleTransaction) (accountrefmap.Table, string, error) {
-	var raw string
-	err := tx.QueryRowContext(ctx, "SELECT value FROM app_kv WHERE key=?", accountrefmap.SyncStateKey).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return accountrefmap.Table{}, "", err
-	}
-	links := accountrefmap.Table{}
-	if err == nil {
-		var shape struct {
-			Links map[string]json.RawMessage `json:"links"`
-		}
-		if json.Unmarshal([]byte(raw), &shape) != nil || shape.Links == nil {
-			return accountrefmap.Table{}, "", errors.New("upstream_rule_mapping_invalid")
-		}
-		for nodeRef, value := range shape.Links {
-			if _, err := accountcore.ParseAccountRef(nodeRef); err != nil {
-				return accountrefmap.Table{}, "", errors.New("upstream_rule_mapping_invalid")
-			}
-			var entry struct {
-				GoRef string `json:"goRef"`
-			}
-			if json.Unmarshal(value, &entry) != nil || len(bytes.TrimSpace(value)) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				return accountrefmap.Table{}, "", errors.New("upstream_rule_mapping_invalid")
-			}
-			if entry.GoRef != "" {
-				if _, err := accountcore.ParseAccountRef(entry.GoRef); err != nil {
-					return accountrefmap.Table{}, "", errors.New("upstream_rule_mapping_invalid")
-				}
-			}
-		}
-		links, err = accountrefmap.Parse(raw)
-		if err != nil {
-			return accountrefmap.Table{}, "", errors.New("upstream_rule_mapping_invalid")
-		}
-	}
-	return links, raw, nil
-}
-
-// Read only the two rule keys in SQL. The raw selected bytes bind a plan to the
-// actual source without returning any credential fields or rule text.
-func readLegacyRuleSource(ctx context.Context, tx *ruleTransaction) (ruleSource, error) {
-	links, rawLinks, err := readRuleLinks(ctx, tx)
-	if err != nil {
-		return ruleSource{}, err
-	}
-	result := ruleSource{links: links, rawLinks: rawLinks, records: map[string]rulesapp.Record{}, selected: [][3]string{}}
-	var kind string
-	err = tx.QueryRowContext(ctx, "SELECT type FROM sqlite_master WHERE name='compat_account_credentials'").Scan(&kind)
-	if errors.Is(err, sql.ErrNoRows) {
-		return result, nil
-	}
-	if err != nil || kind != "table" {
-		return ruleSource{}, errors.New("upstream_rule_legacy_source_invalid")
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT account_ref,
- CASE WHEN env_json='' THEN 1 WHEN json_valid(env_json) THEN json_type(env_json)='object' ELSE 0 END,
- CASE WHEN json_valid(env_json) THEN json_quote(json_extract(env_json,'$.AIH_UPSTREAM_ERROR_RULES')) ELSE 'null' END,
- CASE WHEN json_valid(env_json) THEN json_quote(json_extract(env_json,'$.AIH_UPSTREAM_ERROR_GROUP_IDS')) ELSE 'null' END
- FROM compat_account_credentials ORDER BY account_ref`)
-	if err != nil {
-		return ruleSource{}, err
-	}
-	defer rows.Close()
-	sourceFor := map[string]string{}
-	for rows.Next() {
-		var ref, rulesRaw, groupsRaw string
-		var valid int
-		if err := rows.Scan(&ref, &valid, &rulesRaw, &groupsRaw); err != nil {
-			return ruleSource{}, err
-		}
-		result.selected = append(result.selected, [3]string{ref, rulesRaw, groupsRaw})
-		if valid != 1 {
-			return ruleSource{}, errors.New("upstream_rule_legacy_source_invalid")
-		}
-		ruleBytes, err := unwrapRuleValue(rulesRaw)
-		if err != nil {
-			return ruleSource{}, err
-		}
-		groupBytes, err := unwrapRuleValue(groupsRaw)
-		if err != nil {
-			return ruleSource{}, err
-		}
-		var rules []rulescore.Rule
-		var groups []string
-		if len(ruleBytes) > 0 {
-			if err := json.Unmarshal(ruleBytes, &rules); err != nil {
-				return ruleSource{}, errors.New("upstream_rule_legacy_rules_invalid")
-			}
-		}
-		if len(groupBytes) > 0 {
-			if err := json.Unmarshal(groupBytes, &groups); err != nil {
-				return ruleSource{}, rulesapp.ErrInvalidGroupIDs
-			}
-		}
-		goRef := links.GoRef(ref)
-		if err := validRuleRecord(rulesapp.Record{AccountRef: goRef, Rules: rules, GroupIDs: groups}); err != nil {
-			return ruleSource{}, fmt.Errorf("upstream_rule_legacy_invalid: %w", err)
-		}
-		nonempty := len(rules) > 0 || len(groups) > 0
-		if nonempty {
-			if previous, ok := sourceFor[goRef]; ok && previous != ref {
-				return ruleSource{}, errors.New("upstream_rule_mapping_ambiguous")
-			}
-			sourceFor[goRef] = ref
-			result.records[goRef] = rulesapp.Record{AccountRef: goRef, Rules: rules, GroupIDs: groups}
-		}
-	}
-	return result, rows.Err()
-}
-
-func legacyRulePresence(ctx context.Context, tx *ruleTransaction) (map[string]bool, error) {
-	source, err := readLegacyRuleSource(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]bool, len(source.records))
-	for ref := range source.records {
-		result[ref] = true
-	}
-	return result, nil
-}
-
-func unwrapRuleValue(raw string) ([]byte, error) {
-	value := bytes.TrimSpace([]byte(raw))
-	var encoded string
-	if json.Unmarshal(value, &encoded) == nil {
-		value = bytes.TrimSpace([]byte(encoded))
-	}
-	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
-		return nil, nil
-	}
-	if !json.Valid(value) || value[0] != '[' {
-		return nil, errors.New("upstream_rule_legacy_value_invalid")
-	}
-	return value, nil
-}
-
 func admitRuleAuthority(ctx context.Context, tx *ruleTransaction, mutations ...ruleMutation) (rulesapp.AuthoritySnapshot, error) {
 	doc, found, err := readRuleAuthority(ctx, tx)
 	if err != nil {
 		return rulesapp.AuthoritySnapshot{}, err
 	}
 	records, err := validatedRuleRecords(ctx, tx)
-	if err != nil {
-		return rulesapp.AuthoritySnapshot{}, err
-	}
-	legacy, err := legacyRulePresence(ctx, tx)
 	if err != nil {
 		return rulesapp.AuthoritySnapshot{}, err
 	}
@@ -387,11 +237,6 @@ func admitRuleAuthority(ctx context.Context, tx *ruleTransaction, mutations ...r
 		doc.Accounts[mutation.ref] = ruleAuthorityAccount{State: mutation.state}
 		changed = true
 	}
-	for ref := range legacy {
-		if _, ok := current[ref]; !ok {
-			return rulesapp.AuthoritySnapshot{}, rulesapp.ErrLegacySourceConfirmationRequired
-		}
-	}
 	refs := make([]string, 0, len(current))
 	for ref := range current {
 		refs = append(refs, ref)
@@ -408,9 +253,6 @@ func admitRuleAuthority(ctx context.Context, tx *ruleTransaction, mutations ...r
 			return rulesapp.AuthoritySnapshot{}, errors.New("upstream_rule_cleared_conflict")
 		}
 		if !owned {
-			if !nonempty && legacy[ref] {
-				return rulesapp.AuthoritySnapshot{}, rulesapp.ErrLegacySourceConfirmationRequired
-			}
 			doc.Accounts[ref] = ruleAuthorityAccount{State: "owned"}
 			changed = true
 		}

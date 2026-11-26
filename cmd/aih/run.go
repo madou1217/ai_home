@@ -261,9 +261,6 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "__backup-accounts" {
 		return runBackupAccounts(ctx, arguments[1:], runtime)
 	}
-	if providerID == "__upstream-rules" {
-		return runUpstreamRules(ctx, arguments[1:], runtime)
-	}
 	if providerID == "failure-policy" {
 		return runFailurePolicy(ctx, arguments[1:], runtime)
 	}

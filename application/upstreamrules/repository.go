@@ -80,7 +80,6 @@ type AuthorityRepository interface {
 type ImportRequest struct {
 	Accounts []Record
 	Force    bool
-	Legacy   *LegacyConfirmation
 }
 
 // ImportResult is published only after the entire batch and authority commit.
@@ -94,30 +93,6 @@ type ImportResult struct {
 // loop: every target is staged before one global admission in one transaction.
 type ImportRepository interface {
 	ImportAccounts(context.Context, ImportRequest) (ImportResult, error)
-}
-
-const LegacyRulesSource = "aih.db/compat_account_credentials:upstream-rules"
-const LegacyRulesSelectorVersion = 1
-
-// LegacyPlan contains only counts and a hash of the selected rule/source facts.
-// SelectorVersion versions Go's selector, not an invented legacy data version.
-type LegacyPlan struct {
-	Source            string `json:"source"`
-	SelectorVersion   int    `json:"selector_version"`
-	AuthorityRevision int64  `json:"authority_revision"`
-	Digest            string `json:"digest"`
-	CanonicalAccounts int    `json:"canonical_accounts"`
-	LegacyAccounts    int    `json:"legacy_accounts"`
-	PendingAccounts   int    `json:"pending_accounts"`
-	ClearedAccounts   int    `json:"cleared_accounts"`
-}
-
-// LegacyConfirmation is explicit owner consent to exactly one read-only plan.
-type LegacyConfirmation struct {
-	Source            string
-	SelectorVersion   int
-	AuthorityRevision int64
-	Digest            string
 }
 
 var ErrInvalidImport = errors.New("upstream_rule_import_invalid")

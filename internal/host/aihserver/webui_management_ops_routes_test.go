@@ -11,7 +11,6 @@ import (
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accountstate"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/runtime/managementops"
 	"github.com/madou1217/ai_home/internal/transport/http/webuimanagementapi"
@@ -71,17 +70,6 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 		t.Fatalf("NewUsageStore() error = %v", err)
 	}
 	defer func() { _ = usageStore.Close() }()
-	if _, err := usageStore.DB().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS account_refs (
-		account_ref TEXT PRIMARY KEY,
-		provider TEXT NOT NULL,
-		created_at INTEGER NOT NULL,
-		updated_at INTEGER NOT NULL
-	)`); err != nil {
-		t.Fatalf("create account_refs error = %v", err)
-	}
-	if err := accountstate.EnsureSchema(ctx, usageStore.DB()); err != nil {
-		t.Fatalf("accountstate.EnsureSchema() error = %v", err)
-	}
 
 	routes, err := buildWebUIManagementOpsRoutesWithPorts(webuiRouteDependencies{
 		Authorizer:    stubMgmtAuthorizer{allow: true},
@@ -124,15 +112,7 @@ func TestBuildWebUIManagementOpsRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *te
 		t.Fatalf("POST /restart code=%d body=%s", rRec.Code, rRec.Body.String())
 	}
 
-	// Verify /state-index/upsert -> /usage/stats -> /usage/dashboard/query/{jobId}
-	upReq := httptest.NewRequest(http.MethodPost, webuimanagementapi.StateIndexUpsertPath, strings.NewReader(`{"provider":"codex","accountRef":"acct_0123456789abcdef0123","state":{"configured":true}}`))
-	upReq.Header.Set("Content-Type", "application/json")
-	upRec := httptest.NewRecorder()
-	mux.ServeHTTP(upRec, upReq)
-	if upRec.Code != http.StatusOK || !strings.Contains(upRec.Body.String(), `"updated":true`) {
-		t.Fatalf("POST /state-index/upsert code=%d body=%s", upRec.Code, upRec.Body.String())
-	}
-
+	// Verify /usage/stats -> /usage/dashboard/query/{jobId}
 	qStart := httptest.NewRecorder()
 	mux.ServeHTTP(qStart, httptest.NewRequest(http.MethodPost, webuimanagementapi.UsageDashboardQueryPath+"?from=2026-02-01&to=2026-02-01", nil))
 	if qStart.Code != http.StatusAccepted {

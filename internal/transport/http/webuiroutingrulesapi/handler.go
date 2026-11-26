@@ -26,7 +26,6 @@ import (
 	mappingcore "github.com/madou1217/ai_home/core/upstreammapping"
 	rulescore "github.com/madou1217/ai_home/core/upstreamrules"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/appstate/rulesenv"
 )
 
 const (
@@ -82,11 +81,6 @@ func (resolver AppStateResolver) ProviderOf(ctx context.Context, accountRef stri
 	return appstate.LookupAccountProvider(ctx, resolver.DatabasePath, accountRef)
 }
 
-// RulesStore 是 app-state 规则键的写入口（由 *rulesenv.Store 实现）。
-type RulesStore interface {
-	Update(ctx context.Context, accountRef string, change rulesenv.Change) (rulesenv.Result, error)
-}
-
 // RuntimeBlockClearer 是运行态门禁的人工清空端口（*inmemory.Runtime 实现）。
 type RuntimeBlockClearer interface {
 	ClearManualAdminBlocks(
@@ -98,7 +92,6 @@ type RuntimeBlockClearer interface {
 // Dependencies 汇总调度规则写入依赖。
 type Dependencies struct {
 	Authorizer Authorizer
-	Store      RulesStore
 	Accounts   AccountResolver
 	Catalog    *providers.Catalog
 	Runtime    RuntimeBlockClearer
@@ -107,7 +100,6 @@ type Dependencies struct {
 // Handler 处理账号调度规则写入。
 type Handler struct {
 	authorizer Authorizer
-	store      RulesStore
 	accounts   AccountResolver
 	catalog    *providers.Catalog
 	runtime    RuntimeBlockClearer
@@ -115,13 +107,12 @@ type Handler struct {
 
 // NewHandler 创建默认失败关闭的 Handler。
 func NewHandler(dependencies Dependencies) (*Handler, error) {
-	if dependencies.Authorizer == nil || dependencies.Store == nil ||
+	if dependencies.Authorizer == nil ||
 		dependencies.Accounts == nil || dependencies.Catalog == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
 		authorizer: dependencies.Authorizer,
-		store:      dependencies.Store,
 		accounts:   dependencies.Accounts,
 		catalog:    dependencies.Catalog,
 		runtime:    dependencies.Runtime,
@@ -161,7 +152,7 @@ type errorView struct {
 
 // ServeHTTP 只接受 POST。
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if handler == nil || handler.authorizer == nil || handler.store == nil ||
+	if handler == nil || handler.authorizer == nil ||
 		handler.accounts == nil || handler.catalog == nil {
 		writeError(response, http.StatusServiceUnavailable, "routing_rules_unavailable", "调度规则服务不可用")
 		return
@@ -193,7 +184,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 
 	ctx := request.Context()
-	storedProvider, goRef, nodeRef, exists, err := handler.resolveAccount(ctx, accountRef)
+	storedProvider, goRef, _, exists, err := handler.resolveAccount(ctx, accountRef)
 	if err != nil {
 		writeError(response, http.StatusServiceUnavailable, "routing_rules_unavailable", "账号归属查询失败")
 		return
@@ -228,42 +219,17 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		clearEvidence = evidence
 	}
 
-	syncedToGo := false
-	if syncer, ok := handler.accounts.(GoRulesSyncer); ok {
-		synced, syncErr := syncer.SyncAccountRules(ctx, goRef, validatedRules, groupIDs)
-		if syncErr != nil {
-			writeStoreError(response, syncErr)
-			return
-		}
-		syncedToGo = synced
+	syncer, ok := handler.accounts.(GoRulesSyncer)
+	if !ok {
+		writeStoreError(response, errors.New("账号规则写入端口不可用"))
+		return
 	}
-
-	storeTargetRef := nodeRef
-	if storeTargetRef == "" {
-		storeTargetRef = accountRef
+	synced, syncErr := syncer.SyncAccountRules(ctx, goRef, validatedRules, groupIDs)
+	if syncErr != nil {
+		writeStoreError(response, syncErr)
+		return
 	}
-	result, err := handler.store.Update(ctx, storeTargetRef, rulesenv.Change{
-		Rules:    rulesJSON,
-		GroupIDs: groupIDs,
-	})
-	if errors.Is(err, rulesenv.ErrAccountNotFound) && storeTargetRef != accountRef {
-		result, err = handler.store.Update(ctx, accountRef, rulesenv.Change{
-			Rules:    rulesJSON,
-			GroupIDs: groupIDs,
-		})
-	}
-	if err != nil {
-		if errors.Is(err, rulesenv.ErrAccountNotFound) && syncedToGo {
-			// Go 原生账号只存在于 aih.db、不在历史 app-state.db 中：aih.db 已完成权威持久化。
-			result = rulesenv.Result{
-				Changed:      true,
-				EnvUpdatedAt: time.Now().UnixMilli(),
-			}
-		} else {
-			writeStoreError(response, err)
-			return
-		}
-	}
+	updatedAtMS := time.Now().UnixMilli()
 
 	writeJSON(response, http.StatusOK, successView{
 		OK:                    true,
@@ -271,8 +237,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		AccountRef:            accountRef,
 		UpstreamErrorRules:    rulesJSON,
 		UpstreamErrorGroupIDs: groupIDs,
-		Changed:               result.Changed,
-		EnvUpdatedAt:          result.EnvUpdatedAt,
+		Changed:               synced,
+		EnvUpdatedAt:          updatedAtMS,
 		ClearEvidence:         string(clearEvidence),
 	})
 }
@@ -421,16 +387,14 @@ func writeRuntimeClearError(response http.ResponseWriter, err error) {
 
 func writeStoreError(response http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, rulesenv.ErrAccountNotFound), errors.Is(err, rulesapp.ErrAccountNotFound):
+	case errors.Is(err, rulesapp.ErrAccountNotFound):
 		writeError(response, http.StatusNotFound, "account_not_found", "账号不存在")
-	case errors.Is(err, rulesenv.ErrInvalidAccountRef), errors.Is(err, rulesapp.ErrInvalidAccountRef):
+	case errors.Is(err, rulesapp.ErrInvalidAccountRef):
 		writeError(response, http.StatusBadRequest, "invalid_account_path", "账号引用无效")
-	case errors.Is(err, rulescore.ErrInvalidRules), errors.Is(err, rulesenv.ErrInvalidRules):
+	case errors.Is(err, rulescore.ErrInvalidRules):
 		writeError(response, http.StatusBadRequest, "invalid_upstream_error_rules", err.Error())
-	case errors.Is(err, rulesapp.ErrInvalidGroupIDs), errors.Is(err, rulesenv.ErrInvalidGroupIDs):
+	case errors.Is(err, rulesapp.ErrInvalidGroupIDs):
 		writeError(response, http.StatusBadRequest, "invalid_upstream_error_group", err.Error())
-	case errors.Is(err, rulesenv.ErrInvalidEnvJSON):
-		writeError(response, http.StatusConflict, "account_env_invalid", "账号 env_json 不是 JSON 对象，拒绝写入")
 	default:
 		writeError(response, http.StatusInternalServerError, "routing_rules_failed", "调度规则写入失败")
 	}

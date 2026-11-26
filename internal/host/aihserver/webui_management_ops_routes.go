@@ -212,10 +212,6 @@ func buildWebUIManagementOpsRoutesWithPorts(
 		{Pattern: "POST " + webuimanagementapi.RestartPath, Handler: handler},
 		// Preserve the Node public restart contract when the native server runs without Node.
 		{Pattern: "POST " + webuimanagementapi.PublicPrefix + "/restart", Handler: handler},
-		{Pattern: "POST " + webuimanagementapi.StateIndexOperationalStatusPath, Handler: handler},
-		{Pattern: "POST " + webuimanagementapi.StateIndexRuntimeStatePath, Handler: handler},
-		{Pattern: "POST " + webuimanagementapi.StateIndexUpsertPath, Handler: handler},
-		{Pattern: "POST " + webuimanagementapi.StateIndexPruneMissingPath, Handler: handler},
 		{Pattern: "GET " + webuimanagementapi.UsagePath, Handler: handler},
 		{Pattern: "GET " + webuimanagementapi.UsageStatsPath, Handler: handler},
 		{Pattern: "GET " + webuimanagementapi.UsageDashboardPath, Handler: handler},

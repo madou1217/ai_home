@@ -35,10 +35,6 @@ const (
 	ReloadPath                       = BasePath + "/reload"
 	CooldownClearPath                = BasePath + "/cooldown/clear"
 	RestartPath                      = BasePath + "/restart"
-	StateIndexOperationalStatusPath  = BasePath + "/state-index/operational-status"
-	StateIndexRuntimeStatePath       = BasePath + "/state-index/runtime-state"
-	StateIndexUpsertPath             = BasePath + "/state-index/upsert"
-	StateIndexPruneMissingPath       = BasePath + "/state-index/prune-missing"
 	UsagePath                        = BasePath + "/usage"
 	UsageStatsPath                   = BasePath + "/usage/stats"
 	UsageDashboardPath               = BasePath + "/usage/dashboard"
@@ -134,14 +130,6 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		h.handleCooldownClear(response, request)
 	case RestartPath:
 		h.handleRestart(response, request)
-	case StateIndexOperationalStatusPath:
-		h.handleStateIndexOperationalStatus(response, request)
-	case StateIndexRuntimeStatePath:
-		h.handleStateIndexRuntimeState(response, request)
-	case StateIndexUpsertPath:
-		h.handleStateIndexUpsert(response, request)
-	case StateIndexPruneMissingPath:
-		h.handleStateIndexPruneMissing(response, request)
 	case UsageDashboardQueryWatchPath:
 		h.handleUsageDashboardQueryWatch(response, request)
 	case UsageDashboardQueryPath:
@@ -295,74 +283,6 @@ func (h *Handler) handleRestart(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(response, http.StatusOK, resp)
-}
-
-func (h *Handler) handleStateIndexOperationalStatus(response http.ResponseWriter, request *http.Request) {
-	if !requireMethod(response, request, http.MethodPost) {
-		return
-	}
-	var input managementops.StateIndexOperationalStatusInput
-	if !decodeManagementJSON(response, request, &input) {
-		writeError(response, http.StatusBadRequest, "invalid_state_index_payload", "")
-		return
-	}
-	updated, err := h.service.StateIndexOperationalStatus(request.Context(), input)
-	if err != nil {
-		writeServiceError(response, err, "state_index_failed")
-		return
-	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "updated": updated})
-}
-
-func (h *Handler) handleStateIndexRuntimeState(response http.ResponseWriter, request *http.Request) {
-	if !requireMethod(response, request, http.MethodPost) {
-		return
-	}
-	var input managementops.StateIndexRuntimeStateInput
-	if !decodeManagementJSON(response, request, &input) {
-		writeError(response, http.StatusBadRequest, "invalid_state_index_payload", "")
-		return
-	}
-	updated, err := h.service.StateIndexRuntimeState(request.Context(), input)
-	if err != nil {
-		writeServiceError(response, err, "state_index_failed")
-		return
-	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "updated": updated})
-}
-
-func (h *Handler) handleStateIndexUpsert(response http.ResponseWriter, request *http.Request) {
-	if !requireMethod(response, request, http.MethodPost) {
-		return
-	}
-	var input managementops.StateIndexUpsertInput
-	if !decodeManagementJSON(response, request, &input) {
-		writeError(response, http.StatusBadRequest, "invalid_state_index_payload", "")
-		return
-	}
-	updated, err := h.service.StateIndexUpsert(request.Context(), input)
-	if err != nil {
-		writeServiceError(response, err, "state_index_failed")
-		return
-	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "updated": updated})
-}
-
-func (h *Handler) handleStateIndexPruneMissing(response http.ResponseWriter, request *http.Request) {
-	if !requireMethod(response, request, http.MethodPost) {
-		return
-	}
-	var input managementops.StateIndexPruneMissingInput
-	if !decodeManagementJSON(response, request, &input) {
-		writeError(response, http.StatusBadRequest, "invalid_state_index_payload", "")
-		return
-	}
-	removed, err := h.service.StateIndexPruneMissing(request.Context(), input)
-	if err != nil {
-		writeServiceError(response, err, "state_index_failed")
-		return
-	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "removed": removed})
 }
 
 func (h *Handler) handleUsageDashboardQueryWatch(response http.ResponseWriter, request *http.Request) {
@@ -693,14 +613,10 @@ func writeServiceError(response http.ResponseWriter, err error, fallbackCode str
 		writeError(response, http.StatusBadRequest, "usage_breakdown_scope_required", err.Error())
 	case errors.Is(err, managementops.ErrSessionIDRequired):
 		writeError(response, http.StatusBadRequest, "session_id_required", err.Error())
-	case errors.Is(err, managementops.ErrInvalidStateIndexPayload):
-		writeError(response, http.StatusBadRequest, "invalid_state_index_payload", err.Error())
 	case errors.Is(err, managementops.ErrQueryJobNotFound):
 		writeError(response, http.StatusNotFound, "model_usage_query_job_not_found", err.Error())
 	case errors.Is(err, managementops.ErrUsageUnavailable):
 		writeError(response, http.StatusServiceUnavailable, "model_usage_unavailable", err.Error())
-	case errors.Is(err, managementops.ErrStateIndexUnavailable):
-		writeError(response, http.StatusServiceUnavailable, "state_index_unavailable", err.Error())
 	case errors.Is(err, managementops.ErrRestartUnavailable):
 		writeError(response, http.StatusServiceUnavailable, "management_restart_unavailable", err.Error())
 	case errors.Is(err, managementops.ErrManagementUnavailable):

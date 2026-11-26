@@ -222,9 +222,6 @@ func (service *Service) ImportAccounts(ctx context.Context, request ImportReques
 	if !ok {
 		return ImportResult{}, ErrServiceUnavailable
 	}
-	if request.Legacy != nil && (request.Force || len(request.Accounts) != 0) {
-		return ImportResult{}, ErrInvalidImport
-	}
 	normalized := make([]Record, 0, len(request.Accounts))
 	for _, record := range request.Accounts {
 		ref := strings.TrimSpace(record.AccountRef)

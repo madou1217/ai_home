@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/appstate/rulesenv"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
 	_ "modernc.org/sqlite"
 )
@@ -67,7 +66,8 @@ func seedLiveTestDatabases(
 	defer func() { _ = appDB.Close() }()
 	for _, stmt := range []string{
 		`CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
-		`CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)`,
+		`CREATE TABLE account_upstream_error_rule (account_ref TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'account', position INTEGER NOT NULL, rule_json TEXT NOT NULL, PRIMARY KEY(account_ref, source, position))`,
+		`CREATE TABLE account_upstream_error_group (account_ref TEXT NOT NULL, position INTEGER NOT NULL, group_id TEXT NOT NULL, PRIMARY KEY(account_ref, position))`,
 	} {
 		if _, err := appDB.Exec(stmt); err != nil {
 			t.Fatalf("create app-state table: %v", err)
@@ -79,17 +79,19 @@ func seedLiveTestDatabases(
 	); err != nil {
 		t.Fatalf("insert alias pool kv: %v", err)
 	}
-	rulesPayload, _ := json.Marshal([]map[string]any{{"status": 429, "action": "cooldown"}})
-	groupsPayload, _ := json.Marshal([]string{"grp-a", "grp-b"})
-	envPayload, _ := json.Marshal(map[string]any{
-		rulesenv.RulesEnvKey:    string(rulesPayload),
-		rulesenv.GroupIDsEnvKey: string(groupsPayload),
-	})
 	if _, err := appDB.Exec(
-		`INSERT INTO compat_account_credentials (account_ref, env_json, updated_at) VALUES (?, ?, 1)`,
-		claudeRef, string(envPayload),
+		`INSERT INTO account_upstream_error_rule (account_ref, source, position, rule_json) VALUES (?, 'account', 0, ?)`,
+		claudeRef, `{"status":429,"action":"cooldown"}`,
 	); err != nil {
-		t.Fatalf("insert app-state rules: %v", err)
+		t.Fatalf("insert upstream rules: %v", err)
+	}
+	for position, groupID := range []string{"grp-a", "grp-b"} {
+		if _, err := appDB.Exec(
+			`INSERT INTO account_upstream_error_group (account_ref, position, group_id) VALUES (?, ?, ?)`,
+			claudeRef, position, groupID,
+		); err != nil {
+			t.Fatalf("insert upstream rule groups: %v", err)
+		}
 	}
 
 	// 4. aih.db（kiro loginType）

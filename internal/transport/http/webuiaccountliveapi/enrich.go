@@ -10,7 +10,6 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountactivity"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
-	"github.com/madou1217/ai_home/internal/adapters/appstate/rulesenv"
 	runtimeegress "github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/windowactivation"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountsapi"
@@ -217,10 +216,7 @@ func loadAppStateExtras(ctx context.Context, aiHomeDir string) appStateExtras {
 	if strings.TrimSpace(aiHomeDir) == "" {
 		return extras
 	}
-	dbPath, err := appstate.DatabasePath(aiHomeDir)
-	if err != nil {
-		return extras
-	}
+	dbPath := filepath.Join(strings.TrimSpace(aiHomeDir), "aih.db")
 	if _, statErr := os.Stat(dbPath); statErr != nil {
 		return extras
 	}
@@ -250,27 +246,27 @@ func loadAppStateExtras(ctx context.Context, aiHomeDir string) appStateExtras {
 		}
 	}
 
-	if rows, qErr := db.QueryContext(ctx, "SELECT account_ref, env_json FROM compat_account_credentials WHERE env_json != ''"); qErr == nil {
+	if rows, qErr := db.QueryContext(ctx, "SELECT account_ref, rule_json FROM account_upstream_error_rule ORDER BY account_ref, source, position"); qErr == nil {
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
-			var ref, rawEnv string
-			if err := rows.Scan(&ref, &rawEnv); err != nil {
+			var ref, rawRule string
+			if err := rows.Scan(&ref, &rawRule); err != nil {
 				continue
 			}
-			ref = strings.TrimSpace(ref)
-			if ref == "" {
+			var rule any
+			if json.Unmarshal([]byte(rawRule), &rule) == nil && rule != nil {
+				extras.rules[strings.TrimSpace(ref)] = append(extras.rules[strings.TrimSpace(ref)], rule)
+			}
+		}
+	}
+	if rows, qErr := db.QueryContext(ctx, "SELECT account_ref, group_id FROM account_upstream_error_group ORDER BY account_ref, position"); qErr == nil {
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var ref, groupID string
+			if err := rows.Scan(&ref, &groupID); err != nil {
 				continue
 			}
-			var env map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(rawEnv), &env); err != nil || env == nil {
-				continue
-			}
-			if rules := decodeEnvAnySlice(env[rulesenv.RulesEnvKey]); len(rules) > 0 {
-				extras.rules[ref] = rules
-			}
-			if groupIDs := decodeEnvAnySlice(env[rulesenv.GroupIDsEnvKey]); len(groupIDs) > 0 {
-				extras.groupIDs[ref] = groupIDs
-			}
+			extras.groupIDs[strings.TrimSpace(ref)] = append(extras.groupIDs[strings.TrimSpace(ref)], groupID)
 		}
 	}
 	return extras

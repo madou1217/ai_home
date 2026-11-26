@@ -738,7 +738,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	}
 	runtimeClearer, _ := dependencies.AccountRuntime.(webuiroutingrulesapi.RuntimeBlockClearer)
 	routingRules, err := webuiroutingrulesapi.NewHandler(webuiroutingrulesapi.Dependencies{
-		Authorizer: authorizer, Store: routingAdapters.Store, Accounts: routingAdapters.Accounts,
+		Authorizer: authorizer, Accounts: routingAdapters.Accounts,
 		Catalog: dependencies.Catalog, Runtime: runtimeClearer,
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -55,4 +56,59 @@ func defaultBinaryResolver() binaryResolver {
 // ResolveBinary 解析官方 CLI；Codex 共用 PATH 与常用安装目录的安全发现策略。
 func ResolveBinary(providerID string, binary string) (string, error) {
 	return defaultBinaryResolver().Resolve(providerID, binary)
+}
+
+// ResolveBinaryForHost 在 PATH 之外补充 CodeBuddy 家族的已知安装落点。
+// Windows 托管服务的工作目录通常是 C:\Windows\System32，PATH 也不包含
+// 用户安装目录；只靠 exec.LookPath 会把 codebuddy 解析成不存在的系统路径。
+func ResolveBinaryForHost(providerID, binary, hostHomeDir string) (string, error) {
+	resolver := defaultBinaryResolver()
+	if isCodeBuddyFamilyProvider(providerID) {
+		resolver.discover = func(_, _ string) string {
+			return discoverCodeBuddyBinary(hostHomeDir)
+		}
+	}
+	return resolver.Resolve(providerID, binary)
+}
+
+func isCodeBuddyFamilyProvider(providerID string) bool {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+		return true
+	default:
+		return false
+	}
+}
+
+// discoverCodeBuddyBinary 返回 CodeBuddy 家族官方 CLI 的绝对路径。
+// 只做存在性检查，不执行进程；找不到时返回空串，交给 LookPath 兜底。
+func discoverCodeBuddyBinary(hostHomeDir string) string {
+	home := strings.TrimSpace(hostHomeDir)
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	candidates := make([]string, 0, 10)
+	if override := strings.TrimSpace(os.Getenv("AIH_CODEBUDDY_BINARY")); override != "" {
+		candidates = append(candidates, override)
+	}
+	if local := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); local != "" {
+		candidates = append(candidates,
+			filepath.Join(local, "codebuddy", "bin", "codebuddy.exe"),
+			filepath.Join(local, "Programs", "CodeBuddy", "codebuddy.exe"),
+		)
+	}
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".local", "bin", "codebuddy"),
+			filepath.Join(home, ".local", "bin", "codebuddy.exe"),
+			filepath.Join(home, ".codebuddy", "bin", "codebuddy.exe"),
+		)
+	}
+	candidates = append(candidates, "/opt/homebrew/bin/codebuddy", "/usr/local/bin/codebuddy")
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }

@@ -31,6 +31,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/credentialregister"
 	runtimeprojection "github.com/madou1217/ai_home/internal/runtime/accountprojection"
+	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/pty"
 	"github.com/madou1217/ai_home/internal/runtime/ptyhost"
 )
@@ -124,16 +125,25 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 	if len(options.ExtraEnv) > 0 {
 		env = mergedEnvironment(env, options.ExtraEnv)
 	}
-	cwd, _ := os.Getwd()
+	// 登录进程不能继承服务的工作目录（Windows 下常是 System32）。给它一个
+	// 投影内的临时工作目录，既避免相对路径撞系统目录，也不会污染宿主项目。
+	workspaceDir, err := os.MkdirTemp(result.Root, "login-workspace-")
+	if err != nil {
+		return accountcore.Account{}, fmt.Errorf("创建登录工作目录失败: %w", err)
+	}
 	// 登录投影是独立 HOME：先把工作目录写进 trustedDirectories，避免无头登录
 	// 停在「Do you trust the files in this folder?」。
 	if configDir := strings.TrimSpace(result.SetEnv["CODEBUDDY_CONFIG_DIR"]); configDir != "" {
-		_ = seedLoginFolderTrust(configDir, cwd)
+		_ = seedLoginFolderTrust(configDir, workspaceDir)
+	}
+	binaryPath, err := providercli.ResolveBinaryForHost(providerID, "codebuddy", options.HostHomeDir)
+	if err != nil {
+		return accountcore.Account{}, fmt.Errorf("CodeBuddy 官方 CLI 不存在: %w", err)
 	}
 	code, runErr := ptyhost.Run(ctx, ptyhost.Config{
-		Path:    "codebuddy",
+		Path:    binaryPath,
 		Env:     env,
-		Dir:     cwd,
+		Dir:     workspaceDir,
 		Stdin:   options.Stdin,
 		Stdout:  options.Stdout,
 		Starter: pty.NewStarter(),

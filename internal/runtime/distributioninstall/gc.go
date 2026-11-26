@@ -38,6 +38,13 @@ type PruneOptions struct {
 	// MinAge protects directories touched by an in-flight install. Defaults
 	// to one hour.
 	MinAge time.Duration
+	// DedupeSameVersion lets the installer drop same-version duplicate
+	// directories even when they are younger than MinAge. Same-version builds
+	// are not rollback targets (rolling back to the same version is
+	// meaningless), so keeping them only accumulates pkg directories under
+	// repeated deploys. Only set this while holding the install lock: a
+	// concurrent .run may have extracted its directory before taking the lock.
+	DedupeSameVersion bool
 	// FailedTransactionMaxAge is how long a failed or rolled-back install
 	// transaction is retained before the periodic GC removes it. Defaults to
 	// 24 hours; pass a negative value to retain failed transactions forever.
@@ -132,7 +139,7 @@ func pruneArtifacts(options PruneOptions, lockHeld bool) (PruneReport, error) {
 	}
 
 	collector := &pruneCollector{report: &report, dryRun: options.DryRun}
-	prunePackageVersions(home, report.Current, !options.DisablePrevious, minAge, now, protect, collector)
+	prunePackageVersions(home, report.Current, !options.DisablePrevious, minAge, options.DedupeSameVersion, now, protect, collector)
 	pruneInstallHistoryInto(home, receipt.Transaction, collector)
 	pruneStaleFailedTransactions(home, receipt.Transaction, now, failedMaxAge, collector)
 	pruneDownloads(home, minAge, now, protect, collector)
@@ -162,11 +169,17 @@ func (c *pruneCollector) drop(path string, size int64) {
 	c.report.FreedBytes += size
 }
 
-func prunePackageVersions(home, current string, keepPrevious bool, minAge time.Duration, now time.Time, protect map[string]bool, collector *pruneCollector) {
+func prunePackageVersions(home, current string, keepPrevious bool, minAge time.Duration, dedupeSameVersion bool, now time.Time, protect map[string]bool, collector *pruneCollector) {
 	root := filepath.Join(home, "pkg")
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return
+	}
+	currentVersion := [3]int{}
+	knownCurrentVersion := false
+	if match := packageDirPattern.FindStringSubmatch(current); match != nil {
+		currentVersion = parseVersion(match[1])
+		knownCurrentVersion = true
 	}
 	var candidates []versionedDir
 	for _, entry := range entries {
@@ -191,11 +204,17 @@ func prunePackageVersions(home, current string, keepPrevious bool, minAge time.D
 			collector.keep(path)
 			continue
 		}
+		candidateVersion := parseVersion(match[1])
 		if now.Sub(info.ModTime()) < minAge {
-			collector.keep(path)
-			continue
+			// 安装流程持锁时可以立即回收同版本的重复构建；等待锁的并发 .run
+			// 已经解包的同版本目录是唯一需要保护的场景，MinAge 仍然覆盖它。
+			sameVersion := knownCurrentVersion && compareVersions(candidateVersion, currentVersion) == 0 && name != current
+			if !(dedupeSameVersion && sameVersion) {
+				collector.keep(path)
+				continue
+			}
 		}
-		candidates = append(candidates, versionedDir{name: name, path: path, version: parseVersion(match[1]), mod: info.ModTime()})
+		candidates = append(candidates, versionedDir{name: name, path: path, version: candidateVersion, mod: info.ModTime()})
 	}
 	if len(candidates) == 0 {
 		return

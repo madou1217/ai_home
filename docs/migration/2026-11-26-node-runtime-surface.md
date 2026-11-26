@@ -55,7 +55,8 @@
 | --- | --- | --- |
 | claude | 真实会话直接投递成功 | 重装后的多个真实 Claude Code 会话在 `run/provider-session-state/` 产生 `official-hook` 事件（UserPromptSubmit / Notification 等） |
 | codex | 真实会话可投递，但需通过 Codex 的 hook trust | `aih codex --dangerously-bypass-hook-trust exec ...` 输出 `hook: SessionStart/UserPromptSubmit/Stop`，会话快照写入 `turnState=completed` 与 Stop 事件 |
-| gemini / grok / opencode | 未跑 | 本机账号池当前没有健康账号（`没有可用账号`），与 hook 实现无关 |
-| agy | 未跑 | 本机未安装 agy/antigravity CLI |
+| gemini | 真实会话经本机网关投递成功 | Gemini CLI 0.70.0，`GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:9527`、API-key 认证（临时设置，已还原），模型经网关路由；会话产生 `AfterAgent` / `SessionEnd` 事件 |
+| agy | 真实会话（AWS agy 1.5.18）投递成功 | 在 AWS 账号投影 HOME 与宿主 HOME 安装无 URL 的 agy hooks；`agy --print` 真实会话产生 `PreInvocation` / `PostInvocation` / `Stop` 事件，写入 AWS Server 的 `provider-session-state` |
+| grok / opencode | 未跑 | 本机与 AWS 均无健康账号（`没有可用账号`），与 hook 实现无关 |
 
 **Codex trust 注意**：Codex 按自身规范化对每个 handler 计算 `sha256`，写入 `config.toml` 的 `[hooks.state."<hooks.json>:<event>:<matcher>"] trusted_hash`；托管命令一改，旧信任即失效，非交互 `exec` 会静默跳过 hook（交互 TUI 会要求确认）。目前没有受支持的安装器写入信任的入口（上游 issue openai/codex#21615），因此本仓库**不伪造信任哈希**：重装后需用户在 TUI 确认一次，自动化场景才使用 `--dangerously-bypass-hook-trust`。

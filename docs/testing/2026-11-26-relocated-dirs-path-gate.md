@@ -30,4 +30,15 @@ macOS arm64 托管 runner 容量紧张，曾出现排队约 15 分钟后仍未�
 
 ## 线上验证
 
-待本轮 docs-only 提交运行后补充。
+- docs-only 提交 `6fb094a5`（仅新增本文档），run `45753525541`；
+- `relocated dirs scope` 日志：
+  - changed files: `docs/testing/2026-11-26-relocated-dirs-path-gate.md`
+  - dependency roots: 28
+  - `relocated-dirs tests needed: false`
+- `relocated dirs (${{ matrix.os }})` 结论 `skipped`，`runner=None`，`steps=0`，
+  没有申请任何平台 runner；
+- go-tests 整体 success。
+
+注意：job 级跳过时 matrix 尚未展开，check 名称是
+`relocated dirs (${{ matrix.os }})`。main 当前没有分支保护；如果以后把逐平台
+check 配成 required，需要重新评估这个门。

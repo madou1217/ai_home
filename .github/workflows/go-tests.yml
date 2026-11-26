@@ -2,7 +2,7 @@ name: go-tests
 
 # Go 的多平台验证。
 #
-# 两个 job 分工：
+# 各 job 分工：
 #   - windows：`internal/runtime/artifactstore/junction_windows_test.go` 和
 #     `internal/runtime/distributioninstall/service_sync_windows_test.go` 带
 #     `//go:build windows`，在 macOS/Linux 上整文件被排除（`go test` 只报
@@ -10,11 +10,14 @@ name: go-tests
 #     junction 删除/重命名语义与安装器同步旧 `.ai_home/bin` 的行为。
 #   - linux：补上非 Windows 侧的 vet + 编译，防止 `//go:build !windows` 分支漂移
 #     或包里只有某个平台能编。Linux 也是发行目标之一，但只在打 tag 时才构建。
+#   - relocated_scope：用 sessionscan 的依赖闭包判断改动是否需要三平台矩阵；
+#     取不到 base 或依赖解析失败时默认运行（安全方向）。
+#   - relocated-dirs：会话目录迁移测试，按 relocated_scope 的输出在 job 级跳过。
 #
 # 刻意不使用 workflow 级 paths/paths-ignore 过滤：被路径过滤跳过的 run 会让
 # required status check 永远停在 "Pending"，把不相关的 PR 卡死（GitHub 文档明确写了
-# 这一点）。改为 job 内检测改动、按需跳过重步骤，这样无论改动是什么，这个 check
-# 都会给出结论。
+# 这一点）。windows 在 job 内检测改动；relocated-dirs 由独立 scope job 决定是否启动，
+# 跳过的 job 仍有确定结论。
 on:
   push:
     branches:
@@ -292,10 +295,83 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # relocated-dirs 会占用三个平台（含容量紧张的 macOS arm64）。先用依赖闭包
+  # 判断改动是否可能影响 sessionscan：只有相关目录、go.mod/go.sum 或本工作流
+  # 变化时才启动矩阵；取不到 base 或依赖解析失败时默认运行（安全方向）。
+  relocated_scope:
+    name: relocated dirs scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Detect relocated-dirs changes
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='${{ github.event.pull_request.base.sha }}'
+          if [ -z "$base" ]; then
+            base='${{ github.event.before }}'
+          fi
+          head='${{ github.sha }}'
+          if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "no usable base commit; running relocated-dirs tests"
+            exit 0
+          fi
+          changed=$(mktemp)
+          if ! git diff --name-only "$base" "$head" > "$changed"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "cannot diff $base..$head; running relocated-dirs tests"
+            exit 0
+          fi
+          if ! deps=$(go list -deps -test ./internal/sessionscan/... \
+            | grep '^github.com/madou1217/ai_home/.' \
+            | sed -E 's/ \[.*$//' \
+            | sed 's#^github.com/madou1217/ai_home/##' \
+            | grep -v '\.test$' \
+            | sort -u); then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "dependency listing failed; running relocated-dirs tests"
+            exit 0
+          fi
+          run=false
+          if grep -Eq '^(go\.mod|go\.sum|\.github/workflows/go-tests\.yml)$' "$changed"; then
+            run=true
+          else
+            while IFS= read -r dep; do
+              [ -n "$dep" ] || continue
+              if grep -q "^${dep}/" "$changed"; then
+                run=true
+                break
+              fi
+            done <<< "$deps"
+          fi
+          echo "changed files:"
+          sed -n '1,20p' "$changed"
+          echo "relocated-dirs dependency roots: $(printf '%s\n' "$deps" | wc -l | tr -d ' ')"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "relocated-dirs tests needed: $run"
+
   # 会话发现要同时读当前配置根和迁移前的位置。路径/文件系统语义与平台有关，
   # 因此三个平台都跑同一组 relocated session directory 测试。
   relocated-dirs:
     name: relocated dirs (${{ matrix.os }})
+    needs: relocated_scope
+    if: needs.relocated_scope.result != 'success' || needs.relocated_scope.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:

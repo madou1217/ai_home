@@ -110,6 +110,14 @@ func Current() Manifest {
 				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/v1/chat/completions")},
 			},
 			{
+				// 智谱官方 SDK 默认 base_url 的 Chat Completions 路径；只是
+				// OpenAI Chat 合同的路径别名，不改变请求/响应协议。
+				ID:              "gateway.compat.zhipu.chat_completions",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes:        []Route{httpRoute([]string{"POST"}, "/api/paas/v4/chat/completions")},
+			},
+			{
 				ID:              "gateway.anthropic.messages",
 				ProductionOwner: "go",
 				MigrationState:  "go_owned",
@@ -137,6 +145,15 @@ func Current() Manifest {
 				GoRoutes: []Route{{
 					Transport: "http", Methods: []string{"POST"}, Path: "/v1{beta?}/models/{model}:streamGenerateContent",
 					Pattern: "^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$",
+				}},
+			},
+			{
+				ID:              "gateway.gemini.count_tokens",
+				ProductionOwner: "go",
+				MigrationState:  "go_owned",
+				GoRoutes: []Route{{
+					Transport: "http", Methods: []string{"POST"}, Path: "/v1{beta?}/models/{model}:countTokens",
+					Pattern: "^/v1(?:beta)?/models/([^/:]+):countTokens$",
 				}},
 			},
 			{

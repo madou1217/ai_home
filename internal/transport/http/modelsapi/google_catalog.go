@@ -200,8 +200,8 @@ func newGoogleModel(
 	model := googleModel{
 		Name:        "models/" + view.ID,
 		DisplayName: displayName,
-		// 这两个入口都由网关承接；countTokens 尚未实现，不能在这里冒充。
-		SupportedGenerationMethods: []string{"generateContent", "streamGenerateContent"},
+		// 这三个入口都由网关承接；countTokens 使用本地估算，响应仍是标准形状。
+		SupportedGenerationMethods: []string{"generateContent", "streamGenerateContent", "countTokens"},
 	}
 	if window, found := windows[view.ID]; found && window.IsValid() && window.Tokens > 0 {
 		tokens := window.Tokens

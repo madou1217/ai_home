@@ -15,6 +15,10 @@ import (
 const (
 	// Path 是 OpenAI Chat Completions create 的规范 HTTP 路径。
 	Path = "/v1/chat/completions"
+	// ZhipuCompatPath 是智谱官方 SDK 默认 base_url（/api/paas/v4）下的
+	// Chat Completions 路径。它只是路径别名：请求体、鉴权、模型路由和响应
+	// 仍走标准 OpenAI Chat 合同，不引入 Provider 分支。
+	ZhipuCompatPath = "/api/paas/v4/chat/completions"
 	// DefaultMaxBodyBytes 覆盖常规图片请求，同时保持明确内存上限。
 	DefaultMaxBodyBytes int64 = 32 * 1024 * 1024
 	// MaxBodyBytesLimit 防止 Composition Root 意外关闭请求体边界。

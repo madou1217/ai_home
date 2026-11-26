@@ -28,6 +28,8 @@ const (
 	GenerateContentSuffix = ":generateContent"
 	// StreamGenerateContentSuffix 是流式响应入口后缀。
 	StreamGenerateContentSuffix = ":streamGenerateContent"
+	// CountTokensSuffix 是本地 token 估算入口后缀。
+	CountTokensSuffix = ":countTokens"
 
 	// DefaultMaxBodyBytes 覆盖常规内联图片请求，同时保持明确内存上限。
 	DefaultMaxBodyBytes int64 = 32 * 1024 * 1024
@@ -93,6 +95,8 @@ type Target struct {
 	Model string
 	// Stream 表示走 :streamGenerateContent 入口。
 	Stream bool
+	// Count 表示走 :countTokens 本地估算入口。
+	Count bool
 }
 
 // ParseTarget 从请求路径解析模型与流式意图。
@@ -111,6 +115,8 @@ func ParseTarget(path string) (Target, bool) {
 			suffix = StreamGenerateContentSuffix
 		case strings.HasSuffix(remainder, GenerateContentSuffix):
 			suffix = GenerateContentSuffix
+		case strings.HasSuffix(remainder, CountTokensSuffix):
+			suffix = CountTokensSuffix
 		default:
 			return Target{}, false
 		}
@@ -129,6 +135,7 @@ func ParseTarget(path string) (Target, bool) {
 		return Target{
 			Model:  model,
 			Stream: suffix == StreamGenerateContentSuffix,
+			Count:  suffix == CountTokensSuffix,
 		}, true
 	}
 	return Target{}, false
@@ -154,6 +161,15 @@ func (handler *Handler) ServeHTTP(
 	if request.Method != http.MethodPost {
 		response.Header().Set("Allow", http.MethodPost)
 		writeError(response, http.StatusMethodNotAllowed, "FAILED_PRECONDITION", "Method not allowed")
+		return
+	}
+	if target.Count {
+		body, err := inferenceapi.ReadJSONBody(response, request, handler.maxBodyBytes)
+		if err != nil {
+			writeRequestError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, countTokensPayload(body))
 		return
 	}
 	ctx, err := inferenceapi.ContextWithPinnedAccount(request)

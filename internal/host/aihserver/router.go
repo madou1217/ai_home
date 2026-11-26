@@ -296,7 +296,16 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if chatCompletions == nil {
 		chatCompletions = handlers.inference
 	}
-	mux.Handle(openaichatcompletionsapi.Path, handlers.plugins.wrap("openai_chat", chatCompletions))
+	chatHandler := handlers.plugins.wrap("openai_chat", chatCompletions)
+	mux.Handle(openaichatcompletionsapi.Path, chatHandler)
+	// 智谱官方 SDK 默认把 base_url 指向 /api/paas/v4；这里只做路径别名，
+	// 让标准 SDK 不改配置即可接入，协议与 Provider 路由仍是 OpenAI Chat + 模型目录。
+	// 下游 Chat Handler 与家族透传都按规范路径判断合同，因此先把路径重写回
+	// /v1/chat/completions，避免兼容入口被当成未注册路径。
+	mux.Handle(openaichatcompletionsapi.ZhipuCompatPath, compatPathHandler{
+		path: openaichatcompletionsapi.Path,
+		next: chatHandler,
+	})
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
 	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
 	//
@@ -437,6 +446,29 @@ func (dispatcher modelsDispatcher) ServeHTTP(
 		return
 	}
 	dispatcher.models.ServeHTTP(response, request)
+}
+
+// compatPathHandler 把兼容入口的路径重写成规范路径，再交给同一个处理器。
+// 只改 URL 副本，不修改调用方请求对象；鉴权与统计仍能看到原始路径。
+type compatPathHandler struct {
+	path string
+	next http.Handler
+}
+
+func (handler compatPathHandler) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if handler.next == nil || handler.path == "" {
+		handleRouteNotFound(response, request)
+		return
+	}
+	cloned := request.Clone(request.Context())
+	urlCopy := *request.URL
+	urlCopy.Path = handler.path
+	urlCopy.RawPath = ""
+	cloned.URL = &urlCopy
+	handler.next.ServeHTTP(response, cloned)
 }
 
 // betaModelsDispatcher 让 /v1beta/models/ 子树按路径形态分流：

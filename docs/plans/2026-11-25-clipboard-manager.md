@@ -411,6 +411,6 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 ## 23. 统一等宽字体（2026-11-26）
 
 - 约束：作为开发者工具，界面与终端输出统一使用等宽字体，不引入 Orbitron 等展示型字体或比例字体。
-- WebUI：`--font-mono` / `--font-body` / `--font-display` / `--font-prose` 全部收敛到 JetBrains Mono + 中文等宽字体回落（Sarasa Mono SC、Noto Sans Mono CJK SC、WenQuanYi Zen Hei Mono、MS Gothic），并移除 `@fontsource/orbitron` 的加载；Ant Design 的 `fontFamily` / `fontFamilyCode`、Quick Chat 的局部 `--font-body` 覆盖、Paste Nexus 的 body 字体同步为同一套等宽栈。
+- WebUI：`--font-mono` / `--font-body` / `--font-display` / `--font-prose` 全部收敛到 JetBrains Mono + 中文等宽字体回落（Sarasa Mono SC、Noto Sans Mono CJK SC、WenQuanYi Zen Hei Mono、MS Gothic），并移除 `@fontsource/orbitron` 的加载；Ant Design 的 `fontFamily` / `fontFamilyCode`、Quick Chat 的局部 `--font-body` 覆盖、聊天终端字体、Paste Nexus 的 body 字体同步为同一套等宽栈。
 - 终端：降级输出只包含 ASCII 字母、数字、标点和方框绘制字符，天然落在等宽终端单元格内；非 TTY 输出保持原始字节。
 - 真实验证：WebUI 构建成功，构建产物与运行中 `/ui/umi.*.css`、`/ui/paste/` 均不再包含 `Orbitron` / `SF Pro Text`，`--font-body` 为等宽栈；源码中的 Orbitron 仅保留在历史注释里，不再有字体声明或字体文件加载。

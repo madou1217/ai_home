@@ -37,7 +37,7 @@
   --hud-chamfer-sm: 0px;
   --hud-tick: 0px;
   --hud-tick-color: transparent;
-  --font-display: var(--font-prose);
+  --font-display: var(--font-body);
   --font-body: 'JetBrains Mono', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'WenQuanYi Zen Hei Mono', 'MS Gothic', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-monospace, Menlo, Consolas, monospace;
   --qc-radius: 10px;
   --qc-radius-sm: 7px;

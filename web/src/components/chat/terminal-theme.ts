@@ -9,7 +9,7 @@ import { subscribeThemeMode } from '@/services/theme-mode';
  */
 
 /** 终端字体栈：必须以 JetBrains Mono 开头（随包分发的 HUD 数据字体）。 */
-export const TERMINAL_FONT_FAMILY = "'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace";
+export const TERMINAL_FONT_FAMILY = "'JetBrains Mono', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'WenQuanYi Zen Hei Mono', 'MS Gothic', ui-monospace, Menlo, Consolas, monospace";
 
 function readToken(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback;

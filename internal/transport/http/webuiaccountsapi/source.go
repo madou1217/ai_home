@@ -76,6 +76,7 @@ const (
 	tableCredentials = "account_credentials"
 	tableUIState     = "account_ui_state"
 	tableProfiles    = "account_profiles"
+	tableIdentities  = "account_identities"
 	tableSnapshots   = "account_usage_snapshots"
 	tableDefaults    = "account_defaults"
 	tableModels      = "account_models"
@@ -93,6 +94,7 @@ var trackedTables = []string{
 	tableCredentials,
 	tableUIState,
 	tableProfiles,
+	tableIdentities,
 	tableSnapshots,
 	tableDefaults,
 	tableModels,
@@ -325,6 +327,14 @@ func buildRowStatement(available map[string]bool, query Query) (string, []any) {
 						" FROM account_credentials AS c WHERE c.account_ref = a.account_ref)",
 					"''")+
 				", '')", "''"),
+		optionalColumn(available, tableIdentities,
+			"COALESCE((SELECT i.display_name FROM account_identities AS i WHERE i.account_ref = a.account_ref), '')", "''"),
+		optionalColumn(available, tableIdentities,
+			"COALESCE((SELECT i.email FROM account_identities AS i WHERE i.account_ref = a.account_ref), '')", "''"),
+		optionalColumn(available, tableIdentities,
+			"COALESCE((SELECT i.phone FROM account_identities AS i WHERE i.account_ref = a.account_ref), '')", "''"),
+		optionalColumn(available, tableIdentities,
+			"COALESCE((SELECT i.nickname FROM account_identities AS i WHERE i.account_ref = a.account_ref), '')", "''"),
 		optionalColumn(available, tableProfiles,
 			"COALESCE((SELECT p.subscription_kind FROM account_profiles AS p WHERE p.account_ref = a.account_ref), '')", "''"),
 		optionalColumn(available, tableProfiles,
@@ -458,6 +468,10 @@ func scanAccountFact(rows *sql.Rows) (accountFact, error) {
 		&fact.UIBaseURL,
 		&fact.ProfileName,
 		&fact.ProfileEmail,
+		&fact.IdentityDisplayName,
+		&fact.IdentityEmail,
+		&fact.IdentityPhone,
+		&fact.IdentityNickname,
 		&fact.Subscription,
 		&fact.SubscriptionRaw,
 		&fact.QuotaStatus,

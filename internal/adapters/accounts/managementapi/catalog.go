@@ -43,6 +43,7 @@ type AccountView struct {
 	AuthKind         string
 	AuthMode         string
 	HasProfile       bool
+	HasIdentity      bool
 	DisplayName      string
 	Email            string
 	SubscriptionKind string
@@ -371,6 +372,7 @@ type accountViewDTO struct {
 	AuthKind         string `json:"auth_kind"`
 	AuthMode         string `json:"auth_mode"`
 	HasProfile       bool   `json:"has_profile"`
+	HasIdentity      bool   `json:"has_identity"`
 	DisplayName      string `json:"display_name"`
 	Email            string `json:"email"`
 	SubscriptionKind string `json:"subscription_kind"`
@@ -401,6 +403,7 @@ func (dto accountViewDTO) decode() (AccountView, error) {
 		AuthKind:         dto.AuthKind,
 		AuthMode:         dto.AuthMode,
 		HasProfile:       dto.HasProfile,
+		HasIdentity:      dto.HasIdentity,
 		DisplayName:      dto.DisplayName,
 		Email:            dto.Email,
 		SubscriptionKind: dto.SubscriptionKind,
@@ -446,10 +449,20 @@ func validAccountMetadata(dto accountViewDTO) bool {
 	} else if dto.AuthKind != "" || dto.AuthMode != "" {
 		return false
 	}
-	if !dto.HasProfile {
+	if !dto.HasProfile && !dto.HasIdentity {
 		return dto.DisplayName == "" && dto.Email == "" &&
 			dto.SubscriptionKind == "" && dto.SubscriptionRaw == "" &&
 			dto.ProfileUpdatedAt == ""
+	}
+	if dto.HasIdentity {
+		if !validPublicText(dto.DisplayName, 256) || dto.DisplayName == "" ||
+			(dto.Email != "" && !validPublicText(dto.Email, 320)) {
+			return false
+		}
+		if !dto.HasProfile {
+			return dto.SubscriptionKind == "" && dto.SubscriptionRaw == "" &&
+				dto.ProfileUpdatedAt == ""
+		}
 	}
 	return validPublicText(dto.DisplayName, 256) &&
 		validPublicText(dto.Email, 320) &&

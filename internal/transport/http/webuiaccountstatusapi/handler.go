@@ -51,15 +51,6 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
-// AccountStateProjection 是 Node account_state 展示投影的写入端口。
-//
-// 由 *accountstate.Store 实现。返回 changed=false 表示 Node 台账里没有这个账号
-// （无台账投影账号），此时没有投影要维护，不是错误。nil 表示投影端口未接入，账号
-// 启停仍按 Go 真值执行。
-type AccountStateProjection interface {
-	SetStatus(ctx context.Context, accountRef string, status string) (bool, error)
-}
-
 // HostGrantRevoker 回收账号在宿主上遗留的直连授权（当前只有 codex 声明了这个钩子）。
 type HostGrantRevoker interface {
 	SupportsHostGrant(providerID string) bool
@@ -74,8 +65,6 @@ type Dependencies struct {
 	Authorizer Authorizer
 	Accounts   accountapp.AccountLifecycleStore
 
-	// Projection 为 nil 时跳过 account_state 投影（只保留 Go 真值）。
-	Projection AccountStateProjection
 	// HostGrant 为 nil 或 Provider 没有钩子时跳过宿主授权回收。
 	HostGrant HostGrantRevoker
 
@@ -87,7 +76,6 @@ type Dependencies struct {
 type Handler struct {
 	authorizer Authorizer
 	accounts   accountapp.AccountLifecycleStore
-	projection AccountStateProjection
 	hostGrant  HostGrantRevoker
 	now        func() time.Time
 }
@@ -104,7 +92,6 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		authorizer: dependencies.Authorizer,
 		accounts:   dependencies.Accounts,
-		projection: dependencies.Projection,
 		hostGrant:  dependencies.HostGrant,
 		now:        now,
 	}, nil
@@ -192,24 +179,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 
-	previousStatus := statusOf(account.Enabled())
-	projectionChanged := false
-	if handler.projection != nil {
-		changed, projectionErr := handler.projection.SetStatus(ctx, accountRef.String(), status)
-		if projectionErr != nil {
-			writeError(response, http.StatusInternalServerError, "account_state_projection_failed",
-				"账号状态投影写入失败，账号未被修改。")
-			return
-		}
-		projectionChanged = changed
-	}
-
 	updated, err := handler.accounts.SetEnabled(ctx, accountRef, status == "up", handler.now())
 	if err != nil {
-		if projectionChanged && handler.projection != nil {
-			// 真值没写成功，把刚写的展示投影恢复原状；恢复失败只能如实返回原错误。
-			_, _ = handler.projection.SetStatus(ctx, accountRef.String(), previousStatus)
-		}
 		writeError(response, http.StatusBadGateway, "go_account_status_update_failed",
 			"Go Core 更新账号启停失败，账号未被修改。")
 		return

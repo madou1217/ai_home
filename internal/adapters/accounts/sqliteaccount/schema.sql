@@ -320,6 +320,21 @@ CREATE TABLE IF NOT EXISTS account_ui_state (
   FOREIGN KEY (account_ref) REFERENCES accounts(account_ref) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE IF NOT EXISTS account_identities (
+  account_ref TEXT NOT NULL PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+    CHECK (length(email) <= 320),
+  phone TEXT NOT NULL DEFAULT ''
+    CHECK (length(phone) <= 64),
+  nickname TEXT NOT NULL DEFAULT ''
+    CHECK (length(nickname) <= 256),
+  display_name TEXT NOT NULL DEFAULT ''
+    CHECK (length(display_name) <= 256),
+  updated_at_ms INTEGER NOT NULL
+    CHECK (updated_at_ms BETWEEN 0 AND 253402300799999),
+  FOREIGN KEY (account_ref) REFERENCES accounts(account_ref) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS account_runtime_blocks (
   account_ref TEXT NOT NULL,
   kind TEXT NOT NULL

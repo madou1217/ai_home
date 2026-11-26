@@ -62,16 +62,21 @@ func (query OverviewQuery) Limit() int {
 
 // AccountOverviewInput 是从持久化公开事实构造账号管理投影所需的字段。
 type AccountOverviewInput struct {
-	Account          accountcore.Account
-	HasCredential    bool
-	AuthKind         string
-	AuthMode         string
-	HasProfile       bool
-	DisplayName      string
-	Email            string
-	SubscriptionKind string
-	SubscriptionRaw  string
-	ProfileUpdatedAt time.Time
+	Account       accountcore.Account
+	HasCredential bool
+	AuthKind      string
+	AuthMode      string
+	HasProfile    bool
+	DisplayName   string
+	Email         string
+	// HasIdentity 表示已从当前凭据重新解析出身份事实；它与 Provider 的公开资料
+	// （HasProfile）相互独立：OAuth 账号可能没有资料，但凭据里带 email/nickname。
+	HasIdentity         bool
+	IdentityDisplayName string
+	IdentityEmail       string
+	SubscriptionKind    string
+	SubscriptionRaw     string
+	ProfileUpdatedAt    time.Time
 	// WorkspaceID 是 Codex 领域工作区（个人账号为 personal），其余 Provider 为空。
 	WorkspaceID      string
 	ModelSummary     AccountModelSummary
@@ -91,6 +96,7 @@ type AccountOverview struct {
 	authKind         string
 	authMode         string
 	hasProfile       bool
+	hasIdentity      bool
 	displayName      string
 	email            string
 	subscriptionKind string
@@ -109,9 +115,14 @@ func NewAccountOverview(input AccountOverviewInput) (AccountOverview, error) {
 	if !input.Account.IsValid() ||
 		!validCredentialOverview(input) ||
 		!validProfileOverview(input) ||
+		!validIdentityOverview(input) ||
 		!input.ModelSummary.IsValid() ||
 		!validUsageOverview(input) {
 		return AccountOverview{}, ErrInvalidOverview
+	}
+	displayName, email := input.DisplayName, input.Email
+	if input.HasIdentity {
+		displayName, email = input.IdentityDisplayName, input.IdentityEmail
 	}
 	return AccountOverview{
 		account:          input.Account,
@@ -119,8 +130,9 @@ func NewAccountOverview(input AccountOverviewInput) (AccountOverview, error) {
 		authKind:         input.AuthKind,
 		authMode:         input.AuthMode,
 		hasProfile:       input.HasProfile,
-		displayName:      input.DisplayName,
-		email:            input.Email,
+		hasIdentity:      input.HasIdentity,
+		displayName:      displayName,
+		email:            email,
 		subscriptionKind: input.SubscriptionKind,
 		subscriptionRaw:  input.SubscriptionRaw,
 		profileUpdatedAt: input.ProfileUpdatedAt,
@@ -151,6 +163,11 @@ func (overview AccountOverview) AuthKind() string {
 // AuthMode 返回 Provider 认证子模式。
 func (overview AccountOverview) AuthMode() string {
 	return overview.authMode
+}
+
+// HasIdentity 返回账号是否已从当前凭据重新解析出身份事实。
+func (overview AccountOverview) HasIdentity() bool {
+	return overview.hasIdentity
 }
 
 // HasProfile 返回账号是否已有公开资料。
@@ -390,6 +407,16 @@ func validProfileOverview(input AccountOverviewInput) bool {
 }
 
 // validUsageOverview 校验额度快照确实属于同一账号和 Provider。
+// validIdentityOverview 校验凭据重解析出的身份事实。
+func validIdentityOverview(input AccountOverviewInput) bool {
+	if !input.HasIdentity {
+		return input.IdentityDisplayName == "" && input.IdentityEmail == ""
+	}
+	return validPublicText(input.IdentityDisplayName, 256) &&
+		input.IdentityDisplayName != "" &&
+		(input.IdentityEmail == "" || validPublicText(input.IdentityEmail, 320))
+}
+
 func validUsageOverview(input AccountOverviewInput) bool {
 	if !input.HasUsageSnapshot {
 		return input.UsageSnapshot.AccountRef() == "" &&

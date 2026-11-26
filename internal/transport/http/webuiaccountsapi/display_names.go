@@ -45,7 +45,7 @@ func buildDisplayNames(fact accountFact, displayName string, apiKeyMode bool) []
 		entries = append(entries, DisplayName{Type: kind, Value: text})
 	}
 
-	email := strings.TrimSpace(fact.ProfileEmail)
+	email := firstNonEmpty(fact.IdentityEmail, fact.ProfileEmail)
 	syntheticPhone := ""
 	if match := syntheticPhonePattern.FindStringSubmatch(email); match != nil {
 		syntheticPhone = match[1]
@@ -55,6 +55,9 @@ func buildDisplayNames(fact accountFact, displayName string, apiKeyMode bool) []
 	}
 	if syntheticPhone != "" {
 		push("phone", syntheticPhone)
+	}
+	if phone := strings.TrimSpace(fact.IdentityPhone); phone != "" {
+		push("phone", phone)
 	}
 	if apiKeyMode {
 		push("name", firstNonEmpty(displayName, displayDomain(fact.UIBaseURL), "API Key"))
@@ -69,11 +72,11 @@ func buildDisplayNames(fact accountFact, displayName string, apiKeyMode bool) []
 			push("nickName", name)
 		}
 	}
-	if nickname := cleanOAuthDisplayName(fact.ProfileName, fact.Provider); nickname != "" && nickname != name {
+	if nickname := cleanOAuthDisplayName(firstNonEmpty(fact.IdentityNickname, fact.ProfileName), fact.Provider); nickname != "" && nickname != name {
 		push("nickName", nickname)
 	}
 	if len(entries) == 0 {
-		fallback := firstNonEmpty(displayName, fact.ProfileName)
+		fallback := firstNonEmpty(fact.IdentityNickname, displayName, fact.ProfileName)
 		if isMeaningfulFallback(fallback, fact.Provider) {
 			if emailDisplayValuePattern.MatchString(fallback) {
 				push("email", fallback)

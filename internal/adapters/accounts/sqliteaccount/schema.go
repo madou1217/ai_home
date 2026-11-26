@@ -84,6 +84,10 @@ var requiredTableColumns = map[string][]string{
 		"account_ref", "status", "display_name", "auth_mode", "api_key_mode",
 		"base_url", "updated_at_ms", "configured", "oauth_pending",
 	},
+	"account_identities": {
+		"account_ref", "email", "phone", "nickname", "display_name",
+		"updated_at_ms",
+	},
 	"account_runtime_blocks": {
 		"account_ref", "kind", "scope", "reason", "observed_at_ms", "until_ms",
 	},

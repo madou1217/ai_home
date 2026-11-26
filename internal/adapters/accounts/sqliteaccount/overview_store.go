@@ -77,10 +77,14 @@ const accountOverviewSelectSQL = `
 	       COALESCE(s.quota_reason, ''),
 	       COALESCE(s.remaining_bps, 0),
 	       COALESCE(s.has_numeric_remaining, 0),
-	       COALESCE(s.captured_at_ms, 0)
+	       COALESCE(s.captured_at_ms, 0),
+	       i.account_ref IS NOT NULL,
+	       COALESCE(i.display_name, ''),
+	       COALESCE(i.email, '')
 	FROM accounts AS a
 	LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
 	LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref
+	LEFT JOIN account_identities AS i ON i.account_ref = a.account_ref
 	LEFT JOIN account_usage_snapshots AS s ON s.account_ref = a.account_ref`
 
 // accountOverviewSQL 是账号管理列表及查询计划验证的 keyset SQL 合同。
@@ -178,6 +182,8 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 	var isDefault, hasQuotaSnapshot, hasNumericRemaining int64
 	var quotaStatus, quotaReason string
 	var remainingBPS, quotaCapturedAtMS int64
+	var hasIdentity int64
+	var identityDisplayName, identityEmail string
 	if err := row.Scan(
 		&record.accountRef,
 		&record.providerID,
@@ -204,6 +210,9 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		&remainingBPS,
 		&hasNumericRemaining,
 		&quotaCapturedAtMS,
+		&hasIdentity,
+		&identityDisplayName,
+		&identityEmail,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return accountapp.AccountOverview{}, accountapp.ErrAccountNotFound
@@ -247,6 +256,9 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 	if input.HasProfile {
 		input.ProfileUpdatedAt = time.UnixMilli(profileUpdatedAtMS).UTC()
 	}
+	input.HasIdentity = hasIdentity != 0
+	input.IdentityDisplayName = identityDisplayName
+	input.IdentityEmail = identityEmail
 	overview, err := accountapp.NewAccountOverview(input)
 	if err != nil {
 		return accountapp.AccountOverview{}, ErrIncompatibleDatabase

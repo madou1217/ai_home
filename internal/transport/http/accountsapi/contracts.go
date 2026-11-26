@@ -144,6 +144,7 @@ type accountView struct {
 	AuthKind         string                    `json:"auth_kind"`
 	AuthMode         string                    `json:"auth_mode"`
 	HasProfile       bool                      `json:"has_profile"`
+	HasIdentity      bool                      `json:"has_identity"`
 	DisplayName      string                    `json:"display_name"`
 	Email            string                    `json:"email"`
 	SubscriptionKind string                    `json:"subscription_kind"`
@@ -298,6 +299,7 @@ func newAccountView(overview accountapp.AccountOverview) accountView {
 		AuthKind:         overview.AuthKind(),
 		AuthMode:         overview.AuthMode(),
 		HasProfile:       overview.HasProfile(),
+		HasIdentity:      overview.HasIdentity(),
 		DisplayName:      overview.DisplayName(),
 		Email:            overview.Email(),
 		SubscriptionKind: overview.SubscriptionKind(),

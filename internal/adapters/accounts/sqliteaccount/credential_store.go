@@ -68,6 +68,7 @@ func (store *Store) Register(
 		}
 		return fmt.Errorf("提交账号注册事务失败: %w", err)
 	}
+	_ = store.RefreshAccountIdentity(context.WithoutCancel(ctx), account.Ref().String())
 	store.routes.publishCredentialAccount(entry, "")
 	return nil
 }
@@ -234,6 +235,7 @@ func (store *Store) ReplaceCredential(
 	if err := transaction.Commit(ctx); err != nil {
 		return err
 	}
+	_ = store.RefreshAccountIdentity(context.WithoutCancel(ctx), replacement.AccountRef().String())
 	store.routes.publishCredentialAccount(entry, "")
 	return nil
 }

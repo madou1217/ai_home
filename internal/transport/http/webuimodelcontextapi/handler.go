@@ -288,7 +288,7 @@ func listProviderAccounts(ctx context.Context, databasePath string, catalog *pro
 		if err != nil {
 			env = map[string]any{}
 		}
-		displayName, disabled := readAccountState(ctx, db, ref)
+		displayName, disabled := readAccountIdentity(ctx, db, ref)
 		accounts = append(accounts, SiblingView{
 			AccountRef:     ref,
 			Provider:       provider,
@@ -322,14 +322,23 @@ func readCredentialEnv(ctx context.Context, db *sql.DB, accountRef string) (map[
 	return map[string]any{}, nil
 }
 
-func readAccountState(ctx context.Context, db *sql.DB, accountRef string) (string, bool) {
+// readAccountIdentity 返回账号当前展示名与是否已停用。
+//
+// 展示名来自按凭据重新解析的 account_identities；资料表只作为订阅/历史资料的
+// 当前事实补充，不再读取 account_state 这类兼容投影。
+func readAccountIdentity(ctx context.Context, db *sql.DB, accountRef string) (string, bool) {
 	var displayName string
-	var configured sql.NullInt64
-	err := db.QueryRowContext(ctx, "SELECT display_name, configured FROM account_state WHERE account_ref = ? LIMIT 1", accountRef).Scan(&displayName, &configured)
+	var enabled int
+	err := db.QueryRowContext(ctx, `
+		SELECT COALESCE(NULLIF(i.display_name, ''), NULLIF(p.display_name, ''), p.email, ''), a.enabled
+		  FROM accounts AS a
+		  LEFT JOIN account_identities AS i ON i.account_ref = a.account_ref
+		  LEFT JOIN account_profiles AS p ON p.account_ref = a.account_ref
+		 WHERE a.account_ref = ? LIMIT 1`, accountRef).Scan(&displayName, &enabled)
 	if err != nil {
 		return "", false
 	}
-	return strings.TrimSpace(displayName), configured.Valid && configured.Int64 == 0
+	return strings.TrimSpace(displayName), enabled == 0
 }
 
 func inferCredentialType(env map[string]any, apiKeyEnv []string) string {

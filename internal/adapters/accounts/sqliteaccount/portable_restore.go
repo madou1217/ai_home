@@ -118,6 +118,7 @@ func (store *Store) RestorePortableAccount(ctx context.Context, sourceRef, sourc
 			return accountcore.Account{}, false, e
 		}
 		account, e := store.GetByRef(ctx, ref)
+		_ = store.RefreshAccountIdentity(context.WithoutCancel(ctx), ref.String())
 		store.routes.publishCredentialAccount(entry, "")
 		return account, false, e
 	}
@@ -178,6 +179,7 @@ func (store *Store) RestorePortableAccount(ctx context.Context, sourceRef, sourc
 	if _, err = conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return accountcore.Account{}, false, fmt.Errorf("backup_restore_commit: %w", err)
 	}
+	_ = store.RefreshAccountIdentity(context.WithoutCancel(ctx), preferred.String())
 	store.routes.publishCredentialAccount(entry, "")
 	return account, true, nil
 }

@@ -266,6 +266,13 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开账号数据库失败: %w", err)
 	}
+	// 身份事实按当前凭据重新解析并写入 account_identities；不读取任何历史展示名，
+	// 也不回退兼容表。启动时同步跑一次，新账号在注册/改凭据/重新认证路径即时刷新。
+	if changed, identityErr := store.ReparseAccountIdentities(ctx); identityErr != nil {
+		log.Printf("[accounts] 身份重解析失败: %v", identityErr)
+	} else if changed > 0 {
+		log.Printf("[accounts] 身份重解析完成: %d 个账号", changed)
+	}
 	// 图片专用模型不在账号的对话模型快照里，但该 Provider 的凭据确实能出图：合成进路由索引，
 	// 否则「只写 model」的图片请求会 503，/v1/models 也不会列出这些模型。
 	store.SetSynthesizedModelSource(images.NativeImageModelIDs)
@@ -1399,20 +1406,20 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 开启多个会话；模型没有家族候选时安静交回 Canonical。Node 侧交还门按「透传通道」
 	// 判定哪些模型交给这里，本通道不为「别的 Provider 的模型」兜底。
 	familyRelay, err := newFamilyRelayRuntime(familyRelayInputs{
-		catalog:     catalog,
-		recruiter:   inference.recruiter,
-		aiHomeDir:   aiHomeDir,
-		aliases:     inference.modelAliases,
-		store:       dependencies.Store,
-		fallback:    inference.handler,
-		credentials: credentials,
-		client:      relayClient,
-		egress:      relayEgress,
-		attempts:    accountRuntime,
-		upstream429: upstream429Controller,
-		usage:       attemptUsage,
-		gate:        usageGate,
-		routeChecker: inference.models,
+		catalog:          catalog,
+		recruiter:        inference.recruiter,
+		aiHomeDir:        aiHomeDir,
+		aliases:          inference.modelAliases,
+		store:            dependencies.Store,
+		fallback:         inference.handler,
+		credentials:      credentials,
+		client:           relayClient,
+		egress:           relayEgress,
+		attempts:         accountRuntime,
+		upstream429:      upstream429Controller,
+		usage:            attemptUsage,
+		gate:             usageGate,
+		routeChecker:     inference.models,
 		messagesFallback: nativeRelayHandler,
 		responsesFallback: responsesDispatcher{
 			canonical:  inference.handler,

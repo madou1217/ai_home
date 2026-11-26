@@ -187,6 +187,7 @@ func (store *Store) Reauthenticate(
 	if err := commitReauthentication(ctx, connection); err != nil {
 		return accountcore.Account{}, err
 	}
+	_ = store.RefreshAccountIdentity(context.WithoutCancel(ctx), reauthentication.AccountRef().String())
 	record.account.updatedAtMS = updatedAtMS
 	return store.restoreAccount(record.account)
 }

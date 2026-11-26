@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
-	"log"
 	"net/http"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthloopback"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accountstate"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/hostapps"
@@ -702,19 +700,9 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	if err != nil {
 		return nil, fmt.Errorf("创建 SSH 写入接口失败: %w", err)
 	}
-	// account_state 是 WebUI 读取的展示投影。启停真值已经由 Go 承担，投影也
-	// 必须由 Go 同步写回，否则账号页会一直显示旧状态。
-	// 全新数据根没有这张 Node 时代的表：OpenOrCreate 按同一 DDL 自举，避免
-	// 首次启动就打不开投影（2026-11-21 新主机实测日志）。
-	var accountStatusProjection webuiaccountstatusapi.AccountStateProjection
-	if projection, projectionErr := accountstate.OpenOrCreate(context.Background(), dependencies.AIHomeDir); projectionErr == nil {
-		accountStatusProjection = projection
-	} else {
-		log.Printf("账号启停投影不可用: %v", projectionErr)
-	}
 	accountStatus, err := webuiaccountstatusapi.NewHandler(webuiaccountstatusapi.Dependencies{
 		Authorizer: authorizer, Accounts: dependencies.Store,
-		Projection: accountStatusProjection, HostGrant: dependencies.AccountHostGrant,
+		HostGrant: dependencies.AccountHostGrant,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建账号启停接口失败: %w", err)

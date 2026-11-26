@@ -102,15 +102,21 @@ type accountFact struct {
 	// UIStateUpdatedAtMS 是账号 UI 状态的更新时间；用于派生 oauth pending 的 age/stale。
 	UIStateUpdatedAtMS int64
 	UIBaseURL          string
-	ProfileName        string
-	ProfileEmail       string
-	Subscription       string
-	SubscriptionRaw    string
-	QuotaStatus        string
-	QuotaReason        string
-	RemainingBPS       int64
-	HasRemaining       int64
-	CapturedAtMS       int64
+	// Identity* 是从当前凭据重新解析并持久化的身份事实（account_identities）。
+	// 展示名与轮播身份优先使用它，其次才看 UI 覆盖与资料表。
+	IdentityDisplayName string
+	IdentityEmail       string
+	IdentityPhone       string
+	IdentityNickname    string
+	ProfileName         string
+	ProfileEmail        string
+	Subscription        string
+	SubscriptionRaw     string
+	QuotaStatus         string
+	QuotaReason         string
+	RemainingBPS        int64
+	HasRemaining        int64
+	CapturedAtMS        int64
 	// SnapshotPayload 是 account_usage_snapshots.payload_json 的原文；缺表/无快照时为空串。
 	SnapshotPayload string
 	IsDefault       int64
@@ -233,11 +239,11 @@ func newRow(fact accountFact) Row {
 		DisplayID:             strconv.FormatInt(fact.CLIAccountID, 10),
 		Enabled:               fact.Enabled != 0,
 		Status:                resolveAccountStatus(fact.Enabled != 0 || strings.EqualFold(fact.CredentialKind, "vertex_ai")),
-		DisplayName:           firstNonEmpty(fact.UIDisplayName, fact.ProfileName, fact.ProfileEmail),
+		DisplayName:           firstNonEmpty(fact.IdentityDisplayName, fact.UIDisplayName, fact.ProfileName, fact.ProfileEmail),
 		Configured:            configured,
 		APIKeyMode:            apiKeyMode,
 		IsDefault:             fact.IsDefault != 0,
-		Email:                 fact.ProfileEmail,
+		Email:                 firstNonEmpty(fact.IdentityEmail, fact.ProfileEmail),
 		AuthMode:              authMode,
 		AuthPending:           fact.UIOAuthPending != 0,
 		BaseURL:               baseURL,

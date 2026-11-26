@@ -432,6 +432,20 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 - 一次复制 N 个文件（Finder/Explorer FileDropList）产生**一个** clipboard item：路径先去重、排序、规范化，对一个 canonical 路径列表求 SHA-256；`files` 保存整包索引，`ByteSize` 为真实文件大小总和（不是路径字符串长度），历史列表只占一个位置。
 - 同步信封是 `lazy=true` 的元数据：SHA、kind/MIME、大小、宽高、预览、缩略图、文件索引；不包含文本正文、图片原图或文件字节。
 - 目标端先落 `materialized=false` 的 stub；卡片只使用 preview/thumbnail/files 元数据。只有显式激活（`paste`/`aih clip copy` 的 `POST /items/{id}/materialize` 或 `GET /items/{id}/content`）才写入 materialize 请求，源端下一轮同步通过 `/sync/requests` 用 `BuildSyncPayload` 回传完整内容；图片回传原图，文件回传一次性 zip 包，落到目标 `materialized/<sha>/`。
-- 批量包内容上限：单文件 16 MiB、整包 32 MiB（受 20 MiB 同步单请求上限约束）；超过时 UI 在包卡片上标注 `Over 32 MiB relay limit`，索引仍只占一个位置。大包需要后续做分片/选择性物化，不在当前切片内。
+- 批量包内容传输：小包仍走单封包；总大小超过 24 MiB 或任一文件超过 16 MiB 时改用并行分片传输（见第 26 节）。
 - 实测：Mac 复制 3 个 1000B 文件 → 源端 1 个 item（`files=3`、`size=3000`、`materialized=true`）；Windows 拉取后 1 个 stub（`files=3`、`size=3000`、`materialized=false`），未传输文件字节；Windows `aih clip copy <id>` 后变为 `materialized=true`，三个文件落到 `C:\Users\madou\.ai_home\clipboard\materialized\<sha>\song1..3.mp3`。
 - 文本/图片同样先走元数据：目标端文本只收到截断预览，图片只收到缩略图；正文/原图只在激活后回传。源端本地为了能直接粘贴，文本/图片会保存正文/原图，文件包只保存路径索引。
+
+## 26. 并行分片、动态优先级与多通道（2026-11-27）
+
+- 大包传输：源端把文件包流式打成临时 zip，再按默认 2 MiB 切片，通过 `POST /sync/transfers` 并行发送；默认 4 条连接，`AIH_CLIPBOARD_TRANSFER_LANES=1..16` 控制全局并行上限，`AIH_CLIPBOARD_TRANSFER_CHUNK_BYTES=256KiB..8MiB` 控制分片大小。
+- 每个分片是独立 AES-256-GCM 信封，AAD 绑定 `transferId|itemSha|archiveSha|index|count|totalBytes`；目标端把分片写入临时目录，收齐后校验 zip SHA、流式解压到 `materialized/<sha>/`，再把 stub 升级为 materialized。目标端内存不随包体增长。
+- 优先级：本地复制成功会立即唤醒同步（不再等 5s tick）。元数据推送和手动激活的正文传输持有 `BulkGate`，所有大包分片 worker 在下一片前等待 gate 清零；最多只有一个 2 MiB 分片在途，随后恢复。多包共享全局 lane 上限，避免多个包各自开 4 条连接把链路打爆。
+- 多通道：`AIH_CLIPBOARD_TRANSFER_ENDPOINTS` 可填逗号分隔的多个同目标 base URL（SSH 转发、frp、P2P、WireGuard、Tailscale、局域网地址均可），分片轮转分配；单个通道失败时同一分片自动尝试其余通道。控制面 profile 的 endpoint 始终作为首选通道。
+- 大包等待：WebUI 和 `aih clip copy` 的等待时间按 `20s + size/2MiB/s` 计算（上限 30 分钟），避免 240 MiB 包在 20s 时被误报“源设备未响应”。
+- 真机证据（Mac 源 → Windows 目标，SSH 隧道）：
+  - 3 个 80 MB 文件，源端 1 个 item（240,000,000 B），Windows 1 个 stub；
+  - 分片日志 `archive=240018673 chunks=115 lanes=4`，首轮成功约 26s，热路径约 10.75s，目标 `materialized=true`、3 个文件完整；
+  - 传输途中在 Mac 复制文本，Windows 端文本条目 **0.15s** 出现，而歌曲包在 **10.75s** 才完成，验证文本优先且包传输随后继续；
+  - 失败重试会重新发送分片；当前没有断点续传位图，这是后续可优化项。
+- 边界：真正的“多路径同时聚合”需要用户提供多个可达地址；系统不会自行发现 LAN/P2P 地址。同步控制面仍只有一个 endpoint 用于元数据，分片才使用多通道列表。

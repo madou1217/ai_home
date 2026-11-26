@@ -145,7 +145,18 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 					return
 				}
 				meta.Sealed = sealed
-				if postErr := s.postTransferChunk(ctx, endpoints[index%len(endpoints)], endpoints, managementKey, meta); postErr != nil {
+				if s.transferSlots != nil {
+					select {
+					case s.transferSlots <- struct{}{}:
+					case <-ctx.Done():
+						return
+					}
+				}
+				postErr := s.postTransferChunk(ctx, endpoints[index%len(endpoints)], endpoints, managementKey, meta)
+				if s.transferSlots != nil {
+					<-s.transferSlots
+				}
+				if postErr != nil {
 					select {
 					case errCh <- postErr:
 					default:

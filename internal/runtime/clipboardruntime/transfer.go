@@ -148,11 +148,20 @@ func FilePackageBytes(files []string) int64 {
 
 // ShouldChunkFilePackage reports whether a package should use parallel chunks.
 func ShouldChunkFilePackage(files []string) bool {
-	total := FilePackageBytes(files)
-	if total <= TransferThresholdBytes {
-		return false
+	var total int64
+	for _, raw := range files {
+		info, err := os.Stat(strings.TrimSpace(raw))
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		total += info.Size()
+		// The single-envelope archive skips members over 16 MiB; even a
+		// package below the total threshold must use chunks in that case.
+		if info.Size() > 16<<20 {
+			return true
+		}
 	}
-	return total > 0
+	return total > TransferThresholdBytes
 }
 
 // BuildFileArchiveFile writes a package zip to a temporary file and returns its

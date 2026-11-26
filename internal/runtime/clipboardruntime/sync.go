@@ -463,6 +463,7 @@ type Syncer struct {
 	activeTransfers map[string]struct{}
 	bulkGate        *BulkGate
 	transferLanes   int
+	transferSlots   chan struct{}
 }
 
 // NewSyncer constructs a Syncer with sensible defaults.
@@ -477,6 +478,7 @@ func NewSyncer(service *clipboard.Service, resolver ProfileResolver, client *htt
 	if clock == nil {
 		clock = time.Now
 	}
+	lanes := transferLanesFromEnv()
 	return &Syncer{
 		Service:         service,
 		ResolveProfile:  resolver,
@@ -485,7 +487,8 @@ func NewSyncer(service *clipboard.Service, resolver ProfileResolver, client *htt
 		trigger:         make(chan struct{}, 1),
 		activeTransfers: make(map[string]struct{}),
 		bulkGate:        &BulkGate{},
-		transferLanes:   transferLanesFromEnv(),
+		transferLanes:   lanes,
+		transferSlots:   make(chan struct{}, lanes),
 	}
 }
 

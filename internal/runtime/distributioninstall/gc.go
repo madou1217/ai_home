@@ -304,8 +304,9 @@ func prunePackageVersions(home, current string, keepPrevious bool, minAge time.D
 // neighbourRelease 选相邻的上一份发行版本作为唯一回滚目标。
 //
 // 只认同版本不同的目录：重复构建/重复部署同一版本会产出多个
-// <version>-<os>-<arch>-<sha12> 目录，它们不能当回滚目标（版本相同，回滚没有
-// 意义），必须回收，否则“一个版本多个目录”会一直累积。
+// <version>-<os>-<arch>-<sha8> 目录，它们不能当回滚目标（版本相同，回滚没有
+// 意义），必须回收，否则“一个版本多个目录”会一直累积。选择按版本号而不是
+// 目录 mtime：被常驻进程写过的旧目录 mtime 会更新，不能让它顶掉真正的上一版。
 func neighbourRelease(candidates []versionedDir, current string) *versionedDir {
 	currentVersion := [3]int{}
 	knownVersion := false
@@ -313,6 +314,9 @@ func neighbourRelease(candidates []versionedDir, current string) *versionedDir {
 		currentVersion = parseVersion(match[1])
 		knownVersion = true
 	}
+	// 按版本而不是目录 mtime 选择：目录 mtime 会被写入/部分删除刷新，
+	// 选出来的“最近一份”可能反而是更老的版本（Windows 上 1.0.6 被常驻进程
+	// 写过，就顶掉了真正的 1.0.8 回滚目标）。取版本最高且不等于当前版本的一份。
 	var best *versionedDir
 	for index := range candidates {
 		candidate := &candidates[index]
@@ -322,11 +326,14 @@ func neighbourRelease(candidates []versionedDir, current string) *versionedDir {
 		if knownVersion && compareVersions(candidate.version, currentVersion) == 0 {
 			continue
 		}
-		if best == nil || candidate.mod.After(best.mod) {
+		if best == nil {
 			best = candidate
 			continue
 		}
-		if candidate.mod.Equal(best.mod) && compareVersions(candidate.version, best.version) > 0 {
+		if order := compareVersions(candidate.version, best.version); order > 0 {
+			best = candidate
+			continue
+		} else if order == 0 && candidate.mod.After(best.mod) {
 			best = candidate
 		}
 	}

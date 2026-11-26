@@ -38,6 +38,7 @@ import (
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	codebuddyfamilycli "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
+	opencodecli "github.com/madou1217/ai_home/internal/adapters/opencode/clilaunch"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
@@ -617,6 +618,20 @@ func (app *App) Run(
 	if permission.Applied {
 		launchArguments = permission.Args
 	}
+	// OpenCode 交互式 TUI 不接受 --model：把模型改写成 OPENCODE_CONFIG_CONTENT。
+	// 一次性 `opencode run` 仍保留 --model（见 opencodecli.SplitInteractiveModel）。
+	var interactiveModelEnv map[string]string
+	if strings.EqualFold(strings.TrimSpace(providerID), "opencode") {
+		cleaned, model, ok := opencodecli.SplitInteractiveModel(launchArguments)
+		if ok {
+			merged, mergeErr := opencodecli.MergeConfigModel(os.Getenv("OPENCODE_CONFIG_CONTENT"), model)
+			if mergeErr != nil {
+				return fmt.Errorf("OpenCode 模型配置无效: %w", mergeErr)
+			}
+			launchArguments = cleaned
+			interactiveModelEnv = map[string]string{"OPENCODE_CONFIG_CONTENT": merged}
+		}
+	}
 	// Native Direct 必须应用账号出口；Gateway 模式交给本机网关解析。
 	// 显式 --server 时网络由远端决定，不解析本地出口，避免本机池未就绪误伤。
 	explicitServer := containsLaunchArgument(launchArguments, "--server")
@@ -664,6 +679,11 @@ func (app *App) Run(
 	}
 	for name, value := range accountOverrides.Env {
 		extraEnv[name] = value
+	}
+	for name, value := range interactiveModelEnv {
+		extraEnv[name] = value
+		// 出口清理在 extraEnv 之后执行；同键必须从 unset 里移除，否则模型配置会被删掉。
+		egressOptions.UnsetEnv = removeEnvName(egressOptions.UnsetEnv, name)
 	}
 	if len(extraEnv) == 0 {
 		extraEnv = nil
@@ -759,6 +779,20 @@ func containsLaunchArgument(arguments []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// removeEnvName 从环境名列表里移除精确匹配项。
+func removeEnvName(names []string, target string) []string {
+	if len(names) == 0 {
+		return names
+	}
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if name != target {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
 
 // removeLaunchArgument 删除所有精确匹配的参数。

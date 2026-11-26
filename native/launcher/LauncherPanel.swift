@@ -20,6 +20,8 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   private static let panelHeight: CGFloat = 520
   private static let rowHeight: CGFloat = 50
   private static let cacheTTL: TimeInterval = 300
+  private static let singletonRetryInterval: TimeInterval = 0.25
+  private static let singletonRetryWindow: TimeInterval = 5.0
 
   private let emit: ([String: Any]) -> Void
   let panel = LauncherHostPanel(
@@ -59,6 +61,11 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   private var enabled = false
   private var singletonLockFD: Int32 = -1
   private(set) var isSingletonBlocked = false
+  private var singletonRetryExhausted = false
+  private var singletonRetryWorkItem: DispatchWorkItem?
+  private var singletonRetryGeneration = 0
+  private var singletonRetryDeadline: TimeInterval = 0
+  var onSingletonAcquired: (() -> Void)?
   private var configuredShortcut = ShortcutRegistry.defaultLauncherShortcut
   private var tapKeyCode: UInt16 = 49
   private var tapModifiers: CGEventFlags = .maskAlternate
@@ -110,6 +117,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   }
 
   func shutdown() {
+    cancelSingletonRetry()
     destroyEventTap()
     removeOutsideClickMonitor()
     releaseSingletonLock()
@@ -119,6 +127,10 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
   var isAvailable: Bool {
     enabled && client.isConfigured && singletonLockFD >= 0 && !isSingletonBlocked
+  }
+
+  var isSingletonRetrying: Bool {
+    singletonRetryWorkItem != nil
   }
 
   private func acquireSingletonLock() -> SingletonLockResult {
@@ -175,6 +187,93 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     _ = Darwin.close(fd)
   }
 
+  private func startSingletonRetry() {
+    cancelSingletonRetry()
+    singletonRetryDeadline = ProcessInfo.processInfo.systemUptime + Self.singletonRetryWindow
+    scheduleNextSingletonRetry()
+  }
+
+  private func cancelSingletonRetry() {
+    singletonRetryGeneration += 1
+    singletonRetryWorkItem?.cancel()
+    singletonRetryWorkItem = nil
+    singletonRetryDeadline = 0
+  }
+
+  private func scheduleNextSingletonRetry() {
+    let gen = singletonRetryGeneration
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, self.singletonRetryGeneration == gen else { return }
+      self.singletonRetryWorkItem = nil
+      self.handleSingletonRetryTick()
+    }
+    singletonRetryWorkItem = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.singletonRetryInterval, execute: work)
+  }
+
+  private func handleSingletonRetryTick() {
+    guard enabled && client.isConfigured else {
+      cancelSingletonRetry()
+      return
+    }
+    switch acquireSingletonLock() {
+    case .acquired:
+      cancelSingletonRetry()
+      isSingletonBlocked = false
+      singletonRetryExhausted = false
+      activateConfiguredShortcut(shortcutChanged: true)
+      onSingletonAcquired?()
+    case .occupied:
+      if ProcessInfo.processInfo.systemUptime < singletonRetryDeadline {
+        scheduleNextSingletonRetry()
+      } else {
+        cancelSingletonRetry()
+        isSingletonBlocked = true
+        singletonRetryExhausted = true
+        destroyEventTap()
+        reportedTapFallback = false
+        hide(restoreFocus: false)
+        emit([
+          "type": "status",
+          "trusted": AXIsProcessTrusted(),
+          "detail": "启动器已在另一个 AIH 桌面实例中运行（单例）"
+        ])
+      }
+    case .failed(let reason):
+      cancelSingletonRetry()
+      isSingletonBlocked = true
+      singletonRetryExhausted = true
+      destroyEventTap()
+      reportedTapFallback = false
+      hide(restoreFocus: false)
+      emit([
+        "type": "status",
+        "trusted": AXIsProcessTrusted(),
+        "detail": "启动器单例锁获取失败（\(reason)），已禁用本实例启动器"
+      ])
+    }
+  }
+
+  private func activateConfiguredShortcut(shortcutChanged: Bool) {
+    if let parsed = Self.parseShortcut(configuredShortcut) {
+      tapKeyCode = parsed.keyCode
+      tapModifiers = parsed.modifiers
+      hasValidTapShortcut = true
+    } else {
+      hasValidTapShortcut = false
+      destroyEventTap()
+      emit([
+        "type": "status",
+        "trusted": AXIsProcessTrusted(),
+        "detail": "启动器快捷键「\(configuredShortcut)」缺少修饰键或不受支持，已停用 CGEventTap（防止吞噬普通按键）"
+      ])
+    }
+
+    if hasValidTapShortcut && (shortcutChanged || !isEventTapActive) {
+      reconcileEventTap()
+    }
+  }
+
   func configure(origin nextOrigin: String, managementKey nextKey: String, shortcut nextShortcut: String, enabled nextEnabled: Bool) {
     let endpointChanged = client.configure(origin: nextOrigin, managementKey: nextKey)
     let normalizedShortcut = nextShortcut.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -193,7 +292,9 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     }
 
     if !enabled || !client.isConfigured {
+      cancelSingletonRetry()
       isSingletonBlocked = false
+      singletonRetryExhausted = false
       releaseSingletonLock()
       destroyEventTap()
       reportedTapFallback = false
@@ -203,12 +304,23 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     switch acquireSingletonLock() {
     case .acquired:
+      cancelSingletonRetry()
       isSingletonBlocked = false
+      singletonRetryExhausted = false
     case .occupied:
-      isSingletonBlocked = true
       destroyEventTap()
       reportedTapFallback = false
       hide(restoreFocus: false)
+      if isSingletonRetrying {
+        // Initial 5s handoff retry window already active; keep retrying until deadline.
+        return
+      }
+      if !singletonRetryExhausted {
+        isSingletonBlocked = false
+        startSingletonRetry()
+        return
+      }
+      isSingletonBlocked = true
       emit([
         "type": "status",
         "trusted": AXIsProcessTrusted(),
@@ -216,7 +328,9 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       ])
       return
     case .failed(let reason):
+      cancelSingletonRetry()
       isSingletonBlocked = true
+      singletonRetryExhausted = true
       destroyEventTap()
       reportedTapFallback = false
       hide(restoreFocus: false)
@@ -228,23 +342,7 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       return
     }
 
-    if let parsed = Self.parseShortcut(resolvedShortcut) {
-      tapKeyCode = parsed.keyCode
-      tapModifiers = parsed.modifiers
-      hasValidTapShortcut = true
-    } else {
-      hasValidTapShortcut = false
-      destroyEventTap()
-      emit([
-        "type": "status",
-        "trusted": AXIsProcessTrusted(),
-        "detail": "启动器快捷键「\(resolvedShortcut)」缺少修饰键或不受支持，已停用 CGEventTap（防止吞噬普通按键）"
-      ])
-    }
-
-    if hasValidTapShortcut && (shortcutChanged || !isEventTapActive) {
-      reconcileEventTap()
-    }
+    activateConfiguredShortcut(shortcutChanged: shortcutChanged)
     if panel.isVisible && endpointChanged {
       refreshAppsInBackground(force: true)
     }

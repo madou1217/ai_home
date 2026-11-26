@@ -161,8 +161,8 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
 启动器必须是**单例**：同一登录会话最多一个面板，重复触发只切换/置前，不能叠出第二个窗口；多实例竞争时只允许一个实例拥有启动器，其余实例保留翻译/剪贴板但不注册启动器快捷键。
 
-- macOS：helper 内用 `flock(LOCK_EX|LOCK_NB)` 竞争 `~/Library/Application Support/AIH/launcher.lock`（目录 0700、文件 0600）；失败者禁用 launcher（销毁 CGEventTap、不注册快捷键），status 说明"启动器已在另一个 AIH 桌面实例中运行"，翻译/剪贴板不受影响。锁 fd 在禁用/退出时释放。
-- Windows：`CreateMutexW(NULL, TRUE, "Local\\AIH-Launcher-Singleton-v1")`；`ERROR_ALREADY_EXISTS` 时释放句柄并禁用 launcher（不注册热键/钩子），status 说明；进程退出/禁用时 `ReleaseMutex` + `CloseHandle`。
+- macOS：helper 内用 `flock(LOCK_EX|LOCK_NB)` 竞争 `~/Library/Application Support/AIH/launcher.lock`（目录 0700、文件 0600）；首次失败先每 250ms 异步重试最多 5s（避免重启交接瞬间误判），5s 仍失败才禁用 launcher（销毁 CGEventTap、不注册快捷键）并上报 status「启动器已在另一个 AIH 桌面实例中运行（单例）」，之后每次 `configure(enabled=true)` 再尝试一次（已持有则跳过）；翻译/剪贴板不受影响，锁 fd 在禁用/退出时释放。
+- Windows：`CreateMutexW(NULL, TRUE, "Local\\AIH-Launcher-Singleton-v1")`；`ERROR_ALREADY_EXISTS` 时立即关闭句柄，首次失败每 250ms 异步重试最多 5s，5s 仍失败才禁用 launcher（不注册热键/钩子）并上报 status，之后每次 `configure(enabled=true)` 再尝试一次（已持有则跳过）；进程退出/禁用时 `ReleaseMutex` + `CloseHandle`。
 - Linux：GTK 进程在 bind socket 前用 `flock` 竞争 `<socket>.lock`；失败则尝试向现有 socket 发送 `show` 后退出 0，绝不 unlink 他人 socket。launcherd 的 `Start/Run/StartDetached` 都先 `ProbeSocket`：已有实例时复用（不 Build、不 spawn），`/show` 直接走 socket。
 - 幂等：`show()` 在面板已可见时只置前/聚焦，不重放进场动画；`launcher-show`/`Alt+Space` 重复触发只 toggle 或保持单窗口。
 

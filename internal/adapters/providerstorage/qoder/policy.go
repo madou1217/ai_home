@@ -19,6 +19,10 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 	default:
 		return accountprojection.Policy{}, false
 	}
+	hostRoot := ".qoder"
+	if providerID == "qodercn" {
+		hostRoot = ".qoder-cn"
+	}
 	return accountprojection.Policy{
 		Provider:        providerID,
 		Mode:            accountprojection.ModeConfigDir,
@@ -47,6 +51,12 @@ func Policy(providerID string) (accountprojection.Policy, bool) {
 			{Path: []string{"electron-user-data"}},
 			{Path: []string{".auth"}},
 			{Path: []string{"Library", "Keychains"}},
+		},
+		// 配置根本身就是账号投影；.auth 之外的缓存/日志与账号无关，链回宿主
+		// （dns-cache 是可再生的解析缓存，不是凭据）。
+		SharedHostCaches: []accountprojection.SharedLink{
+			{Projection: []string{".cache"}, Host: []string{hostRoot, ".cache"}},
+			{Projection: []string{"logs"}, Host: []string{hostRoot, "logs"}},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}, true

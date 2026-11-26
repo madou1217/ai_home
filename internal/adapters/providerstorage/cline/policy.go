@@ -36,6 +36,14 @@ func Policy() accountprojection.Policy {
 			{Path: providerroot.NativePath(ProviderID, "data", "secrets.json")},
 			{Path: []string{"Library", "Keychains"}},
 		},
+		// 会话不属于账号（Node 同口径：宿主 `cline /history` 与 `aih cline` 看到同一批）；
+		// 凭据库 settings/providers.json 与 secrets.json 仍保持账号私有。
+		SharedHostDataRoots: []accountprojection.SharedLink{
+			{Projection: []string{".cline", "data", "sessions"}, Host: []string{".cline", "data", "sessions"}},
+			{Projection: []string{".cline", "data", "db", "sessions.db"}, Host: []string{".cline", "data", "db", "sessions.db"}},
+			{Projection: []string{".cline", "data", "db", "session-search.db"}, Host: []string{".cline", "data", "db", "session-search.db"}},
+			{Projection: []string{".cline", "data", "checkpoint-scratch"}, Host: []string{".cline", "data", "checkpoint-scratch"}},
+		},
 		Env: []accountprojection.EnvBinding{
 			{Key: "CLINE_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot(ProviderID)},
 			{Key: "CLINE_DATA_DIR", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativePath(ProviderID, "data")},

@@ -111,61 +111,25 @@ func encodeRequest(
 	return payload, nil
 }
 
-// rejectUnsupportedRequest 在发送网络请求前拒绝不能无损表达的 Canonical 字段。
+// rejectUnsupportedRequest 在发送网络请求前拒绝无法无损表达、且会改变请求语义的字段。
+//
+// Codex Responses 线协议没有输出上限、采样参数、停止序列和部分客户端控制字段。
+// 标准 OpenAI Responses SDK、Claude Code、Chat Completions 与 Gemini 客户端都会
+// 携带这些可选字段；继续按“同协议才严格”拒绝，等于标准 SDK 无法使用 Codex 账号。
+//
+// 因此这里采取宽容策略：上游线协议表达不了的**可选**字段直接丢弃，保留请求主体与
+// 工具语义；只有会让客户端误以为上下文仍被续接的 continuation 继续拒绝。
 func rejectUnsupportedRequest(
 	request inference.Request,
 	authKind codexauth.AuthKind,
 ) error {
-	allowCrossProtocolProjection := isCrossProtocolClient(
-		request.ClientProtocol(),
-	)
-	// Codex Responses 线协议没有输出上限字段，无法无损表达。
+	// max_output_tokens / temperature / top_p / top_k / stop_sequences：Codex
+	// 上游没有对应字段，丢弃上限和采样意图，不阻断标准 SDK 请求。
+	// user_id / prompt cache breakpoints / context_management：只影响客户端侧
+	// 关联或 Anthropic 缓存布局，Codex 上游没有等价物，保留正文即可。
+	// truncation：由客户端控制输入截断；上游不接受时丢弃，避免客户端为此 400。
 	//
-	// 但 Anthropic Messages 的 max_tokens 是**必填**：claude 客户端没有「不发」
-	// 这个选项。继续按不支持拒绝，等于 claude 客户端永远无法使用 codex 账号——
-	// 整条跨协议路径不可用，代价远大于丢一个上限。
-	//
-	// 因此沿用 f162be1 的既定处理：目标协议无法表达的字段，跨协议时静默丢弃、
-	// 不拒绝客户端。同协议（codex 客户端）仍然拒绝——它本可以不发。
-	if request.MaxOutputTokens() != 0 && !allowCrossProtocolProjection {
-		return unsupported("max_output_tokens")
-	}
-	// Codex Responses 线协议没有采样参数和停止序列，无法无损表达。Claude、Chat、
-	// Gemini 客户端经常默认携带 temperature/top_p/top_k/stop，继续按不支持拒绝
-	// 等于这些客户端无法使用 codex 账号；与 Node 一致，跨协议时静默丢弃，同协议
-	// codex 客户端仍然拒绝——它本可以不发。
-	if _, found := request.Temperature(); found && !allowCrossProtocolProjection {
-		return unsupported("temperature")
-	}
-	if _, found := request.TopP(); found && !allowCrossProtocolProjection {
-		return unsupported("top_p")
-	}
-	if _, found := request.TopK(); found && !allowCrossProtocolProjection {
-		return unsupported("top_k")
-	}
-	if len(request.StopSequences()) != 0 && !allowCrossProtocolProjection {
-		return unsupported("stop_sequences")
-	}
-	// user_id 只用于客户端侧会话/计费关联，Codex Responses 没有等价字段。
-	// Claude、Chat 两个跨协议入口明确允许丢弃；未知或 Codex 同协议入口拒绝，
-	// 防止未来新增客户端协议未经审查就获得有损投影。
-	if _, found := request.UserID(); found && !allowCrossProtocolProjection {
-		return unsupported("user_id")
-	}
-	// Claude cache_control 只影响 Anthropic 的提示缓存布局，Codex Responses
-	// 没有等价断点；跨协议时保留正文、丢弃控制标记。
-	if len(request.PromptCacheBreakpoints()) != 0 &&
-		!allowCrossProtocolProjection {
-		return unsupported("prompt_cache_breakpoints")
-	}
-	// context_management 是 Claude 客户端控制字段，Codex 上游不能执行；跨协议
-	// 时由本 Adapter 明确丢弃，原生 Codex 请求仍保持严格边界。
-	if _, found := request.ContextManagement(); found && !allowCrossProtocolProjection {
-		return unsupported("context_management")
-	}
-	if _, found := request.Truncation(); found {
-		return unsupported("truncation")
-	}
+	// 这些字段在 encodeRequest 里本来就不会写入 wire request，因此这里只需不拒绝。
 	// ChatGPT 登录账号（OAuth）的上游不存储 response：store 必须为 false，
 	// previous_response_id 也无从解析。与 Node 的 stateless 归一化一致：
 	// input 内联了完整上下文时丢弃续接引用，否则明确拒绝（客户端以为有上文）。
@@ -175,22 +139,6 @@ func rejectUnsupportedRequest(
 		}
 	}
 	return nil
-}
-
-// isCrossProtocolClient 只识别已经完成字段投影审查的客户端协议。
-//
-// Gemini 入口同样是跨协议：它的请求被翻译成 Canonical 后再编码为 Responses，
-// 因此与 Anthropic / Chat Completions 走同一套字段投影规则。漏掉它会让 codex 上游
-// 把 Gemini 请求当成同协议客户端，套用更严格的字段校验，属于静默行为差异。
-func isCrossProtocolClient(protocol inference.ClientProtocolID) bool {
-	switch protocol {
-	case inference.ClientProtocolAnthropicMessages,
-		inference.ClientProtocolOpenAIChatCompletions,
-		inference.ClientProtocolGeminiGenerateContent:
-		return true
-	default:
-		return false
-	}
 }
 
 // encodeMessages 保持消息和内容块顺序，并在 Responses 顶层拆开工具与 reasoning 项。

@@ -168,6 +168,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "invalid_request_body")
 		return
 	}
+	// 标准 OpenAI Responses SDK 会携带 temperature / max_output_tokens / metadata
+	// 等 Codex 原生线协议表达不了的可选字段。原生快路径是字节透传，直接送给
+	// 上游会被 400 拒绝；这类请求交回 Canonical，由适配层做宽容投影。
+	if codexwire.RequiresCanonicalProjection(payload) {
+		request.Body = io.NopCloser(bytes.NewReader(payload))
+		request.ContentLength = int64(len(payload))
+		handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
+		return
+	}
 	// 原样透传前先剥掉上游解析不了的引用（item id 前缀、store:false 的断点、
 	// 换号后无法解密的 reasoning）。见 sanitizeNativePayload 的说明。
 	timing.markModel(metadata.Model, metadata.Stream)

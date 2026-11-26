@@ -841,7 +841,7 @@ async function refreshAll(opts={}){
     }
     const rawItems=Array.isArray(itemsRes?.items)?itemsRes.items:[];
     const nextIds=new Set(rawItems.map(item=>String(item.id)));
-    if(liveReady){for(const id of nextIds){if(!knownItemIds.has(id))incomingIds.set(id,{start:Date.now(),delay:null})}}
+    if(liveReady){let revealBudget=16;for(const id of nextIds){if(knownItemIds.has(id))continue;if(revealBudget--<=0)break;incomingIds.set(id,{start:Date.now(),delay:null})}}
     knownItemIds=nextIds;
     liveReady=true;
     data=rawItems.map(mapServerItem);

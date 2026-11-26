@@ -164,7 +164,7 @@ func (handler *Handler) ServeMember(response http.ResponseWriter, request *http.
 	case http.MethodPatch:
 		handler.update(response, request, keyID)
 	case http.MethodDelete:
-		handler.revoke(response, request, keyID)
+		handler.deleteKey(response, request, keyID)
 	default:
 		response.Header().Set("Allow", "PATCH, DELETE")
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
@@ -353,12 +353,12 @@ func (handler *Handler) update(response http.ResponseWriter, request *http.Reque
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "key": viewOf(key)})
 }
 
-func (handler *Handler) revoke(response http.ResponseWriter, request *http.Request, keyID string) {
-	if err := handler.keys.Revoke(request.Context(), keyID); err != nil {
+func (handler *Handler) deleteKey(response http.ResponseWriter, request *http.Request, keyID string) {
+	if err := handler.keys.Delete(request.Context(), keyID); err != nil {
 		handler.writeKeyError(response, err)
 		return
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "id": keyID})
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "id": keyID, "deleted": true})
 }
 
 func (handler *Handler) writeKeyError(response http.ResponseWriter, err error) {

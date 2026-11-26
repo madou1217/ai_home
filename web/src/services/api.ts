@@ -3689,7 +3689,7 @@ export const clientKeysAPI = {
     const response = await api.patch<{ ok: boolean; key: ClientKeyRow }>(`/webui/client-keys/${encodeURIComponent(id)}`, payload);
     return response.data.key;
   },
-  revoke: async (id: string): Promise<void> => {
+  deleteKey: async (id: string): Promise<void> => {
     await api.delete(`/webui/client-keys/${encodeURIComponent(id)}`);
   },
   rotate: async (id: string): Promise<string> => {

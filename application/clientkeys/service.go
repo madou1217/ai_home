@@ -22,7 +22,7 @@ var (
 	// ErrInvalidName 表示名称不合法。
 	ErrInvalidName = errors.New("客户端 API Key 名称无效")
 	// ErrNotFound 表示 Key 不存在或已撤销。
-	ErrNotFound = errors.New("客户端 API Key 不存在")
+	ErrNotFound = coreclientkeys.ErrNotFound
 	// ErrMasterCollision 表示新生成的密钥与总 key 冲突。
 	ErrMasterCollision = errors.New("客户端 API Key 与总 key 冲突")
 )
@@ -41,7 +41,7 @@ type Store interface {
 	GetClientKey(ctx context.Context, keyID string) (coreclientkeys.Key, bool, error)
 	CreateClientKey(ctx context.Context, key coreclientkeys.Key, hash [32]byte) error
 	UpdateClientKey(ctx context.Context, keyID string, mutate func(*coreclientkeys.Key) error) (coreclientkeys.Key, error)
-	RevokeClientKey(ctx context.Context, keyID string) error
+	DeleteClientKey(ctx context.Context, keyID string) error
 	RotateClientKeySecret(ctx context.Context, keyID string, hash [32]byte) error
 	TouchClientKeyLastUsed(ctx context.Context, keyID string, atMS int64) error
 	LoadActiveClientKeys(ctx context.Context) ([]coreclientkeys.AuthRecord, error)
@@ -240,12 +240,14 @@ func (service *Service) Update(
 	return key, nil
 }
 
-// Revoke 软删除一把 Key；同步刷新快照，下一个请求立即失效。
-func (service *Service) Revoke(ctx context.Context, keyID string) error {
+// Delete 永久删除一把 Key；同步刷新快照，下一个请求立即失效。
+//
+// 需要「保留记录但停止鉴权」时用 Update 把 Enabled 置 false。
+func (service *Service) Delete(ctx context.Context, keyID string) error {
 	if service == nil || service.store == nil {
 		return ErrUnavailable
 	}
-	if err := service.store.RevokeClientKey(ctx, keyID); err != nil {
+	if err := service.store.DeleteClientKey(ctx, keyID); err != nil {
 		return err
 	}
 	return service.Reload(ctx)
@@ -256,7 +258,8 @@ func (service *Service) Rotate(ctx context.Context, keyID string) (string, error
 	if service == nil || service.store == nil {
 		return "", ErrUnavailable
 	}
-	raw, _, _, hash, err := coreclientkeys.Generate()
+	// 轮换保留原 key_id：鉴权按明文里的 key_id 查快照，换 id 会让新明文失效。
+	raw, hash, err := coreclientkeys.Regenerate(keyID)
 	if err != nil {
 		return "", err
 	}

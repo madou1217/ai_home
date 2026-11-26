@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Form, Grid, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Tooltip, message } from 'antd';
 import type { DefaultOptionType } from 'antd/es/select';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
+import { CopyOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import type { ClientKeyRow } from '@/types';
 import { clientKeysAPI } from '@/services/api';
 import { writeClipboardText } from '@/utils/clipboard';
@@ -143,7 +143,7 @@ function filterModelOption(input: string, option?: DefaultOptionType) {
  * 客户端 API Key 管理。
  *
  * - 总 key（master）由 server 配置提供，这里只展示与统计；
- * - 托管 Key 可创建/编辑（名称、账号池、模型池与四项数值限额）/停用/轮换/撤销，secret 只在创建与轮换时展示一次。
+ * - 托管 Key 可创建/编辑（名称、账号池、模型池与四项数值限额）/停用/轮换/删除，secret 只在创建与轮换时展示一次。
  */
 const ClientKeysPanel: React.FC = () => {
   const screens = Grid.useBreakpoint();
@@ -161,6 +161,7 @@ const ClientKeysPanel: React.FC = () => {
   const [createPrunedNotice, setCreatePrunedNotice] = useState('');
   const [secret, setSecret] = useState('');
   const [secretTitle, setSecretTitle] = useState('');
+  const [secretCopied, setSecretCopied] = useState(false);
 
   const [editingKey, setEditingKey] = useState<ClientKeyRow | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -321,6 +322,7 @@ const ClientKeysPanel: React.FC = () => {
       createForm.resetFields();
       setCreatePrunedNotice('');
       setSecretTitle(`已创建 ${result.key.name}（${result.key.prefix}）`);
+      setSecretCopied(false);
       setSecret(result.secret);
       setPanelFeedback({ tone: 'success', text: `已创建 ${result.key.name} 并立即生效` });
       await load(true);
@@ -414,13 +416,14 @@ const ClientKeysPanel: React.FC = () => {
   const rotate = useCallback((row: ClientKeyRow) => {
     Modal.confirm({
       title: `轮换 ${row.name} 的密钥？`,
-      content: '旧密钥会立即失效；正在进行的请求不受影响。',
+      content: '只更换密钥内容，Key ID、账号池、模型池与限额保持不变；旧密钥立即失效，在途请求不受影响。',
       okText: '轮换',
       cancelText: '取消',
       onOk: async () => {
         try {
           const next = await clientKeysAPI.rotate(row.id);
           setSecretTitle(`已轮换 ${row.name}（${row.prefix}）`);
+          setSecretCopied(false);
           setSecret(next);
           setPanelFeedback({ tone: 'success', text: `已轮换 ${row.name} 的密钥` });
           await load(true);
@@ -436,36 +439,47 @@ const ClientKeysPanel: React.FC = () => {
 
   const remove = useCallback((row: ClientKeyRow) => {
     Modal.confirm({
-      title: `撤销 ${row.name}？`,
-      content: '撤销后该 Key 立即无法鉴权，历史统计保留。',
-      okText: '撤销',
+      title: `删除 ${row.name}？`,
+      content: '删除后该 Key 立即失效并从列表移除，无法恢复；历史调用统计保留。只想暂时停用请用状态开关。',
+      okText: '删除',
       okButtonProps: { danger: true },
       cancelText: '取消',
       onOk: async () => {
         try {
-          await clientKeysAPI.revoke(row.id);
-          setPanelFeedback({ tone: 'success', text: `已撤销 ${row.name}` });
+          await clientKeysAPI.deleteKey(row.id);
+          setPanelFeedback({ tone: 'success', text: `已删除 ${row.name}` });
           await load(true);
         } catch (error: unknown) {
           setPanelFeedback({
             tone: 'error',
-            text: extractApiErrorMessage(error, '撤销失败')
+            text: extractApiErrorMessage(error, '删除失败')
           });
         }
       }
     });
   }, [load]);
 
+  // 复制后保持弹窗打开：secret 只显示一次，关闭即不可恢复，不能让一次复制
+  // 失败或误触销毁唯一明文。
   const copySecret = async () => {
     if (!secret) return;
     try {
       await writeClipboardText(secret);
+      setSecretCopied(true);
       message.success('密钥已复制');
-      setSecret('');
     } catch {
-      message.error('复制失败，请手动复制');
+      message.error('复制失败，请手动选中文本复制');
     }
   };
+
+  const copyKeyID = useCallback(async (row: ClientKeyRow) => {
+    try {
+      await writeClipboardText(row.id);
+      message.success(`已复制 Key ID：${row.id}`);
+    } catch {
+      message.error('复制失败，请手动选中文本复制');
+    }
+  }, []);
 
   const columns = useMemo<ColumnsType<ClientKeyRow>>(() => [
     {
@@ -490,13 +504,25 @@ const ClientKeysPanel: React.FC = () => {
     {
       title: '前缀',
       dataIndex: 'prefix',
-      width: 176,
+      width: 208,
       ellipsis: { showTitle: false },
-      render: (value: string) =>
+      render: (value: string, row: ClientKeyRow) =>
         value ? (
-          <Tooltip title={value}>
-            <span className="client-keys-prefix-cell">{value}</span>
-          </Tooltip>
+          <div className="client-keys-prefix-row">
+            <Tooltip title={value}>
+              <span className="client-keys-prefix-cell">{value}</span>
+            </Tooltip>
+            <Tooltip title="复制 Key ID（CLI 与管理接口使用）">
+              <Button
+                type="text"
+                size="small"
+                className="client-keys-copy-button"
+                icon={<CopyOutlined />}
+                aria-label="复制 Key ID"
+                onClick={() => void copyKeyID(row)}
+              />
+            </Tooltip>
+          </div>
         ) : (
           <span className="aih-muted">—</span>
         )
@@ -642,12 +668,12 @@ const ClientKeysPanel: React.FC = () => {
               轮换
             </Button>
             <Button size="small" danger icon={<DeleteOutlined />} onClick={() => remove(row)}>
-              撤销
+              删除
             </Button>
           </div>
         )
     }
-  ], [modelLabels, openEditModal, pinLeftColumn, pinRightColumn, remove, rotate, toggle, togglingKeyId]);
+  ], [copyKeyID, modelLabels, openEditModal, pinLeftColumn, pinRightColumn, remove, rotate, toggle, togglingKeyId]);
 
   const tableScrollX = useMemo(
     () => columns.reduce((sum, column) => sum + (typeof column.width === 'number' ? column.width : 120), 0),
@@ -1094,21 +1120,37 @@ const ClientKeysPanel: React.FC = () => {
       <Modal
         open={Boolean(secret)}
         title={secretTitle || '一次性密钥'}
-        onCancel={() => setSecret('')}
+        onCancel={() => {
+          setSecret('');
+          setSecretCopied(false);
+        }}
         footer={(
           <Space>
-            <Button onClick={() => setSecret('')}>关闭</Button>
-            <Button type="primary" onClick={() => void copySecret()}>复制并关闭</Button>
+            <Button
+              onClick={() => {
+                setSecret('');
+                setSecretCopied(false);
+              }}
+            >
+              关闭
+            </Button>
+            <Button type="primary" icon={<CopyOutlined />} onClick={() => void copySecret()}>
+              {secretCopied ? '再次复制' : '复制密钥'}
+            </Button>
           </Space>
         )}
         destroyOnClose
       >
-        <p className="gateway-modal-hint">此密钥只显示一次，关闭后无法再次查看，请妥善保存。</p>
+        <p className="gateway-modal-hint">
+          此密钥只显示一次，关闭后无法再次查看，请先复制并妥善保存；复制不会关闭弹窗。
+        </p>
         <Input.TextArea
           className="gateway-secret-textarea"
           value={secret}
           readOnly
           autoSize={{ minRows: 2, maxRows: 4 }}
+          onFocus={(event) => event.currentTarget.select()}
+          onClick={(event) => event.currentTarget.select()}
         />
       </Modal>
     </div>

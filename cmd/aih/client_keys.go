@@ -220,10 +220,10 @@ func clientKeysDelete(ctx context.Context, service *clientkeysapp.Service, runti
 	if len(args) != 1 {
 		return errors.New("client-keys delete 需要 <key_id>")
 	}
-	if err := service.Revoke(ctx, args[0]); err != nil {
+	if err := service.Delete(ctx, args[0]); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已撤销: %s\n", args[0])
+	_, _ = fmt.Fprintf(runtime.stdout, "已删除: %s\n", args[0])
 	return nil
 }
 

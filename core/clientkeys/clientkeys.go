@@ -25,8 +25,13 @@ const (
 	secretBytes = 32
 )
 
-// ErrInvalidSecret 表示客户端 Key 的字符串形态不合法。
-var ErrInvalidSecret = errors.New("客户端 API Key 格式无效")
+var (
+	// ErrInvalidSecret 表示客户端 Key 的字符串形态不合法。
+	ErrInvalidSecret = errors.New("客户端 API Key 格式无效")
+	// ErrNotFound 表示客户端 Key 不存在。适配层与管理层共用同一个哨兵，
+	// 避免「删除不存在的 Key」在各层被误判成 500。
+	ErrNotFound = errors.New("客户端 API Key 不存在")
+)
 
 // 模型池拒绝的稳定线格式：路由层与模型目录必须给出同一个错误码与文本，
 // 否则客户端会看到「目录里有、调用时报另一个错」的矛盾。
@@ -262,6 +267,24 @@ func Generate() (raw string, keyID string, prefix string, hash [32]byte, err err
 	raw = prefix + "." + encoded
 	hash = sha256.Sum256([]byte(raw))
 	return raw, keyID, prefix, hash, nil
+}
+
+// Regenerate 为一把已存在的 Key 重新生成明文，保留原 key_id。
+//
+// 轮换必须复用 key_id：鉴权按明文里解析出的 key_id 查快照，若换成新 id，
+// 新明文会指向一个不存在的 Key，表现为「轮换后新密钥也 401」。
+func Regenerate(keyID string) (raw string, hash [32]byte, err error) {
+	id := strings.TrimSpace(keyID)
+	if !validKeyID(id) {
+		return "", hash, ErrInvalidSecret
+	}
+	secret := make([]byte, secretBytes)
+	if _, err = rand.Read(secret); err != nil {
+		return "", hash, err
+	}
+	raw = SecretPrefix + id + "." + base64.RawURLEncoding.EncodeToString(secret)
+	hash = sha256.Sum256([]byte(raw))
+	return raw, hash, nil
 }
 
 // HashSecret 返回密钥明文的 SHA-256 摘要。

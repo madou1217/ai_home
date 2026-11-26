@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	// ErrClientKeyNotFound 表示 key_id 不存在。
-	ErrClientKeyNotFound = errors.New("客户端 API Key 不存在")
+	// ErrClientKeyNotFound 表示 key_id 不存在；与领域哨兵同源，管理面直接映射 404。
+	ErrClientKeyNotFound = clientkeys.ErrNotFound
 	// ErrClientKeyCollision 表示密钥摘要与已有 Key 冲突（极端情况，需重新生成）。
 	ErrClientKeyCollision = errors.New("客户端 API Key 摘要冲突")
 )
@@ -30,13 +30,16 @@ const clientKeyColumns = `key_id, name, key_prefix, enabled, created_at_ms, upda
 	last_used_at_ms, revoked_at_ms, allowed_providers_json, allowed_models_json,
 	max_concurrency, rpm_limit, tpm_limit, daily_token_limit, notes`
 
-// ListClientKeys 返回全部未清除的 Key（含已停用/已撤销，供管理页展示）。
+// ListClientKeys 返回全部未删除的 Key（含已停用，供管理页展示）。
+//
+// 旧的软删除行（revoked_at_ms != 0）不再出现在列表里：删除是硬删除，但历史
+// 数据库可能残留撤销行，这里统一隐藏，避免「删不掉」的错觉。
 func (store *Store) ListClientKeys(ctx context.Context) ([]clientkeys.Key, error) {
 	if store == nil || store.db == nil {
 		return nil, errors.New("账号数据库不可用")
 	}
 	rows, err := store.db.QueryContext(ctx, `SELECT `+clientKeyColumns+`
-		FROM client_api_keys ORDER BY created_at_ms DESC`)
+		FROM client_api_keys WHERE revoked_at_ms = 0 ORDER BY created_at_ms DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -159,16 +162,17 @@ func (store *Store) UpdateClientKey(
 	return key, nil
 }
 
-// RevokeClientKey 软删除：保留历史统计，鉴权快照立即排除。
-func (store *Store) RevokeClientKey(ctx context.Context, keyID string) error {
+// DeleteClientKey 永久删除一把 Key。
+//
+// 只删 Key 本身：调用统计（client_key_*_minute/hour）是历史事实，保留下来不
+// 影响鉴权与列表，删除后也没有入口再展示它们。软删除语义已由 enabled=0 承担。
+func (store *Store) DeleteClientKey(ctx context.Context, keyID string) error {
 	if store == nil || store.db == nil {
 		return errors.New("账号数据库不可用")
 	}
-	now := time.Now().UnixMilli()
-	result, err := store.db.ExecContext(ctx, `UPDATE client_api_keys
-		SET revoked_at_ms = ?, enabled = 0, updated_at_ms = ?
-		WHERE key_id = ? AND revoked_at_ms = 0`,
-		now, now, strings.TrimSpace(keyID))
+	result, err := store.db.ExecContext(ctx,
+		`DELETE FROM client_api_keys WHERE key_id = ? AND revoked_at_ms = 0`,
+		strings.TrimSpace(keyID))
 	if err != nil {
 		return err
 	}

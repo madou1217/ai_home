@@ -90,16 +90,34 @@
   margin-inline-end: 0;
 }
 
+.client-keys-prefix-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+}
+
 .client-keys-prefix-cell {
   display: block;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.client-keys-copy-button {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+
+.client-keys-copy-button:hover {
+  color: var(--color-accent);
 }
 
 .client-keys-status-cell {

@@ -492,8 +492,19 @@ func TestTmuxStoreLifecycle(t *testing.T) {
 	if err := store.Close(key); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	if store.Probe(key).State != DurableMissing {
-		t.Fatalf("Close() 后状态 = %#v", store.Probe(key))
+	// Close 只保证 kill-session 成功，tmux server 的退出是异步的：紧接着的
+	// has-session 可能撞上 server 正在销毁的窗口，返回 unavailable / alive。
+	// 与前面的 alive 等待一样给一个短窗口，避免把时序竞态当成关闭失败。
+	closeDeadline := time.Now().Add(2 * time.Second)
+	for {
+		probe := store.Probe(key)
+		if probe.State == DurableMissing {
+			break
+		}
+		if time.Now().After(closeDeadline) {
+			t.Fatalf("Close() 后状态 = %#v", probe)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

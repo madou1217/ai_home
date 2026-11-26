@@ -123,7 +123,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   // Reopening the bundle is an explicit user action, unlike the server-owned
   // background launch. Give the hidden helper a discoverable window entry.
   func applicationWillTerminate(_ notification: Notification) {
-    launcherPanel.destroyEventTap()
+    launcherPanel.shutdown()
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -583,7 +583,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       if launcherPanel.isAvailable {
         launcherPanel.show()
       } else {
-        emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": "启动器未启用或本机管理密钥未就绪，无法显示面板"])
+        let detail = launcherPanel.isSingletonBlocked
+          ? "启动器已在另一个 AIH 桌面实例中运行（单例）"
+          : "启动器未启用或本机管理密钥未就绪，无法显示面板"
+        emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": detail])
       }
     default: panel.receive(event)
     }

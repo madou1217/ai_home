@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
 import QuartzCore
 
@@ -49,7 +50,15 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   private let client = LauncherClient()
   private let iconCache = LauncherIconCache()
 
+  private enum SingletonLockResult {
+    case acquired
+    case occupied
+    case failed(String)
+  }
+
   private var enabled = false
+  private var singletonLockFD: Int32 = -1
+  private(set) var isSingletonBlocked = false
   private var configuredShortcut = ShortcutRegistry.defaultLauncherShortcut
   private var tapKeyCode: UInt16 = 49
   private var tapModifiers: CGEventFlags = .maskAlternate
@@ -97,14 +106,73 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   }
 
   deinit {
-    destroyEventTap()
-    removeOutsideClickMonitor()
+    shutdown()
   }
 
-  // MARK: Configuration
+  func shutdown() {
+    destroyEventTap()
+    removeOutsideClickMonitor()
+    releaseSingletonLock()
+  }
+
+  // MARK: Configuration & Singleton Lock
 
   var isAvailable: Bool {
-    enabled && client.isConfigured
+    enabled && client.isConfigured && singletonLockFD >= 0 && !isSingletonBlocked
+  }
+
+  private func acquireSingletonLock() -> SingletonLockResult {
+    if singletonLockFD >= 0 {
+      return .acquired
+    }
+    let dirURL = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/AIH", isDirectory: true)
+    do {
+      try FileManager.default.createDirectory(
+        at: dirURL,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: NSNumber(value: 0o700)]
+      )
+    } catch {
+      return .failed(error.localizedDescription)
+    }
+    _ = dirURL.path.withCString { Darwin.chmod($0, mode_t(0o700)) }
+
+    let lockPath = dirURL.appendingPathComponent("launcher.lock", isDirectory: false).path
+    let fd = lockPath.withCString { Darwin.open($0, O_CREAT | O_RDWR | O_CLOEXEC, mode_t(0o600)) }
+    if fd < 0 {
+      let err = errno
+      let rawError: UnsafeMutablePointer<CChar>? = Darwin.strerror(err)
+      let message = rawError.map { String(cString: $0) } ?? "errno=\(err)"
+      return .failed(message)
+    }
+    _ = Darwin.fchmod(fd, mode_t(0o600))
+
+    var rc: Int32 = -1
+    repeat {
+      rc = Darwin.flock(fd, LOCK_EX | LOCK_NB)
+    } while rc != 0 && errno == EINTR
+
+    if rc == 0 {
+      singletonLockFD = fd
+      return .acquired
+    }
+    let err = errno
+    _ = Darwin.close(fd)
+    if err == EWOULDBLOCK || err == EAGAIN {
+      return .occupied
+    }
+    let rawError: UnsafeMutablePointer<CChar>? = Darwin.strerror(err)
+    let message = rawError.map { String(cString: $0) } ?? "errno=\(err)"
+    return .failed(message)
+  }
+
+  func releaseSingletonLock() {
+    guard singletonLockFD >= 0 else { return }
+    let fd = singletonLockFD
+    singletonLockFD = -1
+    _ = Darwin.flock(fd, LOCK_UN)
+    _ = Darwin.close(fd)
   }
 
   func configure(origin nextOrigin: String, managementKey nextKey: String, shortcut nextShortcut: String, enabled nextEnabled: Bool) {
@@ -115,22 +183,6 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
     configuredShortcut = resolvedShortcut
     enabled = nextEnabled
 
-    if let parsed = Self.parseShortcut(resolvedShortcut) {
-      tapKeyCode = parsed.keyCode
-      tapModifiers = parsed.modifiers
-      hasValidTapShortcut = true
-    } else {
-      hasValidTapShortcut = false
-      destroyEventTap()
-      if nextEnabled {
-        emit([
-          "type": "status",
-          "trusted": AXIsProcessTrusted(),
-          "detail": "启动器快捷键「\(resolvedShortcut)」缺少修饰键或不受支持，已停用 CGEventTap（防止吞噬普通按键）"
-        ])
-      }
-    }
-
     footer.hintsLabel.stringValue = "↑↓ 选择    ↵ 打开    esc 关闭    \(resolvedShortcut) 切换"
 
     if endpointChanged {
@@ -140,11 +192,54 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
       iconCache.clear()
     }
 
-    if !isAvailable {
+    if !enabled || !client.isConfigured {
+      isSingletonBlocked = false
+      releaseSingletonLock()
       destroyEventTap()
       reportedTapFallback = false
       hide(restoreFocus: false)
       return
+    }
+
+    switch acquireSingletonLock() {
+    case .acquired:
+      isSingletonBlocked = false
+    case .occupied:
+      isSingletonBlocked = true
+      destroyEventTap()
+      reportedTapFallback = false
+      hide(restoreFocus: false)
+      emit([
+        "type": "status",
+        "trusted": AXIsProcessTrusted(),
+        "detail": "启动器已在另一个 AIH 桌面实例中运行（单例）"
+      ])
+      return
+    case .failed(let reason):
+      isSingletonBlocked = true
+      destroyEventTap()
+      reportedTapFallback = false
+      hide(restoreFocus: false)
+      emit([
+        "type": "status",
+        "trusted": AXIsProcessTrusted(),
+        "detail": "启动器单例锁获取失败（\(reason)），已禁用本实例启动器"
+      ])
+      return
+    }
+
+    if let parsed = Self.parseShortcut(resolvedShortcut) {
+      tapKeyCode = parsed.keyCode
+      tapModifiers = parsed.modifiers
+      hasValidTapShortcut = true
+    } else {
+      hasValidTapShortcut = false
+      destroyEventTap()
+      emit([
+        "type": "status",
+        "trusted": AXIsProcessTrusted(),
+        "detail": "启动器快捷键「\(resolvedShortcut)」缺少修饰键或不受支持，已停用 CGEventTap（防止吞噬普通按键）"
+      ])
     }
 
     if hasValidTapShortcut && (shortcutChanged || !isEventTapActive) {
@@ -287,12 +382,22 @@ final class LauncherPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate,
   func toggle() {
     if panel.isVisible && !isHiding {
       hide(restoreFocus: true)
-    } else {
+    } else if isAvailable {
       show()
     }
   }
 
   func show() {
+    guard isAvailable else { return }
+    if panel.isVisible && !isHiding {
+      panel.makeKeyAndOrderFront(nil)
+      panel.orderFrontRegardless()
+      panel.makeKey()
+      NSApp.activate(ignoringOtherApps: true)
+      _ = NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+      panel.makeFirstResponder(header.searchField)
+      return
+    }
     visibilityGeneration += 1
     isHiding = false
     clearTransientStatus()

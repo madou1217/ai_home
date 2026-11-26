@@ -179,6 +179,8 @@ func (d *Daemon) SocketPath() string {
 
 // Start launches the GTK4 supervisor asynchronously (non-blocking for Server startup).
 // On headless Linux (no DISPLAY/WAYLAND_DISPLAY), Start records supported=false and returns nil.
+// If another launcher instance is already listening on the control socket, Start attaches to it
+// without building or spawning a second GTK process.
 func (d *Daemon) Start(ctx context.Context) error {
 	if d == nil {
 		return nil
@@ -189,8 +191,37 @@ func (d *Daemon) Start(ctx context.Context) error {
 	if !HasDesktopSession() {
 		d.mu.Lock()
 		d.status.Supported = false
+		d.status.Attached = false
 		d.status.PID = 0
 		d.mu.Unlock()
+		return nil
+	}
+
+	d.mu.Lock()
+	if d.closed {
+		d.mu.Unlock()
+		return errors.New("launcherd_closed")
+	}
+	if d.started {
+		d.mu.Unlock()
+		return nil
+	}
+	d.mu.Unlock()
+
+	if ProbeSocket(ctx, d.socketPath) {
+		d.mu.Lock()
+		if d.closed {
+			d.mu.Unlock()
+			return errors.New("launcherd_closed")
+		}
+		if !d.started {
+			d.status.Supported = true
+			d.status.Attached = true
+			d.status.PID = 0
+			d.status.DesktopError = ""
+		}
+		d.mu.Unlock()
+		d.logf("[aih launch] attached to existing launcher socket: %s\n", d.socketPath)
 		return nil
 	}
 
@@ -207,6 +238,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	doneCh := make(chan struct{})
 	d.started = true
 	d.status.Supported = true
+	d.status.Attached = false
 	d.cancel = cancel
 	d.doneCh = doneCh
 	d.mu.Unlock()
@@ -229,6 +261,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 			d.logf("[aih launch] %v\n", err)
 			return
 		}
+		if ProbeSocket(runCtx, d.socketPath) {
+			d.setAttached()
+			d.logf("[aih launch] attached to existing launcher socket: %s\n", d.socketPath)
+			return
+		}
 		d.setBuilt(binPath)
 		d.superviseLoop(runCtx, binPath)
 	}()
@@ -236,7 +273,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 }
 
 // Run builds the GTK4 UI synchronously and runs the supervisor loop in the foreground
-// until ctx is canceled or the UI requests quit.
+// until ctx is canceled or the UI requests quit. If another launcher instance is already
+// listening on the control socket, Run returns ErrAlreadyRunning without building or spawning.
 func (d *Daemon) Run(ctx context.Context) error {
 	if d == nil {
 		return errors.New("launcherd_nil")
@@ -257,10 +295,27 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.mu.Unlock()
 		return errors.New("launcherd_already_running")
 	}
+	d.mu.Unlock()
+
+	if ProbeSocket(ctx, d.socketPath) {
+		d.setAttached()
+		return fmt.Errorf("%w: socket=%s", ErrAlreadyRunning, d.socketPath)
+	}
+
+	d.mu.Lock()
+	if d.closed {
+		d.mu.Unlock()
+		return errors.New("launcherd_closed")
+	}
+	if d.started {
+		d.mu.Unlock()
+		return errors.New("launcherd_already_running")
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	doneCh := make(chan struct{})
 	d.started = true
 	d.status.Supported = true
+	d.status.Attached = false
 	d.cancel = cancel
 	d.doneCh = doneCh
 	d.mu.Unlock()
@@ -282,6 +337,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.setBuildError(err)
 		return err
 	}
+	if ProbeSocket(runCtx, d.socketPath) {
+		d.setAttached()
+		return fmt.Errorf("%w: socket=%s", ErrAlreadyRunning, d.socketPath)
+	}
 	d.setBuilt(binPath)
 	d.logf("[aih launch] ui binary: %s\n", binPath)
 	d.logf("[aih launch] control socket: %s\n", d.socketPath)
@@ -299,7 +358,7 @@ func (d *Daemon) Show(ctx context.Context) error {
 	if !st.Supported {
 		return fmt.Errorf("%w: 当前 Linux 环境无桌面会话", launcher.ErrUnsupported)
 	}
-	if !st.Built && st.DesktopError != "" {
+	if !st.Attached && !st.Built && st.DesktopError != "" {
 		return fmt.Errorf("%w: %s", launcher.ErrUnsupported, st.DesktopError)
 	}
 	return SendCommand(ctx, d.socketPath, "show")
@@ -376,13 +435,23 @@ func (d *Daemon) Close() error {
 
 func (d *Daemon) superviseLoop(ctx context.Context, binPath string) {
 	backoffIdx := 0
-	for {
+	for attempt := 0; ; attempt++ {
 		if ctx.Err() != nil {
+			return
+		}
+		if attempt > 0 && ProbeSocket(ctx, d.socketPath) {
+			d.setAttached()
+			d.logf("[aih launch] attached to existing launcher socket: %s\n", d.socketPath)
 			return
 		}
 		startTime := time.Now()
 		quitRequested, runErr := d.runChildOnce(ctx, binPath)
 		if quitRequested || ctx.Err() != nil {
+			return
+		}
+		if ProbeSocket(ctx, d.socketPath) {
+			d.setAttached()
+			d.logf("[aih launch] another launcher instance owns socket %s; attaching\n", d.socketPath)
 			return
 		}
 		if time.Since(startTime) >= healthyRunResetWindow {
@@ -627,7 +696,17 @@ func (d *Daemon) detachAndCloseChildStdin(target io.WriteCloser) {
 func (d *Daemon) setBuilt(binPath string) {
 	d.mu.Lock()
 	d.status.Built = true
+	d.status.Attached = false
 	d.status.BinaryPath = binPath
+	d.status.DesktopError = ""
+	d.mu.Unlock()
+}
+
+func (d *Daemon) setAttached() {
+	d.mu.Lock()
+	d.status.Supported = true
+	d.status.Attached = true
+	d.status.PID = 0
 	d.status.DesktopError = ""
 	d.mu.Unlock()
 }

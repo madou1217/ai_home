@@ -151,12 +151,17 @@ internal sealed class TranslationApplicationContext : ApplicationContext
 {
     private const int HotKeyId = 0x4149;
     private const int LauncherHotKeyId = 0x414A;
+    private const string LauncherSingletonMutexName = "Local\\AIH-Launcher-Singleton-v1";
+    private const int ERROR_ALREADY_EXISTS = 183;
+    private const int ERROR_ACCESS_DENIED = 5;
     private readonly object outputLock = new();
     private readonly bool fullApp;
     private readonly TranslationWindow window;
     private readonly LauncherWindow launcherWindow;
     private readonly HotKeyWindow hotKeyWindow;
     private readonly LowLevelLauncherHook launcherHook = new();
+    private IntPtr launcherSingletonMutex = IntPtr.Zero;
+    private bool launcherSingletonBlocked;
     private string target = "zh-Hans";
     private string shortcut = "Ctrl+Alt+T";
     private string launcherShortcut = "Alt+Space";
@@ -285,7 +290,9 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                             CaptureModes = new[] { "shortcut-clipboard" },
                             Permission = "clipboard-shortcut",
                             Shortcut = shortcut,
-                            Detail = "启动器未启用或本机管理密钥未就绪，无法显示面板"
+                            Detail = launcherSingletonBlocked
+                                ? "启动器已在另一个 AIH 桌面实例中运行（单例）"
+                                : "启动器未启用或本机管理密钥未就绪，无法显示面板"
                         });
                     }
                     break;
@@ -338,6 +345,42 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         }
     }
 
+    private bool TryAcquireLauncherSingleton(out bool alreadyExists, out int win32Error)
+    {
+        alreadyExists = false;
+        win32Error = 0;
+        if (launcherSingletonMutex != IntPtr.Zero)
+        {
+            return true;
+        }
+        var handle = CreateMutexW(IntPtr.Zero, true, LauncherSingletonMutexName);
+        var err = Marshal.GetLastWin32Error();
+        if (handle == IntPtr.Zero)
+        {
+            win32Error = err;
+            alreadyExists = err == ERROR_ALREADY_EXISTS || err == ERROR_ACCESS_DENIED;
+            return false;
+        }
+        if (err == ERROR_ALREADY_EXISTS)
+        {
+            CloseHandle(handle);
+            alreadyExists = true;
+            win32Error = err;
+            return false;
+        }
+        launcherSingletonMutex = handle;
+        return true;
+    }
+
+    private void ReleaseLauncherSingleton()
+    {
+        if (launcherSingletonMutex == IntPtr.Zero) return;
+        var handle = launcherSingletonMutex;
+        launcherSingletonMutex = IntPtr.Zero;
+        ReleaseMutex(handle);
+        CloseHandle(handle);
+    }
+
     private string? ConfigureLauncher(JsonElement root)
     {
         var hasLauncherFields = root.TryGetProperty("launcherEnabled", out _)
@@ -358,17 +401,29 @@ internal sealed class TranslationApplicationContext : ApplicationContext
             launcherEnabled = enabledProp.GetBoolean();
         }
 
-        var available = launcherEnabled && !string.IsNullOrWhiteSpace(launcherOrigin) && !string.IsNullOrWhiteSpace(launcherKey);
-        launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, available);
-
         hotKeyWindow.Unregister(LauncherHotKeyId);
         launcherHook.Uninstall();
 
-        if (!available)
+        var wantsAvailable = launcherEnabled && !string.IsNullOrWhiteSpace(launcherOrigin) && !string.IsNullOrWhiteSpace(launcherKey);
+        if (!wantsAvailable)
         {
+            launcherSingletonBlocked = false;
+            ReleaseLauncherSingleton();
+            launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, false);
             return null;
         }
 
+        if (!TryAcquireLauncherSingleton(out var alreadyExists, out var mutexErr))
+        {
+            launcherSingletonBlocked = true;
+            launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, false);
+            return alreadyExists
+                ? "启动器已在另一个 AIH 桌面实例中运行（单例）"
+                : $"启动器单例互斥锁创建失败（错误 {mutexErr}），已禁用本实例启动器";
+        }
+
+        launcherSingletonBlocked = false;
+        launcherWindow.Configure(launcherOrigin, launcherKey, launcherShortcut, true);
         launcherWindow.WarmCatalog();
 
         if (hotKeyWindow.TryRegister(LauncherHotKeyId, launcherShortcut, OnLauncherHotKey, out var regErr))
@@ -386,7 +441,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
 
     private void OnLauncherHotKey()
     {
-        if (!launcherWindow.IsDisposed)
+        if (!launcherWindow.IsDisposed && launcherWindow.IsAvailable)
         {
             launcherWindow.ToggleLauncher();
         }
@@ -553,6 +608,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         FinishCapture();
         launcherHook.Dispose();
         hotKeyWindow.Dispose();
+        ReleaseLauncherSingleton();
         launcherWindow.Dispose();
         window.Dispose();
         ExitThread();
@@ -565,6 +621,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
             FinishCapture();
             launcherHook.Dispose();
             hotKeyWindow.Dispose();
+            ReleaseLauncherSingleton();
             if (!launcherWindow.IsDisposed) launcherWindow.Dispose();
             if (!window.IsDisposed) window.Dispose();
         }
@@ -635,6 +692,14 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalFree(IntPtr memory);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateMutexW")]
+    private static extern IntPtr CreateMutexW(IntPtr lpMutexAttributes, [MarshalAs(UnmanagedType.Bool)] bool bInitialOwner, string lpName);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReleaseMutex(IntPtr hMutex);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
 }
 
 internal sealed class HotKeyWindow : NativeWindow, IDisposable
@@ -1836,7 +1901,7 @@ internal sealed class LauncherWindow : Form
         {
             HideAnimated(restoreFocus: true);
         }
-        else
+        else if (IsAvailable)
         {
             ShowLauncher();
         }
@@ -1844,6 +1909,14 @@ internal sealed class LauncherWindow : Form
 
     public void ShowLauncher()
     {
+        if (!IsAvailable) return;
+        if (Visible && animPhase != AnimPhase.Hiding)
+        {
+            suppressDeactivateUntilUtc = DateTime.UtcNow.AddMilliseconds(240);
+            ForceForeground();
+            searchBox.Focus();
+            return;
+        }
         errorTimer.Stop();
         statusMessage = string.Empty;
         statusIsError = false;

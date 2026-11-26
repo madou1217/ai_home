@@ -464,7 +464,7 @@ func (h *Handler) handleAppsCleanup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, errMsg, errMsg)
 		return
 	}
-	res := apps.CleanupShortcutResidue(r.Context(), body.Provider, h.appsOpts)
+	res := apps.CleanupProviderResidue(r.Context(), body.Provider, h.appsOpts)
 	status := http.StatusOK
 	if !res.OK {
 		status = http.StatusInternalServerError

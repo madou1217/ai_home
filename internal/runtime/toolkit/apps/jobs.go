@@ -536,6 +536,9 @@ func (m *JobManager) runJob(jobID string, target *InstallTarget, input InstallIn
 	succeeded := false
 
 	defer func() {
+		if succeeded && target.Action == "uninstall" && target.Kind == "desktop" && resolvePlatform(opts) == platformWindows {
+			finalResult = m.cleanupUninstallShortcuts(ctx, jobID, target, opts, finalResult)
+		}
 		m.finalizeJob(jobID, target, succeeded, finalResult, finalErr)
 	}()
 
@@ -1035,6 +1038,46 @@ func installProxyLabel(input InstallInput) string {
 	return parsed.String()
 }
 
+func (m *JobManager) cleanupUninstallShortcuts(
+	ctx context.Context,
+	jobID string,
+	target *InstallTarget,
+	opts Options,
+	result *JobResultView,
+) *JobResultView {
+	cleanupRes := cleanupProviderShortcutsAfterUninstall(ctx, target.Provider, opts)
+	if !cleanupRes.OK {
+		detail := nonEmpty(cleanupRes.Message, cleanupRes.Error)
+		m.appendAttempt(jobID, AttemptView{
+			ID:    "windows_shortcut_cleanup",
+			Label: "清理残留快捷方式失败（不影响卸载结果）",
+			OK:    true,
+			Error: detail,
+		}, 95, "卸载完成（残留快捷方式清理失败）")
+		return result
+	}
+	if len(cleanupRes.Removed) == 0 {
+		return result
+	}
+	summary := fmt.Sprintf("已清理 %d 个残留快捷方式：%s", len(cleanupRes.Removed), strings.Join(cleanupRes.Removed, "; "))
+	m.appendAttempt(jobID, AttemptView{
+		ID:    "windows_shortcut_cleanup",
+		Label: summary,
+		OK:    true,
+		Error: strings.Join(cleanupRes.Warnings, "; "),
+	}, 95, fmt.Sprintf("已清理 %d 个残留快捷方式", len(cleanupRes.Removed)))
+	if result == nil {
+		result = &JobResultView{Installed: false}
+	}
+	result.RemovedShortcuts = append([]string(nil), cleanupRes.Removed...)
+	if strings.TrimSpace(result.Message) == "" {
+		result.Message = summary
+	} else {
+		result.Message += "；" + summary
+	}
+	return result
+}
+
 func (m *JobManager) finalizeJob(jobID string, target *InstallTarget, succeeded bool, result *JobResultView, errMsg string) {
 	nowMs := m.nowTime().UnixMilli()
 	m.mu.Lock()
@@ -1165,6 +1208,9 @@ func cloneAppJobView(src JobView) JobView {
 	out.Attempts = append([]AttemptView{}, src.Attempts...)
 	if src.Result != nil {
 		r := *src.Result
+		if src.Result.RemovedShortcuts != nil {
+			r.RemovedShortcuts = append([]string(nil), src.Result.RemovedShortcuts...)
+		}
 		out.Result = &r
 	}
 	if src.FinishedAt != nil {

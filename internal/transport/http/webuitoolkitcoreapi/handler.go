@@ -64,6 +64,7 @@ const (
 	AppsInstallPath         = "/v1/management/webui/toolkit/apps/install"
 	AppsPlanPath            = "/v1/management/webui/toolkit/apps/plan"
 	AppsHooksPath           = "/v1/management/webui/toolkit/apps/hooks"
+	AppsCleanupPath         = "/v1/management/webui/toolkit/apps/cleanup"
 	AppInstallPath          = "/v1/management/webui/app-install"
 	AppInstallJobsPath      = "/v1/management/webui/app-install/jobs"
 	AppInstallJobsWatchPath = "/v1/management/webui/app-install/jobs-watch"
@@ -399,6 +400,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc(AppsInstallPath, h.handleAppsInstall)
 	h.mux.HandleFunc(AppsPlanPath, h.handleAppsPlan)
 	h.mux.HandleFunc(AppsHooksPath, h.handleAppsHooks)
+	h.mux.HandleFunc(AppsCleanupPath, h.handleAppsCleanup)
 
 	h.mux.HandleFunc(AppInstallPath, h.handleAppInstallCreate)
 	h.mux.HandleFunc(AppInstallJobsPath, h.handleAppInstallJobs)

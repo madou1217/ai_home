@@ -452,6 +452,29 @@ func (h *Handler) handleAppsHooks(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) handleAppsCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	var body struct {
+		Provider string `json:"provider"`
+	}
+	if ok, status, errMsg := decodeJSONBody(w, r, smallBodyMaxBytes, &body); !ok {
+		writeError(w, status, errMsg, errMsg)
+		return
+	}
+	res := apps.CleanupShortcutResidue(r.Context(), body.Provider, h.appsOpts)
+	status := http.StatusOK
+	if !res.OK {
+		status = http.StatusInternalServerError
+		if res.Error == "unknown_provider" {
+			status = http.StatusBadRequest
+		}
+	}
+	writeJSON(w, status, res)
+}
+
 func (h *Handler) handleAppInstallCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, http.MethodPost)

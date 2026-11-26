@@ -424,9 +424,11 @@ type JobProgress struct {
 
 // JobResultView 表示安装作业完成结果。
 type JobResultView struct {
-	Installed      bool   `json:"installed"`
-	CLIPath        string `json:"cliPath"`
-	ExecutablePath string `json:"executablePath"`
+	Installed        bool     `json:"installed"`
+	CLIPath          string   `json:"cliPath"`
+	ExecutablePath   string   `json:"executablePath"`
+	RemovedShortcuts []string `json:"removedShortcuts,omitempty"`
+	Message          string   `json:"message,omitempty"`
 }
 
 // JobView 是 app-install 作业对外序列化快照，字段与 Node 完全一致。

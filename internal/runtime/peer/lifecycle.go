@@ -17,7 +17,11 @@ var (
 	ErrMessageInflight  = errors.New("peer_message_inflight")
 	ErrMessageSettled   = errors.New("peer_message_already_delivered")
 	ErrAmbiguousMessage = errors.New("peer_message_ambiguous")
-	recordIDPattern     = regexp.MustCompile(`^pm-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	// ErrModelSelectionUnsupported 表示给不支持回合级模型的通道指定了 model/effort。
+	ErrModelSelectionUnsupported = errors.New("peer_model_selection_unsupported")
+	// ErrModelSelectionRequiresModel 表示只给了推理强度而没有模型。
+	ErrModelSelectionRequiresModel = errors.New("peer_model_selection_requires_model")
+	recordIDPattern                = regexp.MustCompile(`^pm-[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 )
 
 type LifecycleInput struct {
@@ -106,6 +110,10 @@ func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (
 	}
 	if !recordIDPattern.MatchString(id) || !validSender(input.From) || !validParty(input.To) || (input.AutoDeliverUntil != nil && *input.AutoDeliverUntil < 0) || input.ExpiresAt < 0 || input.Priority < PriorityLow || input.Priority > PriorityHigh {
 		return nil, ErrInvalidRecord
+	}
+	// 回合级模型设置只在支持它的通道上有意义；服务层兜底，避免绕过 CLI 写入无效记录。
+	if err := validateTurnSelection(input); err != nil {
+		return nil, err
 	}
 	if _, _, err := s.findExactLocked(id); !errors.Is(err, ErrMessageNotFound) {
 		if err == nil {

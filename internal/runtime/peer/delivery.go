@@ -205,13 +205,12 @@ func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) Delive
 		opts.NoEnvelope = true
 	}
 	text := renderMessageText(rec, opts)
-	channel := strings.TrimSpace(rec.To.Channel)
-	switch channel {
-	case "native":
+	switch ChannelOf(rec.To.Channel) {
+	case ChannelNative:
 		return deliverNative(ctx, rec, text, opts)
-	case "webui-chat":
+	case ChannelWebUIChat:
 		return deliverWebuiChat(ctx, rec, text, opts)
-	case "agy-session":
+	case ChannelAGYSession:
 		return deliverAGYSession(ctx, rec, text, opts)
 	default:
 		return deliverInject(ctx, rec, text, opts)

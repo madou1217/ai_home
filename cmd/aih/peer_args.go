@@ -94,7 +94,7 @@ const peerHelp = `aih peer — 给会话发消息，查看自己的收件箱（G
   aih peer flush                     补投就绪消息
 
   --subject "主题" --purpose "缘由" --action "待办"
-  --model <模型> --effort <档位>  只用于 webui-chat 目标：本轮回合的模型与推理强度
+  --model <模型> --effort <档位>  仅 webui-chat 目标：本轮回合的模型与推理强度（其它通道随会话启动确定）
   --priority high|normal|low      高优先级在同目标消息中先投递
   --reply-policy required|optional|none
   --reply-policy none 仅存收件箱，不打断对方。

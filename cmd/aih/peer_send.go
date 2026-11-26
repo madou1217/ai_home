@@ -71,8 +71,11 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	if effort != "" && model == "" {
 		return fmt.Errorf("--effort 需要同时指定 --model")
 	}
-	if (model != "" || effort != "") && target.Channel != "webui-chat" {
-		return fmt.Errorf("--model/--effort 只用于 webui-chat 会话（目标 %s 不支持）", target.Channel)
+	if (model != "" || effort != "") && !peer.ChannelOf(target.Channel).SupportsTurnModelSelection() {
+		return fmt.Errorf(
+			"--model/--effort 只用于 webui-chat 目标（%s 的模型随会话启动确定；agy 会话请在 aih agy session 创建时指定）",
+			target.Channel,
+		)
 	}
 	from := self
 	if value := args.values["from"]; value != "" && value != self.Name && value != self.Address && value != self.SessionID {

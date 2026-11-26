@@ -75,7 +75,6 @@ type codexHooksConfig struct {
 	enableDesktopHook            bool
 	cliSelfHealIntervalMs        int
 	desktopSelfHealIntervalMs    int
-	providerHookReceiverURL      string
 	traceFile                    string
 	traceResponses               bool
 	traceRemoteControl           bool
@@ -156,7 +155,6 @@ func loadCommandConfig(
 	flags.BoolVar(&hooksCfg.enableDesktopHook, "enable-codex-desktop-hook", false, "启用 Codex Desktop/VSCode Hook 注入与后台自愈")
 	flags.IntVar(&hooksCfg.cliSelfHealIntervalMs, "codex-cli-hook-self-heal-interval-ms", defaultCodexHookSelfHealIntervalMs, "Codex CLI Hook 后台自愈间隔（毫秒）")
 	flags.IntVar(&hooksCfg.desktopSelfHealIntervalMs, "codex-desktop-hook-self-heal-interval-ms", defaultCodexHookSelfHealIntervalMs, "Codex Desktop/VSCode Hook 后台自愈间隔（毫秒）")
-	flags.StringVar(&hooksCfg.providerHookReceiverURL, "codex-provider-hook-receiver-url", "", "覆盖 Codex Desktop provider hook 回调地址；留空按自身回环地址派生")
 	flags.StringVar(&hooksCfg.traceFile, "codex-desktop-trace-file", "", "Codex Desktop 代理追踪日志文件路径")
 	flags.BoolVar(&hooksCfg.traceResponses, "codex-desktop-trace-responses", false, "开启 Codex Desktop responses 追踪日志")
 	flags.BoolVar(&hooksCfg.traceRemoteControl, "codex-desktop-trace-remote-control", true, "开启 Codex Desktop remote-control 追踪")
@@ -241,13 +239,6 @@ func loadCommandConfig(
 		return commandConfig{}, errInvalidCommandConfig
 	}
 	hooksCfg.traceFile = strings.TrimSpace(hooksCfg.traceFile)
-	if strings.IndexFunc(hooksCfg.providerHookReceiverURL, unicode.IsControl) >= 0 {
-		return commandConfig{}, errInvalidCommandConfig
-	}
-	hooksCfg.providerHookReceiverURL = strings.TrimSpace(hooksCfg.providerHookReceiverURL)
-	if hooksCfg.providerHookReceiverURL != "" && !isLoopbackBaseURL(hooksCfg.providerHookReceiverURL) {
-		return commandConfig{}, errInvalidCommandConfig
-	}
 	nodeExecPath, err := envOptionalPath(runtime.lookupEnv, "AIH_SERVER_NODE_EXEC")
 	if err != nil {
 		return commandConfig{}, err

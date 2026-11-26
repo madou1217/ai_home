@@ -273,7 +273,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 				},
 			},
 			filepath.Join(repoDir, "ai_home"),
-			"http://127.0.0.1:9527/",
 			bus,
 			logger,
 		)
@@ -283,10 +282,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 		}
 		if opts.CLISelfHealInterval != 15*time.Second || opts.DesktopSelfHealInterval != 15*time.Second {
 			t.Fatalf("默认自愈间隔应为 15s, 实际 cli=%v desktop=%v", opts.CLISelfHealInterval, opts.DesktopSelfHealInterval)
-		}
-		wantReceiver := "http://127.0.0.1:9527/v0/webui/session-events/provider-hook"
-		if opts.ProviderHookReceiverURL != wantReceiver {
-			t.Fatalf("ProviderHookReceiverURL = %q, want %q", opts.ProviderHookReceiverURL, wantReceiver)
 		}
 		if opts.TraceConfig == nil || !opts.TraceConfig.TraceRemoteControl || !opts.TraceConfig.RemoteControlProxy || opts.TraceConfig.TraceResponses {
 			t.Fatalf("默认 TraceConfig 不符预期: %+v", opts.TraceConfig)
@@ -298,7 +293,7 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 		}
 	})
 
-	t.Run("显式覆盖 Trace、VSCode 独立开关、间隔钳位与 ReceiverURL", func(t *testing.T) {
+	t.Run("显式覆盖 Trace、VSCode 独立开关与间隔钳位", func(t *testing.T) {
 		t.Parallel()
 		disableFalse := false
 		opts := buildCodexHooksDaemonOptions(
@@ -310,7 +305,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 					EnableVscodeHook:             &disableFalse,
 					CLISelfHealInterval:          200 * time.Millisecond,
 					DesktopSelfHealInterval:      2 * time.Second,
-					ProviderHookReceiverURL:      "http://127.0.0.1:19999/custom-hook",
 					TraceFile:                    "/tmp/custom-trace.jsonl",
 					TraceResponses:               true,
 					TraceRemoteControl:           &disableFalse,
@@ -318,7 +312,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 					RestartAppServerOnHookChange: true,
 				},
 			},
-			"",
 			"",
 			nil,
 			nil,
@@ -329,9 +322,6 @@ func TestBuildCodexHooksDaemonOptions(t *testing.T) {
 		}
 		if opts.CLISelfHealInterval != minCodexHooksSelfHealInterval || opts.DesktopSelfHealInterval != 2*time.Second {
 			t.Fatalf("间隔钳位/透传错误: cli=%v desktop=%v", opts.CLISelfHealInterval, opts.DesktopSelfHealInterval)
-		}
-		if opts.ProviderHookReceiverURL != "http://127.0.0.1:19999/custom-hook" {
-			t.Fatalf("显式 ReceiverURL 被覆盖: %q", opts.ProviderHookReceiverURL)
 		}
 		if opts.TraceConfig == nil || opts.TraceConfig.TraceFile != "/tmp/custom-trace.jsonl" ||
 			!opts.TraceConfig.TraceResponses || opts.TraceConfig.TraceRemoteControl || opts.TraceConfig.RemoteControlProxy {
@@ -416,7 +406,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableVscodeHook:             false,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      10 * time.Second,
 		RestartAppServerOnHookChange: false,
 		TraceConfig: &codexhooks.DesktopTraceConfig{
@@ -444,9 +433,8 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 	state1 := rt1.DesktopService().ReadState()
 	wantDefaultTrace := filepath.Join(aiHome, "logs", "codex", "mobile-trace.jsonl")
 	if !state1.Enabled || !state1.TraceRemoteControl || !state1.RemoteControlProxy ||
-		state1.TraceFile != wantDefaultTrace ||
-		state1.ProviderHookReceiverURL != "http://127.0.0.1:9527/v0/webui/session-events/provider-hook" {
-		t.Fatalf("DesktopHookState 未持久化默认 Trace/ReceiverURL: %+v", state1)
+		state1.TraceFile != wantDefaultTrace {
+		t.Fatalf("DesktopHookState 未持久化默认 Trace: %+v", state1)
 	}
 
 	// 2) wrapper 健康且仅修改 Trace，策略为 false 时更新状态但不重启 app-server。
@@ -461,7 +449,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableDesktopHook:            true,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      10 * time.Second,
 		RestartAppServerOnHookChange: false,
 		TraceConfig: &codexhooks.DesktopTraceConfig{
@@ -507,7 +494,6 @@ func TestCodexHooksRuntimeTraceConfigAndRestartAndSelfHeal(t *testing.T) {
 		EnableDesktopHook:            true,
 		AllowSystemApplications:      &allowSys,
 		DesktopRuntimeLayouts:        layouts,
-		ProviderHookReceiverURL:      "http://127.0.0.1:9527/v0/webui/session-events/provider-hook",
 		DesktopSelfHealInterval:      1 * time.Second,
 		RestartAppServerOnHookChange: true,
 		TraceConfig: &codexhooks.DesktopTraceConfig{

@@ -63,7 +63,6 @@ type DesktopHookState struct {
 	TraceResponses          bool             `json:"traceResponses,omitempty"`
 	TraceRemoteControl      bool             `json:"traceRemoteControl,omitempty"`
 	RemoteControlProxy      bool             `json:"remoteControlProxy,omitempty"`
-	ProviderHookReceiverURL string           `json:"providerHookReceiverUrl,omitempty"`
 	DesktopAccountRef       string           `json:"desktopAccountRef,omitempty"`
 	Reason                  string           `json:"reason,omitempty"`
 	ErrorCode               string           `json:"errorCode,omitempty"`
@@ -139,7 +138,6 @@ type DesktopHookOptions struct {
 	HostHomeDir             string
 	Platform                string
 	GoBinaryPath            string
-	ProviderHookReceiverURL string
 	RuntimeLayouts          []DesktopLayout
 	AllowSystemApplications *bool
 	ProcessHomeDir          string
@@ -158,7 +156,6 @@ type DesktopHookService struct {
 	hostHomeDir             string
 	platform                string
 	goBinaryPath            string
-	providerHookReceiverURL string
 	stateFilePath           string
 	runtimeLayouts          []DesktopLayout
 	allowSystemApplications *bool
@@ -194,7 +191,6 @@ func NewDesktopHookService(opts DesktopHookOptions) *DesktopHookService {
 		hostHomeDir:             strings.TrimSpace(opts.HostHomeDir),
 		platform:                NormalizePlatform(opts.Platform),
 		goBinaryPath:            strings.TrimSpace(opts.GoBinaryPath),
-		providerHookReceiverURL: strings.TrimSpace(opts.ProviderHookReceiverURL),
 		stateFilePath:           stateFilePath,
 		runtimeLayouts:          opts.RuntimeLayouts,
 		allowSystemApplications: opts.AllowSystemApplications,
@@ -581,7 +577,6 @@ type desktopStateWritePatch struct {
 	traceResponses          *bool
 	traceRemoteControl      *bool
 	remoteControlProxy      *bool
-	providerHookReceiverURL *string
 	reason                  *string
 	errorCode               *string
 	retryable               *bool
@@ -661,14 +656,9 @@ func (svc *DesktopHookService) writeStateLocked(patch desktopStateWritePatch) bo
 	}
 	rawMap["remoteControlProxy"] = marshalJSONField(remoteProxy)
 
-	hookURL := previous.ProviderHookReceiverURL
-	if hookURL == "" {
-		hookURL = svc.providerHookReceiverURL
-	}
-	if patch.providerHookReceiverURL != nil {
-		hookURL = *patch.providerHookReceiverURL
-	}
-	rawMap["providerHookReceiverUrl"] = marshalJSONField(strings.TrimSpace(hookURL))
+	// 旧版本把 provider hook 接收端 URL 写在 state 里；Hook 传输已改为运行期
+	// 解析（见 providersessionhook），这里顺手清掉历史字段，避免继续留着垃圾。
+	delete(rawMap, "providerHookReceiverUrl")
 
 	accountRef := strings.TrimSpace(previous.DesktopAccountRef)
 	if patch.desktopAccountRef != nil {
@@ -1042,7 +1032,6 @@ func (svc *DesktopHookService) UpdateTraceConfig(cfg DesktopTraceConfig) Desktop
 		previous.TraceResponses != cfg.TraceResponses ||
 		previous.TraceRemoteControl != cfg.TraceRemoteControl ||
 		previous.RemoteControlProxy != cfg.RemoteControlProxy ||
-		strings.TrimSpace(previous.ProviderHookReceiverURL) != svc.providerHookReceiverURL ||
 		strings.TrimSpace(previous.GoBinaryPath) != svc.goBinaryPath ||
 		previous.GoBinaryMtimeMs != goBinaryMtimeMs(svc.goBinaryPath) ||
 		strings.TrimSpace(previous.GoBinaryRevision) != nextHelperRev
@@ -1072,7 +1061,6 @@ func (svc *DesktopHookService) UpdateTraceConfig(cfg DesktopTraceConfig) Desktop
 		traceResponses:          &cfg.TraceResponses,
 		traceRemoteControl:      &cfg.TraceRemoteControl,
 		remoteControlProxy:      &cfg.RemoteControlProxy,
-		providerHookReceiverURL: &svc.providerHookReceiverURL,
 		preserveReasonFields:    true,
 	})
 

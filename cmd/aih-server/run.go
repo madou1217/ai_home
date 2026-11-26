@@ -142,7 +142,6 @@ func run(
 			EnableDesktopHook:            config.codexHooks.enableDesktopHook,
 			CLISelfHealInterval:          time.Duration(config.codexHooks.cliSelfHealIntervalMs) * time.Millisecond,
 			DesktopSelfHealInterval:      time.Duration(config.codexHooks.desktopSelfHealIntervalMs) * time.Millisecond,
-			ProviderHookReceiverURL:      config.codexHooks.providerHookReceiverURL,
 			TraceFile:                    config.codexHooks.traceFile,
 			TraceResponses:               config.codexHooks.traceResponses,
 			TraceRemoteControl:           &traceRemoteControl,

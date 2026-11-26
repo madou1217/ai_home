@@ -42,7 +42,6 @@ type codexHooksDaemonOptions struct {
 	PathEnv                      string
 	TempDir                      string
 	GoBinaryPath                 string
-	ProviderHookReceiverURL      string
 	CLISelfHealInterval          time.Duration
 	DesktopSelfHealInterval      time.Duration
 	TraceConfig                  *codexhooks.DesktopTraceConfig
@@ -83,12 +82,11 @@ type codexHooksRuntime struct {
 
 // buildCodexHooksDaemonOptions 根据 Go Server 启动配置装配完整的 Codex Hook 守护参数。
 // Desktop 开启时联动启用 VSCode 扩展 Hook（除非 EnableVscodeHook 显式设为 false），
-// ProviderHookReceiverURL 为空且 nodeBaseURL 非空时自动派生，TraceRemoteControl 与 RemoteControlProxy
-// 未显式指定时保持默认 true，SelfHeal 间隔默认 15s。
+// TraceRemoteControl 与 RemoteControlProxy 未显式指定时保持默认 true，
+// SelfHeal 间隔默认 15s。
 func buildCodexHooksDaemonOptions(
 	dependencies Options,
 	aiHomeDir string,
-	nodeBaseURL string,
 	sessionEventBus *sessionevents.Bus,
 	errorLog *log.Logger,
 ) codexHooksDaemonOptions {
@@ -96,10 +94,6 @@ func buildCodexHooksDaemonOptions(
 	resolvedAIHome := strings.TrimSpace(aiHomeDir)
 	if resolvedAIHome == "" {
 		resolvedAIHome = strings.TrimSpace(dependencies.AIHomeDir)
-	}
-	resolvedNodeBase := strings.TrimSpace(nodeBaseURL)
-	if resolvedNodeBase == "" {
-		resolvedNodeBase = strings.TrimSpace(dependencies.NodeBaseURL)
 	}
 	resolvedLog := errorLog
 	if resolvedLog == nil {
@@ -109,18 +103,6 @@ func buildCodexHooksDaemonOptions(
 	enableVscode := cfg.EnableDesktopHook
 	if cfg.EnableVscodeHook != nil {
 		enableVscode = *cfg.EnableVscodeHook
-	}
-
-	receiverURL := strings.TrimSpace(cfg.ProviderHookReceiverURL)
-	if receiverURL == "" {
-		// 接收端由 Go 自己提供：优先指回本进程，Node 地址只在旧拓扑里使用。
-		selfBase := strings.TrimRight(strings.TrimSpace(dependencies.SelfBaseURL), "/")
-		if selfBase == "" {
-			selfBase = strings.TrimRight(resolvedNodeBase, "/")
-		}
-		if selfBase != "" {
-			receiverURL = selfBase + "/v0/webui/session-events/provider-hook"
-		}
 	}
 
 	traceRemoteControl := true
@@ -153,7 +135,6 @@ func buildCodexHooksDaemonOptions(
 		EnableCLIHook:            cfg.EnableCLIHook,
 		EnableNotificationBridge: true,
 		GoBinaryPath:             resolveCodexGoBinaryPath(cfg.GoBinaryPath, cfg.EntryFilePath),
-		ProviderHookReceiverURL:  receiverURL,
 		CLISelfHealInterval:      clampSelfHealInterval(cfg.CLISelfHealInterval),
 		DesktopSelfHealInterval:  clampSelfHealInterval(cfg.DesktopSelfHealInterval),
 		TraceConfig: &codexhooks.DesktopTraceConfig{
@@ -301,7 +282,6 @@ func startCodexHooksDaemons(opts codexHooksDaemonOptions) (*codexHooksRuntime, e
 			AIHomeDir:               aiHomeDir,
 			HostHomeDir:             hostHomeDir,
 			GoBinaryPath:            opts.GoBinaryPath,
-			ProviderHookReceiverURL: opts.ProviderHookReceiverURL,
 			RuntimeLayouts:          opts.DesktopRuntimeLayouts,
 			AllowSystemApplications: opts.AllowSystemApplications,
 			ReadBundleMetadata:      opts.ReadBundleMetadata,

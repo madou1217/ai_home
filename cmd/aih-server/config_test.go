@@ -120,7 +120,6 @@ func TestLoadCommandConfigCodexHooksDefaultsAndFlags(t *testing.T) {
 		"--enable-codex-desktop-hook=true",
 		"--codex-cli-hook-self-heal-interval-ms", "2000",
 		"--codex-desktop-hook-self-heal-interval-ms", "3500",
-		"--codex-provider-hook-receiver-url", "http://127.0.0.1:9527/custom/provider-hook",
 		"--codex-desktop-trace-file", " /tmp/codex-trace.jsonl ",
 		"--codex-desktop-trace-responses=true",
 		"--codex-desktop-trace-remote-control=false",
@@ -136,9 +135,6 @@ func TestLoadCommandConfigCodexHooksDefaultsAndFlags(t *testing.T) {
 	}
 	if custom.codexHooks.cliSelfHealIntervalMs != 2000 || custom.codexHooks.desktopSelfHealIntervalMs != 3500 {
 		t.Fatalf("unexpected intervals: %+v", custom.codexHooks)
-	}
-	if custom.codexHooks.providerHookReceiverURL != "http://127.0.0.1:9527/custom/provider-hook" {
-		t.Fatalf("unexpected receiver URL: %q", custom.codexHooks.providerHookReceiverURL)
 	}
 	if custom.codexHooks.traceFile != "/tmp/codex-trace.jsonl" ||
 		!custom.codexHooks.traceResponses ||
@@ -165,14 +161,6 @@ func TestLoadCommandConfigRejectsInvalidCodexHooksFlags(t *testing.T) {
 		{
 			name: "control char in trace file",
 			args: []string{"--codex-desktop-trace-file=/tmp/trace\n.jsonl"},
-		},
-		{
-			name: "non-loopback provider hook receiver url",
-			args: []string{"--codex-provider-hook-receiver-url=http://example.com/hook"},
-		},
-		{
-			name: "query string in provider hook receiver url",
-			args: []string{"--codex-provider-hook-receiver-url=http://127.0.0.1:9527/hook?x=1"},
 		},
 	}
 	for _, tc := range cases {

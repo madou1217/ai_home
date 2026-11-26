@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | ZCode 进程内钩子 | `lib/runtime/zcode-*-hook.js`、`zcode-session-attribution-runner.js`、`zcode-desktop-protocol-bridge.js` | 必须注入 zcode 自己的 Node 进程（patch agent 源码、包 fetch、tap stdio）；Go 只负责拉起 runner |
 | 厂商 Electron 边界 | `lib/account/workbuddy-credential-codec.js` + `scripts/aih-workbuddy-credential-codec.cjs`、`lib/runtime/codebuddy-ide-bridge-*.{js,cjs}` | at-rest 密钥来自 `process._linkedBinding('electron_browser_workbuddy_storage')`，只有厂商二进制能提供；bridge 同样运行在厂商 Electron 内 |
-| 插件 / hooks | `lib/plugins/**` | 插件运行时本身支持 `node|process`。Hook 传输已全部收敛到 Go：命令与 opencode 插件都不含接收端 URL，发送器在投递时按 `config:server` 的当前 host/port 解析；Node sender/config/template 已删除，安装器重装即改写任何旧托管 handler |
+| 插件 / hooks | `lib/plugins/**` | 插件运行时本身支持 `node|process`。Hook 传输已全部收敛到**同一套 Go 底层**：CLI/JSON/agy 命令、opencode 插件、Codex Desktop/VSCode/CLI 包装器都走 Go 的事件管线；命令与插件不含接收端 URL，发送器投递时按 `config:server` 解析；Desktop 侧旧的 receiver-url 选项/state/启动参数已删除。Node sender/config/template 已删除，重装即改写旧托管 handler |
 | 构建 / 发布 / 运维 | `scripts/build-go-server.js`、`scripts/package/*`、`collect-*`、`go-accounts-preview.js` | 工具链，不是运行时代码 |
 
 厂商边界内也不再有第一方业务规则：身份、凭据校验、默认账号、状态推导、用量账本都已由 Go 持有。

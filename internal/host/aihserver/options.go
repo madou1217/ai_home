@@ -115,8 +115,6 @@ type CodexHooksOptions struct {
 	CLISelfHealInterval time.Duration
 	// DesktopSelfHealInterval 配置 Desktop/VSCode Hook 自愈周期；<=0 时使用 15s 默认值，最低钳位到 1s。
 	DesktopSelfHealInterval time.Duration
-	// ProviderHookReceiverURL 覆盖桌面端 provider hook 回调地址；为空且 NodeBaseURL 非空时自动派生。
-	ProviderHookReceiverURL string
 	// TraceFile 指定 Desktop 代理日志文件路径；为空且 TraceRemoteControl 为 true 时使用默认 mobile-trace.jsonl。
 	TraceFile string
 	// TraceResponses 开启 Desktop responses 追踪日志。

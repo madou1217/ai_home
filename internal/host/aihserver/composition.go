@@ -1273,7 +1273,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			NodeBaseURL: nodeBaseURL,
 			SelfBaseURL: dependencies.SelfBaseURL,
 			CodexHooks:  dependencies.CodexHooks,
-		}, hooksAIHome, nodeBaseURL, sessionEventBus, errorLog)
+		}, hooksAIHome, sessionEventBus, errorLog)
 		hookOptions.Context = ctx
 		hookOptions.HostHomeDir = dependencies.HostHomeDir
 		hooksRuntime, err = startCodexHooksDaemons(hookOptions)

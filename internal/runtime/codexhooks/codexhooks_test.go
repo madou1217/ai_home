@@ -184,7 +184,6 @@ func TestDesktopHookServiceLifecycleAndIsolation(t *testing.T) {
 		HostHomeDir:             hostHome,
 		Platform:                "darwin",
 		GoBinaryPath:            goBinary,
-		ProviderHookReceiverURL: "http://127.0.0.1:4312/v0/webui/session-events/provider-hook",
 		SelfPID:                 999,
 		ReadCodexVersion: func(_ string) string {
 			return "codex-cli 0.160.0"

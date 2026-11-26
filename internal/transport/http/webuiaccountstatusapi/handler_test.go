@@ -28,21 +28,6 @@ type fakeAuthorizer struct{ allowed bool }
 
 func (fake fakeAuthorizer) Authorized(*http.Request) bool { return fake.allowed }
 
-// fakeProjection 记录每次投影写入；missing 模拟 Node 台账里没有这个账号。
-type fakeProjection struct {
-	calls   []string
-	missing bool
-	err     error
-}
-
-func (fake *fakeProjection) SetStatus(_ context.Context, _ string, status string) (bool, error) {
-	fake.calls = append(fake.calls, status)
-	if fake.err != nil {
-		return false, fake.err
-	}
-	return !fake.missing, nil
-}
-
 // fakeHostGrant 记录宿主授权回收调用。
 type fakeHostGrant struct {
 	supported  bool
@@ -148,20 +133,18 @@ func fixedClock() time.Time { return time.UnixMilli(1_700_000_000_000).UTC() }
 
 func newHandler(t *testing.T, accounts accountapp.AccountLifecycleStore) http.Handler {
 	t.Helper()
-	return newHandlerWith(t, accounts, &fakeProjection{}, &fakeHostGrant{})
+	return newHandlerWith(t, accounts, &fakeHostGrant{})
 }
 
 func newHandlerWith(
 	t *testing.T,
 	accounts accountapp.AccountLifecycleStore,
-	projection AccountStateProjection,
 	hostGrant HostGrantRevoker,
 ) http.Handler {
 	t.Helper()
 	handler, err := NewHandler(Dependencies{
 		Authorizer: fakeAuthorizer{allowed: true},
 		Accounts:   accounts,
-		Projection: projection,
 		HostGrant:  hostGrant,
 		Now:        fixedClock,
 	})
@@ -199,12 +182,11 @@ func postStatus(
 
 func TestStatusDisablesEnabledAccount(t *testing.T) {
 	store, ref := newStore(t)
-	projection := &fakeProjection{}
 	hostGrant := &fakeHostGrant{
 		supported:  true,
 		revocation: accountapp.GrantRevocation{OK: true, Revoked: true},
 	}
-	handler := newHandlerWith(t, store, projection, hostGrant)
+	handler := newHandlerWith(t, store, hostGrant)
 
 	recorder, decoded := postStatus(t, handler, "codex", ref.String(), `{"status":"down"}`)
 	if recorder.Code != http.StatusOK {
@@ -229,9 +211,6 @@ func TestStatusDisablesEnabledAccount(t *testing.T) {
 		accountPayload["configured"] != true {
 		t.Fatalf("account = %v", accountPayload)
 	}
-	if len(projection.calls) != 1 || projection.calls[0] != "down" {
-		t.Fatalf("投影写入 = %v", projection.calls)
-	}
 	if hostGrant.calls != 1 {
 		t.Fatalf("宿主授权回收调用 = %d", hostGrant.calls)
 	}
@@ -254,9 +233,8 @@ func TestStatusDisablesEnabledAccount(t *testing.T) {
 
 func TestStatusEnablesDisabledAccount(t *testing.T) {
 	store, ref := newStore(t)
-	projection := &fakeProjection{}
 	hostGrant := &fakeHostGrant{supported: true}
-	handler := newHandlerWith(t, store, projection, hostGrant)
+	handler := newHandlerWith(t, store, hostGrant)
 
 	if recorder, _ := postStatus(t, handler, "codex", ref.String(), `{"status":"down"}`); recorder.Code != http.StatusOK {
 		t.Fatalf("disable status = %d", recorder.Code)
@@ -275,9 +253,6 @@ func TestStatusEnablesDisabledAccount(t *testing.T) {
 	if hostGrant.calls != 0 {
 		t.Fatalf("启用时宿主授权回收被调用 %d 次", hostGrant.calls)
 	}
-	if projection.calls[len(projection.calls)-1] != "up" {
-		t.Fatalf("投影写入 = %v", projection.calls)
-	}
 	account, err := store.GetByRef(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("GetByRef() error = %v", err)
@@ -289,9 +264,8 @@ func TestStatusEnablesDisabledAccount(t *testing.T) {
 
 func TestStatusRejectsInvalidStatusWithoutWriting(t *testing.T) {
 	store, ref := newStore(t)
-	projection := &fakeProjection{}
 	hostGrant := &fakeHostGrant{supported: true}
-	handler := newHandlerWith(t, store, projection, hostGrant)
+	handler := newHandlerWith(t, store, hostGrant)
 
 	for _, body := range []string{
 		"",
@@ -313,30 +287,25 @@ func TestStatusRejectsInvalidStatusWithoutWriting(t *testing.T) {
 	if !account.Enabled() {
 		t.Fatal("非法请求不得修改 accounts.enabled")
 	}
-	if len(projection.calls) != 0 || hostGrant.calls != 0 {
-		t.Fatalf("非法请求不得写投影或回收授权: projection=%v host=%d", projection.calls, hostGrant.calls)
+	if hostGrant.calls != 0 {
+		t.Fatalf("非法请求不得回收授权: host=%d", hostGrant.calls)
 	}
 }
 
 func TestStatusRejectsUnknownAccount(t *testing.T) {
 	store, _ := newStore(t)
-	projection := &fakeProjection{}
-	handler := newHandlerWith(t, store, projection, &fakeHostGrant{supported: true})
+	handler := newHandlerWith(t, store, &fakeHostGrant{supported: true})
 
 	recorder, decoded := postStatus(t, handler, "codex", otherRef, `{"status":"down"}`)
 	if recorder.Code != http.StatusNotFound || decoded["error"] != "account_not_found" {
 		t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
 	}
-	if len(projection.calls) != 0 {
-		t.Fatalf("未知账号不得写投影: %v", projection.calls)
-	}
 }
 
 func TestStatusRejectsProviderMismatch(t *testing.T) {
 	store, ref := newStore(t)
-	projection := &fakeProjection{}
 	hostGrant := &fakeHostGrant{supported: true}
-	handler := newHandlerWith(t, store, projection, hostGrant)
+	handler := newHandlerWith(t, store, hostGrant)
 
 	recorder, decoded := postStatus(t, handler, "claude", ref.String(), `{"status":"down"}`)
 	if recorder.Code != http.StatusConflict || decoded["error"] != "account_provider_mismatch" {
@@ -349,20 +318,18 @@ func TestStatusRejectsProviderMismatch(t *testing.T) {
 	if !account.Enabled() {
 		t.Fatal("Provider 不匹配时不得修改 accounts.enabled")
 	}
-	if len(projection.calls) != 0 || hostGrant.calls != 0 {
-		t.Fatalf("Provider 不匹配不得写投影或回收授权: projection=%v host=%d", projection.calls, hostGrant.calls)
+	if hostGrant.calls != 0 {
+		t.Fatalf("Provider 不匹配不得回收授权: host=%d", hostGrant.calls)
 	}
 }
 
 func TestStatusRequiresAuthorizationAndPost(t *testing.T) {
 	store, ref := newStore(t)
-	projection := &fakeProjection{}
 	hostGrant := &fakeHostGrant{supported: true}
 
 	handler, err := NewHandler(Dependencies{
 		Authorizer: fakeAuthorizer{allowed: false},
 		Accounts:   store,
-		Projection: projection,
 		HostGrant:  hostGrant,
 		Now:        fixedClock,
 	})
@@ -377,7 +344,6 @@ func TestStatusRequiresAuthorizationAndPost(t *testing.T) {
 	allowed, err := NewHandler(Dependencies{
 		Authorizer: fakeAuthorizer{allowed: true},
 		Accounts:   store,
-		Projection: projection,
 		HostGrant:  hostGrant,
 		Now:        fixedClock,
 	})
@@ -392,8 +358,8 @@ func TestStatusRequiresAuthorizationAndPost(t *testing.T) {
 	if methodRecorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("method status = %d", methodRecorder.Code)
 	}
-	if len(projection.calls) != 0 || hostGrant.calls != 0 {
-		t.Fatalf("未授权/错误方法不得写投影或回收授权: projection=%v host=%d", projection.calls, hostGrant.calls)
+	if hostGrant.calls != 0 {
+		t.Fatalf("未授权/错误方法不得回收授权: host=%d", hostGrant.calls)
 	}
 }
 
@@ -407,61 +373,17 @@ func TestStatusMapsStoreFailures(t *testing.T) {
 		t.Fatalf("read failure status = %d, error = %v", recorder.Code, decoded["error"])
 	}
 
-	writeProjection := &fakeProjection{}
 	writeHandler := newHandlerWith(t, failingAccounts{account: account, setErr: errors.New("boom")},
-		writeProjection, &fakeHostGrant{supported: true})
+		&fakeHostGrant{supported: true})
 	recorder, decoded = postStatus(t, writeHandler, "codex", accountRef, `{"status":"down"}`)
 	if recorder.Code != http.StatusBadGateway || decoded["error"] != "go_account_status_update_failed" {
 		t.Fatalf("write failure status = %d, error = %v", recorder.Code, decoded["error"])
-	}
-	if len(writeProjection.calls) != 2 || writeProjection.calls[0] != "down" || writeProjection.calls[1] != "up" {
-		t.Fatalf("真值写失败必须把投影恢复原状态: %v", writeProjection.calls)
-	}
-}
-
-func TestStatusFailsClosedWhenProjectionWriteFails(t *testing.T) {
-	store, ref := newStore(t)
-	projection := &fakeProjection{err: errors.New("projection unavailable")}
-	handler := newHandlerWith(t, store, projection, &fakeHostGrant{supported: true})
-
-	recorder, decoded := postStatus(t, handler, "codex", ref.String(), `{"status":"down"}`)
-	if recorder.Code != http.StatusInternalServerError || decoded["error"] != "account_state_projection_failed" {
-		t.Fatalf("status = %d, error = %v", recorder.Code, decoded["error"])
-	}
-	account, err := store.GetByRef(context.Background(), ref)
-	if err != nil {
-		t.Fatalf("GetByRef() error = %v", err)
-	}
-	if !account.Enabled() {
-		t.Fatal("投影写失败时不得单边修改 accounts.enabled")
-	}
-}
-
-func TestStatusAllowsAccountWithoutProjectionRow(t *testing.T) {
-	store, ref := newStore(t)
-	projection := &fakeProjection{missing: true}
-	handler := newHandlerWith(t, store, projection, &fakeHostGrant{supported: true})
-
-	recorder, decoded := postStatus(t, handler, "codex", ref.String(), `{"status":"down"}`)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-	}
-	accountPayload, ok := decoded["account"].(map[string]any)
-	if !ok || accountPayload["status"] != "down" || accountPayload["configured"] != true {
-		t.Fatalf("account = %v", decoded["account"])
-	}
-	account, err := store.GetByRef(context.Background(), ref)
-	if err != nil {
-		t.Fatalf("GetByRef() error = %v", err)
-	}
-	if account.Enabled() {
-		t.Fatal("没有投影行也必须写 accounts.enabled")
 	}
 }
 
 func TestStatusReportsHostGrantFailureWithoutFailingStatus(t *testing.T) {
 	store, ref := newStore(t)
-	handler := newHandlerWith(t, store, &fakeProjection{}, &fakeHostGrant{
+	handler := newHandlerWith(t, store, &fakeHostGrant{
 		supported: true,
 		err:       errors.New("host sync unavailable"),
 	})
@@ -486,7 +408,7 @@ func TestStatusReportsHostGrantFailureWithoutFailingStatus(t *testing.T) {
 func TestStatusSkipsHostGrantForUnsupportedProvider(t *testing.T) {
 	store, ref := newStore(t)
 	hostGrant := &fakeHostGrant{supported: false}
-	handler := newHandlerWith(t, store, &fakeProjection{}, hostGrant)
+	handler := newHandlerWith(t, store, hostGrant)
 
 	recorder, decoded := postStatus(t, handler, "codex", ref.String(), `{"status":"down"}`)
 	if recorder.Code != http.StatusOK {

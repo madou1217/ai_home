@@ -5,14 +5,11 @@
 //	POST /v1/management/webui/accounts/{provider}/{accountRef}/status
 //
 // 请求体与 Node 的 handleUpdateAccountStatusRequest 对齐：{"status":"up"|"down"}。
-// 本包是这条路径的唯一权威实现：先写 Node WebUI 读取的 account_state 展示投影，
-// 再用 *sqliteaccount.Store.SetEnabled 以 compare-and-swap 原子更新 accounts.enabled
-// 并同步路由索引；停用 codex 账号时一并回收宿主直连授权。Node 只负责把浏览器请求
-// 转发到这里并刷新自己的运行池，不再写 account_state。
-//
-// 为什么先写投影再写真值：投影写失败（Schema 不符、库被锁）时账号启停还没有发生，
-// 可以直接失败关闭；反过来先写 enabled 再投影，一旦投影失败就只能返回一个「已经
-// 改成功但报错」的响应。真值写失败时把投影恢复成原状态，两侧不会长期分叉。
+// 本包是这条路径的唯一权威实现：用 *sqliteaccount.Store.SetEnabled 以
+// compare-and-swap 原子更新 accounts.enabled 并同步路由索引；停用 codex 账号时
+// 一并回收宿主直连授权。账号状态直接由 enabled 派生（up/down），不再维护
+// account_state 展示投影——投影是旧 Node 台账留下的第二份真值，已随身份重解析
+// 一并移除。
 package webuiaccountstatusapi
 
 import (

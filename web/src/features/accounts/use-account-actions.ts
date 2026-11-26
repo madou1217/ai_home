@@ -1814,10 +1814,24 @@ export function useAccountActions({
     const generation = ++cliPickerGeneration.current;
     setCliTerminalsLoading(true);
     try {
+      // 终端清单在 Server 重启窗口内会直接连不上；短时间重试后再报错，
+      // 避免把「服务正在重启」显示成「读取可用终端失败」。
+      const listTerminalsWithRetry = async () => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 7; attempt++) {
+          try {
+            return await accountsAPI.listTerminals();
+          } catch (error) {
+            lastError = error;
+            await new Promise((resolve) => setTimeout(resolve, Math.min(3000, 500 * (attempt + 1))));
+          }
+        }
+        throw lastError;
+      };
       // 三个数据面并行读取：终端、已安装的 harness、身份账号的模型目录。
       // 任一副数据失败都不拦终端选择；跨 Provider 的模型缺失会由弹窗提示。
       const [terminalsResult, entriesResult, catalogResult] = await Promise.allSettled([
-        accountsAPI.listTerminals(),
+        listTerminalsWithRetry(),
         accountsAPI.listAppEntries(),
         modelsAPI.listCatalog()
       ]);
@@ -1887,7 +1901,9 @@ export function useAccountActions({
       setSelectedCliModel(defaultHarness !== record.provider ? (defaultModel || models[0] || '') : '');
       setCliPickerAccount(record);
     } catch (error: any) {
-      if (generation === cliPickerGeneration.current) message.error(error?.response?.data?.message || '读取可用终端失败');
+      if (generation === cliPickerGeneration.current) {
+        message.error(error?.response?.data?.message || '读取可用终端失败（服务可能正在重启，请稍后重试）');
+      }
     } finally {
       if (generation === cliPickerGeneration.current) setCliTerminalsLoading(false);
     }

@@ -1461,8 +1461,10 @@ func (o *CodebuddyLimitObserver) Tick(ctx context.Context) CodebuddyLimitSummary
 			model = FindRequestModelInCliLogs(o.aiHomeDir, o.hostHomeDir, prov, ref, item.obs.RequestID, item.obs.AtMS, now)
 		}
 		if model == "" {
-			summary.Unattributed++
-			continue
+			// 429 没有模型线索时不能直接丢弃：它可能是账号级限流。
+			// 用 "*" 写入账号级保守冷却，CLI 选号会把它视为该账号所有模型
+			// 都不可用；能解析出真实模型时仍优先使用真实模型。
+			model = "*"
 		}
 		applied := o.onLimitObserved(ctx, ObservedCodebuddyLimit{
 			Provider:       prov,

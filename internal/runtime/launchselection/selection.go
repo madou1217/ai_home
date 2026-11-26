@@ -174,7 +174,7 @@ func blockedByModel(candidate Candidate, model string, nowMS int64) bool {
 			continue
 		}
 		if len(item.Blocks) > 0 {
-			if model == "" || strings.EqualFold(strings.TrimSpace(item.Model), model) {
+			if model == "" || item.Model == "*" || strings.EqualFold(strings.TrimSpace(item.Model), model) {
 				return true
 			}
 			continue
@@ -182,7 +182,7 @@ func blockedByModel(candidate Candidate, model string, nowMS int64) bool {
 		if until <= nowMS {
 			continue
 		}
-		if model == "" || strings.EqualFold(strings.TrimSpace(item.Model), model) {
+		if model == "" || item.Model == "*" || strings.EqualFold(strings.TrimSpace(item.Model), model) {
 			return true
 		}
 	}

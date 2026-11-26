@@ -10,6 +10,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
+	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
@@ -247,6 +248,15 @@ func rewriteGoLaunchSessionVerb(
 	nativeArgs, err := providerlaunch.BuildSessionVerb(sessions, verb, identity, rest)
 	if err != nil {
 		return nil, true, fmt.Errorf("%s %s: %w", providerID, verb, err)
+	}
+	// 家族 resume 默认自动续聊：有未完成 /goal 时恢复 goal，否则发送 continue。
+	// 只在没有显式提示词时注入；-p 等旗标不算提示词。
+	if codebuddyfamilystorage.IsFamilyProvider(providerID) &&
+		strings.EqualFold(verb, "resume") &&
+		!sessionVerbHasExplicitPrompt(rest) {
+		if prompt, ok := familyContinuationPromptForRuntime(providerID, identity, runtime); ok {
+			nativeArgs = append(nativeArgs, prompt)
+		}
 	}
 	target := ""
 	if verbIndex == 2 {

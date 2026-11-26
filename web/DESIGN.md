@@ -29,7 +29,7 @@ Primitive → Semantic → Domain → HUD
 | Token | 深色 HUD | 日光 HUD | 用途 |
 |---|---|---|---|
 | `--color-bg` | `#05080e` | `#eef3f7` | 画布（叠加 32px 网格） |
-| `--color-surface` / `--hud-panel-bg` | `#0a101a` / `rgba(10,16,26,.85)` | `#ffffff` | 面板 |
+| `--color-surface` / `--hud-panel-bg` | `#0a101a` / `rgba(10,16,26,.78)` | `#ffffff` / `rgba(255,255,255,.84)` | 面板 |
 | `--color-surface-raised` | `#0c1524` | `#f7fafc` | 浮层、弹窗 |
 | `--color-surface-sunken` | `#03060b` | `#dce5ed` | 输入槽、代码块 |
 | `--color-border` / `-strong` | `#15263d` / `#23405f` | `#cbd8e3` / `#aabdcd` | 发丝线 |
@@ -110,7 +110,7 @@ xs 480 · sm 640 · **md 768（移动 ↔ 桌面）** · lg 1024 · xl 1280（�
 
 ## 10. 验收清单
 
-1. `cd web && npm run build`、改动文件 eslint、`bun test web/src`、相关 node 测试通过。
+1. `cd web && npm run build`、改动文件 eslint、`npm run test:unit`、相关 node 测试通过。
 2. 深色 HUD / 日光 HUD 桌面（1440×900）与移动（390×844）真实截图检查。
 3. 界面数据全部来自真实接口；无演示数据、无虚构功能；无浏览器原生 alert / confirm。
 4. CRT、音效、主题三个开关可用且持久化；`prefers-reduced-motion` 生效。

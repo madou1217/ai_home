@@ -424,4 +424,5 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 - 真机证据：
   - macOS 原生 Workspace WKWebView 保持打开，写入新内容后第 2 帧截图已出现带模糊光晕的新卡，后续帧落定；页面无 reload。
   - Windows 11 真机 Edge HUD 保持打开，Mac 先复制、同步后卡片自动出现在首位（time 0s）；连续截帧中第 3 帧捕获到新卡的模糊浮出阶段，第 5 帧落定；Windows SSE 端点实际返回 `event: ready`。
+  - Windows 真机 Quick Orbit（`?mode=quick`）保持打开，新条目同样自动进入左侧卡片；第 7 帧捕获到横向雾化浮入，第 8 帧落定；同时把一次批量涌入的动效上限设为 16 张，避免大批同步时同时跑数百个 blur filter。
   - Windows 页面字体已统一为等宽栈；Mac/Windows 两端的 `/ui/paste/` 为同一份 `index.html`。

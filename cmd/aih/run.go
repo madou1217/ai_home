@@ -498,11 +498,8 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 			arguments = rewritten
 		}
 	}
-	// 家族账号切换后的无参数启动：自动接上当前目录最近的会话，并发送
-	// continue；若会话有未完成 /goal，则用 /goal 恢复目标。--fresh 强制新建。
-	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
-		arguments = maybeAutoContinueFamilyLaunch(providerID, arguments, runtime)
-	}
+	// 不根据“最近会话”猜测要续聊哪一段：同一目录可能同时有多个会话。
+	// 只有显式 resume（带 id 或不带 id）才注入 continue / goal 恢复。
 	needsNativeStore := commandNeedsNativeStore(providerID, arguments)
 	// 网关档也需要数据根：CodeBuddy 家族的 models.json 投影落在
 	// <aiHome>/run/codebuddy-gateway，不能等 Native Direct 分支才解析。
@@ -748,7 +745,6 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintf(output, "  aih %s [<id>] --desktop                      # 打开桌面端（同一账号单例）\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" [原生参数...]                 # 自动择号启动（Native Direct）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> [原生参数...]              # 指定账号启动（伪 HOME 投影）")
-		_, _ = fmt.Fprintln(output, "  aih "+providerID+" <id> --fresh [原生参数...]      # 强制新建会话（不自动续聊）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" relay [原生参数...]              # AIH Server 网关档（models.json 注入）")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" relay [<provider>] <id> ...      # 网关档固定账号 / 跨 Provider")
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" resume [<id>] [原生参数...]      # 续接（无 id = 最近一段）")
@@ -768,7 +764,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output, "说明:")
 		_, _ = fmt.Fprintln(output, "  家族四支共用 codebuddy 二进制；账号边界由投影后的 HOME / CODEBUDDY_CONFIG_DIR 决定。")
 		_, _ = fmt.Fprintln(output, "  裸 `aih "+providerID+"` 未指定账号时按健康度自动选一个账号（Native Direct）。")
-		_, _ = fmt.Fprintln(output, "  无参数启动会接上当前目录最近的会话并自动发送 continue；若会话有未完成 /goal，则用 /goal 恢复目标。")
+		_, _ = fmt.Fprintln(output, "  只有显式 resume 才自动续聊：resume <id> 续指定会话；resume 不带 id 续最近一段。")
 		_, _ = fmt.Fprintln(output, "  `relay` 是独立的网关档：不注入任何 CodeBuddy 账号凭据，模型目录来自 AIH Server 的")
 		_, _ = fmt.Fprintln(output, "  models.json 投影（<aiHome>/run/codebuddy-gateway），与账号档互不影响。")
 		_, _ = fmt.Fprintln(output, "  会话/配置根通过共享链接回到宿主；fork 没有原生入口，aih 不猜参数。")

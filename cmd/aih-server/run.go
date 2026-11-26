@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/distributioninstall"
 	"github.com/madou1217/ai_home/internal/runtime/outboundproxy"
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
+	"github.com/madou1217/ai_home/internal/runtime/termtext"
 	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
 )
 
@@ -59,8 +60,8 @@ func defaultCommandRuntime(requestShutdown func()) commandRuntime {
 		lookupEnv:       os.LookupEnv,
 		userHomeDir:     os.UserHomeDir,
 		listen:          listenConfig.Listen,
-		stdout:          os.Stdout,
-		stderr:          os.Stderr,
+		stdout:          termtext.WrapWriter(os.Stdout),
+		stderr:          termtext.WrapWriter(os.Stderr),
 		requestShutdown: requestShutdown,
 	}
 }

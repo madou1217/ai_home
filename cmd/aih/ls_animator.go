@@ -482,11 +482,11 @@ func (animation *lsAnimation) render(static bool) {
 // Polling on the existing 100ms tick also covers terminals without SIGWINCH
 // forwarding and keeps the rendering path portable to Windows.
 func (animation *lsAnimation) refreshSize() bool {
-	file := animation.stdin
-	if output, ok := animation.stdout.(*os.File); ok {
-		file = output
+	fd := int(animation.stdin.Fd())
+	if output, ok := animation.stdout.(interface{ Fd() uintptr }); ok {
+		fd = int(output.Fd())
 	}
-	width, height, err := term.GetSize(int(file.Fd()))
+	width, height, err := term.GetSize(fd)
 	if err != nil || width <= 0 || height <= 0 {
 		return false
 	}

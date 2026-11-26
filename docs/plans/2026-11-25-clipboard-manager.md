@@ -388,3 +388,22 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 - 实测真实链路：Mac 复制文本→Windows 出现 `materialized=false` stub；Windows 执行 `aih-go clip copy` 后内容落到 Windows 系统剪贴板。反向 Windows API 条目→Mac 为 stub，Mac `aih clip copy` 触发按需拉取后文本精确、`materialized=true`。
 - Windows 终端中文：CLI 启动时调用 `SetConsoleOutputCP(65001)/SetConsoleCP(65001)`；在 `chcp 936` 后执行 `aih-go clip ls` 仍正确显示中文（`，重点看 Windows 的 Tee-Object 路径…`）。
 - 隧道由本机 `ssh -fN` 持有；隧道断开时同步自动暂停，重连后继续。测试条目已从两侧删除。
+
+## 22. 终端中文自动降级（2026-11-26）
+
+目标：无论 Windows 旧控制台、无中文字体的 Linux、本地虚拟终端还是 SSH，都不出现 `?`、乱码或空框，且默认全自动，不要求用户设环境变量。
+
+- 新增 `internal/runtime/termtext`，`WrapWriter` 接入 `aih` 与前台 `aih-server` 的 stdout/stderr；非 TTY（管道、重定向、MCP/补全协议）原样透传，机器可读输出字节不变。
+- 能力判定顺序：
+  - `AIH_TERM_ENCODING=ascii|utf8` 仅作为显式覆盖；
+  - `TERM=dumb` 直接降级；
+  - Linux 的 `/dev/ttyN`、`/dev/console` 内核虚拟终端直接降级（桌面安装的字体在 VT 中无效，避免“有字体文件但控制台显示空框”的假阳性）；
+  - Windows 检查系统 CJK 字体（微软雅黑/黑体/宋体/微软正黑/细明体/Yu Gothic/Meiryo）；macOS 使用系统字体回退，始终 UTF-8；
+  - Linux/macOS 本地 TTY 先看 UTF-8 locale，再用 `fc-list :lang=zh` 与常见 Noto/WenQuanYi/Droid/Source Han 字体路径探测；SSH 连接在 UTF-8 locale 下信任客户端字体，避免因服务器没装中文字体而错误降级。
+- 降级表示：汉字转无声调拼音（内嵌 26,711 条 `pinyin.tsv`），CJK 标点/制表线/常见 TUI 符号（●○◆▶✔✘、braille 动画帧、方块）转 ASCII，拉丁重音折叠（café→cafe），其余符号输出 `[U+XXXX]`，ANSI 颜色序列原样保留；不会静默丢字符。`Fd()` 透传保证 palette、TUI 尺寸探测和动画判定不被包装器破坏。
+- 真实证据：
+  - macOS 真 TTY：默认中文正常；`AIH_TERM_ENCODING=ascii` 下 `用法`→`yong fa`，`aih clip ls` 中文条目显示为拼音且无乱码，`aih ls` TUI 可正常渲染/退出。
+  - 无字体 Linux 容器（`redis:alpine`，无 `fc-list`、无 `/usr/share/fonts`，`LANG=en_US.UTF-8`）：真实 TTY 下自动降级为拼音；挂载一个 `NotoSansCJK*` 字体文件后自动恢复中文，证明判定闭环而非依赖手工开关。
+  - Windows 真机交互会话（Windows Terminal/conhost）：默认控制台中文完整显示；强制 ASCII 时显示可读拼音，均无 `?`/乱码；SSH 抓取 `aih-go clip ls` 的 UTF-8 字节逐字符解码正确。
+  - 交叉构建 `darwin/arm64`、`windows/amd64`、`linux/arm64` 均通过。
+- 已知取舍：ASCII 拼音会把中文列变宽，TUI 的列对齐在降级模式下不如中文模式紧凑；优先级是“任何终端都可读”而不是保持原始列宽。

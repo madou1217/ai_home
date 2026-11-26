@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/termtext"
 )
 
 const (
@@ -61,8 +62,8 @@ func defaultCommandRuntime() commandRuntime {
 		lookupEnv:   os.LookupEnv,
 		userHomeDir: os.UserHomeDir,
 		stdin:       os.Stdin,
-		stdout:      os.Stdout,
-		stderr:      os.Stderr,
+		stdout:      termtext.WrapWriter(os.Stdout),
+		stderr:      termtext.WrapWriter(os.Stderr),
 		managementAPI: &http.Client{
 			Timeout: managementHTTPTimeout,
 		},

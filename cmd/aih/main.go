@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/madou1217/ai_home/internal/runtime/nativeterminal"
+	"github.com/madou1217/ai_home/internal/runtime/termtext"
 )
 
 // silentExit 是前台 TUI 透传退出码的窄合同：不打印 aih 自身错误，只保留子进程退出码。
@@ -23,8 +24,8 @@ var runCLI = run
 // main 为 Go CLI 建立可取消进程生命周期并统一输出根错误。
 func main() {
 	if isNativeVersionArgs(os.Args[1:]) {
-		if err := writeNativeCLIVersion(os.Stdout); err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, "aih:", err)
+		if err := writeNativeCLIVersion(termtext.WrapWriter(os.Stdout)); err != nil {
+			_, _ = fmt.Fprintln(termtext.WrapWriter(os.Stderr), "aih:", err)
 			os.Exit(1)
 		}
 		return

@@ -184,7 +184,7 @@ func (p *desktopPrepContext) decorateKimiBaseEnv() {
 		p.setEnv("HOME", p.hostHomeDir)
 		p.setEnv("USERPROFILE", p.hostHomeDir)
 		p.applySharedCacheEnv()
-		p.applySharedXdgHomeEnv()
+		p.applyProviderXdgEnv()
 	}
 }
 
@@ -198,7 +198,7 @@ func (p *desktopPrepContext) decorateClaudeBaseEnv() {
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
 	p.applySharedCacheEnv()
-	p.applySharedXdgHomeEnv()
+	p.applyProviderXdgEnv()
 }
 
 // decorateIsolatedBaseEnv 是通用 Electron 应用的默认隔离：HOME 与 XDG 配置/数据/
@@ -210,6 +210,9 @@ func (p *desktopPrepContext) decorateIsolatedBaseEnv() {
 	p.setEnv("XDG_DATA_HOME", filepath.Join(p.profileDir, ".local", "share"))
 	p.setEnv("XDG_STATE_HOME", filepath.Join(p.profileDir, ".local", "state"))
 	p.applySharedCacheEnv()
+	// 审计表里登记了部分/全部可共享根的 Provider（当前是 opencode）在这里覆盖；
+	// 未登记者（qoder/qodercn 等）保持上面的账号私有路径。
+	p.applyProviderXdgEnv()
 }
 
 func (p *desktopPrepContext) applySharedCacheEnv() {
@@ -217,22 +220,78 @@ func (p *desktopPrepContext) applySharedCacheEnv() {
 		return
 	}
 	// 缓存与工具链变量永远共享；XDG_CONFIG/DATA/STATE 可能承载某些客户端的
-	// 登录态，只有确认凭据不在其中的 Provider 才额外调用 applySharedXdgHomeEnv。
+	// 登录态，按 desktopXDGShares 的审计结论逐根决定（applyProviderXdgEnv）。
 	p.setEnv("XDG_CACHE_HOME", filepath.Join(p.hostHomeDir, ".cache"))
 	for key, value := range sharedcache.Env(p.hostHomeDir, runtime.GOOS) {
 		p.setEnv(key, value)
 	}
 }
 
-// applySharedXdgHomeEnv 把 XDG 配置/数据/状态指向宿主。
-// 仅用于凭据已确认不在这些目录里的 Provider（CodeBuddy/Kiro/ZCode/Claude/Codex/Kimi）。
-func (p *desktopPrepContext) applySharedXdgHomeEnv() {
+// desktopXDGShare 是桌面进程 XDG 三根的宿主共享审计结果：true 表示该根以宿主为
+// 准，false 表示账号私有（留在账号投影目录里）。
+type desktopXDGShare struct {
+	Config bool
+	Data   bool
+	State  bool
+}
+
+var (
+	desktopXDGAllShared = desktopXDGShare{Config: true, Data: true, State: true}
+	desktopXDGIsolated  = desktopXDGShare{}
+)
+
+// desktopXDGShares 是逐 Provider 的 XDG 审计结论（2026-11-26 实测宿主目录与
+// Windows %APPDATA%/%LOCALAPPDATA%）。表外的 Provider 一律隔离：新增 Provider
+// 必须审计后显式登记，不能靠“默认共享”蒙过去。
+//
+//   - codex / claude / zcode / kimi / CodeBuddy 家族：凭据在各自配置根或账号 auth
+//     artifact 里，XDG 三根没有登录态 → 全部共享。
+//   - opencode：auth.json 在 XDG_DATA_HOME（宿主与账号 profile 各一份），data 必须
+//     账号私有；config（opencode.json/插件）与 state 无凭据，CLI 投影本来就把它们
+//     指向宿主 → 只共享 config/state。
+//   - qoder / qodercn：登录态在 ~/.qoder/.auth；Windows 的 %APPDATA%\Qoder 里还有
+//     SharedClientCache/machine_token.json 与 Network/Cookies → 三根全部账号私有。
+//   - kiro（Electron/VS Code 形态）：凭据在 ~/.local/share/kiro-cli 与系统钥匙串，
+//     userData 的 globalStorage/Network 也可能持有会话 → 保持隔离；darwin 原生 GUI
+//     由 decorateKiroNativeEnv 单独共享（那里凭据同样在 KIRO_HOME/钥匙串）。
+var desktopXDGShares = map[string]desktopXDGShare{
+	"codex":    desktopXDGAllShared,
+	"claude":   desktopXDGAllShared,
+	"zcode":    desktopXDGAllShared,
+	"kimi":     desktopXDGAllShared,
+	"opencode": {Config: true, State: true},
+}
+
+func providerXDGShare(providerID string) desktopXDGShare {
+	id := strings.ToLower(strings.TrimSpace(providerID))
+	if share, ok := desktopXDGShares[id]; ok {
+		return share
+	}
+	if codebuddyfamilystorage.IsFamilyProvider(id) {
+		return desktopXDGAllShared
+	}
+	return desktopXDGIsolated
+}
+
+// applyProviderXdgEnv 按审计表把可以由宿主承载的 XDG 根指向宿主；未登记或只共享
+// 部分根的 Provider 保留调用方设置的账号私有路径。
+func (p *desktopPrepContext) applyProviderXdgEnv() {
+	p.applyHostXdgEnv(providerXDGShare(p.req.Provider))
+}
+
+func (p *desktopPrepContext) applyHostXdgEnv(share desktopXDGShare) {
 	if strings.TrimSpace(p.hostHomeDir) == "" {
 		return
 	}
-	p.setEnv("XDG_CONFIG_HOME", filepath.Join(p.hostHomeDir, ".config"))
-	p.setEnv("XDG_DATA_HOME", filepath.Join(p.hostHomeDir, ".local", "share"))
-	p.setEnv("XDG_STATE_HOME", filepath.Join(p.hostHomeDir, ".local", "state"))
+	if share.Config {
+		p.setEnv("XDG_CONFIG_HOME", filepath.Join(p.hostHomeDir, ".config"))
+	}
+	if share.Data {
+		p.setEnv("XDG_DATA_HOME", filepath.Join(p.hostHomeDir, ".local", "share"))
+	}
+	if share.State {
+		p.setEnv("XDG_STATE_HOME", filepath.Join(p.hostHomeDir, ".local", "state"))
+	}
 }
 
 func (p *desktopPrepContext) decorateCodexBaseEnv() {
@@ -245,7 +304,7 @@ func (p *desktopPrepContext) decorateCodexBaseEnv() {
 	if _, _, isAPIKey := extractCodexAPIKey(p.snapshot); isAPIKey {
 		p.setEnv("CODEX_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("codex")))
 		p.applySharedCacheEnv()
-		p.applySharedXdgHomeEnv()
+		p.applyProviderXdgEnv()
 	} else {
 		p.setEnv("HOME", p.profileDir)
 		p.setEnv("USERPROFILE", p.profileDir)
@@ -254,7 +313,7 @@ func (p *desktopPrepContext) decorateCodexBaseEnv() {
 			p.setEnv("CODEX_SQLITE_HOME", filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex")))
 		}
 		p.applySharedCacheEnv()
-		p.applySharedXdgHomeEnv()
+		p.applyProviderXdgEnv()
 	}
 }
 
@@ -295,7 +354,7 @@ func (p *desktopPrepContext) decorateZcodeBaseEnv() {
 	// 只改 HOME；Windows 上改 USERPROFILE 会导致 ZCode 主进程静默卡死。
 	p.setEnv("HOME", p.profileDir)
 	p.applySharedCacheEnv()
-	p.applySharedXdgHomeEnv()
+	p.applyProviderXdgEnv()
 	if p.applicationName != "" {
 		p.setEnv(zcodeDesktopApplicationNameEnv, p.applicationName)
 	}
@@ -305,7 +364,7 @@ func (p *desktopPrepContext) decorateCodebuddyFamilyBaseEnv() {
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
 	p.applySharedCacheEnv()
-	p.applySharedXdgHomeEnv()
+	p.applyProviderXdgEnv()
 
 	provider := strings.ToLower(strings.TrimSpace(p.req.Provider))
 	dirName, ok := codebuddyfamilystorage.ConfigDir(provider)
@@ -499,7 +558,9 @@ func (p *desktopPrepContext) decorateKiroNativeEnv() {
 	p.setEnv("KIRO_TEST_DB_PATH", filepath.Join(p.profileDir, "data.sqlite3"))
 	p.setEnv("TMPDIR", filepath.Join(p.profileDir, "tmp")+string(filepath.Separator))
 	p.applySharedCacheEnv()
-	p.applySharedXdgHomeEnv()
+	// 原生 GUI 的凭据在 KIRO_HOME（宿主）与系统钥匙串，XDG 三根可以共享；
+	// Electron/VS Code 形态走 desktopXDGShares 的隔离结论。
+	p.applyHostXdgEnv(desktopXDGAllShared)
 	p.deleteEnv("KIRO_API_KEY")
 }
 

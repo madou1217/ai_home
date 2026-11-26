@@ -154,7 +154,7 @@ func readDarwinAppPlist(bundlePath string) infoPlistMeta {
 }
 
 func readDarwinLocalizedNames(bundlePath string) []string {
-	lprojDirs := []string{"zh_CN.lproj", "zh-Hans.lproj"}
+	lprojDirs := []string{"zh_CN.lproj", "zh-Hans.lproj", "zh.lproj"}
 	for _, dir := range lprojDirs {
 		stringsPath := filepath.Join(bundlePath, "Contents", "Resources", dir, "InfoPlist.strings")
 		f, err := os.Open(stringsPath)

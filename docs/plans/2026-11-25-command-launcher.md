@@ -134,7 +134,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
 - 扫描：`/Applications`、`/System/Applications`、`/System/Applications/Utilities`、`~/Applications`（递归 3 层），收集 `*.app`。
 - 名称：**目录名去 `.app`** 作为主名称（用户在 Finder/终端里看到的就是它，例如 `Visual Studio Code` 而不是 plist 里的 `Code`）；解析 `Contents/Info.plist`（XML）得到的 `CFBundleDisplayName`/`CFBundleName` 作为 `aliases`（最多 4 个），仅用于搜索匹配。
-- 中英文：额外读取 `Contents/Resources/zh_CN.lproj/InfoPlist.strings`（其次 `zh-Hans.lproj`）中的 `CFBundleDisplayName`/`CFBundleName` 作为中文 alias（例如 `WeChat` → `微信`），使中文与英文查询都能命中同一应用；`.strings` 解析失败不影响主流程。
+- 中英文：额外读取 `Contents/Resources/zh_CN.lproj/InfoPlist.strings`（依次回退 `zh-Hans.lproj`、`zh.lproj`，支持 UTF-16LE/BE BOM、UTF-8 与 XML/二进制 plist）中的 `CFBundleDisplayName`/`CFBundleName` 作为中文 alias（例如 `WeChat` → `微信`），使中文与英文查询都能命中同一应用；`.strings` 解析失败不影响主流程。
 - 去重：同一真实路径只保留一条（`filepath.EvalSymlinks`，失败用原路径）。
 - 打开：`open -a <path>`（`exec.Command`，无 shell）。
 - 备注：系统应用（Safari 等）名称可能为英文目录名，属可接受回退。

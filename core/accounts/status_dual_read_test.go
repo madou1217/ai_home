@@ -16,10 +16,10 @@ import (
 
 // 本文件是 §7-d「状态推导双读比对」的 Go 侧执行器。
 //
-// 真值来源：scripts/status-dual-read-capture.js 用 Node 的**真实**实现
+// 真值来源：testdata/status-dual-read.json 是 Node 实现退役前用其真实逻辑
 // （touchAccountFailureState / clearRuntimeBlock / clearAccountWideRuntimeState /
-// deriveAccountRuntimeStatus）回放一组固定事件，把每一步之后的运行态与派生状态冻结进
-// testdata/status-dual-read.json。这里用 core/accounts 的移植实现重放同一组事件，逐步比对。
+// deriveAccountRuntimeStatus）一次性冻结的夹具；Node 侧代码已删除，夹具是只读真值。
+// 这里用 core/accounts 的移植实现重放同一组事件，逐步比对。
 //
 // 为什么要把 Go 状态先序列化回「Node 形状」再比，而不是直接 reflect.DeepEqual：
 //   - 双读阶段要证明的是「两端对外给出的文档一致」，而 Go 的表示习惯与 Node 不同

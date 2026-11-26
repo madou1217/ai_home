@@ -17,20 +17,20 @@ import (
 const requestContextKind = "model_usage_request_context"
 
 var (
-	leadingMethodRe        = regexp.MustCompile(`^[A-Z]+\s+`)
-	safeDiagnosticCodeRe   = regexp.MustCompile(`(?i)^[a-z0-9][a-z0-9_.:-]{0,95}$`)
-	urlCredentialRe        = regexp.MustCompile(`(?i)(https?://)[^\s/:@]+:[^\s/@]+@`)
-	quotedSecretAssignRe   = regexp.MustCompile(`(?i)((?:["']?)(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|x[_-]?api[_-]?key|management[_-]?key|private[_-]?key|secret[_-]?key|token|secret|credential|password)(?:["']?)\s*[:=]\s*)(?:"[^\r\n"]*"|'[^\r\n']*')`)
-	secretAssignRe         = regexp.MustCompile(`(?i)(\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|x[_-]?api[_-]?key|management[_-]?key|private[_-]?key|secret[_-]?key|token|secret|credential|password)\b\s*[:=]\s*)[^\s,;&}\])]+`)
-	authorizationHeaderRe  = regexp.MustCompile(`(?i)(\b(?:proxy[-_ ]?)?authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?[^\s,;)}\]]+`)
-	cookieHeaderRe         = regexp.MustCompile(`(?i)(\b(?:set[-_ ]?cookie|cookie)s?\s*[:=]\s*)[^\r\n]*`)
-	bearerTokenRe          = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s,;)}\]]+`)
-	basicTokenRe           = regexp.MustCompile(`(?i)\b(basic)\s+[^\s,;)}\]]+`)
-	jwtLabelRe             = regexp.MustCompile(`(?i)(\bjwt\s+)[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+`)
-	jwtTokenRe             = regexp.MustCompile(`(?i)\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b`)
-	providerAPIKeyRe       = regexp.MustCompile(`(?i)\b(?:sk-(?:ant-|proj-)?[a-z0-9_-]{8,}|AIza[a-z0-9_-]{16,})\b`)
-	controlCharsRe         = regexp.MustCompile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+")
-	whitespaceCollapseRe   = regexp.MustCompile(`\s+`)
+	leadingMethodRe       = regexp.MustCompile(`^[A-Z]+\s+`)
+	safeDiagnosticCodeRe  = regexp.MustCompile(`(?i)^[a-z0-9][a-z0-9_.:-]{0,95}$`)
+	urlCredentialRe       = regexp.MustCompile(`(?i)(https?://)[^\s/:@]+:[^\s/@]+@`)
+	quotedSecretAssignRe  = regexp.MustCompile(`(?i)((?:["']?)(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|x[_-]?api[_-]?key|management[_-]?key|private[_-]?key|secret[_-]?key|token|secret|credential|password)(?:["']?)\s*[:=]\s*)(?:"[^\r\n"]*"|'[^\r\n']*')`)
+	secretAssignRe        = regexp.MustCompile(`(?i)(\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|x[_-]?api[_-]?key|management[_-]?key|private[_-]?key|secret[_-]?key|token|secret|credential|password)\b\s*[:=]\s*)[^\s,;&}\])]+`)
+	authorizationHeaderRe = regexp.MustCompile(`(?i)(\b(?:proxy[-_ ]?)?authorization\s*[:=]\s*)(?:(?:bearer|basic|token)\s+)?[^\s,;)}\]]+`)
+	cookieHeaderRe        = regexp.MustCompile(`(?i)(\b(?:set[-_ ]?cookie|cookie)s?\s*[:=]\s*)[^\r\n]*`)
+	bearerTokenRe         = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s,;)}\]]+`)
+	basicTokenRe          = regexp.MustCompile(`(?i)\b(basic)\s+[^\s,;)}\]]+`)
+	jwtLabelRe            = regexp.MustCompile(`(?i)(\bjwt\s+)[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+`)
+	jwtTokenRe            = regexp.MustCompile(`(?i)\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b`)
+	providerAPIKeyRe      = regexp.MustCompile(`(?i)\b(?:sk-(?:ant-|proj-)?[a-z0-9_-]{8,}|AIza[a-z0-9_-]{16,})\b`)
+	controlCharsRe        = regexp.MustCompile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+")
+	whitespaceCollapseRe  = regexp.MustCompile(`\s+`)
 )
 
 type requestLogRecord struct {
@@ -49,30 +49,30 @@ type requestLogRecord struct {
 }
 
 type requestLogEntry struct {
-	At              string  `json:"at"`
-	Kind            string  `json:"kind"`
-	RequestID       string  `json:"requestId"`
-	Provider        string  `json:"provider"`
-	Model           string  `json:"model"`
-	EffectiveModel  string  `json:"effectiveModel"`
-	RequestedModel  string  `json:"requestedModel"`
-	ReasoningEffort string  `json:"reasoningEffort"`
-	Endpoint        string  `json:"endpoint"`
-	Path            string  `json:"path"`
-	Route           string  `json:"route"`
-	ClientIP        string  `json:"clientIp"`
-	RequestType     string  `json:"requestType"`
-	StreamRequested *bool   `json:"streamRequested"`
-	StreamTransport string  `json:"streamTransport"`
-	Method          string  `json:"method"`
+	At              string   `json:"at"`
+	Kind            string   `json:"kind"`
+	RequestID       string   `json:"requestId"`
+	Provider        string   `json:"provider"`
+	Model           string   `json:"model"`
+	EffectiveModel  string   `json:"effectiveModel"`
+	RequestedModel  string   `json:"requestedModel"`
+	ReasoningEffort string   `json:"reasoningEffort"`
+	Endpoint        string   `json:"endpoint"`
+	Path            string   `json:"path"`
+	Route           string   `json:"route"`
+	ClientIP        string   `json:"clientIp"`
+	RequestType     string   `json:"requestType"`
+	StreamRequested *bool    `json:"streamRequested"`
+	StreamTransport string   `json:"streamTransport"`
+	Method          string   `json:"method"`
 	DurationMS      *float64 `json:"durationMs"`
-	Status          float64 `json:"status"`
-	PolicyKind      string  `json:"policyKind"`
-	FailureReason   string  `json:"failureReason"`
-	Error           string  `json:"error"`
-	UpstreamBody    string  `json:"upstreamBody"`
-	UpstreamError   string  `json:"upstreamError"`
-	Detail          string  `json:"detail"`
+	Status          float64  `json:"status"`
+	PolicyKind      string   `json:"policyKind"`
+	FailureReason   string   `json:"failureReason"`
+	Error           string   `json:"error"`
+	UpstreamBody    string   `json:"upstreamBody"`
+	UpstreamError   string   `json:"upstreamError"`
+	Detail          string   `json:"detail"`
 }
 
 type requestLogReader struct {
@@ -376,10 +376,10 @@ func (s *UsageStore) QueryRequestDetails(ctx context.Context, query UsageQuery) 
 	seenRequests := make(map[string]struct{}, normalized.Limit)
 	for rows.Next() {
 		var (
-			reqID, prov, model                              string
-			inTok, outTok, cacheRead, cacheCreate, reason   int64
-			totalTok, tsMS                                  int64
-			costUSD                                         float64
+			reqID, prov, model                            string
+			inTok, outTok, cacheRead, cacheCreate, reason int64
+			totalTok, tsMS                                int64
+			costUSD                                       float64
 		)
 		if scanErr := rows.Scan(
 			&reqID, &prov, &model,

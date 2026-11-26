@@ -8,6 +8,7 @@ package launchselection
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,10 +18,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/accountadmission"
 )
 
 // recentWindowMillis 是"刚被选过就让开"的时间窗。
 const recentWindowMillis = int64(90 * 1000)
+
+// ErrNoHealthyAccount 表示所有候选都处于账号/模型 429、额度耗尽或不可调度。
+// 调用方必须失败关闭，不能把新会话落到已知受限的账号上。
+var ErrNoHealthyAccount = errors.New("launchselection: no healthy account")
 
 // Candidate 是管理面返回的账号候选。
 type Candidate struct {
@@ -35,6 +42,16 @@ type Candidate struct {
 	// 「健康优先」永远失效，只能退化成余量/最近使用排序。
 	SchedulableStatus string `json:"schedulableStatus"`
 	QuotaStatus       string `json:"quotaStatus"`
+	// RuntimeModels 是账号页同源的模型级阻塞/冷却；账号级 429 之外，
+	// CodeBuddy 的 429 往往只落在具体模型上，不能只看账号级 schedulable。
+	RuntimeModels []RuntimeModel `json:"runtimeModels"`
+}
+
+// RuntimeModel 是账号在某一个模型上的冷却/阻塞事实。
+type RuntimeModel struct {
+	Model         string            `json:"model"`
+	CooldownUntil int64             `json:"cooldownUntil"`
+	Blocks        []json.RawMessage `json:"blocks"`
 }
 
 // Options 描述一次选号请求。
@@ -43,8 +60,10 @@ type Options struct {
 	BaseURL       string
 	ManagementKey string
 	Provider      string
-	HTTPClient    *http.Client
-	Now           func() time.Time
+	// Model 是本次要启动的模型；为空时保守地把任何模型级冷却都视为不健康。
+	Model      string
+	HTTPClient *http.Client
+	Now        func() time.Time
 }
 
 // Pick 返回当前最该用的账号；没有可用候选时 found=false。
@@ -73,42 +92,49 @@ func Pick(ctx context.Context, options Options) (Candidate, bool, error) {
 		defer releaseUsage(lock)
 	}
 	current := nowFunc()
-	// 最近刚被裸启动选过的账号先让开，避免连续/并发启动压在同一条号上；
-	// 全部都在冷却窗口内时，退回"最久未用 + 余量更高"。
-	fresh := make([]Candidate, 0, len(usable))
-	recent := make([]Candidate, 0, len(usable))
+	nowMS := current.UnixMilli()
+	// 账号启动租约能识别「这个账号已有一个 Native CLI 会话」：
+	// 1/2/3 已开着时优先选空闲账号，不要把新会话继续压到它们身上。
+	active := make(map[string]bool, len(usable))
 	for _, candidate := range usable {
-		if current.UnixMilli()-usage.lastUsed(candidate.AccountRef) >= recentWindowMillis {
-			fresh = append(fresh, candidate)
-		} else {
-			recent = append(recent, candidate)
+		active[candidate.AccountRef] = accountadmission.Active(
+			options.AIHomeDir,
+			options.Provider,
+			candidate.AccountRef,
+		)
+	}
+	// 健康候选优先；如果全部账号都 429/额度耗尽，才退回不健康候选。
+	// 不能用「最近使用池」把健康候选挡在外面：否则刚启动过健康账号后，
+	// 唯一未使用的账号即使模型 429 也会被选中。
+	healthy := make([]Candidate, 0, len(usable))
+	for _, candidate := range usable {
+		if isHealthy(candidate, options.Model, nowMS) {
+			healthy = append(healthy, candidate)
 		}
 	}
-	rank := func(pool []Candidate, byRemaining bool) {
-		sort.SliceStable(pool, func(left, right int) bool {
-			a, b := pool[left], pool[right]
-			aHealthy, bHealthy := isHealthy(a), isHealthy(b)
-			if aHealthy != bHealthy {
-				return aHealthy
-			}
-			aUsed, bUsed := usage.lastUsed(a.AccountRef), usage.lastUsed(b.AccountRef)
-			if byRemaining && remaining(a) != remaining(b) {
-				return remaining(a) > remaining(b)
-			}
-			if aUsed != bUsed {
-				return aUsed < bUsed
-			}
-			if remaining(a) != remaining(b) {
-				return remaining(a) > remaining(b)
-			}
-			return a.DisplayID < b.DisplayID
-		})
+	if len(healthy) == 0 {
+		return Candidate{}, false, ErrNoHealthyAccount
 	}
-	pool := fresh
-	if len(pool) == 0 {
-		pool = recent
-	}
-	rank(pool, len(fresh) > 0)
+	pool := healthy
+	sort.SliceStable(pool, func(left, right int) bool {
+		a, b := pool[left], pool[right]
+		if active[a.AccountRef] != active[b.AccountRef] {
+			return !active[a.AccountRef]
+		}
+		aRecent := nowMS-usage.lastUsed(a.AccountRef) < recentWindowMillis
+		bRecent := nowMS-usage.lastUsed(b.AccountRef) < recentWindowMillis
+		if aRecent != bRecent {
+			return !aRecent
+		}
+		if remaining(a) != remaining(b) {
+			return remaining(a) > remaining(b)
+		}
+		aUsed, bUsed := usage.lastUsed(a.AccountRef), usage.lastUsed(b.AccountRef)
+		if aUsed != bUsed {
+			return aUsed < bUsed
+		}
+		return a.DisplayID < b.DisplayID
+	})
 	chosen := pool[0]
 	if lockErr == nil && usage != nil {
 		usage.record(chosen.AccountRef, current)
@@ -122,7 +148,7 @@ func Pick(ctx context.Context, options Options) (Candidate, bool, error) {
 // Status 是启停事实（up/down），永远非空；用它判健康会让所有账号都被当成不健康，
 // 健康优先形同虚设。真正的运行/额度阻塞由 schedulableStatus 与 quotaStatus 表达，
 // 缺字段（旧服务端）时按健康处理，保持与历史选号一致的降级。
-func isHealthy(candidate Candidate) bool {
+func isHealthy(candidate Candidate, model string, nowMS int64) bool {
 	if strings.EqualFold(strings.TrimSpace(candidate.Status), "down") {
 		return false
 	}
@@ -130,7 +156,37 @@ func isHealthy(candidate Candidate) bool {
 	if schedulable != "" && !strings.EqualFold(schedulable, "schedulable") {
 		return false
 	}
-	return !strings.EqualFold(strings.TrimSpace(candidate.QuotaStatus), "exhausted")
+	if strings.EqualFold(strings.TrimSpace(candidate.QuotaStatus), "exhausted") {
+		return false
+	}
+	return !blockedByModel(candidate, model, nowMS)
+}
+
+// blockedByModel 检查账号-模型级 429/阻塞。
+//
+// 未显式指定模型时保守处理：只要账号上还有任意未过期的模型冷却，
+// 就不把它当作健康候选，避免裸启动命中「这个账号只是这个模型 429」。
+func blockedByModel(candidate Candidate, model string, nowMS int64) bool {
+	model = strings.TrimSpace(model)
+	for _, item := range candidate.RuntimeModels {
+		until := item.CooldownUntil
+		if until > 0 && until <= nowMS && len(item.Blocks) == 0 {
+			continue
+		}
+		if len(item.Blocks) > 0 {
+			if model == "" || strings.EqualFold(strings.TrimSpace(item.Model), model) {
+				return true
+			}
+			continue
+		}
+		if until <= nowMS {
+			continue
+		}
+		if model == "" || strings.EqualFold(strings.TrimSpace(item.Model), model) {
+			return true
+		}
+	}
+	return false
 }
 
 func remaining(candidate Candidate) float64 {

@@ -64,7 +64,9 @@ func main() {
 		os.Args = append([]string{os.Args[0], "claude"}, kept...)
 	}
 	// 裸启动（aih <provider>）先按健康度挑一个账号；挑不到时交给 Go 的默认账号解析。
-	if rewritten, ok := resolveBareLaunchArgs(os.Args[1:]); ok {
+	if rewritten, ok, err := resolveBareLaunchArgs(os.Args[1:]); err != nil {
+		os.Exit(2)
+	} else if ok {
 		os.Exit(execute(rewritten, defaultCommandRuntime()))
 	}
 	os.Exit(execute(os.Args[1:], defaultCommandRuntime()))

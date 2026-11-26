@@ -66,6 +66,21 @@ func lockFile(home, provider, ref, suffix string, exclusive bool) (*Lease, error
 	return &Lease{file: file}, nil
 }
 
+// Active reports whether another process currently holds the shared launch
+// lease for this account. It is a non-blocking probe for CLI account selection:
+// a busy writer means an existing native session is still attached.
+func Active(home, provider, ref string) bool {
+	lease, err := lockFile(home, provider, ref, ".writers", true)
+	if errors.Is(err, ErrBusy) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	_ = lease.Close()
+	return false
+}
+
 // Launch retains a shared activity lease through process exit and capture. It
 // briefly checks the deletion intent gate before/after acquiring the lease.
 func Launch(home, provider, ref string) (*Lease, error) {

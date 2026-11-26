@@ -46,9 +46,25 @@ func Policy() accountprojection.Policy {
 		},
 		SharedEntries:         []string{"cli", "workspace"},
 		PrecreatedDirectories: []string{"cli", "workspace"},
+		// 工具链缓存与账号无关，链接回宿主，避免每个账号各存一份
+		// （CodeBuddy 家族注释里记录过 zcode 单账号堆到 4GB 的历史）。
+		SharedHostCaches: []accountprojection.SharedLink{
+			{Projection: []string{".cache"}, Host: []string{".cache"}},
+			{Projection: []string{"go"}, Host: []string{"go"}},
+			{Projection: []string{".npm"}, Host: []string{".npm"}},
+			{
+				Projection: []string{"Library", "Caches", "go-build"},
+				Host:       []string{"Library", "Caches", "go-build"},
+				Platforms:  []string{"darwin"},
+			},
+		},
 		Env: []accountprojection.EnvBinding{
 			{Key: "HOME", Base: accountprojection.EnvBaseProjectionRoot},
 			{Key: "ZCODE_DATA_BASE_DIR", Base: accountprojection.EnvBaseProjectionRoot},
+			{Key: "GOCACHE", Base: accountprojection.EnvBaseHostHome, Path: []string{".cache", "go-build"}},
+			{Key: "GOMODCACHE", Base: accountprojection.EnvBaseHostHome, Path: []string{"go", "pkg", "mod"}},
+			{Key: "GOPATH", Base: accountprojection.EnvBaseHostHome, Path: []string{"go"}},
+			{Key: "npm_config_cache", Base: accountprojection.EnvBaseHostHome, Path: []string{".npm"}},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},
 	}

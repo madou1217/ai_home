@@ -39,8 +39,12 @@ func TestPolicyShape(t *testing.T) {
 	if len(policy.AuthArtifacts) != 2 || policy.AuthArtifacts[0].Field != "oauthToken" {
 		t.Fatalf("artifacts = %#v", policy.AuthArtifacts)
 	}
-	if len(policy.Env) != 7 {
+	if len(policy.Env) != 11 {
 		t.Fatalf("env = %d", len(policy.Env))
+	}
+	// 工具链缓存必须链回宿主：fake HOME 下按账号各存一份会堆满磁盘。
+	if len(policy.SharedHostCaches) < 3 {
+		t.Fatalf("shared host caches = %d", len(policy.SharedHostCaches))
 	}
 	if len(policy.ProjectionRoots) != 2 || len(policy.ProjectionRoots[1].To) != 4 {
 		t.Fatalf("projection roots = %#v", policy.ProjectionRoots)

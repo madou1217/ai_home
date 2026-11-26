@@ -53,8 +53,8 @@ func Policy() accountprojection.Policy {
 		},
 		// 只保留启动必需的两条映射：agy 的会话/知识库在 .gemini/antigravity-cli 下
 		// （与宿主共享），其余 $HOME 子项落到 Provider 运行 home 的 home/ 命名空间。
-		// Node 还给 Library/.local/.cache/.config 建了同样的映射；这些在账号沙箱里
-		// 首次启动会自然生成，不需要为了共享把宿主目录整个链进来。
+		// 工具链缓存（.cache/go/.npm）例外：它们与账号无关，必须链回宿主，
+		// 否则 fake HOME 会让每个账号各存一份并迅速堆满磁盘。
 		ProjectionRoots: []accountprojection.Mapping{
 			{From: append([]string{}, root...), To: append([]string{}, root...)},
 			{From: []string{}, To: runtimeHomeTarget("home")},
@@ -62,6 +62,19 @@ func Policy() accountprojection.Policy {
 		SharedEntries:         append([]string{}, sharedNames...),
 		SessionEntries:        []string{"brain", "conversations"},
 		PrecreatedDirectories: append([]string{}, sharedNames...),
+		// 工具链缓存与账号无关，必须链接回宿主；fake HOME 下每个账号各存一份
+		// 会迅速堆满磁盘（2026-11-26 实测：单个 agy 账号 .cache/go-build 4.7G、
+		// .npm 635M、go/pkg 621M）。与 CodeBuddy 家族的 HOST_TOOLCHAIN_CACHES 同口径。
+		SharedHostCaches: []accountprojection.SharedLink{
+			{Projection: []string{".cache"}, Host: []string{".cache"}},
+			{Projection: []string{"go"}, Host: []string{"go"}},
+			{Projection: []string{".npm"}, Host: []string{".npm"}},
+			{
+				Projection: []string{"Library", "Caches", "go-build"},
+				Host:       []string{"Library", "Caches", "go-build"},
+				Platforms:  []string{"darwin"},
+			},
+		},
 		// XDG/设置指针落在宿主上的 Provider 运行 home；EnvBaseHostHome + 完整路径
 		// 才能带上 .aih-runtime-home（HostNativeRoot 只到 ~/.gemini/antigravity-cli）。
 		Env: []accountprojection.EnvBinding{
@@ -71,6 +84,12 @@ func Policy() accountprojection.Policy {
 			{Key: "XDG_DATA_HOME", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget("xdg", "data")},
 			{Key: "XDG_STATE_HOME", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget("xdg", "state")},
 			{Key: "XDG_CACHE_HOME", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget("xdg", "cache")},
+			// 链接之外的兜底：已启动的会话不会重新建链，但子进程继承这里的
+			// 缓存路径，Windows 等默认位置不在 fake HOME 下的平台也能共享宿主缓存。
+			{Key: "GOCACHE", Base: accountprojection.EnvBaseHostHome, Path: []string{".cache", "go-build"}},
+			{Key: "GOMODCACHE", Base: accountprojection.EnvBaseHostHome, Path: []string{"go", "pkg", "mod"}},
+			{Key: "GOPATH", Base: accountprojection.EnvBaseHostHome, Path: []string{"go"}},
+			{Key: "npm_config_cache", Base: accountprojection.EnvBaseHostHome, Path: []string{".npm"}},
 			{Key: "GEMINI_CLI_SYSTEM_SETTINGS_PATH", Base: accountprojection.EnvBaseHostHome, Path: runtimeHomeTarget(providerroot.ConfigPath(ProviderID, "settings.json")...)},
 		},
 		AttachmentSubdir: []string{"tmp", "model", "images"},

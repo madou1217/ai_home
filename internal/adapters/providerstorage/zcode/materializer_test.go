@@ -35,8 +35,11 @@ func TestPolicyShape(t *testing.T) {
 	if policy.Provider != "zcode" || policy.Mode != accountprojection.ModeFakeHome {
 		t.Fatalf("policy = %s/%s", policy.Provider, policy.Mode)
 	}
-	if len(policy.Env) != 2 || policy.Env[0].Key != "HOME" || policy.Env[1].Key != "ZCODE_DATA_BASE_DIR" {
+	if len(policy.Env) < 2 || policy.Env[0].Key != "HOME" || policy.Env[1].Key != "ZCODE_DATA_BASE_DIR" {
 		t.Fatalf("env = %#v", policy.Env)
+	}
+	if len(policy.SharedHostCaches) < 3 {
+		t.Fatalf("shared host caches = %d", len(policy.SharedHostCaches))
 	}
 	if !policy.AuthArtifacts[0].LiveStore {
 		t.Fatal("credentials 必须声明 liveStore")

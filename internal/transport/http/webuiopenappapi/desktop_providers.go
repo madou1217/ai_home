@@ -184,6 +184,7 @@ func (p *desktopPrepContext) decorateKimiBaseEnv() {
 		p.setEnv("HOME", p.hostHomeDir)
 		p.setEnv("USERPROFILE", p.hostHomeDir)
 		p.applySharedCacheEnv()
+		p.applySharedXdgHomeEnv()
 	}
 }
 
@@ -197,13 +198,17 @@ func (p *desktopPrepContext) decorateClaudeBaseEnv() {
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
 	p.applySharedCacheEnv()
+	p.applySharedXdgHomeEnv()
 }
 
-// decorateIsolatedBaseEnv 是通用 Electron 应用的默认隔离：只有 HOME 指向 profile，
-// XDG 配置/数据/状态/缓存共享宿主；账号态由 electron-user-data 隔离。
+// decorateIsolatedBaseEnv 是通用 Electron 应用的默认隔离：HOME 与 XDG 配置/数据/
+// 状态都指向 profile（未确认这些目录是否有登录态），只共享缓存与工具链。
 func (p *desktopPrepContext) decorateIsolatedBaseEnv() {
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
+	p.setEnv("XDG_CONFIG_HOME", p.profileDir)
+	p.setEnv("XDG_DATA_HOME", filepath.Join(p.profileDir, ".local", "share"))
+	p.setEnv("XDG_STATE_HOME", filepath.Join(p.profileDir, ".local", "state"))
 	p.applySharedCacheEnv()
 }
 
@@ -211,15 +216,23 @@ func (p *desktopPrepContext) applySharedCacheEnv() {
 	if strings.TrimSpace(p.hostHomeDir) == "" {
 		return
 	}
-	// 账号只隔离凭据；XDG 配置/数据/状态/缓存全机器一份，挂到宿主。
-	// 桌面账号态由 electron-user-data 隔离，不在这四个目录里。
-	p.setEnv("XDG_CONFIG_HOME", filepath.Join(p.hostHomeDir, ".config"))
-	p.setEnv("XDG_DATA_HOME", filepath.Join(p.hostHomeDir, ".local", "share"))
-	p.setEnv("XDG_STATE_HOME", filepath.Join(p.hostHomeDir, ".local", "state"))
+	// 缓存与工具链变量永远共享；XDG_CONFIG/DATA/STATE 可能承载某些客户端的
+	// 登录态，只有确认凭据不在其中的 Provider 才额外调用 applySharedXdgHomeEnv。
 	p.setEnv("XDG_CACHE_HOME", filepath.Join(p.hostHomeDir, ".cache"))
 	for key, value := range sharedcache.Env(p.hostHomeDir, runtime.GOOS) {
 		p.setEnv(key, value)
 	}
+}
+
+// applySharedXdgHomeEnv 把 XDG 配置/数据/状态指向宿主。
+// 仅用于凭据已确认不在这些目录里的 Provider（CodeBuddy/Kiro/ZCode/Claude/Codex/Kimi）。
+func (p *desktopPrepContext) applySharedXdgHomeEnv() {
+	if strings.TrimSpace(p.hostHomeDir) == "" {
+		return
+	}
+	p.setEnv("XDG_CONFIG_HOME", filepath.Join(p.hostHomeDir, ".config"))
+	p.setEnv("XDG_DATA_HOME", filepath.Join(p.hostHomeDir, ".local", "share"))
+	p.setEnv("XDG_STATE_HOME", filepath.Join(p.hostHomeDir, ".local", "state"))
 }
 
 func (p *desktopPrepContext) decorateCodexBaseEnv() {
@@ -232,6 +245,7 @@ func (p *desktopPrepContext) decorateCodexBaseEnv() {
 	if _, _, isAPIKey := extractCodexAPIKey(p.snapshot); isAPIKey {
 		p.setEnv("CODEX_HOME", filepath.Join(p.profileDir, providerroot.ConfigDir("codex")))
 		p.applySharedCacheEnv()
+		p.applySharedXdgHomeEnv()
 	} else {
 		p.setEnv("HOME", p.profileDir)
 		p.setEnv("USERPROFILE", p.profileDir)
@@ -240,6 +254,7 @@ func (p *desktopPrepContext) decorateCodexBaseEnv() {
 			p.setEnv("CODEX_SQLITE_HOME", filepath.Join(p.hostHomeDir, providerroot.ConfigDir("codex")))
 		}
 		p.applySharedCacheEnv()
+		p.applySharedXdgHomeEnv()
 	}
 }
 
@@ -280,6 +295,7 @@ func (p *desktopPrepContext) decorateZcodeBaseEnv() {
 	// 只改 HOME；Windows 上改 USERPROFILE 会导致 ZCode 主进程静默卡死。
 	p.setEnv("HOME", p.profileDir)
 	p.applySharedCacheEnv()
+	p.applySharedXdgHomeEnv()
 	if p.applicationName != "" {
 		p.setEnv(zcodeDesktopApplicationNameEnv, p.applicationName)
 	}
@@ -289,6 +305,7 @@ func (p *desktopPrepContext) decorateCodebuddyFamilyBaseEnv() {
 	p.setEnv("HOME", p.profileDir)
 	p.setEnv("USERPROFILE", p.profileDir)
 	p.applySharedCacheEnv()
+	p.applySharedXdgHomeEnv()
 
 	provider := strings.ToLower(strings.TrimSpace(p.req.Provider))
 	dirName, ok := codebuddyfamilystorage.ConfigDir(provider)
@@ -482,6 +499,7 @@ func (p *desktopPrepContext) decorateKiroNativeEnv() {
 	p.setEnv("KIRO_TEST_DB_PATH", filepath.Join(p.profileDir, "data.sqlite3"))
 	p.setEnv("TMPDIR", filepath.Join(p.profileDir, "tmp")+string(filepath.Separator))
 	p.applySharedCacheEnv()
+	p.applySharedXdgHomeEnv()
 	p.deleteEnv("KIRO_API_KEY")
 }
 

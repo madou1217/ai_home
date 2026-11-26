@@ -74,8 +74,8 @@ func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
 	a.NodeImportDeferred = counts[2] > 0 || counts[3] > 0
 	a.ImportGuidance = []string{
 		"Canonical account schema is initialized; compatibility rows are NOT canonical accounts or fabricated credentials.",
-		"After publication, reuse lib/server/go-account-sync.js with lib/account/go-bridge/go-import-translator.js and go-management-client.js; preparation never runs a service or importer.",
-		"The translator uses /v1/management/account-imports for real native artifacts and /v1/management/accounts for static credentials; preserve its identity/generation/deletion checks instead of INSERTing guessed Go credentials.",
+		"After publication, import compatibility rows with the Go account importer (/v1/management/account-imports for native artifacts, /v1/management/accounts for static credentials); preparation never runs a service or importer.",
+		"The importer preserves identity/generation/deletion checks; do not INSERT guessed Go credentials.",
 	}
 	return nil
 }

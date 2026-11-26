@@ -342,7 +342,7 @@ function applyIncomingCards(){
       el.style.setProperty('--incoming-delay',(entry.delay-elapsed)+'ms');
       el.classList.add('incoming');
       el.addEventListener('animationend',()=>{el.classList.remove('incoming');el.style.removeProperty('--incoming-delay');incomingIds.delete(id)},{once:true});
-      setTimeout(()=>{if(incomingIds.get(id)===entry)incomingIds.delete(id)},remaining+80);
+      setTimeout(()=>{if(incomingIds.get(id)===entry)incomingIds.delete(id);el.classList.remove('incoming');el.style.removeProperty('--incoming-delay')},remaining+80);
     });
   }
 }

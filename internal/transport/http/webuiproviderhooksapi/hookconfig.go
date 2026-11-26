@@ -4,11 +4,10 @@ package webuiproviderhooksapi
 // 本文件只实现三种写入格式适配器，不按 Provider 名写分支：
 //   - json_hooks      事件 → [{hooks:[…]}]（codex / claude / gemini / grok）
 //   - agy_named_hooks 顶层具名 hook 定义（agy）
-//   - opencode_plugin 插件桥文件（opencode，见 opencode.go）
+//   - opencode_plugin 插件桥文件（opencode，由 toolkit/apps 统一写入）
 //
-// 判定口径与 Node 的 provider-session-hook-config.js 对齐：只撤销带
-// --aih-provider-session-hook 且指向同一 Provider 的托管 handler，用户自建
-// hook 与其他配置键原样保留。文件写回使用有序 JSON（见 orderedjson.go）。
+// 判定口径：只撤销带 --aih-provider-session-hook 且指向同一 Provider 的托管
+// handler，用户自建 hook 与其他配置键原样保留。文件写回使用有序 JSON（见 orderedjson.go）。
 
 import (
 	"os"
@@ -28,10 +27,6 @@ const (
 	// agyManagedHookName 与 Node 的 AGY_MANAGED_HOOK_NAME 一致。
 	agyManagedHookName = "aih-session-sync"
 )
-
-// defaultReceiverURL 与 Node 的 DEFAULT_RECEIVER_URL 一致；值来自共享监听契约，
-// 因此是变量而不是常量（常量无法调用 serverconfig.BaseURL）。
-var defaultReceiverURL = providersessionhook.DefaultReceiverURL
 
 // hookProfile 是写文件所需的一份 Provider Hook 档案。
 type hookProfile struct {
@@ -103,7 +98,6 @@ func hookTargetPath(profile hookProfile, hostHomeDir string) string {
 // installContext 是一次安装请求的服务端上下文。
 type installContext struct {
 	hostHomeDir string
-	receiverURL string
 	// senderExecPath 覆盖发送器路径；空时定位当前、同目录或 PATH 上的 aih-server。
 	senderExecPath string
 	codexVersion   string

@@ -70,8 +70,6 @@ func decodeJSONFile(t *testing.T, path string) map[string]any {
 
 func installMetadata() map[string]any {
 	return map[string]any{
-		"receiverUrl":      "http://127.0.0.1:9999/hook",
-		"senderScriptPath": "/opt/aih/sender.js",
 		"codexVersion":     "0.158.0",
 	}
 }
@@ -302,9 +300,14 @@ func TestInstallOpenCodePlugin(t *testing.T) {
 		t.Fatalf("install = %d %#v", recorder.Code, body)
 	}
 	text := readFileText(t, filepath.Join(configDir, "plugin", "aih-session-hook.js"))
-	for _, want := range []string{"http://127.0.0.1:9999/hook", "export default", "ctx.event.subscribe"} {
+	for _, want := range []string{"AIH_SENDER_EXEC", "__provider-hook", "export default", "ctx.event.subscribe"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("opencode 插件缺少 %q", want)
+		}
+	}
+	for _, forbidden := range []string{"http://", "https://", "AIH_RECEIVER_URL"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("opencode 插件不应包含 %q", forbidden)
 		}
 	}
 }

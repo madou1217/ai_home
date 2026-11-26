@@ -286,3 +286,12 @@ func probeInstalledCodexVersion() string {
 	}
 	return strings.TrimSpace(string(output))
 }
+
+// readTextFile 读取配置文本；不存在或读取失败按空串处理（调用方用于差异/诊断）。
+func readTextFile(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}

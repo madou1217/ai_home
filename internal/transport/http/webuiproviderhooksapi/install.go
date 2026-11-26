@@ -85,7 +85,6 @@ type installResult struct {
 	DryRun        *bool              `json:"dryRun,omitempty"`
 	Changed       *bool              `json:"changed,omitempty"`
 	Events        []string           `json:"events,omitempty"`
-	ReceiverURL   string             `json:"receiverUrl,omitempty"`
 	CodexFeatures *codexFeaturesView `json:"codexFeatures,omitempty"`
 }
 
@@ -131,7 +130,6 @@ func (handler *InstallHandler) ServeHTTP(response http.ResponseWriter, request *
 
 	context := installContext{
 		hostHomeDir:  handler.hostHomeDir,
-		receiverURL:  textValue(payload["receiverUrl"]),
 		codexVersion: textValue(payload["codexVersion"]),
 	}
 	results := make([]installResult, 0, len(providersToInstall))
@@ -154,10 +152,10 @@ func (handler *InstallHandler) installOne(provider string, settings installConte
 	return handler.installOneContext(context.Background(), provider, settings, dryRun)
 }
 func (handler *InstallHandler) installOneContext(ctx context.Context, provider string, settings installContext, dryRun bool) installResult {
-	result := apps.InstallProviderHooks(ctx, provider, apps.Options{Catalog: handler.catalog, HostHomeDir: settings.hostHomeDir, ReceiverURL: settings.receiverURL, CodexVersion: settings.codexVersion, HookDryRun: dryRun})
+	result := apps.InstallProviderHooks(ctx, provider, apps.Options{Catalog: handler.catalog, HostHomeDir: settings.hostHomeDir, CodexVersion: settings.codexVersion, HookDryRun: dryRun})
 	changed := result.Changed
 	dry := result.DryRun
-	out := installResult{OK: result.OK, Provider: result.Provider, Error: result.Error, TargetPath: result.TargetPath, TargetKind: result.TargetKind, DryRun: &dry, Changed: &changed, Events: result.Events, ReceiverURL: result.ReceiverURL}
+	out := installResult{OK: result.OK, Provider: result.Provider, Error: result.Error, TargetPath: result.TargetPath, TargetKind: result.TargetKind, DryRun: &dry, Changed: &changed, Events: result.Events}
 	if v := result.CodexFeatures; v != nil {
 		out.CodexFeatures = &codexFeaturesView{Path: v.Path, Changed: v.Changed, FlagName: v.FlagName, CodexVersion: v.CodexVersion, DisabledBefore: v.DisabledBefore}
 	}

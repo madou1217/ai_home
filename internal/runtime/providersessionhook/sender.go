@@ -1,12 +1,10 @@
 // Package providersessionhook 实现 Provider 官方 hook 的会话事件发送器。
 //
-// 背景：Codex / Claude / Gemini / agy 等 CLI 的 hook 会在会话事件发生时执行一条
-// 外部命令。aih 原先让这条命令跑一份 Node 脚本（scripts/aih-provider-session-hook-sender.js），
-// 于是 Go 的会话事件链在 provider 侧仍然依赖 Node。本包把同一协议搬进 Go 宿主二进制：
-// 子命令 __provider-hook 由 aih-server 自己提供，安装器把托管 hook 的 command
-// 指向宿主二进制。
+// Codex / Claude / Gemini / Grok / agy 的 hook 在会话事件发生时执行一条外部命令，
+// opencode 的插件桥也复用同一个发送器。命令与插件里都不写接收端 URL：端口是
+// 服务运行态，发送器在投递时按 config:server 的当前监听地址解析。
 //
-// 行为与 Node 版本逐字对齐（lib/server/provider-session-hook-sender.js）：
+// 本包是唯一的 Hook 传输实现：
 //   - 只白名单透传短字段，tool_input 只保留命令/路径等描述字段；
 //   - correlation 来自 AIH_SESSION_INTENT，accountRef 来自 AIH_PROVIDER_ACCOUNT_REF；
 //   - POST 失败只写 stderr，stdout 仍输出 provider 期望的 noop 决策并以 0 退出。
@@ -86,7 +84,6 @@ type Result struct {
 type parsedArgs struct {
 	provider  string
 	eventName string
-	url       string
 	timeout   time.Duration
 }
 
@@ -95,7 +92,7 @@ func Run(options Options) Result {
 	parsed := parseArgs(options.Args)
 	stdout := buildNoopOutput(parsed.provider, parsed.eventName)
 	body := buildReceiverBody(parsed, options.Stdin, options.Getenv)
-	delivery := postJSON(resolveReceiverURL(parsed.url, options.Getenv), body, parsed.timeout)
+	delivery := postJSON(configuredReceiverURL(options.Getenv), body, parsed.timeout)
 	if delivery.ok {
 		return Result{Stdout: stdout}
 	}
@@ -137,11 +134,6 @@ func parseArgs(argv []string) parsedArgs {
 		case "--event", "--eventName":
 			if index+1 < len(argv) {
 				parsed.eventName = strings.TrimSpace(argv[index+1])
-				index++
-			}
-		case "--url":
-			if index+1 < len(argv) {
-				parsed.url = strings.TrimSpace(argv[index+1])
 				index++
 			}
 		case "--timeout-ms":
@@ -389,18 +381,10 @@ type deliveryOutcome struct {
 	err        string
 }
 
-// resolveReceiverURL 解析本次投递的接收端。
+// configuredReceiverURL 在投递时解析接收端。
 //
-// 安装命令不再固化 URL（端口是服务运行态，写进第三方 provider 配置后改端口/
-// 换机就失效）。旧命令带 --url 时仍以它为准；新命令按 config:server 的当前
-// 监听地址解析，读不到配置才回默认。
-func resolveReceiverURL(explicit string, getenv func(string) string) string {
-	if target := strings.TrimSpace(explicit); target != "" {
-		return target
-	}
-	return configuredReceiverURL(getenv)
-}
-
+// 安装命令不固化 URL（端口是服务运行态，写进第三方 provider 配置后改端口/
+// 换机就失效）；每次投递按 config:server 的当前监听地址解析，读不到配置才回默认。
 func configuredReceiverURL(getenv func(string) string) string {
 	home := resolveHookAIHomeDir(getenv)
 	if home == "" {

@@ -95,9 +95,6 @@ type Options struct {
 
 	// SenderExecPath 覆盖原生 Hook 发送器；为空时定位当前、同目录或 PATH 上的 aih-server。
 	SenderExecPath string
-	// SenderScriptPath 仅保留旧调用方源码兼容；Hook 不再执行 Node 脚本。
-	SenderScriptPath     string
-	ReceiverURL          string
 	ServerHost           string
 	ServerPort           int
 	CredentialHelperPath string
@@ -312,7 +309,6 @@ type HookOperationOutcome struct {
 	Changed       bool               `json:"changed"`
 	DryRun        bool               `json:"dryRun"`
 	Events        []string           `json:"events,omitempty"`
-	ReceiverURL   string             `json:"receiverUrl,omitempty"`
 	CodexFeatures *CodexFeaturesView `json:"codexFeatures,omitempty"`
 }
 

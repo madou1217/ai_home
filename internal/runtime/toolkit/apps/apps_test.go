@@ -313,9 +313,7 @@ func TestHooksInstallDiagnoseAndUninstall(t *testing.T) {
 			return "", os.ErrNotExist
 		},
 		Executor:         execStub,
-		SenderScriptPath: senderScript,
 		NodeExecPath:     "/usr/local/bin/node",
-		ReceiverURL:      "http://127.0.0.1:9527/v0/provider-sessions/hook",
 	}
 
 	resp := mgr.InstallAppHooks(context.Background(), []string{"claude", "codex", "agy", "opencode"}, opts)

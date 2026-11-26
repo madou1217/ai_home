@@ -172,7 +172,7 @@ func DiagnoseProviderHooks(ctx context.Context, provider string, cat *providers.
 			if hookDef != nil {
 				evVal = hookDef[ev]
 			}
-			if !agyEventHasManagedHandler(evVal, profile.provider, opts.SenderExecPath) {
+			if !agyEventHasManagedHandler(evVal, profile.provider) {
 				missing = append(missing, ev)
 			}
 		}
@@ -214,7 +214,7 @@ func DiagnoseProviderHooks(ctx context.Context, provider string, cat *providers.
 			if hooksObj != nil {
 				groups = hooksObj[ev]
 			}
-			if !jsonEventHasManagedHandler(groups, profile.provider, opts.SenderExecPath) {
+			if !jsonEventHasManagedHandler(groups, profile.provider) {
 				missing = append(missing, ev)
 			}
 		}
@@ -385,12 +385,6 @@ func resolveDefaultServerRootURL(ctx context.Context, opts Options) string {
 	return serverconfig.BaseURL(serverconfig.NormalizeLoopbackHost(strings.Trim(host, "[]")), port, "")
 }
 
-func resolveReceiverBaseURL(ctx context.Context, opts Options) string {
-	if explicit := strings.TrimSpace(opts.ReceiverURL); explicit != "" {
-		return explicit
-	}
-	return resolveDefaultServerRootURL(ctx, opts) + "/v0/webui/session-events/provider-hook"
-}
 
 func resolveRepoFile(opts Options, relParts ...string) string {
 	rel := filepath.Join(relParts...)
@@ -437,7 +431,7 @@ func hookHandlerTimeout(profile resolvedHookProfile) int {
 	return defaultHookTimeoutSeconds
 }
 
-func jsonEventHasManagedHandler(groupsVal any, provider string, allowed ...string) bool {
+func jsonEventHasManagedHandler(groupsVal any, provider string) bool {
 	groups, _ := groupsVal.([]any)
 	for _, g := range groups {
 		gm, _ := g.(map[string]any)
@@ -448,7 +442,7 @@ func jsonEventHasManagedHandler(groupsVal any, provider string, allowed ...strin
 		for _, h := range hooks {
 			hm, _ := h.(map[string]any)
 			if hm != nil {
-				if cmd, ok := hm["command"].(string); ok && isManagedCommandString(cmd, provider, allowed...) {
+				if cmd, ok := hm["command"].(string); ok && isManagedCommandString(cmd, provider) {
 					return true
 				}
 			}
@@ -457,21 +451,21 @@ func jsonEventHasManagedHandler(groupsVal any, provider string, allowed ...strin
 	return false
 }
 
-func agyEventHasManagedHandler(eventVal any, provider string, allowed ...string) bool {
+func agyEventHasManagedHandler(eventVal any, provider string) bool {
 	items, _ := eventVal.([]any)
 	for _, item := range items {
 		m, _ := item.(map[string]any)
 		if m == nil {
 			continue
 		}
-		if cmd, ok := m["command"].(string); ok && isManagedCommandString(cmd, provider, allowed...) {
+		if cmd, ok := m["command"].(string); ok && isManagedCommandString(cmd, provider) {
 			return true
 		}
 		hooks, _ := m["hooks"].([]any)
 		for _, h := range hooks {
 			hm, _ := h.(map[string]any)
 			if hm != nil {
-				if cmd, ok := hm["command"].(string); ok && isManagedCommandString(cmd, provider, allowed...) {
+				if cmd, ok := hm["command"].(string); ok && isManagedCommandString(cmd, provider) {
 					return true
 				}
 			}
@@ -480,7 +474,7 @@ func agyEventHasManagedHandler(eventVal any, provider string, allowed ...string)
 	return false
 }
 
-func removeManagedHandlersFromHooksMap(hooks map[string]any, provider string, allowed ...string) (map[string]any, bool) {
+func removeManagedHandlersFromHooksMap(hooks map[string]any, provider string) (map[string]any, bool) {
 	if len(hooks) == 0 {
 		return map[string]any{}, false
 	}
@@ -509,7 +503,7 @@ func removeManagedHandlersFromHooksMap(hooks map[string]any, provider string, al
 			for _, rawHook := range innerHooks {
 				hm, _ := rawHook.(map[string]any)
 				cmd, _ := hm["command"].(string)
-				if isManagedCommandString(cmd, provider, allowed...) {
+				if isManagedCommandString(cmd, provider) {
 					changed = true
 					eventChanged = true
 					continue
@@ -535,9 +529,99 @@ func removeManagedHandlersFromHooksMap(hooks map[string]any, provider string, al
 	return out, changed
 }
 
-func buildOpenCodePluginSource(receiverURL string) string {
-	litBytes, _ := json.Marshal(receiverURL)
-	return signedOpenCodeSource(strings.ReplaceAll(openCodePluginTemplate, "__AIH_RECEIVER_URL_LITERAL__", string(litBytes)))
+func buildOpenCodePluginSource(senderExec string) string {
+	litBytes, _ := json.Marshal(senderExec)
+	return signedOpenCodeSource(strings.ReplaceAll(openCodePluginTemplate, "__AIH_SENDER_EXEC_LITERAL__", string(litBytes)))
 }
 
-const openCodePluginTemplate = "// aih-session-hook: AIH 托管的 opencode 会话生命周期桥(自动生成,勿手改)\n// 作用:把 opencode 事件总线(随 opencode 主版本)的会话开始/结束信号 POST 给 aih,\n// 驱动 webUI 实时 pending 状态。兼容 opencode v2(default 对象 + setup)与\n// v1>=1.18.29(default 对象 + server() 旧式 hooks)。\nconst AIH_RECEIVER_URL = __AIH_RECEIVER_URL_LITERAL__;\nconst aihActiveSessions = new Set();\nlet aihV2SetupActive = false;\n\nfunction aihPost(eventName, sessionID) {\n  if (!AIH_RECEIVER_URL || !sessionID) return;\n  const url = AIH_RECEIVER_URL\n    + '?provider=opencode&event=' + encodeURIComponent(eventName)\n    + '&sessionId=' + encodeURIComponent(sessionID);\n  try {\n    // fire-and-forget:不 await,失败静默(不能拖慢/中断会话流)。\n    const p = fetch(url, {\n      method: 'POST',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ eventName: eventName, sessionId: sessionID, at: Date.now() })\n    });\n    if (p && typeof p.catch === 'function') p.catch(() => {});\n  } catch (_error) { /* ignore */ }\n}\n\nfunction aihHandleV2Event(event) {\n  if (!event || typeof event !== 'object') return;\n  const type = String(event.type || '');\n  const data = event.data || {};\n  const sessionID = data.sessionID || event.sessionID || '';\n  if (!sessionID) return;\n\n  if (type === 'session.execution.started') {\n    if (!aihActiveSessions.has(sessionID)) {\n      aihActiveSessions.add(sessionID);\n      aihPost('UserPromptSubmit', sessionID);\n    }\n    return;\n  }\n  if (type === 'session.execution.succeeded' || type === 'session.execution.failed'\n    || type === 'session.execution.interrupted') {\n    if (aihActiveSessions.delete(sessionID)) aihPost('Stop', sessionID);\n  }\n}\n\nfunction aihHandleV1Event(event) {\n  if (!event || typeof event !== 'object') return;\n  const type = String(event.type || '');\n  const props = event.properties || {};\n  const info = props.info || {};\n  const sessionID = props.sessionID || info.sessionID || info.id\n    || (props.part && props.part.sessionID) || '';\n  if (!sessionID) return;\n\n  if (type === 'session.idle') {\n    if (aihActiveSessions.delete(sessionID)) aihPost('Stop', sessionID);\n    return;\n  }\n  if (type === 'message.updated' || type === 'message.part.updated'\n    || type === 'message.part.delta' || type === 'session.status') {\n    if (!aihActiveSessions.has(sessionID)) {\n      aihActiveSessions.add(sessionID);\n      aihPost('UserPromptSubmit', sessionID);\n    }\n  }\n}\n\nexport default {\n  id: 'aih-session-hook',\n  async setup(ctx) {\n    if (!ctx || !ctx.event || typeof ctx.event.subscribe !== 'function') return;\n    aihV2SetupActive = true;\n    const controller = new AbortController();\n    const consume = async () => {\n      try {\n        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {\n          try { aihHandleV2Event(event); } catch (_error) { /* ignore */ }\n        }\n      } catch (_error) { /* ignore */ }\n    };\n    consume();\n    return () => { try { controller.abort(); } catch (_error) { /* ignore */ } };\n  },\n  server: async () => ({\n    event: async ({ event }) => {\n      if (aihV2SetupActive) return;\n      aihHandleV1Event(event);\n    }\n  })\n};\n"
+const openCodePluginTemplate = `// aih-session-hook: AIH 托管的 opencode 会话生命周期桥(自动生成,勿手改)
+// 作用:把 opencode 事件总线的会话开始/结束信号交给 Go 发送器投递。
+// 插件源码不包含接收端 URL/端口:发送器在投递时按 config:server 解析。
+// 兼容 opencode v2(default 对象 + setup)与 v1>=1.18.29(default 对象 + server() 旧式 hooks)。
+import { spawn } from 'node:child_process';
+const AIH_SENDER_EXEC = __AIH_SENDER_EXEC_LITERAL__;
+const aihActiveSessions = new Set();
+let aihV2SetupActive = false;
+
+function aihPost(eventName, sessionID) {
+  if (!AIH_SENDER_EXEC || !sessionID) return;
+  try {
+    // fire-and-forget:不 await,失败静默(不能拖慢/中断会话流)。
+    const child = spawn(AIH_SENDER_EXEC, [
+      '__provider-hook', '--aih-provider-session-hook',
+      '--provider', 'opencode', '--event', eventName
+    ], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
+    child.on('error', () => {});
+    if (child.stdin) {
+      child.stdin.on('error', () => {});
+      child.stdin.end(JSON.stringify({ sessionId: sessionID, eventName: eventName, at: Date.now() }));
+    }
+  } catch (_error) { /* ignore */ }
+}
+
+function aihHandleV2Event(event) {
+  if (!event || typeof event !== 'object') return;
+  const type = String(event.type || '');
+  const data = event.data || {};
+  const sessionID = data.sessionID || event.sessionID || '';
+  if (!sessionID) return;
+
+  if (type === 'session.execution.started') {
+    if (!aihActiveSessions.has(sessionID)) {
+      aihActiveSessions.add(sessionID);
+      aihPost('UserPromptSubmit', sessionID);
+    }
+    return;
+  }
+  if (type === 'session.execution.succeeded' || type === 'session.execution.failed'
+    || type === 'session.execution.interrupted') {
+    if (aihActiveSessions.delete(sessionID)) aihPost('Stop', sessionID);
+  }
+}
+
+function aihHandleV1Event(event) {
+  if (!event || typeof event !== 'object') return;
+  const type = String(event.type || '');
+  const props = event.properties || {};
+  const info = props.info || {};
+  const sessionID = props.sessionID || info.sessionID || info.id
+    || (props.part && props.part.sessionID) || '';
+  if (!sessionID) return;
+
+  if (type === 'session.idle') {
+    if (aihActiveSessions.delete(sessionID)) aihPost('Stop', sessionID);
+    return;
+  }
+  if (type === 'message.updated' || type === 'message.part.updated'
+    || type === 'message.part.delta' || type === 'session.status') {
+    if (!aihActiveSessions.has(sessionID)) {
+      aihActiveSessions.add(sessionID);
+      aihPost('UserPromptSubmit', sessionID);
+    }
+  }
+}
+
+export default {
+  id: 'aih-session-hook',
+  async setup(ctx) {
+    if (!ctx || !ctx.event || typeof ctx.event.subscribe !== 'function') return;
+    aihV2SetupActive = true;
+    const controller = new AbortController();
+    const consume = async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          try { aihHandleV2Event(event); } catch (_error) { /* ignore */ }
+        }
+      } catch (_error) { /* ignore */ }
+    };
+    consume();
+    return () => { try { controller.abort(); } catch (_error) { /* ignore */ } };
+  },
+  server: async () => ({
+    event: async ({ event }) => {
+      if (aihV2SetupActive) return;
+      aihHandleV1Event(event);
+    }
+  })
+};
+`

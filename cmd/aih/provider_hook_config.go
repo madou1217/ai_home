@@ -19,7 +19,6 @@ func runProviderHookConfig(ctx context.Context, runtime commandRuntime) error {
 		Action         string            `json:"action"`
 		Provider       string            `json:"provider"`
 		HomeDir        string            `json:"homeDir"`
-		ReceiverURL    string            `json:"receiverUrl"`
 		CodexVersion   string            `json:"codexVersion"`
 		DryRun         bool              `json:"dryRun"`
 		Env            map[string]string `json:"env"`
@@ -44,7 +43,7 @@ func runProviderHookConfig(ctx context.Context, runtime commandRuntime) error {
 	if !filepath.IsAbs(input.HomeDir) || strings.TrimSpace(input.Provider) == "" {
 		return errors.New("hook_bridge_explicit_home_required")
 	}
-	opts := apps.Options{HostHomeDir: input.HomeDir, ReceiverURL: input.ReceiverURL, CodexVersion: input.CodexVersion, HookDryRun: input.DryRun, Env: input.Env, HookEvents: input.Events, HookName: input.HookName, HookTimeoutSeconds: input.TimeoutSeconds, HookTimeoutMilliseconds: input.TimeoutMs, SenderExecPath: input.SenderExec}
+	opts := apps.Options{HostHomeDir: input.HomeDir, CodexVersion: input.CodexVersion, HookDryRun: input.DryRun, Env: input.Env, HookEvents: input.Events, HookName: input.HookName, HookTimeoutSeconds: input.TimeoutSeconds, HookTimeoutMilliseconds: input.TimeoutMs, SenderExecPath: input.SenderExec}
 	var result apps.HookOperationOutcome
 	switch input.Action {
 	case "install":

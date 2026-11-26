@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexpreferences"
 	"github.com/madou1217/ai_home/internal/runtime/configsnapshot"
 	"github.com/madou1217/ai_home/internal/runtime/providerconfigs"
+	"github.com/madou1217/ai_home/internal/runtime/providersessionhook"
 )
 
 func hookReadFailure(profile resolvedHookProfile, target string, err error) HookDiagnosis {
@@ -29,7 +30,6 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 		return HookOperationOutcome{Provider: provider, Error: "unsupported_provider"}
 	}
 	target := hookTargetPath(profile, opts)
-	receiver := resolveReceiverBaseURL(ctx, opts)
 	outcome := HookOperationOutcome{DryRun: opts.HookDryRun, Provider: provider, TargetPath: target, TargetKind: profile.targetKind, Events: profile.events}
 	if profile.adapter == providers.HookAdapterOpenCodePlugin {
 		if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -62,7 +62,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 			if before.Exists && !ownedOpenCodeSource(before.Content) {
 				return nil, false, errors.New("hook_plugin_ownership_conflict")
 			}
-			return []byte(buildOpenCodePluginSource(receiver)), false, nil
+			return []byte(buildOpenCodePluginSource(providersessionhook.SenderExecutable(opts.SenderExecPath, resolvePlatform(opts)))), false, nil
 		}
 		object, err := parseHookDocument(before)
 		if err != nil {
@@ -72,7 +72,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 		if profile.adapter == providers.HookAdapterAgyNamedHooks {
 			hook := map[string]any{}
 			if prior, exists := next[hookName]; exists {
-				if !agyHookOwned(prior, provider, opts.SenderExecPath) {
+				if !agyHookOwned(prior, provider) {
 					return nil, false, errors.New("hook_entry_ownership_conflict")
 				}
 				hook = cloneJSONMap(prior.(map[string]any))
@@ -89,7 +89,7 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 			next[hookName] = hook
 		} else {
 			hooks, _ := next["hooks"].(map[string]any)
-			cleaned, _ := removeManagedHandlersFromHooksMap(hooks, provider, opts.SenderExecPath)
+			cleaned, _ := removeManagedHandlersFromHooksMap(hooks, provider)
 			for _, event := range profile.events {
 				handler := map[string]any{"type": "command", "command": resolveSenderCommand(profile, event, opts), "timeout": configuredHookTimeout(profile, opts)}
 				group := map[string]any{"hooks": []any{handler}}
@@ -135,7 +135,6 @@ func installSingleProviderHook(ctx context.Context, cat *providers.Catalog, prov
 	outcome.CodexFeatures = features
 	if profile.adapter == providers.HookAdapterOpenCodePlugin {
 		outcome.TargetKind = "plugin.js"
-		outcome.ReceiverURL = receiver
 	}
 	return outcome
 }
@@ -186,7 +185,7 @@ func uninstallSingleProviderHook(cat *providers.Catalog, provider string, opts O
 		changed := false
 		if profile.adapter == providers.HookAdapterAgyNamedHooks {
 			if prior, exists := next[hookName]; exists {
-				if !agyHookOwned(prior, provider, opts.SenderExecPath) {
+				if !agyHookOwned(prior, provider) {
 					return nil, false, errors.New("hook_entry_ownership_conflict")
 				}
 				kept := cloneJSONMap(prior.(map[string]any))
@@ -208,7 +207,7 @@ func uninstallSingleProviderHook(cat *providers.Catalog, provider string, opts O
 			}
 		} else {
 			hooks, _ := next["hooks"].(map[string]any)
-			cleaned, removed := removeManagedHandlersFromHooksMap(hooks, provider, opts.SenderExecPath)
+			cleaned, removed := removeManagedHandlersFromHooksMap(hooks, provider)
 			changed = removed
 			if changed {
 				if len(cleaned) > 0 {
@@ -232,53 +231,11 @@ func uninstallSingleProviderHook(cat *providers.Catalog, provider string, opts O
 	return out
 }
 
-func isManagedCommandString(cmd, provider string, allowed ...string) bool {
+func isManagedCommandString(cmd, provider string) bool {
 	if !strings.Contains(cmd, managedHookMarker) {
 		return false
 	}
-	fields, ok := splitHookCommand(cmd)
-	if !ok || len(fields) < 5 {
-		return false
-	}
-	// Current Go command has a private subcommand. Legacy Node can begin with
-	// either an explicit node binary or `/usr/bin/env node`.
-	start := -1
-	base := strings.ToLower(filepath.Base(strings.ReplaceAll(fields[0], "\\", "/")))
-	trustedSender := base == "aih-server" || base == "aih-server.exe"
-	for _, explicit := range allowed {
-		if explicit != "" && fields[0] == explicit {
-			trustedSender = true
-		}
-	}
-	if fields[1] == "__provider-hook" && trustedSender {
-		start = 2
-	} else {
-		scriptIndex := 1
-		if len(fields) > 2 && base == "env" && filepath.Base(fields[1]) == "node" {
-			scriptIndex = 2
-		}
-		script := strings.ToLower(filepath.Base(fields[scriptIndex]))
-		trustedNode := base == "node" || base == "node.exe" || (scriptIndex == 2 && base == "env")
-		if trustedNode && (script == "aih-provider-session-hook-sender.js" || script == "provider-session-hook.js") {
-			start = scriptIndex + 1
-		}
-	}
-	if start < 0 || fields[start] != managedHookMarker ||
-		fields[start+1] != "--provider" || fields[start+3] != "--event" {
-		return false
-	}
-	// 当前命令不携带接收端 URL（运行期按 config:server 解析）；旧安装可能仍在
-	// 末尾带 --url，两者都识别为托管 handler，重复安装时统一改写成新形状。
-	switch len(fields) {
-	case start + 5:
-	case start + 7:
-		if fields[start+5] != "--url" {
-			return false
-		}
-	default:
-		return false
-	}
-	return provider == "" || strings.EqualFold(provider, fields[start+2])
+	return providersessionhook.ReferencesProvider(cmd, provider)
 }
 
 // InstallProviderHooks is the shared explicit write port, without inventory or

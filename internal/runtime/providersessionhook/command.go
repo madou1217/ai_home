@@ -38,6 +38,27 @@ func BuildCommand(options CommandOptions) string {
 	}, " ")
 }
 
+// SenderExecutable 返回托管 Hook 命令/插件应引用的发送器路径。
+func SenderExecutable(explicit, platform string) string {
+	return resolveSenderExecutable(explicit, commandPlatform(platform))
+}
+
+// ReferencesProvider 判断一条托管命令是否属于指定 provider。
+//
+// 只做文本事实判定（标记 + --provider 值），不看发送器形态：安装/诊断都要能
+// 识别任何历史托管形状并把它们替换成当前形状，不需要继续支持旧参数。
+func ReferencesProvider(command, provider string) bool {
+	text := strings.TrimSpace(command)
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return true
+	}
+	normalized := strings.ReplaceAll(strings.ReplaceAll(text, "'--provider'", "--provider"), "\"--provider\"", "--provider")
+	return strings.Contains(normalized, "--provider '"+provider+"'") ||
+		strings.Contains(normalized, "--provider \""+provider+"\"") ||
+		strings.Contains(normalized, "--provider "+provider)
+}
+
 func commandPlatform(value string) string {
 	switch platform := strings.ToLower(strings.TrimSpace(value)); platform {
 	case "":

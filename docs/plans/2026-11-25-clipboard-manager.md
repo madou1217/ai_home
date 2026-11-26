@@ -400,7 +400,7 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
   - Linux 的 `/dev/ttyN`、`/dev/console` 内核虚拟终端直接降级（桌面安装的字体在 VT 中无效，避免“有字体文件但控制台显示空框”的假阳性）；
   - Windows 检查系统 CJK 字体（微软雅黑/黑体/宋体/微软正黑/细明体/Yu Gothic/Meiryo）；macOS 使用系统字体回退，始终 UTF-8；
   - Linux/macOS 本地 TTY 先看 UTF-8 locale，再用 `fc-list :lang=zh` 与常见 Noto/WenQuanYi/Droid/Source Han 字体路径探测；SSH 连接在 UTF-8 locale 下信任客户端字体，避免因服务器没装中文字体而错误降级。
-- 降级表示：汉字转无声调拼音（内嵌 26,711 条 `pinyin.tsv`），CJK 标点/制表线/常见 TUI 符号（●○◆▶✔✘、braille 动画帧、方块）转 ASCII，拉丁重音折叠（café→cafe），其余符号输出 `[U+XXXX]`，ANSI 颜色序列原样保留；不会静默丢字符。`Fd()` 透传保证 palette、TUI 尺寸探测和动画判定不被包装器破坏。
+- 降级表示：汉字转无声调拼音（内嵌 26,711 条 `pinyin.tsv`），CJK 标点/制表线/常见 TUI 符号（●○◆▶✔✘、braille 动画帧、方块）转 ASCII，拉丁重音折叠（café→cafe），其余符号输出 `[U+XXXX]`，ANSI 颜色序列原样保留；不会静默丢字符。`Fd()` 透传保证 palette、TUI 尺寸探测和动画判定不被包装器破坏；`aihcli` 的交互判定与 `aih clip pick` 的 TUI writer 也按 FD 识别标准流，并在写入前套用同一降级器。
 - 真实证据：
   - macOS 真 TTY：默认中文正常；`AIH_TERM_ENCODING=ascii` 下 `用法`→`yong fa`，`aih clip ls` 中文条目显示为拼音且无乱码，`aih ls` TUI 可正常渲染/退出。
   - 无字体 Linux 容器（`redis:alpine`，无 `fc-list`、无 `/usr/share/fonts`，`LANG=en_US.UTF-8`）：真实 TTY 下自动降级为拼音；挂载一个 `NotoSansCJK*` 字体文件后自动恢复中文，证明判定闭环而非依赖手工开关。

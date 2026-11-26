@@ -480,10 +480,21 @@ func resolveHostHomeDir() string {
 }
 
 func isInteractiveTTY(input io.Reader, output io.Writer) bool {
-	stdin, inputOK := input.(*os.File)
-	stdout, outputOK := output.(*os.File)
-	return inputOK && outputOK && stdin == os.Stdin && stdout == os.Stdout &&
+	stdin, inputOK := input.(interface{ Fd() uintptr })
+	stdout, outputOK := output.(interface{ Fd() uintptr })
+	return inputOK && outputOK &&
+		isStandardFile(input, os.Stdin) && isStandardFile(output, os.Stdout) &&
 		term.IsTerminal(int(stdin.Fd())) && term.IsTerminal(int(stdout.Fd()))
+}
+
+// isStandardFile accepts the process's standard stream either directly or
+// through a transparent writer wrapper (for example termtext's ASCII fallback).
+func isStandardFile(stream any, standard *os.File) bool {
+	if stream == standard {
+		return true
+	}
+	file, ok := stream.(interface{ Fd() uintptr })
+	return ok && file.Fd() == standard.Fd()
 }
 
 // resolveDefaultAccountIntent 把"不带账号编号"的启动解析成默认账号的原生直连。

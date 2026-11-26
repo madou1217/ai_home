@@ -15,6 +15,8 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/madou1217/ai_home/internal/runtime/termtext"
+
 	"github.com/madou1217/ai_home/application/clipboard"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
 )
@@ -489,24 +491,24 @@ func loadRows(ctx context.Context, service *clipboard.Service, kind clipboard.Ki
 
 func resolveTUIWriter(stdout, stderr io.Writer, printStdout bool) (io.Writer, func()) {
 	if !printStdout {
-		if f, ok := stdout.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-			return stdout, func() {}
+		if f, ok := stdout.(interface{ Fd() uintptr }); ok && term.IsTerminal(int(f.Fd())) {
+			return termtext.WrapWriter(stdout), func() {}
 		}
 	}
-	if f, ok := stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		return stderr, func() {}
+	if f, ok := stderr.(interface{ Fd() uintptr }); ok && term.IsTerminal(int(f.Fd())) {
+		return termtext.WrapWriter(stderr), func() {}
 	}
 	if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
-		return tty, func() { _ = tty.Close() }
+		return termtext.WrapWriter(tty), func() { _ = tty.Close() }
 	}
 	if stderr != nil {
-		return stderr, func() {}
+		return termtext.WrapWriter(stderr), func() {}
 	}
-	return stdout, func() {}
+	return termtext.WrapWriter(stdout), func() {}
 }
 
 func terminalSize(tuiOut io.Writer, stdinFD int) (int, int) {
-	if f, ok := tuiOut.(*os.File); ok {
+	if f, ok := tuiOut.(interface{ Fd() uintptr }); ok {
 		if w, h, err := term.GetSize(int(f.Fd())); err == nil && w > 0 && h > 0 {
 			return w, h
 		}

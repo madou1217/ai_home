@@ -132,7 +132,7 @@
   }
 }
 
-/* 2. 统一卡片：切角 / 角标 / 半透明底 / 标题 Orbitron 由 hud.css 统一绘制（后加载，同权重覆盖），
+/* 2. 统一卡片：切角 / 角标 / 半透明底 / 标题等宽粗体由 hud.css 统一绘制（后加载，同权重覆盖），
  *    这里只保留方角 / 发丝线 / 去阴影的基础兜底。 */
 .ant-pro-card.unified-section-card {
   border-radius: var(--unified-card-border-radius) !important;

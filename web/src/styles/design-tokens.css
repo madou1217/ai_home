@@ -94,12 +94,12 @@
    * 2. PRIMITIVES — Typography
    * 字体随包分发（@fontsource），不从外网 CDN 加载（桌面端 / 内网离线可用）。
    * ------------------------------------------------------------------------ */
-  /* 数据与界面：JetBrains Mono（中文回落系统黑体）；展示标题：Orbitron；长文阅读：系统无衬线。
-   * 字体随包分发（@fontsource，见 app.tsx），不依赖外网 CDN。 */
-  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
-  --font-body: 'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', ui-monospace, monospace;
-  --font-display: 'Orbitron', 'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-prose: 'Inter', 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 统一等宽字体：界面、标题、长文全部使用同一套 monospace，优先中文等宽字体，
+   * 不引入展示型/衬线字体。字体随包分发（@fontsource，见 app.tsx），不依赖外网 CDN。 */
+  --font-mono: 'JetBrains Mono', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'Noto Sans Mono SC', 'WenQuanYi Zen Hei Mono', 'MS Gothic', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --font-body: 'JetBrains Mono', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'WenQuanYi Zen Hei Mono', 'MS Gothic', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', ui-monospace, Menlo, Consolas, monospace;
+  --font-display: var(--font-body);
+  --font-prose: var(--font-body);
 
   /* 旧字阶别名，逐档指向 8 级字阶 */
   --text-2xs: var(--hos-text-micro);   /* 11px */

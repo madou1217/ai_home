@@ -38,7 +38,7 @@
   --hud-tick: 0px;
   --hud-tick-color: transparent;
   --font-display: var(--font-prose);
-  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-body: 'JetBrains Mono', 'Sarasa Mono SC', 'Noto Sans Mono CJK SC', 'WenQuanYi Zen Hei Mono', 'MS Gothic', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', ui-monospace, Menlo, Consolas, monospace;
   --qc-radius: 10px;
   --qc-radius-sm: 7px;
   --qc-topbar-h: 44px;

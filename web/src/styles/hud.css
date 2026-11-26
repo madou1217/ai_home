@@ -3,7 +3,7 @@
  * -----------------------------------------------------------------------------
  * 在 design-tokens（颜色）与 App.css（antd 基础材质）之上叠加 HUD 语言：
  *   1. 切角面板（clip-path）+ 左上 / 右下青色角标
- *   2. Orbitron 展示字体 + 发光数值，JetBrains Mono 数据字体
+ *   2. 统一 JetBrains Mono 等宽字体 + 发光数值，不引入展示型字体
  *   3. HUD 按钮 / 输入 / 表格 / 标签 / Tabs / 浮层 / 提示
  *   4. CRT 扫描线覆盖层（开关见 HUD 顶栏与设置页）
  * 只引用语义 token；深浅主题的取值差异全部在 design-tokens.css。
@@ -132,7 +132,7 @@ body {
   display: none;
 }
 
-/* 卡片标题：Orbitron 风格的方块前缀 */
+/* 卡片标题：统一的等宽方块前缀 */
 .ant-pro-card.unified-section-card .ant-pro-card-title {
   display: inline-flex;
   align-items: center;
@@ -180,8 +180,7 @@ body {
   color: var(--color-faint);
 }
 
-/* 数据数值：等宽粗体（规范「数据用 JetBrains Mono，标题用 Orbitron」）。
- * Orbitron 的「0」是带斜杠的方块字形，在 0 值 / 空状态下会读成「⊘」，因此不用于数字。 */
+/* 数据数值：等宽粗体；标题也使用同一等宽字体，不引入展示型字体。 */
 .hud-display {
   font-family: var(--font-mono);
   font-weight: 700;
@@ -189,7 +188,7 @@ body {
   font-variant-numeric: tabular-nums slashed-zero;
 }
 
-/* 展示标题：Orbitron（面板标题、品牌、分区标题） */
+/* 展示标题：统一等宽粗体（面板标题、品牌、分区标题） */
 .hud-heading {
   font-family: var(--font-display);
   font-weight: 700;

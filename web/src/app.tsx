@@ -36,14 +36,11 @@ installCatalogCacheInvalidation((targetKey) => {
   }
   return resolveCatalogStorageKey(serverId, targetKey);
 });
-// Cyber HUD 字体随包分发（不依赖外网 CDN）：JetBrains Mono 数据字体 + Orbitron 展示字体。
+// Cyber HUD 字体随包分发（不依赖外网 CDN）：统一使用 JetBrains Mono 等宽字体。
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
 import "@fontsource/jetbrains-mono/700.css";
-import "@fontsource/orbitron/500.css";
-import "@fontsource/orbitron/700.css";
-import "@fontsource/orbitron/900.css";
 import {
   SERVER_SETUP_HREF,
   SERVER_SETUP_TARGET,

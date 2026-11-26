@@ -341,3 +341,13 @@ Paste Nexus 设置新增 **Direct endpoint pairing**：填写对方 Server 的 L
 
 - **Windows 10.0.26300 真机**（SSH `Windows - MeaDeo`）：`clipboardio.NewSystem()` Probe supported=true；`WriteText`→`ReadText` 字节完全一致；`WriteFiles`→`ReadFiles` 返回 `C:\Users\madou\AppData\Local\Temp\aih-clipboard-probe.txt` 且匹配；4×4 PNG `WriteImage`→`ReadImage` 得到 `image/png`、125 字节、4×4。探针二进制已删除。
 - **Linux 真机**（`Linux - desired.cn:22008`，headless）：Probe supported=false，reason=`headless linux: neither WAYLAND_DISPLAY nor DISPLAY is set`，与设计一致；有 Wayland/X11 的桌面使用 wl-paste/xclip 路径。
+
+### Windows 桌面端真机验收（2026-11-26）
+
+在 Windows 10.0.26300 真机（SSH `Windows - MeaDeo`）上部署测试服务（独立 HOME，127.0.0.1:29527，计划任务交互会话），完成：
+
+- `clipboardio` Probe supported=true；真实 Windows 剪贴板文本/图片被采集入库（文本经 UURemote 剪贴板桥同步后捕获 `WIN-CAP-FROM-MAC-2607`，图片 1024×1024 PNG 700 KiB 入库）；文件 IO 探针 `WriteFiles`/`ReadFiles` 路径匹配。
+- `aih clip orbit --print` 检测到 `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`，生成 `--app=.../ui/paste/?embed=browser&mode=quick` 命令；`clip workspace` 生成工作区命令。
+- `aih clip shortcut install` 在桌面写入 `AIH Quick Orbit.lnk`，WScript 读回 TargetPath、`clip orbit` 参数、Hotkey `Alt+Ctrl+V`。
+- DOCX 文件条目经 Windows 服务预览 API 返回 `AIH DOCX preview probe / Second paragraph 中文内容`。
+- 实际启动 Edge app 窗口并截屏：Quick Orbit 1520×438，真实卡片（Code/File doc.docx/Text/Image）和底部快捷键、分页、Paste 均正常；截图保存在本机 `~/Downloads/aih-windows-quickorbit.png`。测试服务、计划任务、Edge 测试 profile、快捷方式与目录已全部清理，未触碰 Windows 上原有的 9527 服务。

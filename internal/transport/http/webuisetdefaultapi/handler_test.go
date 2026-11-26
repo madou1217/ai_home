@@ -161,7 +161,25 @@ func seed(t *testing.T) string {
 	); err != nil {
 		t.Fatalf("insert gemini account: %v", err)
 	}
+	seedGoAccount(t, directory, codexAccountRef, "codex")
+	seedGoAccount(t, directory, geminiAccountRef, "gemini")
 	return directory
+}
+
+// seedGoAccount 在 aih.db 的 accounts 表登记账号：账号归属已从 app-state.db 迁到 Go 权威库。
+func seedGoAccount(t *testing.T, directory, accountRef, provider string) {
+	t.Helper()
+	database, err := sql.Open("sqlite", filepath.Join(directory, "aih.db"))
+	if err != nil {
+		t.Fatalf("open aih.db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	if _, err := database.Exec("CREATE TABLE IF NOT EXISTS accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL)"); err != nil {
+		t.Fatalf("create accounts: %v", err)
+	}
+	if _, err := database.Exec("INSERT OR REPLACE INTO accounts (account_ref, provider_id) VALUES (?, ?)", accountRef, provider); err != nil {
+		t.Fatalf("insert accounts: %v", err)
+	}
 }
 
 func seedLanding(t *testing.T, aiHomeDir string, provider string) {

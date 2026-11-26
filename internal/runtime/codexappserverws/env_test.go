@@ -19,6 +19,14 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/codexhooks"
 )
 
+// stubCredential 模拟非 API Key 凭据（OAuth 等）：BuildSpawnEnv 只区分是否为 *codex.APIKeyAuth。
+type stubCredential struct{}
+
+func (stubCredential) ProviderID() string   { return "codex" }
+func (stubCredential) IdentitySeed() string { return "stub:codex:oauth" }
+func (stubCredential) String() string       { return "stub-credential" }
+func (stubCredential) GoString() string     { return "stub-credential" }
+
 type stubGoAccountStore struct {
 	def  accountcore.ProviderDefault
 	cred accountapp.Credential
@@ -165,14 +173,21 @@ func TestBuildSpawnEnvDefaultAccountAPIKeyAndOAuth(t *testing.T) {
 
 	t.Run("APIKey默认账号注入并清理远程冲突变量", func(t *testing.T) {
 		t.Parallel()
-		aiHome := filepath.Join(t.TempDir(), "ai")
-		createTestAppStateDB(t, aiHome,
-			`INSERT INTO app_kv (key, value) VALUES ('account:default:codex', '"acct_key_1"')`,
-			`INSERT INTO account_refs (account_ref, provider, account_id) VALUES ('acct_key_1', 'codex', 'k1')`,
-			`INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json) VALUES ('acct_key_1', '{"OPENAI_API_KEY":"sk-acct-1"}', '{}')`,
-		)
+		ref, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		def, err := accountcore.NewProviderDefault("codex", ref, time.UnixMilli(1700000000000))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cred, err := codex.NewAPIKeyAuth(codex.APIKeyInput{APIKey: "sk-acct-1"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		env, err := BuildSpawnEnv(context.Background(), SpawnEnvOptions{
-			AIHomeDir: aiHome,
+			AIHomeDir:    t.TempDir(),
+			AccountStore: stubGoAccountStore{def: def, cred: cred},
 			BaseEnv: []string{
 				"AIH_CODEX_GATEWAY_ACCOUNT_REF=old",
 				"AIH_CODEX_REMOTE_AUTH_TOKEN=tok-old",
@@ -195,14 +210,17 @@ func TestBuildSpawnEnvDefaultAccountAPIKeyAndOAuth(t *testing.T) {
 
 	t.Run("OAuth默认账号清理冲突APIKey环境变量", func(t *testing.T) {
 		t.Parallel()
-		aiHome := filepath.Join(t.TempDir(), "ai")
-		createTestAppStateDB(t, aiHome,
-			`INSERT INTO app_kv (key, value) VALUES ('account:default:codex', '"acct_oauth_1"')`,
-			`INSERT INTO account_refs (account_ref, provider, account_id) VALUES ('acct_oauth_1', 'codex', 'o1')`,
-			`INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json) VALUES ('acct_oauth_1', '{}', '{"tokens":{"access_token":"jwt"}}')`,
-		)
+		ref, err := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		def, err := accountcore.NewProviderDefault("codex", ref, time.UnixMilli(1700000000000))
+		if err != nil {
+			t.Fatal(err)
+		}
 		env, err := BuildSpawnEnv(context.Background(), SpawnEnvOptions{
-			AIHomeDir: aiHome,
+			AIHomeDir:    t.TempDir(),
+			AccountStore: stubGoAccountStore{def: def, cred: stubCredential{}},
 			BaseEnv: []string{
 				"OPENAI_API_KEY=sk-shell-leak",
 				"OPENAI_BASE_URL=http://127.0.0.1:9527/v1",

@@ -34,19 +34,13 @@ func newAppState(t *testing.T) string {
 	}
 	defer func() { _ = db.Close() }()
 	for _, statement := range []string{
-		`CREATE TABLE account_refs (
+		`CREATE TABLE accounts (
 			account_ref TEXT PRIMARY KEY,
-			provider TEXT NOT NULL,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
+			provider_id TEXT NOT NULL
 		)`,
-		`CREATE TABLE compat_account_credentials (
+		`CREATE TABLE account_credentials (
 			account_ref TEXT PRIMARY KEY,
-			env_json TEXT NOT NULL DEFAULT '{}',
-			native_auth_json TEXT NOT NULL DEFAULT '{}',
-			env_updated_at INTEGER NOT NULL DEFAULT 0,
-			native_auth_updated_at INTEGER NOT NULL DEFAULT 0,
-			updated_at INTEGER NOT NULL
+			credential_json TEXT NOT NULL DEFAULT '{}'
 		)`,
 	} {
 		if _, err := db.Exec(statement); err != nil {
@@ -64,17 +58,18 @@ func insertAccount(t *testing.T, directory string, provider string, accountRef s
 	}
 	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(
-		`INSERT INTO account_refs (account_ref, provider, created_at, updated_at)
-		 VALUES (?, ?, 1, 1)`, accountRef, provider,
+		`INSERT INTO accounts (account_ref, provider_id) VALUES (?, ?)`, accountRef, provider,
 	); err != nil {
-		t.Fatalf("insert account_refs: %v", err)
+		t.Fatalf("insert accounts: %v", err)
+	}
+	credentialJSON := `{"native_auth_json":` + nativeAuth + `}`
+	if !json.Valid([]byte(credentialJSON)) {
+		t.Fatalf("native auth 不是合法 JSON: %s", nativeAuth)
 	}
 	if _, err := db.Exec(
-		`INSERT INTO compat_account_credentials
-		 (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at)
-		 VALUES (?, '{}', ?, 0, 0, 1)`, accountRef, nativeAuth,
+		`INSERT INTO account_credentials (account_ref, credential_json) VALUES (?, ?)`, accountRef, credentialJSON,
 	); err != nil {
-		t.Fatalf("insert compat_account_credentials: %v", err)
+		t.Fatalf("insert account_credentials: %v", err)
 	}
 }
 

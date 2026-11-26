@@ -66,7 +66,24 @@ func seed(t *testing.T) string {
 	if _, err := database.Exec("INSERT INTO account_refs VALUES (?, 'codex', 1, 1)", accountRef); err != nil {
 		t.Fatalf("insert account: %v", err)
 	}
+	seedGoAccount(t, directory, accountRef, "codex")
 	return directory
+}
+
+// seedGoAccount 在 aih.db 的 accounts 表登记账号：账号归属已从 app-state.db 迁到 Go 权威库。
+func seedGoAccount(t *testing.T, directory, accountRef, provider string) {
+	t.Helper()
+	database, err := sql.Open("sqlite", filepath.Join(directory, "aih.db"))
+	if err != nil {
+		t.Fatalf("open aih.db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+	if _, err := database.Exec("CREATE TABLE IF NOT EXISTS accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL)"); err != nil {
+		t.Fatalf("create accounts: %v", err)
+	}
+	if _, err := database.Exec("INSERT OR REPLACE INTO accounts (account_ref, provider_id) VALUES (?, ?)", accountRef, provider); err != nil {
+		t.Fatalf("insert accounts: %v", err)
+	}
 }
 
 func newHandler(t *testing.T, aiHomeDir string, restorer RuntimeRestorer) http.Handler {

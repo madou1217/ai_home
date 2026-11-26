@@ -38,36 +38,33 @@ func seedAppState(t *testing.T, aiHomeDir string) {
 	}
 	defer func() { _ = db.Close() }()
 	for _, statement := range []string{
-		"CREATE TABLE account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-		"CREATE TABLE account_state (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, status TEXT, configured INTEGER, display_name TEXT)",
-		"CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL, cli_account_id INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL)",
+		"CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, credential_ref TEXT NOT NULL, auth_kind TEXT NOT NULL, auth_mode TEXT NOT NULL DEFAULT '', format_version INTEGER NOT NULL, credential_json TEXT NOT NULL, updated_at_ms INTEGER NOT NULL)",
+		"CREATE TABLE account_identities (account_ref TEXT PRIMARY KEY, email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', nickname TEXT NOT NULL DEFAULT '', display_name TEXT NOT NULL DEFAULT '', updated_at_ms INTEGER NOT NULL)",
+		"CREATE TABLE account_profiles (account_ref TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '')",
 		"CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)",
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("schema: %v", err)
 		}
 	}
-	for _, ref := range []string{mainRef, oauthRef, apiKeyRef} {
-		if _, err := db.Exec("INSERT INTO account_refs VALUES (?, 'codex', 1, 1)", ref); err != nil {
-			t.Fatalf("account_refs: %v", err)
+	for index, ref := range []string{mainRef, oauthRef, apiKeyRef} {
+		if _, err := db.Exec("INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) VALUES (?, 'codex', ?, 1, 1, 1)", ref, index+1); err != nil {
+			t.Fatalf("accounts: %v", err)
 		}
 	}
-	if _, err := db.Exec("INSERT INTO account_state VALUES (?, 'codex', 'up', 1, 'Main')", mainRef); err != nil {
-		t.Fatalf("account_state: %v", err)
+	for ref, name := range map[string]string{mainRef: "Main", oauthRef: "Second", apiKeyRef: "Keyed"} {
+		if _, err := db.Exec("INSERT INTO account_identities (account_ref, display_name, updated_at_ms) VALUES (?, ?, 1)", ref, name); err != nil {
+			t.Fatalf("identities: %v", err)
+		}
 	}
-	if _, err := db.Exec("INSERT INTO account_state VALUES (?, 'codex', 'up', 1, 'Second')", oauthRef); err != nil {
-		t.Fatalf("account_state: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO account_state VALUES (?, 'codex', 'up', 1, 'Keyed')", apiKeyRef); err != nil {
-		t.Fatalf("account_state: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO compat_account_credentials VALUES (?, '{}', '{}', 0, 0, 1)", mainRef); err != nil {
+	if _, err := db.Exec("INSERT INTO account_credentials VALUES (?, ?, 'oauth', '', 1, '{}', 1)", mainRef, "cred_00000000000000000000"); err != nil {
 		t.Fatalf("credentials: %v", err)
 	}
-	if _, err := db.Exec("INSERT INTO compat_account_credentials VALUES (?, '{}', '{}', 0, 0, 1)", oauthRef); err != nil {
+	if _, err := db.Exec("INSERT INTO account_credentials VALUES (?, ?, 'oauth', '', 1, '{\"native_auth_json\":{}}', 1)", oauthRef, "cred_00000000000000000001"); err != nil {
 		t.Fatalf("credentials: %v", err)
 	}
-	if _, err := db.Exec("INSERT INTO compat_account_credentials VALUES (?, '{\"OPENAI_API_KEY\":\"sk-key\"}', '{}', 0, 0, 1)", apiKeyRef); err != nil {
+	if _, err := db.Exec("INSERT INTO account_credentials VALUES (?, ?, 'api_key', '', 1, '{\"OPENAI_API_KEY\":\"sk-key\"}', 1)", apiKeyRef, "cred_00000000000000000002"); err != nil {
 		t.Fatalf("credentials: %v", err)
 	}
 	overrides := "{\"" + mainRef + "\":{\"gpt-5\":64000},\"unknown-ref\":{\"gpt-5\":1000}}"

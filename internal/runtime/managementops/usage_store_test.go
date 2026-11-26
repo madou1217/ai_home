@@ -71,19 +71,19 @@ func TestUsageStoreCanonicalProjectionAndQueries(t *testing.T) {
 			CWD:                  "/work/ai_home",
 		},
 		{
-			EventKey:    "claude:message:m1",
-			Provider:    "claude",
-			AccountRef:  ref1,
-			SessionID:   "sess-c1",
-			SourceKind:  "session_jsonl",
-			Model:       "claude-sonnet-4-5",
-			InputTokens: 400,
+			EventKey:     "claude:message:m1",
+			Provider:     "claude",
+			AccountRef:   ref1,
+			SessionID:    "sess-c1",
+			SourceKind:   "session_jsonl",
+			Model:        "claude-sonnet-4-5",
+			InputTokens:  400,
 			OutputTokens: 100,
-			TotalTokens: 500,
-			CostUSD:     floatPtr(0.02),
-			TimestampMS: nowMS - 20_000,
-			Project:     "web",
-			CWD:         "/work/web",
+			TotalTokens:  500,
+			CostUSD:      floatPtr(0.02),
+			TimestampMS:  nowMS - 20_000,
+			Project:      "web",
+			CWD:          "/work/web",
 		},
 	})
 	if err != nil || inserted != 3 {
@@ -136,11 +136,11 @@ func TestUsageStoreCanonicalProjectionAndQueries(t *testing.T) {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	logLine, _ := json.Marshal(map[string]any{
-		"at":              time.UnixMilli(nowMS - 5_000).UTC().Format(time.RFC3339Nano),
-		"kind":            requestContextKind,
-		"requestId":       "req-err-1",
-		"provider":        "codex",
-		"model":           "gpt-5",
+		"at":         time.UnixMilli(nowMS - 5_000).UTC().Format(time.RFC3339Nano),
+		"kind":       requestContextKind,
+		"requestId":  "req-err-1",
+		"provider":   "codex",
+		"model":      "gpt-5",
 		"endpoint":   "/v1/responses",
 		"status":     429,
 		"error":      "rate_limit",
@@ -165,7 +165,7 @@ func TestUsageStoreCanonicalProjectionAndQueries(t *testing.T) {
 		t.Fatalf("secret leaked in sanitized ErrorMessage: %q", reqDetails.Errors[0].ErrorMessage)
 	}
 
-	// 校验 ReconcileCodebuddyUsageBatch & ReconcileZcodeUsageOwnershipBatch & InsertNativeOutcomes
+	// 校验 ReconcileCodebuddyUsageBatch & ReconcileZcodeUsageOwnershipBatch
 	cbKey := "codebuddy:message:1111111111111111:2222222222222222:usage"
 	if n, err := store.ReconcileCodebuddyUsageBatch(ctx, []UsageRecordInput{
 		{EventKey: cbKey, Provider: "codebuddy", AccountRef: "", SessionID: "cbs1", SourceKind: "session_jsonl", Model: "glm-5", InputTokens: 10, OutputTokens: 5, TotalTokens: 15, TimestampMS: nowMS - 1000},
@@ -182,11 +182,6 @@ func TestUsageStoreCanonicalProjectionAndQueries(t *testing.T) {
 		t.Fatalf("ReadUsageOwnerByEventKey = %+v found=%v err=%v", ownerRec, found, err)
 	}
 
-	if n, err := store.InsertNativeOutcomes(ctx, []NativeOutcomeInput{
-		{EventKey: "cb:o:1", AccountRef: ref1, Provider: "codebuddy", SessionID: "cbs1", Outcome: "success", TimestampMS: nowMS - 500},
-	}); err != nil || n != 1 {
-		t.Fatalf("InsertNativeOutcomes = %d, %v", n, err)
-	}
 }
 
 func stringContainsSecret(s string) bool {

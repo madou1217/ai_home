@@ -339,19 +339,20 @@ func TestCodebuddyIDEVscdbSessionMessages(t *testing.T) {
 		"sub": "uid-42",
 	})
 	fakeJWT := "hdr." + base64.RawURLEncoding.EncodeToString(claims) + ".sig"
-	// Node 原生凭据与账号台账都在唯一的 aih.db 中，原生 JSON 存于兼容投影表。
+	// 原生凭据与账号台账都在唯一的 aih.db 中。
 	createTestSQLiteDB(t, filepath.Join(aiHome, "aih.db"), `
-		CREATE TABLE account_refs (account_ref TEXT, provider TEXT);
-		CREATE TABLE compat_account_credentials (account_ref TEXT PRIMARY KEY, native_auth_json TEXT);
+		CREATE TABLE accounts (account_ref TEXT, provider_id TEXT);
+		CREATE TABLE account_credentials (account_ref TEXT PRIMARY KEY, credential_json TEXT);
 	`, func(db *sql.DB) error {
-		_, _ = db.Exec(`INSERT INTO account_refs VALUES ('acct-cb','codebuddycn')`)
-		payload, _ := json.Marshal(map[string]any{
+		_, _ = db.Exec(`INSERT INTO accounts VALUES ('acct-cb','codebuddycn')`)
+		native, _ := json.Marshal(map[string]any{
 			"credentials": map[string]any{
 				"auth":    map[string]any{"accessToken": fakeJWT, "refreshToken": "rt-42"},
 				"account": map[string]any{"uid": "uid-42"},
 			},
 		})
-		_, err := db.Exec(`INSERT INTO compat_account_credentials(account_ref, native_auth_json) VALUES ('acct-cb',?)`, string(payload))
+		document, _ := json.Marshal(map[string]any{"native_auth_json": json.RawMessage(native)})
+		_, err := db.Exec(`INSERT INTO account_credentials(account_ref, credential_json) VALUES ('acct-cb',?)`, string(document))
 		return err
 	})
 

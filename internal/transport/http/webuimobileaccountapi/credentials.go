@@ -10,40 +10,38 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"path/filepath"
 )
 
-// readStoredCodexCredential 从 Node 的 app-state.db 读取账号归属与原生凭据。
+// readStoredCodexCredential 从 aih.db 读取账号归属与原生凭据。
 //
-// 账号存在性以 account_refs + compat_account_credentials 为准（与 Node accountExists 同口径）；
-// native_auth_json 解析失败按空对象处理，交给凭证校验拒绝。
+// accounts 与 account_credentials 是唯一来源；native_auth_json 解析失败按空对象
+// 处理，交给凭证校验拒绝。
 func readStoredCodexCredential(
 	ctx context.Context,
 	aiHomeDir string,
 	accountRef string,
 ) (string, map[string]any, bool, error) {
-	databasePath, err := appstate.DatabasePath(aiHomeDir)
-	if err != nil {
-		return "", nil, false, err
-	}
+	databasePath := filepath.Join(strings.TrimSpace(aiHomeDir), "aih.db")
 	if _, err := os.Stat(databasePath); errors.Is(err, os.ErrNotExist) {
 		return "", nil, false, nil
 	} else if err != nil {
-		return "", nil, false, fmt.Errorf("检查 app-state.db 失败: %w", err)
+		return "", nil, false, fmt.Errorf("检查 aih.db 失败: %w", err)
 	}
 	db, err := appstate.OpenReadOnly(ctx, databasePath)
 	if err != nil {
-		return "", nil, false, fmt.Errorf("打开 app-state.db 失败: %w", err)
+		return "", nil, false, fmt.Errorf("打开 aih.db 失败: %w", err)
 	}
 	defer func() { _ = db.Close() }()
 
 	var provider string
-	var nativeAuthJSON string
+	var credentialJSON string
 	err = db.QueryRowContext(ctx, `
-		SELECT r.provider, c.native_auth_json
-		FROM account_refs AS r
-		INNER JOIN compat_account_credentials AS c ON c.account_ref = r.account_ref
-		WHERE r.account_ref = ?
-		LIMIT 1`, accountRef).Scan(&provider, &nativeAuthJSON)
+		SELECT a.provider_id, c.credential_json
+		FROM accounts AS a
+		INNER JOIN account_credentials AS c ON c.account_ref = a.account_ref
+		WHERE a.account_ref = ?
+		LIMIT 1`, accountRef).Scan(&provider, &credentialJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil, false, nil
 	}
@@ -53,7 +51,17 @@ func readStoredCodexCredential(
 		}
 		return "", nil, false, fmt.Errorf("读取账号凭据失败: %w", err)
 	}
-	return strings.ToLower(strings.TrimSpace(provider)), parseNativeAuth(nativeAuthJSON), true, nil
+	document := map[string]any{}
+	_ = json.Unmarshal([]byte(credentialJSON), &document)
+	native := map[string]any{}
+	if inner, ok := document["native_auth_json"].(map[string]any); ok {
+		native = inner
+	} else if innerRaw, ok := document["native_auth_json"].(string); ok {
+		native = parseNativeAuth(innerRaw)
+	} else {
+		native = document
+	}
+	return strings.ToLower(strings.TrimSpace(provider)), native, true, nil
 }
 
 func parseNativeAuth(document string) map[string]any {

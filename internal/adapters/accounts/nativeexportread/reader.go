@@ -1,5 +1,4 @@
-// Package nativeexportread owns the public export's existing compatibility
-// projection. It never merges canonical-only accounts or creates a schema.
+// Package nativeexportread 从 Go 权威库（aih.db）读取公开导出所需的账号记录。
 package nativeexportread
 
 import (
@@ -10,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -20,7 +20,7 @@ import (
 
 var ErrSource = errors.New("public_export_source_invalid")
 
-// Record is the legacy export view, not an inferred canonical credential.
+// Record 是一次导出记录；Env/NativeAuth 由 canonical 凭据文档拆分而来。
 type Record struct {
 	Provider     string         `json:"provider"`
 	AccountRef   string         `json:"accountRef"`
@@ -34,8 +34,8 @@ type Record struct {
 // rows. Errors and malformed objects are not interpreted as an empty export.
 func Read(ctx context.Context, home string, catalog *providers.Catalog) ([]Record, error) {
 	result := []Record{}
-	path, err := appstate.DatabasePath(home)
-	if err != nil || ctx == nil || catalog == nil {
+	path := filepath.Join(strings.TrimSpace(home), "aih.db")
+	if ctx == nil || catalog == nil {
 		return nil, ErrSource
 	}
 	if err := businessdb.CheckReady(ctx, path); err != nil {
@@ -58,20 +58,13 @@ func Read(ctx context.Context, home string, catalog *providers.Catalog) ([]Recor
 		return nil, ErrSource
 	}
 	defer tx.Rollback()
-	for _, name := range []string{"account_refs", "account_cli_aliases", "account_state", "compat_account_credentials"} {
-		var kind string
-		if err := tx.QueryRowContext(ctx, "SELECT type FROM sqlite_master WHERE name = ?", name).Scan(&kind); err != nil || kind != "table" {
-			return nil, ErrSource
-		}
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT r.account_ref, r.provider,
-    COALESCE(CAST(a.cli_account_id AS TEXT), ''), COALESCE(s.status, 'up'),
-    COALESCE(c.env_json, '{}'), COALESCE(c.native_auth_json, '{}')
-    FROM account_refs r
-    LEFT JOIN account_cli_aliases a ON a.account_ref = r.account_ref
-    LEFT JOIN account_state s ON s.account_ref = r.account_ref
-    LEFT JOIN compat_account_credentials c ON c.account_ref = r.account_ref
-    ORDER BY r.account_ref`)
+	rows, err := tx.QueryContext(ctx, `SELECT a.account_ref, a.provider_id,
+    CAST(a.cli_account_id AS TEXT),
+    CASE WHEN a.enabled = 1 THEN 'up' ELSE 'down' END,
+    COALESCE(c.credential_json, '{}')
+    FROM accounts AS a
+    LEFT JOIN account_credentials AS c ON c.account_ref = a.account_ref
+    ORDER BY a.account_ref`)
 	if err != nil {
 		return nil, ErrSource
 	}
@@ -79,11 +72,11 @@ func Read(ctx context.Context, home string, catalog *providers.Catalog) ([]Recor
 	totalBytes := 0
 	for rows.Next() {
 		var row Record
-		var env, auth string
-		if err := rows.Scan(&row.AccountRef, &row.Provider, &row.CLIAccountID, &row.Status, &env, &auth); err != nil {
+		var credential string
+		if err := rows.Scan(&row.AccountRef, &row.Provider, &row.CLIAccountID, &row.Status, &credential); err != nil {
 			return nil, ErrSource
 		}
-		totalBytes += len(env) + len(auth)
+		totalBytes += len(credential)
 		if totalBytes > 64*1024*1024 {
 			return nil, ErrSource
 		}
@@ -99,14 +92,30 @@ func Read(ctx context.Context, home string, catalog *providers.Catalog) ([]Recor
 		if row.Status != "down" {
 			row.Status = "up"
 		}
-		row.Env, err = object(env)
+		document, err := object(credential)
 		if err != nil {
 			return nil, ErrSource
 		}
-		row.NativeAuth, err = object(auth)
-		if err != nil {
-			return nil, ErrSource
+		nativeAuth := map[string]any{}
+		env := make(map[string]any, len(document))
+		for key, value := range document {
+			if key == "native_auth_json" || key == "nativeAuth" {
+				switch typed := value.(type) {
+				case map[string]any:
+					nativeAuth = typed
+				case string:
+					parsed, parseErr := object(typed)
+					if parseErr != nil {
+						return nil, ErrSource
+					}
+					nativeAuth = parsed
+				}
+				continue
+			}
+			env[key] = value
 		}
+		row.Env = env
+		row.NativeAuth = nativeAuth
 		result = append(result, row)
 	}
 	if rows.Err() != nil {

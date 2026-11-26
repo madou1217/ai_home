@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 func makeTestJWT(claims map[string]any) string {
@@ -137,9 +135,7 @@ func TestLoadCodebuddyAccountIdentitiesFromBothDBs(t *testing.T) {
 	ctx := context.Background()
 
 	const refAih = "acct_11111111111111111111"
-	const refApp = "acct_22222222222222222222"
 	const uidAih = "uid_from_aih_db"
-	const uidApp = "uid_from_app_state"
 
 	jwtAih := makeTestJWT(map[string]any{
 		"iss": "https://copilot.tencent.com/auth/realms/copilot",
@@ -173,45 +169,9 @@ func TestLoadCodebuddyAccountIdentitiesFromBothDBs(t *testing.T) {
 	}
 	_ = aihDB.Close()
 
-	jwtApp := makeTestJWT(map[string]any{
-		"iss": "https://www.codebuddy.ai/auth/realms/copilot",
-		"sub": uidApp,
-	})
-	credAppBytes, _ := json.Marshal(map[string]any{
-		"auth":    map[string]any{"accessToken": jwtApp, "refreshToken": jwtApp, "domain": "www.codebuddy.ai"},
-		"account": map[string]any{"uid": uidApp},
-	})
-
-	appStatePath, err := appstate.DatabasePath(aiHome)
-	if err != nil {
-		t.Fatalf("DatabasePath: %v", err)
-	}
-	_ = os.MkdirAll(filepath.Dir(appStatePath), 0o755)
-	appDB, err := sql.Open("sqlite", appStatePath)
-	if err != nil {
-		t.Fatalf("open app-state: %v", err)
-	}
-	// appstate.DatabasePath 已统一指向唯一的 aih.db；Node 原生凭据保存在
-	// 兼容投影表 compat_account_credentials（native_auth_json）中。
-	_, err = appDB.Exec(`
-		CREATE TABLE IF NOT EXISTS account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL);
-		CREATE TABLE IF NOT EXISTS compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}');
-	`)
-	if err != nil {
-		t.Fatalf("create compat tables: %v", err)
-	}
-	// 同 ref 在 Node 兼容台账存在但无 uid 时，不应覆盖 aih.db 里已解析的 uid；另加 refApp 验证兼容台账独立读取。
-	if _, err := appDB.Exec(`INSERT INTO account_refs(account_ref, provider) VALUES (?, 'workbuddycn'), (?, 'codebuddy')`, refAih, refApp); err != nil {
-		t.Fatalf("insert account_refs: %v", err)
-	}
-	if _, err := appDB.Exec(`INSERT INTO compat_account_credentials(account_ref, native_auth_json) VALUES (?, '{}'), (?, ?)`, refAih, refApp, string(credAppBytes)); err != nil {
-		t.Fatalf("insert compat creds: %v", err)
-	}
-	_ = appDB.Close()
-
 	got := LoadCodebuddyAccountIdentities(ctx, aiHome)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 identities, got %+v", got)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 canonical identity, got %+v", got)
 	}
 	byRef := map[string]CodebuddyAccountIdentity{}
 	for _, item := range got {
@@ -219,8 +179,5 @@ func TestLoadCodebuddyAccountIdentitiesFromBothDBs(t *testing.T) {
 	}
 	if byRef["workbuddycn:"+refAih].UID != uidAih {
 		t.Fatalf("unexpected aih identity: %+v", byRef["workbuddycn:"+refAih])
-	}
-	if byRef["codebuddy:"+refApp].UID != uidApp {
-		t.Fatalf("unexpected app-state identity: %+v", byRef["codebuddy:"+refApp])
 	}
 }

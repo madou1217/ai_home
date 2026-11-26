@@ -63,20 +63,20 @@ func (source *Source) Read(
 	defer func() { _ = db.Close() }()
 
 	statement := `
-		SELECT id, event_key, account_ref, provider, quota_key, window_label,
+		SELECT event_id, event_key, account_ref, provider_id, quota_key, window_label,
 		       window_minutes, event_kind, classification, cause,
 		       previous_remaining_pct, current_remaining_pct,
 		       previous_expected_reset_at_ms, exhausted_at_ms,
 		       occurred_at_ms, detected_at_ms, early_duration_ms,
-		       previous_plan_type, current_plan_type
-		FROM compat_account_quota_reset_events
+		       '', ''
+		FROM account_quota_reset_events
 		WHERE account_ref = ?`
 	arguments := []any{reference}
 	if beforeID > 0 {
-		statement += " AND id < ?"
+		statement += " AND event_id < ?"
 		arguments = append(arguments, beforeID)
 	}
-	statement += " ORDER BY occurred_at_ms DESC, id DESC LIMIT ?"
+	statement += " ORDER BY occurred_at_ms DESC, event_id DESC LIMIT ?"
 	arguments = append(arguments, limit)
 
 	rows, err := db.QueryContext(ctx, statement, arguments...)

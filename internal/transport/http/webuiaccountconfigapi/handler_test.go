@@ -42,23 +42,35 @@ func seedAppState(t *testing.T, aiHomeDir string, accountRef string, provider st
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(aiHomeDir, "aih.db"))
 	if err != nil {
-		t.Fatalf("open app-state: %v", err)
+		t.Fatalf("open aih.db: %v", err)
 	}
 	defer func() { _ = db.Close() }()
 	statements := []string{
-		"CREATE TABLE IF NOT EXISTS account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
-		"CREATE TABLE IF NOT EXISTS compat_account_credentials (account_ref TEXT PRIMARY KEY, env_json TEXT NOT NULL DEFAULT '{}', native_auth_json TEXT NOT NULL DEFAULT '{}', env_updated_at INTEGER NOT NULL DEFAULT 0, native_auth_updated_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE IF NOT EXISTS accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL, cli_account_id INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL)",
+		"CREATE TABLE IF NOT EXISTS account_credentials (account_ref TEXT PRIMARY KEY, credential_ref TEXT NOT NULL, auth_kind TEXT NOT NULL, auth_mode TEXT NOT NULL DEFAULT '', format_version INTEGER NOT NULL, credential_json TEXT NOT NULL, updated_at_ms INTEGER NOT NULL)",
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("exec %q: %v", statement, err)
 		}
 	}
-	if _, err := db.Exec("INSERT OR REPLACE INTO account_refs (account_ref, provider, created_at, updated_at) VALUES (?, ?, 1, 1)", accountRef, provider); err != nil {
-		t.Fatalf("insert account_refs: %v", err)
+	document := map[string]any{}
+	_ = json.Unmarshal([]byte(envJSON), &document)
+	if document == nil {
+		document = map[string]any{}
 	}
-	if _, err := db.Exec("INSERT OR REPLACE INTO compat_account_credentials (account_ref, env_json, native_auth_json, env_updated_at, native_auth_updated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-		accountRef, envJSON, nativeJSON, updatedAt, updatedAt, updatedAt); err != nil {
+	if strings.TrimSpace(nativeJSON) != "" && strings.TrimSpace(nativeJSON) != "{}" {
+		var native any
+		if json.Unmarshal([]byte(nativeJSON), &native) == nil {
+			document["native_auth_json"] = native
+		}
+	}
+	encoded, _ := json.Marshal(document)
+	if _, err := db.Exec("INSERT OR REPLACE INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) VALUES (?, ?, 1, 1, ?, ?)", accountRef, provider, updatedAt, updatedAt); err != nil {
+		t.Fatalf("insert accounts: %v", err)
+	}
+	if _, err := db.Exec("INSERT OR REPLACE INTO account_credentials (account_ref, credential_ref, auth_kind, auth_mode, format_version, credential_json, updated_at_ms) VALUES (?, ?, 'api_key', '', 1, ?, ?)",
+		accountRef, "cred_00000000000000000000", string(encoded), updatedAt); err != nil {
 		t.Fatalf("insert credentials: %v", err)
 	}
 }

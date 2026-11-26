@@ -94,23 +94,17 @@ func readCredentialRecord(ctx context.Context, databasePath string, accountRef s
 	defer func() { _ = db.Close() }()
 
 	var (
-		ref                 string
-		provider            string
-		envJSON             string
-		nativeJSON          string
-		envUpdatedAt        sql.NullInt64
-		nativeAuthUpdatedAt sql.NullInt64
-		updatedAt           sql.NullInt64
+		ref        string
+		provider   string
+		credential string
+		updatedAt  sql.NullInt64
 	)
 	err = db.QueryRowContext(ctx, `
-		SELECT c.account_ref, r.provider, c.env_json, c.native_auth_json,
-		       c.env_updated_at, c.native_auth_updated_at, c.updated_at
-		FROM compat_account_credentials c
-		INNER JOIN account_refs r ON r.account_ref = c.account_ref
-		WHERE c.account_ref = ?
-		LIMIT 1`, accountRef).Scan(
-		&ref, &provider, &envJSON, &nativeJSON, &envUpdatedAt, &nativeAuthUpdatedAt, &updatedAt,
-	)
+		SELECT a.account_ref, a.provider_id, c.credential_json, c.updated_at_ms
+		FROM accounts AS a
+		INNER JOIN account_credentials AS c ON c.account_ref = a.account_ref
+		WHERE a.account_ref = ?
+		LIMIT 1`, accountRef).Scan(&ref, &provider, &credential, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -120,13 +114,34 @@ func readCredentialRecord(ctx context.Context, databasePath string, accountRef s
 		}
 		return nil, err
 	}
+	document := parseObject(credential)
+	env := make(map[string]any, len(document))
+	for key, value := range document {
+		if key == "native_auth_json" || key == "nativeAuth" {
+			continue
+		}
+		env[key] = value
+	}
+	nativeAuth := parseObject(credential)
+	if inner, ok := document["native_auth_json"]; ok {
+		switch typed := inner.(type) {
+		case map[string]any:
+			nativeAuth = typed
+		case string:
+			nativeAuth = parseObject(typed)
+		}
+	} else if inner, ok := document["nativeAuth"].(map[string]any); ok {
+		nativeAuth = inner
+	} else {
+		nativeAuth = map[string]any{}
+	}
 	return &credentialRecord{
 		AccountRef:          ref,
 		Provider:            provider,
-		Env:                 parseObject(envJSON),
-		NativeAuth:          parseObject(nativeJSON),
-		EnvUpdatedAt:        envUpdatedAt.Int64,
-		NativeAuthUpdatedAt: nativeAuthUpdatedAt.Int64,
+		Env:                 env,
+		NativeAuth:          nativeAuth,
+		EnvUpdatedAt:        updatedAt.Int64,
+		NativeAuthUpdatedAt: updatedAt.Int64,
 		UpdatedAt:           updatedAt.Int64,
 	}, nil
 }
@@ -171,7 +186,7 @@ func (handler *Handler) credentialStoreFiles(provider string, record *credential
 		ID:             "store:credentials",
 		Label:          "账号凭据记录",
 		Source:         "store",
-		Location:       "aih.db · compat_account_credentials",
+		Location:       "aih.db · account_credentials",
 		Format:         "json",
 		UpdatedAt:      record.UpdatedAt,
 		Content:        content,
@@ -187,7 +202,7 @@ func (handler *Handler) credentialStoreFiles(provider string, record *credential
 			ID:             "store:database",
 			Label:          label,
 			Source:         "store",
-			Location:       "compat_account_credentials.native_auth_json.database",
+			Location:       "account_credentials.native_auth_json.database",
 			Format:         "json",
 			UpdatedAt:      record.NativeAuthUpdatedAt,
 			Content:        dbContent,

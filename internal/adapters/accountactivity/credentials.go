@@ -30,7 +30,6 @@ import (
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/qodercred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/zcodecred"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 )
 
@@ -67,23 +66,7 @@ func LoadAccountRecord(
 	}
 	found := false
 
-	// 1) app-state.db（可能保留旧 env_json 或同步副本）
-	if appStatePath, err := appstate.DatabasePath(aiHomeDir); err == nil {
-		if rec, ok, err := readAccountRecordFromAppState(ctx, appStatePath, normalizedProvider, normalizedRef); err != nil {
-			return AccountRecord{}, false, err
-		} else if ok {
-			found = true
-			for k, v := range rec.Env {
-				merged.Env[k] = v
-			}
-			if len(rec.NativeAuth) > 0 {
-				merged.NativeAuth = rec.NativeAuth
-				merged.NativeAuthUpdatedAt = rec.NativeAuthUpdatedAt
-			}
-		}
-	}
-
-	// 2) aih.db（Go 权威库；若更新或 app-state 无原生载荷则以它为准）
+	// aih.db 是唯一凭据来源；Node 兼容表已删除。
 	aihDBPath := filepath.Join(strings.TrimSpace(aiHomeDir), "aih.db")
 	if rec, ok, err := readAccountRecordFromAihDB(ctx, aihDBPath, normalizedProvider, normalizedRef); err != nil {
 		return AccountRecord{}, false, err
@@ -166,61 +149,6 @@ func readAccountRecordFromAihDB(
 	return rec, true, nil
 }
 
-func readAccountRecordFromAppState(
-	ctx context.Context,
-	databasePath string,
-	provider string,
-	accountRef string,
-) (AccountRecord, bool, error) {
-	if _, err := os.Stat(databasePath); err != nil {
-		return AccountRecord{}, false, nil
-	}
-	db, err := appstate.OpenReadOnly(ctx, databasePath)
-	if err != nil {
-		return AccountRecord{}, false, err
-	}
-	defer func() { _ = db.Close() }()
-
-	var envRaw, nativeRaw string
-	var nativeUpdated int64
-	err = db.QueryRowContext(ctx, `
-		SELECT COALESCE(c.env_json, '{}'), COALESCE(c.native_auth_json, '{}'), COALESCE(c.native_auth_updated_at, 0)
-		FROM compat_account_credentials AS c
-		INNER JOIN account_refs AS r ON r.account_ref = c.account_ref
-		WHERE r.provider = ? AND c.account_ref = ?
-		  AND (c.env_json <> '{}' OR c.native_auth_json <> '{}')
-		LIMIT 1
-	`, provider, accountRef).Scan(&envRaw, &nativeRaw, &nativeUpdated)
-	if errors.Is(err, sql.ErrNoRows) || isNoSuchTableError(err) {
-		return AccountRecord{}, false, nil
-	}
-	if err != nil {
-		return AccountRecord{}, false, err
-	}
-
-	rec := AccountRecord{
-		Provider:            provider,
-		AccountRef:          accountRef,
-		Env:                 map[string]string{},
-		NativeAuth:          map[string]any{},
-		NativeAuthUpdatedAt: nativeUpdated,
-	}
-	var rawEnv map[string]any
-	if json.Unmarshal([]byte(envRaw), &rawEnv) == nil {
-		for k, v := range rawEnv {
-			if s := textOf(v); s != "" {
-				rec.Env[k] = s
-			}
-		}
-	}
-	var rawNative map[string]any
-	if json.Unmarshal([]byte(nativeRaw), &rawNative) == nil && rawNative != nil {
-		rec.NativeAuth = rawNative
-	}
-	return rec, true, nil
-}
-
-// ResolveAccountRuntimeDir 返回账号沙箱投影目录：<aiHomeDir>/run/auth-projections/<provider>/<accountRef>。
 func ResolveAccountRuntimeDir(aiHomeDir, provider, accountRef string) string {
 	root := strings.TrimSpace(aiHomeDir)
 	prov := strings.ToLower(strings.TrimSpace(provider))

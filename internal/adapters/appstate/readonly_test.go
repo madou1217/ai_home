@@ -48,9 +48,9 @@ func TestReadKVAndLookup(t *testing.T) {
 	if _, found, err := ReadKV(ctx, path, "missing"); err != nil || found {
 		t.Fatalf("missing key found=%v err=%v", found, err)
 	}
-	provider, found, err := LookupAccountProvider(ctx, path, testRef)
-	if err != nil || !found || provider != "claude" {
-		t.Fatalf("LookupAccountProvider() = %q, %v, %v", provider, found, err)
+	// 历史 account_refs 台账已退役；只在兼容表里的账号不再被认作存在。
+	if _, found, err := LookupAccountProvider(ctx, path, testRef); err != nil || found {
+		t.Fatalf("LookupAccountProvider(legacy-only) found=%v err=%v", found, err)
 	}
 	if _, found, err := LookupAccountProvider(ctx, path, "acct_ffffffffffffffffffff"); err != nil || found {
 		t.Fatalf("unknown account found=%v err=%v", found, err)
@@ -96,21 +96,12 @@ func TestLookupAccountProviderFallsBackToGoStore(t *testing.T) {
 	if err != nil || !found || provider != "agy" {
 		t.Fatalf("LookupAccountProvider(without-host-ledger) = %q/%v/%v, want agy/true/nil", provider, found, err)
 	}
-	// Node 台账仍然优先：同一个 ref 两边都有时以 account_refs 为准。
-	provider, found, err = LookupAccountProvider(ctx, appStatePath, testRef)
-	if err != nil || !found || provider != "claude" {
-		t.Fatalf("LookupAccountProvider(node) = %q/%v/%v, want claude/true/nil", provider, found, err)
+	// 历史 account_refs 台账已退役：只在兼容表里的 ref 不再被视为存在。
+	if _, found, err = LookupAccountProvider(ctx, appStatePath, testRef); err != nil || found {
+		t.Fatalf("LookupAccountProvider(legacy-only) = %v/%v, want false/nil", found, err)
 	}
 	// 两边都没有：仍然按「不存在」处理。
 	if _, found, err = LookupAccountProvider(ctx, appStatePath, "acct_ffffffffffffffffffff"); err != nil || found {
 		t.Fatalf("LookupAccountProvider(missing) = %v/%v, want false/nil", found, err)
-	}
-	// 刷新所有权判定只看 Node 台账：无台账投影账号不能被视为宿主拥有。
-	if _, found, err = LookupNodeAccountProvider(ctx, appStatePath, unprojectedRef); err != nil || found {
-		t.Fatalf("LookupNodeAccountProvider(without-host-ledger) = %v/%v, want false/nil", found, err)
-	}
-	provider, found, err = LookupNodeAccountProvider(ctx, appStatePath, testRef)
-	if err != nil || !found || provider != "claude" {
-		t.Fatalf("LookupNodeAccountProvider(node) = %q/%v/%v, want claude/true/nil", provider, found, err)
 	}
 }

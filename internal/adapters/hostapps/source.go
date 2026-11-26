@@ -75,14 +75,6 @@ func (source *Source) ListAccounts(ctx context.Context) ([]Account, error) {
 		accounts = append(accounts, Account{Provider: normalizedProvider, AccountRef: normalizedRef})
 	}
 
-	if path := source.appStatePath(); path != "" {
-		rows, err := readAccountRows(ctx, path, "account_refs")
-		if err == nil {
-			for _, row := range rows {
-				appendAccount(row.provider, row.accountRef)
-			}
-		}
-	}
 	if path := source.goAccountPath(); path != "" {
 		rows, err := readAccountRows(ctx, path, "accounts")
 		if err == nil {
@@ -99,7 +91,7 @@ func (source *Source) ListAccounts(ctx context.Context) ([]Account, error) {
 // 只有缺少账号引用标记的历史 CLI 进程才需要它；读不到时返回空映射。
 func (source *Source) ListCLIAliases(ctx context.Context) (map[string]string, error) {
 	aliases := make(map[string]string)
-	path := source.appStatePath()
+	path := source.goAccountPath()
 	if path == "" {
 		return aliases, nil
 	}
@@ -108,7 +100,7 @@ func (source *Source) ListCLIAliases(ctx context.Context) (map[string]string, er
 		return aliases, nil
 	}
 	defer func() { _ = db.Close() }()
-	rows, err := db.QueryContext(ctx, "SELECT provider, cli_account_id, account_ref FROM account_cli_aliases")
+	rows, err := db.QueryContext(ctx, "SELECT provider_id, cli_account_id, account_ref FROM accounts")
 	if err != nil {
 		return aliases, nil
 	}
@@ -140,9 +132,7 @@ func readAccountRows(ctx context.Context, databasePath string, table string) ([]
 	}
 	defer func() { _ = db.Close() }()
 	query := "SELECT provider_id, account_ref FROM accounts"
-	if table == "account_refs" {
-		query = "SELECT provider, account_ref FROM account_refs"
-	}
+	_ = table
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err

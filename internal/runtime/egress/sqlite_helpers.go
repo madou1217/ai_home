@@ -246,14 +246,6 @@ func ListKnownAccounts(ctx context.Context, aiHomeDir string) ([]AccountRecord, 
 		}
 	}
 
-	appStatePath := filepath.Join(trimmedHome, appstate.DatabaseFileName)
-	if _, statErr := os.Stat(appStatePath); statErr == nil {
-		if db, err := appstate.OpenReadOnly(ctx, appStatePath); err == nil {
-			readAccountsFromAppStateDB(ctx, db, byRef)
-			_ = db.Close()
-		}
-	}
-
 	out := make([]AccountRecord, 0, len(byRef))
 	for _, item := range byRef {
 		out = append(out, item)
@@ -350,46 +342,6 @@ func readAccountsFromGoDB(ctx context.Context, db *sql.DB, byRef map[string]Acco
 			APIKeyMode:   apiKeyMode,
 			BaseURL:      strings.TrimSpace(baseURL),
 			Enabled:      enabledInt != 0,
-		}
-	}
-}
-
-func readAccountsFromAppStateDB(ctx context.Context, db *sql.DB, byRef map[string]AccountRecord) {
-	tables := existingSQLiteTables(ctx, db)
-	if !tables["account_refs"] {
-		return
-	}
-	cliAliasExpr := "''"
-	if tables["account_cli_aliases"] {
-		cliAliasExpr = "COALESCE((SELECT c.cli_account_id FROM account_cli_aliases AS c WHERE c.account_ref = r.account_ref LIMIT 1), '')"
-	}
-	query := "SELECT r.account_ref, r.provider, " + cliAliasExpr + " FROM account_refs AS r ORDER BY r.account_ref"
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var ref, provider, cliID string
-		if scanErr := rows.Scan(&ref, &provider, &cliID); scanErr != nil {
-			continue
-		}
-		existing, exists := byRef[ref]
-		if exists {
-			if existing.Provider == "" {
-				existing.Provider = strings.ToLower(strings.TrimSpace(provider))
-			}
-			if existing.CLIAccountID == "" {
-				existing.CLIAccountID = strings.TrimSpace(cliID)
-			}
-			byRef[ref] = existing
-			continue
-		}
-		byRef[ref] = AccountRecord{
-			AccountRef:   strings.TrimSpace(ref),
-			Provider:     strings.ToLower(strings.TrimSpace(provider)),
-			CLIAccountID: strings.TrimSpace(cliID),
-			Enabled:      true,
 		}
 	}
 }

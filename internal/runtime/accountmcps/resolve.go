@@ -35,16 +35,14 @@ func ResolveAccountRef(aiHomeDir, provider, token string) (string, bool) {
 	var accountRef string
 	if strings.HasPrefix(token, "acct_") {
 		err = database.QueryRowContext(ctx,
-			`SELECT account_ref FROM account_refs WHERE account_ref = ? AND provider = ? LIMIT 1`,
+			`SELECT account_ref FROM accounts WHERE account_ref = ? AND provider_id = ? LIMIT 1`,
 			token, provider).Scan(&accountRef)
 	} else {
 		err = database.QueryRowContext(ctx, `
-			SELECT a.account_ref
-			  FROM account_cli_aliases a
-			  INNER JOIN account_refs r ON r.account_ref = a.account_ref
-			 WHERE a.provider = ? AND a.cli_account_id = ? AND r.provider = ?
-			 ORDER BY a.updated_at DESC
-			 LIMIT 1`, provider, token, provider).Scan(&accountRef)
+			SELECT account_ref
+			  FROM accounts
+			 WHERE provider_id = ? AND cli_account_id = ?
+			 LIMIT 1`, provider, token).Scan(&accountRef)
 	}
 	accountRef = strings.TrimSpace(accountRef)
 	if err != nil || accountRef == "" {

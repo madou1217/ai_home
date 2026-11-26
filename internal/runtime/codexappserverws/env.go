@@ -2,9 +2,7 @@ package codexappserverws
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"net/url"
@@ -186,33 +184,6 @@ func applyCodexDefaultCliEnv(ctx context.Context, envMap map[string]string, opts
 			}
 		}
 
-		defaultAccountRaw, ok, err := appstate.ReadKV(ctx, dbPath, accountDefaultCodexKey)
-		if err != nil {
-			return fmt.Errorf("读取 %s 失败: %w", accountDefaultCodexKey, err)
-		}
-		if ok {
-			var accountRef string
-			if err := json.Unmarshal([]byte(defaultAccountRaw), &accountRef); err == nil {
-				accountRef = strings.TrimSpace(accountRef)
-				if accountRef != "" {
-					provider, foundProvider, err := appstate.LookupAccountProvider(ctx, dbPath, accountRef)
-					if err != nil {
-						return fmt.Errorf("查询默认账号 Provider 失败: %w", err)
-					}
-					if foundProvider && provider == codexProviderID {
-						apiKey, baseURL, hasRecord, err := readAppStateCodexCredential(ctx, dbPath, accountRef)
-						if err != nil {
-							return err
-						}
-						if !hasRecord && opts.AccountStore != nil {
-							apiKey, baseURL, _ = readGoStoreCodexCredential(ctx, opts.AccountStore, accountRef)
-						}
-						applyAccountCredentialEnv(envMap, apiKey, baseURL)
-						return nil
-					}
-				}
-			}
-		}
 	}
 
 	if opts.AccountStore != nil {
@@ -279,47 +250,6 @@ func buildServerBaseURL(rawHost string, rawPort any) string {
 
 func normalizeServerPort(raw any) int {
 	return serverconfig.NormalizePort(raw)
-}
-
-func readAppStateCodexCredential(ctx context.Context, dbPath string, accountRef string) (apiKey string, baseURL string, found bool, err error) {
-	db, err := appstate.OpenReadOnly(ctx, dbPath)
-	if err != nil {
-		return "", "", false, fmt.Errorf("打开 app-state.db 失败: %w", err)
-	}
-	defer func() {
-		_ = db.Close()
-	}()
-
-	const query = `
-		SELECT r.provider, c.env_json
-		FROM compat_account_credentials c
-		INNER JOIN account_refs r ON r.account_ref = c.account_ref
-		WHERE c.account_ref = ?
-		LIMIT 1`
-
-	var provider string
-	var envJSON string
-	scanErr := db.QueryRowContext(ctx, query, accountRef).Scan(&provider, &envJSON)
-	if scanErr != nil {
-		if errors.Is(scanErr, sql.ErrNoRows) || isMissingSQLiteTableError(scanErr) {
-			return "", "", false, nil
-		}
-		return "", "", false, fmt.Errorf("查询账号凭据失败: %w", scanErr)
-	}
-	if provider != codexProviderID {
-		return "", "", false, nil
-	}
-	var credEnv map[string]any
-	if err := json.Unmarshal([]byte(envJSON), &credEnv); err != nil || credEnv == nil {
-		return "", "", true, nil
-	}
-	if rawKey, ok := credEnv["OPENAI_API_KEY"].(string); ok {
-		apiKey = strings.TrimSpace(rawKey)
-	}
-	if rawBase, ok := credEnv["OPENAI_BASE_URL"].(string); ok {
-		baseURL = strings.TrimSpace(rawBase)
-	}
-	return apiKey, baseURL, true, nil
 }
 
 func readGoStoreCodexCredential(ctx context.Context, store AccountStore, rawRef string) (apiKey string, baseURL string, ok bool) {

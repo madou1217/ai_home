@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	_ "modernc.org/sqlite"
 )
@@ -175,30 +174,6 @@ func ListAccountRefsFromStores(ctx context.Context, aiHomeDir string) []AccountR
 		return nil
 	}
 	byKey := make(map[string]AccountRefRecord)
-
-	if appStatePath, err := appstate.DatabasePath(root); err == nil {
-		if db, err := appstate.OpenReadOnly(ctx, appStatePath); err == nil {
-			rows, qErr := db.QueryContext(ctx, `SELECT account_ref, provider FROM account_refs`)
-			if qErr == nil {
-				for rows.Next() {
-					var ref, prov string
-					if rows.Scan(&ref, &prov) == nil {
-						prov = strings.ToLower(strings.TrimSpace(prov))
-						ref = strings.TrimSpace(ref)
-						if prov != "" && ref != "" {
-							byKey[prov+":"+ref] = AccountRefRecord{
-								Provider:   prov,
-								AccountRef: ref,
-								Enabled:    true,
-							}
-						}
-					}
-				}
-				_ = rows.Close()
-			}
-			_ = db.Close()
-		}
-	}
 
 	aihDBPath := filepath.Join(root, "aih.db")
 	if info, err := os.Stat(aihDBPath); err == nil && info.Mode().IsRegular() {

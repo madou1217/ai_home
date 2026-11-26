@@ -770,7 +770,6 @@ func scanCodebuddyUsageFile(
 		region = "cn"
 	}
 	prefix := "codebuddy:message:" + StableHash(region+":"+file.SessionID) + ":"
-	outcomePrefix := "codebuddy:outcome:" + StableHash(file.SessionID) + ":"
 	prevOwners, _ := store.ReadUsageOwnersByEventGlob(ctx, prefix+"*:usage")
 
 	cwd := contextString(curCtx, "cwd")
@@ -778,7 +777,6 @@ func scanCodebuddyUsageFile(
 	updatedAtMS := contextInt64(curCtx, "updatedAtMs")
 	var records []UsageRecordInput
 	var prompts []UsagePromptEventInput
-	var outcomes []NativeOutcomeInput
 
 	readRes, err := readJSONLFromOffset(file.FilePath, startOffset, -1, func(line string, _ int64) {
 		entry := safeParseJSONMap(line)
@@ -829,26 +827,6 @@ func scanCodebuddyUsageFile(
 			model = strVal(msg, "model")
 		}
 
-		if entryType == "message" && role == "assistant" && ownerRef != "" {
-			errMap := mapVal(pdata, "error")
-			outcome := ""
-			if errMap != nil {
-				outcome = classifyCodebuddyOutcome(errMap)
-			} else if hasUsage && model != "" {
-				outcome = "success"
-			}
-			if outcome != "" {
-				outcomes = append(outcomes, NativeOutcomeInput{
-					EventKey:    outcomePrefix + StableHash(id),
-					AccountRef:  ownerRef,
-					Provider:    ownerProv,
-					SessionID:   file.SessionID,
-					Outcome:     outcome,
-					TimestampMS: at,
-				})
-			}
-		}
-
 		if !hasUsage || model == "" {
 			return
 		}
@@ -879,10 +857,6 @@ func scanCodebuddyUsageFile(
 	if err != nil {
 		return fileScanOutcome{}, err
 	}
-	if len(outcomes) > 0 {
-		_, _ = store.InsertNativeOutcomes(ctx, outcomes)
-	}
-
 	provSet := make(map[string]struct{})
 	provSet[file.Provider] = struct{}{}
 	for _, r := range records {

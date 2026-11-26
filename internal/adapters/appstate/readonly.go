@@ -206,71 +206,16 @@ func ReadKV(ctx context.Context, databasePath string, key string) (string, bool,
 	return value, found, nil
 }
 
-// LookupAccountProvider 从 account_refs 读取账号归属。
+// LookupAccountProvider 从 Go 账号库读取账号归属。
 //
-// 账号存在性以 Node 的账号台账为准：Go 的 accounts 表可能缺少已停用/未同步账号，
-// 用它做校验会把真实历史或真实设置判成 404。
+// Go accounts 是唯一账号台账；Node 的 account_refs 已删除，不再存在
+// “未命中再回落”的第二套来源。
 func LookupAccountProvider(ctx context.Context, databasePath string, accountRef string) (string, bool, error) {
 	reference := strings.TrimSpace(accountRef)
 	if reference == "" {
 		return "", false, nil
 	}
-	provider, found, err := lookupAppStateAccountProvider(ctx, databasePath, reference)
-	if err != nil || found {
-		return provider, found, err
-	}
-	// 未命中 Node 台账时回落 Go 账号库：账号的真实写入方已经是 Go（浏览器登录 / 导入），
-	// account_refs 只覆盖 Node 建过的账号。不回落的话，所有「按 ref 判归属」的接口
-	// （模型上下文、账号配置、额度、路由规则、默认账号、窗口激活……）都会对
-	// 无台账投影账号一律 404。
 	return lookupGoAccountProviderNear(ctx, databasePath, reference)
-}
-
-// LookupNodeAccountProvider 只读 Node 台账 account_refs，不回落 Go 账号库。
-//
-// 与 LookupAccountProvider 的区别：后者回落 Go 账号库以兼容「账号真实写入方已经是
-// Go」的读模型；这里要回答的是「Node 宿主是否拥有该账号」，所以只能在 Node 台账里
-// 查找。无台账投影账号返回 found=false，调用方据此接管刷新。
-func LookupNodeAccountProvider(
-	ctx context.Context,
-	databasePath string,
-	accountRef string,
-) (string, bool, error) {
-	reference := strings.TrimSpace(accountRef)
-	if reference == "" {
-		return "", false, nil
-	}
-	return lookupAppStateAccountProvider(ctx, databasePath, reference)
-}
-
-func lookupAppStateAccountProvider(
-	ctx context.Context,
-	databasePath string,
-	reference string,
-) (string, bool, error) {
-	db, present, err := openIfPresent(ctx, databasePath)
-	if err != nil {
-		return "", false, err
-	}
-	if !present {
-		return "", false, nil
-	}
-	defer func() { _ = db.Close() }()
-	var provider string
-	err = db.QueryRowContext(ctx,
-		`SELECT provider FROM account_refs WHERE account_ref = ?`,
-		reference,
-	).Scan(&provider)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
-	}
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
-			return "", false, nil
-		}
-		return "", false, fmt.Errorf("读取账号归属失败: %w", err)
-	}
-	return provider, true, nil
 }
 
 func openAndPing(ctx context.Context, databasePath string, immutable bool) (*sql.DB, error) {

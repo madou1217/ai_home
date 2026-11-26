@@ -224,7 +224,7 @@ func newCredentialRefreshRuntime(
 		if appStatePathErr != nil {
 			return false
 		}
-		_, found, lookupErr := appstate.LookupNodeAccountProvider(
+		_, found, lookupErr := appstate.LookupAccountProvider(
 			context.Background(),
 			appStateDatabasePath,
 			accountRef.String(),

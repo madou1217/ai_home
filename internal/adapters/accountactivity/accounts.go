@@ -131,10 +131,9 @@ func collectAccountRefsFromAppState(
 
 	rows, err := database.QueryContext(ctx, `
 		SELECT c.account_ref
-		FROM compat_account_credentials AS c
-		INNER JOIN account_refs AS r ON r.account_ref = c.account_ref
-		WHERE (c.env_json <> '{}' OR c.native_auth_json <> '{}')
-		  AND r.provider = ?
+		FROM account_credentials AS c
+		INNER JOIN accounts AS a ON a.account_ref = c.account_ref
+		WHERE a.provider_id = ? AND c.credential_json NOT IN ('', '{}')
 		ORDER BY c.account_ref
 	`, provider)
 	if err != nil {

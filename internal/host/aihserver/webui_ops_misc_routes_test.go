@@ -163,10 +163,10 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 		t.Fatalf("server/restart JSON 异常: %s", rec.Body.String())
 	}
 
-	// 6. Account outcomes 返回 200 空状态条视图（有 aiHomeDir 时）
+	// 6. Account outcomes 在没有 Go 结果读取端口时明确不可用（不再回退历史表）
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/management/webui/account-outcomes", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"dayStarts"`) {
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "account_outcomes_unavailable") {
 		t.Fatalf("account-outcomes 异常 status=%d body=%s", rec.Code, rec.Body.String())
 	}
 

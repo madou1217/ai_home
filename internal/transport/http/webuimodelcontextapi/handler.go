@@ -258,7 +258,7 @@ func listProviderAccounts(ctx context.Context, databasePath string, catalog *pro
 	}
 	defer func() { _ = db.Close() }()
 
-	rows, err := db.QueryContext(ctx, "SELECT account_ref FROM account_refs WHERE provider = ? ORDER BY account_ref", provider)
+	rows, err := db.QueryContext(ctx, "SELECT account_ref FROM accounts WHERE provider_id = ? ORDER BY account_ref", provider)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
 			return nil, nil
@@ -301,8 +301,8 @@ func listProviderAccounts(ctx context.Context, databasePath string, catalog *pro
 }
 
 func readCredentialEnv(ctx context.Context, db *sql.DB, accountRef string) (map[string]any, error) {
-	var envJSON string
-	err := db.QueryRowContext(ctx, "SELECT env_json FROM compat_account_credentials WHERE account_ref = ? LIMIT 1", accountRef).Scan(&envJSON)
+	var credentialJSON string
+	err := db.QueryRowContext(ctx, "SELECT credential_json FROM account_credentials WHERE account_ref = ? LIMIT 1", accountRef).Scan(&credentialJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return map[string]any{}, nil
 	}
@@ -313,13 +313,16 @@ func readCredentialEnv(ctx context.Context, db *sql.DB, accountRef string) (map[
 		return nil, err
 	}
 	var parsed any
-	if json.Unmarshal([]byte(envJSON), &parsed) != nil {
+	if json.Unmarshal([]byte(credentialJSON), &parsed) != nil {
 		return map[string]any{}, nil
 	}
-	if object, ok := parsed.(map[string]any); ok {
-		return object, nil
+	object, ok := parsed.(map[string]any)
+	if !ok {
+		return map[string]any{}, nil
 	}
-	return map[string]any{}, nil
+	delete(object, "native_auth_json")
+	delete(object, "nativeAuth")
+	return object, nil
 }
 
 // readAccountIdentity 返回账号当前展示名与是否已停用。

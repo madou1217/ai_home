@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"github.com/madou1217/ai_home/internal/runtime/platform"
@@ -531,44 +530,6 @@ func LoadCodebuddyAccountIdentities(ctx context.Context, aiHomeDir string) []Cod
 							uid = ""
 						}
 						byKey[prov+":"+ref] = CodebuddyAccountIdentity{
-							Provider:   prov,
-							AccountRef: ref,
-							UID:        uid,
-						}
-					}
-				}
-				_ = rows.Close()
-			}
-			_ = db.Close()
-		}
-	}
-
-	if appStatePath, err := appstate.DatabasePath(root); err == nil {
-		if db, err := appstate.OpenReadOnly(ctx, appStatePath); err == nil {
-			rows, qErr := db.QueryContext(ctx, `
-				SELECT r.provider, r.account_ref, COALESCE(c.native_auth_json, '')
-				FROM account_refs r
-				LEFT JOIN compat_account_credentials c ON c.account_ref = r.account_ref
-				WHERE r.provider IN ('codebuddy','codebuddycn','workbuddy','workbuddycn')
-			`)
-			if qErr == nil {
-				for rows.Next() {
-					var prov, ref, payload string
-					if rows.Scan(&prov, &ref, &payload) == nil {
-						prov = strings.ToLower(strings.TrimSpace(prov))
-						ref = strings.TrimSpace(ref)
-						if !IsAccountRef(ref) {
-							continue
-						}
-						key := prov + ":" + ref
-						if existing, exists := byKey[key]; exists && existing.UID != "" {
-							continue
-						}
-						uid, _, ok := inspectCodebuddyCredentialPayload([]byte(payload), prov)
-						if !ok {
-							uid = ""
-						}
-						byKey[key] = CodebuddyAccountIdentity{
 							Provider:   prov,
 							AccountRef: ref,
 							UID:        uid,

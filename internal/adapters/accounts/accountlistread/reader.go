@@ -10,14 +10,12 @@ package accountlistread
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/madou1217/ai_home/internal/adapters/sqlitefile"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -171,9 +169,7 @@ func read(ctx context.Context, aiHomeDir string, withNodeOverlay bool) (*Snapsho
 	if err := readDefaults(ctx, db, byRef); err != nil {
 		return nil, err
 	}
-	if withNodeOverlay {
-		readNodeCredentialOverlay(ctx, aiHomeDir, byRef)
-	}
+	_ = withNodeOverlay // Node 兼容凭据 overlay 已退役；只读 canonical 账号行。
 	return snapshot, nil
 }
 
@@ -446,128 +442,4 @@ func readDefaults(ctx context.Context, db *sql.DB, byRef map[string]*Account) er
 
 func isMissingTable(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no such table")
-}
-
-// readNodeCredentialOverlay 读取 app-state.db 的 Node 凭据作为身份补全。
-// 只读、best-effort：文件不存在、表缺失或锁冲突都不影响 Go 库列表。
-type nodeOverlayEntry struct {
-	native []byte
-	env    []byte
-}
-
-var nodeOverlayCache struct {
-	mu   sync.Mutex
-	at   time.Time
-	dir  string
-	data map[string]nodeOverlayEntry
-}
-
-const nodeOverlayTTL = 30 * time.Second
-
-func readNodeCredentialOverlay(ctx context.Context, aiHomeDir string, byRef map[string]*Account) {
-	dir := strings.TrimSpace(aiHomeDir)
-	if dir == "" {
-		return
-	}
-	nodeOverlayCache.mu.Lock()
-	if nodeOverlayCache.dir == dir && time.Since(nodeOverlayCache.at) < nodeOverlayTTL && nodeOverlayCache.data != nil {
-		cached := nodeOverlayCache.data
-		nodeOverlayCache.mu.Unlock()
-		applyNodeOverlay(cached, byRef)
-		return
-	}
-	nodeOverlayCache.mu.Unlock()
-	path := filepath.Join(dir, "aih.db")
-	if _, err := os.Stat(path); err != nil {
-		return
-	}
-	dsn, err := readOnlyDSN(path)
-	if err != nil {
-		return
-	}
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return
-	}
-	defer func() { _ = db.Close() }()
-	if err := db.PingContext(ctx); err != nil {
-		return
-	}
-	links := readNodeLinks(ctx, db)
-	rows, err := db.QueryContext(ctx, `
-		SELECT c.account_ref, c.env_json, c.native_auth_json, c.updated_at
-		  FROM compat_account_credentials c
-		 ORDER BY c.updated_at`)
-	if err != nil {
-		return
-	}
-	defer func() { _ = rows.Close() }()
-	overlay := make(map[string]nodeOverlayEntry)
-	for rows.Next() {
-		var ref string
-		var env, native sql.NullString
-		var updated int64
-		if err := rows.Scan(&ref, &env, &native, &updated); err != nil {
-			continue
-		}
-		_ = updated
-		target := strings.TrimSpace(ref)
-		if linked := strings.TrimSpace(links[target]); linked != "" {
-			target = linked
-		}
-		if target == "" {
-			continue
-		}
-		entry := overlay[target]
-		if native.Valid && strings.TrimSpace(native.String) != "" {
-			entry.native = []byte(native.String)
-		}
-		if env.Valid && strings.TrimSpace(env.String) != "" {
-			entry.env = []byte(env.String)
-		}
-		overlay[target] = entry
-	}
-	nodeOverlayCache.mu.Lock()
-	nodeOverlayCache.at = time.Now()
-	nodeOverlayCache.dir = dir
-	nodeOverlayCache.data = overlay
-	nodeOverlayCache.mu.Unlock()
-	applyNodeOverlay(overlay, byRef)
-}
-
-func applyNodeOverlay(overlay map[string]nodeOverlayEntry, byRef map[string]*Account) {
-	for ref, entry := range overlay {
-		account := byRef[ref]
-		if account == nil {
-			continue
-		}
-		if len(entry.native) > 0 {
-			account.NodeNativeAuth = append([]byte(nil), entry.native...)
-		}
-		if len(entry.env) > 0 {
-			account.NodeEnv = append([]byte(nil), entry.env...)
-		}
-	}
-}
-
-func readNodeLinks(ctx context.Context, db *sql.DB) map[string]string {
-	links := make(map[string]string)
-	var raw string
-	if err := db.QueryRowContext(ctx, `SELECT value FROM app_kv WHERE key = 'go-account-sync:state'`).Scan(&raw); err != nil {
-		return links
-	}
-	var state struct {
-		Links map[string]struct {
-			GoRef string `json:"goRef"`
-		} `json:"links"`
-	}
-	if json.Unmarshal([]byte(raw), &state) != nil {
-		return links
-	}
-	for nodeRef, link := range state.Links {
-		if strings.TrimSpace(nodeRef) != "" && strings.TrimSpace(link.GoRef) != "" {
-			links[strings.TrimSpace(nodeRef)] = strings.TrimSpace(link.GoRef)
-		}
-	}
-	return links
 }

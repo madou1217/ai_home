@@ -46,14 +46,14 @@ func TestBuildWebUISchedulerRoutes_NoConflictsAndEndToEnd(t *testing.T) {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	for _, stmt := range []string{
-		"CREATE TABLE account_refs (account_ref TEXT PRIMARY KEY, provider TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+		"CREATE TABLE accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL, cli_account_id INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL)",
 		"CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)",
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("schema: %v", err)
 		}
 	}
-	if _, err := db.Exec("INSERT INTO account_refs VALUES (?, 'codex', 1, 1)", acctRef); err != nil {
+	if _, err := db.Exec("INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) VALUES (?, 'codex', 1, 1, 1, 1)", acctRef); err != nil {
 		t.Fatalf("seed account_ref: %v", err)
 	}
 	if _, err := db.Exec("INSERT INTO app_kv VALUES (?, ?, 1)", windowactivation.ServerConfigKVKey, `{"windowActivation":false,"windowActivationMinIntervalMs":3600000}`); err != nil {

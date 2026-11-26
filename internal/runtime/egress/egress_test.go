@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
 	agyegress "github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	_ "modernc.org/sqlite"
 )
 
 func seedTestAccountRef(t *testing.T, ctx context.Context, aiHomeDir, accountRef, provider string, nowMS int64) {
@@ -35,18 +35,20 @@ func seedTestAccountRef(t *testing.T, ctx context.Context, aiHomeDir, accountRef
 	}
 	defer func() { _ = db.Close() }()
 	_, err = db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS account_refs (
+		CREATE TABLE IF NOT EXISTS accounts (
 			account_ref TEXT PRIMARY KEY,
-			provider TEXT NOT NULL,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
+			provider_id TEXT NOT NULL,
+			cli_account_id INTEGER NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at_ms INTEGER NOT NULL,
+			updated_at_ms INTEGER NOT NULL
 		)
 	`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO account_refs (account_ref, provider, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		`INSERT OR REPLACE INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) VALUES (?, ?, 1, 1, ?, ?)`,
 		accountRef, provider, nowMS, nowMS,
 	)
 	if err != nil {

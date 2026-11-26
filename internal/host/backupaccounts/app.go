@@ -142,7 +142,6 @@ func importAndProject(ctx context.Context, store Store, catalog *providers.Catal
 		status.OutcomeUnknown = true
 		return result, nil
 	}
-	successes := result.Summary["created"] + result.Summary["updated"] + result.Summary["unchanged"]
 	if result.canonicalCommitted {
 		status.CanonicalStatus = "committed"
 		if !result.OK {
@@ -153,56 +152,8 @@ func importAndProject(ctx context.Context, store Store, catalog *providers.Catal
 		status.CanonicalStatus = "unknown"
 		status.OutcomeUnknown = true
 	}
-	projector, ok := store.(interface {
-		ProjectBackupCompatibility(context.Context, []sqliteaccount.BackupCompatibilityRecord) (int, error)
-	})
-	if !ok {
-		result.OK = false
-		result.Error = "backup_core_mirror_incomplete"
-		return result, nil
-	}
-	records := make([]sqliteaccount.BackupCompatibilityRecord, 0, successes)
-	if result.Document != nil {
-		for _, entry := range result.Document.Accounts {
-			var outcome *Outcome
-			for i := range result.Accounts {
-				item := &result.Accounts[i]
-				if item.AccountRef == entry.AccountRef && item.Status != "failed" && item.Status != "invalid" {
-					outcome = item
-					break
-				}
-			}
-			if outcome == nil {
-				result.OK = false
-				result.Error = "backup_core_mirror_incomplete"
-				return result, nil
-			}
-			env, encodeErr := json.Marshal(entry.Env)
-			if encodeErr != nil {
-				result.OK = false
-				result.Error = "backup_core_mirror_incomplete"
-				return result, nil
-			}
-			records = append(records, sqliteaccount.BackupCompatibilityRecord{AccountRef: entry.AccountRef, Provider: entry.Provider, CLIAccountID: entry.CLIAccountID, CredentialUpdatedAt: outcome.CredentialUpdatedAt, ProfileUpdatedAt: outcome.ProfileUpdatedAt, EnvJSON: env, NativeAuthJSON: entry.NativeAuth})
-		}
-	}
-	// A failed canonical readback must not erase an earlier commit or advertise
-	// an empty projection as complete. Preserve the partial/unknown outcome.
-	if len(records) == 0 && (result.canonicalCommitted || result.canonicalUncertain) {
-		result.OK = false
-		result.Error = "backup_core_mirror_incomplete"
-		return result, nil
-	}
-	applied, projectionErr := projector.ProjectBackupCompatibility(ctx, records)
-	if projectionErr != nil {
-		result.OK = false
-		result.Error = "backup_core_mirror_incomplete"
-		status.Status = "unknown"
-		status.OutcomeUnknown = true
-		return result, nil
-	}
-	status.Status = "applied"
-	status.Applied = applied
+	// Node 兼容投影已退役；导入只写 canonical accounts/credentials/profiles。
+	status.Status = "retired"
 	return result, nil
 }
 

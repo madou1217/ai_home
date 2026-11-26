@@ -104,12 +104,10 @@ func TestCredentialAccountLister_MergesAihAndAppStateDBs(t *testing.T) {
 	}
 
 	aihDB := createTestAihDB(t, aiHome)
-	appDB := createTestAppStateDB(t, aiHome)
 
 	const (
 		refA = "acct_0000000000000000000a"
 		refB = "acct_0000000000000000000b"
-		refC = "acct_0000000000000000000c"
 	)
 	for _, stmt := range []struct {
 		ref, prov, cred string
@@ -130,26 +128,11 @@ func TestCredentialAccountLister_MergesAihAndAppStateDBs(t *testing.T) {
 		}
 	}
 
-	for _, row := range []struct {
-		ref, prov, envJSON, nativeJSON string
-	}{
-		{refB, "zcode", `{"ZCODE_API_KEY":"old-b"}`, `{}`}, // duplicate across both DBs
-		{refC, "zcode", `{}`, `{"zcodejwttoken":"t-c"}`},   // only in app-state.db
-		{"acct_0000000000000000000f", "zcode", `{}`, `{}`}, // empty in app-state.db ignored
-	} {
-		if _, err := appDB.Exec(`INSERT INTO account_refs (account_ref, provider) VALUES (?, ?)`, row.ref, row.prov); err != nil {
-			t.Fatalf("insert app ref: %v", err)
-		}
-		if _, err := appDB.Exec(`INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json) VALUES (?, ?, ?)`, row.ref, row.envJSON, row.nativeJSON); err != nil {
-			t.Fatalf("insert app cred: %v", err)
-		}
-	}
-
 	got, err := lister.ListByProvider(context.Background(), " ZCode ")
 	if err != nil {
 		t.Fatalf("ListByProvider: %v", err)
 	}
-	want := []string{refA, refB, refC}
+	want := []string{refA, refB}
 	if len(got) != len(want) {
 		t.Fatalf("ListByProvider = %v, want %v", got, want)
 	}
@@ -163,21 +146,11 @@ func TestCredentialAccountLister_MergesAihAndAppStateDBs(t *testing.T) {
 func TestLoadAccountRecord_MergesAndMapsFields(t *testing.T) {
 	aiHome := t.TempDir()
 	aihDB := createTestAihDB(t, aiHome)
-	appDB := createTestAppStateDB(t, aiHome)
 
 	const refNewerAih = "acct_11111111111111111111"
 	const refStaticZcode = "acct_22222222222222222222"
 	const refStaticQoder = "acct_33333333333333333333"
 
-	if _, err := appDB.Exec(`INSERT INTO account_refs (account_ref, provider) VALUES (?, 'zcode')`, refNewerAih); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := appDB.Exec(`
-		INSERT INTO compat_account_credentials (account_ref, env_json, native_auth_json, native_auth_updated_at)
-		VALUES (?, '{"CUSTOM_ENV":"from-app"}', '{"zcodejwttoken":"stale-jwt"}', 100)
-	`, refNewerAih); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := aihDB.Exec(`INSERT INTO accounts (account_ref, provider_id) VALUES (?, 'zcode'), (?, 'zcode'), (?, 'qodercn')`,
 		refNewerAih, refStaticZcode, refStaticQoder); err != nil {
 		t.Fatal(err)
@@ -194,9 +167,6 @@ func TestLoadAccountRecord_MergesAndMapsFields(t *testing.T) {
 	rec, ok, err := LoadAccountRecord(context.Background(), aiHome, "zcode", refNewerAih)
 	if err != nil || !ok {
 		t.Fatalf("LoadAccountRecord(refNewerAih) = ok:%v err:%v", ok, err)
-	}
-	if rec.Env["CUSTOM_ENV"] != "from-app" {
-		t.Fatalf("Env = %v, want CUSTOM_ENV preserved", rec.Env)
 	}
 	if textOf(rec.NativeAuth["zcodejwttoken"]) != "fresh-jwt" {
 		t.Fatalf("NativeAuth = %v, want newer aih.db jwt", rec.NativeAuth)

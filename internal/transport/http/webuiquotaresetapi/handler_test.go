@@ -56,61 +56,59 @@ func seedAppState(t *testing.T) string {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	_, err = db.Exec(`CREATE TABLE account_refs (
+	if _, err := db.Exec(`CREATE TABLE accounts (
 			account_ref TEXT PRIMARY KEY,
-			provider TEXT NOT NULL,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
-		)`)
-	if err != nil {
-		t.Fatalf("create account_refs: %v", err)
+			provider_id TEXT NOT NULL,
+			cli_account_id INTEGER NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at_ms INTEGER NOT NULL,
+			updated_at_ms INTEGER NOT NULL
+		)`); err != nil {
+		t.Fatalf("create accounts: %v", err)
 	}
 	if _, err := db.Exec(
-		`INSERT INTO account_refs (account_ref, provider, created_at, updated_at) VALUES (?, 'claude', 1, 1)`,
+		`INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) VALUES (?, 'claude', 1, 1, 1, 1)`,
 		testAccountRef,
 	); err != nil {
-		t.Fatalf("insert account_refs: %v", err)
+		t.Fatalf("insert accounts: %v", err)
 	}
-	_, err = db.Exec(`
-		CREATE TABLE compat_account_quota_reset_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			event_key TEXT,
-			account_ref TEXT,
-			provider TEXT,
-			quota_key TEXT,
-			window_label TEXT,
-			window_minutes INTEGER,
-			event_kind TEXT,
-			classification TEXT,
-			cause TEXT,
+	if _, err := db.Exec(`
+		CREATE TABLE account_quota_reset_events (
+			event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_key TEXT NOT NULL,
+			account_ref TEXT NOT NULL,
+			provider_id TEXT NOT NULL,
+			quota_key TEXT NOT NULL,
+			window_label TEXT NOT NULL DEFAULT '',
+			window_minutes INTEGER NOT NULL DEFAULT 0,
+			event_kind TEXT NOT NULL,
+			classification TEXT NOT NULL DEFAULT '',
+			cause TEXT NOT NULL DEFAULT '',
 			previous_remaining_pct REAL,
 			current_remaining_pct REAL,
-			previous_expected_reset_at_ms INTEGER,
-			detected_at_ms INTEGER,
-			early_duration_ms INTEGER,
+			previous_expected_reset_at_ms INTEGER NOT NULL DEFAULT 0,
 			exhausted_at_ms INTEGER,
-			occurred_at_ms INTEGER,
-			previous_plan_type TEXT,
-			current_plan_type TEXT
-		)`)
-	if err != nil {
+			occurred_at_ms INTEGER NOT NULL,
+			detected_at_ms INTEGER NOT NULL,
+			early_duration_ms INTEGER NOT NULL DEFAULT 0,
+			created_at_ms INTEGER NOT NULL
+		)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	for index := 1; index <= 3; index++ {
-		_, err = db.Exec(
-			`INSERT INTO compat_account_quota_reset_events
-			 (event_key, account_ref, provider, quota_key, window_label, window_minutes,
+		if _, err := db.Exec(
+			`INSERT INTO account_quota_reset_events
+			 (event_key, account_ref, provider_id, quota_key, window_label, window_minutes,
 			  event_kind, classification, cause, previous_remaining_pct, current_remaining_pct,
 			  previous_expected_reset_at_ms, detected_at_ms, early_duration_ms, exhausted_at_ms,
-			  occurred_at_ms, previous_plan_type, current_plan_type)
+			  occurred_at_ms, created_at_ms)
 			 VALUES (?, ?, 'claude', 'five_hour', '5h', 300, 'reset', 'early', 'manual',
-			         0.1, 1.0, 1000, ?, 200, NULL, ?, '', '')`,
+			         0.1, 1.0, 1000, ?, 200, NULL, ?, 1)`,
 			"event-"+string(rune('0'+index)),
 			testAccountRef,
 			int64(1000*index),
 			int64(900*index),
-		)
-		if err != nil {
+		); err != nil {
 			t.Fatalf("insert event %d: %v", index, err)
 		}
 	}

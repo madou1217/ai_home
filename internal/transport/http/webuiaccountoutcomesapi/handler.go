@@ -8,18 +8,14 @@ package webuiaccountoutcomesapi
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountoutcomes"
-	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
-	"github.com/madou1217/ai_home/internal/adapters/appstate"
 )
 
 const (
@@ -30,8 +26,6 @@ const (
 	DayCount  = 90
 	HourCount = 24
 	hourMS    = int64(time.Hour / time.Millisecond)
-
-	nodeOutcomesKVKey = "node-account-outcomes"
 )
 
 // ErrInvalidDependencies 表示 Handler 缺少必需端口。
@@ -137,63 +131,36 @@ func (handler *Handler) buildView(ctx context.Context) (ViewData, bool) {
 	hourFrom := hourStarts[0]
 
 	goDays, goHours, goAvailable := handler.loadGoOutcomes(ctx, dayFrom, hourFrom)
-	appState := handler.loadAppState(ctx, dayFrom, hourFrom)
-
-	if !goAvailable && !appState.available {
+	if !goAvailable {
 		return ViewData{}, false
 	}
 
-	// 汇总候选 accountRef：先保留 Node account_refs 顺序，再补入纯 Go 记录中的新引用。
-	seen := make(map[string]struct{}, len(appState.accountRefs)+len(goDays)+len(goHours))
-	orderedRefs := make([]string, 0, len(appState.accountRefs)+len(goDays)+len(goHours))
-	addRef := func(ref string) {
-		trimmed := strings.TrimSpace(ref)
-		if trimmed == "" {
-			return
-		}
-		if _, exists := seen[trimmed]; exists {
-			return
-		}
-		seen[trimmed] = struct{}{}
-		orderedRefs = append(orderedRefs, trimmed)
+	seen := make(map[string]struct{}, len(goDays)+len(goHours))
+	orderedRefs := make([]string, 0, len(goDays)+len(goHours))
+	for ref := range goDays {
+		orderedRefs = append(orderedRefs, ref)
 	}
-	for _, ref := range appState.accountRefs {
-		addRef(ref)
-	}
-	extraGoRefs := make([]string, 0)
-	for goRef := range goDays {
-		extraGoRefs = append(extraGoRefs, goRef)
-	}
-	for goRef := range goHours {
-		if _, exists := goDays[goRef]; !exists {
-			extraGoRefs = append(extraGoRefs, goRef)
+	for ref := range goHours {
+		if _, exists := seen[ref]; exists {
+			continue
 		}
+		orderedRefs = append(orderedRefs, ref)
 	}
-	sort.Strings(extraGoRefs)
-	for _, goRef := range extraGoRefs {
-		mapped := appState.refMap.NodeRef(goRef)
-		if mapped == "" {
-			mapped = goRef
-		}
-		addRef(mapped)
+	sort.Strings(orderedRefs)
+	seen = make(map[string]struct{}, len(orderedRefs))
+	for _, ref := range orderedRefs {
+		seen[ref] = struct{}{}
 	}
 
 	accounts := make([]AccountView, 0, len(orderedRefs))
-	for _, nodeRef := range orderedRefs {
-		goRef := appState.refMap.GoRef(nodeRef)
-		dayBuckets := mergeBuckets(
-			mergeBuckets(goDays[goRef], appState.nodeDays[nodeRef]),
-			appState.nativeDays[nodeRef],
-		)
-		hourBuckets := mergeBuckets(
-			mergeBuckets(goHours[goRef], appState.nodeHours[nodeRef]),
-			appState.nativeHours[nodeRef],
-		)
+	for _, ref := range orderedRefs {
+		dayBuckets := goDays[ref]
+		hourBuckets := goHours[ref]
 		if len(dayBuckets) == 0 && len(hourBuckets) == 0 {
 			continue
 		}
 		accounts = append(accounts, AccountView{
-			AccountRef: nodeRef,
+			AccountRef: ref,
 			Days:       sortedBuckets(dayBuckets),
 			Hours:      sortedBuckets(hourBuckets),
 		})
@@ -221,166 +188,6 @@ func (handler *Handler) loadGoOutcomes(
 		return nil, nil, false
 	}
 	return groupOutcomeBuckets(dayRows, dayFrom), groupOutcomeBuckets(hourRows, hourFrom), true
-}
-
-type appStateData struct {
-	available   bool
-	refMap      accountrefmap.Table
-	accountRefs []string
-	nodeDays    map[string]bucketMap
-	nodeHours   map[string]bucketMap
-	nativeDays  map[string]bucketMap
-	nativeHours map[string]bucketMap
-}
-
-func (handler *Handler) loadAppState(ctx context.Context, dayFrom int64, hourFrom int64) appStateData {
-	if handler.aiHomeDir == "" {
-		return appStateData{}
-	}
-	dbPath, err := appstate.DatabasePath(handler.aiHomeDir)
-	if err != nil {
-		return appStateData{}
-	}
-	if _, statErr := os.Stat(dbPath); statErr != nil {
-		return appStateData{}
-	}
-	db, err := appstate.OpenReadOnly(ctx, dbPath)
-	if err != nil {
-		return appStateData{}
-	}
-	defer func() { _ = db.Close() }()
-
-	refMap, _ := accountrefmap.Load(ctx, handler.aiHomeDir)
-	data := appStateData{
-		available:   true,
-		refMap:      refMap,
-		accountRefs: queryAccountRefs(ctx, db),
-		nodeDays:    map[string]bucketMap{},
-		nodeHours:   map[string]bucketMap{},
-		nativeDays:  map[string]bucketMap{},
-		nativeHours: map[string]bucketMap{},
-	}
-
-	if rawNodeKV, found, kvErr := appstate.ReadKV(ctx, dbPath, nodeOutcomesKVKey); kvErr == nil && found {
-		decodeNodeOutcomesKV(rawNodeKV, dayFrom, hourFrom, data.nodeDays, data.nodeHours)
-	}
-	loadNativeOutcomes(ctx, db, dayFrom, hourFrom, handler.location, data.nativeDays, data.nativeHours)
-	return data
-}
-
-func queryAccountRefs(ctx context.Context, db *sql.DB) []string {
-	rows, err := db.QueryContext(ctx, `SELECT account_ref FROM account_refs ORDER BY provider, account_ref`)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = rows.Close() }()
-	var refs []string
-	for rows.Next() {
-		var ref string
-		if scanErr := rows.Scan(&ref); scanErr != nil {
-			continue
-		}
-		if trimmed := strings.TrimSpace(ref); trimmed != "" {
-			refs = append(refs, trimmed)
-		}
-	}
-	return refs
-}
-
-type nodeKVPayload struct {
-	Accounts map[string][]struct {
-		Granularity string           `json:"granularity"`
-		StartMS     int64            `json:"startMs"`
-		Success     int64            `json:"success"`
-		Failures    map[string]int64 `json:"failures"`
-	} `json:"accounts"`
-}
-
-func decodeNodeOutcomesKV(
-	raw string,
-	dayFrom int64,
-	hourFrom int64,
-	dayOut map[string]bucketMap,
-	hourOut map[string]bucketMap,
-) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" || trimmed == "null" {
-		return
-	}
-	var payload nodeKVPayload
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return
-	}
-	for ref, entries := range payload.Accounts {
-		accountRef := strings.TrimSpace(ref)
-		if accountRef == "" {
-			continue
-		}
-		for _, entry := range entries {
-			target := dayOut
-			minStart := dayFrom
-			if entry.Granularity == "hour" {
-				target = hourOut
-				minStart = hourFrom
-			}
-			if entry.StartMS < minStart {
-				continue
-			}
-			if entry.Success > 0 {
-				addCount(target, accountRef, entry.StartMS, accountoutcomes.OutcomeSuccess, entry.Success)
-			}
-			for outcome, count := range entry.Failures {
-				name := strings.TrimSpace(outcome)
-				if name == "" || count <= 0 {
-					continue
-				}
-				addCount(target, accountRef, entry.StartMS, name, count)
-			}
-		}
-	}
-}
-
-func loadNativeOutcomes(
-	ctx context.Context,
-	db *sql.DB,
-	dayFrom int64,
-	hourFrom int64,
-	loc *time.Location,
-	dayOut map[string]bucketMap,
-	hourOut map[string]bucketMap,
-) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT account_ref, outcome, timestamp_ms
-		FROM native_account_outcomes
-		WHERE timestamp_ms >= ?
-		ORDER BY timestamp_ms ASC`, dayFrom)
-	if err != nil {
-		return
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var ref, outcome string
-		var tsMS int64
-		if scanErr := rows.Scan(&ref, &outcome, &tsMS); scanErr != nil {
-			continue
-		}
-		accountRef := strings.TrimSpace(ref)
-		name := strings.TrimSpace(outcome)
-		if accountRef == "" || name == "" || tsMS < dayFrom {
-			continue
-		}
-		at := time.UnixMilli(tsMS)
-		dayStart := accountoutcomes.BucketStart(at, accountoutcomes.Day, loc)
-		if dayStart >= dayFrom {
-			addCount(dayOut, accountRef, dayStart, name, 1)
-		}
-		if tsMS >= hourFrom {
-			hourStart := accountoutcomes.BucketStart(at, accountoutcomes.Hour, loc)
-			if hourStart >= hourFrom {
-				addCount(hourOut, accountRef, hourStart, name, 1)
-			}
-		}
-	}
 }
 
 type bucketData struct {

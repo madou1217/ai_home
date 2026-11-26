@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -223,21 +224,18 @@ func readServerConfigForSync(ctx context.Context, home string) (string, error) {
 }
 
 func readCodexCredentials(ctx context.Context, home string) ([]codexCredential, error) {
-	path, err := appstate.DatabasePath(home)
-	if err != nil {
-		return nil, err
-	}
+	path := filepath.Join(strings.TrimSpace(home), "aih.db")
 	db, err := appstate.OpenReadOnly(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	query := "SELECT c.account_ref, c.native_auth_json " +
-		"FROM compat_account_credentials c " +
-		"INNER JOIN account_refs r ON r.account_ref = c.account_ref " +
-		"WHERE r.provider = 'codex' " +
-		"AND c.native_auth_json <> '{}' " +
-		"ORDER BY c.account_ref"
+	query := "SELECT a.account_ref, c.credential_json " +
+		"FROM account_credentials c " +
+		"INNER JOIN accounts a ON a.account_ref = c.account_ref " +
+		"WHERE a.provider_id = 'codex' " +
+		"AND c.credential_json <> '{}' " +
+		"ORDER BY a.account_ref"
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
@@ -252,9 +250,18 @@ func readCodexCredentials(ctx context.Context, home string) ([]codexCredential, 
 		if err := rows.Scan(&accountRef, &raw); err != nil {
 			return nil, err
 		}
-		var native map[string]any
-		if json.Unmarshal([]byte(raw), &native) != nil {
+		var document map[string]any
+		if json.Unmarshal([]byte(raw), &document) != nil {
 			continue
+		}
+		native := document
+		if inner, ok := document["native_auth_json"].(map[string]any); ok {
+			native = inner
+		} else if innerRaw, ok := document["native_auth_json"].(string); ok {
+			var parsed map[string]any
+			if json.Unmarshal([]byte(innerRaw), &parsed) == nil && parsed != nil {
+				native = parsed
+			}
 		}
 		auth, _ := native["auth"].(map[string]any)
 		if auth == nil {

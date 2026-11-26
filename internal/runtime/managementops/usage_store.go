@@ -30,7 +30,6 @@ const (
 	maxStatsCacheEntries       = 64
 	pricingCustomRefreshWindow = 3 * time.Second
 	pricingActiveCatalogKVKey  = "active:model_usage_pricing"
-	nativeOutcomeRetentionMS   = 91 * 24 * 60 * 60 * 1000
 	pricingPerMillion          = 1_000_000.0
 	usageStoreOwnedMaxConns    = 9
 )
@@ -128,16 +127,6 @@ type ZcodeUsageOwnerInput struct {
 	UsageID     string
 	AccountRef  string
 	SessionID   string
-	TimestampMS int64
-}
-
-// NativeOutcomeInput 表示原生 CLI 会话结果记录。
-type NativeOutcomeInput struct {
-	EventKey    string
-	AccountRef  string
-	Provider    string
-	SessionID   string
-	Outcome     string
 	TimestampMS int64
 }
 
@@ -389,20 +378,6 @@ func (s *UsageStore) ensureSchema(ctx context.Context) error {
 			source TEXT NOT NULL DEFAULT '',
 			updated_at_ms INTEGER NOT NULL DEFAULT 0
 		)`,
-		`CREATE TABLE IF NOT EXISTS native_account_outcomes (
-			event_key TEXT NOT NULL UNIQUE,
-			account_ref TEXT NOT NULL DEFAULT '' CHECK (
-				account_ref = '' OR (
-					length(account_ref) = 25
-					AND substr(account_ref, 1, 5) = 'acct_'
-					AND substr(account_ref, 6) NOT GLOB '*[^0-9a-f]*'
-				)
-			),
-			provider TEXT NOT NULL,
-			session_id TEXT NOT NULL DEFAULT '',
-			outcome TEXT NOT NULL,
-			timestamp_ms INTEGER NOT NULL
-		)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_timestamp ON model_usage_records(timestamp_ms)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_provider_model ON model_usage_records(provider, model)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_session ON model_usage_records(provider, session_id)`,
@@ -411,8 +386,6 @@ func (s *UsageStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_account_time ON model_usage_records(account_ref, timestamp_ms)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_request_time ON model_usage_records(request_id, timestamp_ms DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_model_usage_prompt_timestamp ON model_usage_prompt_events(timestamp_ms)`,
-		`CREATE INDEX IF NOT EXISTS idx_native_account_outcomes_time ON native_account_outcomes(timestamp_ms)`,
-		`CREATE INDEX IF NOT EXISTS idx_native_account_outcomes_account_time ON native_account_outcomes(account_ref, timestamp_ms)`,
 	}
 	for _, stmt := range statements {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -1664,68 +1637,6 @@ func (s *UsageStore) ReconcileZcodeUsageOwnershipBatch(ctx context.Context, reco
 	return changed, err
 }
 
-// InsertNativeOutcomes 幂等写入原生 CLI 派生账号结果（91 天滚动保留）。
-func (s *UsageStore) InsertNativeOutcomes(ctx context.Context, records []NativeOutcomeInput) (int, error) {
-	if s == nil || s.db == nil || len(records) == 0 {
-		return 0, nil
-	}
-	cleaned := make([]NativeOutcomeInput, 0, len(records))
-	for _, r := range records {
-		ek := strings.TrimSpace(r.EventKey)
-		ref := strings.TrimSpace(r.AccountRef)
-		prov := strings.ToLower(strings.TrimSpace(r.Provider))
-		sid := strings.TrimSpace(r.SessionID)
-		outcome := strings.TrimSpace(r.Outcome)
-		if ek == "" || prov == "" || outcome == "" || r.TimestampMS <= 0 {
-			continue
-		}
-		if ref != "" && !isValidAccountRef(ref) {
-			continue
-		}
-		cleaned = append(cleaned, NativeOutcomeInput{
-			EventKey:    ek,
-			AccountRef:  ref,
-			Provider:    prov,
-			SessionID:   sid,
-			Outcome:     outcome,
-			TimestampMS: r.TimestampMS,
-		})
-	}
-	if len(cleaned) == 0 {
-		return 0, nil
-	}
-	var changed int
-	err := s.runImmediateTx(ctx, func(tx *sql.Tx) error {
-		stmt, prepErr := tx.PrepareContext(ctx, `
-			INSERT INTO native_account_outcomes (
-				event_key, account_ref, provider, session_id, outcome, timestamp_ms
-			) VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT(event_key) DO UPDATE SET
-				account_ref = excluded.account_ref,
-				provider = excluded.provider,
-				session_id = excluded.session_id,
-				outcome = excluded.outcome,
-				timestamp_ms = excluded.timestamp_ms`)
-		if prepErr != nil {
-			return prepErr
-		}
-		defer func() { _ = stmt.Close() }()
-		for _, r := range cleaned {
-			res, execErr := stmt.ExecContext(ctx, r.EventKey, r.AccountRef, r.Provider, r.SessionID, r.Outcome, r.TimestampMS)
-			if execErr != nil {
-				return execErr
-			}
-			if rows, _ := res.RowsAffected(); rows > 0 {
-				changed += int(rows)
-			}
-		}
-		cutoff := s.now().UnixMilli() - nativeOutcomeRetentionMS
-		_, _ = tx.ExecContext(ctx, `DELETE FROM native_account_outcomes WHERE timestamp_ms < ?`, cutoff)
-		return nil
-	})
-	return changed, err
-}
-
 func randomHexID(bytesLen int) string {
 	buf := make([]byte, bytesLen)
 	_, _ = rand.Read(buf)
@@ -1796,34 +1707,4 @@ func (s *UsageStore) ReadUsageOwnerByEventKey(ctx context.Context, eventKey stri
 		return UsageOwnerRecord{}, false, err
 	}
 	return rec, true, nil
-}
-
-// ReadAccountRefsByProvider 读取 app-state account_refs 台账中的指定 Provider 账号列表。
-func (s *UsageStore) ReadAccountRefsByProvider(ctx context.Context, provider string) ([]string, error) {
-	if s == nil || s.db == nil || strings.TrimSpace(provider) == "" {
-		return nil, nil
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT account_ref
-		FROM account_refs
-		WHERE provider = ?
-		ORDER BY account_ref`, strings.ToLower(strings.TrimSpace(provider)))
-	if err != nil {
-		if isSQLiteMissingTable(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var refs []string
-	for rows.Next() {
-		var ref string
-		if scanErr := rows.Scan(&ref); scanErr != nil {
-			return nil, scanErr
-		}
-		if trimmed := strings.TrimSpace(ref); trimmed != "" {
-			refs = append(refs, trimmed)
-		}
-	}
-	return refs, rows.Err()
 }

@@ -280,9 +280,9 @@ func discoverCodebuddyIDEAccounts(ctx context.Context, opts Options, targetProvi
 
 	rows, err := db.QueryContext(
 		ctx,
-		`SELECT r.account_ref, r.provider, COALESCE(c.native_auth_json, '')
-		 FROM account_refs r
-		 LEFT JOIN compat_account_credentials c ON c.account_ref = r.account_ref`,
+		`SELECT a.account_ref, a.provider_id, COALESCE(c.credential_json, '')
+		 FROM accounts a
+		 LEFT JOIN account_credentials c ON c.account_ref = a.account_ref`,
 	)
 	if err != nil {
 		return nil
@@ -306,7 +306,7 @@ func discoverCodebuddyIDEAccounts(ctx context.Context, opts Options, targetProvi
 		if strings.TrimSpace(opts.AccountRef) != "" && ref != strings.TrimSpace(opts.AccountRef) {
 			continue
 		}
-		uid := inspectCodebuddyAuthUID(authJSON, normProv)
+		uid := inspectCodebuddyAuthUID(unwrapNativeAuthJSON(authJSON), normProv)
 		if uid == "" {
 			continue
 		}
@@ -317,6 +317,23 @@ func discoverCodebuddyIDEAccounts(ctx context.Context, opts Options, targetProvi
 		})
 	}
 	return out
+}
+
+// unwrapNativeAuthJSON 从 canonical credential_json 中取出 native_auth_json。
+func unwrapNativeAuthJSON(raw string) string {
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &envelope) != nil {
+		return raw
+	}
+	inner, ok := envelope["native_auth_json"]
+	if !ok {
+		return raw
+	}
+	var encoded string
+	if json.Unmarshal(inner, &encoded) == nil && strings.TrimSpace(encoded) != "" {
+		return encoded
+	}
+	return string(inner)
 }
 
 func inspectCodebuddyAuthUID(nativeAuthJSON, expectedProvider string) string {

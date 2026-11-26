@@ -476,6 +476,67 @@ func (s *Service) ingestMaterializedFiles(ctx context.Context, input IngestInput
 	return IngestResult{Item: persisted, Deduplicated: deduplicated}, nil
 }
 
+// archiveMaterializer is implemented by blob stores that can extract a zip
+// package straight to the materialized directory without buffering the whole
+// archive in memory.
+type archiveMaterializer interface {
+	MaterializeArchive(sha256Hex string, archivePath string) (paths []string, totalBytes int64, err error)
+}
+
+// IngestArchive completes a chunked file-package transfer. The stub already
+// exists by SHA; extraction streams the archive to disk and upgrades the stub
+// to materialized in one upsert.
+func (s *Service) IngestArchive(ctx context.Context, stub Item, archivePath string) (Item, error) {
+	sha := strings.ToLower(strings.TrimSpace(stub.SHA256))
+	if !isSHA256Hex(sha) || stub.Kind != KindFile {
+		return Item{}, fmt.Errorf("%w: archive ingest requires a file stub sha", ErrInvalidInput)
+	}
+	materializer, ok := s.blobs.(archiveMaterializer)
+	if !ok {
+		return Item{}, fmt.Errorf("%w: blob store cannot extract archives", ErrInvalidInput)
+	}
+	paths, total, err := materializer.MaterializeArchive(sha, archivePath)
+	if err != nil {
+		return Item{}, err
+	}
+	if len(paths) == 0 {
+		return Item{}, ErrEmptyContent
+	}
+	mime := limitClipText(strings.TrimSpace(stub.MIME), 200)
+	if mime == "" {
+		mime = "text/uri-list"
+	}
+	item := Item{
+		ID:           uuid.NewString(),
+		SHA256:       sha,
+		Kind:         KindFile,
+		MIME:         mime,
+		ByteSize:     total,
+		Preview:      buildFilePreview(paths),
+		Files:        paths,
+		SourceDevice: limitClipText(stub.SourceDevice, 200),
+		SourceApp:    limitClipText(stub.SourceApp, 200),
+		RemoteID:     stub.RemoteID,
+		SyncedAtMs:   s.clock().UnixMilli(),
+		CreatedAtMs:  stub.CreatedAtMs,
+		LastSeenAtMs: s.clock().UnixMilli(),
+		SeenCount:    1,
+		Materialized: true,
+	}
+	if item.CreatedAtMs <= 0 {
+		item.CreatedAtMs = item.LastSeenAtMs
+	}
+	persisted, _, err := s.store.UpsertItem(ctx, item)
+	if err != nil {
+		return Item{}, err
+	}
+	if err := s.store.ClearContentRequest(ctx, sha); err != nil {
+		return Item{}, err
+	}
+	s.notifyChanged()
+	return persisted, nil
+}
+
 func isSHA256Hex(value string) bool {
 	if len(value) != 64 {
 		return false

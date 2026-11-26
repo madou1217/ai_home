@@ -62,6 +62,7 @@ type Handler struct {
 	Service           *clipboard.Service
 	Servers           func(context.Context) ([]ServerProfileView, error)
 	SyncRun           func(context.Context) error
+	Transfers         *clipboardruntime.TransferReceiver
 	MaxBody           int64
 	OnSettingsChanged func(clipboard.Settings)
 }
@@ -74,6 +75,7 @@ func NewHandler(authorizer Authorizer, service *clipboard.Service) (*Handler, er
 	return &Handler{
 		Authorizer: authorizer,
 		Service:    service,
+		Transfers:  clipboardruntime.NewTransferReceiver(service),
 		MaxBody:    clipboard.MaxRequestBytes,
 	}, nil
 }
@@ -110,6 +112,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleServers(w, r)
 	case rest == "sync/key":
 		h.handleSyncKey(w, r)
+	case rest == "sync/transfers":
+		h.handleSyncTransfer(w, r)
 	case rest == "sync/items":
 		h.handleSyncItems(w, r)
 	case rest == "sync/requests":
@@ -720,6 +724,48 @@ func (h *Handler) handleSyncKey(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST")
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
 	}
+}
+
+// handleSyncTransfer accepts one parallel chunk of a file package. Chunks are
+// authenticated by the sync key and only the complete archive upgrades the stub.
+func (h *Handler) handleSyncTransfer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	key, _, found, err := h.Service.GetSyncKey(r.Context())
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "clipboard_sync_key_missing", "尚未配置同步密钥")
+		return
+	}
+	var chunk clipboardruntime.TransferChunk
+	if err := h.decodeJSON(w, r, &chunk); err != nil {
+		h.writeDecodeError(w, err)
+		return
+	}
+	if h.Transfers == nil {
+		writeError(w, http.StatusServiceUnavailable, "clipboard_transfer_unavailable", "剪贴板传输未就绪")
+		return
+	}
+	complete, err := h.Transfers.Accept(r.Context(), chunk, chunk.Sealed, key)
+	if err != nil {
+		if errors.Is(err, clipboardruntime.ErrSyncDecryptFailed) {
+			writeError(w, http.StatusBadRequest, "clipboard_sync_decrypt_failed", "同步分片解密失败")
+			return
+		}
+		h.writeDomainError(w, err)
+		return
+	}
+	status := http.StatusAccepted
+	if complete {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"complete": complete})
 }
 
 func (h *Handler) handleSyncItems(w http.ResponseWriter, r *http.Request) {

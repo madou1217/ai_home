@@ -1,8 +1,10 @@
 package clipboardstore
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -138,6 +140,77 @@ func isValidSHA256Hex(s string) bool {
 // MaterializeFiles writes on-demand synced file bytes into
 // <aiHome>/clipboard/materialized/<sha>/ and returns local paths. Names are
 // reduced to base names and de-duplicated so a peer cannot escape the cache.
+// MaterializeArchive extracts a file-package zip straight to disk. Entries
+// are consumed one at a time so a multi-hundred-megabyte package never has to
+// fit in memory. Zip-slip is prevented by using each entry's base name.
+func (b *BlobStore) MaterializeArchive(sha256Hex string, archivePath string) ([]string, int64, error) {
+	hexName := strings.ToLower(strings.TrimSpace(sha256Hex))
+	if !isValidSHA256Hex(hexName) {
+		return nil, 0, fmt.Errorf("%w: invalid sha256", errInvalidBlobPath)
+	}
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("打开剪贴板归档失败: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	dir := filepath.Join(b.aiHomeDir, "clipboard", "materialized", hexName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, 0, fmt.Errorf("创建剪贴板内容目录失败: %w", err)
+	}
+	const maxTotalBytes = int64(4 << 30)
+	used := make(map[string]struct{}, len(reader.File))
+	paths := make([]string, 0, len(reader.File))
+	var total int64
+	for _, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		name := filepath.Base(strings.TrimSpace(entry.Name))
+		if name == "" || name == "." || name == string(filepath.Separator) {
+			continue
+		}
+		base := name
+		for index := 2; ; index++ {
+			if _, exists := used[name]; !exists {
+				break
+			}
+			ext := filepath.Ext(base)
+			name = fmt.Sprintf("%s-%d%s", strings.TrimSuffix(base, ext), index, ext)
+		}
+		used[name] = struct{}{}
+		source, err := entry.Open()
+		if err != nil {
+			return nil, 0, fmt.Errorf("读取剪贴板归档条目失败: %w", err)
+		}
+		target := filepath.Join(dir, name)
+		partial := target + ".part"
+		file, err := os.OpenFile(partial, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+		if err != nil {
+			_ = source.Close()
+			return nil, 0, fmt.Errorf("写入剪贴板内容文件失败: %w", err)
+		}
+		written, copyErr := io.Copy(file, source)
+		closeErr := file.Close()
+		_ = source.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(partial)
+			return nil, 0, fmt.Errorf("写入剪贴板内容文件失败: %w", errors.Join(copyErr, closeErr))
+		}
+		total += written
+		if total > maxTotalBytes {
+			_ = os.Remove(partial)
+			return nil, 0, clipboard.ErrItemTooLarge
+		}
+		if err := os.Rename(partial, target); err != nil {
+			_ = os.Remove(partial)
+			return nil, 0, fmt.Errorf("保存剪贴板内容文件失败: %w", err)
+		}
+		paths = append(paths, target)
+	}
+	return paths, total, nil
+}
+
 func (b *BlobStore) MaterializeFiles(sha256Hex string, files []clipboard.MaterializedFile) ([]string, int64, error) {
 	hexName := strings.ToLower(strings.TrimSpace(sha256Hex))
 	if !isValidSHA256Hex(hexName) {

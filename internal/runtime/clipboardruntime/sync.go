@@ -458,6 +458,11 @@ type Syncer struct {
 	lastErr  string
 	targetID string
 	enabled  bool
+
+	transferMu      sync.Mutex
+	activeTransfers map[string]struct{}
+	bulkGate        *BulkGate
+	transferLanes   int
 }
 
 // NewSyncer constructs a Syncer with sensible defaults.
@@ -473,11 +478,14 @@ func NewSyncer(service *clipboard.Service, resolver ProfileResolver, client *htt
 		clock = time.Now
 	}
 	return &Syncer{
-		Service:        service,
-		ResolveProfile: resolver,
-		HTTPClient:     client,
-		Clock:          clock,
-		trigger:        make(chan struct{}, 1),
+		Service:         service,
+		ResolveProfile:  resolver,
+		HTTPClient:      client,
+		Clock:           clock,
+		trigger:         make(chan struct{}, 1),
+		activeTransfers: make(map[string]struct{}),
+		bulkGate:        &BulkGate{},
+		transferLanes:   transferLanesFromEnv(),
 	}
 }
 
@@ -595,11 +603,19 @@ func (s *Syncer) runSyncLocked(ctx context.Context, profileID string) error {
 		return err
 	}
 
-	if err := s.pushUnsynced(ctx, endpoint, mgmtKey, activeKey); err != nil {
-		return err
+	// Metadata and explicitly activated content are interactive traffic: pause
+	// bulk file chunks while they use the link, then let the bulk workers resume.
+	s.bulkGate.BeginPriority()
+	pushErr := s.pushUnsynced(ctx, endpoint, mgmtKey, activeKey)
+	s.bulkGate.EndPriority()
+	if pushErr != nil {
+		return pushErr
 	}
-	if err := s.serveContentRequests(ctx, endpoint, mgmtKey, activeKey); err != nil {
-		log.Printf("[clipboard-sync] serve content requests: %v", err)
+	s.bulkGate.BeginPriority()
+	serveErr := s.serveContentRequests(ctx, endpoint, mgmtKey, activeKey)
+	s.bulkGate.EndPriority()
+	if serveErr != nil {
+		log.Printf("[clipboard-sync] serve content requests: %v", serveErr)
 	}
 	if err := s.pullRemote(ctx, endpoint, mgmtKey, profileID, activeKey); err != nil {
 		return err
@@ -850,6 +866,10 @@ func (s *Syncer) serveContentRequests(ctx context.Context, endpoint, mgmtKey str
 	for _, sha := range body.SHAs {
 		item, found, err := s.Service.GetBySHA(ctx, sha)
 		if err != nil || !found || !item.Materialized {
+			continue
+		}
+		if item.Kind == clipboard.KindFile && ShouldChunkFilePackage(item.Files) {
+			s.startChunkedTransfer(endpoint, mgmtKey, key, item)
 			continue
 		}
 		payload, err := BuildSyncPayload(ctx, s.Service, item)

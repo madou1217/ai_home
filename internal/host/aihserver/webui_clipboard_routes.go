@@ -123,6 +123,7 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		&http.Client{Timeout: 30 * time.Second, CheckRedirect: rejectOAuthRedirect},
 		time.Now,
 	)
+	capture.SetOnIngest(syncer.Trigger)
 	service.SetRuntimeProbe(clipboardruntime.NewProbe(capture, syncer))
 
 	runCtx, runCancel := context.WithCancel(ctx)

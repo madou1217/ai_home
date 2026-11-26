@@ -39,6 +39,7 @@ type Capture struct {
 	active       bool
 	lastHash     string
 	recentHashes map[string]time.Time
+	onIngest     func()
 	wakeCh       chan struct{}
 }
 
@@ -59,6 +60,29 @@ func NewCapture(service *clipboard.Service, reader clipboardio.Reader) *Capture 
 		capability:             capStatus,
 		recentHashes:           make(map[string]time.Time),
 		wakeCh:                 make(chan struct{}, 1),
+	}
+}
+
+// SetOnIngest registers a cheap callback fired after a successful local
+// ingest, used by the syncer to start a priority metadata pass immediately.
+func (c *Capture) SetOnIngest(fn func()) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.onIngest = fn
+	c.mu.Unlock()
+}
+
+func (c *Capture) notifyIngest() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	fn := c.onIngest
+	c.mu.Unlock()
+	if fn != nil {
+		fn()
 	}
 }
 
@@ -207,6 +231,7 @@ func (c *Capture) pollOnce(ctx context.Context) {
 				Files: files,
 			}); ingestErr == nil {
 				c.recordSeen(hash, now)
+				c.notifyIngest()
 			}
 			return
 		}
@@ -225,6 +250,7 @@ func (c *Capture) pollOnce(ctx context.Context) {
 			Data: data,
 		}); ingestErr == nil {
 			c.recordSeen(hash, now)
+			c.notifyIngest()
 		}
 		return
 	}
@@ -241,6 +267,7 @@ func (c *Capture) pollOnce(ctx context.Context) {
 		}
 		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{Text: text}); ingestErr == nil {
 			c.recordSeen(hash, now)
+			c.notifyIngest()
 		}
 	}
 }

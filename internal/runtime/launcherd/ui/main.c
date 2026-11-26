@@ -59,6 +59,9 @@
 #define SCORE_SUBSEQUENCE_BASE 600
 #define SCORE_SUBSEQ_MAX_PEN 150
 #define SCORE_SUBTITLE_ONLY 300
+#define FRECENCY_BOOST_CAP 700
+#define FRECENCY_EFFECTIVE_BOOST_CAP 150
+#define FRECENCY_SCORE_CEILING (SCORE_EXACT_NAME - 1)
 
 static const char *LAUNCHER_CSS =
     "window.launcher-window {\n"
@@ -242,7 +245,6 @@ typedef enum {
 typedef struct {
   char *id;
   char *name;
-  char *name_lower;
   char *subtitle;
   char *icon;
   char *kind;
@@ -399,7 +401,6 @@ static void app_item_free(gpointer data) {
   }
   g_free(item->id);
   g_free(item->name);
-  g_free(item->name_lower);
   g_free(item->subtitle);
   g_free(item->icon);
   g_free(item->kind);
@@ -589,6 +590,24 @@ static void mark_range(gboolean *mask, gsize mask_len, gsize start, gsize len) {
   }
 }
 
+static int effective_boost(int base_score, int raw_boost) {
+  if (raw_boost <= 0) {
+    return 0;
+  }
+  int headroom = FRECENCY_SCORE_CEILING - base_score;
+  if (headroom <= 0) {
+    return 0;
+  }
+  int eff = raw_boost;
+  if (eff > FRECENCY_EFFECTIVE_BOOST_CAP) {
+    eff = FRECENCY_EFFECTIVE_BOOST_CAP;
+  }
+  if (eff > headroom) {
+    eff = headroom;
+  }
+  return eff;
+}
+
 static FilteredItem *score_app_item(const AppItem *app, const char *q_norm,
                                     const gunichar *q_runes, gsize q_len) {
   int best = 0;
@@ -761,7 +780,7 @@ static FilteredItem *score_app_item(const AppItem *app, const char *q_norm,
 
   FilteredItem *fi = g_new0(FilteredItem, 1);
   fi->app = app;
-  fi->score = best + (app->boost > 0 ? app->boost : 0);
+  fi->score = best + effective_boost(best, app->boost);
   fi->source = best_source;
   if (best_source == MATCH_NAME && best_mask) {
     fi->matched_runes = best_mask;
@@ -778,9 +797,8 @@ static gint compare_filtered_items(gconstpointer a_ptr, gconstpointer b_ptr) {
   if (a->score != b->score) {
     return (a->score > b->score) ? -1 : 1;
   }
-  int cmp = strcmp(a->app->name_lower, b->app->name_lower);
-  if (cmp != 0) {
-    return cmp;
+  if (a->app->catalog_index != b->app->catalog_index) {
+    return (a->app->catalog_index < b->app->catalog_index) ? -1 : 1;
   }
   return strcmp(a->app->id, b->app->id);
 }
@@ -1702,7 +1720,6 @@ static void handle_launch1_line(LauncherState *st, const char *line) {
   AppItem *item = g_new0(AppItem, 1);
   item->id = decode_base64_utf8(parts[1]);
   item->name = decode_base64_utf8(parts[2]);
-  item->name_lower = normalize_query_utf8(item->name);
   item->subtitle = decode_base64_utf8(parts[3]);
   item->icon = decode_base64_utf8(parts[4]);
   item->kind = decode_base64_utf8(parts[5]);
@@ -1729,10 +1746,13 @@ static void handle_launch1_line(LauncherState *st, const char *line) {
     g_free(decoded_aliases);
   }
 
-  /* Optional 10th column: transient §6 recency boost integer */
+  /* Optional 10th column: transient §6 frecency boost integer */
   if (count >= 10 && parts[9][0] != '\0') {
     gint64 parsed = g_ascii_strtoll(parts[9], NULL, 10);
-    if (parsed > 0 && parsed <= 1000) {
+    if (parsed > 0) {
+      if (parsed > FRECENCY_BOOST_CAP) {
+        parsed = FRECENCY_BOOST_CAP;
+      }
       item->boost = (int)parsed;
     }
   }
@@ -1763,8 +1783,9 @@ static void process_stdin_line(LauncherState *st, const char *raw_line) {
     st->apps = st->staging_apps;
     st->staging_apps = g_ptr_array_new_with_free_func(app_item_free);
     /* Rebuild BEFORE unreffing old apps so preserve_selection can safely read
-     * the previous FilteredItem->app->id before st->filtered is replaced. */
-    rebuild_filtered_list(st, FALSE, TRUE);
+     * the previous FilteredItem->app->id before st->filtered is replaced.
+     * Keep selection at index 0 unless the user already moved down from row 0. */
+    rebuild_filtered_list(st, FALSE, st->selected_index > 0);
     g_ptr_array_unref(old);
   } else if (strcmp(line, "open-ok") == 0 ||
              g_str_has_prefix(line, "open-ok\t")) {

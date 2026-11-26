@@ -66,10 +66,10 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 `~/.ai_home/run/launcher/usage.json`
 
 ~~~json
-{"version":1,"apps":{"<appId>":{"openedAtMs":1764000000000,"count":7}}}
+{"version":2,"apps":{"<appId>":{"openedAtMs":1764000000000,"count":7,"score":4.82,"updatedAtMs":1764000000000}}}
 ~~~
 
-- 打开成功后 UPSERT：`count+1`、`openedAtMs=now`；
+- 打开成功后 UPSERT：先按 `exp(-Δt / HALF_LIFE)` 衰减旧 `score` 再 `+1`，`count+1`、`openedAtMs=now`、`updatedAtMs=now`；兼容读取 v1（`score=min(count,20)`、`updatedAtMs=openedAtMs`，下次写入时升级到 v2）；
 - 只保留最近 500 条（按 openedAtMs），原子写（临时文件 + rename，0600）；
 - 目录刷新/应用消失不影响记录，仅排序时查不到对应应用就忽略。
 
@@ -81,7 +81,7 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/apps?q=&refresh=1&limit=` | 返回 `{platform, generatedAt, apps:[...], truncated}`；`q` 最多 256 个字符（超出返回 400 `invalid_query`）；`q` 为空时按「最近使用 → 名称」排序，`q` 非空时按第 6 节排序；`limit` 钳制在 `1..2000`（默认 2000）；`refresh=1` 强制重扫 |
+| GET | `/apps?q=&refresh=1&limit=` | 返回 `{platform, generatedAt, apps:[...], truncated}`；`q` 最多 256 个字符（超出返回 400 `invalid_query`）；`q` 为空时按第 6 节 frecency（再 `ModifiedAtMs` → ID，不用名称 A–Z）排序，`q` 非空时按第 6 节排序；`limit` 钳制在 `1..2000`（默认 2000）；`refresh=1` 强制重扫 |
 | POST | `/open` | body `{id}`；打开成功记录 usage 并返回 `{ok:true}`；失败返回 4xx/5xx 与 `{error, message}` |
 | POST | `/show` | 让桌面面板显示（Server 向 helper 下发 `{"type":"launcher-show"}`；Linux 走 launcherd socket）；无桌面面板时 501 |
 | GET | `/status` | `{platform, supported, count, generatedAt, lastError, desktop?}`；Linux 桌面附带 `desktop:{supported, built, binaryPath, pid, desktopError, autostart}` |
@@ -98,7 +98,7 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 ~~~
 
 - `icon`：macOS 为 .app 路径；Windows 为 .lnk/.exe 路径（UWP 为空，UI 用通用图标）；Linux 为 `Icon=` 值（主题名或绝对路径）。
-- `subtitle` 截断 160 字符；`name` 截断 120 字符；`boost` 为查询时动态计算的 §6 使用加成（7 天内 +30 与 `min(count,10)`），仅用于三端本地打分对齐，不参与 ID 计算或持久化。
+- `subtitle` 截断 160 字符；`name` 截断 120 字符；`boost` 为查询时动态计算的 §6 frecency 使用加成（`clamp(round(frecency*60), 0, 700)`），仅用于三端本地打分对齐，不参与 ID 计算或持久化。
 - 列表上限默认且最大为 2000，超出时 `truncated=true`。
 
 ## 6. 搜索与排序（唯一规格）
@@ -113,13 +113,18 @@ internal/runtime/launcherd/           Linux 桌面监督器（构建 + 启动 GT
 - 词首缩写（`vsc` → Visual Studio Code）：750
 - 名称子串：700 − 位置（上限 100）
 - 名称子序列（按序、不连续）：600 − 间隔总数（上限 150）
-- 任一 alias（`Aliases`，仅 macOS 有）前缀/词前缀/缩写/子串/子序列命中：650（不与名称分叠加，取最大值）
+- 任一 alias（`Aliases`，macOS/Linux 中英文别名等）前缀/词前缀/缩写/子串/子序列命中：650（不与名称分叠加，取最大值）
 - 仅副标题命中：300
 
 CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
-加成：`recencyBoost = 30`（7 天内打开过）+ `min(count,10)`；与基础分相加后排序。分数相同按名称小写字典序，再按 ID。Server 在 `/apps` 的 `boost` 字段与 Linux `LAUNCH1` 第 10 列透传该值，使三端本地过滤与 Go 排序完全一致。
-空查询：最近打开优先（无记录排后），然后名称字典序。
+加成（**frecency，2026-11-26 用户明确：越用越好用，不使用 A–Z**）：
+- 使用记录不再只存 count/最近时间，而是存**指数衰减热度**：`score = score*exp(-Δt/ HALF_LIFE) + 1`，`HALF_LIFE = 14 天`；每次通过启动器打开（UI/CLI/API）都更新。
+- 计算时按当前时间再次衰减，得到 `frecency`；对外透传 `rawBoost = clamp(round(frecency*60), 0, 700)`。
+- 查询非空：实际计分使用 `effectiveBoost = min(rawBoost, 150, max(0, 999 - base))`，`总分 = base + effectiveBoost`；名称全等（`base=1000`）永远排第一，常用前缀匹配最高 `999` 不压过全等，子序列（最高 `600+150=750`）不越级压过未使用前缀（`850..900`）。同分时按 `rawBoost` 高者优先，再按安装/更新时间（`ModifiedAtMs`）新者优先，最后 ID；**不再按名称 A–Z 排序**。
+- 空查询：仍按 `frecency` 原始值降序（不受 150 限制）；从未打开过的（frecency=0）排后，按 `ModifiedAtMs` 降序（最近安装/更新优先），最后 ID。**不使用名称字典序**。
+- Server 在 `/apps` 的 `boost` 字段与 Linux `LAUNCH1` 第 10 列透传 `rawBoost`；三端本地过滤按同一 `effectiveBoost` 计分，且空查询保持 Server 顺序、同分只以 server 顺序/ID 作最终 tiebreak。
+- 迁移：旧 `usage.json`（只有 count/openedAtMs）读取时按 `score = min(count,20)`、`updatedAt = openedAtMs` 初始化，之后正常衰减。
 
 以上常量只出现在 Go 的一处（`application/launcher/rank.go`）；三端 UI 的本地区间过滤必须按相同规则实现，常量在各自源码中明确注明「与 rank.go 同步」。
 
@@ -129,6 +134,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
 - 扫描：`/Applications`、`/System/Applications`、`/System/Applications/Utilities`、`~/Applications`（递归 3 层），收集 `*.app`。
 - 名称：**目录名去 `.app`** 作为主名称（用户在 Finder/终端里看到的就是它，例如 `Visual Studio Code` 而不是 plist 里的 `Code`）；解析 `Contents/Info.plist`（XML）得到的 `CFBundleDisplayName`/`CFBundleName` 作为 `aliases`（最多 4 个），仅用于搜索匹配。
+- 中英文：额外读取 `Contents/Resources/zh_CN.lproj/InfoPlist.strings`（依次回退 `zh-Hans.lproj`、`zh.lproj`，支持 UTF-16LE/BE BOM、UTF-8 与 XML/二进制 plist）中的 `CFBundleDisplayName`/`CFBundleName` 作为中文 alias（例如 `WeChat` → `微信`），使中文与英文查询都能命中同一应用；`.strings` 解析失败不影响主流程。
 - 去重：同一真实路径只保留一条（`filepath.EvalSymlinks`，失败用原路径）。
 - 打开：`open -a <path>`（`exec.Command`，无 shell）。
 - 备注：系统应用（Safari 等）名称可能为英文目录名，属可接受回退。
@@ -144,7 +150,7 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 ### Linux（appcatalog linux）
 
 - 扫描目录：`$XDG_DATA_HOME/applications`（默认 `~/.local/share/applications`）、`$XDG_DATA_DIRS` 各项（默认 `/usr/local/share:/usr/share`）的 `applications`、`/var/lib/flatpak/exports/share/applications`、`~/.local/share/flatpak/exports/share/applications`、`/var/lib/snapd/desktop/applications`。递归一层。
-- 解析 `*.desktop` INI 的 `[Desktop Entry]`：`Type=Application`、`Hidden=true`/`NoDisplay=true` 跳过；`Name`（`Name[zh_CN]` 优先，再 `Name[zh]`，再 `Name`）；`Exec`、`Icon`、`Terminal`、`StartupWMClass` 忽略。
+- 解析 `*.desktop` INI 的 `[Desktop Entry]`：`Type=Application`、`Hidden=true`/`NoDisplay=true` 跳过；`Name`（`Name[zh_CN]` 优先，再 `Name[zh]`，再 `Name`，并将英文名/本地化名互为 `aliases`，最多 4 个）；`Exec`、`Icon`、`Terminal`、`StartupWMClass` 忽略；使用 `.desktop` 文件 mtime 填充 `ModifiedAtMs`。
 - 去重：Desktop ID（相对 applications 的路径，`/`→`-`）。
 - 打开：优先 `gio launch <desktop 文件>`；失败或不存在时 `gtk-launch <desktop-id>`；再失败则解析 `Exec`（去掉 `%f %F %u %U %i %c %k` 等字段）直接 `exec.Command`（终端应用用 `x-terminal-emulator -e …` 或 GNOME Terminal）。
 - 图标：`Icon=` 原样返回。

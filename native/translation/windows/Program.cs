@@ -1123,9 +1123,18 @@ internal static class LauncherRanker
     public const int ScoreSubsequenceBase = 600;
     public const int ScoreSubseqMaxPen = 150;
     public const int ScoreSubtitleOnly = 300;
+    public const int FrecencyEffectiveBoostCap = 150;
+    public const int FrecencyScoreCeiling = ScoreExactName - 1;
 
     public static string NormalizeQuery(string? raw)
         => string.IsNullOrWhiteSpace(raw) ? string.Empty : raw.Trim().ToLowerInvariant();
+
+    public static int EffectiveBoost(int baseScore, int rawBoost)
+    {
+        if (rawBoost <= 0) return 0;
+        var headroom = Math.Max(0, FrecencyScoreCeiling - baseScore);
+        return Math.Min(rawBoost, Math.Min(FrecencyEffectiveBoostCap, headroom));
+    }
 
     public static List<LauncherMatchResult> Filter(IReadOnlyList<LauncherApp> apps, string? rawQuery)
     {
@@ -1146,27 +1155,23 @@ internal static class LauncherRanker
             return new List<LauncherMatchResult>();
         }
 
-        var scored = new List<(LauncherMatchResult Result, string NameLower, int ServerIndex)>(apps.Count);
+        var scored = new List<(LauncherMatchResult Result, int ServerIndex)>(apps.Count);
         for (var i = 0; i < apps.Count; i++)
         {
             var app = apps[i];
             var eval = Evaluate(app, query, queryRunes);
             if (eval.Score <= 0) continue;
-            var totalScore = eval.Score + Math.Max(0, app.Boost);
+            var totalScore = eval.Score + EffectiveBoost(eval.Score, app.Boost);
             scored.Add((
                 new LauncherMatchResult(app, totalScore, eval.Source, eval.Indices),
-                NormalizeQuery(app.Name),
                 i
             ));
         }
 
+        // Preserve server frecency/mtime/id tiebreak via ServerIndex; never sort by name A–Z.
         scored.Sort((a, b) =>
         {
             var cmp = b.Result.Score.CompareTo(a.Result.Score);
-            if (cmp != 0) return cmp;
-            cmp = string.CompareOrdinal(a.NameLower, b.NameLower);
-            if (cmp != 0) return cmp;
-            cmp = string.CompareOrdinal(a.Result.App.Id, b.Result.App.Id);
             if (cmp != 0) return cmp;
             return a.ServerIndex.CompareTo(b.ServerIndex);
         });

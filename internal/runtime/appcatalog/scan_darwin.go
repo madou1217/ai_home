@@ -79,16 +79,24 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 				if meta.isBackgroundHelper() {
 					continue
 				}
-				aliases := filterDarwinAppAliases(meta.Names, displayName)
+				rawAliases := make([]string, 0, len(meta.Names)+2)
+				rawAliases = append(rawAliases, meta.Names...)
+				rawAliases = append(rawAliases, readDarwinLocalizedNames(fullPath)...)
+				aliases := filterDarwinAppAliases(rawAliases, displayName)
+				var modifiedAtMs int64
+				if info, statErr := os.Stat(realPath); statErr == nil {
+					modifiedAtMs = info.ModTime().UnixMilli()
+				}
 				apps = append(apps, launcher.App{
-					ID:       launcher.AppID(darwinPlatformString, realPath),
-					Name:     displayName,
-					Subtitle: fullPath,
-					Path:     fullPath,
-					Kind:     launcher.KindApp,
-					Icon:     fullPath,
-					Terminal: false,
-					Aliases:  aliases,
+					ID:           launcher.AppID(darwinPlatformString, realPath),
+					Name:         displayName,
+					Subtitle:     fullPath,
+					Path:         fullPath,
+					Kind:         launcher.KindApp,
+					Icon:         fullPath,
+					Terminal:     false,
+					Aliases:      aliases,
+					ModifiedAtMs: modifiedAtMs,
 				})
 				// Never recurse inside a .app bundle.
 				continue
@@ -143,6 +151,26 @@ func readDarwinAppPlist(bundlePath string) infoPlistMeta {
 		return infoPlistMeta{}
 	}
 	return parseInfoPlist(data)
+}
+
+func readDarwinLocalizedNames(bundlePath string) []string {
+	lprojDirs := []string{"zh_CN.lproj", "zh-Hans.lproj", "zh.lproj"}
+	for _, dir := range lprojDirs {
+		stringsPath := filepath.Join(bundlePath, "Contents", "Resources", dir, "InfoPlist.strings")
+		f, err := os.Open(stringsPath)
+		if err != nil {
+			continue
+		}
+		data, readErr := io.ReadAll(io.LimitReader(f, darwinMaxPlistBytes))
+		_ = f.Close()
+		if readErr != nil || len(data) == 0 {
+			continue
+		}
+		if names := parseInfoPlistStrings(data); len(names) > 0 {
+			return names
+		}
+	}
+	return nil
 }
 
 func filterDarwinAppAliases(raw []string, primaryName string) []string {

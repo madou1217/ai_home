@@ -61,7 +61,8 @@ func (s *Store) Load(_ context.Context) (launcher.UsageSnapshot, error) {
 	return s.readLocked()
 }
 
-// RecordOpen increments count and updates openedAtMs for appID, retaining the 500 most recent entries.
+// RecordOpen decays the existing frecency score to openedAtMs, adds 1, increments count,
+// and updates timestamps for appID, retaining the 500 most recently opened entries.
 func (s *Store) RecordOpen(ctx context.Context, appID string, openedAtMs int64) error {
 	if s == nil || s.path == "" {
 		return errors.New("launcher_store_uninitialized")
@@ -87,10 +88,7 @@ func (s *Store) RecordOpen(ctx context.Context, appID string, openedAtMs int64) 
 		// Recover from a corrupted usage file rather than permanently breaking opens.
 		snap = emptyUsageSnapshot()
 	}
-	entry := snap.Apps[id]
-	entry.Count++
-	entry.OpenedAtMs = openedAtMs
-	snap.Apps[id] = entry
+	snap.Apps[id] = launcher.AdvanceUsageEntry(snap.Apps[id], openedAtMs)
 
 	pruneUsage(&snap, launcher.MaxUsageEntries)
 	return s.writeAtomicLocked(snap)
@@ -143,11 +141,7 @@ func (s *Store) readLocked() (launcher.UsageSnapshot, error) {
 	if err := json.Unmarshal(raw, &snap); err != nil {
 		return emptyUsageSnapshot(), err
 	}
-	if snap.Apps == nil {
-		snap.Apps = map[string]launcher.UsageEntry{}
-	}
-	snap.Version = launcher.UsageVersion
-	return snap, nil
+	return launcher.MigrateUsageSnapshot(snap), nil
 }
 
 func (s *Store) writeAtomicLocked(snap launcher.UsageSnapshot) error {

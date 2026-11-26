@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -22,9 +23,19 @@ const (
 	ScoreSubseqMaxPen     = 150
 	ScoreSubtitleOnly     = 300
 
-	RecencyBoostWindow = 7 * 24 * time.Hour
-	RecencyBoostPoints = 30
-	CountBoostCap      = 10
+	// FrecencyHalfLife is the exponential decay time constant (14 days) for usage score (§6).
+	FrecencyHalfLife = 14 * 24 * time.Hour
+	// FrecencyBoostWeight scales decayed frecency score into integer boost points.
+	FrecencyBoostWeight = 60
+	// FrecencyBoostCap caps the integer raw boost emitted to API/UI clients.
+	FrecencyBoostCap = 700
+	// FrecencyEffectiveBoostCap bounds boost added to non-empty query scores so
+	// lower-tier matches (e.g. subsequence) cannot jump ahead of prefix matches.
+	FrecencyEffectiveBoostCap = 150
+	// FrecencyScoreCeiling caps boosted non-exact scores below ScoreExactName (1000).
+	FrecencyScoreCeiling = ScoreExactName - 1
+	// FrecencyV1MigrationCap caps initial score migrated from v1 usage.json counts.
+	FrecencyV1MigrationCap = 20
 )
 
 // NormalizeQuery trims whitespace and lowercases text while preserving CJK runes.
@@ -137,26 +148,135 @@ func aliasMatches(aliasRunes, qRunes []rune) bool {
 	return ok
 }
 
-// RecencyBoost computes the usage bonus: 30 (if opened within 7 days) + min(count, 10).
-func RecencyBoost(entry UsageEntry, now time.Time) int {
-	boost := 0
-	if entry.OpenedAtMs > 0 {
-		windowMs := RecencyBoostWindow.Milliseconds()
-		if now.UnixMilli()-entry.OpenedAtMs <= windowMs {
-			boost += RecencyBoostPoints
+// MigrateUsageSnapshot upgrades a v1 usage snapshot in memory to the current schema version.
+// v1 entries initialize Score = min(count, 20) and UpdatedAtMs = openedAtMs.
+func MigrateUsageSnapshot(snap UsageSnapshot) UsageSnapshot {
+	if snap.Apps == nil {
+		snap.Apps = map[string]UsageEntry{}
+	}
+	if snap.Version < UsageVersion {
+		for id, entry := range snap.Apps {
+			snap.Apps[id] = migrateV1UsageEntry(entry)
+		}
+	} else {
+		for id, entry := range snap.Apps {
+			if math.IsNaN(entry.Score) || math.IsInf(entry.Score, 0) || entry.Score < 0 {
+				entry.Score = 0
+				snap.Apps[id] = entry
+			}
 		}
 	}
-	if entry.Count > 0 {
-		c := entry.Count
-		if c > CountBoostCap {
-			c = CountBoostCap
-		}
-		boost += c
-	}
-	return boost
+	snap.Version = UsageVersion
+	return snap
 }
 
-// Rank filters (when query is non-empty) and sorts apps according to §6.
+func migrateV1UsageEntry(entry UsageEntry) UsageEntry {
+	if math.IsNaN(entry.Score) || math.IsInf(entry.Score, 0) || entry.Score < 0 {
+		entry.Score = 0
+	}
+	if entry.Score == 0 && entry.UpdatedAtMs == 0 {
+		c := entry.Count
+		if c < 0 {
+			c = 0
+		}
+		if c > FrecencyV1MigrationCap {
+			c = FrecencyV1MigrationCap
+		}
+		entry.Score = float64(c)
+		entry.UpdatedAtMs = entry.OpenedAtMs
+	}
+	return entry
+}
+
+// Frecency computes the exponentially decayed usage score of entry at now:
+// score * exp(-(now - updatedAt) / FrecencyHalfLife).
+func Frecency(entry UsageEntry, now time.Time) float64 {
+	score := entry.Score
+	updatedAtMs := entry.UpdatedAtMs
+	if score <= 0 && updatedAtMs == 0 && entry.Count > 0 {
+		migrated := migrateV1UsageEntry(entry)
+		score = migrated.Score
+		updatedAtMs = migrated.UpdatedAtMs
+	}
+	if score <= 0 || math.IsNaN(score) || math.IsInf(score, 0) {
+		return 0
+	}
+	if updatedAtMs <= 0 {
+		updatedAtMs = entry.OpenedAtMs
+	}
+	return decayScore(score, updatedAtMs, now.UnixMilli())
+}
+
+// FrecencyBoost converts entry's decayed frecency at now into the raw integer boost
+// clamp(round(frecency * FrecencyBoostWeight), 0, FrecencyBoostCap) emitted to API/UI clients.
+func FrecencyBoost(entry UsageEntry, now time.Time) int {
+	return frecencyToBoost(Frecency(entry, now))
+}
+
+// EffectiveBoost bounds rawBoost for non-empty query scoring:
+// min(rawBoost, 150, max(0, 999 - baseScore)).
+// Exact name matches (1000) always remain #1 and lower-tier matches cannot overtake prefix matches.
+func EffectiveBoost(baseScore, rawBoost int) int {
+	if rawBoost <= 0 {
+		return 0
+	}
+	headroom := FrecencyScoreCeiling - baseScore
+	if headroom <= 0 {
+		return 0
+	}
+	eff := rawBoost
+	if eff > FrecencyEffectiveBoostCap {
+		eff = FrecencyEffectiveBoostCap
+	}
+	if eff > headroom {
+		eff = headroom
+	}
+	return eff
+}
+
+// AdvanceUsageEntry decays entry's existing score to openedAtMs, adds 1, and updates
+// timestamps and count for a newly recorded application open.
+func AdvanceUsageEntry(entry UsageEntry, openedAtMs int64) UsageEntry {
+	decayed := Frecency(entry, time.UnixMilli(openedAtMs))
+	entry.Score = decayed + 1
+	entry.UpdatedAtMs = openedAtMs
+	entry.OpenedAtMs = openedAtMs
+	entry.Count++
+	return entry
+}
+
+func decayScore(score float64, updatedAtMs int64, nowMs int64) float64 {
+	if score <= 0 || math.IsNaN(score) || math.IsInf(score, 0) {
+		return 0
+	}
+	if updatedAtMs <= 0 || nowMs <= updatedAtMs {
+		return score
+	}
+	dtMs := float64(nowMs - updatedAtMs)
+	halfLifeMs := float64(FrecencyHalfLife.Milliseconds())
+	decayed := score * math.Exp(-dtMs/halfLifeMs)
+	if decayed <= 0 || math.IsNaN(decayed) || math.IsInf(decayed, 0) {
+		return 0
+	}
+	return decayed
+}
+
+func frecencyToBoost(frecency float64) int {
+	if frecency <= 0 || math.IsNaN(frecency) || math.IsInf(frecency, 0) {
+		return 0
+	}
+	scaled := math.Round(frecency * FrecencyBoostWeight)
+	if scaled <= 0 {
+		return 0
+	}
+	if scaled >= float64(FrecencyBoostCap) {
+		return FrecencyBoostCap
+	}
+	return int(scaled)
+}
+
+// Rank filters (when query is non-empty) and sorts apps according to §6 frecency rules.
+// Never uses application name A–Z ordering.
 func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) []App {
 	qNorm := NormalizeQuery(query)
 	if len(apps) == 0 {
@@ -165,9 +285,8 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 
 	if qNorm == "" {
 		type emptyItem struct {
-			app        App
-			openedAtMs int64
-			nameLower  string
+			app      App
+			frecency float64
 		}
 		items := make([]emptyItem, 0, len(apps))
 		for _, app := range apps {
@@ -175,23 +294,20 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 			if usage != nil {
 				entry = usage[app.ID]
 			}
-			app.Boost = RecencyBoost(entry, now)
+			frecency := Frecency(entry, now)
+			app.Boost = frecencyToBoost(frecency)
 			items = append(items, emptyItem{
-				app:        app,
-				openedAtMs: entry.OpenedAtMs,
-				nameLower:  NormalizeQuery(app.Name),
+				app:      app,
+				frecency: frecency,
 			})
 		}
 		sort.Slice(items, func(i, j int) bool {
 			a, b := items[i], items[j]
-			if (a.openedAtMs > 0) != (b.openedAtMs > 0) {
-				return a.openedAtMs > 0
+			if a.frecency != b.frecency {
+				return a.frecency > b.frecency
 			}
-			if a.openedAtMs != b.openedAtMs {
-				return a.openedAtMs > b.openedAtMs
-			}
-			if a.nameLower != b.nameLower {
-				return a.nameLower < b.nameLower
+			if a.app.ModifiedAtMs != b.app.ModifiedAtMs {
+				return a.app.ModifiedAtMs > b.app.ModifiedAtMs
 			}
 			return a.app.ID < b.app.ID
 		})
@@ -203,9 +319,8 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 	}
 
 	type scoredItem struct {
-		app       App
-		score     int
-		nameLower string
+		app   App
+		score int
 	}
 	scored := make([]scoredItem, 0, len(apps))
 	for _, app := range apps {
@@ -217,12 +332,11 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 		if usage != nil {
 			entry = usage[app.ID]
 		}
-		boost := RecencyBoost(entry, now)
+		boost := FrecencyBoost(entry, now)
 		app.Boost = boost
 		scored = append(scored, scoredItem{
-			app:       app,
-			score:     base + boost,
-			nameLower: NormalizeQuery(app.Name),
+			app:   app,
+			score: base + EffectiveBoost(base, boost),
 		})
 	}
 	sort.Slice(scored, func(i, j int) bool {
@@ -230,8 +344,11 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 		if a.score != b.score {
 			return a.score > b.score
 		}
-		if a.nameLower != b.nameLower {
-			return a.nameLower < b.nameLower
+		if a.app.Boost != b.app.Boost {
+			return a.app.Boost > b.app.Boost
+		}
+		if a.app.ModifiedAtMs != b.app.ModifiedAtMs {
+			return a.app.ModifiedAtMs > b.app.ModifiedAtMs
 		}
 		return a.app.ID < b.app.ID
 	})

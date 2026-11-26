@@ -376,3 +376,15 @@ Paste Nexus 设置新增 **Direct endpoint pairing**：填写对方 Server 的 L
 - 真机截图：macOS 原生底部 1520×472、左侧 460×780、右侧 460×780（X=3362，右边缘 18px 内）均正常；Windows 页面 1520×472/460×780 的纵向/横向布局由浏览器截图验证。
 
 Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，Edge 中标题为 `Paste // Nexus` 的 app 窗口数仍为 1（第二次被 `AppActivate` 聚焦），随后测试任务与目录已清理。
+
+## 21. 真实 Mac ↔ Windows 同步配置（2026-11-26）
+
+- Windows 真机服务升级到本分支二进制：`C:\Users\madou\.ai_home\bin\aih-server.exe`（备份 `aih-server.prev-20261126.exe`），CLI `aih-go.exe` 同步升级，`web/dist/paste/index.html` 已部署。
+- 通过 SSH 双隧道配对：
+  - Mac → Windows：`127.0.0.1:19537`，profile `cp-19gvll`；
+  - Windows → Mac：`127.0.0.1:29538`，profile `cp-driva1`；
+  - 两侧 syncEnabled=true、captureEnabled=true，lastSyncAt 正常。
+- 修复了一个关键遗漏：`GET /sync/items` 拉取端此前仍发送完整 payload，导致 Windows→Mac 会提前 materialize；现在拉取端也只发送索引，内容只走 `/sync/requests` 按需推送。
+- 实测真实链路：Mac 复制文本→Windows 出现 `materialized=false` stub；Windows 执行 `aih-go clip copy` 后内容落到 Windows 系统剪贴板。反向 Windows API 条目→Mac 为 stub，Mac `aih clip copy` 触发按需拉取后文本精确、`materialized=true`。
+- Windows 终端中文：CLI 启动时调用 `SetConsoleOutputCP(65001)/SetConsoleCP(65001)`；在 `chcp 936` 后执行 `aih-go clip ls` 仍正确显示中文（`，重点看 Windows 的 Tee-Object 路径…`）。
+- 隧道由本机 `ssh -fN` 持有；隧道断开时同步自动暂停，重连后继续。测试条目已从两侧删除。

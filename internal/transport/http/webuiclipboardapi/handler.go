@@ -787,7 +787,7 @@ func (h *Handler) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 	cursor := sinceMs
 	accBytes := 64
 	for _, item := range items {
-		payload, buildErr := clipboardruntime.BuildSyncPayload(r.Context(), h.Service, item)
+		payload, buildErr := clipboardruntime.BuildMetadataPayload(item)
 		if buildErr != nil {
 			// Skip un-buildable item (e.g. missing blob or >1 MiB text) without breaking pull.
 			if item.LastSeenAtMs > cursor {

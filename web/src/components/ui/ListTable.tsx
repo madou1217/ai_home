@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ProTable } from '@ant-design/pro-components';
 import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
-import { Empty, Skeleton, Grid } from 'antd';
+import { Empty, Skeleton, Grid, Pagination } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
@@ -19,6 +19,15 @@ export interface ListTableProps<T extends Record<string, any>, U extends Record<
   dataSource?: readonly T[];
   loading?: boolean;
   children?: ReactNode;
+  /** 分页配置：不传时用内置 12/页；传 total 表示服务端分页（数据只含当前页）。 */
+  pagination?: {
+    current?: number;
+    pageSize?: number;
+    total?: number;
+    pageSizeOptions?: number[];
+    showTotal?: (total: number) => string;
+    onChange?: (page: number, pageSize: number) => void;
+  };
 }
 
 const emptyText = (
@@ -149,6 +158,7 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
   toolBarRender,
   toolbar,
   children,
+  pagination,
   ...rest
 }: ListTableProps<T, U>) {
   const screens = Grid.useBreakpoint();
@@ -164,6 +174,14 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     return (row as any).key ?? (row as any).id ?? index;
   };
 
+  // 分页：默认客户端分页；传 pagination.total 时按服务端分页处理（dataSource 只含当前页）。
+  const totalRows = typeof pagination?.total === 'number'
+    ? pagination.total
+    : (Array.isArray(rest.dataSource) ? rest.dataSource.length : 0);
+  const safePageSize = Math.max(1, pagination?.pageSize ?? pageSize);
+  const maxPage = Math.max(1, Math.ceil(totalRows / safePageSize));
+  const effectivePage = Math.min(pagination?.current ?? currentPage, maxPage);
+
   // 首屏（loading 且无数据）走骨架屏；有缓存数据时即便 loading 也保持表格可见，
   // 仅由 ProTable 的轻量 overlay 提示刷新中，避免整表被遮罩闪白。
   const isFirstLoad = Boolean(rest.loading) && (!Array.isArray(rest.dataSource) || rest.dataSource.length === 0);
@@ -171,15 +189,26 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     return <ListTableSkeleton columns={columns} />;
   }
 
-  // 移动端：宽表格统一降级为卡片列表 + 无分页（避免横向溢出和显式分页）。
+  // 移动端：宽表格统一降级为卡片列表；服务端分页时补一个分页条，否则翻不到下一页。
   if (isMobile) {
-    return <ListTableMobileCards columns={columns} dataSource={rest.dataSource} rowKey={rowKey} />;
+    return (
+      <>
+        <ListTableMobileCards columns={columns} dataSource={rest.dataSource} rowKey={rowKey} />
+        {pagination && totalRows > safePageSize ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
+            <Pagination
+              size="small"
+              current={effectivePage}
+              pageSize={safePageSize}
+              total={totalRows}
+              showSizeChanger={false}
+              onChange={(page) => pagination.onChange?.(page, safePageSize)}
+            />
+          </div>
+        ) : null}
+      </>
+    );
   }
-
-  const totalRows = Array.isArray(rest.dataSource) ? rest.dataSource.length : 0;
-  const safePageSize = Math.max(1, pageSize);
-  const maxPage = Math.max(1, Math.ceil(totalRows / safePageSize));
-  const effectivePage = Math.min(currentPage, maxPage);
 
   const fixedProps = {
     className: 'unified-list-table',
@@ -192,10 +221,15 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
       pageSize: safePageSize,
       showSizeChanger: true,
       showQuickJumper: true,
-      showTotal: (total: number) => `共 ${total} 条`,
+      showTotal: pagination?.showTotal ?? ((total: number) => `共 ${total} 条`),
+      pageSizeOptions: pagination?.pageSizeOptions,
       onChange: (nextPage: number, nextPageSize: number) => {
         const resolvedSize = Math.max(1, nextPageSize || safePageSize);
         const resolvedPage = resolvedSize !== safePageSize ? 1 : nextPage;
+        if (pagination?.onChange) {
+          pagination.onChange(resolvedPage, resolvedSize);
+          return;
+        }
         const direction = resolvedPage > effectivePage
           ? 'forward'
           : resolvedPage < effectivePage

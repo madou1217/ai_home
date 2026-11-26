@@ -7,13 +7,13 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   TimePicker,
   Tooltip,
   message
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import type { ProColumns } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -29,6 +29,7 @@ import PageScaffold from '@/components/ui/PageScaffold';
 import Reveal from '@/components/ui/Reveal';
 import SaveActionBar from '@/components/ui/SaveActionBar';
 import SectionCard from '@/components/ui/SectionCard';
+import ListTable from '@/components/ui/ListTable';
 import { SettingRow, SettingSection } from '@/components/ui/SettingSection';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import HudStateView from '@/components/hud/HudStateView';
@@ -869,11 +870,11 @@ export default function ScheduledTasks() {
   ];
 
   const recordColumns: ColumnsType<ScheduledTaskRecord> = [
-    { title: '时间', width: 120, render: (_value, row) => <span className="scheduled-tasks-mono">{formatTime(row.startedAt)}</span> },
+    { title: '时间', width: 120, render: (_value: unknown, row: ScheduledTaskRecord) => <span className="scheduled-tasks-mono">{formatTime(row.startedAt)}</span> },
     { title: '任务', dataIndex: 'taskName', width: 160 },
     { title: '事件', dataIndex: 'eventLabel', width: 140 },
-    { title: '触发', width: 72, render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
-    { title: '结果', width: 96, render: (_value, row) => recordStatusTag(row.status) },
+    { title: '触发', width: 72, render: (_value: unknown, row: ScheduledTaskRecord) => (row.trigger === 'schedule' ? '定时' : '手动') },
+    { title: '结果', width: 96, render: (_value: unknown, row: ScheduledTaskRecord) => recordStatusTag(row.status) },
     {
       title: '摘要',
       render: (_value, row) => (
@@ -989,22 +990,14 @@ export default function ScheduledTasks() {
             )}
           />
         ) : (
-          <div className="scheduled-tasks-table-scroll">
-            <Table<ScheduledTask>
-              rowKey="id"
-              size="small"
-              loading={loading}
-              scroll={{ x: 'max-content' }}
-              pagination={{
-                pageSize: 10,
-                showSizeChanger: true,
-                pageSizeOptions: [10, 20, 50],
-                showTotal: (total) => `共 ${total} 个任务`
-              }}
-              dataSource={filteredTasks}
-              columns={taskColumns}
-            />
-          </div>
+          <ListTable<ScheduledTask>
+            rowKey="id"
+            size="small"
+            loading={loading}
+            dataSource={filteredTasks}
+            columns={taskColumns as unknown as ProColumns<ScheduledTask>[]}
+            pagination={{ pageSizeOptions: [10, 20, 50], showTotal: (total) => `共 ${total} 个任务` }}
+          />
         )}
       </SectionCard>
 
@@ -1041,32 +1034,28 @@ export default function ScheduledTasks() {
           {records.length === 0 ? (
             <HudStateView compact code="NO_LOGS" title={`最近 ${recordDays} 天暂无运行记录`} />
           ) : (
-            <div className="scheduled-tasks-table-scroll">
-              <Table<ScheduledTaskRecord>
-                rowKey="id"
-                size="small"
-                loading={loading}
-                scroll={{ x: 'max-content' }}
-                pagination={{
-                  current: recordPage,
-                  pageSize: recordPageSize,
-                  total: recordTotal,
-                  showSizeChanger: true,
-                  pageSizeOptions: [20, 50, 100],
-                  showTotal: (total) => `共 ${total} 条记录`,
-                  onChange: (page, pageSize) => {
-                    switchRecordsSurface(() => {
-                      setRecordPage(page);
-                      if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
-                    }, {
-                      direction: page > recordPage ? 'forward' : page < recordPage ? 'backward' : 'neutral'
-                    });
-                  }
-                }}
-                dataSource={records}
-                columns={recordColumns}
-              />
-            </div>
+            <ListTable<ScheduledTaskRecord>
+              rowKey="id"
+              size="small"
+              loading={loading}
+              dataSource={records}
+              columns={recordColumns as unknown as ProColumns<ScheduledTaskRecord>[]}
+              pagination={{
+                current: recordPage,
+                pageSize: recordPageSize,
+                total: recordTotal,
+                pageSizeOptions: [20, 50, 100],
+                showTotal: (total) => `共 ${total} 条记录`,
+                onChange: (page, pageSize) => {
+                  switchRecordsSurface(() => {
+                    setRecordPage(page);
+                    if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
+                  }, {
+                    direction: page > recordPage ? 'forward' : page < recordPage ? 'backward' : 'neutral'
+                  });
+                }
+              }}
+            />
           )}
         </div>
       </SectionCard>
@@ -1111,41 +1100,37 @@ export default function ScheduledTasks() {
             title={taskRecordsLoading ? '正在读取执行记录…' : `最近 ${recordDays} 天没有执行记录`}
           />
         ) : (
-          <div className="scheduled-tasks-table-scroll">
-            <Table<ScheduledTaskRecord>
-              rowKey="id"
-              size="small"
-              scroll={{ x: 'max-content' }}
-              pagination={{
-                current: taskRecordsPage,
-                pageSize: taskRecordsPageSize,
-                total: taskRecordsTotal,
-                showSizeChanger: true,
-                pageSizeOptions: [10, 20, 50],
-                showTotal: (total) => `共 ${total} 条记录`,
-                onChange: (page, pageSize) => {
-                  if (!recordsTask) return;
-                  setTaskRecordsPage(page);
-                  if (pageSize !== taskRecordsPageSize) setTaskRecordsPageSize(pageSize);
-                  void loadTaskRecords(recordsTask, page, pageSize);
-                }
-              }}
-              dataSource={taskRecords}
-              columns={[
-                { title: '时间', width: 120, render: (_value, row) => <span className="scheduled-tasks-mono">{formatTime(row.startedAt)}</span> },
-                { title: '触发', width: 72, render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
-                { title: '结果', width: 96, render: (_value, row) => recordStatusTag(row.status) },
-                {
-                  title: '摘要',
-                  render: (_value, row) => (
-                    <span className="scheduled-tasks-summary">
-                      {row.errorSummary || row.error || row.summary || '—'}
-                    </span>
-                  )
-                }
-              ]}
-            />
-          </div>
+          <ListTable<ScheduledTaskRecord>
+            rowKey="id"
+            size="small"
+            dataSource={taskRecords}
+            columns={[
+              { title: '时间', width: 120, render: (_value: unknown, row: ScheduledTaskRecord) => <span className="scheduled-tasks-mono">{formatTime(row.startedAt)}</span> },
+              { title: '触发', width: 72, render: (_value: unknown, row: ScheduledTaskRecord) => (row.trigger === 'schedule' ? '定时' : '手动') },
+              { title: '结果', width: 96, render: (_value: unknown, row: ScheduledTaskRecord) => recordStatusTag(row.status) },
+              {
+                title: '摘要',
+                render: (_value: unknown, row: ScheduledTaskRecord) => (
+                  <span className="scheduled-tasks-summary">
+                    {row.errorSummary || row.error || row.summary || '—'}
+                  </span>
+                )
+              }
+            ] as unknown as ProColumns<ScheduledTaskRecord>[]}
+            pagination={{
+              current: taskRecordsPage,
+              pageSize: taskRecordsPageSize,
+              total: taskRecordsTotal,
+              pageSizeOptions: [10, 20, 50],
+              showTotal: (total) => `共 ${total} 条记录`,
+              onChange: (page, pageSize) => {
+                if (!recordsTask) return;
+                setTaskRecordsPage(page);
+                if (pageSize !== taskRecordsPageSize) setTaskRecordsPageSize(pageSize);
+                void loadTaskRecords(recordsTask, page, pageSize);
+              }
+            }}
+          />
         )}
       </Modal>
     </PageScaffold>

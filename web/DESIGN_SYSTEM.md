@@ -27,6 +27,7 @@
   - `pagination = { pageSize: 12, showSizeChanger: true, showQuickJumper: true }`
   - 行 hover 走 `--color-overlay-subtle`（深 / 浅主题各自 3% 叠加），不自定义行底色
   - 空态统一 `Empty.PRESENTED_IMAGE_SIMPLE` + 文案 **“暂无数据”**
+- 可选项：`pagination={{ current, pageSize, total, pageSizeOptions, showTotal, onChange }}`。传 `total` 即服务端分页（`dataSource` 只放当前页，翻页由调用方重新取数）；移动端会自动补一个分页条。
 
 ### 其它公共件
 - `AppButton`（`src/components/ui/AppButton.tsx`）：提交类操作默认 720ms 防连点，展开 / 收起 / 切换必须传 `disableDebounce`。
@@ -52,7 +53,7 @@
 - 仪表盘 `ServiceWidgetGrid`、账号页统计条遵循同一外观。
 
 ## 反模式（一律拒绝评审/合入）
-- 页面级列表直接 `<PageContainer>` / `<ProCard>` / `<ProTable>` / `<Table>`。例外：弹窗、抽屉、面板内**无分页的只读小表**可用 antd `Table`（`pagination={false}`）；一旦需要分页或搜索就改用 `ListTable`。
+- 页面级列表直接 `<PageContainer>` / `<ProCard>` / `<ProTable>` / `<Table>`。例外：弹窗、抽屉、Settings tab 内**无分页的只读小表**可用 antd `Table`（`pagination={false}`）；需要分页（含服务端分页）或搜索时一律用 `ListTable`。
 - 列表上方平铺 `Statistic` 卡片（应进 `headerContent` Descriptions 条或 KPI 条）。
 - 页面内容里的整块 `Alert`（应改用 `InlineNote`）；左侧粗彩色竖条；浏览器原生 `alert` / `confirm` / `prompt`（应改用 `utils/confirm-action`；antd `Modal.confirm` 允许，优先 `confirmAction`）；界面上的演示 / 虚构数据。
 - 各页自写 `padding` / `margin` 做布局（应走令牌）。
@@ -78,9 +79,10 @@ Accounts → Models → ModelUsage → ModelAliases → Settings/SshHostsPanel �
 | SSH 开发机 | `/ssh-hosts` · `SshHosts.tsx` | 🔁 复用子组件 | 该页渲染 `<Settings section="ssh-hosts" />`。 |
 | 服务端设置 | `/server-setup` · `ServerSetup.tsx` | ✅ 已改造 | `PageScaffold` + `SectionCard` + `ListTable`（隐藏入口页）。 |
 | 设置 | `/settings` · `Settings.tsx` | ✅ 已改造 | `PageScaffold` + 8 个 tab；`/servers`、`/ssh-hosts` 复用其 section。 |
+| 计划任务 | `/scheduled-tasks` · `ScheduledTasks.tsx` | ✅ 已改造 | 三张表全部迁到 `ListTable`，含服务端分页的运行记录与弹窗记录。 |
 | 会话 | `/chat` · `Chat.tsx` | 🔁 专用布局 | 三栏工作区（`ChatWorkspaceLayout`）+ iOS 导航栈，自带布局，不走 `PageScaffold`。 |
 
 ### 注释
 - `Settings.tsx` 使用 `PageScaffold` 承载 8 个 tab（basic / capture / service / aliases / upstream-errors / failure-semantics / api-keys / concurrency）；`/servers` 与 `/ssh-hosts` 复用其中的 `control-planes` / `ssh-hosts` section，因此两者记为 🔁 复用子组件。原 `PageHero` 组件已移除。
-- `ClientKeys` / `ConcurrencyLimits` / `FailureSemantics` / `UpstreamErrorMappings` 四个页面目前未挂路由（`config/routes.ts` 无入口），迁移前先决定删除或补路由。
+- `ClientKeys` / `ConcurrencyLimits` / `FailureSemantics` / `UpstreamErrorMappings` 四个文件虽然放在 `src/pages` 下，但没有独立路由：它们是 `Settings.tsx` 直接 import 的 tab 内容组件（`api-keys` / `concurrency` / `failure-semantics` / `upstream-errors`），不是死代码。
 - `ModelAliases` 模型别名逻辑已迁到 `SectionCard` + `ListTable`，但作为独立路由页缺失，仍记为 🟡。

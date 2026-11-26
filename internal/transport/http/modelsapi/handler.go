@@ -15,6 +15,8 @@ import (
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/application/modelvisibility"
+	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 )
@@ -42,9 +44,28 @@ type Authorizer interface {
 	Authorized(request *http.Request) bool
 }
 
+// ScopedAuthorizer 是可选的鉴权能力：除布尔鉴权外还返回调用方身份与 Key 限制。
+//
+// 实现它之后，目录只展示这把 Key 实际可调用的模型；未实现时保持全局目录
+// （单 key 部署与测试桩）。判定由 application/modelvisibility 完成，与路由层
+// ScopedRoutes 使用同一套账号池/模型池语义。
+type ScopedAuthorizer interface {
+	Authorizer
+	Authenticate(request *http.Request) (coreclientkeys.Identity, bool)
+	Limits(keyID string) (coreclientkeys.Limits, bool)
+}
+
 // ModelReader 是 Handler 所需的本地物化目录最小端口。
 type ModelReader interface {
 	ListRoutableModels(ctx context.Context) ([]accountapp.RoutableModel, error)
+}
+
+// CarrierReader 是可选的模型读取能力：返回全部可执行 (Provider, 模型) 承载行。
+//
+// 公共目录按模型 ID 去重，无法据此判断某 Provider 是否承载某个共享模型
+// （同名模型常由多家提供），因此账号池过滤必须使用承载行。
+type CarrierReader interface {
+	ListRoutableModelCarriers(ctx context.Context) ([]accountapp.RoutableModel, error)
 }
 
 // Dependencies 声明标准模型目录的只读依赖。
@@ -106,9 +127,13 @@ func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
-	if handler == nil ||
-		handler.authorizer == nil ||
-		!handler.authorizer.Authorized(request) {
+	if handler == nil || handler.authorizer == nil {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeUnauthorized(response)
+		return
+	}
+	scope, authorized := handler.catalogScope(request)
+	if !authorized {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeUnauthorized(response)
 		return
@@ -123,7 +148,24 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
+	// 受限 Key 的目录必须与真实权限一致：同一份可见集合同时决定列表、单模型
+	// 查询与 supported_endpoints，避免「目录里有、调用报 403」。
+	var visibility modelvisibility.Result
+	if scope.Restricted() {
+		models, err := handler.routableRows(request.Context())
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		visibility = scope.Apply(models, handler.displayAliases())
+	}
 	if isSingleModel {
+		if scope.Restricted() {
+			if _, allowed := visibility.VisibleIDs[modelID]; !allowed {
+				writeModelForbidden(response)
+				return
+			}
+		}
 		writeSingleModel(response, request, modelID)
 		return
 	}
@@ -145,11 +187,16 @@ func (handler *Handler) ServeHTTP(
 		}
 	}
 	if views == nil {
-		models, err := handler.models.ListRoutableModels(request.Context())
-		if err != nil {
-			writeError(response, http.StatusInternalServerError, "internal_error")
-			return
+		models := visibility.Routable
+		if !scope.Restricted() {
+			loaded, err := handler.models.ListRoutableModels(request.Context())
+			if err != nil {
+				writeError(response, http.StatusInternalServerError, "internal_error")
+				return
+			}
+			models = loaded
 		}
+		var err error
 		views, err = newModelViews(
 			models,
 			handler.modalities,
@@ -164,6 +211,9 @@ func (handler *Handler) ServeHTTP(
 			writeError(response, http.StatusInternalServerError, "internal_error")
 			return
 		}
+	}
+	if scope.Restricted() {
+		views = keepVisibleViews(views, visibility.VisibleIDs)
 	}
 	if request.Method == http.MethodHead {
 		writeJSONHeaders(response, http.StatusOK)
@@ -598,6 +648,69 @@ func newModelModalitiesView(
 		Input:  modalities.Input(),
 		Output: modalities.Output(),
 	}
+}
+
+// catalogScope 认证请求并返回目录可见范围。
+//
+// 鉴权器实现 ScopedAuthorizer 时按身份取 Key 限制；否则退回布尔鉴权并视为
+// 不受限（单 key 部署、测试桩）。
+func (handler *Handler) catalogScope(request *http.Request) (modelvisibility.Scope, bool) {
+	if scoped, ok := handler.authorizer.(ScopedAuthorizer); ok {
+		identity, authorized := scoped.Authenticate(request)
+		if !authorized {
+			return modelvisibility.Scope{}, false
+		}
+		limits, _ := scoped.Limits(identity.KeyID)
+		return modelvisibility.FromLimits(limits), true
+	}
+	if !handler.authorizer.Authorized(request) {
+		return modelvisibility.Scope{}, false
+	}
+	return modelvisibility.Scope{}, true
+}
+
+// routableRows 返回用于账号池过滤的路由行。
+//
+// 优先取承载行（保留同一模型的全部 Provider）；读取端口只实现最小接口时退回
+// 公共目录，此时跨 Provider 的共享模型会按去重后的首个 Provider 判定。
+func (handler *Handler) routableRows(ctx context.Context) ([]accountapp.RoutableModel, error) {
+	if reader, ok := handler.models.(CarrierReader); ok {
+		return reader.ListRoutableModelCarriers(ctx)
+	}
+	return handler.models.ListRoutableModels(ctx)
+}
+
+// displayAliases 返回可展示的别名快照；未注入别名目录时为空。
+func (handler *Handler) displayAliases() []modelalias.DisplayModel {
+	if handler.aliases == nil {
+		return nil
+	}
+	return handler.aliases.ListDisplayModels()
+}
+
+// keepVisibleViews 只保留可见 ID 的目录项，保持原顺序。
+func keepVisibleViews(views []modelView, visible map[string]struct{}) []modelView {
+	if len(views) == 0 {
+		return views
+	}
+	kept := make([]modelView, 0, len(views))
+	for _, view := range views {
+		if _, allowed := visible[view.ID]; !allowed {
+			continue
+		}
+		kept = append(kept, view)
+	}
+	return kept
+}
+
+// writeModelForbidden 复用推理入口的模型池拒绝契约：同一错误码与文本。
+func writeModelForbidden(response http.ResponseWriter) {
+	writeJSON(response, http.StatusForbidden, map[string]any{
+		"error": map[string]string{
+			"code":    coreclientkeys.CodeModelNotAllowed,
+			"message": coreclientkeys.MessageModelNotAllowed,
+		},
+	})
 }
 
 // writeError 输出不包含内部错误文本的标准错误 envelope。

@@ -28,10 +28,20 @@ const (
 // ErrInvalidSecret 表示客户端 Key 的字符串形态不合法。
 var ErrInvalidSecret = errors.New("客户端 API Key 格式无效")
 
+// 模型池拒绝的稳定线格式：路由层与模型目录必须给出同一个错误码与文本，
+// 否则客户端会看到「目录里有、调用时报另一个错」的矛盾。
+const (
+	// CodeModelNotAllowed 是模型池拒绝的错误码。
+	CodeModelNotAllowed = "model_not_allowed"
+	// MessageModelNotAllowed 是模型池拒绝的错误文本。
+	MessageModelNotAllowed = "This API key is not allowed to use the requested model"
+)
+
 // Limits 是一把 Key 的限流字段；0 表示不限/继承。
 //
 // 并发、RPM、TPM 与每日 token 由 application/admission 执行；AllowedProviders
-// 与 AllowedModels 由路由解析层（application/inferencegateway.ScopedRoutes）执行：
+// 与 AllowedModels 由路由解析层（application/inferencegateway.ScopedRoutes）执行，
+// 模型目录（/v1/models）再由 application/modelvisibility 折算成同一份可见集合：
 // 空列表表示不限制，非空时分别限定可使用的账号池（Provider）与模型。
 type Limits struct {
 	MaxConcurrency   int

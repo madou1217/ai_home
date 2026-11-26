@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	coreclientkeys "github.com/madou1217/ai_home/core/clientkeys"
 )
 
 // ClientKeyScopeRejection 是客户端 Key 白名单拒绝的协议无关描述。
@@ -23,8 +24,8 @@ func ClientKeyScopeRejectionOf(err error) (ClientKeyScopeRejection, bool) {
 	case errors.Is(err, inferencegateway.ErrClientKeyModelForbidden):
 		return ClientKeyScopeRejection{
 			Status:  http.StatusForbidden,
-			Code:    "model_not_allowed",
-			Message: "This API key is not allowed to use the requested model",
+			Code:    coreclientkeys.CodeModelNotAllowed,
+			Message: coreclientkeys.MessageModelNotAllowed,
 		}, true
 	case errors.Is(err, inferencegateway.ErrClientKeyProviderForbidden):
 		return ClientKeyScopeRejection{

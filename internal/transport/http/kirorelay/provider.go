@@ -2,6 +2,7 @@ package kirorelay
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -122,6 +123,7 @@ func (provider *Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, 
 	encoded := EncodeConversation(request.Messages, EncodeOptions{
 		ModelID:           request.Model,
 		ToolCount:         request.ToolCount,
+		Tools:             request.Tools,
 		UnsupportedParams: request.UnsupportedParams,
 	})
 	if provider.profileArn != "" {
@@ -162,8 +164,46 @@ type chatRequest struct {
 	Model     string
 	Messages  []Message
 	ToolCount int
+	Tools     []ToolSpec
 	// UnsupportedParams 是 Chat 请求里 Coral conversationState 不承载的参数名。
 	UnsupportedParams []string
+}
+
+// rawChatMessage 是 Chat 消息里方言需要读取的字段。
+type rawChatMessage struct {
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCalls  []rawToolCall   `json:"tool_calls"`
+	ToolCallID string          `json:"tool_call_id"`
+	IsError    bool            `json:"is_error"`
+	Status     string          `json:"status"`
+}
+
+type rawToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// rawContentPart 是 content part 数组的元素。
+type rawContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text"`
+	ImageURL json.RawMessage `json:"image_url"`
+	URL      string          `json:"url"`
+}
+
+type rawToolDeclaration struct {
+	Type             string              `json:"type"`
+	Name             string              `json:"name"`
+	Description      string              `json:"description"`
+	Parameters       json.RawMessage     `json:"parameters"`
+	InputSchema      json.RawMessage     `json:"input_schema"`
+	InputSchemaCamel json.RawMessage     `json:"inputSchema"`
+	Function         *rawToolDeclaration `json:"function"`
 }
 
 // jsonFieldPresent 判断客户端是否真的声明了该字段（null/空串视为未声明）。
@@ -177,6 +217,7 @@ func parseChatRequest(body []byte) (chatRequest, error) {
 		Model           string            `json:"model"`
 		Messages        []json.RawMessage `json:"messages"`
 		Tools           []json.RawMessage `json:"tools"`
+		ToolChoice      json.RawMessage   `json:"tool_choice"`
 		MaxTokens       json.RawMessage   `json:"max_tokens"`
 		Temperature     json.RawMessage   `json:"temperature"`
 		TopP            json.RawMessage   `json:"top_p"`
@@ -203,60 +244,194 @@ func parseChatRequest(body []byte) (chatRequest, error) {
 			request.UnsupportedParams = append(request.UnsupportedParams, control.name)
 		}
 	}
-	for _, item := range raw.Messages {
-		var message struct {
-			Role    string          `json:"role"`
-			Content json.RawMessage `json:"content"`
-		}
+	if jsonFieldPresent(raw.ToolChoice) {
+		// 规则 7：Coral conversationState 没有 tool_choice 字段，语义等价 auto。
+		request.UnsupportedParams = append(request.UnsupportedParams, "tool_choice")
+	}
+	specs, droppedTools := parseToolDeclarations(raw.Tools)
+	request.Tools = specs
+	if droppedTools {
+		request.UnsupportedParams = append(request.UnsupportedParams, "tools")
+	}
+	droppedImages := false
+	for index, item := range raw.Messages {
+		var message rawChatMessage
 		if err := json.Unmarshal(item, &message); err != nil {
 			return chatRequest{}, err
 		}
-		text, hasImages := readContent(message.Content)
-		request.Messages = append(request.Messages, Message{
-			Role:      message.Role,
-			Content:   text,
-			HasImages: hasImages,
-		})
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		text, images, contentDropped := readContent(message.Content)
+		if contentDropped {
+			droppedImages = true
+		}
+		converted := Message{Role: role, Content: text, Images: images}
+		switch role {
+		case "tool", "function":
+			toolUseID := strings.TrimSpace(message.ToolCallID)
+			if toolUseID == "" {
+				converted.Content = text
+				break
+			}
+			status := "success"
+			if message.IsError || strings.EqualFold(strings.TrimSpace(message.Status), "error") {
+				status = "error"
+			}
+			resultText := text
+			if resultText == "" {
+				resultText = "(empty result)"
+			}
+			converted.Content = ""
+			converted.ToolResults = []ToolResult{{
+				ToolUseID: toolUseID,
+				Status:    status,
+				Content:   []ToolResultContent{{Text: resultText}},
+			}}
+		case "assistant":
+			uses := make([]ToolUse, 0, len(message.ToolCalls))
+			for callIndex, call := range message.ToolCalls {
+				name := strings.TrimSpace(call.Function.Name)
+				if name == "" {
+					continue
+				}
+				if call.Type != "" && call.Type != "function" {
+					continue
+				}
+				useID := strings.TrimSpace(call.ID)
+				if useID == "" {
+					useID = fmt.Sprintf("tooluse_%d_%d", index+1, callIndex+1)
+				}
+				uses = append(uses, ToolUse{
+					ToolUseID: useID,
+					Name:      name,
+					Input:     parseToolArguments(call.Function.Arguments),
+				})
+			}
+			converted.ToolUses = uses
+		}
+		request.Messages = append(request.Messages, converted)
+	}
+	if droppedImages {
+		// 远程图片 / 未知格式：截图中已显式写入占位文本，这里再如实上报。
+		request.UnsupportedParams = append(request.UnsupportedParams, "remote_image")
 	}
 	return request, nil
 }
 
+// parseToolDeclarations 把 Chat tools 转成 toolSpecification 输入。
+// 没有 name 的工具无法编码，返回 dropped=true 由调用方降级上报。
+func parseToolDeclarations(rawTools []json.RawMessage) ([]ToolSpec, bool) {
+	specs := make([]ToolSpec, 0, len(rawTools))
+	dropped := false
+	for _, rawTool := range rawTools {
+		var declaration rawToolDeclaration
+		if err := json.Unmarshal(rawTool, &declaration); err != nil {
+			dropped = true
+			continue
+		}
+		source := declaration
+		if declaration.Function != nil {
+			source = *declaration.Function
+		}
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			dropped = true
+			continue
+		}
+		schema := source.Parameters
+		if len(schema) == 0 {
+			schema = source.InputSchema
+		}
+		if len(schema) == 0 {
+			schema = source.InputSchemaCamel
+		}
+		specs = append(specs, ToolSpec{
+			Name:        name,
+			Description: strings.TrimSpace(source.Description),
+			Schema:      schema,
+		})
+	}
+	return specs, dropped
+}
+
+// parseToolArguments 把 Chat 的参数字符串解析成对象；无法解析时保留原文。
+func parseToolArguments(raw string) map[string]any {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return map[string]any{}
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(text), &object); err == nil && object != nil {
+		return object
+	}
+	return map[string]any{"input": text}
+}
+
 // readContent 接受 OpenAI 的两种 content 形态：字符串或 part 数组。
-func readContent(raw json.RawMessage) (string, bool) {
+// 返回文本、可发送图片、以及是否发生了不可发送图片的降级。
+func readContent(raw json.RawMessage) (string, []Image, bool) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
-		return "", false
+		return "", nil, false
 	}
 	if strings.HasPrefix(trimmed, `"`) {
 		var text string
 		if json.Unmarshal(raw, &text) == nil {
-			return strings.TrimSpace(text), false
+			return strings.TrimSpace(text), nil, false
 		}
-		return "", false
+		return "", nil, false
 	}
 	if !strings.HasPrefix(trimmed, "[") {
-		return "", false
+		return "", nil, false
 	}
-	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
+	var parts []rawContentPart
 	if err := json.Unmarshal(raw, &parts); err != nil {
-		return "", false
+		return "", nil, false
 	}
 	texts := make([]string, 0, len(parts))
-	hasImages := false
+	images := make([]Image, 0, 2)
+	dropped := false
 	for _, part := range parts {
 		switch part.Type {
-		case "text", "input_text":
+		case "text", "input_text", "output_text", "":
 			if text := strings.TrimSpace(part.Text); text != "" {
 				texts = append(texts, text)
 			}
 		case "image_url", "input_image", "image":
-			hasImages = true
+			url := readImageURL(part)
+			if image, ok := Base64Image(url); ok {
+				images = append(images, image)
+				continue
+			}
+			texts = append(texts, remoteImagePlaceholder)
+			dropped = true
 		}
 	}
-	return strings.Join(texts, "\n"), hasImages
+	return strings.Join(texts, "\n"), images, dropped
+}
+
+// readImageURL 兼容 image_url 字符串与对象两种形态。
+func readImageURL(part rawContentPart) string {
+	if part.URL != "" {
+		return part.URL
+	}
+	trimmed := strings.TrimSpace(string(part.ImageURL))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, `"`) {
+		var url string
+		if json.Unmarshal(part.ImageURL, &url) == nil {
+			return url
+		}
+		return ""
+	}
+	var object struct {
+		URL string `json:"url"`
+	}
+	if json.Unmarshal(part.ImageURL, &object) == nil {
+		return object.URL
+	}
+	return ""
 }
 
 func objectValue(value any) map[string]any {

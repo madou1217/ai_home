@@ -1,8 +1,11 @@
 package aihserver
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/sessionmodelalias"
@@ -303,14 +306,16 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 下游 Chat Handler 与家族透传都按规范路径判断合同，因此先把路径重写回
 	// /v1/chat/completions，避免兼容入口被当成未注册路径。
 	mux.Handle(openaichatcompletionsapi.ZhipuCompatPath, compatPathHandler{
-		path: openaichatcompletionsapi.Path,
-		next: chatHandler,
+		path:       openaichatcompletionsapi.Path,
+		next:       chatHandler,
+		stripNulls: true,
 	})
 	// 火山方舟官方 SDK 默认 base_url 是 /api/v3；方舟的请求/响应是 OpenAI Chat
 	// 合同，因此同样只做路径别名，复用同一个处理链。
 	mux.Handle(openaichatcompletionsapi.ArkCompatPath, compatPathHandler{
-		path: openaichatcompletionsapi.Path,
-		next: chatHandler,
+		path:       openaichatcompletionsapi.Path,
+		next:       chatHandler,
+		stripNulls: true,
 	})
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
 	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
@@ -459,6 +464,10 @@ func (dispatcher modelsDispatcher) ServeHTTP(
 type compatPathHandler struct {
 	path string
 	next http.Handler
+	// stripNulls 让官方 SDK 显式发送的顶层 null 可选字段按“未提供”处理。
+	// 火山方舟 SDK 会把未设置的 function_call / stream_options / thinking 等
+	// 全部序列化为 null；严格解码器会把这些键当成未知字段拒绝。
+	stripNulls bool
 }
 
 func (handler compatPathHandler) ServeHTTP(
@@ -470,11 +479,59 @@ func (handler compatPathHandler) ServeHTTP(
 		return
 	}
 	cloned := request.Clone(request.Context())
-	urlCopy := *request.URL
+	if handler.stripNulls {
+		cloned = stripNullTopLevelFields(cloned)
+	}
+	urlCopy := *cloned.URL
 	urlCopy.Path = handler.path
 	urlCopy.RawPath = ""
 	cloned.URL = &urlCopy
 	handler.next.ServeHTTP(response, cloned)
+}
+
+// stripNullTopLevelFields 删除 JSON 对象中值为 null 的顶层键。
+//
+// 标准 SDK 常把未设置的可选参数显式序列化为 null（火山方舟 SDK 最典型）。
+// 对严格解码器来说，这些键与“字段不存在”语义相同，但 DisallowUnknownFields
+// 会先因未知键失败。兼容入口在这里做一次无损归一，不改变非 null 值。
+func stripNullTopLevelFields(request *http.Request) *http.Request {
+	if request == nil || request.Body == nil || request.ContentLength <= 0 {
+		return request
+	}
+	const maxCompatBodyBytes = 32 << 20
+	if request.ContentLength > maxCompatBodyBytes {
+		return request
+	}
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		return request
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		return request
+	}
+	changed := false
+	for key, value := range object {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			delete(object, key)
+			changed = true
+		}
+	}
+	if !changed {
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		return request
+	}
+	normalized, err := json.Marshal(object)
+	if err != nil {
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		return request
+	}
+	request.Body = io.NopCloser(bytes.NewReader(normalized))
+	request.ContentLength = int64(len(normalized))
+	request.Header.Set("Content-Length", strconv.Itoa(len(normalized)))
+	return request
 }
 
 // betaModelsDispatcher 让 /v1beta/models/ 子树按路径形态分流：

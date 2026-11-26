@@ -5,7 +5,6 @@ package appcatalog
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -13,13 +12,16 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
 
 	"github.com/madou1217/ai_home/application/launcher"
 )
 
 const (
 	windowsPlatformString = "windows"
-	windowsUWPTimeout     = 8 * time.Second
+	// windowsShellAppsTimeout bounds the Shell AppsFolder enumeration. The Shell
+	// namespace can take a few seconds on machines with hundreds of Start entries.
+	windowsShellAppsTimeout = 25 * time.Second
 )
 
 func platformSupported() bool {
@@ -27,8 +29,9 @@ func platformSupported() bool {
 }
 
 func scanApps(ctx context.Context) ([]launcher.App, error) {
-	apps := make([]launcher.App, 0, 128)
-	seenLnk := make(map[string]struct{}, 128)
+	apps := make([]launcher.App, 0, 256)
+	seenLnk := make(map[string]struct{}, 256)
+	seenName := make(map[string]struct{}, 256)
 
 	for _, root := range windowsStartMenuRoots() {
 		if ctx.Err() != nil {
@@ -63,6 +66,7 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 			if info, infoErr := d.Info(); infoErr == nil {
 				modifiedAtMs = info.ModTime().UnixMilli()
 			}
+			seenName[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
 			apps = append(apps, launcher.App{
 				ID:           launcher.AppID(windowsPlatformString, key),
 				Name:         name,
@@ -77,8 +81,7 @@ func scanApps(ctx context.Context) ([]launcher.App, error) {
 		})
 	}
 
-	uwpApps := scanWindowsStartApps(ctx)
-	apps = append(apps, uwpApps...)
+	apps = append(apps, scanWindowsShellApps(ctx, seenName)...)
 	return apps, nil
 }
 
@@ -93,73 +96,130 @@ func windowsStartMenuRoots() []string {
 	return roots
 }
 
-type startAppRow struct {
-	Name  string `json:"Name"`
-	AppID string `json:"AppID"`
-}
-
-func scanWindowsStartApps(ctx context.Context) []launcher.App {
-	psCtx, cancel := context.WithTimeout(ctx, windowsUWPTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(
-		psCtx,
-		"powershell.exe",
-		"-NoProfile",
-		"-NonInteractive",
-		"-WindowStyle", "Hidden",
-		"-Command",
-		"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-StartApps | ConvertTo-Json -Compress",
-	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	out, err := cmd.Output()
+// scanWindowsShellApps enumerates the Start menu through the Shell AppsFolder
+// namespace, which returns desktop shortcuts and UWP/Store apps together.
+//
+// A temporary VBS executed by cscript is used instead of Get-StartApps: a child
+// powershell.exe can stall under the desktop helper's scheduled-task context on
+// some machines (observed 2026-11-26), which silently dropped every UWP entry.
+// The Shell namespace enumerates reliably there and writes UTF-16LE itself, so
+// no console code page or stdout encoding is involved.
+func scanWindowsShellApps(ctx context.Context, existingNames map[string]struct{}) []launcher.App {
+	dir, err := os.MkdirTemp("", "aih-startapps-")
 	if err != nil {
-		// Per §7: PowerShell UWP discovery fails silently without blocking Start Menu apps.
 		return nil
 	}
-	trimmed := bytes.TrimSpace(bytes.TrimPrefix(out, []byte{0xef, 0xbb, 0xbf}))
-	if len(trimmed) == 0 {
+	defer func() { _ = os.RemoveAll(dir) }()
+	outPath := filepath.Join(dir, "apps.tsv")
+	vbsPath := filepath.Join(dir, "enum.vbs")
+	script := strings.ReplaceAll(windowsShellAppsVBS, "{{OUT}}", strings.ReplaceAll(outPath, `"`, `""`))
+	if err := os.WriteFile(vbsPath, []byte(script), 0o600); err != nil {
 		return nil
 	}
 
-	var rows []startAppRow
-	if trimmed[0] == '[' {
-		if err := json.Unmarshal(trimmed, &rows); err != nil {
-			return nil
-		}
-	} else {
-		var single startAppRow
-		if err := json.Unmarshal(trimmed, &single); err != nil {
-			return nil
-		}
-		rows = []startAppRow{single}
+	cctx, cancel := context.WithTimeout(ctx, windowsShellAppsTimeout)
+	defer cancel()
+	cscript := filepath.Join(strings.TrimSpace(os.Getenv("SystemRoot")), "System32", "cscript.exe")
+	if _, statErr := os.Stat(cscript); statErr != nil {
+		cscript = "cscript.exe"
 	}
+	cmd := exec.CommandContext(cctx, cscript, "//nologo", vbsPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	_ = cmd.Run()
 
-	seenAppID := make(map[string]struct{}, len(rows))
-	result := make([]launcher.App, 0, len(rows))
-	for _, row := range rows {
-		name := strings.TrimSpace(row.Name)
-		appID := strings.TrimSpace(row.AppID)
-		if name == "" || appID == "" {
+	data, err := os.ReadFile(outPath)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	text := decodeWindowsText(data)
+
+	seenRow := make(map[string]struct{}, 256)
+	result := make([]launcher.App, 0, 256)
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" {
 			continue
 		}
-		normID := strings.ToLower(appID)
-		if _, dup := seenAppID[normID]; dup {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
 			continue
 		}
-		seenAppID[normID] = struct{}{}
+		name := strings.TrimSpace(parts[0])
+		target := strings.TrimSpace(parts[1])
+		if name == "" || target == "" {
+			continue
+		}
+		normName := strings.ToLower(name)
+		if _, dup := existingNames[normName]; dup {
+			continue
+		}
+		if _, dup := seenRow[normName]; dup {
+			continue
+		}
+		seenRow[normName] = struct{}{}
 
-		shellPath := `shell:AppsFolder\` + appID
+		if strings.ContainsAny(target, `:\`) {
+			// Desktop app exposed by the Shell with a real executable path.
+			var modifiedAtMs int64
+			if info, statErr := os.Stat(target); statErr == nil {
+				modifiedAtMs = info.ModTime().UnixMilli()
+			}
+			result = append(result, launcher.App{
+				ID:           launcher.AppID(windowsPlatformString, "path:"+strings.ToLower(target)),
+				Name:         name,
+				Subtitle:     target,
+				Path:         target,
+				Kind:         launcher.KindApp,
+				Icon:         target,
+				ModifiedAtMs: modifiedAtMs,
+			})
+			continue
+		}
+		// UWP/Store app or AUMID entry: launch through the AppsFolder shell path.
+		shellPath := `shell:AppsFolder\` + target
 		result = append(result, launcher.App{
-			ID:           launcher.AppID(windowsPlatformString, normID),
-			Name:         name,
-			Subtitle:     shellPath,
-			Path:         shellPath,
-			Kind:         launcher.KindUWP,
-			Icon:         "",
-			Terminal:     false,
-			ModifiedAtMs: 0,
+			ID:       launcher.AppID(windowsPlatformString, "uwp:"+strings.ToLower(target)),
+			Name:     name,
+			Subtitle: shellPath,
+			Path:     shellPath,
+			Kind:     launcher.KindUWP,
 		})
 	}
 	return result
 }
+
+// decodeWindowsText converts the UTF-16LE output written by the VBS (with BOM)
+// or UTF-8 data from a fallback tool into a Go string.
+func decodeWindowsText(data []byte) string {
+	if len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE {
+		units := make([]uint16, 0, (len(data)-2)/2)
+		for i := 2; i+1 < len(data); i += 2 {
+			units = append(units, uint16(data[i])|uint16(data[i+1])<<8)
+		}
+		return string(utf16.Decode(units))
+	}
+	return string(bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}))
+}
+
+const windowsShellAppsVBS = `Set fso = CreateObject("Scripting.FileSystemObject")
+Set out = fso.CreateTextFile("{{OUT}}", True, True)
+On Error Resume Next
+Set shell = CreateObject("Shell.Application")
+If Err.Number <> 0 Then
+  out.Close
+  WScript.Quit 1
+End If
+Set folder = shell.NameSpace("shell:AppsFolder")
+If Err.Number <> 0 Or folder Is Nothing Then
+  out.Close
+  WScript.Quit 1
+End If
+For Each item In folder.Items
+  name = item.Name
+  path = item.Path
+  If Len(name) > 0 And Len(path) > 0 Then
+    out.WriteLine name & vbTab & path
+  End If
+Next
+out.Close
+`

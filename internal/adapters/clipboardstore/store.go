@@ -62,6 +62,10 @@ CREATE TABLE IF NOT EXISTS clipboard_sync_state (
   value TEXT NOT NULL,
   updated_at_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS clipboard_requests (
+  sha256 TEXT PRIMARY KEY,
+  requested_at_ms INTEGER NOT NULL
+);
 `
 
 // Store implements clipboard.Store on top of aih.db.
@@ -108,6 +112,13 @@ func Open(ctx context.Context, aiHomeDir string) (*Store, error) {
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("初始化剪贴板表失败: %w", err)
+	}
+	// Additive migrations for existing databases; duplicate-column errors are ignored.
+	for _, statement := range []string{
+		`ALTER TABLE clipboard_items ADD COLUMN materialized INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE clipboard_items ADD COLUMN remote_source TEXT NOT NULL DEFAULT ''`,
+	} {
+		_, _ = db.ExecContext(ctx, statement)
 	}
 	// The DB (and any WAL sidecar already present) holds plaintext and the sync
 	// key; tighten after creation so a CLI-first open cannot leave 0644.
@@ -185,8 +196,8 @@ INSERT INTO clipboard_items (
   id, sha256, kind, mime, text, blob_path, byte_size, width, height,
   preview, thumbnail, files_json, source_device, source_app,
   pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
-  synced_at_ms, remote_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?)
+  synced_at_ms, remote_id, materialized, remote_source
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO UPDATE SET
   last_seen_at_ms = CASE
     WHEN excluded.last_seen_at_ms > clipboard_items.last_seen_at_ms THEN excluded.last_seen_at_ms
@@ -195,7 +206,13 @@ ON CONFLICT(sha256) DO UPDATE SET
   seen_count = clipboard_items.seen_count + 1,
   deleted = 0,
   deleted_at_ms = 0,
-  blob_path = CASE WHEN clipboard_items.blob_path = '' THEN excluded.blob_path ELSE clipboard_items.blob_path END,
+  text = CASE WHEN excluded.materialized = 1 THEN excluded.text ELSE clipboard_items.text END,
+  blob_path = CASE WHEN excluded.materialized = 1 THEN excluded.blob_path WHEN clipboard_items.blob_path = '' THEN excluded.blob_path ELSE clipboard_items.blob_path END,
+  files_json = CASE WHEN excluded.materialized = 1 THEN excluded.files_json ELSE clipboard_items.files_json END,
+  byte_size = CASE WHEN excluded.materialized = 1 THEN excluded.byte_size ELSE clipboard_items.byte_size END,
+  materialized = CASE WHEN excluded.materialized = 1 THEN 1 ELSE clipboard_items.materialized END,
+  preview = CASE WHEN excluded.preview <> '' THEN excluded.preview ELSE clipboard_items.preview END,
+  remote_source = CASE WHEN excluded.remote_source <> '' THEN excluded.remote_source ELSE clipboard_items.remote_source END,
   thumbnail = CASE WHEN clipboard_items.thumbnail IS NULL OR length(clipboard_items.thumbnail) = 0 THEN excluded.thumbnail ELSE clipboard_items.thumbnail END,
   width = CASE WHEN clipboard_items.width = 0 THEN excluded.width ELSE clipboard_items.width END,
   height = CASE WHEN clipboard_items.height = 0 THEN excluded.height ELSE clipboard_items.height END,
@@ -224,6 +241,8 @@ ON CONFLICT(sha256) DO UPDATE SET
 		item.LastSeenAtMs,
 		item.SyncedAtMs,
 		item.RemoteID,
+		boolToInt(item.Materialized),
+		item.RemoteSource,
 	); err != nil {
 		return clipboard.Item{}, false, err
 	}
@@ -277,7 +296,7 @@ func (s *Store) ListItems(ctx context.Context, filter clipboard.ListFilter) ([]c
 SELECT id, sha256, kind, mime, blob_path, byte_size, width, height,
        preview, thumbnail, files_json, source_device, source_app,
        pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
-       synced_at_ms, remote_id
+       synced_at_ms, remote_id, materialized, remote_source
 FROM clipboard_items`)
 	if len(where) > 0 {
 		query.WriteString(" WHERE ")
@@ -314,6 +333,44 @@ func (s *Store) GetItemByID(ctx context.Context, id string) (clipboard.Item, boo
 }
 
 // GetItemByPrefix resolves a unique ID prefix across active items first, then all items.
+// GetItemBySHA finds an item by its content hash (used to serve on-demand sync content).
+func (s *Store) GetItemBySHA(ctx context.Context, sha string) (clipboard.Item, bool, error) {
+	return queryFullItem(ctx, s.db, `WHERE sha256 = ? AND deleted = 0`, strings.ToLower(strings.TrimSpace(sha)))
+}
+
+// RequestContent records that a synced stub needs its full content from a peer.
+func (s *Store) RequestContent(ctx context.Context, sha string, nowMs int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO clipboard_requests (sha256, requested_at_ms) VALUES (?, ?) ON CONFLICT(sha256) DO UPDATE SET requested_at_ms = excluded.requested_at_ms`, strings.ToLower(strings.TrimSpace(sha)), nowMs)
+	return err
+}
+
+// ListContentRequests returns pending content hashes in request order.
+func (s *Store) ListContentRequests(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT sha256 FROM clipboard_requests ORDER BY requested_at_ms ASC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]string, 0, limit)
+	for rows.Next() {
+		var sha string
+		if err := rows.Scan(&sha); err != nil {
+			return nil, err
+		}
+		out = append(out, sha)
+	}
+	return out, rows.Err()
+}
+
+// ClearContentRequest removes a fulfilled request.
+func (s *Store) ClearContentRequest(ctx context.Context, sha string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM clipboard_requests WHERE sha256 = ?`, strings.ToLower(strings.TrimSpace(sha)))
+	return err
+}
+
 func (s *Store) GetItemByPrefix(ctx context.Context, prefix string) (clipboard.Item, bool, error) {
 	pattern := escapeLike(prefix) + "%"
 	const query = fullItemSelect + ` WHERE deleted = 0 AND id LIKE ? ESCAPE '\' LIMIT 2`
@@ -688,7 +745,7 @@ const fullItemSelect = `
 SELECT id, sha256, kind, mime, text, blob_path, byte_size, width, height,
        preview, thumbnail, files_json, source_device, source_app,
        pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
-       synced_at_ms, remote_id
+       synced_at_ms, remote_id, materialized, remote_source
 FROM clipboard_items`
 
 func queryFullItem(ctx context.Context, q rowQuerier, clause string, args ...any) (clipboard.Item, bool, error) {
@@ -710,7 +767,7 @@ type rowScanner interface {
 func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 	var item clipboard.Item
 	var kind, filesJSON string
-	var pinned, deleted int
+	var pinned, deleted, materialized int
 	if err := scanner.Scan(
 		&item.ID,
 		&item.SHA256,
@@ -734,10 +791,13 @@ func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 		&item.LastSeenAtMs,
 		&item.SyncedAtMs,
 		&item.RemoteID,
+		&materialized,
+		&item.RemoteSource,
 	); err != nil {
 		return clipboard.Item{}, err
 	}
 	item.Kind = clipboard.Kind(kind)
+	item.Materialized = materialized != 0
 	item.Pinned = pinned != 0
 	item.Deleted = deleted != 0
 	item.Files = decodeFilesJSON(filesJSON)
@@ -747,7 +807,7 @@ func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 	var item clipboard.Item
 	var kind, filesJSON string
-	var pinned, deleted int
+	var pinned, deleted, materialized int
 	if err := scanner.Scan(
 		&item.ID,
 		&item.SHA256,
@@ -770,10 +830,13 @@ func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 		&item.LastSeenAtMs,
 		&item.SyncedAtMs,
 		&item.RemoteID,
+		&materialized,
+		&item.RemoteSource,
 	); err != nil {
 		return clipboard.Item{}, err
 	}
 	item.Kind = clipboard.Kind(kind)
+	item.Materialized = materialized != 0
 	item.Pinned = pinned != 0
 	item.Deleted = deleted != 0
 	item.Files = decodeFilesJSON(filesJSON)

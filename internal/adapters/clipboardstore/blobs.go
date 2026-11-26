@@ -7,6 +7,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/madou1217/ai_home/application/clipboard"
 )
 
 const blobRelativePrefix = "clipboard/blobs/"
@@ -131,4 +133,43 @@ func isValidSHA256Hex(s string) bool {
 		}
 	}
 	return true
+}
+
+// MaterializeFiles writes on-demand synced file bytes into
+// <aiHome>/clipboard/materialized/<sha>/ and returns local paths. Names are
+// reduced to base names and de-duplicated so a peer cannot escape the cache.
+func (b *BlobStore) MaterializeFiles(sha256Hex string, files []clipboard.MaterializedFile) ([]string, int64, error) {
+	hexName := strings.ToLower(strings.TrimSpace(sha256Hex))
+	if !isValidSHA256Hex(hexName) {
+		return nil, 0, fmt.Errorf("%w: invalid sha256", errInvalidBlobPath)
+	}
+	dir := filepath.Join(b.aiHomeDir, "clipboard", "materialized", hexName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, 0, fmt.Errorf("创建剪贴板内容目录失败: %w", err)
+	}
+	used := make(map[string]struct{}, len(files))
+	paths := make([]string, 0, len(files))
+	var total int64
+	for _, file := range files {
+		name := filepath.Base(strings.TrimSpace(file.Name))
+		if name == "" || name == "." || name == string(filepath.Separator) {
+			name = "clipboard-file"
+		}
+		base := name
+		for index := 2; ; index++ {
+			if _, exists := used[name]; !exists {
+				break
+			}
+			ext := filepath.Ext(base)
+			name = fmt.Sprintf("%s-%d%s", strings.TrimSuffix(base, ext), index, ext)
+		}
+		used[name] = struct{}{}
+		target := filepath.Join(dir, name)
+		if err := os.WriteFile(target, file.Data, 0o600); err != nil {
+			return nil, 0, fmt.Errorf("写入剪贴板内容文件失败: %w", err)
+		}
+		paths = append(paths, target)
+		total += int64(len(file.Data))
+	}
+	return paths, total, nil
 }

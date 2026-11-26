@@ -115,6 +115,12 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 			sourceDevice = dev.ID
 		}
 	}
+	if input.Lazy {
+		return s.ingestLazy(ctx, input, nowMs, sourceDevice)
+	}
+	if input.Kind == KindFile && len(input.FilePayload) > 0 {
+		return s.ingestMaterializedFiles(ctx, input, nowMs, sourceDevice)
+	}
 
 	item := Item{
 		ID:           uuid.NewString(),
@@ -125,6 +131,7 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (IngestResult, 
 		CreatedAtMs:  nowMs,
 		LastSeenAtMs: nowMs,
 		SeenCount:    1,
+		Materialized: true,
 	}
 
 	mime := limitClipText(strings.TrimSpace(input.MIME), 200)
@@ -323,7 +330,147 @@ func (s *Service) ResolveSelector(ctx context.Context, selector string) (Item, e
 }
 
 // ReadContent loads the exact payload bytes for an item (inline text, blob file, or newline-joined file paths).
+func (s *Service) ingestLazy(ctx context.Context, input IngestInput, nowMs int64, sourceDevice string) (IngestResult, error) {
+	sha := strings.ToLower(strings.TrimSpace(input.SHA256))
+	if !isSHA256Hex(sha) {
+		return IngestResult{}, fmt.Errorf("%w: lazy item requires sha256", ErrInvalidInput)
+	}
+	if !input.Kind.Valid() {
+		return IngestResult{}, ErrInvalidKind
+	}
+	preview := input.Preview
+	if preview == "" {
+		preview = truncateRunes(string(input.Kind), MaxPreviewRunes)
+	}
+	thumbnail := input.Thumbnail
+	if len(thumbnail) > 64*1024 {
+		thumbnail = thumbnail[:64*1024]
+	}
+	item := Item{
+		ID:           uuid.NewString(),
+		SHA256:       sha,
+		Kind:         input.Kind,
+		MIME:         limitClipText(strings.TrimSpace(input.MIME), 200),
+		ByteSize:     input.ByteSize,
+		Width:        input.Width,
+		Height:       input.Height,
+		Preview:      truncateRunes(preview, MaxPreviewRunes),
+		Thumbnail:    thumbnail,
+		Files:        append([]string(nil), input.Files...),
+		SourceDevice: limitClipText(sourceDevice, 200),
+		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
+		RemoteID:     strings.TrimSpace(input.RemoteID),
+		RemoteSource: strings.TrimSpace(input.RemoteSource),
+		SyncedAtMs:   input.SyncedAtMs,
+		CreatedAtMs:  nowMs,
+		LastSeenAtMs: nowMs,
+		SeenCount:    1,
+		Materialized: false,
+	}
+	persisted, deduplicated, err := s.store.UpsertItem(ctx, item)
+	if err != nil {
+		return IngestResult{}, err
+	}
+	return IngestResult{Item: persisted, Deduplicated: deduplicated}, nil
+}
+
+func (s *Service) ingestMaterializedFiles(ctx context.Context, input IngestInput, nowMs int64, sourceDevice string) (IngestResult, error) {
+	sha := strings.ToLower(strings.TrimSpace(input.SHA256))
+	if !isSHA256Hex(sha) {
+		names := make([]string, 0, len(input.FilePayload))
+		for _, file := range input.FilePayload {
+			names = append(names, file.Name)
+		}
+		sha = sha256Hex([]byte(strings.Join(names, "\n")))
+	}
+	paths, total, err := s.blobs.MaterializeFiles(sha, input.FilePayload)
+	if err != nil {
+		return IngestResult{}, err
+	}
+	if len(paths) == 0 {
+		return IngestResult{}, ErrEmptyContent
+	}
+	mime := limitClipText(strings.TrimSpace(input.MIME), 200)
+	if mime == "" {
+		mime = "text/uri-list"
+	}
+	item := Item{
+		ID:           uuid.NewString(),
+		SHA256:       sha,
+		Kind:         KindFile,
+		MIME:         mime,
+		ByteSize:     total,
+		Preview:      buildFilePreview(paths),
+		Files:        paths,
+		SourceDevice: limitClipText(sourceDevice, 200),
+		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
+		RemoteID:     strings.TrimSpace(input.RemoteID),
+		SyncedAtMs:   input.SyncedAtMs,
+		CreatedAtMs:  nowMs,
+		LastSeenAtMs: nowMs,
+		SeenCount:    1,
+		Materialized: true,
+	}
+	persisted, deduplicated, err := s.store.UpsertItem(ctx, item)
+	if err != nil {
+		return IngestResult{}, err
+	}
+	if err := s.store.ClearContentRequest(ctx, sha); err != nil {
+		return IngestResult{}, err
+	}
+	return IngestResult{Item: persisted, Deduplicated: deduplicated}, nil
+}
+
+func isSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+// RequestMaterialization marks an index-only synced item so the source peer
+// pushes its full content on the next sync pass.
+func (s *Service) RequestMaterialization(ctx context.Context, id string) (Item, bool, error) {
+	item, found, err := s.store.GetItemByID(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return Item{}, false, err
+	}
+	if !found {
+		return Item{}, false, ErrNotFound
+	}
+	if item.Materialized {
+		return item, true, nil
+	}
+	if err := s.store.RequestContent(ctx, item.SHA256, s.clock().UnixMilli()); err != nil {
+		return Item{}, false, err
+	}
+	return item, false, nil
+}
+
+// GetBySHA returns a local item by content hash for on-demand content serving.
+func (s *Service) GetBySHA(ctx context.Context, sha string) (Item, bool, error) {
+	return s.store.GetItemBySHA(ctx, sha)
+}
+
+// ContentRequests lists hashes a peer should materialize.
+func (s *Service) ContentRequests(ctx context.Context, limit int) ([]string, error) {
+	return s.store.ListContentRequests(ctx, limit)
+}
+
+// ClearContentRequest removes a pending request.
+func (s *Service) ClearContentRequest(ctx context.Context, sha string) error {
+	return s.store.ClearContentRequest(ctx, sha)
+}
+
 func (s *Service) ReadContent(ctx context.Context, item Item) (Content, error) {
+	if !item.Materialized {
+		return Content{}, ErrNotMaterialized
+	}
 	result := Content{
 		Item: item,
 		MIME: item.MIME,
@@ -783,6 +930,17 @@ func normalizeFilePaths(files []string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func truncateRunes(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 // limitClipText bounds metadata so a caller cannot inflate envelope size through

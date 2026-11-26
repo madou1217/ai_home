@@ -13,6 +13,7 @@ type Store interface {
 	UpsertItem(ctx context.Context, item Item) (persisted Item, deduplicated bool, err error)
 	ListItems(ctx context.Context, filter ListFilter) ([]Item, error)
 	GetItemByID(ctx context.Context, id string) (Item, bool, error)
+	GetItemBySHA(ctx context.Context, sha string) (Item, bool, error)
 	GetItemByPrefix(ctx context.Context, prefix string) (Item, bool, error)
 	GetItemByIndex(ctx context.Context, oneBasedIndex int) (Item, bool, error)
 	SetPinned(ctx context.Context, id string, pinned bool) (Item, bool, error)
@@ -31,6 +32,9 @@ type Store interface {
 	ListUnsyncedItems(ctx context.Context, limit int) ([]Item, error)
 	MarkItemsSynced(ctx context.Context, ids []string, atMs int64) error
 	ListItemsSince(ctx context.Context, sinceMs int64, limit int) ([]Item, error)
+	RequestContent(ctx context.Context, sha string, nowMs int64) error
+	ListContentRequests(ctx context.Context, limit int) ([]string, error)
+	ClearContentRequest(ctx context.Context, sha string) error
 }
 
 // BlobStore manages on-disk clipboard blobs under ~/.ai_home/clipboard/blobs/.
@@ -39,6 +43,7 @@ type BlobStore interface {
 	Read(relativePath string) ([]byte, error)
 	ResolvePath(relativePath string) (string, error)
 	Delete(relativePath string) error
+	MaterializeFiles(sha256Hex string, files []MaterializedFile) (paths []string, totalBytes int64, err error)
 }
 
 // RuntimeProbe optionally reports live capture/sync/transport state to Status.

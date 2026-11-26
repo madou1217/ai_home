@@ -109,6 +109,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleSyncKey(w, r)
 	case rest == "sync/items":
 		h.handleSyncItems(w, r)
+	case rest == "sync/requests":
+		h.handleSyncRequests(w, r)
 	case rest == "sync/run", rest == "sync-run":
 		h.handleSyncRun(w, r)
 	default:
@@ -136,6 +138,7 @@ type itemView struct {
 	LastSeenAtMs     int64          `json:"lastSeenAtMs"`
 	SyncedAtMs       int64          `json:"syncedAtMs,omitempty"`
 	RemoteID         string         `json:"remoteId,omitempty"`
+	Materialized     bool           `json:"materialized"`
 }
 
 type itemDetailView struct {
@@ -166,6 +169,7 @@ func toItemView(item clipboard.Item) itemView {
 		LastSeenAtMs:     item.LastSeenAtMs,
 		SyncedAtMs:       item.SyncedAtMs,
 		RemoteID:         item.RemoteID,
+		Materialized:     item.Materialized,
 	}
 }
 
@@ -308,6 +312,19 @@ func (h *Handler) handleItemSubroute(w http.ResponseWriter, r *http.Request, tai
 		}
 		h.handleItemContent(w, r, id)
 
+	case strings.HasSuffix(tail, "/materialize"):
+		id := strings.TrimSuffix(tail, "/materialize")
+		if id == "" || strings.Contains(id, "/") {
+			writeError(w, http.StatusNotFound, "not_found", "没有这个剪贴板路由")
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+			return
+		}
+		h.handleMaterializeItem(w, r, id)
+
 	case strings.HasSuffix(tail, "/preview"):
 		id := strings.TrimSuffix(tail, "/preview")
 		if id == "" || strings.Contains(id, "/") {
@@ -409,6 +426,25 @@ func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id s
 		h.writeDomainError(w, err)
 		return
 	}
+	if !item.Materialized {
+		_, ready, requestErr := h.Service.RequestMaterialization(r.Context(), id)
+		if requestErr != nil {
+			h.writeDomainError(w, requestErr)
+			return
+		}
+		if !ready {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":        map[string]string{"code": "clipboard_content_pending", "message": "正在从源设备获取内容"},
+				"retryAfterMs": 800,
+			})
+			return
+		}
+		item, err = h.Service.Get(r.Context(), id)
+		if err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+	}
 	content, err := h.Service.ReadContentForItem(r.Context(), item)
 	if err != nil {
 		h.writeDomainError(w, err)
@@ -426,6 +462,19 @@ func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id s
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content.Data)
+}
+
+func (h *Handler) handleMaterializeItem(w http.ResponseWriter, r *http.Request, id string) {
+	item, ready, err := h.Service.RequestMaterialization(r.Context(), id)
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	state := "pending"
+	if ready {
+		state = "ready"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"state": state, "item": toItemView(item)})
 }
 
 func (h *Handler) handleItemPreview(w http.ResponseWriter, r *http.Request, id string) {
@@ -668,7 +717,13 @@ func (h *Handler) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "clipboard_sync_decrypt_failed", "同步负载解密失败")
 			return
 		}
-		ingestInput, verifyErr := clipboardruntime.VerifyAndDecodePayload(sealed.SHA256, payload, nowMs)
+		var ingestInput clipboard.IngestInput
+		var verifyErr error
+		if payload.Lazy {
+			ingestInput, verifyErr = clipboardruntime.VerifyMetadata(sealed.SHA256, payload, nowMs, "")
+		} else {
+			ingestInput, verifyErr = clipboardruntime.VerifyAndDecodePayload(sealed.SHA256, payload, nowMs)
+		}
 		if verifyErr != nil {
 			h.writeDomainError(w, verifyErr)
 			return
@@ -679,6 +734,9 @@ func (h *Handler) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		shaKey := strings.ToLower(strings.TrimSpace(sealed.SHA256))
+		if !payload.Lazy {
+			_ = h.Service.ClearContentRequest(r.Context(), shaKey)
+		}
 		ids[shaKey] = res.Item.ID
 		dedup[shaKey] = res.Deduplicated
 	}
@@ -764,6 +822,26 @@ func (h *Handler) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		"items":  sealedItems,
 		"cursor": cursor,
 	})
+}
+
+func (h *Handler) handleSyncRequests(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	shas, err := h.Service.ContentRequests(r.Context(), limit)
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"shas": shas})
 }
 
 func (h *Handler) handleSyncRun(w http.ResponseWriter, r *http.Request) {

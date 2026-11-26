@@ -62,6 +62,7 @@ const (
 )
 
 var (
+	ErrNotMaterialized = errors.New("clipboard_content_not_materialized")
 	ErrInvalidInput    = errors.New("clipboard_invalid_input")
 	ErrEmptyContent    = errors.New("clipboard_empty_content")
 	ErrItemTooLarge    = errors.New("clipboard_item_too_large")
@@ -115,6 +116,10 @@ type Item struct {
 	LastSeenAtMs int64    `json:"lastSeenAtMs"`
 	SyncedAtMs   int64    `json:"syncedAtMs,omitempty"`
 	RemoteID     string   `json:"remoteId,omitempty"`
+	// Materialized is false for synced index-only stubs; the full content is
+	// fetched on demand when the user actually pastes the item.
+	Materialized bool   `json:"materialized"`
+	RemoteSource string `json:"remoteSource,omitempty"`
 }
 
 // Device identifies a host participating in clipboard history.
@@ -213,6 +218,12 @@ type Status struct {
 }
 
 // IngestInput is the normalized ingestion request shared by capture, API, and sync.
+// MaterializedFile is one file payload transferred on demand.
+type MaterializedFile struct {
+	Name string
+	Data []byte
+}
+
 type IngestInput struct {
 	Kind         Kind
 	MIME         string
@@ -227,6 +238,17 @@ type IngestInput struct {
 	RemoteID     string
 	SyncedAtMs   int64
 	ObservedAtMs int64
+	// Lazy marks a synced index-only item with no content.
+	Lazy bool
+	// SHA256 is the sender's content id for lazy/full synced items.
+	SHA256 string
+	// Preview/ByteSize describe a lazy item (Thumbnail above is reused).
+	Preview        string
+	ByteSize       int64
+	SourceEndpoint string
+	RemoteSource   string
+	// FilePayload carries materialized file bytes for on-demand transfers.
+	FilePayload []MaterializedFile
 }
 
 // IngestResult reports the upserted item and whether it matched an existing SHA-256.

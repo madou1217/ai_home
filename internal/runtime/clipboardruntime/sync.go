@@ -1,6 +1,7 @@
 package clipboardruntime
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/aes"
@@ -17,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -60,6 +62,12 @@ type SyncPayload struct {
 	SourceDevice string         `json:"sourceDevice,omitempty"`
 	SourceApp    string         `json:"sourceApp,omitempty"`
 	CreatedAtMs  int64          `json:"createdAtMs"`
+	// Lazy marks an index-only envelope; content is fetched on demand.
+	Lazy              bool   `json:"lazy,omitempty"`
+	Preview           string `json:"preview,omitempty"`
+	ThumbnailBase64   string `json:"thumbnailBase64,omitempty"`
+	ByteSize          int64  `json:"byteSize,omitempty"`
+	FileArchiveBase64 string `json:"fileArchiveBase64,omitempty"`
 }
 
 // SealedSyncItem is one AES-256-GCM envelope on the wire: base64(nonce || ciphertext).
@@ -138,6 +146,34 @@ func OpenSyncPayload(key []byte, item SealedSyncItem) (SyncPayload, error) {
 	return payload, nil
 }
 
+// BuildMetadataPayload builds the index-only envelope: previews and thumbnails
+// sync immediately, full text/image/file bytes wait for an activation request.
+func BuildMetadataPayload(item clipboard.Item) (SyncPayload, error) {
+	if !item.Kind.Valid() || !item.Materialized && item.Preview == "" && len(item.Files) == 0 {
+		return SyncPayload{}, clipboard.ErrInvalidInput
+	}
+	payload := SyncPayload{
+		OriginID:     item.ID,
+		Kind:         item.Kind,
+		MIME:         item.MIME,
+		Width:        item.Width,
+		Height:       item.Height,
+		SourceDevice: item.SourceDevice,
+		SourceApp:    item.SourceApp,
+		CreatedAtMs:  item.CreatedAtMs,
+		Lazy:         true,
+		Preview:      item.Preview,
+		ByteSize:     item.ByteSize,
+	}
+	if item.Kind == clipboard.KindFile {
+		payload.Files = append([]string(nil), item.Files...)
+	}
+	if item.Kind == clipboard.KindImage && len(item.Thumbnail) > 0 {
+		payload.ThumbnailBase64 = base64.StdEncoding.EncodeToString(item.Thumbnail)
+	}
+	return payload, nil
+}
+
 // BuildSyncPayload constructs a SyncPayload from a persisted clipboard.Item, reading blobs if needed.
 func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clipboard.Item) (SyncPayload, error) {
 	payload := SyncPayload{
@@ -162,6 +198,11 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
 		payload.Files = normalized
+		archive, archiveErr := buildFileArchive(item.Files)
+		if archiveErr != nil {
+			return SyncPayload{}, archiveErr
+		}
+		payload.FileArchiveBase64 = base64.StdEncoding.EncodeToString(archive)
 	case clipboard.KindImage:
 		content, err := service.ReadContentForItem(ctx, item)
 		if err != nil {
@@ -222,6 +263,22 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 	}
 	switch payload.Kind {
 	case clipboard.KindFile:
+		if strings.TrimSpace(payload.FileArchiveBase64) != "" {
+			raw, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(payload.FileArchiveBase64))
+			if decodeErr != nil {
+				return clipboard.IngestInput{}, ErrSyncDecryptFailed
+			}
+			files, archiveErr := materializedFilesFromArchive(raw)
+			if archiveErr != nil {
+				return clipboard.IngestInput{}, archiveErr
+			}
+			if len(files) == 0 {
+				return clipboard.IngestInput{}, clipboard.ErrEmptyContent
+			}
+			input.FilePayload = files
+			input.SHA256 = want
+			return input, nil
+		}
 		normalized, canonical := clipboard.NormalizeSyncedFilePaths(payload.Files)
 		if len(canonical) == 0 {
 			return clipboard.IngestInput{}, clipboard.ErrEmptyContent
@@ -259,6 +316,127 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 		input.Text = payload.Text
 	}
 	return input, nil
+}
+
+// VerifyMetadata converts an index-only payload into a lazy IngestInput. The
+// envelope itself is authenticated by AES-GCM; the SHA is the content id that
+// the source will serve on demand.
+func VerifyMetadata(expectedSHA string, payload SyncPayload, syncedAtMs int64, remoteSource string) (clipboard.IngestInput, error) {
+	want := strings.ToLower(strings.TrimSpace(expectedSHA))
+	if len(want) != 64 || !payload.Kind.Valid() {
+		return clipboard.IngestInput{}, clipboard.ErrInvalidInput
+	}
+	var thumbnail []byte
+	if strings.TrimSpace(payload.ThumbnailBase64) != "" {
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload.ThumbnailBase64))
+		if err != nil {
+			return clipboard.IngestInput{}, clipboard.ErrInvalidInput
+		}
+		thumbnail = decoded
+	}
+	files := append([]string(nil), payload.Files...)
+	preview := payload.Preview
+	if preview == "" && len(files) > 0 {
+		names := make([]string, 0, len(files))
+		for _, file := range files {
+			names = append(names, filepath.Base(file))
+		}
+		preview = strings.Join(names, ", ")
+	}
+	return clipboard.IngestInput{
+		Kind:         payload.Kind,
+		MIME:         payload.MIME,
+		Lazy:         true,
+		SHA256:       want,
+		Preview:      preview,
+		Thumbnail:    thumbnail,
+		ByteSize:     payload.ByteSize,
+		Files:        files,
+		Width:        payload.Width,
+		Height:       payload.Height,
+		SourceDevice: payload.SourceDevice,
+		SourceApp:    payload.SourceApp,
+		RemoteID:     payload.OriginID,
+		SyncedAtMs:   syncedAtMs,
+		ObservedAtMs: syncedAtMs,
+		RemoteSource: remoteSource,
+	}, nil
+}
+
+// buildFileArchive packs referenced files into a zip for on-demand transfer.
+func buildFileArchive(files []string) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	var total int64
+	for _, raw := range files {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if info.Size() > 16*1024*1024 {
+			continue
+		}
+		total += info.Size()
+		if total > 32*1024*1024 {
+			return nil, clipboard.ErrItemTooLarge
+		}
+		entry, err := writer.Create(filepath.Base(path))
+		if err != nil {
+			_ = writer.Close()
+			return nil, err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if _, err := entry.Write(data); err != nil {
+			_ = writer.Close()
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	if buffer.Len() == 0 {
+		return nil, clipboard.ErrEmptyContent
+	}
+	return buffer.Bytes(), nil
+}
+
+func materializedFilesFromArchive(raw []byte) ([]clipboard.MaterializedFile, error) {
+	reader, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return nil, err
+	}
+	files := make([]clipboard.MaterializedFile, 0, len(reader.File))
+	var total int64
+	for _, entry := range reader.File {
+		if entry.FileInfo().IsDir() {
+			continue
+		}
+		if entry.UncompressedSize64 > 16*1024*1024 {
+			continue
+		}
+		stream, err := entry.Open()
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(io.LimitReader(stream, 16*1024*1024))
+		_ = stream.Close()
+		if err != nil {
+			return nil, err
+		}
+		total += int64(len(data))
+		if total > 32*1024*1024 {
+			return nil, clipboard.ErrItemTooLarge
+		}
+		files = append(files, clipboard.MaterializedFile{Name: entry.Name, Data: data})
+	}
+	return files, nil
 }
 
 // ProfileResolver resolves a control-plane server profile ID into its base endpoint and management key.
@@ -420,6 +598,9 @@ func (s *Syncer) runSyncLocked(ctx context.Context, profileID string) error {
 	if err := s.pushUnsynced(ctx, endpoint, mgmtKey, activeKey); err != nil {
 		return err
 	}
+	if err := s.serveContentRequests(ctx, endpoint, mgmtKey, activeKey); err != nil {
+		log.Printf("[clipboard-sync] serve content requests: %v", err)
+	}
 	if err := s.pullRemote(ctx, endpoint, mgmtKey, profileID, activeKey); err != nil {
 		return err
 	}
@@ -532,7 +713,7 @@ func (s *Syncer) pushUnsynced(ctx context.Context, endpoint, mgmtKey string, key
 		entries := make([]pendingEntry, 0, len(unsynced))
 		unbuildableIDs := make([]string, 0)
 		for _, item := range unsynced {
-			payload, buildErr := BuildSyncPayload(ctx, s.Service, item)
+			payload, buildErr := BuildMetadataPayload(item)
 			if buildErr != nil {
 				// Item cannot be synced (e.g. >1 MiB text or missing blob); skip without stalling.
 				unbuildableIDs = append(unbuildableIDs, item.ID)
@@ -641,6 +822,51 @@ func (s *Syncer) postSyncBatch(ctx context.Context, itemsURL, mgmtKey string, ba
 	return nil
 }
 
+// serveContentRequests asks the peer which stubs were activated, then pushes
+// only those full payloads. This keeps the normal sync pass index-only and
+// works with one-way reachability (source -> target).
+func (s *Syncer) serveContentRequests(ctx context.Context, endpoint, mgmtKey string, key []byte) error {
+	requestURL := endpoint + syncPathPrefix + "/sync/requests?limit=50"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+mgmtKey)
+	resp, err := s.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var body struct {
+		SHAs []string `json:"shas"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
+		return err
+	}
+	itemsURL := endpoint + syncPathPrefix + "/sync/items"
+	for _, sha := range body.SHAs {
+		item, found, err := s.Service.GetBySHA(ctx, sha)
+		if err != nil || !found || !item.Materialized {
+			continue
+		}
+		payload, err := BuildSyncPayload(ctx, s.Service, item)
+		if err != nil {
+			continue
+		}
+		sealed, err := SealSyncPayload(key, item.SHA256, payload)
+		if err != nil {
+			continue
+		}
+		if err := s.postSyncBatch(ctx, itemsURL, mgmtKey, []SealedSyncItem{sealed}); err != nil {
+			log.Printf("[clipboard-sync] push requested content sha=%s: %v", sha, err)
+		}
+	}
+	return nil
+}
+
 func (s *Syncer) pullRemote(ctx context.Context, endpoint, mgmtKey, profileID string, key []byte) error {
 	cursorKey := "cursor." + profileID
 	var sinceMs int64
@@ -698,7 +924,13 @@ func (s *Syncer) pullRemote(ctx context.Context, endpoint, mgmtKey, profileID st
 				log.Printf("[clipboard-sync] skip unreadable item sha=%s: %v", sealed.SHA256, openErr)
 				continue
 			}
-			input, verifyErr := VerifyAndDecodePayload(sealed.SHA256, payload, nowMs)
+			var input clipboard.IngestInput
+			var verifyErr error
+			if payload.Lazy {
+				input, verifyErr = VerifyMetadata(sealed.SHA256, payload, nowMs, profileID)
+			} else {
+				input, verifyErr = VerifyAndDecodePayload(sealed.SHA256, payload, nowMs)
+			}
 			if verifyErr != nil {
 				log.Printf("[clipboard-sync] skip mismatched item sha=%s: %v", sealed.SHA256, verifyErr)
 				continue

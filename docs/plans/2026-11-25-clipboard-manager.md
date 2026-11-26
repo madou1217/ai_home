@@ -351,3 +351,19 @@ Paste Nexus 设置新增 **Direct endpoint pairing**：填写对方 Server 的 L
 - `aih clip shortcut install` 在桌面写入 `AIH Quick Orbit.lnk`，WScript 读回 TargetPath、`clip orbit` 参数、Hotkey `Alt+Ctrl+V`。
 - DOCX 文件条目经 Windows 服务预览 API 返回 `AIH DOCX preview probe / Second paragraph 中文内容`。
 - 实际启动 Edge app 窗口并截屏：Quick Orbit 1520×438，真实卡片（Code/File doc.docx/Text/Image）和底部快捷键、分页、Paste 均正常；截图保存在本机 `~/Downloads/aih-windows-quickorbit.png`。测试服务、计划任务、Edge 测试 profile、快捷方式与目录已全部清理，未触碰 Windows 上原有的 9527 服务。
+
+## 19. 索引优先的按需同步（2026-11-26）
+
+同步默认只发送**索引**，不发送完整内容：
+
+- 文本/链接：只同步 preview；图片：同步缩略图；文件：只同步文件名/来源路径/大小。
+- 目标端建立 `materialized=0` 的 stub；面板历史可立即看到卡片，但 `GET /content` 返回 `409 clipboard_content_pending` 并记录请求。
+- 源端同步循环读取目标的 `/sync/requests`，只对已激活的 SHA 推送完整封包（文本/图片/文件夹 zip）；目标 ingest 后置 `materialized=1` 并清除请求。
+- 文件在激活时才按需传输并落到目标 `clipboard/materialized/<sha>/`，粘贴得到本机真实文件路径；未激活的文件只占一条索引。
+- `aih clip copy <id>` 在目标端会自动触发 materialize 并轮询，然后写入本机剪贴板。
+
+真实验证（Mac 源 → Windows 目标，SSH 隧道）：
+
+- Mac 连续复制 10 个不同类型内容，Windows 历史出现 10 条 `materialized=false` 的 stub（文本/链接/图片/文件，含中文），没有提前传输正文。
+- Windows 侧 `aih clip copy` 一个文本 stub：源端自动推送后 Windows 剪贴板变为 `MAC-LAZY-TEXT-1`；文件 stub 复制后 Windows 剪贴板得到 `...\materialized\<sha>\doc.docx` 真实文件。
+- 两个本地 Server 的懒同步同样验证：文本、图片（SHA 完全一致）、DOCX（zip 解包落地）均按需 materialize，请求自动清空。

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -89,7 +90,7 @@ func runClip(ctx context.Context, arguments []string, runtime commandRuntime) er
 	case "paste":
 		return runClipPaste(ctx, service, rest, runtime)
 	case "copy":
-		return runClipCopy(ctx, service, sysIO, rest, runtime)
+		return runClipCopy(ctx, service, sysIO, homeDir, rest, runtime)
 	case "pick", "ui":
 		return runClipPick(ctx, service, sysIO, rest, runtime)
 	case "pin":
@@ -411,7 +412,58 @@ func runClipPaste(ctx context.Context, service *clipboard.Service, args []string
 	}
 }
 
-func runClipCopy(ctx context.Context, service *clipboard.Service, sysIO clipboardio.Writer, args []string, runtime commandRuntime) error {
+// ensureClipMaterialized asks the local Server to pull a synced index-only item
+// from its source peer, then waits for the shared DB row to become materialized.
+func ensureClipMaterialized(ctx context.Context, service *clipboard.Service, item clipboard.Item, homeDir string, runtime commandRuntime) (clipboard.Item, error) {
+	if item.Materialized {
+		return item, nil
+	}
+	base := strings.TrimRight(clipOrbitOrigin(runtime), "/")
+	key := resolveManagementKey(homeDir)
+	if base == "" || key == "" {
+		return item, errors.New("synced item content pending: server management key unavailable")
+	}
+	idPath := url.PathEscape(item.ID)
+	body := strings.NewReader("{}")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/management/webui/clipboard/items/"+idPath+"/materialize", body)
+	if err != nil {
+		return item, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	if resp, requestErr := (&http.Client{Timeout: 10 * time.Second}).Do(req); requestErr == nil {
+		_ = resp.Body.Close()
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		getReq, getErr := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/management/webui/clipboard/items/"+idPath, nil)
+		if getErr != nil {
+			return item, getErr
+		}
+		getReq.Header.Set("Authorization", "Bearer "+key)
+		resp, getErr := (&http.Client{Timeout: 10 * time.Second}).Do(getReq)
+		if getErr == nil {
+			var payload struct {
+				Item struct {
+					Materialized bool `json:"materialized"`
+				} `json:"item"`
+			}
+			decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload)
+			_ = resp.Body.Close()
+			if decodeErr == nil && payload.Item.Materialized {
+				return service.Get(ctx, item.ID)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return item, ctx.Err()
+		case <-time.After(700 * time.Millisecond):
+		}
+	}
+	return item, errors.New("synced item content pending: source device did not respond")
+}
+
+func runClipCopy(ctx context.Context, service *clipboard.Service, sysIO clipboardio.Writer, homeDir string, args []string, runtime commandRuntime) error {
 	selector := "#1"
 	hasSelector := false
 	for _, arg := range args {
@@ -433,6 +485,10 @@ func runClipCopy(ctx context.Context, service *clipboard.Service, sysIO clipboar
 		return fmt.Errorf("clipboard copy unavailable: %s", reason)
 	}
 	item, err := service.ResolveSelector(ctx, selector)
+	if err != nil {
+		return err
+	}
+	item, err = ensureClipMaterialized(ctx, service, item, homeDir, runtime)
 	if err != nil {
 		return err
 	}

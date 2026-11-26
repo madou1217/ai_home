@@ -31,6 +31,7 @@ body.mode-quick[data-embed=browser]{background:#080b15!important}body.mode-quick
 .dochead{display:flex;align-items:center;gap:8px;font-size:12px;color:#cfe3f7}.dochead small{margin-left:auto;font:10px Consolas,monospace;color:#8496b0}.docpreview{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.6 "Cascadia Code",Consolas,monospace;color:#c8d8ec;background:#091323;border:1px solid #1d3046;border-radius:8px;padding:10px}.pdfpreview{width:100%;height:min(52vh,420px);border:1px solid #1d3046;border-radius:8px;background:#0b1220}
 .docactions{display:flex;gap:8px;align-items:center}
 .settingcontrol input{background:#0a1220;border:1px solid #2d4058;color:#dce9f8;border-radius:6px;padding:6px 8px;font-size:11px;min-width:170px;outline:none}.settingcontrol input:focus{border-color:#4db9d0}
+.indexbadge{margin-left:6px;padding:1px 5px;border:1px solid #3b798b;border-radius:4px;color:#7fe6ff;font:9px Consolas,monospace;letter-spacing:.08em}
 #quickWindow>.quickhead,#quickWindow>.quickfooter{flex:0 0 auto}
 #quickWindow>.filters{flex:0 0 auto;align-items:center;overflow-x:auto;overflow-y:hidden}
 #quickWindow>.filters::-webkit-scrollbar{display:none}
@@ -205,7 +206,7 @@ function mapServerItem(item){
     device:devName||item.sourceDevice||'Local',
     time:formatRelative(item.lastSeenAtMs||item.createdAtMs),
     title,
-    value:baseText,
+    value:item.materialized===false?rawPreview:baseText,
     site:urlMeta.site||'',
     domain:urlMeta.domain||'',
     thumbnailDataUrl:item.thumbnailDataUrl||'',
@@ -217,7 +218,8 @@ function mapServerItem(item){
     createdAtMs:Number(item.createdAtMs||0),
     lastSeenAtMs:Number(item.lastSeenAtMs||item.createdAtMs||0),
     pinned:Boolean(item.pinned),
-    hydrated:item.kind==='image'||item.kind==='file'||Boolean(hasCached),
+    materialized:item.materialized!==false,
+    hydrated:(item.kind==='image'||item.kind==='file'||Boolean(hasCached))&&item.materialized!==false,
     textTruncated:hasCached?Boolean(cached.textTruncated):false
   };
 }
@@ -249,9 +251,9 @@ function body(c,full=false){
     }
     return `<div class="fileicon">${icon('file')}</div><strong>${esc(c.title)}</strong><small>${esc(sub)}</small>`;
   }
-  return `<p>${esc(c.value)}</p>`;
+  return `<p>${esc(c.value)}</p>${c.materialized===false?'<small class="micro">INDEX ONLY · paste to fetch</small>':''}`;
 }
-function card(c,i,keys=false){return `<article tabindex="0" role="option" aria-selected="${c.id===selected}" data-id="${esc(c.id)}" data-type="${esc(c.type)}" class="clip ${c.id===selected?'selected':''}"><div class="cliphead">${icon(typeIcon(c.type))}${labels[c.type]||c.type}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div><div class="clipfoot">${icon('cube')}<span>${esc(c.app)} · ${esc(c.title)}</span>${c.pinned?`<i class="pin">${icon('pin')}</i>`:''}</div>${keys&&i<9?`<span class="keynum">${i+1}</span>`:''}</article>`}
+function card(c,i,keys=false){return `<article tabindex="0" role="option" aria-selected="${c.id===selected}" data-id="${esc(c.id)}" data-type="${esc(c.type)}" class="clip ${c.id===selected?'selected':''}"><div class="cliphead">${icon(typeIcon(c.type))}${labels[c.type]||c.type}${c.materialized===false?'<span class="indexbadge">INDEX</span>':''}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div><div class="clipfoot">${icon('cube')}<span>${esc(c.app)} · ${esc(c.title)}</span>${c.pinned?`<i class="pin">${icon('pin')}</i>`:''}</div>${keys&&i<9?`<span class="keynum">${i+1}</span>`:''}</article>`}
 function filterButtons(id){$(id).innerHTML=Object.entries(labels).map(([k,v])=>`<button class="filter ${filter===k?'active':''}" data-filter="${k}">${icon(k==='all'?'grid':typeIcon(k))}${v}${k==='all'?` <b>${data.length}</b>`:''}</button>`).join('');$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()})}
 function getVisible(){
   let q=query.toLowerCase().trim();
@@ -353,7 +355,7 @@ function updateFocus(scroll=true){
 }
 function select(id,scroll=true){if(!data.some(c=>c.id===id))return;selected=id;updateFocus(scroll);const c=current();if(c&&!c.hydrated)hydrateOne(c)}
 async function ensureFullImage(c,container){
-  if(!c||c.type!=='image')return;
+  if(!c||c.type!=='image'||c.materialized===false)return;
   if(imageUrlCache.has(c.id))return;
   const gen=++previewImageGen;
   try{
@@ -368,7 +370,7 @@ async function ensureFullImage(c,container){
   }catch(e){}
 }
 async function loadFilePreview(c){
-  if(!c||c.rawKind!=='file'||filePreviewCache.has(c.id))return;
+  if(!c||c.rawKind!=='file'||c.materialized===false||filePreviewCache.has(c.id))return;
   try{
     const res=await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}/preview`);
     const p=res?.preview;
@@ -452,8 +454,30 @@ function closeQuickSurface(){
   if(!isQuickPage&&quickOpened)openQuick(false);
 }
 
+async function ensureMaterialized(c){
+  if(!c||c.materialized!==false)return true;
+  notify('正在从源设备获取…');
+  try{await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}/materialize`,{method:'POST',body:'{}'})}catch(e){}
+  for(let i=0;i<20;i++){
+    await new Promise(r=>setTimeout(r,700));
+    try{
+      const res=await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}`);
+      const item=res?.item;
+      if(item?.materialized){
+        Object.assign(c,mapServerItem(item));
+        c.type=c.type||mapServerItem(item).type;
+        filePreviewCache.delete(c.id);
+        scheduleRender();
+        return true;
+      }
+    }catch(e){}
+  }
+  notify('源设备暂未响应，稍后重试');
+  return false;
+}
 async function paste(c){
   if(!c)return;
+  if(!(await ensureMaterialized(c)))return;
   try{
     if(c.type==='image'){
       let copied=false,blobPromise=fetchContentBlob(c.id);
@@ -710,7 +734,7 @@ function commands(){
 }
 
 async function hydrateOne(clip){
-  if(!clip||clip.hydrated||clip.rawKind==='image'||clip.rawKind==='file')return;
+  if(!clip||clip.hydrated||clip.materialized===false||clip.rawKind==='image'||clip.rawKind==='file')return;
   try{
     const res=await apiJSON(`${API_BASE}/items/${encodeURIComponent(clip.id)}`);
     const detail=res?.item;

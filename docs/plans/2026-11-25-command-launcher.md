@@ -120,10 +120,10 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
 加成（**frecency，2026-11-26 用户明确：越用越好用，不使用 A–Z**）：
 - 使用记录不再只存 count/最近时间，而是存**指数衰减热度**：`score = score*exp(-Δt/ HALF_LIFE) + 1`，`HALF_LIFE = 14 天`；每次通过启动器打开（UI/CLI/API）都更新。
-- 计算时按当前时间再次衰减，得到 `frecency`；对外 `boost = clamp(round(frecency*60), 0, 700)`。
-- 查询非空：`总分 = 匹配分 + boost`；同分时按 boost 高者优先，再按安装/更新时间（`ModifiedAtMs`）新者优先，最后 ID；**不再按名称 A–Z 排序**。
-- 空查询：按 frecency 降序；从未打开过的（frecency=0）排后，按 `ModifiedAtMs` 降序（最近安装/更新优先），最后 ID。**不使用名称字典序**。
-- Server 在 `/apps` 的 `boost` 字段与 Linux `LAUNCH1` 第 10 列透传该值；三端本地过滤使用同一 boost，且空查询保持 Server 顺序、同分只以 server 顺序/ID 作最终 tiebreak。
+- 计算时按当前时间再次衰减，得到 `frecency`；对外透传 `rawBoost = clamp(round(frecency*60), 0, 700)`。
+- 查询非空：实际计分使用 `effectiveBoost = min(rawBoost, 150, max(0, 999 - base))`，`总分 = base + effectiveBoost`；名称全等（`base=1000`）永远排第一，常用前缀匹配最高 `999` 不压过全等，子序列（最高 `600+150=750`）不越级压过未使用前缀（`850..900`）。同分时按 `rawBoost` 高者优先，再按安装/更新时间（`ModifiedAtMs`）新者优先，最后 ID；**不再按名称 A–Z 排序**。
+- 空查询：仍按 `frecency` 原始值降序（不受 150 限制）；从未打开过的（frecency=0）排后，按 `ModifiedAtMs` 降序（最近安装/更新优先），最后 ID。**不使用名称字典序**。
+- Server 在 `/apps` 的 `boost` 字段与 Linux `LAUNCH1` 第 10 列透传 `rawBoost`；三端本地过滤按同一 `effectiveBoost` 计分，且空查询保持 Server 顺序、同分只以 server 顺序/ID 作最终 tiebreak。
 - 迁移：旧 `usage.json`（只有 count/openedAtMs）读取时按 `score = min(count,20)`、`updatedAt = openedAtMs` 初始化，之后正常衰减。
 
 以上常量只出现在 Go 的一处（`application/launcher/rank.go`）；三端 UI 的本地区间过滤必须按相同规则实现，常量在各自源码中明确注明「与 rank.go 同步」。

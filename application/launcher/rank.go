@@ -27,8 +27,13 @@ const (
 	FrecencyHalfLife = 14 * 24 * time.Hour
 	// FrecencyBoostWeight scales decayed frecency score into integer boost points.
 	FrecencyBoostWeight = 60
-	// FrecencyBoostCap caps the integer boost emitted to API/UI clients.
+	// FrecencyBoostCap caps the integer raw boost emitted to API/UI clients.
 	FrecencyBoostCap = 700
+	// FrecencyEffectiveBoostCap bounds boost added to non-empty query scores so
+	// lower-tier matches (e.g. subsequence) cannot jump ahead of prefix matches.
+	FrecencyEffectiveBoostCap = 150
+	// FrecencyScoreCeiling caps boosted non-exact scores below ScoreExactName (1000).
+	FrecencyScoreCeiling = ScoreExactName - 1
 	// FrecencyV1MigrationCap caps initial score migrated from v1 usage.json counts.
 	FrecencyV1MigrationCap = 20
 )
@@ -202,10 +207,31 @@ func Frecency(entry UsageEntry, now time.Time) float64 {
 	return decayScore(score, updatedAtMs, now.UnixMilli())
 }
 
-// FrecencyBoost converts entry's decayed frecency at now into the integer boost
-// clamp(round(frecency * FrecencyBoostWeight), 0, FrecencyBoostCap).
+// FrecencyBoost converts entry's decayed frecency at now into the raw integer boost
+// clamp(round(frecency * FrecencyBoostWeight), 0, FrecencyBoostCap) emitted to API/UI clients.
 func FrecencyBoost(entry UsageEntry, now time.Time) int {
 	return frecencyToBoost(Frecency(entry, now))
+}
+
+// EffectiveBoost bounds rawBoost for non-empty query scoring:
+// min(rawBoost, 150, max(0, 999 - baseScore)).
+// Exact name matches (1000) always remain #1 and lower-tier matches cannot overtake prefix matches.
+func EffectiveBoost(baseScore, rawBoost int) int {
+	if rawBoost <= 0 {
+		return 0
+	}
+	headroom := FrecencyScoreCeiling - baseScore
+	if headroom <= 0 {
+		return 0
+	}
+	eff := rawBoost
+	if eff > FrecencyEffectiveBoostCap {
+		eff = FrecencyEffectiveBoostCap
+	}
+	if eff > headroom {
+		eff = headroom
+	}
+	return eff
 }
 
 // AdvanceUsageEntry decays entry's existing score to openedAtMs, adds 1, and updates
@@ -310,7 +336,7 @@ func Rank(apps []App, query string, usage map[string]UsageEntry, now time.Time) 
 		app.Boost = boost
 		scored = append(scored, scoredItem{
 			app:   app,
-			score: base + boost,
+			score: base + EffectiveBoost(base, boost),
 		})
 	}
 	sort.Slice(scored, func(i, j int) bool {

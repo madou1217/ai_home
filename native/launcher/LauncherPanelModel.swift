@@ -82,9 +82,19 @@ enum LauncherRanker {
   static let scoreSubsequenceBase = 600
   static let scoreSubseqMaxPen = 150
   static let scoreSubtitleOnly = 300
+  static let frecencyEffectiveBoostCap = 150
+  static let frecencyScoreCeiling = scoreExactName - 1
 
   static func normalizeQuery(_ raw: String) -> String {
     raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  /// Bounds server-supplied raw frecency boost for non-empty query scoring so exact
+  /// matches (1000) always win and lower-tier matches cannot overtake prefix matches.
+  static func effectiveBoost(base: Int, rawBoost: Int) -> Int {
+    guard rawBoost > 0 else { return 0 }
+    let headroom = max(0, frecencyScoreCeiling - base)
+    return min(rawBoost, min(frecencyEffectiveBoostCap, headroom))
   }
 
   /// Filters and sorts `apps` for instant zero-latency typing.
@@ -105,7 +115,7 @@ enum LauncherRanker {
       results.append((
         result: LauncherMatchResult(
           app: app,
-          score: evaluation.score + max(0, app.boost),
+          score: evaluation.score + effectiveBoost(base: evaluation.score, rawBoost: app.boost),
           matchSource: evaluation.source,
           matchedRanges: evaluation.ranges
         ),

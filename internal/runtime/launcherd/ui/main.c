@@ -60,6 +60,8 @@
 #define SCORE_SUBSEQ_MAX_PEN 150
 #define SCORE_SUBTITLE_ONLY 300
 #define FRECENCY_BOOST_CAP 700
+#define FRECENCY_EFFECTIVE_BOOST_CAP 150
+#define FRECENCY_SCORE_CEILING (SCORE_EXACT_NAME - 1)
 
 static const char *LAUNCHER_CSS =
     "window.launcher-window {\n"
@@ -588,6 +590,24 @@ static void mark_range(gboolean *mask, gsize mask_len, gsize start, gsize len) {
   }
 }
 
+static int effective_boost(int base_score, int raw_boost) {
+  if (raw_boost <= 0) {
+    return 0;
+  }
+  int headroom = FRECENCY_SCORE_CEILING - base_score;
+  if (headroom <= 0) {
+    return 0;
+  }
+  int eff = raw_boost;
+  if (eff > FRECENCY_EFFECTIVE_BOOST_CAP) {
+    eff = FRECENCY_EFFECTIVE_BOOST_CAP;
+  }
+  if (eff > headroom) {
+    eff = headroom;
+  }
+  return eff;
+}
+
 static FilteredItem *score_app_item(const AppItem *app, const char *q_norm,
                                     const gunichar *q_runes, gsize q_len) {
   int best = 0;
@@ -760,7 +780,7 @@ static FilteredItem *score_app_item(const AppItem *app, const char *q_norm,
 
   FilteredItem *fi = g_new0(FilteredItem, 1);
   fi->app = app;
-  fi->score = best + (app->boost > 0 ? app->boost : 0);
+  fi->score = best + effective_boost(best, app->boost);
   fi->source = best_source;
   if (best_source == MATCH_NAME && best_mask) {
     fi->matched_runes = best_mask;

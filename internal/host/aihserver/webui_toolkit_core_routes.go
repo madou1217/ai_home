@@ -114,6 +114,7 @@ func buildWebUIToolkitCoreRoutes(dependencies webuiRouteDependencies) ([]webuiRo
 		{Pattern: "POST " + webuitoolkitcoreapi.AppsInstallPath, Handler: handler},
 		{Pattern: "POST " + webuitoolkitcoreapi.AppsPlanPath, Handler: handler},
 		{Pattern: "POST " + webuitoolkitcoreapi.AppsHooksPath, Handler: handler},
+		{Pattern: "POST " + webuitoolkitcoreapi.AppsCleanupPath, Handler: handler},
 
 		{Pattern: "POST " + webuitoolkitcoreapi.AppInstallPath, Handler: handler},
 		{Pattern: "GET " + webuitoolkitcoreapi.AppInstallJobsPath, Handler: handler},

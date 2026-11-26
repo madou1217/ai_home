@@ -3,18 +3,15 @@
 package appcatalog
 
 import (
-	"bytes"
 	"context"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
-	"unicode/utf16"
 
 	"github.com/madou1217/ai_home/application/launcher"
+	"github.com/madou1217/ai_home/internal/runtime/winshell"
 )
 
 const (
@@ -123,33 +120,10 @@ func windowsStartMenuRoots() []string {
 // The Shell namespace enumerates reliably there and writes UTF-16LE itself, so
 // no console code page or stdout encoding is involved.
 func scanWindowsShellApps(ctx context.Context) []launcher.App {
-	dir, err := os.MkdirTemp("", "aih-startapps-")
-	if err != nil {
+	text, err := winshell.RunVBSReadText(ctx, windowsShellAppsVBS, windowsShellAppsTimeout)
+	if err != nil || text == "" {
 		return nil
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	outPath := filepath.Join(dir, "apps.tsv")
-	vbsPath := filepath.Join(dir, "enum.vbs")
-	script := strings.ReplaceAll(windowsShellAppsVBS, "{{OUT}}", strings.ReplaceAll(outPath, `"`, `""`))
-	if err := os.WriteFile(vbsPath, []byte(script), 0o600); err != nil {
-		return nil
-	}
-
-	cctx, cancel := context.WithTimeout(ctx, windowsShellAppsTimeout)
-	defer cancel()
-	cscript := filepath.Join(strings.TrimSpace(os.Getenv("SystemRoot")), "System32", "cscript.exe")
-	if _, statErr := os.Stat(cscript); statErr != nil {
-		cscript = "cscript.exe"
-	}
-	cmd := exec.CommandContext(cctx, cscript, "//nologo", vbsPath)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	_ = cmd.Run()
-
-	data, err := os.ReadFile(outPath)
-	if err != nil || len(data) == 0 {
-		return nil
-	}
-	text := decodeWindowsText(data)
 
 	seenName := make(map[string]struct{}, 256)
 	seenTarget := make(map[string]struct{}, 256)
@@ -207,19 +181,6 @@ func scanWindowsShellApps(ctx context.Context) []launcher.App {
 		result = append(result, app)
 	}
 	return result
-}
-
-// decodeWindowsText converts the UTF-16LE output written by the VBS (with BOM)
-// or UTF-8 data from a fallback tool into a Go string.
-func decodeWindowsText(data []byte) string {
-	if len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE {
-		units := make([]uint16, 0, (len(data)-2)/2)
-		for i := 2; i+1 < len(data); i += 2 {
-			units = append(units, uint16(data[i])|uint16(data[i+1])<<8)
-		}
-		return string(utf16.Decode(units))
-	}
-	return string(bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}))
 }
 
 const windowsShellAppsVBS = `Set fso = CreateObject("Scripting.FileSystemObject")

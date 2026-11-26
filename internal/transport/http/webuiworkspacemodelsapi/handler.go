@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/application/modelsnapshot"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accountrefmap"
+	"github.com/madou1217/ai_home/internal/adapters/cline/modelcatalog"
 )
 
 const (
@@ -464,6 +465,10 @@ func buildResponse(
 		addProviderModel(provider, modelID)
 	}
 
+	// CLI-only 免费模型：只在“打开 CLI”的选择器里出现，不进入网关路由目录。
+	// 事实源在 Provider adapter（cline 的免费模型走官方 CLI 登录态）。
+	applyCLIOnlyProviderModels(providerByRef, providerModelSets, selectableByAccountRef)
+
 	for ref, ids := range byAccountRef {
 		sort.Strings(ids)
 		byAccountRef[ref] = ids
@@ -540,6 +545,28 @@ func buildResponse(
 		"accountProbedAt":        accountProbedAt,
 		"labels":                 labels,
 		"metadata":               metadata,
+	}
+}
+
+// applyCLIOnlyProviderModels 把 Provider CLI 可执行、但网关 API 不可路由的免费模型
+// 加进 CLI 选择器。只影响 models[provider] 与 selectableByAccountRef，不动
+// byAccountRef / effective 路由事实，因此不会让网关去调用会 403 的模型。
+func applyCLIOnlyProviderModels(
+	providerByRef map[string]string,
+	providerModelSets map[string]map[string]struct{},
+	selectableByAccountRef map[string][]string,
+) {
+	for ref, provider := range providerByRef {
+		if provider != "cline" {
+			continue
+		}
+		if providerModelSets[provider] == nil {
+			providerModelSets[provider] = map[string]struct{}{}
+		}
+		for _, modelID := range modelcatalog.CLIFreeModels {
+			providerModelSets[provider][modelID] = struct{}{}
+			selectableByAccountRef[ref] = appendDistinct(selectableByAccountRef[ref], modelID)
+		}
 	}
 }
 

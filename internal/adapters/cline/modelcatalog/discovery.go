@@ -51,6 +51,16 @@ var KnownModels = []string{
 	"cline-pass/qwen3.8-max",
 }
 
+// CLIFreeModels 是 Cline 官方 CLI 的免费模型。
+//
+// 它们只在 CLI 的原生登录态下可用（pricing 为 0，实测能完成回合）；
+// 本网关的 API 面对 cline-free/* 一律 403，所以这些模型只能进入
+// “打开 CLI”的模型选择器，不能进入网关路由目录。
+var CLIFreeModels = []string{
+	"nvidia/nemotron-3.5-lightning-free",
+	"cline-free/nemotron-3.5-super-vl",
+}
+
 // IsRoutableModelID 判断模型是否属于 cline 命名空间。
 func IsRoutableModelID(modelID string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(modelID)), NamespacePrefix)

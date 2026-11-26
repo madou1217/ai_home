@@ -436,6 +436,23 @@ func (provisioner *Provisioner) applyHostLinks(
 	policy appprojection.Policy,
 	root string,
 ) error {
+	// 缓存类链接的宿主目录可以先建：缓存为空也可安全共享，不能因为宿主
+	// 尚未生成 .qoder/.cache 就让每个账号各自落一份。
+	for _, link := range policy.SharedHostCaches {
+		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
+			continue
+		}
+		if len(link.Exclude) > 0 {
+			continue
+		}
+		target, err := joinUnder(request.HostHomeDir, link.Host)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			return err
+		}
+	}
 	links := make([]appprojection.SharedLink, 0, len(policy.SharedHostCaches)+len(policy.SharedHostDataRoots)+len(policy.SharedHostDedupe))
 	links = append(links, policy.SharedHostCaches...)
 	links = append(links, policy.SharedHostDataRoots...)

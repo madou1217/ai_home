@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package xai_api;
+
+option go_package = "github.com/madou1217/ai_home/internal/transport/grpc/xaiapi;xaiapi";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Minimal xAI Chat wire contract used by the official xai-sdk.
+// Only fields the gateway maps are declared; unknown fields are ignored by protobuf.
+service Chat {
+  rpc GetCompletion(GetCompletionsRequest) returns (GetChatCompletionResponse);
+  rpc GetCompletionChunk(GetCompletionsRequest) returns (stream GetChatCompletionChunk);
+}
+
+// xAI SDK 的模型目录只暴露语言模型列表/单模型查询；嵌入与图像目录返回空集。
+service Models {
+  rpc ListLanguageModels(google.protobuf.Empty) returns (ListLanguageModelsResponse);
+  rpc GetLanguageModel(GetModelRequest) returns (LanguageModel);
+  rpc ListEmbeddingModels(google.protobuf.Empty) returns (ListEmbeddingModelsResponse);
+  rpc GetEmbeddingModel(GetModelRequest) returns (EmbeddingModel);
+  rpc ListImageGenerationModels(google.protobuf.Empty) returns (ListImageGenerationModelsResponse);
+  rpc GetImageGenerationModel(GetModelRequest) returns (ImageGenerationModel);
+}
+
+message ListLanguageModelsResponse {
+  repeated LanguageModel models = 1;
+}
+
+message GetModelRequest {
+  string name = 1;
+}
+
+message ListEmbeddingModelsResponse {
+  repeated EmbeddingModel models = 1;
+}
+
+message EmbeddingModel {
+  string name = 1;
+  repeated string aliases = 11;
+  string system_fingerprint = 8;
+}
+
+message ListImageGenerationModelsResponse {
+  repeated ImageGenerationModel models = 1;
+}
+
+message ImageGenerationModel {
+  string name = 1;
+  repeated string aliases = 11;
+  int32 max_prompt_length = 9;
+  string system_fingerprint = 10;
+}
+
+message LanguageModel {
+  string name = 1;
+  string version = 2;
+  repeated int32 input_modalities = 3;
+  repeated int32 output_modalities = 4;
+  int64 prompt_text_token_price = 5;
+  int64 prompt_image_token_price = 6;
+  int64 completion_text_token_price = 7;
+  google.protobuf.Timestamp created = 8;
+  int32 max_prompt_length = 9;
+  string system_fingerprint = 10;
+  repeated string aliases = 11;
+  int64 cached_prompt_token_price = 12;
+  int64 search_price = 13;
+}
+
+message GetCompletionsRequest {
+  repeated Message messages = 1;
+  string model = 2;
+  float frequency_penalty = 3;
+  bool logprobs = 5;
+  int32 top_logprobs = 6;
+  int32 max_tokens = 7;
+  int32 n = 8;
+  float presence_penalty = 9;
+  int32 seed = 11;
+  repeated string stop = 12;
+  float temperature = 14;
+  float top_p = 15;
+  string user = 16;
+  repeated Tool tools = 17;
+  ToolChoice tool_choice = 18;
+  ReasoningEffort reasoning_effort = 19;
+  bool parallel_tool_calls = 21;
+  string previous_response_id = 22;
+  bool store_messages = 23;
+  bool use_encrypted_content = 24;
+  int32 max_turns = 25;
+  string safety_identifier = 34;
+}
+
+message Message {
+  repeated Content content = 1;
+  MessageRole role = 2;
+  string name = 3;
+  repeated ToolCall tool_calls = 4;
+  string reasoning_content = 5;
+  string tool_call_id = 7;
+}
+
+message Content {
+  string text = 1;
+  ImageUrlContent image_url = 2;
+  FileContent file = 3;
+}
+
+message ImageUrlContent {
+  string image_url = 1;
+  int32 detail = 2;
+  string file_id = 3;
+}
+
+message FileContent {
+  string file_id = 1;
+  bytes data = 2;
+  string filename = 3;
+  string mime_type = 4;
+  string url = 5;
+}
+
+message Tool {
+  Function function = 1;
+}
+
+message Function {
+  string name = 1;
+  string description = 2;
+  bool strict = 3;
+  string parameters = 4;
+}
+
+message ToolChoice {
+  ToolMode mode = 1;
+  string function_name = 2;
+}
+
+message ToolCall {
+  string id = 1;
+  ToolCallType type = 2;
+  ToolCallStatus status = 3;
+  string error_message = 4;
+  FunctionCall function = 10;
+}
+
+message FunctionCall {
+  string name = 1;
+  string arguments = 2;
+}
+
+message GetChatCompletionResponse {
+  string id = 1;
+  repeated CompletionOutput outputs = 2;
+  google.protobuf.Timestamp created = 5;
+  string model = 6;
+  SamplingUsage usage = 9;
+}
+
+message CompletionOutput {
+  FinishReason finish_reason = 1;
+  int32 index = 2;
+  CompletionMessage message = 3;
+}
+
+message CompletionMessage {
+  string content = 1;
+  MessageRole role = 2;
+  repeated ToolCall tool_calls = 3;
+  string reasoning_content = 4;
+}
+
+message GetChatCompletionChunk {
+  string id = 1;
+  repeated CompletionOutputChunk outputs = 2;
+  google.protobuf.Timestamp created = 3;
+  string model = 4;
+  SamplingUsage usage = 6;
+}
+
+message CompletionOutputChunk {
+  Delta delta = 1;
+  FinishReason finish_reason = 3;
+  int32 index = 4;
+}
+
+message Delta {
+  string content = 1;
+  MessageRole role = 2;
+  repeated ToolCall tool_calls = 3;
+  string reasoning_content = 4;
+}
+
+message SamplingUsage {
+  int64 completion_tokens = 1;
+  int64 prompt_tokens = 2;
+  int64 total_tokens = 3;
+  int64 prompt_text_tokens = 4;
+  int64 prompt_image_tokens = 5;
+  int64 reasoning_tokens = 6;
+}
+
+enum MessageRole {
+  INVALID_ROLE = 0;
+  ROLE_USER = 1;
+  ROLE_ASSISTANT = 2;
+  ROLE_SYSTEM = 3;
+  ROLE_FUNCTION = 4;
+  ROLE_TOOL = 5;
+  ROLE_DEVELOPER = 6;
+}
+
+enum FinishReason {
+  REASON_INVALID = 0;
+  REASON_MAX_LEN = 1;
+  REASON_MAX_CONTEXT = 2;
+  REASON_STOP = 3;
+  REASON_TOOL_CALLS = 4;
+  REASON_TIME_LIMIT = 5;
+}
+
+enum ToolMode {
+  TOOL_MODE_INVALID = 0;
+  TOOL_MODE_AUTO = 1;
+  TOOL_MODE_NONE = 2;
+  TOOL_MODE_REQUIRED = 3;
+}
+
+enum ToolCallType {
+  TOOL_CALL_TYPE_INVALID = 0;
+  TOOL_CALL_TYPE_CLIENT_SIDE_TOOL = 1;
+  TOOL_CALL_TYPE_WEB_SEARCH_TOOL = 2;
+  TOOL_CALL_TYPE_X_SEARCH_TOOL = 3;
+  TOOL_CALL_TYPE_CODE_EXECUTION_TOOL = 4;
+  TOOL_CALL_TYPE_COLLECTIONS_SEARCH_TOOL = 5;
+  TOOL_CALL_TYPE_MCP_TOOL = 6;
+  TOOL_CALL_TYPE_ATTACHMENT_SEARCH_TOOL = 7;
+  TOOL_CALL_TYPE_IMAGE_GENERATION_TOOL = 10;
+}
+
+enum ToolCallStatus {
+  TOOL_CALL_STATUS_IN_PROGRESS = 0;
+  TOOL_CALL_STATUS_COMPLETED = 1;
+  TOOL_CALL_STATUS_INCOMPLETE = 2;
+  TOOL_CALL_STATUS_FAILED = 3;
+}
+
+enum ReasoningEffort {
+  INVALID_EFFORT = 0;
+  EFFORT_LOW = 1;
+  EFFORT_MEDIUM = 2;
+  EFFORT_HIGH = 3;
+  EFFORT_NONE = 4;
+  EFFORT_XHIGH = 5;
+}

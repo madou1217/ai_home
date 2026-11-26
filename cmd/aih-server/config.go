@@ -36,8 +36,10 @@ var (
 
 // commandConfig 是不会被日志格式化的 Go Server 启动配置。
 type commandConfig struct {
-	host          string
-	port          int
+	host string
+	port int
+	// grpcPort 是 xAI 官方 SDK 使用的 gRPC 兼容端口；0 表示 HTTP 端口 + 1。
+	grpcPort      int
 	aiHomeDir     string
 	managementKey string
 	clientKey     string
@@ -121,12 +123,23 @@ func loadCommandConfig(
 	if err != nil {
 		return commandConfig{}, err
 	}
+	grpcPort := 0
+	if raw, found := runtime.lookupEnv("AIH_SERVER_GRPC_PORT"); found && raw != "" {
+		if strings.TrimSpace(raw) != raw {
+			return commandConfig{}, errInvalidCommandConfig
+		}
+		grpcPort, err = strconv.Atoi(raw)
+		if err != nil || grpcPort < 0 || grpcPort > 65535 {
+			return commandConfig{}, errInvalidCommandConfig
+		}
+	}
 
 	flags := flag.NewFlagSet("aih-server", flag.ContinueOnError)
 	_ = flags.Bool("exit-with-parent", false, "exit when the supervising parent disappears")
 	flags.SetOutput(runtime.stderr)
 	flags.StringVar(&host, "host", host, "监听地址；当前只允许 loopback")
 	flags.IntVar(&port, "port", port, "监听端口；0 表示由系统分配临时端口")
+	flags.IntVar(&grpcPort, "grpc-port", grpcPort, "xAI 官方 SDK 的 gRPC 兼容端口；0 表示 HTTP 端口 + 1")
 	var webDir string
 	flags.StringVar(&webDir, "web-dir", "", "Web UI 构建产物目录（web/dist）；为空时不托管 /ui")
 	var nodeBaseURL string
@@ -163,6 +176,18 @@ func loadCommandConfig(
 		return commandConfig{}, errNonLoopbackHost
 	}
 	if port < 0 || port > 65535 {
+		return commandConfig{}, errInvalidCommandConfig
+	}
+	if grpcPort < 0 || grpcPort > 65535 {
+		return commandConfig{}, errInvalidCommandConfig
+	}
+	if grpcPort == 0 && port > 0 {
+		if port == 65535 {
+			return commandConfig{}, errInvalidCommandConfig
+		}
+		grpcPort = port + 1
+	}
+	if grpcPort != 0 && grpcPort == port {
 		return commandConfig{}, errInvalidCommandConfig
 	}
 	nodeBaseURL = strings.TrimSpace(nodeBaseURL)
@@ -234,6 +259,7 @@ func loadCommandConfig(
 	return commandConfig{
 		host:                       host,
 		port:                       port,
+		grpcPort:                   grpcPort,
 		aiHomeDir:                  aiHomeDir,
 		managementKey:              managementKey,
 		clientKey:                  clientKey,

@@ -11,7 +11,10 @@ import (
 	"net/http"
 	"os"
 	goruntime "runtime"
+	"strconv"
 	"time"
+
+	"google.golang.org/grpc"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
@@ -21,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/serveridentity"
 	"github.com/madou1217/ai_home/internal/runtime/termtext"
 	"github.com/madou1217/ai_home/internal/runtime/upstreamfailurepolicy"
+	"github.com/madou1217/ai_home/internal/transport/grpc/xaiapi"
 )
 
 // shutdownTimeout 覆盖推理流收尾窗口（30s）+ HTTP 优雅关闭预算。
@@ -187,6 +191,57 @@ func run(
 		runtime.stdout,
 		"aih-server listening on http://%s\n",
 		listener.Addr().String(),
+	)
+	// xAI 官方 SDK 只走 gRPC。HTTP 端口继续承载标准 HTTP 协议；gRPC 端口只做
+	// xai_api.Chat 到 /v1/chat/completions 的桥接，账号、模型路由和错误策略复用 HTTP。
+	httpPort := config.port
+	if address, ok := listener.Addr().(*net.TCPAddr); ok {
+		httpPort = address.Port
+	}
+	grpcListener, err := runtime.listen(
+		ctx,
+		"tcp",
+		net.JoinHostPort(config.host, strconv.Itoa(config.grpcPort)),
+	)
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("监听 xAI gRPC 端口失败: %w", err)
+	}
+	xaiServer, err := xaiapi.NewServer(xaiapi.Options{
+		HTTPBaseURL: fmt.Sprintf("http://127.0.0.1:%d", httpPort),
+		ClientKey:   func() string { return clientKey },
+		HTTPClient:  &http.Client{Transport: &http.Transport{Proxy: nil}},
+	})
+	if err != nil {
+		_ = grpcListener.Close()
+		_ = listener.Close()
+		return fmt.Errorf("创建 xAI gRPC 兼容层失败: %w", err)
+	}
+	grpcServer := grpc.NewServer()
+	xaiapi.Register(grpcServer, xaiServer)
+	defer grpcServer.Stop()
+	go func() {
+		if serveErr := grpcServer.Serve(grpcListener); serveErr != nil {
+			log.Printf("xai grpc serve stopped: %v", serveErr)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		done := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(shutdownTimeout):
+			grpcServer.Stop()
+		}
+	}()
+	_, _ = fmt.Fprintf(
+		runtime.stdout,
+		"aih-server xai grpc listening on %s\n",
+		grpcListener.Addr().String(),
 	)
 	return serveUntilCanceled(ctx, server, listener, runtime.stderr)
 }

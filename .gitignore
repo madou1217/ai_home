@@ -25,6 +25,8 @@ tmp/
 !/plugins/**/README.md
 !/web/public/**/README.md
 !/web/DESIGN_SYSTEM.md
+# internal 包的契约说明（例如离线分发数据准备）属于架构文档，随包入库。
+!/internal/**/README.md
 !/docs/
 !/docs/**
 # aih-collab built-in skill: runtime asset shipped with the CLI, not documentation.

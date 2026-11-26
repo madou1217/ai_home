@@ -169,6 +169,7 @@ func readUninstallSubKeys(root registry.Key, scope RegistryScope, parentPath str
 			DisplayIcon:          readRegistryStringValue(child, "DisplayIcon", true),
 			UninstallString:      readRegistryStringValue(child, "UninstallString", true),
 			QuietUninstallString: readRegistryStringValue(child, "QuietUninstallString", true),
+			DisplayVersion:       readRegistryStringValue(child, "DisplayVersion", true),
 		}
 		_ = child.Close()
 		entries = append(entries, entry)

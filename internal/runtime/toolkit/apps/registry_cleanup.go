@@ -34,6 +34,7 @@ type RegistryUninstallEntry struct {
 	DisplayIcon          string
 	UninstallString      string
 	QuietUninstallString string
+	DisplayVersion       string
 }
 
 // FullPath returns the canonical registry path for logging and reporting.

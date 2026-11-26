@@ -376,6 +376,9 @@ func findMacDesktopBundle(cfg *providers.DesktopPlatform, opts Options) string {
 }
 
 func findWindowsRegisteredDesktopClient(ctx context.Context, provider string, cfg *providers.DesktopPlatform, opts Options) *DesktopRecord {
+	if rec := findWindowsRegisteredDesktopClientNative(ctx, provider, cfg, opts); rec != nil {
+		return rec
+	}
 	if len(cfg.DisplayNames) == 0 {
 		return nil
 	}

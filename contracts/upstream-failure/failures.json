@@ -490,6 +490,15 @@
       ],
       "semantic": "credential_rejected",
       "block_scope": "account"
+    },
+    {
+      "id": "builtin.zcode.model_not_allowed.code3006",
+      "provider": "zcode",
+      "priority": 0,
+      "statuses": [200, 400],
+      "error_code": "3006",
+      "semantic": "model_unsupported",
+      "block_scope": "account_model"
     }
   ],
   "rule_kinds": [

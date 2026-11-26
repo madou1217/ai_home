@@ -117,8 +117,29 @@ func (*Provider) PresentBusinessFailure(
 			Code:       "zcode_client_contract_mismatch",
 			Message:    "ZCode 拒绝当前客户端/协议（3012）：请确认官方 harness 与客户端版本",
 		}
+	case runtimecore.FailureModelUnsupported:
+		return relaycore.BusinessFailurePresentation{
+			StatusCode: http.StatusBadRequest,
+			Code:       "zcode_model_not_allowed",
+			Message:    "该账号套餐不允许使用此模型（3006）",
+		}
 	}
 	return relaycore.BusinessFailurePresentation{}
+}
+
+// PresentHTTPStatusFailure 让非 2xx 的 zcode 业务码也能带上可操作文案。
+func (*Provider) PresentHTTPStatusFailure(
+	statusCode int,
+	classification sharedfailure.Classification,
+) (relaycore.BusinessFailurePresentation, bool) {
+	if classification.Kind() == runtimecore.FailureModelUnsupported {
+		return relaycore.BusinessFailurePresentation{
+			StatusCode: http.StatusBadRequest,
+			Code:       "zcode_model_not_allowed",
+			Message:    "该账号套餐不允许使用此模型（3006）",
+		}, true
+	}
+	return relaycore.BusinessFailurePresentation{}, false
 }
 
 // classifyByContract 用 (provider, surface, status, code) 查失败契约。

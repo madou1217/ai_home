@@ -412,7 +412,8 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		}
 	}
 	if providerID == "help" {
-		if len(arguments) == 2 && isCLIProvider(arguments[1]) {
+		// 帮助只要求 Provider 已注册：workbuddy 这类桌面端 Provider 也有自己的用法。
+		if len(arguments) == 2 && isRegisteredProvider(arguments[1]) {
 			writeProviderUsage(runtime.stdout, arguments[1])
 			return nil
 		}
@@ -683,6 +684,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 	if providerID == "claude" {
 		_, _ = fmt.Fprintln(output, "AIH Claude 用法:")
 		_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
+		_, _ = fmt.Fprintf(output, "  aih %s [<id>] --desktop                       # 打开 Claude 桌面端（同一账号单例）\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih claude [claude_args...]                    # Gateway 账号池")
 		_, _ = fmt.Fprintln(output, "  aih claude relay <account_id> [claude_args...] # Gateway 固定账号")
 		_, _ = fmt.Fprintln(output, "  aih claude <account_id> [claude_args...]       # Native Direct")
@@ -757,6 +759,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 
 	_, _ = fmt.Fprintln(output, "AIH Codex 用法:")
 	_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
+	_, _ = fmt.Fprintln(output, "  aih codex [<id>] --desktop                            # 打开 ChatGPT / Codex 桌面端（同一账号单例）")
 	_, _ = fmt.Fprintln(output, "  aih codex [codex_args...]                            # Gateway 账号池")
 	_, _ = fmt.Fprintln(output, "  aih codex relay <account_id> [codex_args...]         # Gateway 固定账号")
 	_, _ = fmt.Fprintln(output, "  aih codex relay <provider> <account_id> [codex_args...] # Gateway 跨 Provider 固定账号")

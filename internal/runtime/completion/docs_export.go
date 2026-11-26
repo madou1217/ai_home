@@ -85,6 +85,7 @@ func launchGrammarDocEntries() []DocEntry {
 		{Group: "启动语法", Path: "aih <provider> relay [<cliID>] [原生参数...]", Description: "网关档：经 AIH Server，固定账号不换号"},
 		{Group: "启动语法", Path: "aih <client> relay <provider> <cliID> [原生参数...]", Description: "跨 Provider：Codex/Claude 客户端跑别的 Provider 账号"},
 		{Group: "启动语法", Path: "aih <cliID> [原生参数...]", Description: "裸数字：编号只在一个 Provider 内唯一时才解释"},
+		{Group: "启动语法", Path: "aih <provider> [<cliID>] --desktop", Description: "打开桌面端（同一账号单例；与 CLI 启动二选一）"},
 		{Group: "启动语法", Path: "aih <provider> -m|--model {ModelID}", Description: "指定本次会话模型（TAB 按账号模型目录补全）"},
 		{Group: "启动语法", Path: "aih <provider> --model-alias {AliasID}", Description: "临时转发：请求 A 实际用 B（不落库）"},
 		{Group: "启动语法", Path: "aih <provider> -- {原生参数...}", Description: "逃生门：之后的参数原样交给原生 CLI"},

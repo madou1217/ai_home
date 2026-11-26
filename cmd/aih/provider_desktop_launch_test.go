@@ -140,3 +140,22 @@ func TestDesktopLaunchInstallRequired(t *testing.T) {
 		t.Fatalf("应提示安装桌面端：%q", stdout.String())
 	}
 }
+
+// --desktop 必须出现在有桌面端的 Provider 帮助里；纯桌面端不需要该旗标。
+func TestProviderUsageDocumentsDesktopFlag(t *testing.T) {
+	for _, provider := range []string{"codebuddy", "codex", "claude"} {
+		var output bytes.Buffer
+		writeProviderUsage(&output, provider)
+		if !strings.Contains(output.String(), "--desktop") {
+			t.Fatalf("%s 帮助缺少 --desktop：%s", provider, output.String())
+		}
+	}
+	var workbuddy bytes.Buffer
+	writeProviderUsage(&workbuddy, "workbuddy")
+	if strings.Contains(workbuddy.String(), "--desktop") {
+		t.Fatalf("纯桌面端不应宣传 --desktop：%s", workbuddy.String())
+	}
+	if !strings.Contains(workbuddy.String(), "打开桌面端") {
+		t.Fatalf("workbuddy 帮助缺少桌面端说明：%s", workbuddy.String())
+	}
+}

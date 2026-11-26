@@ -22,7 +22,7 @@ func DocumentationEntries() []DocEntry {
 		entries = append(entries, docEntryForNode("顶层命令", "", command))
 		appendChildDocEntries(&entries, "aih "+command.Name, command)
 	}
-	for _, provider := range providerNames() {
+	for _, provider := range allProviderNames() {
 		entries = append(entries, DocEntry{
 			Group:       "Provider",
 			Path:        "aih " + provider,
@@ -351,9 +351,38 @@ func DocumentationGroupNotes() map[string]string {
 	}
 	// Provider 动作按 Provider 拆组后，共用同一条解读。
 	if note, ok := docGroupNotes["Provider 动作"]; ok {
-		for _, provider := range providerNames() {
+		for _, provider := range allProviderNames() {
 			notes["Provider · "+provider] = note
 		}
 	}
 	return notes
+}
+
+// RootHelpEntry 是 aih help 的一行：一级命令或 Provider。
+type RootHelpEntry struct {
+	Name     string
+	Summary  string
+	Aliases  []string
+	Provider bool
+}
+
+// RootHelpEntries 返回一级命令（含别名）与全部 Provider，供 aih help 打印基础命令树。
+func RootHelpEntries() []RootHelpEntry {
+	entries := make([]RootHelpEntry, 0, len(topLevelCommands)+len(allProviderNames()))
+	for index := range topLevelCommands {
+		command := &topLevelCommands[index]
+		entries = append(entries, RootHelpEntry{
+			Name:    command.Name,
+			Summary: command.Summary,
+			Aliases: append([]string(nil), command.Aliases...),
+		})
+	}
+	for _, provider := range allProviderNames() {
+		entries = append(entries, RootHelpEntry{
+			Name:     provider,
+			Summary:  describeProvider(provider),
+			Provider: true,
+		})
+	}
+	return entries
 }

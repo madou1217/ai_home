@@ -72,6 +72,35 @@ func providerNames() []string {
 	return names
 }
 
+// providerHasCLI 报告 Provider 是否提供可启动的原生 CLI。
+func providerHasCLI(id string) bool {
+	definition, found := providerDefinition(id)
+	return found && definition.CLI != nil && definition.Clients.CLI
+}
+
+// allProviderNames 返回全部已注册 Provider（含桌面端），有 CLI 的按 CLI order 排在前。
+func allProviderNames() []string {
+	snapshot := loadProviderSnapshot()
+	ordered := make([]providers.Definition, len(snapshot.definitions))
+	copy(ordered, snapshot.definitions)
+	sort.SliceStable(ordered, func(left, right int) bool {
+		leftCLI := ordered[left].CLI != nil && ordered[left].Clients.CLI
+		rightCLI := ordered[right].CLI != nil && ordered[right].Clients.CLI
+		if leftCLI != rightCLI {
+			return leftCLI
+		}
+		if leftCLI && ordered[left].CLI.Order != ordered[right].CLI.Order {
+			return ordered[left].CLI.Order < ordered[right].CLI.Order
+		}
+		return ordered[left].ID < ordered[right].ID
+	})
+	names := make([]string, 0, len(ordered))
+	for _, definition := range ordered {
+		names = append(names, definition.ID)
+	}
+	return names
+}
+
 func isProviderName(token string) bool {
 	normalized := normalizeProviderID(token)
 	if normalized == "" {

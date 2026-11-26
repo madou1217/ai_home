@@ -147,7 +147,7 @@ func addTopLevelCommands(target *collector) {
 			target.add(alias, command.Summary, groupCommand, "")
 		}
 	}
-	for _, provider := range providerNames() {
+	for _, provider := range allProviderNames() {
 		target.add(provider, describeProvider(provider), groupProvider, "")
 	}
 }
@@ -184,10 +184,12 @@ func resolveProviderCompletion(target *collector, context *resolverContext, prio
 			target.add(action.Name, action.Summary, groupAction, "")
 		}
 		addAccounts(target, context, head, false)
-		target.add(escapeHatchValue, escapeHatchSummary, groupOther, "")
-		// 用户已经开始敲旗标：直接给出本次启动可用的旗标，而不是只有动作名。
-		if strings.HasPrefix(current, "-") {
-			addSessionFlags(target, head)
+		// 桌面端 Provider 没有可透传参数的原生 CLI：不给逃生门与启动旗标，避免误导。
+		if providerHasCLI(head) {
+			target.add(escapeHatchValue, escapeHatchSummary, groupOther, "")
+			if strings.HasPrefix(current, "-") {
+				addSessionFlags(target, head)
+			}
 		}
 		addHistoryCandidates(target, context, current, head)
 		return target.items
@@ -366,7 +368,7 @@ func addCommandPositionCandidates(target *collector, context *resolverContext, c
 			addHistoryHints(target, context, trimmed)
 			return
 		}
-		if isProviderName(trimmed) {
+		if knownProvider(trimmed) {
 			provider := normalizeProviderID(trimmed)
 			target.add(provider, describeProvider(provider), groupProvider, "")
 			target.addHint(nextLevelHintForProvider(provider))
@@ -381,7 +383,7 @@ func addCommandPositionCandidates(target *collector, context *resolverContext, c
 			target.add(alias, command.Summary, groupCommand, "")
 		}
 	}
-	for _, provider := range providerNames() {
+	for _, provider := range allProviderNames() {
 		target.add(provider, describeProvider(provider), groupProvider, "")
 	}
 	if trimmed != "" {
@@ -468,7 +470,7 @@ func suggestCommandNames(input string, limit int) []string {
 		return nil
 	}
 	names := listTopLevelCommandNames()
-	names = append(names, providerNames()...)
+	names = append(names, allProviderNames()...)
 	seen := make(map[string]bool, len(names))
 	prefixMatches := make([]string, 0, 4)
 	others := make([]string, 0, 4)

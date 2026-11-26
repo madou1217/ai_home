@@ -96,10 +96,14 @@ func collapseWhitespace(value string) string {
 
 func describeProvider(provider string) string {
 	label := strings.TrimSpace(providerMenuLabel(provider))
-	if label == "" {
-		return "CLI"
+	kind := "CLI"
+	if !providerHasCLI(provider) {
+		kind = "桌面端"
 	}
-	return "CLI：" + label
+	if label == "" {
+		return kind
+	}
+	return kind + "：" + label
 }
 
 func shortRef(accountRef string) string {

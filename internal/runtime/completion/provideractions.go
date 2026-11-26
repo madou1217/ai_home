@@ -133,7 +133,15 @@ func listProviderActions(provider string) []namedSummary {
 		actions = append(actions, gatewayActions...)
 	}
 	actions = append(actions, providerEntryActions...)
+	hasCLI := providerHasCLI(id)
 	for _, action := range providerActions {
+		// 无独立 CLI 的桌面端 Provider：这些动作会去找不存在的二进制。
+		if !hasCLI {
+			switch action.Name {
+			case "install", "update", "version", "detect", "terminal-icon":
+				continue
+			}
+		}
 		switch action.Name {
 		case "resume", "fork":
 			if providerSessionCommand(id, action.Name) == nil {

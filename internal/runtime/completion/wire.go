@@ -281,14 +281,14 @@ func RunSuggest(argv []string, environment Environment) {
 		}
 	}
 	context := newResolverContext(environment, options.historyFile, options.stdinHistory)
-	aihNames := make([]string, 0, 1+len(topLevelCommands)*2+len(providerNames()))
+	aihNames := make([]string, 0, 1+len(topLevelCommands)*2+len(allProviderNames()))
 	aihNames = append(aihNames, "aih")
 	aihNames = append(aihNames, listTopLevelCommandNames()...)
-	aihNames = append(aihNames, providerNames()...)
+	aihNames = append(aihNames, allProviderNames()...)
 	learned := loadLearnedCorrections(environment.aiHomeDir())
 	var suggestions []suggestion
 	if options.inside {
-		universe := append(listTopLevelCommandNames(), providerNames()...)
+		universe := append(listTopLevelCommandNames(), allProviderNames()...)
 		suggestions = suggestInsideArgv(options.tokens, universe, learned)
 	} else {
 		suggestions = suggestCommand(options.tokens, aihNames, context.historyEntries, learned, environment)

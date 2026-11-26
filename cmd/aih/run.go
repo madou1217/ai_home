@@ -19,6 +19,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
+	"github.com/madou1217/ai_home/internal/runtime/completion"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/termtext"
 )
@@ -606,6 +607,12 @@ func isCLIProvider(providerID string) bool {
 
 // writeUsage 说明当前已实现的双模式命令和共享状态约束。
 func writeUsage(output io.Writer) {
+	_, _ = fmt.Fprintln(output, "一级命令:")
+	writeRootHelpSection(output, false)
+	_, _ = fmt.Fprintln(output, "Provider:")
+	writeRootHelpSection(output, true)
+	_, _ = fmt.Fprintln(output, "完整手册: aih man（可搜索；含子命令、旗标与示例）")
+	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "用法:")
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> [provider_args...]                  # Gateway 账号池")
 	_, _ = fmt.Fprintln(output, "  aih <codex|claude> relay [account_id] [provider_args...] # Gateway 同 Provider 固定账号")
@@ -632,6 +639,31 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_API_KEY（仅 Gateway 模式必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号管理和固定 Relay 数字别名解析必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_CODEX_BINARY / AIH_CLAUDE_BINARY（可选官方 CLI 路径）")
+}
+
+// writeRootHelpSection 打印一级命令（providers=false）或 Provider 列表（providers=true）。
+func writeRootHelpSection(output io.Writer, providers bool) {
+	const width = 24
+	for _, entry := range completion.RootHelpEntries() {
+		if entry.Provider != providers {
+			continue
+		}
+		label := entry.Name
+		if len(entry.Aliases) > 0 {
+			label += " (" + strings.Join(entry.Aliases, ", ") + ")"
+		}
+		_, _ = fmt.Fprintf(output, "  %-*s %s\n", width, label, entry.Summary)
+	}
+}
+
+// providerHasNativeCLI 报告 Provider 是否提供可启动的原生 CLI（workbuddy 等桌面端为 false）。
+func providerHasNativeCLI(providerID string) bool {
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil || catalog == nil {
+		return false
+	}
+	definition, found := catalog.Get(providerID)
+	return found && definition.CLI != nil && definition.Clients.CLI
 }
 
 // writeProviderUsage 在打开数据库或连接 Server 前说明 AIH 模式边界。
@@ -667,6 +699,19 @@ func writeProviderUsage(output io.Writer, providerID string) {
 	}
 
 	if codebuddyfamilystorage.IsFamilyProvider(providerID) {
+		if !providerHasNativeCLI(providerID) {
+			_, _ = fmt.Fprintf(output, "AIH %s 用法（桌面端）:\n", providerID)
+			_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
+			_, _ = fmt.Fprintf(output, "  aih %s ls | usage [<id>] [--refresh]          # 账号列表与额度\n", providerID)
+			_, _ = fmt.Fprintf(output, "  aih %s sessions [<id>] | resume [<id>]        # 持久会话\n", providerID)
+			_, _ = fmt.Fprintf(output, "  aih %s login | detect | import | export       # 账号接入\n", providerID)
+			_, _ = fmt.Fprintf(output, "  aih %s home [<id>] | delete <id> | set-default <id>\n", providerID)
+			_, _ = fmt.Fprintln(output)
+			_, _ = fmt.Fprintln(output, "说明:")
+			_, _ = fmt.Fprintf(output, "  %s 只提供桌面端，没有独立 CLI；启动请打开 App（或 WebUI「打开应用」）。\n", providerID)
+			_, _ = fmt.Fprintln(output, "  CLI 只管理账号、额度与会话，不会为它创建账号级 HOME。")
+			return
+		}
 		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)
 		_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
 		_, _ = fmt.Fprintln(output, "  aih "+providerID+" [原生参数...]                 # 自动择号启动（Native Direct）")

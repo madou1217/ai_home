@@ -543,3 +543,64 @@ func runCompleteOutput(t *testing.T, argv []string, stdin string) string {
 	RunComplete(argv, environment)
 	return output.String()
 }
+
+// 桌面端 Provider（workbuddy）没有 CLI，也要能补出账号管理类动作。
+func TestDesktopOnlyProviderOffersActions(t *testing.T) {
+	context := resolverForTest()
+	candidates := resolveCompletion([]string{"workbuddy", ""}, context)
+	values := candidateValues(candidates)
+	joined := strings.Join(values, ",")
+	for _, wanted := range []string{"ls", "usage", "sessions", "resume", "login", "models"} {
+		if !strings.Contains(joined, wanted) {
+			t.Fatalf("缺少动作 %s：%v", wanted, values)
+		}
+	}
+	for _, unwanted := range []string{"install", "update", "version", "detect"} {
+		if strings.Contains(joined, unwanted) {
+			t.Fatalf("无 CLI 的 Provider 不应出现 %s：%v", unwanted, values)
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Value == "--" {
+			t.Fatalf("无 CLI 的 Provider 不应给逃生门：%+v", candidates)
+		}
+	}
+}
+
+// 命令位精确命中桌面端 Provider 时仍给候选与动作提示。
+func TestDesktopOnlyProviderAtCommandPosition(t *testing.T) {
+	candidates := resolveCompletion([]string{"workbuddy"}, resolverForTest())
+	if len(candidates) == 0 || candidates[0].Value != "workbuddy" {
+		t.Fatalf("命令位应补出 workbuddy：%+v", candidates)
+	}
+	found := false
+	for _, candidate := range candidates {
+		if candidate.Group == groupHint && strings.Contains(candidate.Value, "ls") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("缺少可用动作提示：%+v", candidates)
+	}
+}
+
+// aih help 的基础树包含一级命令与桌面端 Provider。
+func TestRootHelpEntriesCoverCommandsAndProviders(t *testing.T) {
+	commands, providers := 0, 0
+	for _, entry := range RootHelpEntries() {
+		if entry.Provider {
+			providers++
+			if entry.Name == "workbuddy" && !strings.Contains(entry.Summary, "桌面端") {
+				t.Fatalf("workbuddy 应标注桌面端：%+v", entry)
+			}
+			continue
+		}
+		commands++
+		if entry.Name == "" || entry.Summary == "" {
+			t.Fatalf("一级命令缺少名称或说明：%+v", entry)
+		}
+	}
+	if commands < 20 || providers < 10 {
+		t.Fatalf("帮助树过少：commands=%d providers=%d", commands, providers)
+	}
+}

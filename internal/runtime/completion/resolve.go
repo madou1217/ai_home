@@ -289,7 +289,7 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 			return target.items
 		}
 	case "--provider":
-		for _, provider := range providerNames() {
+		for _, provider := range allProviderNames() {
 			target.add(provider, describeProvider(provider), groupProvider, "")
 		}
 		return target.items
@@ -301,7 +301,7 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 			return target.items
 		}
 	case "--scope":
-		for _, provider := range providerNames() {
+		for _, provider := range allProviderNames() {
 			target.add(provider, describeProvider(provider), groupProvider, "")
 		}
 		return target.items
@@ -384,7 +384,9 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 		return target.items
 	}
 
-	if isProviderName(head) {
+	// 桌面端 Provider（如 workbuddy）没有 CLI 也能管理账号、额度与会话，
+	// 因此这里用 knownProvider 而不是 isProviderName。
+	if knownProvider(head) {
 		return resolveProviderCompletion(target, context, prior, head, current)
 	}
 

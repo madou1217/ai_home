@@ -87,6 +87,9 @@ type SharedLink struct {
 	Host       []string
 	Platforms  []string
 	Exclude    []string
+	// StampFile 用于 SharedHostDedupe：两侧版本戳一致时才做逐文件硬链接去重。
+	// 空值表示不校验版本戳（仅供普通链接使用）。
+	StampFile string
 }
 
 // EnvBase 是投影 env 值的路径基准。
@@ -302,6 +305,11 @@ func validateSharedLinks(label string, links []SharedLink) error {
 		for excludeIndex, exclude := range link.Exclude {
 			if err := validateEntryName(exclude); err != nil {
 				return fmt.Errorf("%s[%d] exclude[%d]: %w", label, index, excludeIndex, err)
+			}
+		}
+		if link.StampFile != "" {
+			if err := validateEntryName(link.StampFile); err != nil {
+				return fmt.Errorf("%s[%d] stamp: %w", label, index, err)
 			}
 		}
 	}

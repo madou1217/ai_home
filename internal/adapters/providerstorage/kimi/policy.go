@@ -54,6 +54,22 @@ func Policy() accountprojection.Policy {
 			"sessions", "cache", "logs", "user-history", "updates",
 			"workspace-trust", "bin", "telemetry",
 		},
+		// 桌面 daimon bundle 约 600MB/账号；版本戳一致时逐文件硬链接到宿主，
+		// 不做整目录 symlink（应用升级会并发往同一目录解压）。
+		SharedHostDedupe: []accountprojection.SharedLink{
+			{
+				Projection: []string{"electron-user-data", "daimon-bundle"},
+				Host:       []string{"Library", "Application Support", "kimi-desktop", "daimon-bundle"},
+				Platforms:  []string{"darwin"},
+				StampFile:  ".daimon-bundle-stamp",
+			},
+			{
+				Projection: []string{"electron-user-data", "daimon-bundle"},
+				Host:       []string{"AppData", "Roaming", "kimi-desktop", "daimon-bundle"},
+				Platforms:  []string{"windows"},
+				StampFile:  ".daimon-bundle-stamp",
+			},
+		},
 		Env: []accountprojection.EnvBinding{
 			{Key: "KIMI_CODE_HOME", Base: accountprojection.EnvBaseProjectionRoot, Path: providerroot.NativeRoot(ProviderID)},
 		},

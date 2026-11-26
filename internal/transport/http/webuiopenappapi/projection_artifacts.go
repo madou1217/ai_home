@@ -138,13 +138,61 @@ func ensureDesktopSharedCaches(aiHomeDir, provider, userDataDir string) {
 		"DawnCache",
 		"DawnGraphiteCache",
 		"DawnWebGPUCache",
+		"GraphiteDawnCache",
+		"ShaderCache",
+		"GrShaderCache",
+		"CachedData",
+		"component_crx_cache",
+	}
+	// Chromium 会把大部分缓存放在 Default/ 下；只共享这些纯缓存叶子，
+	// Default 本身（Cookies/Local Storage 等账号态）绝不动。
+	for _, relative := range append([]string{}, sharedDirs...) {
+		sharedDirs = append(sharedDirs, filepath.Join("Default", relative))
 	}
 	for _, name := range sharedDirs {
 		target := filepath.Join(cacheRoot, name)
 		linkPath := filepath.Join(userDataDir, name)
 		_ = os.MkdirAll(target, 0o700)
-		ensureSymlinkIfAbsent(linkPath, target)
+		linkDesktopCacheDir(linkPath, target)
 	}
+}
+
+// linkDesktopCacheDir 让 Electron 的纯缓存目录指向 provider 共享缓存。
+// 历史真实缓存副本直接接管（这些目录可重建），链接/删除失败只跳过，不影响启动。
+func linkDesktopCacheDir(linkPath, target string) {
+	if info, err := os.Lstat(linkPath); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			if resolved, readErr := os.Readlink(linkPath); readErr == nil {
+				resolved = strings.TrimSpace(resolved)
+				if resolved == target {
+					return
+				}
+			}
+			_ = os.Remove(linkPath)
+		} else if info.IsDir() {
+			_ = removeCacheTree(linkPath)
+		} else {
+			return
+		}
+	}
+	_ = os.Symlink(target, linkPath)
+}
+
+func removeCacheTree(path string) error {
+	_ = filepath.Walk(path, func(current string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
+		}
+		perm := info.Mode().Perm()
+		if info.IsDir() {
+			perm |= 0o700
+		} else {
+			perm |= 0o600
+		}
+		_ = os.Chmod(current, perm)
+		return nil
+	})
+	return os.RemoveAll(path)
 }
 
 func ensureSymlinkIfAbsent(linkPath, target string) {

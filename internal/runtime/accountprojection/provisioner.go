@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/application/providerruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/runtime/sharedcache"
+	"github.com/madou1217/ai_home/internal/runtime/spacegc"
 )
 
 // Options 是投影执行器的依赖。
@@ -403,6 +404,59 @@ func (provisioner *Provisioner) applyDefaultHostLinks(
 			return err
 		}
 	}
+	if err := provisioner.applyDedupeLinks(request, policy, root); err != nil {
+		return err
+	}
+	return nil
+}
+
+// applyDedupeLinks 处理 SharedHostDedupe：两侧版本戳一致时，把内容完全相同的
+// 文件硬链接成同一份（典型：Kimi daimon bundle，每个账号会解压一份约 600MB）。
+// 不做整目录 symlink：应用升级会同时往同一目录解压，硬链接去重不改变各账号目录。
+func (provisioner *Provisioner) applyDedupeLinks(
+	request appprojection.Request,
+	policy appprojection.Policy,
+	root string,
+) error {
+	for _, link := range policy.SharedHostDedupe {
+		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
+			continue
+		}
+		source, err := joinUnder(root, link.Projection)
+		if err != nil {
+			return err
+		}
+		target, err := joinUnder(request.HostHomeDir, link.Host)
+		if err != nil {
+			return err
+		}
+		sourceInfo, sourceErr := os.Stat(source)
+		if sourceErr != nil || !sourceInfo.IsDir() {
+			continue
+		}
+		targetInfo, targetErr := os.Stat(target)
+		if targetErr != nil || !targetInfo.IsDir() {
+			continue
+		}
+		stamp := strings.TrimSpace(link.StampFile)
+		if stamp != "" {
+			hostStamp, _ := os.ReadFile(filepath.Join(target, stamp))
+			sourceStamp, _ := os.ReadFile(filepath.Join(source, stamp))
+			if len(hostStamp) == 0 || string(hostStamp) != string(sourceStamp) {
+				continue
+			}
+			if marker, err := os.ReadFile(filepath.Join(source, ".aih-dedupe-stamp")); err == nil &&
+				string(marker) == string(hostStamp) {
+				continue
+			}
+		}
+		spacegc.Dedupe([]string{source, target}, spacegc.DedupeOptions{MinSize: 4096, MinAge: 0})
+		if stamp != "" {
+			if hostStamp, err := os.ReadFile(filepath.Join(target, stamp)); err == nil {
+				_ = os.WriteFile(filepath.Join(source, ".aih-dedupe-stamp"), hostStamp, 0o600)
+			}
+		}
+	}
 	return nil
 }
 
@@ -453,10 +507,9 @@ func (provisioner *Provisioner) applyHostLinks(
 			return err
 		}
 	}
-	links := make([]appprojection.SharedLink, 0, len(policy.SharedHostCaches)+len(policy.SharedHostDataRoots)+len(policy.SharedHostDedupe))
+	links := make([]appprojection.SharedLink, 0, len(policy.SharedHostCaches)+len(policy.SharedHostDataRoots))
 	links = append(links, policy.SharedHostCaches...)
 	links = append(links, policy.SharedHostDataRoots...)
-	links = append(links, policy.SharedHostDedupe...)
 	for _, link := range links {
 		if len(link.Platforms) > 0 && !contains(link.Platforms, runtime.GOOS) {
 			continue

@@ -41,8 +41,18 @@ func verifyPrepared(ctx context.Context, report *Report) (resultErr error) {
 			return err
 		}
 		for _, table := range before {
+			present, err := exists(ctx, db, "main", table)
+			if err != nil {
+				return err
+			}
+			if !present {
+				// 退役表按设计被启动迁移删除；其它表缺失就是迁移丢数据。
+				if sqliteaccount.IsRetiredTable(table) {
+					continue
+				}
+				return fmt.Errorf("distributiondata: table_lost: before.%s", table)
+			}
 			var check TableCheck
-			var err error
 			if table == "usage_ledger_daily" {
 				check, err = verifyLedgerDaily(ctx, db)
 			} else {

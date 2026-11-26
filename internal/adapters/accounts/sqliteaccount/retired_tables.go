@@ -23,6 +23,18 @@ var retiredTables = []string{
 	"native_account_outcomes",
 }
 
+// IsRetiredTable 报告某张 Node 时代表是否已退役（启动迁移会删除它）。
+// 数据迁移校验用它区分“按设计删除”与“迁移丢表”。
+func IsRetiredTable(name string) bool {
+	name = strings.TrimSpace(name)
+	for _, table := range retiredTables {
+		if table == name {
+			return true
+		}
+	}
+	return false
+}
+
 // dropRetiredTables 删除退役表；必要时先去掉当前表的 account_refs 外键。
 func dropRetiredTables(ctx context.Context, connection *sql.Conn) error {
 	if connection == nil {

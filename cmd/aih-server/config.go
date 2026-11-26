@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
+	"github.com/madou1217/ai_home/core/secretkey"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 )
@@ -317,14 +316,14 @@ func ensureDefaultServerKeys(aiHomeDir, managementKey, clientKey string) (string
 	return managementKey, clientKey, generated, nil
 }
 
-// newServerKey 生成 48 位十六进制密钥（24 字节随机数），满足服务端 key 约束。
-// newServerKey 生成带类型前缀的默认密钥；默认生成绝不覆盖已有值（见 ensureDefaultServerKeys）。
+// newServerKey 生成带类型前缀的默认密钥；规则只在 core/secretkey 定义一次。
+// 默认生成绝不覆盖已有值（见 ensureDefaultServerKeys）。
 func newServerKey(prefix string) (string, error) {
-	buffer := make([]byte, 24)
-	if _, err := rand.Read(buffer); err != nil {
+	value, err := secretkey.Generate(prefix)
+	if err != nil {
 		return "", fmt.Errorf("生成默认服务密钥失败: %w", err)
 	}
-	return prefix + hex.EncodeToString(buffer), nil
+	return value, nil
 }
 
 // envOptionalPath 校验可选路径环境变量：未设置或空串按缺省处理，

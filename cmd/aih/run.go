@@ -467,6 +467,10 @@ func isRegisteredProvider(providerID string) bool {
 // runProviderLaunch composes the same native/relay execution path for both the
 // explicit escape and normal parsed commands; it never dispatches management verbs.
 func runProviderLaunch(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	// 没有原生 CLI 的桌面端 Provider：aih workbuddy [<id>] 直接请求本机 Server 打开 App。
+	if !providerHasNativeCLI(providerID) && (len(arguments) == 0 || isDesktopAccountToken(arguments[0])) {
+		return runDesktopOnlyProviderLaunch(ctx, providerID, arguments, runtime)
+	}
 	// 环境变量缺失时回落到本地 config:server（显式值永远优先；远端不继承本机密钥）。
 	runtime = withLocalGatewayDefaults(ctx, runtime)
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
@@ -702,14 +706,15 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		if !providerHasNativeCLI(providerID) {
 			_, _ = fmt.Fprintf(output, "AIH %s 用法（桌面端）:\n", providerID)
 			_, _ = fmt.Fprintf(output, "  aih %s models [accountID|accountRef] [--json]  # 只读目标 Server 模型目录\n", providerID)
+			_, _ = fmt.Fprintf(output, "  aih %s [<id>]                                 # 打开桌面端（经本机 Server 投影账号）\n", providerID)
 			_, _ = fmt.Fprintf(output, "  aih %s ls | usage [<id>] [--refresh]          # 账号列表与额度\n", providerID)
 			_, _ = fmt.Fprintf(output, "  aih %s sessions [<id>] | resume [<id>]        # 持久会话\n", providerID)
 			_, _ = fmt.Fprintf(output, "  aih %s login | detect | import | export       # 账号接入\n", providerID)
 			_, _ = fmt.Fprintf(output, "  aih %s home [<id>] | delete <id> | set-default <id>\n", providerID)
 			_, _ = fmt.Fprintln(output)
 			_, _ = fmt.Fprintln(output, "说明:")
-			_, _ = fmt.Fprintf(output, "  %s 只提供桌面端，没有独立 CLI；启动请打开 App（或 WebUI「打开应用」）。\n", providerID)
-			_, _ = fmt.Fprintln(output, "  CLI 只管理账号、额度与会话，不会为它创建账号级 HOME。")
+			_, _ = fmt.Fprintf(output, "  %s 只提供桌面端，没有独立 CLI；aih %s [<id>] 会请求本机 Server 投影账号并打开 App。\n", providerID, providerID)
+			_, _ = fmt.Fprintln(output, "  CLI 负责账号、额度与会话，不会为它创建账号级 HOME。")
 			return
 		}
 		_, _ = fmt.Fprintf(output, "AIH %s 用法:\n", providerID)

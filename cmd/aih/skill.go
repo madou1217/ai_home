@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/nativeresources"
@@ -28,7 +29,7 @@ func runSkill(ctx context.Context, arguments []string, runtime commandRuntime) e
 	command := strings.ToLower(strings.TrimSpace(args[0]))
 	rest := args[1:]
 	switch command {
-	case "list", "doctor", "install", "adopt", "enable", "disable", "remove":
+	case "list", "available", "doctor", "install", "adopt", "enable", "disable", "remove":
 	default:
 		writeSkillUsage(runtime.stdout)
 		return nil
@@ -43,6 +44,12 @@ func runSkill(ctx context.Context, arguments []string, runtime commandRuntime) e
 		return err
 	}
 	switch command {
+	case "available":
+		entries, repoErr := service.SkillRepo(ctx)
+		if repoErr != nil {
+			return printNativeResourceError(runtime, "skill", repoErr)
+		}
+		return writeSkillRepo(runtime, entries, options.jsonOutput)
 	case "list":
 		revision, resources, listErr := service.SkillList(ctx, options.provider)
 		if listErr != nil {
@@ -264,12 +271,20 @@ func runSkillOperation(
 	if options.link && action != "install" {
 		return fmt.Errorf("skill_link_unsupported")
 	}
+	source := id
+	if action == "install" {
+		if _, statErr := os.Stat(source); statErr != nil {
+			if resolved, ok := service.SkillCandidateSource(id); ok {
+				source = resolved
+			}
+		}
+	}
 	results := make([]map[string]any, 0, len(providers))
 	allOK := true
 	for _, provider := range providers {
 		input := nativeresources.OperateInput{Kind: "skill", Action: action, Provider: provider, ID: id}
 		if action == "install" {
-			input.Source = id
+			input.Source = source
 			input.ID = ""
 			input.Link = options.link
 		}
@@ -295,6 +310,44 @@ func runSkillOperation(
 	}
 	if !allOK {
 		return &cliExitCode{code: 1}
+	}
+	return nil
+}
+
+func writeSkillRepo(runtime commandRuntime, entries []nativeresources.SkillRepoEntry, jsonOutput bool) error {
+	if jsonOutput {
+		return writeJSONDocument(runtime.stdout, map[string]any{"ok": true, "skills": entries})
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "Skill repository · %d available\n", len(entries))
+	for _, entry := range entries {
+		origin := entry.Origin
+		if origin == "" {
+			origin = "builtin"
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "%s\t%s\t%s\t%s\n", entry.ID, origin, entry.Source, entry.Description)
+	}
+	if len(entries) == 0 {
+		_, _ = fmt.Fprintln(runtime.stdout, "(no available skills)")
+		return nil
+	}
+	_, _ = fmt.Fprintln(runtime.stdout)
+	for _, entry := range entries {
+		parts := make([]string, 0, len(entry.Providers))
+		for _, state := range entry.Providers {
+			value := "-"
+			if state.Supported {
+				switch {
+				case !state.Installed:
+					value = "available"
+				case state.Enabled:
+					value = state.Mode + ":enabled"
+				default:
+					value = state.Mode + ":disabled"
+				}
+			}
+			parts = append(parts, state.Provider+"="+value)
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "%s\t%s\n", entry.ID, strings.Join(parts, " "))
 	}
 	return nil
 }
@@ -334,6 +387,7 @@ func writeSkillUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "Usage: aih skill <command> [options]")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "  list [--provider <id>] [--json]")
+	_, _ = fmt.Fprintln(output, "  available [--json]")
 	_, _ = fmt.Fprintln(output, "  install <skillDir> (--provider <id>|--all-supported) [--link] [--json]")
 	_, _ = fmt.Fprintln(output, "  adopt <skillId> --provider <id> [--json]")
 	_, _ = fmt.Fprintln(output, "  enable <skillId> [--provider <id>] [--json]")

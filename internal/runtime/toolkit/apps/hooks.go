@@ -550,8 +550,11 @@ function aihPost(eventName, sessionID) {
     const child = spawn(AIH_SENDER_EXEC, [
       '__provider-hook', '--aih-provider-session-hook',
       '--provider', 'opencode', '--event', eventName
-    ], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
+    ], { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, detached: true });
     child.on('error', () => {});
+    // 最后一轮事件（Stop）发出后 opencode 会立刻退出；不脱离父进程的话，
+    // 发送器子进程可能来不及投递就被一起回收。
+    if (typeof child.unref === 'function') child.unref();
     if (child.stdin) {
       child.stdin.on('error', () => {});
       child.stdin.end(JSON.stringify({ sessionId: sessionID, eventName: eventName, at: Date.now() }));

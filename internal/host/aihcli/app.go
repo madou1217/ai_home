@@ -513,14 +513,22 @@ func (app *App) resolveDefaultAccountIntent(
 		return providerlaunch.LaunchIntent{}, false
 	}
 	raw, found, err := appstate.ReadKV(ctx, databasePath, "account:default:"+providerID)
-	if err != nil || !found {
-		return providerlaunch.LaunchIntent{}, false
-	}
 	var accountRefText string
-	if json.Unmarshal([]byte(raw), &accountRefText) != nil {
-		return providerlaunch.LaunchIntent{}, false
+	if err == nil && found {
+		var compatibilityRef string
+		if json.Unmarshal([]byte(raw), &compatibilityRef) == nil {
+			accountRefText = strings.TrimSpace(compatibilityRef)
+		}
 	}
-	accountRefText = strings.TrimSpace(accountRefText)
+	if accountRefText == "" {
+		// account_defaults 是 Go 的默认关系真值；app_kv 的 account:default:<provider>
+		// 只在 Node 兼容期写入。opencode 这类 Go 独有默认如果只查 app_kv，会把
+		// “有默认账号”误报成“没有可用账号”。
+		if providerDefault, defaultErr := app.accountStore.GetProviderDefault(ctx, providerID); defaultErr == nil &&
+			providerDefault.IsValid() {
+			accountRefText = strings.TrimSpace(providerDefault.AccountRef().String())
+		}
+	}
 	if accountRefText == "" {
 		return providerlaunch.LaunchIntent{}, false
 	}

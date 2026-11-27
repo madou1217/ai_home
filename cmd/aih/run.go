@@ -489,6 +489,15 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 	}
 	// 环境变量缺失时回落到本地 config:server（显式值永远优先；远端不继承本机密钥）。
 	runtime = withLocalGatewayDefaults(ctx, runtime)
+	// 固定账号登录态已失效时，交互式提示重新登录；非交互直接失败。
+	// 这一步必须在真正启动官方 CLI 之前，避免带着 401 token 打开 TUI。
+	proceed, err := promptPinnedAccountReauth(ctx, providerID, arguments, runtime)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return nil
+	}
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
 	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_API_KEY", "")
 	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")

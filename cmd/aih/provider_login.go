@@ -21,16 +21,16 @@ import (
 //
 // 家族四支走临时 fake-home 投影；已迁移的非家族 CLI（agy）走通用 CLI 登录。
 // 只支持裸 login（不带额外参数）；未迁移的 Provider 明确拒绝，不静默交给 Node。
-func runProviderLogin(
+func runProviderLoginAccount(
 	ctx context.Context,
 	providerID string,
 	arguments []string,
 	runtime commandRuntime,
-) error {
+) (accountcore.Account, error) {
 	for _, argument := range arguments {
 		if isRootHelp(argument) {
 			writeProviderLoginUsage(runtime.stdout, providerID)
-			return nil
+			return accountcore.Account{}, nil
 		}
 		if argument == "--no-browser" {
 			// 登录进程本来就用 BROWSER 捕获脚本，不打开宿主浏览器；接受该旗标
@@ -39,28 +39,28 @@ func runProviderLogin(
 		}
 		if strings.TrimSpace(argument) != "" {
 			writeProviderLoginUsage(runtime.stderr, providerID)
-			return fmt.Errorf("%w: login 不接受参数", errInvalidCommand)
+			return accountcore.Account{}, fmt.Errorf("%w: login 不接受参数", errInvalidCommand)
 		}
 	}
 	family := codebuddyfamilystorage.IsFamilyProvider(providerID)
 	if !family && !clilogin.Supported(providerID) {
-		return fmt.Errorf("%w: %s 的 CLI 登录尚未迁移到 Go", errInvalidCommand, providerID)
+		return accountcore.Account{}, fmt.Errorf("%w: %s 的 CLI 登录尚未迁移到 Go", errInvalidCommand, providerID)
 	}
 	aiHomeDir, err := resolveAIHomeDir(runtime)
 	if err != nil {
-		return err
+		return accountcore.Account{}, err
 	}
 	hostHomeDir := lookupOrDefault(runtime.lookupEnv, "AIH_HOST_HOME", "")
 	if hostHomeDir == "" {
 		hostHomeDir, err = runtime.userHomeDir()
 		if err != nil {
-			return err
+			return accountcore.Account{}, err
 		}
 	}
 	var account accountcore.Account
 	loginEnv, releaseEgress, err := ensureLoginNetworkEnv(ctx, providerID, providerLoginProbe(providerID), runtime, runtime.stderr)
 	if err != nil {
-		return err
+		return accountcore.Account{}, err
 	}
 	defer releaseEgress()
 	if family {
@@ -86,24 +86,30 @@ func runProviderLogin(
 	}
 	if err != nil {
 		if errors.Is(err, aihlogin.ErrCredentialMissing) {
-			return fmt.Errorf(
+			return accountcore.Account{}, fmt.Errorf(
 				"%w（CodeBuddy 浏览器登录结果不会回传 CLI；可运行 aih %s detect 导入本机已登录账号）",
 				err,
 				providerID,
 			)
 		}
 		if errors.Is(err, clilogin.ErrCredentialMissing) {
-			return fmt.Errorf(
+			return accountcore.Account{}, fmt.Errorf(
 				"%w（浏览器授权完成后 CLI 应写出凭据文件；可运行 aih %s ls 确认账号是否入库）",
 				err,
 				providerID,
 			)
 		}
-		return err
+		return accountcore.Account{}, err
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "登录完成: %s #%d (%s)\n",
 		account.ProviderID(), account.CLIAccountID().Int64(), account.Ref())
-	return nil
+	return account, nil
+}
+
+// runProviderLogin 保留只返回 error 的命令入口。
+func runProviderLogin(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	_, err := runProviderLoginAccount(ctx, providerID, arguments, runtime)
+	return err
 }
 
 func writeProviderLoginUsage(output io.Writer, providerID string) {

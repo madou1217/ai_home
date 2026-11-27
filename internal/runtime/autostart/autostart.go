@@ -821,6 +821,10 @@ func windowsQuote(value string) string {
 	return quote + strings.ReplaceAll(value, quote, quote+quote) + quote
 }
 
+func psSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
 func windowsScriptCommand(options Options) string {
 	args := serviceArgs(options)
 	quoted := make([]string, 0, len(args))
@@ -880,8 +884,12 @@ func installWindows(ctx context.Context, options Options) (Status, error) {
 	if err := atomicWrite(taskLauncher, buildWindowsLauncher(options), 0600); err != nil {
 		return Status{}, err
 	}
+	// Each argv is passed separately and Go quotes it for CreateProcess.
+	// Wrapping the command in windowsQuote added a second quoting layer, and
+	// schtasks stored a broken action (wscript.exe //nologo " + path) that
+	// never launched the server.
 	taskCommand := "wscript.exe //nologo " + windowsQuote(taskLauncher)
-	args := []string{"/Create", "/SC", "ONLOGON", "/TN", options.Label, "/TR", windowsQuote(taskCommand), "/F"}
+	args := []string{"/Create", "/SC", "ONLOGON", "/TN", options.Label, "/TR", taskCommand, "/F"}
 	if user := strings.TrimSpace(os.Getenv("USERNAME")); user != "" {
 		args = append(args, "/RU", user, "/IT")
 	}
@@ -898,6 +906,12 @@ func installWindows(ctx context.Context, options Options) (Status, error) {
 		_ = os.Remove(legacyStartupScript)
 		return statusWindows(options)
 	}
+	// schtasks defaults stop the task on battery and when the machine goes idle;
+	// the AIH service must keep running in both cases. Best-effort: never fail
+	// the installation because the settings refresh was rejected.
+	settings := "$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd -MultipleInstances IgnoreNew; Set-ScheduledTask -TaskName " + psSingleQuote(options.Label) + " -Settings $s | Out-Null"
+	_, _ = run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", settings)
+
 	// 计划任务只声明 ONLOGON 触发；安装流程必须当场拉起一次，否则安装器随后的
 	// 启动验证没有任何进程可连。Linux/macOS 的安装路径本身就带 restart，Windows
 	// 的 schtasks /Create 不带。这里不把 /Run 的失败直接判死：服务是否真的起来

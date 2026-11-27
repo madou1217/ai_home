@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/proxyingress"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
@@ -58,6 +59,11 @@ type Candidate struct {
 	Source    string `json:"source"`
 	Available bool   `json:"available"`
 	Error     string `json:"error,omitempty"`
+	Country   string `json:"country,omitempty"`
+	City      string `json:"city,omitempty"`
+	CityCode  string `json:"cityCode,omitempty"`
+	Region    string `json:"region,omitempty"`
+	GeoSource string `json:"geoSource,omitempty"`
 }
 
 // Lease 是原始租约：ProxyURL 内含只对 Server 入口有效的凭据。
@@ -144,12 +150,74 @@ func (client *Client) AvailableIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// Resolve 把一个选择器（auto/pool/稳定 ID/唯一名称）归一成稳定 ID。
-// 名称歧义或不可用时明确失败，绝不静默换成另一个出口。
+// CandidatesMatching 返回服务端顺序中落在地区范围内的可用候选。
+// filter 为空时等价于全部可用候选。
+func (client *Client) CandidatesMatching(ctx context.Context, filter proxyregion.Filter) ([]Candidate, error) {
+	candidates, err := client.Candidates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	matched := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !candidate.Available || candidate.ID == "" {
+			continue
+		}
+		if !filter.Match(candidate.Country, candidate.CityCode) {
+			continue
+		}
+		matched = append(matched, candidate)
+	}
+	if len(matched) == 0 {
+		if filter.Empty() {
+			return nil, ErrNoCandidates
+		}
+		return nil, fmt.Errorf("没有符合地区范围（%s）的可用出口", filter.Describe())
+	}
+	return matched, nil
+}
+
+// AvailableIDsMatching 按服务端顺序返回地区范围内可用候选的稳定 ID。
+func (client *Client) AvailableIDsMatching(ctx context.Context, filter proxyregion.Filter) ([]string, error) {
+	candidates, err := client.CandidatesMatching(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.ID)
+	}
+	if len(ids) == 0 {
+		return nil, ErrNoCandidates
+	}
+	return ids, nil
+}
+
+// RotationWithFilter 把地区范围内的候选装成轮换状态机。
+func (client *Client) RotationWithFilter(filter proxyregion.Filter, notify updateproxy.EgressNotifier) *updateproxy.EgressRotation {
+	return updateproxy.NewEgressRotation(
+		func(ctx context.Context) ([]string, error) {
+			return client.AvailableIDsMatching(ctx, filter)
+		},
+		client.Acquire,
+		notify,
+	)
+}
+
+// Resolve 把一个选择器（auto/pool/稳定 ID/唯一名称/地区范围）归一成稳定 ID。
+// 名称歧义、地区范围内没有候选或不可用时明确失败，绝不静默换成另一个出口。
 func (client *Client) Resolve(ctx context.Context, selector string) (string, error) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" || selector == "auto" || selector == "pool" {
 		return selector, nil
+	}
+	if filter, isFilter, parseErr := proxyregion.Parse(selector); parseErr != nil {
+		return "", parseErr
+	} else if isFilter {
+		candidates, err := client.CandidatesMatching(ctx, filter)
+		if err != nil {
+			return "", err
+		}
+		return candidates[0].ID, nil
 	}
 	candidates, err := client.Candidates(ctx)
 	if err != nil {
@@ -251,6 +319,7 @@ func (client *Client) Acquire(ctx context.Context, selector string) (updateproxy
 		// 让客户端误以为需要认证。用裸 host:port 最干净。
 		AnonymousURL: "http://" + anonymous.HTTPAddress(),
 		Name:         lease.Name,
+		ID:           selector,
 		Release:      release,
 	}, nil
 }

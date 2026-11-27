@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
@@ -103,6 +104,9 @@ func newServeEntryUnit(ctx context.Context, runtime commandRuntime, options prox
 
 // serveSelfHeal 判断 selector 是否允许自愈，并给出不该自愈时的原因。
 func serveSelfHeal(selector string) bool {
+	if _, scoped, err := proxyregion.Parse(selector); err == nil && scoped {
+		return true
+	}
 	switch strings.ToLower(strings.TrimSpace(selector)) {
 	case "", "auto", "pool":
 		return true
@@ -123,9 +127,11 @@ func serveRotation(ctx context.Context, runtime commandRuntime, selector string,
 	if err != nil {
 		return nil
 	}
-	rotation := client.Rotation(notify)
 	_ = ctx
-	return rotation
+	if filter, scoped, parseErr := proxyregion.Parse(selector); parseErr == nil && scoped {
+		return client.RotationWithFilter(filter, notify)
+	}
+	return client.Rotation(notify)
 }
 
 // isLeaseLossError 判断续期失败是否属于「这个出口已经不可用」。
@@ -185,6 +191,9 @@ func rotateServeEntry(
 // managementproxy 的轮换器不对外暴露它用的是哪个候选 ID，而 serve 需要它来
 // 重新建立同名出口。租约名即候选显示名，管理面接受唯一名称。
 func selectorForLease(lease updateproxy.EgressLease) string {
+	if id := strings.TrimSpace(lease.ID); id != "" {
+		return id
+	}
 	if name := strings.TrimSpace(lease.Name); name != "" {
 		return name
 	}

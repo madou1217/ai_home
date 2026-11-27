@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/proxytransport"
 )
 
@@ -37,7 +38,7 @@ func runProxyCommand(ctx context.Context, arguments []string, runtime commandRun
 }
 
 func writeProxyCommandUsage(runtime commandRuntime) {
-	_, _ = fmt.Fprintln(runtime.stdout, "用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID] [--server URL | --ssh <connectionId> | --peer <connectionId>] [--no-socks] [--system --system-service <name>] [--system-dry-run] [--json]")
+	_, _ = fmt.Fprintln(runtime.stdout, "用法: aih proxy serve [--selector auto|pool|ssh:<id>|节点ID|地区范围 us,sg / lax / exclude:cn] [--server URL | --ssh <connectionId> | --peer <connectionId>] [--no-socks] [--system --system-service <name>] [--system-dry-run] [--json]")
 	_, _ = fmt.Fprintln(runtime.stdout, "")
 	_, _ = fmt.Fprintln(runtime.stdout, "通过远端 AIH Server 的代理租约，在当前主机建立 loopback HTTP 与 SOCKS5 代理入口。")
 	_, _ = fmt.Fprintln(runtime.stdout, "需要 AIH_SERVER_MANAGEMENT_KEY；--server 直达管理面，--ssh 自动建立本地转发。")
@@ -94,7 +95,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, peerAih: "aih", renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5", httpPort: 6152, socksPort: 6153, anonymous: true}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
+	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId>、节点 ID，或地区范围 us,sg / lax / exclude:cn")
 	flags.StringVar(&options.server, "server", "", "远端 AIH Server 管理面地址；缺省读取 AIH_SERVER_BASE_URL")
 	flags.StringVar(&options.ssh, "ssh", "", "用已保存的 SSH 连接建立本地转发（连接 ID）")
 	flags.StringVar(&options.sshVia, "ssh-via", "", "可选的 SSH 跳板连接 ID（复用现有 mesh 链路）")
@@ -165,6 +166,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	options.managementKeyFile = strings.TrimSpace(options.managementKeyFile)
 	if options.selector == "" || strings.ContainsAny(options.selector, "\r\n\x00") {
 		return options, errors.New("--selector 无效")
+	}
+	if _, _, scopeErr := proxyregion.Parse(options.selector); scopeErr != nil {
+		return options, fmt.Errorf("--selector 地区范围无效: %w", scopeErr)
 	}
 	if countNonEmpty(options.server, options.ssh, options.peer) > 1 {
 		return options, errors.New("--server、--ssh 与 --peer 只能选择一个")
@@ -420,6 +424,9 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		reconnects++
 		startWatchers(lease)
 		publishStatus()
+		if rotation != nil {
+			rotation.Reset()
+		}
 		return name, nil
 	}
 
@@ -475,6 +482,8 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("此 selector 不允许自动换出口")}
 					continue
 				}
+				// 用户显式续约时允许重新尝试所有候选；自动失败循环仍保留排除集。
+				rotation.Reset()
 				if _, healErr := rebuildEntry(renewErr.Error()); healErr != nil {
 					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: healErr}
 					continue

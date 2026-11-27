@@ -84,6 +84,10 @@ type messageDTO struct {
 	ID string `json:"id"`
 	// Status 是重放输出项时携带的历史状态。
 	Status string `json:"status"`
+	// Passthrough 是 Codex 客户端自己记录的会话/UI 元数据（turn_id、create_time、
+	// 内容项来源等）。上游线协议没有对应表达，Canonical 投影一律丢弃；但它是客户端
+	// 正常随消息下发的字段，不能被未知字段检查当成非法请求拒掉整个会话。
+	Passthrough json.RawMessage `json:"internal_chat_message_metadata_passthrough"`
 }
 
 // contentHeaderDTO 只用于选择具体内容块 Decoder。

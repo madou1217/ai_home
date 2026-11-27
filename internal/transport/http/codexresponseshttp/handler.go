@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"strconv"
@@ -166,6 +167,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败；
 		// 标记为解码拒收，供前置宿主识别失败类别。
 		inferenceapi.MarkDecodeRejected(response)
+		// 这个分支过去完全静默，线上只能靠响应体反推，无法区分「请求形状不支持」
+		// 与「上传被中间层截断」。只记录长度/编码/错误类别，不落请求体内容。
+		log.Printf(
+			"Codex Responses decode rejected: request_id=%s content_length=%d content_encoding=%q err=%v",
+			requestid.FromContext(ctx),
+			request.ContentLength,
+			strings.TrimSpace(request.Header.Get("Content-Encoding")),
+			err,
+		)
 		writeError(response, "invalid_request_body")
 		return
 	}

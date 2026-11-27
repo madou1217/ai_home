@@ -108,6 +108,28 @@ func (store *Store) Add(ctx context.Context, instance Instance) (Instance, error
 	if err != nil {
 		return Instance{}, err
 	}
+	// Refresh before deduplicating: a repeated Chromium launch with the same
+	// proxy URL reuses one profile, and Chrome hands the new window to that
+	// existing process. Appending another record would make the desk show the
+	// same live PID two or three times.
+	if _, refreshErr := store.refreshLocked(document, time.Now()); refreshErr == nil && instance.ProfileDir != "" {
+		for index := range document.Instances {
+			existing := &document.Instances[index]
+			if existing.ProfileDir != instance.ProfileDir || !existing.ActiveNow() {
+				continue
+			}
+			existing.Proxied = instance.Proxied
+			existing.ProxyURL = instance.ProxyURL
+			existing.ProxyMode = instance.ProxyMode
+			existing.ProxyCountry = instance.ProxyCountry
+			existing.ProxyCity = instance.ProxyCity
+			existing.ProxyRegion = instance.ProxyRegion
+			if err := store.saveLocked(document); err != nil {
+				return Instance{}, err
+			}
+			return *existing, nil
+		}
+	}
 	document.Instances = append(document.Instances, instance)
 	document.Instances = prune(document.Instances, time.Now())
 	if err := store.saveLocked(document); err != nil {
@@ -213,35 +235,68 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 	return results, nil
 }
 
-// Remove deletes records without touching processes (use Kill to stop them).
-func (store *Store) Remove(ids []string) error {
+// History refreshes state and returns exited rows newest-first.
+//
+// The live desk only shows ActiveNow rows; this is the explicit history view
+// so ended launches do not accumulate in the running list.
+func (store *Store) History(ctx context.Context) ([]Instance, error) {
+	instances, err := store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_, history := SplitActive(instances)
+	return history, nil
+}
+
+// RemoveHistory deletes exited records without touching processes (use Kill to
+// stop live ones). Live rows are always kept; empty ids clears all history.
+func (store *Store) RemoveHistory(ctx context.Context, ids []string) (int, error) {
 	if store == nil {
-		return errors.New("app_sessions_store_unavailable")
+		return 0, errors.New("app_sessions_store_unavailable")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	release, lockErr := store.lockDocument()
 	if lockErr != nil {
-		return lockErr
+		return 0, lockErr
 	}
 	defer release()
 	document, err := store.loadLocked()
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if _, refreshErr := store.refreshLocked(document, time.Now()); refreshErr != nil {
+		return 0, refreshErr
 	}
 	selected := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
-		selected[strings.TrimSpace(id)] = struct{}{}
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			selected[trimmed] = struct{}{}
+		}
 	}
 	kept := document.Instances[:0]
+	removed := 0
 	for _, instance := range document.Instances {
-		if _, drop := selected[instance.ID]; drop {
+		if instance.ActiveNow() {
+			kept = append(kept, instance)
 			continue
 		}
-		kept = append(kept, instance)
+		if len(selected) > 0 {
+			if _, drop := selected[instance.ID]; !drop {
+				kept = append(kept, instance)
+				continue
+			}
+		}
+		removed++
 	}
 	document.Instances = kept
-	return store.saveLocked(document)
+	if removed == 0 {
+		return 0, nil
+	}
+	if err := store.saveLocked(document); err != nil {
+		return 0, err
+	}
+	return removed, nil
 }
 
 func (store *Store) refreshLocked(document *storeDocument, now time.Time) (bool, error) {

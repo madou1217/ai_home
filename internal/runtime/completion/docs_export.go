@@ -262,8 +262,8 @@ var docExamples = map[string]docExample{
 		Example: "aih proxy serve --selector auto",
 	},
 	"aih app": {
-		Usage:   "aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list|--status] [--refresh] [--json]",
-		Example: "aih app \"Microsoft Edge\" --proxy",
+		Usage:   "aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list|--status|--history] [--refresh] [--json]",
+		Example: "aih app \"Microsoft Edge\" --proxy-url http://127.0.0.1:6156",
 	},
 	"aih proxy service install": {
 		Usage:   "aih proxy service install [--selector auto] [--no-socks]",

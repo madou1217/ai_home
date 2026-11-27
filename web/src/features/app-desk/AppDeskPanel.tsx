@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Checkbox, Modal, Spin, Switch, Tooltip, message } from 'antd';
+import { Checkbox, Input, Modal, Segmented, Select, Spin, Switch, Tooltip, message } from 'antd';
 import {
   CheckOutlined,
   CloseOutlined,
   CopyOutlined,
+  DeleteOutlined,
   DesktopOutlined,
   ExclamationCircleOutlined,
+  HistoryOutlined,
   PoweroffOutlined,
   ReloadOutlined,
+  RocketOutlined,
   StopOutlined,
   SyncOutlined,
   ThunderboltOutlined
@@ -22,7 +25,8 @@ import {
   sanitizeProxyUrl,
   type AppDeskInstance,
   type AppDeskProxyStatus,
-  type AppDeskView
+  type AppDeskView,
+  type LocalApp
 } from './app-desk-api';
 import './AppDeskPanel.css';
 
@@ -31,8 +35,11 @@ const CLOCK_TICK_MS = 1000;
 const RECONNECT_ANIMATION_MS = 3400;
 const FEEDBACK_TTL_MS = 6000;
 const SAMPLE_COMMAND = 'aih app "Google Chrome" --proxy';
+const SAMPLE_PROXY_URL = 'http://127.0.0.1:6156';
 
 type ProxyVisualState = 'active' | 'reconnecting' | 'stopped';
+type LaunchProxyMode = 'direct' | 'default' | 'custom';
+type DeskListView = 'active' | 'history';
 
 interface ReconnectBanner {
   seq: number;
@@ -186,11 +193,27 @@ export default function AppDeskPanel() {
   const [togglingHotSwap, setTogglingHotSwap] = useState(false);
   const [copiedSample, setCopiedSample] = useState(false);
 
+  // 主列表只放运行中的实例；已结束的行进历史视图，避免列表无限增长。
+  const [view, setView] = useState<DeskListView>('active');
+  const [history, setHistory] = useState<AppDeskInstance[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
+
+  // 「启动应用」：把 CLI 的 aih app [--proxy|--proxy-url] 可视化成同一组参数。
+  const [launchOpen, setLaunchOpen] = useState(false);
+  const [appCatalog, setAppCatalog] = useState<LocalApp[]>([]);
+  const [appCatalogLoading, setAppCatalogLoading] = useState(false);
+  const [launchAppId, setLaunchAppId] = useState('');
+  const [launchProxyMode, setLaunchProxyMode] = useState<LaunchProxyMode>('default');
+  const [launchProxyUrl, setLaunchProxyUrl] = useState('');
+  const [launching, setLaunching] = useState(false);
+
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [reconnectBanner, setReconnectBanner] = useState<ReconnectBanner | null>(null);
   const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
 
   const inFlightRef = useRef(false);
+  const historyInFlightRef = useRef(false);
   const mountedRef = useRef(true);
   const mutationEpochRef = useRef(0);
   const proxyPrevRef = useRef<{ initialized: boolean; leaseActive: boolean; reconnects: number }>({
@@ -280,6 +303,23 @@ export default function AppDeskPanel() {
     }
   }, [applyDeskSnapshot]);
 
+  const fetchHistory = useCallback(async () => {
+    if (historyInFlightRef.current) return;
+    historyInFlightRef.current = true;
+    setHistoryLoading(true);
+    try {
+      const rows = await appDeskAPI.history();
+      if (!mountedRef.current) return;
+      setHistory(rows);
+    } catch (error: unknown) {
+      if (!mountedRef.current) return;
+      showFeedback('error', `读取历史失败：${describeAppDeskError(error, '历史读取失败')}`);
+    } finally {
+      historyInFlightRef.current = false;
+      if (mountedRef.current) setHistoryLoading(false);
+    }
+  }, [showFeedback]);
+
   useEffect(() => {
     mountedRef.current = true;
     void fetchDesk();
@@ -310,6 +350,18 @@ export default function AppDeskPanel() {
     };
   }, [fetchDesk]);
 
+  // 历史视图激活时才拉取已结束记录；不轮询时不会给主看台增加负载。
+  useEffect(() => {
+    if (view !== 'history') return;
+    void fetchHistory();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchHistory();
+      }
+    }, POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [view, fetchHistory]);
+
   // 本地 1s 时钟：平滑更新运行时长与“最后续约”相对时间。
   useEffect(() => {
     const ticker = window.setInterval(() => {
@@ -319,10 +371,33 @@ export default function AppDeskPanel() {
   }, []);
 
   const instances = desk?.instances ?? [];
+  const historyCount = desk?.historyCount ?? 0;
+  const historyRows = useMemo(() => history.filter((item) => !item.live), [history]);
   const proxy = desk?.proxy;
   const proxyState = resolveProxyVisualState(proxy, desk?.proxyError);
   const hotSwapEnabled = desk?.hotSwap ?? false;
   const hotSwapUnavailable = Boolean(proxy?.running && !proxy.hotSwapAvailable);
+
+  const selectedApp = useMemo(
+    () => appCatalog.find((item) => item.id === launchAppId),
+    [appCatalog, launchAppId]
+  );
+  const launchCustomUrl = launchProxyUrl.trim();
+  const launchCustomValid = (() => {
+    if (launchProxyMode !== 'custom' || !launchCustomUrl) return false;
+    try {
+      const parsed = new URL(launchCustomUrl);
+      return ['http:', 'https:', 'socks5:', 'socks5h:', 'socks:'].includes(parsed.protocol) && Boolean(parsed.host);
+    } catch {
+      return false;
+    }
+  })();
+  const launchReady = Boolean(launchAppId) && (launchProxyMode !== 'custom' || launchCustomValid);
+  const selectedAppMode = selectedApp?.proxyMode === 'chromium'
+    ? '浏览器参数（独立 profile + --proxy-server，可靠生效）'
+    : selectedApp
+      ? '环境变量（应用若不读取 HTTP(S)_PROXY 则不生效）'
+      : '选择应用后显示代理生效方式';
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedInstances = useMemo(
@@ -562,6 +637,93 @@ export default function AppDeskPanel() {
     }
   };
 
+  const loadAppCatalog = useCallback(async () => {
+    setAppCatalogLoading(true);
+    try {
+      const apps = await appDeskAPI.listApps();
+      if (mountedRef.current) setAppCatalog(apps);
+    } catch (error: unknown) {
+      if (mountedRef.current) {
+        showFeedback('error', `读取应用列表失败：${describeAppDeskError(error, '应用列表读取失败')}`);
+      }
+    } finally {
+      if (mountedRef.current) setAppCatalogLoading(false);
+    }
+  }, [showFeedback]);
+
+  const openLaunch = () => {
+    setLaunchOpen(true);
+    if (appCatalog.length === 0 && !appCatalogLoading) {
+      void loadAppCatalog();
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!launchReady || launching) return;
+    setLaunching(true);
+    try {
+      const result = await appDeskAPI.launchApp({
+        id: launchAppId,
+        proxy: launchProxyMode !== 'direct',
+        proxyUrl: launchProxyMode === 'custom' ? launchCustomUrl : undefined
+      });
+      if (!mountedRef.current) return;
+      const proxyText = result.proxyUrl
+        ? `代理 ${sanitizeProxyUrl(result.proxyUrl)}（${result.proxyLabel || result.app.proxyLabel}）`
+        : '直连';
+      showFeedback('success', `已启动 ${result.app.name}`, `${proxyText} · 独立实例`);
+      message.success(`已启动 ${result.app.name}（${proxyText}）`);
+      setLaunchOpen(false);
+      setView('active');
+      void fetchDesk();
+    } catch (error: unknown) {
+      if (!mountedRef.current) return;
+      const text = describeAppDeskError(error, '启动应用失败');
+      showFeedback('error', `启动失败：${text}`);
+      message.error(text);
+    } finally {
+      if (mountedRef.current) setLaunching(false);
+    }
+  };
+
+  const handleClearHistory = () => {
+    if (clearingHistory) return;
+    Modal.confirm({
+      title: '清空已结束的历史记录',
+      content: '只会删除看台历史记录，不会结束任何运行中的实例。',
+      okText: '清空历史',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: async () => {
+        setClearingHistory(true);
+        try {
+          const removed = await appDeskAPI.clearHistory();
+          if (!mountedRef.current) return;
+          setHistory([]);
+          showFeedback('success', `已清理 ${removed} 条历史记录`);
+          void fetchDesk();
+        } catch (error: unknown) {
+          if (!mountedRef.current) return;
+          showFeedback('error', `清理历史失败：${describeAppDeskError(error, '清理历史失败')}`);
+        } finally {
+          if (mountedRef.current) setClearingHistory(false);
+        }
+      }
+    });
+  };
+
+  const handleRemoveHistoryRow = async (id: string) => {
+    try {
+      await appDeskAPI.clearHistory([id]);
+      if (!mountedRef.current) return;
+      setHistory((current) => current.filter((item) => item.id !== id));
+      void fetchDesk();
+    } catch (error: unknown) {
+      if (!mountedRef.current) return;
+      showFeedback('error', `移除历史记录失败：${describeAppDeskError(error, '移除历史记录失败')}`);
+    }
+  };
+
   const renewDisabledTip = selectedIds.length === 0
     ? '请先勾选至少一个带代理的应用实例'
     : selectedProxiedCount === 0
@@ -573,6 +735,134 @@ export default function AppDeskPanel() {
     : selectedLiveIds.length === 0
       ? '已选实例均已退出'
       : '';
+
+  const renderInstanceRow = (instance: AppDeskInstance, historyMode: boolean) => {
+    const checked = !historyMode && selectedSet.has(instance.id);
+    const state = historyMode ? { tone: 'exited' as const, label: '已结束' } : statusMeta(instance);
+    const pids = formatPids(instance.pids);
+    const port = extractProxyPort(instance.proxyUrl) || (instance.proxied ? '6152' : '');
+    const mode = proxyModeMeta(instance.proxyMode);
+    const isRunningOrStarting = instance.live || instance.status === 'running' || instance.status === 'starting';
+    const uptimeMs = !isRunningOrStarting && instance.exitedAtMs
+      ? instance.exitedAtMs - instance.startedAtMs
+      : nowMs - instance.startedAtMs;
+    const uptimeText = historyMode
+      ? instance.exitedAtMs
+        ? `结束于 ${formatClock(instance.exitedAtMs)}`
+        : '—'
+      : !isRunningOrStarting && instance.exitedAtMs
+        ? `运行 ${formatDuration(uptimeMs)}`
+        : formatDuration(uptimeMs);
+    const timeTooltip = instance.exitedAtMs
+      ? `启动：${formatDateTime(instance.startedAtMs)} · 退出：${formatDateTime(instance.exitedAtMs)} · 时长 ${formatDuration(uptimeMs)}`
+      : `启动于 ${formatDateTime(instance.startedAtMs)}`;
+
+    return (
+      <li
+        key={instance.id}
+        className="app-desk-row"
+        data-selected={checked ? 'true' : 'false'}
+        data-status={state.tone}
+        data-live={instance.live ? 'true' : 'false'}
+        data-history={historyMode ? 'true' : 'false'}
+        onClick={(event) => {
+          if (historyMode) return;
+          const target = event.target as HTMLElement | null;
+          if (target?.closest('input, button, a, label, .ant-checkbox-wrapper')) return;
+          toggleSelectOne(instance.id);
+        }}
+      >
+        <div className="app-desk-cell app-desk-cell-check">
+          {historyMode ? (
+            <Tooltip title="移除这条历史记录">
+              <Button
+                size="small"
+                type="text"
+                icon={<DeleteOutlined />}
+                aria-label={`移除 ${instance.name} 的历史记录`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleRemoveHistoryRow(instance.id);
+                }}
+              />
+            </Tooltip>
+          ) : (
+            <Checkbox
+              checked={checked}
+              aria-label={`选择 ${instance.name}`}
+              onChange={(event) => toggleSelectOne(instance.id, event.target.checked)}
+            />
+          )}
+        </div>
+
+        <div className="app-desk-cell app-desk-cell-app">
+          <div className="app-desk-app-title-row">
+            <span className="app-desk-app-name" title={instance.name}>
+              {instance.name}
+            </span>
+            {instance.kind ? <span className="app-desk-kind-badge">{instance.kind}</span> : null}
+            {instance.adopted ? (
+              <Tooltip title="单实例应用：复用已运行的进程（非本次新拉起）">
+                <span className="app-desk-adopted-badge">adopted</span>
+              </Tooltip>
+            ) : null}
+          </div>
+          {instance.path ? (
+            <span className="app-desk-app-path" title={instance.path}>
+              {instance.path}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="app-desk-cell app-desk-cell-pid" data-label="PID">
+          {pids.full && pids.full !== pids.display ? (
+            <Tooltip title={`PIDs: ${pids.full}`}>
+              <span className="app-desk-mono">{pids.display}</span>
+            </Tooltip>
+          ) : (
+            <span className="app-desk-mono">{pids.display}</span>
+          )}
+        </div>
+
+        <div className="app-desk-cell app-desk-cell-proxy" data-label="代理">
+          {instance.proxied ? (
+            <div className="app-desk-proxy-badges">
+              <Tooltip title={sanitizeProxyUrl(instance.proxyUrl) || `127.0.0.1:${port}`}>
+                <span className="app-desk-port-chip">:{port}</span>
+              </Tooltip>
+              {instance.proxyRegion ? (
+                <Tooltip title={`出口地区：${instance.proxyRegion}`}>
+                  <span className="app-desk-region-chip">{instance.proxyRegion}</span>
+                </Tooltip>
+              ) : null}
+              <Tooltip title={mode.tip}>
+                <span className="app-desk-mode-chip" data-tone={mode.tone}>
+                  {mode.label}
+                </span>
+              </Tooltip>
+            </div>
+          ) : (
+            <span className="app-desk-muted">直连</span>
+          )}
+        </div>
+
+        <div className="app-desk-cell app-desk-cell-status" data-label="状态">
+          <span className="app-desk-status-chip" data-tone={state.tone}>
+            <span className="app-desk-status-dot" aria-hidden="true" />
+            <span>{state.label}</span>
+          </span>
+        </div>
+
+        <div className="app-desk-cell app-desk-cell-uptime" data-label="时长">
+          <Tooltip title={timeTooltip}>
+            <span className="app-desk-mono app-desk-uptime-text" data-live={isRunningOrStarting && !historyMode ? 'true' : 'false'}>
+              {uptimeText}
+            </span>
+          </Tooltip>
+        </div>
+      </li>
+    );
+  };
 
   const httpPort = extractProxyPort(proxy?.httpUrl);
   const socksPort = extractProxyPort(proxy?.socks5Url);
@@ -596,6 +886,9 @@ export default function AppDeskPanel() {
             <span className="app-desk-poll-dot" aria-hidden="true" />
             <span>1.5s 轮询</span>
           </span>
+          <Button type="primary" icon={<RocketOutlined />} onClick={openLaunch}>
+            启动应用
+          </Button>
           <Button
             icon={<ReloadOutlined spin={manualRefreshing} />}
             loading={manualRefreshing}
@@ -707,6 +1000,7 @@ export default function AppDeskPanel() {
             <dt>出口名称</dt>
             <dd title={proxy?.leaseName || undefined}>
               <strong className="app-desk-metric-value">{proxy?.leaseName || '—'}</strong>
+              {proxy?.region ? <span className="app-desk-metric-sub">{proxy.region}</span> : null}
             </dd>
           </div>
           <div className="app-desk-metric">
@@ -786,7 +1080,32 @@ export default function AppDeskPanel() {
         ) : null}
       </article>
 
+      {/* 运行中 / 历史 视图切换：已结束实例不再混入主列表 */}
+      <div className="app-desk-view-bar">
+        <Segmented
+          value={view}
+          onChange={(value) => setView(value as DeskListView)}
+          options={[
+            { value: 'active', label: `运行中 ${instances.length}` },
+            { value: 'history', label: `历史 ${historyCount}` }
+          ]}
+        />
+        {view === 'history' ? (
+          <Button
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            loading={clearingHistory}
+            disabled={historyRows.length === 0 || clearingHistory}
+            onClick={handleClearHistory}
+          >
+            清空历史
+          </Button>
+        ) : null}
+      </div>
+
       {/* 批量选择与操作工具条 */}
+      {view === 'active' ? (
       <div className="app-desk-toolbar">
         <div className="app-desk-selection-bar">
           <Checkbox
@@ -845,6 +1164,21 @@ export default function AppDeskPanel() {
           </Button>
         </div>
       </div>
+      ) : (
+        <div className="app-desk-history-bar">
+          <span>
+            共 {historyRows.length} 条已结束记录 · 自动保留最近 24 小时
+          </span>
+          <Button
+            size="small"
+            icon={<ReloadOutlined spin={historyLoading} />}
+            loading={historyLoading}
+            onClick={() => void fetchHistory()}
+          >
+            刷新历史
+          </Button>
+        </div>
+      )}
 
       {feedback ? (
         <div key={feedback.id} className="app-desk-feedback" data-tone={feedback.tone} role="status">
@@ -872,8 +1206,39 @@ export default function AppDeskPanel() {
         </div>
       ) : null}
 
-      {/* 实例列表 */}
-      {loading && !desk ? (
+      {/* 实例列表 / 历史列表：已结束的行只在历史视图出现 */}
+      {view === 'history' ? (
+        historyLoading && historyRows.length === 0 ? (
+          <div className="app-desk-loading" role="status">
+            <Spin />
+            <span className="app-desk-loading-text">正在读取历史…</span>
+          </div>
+        ) : historyRows.length === 0 ? (
+          <div className="app-desk-empty" role="status">
+            <span className="app-desk-empty-icon" aria-hidden="true">
+              <HistoryOutlined />
+            </span>
+            <p className="app-desk-empty-title">历史里还没有已结束的实例</p>
+            <p className="app-desk-empty-desc">
+              实例退出或结束后会在这里保留最近 24 小时；运行中的实例在「运行中」。
+            </p>
+          </div>
+        ) : (
+          <div className="app-desk-table" role="region" aria-label="已结束应用实例历史">
+            <div className="app-desk-table-head" aria-hidden="true">
+              <span className="app-desk-col-check" />
+              <span>应用 / Kind</span>
+              <span>PID</span>
+              <span>代理端口与模式</span>
+              <span>状态</span>
+              <span className="app-desk-col-uptime">结束时间</span>
+            </div>
+            <ul className="app-desk-rows">
+              {historyRows.map((instance) => renderInstanceRow(instance, true))}
+            </ul>
+          </div>
+        )
+      ) : loading && !desk ? (
         <div className="app-desk-loading" role="status">
           <Spin />
           <span className="app-desk-loading-text">正在读取应用看台…</span>
@@ -885,7 +1250,7 @@ export default function AppDeskPanel() {
           </span>
           <p className="app-desk-empty-title">还没有通过 aih app 启动的实例</p>
           <p className="app-desk-empty-desc">
-            在终端执行下面的命令，或在「网络 → 本机代理」启动带代理应用，实例会自动出现在看台中。
+            点右上角「启动应用」选择应用与代理参数，或在终端执行下面的命令。
           </p>
           <div className="app-desk-sample-command">
             <code>{SAMPLE_COMMAND}</code>
@@ -910,112 +1275,93 @@ export default function AppDeskPanel() {
           </div>
 
           <ul className="app-desk-rows">
-            {instances.map((instance) => {
-              const checked = selectedSet.has(instance.id);
-              const state = statusMeta(instance);
-              const pids = formatPids(instance.pids);
-              const port = extractProxyPort(instance.proxyUrl) || (instance.proxied ? '6152' : '');
-              const mode = proxyModeMeta(instance.proxyMode);
-              const isRunningOrStarting = instance.live || instance.status === 'running' || instance.status === 'starting';
-              const uptimeMs = !isRunningOrStarting && instance.exitedAtMs
-                ? instance.exitedAtMs - instance.startedAtMs
-                : nowMs - instance.startedAtMs;
-              const uptimeText = !isRunningOrStarting && instance.exitedAtMs
-                ? `运行 ${formatDuration(uptimeMs)}`
-                : formatDuration(uptimeMs);
-              const timeTooltip = instance.exitedAtMs
-                ? `启动：${formatDateTime(instance.startedAtMs)} · 退出：${formatDateTime(instance.exitedAtMs)}`
-                : `启动于 ${formatDateTime(instance.startedAtMs)}`;
-
-              return (
-                <li
-                  key={instance.id}
-                  className="app-desk-row"
-                  data-selected={checked ? 'true' : 'false'}
-                  data-status={state.tone}
-                  data-live={instance.live ? 'true' : 'false'}
-                  onClick={(event) => {
-                    const target = event.target as HTMLElement | null;
-                    if (target?.closest('input, button, a, label, .ant-checkbox-wrapper')) return;
-                    toggleSelectOne(instance.id);
-                  }}
-                >
-                  <div className="app-desk-cell app-desk-cell-check">
-                    <Checkbox
-                      checked={checked}
-                      aria-label={`选择 ${instance.name}`}
-                      onChange={(event) => toggleSelectOne(instance.id, event.target.checked)}
-                    />
-                  </div>
-
-                  <div className="app-desk-cell app-desk-cell-app">
-                    <div className="app-desk-app-title-row">
-                      <span className="app-desk-app-name" title={instance.name}>
-                        {instance.name}
-                      </span>
-                      {instance.kind ? (
-                        <span className="app-desk-kind-badge">{instance.kind}</span>
-                      ) : null}
-                      {instance.adopted ? (
-                        <Tooltip title="单实例应用：复用已运行的进程（非本次新拉起）">
-                          <span className="app-desk-adopted-badge">adopted</span>
-                        </Tooltip>
-                      ) : null}
-                    </div>
-                    {instance.path ? (
-                      <span className="app-desk-app-path" title={instance.path}>
-                        {instance.path}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="app-desk-cell app-desk-cell-pid" data-label="PID">
-                    {pids.full && pids.full !== pids.display ? (
-                      <Tooltip title={`PIDs: ${pids.full}`}>
-                        <span className="app-desk-mono">{pids.display}</span>
-                      </Tooltip>
-                    ) : (
-                      <span className="app-desk-mono">{pids.display}</span>
-                    )}
-                  </div>
-
-                  <div className="app-desk-cell app-desk-cell-proxy" data-label="代理">
-                    {instance.proxied ? (
-                      <div className="app-desk-proxy-badges">
-                        <Tooltip title={sanitizeProxyUrl(instance.proxyUrl) || `127.0.0.1:${port}`}>
-                          <span className="app-desk-port-chip">:{port}</span>
-                        </Tooltip>
-                        <Tooltip title={mode.tip}>
-                          <span className="app-desk-mode-chip" data-tone={mode.tone}>
-                            {mode.label}
-                          </span>
-                        </Tooltip>
-                      </div>
-                    ) : (
-                      <span className="app-desk-muted">直连</span>
-                    )}
-                  </div>
-
-                  <div className="app-desk-cell app-desk-cell-status" data-label="状态">
-                    <span className="app-desk-status-chip" data-tone={state.tone}>
-                      <span className="app-desk-status-dot" aria-hidden="true" />
-                      <span>{state.label}</span>
-                    </span>
-                  </div>
-
-                  <div className="app-desk-cell app-desk-cell-uptime" data-label="时长">
-                    <Tooltip title={timeTooltip}>
-                      <span className="app-desk-mono app-desk-uptime-text" data-live={isRunningOrStarting ? 'true' : 'false'}>
-                        {uptimeText}
-                      </span>
-                    </Tooltip>
-                  </div>
-                </li>
-              );
-            })}
+            {instances.map((instance) => renderInstanceRow(instance, false))}
           </ul>
         </div>
       )}
+
+      {/* 启动应用：把 aih app 的 --proxy / --proxy-url 参数可视化 */}
+      <Modal
+        title="启动应用"
+        open={launchOpen}
+        onCancel={() => setLaunchOpen(false)}
+        onOk={() => void handleLaunch()}
+        okText="启动"
+        cancelText="取消"
+        confirmLoading={launching}
+        okButtonProps={{ disabled: !launchReady }}
+        width={560}
+      >
+        <div className="app-desk-launch-form">
+          <label className="app-desk-launch-field">
+            <span className="app-desk-launch-label">应用</span>
+            <Select
+              showSearch
+              allowClear
+              loading={appCatalogLoading}
+              value={launchAppId || undefined}
+              placeholder="搜索本机应用（与 alt+space / aih app 同源）"
+              optionFilterProp="label"
+              onChange={(value) => setLaunchAppId(value || '')}
+              options={appCatalog.map((app) => ({
+                value: app.id,
+                label: `${app.name}${app.kind ? `（${app.kind}）` : ''}`
+              }))}
+              notFoundContent={appCatalogLoading ? <Spin size="small" /> : '没有匹配的应用'}
+            />
+          </label>
+          {selectedApp ? <p className="app-desk-launch-hint">{selectedApp.path}</p> : null}
+
+          <div className="app-desk-launch-field">
+            <span className="app-desk-launch-label">代理参数</span>
+            <Segmented
+              block
+              value={launchProxyMode}
+              onChange={(value) => setLaunchProxyMode(value as LaunchProxyMode)}
+              options={[
+                { value: 'direct', label: '直连' },
+                { value: 'default', label: '本机代理' },
+                { value: 'custom', label: '自定义 URL' }
+              ]}
+            />
+          </div>
+
+          {launchProxyMode === 'default' ? (
+            <div className="app-desk-launch-note">
+              {proxy?.running && !desk?.proxyError ? (
+                <>
+                  入口 HTTP :{httpPort || '—'} · 出口 {proxy.leaseName || '—'}
+                  {proxy.region ? ` · ${proxy.region}` : ''}（等价 <code>aih app ... --proxy</code>）
+                </>
+              ) : (
+                <InlineNote tone="warning">
+                  本机代理入口未运行，启动后应用无法经代理出网；可先在「网络 → 本机代理」启动。
+                </InlineNote>
+              )}
+            </div>
+          ) : null}
+
+          {launchProxyMode === 'custom' ? (
+            <label className="app-desk-launch-field">
+              <span className="app-desk-launch-label">代理 URL</span>
+              <Input
+                value={launchProxyUrl}
+                placeholder={SAMPLE_PROXY_URL}
+                onChange={(event) => setLaunchProxyUrl(event.target.value)}
+                status={launchCustomUrl && !launchCustomValid ? 'error' : undefined}
+              />
+              <span className="app-desk-launch-hint">
+                支持 http/https/socks5；等价 <code>aih app ... --proxy-url {SAMPLE_PROXY_URL}</code>。
+              </span>
+            </label>
+          ) : null}
+
+          <div className="app-desk-launch-note">
+            <span className="app-desk-launch-capability">{selectedAppMode}</span>
+            <span className="app-desk-launch-hint">始终启动独立实例，不修改系统代理或全局配置。</span>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

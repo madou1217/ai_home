@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/madou1217/ai_home/internal/runtime/proxyendpoints"
 	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
@@ -31,6 +32,8 @@ type serveEntryUnit struct {
 	restoreSystem func()
 	// unpublish 只删除本次写入的入口文件（核对 PID）。
 	unpublish func()
+	// unpublishEndpoint 删除本进程发布的 <port>.json geo 记录。
+	unpublishEndpoint func()
 }
 
 func (unit *serveEntryUnit) Close() error {
@@ -50,6 +53,10 @@ func (unit *serveEntryUnit) Close() error {
 		unit.unpublish()
 		unit.unpublish = nil
 	}
+	if unit.unpublishEndpoint != nil {
+		unit.unpublishEndpoint()
+		unit.unpublishEndpoint = nil
+	}
 	if unit.lease != nil {
 		err := unit.lease.Close()
 		unit.lease = nil
@@ -65,6 +72,15 @@ func newServeEntryUnit(ctx context.Context, runtime commandRuntime, options prox
 		return nil, err
 	}
 	unit := &serveEntryUnit{lease: lease}
+	// 所有 serve 进程（含临时前台入口）都发布自己的地区元数据；它不含凭据，
+	// 只让应用看台按端口显示国家/城市。
+	if home, homeErr := resolveAIHomeDir(runtime); homeErr == nil {
+		if cleanup, publishErr := proxyendpoints.Publish(home, lease.httpURL, lease.name); publishErr != nil {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能发布代理入口地区信息: %v\n", publishErr)
+		} else {
+			unit.unpublishEndpoint = cleanup
+		}
+	}
 	fail := func(cause error) (*serveEntryUnit, error) {
 		_ = unit.Close()
 		return nil, cause

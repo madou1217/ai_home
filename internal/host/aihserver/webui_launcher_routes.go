@@ -118,6 +118,8 @@ func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies
 		{Pattern: webuiappsapi.DeskRenewPath, Handler: appsHandler, SkipPublicAlias: true},
 		{Pattern: webuiappsapi.DeskKillPath, Handler: appsHandler, SkipPublicAlias: true},
 		{Pattern: webuiappsapi.DeskHotSwapPath, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.DeskHistoryPath, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.DeskHistoryClearPath, Handler: appsHandler, SkipPublicAlias: true},
 	}
 	return rt, routes, nil
 }

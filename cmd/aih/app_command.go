@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/launcherstore"
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 )
 
@@ -26,6 +27,7 @@ type appOptions struct {
 	proxy    bool
 	proxyURL string
 	list     bool
+	history  bool
 	status   bool
 	refresh  bool
 	json     bool
@@ -42,6 +44,8 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 			options.proxy = true
 		case arg == "--list":
 			options.list = true
+		case arg == "--history":
+			options.history = true
 		case arg == "--status":
 			options.status = true
 		case arg == "--refresh":
@@ -54,7 +58,8 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 			index++
 			options.proxyURL = args[index]
 		case arg == "-h" || arg == "--help":
-			_, _ = fmt.Fprintln(runtime.stdout, "用法: aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--status] [--refresh] [--json]")
+			_, _ = fmt.Fprintln(runtime.stdout, "用法: aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--history] [--status] [--refresh] [--json]")
+			_, _ = fmt.Fprintln(runtime.stdout, "  无参数：运行中的实例看台；--history 查看已结束的历史。")
 			return nil
 		case strings.HasPrefix(arg, "-"):
 			return fmt.Errorf("未知参数: %s", arg)
@@ -106,7 +111,19 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 		return launchAppWithRecord(ctx, runtime, homeDir, app, options)
 	}
 
+	if options.history && options.query != "" {
+		return fmt.Errorf("--history 不能与应用名一起使用")
+	}
 	// 无参数：应用看台（通过 aih app 启动过的实例）。
+	if options.history {
+		history, err := appsessions.New(homeDir).History(ctx)
+		if err != nil {
+			return err
+		}
+		history = appproxyregion.Enrich(ctx, history, homeDir)
+		renderAppHistory(runtime.stdout, history, options.json)
+		return nil
+	}
 	if options.json {
 		state := &appDeskState{marked: map[string]bool{}}
 		state.refresh(ctx, appsessions.New(homeDir), homeDir)
@@ -136,13 +153,15 @@ func launchAppWithRecord(ctx context.Context, runtime commandRuntime, homeDir st
 		return err
 	}
 	store := appsessions.New(homeDir)
-	if _, recordErr := store.Add(ctx, appsessions.NewInstance(
+	instance := appsessions.NewInstance(
 		app,
 		appsessions.ExecutableFor(app),
 		profileDir,
 		proxyURL,
 		string(mode),
-	)); recordErr != nil {
+	)
+	instance.ProxyCountry, instance.ProxyCity, instance.ProxyRegion = appproxyregion.Resolve(ctx, homeDir, proxyURL)
+	if _, recordErr := store.Add(ctx, instance); recordErr != nil {
 		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能记录本次启动: %v\n", recordErr)
 	}
 

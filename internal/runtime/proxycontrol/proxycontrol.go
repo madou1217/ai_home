@@ -28,11 +28,14 @@ const (
 
 // Status is the live view of the local proxy entry.
 type Status struct {
-	Running          bool   `json:"running"`
-	PID              int    `json:"pid,omitempty"`
-	HTTPURL          string `json:"httpUrl,omitempty"`
-	SOCKS5URL        string `json:"socks5Url,omitempty"`
-	LeaseName        string `json:"leaseName,omitempty"`
+	Running   bool   `json:"running"`
+	PID       int    `json:"pid,omitempty"`
+	HTTPURL   string `json:"httpUrl,omitempty"`
+	SOCKS5URL string `json:"socks5Url,omitempty"`
+	LeaseName string `json:"leaseName,omitempty"`
+	// Region is the Chinese country/city label derived from LeaseName; empty
+	// when the name carries no recognizable geo ("AWS", custom names).
+	Region           string `json:"region,omitempty"`
 	LeaseActive      bool   `json:"leaseActive"`
 	HotSwap          bool   `json:"hotSwap"`
 	HotSwapAvailable bool   `json:"hotSwapAvailable"`

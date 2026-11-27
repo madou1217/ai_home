@@ -121,6 +121,23 @@ aih proxy regions --all                    # 查 2 字国家码 / 3 字城市码
 - 地区范围只作用于**临时受管代理池**；点名具体节点仍然不轮换，地区范围在范围内轮换；没有匹配出口时**失败关闭**，不回落直连或全部出口。
 - 城市码依赖候选的解析城市（`node-health.geo` 或节点名中的 IATA）；当前池没有城市数据时先用国家码，`aih proxy regions --all` 可看完整城市表。
 
+### 应用看台：启动应用与代理参数
+
+「开发工具 → 应用与集成 → 应用看台」把 `aih app` 的能力可视化：选择本机应用，按需选择**直连 / 本机代理 / 自定义代理 URL**，启动独立实例；实例、PID、代理端口、出口国家/城市与运行时长会实时显示。命令行等价：
+
+```bash
+aih app "Google Chrome"                                  # 直连启动独立实例
+aih app "Google Chrome" --proxy                          # 走本机 6152 入口
+aih app "Google Chrome" --proxy-url http://127.0.0.1:6156 # 走指定临时入口（例如某个节点/地区）
+aih app                                                   # 看台：只列运行中的实例
+aih app --history                                         # 已结束实例的历史记录
+```
+
+- Chromium 系使用独立 profile + `--proxy-server`；其它应用注入 `HTTP(S)_PROXY`（应用不读取则不生效）。
+- 挂了代理的实例会显示端口与**出口国家/城市**（由入口租约名或 `run/proxy/endpoints/<port>.json` 解析，解析不出就不显示，绝不猜）。
+- 已结束的实例会移入历史（保留最近 24 小时、最多 200 条），主列表只显示运行中；WebUI 顶部可切换「运行中 / 历史」，CLI 用 `aih app --history`。
+- Windows 的 `shell:AppsFolder` / `.lnk` 启动项无法透传 Chromium 参数；`aih app` 会解析真实 `chrome.exe` / `msedge.exe` 后再带参数启动，避免“显示已启动但代理没生效”。
+
 ### 常用入口与边界
 
 ```bash

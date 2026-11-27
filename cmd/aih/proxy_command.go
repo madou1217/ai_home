@@ -343,12 +343,15 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	lastErr := ""
 	reconnects := 0
 	statusFor := func() proxycontrol.Status {
+		leaseName := lease.leaseName()
+		country, cityCode := proxyregion.ParseNodeLabel(leaseName)
 		return proxycontrol.Status{
 			Running:       true,
 			PID:           os.Getpid(),
 			HTTPURL:       lease.httpURL,
 			SOCKS5URL:     lease.socksURL,
-			LeaseName:     lease.leaseName(),
+			LeaseName:     leaseName,
+			Region:        proxyregion.RegionLabel(country, cityCode),
 			LeaseActive:   leaseActive,
 			HotSwap:       hotSwapEnabled.Load(),
 			LastRenewAtMs: lastRenewAt,

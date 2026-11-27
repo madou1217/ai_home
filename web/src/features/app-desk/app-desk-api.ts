@@ -14,6 +14,10 @@ export interface AppDeskInstance {
   proxied: boolean;
   proxyUrl?: string;
   proxyMode?: string;
+  /** 代理出口国家/城市（能解析时才有）：proxyRegion 是可直接展示的中文标签。 */
+  proxyCountry?: string;
+  proxyCity?: string;
+  proxyRegion?: string;
   startedAtMs: number;
   pids?: number[];
   live: boolean;
@@ -30,6 +34,8 @@ export interface AppDeskProxyStatus {
   httpUrl?: string;
   socks5Url?: string;
   leaseName?: string;
+  /** 出口国家/城市（由租约名解析，能解析时才有）。 */
+  region?: string;
   leaseActive: boolean;
   hotSwap: boolean;
   hotSwapAvailable: boolean;
@@ -42,9 +48,39 @@ export interface AppDeskProxyStatus {
 /** GET /v1/management/webui/apps/desk 返回的看台快照。 */
 export interface AppDeskView {
   instances: AppDeskInstance[];
+  /** 已结束实例数；历史行按需从 /desk/history 拉取。 */
+  historyCount: number;
   proxy: AppDeskProxyStatus;
   hotSwap: boolean;
   proxyError?: string;
+}
+
+/** 本机应用目录项（与 alt+space、aih app 同一目录）。 */
+export interface LocalApp {
+  id: string;
+  name: string;
+  subtitle?: string;
+  path: string;
+  kind: string;
+  icon?: string;
+  terminal?: boolean;
+  /** chromium = 浏览器参数；environment = 环境变量（应用可能忽略）。 */
+  proxyMode: 'chromium' | 'environment' | (string & {});
+  proxyLabel: string;
+}
+
+export interface LocalAppLaunchInput {
+  id?: string;
+  query?: string;
+  proxy: boolean;
+  proxyUrl?: string;
+}
+
+export interface LocalAppLaunchResponse {
+  app: LocalApp;
+  proxyUrl: string;
+  proxyMode?: string;
+  proxyLabel: string;
 }
 
 export interface AppDeskKillResult {
@@ -82,6 +118,8 @@ export interface AppDeskErrorInfo {
 
 const PUBLIC_BASE = '/webui/apps/desk';
 const MANAGEMENT_BASE = '/v1/management/webui/apps/desk';
+const PUBLIC_APPS_BASE = '/webui/apps';
+const MANAGEMENT_APPS_BASE = '/v1/management/webui/apps';
 
 const DEFAULT_PROXY_STATUS: AppDeskProxyStatus = {
   running: false,
@@ -109,14 +147,16 @@ function isHttpStatus(error: unknown, targetStatus: number): boolean {
   return status === targetStatus;
 }
 
-async function requestDesk<T>(
+async function requestLocal<T>(
   method: 'GET' | 'POST',
+  publicBase: string,
+  managementBase: string,
   suffix: string,
   payload?: unknown
 ): Promise<T> {
   const remote = resolveActiveServer().isRemote;
   const invoke = async (useManagement: boolean): Promise<T> => {
-    const url = `${useManagement ? MANAGEMENT_BASE : PUBLIC_BASE}${suffix}`;
+    const url = `${useManagement ? managementBase : publicBase}${suffix}`;
     const config = useManagement ? { baseURL: '' } : undefined;
     if (method === 'GET') {
       const response = await api.get<T>(url, config);
@@ -151,6 +191,14 @@ async function requestDesk<T>(
   }
 }
 
+function requestDesk<T>(method: 'GET' | 'POST', suffix: string, payload?: unknown): Promise<T> {
+  return requestLocal<T>(method, PUBLIC_BASE, MANAGEMENT_BASE, suffix, payload);
+}
+
+function requestApps<T>(method: 'GET' | 'POST', suffix: string, payload?: unknown): Promise<T> {
+  return requestLocal<T>(method, PUBLIC_APPS_BASE, MANAGEMENT_APPS_BASE, suffix, payload);
+}
+
 function normalizeProxyStatus(raw?: Partial<AppDeskProxyStatus> | null): AppDeskProxyStatus {
   if (!raw || typeof raw !== 'object') {
     return { ...DEFAULT_PROXY_STATUS };
@@ -161,6 +209,7 @@ function normalizeProxyStatus(raw?: Partial<AppDeskProxyStatus> | null): AppDesk
     httpUrl: typeof raw.httpUrl === 'string' && raw.httpUrl ? raw.httpUrl : undefined,
     socks5Url: typeof raw.socks5Url === 'string' && raw.socks5Url ? raw.socks5Url : undefined,
     leaseName: typeof raw.leaseName === 'string' && raw.leaseName ? raw.leaseName : undefined,
+    region: typeof raw.region === 'string' && raw.region ? raw.region : undefined,
     leaseActive: Boolean(raw.leaseActive),
     hotSwap: Boolean(raw.hotSwap),
     hotSwapAvailable: Boolean(raw.hotSwapAvailable),
@@ -175,6 +224,7 @@ function normalizeDeskView(raw?: Partial<AppDeskView> | null): AppDeskView {
   const proxy = normalizeProxyStatus(raw?.proxy);
   return {
     instances: Array.isArray(raw?.instances) ? raw.instances : [],
+    historyCount: typeof raw?.historyCount === 'number' && raw.historyCount > 0 ? raw.historyCount : 0,
     proxy,
     hotSwap: typeof raw?.hotSwap === 'boolean' ? raw.hotSwap : proxy.hotSwap,
     proxyError: typeof raw?.proxyError === 'string' && raw.proxyError ? raw.proxyError : undefined
@@ -286,6 +336,46 @@ export const appDeskAPI = {
       hotSwap: typeof data.hotSwap === 'boolean' ? data.hotSwap : enabled,
       proxy: data.proxy ? normalizeProxyStatus(data.proxy) : undefined,
       running: data.running
+    };
+  },
+
+  /** 历史：已结束的启动记录（主列表不再混入）。 */
+  async history(): Promise<AppDeskInstance[]> {
+    const data = await requestDesk<{ ok: boolean; instances?: AppDeskInstance[] }>('GET', '/history');
+    return Array.isArray(data.instances) ? data.instances : [];
+  },
+
+  /** 清理历史；ids 为空时清空全部已结束记录。 */
+  async clearHistory(ids?: string[]): Promise<number> {
+    const cleaned = Array.isArray(ids) ? ids.map((id) => id.trim()).filter(Boolean) : [];
+    const data = await requestDesk<{ ok: boolean; removed?: number }>(
+      'POST',
+      '/history/clear',
+      cleaned.length > 0 ? { ids: cleaned } : {}
+    );
+    return typeof data.removed === 'number' ? data.removed : 0;
+  },
+
+  /** 本机应用目录（与 alt+space / aih app 同源）。 */
+  async listApps(): Promise<LocalApp[]> {
+    const data = await requestApps<{ ok: boolean; apps?: LocalApp[] }>('GET', '');
+    return Array.isArray(data.apps) ? data.apps : [];
+  },
+
+  /** 启动一个独立应用实例；proxy=false 即直连。 */
+  async launchApp(input: LocalAppLaunchInput): Promise<LocalAppLaunchResponse> {
+    const data = await requestApps<{
+      ok: boolean;
+      app: LocalApp;
+      proxyUrl?: string;
+      proxyMode?: string;
+      proxyLabel?: string;
+    }>('POST', '/launch', input);
+    return {
+      app: data.app,
+      proxyUrl: typeof data.proxyUrl === 'string' ? data.proxyUrl : '',
+      proxyMode: data.proxyMode,
+      proxyLabel: data.proxyLabel || data.app?.proxyLabel || ''
     };
   }
 };

@@ -30,6 +30,12 @@ type Instance struct {
 	Proxied   bool   `json:"proxied"`
 	ProxyURL  string `json:"proxyUrl,omitempty"`
 	ProxyMode string `json:"proxyMode,omitempty"`
+	// ProxyCountry/ProxyCity come from the serving entry's lease label (or its
+	// published endpoint metadata); ProxyRegion is the ready-to-render Chinese
+	// label. All three stay empty when the region cannot be resolved.
+	ProxyCountry string `json:"proxyCountry,omitempty"`
+	ProxyCity    string `json:"proxyCity,omitempty"`
+	ProxyRegion  string `json:"proxyRegion,omitempty"`
 
 	StartedAtMs int64 `json:"startedAtMs"`
 	PIDs        []int `json:"pids,omitempty"`
@@ -49,6 +55,25 @@ const (
 	StatusExited   = "exited"
 	StatusUnknown  = "unknown"
 )
+
+// ActiveNow reports whether the instance belongs on the live desk: it still
+// has a matched process or is inside the launch window. Exited rows belong in
+// history so a long-lived desk cannot grow into a process graveyard.
+func (instance Instance) ActiveNow() bool {
+	return instance.Live || instance.Status == StatusStarting
+}
+
+// SplitActive separates live rows from exited history, preserving order.
+func SplitActive(instances []Instance) (active, history []Instance) {
+	for _, instance := range instances {
+		if instance.ActiveNow() {
+			active = append(active, instance)
+		} else {
+			history = append(history, instance)
+		}
+	}
+	return active, history
+}
 
 // NewInstance builds a record from the catalog app and launch decision.
 func NewInstance(app launcher.App, executable, profileDir, proxyURL, proxyMode string) Instance {

@@ -97,6 +97,7 @@ func buildCommandCatalog() []commandNode {
 		f("--proxy", "只给本次启动的应用实例挂代理"),
 		vf("--proxy-url", "覆盖代理地址（默认 127.0.0.1:6152）", kindFree),
 		f("--list", "列出本机应用（与 alt+space 工作台同源）"),
+		f("--history", "查看已结束实例的历史记录"),
 		f("--status", "以纯文本输出应用看台（非交互）"),
 		f("--refresh", "重新扫描本机应用"),
 		jsonFlag,
@@ -235,7 +236,7 @@ func buildCommandCatalog() []commandNode {
 			n("stats", "查看 key 用量统计").withOptions(vf("--key", "key id", kindClientKey), vf("--granularity", "统计粒度", kindEnum, "minute", "hour"), f("--from-ms", ""), f("--to-ms", ""), jsonFlag),
 		),
 		n("zcode-url", "处理 zcode:// 登录回调（交给登录任务）").withPositionals(p(kindFree)),
-		n("app", "本机应用看台 / 按需启动；--proxy 只给本次实例挂代理").withOptions(appOptions...).withPositionals(p(kindFree)),
+		n("app", "本机应用看台 / 按需启动；--proxy 只给本次实例挂代理，看台显示出口国家/城市").withOptions(appOptions...).withPositionals(p(kindFree)),
 		n("proxy", "把远端出口租约变成本机 HTTP / SOCKS5 代理").withOptions(proxyOptions...).withChildren(
 			n("serve", "建立代理入口（默认命令）").withOptions(proxyOptions...),
 			n("regions", "列出地区码与中文名（2 字国家 / 3 字城市）").withOptions(jsonFlag, f("--all", "展开全部城市码")),

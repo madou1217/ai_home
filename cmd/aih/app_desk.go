@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
 )
@@ -39,9 +40,12 @@ var spinnerFrames = []string{"◐", "◓", "◑", "◒"}
 
 type appDeskState struct {
 	instances []appsessions.Instance
-	proxy     proxycontrol.Status
-	proxyErr  string
-	hotSwap   bool
+	// historyCount keeps ended launches out of the live list while still
+	// telling the user they exist (aih app --history / WebUI history).
+	historyCount int
+	proxy        proxycontrol.Status
+	proxyErr     string
+	hotSwap      bool
 
 	selected int
 	marked   map[string]bool
@@ -83,7 +87,10 @@ func runAppDashboard(ctx context.Context, runtime commandRuntime, aiHome string,
 
 func (state *appDeskState) refresh(ctx context.Context, store *appsessions.Store, aiHome string) {
 	if instances, err := store.List(ctx); err == nil {
-		state.instances = instances
+		instances = appproxyregion.Enrich(ctx, instances, aiHome)
+		active, history := appsessions.SplitActive(instances)
+		state.instances = active
+		state.historyCount = len(history)
 	}
 	state.proxyErr = ""
 	state.proxy = proxycontrol.Status{}
@@ -448,11 +455,14 @@ func renderAppDesk(output io.Writer, state *appDeskState) {
 		_, _ = fmt.Fprintf(output, "\r\n  %s还没有通过 aih app 启动的实例。%s\r\n", ansiDim, ansiReset)
 		_, _ = fmt.Fprintf(output, "  试试：%saih app \"Google Chrome\" --proxy%s\r\n", ansiCyan, ansiReset)
 	} else {
-		header := fmt.Sprintf("  %-3s %-24s %-16s %-12s %-18s %s", "", "APP", "PID", "PROXY", "STATE", "UPTIME")
+		header := fmt.Sprintf("  %-3s %-24s %-16s %-26s %-10s %s", "", "APP", "PID", "PROXY / 地区", "STATE", "UPTIME")
 		_, _ = fmt.Fprintf(output, "%s%s%s\r\n", ansiDim, header, ansiReset)
 		for index, instance := range state.instances {
 			line := renderInstanceLine(instance, index == state.selected, state.marked[instance.ID])
 			_, _ = fmt.Fprintf(output, "%s\r\n", line)
+		}
+		if state.historyCount > 0 {
+			_, _ = fmt.Fprintf(output, "  %s已结束 %d 个，已移入历史（aih app --history 查看）%s\r\n", ansiDim, state.historyCount, ansiReset)
 		}
 	}
 	if state.detail {
@@ -464,6 +474,9 @@ func renderAppDesk(output io.Writer, state *appDeskState) {
 			}
 			if current.Proxied {
 				_, _ = fmt.Fprintf(output, "  proxy     %s  (%s)\r\n", sanitizeProxyURL(current.ProxyURL), current.ProxyMode)
+				if current.ProxyRegion != "" {
+					_, _ = fmt.Fprintf(output, "  region    %s\r\n", current.ProxyRegion)
+				}
 			}
 			_, _ = fmt.Fprintf(output, "  started   %s\r\n", time.UnixMilli(current.StartedAtMs).Format("2006-01-02 15:04:05"))
 			if current.ExitedAtMs > 0 {
@@ -502,6 +515,9 @@ func renderProxyLine(state *appDeskState) string {
 	name := status.LeaseName
 	if name == "" {
 		name = "—"
+	}
+	if status.Region != "" {
+		name += " · " + status.Region
 	}
 	hotSwap := "○ off"
 	if state.hotSwap {
@@ -550,6 +566,9 @@ func renderInstanceLine(instance appsessions.Instance, selected, marked bool) st
 		if port != "" {
 			proxyText = port
 		}
+		if instance.ProxyRegion != "" {
+			proxyText += " · " + instance.ProxyRegion
+		}
 	}
 	stateText := instance.Status
 	stateColor := ansiDim
@@ -560,7 +579,7 @@ func renderInstanceLine(instance appsessions.Instance, selected, marked bool) st
 	if !instance.Live && instance.ExitedAtMs > 0 {
 		uptime = "exited " + formatDeskDuration(time.UnixMilli(instance.ExitedAtMs).Sub(time.UnixMilli(instance.StartedAtMs)))
 	}
-	line := fmt.Sprintf("%s%s %s%s%s %-24s %-16s %-12s %s%-18s%s %s",
+	line := fmt.Sprintf("%s%s %s%s%s %-24s %-16s %-26s %s%-10s%s %s",
 		cursor, marker,
 		dotColor, dot, ansiReset,
 		name, pid, proxyText,
@@ -577,7 +596,7 @@ func renderAppDeskPlain(output io.Writer, state *appDeskState) {
 		_, _ = fmt.Fprintln(output, "还没有通过 aih app 启动的实例。")
 		return
 	}
-	_, _ = fmt.Fprintf(output, "%-3s %-24s %-16s %-10s %-10s %s\n", "", "APP", "PID", "PROXY", "STATE", "UPTIME")
+	_, _ = fmt.Fprintf(output, "%-3s %-24s %-16s %-26s %-10s %s\n", "", "APP", "PID", "PROXY / 地区", "STATE", "UPTIME")
 	for _, instance := range state.instances {
 		pid := "—"
 		if len(instance.PIDs) > 0 {
@@ -593,12 +612,18 @@ func renderAppDeskPlain(output io.Writer, state *appDeskState) {
 			if port := proxyPort(instance.ProxyURL); port != "" {
 				proxyText = port
 			}
+			if instance.ProxyRegion != "" {
+				proxyText += " · " + instance.ProxyRegion
+			}
 		}
 		uptime := formatDeskDuration(time.Since(time.UnixMilli(instance.StartedAtMs)))
 		if !instance.Live && instance.ExitedAtMs > 0 {
 			uptime = "exited " + formatDeskDuration(time.UnixMilli(instance.ExitedAtMs).Sub(time.UnixMilli(instance.StartedAtMs)))
 		}
-		_, _ = fmt.Fprintf(output, "%-3s %-24s %-16s %-10s %-10s %s\n", "", truncateRunes(instance.Name, 24), pid, proxyText, instance.Status, uptime)
+		_, _ = fmt.Fprintf(output, "%-3s %-24s %-16s %-26s %-10s %s\n", "", truncateRunes(instance.Name, 24), pid, proxyText, instance.Status, uptime)
+	}
+	if state.historyCount > 0 {
+		_, _ = fmt.Fprintf(output, "\n已结束 %d 个，已移入历史（aih app --history 查看）\n", state.historyCount)
 	}
 	_, _ = fmt.Fprintf(output, "\n代理入口: ")
 	if state.proxyErr != "" || !state.proxy.Running {
@@ -613,16 +638,62 @@ func renderAppDeskJSON(output io.Writer, state *appDeskState, aiHome string) {
 	proxy.HTTPURL = sanitizeProxyURL(proxy.HTTPURL)
 	proxy.SOCKS5URL = sanitizeProxyURL(proxy.SOCKS5URL)
 	payload := map[string]any{
-		"ok":        true,
-		"instances": state.instances,
-		"proxy":     proxy,
-		"hotSwap":   state.hotSwap,
+		"ok":           true,
+		"instances":    state.instances,
+		"historyCount": state.historyCount,
+		"proxy":        proxy,
+		"hotSwap":      state.hotSwap,
 	}
 	if state.proxyErr != "" {
 		payload["proxyError"] = state.proxyErr
 	}
 	encoded, _ := json.MarshalIndent(payload, "", "  ")
 	_, _ = fmt.Fprintln(output, string(encoded))
+}
+
+// renderAppHistory lists ended launches (the live desk excludes them).
+func renderAppHistory(output io.Writer, history []appsessions.Instance, asJSON bool) {
+	if history == nil {
+		history = []appsessions.Instance{}
+	}
+	if asJSON {
+		payload, _ := json.MarshalIndent(map[string]any{
+			"ok":      true,
+			"history": history,
+		}, "", "  ")
+		_, _ = fmt.Fprintln(output, string(payload))
+		return
+	}
+	if len(history) == 0 {
+		_, _ = fmt.Fprintln(output, "历史里还没有已结束的实例。")
+		return
+	}
+	_, _ = fmt.Fprintf(output, "%-24s %-30s %-20s %s\n", "APP", "PROXY / 地区", "已结束", "运行时长")
+	for _, instance := range history {
+		proxyText := "直连"
+		if instance.Proxied {
+			proxyText = "代理"
+			if port := proxyPort(instance.ProxyURL); port != "" {
+				proxyText = ":" + port
+			}
+			if instance.ProxyRegion != "" {
+				proxyText += " · " + instance.ProxyRegion
+			}
+		}
+		ended := instance.ExitedAtMs
+		if ended <= 0 {
+			ended = instance.StartedAtMs
+		}
+		duration := time.Duration(0)
+		if instance.ExitedAtMs > instance.StartedAtMs {
+			duration = time.UnixMilli(instance.ExitedAtMs).Sub(time.UnixMilli(instance.StartedAtMs))
+		}
+		_, _ = fmt.Fprintf(output, "%-24s %-30s %-20s %s\n",
+			truncateRunes(instance.Name, 24),
+			proxyText,
+			time.UnixMilli(ended).Format("2006-01-02 15:04:05"),
+			formatDeskDuration(duration))
+	}
 }
 
 func proxyPort(raw string) string {

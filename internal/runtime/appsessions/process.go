@@ -22,9 +22,20 @@ type Process struct {
 // a single-instance app has handed off to an existing process; adopt the
 // newest matching one so the desk reflects reality.
 func matchPIDs(instance Instance, processes []Process, now time.Time) ([]int, bool, int64) {
+	if instance.ExitedAtMs > 0 && !instance.Live {
+		// An exited record is history. A later process with the same executable
+		// belongs to a new launch, never to this row.
+		return nil, false, 0
+	}
 	started := time.UnixMilli(instance.StartedAtMs)
 	lowerBound := started.Add(-5 * time.Second)
-	upperBound := now.Add(10 * time.Second)
+	// Keep the matching window anchored to the launch. Using "now + 10s" made
+	// every later process of the same app match an old record, reviving history
+	// rows and duplicating live PIDs.
+	upperBound := started.Add(2 * time.Minute)
+	if upperBound.After(now.Add(10 * time.Second)) {
+		upperBound = now.Add(10 * time.Second)
+	}
 	var matched []int
 	var adoptedStart time.Time
 	for _, process := range processes {
@@ -40,6 +51,12 @@ func matchPIDs(instance Instance, processes []Process, now time.Time) ([]int, bo
 	}
 	if len(matched) > 0 {
 		return matched, false, 0
+	}
+	// Adoption is only for a launch that is still inside its start window. An
+	// exited record must never revive just because the same app was launched
+	// again later — that would move old history rows back into the live desk.
+	if instance.Status != StatusStarting || instance.ExitedAtMs > 0 || now.Sub(started) > 2*time.Minute {
+		return nil, false, 0
 	}
 	for _, process := range processes {
 		if process.PID <= 0 || process.Command == "" || isHelperProcess(process.Command) {
@@ -66,9 +83,11 @@ func matchPIDs(instance Instance, processes []Process, now time.Time) ([]int, bo
 }
 
 func matchesInstance(instance Instance, command string) bool {
-	if instance.ProfileDir != "" &&
-		strings.Contains(command, "--user-data-dir="+instance.ProfileDir) {
-		return true
+	// A proxied Chromium launch owns exactly one isolated profile. Falling back
+	// to executable matching would absorb a concurrently running direct Chrome
+	// (and every other browser window) into the proxied instance's PID list.
+	if instance.ProfileDir != "" {
+		return strings.Contains(command, "--user-data-dir="+instance.ProfileDir)
 	}
 	return matchesExecutable(instance, command)
 }

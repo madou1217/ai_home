@@ -254,6 +254,7 @@ function waitForInstaller(exe, args, appId, timeoutMs) {
       settled = true;
       if (timer) clearInterval(timer);
       if (error) {
+        // 保留日志用于排查超时/失败原因。
         reject(error);
         return;
       }
@@ -286,6 +287,9 @@ function waitForInstaller(exe, args, appId, timeoutMs) {
         return;
       }
       if (Date.now() - started > timeoutMs) {
+        // 超时也必须结束安装器，否则它会在后台继续写目标目录；
+        // 用户重试时两个安装器同时写同一路径，会互相覆盖或锁文件。
+        stopInstaller(exe, child.pid);
         finish(new Error('安装超时'));
       }
     }, 2000);

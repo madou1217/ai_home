@@ -172,3 +172,13 @@ func TestProviderHelpSupported(t *testing.T) {
 		}
 	}
 }
+
+// 桌面端无法执行的动词必须在入口显式拒绝，而不是静默返回 0。
+func TestDesktopLaunchRejectsVerbs(t *testing.T) {
+	for _, verb := range []string{"relay", "resume", "fork"} {
+		err := runDesktopOnlyProviderLaunch(context.Background(), "workbuddy", []string{verb}, commandRuntime{})
+		if err == nil || !strings.Contains(err.Error(), verb) {
+			t.Fatalf("%s 应被拒绝：%v", verb, err)
+		}
+	}
+}

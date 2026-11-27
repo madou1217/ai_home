@@ -550,12 +550,12 @@ func TestDesktopOnlyProviderOffersActions(t *testing.T) {
 	candidates := resolveCompletion([]string{"workbuddy", ""}, context)
 	values := candidateValues(candidates)
 	joined := strings.Join(values, ",")
-	for _, wanted := range []string{"ls", "usage", "sessions", "resume", "login", "models"} {
+	for _, wanted := range []string{"ls", "usage", "sessions", "login", "models"} {
 		if !strings.Contains(joined, wanted) {
 			t.Fatalf("缺少动作 %s：%v", wanted, values)
 		}
 	}
-	for _, unwanted := range []string{"install", "update", "version", "detect"} {
+	for _, unwanted := range []string{"install", "update", "version", "detect", "relay", "resume", "fork"} {
 		if strings.Contains(joined, unwanted) {
 			t.Fatalf("无 CLI 的 Provider 不应出现 %s：%v", unwanted, values)
 		}

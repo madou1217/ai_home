@@ -133,7 +133,8 @@ var providerActionFlags = map[string][]string{
 func listProviderActions(provider string) []namedSummary {
 	id := normalizeProviderID(provider)
 	actions := make([]namedSummary, 0, 2+len(providerActions)+len(providerActionExtras[id]))
-	if providerSupportsGatewayRelay(id) {
+	// relay 需要原生 CLI；纯桌面端 Provider 只有打开 App 与账号管理。
+	if providerHasCLI(id) && providerSupportsGatewayRelay(id) {
 		actions = append(actions, gatewayActions...)
 	}
 	actions = append(actions, providerEntryActions...)
@@ -148,7 +149,7 @@ func listProviderActions(provider string) []namedSummary {
 		}
 		switch action.Name {
 		case "resume", "fork":
-			if providerSessionCommand(id, action.Name) == nil {
+			if !providerHasCLI(id) || providerSessionCommand(id, action.Name) == nil {
 				continue
 			}
 		case "login":

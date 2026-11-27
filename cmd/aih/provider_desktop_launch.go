@@ -9,6 +9,16 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
+// isDesktopUnsupportedVerb 判断参数是否是桌面端无法执行的 CLI 动词。
+func isDesktopUnsupportedVerb(token string) bool {
+	switch strings.ToLower(strings.TrimSpace(token)) {
+	case "relay", "resume", "fork":
+		return true
+	default:
+		return false
+	}
+}
+
 // isDesktopAccountToken 判断参数是否是账号别名（数字或 acct_ 引用）。
 func isDesktopAccountToken(text string) bool {
 	trimmed := strings.TrimSpace(text)
@@ -73,6 +83,9 @@ func runDesktopOnlyProviderLaunch(ctx context.Context, providerID string, argume
 		if text == "--help" || text == "-h" || text == "help" {
 			writeProviderUsage(runtime.stdout, providerID)
 			return nil
+		}
+		if isDesktopUnsupportedVerb(text) {
+			return fmt.Errorf("%w: %s 的桌面端启动只接受账号，不支持 %s；去掉 --desktop 用 CLI 启动", errInvalidCommand, providerID, text)
 		}
 		if strings.HasPrefix(text, "-") {
 			return fmt.Errorf("%w: %s 是桌面端，不支持参数 %s；用法: aih %s [<id>]", errInvalidCommand, providerID, text, providerID)

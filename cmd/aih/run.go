@@ -478,8 +478,15 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 		return runDesktopOnlyProviderLaunch(ctx, providerID, arguments, runtime)
 	}
 	// 没有原生 CLI 的桌面端 Provider：aih workbuddy [<id>] 直接请求本机 Server 打开 App。
-	if !providerHasNativeCLI(providerID) && (len(arguments) == 0 || isDesktopAccountToken(arguments[0])) {
-		return runDesktopOnlyProviderLaunch(ctx, providerID, arguments, runtime)
+	if !providerHasNativeCLI(providerID) {
+		if len(arguments) == 0 || isDesktopAccountToken(arguments[0]) {
+			return runDesktopOnlyProviderLaunch(ctx, providerID, arguments, runtime)
+		}
+		// relay/resume/fork 需要原生 CLI；之前会落到通用路径静默返回 0。
+		if isDesktopUnsupportedVerb(arguments[0]) {
+			return fmt.Errorf("%w: %s 是桌面端，不支持 %s；用 aih %s [<id>] 打开 App",
+				errInvalidCommand, providerID, arguments[0], providerID)
+		}
 	}
 	// 环境变量缺失时回落到本地 config:server（显式值永远优先；远端不继承本机密钥）。
 	runtime = withLocalGatewayDefaults(ctx, runtime)

@@ -855,7 +855,7 @@ func buildWindowsLauncher(options Options) []byte {
 		comspec = filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
 	}
 	serveScript := filepath.Join(options.Home, "run", "aih-server-serve.cmd")
-	commandLine := windowsQuote(comspec) + " /d /s /c " + windowsQuote(windowsQuote(serveScript))
+	commandLine := windowsQuote(comspec) + " /d /s /c " + windowsQuote(serveScript)
 	lines := []string{
 		"Option Explicit",
 		"Dim shell",

@@ -450,3 +450,15 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
   - 传输途中在 Mac 复制文本，Windows 端文本条目 **0.15s** 出现，而歌曲包在 **10.75s** 才完成，验证文本优先且包传输随后继续；
   - 失败重试会重新发送分片；当前没有断点续传位图，这是后续可优化项。
 - 边界：真正的“多路径同时聚合”需要用户提供多个可达地址；系统不会自行发现 LAN/P2P 地址。同步控制面仍只有一个 endpoint 用于元数据，分片才使用多通道列表。
+
+## 27. UU Remote 过滤、批量清理与同步时间戳修复（2026-11-27）
+
+- **UU Remote 临时文件**：`.uuremote_*` 是 UU 远程的加密暂存文件，不是用户内容。捕获层在 FileDropList 过滤后若为空直接返回，不继续读取图片/文本 shadow；服务层 Ingest、lazy ingest、materialized file payload、元数据构建、完整 payload archive 和分片 archive 也统一过滤。路径按 basename、大小写不敏感匹配。
+- **批量清理**：管理 API 新增 `POST /v1/management/webui/clipboard/items/batch-delete`（最多 1000 个 ID）；Paste Nexus 增加 `Select` 模式、卡片勾选、`Select filtered`、`Clear filtered (N)`、`Delete selected (N)`，确认框明确说明 pinned 项在匹配筛选时也会删除。
+- **文件卡片一闪而逝的根因**：lazy pull 曾把同一批条目的 `LastSeenAtMs` 全部写成接收端的当前时间。历史 backlog 批次会因此比刚复制的文件“更新”，文件卡片在 200 条窗口外，刷新一次就消失。现在同步信封携带源端 `lastSeenAtMs`，目标端用它排序；旧信封回退 `createdAtMs`，再回退接收时间。
+- 真实验证：
+  - 只复制 `.uuremote_ignoretest_20261127`：Mac/Windows 均无新条目；
+  - 混合复制 `.uuremote_*` + `normal-20261127.txt`：只产生 1 个条目，files 仅包含 normal 文件；
+  - `items/batch-delete` 实际删除 4 条测试数据；
+  - Windows 新文件 `recency-test-20261127.txt` 位于列表首位，时间来自源端（11:02:34），不再与整批 backlog 共用接收时间。
+- 说明：历史里已经存在的 UU 条目不会静默删除；可在文件筛选/搜索 `.uuremote` 后使用新的 `Clear filtered` 清理。

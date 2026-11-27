@@ -1671,20 +1671,68 @@ export interface FileTreeResponse {
   truncated: boolean;
 }
 
+// 项目根在服务端未登记时（例如只由运行时会话目录暴露的项目），首次访问文件 / Git 会
+// 返回 unknown_project_root。此时按需把该目录登记为项目再重试一次：登记结果会持久化，
+// 后续 fs/git 请求即可通过授权。只在服务端明确报未登记时触发，不改变普通项目的列表顺序。
+const projectRootOpenRequests = new Map<string, Promise<void>>();
+
+function ensureProjectRootOpened(projectPath: string): Promise<void> {
+  const path = String(projectPath || '').trim();
+  if (!path) return Promise.resolve();
+  const pending = projectRootOpenRequests.get(path);
+  if (pending) return pending;
+  const request = sessionsAPI.openProject(path).then(
+    () => undefined,
+    (error) => {
+      projectRootOpenRequests.delete(path);
+      throw error;
+    },
+  );
+  projectRootOpenRequests.set(path, request);
+  return request;
+}
+
+function isUnknownProjectRootError(error: unknown): boolean {
+  const payload = (error as { response?: { data?: { error?: string } } } | null)?.response?.data;
+  return payload?.error === 'unknown_project_root';
+}
+
+async function withProjectRootAccess<T>(projectPath: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!isUnknownProjectRootError(error)) throw error;
+    try {
+      await ensureProjectRootOpened(projectPath);
+    } catch {
+      throw error;
+    }
+    return run();
+  }
+}
+
 // 本地文件系统 API
 export const fsAPI = {
-  tree: async (projectPath: string, path = ''): Promise<FileTreeResponse> => {
-    const response = await api.get('/webui/fs/tree', { params: { projectPath, path } });
-    return response.data;
-  },
+  tree: async (projectPath: string, path = ''): Promise<FileTreeResponse> => (
+    withProjectRootAccess(projectPath, async () => {
+      const response = await api.get('/webui/fs/tree', { params: { projectPath, path } });
+      return response.data;
+    })
+  ),
   read: async (path: string, projectPath?: string, source?: string): Promise<FileMetadataResponse & { content: string }> => {
     // source 用于后端选择受控根目录，例如 Codex memory citation 不应按当前项目解析。
-    const response = await api.get('/webui/fs/read', { params: { path, projectPath, source } });
-    return response.data;
+    const run = async () => {
+      const response = await api.get('/webui/fs/read', { params: { path, projectPath, source } });
+      return response.data;
+    };
+    return projectPath ? withProjectRootAccess(projectPath, run) : run();
   },
   checkAccess: async (path: string, projectPath?: string, source?: string): Promise<FileMetadataResponse> => {
-    const response = await api.get('/webui/fs/access', { params: { path, projectPath, source } });
-    return response.data;
+    const run = async () => {
+      const response = await api.get('/webui/fs/access', { params: { path, projectPath, source } });
+      return response.data;
+    };
+    return projectPath ? withProjectRootAccess(projectPath, run) : run();
   },
   trust: async (path: string, scope: FileTrustScope, source?: string): Promise<{ trustedRoot: string; filePath: string }> => {
     const response = await api.post('/webui/fs/trust', { path, scope, source });
@@ -1710,14 +1758,18 @@ export interface GitSummary {
 }
 
 export const gitReviewAPI = {
-  summary: async (projectPath: string): Promise<GitSummary> => {
-    const response = await api.get('/webui/git/summary', { params: { projectPath } });
-    return response.data;
-  },
-  diff: async (projectPath: string, path: string, staged = false): Promise<{ content: string; truncated: boolean }> => {
-    const response = await api.get('/webui/git/diff', { params: { projectPath, path, staged: staged ? 1 : 0 } });
-    return response.data;
-  }
+  summary: async (projectPath: string): Promise<GitSummary> => (
+    withProjectRootAccess(projectPath, async () => {
+      const response = await api.get('/webui/git/summary', { params: { projectPath } });
+      return response.data;
+    })
+  ),
+  diff: async (projectPath: string, path: string, staged = false): Promise<{ content: string; truncated: boolean }> => (
+    withProjectRootAccess(projectPath, async () => {
+      const response = await api.get('/webui/git/diff', { params: { projectPath, path, staged: staged ? 1 : 0 } });
+      return response.data;
+    })
+  )
 };
 
 export interface WorkspaceCheckpoint {

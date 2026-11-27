@@ -90,6 +90,12 @@ func proxyUsageDocEntries() []DocEntry {
 		},
 		{
 			Group:       "代理用法",
+			Path:        "应用看台 · WebUI",
+			Description: "实例、PID、代理状态、续约、批量结束与热替换开关的图形看台",
+			Usage:       "WebUI → 开发工具 → 应用看台（/ui/toolkit?panel=app-desk）",
+		},
+		{
+			Group:       "代理用法",
 			Path:        "按应用代理 · 浏览器",
 			Description: "只为本次启动的浏览器实例挂代理，与普通实例并存",
 			Usage:       "aih app \"Microsoft Edge\" --proxy",
@@ -449,6 +455,11 @@ var docDetails = map[string][]string{
 	"代理入口 · 端口与匿名": {
 		"CLI 与 WebUI 共用同一套端口规则：显式设置端口时若被其它进程占用会阻塞启动；自动分配时只避开占用。",
 		"匿名入口只允许 loopback 客户端；不要把监听地址改成 0.0.0.0 暴露到局域网。",
+	},
+	"应用看台 · WebUI": {
+		"每 1.5 秒轮询一次；租约失效→恢复或重连次数增加时播放重连动画，续约按钮带环形进度。",
+		"结束全部会二次确认；adopted 实例是复用已有进程的单实例应用，结束它会关闭该应用现有窗口。",
+		"热替换开关与 CLI 共用 run/proxy/settings.json，默认关闭；入口未运行时只保存下次启动的偏好。",
 	},
 	"借用远端入口": {
 		"SSH 借用不会在远端安装常驻服务；连接断开后入口停止。",

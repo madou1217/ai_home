@@ -57,18 +57,13 @@ func TestKnownModelsMatchGoldenList(t *testing.T) {
 			t.Fatalf("KnownModels[%d] = %q, want %q", index, KnownModels[index], want)
 		}
 	}
-	freeModels := make(map[string]bool, len(CLIFreeModels))
-	for _, model := range CLIFreeModels {
-		freeModels[model] = true
-	}
 	// 顺序也是对外契约的一部分：WebUI 与 CLI 按清单顺序展示，重排会让目录看起来变过。
 	for _, model := range KnownModels {
 		if model != strings.ToLower(strings.TrimSpace(model)) {
 			t.Fatalf("%q 必须是已归一的小写 ID", model)
 		}
-		// 除显式声明的免费模型外，也必须落在 cline-pass 命名空间。
-		if !IsRoutableModelID(model) && !freeModels[model] {
-			t.Fatalf("%q 既不在 %s 命名空间，也不是声明的免费模型", model, NamespacePrefix)
+		if !IsRoutableModelID(model) {
+			t.Fatalf("%q 不在可路由目录", model)
 		}
 	}
 }
@@ -84,6 +79,8 @@ func TestIsRoutableModelID(t *testing.T) {
 		// 裸模型名会与 zcode 的 glm-* 抢路由，绝不能认。
 		{"glm-5.3", false},
 		{"cline-free/mimo-v2.6-flash", false},
+		{"nvidia/nemotron-3.5-lightning-free", true},
+		{"cline-free/nemotron-3.5-super-vl", true},
 		{"", false},
 		{"anthropic/claude-sonnet-4.5", false},
 	}

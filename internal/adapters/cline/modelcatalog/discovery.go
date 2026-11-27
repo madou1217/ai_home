@@ -66,9 +66,19 @@ var CLIFreeModels = []string{
 	"cline-free/nemotron-3.5-super-vl",
 }
 
-// IsRoutableModelID 判断模型是否属于 cline 命名空间。
+// IsRoutableModelID 判断模型是否属于 cline 的可路由目录：cline-pass 命名空间，
+// 或显式声明的免费模型（a07932fc 起它们是正常可路由模型，不再只用于 CLI 选择器）。
 func IsRoutableModelID(modelID string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(modelID)), NamespacePrefix)
+	normalized := strings.ToLower(strings.TrimSpace(modelID))
+	if strings.HasPrefix(normalized, NamespacePrefix) {
+		return true
+	}
+	for _, model := range CLIFreeModels {
+		if normalized == model {
+			return true
+		}
+	}
+	return false
 }
 
 // Source 是 cline 的静态目录源（不联网、不依赖客户端）。

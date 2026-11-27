@@ -459,11 +459,13 @@ type Syncer struct {
 	targetID string
 	enabled  bool
 
-	transferMu      sync.Mutex
-	activeTransfers map[string]struct{}
-	bulkGate        *BulkGate
-	transferLanes   int
-	transferSlots   chan struct{}
+	transferMu         sync.Mutex
+	activeTransfers    map[string]struct{}
+	bulkGate           *BulkGate
+	transferLanes      int
+	transferChunkBytes int
+	transferEndpoints  []string
+	laneLimiter        *LaneLimiter
 }
 
 // NewSyncer constructs a Syncer with sensible defaults.
@@ -479,16 +481,18 @@ func NewSyncer(service *clipboard.Service, resolver ProfileResolver, client *htt
 		clock = time.Now
 	}
 	lanes := transferLanesFromEnv()
+	chunkBytes := transferChunkBytesFromEnv()
 	return &Syncer{
-		Service:         service,
-		ResolveProfile:  resolver,
-		HTTPClient:      client,
-		Clock:           clock,
-		trigger:         make(chan struct{}, 1),
-		activeTransfers: make(map[string]struct{}),
-		bulkGate:        &BulkGate{},
-		transferLanes:   lanes,
-		transferSlots:   make(chan struct{}, lanes),
+		Service:            service,
+		ResolveProfile:     resolver,
+		HTTPClient:         client,
+		Clock:              clock,
+		trigger:            make(chan struct{}, 1),
+		activeTransfers:    make(map[string]struct{}),
+		bulkGate:           &BulkGate{},
+		transferLanes:      lanes,
+		transferChunkBytes: chunkBytes,
+		laneLimiter:        NewLaneLimiter(lanes),
 	}
 }
 
@@ -552,6 +556,7 @@ func (s *Syncer) SyncOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.applyTransferSettings(settings)
 	target := strings.TrimSpace(settings.SyncTargetProfileID)
 	s.stateMu.Lock()
 	s.enabled = settings.SyncEnabled
@@ -572,6 +577,9 @@ func (s *Syncer) SyncTarget(ctx context.Context, profileID string) error {
 	profileID = strings.TrimSpace(profileID)
 	if profileID == "" {
 		return errors.New("clipboard_sync_target_required")
+	}
+	if settings, settingsErr := s.Service.GetSettings(ctx); settingsErr == nil {
+		s.applyTransferSettings(settings)
 	}
 
 	s.syncMu.Lock()

@@ -57,6 +57,9 @@ const (
 	SettingMaxItems            = "maxItems"
 	SettingMaxItemBytes        = "maxItemBytes"
 	SettingQuickOrbitPosition  = "quickOrbitPosition"
+	SettingTransferLanes       = "transferLanes"
+	SettingTransferChunkBytes  = "transferChunkBytes"
+	SettingTransferEndpoints   = "transferEndpoints"
 	SettingDeviceID            = "deviceId"
 	SettingSyncKey             = "syncKey"
 )
@@ -146,13 +149,16 @@ func NormalizeQuickOrbitPosition(raw string) (string, bool) {
 
 // Settings holds persisted user configuration for the clipboard subsystem.
 type Settings struct {
-	CaptureEnabled      bool   `json:"captureEnabled"`
-	SyncEnabled         bool   `json:"syncEnabled"`
-	SyncTargetProfileID string `json:"syncTargetProfileId"`
-	RetentionDays       int    `json:"retentionDays"`
-	MaxItems            int    `json:"maxItems"`
-	MaxItemBytes        int64  `json:"maxItemBytes"`
-	QuickOrbitPosition  string `json:"quickOrbitPosition"`
+	CaptureEnabled      bool     `json:"captureEnabled"`
+	SyncEnabled         bool     `json:"syncEnabled"`
+	SyncTargetProfileID string   `json:"syncTargetProfileId"`
+	RetentionDays       int      `json:"retentionDays"`
+	MaxItems            int      `json:"maxItems"`
+	MaxItemBytes        int64    `json:"maxItemBytes"`
+	QuickOrbitPosition  string   `json:"quickOrbitPosition"`
+	TransferLanes       int      `json:"transferLanes"`
+	TransferChunkBytes  int64    `json:"transferChunkBytes"`
+	TransferEndpoints   []string `json:"transferEndpoints"`
 }
 
 // DefaultSettings returns the canonical opt-in defaults.
@@ -170,13 +176,16 @@ func DefaultSettings() Settings {
 
 // SettingsPatch applies partial updates to Settings.
 type SettingsPatch struct {
-	CaptureEnabled      *bool   `json:"captureEnabled,omitempty"`
-	SyncEnabled         *bool   `json:"syncEnabled,omitempty"`
-	SyncTargetProfileID *string `json:"syncTargetProfileId,omitempty"`
-	RetentionDays       *int    `json:"retentionDays,omitempty"`
-	MaxItems            *int    `json:"maxItems,omitempty"`
-	MaxItemBytes        *int64  `json:"maxItemBytes,omitempty"`
-	QuickOrbitPosition  *string `json:"quickOrbitPosition,omitempty"`
+	CaptureEnabled      *bool     `json:"captureEnabled,omitempty"`
+	SyncEnabled         *bool     `json:"syncEnabled,omitempty"`
+	SyncTargetProfileID *string   `json:"syncTargetProfileId,omitempty"`
+	RetentionDays       *int      `json:"retentionDays,omitempty"`
+	MaxItems            *int      `json:"maxItems,omitempty"`
+	MaxItemBytes        *int64    `json:"maxItemBytes,omitempty"`
+	QuickOrbitPosition  *string   `json:"quickOrbitPosition,omitempty"`
+	TransferLanes       *int      `json:"transferLanes,omitempty"`
+	TransferChunkBytes  *int64    `json:"transferChunkBytes,omitempty"`
+	TransferEndpoints   *[]string `json:"transferEndpoints,omitempty"`
 }
 
 // CaptureStatus reports local OS clipboard capture readiness.

@@ -438,7 +438,8 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 
 ## 26. 并行分片、动态优先级与多通道（2026-11-27）
 
-- 大包传输：源端把文件包流式打成临时 zip，再按默认 2 MiB 切片，通过 `POST /sync/transfers` 并行发送；默认 4 条连接，`AIH_CLIPBOARD_TRANSFER_LANES=1..16` 控制全局并行上限，`AIH_CLIPBOARD_TRANSFER_CHUNK_BYTES=256KiB..8MiB` 控制分片大小。
+- 大包传输：源端把文件包流式打成临时 zip，再按默认 2 MiB 切片，通过 `POST /sync/transfers` 并行发送。**切片是 zip 的字节切片，不是“每个文件一条通道”**；单个大文件也会被切成多片分发，多个文件先进入同一个包再按字节切片，目标端按索引拼回一个 zip 后解压。
+- 可控项已进入 `clipboard_settings` 并由 Paste Nexus 设置面板编辑：`transferLanes`（1..16，默认 4）、`transferChunkBytes`（256 KiB..8 MiB，默认 2 MiB）、`transferEndpoints`（多通道 URL 列表）。对应环境变量仍作为未设置时的兜底值。修改设置会唤醒同步，下一次传输立即使用新值；全局 lane 上限在传输中调整也会生效。
 - 每个分片是独立 AES-256-GCM 信封，AAD 绑定 `transferId|itemSha|archiveSha|index|count|totalBytes`；目标端把分片写入临时目录，收齐后校验 zip SHA、流式解压到 `materialized/<sha>/`，再把 stub 升级为 materialized。目标端内存不随包体增长。
 - 优先级：本地复制成功会立即唤醒同步（不再等 5s tick）。元数据推送和手动激活的正文传输持有 `BulkGate`，所有大包分片 worker 在下一片前等待 gate 清零；最多只有一个 2 MiB 分片在途，随后恢复。多包共享全局 lane 上限，避免多个包各自开 4 条连接把链路打爆。
 - 多通道：`AIH_CLIPBOARD_TRANSFER_ENDPOINTS` 可填逗号分隔的多个同目标 base URL（SSH 转发、frp、P2P、WireGuard、Tailscale、局域网地址均可），分片轮转分配；单个通道失败时同一分片自动尝试其余通道。控制面 profile 的 endpoint 始终作为首选通道。

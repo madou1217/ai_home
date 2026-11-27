@@ -700,6 +700,8 @@ function renderSettingsDialog(){
   const serverOpts=['<option value="">No target selected</option>'].concat(serversList.map(sv=>`<option value="${esc(sv.id)}" ${sv.id===st.syncTargetProfileId?'selected':''}>${esc(sv.label||sv.id)} (${esc(sv.endpoint)})</option>`)).join('');
   const transports=Array.isArray(statusInfo?.transports)?statusInfo.transports:[];
   const transportHtml=transports.length?transports.map(t=>`<span class="pill" title="${esc(t.detail||'')}"><i class="dot ${t.available?'':'off'}"></i>${esc(t.name)}${t.detail?` · ${esc(t.detail)}`:''}</span>`).join(''):'<span class="micro">None detected</span>';
+  const transferLanes=Number(st.transferLanes||4),transferChunk=Number(st.transferChunkBytes||2097152);
+  const transferEndpoints=Array.isArray(st.transferEndpoints)?st.transferEndpoints.join(', '):'';
   const devices=Array.isArray(statusInfo?.devices)?statusInfo.devices:[];
   const devicesHtml=devices.length?devices.map(d=>`<div class="devicerow"><span>${esc(d.name||d.id)}${d.id===statusInfo?.deviceId?' · this device':''}</span><small class="mono">${esc(d.platform||'-')} · ${esc(formatCaptured(d.lastSeenAtMs))}</small></div>`).join(''):'<div class="micro">No devices recorded</div>';
   showDialog('Nexus settings',
@@ -707,6 +709,8 @@ function renderSettingsDialog(){
     `<div class="settingrow"><div>Encrypted sync<small>${esc(syncNote)}</small></div><button class="switch ${st.syncEnabled?'on':''}" id="setSync" aria-pressed="${Boolean(st.syncEnabled)}" title="Toggle sync"></button></div>`+
     `<div class="settingrow"><div>Sync target server<small>Select remote AIH server profile</small></div><div class="settingcontrol"><select id="setSyncTarget">${serverOpts}</select><button class="btn" id="setSyncRun">Sync now</button></div></div>`+
     `<div class="settingrow"><div>Direct endpoint pairing<small>LAN / WireGuard / Tailscale endpoint + management key</small></div><div class="settingcontrol"><input id="setDirectEndpoint" placeholder="http://10.0.0.2:9527" autocomplete="off"><input id="setDirectKey" type="password" placeholder="Management key" autocomplete="off"><button class="btn" id="setDirectPair">Pair</button></div></div>`+
+    `<div class="settingrow"><div>Transfer lanes<small>Global parallel chunk connections (1–16)</small></div><div class="settingcontrol"><input id="setTransferLanes" type="number" min="1" max="16" step="1" value="${transferLanes}"><select id="setTransferChunk"><option value="1048576" ${transferChunk===1048576?'selected':''}>1 MiB chunk</option><option value="2097152" ${transferChunk===2097152?'selected':''}>2 MiB chunk</option><option value="4194304" ${transferChunk===4194304?'selected':''}>4 MiB chunk</option><option value="8388608" ${transferChunk===8388608?'selected':''}>8 MiB chunk</option></select><button class="btn" id="setTransferApply">Apply</button></div></div>`+
+    `<div class="settingrow"><div>Extra transfer channels<small>Comma-separated URLs to the same server; SSH / frp / P2P / WireGuard / Tailscale / LAN</small></div><div class="settingcontrol"><input id="setTransferEndpoints" value="${esc(transferEndpoints)}" placeholder="http://10.0.0.8:9527, http://100.64.0.8:9527" autocomplete="off"></div></div>`+
     `<div class="settingrow"><div>Quick orbit position<small>Desktop overlay anchor position</small></div><div class="settingcontrol">${['bottom','left','right'].map(p=>`<button class="btn ${pos===p?'active':''}" data-pos="${p}">${p[0].toUpperCase()+p.slice(1)}</button>`).join('')}</div></div>`+
     `<div class="settingrow"><div>Quick orbit layout<small>Switch between ribbon and card grid</small></div><button class="btn" id="settingLayout">${esc(quickMode)}</button></div>`+
     `<div class="settingrow"><div>Key fingerprint<small>End-to-end sync key SHA-256 prefix</small></div><span class="mono">${esc(statusInfo?.keyFingerprint||'Not configured')}</span></div>`+
@@ -742,6 +746,12 @@ function renderSettingsDialog(){
       await refreshAll({force:true,includeMeta:true});
       if(dialogOpened&&dialogKind==='settings')renderSettingsDialog();
     }catch(e){notify('Sync failed · '+e.message)}finally{if($('setSyncRun'))$('setSyncRun').disabled=false}
+  };
+  $('setTransferApply').onclick=async()=>{
+    const lanes=Math.max(1,Math.min(16,parseInt($('setTransferLanes').value,10)||4));
+    const chunk=parseInt($('setTransferChunk').value,10)||2097152;
+    const endpoints=($('setTransferEndpoints').value||'').split(/[,\n]/).map(v=>v.trim()).filter(Boolean);
+    await patchSettings({transferLanes:lanes,transferChunkBytes:chunk,transferEndpoints:endpoints});
   };
   $('dialog').querySelectorAll('[data-pos]').forEach(btn=>btn.onclick=()=>patchSettings({quickOrbitPosition:btn.dataset.pos}));
   $('settingLayout').onclick=()=>{setQuickMode();$('settingLayout').textContent=quickMode};

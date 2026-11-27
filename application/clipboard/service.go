@@ -750,7 +750,58 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 			settings.QuickOrbitPosition = normalized
 		}
 	}
+	if v, ok := raw[SettingTransferLanes]; ok {
+		if parsed, parseErr := strconv.Atoi(strings.TrimSpace(v)); parseErr == nil && parsed >= 1 && parsed <= 16 {
+			settings.TransferLanes = parsed
+		}
+	}
+	if v, ok := raw[SettingTransferChunkBytes]; ok {
+		if parsed, parseErr := strconv.ParseInt(strings.TrimSpace(v), 10, 64); parseErr == nil && parsed >= 256*1024 && parsed <= 8*1024*1024 {
+			settings.TransferChunkBytes = parsed
+		}
+	}
+	if v, ok := raw[SettingTransferEndpoints]; ok {
+		settings.TransferEndpoints = splitTransferEndpoints(v)
+	}
 	return settings, nil
+}
+
+func splitTransferEndpoints(raw string) []string {
+	seen := map[string]struct{}{}
+	result := []string{}
+	for _, line := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' }) {
+		value := strings.TrimRight(strings.TrimSpace(line), "/")
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func normalizeTransferEndpoints(values []string) ([]string, error) {
+	seen := map[string]struct{}{}
+	result := []string{}
+	for _, raw := range values {
+		value := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if value == "" {
+			continue
+		}
+		parsed, err := url.Parse(value)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return nil, fmt.Errorf("%w: invalid transfer endpoint %q", ErrInvalidInput, value)
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 // UpdateSettings validates and persists partial settings updates.
@@ -774,6 +825,20 @@ func (s *Service) UpdateSettings(ctx context.Context, patch SettingsPatch) (Sett
 			return Settings{}, fmt.Errorf("%w: quickOrbitPosition must be bottom, left, or right", ErrInvalidInput)
 		}
 		quickOrbitPosition = normalized
+	}
+	if patch.TransferLanes != nil && (*patch.TransferLanes < 1 || *patch.TransferLanes > 16) {
+		return Settings{}, fmt.Errorf("%w: transferLanes must be between 1 and 16", ErrInvalidInput)
+	}
+	if patch.TransferChunkBytes != nil && (*patch.TransferChunkBytes < 256*1024 || *patch.TransferChunkBytes > 8*1024*1024) {
+		return Settings{}, fmt.Errorf("%w: transferChunkBytes must be between 262144 and 8388608", ErrInvalidInput)
+	}
+	var transferEndpoints []string
+	if patch.TransferEndpoints != nil {
+		normalized, err := normalizeTransferEndpoints(*patch.TransferEndpoints)
+		if err != nil {
+			return Settings{}, err
+		}
+		transferEndpoints = normalized
 	}
 	if patch.RetentionDays != nil {
 		if err := s.store.SetSetting(ctx, SettingRetentionDays, strconv.Itoa(*patch.RetentionDays), nowMs); err != nil {
@@ -807,6 +872,21 @@ func (s *Service) UpdateSettings(ctx context.Context, patch SettingsPatch) (Sett
 	}
 	if patch.QuickOrbitPosition != nil {
 		if err := s.store.SetSetting(ctx, SettingQuickOrbitPosition, quickOrbitPosition, nowMs); err != nil {
+			return Settings{}, err
+		}
+	}
+	if patch.TransferLanes != nil {
+		if err := s.store.SetSetting(ctx, SettingTransferLanes, strconv.Itoa(*patch.TransferLanes), nowMs); err != nil {
+			return Settings{}, err
+		}
+	}
+	if patch.TransferChunkBytes != nil {
+		if err := s.store.SetSetting(ctx, SettingTransferChunkBytes, strconv.FormatInt(*patch.TransferChunkBytes, 10), nowMs); err != nil {
+			return Settings{}, err
+		}
+	}
+	if patch.TransferEndpoints != nil {
+		if err := s.store.SetSetting(ctx, SettingTransferEndpoints, strings.Join(transferEndpoints, "\n"), nowMs); err != nil {
 			return Settings{}, err
 		}
 	}

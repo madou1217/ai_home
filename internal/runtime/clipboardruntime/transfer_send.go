@@ -19,6 +19,27 @@ import (
 	"github.com/madou1217/ai_home/application/clipboard"
 )
 
+func (s *Syncer) applyTransferSettings(settings clipboard.Settings) {
+	if s == nil {
+		return
+	}
+	lanes := settings.TransferLanes
+	if lanes < 1 || lanes > 16 {
+		lanes = transferLanesFromEnv()
+	}
+	chunkBytes := settings.TransferChunkBytes
+	if chunkBytes < 256*1024 || chunkBytes > TransferMaxChunkBytes {
+		chunkBytes = int64(transferChunkBytesFromEnv())
+	}
+	endpoints := append([]string(nil), settings.TransferEndpoints...)
+	s.transferMu.Lock()
+	s.transferLanes = lanes
+	s.transferChunkBytes = int(chunkBytes)
+	s.transferEndpoints = endpoints
+	s.transferMu.Unlock()
+	s.laneLimiter.SetCapacity(lanes)
+}
+
 // startChunkedTransfer runs a file package outside the 5s sync pass so large
 // packages do not block metadata. The same item SHA is never sent twice at once.
 func (s *Syncer) startChunkedTransfer(endpoint, managementKey string, key []byte, item clipboard.Item) {
@@ -34,6 +55,9 @@ func (s *Syncer) startChunkedTransfer(endpoint, managementKey string, key []byte
 		s.transferMu.Unlock()
 		return
 	}
+	lanes := s.transferLanes
+	chunkBytes := s.transferChunkBytes
+	configuredEndpoints := append([]string(nil), s.transferEndpoints...)
 	s.activeTransfers[itemSHA] = struct{}{}
 	s.transferMu.Unlock()
 
@@ -47,7 +71,7 @@ func (s *Syncer) startChunkedTransfer(endpoint, managementKey string, key []byte
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), transferMaxDuration)
 		defer cancel()
-		if err := s.sendChunkedTransfer(ctx, endpoint, managementKey, keyCopy, itemSHA, files); err != nil {
+		if err := s.sendChunkedTransfer(ctx, endpoint, managementKey, keyCopy, itemSHA, files, lanes, chunkBytes, configuredEndpoints); err != nil {
 			log.Printf("[clipboard-transfer] sha=%s failed: %v", itemSHA[:12], err)
 			return
 		}
@@ -55,7 +79,7 @@ func (s *Syncer) startChunkedTransfer(endpoint, managementKey string, key []byte
 	}()
 }
 
-func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKey string, key []byte, itemSHA string, files []string) error {
+func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKey string, key []byte, itemSHA string, files []string, lanes, chunkBytes int, configuredEndpoints []string) error {
 	archivePath, payloadBytes, archiveSHA, err := BuildFileArchiveFile(files)
 	if err != nil {
 		return err
@@ -69,18 +93,20 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 	if archiveBytes > TransferMaxPackageBytes {
 		return clipboard.ErrItemTooLarge
 	}
-	chunkBytes := int64(transferChunkBytesFromEnv())
-	chunkCount := int((archiveBytes + chunkBytes - 1) / chunkBytes)
+	if chunkBytes < 256*1024 {
+		chunkBytes = transferChunkBytesFromEnv()
+	}
+	chunkSize := int64(chunkBytes)
+	chunkCount := int((archiveBytes + chunkSize - 1) / chunkSize)
 	if chunkCount < 1 || chunkCount > TransferMaxChunks {
 		return clipboard.ErrItemTooLarge
 	}
 	transferHash := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d", itemSHA, archiveSHA, archiveBytes)))
 	transferID := hex.EncodeToString(transferHash[:])
-	lanes := s.transferLanes
 	if lanes < 1 {
 		lanes = TransferDefaultLanes
 	}
-	endpoints := transferEndpoints(endpoint)
+	endpoints := transferEndpoints(endpoint, configuredEndpoints)
 	if lanes > chunkCount {
 		lanes = chunkCount
 	}
@@ -105,13 +131,13 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 				return
 			}
 			defer func() { _ = file.Close() }()
-			buffer := make([]byte, chunkBytes)
+			buffer := make([]byte, chunkSize)
 			for index := range indexes {
 				if err := s.bulkGate.Wait(ctx); err != nil {
 					return
 				}
-				offset := int64(index) * chunkBytes
-				length := chunkBytes
+				offset := int64(index) * chunkSize
+				length := chunkSize
 				if remaining := archiveBytes - offset; remaining < length {
 					length = remaining
 				}
@@ -145,17 +171,11 @@ func (s *Syncer) sendChunkedTransfer(ctx context.Context, endpoint, managementKe
 					return
 				}
 				meta.Sealed = sealed
-				if s.transferSlots != nil {
-					select {
-					case s.transferSlots <- struct{}{}:
-					case <-ctx.Done():
-						return
-					}
+				if err := s.laneLimiter.Acquire(ctx); err != nil {
+					return
 				}
 				postErr := s.postTransferChunk(ctx, endpoints[index%len(endpoints)], endpoints, managementKey, meta)
-				if s.transferSlots != nil {
-					<-s.transferSlots
-				}
+				s.laneLimiter.Release()
 				if postErr != nil {
 					select {
 					case errCh <- postErr:
@@ -230,7 +250,7 @@ func (s *Syncer) postTransferChunk(ctx context.Context, preferred string, endpoi
 // transferEndpoints merges the configured profile endpoint with optional
 // additional paths to the same server (SSH/frp/P2P/WireGuard/Tailscale/LAN).
 // Set AIH_CLIPBOARD_TRANSFER_ENDPOINTS to a comma-separated list.
-func transferEndpoints(primary string) []string {
+func transferEndpoints(primary string, configured []string) []string {
 	primary = strings.TrimRight(strings.TrimSpace(primary), "/")
 	result := make([]string, 0, 4)
 	seen := map[string]struct{}{}
@@ -250,8 +270,14 @@ func transferEndpoints(primary string) []string {
 		result = append(result, candidate)
 	}
 	appendEndpoint(primary)
-	for _, raw := range strings.Split(os.Getenv("AIH_CLIPBOARD_TRANSFER_ENDPOINTS"), ",") {
-		appendEndpoint(raw)
+	if len(configured) > 0 {
+		for _, raw := range configured {
+			appendEndpoint(raw)
+		}
+	} else {
+		for _, raw := range strings.Split(os.Getenv("AIH_CLIPBOARD_TRANSFER_ENDPOINTS"), ",") {
+			appendEndpoint(raw)
+		}
 	}
 	if len(result) == 0 && primary != "" {
 		result = append(result, primary)

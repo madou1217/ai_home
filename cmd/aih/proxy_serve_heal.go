@@ -59,7 +59,7 @@ func (unit *serveEntryUnit) Close() error {
 
 // newServeEntryUnit 按当前选择器完整建立一次入口。
 func newServeEntryUnit(ctx context.Context, runtime commandRuntime, options proxyServeOptions) (*serveEntryUnit, error) {
-	lease, err := acquireServeLease(ctx, runtime, options.selector, !options.noSocks, options.httpPort, options.socksPort, options.anonymous, options.httpPortSet, options.socksPortSet)
+	lease, err := acquireServeLease(ctx, runtime, options.selector, !options.noSocks, options.httpPort, options.socksPort, options.anonymous, options.httpPortSet, options.socksPortSet, options.hotSwap)
 	if err != nil {
 		return nil, err
 	}

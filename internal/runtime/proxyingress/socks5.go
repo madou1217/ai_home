@@ -69,7 +69,7 @@ func (i *Ingress) serveSOCKSConn(connection net.Conn) {
 	}
 	results := make(chan upstreamResult, 1)
 	go func() {
-		upstreamReader, err := connectUpstream(upstream, target, i.authorization, i.maxHeaderBytes)
+		upstreamReader, err := connectUpstream(upstream, target, i.currentAuthorization(), i.maxHeaderBytes)
 		results <- upstreamResult{reader: upstreamReader, err: err}
 	}()
 	timer := time.NewTimer(remaining)

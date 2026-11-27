@@ -10,9 +10,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
 	"github.com/madou1217/ai_home/internal/runtime/proxytransport"
 )
 
@@ -84,6 +86,8 @@ type proxyServeOptions struct {
 	// exitWithParent 由 launchd/systemd 的包装器追加：监督进程消失时优雅退出。
 	exitWithParent bool
 	json           bool
+	// hotSwap 是运行期共享开关（默认关闭）；轮换时原地替换上游而不是重建入口。
+	hotSwap *atomic.Bool
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
@@ -283,6 +287,14 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			return original(key)
 		}
 	}
+	homeDir, _ := resolveAIHomeDir(runtime)
+	settings := proxycontrol.LoadSettings(homeDir)
+	hotSwapEnabled := &atomic.Bool{}
+	hotSwapAvailable := proxyHotSwapAvailable(options)
+	hotSwapEnabled.Store(hotSwapAvailable && settings.HotSwap)
+	options.hotSwap = hotSwapEnabled
+	controlHub := newProxyControlHub(homeDir, hotSwapEnabled, hotSwapAvailable)
+
 	unit, err := newServeEntryUnit(ctx, runtime, options)
 	if err != nil {
 		return err
@@ -299,7 +311,7 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			"ok":            true,
 			"httpUrl":       lease.httpURL,
 			"socks5Url":     lease.socksURL,
-			"name":          lease.name,
+			"name":          lease.leaseName(),
 			"selector":      options.selector,
 			"systemProxy":   options.system,
 			"systemService": options.systemService,
@@ -316,15 +328,101 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 	rotation := serveRotation(ctx, runtime, options.selector, func(message string) {
 		_, _ = fmt.Fprintln(runtime.stderr, message)
 	})
+
 	leaseErr := make(chan error, 1)
-	if options.renewInterval > 0 {
-		go lease.keepAlive(ctx, options.renewInterval, func(renewErr error) {
+	leaseActive := true
+	lastRenewAt := time.Now().UnixMilli()
+	lastErr := ""
+	reconnects := 0
+	statusFor := func() proxycontrol.Status {
+		return proxycontrol.Status{
+			Running:       true,
+			PID:           os.Getpid(),
+			HTTPURL:       lease.httpURL,
+			SOCKS5URL:     lease.socksURL,
+			LeaseName:     lease.leaseName(),
+			LeaseActive:   leaseActive,
+			HotSwap:       hotSwapEnabled.Load(),
+			LastRenewAtMs: lastRenewAt,
+			LastError:     lastErr,
+			Reconnects:    reconnects,
+		}
+	}
+	publishStatus := func() { controlHub.setStatus(statusFor()) }
+	publishStatus()
+	if cleanup, controlErr := controlHub.serve(ctx); controlErr != nil {
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 代理控制通道不可用: %v\n", controlErr)
+	} else {
+		defer cleanup()
+	}
+
+	var watcherCancel context.CancelFunc
+	startWatchers := func(current *serveLease) {
+		if watcherCancel != nil {
+			watcherCancel()
+		}
+		watcherCtx, cancel := context.WithCancel(ctx)
+		watcherCancel = cancel
+		go current.watchLeaseLoss(watcherCtx, func(lostErr error) {
 			select {
-			case leaseErr <- renewErr:
+			case leaseErr <- lostErr:
 			default:
 			}
 		})
+		if options.renewInterval > 0 {
+			go current.keepAlive(watcherCtx, options.renewInterval, func(renewErr error) {
+				select {
+				case leaseErr <- renewErr:
+				default:
+				}
+			})
+		}
 	}
+	stopWatchers := func() {
+		if watcherCancel != nil {
+			watcherCancel()
+			watcherCancel = nil
+		}
+	}
+	defer stopWatchers()
+	startWatchers(lease)
+
+	refreshInPlace := func() error {
+		stopWatchers()
+		if refreshErr := lease.refresh(ctx, options.selector); refreshErr != nil {
+			startWatchers(lease)
+			return refreshErr
+		}
+		leaseActive = true
+		lastErr = ""
+		lastRenewAt = time.Now().UnixMilli()
+		reconnects++
+		startWatchers(lease)
+		publishStatus()
+		if !options.json {
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 上游已热替换：出口 %s（入口保持）。\n", lease.leaseName())
+		}
+		return nil
+	}
+
+	rebuildEntry := func(cause string) (string, error) {
+		stopWatchers()
+		_ = unit.Close()
+		next, name, healErr := rotateServeEntry(ctx, runtime, options, rotation, cause)
+		if healErr != nil {
+			return "", healErr
+		}
+		unit, lease = next, next.lease
+		tunDone = next.tunDone
+		leaseActive = true
+		lastErr = ""
+		lastRenewAt = time.Now().UnixMilli()
+		reconnects++
+		startWatchers(lease)
+		publishStatus()
+		return name, nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -332,32 +430,94 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			return nil
 		case <-tunDone:
 			return errors.New("TUN 内核已退出，代理入口随之关闭")
+		case action := <-controlHub.commands:
+			switch action.kind {
+			case "hot-swap":
+				if !hotSwapAvailable {
+					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("当前入口不支持热替换（需要匿名且非 TUN）")}
+					continue
+				}
+				hotSwapEnabled.Store(action.enabled)
+				if saveErr := proxycontrol.SaveSettings(homeDir, proxycontrol.Settings{Version: 1, HotSwap: action.enabled}); saveErr != nil {
+					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: fmt.Errorf("保存热替换开关失败: %w", saveErr)}
+					continue
+				}
+				publishStatus()
+				action.reply <- proxyControlResult{status: controlHub.snapshot()}
+			case "renew":
+				renewErr := lease.client.Renew(ctx, lease.leaseID())
+				if renewErr == nil {
+					leaseActive = true
+					lastErr = ""
+					lastRenewAt = time.Now().UnixMilli()
+					publishStatus()
+					action.reply <- proxyControlResult{status: controlHub.snapshot()}
+					continue
+				}
+				if !isLeaseLossError(renewErr) {
+					lastErr = renewErr.Error()
+					publishStatus()
+					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: renewErr}
+					continue
+				}
+				leaseActive = false
+				lastErr = renewErr.Error()
+				publishStatus()
+				if hotSwapEnabled.Load() && hotSwapAvailable {
+					if refreshErr := refreshInPlace(); refreshErr != nil {
+						action.reply <- proxyControlResult{status: controlHub.snapshot(), err: refreshErr}
+						continue
+					}
+					action.reply <- proxyControlResult{status: controlHub.snapshot()}
+					continue
+				}
+				if rotation == nil {
+					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("此 selector 不允许自动换出口")}
+					continue
+				}
+				if _, healErr := rebuildEntry(renewErr.Error()); healErr != nil {
+					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: healErr}
+					continue
+				}
+				action.reply <- proxyControlResult{status: controlHub.snapshot()}
+			default:
+				action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("未知代理控制命令")}
+			}
 		case renewErr := <-leaseErr:
-			if rotation == nil || !isLeaseLossError(renewErr) {
+			if !isLeaseLossError(renewErr) {
 				return fmt.Errorf("代理租约续期失败: %w", renewErr)
 			}
-			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在自动切换…\n", renewErr)
-			// 先拆旧入口再建新的：同一个常驻服务只能有一个有效入口。
-			_ = unit.Close()
-			next, name, healErr := rotateServeEntry(ctx, runtime, options, rotation, renewErr.Error())
+			if rotation == nil {
+				return fmt.Errorf("代理租约续期失败: %w", renewErr)
+			}
+			leaseActive = false
+			lastErr = renewErr.Error()
+			publishStatus()
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在恢复…\n", renewErr)
+			recovered := false
+			if hotSwapEnabled.Load() && hotSwapAvailable {
+				if refreshErr := refreshInPlace(); refreshErr == nil {
+					lease.finishRecovery(nil)
+					recovered = true
+				} else {
+					lease.finishRecovery(refreshErr)
+				}
+			} else {
+				lease.finishRecovery(errors.New("热替换未开启"))
+			}
+			if recovered {
+				continue
+			}
+			name, healErr := rebuildEntry(renewErr.Error())
 			if healErr != nil {
 				return fmt.Errorf("出口切换失败: %w", healErr)
 			}
-			unit, lease = next, next.lease
-			tunDone = next.tunDone
 			if name != "" {
 				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已切换到出口 %s（入口已重建）。\n", name)
 			}
-			if options.json {
-				continue
+			if !options.json {
+				writeServeEntrySummary(runtime, options, lease)
 			}
-			writeServeEntrySummary(runtime, options, lease)
-			go lease.keepAlive(ctx, options.renewInterval, func(nextErr error) {
-				select {
-				case leaseErr <- nextErr:
-				default:
-				}
-			})
 		}
 	}
 }

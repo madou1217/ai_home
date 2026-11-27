@@ -14,6 +14,10 @@ import (
 // Ingress owns loopback HTTP and/or SOCKS5 listeners. URLs returned by the
 // accessors embed credentials and must not be logged. Close is idempotent.
 type Ingress struct {
+	// upstreamMu guards the lease token and dial function so a long-running
+	// entry can replace its upstream without closing listeners. Readers always
+	// take the current values; a rotation never leaves a half-swapped pair.
+	upstreamMu         sync.RWMutex
 	dial               Dial
 	credentials        Credentials
 	authorization      string
@@ -137,6 +141,54 @@ func (i *Ingress) watch(ctx context.Context) {
 		_ = i.Close()
 	case <-i.done:
 	}
+}
+
+// UpdateUpstream swaps the lease credentials and dial function in place.
+// Listeners and client URLs stay intact; only new connections use the new
+// upstream. This is what makes first-request recovery possible after a server
+// restart: the failing CONNECT can wait for this swap and retry.
+func (i *Ingress) UpdateUpstream(credentials Credentials, dial Dial) error {
+	if i == nil {
+		return ErrClosed
+	}
+	if err := validateCredentials(credentials); err != nil {
+		return err
+	}
+	if dial == nil {
+		return errors.New("proxyingress: dial is required")
+	}
+	encoded := encodeBasic(credentials)
+	i.upstreamMu.Lock()
+	i.credentials = credentials
+	i.authorization = "Basic " + encoded
+	i.authorizationValue = encoded
+	i.dial = dial
+	i.upstreamMu.Unlock()
+	return nil
+}
+
+func (i *Ingress) currentDial() Dial {
+	i.upstreamMu.RLock()
+	defer i.upstreamMu.RUnlock()
+	return i.dial
+}
+
+func (i *Ingress) currentCredentials() Credentials {
+	i.upstreamMu.RLock()
+	defer i.upstreamMu.RUnlock()
+	return i.credentials
+}
+
+func (i *Ingress) currentAuthorization() string {
+	i.upstreamMu.RLock()
+	defer i.upstreamMu.RUnlock()
+	return i.authorization
+}
+
+func (i *Ingress) currentAuthorizationValue() string {
+	i.upstreamMu.RLock()
+	defer i.upstreamMu.RUnlock()
+	return i.authorizationValue
 }
 
 // HTTPAddress returns the loopback host:port of the HTTP listener, or "" when

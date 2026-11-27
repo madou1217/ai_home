@@ -32,13 +32,17 @@ type dialResult struct {
 }
 
 func (i *Ingress) openDial(ctx context.Context) (io.ReadWriteCloser, error) {
+	dial := i.currentDial()
+	if dial == nil {
+		return nil, errors.New("proxyingress: Dial is not configured")
+	}
 	if i.dialTimeout <= 0 {
-		return i.dial(ctx)
+		return dial(ctx)
 	}
 	callCtx, cancel := context.WithCancel(ctx)
 	results := make(chan dialResult, 1)
 	go func() {
-		stream, err := i.dial(callCtx)
+		stream, err := dial(callCtx)
 		results <- dialResult{stream: stream, err: err}
 	}()
 	timer := time.NewTimer(i.dialTimeout)

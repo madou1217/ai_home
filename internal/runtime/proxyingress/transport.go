@@ -12,14 +12,17 @@ func (i *Ingress) newHTTPTransport() *http.Transport {
 	// terminates at the upstream proxy. The host is only a placeholder that
 	// keeps net/http's proxy path, which writes absolute-form requests and
 	// adds the configured Proxy-Authorization.
-	proxy := &url.URL{
-		Scheme: "http",
-		Host:   "upstream.invalid",
-		User:   url.UserPassword(i.credentials.Username, i.credentials.Password),
-	}
+	//
+	// Credentials are read per request so UpdateUpstream can swap the lease
+	// token without rebuilding the transport.
 	return &http.Transport{
 		Proxy: func(*http.Request) (*url.URL, error) {
-			return proxy, nil
+			credentials := i.currentCredentials()
+			return &url.URL{
+				Scheme: "http",
+				Host:   "upstream.invalid",
+				User:   url.UserPassword(credentials.Username, credentials.Password),
+			}, nil
 		},
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			stream, err := i.openStream(ctx)

@@ -253,7 +253,11 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 			mime = detectImageMIME(input.Data)
 		}
 		item.MIME = mime
-		item.SHA256 = sha256Hex(input.Data)
+		if canonicalSHA, hashErr := canonicalImageSHA(input.Data); hashErr == nil {
+			item.SHA256 = canonicalSHA
+		} else {
+			item.SHA256 = sha256Hex(input.Data)
+		}
 		item.ByteSize = int64(len(input.Data))
 		item.Width = input.Width
 		item.Height = input.Height

@@ -3,6 +3,7 @@ import { ProTable } from '@ant-design/pro-components';
 import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
 import { Empty, Skeleton, Grid, Pagination } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
+import { resolveListTablePagination } from './list-table-pagination';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import '../../styles/unified.css';
@@ -178,9 +179,11 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
   const totalRows = typeof pagination?.total === 'number'
     ? pagination.total
     : (Array.isArray(rest.dataSource) ? rest.dataSource.length : 0);
-  const safePageSize = Math.max(1, pagination?.pageSize ?? pageSize);
-  const maxPage = Math.max(1, Math.ceil(totalRows / safePageSize));
-  const effectivePage = Math.min(pagination?.current ?? currentPage, maxPage);
+  const { pageSize: safePageSize, page: effectivePage } = resolveListTablePagination(
+    totalRows,
+    pagination?.pageSize ?? pageSize,
+    pagination?.current ?? currentPage,
+  );
 
   // 首屏（loading 且无数据）走骨架屏；有缓存数据时即便 loading 也保持表格可见，
   // 仅由 ProTable 的轻量 overlay 提示刷新中，避免整表被遮罩闪白。

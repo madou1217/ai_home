@@ -8,7 +8,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "postinstall": "max setup",
-    "test:unit": "node --experimental-strip-types --test src/features/chat-runtime/*.test.ts"
+    "test:unit": "node --experimental-strip-types --test src/features/chat-runtime/*.test.ts src/components/ui/*.test.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.2",

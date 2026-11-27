@@ -13,6 +13,10 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codexwire"
 )
 
+// ErrClientCancelled 表示客户端用 response.cancel 主动结束了当前轮次。
+// 它不是账号失败，不写运行态、不触发换号。
+var ErrClientCancelled = errors.New("client cancelled response")
+
 type clientFrame struct {
 	messageType websocket.MessageType
 	payload     []byte
@@ -345,6 +349,21 @@ func (handler *Handler) pumpClientToUpstream(
 		// 非法请求会直接 400，客户端的取消/控制帧因此反复失败。
 		if frameType := clientFrameType(payload); frameType != "" && frameType != "response.create" {
 			observer.MarkReplayUnavailable()
+			// response.cancel：上游 native turn lane 在轮次运行中拒绝状态帧
+			// （unsupported_native_inflight_message），转发只会把这个错误交给
+			// 用户。取消的语义是停止本轮：直接结束两侧连接，让 Codex 用新的
+			// 独立连接开始下一轮，而不是让用户看到上游的内部错误。
+			if frameType == "response.cancel" {
+				_ = client.Close(websocket.StatusNormalClosure, "cancelled")
+				_ = upstream.Close(websocket.StatusNormalClosure, "cancelled")
+				results <- pumpResult{
+					source:      pumpSourceClient,
+					err:         ErrClientCancelled,
+					closeCode:   websocket.StatusNormalClosure,
+					closeReason: "cancelled",
+				}
+				return
+			}
 			if err := writeMessage(session.Context(), upstream, messageType, payload); err != nil {
 				results <- resultFromRead(pumpSourceUpstream, err, true)
 				return

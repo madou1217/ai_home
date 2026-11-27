@@ -1135,12 +1135,12 @@ func builtinCodebuddyCN() Definition {
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		Storage: &StorageFacts{
 			AuthArtifacts: []AuthArtifactFacts{
-				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("workbuddy-desktop.info"), Format: "json"},
+				{Field: "credentials", Base: ArtifactBaseHome, Path: codebuddySharedAuthPath("Tencent-Cloud.coding-copilot.info"), Format: "json"},
 			},
 			PrivateArtifacts: codebuddyFamilyPrivateFacts(true),
 			AttachmentSubdir: defaultAttachmentSubdir(),
 			HostAuthRoot:     &[]string{},
-			DefaultAuthFile:  "workbuddy-desktop.info",
+			DefaultAuthFile:  "Tencent-Cloud.coding-copilot.info",
 			IDEDataName:      "CodeBuddy CN",
 			SessionRoots:     []string{".codebuddy-cn", ".workbuddy"},
 		},

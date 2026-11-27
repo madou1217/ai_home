@@ -271,7 +271,7 @@ func TestDeletionOnlyProviderRemovesProjectionAndKeepsHost(t *testing.T) {
 		authFile   string
 	}{
 		{"codebuddy", ".codebuddy", "Tencent-Cloud.coding-copilot.info"},
-		{"codebuddycn", ".codebuddy-cn", "workbuddy-desktop.info"},
+		{"codebuddycn", ".codebuddy-cn", "Tencent-Cloud.coding-copilot.info"},
 		{"workbuddy", ".workbuddy-ai", "workbuddy-desktop-ai.info"},
 		{"workbuddycn", ".workbuddy", "workbuddy-desktop.info"},
 	}

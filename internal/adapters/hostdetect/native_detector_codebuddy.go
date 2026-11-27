@@ -40,7 +40,7 @@ var (
 	codebuddyFamilyProviders = providers.CodeBuddyFamilyProviders()
 	codebuddyAuthFileNames   = map[string]string{
 		"codebuddy":   "Tencent-Cloud.coding-copilot.info",
-		"codebuddycn": "workbuddy-desktop.info",
+		"codebuddycn": "Tencent-Cloud.coding-copilot.info",
 		"workbuddy":   "workbuddy-desktop-ai.info",
 		"workbuddycn": "workbuddy-desktop.info",
 	}

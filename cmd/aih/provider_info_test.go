@@ -56,7 +56,7 @@ func TestHomeDiagnosticsPathsFollowPolicy(t *testing.T) {
 	wantAuth := filepath.Join(
 		root,
 		"Library", "Application Support", "CodeBuddyExtension", "Data", "Public", "auth",
-		"workbuddy-desktop.info",
+		"Tencent-Cloud.coding-copilot.info",
 	)
 	if authPath != wantAuth {
 		t.Fatalf("auth path = %q, want %q", authPath, wantAuth)

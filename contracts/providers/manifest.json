@@ -3261,7 +3261,7 @@
         }
       },
       "storage": {
-        "defaultAuthFile": "workbuddy-desktop.info",
+        "defaultAuthFile": "Tencent-Cloud.coding-copilot.info",
         "ideDataName": "CodeBuddy CN",
         "attachmentSubdir": [
           "tmp",
@@ -3276,7 +3276,7 @@
           {
             "field": "credentials",
             "base": "home",
-            "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
+            "path": "Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info",
             "format": "json"
           }
         ],

@@ -609,10 +609,13 @@ func renderAppDeskPlain(output io.Writer, state *appDeskState) {
 }
 
 func renderAppDeskJSON(output io.Writer, state *appDeskState, aiHome string) {
+	proxy := state.proxy
+	proxy.HTTPURL = sanitizeProxyURL(proxy.HTTPURL)
+	proxy.SOCKS5URL = sanitizeProxyURL(proxy.SOCKS5URL)
 	payload := map[string]any{
 		"ok":        true,
 		"instances": state.instances,
-		"proxy":     state.proxy,
+		"proxy":     proxy,
 		"hotSwap":   state.hotSwap,
 	}
 	if state.proxyErr != "" {

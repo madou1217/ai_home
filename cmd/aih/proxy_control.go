@@ -129,9 +129,17 @@ func (hub *proxyControlHub) serve(ctx context.Context) (func(), error) {
 	go func() { _ = server.Serve(listener) }()
 
 	path := proxycontrol.ControlPath(hub.home)
-	if err := writeControlFile(path, controlFileVersion, os.Getpid(), "http://"+listener.Addr().String(), token); err != nil {
+	var writeErr error
+	for attempt := 0; attempt < 15; attempt++ {
+		writeErr = writeControlFile(path, controlFileVersion, os.Getpid(), "http://"+listener.Addr().String(), token)
+		if writeErr == nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if writeErr != nil {
 		_ = server.Close()
-		return nil, err
+		return nil, writeErr
 	}
 	cleanup := func() {
 		_ = server.Close()
@@ -228,6 +236,17 @@ func randomControlToken() (string, error) {
 func writeControlFile(path string, version, pid int, url, token string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
+	}
+	// A second serve instance (temporary CLI on another port) must not steal the
+	// resident entry's control file. Only replace a file whose publisher is gone.
+	if raw, err := os.ReadFile(path); err == nil {
+		var existing struct {
+			PID int `json:"pid"`
+		}
+		if json.Unmarshal(raw, &existing) == nil && existing.PID > 0 &&
+			existing.PID != pid && processAlive(existing.PID) {
+			return errors.New("另一个代理入口正在使用控制端点")
+		}
 	}
 	raw, err := json.Marshal(map[string]any{"version": version, "pid": pid, "url": url, "token": token})
 	if err != nil {

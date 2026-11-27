@@ -223,7 +223,9 @@ func clipOrbitScreenWidth() int {
 	if runtime.GOOS != "windows" {
 		return 1920
 	}
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width").Output()
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width")
+	hideChildWindow(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return 1920
 	}
@@ -268,7 +270,9 @@ func activateExistingOrbitWindow(cmdRuntime commandRuntime) bool {
 	switch runtime.GOOS {
 	case "windows":
 		command := `$w=New-Object -ComObject WScript.Shell; if($w.AppActivate('Paste // Nexus')){exit 0}; exit 1`
-		return exec.Command("powershell", "-NoProfile", "-Command", command).Run() == nil
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", command)
+		hideChildWindow(cmd)
+		return cmd.Run() == nil
 	case "darwin":
 		script := `tell application "System Events" to tell process "Microsoft Edge" to get name of every window`
 		out, err := exec.Command("osascript", "-e", script).Output()
@@ -312,16 +316,24 @@ func runClipShortcut(args []string, cmdRuntime commandRuntime) error {
 		return nil
 	case "windows":
 		link := filepath.Join(windowsDesktopDir(home), "AIH Quick Orbit.lnk")
-		script := fmt.Sprintf(`$W=New-Object -ComObject WScript.Shell; $S=$W.CreateShortcut('%s'); $S.TargetPath='%s'; $S.Arguments='clip orbit'; $S.WorkingDirectory='%s'; $S.Hotkey='CTRL+ALT+V'; $S.WindowStyle=7; $S.Save()`,
+		launcher := filepath.Join(filepath.Dir(executable), "clip-orbit-hidden.vbs")
+		vbs := fmt.Sprintf("Set sh = CreateObject(\"WScript.Shell\")\r\nsh.Run \"\"\"%s\"\" clip orbit\", 0, False\r\n", strings.ReplaceAll(executable, "\"", "\"\""))
+		script := fmt.Sprintf(`$W=New-Object -ComObject WScript.Shell; $S=$W.CreateShortcut('%s'); $S.TargetPath='%s'; $S.Arguments='"%s"'; $S.WorkingDirectory='%s'; $S.Hotkey='CTRL+ALT+V'; $S.WindowStyle=7; $S.Save()`,
 			strings.ReplaceAll(link, "'", "''"),
-			strings.ReplaceAll(executable, "'", "''"),
+			strings.ReplaceAll("C:\\Windows\\System32\\wscript.exe", "'", "''"),
+			strings.ReplaceAll(launcher, "'", "''"),
 			strings.ReplaceAll(filepath.Dir(executable), "'", "''"))
 		if action == "print" {
+			_, _ = fmt.Fprintln(cmdRuntime.stdout, "launcher:", launcher)
 			_, _ = fmt.Fprintln(cmdRuntime.stdout, "powershell -NoProfile -Command \""+script+"\"")
 			_, _ = fmt.Fprintln(cmdRuntime.stdout, "目标:", link, "快捷键: Ctrl+Alt+V")
 			return nil
 		}
+		if err := os.WriteFile(launcher, []byte(vbs), 0o644); err != nil {
+			return fmt.Errorf("写入隐藏启动器失败: %w", err)
+		}
 		cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
+		hideChildWindow(cmd)
 		cmd.Stdout = cmdRuntime.stdout
 		cmd.Stderr = cmdRuntime.stderr
 		if err := cmd.Run(); err != nil {

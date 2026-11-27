@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/madou1217/ai_home/application/clipboard"
@@ -236,11 +237,19 @@ func (w *windowsIO) WriteFiles(ctx context.Context, files []string) error {
 	return runPowerShell(ctx, ps, script)
 }
 
+func hidePowerShellWindow(cmd *exec.Cmd) {
+	if cmd == nil {
+		return
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+}
+
 func runPowerShell(ctx context.Context, ps string, script string) error {
 	cmdCtx, cancel := context.WithTimeout(ctx, windowsCommandTimeout)
 	defer cancel()
 	encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
 	cmd := exec.CommandContext(cmdCtx, ps, "-NoProfile", "-STA", "-EncodedCommand", encoded)
+	hidePowerShellWindow(cmd)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run()
@@ -251,6 +260,7 @@ func runPowerShellCapture(ctx context.Context, ps string, script string, maxByte
 	defer cancel()
 	encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
 	cmd := exec.CommandContext(cmdCtx, ps, "-NoProfile", "-STA", "-EncodedCommand", encoded)
+	hidePowerShellWindow(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, false, err

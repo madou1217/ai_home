@@ -35,6 +35,7 @@ import {
 import {
   getProjectProviderBadges,
   getRunningProviders,
+  PROJECT_PROVIDER_BADGE_LIMIT,
   getSessionRunKey,
   getVisibleProjectSessions,
   isSameSession,
@@ -783,8 +784,10 @@ const ProjectList = ({
                   const projectProviderBadges = getProjectProviderBadges(
                     project.providers || [],
                     runningProviders,
-                    isExpanded,
+                    project.sessions,
                   );
+                  const visibleProviderBadges = projectProviderBadges.slice(0, PROJECT_PROVIDER_BADGE_LIMIT);
+                  const hiddenProviderCount = Math.max(0, projectProviderBadges.length - visibleProviderBadges.length);
 
                   return (
                     <div key={project.id}>
@@ -825,17 +828,29 @@ const ProjectList = ({
                           ) : null}
                         </span>
                         <span className={styles.projectProviders}>
-                          {projectProviderBadges.map((badge) => (
+                          {visibleProviderBadges.map((badge, index) => (
                             <span
                               key={badge.provider}
                               className={`${styles.projectProviderBadge} ${
                                 badge.running ? styles.projectProviderRunning : ''
                               }`}
-                              style={providerAccentStyle(badge.provider)}
+                              style={{
+                                ...providerAccentStyle(badge.provider),
+                                zIndex: visibleProviderBadges.length - index,
+                              }}
+                              title={badge.running ? '有活跃会话' : undefined}
                             >
                               <ProviderIcon provider={badge.provider} size={12} />
                             </span>
                           ))}
+                          {hiddenProviderCount > 0 ? (
+                            <span
+                              className={styles.projectProviderOverflow}
+                              title={`另有 ${hiddenProviderCount} 个 provider`}
+                            >
+                              +{hiddenProviderCount}
+                            </span>
+                          ) : null}
                         </span>
                         {mobile ? (
                           <button

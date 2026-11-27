@@ -22,10 +22,18 @@ export declare function getVisibleProjectSessions(
   expandedLimit?: number
 ): Session[];
 
+export declare const PROJECT_PROVIDER_BADGE_LIMIT: number;
+
+export declare function sortProjectProvidersByActivity(
+  projectProviders: Provider[],
+  runningProviders: Set<Provider> | Set<string>,
+  projectSessions?: Session[]
+): Provider[];
+
 export declare function getProjectProviderBadges(
   projectProviders: Provider[],
   runningProviders: Set<Provider> | Set<string>,
-  isExpanded: boolean
+  projectSessions?: Session[]
 ): Array<{
   provider: Provider;
   running: boolean;

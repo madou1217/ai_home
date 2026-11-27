@@ -117,6 +117,15 @@ func writeApplicationError(response http.ResponseWriter, err error) {
 			"usage_refresh_unsupported",
 			"当前凭据没有可信额度接口",
 		)
+	case errors.Is(err, usageapp.ErrCredentialRejected):
+		// 凭据被上游明确拒绝（401/403 或 refresh token revoked）时，不能
+		// 伪装成 502 暂态失败；调用方需要看到“重新登录”这一确定语义。
+		writeAPIError(
+			response,
+			http.StatusUnauthorized,
+			"credential_rejected",
+			"账号凭据被上游拒绝，请重新登录",
+		)
 	case errors.Is(err, usageapp.ErrRefreshFailed):
 		writeAPIError(
 			response,

@@ -707,7 +707,12 @@ func renderAppHistory(output io.Writer, history []appsessions.Instance, asJSON b
 				proxyText = ":" + port
 			}
 			if instance.ProxyRegion != "" {
-				proxyText += " · " + instance.ProxyRegion
+				if flag := proxyregion.Flag(instance.ProxyCountry); flag != "" {
+					proxyText += " · " + flag
+				} else {
+					proxyText += " ·"
+				}
+				proxyText += " " + instance.ProxyRegion
 			}
 		}
 		ended := instance.ExitedAtMs

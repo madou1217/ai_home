@@ -46,22 +46,23 @@ type jobRecord struct {
 // Job 的私有 Flow 只存在于内存；公开快照在 jobStore 非空时同步落库，
 // 使进程重启后仍能查到终态结果。
 type Service struct {
-	mu            sync.Mutex
-	providers     map[string]OAuthProvider
-	jobs          map[string]*jobRecord
-	activeJobs    map[string]string
-	subscribers   map[string]map[*jobSubscription]struct{}
-	decoder       NativeAccountDecoder
-	registrar     Registrar
-	reauth        Reauthenticator
-	clock         Clock
-	generateID    IDGenerator
-	jobStore      JobStore
-	aliasPool     AliasPoolWriter
-	profileBinder func(ctx context.Context, providerID, accountRef, jobID string) error
-	onJobSnapshot func(Job)
-	loginEgress   LoginEgress
-	settings      serviceSettings
+	mu                 sync.Mutex
+	providers          map[string]OAuthProvider
+	jobs               map[string]*jobRecord
+	activeJobs         map[string]string
+	subscribers        map[string]map[*jobSubscription]struct{}
+	decoder            NativeAccountDecoder
+	registrar          Registrar
+	reauth             Reauthenticator
+	clock              Clock
+	generateID         IDGenerator
+	jobStore           JobStore
+	aliasPool          AliasPoolWriter
+	profileBinder      func(ctx context.Context, providerID, accountRef, jobID string) error
+	onJobSnapshot      func(Job)
+	onAccountPersisted func(context.Context, accountcore.Account)
+	loginEgress        LoginEgress
+	settings           serviceSettings
 }
 
 // NewService 创建只支持 Codex、Claude 且使用生产边界的 OAuth Job 服务。
@@ -107,21 +108,22 @@ func newService(
 		return nil, ErrInvalidDependencies
 	}
 	return &Service{
-		providers:     providerRegistry,
-		jobs:          make(map[string]*jobRecord),
-		activeJobs:    make(map[string]string),
-		subscribers:   make(map[string]map[*jobSubscription]struct{}),
-		decoder:       dependencies.Decoder,
-		registrar:     dependencies.Registrar,
-		reauth:        dependencies.Reauth,
-		clock:         dependencies.Clock,
-		generateID:    dependencies.GenerateID,
-		jobStore:      dependencies.JobStore,
-		aliasPool:     dependencies.AliasPool,
-		profileBinder: dependencies.ProfileBinder,
-		onJobSnapshot: dependencies.OnJobSnapshot,
-		loginEgress:   dependencies.LoginEgress,
-		settings:      settings,
+		providers:          providerRegistry,
+		jobs:               make(map[string]*jobRecord),
+		activeJobs:         make(map[string]string),
+		subscribers:        make(map[string]map[*jobSubscription]struct{}),
+		decoder:            dependencies.Decoder,
+		registrar:          dependencies.Registrar,
+		reauth:             dependencies.Reauth,
+		clock:              dependencies.Clock,
+		generateID:         dependencies.GenerateID,
+		jobStore:           dependencies.JobStore,
+		aliasPool:          dependencies.AliasPool,
+		profileBinder:      dependencies.ProfileBinder,
+		onJobSnapshot:      dependencies.OnJobSnapshot,
+		onAccountPersisted: dependencies.OnAccountPersisted,
+		loginEgress:        dependencies.LoginEgress,
+		settings:           settings,
 	}, nil
 }
 
@@ -676,11 +678,13 @@ func (service *Service) persistAccount(
 	credential accountapp.Credential,
 	profile accountapp.PublicProfile,
 ) (accountcore.Account, error) {
+	var account accountcore.Account
+	var err error
 	switch claimed.purpose {
 	case PurposeRegister:
-		return service.registrar.Register(ctx, credential, profile)
+		account, err = service.registrar.Register(ctx, credential, profile)
 	case PurposeReauth:
-		return service.reauth.Reauthenticate(
+		account, err = service.reauth.Reauthenticate(
 			ctx,
 			claimed.targetRef,
 			credential,
@@ -689,6 +693,13 @@ func (service *Service) persistAccount(
 	default:
 		return accountcore.Account{}, ErrInvalidStartRequest
 	}
+	if err != nil {
+		return accountcore.Account{}, err
+	}
+	if service.onAccountPersisted != nil && account.Ref().IsValid() {
+		service.onAccountPersisted(ctx, account)
+	}
+	return account, nil
 }
 
 // Cancel 只取消尚未被回调消费者领取的 pending Job。

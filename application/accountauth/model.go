@@ -433,6 +433,9 @@ type Dependencies struct {
 	ProfileBinder func(ctx context.Context, providerID, accountRef, jobID string) error
 	// OnJobSnapshot 在每次状态迁移后收到最新 Job；供账号实时流广播 auth-job。
 	OnJobSnapshot func(Job)
+	// OnAccountPersisted 在注册/重新认证成功后收到账号；供清理旧的 auth_invalid
+	// 并让账号实时流重新装配行。回调失败不能改写登录结果。
+	OnAccountPersisted func(ctx context.Context, account accountcore.Account)
 	// LoginEgress 在换码前按 Provider 预检授权域名；直连不可用时返回临时出口。
 	// 为空表示不做网络预检，保持原有直连语义。
 	LoginEgress LoginEgress

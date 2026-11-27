@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/kirooauth"
@@ -15,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/host/backupaccounts"
 	"github.com/madou1217/ai_home/internal/runtime/accountbrowser"
+	"github.com/madou1217/ai_home/internal/runtime/tokenrefreshdaemon"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
@@ -143,6 +146,26 @@ func newAccountAuthRuntime(inputs accountAuthInputs) (*accountAuthRuntime, error
 		},
 		OnJobSnapshot: func(job accountauth.Job) {
 			inputs.tokenEvents.PublishAuthJob(webuiaccountaddapi.NewJobView(job))
+		},
+		// OAuth 登录/重新认证成功后的凭据更新就是 auth_invalid 的真相解除：
+		// 清理旧状态与阻塞，账号 watcher 会把新行广播给 WebUI；CLI ls 下次读取也干净。
+		OnAccountPersisted: func(ctx context.Context, account accountcore.Account) {
+			if !account.Ref().IsValid() {
+				return
+			}
+			clearCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			var notifier tokenrefreshdaemon.AccountRuntimeNotifier
+			if value, ok := inputs.runtimeStates.(tokenrefreshdaemon.AccountRuntimeNotifier); ok {
+				notifier = value
+			}
+			_, _ = tokenrefreshdaemon.ClearAccountAuthInvalid(clearCtx, inputs.store, notifier, account.Ref(), time.Now())
+			_ = inputs.store.DeleteAccountBlock(clearCtx, account.Ref(), runtimecore.FailureReauthenticationRequired)
+			if clearer, ok := inputs.runtimeStates.(interface {
+				ClearAccountState(context.Context, accountcore.AccountRef) error
+			}); ok {
+				_ = clearer.ClearAccountState(clearCtx, account.Ref())
+			}
 		},
 	})
 	if err != nil {

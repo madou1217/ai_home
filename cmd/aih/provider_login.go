@@ -101,6 +101,14 @@ func runProviderLoginAccount(
 		}
 		return accountcore.Account{}, err
 	}
+	// 登录成功即视为凭据恢复：清掉旧的 auth_invalid，并显式广播账号快照。
+	// 这样已打开的 WebUI 不用手动刷新，CLI 的 ls 也会读到干净状态。
+	// login 命令不走 runProviderLaunch 的默认注入，这里自己补齐本地 config:server。
+	managementRuntime := withLocalGatewayDefaults(ctx, runtime)
+	if client, clientErr := newAccountManagementClient(managementRuntime); clientErr == nil && account.Ref().IsValid() {
+		_ = client.ClearAccountRuntimeState(ctx, account.Ref())
+		_ = client.PublishAccountsSnapshot(ctx)
+	}
 	_, _ = fmt.Fprintf(runtime.stdout, "登录完成: %s #%d (%s)\n",
 		account.ProviderID(), account.CLIAccountID().Int64(), account.Ref())
 	return account, nil

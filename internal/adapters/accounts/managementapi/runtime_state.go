@@ -60,6 +60,28 @@ func (client *Client) GetAccountRuntimeState(
 	}, nil
 }
 
+const accountsWatchSnapshotPath = "/v1/management/webui/accounts/watch/snapshot"
+
+// PublishAccountsSnapshot 请求 Server 重建并广播账号页快照。
+//
+// CLI 登录是跨进程写入；文件 watcher 可能合并/延迟，显式事件能让已打开的
+// WebUI 立即收到新行，而不是等用户手动刷新。
+func (client *Client) PublishAccountsSnapshot(ctx context.Context) error {
+	if !client.isValid() {
+		return ErrInvalidConfig
+	}
+	if ctx == nil {
+		return ErrInvalidRequest
+	}
+	_, err := client.doDocumentRequest(
+		ctx,
+		http.MethodPost,
+		client.baseURL+accountsWatchSnapshotPath,
+		nil,
+	)
+	return err
+}
+
 // ClearAccountRuntimeState 删除账号运行态；用于同账号登录成功后立即解除
 // auth_invalid，避免 WebUI/CLI 仍显示“需要重新登录”。
 func (client *Client) ClearAccountRuntimeState(

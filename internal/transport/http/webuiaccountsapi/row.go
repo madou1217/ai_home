@@ -68,15 +68,15 @@ type Row struct {
 	GatewayTargetSupported    bool              `json:"gatewayTargetSupported"`
 
 	QuotaStatus string `json:"quotaStatus"`
-	QuotaReason string `json:"quotaReason,omitempty"`
+	QuotaReason string `json:"quotaReason"`
 
 	SchedulableStatus string `json:"schedulableStatus"`
-	SchedulableReason string `json:"schedulableReason,omitempty"`
+	SchedulableReason string `json:"schedulableReason"`
 
 	LastUsedAt    *int64 `json:"lastUsedAt,omitempty"`
-	RuntimeStatus string `json:"runtimeStatus,omitempty"`
-	RuntimeUntil  int64  `json:"runtimeUntil,omitempty"`
-	RuntimeReason string `json:"runtimeReason,omitempty"`
+	RuntimeStatus string `json:"runtimeStatus"`
+	RuntimeUntil  int64  `json:"runtimeUntil"`
+	RuntimeReason string `json:"runtimeReason"`
 	// RuntimeModels 是模型级阻塞/cooldown（只影响单个模型），由 live 运行态填充。
 	RuntimeModels []any `json:"runtimeModels,omitempty"`
 

@@ -18,7 +18,7 @@ func raiseFileDescriptorLimit() {
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit); err != nil {
 		return
 	}
-	const target uint64 = 65536
+	const target uint64 = 262144
 	desired := target
 	if limit.Max != 0 && limit.Max != ^uint64(0) && desired > limit.Max {
 		desired = limit.Max

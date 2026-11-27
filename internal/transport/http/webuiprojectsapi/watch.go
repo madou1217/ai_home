@@ -279,7 +279,7 @@ func (hub *projectWatchHub) start() {
 	if factory != nil {
 		source, err = factory()
 	} else {
-		source, err = newFsnotifyProjectWatchSource()
+		source, err = newProjectWatchSource()
 	}
 	if err != nil || source == nil {
 		// watcher 创建失败（fd 用尽、文件系统不支持）时降级为「只在显式请求时重建」；

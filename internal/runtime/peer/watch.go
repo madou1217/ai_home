@@ -28,23 +28,6 @@ type DirectoryWatcher interface {
 	Close() error
 }
 
-type fsnotifyWatcher struct {
-	inner *fsnotify.Watcher
-}
-
-func newFSNotifyWatcher() (DirectoryWatcher, error) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
-	return &fsnotifyWatcher{inner: watcher}, nil
-}
-
-func (w *fsnotifyWatcher) Add(path string) error         { return w.inner.Add(path) }
-func (w *fsnotifyWatcher) Events() <-chan fsnotify.Event { return w.inner.Events }
-func (w *fsnotifyWatcher) Errors() <-chan error          { return w.inner.Errors }
-func (w *fsnotifyWatcher) Close() error                  { return w.inner.Close() }
-
 // WatchOptions 控制目录监听参数。
 type WatchOptions struct {
 	Debounce   time.Duration
@@ -82,7 +65,7 @@ func Watch(ctx context.Context, aiHomeDir string, options WatchOptions) (<-chan 
 	}
 	newWatcher := options.NewWatcher
 	if newWatcher == nil {
-		newWatcher = newFSNotifyWatcher
+		newWatcher = newDirectoryWatcher
 	}
 
 	events := make(chan WatchEvent, 16)
@@ -159,14 +142,15 @@ func runWatchLoop(
 		select {
 		case <-ctx.Done():
 			return
-		case event, ok := <-watcher.Events():
+		case _, ok := <-watcher.Events():
 			if !ok {
 				return
 			}
-			if event.Op&fsnotify.Create != 0 && filepath.Dir(event.Name) == filepath.Join(aiHomeDir, "run", "peer") {
-				for _, dir := range ExistingDirectories(aiHomeDir) {
-					_ = watcher.Add(dir)
-				}
+			// Backends differ in event names: fsnotify reports the new child,
+			// kqueue reports the watched directory. Re-enumerate on every event;
+			// Add is idempotent for already-watched directories.
+			for _, dir := range ExistingDirectories(aiHomeDir) {
+				_ = watcher.Add(dir)
 			}
 			if timer == nil {
 				timer = time.NewTimer(debounce)

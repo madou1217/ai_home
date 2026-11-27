@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/src/assets/brand/ai-home-logo.png" alt="AI Home" width="200" />
+  <img src="web/src/assets/brand/ai-home-logo.png" alt="AI Home 品牌标识" width="180" />
 </p>
 
 <h1 align="center">AI Home（aih）</h1>
@@ -10,12 +10,15 @@
   <a href="https://madou1217.github.io/ai_home/">产品页（含动画）</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#它是怎么工作的">架构</a> ·
+  <a href="#代理与出口">代理与出口</a> ·
   <a href="#mcp-选择">MCP</a> ·
   <a href="#安装">安装</a>
 </p>
 
 <p align="center">
-  <img src="site/assets/hero.svg" alt="多个终端通过 AI Home 网关连接到不同账号池" width="860" />
+  <img src="site/assets/hero.svg" alt="AI Home 架构示意：多个本地终端经中央本机网关按配额调度到不同账号并转发至上游 Provider" width="840" />
+  <br />
+  <sub>示意：多个本地终端经 AIH 本机网关按配额调度到不同账号，再转发至官方 Provider。</sub>
 </p>
 
 AI Home（命令 `aih`）是一台机器上的 **AI CLI 控制面**：管理 `codex`、`claude`、`gemini`、`agy` 等 16 个 CLI 的多个账号，内置 OpenAI / Anthropic / Gemini 兼容网关（**AIH Server**），并提供 WebUI、持久会话、MCP 选择与远程 Server。默认只监听 `127.0.0.1`。
@@ -68,6 +71,52 @@ CLI 会话 / WebUI
 - **Workspace Connector**：把本机某个目录登记成工作区，远程会话通过受控工具访问它；不暴露任意路径。
 - **持久会话**：tmux 负责脱离终端；`aih resume` / `aih ss` 负责跨工具找回。
 - 完整命令与边界见下文，设计细节见 `docs/`。
+
+## 代理与出口
+
+AI Home 把代理拆成**控制面**（候选/租约/管理鉴权，挂载在 `:9527`）、**传输面**（SSH 本地转发、SSH 跳板、`--peer` 对等借用与反向隧道；Tailscale/WireGuard 属于 `network.connector@1` 插件契约，非默认）与**出口面**（AIH 出口池 `:17890`/`:17891`、无内核直连节点池、SSH 出口、系统代理与外部 TUN 复用）。显式账号出口一律**失败关闭（fail-closed）**，不静默回落宿主网络。
+
+<p align="center">
+  <a href="docs/assets/proxy-architecture.svg"><img src="docs/assets/proxy-architecture.svg" alt="AI Home 代理与出口架构图：控制面、传输面、出口面三个平面，9527 网关、6152/6153 proxy serve 本机入口、17890/17891 出口池及账号级 6 种出口模式" width="960" /></a>
+  <br />
+  <sub>图：AI Home 代理与出口静态架构（三平面、本机双入口、出口池与账号级 6 模式） · <a href="docs/assets/proxy-architecture.svg">打开原图</a></sub>
+</p>
+
+<p align="center">
+  <a href="docs/assets/proxy-request-flow.svg"><img src="docs/assets/proxy-request-flow.svg" alt="AI Home 双泳道请求流转动态图：泳道一 CLI 经 9527 网关解析账号出口到 Provider，泳道二浏览器或应用经 6152/6153 proxy serve 与租约通道访问互联网" width="960" /></a>
+  <br />
+  <sub>图：两条核心请求路径动态示意（支持 SVG 动画的浏览器打开原图可播放；README 中为静态首帧）与 404/410 租约立即自愈 · <a href="docs/assets/proxy-request-flow.svg">打开动态图</a></sub>
+</p>
+
+### 两条请求路径
+
+1. **AI CLI / 网关推理链路**：`CLI / WebUI` → **`127.0.0.1:9527`** AIH Server 网关 → 按 `aih.db` KV `account:egress:<accountRef>` 解析账号出口（6 模式）→ AIH 出口池（`:17890` mixed / `:17891` Clash API，支持 `sing-box` / `mihomo` 插件车道；无内核时自动降级到 HTTP/SOCKS/SSH 直连节点池）或 SSH 回环出口 → 官方 Provider。
+2. **浏览器 / App 通用代理链路**：`浏览器 / 桌面 App` → **`127.0.0.1:6152`**（HTTP）/ **`6153`**（SOCKS5）`aih proxy serve` 本机入口 → 经控制面租约（HTTP Upgrade `aih-proxy`，TTL 3h / 每 30m 续租；`404`/`410` 在首个失败请求立即换出口并重建入口）→ 本机出口池或 `--ssh` / `--peer` 跨机借用出口 → 互联网。
+
+### 账号级出口 6 模式
+
+| 模式 | 行为要点 | 关键边界 |
+| --- | --- | --- |
+| `direct` | 不走代理；网关绕过全局上游代理，CLI 清除宿主代理变量 | 宿主机已激活的外部 TUN 仍生效；适合 CN 账号 |
+| `system` | 只读复用当前操作系统代理（`HTTPS > HTTP > SOCKS5`） | 不修改系统设置；无可用系统代理时失败关闭 |
+| `url` | 指定 HTTP(S) / SOCKS5 代理地址 | 绑定不保存带账号密码（userinfo）的 URL |
+| `ssh` | AIH 管理的 SSH 回环隧道（`ssh:<connectionId>`） | 不依赖 `mihomo` / `sing-box` 代理内核 |
+| `pool` | AIH 出口池（有核走 `sticky/shared/session` 车道，无核降级直连池） | 失败关闭，绝不回落宿主网络 |
+| `tun` | 仅检测并复用宿主机已激活的外部 TUN | AIH 不创建不启停，**不同于 `aih proxy serve --tun`** |
+
+### 常用入口与边界
+
+```bash
+aih proxy serve                                     # 启动本机 HTTP/SOCKS5 入口（不发布 entry.json）
+aih proxy serve --system --system-service <name>    # 显式开启系统代理（退出恢复快照，绕过回环）
+aih proxy serve --peer <connectionId>               # 借用对端 AIH 出口（远端密钥不出对端）
+aih proxy serve --tun-dry-run                       # 仅校验 AIH 自建 sing-box TUN 配置（--tun 需 root）
+```
+
+- **`6152` / `6153` 是本机入口，不是出口池**（出口池在 `17890` / `17891`）；受监督实例（`--exit-with-parent`）独占默认 `6152`/`6153` 并发布 `0600` 权限的 `run/proxy/entry.json`。
+- **系统代理默认关闭**，不静默抢占；**CN 账号不要走海外出口**（建议绑定 `direct`）。
+
+完整功能矩阵、端口/文件速查、6152/6153 案例复盘与 P2P 证据边界见 **[代理与出口完整功能矩阵](docs/architecture/proxy-functional-matrix.md)**（跨机借用与 P2P 设计见 [proxy-borrowing-and-p2p.md](docs/architecture/proxy-borrowing-and-p2p.md)）。
 
 ## 设计原则
 
@@ -336,10 +385,10 @@ Tab 补全候选 = Provider 原生 MCP ∪ 账号允许的注册表 MCP；`--mcp
 服务启动后打开 `http://127.0.0.1:9527/ui/`。WebUI 和管理接口即使从本机访问，也需要 Management Key（见下文）。
 
 <p align="center">
-  <img src="docs/assets/webui-mock.png" alt="WebUI 账号与 MCP 设置示意（示例数据）" width="560" />
+  <img src="docs/assets/webui-mock.png" alt="AI Home WebUI 账号调度状态与 MCP 策略面板示意（示例数据）" width="560" />
+  <br />
+  <sub>示意图（示例数据）：展示 <code>127.0.0.1:9527/ui/accounts</code> 中的账号可调度/冷却状态与 MCP 自动策略，不包含真实账号信息。</sub>
 </p>
-
-> 上图为 WebUI 的账号列表与 MCP 策略示意，账号数据是示例值，不包含真实账号信息。
 
 页面：
 

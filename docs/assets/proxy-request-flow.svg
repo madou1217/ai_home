@@ -1,0 +1,402 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="flow-title flow-desc" fill="none">
+  <title id="flow-title">AI Home 双泳道请求流转动态图</title>
+  <desc id="flow-desc">动态展示 AI Home 代理系统的两条主要请求路径：泳道一为 CLI 经 9527 AIH Server 网关解析账号出口后通过出口池或 SSH 到达官方 Provider；泳道二为浏览器或桌面 App 经 6152/6153 proxy serve 本机入口与租约 Upgrade 通道经受管出口访问互联网，下方并展示 9527 控制面 30 分钟续租与 404/410 首个失败请求立即自愈重建机制。每 10 秒循环一次，静态首帧亦完整可读。</desc>
+
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+      /* Flowing arrow dash overlays */
+      .flow-track {
+        stroke-dasharray: 8 8;
+        animation: dash-move 1.6s linear infinite;
+      }
+      .control-track {
+        stroke-dasharray: 6 5;
+        animation: dash-move 2.4s linear infinite;
+      }
+      @keyframes dash-move {
+        from { stroke-dashoffset: 32; }
+        to { stroke-dashoffset: 0; }
+      }
+
+      /* Swimlane 1 packet (base cx=246, cy=204; 10s cycle; nodes x=[42..214, 278..450, 514..686, 750..922, 986..1158]) */
+      .pkt-l1 {
+        animation: travel-l1 10s linear infinite;
+        animation-delay: -1.45s;
+      }
+      @keyframes travel-l1 {
+        0%   { transform: translateX(-32px); opacity: 0; }
+        10%  { transform: translateX(-32px); opacity: 1; }
+        19%  { transform: translateX(32px);  opacity: 1; }
+        20%  { transform: translateX(32px);  opacity: 0; }
+        29%  { transform: translateX(204px); opacity: 0; }
+        30%  { transform: translateX(204px); opacity: 1; }
+        39%  { transform: translateX(268px); opacity: 1; }
+        40%  { transform: translateX(268px); opacity: 0; }
+        49%  { transform: translateX(440px); opacity: 0; }
+        50%  { transform: translateX(440px); opacity: 1; }
+        59%  { transform: translateX(504px); opacity: 1; }
+        60%  { transform: translateX(504px); opacity: 0; }
+        69%  { transform: translateX(676px); opacity: 0; }
+        70%  { transform: translateX(676px); opacity: 1; }
+        79%  { transform: translateX(740px); opacity: 1; }
+        80%  { transform: translateX(740px); opacity: 0; }
+        99%  { transform: translateX(-32px); opacity: 0; }
+        100% { transform: translateX(-32px); opacity: 0; }
+      }
+
+      /* Swimlane 2 packet (base cx=482, cy=430; 10s cycle) */
+      .pkt-l2 {
+        animation: travel-l2 10s linear infinite;
+        animation-delay: -3.45s;
+      }
+      @keyframes travel-l2 {
+        0%   { transform: translateX(-268px); opacity: 0; }
+        10%  { transform: translateX(-268px); opacity: 1; }
+        19%  { transform: translateX(-204px); opacity: 1; }
+        20%  { transform: translateX(-204px); opacity: 0; }
+        29%  { transform: translateX(-32px);  opacity: 0; }
+        30%  { transform: translateX(-32px);  opacity: 1; }
+        39%  { transform: translateX(32px);   opacity: 1; }
+        40%  { transform: translateX(32px);   opacity: 0; }
+        49%  { transform: translateX(204px);  opacity: 0; }
+        50%  { transform: translateX(204px);  opacity: 1; }
+        59%  { transform: translateX(268px);  opacity: 1; }
+        60%  { transform: translateX(268px);  opacity: 0; }
+        69%  { transform: translateX(440px);  opacity: 0; }
+        70%  { transform: translateX(440px);  opacity: 1; }
+        79%  { transform: translateX(504px);  opacity: 1; }
+        80%  { transform: translateX(504px);  opacity: 0; }
+        99%  { transform: translateX(-268px); opacity: 0; }
+        100% { transform: translateX(-268px); opacity: 0; }
+      }
+
+      /* Sequential node highlight rings (10s cycle, synchronized with each lane) */
+      .hl-n1 { animation: pulse-n1 10s ease-in-out infinite; }
+      .hl-n2 { animation: pulse-n2 10s ease-in-out infinite; }
+      .hl-n3 { animation: pulse-n3 10s ease-in-out infinite; }
+      .hl-n4 { animation: pulse-n4 10s ease-in-out infinite; }
+      .hl-n5 { animation: pulse-n5 10s ease-in-out infinite; }
+
+      .sync-l1 { animation-delay: -1.45s; }
+      .sync-l2 { animation-delay: -3.45s; }
+
+      @keyframes pulse-n1 {
+        0%, 100% { opacity: 0.95; }
+        11%      { opacity: 0.95; }
+        15%, 94% { opacity: 0; }
+      }
+      @keyframes pulse-n2 {
+        0%, 17%  { opacity: 0; }
+        20%, 31% { opacity: 0.95; }
+        35%, 100%{ opacity: 0; }
+      }
+      @keyframes pulse-n3 {
+        0%, 37%  { opacity: 0; }
+        40%, 51% { opacity: 0.95; }
+        55%, 100%{ opacity: 0; }
+      }
+      @keyframes pulse-n4 {
+        0%, 57%  { opacity: 0; }
+        60%, 71% { opacity: 0.95; }
+        75%, 100%{ opacity: 0; }
+      }
+      @keyframes pulse-n5 {
+        0%, 77%  { opacity: 0; }
+        80%, 93% { opacity: 0.95; }
+        97%, 100%{ opacity: 0; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .flow-track, .control-track, .pkt-l1, .pkt-l2,
+        .hl-n1, .hl-n2, .hl-n3, .hl-n4, .hl-n5 {
+          animation: none !important;
+        }
+        .hl-n1, .hl-n2, .hl-n3, .hl-n4, .hl-n5 {
+          opacity: 0 !important;
+        }
+      }
+    </style>
+
+    <pattern id="bg-dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="1.1" fill="#10151c" fill-opacity="0.065"/>
+    </pattern>
+
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 Z" fill="#1f9d82"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 Z" fill="#3b76d9"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect x="0" y="0" width="1200" height="620" fill="#f6f7f9"/>
+  <rect x="0" y="0" width="1200" height="620" fill="url(#bg-dots)"/>
+
+  <!-- Header (x: 24..1176, y: 18..68) -->
+  <g>
+    <text x="24" y="40" class="sans" font-size="22" font-weight="700" fill="#10151c">AI Home 请求流转动态示意</text>
+    <text x="24" y="62" class="sans" font-size="13" fill="#5d6673">两条核心数据面泳道 + 租约控制面自愈 · 10s 循环（静态首帧完整可读）</text>
+
+    <!-- Legend -->
+    <rect x="764" y="20" width="412" height="44" rx="12" fill="#ffffff" stroke="#d5dde8" stroke-width="1.3"/>
+    <circle cx="784" cy="42" r="5" fill="#1f9d82"/>
+    <text x="796" y="46" class="sans" font-size="12" font-weight="600" fill="#10151c">泳道 1：网关请求</text>
+
+    <circle cx="914" cy="42" r="5" fill="#3b76d9"/>
+    <text x="926" y="46" class="sans" font-size="12" font-weight="600" fill="#10151c">泳道 2：本机代理</text>
+
+    <line x1="1040" y1="42" x2="1066" y2="42" stroke="#3b76d9" stroke-width="2" stroke-dasharray="4 3"/>
+    <text x="1074" y="46" class="sans" font-size="12" font-weight="600" fill="#10151c">控制面自愈</text>
+  </g>
+
+  <!-- ==================== SWIMLANE 1 (x: 24..1176, y: 82..298) ==================== -->
+  <g>
+    <rect x="24" y="82" width="1152" height="216" rx="16" fill="#ffffff" stroke="#cfd8e3" stroke-width="1.3"/>
+
+    <!-- Lane 1 Header -->
+    <rect x="42" y="96" width="236" height="26" rx="13" fill="#e8f7f3" stroke="#9bd9ca" stroke-width="1"/>
+    <text x="56" y="113" class="sans" font-size="12" font-weight="700" fill="#14725e">泳道 1 · AI CLI / 网关推理请求流</text>
+    <text x="1158" y="113" text-anchor="end" class="sans" font-size="12" fill="#5d6673">数据面走 9527 回环网关 · 按账号绑定解析出口 · 失败关闭不回落宿主</text>
+
+    <!-- Connector Arrows (y=204) -->
+    <g>
+      <line x1="214" y1="204" x2="272" y2="204" stroke="#cdeae2" stroke-width="3"/>
+      <line x1="214" y1="204" x2="272" y2="204" stroke="#1f9d82" stroke-width="2" class="flow-track" marker-end="url(#arrow-teal)"/>
+      <rect x="220" y="172" width="52" height="20" rx="10" fill="#f1faf7" stroke="#9bd9ca" stroke-width="1"/>
+      <text x="246" y="186" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#14725e">请求</text>
+      <text x="246" y="228" text-anchor="middle" class="mono" font-size="12" fill="#5d6673">:9527</text>
+
+      <line x1="450" y1="204" x2="508" y2="204" stroke="#cdeae2" stroke-width="3"/>
+      <line x1="450" y1="204" x2="508" y2="204" stroke="#1f9d82" stroke-width="2" class="flow-track" marker-end="url(#arrow-teal)"/>
+      <rect x="454" y="172" width="56" height="20" rx="10" fill="#f1faf7" stroke="#9bd9ca" stroke-width="1"/>
+      <text x="482" y="186" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#14725e">查绑定</text>
+      <text x="482" y="228" text-anchor="middle" class="sans" font-size="12" fill="#5d6673">6 模式</text>
+
+      <line x1="686" y1="204" x2="744" y2="204" stroke="#cdeae2" stroke-width="3"/>
+      <line x1="686" y1="204" x2="744" y2="204" stroke="#1f9d82" stroke-width="2" class="flow-track" marker-end="url(#arrow-teal)"/>
+      <rect x="690" y="172" width="56" height="20" rx="10" fill="#f1faf7" stroke="#9bd9ca" stroke-width="1"/>
+      <text x="718" y="186" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#14725e">数据面</text>
+      <text x="718" y="228" text-anchor="middle" class="mono" font-size="12" fill="#5d6673">:17890</text>
+
+      <line x1="922" y1="204" x2="980" y2="204" stroke="#cdeae2" stroke-width="3"/>
+      <line x1="922" y1="204" x2="980" y2="204" stroke="#1f9d82" stroke-width="2" class="flow-track" marker-end="url(#arrow-teal)"/>
+      <rect x="928" y="172" width="52" height="20" rx="10" fill="#f1faf7" stroke="#9bd9ca" stroke-width="1"/>
+      <text x="954" y="186" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#14725e">上游</text>
+      <text x="954" y="228" text-anchor="middle" class="mono" font-size="12" fill="#5d6673">HTTPS</text>
+    </g>
+
+    <!-- Lane 1 Stage 1 (x: 42..214) -->
+    <g>
+      <rect x="42" y="148" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="40" y="146" width="176" height="114" rx="14" fill="#1f9d82" fill-opacity="0.08" stroke="#1f9d82" stroke-width="2.4" class="hl-n1 sync-l1" opacity="0"/>
+      <rect x="54" y="160" width="28" height="20" rx="10" fill="#e8f7f3"/>
+      <text x="68" y="174" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#14725e">01</text>
+      <text x="90" y="175" class="sans" font-size="14" font-weight="700" fill="#10151c">AI CLI / 会话</text>
+      <text x="54" y="201" class="mono" font-size="12" fill="#10151c">aih codex / claude</text>
+      <text x="54" y="222" class="sans" font-size="12" fill="#5d6673">WebUI 与外部 harness</text>
+      <text x="54" y="242" class="sans" font-size="12" fill="#5d6673">发起推理或刷新请求</text>
+      <circle cx="214" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 1 Stage 2 (x: 278..450) -->
+    <g>
+      <rect x="278" y="148" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="276" y="146" width="176" height="114" rx="14" fill="#1f9d82" fill-opacity="0.08" stroke="#1f9d82" stroke-width="2.4" class="hl-n2 sync-l1" opacity="0"/>
+      <rect x="290" y="160" width="28" height="20" rx="10" fill="#e8f7f3"/>
+      <text x="304" y="174" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#14725e">02</text>
+      <text x="326" y="175" class="sans" font-size="14" font-weight="700" fill="#10151c">9527 网关</text>
+      <text x="290" y="201" class="mono" font-size="12" fill="#14725e">127.0.0.1:9527</text>
+      <text x="290" y="222" class="sans" font-size="12" fill="#5d6673">AIH Server 协议兼容</text>
+      <text x="290" y="242" class="sans" font-size="12" fill="#5d6673">选号 · 熔断 · 模型别名</text>
+      <circle cx="278" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+      <circle cx="450" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 1 Stage 3 (x: 514..686) -->
+    <g>
+      <rect x="514" y="148" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="512" y="146" width="176" height="114" rx="14" fill="#1f9d82" fill-opacity="0.08" stroke="#1f9d82" stroke-width="2.4" class="hl-n3 sync-l1" opacity="0"/>
+      <rect x="526" y="160" width="28" height="20" rx="10" fill="#e8f7f3"/>
+      <text x="540" y="174" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#14725e">03</text>
+      <text x="562" y="175" class="sans" font-size="14" font-weight="700" fill="#10151c">解析账号出口</text>
+      <text x="526" y="201" class="mono" font-size="12" fill="#10151c">account:egress</text>
+      <text x="526" y="222" class="sans" font-size="12" fill="#5d6673">按绑定选定 6 模式之一</text>
+      <text x="526" y="242" class="sans" font-size="12" font-weight="600" fill="#14725e">失败关闭 · 不回落宿主</text>
+      <circle cx="514" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+      <circle cx="686" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 1 Stage 4 (x: 750..922) -->
+    <g>
+      <rect x="750" y="148" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="748" y="146" width="176" height="114" rx="14" fill="#1f9d82" fill-opacity="0.08" stroke="#1f9d82" stroke-width="2.4" class="hl-n4 sync-l1" opacity="0"/>
+      <rect x="762" y="160" width="28" height="20" rx="10" fill="#e8f7f3"/>
+      <text x="776" y="174" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#14725e">04</text>
+      <text x="798" y="175" class="sans" font-size="14" font-weight="700" fill="#10151c">出口池 / SSH</text>
+      <text x="762" y="201" class="mono" font-size="12" fill="#14725e">:17890 / ssh:&lt;id&gt;</text>
+      <text x="762" y="222" class="sans" font-size="12" fill="#5d6673">车道或无核直连节点池</text>
+      <text x="762" y="242" class="sans" font-size="12" fill="#5d6673">PickBest 健康账本选路</text>
+      <circle cx="750" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+      <circle cx="922" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 1 Stage 5 (x: 986..1158) -->
+    <g>
+      <rect x="986" y="148" width="172" height="110" rx="12" fill="#f1faf7" stroke="#8ad3c1" stroke-width="1.4"/>
+      <rect x="984" y="146" width="176" height="114" rx="14" fill="#1f9d82" fill-opacity="0.1" stroke="#1f9d82" stroke-width="2.4" class="hl-n5 sync-l1" opacity="0"/>
+      <rect x="998" y="160" width="28" height="20" rx="10" fill="#ffffff" stroke="#9bd9ca" stroke-width="1"/>
+      <text x="1012" y="174" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#14725e">05</text>
+      <text x="1034" y="175" class="sans" font-size="14" font-weight="700" fill="#10151c">官方 Provider</text>
+      <text x="998" y="201" class="sans" font-size="12" fill="#10151c">OpenAI / Anthropic</text>
+      <text x="998" y="222" class="sans" font-size="12" fill="#5d6673">Gemini 等官方接口</text>
+      <text x="998" y="242" class="sans" font-size="12" font-weight="600" fill="#14725e">独立出口 IP 送达响应</text>
+      <circle cx="986" cy="204" r="4" fill="#ffffff" stroke="#1f9d82" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 1 Footer -->
+    <text x="44" y="282" class="sans" font-size="12" fill="#5d6673">账号 6 模式：direct（绕全局代理）· system（只读系统代理）· url（无凭据地址）· ssh（回环隧道）· pool（车道/无核直连池）· tun（仅复用外部 TUN）</text>
+
+    <!-- Animated Packet Dot (Lane 1, static fallback at Arrow 1 center: 246, 204) -->
+    <g class="pkt-l1">
+      <circle cx="246" cy="204" r="11" fill="#1f9d82" fill-opacity="0.22"/>
+      <circle cx="246" cy="204" r="5.5" fill="#1f9d82" stroke="#ffffff" stroke-width="1.8"/>
+    </g>
+  </g>
+
+  <!-- ==================== SWIMLANE 2 (x: 24..1176, y: 312..596) ==================== -->
+  <g>
+    <rect x="24" y="312" width="1152" height="284" rx="16" fill="#ffffff" stroke="#cfd8e3" stroke-width="1.3"/>
+
+    <!-- Lane 2 Header -->
+    <rect x="42" y="326" width="266" height="26" rx="13" fill="#edf3fd" stroke="#adc7f2" stroke-width="1"/>
+    <text x="56" y="343" class="sans" font-size="12" font-weight="700" fill="#2857a8">泳道 2 · 浏览器 / App 通用代理请求流</text>
+    <text x="1158" y="343" text-anchor="end" class="sans" font-size="12" fill="#5d6673">6152/6153 是本机入口（非出口池）· 受监督实例独占并发布 entry.json（0600）</text>
+
+    <!-- Connector Arrows (y=430) -->
+    <g>
+      <line x1="214" y1="430" x2="272" y2="430" stroke="#d3e2fa" stroke-width="3"/>
+      <line x1="214" y1="430" x2="272" y2="430" stroke="#3b76d9" stroke-width="2" class="flow-track" marker-end="url(#arrow-blue)"/>
+      <rect x="220" y="398" width="52" height="20" rx="10" fill="#edf3fd" stroke="#adc7f2" stroke-width="1"/>
+      <text x="246" y="412" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#2857a8">请求</text>
+      <text x="246" y="454" text-anchor="middle" class="mono" font-size="12" fill="#5d6673">:6152/53</text>
+
+      <line x1="450" y1="430" x2="508" y2="430" stroke="#d3e2fa" stroke-width="3"/>
+      <line x1="450" y1="430" x2="508" y2="430" stroke="#3b76d9" stroke-width="2" class="flow-track" marker-end="url(#arrow-blue)"/>
+      <rect x="456" y="398" width="52" height="20" rx="10" fill="#edf3fd" stroke="#adc7f2" stroke-width="1"/>
+      <text x="482" y="412" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#2857a8">租约</text>
+      <text x="482" y="454" text-anchor="middle" class="mono" font-size="12" fill="#5d6673">Upgrade</text>
+
+      <line x1="686" y1="430" x2="744" y2="430" stroke="#d3e2fa" stroke-width="3"/>
+      <line x1="686" y1="430" x2="744" y2="430" stroke="#3b76d9" stroke-width="2" class="flow-track" marker-end="url(#arrow-blue)"/>
+      <rect x="690" y="398" width="56" height="20" rx="10" fill="#edf3fd" stroke="#adc7f2" stroke-width="1"/>
+      <text x="718" y="412" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#2857a8">数据面</text>
+      <text x="718" y="454" text-anchor="middle" class="sans" font-size="12" fill="#5d6673">选定出口</text>
+
+      <line x1="922" y1="430" x2="980" y2="430" stroke="#d3e2fa" stroke-width="3"/>
+      <line x1="922" y1="430" x2="980" y2="430" stroke="#3b76d9" stroke-width="2" class="flow-track" marker-end="url(#arrow-blue)"/>
+      <rect x="928" y="398" width="52" height="20" rx="10" fill="#edf3fd" stroke="#adc7f2" stroke-width="1"/>
+      <text x="954" y="412" text-anchor="middle" class="sans" font-size="12" font-weight="600" fill="#2857a8">出网</text>
+      <text x="954" y="454" text-anchor="middle" class="sans" font-size="12" fill="#5d6673">公网目标</text>
+    </g>
+
+    <!-- Lane 2 Stage 1 (x: 42..214) -->
+    <g>
+      <rect x="42" y="374" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="40" y="372" width="176" height="114" rx="14" fill="#3b76d9" fill-opacity="0.08" stroke="#3b76d9" stroke-width="2.4" class="hl-n1 sync-l2" opacity="0"/>
+      <rect x="54" y="386" width="28" height="20" rx="10" fill="#edf3fd"/>
+      <text x="68" y="400" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#2857a8">01</text>
+      <text x="90" y="401" class="sans" font-size="14" font-weight="700" fill="#10151c">浏览器 / App</text>
+      <text x="54" y="427" class="sans" font-size="12" fill="#10151c">HTTP / SOCKS5 客户端</text>
+      <text x="54" y="448" class="sans" font-size="12" fill="#5d6673">或显式 --system / --tun</text>
+      <text x="54" y="468" class="sans" font-size="12" fill="#5d6673">系统代理默认关闭</text>
+      <circle cx="214" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 2 Stage 2 (x: 278..450) -->
+    <g>
+      <rect x="278" y="374" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="276" y="372" width="176" height="114" rx="14" fill="#3b76d9" fill-opacity="0.08" stroke="#3b76d9" stroke-width="2.4" class="hl-n2 sync-l2" opacity="0"/>
+      <rect x="290" y="386" width="28" height="20" rx="10" fill="#edf3fd"/>
+      <text x="304" y="400" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#2857a8">02</text>
+      <text x="326" y="401" class="sans" font-size="14" font-weight="700" fill="#10151c">proxy serve</text>
+      <text x="290" y="427" class="mono" font-size="12" fill="#2857a8">:6152 HTTP · :6153</text>
+      <text x="290" y="448" class="sans" font-size="12" fill="#5d6673">默认匿名回环入口</text>
+      <text x="290" y="468" class="sans" font-size="12" fill="#5d6673">受监督发布 entry.json</text>
+      <circle cx="278" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+      <circle cx="450" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 2 Stage 3 (x: 514..686) -->
+    <g>
+      <rect x="514" y="374" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="512" y="372" width="176" height="114" rx="14" fill="#3b76d9" fill-opacity="0.08" stroke="#3b76d9" stroke-width="2.4" class="hl-n3 sync-l2" opacity="0"/>
+      <rect x="526" y="386" width="28" height="20" rx="10" fill="#edf3fd"/>
+      <text x="540" y="400" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#2857a8">03</text>
+      <text x="562" y="401" class="sans" font-size="14" font-weight="700" fill="#10151c">租约通道</text>
+      <text x="526" y="427" class="mono" font-size="12" fill="#10151c">Upgrade aih-proxy</text>
+      <text x="526" y="448" class="sans" font-size="12" fill="#5d6673">数据面持租约令牌</text>
+      <text x="526" y="468" class="sans" font-size="12" fill="#2857a8">TTL 3h · 30m 续租</text>
+      <circle cx="514" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+      <circle cx="686" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 2 Stage 4 (x: 750..922) -->
+    <g>
+      <rect x="750" y="374" width="172" height="110" rx="12" fill="#fafbfc" stroke="#cfd8e3" stroke-width="1.3"/>
+      <rect x="748" y="372" width="176" height="114" rx="14" fill="#3b76d9" fill-opacity="0.08" stroke="#3b76d9" stroke-width="2.4" class="hl-n4 sync-l2" opacity="0"/>
+      <rect x="762" y="386" width="28" height="20" rx="10" fill="#edf3fd"/>
+      <text x="776" y="400" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#2857a8">04</text>
+      <text x="798" y="401" class="sans" font-size="14" font-weight="700" fill="#10151c">受管出口</text>
+      <text x="762" y="427" class="mono" font-size="12" fill="#14725e">出口池 / SSH / --peer</text>
+      <text x="762" y="448" class="sans" font-size="12" fill="#5d6673">本机出口池 :17890</text>
+      <text x="762" y="468" class="sans" font-size="12" fill="#5d6673">或 SSH/跳板跨机借用</text>
+      <circle cx="750" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+      <circle cx="922" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+    </g>
+
+    <!-- Lane 2 Stage 5 (x: 986..1158) -->
+    <g>
+      <rect x="986" y="374" width="172" height="110" rx="12" fill="#edf3fd" stroke="#adc7f2" stroke-width="1.4"/>
+      <rect x="984" y="372" width="176" height="114" rx="14" fill="#3b76d9" fill-opacity="0.1" stroke="#3b76d9" stroke-width="2.4" class="hl-n5 sync-l2" opacity="0"/>
+      <rect x="998" y="386" width="28" height="20" rx="10" fill="#ffffff" stroke="#adc7f2" stroke-width="1"/>
+      <text x="1012" y="400" text-anchor="middle" class="mono" font-size="12" font-weight="700" fill="#2857a8">05</text>
+      <text x="1034" y="401" class="sans" font-size="14" font-weight="700" fill="#10151c">互联网目标</text>
+      <text x="998" y="427" class="sans" font-size="12" fill="#10151c">网页 · 包源 · 远端服务</text>
+      <text x="998" y="448" class="sans" font-size="12" fill="#5d6673">按租约绑定出口访问</text>
+      <text x="998" y="468" class="sans" font-size="12" font-weight="600" fill="#9a5206">CN 账号勿走海外出口</text>
+      <circle cx="986" cy="430" r="4" fill="#ffffff" stroke="#3b76d9" stroke-width="2"/>
+    </g>
+
+    <!-- Control Plane & Lease Self-Heal Sub-bar (x: 64..1136, y: 514..582) -->
+    <g>
+      <rect x="64" y="514" width="1072" height="68" rx="12" fill="#f3f7fe" stroke="#9dbef0" stroke-width="1.3" stroke-dasharray="5 4"/>
+
+      <!-- Vertical connectors to Stages 2, 3, 4 -->
+      <line x1="364" y1="514" x2="364" y2="488" stroke="#3b76d9" stroke-width="1.6" class="control-track" marker-end="url(#arrow-blue)"/>
+      <rect x="370" y="490" width="62" height="18" rx="9" fill="#ffffff" stroke="#bfd4f6" stroke-width="1"/>
+      <text x="401" y="503" text-anchor="middle" class="sans" font-size="12" fill="#2857a8">重建入口</text>
+
+      <line x1="600" y1="484" x2="600" y2="510" stroke="#3b76d9" stroke-width="1.6" class="control-track" marker-end="url(#arrow-blue)"/>
+      <rect x="606" y="490" width="84" height="18" rx="9" fill="#ffffff" stroke="#bfd4f6" stroke-width="1"/>
+      <text x="648" y="503" text-anchor="middle" class="sans" font-size="12" fill="#2857a8">404/410 触发</text>
+
+      <line x1="836" y1="514" x2="836" y2="488" stroke="#3b76d9" stroke-width="1.6" class="control-track" marker-end="url(#arrow-blue)"/>
+      <rect x="842" y="490" width="62" height="18" rx="9" fill="#ffffff" stroke="#bfd4f6" stroke-width="1"/>
+      <text x="873" y="503" text-anchor="middle" class="sans" font-size="12" fill="#2857a8">切换出口</text>
+
+      <text x="84" y="540" class="sans" font-size="12" font-weight="700" fill="#2857a8">控制面 (:9527)：</text>
+      <text x="188" y="540" class="mono" font-size="12" fill="#10151c">GET /v1/management/proxy-candidates → POST /proxy-leases → GET /proxy-leases/{id}/connect (Upgrade)</text>
+      <text x="84" y="566" class="sans" font-size="12" fill="#10151c">续租与自愈：POST /proxy-leases/{id}/renew（30m）· DELETE 释放；404/410（lease lost）→ 首个失败请求立即换出口并重建 6152/6153 与 entry.json</text>
+    </g>
+
+    <!-- Animated Packet Dot (Lane 2, static fallback at Arrow 2 center: 482, 430) -->
+    <g class="pkt-l2">
+      <circle cx="482" cy="430" r="11" fill="#3b76d9" fill-opacity="0.22"/>
+      <circle cx="482" cy="430" r="5.5" fill="#3b76d9" stroke="#ffffff" stroke-width="1.8"/>
+    </g>
+  </g>
+</svg>

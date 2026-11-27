@@ -21,10 +21,12 @@
 //   - `request_rewrite.go`：四条硬约束改写 + tool_choice 翻译；
 //   - `aggregate.go`：客户端要非流式时的 SSE 聚合（上游只给流，约束 2）；
 //   - `handler.go`：契约不满足或没有可透传账号时交回 Canonical（Fallback）。
+//
 // 回归护栏见 `handler_test.go`：构造依赖、零值 503、方法/路径/正文交还、请求体原样重放。
 package codebuddyfamilyrelay
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,6 +129,11 @@ func RewriteRequestBody(body []byte, options RewriteOptions) (RewriteResult, err
 	if err != nil {
 		return RewriteResult{}, fmt.Errorf("%w: messages %v", ErrInvalidRequestBody, err)
 	}
+	// 官方 CLI 的请求本来就满足全部上游约束。此时必须**逐字节原样转发**：
+	// 一旦经过 map 重新 Marshal，键顺序与空白都会变化，成为与官方可区分的差异。
+	if requestAlreadySatisfies(fields, messages) {
+		return RewriteResult{Body: body}, nil
+	}
 	if !firstMessageIsSystem(messages) {
 		prompt := strings.TrimSpace(options.DefaultSystemPrompt)
 		if prompt == "" {
@@ -166,6 +173,38 @@ func RewriteRequestBody(body []byte, options RewriteOptions) (RewriteResult, err
 	}
 	result.Body = rewritten
 	return result, nil
+}
+
+// requestAlreadySatisfies 判断请求体是否已经满足四条上游硬约束，且不需要任何
+// tool_choice 归一。成立时调用方应原样返回 body，不能重新序列化。
+func requestAlreadySatisfies(fields map[string]json.RawMessage, messages []json.RawMessage) bool {
+	if !firstMessageIsSystem(messages) {
+		return false
+	}
+	if !bytes.Equal(bytes.TrimSpace(fields["stream"]), []byte("true")) {
+		return false
+	}
+	if _, err := decodeRawArray(fields["tools"]); err != nil {
+		return false
+	}
+	raw, present := fields["tool_choice"]
+	if !present {
+		return true
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if bytes.Equal(trimmed, []byte("null")) {
+		return true
+	}
+	var value string
+	if json.Unmarshal(trimmed, &value) != nil {
+		return false
+	}
+	switch value {
+	case "auto", "required", "none":
+		return true
+	default:
+		return false
+	}
 }
 
 // applyToolChoice 把翻译结论写回请求体并填充结论字段。

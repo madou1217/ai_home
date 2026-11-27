@@ -6,7 +6,9 @@
 package cliversion
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,6 +21,8 @@ import (
 const (
 	// envOverride 是运维显式锁定的版本（不是写死版本，而是可配置事实）。
 	envOverride = "AIH_CODEEBUDDY_CLI_VERSION"
+	// envBinaryOverride 显式指定要探测的官方 CLI 二进制（安装器/运维使用）。
+	envBinaryOverride = "AIH_CODEEBUDDY_BINARY"
 	// cacheTTL 是文件系统探测结果的缓存时长：安装目录只在升级时变化。
 	cacheTTL = time.Hour
 )
@@ -56,7 +60,10 @@ func UserAgent(version string) string {
 	return "CLI/" + value + " CodeBuddy/" + value
 }
 
-// detect 按「显式配置 > 本机安装（取最高）」解析版本。
+// detect 按「显式配置 > 二进制自报 > 本机安装目录（取最高）」解析版本。
+//
+// 二进制自报优先于目录名：官方安装目录可能停留在旧版本（例如目录叫
+// 2.178.1，二进制实际是 2.187.0），只读目录会把旧版本当成当前身份发给上游。
 func detect() string {
 	if configured := strings.TrimSpace(os.Getenv(envOverride)); configured != "" {
 		// 配置值必须自身是干净 semver，避免把非法串当身份发出去。
@@ -64,7 +71,59 @@ func detect() string {
 			return configured
 		}
 	}
+	if version := detectBinaryVersion(); version != "" {
+		return version
+	}
 	return detectInstalled()
+}
+
+// detectBinaryVersion 运行官方 CLI 的 --version，返回它真实自报的版本。
+//
+// 只用于读版本，不触网；超时 3s。路径全部来自固定安装位置或显式覆盖，
+// 不接受用户输入。失败时返回空串，由目录探测兜底。
+func detectBinaryVersion() string {
+	candidates := make([]string, 0, 6)
+	if configured := strings.TrimSpace(os.Getenv(envBinaryOverride)); configured != "" {
+		candidates = append(candidates, configured)
+	}
+	home := strings.TrimSpace(os.Getenv("AIH_HOST_HOME"))
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".local", "bin", "codebuddy"),
+			filepath.Join(home, ".local", "share", "codebuddy", "bin", "codebuddy"),
+			filepath.Join(home, ".codebuddy-cn", "bin", "codebuddy"),
+		)
+	}
+	candidates = append(candidates,
+		"/opt/homebrew/bin/codebuddy",
+		"/usr/local/bin/codebuddy",
+	)
+	for _, candidate := range candidates {
+		path := strings.TrimSpace(candidate)
+		if path == "" {
+			continue
+		}
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		output, err := exec.CommandContext(ctx, path, "--version").Output()
+		cancel()
+		if err != nil {
+			continue
+		}
+		version := strings.TrimSpace(string(output))
+		if line, _, ok := strings.Cut(version, "\n"); ok {
+			version = strings.TrimSpace(line)
+		}
+		if parsed, ok := clientversion.Parse(version); ok && parsed.String() == version {
+			return version
+		}
+	}
+	return ""
 }
 
 // detectInstalled 读本机安装的官方 CLI 版本目录名，取最高合法 semver。

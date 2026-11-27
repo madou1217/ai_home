@@ -34,6 +34,9 @@ type Provider struct {
 	providerID string
 	// userID 是账号 uid，用于官方身份头 X-User-Id（复刻官方画像；为空则不下发该头）。
 	userID string
+	// domain 是账号登录态里的站点域名（官方 X-Domain 的真实取值）。
+	// 为空时回退到站点根域名；不要用推理 endpoint 冒充登录域名。
+	domain string
 }
 
 // 编译期确认家族实现满足 relaycore 契约。
@@ -79,9 +82,10 @@ func (provider Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provid
 	}
 	resolved := provider
 	resolved.providerID = normalized
-	// 账号 uid 与 access token 同源（同一个 credentials 载荷），从同一处取，
-	// 避免两处口径分叉。取不到只是不下发 X-User-Id，不影响渠道校验。
+	// 账号 uid、站点域名与 access token 同源（同一个 credentials 载荷），从同一处取，
+	// 避免两处口径分叉。取不到只是不下发对应头，不影响渠道校验。
 	resolved.userID = UserIDFromCredential(input.Credential)
+	resolved.domain = DomainFromCredential(input.Credential)
 	return resolved, true
 }
 
@@ -121,13 +125,30 @@ func (provider Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, e
 // 身份才带）。此前本端补发它们，反而是一处与官方不符的差异。
 func (provider Provider) DecorateUpstream(request *http.Request, accessToken string) {
 	provider.BaseProvider.DecorateUpstream(request, accessToken)
-	// UA 与 X-IDE-Version 同源，且只下发真实观测到的版本；拿不到版本就不发，
-	// 不伪造官方客户端身份。
-	if userAgent := cliversion.UserAgent(cliversion.Current()); userAgent != "" {
+	// 官方原生请求声明 application/json（即使 body 里 stream=true），不是
+	// text/event-stream。基类为聚合通道设置的 Accept 在这里必须覆盖回去。
+	request.Header.Set("Accept", "application/json")
+	// UA、X-IDE-Version、x-stainless-* 必须同源：都取当前实际安装的 CLI 版本，
+	// 版本未知时宁可不发版本类头，也不自报一个会过期的假身份。
+	version := cliversion.Current()
+	if userAgent := cliversion.UserAgent(version); userAgent != "" {
 		request.Header.Set("User-Agent", userAgent)
 	}
+	profile := cliversion.Transport(version)
+	request.Header.Set("x-stainless-arch", profile.Arch)
+	request.Header.Set("x-stainless-lang", profile.Lang)
+	request.Header.Set("x-stainless-os", profile.OS)
+	request.Header.Set("x-stainless-retry-count", "0")
+	request.Header.Set("x-stainless-runtime", profile.Runtime)
+	if profile.StainlessVersion != "" {
+		request.Header.Set("x-stainless-package-version", profile.StainlessVersion)
+	}
+	if profile.RuntimeVersion != "" {
+		request.Header.Set("x-stainless-runtime-version", profile.RuntimeVersion)
+	}
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")
-	for name, value := range IdentityHeaders(provider.providerID, provider.userID) {
+	request.Header.Set("Connection", "keep-alive")
+	for name, value := range IdentityHeaders(provider.providerID, provider.userID, provider.domain) {
 		request.Header.Set(name, value)
 	}
 	for name, value := range TraceHeaders() {

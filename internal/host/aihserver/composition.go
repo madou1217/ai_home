@@ -1405,6 +1405,10 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 	// 家族模型目录经无客户端 HTTP 通道进入 Go 的账号索引后，未钉选征召按家族表链式
 	// 开启多个会话；模型没有家族候选时安静交回 Canonical。Node 侧交还门按「透传通道」
 	// 判定哪些模型交给这里，本通道不为「别的 Provider 的模型」兜底。
+	familyRelayClient := newFamilyFingerprintHTTPClient()
+	if relayHTTPClient != nil {
+		familyRelayClient = relayHTTPClient
+	}
 	familyRelay, err := newFamilyRelayRuntime(familyRelayInputs{
 		catalog:          catalog,
 		recruiter:        inference.recruiter,
@@ -1413,8 +1417,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		store:            dependencies.Store,
 		fallback:         inference.handler,
 		credentials:      credentials,
-		client:           relayClient,
-		egress:           relayEgress,
+		client:           familyRelayClient,
+		egress:           familyFingerprintEgress{base: relayEgress},
 		attempts:         accountRuntime,
 		upstream429:      upstream429Controller,
 		usage:            attemptUsage,

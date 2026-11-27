@@ -68,9 +68,13 @@ type Connection interface {
 }
 
 // Dialer 使用独立 HTTP Client 建立上游 WebSocket，连接期不设置总请求超时。
+//
+// journal 由同一进程的所有上游连接共享：账号池换号或重连后，客户端带着上一次
+// 响应的 previous_response_id 续接时，仍能展开成完整上下文再转发。
 type Dialer struct {
 	client   *http.Client
 	versions clientversion.Source
+	journal  *responseJournal
 }
 
 // NewDialer 创建默认失败关闭的 Codex Responses WebSocket Dialer。
@@ -83,7 +87,7 @@ func NewDialerWithClientVersion(client *http.Client, versions clientversion.Sour
 	if client == nil || versions == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Dialer{client: client, versions: versions}, nil
+	return &Dialer{client: client, versions: versions, journal: newResponseJournal()}, nil
 }
 
 // SupportsCredential 声明当前 WS 适配器可承载的 Codex 凭据集合。
@@ -144,10 +148,9 @@ func (dialer *Dialer) Connect(
 	if err != nil {
 		return nil, response, err
 	}
-	if _, apiKey := credential.(*codexauth.APIKeyAuth); apiKey {
-		return &statelessConnection{Connection: connection}, response, nil
-	}
-	return connection, response, nil
+	// 所有账号池连接都经过这一层：官方 OAuth 账号同样按账号隔离持久化，
+	// 换号后续接不能依赖上游存储。API-key 与 OAuth 的展开语义完全一致。
+	return &statelessConnection{Connection: connection, journal: dialer.journal}, response, nil
 }
 
 // projectCredential 返回不含查询参数的 WS 端点和只存在于内存中的认证头。

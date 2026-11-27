@@ -186,6 +186,18 @@ type CredentialRefresher interface {
 	) (accountapp.CredentialSnapshot, error)
 }
 
+// CredentialReauthRefresher 在网关明确拒绝当前凭据后强制刷新一次。
+//
+// 与 CredentialRefresher 的区别：后者只在 exp 临近时刷新；网关可能在 token
+// 尚未到期时吊销 session（官方 CLI 会在 401 后刷新并轮换 refresh_token）。
+// 只有强制刷新明确返回凭据被拒绝时，才应该把账号标成需要重新登录。
+type CredentialReauthRefresher interface {
+	ForceRefreshCredential(
+		ctx context.Context,
+		snapshot accountapp.CredentialSnapshot,
+	) (accountapp.CredentialSnapshot, error)
+}
+
 // ProviderSnapshotStrategy 让策略在一次采集里同时产出展示文档（可选）。
 //
 // 归一化 Snapshot 只保存路由事实（剩余基点/窗口），WebUI 的 Provider 专属视图
@@ -214,6 +226,8 @@ type Dependencies struct {
 	Strategies  []ProviderStrategy
 	// Refresher 可选：为需要刷新 OAuth 凭据的 Provider 在探测前续期。
 	Refresher CredentialRefresher
+	// ReauthRefresher 可选：网关 401/403 后强制刷新并 CAS 回写。
+	ReauthRefresher CredentialReauthRefresher
 	// Egress 可选：探测前解析账号出口并写进请求 Context。
 	Egress accountegress.Resolver
 	// AuthInvalid 可选：把额度接口 401/403 投影为账号级 auth_invalid。
@@ -258,6 +272,7 @@ type Service struct {
 	runtime     RuntimeProjection
 	strategies  map[string]ProviderStrategy
 	refresher   CredentialRefresher
+	reauth      CredentialReauthRefresher
 	egress      accountegress.Resolver
 	authInvalid AuthInvalidMarker
 	clock       Clock
@@ -297,6 +312,8 @@ func NewService(dependencies Dependencies) (*Service, error) {
 		models:      dependencies.Models,
 		runtime:     dependencies.Runtime,
 		strategies:  strategies,
+		refresher:   dependencies.Refresher,
+		reauth:      dependencies.ReauthRefresher,
 		egress:      dependencies.Egress,
 		authInvalid: dependencies.AuthInvalid,
 		clock:       dependencies.Clock,
@@ -422,6 +439,11 @@ func (service *Service) refreshCurrent(
 	if service.refresher != nil {
 		refreshed, refreshErr := service.refresher.RefreshCredential(ctx, credentialSnapshot)
 		if refreshErr != nil {
+			if errors.Is(refreshErr, ErrCredentialRejected) && service.authInvalid != nil {
+				markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				_ = service.authInvalid.MarkAuthInvalid(markCtx, accountRef, "额度接口认证被拒绝，请重新登录")
+				cancel()
+			}
 			return ReadResult{}, refreshErr
 		}
 		if !refreshed.IsValid() {
@@ -462,24 +484,31 @@ func (service *Service) refreshCurrent(
 	if err != nil {
 		return ReadResult{}, err
 	}
-	var (
-		snapshot usagecore.Snapshot
-		document *usagecore.Document
-	)
-	if extended, ok := strategy.(ProviderSnapshotStrategy); ok {
-		snapshot, document, err = extended.FetchUsageWithDocument(
-			ctx,
-			accountRef,
-			credential,
-			capturedAt,
-		)
-	} else {
-		snapshot, err = strategy.FetchUsage(
-			ctx,
-			accountRef,
-			credential,
-			capturedAt,
-		)
+	fetch := func(current accountapp.Credential) (usagecore.Snapshot, *usagecore.Document, error) {
+		if extended, ok := strategy.(ProviderSnapshotStrategy); ok {
+			return extended.FetchUsageWithDocument(ctx, accountRef, current, capturedAt)
+		}
+		snapshot, fetchErr := strategy.FetchUsage(ctx, accountRef, current, capturedAt)
+		return snapshot, nil, fetchErr
+	}
+	snapshot, document, err := fetch(credential)
+	// 网关可能在 token 尚未到期时吊销 session。官方 CLI 的处理是 401 后
+	// 调 /v2/plugin/auth/token/refresh 并轮换 refresh_token；这里必须做
+	// 同账号刷新，否则会把仍可恢复的账号误标成需要重新登录。
+	if err != nil && errors.Is(err, ErrCredentialRejected) && service.reauth != nil {
+		refreshed, refreshErr := service.reauth.ForceRefreshCredential(ctx, credentialSnapshot)
+		switch {
+		case refreshErr == nil && refreshed.IsValid():
+			if refreshed.AccountRef() != accountRef {
+				return ReadResult{}, ErrInvalidSnapshot
+			}
+			credentialSnapshot = refreshed
+			credential = refreshed.Credential()
+			snapshot, document, err = fetch(credential)
+		case refreshErr != nil && !errors.Is(refreshErr, ErrCredentialRejected):
+			// 网络/5xx 等暂时失败不能证明凭据失效：保留账号状态，等下次重试。
+			return ReadResult{}, errors.Join(err, refreshErr)
+		}
 	}
 	if err != nil {
 		if errors.Is(err, ErrCredentialRejected) && service.authInvalid != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/application/providerruntime"
 	"github.com/madou1217/ai_home/core/providers"
@@ -58,6 +59,19 @@ func runProviderLoginAccount(
 		}
 	}
 	var account accountcore.Account
+	// 登录期间也可能写账号库/清运行态：先把管理客户端准备好，凭据一落盘就
+	// 回调，不能等用户退出交互式 CLI。
+	managementRuntime := withLocalGatewayDefaults(ctx, runtime)
+	recoveryClient, _ := newAccountManagementClient(managementRuntime)
+	recoverAccount := func(recovered accountcore.Account) {
+		if recoveryClient == nil || !recovered.Ref().IsValid() {
+			return
+		}
+		clearCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = recoveryClient.ClearAccountRuntimeState(clearCtx, recovered.Ref())
+		_ = recoveryClient.PublishAccountsSnapshot(clearCtx)
+	}
 	loginEnv, releaseEgress, err := ensureLoginNetworkEnv(ctx, providerID, providerLoginProbe(providerID), runtime, runtime.stderr)
 	if err != nil {
 		return accountcore.Account{}, err
@@ -65,13 +79,14 @@ func runProviderLoginAccount(
 	defer releaseEgress()
 	if family {
 		account, err = aihlogin.Run(ctx, aihlogin.Options{
-			AIHomeDir:   aiHomeDir,
-			HostHomeDir: hostHomeDir,
-			ProviderID:  providerID,
-			Stdin:       runtime.stdin,
-			Stdout:      runtime.stdout,
-			Stderr:      runtime.stderr,
-			ExtraEnv:    loginEnv,
+			AIHomeDir:    aiHomeDir,
+			HostHomeDir:  hostHomeDir,
+			ProviderID:   providerID,
+			Stdin:        runtime.stdin,
+			Stdout:       runtime.stdout,
+			Stderr:       runtime.stderr,
+			ExtraEnv:     loginEnv,
+			OnRegistered: recoverAccount,
 		})
 	} else {
 		account, err = clilogin.Run(ctx, clilogin.Options{
@@ -103,12 +118,7 @@ func runProviderLoginAccount(
 	}
 	// 登录成功即视为凭据恢复：清掉旧的 auth_invalid，并显式广播账号快照。
 	// 这样已打开的 WebUI 不用手动刷新，CLI 的 ls 也会读到干净状态。
-	// login 命令不走 runProviderLaunch 的默认注入，这里自己补齐本地 config:server。
-	managementRuntime := withLocalGatewayDefaults(ctx, runtime)
-	if client, clientErr := newAccountManagementClient(managementRuntime); clientErr == nil && account.Ref().IsValid() {
-		_ = client.ClearAccountRuntimeState(ctx, account.Ref())
-		_ = client.PublishAccountsSnapshot(ctx)
-	}
+	recoverAccount(account)
 	_, _ = fmt.Fprintf(runtime.stdout, "登录完成: %s #%d (%s)\n",
 		account.ProviderID(), account.CLIAccountID().Int64(), account.Ref())
 	return account, nil
@@ -123,7 +133,7 @@ func runProviderLogin(ctx context.Context, providerID string, arguments []string
 func writeProviderLoginUsage(output io.Writer, providerID string) {
 	_, _ = fmt.Fprintf(output, "用法:\n  aih %s login\n", providerID)
 	_, _ = fmt.Fprintln(output)
-	_, _ = fmt.Fprintln(output, "  用一次性运行目录启动官方 CLI 登录；退出后把凭据注册成账号。")
+	_, _ = fmt.Fprintln(output, "  用一次性运行目录启动官方 CLI 登录；浏览器授权完成后立即把凭据注册成账号。")
 }
 
 // ensureLoginNetworkEnv 在登录前探测授权域名；直连被拒时临时启用受管出口。

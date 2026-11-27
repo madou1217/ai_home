@@ -15,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/kirocred"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/tokenrefresh"
 )
 
 const (
@@ -88,6 +89,18 @@ func newUsageComposition(
 	if err != nil {
 		return nil, err
 	}
+	familyRefresher, err := tokenrefresh.New(tokenrefresh.Options{
+		Client:      client,
+		Credentials: dependencies.store,
+		Clock:       dependencies.clock,
+	})
+	if err != nil {
+		return nil, err
+	}
+	credentialRefresher := usageCredentialRefresher{
+		kiro:   kiroRefresher,
+		family: familyRefresher,
+	}
 	service, err := usageapp.NewService(usageapp.Dependencies{
 		Catalog:   dependencies.catalog,
 		Store:     dependencies.store,
@@ -96,11 +109,12 @@ func newUsageComposition(
 			resolver: dependencies.credentials,
 			store:    dependencies.store,
 		},
-		Models:     dependencies.models,
-		Runtime:    dependencies.runtime,
-		Strategies: strategies,
-		Refresher:  kiroRefresher,
-		Egress:     dependencies.egress,
+		Models:          dependencies.models,
+		Runtime:         dependencies.runtime,
+		Strategies:      strategies,
+		Refresher:       credentialRefresher,
+		ReauthRefresher: credentialRefresher,
+		Egress:          dependencies.egress,
 		AuthInvalid: usageAuthInvalidMarker{
 			store:   dependencies.store,
 			runtime: dependencies.runtime,

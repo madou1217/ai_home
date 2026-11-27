@@ -1,8 +1,8 @@
 // Package aihlogin 执行 CodeBuddy / WorkBuddy 家族的原生 CLI 登录。
 //
 // 流程：临时 fake-home 投影 → PTY 运行官方 codebuddy → 读取共享 .info →
-// nativeaccount 解码 → 注册账号 → 清理临时投影。它不经过 Node 登录 Job，
-// 也不修改宿主真实登录态。
+// nativeaccount 解码 → 注册账号 → 清理临时投影。浏览器授权一完成就导入，
+// 不要求用户先退出交互式 CLI。它不经过 Node 登录 Job，也不修改宿主真实登录态。
 package aihlogin
 
 import (
@@ -14,11 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
-	"time"
 
 	appprojection "github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -55,6 +51,9 @@ type Options struct {
 	Stderr      io.Writer
 	// ExtraEnv 在投影环境之外追加进程环境（例如登录期间临时出口代理）。
 	ExtraEnv map[string]string
+	// OnRegistered 在凭据可用时立即回调；CLI 还停留在交互会话也能让调用方
+	// 清除 auth_invalid、广播账号快照。最终退出后仍会再注册一次取最新 token。
+	OnRegistered func(accountcore.Account)
 }
 
 // Run 执行登录并返回新注册/更新的账号。
@@ -141,6 +140,17 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 	if err != nil {
 		return accountcore.Account{}, fmt.Errorf("CodeBuddy 官方 CLI 不存在: %w", err)
 	}
+	register := func(registerCtx context.Context, credential accountapp.Credential, profile accountapp.PublicProfile) (accountcore.Account, error) {
+		return credentialregister.Register(registerCtx, store, catalog, credential, profile, nil)
+	}
+	stopWatcher := startCredentialWatcher(
+		ctx,
+		providerID,
+		result.Root,
+		snapshotCredentialArtifacts(result.Root),
+		register,
+		options.OnRegistered,
+	)
 	code, runErr := ptyhost.Run(ctx, ptyhost.Config{
 		Path:    binaryPath,
 		Env:     env,
@@ -149,6 +159,7 @@ func Run(ctx context.Context, options Options) (accountcore.Account, error) {
 		Stdout:  options.Stdout,
 		Starter: pty.NewStarter(),
 	})
+	stopWatcher()
 	if runErr != nil {
 		var exitErr *ptyhost.ExitError
 		if !errors.As(runErr, &exitErr) {
@@ -237,36 +248,17 @@ func removeProjection(root string) {
 
 // readCredential 读取投影共享 auth 目录里最新的 .info，并包成 decoder 需要的 envelope。
 func readCredential(providerID string, root string) (accountapp.Credential, accountapp.PublicProfile, error) {
-	directory := filepath.Join(append([]string{root}, codebuddyfamilystorage.AuthDirSegments(runtime.GOOS)...)...)
-	entries, err := os.ReadDir(directory)
-	if err != nil {
+	artifacts := scanCredentialArtifacts(root)
+	if len(artifacts) == 0 {
 		return nil, nil, ErrCredentialMissing
 	}
-	type candidate struct {
-		path    string
-		modTime time.Time
-	}
-	candidates := make([]candidate, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".info") {
-			continue
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			continue
-		}
-		candidates = append(candidates, candidate{
-			path:    filepath.Join(directory, entry.Name()),
-			modTime: info.ModTime(),
-		})
-	}
-	if len(candidates) == 0 {
-		return nil, nil, ErrCredentialMissing
-	}
-	sort.Slice(candidates, func(left, right int) bool {
-		return candidates[left].modTime.After(candidates[right].modTime)
-	})
-	raw, err := os.ReadFile(candidates[0].path)
+	return readCredentialArtifact(providerID, artifacts[0].path)
+}
+
+// readCredentialArtifact 读取单个 .info 并校验凭据身份；文件正在写入时返回错误，
+// 调用方可以重试。
+func readCredentialArtifact(providerID string, path string) (accountapp.Credential, accountapp.PublicProfile, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil || len(raw) == 0 || len(raw) > 1024*1024 {
 		return nil, nil, ErrCredentialMissing
 	}

@@ -1,9 +1,12 @@
 package responseswebsocket
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/application/codexcontext"
 )
 
 // responseJournal 保存本进程已交付的 Codex 响应上下文，供跨连接、跨账号的
@@ -33,6 +36,8 @@ type responseJournal struct {
 	entries map[string]responseJournalEntry
 	bytes   int
 	clock   func() time.Time
+	// store 是可选的持久层：服务重启后仍能按 response ID 展开续接。
+	store codexcontext.Store
 }
 
 func newResponseJournal() *responseJournal {
@@ -73,26 +78,43 @@ func (journal *responseJournal) Store(responseID string, items []json.RawMessage
 		recorded: now,
 	}
 	journal.bytes += size
+	if journal.store != nil {
+		journal.store.SaveItems(responseID, items, now)
+	}
 }
 
 // Lookup 返回该响应记录的完整上下文；过期条目视为未命中。
-func (journal *responseJournal) Lookup(responseID string) ([]json.RawMessage, bool) {
+//
+// 进程内未命中时回落到持久层：服务重启后，客户端仍可能用重启前的
+// previous_response_id 续接。命中后回填进程内缓存。
+func (journal *responseJournal) Lookup(ctx context.Context, responseID string) ([]json.RawMessage, bool) {
 	if journal == nil || responseID == "" {
 		return nil, false
 	}
 	now := journal.clock()
 	journal.mu.Lock()
-	defer journal.mu.Unlock()
 	entry, found := journal.entries[responseID]
-	if !found {
-		return nil, false
-	}
-	if now.Sub(entry.recorded) > responseJournalTTL {
+	if found && now.Sub(entry.recorded) > responseJournalTTL {
 		delete(journal.entries, responseID)
 		journal.bytes -= entry.bytes
+		found = false
+	}
+	if found {
+		items := append([]json.RawMessage(nil), entry.items...)
+		journal.mu.Unlock()
+		return items, true
+	}
+	store := journal.store
+	journal.mu.Unlock()
+	if store == nil || ctx == nil {
 		return nil, false
 	}
-	return append([]json.RawMessage(nil), entry.items...), true
+	record, ok, err := store.Load(ctx, responseID)
+	if err != nil || !ok || len(record.Items) == 0 {
+		return nil, false
+	}
+	journal.Store(responseID, record.Items)
+	return append([]json.RawMessage(nil), record.Items...), true
 }
 
 func (journal *responseJournal) evictExpiredLocked(now time.Time) {

@@ -40,7 +40,7 @@ type statelessConnection struct {
 
 func (connection *statelessConnection) Write(ctx context.Context, kind websocket.MessageType, payload []byte) error {
 	if kind == websocket.MessageText {
-		payload = connection.prepare(payload)
+		payload = connection.prepare(ctx, payload)
 	}
 	return connection.Connection.Write(ctx, kind, payload)
 }
@@ -53,7 +53,7 @@ func (connection *statelessConnection) Read(ctx context.Context) (websocket.Mess
 	return kind, payload, err
 }
 
-func (connection *statelessConnection) prepare(payload []byte) []byte {
+func (connection *statelessConnection) prepare(ctx context.Context, payload []byte) []byte {
 	var frame map[string]json.RawMessage
 	if json.Unmarshal(payload, &frame) != nil || string(frame["type"]) != `"response.create"` {
 		return payload
@@ -72,7 +72,7 @@ func (connection *statelessConnection) prepare(payload []byte) []byte {
 	var previous string
 	_ = json.Unmarshal(frame["previous_response_id"], &previous)
 	if previous != "" {
-		contextItems, found := connection.continuationContext(previous)
+		contextItems, found := connection.continuationContext(ctx, previous)
 		if found {
 			expanded := make([]json.RawMessage, 0, len(contextItems)+len(input))
 			expanded = append(expanded, contextItems...)
@@ -102,14 +102,14 @@ func (connection *statelessConnection) prepare(payload []byte) []byte {
 // continuationContext 先看本连接上一轮，再看 Dialer 的进程级日志。
 //
 // 日志覆盖换号、重连和另一条连接上的同会话续接；两者都未命中时不能发明上下文。
-func (connection *statelessConnection) continuationContext(previous string) ([]json.RawMessage, bool) {
+func (connection *statelessConnection) continuationContext(ctx context.Context, previous string) ([]json.RawMessage, bool) {
 	if connection.lastID == previous && connection.lastInput != nil {
 		return connection.lastInput, true
 	}
 	if connection.journal == nil {
 		return nil, false
 	}
-	return connection.journal.Lookup(previous)
+	return connection.journal.Lookup(ctx, previous)
 }
 
 // stripForeignState 按 store:false 语义清理展开后的历史项。

@@ -14,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/codexcontext"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
@@ -88,6 +89,17 @@ func NewDialerWithClientVersion(client *http.Client, versions clientversion.Sour
 		return nil, ErrInvalidDependencies
 	}
 	return &Dialer{client: client, versions: versions, journal: newResponseJournal()}, nil
+}
+
+// SetResponseContextStore 注入可选的持久层：进程重启后仍能按 response ID
+// 展开续接，并保留响应→账号归属。
+func (dialer *Dialer) SetResponseContextStore(store codexcontext.Store) {
+	if dialer == nil || dialer.journal == nil {
+		return
+	}
+	dialer.journal.mu.Lock()
+	dialer.journal.store = store
+	dialer.journal.mu.Unlock()
 }
 
 // SupportsCredential 声明当前 WS 适配器可承载的 Codex 凭据集合。

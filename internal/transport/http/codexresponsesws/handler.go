@@ -22,6 +22,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/admission"
 	"github.com/madou1217/ai_home/application/clientkeystats"
+	"github.com/madou1217/ai_home/application/codexcontext"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
 	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -110,6 +111,8 @@ type Dependencies struct {
 	// Upstream429Retries 可选：上游 WS 握手阶段原始 HTTP 429 有界等待重试控制器。
 	// 仅在尚未向任何上游发送业务帧（response.create）的握手阶段生效；连接内帧永不重试。
 	Upstream429Retries *upstreamretry.Controller
+	// ResponseContexts 可选：响应→账号归属的持久层，服务重启后续接仍能钉回原账号。
+	ResponseContexts codexcontext.Store
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
@@ -165,7 +168,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		upstream429Retries: dependencies.Upstream429Retries,
 		sessions:           newSessionRegistry(),
 		sessionAccounts:    newSessionAccounts(),
-		responseAccounts:   newResponseAccounts(),
+		responseAccounts:   newResponseAccounts(dependencies.ResponseContexts),
 	}, nil
 }
 
@@ -274,7 +277,7 @@ func (handler *Handler) ServeHTTP(
 	// 显式 X-Account-Ref 优先；没有时按上一轮响应的账号归属钉选（仅亲和偏好，
 	// 账号不可用时 Selector 会按 Eligibility 回落到候选池）。
 	if pinnedAccountRef == "" && firstRequest.PreviousResponseID != "" {
-		if bound, found := handler.responseAccounts.Lookup(firstRequest.PreviousResponseID, handler.clock()); found {
+		if bound, found := handler.responseAccounts.Lookup(request.Context(), firstRequest.PreviousResponseID, handler.clock()); found {
 			pinnedAccountRef = bound.String()
 		}
 	}

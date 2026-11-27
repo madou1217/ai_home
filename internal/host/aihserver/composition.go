@@ -40,6 +40,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
+	"github.com/madou1217/ai_home/internal/adapters/codexresponsecontext"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	capabilitycontract "github.com/madou1217/ai_home/internal/adapters/modelcapabilities/contract"
@@ -1641,6 +1642,17 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			err,
 		)
 	}
+	// 响应上下文持久层：重启后仍能按 previous_response_id 展开续接/钉回原账号。
+	// 持久层打不开不能阻断服务，降级为仅进程内有效并明确记录。
+	responseContextStore, contextErr := codexresponsecontext.Open(ctx, aiHomeDir)
+	if contextErr != nil {
+		if errorLog != nil {
+			errorLog.Printf("Codex 响应上下文持久层不可用，续接仅在本次进程内有效: %v", contextErr)
+		}
+		responseContextStore = nil
+	} else if responseContextStore != nil {
+		webSocketDialer.SetResponseContextStore(responseContextStore)
+	}
 	webSocketSelector, err := codexwebsocket.NewSelector(
 		codexwebsocket.Dependencies{
 			Catalog:    catalog,
@@ -1701,6 +1713,7 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 			Rules:                  upstreamRuleEvaluator,
 			Routes:                 routeObserver,
 			Ladders:                modelModalities,
+			ResponseContexts:       responseContextStore,
 		},
 	)
 	if err != nil {

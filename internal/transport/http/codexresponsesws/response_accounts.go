@@ -1,9 +1,11 @@
 package codexresponsesws
 
 import (
+	"context"
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/application/codexcontext"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
@@ -29,10 +31,12 @@ type responseAccountEntry struct {
 type responseAccounts struct {
 	mu      sync.Mutex
 	entries map[string]responseAccountEntry
+	// store 是可选的持久层：服务重启后仍能按 response ID 找回原账号。
+	store codexcontext.Store
 }
 
-func newResponseAccounts() *responseAccounts {
-	return &responseAccounts{entries: make(map[string]responseAccountEntry)}
+func newResponseAccounts(store codexcontext.Store) *responseAccounts {
+	return &responseAccounts{entries: make(map[string]responseAccountEntry), store: store}
 }
 
 // Bind 记录一个响应的账号归属。
@@ -50,10 +54,17 @@ func (registry *responseAccounts) Bind(
 		registry.evictLocked(now)
 	}
 	registry.entries[responseID] = responseAccountEntry{account: account, seenAt: now}
+	store := registry.store
+	registry.mu.Unlock()
+	if store != nil {
+		store.SaveAccount(responseID, account.String(), now)
+	}
+	registry.mu.Lock()
 }
 
 // Lookup 返回响应最初由哪个账号交付；过期条目视为未命中。
 func (registry *responseAccounts) Lookup(
+	ctx context.Context,
 	responseID string,
 	now time.Time,
 ) (accountcore.AccountRef, bool) {
@@ -61,16 +72,33 @@ func (registry *responseAccounts) Lookup(
 		return "", false
 	}
 	registry.mu.Lock()
-	defer registry.mu.Unlock()
 	entry, found := registry.entries[responseID]
-	if !found {
-		return "", false
-	}
-	if now.Sub(entry.seenAt) > responseAccountTTL {
+	if found && now.Sub(entry.seenAt) > responseAccountTTL {
 		delete(registry.entries, responseID)
+		found = false
+	}
+	store := registry.store
+	if found {
+		registry.mu.Unlock()
+		return entry.account, true
+	}
+	registry.mu.Unlock()
+	// 进程内未命中：服务重启后用持久层找回原账号；回填内存缓存。
+	if store == nil || ctx == nil {
 		return "", false
 	}
-	return entry.account, true
+	record, ok, err := store.Load(ctx, responseID)
+	if err != nil || !ok || record.AccountRef == "" {
+		return "", false
+	}
+	account, parseErr := accountcore.ParseAccountRef(record.AccountRef)
+	if parseErr != nil {
+		return "", false
+	}
+	registry.mu.Lock()
+	registry.entries[responseID] = responseAccountEntry{account: account, seenAt: now}
+	registry.mu.Unlock()
+	return account, true
 }
 
 func (registry *responseAccounts) evictLocked(now time.Time) {

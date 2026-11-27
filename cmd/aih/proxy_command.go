@@ -496,7 +496,13 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 					continue
 				}
 				if rotation == nil {
-					action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("此 selector 不允许自动换出口")}
+					// 点名节点不允许换到别的出口，但可以用**同一个 selector**
+					// 重新取得租约；Server 重启后这能把入口救回来，出口 IP 不变。
+					if refreshErr := refreshInPlace(); refreshErr != nil {
+						action.reply <- proxyControlResult{status: controlHub.snapshot(), err: refreshErr}
+						continue
+					}
+					action.reply <- proxyControlResult{status: controlHub.snapshot()}
 					continue
 				}
 				// 用户显式续约时允许重新尝试所有候选；自动失败循环仍保留排除集。
@@ -513,12 +519,23 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			if !isLeaseLossError(renewErr) {
 				return fmt.Errorf("代理租约续期失败: %w", renewErr)
 			}
-			if rotation == nil {
-				return fmt.Errorf("代理租约续期失败: %w", renewErr)
-			}
 			leaseActive = false
 			lastErr = renewErr.Error()
 			publishStatus()
+			if rotation == nil {
+				// 显式节点：只重新获取同一 selector，绝不静默切换出口；
+				// 节点确实不可用时失败关闭。
+				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在用同一 selector 恢复…\n", renewErr)
+				if refreshErr := refreshInPlace(); refreshErr != nil {
+					lease.finishRecovery(refreshErr)
+					return fmt.Errorf("代理租约续期失败: %w", renewErr)
+				}
+				lease.finishRecovery(nil)
+				if !options.json {
+					writeServeEntrySummary(runtime, options, lease)
+				}
+				continue
+			}
 			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在恢复…\n", renewErr)
 			recovered := false
 			if hotSwapEnabled.Load() && hotSwapAvailable {

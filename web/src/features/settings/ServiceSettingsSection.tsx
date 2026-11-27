@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from 'react';
-import { Form, Input, InputNumber, Switch, message } from 'antd';
+import { Form, Input, InputNumber, Switch, Tooltip, message } from 'antd';
 import type { Rule } from 'antd/es/form';
 import { CopyOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
@@ -70,13 +70,27 @@ interface SecretInputProps {
   autoComplete?: string;
   onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
   onCopy: (value: string) => void;
+  onRotate: () => void;
+  rotating?: boolean;
+  rotateDisabled?: boolean;
 }
 
 /**
- * 密钥输入：直接承载当前密钥，眼睛在输入框内切换明文，
- * 复制图标同样在输入框内、悬停或聚焦时出现。
+ * 密钥输入：眼睛、复制与一键轮换全部收在输入框内部；
+ * 复制与轮换常显为纯图标，悬停显示 tooltip。
  */
-function SecretInput({ id, value = '', disabled, placeholder, autoComplete, onChange, onCopy }: SecretInputProps) {
+function SecretInput({
+  id,
+  value = '',
+  disabled,
+  placeholder,
+  autoComplete,
+  onChange,
+  onCopy,
+  onRotate,
+  rotating = false,
+  rotateDisabled = false
+}: SecretInputProps) {
   return (
     <Input.Password
       id={id}
@@ -87,15 +101,31 @@ function SecretInput({ id, value = '', disabled, placeholder, autoComplete, onCh
       placeholder={placeholder}
       className="hos-secret-input"
       suffix={
-        <Button
-          type="text"
-          size="small"
-          className="hos-secret-copy"
-          icon={<CopyOutlined />}
-          aria-label="复制密钥"
-          disabled={!value}
-          onClick={() => { if (value) onCopy(value); }}
-        />
+        <span className="hos-secret-actions">
+          <Tooltip title="复制">
+            <Button
+              type="text"
+              size="small"
+              className="hos-secret-icon"
+              icon={<CopyOutlined />}
+              aria-label="复制密钥"
+              disabled={!value}
+              onClick={() => { if (value) onCopy(value); }}
+            />
+          </Tooltip>
+          <Tooltip title="一键轮换">
+            <Button
+              type="text"
+              size="small"
+              className="hos-secret-icon"
+              icon={<SwapOutlined />}
+              aria-label="一键轮换"
+              loading={rotating}
+              disabled={rotateDisabled && !rotating}
+              onClick={onRotate}
+            />
+          </Tooltip>
+        </span>
       }
     />
   );
@@ -109,14 +139,14 @@ function secretPlaceholder(configured: boolean, value: string): string {
 }
 
 function apiKeyCaveat(configured: boolean, value: string): string {
-  if (value) return '点击眼睛图标查看明文；悬停输入框显示复制图标。填写新值或“一键轮换”后保存，重启服务即对外生效。';
+  if (value) return '点击眼睛图标查看明文；输入框内图标可复制或一键轮换。填写新值或轮换后保存，重启服务即对外生效。';
   return configured
     ? '当前值由环境变量提供，无法在界面回显；填写新值保存后会写入配置，重启后生效。'
     : '暂未设置；填写新值保存并重启即可启用。';
 }
 
 function managementKeyCaveat(configured: boolean, value: string): string {
-  if (value) return '点击眼睛图标查看明文；悬停输入框显示复制图标。填写新值或“一键轮换”即完成轮换，并同步更新当前默认 Server 凭据。';
+  if (value) return '点击眼睛图标查看明文；输入框内图标可复制或一键轮换。填写新值或轮换即完成轮换，并同步更新当前默认 Server 凭据。';
   return configured
     ? '当前值由环境变量提供，无法在界面回显；填写新值保存后会写入配置并同步更新当前默认 Server 凭据。'
     : '暂未设置；填写新值保存即可启用，并同步更新当前默认 Server 凭据。';
@@ -527,24 +557,17 @@ export default function ServiceSettingsSection({
             caveat={apiKeyCaveat(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
             layout="stacked"
             control={
-              <div className="hos-secret-control">
-                <Form.Item name="apiKey" className="hos-secret-control-field">
-                  <SecretInput
-                    id="server-api-key"
-                    autoComplete="new-password"
-                    placeholder={secretPlaceholder(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
-                    onCopy={(value) => void copyServerSecret('API Key', value)}
-                  />
-                </Form.Item>
-                <Button
-                  icon={<SwapOutlined />}
-                  loading={rotatingSecret === 'apiKey'}
-                  disabled={loading || serverSaving}
-                  onClick={() => void rotateSecret('apiKey')}
-                >
-                  一键轮换
-                </Button>
-              </div>
+              <Form.Item name="apiKey" className="hos-secret-control-field">
+                <SecretInput
+                  id="server-api-key"
+                  autoComplete="new-password"
+                  placeholder={secretPlaceholder(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
+                  onCopy={(value) => void copyServerSecret('API Key', value)}
+                  onRotate={() => void rotateSecret('apiKey')}
+                  rotating={rotatingSecret === 'apiKey'}
+                  rotateDisabled={loading || serverSaving}
+                />
+              </Form.Item>
             }
           />
 
@@ -555,24 +578,17 @@ export default function ServiceSettingsSection({
             caveat={managementKeyCaveat(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
             layout="stacked"
             control={
-              <div className="hos-secret-control">
-                <Form.Item name="managementKey" className="hos-secret-control-field" rules={managementKeyRules}>
-                  <SecretInput
-                    id="server-management-key"
-                    autoComplete="new-password"
-                    placeholder={secretPlaceholder(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
-                    onCopy={(value) => void copyServerSecret('Management Key', value)}
-                  />
-                </Form.Item>
-                <Button
-                  icon={<SwapOutlined />}
-                  loading={rotatingSecret === 'managementKey'}
-                  disabled={loading || serverSaving}
-                  onClick={() => void rotateSecret('managementKey')}
-                >
-                  一键轮换
-                </Button>
-              </div>
+              <Form.Item name="managementKey" className="hos-secret-control-field" rules={managementKeyRules}>
+                <SecretInput
+                  id="server-management-key"
+                  autoComplete="new-password"
+                  placeholder={secretPlaceholder(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
+                  onCopy={(value) => void copyServerSecret('Management Key', value)}
+                  onRotate={() => void rotateSecret('managementKey')}
+                  rotating={rotatingSecret === 'managementKey'}
+                  rotateDisabled={loading || serverSaving}
+                />
+              </Form.Item>
             }
           />
 

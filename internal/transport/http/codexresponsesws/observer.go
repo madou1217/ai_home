@@ -26,17 +26,18 @@ var (
 
 // turnObserver 只观察请求是否在途、是否预热和上游终态，不保存帧正文。
 type turnObserver struct {
-	mu             sync.Mutex
-	ctx            context.Context
-	model          string
-	route          runtimecore.ModelRoute
-	observation    accountcredentials.CredentialObservation
-	attempts       *inferencegateway.ObservedAttemptRecorder
-	modelRefreshes inferencegateway.ModelRefreshScheduler
-	clock          func() time.Time
-	rules          configured.Rules
-	active         bool
-	generate       bool
+	mu               sync.Mutex
+	ctx              context.Context
+	model            string
+	route            runtimecore.ModelRoute
+	observation      accountcredentials.CredentialObservation
+	attempts         *inferencegateway.ObservedAttemptRecorder
+	modelRefreshes   inferencegateway.ModelRefreshScheduler
+	clock            func() time.Time
+	rules            configured.Rules
+	responseAccounts *responseAccounts
+	active           bool
+	generate         bool
 	// ended 标记刚刚观察到的一帧结束了本轮（response.completed 时连接仍可复用，
 	// 需要据此在下一轮之前归还并发名额）。由 TakeTurnEnded 消费一次。
 	ended bool
@@ -56,16 +57,18 @@ func newTurnObserver(
 	modelRefreshes inferencegateway.ModelRefreshScheduler,
 	clock func() time.Time,
 	rules configured.Rules,
+	responseAccounts *responseAccounts,
 ) *turnObserver {
 	return &turnObserver{
-		ctx:            ctx,
-		model:          model,
-		route:          route,
-		observation:    observation,
-		attempts:       attempts,
-		modelRefreshes: modelRefreshes,
-		clock:          clock,
-		rules:          rules,
+		ctx:              ctx,
+		model:            model,
+		route:            route,
+		observation:      observation,
+		attempts:         attempts,
+		modelRefreshes:   modelRefreshes,
+		clock:            clock,
+		rules:            rules,
+		responseAccounts: responseAccounts,
 	}
 }
 
@@ -129,7 +132,10 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		return false, ErrInvalidObserverState
 	}
 	var event struct {
-		Type string `json:"type"`
+		Type     string `json:"type"`
+		Response struct {
+			ID string `json:"id"`
+		} `json:"response"`
 	}
 	if json.Unmarshal(payload, &event) != nil || event.Type == "" {
 		// 未知未来事件仍原样透传；只有明确终态才影响状态机。
@@ -137,6 +143,10 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 	}
 	switch event.Type {
 	case "response.completed":
+		// 先记住响应归属：后续换号/重连时用它把续接钉回原账号。
+		if observer.responseAccounts != nil && event.Response.ID != "" {
+			observer.responseAccounts.Bind(event.Response.ID, observer.route.AccountRef(), observer.clock())
+		}
 		generate, err := observer.finishTurn()
 		if err != nil {
 			return false, err

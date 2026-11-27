@@ -128,6 +128,8 @@ type Handler struct {
 	sessions           *sessionRegistry
 	// sessionAccounts 记住每个 Codex 会话上次由哪个账号服务，换号时剥离旧账号的加密推理。
 	sessionAccounts *sessionAccounts
+	// responseAccounts 记住每个已交付响应的账号归属，续接优先回到原账号。
+	responseAccounts *responseAccounts
 }
 
 // NewHandler 创建支持并发连接且可显式关闭的 Handler。
@@ -163,6 +165,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		upstream429Retries: dependencies.Upstream429Retries,
 		sessions:           newSessionRegistry(),
 		sessionAccounts:    newSessionAccounts(),
+		responseAccounts:   newResponseAccounts(),
 	}, nil
 }
 
@@ -268,6 +271,13 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	pinnedAccountRef := strings.TrimSpace(request.Header.Get("X-Account-Ref"))
+	// 显式 X-Account-Ref 优先；没有时按上一轮响应的账号归属钉选（仅亲和偏好，
+	// 账号不可用时 Selector 会按 Eligibility 回落到候选池）。
+	if pinnedAccountRef == "" && firstRequest.PreviousResponseID != "" {
+		if bound, found := handler.responseAccounts.Lookup(firstRequest.PreviousResponseID, handler.clock()); found {
+			pinnedAccountRef = bound.String()
+		}
+	}
 	sessionID := strings.TrimSpace(request.Header.Get("Session-Id"))
 	upstream, selection, route, connected := handler.connectUpstreamForTurn(
 		session,
@@ -313,6 +323,7 @@ func (handler *Handler) ServeHTTP(
 		handler.modelRefreshes,
 		handler.clock,
 		handler.rules,
+		handler.responseAccounts,
 	)
 	if err := observer.Begin(sendFrame); err != nil {
 		writeWebSocketError(
@@ -561,6 +572,7 @@ func (handler *Handler) switchModel(
 		handler.modelRefreshes,
 		handler.clock,
 		handler.rules,
+		handler.responseAccounts,
 	)
 	if err := observer.Begin(sendFrame); err != nil {
 		_ = upstream.CloseNow()
@@ -761,9 +773,10 @@ func normalizeClientFrameModel(payload []byte, model string) []byte {
 
 // clientRequestEnvelope 是 response.create 的有界最小观察投影。
 type clientRequestEnvelope struct {
-	Type     string `json:"type"`
-	Model    string `json:"model"`
-	Generate *bool  `json:"generate"`
+	Type               string `json:"type"`
+	Model              string `json:"model"`
+	PreviousResponseID string `json:"previous_response_id"`
+	Generate           *bool  `json:"generate"`
 }
 
 // IsUpgradeRequest 判断 /v1/responses 请求是否明确要求 WebSocket Upgrade。

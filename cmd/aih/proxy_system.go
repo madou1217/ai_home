@@ -42,7 +42,7 @@ func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, s
 	endpoint := systemproxy.Endpoint{Host: host, Port: port}
 	if dryRun {
 		result, applyErr := systemproxy.Apply(ctx, systemproxy.ApplyOptions{
-			Service: service, HTTP: endpoint, HTTPS: endpoint, DryRun: true,
+			Service: service, HTTP: endpoint, HTTPS: endpoint, Bypass: loopbackBypassDomains(), DryRun: true,
 		})
 		if applyErr != nil {
 			return nil, applyErr
@@ -59,7 +59,7 @@ func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, s
 		return nil, nil
 	}
 	result, err := systemproxy.Apply(ctx, systemproxy.ApplyOptions{
-		Service: service, HTTP: endpoint, HTTPS: endpoint,
+		Service: service, HTTP: endpoint, HTTPS: endpoint, Bypass: loopbackBypassDomains(),
 	})
 	if err != nil {
 		restoreCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -93,6 +93,13 @@ func applySystemProxy(ctx context.Context, cmdRuntime commandRuntime, address, s
 // systemProxyMatches 确认系统当前仍指向本次应用的 loopback 入口。
 // 其他代理管理器（例如 Clash Verge）可能在我们写入后立即改写系统代理；
 // 这时 AIH 只报告冲突，不反复争抢。
+// loopbackBypassDomains 让系统代理始终绕过本机回环：否则 Codex/CodeBuddy 这类
+// 会遵守系统代理的客户端会把发往 127.0.0.1:9527 的网关请求也交给远端出口，
+// 远端只能连到它自己的 loopback，网关侧表现为 upstream proxy unavailable。
+func loopbackBypassDomains() []string {
+	return []string{"127.0.0.1", "localhost", "::1"}
+}
+
 func systemProxyMatches(ctx context.Context, service, host string, port int) (bool, string) {
 	snapshot, err := systemproxy.Capture(ctx)
 	if err != nil {

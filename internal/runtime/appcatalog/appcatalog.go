@@ -153,7 +153,7 @@ func launchDarwin(app App, proxyURL string, options LaunchOptions) error {
 			}
 			if profile != "" {
 				if err := os.MkdirAll(profile, 0o700); err == nil {
-					args = append(args, "--args", "--proxy-server="+proxyURL, "--user-data-dir="+profile)
+					args = append(args, "--args", "--proxy-server="+proxyURL, "--proxy-bypass-list=127.0.0.1;localhost;::1", "--user-data-dir="+profile)
 					args = append(args, options.ExtraArgs...)
 				}
 			}

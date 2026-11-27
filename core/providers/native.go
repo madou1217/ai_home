@@ -161,7 +161,7 @@ func nativeGrok() *NativeCapability {
 			ConfigFiles: []string{".grok/mcp.json"},
 		},
 		Hooks: NativeHooks{
-			Files:                  []string{".grok/hooks.json"},
+			Files:                  []string{".grok/hooks/aih-session-hook.json"},
 			StopRequiresJSONStdout: true,
 		},
 		Permissions: NativePermissions{

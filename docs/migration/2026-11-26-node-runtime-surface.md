@@ -58,7 +58,10 @@
 | gemini | 真实会话经本机网关投递成功 | Gemini CLI 0.70.0，`GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:9527`、API-key 认证（临时设置，已还原），模型经网关路由；会话产生 `AfterAgent` / `SessionEnd` 事件 |
 | agy | 真实会话（AWS agy 1.5.18）投递成功 | 在 AWS 账号投影 HOME 与宿主 HOME 安装无 URL 的 agy hooks；`agy --print` 真实会话产生 `PreInvocation` / `PostInvocation` / `Stop` 事件，写入 AWS Server 的 `provider-session-state` |
 | opencode | 真实会话（免费 zen）投递成功 | opencode 2.4.2，默认 opencode #12 的免费模型 `seaglass-alpha-free`；插件 spawn 发送器并 detach，`UserPromptSubmit` 与 `Stop` 都写入会话快照 |
-| grok | 未跑 | 本机与 AWS 均无健康账号（`没有可用账号`），与 hook 实现无关 |
+| grok | 真实会话（free 账号）投递成功 | 重新 device 登录后导入同一账号；Grok 1.0.92 只扫描 `~/.grok/hooks/*.json`（不是 hooks.json），契约已改；会话产生 SessionStart/UserPromptSubmit/Stop/SessionEnd，且通过祖先进程判定跳过 Claude 兼容 hook，不再重复记成 claude |
+
+
+**系统代理与回环**：`aih proxy serve --system` 写的是全局系统代理；Codex/CodeBuddy 之类会遵守系统代理的客户端会把发往 `127.0.0.1:9527` 的网关请求也交给远端出口，远端只能连到自己的 loopback，表现为 `502 upstream proxy unavailable`（CodeBuddy 的腾讯鉴权也会因出口改变而 401）。系统代理已关闭；`--system` 现在总是写入 `127.0.0.1/localhost/::1` 绕过，但日常应优先用终端 exports 或 `aih app --proxy` 的按应用代理。
 
 **provider 默认账号的双事实源**：`aih <provider>` 的默认账号回退原先只读 app_kv 的 `account:default:<provider>`；opencode 这类 Go 独有默认只存在 `account_defaults` 表，于是被误报为“没有可用账号”。已改为 app_kv 缺失时回落 Go 默认关系。另发现 opencode 账号 #8 是 2026-10-18 的测试残留（api_key + codex dummy），健康选号偶尔会选中它并报“凭据类型不受支持”；显式 `aih opencode 12 …` 可正常使用免费 zen。
 

@@ -571,10 +571,10 @@ func builtinGrok() Definition {
 			Mode:       SessionSyncHook,
 			Adapter:    "json_hooks",
 			TargetKind: "hooks.json",
-			// nativeBoundary.hooks.files 已写成宿主 home 相对的 .grok/hooks.json。
+			// Grok 1.0.9x 只扫描宿主 home 的 .grok/hooks/*.json（不是 .grok/hooks.json）。
 			// Node 描述符：timeout 以秒计，不需要 matcher 与特性开关。
 			Hook: &HookFormat{
-				Target:      []string{".grok", "hooks.json"},
+				Target:      []string{".grok", "hooks", "aih-session-hook.json"},
 				TimeoutUnit: HookTimeoutSeconds,
 				FeatureFlag: hookFeatureFlag(false),
 			},

@@ -91,6 +91,20 @@ type parsedArgs struct {
 func Run(options Options) Result {
 	parsed := parseArgs(options.Args)
 	stdout := buildNoopOutput(parsed.provider, parsed.eventName)
+	// Grok 默认还会扫描 ~/.claude/settings.json：同一事件会让 Claude 的托管
+	// hook 也在 Grok 进程里执行。只允许与当前 harness 对应的 provider 投递，
+	// 否则会话会被记成 claude 与 grok 两份身份。
+	getenv := options.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if parsed.provider != "" && parsed.provider != "grok" &&
+		(strings.TrimSpace(getenv("GROK_EVENT")) != "" || strings.TrimSpace(getenv("GROK_HOME")) != "") {
+		return Result{Stdout: stdout}
+	}
+	if harness := invokingHarness(); harness != "" && parsed.provider != "" && parsed.provider != harness {
+		return Result{Stdout: stdout}
+	}
 	body := buildReceiverBody(parsed, options.Stdin, options.Getenv)
 	delivery := postJSON(configuredReceiverURL(options.Getenv), body, parsed.timeout)
 	if delivery.ok {

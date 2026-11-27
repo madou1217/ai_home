@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/application/accountprojection"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -51,7 +52,7 @@ func (Materializer) Materialize(
 		return nil, ErrUnsupportedCredential
 	}
 	path := filepath.Join(root, authFile)
-	if existing, found := readAuthDocument(path); found && hasUsableToken(existing) {
+	if existing, found := readAuthDocument(path); found && hasUsableToken(existing) && !hasExpiredToken(existing) {
 		return nil, nil
 	}
 	return []accountprojection.ArtifactWrite{{Path: path, Data: auth, Mode: 0o600}}, nil
@@ -147,6 +148,47 @@ func hasUsableToken(document json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+// hasExpiredToken 报告文档里带 token 的档案是否已经全部过期。
+//
+// 仅凭 "有任何 token" 保留磁盘内容会把账号库里更新过的凭据挡在外面：
+// 旧投影里的 token 过期后，官方 CLI 会拒绝并清空 auth.json，表现为明明
+// 刚导入/刷新过账号却提示未登录。无过期时间或解析失败时保守保留。
+func hasExpiredToken(document json.RawMessage) bool {
+	var root map[string]any
+	if err := json.Unmarshal(document, &root); err != nil || root == nil {
+		return false
+	}
+	checked := false
+	profiles := make([]map[string]any, 0, len(root))
+	if usableProfile(root) {
+		profiles = append(profiles, root)
+	}
+	for _, value := range root {
+		if profile, ok := value.(map[string]any); ok && usableProfile(profile) {
+			profiles = append(profiles, profile)
+		}
+	}
+	now := time.Now()
+	for _, profile := range profiles {
+		raw, _ := profile["expires_at"].(string)
+		if raw == "" {
+			raw, _ = profile["expiresAt"].(string)
+		}
+		if raw == "" {
+			return false
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return false
+		}
+		checked = true
+		if parsed.After(now) {
+			return false
+		}
+	}
+	return checked
 }
 
 func usableProfile(profile map[string]any) bool {

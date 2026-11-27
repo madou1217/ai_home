@@ -10,9 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/transport/http/httpfixtures"
 	_ "modernc.org/sqlite"
 )
 
@@ -80,44 +79,13 @@ func seedDB(t *testing.T, withSetting string) string {
 		t.Fatalf("create app_kv: %v", err)
 	}
 	// 先建立 aih.db：sqliteaccount.Open 会校验 alias-pool 设置，损坏值必须在建库之后写入。
-	seedGoAccount(t, directory, testAccountRef, "claude")
+	httpfixtures.SeedGoAccount(t, directory, testAccountRef, "claude")
 	if withSetting != "" {
 		if _, err := db.Exec(`INSERT INTO app_kv (key, value, updated_at) VALUES (?, ?, 1)`, aliasPoolKeyPrefix+testAccountRef, withSetting); err != nil {
 			t.Fatalf("insert app_kv: %v", err)
 		}
 	}
 	return directory
-}
-
-// seedGoAccount 用 sqliteaccount 的真实 schema 建 aih.db，再插入账号行。
-func seedGoAccount(t *testing.T, directory, accountRef, provider string) {
-	t.Helper()
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		t.Fatalf("NewCatalog() error = %v", err)
-	}
-	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
-		AIHomeDir: directory,
-		Catalog:   catalog,
-	})
-	if err != nil {
-		t.Fatalf("open aih.db: %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("close aih.db: %v", err)
-	}
-	database, err := sql.Open("sqlite", filepath.Join(directory, "aih.db"))
-	if err != nil {
-		t.Fatalf("open aih.db: %v", err)
-	}
-	defer func() { _ = database.Close() }()
-	if _, err := database.Exec(
-		"INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) "+
-			"VALUES (?, ?, (SELECT COALESCE(MAX(cli_account_id), 0) + 1 FROM accounts WHERE provider_id = ?), 1, 1, 1)",
-		accountRef, provider, provider,
-	); err != nil {
-		t.Fatalf("insert accounts: %v", err)
-	}
 }
 
 func doGet(t *testing.T, handler http.Handler, path string) *httptest.ResponseRecorder {

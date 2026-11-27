@@ -15,9 +15,9 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	"github.com/madou1217/ai_home/internal/host/aihdefault"
+	"github.com/madou1217/ai_home/internal/transport/http/httpfixtures"
 	_ "modernc.org/sqlite"
 )
 
@@ -162,40 +162,9 @@ func seed(t *testing.T) string {
 	); err != nil {
 		t.Fatalf("insert gemini account: %v", err)
 	}
-	seedGoAccount(t, directory, codexAccountRef, "codex")
-	seedGoAccount(t, directory, geminiAccountRef, "gemini")
+	httpfixtures.SeedGoAccount(t, directory, codexAccountRef, "codex")
+	httpfixtures.SeedGoAccount(t, directory, geminiAccountRef, "gemini")
 	return directory
-}
-
-// seedGoAccount 用 sqliteaccount 的真实 schema 建 aih.db，再插入账号行。
-func seedGoAccount(t *testing.T, directory, accountRef, provider string) {
-	t.Helper()
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		t.Fatalf("NewCatalog() error = %v", err)
-	}
-	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
-		AIHomeDir: directory,
-		Catalog:   catalog,
-	})
-	if err != nil {
-		t.Fatalf("open aih.db: %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("close aih.db: %v", err)
-	}
-	database, err := sql.Open("sqlite", filepath.Join(directory, "aih.db"))
-	if err != nil {
-		t.Fatalf("open aih.db: %v", err)
-	}
-	defer func() { _ = database.Close() }()
-	if _, err := database.Exec(
-		"INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) "+
-			"VALUES (?, ?, (SELECT COALESCE(MAX(cli_account_id), 0) + 1 FROM accounts WHERE provider_id = ?), 1, 1, 1)",
-		accountRef, provider, provider,
-	); err != nil {
-		t.Fatalf("insert accounts: %v", err)
-	}
 }
 
 func seedLanding(t *testing.T, aiHomeDir string, provider string) {

@@ -52,7 +52,7 @@ func runLaunch(ctx context.Context, arguments []string, runtime commandRuntime) 
 	if err != nil {
 		return err
 	}
-	service, err := launcher.NewService(appcatalog.New(), applaunch.New(), store, time.Now)
+	service, err := launcher.NewService(appcatalog.NewWithOptions(appcatalog.Options{CachePath: appcatalog.CachePath(homeDir)}), applaunch.New(), store, time.Now)
 	if err != nil {
 		return err
 	}

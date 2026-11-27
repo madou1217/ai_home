@@ -69,7 +69,7 @@ export default function ProxyServePanel() {
   const [socksPort, setSocksPort] = useState(6153);
   const [anonymous, setAnonymous] = useState(true);
   const [apps, setApps] = useState<LocalApp[]>([]);
-  const [appQuery, setAppQuery] = useState('');
+  const [appID, setAppID] = useState('');
   const [appBusy, setAppBusy] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -313,11 +313,18 @@ export default function ProxyServePanel() {
   };
 
   const launchApp = async (proxy: boolean) => {
-    if (!appQuery) return;
+    if (!appID) return;
     setAppBusy(proxy ? 'proxy' : 'plain');
     try {
-      const result = await appsAPI.launch({ query: appQuery, proxy });
-      message.success(proxy ? `已启动 ${result.app.name}（独立实例，代理 ${result.proxyUrl}）` : `已启动 ${result.app.name}`);
+      const result = await appsAPI.launch({ id: appID, proxy });
+      message.success(
+        proxy
+          ? `已启动 ${result.app.name}（独立实例，代理 ${result.proxyUrl}，${result.proxyLabel}）`
+          : `已启动 ${result.app.name}`
+      );
+      if (proxy && result.app.proxyMode === 'environment') {
+        message.info('该应用通过环境变量读取代理；若它忽略 HTTP(S)_PROXY，代理不会生效。');
+      }
     } catch (launchError) {
       message.error(describeProxyServeError(launchError));
     } finally {
@@ -574,28 +581,29 @@ export default function ProxyServePanel() {
       >
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Typography.Text type="secondary">
-            代理只注入本次启动的进程：同一应用可以同时开一个带代理、一个不带代理的实例。浏览器使用独立 profile 与
-            --proxy-server。
+            应用清单与 alt+space 工作台同源；代理只注入本次启动的进程。Chromium
+            系使用独立 profile 与 --proxy-server，其它应用注入 HTTP(S)_PROXY（应用若不读取则不生效）。
           </Typography.Text>
           <Space wrap>
             <Select
               showSearch
               style={{ minWidth: 320, maxWidth: '100%' }}
-              placeholder="选择本机应用（可输入搜索）"
-              value={appQuery || undefined}
+              placeholder="选择本机应用（可搜索名称或别名）"
+              value={appID || undefined}
+              optionFilterProp="label"
               options={apps.map((app) => ({
-                value: app.name,
-                label: app.chromium ? `${app.name}（浏览器）` : app.name
+                value: app.id,
+                label: `${app.name}（${app.kind} · 代理: ${app.proxyLabel}）`
               }))}
-              onChange={setAppQuery}
+              onChange={setAppID}
               popupMatchSelectWidth={false}
             />
-            <Button disabled={!appQuery || Boolean(appBusy)} loading={appBusy === 'plain'} onClick={() => void launchApp(false)}>
+            <Button disabled={!appID || Boolean(appBusy)} loading={appBusy === 'plain'} onClick={() => void launchApp(false)}>
               普通启动
             </Button>
             <Button
               type="primary"
-              disabled={!appQuery || Boolean(appBusy)}
+              disabled={!appID || Boolean(appBusy)}
               loading={appBusy === 'proxy'}
               onClick={() => void launchApp(true)}
             >

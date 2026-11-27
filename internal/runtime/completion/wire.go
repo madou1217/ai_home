@@ -383,6 +383,11 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 	aiHome := environment.aiHomeDir()
 	hostAIHome := environment.hostAIHomeDir()
 	hostHome := environment.hostHomeDir()
+	// 本机应用与 alt+space 工作台一样属于宿主；投影 HOME 下的补全也读宿主目录。
+	appHome := hostAIHome
+	if appHome == "" {
+		appHome = aiHome
+	}
 	return &resolverContext{
 		historyEntries: loadHistoryEntries(environment, historyFile, readStdinHistory),
 		historyLimit:   8,
@@ -452,7 +457,7 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 			return listClipboardCandidates(aiHome, hostAIHome)
 		},
 		appLister: func() []namedChoice {
-			return listAppCandidates()
+			return listAppCandidates(appHome)
 		},
 		clientKeyLister: func() []namedChoice {
 			return listClientKeys(aiHome)

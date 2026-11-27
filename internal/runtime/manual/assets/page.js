@@ -74,17 +74,20 @@
     for (const flag of flags) metaBits.push('<span class="chip flag">' + esc(flag) + '</span>');
     for (const alias of aliases) metaBits.push('<span class="chip alias">' + esc(alias) + '</span>');
     const usage = entry.usage ? '<div class="usage"><b>用法</b>' + highlight(entry.usage) + '</div>' : '';
+    const details = (entry.detail || []).length
+      ? '<ul class="details">' + entry.detail.map((item) => '<li>' + highlight(item) + '</li>').join('') + '</ul>'
+      : '';
     const example = entry.example
       ? '<div class="example"><div class="example-head"><span class="dots"><i></i><i></i><i></i></span><span>example</span></div><code><span class="prompt">$ </span>' + highlight(entry.example) + '</code></div>'
       : '';
-    const search = norm([entry.path, entry.description, entry.usage, entry.example, entry.group, (entry.flags || []).join(' '), (entry.alias || []).join(' ')].join(' '));
+    const search = norm([entry.path, entry.description, entry.usage, entry.example, (entry.detail || []).join(' '), entry.group, (entry.flags || []).join(' '), (entry.alias || []).join(' ')].join(' '));
     return '<article class="card" data-path="' + esc(entry.path) + '" data-search="' + esc(search) + '" tabindex="-1">' +
       '<div class="card-head"><div class="cmd"><div class="cmd-path">' + highlight(entry.path) + '</div>' +
       '<div class="cmd-desc">' + highlight(entry.description) + '</div></div>' +
       '<button class="copy" type="button" title="复制命令" aria-label="复制 ' + esc(entry.path) + '" data-copy="' + esc(entry.path) + '">' +
       '<span class="copy-icon">' + ICON_COPY + '</span><span class="check">' + ICON_CHECK + '</span></button></div>' +
       (metaBits.length ? '<div class="meta-row">' + metaBits.join('') + '</div>' : '') +
-      usage + example + '</article>';
+      usage + details + example + '</article>';
   }
 
   function renderSections() {

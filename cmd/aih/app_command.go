@@ -2,9 +2,10 @@ package main
 
 // `aih app`：列出本机应用并按需只给本次启动的实例挂代理。
 //
-// 代理不写系统设置，也不复用已有实例：macOS 用 `open -n`，Chromium 系浏览器
-// 再附加 --proxy-server 与独立 user-data-dir；普通应用用 --env 注入代理环境
-// 变量。这样同一应用可以同时开一个带代理、一个不带代理的实例。
+// 应用清单与 alt+space 工作台（`application/launcher` + `appcatalog`）同源：
+// 扫描、去重、别名、排序与图标都由工作台目录提供，CLI / TAB 补全 / WebUI
+// 不再各自维护候选。代理只影响本次启动的进程：Chromium 系用
+// --proxy-server + 独立 profile，其它应用注入代理环境变量（尽力而为）。
 
 import (
 	"context"
@@ -12,19 +13,24 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/madou1217/ai_home/application/launcher"
+	"github.com/madou1217/ai_home/internal/adapters/launcherstore"
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
+	"github.com/madou1217/ai_home/internal/runtime/applaunch"
 )
 
 type appOptions struct {
 	proxy    bool
 	proxyURL string
 	list     bool
+	refresh  bool
 	json     bool
 	query    string
 }
 
-func runAppCommand(_ context.Context, args []string, runtime commandRuntime) error {
+func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) error {
 	options := appOptions{}
 	var positional []string
 	for index := 0; index < len(args); index++ {
@@ -34,6 +40,8 @@ func runAppCommand(_ context.Context, args []string, runtime commandRuntime) err
 			options.proxy = true
 		case arg == "--list":
 			options.list = true
+		case arg == "--refresh":
+			options.refresh = true
 		case arg == "--json":
 			options.json = true
 		case strings.HasPrefix(arg, "--proxy-url="):
@@ -42,7 +50,7 @@ func runAppCommand(_ context.Context, args []string, runtime commandRuntime) err
 			index++
 			options.proxyURL = args[index]
 		case arg == "-h" || arg == "--help":
-			_, _ = fmt.Fprintln(runtime.stdout, "用法: aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--json]")
+			_, _ = fmt.Fprintln(runtime.stdout, "用法: aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--refresh] [--json]")
 			return nil
 		case strings.HasPrefix(arg, "-"):
 			return fmt.Errorf("未知参数: %s", arg)
@@ -56,76 +64,109 @@ func runAppCommand(_ context.Context, args []string, runtime commandRuntime) err
 		options.proxy = true
 	}
 
-	apps, err := appcatalog.List()
+	homeDir, err := resolveLauncherAIHomeDir(runtime)
 	if err != nil {
 		return err
 	}
+	store, err := launcherstore.New(homeDir)
+	if err != nil {
+		return err
+	}
+	catalog := appcatalog.NewWithOptions(appcatalog.Options{CachePath: appcatalog.CachePath(homeDir)})
+	service, err := launcher.NewService(catalog, applaunch.New(), store, time.Now)
+	if err != nil {
+		return err
+	}
+	result, err := service.List(ctx, launcher.ListOptions{
+		Query:   options.query,
+		Refresh: options.refresh,
+		Limit:   launcher.DefaultLimit,
+	})
+	if err != nil {
+		return err
+	}
+
 	if options.list || options.query == "" {
-		printApps(runtime, apps, options.json)
+		printApps(runtime, result, options.json)
 		return nil
 	}
 
-	app, resolveErr := appcatalog.Resolve(options.query)
+	app, resolveErr := launcher.ResolveQuery(result.Apps, options.query)
 	if resolveErr != nil {
-		if errors.Is(resolveErr, appcatalog.ErrAmbiguous) {
-			printAppMatches(runtime, apps, options.query)
-			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 匹配到多个应用，请写得更具体\n")
+		if errors.Is(resolveErr, launcher.ErrQueryAmbiguous) || len(result.Apps) > 0 {
+			printAppMatches(runtime, result.Apps)
+			_, _ = fmt.Fprintln(runtime.stderr, "[aih] 匹配不唯一或过于宽泛，请写得更具体")
 			return cliExitCode{code: 1}
 		}
-		return resolveErr
+		return fmt.Errorf("没有匹配「%s」的本机应用；用 aih app --list 查看", options.query)
 	}
 
 	proxyURL := ""
 	if options.proxy {
 		proxyURL = options.proxyURL
 		if proxyURL == "" {
-			proxyURL = appcatalog.DefaultProxyURL()
-		}
-		if proxyURL == "" {
-			return errors.New("没有可用的本机代理入口；先运行 aih proxy serve")
+			proxyURL = applaunch.DefaultProxyURL(homeDir)
 		}
 	}
-	if err := appcatalog.Launch(app, appcatalog.LaunchOptions{ProxyURL: proxyURL}); err != nil {
+	mode, err := applaunch.New().OpenWithProxy(ctx, app, applaunch.ProxyOptions{
+		URL:       proxyURL,
+		AIHomeDir: homeDir,
+	})
+	if err != nil {
 		return err
 	}
+
 	if options.json {
 		payload, _ := json.MarshalIndent(map[string]any{
-			"ok":       true,
-			"app":      app,
-			"proxyUrl": proxyURL,
+			"ok":         true,
+			"app":        app,
+			"proxyUrl":   proxyURL,
+			"proxyMode":  mode,
+			"proxyLabel": mode.Label(),
 		}, "", "  ")
 		_, _ = fmt.Fprintln(runtime.stdout, string(payload))
 		return nil
 	}
 	if proxyURL == "" {
 		_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（未挂代理）\n", app.Name)
-	} else {
-		_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（独立实例，代理 %s）\n", app.Name, proxyURL)
+		return nil
+	}
+	_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（独立实例，代理 %s，%s）\n", app.Name, proxyURL, mode.Label())
+	if mode == applaunch.ProxyModeEnvironment {
+		_, _ = fmt.Fprintln(runtime.stderr, "[aih] 该应用通过环境变量读取代理；若它不读取 HTTP(S)_PROXY，代理不会生效")
 	}
 	return nil
 }
 
-func printApps(runtime commandRuntime, apps []appcatalog.App, asJSON bool) {
+func printApps(runtime commandRuntime, result launcher.ListResult, asJSON bool) {
 	if asJSON {
-		payload, _ := json.MarshalIndent(map[string]any{"ok": true, "apps": apps}, "", "  ")
+		payload, _ := json.MarshalIndent(map[string]any{
+			"ok":          true,
+			"platform":    result.Platform,
+			"generatedAt": result.GeneratedAt,
+			"apps":        result.Apps,
+		}, "", "  ")
 		_, _ = fmt.Fprintln(runtime.stdout, string(payload))
 		return
 	}
-	for _, app := range apps {
-		label := app.Name
-		if app.Chromium {
-			label += "  [浏览器]"
-		}
-		_, _ = fmt.Fprintf(runtime.stdout, "%-32s %s\n", label, app.Path)
+	if len(result.Apps) == 0 {
+		_, _ = fmt.Fprintln(runtime.stdout, "(没有找到应用)")
+		return
+	}
+	for _, app := range result.Apps {
+		mode := applaunch.ProxyModeFor(app)
+		_, _ = fmt.Fprintf(runtime.stdout, "%-32s %-10s %-16s %s\n", app.Name, app.Kind, mode.Label(), app.Path)
+	}
+	if result.Truncated {
+		_, _ = fmt.Fprintf(runtime.stdout, "(已截断到 %d 个应用)\n", len(result.Apps))
 	}
 }
 
-func printAppMatches(runtime commandRuntime, apps []appcatalog.App, query string) {
-	lower := strings.ToLower(strings.TrimSpace(query))
-	for _, app := range apps {
-		if strings.Contains(strings.ToLower(app.Name), lower) {
-			_, _ = fmt.Fprintf(runtime.stdout, "%-32s %s\n", app.Name, app.Path)
+func printAppMatches(runtime commandRuntime, apps []launcher.App) {
+	for index, app := range apps {
+		if index >= 20 {
+			break
 		}
+		_, _ = fmt.Fprintf(runtime.stdout, "%-32s %s\n", app.Name, app.Path)
 	}
 }
-

@@ -12,6 +12,9 @@ type DocEntry struct {
 	Example     string   `json:"example,omitempty"`
 	Flags       []string `json:"flags,omitempty"`
 	Alias       []string `json:"alias,omitempty"`
+	// Detail 是比 Description 更长的使用说明（逐条），用于代理这类需要解释
+	// 场景差异的功能；页面直接渲染，不需要另一份手写手册。
+	Detail []string `json:"detail,omitempty"`
 }
 
 // DocumentationEntries 返回完整命令文档条目（命令树 + Provider 动作 + 启动语法）。
@@ -44,7 +47,83 @@ func DocumentationEntries() []DocEntry {
 		}
 	}
 	entries = append(entries, launchGrammarDocEntries()...)
+	entries = append(entries, proxyUsageDocEntries()...)
+	for index := range entries {
+		if details, ok := docDetails[entries[index].Path]; ok {
+			entries[index].Detail = append([]string(nil), details...)
+		}
+	}
 	return entries
+}
+
+// proxyUsageDocEntries 是代理功能的场景化指南：端口/匿名、按应用启动、
+// 终端环境变量、系统代理与 SSH 借用。它们不是命令树节点，但和命令卡片
+// 一起被 `aih man` 渲染与搜索。
+func proxyUsageDocEntries() []DocEntry {
+	return []DocEntry{
+		{
+			Group:       "代理用法",
+			Path:        "代理入口 · HTTP",
+			Description: "把远端出口租约变成本机 HTTP 代理入口，默认只监听 loopback",
+			Usage:       "aih proxy serve --selector auto",
+			Example:     "aih proxy serve --selector auto",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "代理入口 · SOCKS5",
+			Description: "同一入口同时提供 SOCKS5；需要 DNS 在远端解析时用 socks5h",
+			Usage:       "socks5h://127.0.0.1:6153",
+			Example:     "curl --proxy socks5h://127.0.0.1:6153 https://example.com",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "代理入口 · 端口与匿名",
+			Description: "6152/6153 空闲时默认使用这两个端口；--anonymous=false 恢复用户名密码",
+			Usage:       "aih proxy serve --http-port 6152 --socks-port 6153 --anonymous",
+			Example:     "aih proxy serve --http-port 6152 --socks-port 6153",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "代理入口 · WebUI",
+			Description: "设置 → 代理入口：启停入口、改端口/匿名、选择出口与按应用启动",
+			Usage:       "WebUI → 设置 → 代理入口",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "按应用代理 · 浏览器",
+			Description: "只为本次启动的浏览器实例挂代理，与普通实例并存",
+			Usage:       "aih app \"Microsoft Edge\" --proxy",
+			Example:     "aih app \"Microsoft Edge\" --proxy",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "按应用代理 · 其它应用",
+			Description: "非 Chromium 应用只能继承 HTTP(S)_PROXY；应用不读取时不会生效",
+			Usage:       "aih app \"Visual Studio Code\" --proxy",
+			Example:     "aih app \"Visual Studio Code\" --proxy",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "终端代理 · 当前 shell",
+			Description: "把当前终端产生的请求指向本机入口；只影响这个 shell",
+			Usage:       "export HTTPS_PROXY=http://127.0.0.1:6152 HTTP_PROXY=http://127.0.0.1:6152",
+			Example:     "export HTTPS_PROXY=http://127.0.0.1:6152",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "系统代理 · 注意",
+			Description: "只有 --system 才改系统代理；loopback 必须绕过，否则本机网关会经远端出口回拨自己",
+			Usage:       "sudo aih proxy serve --selector auto --system --system-service \"Wi-Fi\"",
+			Example:     "sudo aih proxy serve --system --system-dry-run",
+		},
+		{
+			Group:       "代理用法",
+			Path:        "借用远端入口",
+			Description: "本机入口经 SSH 借用远端 AIH 的出口；--peer 让远端自己起入口再转发端口",
+			Usage:       "aih proxy serve --ssh <connectionId>",
+			Example:     "aih proxy serve --ssh aws",
+		},
+	}
 }
 
 func docEntryForNode(group, parentPath string, node *commandNode) DocEntry {
@@ -173,8 +252,20 @@ var docExamples = map[string]docExample{
 		Example: "aih client-keys stats --granularity hour",
 	},
 	"aih proxy serve": {
-		Usage:   "aih proxy serve [--selector auto|pool|ssh:<id>] [--no-socks]",
+		Usage:   "aih proxy serve [--selector auto|pool|ssh:<id>] [--http-port 6152] [--socks-port 6153] [--anonymous] [--no-socks]",
 		Example: "aih proxy serve --selector auto",
+	},
+	"aih app": {
+		Usage:   "aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--refresh] [--json]",
+		Example: "aih app \"Microsoft Edge\" --proxy",
+	},
+	"aih proxy service install": {
+		Usage:   "aih proxy service install [--selector auto] [--no-socks]",
+		Example: "aih proxy service install --selector auto",
+	},
+	"aih proxy service status": {
+		Usage:   "aih proxy service status",
+		Example: "aih proxy service status",
 	},
 	"aih remote target resolve": {
 		Usage:   "aih remote target resolve [--server <profile>] [--harness <id>]",
@@ -319,6 +410,49 @@ var docExamples = map[string]docExample{
 }
 
 // docGroupNotes 是页面每个分组的解读；没登记的分组不显示解读。
+// docDetails 是按命令路径登记的详细说明，渲染在命令卡片描述之后。
+var docDetails = map[string][]string{
+	"aih app": {
+		"应用清单与 alt+space 工作台同源：同一个 appcatalog 扫描、同一套别名与排序，TAB 补全也是这份目录，不再另猜。",
+		"不带 --proxy 时按普通方式打开应用（已有实例会被复用）；带 --proxy 时启动一个独立实例，两个实例可以同时存在。",
+		"Chromium 系浏览器（Chrome / Edge / Brave / Chromium / Vivaldi / Opera）使用 --proxy-server 与独立 user-data-dir，代理可靠生效。",
+		"其它应用注入 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY；应用自己不读取这些变量时，代理不会生效，CLI 会明确提示。",
+		"默认代理地址是匿名入口 http://127.0.0.1:6152；入口文件 run/proxy/entry.json 中的地址也会被探测，--proxy-url 可覆盖。",
+		"aih app --list 列出目录并标注每个应用的代理方式；--refresh 强制重新扫描（Windows 的 Shell 枚举可能较慢）。",
+	},
+	"aih proxy serve": {
+		"入口默认只监听 loopback，不需要用户名密码；6152/6153 空闲时默认使用这两个端口，被占用会改用临时端口并在输出中说明。",
+		"--anonymous=false 恢复租约凭据认证；凭据只出现在返回的 URL 中，不要写进脚本或提交记录。",
+		"HTTP 与 SOCKS5 同时提供；需要远端解析 DNS 时使用 socks5h://127.0.0.1:6153。",
+		"只有显式 --system 才修改系统代理；loopback（127.0.0.1/localhost/::1）必须绕过，否则本机网关请求会被代理到远端再拨回自己的 loopback。",
+		"--ssh <connectionId> 借用已保存 SSH 主机上的出口；--peer 让远端 AIH 自己启动入口，本机只转发端口。",
+	},
+	"aih proxy service install": {
+		"用 launchd / systemd --user / Windows 登录任务托管入口，登录后自动恢复，不需要前台进程。",
+		"常驻服务会发布 run/proxy/entry.json；临时前台入口不会覆盖常驻入口的发布文件。",
+	},
+	"按应用代理 · 浏览器": {
+		"独立 profile 目录位于 <AI_HOME>/run/app-proxy/<应用>-<端口>；已有 profile 会被复用，不会污染日常浏览数据。",
+		"代理失败时先确认 6152 有监听：nc -z 127.0.0.1 6152，或先运行 aih proxy serve。",
+	},
+	"按应用代理 · 其它应用": {
+		"环境变量只影响本次启动的进程及其子进程；不会修改系统设置，也不会影响已在运行的实例。",
+		"若应用完全没有读取 HTTP(S)_PROXY（很多原生 macOS 应用如此），只能改用系统代理或 TUN。",
+	},
+	"系统代理 · 注意": {
+		"系统代理会把所有应用的流量（包括本机 127.0.0.1 的网关调用）纳入，务必保留 loopback 绕过。",
+		"用 --system-dry-run 先查看将执行的 networksetup / 系统配置命令；退出入口后应恢复原代理设置。",
+	},
+	"代理入口 · 端口与匿名": {
+		"CLI 与 WebUI 共用同一套端口规则：显式设置端口时若被其它进程占用会阻塞启动；自动分配时只避开占用。",
+		"匿名入口只允许 loopback 客户端；不要把监听地址改成 0.0.0.0 暴露到局域网。",
+	},
+	"借用远端入口": {
+		"SSH 借用不会在远端安装常驻服务；连接断开后入口停止。",
+		"远端 Management Key 只在 SSH 通道内使用，不写入本机命令参数或 URL 日志。",
+	},
+}
+
 var docGroupNotes = map[string]string{
 	"顶层命令":              "日常入口：看账号、续会话、查用量、装服务。先从这里建立全局地图，再进子命令。",
 	"启动语法":              "三种启动形态共用一套账号与模型解析：裸启动自动选号，relay 固定账号且不换号，-- 之后完全交给原生 CLI。",
@@ -328,6 +462,8 @@ var docGroupNotes = map[string]string{
 	"aih account":       "账号管理走目标 Server 的管理面；本机 CLI 只负责把请求送到 AIH_SERVER_BASE_URL。",
 	"aih server":        "server 既是本机网关，也是远程 Server 的连接档案：start/stop 管进程，add/use 管连接，config 管监听与密钥。",
 	"aih proxy":         "proxy 把远端出口租约变成本机入口；默认只监听 loopback，--system 才动系统代理。",
+	"aih app":           "app 与 alt+space 工作台共用同一份应用目录；--proxy 只给本次启动的独立实例挂代理，不会影响已打开的实例。",
+	"代理用法":              "代理不是全局开关：入口、按应用、终端环境变量、系统代理是四种独立作用域；按需要选最小的一种。",
 	"aih remote":        "remote 只做目标解析与预检，不执行命令；执行能力由 workspace connector 提供。",
 	"aih workspace":     "workspace 只暴露显式目录；审批与命令通道是两条独立路径，不要把目录可见当成执行成功。",
 	"aih clip":          "剪贴板是跨设备总线：pick 负责选，sync 负责传，vim 负责在远端粘贴。图片走原始字节，不走文本转义。",

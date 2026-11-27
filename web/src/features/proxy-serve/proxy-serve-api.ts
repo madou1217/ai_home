@@ -128,22 +128,31 @@ export function describeProxyServeError(error: unknown): string {
   return response?.data?.message || response?.data?.error || (error instanceof Error ? error.message : '请求失败');
 }
 
-/** 本机应用列表项。 */
+/** 本机应用列表项（与 alt+space 工作台同一目录）。 */
 export interface LocalApp {
   id: string;
   name: string;
+  subtitle?: string;
   path: string;
-  bundleId?: string;
-  chromium?: boolean;
+  kind: string;
+  icon?: string;
+  terminal?: boolean;
+  /** chromium = 浏览器参数；environment = 环境变量（应用可能忽略）。 */
+  proxyMode: 'chromium' | 'environment';
+  proxyLabel: string;
 }
 
 export interface LocalAppsResponse {
   ok: boolean;
+  platform?: string;
+  generatedAt?: number;
   apps: LocalApp[];
 }
 
 export interface LocalAppLaunchInput {
-  query: string;
+  /** 应用目录中的稳定 ID；未传时回退到名称查询。 */
+  id?: string;
+  query?: string;
   proxy: boolean;
   proxyUrl?: string;
 }
@@ -154,11 +163,15 @@ export const appsAPI = {
     const response = await api.get<LocalAppsResponse>('/webui/apps');
     return response.data.apps || [];
   },
-  async launch(input: LocalAppLaunchInput): Promise<{ app: LocalApp; proxyUrl: string }> {
-    const response = await api.post<{ ok: boolean; app: LocalApp; proxyUrl: string }>(
+  async launch(input: LocalAppLaunchInput): Promise<{ app: LocalApp; proxyUrl: string; proxyLabel: string }> {
+    const response = await api.post<{ ok: boolean; app: LocalApp; proxyUrl: string; proxyLabel: string }>(
       '/webui/apps/launch',
       input
     );
-    return { app: response.data.app, proxyUrl: response.data.proxyUrl };
+    return {
+      app: response.data.app,
+      proxyUrl: response.data.proxyUrl,
+      proxyLabel: response.data.proxyLabel || response.data.app.proxyLabel
+    };
   }
 };

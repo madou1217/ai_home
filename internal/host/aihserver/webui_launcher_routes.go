@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/desktoplauncher"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	"github.com/madou1217/ai_home/internal/runtime/launcherd"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiappsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuilauncherapi"
 )
 
@@ -64,13 +65,22 @@ func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies
 	if err != nil {
 		return nil, nil, err
 	}
-	catalog := appcatalog.New()
+	catalog := appcatalog.NewWithOptions(appcatalog.Options{CachePath: appcatalog.CachePath(dependencies.AIHomeDir)})
 	opener := applaunch.New()
 	service, err := launcher.NewService(catalog, opener, store, time.Now)
 	if err != nil {
 		return nil, nil, err
 	}
 	handler, err := webuilauncherapi.NewHandler(dependencies.Authorizer, service)
+	if err != nil {
+		return nil, nil, err
+	}
+	appsHandler, err := webuiappsapi.NewHandler(webuiappsapi.Dependencies{
+		Authorizer: dependencies.Authorizer,
+		Catalog:    service,
+		Launcher:   opener,
+		AIHomeDir:  dependencies.AIHomeDir,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,6 +111,9 @@ func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies
 		{Pattern: webuilauncherapi.Path + "/open", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/show", Handler: handler, SkipPublicAlias: true},
 		{Pattern: webuilauncherapi.Path + "/status", Handler: handler, SkipPublicAlias: true},
+		// 代理启动复用同一 launcher.Service：WebUI、TAB、CLI 的应用集合不会漂移。
+		{Pattern: webuiappsapi.Path, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.LaunchPath, Handler: appsHandler, SkipPublicAlias: true},
 	}
 	return rt, routes, nil
 }

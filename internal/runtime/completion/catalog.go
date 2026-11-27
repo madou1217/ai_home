@@ -95,8 +95,9 @@ func buildCommandCatalog() []commandNode {
 	pluginOptions := []optionSpec{jsonFlag}
 	appOptions := []optionSpec{
 		f("--proxy", "只给本次启动的应用实例挂代理"),
-		f("--proxy-url", "覆盖代理地址（默认 127.0.0.1:6152）"),
-		f("--list", "列出本机应用"),
+		vf("--proxy-url", "覆盖代理地址（默认 127.0.0.1:6152）", kindFree),
+		f("--list", "列出本机应用（与 alt+space 工作台同源）"),
+		f("--refresh", "重新扫描本机应用"),
 		jsonFlag,
 	}
 	proxyOptions := []optionSpec{
@@ -110,6 +111,9 @@ func buildCommandCatalog() []commandNode {
 		f("--peer-via", "peer 的 SSH 跳板连接 ID"),
 		f("--peer-aih", "远端 aih 可执行文件路径"),
 		f("--no-socks", "只提供 HTTP 代理，不启动 SOCKS5"),
+		vf("--http-port", "HTTP 入口端口（默认 6152）", kindFree),
+		vf("--socks-port", "SOCKS5 入口端口（默认 6153）", kindFree),
+		f("--anonymous", "loopback 客户端免代理凭据（默认开启；=false 恢复认证）"),
 		f("--system", "写入系统 HTTP/HTTPS 代理，退出时恢复"),
 		vf("--system-service", "系统网络服务名（macOS 必填）", kindEnum, "Wi-Fi", "Ethernet"),
 		f("--system-dry-run", "只打印系统代理动作"),

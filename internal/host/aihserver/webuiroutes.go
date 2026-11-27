@@ -138,9 +138,9 @@ type webuiRouteDependencies struct {
 	AIHomeDir              string
 	// ManagementKeyRotated 让轮换接口把新 Key 推回进程内鉴权。
 	ManagementKeyRotated func(string)
-	Catalog                *providers.Catalog
-	ModelModalities        modelmetadata.Catalog
-	ModelAliasExpander     modelmetadata.AliasExpander
+	Catalog              *providers.Catalog
+	ModelModalities      modelmetadata.Catalog
+	ModelAliasExpander   modelmetadata.AliasExpander
 	// ModelAliasDisplay 提供已发布的具体别名，作为关键设置的模型候选。
 	ModelAliasDisplay modelalias.DisplayReader
 	MetadataResolver  modelpricing.Resolver
@@ -660,6 +660,12 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	fsTree, err := webuifstreeapi.NewHandler(webuifstreeapi.Dependencies{
 		Authorizer:  authorizer,
 		HostHomeDir: dependencies.HostHomeDir,
+		// 目录树和项目快照必须用同一份已登记根：否则 UI 能列出项目，文件面板却
+		// 因登记表为空返回 unknown_project_root。
+		ProjectPaths: func() []string {
+			paths, _ := webuiprojectsapi.ListAuthorizedProjectPaths(context.Background(), dependencies.HostHomeDir, dependencies.AIHomeDir)
+			return paths
+		},
 		TrustedRoots: func() []webuifile.TrustedRoot {
 			roots, _ := trustSource.ReadTrustedRoots(context.Background())
 			return roots
@@ -782,6 +788,11 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	// 统一以 HostHomeDir 为边界，越界由各包自己拒绝。
 	gitRead, err := webuigitapi.NewHandler(webuigitapi.Dependencies{
 		Authorizer: authorizer, HostHomeDir: dependencies.HostHomeDir,
+		// Git 和项目快照共用同一份已登记根：手动打开/会话所在的 HOME 外项目也要能看变更。
+		ProjectPaths: func(ctx context.Context) []string {
+			paths, _ := webuiprojectsapi.ListAuthorizedProjectPaths(ctx, dependencies.HostHomeDir, dependencies.AIHomeDir)
+			return paths
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建 git 只读接口失败: %w", err)

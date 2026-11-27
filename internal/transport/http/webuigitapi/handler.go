@@ -21,6 +21,7 @@
 package webuigitapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -65,12 +66,17 @@ type Dependencies struct {
 	Authorizer Authorizer
 	// HostHomeDir 是允许查询的宿主目录边界；projectPath 必须落在它之内。
 	HostHomeDir string
+	// ProjectPaths 返回服务端已登记项目的绝对路径。项目登记表覆盖 HostHomeDir
+	// 之外的目录（手动打开的项目、运行时会话所在目录），必须与项目快照同源，
+	// 否则 UI 能列出项目、Git 面板却 403。
+	ProjectPaths func(context.Context) []string
 }
 
 // Handler 是宿主 Git 只读接口的 HTTP 入站适配器。
 type Handler struct {
-	authorizer  Authorizer
-	hostHomeDir string
+	authorizer   Authorizer
+	hostHomeDir  string
+	projectPaths func(context.Context) []string
 	// runner 是 git 子进程执行端口；生产实现在 NewHandler 里绑定，测试直接替换。
 	runner gitRunner
 }
@@ -82,9 +88,10 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:  dependencies.Authorizer,
-		hostHomeDir: hostHomeDir,
-		runner:      runGit,
+		authorizer:   dependencies.Authorizer,
+		hostHomeDir:  hostHomeDir,
+		projectPaths: dependencies.ProjectPaths,
+		runner:       runGit,
 	}, nil
 }
 
@@ -212,11 +219,10 @@ func (handler *Handler) resolveProjectRoot(request *http.Request) (string, *apiE
 		return "", unknownProjectRootError()
 	}
 	candidate := filepath.Clean(requested)
-	realHome, err := filepath.EvalSymlinks(handler.hostHomeDir)
-	if err != nil {
-		return "", &apiError{status: http.StatusServiceUnavailable, code: codeUnavailable, message: "宿主目录不可用"}
-	}
-	if !webuifile.WithinRoot(handler.hostHomeDir, candidate) {
+	ctx := request.Context()
+	withinHome := webuifile.WithinRoot(handler.hostHomeDir, candidate)
+	// 已登记项目可以在宿主 HOME 之外（手动打开的目录、运行时会话所在目录）。
+	if !withinHome && !handler.projectRootAuthorized(ctx, candidate) {
 		return "", unknownProjectRootError()
 	}
 	realRoot, err := filepath.EvalSymlinks(candidate)
@@ -224,10 +230,44 @@ func (handler *Handler) resolveProjectRoot(request *http.Request) (string, *apiE
 		// 路径不存在时 Node 同样拿不到已登记项目，按未授权根处理。
 		return "", unknownProjectRootError()
 	}
-	if !webuifile.WithinRoot(realHome, realRoot) {
-		return "", unknownProjectRootError()
+	if withinHome {
+		realHome, homeErr := filepath.EvalSymlinks(handler.hostHomeDir)
+		if homeErr != nil {
+			return "", &apiError{status: http.StatusServiceUnavailable, code: codeUnavailable, message: "宿主目录不可用"}
+		}
+		if webuifile.WithinRoot(realHome, realRoot) {
+			return realRoot, nil
+		}
 	}
-	return realRoot, nil
+	if handler.projectRootAuthorized(ctx, realRoot) {
+		return realRoot, nil
+	}
+	return "", unknownProjectRootError()
+}
+
+// projectRootAuthorized 报告 candidate 是否等于某个已登记项目根（字面路径或 realpath）。
+// 传入 realRoot 时能拦住「项目内软链指向项目外」的逃逸。
+func (handler *Handler) projectRootAuthorized(ctx context.Context, candidate string) bool {
+	if handler.projectPaths == nil {
+		return false
+	}
+	candidate = filepath.Clean(strings.TrimSpace(candidate))
+	if candidate == "" || !filepath.IsAbs(candidate) {
+		return false
+	}
+	for _, root := range handler.projectPaths(ctx) {
+		cleaned := filepath.Clean(strings.TrimSpace(root))
+		if cleaned == "" || !filepath.IsAbs(cleaned) {
+			continue
+		}
+		if cleaned == candidate {
+			return true
+		}
+		if realRoot, err := filepath.EvalSymlinks(cleaned); err == nil && filepath.Clean(realRoot) == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func unknownProjectRootError() *apiError {

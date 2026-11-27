@@ -494,3 +494,10 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
 - **Ctrl+Alt+V 不灵根因**：Windows 真实 Desktop 是 `OneDrive\Desktop`，且桌面快捷方式在 Explorer 启动时会抢占 `Ctrl+Alt+V`，导致热键代理注册返回 1409；快捷键有时被 Explorer 处理、有时无人处理。现在快捷方式不再写 Hotkey，由 `AihClipHotkeyHidden` 代理独占注册；注册失败时安装低级键盘钩子兜底；快捷键执行 `clip orbit --toggle`，第二次按下会关闭已打开的 Quick Orbit。
 - 热键代理启动 CLI 使用 `CreateNoWindow`，快捷方式使用 `wscript` 隐藏启动，均不会再弹控制台。
 - 验证：热键代理日志在清除 Explorer 注册后 `register=True`；`--toggle` 路径已部署；Windows 服务/热键代理由隐藏任务与 watchdog 守护。
+
+## 31. 截图洪泛的近重复合并与 Windows 重启（2026-11-28）
+
+- 截图/视频帧可能每秒产生略微不同的 RGB，仅靠 alpha 忽略或精确 RGB SHA 仍会持续新建记录。新增 64-bit dHash：同尺寸、20 秒内、Hamming 距离不超过 6 的已 materialize 图片会刷新原记录的 `last_seen`/`perceptual_hash`，而不是插入新行；perceptual hash 随 lazy metadata 跨设备同步。
+- 对已有重复图片做了收敛：Windows 删除 512×609（30→1）、294×267（18→1）、342×437（6→1）组内旧帧，保留每组最新一条；更早的 312×185 alpha 洪水也已清理。
+- 热键代理在 Explorer 占用 Ctrl+Alt+V 时会退回低级键盘钩子；清除快捷方式 Hotkey 后代理注册已恢复 `register=True`。
+- **Windows 不可达原因**：23:20、23:27、00:14 三次 `Kernel-Power 41` 非正常关机/重启；同时间 Linux 22008 端口仍可达，Mac 侧网络正常。Windows 于 00:14 重启后恢复，服务/热键/隧道自动恢复。属于主机掉电/强制重启/系统级异常，不是 aih-server 进程退出。

@@ -64,6 +64,17 @@ const DEFAULT_SECONDARY: Record<ToolkitSection, string> = {
   network: 'network-access'
 };
 
+/** 深链 ?panel=app-desk 在移动端也应落到对应分区；与新开标签/分享链接一致。 */
+function resolveInitialPanel(): { section: ToolkitSection; panel: string } {
+  const requested = new URLSearchParams(window.location.search).get('panel') || '';
+  for (const section of Object.keys(SECTION_ITEMS) as ToolkitSection[]) {
+    if (SECTION_ITEMS[section].some((item) => item.id === requested)) {
+      return { section, panel: requested };
+    }
+  }
+  return { section: 'integration', panel: DEFAULT_SECONDARY.integration };
+}
+
 function renderPanel(panelId: string) {
   switch (panelId) {
     case 'apps':
@@ -96,8 +107,12 @@ function renderPanel(panelId: string) {
  * （与桌面 destroyInactiveTabPane 一致，只请求当前面板的数据）。
  */
 export default function MobileToolkit(_props: MobilePageProps) {
-  const [section, setSection] = useState<ToolkitSection>('integration');
-  const [selection, setSelection] = useState<Record<ToolkitSection, string>>(DEFAULT_SECONDARY);
+  const initial = resolveInitialPanel();
+  const [section, setSection] = useState<ToolkitSection>(initial.section);
+  const [selection, setSelection] = useState<Record<ToolkitSection, string>>({
+    ...DEFAULT_SECONDARY,
+    [initial.section]: initial.panel
+  });
   const panelId = selection[section];
 
   return (

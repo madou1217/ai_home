@@ -77,6 +77,8 @@ export interface LocalAppLaunchInput {
   query?: string;
   proxy: boolean;
   proxyUrl?: string;
+  /** 节点/地区选择器；与 proxyUrl 互斥，由服务端按候选解析。 */
+  proxySelector?: string;
 }
 
 export interface LocalAppLaunchResponse {

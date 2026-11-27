@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
+
+	"github.com/madou1217/ai_home/internal/adapters/codex/responsesitem"
 )
 
 const maxStatelessContextBytes = 32 * 1024 * 1024
@@ -117,13 +119,19 @@ func stripForeignState(items []json.RawMessage) []json.RawMessage {
 			out = append(out, item)
 			continue
 		}
+		var itemType string
+		_ = json.Unmarshal(fields["type"], &itemType)
+		// 工具发现、本地 shell、web 搜索只是客户端的本地轨迹；上游无法重放，
+		// 展开为无状态请求时必须移除（与 HTTP 清洗同一份名单）。
+		if responsesitem.IsUnreplayableInputItem(itemType) {
+			changed = true
+			continue
+		}
 		itemChanged := false
 		if _, found := fields["id"]; found {
 			delete(fields, "id")
 			itemChanged = true
 		}
-		var itemType string
-		_ = json.Unmarshal(fields["type"], &itemType)
 		if itemType == "reasoning" {
 			if _, found := fields["encrypted_content"]; found {
 				delete(fields, "encrypted_content")

@@ -23,6 +23,8 @@ export default function ReviewPanel({ projectPath, mobile, registerRefresh, onSu
   const [summary, setSummary] = useState<GitSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 非 Git 项目是正常状态：单独标记，渲染空态而不是错误提示。
+  const [notRepo, setNotRepo] = useState(false);
   const [selected, setSelected] = useState<{ file: GitChangedFile; staged: boolean } | null>(null);
   const [diff, setDiff] = useState('');
   const [diffLoading, setDiffLoading] = useState(false);
@@ -31,8 +33,16 @@ export default function ReviewPanel({ projectPath, mobile, registerRefresh, onSu
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
-    try { setSummary(await gitReviewAPI.summary(projectPath)); }
-    catch (err) { setError(String((err as Error)?.message || err)); }
+    try {
+      setSummary(await gitReviewAPI.summary(projectPath));
+      setNotRepo(false);
+    } catch (err) {
+      const payload = (err as { response?: { data?: { error?: string; message?: string } } } | null)?.response?.data;
+      const message = String(payload?.message || (err as Error)?.message || err);
+      const isNotRepo = payload?.error === 'not_a_git_repository' || /not a git repository/i.test(message);
+      setNotRepo(isNotRepo);
+      setError(isNotRepo ? '' : message);
+    }
     setLoading(false);
   }, [projectPath]);
 
@@ -100,7 +110,8 @@ export default function ReviewPanel({ projectPath, mobile, registerRefresh, onSu
         ) : null}
         {loading ? <div className={styles.filesCentered}><Spin size="small" /></div> : null}
         {error ? <InlineNote tone="error" description={error}>无法读取 Git 状态</InlineNote> : null}
-        {!loading && !error && groups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="工作区无变更" /> : null}
+        {!loading && !error && notRepo ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前目录不是 Git 仓库" /> : null}
+        {!loading && !error && !notRepo && groups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="工作区无变更" /> : null}
         <div className={styles.reviewGroups}>
           {groups.map((group) => (
             <section key={group.key}>

@@ -25,9 +25,10 @@ const (
 // git_not_found 是 Node 没有单独命名的一类（Node 会把 spawn 的 ENOENT 原样透出），
 // 这里给它一个稳定码，避免把 errno 当契约。
 const (
-	codeGitTimeout  = "git_timeout"
-	codeGitFailed   = "git_failed"
-	codeGitNotFound = "git_not_found"
+	codeGitTimeout        = "git_timeout"
+	codeGitFailed         = "git_failed"
+	codeGitNotFound       = "git_not_found"
+	codeNotAGitRepository = "not_a_git_repository"
 )
 
 // gitFailure 是 git 子进程失败。
@@ -87,6 +88,11 @@ func runGit(ctx context.Context, root string, args []string, allowFailure bool) 
 	message := strings.TrimSpace(result.stderr)
 	if message == "" {
 		message = fmt.Sprintf("git 退出码 %d", result.exitCode)
+	}
+	// 非 Git 项目是正常状态，不是故障：给前端一个稳定的空态码，避免把 git 的
+	// fatal 文本当成错误弹给用户。
+	if strings.Contains(strings.ToLower(message), "not a git repository") {
+		return result, &gitFailure{code: codeNotAGitRepository, message: "当前目录不是 Git 仓库"}
 	}
 	return result, &gitFailure{code: codeGitFailed, message: message}
 }

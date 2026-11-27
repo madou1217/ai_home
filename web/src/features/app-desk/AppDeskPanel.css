@@ -253,6 +253,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
   padding: 2px var(--space-3);
   border: 1px solid color-mix(in srgb, var(--color-success) 52%, var(--color-border));
   border-radius: var(--hos-radius-md);
@@ -261,7 +262,14 @@
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   white-space: nowrap;
+  overflow: hidden;
   animation: app-desk-badge-enter 260ms var(--ease-emphasized);
+}
+
+.app-desk-reconnected-pill > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-desk-proxy-endpoints {
@@ -433,6 +441,11 @@
   gap: var(--space-3);
 }
 
+.app-desk-renew-btn.is-renewing {
+  pointer-events: none;
+  opacity: 0.88;
+}
+
 .app-desk-feedback {
   display: flex;
   align-items: center;
@@ -566,10 +579,17 @@
 .app-desk-loading {
   display: grid;
   min-height: 200px;
-  place-items: center;
+  gap: var(--space-3);
+  align-content: center;
+  justify-items: center;
   border: 1px solid var(--color-border);
   border-radius: var(--hos-radius-md);
   background: var(--color-surface);
+}
+
+.app-desk-loading-text {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
 }
 
 .app-desk-empty {
@@ -1086,6 +1106,11 @@
 }
 
 @media (max-width: 640px) {
+  .app-desk-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .app-desk-header-actions {
     width: 100%;
     justify-content: space-between;
@@ -1134,7 +1159,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .app-desk-metric {
+  .app-desk-metric,
+  .app-desk-metric:nth-last-child(-n + 2) {
     border-right: 0;
     border-bottom: 1px solid var(--color-border-subtle);
     padding: var(--space-3) var(--space-4);

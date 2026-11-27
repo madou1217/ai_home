@@ -184,7 +184,6 @@ export default function AppDeskPanel() {
   const [renewing, setRenewing] = useState(false);
   const [killingMode, setKillingMode] = useState<'' | 'selected' | 'all'>('');
   const [togglingHotSwap, setTogglingHotSwap] = useState(false);
-  const [confirmKillAllOpen, setConfirmKillAllOpen] = useState(false);
   const [copiedSample, setCopiedSample] = useState(false);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -193,6 +192,7 @@ export default function AppDeskPanel() {
 
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
+  const mutationEpochRef = useRef(0);
   const proxyPrevRef = useRef<{ initialized: boolean; leaseActive: boolean; reconnects: number }>({
     initialized: false,
     leaseActive: false,
@@ -262,13 +262,14 @@ export default function AppDeskPanel() {
   const fetchDesk = useCallback(async (options?: { manual?: boolean }) => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
+    const epoch = mutationEpochRef.current;
     if (options?.manual) setManualRefreshing(true);
     try {
       const next = await appDeskAPI.getDesk();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || epoch !== mutationEpochRef.current) return;
       applyDeskSnapshot(next);
     } catch (error: unknown) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || epoch !== mutationEpochRef.current) return;
       setLoadError(describeAppDeskError(error, '读取应用看台失败'));
     } finally {
       inFlightRef.current = false;
@@ -361,13 +362,15 @@ export default function AppDeskPanel() {
   };
 
   const handleRenew = async () => {
-    if (!canRenew) return;
+    if (!canRenew || renewing) return;
     setRenewing(true);
+    mutationEpochRef.current += 1;
     const startedAt = Date.now();
     const prevReconnects = proxy?.reconnects ?? 0;
     try {
       const result = await appDeskAPI.renew(selectedIds);
       if (!mountedRef.current) return;
+      mutationEpochRef.current += 1;
       const elapsedMs = Math.max(1, Date.now() - startedAt);
       observeProxyTransition(result.proxy);
       setDesk((current) => (current ? { ...current, proxy: result.proxy, proxyError: undefined } : current));
@@ -383,8 +386,10 @@ export default function AppDeskPanel() {
       if (!mountedRef.current) return;
       const info = extractAppDeskError(error, '续约失败');
       if (info.proxy) {
-        observeProxyTransition(info.proxy);
-        setDesk((current) => (current ? { ...current, proxy: info.proxy! } : current));
+        const nextProxy = info.proxy;
+        mutationEpochRef.current += 1;
+        observeProxyTransition(nextProxy);
+        setDesk((current) => (current ? { ...current, proxy: nextProxy } : current));
       }
       showFeedback('error', `续约失败：${info.message}`);
       message.error(`续约失败：${info.message}`);
@@ -396,9 +401,11 @@ export default function AppDeskPanel() {
   const handleKillSelected = async () => {
     if (selectedLiveIds.length === 0 || busyAny) return;
     setKillingMode('selected');
+    mutationEpochRef.current += 1;
     try {
       const result = await appDeskAPI.kill(selectedLiveIds);
       if (!mountedRef.current) return;
+      mutationEpochRef.current += 1;
       if (result.desk) {
         applyDeskSnapshot(result.desk);
       } else {
@@ -428,10 +435,11 @@ export default function AppDeskPanel() {
   const handleKillAllConfirm = async () => {
     if (busyAny) return;
     setKillingMode('all');
+    mutationEpochRef.current += 1;
     try {
       const result = await appDeskAPI.kill([]);
       if (!mountedRef.current) return;
-      setConfirmKillAllOpen(false);
+      mutationEpochRef.current += 1;
       setSelectedIds([]);
       if (result.desk) {
         applyDeskSnapshot(result.desk);
@@ -458,12 +466,53 @@ export default function AppDeskPanel() {
     }
   };
 
+  const openKillAllConfirm = () => {
+    if (liveInstances.length === 0 || busyAny) return;
+    const targets = liveInstances;
+    const adoptedCount = targets.filter((item) => item.adopted).length;
+    Modal.confirm({
+      title: '确认结束全部运行实例',
+      okText: '确认结束全部',
+      cancelText: '取消',
+      okType: 'danger',
+      content: (
+        <div className="app-desk-confirm-body">
+          <p>
+            即将向全部 <strong>{targets.length}</strong> 个正在运行的实例发送终止信号：
+          </p>
+          <ul className="app-desk-confirm-list">
+            {targets.slice(0, 6).map((item) => (
+              <li key={item.id}>
+                <span>{item.name}</span>
+                {item.adopted ? <span className="app-desk-adopted-badge">adopted</span> : null}
+                {item.pids && item.pids.length > 0 ? (
+                  <span className="app-desk-mono app-desk-confirm-pid">PID {item.pids[0]}</span>
+                ) : null}
+              </li>
+            ))}
+            {targets.length > 6 ? (
+              <li className="app-desk-confirm-more">以及其余 {targets.length - 6} 个运行实例…</li>
+            ) : null}
+          </ul>
+          {adoptedCount > 0 ? (
+            <InlineNote tone="warning">
+              其中包含 {adoptedCount} 个接管（adopted）的单实例进程，终止会关闭该应用的现有窗口。
+            </InlineNote>
+          ) : null}
+        </div>
+      ),
+      onOk: () => handleKillAllConfirm()
+    });
+  };
+
   const handleToggleHotSwap = async (nextEnabled: boolean) => {
     if (togglingHotSwap || hotSwapUnavailable) return;
     setTogglingHotSwap(true);
+    mutationEpochRef.current += 1;
     try {
       const result = await appDeskAPI.setHotSwap(nextEnabled);
       if (!mountedRef.current) return;
+      mutationEpochRef.current += 1;
       if (result.proxy) {
         observeProxyTransition(result.proxy);
       }
@@ -486,8 +535,10 @@ export default function AppDeskPanel() {
       if (!mountedRef.current) return;
       const info = extractAppDeskError(error, '切换热替换失败');
       if (info.proxy) {
-        observeProxyTransition(info.proxy);
-        setDesk((current) => (current ? { ...current, proxy: info.proxy!, hotSwap: info.proxy!.hotSwap } : current));
+        const nextProxy = info.proxy;
+        mutationEpochRef.current += 1;
+        observeProxyTransition(nextProxy);
+        setDesk((current) => (current ? { ...current, proxy: nextProxy, hotSwap: nextProxy.hotSwap } : current));
       }
       showFeedback('error', `热替换切换失败：${info.message}`);
       message.error(info.message);
@@ -526,7 +577,9 @@ export default function AppDeskPanel() {
   const httpPort = extractProxyPort(proxy?.httpUrl);
   const socksPort = extractProxyPort(proxy?.socks5Url);
   const lastRenewAgo = formatRelativeAgo(proxy?.lastRenewAtMs, nowMs);
-  const adoptedLiveCount = liveInstances.filter((item) => item.adopted).length;
+  const hasUnexpectedProxyError = Boolean(
+    desk?.proxyError && !/控制文件不可用|no such file|cannot find the file/i.test(desk.proxyError)
+  );
 
   return (
     <section className="toolkit-page toolkit-domain-panel app-desk" aria-labelledby="toolkit-app-desk">
@@ -709,22 +762,26 @@ export default function AppDeskPanel() {
               size="small"
               checked={hotSwapEnabled && !hotSwapUnavailable}
               loading={togglingHotSwap}
-              disabled={hotSwapUnavailable || togglingHotSwap}
+              disabled={(loading && !desk) || hotSwapUnavailable || togglingHotSwap}
               onChange={(checked) => void handleToggleHotSwap(checked)}
             />
           </div>
           <p className="app-desk-hotswap-desc" data-unavailable={hotSwapUnavailable ? 'true' : 'false'}>
             {hotSwapUnavailable
-              ? '当前入口不支持热替换（需要匿名入口且非 TUN 模式；带认证 URL 内嵌租约凭据，切换上游会导致旧客户端凭据失效）。'
+              ? '当前入口不支持热替换：需要匿名入口且非 TUN 模式（带认证入口 URL 内嵌租约凭据，TUN 独立持有上游，均无法原地替换）。'
               : hotSwapEnabled
-                ? '已开启：租约失效或续约切换时，原地替换上游并自动重试当前失败请求。'
-                : '默认关闭：租约失效时重建本地代理入口（短暂断线）；开启后将原地替换上游并自动重试当前失败请求。'}
+                ? '已开启（on）：原地替换上游并自动重试当前失败请求；关闭（off）则重建入口（短暂断线）。'
+                : '默认关闭（off）：重建入口（短暂断线）；开启（on）后改为原地替换上游并自动重试当前失败请求。'}
           </p>
         </div>
 
         {proxy?.running && proxy.lastError ? (
           <div className="app-desk-proxy-note">
             <InlineNote tone="warning">代理入口最近报错：{proxy.lastError}</InlineNote>
+          </div>
+        ) : hasUnexpectedProxyError ? (
+          <div className="app-desk-proxy-note">
+            <InlineNote tone="warning">代理控制通道异常：{desk?.proxyError}</InlineNote>
           </div>
         ) : null}
       </article>
@@ -752,8 +809,10 @@ export default function AppDeskPanel() {
             <span>
               <Button
                 type="primary"
+                className={renewing ? 'app-desk-renew-btn is-renewing' : 'app-desk-renew-btn'}
                 icon={renewing ? <RingSpinner size={14} className="app-desk-ring-on-primary" /> : <SyncOutlined />}
-                disabled={!canRenew}
+                disabled={!renewing && !canRenew}
+                aria-busy={renewing || undefined}
                 onClick={() => void handleRenew()}
               >
                 {renewing ? '续约中…' : '续约'}
@@ -780,7 +839,7 @@ export default function AppDeskPanel() {
             icon={<PoweroffOutlined />}
             loading={killingMode === 'all'}
             disabled={liveInstances.length === 0 || busyAny}
-            onClick={() => setConfirmKillAllOpen(true)}
+            onClick={openKillAllConfirm}
           >
             {liveInstances.length > 0 ? `结束全部 (${liveInstances.length})` : '结束全部'}
           </Button>
@@ -815,8 +874,9 @@ export default function AppDeskPanel() {
 
       {/* 实例列表 */}
       {loading && !desk ? (
-        <div className="app-desk-loading">
-          <Spin tip="正在读取应用看台…" />
+        <div className="app-desk-loading" role="status">
+          <Spin />
+          <span className="app-desk-loading-text">正在读取应用看台…</span>
         </div>
       ) : instances.length === 0 ? (
         <div className="app-desk-empty" role="status">
@@ -956,45 +1016,6 @@ export default function AppDeskPanel() {
           </ul>
         </div>
       )}
-
-      {/* 结束全部确认弹窗 */}
-      <Modal
-        open={confirmKillAllOpen}
-        title="确认结束全部运行实例"
-        okText="确认结束全部"
-        cancelText="取消"
-        okButtonProps={{ danger: true, loading: killingMode === 'all' }}
-        cancelButtonProps={{ disabled: killingMode === 'all' }}
-        onOk={() => void handleKillAllConfirm()}
-        onCancel={() => {
-          if (killingMode !== 'all') setConfirmKillAllOpen(false);
-        }}
-      >
-        <div className="app-desk-confirm-body">
-          <p>
-            即将向全部 <strong>{liveInstances.length}</strong> 个正在运行的实例发送终止信号：
-          </p>
-          <ul className="app-desk-confirm-list">
-            {liveInstances.slice(0, 6).map((item) => (
-              <li key={item.id}>
-                <span>{item.name}</span>
-                {item.adopted ? <span className="app-desk-adopted-badge">adopted</span> : null}
-                {item.pids && item.pids.length > 0 ? (
-                  <span className="app-desk-mono app-desk-confirm-pid">PID {item.pids[0]}</span>
-                ) : null}
-              </li>
-            ))}
-            {liveInstances.length > 6 ? (
-              <li className="app-desk-confirm-more">以及其余 {liveInstances.length - 6} 个运行实例…</li>
-            ) : null}
-          </ul>
-          {adoptedLiveCount > 0 ? (
-            <InlineNote tone="warning">
-              其中包含 {adoptedLiveCount} 个接管（adopted）的单实例进程，终止会关闭该应用的现有窗口。
-            </InlineNote>
-          ) : null}
-        </div>
-      </Modal>
     </section>
   );
 }

@@ -46,6 +46,9 @@ func newModelUsageRuntime(
 	claudeVersions *clientversion.Resolver,
 	reauthenticator accountapp.ReauthenticationService,
 ) (*modelUsageRuntime, error) {
+	// CodeBuddy 家族账单端点对默认 Go TLS 指纹返回自签名链（与 relay 同一问题）；
+	// 额度刷新与 relay 共用官方 ClientHello/HTTP 指纹，避免所有账号的刷新被 TLS 层拦下。
+	usageClient = newFamilyFingerprintClient(usageClient)
 	// 模型发现与额度/推理共用同一个 credential resolver：探测前先按到期窗口刷新
 	// OAuth 并 CAS 落库。模型路径原先只接了 kiro 专用刷新器，agy 的 1h access token
 	// 过期后仍会拿旧值打 loadCodeAssist，上游固定 401。

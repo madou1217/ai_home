@@ -141,10 +141,10 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
 ### Windows（appcatalog windows）
 
-- 扫描开始菜单：`%ProgramData%\Microsoft\Windows\Start Menu\Programs`、`%APPDATA%\Microsoft\Windows\Start Menu\Programs` 递归收集 `*.lnk`（跳过 `Startup` 目录）。
-- UWP：执行 PowerShell `Get-StartApps | ConvertTo-Json -Compress`（超时 8s，失败静默）；每项 `Name` + `AppID` → `kind:"uwp"`，`path:"shell:AppsFolder\\<AppID>"`。
-- 去重：同 .lnk 路径唯一；UWP 以 AppID 唯一；名称与 .lnk 重名时都保留（不同来源）。
-- 打开：.lnk 用 `cmd /c start "" "<path>"`（`SysProcAttr{HideWindow:true}`）；UWP 用 `explorer.exe shell:AppsFolder\<AppID>`。
+- 扫描：优先用临时 VBS + `cscript` 枚举 `shell:AppsFolder`（与开始菜单同源，含桌面快捷方式与 UWP/Store 应用，UTF-16LE 文件输出；超时 25s）；`.lnk` 遍历仅作兜底（子 `powershell.exe` 在计划任务上下文会卡住，禁止用于目录扫描）。
+- 去重：按显示名与目标可执行路径去重；UWP 以 AUMID 唯一。
+- 中英文：Windows Shell 只给出当前显示语言的名称，因此 `windowsSearchAliases` 组合两种来源——(1) 内置中英别名表（系统应用与常见中文应用，如 Calculator↔计算器、WeChat↔微信、BaiduNetdisk↔百度网盘）；(2) 从目标可执行名/包标识/路径分段推导英文名（`BaiduNetdisk.exe` → `BaiduNetdisk`/`Baidu Netdisk`，`QuarkClouddrive_…` → `QuarkClouddrive`）。中文与英文查询都能命中同一应用，最多 4 个 alias。
+- 打开：桌面应用走管理 API（失败原生 ShellExecute 兜底）；UWP 用 `shell:AppsFolder\<AUMID>`。
 - 图标：UI 用 `Icon.ExtractAssociatedIcon(path)`；UWP 用通用方块图标。
 
 ### Linux（appcatalog linux）
@@ -202,9 +202,9 @@ CJK 查询同样按「前缀/子串/子序列」处理（不做拼音）。
 
 ### 8.3 Windows 面板（native/translation/windows/Program.cs）
 
-- 新增 `LauncherWindow : Form`（无边框、圆角、acrylic）与 `LauncherModel`：
+- 新增 `LauncherWindow : Form`（无边框、圆角、不透明渐变背景）与 `LauncherModel`：
   - `FormBorderStyle.None`、`ShowInTaskbar=false`、`TopMost=true`、`StartPosition=Manual`、`DoubleBuffered=true`；
-  - 圆角：`DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE=33, 2)`；acrylic：`SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)`，失败回退半透明画刷；
+  - 圆角：`DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE=33, 2)`；背景统一使用不透明深色渐变（2026-11-27：Win11 acrylic 会给整窗叠加材质色，导致真实 `TextBox` 背景比自绘搜索胶囊更亮、颜色割裂，故移除 acrylic）；
   - 自绘（GDI+，`SmoothingMode.AntiAlias`）：面板背景圆角矩形渐变、1px 青边、eyebrow、搜索框（真实 `TextBox`，无边框，20pt，启用 IME）、行列表（图标 36px、名称、副标题、选中行圆角高亮、`↵`）、底部提示；
   - 动画：`System.Windows.Forms.Timer` 16ms 驱动 180ms 进场（`Opacity` 0→1、`Top` +10→目标、选中高亮宽度/透明度缓动）；`easeOutCubic`；关闭 110ms 淡出；行 stagger 12ms；
   - 图标：`Icon.ExtractAssociatedIcon(path)` → `ToBitmap()`，`ImageList`/字典缓存；UWP 用绘制方块；

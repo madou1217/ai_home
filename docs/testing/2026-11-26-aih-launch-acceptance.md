@@ -120,6 +120,25 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
   - helper（pid 45180，08:44:53）由新源码指纹目录 `run/desktop-translation/windows/helper/7d1dd4aa…` 重新构建。
   - 真实唤起：`POST /v1/management/launcher/show` 返回 200，交互会话截图中面板实际渲染（Calculator、百度网盘、迅雷、Python 3.14 Manuals、Python 3.14、PhpStorm、WebStorm、DataGrip…）；面板为无标题栏工具窗口，`MainWindowTitle` 枚举不到属正常。
 
+## 4.7 Windows 中英文搜索与搜索框配色（2026-11-27 追加）
+
+- 用户反馈：Windows 上中英文不能都筛到应用；搜索框颜色与面板割裂。
+- 实现：
+  - `internal/runtime/appcatalog/windows_search_aliases.go`（新）：Windows Shell 只返回当前显示语言的名称，因此为每个目录项生成双向 aliases——内置中英别名表（Calculator↔计算器、Settings↔设置、WeChat↔微信、百度网盘↔Baidu Netdisk、钉钉↔DingTalk 等）+ 从 exe 名/包标识/路径推导英文名（`Weixin.exe`→Weixin、`BaiduNetdisk.exe`→BaiduNetdisk/Baidu Netdisk、`QuarkClouddrive_…`→QuarkClouddrive）；协议目标（`steamchina://`）不参与推导，`http(s)` 文档快捷方式只取主机名。
+  - `scan_windows.go` 为每个条目写入 aliases，并过滤开始菜单里的卸载快捷方式（187 条，避免卸载器继承产品别名）。
+  - `native/translation/windows/Program.cs`：Win11 acrylic 会给整窗叠加材质色，使真实 `TextBox` 背景比自绘搜索胶囊更亮；移除 acrylic，统一不透明深色渐变。
+- Windows 真机（1.0.11/1.0.12 发行包，API + 面板截图）：
+  - `微信`→微信输入法/微信开发者工具/**WeChat**；`计算器`→Calculator；`设置`→Settings；`百度`/`baidu`→百度网盘；`迅雷`/`thunder`→迅雷；`钉钉`/`dingtalk`→钉钉；`火绒`/`huorong`→火绒安全软件；`夸克`/`quark`→夸克网盘；`终端`/`terminal`→Terminal；`商店`→Microsoft Store；`截图`→Snipping Tool；`资源管理器`/`explorer`→File Explorer；`哔哩哔哩`/`bilibili`→哔哩哔哩；`刀塔`/`dota`→Dota 2 刀塔；`我的世界`/`minecraft`→我的世界；`腾讯`→QQ/TIM。
+  - 面板实际粘贴 `微信` → 3 / 187，命中微信输入法、微信开发者工具、WeChat；搜索框、胶囊与面板同色。
+
+## 4.8 Windows 后台服务不再显示终端（2026-11-27 追加）
+
+- 用户反馈：Windows 启动后前置一个空终端（Windows Terminal 标题 `kimi-code`），关闭后 AIH 功能异常。
+- 根因：`autostart.installWindows` 的 ONLOGON 计划任务把 `.cmd` 直接作为 action，Task Scheduler 以可见控制台启动 `cmd.exe`；Win11 默认终端接管后出现空白终端窗口，关闭即杀掉 Server 进程树。
+- 修复：`<home>\run\aih-server-launch.vbs`（`WScript.Shell.Run "<comspec> /d /s /c "<serve.cmd>"", 0, False`）；任务 action 改为 `wscript.exe //nologo <vbs>`；Startup 兜底也写 VBS（删除旧 `.cmd`）；WMI 重启路径复用同一 VBS；`serviceFiles` 纳入备份/回滚。
+- 真机：按同一逻辑改造任务并重启后 `readyz=200`；server 与 helper `MainWindowHandle=0`；交互会话窗口枚举不再出现该终端（仅剩用户自己的 PowerShell 终端），server 父进程 `cmd.exe` 命令行正确且无窗口。
+- 发行状态：代码已提交（`0796fc82`、`228a9a83`）；1.0.13 构建时 `origin/main` 因并行会话未提交的 `cmd/aih/global_sessions_native.go` 无法编译，待 main 恢复后以新版本补发并复验。
+
 ## 5. 已知限制 / 复验步骤
 
 - Windows 锁屏：解锁后执行

@@ -5,6 +5,7 @@ import {
   AppstoreOutlined,
   CloudSyncOutlined,
   CodeOutlined,
+  DesktopOutlined,
   ForkOutlined,
   GatewayOutlined,
   GlobalOutlined,
@@ -12,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import type { MobilePageProps } from '../mobile-routes';
 import { HudChips, MobilePage } from '@/mobile/ui';
+import AppDeskPanel from '@/features/app-desk/AppDeskPanel';
 import AppsPanel from './toolkit/AppsPanel';
 import DiagnosticsPanel from './toolkit/DiagnosticsPanel';
 import EnvironmentPanel from './toolkit/EnvironmentPanel';
@@ -40,6 +42,7 @@ const SECTIONS: Array<{ key: ToolkitSection; label: string; icon: ReactNode }> =
 const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
   integration: [
     { id: 'apps', label: '应用管理', icon: <AppstoreOutlined /> },
+    { id: 'app-desk', label: '应用看台', icon: <DesktopOutlined /> },
     { id: 'terminals', label: '终端管理', icon: <ToolOutlined /> },
     { id: 'edge-forwarding', label: '入口与转发', icon: <GatewayOutlined /> },
     { id: 'session-runtimes', label: '持久化工具', icon: <ToolOutlined /> }
@@ -65,6 +68,8 @@ function renderPanel(panelId: string) {
   switch (panelId) {
     case 'apps':
       return <AppsPanel />;
+    case 'app-desk':
+      return <AppDeskPanel />;
     case 'terminals':
       return <TerminalsPanel />;
     case 'edge-forwarding':

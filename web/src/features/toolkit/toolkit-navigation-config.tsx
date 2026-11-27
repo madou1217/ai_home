@@ -6,6 +6,7 @@ import {
   CloudSyncOutlined,
   CodeOutlined,
   DeploymentUnitOutlined,
+  DesktopOutlined,
   ForkOutlined,
   GatewayOutlined,
   GlobalOutlined,
@@ -42,6 +43,7 @@ export const TOOLKIT_SECTION_LABELS: Record<ToolkitSection, string> = {
 export const TOOLKIT_SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
   integration: [
     { id: 'apps', label: '应用管理', icon: <AppstoreOutlined /> },
+    { id: 'app-desk', label: '应用看台', icon: <DesktopOutlined /> },
     { id: 'terminals', label: '终端管理', icon: <ToolOutlined /> },
     { id: 'edge-forwarding', label: '入口与转发', icon: <GatewayOutlined /> },
     { id: 'session-runtimes', label: '持久会话', icon: <ToolOutlined /> },

@@ -15,6 +15,7 @@ import NativeResourcesPanel from '@/components/toolkit/NativeResourcesPanel';
 import NetworkConnectorPanel from '@/components/toolkit/NetworkConnectorPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
 import ProxyServePanel from '@/features/proxy-serve/ProxyServePanel';
+import AppDeskPanel from '@/features/app-desk/AppDeskPanel';
 import ToolkitNavigationShell from '@/features/toolkit/ToolkitNavigationShell';
 import {
   DEFAULT_TOOLKIT_SECONDARY,
@@ -30,6 +31,8 @@ function renderPanel(panelId: string) {
   switch (panelId) {
     case 'apps':
       return <AppManagerPanel />;
+    case 'app-desk':
+      return <AppDeskPanel />;
     case 'session-runtimes':
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'native-resources':

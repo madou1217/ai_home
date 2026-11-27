@@ -221,10 +221,10 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 			mime = "text/uri-list"
 		}
 		item.MIME = mime
-		item.SHA256 = sha256Hex(canonical)
 		// ByteSize is a display/sync metadata fact: a batch package of N files
 		// should show its real payload size, not the length of its path list.
 		item.ByteSize = fileContentBytes(normalized)
+		item.SHA256 = sha256Hex(FilePackageIdentity(normalized, item.ByteSize))
 		item.Files = normalized
 		item.Preview = buildFilePreview(normalized)
 
@@ -452,10 +452,12 @@ func (s *Service) ingestMaterializedFiles(ctx context.Context, input IngestInput
 	sha := strings.ToLower(strings.TrimSpace(input.SHA256))
 	if !isSHA256Hex(sha) {
 		names := make([]string, 0, len(input.FilePayload))
+		var total int64
 		for _, file := range input.FilePayload {
 			names = append(names, file.Name)
+			total += int64(len(file.Data))
 		}
-		sha = sha256Hex([]byte(strings.Join(names, "\n")))
+		sha = sha256Hex(FilePackageIdentity(names, total))
 	}
 	paths, total, err := s.blobs.MaterializeFiles(sha, input.FilePayload)
 	if err != nil {

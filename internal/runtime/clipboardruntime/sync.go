@@ -208,6 +208,7 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
 		payload.Files = normalized
+		payload.ByteSize = item.ByteSize
 		archive, archiveErr := buildFileArchive(files)
 		if archiveErr != nil {
 			return SyncPayload{}, archiveErr
@@ -296,7 +297,7 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 		if len(canonical) > clipboard.MaxTextBytes {
 			return clipboard.IngestInput{}, clipboard.ErrItemTooLarge
 		}
-		if sha256HexBytes(canonical) != want {
+		if sha256HexBytes(clipboard.FilePackageIdentity(normalized, payload.ByteSize)) != want {
 			return clipboard.IngestInput{}, ErrSyncSHAMismatch
 		}
 		input.Files = normalized

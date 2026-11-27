@@ -198,6 +198,27 @@ func clipOrbitBrowserCandidates() []string {
 	}
 }
 
+// windowsDesktopDir follows the shell's actual Desktop known folder. When
+// OneDrive has redirected Desktop, ~/Desktop is not scanned by Explorer, so a
+// shortcut created there never registers its global hotkey.
+func windowsDesktopDir(home string) string {
+	out, err := exec.Command("powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')").Output()
+	if err == nil {
+		if dir := strings.TrimSpace(string(out)); dir != "" {
+			if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+				return dir
+			}
+		}
+	}
+	if oneDrive := strings.TrimSpace(os.Getenv("OneDrive")); oneDrive != "" {
+		dir := filepath.Join(oneDrive, "Desktop")
+		if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return filepath.Join(home, "Desktop")
+}
+
 func clipOrbitScreenWidth() int {
 	if runtime.GOOS != "windows" {
 		return 1920
@@ -290,7 +311,7 @@ func runClipShortcut(args []string, cmdRuntime commandRuntime) error {
 		_, _ = fmt.Fprintln(cmdRuntime.stdout, "macOS 已内置原生 ⌘⌥V Quick Orbit；无需安装桌面快捷方式。")
 		return nil
 	case "windows":
-		link := filepath.Join(home, "Desktop", "AIH Quick Orbit.lnk")
+		link := filepath.Join(windowsDesktopDir(home), "AIH Quick Orbit.lnk")
 		script := fmt.Sprintf(`$W=New-Object -ComObject WScript.Shell; $S=$W.CreateShortcut('%s'); $S.TargetPath='%s'; $S.Arguments='clip orbit'; $S.WorkingDirectory='%s'; $S.Hotkey='CTRL+ALT+V'; $S.WindowStyle=7; $S.Save()`,
 			strings.ReplaceAll(link, "'", "''"),
 			strings.ReplaceAll(executable, "'", "''"),

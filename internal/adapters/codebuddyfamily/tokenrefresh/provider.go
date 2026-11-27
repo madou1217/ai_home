@@ -97,7 +97,7 @@ func (provider *Provider) Refresh(
 	if text(auth["refreshToken"]) == "" {
 		return nil, ErrCannotRefresh
 	}
-	payload, credentialRejected, err := provider.caller.call(ctx, provider.caller.endpoint(provider.providerID), auth)
+	payload, credentialRejected, err := provider.caller.call(ctx, provider.caller.endpoint(provider.providerID), auth, credentialUID(credentials))
 	if err != nil {
 		if credentialRejected {
 			return nil, usageapp.ErrCredentialRejected

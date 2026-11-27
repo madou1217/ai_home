@@ -158,7 +158,7 @@ func (refresher *Refresher) refresh(
 	if endpoint == "" {
 		return accountapp.CredentialSnapshot{}, ErrRefreshFailed
 	}
-	payload, credentialRejected, err := refresher.call(ctx, endpoint, auth)
+	payload, credentialRejected, err := refresher.call(ctx, endpoint, auth, credentialUID(credentials))
 	if err != nil {
 		if credentialRejected {
 			return accountapp.CredentialSnapshot{}, fmt.Errorf("%w: %v", usageapp.ErrCredentialRejected, err)
@@ -199,6 +199,7 @@ func (refresher *Refresher) call(
 	ctx context.Context,
 	endpoint string,
 	auth map[string]any,
+	uid string,
 ) (map[string]any, bool, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -215,6 +216,14 @@ func (refresher *Refresher) call(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Refresh-Token", text(auth["refreshToken"]))
 	request.Header.Set("X-Auth-Refresh-Source", "plugin")
+	// 官方 CLI 的认证拦截器会给刷新请求补上当前 access token 和 uid；
+	// 刷新端点用它们识别会话，只有 X-Refresh-Token 会被网关直接 401。
+	if accessToken := text(auth["accessToken"]); accessToken != "" {
+		request.Header.Set("Authorization", "Bearer "+accessToken)
+	}
+	if uid != "" {
+		request.Header.Set("X-User-Id", uid)
+	}
 	if domain := text(auth["domain"]); domain != "" {
 		request.Header.Set("X-Domain", domain)
 	}
@@ -239,6 +248,13 @@ func (refresher *Refresher) call(
 		return nil, false, ErrRefreshFailed
 	}
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		detail := strings.TrimSpace(string(body))
+		if len(detail) > 300 {
+			detail = detail[:300]
+		}
+		if detail != "" {
+			return nil, true, fmt.Errorf("HTTP %d: %s", response.StatusCode, detail)
+		}
 		return nil, true, fmt.Errorf("HTTP %d", response.StatusCode)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -270,6 +286,15 @@ func isRevokedMessage(message string) bool {
 	return strings.Contains(value, "revoked") ||
 		strings.Contains(value, "invalid_grant") ||
 		strings.Contains(value, "refresh token failed")
+}
+
+// credentialUID 读取凭据文档里的账号 uid，用于补齐官方刷新请求头。
+func credentialUID(credentials map[string]any) string {
+	account, _ := credentials["account"].(map[string]any)
+	if account == nil {
+		return ""
+	}
+	return text(account["uid"])
 }
 
 func parsePayload(payload []byte) (map[string]json.RawMessage, map[string]any, map[string]any, error) {

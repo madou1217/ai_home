@@ -40,6 +40,9 @@ const (
 	AgentPurposeHeader   = "X-Agent-Purpose"
 	AgentIntentHeader    = "X-Agent-Intent"
 	AgentTypeHeader      = "X-Agent-Type"
+	AgentRuntimeHeader   = "X-Agent-Runtime"
+	AgentCoreHeader      = "X-Agent-Core"
+	FeatureModuleHeader  = "X-Feature-Module"
 	PrivateDataHeader    = "X-Private-Data"
 	UserIDHeader         = "X-User-Id"
 	CodebuddyRequestHead = "x-codebuddy-request"
@@ -121,8 +124,9 @@ func randomHex(n int) string {
 
 // IdentityHeaders 返回官方身份头（不含会话 ID 家族与鉴权）。
 //
-// uid 为空时不下发 `X-User-Id`：留一个空头比不发更容易被识别为异常。
-func IdentityHeaders(provider string, uid string) map[string]string {
+// uid/domain 为空时不下发对应头：留一个空头比不发更容易被识别为异常。
+// domain 优先使用账号登录态里的真实站点域名；只有拿不到时才回退到站点根域名。
+func IdentityHeaders(provider string, uid string, domain string) map[string]string {
 	headers := map[string]string{
 		ProductHeader:        "SaaS",
 		IDETypeHeader:        "CLI",
@@ -130,6 +134,9 @@ func IdentityHeaders(provider string, uid string) map[string]string {
 		AgentPurposeHeader:   "conversation",
 		AgentIntentHeader:    "craft",
 		AgentTypeHeader:      "main",
+		AgentRuntimeHeader:   "other",
+		AgentCoreHeader:      "agent-cli",
+		FeatureModuleHeader:  "cli_local",
 		PrivateDataHeader:    "false",
 		CodebuddyRequestHead: "1",
 	}
@@ -137,13 +144,41 @@ func IdentityHeaders(provider string, uid string) map[string]string {
 	if version := cliversion.Current(); version != "" {
 		headers[IDEVersionHeader] = version
 	}
-	if domain := domainByProvider[normalizeProvider(provider)]; domain != "" {
-		headers[DomainHeader] = domain
+	if value := strings.TrimSpace(domain); value != "" {
+		headers[DomainHeader] = value
+	} else if value := domainByProvider[normalizeProvider(provider)]; value != "" {
+		headers[DomainHeader] = value
 	}
 	if value := strings.TrimSpace(uid); value != "" {
 		headers[UserIDHeader] = value
 	}
 	return headers
+}
+
+// DomainFromCredential 从家族原生凭据里取登录态域名（官方 X-Domain 的值）。
+func DomainFromCredential(credential accountapp.Credential) string {
+	native, ok := credential.(*accountcore.NativeCredential)
+	if !ok || native == nil {
+		return ""
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(native.Payload(), &fields); err != nil {
+		return ""
+	}
+	credentials, ok := decodeRawObject(fields["credentials"])
+	if !ok {
+		return ""
+	}
+	for _, section := range []string{"auth", "account"} {
+		object, ok := decodeRawObject(credentials[section])
+		if !ok {
+			continue
+		}
+		if domain, ok := rawString(object["domain"]); ok && strings.TrimSpace(domain) != "" {
+			return strings.TrimSpace(domain)
+		}
+	}
+	return ""
 }
 
 // newConversationID 生成官方同形的 UUIDv7 标识：`8-4-4-4-12` 十六进制，

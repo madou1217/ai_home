@@ -4,6 +4,7 @@ package appsessions
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -17,6 +18,63 @@ import (
 const processQueryTimeout = 15 * time.Second
 
 func listProcesses(ctx context.Context) ([]Process, error) {
+	if processes, err := listProcessesWMIC(ctx); err == nil && len(processes) > 0 {
+		return processes, nil
+	}
+	return listProcessesPowerShell(ctx)
+}
+
+// listProcessesWMIC is the fast path; wmic is absent on some newer Windows
+// builds, where the PowerShell fallback still works.
+func listProcessesWMIC(ctx context.Context) ([]Process, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(queryCtx, "wmic", "process", "get", "ProcessId,CreationDate,CommandLine", "/format:csv")
+	output, err := command.Output()
+	if err != nil {
+		return nil, err
+	}
+	reader := csv.NewReader(strings.NewReader(string(output)))
+	reader.FieldsPerRecord = -1
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("parse wmic output: %w", err)
+	}
+	for len(rows) > 0 && len(rows[0]) == 0 {
+		rows = rows[1:]
+	}
+	if len(rows) < 2 {
+		return nil, fmt.Errorf("wmic output is empty")
+	}
+	header := make(map[string]int, len(rows[0]))
+	for index, name := range rows[0] {
+		header[strings.ToLower(strings.TrimSpace(strings.TrimPrefix(name, "\xef\xbb\xbf")))] = index
+	}
+	commandIndex, okCommand := header["commandline"]
+	dateIndex, okDate := header["creationdate"]
+	pidIndex, okPID := header["processid"]
+	if !okCommand || !okDate || !okPID {
+		return nil, fmt.Errorf("wmic output missing columns")
+	}
+	processes := make([]Process, 0, len(rows)-1)
+	for _, row := range rows[1:] {
+		if len(row) <= commandIndex || len(row) <= dateIndex || len(row) <= pidIndex {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(row[pidIndex]))
+		if err != nil || pid <= 0 || strings.TrimSpace(row[commandIndex]) == "" {
+			continue
+		}
+		processes = append(processes, Process{
+			PID:       pid,
+			Command:   strings.TrimSpace(row[commandIndex]),
+			StartedAt: parseWindowsDate(strings.TrimSpace(row[dateIndex])),
+		})
+	}
+	return processes, nil
+}
+
+func listProcessesPowerShell(ctx context.Context) ([]Process, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, processQueryTimeout)
 	defer cancel()
 	command := exec.CommandContext(queryCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
@@ -75,6 +133,11 @@ func parseWindowsDate(value string) time.Time {
 	}
 	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
 		return parsed
+	}
+	if len(trimmed) >= 14 {
+		if parsed, err := time.ParseInLocation("20060102150405", trimmed[:14], time.Local); err == nil {
+			return parsed
+		}
 	}
 	return time.Time{}
 }

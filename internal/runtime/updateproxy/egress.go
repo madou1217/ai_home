@@ -12,6 +12,9 @@ import (
 type EgressLease struct {
 	URL  string
 	Name string
+	// ID 是候选出口的稳定 ID；重建入口时优先用它，显示名可能被地区解析器
+	// 误当成城市码，也可能在多个节点间重名。
+	ID string
 	// AnonymousURL 是不要求 Proxy-Authorization 的 loopback 入口；为空表示
 	// 当前来源没有提供。
 	//
@@ -132,6 +135,20 @@ func (rotation *EgressRotation) Next(ctx context.Context, cause string) (EgressA
 	rotation.Release()
 	rotation.notify("[aih] " + message + "；不再重试。")
 	return EgressAttempt{Exhausted: true, Message: message}, nil
+}
+
+// Reset clears the tried set so a new recovery round can reconsider every
+// candidate. It releases the rotation's own (unused) lease, not the caller's.
+// Use it after a successful rebuild or when the user explicitly retries; an
+// automatic failure loop must keep its exclusions to avoid cycling forever.
+func (rotation *EgressRotation) Reset() {
+	if rotation == nil {
+		return
+	}
+	rotation.Release()
+	rotation.tried = map[string]struct{}{}
+	rotation.failed = ""
+	rotation.failedReason = ""
 }
 
 // Fail 记录当前出口失败：立即释放，下一次 Next 会跳过它并说明切换。

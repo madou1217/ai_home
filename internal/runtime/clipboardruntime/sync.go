@@ -62,6 +62,10 @@ type SyncPayload struct {
 	SourceDevice string         `json:"sourceDevice,omitempty"`
 	SourceApp    string         `json:"sourceApp,omitempty"`
 	CreatedAtMs  int64          `json:"createdAtMs"`
+	// LastSeenAtMs preserves the source's recency order across devices; using
+	// the receiver's sync-arrival time made backlog items look newer than a
+	// just-copied file and pushed it out of the 200-row page window.
+	LastSeenAtMs int64 `json:"lastSeenAtMs,omitempty"`
 	// Lazy marks an index-only envelope; content is fetched on demand.
 	Lazy              bool   `json:"lazy,omitempty"`
 	Preview           string `json:"preview,omitempty"`
@@ -161,6 +165,7 @@ func BuildMetadataPayload(item clipboard.Item) (SyncPayload, error) {
 		SourceDevice: item.SourceDevice,
 		SourceApp:    item.SourceApp,
 		CreatedAtMs:  item.CreatedAtMs,
+		LastSeenAtMs: item.LastSeenAtMs,
 		Lazy:         true,
 		Preview:      item.Preview,
 		ByteSize:     item.ByteSize,
@@ -188,6 +193,7 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 		SourceDevice: item.SourceDevice,
 		SourceApp:    item.SourceApp,
 		CreatedAtMs:  item.CreatedAtMs,
+		LastSeenAtMs: item.LastSeenAtMs,
 	}
 	switch item.Kind {
 	case clipboard.KindFile:
@@ -263,7 +269,7 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 		SourceApp:    payload.SourceApp,
 		RemoteID:     payload.OriginID,
 		SyncedAtMs:   syncedAtMs,
-		ObservedAtMs: syncedAtMs,
+		ObservedAtMs: payloadObservedAt(payload, syncedAtMs),
 	}
 	switch payload.Kind {
 	case clipboard.KindFile:
@@ -322,6 +328,16 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 	return input, nil
 }
 
+func payloadObservedAt(payload SyncPayload, fallbackMs int64) int64 {
+	if payload.LastSeenAtMs > 0 {
+		return payload.LastSeenAtMs
+	}
+	if payload.CreatedAtMs > 0 {
+		return payload.CreatedAtMs
+	}
+	return fallbackMs
+}
+
 // VerifyMetadata converts an index-only payload into a lazy IngestInput. The
 // envelope itself is authenticated by AES-GCM; the SHA is the content id that
 // the source will serve on demand.
@@ -362,7 +378,7 @@ func VerifyMetadata(expectedSHA string, payload SyncPayload, syncedAtMs int64, r
 		SourceApp:    payload.SourceApp,
 		RemoteID:     payload.OriginID,
 		SyncedAtMs:   syncedAtMs,
-		ObservedAtMs: syncedAtMs,
+		ObservedAtMs: payloadObservedAt(payload, syncedAtMs),
 		RemoteSource: remoteSource,
 	}, nil
 }

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type { ReactNode } from 'react';
 import { Dropdown, Skeleton, Empty, Popconfirm, message, Modal } from 'antd';
 import {
   CloudServerOutlined,
@@ -26,7 +25,7 @@ import SessionArchiveAction from './SessionArchiveAction';
 import Button from '@/components/ui/AppButton';
 import Reveal from '@/components/ui/Reveal';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
-import ModeSelector, { type WorkspaceMode } from './ModeSelector';
+import type { WorkspaceMode } from './ModeSelector';
 import { providerAccentStyle } from './provider-registry';
 import { resolveArchiveAction } from './session-lifecycle-policy.js';
 import {
@@ -245,7 +244,6 @@ interface Props {
   selectedProject: AggregatedProject | null;
   expandedProjects: Set<string>;
   mode?: WorkspaceMode;
-  onModeChange?: (mode: WorkspaceMode) => void;
   onRefresh: () => void;
   onToggleProject: (id: string) => void;
   onSelectProject: (project: AggregatedProject) => void;
@@ -253,7 +251,6 @@ interface Props {
   onOpenProject: () => void;
   onCreateSession: () => void;
   onProjectRemoved?: (project: AggregatedProject) => void;
-  remoteSessionsPanel?: ReactNode;
 }
 
 interface MobileConfirmState {
@@ -273,7 +270,6 @@ const ProjectList = ({
   selectedProject,
   expandedProjects,
   mode = 'work',
-  onModeChange,
   onRefresh,
   onToggleProject,
   onSelectProject,
@@ -281,7 +277,6 @@ const ProjectList = ({
   onOpenProject,
   onCreateSession,
   onProjectRemoved,
-  remoteSessionsPanel,
 }: Props) => {
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -461,9 +456,6 @@ const ProjectList = ({
   if (mobile) {
     return (
       <>
-        {onModeChange && (
-          <ModeSelector mode={mode} onChange={onModeChange} mobile={mobile} />
-        )}
         {mode === 'chat' ? (
           <div className={`${styles.sidebarContent} aih-panel-enter`} style={{ padding: '8px 12px' }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -573,9 +565,6 @@ const ProjectList = ({
     <div className={styles.sidebar}>
       {/* 统一 HarmonyOS 6 风格侧边栏沉浸顶栏 */}
       <div className={styles.sidebarUnifiedHeader}>
-        {onModeChange && (
-          <ModeSelector mode={mode} onChange={onModeChange} mobile={false} />
-        )}
         {/* 顶栏是桌面端唯一的操作区（不再在列表上方重复一行同样的按钮；移动端保留自己的
             带标题操作行）。侧栏宽度下模式切换旁只放得下两个按钮，所以 WORK 模式把
             新建会话（最常用）作为主按钮，打开项目/归档/刷新收进「更多」菜单。 */}
@@ -754,8 +743,6 @@ const ProjectList = ({
             />
           </div>
           ) : null}
-
-          {remoteSessionsPanel}
 
           <div className={`${styles.sidebarContent} aih-panel-enter`}>
             {loading && projects.length === 0 ? (

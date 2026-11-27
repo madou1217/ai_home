@@ -11,7 +11,11 @@ import ChatMiniWindow from "@/features/chat-runtime/ChatMiniWindow";
 import HudEffects from "@/components/hud/HudEffects";
 import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
 import HudRouteStage from "@/components/hud/HudRouteStage";
-import { resolveHudNavCode, resolveHudRouteOrder } from "@/components/hud/hud-nav";
+import {
+  resolveHudNavCode,
+  resolveHudRouteOrder,
+  resolveHudSubmenuParentCode,
+} from "@/components/hud/hud-nav";
 import {
   installRouteViewTransition,
   type HistoryLike,
@@ -184,6 +188,7 @@ export function rootContainer(
 
 interface HudMenuItem {
   path?: string;
+  name?: string;
   isUrl?: boolean;
   target?: string;
   children?: unknown[];
@@ -191,7 +196,7 @@ interface HudMenuItem {
 
 // 侧栏菜单项：保留 ProLayout 默认渲染（图标 / 中文名），在前后补 HUD 编号与英文代号。
 function renderHudMenuLabel(item: HudMenuItem, dom: ReactNode) {
-  const code = resolveHudNavCode(item.path);
+  const code = resolveHudNavCode(item.path) || resolveHudSubmenuParentCode(item.children);
   if (!code) return dom;
   return (
     <span
@@ -218,6 +223,23 @@ function renderHudMenuItem(item: HudMenuItem, dom: ReactNode) {
   );
 }
 
+// 没有自身 path 的父菜单（如「AI 会话」）在 ProLayout 里只有 antd 的展开/收起，
+// 标题上没有任何导航目标，用户点它感知为「完全没反应」。取第一个真实叶子子项的
+// path 作为父菜单的点击目标（AI 会话 → /chat，即 Chat 子页）。
+// 有 path 的父菜单（项目管理 /projects、灵感工坊 /studio）保持 ProLayout 原行为不动，
+// 避免改变它们既有的展开与导航语义。
+function resolveSubmenuClickPath(item: HudMenuItem): string | undefined {
+  if (item.path) return undefined;
+  if (!Array.isArray(item.children)) return undefined;
+  for (const child of item.children) {
+    if (!child || typeof child !== 'object') continue;
+    const candidate = child as HudMenuItem;
+    if (candidate.isUrl || !candidate.path || Array.isArray(candidate.children)) continue;
+    return candidate.path.replace('/*', '');
+  }
+  return undefined;
+}
+
 export const layout = ({ initialState }: any) => {
   if (isGoAccountsPreview) {
     return {
@@ -241,7 +263,13 @@ export const layout = ({ initialState }: any) => {
       popupClassName: "hud-sider-submenu-popup",
     },
     menuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuItem(item, dom),
-    subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuLabel(item, dom),
+    subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => {
+      const label = renderHudMenuLabel(item, dom);
+      const clickPath = resolveSubmenuClickPath(item);
+      // 注意：ProLayout 调 subMenuItemRender 时会强制把 isUrl 置为 false，
+      // 所以这里不能依赖 item.isUrl 判断外链；resolveSubmenuClickPath 已跳过外链子项。
+      return clickPath ? <Link to={clickPath}>{label}</Link> : label;
+    },
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
       // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），

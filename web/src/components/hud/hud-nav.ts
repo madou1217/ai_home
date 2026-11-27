@@ -16,7 +16,9 @@ export interface HudNavCode {
 const NAV_CODES: Record<string, HudNavCode> = {
   '/dashboard': { no: '01', code: 'DASHBOARD', order: 1 },
   '/accounts': { no: '02', code: 'ACCOUNTS', order: 2 },
-  '/chat': { no: '03', code: 'SESSIONS', order: 3 },
+  // AI 会话拆成 Chat / Work 子菜单：一级编号 03 给父菜单，子项用层级编号 03.01 / 03.02。
+  '/chat': { no: '03.01', code: 'CHAT', parentPath: '/chat', order: 3.01 },
+  '/chat/work': { no: '03.02', code: 'WORK', parentPath: '/chat', order: 3.02 },
   '/projects': { no: '04', code: 'PROJECT', order: 4 },
   '/projects/office': { no: '04.01', code: 'OFFICE', parentPath: '/projects', order: 4.01 },
   '/projects/requirements': { no: '04.02', code: 'REQUIRE', parentPath: '/projects', order: 4.02 },
@@ -52,10 +54,27 @@ function normalizeNavPath(path: string | undefined): string {
   return normalized;
 }
 
+// 父菜单若没有自己的路径（如 AI 会话），从子项路径反查一级编号，避免子项顶掉 03 后
+// 一级序号出现空洞，也让菜单编号与 04.01 / 10.02 的既有层级约定保持一致。
+const SUBMENU_PARENT_CODES: Record<string, HudNavCode> = {
+  '/chat': { no: '03', code: 'SESSIONS', order: 3 },
+};
+
 export function resolveHudNavCode(path: string | undefined): HudNavCode | null {
   const normalized = normalizeNavPath(path);
   if (!normalized) return null;
   return NAV_CODES[normalized] || null;
+}
+
+export function resolveHudSubmenuParentCode(children: unknown[] | undefined): HudNavCode | null {
+  if (!Array.isArray(children)) return null;
+  for (const child of children) {
+    if (!child || typeof child !== 'object') continue;
+    const path = (child as { path?: unknown }).path;
+    const code = SUBMENU_PARENT_CODES[normalizeNavPath(typeof path === 'string' ? path : undefined)];
+    if (code) return code;
+  }
+  return null;
 }
 
 /**

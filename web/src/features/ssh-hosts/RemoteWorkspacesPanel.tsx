@@ -23,8 +23,10 @@ function readCollapsed(): boolean {
  * 文件 / 命令经 SSH 落到远端，远端无需安装 aih / AI CLI）。右侧终端按钮在全局 Web Terminal
  * 浮窗里打开该目录的远端 shell。
  */
-export default function RemoteWorkspacesPanel({ onOpenInWork }: {
+export default function RemoteWorkspacesPanel({ onOpenInWork, onlyWorkspaces = false }: {
   onOpenInWork?: (workspace: SshWorkspace) => void | Promise<void>;
+  /** Work 的 remote 标签页只显示远程工作区，不混入执行目标 / Connector 面板。 */
+  onlyWorkspaces?: boolean;
 } = {}) {
   const [workspaces, setWorkspaces] = useState<SshWorkspace[]>([]);
   const [connections, setConnections] = useState<SshConnection[]>([]);
@@ -154,8 +156,8 @@ export default function RemoteWorkspacesPanel({ onOpenInWork }: {
         )}
       </Reveal>
       </section>
-      <RemoteTargetPanel />
-      <WorkspaceConnectorPanel />
+      {!onlyWorkspaces ? <RemoteTargetPanel /> : null}
+      {!onlyWorkspaces ? <WorkspaceConnectorPanel /> : null}
     </>
   );
 }

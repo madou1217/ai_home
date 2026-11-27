@@ -17,9 +17,19 @@ const nodeRoutes = [
   },
   {
     name: "AI 会话",
-    path: "/chat",
-    component: "./Chat",
     icon: "message",
+    routes: [
+      {
+        name: "Chat",
+        path: "/chat",
+        component: "./Chat",
+      },
+      {
+        name: "Work",
+        path: "/chat/work",
+        component: "./Chat",
+      },
+    ],
   },
   {
     // 快捷唤起（桌面原生小窗 / 一键打开）：同一个 Chat 页，参数见 pages/chat-quick-launch.ts。

@@ -19,7 +19,7 @@ import ChatWorkspaceLayout from '@/features/chat-workspace/ChatWorkspaceLayout';
 import RemoteWorkspacesPanel from '@/features/ssh-hosts/RemoteWorkspacesPanel';
 import { useSurfaceSwitch } from '@/hooks/use-surface-switch';
 import type { AggregatedProject, Session } from '@/types';
-import { ChatConversationContent, useChatPageState } from './chat-page-state';
+import { ChatConversationContent, useChatPageState, type WorkScope } from './chat-page-state';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -58,6 +58,8 @@ export default function Chat() {
   const {
     workspaceMode,
     handleModeChange,
+    workScope,
+    handleWorkScopeChange,
     projectCatalog,
     canonicalDirectory,
     setSelectedModel,
@@ -219,7 +221,9 @@ export default function Chat() {
       selectedSession={projectCatalog.selectedSession}
       selectedProject={projectCatalog.selectedProject}
       expandedProjects={projectCatalog.expandedProjects}
-      onModeChange={switchMode}
+      workScope={workScope}
+      onWorkScopeChange={handleWorkScopeChange}
+      onOpenRemoteWorkspace={switchRemoteWorkspace}
       onRefresh={refreshProjectList}
       onToggleProject={projectCatalog.toggleProject}
       onSelectProject={switchProject}
@@ -227,7 +231,6 @@ export default function Chat() {
       onOpenProject={dialogs.openProject}
       onCreateSession={switchCreateSession}
       onProjectRemoved={handleProjectRemoved}
-      onOpenRemoteWorkspace={switchRemoteWorkspace}
     />
   );
 
@@ -274,7 +277,9 @@ interface ChatSidebarPaneProps {
   readonly selectedSession: Session | null;
   readonly selectedProject: AggregatedProject | null;
   readonly expandedProjects: Set<string>;
-  readonly onModeChange: (mode: WorkspaceMode) => void;
+  readonly workScope: WorkScope;
+  readonly onWorkScopeChange: (scope: WorkScope) => void;
+  readonly onOpenRemoteWorkspace: (workspace: { projectPath?: string }) => Promise<void>;
   readonly onRefresh: () => void;
   readonly onToggleProject: (projectId: string) => void;
   readonly onSelectProject: (project: AggregatedProject) => void;
@@ -282,7 +287,6 @@ interface ChatSidebarPaneProps {
   readonly onOpenProject: () => void;
   readonly onCreateSession: () => void;
   readonly onProjectRemoved: (project: AggregatedProject) => void;
-  readonly onOpenRemoteWorkspace: (workspace: { projectPath?: string }) => Promise<void>;
 }
 
 function ChatSidebarPane({
@@ -297,7 +301,9 @@ function ChatSidebarPane({
   selectedSession,
   selectedProject,
   expandedProjects,
-  onModeChange,
+  workScope,
+  onWorkScopeChange,
+  onOpenRemoteWorkspace,
   onRefresh,
   onToggleProject,
   onSelectProject,
@@ -305,9 +311,9 @@ function ChatSidebarPane({
   onOpenProject,
   onCreateSession,
   onProjectRemoved,
-  onOpenRemoteWorkspace,
 }: ChatSidebarPaneProps) {
-  const showWorkFirstRun = workspaceMode === 'work' && !loading && projects.length === 0;
+  const workRemote = workspaceMode === 'work' && workScope === 'remote';
+  const showWorkFirstRun = workspaceMode === 'work' && !workRemote && !loading && projects.length === 0;
   const headingSubtitle = workspaceMode === 'chat'
     ? '选择或新建对话；角色与压缩设置按会话保存'
     : '按项目组织代码会话，支持本地与远程工作区';
@@ -344,10 +350,45 @@ function ChatSidebarPane({
           >
             {headingSubtitle}
           </p>
+          {workspaceMode === 'work' ? (
+            <div
+              role="tablist"
+              aria-label="Work 工作区范围"
+              style={{ display: 'flex', gap: 6, marginTop: 8 }}
+            >
+              {(['local', 'remote'] as const).map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  role="tab"
+                  aria-selected={workScope === scope}
+                  onClick={() => onWorkScopeChange(scope)}
+                  style={{
+                    flex: 1,
+                    padding: '5px 8px',
+                    borderRadius: 6,
+                    border: '1px solid var(--color-border, rgba(127,127,127,0.18))',
+                    background: workScope === scope
+                      ? 'var(--color-fill-secondary, rgba(127,127,127,0.12))'
+                      : 'transparent',
+                    color: workScope === scope ? 'var(--color-accent, var(--color-heading))' : 'var(--color-muted, inherit)',
+                    font: 'inherit',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {scope}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+        {workRemote ? (
+          <RemoteWorkspacesPanel onOpenInWork={onOpenRemoteWorkspace} onlyWorkspaces />
+        ) : (
         <ProjectList
           mobile={mobile}
           projects={projects}
@@ -358,7 +399,6 @@ function ChatSidebarPane({
           selectedProject={selectedProject}
           expandedProjects={expandedProjects}
           mode={workspaceMode}
-          onModeChange={onModeChange}
           onRefresh={onRefresh}
           onToggleProject={onToggleProject}
           onSelectProject={onSelectProject}
@@ -366,8 +406,8 @@ function ChatSidebarPane({
           onOpenProject={onOpenProject}
           onCreateSession={onCreateSession}
           onProjectRemoved={onProjectRemoved}
-          remoteSessionsPanel={workspaceMode === 'work' ? <RemoteWorkspacesPanel onOpenInWork={onOpenRemoteWorkspace} /> : null}
         />
+        )}
 
         {showWorkFirstRun ? (
           <div

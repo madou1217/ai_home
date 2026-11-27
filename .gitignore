@@ -116,3 +116,5 @@ C:\\*
 /clipboard2.png
 /in2-body.txt
 **/.playwright-cli/
+# 测试产物统一目录：Playwright yaml、请求/响应 txt、截图、一次性脚本只放这里。
+/.test-artifacts/

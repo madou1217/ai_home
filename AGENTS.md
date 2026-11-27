@@ -72,6 +72,13 @@
 - **产品自身的目录不在此禁令内**：`run/auth-projections`（账号投影）、`run/chat-workspaces`（网页会话工作目录，`chatruntime/runtime_target.go`）、`run/remote-workspaces`、`run/provider-session-state`、`run/releases` 等是运行时数据，不得当成"垃圾副本"删除；清理只能针对缓存与旧包。
 - **清理既有残留**：删除 `run/` 下整树副本前，先确认没有进程持有（`lsof`/`/proc/*/cwd`）、且不属于活跃线程；活跃线程的证据目录保留并转交该 owner。
 
+## Test Artifacts & Workspace Hygiene
+- **The repository root must stay free of test artifacts.** All ad-hoc test outputs — Playwright `*.yaml` snapshots, request/response `*.txt`, screenshots, temporary JSON, and one-off scripts — must be written under `.test-artifacts/`, using a subdirectory per session or task (for example `.test-artifacts/<session-topic>/`).
+- `.test-artifacts/` is ignored by git as a whole. Never add negation exceptions for it and never commit files from it.
+- Do not create `*.yaml`, `*.yml`, `*.txt`, `*.png`, or similar evidence files in the repository root. Root-level artifacts are leftovers and may be moved to `.test-artifacts/legacy-root/` or cleaned without notice.
+- When a task needs persistent evidence, reference the path under `.test-artifacts/` in the report; do not copy it back to the repository root.
+- This rule applies to every session, including parallel agents sharing this worktree.
+
 ## Commit & Pull Request Guidelines
 - Follow conventional-style messages seen in history: `feat(...)`, `fix(...)`, `refactor(...)`.
 - Keep commits focused (one logical change per commit).

@@ -22,6 +22,11 @@ const CONTRIBUTION = 'antigravity.apps.install';
 const PROVIDER = 'agy';
 const DOWNLOAD_PAGE = 'https://antigravity.google/download';
 
+// 超时/失败日志保留策略：每个产品最多保留 5 份，超过 7 天的删除。
+// 成功安装会删除本次日志；失败日志保留用于定位中断位置。
+const INSTALL_LOG_KEEP = 5;
+const INSTALL_LOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 // 两个产品各自的官方产物域名：解析出的地址必须落在其中之一，防止被中间人
 // 换成任意主机（页面内容来自网络，不能当成可信输入）。
 const OFFICIAL_PREFIXES = [
@@ -239,6 +244,39 @@ function stopInstaller(exe, pid) {
   }
 }
 
+// pruneInstallerLogs 清理旧的超时/失败安装日志，避免临时目录无限增长。
+//
+// 只处理当前产品的 aih-<appId>-install-*.log，不删除本次即将写入的日志。
+// 当前安装还会新增一份，因此旧日志只保留 KEEP-1 份。
+function pruneInstallerLogs(appId, currentLogPath) {
+  const prefix = 'aih-' + appId + '-install-';
+  const dir = os.tmpdir();
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch (_error) {
+    return;
+  }
+  const now = Date.now();
+  const logs = [];
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith('.log')) continue;
+    const full = path.join(dir, name);
+    if (full === currentLogPath) continue;
+    try {
+      const stat = fs.statSync(full);
+      if (!stat.isFile()) continue;
+      logs.push({ path: full, mtimeMs: stat.mtimeMs });
+    } catch (_error) { /* ignore */ }
+  }
+  logs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  logs.forEach((log, index) => {
+    if (index >= INSTALL_LOG_KEEP - 1 || now - log.mtimeMs > INSTALL_LOG_MAX_AGE_MS) {
+      try { fs.rmSync(log.path, { force: true }); } catch (_error) { /* ignore */ }
+    }
+  });
+}
+
 // waitForInstaller 以 Inno 的安装完成日志判断结束，而不是看 exe 是否出现。
 //
 // Inno 先写 exe，再写 resources 等大量文件；以「exe 出现」为完成信号会
@@ -249,6 +287,7 @@ function waitForInstaller(exe, args, appId, timeoutMs) {
     let settled = false;
     let timer = null;
     const logPath = path.join(os.tmpdir(), 'aih-' + appId + '-install-' + process.pid + '-' + Date.now() + '.log');
+    pruneInstallerLogs(appId, logPath);
     const finish = (error) => {
       if (settled) return;
       settled = true;

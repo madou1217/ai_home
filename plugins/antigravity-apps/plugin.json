@@ -3,7 +3,7 @@
   "kind": "capability",
   "protocolVersion": 1,
   "pluginId": "antigravity.apps",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "engines": {
     "aih": ">=1.0.0"
   },

@@ -365,6 +365,16 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		if watcherCancel != nil {
 			watcherCancel()
 		}
+		// Drain a loss reported by a concurrent request for the previous upstream;
+		// this round already handled it.
+		for {
+			select {
+			case <-current.lost:
+				continue
+			default:
+			}
+			break
+		}
 		watcherCtx, cancel := context.WithCancel(ctx)
 		watcherCancel = cancel
 		go current.watchLeaseLoss(watcherCtx, func(lostErr error) {

@@ -18,6 +18,9 @@ export interface AppDeskInstance {
   proxyCountry?: string;
   proxyCity?: string;
   proxyRegion?: string;
+  /** 代理端口探活：ok / down；仅看台运行时字段，不落盘。 */
+  proxyHealth?: 'ok' | 'down' | (string & {});
+  proxyHealthDetail?: string;
   startedAtMs: number;
   pids?: number[];
   live: boolean;

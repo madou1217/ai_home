@@ -20,9 +20,11 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/madou1217/ai_home/internal/runtime/appproxyhealth"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 )
 
 const (
@@ -89,6 +91,7 @@ func (state *appDeskState) refresh(ctx context.Context, store *appsessions.Store
 	if instances, err := store.List(ctx); err == nil {
 		instances = appproxyregion.Enrich(ctx, instances, aiHome)
 		active, history := appsessions.SplitActive(instances)
+		active = appproxyhealth.Enrich(ctx, active)
 		state.instances = active
 		state.historyCount = len(history)
 	}
@@ -475,7 +478,13 @@ func renderAppDesk(output io.Writer, state *appDeskState) {
 			if current.Proxied {
 				_, _ = fmt.Fprintf(output, "  proxy     %s  (%s)\r\n", sanitizeProxyURL(current.ProxyURL), current.ProxyMode)
 				if current.ProxyRegion != "" {
-					_, _ = fmt.Fprintf(output, "  region    %s\r\n", current.ProxyRegion)
+					_, _ = fmt.Fprintf(output, "  region    %s %s\r\n", proxyregion.Flag(current.ProxyCountry), current.ProxyRegion)
+				}
+				switch current.ProxyHealth {
+				case "down":
+					_, _ = fmt.Fprintf(output, "  %s代理已断开  %s%s\r\n", ansiAmber, current.ProxyHealthDetail, ansiReset)
+				case "ok":
+					_, _ = fmt.Fprintf(output, "  %s代理端口可达%s\r\n", ansiDim, ansiReset)
 				}
 			}
 			_, _ = fmt.Fprintf(output, "  started   %s\r\n", time.UnixMilli(current.StartedAtMs).Format("2006-01-02 15:04:05"))
@@ -567,8 +576,21 @@ func renderInstanceLine(instance appsessions.Instance, selected, marked bool) st
 			proxyText = port
 		}
 		if instance.ProxyRegion != "" {
-			proxyText += " · " + instance.ProxyRegion
+			flag := proxyregion.Flag(instance.ProxyCountry)
+			if flag != "" {
+				proxyText += " · " + flag
+			} else {
+				proxyText += " ·"
+			}
+			proxyText += " " + instance.ProxyRegion
 		}
+		if instance.ProxyHealth == "down" {
+			proxyText = "⚠ " + proxyText
+		}
+	}
+	proxyCell := fmt.Sprintf("%-26s", proxyText)
+	if instance.Proxied && instance.ProxyHealth == "down" {
+		proxyCell = ansiAmber + proxyCell + ansiReset
 	}
 	stateText := instance.Status
 	stateColor := ansiDim
@@ -579,10 +601,10 @@ func renderInstanceLine(instance appsessions.Instance, selected, marked bool) st
 	if !instance.Live && instance.ExitedAtMs > 0 {
 		uptime = "exited " + formatDeskDuration(time.UnixMilli(instance.ExitedAtMs).Sub(time.UnixMilli(instance.StartedAtMs)))
 	}
-	line := fmt.Sprintf("%s%s %s%s%s %-24s %-16s %-26s %s%-10s%s %s",
+	line := fmt.Sprintf("%s%s %s%s%s %-24s %-16s %s %s%-10s%s %s",
 		cursor, marker,
 		dotColor, dot, ansiReset,
-		name, pid, proxyText,
+		name, pid, proxyCell,
 		stateColor, stateText, ansiReset,
 		uptime)
 	if selected {
@@ -613,7 +635,15 @@ func renderAppDeskPlain(output io.Writer, state *appDeskState) {
 				proxyText = port
 			}
 			if instance.ProxyRegion != "" {
-				proxyText += " · " + instance.ProxyRegion
+				if flag := proxyregion.Flag(instance.ProxyCountry); flag != "" {
+					proxyText += " · " + flag
+				} else {
+					proxyText += " ·"
+				}
+				proxyText += " " + instance.ProxyRegion
+			}
+			if instance.ProxyHealth == "down" {
+				proxyText = "⚠ " + proxyText + " [代理已断开]"
 			}
 		}
 		uptime := formatDeskDuration(time.Since(time.UnixMilli(instance.StartedAtMs)))

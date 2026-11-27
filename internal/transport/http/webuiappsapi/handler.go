@@ -14,6 +14,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/launcher"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/runtime/appproxyhealth"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
@@ -270,6 +271,7 @@ func (handler *Handler) deskView(request *http.Request) (deskView, error) {
 	}
 	instances = appproxyregion.Enrich(request.Context(), instances, handler.aiHomeDir)
 	active, history := appsessions.SplitActive(instances)
+	active = appproxyhealth.Enrich(request.Context(), active)
 	view := deskView{
 		Instances:    active,
 		HistoryCount: len(history),

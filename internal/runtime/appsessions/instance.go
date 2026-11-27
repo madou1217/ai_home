@@ -36,6 +36,11 @@ type Instance struct {
 	ProxyCountry string `json:"proxyCountry,omitempty"`
 	ProxyCity    string `json:"proxyCity,omitempty"`
 	ProxyRegion  string `json:"proxyRegion,omitempty"`
+	// ProxyHealth/ProxyHealthDetail are runtime-only desk facts (not persisted):
+	// "ok" when the instance's proxy endpoint accepts TCP connections, "down"
+	// with a short reason when it does not.
+	ProxyHealth       string `json:"proxyHealth,omitempty"`
+	ProxyHealthDetail string `json:"proxyHealthDetail,omitempty"`
 
 	StartedAtMs int64 `json:"startedAtMs"`
 	PIDs        []int `json:"pids,omitempty"`

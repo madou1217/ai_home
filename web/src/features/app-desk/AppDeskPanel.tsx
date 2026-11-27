@@ -6,6 +6,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
+  DisconnectOutlined,
   ExclamationCircleOutlined,
   HistoryOutlined,
   PoweroffOutlined,
@@ -132,6 +133,13 @@ function proxyModeMeta(mode?: string): { label: string; tone: 'reliable' | 'best
         tone: 'neutral'
       };
   }
+}
+
+/** 2 字国家码 → 国旗 emoji；未知码返回空串。 */
+function countryFlag(code?: string): string {
+  const normalized = (code || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalized)) return '';
+  return String.fromCodePoint(...[...normalized].map((char) => 0x1f1e6 + char.charCodeAt(0) - 65));
 }
 
 function formatPids(pids?: number[]): { display: string; full: string } {
@@ -765,6 +773,7 @@ export default function AppDeskPanel() {
         data-status={state.tone}
         data-live={instance.live ? 'true' : 'false'}
         data-history={historyMode ? 'true' : 'false'}
+        data-proxy-health={instance.proxied && !historyMode ? instance.proxyHealth || 'unknown' : undefined}
         onClick={(event) => {
           if (historyMode) return;
           const target = event.target as HTMLElement | null;
@@ -831,8 +840,23 @@ export default function AppDeskPanel() {
                 <span className="app-desk-port-chip">:{port}</span>
               </Tooltip>
               {instance.proxyRegion ? (
-                <Tooltip title={`出口地区：${instance.proxyRegion}`}>
-                  <span className="app-desk-region-chip">{instance.proxyRegion}</span>
+                <Tooltip title={`出口地区：${countryFlag(instance.proxyCountry)} ${instance.proxyRegion}`}>
+                  <span className="app-desk-region-chip">
+                    {countryFlag(instance.proxyCountry) ? (
+                      <span className="app-desk-region-flag" aria-hidden="true">
+                        {countryFlag(instance.proxyCountry)}
+                      </span>
+                    ) : null}
+                    {instance.proxyRegion}
+                  </span>
+                </Tooltip>
+              ) : null}
+              {instance.proxyHealth === 'down' ? (
+                <Tooltip title={instance.proxyHealthDetail || '代理端口不可达'}>
+                  <span className="app-desk-proxy-down-chip">
+                    <DisconnectOutlined aria-hidden="true" />
+                    代理已断开
+                  </span>
                 </Tooltip>
               ) : null}
               <Tooltip title={mode.tip}>

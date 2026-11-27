@@ -83,3 +83,16 @@ func countryFromToken(label string) string {
 	}
 	return ""
 }
+
+// Flag renders a 2-letter country code as its flag emoji. Unknown codes return
+// an empty string so callers can omit the icon instead of showing a wrong one.
+func Flag(code string) string {
+	code = NormalizeCountry(code)
+	if code == "" || !ValidCountry(code) {
+		return ""
+	}
+	return string([]rune{
+		0x1F1E6 + rune(code[0]-'A'),
+		0x1F1E6 + rune(code[1]-'A'),
+	})
+}

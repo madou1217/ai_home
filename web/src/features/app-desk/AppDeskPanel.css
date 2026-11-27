@@ -1266,3 +1266,22 @@
   font-size: var(--text-2xs);
   white-space: nowrap;
 }
+
+.app-desk-region-flag {
+  margin-right: 3px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.app-desk-proxy-down-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 46%, var(--color-border));
+  border-radius: var(--hos-radius-xs);
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface));
+  color: var(--color-danger);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}

@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
@@ -62,12 +65,13 @@ func providerHasDesktopClient(providerID string) bool {
 }
 
 // isInstallRequiredError 识别 Management API 的 428 install_required。
+// 走类型化 RemoteError，避免错误正文里恰好出现 "428" 时被误判。
 func isInstallRequiredError(err error) bool {
-	if err == nil {
-		return false
+	var remote managementapi.RemoteError
+	if errors.As(err, &remote) {
+		return remote.StatusCode == http.StatusPreconditionRequired
 	}
-	text := err.Error()
-	return strings.Contains(text, "428") || strings.Contains(text, "install_required")
+	return false
 }
 
 // runDesktopOnlyProviderLaunch 处理桌面端启动（workbuddy 这类无 CLI 的 Provider，

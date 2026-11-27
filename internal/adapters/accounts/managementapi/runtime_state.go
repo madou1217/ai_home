@@ -3,6 +3,7 @@ package managementapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
@@ -84,5 +85,9 @@ func (client *Client) ClearAccountRuntimeState(
 	requestURL := client.baseURL + accountcontract.AccountsPath + "/" +
 		url.PathEscape(accountRef.String()) + "/runtime-state"
 	_, err = client.doDocumentRequest(ctx, http.MethodPut, requestURL, payload)
-	return err
+	// 状态文档与独立块表是两份事实；只清 state 会让 openapp/AuthInvalid 继续为 true。
+	blockURL := client.baseURL + accountcontract.AccountsPath + "/" +
+		url.PathEscape(accountRef.String()) + "/runtime-block?kind=reauthentication_required"
+	_, blockErr := client.doDocumentRequest(ctx, http.MethodDelete, blockURL, nil)
+	return errors.Join(err, blockErr)
 }

@@ -24,14 +24,18 @@ const maxStatelessContextBytes = 32 * 1024 * 1024
 // forwarded as a complete stateless request instead.
 type statelessConnection struct {
 	Connection
-	journal       *responseJournal
-	mu            sync.Mutex
-	lastID        string
-	lastInput     []json.RawMessage
-	pendingInput  []json.RawMessage
-	pendingValid  bool
-	pendingOutput map[int]json.RawMessage
-	outputBytes   int
+	journal      *responseJournal
+	mu           sync.Mutex
+	lastID       string
+	lastInput    []json.RawMessage
+	pendingInput []json.RawMessage
+	pendingValid bool
+	// pendingAmbiguous 表示上一轮尚未结束时又收到新的 response.create
+	// （Codex pipelining）。此时无法把输入与 completed 帧一一对应，跳过
+	// journal/lastInput，避免把错误的上下文用于后续续接展开。
+	pendingAmbiguous bool
+	pendingOutput    map[int]json.RawMessage
+	outputBytes      int
 }
 
 func (connection *statelessConnection) Write(ctx context.Context, kind websocket.MessageType, payload []byte) error {
@@ -56,6 +60,9 @@ func (connection *statelessConnection) prepare(payload []byte) []byte {
 	}
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
+	if connection.pendingValid {
+		connection.pendingAmbiguous = true
+	}
 	connection.pendingInput, connection.pendingValid = nil, false
 	connection.pendingOutput, connection.outputBytes = nil, 0
 	input, ok := statelessInput(frame["input"])
@@ -218,6 +225,10 @@ func (connection *statelessConnection) observe(payload []byte) {
 	items = append(items, connection.pendingInput...)
 	items = append(items, event.Response.Output...)
 	// 进程级日志跨连接共享：换号或重连后的续接仍能展开为完整上下文。
+	// pipelined 轮次无法把输入与终态对应，宁可不记也不写错上下文。
+	if connection.pendingAmbiguous {
+		return
+	}
 	if connection.journal != nil {
 		connection.journal.Store(event.Response.ID, items)
 	}

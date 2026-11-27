@@ -2,8 +2,10 @@ package codexresponsesws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -338,6 +340,17 @@ func (handler *Handler) pumpClientToUpstream(
 			}
 			return
 		}
+		// 非 response.create 帧（response.cancel、未知扩展）与上游共用同一套
+		// Responses WS 协议；Node 旧实现原样转发，只标记不可重放。把它们当成
+		// 非法请求会直接 400，客户端的取消/控制帧因此反复失败。
+		if frameType := clientFrameType(payload); frameType != "" && frameType != "response.create" {
+			observer.MarkReplayUnavailable()
+			if err := writeMessage(session.Context(), upstream, messageType, payload); err != nil {
+				results <- resultFromRead(pumpSourceUpstream, err, true)
+				return
+			}
+			continue
+		}
 		if err := observer.Begin(payload); err != nil {
 			if errors.Is(err, ErrModelChanged) {
 				request, parseErr := parseClientFrame(payload)
@@ -350,13 +363,33 @@ func (handler *Handler) pumpClientToUpstream(
 					return
 				}
 			}
-			code := "invalid_response_create"
-			message := "请求必须是同模型的串行 response.create"
+			// 同一模型在跑时再来 response.create 属于 pipelining：Node 旧实现
+			// 同样允许并原样转发，只是放弃重放关联。只有“运行中换模型”才是
+			// 真正的并发请求，保留 concurrent_response_create。
 			if errors.Is(err, ErrConcurrentTurn) {
-				code = "concurrent_response_create"
-				message = "同一 WebSocket 连接只允许串行请求"
+				if request, parseErr := parseClientFrame(payload, observer.model); parseErr == nil && request.Model == observer.model {
+					observer.MarkReplayUnavailable()
+					if writeErr := writeMessage(
+						session.Context(),
+						upstream,
+						messageType,
+						handler.prepareBoundClientFrame(payload, observer.model, observer.route.ModelID().String()),
+					); writeErr != nil {
+						results <- resultFromRead(pumpSourceUpstream, writeErr, true)
+						return
+					}
+					continue
+				}
+				writeWebSocketError(client, 400, "concurrent_response_create", "同一 WebSocket 连接只允许串行请求")
+				results <- pumpResult{
+					source:      pumpSourceClient,
+					err:         err,
+					closeCode:   websocket.StatusPolicyViolation,
+					closeReason: "concurrent response.create",
+				}
+				return
 			}
-			writeWebSocketError(client, 400, code, message)
+			writeWebSocketError(client, 400, "invalid_response_create", "请求必须是同模型的串行 response.create")
 			results <- pumpResult{
 				source:      pumpSourceClient,
 				err:         err,
@@ -535,4 +568,16 @@ func propagateClose(
 		code = websocket.StatusGoingAway
 	}
 	_ = target.Close(code, result.closeReason)
+}
+
+// clientFrameType 返回客户端帧的 type；非 JSON 对象返回空串，交给后续校验拒绝。
+// 非 response.create 的控制帧（response.cancel 等）与上游共用同一协议，必须转发。
+func clientFrameType(payload []byte) string {
+	var frame struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(payload, &frame) != nil {
+		return ""
+	}
+	return strings.TrimSpace(frame.Type)
 }

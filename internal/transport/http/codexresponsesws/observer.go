@@ -99,6 +99,17 @@ func (observer *turnObserver) Begin(payload []byte) error {
 	return nil
 }
 
+// MarkReplayUnavailable 标记当前轮次不可重放（控制帧、pipelined 请求等）。
+// 效果与已交出输出一致：后续失败不能再换号重放，避免重复执行工具。
+func (observer *turnObserver) MarkReplayUnavailable() {
+	if observer == nil {
+		return
+	}
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	observer.committed = true
+}
+
 // MarkCommitted 记录本轮已有非预备帧交给客户端。
 func (observer *turnObserver) MarkCommitted() {
 	observer.mu.Lock()

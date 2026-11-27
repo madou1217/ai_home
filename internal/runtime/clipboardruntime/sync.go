@@ -51,18 +51,19 @@ var (
 
 // SyncPayload is the plaintext JSON encrypted inside SealedSyncItem.Sealed.
 type SyncPayload struct {
-	OriginID     string         `json:"originId"`
-	Kind         clipboard.Kind `json:"kind"`
-	MIME         string         `json:"mime"`
-	Text         string         `json:"text,omitempty"`
-	DataBase64   string         `json:"dataBase64,omitempty"`
-	Files        []string       `json:"files,omitempty"`
-	FileHashes   []string       `json:"fileHashes,omitempty"`
-	Width        int            `json:"width,omitempty"`
-	Height       int            `json:"height,omitempty"`
-	SourceDevice string         `json:"sourceDevice,omitempty"`
-	SourceApp    string         `json:"sourceApp,omitempty"`
-	CreatedAtMs  int64          `json:"createdAtMs"`
+	OriginID       string         `json:"originId"`
+	Kind           clipboard.Kind `json:"kind"`
+	MIME           string         `json:"mime"`
+	Text           string         `json:"text,omitempty"`
+	DataBase64     string         `json:"dataBase64,omitempty"`
+	Files          []string       `json:"files,omitempty"`
+	FileHashes     []string       `json:"fileHashes,omitempty"`
+	PerceptualHash string         `json:"perceptualHash,omitempty"`
+	Width          int            `json:"width,omitempty"`
+	Height         int            `json:"height,omitempty"`
+	SourceDevice   string         `json:"sourceDevice,omitempty"`
+	SourceApp      string         `json:"sourceApp,omitempty"`
+	CreatedAtMs    int64          `json:"createdAtMs"`
 	// LastSeenAtMs preserves the source's recency order across devices; using
 	// the receiver's sync-arrival time made backlog items look newer than a
 	// just-copied file and pushed it out of the 200-row page window.
@@ -158,18 +159,19 @@ func BuildMetadataPayload(item clipboard.Item) (SyncPayload, error) {
 		return SyncPayload{}, clipboard.ErrInvalidInput
 	}
 	payload := SyncPayload{
-		OriginID:     item.ID,
-		Kind:         item.Kind,
-		MIME:         item.MIME,
-		Width:        item.Width,
-		Height:       item.Height,
-		SourceDevice: item.SourceDevice,
-		SourceApp:    item.SourceApp,
-		CreatedAtMs:  item.CreatedAtMs,
-		LastSeenAtMs: item.LastSeenAtMs,
-		Lazy:         true,
-		Preview:      item.Preview,
-		ByteSize:     item.ByteSize,
+		OriginID:       item.ID,
+		Kind:           item.Kind,
+		MIME:           item.MIME,
+		Width:          item.Width,
+		Height:         item.Height,
+		SourceDevice:   item.SourceDevice,
+		SourceApp:      item.SourceApp,
+		CreatedAtMs:    item.CreatedAtMs,
+		LastSeenAtMs:   item.LastSeenAtMs,
+		Lazy:           true,
+		Preview:        item.Preview,
+		ByteSize:       item.ByteSize,
+		PerceptualHash: item.PerceptualHash,
 	}
 	if item.Kind == clipboard.KindFile {
 		payload.Files = clipboard.FilterIgnoredClipboardFiles(item.Files)
@@ -189,15 +191,16 @@ func BuildMetadataPayload(item clipboard.Item) (SyncPayload, error) {
 // BuildSyncPayload constructs a SyncPayload from a persisted clipboard.Item, reading blobs if needed.
 func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clipboard.Item) (SyncPayload, error) {
 	payload := SyncPayload{
-		OriginID:     item.ID,
-		Kind:         item.Kind,
-		MIME:         item.MIME,
-		Width:        item.Width,
-		Height:       item.Height,
-		SourceDevice: item.SourceDevice,
-		SourceApp:    item.SourceApp,
-		CreatedAtMs:  item.CreatedAtMs,
-		LastSeenAtMs: item.LastSeenAtMs,
+		OriginID:       item.ID,
+		Kind:           item.Kind,
+		MIME:           item.MIME,
+		Width:          item.Width,
+		Height:         item.Height,
+		SourceDevice:   item.SourceDevice,
+		SourceApp:      item.SourceApp,
+		CreatedAtMs:    item.CreatedAtMs,
+		LastSeenAtMs:   item.LastSeenAtMs,
+		PerceptualHash: item.PerceptualHash,
 	}
 	switch item.Kind {
 	case clipboard.KindFile:
@@ -269,15 +272,16 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 		return clipboard.IngestInput{}, clipboard.ErrInvalidInput
 	}
 	input := clipboard.IngestInput{
-		Kind:         payload.Kind,
-		MIME:         payload.MIME,
-		Width:        payload.Width,
-		Height:       payload.Height,
-		SourceDevice: payload.SourceDevice,
-		SourceApp:    payload.SourceApp,
-		RemoteID:     payload.OriginID,
-		SyncedAtMs:   syncedAtMs,
-		ObservedAtMs: payloadObservedAt(payload, syncedAtMs),
+		Kind:           payload.Kind,
+		MIME:           payload.MIME,
+		Width:          payload.Width,
+		Height:         payload.Height,
+		SourceDevice:   payload.SourceDevice,
+		SourceApp:      payload.SourceApp,
+		RemoteID:       payload.OriginID,
+		PerceptualHash: payload.PerceptualHash,
+		SyncedAtMs:     syncedAtMs,
+		ObservedAtMs:   payloadObservedAt(payload, syncedAtMs),
 	}
 	switch payload.Kind {
 	case clipboard.KindFile:
@@ -373,23 +377,24 @@ func VerifyMetadata(expectedSHA string, payload SyncPayload, syncedAtMs int64, r
 		preview = strings.Join(names, ", ")
 	}
 	return clipboard.IngestInput{
-		Kind:         payload.Kind,
-		MIME:         payload.MIME,
-		Lazy:         true,
-		SHA256:       want,
-		Preview:      preview,
-		Thumbnail:    thumbnail,
-		ByteSize:     payload.ByteSize,
-		Files:        files,
-		FileHashes:   append([]string(nil), payload.FileHashes...),
-		Width:        payload.Width,
-		Height:       payload.Height,
-		SourceDevice: payload.SourceDevice,
-		SourceApp:    payload.SourceApp,
-		RemoteID:     payload.OriginID,
-		SyncedAtMs:   syncedAtMs,
-		ObservedAtMs: payloadObservedAt(payload, syncedAtMs),
-		RemoteSource: remoteSource,
+		Kind:           payload.Kind,
+		MIME:           payload.MIME,
+		Lazy:           true,
+		SHA256:         want,
+		Preview:        preview,
+		Thumbnail:      thumbnail,
+		ByteSize:       payload.ByteSize,
+		PerceptualHash: payload.PerceptualHash,
+		Files:          files,
+		FileHashes:     append([]string(nil), payload.FileHashes...),
+		Width:          payload.Width,
+		Height:         payload.Height,
+		SourceDevice:   payload.SourceDevice,
+		SourceApp:      payload.SourceApp,
+		RemoteID:       payload.OriginID,
+		SyncedAtMs:     syncedAtMs,
+		ObservedAtMs:   payloadObservedAt(payload, syncedAtMs),
+		RemoteSource:   remoteSource,
 	}, nil
 }
 

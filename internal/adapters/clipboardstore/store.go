@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS clipboard_items (
   height INTEGER NOT NULL DEFAULT 0,
   preview TEXT NOT NULL DEFAULT '',
   thumbnail BLOB,
+  perceptual_hash TEXT NOT NULL DEFAULT '',
   files_json TEXT NOT NULL DEFAULT '[]',
   source_device TEXT NOT NULL DEFAULT '',
   source_app TEXT NOT NULL DEFAULT '',
@@ -176,6 +177,11 @@ func (s *Store) ensureColumns(ctx context.Context) error {
 			return err
 		}
 	}
+	if !columns["perceptual_hash"] {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE clipboard_items ADD COLUMN perceptual_hash TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	if !columns["file_hashes_json"] {
 		if _, err := s.db.ExecContext(ctx, `ALTER TABLE clipboard_items ADD COLUMN file_hashes_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
 			return err
@@ -203,10 +209,10 @@ func (s *Store) UpsertItem(ctx context.Context, item clipboard.Item) (clipboard.
 	const upsertSQL = `
 INSERT INTO clipboard_items (
   id, sha256, kind, mime, text, blob_path, byte_size, width, height,
-  preview, thumbnail, files_json, file_hashes_json, source_device, source_app,
+  preview, thumbnail, perceptual_hash, files_json, file_hashes_json, source_device, source_app,
   pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
   synced_at_ms, remote_id, materialized, remote_source
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO UPDATE SET
   last_seen_at_ms = CASE
     WHEN excluded.last_seen_at_ms > clipboard_items.last_seen_at_ms THEN excluded.last_seen_at_ms
@@ -222,6 +228,7 @@ ON CONFLICT(sha256) DO UPDATE SET
   byte_size = CASE WHEN excluded.materialized = 1 THEN excluded.byte_size ELSE clipboard_items.byte_size END,
   materialized = CASE WHEN excluded.materialized = 1 THEN 1 ELSE clipboard_items.materialized END,
   preview = CASE WHEN excluded.preview <> '' THEN excluded.preview ELSE clipboard_items.preview END,
+  perceptual_hash = CASE WHEN excluded.perceptual_hash <> '' THEN excluded.perceptual_hash ELSE clipboard_items.perceptual_hash END,
   remote_source = CASE WHEN excluded.remote_source <> '' THEN excluded.remote_source ELSE clipboard_items.remote_source END,
   thumbnail = CASE WHEN clipboard_items.thumbnail IS NULL OR length(clipboard_items.thumbnail) = 0 THEN excluded.thumbnail ELSE clipboard_items.thumbnail END,
   width = CASE WHEN clipboard_items.width = 0 THEN excluded.width ELSE clipboard_items.width END,
@@ -243,6 +250,7 @@ ON CONFLICT(sha256) DO UPDATE SET
 		item.Height,
 		item.Preview,
 		item.Thumbnail,
+		item.PerceptualHash,
 		filesJSON,
 		hashesJSON,
 		item.SourceDevice,
@@ -305,7 +313,7 @@ func (s *Store) ListItems(ctx context.Context, filter clipboard.ListFilter) ([]c
 	var query strings.Builder
 	query.WriteString(`
 SELECT id, sha256, kind, mime, blob_path, byte_size, width, height,
-       preview, thumbnail, files_json, file_hashes_json, source_device, source_app,
+       preview, thumbnail, perceptual_hash, files_json, file_hashes_json, source_device, source_app,
        pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
        synced_at_ms, remote_id, materialized, remote_source
 FROM clipboard_items`)
@@ -754,7 +762,7 @@ type rowQuerier interface {
 
 const fullItemSelect = `
 SELECT id, sha256, kind, mime, text, blob_path, byte_size, width, height,
-       preview, thumbnail, files_json, file_hashes_json, source_device, source_app,
+       preview, thumbnail, perceptual_hash, files_json, file_hashes_json, source_device, source_app,
        pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
        synced_at_ms, remote_id, materialized, remote_source
 FROM clipboard_items`
@@ -777,7 +785,7 @@ type rowScanner interface {
 
 func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 	var item clipboard.Item
-	var kind, filesJSON, hashesJSON string
+	var kind, filesJSON, hashesJSON, perceptualHash string
 	var pinned, deleted, materialized int
 	if err := scanner.Scan(
 		&item.ID,
@@ -791,6 +799,7 @@ func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 		&item.Height,
 		&item.Preview,
 		&item.Thumbnail,
+		&perceptualHash,
 		&filesJSON,
 		&hashesJSON,
 		&item.SourceDevice,
@@ -814,12 +823,13 @@ func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 	item.Deleted = deleted != 0
 	item.Files = decodeFilesJSON(filesJSON)
 	item.FileHashes = decodeFilesJSON(hashesJSON)
+	item.PerceptualHash = perceptualHash
 	return item, nil
 }
 
 func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 	var item clipboard.Item
-	var kind, filesJSON, hashesJSON string
+	var kind, filesJSON, hashesJSON, perceptualHash string
 	var pinned, deleted, materialized int
 	if err := scanner.Scan(
 		&item.ID,
@@ -832,6 +842,7 @@ func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 		&item.Height,
 		&item.Preview,
 		&item.Thumbnail,
+		&perceptualHash,
 		&filesJSON,
 		&hashesJSON,
 		&item.SourceDevice,
@@ -855,6 +866,7 @@ func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 	item.Deleted = deleted != 0
 	item.Files = decodeFilesJSON(filesJSON)
 	item.FileHashes = decodeFilesJSON(hashesJSON)
+	item.PerceptualHash = perceptualHash
 	return item, nil
 }
 
@@ -904,3 +916,40 @@ func minInt(a, b int) int {
 
 var _ clipboard.Store = (*Store)(nil)
 var _ clipboard.BlobStore = (*BlobStore)(nil)
+
+// ListRecentImageItems returns materialized image rows with the same
+// dimensions for near-duplicate screenshot coalescing.
+func (s *Store) ListRecentImageItems(ctx context.Context, sinceMs int64, width, height, limit int) ([]clipboard.Item, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	query := fullItemSelect + ` WHERE deleted = 0 AND materialized = 1 AND kind = ? AND last_seen_at_ms >= ? AND width = ? AND height = ? ORDER BY last_seen_at_ms DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, string(clipboard.KindImage), sinceMs, width, height, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]clipboard.Item, 0, limit)
+	for rows.Next() {
+		item, scanErr := scanFullItem(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// TouchImageItem refreshes recency and the perceptual fingerprint without
+// replacing the stored image bytes.
+func (s *Store) TouchImageItem(ctx context.Context, id string, atMs int64, perceptualHash string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE clipboard_items SET last_seen_at_ms = ?, seen_count = seen_count + 1, perceptual_hash = ? WHERE id = ? AND deleted = 0`, atMs, strings.TrimSpace(perceptualHash), strings.TrimSpace(id))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}

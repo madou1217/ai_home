@@ -97,29 +97,30 @@ func ParseKind(raw string) (Kind, error) {
 
 // Item is a persisted clipboard history entry.
 type Item struct {
-	ID           string   `json:"id"`
-	SHA256       string   `json:"sha256"`
-	Kind         Kind     `json:"kind"`
-	MIME         string   `json:"mime"`
-	Text         string   `json:"text,omitempty"`
-	BlobPath     string   `json:"blobPath,omitempty"`
-	ByteSize     int64    `json:"byteSize"`
-	Width        int      `json:"width,omitempty"`
-	Height       int      `json:"height,omitempty"`
-	Preview      string   `json:"preview"`
-	Thumbnail    []byte   `json:"-"`
-	Files        []string `json:"files,omitempty"`
-	FileHashes   []string `json:"fileHashes,omitempty"`
-	SourceDevice string   `json:"sourceDevice,omitempty"`
-	SourceApp    string   `json:"sourceApp,omitempty"`
-	Pinned       bool     `json:"pinned"`
-	Deleted      bool     `json:"deleted"`
-	DeletedAtMs  int64    `json:"deletedAtMs,omitempty"`
-	SeenCount    int      `json:"seenCount"`
-	CreatedAtMs  int64    `json:"createdAtMs"`
-	LastSeenAtMs int64    `json:"lastSeenAtMs"`
-	SyncedAtMs   int64    `json:"syncedAtMs,omitempty"`
-	RemoteID     string   `json:"remoteId,omitempty"`
+	ID             string   `json:"id"`
+	SHA256         string   `json:"sha256"`
+	Kind           Kind     `json:"kind"`
+	MIME           string   `json:"mime"`
+	Text           string   `json:"text,omitempty"`
+	BlobPath       string   `json:"blobPath,omitempty"`
+	ByteSize       int64    `json:"byteSize"`
+	Width          int      `json:"width,omitempty"`
+	Height         int      `json:"height,omitempty"`
+	Preview        string   `json:"preview"`
+	PerceptualHash string   `json:"perceptualHash,omitempty"`
+	Thumbnail      []byte   `json:"-"`
+	Files          []string `json:"files,omitempty"`
+	FileHashes     []string `json:"fileHashes,omitempty"`
+	SourceDevice   string   `json:"sourceDevice,omitempty"`
+	SourceApp      string   `json:"sourceApp,omitempty"`
+	Pinned         bool     `json:"pinned"`
+	Deleted        bool     `json:"deleted"`
+	DeletedAtMs    int64    `json:"deletedAtMs,omitempty"`
+	SeenCount      int      `json:"seenCount"`
+	CreatedAtMs    int64    `json:"createdAtMs"`
+	LastSeenAtMs   int64    `json:"lastSeenAtMs"`
+	SyncedAtMs     int64    `json:"syncedAtMs,omitempty"`
+	RemoteID       string   `json:"remoteId,omitempty"`
 	// Materialized is false for synced index-only stubs; the full content is
 	// fetched on demand when the user actually pastes the item.
 	Materialized bool   `json:"materialized"`
@@ -235,20 +236,21 @@ type MaterializedFile struct {
 }
 
 type IngestInput struct {
-	Kind         Kind
-	MIME         string
-	Text         string
-	Data         []byte
-	Files        []string
-	FileHashes   []string
-	Width        int
-	Height       int
-	Thumbnail    []byte
-	SourceDevice string
-	SourceApp    string
-	RemoteID     string
-	SyncedAtMs   int64
-	ObservedAtMs int64
+	Kind           Kind
+	MIME           string
+	Text           string
+	Data           []byte
+	Files          []string
+	FileHashes     []string
+	PerceptualHash string
+	Width          int
+	Height         int
+	Thumbnail      []byte
+	SourceDevice   string
+	SourceApp      string
+	RemoteID       string
+	SyncedAtMs     int64
+	ObservedAtMs   int64
 	// Lazy marks a synced index-only item with no content.
 	Lazy bool
 	// SHA256 is the sender's content id for lazy/full synced items.

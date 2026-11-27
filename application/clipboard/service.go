@@ -149,6 +149,39 @@ func (s *Service) EnsureDevice(ctx context.Context) (Device, error) {
 	return device, nil
 }
 
+type nearDuplicateImageStore interface {
+	ListRecentImageItems(ctx context.Context, sinceMs int64, width, height, limit int) ([]Item, error)
+	TouchImageItem(ctx context.Context, id string, atMs int64, perceptualHash string) (bool, error)
+}
+
+// findNearDuplicateImage coalesces live screenshot frames. The same window can
+// produce a slightly different image every 900ms (cursor, hover, alpha), and
+// exact content hashes alone would fill history with lookalikes.
+func (s *Service) findNearDuplicateImage(ctx context.Context, item Item, nowMs int64) (Item, bool) {
+	store, ok := s.store.(nearDuplicateImageStore)
+	if !ok || len(item.PerceptualHash) != 16 || item.Width <= 0 || item.Height <= 0 {
+		return Item{}, false
+	}
+	candidates, err := store.ListRecentImageItems(ctx, nowMs-20_000, item.Width, item.Height, 20)
+	if err != nil {
+		return Item{}, false
+	}
+	for _, candidate := range candidates {
+		if candidate.ID == item.ID || !candidate.Materialized || len(candidate.PerceptualHash) != 16 {
+			continue
+		}
+		if PerceptualDistance(candidate.PerceptualHash, item.PerceptualHash) <= 8 {
+			if _, touchErr := store.TouchImageItem(ctx, candidate.ID, nowMs, item.PerceptualHash); touchErr == nil {
+				candidate.LastSeenAtMs = nowMs
+				candidate.SeenCount++
+				candidate.PerceptualHash = item.PerceptualHash
+				return candidate, true
+			}
+		}
+	}
+	return Item{}, false
+}
+
 // Ingest validates, canonicalizes, hashes, stores blobs when needed, and idempotently upserts an item.
 func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestResult, err error) {
 	defer func() {
@@ -253,8 +286,9 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 			mime = detectImageMIME(input.Data)
 		}
 		item.MIME = mime
-		if canonicalSHA, hashErr := canonicalImageSHA(input.Data); hashErr == nil {
+		if canonicalSHA, perceptual, hashErr := canonicalImageIdentity(input.Data); hashErr == nil {
 			item.SHA256 = canonicalSHA
+			item.PerceptualHash = perceptual
 		} else {
 			item.SHA256 = sha256Hex(input.Data)
 		}
@@ -281,6 +315,9 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 			}
 		}
 		item.Preview = buildImagePreview(mime, item.Width, item.Height, item.ByteSize)
+		if existing, ok := s.findNearDuplicateImage(ctx, item, nowMs); ok {
+			return IngestResult{Item: existing, Deduplicated: true}, nil
+		}
 		relPath, writeErr := s.blobs.Write(item.SHA256, input.Data)
 		if writeErr != nil {
 			return IngestResult{}, writeErr
@@ -426,26 +463,27 @@ func (s *Service) ingestLazy(ctx context.Context, input IngestInput, nowMs int64
 		return IngestResult{}, ErrEmptyContent
 	}
 	item := Item{
-		ID:           uuid.NewString(),
-		SHA256:       sha,
-		Kind:         input.Kind,
-		MIME:         limitClipText(strings.TrimSpace(input.MIME), 200),
-		ByteSize:     input.ByteSize,
-		Width:        input.Width,
-		Height:       input.Height,
-		Preview:      truncateRunes(preview, MaxPreviewRunes),
-		Thumbnail:    thumbnail,
-		Files:        lazyFiles,
-		FileHashes:   append([]string(nil), input.FileHashes...),
-		SourceDevice: limitClipText(sourceDevice, 200),
-		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
-		RemoteID:     strings.TrimSpace(input.RemoteID),
-		RemoteSource: strings.TrimSpace(input.RemoteSource),
-		SyncedAtMs:   input.SyncedAtMs,
-		CreatedAtMs:  nowMs,
-		LastSeenAtMs: nowMs,
-		SeenCount:    1,
-		Materialized: false,
+		ID:             uuid.NewString(),
+		SHA256:         sha,
+		Kind:           input.Kind,
+		MIME:           limitClipText(strings.TrimSpace(input.MIME), 200),
+		ByteSize:       input.ByteSize,
+		Width:          input.Width,
+		Height:         input.Height,
+		Preview:        truncateRunes(preview, MaxPreviewRunes),
+		PerceptualHash: input.PerceptualHash,
+		Thumbnail:      thumbnail,
+		Files:          lazyFiles,
+		FileHashes:     append([]string(nil), input.FileHashes...),
+		SourceDevice:   limitClipText(sourceDevice, 200),
+		SourceApp:      limitClipText(strings.TrimSpace(input.SourceApp), 200),
+		RemoteID:       strings.TrimSpace(input.RemoteID),
+		RemoteSource:   strings.TrimSpace(input.RemoteSource),
+		SyncedAtMs:     input.SyncedAtMs,
+		CreatedAtMs:    nowMs,
+		LastSeenAtMs:   nowMs,
+		SeenCount:      1,
+		Materialized:   false,
 	}
 	persisted, deduplicated, err := s.store.UpsertItem(ctx, item)
 	if err != nil {

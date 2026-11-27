@@ -35,9 +35,9 @@ export function normalizeSavedManagementKey(value: unknown) {
   return managementKey;
 }
 
-export function generateManagementKey(cryptoImpl: Crypto = window.crypto) {
+export function generateSecureToken(cryptoImpl: Crypto = window.crypto) {
   if (!cryptoImpl || typeof cryptoImpl.getRandomValues !== 'function') {
-    throw createRotationError('secure_random_unavailable', '当前客户端无法生成安全的 Management Key。');
+    throw createRotationError('secure_random_unavailable', '当前客户端无法生成安全密钥。');
   }
   const bytes = cryptoImpl.getRandomValues(new Uint8Array(32));
   let binary = '';
@@ -46,6 +46,10 @@ export function generateManagementKey(cryptoImpl: Crypto = window.crypto) {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/g, '');
+}
+
+export function generateManagementKey(cryptoImpl: Crypto = window.crypto) {
+  return generateSecureToken(cryptoImpl);
 }
 
 function profileWithManagementKey(profile: ControlPlaneProfile, managementKey: string) {

@@ -151,6 +151,7 @@ func newWebUIDependencies(inputs webuiDependenciesInputs) webuiRouteDependencies
 		NodeBaseURL:            inputs.nodeBaseURL,
 		SelfBaseURL:            inputs.selfBaseURL,
 		ManagementKey:          inputs.managementKey,
+		ManagementKeyRotated:   inputs.host.ManagementKeyRotated,
 		RequestShutdown:        inputs.requestShutdown,
 		TerminalHandler:        inputs.terminalHandler,
 		SubAggregator:          inputs.subAggregator,

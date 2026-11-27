@@ -90,6 +90,8 @@ type Dependencies struct {
 	Authorizer Authorizer
 	Store      Store
 	Generator  Generator
+	// OnRotated 在落库确认后收到新 Key，供宿主让进程内鉴权立即切换到新值。
+	OnRotated func(string)
 }
 
 // Handler 是 Management Key 轮换的 HTTP 入站适配器。
@@ -97,6 +99,7 @@ type Handler struct {
 	authorizer Authorizer
 	store      Store
 	generator  Generator
+	onRotated  func(string)
 }
 
 // NewHandler 校验依赖并创建默认失败关闭的 Handler。
@@ -112,6 +115,7 @@ func NewHandler(dependencies Dependencies) (http.Handler, error) {
 		authorizer: dependencies.Authorizer,
 		store:      dependencies.Store,
 		generator:  generator,
+		onRotated:  dependencies.OnRotated,
 	}, nil
 }
 
@@ -230,6 +234,10 @@ func (handler *Handler) rotate(response http.ResponseWriter, request *http.Reque
 	confirmed, err := managementKeyFromConfig(confirmedRaw, confirmedFound)
 	if err != nil || confirmed != replacement {
 		return nil, &rotationFailure{http.StatusInternalServerError, "management_key_rotation_persist_failed", "Server 未能确认新的 Management Key。"}
+	}
+	// 落库确认后再切换进程内鉴权：客户端接下来就会用新 Key 发请求。
+	if handler.onRotated != nil {
+		handler.onRotated(replacement)
 	}
 
 	return &rotateResponse{

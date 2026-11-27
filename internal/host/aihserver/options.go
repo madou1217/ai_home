@@ -51,6 +51,9 @@ type Options struct {
 	ProxyPool *outboundproxy.Manager
 	// ManagementKey 返回当前生效的 Server Management Key。
 	ManagementKey func() string
+	// ManagementKeyRotated 在 WebUI 成功轮换 Management Key 后收到新值，
+	// 让进程内鉴权立即使用新 Key，而不是等下次重启。
+	ManagementKeyRotated func(string)
 	// ClientKey 返回标准推理和模型目录使用的 Client Key。
 	ClientKey func() string
 	// ErrorLog 接收 net/http 连接级错误，不记录请求体或凭据。

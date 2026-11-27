@@ -153,6 +153,7 @@ func run(
 		FrontDoorBaseURL:           config.frontDoorBaseURL(),
 		DesktopManagedByHost:       desktopOwner == "node",
 		ManagementKey:              func() string { return managementKey },
+		ManagementKeyRotated:       func(value string) { managementKey = value },
 		ClientKey:                  func() string { return clientKey },
 		ModelDiscoverers:           runtime.models,
 		DelegateCredentialRefresh:  config.delegateCredentialRefresh,

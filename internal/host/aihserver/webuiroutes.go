@@ -137,6 +137,8 @@ type webuiRouteDependencies struct {
 	DesktopSettingsChanged func()
 	Authorizer             interface{ Authorized(*http.Request) bool }
 	AIHomeDir              string
+	// ManagementKeyRotated 让轮换接口把新 Key 推回进程内鉴权。
+	ManagementKeyRotated func(string)
 	Catalog                *providers.Catalog
 	ModelModalities        modelmetadata.Catalog
 	ModelAliasExpander     modelmetadata.AliasExpander
@@ -853,7 +855,7 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		return nil, fmt.Errorf("创建管理密钥数据源失败: %w", err)
 	}
 	managementKey, err := webuimanagementkeyapi.NewHandler(webuimanagementkeyapi.Dependencies{
-		Authorizer: authorizer, Store: managementKeySource,
+		Authorizer: authorizer, Store: managementKeySource, OnRotated: dependencies.ManagementKeyRotated,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("创建管理密钥轮换接口失败: %w", err)

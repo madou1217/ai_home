@@ -432,6 +432,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		DeletionOccupancy:          deletionOccupancy,
 		DeletionPreparation:        deletionPreparation,
 		ManagementKey:              options.ManagementKey,
+		ManagementKeyRotated:       options.ManagementKeyRotated,
 		ClientKey:                  options.ClientKey,
 		RequestShutdown:            options.RequestShutdown,
 		InferenceClient:            options.InferenceHTTPClient,
@@ -547,6 +548,7 @@ type handlerDependencies struct {
 	DeletionOccupancy         accountapp.DeletionOccupancy
 	DeletionPreparation       accountapp.DeletionPreparation
 	ManagementKey             func() string
+	ManagementKeyRotated      func(string)
 	ClientKey                 func() string
 	RequestShutdown           func()
 	InferenceClient           InferenceHTTPClient

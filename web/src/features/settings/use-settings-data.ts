@@ -28,6 +28,7 @@ import {
   type UsageFormValues
 } from './settings-config';
 import { saveServerConfig } from './save-server-config';
+import { rotateManagementKey } from '@/services/management-key-rotation';
 
 export interface FormSaveFeedback {
   tone: 'success' | 'error';
@@ -72,15 +73,19 @@ export function isUsageFormDirty(
 
 export function isServerFormDirty(
   draft: Partial<ServerConfig> | null | undefined,
-  saved: ServerConfig | null
+  saved: ServerConfig | null,
+  secretBaseline?: { apiKey?: string; managementKey?: string } | null
 ): boolean {
   if (!saved || !draft) return false;
   const openNetwork = Boolean(draft.openNetwork);
   const host = openNetwork ? '0.0.0.0' : String(draft.host || '').trim();
   const port = Number(draft.port);
   const proxyUrl = String(draft.proxyUrl || '').trim();
-  const hasNewApiKey = Boolean(String(draft.apiKey || '').trim());
-  const hasNewManagementKey = Boolean(String(draft.managementKey || '').trim());
+  // 密钥输入框预填当前值：只有与已保存明文不同且非空才算改动，留空表示保持原值。
+  const apiKey = String(draft.apiKey || '').trim();
+  const managementKey = String(draft.managementKey || '').trim();
+  const hasNewApiKey = apiKey !== '' && apiKey !== String(secretBaseline?.apiKey || '').trim();
+  const hasNewManagementKey = managementKey !== '' && managementKey !== String(secretBaseline?.managementKey || '').trim();
   return (
     openNetwork !== saved.openNetwork
     || host !== saved.host
@@ -332,7 +337,8 @@ export function useServiceConfigState(
   const saveServer = useCallback(async (values: ServerConfig) => {
     setServerSaving(true);
     setServerFeedback(null);
-    const needsRestart = hasListenerChanges(values, savedServer);
+    // API Key 在进程启动时载入鉴权器，保存后需要重启才对客户端生效。
+    const needsRestart = hasListenerChanges(values, savedServer) || Boolean(String(values.apiKey || '').trim());
     try {
       const { saved, rotatedProfileId } = await saveServerConfig(values, activeProfile);
       if (rotatedProfileId) {
@@ -360,6 +366,31 @@ export function useServiceConfigState(
     }
   }, [activeProfile, onRotatedProfile, savedServer]);
 
+  // 一键轮换：只写这一把密钥，不提交表单里其它未保存草稿。
+  // apiKey 走 server-config 补丁；managementKey 走专用轮换并同步默认 Server 凭据。
+  const applyServerSecret = useCallback(async (field: 'apiKey' | 'managementKey', value: string) => {
+    setServerSaving(true);
+    setServerFeedback(null);
+    try {
+      if (field === 'apiKey') {
+        await configAPI.updateServer({ apiKey: value });
+        setRestartRequired(true);
+        setServerFeedback({ tone: 'success', text: 'API Key 已轮换；重启服务后对外生效' });
+      } else {
+        if (!activeProfile) throw new Error('请先选择要轮换的 Server');
+        await rotateManagementKey(activeProfile, value);
+        onRotatedProfile(activeProfile.id);
+        setServerFeedback({ tone: 'success', text: 'Management Key 已轮换，并同步更新当前默认 Server 凭据' });
+      }
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : '轮换密钥失败';
+      setServerFeedback({ tone: 'error', text: errMsg });
+      throw error;
+    } finally {
+      setServerSaving(false);
+    }
+  }, [activeProfile, onRotatedProfile]);
+
   const markRestarted = useCallback(() => {
     setRestartRequired(false);
   }, []);
@@ -379,6 +410,7 @@ export function useServiceConfigState(
     loadConfig,
     saveUsage,
     saveServer,
+    applyServerSecret,
     markRestarted
   };
 }

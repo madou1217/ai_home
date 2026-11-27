@@ -223,6 +223,7 @@ const Settings = ({ section }: SettingsProps) => {
           onReload={() => { void serviceConfig.loadConfig(); }}
           onSaveUsage={serviceConfig.saveUsage}
           onSaveServer={serviceConfig.saveServer}
+          onApplyServerSecret={serviceConfig.applyServerSecret}
           onClearUsageFeedback={() => serviceConfig.setUsageFeedback(null)}
           onClearServerFeedback={() => serviceConfig.setServerFeedback(null)}
           onRestartServer={() => { void handleRestartServer(); }}

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react';
-import { Form, Input, InputNumber, Space, Switch, message } from 'antd';
-import { CopyOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from 'react';
+import { Form, Input, InputNumber, Switch, message } from 'antd';
+import type { Rule } from 'antd/es/form';
+import { CopyOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { configAPI } from '@/services/api';
 import { writeClipboardText } from '@/utils/clipboard';
@@ -8,6 +9,11 @@ import InlineNote from '@/components/ui/InlineNote';
 import SettingSection, { SettingRow } from '@/components/ui/SettingSection';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import SaveActionBar from '@/components/ui/SaveActionBar';
+import {
+  MAX_MANAGEMENT_KEY_LENGTH,
+  MIN_MANAGEMENT_KEY_LENGTH,
+  generateSecureToken
+} from '@/services/management-key-rotation';
 import Upstream429RetrySettingCard from './Upstream429RetrySettingCard';
 import {
   SERVER_FORM_DEFAULTS,
@@ -48,38 +54,72 @@ export interface ServiceSettingsSectionProps {
   onReload: () => void;
   onSaveUsage: (values: UsageFormValues) => Promise<UsageFormValues>;
   onSaveServer: (values: ServerConfig) => Promise<ServerConfig>;
+  onApplyServerSecret: (field: SecretField, value: string) => Promise<void>;
   onClearUsageFeedback: () => void;
   onClearServerFeedback: () => void;
   onRestartServer: () => void;
 }
 
-interface CurrentSecretControlProps {
+type SecretField = 'apiKey' | 'managementKey';
+
+interface SecretInputProps {
   id: string;
-  value: string;
-  configured: boolean;
-  onCopy: () => void;
+  value?: string;
+  disabled?: boolean;
+  placeholder?: string;
+  autoComplete?: string;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onCopy: (value: string) => void;
 }
 
-/** 当前密钥回显：眼睛切换明文，复制一键写入剪贴板。 */
-function CurrentSecretControl({ id, value, configured, onCopy }: CurrentSecretControlProps) {
+/**
+ * 密钥输入：直接承载当前密钥，眼睛在输入框内切换明文，
+ * 复制图标同样在输入框内、悬停或聚焦时出现。
+ */
+function SecretInput({ id, value = '', disabled, placeholder, autoComplete, onChange, onCopy }: SecretInputProps) {
   return (
-    <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
-      <Input.Password
-        id={id}
-        value={value}
-        readOnly
-        placeholder={configured ? '由环境变量提供，无法在此显示' : '配置中未保存（可能由环境变量提供）'}
-      />
-      <Button icon={<CopyOutlined />} disabled={!value} onClick={onCopy}>
-        复制
-      </Button>
-    </Space.Compact>
+    <Input.Password
+      id={id}
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+      autoComplete={autoComplete}
+      placeholder={placeholder}
+      className="hos-secret-input"
+      suffix={
+        <Button
+          type="text"
+          size="small"
+          className="hos-secret-copy"
+          icon={<CopyOutlined />}
+          aria-label="复制密钥"
+          disabled={!value}
+          onClick={() => { if (value) onCopy(value); }}
+        />
+      }
+    />
   );
 }
 
-function currentSecretCaveat(configured: boolean, value: string): string {
-  if (value) return '点击眼睛图标显示明文；复制按钮直接写入剪贴板。';
-  return configured ? '当前值由环境变量提供，无法在界面回显。' : '配置中未保存密钥；若由环境变量提供，此界面无法回显。';
+function secretPlaceholder(configured: boolean, value: string): string {
+  if (value) return '输入新值后保存即完成轮换';
+  return configured
+    ? '当前值由环境变量提供，无法在此回显；输入新值可覆盖'
+    : '尚未设置；输入新值后保存即可启用';
+}
+
+function apiKeyCaveat(configured: boolean, value: string): string {
+  if (value) return '点击眼睛图标查看明文；悬停输入框显示复制图标。填写新值或“一键轮换”后保存，重启服务即对外生效。';
+  return configured
+    ? '当前值由环境变量提供，无法在界面回显；填写新值保存后会写入配置，重启后生效。'
+    : '暂未设置；填写新值保存并重启即可启用。';
+}
+
+function managementKeyCaveat(configured: boolean, value: string): string {
+  if (value) return '点击眼睛图标查看明文；悬停输入框显示复制图标。填写新值或“一键轮换”即完成轮换，并同步更新当前默认 Server 凭据。';
+  return configured
+    ? '当前值由环境变量提供，无法在界面回显；填写新值保存后会写入配置并同步更新当前默认 Server 凭据。'
+    : '暂未设置；填写新值保存即可启用，并同步更新当前默认 Server 凭据。';
 }
 
 function summarizeProxyPool(proxyUrl: string | undefined): string {
@@ -108,6 +148,7 @@ export default function ServiceSettingsSection({
   onReload,
   onSaveUsage,
   onSaveServer,
+  onApplyServerSecret,
   onClearUsageFeedback,
   onClearServerFeedback,
   onRestartServer
@@ -124,6 +165,9 @@ export default function ServiceSettingsSection({
     apiKeyConfigured: false,
     managementKeyConfigured: false
   });
+  const [rotatingSecret, setRotatingSecret] = useState<SecretField | ''>('');
+  // 记录已经写进表单的密钥明文，避免刷新时覆盖用户正在输入的新值。
+  const appliedSecretRef = useRef({ apiKey: '', managementKey: '' });
 
   // 明文只在显式请求时取回；用于当前值的眼睛回显与复制，不进入普通配置快照。
   const loadServerSecrets = useCallback(async () => {
@@ -152,16 +196,31 @@ export default function ServiceSettingsSection({
     usageForm.setFieldsValue(savedUsage);
   }, [savedUsage, usageForm]);
 
+  // 非密钥字段跟随已保存配置；密钥字段由下面的明文快照同步，避免保存后被清空。
   useEffect(() => {
     serverForm.setFieldsValue({
-      ...savedServer,
-      apiKey: '',
-      managementKey: ''
+      host: savedServer.host,
+      port: savedServer.port,
+      openNetwork: savedServer.openNetwork,
+      proxyUrl: savedServer.proxyUrl
     });
   }, [savedServer, serverForm]);
 
+  useEffect(() => {
+    const applied = appliedSecretRef.current;
+    const draft = serverForm.getFieldsValue(['apiKey', 'managementKey']) as Partial<ServerConfig>;
+    const next: Partial<ServerConfig> = {};
+    if (String(draft.apiKey ?? '') === applied.apiKey) next.apiKey = serverSecrets.apiKey;
+    if (String(draft.managementKey ?? '') === applied.managementKey) next.managementKey = serverSecrets.managementKey;
+    if (Object.keys(next).length) serverForm.setFieldsValue(next);
+    appliedSecretRef.current = {
+      apiKey: serverSecrets.apiKey,
+      managementKey: serverSecrets.managementKey
+    };
+  }, [serverSecrets, serverForm]);
+
   const usageDirty = isUsageFormDirty(usageDraft, savedUsage);
-  const serverDirty = isServerFormDirty(serverDraft, savedServer);
+  const serverDirty = isServerFormDirty(serverDraft, savedServer, serverSecrets);
   const draftOpenNetwork = Boolean(serverDraft?.openNetwork ?? savedServer.openNetwork);
   const listenerDraftChanged = serverDirty && hasListenerChanges(serverDraft || {}, savedServer);
   const hasSavedProxy = Boolean(String(savedServer.proxyUrl || '').trim());
@@ -190,24 +249,103 @@ export default function ServiceSettingsSection({
   };
 
   const handleResetServer = () => {
-    serverForm.setFieldsValue({ ...savedServer, apiKey: '', managementKey: '' });
+    appliedSecretRef.current = {
+      apiKey: serverSecrets.apiKey,
+      managementKey: serverSecrets.managementKey
+    };
+    serverForm.setFieldsValue({
+      ...savedServer,
+      apiKey: serverSecrets.apiKey,
+      managementKey: serverSecrets.managementKey
+    });
     onClearServerFeedback();
+  };
+
+  // 表单里预填的是当前密钥；只有真正改成新值才提交，留空或未改动都保持原密钥。
+  const valuesForServerSave = (values: ServerConfig): ServerConfig => {
+    const apiKey = String(values.apiKey || '').trim();
+    const managementKey = String(values.managementKey || '').trim();
+    return {
+      ...values,
+      apiKey: apiKey && apiKey !== String(serverSecrets.apiKey || '').trim() ? apiKey : '',
+      managementKey: managementKey && managementKey !== String(serverSecrets.managementKey || '').trim()
+        ? managementKey
+        : ''
+    };
+  };
+
+  const submitServerValues = async (values: ServerConfig) => {
+    const saved = await onSaveServer(valuesForServerSave(values));
+    // 保存成功后立即把密钥快照更新为新值，避免表单短暂回退到旧密钥。
+    const apiKey = String(values.apiKey || '').trim() || serverSecrets.apiKey;
+    const managementKey = String(values.managementKey || '').trim() || serverSecrets.managementKey;
+    appliedSecretRef.current = { apiKey, managementKey };
+    // 留空保存等于保持原密钥：把输入框恢复成实际生效值，避免显示成空。
+    serverForm.setFieldsValue({ apiKey, managementKey });
+    setServerSecrets((current) => ({
+      apiKey,
+      managementKey,
+      apiKeyConfigured: Boolean(apiKey) || current.apiKeyConfigured,
+      managementKeyConfigured: Boolean(managementKey) || current.managementKeyConfigured
+    }));
+    void loadServerSecrets();
+    return saved;
   };
 
   const handleClearProxy = async () => {
     try {
       const values = await serverForm.validateFields();
-      await onSaveServer({ ...values, proxyUrl: '' });
+      await submitServerValues({ ...values, proxyUrl: '' });
     } catch (_error) {
       // 表单校验会自行提示
     }
   };
 
+  // 一键轮换：生成随机密钥并立即写入，不触碰表单里其它未保存草稿。
+  const rotateSecret = async (field: SecretField) => {
+    const label = field === 'apiKey' ? 'API Key' : 'Management Key';
+    setRotatingSecret(field);
+    try {
+      const generated = generateSecureToken();
+      await onApplyServerSecret(field, generated);
+      appliedSecretRef.current = { ...appliedSecretRef.current, [field]: generated };
+      setServerSecrets((current) => (
+        field === 'apiKey'
+          ? { ...current, apiKey: generated, apiKeyConfigured: true }
+          : { ...current, managementKey: generated, managementKeyConfigured: true }
+      ));
+      serverForm.setFieldValue(field, generated);
+      message.success(`${label} 已轮换`);
+    } catch {
+      // 失败反馈由 onApplyServerSecret 写入 serverFeedback。
+    } finally {
+      setRotatingSecret('');
+    }
+  };
+
+  const managementKeyRules: Rule[] = [
+    {
+      validator: async (_rule, value) => {
+        const next = String(value || '').trim();
+        if (!next || next === String(serverSecrets.managementKey || '').trim()) return;
+        if (
+          next.length < MIN_MANAGEMENT_KEY_LENGTH
+          || next.length > MAX_MANAGEMENT_KEY_LENGTH
+          || /[\r\n\0]/.test(next)
+        ) {
+          throw new Error(
+            `Management Key 必须为 ${MIN_MANAGEMENT_KEY_LENGTH}-${MAX_MANAGEMENT_KEY_LENGTH} 个字符，且不能包含换行。`
+          );
+        }
+      }
+    }
+  ];
+
   const serverEffectSummary = listenerDraftChanged
     ? '监听地址/端口保存后需点击“一键重启服务”生效'
     : restartRequired
-      ? '已保存新的监听配置，点击“一键重启服务”后生效'
-      : '代理池保存后立即生效；监听与端口需重启生效';
+      ? '有配置需重启才生效，点击“一键重启服务”完成'
+      : '代理池与 Management Key 立即生效；API Key、监听与端口需重启生效';
 
   return (
     <div className="settings-grid">
@@ -294,7 +432,7 @@ export default function ServiceSettingsSection({
         form={serverForm}
         disabled={loading}
         layout="vertical"
-        onFinish={(values) => { void onSaveServer(values).then(() => void loadServerSecrets()); }}
+        onFinish={(values) => { void submitServerValues(values); }}
         onValuesChange={() => { if (serverFeedback) onClearServerFeedback(); }}
         initialValues={SERVER_FORM_DEFAULTS}
         className="settings-section-form"
@@ -383,68 +521,58 @@ export default function ServiceSettingsSection({
           />
 
           <SettingRow
-            title="当前 API Key"
-            htmlFor="server-api-key-current"
-            description="客户端调用 /v1 接口时使用的密钥。"
-            caveat={currentSecretCaveat(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
-            layout="stacked"
-            control={(
-              <CurrentSecretControl
-                id="server-api-key-current"
-                value={serverSecrets.apiKey}
-                configured={serverSecrets.apiKeyConfigured}
-                onCopy={() => void copyServerSecret('API Key', serverSecrets.apiKey)}
-              />
-            )}
-          />
-
-          <SettingRow
-            title="设置新 API Key"
+            title="API Key"
             htmlFor="server-api-key"
-            description="填写后保存即替换当前密钥。"
-            caveat="留空保持当前密钥不变。"
+            description="客户端调用 /v1 接口时使用的密钥。"
+            caveat={apiKeyCaveat(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
             layout="stacked"
             control={
-              <Form.Item name="apiKey">
-                <Input.Password
-                  id="server-api-key"
-                  autoComplete="new-password"
-                  placeholder="输入新的 API Key（留空保留原配置）"
-                />
-              </Form.Item>
+              <div className="hos-secret-control">
+                <Form.Item name="apiKey" className="hos-secret-control-field">
+                  <SecretInput
+                    id="server-api-key"
+                    autoComplete="new-password"
+                    placeholder={secretPlaceholder(serverSecrets.apiKeyConfigured, serverSecrets.apiKey)}
+                    onCopy={(value) => void copyServerSecret('API Key', value)}
+                  />
+                </Form.Item>
+                <Button
+                  icon={<SwapOutlined />}
+                  loading={rotatingSecret === 'apiKey'}
+                  disabled={loading || serverSaving}
+                  onClick={() => void rotateSecret('apiKey')}
+                >
+                  一键轮换
+                </Button>
+              </div>
             }
           />
 
           <SettingRow
-            title="当前 Management Key"
-            htmlFor="server-management-key-current"
-            description="管理端连接当前 Server 所需的密钥。"
-            caveat={currentSecretCaveat(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
-            layout="stacked"
-            control={(
-              <CurrentSecretControl
-                id="server-management-key-current"
-                value={serverSecrets.managementKey}
-                configured={serverSecrets.managementKeyConfigured}
-                onCopy={() => void copyServerSecret('Management Key', serverSecrets.managementKey)}
-              />
-            )}
-          />
-
-          <SettingRow
-            title="设置新 Management Key"
+            title="Management Key"
             htmlFor="server-management-key"
-            description="填写后保存即轮换当前 Management Key。"
-            caveat="留空保持当前密钥不变；轮换后会同步更新当前默认 Server 凭据。"
+            description="管理端连接当前 Server 所需的密钥。"
+            caveat={managementKeyCaveat(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
             layout="stacked"
             control={
-              <Form.Item name="managementKey">
-                <Input.Password
-                  id="server-management-key"
-                  autoComplete="new-password"
-                  placeholder="输入新的 Management Key（留空保留原配置）"
-                />
-              </Form.Item>
+              <div className="hos-secret-control">
+                <Form.Item name="managementKey" className="hos-secret-control-field" rules={managementKeyRules}>
+                  <SecretInput
+                    id="server-management-key"
+                    autoComplete="new-password"
+                    placeholder={secretPlaceholder(serverSecrets.managementKeyConfigured, serverSecrets.managementKey)}
+                    onCopy={(value) => void copyServerSecret('Management Key', value)}
+                  />
+                </Form.Item>
+                <Button
+                  icon={<SwapOutlined />}
+                  loading={rotatingSecret === 'managementKey'}
+                  disabled={loading || serverSaving}
+                  onClick={() => void rotateSecret('managementKey')}
+                >
+                  一键轮换
+                </Button>
+              </div>
             }
           />
 

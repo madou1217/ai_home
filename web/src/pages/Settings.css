@@ -1033,3 +1033,32 @@
   .settings-actions { width: 100%; display: flex; gap: var(--hos-space-2-5); }
   .settings-actions .ant-btn { flex: 1; height: 44px; }
 }
+/* 服务配置密钥行：眼睛与复制图标都收在输入框内部，复制图标仅在悬停/聚焦时出现。 */
+.hos-secret-control {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2);
+  width: 100%;
+  max-width: 560px;
+}
+.hos-secret-control .hos-secret-control-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.hos-secret-copy.ant-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.hos-secret-input:hover .hos-secret-copy.ant-btn,
+.hos-secret-input:focus-within .hos-secret-copy.ant-btn {
+  opacity: 1;
+}
+.hos-secret-copy.ant-btn:disabled {
+  display: none;
+}
+

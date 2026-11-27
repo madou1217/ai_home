@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/launcher"
@@ -259,8 +260,19 @@ func (handler *Handler) deskView(request *http.Request) (deskView, error) {
 		return view, nil
 	}
 	view.Proxy = status
+	view.Proxy.HTTPURL = stripURLUserinfo(status.HTTPURL)
+	view.Proxy.SOCKS5URL = stripURLUserinfo(status.SOCKS5URL)
 	view.HotSwap = status.HotSwap
 	return view, nil
+}
+
+func stripURLUserinfo(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil {
+		return raw
+	}
+	parsed.User = nil
+	return parsed.String()
 }
 
 func (handler *Handler) renew(response http.ResponseWriter, request *http.Request) {

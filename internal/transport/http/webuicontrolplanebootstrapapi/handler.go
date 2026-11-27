@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/transport/http/webuiauth"
+	"github.com/madou1217/ai_home/internal/transport/http/webuipublicalias"
 )
 
 // Path 是控制面引导的管理面契约路径。
@@ -120,6 +121,17 @@ func IsLoopbackBootstrapRequest(request *http.Request) bool {
 	return true
 }
 
+// isPublicLoopbackBootstrap is the direct loopback exception for requests that
+// entered through the public /v0 alias. The rewrite records the original path
+// in context, so a direct call to the management path still needs auth.
+func isPublicLoopbackBootstrap(request *http.Request) bool {
+	if request == nil {
+		return false
+	}
+	return webuipublicalias.OriginalPath(request.Context()) == PublicPath &&
+		IsLoopbackBootstrapRequest(request)
+}
+
 func isLoopbackPeerAddr(remoteAddr string) bool {
 	trimmed := strings.TrimSpace(remoteAddr)
 	if trimmed == "" {
@@ -168,7 +180,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	if !handler.authorizer.Authorized(request) &&
 		!webuiauth.IsLoopbackBootstrap(request) &&
-		!IsLoopbackBootstrapRequest(request) {
+		!isPublicLoopbackBootstrap(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
@@ -229,10 +241,10 @@ func (handler *Handler) revealableManagementKey(request *http.Request, existing 
 	allowed := false
 	if handler.revealManagementKey != nil {
 		allowed = handler.revealManagementKey(request)
-	} else if webuiauth.IsLoopbackBootstrap(request) || IsLoopbackBootstrapRequest(request) {
+	} else if webuiauth.IsLoopbackBootstrap(request) || isPublicLoopbackBootstrap(request) {
 		// Public /v0 aliases are mounted without the outer webuiauth wrapper, so
-		// the context marker may be absent; the request itself still proves the
-		// same narrow loopback boundary.
+		// the context marker may be absent; the rewrite preserves the original
+		// path so the management path itself gains no direct exception.
 		allowed = IsLoopbackBootstrapRequest(request)
 	}
 	if !allowed {

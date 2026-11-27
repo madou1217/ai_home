@@ -5,9 +5,23 @@
 package webuipublicalias
 
 import (
+	"context"
 	"net/http"
 	"strings"
 )
+
+type originalPathKey struct{}
+
+// OriginalPath returns the pre-rewrite browser path (/v0/webui/...).
+// Handlers that must distinguish the public alias from a direct management
+// call can use this context value; clients cannot spoof it.
+func OriginalPath(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	value, _ := ctx.Value(originalPathKey{}).(string)
+	return value
+}
 
 // PublicAccountPrefix 是浏览器账号数据面的统一前缀。
 //
@@ -28,6 +42,9 @@ func Rewrite(from, to string, handler http.Handler) http.Handler {
 			return
 		}
 		request := r.Clone(r.Context())
+		if r.URL != nil {
+			request = request.WithContext(context.WithValue(request.Context(), originalPathKey{}, r.URL.Path))
+		}
 		if hasSegmentPrefix(r.URL.Path, trimmedFrom) {
 			request.URL.Path = trimmedTo + strings.TrimPrefix(r.URL.Path, trimmedFrom)
 		}

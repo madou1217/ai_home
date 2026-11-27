@@ -470,6 +470,9 @@ func renderAppDesk(output io.Writer, state *appDeskState) {
 				_, _ = fmt.Fprintf(output, "  exited    %s\r\n", time.UnixMilli(current.ExitedAtMs).Format("2006-01-02 15:04:05"))
 			}
 			_, _ = fmt.Fprintf(output, "  id        %s\r\n", current.ID)
+			if current.Adopted {
+				_, _ = fmt.Fprintf(output, "  adopted   复用已有实例（单实例应用）\r\n")
+			}
 		}
 	}
 	_, _ = fmt.Fprintf(output, "%s  ──────────────────────────────────────────────────────────────────────────────%s\r\n", ansiDim, ansiReset)

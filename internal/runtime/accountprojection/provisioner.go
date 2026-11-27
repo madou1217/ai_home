@@ -124,6 +124,25 @@ func (provisioner *Provisioner) Prepare(
 		if request.Credential == nil {
 			return appprojection.Result{}, appprojection.ErrInvalidProjectionRequest
 		}
+		// 启动前先采纳投影里更新一代的凭据：上一次 CLI 在退出窗口内轮换的
+		// token 若没赶上 Capture，这里用同一账号的投影把它补回账号库，避免
+		// 本次 Materialize 用旧一代 token 覆盖掉仍可恢复的新 token。
+		if provisioner.credentials != nil {
+			if captureErr := provisioner.captureLocked(ctx, request, policy, materializer, root); captureErr != nil &&
+				!errors.Is(captureErr, ErrProjectionCaptureSkipped) {
+				return appprojection.Result{}, captureErr
+			}
+			snapshot, snapshotErr := provisioner.credentials.GetCredentialSnapshot(ctx, request.AccountRef)
+			if snapshotErr != nil {
+				return appprojection.Result{}, snapshotErr
+			}
+			if !snapshot.IsValid() ||
+				snapshot.ProviderID() != providerID ||
+				snapshot.AccountRef() != request.AccountRef {
+				return appprojection.Result{}, appprojection.ErrInvalidProjectionRequest
+			}
+			request.Credential = snapshot.Credential()
+		}
 		writes, err := materializer.Materialize(ctx, request, policy, root)
 		if err != nil {
 			return appprojection.Result{}, err
@@ -183,9 +202,27 @@ func (provisioner *Provisioner) Capture(
 		return err
 	}
 	defer release()
+	return provisioner.captureLocked(ctx, request, policy, materializer, root)
+}
+
+// ErrProjectionCaptureSkipped 表示投影凭据不可采纳（身份不符/损坏），
+// 调用方应继续用账号库当前凭据，而不是把这一次读取当成回写失败。
+var ErrProjectionCaptureSkipped = errors.New("projection credential skipped")
+
+// captureLocked 在已持有投影锁时把投影里更新一代的凭据按 CAS 写回。
+func (provisioner *Provisioner) captureLocked(
+	ctx context.Context,
+	request appprojection.Request,
+	policy appprojection.Policy,
+	materializer appprojection.Materializer,
+	root string,
+) error {
 	next, changed, err := materializer.Capture(ctx, request, policy, root)
-	if err != nil || !changed || next == nil {
-		return err
+	if err != nil {
+		return errors.Join(ErrProjectionCaptureSkipped, err)
+	}
+	if !changed || next == nil {
+		return nil
 	}
 	if provisioner.credentials == nil {
 		return appprojection.ErrCredentialStoreUnavailable
@@ -194,6 +231,7 @@ func (provisioner *Provisioner) Capture(
 	if err != nil {
 		return err
 	}
+	providerID := providerruntime.NormalizeProvider(request.ProviderID)
 	if snapshot.ProviderID() != providerID || !materializer.ShouldAdopt(snapshot.Credential(), next) {
 		return nil
 	}

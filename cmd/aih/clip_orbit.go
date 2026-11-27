@@ -347,7 +347,7 @@ func runClipShortcut(args []string, cmdRuntime commandRuntime) error {
 		link := filepath.Join(windowsDesktopDir(home), "AIH Quick Orbit.lnk")
 		launcher := filepath.Join(filepath.Dir(executable), "clip-orbit-hidden.vbs")
 		vbs := fmt.Sprintf("Set sh = CreateObject(\"WScript.Shell\")\r\nsh.Run \"\"\"%s\"\" clip orbit\", 0, False\r\n", strings.ReplaceAll(executable, "\"", "\"\""))
-		script := fmt.Sprintf(`$W=New-Object -ComObject WScript.Shell; $S=$W.CreateShortcut('%s'); $S.TargetPath='%s'; $S.Arguments='"%s"'; $S.WorkingDirectory='%s'; $S.Hotkey='CTRL+ALT+V'; $S.WindowStyle=7; $S.Save()`,
+		script := fmt.Sprintf(`$W=New-Object -ComObject WScript.Shell; $S=$W.CreateShortcut('%s'); $S.TargetPath='%s'; $S.Arguments='"%s"'; $S.WorkingDirectory='%s'; $S.Hotkey=''; $S.WindowStyle=7; $S.Save()`,
 			strings.ReplaceAll(link, "'", "''"),
 			strings.ReplaceAll("C:\\Windows\\System32\\wscript.exe", "'", "''"),
 			strings.ReplaceAll(launcher, "'", "''"),
@@ -355,7 +355,7 @@ func runClipShortcut(args []string, cmdRuntime commandRuntime) error {
 		if action == "print" {
 			_, _ = fmt.Fprintln(cmdRuntime.stdout, "launcher:", launcher)
 			_, _ = fmt.Fprintln(cmdRuntime.stdout, "powershell -NoProfile -Command \""+script+"\"")
-			_, _ = fmt.Fprintln(cmdRuntime.stdout, "目标:", link, "快捷键: Ctrl+Alt+V")
+			_, _ = fmt.Fprintln(cmdRuntime.stdout, "目标:", link, "快捷键由 AihClipHotkey 热键代理提供: Ctrl+Alt+V")
 			return nil
 		}
 		if err := os.WriteFile(launcher, []byte(vbs), 0o644); err != nil {

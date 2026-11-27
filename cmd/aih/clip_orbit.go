@@ -20,6 +20,7 @@ const (
 
 type clipOrbitOptions struct {
 	workspace bool
+	toggle    bool
 	position  string
 	printOnly bool
 	browser   string
@@ -38,6 +39,8 @@ func runClipOrbit(args []string, cmdRuntime commandRuntime) error {
 			options.workspace = true
 		case arg == "--quick":
 			options.workspace = false
+		case arg == "--toggle":
+			options.toggle = true
 		case arg == "--print":
 			options.printOnly = true
 		case arg == "--position" && i+1 < len(args):
@@ -84,7 +87,13 @@ func runClipOrbit(args []string, cmdRuntime commandRuntime) error {
 	if locked {
 		defer release()
 	} else {
+		if options.toggle && closeExistingOrbitWindow(cmdRuntime) {
+			return nil
+		}
 		_ = activateExistingOrbitWindow(cmdRuntime)
+		return nil
+	}
+	if options.toggle && closeExistingOrbitWindow(cmdRuntime) {
 		return nil
 	}
 	if activateExistingOrbitWindow(cmdRuntime) {
@@ -262,6 +271,26 @@ func acquireOrbitLaunchLock(cmdRuntime commandRuntime) (func(), bool) {
 		_ = os.Remove(lockPath)
 	}
 	return func() {}, true
+}
+
+// closeExistingOrbitWindow toggles the Quick Orbit HUD closed. It only targets
+// the Paste // Nexus app window, never ordinary Edge tabs.
+func closeExistingOrbitWindow(cmdRuntime commandRuntime) bool {
+	switch runtime.GOOS {
+	case "windows":
+		command := `$w=New-Object -ComObject WScript.Shell; if($w.AppActivate('Paste // Nexus')){Start-Sleep -Milliseconds 250; $w.SendKeys('%{F4}'); exit 0}; exit 1`
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", command)
+		hideChildWindow(cmd)
+		return cmd.Run() == nil
+	case "darwin":
+		return false
+	default:
+		path, err := exec.LookPath("wmctrl")
+		if err != nil {
+			return false
+		}
+		return exec.Command(path, "-c", "Paste // Nexus").Run() == nil
+	}
 }
 
 // activateExistingOrbitWindow brings an already-open HUD app window to the

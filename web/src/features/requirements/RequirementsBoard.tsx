@@ -468,7 +468,7 @@ export default function RequirementsBoard() {
     try {
       const workspace = selectedWorkWorkspace(requirement.workspacePath);
       if ((action === 'confirm' || action === 'refine' || action === 'dispatch') && !workspace) {
-        message.warning('请先在编辑里选择 /ui/chat（Work）中的工作区'); return;
+        message.warning('请先在编辑里选择 AI 会话 → Work 中的工作区'); return;
       }
       if (action === 'confirm') { await requirementsAPI.update(requirement.id, { status: 'ready' }); message.success('已确认进入排期'); }
       else if (action === 'refine') {
@@ -673,7 +673,7 @@ export default function RequirementsBoard() {
           <div className={styles.primaryActions}>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建需求</Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入</Button>
-            <Button icon={<FolderOpenOutlined />} href="/ui/chat">打开 Work</Button>
+            <Button icon={<FolderOpenOutlined />} href="/ui/work">打开 Work</Button>
           </div>
         </div>
       </header>
@@ -730,7 +730,7 @@ export default function RequirementsBoard() {
               {detail.refinedAt ? <Tag color="purple">AI 已优化 · {(detail.steps || []).length} 步</Tag> : null}
               {detail.source !== 'manual' ? <Tag color="gold">{detail.source}</Tag> : null}
             </div>
-            {detail.workspacePath ? <code className={styles.pathCode}>{detail.workspaceKind === 'connector' ? `本地工作区 · ${workspaceDetail(detail)}（执行时镜像，完成后写回）` : detail.workspacePath}</code> : <div className={styles.inlineNote}><FolderOpenOutlined /> 还没有绑定 Work 工作区。请编辑并选择 /ui/chat（Work）里的项目或远程工作区。</div>}
+            {detail.workspacePath ? <code className={styles.pathCode}>{detail.workspaceKind === 'connector' ? `本地工作区 · ${workspaceDetail(detail)}（执行时镜像，完成后写回）` : detail.workspacePath}</code> : <div className={styles.inlineNote}><FolderOpenOutlined /> 还没有绑定 Work 工作区。请编辑并选择 AI 会话 → Work 里的项目或远程工作区。</div>}
             <div className={styles.detailProgress}><Progress percent={progressOf(detail)} status={detail.status === 'blocked' ? 'exception' : undefined} /><span>{detail.progressNote || '等待调度'}</span></div>
             {detail.lastError ? <div className={styles.inlineError}><ExclamationCircleOutlined /> {detail.lastError}</div> : null}
             <section className={styles.detailSection}>
@@ -769,7 +769,7 @@ export default function RequirementsBoard() {
                   <Tag color="geekblue">{detail.sessionId}</Tag>
                   {detail.workspaceKind === 'connector'
                     ? <span className={styles.muted}>本地 Connector 工作区；执行和同步都在 Server 端完成</span>
-                    : <Button size="small" icon={<LinkOutlined />} href={`/ui/chat?sessionId=${encodeURIComponent(detail.sessionId)}&projectPath=${encodeURIComponent(detail.workspacePath)}`}>在 Work 打开</Button>}
+                    : <Button size="small" icon={<LinkOutlined />} href={`/ui/work?sessionId=${encodeURIComponent(detail.sessionId)}&projectPath=${encodeURIComponent(detail.workspacePath)}`}>在 Work 打开</Button>}
                 </div>
                 {detail.peerMessageId ? <div className={styles.muted}>peer 任务：{detail.peerMessageId}</div> : null}
               </section>

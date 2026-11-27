@@ -24,5 +24,6 @@ export async function resolveBranchParentHref(
     ['embed', 'theme', 'mode'].forEach((key) => { const value = current.get(key); if (value) query.set(key, value); });
     return `${window.location.pathname}?${query}`;
   }
-  return `/ui/chat?${query}`;
+  // Work 会话（带 projectPath）走独立 /work 路由，纯聊天会话仍回 /chat。
+  return `${query.has('projectPath') ? '/ui/work' : '/ui/chat'}?${query}`;
 }

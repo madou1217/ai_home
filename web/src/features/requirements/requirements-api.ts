@@ -25,7 +25,7 @@ export interface Requirement {
   status: RequirementStatus;
   priority: number;
   position: number;
-  /** /ui/chat（Work）里的项目路径或远程工作区影子路径。 */
+  /** /ui/work（Work）里的项目路径或远程工作区影子路径。 */
 	workspacePath: string;
 	workspaceLabel: string;
 	workspaceKind: string;
@@ -141,7 +141,7 @@ export interface RequirementImportInput {
   workspaceKind?: string;
 }
 
-/** 与 /ui/chat（Work）同源的工作区选项。 */
+/** 与 /ui/work（Work）同源的工作区选项。 */
 export interface WorkWorkspaceOption {
   path: string;
   label: string;

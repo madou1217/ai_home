@@ -375,7 +375,7 @@ export function SshWorkspaceCardList({ workspaces, connections, loading, onEdit,
                     size="small"
                     type="primary"
                     icon={<MessageOutlined />}
-                    href={buildAppHref('/chat', `?projectPath=${encodeURIComponent(workspace.projectPath)}`)}
+                    href={buildAppHref('/work', `?projectPath=${encodeURIComponent(workspace.projectPath)}`)}
                     title="作为 Work 项目打开：文件与命令在远端执行"
                   >
                     在 Work 中打开

@@ -48,6 +48,12 @@ func matchPIDs(instance Instance, processes []Process, now time.Time) ([]int, bo
 		if !matchesInstance(instance, process.Command) {
 			continue
 		}
+		// A plain launch must not adopt the desk's proxied browser instance:
+		// both share the executable, only one has the isolated app-proxy profile.
+		if instance.ProfileDir == "" && !instance.Proxied &&
+			strings.Contains(process.Command, "app-proxy") {
+			continue
+		}
 		if adoptedStart.IsZero() || process.StartedAt.After(adoptedStart) {
 			adoptedStart = process.StartedAt
 			matched = []int{process.PID}

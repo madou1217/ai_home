@@ -37,7 +37,7 @@ export function getVisibleProjectSessions(projectSessions, isExpanded, isSession
 }
 
 /** 项目行 provider / agent / harness 图标最多展示数量，多余收进 +N。 */
-export const PROJECT_PROVIDER_BADGE_LIMIT = 5;
+export const PROJECT_PROVIDER_BADGE_LIMIT = 6;
 
 /**
  * 按「活跃会话」给项目的 provider / agent / harness 排序：

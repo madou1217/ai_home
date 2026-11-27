@@ -473,3 +473,16 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
   - Mac 与 Windows 各复制同一批 `copy-a.txt/copy-b.txt`，Windows 历史仍只有 1 条（upsert 到已有 SHA），Mac 也仍为 1 条；
   - 热键代理日志 `register=True win32=1401`，模拟 `Ctrl+Alt+V` 后记录 `triggered` 并实际弹出 Quick Orbit；
   - Windows 服务 Watchdog 同时守护 `aih-server.exe` 与热键代理。
+
+## 29. 文件包 BLAKE3 内容身份与缓存（2026-11-27）
+
+- `core/filehash`：并行计算每个文件的 BLAKE3 全文摘要（最多 8 个 worker），持久化缓存键为 `path + size + mtime`，缓存文件 `~/.ai_home/cache/clipboard-file-hashes.json`（0600，原子替换）。重复复制同一文件不再读盘。
+- `clipboard_items` 新增 `file_hashes_json`；同步信封新增 `fileHashes`。文件包 SHA 改为“排序后的 per-file BLAKE3 列表”（文件名不参与身份），因此同一批内容即使跨设备路径不同、临时文件名不同，也收敛为同一条记录；文件数量/重复文件仍由 hash 列表体现。
+- 传输 lazy 不变：源端只在捕获时读本地文件算 hash，hash 进入 meta；文件字节仍然只在粘贴时按需 zip/分片传输。
+- 缓存失效/文件被替换时按 size+mtime 重算；文件不可读时 hash 为空并回退到旧的文件名+总大小身份。
+- 真实验证：
+  - Mac 复制 `hash-a.txt(alpha) + hash-b.txt(beta)`，Windows stub 具有相同 SHA；
+  - Mac 再用不同文件名 `renamed-x/renamed-y` 复制相同内容 → 同一 item ID，不新增记录；
+  - Windows 再用 `local-alpha/local-beta` 复制相同内容 → 仍为 1 条记录，ID/SHA 不变，files 更新为 Windows 路径；
+  - 两侧缓存文件写入 alpha/beta 的 BLAKE3 摘要。
+- 边界：旧条目没有 `fileHashes` 时仍使用 names+size 身份；BLAKE3 读取发生在捕获时，100 GB 级别文件包会消耗相应本地 IO，但不会提前跨设备传输内容。

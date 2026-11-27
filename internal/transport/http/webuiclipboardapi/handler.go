@@ -147,6 +147,7 @@ type itemView struct {
 	Preview          string         `json:"preview"`
 	ThumbnailDataURL string         `json:"thumbnailDataUrl,omitempty"`
 	Files            []string       `json:"files,omitempty"`
+	FileHashes       []string       `json:"fileHashes,omitempty"`
 	SourceDevice     string         `json:"sourceDevice,omitempty"`
 	SourceApp        string         `json:"sourceApp,omitempty"`
 	Pinned           bool           `json:"pinned"`
@@ -178,6 +179,7 @@ func toItemView(item clipboard.Item) itemView {
 		Preview:          item.Preview,
 		ThumbnailDataURL: clipboard.ThumbnailDataURL(item.Thumbnail),
 		Files:            item.Files,
+		FileHashes:       item.FileHashes,
 		SourceDevice:     item.SourceDevice,
 		SourceApp:        item.SourceApp,
 		Pinned:           item.Pinned,

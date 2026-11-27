@@ -137,7 +137,10 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
 - 根因：`autostart.installWindows` 的 ONLOGON 计划任务把 `.cmd` 直接作为 action，Task Scheduler 以可见控制台启动 `cmd.exe`；Win11 默认终端接管后出现空白终端窗口，关闭即杀掉 Server 进程树。
 - 修复：`<home>\run\aih-server-launch.vbs`（`WScript.Shell.Run "<comspec> /d /s /c "<serve.cmd>"", 0, False`）；任务 action 改为 `wscript.exe //nologo <vbs>`；Startup 兜底也写 VBS（删除旧 `.cmd`）；WMI 重启路径复用同一 VBS；`serviceFiles` 纳入备份/回滚。
 - 真机：按同一逻辑改造任务并重启后 `readyz=200`；server 与 helper `MainWindowHandle=0`；交互会话窗口枚举不再出现该终端（仅剩用户自己的 PowerShell 终端），server 父进程 `cmd.exe` 命令行正确且无窗口。
-- 发行状态：代码已提交（`0796fc82`、`228a9a83`）；1.0.13 构建时 `origin/main` 因并行会话未提交的 `cmd/aih/global_sessions_native.go` 无法编译，待 main 恢复后以新版本补发并复验。
+- 首个发行验证暴露的第二个缺陷：`installWindows` 把 `/TR` 的值又包了一层 `windowsQuote`，schtasks 最终存成 `Execute=wscript.exe //nologo "` + 分离的参数字符串，任务实际不执行；安装器的 90 秒启动验证因此报 `readyz connection refused`，回滚也超时（1.0.14/1.0.15）。修复：`/TR` 直接传单个 argv（由 Go 负责 CreateProcess 转义），并用 `New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd` 覆盖 schtasks 默认的电池/空闲停止策略。
+- 真机复验（`com.meadeo.ai_home.probe` 任务）：action 为 `wscript.exe` + `//nologo "…\aih-server-launch.vbs"`，`battery_disallow=False`、`idle_stop=False`，任务启动后 `readyz=yes`，server 来自目标发行包。
+- 发行状态：代码提交 `3982d2cb`（引号修复）、`7948e61a`（1.0.16）；1.0.13 曾因并行会话未提交文件 `cmd/aih/global_sessions_native.go` 无法构建，main 恢复后发布 1.0.16。
+- 1.0.16 真机验收：安装到 `pkg\\1.0.16-win32-x64-f1a60056`；任务 `com.meadeo.ai_home` = `wscript.exe` + `//nologo "…\\run\\aih-server-launch.vbs"`（ONLOGON / madou / Interactive），`battery_disallow=False`、`stop_on_battery=False`、`idle_stop=False`；`readyz` 为 `ready:true`（64 模型 / 126 路由）；优雅停止后经任务重启仍 `ready`，server `MainWindowHandle=0`，交互会话窗口枚举只剩用户自己的 PowerShell 终端；启动器目录 187 条，`微信/计算器/百度/thunder/dingtalk/终端/商店/截图/资源管理器/刀塔/腾讯` 等中英查询正常。
 
 ## 5. 已知限制 / 复验步骤
 

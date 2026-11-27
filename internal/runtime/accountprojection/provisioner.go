@@ -133,15 +133,19 @@ func (provisioner *Provisioner) Prepare(
 				return appprojection.Result{}, captureErr
 			}
 			snapshot, snapshotErr := provisioner.credentials.GetCredentialSnapshot(ctx, request.AccountRef)
-			if snapshotErr != nil {
+			switch {
+			case snapshotErr == nil:
+				if !snapshot.IsValid() ||
+					snapshot.ProviderID() != providerID ||
+					snapshot.AccountRef() != request.AccountRef {
+					return appprojection.Result{}, appprojection.ErrInvalidProjectionRequest
+				}
+				request.Credential = snapshot.Credential()
+			case errors.Is(snapshotErr, accountapp.ErrCredentialNotFound):
+				// 测试/合成启动可能只带 request.Credential，没有落库；保持原凭据。
+			default:
 				return appprojection.Result{}, snapshotErr
 			}
-			if !snapshot.IsValid() ||
-				snapshot.ProviderID() != providerID ||
-				snapshot.AccountRef() != request.AccountRef {
-				return appprojection.Result{}, appprojection.ErrInvalidProjectionRequest
-			}
-			request.Credential = snapshot.Credential()
 		}
 		writes, err := materializer.Materialize(ctx, request, policy, root)
 		if err != nil {
@@ -229,6 +233,9 @@ func (provisioner *Provisioner) captureLocked(
 	}
 	snapshot, err := provisioner.credentials.GetCredentialSnapshot(ctx, request.AccountRef)
 	if err != nil {
+		if errors.Is(err, accountapp.ErrCredentialNotFound) {
+			return nil
+		}
 		return err
 	}
 	providerID := providerruntime.NormalizeProvider(request.ProviderID)

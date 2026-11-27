@@ -50,6 +50,9 @@ type ProxyOptions struct {
 	ProfileDir string
 	// ExtraArgs 仅对 Chromium 系生效，追加在代理参数之后。
 	ExtraArgs []string
+	// Independent 强制启动独立实例（即使没有代理）。看台需要可追踪的进程，
+	// 复用已有实例会拿到一个启动前就存在的 PID。
+	Independent bool
 }
 
 // ProxyModeFor 判定应用的代理能力。
@@ -81,13 +84,23 @@ func ProxyModeFor(app launcher.App) ProxyMode {
 func OpenWithProxy(ctx context.Context, app launcher.App, options ProxyOptions) (ProxyMode, error) {
 	mode := ProxyModeFor(app)
 	proxyURL := strings.TrimSpace(options.URL)
-	if proxyURL == "" {
+	if proxyURL == "" && !options.Independent {
 		return mode, New().Open(ctx, app)
 	}
-	if mode == ProxyModeChromium && strings.TrimSpace(options.ProfileDir) == "" {
+	if mode == ProxyModeChromium && proxyURL != "" && strings.TrimSpace(options.ProfileDir) == "" {
 		options.ProfileDir = defaultChromiumProfile(app, proxyURL, options.AIHomeDir)
 	}
 	return mode, openWithProxy(ctx, app, mode, proxyURL, options)
+}
+
+// ProfileDir returns the isolated browser profile used by a proxied launch.
+// Non-Chromium apps and empty proxy URLs return "".
+func ProfileDir(app launcher.App, proxyURL, aiHomeDir string) string {
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL == "" || ProxyModeFor(app) != ProxyModeChromium {
+		return ""
+	}
+	return defaultChromiumProfile(app, proxyURL, aiHomeDir)
 }
 
 // OpenWithProxy 与包级函数同义，供依赖注入的 Launcher 端口使用。

@@ -114,6 +114,10 @@ func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies
 		// 代理启动复用同一 launcher.Service：WebUI、TAB、CLI 的应用集合不会漂移。
 		{Pattern: webuiappsapi.Path, Handler: appsHandler, SkipPublicAlias: true},
 		{Pattern: webuiappsapi.LaunchPath, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.DeskPath, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.DeskRenewPath, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.DeskKillPath, Handler: appsHandler, SkipPublicAlias: true},
+		{Pattern: webuiappsapi.DeskHotSwapPath, Handler: appsHandler, SkipPublicAlias: true},
 	}
 	return rt, routes, nil
 }

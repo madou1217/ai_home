@@ -13,6 +13,8 @@ import (
 
 	"github.com/madou1217/ai_home/application/launcher"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/runtime/appsessions"
+	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
 )
 
 const (
@@ -22,6 +24,16 @@ const (
 	//	POST /v1/management/webui/apps/launch
 	Path       = "/v1/management/webui/apps"
 	LaunchPath = Path + "/launch"
+	// DeskPath 是「应用看台」：已启动实例 + 代理状态 + 续约/结束/热替换。
+	//
+	//	GET  /v1/management/webui/apps/desk
+	//	POST /v1/management/webui/apps/desk/renew
+	//	POST /v1/management/webui/apps/desk/kill
+	//	POST /v1/management/webui/apps/desk/hot-swap
+	DeskPath        = Path + "/desk"
+	DeskRenewPath   = DeskPath + "/renew"
+	DeskKillPath    = DeskPath + "/kill"
+	DeskHotSwapPath = DeskPath + "/hot-swap"
 
 	maxBodyBytes = 16 * 1024
 )
@@ -94,6 +106,34 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			return
 		}
 		handler.launch(response, request)
+	case DeskPath:
+		if request.Method != http.MethodGet {
+			response.Header().Set("Allow", http.MethodGet)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
+			return
+		}
+		handler.desk(response, request)
+	case DeskRenewPath:
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", http.MethodPost)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
+			return
+		}
+		handler.renew(response, request)
+	case DeskKillPath:
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", http.MethodPost)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
+			return
+		}
+		handler.kill(response, request)
+	case DeskHotSwapPath:
+		if request.Method != http.MethodPost {
+			response.Header().Set("Allow", http.MethodPost)
+			writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"ok": false, "error": "method_not_allowed"})
+			return
+		}
+		handler.hotSwap(response, request)
 	default:
 		writeJSON(response, http.StatusNotFound, map[string]any{"ok": false, "error": "route_not_found"})
 	}
@@ -152,11 +192,24 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		}
 	}
 	mode, err := handler.launcher.OpenWithProxy(request.Context(), app, applaunch.ProxyOptions{
-		URL:       proxyURL,
-		AIHomeDir: handler.aiHomeDir,
+		URL:         proxyURL,
+		AIHomeDir:   handler.aiHomeDir,
+		ProfileDir:  applaunch.ProfileDir(app, proxyURL, handler.aiHomeDir),
+		Independent: true,
 	})
 	if err != nil {
 		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "launch_failed", "message": err.Error()})
+		return
+	}
+	instance, recordErr := appsessions.New(handler.aiHomeDir).Add(request.Context(), appsessions.NewInstance(
+		app,
+		appsessions.ExecutableFor(app),
+		applaunch.ProfileDir(app, proxyURL, handler.aiHomeDir),
+		proxyURL,
+		string(mode),
+	))
+	if recordErr != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "record_failed", "message": recordErr.Error()})
 		return
 	}
 	writeJSON(response, http.StatusOK, map[string]any{
@@ -165,7 +218,137 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		"proxyUrl":   proxyURL,
 		"proxyMode":  mode,
 		"proxyLabel": mode.Label(),
+		"instance":   instance,
 	})
+}
+
+func (handler *Handler) desk(response http.ResponseWriter, request *http.Request) {
+	view, err := handler.deskView(request)
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "desk_failed", "message": err.Error()})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "desk": view})
+}
+
+type deskView struct {
+	Instances  []appsessions.Instance `json:"instances"`
+	Proxy      proxycontrol.Status    `json:"proxy"`
+	HotSwap    bool                   `json:"hotSwap"`
+	ProxyError string                 `json:"proxyError,omitempty"`
+}
+
+func (handler *Handler) deskView(request *http.Request) (deskView, error) {
+	instances, err := appsessions.New(handler.aiHomeDir).List(request.Context())
+	if err != nil {
+		return deskView{}, err
+	}
+	view := deskView{
+		Instances: instances,
+		HotSwap:   proxycontrol.LoadSettings(handler.aiHomeDir).HotSwap,
+	}
+	client, loadErr := proxycontrol.Load(handler.aiHomeDir)
+	if loadErr != nil {
+		view.ProxyError = loadErr.Error()
+		return view, nil
+	}
+	status, statusErr := client.Status(request.Context())
+	if statusErr != nil {
+		view.ProxyError = statusErr.Error()
+		view.Proxy = status
+		return view, nil
+	}
+	view.Proxy = status
+	view.HotSwap = status.HotSwap
+	return view, nil
+}
+
+func (handler *Handler) renew(response http.ResponseWriter, request *http.Request) {
+	var payload struct {
+		IDs []string `json:"ids"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes)).Decode(&payload)
+	if len(payload.IDs) > 0 {
+		instances, err := appsessions.New(handler.aiHomeDir).List(request.Context())
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "desk_failed", "message": err.Error()})
+			return
+		}
+		proxied := false
+		wanted := make(map[string]struct{}, len(payload.IDs))
+		for _, id := range payload.IDs {
+			wanted[strings.TrimSpace(id)] = struct{}{}
+		}
+		for _, instance := range instances {
+			if _, ok := wanted[instance.ID]; ok && instance.Proxied {
+				proxied = true
+				break
+			}
+		}
+		if !proxied {
+			writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "app_not_proxied", "message": "选中的应用没有使用代理"})
+			return
+		}
+	}
+	client, err := proxycontrol.Load(handler.aiHomeDir)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "proxy_not_running", "message": err.Error()})
+		return
+	}
+	status, renewErr := client.Renew(request.Context())
+	if renewErr != nil {
+		writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "renew_failed", "message": renewErr.Error(), "proxy": status})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "proxy": status})
+}
+
+func (handler *Handler) kill(response http.ResponseWriter, request *http.Request) {
+	var payload struct {
+		IDs []string `json:"ids"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes)).Decode(&payload) != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload"})
+		return
+	}
+	results, err := appsessions.New(handler.aiHomeDir).Kill(request.Context(), payload.IDs)
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "kill_failed", "message": err.Error()})
+		return
+	}
+	view, viewErr := handler.deskView(request)
+	payloadOut := map[string]any{"ok": true, "results": results}
+	if viewErr == nil {
+		payloadOut["desk"] = view
+	}
+	writeJSON(response, http.StatusOK, payloadOut)
+}
+
+func (handler *Handler) hotSwap(response http.ResponseWriter, request *http.Request) {
+	var payload struct {
+		Enabled bool `json:"enabled"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes)).Decode(&payload) != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload"})
+		return
+	}
+	client, loadErr := proxycontrol.Load(handler.aiHomeDir)
+	if loadErr != nil {
+		// No running entry: persist the preference for the next start.
+		if err := proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{Version: 1, HotSwap: payload.Enabled}); err != nil {
+			writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "save_failed", "message": err.Error()})
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]any{"ok": true, "hotSwap": payload.Enabled, "running": false})
+		return
+	}
+	status, err := client.SetHotSwap(request.Context(), payload.Enabled)
+	if err != nil {
+		writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "hot_swap_failed", "message": err.Error(), "proxy": status})
+		return
+	}
+	_ = proxycontrol.SaveSettings(handler.aiHomeDir, proxycontrol.Settings{Version: 1, HotSwap: payload.Enabled})
+	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "hotSwap": payload.Enabled, "proxy": status})
 }
 
 func resolveApp(apps []launcher.App, id, query string) (launcher.App, error) {

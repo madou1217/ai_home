@@ -32,7 +32,7 @@ func openWithProxy(ctx context.Context, app launcher.App, mode ProxyMode, proxyU
 		return err
 	}
 	argv[0] = binary
-	if mode == ProxyModeChromium {
+	if mode == ProxyModeChromium && proxyURL != "" {
 		if err := ensureProfileDir(options.ProfileDir); err != nil {
 			return err
 		}

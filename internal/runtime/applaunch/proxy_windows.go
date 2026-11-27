@@ -31,7 +31,7 @@ func openWithProxy(ctx context.Context, app launcher.App, mode ProxyMode, proxyU
 		command = exec.Command("cmd", "/c", "start", "", target)
 	} else {
 		arguments := []string{}
-		if mode == ProxyModeChromium {
+		if mode == ProxyModeChromium && proxyURL != "" {
 			if err := ensureProfileDir(options.ProfileDir); err != nil {
 				return err
 			}

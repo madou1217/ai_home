@@ -256,7 +256,7 @@ var docExamples = map[string]docExample{
 		Example: "aih proxy serve --selector auto",
 	},
 	"aih app": {
-		Usage:   "aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--refresh] [--json]",
+		Usage:   "aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list|--status] [--refresh] [--json]",
 		Example: "aih app \"Microsoft Edge\" --proxy",
 	},
 	"aih proxy service install": {
@@ -419,6 +419,9 @@ var docDetails = map[string][]string{
 		"其它应用注入 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY；应用自己不读取这些变量时，代理不会生效，CLI 会明确提示。",
 		"默认代理地址是匿名入口 http://127.0.0.1:6152；入口文件 run/proxy/entry.json 中的地址也会被探测，--proxy-url 可覆盖。",
 		"aih app --list 列出目录并标注每个应用的代理方式；--refresh 强制重新扫描（Windows 的 Shell 枚举可能较慢）。",
+		"不带参数进入应用看台：显示通过 aih app 启动的实例、PID、代理与租约状态；↑/↓ 选择，space 标记，r 续约，x 结束，X 全部结束，t 切换热替换。",
+		"aih app --status 输出同一份数据的纯文本表；--json 供脚本/WebUI 消费。",
+		"入口上游热替换默认关闭：关闭时续约/失效恢复会重建入口（短暂断线）；开启后原地替换上游，连当前失败请求也会重试一次。",
 	},
 	"aih proxy serve": {
 		"入口默认只监听 loopback，不需要用户名密码；6152/6153 空闲时默认使用这两个端口，被占用会改用临时端口并在输出中说明。",

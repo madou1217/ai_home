@@ -17,14 +17,16 @@ func openWithProxy(_ context.Context, app launcher.App, mode ProxyMode, proxyURL
 		return errors.New("应用缺少可启动路径")
 	}
 	args := []string{"-n", "-a", target}
-	for key, value := range ProxyEnvironment(proxyURL) {
-		// 只传大写一套；open 会把变量原样写入子进程环境，重复的小写值没有意义。
-		switch key {
-		case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY":
-			args = append(args, "--env", key+"="+value)
+	if proxyURL != "" {
+		for key, value := range ProxyEnvironment(proxyURL) {
+			// 只传大写一套；open 会把变量原样写入子进程环境，重复的小写值没有意义。
+			switch key {
+			case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY":
+				args = append(args, "--env", key+"="+value)
+			}
 		}
 	}
-	if mode == ProxyModeChromium {
+	if mode == ProxyModeChromium && proxyURL != "" {
 		if err := ensureProfileDir(options.ProfileDir); err != nil {
 			return err
 		}

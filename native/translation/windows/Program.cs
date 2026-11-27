@@ -1789,7 +1789,6 @@ internal sealed class LauncherWindow : Form
 
     private IntPtr previousForegroundWindow = IntPtr.Zero;
     private DateTime suppressDeactivateUntilUtc = DateTime.MinValue;
-    private bool acrylicEnabled;
 
     private enum AnimPhase { Idle, Showing, Hiding }
     private AnimPhase animPhase = AnimPhase.Idle;
@@ -1903,42 +1902,6 @@ internal sealed class LauncherWindow : Form
             _ = DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
         }
         catch { }
-        acrylicEnabled = TryEnableAcrylic();
-    }
-
-    private bool TryEnableAcrylic()
-    {
-        try
-        {
-            var accent = new AccentPolicy
-            {
-                AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,
-                AccentFlags = 2,
-                GradientColor = AcrylicGradientColor,
-                AnimationId = 0
-            };
-            var size = Marshal.SizeOf<AccentPolicy>();
-            var ptr = Marshal.AllocHGlobal(size);
-            try
-            {
-                Marshal.StructureToPtr(accent, ptr, false);
-                var data = new WindowCompositionAttributeData
-                {
-                    Attribute = WCA_ACCENT_POLICY,
-                    Data = ptr,
-                    SizeOfData = size
-                };
-                return SetWindowCompositionAttribute(Handle, ref data) != 0;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(ptr);
-            }
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private void EnsureFonts()
@@ -2632,24 +2595,13 @@ internal sealed class LauncherWindow : Form
         var rect = new RectangleF(0, 0, ClientSize.Width, ClientSize.Height);
         var radius = Sf(14f);
 
-        // Panel backdrop: use SourceCopy with low-alpha tint when Acrylic is active so DWM blur
-        // shows through cleanly; otherwise fill with opaque dark gradient fallback.
-        if (acrylicEnabled)
+        // Opaque gradient backdrop. The acrylic blur-behind material tinted every
+        // pixel of the window (including child controls), which made the search
+        // field render lighter than the pill painted behind it; the solid fallback
+        // keeps the field, the pill and the panel on one deterministic palette.
+        using (var bgBrush = new LinearGradientBrush(rect, BgTop, BgBottom, 90f))
         {
-            var prevMode = g.CompositingMode;
-            g.CompositingMode = CompositingMode.SourceCopy;
-            using (var bgBrush = new LinearGradientBrush(rect, Color.FromArgb(24, 16, 23, 39), Color.FromArgb(32, 8, 11, 21), 90f))
-            {
-                g.FillRectangle(bgBrush, rect);
-            }
-            g.CompositingMode = prevMode;
-        }
-        else
-        {
-            using (var bgBrush = new LinearGradientBrush(rect, BgTop, BgBottom, 90f))
-            {
-                g.FillRectangle(bgBrush, rect);
-            }
+            g.FillRectangle(bgBrush, rect);
         }
 
         // Subtle top-left cyan ambient glow (no left accent bar).
@@ -2990,32 +2942,9 @@ internal sealed class LauncherWindow : Form
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
-    private const int WCA_ACCENT_POLICY = 19;
-    private const int ACCENT_ENABLE_ACRYLICBLURBEHIND = 4;
-    private const uint AcrylicGradientColor = 0xCC0B1220;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct AccentPolicy
-    {
-        public int AccentState;
-        public int AccentFlags;
-        public uint GradientColor;
-        public int AnimationId;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WindowCompositionAttributeData
-    {
-        public int Attribute;
-        public IntPtr Data;
-        public int SizeOfData;
-    }
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-
-    [DllImport("user32.dll")]
-    private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
 
     private void ForceForeground()
     {

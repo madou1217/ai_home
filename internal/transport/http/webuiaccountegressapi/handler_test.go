@@ -2,6 +2,7 @@ package webuiaccountegressapi
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/agy/egress"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	_ "modernc.org/sqlite"
@@ -47,18 +49,33 @@ func seed(t *testing.T) string {
 	return directory
 }
 
-// seedGoAccount 在 aih.db 的 accounts 表登记账号：账号归属已从 app-state.db 迁到 Go 权威库。
+// seedGoAccount 用 sqliteaccount 的真实 schema 建 aih.db，再插入账号行。
 func seedGoAccount(t *testing.T, directory, accountRef, provider string) {
 	t.Helper()
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
+	if err != nil {
+		t.Fatalf("NewCatalog() error = %v", err)
+	}
+	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
+		AIHomeDir: directory,
+		Catalog:   catalog,
+	})
+	if err != nil {
+		t.Fatalf("open aih.db: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close aih.db: %v", err)
+	}
 	database, err := sql.Open("sqlite", filepath.Join(directory, "aih.db"))
 	if err != nil {
 		t.Fatalf("open aih.db: %v", err)
 	}
 	defer func() { _ = database.Close() }()
-	if _, err := database.Exec("CREATE TABLE IF NOT EXISTS accounts (account_ref TEXT PRIMARY KEY, provider_id TEXT NOT NULL)"); err != nil {
-		t.Fatalf("create accounts: %v", err)
-	}
-	if _, err := database.Exec("INSERT OR REPLACE INTO accounts (account_ref, provider_id) VALUES (?, ?)", accountRef, provider); err != nil {
+	if _, err := database.Exec(
+		"INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms) "+
+			"VALUES (?, ?, (SELECT COALESCE(MAX(cli_account_id), 0) + 1 FROM accounts WHERE provider_id = ?), 1, 1, 1)",
+		accountRef, provider, provider,
+	); err != nil {
 		t.Fatalf("insert accounts: %v", err)
 	}
 }

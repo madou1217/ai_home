@@ -1,14 +1,18 @@
 package webuimobileaccountapi
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
 	_ "modernc.org/sqlite"
 )
@@ -24,28 +28,23 @@ type fakeAuthorizer struct{ allowed bool }
 
 func (fake fakeAuthorizer) Authorized(*http.Request) bool { return fake.allowed }
 
-// newAppState 创建带 account_refs/compat_account_credentials 的临时 aih.db。
+// newAppState 用 sqliteaccount 的真实 schema 建临时 aih.db。
 func newAppState(t *testing.T) string {
 	t.Helper()
 	directory := t.TempDir()
-	db, err := sql.Open("sqlite", filepath.Join(directory, appstate.DatabaseFileName))
+	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("NewCatalog() error = %v", err)
 	}
-	defer func() { _ = db.Close() }()
-	for _, statement := range []string{
-		`CREATE TABLE accounts (
-			account_ref TEXT PRIMARY KEY,
-			provider_id TEXT NOT NULL
-		)`,
-		`CREATE TABLE account_credentials (
-			account_ref TEXT PRIMARY KEY,
-			credential_json TEXT NOT NULL DEFAULT '{}'
-		)`,
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("create table: %v", err)
-		}
+	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
+		AIHomeDir: directory,
+		Catalog:   catalog,
+	})
+	if err != nil {
+		t.Fatalf("open aih.db: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close aih.db: %v", err)
 	}
 	return directory
 }
@@ -58,7 +57,9 @@ func insertAccount(t *testing.T, directory string, provider string, accountRef s
 	}
 	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(
-		`INSERT INTO accounts (account_ref, provider_id) VALUES (?, ?)`, accountRef, provider,
+		`INSERT INTO accounts (account_ref, provider_id, cli_account_id, enabled, created_at_ms, updated_at_ms)
+		 VALUES (?, ?, (SELECT COALESCE(MAX(cli_account_id), 0) + 1 FROM accounts WHERE provider_id = ?), 1, 1, 1)`,
+		accountRef, provider, provider,
 	); err != nil {
 		t.Fatalf("insert accounts: %v", err)
 	}
@@ -66,8 +67,12 @@ func insertAccount(t *testing.T, directory string, provider string, accountRef s
 	if !json.Valid([]byte(credentialJSON)) {
 		t.Fatalf("native auth 不是合法 JSON: %s", nativeAuth)
 	}
+	credentialRef := "cred_" + strings.TrimPrefix(accountRef, "acct_")
 	if _, err := db.Exec(
-		`INSERT INTO account_credentials (account_ref, credential_json) VALUES (?, ?)`, accountRef, credentialJSON,
+		`INSERT INTO account_credentials
+		 (account_ref, credential_ref, auth_kind, auth_mode, format_version, credential_json, updated_at_ms)
+		 VALUES (?, ?, 'oauth', '', 1, ?, 1)`,
+		accountRef, credentialRef, credentialJSON,
 	); err != nil {
 		t.Fatalf("insert account_credentials: %v", err)
 	}

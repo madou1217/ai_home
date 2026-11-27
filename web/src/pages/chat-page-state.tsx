@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
-import { history } from '@umijs/max';
+import { history, useLocation } from '@umijs/max';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import { resolveAppRoutePathname } from '@/services/app-navigation';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
@@ -50,12 +50,17 @@ const WORK_ROUTE_PATH = '/chat/work';
  * 桌面主站把模式映射到菜单子路由：/chat = chat、/chat/work = work。
  * 快捷小窗（launchMode / urlSelectionOnly）与移动端没有主站路由语义，返回 null 保持原行为。
  */
+function modeFromPathname(pathname: string | undefined): WorkspaceMode | null {
+  if (!pathname) return null;
+  const normalized = resolveAppRoutePathname(pathname);
+  if (normalized === WORK_ROUTE_PATH) return 'work';
+  if (normalized === CHAT_ROUTE_PATH) return 'chat';
+  return null;
+}
+
 function resolveExplicitRouteMode(): WorkspaceMode | null {
   if (typeof window === 'undefined') return null;
-  const pathname = resolveAppRoutePathname(window.location.pathname);
-  if (pathname === WORK_ROUTE_PATH) return 'work';
-  if (pathname === CHAT_ROUTE_PATH) return 'chat';
-  return null;
+  return modeFromPathname(window.location.pathname);
 }
 
 /**
@@ -102,6 +107,21 @@ export function useChatPageState(
     }
   }, [mobile, launchMode, options.urlSelectionOnly]);
 
+  // /chat 与 /chat/work 渲染同一个 Chat 组件，菜单跳转不会重新挂载，useState 初值也不会重跑。
+  // 只订阅 location 才能把路由变化同步成 workspaceMode；否则点菜单后页面仍停在旧模式，
+  // 表现为 chat / work 没有真正分离。
+  const location = useLocation();
+  const locationMode = routeDrivenMode ? modeFromPathname(location?.pathname) : null;
+  useEffect(() => {
+    if (!locationMode) return;
+    // 深链 /chat?projectPath=... 仍应进 Work：把地址补成 /chat/work，保持 UI 与 URL 一致。
+    if (locationMode === 'chat' && new URLSearchParams(location.search).get('projectPath')) {
+      history.replace({ pathname: WORK_ROUTE_PATH, search: location.search });
+      return;
+    }
+    setWorkspaceMode(locationMode);
+  }, [locationMode, location?.search]);
+
   const [workScope, setWorkScope] = useState<WorkScope>(() => {
     if (typeof window === 'undefined') return 'local';
     return window.localStorage.getItem(STORAGE_KEY_WORK_SCOPE) === 'remote' ? 'remote' : 'local';
@@ -126,6 +146,9 @@ export function useChatPageState(
   const initialRouteModeRef = useRef(routeDrivenMode ? resolveExplicitRouteMode() : null);
   const initialSessionKeyRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    // 桌面主站的模式由路由决定（/chat vs /chat/work），会话恢复不能反向改写路由，
+    // 否则在 Work 恢复出上次的纯聊天会话时会被弹回 Chat。
+    if (routeDrivenMode) return;
     const session = projectCatalog.selectedSession;
     if (!session) return;
     const key = `${session.id || ''}:${session.projectPath || ''}`;

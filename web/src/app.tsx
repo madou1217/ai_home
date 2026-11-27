@@ -223,21 +223,25 @@ function renderHudMenuItem(item: HudMenuItem, dom: ReactNode) {
   );
 }
 
-// 没有自身 path 的父菜单（如「AI 会话」）在 ProLayout 里只有 antd 的展开/收起，
-// 标题上没有任何导航目标，用户点它感知为「完全没反应」。取第一个真实叶子子项的
-// path 作为父菜单的点击目标（AI 会话 → /chat，即 Chat 子页）。
-// 有 path 的父菜单（项目管理 /projects、灵感工坊 /studio）保持 ProLayout 原行为不动，
-// 避免改变它们既有的展开与导航语义。
-function resolveSubmenuClickPath(item: HudMenuItem): string | undefined {
-  if (item.path) return undefined;
-  if (!Array.isArray(item.children)) return undefined;
-  for (const child of item.children) {
-    if (!child || typeof child !== 'object') continue;
-    const candidate = child as HudMenuItem;
-    if (candidate.isUrl || !candidate.path || Array.isArray(candidate.children)) continue;
-    return candidate.path.replace('/*', '');
-  }
-  return undefined;
+// ProLayout 用 item.key || item.path 作为菜单 key；没有 path 的父菜单（AI 会话）
+// key 为空，matchMenuKeys 命中不了，子菜单就不会随路由自动展开。
+// 给这类父菜单补一个稳定 key（取第一个叶子子项路径），让子项把父 key 记进
+// pro_layout_parentKeys，菜单在当前路由下即可自动展开。
+function assignSubmenuKeys(items: any[]): any[] {
+  if (!Array.isArray(items)) return items;
+  return items.map((item) => {
+    if (!item || typeof item !== "object") return item;
+    const children = Array.isArray(item.children) ? assignSubmenuKeys(item.children) : item.children;
+    const firstChildPath = Array.isArray(children)
+      ? children.find((child: any) => child && typeof child.path === "string" && child.path)?.path
+      : undefined;
+    const key = item.key || item.path || (firstChildPath ? `${firstChildPath}::group` : undefined);
+    return {
+      ...item,
+      ...(children !== undefined ? { children } : {}),
+      ...(key ? { key } : {}),
+    };
+  });
 }
 
 export const layout = ({ initialState }: any) => {
@@ -263,18 +267,16 @@ export const layout = ({ initialState }: any) => {
       popupClassName: "hud-sider-submenu-popup",
     },
     menuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuItem(item, dom),
-    subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => {
-      const label = renderHudMenuLabel(item, dom);
-      const clickPath = resolveSubmenuClickPath(item);
-      // 注意：ProLayout 调 subMenuItemRender 时会强制把 isUrl 置为 false，
-      // 所以这里不能依赖 item.isUrl 判断外链；resolveSubmenuClickPath 已跳过外链子项。
-      return clickPath ? <Link to={clickPath}>{label}</Link> : label;
-    },
+    // 子菜单标题只做展开/收起，不能包 <Link>：包了以后点击变成导航，
+    // antd 的展开行为被打断，表现为「菜单无法展开」。
+    subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuLabel(item, dom),
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
       // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），
       // 不随运行期健康快照（ready）抖动而隐藏。
-      isGoAccountsPreview || resolveCurrentServerProfileGate().configured ? menuData : []
+      isGoAccountsPreview || resolveCurrentServerProfileGate().configured
+        ? assignSubmenuKeys(menuData)
+        : []
     ),
     menuFooterRender: () => isGoAccountsPreview ? null : (
       <div style={{ padding: "8px 12px" }}>

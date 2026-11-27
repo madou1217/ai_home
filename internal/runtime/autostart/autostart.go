@@ -797,14 +797,23 @@ func buildUnit(options Options) []byte {
 	return []byte(strings.Join(lines, string(rune(10))))
 }
 
-func windowsPaths(options Options) (serveScript, marker, startupDir, startupScript, launcherScript string) {
+// WindowsServerLauncherScript is the VBS the ONLOGON task and the WScript
+// launcher run. It starts the serve script with a hidden window: launching a
+// .cmd directly from Task Scheduler opens a console (and, with Windows 11's
+// default-terminal routing, a terminal tab), which the product must never show.
+func WindowsServerLauncherScript(home string) string {
+	return filepath.Join(home, "run", "aih-server-launch.vbs")
+}
+
+func windowsPaths(options Options) (serveScript, marker, startupDir, startupScript, legacyStartupScript, taskLauncher string) {
 	runDir := filepath.Join(options.Home, "run")
 	startupDir = filepath.Join(options.HostHome, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
 	return filepath.Join(runDir, "aih-server-serve.cmd"),
 		filepath.Join(runDir, "windows-autostart-task.json"),
 		startupDir,
 		filepath.Join(startupDir, options.Label+".vbs"),
-		filepath.Join(startupDir, options.Label+".cmd")
+		filepath.Join(startupDir, options.Label+".cmd"),
+		WindowsServerLauncherScript(options.Home)
 }
 
 func windowsQuote(value string) string {
@@ -836,24 +845,29 @@ func buildWindowsServeScript(options Options) []byte {
 	return []byte(strings.Join(lines, crlf))
 }
 
-func buildWindowsVBS(options Options) []byte {
+// buildWindowsLauncher starts the canonical serve script through WScript.Shell
+// with window style 0. wscript.exe is a GUI-subsystem host, so neither the task
+// action nor the Startup fallback ever owns a visible console window.
+func buildWindowsLauncher(options Options) []byte {
 	crlf := string(rune(13)) + string(rune(10))
-	pathValue := os.Getenv("PATH")
-	command := windowsScriptCommand(options)
+	comspec := strings.TrimSpace(os.Getenv("ComSpec"))
+	if comspec == "" {
+		comspec = filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
+	}
+	serveScript := filepath.Join(options.Home, "run", "aih-server-serve.cmd")
+	commandLine := windowsQuote(comspec) + " /d /s /c " + windowsQuote(windowsQuote(serveScript))
 	lines := []string{
 		"Option Explicit",
-		"Dim shell, execObj",
+		"Dim shell",
 		"Set shell = CreateObject(" + windowsQuote("WScript.Shell") + ")",
-		"shell.Environment(" + windowsQuote("PROCESS") + ")(" + windowsQuote("PATH") + ") = " + windowsQuote(pathValue),
-		"shell.Environment(" + windowsQuote("PROCESS") + ")(" + windowsQuote("AIH_HOME_DIR") + ") = " + windowsQuote(options.Home),
-		"Set execObj = shell.Exec(" + windowsQuote("%ComSpec% /c "+windowsQuote(command)) + ")",
+		"shell.Run " + windowsQuote(commandLine) + ", 0, False",
 		"",
 	}
 	return []byte(strings.Join(lines, crlf))
 }
 
 func installWindows(ctx context.Context, options Options) (Status, error) {
-	serveScript, marker, startupDir, startupScript, launcherScript := windowsPaths(options)
+	serveScript, marker, startupDir, startupScript, legacyStartupScript, taskLauncher := windowsPaths(options)
 	if err := os.MkdirAll(filepath.Dir(serveScript), 0700); err != nil {
 		return Status{}, err
 	}
@@ -863,7 +877,11 @@ func installWindows(ctx context.Context, options Options) (Status, error) {
 	if err := atomicWrite(serveScript, buildWindowsServeScript(options), 0600); err != nil {
 		return Status{}, err
 	}
-	args := []string{"/Create", "/SC", "ONLOGON", "/TN", options.Label, "/TR", windowsQuote(serveScript), "/F"}
+	if err := atomicWrite(taskLauncher, buildWindowsLauncher(options), 0600); err != nil {
+		return Status{}, err
+	}
+	taskCommand := "wscript.exe //nologo " + windowsQuote(taskLauncher)
+	args := []string{"/Create", "/SC", "ONLOGON", "/TN", options.Label, "/TR", windowsQuote(taskCommand), "/F"}
 	if user := strings.TrimSpace(os.Getenv("USERNAME")); user != "" {
 		args = append(args, "/RU", user, "/IT")
 	}
@@ -873,13 +891,11 @@ func installWindows(ctx context.Context, options Options) (Status, error) {
 		if startupErr := os.MkdirAll(startupDir, 0700); startupErr != nil {
 			return Status{}, err
 		}
-		if startupErr := atomicWrite(startupScript, buildWindowsVBS(options), 0600); startupErr != nil {
+		if startupErr := atomicWrite(startupScript, buildWindowsLauncher(options), 0600); startupErr != nil {
 			return Status{}, err
 		}
-		launcher := []byte("@echo off" + string(rune(13)) + string(rune(10)) + "cscript //nologo " + windowsQuote(startupScript) + string(rune(13)) + string(rune(10)))
-		if startupErr := atomicWrite(launcherScript, launcher, 0600); startupErr != nil {
-			return Status{}, err
-		}
+		// Older installs used a .cmd wrapper, which Explorer runs with a console.
+		_ = os.Remove(legacyStartupScript)
 		return statusWindows(options)
 	}
 	// 计划任务只声明 ONLOGON 触发；安装流程必须当场拉起一次，否则安装器随后的
@@ -896,8 +912,8 @@ func installWindows(ctx context.Context, options Options) (Status, error) {
 }
 
 func uninstallWindows(ctx context.Context, options Options) error {
-	serveScript, marker, _, startupScript, launcherScript := windowsPaths(options)
-	for _, file := range []string{serveScript, marker, startupScript, launcherScript} {
+	serveScript, marker, _, startupScript, legacyStartupScript, taskLauncher := windowsPaths(options)
+	for _, file := range []string{serveScript, marker, startupScript, legacyStartupScript, taskLauncher} {
 		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -908,7 +924,7 @@ func uninstallWindows(ctx context.Context, options Options) error {
 }
 
 func statusWindows(options Options) (Status, error) {
-	serveScript, marker, _, startupScript, _ := windowsPaths(options)
+	serveScript, marker, _, startupScript, _, _ := windowsPaths(options)
 	status := Status{Supported: true, Label: options.Label}
 	if _, err := os.Stat(marker); err == nil {
 		status.Installed, status.Loaded, status.File = true, true, serveScript

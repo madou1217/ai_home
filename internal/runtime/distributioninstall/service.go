@@ -35,7 +35,11 @@ func serviceFiles(o Options) []string {
 	case "darwin":
 		return []string{filepath.Join(o.HostHome, "Library", "LaunchAgents", serviceName(o)+".plist")}
 	case "windows":
-		return []string{filepath.Join(o.Home, "run", "aih-server-serve.cmd"), filepath.Join(o.Home, "run", "windows-autostart-task.json")}
+		return []string{
+			filepath.Join(o.Home, "run", "aih-server-serve.cmd"),
+			filepath.Join(o.Home, "run", "windows-autostart-task.json"),
+			autostart.WindowsServerLauncherScript(o.Home),
+		}
 	}
 	return nil
 }

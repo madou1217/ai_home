@@ -75,6 +75,9 @@ func scanWindowsShortcutApps(ctx context.Context) ([]launcher.App, error) {
 			if name == "" {
 				return nil
 			}
+			if windowsUninstallEntry(name, cleanPath) {
+				return nil
+			}
 			normName := strings.ToLower(name)
 			if _, dup := seenName[normName]; dup {
 				return nil
@@ -98,6 +101,27 @@ func scanWindowsShortcutApps(ctx context.Context) ([]launcher.App, error) {
 		})
 	}
 	return apps, nil
+}
+
+// windowsUninstallEntry reports whether a Start menu item is an uninstall
+// shortcut (name "卸载…"/"Uninstall…" or an unins*.exe/uninstall.exe target).
+func windowsUninstallEntry(name, target string) bool {
+	trimmedName := strings.ToLower(strings.TrimSpace(name))
+	for _, prefix := range []string{"uninstall", "unins", "卸载"} {
+		if strings.HasPrefix(trimmedName, prefix) {
+			return true
+		}
+	}
+
+	stem := strings.ToLower(strings.TrimSpace(target))
+	stem = strings.TrimPrefix(stem, `shell:AppsFolder\`)
+	if idx := strings.LastIndexAny(stem, `\/`); idx >= 0 {
+		stem = stem[idx+1:]
+	}
+	if idx := strings.LastIndex(stem, "."); idx > 0 {
+		stem = stem[:idx]
+	}
+	return strings.HasPrefix(stem, "unins") || stem == "uninstall" || stem == "uninstaller"
 }
 
 func windowsStartMenuRoots() []string {
@@ -141,6 +165,12 @@ func scanWindowsShellApps(ctx context.Context) []launcher.App {
 		name := strings.TrimSpace(parts[0])
 		target := strings.TrimSpace(parts[1])
 		if name == "" || target == "" {
+			continue
+		}
+		// The Start menu also lists uninstall shortcuts; a launcher must not
+		// offer them as apps (they also pollute alias matching, e.g. an
+		// uninstaller inheriting WeChat's aliases from Weixin.exe).
+		if windowsUninstallEntry(name, target) {
 			continue
 		}
 		normName := strings.ToLower(name)

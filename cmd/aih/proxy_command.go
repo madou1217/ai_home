@@ -96,7 +96,7 @@ type proxyServeOptions struct {
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, peerAih: "aih", renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5", httpPort: 6152, socksPort: 6153, anonymous: true}
+	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, peerAih: "aih", renewInterval: time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5", httpPort: 6152, socksPort: 6153, anonymous: true}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId>、节点 ID，或地区范围 us,sg / lax / exclude:cn")
@@ -116,7 +116,7 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.StringVar(&options.systemService, "system-service", "", "系统网络服务名（macOS 必填，例如 Wi-Fi）")
 	flags.BoolVar(&options.systemDryRun, "system-dry-run", false, "只打印系统代理动作，不实际修改")
 	flags.BoolVar(&options.systemForce, "system-force", false, "即使已有系统代理也强制接管（默认不抢占）")
-	flags.DurationVar(&options.renewInterval, "renew-interval", 30*time.Minute, "租约续期间隔；0 表示关闭续期")
+	flags.DurationVar(&options.renewInterval, "renew-interval", time.Minute, "租约续期间隔（默认 1m，用于及时发现 Server 重启）；0 表示关闭续期")
 	flags.StringVar(&options.managementKeyFile, "management-key-file", "", "从 0600 文件读取 Management Key（服务模式使用）")
 	flags.BoolVar(&options.tun, "tun", false, "显式创建本地 TUN 并接管系统流量（需要 root/管理员）")
 	flags.StringVar(&options.tunInterface, "tun-interface", "", "TUN 接口名；空值由 sing-box 选择")

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { InputNumber, Select, Space, Switch, Table, Tabs, Tag, message } from 'antd';
+import type { ProColumns } from '@ant-design/pro-components';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -9,6 +10,7 @@ import {
   StopOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import ListTable from '@/components/ui/ListTable';
 import type {
   FailureProvenanceEntry,
   FailureSemanticPolicy,
@@ -512,18 +514,18 @@ const HitsTableSection: React.FC<HitsTableSectionProps> = ({
         </div>
       ) : null}
       <div style={{ padding: '12px 18px', overflowX: 'auto' }}>
-        <Table
-          size="small"
-          rowKey={(row) => `${row.atMs}-${row.accountRef}-${row.model}-${row.signalId}`}
-          loading={loading}
-          pagination={{ pageSize: 20 }}
-          scroll={{ x: 'max-content' }}
-          dataSource={hits}
-          columns={columns}
-          locale={{
-            emptyText: <HudStateView compact code="NO_HITS" title="暂无最近命中记录" />
-          }}
-        />
+        {hits.length === 0 ? (
+          <HudStateView compact code="NO_HITS" title="暂无最近命中记录" />
+        ) : (
+          <ListTable<FailureProvenanceEntry>
+            size="small"
+            rowKey={(row) => `${row.atMs}-${row.accountRef}-${row.model}-${row.signalId}`}
+            loading={loading}
+            dataSource={hits}
+            columns={columns as unknown as ProColumns<FailureProvenanceEntry>[]}
+            pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 条命中` }}
+          />
+        )}
       </div>
     </SettingSection>
   );

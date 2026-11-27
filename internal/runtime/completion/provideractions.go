@@ -60,6 +60,7 @@ const escapeHatchSummary = "逃生门：之后的参数原样交给原生 CLI"
 var providerActions = []namedSummary{
 	{Name: "ls", Summary: "列出该工具的账号"},
 	{Name: "sessions", Summary: "进入/列出该账号的持久会话"},
+	{Name: "ss", Summary: "sessions 简写"},
 	{Name: "resume", Summary: "续接上一段对话（翻译成原生 resume 参数）"},
 	{Name: "fork", Summary: "从上一段对话分叉（翻译成原生 fork 参数）"},
 	{Name: "login", Summary: "新建账号并跑登录流程"},
@@ -110,6 +111,7 @@ var providerActionFlags = map[string][]string{
 	"auto-switch":   {"--remaining"},
 	"login":         {"--no-browser"},
 	"sessions":      {"--history", "--limit", "--all-projects"},
+	"ss":            {"--history", "--limit", "--all-projects"},
 	"import":        {"--dry-run"},
 	"set-default":   {"--restart-client", "--force-quit-client"},
 	"set-mobile":    {},

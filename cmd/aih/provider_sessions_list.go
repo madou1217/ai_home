@@ -80,6 +80,9 @@ func runProviderSessionsList(
 	if err != nil {
 		return fmt.Errorf("读取持久会话失败: %w", err)
 	}
+	// 原生启动没有 tmux pane；只读 tmux 会让 aih <p> sessions|ss 恒为空。
+	appendNativeCodexRows(ctx, runtime, &rows)
+	appendNativeProviderRows(ctx, runtime, &rows)
 	selected := make([]persistent.SessionRow, 0, len(rows))
 	for _, row := range rows {
 		if row.Provider != providerID {
@@ -181,7 +184,11 @@ func writeSessionRows(
 			project = "-"
 		}
 		sessionID := strings.TrimSpace(row.Name)
-		if sessionID == "" {
+		if row.NativeOnly {
+			if native := strings.TrimSpace(row.NativeID); native != "" {
+				sessionID = native
+			}
+		} else if sessionID == "" {
 			sessionID = row.Socket
 		}
 		_, _ = fmt.Fprintf(

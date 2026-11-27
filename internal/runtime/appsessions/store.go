@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -56,6 +57,39 @@ func (store *Store) Path() string {
 }
 
 // Add appends one launch record and resolves its process immediately.
+func (store *Store) lockDocument() (func(), error) {
+	if store == nil || store.path == "" {
+		return func() {}, nil
+	}
+	lockPath := store.path + ".lock"
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
+			_ = file.Close()
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		if info, statErr := os.Stat(lockPath); statErr == nil &&
+			time.Since(info.ModTime()) > 10*time.Second {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		if time.Now().After(deadline) {
+			// A stuck writer must not block launches forever; the atomic rename
+			// still prevents corrupt JSON, so proceed without the lock.
+			return func() {}, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (store *Store) Add(ctx context.Context, instance Instance) (Instance, error) {
 	if store == nil {
 		return Instance{}, errors.New("app_sessions_store_unavailable")
@@ -65,6 +99,11 @@ func (store *Store) Add(ctx context.Context, instance Instance) (Instance, error
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	release, err := store.lockDocument()
+	if err != nil {
+		return Instance{}, err
+	}
+	defer release()
 	document, err := store.loadLocked()
 	if err != nil {
 		return Instance{}, err
@@ -93,6 +132,11 @@ func (store *Store) List(ctx context.Context) ([]Instance, error) {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	release, err := store.lockDocument()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	document, err := store.loadLocked()
 	if err != nil {
 		return nil, err
@@ -119,6 +163,11 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return nil, lockErr
+	}
+	defer release()
 	document, err := store.loadLocked()
 	if err != nil {
 		return nil, err
@@ -171,6 +220,11 @@ func (store *Store) Remove(ids []string) error {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 	document, err := store.loadLocked()
 	if err != nil {
 		return err

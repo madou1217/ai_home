@@ -408,7 +408,27 @@ func New(ctx context.Context, options Options) (*App, error) {
 		CodexHomeDir: codexHomeDir,
 		PrepareNative: func(ctx context.Context, providerID, command string, args, env []string) ([]string, func(), error) {
 			prepared, lease, err := codexexecintent.Prepare(ctx, providerID, command, args, env)
-			return prepared, func() { lease.Release() }, err
+			if err != nil {
+				return nil, nil, err
+			}
+			release := func() {
+				if lease != nil {
+					lease.Release()
+				}
+			}
+			if !strings.EqualFold(strings.TrimSpace(providerID), "claude") {
+				return prepared, release, nil
+			}
+			launchArguments, settingsErr := providercli.PrepareClaudeLaunchSettings(
+				options.AIHomeDir,
+				prepared,
+				env,
+			)
+			if settingsErr != nil {
+				release()
+				return nil, nil, settingsErr
+			}
+			return launchArguments, release, nil
 		},
 		DiscoverBinary:  cliLifecycle.Resolve,
 		ClaudePreflight: options.ClaudePreflight,

@@ -108,9 +108,6 @@ func (*Strategy) Build(
 	if err != nil {
 		return providerlaunch.StrategyResult{}, fmt.Errorf("%w: 原生认证运行时编码失败", ErrBuildLaunchContext)
 	}
-	if runtime.Kind() == providerlaunch.RuntimeKindDirectProcess {
-		values["CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"] = "1"
-	}
 	patch, err := providerlaunch.NewEnvironmentPatch(
 		values,
 		withoutSetKeys(inheritedCredentialKeys, values),

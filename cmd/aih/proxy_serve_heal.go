@@ -138,7 +138,7 @@ func isLeaseLossError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	for _, marker := range []string{
-		"404", "410", "proxy_lease_expired", "lease unavailable",
+		"proxy_lease_lost", "404", "410", "proxy_lease_expired", "lease unavailable",
 		"upgrade", "连接失败", "不可用",
 		"econnrefused", "connection refused", "timeout", "超时",
 	} {

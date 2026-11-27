@@ -37,6 +37,10 @@ const (
 // ErrNoCandidates 表示服务端没有任何可用出口（不是传输失败）。
 var ErrNoCandidates = errors.New("没有可用的受管代理出口")
 
+// ErrLeaseLost 表示服务端明确不认识这个租约（404/410）。它与网络传输失败
+// 区分开：只有前者值得立即换出口，后者可能是 Server 正在重启。
+var ErrLeaseLost = errors.New("proxy_lease_lost")
+
 // Config 描述管理面连接。凭据来源由调用方决定，本包不读环境变量。
 type Config struct {
 	BaseURL       string
@@ -240,7 +244,7 @@ func (client *Client) Acquire(ctx context.Context, selector string) (updateproxy
 		client.Release(lease.ID)
 	}
 	return updateproxy.EgressLease{
-		URL:          ingress.HTTPURL(),
+		URL: ingress.HTTPURL(),
 		// 匿名入口必须给**不带 userinfo** 的地址：winget 的 --proxy 会把
 		// userinfo 原样塞进请求，代理侧看到 Basic 头后按凭据校验，而它给的是
 		// 我们自己的租约令牌——匿名入口不校验凭据，但带着 userinfo 的 URL 会
@@ -295,7 +299,13 @@ func (client *Client) Connect(ctx context.Context, id string) (io.ReadWriteClose
 	}
 	stream, ok := response.Body.(io.ReadWriteCloser)
 	if response.StatusCode != http.StatusSwitchingProtocols || !strings.EqualFold(response.Header.Get("Upgrade"), upgradeToken) || !ok {
+		status := response.StatusCode
 		response.Body.Close()
+		// Server 重启后内存租约全部失效；浏览器此时会看到 502。把它标成
+		// ErrLeaseLost，入口层就能立即触发换出口，而不是等下一次续期。
+		if status == http.StatusNotFound || status == http.StatusGone {
+			return nil, fmt.Errorf("%w: HTTP %d", ErrLeaseLost, status)
+		}
 		return nil, errors.New("代理管理 Upgrade 被拒绝")
 	}
 	return stream, nil

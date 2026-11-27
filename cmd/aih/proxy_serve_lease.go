@@ -27,8 +27,11 @@ type serveLease struct {
 	anonymous     bool
 	dial          proxyingress.Dial
 	client        *managementproxy.Client
-	once          sync.Once
-	closeErr      error
+	// lost 由 dial 在 Server 明确丢弃租约（404/410）时投递一次，主循环立即
+	// 换出口；否则要等到下一次 30 分钟续期，浏览器会持续看到 502。
+	lost     chan error
+	once     sync.Once
+	closeErr error
 }
 
 func acquireServeLease(ctx context.Context, runtime commandRuntime, selector string, socks5 bool, httpPort, socksPort int, anonymous, httpPortSet, socksPortSet bool) (*serveLease, error) {
@@ -49,9 +52,16 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	if username == "" || !hasPassword || password == "" {
 		return nil, errors.New("代理 lease 未返回有效的认证入口")
 	}
-	lease := &serveLease{id: raw.ID, name: raw.Name, username: username, password: password, anonymous: anonymous, client: client}
+	lease := &serveLease{id: raw.ID, name: raw.Name, username: username, password: password, anonymous: anonymous, client: client, lost: make(chan error, 1)}
 	lease.dial = func(dialCtx context.Context) (io.ReadWriteCloser, error) {
-		return client.Connect(dialCtx, lease.id)
+		stream, dialErr := client.Connect(dialCtx, lease.id)
+		if dialErr != nil && errors.Is(dialErr, managementproxy.ErrLeaseLost) {
+			select {
+			case lease.lost <- dialErr:
+			default:
+			}
+		}
+		return stream, dialErr
 	}
 	startIngress := func(httpListen, socksListen string) (*proxyingress.Ingress, error) {
 		return proxyingress.Start(ctx, proxyingress.Config{
@@ -100,6 +110,11 @@ func (lease *serveLease) keepAlive(ctx context.Context, interval time.Duration, 
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case lostErr := <-lease.lost:
+			// Server 重启/清理租约后，第一条经过入口的连接就能触发自愈，
+			// 不必等下一个 30 分钟续期窗口。
+			onError(lostErr)
 			return
 		case <-ticker.C:
 			renewCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

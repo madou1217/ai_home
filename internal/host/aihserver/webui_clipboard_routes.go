@@ -163,6 +163,7 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		return nil, nil, err
 	}
 	handler.Servers = serverProfiles.List
+	handler.ClipboardWriter = clipboardio.NewSystem()
 	handler.SyncRun = func(runCtx context.Context) error {
 		return syncer.SyncOnce(runCtx)
 	}

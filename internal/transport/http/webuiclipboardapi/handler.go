@@ -56,6 +56,14 @@ type ServerProfileView struct {
 	Active   bool   `json:"active"`
 }
 
+// ClipboardWriter writes the server host's OS clipboard. File lists require a
+// native writer; browsers cannot create CF_HDROP themselves.
+type ClipboardWriter interface {
+	WriteText(ctx context.Context, text string) error
+	WriteImage(ctx context.Context, data []byte, mime string) error
+	WriteFiles(ctx context.Context, files []string) error
+}
+
 // Handler serves clipboard management API requests.
 type Handler struct {
 	Authorizer        Authorizer
@@ -63,6 +71,7 @@ type Handler struct {
 	Servers           func(context.Context) ([]ServerProfileView, error)
 	SyncRun           func(context.Context) error
 	Transfers         *clipboardruntime.TransferReceiver
+	ClipboardWriter   ClipboardWriter
 	MaxBody           int64
 	OnSettingsChanged func(clipboard.Settings)
 }
@@ -344,6 +353,19 @@ func (h *Handler) handleBatchDeleteItems(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handleItemSubroute(w http.ResponseWriter, r *http.Request, tail string) {
 	switch {
+	case strings.HasSuffix(tail, "/copy"):
+		id := strings.TrimSuffix(tail, "/copy")
+		if id == "" || strings.Contains(id, "/") {
+			writeError(w, http.StatusNotFound, "not_found", "没有这个剪贴板路由")
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+			return
+		}
+		h.handleCopyItem(w, r, id)
+
 	case strings.HasSuffix(tail, "/content"):
 		id := strings.TrimSuffix(tail, "/content")
 		if id == "" || strings.Contains(id, "/") {
@@ -463,6 +485,59 @@ func safeItemContentType(kind clipboard.Kind, mime string) (string, bool) {
 	default:
 		return "application/octet-stream", false
 	}
+}
+
+// handleCopyItem writes a materialized item to the server host's OS clipboard.
+// The Paste page uses this for file packages so Explorer receives a real file
+// list instead of a text blob of paths.
+func (h *Handler) handleCopyItem(w http.ResponseWriter, r *http.Request, id string) {
+	if h.ClipboardWriter == nil {
+		writeError(w, http.StatusServiceUnavailable, "clipboard_writer_unavailable", "本机剪贴板不可用")
+		return
+	}
+	item, err := h.Service.Get(r.Context(), id)
+	if err != nil {
+		h.writeDomainError(w, err)
+		return
+	}
+	if !item.Materialized {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": map[string]string{"code": "clipboard_content_pending", "message": "正在从源设备获取内容"},
+		})
+		return
+	}
+	switch item.Kind {
+	case clipboard.KindFile:
+		if len(item.Files) == 0 {
+			h.writeDomainError(w, clipboard.ErrEmptyContent)
+			return
+		}
+		if err := h.ClipboardWriter.WriteFiles(r.Context(), item.Files); err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+	case clipboard.KindImage:
+		content, err := h.Service.ReadContentForItem(r.Context(), item)
+		if err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+		if err := h.ClipboardWriter.WriteImage(r.Context(), content.Data, content.MIME); err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+	default:
+		content, err := h.Service.ReadContentForItem(r.Context(), item)
+		if err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+		if err := h.ClipboardWriter.WriteText(r.Context(), string(content.Data)); err != nil {
+			h.writeDomainError(w, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h *Handler) handleItemContent(w http.ResponseWriter, r *http.Request, id string) {

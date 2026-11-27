@@ -614,10 +614,17 @@ async function paste(c){
       return;
     }
     if(c.type==='file'){
-      let text=c.files.length?c.files.join('\n'):await fetchContentText(c.id);
-      if(await copyText(text)){notify('Copied paths · '+c.title);closeQuickSurface()}
-      else showDialog('Copy manually',`<textarea readonly>${esc(text)}</textarea>`,'<button class="btn primary" data-close>Done</button>');
-      return;
+      try{
+        await apiJSON(`${API_BASE}/items/${encodeURIComponent(c.id)}/copy`,{method:'POST',body:'{}'});
+        notify('File'+(c.files.length>1?'s':'')+' copied · '+(c.files.length>1?c.files.length+' files':c.title));
+        closeQuickSurface();
+        return;
+      }catch(e){
+        const text=c.files.length?c.files.join('\n'):await fetchContentText(c.id);
+        if(await copyText(text))notify('Copied paths as text · '+c.title);
+        else showDialog('Copy manually',`<textarea readonly>${esc(text)}</textarea>`,'<button class="btn primary" data-close>Done</button>');
+        return;
+      }
     }
     const textPromise=fetchContentText(c.id);
     if(navigator.clipboard?.write&&typeof ClipboardItem!=='undefined'){

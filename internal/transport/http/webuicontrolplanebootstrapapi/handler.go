@@ -166,7 +166,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, http.StatusServiceUnavailable, "control_plane_bootstrap_unavailable", "控制面引导服务不可用")
 		return
 	}
-	if !handler.authorizer.Authorized(request) && !webuiauth.IsLoopbackBootstrap(request) {
+	if !handler.authorizer.Authorized(request) &&
+		!webuiauth.IsLoopbackBootstrap(request) &&
+		!IsLoopbackBootstrapRequest(request) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(response, http.StatusUnauthorized, "unauthorized", "需要管理密钥")
 		return
@@ -227,7 +229,10 @@ func (handler *Handler) revealableManagementKey(request *http.Request, existing 
 	allowed := false
 	if handler.revealManagementKey != nil {
 		allowed = handler.revealManagementKey(request)
-	} else if webuiauth.IsLoopbackBootstrap(request) {
+	} else if webuiauth.IsLoopbackBootstrap(request) || IsLoopbackBootstrapRequest(request) {
+		// Public /v0 aliases are mounted without the outer webuiauth wrapper, so
+		// the context marker may be absent; the request itself still proves the
+		// same narrow loopback boundary.
 		allowed = IsLoopbackBootstrapRequest(request)
 	}
 	if !allowed {

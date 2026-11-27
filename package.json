@@ -1,6 +1,6 @@
 {
   "name": "proxy.meadeo.com",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "",
   "scripts": {
     "deploy:server": "node scripts/deploy-server.js",

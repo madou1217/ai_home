@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -51,14 +52,16 @@ type Config struct {
 	Credentials Credentials
 	HTTP        bool
 	SOCKS5      bool
-	// AllowAnonymous 允许 loopback HTTP 客户端不携带 Proxy-Authorization。
-	// 仅用于操作系统系统代理（系统代理无法可靠保存每应用凭据）；上游仍然
-	// 使用 Credentials 生成租约认证。SOCKS5 不允许匿名。
-	AllowAnonymous   bool
-	MaxHeaderBytes   int
-	HandshakeTimeout time.Duration
-	DialTimeout      time.Duration
-	ShutdownTimeout  time.Duration
+	// AllowAnonymous 让 loopback 客户端不携带凭据即可使用 HTTP 与 SOCKS5。
+	// 入口只监听 127.0.0.1；上游仍然使用 Credentials 生成租约认证。
+	AllowAnonymous bool
+	// HTTPListenAddress / SOCKSListenAddress 是监听地址；空值监听 127.0.0.1:0。
+	HTTPListenAddress  string
+	SOCKSListenAddress string
+	MaxHeaderBytes     int
+	HandshakeTimeout   time.Duration
+	DialTimeout        time.Duration
+	ShutdownTimeout    time.Duration
 }
 
 func normalizeConfig(config Config) (Config, error) {
@@ -70,9 +73,6 @@ func normalizeConfig(config Config) (Config, error) {
 	}
 	if err := validateCredentials(config.Credentials); err != nil {
 		return Config{}, err
-	}
-	if config.AllowAnonymous && (!config.HTTP || config.SOCKS5) {
-		return Config{}, errors.New("proxyingress: AllowAnonymous is only valid for HTTP without SOCKS5")
 	}
 	if config.SOCKS5 && (len(config.Credentials.Username) > 255 || len(config.Credentials.Password) > 255) {
 		return Config{}, errors.New("proxyingress: SOCKS5 credentials must not exceed 255 bytes")
@@ -98,7 +98,25 @@ func normalizeConfig(config Config) (Config, error) {
 	} else if config.ShutdownTimeout < 0 {
 		return Config{}, errors.New("proxyingress: ShutdownTimeout must not be negative")
 	}
+	if config.HTTPListenAddress = strings.TrimSpace(config.HTTPListenAddress); config.HTTPListenAddress == "" {
+		config.HTTPListenAddress = loopbackListenAddress
+	}
+	if config.SOCKSListenAddress = strings.TrimSpace(config.SOCKSListenAddress); config.SOCKSListenAddress == "" {
+		config.SOCKSListenAddress = loopbackListenAddress
+	}
+	if !isLoopbackListenAddress(config.HTTPListenAddress) || !isLoopbackListenAddress(config.SOCKSListenAddress) {
+		return Config{}, errors.New("proxyingress: listeners must bind loopback")
+	}
 	return config, nil
+}
+
+func isLoopbackListenAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	host = strings.Trim(host, "[]")
+	return host == "127.0.0.1" || host == "::1" || strings.EqualFold(host, "localhost")
 }
 
 func validateCredentials(credentials Credentials) error {
@@ -114,7 +132,10 @@ func validateCredentials(credentials Credentials) error {
 	return nil
 }
 
-func credentialURL(scheme, address string, credentials Credentials) string {
+func credentialURL(scheme, address string, credentials Credentials, anonymous bool) string {
+	if anonymous {
+		return (&url.URL{Scheme: scheme, Host: address}).String()
+	}
 	return (&url.URL{
 		Scheme: scheme,
 		Host:   address,

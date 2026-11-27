@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, Input, Segmented, Select, Space, Switch, Tag, Typography, message } from 'antd';
+import { Card, Input, InputNumber, Segmented, Select, Space, Switch, Tag, Typography, message } from 'antd';
 import {
   CheckCircleOutlined,
   CloudServerOutlined,
@@ -13,8 +13,10 @@ import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import { toolkitAPI, type ToolkitProxyCandidate } from '@/services/api';
 import {
+  appsAPI,
   describeProxyServeError,
   proxyServeAPI,
+  type LocalApp,
   type ProxyServeService,
   type ProxyServeSSHConnection,
   type ProxyServeView
@@ -63,6 +65,12 @@ export default function ProxyServePanel() {
   const [peerAih, setPeerAih] = useState('');
   const [selector, setSelector] = useState('auto');
   const [socks5, setSocks5] = useState(true);
+  const [httpPort, setHttpPort] = useState(6152);
+  const [socksPort, setSocksPort] = useState(6153);
+  const [anonymous, setAnonymous] = useState(true);
+  const [apps, setApps] = useState<LocalApp[]>([]);
+  const [appQuery, setAppQuery] = useState('');
+  const [appBusy, setAppBusy] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -86,11 +94,12 @@ export default function ProxyServePanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [viewResult, candidatesResult, serviceResult, sshResult] = await Promise.allSettled([
+    const [viewResult, candidatesResult, serviceResult, sshResult, appsResult] = await Promise.allSettled([
       proxyServeAPI.view(),
       toolkitAPI.listProxyCandidates(),
       proxyServeAPI.serviceStatus(),
-      proxyServeAPI.listSSHConnections()
+      proxyServeAPI.listSSHConnections(),
+      appsAPI.list()
     ]);
     if (viewResult.status === 'fulfilled') {
       setView(viewResult.value);
@@ -119,6 +128,7 @@ export default function ProxyServePanel() {
       setSSHConnections([]);
       setSSHError(describeProxyServeError(sshResult.reason));
     }
+    setApps(appsResult.status === 'fulfilled' ? appsResult.value : []);
     setLoading(false);
   }, []);
 
@@ -217,6 +227,9 @@ export default function ProxyServePanel() {
       const next = await proxyServeAPI.start({
         selector,
         noSocks: !socks5,
+        httpPort,
+        socksPort,
+        anonymous,
         peer: peerMode ? peer : undefined,
         peerVia: peerMode && peerVia ? peerVia : undefined,
         peerAih: peerMode && peerAih.trim() ? peerAih.trim() : undefined
@@ -296,6 +309,19 @@ export default function ProxyServePanel() {
       message.error(text);
     } finally {
       setBusy('');
+    }
+  };
+
+  const launchApp = async (proxy: boolean) => {
+    if (!appQuery) return;
+    setAppBusy(proxy ? 'proxy' : 'plain');
+    try {
+      const result = await appsAPI.launch({ query: appQuery, proxy });
+      message.success(proxy ? `已启动 ${result.app.name}（独立实例，代理 ${result.proxyUrl}）` : `已启动 ${result.app.name}`);
+    } catch (launchError) {
+      message.error(describeProxyServeError(launchError));
+    } finally {
+      setAppBusy('');
     }
   };
 
@@ -486,6 +512,20 @@ export default function ProxyServePanel() {
                   <Switch checked={socks5} onChange={setSocks5} />
                 </label>
               </div>
+              <div className="proxy-serve-controls">
+                <label className="proxy-serve-field">
+                  <span>HTTP 端口</span>
+                  <InputNumber min={0} max={65535} value={httpPort} onChange={(value) => setHttpPort(Number(value) || 0)} />
+                </label>
+                <label className="proxy-serve-field">
+                  <span>SOCKS5 端口</span>
+                  <InputNumber min={0} max={65535} value={socksPort} onChange={(value) => setSocksPort(Number(value) || 0)} />
+                </label>
+                <label className="proxy-serve-field proxy-serve-switch">
+                  <span>匿名入口（无需 aih:password）</span>
+                  <Switch checked={anonymous} onChange={setAnonymous} />
+                </label>
+              </div>
               {peerMode ? (
                 <div className="proxy-serve-controls">
                   <label className="proxy-serve-field">
@@ -520,6 +560,48 @@ export default function ProxyServePanel() {
               </Space>
             </>
           )}
+        </Space>
+      </Card>
+
+      <Card
+        size="small"
+        title={
+          <Space>
+            <DeploymentUnitOutlined />
+            <strong>应用代理启动</strong>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Typography.Text type="secondary">
+            代理只注入本次启动的进程：同一应用可以同时开一个带代理、一个不带代理的实例。浏览器使用独立 profile 与
+            --proxy-server。
+          </Typography.Text>
+          <Space wrap>
+            <Select
+              showSearch
+              style={{ minWidth: 320, maxWidth: '100%' }}
+              placeholder="选择本机应用（可输入搜索）"
+              value={appQuery || undefined}
+              options={apps.map((app) => ({
+                value: app.name,
+                label: app.chromium ? `${app.name}（浏览器）` : app.name
+              }))}
+              onChange={setAppQuery}
+              popupMatchSelectWidth={false}
+            />
+            <Button disabled={!appQuery || Boolean(appBusy)} loading={appBusy === 'plain'} onClick={() => void launchApp(false)}>
+              普通启动
+            </Button>
+            <Button
+              type="primary"
+              disabled={!appQuery || Boolean(appBusy)}
+              loading={appBusy === 'proxy'}
+              onClick={() => void launchApp(true)}
+            >
+              带代理启动
+            </Button>
+          </Space>
         </Space>
       </Card>
 

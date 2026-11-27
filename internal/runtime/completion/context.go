@@ -102,6 +102,7 @@ type resolverContext struct {
 	remoteTargetLister    func(request remoteTargetRequest) []remoteTargetChoice
 	workspaceLister       func(request workspaceRequest) []remoteTargetChoice
 	clipboardLister       func(current string) []clipboardChoice
+	appLister             func() []namedChoice
 	clientKeyLister       func() []namedChoice
 	backupTargetLister    func() []namedChoice
 	failureSignalLister   func() []namedChoice

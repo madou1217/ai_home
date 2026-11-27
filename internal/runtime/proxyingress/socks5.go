@@ -17,6 +17,7 @@ import (
 const (
 	socksVersion                 = 0x05
 	socksAuthVersion             = 0x01
+	socksMethodNoAuth            = 0x00
 	socksMethodUserPassword      = 0x02
 	socksMethodNoAcceptable      = 0xFF
 	socksCommandConnect          = 0x01
@@ -113,6 +114,12 @@ func (i *Ingress) negotiateSOCKS(connection net.Conn, reader *bufio.Reader) (str
 	methods := make([]byte, methodCount)
 	if _, err := io.ReadFull(reader, methods); err != nil {
 		return "", err
+	}
+	if i.allowAnonymous && bytes.Contains(methods, []byte{socksMethodNoAuth}) {
+		if err := writeAll(connection, []byte{socksVersion, socksMethodNoAuth}); err != nil {
+			return "", err
+		}
+		return readSOCKSTarget(connection, reader)
 	}
 	if !bytes.Contains(methods, []byte{socksMethodUserPassword}) {
 		_ = writeAll(connection, []byte{socksVersion, socksMethodNoAcceptable})

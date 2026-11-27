@@ -141,11 +141,14 @@ func (handler *Handler) serveView(responseWriter http.ResponseWriter) {
 
 func (handler *Handler) serveStart(responseWriter http.ResponseWriter, request *http.Request) {
 	var body struct {
-		Selector string `json:"selector"`
-		NoSocks  bool   `json:"noSocks"`
-		Peer     string `json:"peer"`
-		PeerVia  string `json:"peerVia"`
-		PeerAIH  string `json:"peerAih"`
+		Selector  string `json:"selector"`
+		NoSocks   bool   `json:"noSocks"`
+		Peer      string `json:"peer"`
+		PeerVia   string `json:"peerVia"`
+		PeerAIH   string `json:"peerAih"`
+		HTTPPort  int    `json:"httpPort"`
+		SocksPort int    `json:"socksPort"`
+		Anonymous *bool  `json:"anonymous"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(responseWriter, request.Body, maxBodyBytes)).Decode(&body); err != nil {
 		writeError(responseWriter, http.StatusBadRequest, "invalid_request_body", "请求体不是有效的 JSON")
@@ -156,11 +159,14 @@ func (handler *Handler) serveStart(responseWriter http.ResponseWriter, request *
 		body.Selector = "auto"
 	}
 	view, err := handler.manager.Start(request.Context(), proxyserve.Request{
-		Selector: body.Selector,
-		NoSocks:  body.NoSocks,
-		Peer:     body.Peer,
-		PeerVia:  body.PeerVia,
-		PeerAIH:  body.PeerAIH,
+		Selector:  body.Selector,
+		NoSocks:   body.NoSocks,
+		Peer:      body.Peer,
+		PeerVia:   body.PeerVia,
+		PeerAIH:   body.PeerAIH,
+		HTTPPort:  body.HTTPPort,
+		SocksPort: body.SocksPort,
+		Anonymous: body.Anonymous,
 	})
 	if err != nil {
 		writeStartError(responseWriter, err)

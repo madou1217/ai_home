@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,11 @@ var (
 type Request struct {
 	Selector string `json:"selector"`
 	NoSocks  bool   `json:"noSocks,omitempty"`
+	// HTTPPort / SocksPort 是入口端口；0 表示随机。默认在 CLI 层为 6152/6153。
+	HTTPPort  int `json:"httpPort,omitempty"`
+	SocksPort int `json:"socksPort,omitempty"`
+	// Anonymous 允许 loopback 客户端不带代理凭据；nil 使用默认（匿名）。
+	Anonymous *bool `json:"anonymous,omitempty"`
 	// Peer 非空时通过已保存的 SSH 连接借用远端 AIH 的入口；PeerVia 是可选跳板。
 	// PeerAIH 可指定远端可执行文件，空值由远端 CLI 自动探测。
 	Peer    string `json:"peer,omitempty"`
@@ -228,6 +234,15 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 	}
 	if request.NoSocks {
 		args = append(args, "--no-socks")
+	}
+	if request.HTTPPort > 0 {
+		args = append(args, "--http-port", strconv.Itoa(request.HTTPPort))
+	}
+	if request.SocksPort > 0 {
+		args = append(args, "--socks-port", strconv.Itoa(request.SocksPort))
+	}
+	if request.Anonymous != nil && !*request.Anonymous {
+		args = append(args, "--anonymous=false")
 	}
 	command := exec.Command(cliPath, args...)
 	managementKey := ""

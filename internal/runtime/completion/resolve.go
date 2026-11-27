@@ -267,6 +267,14 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 
 	head := prior[0]
 	lastPrior := prior[len(prior)-1]
+	if (head == "app" || head == "--app" || head == "--application") && !strings.HasPrefix(current, "-") {
+		if context.appLister != nil {
+			for _, row := range context.appLister() {
+				target.add(row.Value, row.Description, groupOther, "")
+			}
+		}
+		return target.items
+	}
 
 	// 唯一的代理目录 IO 位置：后续旗标属于生命周期解析器，不是 --proxy 的值。
 	if lastPrior == "--proxy" && isProviderName(head) &&

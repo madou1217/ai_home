@@ -451,6 +451,9 @@ func newResolverContext(environment Environment, historyFile string, readStdinHi
 		clipboardLister: func(_ string) []clipboardChoice {
 			return listClipboardCandidates(aiHome, hostAIHome)
 		},
+		appLister: func() []namedChoice {
+			return listAppCandidates()
+		},
 		clientKeyLister: func() []namedChoice {
 			return listClientKeys(aiHome)
 		},

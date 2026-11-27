@@ -24,13 +24,14 @@ type serveLease struct {
 	socksURL      string
 	ingress       *proxyingress.Ingress
 	systemIngress *proxyingress.Ingress
+	anonymous     bool
 	dial          proxyingress.Dial
 	client        *managementproxy.Client
 	once          sync.Once
 	closeErr      error
 }
 
-func acquireServeLease(ctx context.Context, runtime commandRuntime, selector string, socks5 bool) (*serveLease, error) {
+func acquireServeLease(ctx context.Context, runtime commandRuntime, selector string, socks5 bool, httpPort, socksPort int, anonymous, httpPortSet, socksPortSet bool) (*serveLease, error) {
 	client, err := managementProxyClient(runtime)
 	if err != nil {
 		return nil, err
@@ -48,16 +49,37 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	if username == "" || !hasPassword || password == "" {
 		return nil, errors.New("代理 lease 未返回有效的认证入口")
 	}
-	lease := &serveLease{id: raw.ID, name: raw.Name, username: username, password: password, client: client}
+	lease := &serveLease{id: raw.ID, name: raw.Name, username: username, password: password, anonymous: anonymous, client: client}
 	lease.dial = func(dialCtx context.Context) (io.ReadWriteCloser, error) {
 		return client.Connect(dialCtx, lease.id)
 	}
-	ingress, ingressErr := proxyingress.Start(ctx, proxyingress.Config{
-		Credentials: proxyingress.Credentials{Username: username, Password: password},
-		HTTP:        true,
-		SOCKS5:      socks5,
-		Dial:        lease.dial,
-	})
+	startIngress := func(httpListen, socksListen string) (*proxyingress.Ingress, error) {
+		return proxyingress.Start(ctx, proxyingress.Config{
+			Credentials:        proxyingress.Credentials{Username: username, Password: password},
+			HTTP:               true,
+			SOCKS5:             socks5,
+			AllowAnonymous:     anonymous,
+			HTTPListenAddress:  httpListen,
+			SOCKSListenAddress: socksListen,
+			Dial:               lease.dial,
+		})
+	}
+	listenAddress := func(port int) string {
+		if port <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("127.0.0.1:%d", port)
+	}
+	ingress, ingressErr := startIngress(listenAddress(httpPort), listenAddress(socksPort))
+	if ingressErr != nil {
+		// 默认端口被别的程序占用时回退随机端口；显式指定的端口必须让用户看到冲突。
+		if httpPortSet || socksPortSet {
+			_ = lease.releaseRemote()
+			return nil, fmt.Errorf("代理入口端口不可用（请换端口或停止占用进程）: %w", ingressErr)
+		}
+		httpPort, socksPort = 0, 0
+		ingress, ingressErr = startIngress("", "")
+	}
 	if ingressErr != nil {
 		_ = lease.releaseRemote()
 		return nil, fmt.Errorf("无法建立本机代理入口: %w", ingressErr)
@@ -103,6 +125,10 @@ func (lease *serveLease) HTTPAddress() string {
 func (lease *serveLease) startSystemIngress(ctx context.Context) (string, error) {
 	if lease == nil {
 		return "", errors.New("代理 lease 不可用")
+	}
+	// 匿名入口本身就是 loopback 无凭据的，系统代理直接复用同一入口。
+	if lease.anonymous {
+		return lease.HTTPAddress(), nil
 	}
 	if lease.systemIngress == nil {
 		ingress, err := proxyingress.Start(ctx, proxyingress.Config{

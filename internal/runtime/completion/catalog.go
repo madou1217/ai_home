@@ -93,6 +93,12 @@ func buildCommandCatalog() []commandNode {
 	skillOptions := []optionSpec{vf("--provider", "指定 Provider", kindProvider), f("--all-supported", "对所有支持的 Provider 生效"), jsonFlag}
 	claimOptions := []optionSpec{f("--dry-run", "只预览"), vf("--account", "指定账号", kindAccount), jsonFlag, f("--quiet", "安静模式")}
 	pluginOptions := []optionSpec{jsonFlag}
+	appOptions := []optionSpec{
+		f("--proxy", "只给本次启动的应用实例挂代理"),
+		f("--proxy-url", "覆盖代理地址（默认 127.0.0.1:6152）"),
+		f("--list", "列出本机应用"),
+		jsonFlag,
+	}
 	proxyOptions := []optionSpec{
 		vf("--selector", "代理选择器 auto|pool|ssh:<id>|节点ID", kindEnum, "auto", "pool"),
 		f("--server", "远端 AIH Server 管理面地址"),
@@ -224,6 +230,7 @@ func buildCommandCatalog() []commandNode {
 			n("stats", "查看 key 用量统计").withOptions(vf("--key", "key id", kindClientKey), vf("--granularity", "统计粒度", kindEnum, "minute", "hour"), f("--from-ms", ""), f("--to-ms", ""), jsonFlag),
 		),
 		n("zcode-url", "处理 zcode:// 登录回调（交给登录任务）").withPositionals(p(kindFree)),
+		n("app", "启动本机应用；--proxy 只给本次启动的实例挂代理").withOptions(appOptions...).withPositionals(p(kindFree)),
 		n("proxy", "把远端出口租约变成本机 HTTP / SOCKS5 代理").withOptions(proxyOptions...).withChildren(
 			n("serve", "建立代理入口（默认命令）").withOptions(proxyOptions...),
 			n("service", "代理入口的托管服务").withChildren(

@@ -55,6 +55,11 @@ type proxyServeOptions struct {
 	peerVia           string
 	peerAih           string
 	noSocks           bool
+	httpPort          int
+	socksPort         int
+	anonymous         bool
+	httpPortSet       bool
+	socksPortSet      bool
 	system            bool
 	systemService     string
 	systemDryRun      bool
@@ -82,7 +87,7 @@ type proxyServeOptions struct {
 }
 
 func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
-	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, peerAih: "aih", renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5"}
+	options := proxyServeOptions{selector: "auto", sshRemote: proxytransport.DefaultRemoteAddress, listen: proxytransport.DefaultListenAddress, peerAih: "aih", renewInterval: 30 * time.Minute, tunMTU: 9000, tunStack: "system", tunDNS: "223.5.5.5", httpPort: 6152, socksPort: 6153, anonymous: true}
 	flags := flag.NewFlagSet("proxy serve", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&options.selector, "selector", "auto", "代理选择器：auto、pool、ssh:<connectionId> 或节点 ID")
@@ -95,6 +100,9 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	flags.StringVar(&options.peerVia, "peer-via", "", "--peer 的可选 SSH 跳板连接 ID（复用现有 mesh 链路）")
 	flags.StringVar(&options.peerAih, "peer-aih", "aih", "远端 aih 可执行文件路径（Windows 可传绝对路径）")
 	flags.BoolVar(&options.noSocks, "no-socks", false, "不启动本地 SOCKS5 入口，只提供 HTTP 代理")
+	flags.IntVar(&options.httpPort, "http-port", 6152, "本机 HTTP 代理端口；空闲时默认 6152，被占用则回退随机端口")
+	flags.IntVar(&options.socksPort, "socks-port", 6153, "本机 SOCKS5 代理端口；空闲时默认 6153，被占用则回退随机端口")
+	flags.BoolVar(&options.anonymous, "anonymous", true, "loopback 入口不要求代理凭据（隐藏 aih:password）；false 时恢复 Basic 认证")
 	flags.BoolVar(&options.system, "system", false, "把入口写入系统 HTTP/HTTPS 代理，退出时恢复")
 	flags.StringVar(&options.systemService, "system-service", "", "系统网络服务名（macOS 必填，例如 Wi-Fi）")
 	flags.BoolVar(&options.systemDryRun, "system-dry-run", false, "只打印系统代理动作，不实际修改")
@@ -120,6 +128,14 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}
+	flags.Visit(func(item *flag.Flag) {
+		switch item.Name {
+		case "http-port":
+			options.httpPortSet = true
+		case "socks-port":
+			options.socksPortSet = true
+		}
+	})
 	if flags.NArg() != 0 {
 		return options, errors.New("proxy serve 不接受位置参数")
 	}
@@ -133,6 +149,15 @@ func parseProxyServeOptions(args []string) (proxyServeOptions, error) {
 	options.peerVia = strings.TrimSpace(options.peerVia)
 	options.peerAih = strings.TrimSpace(options.peerAih)
 	options.systemService = strings.TrimSpace(options.systemService)
+	if options.httpPort < 0 || options.httpPort > 65535 {
+		return options, errors.New("--http-port 必须在 0-65535")
+	}
+	if options.socksPort < 0 || options.socksPort > 65535 {
+		return options, errors.New("--socks-port 必须在 0-65535")
+	}
+	if options.httpPort > 0 && options.socksPort > 0 && options.httpPort == options.socksPort {
+		return options, errors.New("--http-port 与 --socks-port 不能相同")
+	}
 	options.managementKeyFile = strings.TrimSpace(options.managementKeyFile)
 	if options.selector == "" || strings.ContainsAny(options.selector, "\r\n\x00") {
 		return options, errors.New("--selector 无效")

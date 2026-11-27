@@ -52,6 +52,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountaddapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountbrowserapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountconfigapi"
+	"github.com/madou1217/ai_home/internal/transport/http/webuiappsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdeleteapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountdetectapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountegressapi"
@@ -513,6 +514,10 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 	toolkitTargets, err := webuitoolkittargetsapi.NewHandler(webuitoolkittargetsapi.Dependencies{Authorizer: authorizer, Store: sshSource})
 	if err != nil {
 		return nil, fmt.Errorf("创建 toolkit 执行目标接口失败: %w", err)
+	}
+	appsHandler, err := webuiappsapi.NewHandler(authorizer)
+	if err != nil {
+		return nil, fmt.Errorf("创建本机应用接口失败: %w", err)
 	}
 	accountConfig, err := webuiaccountconfigapi.NewHandler(webuiaccountconfigapi.Dependencies{
 		Authorizer: authorizer, AIHomeDir: dependencies.AIHomeDir, Catalog: dependencies.Catalog,
@@ -1116,6 +1121,8 @@ func buildWebUIRoutes(dependencies webuiRouteDependencies) ([]webuiRoute, error)
 		{Pattern: "POST " + webuiserverconfigapi.Path, Handler: serverConfig},
 		{Pattern: "GET " + webuiserverconfigapi.SecretsPath, Handler: http.HandlerFunc(serverConfig.ServeSecrets)},
 		{Pattern: "GET " + webuitoolkittargetsapi.Path, Handler: toolkitTargets},
+		{Pattern: "GET " + webuiappsapi.Path, Handler: appsHandler},
+		{Pattern: "POST " + webuiappsapi.LaunchPath, Handler: appsHandler},
 		{Pattern: "GET " + webuiaccountconfigapi.Path + "/{provider}/{accountRef}/config-files", Handler: accountConfig},
 		{Pattern: "GET " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},
 		{Pattern: "POST " + webuimodelcontextapi.Path + "/{provider}/{accountRef}/model-context", Handler: modelContext},

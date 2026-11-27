@@ -35,6 +35,11 @@ export interface ProxyServeView {
 export interface ProxyServeStartInput {
   selector: string;
   noSocks?: boolean;
+  /** 入口端口；0 表示随机。默认 6152/6153。 */
+  httpPort?: number;
+  socksPort?: number;
+  /** 匿名 loopback 入口（默认 true）；false 时恢复 Basic 认证。 */
+  anonymous?: boolean;
   /** 非空时用该 SSH 连接借用远端 AIH 的入口；远端管理密钥不出对端。 */
   peer?: string;
   peerVia?: string;
@@ -122,3 +127,38 @@ export function describeProxyServeError(error: unknown): string {
   const response = (error as { response?: { data?: { message?: string; error?: string } } })?.response;
   return response?.data?.message || response?.data?.error || (error instanceof Error ? error.message : '请求失败');
 }
+
+/** 本机应用列表项。 */
+export interface LocalApp {
+  id: string;
+  name: string;
+  path: string;
+  bundleId?: string;
+  chromium?: boolean;
+}
+
+export interface LocalAppsResponse {
+  ok: boolean;
+  apps: LocalApp[];
+}
+
+export interface LocalAppLaunchInput {
+  query: string;
+  proxy: boolean;
+  proxyUrl?: string;
+}
+
+/** 本机应用：列表 + 只给本次实例挂代理启动。 */
+export const appsAPI = {
+  async list(): Promise<LocalApp[]> {
+    const response = await api.get<LocalAppsResponse>('/webui/apps');
+    return response.data.apps || [];
+  },
+  async launch(input: LocalAppLaunchInput): Promise<{ app: LocalApp; proxyUrl: string }> {
+    const response = await api.post<{ ok: boolean; app: LocalApp; proxyUrl: string }>(
+      '/webui/apps/launch',
+      input
+    );
+    return { app: response.data.app, proxyUrl: response.data.proxyUrl };
+  }
+};

@@ -84,14 +84,14 @@ func Start(ctx context.Context, config Config) (*Ingress, error) {
 	var httpListener net.Listener
 	var socksListener net.Listener
 	if normalized.HTTP {
-		httpListener, err = net.Listen("tcp", loopbackListenAddress)
+		httpListener, err = net.Listen("tcp", normalized.HTTPListenAddress)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("proxyingress: listen http: %w", err)
 		}
 	}
 	if normalized.SOCKS5 {
-		socksListener, err = net.Listen("tcp", loopbackListenAddress)
+		socksListener, err = net.Listen("tcp", normalized.SOCKSListenAddress)
 		if err != nil {
 			if httpListener != nil {
 				_ = httpListener.Close()
@@ -105,7 +105,7 @@ func Start(ctx context.Context, config Config) (*Ingress, error) {
 	ingress.socksListener = socksListener
 	if httpListener != nil {
 		ingress.httpAddress = httpListener.Addr().String()
-		ingress.httpURL = credentialURL("http", ingress.httpAddress, normalized.Credentials)
+		ingress.httpURL = credentialURL("http", ingress.httpAddress, normalized.Credentials, normalized.AllowAnonymous)
 		ingress.httpServer = &http.Server{
 			Handler:           http.HandlerFunc(ingress.serveHTTP),
 			ReadHeaderTimeout: normalized.HandshakeTimeout,
@@ -115,7 +115,7 @@ func Start(ctx context.Context, config Config) (*Ingress, error) {
 	}
 	if socksListener != nil {
 		ingress.socksAddress = socksListener.Addr().String()
-		ingress.socksURL = credentialURL("socks5", ingress.socksAddress, normalized.Credentials)
+		ingress.socksURL = credentialURL("socks5", ingress.socksAddress, normalized.Credentials, normalized.AllowAnonymous)
 	}
 
 	go ingress.watch(lifetime)

@@ -175,6 +175,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if providerID == "proxy" {
 		return runProxyCommand(ctx, arguments[1:], runtime)
 	}
+	if providerID == "app" || providerID == "--app" || providerID == "--application" {
+		return runAppCommand(ctx, arguments[1:], runtime)
+	}
 	if providerID == "harness" {
 		return runHarness(arguments[1:], runtime)
 	}

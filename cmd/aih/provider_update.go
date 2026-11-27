@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/providercliupgrade"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/toolkit/apps"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
@@ -19,6 +20,8 @@ func runProviderUpdate(ctx context.Context, provider string, arguments []string,
 type providerLifecycleFlags struct {
 	proxy         string
 	explicitProxy bool
+	scope         proxyregion.Filter
+	scoped        bool
 	help          bool
 }
 
@@ -46,10 +49,16 @@ func parseProviderLifecycleFlags(arguments []string) (providerLifecycleFlags, er
 				options.proxy = strings.TrimPrefix(argument, "--proxy=")
 			}
 			if options.proxy == "" || options.proxy != strings.TrimSpace(options.proxy) || strings.ContainsAny(options.proxy, "\r\n\x00") {
-				return options, fmt.Errorf("%w: --proxy 需要有效的选择器或 HTTP(S) URL", errInvalidCommand)
+				return options, fmt.Errorf("%w: --proxy 需要有效的选择器、地区范围或 HTTP(S) URL", errInvalidCommand)
 			}
+			scope, scoped, scopeErr := proxyregion.Parse(options.proxy)
+			if scopeErr != nil {
+				return options, fmt.Errorf("%w: %v", errInvalidCommand, scopeErr)
+			}
+			options.scope = scope
+			options.scoped = scoped
 		default:
-			return options, fmt.Errorf("%w: install/update 仅接受 --proxy [选择器或 HTTP(S) URL] 和 --help", errInvalidCommand)
+			return options, fmt.Errorf("%w: install/update 仅接受 --proxy [选择器、地区范围或 HTTP(S) URL] 和 --help", errInvalidCommand)
 		}
 	}
 	return options, nil
@@ -96,20 +105,25 @@ func runProviderLifecycle(ctx context.Context, provider, action string, argument
 	}
 	_, _ = fmt.Fprintf(runtime.stdout, "[aih] %s CLI %s验证通过: %s -> %s\n%s\n",
 		provider, cycle.label, previous, result.Version, result.CLIPath)
-	if cycle.autoSelected {
+	if cycle.scoped {
+		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 本次经代理范围 %s 完成；全局代理配置未改动。\n", cycle.options.scope.Describe())
+	} else if cycle.autoSelected {
 		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 本次经自动代理 %s 完成；全局代理配置未改动。\n", displayEgressName(cycle.egressName))
 	}
 	return nil
 }
 
 func writeProviderLifecycleUsage(provider, action string, runtime commandRuntime) {
-	_, _ = fmt.Fprintf(runtime.stdout, `用法: aih %s %s [--proxy[=<选择器或 HTTP(S) URL>]]
+	_, _ = fmt.Fprintf(runtime.stdout, `用法: aih %s %s [--proxy[=<选择器|地区范围|HTTP(S) URL>]]
 
 安装/更新此 harness/provider CLI，不更新 AIH、模型或账号。
 --proxy 裸旗标选择 auto；也可使用名称、ssh:conn_...、节点 ID 或 pool。
+地区范围：2 字国家码（us,sg）或 3 字 IATA 城市码（lax,sin），可混用；
+          exclude:cn,ru 排除国家/城市；TAB 会显示中文说明。
+示例：--proxy us,sg   --proxy lax   --proxy us,sg,exclude:hk
 不加 --proxy 时：直连若失败于网络层，会自动选一个可用受管代理重试；
 该出口也不可用时自动换下一个候选出口，所选出口会在终端说明（仅本次任务）。
-显式 --proxy 时绝不自动换出口：你选的就是唯一出口，失败不回落直连。
+显式 --proxy 点名节点时绝不自动换出口；指定地区范围时只在范围内轮换。
 命名代理使用管理面 lease，并在当前 CLI 主机上建立临时认证入口。
 HTTP(S) URL 不需要 Server；未指定旗标时继承当前代理环境。
 原生命令透传: aih %s -- %s
@@ -139,7 +153,9 @@ type providerLifecycleCycle struct {
 	egressName string
 	// autoSelected 区分「自动选出的出口」与「用户显式 --proxy」。
 	autoSelected bool
-	releases     []func()
+	// scoped 表示用户用 --proxy 指定了地区范围（范围内自动轮换）。
+	scoped   bool
+	releases []func()
 }
 
 func (cycle *providerLifecycleCycle) run() (apps.CLIUpdateResult, error) {
@@ -148,10 +164,51 @@ func (cycle *providerLifecycleCycle) run() (apps.CLIUpdateResult, error) {
 		lifecycle, label = apps.InstallCLI, "安装"
 	}
 	cycle.label = label
+	if cycle.options.scoped {
+		return cycle.runWithScopedEgress(lifecycle)
+	}
 	if cycle.options.explicitProxy {
 		return cycle.runWithExplicitEgress(lifecycle)
 	}
 	return cycle.runWithAutoEgress(lifecycle)
+}
+
+// runWithScopedEgress 在用户指定的地区范围内强制走受管代理，并在范围内轮换。
+//
+// 与 runWithExplicitEgress 的区别：点名具体节点是唯一出口、绝不换；地区范围
+// 是一个集合，范围内换出口正是用户要的语义，所以不先直连。
+func (cycle *providerLifecycleCycle) runWithScopedEgress(lifecycle apps.CLILifecycleFunc) (apps.CLIUpdateResult, error) {
+	rotation := managementProxyRotationFiltered(cycle.runtime, cycle.options.scope, func(message string) {
+		_, _ = fmt.Fprintln(cycle.runtime.stderr, message)
+	})
+	if rotation == nil {
+		return apps.CLIUpdateResult{}, fmt.Errorf("%w: 地区范围 %s 需要可达的 AIH Server 与管理密钥", errInvalidCommand, cycle.options.scope.Describe())
+	}
+	cycle.rotation = rotation
+	cycle.scoped = true
+	_, _ = fmt.Fprintf(cycle.runtime.stderr, "[aih] 代理范围：%s\n", cycle.options.scope.Describe())
+	lastURL := ""
+	result, used, err := updateproxy.RetryWithRotation(
+		cycle.ctx, rotation, providerLifecycleMaxEgressAttempts,
+		func(err error) (string, bool) { return providercliupgrade.EgressFailureReason(err.Error()) },
+		func(endpoint updateproxy.EgressEndpoint) (apps.CLIUpdateResult, error) {
+			lastURL = endpoint.URL
+			env, envErr := cycle.taskEnv(endpoint.URL)
+			if envErr != nil {
+				return apps.CLIUpdateResult{}, envErr
+			}
+			return cycle.invokeWithEgress(lifecycle, env, endpoint)
+		},
+		"用户指定地区范围（"+cycle.options.scope.Describe()+"）",
+	)
+	cycle.egressURL, cycle.egressName, cycle.autoSelected = used.URL, used.Name, true
+	if err != nil {
+		if lastURL == "" {
+			lastURL = used.URL
+		}
+		return apps.CLIUpdateResult{}, cycle.redactError(err, lastURL)
+	}
+	return result, nil
 }
 
 // runWithExplicitEgress 只跑一次：用户选定的出口失败时绝不自动换到别的出口，

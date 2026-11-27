@@ -3,8 +3,8 @@ package sshproxy
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/egress"
 	"github.com/madou1217/ai_home/internal/runtime/managedproxy"
 	"github.com/madou1217/ai_home/internal/runtime/proxypoollease"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
@@ -54,10 +55,10 @@ type lease struct {
 	// 匿名入口与认证入口共享同一个 dial，只是不做 Token 校验。
 	anonListener net.Listener
 	anonServer   *http.Server
-	sockets  map[net.Conn]bool
-	timer    *time.Timer
-	cleanup  func()
-	closing  bool
+	sockets      map[net.Conn]bool
+	timer        *time.Timer
+	cleanup      func()
+	closing      bool
 }
 
 // engineProvider 只在池管理器真实存在时暴露插件集合，避免 typed-nil 进入接口。
@@ -82,7 +83,12 @@ func (m *LeaseManager) Candidates() []Candidate {
 		result = m.ssh.Candidates()
 	}
 	nodes, _ := egress.ReadProxyPoolNodes(m.home)
-	identities := make(map[string]string, len(nodes))
+	identities := make(map[string]string, len(nodes)+len(result))
+	for _, item := range result {
+		if identity := strings.TrimSpace(item.Identity); identity != "" {
+			identities[item.ID] = identity
+		}
+	}
 	for _, node := range nodes {
 		if node.Raw["managedBy"] == "sshproxy" {
 			continue
@@ -92,14 +98,64 @@ func (m *LeaseManager) Candidates() []Candidate {
 		if !available {
 			item.Error = "此协议需要已安装的代理内核"
 		}
-		identities[node.ID] = egress.BuildExitIdentity(node.Protocol, node.Server, node.Port)
+		identity := egress.BuildExitIdentity(node.Protocol, node.Server, node.Port)
+		identities[node.ID] = identity
+		m.enrichCandidateGeo(&item, identity, node.CountryCode, rawNodeString(node.Raw, "city"), rawNodeString(node.Raw, "region"), node.Name)
 		result = append(result, item)
+	}
+	// SSH 候选没有节点声明地区；只使用健康账本里已经解析出的真实出口位置。
+	for index := range result {
+		if result[index].Source != "ssh" {
+			continue
+		}
+		m.enrichCandidateGeo(&result[index], result[index].Identity, "", "", "", "")
 	}
 	if m.pool != nil && m.pool.IsPoolReady() {
 		result = append(result, Candidate{ID: "pool", Name: "当前代理池", Source: "pool", Available: true})
 	}
 	m.sortByPreference(result, identities)
 	return result
+}
+
+// enrichCandidateGeo 把「解析出的真实出口位置」优先于「节点声明国家」写入候选。
+// 未知地区保持为空；范围过滤会把空地区排除在外（fail closed）。
+func (m *LeaseManager) enrichCandidateGeo(item *Candidate, identity, declaredCountry, declaredCity, declaredRegion, nodeName string) {
+	if item == nil {
+		return
+	}
+	country := proxyregion.NormalizeCountry(declaredCountry)
+	city := strings.TrimSpace(declaredCity)
+	region := strings.TrimSpace(declaredRegion)
+	source := ""
+	if country != "" {
+		source = "declared"
+	}
+	if m != nil && m.pool != nil && strings.TrimSpace(identity) != "" {
+		if geo := m.pool.NodeGeoByIdentity(identity); geo != nil {
+			if resolvedCountry := proxyregion.NormalizeCountry(geo.Country); resolvedCountry != "" {
+				country = resolvedCountry
+				city = strings.TrimSpace(geo.City)
+				region = strings.TrimSpace(geo.Region)
+				source = "resolved"
+			}
+		}
+	}
+	item.Country = country
+	item.City = city
+	item.Region = region
+	item.CityCode = proxyregion.CityCodeFor(country, city, nodeName)
+	if item.CityCode != "" && source == "" {
+		source = "declared"
+	}
+	item.GeoSource = source
+}
+
+func rawNodeString(raw map[string]any, key string) string {
+	if raw == nil {
+		return ""
+	}
+	value, _ := raw[key].(string)
+	return strings.TrimSpace(value)
 }
 
 // sortByPreference 按节点健康账本的偏好分排序候选：可用优先、分高优先。

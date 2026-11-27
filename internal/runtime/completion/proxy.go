@@ -5,17 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/madou1217/ai_home/application/serverconfig"
 	"github.com/madou1217/ai_home/internal/adapters/appstate"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 )
 
 const (
@@ -30,6 +33,11 @@ type proxySnapshotCandidate struct {
 	Source          string `json:"source"`
 	Available       bool   `json:"available"`
 	LabelSelectable *bool  `json:"labelSelectable"`
+	Country         string `json:"country,omitempty"`
+	City            string `json:"city,omitempty"`
+	CityCode        string `json:"cityCode,omitempty"`
+	Region          string `json:"region,omitempty"`
+	GeoSource       string `json:"geoSource,omitempty"`
 }
 
 type proxySnapshot struct {
@@ -196,6 +204,11 @@ func publicProxyCandidates(snapshot proxySnapshot) []proxySnapshotCandidate {
 			Source:          source,
 			Available:       true,
 			LabelSelectable: &selectable,
+			Country:         proxyregion.NormalizeCountry(row.Country),
+			City:            sanitizeControlBytes(row.City, 80),
+			CityCode:        proxyregion.NormalizeCityCode(row.CityCode),
+			Region:          sanitizeControlBytes(row.Region, 80),
+			GeoSource:       sanitizeControlBytes(row.GeoSource, 24),
 		})
 	}
 	return result
@@ -247,9 +260,76 @@ func formatProxyCandidates(rows []proxySnapshotCandidate) []proxyChoice {
 		result = append(result, proxyChoice{Value: name, Description: description})
 	}
 	if len(rows) > 0 {
+		result = append(result, formatProxyRegions(rows)...)
 		result = append([]proxyChoice{{Value: "auto", Description: "自动选择可用代理（仅本次任务）"}}, result...)
 	}
 	return result
+}
+
+// formatProxyRegions 生成地区范围补全：2 字国家码、3 字城市码，均带中文描述。
+// 只列出当前候选里真实出现的地区，避免给出选了必然落空的码。
+func formatProxyRegions(rows []proxySnapshotCandidate) []proxyChoice {
+	countryCounts := make(map[string]int, len(rows))
+	cityCounts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		if row.Country != "" {
+			countryCounts[row.Country]++
+		}
+		if row.CityCode != "" {
+			cityCounts[row.CityCode]++
+		}
+	}
+	countries := make([]string, 0, len(countryCounts))
+	for code := range countryCounts {
+		countries = append(countries, code)
+	}
+	sort.Strings(countries)
+	cities := make([]string, 0, len(cityCounts))
+	for code := range cityCounts {
+		cities = append(cities, code)
+	}
+	sort.Strings(cities)
+	result := make([]proxyChoice, 0, len(countries)+len(cities)+1)
+	for _, code := range countries {
+		result = append(result, proxyChoice{
+			Value:       strings.ToLower(code),
+			Description: fmt.Sprintf("%s · %d 个出口", proxyregion.CountryLabel(code), countryCounts[code]),
+		})
+	}
+	for _, code := range cities {
+		result = append(result, proxyChoice{
+			Value:       strings.ToLower(code),
+			Description: fmt.Sprintf("%s · %d 个出口", proxyregion.CityLabel(code), cityCounts[code]),
+		})
+	}
+	for _, code := range countries {
+		result = append(result, proxyChoice{
+			Value:       "exclude:" + strings.ToLower(code),
+			Description: "排除 " + proxyregion.CountryLabel(code) + fmt.Sprintf(" · %d 个出口", countryCounts[code]),
+		})
+	}
+	for _, code := range cities {
+		result = append(result, proxyChoice{
+			Value:       "exclude:" + strings.ToLower(code),
+			Description: "排除 " + proxyregion.CityLabel(code) + fmt.Sprintf(" · %d 个出口", cityCounts[code]),
+		})
+	}
+	if len(result) > 0 {
+		result = append(result, proxyChoice{Value: "exclude:", Description: "排除以下国家/城市：exclude:cn,ru"})
+	}
+	return result
+}
+
+// proxyChoiceAllowed 控制 exclude:* 候选只在用户已经敲了 exclude: 时出现，
+// 避免主列表被成倍的排除项淹没。
+func proxyChoiceAllowed(row proxyChoice, current string) bool {
+	if row.Value == "exclude:" {
+		return true
+	}
+	if strings.HasPrefix(row.Value, "exclude:") {
+		return strings.HasPrefix(current, "exclude:")
+	}
+	return true
 }
 
 func proxyCachePath(aiHome string, config proxyManagementConfig) string {

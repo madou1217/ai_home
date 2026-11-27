@@ -23,6 +23,13 @@ type Candidate struct {
 	Source    string `json:"source"`
 	Available bool   `json:"available"`
 	Error     string `json:"error,omitempty"`
+	// Country/City/CityCode 是代理解析出的地区，供 --proxy 范围筛选与补全。
+	// Country 为 ISO alpha-2；CityCode 为 IATA 3 字码；未知时为空。
+	Country   string `json:"country,omitempty"`
+	City      string `json:"city,omitempty"`
+	CityCode  string `json:"cityCode,omitempty"`
+	Region    string `json:"region,omitempty"`
+	GeoSource string `json:"geoSource,omitempty"`
 	// Identity 是健康账本的共同键（protocol|server|port 或 ssh|connId）。
 	// 不对外序列化：它是内部对账用的，不属于给用户/客户端的候选契约。
 	Identity string `json:"-"`

@@ -284,6 +284,9 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 		}
 		if context.proxyLister != nil {
 			for _, row := range context.proxyLister() {
+				if !proxyChoiceAllowed(row, current) {
+					continue
+				}
 				target.add(row.Value, row.Description, groupFlag, row.Description)
 			}
 		}

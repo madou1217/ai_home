@@ -102,7 +102,7 @@ func buildCommandCatalog() []commandNode {
 		jsonFlag,
 	}
 	proxyOptions := []optionSpec{
-		vf("--selector", "代理选择器 auto|pool|ssh:<id>|节点ID", kindEnum, "auto", "pool"),
+		vf("--selector", "代理选择器 auto|pool|ssh:<id>|节点ID|地区范围 us,sg / lax / exclude:cn", kindProxy),
 		f("--server", "远端 AIH Server 管理面地址"),
 		f("--ssh", "用已保存的 SSH 连接建立本地转发（连接 ID）"),
 		f("--ssh-via", "SSH 跳板连接 ID"),
@@ -238,6 +238,7 @@ func buildCommandCatalog() []commandNode {
 		n("app", "本机应用看台 / 按需启动；--proxy 只给本次实例挂代理").withOptions(appOptions...).withPositionals(p(kindFree)),
 		n("proxy", "把远端出口租约变成本机 HTTP / SOCKS5 代理").withOptions(proxyOptions...).withChildren(
 			n("serve", "建立代理入口（默认命令）").withOptions(proxyOptions...),
+			n("regions", "列出地区码与中文名（2 字国家 / 3 字城市）").withOptions(jsonFlag, f("--all", "展开全部城市码")),
 			n("service", "代理入口的托管服务").withChildren(
 				n("install", "安装代理守护服务"),
 				n("uninstall", "移除代理守护服务"),

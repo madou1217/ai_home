@@ -369,6 +369,15 @@ func (m *Manager) NodePreferenceScoreByIdentity(identity string, atMS int64) int
 	return m.health.PreferenceScoreByIdentity(identity, atMS)
 }
 
+// NodeGeoByIdentity 按稳定出口身份返回最近一次解析的出口位置。
+// 只读缓存；没有解析过时返回 nil，候选筛选据此把未知地区排除在范围外。
+func (m *Manager) NodeGeoByIdentity(identity string) *GeoLocation {
+	if m == nil || m.health == nil {
+		return nil
+	}
+	return m.health.GeoOfIdentity(identity)
+}
+
 // RecordEgressOutcomeByIdentity 按出口身份记录任务级结果（自动代理用这个）。
 func (m *Manager) RecordEgressOutcomeByIdentity(identity string, ok bool, reason string) {
 	if m == nil || m.health == nil {

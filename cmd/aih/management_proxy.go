@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/madou1217/ai_home/internal/adapters/managementproxy"
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 	"github.com/madou1217/ai_home/internal/runtime/updateproxy"
 )
 
@@ -55,6 +56,15 @@ func managementProxyRotation(runtime commandRuntime, notify func(string)) *updat
 		return nil
 	}
 	return client.Rotation(notify)
+}
+
+// managementProxyRotationFiltered 只轮换地区范围内的受管出口。
+func managementProxyRotationFiltered(runtime commandRuntime, filter proxyregion.Filter, notify func(string)) *updateproxy.EgressRotation {
+	client, err := managementProxyClient(runtime)
+	if err != nil {
+		return nil
+	}
+	return client.RotationWithFilter(filter, notify)
 }
 
 // displayEgressName 把出口名压成一行可打印文本（去掉控制字符与多余空白）。

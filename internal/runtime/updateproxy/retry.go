@@ -56,22 +56,66 @@ func RetryWithEgress[T any](
 	if !retryable || rotation == nil || maxAttempts <= 0 {
 		return zero, used, err
 	}
+	return retryWithRotation(ctx, rotation, maxAttempts, classify, run, reason, err)
+}
+
+// RetryWithRotation 只走受管出口，不先尝试直连。
+//
+// 用于用户显式指定地区范围（--proxy us,sg）的场景：用户已经要求走代理，
+// 再把请求先打到直连等于忽略范围语义。轮换仍复用同一份 EgressRotation。
+func RetryWithRotation[T any](
+	ctx context.Context,
+	rotation *EgressRotation,
+	maxAttempts int,
+	classify EgressClassifier,
+	run func(EgressEndpoint) (T, error),
+	cause string,
+) (T, UsedEgress, error) {
+	var zero T
+	if rotation == nil || maxAttempts <= 0 {
+		return zero, UsedEgress{}, fmt.Errorf("地区范围代理未配置")
+	}
+	return retryWithRotation(ctx, rotation, maxAttempts, classify, run, cause, nil)
+}
+
+func retryWithRotation[T any](
+	ctx context.Context,
+	rotation *EgressRotation,
+	maxAttempts int,
+	classify EgressClassifier,
+	run func(EgressEndpoint) (T, error),
+	cause string,
+	original error,
+) (T, UsedEgress, error) {
+	var zero T
+	var used UsedEgress
 	// 轮换期间由本函数持有出口；结束时无论成败都要释放。
 	defer rotation.Release()
+	reason := cause
+	lastErr := original
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		next, nextErr := rotation.Next(ctx, reason)
 		if nextErr != nil {
-			// 还没用上任何出口：保留原始失败，并补充自动代理为何不可用。
+			// 还没用上任何出口：保留原始失败（若有），并补充代理为何不可用。
 			if !rotation.Active() {
-				return zero, used, fmt.Errorf("%w；自动代理不可用：%s", err, nextErr)
+				if lastErr != nil {
+					return zero, used, fmt.Errorf("%w；自动代理不可用：%s", lastErr, nextErr)
+				}
+				return zero, used, nextErr
 			}
-			return zero, used, err
+			if lastErr != nil {
+				return zero, used, lastErr
+			}
+			return zero, used, nextErr
 		}
 		if next.Exhausted {
-			return zero, used, fmt.Errorf("%w；%s", err, next.Message)
+			if lastErr != nil {
+				return zero, used, fmt.Errorf("%w；%s", lastErr, next.Message)
+			}
+			return zero, used, fmt.Errorf("%s", next.Message)
 		}
 		used = UsedEgress{URL: next.Lease.URL, Name: next.Lease.Name, Identity: next.Lease.Identity, Auto: true}
-		result, err = run(EgressEndpoint{
+		result, err := run(EgressEndpoint{
 			URL:          next.Lease.URL,
 			AnonymousURL: next.Lease.AnonymousURL,
 			Name:         next.Lease.Name,
@@ -79,6 +123,7 @@ func RetryWithEgress[T any](
 		if err == nil {
 			return result, used, nil
 		}
+		lastErr = err
 		failureReason, stillNetwork := classify(err)
 		if !stillNetwork {
 			return zero, used, err
@@ -86,5 +131,8 @@ func RetryWithEgress[T any](
 		reason = failureReason
 		rotation.Fail(reason)
 	}
-	return zero, used, err
+	if lastErr != nil {
+		return zero, used, lastErr
+	}
+	return zero, used, fmt.Errorf("没有可用的代理出口")
 }

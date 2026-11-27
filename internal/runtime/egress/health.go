@@ -442,6 +442,18 @@ func (l *NodeHealthLedger) GeoOf(name string) *GeoLocation {
 	return &g
 }
 
+// GeoOfIdentity 按稳定出口身份返回缓存位置，未查过返回 nil。
+func (l *NodeHealthLedger) GeoOfIdentity(identity string) *GeoLocation {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	stats := l.byIdentity[strings.TrimSpace(identity)]
+	if stats == nil || stats.Geo == nil {
+		return nil
+	}
+	g := *stats.Geo
+	return &g
+}
+
 // ClearCooldown 人工解除指定节点冷却并写盘。
 func (l *NodeHealthLedger) ClearCooldown(name string) bool {
 	l.mu.Lock()

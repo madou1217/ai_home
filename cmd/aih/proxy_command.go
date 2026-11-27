@@ -31,8 +31,11 @@ func runProxyCommand(ctx context.Context, arguments []string, runtime commandRun
 	if arguments[0] == "service" {
 		return runProxyServiceCommand(ctx, arguments[1:], runtime)
 	}
+	if arguments[0] == "regions" {
+		return runProxyRegions(ctx, arguments[1:], runtime)
+	}
 	if arguments[0] != "serve" {
-		return errors.New("用法: aih proxy serve [...] 或 aih proxy service <install|uninstall|status>")
+		return errors.New("用法: aih proxy serve [...]、aih proxy service <install|uninstall|status> 或 aih proxy regions")
 	}
 	return runProxyServe(arguments[1:], runtime)
 }
@@ -44,6 +47,7 @@ func writeProxyCommandUsage(runtime commandRuntime) {
 	_, _ = fmt.Fprintln(runtime.stdout, "需要 AIH_SERVER_MANAGEMENT_KEY；--server 直达管理面，--ssh 自动建立本地转发。")
 	_, _ = fmt.Fprintln(runtime.stdout, "--peer 在远端 AIH 上启动代理入口并经 SSH 转发到本机，不需要远端管理密钥；--peer-via 可指定跳板。")
 	_, _ = fmt.Fprintln(runtime.stdout, "--system 显式写入系统 HTTP/HTTPS 代理，退出时恢复；macOS 必须指定 --system-service。")
+	_, _ = fmt.Fprintln(runtime.stdout, "aih proxy regions [--all] [--json] 查看 2 字国家码 / 3 字城市码及中文名。")
 	_, _ = fmt.Fprintln(runtime.stdout, "命令持续运行，Ctrl+C 释放租约；不会修改系统代理，除非指定 --system。")
 }
 

@@ -104,6 +104,23 @@ AI Home 把代理拆成**控制面**（候选/租约/管理鉴权，挂载在 `:
 | `pool` | AIH 出口池（有核走 `sticky/shared/session` 车道，无核降级直连池） | 失败关闭，绝不回落宿主网络 |
 | `tun` | 仅检测并复用宿主机已激活的外部 TUN | AIH 不创建不启停，**不同于 `aih proxy serve --tun`** |
 
+### 按地区选临时出口
+
+`--proxy` 不再只能点名一个节点，也可以给**临时代理池**划地区范围（`aih proxy serve --selector` 同样适用）：
+
+```bash
+aih codex install --proxy us,sg            # 只用美国/新加坡
+aih codex install --proxy lax,sin          # 只用洛杉矶/新加坡（IATA 3 字城市码）
+aih codex install --proxy us,sg,exclude:hk # 美国/新加坡，但排除香港
+aih proxy regions --all                    # 查 2 字国家码 / 3 字城市码的中文码表
+```
+
+- **2 字 = 国家**（ISO 3166-1 alpha-2，如 `US`/`SG`）；**3 字 = 城市**（IATA，如 `LAX`/`SIN`），可混用。
+- `exclude:` 排除多个，排除优先；大小写不敏感。
+- TAB 只列出当前候选里**实际存在**的码，并带中文描述（如 `us — 美国(US) · 19 个出口`、`exclude:jp — 排除日本`）。
+- 地区范围只作用于**临时受管代理池**；点名具体节点仍然不轮换，地区范围在范围内轮换；没有匹配出口时**失败关闭**，不回落直连或全部出口。
+- 城市码依赖候选的解析城市（`node-health.geo` 或节点名中的 IATA）；当前池没有城市数据时先用国家码，`aih proxy regions --all` 可看完整城市表。
+
 ### 常用入口与边界
 
 ```bash
@@ -111,6 +128,7 @@ aih proxy serve                                     # 启动本机 HTTP/SOCKS5 �
 aih proxy serve --system --system-service <name>    # 显式开启系统代理（退出恢复快照，绕过回环）
 aih proxy serve --peer <connectionId>               # 借用对端 AIH 出口（远端密钥不出对端）
 aih proxy serve --tun-dry-run                       # 仅校验 AIH 自建 sing-box TUN 配置（--tun 需 root）
+aih proxy regions --all                             # 2 字国家码 / 3 字城市码中文表
 ```
 
 - **`6152` / `6153` 是本机入口，不是出口池**（出口池在 `17890` / `17891`）；受监督实例（`--exit-with-parent`）独占默认 `6152`/`6153` 并发布 `0600` 权限的 `run/proxy/entry.json`。

@@ -4,7 +4,7 @@ import "strings"
 
 // flagSummaries 是「每个候选都要能解释自己」的旗标说明。
 var flagSummaries = map[string]string{
-	"--proxy":               "本次安装/更新代理：裸旗标 auto，或指定节点/名称/HTTP(S) URL",
+	"--proxy":               "本次安装/更新代理：裸旗标 auto；可点名节点/URL，或地区范围 us,sg、lax、exclude:cn,ru",
 	"--account":             "账号编号或 accountRef",
 	"--all-supported":       "对所有支持的 Provider 生效",
 	"--channel":             "投递通道（native / inject / webui-chat）",

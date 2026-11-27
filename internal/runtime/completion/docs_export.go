@@ -252,7 +252,7 @@ var docExamples = map[string]docExample{
 		Example: "aih client-keys stats --granularity hour",
 	},
 	"aih proxy serve": {
-		Usage:   "aih proxy serve [--selector auto|pool|ssh:<id>] [--http-port 6152] [--socks-port 6153] [--anonymous] [--no-socks]",
+		Usage:   "aih proxy serve [--selector auto|pool|ssh:<id>|地区范围 us,sg / lax / exclude:cn] [--http-port 6152] [--socks-port 6153] [--anonymous] [--no-socks]",
 		Example: "aih proxy serve --selector auto",
 	},
 	"aih app": {

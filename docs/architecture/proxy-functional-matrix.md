@@ -95,7 +95,37 @@ AIH 出口池承载 `pool` 账号模式与受管代理池的池化出口能力�
 | **释放租约** | `DELETE /proxy-leases/{id}` | 正常退出、任务完成或取消时显式释放；异常崩溃残留由服务端在 3h TTL 到期后自动回收。 |
 | **租约丢失自愈** | `404` / `410` → `ErrLeaseLost`（commit `de122bac`） | 服务端重启或租约被删导致 `/connect` 或续租返回 `404`/`410` 时，**在首个失败请求即刻触发自愈**：自动换下一个可用出口，重建本机入口、`entry.json`、系统代理与 TUN 路由，不再干等 30 分钟续租周期。 |
 
-### 4.2 跨机传输面与对等借用
+### 4.2 按地区给临时池划范围（`--proxy` 范围）
+
+`--proxy` 与 `aih proxy serve --selector` 接受地区范围，把**临时受管代理池**限定在范围内，而不是只点一个节点：
+
+```text
+--proxy us,sg
+   │
+   ▼
+候选池（全部出口）
+   │ 按代理解析出的国家/城市过滤
+   ▼
+US / SG 出口 ──失败──▶ 下一个 US/SG 出口
+   │
+   ▼
+租约 → 安装器
+```
+
+| 语法 | 含义 |
+| --- | --- |
+| `--proxy us,sg` | 仅美国、新加坡（2 字 ISO 3166-1 alpha-2 国家码） |
+| `--proxy lax,sin` | 仅洛杉矶、新加坡（3 字 IATA 城市码） |
+| `--proxy us,lax` | 国家与城市取并集 |
+| `--proxy us,sg,exclude:hk` | 仅美国/新加坡，排除香港（排除优先） |
+| `--proxy exclude:cn,ru` | 排除中国/俄罗斯，其余可用 |
+
+- TAB 只列出当前候选里实际存在的码，并带中文描述；`aih proxy regions --all` 打印 2 字国家码 / 3 字城市码的完整中文表。
+- 地区来源优先 `node-health.geo` 的解析国家/城市，回退节点声明的 `countryCode` / 节点名中的 IATA；解析不出地区的候选在范围过滤下**不参与（fail closed）**。
+- 点名具体节点仍不轮换；地区范围在范围内轮换。范围内没有候选时明确报错，不静默回全部或直连。
+- 城市码依赖候选有城市级解析；当前池没有城市数据时先用国家码，`--all` 可查完整城市码表。
+
+### 4.3 跨机传输面与对等借用
 
 | 传输方式 | 命令 / 契约 | 验证状态与路径证据语义 |
 | --- | --- | --- |
@@ -105,7 +135,7 @@ AIH 出口池承载 `pool` 账号模式与受管代理池的池化出口能力�
 | **SSH 反向隧道 / 中继** | 复用 `sshtunnel` / reverse tunnel 组件 | 适用于两端均在 NAT 后、经一台可达公网中继互联的场景；公网节点代转字节必须报告 `peer-relay`。 |
 | **Tailscale / WireGuard / Cloudflare Tunnel** | `network.connector@1` 外部签名插件契约 | **未作为默认传输（未安装/未验证）**。仅当插件给出可复核的数据面无中继证据时才允许报告 `direct-p2p`；DERP 中继报 `derp-relay`，Cloudflare 报 `outbound-tunnel`，握手未证明路径报 `wireguard-tunnel`。 |
 
-### 4.3 任务级自动代理轮换（`updateproxy.RetryWithEgress`）
+### 4.4 任务级自动代理轮换（`updateproxy.RetryWithEgress`）
 
 | 入口 | 触发规则 | 不触发反例 |
 | --- | --- | --- |

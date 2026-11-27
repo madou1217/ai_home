@@ -56,13 +56,14 @@ body.mode-quick[data-position=right] #quickWindow{animation-name:orbitInRight}
 body.mode-quick #quickWindow .quickgallery{flex:1 1 0%;min-height:0;max-height:none}
 body.mode-quick #quickWindow.ribbon .quickgallery{min-height:0;padding:8px 4px 10px}
 body.mode-quick .dialog .previewcontent{min-height:140px;max-height:calc(100vh - 150px)}
-</style></head><body><div class="shell" id="shell">
+.clip.picking{cursor:pointer}.pick{position:absolute;top:6px;right:6px;z-index:4;width:20px;height:20px;padding:0;display:grid;place-items:center;border:1px solid #48637e;border-radius:5px;background:#0b1524d9;color:transparent}.pick .ic{width:12px;height:12px}.pick.on{border-color:#62edff;background:#123a47;color:#bffaff;box-shadow:0 0 10px #62edff55}.clip.picking .cliphead{padding-right:22px}.bulkbar{position:fixed;left:50%;bottom:34px;transform:translate(-50%,18px);opacity:0;pointer-events:none;z-index:95;display:flex;align-items:center;gap:18px;padding:9px 12px;border:1px solid #3b6d82;border-radius:9px;background:#0d1b2bf2;box-shadow:0 14px 42px #000a;transition:opacity .18s,transform .18s}.bulkbar.open{opacity:1;pointer-events:auto;transform:translate(-50%,0)}.bulkcopy{display:flex;align-items:baseline;gap:6px;white-space:nowrap}.bulkcopy strong{font-size:18px;color:#a9f6ff}.bulkcopy span{font-size:10px;color:#8395ae}.bulkactions{display:flex;gap:6px;align-items:center}.btn.danger{border-color:#7b3e49;color:#ffb4bd;background:#2a151c}.btn.danger:hover{border-color:#d56a7a;background:#3a1b24;color:#fff}@media(max-width:760px){.bulkbar{left:10px;right:10px;bottom:12px;transform:translateY(18px);gap:8px;flex-wrap:wrap;justify-content:space-between}.bulkbar.open{transform:none}.bulkactions{flex-wrap:wrap}}</style></head><body><div class="shell" id="shell">
 <header class="top panel"><div class="brand"><div class="brandmark"><svg viewBox="0 0 48 48" fill="none"><defs><linearGradient id="logo"><stop stop-color="#68e7ff"/><stop offset="1" stop-color="#b18bff"/></linearGradient></defs><path d="M24 3 42 13 42 35 24 45 6 35 6 13Z" stroke="url(#logo)" stroke-width="1.4"/><path d="m24 10 12 7v14l-12 7-12-7V17Z" stroke="url(#logo)" stroke-width="2.5"/><path d="m12 17 12 7 12-7M24 24v14" stroke="#9ce9ff" stroke-width="1.5"/><circle cx="24" cy="24" r="3" fill="#e2faff"/></svg></div><div><strong>paste<span> / nexus</span></strong><div class="eyebrow">Clipboard operating layer</div></div></div><label class="search"><span data-icon="search"></span><input id="search" placeholder="Search clips, code, links, ideas…" autocomplete="off"><kbd>/</kbd></label><div class="topactions"><button class="btn" id="command"><span data-icon="command"></span><span>Command</span><kbd>Ctrl K</kbd></button><button class="btn active" id="quickOpen"><span data-icon="bolt"></span><span>Quick Paste</span><kbd>Alt V</kbd></button><button class="btn iconbtn settings" id="settings" title="Settings"><span data-icon="settings"></span></button></div></header>
 <main class="main"><aside class="side panel"><h3><span data-icon="clock"></span> Timeline</h3><div class="eyebrow">History / index</div><div id="timeline" class="timeline"></div><div class="sidefoot"><div class="eyebrow" style="margin:0">Capture activity</div><div class="histogram" id="histogram"></div><div class="micro" id="activityMeta">LOCAL · 24H</div><div class="status" id="captureStatus"><i class="dot off"></i><span>Connecting…</span></div></div></aside>
-<section class="workspace"><div class="workhead"><div><div class="eyebrow">Workspace / 01</div><h1>My clipboard <small id="count"></small></h1></div><div class="modules"><button class="module" id="context"><span data-icon="cube"></span><div><span>Context lens</span><small>ALL SOURCES</small></div></button><button class="module" id="privacy"><span data-icon="shield"></span><div><span>Privacy shield</span><small id="privacyLabel">LOCAL STORE</small></div></button><button class="module violet" id="semantic"><span data-icon="spark"></span><div><span>Smart search</span><small>KEYWORDS</small></div></button></div></div><div class="filterbar"><div class="filters" id="filters"></div><select class="sort" id="sort"><option value="new">Newest</option><option value="old">Oldest</option><option value="name">Name</option></select><button class="btn iconbtn active" id="gridBtn" title="Grid"><span data-icon="grid"></span></button><button class="btn iconbtn" id="listBtn" title="List"><span data-icon="list"></span></button></div><div class="gallery" id="gallery"></div></section>
+<section class="workspace"><div class="workhead"><div><div class="eyebrow">Workspace / 01</div><h1>My clipboard <small id="count"></small></h1></div><div class="modules"><button class="module" id="context"><span data-icon="cube"></span><div><span>Context lens</span><small>ALL SOURCES</small></div></button><button class="module" id="privacy"><span data-icon="shield"></span><div><span>Privacy shield</span><small id="privacyLabel">LOCAL STORE</small></div></button><button class="module violet" id="semantic"><span data-icon="spark"></span><div><span>Smart search</span><small>KEYWORDS</small></div></button></div></div><div class="filterbar"><div class="filters" id="filters"></div><select class="sort" id="sort"><option value="new">Newest</option><option value="old">Oldest</option><option value="name">Name</option></select><button class="btn iconbtn active" id="gridBtn" title="Grid"><span data-icon="grid"></span></button><button class="btn iconbtn" id="listBtn" title="List"><span data-icon="list"></span></button><button class="btn" id="selectMode" title="Multi-select clips">Select</button></div><div class="gallery" id="gallery"></div></section>
 <aside class="preview panel"><div class="previewtop"><h3><span data-icon="eye"></span> Preview</h3><span class="micro" id="previewID"></span><button class="btn iconbtn" id="expand" title="Full preview"><span data-icon="expand"></span></button></div><div class="previewcontent" id="previewContent"></div><div class="tabs" id="tabs"></div><div id="detail"></div><div class="previewactions"><button class="btn primary" id="paste"><span data-icon="play"></span> Paste <kbd>↵</kbd></button><button class="btn iconbtn" id="pin" title="Pin"><span data-icon="pin"></span></button><button class="btn iconbtn" id="stackAdd" title="Add to stack"><span data-icon="layers"></span></button><button class="btn iconbtn" id="edit" title="Read-only" disabled aria-disabled="true"><span data-icon="edit"></span></button><button class="btn iconbtn" id="delete" title="Delete"><span data-icon="trash"></span></button></div></aside></main>
 <section class="stack panel"><div class="stacktitle"><span data-icon="layers"></span><div><strong>Fusion stack</strong><div class="eyebrow">Compose / combine</div></div></div><div class="stackitems" id="stackItems"></div><span class="micro" id="stackCount"></span><button class="btn primary" id="fusion"><span data-icon="layers"></span> Fusion Paste <kbd>Ctrl Shift V</kbd></button></section>
 <section class="dock panel"><div class="docktitle"><div class="orbitlogo"><span data-icon="bolt"></span></div><div class="eyebrow">Instant access</div><h2>Quick orbit</h2><button class="btn" id="dockOpen" style="font-size:10px;padding:4px 7px">Expand <kbd>Alt V</kbd></button></div><div class="docknav"><button class="btn" id="dockPrev" title="Previous">‹</button><button class="btn" id="dockNext" title="Next">›</button></div><div class="docktrack" id="dockTrack"></div><div class="transform"><div class="eyebrow">Utility / 04</div><h3><span data-icon="spark"></span> Transform</h3><select id="transformType"><option value="trim">Clean whitespace</option><option value="json">Format JSON</option><option value="upper">Uppercase</option><option value="lower">Lowercase</option><option value="url">URL encode</option><option value="lines">Remove blank lines</option></select><button class="btn" id="transformRun"><span data-icon="bolt"></span> Apply to selection</button></div></section>
+<div class="bulkbar" id="bulkbar" aria-live="polite"></div>
 <footer class="statusbar"><span id="statusSystem"><i class="dot off" id="statusDot"></i> NEXUS <span>·</span> CONNECTING</span><span id="statusSelection">READY</span><span><kbd>↑ ↓ ← →</kbd> NAVIGATE <kbd>SPACE</kbd> PEEK <kbd>ESC</kbd> CLOSE</span></footer></div>
 <div class="modal" id="quickModal"><section class="quickwindow panel ribbon" id="quickWindow"><div class="quickhead"><div class="orbitlogo"><span data-icon="bolt"></span></div><div><div class="eyebrow">Nexus / instant access</div><h2>Quick orbit</h2></div><label class="search"><span data-icon="search"></span><input id="quickSearch" placeholder="Find a clip…"><kbd>/</kbd></label><button class="btn iconbtn" id="quickLayout" title="Toggle card layout"><span data-icon="grid"></span></button><button class="btn iconbtn" id="quickClose" title="Close"><span data-icon="x"></span></button></div><div class="filters" id="quickFilters"></div><div class="quickgallery" id="quickGallery"></div><div class="quickfooter"><div><kbd>1–9</kbd> Direct paste <kbd>Space</kbd> Peek <kbd>G</kbd> Layout</div><div class="quickrail" id="quickRail"></div><div><span id="quickPosition"></span><button class="btn primary" id="quickPaste">Paste <kbd>↵</kbd></button></div></div></section></div>
 <div class="modal" id="dialogModal"><section class="dialog panel" id="dialog"></section></div><div class="toast" id="toast" role="status"></div>
@@ -139,6 +140,7 @@ const IDE_PATTERN=/\b(vs\s?code|code|cursor|zed|xcode|terminal|iterm|warp|alacri
 let data=[],selected=null,filter='all',query='',timeFilter='all',sort='new',layout='grid',quickMode='ribbon',tab='Details',stack=[],context=false,smart=false,visible=[],quickOpened=isQuickPage,dialogOpened=false,dialogKind='',toastTimer;
 let statusInfo=null,settingsInfo=null,serversList=[],serversLoaded=false,lastError=null,loading=true,refreshInFlight=false,lastRefreshAt=0;
 let knownItemIds=new Set(),liveReady=false,incomingIds=new Map(),refreshPending=false,liveRefreshTimer=null,liveAbort=null,liveRetryTimer=null,liveRetryDelay=1200;
+let selectMode=false,selectedIds=new Set();
 let hydratedCache=new Map(),imageUrlCache=new Map(),filePreviewCache=new Map(),fileBlobCache=new Map(),hydrateToken=0,renderQueued=false,previewImageGen=0;
 
 function formatBytes(n){n=Number(n||0);if(n>=1073741824)return (n/1073741824).toFixed(1)+' GiB';if(n>=1048576)return (n/1048576).toFixed(1)+' MiB';if(n>=1024)return (n/1024).toFixed(1)+' KiB';return n+' B'}
@@ -280,7 +282,7 @@ function body(c,full=false){
   }
   return `<p>${esc(c.value)}</p>${c.materialized===false?'<small class="micro">INDEX ONLY · paste to fetch</small>':''}`;
 }
-function card(c,i,keys=false){return `<article tabindex="0" role="option" aria-selected="${c.id===selected}" data-id="${esc(c.id)}" data-type="${esc(c.type)}" class="clip ${c.id===selected?'selected':''}"><div class="cliphead">${icon(typeIcon(c.type))}${labels[c.type]||c.type}${c.rawKind==='file'&&c.files.length>1?`<span class="batchbadge">BATCH ×${c.files.length}</span>`:''}${c.materialized===false?'<span class="indexbadge">INDEX</span>':''}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div><div class="clipfoot">${icon('cube')}<span>${esc(c.app)} · ${esc(c.title)}</span>${c.pinned?`<i class="pin">${icon('pin')}</i>`:''}</div>${keys&&i<9?`<span class="keynum">${i+1}</span>`:''}</article>`}
+function card(c,i,keys=false){return `<article tabindex="0" role="option" aria-selected="${c.id===selected}" data-id="${esc(c.id)}" data-type="${esc(c.type)}" class="clip ${c.id===selected?'selected':''} ${selectMode?'picking':''}">${selectMode?`<button class="pick ${selectedIds.has(c.id)?'on':''}" data-pick="${esc(c.id)}" aria-label="Select clip">${icon('check')}</button>`:''}<div class="cliphead">${icon(typeIcon(c.type))}${labels[c.type]||c.type}${c.rawKind==='file'&&c.files.length>1?`<span class="batchbadge">BATCH ×${c.files.length}</span>`:''}${c.materialized===false?'<span class="indexbadge">INDEX</span>':''}<time>${esc(c.time)}</time></div><div class="clipbody">${body(c)}</div><div class="clipfoot">${icon('cube')}<span>${esc(c.app)} · ${esc(c.title)}</span>${c.pinned?`<i class="pin">${icon('pin')}</i>`:''}</div>${keys&&i<9?`<span class="keynum">${i+1}</span>`:''}</article>`}
 function filterButtons(id){$(id).innerHTML=Object.entries(labels).map(([k,v])=>`<button class="filter ${filter===k?'active':''}" data-filter="${k}">${icon(k==='all'?'grid':typeIcon(k))}${v}${k==='all'?` <b>${data.length}</b>`:''}</button>`).join('');$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;render()})}
 function getVisible(){
   let q=query.toLowerCase().trim();
@@ -331,6 +333,61 @@ function renderStatusIndicators(){
   $('statusSystem').innerHTML=`<i class="dot ${dotCls}" id="statusDot"></i> NEXUS ONLINE <span>·</span> ${esc(sysRight)}`;
   $('privacyLabel').textContent=syn?.enabled?'E2E SYNC':'LOCAL ONLY';
 }
+function togglePick(id){
+  if(!id)return;
+  if(selectedIds.has(id))selectedIds.delete(id);else selectedIds.add(id);
+  render();
+}
+function selectAllVisible(){
+  if(!visible.length)return;
+  const all=visible.every(c=>selectedIds.has(c.id));
+  if(all)selectedIds.clear();else visible.forEach(c=>selectedIds.add(c.id));
+  render();
+}
+function renderBulkBar(){
+  const bar=$('bulkbar'),button=$('selectMode');
+  if(button)button.classList.toggle('active',selectMode);
+  if(!bar)return;
+  bar.classList.toggle('open',selectMode);
+  if(!selectMode){bar.innerHTML='';return}
+  const filtered=visible.length;
+  bar.innerHTML=`<div class="bulkcopy"><strong>${selectedIds.size}</strong><span>selected · ${filtered} filtered</span></div>`+
+    `<div class="bulkactions"><button class="btn" id="bulkAll">${visible.every(c=>selectedIds.has(c.id))&&filtered?'Deselect all':'Select filtered'}</button>`+
+    `<button class="btn" id="bulkFiltered" ${filtered?'':'disabled'}>Clear filtered (${filtered})</button>`+
+    `<button class="btn danger" id="bulkDelete" ${selectedIds.size?'':'disabled'}>Delete selected (${selectedIds.size})</button>`+
+    `<button class="btn" id="bulkExit">Done</button></div>`;
+  $('bulkAll').onclick=selectAllVisible;
+  $('bulkFiltered').onclick=()=>confirmBulkDelete(visible.map(c=>c.id),'all clips matching the current filters');
+  $('bulkDelete').onclick=()=>confirmBulkDelete(Array.from(selectedIds),'the selected clips');
+  $('bulkExit').onclick=()=>{selectMode=false;selectedIds.clear();render()};
+}
+function confirmBulkDelete(ids,label){
+  ids=Array.from(new Set(ids.filter(Boolean)));
+  if(!ids.length){notify('No clips to delete');return}
+  showDialog(`Delete ${ids.length} clips?`,
+    `<p style="margin:0;color:#c8d5e9">This removes ${esc(label)} from this device. Pinned clips are included when they match the current filters.</p>`,
+    `<button class="btn" data-close>Cancel</button><button class="btn primary" id="confirmBulkDelete">Delete ${ids.length}</button>`);
+  $('confirmBulkDelete').onclick=async()=>{
+    $('confirmBulkDelete').disabled=true;
+    try{
+      const res=await apiJSON(`${API_BASE}/items/batch-delete`,{method:'POST',body:JSON.stringify({ids})});
+      const removed=Number(res?.deleted||0);
+      for(const id of ids){
+        hydratedCache.delete(id);
+        filePreviewCache.delete(id);
+        if(imageUrlCache.has(id)){URL.revokeObjectURL(imageUrlCache.get(id));imageUrlCache.delete(id)}
+        if(fileBlobCache.has(id)){URL.revokeObjectURL(fileBlobCache.get(id));fileBlobCache.delete(id)}
+      }
+      stack=stack.filter(id=>!ids.includes(id));
+      selectedIds.clear();
+      closeDialog();
+      notify(`Deleted ${removed} clips`);
+      await refreshAll({force:true});
+      if(selectMode&&!visible.length){selectMode=false;render()}
+    }catch(e){notify('Bulk delete failed · '+e.message);$('confirmBulkDelete').disabled=false}
+  };
+}
+
 function applyIncomingCards(){
   if(!incomingIds.size)return;
   const now=Date.now();
@@ -358,6 +415,7 @@ function render(){
   visible=getVisible();
   if(!visible.some(c=>c.id===selected))selected=visible[0]?.id??null;
   $('count').textContent=`// ${visible.length} clips`;
+  renderBulkBar();
   $('timeline').innerHTML=ranges.map(([k,l])=>`<button class="time ${timeFilter===k?'active':''}" data-time="${k}"><i></i><span>${l}</span><em>${data.filter(c=>inTime(c,k)).length}</em></button>`).join('');
   $('timeline').querySelectorAll('button').forEach(b=>b.onclick=()=>{timeFilter=b.dataset.time;render()});
   filterButtons('filters');filterButtons('quickFilters');
@@ -372,9 +430,12 @@ function render(){
   $('quickRail').innerHTML=visible.map(c=>`<button data-id="${esc(c.id)}" title="${esc(c.title)}" class="${c.id===selected?'active':''}"></button>`).join('');
   $('quickRail').querySelectorAll('button').forEach(b=>b.onclick=()=>select(b.dataset.id));
   ['gallery','dockTrack','quickGallery'].forEach(id=>$(id).querySelectorAll('.clip').forEach(e=>{
-    e.onclick=ev=>{if(ev.shiftKey){select(e.dataset.id);addStack();return}select(e.dataset.id,false)};
-    e.ondblclick=()=>paste(data.find(c=>c.id===e.dataset.id));
-    e.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();ev.stopPropagation();paste(data.find(c=>c.id===e.dataset.id))}};
+    e.onclick=ev=>{
+      if(selectMode){ev.preventDefault();ev.stopPropagation();togglePick(e.dataset.id);return}
+      if(ev.shiftKey){select(e.dataset.id);addStack();return}select(e.dataset.id,false)
+    };
+    e.ondblclick=()=>{if(!selectMode)paste(data.find(c=>c.id===e.dataset.id))};
+    e.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();ev.stopPropagation();if(selectMode)togglePick(e.dataset.id);else paste(data.find(c=>c.id===e.dataset.id))}};
   }));
   applyIncomingCards();
   renderHistogram();renderStatusIndicators();updatePreview();renderStack();updateFocus(false);
@@ -938,6 +999,7 @@ $('search').oninput=e=>{query=e.target.value;syncSearch();render()};
 $('quickSearch').oninput=e=>{query=e.target.value;syncSearch();render()};
 $('sort').onchange=e=>{sort=e.target.value;render()};
 $('gridBtn').onclick=()=>{layout='grid';render()};
+$('selectMode').onclick=()=>{selectMode=!selectMode;selectedIds.clear();render();notify(selectMode?'Select clips · click cards':'Selection closed')};
 $('listBtn').onclick=()=>{layout='list';render()};
 $('context').onclick=()=>{context=!context;render();notify(context?'IDE source filter enabled':'All sources enabled')};
 $('privacy').onclick=()=>{

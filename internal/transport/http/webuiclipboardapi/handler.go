@@ -100,6 +100,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case rest == "items":
 		h.handleItemsCollection(w, r)
+	case rest == "items/batch-delete":
+		h.handleBatchDeleteItems(w, r)
 	case strings.HasPrefix(rest, "items/"):
 		h.handleItemSubroute(w, r, strings.TrimPrefix(rest, "items/"))
 	case rest == "settings":
@@ -302,6 +304,42 @@ func (h *Handler) handleIngestItem(w http.ResponseWriter, r *http.Request) {
 		"item":         toItemView(res.Item),
 		"deduplicated": res.Deduplicated,
 	})
+}
+
+// handleBatchDeleteItems soft-deletes a user-selected set of clips in one
+// request. The UI computes the set from its current search/kind/time filters.
+func (h *Handler) handleBatchDeleteItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "不支持的请求方法")
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := h.decodeJSON(w, r, &body); err != nil {
+		h.writeDecodeError(w, err)
+		return
+	}
+	if len(body.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "clipboard_ids_required", "至少选择一个条目")
+		return
+	}
+	if len(body.IDs) > 1000 {
+		writeError(w, http.StatusBadRequest, "clipboard_ids_too_many", "单次最多清理 1000 条")
+		return
+	}
+	deleted := 0
+	for _, id := range body.IDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if err := h.Service.Delete(r.Context(), id); err == nil {
+			deleted++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
 func (h *Handler) handleItemSubroute(w http.ResponseWriter, r *http.Request, tail string) {

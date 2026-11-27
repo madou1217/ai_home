@@ -192,14 +192,18 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 
 	switch {
 	case input.Kind == KindFile || len(input.Files) > 0:
+		sourceFiles := FilterIgnoredClipboardFiles(input.Files)
+		if len(sourceFiles) == 0 {
+			return IngestResult{}, ErrEmptyContent
+		}
 		var normalized []string
 		var canonical []byte
 		if input.SyncedAtMs > 0 {
 			// Synced peers keep their own path syntax; hash the canonical raw list.
-			normalized, canonical = NormalizeSyncedFilePaths(input.Files)
+			normalized, canonical = NormalizeSyncedFilePaths(sourceFiles)
 		} else {
 			var normErr error
-			normalized, normErr = normalizeFilePaths(input.Files)
+			normalized, normErr = normalizeFilePaths(sourceFiles)
 			if normErr != nil {
 				return IngestResult{}, normErr
 			}
@@ -401,6 +405,10 @@ func (s *Service) ingestLazy(ctx context.Context, input IngestInput, nowMs int64
 	if len(thumbnail) > 64*1024 {
 		thumbnail = thumbnail[:64*1024]
 	}
+	lazyFiles := FilterIgnoredClipboardFiles(input.Files)
+	if input.Kind == KindFile && len(lazyFiles) == 0 {
+		return IngestResult{}, ErrEmptyContent
+	}
 	item := Item{
 		ID:           uuid.NewString(),
 		SHA256:       sha,
@@ -411,7 +419,7 @@ func (s *Service) ingestLazy(ctx context.Context, input IngestInput, nowMs int64
 		Height:       input.Height,
 		Preview:      truncateRunes(preview, MaxPreviewRunes),
 		Thumbnail:    thumbnail,
-		Files:        append([]string(nil), input.Files...),
+		Files:        lazyFiles,
 		SourceDevice: limitClipText(sourceDevice, 200),
 		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
 		RemoteID:     strings.TrimSpace(input.RemoteID),
@@ -430,6 +438,17 @@ func (s *Service) ingestLazy(ctx context.Context, input IngestInput, nowMs int64
 }
 
 func (s *Service) ingestMaterializedFiles(ctx context.Context, input IngestInput, nowMs int64, sourceDevice string) (IngestResult, error) {
+	payload := make([]MaterializedFile, 0, len(input.FilePayload))
+	for _, file := range input.FilePayload {
+		if IsIgnoredClipboardFile(file.Name) {
+			continue
+		}
+		payload = append(payload, file)
+	}
+	if len(payload) == 0 {
+		return IngestResult{}, ErrEmptyContent
+	}
+	input.FilePayload = payload
 	sha := strings.ToLower(strings.TrimSpace(input.SHA256))
 	if !isSHA256Hex(sha) {
 		names := make([]string, 0, len(input.FilePayload))

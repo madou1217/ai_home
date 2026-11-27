@@ -166,7 +166,10 @@ func BuildMetadataPayload(item clipboard.Item) (SyncPayload, error) {
 		ByteSize:     item.ByteSize,
 	}
 	if item.Kind == clipboard.KindFile {
-		payload.Files = append([]string(nil), item.Files...)
+		payload.Files = clipboard.FilterIgnoredClipboardFiles(item.Files)
+		if len(payload.Files) == 0 {
+			return SyncPayload{}, clipboard.ErrEmptyContent
+		}
 	}
 	if item.Kind == clipboard.KindImage && len(item.Thumbnail) > 0 {
 		payload.ThumbnailBase64 = base64.StdEncoding.EncodeToString(item.Thumbnail)
@@ -188,17 +191,18 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 	}
 	switch item.Kind {
 	case clipboard.KindFile:
-		if len(item.Files) == 0 {
+		files := clipboard.FilterIgnoredClipboardFiles(item.Files)
+		if len(files) == 0 {
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
 		// Hash exactly what the receiver will hash: raw trimmed/sorted paths,
 		// never this host's filepath.Abs (a relay must not rewrite C:\ or / paths).
-		normalized, canonical := clipboard.NormalizeSyncedFilePaths(item.Files)
+		normalized, canonical := clipboard.NormalizeSyncedFilePaths(files)
 		if len(canonical) == 0 {
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
 		payload.Files = normalized
-		archive, archiveErr := buildFileArchive(item.Files)
+		archive, archiveErr := buildFileArchive(files)
 		if archiveErr != nil {
 			return SyncPayload{}, archiveErr
 		}
@@ -370,7 +374,7 @@ func buildFileArchive(files []string) ([]byte, error) {
 	var total int64
 	for _, raw := range files {
 		path := strings.TrimSpace(raw)
-		if path == "" {
+		if path == "" || clipboard.IsIgnoredClipboardFile(path) {
 			continue
 		}
 		info, err := os.Stat(path)

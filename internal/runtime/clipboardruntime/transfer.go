@@ -182,7 +182,7 @@ func BuildFileArchiveFile(files []string) (archivePath string, total int64, arch
 	added := 0
 	for _, raw := range files {
 		path := strings.TrimSpace(raw)
-		if path == "" {
+		if path == "" || clipboard.IsIgnoredClipboardFile(path) {
 			continue
 		}
 		info, statErr := os.Stat(path)

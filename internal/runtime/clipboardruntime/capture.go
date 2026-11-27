@@ -218,7 +218,13 @@ func (c *Capture) pollOnce(ctx context.Context) {
 	now := c.clock()
 
 	// 1. File references (multi-file aware) win over their text shadow.
-	files, ok, err := c.io.ReadFiles(ctx)
+	rawFiles, ok, err := c.io.ReadFiles(ctx)
+	files := clipboard.FilterIgnoredClipboardFiles(rawFiles)
+	if err == nil && ok && len(rawFiles) > 0 && len(files) == 0 {
+		// UU Remote's encrypted scratch files must not fall through to the
+		// text/image readers and be captured through their shadow formats.
+		return
+	}
 	if err == nil && ok && len(files) > 0 {
 		canonical := canonicalFilesBytes(files)
 		if len(canonical) > 0 {

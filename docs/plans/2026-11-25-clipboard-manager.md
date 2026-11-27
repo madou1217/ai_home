@@ -462,3 +462,14 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
   - `items/batch-delete` 实际删除 4 条测试数据；
   - Windows 新文件 `recency-test-20261127.txt` 位于列表首位，时间来自源端（11:02:34），不再与整批 backlog 共用接收时间。
 - 说明：历史里已经存在的 UU 条目不会静默删除；可在文件筛选/搜索 `.uuremote` 后使用新的 `Clear filtered` 清理。
+
+## 28. 文件粘贴、跨设备文件幂等与 Windows 快捷键（2026-11-27）
+
+- **页面粘贴文件**：浏览器无法创建 Windows `CF_HDROP`，此前 Paste 页把文件路径当文本复制，所以资源管理器 `Ctrl+V` 没反应。新增 `POST /v1/management/webui/clipboard/items/{id}/copy`，由本机 Server 的 native clipboard writer 写入真实文件列表；Paste 页文件项改为调用该接口，文本路径只作为远端/失败兜底。
+- **文件包跨设备幂等**：文件包身份从“绝对路径列表”改为“basename 列表 + 内容总大小”（`FilePackageIdentity`）。同一批文件在 Mac/Windows 不同路径复制会收敛到同一 SHA/记录；绝对路径仍作为物化与传输元数据保留。文本/图片继续按内容 SHA 幂等。
+- **Windows 快捷键根因**：`aih clip shortcut install` 原先写入 `C:\Users\madou\Desktop`，但该机器的真实 Shell Desktop 已重定向到 `C:\Users\madou\OneDrive\Desktop`，Explorer 不会扫描并注册那个 lnk 的全局热键。安装器改为读取 `[Environment]::GetFolderPath('Desktop')`；同时增加独立 `AihClipHotkey` 热键代理（登录启动 + watchdog），用 `RegisterHotKey` 直接注册 `Ctrl+Alt+V`，不再依赖 Explorer 的 lnk 热键注册。
+- 验证：
+  - `POST .../copy` 后交互会话 `Get-Clipboard -Format FileDropList` 返回两个 materialized 文件路径，资源管理器可粘贴；
+  - Mac 与 Windows 各复制同一批 `copy-a.txt/copy-b.txt`，Windows 历史仍只有 1 条（upsert 到已有 SHA），Mac 也仍为 1 条；
+  - 热键代理日志 `register=True win32=1401`，模拟 `Ctrl+Alt+V` 后记录 `triggered` 并实际弹出 Quick Orbit；
+  - Windows 服务 Watchdog 同时守护 `aih-server.exe` 与热键代理。

@@ -16,6 +16,11 @@ import (
 // sessionchat.accountGuessedCooldownMs：过期后允许下一次真实请求或显式恢复复核。
 const defaultAuthInvalidBlockDuration = 30 * time.Second
 
+// reauthRequiredBlockDuration 用于额度接口明确 401/403 的场景：这不是一次
+// 窗口性限流，而是 token 被拒绝，必须保持「需重新登录」直到凭据更新或
+// 同账号刷新成功。30s 的猜测冷却会让 WebUI 几分钟后又显示可调度。
+const reauthRequiredBlockDuration = 30 * 24 * time.Hour
+
 // AccountStore 抽象 Token 后台续期所需的账号列表、静态模式识别与运行态读写端口。
 type AccountStore interface {
 	ListAccountOverviews(ctx context.Context, query accountapp.OverviewQuery) ([]accountapp.AccountOverview, error)
@@ -51,7 +56,33 @@ func MarkAccountAuthInvalid(
 	reason string,
 	now time.Time,
 ) (bool, error) {
-	return markAccountAuthInvalid(ctx, store, applier, accountRef, reason, now)
+	return markAccountAuthInvalid(ctx, store, applier, accountRef, reason, now, defaultAuthInvalidBlockDuration)
+}
+
+// MarkAccountReauthRequired 把额度接口 401/403 标记为需要重新登录。
+//
+// 与 MarkAccountAuthInvalid 的区别只有冷却时长：这里是账号凭据被拒绝的
+// 确定性事实，不是 30s 后可以自动复核的猜测冷却。
+func MarkAccountReauthRequired(
+	ctx context.Context,
+	store AccountStore,
+	applier AccountStateApplier,
+	accountRef accountcore.AccountRef,
+	reason string,
+	now time.Time,
+) (bool, error) {
+	return markAccountAuthInvalid(ctx, store, applier, accountRef, reason, now, reauthRequiredBlockDuration)
+}
+
+// ClearAccountAuthInvalid 清除 auth_invalid 及其阻塞；用于同账号刷新成功/重新登录。
+func ClearAccountAuthInvalid(
+	ctx context.Context,
+	store AccountStore,
+	runtimeNotifier AccountRuntimeNotifier,
+	accountRef accountcore.AccountRef,
+	now time.Time,
+) (bool, error) {
+	return clearAccountAuthInvalid(ctx, store, runtimeNotifier, accountRef, now)
 }
 
 func markAccountAuthInvalid(
@@ -61,6 +92,7 @@ func markAccountAuthInvalid(
 	accountRef accountcore.AccountRef,
 	reason string,
 	now time.Time,
+	duration time.Duration,
 ) (bool, error) {
 	if store == nil || ctx == nil || !accountRef.IsValid() {
 		return false, nil
@@ -87,7 +119,7 @@ func markAccountAuthInvalid(
 		message = "auth_invalid_reauth_required"
 	}
 	nowMS := now.UnixMilli()
-	untilMS := now.Add(defaultAuthInvalidBlockDuration).UnixMilli()
+	untilMS := now.Add(duration).UnixMilli()
 	ensureDefaultRuntimeBaseFields(doc)
 	doc["cooldownUntil"] = untilMS
 	doc["authInvalidUntil"] = untilMS

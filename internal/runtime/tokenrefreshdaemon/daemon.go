@@ -524,6 +524,7 @@ func (d *Daemon) executeCycle(ctx context.Context, providerFilter string) (TickS
 							outcome.job.accountRef,
 							fmt.Sprintf("token_refresh_%s", errText),
 							finishNow,
+							defaultAuthInvalidBlockDuration,
 						)
 						if markErr == nil && marked {
 							stats.summary.Invalidated++

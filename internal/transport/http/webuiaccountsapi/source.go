@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/runtime/sqlitex"
 
 	_ "modernc.org/sqlite"
@@ -78,10 +80,13 @@ const (
 	tableProfiles    = "account_profiles"
 	tableIdentities  = "account_identities"
 	tableSnapshots   = "account_usage_snapshots"
-	tableDefaults    = "account_defaults"
-	tableModels      = "account_models"
-	tableRules       = "account_upstream_error_rule"
-	tableRuleGroups  = "account_upstream_error_group"
+	// tableRuntimeStates 是账号级运行态文档；账号页必须把 auth_invalid 等状态
+	// 合并进行，否则 WebUI 会把已失效 token 的账号继续显示为可调度。
+	tableRuntimeStates = "account_runtime_states"
+	tableDefaults      = "account_defaults"
+	tableModels        = "account_models"
+	tableRules         = "account_upstream_error_rule"
+	tableRuleGroups    = "account_upstream_error_group"
 	// tableModelCooldowns 是调度器持久化的模型级冷却账本；旧入口与 live 行
 	// 都必须投影它，否则同一份账号在不同接口里会给出不同的模型可用性。
 	tableModelCooldowns = "account_runtime_state"
@@ -192,7 +197,91 @@ func (source *SQLiteSource) ListAccountRows(ctx context.Context, query Query) (R
 	if len(result.Rows) > 0 && available[tableModelCooldowns] {
 		source.attachModelCooldowns(ctx, result.Rows)
 	}
+	if len(result.Rows) > 0 && available[tableRuntimeStates] {
+		source.attachRuntimeStates(ctx, result.Rows)
+	}
 	return result, nil
+}
+
+// attachRuntimeStates 把账号级运行态文档合并进账号行。
+//
+// 账号页只读 SQLite，不经过 ManagementService；如果不在这里合并，
+// auth_invalid 只会出现在 /v1/management/accounts 和 CLI，WebUI 仍显示
+// schedulable，正是 2026-11-27 用户看到的错误状态。
+func (source *SQLiteSource) attachRuntimeStates(ctx context.Context, accountRows []Row) {
+	byRef := make(map[string]*Row, len(accountRows))
+	refs := make([]any, 0, len(accountRows))
+	for index := range accountRows {
+		ref := strings.TrimSpace(accountRows[index].AccountRef)
+		if ref == "" {
+			continue
+		}
+		if _, duplicate := byRef[ref]; duplicate {
+			continue
+		}
+		if _, err := accountcore.ParseAccountRef(ref); err != nil {
+			continue
+		}
+		byRef[ref] = &accountRows[index]
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(refs)), ",")
+	statement := "SELECT account_ref, state_json, updated_at_ms FROM " + tableRuntimeStates +
+		" WHERE account_ref IN (" + placeholders + ")"
+	resultRows, err := source.db.QueryContext(ctx, statement, refs...)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = resultRows.Close()
+	}()
+	now := time.Now()
+	for resultRows.Next() {
+		var ref, raw string
+		var updatedMS int64
+		if err := resultRows.Scan(&ref, &raw, &updatedMS); err != nil {
+			return
+		}
+		row := byRef[strings.TrimSpace(ref)]
+		if row == nil || strings.TrimSpace(raw) == "" {
+			continue
+		}
+		parsedRef, err := accountcore.ParseAccountRef(ref)
+		if err != nil {
+			continue
+		}
+		updatedAt := now
+		if updatedMS > 0 {
+			updatedAt = time.UnixMilli(updatedMS)
+		}
+		state, err := runtimecore.NewAccountState(runtimecore.AccountStateInput{
+			AccountRef: parsedRef,
+			Document:   []byte(raw),
+			UpdatedAt:  updatedAt,
+		})
+		if err != nil {
+			continue
+		}
+		derived := state.DeriveStatus(now)
+		status := strings.TrimSpace(derived.Status())
+		if status == "" || status == "healthy" {
+			continue
+		}
+		row.RuntimeStatus = status
+		row.RuntimeReason = derived.Reason()
+		if !derived.Until().IsZero() {
+			row.RuntimeUntil = derived.Until().UnixMilli()
+		}
+		row.SchedulableStatus = "blocked_by_runtime"
+		if row.RuntimeReason != "" {
+			row.SchedulableReason = row.RuntimeReason
+		} else {
+			row.SchedulableReason = status
+		}
+	}
 }
 
 // attachRuleRows 批量补齐账号行上的上游错误规则与组挂载。

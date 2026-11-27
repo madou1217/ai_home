@@ -101,7 +101,12 @@ func newUsageComposition(
 		Strategies: strategies,
 		Refresher:  kiroRefresher,
 		Egress:     dependencies.egress,
-		Clock:      dependencies.clock,
+		AuthInvalid: usageAuthInvalidMarker{
+			store:   dependencies.store,
+			runtime: dependencies.runtime,
+			clock:   dependencies.clock,
+		},
+		Clock: dependencies.clock,
 	})
 	if err != nil {
 		return nil, err

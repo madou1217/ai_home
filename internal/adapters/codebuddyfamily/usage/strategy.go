@@ -265,6 +265,14 @@ func (strategy *Strategy) fetch(ctx context.Context, auth familyCredential) ([]b
 	defer func() {
 		_ = response.Body.Close()
 	}()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+		return nil, fmt.Errorf(
+			"%w: CodeBuddy 额度请求认证被拒绝: HTTP %d",
+			usageapp.ErrCredentialRejected,
+			response.StatusCode,
+		)
+	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 		return nil, fmt.Errorf("CodeBuddy 额度请求失败: HTTP %d", response.StatusCode)

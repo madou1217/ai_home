@@ -36,6 +36,8 @@ var (
 	ErrUsageUnsupported = errors.New("账号凭据不支持额度刷新")
 	// ErrRefreshFailed 表示 Provider 请求或响应解码失败。
 	ErrRefreshFailed = errors.New("账号额度刷新失败")
+	// ErrCredentialRejected 表示额度接口明确拒绝当前账号凭据（401/403）。
+	ErrCredentialRejected = errors.New("账号凭据被上游拒绝")
 	// ErrInvalidSnapshot 表示 Adapter 或存储返回了身份不一致的额度快照。
 	ErrInvalidSnapshot = errors.New("账号额度快照结果无效")
 	// ErrSnapshotSuperseded 表示较新的观察已经生效，本次结果不得覆盖或投影。
@@ -149,6 +151,15 @@ type RuntimeProjection interface {
 	) error
 }
 
+// AuthInvalidMarker 把额度接口的凭据拒绝投影为账号级 auth_invalid。
+//
+// 额度刷新是账号页之外唯一会稳定触达官方端点、并能拿到 401/403 的路径；
+// 没有它，WebUI 只能看到缓存的 schedulable，无法提示重新登录。
+type AuthInvalidMarker interface {
+	MarkAuthInvalid(ctx context.Context, accountRef accountcore.AccountRef, reason string) error
+	ClearAuthInvalid(ctx context.Context, accountRef accountcore.AccountRef) error
+}
+
 // ProviderStrategy 隔离一个 Provider 的额度协议与模型族命名事实。
 type ProviderStrategy interface {
 	// ProviderID 返回策略唯一支持的规范 Provider。
@@ -205,7 +216,9 @@ type Dependencies struct {
 	Refresher CredentialRefresher
 	// Egress 可选：探测前解析账号出口并写进请求 Context。
 	Egress accountegress.Resolver
-	Clock  Clock
+	// AuthInvalid 可选：把额度接口 401/403 投影为账号级 auth_invalid。
+	AuthInvalid AuthInvalidMarker
+	Clock       Clock
 }
 
 // ReadResult 是管理 API 读取的当前快照和陈旧状态。
@@ -246,6 +259,7 @@ type Service struct {
 	strategies  map[string]ProviderStrategy
 	refresher   CredentialRefresher
 	egress      accountegress.Resolver
+	authInvalid AuthInvalidMarker
 	clock       Clock
 	flights     refreshFlightGroup
 }
@@ -284,6 +298,7 @@ func NewService(dependencies Dependencies) (*Service, error) {
 		runtime:     dependencies.Runtime,
 		strategies:  strategies,
 		egress:      dependencies.Egress,
+		authInvalid: dependencies.AuthInvalid,
 		clock:       dependencies.Clock,
 		flights: refreshFlightGroup{
 			active:      make(map[accountcore.AccountRef]*refreshCall),
@@ -467,7 +482,17 @@ func (service *Service) refreshCurrent(
 		)
 	}
 	if err != nil {
+		if errors.Is(err, ErrCredentialRejected) && service.authInvalid != nil {
+			markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_ = service.authInvalid.MarkAuthInvalid(markCtx, accountRef, "额度接口认证被拒绝，请重新登录")
+			cancel()
+		}
 		return ReadResult{}, err
+	}
+	if service.authInvalid != nil {
+		clearCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		_ = service.authInvalid.ClearAuthInvalid(clearCtx, accountRef)
+		cancel()
 	}
 	if !snapshot.IsValid() ||
 		snapshot.AccountRef() != accountRef ||

@@ -173,6 +173,9 @@ var approxRowFields = []string{
 	"schedulableStatus",
 	"schedulableReason",
 	"runtimeModels",
+	"runtimeStatus",
+	"runtimeReason",
+	"runtimeUntil",
 }
 
 // unfilledRowFields 返回既不在 filled 也不在 approx 里的字段，即本切片的空占位。

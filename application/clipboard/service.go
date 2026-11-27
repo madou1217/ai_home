@@ -22,6 +22,8 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+
+	"github.com/madou1217/ai_home/core/filehash"
 )
 
 // Service coordinates clipboard domain rules, deduplication, settings, and retention.
@@ -35,6 +37,8 @@ type Service struct {
 
 	subscribersMu sync.Mutex
 	subscribers   map[chan struct{}]struct{}
+
+	fileHashCache *filehash.Cache
 }
 
 // NewService constructs a clipboard Service.
@@ -59,6 +63,13 @@ func NewService(store Store, blobs BlobStore, clock Clock) (*Service, error) {
 func (s *Service) SetRuntimeProbe(probe RuntimeProbe) {
 	if s != nil {
 		s.probe = probe
+	}
+}
+
+// SetFileHashCache attaches the persistent BLAKE3 cache used for file packages.
+func (s *Service) SetFileHashCache(cache *filehash.Cache) {
+	if s != nil {
+		s.fileHashCache = cache
 	}
 }
 
@@ -224,7 +235,8 @@ func (s *Service) Ingest(ctx context.Context, input IngestInput) (result IngestR
 		// ByteSize is a display/sync metadata fact: a batch package of N files
 		// should show its real payload size, not the length of its path list.
 		item.ByteSize = fileContentBytes(normalized)
-		item.SHA256 = sha256Hex(FilePackageIdentity(normalized, item.ByteSize))
+		item.FileHashes = filehash.HashPaths(ctx, s.fileHashCache, normalized, 0)
+		item.SHA256 = sha256Hex(FilePackageIdentity(normalized, item.FileHashes, item.ByteSize))
 		item.Files = normalized
 		item.Preview = buildFilePreview(normalized)
 
@@ -420,6 +432,7 @@ func (s *Service) ingestLazy(ctx context.Context, input IngestInput, nowMs int64
 		Preview:      truncateRunes(preview, MaxPreviewRunes),
 		Thumbnail:    thumbnail,
 		Files:        lazyFiles,
+		FileHashes:   append([]string(nil), input.FileHashes...),
 		SourceDevice: limitClipText(sourceDevice, 200),
 		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
 		RemoteID:     strings.TrimSpace(input.RemoteID),
@@ -452,12 +465,20 @@ func (s *Service) ingestMaterializedFiles(ctx context.Context, input IngestInput
 	sha := strings.ToLower(strings.TrimSpace(input.SHA256))
 	if !isSHA256Hex(sha) {
 		names := make([]string, 0, len(input.FilePayload))
+		hashes := make([]string, 0, len(input.FilePayload))
 		var total int64
 		for _, file := range input.FilePayload {
 			names = append(names, file.Name)
+			hashes = append(hashes, filehash.Blake3Hex(file.Data))
 			total += int64(len(file.Data))
 		}
-		sha = sha256Hex(FilePackageIdentity(names, total))
+		sha = sha256Hex(FilePackageIdentity(names, hashes, total))
+	}
+	if len(input.FileHashes) != len(input.FilePayload) {
+		input.FileHashes = make([]string, 0, len(input.FilePayload))
+		for _, file := range input.FilePayload {
+			input.FileHashes = append(input.FileHashes, filehash.Blake3Hex(file.Data))
+		}
 	}
 	paths, total, err := s.blobs.MaterializeFiles(sha, input.FilePayload)
 	if err != nil {
@@ -478,6 +499,7 @@ func (s *Service) ingestMaterializedFiles(ctx context.Context, input IngestInput
 		ByteSize:     total,
 		Preview:      buildFilePreview(paths),
 		Files:        paths,
+		FileHashes:   append([]string(nil), input.FileHashes...),
 		SourceDevice: limitClipText(sourceDevice, 200),
 		SourceApp:    limitClipText(strings.TrimSpace(input.SourceApp), 200),
 		RemoteID:     strings.TrimSpace(input.RemoteID),
@@ -535,6 +557,7 @@ func (s *Service) IngestArchive(ctx context.Context, stub Item, archivePath stri
 		ByteSize:     total,
 		Preview:      buildFilePreview(paths),
 		Files:        paths,
+		FileHashes:   append([]string(nil), stub.FileHashes...),
 		SourceDevice: limitClipText(stub.SourceDevice, 200),
 		SourceApp:    limitClipText(stub.SourceApp, 200),
 		RemoteID:     stub.RemoteID,

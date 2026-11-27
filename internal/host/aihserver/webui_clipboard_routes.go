@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/madou1217/ai_home/application/clipboard"
+	"github.com/madou1217/ai_home/core/filehash"
 	"github.com/madou1217/ai_home/internal/adapters/clipboardstore"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardruntime"
@@ -110,6 +112,7 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 		_ = store.Close()
 		return nil, nil, err
 	}
+	service.SetFileHashCache(filehash.NewCache(filepath.Join(dependencies.AIHomeDir, "cache", "clipboard-file-hashes.json")))
 	if _, err := service.EnsureDevice(ctx); err != nil {
 		_ = store.Close()
 		return nil, nil, err

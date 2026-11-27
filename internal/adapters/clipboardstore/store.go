@@ -176,12 +176,21 @@ func (s *Store) ensureColumns(ctx context.Context) error {
 			return err
 		}
 	}
+	if !columns["file_hashes_json"] {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE clipboard_items ADD COLUMN file_hashes_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // UpsertItem atomically inserts a new item or updates an existing SHA-256 entry.
 func (s *Store) UpsertItem(ctx context.Context, item clipboard.Item) (clipboard.Item, bool, error) {
 	filesJSON, err := encodeFilesJSON(item.Files)
+	if err != nil {
+		return clipboard.Item{}, false, err
+	}
+	hashesJSON, err := encodeFilesJSON(item.FileHashes)
 	if err != nil {
 		return clipboard.Item{}, false, err
 	}
@@ -194,10 +203,10 @@ func (s *Store) UpsertItem(ctx context.Context, item clipboard.Item) (clipboard.
 	const upsertSQL = `
 INSERT INTO clipboard_items (
   id, sha256, kind, mime, text, blob_path, byte_size, width, height,
-  preview, thumbnail, files_json, source_device, source_app,
+  preview, thumbnail, files_json, file_hashes_json, source_device, source_app,
   pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
   synced_at_ms, remote_id, materialized, remote_source
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO UPDATE SET
   last_seen_at_ms = CASE
     WHEN excluded.last_seen_at_ms > clipboard_items.last_seen_at_ms THEN excluded.last_seen_at_ms
@@ -209,6 +218,7 @@ ON CONFLICT(sha256) DO UPDATE SET
   text = CASE WHEN excluded.materialized = 1 THEN excluded.text ELSE clipboard_items.text END,
   blob_path = CASE WHEN excluded.materialized = 1 THEN excluded.blob_path WHEN clipboard_items.blob_path = '' THEN excluded.blob_path ELSE clipboard_items.blob_path END,
   files_json = CASE WHEN excluded.materialized = 1 THEN excluded.files_json ELSE clipboard_items.files_json END,
+  file_hashes_json = CASE WHEN excluded.file_hashes_json <> '[]' THEN excluded.file_hashes_json ELSE clipboard_items.file_hashes_json END,
   byte_size = CASE WHEN excluded.materialized = 1 THEN excluded.byte_size ELSE clipboard_items.byte_size END,
   materialized = CASE WHEN excluded.materialized = 1 THEN 1 ELSE clipboard_items.materialized END,
   preview = CASE WHEN excluded.preview <> '' THEN excluded.preview ELSE clipboard_items.preview END,
@@ -234,6 +244,7 @@ ON CONFLICT(sha256) DO UPDATE SET
 		item.Preview,
 		item.Thumbnail,
 		filesJSON,
+		hashesJSON,
 		item.SourceDevice,
 		item.SourceApp,
 		boolToInt(item.Pinned),
@@ -294,7 +305,7 @@ func (s *Store) ListItems(ctx context.Context, filter clipboard.ListFilter) ([]c
 	var query strings.Builder
 	query.WriteString(`
 SELECT id, sha256, kind, mime, blob_path, byte_size, width, height,
-       preview, thumbnail, files_json, source_device, source_app,
+       preview, thumbnail, files_json, file_hashes_json, source_device, source_app,
        pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
        synced_at_ms, remote_id, materialized, remote_source
 FROM clipboard_items`)
@@ -743,7 +754,7 @@ type rowQuerier interface {
 
 const fullItemSelect = `
 SELECT id, sha256, kind, mime, text, blob_path, byte_size, width, height,
-       preview, thumbnail, files_json, source_device, source_app,
+       preview, thumbnail, files_json, file_hashes_json, source_device, source_app,
        pinned, deleted, deleted_at_ms, seen_count, created_at_ms, last_seen_at_ms,
        synced_at_ms, remote_id, materialized, remote_source
 FROM clipboard_items`
@@ -766,7 +777,7 @@ type rowScanner interface {
 
 func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 	var item clipboard.Item
-	var kind, filesJSON string
+	var kind, filesJSON, hashesJSON string
 	var pinned, deleted, materialized int
 	if err := scanner.Scan(
 		&item.ID,
@@ -781,6 +792,7 @@ func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 		&item.Preview,
 		&item.Thumbnail,
 		&filesJSON,
+		&hashesJSON,
 		&item.SourceDevice,
 		&item.SourceApp,
 		&pinned,
@@ -801,12 +813,13 @@ func scanFullItem(scanner rowScanner) (clipboard.Item, error) {
 	item.Pinned = pinned != 0
 	item.Deleted = deleted != 0
 	item.Files = decodeFilesJSON(filesJSON)
+	item.FileHashes = decodeFilesJSON(hashesJSON)
 	return item, nil
 }
 
 func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 	var item clipboard.Item
-	var kind, filesJSON string
+	var kind, filesJSON, hashesJSON string
 	var pinned, deleted, materialized int
 	if err := scanner.Scan(
 		&item.ID,
@@ -820,6 +833,7 @@ func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 		&item.Preview,
 		&item.Thumbnail,
 		&filesJSON,
+		&hashesJSON,
 		&item.SourceDevice,
 		&item.SourceApp,
 		&pinned,
@@ -840,6 +854,7 @@ func scanListItem(scanner rowScanner) (clipboard.Item, error) {
 	item.Pinned = pinned != 0
 	item.Deleted = deleted != 0
 	item.Files = decodeFilesJSON(filesJSON)
+	item.FileHashes = decodeFilesJSON(hashesJSON)
 	return item, nil
 }
 

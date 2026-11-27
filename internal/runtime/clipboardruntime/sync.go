@@ -57,6 +57,7 @@ type SyncPayload struct {
 	Text         string         `json:"text,omitempty"`
 	DataBase64   string         `json:"dataBase64,omitempty"`
 	Files        []string       `json:"files,omitempty"`
+	FileHashes   []string       `json:"fileHashes,omitempty"`
 	Width        int            `json:"width,omitempty"`
 	Height       int            `json:"height,omitempty"`
 	SourceDevice string         `json:"sourceDevice,omitempty"`
@@ -175,6 +176,9 @@ func BuildMetadataPayload(item clipboard.Item) (SyncPayload, error) {
 		if len(payload.Files) == 0 {
 			return SyncPayload{}, clipboard.ErrEmptyContent
 		}
+		if len(item.FileHashes) == len(payload.Files) {
+			payload.FileHashes = append([]string(nil), item.FileHashes...)
+		}
 	}
 	if item.Kind == clipboard.KindImage && len(item.Thumbnail) > 0 {
 		payload.ThumbnailBase64 = base64.StdEncoding.EncodeToString(item.Thumbnail)
@@ -209,6 +213,9 @@ func BuildSyncPayload(ctx context.Context, service *clipboard.Service, item clip
 		}
 		payload.Files = normalized
 		payload.ByteSize = item.ByteSize
+		if len(item.FileHashes) == len(normalized) {
+			payload.FileHashes = append([]string(nil), item.FileHashes...)
+		}
 		archive, archiveErr := buildFileArchive(files)
 		if archiveErr != nil {
 			return SyncPayload{}, archiveErr
@@ -287,6 +294,7 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 				return clipboard.IngestInput{}, clipboard.ErrEmptyContent
 			}
 			input.FilePayload = files
+			input.FileHashes = append([]string(nil), payload.FileHashes...)
 			input.SHA256 = want
 			return input, nil
 		}
@@ -297,7 +305,7 @@ func VerifyAndDecodePayload(expectedSHA string, payload SyncPayload, syncedAtMs 
 		if len(canonical) > clipboard.MaxTextBytes {
 			return clipboard.IngestInput{}, clipboard.ErrItemTooLarge
 		}
-		if sha256HexBytes(clipboard.FilePackageIdentity(normalized, payload.ByteSize)) != want {
+		if sha256HexBytes(clipboard.FilePackageIdentity(normalized, payload.FileHashes, payload.ByteSize)) != want {
 			return clipboard.IngestInput{}, ErrSyncSHAMismatch
 		}
 		input.Files = normalized
@@ -373,6 +381,7 @@ func VerifyMetadata(expectedSHA string, payload SyncPayload, syncedAtMs int64, r
 		Thumbnail:    thumbnail,
 		ByteSize:     payload.ByteSize,
 		Files:        files,
+		FileHashes:   append([]string(nil), payload.FileHashes...),
 		Width:        payload.Width,
 		Height:       payload.Height,
 		SourceDevice: payload.SourceDevice,

@@ -109,6 +109,7 @@ type Item struct {
 	Preview      string   `json:"preview"`
 	Thumbnail    []byte   `json:"-"`
 	Files        []string `json:"files,omitempty"`
+	FileHashes   []string `json:"fileHashes,omitempty"`
 	SourceDevice string   `json:"sourceDevice,omitempty"`
 	SourceApp    string   `json:"sourceApp,omitempty"`
 	Pinned       bool     `json:"pinned"`
@@ -239,6 +240,7 @@ type IngestInput struct {
 	Text         string
 	Data         []byte
 	Files        []string
+	FileHashes   []string
 	Width        int
 	Height       int
 	Thumbnail    []byte

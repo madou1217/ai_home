@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/proxyendpoints"
 	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
@@ -75,7 +76,7 @@ func newServeEntryUnit(ctx context.Context, runtime commandRuntime, options prox
 	// 所有 serve 进程（含临时前台入口）都发布自己的地区元数据；它不含凭据，
 	// 只让应用看台按端口显示国家/城市。
 	if home, homeErr := resolveAIHomeDir(runtime); homeErr == nil {
-		if cleanup, publishErr := proxyendpoints.Publish(home, lease.httpURL, lease.name); publishErr != nil {
+		if cleanup, publishErr := proxyendpoints.Publish(home, lease.httpURL, lease.name, options.selector); publishErr != nil {
 			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能发布代理入口地区信息: %v\n", publishErr)
 		} else {
 			unit.unpublishEndpoint = cleanup
@@ -169,6 +170,29 @@ func isLeaseLossError(err error) bool {
 		}
 	}
 	return false
+}
+
+// retryRecovery retries a transient management-plane recovery. A Server
+// restart makes the API unreachable for a few seconds; treating that as fatal
+// turned every temporary app entry into a dead port.
+func retryRecovery(ctx context.Context, attempts int, delay time.Duration, attempt func() error) error {
+	var err error
+	for index := 0; index < attempts; index++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if err = attempt(); err == nil {
+			return nil
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
 }
 
 // rotateServeEntry 在当前出口失效后换下一个候选并完整重建入口。

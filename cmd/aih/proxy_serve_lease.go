@@ -50,7 +50,7 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	if err != nil {
 		return nil, err
 	}
-	raw, err := client.Lease(ctx, selector)
+	raw, err := client.LeaseWorking(ctx, selector, 8)
 	if err != nil {
 		return nil, err
 	}

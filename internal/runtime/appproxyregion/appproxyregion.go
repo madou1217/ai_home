@@ -62,6 +62,17 @@ func Enrich(ctx context.Context, instances []appsessions.Instance, aiHomeDir str
 			resolved.country, resolved.city, resolved.region = Resolve(ctx, aiHomeDir, key)
 			cache[key] = resolved
 		}
+		if instance.ProxySelector == "" {
+			if info, ok := proxyendpoints.Lookup(aiHomeDir, key); ok {
+				switch strings.ToLower(strings.TrimSpace(info.Selector)) {
+				case "", "auto", "pool":
+					// Resident entries are renewed through their control API,
+					// not by starting a temporary entry on the same port.
+				default:
+					instance.ProxySelector = info.Selector
+				}
+			}
+		}
 		if resolved.region == "" {
 			continue
 		}

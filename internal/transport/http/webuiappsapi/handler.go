@@ -10,14 +10,17 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/launcher"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyhealth"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
+	"github.com/madou1217/ai_home/internal/runtime/appproxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 	"github.com/madou1217/ai_home/internal/runtime/proxycontrol"
+	"github.com/madou1217/ai_home/internal/runtime/proxyendpoints"
 )
 
 const (
@@ -63,20 +66,31 @@ type ProxyLauncher interface {
 	OpenWithProxy(ctx context.Context, app launcher.App, options applaunch.ProxyOptions) (applaunch.ProxyMode, error)
 }
 
+// ProxyEntries starts/reuses temporary per-selector entries for app launches
+// and manual reconnects.
+type ProxyEntries interface {
+	Ensure(ctx context.Context, selector string) (appproxyserve.Entry, error)
+	EnsureOnPort(ctx context.Context, selector string, port int) (appproxyserve.Entry, error)
+	RestartOnPort(ctx context.Context, selector string, port int) (appproxyserve.Entry, error)
+	Stop(selector string)
+}
+
 // Dependencies 汇总 Handler 依赖。
 type Dependencies struct {
-	Authorizer Authorizer
-	Catalog    AppCatalog
-	Launcher   ProxyLauncher
-	AIHomeDir  string
+	Authorizer   Authorizer
+	Catalog      AppCatalog
+	Launcher     ProxyLauncher
+	ProxyEntries ProxyEntries
+	AIHomeDir    string
 }
 
 // Handler 是本机应用接口的 HTTP 入站适配器。
 type Handler struct {
-	authorizer Authorizer
-	catalog    AppCatalog
-	launcher   ProxyLauncher
-	aiHomeDir  string
+	authorizer   Authorizer
+	catalog      AppCatalog
+	launcher     ProxyLauncher
+	proxyEntries ProxyEntries
+	aiHomeDir    string
 }
 
 // NewHandler 创建 Handler。
@@ -85,10 +99,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer: dependencies.Authorizer,
-		catalog:    dependencies.Catalog,
-		launcher:   dependencies.Launcher,
-		aiHomeDir:  dependencies.AIHomeDir,
+		authorizer:   dependencies.Authorizer,
+		catalog:      dependencies.Catalog,
+		launcher:     dependencies.Launcher,
+		proxyEntries: dependencies.ProxyEntries,
+		aiHomeDir:    dependencies.AIHomeDir,
 	}, nil
 }
 
@@ -180,10 +195,11 @@ func (handler *Handler) list(response http.ResponseWriter, request *http.Request
 
 func (handler *Handler) launch(response http.ResponseWriter, request *http.Request) {
 	var payload struct {
-		ID       string `json:"id"`
-		Query    string `json:"query"`
-		Proxy    bool   `json:"proxy"`
-		ProxyURL string `json:"proxyUrl"`
+		ID            string `json:"id"`
+		Query         string `json:"query"`
+		Proxy         bool   `json:"proxy"`
+		ProxyURL      string `json:"proxyUrl"`
+		ProxySelector string `json:"proxySelector"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes))
 	decoder.DisallowUnknownFields()
@@ -205,11 +221,32 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": code})
 		return
 	}
+	selector := strings.TrimSpace(payload.ProxySelector)
+	customURL := strings.TrimSpace(payload.ProxyURL)
+	if selector != "" && customURL != "" {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid_payload", "message": "proxySelector 与 proxyUrl 只能指定一个"})
+		return
+	}
+	entry := appproxyserve.Entry{}
 	proxyURL := ""
-	if payload.Proxy {
-		proxyURL = strings.TrimSpace(payload.ProxyURL)
-		if proxyURL == "" {
-			proxyURL = applaunch.DefaultProxyURL(handler.aiHomeDir)
+	if payload.Proxy || selector != "" {
+		if selector != "" {
+			if handler.proxyEntries == nil {
+				writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "proxy_entries_unavailable", "message": "临时节点/地区入口不可用"})
+				return
+			}
+			ensured, entryErr := handler.proxyEntries.Ensure(request.Context(), selector)
+			if entryErr != nil {
+				writeJSON(response, http.StatusBadGateway, map[string]any{"ok": false, "error": "proxy_entry_failed", "message": entryErr.Error()})
+				return
+			}
+			entry = ensured
+			proxyURL = entry.URL
+		} else {
+			proxyURL = customURL
+			if proxyURL == "" {
+				proxyURL = applaunch.DefaultProxyURL(handler.aiHomeDir)
+			}
 		}
 	}
 	mode, err := handler.launcher.OpenWithProxy(request.Context(), app, applaunch.ProxyOptions{
@@ -229,19 +266,30 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		proxyURL,
 		string(mode),
 	)
-	instance.ProxyCountry, instance.ProxyCity, instance.ProxyRegion = appproxyregion.Resolve(request.Context(), handler.aiHomeDir, proxyURL)
+	if entry.Selector != "" {
+		instance.ProxySelector = entry.Selector
+		instance.ProxyPID = entry.PID
+		instance.ProxyCountry = entry.Country
+		instance.ProxyCity = entry.CityCode
+		instance.ProxyRegion = entry.Region
+	} else {
+		instance.ProxyCountry, instance.ProxyCity, instance.ProxyRegion = appproxyregion.Resolve(request.Context(), handler.aiHomeDir, proxyURL)
+	}
 	instance, recordErr := appsessions.New(handler.aiHomeDir).Add(request.Context(), instance)
 	if recordErr != nil {
 		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "record_failed", "message": recordErr.Error()})
 		return
 	}
 	writeJSON(response, http.StatusOK, map[string]any{
-		"ok":         true,
-		"app":        viewFor(app),
-		"proxyUrl":   proxyURL,
-		"proxyMode":  mode,
-		"proxyLabel": mode.Label(),
-		"instance":   instance,
+		"ok":            true,
+		"app":           viewFor(app),
+		"proxyUrl":      proxyURL,
+		"proxyMode":     mode,
+		"proxyLabel":    mode.Label(),
+		"proxySelector": entry.Selector,
+		"proxyRegion":   entry.Region,
+		"proxyPid":      entry.PID,
+		"instance":      instance,
 	})
 }
 
@@ -304,44 +352,177 @@ func stripURLUserinfo(raw string) string {
 	return parsed.String()
 }
 
+// renew manually reconnects the selected app proxies.
+//
+// Temporary node/region entries are restarted on the port the already-running
+// app was launched with; the resident 6152 entry is renewed through its control
+// API. Custom URL proxies cannot be renewed by AIH and report a clear error.
 func (handler *Handler) renew(response http.ResponseWriter, request *http.Request) {
 	var payload struct {
 		IDs []string `json:"ids"`
 	}
 	_ = json.NewDecoder(http.MaxBytesReader(response, request.Body, maxBodyBytes)).Decode(&payload)
-	if len(payload.IDs) > 0 {
-		instances, err := appsessions.New(handler.aiHomeDir).List(request.Context())
-		if err != nil {
-			writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "desk_failed", "message": err.Error()})
-			return
+	store := appsessions.New(handler.aiHomeDir)
+	instances, err := store.List(request.Context())
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "desk_failed", "message": err.Error()})
+		return
+	}
+	wanted := make(map[string]struct{}, len(payload.IDs))
+	for _, id := range payload.IDs {
+		wanted[strings.TrimSpace(id)] = struct{}{}
+	}
+	selected := make([]appsessions.Instance, 0, len(instances))
+	for _, instance := range instances {
+		if !instance.Proxied || !instance.ActiveNow() {
+			continue
 		}
-		proxied := false
-		wanted := make(map[string]struct{}, len(payload.IDs))
-		for _, id := range payload.IDs {
-			wanted[strings.TrimSpace(id)] = struct{}{}
-		}
-		for _, instance := range instances {
-			if _, ok := wanted[instance.ID]; ok && instance.Proxied {
-				proxied = true
-				break
+		if len(wanted) > 0 {
+			if _, ok := wanted[instance.ID]; !ok {
+				continue
 			}
 		}
-		if !proxied {
-			writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "app_not_proxied", "message": "选中的应用没有使用代理"})
-			return
+		selected = append(selected, instance)
+	}
+	if len(selected) == 0 {
+		writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "app_not_proxied", "message": "选中的应用没有使用代理"})
+		return
+	}
+
+	client, _ := proxycontrol.Load(handler.aiHomeDir)
+	residentStatus := proxycontrol.Status{}
+	residentMatches := func(proxyURL string) bool {
+		if client == nil {
+			return false
+		}
+		status, statusErr := client.Status(request.Context())
+		if statusErr != nil && status.HTTPURL == "" {
+			return false
+		}
+		residentStatus = status
+		return sameProxyEndpoint(status.HTTPURL, proxyURL)
+	}
+
+	type selectorGroup struct {
+		selector  string
+		port      int
+		instances []appsessions.Instance
+	}
+	selectors := make(map[string]*selectorGroup)
+	residentSelected := false
+	errorsList := make([]string, 0)
+	for _, instance := range selected {
+		selector := strings.TrimSpace(instance.ProxySelector)
+		if selector == "" {
+			// Legacy entries launched with --proxy-url: the published endpoint
+			// metadata now carries the selector the serve process was started
+			// with, so the same port can be restored without guessing.
+			if info, ok := proxyendpoints.Lookup(handler.aiHomeDir, instance.ProxyURL); ok {
+				selector = strings.TrimSpace(info.Selector)
+			}
+		}
+		switch strings.ToLower(selector) {
+		case "", "auto", "pool":
+			selector = ""
+		}
+		if selector != "" {
+			port := proxyPort(instance.ProxyURL)
+			if port <= 0 {
+				errorsList = append(errorsList, instance.Name+"：代理地址缺少端口，请重新启动应用")
+				continue
+			}
+			key := selector + "|" + strconv.Itoa(port)
+			group := selectors[key]
+			if group == nil {
+				group = &selectorGroup{selector: selector, port: port}
+				selectors[key] = group
+			}
+			group.instances = append(group.instances, instance)
+			continue
+		}
+		if residentMatches(instance.ProxyURL) {
+			residentSelected = true
+			continue
+		}
+		errorsList = append(errorsList, instance.Name+"：自定义代理 URL 无法由 AIH 重连，请重新启动应用")
+	}
+
+	renewed := 0
+	for _, group := range selectors {
+		if handler.proxyEntries == nil {
+			errorsList = append(errorsList, "临时节点/地区入口不可用")
+			break
+		}
+		entry, ensureErr := handler.proxyEntries.RestartOnPort(request.Context(), group.selector, group.port)
+		if ensureErr != nil {
+			errorsList = append(errorsList, group.selector+":"+strconv.Itoa(group.port)+"："+ensureErr.Error())
+			continue
+		}
+		for _, instance := range group.instances {
+			if updateErr := store.SetProxyEntry(request.Context(), instance.ID, appsessions.ProxyEntry{
+				URL:      entry.URL,
+				Selector: group.selector,
+				Country:  entry.Country,
+				City:     entry.CityCode,
+				Region:   entry.Region,
+				PID:      entry.PID,
+			}); updateErr != nil {
+				errorsList = append(errorsList, instance.Name+"："+updateErr.Error())
+				continue
+			}
+			renewed++
 		}
 	}
-	client, err := proxycontrol.Load(handler.aiHomeDir)
-	if err != nil {
-		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "proxy_not_running", "message": err.Error()})
+	if residentSelected {
+		if client == nil {
+			errorsList = append(errorsList, "本机代理入口未运行")
+		} else {
+			status, renewErr := client.Renew(request.Context())
+			if renewErr != nil {
+				errorsList = append(errorsList, "本机代理入口："+renewErr.Error())
+			} else {
+				residentStatus = status
+				renewed++
+			}
+		}
+	}
+	if renewed == 0 {
+		writeJSON(response, http.StatusBadGateway, map[string]any{"ok": false, "error": "renew_failed", "message": strings.Join(errorsList, "；"), "errors": errorsList})
 		return
 	}
-	status, renewErr := client.Renew(request.Context())
-	if renewErr != nil {
-		writeJSON(response, http.StatusConflict, map[string]any{"ok": false, "error": "renew_failed", "message": renewErr.Error(), "proxy": status})
-		return
+	view, viewErr := handler.deskView(request)
+	result := map[string]any{"ok": true, "proxy": residentStatus, "renewed": renewed}
+	if len(errorsList) > 0 {
+		result["errors"] = errorsList
 	}
-	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "proxy": status})
+	if viewErr == nil {
+		result["desk"] = view
+	}
+	writeJSON(response, http.StatusOK, result)
+}
+
+func sameProxyEndpoint(left, right string) bool {
+	a, err := url.Parse(strings.TrimSpace(left))
+	if err != nil || a == nil || a.Host == "" {
+		return false
+	}
+	b, err := url.Parse(strings.TrimSpace(right))
+	if err != nil || b == nil || b.Host == "" {
+		return false
+	}
+	return strings.EqualFold(a.Host, b.Host)
+}
+
+func proxyPort(raw string) int {
+	endpoint, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || endpoint == nil || endpoint.Port() == "" {
+		return 0
+	}
+	port, err := strconv.Atoi(endpoint.Port())
+	if err != nil || port <= 0 || port > 65535 {
+		return 0
+	}
+	return port
 }
 
 func (handler *Handler) kill(response http.ResponseWriter, request *http.Request) {

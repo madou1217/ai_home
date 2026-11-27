@@ -94,7 +94,8 @@ func buildCommandCatalog() []commandNode {
 	claimOptions := []optionSpec{f("--dry-run", "只预览"), vf("--account", "指定账号", kindAccount), jsonFlag, f("--quiet", "安静模式")}
 	pluginOptions := []optionSpec{jsonFlag}
 	appOptions := []optionSpec{
-		f("--proxy", "只给本次启动的应用实例挂代理"),
+		f("--proxy", "只给本次实例挂代理；可带节点/地区选择器"),
+		vf("--proxy-selector", "临时入口选择器：auto/节点ID/地区范围 us,jp,exclude:cn", kindProxy),
 		vf("--proxy-url", "覆盖代理地址（默认 127.0.0.1:6152）", kindFree),
 		f("--list", "列出本机应用（与 alt+space 工作台同源）"),
 		f("--history", "查看已结束实例的历史记录"),

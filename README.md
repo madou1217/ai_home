@@ -126,16 +126,23 @@ aih proxy regions --all                    # 查 2 字国家码 / 3 字城市码
 「开发工具 → 应用与集成 → 应用看台」把 `aih app` 的能力可视化：选择本机应用，按需选择**直连 / 本机代理 / 自定义代理 URL**，启动独立实例；实例、PID、代理端口、出口国家/城市与运行时长会实时显示。命令行等价：
 
 ```bash
-aih app "Google Chrome"                                  # 直连启动独立实例
-aih app "Google Chrome" --proxy                          # 走本机 6152 入口
-aih app "Google Chrome" --proxy-url http://127.0.0.1:6156 # 走指定临时入口（例如某个节点/地区）
-aih app                                                   # 看台：只列运行中的实例
-aih app --history                                         # 已结束实例的历史记录
+aih app "Google Chrome"                                   # 直连启动独立实例
+aih app "Google Chrome" --proxy                           # 走本机 6152 入口
+aih app "Google Chrome" --proxy us,jp,exclude:cn          # 节点/地区选择：独立临时入口
+aih app "Google Chrome" --proxy-selector node_a40e...     # 显式节点 ID
+aih app "Google Chrome" --proxy-url http://127.0.0.1:6156 # 自定义代理 URL
+aih app                                                    # 看台：只列运行中的实例
+aih app --history                                          # 已结束实例的历史记录
 ```
+
+- **节点/地区选择器**与 `aih proxy serve --selector` 完全同源：2 字国家码、3 字 IATA 城市码、逗号多选、`exclude:` 排除、节点 ID/名称、`auto`/`pool`。每个选择器启动一个独立临时入口（随机空闲端口），多个 App 可以同时使用不同地区。
+- WebUI「启动应用」的「节点/地区」模式与 CLI 使用同一套解析与入口实现。
+- 临时入口启动前会做一次实际出网探测，自动跳过返回 403/5xx 的候选；同 selector 的多个 App 可共享入口。
 
 - Chromium 系使用独立 profile + `--proxy-server`；其它应用注入 `HTTP(S)_PROXY`（应用不读取则不生效）。
 - 挂了代理的实例会显示端口与**出口国家/城市**（由入口租约名或 `run/proxy/endpoints/<port>.json` 解析，解析不出就不显示，绝不猜）。
 - 已结束的实例会移入历史（保留最近 24 小时、最多 200 条），主列表只显示运行中；WebUI 顶部可切换「运行中 / 历史」，CLI 用 `aih app --history`。
+- 每个代理实例都做端口探活：不可达时 WebUI 显示红色「代理已断开」并给出原因，CLI 显示 `⚠ ... [代理已断开]`；行内/工具条的续约会在**原端口**重启该实例的临时入口，已打开的浏览器无需重启。Server 重启后也会自动恢复这些入口。
 - Windows 的 `shell:AppsFolder` / `.lnk` 启动项无法透传 Chromium 参数；`aih app` 会解析真实 `chrome.exe` / `msedge.exe` 后再带参数启动，避免“显示已启动但代理没生效”。
 
 ### 常用入口与边界

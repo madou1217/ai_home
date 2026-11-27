@@ -21,6 +21,8 @@ export interface AppDeskInstance {
   /** 代理端口探活：ok / down；仅看台运行时字段，不落盘。 */
   proxyHealth?: 'ok' | 'down' | (string & {});
   proxyHealthDetail?: string;
+  /** 节点/地区选择器；为空表示本机 6152 或自定义 URL。 */
+  proxySelector?: string;
   startedAtMs: number;
   pids?: number[];
   live: boolean;
@@ -86,6 +88,9 @@ export interface LocalAppLaunchResponse {
   proxyUrl: string;
   proxyMode?: string;
   proxyLabel: string;
+  proxySelector?: string;
+  proxyRegion?: string;
+  proxyPid?: number;
 }
 
 export interface AppDeskKillResult {
@@ -99,6 +104,10 @@ export interface AppDeskKillResult {
 export interface AppDeskRenewResponse {
   ok: boolean;
   proxy: AppDeskProxyStatus;
+  /** 按实例重连后的完整看台（临时入口会更新端口/地区/探活）。 */
+  desk?: AppDeskView;
+  renewed?: number;
+  errors?: string[];
 }
 
 export interface AppDeskKillResponse {
@@ -304,14 +313,19 @@ export const appDeskAPI = {
       ? ids.map((id) => id.trim()).filter(Boolean)
       : [];
     const payload = cleaned.length > 0 ? { ids: cleaned } : {};
-    const data = await requestDesk<{ ok: boolean; proxy?: Partial<AppDeskProxyStatus> }>(
-      'POST',
-      '/renew',
-      payload
-    );
+    const data = await requestDesk<{
+      ok: boolean;
+      proxy?: Partial<AppDeskProxyStatus>;
+      desk?: Partial<AppDeskView>;
+      renewed?: number;
+      errors?: string[];
+    }>('POST', '/renew', payload);
     return {
       ok: Boolean(data.ok),
-      proxy: normalizeProxyStatus(data.proxy)
+      proxy: normalizeProxyStatus(data.proxy),
+      desk: data.desk ? normalizeDeskView(data.desk) : undefined,
+      renewed: typeof data.renewed === 'number' ? data.renewed : undefined,
+      errors: Array.isArray(data.errors) ? data.errors.filter((item): item is string => typeof item === 'string') : []
     };
   },
 
@@ -375,12 +389,18 @@ export const appDeskAPI = {
       proxyUrl?: string;
       proxyMode?: string;
       proxyLabel?: string;
+      proxySelector?: string;
+      proxyRegion?: string;
+      proxyPid?: number;
     }>('POST', '/launch', input);
     return {
       app: data.app,
       proxyUrl: typeof data.proxyUrl === 'string' ? data.proxyUrl : '',
       proxyMode: data.proxyMode,
-      proxyLabel: data.proxyLabel || data.app?.proxyLabel || ''
+      proxyLabel: data.proxyLabel || data.app?.proxyLabel || '',
+      proxySelector: typeof data.proxySelector === 'string' ? data.proxySelector : undefined,
+      proxyRegion: typeof data.proxyRegion === 'string' ? data.proxyRegion : undefined,
+      proxyPid: typeof data.proxyPid === 'number' ? data.proxyPid : undefined
     };
   }
 };

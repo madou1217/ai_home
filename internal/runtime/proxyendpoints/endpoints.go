@@ -30,6 +30,7 @@ const Version = 1
 type Info struct {
 	Version   int    `json:"version"`
 	PID       int    `json:"pid"`
+	Selector  string `json:"selector,omitempty"`
 	Name      string `json:"name,omitempty"`
 	HTTPURL   string `json:"httpUrl"`
 	Country   string `json:"country,omitempty"`
@@ -45,7 +46,7 @@ func Dir(aiHomeDir string) string {
 
 // Publish writes (or refreshes) the metadata for lease.name. The returned
 // cleanup only removes the record if it still belongs to this process.
-func Publish(aiHomeDir, httpURL, name string) (func(), error) {
+func Publish(aiHomeDir, httpURL, name, selector string) (func(), error) {
 	noop := func() {}
 	home := strings.TrimSpace(aiHomeDir)
 	httpURL = strings.TrimSpace(httpURL)
@@ -60,6 +61,7 @@ func Publish(aiHomeDir, httpURL, name string) (func(), error) {
 	info := Info{
 		Version:   Version,
 		PID:       os.Getpid(),
+		Selector:  strings.TrimSpace(selector),
 		Name:      strings.TrimSpace(name),
 		HTTPURL:   httpURL,
 		Country:   country,

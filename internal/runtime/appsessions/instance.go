@@ -41,6 +41,11 @@ type Instance struct {
 	// with a short reason when it does not.
 	ProxyHealth       string `json:"proxyHealth,omitempty"`
 	ProxyHealthDetail string `json:"proxyHealthDetail,omitempty"`
+	// ProxySelector/ProxyPID describe a temporary per-app entry started for a
+	// node/region selection. They are persisted so the desk can show the
+	// selection and stop the entry when the app is explicitly killed.
+	ProxySelector string `json:"proxySelector,omitempty"`
+	ProxyPID      int    `json:"proxyPid,omitempty"`
 
 	StartedAtMs int64 `json:"startedAtMs"`
 	PIDs        []int `json:"pids,omitempty"`
@@ -96,6 +101,17 @@ func NewInstance(app launcher.App, executable, profileDir, proxyURL, proxyMode s
 		Status:      StatusStarting,
 	}
 	return instance
+}
+
+// ProxyEntry is the runtime-side update written when a per-app proxy entry is
+// (re)started. Health fields are recomputed by the desk on the next read.
+type ProxyEntry struct {
+	URL      string
+	Selector string
+	Country  string
+	City     string
+	Region   string
+	PID      int
 }
 
 // KillResult reports one instance's termination.

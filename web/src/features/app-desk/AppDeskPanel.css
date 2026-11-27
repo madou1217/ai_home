@@ -1285,3 +1285,14 @@
   font-size: var(--text-2xs);
   white-space: nowrap;
 }
+
+.app-desk-selector-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}

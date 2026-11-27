@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -11,9 +12,11 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/launcherstore"
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
+	"github.com/madou1217/ai_home/internal/runtime/appproxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/desktoplauncher"
 	"github.com/madou1217/ai_home/internal/runtime/desktoptranslation"
 	"github.com/madou1217/ai_home/internal/runtime/launcherd"
+	"github.com/madou1217/ai_home/internal/runtime/proxyserve"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiappsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuilauncherapi"
 )
@@ -21,14 +24,21 @@ import (
 // launcherRuntime owns the AIH Launch application service, optional Linux launcherd,
 // and HTTP handler wired into aihserver.
 type launcherRuntime struct {
-	service     *launcher.Service
-	handler     *webuilauncherapi.Handler
-	linuxDaemon *launcherd.Daemon
+	service      *launcher.Service
+	handler      *webuilauncherapi.Handler
+	linuxDaemon  *launcherd.Daemon
+	proxyEntries *appproxyserve.Provider
 }
 
 // Close stops the Linux desktop launcher supervisor if running.
 func (r *launcherRuntime) Close() error {
-	if r == nil || r.linuxDaemon == nil {
+	if r == nil {
+		return nil
+	}
+	// Temporary app entries are detached on purpose: survive a server restart
+	// and re-acquire their same selector against the new process. Stop them
+	// explicitly from the app desk when the user kills the app.
+	if r.linuxDaemon == nil {
 		return nil
 	}
 	return r.linuxDaemon.Close()
@@ -75,19 +85,33 @@ func newLauncherRuntime(ctx context.Context, dependencies webuiRouteDependencies
 	if err != nil {
 		return nil, nil, err
 	}
+	proxyEntries := appproxyserve.New(proxyserve.Options{
+		AIHomeDir:     dependencies.AIHomeDir,
+		ServerURL:     dependencies.SelfBaseURL,
+		ManagementKey: dependencies.ManagementKey,
+		LogDir:        filepath.Join(dependencies.AIHomeDir, "logs", "app-proxy"),
+	})
+	// A server restart must not leave already-open apps pointing at dead
+	// temporary entries. Restore runs after the HTTP routes are ready.
+	go func() {
+		time.Sleep(2 * time.Second)
+		proxyEntries.Restore(ctx, dependencies.AIHomeDir)
+	}()
 	appsHandler, err := webuiappsapi.NewHandler(webuiappsapi.Dependencies{
-		Authorizer: dependencies.Authorizer,
-		Catalog:    service,
-		Launcher:   opener,
-		AIHomeDir:  dependencies.AIHomeDir,
+		Authorizer:   dependencies.Authorizer,
+		Catalog:      service,
+		Launcher:     opener,
+		ProxyEntries: proxyEntries,
+		AIHomeDir:    dependencies.AIHomeDir,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	rt := &launcherRuntime{
-		service: service,
-		handler: handler,
+		service:      service,
+		handler:      handler,
+		proxyEntries: proxyEntries,
 	}
 
 	if runtime.GOOS == "linux" {

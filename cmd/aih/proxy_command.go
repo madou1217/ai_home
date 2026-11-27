@@ -516,42 +516,30 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 				action.reply <- proxyControlResult{status: controlHub.snapshot(), err: errors.New("未知代理控制命令")}
 			}
 		case renewErr := <-leaseErr:
-			if !isLeaseLossError(renewErr) {
-				return fmt.Errorf("代理租约续期失败: %w", renewErr)
-			}
 			leaseActive = false
 			lastErr = renewErr.Error()
 			publishStatus()
-			if rotation == nil {
-				// 显式节点：只重新获取同一 selector，绝不静默切换出口；
-				// 节点确实不可用时失败关闭。
-				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在用同一 selector 恢复…\n", renewErr)
-				if refreshErr := refreshInPlace(); refreshErr != nil {
-					lease.finishRecovery(refreshErr)
-					return fmt.Errorf("代理租约续期失败: %w", renewErr)
-				}
+			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 代理租约续期失败（%v），正在恢复…\n", renewErr)
+			// 先原地重取同一 selector：Server 重启/短暂不可达时端口保持不变，
+			// 已经启动的浏览器不会因为管理面几秒不可用而永久失去代理。
+			if refreshErr := retryRecovery(ctx, 15, 2*time.Second, refreshInPlace); refreshErr == nil {
 				lease.finishRecovery(nil)
 				if !options.json {
 					writeServeEntrySummary(runtime, options, lease)
 				}
 				continue
+			} else if rotation == nil {
+				// 点名节点在重试窗口后仍不可用：失败关闭，绝不换到别的出口。
+				lease.finishRecovery(refreshErr)
+				return fmt.Errorf("代理租约续期失败: %w", renewErr)
 			}
-			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 出口已失效（%v），正在恢复…\n", renewErr)
-			recovered := false
-			if hotSwapEnabled.Load() && hotSwapAvailable {
-				if refreshErr := refreshInPlace(); refreshErr == nil {
-					lease.finishRecovery(nil)
-					recovered = true
-				} else {
-					lease.finishRecovery(refreshErr)
-				}
-			} else {
-				lease.finishRecovery(errors.New("热替换未开启"))
-			}
-			if recovered {
-				continue
-			}
-			name, healErr := rebuildEntry(renewErr.Error())
+			var name string
+			healErr := retryRecovery(ctx, 15, 2*time.Second, func() error {
+				var rebuildErr error
+				name, rebuildErr = rebuildEntry(renewErr.Error())
+				return rebuildErr
+			})
+			lease.finishRecovery(healErr)
 			if healErr != nil {
 				return fmt.Errorf("出口切换失败: %w", healErr)
 			}

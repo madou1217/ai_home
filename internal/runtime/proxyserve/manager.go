@@ -38,9 +38,13 @@ var (
 type Request struct {
 	Selector string `json:"selector"`
 	NoSocks  bool   `json:"noSocks,omitempty"`
-	// HTTPPort / SocksPort 是入口端口；0 表示随机。默认在 CLI 层为 6152/6153。
+	// HTTPPort / SocksPort 是入口端口；0 使用 CLI 默认（6152/6153）。
 	HTTPPort  int `json:"httpPort,omitempty"`
 	SocksPort int `json:"socksPort,omitempty"`
+	// ForceRandomPort makes the CLI bind an OS-assigned port instead of its
+	// 6152 default. Used by per-app temporary entries so many regions can run
+	// side by side.
+	ForceRandomPort bool `json:"-"`
 	// Anonymous 允许 loopback 客户端不带代理凭据；nil 使用默认（匿名）。
 	Anonymous *bool `json:"anonymous,omitempty"`
 	// Peer 非空时通过已保存的 SSH 连接借用远端 AIH 的入口；PeerVia 是可选跳板。
@@ -94,6 +98,7 @@ type Manager struct {
 	serverURL     string
 	managementKey func() string
 	cliPath       string
+	logDir        string
 	starting      bool
 	current       *session
 	last          View
@@ -105,6 +110,9 @@ type Options struct {
 	ServerURL     string
 	ManagementKey func() string
 	CLIPath       string
+	// LogDir receives one append-only stderr log per temporary entry. Empty
+	// keeps the previous in-memory-only diagnostics.
+	LogDir string
 }
 
 func NewManager(options Options) *Manager {
@@ -113,6 +121,7 @@ func NewManager(options Options) *Manager {
 		serverURL:     NormalizeServerURL(options.ServerURL),
 		managementKey: options.ManagementKey,
 		cliPath:       strings.TrimSpace(options.CLIPath),
+		logDir:        strings.TrimSpace(options.LogDir),
 	}
 }
 
@@ -235,7 +244,9 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 	if request.NoSocks {
 		args = append(args, "--no-socks")
 	}
-	if request.HTTPPort > 0 {
+	if request.ForceRandomPort {
+		args = append(args, "--http-port", "0")
+	} else if request.HTTPPort > 0 {
 		args = append(args, "--http-port", strconv.Itoa(request.HTTPPort))
 	}
 	if request.SocksPort > 0 {
@@ -245,6 +256,7 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 		args = append(args, "--anonymous=false")
 	}
 	command := exec.Command(cliPath, args...)
+	detachProcess(command)
 	managementKey := ""
 	if manager.managementKey != nil {
 		managementKey = strings.TrimSpace(manager.managementKey())
@@ -261,7 +273,23 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 	}
 	// JSON 模式不再往 stderr 输出正常信息；失败时只保留末尾诊断，启动错误才有可读原因。
 	diagnostics := &tailBuffer{limit: 4096}
-	command.Stderr = diagnostics
+	stderr := io.Writer(diagnostics)
+	var logFile *os.File
+	if manager.logDir != "" {
+		if err := os.MkdirAll(manager.logDir, 0o700); err == nil {
+			safe := strings.Map(func(r rune) rune {
+				if r == '/' || r == '\\' || r == ':' || r == ' ' || r < 0x20 {
+					return '_'
+				}
+				return r
+			}, selector)
+			if opened, openErr := os.OpenFile(filepath.Join(manager.logDir, "app-proxy-"+safe+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); openErr == nil {
+				logFile = opened
+				stderr = io.MultiWriter(diagnostics, opened)
+			}
+		}
+	}
+	command.Stderr = stderr
 	if err := command.Start(); err != nil {
 		finishStart()
 		return View{}, fmt.Errorf("%w: %v", ErrStartFailed, err)
@@ -287,6 +315,9 @@ func (manager *Manager) Start(ctx context.Context, request Request) (View, error
 	manager.mu.Unlock()
 	go func() {
 		current.waitErr = command.Wait()
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		close(current.exited)
 		manager.mu.Lock()
 		if manager.current == current {

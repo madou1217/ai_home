@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 )
 
 const (
@@ -233,6 +235,46 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 		return results, err
 	}
 	return results, nil
+}
+
+// SetProxyEntry updates one instance's proxy endpoint after a manual reconnect.
+// The app process is untouched; only the endpoint/PID/geo fields change.
+func (store *Store) SetProxyEntry(ctx context.Context, id string, entry ProxyEntry) error {
+	if store == nil {
+		return errors.New("app_sessions_store_unavailable")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrNotFound
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ID != id {
+			continue
+		}
+		instance.Proxied = entry.URL != ""
+		instance.ProxyURL = entry.URL
+		instance.ProxySelector = strings.TrimSpace(entry.Selector)
+		instance.ProxyCountry = proxyregion.NormalizeCountry(entry.Country)
+		instance.ProxyCity = strings.ToUpper(strings.TrimSpace(entry.City))
+		instance.ProxyRegion = strings.TrimSpace(entry.Region)
+		instance.ProxyPID = entry.PID
+		instance.ProxyHealth = ""
+		instance.ProxyHealthDetail = ""
+		return store.saveLocked(document)
+	}
+	return ErrNotFound
 }
 
 // History refreshes state and returns exited rows newest-first.

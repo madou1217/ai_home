@@ -203,6 +203,128 @@ func (client *Client) RotationWithFilter(filter proxyregion.Filter, notify updat
 	)
 }
 
+// LeaseWorking 申请一个经过实际出网探测的租约。
+//
+// 候选池里的节点可能“租约可建、数据面 403/502”；只按顺序拿第一个会让
+// 临时入口看起来健康但浏览器完全不通。这里最多试 maxCandidates 个候选，
+// 用一次很短的 HTTP 请求验证出口，失败立即释放并换下一个。
+func (client *Client) LeaseWorking(ctx context.Context, selector string, maxCandidates int) (Lease, error) {
+	selector = strings.TrimSpace(selector)
+	if maxCandidates <= 0 {
+		maxCandidates = 6
+	}
+	filter, scoped, parseErr := proxyregion.Parse(selector)
+	if parseErr != nil {
+		return Lease{}, parseErr
+	}
+	var ids []string
+	switch {
+	case scoped:
+		candidates, err := client.CandidatesMatching(ctx, filter)
+		if err != nil {
+			return Lease{}, err
+		}
+		// Try one candidate from every requested country before a second node
+		// from the same country. `us,jp` must not burn the whole probe budget
+		// on unavailable JP nodes before it ever reaches US.
+		ordered := make([]Candidate, 0, len(candidates))
+		seenCountry := make(map[string]bool)
+		for _, candidate := range candidates {
+			key := strings.ToUpper(strings.TrimSpace(candidate.Country))
+			if key == "" || seenCountry[key] {
+				continue
+			}
+			seenCountry[key] = true
+			ordered = append(ordered, candidate)
+		}
+		for _, candidate := range candidates {
+			duplicate := false
+			for _, existing := range ordered {
+				if existing.ID == candidate.ID {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				ordered = append(ordered, candidate)
+			}
+		}
+		for _, candidate := range ordered {
+			ids = append(ids, candidate.ID)
+		}
+	case selector == "" || strings.EqualFold(selector, "auto") || strings.EqualFold(selector, "pool"):
+		candidates, err := client.Candidates(ctx)
+		if err != nil {
+			return Lease{}, err
+		}
+		for _, candidate := range candidates {
+			if candidate.Available && candidate.ID != "" {
+				ids = append(ids, candidate.ID)
+			}
+		}
+	default:
+		resolved, err := client.Resolve(ctx, selector)
+		if err != nil {
+			return Lease{}, err
+		}
+		ids = []string{resolved}
+	}
+	if len(ids) == 0 {
+		return Lease{}, ErrNoCandidates
+	}
+	var lastErr error
+	for index, id := range ids {
+		if index >= maxCandidates {
+			break
+		}
+		lease, err := client.Lease(ctx, id)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if probeErr := probeLeaseEgress(ctx, lease.ProxyURL); probeErr == nil {
+			return lease, nil
+		} else {
+			lastErr = probeErr
+		}
+		client.Release(lease.ID)
+	}
+	if lastErr == nil {
+		lastErr = errors.New("没有可用的代理出口")
+	}
+	return Lease{}, fmt.Errorf("没有通过出网探测的代理出口: %w", lastErr)
+}
+
+// probeLeaseEgress requests a tiny HTTP target through the lease. It accepts
+// any 2xx/3xx response; 403/407/5xx and transport errors mean the node is not
+// usable even though its lease exists.
+func probeLeaseEgress(ctx context.Context, proxyURL string) error {
+	endpoint, err := url.Parse(strings.TrimSpace(proxyURL))
+	if err != nil || endpoint == nil || endpoint.Host == "" {
+		return errors.New("代理租约地址无效")
+	}
+	transport := &http.Transport{
+		Proxy:             http.ProxyURL(endpoint),
+		DisableKeepAlives: true,
+	}
+	defer transport.CloseIdleConnections()
+	probeCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
+	defer cancel()
+	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, "http://www.gstatic.com/generate_204", nil)
+	if err != nil {
+		return err
+	}
+	response, err := (&http.Client{Transport: transport, Timeout: 3 * time.Second}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 400 {
+		return fmt.Errorf("出口探测返回 HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
 // Resolve 把一个选择器（auto/pool/稳定 ID/唯一名称/地区范围）归一成稳定 ID。
 // 名称歧义、地区范围内没有候选或不可用时明确失败，绝不静默换成另一个出口。
 func (client *Client) Resolve(ctx context.Context, selector string) (string, error) {

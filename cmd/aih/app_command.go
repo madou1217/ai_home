@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -20,18 +21,21 @@ import (
 	"github.com/madou1217/ai_home/internal/runtime/appcatalog"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
+	"github.com/madou1217/ai_home/internal/runtime/appproxyserve"
 	"github.com/madou1217/ai_home/internal/runtime/appsessions"
+	"github.com/madou1217/ai_home/internal/runtime/proxyserve"
 )
 
 type appOptions struct {
-	proxy    bool
-	proxyURL string
-	list     bool
-	history  bool
-	status   bool
-	refresh  bool
-	json     bool
-	query    string
+	proxy         bool
+	proxyURL      string
+	proxySelector string
+	list          bool
+	history       bool
+	status        bool
+	refresh       bool
+	json          bool
+	query         string
 }
 
 func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) error {
@@ -42,6 +46,18 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 		switch {
 		case arg == "--proxy":
 			options.proxy = true
+			if index+1 < len(args) && !strings.HasPrefix(args[index+1], "-") {
+				index++
+				options.proxySelector = args[index]
+			}
+		case strings.HasPrefix(arg, "--proxy="):
+			options.proxy = true
+			options.proxySelector = strings.TrimPrefix(arg, "--proxy=")
+		case arg == "--proxy-selector" && index+1 < len(args):
+			index++
+			options.proxySelector = args[index]
+		case strings.HasPrefix(arg, "--proxy-selector="):
+			options.proxySelector = strings.TrimPrefix(arg, "--proxy-selector=")
 		case arg == "--list":
 			options.list = true
 		case arg == "--history":
@@ -58,7 +74,9 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 			index++
 			options.proxyURL = args[index]
 		case arg == "-h" || arg == "--help":
-			_, _ = fmt.Fprintln(runtime.stdout, "用法: aih app [<应用名或前缀>] [--proxy] [--proxy-url <url>] [--list] [--history] [--status] [--refresh] [--json]")
+			_, _ = fmt.Fprintln(runtime.stdout, "用法: aih app [<应用名或前缀>] [--proxy[=<选择器|地区范围>]] [--proxy-url <url>] [--list] [--history] [--status] [--refresh] [--json]")
+			_, _ = fmt.Fprintln(runtime.stdout, "  --proxy 裸旗标走本机 6152；带值启动独立临时入口：")
+			_, _ = fmt.Fprintln(runtime.stdout, "    地区范围 us,sg / jp / us,jp,exclude:cn；或节点 ID、节点名、auto、pool。")
 			_, _ = fmt.Fprintln(runtime.stdout, "  无参数：运行中的实例看台；--history 查看已结束的历史。")
 			return nil
 		case strings.HasPrefix(arg, "-"):
@@ -69,8 +87,18 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 	}
 	options.query = strings.TrimSpace(strings.Join(positional, " "))
 	options.proxyURL = strings.TrimSpace(options.proxyURL)
+	options.proxySelector = strings.TrimSpace(options.proxySelector)
 	if options.proxyURL != "" {
 		options.proxy = true
+	}
+	if options.proxySelector != "" {
+		options.proxy = true
+	}
+	if options.proxyURL != "" && options.proxySelector != "" {
+		return fmt.Errorf("--proxy 选择器与 --proxy-url 只能指定一个")
+	}
+	if strings.ContainsAny(options.proxySelector, "\r\n\x00") {
+		return fmt.Errorf("--proxy 选择器无效")
 	}
 
 	homeDir, err := resolveLauncherAIHomeDir(runtime)
@@ -136,9 +164,33 @@ func runAppCommand(ctx context.Context, args []string, runtime commandRuntime) e
 // launchAppWithRecord starts one independent instance and records it for the desk.
 func launchAppWithRecord(ctx context.Context, runtime commandRuntime, homeDir string, app launcher.App, options appOptions) error {
 	proxyURL := ""
+	entry := appproxyserve.Entry{}
+	var provider *appproxyserve.Provider
 	if options.proxy {
-		proxyURL = options.proxyURL
-		if proxyURL == "" {
+		switch {
+		case options.proxySelector != "":
+			// 节点/地区选择需要独占上游：为本次启动拉起一个随机端口的临时入口，
+			// 不复用 6152（常驻入口的 selector 固定，多个 App 会互相改出口）。
+			key, _ := runtime.lookupEnv("AIH_SERVER_MANAGEMENT_KEY")
+			executable, execErr := os.Executable()
+			if execErr != nil {
+				return fmt.Errorf("无法定位 aih 可执行文件: %w", execErr)
+			}
+			provider = appproxyserve.New(proxyserve.Options{
+				AIHomeDir:     homeDir,
+				ServerURL:     resolveManagementBaseURL(runtime),
+				ManagementKey: func() string { return key },
+				CLIPath:       executable,
+			})
+			ensured, ensureErr := provider.Ensure(ctx, options.proxySelector)
+			if ensureErr != nil {
+				return fmt.Errorf("无法为「%s」启动临时入口: %w", options.proxySelector, ensureErr)
+			}
+			entry = ensured
+			proxyURL = entry.URL
+		case options.proxyURL != "":
+			proxyURL = options.proxyURL
+		default:
 			proxyURL = applaunch.DefaultProxyURL(homeDir)
 		}
 	}
@@ -150,6 +202,9 @@ func launchAppWithRecord(ctx context.Context, runtime commandRuntime, homeDir st
 		Independent: true,
 	})
 	if err != nil {
+		if provider != nil {
+			provider.Stop(options.proxySelector)
+		}
 		return err
 	}
 	store := appsessions.New(homeDir)
@@ -160,18 +215,29 @@ func launchAppWithRecord(ctx context.Context, runtime commandRuntime, homeDir st
 		proxyURL,
 		string(mode),
 	)
-	instance.ProxyCountry, instance.ProxyCity, instance.ProxyRegion = appproxyregion.Resolve(ctx, homeDir, proxyURL)
+	if entry.Selector != "" {
+		instance.ProxySelector = entry.Selector
+		instance.ProxyPID = entry.PID
+		instance.ProxyCountry = entry.Country
+		instance.ProxyCity = entry.CityCode
+		instance.ProxyRegion = entry.Region
+	} else {
+		instance.ProxyCountry, instance.ProxyCity, instance.ProxyRegion = appproxyregion.Resolve(ctx, homeDir, proxyURL)
+	}
 	if _, recordErr := store.Add(ctx, instance); recordErr != nil {
 		_, _ = fmt.Fprintf(runtime.stderr, "[aih] 未能记录本次启动: %v\n", recordErr)
 	}
 
 	if options.json {
 		payload, _ := json.MarshalIndent(map[string]any{
-			"ok":         true,
-			"app":        app,
-			"proxyUrl":   proxyURL,
-			"proxyMode":  mode,
-			"proxyLabel": mode.Label(),
+			"ok":            true,
+			"app":           app,
+			"proxyUrl":      proxyURL,
+			"proxyMode":     mode,
+			"proxyLabel":    mode.Label(),
+			"proxySelector": entry.Selector,
+			"proxyRegion":   entry.Region,
+			"proxyPid":      entry.PID,
 		}, "", "  ")
 		_, _ = fmt.Fprintln(runtime.stdout, string(payload))
 		return nil
@@ -180,7 +246,15 @@ func launchAppWithRecord(ctx context.Context, runtime commandRuntime, homeDir st
 		_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（独立实例，未挂代理）\n", app.Name)
 		return nil
 	}
-	_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（独立实例，代理 %s，%s）\n", app.Name, proxyURL, mode.Label())
+	if entry.Selector != "" {
+		region := entry.Region
+		if region == "" {
+			region = "地区待解析"
+		}
+		_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（独立实例，选择器 %s · %s，代理 %s，%s）\n", app.Name, entry.Selector, region, proxyURL, mode.Label())
+	} else {
+		_, _ = fmt.Fprintf(runtime.stdout, "已启动 %s（独立实例，代理 %s，%s）\n", app.Name, proxyURL, mode.Label())
+	}
 	if mode == applaunch.ProxyModeEnvironment {
 		_, _ = fmt.Fprintln(runtime.stderr, "[aih] 该应用通过环境变量读取代理；若它不读取 HTTP(S)_PROXY，代理不会生效")
 	}

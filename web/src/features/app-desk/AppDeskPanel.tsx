@@ -39,7 +39,7 @@ const SAMPLE_COMMAND = 'aih app "Google Chrome" --proxy';
 const SAMPLE_PROXY_URL = 'http://127.0.0.1:6156';
 
 type ProxyVisualState = 'active' | 'reconnecting' | 'stopped';
-type LaunchProxyMode = 'direct' | 'default' | 'custom';
+type LaunchProxyMode = 'direct' | 'default' | 'selector' | 'custom';
 type DeskListView = 'active' | 'history';
 
 interface ReconnectBanner {
@@ -214,6 +214,7 @@ export default function AppDeskPanel() {
   const [launchAppId, setLaunchAppId] = useState('');
   const [launchProxyMode, setLaunchProxyMode] = useState<LaunchProxyMode>('default');
   const [launchProxyUrl, setLaunchProxyUrl] = useState('');
+  const [launchSelector, setLaunchSelector] = useState('');
   const [launching, setLaunching] = useState(false);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -391,6 +392,9 @@ export default function AppDeskPanel() {
     [appCatalog, launchAppId]
   );
   const launchCustomUrl = launchProxyUrl.trim();
+  const launchSelectorValue = launchSelector.trim();
+  const launchSelectorValid = launchProxyMode !== 'selector'
+    || (launchSelectorValue.length > 0 && !/[\r\n]/.test(launchSelectorValue));
   const launchCustomValid = (() => {
     if (launchProxyMode !== 'custom' || !launchCustomUrl) return false;
     try {
@@ -400,7 +404,9 @@ export default function AppDeskPanel() {
       return false;
     }
   })();
-  const launchReady = Boolean(launchAppId) && (launchProxyMode !== 'custom' || launchCustomValid);
+  const launchReady = Boolean(launchAppId)
+    && (launchProxyMode !== 'custom' || launchCustomValid)
+    && (launchProxyMode !== 'selector' || launchSelectorValid);
   const selectedAppMode = selectedApp?.proxyMode === 'chromium'
     ? '浏览器参数（独立 profile + --proxy-server，可靠生效）'
     : selectedApp
@@ -444,26 +450,39 @@ export default function AppDeskPanel() {
     });
   };
 
-  const handleRenew = async () => {
-    if (!canRenew || renewing) return;
+  const handleRenew = async (ids?: string[]) => {
+    const targets = ids ?? selectedIds;
+    if (renewing || targets.length === 0) return;
+    if (!ids && !canRenew) return;
     setRenewing(true);
     mutationEpochRef.current += 1;
     const startedAt = Date.now();
     const prevReconnects = proxy?.reconnects ?? 0;
     try {
-      const result = await appDeskAPI.renew(selectedIds);
+      const result = await appDeskAPI.renew(targets);
       if (!mountedRef.current) return;
       mutationEpochRef.current += 1;
       const elapsedMs = Math.max(1, Date.now() - startedAt);
-      observeProxyTransition(result.proxy);
-      setDesk((current) => (current ? { ...current, proxy: result.proxy, proxyError: undefined } : current));
+      if (result.desk) {
+        applyDeskSnapshot(result.desk);
+      } else {
+        observeProxyTransition(result.proxy);
+        setDesk((current) => (current ? { ...current, proxy: result.proxy, proxyError: undefined } : current));
+      }
       const leaseTarget = result.proxy.leaseName || '当前出口';
       const reconnected = (result.proxy.reconnects ?? 0) > prevReconnects;
-      const summary = reconnected
-        ? `已重连上游 · ${leaseTarget}`
-        : `已续约代理 · ${leaseTarget}`;
+      const summary = result.renewed && result.renewed > 1
+        ? `已重连 ${result.renewed} 个代理入口`
+        : result.renewed === 1 && !result.proxy.leaseName
+          ? '已重连代理入口'
+          : reconnected
+            ? `已重连上游 · ${leaseTarget}`
+            : `已续约代理 · ${leaseTarget}`;
       showFeedback('success', summary, `${elapsedMs}ms`);
       message.success(`${summary}（${elapsedMs}ms）`);
+      if (result.errors && result.errors.length > 0) {
+        message.warning(result.errors.join('；'));
+      }
       void fetchDesk();
     } catch (error: unknown) {
       if (!mountedRef.current) return;
@@ -673,12 +692,15 @@ export default function AppDeskPanel() {
       const result = await appDeskAPI.launchApp({
         id: launchAppId,
         proxy: launchProxyMode !== 'direct',
-        proxyUrl: launchProxyMode === 'custom' ? launchCustomUrl : undefined
+        proxyUrl: launchProxyMode === 'custom' ? launchCustomUrl : undefined,
+        proxySelector: launchProxyMode === 'selector' ? launchSelectorValue : undefined
       });
       if (!mountedRef.current) return;
-      const proxyText = result.proxyUrl
-        ? `代理 ${sanitizeProxyUrl(result.proxyUrl)}（${result.proxyLabel || result.app.proxyLabel}）`
-        : '直连';
+      const proxyText = result.proxySelector
+        ? `节点/地区 ${result.proxySelector}${result.proxyRegion ? ` · ${result.proxyRegion}` : ''}（代理 ${sanitizeProxyUrl(result.proxyUrl)}）`
+        : result.proxyUrl
+          ? `代理 ${sanitizeProxyUrl(result.proxyUrl)}（${result.proxyLabel || result.app.proxyLabel}）`
+          : '直连';
       showFeedback('success', `已启动 ${result.app.name}`, `${proxyText} · 独立实例`);
       message.success(`已启动 ${result.app.name}（${proxyText}）`);
       setLaunchOpen(false);
@@ -839,6 +861,11 @@ export default function AppDeskPanel() {
               <Tooltip title={sanitizeProxyUrl(instance.proxyUrl) || `127.0.0.1:${port}`}>
                 <span className="app-desk-port-chip">:{port}</span>
               </Tooltip>
+              {instance.proxySelector ? (
+                <Tooltip title={`节点/地区选择器：${instance.proxySelector}`}>
+                  <span className="app-desk-selector-chip">{instance.proxySelector}</span>
+                </Tooltip>
+              ) : null}
               {instance.proxyRegion ? (
                 <Tooltip title={`出口地区：${countryFlag(instance.proxyCountry)} ${instance.proxyRegion}`}>
                   <span className="app-desk-region-chip">
@@ -852,12 +879,30 @@ export default function AppDeskPanel() {
                 </Tooltip>
               ) : null}
               {instance.proxyHealth === 'down' ? (
-                <Tooltip title={instance.proxyHealthDetail || '代理端口不可达'}>
-                  <span className="app-desk-proxy-down-chip">
-                    <DisconnectOutlined aria-hidden="true" />
-                    代理已断开
-                  </span>
-                </Tooltip>
+                <>
+                  <Tooltip title={instance.proxyHealthDetail || '代理端口不可达'}>
+                    <span className="app-desk-proxy-down-chip">
+                      <DisconnectOutlined aria-hidden="true" />
+                      代理已断开
+                    </span>
+                  </Tooltip>
+                  {!historyMode ? (
+                    <Tooltip title="重连代理（在原端口重启临时入口）">
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label={`重连 ${instance.name} 的代理`}
+                        loading={renewing}
+                        disabled={renewing}
+                        icon={<ReloadOutlined />}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleRenew([instance.id]);
+                        }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </>
               ) : null}
               <Tooltip title={mode.tip}>
                 <span className="app-desk-mode-chip" data-tone={mode.tone}>
@@ -1344,8 +1389,9 @@ export default function AppDeskPanel() {
               onChange={(value) => setLaunchProxyMode(value as LaunchProxyMode)}
               options={[
                 { value: 'direct', label: '直连' },
-                { value: 'default', label: '本机代理' },
-                { value: 'custom', label: '自定义 URL' }
+                { value: 'default', label: '本机' },
+                { value: 'selector', label: '节点/地区' },
+                { value: 'custom', label: '自定义' }
               ]}
             />
           </div>
@@ -1363,6 +1409,22 @@ export default function AppDeskPanel() {
                 </InlineNote>
               )}
             </div>
+          ) : null}
+
+          {launchProxyMode === 'selector' ? (
+            <label className="app-desk-launch-field">
+              <span className="app-desk-launch-label">节点 / 地区选择器</span>
+              <Input
+                value={launchSelector}
+                placeholder="us,jp,exclude:cn / node_a40e1afa297a / auto"
+                onChange={(event) => setLaunchSelector(event.target.value)}
+                status={launchSelector && !launchSelectorValid ? 'error' : undefined}
+              />
+              <span className="app-desk-launch-hint">
+                支持 2 字国家码（us）、3 字城市码（lax）、逗号多选与 exclude: 排除；也可写节点 ID/名称或 auto/pool。
+                会为本次应用启动独立临时入口，不影响本机 6152。
+              </span>
+            </label>
           ) : null}
 
           {launchProxyMode === 'custom' ? (

@@ -179,6 +179,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "invalid_request_body")
 		return
 	}
+	// payload 已解码：原生上游与交还 Canonical 的请求都不能再带客户端编码头，
+	// 否则上游会把纯 JSON 再解压一次（invalid_request_body / 415）。
+	request.Header.Del("Content-Encoding")
 	// 标准 OpenAI Responses SDK 会携带 temperature / max_output_tokens / metadata
 	// 等 Codex 原生线协议表达不了的可选字段。原生快路径是字节透传，直接送给
 	// 上游会被 400 拒绝；这类请求交回 Canonical，由适配层做宽容投影。

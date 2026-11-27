@@ -41,6 +41,12 @@ func (request nativeRequest) passthroughSafe() bool {
 	return len(input) > 0 && input[0] == '['
 }
 
+// readRequest 返回解压后的请求体。
+//
+// 之前返回原始（可能压缩的）请求体：压缩请求因此绕过 RequiresCanonicalProjection
+// 与 SanitizeRequestPayload，交回 Canonical 时还会被当成不支持的 body 形状（415）。
+// 长会话恰好都会压缩。现在统一解码一次，原生转发与下游交还都使用 JSON 明文，
+// 上游不再携带客户端的 Content-Encoding（见 handler）。
 func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, nativeRequest, error) {
 	if request.ContentLength > MaxRequestBytes {
 		return nil, nativeRequest{}, inferenceapi.ErrRequestTooLarge
@@ -75,9 +81,9 @@ func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, n
 		return nil, metadata, err
 	}
 	if json.Unmarshal(body, &metadata) != nil || metadata.Model == "" {
-		return payload, metadata, errInvalidRequest
+		return nil, metadata, errInvalidRequest
 	}
-	return payload, metadata, nil
+	return body, metadata, nil
 }
 
 func readBounded(reader io.Reader, limit int64) ([]byte, error) {

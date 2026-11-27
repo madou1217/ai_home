@@ -91,6 +91,7 @@ func scanWindowsShortcutApps(ctx context.Context) ([]launcher.App, error) {
 				Path:         cleanPath,
 				Kind:         launcher.KindApp,
 				Icon:         cleanPath,
+				Aliases:      windowsSearchAliases(name, cleanPath),
 				ModifiedAtMs: modifiedAtMs,
 			})
 			return nil
@@ -178,6 +179,7 @@ func scanWindowsShellApps(ctx context.Context) []launcher.App {
 			app.Kind = launcher.KindUWP
 		}
 		seenName[normName] = struct{}{}
+		app.Aliases = windowsSearchAliases(name, target)
 		result = append(result, app)
 	}
 	return result

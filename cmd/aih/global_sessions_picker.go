@@ -71,12 +71,13 @@ func (source pickerStore) Rows(ctx context.Context) ([]persistent.SessionRow, er
 	// Codex 没有 tmux pane，必须和 --list 共享同一投影，否则交互 ss 仍显示为空。
 	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(source.store.AIHomeDir, time.Now()))
 	appendNativeCodexRows(ctx, source.runtime, &rows)
+	appendNativeProviderRows(ctx, source.runtime, &rows)
 	return scopeGlobalSessionRows(rows, source.allProjects)
 }
 
 func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) error {
 	if row.NativeOnly {
-		return fmt.Errorf("原生 Codex 会话不能从 aih ss 关闭；退出该 Codex 进程后再刷新")
+		return fmt.Errorf("原生会话不能从 aih ss 关闭；退出该 Provider 进程后再刷新")
 	}
 	return source.store.CloseSession(ctx, row)
 }
@@ -97,6 +98,7 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 		}
 		resolveSessionTitles(ctx, runtime, rows)
 		appendNativeCodexRows(ctx, runtime, &rows)
+		appendNativeProviderRows(ctx, runtime, &rows)
 		_ = persistent.WriteSessionCache(store.AIHomeDir, rows, time.Now())
 	} else {
 		// 默认走与 --list 相同的采集+缓存补全，picker 里的 c/y 才有原生会话 id。

@@ -160,6 +160,7 @@ func usableSessionTitle(value string) string {
 	for _, prefix := range []string{
 		"<goal_context", "<environment_context", "<user_instructions",
 		"<session_context", "# AGENTS.md instructions", "Caveat:", "<command-name>",
+		"<local-command-stdout", "<local-command-stderr",
 		"<codex_internal_context", "<turn_aborted", "<user_shell_command",
 	} {
 		if strings.HasPrefix(title, prefix) {

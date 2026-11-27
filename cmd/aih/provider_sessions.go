@@ -217,5 +217,5 @@ func formatSessionTime(ms int64) string {
 }
 
 func writeProviderSessionsUsage(output io.Writer, providerID string) {
-	_, _ = fmt.Fprintf(output, "用法:\n  aih %s sessions [<id>] [--all-projects]\n  aih %s sessions --history [--limit N] [--all-projects]\n  --all: 全部项目历史（等同 --history --all-projects）\n", providerID, providerID)
+	_, _ = fmt.Fprintf(output, "用法:\n  aih %s sessions|ss [<id>] [--all-projects]\n  aih %s sessions|ss --history [--limit N] [--all-projects]\n  --all: 全部项目历史（等同 --history --all-projects）\n", providerID, providerID)
 }

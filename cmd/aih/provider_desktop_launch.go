@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/managementapi"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
@@ -56,11 +55,7 @@ func stripDesktopFlag(arguments []string) ([]string, bool) {
 
 // providerHasDesktopClient 报告 Provider 是否声明了桌面客户端。
 func providerHasDesktopClient(providerID string) bool {
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil || catalog == nil {
-		return false
-	}
-	definition, found := catalog.Get(strings.ToLower(strings.TrimSpace(providerID)))
+	definition, found := lookupProviderDefinition(providerID)
 	return found && definition.Clients.Desktop
 }
 

@@ -80,6 +80,7 @@ func collectGlobalRows(ctx context.Context, runtime commandRuntime, allProjects 
 	now := time.Now()
 	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
 	appendNativeCodexRows(ctx, runtime, &rows)
+	appendNativeProviderRows(ctx, runtime, &rows)
 	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
 	return scopeGlobalSessionRows(rows, allProjects...)
 }

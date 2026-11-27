@@ -127,6 +127,10 @@ func matchGlobalSession(
 		if strings.ToLower(strings.TrimSpace(rows[index].Name)) == wanted {
 			return &rows[index], nil
 		}
+		// 原生会话允许直接粘贴完整 session id（列表的「会话ID」列）。
+		if rows[index].NativeOnly && strings.ToLower(strings.TrimSpace(rows[index].NativeID)) == wanted {
+			return &rows[index], nil
+		}
 	}
 	prefixMatches := make([]persistent.SessionRow, 0)
 	for _, row := range rows {

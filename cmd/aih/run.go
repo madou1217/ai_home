@@ -396,10 +396,10 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	if len(arguments) >= 2 && (arguments[1] == "set-default" || arguments[1] == "unset-default") {
 		return runProviderDefaultCommand(ctx, providerID, arguments[1:], runtime)
 	}
-	if len(arguments) >= 2 && arguments[1] == "sessions" && (containsArgument(arguments[2:], "--history") || containsArgument(arguments[2:], "--all")) {
+	if len(arguments) >= 2 && (arguments[1] == "sessions" || arguments[1] == "ss") && (containsArgument(arguments[2:], "--history") || containsArgument(arguments[2:], "--all")) {
 		return runProviderSessionsHistory(ctx, providerID, arguments[2:], runtime)
 	}
-	if len(arguments) >= 2 && arguments[1] == "sessions" {
+	if len(arguments) >= 2 && (arguments[1] == "sessions" || arguments[1] == "ss") {
 		return runProviderSessionsList(ctx, providerID, arguments[2:], runtime)
 	}
 	// Codex resume may target a thread whose prior process still owns the
@@ -458,11 +458,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 
 // isRegisteredProvider 判断根命令位是否是 Provider 合同里的名字。
 func isRegisteredProvider(providerID string) bool {
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		return false
-	}
-	_, found := catalog.Get(strings.ToLower(strings.TrimSpace(providerID)))
+	_, found := lookupProviderDefinition(providerID)
 	return found
 }
 
@@ -691,11 +687,7 @@ func writeRootHelpSection(output io.Writer, providers bool) {
 
 // providerHasNativeCLI 报告 Provider 是否提供可启动的原生 CLI（workbuddy 等桌面端为 false）。
 func providerHasNativeCLI(providerID string) bool {
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil || catalog == nil {
-		return false
-	}
-	definition, found := catalog.Get(providerID)
+	definition, found := lookupProviderDefinition(providerID)
 	return found && definition.CLI != nil && definition.Clients.CLI
 }
 

@@ -71,7 +71,7 @@ func bareLaunchNeedsSelection(rest []string) bool {
 	}
 	switch first {
 	case "relay", "resume", "fork", "ls", "list", "usage", "stats", "--usage",
-		"sessions", "login", "detect", "home", "version", "install", "update",
+		"sessions", "ss", "login", "detect", "home", "version", "install", "update",
 		"auto-switch", "set-default", "unset-default", "delete", "deleteall",
 		"terminal-icon", "terminal-icons", "models", "help", "--help", "-h",
 		"--version", "-v", "--desktop", "--fresh", "--new":

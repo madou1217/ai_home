@@ -107,7 +107,18 @@ dotnet publish（Windows 真机，self-contained）   # 成功，单文件 aih-t
   3. 自动删除 3 个快捷方式（`OpenCode Test.lnk`、`OpenCode.lnk`、OneDrive 桌面 `OpenCode.lnk`）与 4 个注册表项（`App Paths\OpenCode.exe`、`Run::OpenCode`、`Uninstall\AIH-OpenCode-Test`、应用自身残留的 `Uninstall\d074f30d-…`）；
   4. HONOR 的卸载键/App Paths/Run/桌面快捷方式全部保留；
   5. 清理后启动器目录 `196/196，missing=0`（与系统 Start 项一致）。
-- 发行提示：Windows 真机当前运行的是自动升级后的 **1.0.9 发行包**，不包含本轮之后的提交；需要重新构建发行包并安装，才能让正式卸载路径带上这些修复。
+## 4.6 1.0.10 发行包部署（2026-11-27 追加）
+
+- 1.0.9 发行包构建早于本轮修复；将版本升至 **1.0.10**（commit `58b8df51`，已推送 `origin/main`），用 `scripts/deploy-server.js --ref origin/main --target win32-x64` 从 `origin/main` 构建并安装。
+- 产物：`aih-1.0.10-win32-x64.exe`（57.0 MiB，SFX payload `56f651a5c1d7`）、`aih-1.0.10-win32-x64.zip`（87.8 MiB，`de775074e8ca6d77`）；安装输出「安装完成，账号、配置和会话数据已保留（1.0.10）」。
+- Windows 真机核验：
+  - 运行进程 `C:\Users\madou\.ai_home\pkg\1.0.10-win32-x64-56f651a5\bin\native\win32-x64\aih-server.exe`（pid 52512，08:44:51 启动）；旧 `1.0.9-win32-x64-91a25405` 作为回滚备份保留。
+  - `GET /readyz` 200、`GET /ui/` 200。
+  - `/v1/management/launcher/status` → `platform=windows, supported=true, count=196, lastError=""`；目录 `196/196，missing=0`（与 `Get-StartApps` 一致）。
+  - Toolkit 应用列表 30 项；桌面客户端探测经原生注册表路径识别出 `codex-desktop / claude-desktop / qoder-desktop / qodercn-desktop / kimi-desktop / kiro-desktop / zcode-desktop / vscode`（不再依赖会卡住的子 PowerShell）。
+  - 二进制符号核对：`findWindowsRegisteredDesktopClientNative`、`cleanupProviderResidueAfterUninstall`、`RegistryResidue`、`scanWindowsShellApps` 均存在（1.0.10 包含原生卸载检测与自动残留清理）。
+  - helper（pid 45180，08:44:53）由新源码指纹目录 `run/desktop-translation/windows/helper/7d1dd4aa…` 重新构建。
+  - 真实唤起：`POST /v1/management/launcher/show` 返回 200，交互会话截图中面板实际渲染（Calculator、百度网盘、迅雷、Python 3.14 Manuals、Python 3.14、PhpStorm、WebStorm、DataGrip…）；面板为无标题栏工具窗口，`MainWindowTitle` 枚举不到属正常。
 
 ## 5. 已知限制 / 复验步骤
 

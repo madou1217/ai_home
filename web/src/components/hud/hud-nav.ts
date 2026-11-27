@@ -18,6 +18,10 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/accounts': { no: '02', code: 'ACCOUNTS', order: 2 },
   // AI 会话拆成 Chat / Work 子菜单：一级编号 03 给父菜单，子项用层级编号 03.01 / 03.02。
   '/chat': { no: '03.01', code: 'CHAT', parentPath: '/chat', order: 3.01 },
+  // Work 是独立顶级路径（/work），编号仍归属「03 AI 会话」，所以 parentPath 保持 /chat：
+  // 层级标记看的是业务分组，不是 URL 前缀。
+  '/work': { no: '03.02', code: 'WORK', parentPath: '/chat', order: 3.02 },
+  // 历史链接（/chat/work 会跳到 /work）：保留同一编号，避免跳转瞬间序号闪成一级。
   '/chat/work': { no: '03.02', code: 'WORK', parentPath: '/chat', order: 3.02 },
   '/projects': { no: '04', code: 'PROJECT', order: 4 },
   '/projects/office': { no: '04.01', code: 'OFFICE', parentPath: '/projects', order: 4.01 },
@@ -56,6 +60,7 @@ function normalizeNavPath(path: string | undefined): string {
 
 // 父菜单若没有自己的路径（如 AI 会话），从子项路径反查一级编号，避免子项顶掉 03 后
 // 一级序号出现空洞，也让菜单编号与 04.01 / 10.02 的既有层级约定保持一致。
+// 取首个子项（/chat）即可代表整组：Work 已拆到 /work，但业务分组仍是 03 AI 会话。
 const SUBMENU_PARENT_CODES: Record<string, HudNavCode> = {
   '/chat': { no: '03', code: 'SESSIONS', order: 3 },
 };

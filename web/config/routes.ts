@@ -25,11 +25,21 @@ const nodeRoutes = [
         component: "./Chat",
       },
       {
+        // Work 用独立顶级路径：ProLayout 用 getMatchMenu(pathname, menuData, true) 生成
+        // selectedKeys，它会用 pathToRegexp('/chat/(.*)') 匹配 '/chat/work'，导致 Chat 与 Work
+        // 同时高亮。离开 /chat 前缀后，/work 只命中自己。
         name: "Work",
-        path: "/chat/work",
+        path: "/work",
         component: "./Chat",
       },
     ],
+  },
+  {
+    // 历史链接 /chat/work → /work：仍留在 /chat 前缀下，但组件自行带 query 跳转，
+    // 且 hideInMenu 让它不参与菜单匹配（不会出现双选中）。
+    path: "/chat/work",
+    component: "./ChatWorkRedirect",
+    hideInMenu: true,
   },
   {
     // 快捷唤起（桌面原生小窗 / 一键打开）：同一个 Chat 页，参数见 pages/chat-quick-launch.ts。

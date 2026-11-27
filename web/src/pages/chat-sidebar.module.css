@@ -1,0 +1,175 @@
+/* AI 会话侧栏（Chat / Work 共用同一套头部与列表容器）。
+   层级：一个头部 → （Work）local/remote 分段 → 列表。只用现有 HUD token，不引入新配色。 */
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-surface-raised);
+}
+
+/* ---- 一级：唯一头部 ---- */
+.header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-2);
+  padding: var(--hos-space-3) var(--hos-space-3) var(--hos-space-2);
+}
+
+.titleBlock {
+  display: flex;
+  align-items: baseline;
+  gap: var(--hos-space-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--hos-text-h3);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--color-heading);
+  white-space: nowrap;
+}
+
+.modeTag {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  letter-spacing: 0.08em;
+  color: var(--color-faint);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+  flex: 0 0 auto;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--hos-radius-xs);
+  background: transparent;
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.iconBtn:hover:not(:disabled) {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-heading);
+}
+
+.iconBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---- 二级：Work 的 local / remote 分段（唯一模式切换） ---- */
+.scopeTabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 0 var(--hos-space-3) var(--hos-space-2);
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+}
+
+.scopeTab {
+  appearance: none;
+  border: 0;
+  border-radius: var(--hos-radius-2xs);
+  background: transparent;
+  padding: 5px var(--hos-space-2);
+  font: inherit;
+  font-size: var(--hos-text-caption);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.scopeTab:hover {
+  color: var(--color-heading);
+}
+
+.scopeTabActive,
+.scopeTab[aria-selected='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* ---- 列表区 ---- */
+.listArea {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.remotePane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 空态：没有项目时唯一的引导，不再叠加浮层 */
+.firstRun {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--hos-space-2);
+  margin: var(--hos-space-2) var(--hos-space-3) var(--hos-space-3);
+  padding: var(--hos-space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--hos-radius-md);
+  background: var(--color-surface);
+}
+
+.firstRunTitle {
+  font-size: var(--hos-text-body-sm);
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.firstRunText {
+  margin: 0;
+  font-size: var(--hos-text-caption);
+  line-height: 1.55;
+  color: var(--color-muted);
+}
+
+/* 失败态：贴在列表下方，不覆盖列表内容 */
+.failureStrip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2);
+  margin: 0 var(--hos-space-3) var(--hos-space-2);
+  padding: 6px var(--hos-space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+  font-size: var(--hos-text-caption);
+  color: var(--color-muted-strong);
+}

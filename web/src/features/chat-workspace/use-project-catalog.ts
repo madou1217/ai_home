@@ -83,7 +83,9 @@ export function useProjectCatalog(
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [hydratingProjectPaths, setHydratingProjectPaths] = useState<Set<string>>(new Set());
   const [passiveRunningSessionKeys, setPassiveRunningSessionKeys] = useState<Set<string>>(new Set());
-  const [loadingProjects, setLoadingProjects] = useState(false);
+  // 没有本地缓存时，首帧就必须是「加载中」：否则空列表 + loading=false 会先渲染一次
+  // 「首次使用工作区 / 暂无项目」，等 watch 连上再跳成真实列表，看起来像数据丢了。
+  const [loadingProjects, setLoadingProjects] = useState(() => initialProjects.length === 0);
 
   const selectedSessionRef = useRef<Session | null>(null);
   const selectedProjectRef = useRef<AggregatedProject | null>(null);

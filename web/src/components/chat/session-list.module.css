@@ -737,8 +737,9 @@
 }
 
 .sessionTitle {
-  display: flex;
-  align-items: center;
+  /* 块级才能吃到 overflow/text-overflow：flex 容器上的 text-overflow 不生效，
+     长标题会在中间被硬切掉（Work / Chat 列表都受影响）。 */
+  display: block;
   font-size: var(--hos-text-caption);
   line-height: 1.25;
   color: var(--hos-muted-strong);

@@ -244,6 +244,8 @@ interface Props {
   selectedProject: AggregatedProject | null;
   expandedProjects: Set<string>;
   mode?: WorkspaceMode;
+  /** 桌面端隐藏自带的操作顶栏：外层侧栏（Work 页 ChatSidebarPane）已经提供唯一的头部。 */
+  showDesktopHeader?: boolean;
   onRefresh: () => void;
   onToggleProject: (id: string) => void;
   onSelectProject: (project: AggregatedProject) => void;
@@ -270,6 +272,7 @@ const ProjectList = ({
   selectedProject,
   expandedProjects,
   mode = 'work',
+  showDesktopHeader = true,
   onRefresh,
   onToggleProject,
   onSelectProject,
@@ -563,61 +566,63 @@ const ProjectList = ({
 
   return (
     <div className={styles.sidebar}>
-      {/* 统一 HarmonyOS 6 风格侧边栏沉浸顶栏 */}
-      <div className={styles.sidebarUnifiedHeader}>
-        {/* 顶栏是桌面端唯一的操作区（不再在列表上方重复一行同样的按钮；移动端保留自己的
-            带标题操作行）。侧栏宽度下模式切换旁只放得下两个按钮，所以 WORK 模式把
-            新建会话（最常用）作为主按钮，打开项目/归档/刷新收进「更多」菜单。 */}
-        <div className={styles.sidebarHeaderActions}>
-          <button
-            type="button"
-            className={styles.sidebarActionBtn}
-            onClick={onCreateSession}
-            disabled={mode === 'work' && !selectedProject}
-            title={mode === 'chat' ? '发起新对话' : (selectedProject ? '新建工作区会话' : '先选择一个项目')}
-            aria-label={mode === 'chat' ? '新建会话' : '新建工作区会话'}
-          >
-            <PlusOutlined />
-          </button>
-          {mode === 'work' ? (
-            <Dropdown
-              trigger={['click']}
-              placement="bottomRight"
-              menu={{
-                items: [
-                  { key: 'open', icon: <FolderOpenOutlined />, label: '打开项目目录' },
-                  { key: 'archived', icon: <InboxOutlined />, label: '已归档的会话' },
-                  { key: 'refresh', icon: <ReloadOutlined spin={loading} />, label: '刷新列表' }
-                ],
-                onClick: ({ key }) => {
-                  if (key === 'open') onOpenProject?.();
-                  else if (key === 'archived') setArchivedOpen(true);
-                  else if (key === 'refresh') onRefresh?.();
-                }
-              }}
-            >
-              <button
-                type="button"
-                className={styles.sidebarActionBtn}
-                title="更多操作：打开项目 / 已归档 / 刷新"
-                aria-label="更多操作"
-              >
-                <EllipsisOutlined />
-              </button>
-            </Dropdown>
-          ) : (
+      {/* 统一 HarmonyOS 6 风格侧边栏沉浸顶栏（Work 页由外层侧栏提供唯一头部时隐藏） */}
+      {showDesktopHeader ? (
+        <div className={styles.sidebarUnifiedHeader}>
+          {/* 顶栏是桌面端唯一的操作区（不再在列表上方重复一行同样的按钮；移动端保留自己的
+              带标题操作行）。侧栏宽度下模式切换旁只放得下两个按钮，所以 WORK 模式把
+              新建会话（最常用）作为主按钮，打开项目/归档/刷新收进「更多」菜单。 */}
+          <div className={styles.sidebarHeaderActions}>
             <button
               type="button"
               className={styles.sidebarActionBtn}
-              onClick={fetchChatSessions}
-              title="刷新列表"
-              aria-label="刷新列表"
+              onClick={onCreateSession}
+              disabled={mode === 'work' && !selectedProject}
+              title={mode === 'chat' ? '发起新对话' : (selectedProject ? '新建工作区会话' : '先选择一个项目')}
+              aria-label={mode === 'chat' ? '新建会话' : '新建工作区会话'}
             >
-              <ReloadOutlined spin={loadingChatSessions} />
+              <PlusOutlined />
             </button>
-          )}
+            {mode === 'work' ? (
+              <Dropdown
+                trigger={['click']}
+                placement="bottomRight"
+                menu={{
+                  items: [
+                    { key: 'open', icon: <FolderOpenOutlined />, label: '打开项目目录' },
+                    { key: 'archived', icon: <InboxOutlined />, label: '已归档的会话' },
+                    { key: 'refresh', icon: <ReloadOutlined spin={loading} />, label: '刷新列表' }
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === 'open') onOpenProject?.();
+                    else if (key === 'archived') setArchivedOpen(true);
+                    else if (key === 'refresh') onRefresh?.();
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  className={styles.sidebarActionBtn}
+                  title="更多操作：打开项目 / 已归档 / 刷新"
+                  aria-label="更多操作"
+                >
+                  <EllipsisOutlined />
+                </button>
+              </Dropdown>
+            ) : (
+              <button
+                type="button"
+                className={styles.sidebarActionBtn}
+                onClick={fetchChatSessions}
+                title="刷新列表"
+                aria-label="刷新列表"
+              >
+                <ReloadOutlined spin={loadingChatSessions} />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {mode === 'chat' ? (
         <>

@@ -44,16 +44,20 @@ const STORAGE_KEY_WORK_SCOPE = 'aih_chat_work_scope';
 export type WorkScope = 'local' | 'remote';
 
 const CHAT_ROUTE_PATH = '/chat';
-const WORK_ROUTE_PATH = '/chat/work';
+// Work 必须是独立顶级路径：/chat/work 会被 getMatchMenu 的 '/chat/(.*)' 同时命中，
+// 侧栏 Chat 与 Work 双高亮（见 config/routes.ts 注释）。
+const WORK_ROUTE_PATH = '/work';
+/** 历史链接：旧 /chat/work 由 ChatWorkRedirect 跳到这里，模式判定仍按 work 处理。 */
+const LEGACY_WORK_ROUTE_PATH = '/chat/work';
 
 /**
- * 桌面主站把模式映射到菜单子路由：/chat = chat、/chat/work = work。
+ * 桌面主站把模式映射到菜单子路由：/chat = chat、/work = work。
  * 快捷小窗（launchMode / urlSelectionOnly）与移动端没有主站路由语义，返回 null 保持原行为。
  */
 function modeFromPathname(pathname: string | undefined): WorkspaceMode | null {
   if (!pathname) return null;
   const normalized = resolveAppRoutePathname(pathname);
-  if (normalized === WORK_ROUTE_PATH) return 'work';
+  if (normalized === WORK_ROUTE_PATH || normalized === LEGACY_WORK_ROUTE_PATH) return 'work';
   if (normalized === CHAT_ROUTE_PATH) return 'chat';
   return null;
 }
@@ -80,7 +84,7 @@ export function useChatPageState(
     if (launchMode) return launchMode;
     if (typeof window !== 'undefined') {
       if (routeDrivenMode) {
-        // 菜单子路由 /chat/work 进 Work、/chat 进 Chat（路由是模式的主要来源）。
+        // 菜单子路由 /work 进 Work、/chat 进 Chat（路由是模式的主要来源）。
         // 深链带 projectPath（如 SSH 开发机「在 Work 中打开」）仍优先进 Work。
         if (new URLSearchParams(window.location.search).get('projectPath')) return 'work';
         return resolveExplicitRouteMode() || 'chat';
@@ -107,14 +111,14 @@ export function useChatPageState(
     }
   }, [mobile, launchMode, options.urlSelectionOnly]);
 
-  // /chat 与 /chat/work 渲染同一个 Chat 组件，菜单跳转不会重新挂载，useState 初值也不会重跑。
+  // /chat 与 /work 渲染同一个 Chat 组件，菜单跳转不会重新挂载，useState 初值也不会重跑。
   // 只订阅 location 才能把路由变化同步成 workspaceMode；否则点菜单后页面仍停在旧模式，
   // 表现为 chat / work 没有真正分离。
   const location = useLocation();
   const locationMode = routeDrivenMode ? modeFromPathname(location?.pathname) : null;
   useEffect(() => {
     if (!locationMode) return;
-    // 深链 /chat?projectPath=... 仍应进 Work：把地址补成 /chat/work，保持 UI 与 URL 一致。
+    // 深链 /chat?projectPath=... 仍应进 Work：把地址补成 /work，保持 UI 与 URL 一致。
     if (locationMode === 'chat' && new URLSearchParams(location.search).get('projectPath')) {
       history.replace({ pathname: WORK_ROUTE_PATH, search: location.search });
       return;
@@ -140,13 +144,13 @@ export function useChatPageState(
   );
   const projectCatalog = useProjectCatalog(initialSelectionRef.current);
   // 「选中工作区会话 → Work」的业务语义要保留，但不能让它覆盖路由显式进入的模式：
-  // 从 /chat/work 进入时，若恢复出的是上次的纯聊天会话，原 effect 会立刻
+  // 从 /work 进入时，若恢复出的是上次的纯聊天会话，原 effect 会立刻
   // handleModeChange('chat') 把 URL replace 回 /chat，表现为点 Work 后弹回 Chat。
   // 用 ref 跳过首次（含异步恢复）的会话回写；之后用户主动点选会话仍照常切模式。
   const initialRouteModeRef = useRef(routeDrivenMode ? resolveExplicitRouteMode() : null);
   const initialSessionKeyRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    // 桌面主站的模式由路由决定（/chat vs /chat/work），会话恢复不能反向改写路由，
+    // 桌面主站的模式由路由决定（/chat vs /work），会话恢复不能反向改写路由，
     // 否则在 Work 恢复出上次的纯聊天会话时会被弹回 Chat。
     if (routeDrivenMode) return;
     const session = projectCatalog.selectedSession;

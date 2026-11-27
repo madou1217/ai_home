@@ -196,18 +196,32 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// /v1/models/ 同时承载两条能力：单模型查询 GET /v1/models/{id}，
 	// 以及 Gemini 的 POST /v1/models/{model}:generateContent[Stream]。dispatcher 先按
 	// Gemini 的路径形态判断，避免 `:generateContent` 被单模型回显当成模型 ID 吞掉。
-	mux.Handle(modelsapi.PathPrefix, modelsDispatcher{
+	modelsHandler := http.Handler(modelsDispatcher{
 		models: handlers.models,
 		gemini: handlers.gemini,
 	})
+	if handlers.relayGeminiStable != nil {
+		if setter, ok := handlers.relayGeminiStable.(interface{ SetFallback(http.Handler) }); ok {
+			setter.SetFallback(modelsHandler)
+		}
+		modelsHandler = handlers.relayGeminiStable
+	}
+	mux.Handle(modelsapi.PathPrefix, modelsHandler)
 	// /v1beta/models 与 /v1beta/models/{model} 是 Gemini Models API 的标准
 	// 集合/单模型查询路径；同一前缀下的 POST {model}:generateContent 仍归
 	// Gemini 推理 Handler，由 dispatcher 按路径形态分流。
 	mux.Handle(modelsapi.BetaPath, handlers.models)
-	mux.Handle(geminiapi.BetaPathPrefix, betaModelsDispatcher{
+	betaHandler := http.Handler(betaModelsDispatcher{
 		models: handlers.models,
 		gemini: handlers.gemini,
 	})
+	if handlers.relayGeminiBeta != nil {
+		if setter, ok := handlers.relayGeminiBeta.(interface{ SetFallback(http.Handler) }); ok {
+			setter.SetFallback(betaHandler)
+		}
+		betaHandler = handlers.relayGeminiBeta
+	}
+	mux.Handle(geminiapi.BetaPathPrefix, betaHandler)
 	// /v1/blobs/{id}：取回被剥离出请求的图片字节，与其它 /v1 路由共用客户端密钥闸门。
 	//
 	// 挂载写成 `Path + "/"` 而不是直接引用 PathPrefix：路由采集器只把 `Ident.Ident + "/"`

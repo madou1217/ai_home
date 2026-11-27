@@ -50,6 +50,8 @@ type familyRelayRuntime struct {
 	// Anthropic Messages / OpenAI Responses 入口上的跨协议桥。
 	messagesHandler  http.Handler
 	responsesHandler http.Handler
+	geminiStable     http.Handler
+	geminiBeta       http.Handler
 	modules          []relayModule
 	familyAccounts   *familyRelayAccountSource
 	pluginProviders  *pluginProviderRegistry
@@ -150,11 +152,33 @@ func newFamilyRelayRuntime(inputs familyRelayInputs) (*familyRelayRuntime, error
 	if err != nil {
 		return nil, fmt.Errorf("创建 Responses 跨协议桥失败: %w", err)
 	}
+	// Gemini 的模型在 URL 路径里，同一套透传依赖需要两个入口实例（稳定版与 beta
+	// 前缀各自的下游 dispatcher 不同），由路由器在挂载前补齐 fallback。
+	geminiStable, err := relaybridge.New(
+		relayDependencies,
+		relaybridge.GeminiSurface(),
+		inputs.routeChecker,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Gemini（稳定版）跨协议桥失败: %w", err)
+	}
+	geminiBeta, err := relaybridge.New(
+		relayDependencies,
+		relaybridge.GeminiSurface(),
+		inputs.routeChecker,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Gemini（beta）跨协议桥失败: %w", err)
+	}
 
 	return &familyRelayRuntime{
 		handler:          familyRelayHandler,
 		messagesHandler:  messagesHandler,
 		responsesHandler: responsesHandler,
+		geminiStable:     geminiStable,
+		geminiBeta:       geminiBeta,
 		modules:          relayModules,
 		familyAccounts:   familyRelayAccounts,
 		pluginProviders:  pluginProviders,

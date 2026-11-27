@@ -66,10 +66,11 @@ type chatRequestWire struct {
 }
 
 type chatRequestMessage struct {
-	Role       string                `json:"role"`
-	Content    any                   `json:"content"`
-	ToolCalls  []chatRequestToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string                `json:"tool_call_id,omitempty"`
+	Role             string                `json:"role"`
+	Content          any                   `json:"content"`
+	ReasoningContent string                `json:"reasoning_content,omitempty"`
+	ToolCalls        []chatRequestToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string                `json:"tool_call_id,omitempty"`
 }
 
 type chatRequestToolCall struct {

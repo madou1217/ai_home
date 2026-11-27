@@ -36,6 +36,19 @@ type Surface interface {
 	ErrorEvent(status int, code string, message string) (clientprotocol.RenderedEvent, bool)
 }
 
+// RequestSurface 是「模型在 URL 路径里」的入口扩展面（例如 Gemini 的
+// `/v1beta/models/{model}:generateContent`）。普通 Surface 的模型在请求体里，
+// 这两件事无法共用同一个 Decode 签名。
+type RequestSurface interface {
+	// Match 判断该请求是否属于本 Surface；false 时 Bridge 直接交还下游。
+	Match(request *http.Request) bool
+	// RelayPath 是交给 relaycore 的内部路径：relaycore 要求请求路径与 Handler
+	// 声明完全相等，而 Gemini 的真实路径携带模型，因此改写成一个固定占位路径。
+	RelayPath() string
+	// DecodeRequest 从路径与请求体构造 Chat 请求与用于渲染的 Canonical 请求。
+	DecodeRequest(request *http.Request, body []byte) (Decoded, error)
+}
+
 // Decoded 是一次客户端请求的桥接结果。
 type Decoded struct {
 	Chat    []byte
@@ -143,7 +156,18 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 		bridge.delegate(response, request, body)
 		return
 	}
-	decoded, err := bridge.surface.Decode(body)
+	var relayPath string
+	var decoded Decoded
+	if requestSurface, ok := bridge.surface.(RequestSurface); ok {
+		if !requestSurface.Match(request) {
+			bridge.delegate(response, request, body)
+			return
+		}
+		decoded, err = requestSurface.DecodeRequest(request, body)
+		relayPath = requestSurface.RelayPath()
+	} else {
+		decoded, err = bridge.surface.Decode(body)
+	}
 	if err != nil {
 		bridge.delegate(response, request, body)
 		return
@@ -162,6 +186,10 @@ func (bridge *Bridge) ServeHTTP(response http.ResponseWriter, request *http.Requ
 	relayRequest.ContentLength = int64(len(decoded.Chat))
 	relayRequest.Header = request.Header.Clone()
 	relayRequest.Header.Set("Content-Type", "application/json")
+	if relayPath != "" {
+		relayRequest.URL.Path = relayPath
+		relayRequest.RequestURI = ""
+	}
 	writer := newBridgeWriter(response, bridge.surface, decoded.Request, decoded.Stream)
 	bridge.inner.ServeHTTP(writer, relayRequest)
 	if bridge.signal.delegatedNow() {

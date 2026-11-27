@@ -145,9 +145,11 @@ type serverHandlers struct {
 	familyRelay http.Handler
 	// relayMessages / relayResponses 是同一套透传账号在 Anthropic Messages /
 	// OpenAI Responses 入口上的跨协议桥；只有 Canonical 目录没有路由的模型才进桥。
-	relayMessages  http.Handler
-	relayResponses http.Handler
-	catalogStatus  func() catalogReadiness
+	relayMessages     http.Handler
+	relayResponses    http.Handler
+	relayGeminiStable http.Handler
+	relayGeminiBeta   http.Handler
+	catalogStatus     func() catalogReadiness
 	// observeCodexClient 从 Responses 入口的真实 Codex 客户端学习版本，见 client_version.go。
 	observeCodexClient func(*http.Request)
 	// accountOutcomes 是账号请求结果时间桶的只读管理接口。
@@ -1854,6 +1856,8 @@ func newHandlers(dependencies handlerDependencies) (_ serverHandlers, _ []io.Clo
 		familyRelay:           familyRelayHandler,
 		relayMessages:         familyRelay.messagesHandler,
 		relayResponses:        familyRelay.responsesHandler,
+		relayGeminiStable:     familyRelay.geminiStable,
+		relayGeminiBeta:       familyRelay.geminiBeta,
 		shutdown:              shutdownHandler,
 		modelAliases:          modelAliasesHandler,
 		modelAliasesWebUI:     modelAliasesWebUIHandler,

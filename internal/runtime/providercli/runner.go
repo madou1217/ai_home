@@ -75,6 +75,8 @@ type Options struct {
 	DiscoverBinary func(providerID, binary string) string
 	// ClaudePreflight 是 Claude 首屏检查决策；零值表示保留官方行为且不告警。
 	ClaudePreflight ClaudePreflight
+	// ProjectionCaptureInterval 覆盖运行中凭据轮询间隔（测试用）；零值使用 2s。
+	ProjectionCaptureInterval time.Duration
 }
 
 // Runner 是 LaunchPlan 到官方进程拓扑的唯一执行入口。
@@ -95,6 +97,8 @@ type Runner struct {
 	processes       processFactory
 	prepareNative   func(context.Context, string, string, []string, []string) ([]string, func(), error)
 	claudePreflight ClaudePreflight
+	// projectionCaptureInterval 是运行中投影凭据的轮询间隔。
+	projectionCaptureInterval time.Duration
 	// extraEnv 是本次启动的额外环境（如权限合同的 CODEBUDDY_IS_SANDBOX）。
 	// 由 RunWithOptions 通过浅拷贝注入，避免并发启动互相污染。
 	extraEnv map[string]string
@@ -121,22 +125,23 @@ func NewRunner(options Options) (*Runner, error) {
 	resolver := defaultBinaryResolver()
 	resolver.discover = options.DiscoverBinary
 	return &Runner{
-		credentials:     options.Credentials,
-		stdin:           options.Stdin,
-		stdout:          options.Stdout,
-		stderr:          options.Stderr,
-		httpClient:      client,
-		interactive:     options.Interactive,
-		ptyStarter:      options.PTYStarter,
-		projection:      options.Projection,
-		hostHomeDir:     options.HostHomeDir,
-		codexHomeDir:    options.CodexHomeDir,
-		platform:        platform,
-		environ:         os.Environ,
-		binaries:        resolver,
-		processes:       execProcessFactory{},
-		prepareNative:   options.PrepareNative,
-		claudePreflight: options.ClaudePreflight,
+		credentials:               options.Credentials,
+		stdin:                     options.Stdin,
+		stdout:                    options.Stdout,
+		stderr:                    options.Stderr,
+		httpClient:                client,
+		interactive:               options.Interactive,
+		ptyStarter:                options.PTYStarter,
+		projection:                options.Projection,
+		hostHomeDir:               options.HostHomeDir,
+		codexHomeDir:              options.CodexHomeDir,
+		platform:                  platform,
+		environ:                   os.Environ,
+		binaries:                  resolver,
+		processes:                 execProcessFactory{},
+		prepareNative:             options.PrepareNative,
+		claudePreflight:           options.ClaudePreflight,
+		projectionCaptureInterval: options.ProjectionCaptureInterval,
 	}, nil
 }
 
@@ -320,7 +325,11 @@ func (runner *Runner) runNativeDirect(
 	// 就绪后把本次账号的配置根注入 argv，不能落到宿主 ~/.qoder。
 	arguments = applyConfigDirArgument(spec.ProviderID(), arguments, result.Root)
 	launchArguments = append(append([]string(nil), launch.PrefixArgs...), arguments...)
+	// CLI 运行期间实时采集客户端轮换的凭据；退出后的 Capture 仍保留，
+	// 用于覆盖最后一次写入与停止 watcher 之间的窗口。
+	stopWatcher := runner.startProjectionCaptureWatcher(ctx, request, result)
 	runErr := runner.runPreparedProviderProcess(ctx, spec.ProviderID(), path, launchArguments, environment)
+	stopWatcher()
 	// 回写失败必须可见：它意味着账号库停留在旧一代，下一次启动可能拿到失效的
 	// refresh_token。TUI 已经正常退出时把它当本次失败；TUI 自己失败时保留原
 	// 退出码，并向宿主显式携带 CaptureFailed，不能仅打印后丢掉回写失败事实。

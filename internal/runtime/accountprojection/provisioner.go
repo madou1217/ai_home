@@ -1273,3 +1273,41 @@ func contains(values []string, target string) bool {
 	}
 	return false
 }
+
+// CredentialPaths 返回策略声明的、客户端会原地续期的凭据文件绝对路径。
+//
+// 只使用 Policy.AuthArtifacts，不递归扫描投影根；调用方（运行中 watcher）
+// 因此可以覆盖所有文件形态的 OAuth Provider，而不会扫到宿主缓存链接。
+func (provisioner *Provisioner) CredentialPaths(
+	ctx context.Context,
+	request appprojection.Request,
+	result appprojection.Result,
+) []string {
+	if provisioner == nil || ctx == nil || !request.ProjectionRequired ||
+		strings.TrimSpace(result.Root) == "" {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	providerID := providerruntime.NormalizeProvider(request.ProviderID)
+	policy, _, err := provisioner.resolve(providerID)
+	if err != nil || policy.Mode == appprojection.ModeNone || len(policy.AuthArtifacts) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(policy.AuthArtifacts))
+	seen := make(map[string]bool, len(policy.AuthArtifacts))
+	for _, artifact := range policy.AuthArtifacts {
+		base := result.Root
+		if artifact.BaseOrDefault() == appprojection.ArtifactBaseNativeRoot && len(policy.NativeRoot) > 0 {
+			base = filepath.Join(append([]string{result.Root}, policy.NativeRoot...)...)
+		}
+		path := filepath.Join(append([]string{base}, artifact.Path...)...)
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		paths = append(paths, path)
+	}
+	return paths
+}

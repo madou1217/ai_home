@@ -77,6 +77,14 @@ type PolicyProvider interface {
 	Policy(providerID string) (Policy, bool)
 }
 
+// CredentialPathProvider 返回投影里会被客户端原地续期的凭据文件绝对路径。
+//
+// 运行中 watcher 只监听这些文件，不递归遍历伪 HOME（伪 HOME 里包含大量
+// 指回宿主的缓存链接）。返回空表示该 Provider 没有文件形态的凭据。
+type CredentialPathProvider interface {
+	CredentialPaths(ctx context.Context, request Request, result Result) []string
+}
+
 // Provisioner 执行投影目录、链接与凭据物化；实现必须在失败时保持可回滚。
 type Provisioner interface {
 	Prepare(ctx context.Context, request Request) (Result, error)

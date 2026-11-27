@@ -486,3 +486,11 @@ Windows 单例实测：同一交互会话连续执行两次 `aih clip orbit`，E
   - Windows 再用 `local-alpha/local-beta` 复制相同内容 → 仍为 1 条记录，ID/SHA 不变，files 更新为 Windows 路径；
   - 两侧缓存文件写入 alpha/beta 的 BLAKE3 摘要。
 - 边界：旧条目没有 `fileHashes` 时仍使用 names+size 身份；BLAKE3 读取发生在捕获时，100 GB 级别文件包会消耗相应本地 IO，但不会提前跨设备传输内容。
+
+## 30. Windows 控制台闪烁、截图洪泛与热键归属（2026-11-28）
+
+- **截图无限历史根因**：同一张 Windows 截图会以完全相同的 RGB 像素、但不同 PNG alpha 表示反复出现在剪贴板；按原始 PNG 字节求 SHA 每 900ms 产生一条新记录。图片身份改为 `dimensions + 非预乘 RGB`，忽略 alpha；真正不同的像素仍会分开。实测同一 312×185 图片的两种 alpha 表示只生成 1 条记录（seenCount=2），Mac/Windows 均验证。
+- **终端闪烁**：剪贴板捕获的 PowerShell、`clip orbit` 的窗口宽度/Activate/安装器 PowerShell 全部设置 `HideWindow + CREATE_NO_WINDOW`；桌面快捷方式改为隐藏 `wscript` 启动器；watchdog/热键计划任务改为隐藏 VBS。服务端本身由 `launch.vbs` 隐藏启动。
+- **Ctrl+Alt+V 不灵根因**：Windows 真实 Desktop 是 `OneDrive\Desktop`，且桌面快捷方式在 Explorer 启动时会抢占 `Ctrl+Alt+V`，导致热键代理注册返回 1409；快捷键有时被 Explorer 处理、有时无人处理。现在快捷方式不再写 Hotkey，由 `AihClipHotkeyHidden` 代理独占注册；注册失败时安装低级键盘钩子兜底；快捷键执行 `clip orbit --toggle`，第二次按下会关闭已打开的 Quick Orbit。
+- 热键代理启动 CLI 使用 `CreateNoWindow`，快捷方式使用 `wscript` 隐藏启动，均不会再弹控制台。
+- 验证：热键代理日志在清除 Explorer 注册后 `register=True`；`--toggle` 路径已部署；Windows 服务/热键代理由隐藏任务与 watchdog 守护。

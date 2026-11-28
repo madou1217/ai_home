@@ -257,14 +257,14 @@
 | 严格进程级网络控制（跨平台） | 中 | 30% | 🚧 Phase 1/2/3 |
 | Windows per-instance GUI（JP/SG） | 稳定版 WFP 已恢复并回归通过；redirect 试验停用 | 55% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+Claude/Codex 真实 API 通过 | 50% | 🚧 Phase 3 |
-| macOS GUI strict | App Desk 严格启动走 sandbox-exec，台账/进程真机通过 | 45% | 🚧 Phase 3 |
+| macOS GUI strict | App Desk sandbox-exec；Chrome/ChatGPT/VS Code 真机通过 | 55% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
 | DNS Guard | Linux redirect→DoH 真机通过 | 30% | 🚧 Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
 | 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈50%** | 🚧 |
+| **总目标** | — | **≈52%** | 🚧 |
 
 ---
 

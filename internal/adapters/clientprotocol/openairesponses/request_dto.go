@@ -88,6 +88,8 @@ type messageDTO struct {
 	// 内容项来源等）。上游线协议没有对应表达，Canonical 投影一律丢弃；但它是客户端
 	// 正常随消息下发的字段，不能被未知字段检查当成非法请求拒掉整个会话。
 	Passthrough json.RawMessage `json:"internal_chat_message_metadata_passthrough"`
+	// Name 是 Responses message 项可选的参与者名，Canonical 没有对应语义，丢弃。
+	Name string `json:"name"`
 }
 
 // contentHeaderDTO 只用于选择具体内容块 Decoder。
@@ -176,6 +178,8 @@ type functionCallOutputDTO struct {
 	ID string `json:"id"`
 	// CallID 是被结果精确引用的调用 ID。
 	CallID string `json:"call_id"`
+	// Name 是 Codex 客户端附带的工具名提示，Canonical 用 call_id 配对，丢弃。
+	Name string `json:"name"`
 	// Output 是字符串或多模态内容块数组。
 	Output json.RawMessage `json:"output"`
 	// Status 是历史工具结果状态。

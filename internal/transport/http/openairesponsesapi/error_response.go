@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
@@ -19,10 +21,11 @@ type apiErrorResponse struct {
 
 // apiErrorView 只暴露低敏错误类别、稳定代码和安全消息。
 type apiErrorView struct {
-	Message string  `json:"message"`
-	Type    string  `json:"type"`
-	Param   *string `json:"param"`
-	Code    string  `json:"code"`
+	Message      string  `json:"message"`
+	Type         string  `json:"type"`
+	Param        *string `json:"param"`
+	Code         string  `json:"code"`
+	AIHRequestID string  `json:"aih_request_id,omitempty"`
 }
 
 // writeRequestError 映射 HTTP 请求体边界错误。
@@ -58,6 +61,7 @@ func writeRequestError(response http.ResponseWriter, err error) {
 
 // writeDecodeError 映射 Adapter 的安全错误类别，不回显字段值。
 func writeDecodeError(response http.ResponseWriter, err error) {
+	log.Printf("OpenAI Responses decode rejected: request_id=%s err=%v", response.Header().Get(requestid.HeaderName), err)
 	message := "Invalid request"
 	code := "invalid_request"
 	if errors.Is(err, openairesponses.ErrUnsupportedFeature) {
@@ -209,11 +213,14 @@ func writeAPIError(
 	code string,
 	message string,
 ) {
+	requestID := response.Header().Get(requestid.HeaderName)
+	log.Printf("OpenAI Responses error status=%d code=%s request_id=%s", status, code, requestID)
 	data, err := json.Marshal(apiErrorResponse{
 		Error: apiErrorView{
-			Message: message,
-			Type:    errorType,
-			Code:    code,
+			Message:      message,
+			Type:         errorType,
+			Code:         code,
+			AIHRequestID: requestID,
 		},
 	})
 	if err != nil {

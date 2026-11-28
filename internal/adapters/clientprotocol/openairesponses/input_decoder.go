@@ -2,6 +2,7 @@ package openairesponses
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -83,14 +84,14 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 	case header.Type == "" && header.Role != "", header.Type == "message":
 		message, decodeErr := decodeMessageItem(raw, field)
 		if decodeErr != nil {
-			return decodeErr
+			return inputItemError(decodeErr, field, header.Type)
 		}
 		output.messages = append(output.messages, message)
 		return nil
 	case header.Type == "function_call":
 		message, callID, decodeErr := decodeFunctionCall(raw, field)
 		if decodeErr != nil {
-			return decodeErr
+			return inputItemError(decodeErr, field, header.Type)
 		}
 		if _, exists := output.toolCalls[callID]; exists {
 			return invalidField(field + ".call_id")
@@ -101,7 +102,7 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 	case header.Type == "function_call_output":
 		message, callID, decodeErr := decodeFunctionCallOutput(raw, field)
 		if decodeErr != nil {
-			return decodeErr
+			return inputItemError(decodeErr, field, header.Type)
 		}
 		output.toolResults = append(output.toolResults, callID)
 		output.messages = append(output.messages, message)
@@ -109,7 +110,7 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 	case header.Type == "reasoning":
 		message, decodeErr := decodeReasoningItem(raw, field)
 		if decodeErr != nil {
-			return decodeErr
+			return inputItemError(decodeErr, field, header.Type)
 		}
 		output.messages = append(output.messages, message)
 		return nil
@@ -119,7 +120,7 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 	case header.Type == "custom_tool_call":
 		message, callID, decodeErr := decodeCustomToolCall(raw, field, output.freeformTools)
 		if decodeErr != nil {
-			return decodeErr
+			return inputItemError(decodeErr, field, header.Type)
 		}
 		if _, exists := output.toolCalls[callID]; exists {
 			return invalidField(field + ".call_id")
@@ -130,7 +131,7 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 	case header.Type == "custom_tool_call_output":
 		message, callID, decodeErr := decodeCustomToolCallOutput(raw, field)
 		if decodeErr != nil {
-			return decodeErr
+			return inputItemError(decodeErr, field, header.Type)
 		}
 		output.toolResults = append(output.toolResults, callID)
 		output.messages = append(output.messages, message)
@@ -414,4 +415,16 @@ func decodeReasoningItem(raw json.RawMessage, field string) (inference.Message, 
 		return inference.Message{}, invalidField(field)
 	}
 	return message, nil
+}
+
+// inputItemError 在字段路径中补充输入项 type，便于从日志直接判断是哪种 item
+// 携带了未知字段；type 经过诊断包的白名单清洗，不落正文。
+func inputItemError(err error, field, itemType string) error {
+	var decodeError *DecodeError
+	if !errors.As(err, &decodeError) || !strings.HasPrefix(decodeError.field, field) {
+		return err
+	}
+	suffix := strings.TrimPrefix(decodeError.field, field)
+	context := decodediag.Discriminator("type", itemType)
+	return &DecodeError{kind: decodeError.kind, field: field + "(" + context + ")" + suffix}
 }

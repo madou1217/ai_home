@@ -55,11 +55,14 @@ type customToolCallDTO struct {
 
 // customToolCallOutputDTO 是 freeform 工具结果输入项。
 type customToolCallOutputDTO struct {
-	Type   string          `json:"type"`
-	ID     string          `json:"id"`
-	CallID string          `json:"call_id"`
-	Output json.RawMessage `json:"output"`
-	Status string          `json:"status"`
+	Type   string `json:"type"`
+	ID     string `json:"id"`
+	CallID string `json:"call_id"`
+	// Name/Namespace 是 Codex 客户端附带的工具身份提示；配对仍以 call_id 为准。
+	Name      string          `json:"name"`
+	Namespace string          `json:"namespace"`
+	Output    json.RawMessage `json:"output"`
+	Status    string          `json:"status"`
 }
 
 // collectAdditionalTools 预扫 input 数组中的 additional_tools 项并返回其工具定义。

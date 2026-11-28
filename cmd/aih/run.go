@@ -411,6 +411,9 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 	// global writer lock. Resolve the exact thread before native argv rewrite.
 	if providerID == "codex" && len(arguments) >= 2 {
 		if threadID, ok := codexResumeThreadID(arguments); ok {
+			if handled, err := attachCodexTmuxIfRunning(ctx, runtime, threadID); handled {
+				return err
+			}
 			if err := ensureCodexResumeAvailable(threadID, runtime); err != nil {
 				return err
 			}
@@ -470,6 +473,16 @@ func isRegisteredProvider(providerID string) bool {
 // runProviderLaunch composes the same native/relay execution path for both the
 // explicit escape and normal parsed commands; it never dispatches management verbs.
 func runProviderLaunch(ctx context.Context, providerID string, arguments []string, runtime commandRuntime) error {
+	if providerID == "codex" {
+		if threadID, ok := codexResumeThreadID(append([]string{providerID}, arguments...)); ok {
+			if handled, err := attachCodexTmuxIfRunning(ctx, runtime, threadID); handled {
+				return err
+			}
+			if err := ensureCodexResumeAvailable(threadID, runtime); err != nil {
+				return err
+			}
+		}
+	}
 	if handled, err := maybeRunInTmux(ctx, runtime, providerID, append([]string{providerID}, arguments...)); handled {
 		return err
 	}

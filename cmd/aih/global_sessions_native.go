@@ -70,7 +70,7 @@ type nativeSelectedSession struct {
 // 探测里；不绑定的话 hook/最近会话投影会再补一行同项目同 provider 的记录。
 func bindTmuxNativeStates(aiHomeDir string, rows []persistent.SessionRow) {
 	states := readNativeStateSessions(aiHomeDir)
-	if len(states) == 0 || len(rows) == 0 {
+	if len(rows) == 0 {
 		return
 	}
 	used := make(map[string]bool, len(rows))
@@ -108,6 +108,35 @@ func bindTmuxNativeStates(aiHomeDir string, rows []persistent.SessionRow) {
 		state := states[best]
 		row.NativeID = strings.TrimSpace(state.ID)
 		used[providerID+"\x00"+row.NativeID] = true
+	}
+	// 把 NativeID 写回持久注册表，aih codex resume 才能不扫全表直接找到
+	// 对应的 tmux socket/session 并 attach。
+	registry, err := persistent.NewRegistry(filepath.Join(filepath.Clean(aiHomeDir), "run"))
+	if err != nil {
+		return
+	}
+	for _, row := range rows {
+		if strings.TrimSpace(row.Socket) == "" || strings.TrimSpace(row.NativeID) == "" || strings.TrimSpace(row.Name) == "" {
+			continue
+		}
+		accountRef := strings.TrimSpace(row.AccountRef)
+		runtimeScope := accountRef
+		gateway := row.Gateway || accountRef == ""
+		if gateway {
+			runtimeScope = "gateway"
+		}
+		_ = registry.Write(context.Background(), persistent.Entry{
+			Provider:     row.Provider,
+			RuntimeScope: runtimeScope,
+			Gateway:      gateway,
+			AccountRef:   row.AccountRef,
+			Socket:       row.Socket,
+			Session:      row.Name,
+			CWD:          row.Path,
+			Label:        row.Label,
+			NativeID:     row.NativeID,
+			ForwardArgs:  row.ForwardArgs,
+		})
 	}
 }
 

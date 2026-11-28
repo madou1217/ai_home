@@ -86,8 +86,8 @@
 - [x] loopback 豁免：V4 127.0.0.0/8、V6 ::1 与 ::ffff:127.0.0.0/8 放行（实例代理与 AIH 本地入口）
 - [x] 测试签名证书：`CN=AIH NetGuard Test` 自签代码签名证书，导入 Root/TrustedPublisher，`Set-AuthenticodeSignature` 签名后 `Get-AuthenticodeSignature = Valid`
 - [x] 驱动安装：`System32\drivers\aihnetguard.sys` + `AihNetGuard` kernel 服务已注册（demand start）
-- [ ] test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**，属预期
-- [ ] 驱动加载后的真机验收：目标进程外联被阻断、loopback 代理可用、非目标进程不受影响、卸载清理
+- ⛔ test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**。**等待用户授权重启**
+- ⛔ 驱动加载后的真机验收：被 test signing 重启授权阻塞
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [x] Windows Store/UWP 事实确认：Claude/Codex 均为 AppsFolder/AppContainer；命令行代理参数不可注入、同包多实例受限。Chrome/Edge（独立 profile）可严格启动；UWP 双实例需透明重定向
 
@@ -95,7 +95,7 @@
 
 设计：`docs/architecture/netguard-transparent-redirect.md`（出站 SYN 改写、回程反向改写、relay CONNECT、MSS/checksum/失败语义与验收）。
 
-- [ ] 出站 SYN 改写目标到实例专属本地 relay
+- [x] 结论：WinDivert 用户态 NAT 改写后无法投递给本地 relay（4 种路径真机证伪），该路线终止，改由 WFP ALE_CONNECT_REDIRECT
 - [ ] NAT 表：原目标 ↔ 本地源端口；回程改写与 checksum 重算
 - [ ] relay 支持 HTTP CONNECT / SOCKS5，连该实例代理入口
 - [ ] MSS/分片/IPv6/窗口缩放边界处理

@@ -270,58 +270,53 @@ enum V15Tokens {
     static let categoryEnterOffsetY: CGFloat = 22
   }
 
-  // MARK: Orbit Card (.clip.v10card)
+  // MARK: Orbit Card (.clip + .rail .clip.v10card + .shared-orbit .rail-item .clip.v10card)
 
   enum Card {
-    /// Source: `lumen-v15-exact-tokens.md` `.clip.v10card` -> `width: clamp(166px, 14.3vw, 220px)`
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card -> `width: clamp(166px, 14.3vw, 220px)`
     static let minWidth: CGFloat = 166
     static let maxWidth: CGFloat = 220
     static let widthRailRatio: CGFloat = 0.143
 
-    /// Source: `lumen-v15-exact-tokens.md` `.clip.v10card` -> `max-height: 242px; min-height: 148px`
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card -> `min-height: 148px; max-height: 242px`
     static let maxHeight: CGFloat = 242
     static let minHeight: CGFloat = 148
 
-    /// Source: `README-Lumen-V15.md` §19.1 `orbit.card.corner = 16 DIP` & `paste-lumen-v15.html` line 116
-    /// `.rail .clip.v10card { border-radius: 16px }`
-    /// (Conflict note: base `.clip` in `exact-tokens.md` has `19px`; §19.1 takes strict precedence.)
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card & `README-Lumen-V15.md` §19.1 -> `border-radius: 16px`
     static let cornerRadius: CGFloat = 16
 
-    /// Source: `lumen-v15-exact-tokens.md` `.clip.v10card` -> `border: 1px solid #ffffff70`
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card -> `border: 1px solid #ffffff95`
     static let borderWidth: CGFloat = 1
-    static let lightBorderColor = V15Color.hex("#ffffff70")
-    /// Source: `paste-lumen-v15.html` line 96 `.dark .rail .clip.v10card` -> `border-color: #9fb8df4a`
+    static let lightBorderColor = V15Color.hex("#ffffff95")
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Dark `.dark .clip.v10card` -> `border-color: #9fb8df4a`
     static let darkBorderColor = V15Color.hex("#9fb8df4a")
-    /// Source: `paste-lumen-v15.html` `.rail .clip.selected` / `.dark .rail .clip.v10card.selected`
+    /// Source: `paste-lumen-v15.html` line 96 `.rail .clip.v10card.selected` / `.dark .rail .clip.v10card.selected`
     static let lightSelectedBorderColor = V15Color.hex("#f8fcff")
     static let darkSelectedBorderColor = V15Color.hex("#d4eaff")
 
-    /// Source: `lumen-v15-exact-tokens.md` `.clip.v10card` ->
-    /// `background: linear-gradient(140deg, #fcfdffef, #e9f1fbe0 60%, #dce7f6e0)`
-    static let lightGradientDegrees: CGFloat = 140
-    static let lightGradientStart = V15Color.hex("#fcfdffef")
-    static let lightGradientMid = V15Color.hex("#e9f1fbe0")
-    static let lightGradientMidLocation: CGFloat = 0.60
-    static let lightGradientEnd = V15Color.hex("#dce7f6e0")
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card ->
+    /// `background: linear-gradient(155deg, #fbfdfff5, #e2eaf6ed)`
+    static let lightGradientDegrees: CGFloat = 155
+    static let lightGradientStart = V15Color.hex("#fbfdfff5")
+    static let lightGradientEnd = V15Color.hex("#e2eaf6ed")
 
-    /// Source: `paste-lumen-v15.html` line 96 `.dark .rail .clip.v10card` ->
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Dark `.dark .clip.v10card` ->
     /// `background: linear-gradient(145deg, #344660ef, #202e44f2)`
     static let darkGradientDegrees: CGFloat = 145
     static let darkGradientStart = V15Color.hex("#344660ef")
-    static let darkGradientMid = V15Color.hex("#283951f1")
-    static let darkGradientMidLocation: CGFloat = 0.60
     static let darkGradientEnd = V15Color.hex("#202e44f2")
 
-    /// Source: `lumen-v15-exact-tokens.md` `.clip.v10card` ->
-    /// `box-shadow: 0 9px 25px #0b1d3924, inset 0 1px 1px #fff9`
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card ->
+    /// `box-shadow: 0 6px 18px #142a4220`
     static let lightShadow = V15ShadowSpec(
       offsetX: 0,
-      offsetY: 9,
-      blurRadius: 25,
-      color: V15Color.hex("#0b1d3924")
+      offsetY: 6,
+      blurRadius: 18,
+      color: V15Color.hex("#142a4220")
     )
-    static let lightInnerTopHighlight = V15Color.hex("#ffffff99")
-    static let darkInnerTopHighlight = V15Color.hex("#c7e0ff4a")
+    /// Source: `paste-lumen-v15.html` line 11 `.rail .clip.selected:after` -> `inset 0 1px 7px #fff9` (dark `#c7e0ff4a`)
+    static let lightSelectedInnerHighlight = V15Color.hex("#ffffff99")
+    static let darkSelectedInnerHighlight = V15Color.hex("#c7e0ff4a")
 
     /// Source: `paste-lumen-v15.html` line 96 `.rail .clip.v10card.selected` ->
     /// `box-shadow: 0 0 0 1px #f8fcff, 0 0 19px #c9edff8c, 0 12px 27px #173b5840`
@@ -341,8 +336,8 @@ enum V15Tokens {
     /// `box-shadow: 0 0 0 1px #d4eaff, 0 0 17px #94caff70, 0 12px 25px #0005`
     static let darkShadow = V15ShadowSpec(
       offsetX: 0,
-      offsetY: 9,
-      blurRadius: 25,
+      offsetY: 6,
+      blurRadius: 18,
       color: V15Color.hex("#050a1844")
     )
     static let darkSelectedShadow = V15ShadowSpec(
@@ -363,8 +358,8 @@ enum V15Tokens {
     static let darkSpecularSheen = V15Color.hex("#b3d3ff55")
     static let specularSheenActiveOpacity: Float = 0.65
 
-    /// Source: `lumen-v15-exact-tokens.md` `.clip.v10card` -> `color: #26344e` / Dark `#eaf1ff`
-    static let lightInk = V15Color.hex("#26344e")
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card -> `color: #20324b` / Dark `#eaf1ff`
+    static let lightInk = V15Color.hex("#20324b")
     static let darkInk = V15Color.hex("#eaf1ff")
     static let lightSecondaryInk = V15Color.hex("#4c5c75")
     static let darkSecondaryInk = V15Color.hex("#c1d0e5")
@@ -411,16 +406,15 @@ enum V15Tokens {
     static let gap: CGFloat = 7
     /// Source: `paste-lumen-v15.html` line 182 `.clip .clip-head .v14-glyph` -> `width: 18px; height: 18px`
     static let glyphSize: CGFloat = 18
-    /// Source: `lumen-v15-exact-tokens.md` `.clip-head` -> `font-size: 10px; color: #61728a`
-    /// (Note: `.v10kind` dark is `#b4c6dd` per `lumen-v15-exact-tokens.md`)
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card header -> `font-size: 10px; color: #61728a` (Dark `#a9bbd4`)
     static let kindFontSize: CGFloat = 10
     static let kindLightColor = V15Color.hex("#61728a")
-    static let kindDarkColor = V15Color.hex("#b4c6dd")
+    static let kindDarkColor = V15Color.hex("#a9bbd4")
 
-    /// Source: `lumen-v15-exact-tokens.md` `.time` -> `font-size: 10.5px; font-variant-numeric: tabular-nums`
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card time -> `font-size: 10.5px; font-variant-numeric: tabular-nums`
     static let timeFontSize: CGFloat = 10.5
     static let timeLightColor = V15Color.hex("#61728a")
-    static let timeDarkColor = V15Color.hex("#b4c6dd")
+    static let timeDarkColor = V15Color.hex("#a9bbd4")
 
     /// Source: `paste-lumen-v15.html` line 190–191 ->
     /// `transition: padding-right 210ms cubic-bezier(.22,.8,.22,1) 100ms` (enter delay `0ms`, leave delay `100ms`)
@@ -587,10 +581,12 @@ enum V15Tokens {
     static let sourceIconCornerRadius: CGFloat = 5
     /// Source: `lumen-v15-exact-tokens.md` `.app-origin` -> `background: #8296b4`
     static let sourceFallbackBackground = V15Color.hex("#8296b4")
-    /// Source: `paste-lumen-v15.html` line 116 `.v10card .clip-foot .origin-name` -> `font-size: 11px; color: #526984` (dark `#b4c6dd`)
-    static let sourceNameFontSize: CGFloat = 11
-    static let sourceLightColor = V15Color.hex("#526984")
-    static let sourceDarkColor = V15Color.hex("#b4c6dd")
+    /// Source: `lumen-v15-exact-tokens.md` (curated 5dee6f4a) Orbit card footer ->
+    /// `padding: 8px 12px 10px; gap: 6px; font-size: 10px; color: #78869d; min-height: 31px`
+    /// (Dark `.dark .rail .clip-foot`: `#a9bbd4`)
+    static let sourceNameFontSize: CGFloat = 10
+    static let sourceLightColor = V15Color.hex("#78869d")
+    static let sourceDarkColor = V15Color.hex("#a9bbd4")
 
     /// Source: `paste-lumen-v15.html` `.clip .pinmini` -> `color: #6589d7`, `.clip-foot .ico` `12 × 12`
     static let pinGlyphSize: CGFloat = 12

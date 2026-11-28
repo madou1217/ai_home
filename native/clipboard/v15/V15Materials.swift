@@ -255,12 +255,11 @@ final class V15OrbitBackdropView: NSView {
 // MARK: - V15 Card Glass Surface Layers (.clip.v10card)
 
 /// Encapsulates the exact multi-layer optical material of a V15 Orbit card:
-/// - Outer shadow host (`0 9px 25px #0b1d3924` default; selected halo + deeper shadow)
-/// - Clipped rounded body (`cornerRadius = 16` per §19.1, `border = 1px #ffffff70`)
-/// - 3-stop `140deg` `CAGradientLayer` (`#fcfdffef`, `#e9f1fbe0` 60%, `#dce7f6e0` light; dark variant)
-/// - Inner top highlight (`inset 0 1px 1px #fff9`)
+/// - Outer shadow host (`0 6px 18px #142a4220` default per curated `lumen-v15-exact-tokens.md`; selected halo + deeper shadow)
+/// - Clipped rounded body (`cornerRadius = 16`, `border = 1px #ffffff95` light / `#9fb8df4a` dark)
+/// - 2-stop `155deg` `CAGradientLayer` (`#fbfdfff5 → #e2eaf6ed` light; `145deg #344660ef → #202e44f2` dark)
 /// - Pointer-reactive radial specular sheen (`.clip:before`, opacity 0 -> 0.65)
-/// - Selected oblique light pass (`.clip.selected:after`)
+/// - Selected oblique light pass & top inset specular (`.clip.selected:after`)
 final class V15CardSurfaceView: NSView {
   override var isFlipped: Bool { true }
 
@@ -323,9 +322,10 @@ final class V15CardSurfaceView: NSView {
     overlayClipLayer.zPosition = 40
     layer?.addSublayer(overlayClipLayer)
 
-    // `inset 0 1px 1px #fff9`: crisp 2pt feathered top highlight band inside clipped corners
+    // Selected top inset specular (`inset 0 1px 7px #fff9` / dark `#c7e0ff4a`)
     innerTopHighlightLayer.startPoint = CGPoint(x: 0.5, y: 0)
     innerTopHighlightLayer.endPoint = CGPoint(x: 0.5, y: 1)
+    innerTopHighlightLayer.opacity = 0
     overlayClipLayer.addSublayer(innerTopHighlightLayer)
 
     specularSheenLayer.contentsGravity = .resize
@@ -399,12 +399,11 @@ final class V15CardSurfaceView: NSView {
         gradientLayer.endPoint = pts.1
         gradientLayer.colors = [
           V15Tokens.Card.darkGradientStart.cgColor,
-          V15Tokens.Card.darkGradientMid.cgColor,
           V15Tokens.Card.darkGradientEnd.cgColor
         ]
-        gradientLayer.locations = [0, NSNumber(value: Double(V15Tokens.Card.darkGradientMidLocation)), 1]
+        gradientLayer.locations = [0, 1]
         innerTopHighlightLayer.colors = [
-          V15Tokens.Card.darkInnerTopHighlight.cgColor,
+          V15Tokens.Card.darkSelectedInnerHighlight.cgColor,
           V15Color.hex("#c7e0ff00").cgColor
         ]
         specularSheenLayer.contents = V15Materials.makeRadialGlowImage(color: V15Tokens.Card.darkSpecularSheen, diameter: 128)
@@ -414,12 +413,11 @@ final class V15CardSurfaceView: NSView {
         gradientLayer.endPoint = pts.1
         gradientLayer.colors = [
           V15Tokens.Card.lightGradientStart.cgColor,
-          V15Tokens.Card.lightGradientMid.cgColor,
           V15Tokens.Card.lightGradientEnd.cgColor
         ]
-        gradientLayer.locations = [0, NSNumber(value: Double(V15Tokens.Card.lightGradientMidLocation)), 1]
+        gradientLayer.locations = [0, 1]
         innerTopHighlightLayer.colors = [
-          V15Tokens.Card.lightInnerTopHighlight.cgColor,
+          V15Tokens.Card.lightSelectedInnerHighlight.cgColor,
           V15Color.hex("#ffffff00").cgColor
         ]
         specularSheenLayer.contents = V15Materials.makeRadialGlowImage(color: V15Tokens.Card.lightSpecularSheen, diameter: 128)
@@ -460,6 +458,7 @@ final class V15CardSurfaceView: NSView {
     let showSheen = glowEnabled && (isHovered || isSelected)
     specularSheenLayer.opacity = showSheen ? V15Tokens.Card.specularSheenActiveOpacity : 0.0
     selectedLightPassLayer.opacity = (glowEnabled && isSelected) ? 0.38 : 0.0
+    innerTopHighlightLayer.opacity = (glowEnabled && isSelected) ? 1.0 : 0.0
 
     CATransaction.commit()
 

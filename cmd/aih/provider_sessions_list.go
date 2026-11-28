@@ -216,6 +216,7 @@ func writeSessionRows(
 	rows []persistent.SessionRow,
 	labels map[string]string,
 ) {
+	rows = mainSessionRows(rows)
 	if len(rows) == 0 {
 		_, _ = fmt.Fprintf(output, "%s：当前没有活跃的持久会话。\n", providerID)
 		return

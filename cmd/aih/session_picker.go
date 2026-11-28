@@ -26,6 +26,7 @@ const (
 	pickerCopyCommand
 	pickerClose
 	pickerCloseIdle
+	pickerToggleExpand
 )
 
 // pickerState 是选择器的纯状态：选中项、详情开关与提示行。
@@ -44,10 +45,12 @@ type pickerState struct {
 	dismissed map[string]bool
 	// loading 表示首帧来自空缓存、完整采集仍在后台跑。
 	loading bool
+	// expanded 记录主会话是否展开 subagent 子行；默认全部折叠。
+	expanded map[string]bool
 }
 
 func newPickerState(rows []persistent.SessionRow) *pickerState {
-	state := &pickerState{rows: rows, loading: len(rows) == 0}
+	state := &pickerState{rows: rows, loading: len(rows) == 0, expanded: make(map[string]bool)}
 	state.syncActiveProject()
 	return state
 }
@@ -66,7 +69,8 @@ func (state *pickerState) syncActiveProject() {
 }
 
 func (state *pickerState) move(delta int) {
-	if len(state.rows) == 0 {
+	visible := state.visibleRows()
+	if len(visible) == 0 {
 		state.selected = 0
 		return
 	}
@@ -74,18 +78,65 @@ func (state *pickerState) move(delta int) {
 	if next < 0 {
 		next = 0
 	}
-	if next >= len(state.rows) {
-		next = len(state.rows) - 1
+	if next >= len(visible) {
+		next = len(visible) - 1
 	}
 	state.selected = next
 	state.syncActiveProject()
 }
 
 func (state *pickerState) current() *persistent.SessionRow {
-	if state.selected < 0 || state.selected >= len(state.rows) {
+	visible := state.visibleRows()
+	if state.selected < 0 || state.selected >= len(visible) {
 		return nil
 	}
-	return &state.rows[state.selected]
+	return &visible[state.selected]
+}
+
+// visibleRows 返回主行 + 已展开 main 的 subagent 子行；子行没有父行时
+// 作为孤儿主行显示，避免数据缺失时会话彻底消失。
+func (state *pickerState) visibleRows() []persistent.SessionRow {
+	if len(state.rows) == 0 {
+		return nil
+	}
+	ids := make(map[string]bool, len(state.rows))
+	for _, row := range state.rows {
+		if id := strings.TrimSpace(row.NativeID); id != "" {
+			ids[id] = true
+		}
+	}
+	children := make(map[string][]persistent.SessionRow)
+	main := make([]persistent.SessionRow, 0, len(state.rows))
+	for _, row := range state.rows {
+		if row.Subagent {
+			parent := strings.TrimSpace(row.ParentID)
+			if parent != "" && ids[parent] {
+				children[parent] = append(children[parent], row)
+			}
+			// 父会话不在本次列表时不能把 subagent 顶成主行；
+			// 宁可暂时不显示，也不让用户误以为是独立会话。
+			continue
+		}
+		main = append(main, row)
+	}
+	visible := make([]persistent.SessionRow, 0, len(state.rows))
+	for _, row := range main {
+		visible = append(visible, row)
+		if state.expanded[strings.TrimSpace(row.NativeID)] {
+			visible = append(visible, children[strings.TrimSpace(row.NativeID)]...)
+		}
+	}
+	return visible
+}
+
+func (state *pickerState) childCount(parentID string) int {
+	count := 0
+	for _, row := range state.rows {
+		if row.Subagent && strings.TrimSpace(row.ParentID) == strings.TrimSpace(parentID) {
+			count++
+		}
+	}
+	return count
 }
 
 // handleKey 把一次按键映射成动作；未知按键返回 pickerNone。
@@ -100,6 +151,11 @@ func (state *pickerState) handleKey(key string) pickerAction {
 	case "enter":
 		if state.current() != nil {
 			return pickerAttach
+		}
+		return pickerNone
+	case " ":
+		if row := state.current(); row != nil && state.childCount(row.NativeID) > 0 {
+			state.expanded[strings.TrimSpace(row.NativeID)] = !state.expanded[strings.TrimSpace(row.NativeID)]
 		}
 		return pickerNone
 	case "d":
@@ -227,17 +283,18 @@ func buildPickerLines(state *pickerState, labels map[string]string, width int) [
 // buildPickerFrame 额外返回选中行在整帧里的行号，供终端变矮时滚动窗口。
 func buildPickerFrame(state *pickerState, labels map[string]string, width int) ([]string, int) {
 	layout := resolvePickerLayout(width)
-	lines := make([]string, 0, len(state.rows)+8)
+	visible := state.visibleRows()
+	lines := make([]string, 0, len(visible)+8)
 	selectedLine := 0
-	header := fmt.Sprintf("[aih] 活跃持久会话（%d）", len(state.rows))
+	header := fmt.Sprintf("[aih] 活跃持久会话（%d）", len(visible))
 	legend := "  \x1b[32m⠿\x1b[0m 运行中  \x1b[33m◐\x1b[0m 等待输入  \x1b[90m○\x1b[0m 空闲  \x1b[90m✕\x1b[0m 已结束"
 	lines = append(lines, truncateDisplayPreservingANSI(header+legend, width))
-	hints := "↑/↓ 选择 · Enter 进入 · d 详情 · c 复制ID · y 复制命令 · x 关闭 · X 关空闲/已结束 · q 退出"
+	hints := "↑/↓ 选择 · Space 展开 · Enter 进入 · d 详情 · c 复制ID · y 复制命令 · x 关闭 · X 关空闲/已结束 · q 退出"
 	if displayWidth(hints) > width {
-		hints = "↑/↓ · Enter · d · c · y · x · X · q"
+		hints = "↑/↓ · Space · Enter · d · c · y · x · X · q"
 	}
 	lines = append(lines, truncateDisplayPreservingANSI("\x1b[90m"+hints+"\x1b[0m", width))
-	if len(state.rows) == 0 {
+	if len(visible) == 0 {
 		if state.loading {
 			lines = append(lines, "正在加载会话…")
 		} else {
@@ -247,12 +304,12 @@ func buildPickerFrame(state *pickerState, labels map[string]string, width int) (
 	}
 	lines = append(lines, formatPickerTableHeader(layout, width))
 
-	projectCounts := make(map[string]int, len(state.rows))
-	for _, row := range state.rows {
+	projectCounts := make(map[string]int, len(visible))
+	for _, row := range visible {
 		projectCounts[sessionProjectPath(row)]++
 	}
 	currentProject := ""
-	for index, row := range state.rows {
+	for index, row := range visible {
 		project := sessionProjectPath(row)
 		if project != currentProject {
 			if currentProject != "" {
@@ -264,7 +321,12 @@ func buildPickerFrame(state *pickerState, labels map[string]string, width int) (
 		if index == state.selected {
 			selectedLine = len(lines)
 		}
-		lines = append(lines, formatPickerRow(row, index == state.selected, labels, layout, width, state.animationFrame))
+		depth := 0
+		if row.Subagent && state.childCount(row.ParentID) > 0 {
+			depth = 1
+		}
+		accent := state.childCount(row.NativeID) > 0
+		lines = append(lines, formatPickerRow(row, index == state.selected, labels, layout, width, state.animationFrame, depth, accent, state.expanded[strings.TrimSpace(row.NativeID)]))
 	}
 	if state.detail {
 		if row := state.current(); row != nil {
@@ -337,6 +399,9 @@ func formatPickerRow(
 	layout pickerColumnLayout,
 	width int,
 	frame int,
+	depth int,
+	hasChildren bool,
+	expanded bool,
 ) string {
 	marker := "  "
 	if selected {
@@ -350,7 +415,21 @@ func formatPickerRow(
 	if layout.account > 0 {
 		account = padDisplay(truncateDisplay(globalSessionAccount(row, labels), layout.account), layout.account)
 	}
-	title := padDisplay(truncateDisplay(globalSessionTitle(row), layout.title), layout.title)
+	displayTitle := globalSessionTitle(row)
+	if depth > 0 {
+		prefix := "  ↳ "
+		if name := strings.TrimSpace(row.AgentName); name != "" {
+			prefix += name + " · "
+		}
+		displayTitle = prefix + displayTitle
+	} else if hasChildren {
+		if expanded {
+			displayTitle = "▾ " + displayTitle
+		} else {
+			displayTitle = "▸ " + displayTitle
+		}
+	}
+	title := padDisplay(truncateDisplay(displayTitle, layout.title), layout.title)
 	if selected {
 		title = "\x1b[1m" + title + "\x1b[0m"
 	}
@@ -819,7 +898,6 @@ func (state *pickerState) removeKeys(keys map[string]bool) {
 	if len(keys) == 0 {
 		return
 	}
-	selected := 0
 	selectedKey := ""
 	if current := state.current(); current != nil {
 		selectedKey = sessionRowKey(*current)
@@ -829,19 +907,10 @@ func (state *pickerState) removeKeys(keys map[string]bool) {
 		if keys[sessionRowKey(row)] {
 			continue
 		}
-		if sessionRowKey(row) == selectedKey {
-			selected = len(filtered)
-		}
 		filtered = append(filtered, row)
 	}
 	state.rows = filtered
-	state.selected = selected
-	if state.selected >= len(state.rows) {
-		state.selected = len(state.rows) - 1
-	}
-	if state.selected < 0 {
-		state.selected = 0
-	}
+	state.selectByKey(selectedKey)
 	state.syncActiveProject()
 }
 
@@ -860,8 +929,9 @@ func sessionRowKey(row persistent.SessionRow) string {
 
 func (state *pickerState) selectByKey(key string) {
 	if key != "" {
-		for index := range state.rows {
-			if sessionRowKey(state.rows[index]) == key {
+		visible := state.visibleRows()
+		for index := range visible {
+			if sessionRowKey(visible[index]) == key {
 				state.selected = index
 				return
 			}

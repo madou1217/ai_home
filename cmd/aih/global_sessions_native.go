@@ -60,6 +60,9 @@ type nativeSelectedSession struct {
 	Title       string
 	TurnState   string
 	LastEventAt int64
+	ParentID    string
+	Subagent    bool
+	AgentName   string
 }
 
 // appendNativeProviderRows 把存活的 Provider 原生会话补进 ss 行集。只在
@@ -167,6 +170,9 @@ func nativeSessionRow(session nativeSelectedSession) persistent.SessionRow {
 		StartPath:        session.CWD,
 		Label:            title,
 		NativeID:         session.ID,
+		ParentID:         session.ParentID,
+		Subagent:         session.Subagent,
+		AgentName:        session.AgentName,
 		TurnState:        session.TurnState,
 		Live:             true,
 		NativeOnly:       true,
@@ -327,6 +333,7 @@ func selectNativeSessions(
 		}
 		selected = append(selected, nativeSelectedSession{
 			Provider: providerID, ID: id, CWD: cwd, Title: title, TurnState: state.TurnState, LastEventAt: activity,
+			ParentID: candidate.ParentID, Subagent: candidate.Subagent, AgentName: candidate.AgentName,
 		})
 		used[id] = true
 	}
@@ -340,6 +347,7 @@ func selectNativeSessions(
 		}
 		selected = append(selected, nativeSelectedSession{
 			Provider: providerID, ID: id, CWD: cwd, Title: candidate.Title, LastEventAt: candidate.UpdatedAtMS,
+			ParentID: candidate.ParentID, Subagent: candidate.Subagent, AgentName: candidate.AgentName,
 		})
 		used[id] = true
 	}
@@ -491,6 +499,9 @@ func appendRecentNativeSessionRows(
 					StartPath:        projectPath,
 					Label:            compactGlobalSessionTitle(session.Title),
 					NativeID:         id,
+					ParentID:         session.ParentID,
+					Subagent:         session.Subagent,
+					AgentName:        session.AgentName,
 					TurnState:        "idle",
 					Live:             false,
 					NativeOnly:       true,
@@ -548,12 +559,16 @@ func nativeCandidatesForProvider(
 			return byPath
 		}
 		for _, session := range sessionread.ListCodexStateSessions(ctx, hostHomeDir) {
+			if session.Exec {
+				continue
+			}
 			key := normalizeSessionProjectPath(session.CWD)
 			if key == "" {
 				continue
 			}
 			byPath[key] = append(byPath[key], resolvedCandidate{
 				ID: session.ID, Title: session.Title, UpdatedAtMS: session.UpdatedAtMS,
+				ParentID: session.ParentID, Subagent: session.Subagent, AgentName: session.AgentName,
 			})
 		}
 	} else {

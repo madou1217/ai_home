@@ -61,9 +61,14 @@ type SessionRow struct {
 	LastMessage     string
 	LastMessageRole string
 	LastMessageAtMS int64
-	WindowName      string
-	Command         string
-	PanePID         int
+	// ParentID 是 subagent 会话的主会话 NativeID；Subagent 为 true 时
+	// 列表默认折叠在父行下面，Space 展开。
+	ParentID   string
+	Subagent   bool
+	AgentName  string
+	WindowName string
+	Command    string
+	PanePID    int
 	// PaneDead 表示 tmux pane 已退出但 session 记录还在；它不是空闲可进入，
 	// 而是只能 resume 的已结束会话。
 	PaneDead         bool

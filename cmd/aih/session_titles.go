@@ -17,6 +17,10 @@ type resolvedCandidate struct {
 	ID          string
 	Title       string
 	UpdatedAtMS int64
+	ParentID    string
+	Subagent    bool
+	AgentName   string
+	Exec        bool
 }
 
 // resolveSessionTitles 用 Provider 原生会话库补标题与原生会话 id（aih ss --refresh）。
@@ -267,6 +271,19 @@ func sanitizeTerminalText(value string) string {
 		}
 		return char
 	}, value)
+}
+
+// mainSessionRows 用于非交互列表：subagent 默认折叠，不单独占一行。
+// 交互 picker 仍保留它们，只是默认不进入 visibleRows。
+func mainSessionRows(rows []persistent.SessionRow) []persistent.SessionRow {
+	selected := make([]persistent.SessionRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Subagent {
+			continue
+		}
+		selected = append(selected, row)
+	}
+	return selected
 }
 
 func shortSessionID(id string) string {

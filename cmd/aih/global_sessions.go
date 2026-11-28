@@ -148,7 +148,7 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 		id := strings.TrimSpace(session.ID)
 		// ss is a live/persistent-session view, not a second Codex history
 		// command. State rows without a held writer lock are historical rows.
-		if id == "" || !isCodexThreadID(id) || known[id] || strings.TrimSpace(session.CWD) == "" {
+		if id == "" || !isCodexThreadID(id) || known[id] || strings.TrimSpace(session.CWD) == "" || session.Exec {
 			continue
 		}
 		locked := codexThreadLockHeld(hostHome, id)
@@ -168,6 +168,9 @@ func appendNativeCodexRows(ctx context.Context, runtime commandRuntime, rows *[]
 			StartPath:    session.CWD,
 			Title:        compactGlobalSessionTitle(session.Title),
 			NativeID:     id,
+			ParentID:     session.ParentID,
+			Subagent:     session.Subagent,
+			AgentName:    session.AgentName,
 			// 写锁只证明 thread 被 Codex app-server 打开过，不等于有交互
 			// CLI 在跑：0.171 的共享 app-server 会同时持有多个 thread 锁。
 			// 真正在跑的会话已由进程投影标记 Live，这里只补空闲行。
@@ -221,6 +224,9 @@ func cachedGlobalRows(aiHomeDir string) []persistent.SessionRow {
 			LastMessage:      strings.TrimSpace(entry.LastMessage),
 			LastMessageRole:  strings.TrimSpace(entry.LastMessageRole),
 			LastMessageAtMS:  entry.LastMessageAt,
+			ParentID:         strings.TrimSpace(entry.ParentID),
+			Subagent:         entry.Subagent,
+			AgentName:        strings.TrimSpace(entry.AgentName),
 			Live:             entry.Live,
 			CreatedAtMS:      entry.CreatedAt,
 			LastActivityAtMS: entry.UpdatedAt,
@@ -370,7 +376,7 @@ func writeGlobalSessionGroups(
 	rows []persistent.SessionRow,
 	labels map[string]string,
 ) {
-	groups := groupSessionsByProject(rows)
+	groups := groupSessionsByProject(mainSessionRows(rows))
 	if len(groups) == 0 {
 		_, _ = fmt.Fprintln(output, "[aih] 当前没有活跃的持久会话。")
 		return

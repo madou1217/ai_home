@@ -34,6 +34,9 @@ type SessionCacheEntry struct {
 	LastMessage     string `json:"lastMessage,omitempty"`
 	LastMessageRole string `json:"lastMessageRole,omitempty"`
 	LastMessageAt   int64  `json:"lastMessageAt,omitempty"`
+	ParentID        string `json:"parentId,omitempty"`
+	Subagent        bool   `json:"subagent,omitempty"`
+	AgentName       string `json:"agentName,omitempty"`
 	// Here 表示会话就在当前工作目录（Node 补全用它排序）。
 	Here      bool  `json:"here"`
 	CreatedAt int64 `json:"createdAt,omitempty"`
@@ -103,6 +106,9 @@ func WriteSessionCache(aiHomeDir string, rows []SessionRow, now time.Time) error
 			LastMessage:     strings.TrimSpace(row.LastMessage),
 			LastMessageRole: strings.TrimSpace(row.LastMessageRole),
 			LastMessageAt:   row.LastMessageAtMS,
+			ParentID:        strings.TrimSpace(row.ParentID),
+			Subagent:        row.Subagent,
+			AgentName:       strings.TrimSpace(row.AgentName),
 			Here:            projectPath != "" && cwd != "" && projectPath == cwd,
 			CreatedAt:       CreatedAtMillis(row),
 			UpdatedAt:       now.UnixMilli(),

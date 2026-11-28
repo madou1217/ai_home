@@ -3,6 +3,7 @@ package sessionread
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"github.com/madou1217/ai_home/internal/adapters/providerstorage/providerroot"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,13 @@ type CodexStateSession struct {
 	CWD         string
 	Title       string
 	UpdatedAtMS int64
+	// ParentID/Subagent 来自 threads.source 的 subagent.thread_spawn；
+	// Exec 为 codex exec 的一次性线程，不属于可交互持久会话。
+	ParentID   string
+	Subagent   bool
+	AgentName  string
+	Exec       bool
+	ThreadKind string
 }
 
 // ListCodexStateSessions 读取 ~/.codex/state_*.sqlite 的 threads 表。
@@ -65,6 +73,25 @@ func ListCodexStateSessions(ctx context.Context, hostHome string) []CodexStateSe
 	return out
 }
 
+func parseCodexSubagentSource(raw string) (string, string, bool) {
+	text := strings.TrimSpace(raw)
+	if text == "" || !strings.Contains(text, "subagent") {
+		return "", "", false
+	}
+	var payload struct {
+		Subagent struct {
+			ThreadSpawn struct {
+				ParentThreadID string `json:"parent_thread_id"`
+				AgentNickname  string `json:"agent_nickname"`
+			} `json:"thread_spawn"`
+		} `json:"subagent"`
+	}
+	if json.Unmarshal([]byte(text), &payload) != nil {
+		return "", "", true
+	}
+	return strings.TrimSpace(payload.Subagent.ThreadSpawn.ParentThreadID), strings.TrimSpace(payload.Subagent.ThreadSpawn.AgentNickname), true
+}
+
 func readCodexStateThreadRows(ctx context.Context, db *sql.DB, columns map[string]bool) []CodexStateSession {
 	titleExpr := "NULL"
 	if columns["title"] {
@@ -82,7 +109,15 @@ func readCodexStateThreadRows(ctx context.Context, db *sql.DB, columns map[strin
 	if columns["updated_at"] {
 		updatedAtExpr = "updated_at"
 	}
-	query := "SELECT id, cwd, " + titleExpr + ", " + firstUserExpr + ", " + updatedAtMsExpr + ", " + updatedAtExpr + " FROM threads"
+	sourceExpr := "NULL"
+	if columns["source"] {
+		sourceExpr = "source"
+	}
+	threadSourceExpr := "NULL"
+	if columns["thread_source"] {
+		threadSourceExpr = "thread_source"
+	}
+	query := "SELECT id, cwd, " + titleExpr + ", " + firstUserExpr + ", " + updatedAtMsExpr + ", " + updatedAtExpr + ", " + sourceExpr + ", " + threadSourceExpr + " FROM threads"
 	if columns["archived"] {
 		query += " WHERE archived = 0"
 	}
@@ -94,9 +129,9 @@ func readCodexStateThreadRows(ctx context.Context, db *sql.DB, columns map[strin
 	out := make([]CodexStateSession, 0, 32)
 	for rows.Next() {
 		var id, cwd string
-		var title, firstUser sql.NullString
+		var title, firstUser, source, threadSource sql.NullString
 		var updatedAtMS, updatedAt sql.NullInt64
-		if rows.Scan(&id, &cwd, &title, &firstUser, &updatedAtMS, &updatedAt) != nil {
+		if rows.Scan(&id, &cwd, &title, &firstUser, &updatedAtMS, &updatedAt, &source, &threadSource) != nil {
 			continue
 		}
 		titleText := strings.TrimSpace(title.String)
@@ -110,11 +145,17 @@ func readCodexStateThreadRows(ctx context.Context, db *sql.DB, columns map[strin
 		if updated == 0 {
 			updated = updatedAt.Int64 * 1000
 		}
+		parentID, agentName, subagent := parseCodexSubagentSource(source.String)
 		out = append(out, CodexStateSession{
 			ID:          strings.TrimSpace(id),
 			CWD:         strings.TrimSpace(cwd),
 			Title:       titleText,
 			UpdatedAtMS: updated,
+			ParentID:    parentID,
+			Subagent:    subagent || strings.EqualFold(strings.TrimSpace(threadSource.String), "subagent"),
+			AgentName:   agentName,
+			Exec:        strings.EqualFold(strings.TrimSpace(source.String), "exec"),
+			ThreadKind:  strings.TrimSpace(threadSource.String),
 		})
 	}
 	return out

@@ -65,6 +65,52 @@ type nativeSelectedSession struct {
 	AgentName   string
 }
 
+// bindTmuxNativeStates 把 tmux 行和 hook state 的原生 session id 绑定。
+// 包装在 tmux 里的 provider 进程父链是 tmux server，不会出现在原生进程
+// 探测里；不绑定的话 hook/最近会话投影会再补一行同项目同 provider 的记录。
+func bindTmuxNativeStates(aiHomeDir string, rows []persistent.SessionRow) {
+	states := readNativeStateSessions(aiHomeDir)
+	if len(states) == 0 || len(rows) == 0 {
+		return
+	}
+	used := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if id := strings.TrimSpace(row.NativeID); id != "" {
+			used[strings.ToLower(strings.TrimSpace(row.Provider))+"\x00"+id] = true
+		}
+	}
+	for index := range rows {
+		row := &rows[index]
+		if strings.TrimSpace(row.Socket) == "" || strings.TrimSpace(row.NativeID) != "" {
+			continue
+		}
+		providerID := strings.ToLower(strings.TrimSpace(row.Provider))
+		cwd := normalizeSessionProjectPath(sessionProjectPath(*row))
+		best := -1
+		for stateIndex, state := range states {
+			if strings.ToLower(strings.TrimSpace(state.Provider)) != providerID {
+				continue
+			}
+			if normalizeSessionProjectPath(state.CWD) != cwd {
+				continue
+			}
+			key := providerID + "\x00" + strings.TrimSpace(state.ID)
+			if used[key] {
+				continue
+			}
+			if best < 0 || state.LastEventAt > states[best].LastEventAt {
+				best = stateIndex
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		state := states[best]
+		row.NativeID = strings.TrimSpace(state.ID)
+		used[providerID+"\x00"+row.NativeID] = true
+	}
+}
+
 // appendNativeProviderRows 把存活的 Provider 原生会话补进 ss 行集。只在
 // 已有行没有同一 NativeID 时追加，避免和 Codex 锁投影或 tmux 行重复。
 func appendNativeProviderRows(ctx context.Context, runtime commandRuntime, rows *[]persistent.SessionRow) {

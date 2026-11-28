@@ -111,6 +111,9 @@ func collectGlobalRowsMode(
 		// 与 Node 共用标题缓存：先用未过期缓存补标题/原生会话 id，再把本次结果写回。
 		persistent.ApplySessionCache(rows, persistent.ReadSessionCache(store.AIHomeDir, now))
 	}
+	// tmux 承载的 Provider/harness 会话先把 hook state 的原生 id 绑回 tmux 行，
+	// 后面的原生进程/最近会话投影就能按 id 去重，不会一行变两行。
+	bindTmuxNativeStates(store.AIHomeDir, rows)
 	// 原生进程行必须先于 Codex 写锁投影生成：前者能给出真实的运行/等待
 	// 状态，后者只补没有进程的 thread，避免同一个会话出现两行。
 	appendNativeProviderRows(ctx, runtime, &rows)

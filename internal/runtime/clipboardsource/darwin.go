@@ -61,10 +61,26 @@ func (r *darwinResolver) query(parent context.Context) (App, bool) {
 		return App{Name: asn}, false
 	}
 	text := string(raw)
+	// lsappinfo prints the display name as the leading quoted token
+	// (e.g. "Warp" ASN:0x0-...:), then key="value" pairs on later lines.
 	return App{
-		Name:     quotedValue(text, "name"),
+		Name:     leadingQuoted(text),
 		BundleID: quotedValue(text, "bundleID"),
 	}, true
+}
+
+// leadingQuoted returns the first double-quoted token of the output.
+func leadingQuoted(text string) string {
+	start := strings.IndexByte(text, '"')
+	if start < 0 {
+		return ""
+	}
+	rest := text[start+1:]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }
 
 // quotedValue extracts the first key="value" occurrence from lsappinfo output.

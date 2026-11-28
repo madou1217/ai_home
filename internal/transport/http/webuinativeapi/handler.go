@@ -5,11 +5,15 @@
 package webuinativeapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/madou1217/ai_home/internal/runtime/peer"
 )
@@ -17,6 +21,8 @@ import (
 const (
 	// Path is the native session inventory endpoint.
 	Path = "/v1/management/webui/native-sessions"
+	// GlobalSessionsPath is the read-only `aih ss` session inventory endpoint.
+	GlobalSessionsPath = "/v1/management/webui/global-sessions"
 )
 
 // Authorizer validates WebUI management access.
@@ -38,6 +44,11 @@ type Handler struct {
 	aiHomeDir   string
 	hostHomeDir string
 	getenv      func(string) string
+
+	globalMu      sync.Mutex
+	globalBody    []byte
+	globalAt      time.Time
+	globalErr     error
 }
 
 // NewHandler creates the handler. Missing authorizer fails closed.
@@ -90,6 +101,10 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "native_sessions_home_missing"})
 		return
 	}
+	if request.URL != nil && request.URL.Path == GlobalSessionsPath {
+		h.serveGlobalSessions(response, request)
+		return
+	}
 
 	targets, err := peer.ListTargets(request.Context(), h.aiHomeDir, h.hostHomeDir, h.getenv)
 	if err != nil {
@@ -124,6 +139,43 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		})
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "sessions": sessions})
+}
+
+// serveGlobalSessions runs the read-only `aih ss --list --all --json` CLI. The
+// result is cached briefly because collecting tmux/process rows is expensive.
+func (h *Handler) serveGlobalSessions(response http.ResponseWriter, request *http.Request) {
+	h.globalMu.Lock()
+	defer h.globalMu.Unlock()
+	if len(h.globalBody) > 0 && time.Since(h.globalAt) < 5*time.Second {
+		response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		response.WriteHeader(http.StatusOK)
+		_, _ = response.Write(h.globalBody)
+		return
+	}
+	cli := resolveCLIPath()
+	if cli == "" {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "global_sessions_cli_missing"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, cli, "ss", "--list", "--all", "--json")
+	cmd.Env = append(os.Environ(), "AIH_HOME_DIR="+h.aiHomeDir)
+	if h.hostHomeDir != "" {
+		cmd.Env = append(cmd.Env, "HOME="+h.hostHomeDir)
+	}
+	body, err := cmd.Output()
+	if err != nil {
+		h.globalErr = err
+		writeJSON(response, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "global_sessions_unavailable"})
+		return
+	}
+	h.globalBody = body
+	h.globalAt = time.Now()
+	h.globalErr = nil
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.WriteHeader(http.StatusOK)
+	_, _ = response.Write(body)
 }
 
 // resolveCLIPath locates the Go CLI next to the running server binary.

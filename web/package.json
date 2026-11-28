@@ -43,14 +43,12 @@
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "shiki": "4.4.3",
-    "tailwindcss": "^4.3.0",
-    "three": "0.187.0"
+    "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@types/three": "0.187.0",
     "@typescript-eslint/eslint-plugin": "^8.19.1",
     "@typescript-eslint/parser": "^8.19.1",
     "@umijs/max": "^4.3.36",

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -33,11 +34,15 @@ func runGlobalSessions(
 	runtime commandRuntime,
 ) error {
 	allProjects := false
+	jsonOutput := false
 	options := make([]string, 0, len(arguments))
 	for _, arg := range arguments {
-		if arg == "--all-projects" || arg == "--all" {
+		switch arg {
+		case "--all-projects", "--all":
 			allProjects = true
-		} else {
+		case "--json":
+			jsonOutput = true
+		default:
 			options = append(options, arg)
 		}
 	}
@@ -62,6 +67,11 @@ func runGlobalSessions(
 	rows, err := collectGlobalRows(ctx, runtime, allProjects)
 	if err != nil {
 		return err
+	}
+	if jsonOutput {
+		encoder := json.NewEncoder(runtime.stdout)
+		encoder.SetEscapeHTML(false)
+		return encoder.Encode(map[string]any{"ok": true, "sessions": rows})
 	}
 	writeGlobalSessionGroups(runtime.stdout, rows, collectGlobalLabels(ctx, rows, runtime))
 	return nil

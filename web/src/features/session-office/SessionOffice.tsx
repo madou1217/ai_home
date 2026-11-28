@@ -32,12 +32,15 @@ interface SessionItem extends GlobalSessionRow {
 }
 
 function resolveState(row: GlobalSessionRow): { state: SessionState; label: string } {
-  if (row.PaneDead || (!row.Live && !row.NativeOnly)) return { state: 'ended', label: '已结束' };
+  if (row.PaneDead) return { state: 'ended', label: '已结束' };
+  const alive = row.Live || Boolean(String(row.Socket || '').trim()) || Number(row.PanePID || 0) > 0;
+  if (!alive) return { state: 'ended', label: '已结束' };
   const turn = String(row.TurnState || '').toLowerCase();
   if (turn === 'working') return { state: 'working', label: '运行中' };
   if (turn === 'waiting') return { state: 'waiting', label: '等待输入' };
-  if (row.Live) return { state: 'idle', label: '空闲' };
-  return { state: 'ended', label: '已结束' };
+  if (turn === 'completed' || turn === 'idle') return { state: 'idle', label: '空闲' };
+  if (row.Live) return { state: 'working', label: '运行中' };
+  return { state: 'idle', label: '空闲' };
 }
 
 function projectNameOf(path: string): string {

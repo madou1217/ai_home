@@ -9,6 +9,7 @@ import {
   createDeskBadgeBundle,
   updateDeskBadgeTexture,
   type CanvasTextureBundle,
+  type MonitorScreenLod,
 } from './office-scene-textures';
 import {
   animateOfficeCharacter,
@@ -25,12 +26,21 @@ import {
 import {
   createMonitorAssemblyRig,
   DESK_SURFACE_Y,
+  setMonitorScreenLod,
   syncMonitorAssemblyRig,
+  writeMonitorScreenCenterWorld,
   type MonitorAssemblyRig,
 } from './office-monitor-rig';
-import { getSharedVoxelMaterialSet, type VoxelTileId } from './office-voxel-atlas';
+import {
+  getSharedVoxelMaterialSet,
+  type VoxelQualityTier,
+  type VoxelTileId,
+} from './office-voxel-atlas';
 import { VoxelBoxBuilder } from './office-voxel-builder';
-import { createWireframeBoxGeometry } from './office-voxel-kit';
+import {
+  createBatchedContactShadowGeometry,
+  createStationSelectionFrameGeometry,
+} from './office-voxel-kit';
 import {
   SEAT_FACING_YAW,
   SEAT_LOCAL_X,
@@ -40,9 +50,11 @@ import {
 
 /**
  * Minecraft 体素工位组装模块：
- * - 橡木木板书桌（桌面顶面严格维持 DESK_SURFACE_Y = 0.746）+ 方块椅子 + 羊毛地毯合批构建（1 Draw Call）。
- * - 12 根细长方体拼成的发光选中方框；悬停仅提亮材质不改几何形状。
- * - 完整保留 `hitKind` / `sessionKey` / `monitorIndex` 拾取标签树。
+ * - 橡木木板书桌（含左侧双抽屉柜体与深铁脚垫，桌面严格保持 DESK_SURFACE_Y = 0.746）+
+ *   立体腰靠方块椅 + 编织羊毛地毯合批构建（1 Draw Call）。
+ * - 内置桌底、椅底与落地机箱底部的合批接触阴影面片（1 Draw Call），让工位稳稳落地。
+ * - 贴地式发光四角选中围框（createStationSelectionFrameGeometry）：远景一目了然，近距读屏零遮挡。
+ * - 完整保留 `hitKind` / `sessionKey` 拾取树。
  */
 
 const CARPET_TOP_Y = 0.03125;
@@ -51,7 +63,7 @@ const CHAIR_CENTER_X = 0.5625;
 const CHAIR_CENTER_Z = 0;
 
 const SCRATCH_FRAME_COLOR = new THREE.Color();
-const FRAME_SOFTEN_BASE = new THREE.Color('#3b738f');
+const FRAME_SOFTEN_BASE = new THREE.Color('#387494');
 
 const CARPET_WOOL_TILES: readonly VoxelTileId[] = [
   'wool_cyan',
@@ -70,9 +82,10 @@ export interface OfficeStationRig {
   screenMesh: THREE.Mesh;
   computerRig: DesktopComputerRig;
   selectionFrameMesh: THREE.Mesh;
+  contactShadowMesh: THREE.Mesh;
   character: OfficeCharacterRig;
   badgeBundle: CanvasTextureBundle;
-  furnitureMaterial: THREE.MeshLambertMaterial;
+  furnitureMaterial: THREE.MeshStandardMaterial;
   selectionFrameMaterial: THREE.MeshBasicMaterial;
   phaseOffset: number;
 }
@@ -92,56 +105,6 @@ function hashKey(value: string): number {
   return h >>> 0;
 }
 
-/**
- * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃与状态灯）
- * 精准平移至桌子侧后方地面地毯（x ∈ [0.375, 0.625], y ∈ [0.03125, 0.46875], z ∈ [-0.75, -0.375]）：
- * - 严格避开桌腿、椅子、显示器与键盘鼠标；
- * - 任意正视屏幕视角（含全范围偏航角）均保证整块屏幕零遮挡；
- * - 完整保留机箱原有合批 Draw Call 与状态灯材质与 station 拾取标签。
- */
-const ORIGINAL_PC_MIN_X = -0.98;
-const ORIGINAL_PC_MAX_X = -0.7;
-const ORIGINAL_PC_MIN_Y = DESK_SURFACE_Y - 0.01;
-const ORIGINAL_PC_MAX_Y = DESK_SURFACE_Y + 0.48;
-const ORIGINAL_PC_MIN_Z = 0.04;
-const ORIGINAL_PC_MAX_Z = 0.46;
-
-const PC_RELOCATE_DX = 1.34375; // [-0.96875, -0.71875] -> [+0.375, +0.625]
-const PC_RELOCATE_DY = CARPET_TOP_Y - DESK_SURFACE_Y; // 落于地毯顶面 y = 0.03125
-const PC_RELOCATE_DZ = -0.8125; // [+0.0625, +0.4375] -> [-0.75, -0.375]
-
-function relocateDesktopPcTowerToFloor(computerRig: DesktopComputerRig): void {
-  computerRig.root.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh)) return;
-    const pos = obj.geometry.getAttribute('position');
-    if (!(pos instanceof THREE.BufferAttribute)) return;
-
-    let moved = false;
-    for (let i = 0; i < pos.count; i += 1) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      const z = pos.getZ(i);
-      if (
-        x >= ORIGINAL_PC_MIN_X
-        && x <= ORIGINAL_PC_MAX_X
-        && y >= ORIGINAL_PC_MIN_Y
-        && y <= ORIGINAL_PC_MAX_Y
-        && z >= ORIGINAL_PC_MIN_Z
-        && z <= ORIGINAL_PC_MAX_Z
-      ) {
-        pos.setXYZ(i, x + PC_RELOCATE_DX, y + PC_RELOCATE_DY, z + PC_RELOCATE_DZ);
-        moved = true;
-      }
-    }
-
-    if (moved) {
-      pos.needsUpdate = true;
-      obj.geometry.computeBoundingBox();
-      obj.geometry.computeBoundingSphere();
-    }
-  });
-}
-
 function tagPickableTree(
   object: THREE.Object3D,
   sessionKey: string,
@@ -158,11 +121,11 @@ function tagPickableTree(
   });
 }
 
-/** 合批构建橡木书桌、方块椅子与羊毛地毯底座（1 次 Draw Call） */
+/** 合批构建橡木书桌（含双抽屉底柜）、立体方块椅与羊毛地毯底座（1 次 Draw Call） */
 function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeometry {
   const builder = new VoxelBoxBuilder();
 
-  // 1. 羊毛地毯底座（x ∈ [-1.1875, 0.9375], z ∈ [-0.75, 0.8125], y ∈ [0, 0.03125]）
+  // 1. 编织羊毛地毯底座（x ∈ [-1.1875, 0.9375], z ∈ [-0.75, 0.8125], y ∈ [0, 0.03125]）
   builder.addBox({
     minX: -1.1875,
     minY: 0,
@@ -179,9 +142,9 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     floorY: 0,
   });
 
-  // 地毯前缘镶边色带（合批于地毯内，0 额外 Draw Call）
+  // 地毯前缘镶金装饰条
   builder.addBox({
-    minX: -0.50,
+    minX: -0.5,
     minY: CARPET_TOP_Y,
     minZ: 0.75,
     maxX: 0.25,
@@ -191,17 +154,17 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     occludes: false,
   });
 
-  // 2. 橡木书桌桌面（4 条拼板，顶面精确保持 DESK_SURFACE_Y = 0.746，后沿延展至 -0.6875 稳妥承托显示器）
+  // 2. 橡木书桌桌面（4 条实木拼板，顶面精确保持 DESK_SURFACE_Y = 0.746）
   const deskBottomY = DESK_SURFACE_Y - 0.0625; // 0.6835
   const plankStrips: Array<[number, number, VoxelTileId]> = [
     [-0.6875, -0.375, 'oak_planks'],
     [-0.375, -0.0625, 'oak_planks'],
     [-0.0625, 0.21875, 'oak_planks'],
-    [0.21875, 0.50, 'oak_planks'],
+    [0.21875, 0.5, 'oak_planks'],
   ];
   for (const [z0, z1, tile] of plankStrips) {
     builder.addBox({
-      minX: -1.00,
+      minX: -1.0,
       minY: deskBottomY,
       minZ: z0,
       maxX: 0.3125,
@@ -215,10 +178,10 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     });
   }
 
-  // 书桌后挡板（加深结构立体感与下方暗角 AO）
+  // 书桌后挡板与走线槽
   builder.addBox({
     minX: -0.875,
-    minY: deskBottomY - 0.125,
+    minY: deskBottomY - 0.140625,
     minZ: -0.65625,
     maxX: 0.1875,
     maxY: deskBottomY,
@@ -226,17 +189,63 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     tiles: 'spruce_planks',
   });
 
-  // 书桌 4 根方形原木桌腿（0.125 × 0.65225 × 0.125，落于地毯顶面之上）
+  // 左侧桌下紧凑双抽屉柜（x ∈ [-0.9375, -0.5625]，完全远离角色腿部空间）
+  builder.addBox({
+    minX: -0.9375,
+    minY: CARPET_TOP_Y + 0.03125,
+    minZ: -0.5625,
+    maxX: -0.5625,
+    maxY: deskBottomY,
+    maxZ: 0.34375,
+    tiles: { px: 'spruce_planks', pz: 'oak_planks', all: 'dark_oak_planks' },
+    floorY: CARPET_TOP_Y,
+  });
+  // 抽屉金属拉手（上下两层，面向 +Z 前侧）
+  builder.addBox({
+    minX: -0.8125,
+    minY: 0.46875,
+    minZ: 0.34375,
+    maxX: -0.6875,
+    maxY: 0.5,
+    maxZ: 0.375,
+    tiles: 'iron_block',
+    occludes: false,
+    hiddenFaces: { nz: true },
+  });
+  builder.addBox({
+    minX: -0.8125,
+    minY: 0.21875,
+    minZ: 0.34375,
+    maxX: -0.6875,
+    maxY: 0.25,
+    maxZ: 0.375,
+    tiles: 'iron_block',
+    occludes: false,
+    hiddenFaces: { nz: true },
+  });
+
+  // 书桌 4 根方形原木桌腿 + 底部深铁护脚套
   const legCorners: Array<[number, number]> = [
-    [-1.00, -0.6875],
+    [-1.0, -0.6875],
     [0.1875, -0.6875],
-    [-1.00, 0.375],
+    [-1.0, 0.375],
     [0.1875, 0.375],
   ];
   for (const [lx, lz] of legCorners) {
     builder.addBox({
       minX: lx,
       minY: CARPET_TOP_Y,
+      minZ: lz,
+      maxX: lx + 0.125,
+      maxY: CARPET_TOP_Y + 0.0625,
+      maxZ: lz + 0.125,
+      tiles: 'dark_iron',
+      floorY: CARPET_TOP_Y,
+      hiddenFaces: { ny: true, py: true },
+    });
+    builder.addBox({
+      minX: lx,
+      minY: CARPET_TOP_Y + 0.0625,
       minZ: lz,
       maxX: lx + 0.125,
       maxY: deskBottomY,
@@ -246,29 +255,28 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
         top: 'oak_log_top',
         bottom: 'oak_log_top',
       },
-      floorY: CARPET_TOP_Y,
+      hiddenFaces: { ny: true },
     });
   }
 
-  // 桌面正前方的深色橡木铭牌底框（同步放大以匹配 48px 铭牌字号）
+  // 桌面正前方的深色橡木铭牌底框
   builder.addBox({
     minX: -0.5625,
     minY: deskBottomY - 0.03125,
-    minZ: 0.50,
+    minZ: 0.5,
     maxX: -0.1875,
     maxY: DESK_SURFACE_Y,
     maxZ: 0.53125,
     tiles: 'dark_oak_planks',
   });
 
-  // 3. 方块椅子（中心位于 x = 0.5625, z = 0，面朝 -X 书桌，椅面顶高 exact 0.375）
+  // 3. 立体方块办公椅（中心位于 x = 0.5625, z = 0，椅面顶高 exact 0.375）
   const seatMinX = CHAIR_CENTER_X - 0.25; // 0.3125
   const seatMaxX = CHAIR_CENTER_X + 0.25; // 0.8125
   const seatMinZ = CHAIR_CENTER_Z - 0.25; // -0.25
   const seatMaxZ = CHAIR_CENTER_Z + 0.25; // 0.25
   const seatBottomY = CHAIR_SEAT_TOP_Y - 0.0625; // 0.3125
 
-  // 椅面（橡木底座 + 羊毛坐垫）
   builder.addBox({
     minX: seatMinX,
     minY: seatBottomY,
@@ -283,7 +291,7 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     },
   });
 
-  // 椅子 4 条方腿
+  // 椅子 4 条方腿与脚轮块
   const chairLegs: Array<[number, number]> = [
     [seatMinX, seatMinZ],
     [seatMaxX - 0.0625, seatMinZ],
@@ -296,14 +304,25 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
       minY: CARPET_TOP_Y,
       minZ: cz,
       maxX: cx + 0.0625,
+      maxY: CARPET_TOP_Y + 0.046875,
+      maxZ: cz + 0.0625,
+      tiles: 'dark_iron',
+      floorY: CARPET_TOP_Y,
+      hiddenFaces: { ny: true, py: true },
+    });
+    builder.addBox({
+      minX: cx,
+      minY: CARPET_TOP_Y + 0.046875,
+      minZ: cz,
+      maxX: cx + 0.0625,
       maxY: seatBottomY,
       maxZ: cz + 0.0625,
       tiles: 'dark_oak_planks',
-      floorY: CARPET_TOP_Y,
+      hiddenFaces: { ny: true },
     });
   }
 
-  // 椅子靠背（位于 +X 背侧，紧贴角色后背）
+  // 椅子靠背（外层木框架 + 内嵌软垫腰靠，紧贴角色后背零穿模）
   builder.addBox({
     minX: seatMaxX - 0.0625,
     minY: CHAIR_SEAT_TOP_Y,
@@ -312,10 +331,22 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
     maxY: CHAIR_SEAT_TOP_Y + 0.5625,
     maxZ: seatMaxZ,
     tiles: {
+      nx: carpetTile,
       side: 'oak_planks',
       top: 'spruce_planks',
       bottom: 'spruce_planks',
     },
+  });
+  // 头枕收边条
+  builder.addBox({
+    minX: seatMaxX - 0.0625,
+    minY: CHAIR_SEAT_TOP_Y + 0.5625,
+    minZ: seatMinZ + 0.0625,
+    maxX: seatMaxX,
+    maxY: CHAIR_SEAT_TOP_Y + 0.625,
+    maxZ: seatMaxZ - 0.0625,
+    tiles: 'spruce_planks',
+    hiddenFaces: { ny: true },
   });
 
   // 椅子左右方块扶手
@@ -345,25 +376,46 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
   return builder.build(true);
 }
 
+/** 合批生成工位桌底、椅底与落地机箱底部的柔和接触阴影 */
+function buildStationContactShadowGeometry(): THREE.BufferGeometry {
+  return createBatchedContactShadowGeometry([
+    // 书桌阴影
+    { cx: -0.34375, cz: -0.09375, width: 1.56, depth: 1.4, y: CARPET_TOP_Y + 0.004 },
+    // 座椅阴影
+    { cx: CHAIR_CENTER_X, cz: CHAIR_CENTER_Z, width: 0.72, depth: 0.74, y: CARPET_TOP_Y + 0.004 },
+    // 落地机箱阴影
+    { cx: 0.5, cz: -0.5625, width: 0.42, depth: 0.52, y: CARPET_TOP_Y + 0.004 },
+  ]);
+}
+
 export function createWorkstationPod(
   session: OfficeSessionItem,
   palette: OfficeScenePalette,
-  anisotropy = 1
+  anisotropy = 4,
+  tier: VoxelQualityTier = 'high'
 ): OfficeStationRig {
   const shared = getSharedVoxelMaterialSet();
   const root = new THREE.Group();
 
-  // 每工位独立 Lambert 材质复用共享像素图集，使悬停仅提亮本工位而不改变形状
-  const furnitureMaterial = new THREE.MeshLambertMaterial({
+  // 每工位独立 PBR 材质复用共享像素图集与贴图，使悬停仅轻柔提亮本工位
+  const furnitureMaterial = new THREE.MeshStandardMaterial({
     map: shared.atlasTexture,
+    roughnessMap: shared.pbrTexture,
+    metalnessMap: shared.pbrTexture,
+    bumpMap: tier !== 'low' ? shared.bumpTexture : null,
+    bumpScale: tier === 'high' ? 0.016 : 0.01,
+    roughness: 1.0,
+    metalness: 1.0,
+    envMapIntensity: 0.55,
     vertexColors: true,
   });
 
   const selectionFrameMaterial = new THREE.MeshBasicMaterial({
     color: palette.accentHex,
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.85,
     depthWrite: false,
+    toneMapped: false,
   });
 
   // 1. 书桌 + 椅子 + 羊毛地毯底座（单次合批）
@@ -378,9 +430,21 @@ export function createWorkstationPod(
   furnitureMesh.userData.hitKind = 'station';
   root.add(furnitureMesh);
 
-  // 桌面正前方的像素工位铭牌面（尺寸 0.34 × 0.084，同步放大字号且保持从属于主显示器）
+  // 1b. 桌椅与机箱落地接触阴影（合批 1 Draw Call）
+  const contactShadowMesh = new THREE.Mesh(
+    buildStationContactShadowGeometry(),
+    shared.contactShadow
+  );
+  contactShadowMesh.userData.noShadow = true;
+  contactShadowMesh.renderOrder = 1;
+  root.add(contactShadowMesh);
+
+  // 桌面正前方的像素工位铭牌面
   const badgeBundle = createDeskBadgeBundle(anisotropy);
-  const badgeFaceMat = new THREE.MeshBasicMaterial({ map: badgeBundle.texture });
+  const badgeFaceMat = new THREE.MeshBasicMaterial({
+    map: badgeBundle.texture,
+    toneMapped: false,
+  });
   const badgeFace = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.084), badgeFaceMat);
   badgeFace.position.set(-0.375, DESK_SURFACE_Y - 0.047, 0.533);
   badgeFace.userData.sessionKey = session.sessionKey;
@@ -388,36 +452,36 @@ export function createWorkstationPod(
   badgeFace.userData.noShadow = true;
   root.add(badgeFace);
 
-  // 2. 选中态发光描边方框（12 根细棱条紧凑包覆放大后的桌面与显示器，不裁剪屏幕顶边与摄像头）
-  const selectionFrameGeo = createWireframeBoxGeometry(1.44, 1.14, 1.26, 0.014, false);
+  // 2. 贴地式发光工位围框（紧贴地毯边缘 + 四角低矮体素标柱，清晰标示工位且永不遮挡屏幕）
+  const selectionFrameGeo = createStationSelectionFrameGeometry(2.2, 1.64, 0.028, 0.16);
   const selectionFrameMesh = new THREE.Mesh(selectionFrameGeo, selectionFrameMaterial);
-  selectionFrameMesh.position.set(-0.34375, 0.64, -0.09375);
+  selectionFrameMesh.position.set(-0.125, 0, 0.03125);
   selectionFrameMesh.visible = false;
   selectionFrameMesh.userData.noShadow = true;
   selectionFrameMesh.userData.sessionKey = session.sessionKey;
   selectionFrameMesh.userData.hitKind = 'station';
   root.add(selectionFrameMesh);
 
-  // 3. Minecraft 体素 PC 主机（挪至桌旁侧后方地面避免遮挡屏幕）、方块键鼠与杯子/花盆小装饰
+  // 3. Minecraft 体素 PC 主机（原生位于桌旁地面）+ 键鼠 + 咖啡杯/花盆/笔记本
   const computerRig = createDesktopComputerRig(
     palette,
     session.persona.deskAccent || palette.accentHex
   );
-  relocateDesktopPcTowerToFloor(computerRig);
   tagPickableTree(computerRig.root, session.sessionKey, 'station', true);
   root.add(computerRig.root);
 
-  // 4. Minecraft Steve 比例角色（坐于方块椅上，精准旋转 -90° 朝向书桌）
+  // 4. Minecraft Steve 立体皮肤角色
   const character = createOfficeCharacter(session, palette);
   character.root.position.set(CHAIR_CENTER_X, 0, CHAIR_CENTER_Z);
   character.root.rotation.y = -Math.PI / 2;
   root.add(character.root);
 
-  // 5. Minecraft 体素单显示器组件
+  // 5. Minecraft 体素单显示器组件（支持双档高清 LOD）
   const monitorAssembly = createMonitorAssemblyRig(
     session.sessionKey,
     anisotropy,
-    palette
+    palette,
+    tier
   );
   root.add(monitorAssembly.root);
 
@@ -429,6 +493,7 @@ export function createWorkstationPod(
     screenMesh: monitorAssembly.monitor.screenMesh,
     computerRig,
     selectionFrameMesh,
+    contactShadowMesh,
     character,
     badgeBundle,
     furnitureMaterial,
@@ -449,6 +514,43 @@ export function getStationMonitorScreenMesh(rig: OfficeStationRig): THREE.Mesh |
   return rig.monitorAssembly.monitor.screenMesh;
 }
 
+export function writeStationMonitorCenterWorld(
+  rig: OfficeStationRig,
+  out: THREE.Vector3
+): THREE.Vector3 {
+  return writeMonitorScreenCenterWorld(rig.monitorAssembly, rig.root.position, out);
+}
+
+export function setStationScreenLod(
+  rig: OfficeStationRig,
+  lod: MonitorScreenLod,
+  tier: VoxelQualityTier,
+  session: OfficeSessionItem,
+  isSelected: boolean,
+  palette: OfficeScenePalette,
+  anisotropy: number
+): boolean {
+  return setMonitorScreenLod(
+    rig.monitorAssembly,
+    lod,
+    tier,
+    session,
+    isSelected,
+    palette,
+    anisotropy
+  );
+}
+
+export function syncStationQualityTier(rig: OfficeStationRig, tier: VoxelQualityTier): void {
+  const shared = getSharedVoxelMaterialSet();
+  const nextBump = tier !== 'low' ? shared.bumpTexture : null;
+  if (rig.furnitureMaterial.bumpMap !== nextBump) {
+    rig.furnitureMaterial.bumpMap = nextBump;
+    rig.furnitureMaterial.bumpScale = tier === 'high' ? 0.016 : 0.01;
+    rig.furnitureMaterial.needsUpdate = true;
+  }
+}
+
 export function disposeStationTextureBundles(rig: OfficeStationRig): void {
   rig.badgeBundle.texture.dispose();
   rig.monitorAssembly.monitor.screenBundle.texture.dispose();
@@ -461,27 +563,18 @@ export function syncWorkstationPod(
   palette: OfficeScenePalette,
   options: StationSyncOptions
 ): void {
-  const {
-    isSelected,
-    isHovered,
-    preferences,
-  } = options;
+  const { isSelected, isHovered, preferences } = options;
 
-  // 悬停提亮（绝不修改几何形状）
+  // 悬停轻柔提亮（不改变任何几何）
   if (isHovered) {
-    rig.furnitureMaterial.emissive.set(palette.mode === 'dark' ? '#243448' : '#2a2a1e');
+    rig.furnitureMaterial.emissive.set(palette.mode === 'dark' ? '#1e3046' : '#262418');
   } else {
     rig.furnitureMaterial.emissive.set('#000000');
   }
+  rig.furnitureMaterial.envMapIntensity = palette.mode === 'dark' ? 0.5 : 0.6;
 
-  // 同步主机状态灯与键鼠状态
-  syncDesktopComputerRig(
-    rig.computerRig,
-    session.availability,
-    palette
-  );
+  syncDesktopComputerRig(rig.computerRig, session.availability, palette);
 
-  // 同步显示器位姿与实时预览屏幕
   syncMonitorAssemblyRig(rig.monitorAssembly, session, isSelected, palette, {
     transform: preferences.monitor,
   });
@@ -493,16 +586,13 @@ export function syncWorkstationPod(
     palette
   );
 
-  // 同步 Steve 角色状态与配饰
   updateOfficeCharacter(rig.character, session, palette);
 
-  // 12 边选中描边方框（紧凑包住桌面与显示器，适度柔化亮度以免遮挡视线）
-  SCRATCH_FRAME_COLOR.set(palette.accentHex).lerp(FRAME_SOFTEN_BASE, isHovered ? 0.1 : 0.28);
+  SCRATCH_FRAME_COLOR.set(palette.accentHex).lerp(FRAME_SOFTEN_BASE, isHovered ? 0.08 : 0.2);
   rig.selectionFrameMaterial.color.copy(SCRATCH_FRAME_COLOR);
-  rig.selectionFrameMaterial.opacity = isHovered ? 0.88 : 0.72;
+  rig.selectionFrameMaterial.opacity = isHovered ? 0.94 : 0.8;
   rig.selectionFrameMesh.visible = isSelected;
-
-  }
+}
 
 export function animateWorkstationPod(
   rig: OfficeStationRig,

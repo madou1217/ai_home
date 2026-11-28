@@ -594,6 +594,8 @@ export function buildStationFurnitureObstacles(
 /** 办公室全房间角色行为调度器 */
 export class OfficeBehaviourManager {
   private readonly agents = new Map<string, AgentRecord>();
+  private sortedAgentKeys: string[] = [];
+  private sortedKeysDirty = false;
   private layout: RoomWalkLayout | null = null;
   private grid: OfficeWalkabilityGrid | null = null;
   private layoutSignature = '';
@@ -601,6 +603,14 @@ export class OfficeBehaviourManager {
   private nextDepartOrder = 1;
   private coffeeReservedBy: string | null = null;
   private reducedMotion = false;
+
+  private getSortedAgentKeys(): readonly string[] {
+    if (this.sortedKeysDirty) {
+      this.sortedAgentKeys = [...this.agents.keys()].sort();
+      this.sortedKeysDirty = false;
+    }
+    return this.sortedAgentKeys;
+  }
 
   public getClockSec(): number {
     return this.clockSec;
@@ -625,6 +635,8 @@ export class OfficeBehaviourManager {
   /** 重置整个房间状态（切换项目房间时调用） */
   public resetRoom(): void {
     this.agents.clear();
+    this.sortedAgentKeys = [];
+    this.sortedKeysDirty = false;
     this.coffeeReservedBy = null;
     this.layoutSignature = '';
     this.grid = null;
@@ -644,7 +656,9 @@ export class OfficeBehaviourManager {
     if (this.coffeeReservedBy === sessionKey) {
       this.coffeeReservedBy = null;
     }
-    this.agents.delete(sessionKey);
+    if (this.agents.delete(sessionKey)) {
+      this.sortedKeysDirty = true;
+    }
   }
 
   /** 增量同步房间布局、工位坐标与会话活动状态（不打断正在进行的行为） */
@@ -770,6 +784,7 @@ export class OfficeBehaviourManager {
           },
         };
         this.agents.set(session.sessionKey, agent);
+        this.sortedKeysDirty = true;
       } else {
         const bayMoved =
           Math.abs(agent.bayX - anchor.bayX) > 1e-4
@@ -944,8 +959,8 @@ export class OfficeBehaviourManager {
     let awayCount = this.getAwayCount();
     if (awayCount >= MAX_CONCURRENT_AWAY) return;
 
-    // 确定性按 sessionKey 排序评估候选，保证刷新后行为序列完全可复现
-    const sortedKeys = [...this.agents.keys()].sort();
+    // 确定性按 sessionKey 排序评估候选，缓存键序避免每帧分配与重排
+    const sortedKeys = this.getSortedAgentKeys();
 
     // 第一轮优先派发「工作中接咖啡」（需持续运行 >=20s 且距上次接咖啡 >=90s 且咖啡机空闲）
     if (!this.coffeeReservedBy && awayCount < MAX_CONCURRENT_AWAY) {

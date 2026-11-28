@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clipboardstore"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardruntime"
+	"github.com/madou1217/ai_home/internal/runtime/clipboardsource"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiclipboardapi"
 )
 
@@ -120,6 +121,7 @@ func newClipboardRuntime(ctx context.Context, dependencies webuiRouteDependencie
 
 	serverProfiles := clipboardServerProfiles{home: dependencies.AIHomeDir}
 	capture := clipboardruntime.NewCapture(service, clipboardio.NewSystem())
+	capture.SetSourceResolver(clipboardsource.New())
 	syncer := clipboardruntime.NewSyncer(
 		service,
 		serverProfiles.Resolve,

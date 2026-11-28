@@ -139,7 +139,8 @@
 - [x] 真机：Claude 2.1.332 / Codex 0.172.0 / Gemini 0.70.0 均可在 sandbox 内启动
 - [x] CLI 工具：`aih-netguard exec --proxy-url ... -- <command>`
 - [x] Codex CLI 真实 API 通过 sandbox：`aih-netguard exec --proxy-url http://127.0.0.1:6152 -- codex exec ... "Reply with exactly OK"` 返回 `OK`
-- [ ] Claude / Gemini / AGY CLI 真实 API 验收（尝试结果：Claude 未登录；Gemini 本机 API key 400 invalid；AGY 本机未安装。均非 sandbox 失败，需先修复凭据/安装）
+- [x] Claude CLI 真实 API 通过 sandbox（经 AIH 网关：`ANTHROPIC_BASE_URL=http://127.0.0.1:9527` + `ANTHROPIC_AUTH_TOKEN`，返回 `OK`）
+- [ ] Gemini / AGY CLI 真实 API 验收（Gemini 本机 key 400 invalid；AGY 本机未安装）
 - [x] 多实例不同代理验收（真机：6152 AU / 6156 SG，两个 sandbox 实例出口不同；直连均被拒）
 - [ ] DNS 严格阻断（当前 DNS 经 mDNSResponder 仍可解析；Phase 5）
 - [ ] 与 Provider CLI 启动路径集成（Phase 8）

@@ -14,11 +14,6 @@ import InlineNote from '@/components/ui/InlineNote';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import OfficeRoom from './OfficeRoom';
 import SessionDesktop from './SessionDesktop';
-import {
-  isSessionServerScopeAdmitted,
-  readStationPowerState,
-} from './office-computer-power';
-import { updateOfficeComputerPreferences } from './office-computer-state';
 import type {
   DesktopOriginRect,
   OfficeCameraPreset,
@@ -282,18 +277,6 @@ export default function SessionOffice({
     if (!activeRoom.projectPath || activeRoom.projectPath === '__no_cwd__') return undefined;
     return activeRoom.projectPath;
   }, [activeRoom]);
-
-  const handleToggleStationPower = useCallback((station: OfficeSessionItem) => {
-    if (isSessionTerminating(station.sessionKey) || !isSessionServerScopeAdmitted(serverId, station)) {
-      return;
-    }
-    const sid = serverId.trim();
-    const skey = station.sessionKey.trim();
-    const current = readStationPowerState(sid, skey);
-    updateOfficeComputerPreferences(sid, skey, {
-      power: current === 'on' ? 'off' : 'on',
-    });
-  }, [isSessionTerminating, serverId]);
 
   const providerSelectOptions = useMemo(
     () => [
@@ -657,7 +640,6 @@ export default function SessionOffice({
               onOpenNewTerminal={handleOpenNewTerminal}
               directoryLoading={directoryLoading}
               onTerminateSession={handleRequestTerminateSession}
-              onToggleStationPower={handleToggleStationPower}
               terminatingSessionKey={terminatingSessionKey}
             />
           )}
@@ -715,7 +697,7 @@ export default function SessionOffice({
         {confirmTarget ? (
           <div className="session-office-terminate-confirm">
             <p className="session-office-terminate-desc">
-              此操作将不可逆地停止服务端该 Shell 会话及其内正在运行的进程。关闭后本地工位与已最小化终端视图会同步移除，且不会自动重新打开或连接。若仅需关闭虚拟显示器并保留后台进程运行，请取消并使用“虚拟关机”。
+              此操作将不可逆地停止服务端该 Shell 会话及其内正在运行的进程。关闭后本地工位与已最小化终端视图会同步移除，且不会自动重新打开或连接。此操作会终止进程，不能仅关闭视图保留进程。
             </p>
 
             <dl className="session-office-terminate-meta">

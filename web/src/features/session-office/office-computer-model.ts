@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import type { SessionAvailability } from './session-office-types';
 import type { OfficeScenePalette } from './office-scene-types';
 import {
-  type OfficeComputerPowerState,
 } from './office-computer-state';
 import { getSharedVoxelMaterialSet } from './office-voxel-atlas';
 import {
@@ -19,7 +18,6 @@ import {
 export interface DesktopComputerRig {
   root: THREE.Group;
   powerLedMaterial: THREE.MeshBasicMaterial;
-  powerState: OfficeComputerPowerState;
   /** 确定性呼吸灯初始相位，避免相邻工位完全同步闪烁 */
   pulsePhase: number;
 }
@@ -39,7 +37,6 @@ const PC_MAX_Z = 0.4375;
 const PC_CAVITY_MIN_Y = PC_MIN_Y + 0.046875;
 const PC_CAVITY_MAX_Y = PC_MAX_Y - 0.03125;
 
-const POWER_LED_OFF_HEX = '#374151';
 
 /** 基于工位强调色计算确定性 32 位哈希（FNV-1a） */
 function hashAccentString(input: string): number {
@@ -447,24 +444,18 @@ export function createDesktopComputerRig(
   return {
     root,
     powerLedMaterial,
-    powerState: 'on',
     pulsePhase: initialPhase,
   };
 }
 
 export function syncDesktopComputerRig(
   rig: DesktopComputerRig,
-  power: OfficeComputerPowerState,
   availability: SessionAvailability,
   palette: OfficeScenePalette
 ): void {
-  rig.powerState = power;
-
-  // 机箱顶前角电源状态灯同步
+  // 机箱顶前角状态灯同步
   let ledHex = palette.accentHex;
-  if (power === 'off') {
-    ledHex = POWER_LED_OFF_HEX;
-  } else if (availability === 'interactive') {
+  if (availability === 'interactive') {
     ledHex = palette.successHex;
   } else if (availability === 'unavailable') {
     ledHex = palette.warningHex;

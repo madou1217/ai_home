@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import type { OfficeSessionItem, SessionAvailability } from './session-office-types';
 import type { OfficeScenePalette, OfficeSceneSyncState } from './office-scene-types';
-import type { OfficeComputerPowerState } from './office-computer-state';
 
 /**
  * 像素风 2D Canvas 纹理生成器（显示器实时会话预览、墙面铭牌、房间终端、桌面工位牌）。
@@ -16,19 +15,11 @@ export interface CanvasTextureBundle {
   lastSignature: string;
 }
 
-export interface MonitorScreenTextureOptions {
-  power: OfficeComputerPowerState;
-}
-
 export const OFFICE_MONITOR_CANVAS_WIDTH = 1024;
 export const OFFICE_MONITOR_CANVAS_HEIGHT = 640;
 
 const SCREEN_W = OFFICE_MONITOR_CANVAS_WIDTH;
 const SCREEN_H = OFFICE_MONITOR_CANVAS_HEIGHT;
-
-const DEFAULT_SCREEN_OPTIONS: MonitorScreenTextureOptions = {
-  power: 'on',
-};
 
 const PIXEL_FONT_STACK = '"JetBrains Mono", "Fira Code", "Consolas", "PingFang SC", "Microsoft YaHei", monospace';
 
@@ -205,43 +196,6 @@ function paintScreenBackdrop(ctx: CanvasRenderingContext2D): void {
   }
 }
 
-function renderPoweredOffScreen(
-  ctx: CanvasRenderingContext2D,
-  isSelected: boolean
-): void {
-  ctx.fillStyle = '#090e17';
-  ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
-
-  // 像素棋盘暗纹
-  ctx.fillStyle = '#0f1624';
-  for (let y = 24; y < SCREEN_H - 24; y += 48) {
-    for (let x = 24; x < SCREEN_W - 24; x += 48) {
-      ctx.fillRect(x, y, 24, 24);
-    }
-  }
-
-  // 外框像素边框
-  ctx.strokeStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#354966';
-  ctx.lineWidth = isSelected ? 6 : 4;
-  ctx.strokeRect(10, 10, SCREEN_W - 20, SCREEN_H - 20);
-
-  // 像素风格电源方块图标（全矩形，无圆弧）
-  const cx = Math.floor(SCREEN_W / 2);
-  const cy = Math.floor(SCREEN_H / 2) - 34;
-  ctx.fillStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#8fa9c7';
-  ctx.fillRect(cx - 34, cy - 20, 10, 52);
-  ctx.fillRect(cx + 24, cy - 20, 10, 52);
-  ctx.fillRect(cx - 34, cy + 22, 68, 10);
-  ctx.fillRect(cx - 5, cy - 38, 10, 38);
-
-  ctx.font = `700 36px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = isSelected ? SCREEN_CYAN_BRIGHT : '#c4d6ec';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('POWER OFF · CLICK TO BOOT', SCREEN_W / 2, cy + 88);
-  ctx.textAlign = 'left';
-}
-
 export function createMonitorScreenBundle(anisotropy: number): CanvasTextureBundle {
   return createPixelCanvasBundle(SCREEN_W, SCREEN_H, anisotropy);
 }
@@ -250,22 +204,8 @@ export function updateMonitorScreenTexture(
   bundle: CanvasTextureBundle,
   session: OfficeSessionItem,
   isSelected: boolean,
-  palette: OfficeScenePalette,
-  options: MonitorScreenTextureOptions = DEFAULT_SCREEN_OPTIONS
+  palette: OfficeScenePalette
 ): boolean {
-  if (options.power === 'off') {
-    const offSignature = `off|${palette.mode}|${isSelected ? '1' : '0'}`;
-    if (bundle.lastSignature === offSignature) {
-      return false;
-    }
-    bundle.lastSignature = offSignature;
-    const { ctx } = bundle;
-    ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
-    renderPoweredOffScreen(ctx, isSelected);
-    bundle.texture.needsUpdate = true;
-    return true;
-  }
-
   const displayCwd = formatCompactPath(session.cwd) || '未登记工作目录';
   const signature = [
     'on-v3',

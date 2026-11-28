@@ -93,11 +93,11 @@ function hashKey(value: string): number {
 }
 
 /**
- * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃与电源灯）
+ * 在不修改禁止文件 office-computer-model.ts 的前提下，将桌面上的 PC 机箱（含侧透玻璃与状态灯）
  * 精准平移至桌子侧后方地面地毯（x ∈ [0.375, 0.625], y ∈ [0.03125, 0.46875], z ∈ [-0.75, -0.375]）：
  * - 严格避开桌腿、椅子、显示器与键盘鼠标；
  * - 任意正视屏幕视角（含全范围偏航角）均保证整块屏幕零遮挡；
- * - 完整保留机箱原有合批 Draw Call 与电源灯效材质与 station 拾取标签。
+ * - 完整保留机箱原有合批 Draw Call 与状态灯材质与 station 拾取标签。
  */
 const ORIGINAL_PC_MIN_X = -0.98;
 const ORIGINAL_PC_MAX_X = -0.7;
@@ -474,17 +474,15 @@ export function syncWorkstationPod(
     rig.furnitureMaterial.emissive.set('#000000');
   }
 
-  // 同步主机电源与键鼠状态
+  // 同步主机状态灯与键鼠状态
   syncDesktopComputerRig(
     rig.computerRig,
-    preferences.power,
     session.availability,
     palette
   );
 
   // 同步显示器位姿与实时预览屏幕
   syncMonitorAssemblyRig(rig.monitorAssembly, session, isSelected, palette, {
-    power: preferences.power,
     transform: preferences.monitor,
   });
 

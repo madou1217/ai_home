@@ -22,7 +22,7 @@ export default function OfficeBrowserWindow({ requiredServerId, onMinimize, onCl
     };
   }, []);
 
-  return <section ref={windowRef} className={styles.window} role="dialog" aria-label="虚拟电脑内部任务浏览器窗口"
+  return <section ref={windowRef} className={styles.window} role="dialog" aria-label="任务浏览器窗口"
     tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape') event.stopPropagation(); }}>
     <header className={styles.titlebar}>
       <div className={styles.title}><GlobalOutlined /><span>任务浏览器</span></div>

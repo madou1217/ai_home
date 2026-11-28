@@ -251,31 +251,6 @@
   color: var(--color-muted);
 }
 
-/* 虚拟电脑关机 / 开机按钮（与销毁会话红色按钮严格视觉区分） */
-.session-desktop-btn--power-off {
-  border-color: color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning-soft) 68%, var(--color-surface-raised));
-  color: var(--ink-warning, var(--color-warning));
-}
-
-.session-desktop-btn--power-off:hover:not(:disabled) {
-  border-color: var(--color-warning);
-  background: var(--color-warning-soft);
-  color: var(--ink-warning, var(--color-warning));
-}
-
-.session-desktop-btn--power-on {
-  border-color: color-mix(in srgb, var(--color-success) 52%, var(--color-border));
-  background: var(--tint-success, var(--color-accent-soft));
-  color: var(--ink-success, var(--color-success));
-}
-
-.session-desktop-btn--power-on:hover:not(:disabled) {
-  border-color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 20%, var(--color-surface));
-  color: var(--ink-success, var(--color-success));
-}
-
 .session-desktop-btn--danger {
   border-color: color-mix(in srgb, var(--color-danger) 50%, var(--color-border));
   background: var(--color-danger-soft);
@@ -330,12 +305,6 @@
   color: var(--ink-danger);
 }
 
-.session-desktop-status-pill--standby {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-}
-
 .session-desktop-inline-badge {
   display: inline-flex;
   align-items: center;
@@ -361,13 +330,6 @@
   min-height: 0;
   overflow: hidden;
   background-color: #06101e;
-}
-
-/* 虚拟关机状态：呈现安静深灰黑待机屏面 */
-.session-desktop-stage[data-power='off'] {
-  background-color: var(--color-bg);
-  background-image:
-    radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--color-surface-raised) 48%, transparent), transparent 65%);
 }
 
 /* 桌面图标层（应用图标 + 身份与进程信息卡片） */
@@ -584,76 +546,6 @@
   flex-wrap: wrap;
 }
 
-/* ── 虚拟电脑已关机待机层（零终端挂载） ──────────────────────────────────── */
-.session-desktop-standby {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  justify-items: center;
-  gap: var(--space-6, 12px);
-  width: 100%;
-  height: 100%;
-  padding: var(--space-8, 16px);
-  overflow: auto;
-  box-sizing: border-box;
-}
-
-.session-desktop-standby-screen {
-  width: min(640px, 100%);
-  align-self: center;
-  justify-self: center;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5, 10px);
-  padding: var(--space-9, 18px);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--hos-radius-md, 4px);
-  background: var(--color-surface);
-  box-shadow: var(--elevation-3);
-}
-
-.session-desktop-standby-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4, 8px);
-  flex-wrap: wrap;
-}
-
-.session-desktop-standby-tag {
-  padding: 1px var(--space-3, 6px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-pill, 9999px);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-}
-
-.session-desktop-standby-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: var(--weight-semibold, 600);
-  color: var(--color-heading);
-}
-
-.session-desktop-standby-desc {
-  margin: 0;
-  font-size: var(--text-base, 13px);
-  line-height: 1.55;
-  color: var(--color-muted);
-}
-
-.session-desktop-standby-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4, 8px);
-  flex-wrap: wrap;
-}
-
 /* ── OS 窗口层 ─────────────────────────────────────────────────────────────── */
 .session-desktop-windows {
   position: absolute;
@@ -838,7 +730,6 @@
   flex: 0 0 auto;
 }
 
-.session-desktop-win-power-btn,
 .session-desktop-win-terminate-btn {
   display: inline-flex;
   align-items: center;
@@ -854,22 +745,6 @@
   transition:
     border-color var(--motion-fast, 120ms) var(--ease-standard, ease),
     background-color var(--motion-fast, 120ms) var(--ease-standard, ease);
-}
-
-.session-desktop-win-power-btn {
-  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning-soft) 65%, var(--color-surface));
-  color: var(--ink-warning, var(--color-warning));
-}
-
-.session-desktop-win-power-btn:hover:not(:disabled) {
-  border-color: var(--color-warning);
-  background: var(--color-warning-soft);
-}
-
-.session-desktop-win-power-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .session-desktop-win-terminate-btn {
@@ -1088,11 +963,6 @@
   white-space: nowrap;
 }
 
-.session-desktop-coworker-poweroff {
-  color: var(--color-muted);
-  font-size: 11px;
-}
-
 .session-desktop-dock-right {
   display: inline-flex;
   align-items: center;
@@ -1155,7 +1025,6 @@
 
   .session-desktop-btn,
   .session-desktop-win-btn,
-  .session-desktop-win-power-btn,
   .session-desktop-win-terminate-btn,
   .session-desktop-dock-pill,
   .session-desktop-coworker-pill,

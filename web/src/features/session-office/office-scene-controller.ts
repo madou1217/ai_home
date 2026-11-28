@@ -1621,16 +1621,11 @@ export class OfficeSceneController {
     const label = session ? `${session.persona.badgeCode} · ${session.shortLabel}` : '工位';
 
     if (target.kind === 'monitor') {
-      const prefs = target.sessionKey
-        ? this.getStationPreferences(target.sessionKey)
-        : DEFAULT_OFFICE_COMPUTER_PREFERENCES;
       return {
         kind: 'monitor',
         sessionKey: target.sessionKey,
         label,
-        hint: prefs.power === 'off'
-          ? '虚拟电脑已关机 · 点击打开开机面板'
-          : '按住拖动旋转角度 · 点击打开员工电脑桌面',
+        hint: '按住拖动旋转角度 · 点击打开员工电脑桌面',
         clientX,
         clientY,
       };

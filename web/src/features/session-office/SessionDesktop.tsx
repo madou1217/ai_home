@@ -18,9 +18,7 @@ import {
   LoadingOutlined,
   MinusOutlined,
   PlusOutlined,
-  PoweroffOutlined,
   ReloadOutlined,
-  ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Tooltip } from 'antd';
@@ -28,11 +26,8 @@ import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
 import OfficeBrowserWindow from './OfficeBrowserWindow';
 import {
-  buildStationPowerMap,
   isSessionServerScopeAdmitted,
   isTerminalTabScopeAdmitted,
-  useOfficeComputerPowerController,
-  useOfficeComputerStoreRevision,
 } from './office-computer-power';
 import type {
   DesktopOriginRect,
@@ -103,7 +98,7 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
         ledClass: 'hud-led--ok hud-led--live',
         tone: 'ok',
         title: '具备原会话附着入口',
-        description: '当前工位具备受控终端附着资格（不等同于模型正在推理忙碌）；最小化、返回办公室或虚拟电脑关机均不销毁会话，仅“关闭会话”会终止 Web Shell。',
+        description: '当前工位具备受控终端附着资格（不等同于模型正在推理忙碌）；最小化或返回办公室均不销毁会话，仅“关闭会话”会终止 Web Shell。',
       };
     case 'directory-only':
       return {
@@ -209,26 +204,9 @@ export function SessionDesktop({
   );
   const isTerminating = Boolean(session && terminatingSessionKey === session.sessionKey);
 
-  const {
-    preferences,
-    isPoweredOn,
-    bootPhase,
-    bootReason,
-    shouldMountTerminal,
-    durabilityNote,
-    powerOffComputer,
-    bootComputer,
-  } = useOfficeComputerPowerController({
-    open,
-    serverId,
-    session,
-    canAttachBase,
-    isTerminating,
-    terminalHostRef,
-    onRefreshAll,
-  });
+  const shouldMountTerminal = Boolean(open && canAttachBase);
 
-  const browserAllowed = Boolean(open && isPoweredOn && sessionScopeAdmitted
+  const browserAllowed = Boolean(open && sessionScopeAdmitted
     && resolvedServerId.trim() && resolvedSessionKey && !isTerminating);
   const browserWindowOpen = browserAllowed && browserWindow?.identity === desktopIdentity;
   const browserWindowVisible = browserWindowOpen && !browserWindow?.minimized;
@@ -237,9 +215,6 @@ export function SessionDesktop({
     // Render guards unmount the old viewer immediately; never restore it on another identity or after power-off.
     setBrowserWindow((current) => browserAllowed && current?.identity === desktopIdentity ? current : null);
   }, [browserAllowed, desktopIdentity]);
-
-  // Subscribe coworker pills to power preference updates across the room.
-  const storeRevision = useOfficeComputerStoreRevision();
 
   useEffect(() => {
     const justOpened = open && !prevOpenRef.current;
@@ -274,7 +249,7 @@ export function SessionDesktop({
         setPortalOrigin(null);
       }
 
-      if (!session?.canAttachTerminal || !isPoweredOn) {
+      if (!session?.canAttachTerminal) {
         requestAnimationFrame(() => {
           shellRef.current?.focus({ preventScroll: true });
         });
@@ -282,7 +257,6 @@ export function SessionDesktop({
     }
   }, [
     desktopIdentity,
-      isPoweredOn,
     open,
     originRect,
     session?.canAttachTerminal,
@@ -322,7 +296,7 @@ export function SessionDesktop({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onCloseToRoom, terminateConfirmOpen]);
 
-  const terminalWanted = isPoweredOn && !terminalMinimized;
+  const terminalWanted = !terminalMinimized;
 
   const terminalLayoutSignature = tabId ?? '';
 
@@ -359,9 +333,8 @@ export function SessionDesktop({
   }, [open, shouldMountTerminal, terminalLayoutSignature, terminalWanted]);
 
   const handleRestoreTerminal = useCallback(() => {
-    if (!isPoweredOn) return;
     setTerminalMinimized(false);
-  }, [isPoweredOn]);
+  }, []);
 
   const handleMinimizeTerminal = useCallback(() => {
     setTerminalMinimized(true);
@@ -375,38 +348,15 @@ export function SessionDesktop({
     }
   }, [handleMinimizeTerminal, handleRestoreTerminal]);
 
-  const handleToggleTerminalDock = useCallback(() => {
-    if (!isPoweredOn) return;
-    if (terminalWanted) {
-      handleMinimizeTerminal();
-    } else {
-      handleRestoreTerminal();
-    }
-  }, [handleMinimizeTerminal, handleRestoreTerminal, isPoweredOn, terminalWanted]);
-
   const handleRequestTerminateCurrent = useCallback(() => {
     if (!session) return;
     onTerminateSession(session);
   }, [onTerminateSession, session]);
 
-  const handlePowerOff = useCallback(() => {
-    powerOffComputer();
-  }, [powerOffComputer]);
-
-  const handleBoot = useCallback(() => {
-    setTerminalMinimized(false);
-    bootComputer();
-  }, [bootComputer]);
-
   const coworkers = useMemo(() => {
     if (room?.sessions.length) return room.sessions;
     return session ? [session] : [];
   }, [room?.sessions, session]);
-
-  const coworkerPowerMap = useMemo(
-    () => buildStationPowerMap(serverId, coworkers, storeRevision),
-    [coworkers, serverId, storeRevision],
-  );
 
   if (!open) return null;
 
@@ -417,25 +367,7 @@ export function SessionDesktop({
   const sessionTitle = session?.shortLabel || session?.label || '未选定会话';
 
   const gridColumns = terminalWanted ? 'one' : 'none';
-  const allWindowsMinimized = isPoweredOn && gridColumns === 'none';
-
-  const fallbackMeta: AvailabilityMeta = bootPhase === 'exited'
-    ? {
-        label: '进程已退出',
-        ledClass: 'hud-led--err',
-        tone: 'err',
-        title: '原会话进程已在关机期间结束',
-        description: bootReason || availability.description,
-      }
-    : bootPhase === 'unavailable'
-      ? {
-          label: '原标识不可接入',
-          ledClass: 'hud-led--warn',
-          tone: 'warn',
-          title: '未能恢复接入原会话 · 未自动新建替代终端',
-          description: bootReason || availability.description,
-        }
-      : availability;
+  const allWindowsMinimized = gridColumns === 'none';
 
   const portalStyle = portalOrigin
     ? ({
@@ -465,7 +397,6 @@ export function SessionDesktop({
       <div
         ref={shellRef}
         className="session-desktop-shell"
-        data-power={preferences.power}
         tabIndex={-1}
       >
         {/* OS Top Status Bar */}
@@ -476,7 +407,7 @@ export function SessionDesktop({
               className="session-desktop-btn session-desktop-btn--back"
               disabled={isTerminating}
               onClick={onCloseToRoom}
-              title="返回项目办公室（当前电源状态与后台会话原样保持）"
+              title="返回项目办公室（后台会话原样保持）"
             >
               <ArrowLeftOutlined />
               <span>返回办公室</span>
@@ -500,12 +431,6 @@ export function SessionDesktop({
                   <span className={`hud-led ${availability.ledClass}`} aria-hidden="true" />
                   <span>{availability.label}</span>
                 </span>
-                {!isPoweredOn ? (
-                  <span className="session-desktop-status-pill session-desktop-status-pill--standby">
-                    <PoweroffOutlined />
-                    <span>虚拟已关机</span>
-                  </span>
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -547,32 +472,6 @@ export function SessionDesktop({
             ) : null}
 
             {session ? (
-              isPoweredOn ? (
-                <button
-                  type="button"
-                  className="session-desktop-btn session-desktop-btn--power-off"
-                  disabled={isTerminating}
-                  onClick={handlePowerOff}
-                  title="虚拟电脑关机：仅关闭虚拟显示器并断开前端终端连接，保留后台持久会话与运行中进程"
-                >
-                  <PoweroffOutlined />
-                  <span>虚拟关机</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="session-desktop-btn session-desktop-btn--power-on"
-                  disabled={isTerminating}
-                  onClick={handleBoot}
-                  title="开启虚拟电脑并按原会话标识恢复连接（绝不静默启动新 Shell）"
-                >
-                  <ThunderboltOutlined />
-                  <span>开机恢复</span>
-                </button>
-              )
-            ) : null}
-
-            {session ? (
               <>
                 <span className="session-desktop-win-sep" aria-hidden="true" />
                 {isWebShell ? (
@@ -609,10 +508,8 @@ export function SessionDesktop({
         {/* Desktop Stage: Standby or Active OS Windows */}
         <main
           className="session-desktop-stage"
-          data-power={preferences.power}
-        >
+          >
 
-          {isPoweredOn ? (
             /* Powered-On Desktop Canvas (Desktop Icons + Identity Summary) */
             <section
               className="session-desktop-canvas"
@@ -716,17 +613,6 @@ export function SessionDesktop({
                     <span>新建项目终端</span>
                   </button>
                   {session ? (
-                    <button
-                      type="button"
-                      className="session-desktop-btn session-desktop-btn--power-off"
-                      disabled={isTerminating}
-                      onClick={handlePowerOff}
-                    >
-                      <PoweroffOutlined />
-                      <span>虚拟电脑关机</span>
-                    </button>
-                  ) : null}
-                  {session ? (
                     isWebShell ? (
                       <button
                         type="button"
@@ -756,115 +642,7 @@ export function SessionDesktop({
                 </div>
               </aside>
             </section>
-          ) : (
-            /* Virtual Workstation Powered-Off Standby Screen (Zero ShellTerminalPanel Mount) */
-            <section
-              className="session-desktop-standby"
-              aria-label="虚拟电脑已关机待机屏幕"
-            >
-              <div className="session-desktop-standby-screen">
-                <div className="session-desktop-standby-top">
-                  <span className="session-desktop-status-pill session-desktop-status-pill--standby">
-                    <PoweroffOutlined />
-                    <span>STANDBY · 虚拟电脑已关机</span>
-                  </span>
-                  <span className="session-desktop-standby-tag">{durabilityNote.badge}</span>
-                </div>
-
-                <h2 className="session-desktop-standby-title">
-                  {sessionTitle} — 虚拟显示器已断电熄屏
-                </h2>
-
-                <p className="session-desktop-standby-desc">
-                  当前仅关闭虚拟桌面显示并解除了浏览器终端流附着，未发送任何 close 或进程退出信号。
-                  {durabilityNote.summary}
-                </p>
-
-                {session ? (
-                  <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
-                    <div className="session-desktop-meta-row">
-                      <dt>SESSION KEY</dt>
-                      <dd><code>{session.sessionKey}</code></dd>
-                    </div>
-                    {session.nativeSessionId ? (
-                      <div className="session-desktop-meta-row">
-                        <dt>NATIVE ID</dt>
-                        <dd><code>{session.nativeSessionId}</code></dd>
-                      </div>
-                    ) : null}
-                    <div className="session-desktop-meta-row">
-                      <dt>WORKDIR</dt>
-                      <dd><code>{session.cwd || '未指定目录'}</code></dd>
-                    </div>
-                    <div className="session-desktop-meta-row">
-                      <dt>PROVIDER</dt>
-                      <dd>
-                        <span>
-                          {session.provider || 'shell'} · {session.source === 'web' ? 'Web 终端' : '原生 CLI'}
-                        </span>
-                      </dd>
-                    </div>
-                  </dl>
-                ) : null}
-
-                <div className="session-desktop-standby-actions">
-                  {session ? (
-                    <button
-                      type="button"
-                      className="session-desktop-btn session-desktop-btn--power-on"
-                      disabled={isTerminating}
-                      onClick={handleBoot}
-                    >
-                      <ThunderboltOutlined />
-                      <span>开机并恢复原会话</span>
-                    </button>
-                  ) : null}
-                  {session ? (
-                    <button
-                      type="button"
-                      className="session-desktop-btn"
-                      disabled={isTerminating}
-                      onClick={() => onCopyIdentity(session)}
-                    >
-                      <CopyOutlined />
-                      <span>复制原标识</span>
-                    </button>
-                  ) : null}
-                  {session ? (
-                    isWebShell ? (
-                      <button
-                        type="button"
-                        className="session-desktop-btn session-desktop-btn--danger"
-                        disabled={isTerminating}
-                        onClick={handleRequestTerminateCurrent}
-                        title="不可逆销毁并停止服务端此 Web Shell 会话（需确认）"
-                      >
-                        {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
-                        <span>{isTerminating ? '正在关闭…' : '关闭会话'}</span>
-                      </button>
-                    ) : (
-                      <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
-                        <span className="session-desktop-disabled-wrap">
-                          <button
-                            type="button"
-                            className="session-desktop-btn session-desktop-btn--disabled"
-                            disabled
-                            aria-disabled="true"
-                          >
-                            <DeleteOutlined />
-                            <span>关闭会话</span>
-                          </button>
-                        </span>
-                      </Tooltip>
-                    )
-                  ) : null}
-                </div>
-              </div>
-
-                          </section>
-          )}
-
-          {/* OS Windows Layer */}
+                    {/* OS Windows Layer */}
           <div
             className="session-desktop-windows"
             data-cols={gridColumns}
@@ -890,7 +668,7 @@ export function SessionDesktop({
                     className="session-desktop-win-btn"
                     onClick={handleMinimizeTerminal}
                     aria-label="最小化终端窗口"
-                    title="最小化窗口到任务栏（电脑保持开机，终端连接不中断）"
+                    title="最小化窗口到任务栏（终端连接不中断）"
                   >
                     <MinusOutlined />
                   </button>
@@ -898,16 +676,6 @@ export function SessionDesktop({
                   {session ? (
                     <>
                       <span className="session-desktop-win-sep" aria-hidden="true" />
-                      <button
-                        type="button"
-                        className="session-desktop-win-power-btn"
-                        disabled={isTerminating}
-                        onClick={handlePowerOff}
-                        title="虚拟电脑关机：仅熄灭显示器并断开前端终端附着，保留后台持久会话"
-                      >
-                        <PoweroffOutlined />
-                        <span>虚拟关机</span>
-                      </button>
                       {isWebShell ? (
                         <button
                           type="button"
@@ -958,154 +726,7 @@ export function SessionDesktop({
                     onMinimizedChange={handleShellMinimizedChange}
                     onClose={handleRequestTerminateCurrent}
                   />
-                ) : bootPhase === 'checking' ? (
-                  <div className="session-desktop-terminal-fallback">
-                    <div className="session-desktop-fallback-card">
-                      <div className="session-desktop-fallback-head">
-                        <span className="session-desktop-status-pill">
-                          <LoadingOutlined />
-                          <span>正在核对原会话</span>
-                        </span>
-                        <h3>正在按原标识核对持久会话状态…</h3>
-                      </div>
-                      <p className="session-desktop-fallback-desc">
-                        {bootReason || '正在向当前服务器核对原会话标识，确认存活后将直接恢复附着，绝不静默创建替代终端。'}
-                      </p>
-                      {session ? (
-                        <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
-                          <div className="session-desktop-meta-row">
-                            <dt>SESSION KEY</dt>
-                            <dd><code>{session.sessionKey}</code></dd>
-                          </div>
-                        </dl>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="session-desktop-terminal-fallback">
-                    <div className="session-desktop-fallback-card">
-                      <div className="session-desktop-fallback-head">
-                        <span className={`session-desktop-status-pill session-desktop-status-pill--${fallbackMeta.tone}`}>
-                          <span className={`hud-led ${fallbackMeta.ledClass}`} aria-hidden="true" />
-                          <span>{fallbackMeta.label}</span>
-                        </span>
-                        <h3>{fallbackMeta.title}</h3>
-                      </div>
-
-                      <p className="session-desktop-fallback-desc">{fallbackMeta.description}</p>
-
-                      {session ? (
-                        <dl className="session-desktop-meta-grid session-desktop-meta-grid--compact">
-                          <div className="session-desktop-meta-row">
-                            <dt>SESSION KEY</dt>
-                            <dd><code>{session.sessionKey}</code></dd>
-                          </div>
-                          {session.nativeSessionId ? (
-                            <div className="session-desktop-meta-row">
-                              <dt>NATIVE ID</dt>
-                              <dd><code>{session.nativeSessionId}</code></dd>
-                            </div>
-                          ) : null}
-                          <div className="session-desktop-meta-row">
-                            <dt>WORKDIR</dt>
-                            <dd><code>{session.cwd || '未指定目录'}</code></dd>
-                          </div>
-                          <div className="session-desktop-meta-row">
-                            <dt>PROVIDER</dt>
-                            <dd>
-                              <span>
-                                {session.provider || 'shell'} · {session.source === 'web' ? 'Web 终端' : '原生 CLI'}
-                              </span>
-                            </dd>
-                          </div>
-                        </dl>
-                      ) : null}
-
-                      {session && !isWebShell ? (
-                        <p className="session-desktop-lifecycle-note">
-                          {NATIVE_CLOSE_DISABLED_REASON}
-                        </p>
-                      ) : null}
-
-                      {session?.contentPreview ? (
-                        <div className="session-desktop-preview-box">
-                          <span className="session-desktop-preview-label">最近同步摘要（只读）</span>
-                          <pre>{session.contentPreview}</pre>
-                        </div>
-                      ) : null}
-
-                      <div className="session-desktop-fallback-actions">
-                        {session && (bootPhase === 'unavailable' || bootPhase === 'exited') ? (
-                          <button
-                            type="button"
-                            className="session-desktop-btn session-desktop-btn--power-on"
-                            disabled={isTerminating}
-                            onClick={handleBoot}
-                          >
-                            <ThunderboltOutlined />
-                            <span>重新尝试接入原会话</span>
-                          </button>
-                        ) : null}
-                        {session ? (
-                          <button
-                            type="button"
-                            className="session-desktop-btn"
-                            disabled={isTerminating}
-                            onClick={() => onCopyIdentity(session)}
-                          >
-                            <CopyOutlined />
-                            <span>复制原标识</span>
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="session-desktop-btn"
-                          disabled={isTerminating}
-                          onClick={onRefreshAll}
-                        >
-                          <ReloadOutlined />
-                          <span>刷新核对</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="session-desktop-btn session-desktop-btn--primary"
-                          disabled={isTerminating}
-                          onClick={() => onOpenNewTerminal(session?.cwd || room?.projectPath)}
-                        >
-                          <PlusOutlined />
-                          <span>新建项目终端</span>
-                        </button>
-                        {session ? (
-                          isWebShell ? (
-                            <button
-                              type="button"
-                              className="session-desktop-btn session-desktop-btn--danger"
-                              disabled={isTerminating}
-                              onClick={handleRequestTerminateCurrent}
-                            >
-                              {isTerminating ? <LoadingOutlined /> : <DeleteOutlined />}
-                              <span>{isTerminating ? '正在关闭…' : '关闭会话'}</span>
-                            </button>
-                          ) : (
-                            <Tooltip title={NATIVE_CLOSE_DISABLED_REASON}>
-                              <span className="session-desktop-disabled-wrap">
-                                <button
-                                  type="button"
-                                  className="session-desktop-btn session-desktop-btn--disabled"
-                                  disabled
-                                  aria-disabled="true"
-                                >
-                                  <DeleteOutlined />
-                                  <span>关闭会话</span>
-                                </button>
-                              </span>
-                            </Tooltip>
-                          )
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                ) : null}
               </div>
             </section>
 
@@ -1123,22 +744,6 @@ export function SessionDesktop({
         {/* Bottom Desktop Dock / Taskbar */}
         <footer className="session-desktop-dock" aria-label="桌面任务栏">
           <div className="session-desktop-dock-apps">
-            <button
-              type="button"
-              className="session-desktop-dock-pill"
-              data-active={terminalWanted ? 'true' : undefined}
-              data-minimized={!terminalWanted ? 'true' : undefined}
-              onClick={handleToggleTerminalDock}
-              title={
-                !isPoweredOn
-                  ? '查看虚拟电脑待机屏（点击“开机恢复”可重连终端）'
-                  : (terminalWanted ? '最小化终端窗口（保持开机与后台运行）' : '恢复终端窗口')
-              }
-            >
-              <CodeOutlined />
-              <span className={`hud-led ${isPoweredOn ? availability.ledClass : ''}`} aria-hidden="true" />
-              <span>会话终端</span>
-            </button>
 
             <button
               type="button"
@@ -1146,13 +751,13 @@ export function SessionDesktop({
               disabled={!browserAllowed}
               data-active={browserWindowVisible ? 'true' : undefined}
               data-minimized={browserWindowOpen && !browserWindowVisible ? 'true' : undefined}
-              aria-label="在虚拟电脑内部打开或恢复任务浏览器窗口"
+              aria-label="打开或恢复任务浏览器窗口"
               aria-expanded={browserWindowVisible}
               title={!browserAllowed
-                ? '任务浏览器需要已开机的虚拟电脑及明确的 Server 和会话身份'
+                ? '任务浏览器需要明确的 Server 和会话身份'
                 : browserWindowVisible
                   ? '最小化任务浏览器并释放控制连接（后台会话不变）'
-                  : '在虚拟电脑内部打开任务浏览器；需手动启动，尚未绑定账号'}
+                  : '打开任务浏览器；需手动启动，尚未绑定账号'}
               onClick={() => setBrowserWindow((current) => current?.identity === desktopIdentity
                 ? { ...current, minimized: !current.minimized }
                 : { identity: desktopIdentity, minimized: false })}
@@ -1170,7 +775,6 @@ export function SessionDesktop({
             {coworkers.map((coworker) => {
               const isCurrent = coworker.id === session?.id;
               const coworkerMeta = getAvailabilityMeta(coworker.availability);
-              const coworkerPower = coworkerPowerMap.get(coworker.sessionKey) ?? 'on';
               return (
                 <button
                   key={coworker.id}
@@ -1179,47 +783,18 @@ export function SessionDesktop({
                   data-active={isCurrent ? 'true' : undefined}
                   aria-current={isCurrent ? 'true' : undefined}
                   onClick={() => onSelectRoomSession(coworker)}
-                  title={`${coworker.label} · ${coworkerMeta.label}${coworkerPower === 'off' ? ' · 虚拟已关机' : ''}`}
+                  title={`${coworker.label} · ${coworkerMeta.label}`}
                 >
                   {coworker.canAttachTerminal ? <CodeOutlined /> : <UserOutlined />}
-                  <span className={`hud-led ${coworkerPower === 'off' ? '' : coworkerMeta.ledClass}`} aria-hidden="true" />
+                  <span className={`hud-led ${coworkerMeta.ledClass}`} aria-hidden="true" />
                   <span className="session-desktop-coworker-code">{coworker.persona.badgeCode}</span>
                   <span className="session-desktop-coworker-name">{coworker.shortLabel || coworker.label}</span>
-                  {coworkerPower === 'off' ? (
-                    <PoweroffOutlined className="session-desktop-coworker-poweroff" aria-label="虚拟已关机" />
-                  ) : null}
                 </button>
               );
             })}
           </nav>
 
           <div className="session-desktop-dock-right">
-            {session ? (
-              isPoweredOn ? (
-                <button
-                  type="button"
-                  className="session-desktop-btn session-desktop-btn--power-off"
-                  disabled={isTerminating}
-                  onClick={handlePowerOff}
-                  title="虚拟电脑关机：仅熄屏并断开前端附着，保留后台会话"
-                >
-                  <PoweroffOutlined />
-                  <span>虚拟关机</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="session-desktop-btn session-desktop-btn--power-on"
-                  disabled={isTerminating}
-                  onClick={handleBoot}
-                  title="开机恢复原会话连接"
-                >
-                  <ThunderboltOutlined />
-                  <span>开机恢复</span>
-                </button>
-              )
-            ) : null}
-
             <button
               type="button"
               className="session-desktop-btn session-desktop-dock-return"

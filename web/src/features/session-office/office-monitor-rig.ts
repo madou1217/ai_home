@@ -3,7 +3,6 @@ import type { OfficeSessionItem } from './session-office-types';
 import type { OfficeScenePalette } from './office-scene-types';
 import {
   DEFAULT_OFFICE_MONITOR_TRANSFORM,
-  type OfficeComputerPowerState,
   type OfficeMonitorTransform,
 } from './office-computer-state';
 import {
@@ -42,7 +41,6 @@ const COLLAR_MAX_LOCAL_Y = 0.8125;
 const VESA_BACK_OFFSET_Z = -0.203125;
 const ARM_SEGMENT_EPS = 0.01;
 
-const LED_STANDBY_HEX = '#8a5a10';
 const LED_EXITED_HEX = '#475569';
 
 export interface SingleMonitorRig {
@@ -426,7 +424,6 @@ export function syncMonitorAssemblyRig(
   isSelected: boolean,
   palette: OfficeScenePalette,
   options: {
-    power: OfficeComputerPowerState;
     transform: OfficeMonitorTransform;
   }
 ): void {
@@ -434,15 +431,7 @@ export function syncMonitorAssemblyRig(
   const unit = rig.monitor;
   const isDark = palette.mode === 'dark';
 
-  updateMonitorScreenTexture(unit.screenBundle, session, isSelected, palette, {
-    power: options.power,
-  });
-
-  if (options.power === 'off') {
-    unit.screenMaterial.emissiveIntensity = isDark ? 0.12 : 0.1;
-    unit.powerLedMaterial.color.set(LED_STANDBY_HEX);
-    return;
-  }
+  updateMonitorScreenTexture(unit.screenBundle, session, isSelected, palette);
 
   if (session.availability === 'exited') {
     unit.screenMaterial.emissiveIntensity = isDark ? 1.0 : 0.68;

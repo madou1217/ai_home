@@ -1,5 +1,3 @@
-export type OfficeComputerPowerState = 'on' | 'off';
-
 export interface OfficeMonitorTransform {
   x: number;
   y: number;
@@ -8,7 +6,6 @@ export interface OfficeMonitorTransform {
 }
 
 export interface OfficeComputerPreferences {
-  power: OfficeComputerPowerState;
   /** Per-station monitor pose; each station stores its own transform. */
   monitor: OfficeMonitorTransform;
 }
@@ -35,7 +32,6 @@ export const DEFAULT_OFFICE_MONITOR_TRANSFORM: OfficeMonitorTransform = Object.f
 });
 
 export const DEFAULT_OFFICE_COMPUTER_PREFERENCES: OfficeComputerPreferences = freezePreferences({
-  power: 'on',
   monitor: DEFAULT_OFFICE_MONITOR_TRANSFORM,
 });
 
@@ -65,7 +61,6 @@ function freezeTransform(transform: OfficeMonitorTransform): OfficeMonitorTransf
 
 function freezePreferences(prefs: OfficeComputerPreferences): OfficeComputerPreferences {
   return Object.freeze({
-    power: prefs.power,
     monitor: freezeTransform(prefs.monitor),
   });
 }
@@ -102,10 +97,6 @@ export function clampOfficeMonitorTransform(
   };
 }
 
-function normalizePower(value: unknown, fallback: OfficeComputerPowerState): OfficeComputerPowerState {
-  return value === 'off' || value === 'on' ? value : fallback;
-}
-
 function sanitizePreferences(
   rawInput: unknown,
   fallback: OfficeComputerPreferences = DEFAULT_OFFICE_COMPUTER_PREFERENCES
@@ -121,10 +112,7 @@ function sanitizePreferences(
     fallback.monitor
   );
 
-  return freezePreferences({
-    power: normalizePower(candidate.power, fallback.power),
-    monitor,
-  });
+  return freezePreferences({ monitor });
 }
 
 function areTransformsEqual(a: OfficeMonitorTransform, b: OfficeMonitorTransform): boolean {
@@ -133,8 +121,7 @@ function areTransformsEqual(a: OfficeMonitorTransform, b: OfficeMonitorTransform
 
 function arePreferencesEqual(a: OfficeComputerPreferences, b: OfficeComputerPreferences): boolean {
   return (
-    a.power === b.power
-    && areTransformsEqual(a.monitor, b.monitor)
+areTransformsEqual(a.monitor, b.monitor)
   );
 }
 

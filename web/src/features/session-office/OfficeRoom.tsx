@@ -19,10 +19,8 @@ import {
   LeftOutlined,
   MoreOutlined,
   PlusOutlined,
-  PoweroffOutlined,
   RightOutlined,
   StopOutlined,
-  ThunderboltOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, type MenuProps } from 'antd';
@@ -62,7 +60,6 @@ export interface OfficeRoomProps {
   onOpenNewTerminal: (cwd?: string) => void;
   directoryLoading: boolean;
   onTerminateSession?: (session: OfficeSessionItem) => void | Promise<void>;
-  onToggleStationPower?: (session: OfficeSessionItem) => void;
   terminatingSessionKey?: string | null;
 }
 
@@ -168,7 +165,6 @@ export function OfficeRoom({
   onOpenNewTerminal,
   directoryLoading,
   onTerminateSession,
-  onToggleStationPower,
   terminatingSessionKey = null,
 }: OfficeRoomProps) {
   const themeMode = useThemeMode();
@@ -294,12 +290,6 @@ export function OfficeRoom({
     return map;
   }, [prefsRevision, serverId, visibleSessions]);
 
-  const activeComputerPrefs = useMemo<OfficeComputerPreferences | null>(() => {
-    if (!activeSession) return null;
-    const sid = serverId || activeSession.serverId || 'local';
-    return computerPreferencesByKey[activeSession.sessionKey]
-      ?? readOfficeComputerPreferences(sid, activeSession.sessionKey);
-  }, [activeSession, computerPreferencesByKey, serverId]);
   const sceneSyncState = useMemo<OfficeSceneSyncState | null>(() => {
     if (!room) return null;
     return {
@@ -515,25 +505,13 @@ export function OfficeRoom({
 
   const moreMenuItems: MenuProps['items'] = [
     { key: 'copy', icon: <CopyOutlined />, label: '复制标识' },
-    ...(onToggleStationPower
-      ? [
-        { type: 'divider' as const },
-        {
-          key: 'power',
-          icon: activeComputerPrefs?.power === 'off' ? <ThunderboltOutlined /> : <PoweroffOutlined />,
-          label: activeComputerPrefs?.power === 'off' ? '虚拟开机' : '虚拟关机',
-        },
-      ]
-      : []),
+
   ];
 
   const handleMoreMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (key === 'copy') {
       handleCopySelectedIdentity();
       return;
-    }
-    if (key === 'power' && activeSession) {
-      onToggleStationPower?.(activeSession);
     }
   };
 
@@ -835,9 +813,6 @@ export function OfficeRoom({
                 <span className={`office-selected-chip ${activeMeta.toneClass}`}>
                   {activeMeta.label}
                 </span>
-                {activeComputerPrefs?.power === 'off' ? (
-                  <span className="office-selected-chip office-tone--poweroff">已关机</span>
-                ) : null}
                                 <span className="office-selected-preview" title={activeSnippet.text}>
                   <em>{activeSnippet.tag}</em>
                   <span>{activeSnippet.text}</span>
@@ -851,7 +826,7 @@ export function OfficeRoom({
                   icon={<DesktopOutlined />}
                   onClick={handleOpenSelectedMonitor}
                 >
-                  {activeComputerPrefs?.power === 'off' ? '开机桌面' : '打开桌面'}
+                  打开桌面
                 </Button>
                 <Dropdown
                   trigger={['click']}

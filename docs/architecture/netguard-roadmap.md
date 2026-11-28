@@ -93,6 +93,8 @@
 
 ### 2.2 P1：per-instance 透明 TCP 代理（WinDivert NAT）
 
+设计：`docs/architecture/netguard-transparent-redirect.md`（出站 SYN 改写、回程反向改写、relay CONNECT、MSS/checksum/失败语义与验收）。
+
 - [ ] 出站 SYN 改写目标到实例专属本地 relay
 - [ ] NAT 表：原目标 ↔ 本地源端口；回程改写与 checksum 重算
 - [ ] relay 支持 HTTP CONNECT / SOCKS5，连该实例代理入口

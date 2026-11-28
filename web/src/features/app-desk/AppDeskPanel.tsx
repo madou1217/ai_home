@@ -216,6 +216,7 @@ export default function AppDeskPanel() {
   const [launchProxyUrl, setLaunchProxyUrl] = useState('');
   const [launchSelector, setLaunchSelector] = useState('');
   const [launching, setLaunching] = useState(false);
+  const [launchStrict, setLaunchStrict] = useState(false);
   const [rememberedProfile, setRememberedProfile] = useState<AppDeskLaunchProfile | null>(null);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -695,6 +696,7 @@ export default function AppDeskPanel() {
         proxy: launchProxyMode !== 'direct',
         proxyUrl: launchProxyMode === 'custom' ? launchCustomUrl : undefined,
         proxySelector: launchProxyMode === 'selector' ? launchSelectorValue : undefined,
+        networkMode: launchProxyMode === 'direct' ? 'direct' : launchStrict ? 'strict_proxy' : 'cooperative',
         force
       });
       if (!mountedRef.current) return;
@@ -883,6 +885,15 @@ export default function AppDeskPanel() {
               {instance.proxySelector ? (
                 <Tooltip title={`节点/地区选择器：${instance.proxySelector}`}>
                   <span className="app-desk-selector-chip">{instance.proxySelector}</span>
+                </Tooltip>
+              ) : null}
+              {instance.guardActive ? (
+                <Tooltip title={`NetGuard PID ${instance.guardPid || '—'}`}>
+                  <span className="app-desk-selector-chip">Guard {instance.guardBackend || ''}</span>
+                </Tooltip>
+              ) : instance.guardError ? (
+                <Tooltip title={instance.guardError}>
+                  <span className="app-desk-selector-chip">Guard 未启用</span>
                 </Tooltip>
               ) : null}
               {instance.proxyRegion ? (
@@ -1400,6 +1411,12 @@ export default function AppDeskPanel() {
               ]}
             />
           </div>
+
+          {launchProxyMode !== 'direct' ? (
+            <Checkbox checked={launchStrict} onChange={(event) => setLaunchStrict(event.target.checked)}>
+              严格隔离（实验）：Guard 只放行本机代理，直连流量全部阻断
+            </Checkbox>
+          ) : null}
 
           {launchProxyMode === 'default' ? (
             <div className="app-desk-launch-note">

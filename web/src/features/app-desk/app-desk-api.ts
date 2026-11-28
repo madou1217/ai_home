@@ -23,6 +23,11 @@ export interface AppDeskInstance {
   proxyHealthDetail?: string;
   /** 节点/地区选择器；为空表示本机 6152 或自定义 URL。 */
   proxySelector?: string;
+  /** NetGuard 严格隔离：进程/后端/错误（运行时字段）。 */
+  guardPid?: number;
+  guardBackend?: string;
+  guardActive?: boolean;
+  guardError?: string;
   startedAtMs: number;
   pids?: number[];
   live: boolean;

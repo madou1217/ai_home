@@ -196,9 +196,13 @@
 
 ## Phase 7 — 统一实例台账与控制面
 
-- [ ] 所有启动路径注册 appsessions（Provider desktop/CLI 当前未注册）
-- [ ] 实例字段：launchId、profile、账号、proxySpec、实际节点/国家/城市/IP、Guard、DNS、进程树、健康
-- [ ] WebUI 看板：启动、重连、换代理、重启、结束进程树、日志
+- [x] App Desk 启动路径注册 appsessions（Provider desktop/CLI 仍未注册）
+- [x] 实例字段：proxy/selector/国家城市、Guard PID/backend/active/error、进程 PID、健康
+- [x] 严格模式启动：`networkMode=strict_proxy` 在启动应用前校验 NetGuard 可用；启动后以实例根 PID 拉起 `aih-netguard`，写入台账
+- [x] Guard 生命周期：结束实例/自然退出后回收 Guard PID（真机用假 guard 验证：启动 84932、desk 可见、kill 后进程消失）
+- [x] WebUI：启动弹窗“严格隔离（实验）”开关；实例行显示 Guard 后端/PID 或“Guard 未启用”
+- [ ] Provider desktop/CLI 启动路径注册 appsessions
+- [ ] WebUI 看板：换代理、重启、查看 Guard 日志
 - [ ] CLI 等价命令：`aih app` / Provider 查看与管理
 - [ ] 历史/孤儿清理与断链状态
 - [ ] 审计日志与证据导出
@@ -243,10 +247,10 @@
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
 | DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
-| 统一实例台账 / 可观测 | App 看台部分有 | 30% | ⬜ Phase 7 |
+| 统一实例台账 / 可观测 | App Desk Guard 台账+启停真机通过 | 45% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈31%** | 🚧 |
+| **总目标** | — | **≈33%** | 🚧 |
 
 ---
 

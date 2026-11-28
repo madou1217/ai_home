@@ -10,10 +10,12 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/launcher"
+	"github.com/madou1217/ai_home/internal/runtime/appguard"
 	"github.com/madou1217/ai_home/internal/runtime/applaunch"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyhealth"
 	"github.com/madou1217/ai_home/internal/runtime/appproxyregion"
@@ -269,6 +271,25 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		}
 	}
 	preflightWarning := ""
+	if netguard.Mode(networkMode) == netguard.ModeStrict {
+		if proxyURL == "" {
+			writeJSON(response, http.StatusConflict, map[string]any{
+				"ok":      false,
+				"error":   "preflight_failed",
+				"message": "严格隔离需要先选择代理；直连模式不能开启严格隔离",
+			})
+			return
+		}
+		if err := appguard.Available(appguard.Spec{AIHomeDir: handler.aiHomeDir}); err != nil {
+			writeJSON(response, http.StatusConflict, map[string]any{
+				"ok":          false,
+				"error":       "guard_unavailable",
+				"message":     "NetGuard 不可用：" + err.Error(),
+				"canContinue": false,
+			})
+			return
+		}
+	}
 	if proxyURL != "" {
 		health, detail := appproxyhealth.Check(request.Context(), proxyURL)
 		if health != "ok" {
@@ -319,6 +340,10 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "record_failed", "message": recordErr.Error()})
 		return
 	}
+	guardWarning := ""
+	if netguard.Mode(networkMode) == netguard.ModeStrict {
+		instance, guardWarning = handler.startGuard(instance)
+	}
 	profile, profileErr := handler.rememberProfile(request, app, entry, proxyURL, selector, customURL, payload.Proxy, networkMode, payload.Remember)
 	responsePayload := map[string]any{
 		"ok":            true,
@@ -331,8 +356,14 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		"proxyPid":      entry.PID,
 		"instance":      instance,
 		"preflight": map[string]any{
-			"ok":      preflightWarning == "",
-			"warning": preflightWarning,
+			"ok":      preflightWarning == "" && guardWarning == "",
+			"warning": strings.TrimSpace(preflightWarning + " " + guardWarning),
+		},
+		"guard": map[string]any{
+			"pid":     instance.GuardPID,
+			"backend": instance.GuardBackend,
+			"active":  instance.GuardActive,
+			"error":   instance.GuardError,
 		},
 	}
 	if profileErr != nil {
@@ -369,6 +400,35 @@ func (handler *Handler) profile(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "profile": profile})
+}
+
+func (handler *Handler) startGuard(instance appsessions.Instance) (appsessions.Instance, string) {
+	if len(instance.PIDs) == 0 {
+		instance.GuardError = "未匹配到实例根进程，NetGuard 未启动"
+		_ = appsessions.New(handler.aiHomeDir).SetGuard(instance.ID, 0, "", instance.GuardError)
+		return instance, instance.GuardError
+	}
+	logPath := ""
+	if strings.TrimSpace(handler.aiHomeDir) != "" {
+		logPath = filepath.Join(handler.aiHomeDir, "logs", "app-guard", instance.ID+".log")
+	}
+	pid, backend, err := appguard.Start(appguard.Spec{
+		AIHomeDir:  handler.aiHomeDir,
+		RootPID:    instance.PIDs[0],
+		ProxyURL:   instance.ProxyURL,
+		InstanceID: instance.ID,
+		LogPath:    logPath,
+	})
+	if err != nil {
+		instance.GuardError = err.Error()
+		_ = appsessions.New(handler.aiHomeDir).SetGuard(instance.ID, 0, "", instance.GuardError)
+		return instance, instance.GuardError
+	}
+	instance.GuardPID = pid
+	instance.GuardBackend = backend
+	instance.GuardActive = true
+	_ = appsessions.New(handler.aiHomeDir).SetGuard(instance.ID, pid, backend, "")
+	return instance, ""
 }
 
 func (handler *Handler) rememberProfile(

@@ -213,6 +213,7 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 	var results []KillResult
 	now := time.Now()
 	proxyPIDs := make(map[int]struct{})
+	guardPIDs := make(map[int]struct{})
 	for index := range document.Instances {
 		instance := &document.Instances[index]
 		if len(selected) > 0 {
@@ -240,6 +241,11 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 			proxyPIDs[instance.ProxyPID] = struct{}{}
 			instance.ProxyPID = 0
 		}
+		if instance.GuardPID > 0 {
+			guardPIDs[instance.GuardPID] = struct{}{}
+			instance.GuardPID = 0
+			instance.GuardActive = false
+		}
 		results = append(results, KillResult{ID: instance.ID, Name: instance.Name, PIDs: signalled, Killed: true})
 	}
 	// Temporary proxy entries belong to the app instance; do not leave the
@@ -250,10 +256,28 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 		}
 		_, _ = terminateProcesses(ctx, []int{pid})
 	}
+	for pid := range guardPIDs {
+		if guardPIDReferenced(document.Instances, pid) {
+			continue
+		}
+		_, _ = terminateProcesses(ctx, []int{pid})
+	}
 	if err := store.saveLocked(document); err != nil {
 		return results, err
 	}
 	return results, nil
+}
+
+func guardPIDReferenced(instances []Instance, pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	for _, instance := range instances {
+		if instance.ActiveNow() && instance.GuardPID == pid {
+			return true
+		}
+	}
+	return false
 }
 
 func proxyPIDReferenced(instances []Instance, pid int) bool {
@@ -303,6 +327,40 @@ func (store *Store) SetProxyEntry(ctx context.Context, id string, entry ProxyEnt
 		instance.ProxyPID = entry.PID
 		instance.ProxyHealth = ""
 		instance.ProxyHealthDetail = ""
+		return store.saveLocked(document)
+	}
+	return ErrNotFound
+}
+
+// SetGuard records the NetGuard process attached to an instance.
+func (store *Store) SetGuard(id string, pid int, backend, errorText string) error {
+	if store == nil {
+		return errors.New("app_sessions_store_unavailable")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrNotFound
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ID != id {
+			continue
+		}
+		instance.GuardPID = pid
+		instance.GuardBackend = strings.TrimSpace(backend)
+		instance.GuardActive = pid > 0
+		instance.GuardError = strings.TrimSpace(errorText)
 		return store.saveLocked(document)
 	}
 	return ErrNotFound
@@ -377,10 +435,14 @@ func (store *Store) RemoveHistory(ctx context.Context, ids []string) (int, error
 // user closing the app window themselves, without leaving a serve child behind.
 func (store *Store) reapProxyEntriesLocked(document *storeDocument, now time.Time) bool {
 	referenced := make(map[int]struct{})
+	guards := make(map[int]struct{})
 	for index := range document.Instances {
 		instance := &document.Instances[index]
 		if instance.ActiveNow() && instance.ProxyPID > 0 {
 			referenced[instance.ProxyPID] = struct{}{}
+		}
+		if instance.ActiveNow() && instance.GuardPID > 0 {
+			guards[instance.GuardPID] = struct{}{}
 		}
 	}
 	changed := false
@@ -399,6 +461,22 @@ func (store *Store) reapProxyEntriesLocked(document *storeDocument, now time.Tim
 		}
 		_, _ = terminateProcesses(context.Background(), []int{instance.ProxyPID})
 		instance.ProxyPID = 0
+		changed = true
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.GuardPID <= 0 || instance.ActiveNow() {
+			continue
+		}
+		if _, used := guards[instance.GuardPID]; used {
+			continue
+		}
+		if instance.ExitedAtMs > 0 && now.Sub(time.UnixMilli(instance.ExitedAtMs)) < 3*time.Second {
+			continue
+		}
+		_, _ = terminateProcesses(context.Background(), []int{instance.GuardPID})
+		instance.GuardPID = 0
+		instance.GuardActive = false
 		changed = true
 	}
 	return changed

@@ -447,6 +447,28 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 		return name, nil
 	}
 
+	// rebuildSameSelection is the fail-closed path for an explicit selector:
+	// close the local listeners first, then re-acquire the same selector and
+	// bind the same port again. While this runs, clients get connection refused,
+	// never a direct-network fallback.
+	rebuildSameSelection := func() error {
+		stopWatchers()
+		_ = unit.Close()
+		next, buildErr := newServeEntryUnit(ctx, runtime, options)
+		if buildErr != nil {
+			return buildErr
+		}
+		unit, lease = next, next.lease
+		tunDone = next.tunDone
+		leaseActive = true
+		lastErr = ""
+		lastRenewAt = time.Now().UnixMilli()
+		reconnects++
+		startWatchers(lease)
+		publishStatus()
+		return nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -520,31 +542,41 @@ func runProxyServe(args []string, runtime commandRuntime) (err error) {
 			lastErr = renewErr.Error()
 			publishStatus()
 			_, _ = fmt.Fprintf(runtime.stderr, "[aih] 代理租约续期失败（%v），正在恢复…\n", renewErr)
-			// 先原地重取同一 selector：Server 重启/短暂不可达时端口保持不变，
-			// 已经启动的浏览器不会因为管理面几秒不可用而永久失去代理。
-			if refreshErr := retryRecovery(ctx, 15, 2*time.Second, refreshInPlace); refreshErr == nil {
-				lease.finishRecovery(nil)
-				if !options.json {
-					writeServeEntrySummary(runtime, options, lease)
+			hotSwap := hotSwapEnabled.Load() && hotSwapAvailable
+			if hotSwap {
+				// 热替换开启：入口保持，上游原地恢复；请求在上游不可用期间
+				// 一律 502，不会落到直连。
+				if refreshErr := retryRecovery(ctx, 15, 2*time.Second, refreshInPlace); refreshErr == nil {
+					lease.finishRecovery(nil)
+					if !options.json {
+						writeServeEntrySummary(runtime, options, lease)
+					}
+					continue
 				}
-				continue
-			} else if rotation == nil {
-				// 点名节点在重试窗口后仍不可用：失败关闭，绝不换到别的出口。
-				lease.finishRecovery(refreshErr)
+				lease.finishRecovery(errors.New("上游恢复超时"))
 				return fmt.Errorf("代理租约续期失败: %w", renewErr)
 			}
-			var name string
-			healErr := retryRecovery(ctx, 15, 2*time.Second, func() error {
-				var rebuildErr error
-				name, rebuildErr = rebuildEntry(renewErr.Error())
-				return rebuildErr
-			})
-			lease.finishRecovery(healErr)
-			if healErr != nil {
-				return fmt.Errorf("出口切换失败: %w", healErr)
+			// 热替换关闭：先掐断入口，再在同一端口重建。恢复期间所有连接
+			// 被拒绝（fail closed），绝不回落到直连。
+			stopWatchers()
+			_ = unit.Close()
+			lease.finishRecovery(errors.New("入口已断开，等待恢复"))
+			var healErr error
+			if rotation != nil {
+				healErr = retryRecovery(ctx, 15, 2*time.Second, func() error {
+					var name string
+					var rebuildErr error
+					name, rebuildErr = rebuildEntry(renewErr.Error())
+					if rebuildErr == nil && name != "" {
+						_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已切换到出口 %s（入口已重建）。\n", name)
+					}
+					return rebuildErr
+				})
+			} else {
+				healErr = retryRecovery(ctx, 15, 2*time.Second, rebuildSameSelection)
 			}
-			if name != "" {
-				_, _ = fmt.Fprintf(runtime.stderr, "[aih] 已切换到出口 %s（入口已重建）。\n", name)
+			if healErr != nil {
+				return fmt.Errorf("出口恢复失败: %w", healErr)
 			}
 			if !options.json {
 				writeServeEntrySummary(runtime, options, lease)

@@ -81,14 +81,15 @@ type processEntry32 struct {
 type WinDivertGuard struct {
 	options Options
 
-	mu       sync.Mutex
-	handle   uintptr
-	pids     map[int]uint64
-	roots    map[int]uint64
-	watcher  context.CancelFunc
-	status   GuardStatus
-	blocked  uint64
-	applyErr string
+	mu        sync.Mutex
+	handle    uintptr
+	pids      map[int]uint64
+	roots     map[int]uint64
+	watcher   context.CancelFunc
+	status    GuardStatus
+	blocked   uint64
+	applyErr  string
+	dnsBridge *DoHBridge
 	// transparent TCP redirect state (AIH_NETGUARD_TRANSPARENT=1).
 	nat     *natTable
 	relay   *redirectRelay
@@ -164,6 +165,19 @@ func (guard *WinDivertGuard) Start(ctx context.Context) error {
 	guard.mu.Lock()
 	defer guard.mu.Unlock()
 	guard.status.Active = true
+	if guard.options.Policy.DNS == DNSBridge && guard.options.ProxyURL != "" {
+		bridge, err := NewDoHBridge(guard.options.ProxyURL, "https://1.1.1.1/dns-query")
+		if err != nil {
+			guard.status.Active = false
+			if guard.dnsBridge != nil {
+				_ = guard.dnsBridge.Close()
+				guard.dnsBridge = nil
+			}
+			return err
+		}
+		guard.dnsBridge = bridge
+		guard.status.DNSAddr = bridge.Addr()
+	}
 	if transparentEnabled() {
 		if err := guard.startTransparent(ctx); err != nil {
 			guard.status.Active = false

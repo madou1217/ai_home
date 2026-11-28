@@ -119,21 +119,37 @@ func (source providerSessionSource) Rows(ctx context.Context) ([]persistent.Sess
 	// 原生启动没有 tmux pane；只读 tmux 会让 aih <p> sessions|ss 恒为空。
 	appendNativeProviderRows(ctx, source.runtime, &rows)
 	appendNativeCodexRows(ctx, source.runtime, &rows)
-	appendRecentNativeSessionRows(ctx, source.runtime, &rows, source.allProjects)
-	applyNativeTurnStates(source.aiHomeDir, rows)
-	ensureUniqueSessionTitles(rows)
-	selected := make([]persistent.SessionRow, 0, len(rows))
-	for _, row := range rows {
-		if row.Provider != source.providerID {
-			continue
+	selectProviderRows := func() []persistent.SessionRow {
+		selected := make([]persistent.SessionRow, 0, len(rows))
+		for _, row := range rows {
+			if row.Provider != source.providerID {
+				continue
+			}
+			if source.filterRef != "" && row.AccountRef != source.filterRef &&
+				(source.filterID == "" || row.AccountID != source.filterID) {
+				continue
+			}
+			selected = append(selected, row)
 		}
-		if source.filterRef != "" && row.AccountRef != source.filterRef &&
-			(source.filterID == "" || row.AccountID != source.filterID) {
-			continue
-		}
-		selected = append(selected, row)
+		return selected
 	}
-	if !source.allProjects {
+	visibleAll := source.allProjects
+	if !visibleAll {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return nil, cwdErr
+		}
+		if isSessionHomeDir(cwd, source.runtime) || len(persistent.FilterSessionsByCwd(selectProviderRows(), cwd)) == 0 {
+			visibleAll = true
+		}
+	}
+	appendRecentNativeSessionRows(ctx, source.runtime, &rows, visibleAll)
+	applyNativeTurnStates(source.aiHomeDir, rows)
+	annotateLatestMessages(ctx, source.runtime, source.aiHomeDir, rows)
+	rows = filterDismissedSessionRows(rows, readSSDismissed(source.aiHomeDir, time.Now()))
+	ensureUniqueSessionTitles(rows)
+	selected := selectProviderRows()
+	if !visibleAll {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
 			return nil, cwdErr
@@ -149,6 +165,10 @@ func (source providerSessionSource) Close(ctx context.Context, row persistent.Se
 		return fmt.Errorf("原生会话不能从 aih %s sessions 关闭；退出该 Provider 进程后再刷新", source.providerID)
 	}
 	return source.store.CloseSession(ctx, row)
+}
+
+func (source providerSessionSource) Dismiss(_ context.Context, row persistent.SessionRow) error {
+	return dismissSSSession(source.aiHomeDir, row.Provider, row.NativeID)
 }
 
 // sessionAccountLabels 读取 #<id> 与显示名；管理面不可用时退化为空表，
@@ -202,7 +222,7 @@ func writeSessionRows(
 	}
 	_, _ = fmt.Fprintf(output, "%s 持久会话（%d）：\n", providerID, len(rows))
 	writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "状态\t账号\t会话名称\t会话ID\t项目\t最近活动")
+	_, _ = fmt.Fprintln(writer, "状态\t账号\t会话名称\t最新消息\t会话ID\t项目\t最近活动")
 	for _, row := range rows {
 		status := globalSessionStatus(row)
 		account := strings.TrimSpace(labels[row.AccountRef])
@@ -224,10 +244,11 @@ func writeSessionRows(
 		}
 		_, _ = fmt.Fprintf(
 			writer,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			status,
 			account,
 			title,
+			pickerLatestMessage(row),
 			sessionID,
 			project,
 			sessionActivityLabel(row),

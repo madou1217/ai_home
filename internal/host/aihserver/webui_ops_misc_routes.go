@@ -179,6 +179,7 @@ func buildWebUIOpsMiscRoutesWithPorts(
 	routes := []webuiRoute{
 		{Pattern: "GET " + webuiaccountoutcomesapi.Path, Handler: outcomesHandler},
 		{Pattern: "GET " + webuinativeapi.Path, Handler: nativeSessionsHandler},
+		{Pattern: "GET " + webuinativeapi.GlobalSessionsPath, Handler: nativeSessionsHandler},
 		// 浏览器数据面直接由 Go 应答。
 		{Pattern: "GET " + webuiaccountoutcomesapi.PublicPath, Handler: webuiaccountoutcomesapi.NewPublicAlias(outcomesHandler)},
 		{Pattern: "GET " + webuitasksapi.Path, Handler: tasksHandler},

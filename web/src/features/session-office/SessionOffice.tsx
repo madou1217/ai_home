@@ -1,26 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Input, Select, message } from 'antd';
 import {
-  DeleteOutlined,
-  DesktopOutlined,
-  ExclamationCircleOutlined,
-  EyeOutlined,
-  FolderOutlined,
-  PlusOutlined,
+  CheckOutlined,
+  CodeOutlined,
+  CopyOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
-import HudStateView from '@/components/hud/HudStateView';
-import InlineNote from '@/components/ui/InlineNote';
-import SettingStatusTag from '@/components/ui/SettingStatusTag';
-import OfficeRoom from './OfficeRoom';
-import SessionDesktop from './SessionDesktop';
-import type {
-  DesktopOriginRect,
-  OfficeCameraPreset,
-  OfficeProjectRoom,
-  OfficeSessionItem,
-} from './session-office-types';
-import { useSessionOfficeData } from './use-session-office-data';
+import { globalSessionsAPI, type GlobalSessionRow } from '@/services/api';
+import { writeClipboardText } from '@/utils/clipboard';
 import './SessionOffice.css';
 
 export interface SessionOfficeProps {
@@ -28,710 +15,307 @@ export interface SessionOfficeProps {
   defaultSessionKey?: string;
 }
 
-const ZOOM_CUE_MS = 260;
+const POLL_MS = 15000;
 
-const NATIVE_CLOSE_DISABLED_REASON =
-  '原生 CLI 会话由外部独立进程托管；终端 close 接口仅断开借用连接而不会终止原进程，如需结束请前往原 CLI 终端退出。';
+type SessionState = 'working' | 'waiting' | 'idle' | 'ended';
 
-function isTerminableWebSession(session: OfficeSessionItem): boolean {
-  return session.source === 'web' && !session.sessionKey.startsWith('native:');
+interface SessionItem extends GlobalSessionRow {
+  key: string;
+  state: SessionState;
+  stateLabel: string;
+  title: string;
+  accountLabel: string;
+  projectPath: string;
+  projectName: string;
+  lastActive: number;
+  latestMessage: string;
 }
 
-function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function resolveState(row: GlobalSessionRow): { state: SessionState; label: string } {
+  if (row.PaneDead) return { state: 'ended', label: '已结束' };
+  const alive = row.Live || Boolean(String(row.Socket || '').trim()) || Number(row.PanePID || 0) > 0;
+  if (!alive) return { state: 'ended', label: '已结束' };
+  const turn = String(row.TurnState || '').toLowerCase();
+  if (turn === 'working') return { state: 'working', label: '运行中' };
+  if (turn === 'waiting') return { state: 'waiting', label: '等待输入' };
+  if (turn === 'completed' || turn === 'idle') return { state: 'idle', label: '空闲' };
+  if (row.Live) return { state: 'working', label: '运行中' };
+  return { state: 'idle', label: '空闲' };
 }
 
-function resolveRoomDisplayTitle(room: OfficeProjectRoom): string {
-  if (room.projectName) return room.projectName;
-  return room.isFallbackRoom ? '未指定目录会话' : '未命名项目';
+function projectNameOf(path: string): string {
+  const normalized = String(path || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!normalized) return '未指定目录';
+  const parts = normalized.split('/').filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : normalized;
 }
 
-function resolveRoomPathHint(room: OfficeProjectRoom): string {
-  if (!room.projectPath || room.projectPath === '__no_cwd__') {
-    return '无工作目录（fallback）';
-  }
-  return room.projectPath;
+function toItem(row: GlobalSessionRow): SessionItem {
+  const state = resolveState(row);
+  const nativeId = String(row.NativeID || '').trim();
+  const sessionKey = String(row.Socket || '').trim() && String(row.Name || '').trim()
+    ? `tmux:${row.Socket}:${row.Name}`
+    : nativeId || `${row.Provider}:${row.Name}`;
+  const message = String(row.LastMessage || '').trim();
+  const role = String(row.LastMessageRole || '').trim();
+  return {
+    ...row,
+    key: sessionKey,
+    state: state.state,
+    stateLabel: state.label,
+    title: String(row.Label || row.Title || row.Name || row.Provider || '未命名会话').trim(),
+    accountLabel: row.AccountID
+      ? `#${row.AccountID}`
+      : row.AccountRef
+        ? `#${row.AccountRef.slice(-6)}`
+        : '-',
+    projectPath: String(row.Path || row.StartPath || '').trim(),
+    projectName: projectNameOf(row.Path || row.StartPath || ''),
+    lastActive: Number(row.LastMessageAtMS || row.LastActiveAtMS || row.LastActivityAtMS || row.CreatedAtMS || 0),
+    latestMessage: message ? (role ? `${role} · ${message}` : message) : '',
+  };
 }
 
-function matchesRoomRef(room: OfficeProjectRoom, refKey: string): boolean {
-  const normalized = refKey.trim();
-  if (!normalized) return false;
-  return room.projectKey === normalized || room.projectPath === normalized || room.projectName === normalized;
+function formatTime(ms: number): string {
+  if (!ms) return '-';
+  const date = new Date(ms);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function matchesSessionRef(session: OfficeSessionItem, refKey: string): boolean {
-  const normalized = refKey.trim();
-  if (!normalized) return false;
-  return (
-    session.sessionKey === normalized
-    || session.id === normalized
-    || Boolean(session.nativeSessionId && session.nativeSessionId === normalized)
-  );
+function entryCommand(item: SessionItem): string {
+  const id = String(item.NativeID || item.Name || '').trim();
+  if (!id) return 'aih ss';
+  return `aih ss ${id}`;
 }
 
-export default function SessionOffice({
-  defaultRoomKey,
-  defaultSessionKey,
-}: SessionOfficeProps) {
-  const {
-    serverId,
-    rooms,
-    filteredRooms,
-    allSessions,
-    hiddenCount,
-    providerOptions,
-    query,
-    setQuery,
-    providerFilter,
-    setProviderFilter,
-    directoryLoading,
-    directoryError,
-    terminatingSessionKey,
-    isSessionTerminating,
-    refreshAll,
-    openNewProjectTerminal,
-    terminateWebSession,
-    hideSession,
-    restoreHiddenSessions,
-    copySessionIdentity,
-    activateManagerSession,
-  } = useSessionOfficeData();
-
-  const [selectedRoomKey, setSelectedRoomKey] = useState<string | null>(defaultRoomKey || null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [cameraPreset, setCameraPreset] = useState<OfficeCameraPreset>('isometric');
-
-  const [desktopOpen, setDesktopOpen] = useState(false);
-  const [desktopOriginRect, setDesktopOriginRect] = useState<DesktopOriginRect | null>(null);
-  const [zoomingSessionId, setZoomingSessionId] = useState<string | null>(null);
-
-
-  const [confirmTarget, setConfirmTarget] = useState<OfficeSessionItem | null>(null);
-  const [confirmError, setConfirmError] = useState<string>('');
-
+export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: SessionOfficeProps) {
+  const [rows, setRows] = useState<GlobalSessionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [providerFilter, setProviderFilter] = useState('all');
+  const [copiedKey, setCopiedKey] = useState('');
   const mountedRef = useRef(true);
-  const liveServerIdRef = useRef(serverId);
-  liveServerIdRef.current = serverId;
-  const prevServerIdRef = useRef(serverId);
-  const renderServerIdRef = useRef(serverId);
-  const serverGenerationRef = useRef(0);
-  if (renderServerIdRef.current !== serverId) {
-    renderServerIdRef.current = serverId;
-    serverGenerationRef.current += 1;
-  }
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const latestAllSessionsRef = useRef(allSessions);
-  latestAllSessionsRef.current = allSessions;
-  const latestSelectedRoomKeyRef = useRef(selectedRoomKey);
-  latestSelectedRoomKeyRef.current = selectedRoomKey;
-  const latestSelectedSessionIdRef = useRef(selectedSessionId);
-  latestSelectedSessionIdRef.current = selectedSessionId;
-  const latestConfirmTargetRef = useRef(confirmTarget);
-  latestConfirmTargetRef.current = confirmTarget;
-
-  const confirmIdentity = confirmTarget
-    ? `${confirmTarget.serverId}\0${confirmTarget.sessionKey}\0${confirmTarget.id}`
-    : '';
-  const prevConfirmIdentityRef = useRef(confirmIdentity);
-  const confirmGenerationRef = useRef(0);
-  if (prevConfirmIdentityRef.current !== confirmIdentity) {
-    prevConfirmIdentityRef.current = confirmIdentity;
-    confirmGenerationRef.current += 1;
-  }
-  const inFlightConfirmGenRef = useRef<number | null>(null);
-
-  const zoomTimerRef = useRef<number | null>(null);
-  const deepLinkSignature = `${defaultRoomKey ?? ''}|${defaultSessionKey ?? ''}`;
-  const appliedDeepLinkRef = useRef<string>('');
-
-  const clearZoomTimer = useCallback(() => {
-    if (zoomTimerRef.current !== null && typeof window !== 'undefined') {
-      window.clearTimeout(zoomTimerRef.current);
-      zoomTimerRef.current = null;
+  const load = useCallback(async () => {
+    try {
+      const result = await globalSessionsAPI.list();
+      if (!mountedRef.current) return;
+      if (!result?.ok || !Array.isArray(result.sessions)) {
+        setError('会话清单暂不可用');
+        return;
+      }
+      setRows(result.sessions);
+      setError('');
+    } catch {
+      if (mountedRef.current) setError('会话清单读取失败');
+    } finally {
+      if (mountedRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
+    void load();
+    const timer = window.setInterval(() => { void load(); }, POLL_MS);
     return () => {
       mountedRef.current = false;
-      serverGenerationRef.current += 1;
-      clearZoomTimer();
+      window.clearInterval(timer);
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
     };
-  }, [clearZoomTimer]);
+  }, [load]);
 
-  // 服务器切换时立即清理原服务器的缩放计时器、桌面、选中会话及关闭确认弹窗，防止跨节点状态残留或误发关闭请求。
-  useEffect(() => {
-    if (prevServerIdRef.current !== serverId) {
-      prevServerIdRef.current = serverId;
-      clearZoomTimer();
-      setZoomingSessionId(null);
-      setDesktopOpen(false);
-      setDesktopOriginRect(null);
-      setSelectedSessionId(null);
-      setConfirmTarget(null);
-      setConfirmError('');
+  const items = useMemo(() => rows.map(toItem), [rows]);
+
+  const providerOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const item of items) {
+      const provider = String(item.Provider || '').trim();
+      if (provider) values.add(provider);
     }
-  }, [clearZoomTimer, serverId]);
+    return [
+      { value: 'all', label: '全部 Provider' },
+      ...[...values].sort().map((value) => ({ value, label: value })),
+    ];
+  }, [items]);
 
-  const triggerZoomCue = useCallback((sessionId: string) => {
-    clearZoomTimer();
-    if (prefersReducedMotion() || typeof window === 'undefined') {
-      setZoomingSessionId(null);
-      return;
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return items
+      .filter((item) => providerFilter === 'all' || item.Provider === providerFilter)
+      .filter((item) => {
+        if (!normalizedQuery) return true;
+        const haystack = [
+          item.title,
+          item.Name,
+          item.Label,
+          item.NativeID,
+          item.Provider,
+          item.projectName,
+          item.projectPath,
+          item.AccountRef,
+          item.latestMessage,
+        ].join(' ').toLowerCase();
+        return haystack.includes(normalizedQuery);
+      })
+      .sort((left, right) => {
+        const rank: Record<SessionState, number> = { working: 0, waiting: 1, idle: 2, ended: 3 };
+        if (rank[left.state] !== rank[right.state]) return rank[left.state] - rank[right.state];
+        return right.lastActive - left.lastActive;
+      });
+  }, [items, providerFilter, query]);
+
+  const groups = useMemo(() => {
+    const byProject = new Map<string, SessionItem[]>();
+    for (const item of filtered) {
+      const key = item.projectPath || '__no_cwd__';
+      const bucket = byProject.get(key);
+      if (bucket) bucket.push(item);
+      else byProject.set(key, [item]);
     }
-    setZoomingSessionId(sessionId);
-    zoomTimerRef.current = window.setTimeout(() => {
-      zoomTimerRef.current = null;
-      setZoomingSessionId(null);
-    }, ZOOM_CUE_MS);
-  }, [clearZoomTimer]);
+    return [...byProject.entries()]
+      .map(([path, sessions]) => ({ path, sessions }))
+      .sort((left, right) => {
+        if (left.path === '__no_cwd__') return 1;
+        if (right.path === '__no_cwd__') return -1;
+        return left.path.localeCompare(right.path);
+      });
+  }, [filtered]);
 
-  // 深链定位房间或会话（仅在目标就绪后触发一次，避免关闭会话或桌面后被重复拉起）。
-  useEffect(() => {
-    if (appliedDeepLinkRef.current === deepLinkSignature) return;
-    if (!defaultRoomKey && !defaultSessionKey) {
-      appliedDeepLinkRef.current = deepLinkSignature;
-      return;
-    }
-    if (rooms.length === 0 && allSessions.length === 0) return;
+  const counts = useMemo(() => {
+    const result = { working: 0, waiting: 0, idle: 0, ended: 0 };
+    for (const item of items) result[item.state] += 1;
+    return result;
+  }, [items]);
 
-    const matchedSession = defaultSessionKey
-      ? allSessions.find((session) => matchesSessionRef(session, defaultSessionKey)) ?? null
-      : null;
-    const matchedRoom = matchedSession
-      ? rooms.find((room) => room.projectKey === matchedSession.projectKey) ?? null
-      : (defaultRoomKey ? rooms.find((room) => matchesRoomRef(room, defaultRoomKey)) ?? null : null);
+  const focusSessionKey = String(defaultSessionKey || '').trim();
+  const focusRoom = String(defaultRoomKey || '').trim();
 
-    if (matchedRoom) {
-      setSelectedRoomKey(matchedRoom.projectKey);
-    }
-    if (matchedSession) {
-      setSelectedSessionId(matchedSession.id);
-      activateManagerSession(matchedSession.id);
-      setDesktopOriginRect(null);
-      setDesktopOpen(true);
-      appliedDeepLinkRef.current = deepLinkSignature;
-      return;
-    }
-    if (matchedRoom && !defaultSessionKey) {
-      appliedDeepLinkRef.current = deepLinkSignature;
-    }
-  }, [
-    activateManagerSession,
-    allSessions,
-    deepLinkSignature,
-    defaultRoomKey,
-    defaultSessionKey,
-    rooms,
-  ]);
-
-  // 自动清理已不存在的选中会话并退出关联桌面，避免会话终止或退出后残留过期激活引用或桌面打开状态。
-  useEffect(() => {
-    if (!selectedSessionId) return;
-    const stillExists = allSessions.some((session) => session.id === selectedSessionId);
-    if (!stillExists) {
-      clearZoomTimer();
-      setZoomingSessionId(null);
-      setDesktopOpen(false);
-      setDesktopOriginRect(null);
-      setSelectedSessionId(null);
-    }
-  }, [allSessions, clearZoomTimer, selectedSessionId]);
-
-  const activeRoom = useMemo<OfficeProjectRoom | null>(() => {
-    if (filteredRooms.length === 0) return null;
-    if (selectedRoomKey) {
-      const matched = filteredRooms.find((room) => room.projectKey === selectedRoomKey);
-      if (matched) return matched;
-    }
-    return filteredRooms[0];
-  }, [filteredRooms, selectedRoomKey]);
-
-  const desktopSession = useMemo<OfficeSessionItem | null>(() => {
-    if (!selectedSessionId) return null;
-    return allSessions.find((session) => session.id === selectedSessionId) ?? null;
-  }, [allSessions, selectedSessionId]);
-
-  const desktopRoom = useMemo<OfficeProjectRoom | null>(() => {
-    if (desktopSession) {
-      const sessionRoom = rooms.find((room) => room.projectKey === desktopSession.projectKey);
-      if (sessionRoom) return sessionRoom;
-    }
-    return activeRoom;
-  }, [activeRoom, desktopSession, rooms]);
-
-  const roomSelectedSessionId = useMemo<string | null>(() => {
-    if (!activeRoom) return null;
-    if (selectedSessionId && activeRoom.sessions.some((session) => session.id === selectedSessionId)) {
-      return selectedSessionId;
-    }
-    return activeRoom.sessions[0]?.id ?? null;
-  }, [activeRoom, selectedSessionId]);
-
-  const visibleSessionCount = allSessions.length;
-
-  const activeRoomCwd = useMemo<string | undefined>(() => {
-    if (!activeRoom || activeRoom.isFallbackRoom) return undefined;
-    if (!activeRoom.projectPath || activeRoom.projectPath === '__no_cwd__') return undefined;
-    return activeRoom.projectPath;
-  }, [activeRoom]);
-
-  const providerSelectOptions = useMemo(
-    () => [
-      { value: 'all', label: '全部类型' },
-      ...providerOptions.map((provider) => ({ value: provider, label: provider })),
-    ],
-    [providerOptions],
-  );
-
-  const handleOpenMonitor = useCallback((session: OfficeSessionItem, originRect?: DesktopOriginRect) => {
-    setSelectedRoomKey(session.projectKey);
-    setSelectedSessionId(session.id);
-    activateManagerSession(session.id);
-    setDesktopOriginRect(originRect ?? null);
-    triggerZoomCue(session.id);
-    setDesktopOpen(true);
-  }, [activateManagerSession, triggerZoomCue]);
-
-  const handleCloseToRoom = useCallback(() => {
-    clearZoomTimer();
-    setZoomingSessionId(null);
-    setDesktopOpen(false);
-  }, [clearZoomTimer]);
-
-  const handleSelectRoomSession = useCallback((session: OfficeSessionItem) => {
-    setSelectedRoomKey(session.projectKey);
-    setSelectedSessionId(session.id);
-    activateManagerSession(session.id);
-  }, [activateManagerSession]);
-
-  const handleHideSession = useCallback((sessionId: string) => {
-    hideSession(sessionId);
-    if (selectedSessionId === sessionId) {
-      setSelectedSessionId(null);
-      setDesktopOpen(false);
-    }
-  }, [hideSession, selectedSessionId]);
-
-  const handleCopyIdentity = useCallback((session: OfficeSessionItem) => {
-    void copySessionIdentity(session);
-  }, [copySessionIdentity]);
-
-  const handleOpenNewTerminal = useCallback((cwd?: string) => {
-    void openNewProjectTerminal(cwd ?? activeRoomCwd);
-  }, [activeRoomCwd, openNewProjectTerminal]);
-
-  const handleRequestTerminateSession = useCallback((session: OfficeSessionItem) => {
-    if (!isTerminableWebSession(session)) {
-      message.info(NATIVE_CLOSE_DISABLED_REASON);
-      return;
-    }
-    if (isSessionTerminating(session.sessionKey)) {
-      return;
-    }
-    setConfirmError('');
-    setConfirmTarget(session);
-  }, [isSessionTerminating]);
-
-  const confirmBusy = Boolean(
-    confirmTarget && isSessionTerminating(confirmTarget.sessionKey),
-  );
-
-  const handleCancelTerminateModal = useCallback(() => {
-    if (confirmBusy) return;
-    setConfirmTarget(null);
-    setConfirmError('');
-  }, [confirmBusy]);
-
-  const handleConfirmTerminate = useCallback(async () => {
-    if (!confirmTarget || confirmBusy) return;
-    const target = confirmTarget;
-    const requestGeneration = serverGenerationRef.current;
-    const requestConfirmGeneration = confirmGenerationRef.current;
-    if (inFlightConfirmGenRef.current === requestConfirmGeneration) return;
-
-    if (target.serverId !== serverId || target.serverId !== liveServerIdRef.current) {
-      setConfirmTarget(null);
-      setConfirmError('');
-      message.warning('当前服务器已切换，原服务器关闭确认已取消');
-      return;
-    }
-    setConfirmError('');
-
-    inFlightConfirmGenRef.current = requestConfirmGeneration;
+  const handleCopy = useCallback(async (key: string, value: string, label: string) => {
     try {
-      const result = await terminateWebSession(target);
-      if (
-        !mountedRef.current
-        || serverGenerationRef.current !== requestGeneration
-        || target.serverId !== liveServerIdRef.current
-      ) {
-        return;
-      }
-
-      const isSameActiveConfirm =
-        confirmGenerationRef.current === requestConfirmGeneration
-        && Boolean(latestConfirmTargetRef.current)
-        && latestConfirmTargetRef.current?.serverId === target.serverId
-        && latestConfirmTargetRef.current?.sessionKey === target.sessionKey
-        && latestConfirmTargetRef.current?.id === target.id;
-
-      if (!result.ok) {
-        const errMsg = result.error || '关闭会话失败';
-        if (isSameActiveConfirm) {
-          setConfirmError(errMsg);
-          message.error(errMsg);
-        }
-        return;
-      }
-
-      const currentSelectedId = latestSelectedSessionIdRef.current;
-      const currentSelectedSession = currentSelectedId
-        ? latestAllSessionsRef.current.find((item) => item.id === currentSelectedId) ?? null
-        : null;
-      const isViewingClosedTarget =
-        currentSelectedId === target.id
-        && (!currentSelectedSession || (
-          currentSelectedSession.sessionKey === target.sessionKey
-          && currentSelectedSession.serverId === target.serverId
-        ));
-
-      if (isViewingClosedTarget) {
-        clearZoomTimer();
-        setZoomingSessionId(null);
-        setDesktopOriginRect(null);
-        setSelectedSessionId(null);
-        setDesktopOpen(false);
-      }
-
-      const remainingInRoom = latestAllSessionsRef.current.filter(
-        (item) => item.projectKey === target.projectKey && item.sessionKey !== target.sessionKey,
-      );
-      if (remainingInRoom.length === 0 && latestSelectedRoomKeyRef.current === target.projectKey) {
-        setSelectedRoomKey(null);
-      }
-
-      if (isSameActiveConfirm) {
-        setConfirmTarget(null);
-        setConfirmError('');
-      }
-
-      if (result.alreadyGone) {
-        message.info(`会话「${target.label}」在服务端已结束，已清理残留视图并同步目录`);
-      } else {
-        message.success(`已关闭会话「${target.label}」`);
-      }
-    } finally {
-      if (inFlightConfirmGenRef.current === requestConfirmGeneration) {
-        inFlightConfirmGenRef.current = null;
-      }
+      await writeClipboardText(value);
+      setCopiedKey(key);
+      message.success(label);
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedKey(''), 1600);
+    } catch {
+      message.error('复制失败');
     }
-  }, [
-    clearZoomTimer,
-    confirmBusy,
-    confirmTarget,
-    serverId,
-    terminateWebSession,
-  ]);
-
-  const handleSelectRoom = useCallback((room: OfficeProjectRoom) => {
-    setSelectedRoomKey(room.projectKey);
-    if (!room.sessions.some((session) => session.id === selectedSessionId)) {
-      setSelectedSessionId(room.sessions[0]?.id ?? null);
-    }
-  }, [selectedSessionId]);
-
-  const hasFilter = Boolean(query.trim()) || providerFilter !== 'all';
+  }, []);
 
   return (
-    <main className="session-office aih-panel-enter">
-      <header className="session-office-command-bar hud-panel hud-panel--sm">
-        <div className="session-office-brand">
-          <div className="session-office-title-block">
-            <span className="session-office-eyebrow">SYS // PROJECT OFFICE</span>
-            <h1>
-              <DesktopOutlined className="session-office-title-icon" />
-              项目办公室
-            </h1>
-          </div>
-
-          <div className="session-office-metrics" aria-label="办公室实时统计">
-            <SettingStatusTag
-              status={directoryError ? 'error' : directoryLoading ? 'saving' : visibleSessionCount > 0 ? 'applied' : 'unset'}
-              label={directoryError ? '同步异常' : directoryLoading ? '同步中' : visibleSessionCount > 0 ? `会话 ${visibleSessionCount}` : '暂无会话'}
-              compact
-              live="off"
-            />
-            <span className="session-office-metric">
-              <span className="hud-label">房间</span>
-              <strong className="hud-display">{rooms.length}</strong>
-            </span>
-            </div>
+    <main className="session-list-page">
+      <header className="session-list-head">
+        <div className="session-list-title-block">
+          <span className="session-list-eyebrow">AIH // SESSIONS</span>
+          <h1>项目办公室</h1>
+          <p>来自 `aih ss` 的活跃与历史会话，不再渲染 3D 办公室。</p>
         </div>
 
-        <div className="session-office-controls">
+        <div className="session-list-metrics" aria-label="会话统计">
+          <span className="session-list-metric"><i className="status-dot status-dot--working" />运行中 {counts.working}</span>
+          <span className="session-list-metric"><i className="status-dot status-dot--waiting" />等待输入 {counts.waiting}</span>
+          <span className="session-list-metric"><i className="status-dot status-dot--idle" />空闲 {counts.idle}</span>
+          <span className="session-list-metric"><i className="status-dot status-dot--ended" />已结束 {counts.ended}</span>
+        </div>
+
+        <div className="session-list-controls">
           <Input.Search
-            className="session-office-search"
-            aria-label="搜索项目房间、会话或路径"
-            placeholder="搜索房间、会话、路径"
+            aria-label="搜索会话"
+            placeholder="搜索名称、Provider、项目、会话 ID"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             allowClear
           />
           <Select
-            className="session-office-provider-select"
-            aria-label="筛选会话类型"
+            aria-label="筛选 Provider"
             value={providerFilter}
             onChange={setProviderFilter}
-            options={providerSelectOptions}
+            options={providerOptions}
           />
-          <Button
-            icon={<ReloadOutlined />}
-            loading={directoryLoading}
-            onClick={() => void refreshAll()}
-          >
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { setLoading(true); void load(); }}>
             刷新
           </Button>
-          {hiddenCount > 0 ? (
-            <Button icon={<EyeOutlined />} onClick={restoreHiddenSessions}>
-              显示已隐藏 ({hiddenCount})
-            </Button>
-          ) : null}
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => handleOpenNewTerminal(activeRoomCwd)}
-          >
-            项目终端
-          </Button>
         </div>
-
-        {directoryError ? (
-          <div className="session-office-inline-errors">
-            <InlineNote tone="error">会话目录：{directoryError}</InlineNote>
-          </div>
-        ) : null}
       </header>
 
-      <div className="session-office-body">
-        <aside className="session-office-sidebar hud-panel" aria-label="项目房间与工位选择器">
-          <div className="session-office-sidebar-head">
-            <span className="session-office-sidebar-title">
-              <FolderOutlined />
-              <span>项目房间</span>
-            </span>
-            <span className="session-office-sidebar-count hud-display">
-              {filteredRooms.length}{filteredRooms.length !== rooms.length ? `/${rooms.length}` : ''}
-            </span>
-          </div>
+      {error ? <div className="session-list-inline-error">{error}</div> : null}
 
-          <div className="session-office-room-list" role="listbox" aria-label="项目房间列表">
-            {filteredRooms.length > 0 ? (
-              filteredRooms.map((room) => {
-                const isActive = activeRoom?.projectKey === room.projectKey;
-                const roomTitle = resolveRoomDisplayTitle(room);
-                const pathHint = resolveRoomPathHint(room);
-                const statusLedClass = room.runningCount > 0 ? 'hud-led hud-led--ok' : 'hud-led';
-                return (
-                  <Tooltip key={room.projectKey} title={pathHint} placement="right" mouseEnterDelay={0.35}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={isActive}
-                      className={`session-office-room-card${isActive ? ' is-active' : ''}`}
-                      onClick={() => handleSelectRoom(room)}
+      <section className="session-list-body" aria-label="会话列表">
+        {loading && items.length === 0 ? (
+          <div className="session-list-empty">正在读取 aih ss 会话…</div>
+        ) : groups.length === 0 ? (
+          <div className="session-list-empty">
+            {focusSessionKey || focusRoom ? '没有匹配当前筛选的会话' : '当前没有 aih ss 会话'}
+          </div>
+        ) : (
+          groups.map((group) => (
+            <section key={group.path} className="session-list-group" aria-label={group.path}>
+              <header className="session-list-group-head">
+                <div className="session-list-group-title">
+                  <CodeOutlined />
+                  <strong>{projectNameOf(group.path)}</strong>
+                  <span title={group.path}>{group.path === '__no_cwd__' ? '未指定目录' : group.path}</span>
+                </div>
+                <span className="session-list-group-count">{group.sessions.length}</span>
+              </header>
+
+              <div className="session-list-rows" role="list">
+                {group.sessions.map((item) => {
+                  const isFocus = focusSessionKey && (item.NativeID === focusSessionKey || item.Name === focusSessionKey || item.key === focusSessionKey);
+                  return (
+                    <article
+                      key={item.key}
+                      role="listitem"
+                      className={`session-list-row${isFocus ? ' is-focus' : ''}`}
+                      data-state={item.state}
                     >
-                      <div className="session-office-room-top">
-                        <span className="session-office-room-name-wrap">
-                          <span className={statusLedClass} aria-hidden="true" />
-                          <span className="session-office-room-name">{roomTitle}</span>
-                        </span>
-                        <span className="session-office-room-ratio hud-display">
-                          {room.runningCount}/{room.sessions.length}
-                        </span>
+                      <span className={`status-dot status-dot--${item.state}`} aria-hidden="true" />
+                      <div className="session-list-primary">
+                        <div className="session-list-row-title">
+                          <strong title={item.title}>{item.title}</strong>
+                          <span className={`session-state-tag session-state-tag--${item.state}`}>{item.stateLabel}</span>
+                        </div>
+                        <div className="session-list-row-meta">
+                          <span>{item.Provider || 'unknown'}</span>
+                          <span>{item.accountLabel}</span>
+                          <span className="session-list-native-id" title={item.NativeID || item.Name}>
+                            {item.NativeID || item.Name || '-'}
+                          </span>
+                          <span>{formatTime(item.lastActive)}</span>
+                        </div>
+                        {item.latestMessage ? (
+                          <div className="session-list-row-latest" title={item.latestMessage}>
+                            {item.latestMessage}
+                          </div>
+                        ) : null}
                       </div>
-
-                      <div className="session-office-room-path">{pathHint}</div>
-                    </button>
-                  </Tooltip>
-                );
-              })
-            ) : (
-              <div className="session-office-sidebar-empty">
-                {rooms.length > 0 && hasFilter ? (
-                  <>
-                    <span>没有匹配的项目房间</span>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setQuery('');
-                        setProviderFilter('all');
-                      }}
-                    >
-                      清除筛选
-                    </Button>
-                  </>
-                ) : (
-                  <span>暂无运行中的项目房间</span>
-                )}
+                      <div className="session-list-row-actions">
+                        <Button
+                          size="small"
+                          icon={copiedKey === `id:${item.key}` ? <CheckOutlined /> : <CopyOutlined />}
+                          onClick={() => void handleCopy(`id:${item.key}`, item.NativeID || item.Name || item.key, '会话 ID 已复制')}
+                        >
+                          复制 ID
+                        </Button>
+                        <Button
+                          size="small"
+                          icon={copiedKey === `cmd:${item.key}` ? <CheckOutlined /> : <CodeOutlined />}
+                          onClick={() => void handleCopy(`cmd:${item.key}`, entryCommand(item), '进入命令已复制')}
+                        >
+                          复制进入命令
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            )}
-          </div>
-
-        </aside>
-
-        <section className="session-office-stage" aria-label="项目三维办公空间">
-          {rooms.length === 0 ? (
-            <div className="session-office-stage-empty">
-              {directoryLoading ? (
-                <HudStateView
-                  variant="loading"
-                  code="SYS // DISCOVERING"
-                  title="正在发现项目房间与运行会话"
-                  description="正在同步当前 Server 上的活跃终端与原生 CLI 会话"
-                />
-              ) : (
-                <HudStateView
-                  code="NO_ROOMS"
-                  title="当前服务器没有活跃项目房间"
-                  description="打开项目终端，或在账号管理 / AI 会话页启动 CLI 后会自动按项目房间汇聚在此"
-                  extra={(
-                    <Button
-                      type="primary"
-                      icon={<PlusOutlined />}
-                      onClick={() => handleOpenNewTerminal()}
-                    >
-                      打开项目终端
-                    </Button>
-                  )}
-                />
-              )}
-            </div>
-          ) : filteredRooms.length === 0 || !activeRoom ? (
-            <div className="session-office-stage-empty">
-              <HudStateView
-                code="NO_MATCH"
-                title="没有匹配的项目房间或会话"
-                description="请调整搜索关键词或类型筛选，或重置过滤条件查看全部房间"
-                extra={(
-                  <Button
-                    onClick={() => {
-                      setQuery('');
-                      setProviderFilter('all');
-                    }}
-                  >
-                    重置筛选
-                  </Button>
-                )}
-              />
-            </div>
-          ) : (
-            <OfficeRoom
-              serverId={serverId}
-              room={activeRoom}
-              selectedSessionId={roomSelectedSessionId}
-              zoomingSessionId={zoomingSessionId}
-              cameraPreset={cameraPreset}
-              onCameraPresetChange={setCameraPreset}
-              onOpenMonitor={handleOpenMonitor}
-              onCopyIdentity={handleCopyIdentity}
-              onOpenNewTerminal={handleOpenNewTerminal}
-              directoryLoading={directoryLoading}
-              onTerminateSession={handleRequestTerminateSession}
-              terminatingSessionKey={terminatingSessionKey}
-            />
-          )}
-        </section>
-      </div>
-
-      {/* 员工工位桌面浮层：位于 3D 舞台容器之外 */}
-      <SessionDesktop
-        open={desktopOpen && Boolean(desktopSession)}
-        serverId={serverId}
-        session={desktopSession}
-        room={desktopRoom}
-        originRect={desktopOriginRect}
-        terminatingSessionKey={terminatingSessionKey}
-        terminateConfirmOpen={Boolean(confirmTarget)}
-        onTerminateSession={handleRequestTerminateSession}
-        onCloseToRoom={handleCloseToRoom}
-        onSelectRoomSession={handleSelectRoomSession}
-        onCopyIdentity={handleCopyIdentity}
-        onHideSession={handleHideSession}
-        onRefreshAll={() => void refreshAll()}
-        onOpenNewTerminal={handleOpenNewTerminal}
-      />
-
-      {/* Web Shell 真实关闭会话不可逆确认层 */}
-      <Modal
-        open={Boolean(confirmTarget)}
-        zIndex={1300}
-        title="确认关闭 Web 终端会话？"
-        closable={!confirmBusy}
-        maskClosable={!confirmBusy}
-        keyboard={!confirmBusy}
-        onCancel={handleCancelTerminateModal}
-        footer={[
-          <Button
-            key="cancel"
-            disabled={confirmBusy}
-            onClick={handleCancelTerminateModal}
-          >
-            取消
-          </Button>,
-          <Button
-            key="confirm"
-            type="primary"
-            danger
-            icon={<DeleteOutlined />}
-            loading={confirmBusy}
-            disabled={confirmBusy}
-            onClick={() => void handleConfirmTerminate()}
-          >
-            {confirmBusy ? '正在关闭会话…' : '确认关闭会话'}
-          </Button>,
-        ]}
-      >
-        {confirmTarget ? (
-          <div className="session-office-terminate-confirm">
-            <p className="session-office-terminate-desc">
-              此操作将不可逆地停止服务端该 Shell 会话及其内正在运行的进程。关闭后本地工位与已最小化终端视图会同步移除，且不会自动重新打开或连接。此操作会终止进程，不能仅关闭视图保留进程。
-            </p>
-
-            <dl className="session-office-terminate-meta">
-              <div>
-                <dt>会话名称</dt>
-                <dd><strong>{confirmTarget.label}</strong></dd>
-              </div>
-              <div>
-                <dt>工作目录</dt>
-                <dd><code>{confirmTarget.cwd || '未指定目录'}</code></dd>
-              </div>
-              <div>
-                <dt>会话标识</dt>
-                <dd>
-                  <code>{confirmTarget.sessionKey}</code>
-                  {confirmTarget.termId ? (
-                    <span className="session-office-terminate-termid">
-                      termId: {confirmTarget.termId}
-                    </span>
-                  ) : null}
-                </dd>
-              </div>
-            </dl>
-
-            {confirmError ? (
-              <div className="session-office-terminate-error" role="alert">
-                <span className="hud-led hud-led--err" aria-hidden="true" />
-                <ExclamationCircleOutlined aria-hidden="true" />
-                <span>{confirmError}</span>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </Modal>
+            </section>
+          ))
+        )}
+      </section>
     </main>
   );
 }

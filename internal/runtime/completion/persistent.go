@@ -162,6 +162,30 @@ func listPersistentSessionNames(environment Environment, aiHome, hostHome, cwd s
 			MatchText: strings.TrimSpace(title),
 		})
 	}
+	projectCounts := make(map[string]int)
+	addProject := func(path string) {
+		project := trimTrailingSlashes(strings.TrimSpace(path))
+		if project != "" {
+			projectCounts[project]++
+		}
+	}
+	for _, entry := range entries {
+		if entry.Session != "" {
+			addProject(entry.Cwd)
+		}
+	}
+	for _, cached := range cachedByName {
+		addProject(cached.ProjectPath)
+	}
+	for project, count := range projectCounts {
+		rows = append(rows, persistentChoice{
+			Name:      project,
+			Title:     "项目 · " + strconv.Itoa(count) + " 个会话",
+			UpdatedAt: 1<<62 - 1,
+			Here:      normalizedCwd != "" && trimTrailingSlashes(project) == normalizedCwd,
+			MatchText: project,
+		})
+	}
 	sort.SliceStable(rows, func(left, right int) bool {
 		if rows[left].Here != rows[right].Here {
 			return rows[left].Here

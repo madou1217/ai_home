@@ -37,12 +37,13 @@ const (
 type WFPGuard struct {
 	options Options
 
-	mu      sync.Mutex
-	pids    map[int]uint64
-	roots   map[int]uint64
-	watcher context.CancelFunc
-	active  bool
-	status  GuardStatus
+	mu        sync.Mutex
+	pids      map[int]uint64
+	roots     map[int]uint64
+	watcher   context.CancelFunc
+	active    bool
+	status    GuardStatus
+	dnsBridge *DoHBridge
 }
 
 type wfpController struct {
@@ -225,6 +226,19 @@ func (guard *WFPGuard) Start(context.Context) error {
 	guard.mu.Lock()
 	guard.active = true
 	guard.status.Active = true
+	if guard.options.Policy.DNS == DNSBridge && guard.options.ProxyURL != "" {
+		bridge, err := NewDoHBridge(guard.options.ProxyURL, "https://1.1.1.1/dns-query")
+		if err != nil {
+			guard.status.Active = false
+			if guard.dnsBridge != nil {
+				_ = guard.dnsBridge.Close()
+				guard.dnsBridge = nil
+			}
+			return err
+		}
+		guard.dnsBridge = bridge
+		guard.status.DNSAddr = bridge.Addr()
+	}
 	guard.mu.Unlock()
 	return nil
 }

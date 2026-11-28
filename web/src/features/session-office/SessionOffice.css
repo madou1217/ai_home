@@ -1,725 +1,349 @@
-/* 项目办公室（/terminals & /peer-inbox 统一工作台）
- * 严格遵循 Cyber HUD token：零硬编码主题色、零左侧粗竖条、零大面积 Alert 容器、
- * 3D 舞台容器与独立邮箱/桌面浮层彻底分离（零 transform 包裹 xterm / 邮箱）。 */
+/* 项目办公室（/terminals）：只读的 aih ss 会话列表。
+ * 无 3D 场景、无邮箱、无大块提示容器、无左侧彩色竖条。 */
 
-.session-office {
+.session-list-page {
   display: flex;
   flex-direction: column;
+  gap: var(--space-6);
   height: calc(100vh - 76px);
-  min-height: 540px;
-  gap: var(--space-5);
+  min-height: 480px;
   min-width: 0;
-  padding: var(--space-5) var(--space-7) var(--space-6);
+  padding: var(--space-8) var(--space-10) var(--space-10);
+  color: var(--color-text);
 }
 
-/* 项目办公室是整屏工作台。默认内容区会给上下各留 32px，若页面再按 100vh
- * 扣顶栏高度，整体会比可视区高出 16px，底部停靠栏被内容区裁掉。这里让
- * 路由舞台承接内容区的剩余高度，页面高度改由 flex 分配，不再重复计算视口。 */
-@media (min-width: 1121px) {
-  .ant-pro-layout-content:has(.session-office) {
-    display: flex !important;
-    flex-direction: column !important;
-    overflow: hidden !important;
-    padding-block: 0 !important;
-  }
-
-  .aih-route-stage:has(.session-office) {
-    display: flex;
-    flex: 1 1 0%;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  .session-office {
-    flex: 1 1 0%;
-    height: auto;
-    min-height: 0;
-  }
+.session-list-head {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  grid-template-areas:
+    'title metrics'
+    'controls controls';
+  gap: var(--space-5) var(--space-8);
+  align-items: end;
 }
 
-/* -------------------------------------------------------------------------
- * 1. Top Office Command Bar
- * ---------------------------------------------------------------------- */
-.session-office-command-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4) var(--space-6);
-  padding: var(--space-4) var(--space-6);
-  flex: 0 0 auto;
-}
-
-.session-office-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  flex-wrap: wrap;
+.session-list-title-block {
+  grid-area: title;
   min-width: 0;
 }
 
-.session-office-title-block {
-  min-width: 0;
-}
-
-.session-office-eyebrow {
+.session-list-eyebrow {
   display: block;
-  color: var(--color-accent);
-  font-family: var(--font-display);
-  font-size: 10px;
+  margin-bottom: var(--space-2);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.session-list-title-block h1 {
+  margin: 0;
+  font-size: 24px;
   font-weight: 600;
-  letter-spacing: var(--tracking-caps);
-  text-shadow: var(--hud-text-glow);
-  opacity: 0.9;
+  line-height: 1.2;
 }
 
-.session-office-title-block h1 {
+.session-list-title-block p {
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.session-list-metrics {
+  grid-area: metrics;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2) var(--space-5);
+}
+
+.session-list-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted-strong);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.session-list-controls {
+  grid-area: controls;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
-  margin: 2px 0 0;
-  font-family: var(--font-display);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--color-heading);
-  text-shadow: var(--hud-text-glow-soft);
 }
 
-.session-office-title-icon {
-  color: var(--color-accent);
+.session-list-controls .ant-input-search {
+  flex: 1 1 280px;
+  max-width: 420px;
 }
 
-.session-office-metrics {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+.session-list-controls .ant-select {
+  min-width: 160px;
 }
 
-.session-office-message-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
-  border-radius: 999px;
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1;
+.status-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-muted);
 }
 
-.session-office-metric {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 3px var(--space-4);
+.status-dot--working {
+  background: #22b573;
+  box-shadow: 0 0 0 3px rgba(34, 181, 115, 0.16);
+}
+
+.status-dot--waiting {
+  background: #d99a1c;
+  box-shadow: 0 0 0 3px rgba(217, 154, 28, 0.16);
+}
+
+.status-dot--idle {
+  background: #6f9ef5;
+  box-shadow: 0 0 0 3px rgba(111, 158, 245, 0.14);
+}
+
+.status-dot--ended {
+  background: var(--color-border-strong);
+}
+
+.session-list-inline-error {
+  padding: var(--space-3) var(--space-5);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-surface-sunken);
+  border-radius: 8px;
+  background: var(--color-surface-soft);
+  color: var(--color-muted-strong);
   font-size: 12px;
 }
 
-.session-office-metric strong {
-  color: var(--color-heading);
-  font-size: 12px;
+.session-list-body {
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--space-2);
 }
 
-.session-office-metric--warn {
-  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
-  background: var(--color-warning-soft);
+.session-list-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.session-office-metric--warn strong {
-  color: var(--color-warning);
-}
-
-.session-office-controls {
+.session-list-group-head {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.session-office-search {
-  width: 224px;
-  max-width: 100%;
-}
-
-.session-office-provider-select {
-  width: 132px;
-}
-
-.session-office-inline-errors {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  width: 100%;
-}
-
-.session-office-inline-error {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 2px var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-/* -------------------------------------------------------------------------
- * 2. Main Split Body (Project Rooms Sidebar + 3D Stage)
- * ---------------------------------------------------------------------- */
-.session-office-body {
-  display: grid;
-  grid-template-columns: minmax(224px, 244px) minmax(0, 1fr);
+  justify-content: space-between;
   gap: var(--space-5);
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-}
-
-.session-office-sidebar {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  padding: var(--space-4) var(--space-5);
-  gap: var(--space-4);
-}
-
-.session-office-sidebar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding-bottom: var(--space-3);
+  padding: 0 var(--space-2) var(--space-2);
   border-bottom: 1px solid var(--color-border-subtle);
-  flex: 0 0 auto;
 }
 
-.session-office-sidebar-title {
-  display: inline-flex;
+.session-list-group-title {
+  display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-family: var(--font-display);
+  min-width: 0;
+  color: var(--color-muted);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: var(--tracking-wide);
-  color: var(--color-accent);
-  text-shadow: var(--hud-text-glow-soft);
 }
 
-.session-office-sidebar-count {
-  padding: 1px var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted-strong);
-  font-size: 11px;
+.session-list-group-title .anticon {
+  color: var(--color-muted);
 }
 
-.session-office-room-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.session-office-room-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  width: 100%;
-  min-width: 0;
-  text-align: left;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-raised);
+.session-list-group-title strong {
   color: var(--color-text);
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
-}
-
-.session-office-room-card:hover {
-  border-color: var(--hud-border-glass-hover, var(--color-border-strong));
-  background: var(--color-overlay-subtle);
-}
-
-.session-office-room-card.is-active {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-  box-shadow: var(--hud-glow-accent);
-}
-
-.session-office-room-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.session-office-room-name-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-  flex: 1;
-}
-
-.session-office-room-name {
-  font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-heading);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.session-office-room-card.is-active .session-office-room-name {
-  color: var(--color-accent);
-}
-
-.session-office-room-ratio {
-  flex: 0 0 auto;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted-strong);
-  font-size: 11px;
-}
-
-.session-office-room-path {
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
+.session-list-group-title span {
+  overflow: hidden;
   color: var(--color-muted);
-  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.session-office-room-pills {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: 2px;
-}
-
-.session-office-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-3);
-  height: 18px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted-strong);
+.session-list-group-count {
+  flex: 0 0 auto;
+  color: var(--color-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
+  font-size: 11px;
 }
 
-.session-office-pill--warn {
-  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-}
-
-.session-office-pill--cross {
-  border-color: color-mix(in srgb, var(--hud-violet, var(--color-accent)) 45%, var(--color-border));
-  background: var(--hud-violet-soft, var(--color-accent-soft));
-  color: var(--color-heading);
-}
-
-.session-office-sidebar-empty {
+.session-list-rows {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  gap: var(--space-2);
+}
+
+.session-list-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: var(--space-4);
-  padding: var(--space-8) var(--space-4);
-  text-align: center;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
-/* 当前选中房间工位列表（直接提供可见“关闭会话”与“桌面”操作） */
-.session-office-stations {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border-subtle);
-  flex: 0 1 auto;
-  min-height: 0;
-}
-
-.session-office-stations-head {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.session-office-stations-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-display);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: var(--tracking-wide);
-  color: var(--color-heading);
-}
-
-.session-office-stations-title > .anticon {
-  color: var(--color-accent);
-}
-
-.session-office-station-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 2px 0 0;
-  max-height: 224px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.session-office-station-item {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
   background: var(--color-surface-raised);
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.session-office-station-item:hover {
-  border-color: var(--color-border-strong);
-  background: var(--color-overlay-subtle);
+.session-list-row:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface-soft);
 }
 
-.session-office-station-item.is-selected {
+.session-list-row.is-focus {
   border-color: var(--color-accent);
-  background: var(--color-accent-soft);
 }
 
-.session-office-station-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.session-office-station-name-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  flex: 1;
-}
-
-.session-office-station-name {
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-heading);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-office-station-badges {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-}
-
-.session-office-station-poweroff {
-  padding: 0 5px;
-  border: 1px solid color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.session-office-station-source {
-  flex: 0 0 auto;
-  padding: 0 5px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-surface-sunken);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
-.session-office-station-cwd {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--color-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-office-station-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+.session-list-row > .status-dot {
   margin-top: 1px;
+  align-self: start;
 }
 
-.session-office-disabled-action {
-  display: inline-flex;
-}
-
-.session-office-sidebar-footer {
+.session-list-primary {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border-subtle);
-  flex: 0 0 auto;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
-.session-office-unassigned-card {
+.session-list-row-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  width: 100%;
-  min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-raised);
-  color: var(--color-heading);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
-}
-
-.session-office-unassigned-card:hover,
-.session-office-unassigned-card.is-active {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
-
-.session-office-unassigned-title {
-  display: inline-flex;
-  align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  flex: 1 1 auto;
 }
 
-.session-office-unassigned-title > span:last-child {
+.session-list-row-title strong {
   overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.session-office-unassigned-title > :first-child {
+.session-state-tag {
   flex: 0 0 auto;
-  color: var(--color-accent);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 4px;
+  color: var(--color-muted-strong);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
-.session-office-unassigned-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 0 0 auto;
+.session-state-tag--working {
+  color: #1f9d63;
+  border-color: rgba(34, 181, 115, 0.32);
+  background: rgba(34, 181, 115, 0.08);
 }
 
-.session-office-unassigned-count {
-  padding: 1px var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-surface-sunken);
-  color: var(--color-accent);
-  font-size: 11px;
+.session-state-tag--waiting {
+  color: #b57c0c;
+  border-color: rgba(217, 154, 28, 0.34);
+  background: rgba(217, 154, 28, 0.08);
 }
 
-/* -------------------------------------------------------------------------
- * 3. 3D Stage Container
- * ---------------------------------------------------------------------- */
-.session-office-stage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--hud-border-glass, var(--color-border));
-  background: var(--hud-glass-gradient), var(--hud-panel-bg);
-  box-shadow: inset 0 1px 0 var(--hud-glass-specular, transparent);
+.session-state-tag--idle {
+  color: #3f6fc9;
+  border-color: rgba(111, 158, 245, 0.32);
+  background: rgba(111, 158, 245, 0.08);
 }
 
-.session-office-stage-empty {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  padding: var(--space-8);
-}
-
-/* -------------------------------------------------------------------------
- * 5. Web Shell Termination Confirmation Modal Content
- * ---------------------------------------------------------------------- */
-.session-office-terminate-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding-top: var(--space-2);
-}
-
-.session-office-terminate-desc {
-  margin: 0;
-  font-family: var(--font-prose);
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--color-text);
-}
-
-.session-office-terminate-meta {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-sunken);
-}
-
-.session-office-terminate-meta > div {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  align-items: baseline;
-  gap: var(--space-3);
-  font-size: 12px;
-}
-
-.session-office-terminate-meta dt {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-faint);
-}
-
-.session-office-terminate-meta dd {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  color: var(--color-heading);
-  word-break: break-all;
-}
-
-.session-office-terminate-meta code {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--color-accent);
-  user-select: text;
-}
-
-.session-office-terminate-termid {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+.session-state-tag--ended {
   color: var(--color-muted);
+  background: var(--color-surface-muted);
 }
 
-.session-office-terminate-error {
+.session-list-row-meta {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
-  border-radius: var(--hos-radius-xs, 2px);
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  color: var(--color-muted);
   font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.session-list-native-id {
+  overflow: hidden;
+  max-width: 320px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-list-row-latest {
+  overflow: hidden;
+  color: var(--color-muted);
   font-size: 12px;
   line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* -------------------------------------------------------------------------
- * 6. Responsive Desktop Widths (1440px / 1920px / <= 1120px)
- * ---------------------------------------------------------------------- */
-@media (min-width: 1680px) {
-  .session-office {
-    padding: var(--space-6) var(--unified-page-padding, 20px) var(--space-8);
-  }
-
-  .session-office-body {
-    grid-template-columns: 304px minmax(0, 1fr);
-    gap: var(--space-6);
-  }
-
-  .session-office-sidebar {
-    padding: var(--space-5);
-  }
-
-  .session-office-room-card,
-  .session-office-unassigned-card {
-    padding: var(--space-4) var(--space-5);
-  }
+.session-list-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
 }
 
-@media (max-width: 1120px) {
-  .session-office {
+.session-list-empty {
+  display: flex;
+  flex: 1 1 0%;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .session-list-page {
     height: auto;
     min-height: calc(100vh - 76px);
+    padding: var(--space-6) var(--space-5) var(--space-8);
   }
 
-  .session-office-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(480px, 1fr);
+  .session-list-head {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'title'
+      'metrics'
+      'controls';
   }
 
-  .session-office-room-list {
-    max-height: 220px;
+  .session-list-metrics {
+    justify-content: flex-start;
+  }
+
+  .session-list-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .session-list-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-left: var(--space-6);
+  }
+
+  .session-list-body {
+    overflow: visible;
   }
 }

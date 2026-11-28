@@ -78,8 +78,8 @@ func main() {
 		encoded, _ := json.MarshalIndent(status, "", "  ")
 		fmt.Fprintln(os.Stdout, string(encoded))
 	} else {
-		fmt.Fprintf(os.Stdout, "netguard %s active=%v backend=%s pids=%d blocked=%d\n",
-			status.Mode, status.Active, status.Backend, status.ProtectedPIDs, status.Blocked)
+		fmt.Fprintf(os.Stdout, "netguard %s active=%v backend=%s pids=%d blocked=%d dns=%s dnsAddr=%s\n",
+			status.Mode, status.Active, status.Backend, status.ProtectedPIDs, status.Blocked, status.DNSMode, status.DNSAddr)
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -102,7 +102,7 @@ func main() {
 		encoded, _ := json.MarshalIndent(status, "", "  ")
 		fmt.Fprintln(os.Stdout, string(encoded))
 	} else {
-		fmt.Fprintf(os.Stdout, "netguard stopped pids=%d blocked=%d\n", status.ProtectedPIDs, status.Blocked)
+		fmt.Fprintf(os.Stdout, "netguard stopped pids=%d blocked=%d dns=%s dnsAddr=%s\n", status.ProtectedPIDs, status.Blocked, status.DNSMode, status.DNSAddr)
 	}
 }
 

@@ -90,7 +90,7 @@ func TestRenderPicker(t *testing.T) {
 	var output strings.Builder
 	renderPicker(&output, state, map[string]string{})
 	text := output.String()
-	if !strings.Contains(text, "> ") || !strings.Contains(text, "●") || !strings.Contains(text, "活跃持久会话（2）") {
+	if !strings.Contains(text, "> ") || !strings.Contains(text, "运行中") || !strings.Contains(text, "活跃持久会话（2）") {
 		t.Fatalf("render = %q", text)
 	}
 	state.detail = true

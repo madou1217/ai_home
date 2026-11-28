@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -33,11 +34,15 @@ func runGlobalSessions(
 	runtime commandRuntime,
 ) error {
 	allProjects := false
+	jsonOutput := false
 	options := make([]string, 0, len(arguments))
 	for _, arg := range arguments {
-		if arg == "--all-projects" || arg == "--all" {
+		switch arg {
+		case "--all-projects", "--all":
 			allProjects = true
-		} else {
+		case "--json":
+			jsonOutput = true
+		default:
 			options = append(options, arg)
 		}
 	}
@@ -62,6 +67,11 @@ func runGlobalSessions(
 	rows, err := collectGlobalRows(ctx, runtime, allProjects)
 	if err != nil {
 		return err
+	}
+	if jsonOutput {
+		encoder := json.NewEncoder(runtime.stdout)
+		encoder.SetEscapeHTML(false)
+		return encoder.Encode(map[string]any{"ok": true, "sessions": rows})
 	}
 	writeGlobalSessionGroups(runtime.stdout, rows, collectGlobalLabels(ctx, rows, runtime))
 	return nil
@@ -99,12 +109,18 @@ func collectGlobalRowsMode(
 	// 状态，后者只补没有进程的 thread，避免同一个会话出现两行。
 	appendNativeProviderRows(ctx, runtime, &rows)
 	appendNativeCodexRows(ctx, runtime, &rows)
-	appendRecentNativeSessionRows(ctx, runtime, &rows, allProjectsRequested(allProjects...))
+	// 范围规则：显式 --all-projects 或当前位于 $HOME 时显示全部；当前目录
+	// 有会话时只显示当前项目；当前目录没有会话时回退到全部，避免用户
+	// 站在空目录里以为所有会话都丢了。
+	visibleAll, _ := resolveSessionScope(rows, runtime, allProjectsRequested(allProjects...))
+	appendRecentNativeSessionRows(ctx, runtime, &rows, visibleAll)
 	applyNativeTurnStates(store.AIHomeDir, rows)
+	annotateLatestMessages(ctx, runtime, store.AIHomeDir, rows)
+	rows = filterDismissedSessionRows(rows, readSSDismissed(store.AIHomeDir, now))
 	ensureUniqueSessionTitles(rows)
 	sortSessionRowsForDisplay(rows)
 	_ = persistent.WriteSessionCache(store.AIHomeDir, rows, now)
-	return scopeGlobalSessionRows(rows, allProjects...)
+	return scopeGlobalSessionRows(rows, visibleAll)
 }
 
 // appendNativeCodexRows 把 Go 原生 Codex 进程对应的 state.sqlite 会话投影到 ss。
@@ -177,12 +193,51 @@ func codexThreadLockHeld(hostHome, threadID string) bool {
 	return len(lockHolderPIDs(lock)) > 0
 }
 
+// cachedGlobalRows 用 30 分钟内的 ss-rows.json 先渲染首帧；真实采集
+// 在 picker 起来后由后台刷新接管，避免终端空等 2~3 秒。
+func cachedGlobalRows(aiHomeDir string) []persistent.SessionRow {
+	entries := persistent.ReadSessionCache(aiHomeDir, time.Now())
+	if len(entries) == 0 {
+		return nil
+	}
+	rows := make([]persistent.SessionRow, 0, len(entries))
+	for _, entry := range entries {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" {
+			continue
+		}
+		rows = append(rows, persistent.SessionRow{
+			Provider:         strings.TrimSpace(entry.Provider),
+			Name:             name,
+			Label:            strings.TrimSpace(entry.Title),
+			NativeID:         strings.TrimSpace(entry.AgentSessionID),
+			Path:             strings.TrimSpace(entry.ProjectPath),
+			StartPath:        strings.TrimSpace(entry.ProjectPath),
+			Socket:           strings.TrimSpace(entry.Socket),
+			NativeOnly:       entry.NativeOnly || (entry.Socket == "" && strings.TrimSpace(entry.AgentSessionID) != ""),
+			AccountRef:       strings.TrimSpace(entry.AccountRef),
+			AccountID:        strings.TrimSpace(entry.AccountID),
+			TurnState:        strings.TrimSpace(entry.TurnState),
+			LastMessage:      strings.TrimSpace(entry.LastMessage),
+			LastMessageRole:  strings.TrimSpace(entry.LastMessageRole),
+			LastMessageAtMS:  entry.LastMessageAt,
+			Live:             entry.Live,
+			CreatedAtMS:      entry.CreatedAt,
+			LastActivityAtMS: entry.UpdatedAt,
+			LastActiveAtMS:   entry.UpdatedAt,
+		})
+	}
+	ensureUniqueSessionTitles(rows)
+	sortSessionRowsForDisplay(rows)
+	return rows
+}
+
 func allProjectsRequested(values ...bool) bool {
 	return len(values) > 0 && values[0]
 }
 
-func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) ([]persistent.SessionRow, error) {
-	if len(allProjects) > 0 && allProjects[0] {
+func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects bool) ([]persistent.SessionRow, error) {
+	if allProjects {
 		return rows, nil
 	}
 	cwd, err := os.Getwd()
@@ -190,6 +245,42 @@ func scopeGlobalSessionRows(rows []persistent.SessionRow, allProjects ...bool) (
 		return nil, err
 	}
 	return persistent.FilterSessionsByCwd(rows, cwd), nil
+}
+
+func resolveSessionScope(rows []persistent.SessionRow, runtime commandRuntime, explicitAll bool) (bool, string) {
+	if explicitAll {
+		return true, "全部项目"
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return true, "全部项目"
+	}
+	if isSessionHomeDir(cwd, runtime) {
+		return true, "全部项目（HOME）"
+	}
+	if len(persistent.FilterSessionsByCwd(rows, cwd)) > 0 {
+		return false, "当前项目"
+	}
+	return true, "全部项目（当前目录无会话）"
+}
+
+func isSessionHomeDir(cwd string, runtime commandRuntime) bool {
+	candidates := make([]string, 0, 3)
+	if home, err := runtime.userHomeDir(); err == nil {
+		candidates = append(candidates, home)
+	}
+	if host := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_HOST_HOME")); host != "" {
+		candidates = append(candidates, host)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, home)
+	}
+	for _, home := range candidates {
+		if strings.TrimSpace(home) != "" && sessionproject.MatchesCwd(home, cwd) {
+			return true
+		}
+	}
+	return false
 }
 
 // sessionGroup 是一个项目下的会话集合。
@@ -288,22 +379,23 @@ func writeGlobalSessionGroups(
 	for _, group := range groups {
 		_, _ = fmt.Fprintf(output, "\n  项目：%s\n", group.Project)
 		writer := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(writer, "  状态\tprovider\t账号\t会话名称\t会话ID\t最近活动")
+		_, _ = fmt.Fprintln(writer, "  状态\tprovider\t账号\t会话名称\t最新消息\t会话ID\t最近活动")
 		for _, row := range group.Rows {
 			_, _ = fmt.Fprintf(
 				writer,
-				"  %s\t%s\t%s\t%s\t%s\t%s\n",
+				"  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				globalSessionStatus(row),
 				row.Provider,
 				globalSessionAccount(row, labels),
 				globalSessionTitle(row),
+				truncateDisplay(pickerLatestMessage(row), 60),
 				globalSessionID(row),
 				globalSessionActivityLabel(row),
 			)
 		}
 		_ = writer.Flush()
 	}
-	_, _ = fmt.Fprintln(output, "\n提示（● 运行中 / ◐ 等待输入 / ○ 空闲 / ✔ 已结束）：Enter=进入，c=复制ID，y=复制命令，d=详情，x=关闭选中，X=关闭闲置。")
+	_, _ = fmt.Fprintln(output, "\n提示（● 运行中 / ◐ 等待输入 / ○ 空闲 / ✕ 已结束）：Enter=进入，c=复制ID，y=复制命令，d=详情，x=关闭选中，X=关闭空闲/已结束。")
 }
 
 // sessionStatus 把「进程是否存活」和「轮次是否在跑」收敛成一个状态。
@@ -318,11 +410,11 @@ func globalSessionState(row persistent.SessionRow) sessionStatus {
 	// tmux 会话即使没有客户端附着，pane 仍在，可以直接 attach；原生行
 	// 没有进程就是已结束，只能 resume。两者不能共用"空闲"。
 	if row.PaneDead {
-		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}
+		return sessionStatus{Kind: "ended", Icon: "✕", Label: "已结束"}
 	}
 	alive := row.Live || strings.TrimSpace(row.Socket) != "" || row.PanePID > 0
 	if !alive {
-		return sessionStatus{Kind: "ended", Icon: "✔", Label: "已结束"}
+		return sessionStatus{Kind: "ended", Icon: "✕", Label: "已结束"}
 	}
 	switch strings.ToLower(strings.TrimSpace(row.TurnState)) {
 	case "working":

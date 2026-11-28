@@ -13,6 +13,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/clipboard"
 	"github.com/madou1217/ai_home/internal/runtime/clipboardio"
+	"github.com/madou1217/ai_home/internal/runtime/clipboardsource"
 )
 
 const (
@@ -41,6 +42,7 @@ type Capture struct {
 	recentHashes map[string]time.Time
 	onIngest     func()
 	wakeCh       chan struct{}
+	source       clipboardsource.Resolver
 }
 
 // NewCapture creates a Capture runtime bound to service and platform IO.
@@ -61,6 +63,18 @@ func NewCapture(service *clipboard.Service, reader clipboardio.Reader) *Capture 
 		recentHashes:           make(map[string]time.Time),
 		wakeCh:                 make(chan struct{}, 1),
 	}
+}
+
+// SetSourceResolver installs the platform frontmost-application probe used to
+// attribute captured items. Attribution is inferred context (V15 S01), never a
+// verified writer identity.
+func (c *Capture) SetSourceResolver(resolver clipboardsource.Resolver) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.source = resolver
+	c.mu.Unlock()
 }
 
 // SetOnIngest registers a cheap callback fired after a successful local
@@ -216,6 +230,7 @@ func (c *Capture) pollOnce(ctx context.Context) {
 		return
 	}
 	now := c.clock()
+	sourceApp := c.newSourceResolver(ctx)
 
 	// 1. File references (multi-file aware) win over their text shadow.
 	rawFiles, ok, err := c.io.ReadFiles(ctx)
@@ -233,8 +248,9 @@ func (c *Capture) pollOnce(ctx context.Context) {
 				return
 			}
 			if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{
-				Kind:  clipboard.KindFile,
-				Files: files,
+				Kind:      clipboard.KindFile,
+				Files:     files,
+				SourceApp: sourceApp(),
 			}); ingestErr == nil {
 				c.recordSeen(hash, now)
 				c.notifyIngest()
@@ -251,9 +267,10 @@ func (c *Capture) pollOnce(ctx context.Context) {
 			return
 		}
 		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{
-			Kind: clipboard.KindImage,
-			MIME: mime,
-			Data: data,
+			Kind:      clipboard.KindImage,
+			MIME:      mime,
+			Data:      data,
+			SourceApp: sourceApp(),
 		}); ingestErr == nil {
 			c.recordSeen(hash, now)
 			c.notifyIngest()
@@ -271,10 +288,33 @@ func (c *Capture) pollOnce(ctx context.Context) {
 		if c.shouldSkip(hash, now) {
 			return
 		}
-		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{Text: text}); ingestErr == nil {
+		if _, ingestErr := c.service.Ingest(ctx, clipboard.IngestInput{Text: text, SourceApp: sourceApp()}); ingestErr == nil {
 			c.recordSeen(hash, now)
 			c.notifyIngest()
 		}
+	}
+}
+
+// newSourceResolver returns a once-per-poll attribution closure. The probe runs
+// only when an item is actually about to be ingested, so idle polls stay cheap.
+func (c *Capture) newSourceResolver(ctx context.Context) func() string {
+	resolved := false
+	value := ""
+	return func() string {
+		if resolved {
+			return value
+		}
+		resolved = true
+		c.mu.Lock()
+		probe := c.source
+		c.mu.Unlock()
+		if probe == nil {
+			return ""
+		}
+		if app, ok := probe.Frontmost(ctx); ok && !clipboardsource.Ignored(app) {
+			value = app.DisplayName()
+		}
+		return value
 	}
 }
 

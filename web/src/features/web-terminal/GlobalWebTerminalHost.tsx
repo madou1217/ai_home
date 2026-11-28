@@ -2,10 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import { CodeOutlined, LoadingOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
-import { resolveLiveActiveServerId } from '@/features/session-office/office-computer-power';
-import {
-  subscribeOfficeComputerPreferences,
-} from '@/features/session-office/office-computer-state';
+import { resolveLiveActiveServerId } from './live-server-scope';
 import { terminalAPI } from '@/services/api';
 import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
 import { useWebTerminalManager, type WebTerminalTab } from './web-terminal-context';
@@ -21,37 +18,6 @@ import { moveTerminalWindow } from './terminal-window-geometry';
 import { useOfficeTerminalRouteOwnership } from './web-terminal-route-ownership';
 import './global-web-terminal.css';
 
-let globalPrefsRevision = 0;
-let unsubscribeGlobalPrefs: (() => void) | null = null;
-const globalPrefsListeners = new Set<() => void>();
-
-function subscribeGlobalComputerPrefsRevision(listener: () => void): () => void {
-  globalPrefsListeners.add(listener);
-  if (!unsubscribeGlobalPrefs) {
-    unsubscribeGlobalPrefs = subscribeOfficeComputerPreferences(() => {
-      globalPrefsRevision += 1;
-      for (const item of [...globalPrefsListeners]) {
-        item();
-      }
-    });
-  }
-  return () => {
-    globalPrefsListeners.delete(listener);
-    if (globalPrefsListeners.size === 0 && unsubscribeGlobalPrefs) {
-      unsubscribeGlobalPrefs();
-      unsubscribeGlobalPrefs = null;
-    }
-  };
-}
-
-function getGlobalComputerPrefsRevision(): number {
-  return globalPrefsRevision;
-}
-
-function getServerGlobalComputerPrefsRevision(): number {
-  return 0;
-}
-
 function subscribeLiveServerScope(listener: () => void): () => void {
   return addActiveControlPlaneProfileChangeListener(listener);
 }
@@ -64,11 +30,10 @@ function filterAdmittedPoweredOnTabs(
   managerServerId: string,
   liveActiveServerId: string,
   tabs: ReadonlyArray<WebTerminalTab>,
-  revision: number,
 ): WebTerminalTab[] {
   const sid = String(managerServerId || '').trim();
   const liveSid = String(liveActiveServerId || '').trim();
-  if (revision < 0 || !sid || !liveSid || sid !== liveSid) return [];
+  if (!sid || !liveSid || sid !== liveSid) return [];
   if (resolveLiveActiveServerId() !== sid) return [];
   return tabs.filter((tab) => {
     const id = String(tab.id || '').trim();
@@ -154,11 +119,6 @@ export default function GlobalWebTerminalHost() {
   const officeRouteOwnsTerminal = useOfficeTerminalRouteOwnership();
   const manager = useWebTerminalManager();
   const { closeTab, openTab, setMinimized, setPosition } = manager;
-  const prefsRevision = useSyncExternalStore(
-    subscribeGlobalComputerPrefsRevision,
-    getGlobalComputerPrefsRevision,
-    getServerGlobalComputerPrefsRevision,
-  );
   const liveServerScope = useSyncExternalStore(
     subscribeLiveServerScope,
     resolveLiveActiveServerId,
@@ -174,15 +134,15 @@ export default function GlobalWebTerminalHost() {
   const admittedServerId = serverAdmitted ? normalizedManagerServerId : '';
 
   const poweredOnTabs = useMemo(
-    () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.tabs, prefsRevision),
-    [liveServerScope, manager.tabs, normalizedManagerServerId, prefsRevision],
+    () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.tabs),
+    [liveServerScope, manager.tabs, normalizedManagerServerId],
   );
   // Explicit powered-ON native tabs whose server-side availability has not yet
   // been observed while the floating viewer is dormant. Used only to render the
   // lightweight non-attaching restore dock affordance without background polling.
   const dormantExplicitNativeTabs = useMemo(
-    () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.unavailableTabs, prefsRevision),
-    [liveServerScope, manager.unavailableTabs, normalizedManagerServerId, prefsRevision],
+    () => filterAdmittedPoweredOnTabs(normalizedManagerServerId, liveServerScope, manager.unavailableTabs),
+    [liveServerScope, manager.unavailableTabs, normalizedManagerServerId],
   );
   const exactViewerTuples = useMemo<ReadonlyArray<ViewerIdentityTuple>>(
     () => poweredOnTabs.map((tab) => [
@@ -204,10 +164,6 @@ export default function GlobalWebTerminalHost() {
 
   useEffect(() => addActiveControlPlaneProfileChangeListener(() => {
     viewerAuthority.onServerProfileChanged();
-  }), [viewerAuthority]);
-
-  useEffect(() => subscribeOfficeComputerPreferences(() => {
-    viewerAuthority.onPowerPreferencesChanged();
   }), [viewerAuthority]);
 
   const {

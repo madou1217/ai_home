@@ -267,6 +267,14 @@ func decodeCustomToolCallOutput(
 	if err != nil {
 		return inference.Message{}, "", err
 	}
+	// 与 function_call_output 相同：没有 call_id 的合成输出按用户上下文保留。
+	if strings.TrimSpace(wireOutput.CallID) == "" {
+		message, messageErr := inference.NewMessage(inference.RoleUser, contents...)
+		if messageErr != nil {
+			return inference.Message{}, "", invalidField(field)
+		}
+		return message, "", nil
+	}
 	result, err := inference.NewToolResultContent(wireOutput.CallID, false, contents...)
 	if err != nil {
 		return inference.Message{}, "", invalidField(field)

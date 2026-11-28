@@ -87,7 +87,9 @@
 - [x] 测试签名证书：`CN=AIH NetGuard Test` 自签代码签名证书，导入 Root/TrustedPublisher，`Set-AuthenticodeSignature` 签名后 `Get-AuthenticodeSignature = Valid`
 - [x] 驱动安装：`System32\drivers\aihnetguard.sys` + `AihNetGuard` kernel 服务已注册（demand start）
 - ⛔ test signing：`bcdedit /set testsigning on` + 重启（Secure Boot 已关闭）；当前 `sc start` 返回 **577**。**等待用户授权重启**
-- ⛔ 驱动加载后的真机验收：被 test signing 重启授权阻塞
+- [x] 驱动加载：testsigning 重启后 `AihNetGuard` RUNNING
+- [x] WFP 外部阻断真机：受保护进程 TCP/UDP 外联失败，`blocked=3`
+- [ ] WFP loopback 放行：真机仍失败（127.0.0.1:18080 被阻断），需继续修 classify 地址判断
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [x] Windows Store/UWP 事实确认：Claude/Codex 均为 AppsFolder/AppContainer；命令行代理参数不可注入、同包多实例受限。Chrome/Edge（独立 profile）可严格启动；UWP 双实例需透明重定向
 
@@ -149,7 +151,9 @@
 
 - [x] Chromium GUI 直接可执行 + sandbox 原型：Chrome 启动、建立到 6152 的连接；外层 sandbox 拒绝直连
 - [x] 需要 `--no-sandbox` 才能避免 Chromium 嵌套 sandbox 初始化失败（安全降级，需决策）
-- [ ] Vendor Electron App / AGY `open -a` 路径改造
+- [x] Chromium GUI 沙箱启动（opt-in `AIH_NETGUARD_SANDBOX_GUI=1`）：直接执行 bundle 可执行文件 + sandbox-exec + `--no-sandbox`；真机 Chrome 全部 TCP 只连 127.0.0.1:6152，无外部连接
+- [x] Vendor Electron 沙箱启动：ChatGPT.app 直接可执行文件 + sandbox-exec 启动成功，实例无外部 TCP socket；但它不读环境代理，当前只做到 fail-closed
+- ⛔ Vendor App 代理可用性：ChatGPT 无外部 socket 但未验证代理请求；VS Code 单实例交接给已运行实例（仍用原 user-data-dir），不结束用户应用无法隔离
 - [ ] 窗口/TCC/单实例/OAuth 深链/更新器验证
 - [ ] 无法满足时决策 Network Extension（签名扩展）
 - [ ] 系统 XPC/nsurlsessiond/更新器边界文档化
@@ -165,7 +169,7 @@
 - [ ] per-instance 透明 TCP 重定向（当前为阻断；App 需使用代理）
 - [ ] 外部 UDP/QUIC/DNS 策略（cgroup 规则会 drop；系统 resolver 旁路待验证）
 - [ ] CLI strict 四家真实 API 验收
-- [ ] GUI App 进程树验收（cgroup 继承，理论上覆盖子进程）
+- [x] 进程树验收：AWS 真机用子进程继承 cgroup，DNS/网络策略生效（GUI 显示未测，无桌面会话）
 - [ ] 多实例不同代理验收
 - [ ] 与 Docker/Colima/VPN/Tailscale 规则冲突处理
 - [ ] 容器/VM 不在宿主进程树范围的文档化
@@ -174,8 +178,9 @@
 
 ## Phase 5 — DNS Guard
 
-- [ ] 严格默认：禁止本地 DNS 直出
-- [ ] 代理端域名解析验证（HTTP CONNECT / socks5h）
+- [x] Linux：nftables nat 链把 cgroup 的 UDP/TCP 53 redirect 到 DoH bridge；AWS 真机 `getent example.com` 成功且代理日志出现 `CONNECT 1.1.1.1:443`
+- [x] 结论：Windows/macOS 无法用当前按 PID 的 guard 阻断 DNS。真机：受保护进程 `Resolve-DnsName` 成功，DNS 包来自 svchost（pid 5988/10888），不在实例集合；macOS sandbox 连 `(deny mach-lookup)` 也仍能解析。必须用 WFP NRPT/DNS 策略或 Network Extension
+- [x] 代理端域名解析验证：DoH over HTTP CONNECT 真机通过（Linux）
 - [ ] 本地 DoH/DoT 桥：DNS 流量走代理（兼容档）
 - [ ] mDNSResponder / Windows Dnscache 特殊处理
 - [ ] 出口 IP/国家与 DNS 落点一致性验证
@@ -249,14 +254,14 @@
 | 严格进程级网络控制（跨平台） | 中 | 22% | 🚧 Phase 1/2/3 |
 | Windows per-instance GUI（JP/SG） | App Desk 严格启动端到端通过；双 Chrome 代理/直连通过；WFP 待加载 | 40% | 🚧 Phase 2 |
 | macOS CLI strict | 机制+Claude/Codex 真实 API 通过 | 50% | 🚧 Phase 3 |
-| macOS GUI strict | Chromium 原型可用 | 20% | 🚧 Phase 3 |
+| macOS GUI strict | App Desk 严格启动走 sandbox-exec，台账/进程真机通过 | 45% | 🚧 Phase 3 |
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
-| DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
+| DNS Guard | Linux redirect→DoH 真机通过 | 30% | 🚧 Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
 | 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈38%** | 🚧 |
+| **总目标** | — | **≈43%** | 🚧 |
 
 ---
 

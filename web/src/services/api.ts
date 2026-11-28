@@ -2773,6 +2773,41 @@ export const nativeSessionsAPI = {
   },
 };
 
+export interface GlobalSessionRow {
+  Provider: string;
+  RuntimeScope: string;
+  AccountRef: string;
+  Gateway: boolean;
+  Socket: string;
+  Name: string;
+  Label: string;
+  Path: string;
+  StartPath: string;
+  Title: string;
+  NativeID: string;
+  NativeOnly: boolean;
+  TurnState: string;
+  AccountID: string;
+  LastMessage: string;
+  LastMessageRole: string;
+  LastMessageAtMS: number;
+  WindowName: string;
+  Command: string;
+  PanePID: number;
+  PaneDead: boolean;
+  Live: boolean;
+  CreatedAtMS: number;
+  LastActivityAtMS: number;
+  LastActiveAtMS: number;
+}
+
+export const globalSessionsAPI = {
+  list: async (): Promise<{ ok: boolean; sessions: GlobalSessionRow[] }> => {
+    const response = await api.get('/webui/global-sessions');
+    return response.data;
+  },
+};
+
 export const terminalAPI = {
   listSessions: async (): Promise<{ ok: boolean; sessions: TerminalDirectorySession[] }> => {
     const response = await api.get('/webui/terminal/sessions');

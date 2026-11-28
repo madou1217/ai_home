@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ type LinuxGuard struct {
 	table     string
 	started   bool
 	protected int
+	dnsBridge *DoHBridge
 }
 
 // NewLinuxGuard creates a Linux strict guard.
@@ -65,6 +67,11 @@ func (guard *LinuxGuard) Start(ctx context.Context) error {
 		return fmt.Errorf("创建 cgroup 失败: %w", err)
 	}
 	// Recreate the table so stale rules from a crashed run cannot accumulate.
+	if guard.dnsBridge != nil {
+		_ = guard.dnsBridge.Close()
+		guard.dnsBridge = nil
+	}
+	_ = sudoRun(ctx, "nft", "delete", "table", "inet", guard.table+"_dns")
 	_ = sudoRun(ctx, "nft", "delete", "table", "inet", guard.table)
 	if err := sudoRun(ctx, "nft", "add", "table", "inet", guard.table); err != nil {
 		return fmt.Errorf("创建 nft table 失败: %w", err)
@@ -74,6 +81,39 @@ func (guard *LinuxGuard) Start(ctx context.Context) error {
 		return fmt.Errorf("创建 nft chain 失败: %w", err)
 	}
 	path := "aih-netguard/" + guard.id
+	if guard.options.Policy.DNS == DNSBridge && guard.options.ProxyURL != "" {
+		dnsTable := guard.table + "_dns"
+		if err := sudoRun(ctx, "nft", "add", "table", "inet", dnsTable); err != nil {
+			return fmt.Errorf("创建 DNS nat table 失败: %w", err)
+		}
+		if err := sudoRun(ctx, "nft", "add", "chain", "inet", dnsTable, "output",
+			"{ type nat hook output priority -100; policy accept; }"); err != nil {
+			return fmt.Errorf("创建 DNS nat chain 失败: %w", err)
+		}
+		bridge, err := NewDoHBridge(guard.options.ProxyURL, "https://1.1.1.1/dns-query")
+		if err != nil {
+			_ = sudoRun(context.Background(), "nft", "delete", "table", "inet", guard.table)
+			return fmt.Errorf("启动 DoH 桥失败: %w", err)
+		}
+		guard.dnsBridge = bridge
+		_, port, splitErr := net.SplitHostPort(bridge.Addr())
+		if splitErr != nil {
+			_ = bridge.Close()
+			return splitErr
+		}
+		redirect := port
+		rulesWithDNS := [][]string{
+			{"add", "rule", "inet", dnsTable, "output", "socket", "cgroupv2", "level", "2", strconv.Quote(path), "udp", "dport", "53", "redirect", "to", ":" + redirect},
+			{"add", "rule", "inet", dnsTable, "output", "socket", "cgroupv2", "level", "2", strconv.Quote(path), "tcp", "dport", "53", "redirect", "to", ":" + redirect},
+		}
+		for _, rule := range rulesWithDNS {
+			if err := sudoRun(ctx, "nft", rule...); err != nil {
+				_ = bridge.Close()
+				_ = sudoRun(context.Background(), "nft", "delete", "table", "inet", guard.table)
+				return fmt.Errorf("安装 DNS redirect 规则失败: %w", err)
+			}
+		}
+	}
 	rules := [][]string{
 		{"add", "rule", "inet", guard.table, "output", "socket", "cgroupv2", "level", "2", strconv.Quote(path), "ip", "daddr", "127.0.0.0/8", "accept"},
 		{"add", "rule", "inet", guard.table, "output", "socket", "cgroupv2", "level", "2", strconv.Quote(path), "ip6", "daddr", "::1", "accept"},
@@ -134,6 +174,11 @@ func (guard *LinuxGuard) Stop(ctx context.Context) error {
 	if !started {
 		return nil
 	}
+	if guard.dnsBridge != nil {
+		_ = guard.dnsBridge.Close()
+		guard.dnsBridge = nil
+	}
+	_ = sudoRun(ctx, "nft", "delete", "table", "inet", guard.table+"_dns")
 	_ = sudoRun(ctx, "nft", "delete", "table", "inet", guard.table)
 	_ = sudoRun(ctx, "rmdir", guard.cgroup)
 	return nil

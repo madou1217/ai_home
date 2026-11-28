@@ -760,6 +760,10 @@ public static class LumenUiFactory
             Child = CreateGlyph(glyph, 13.5, tintOverride ?? palette.Muted)
         };
         var btn = CreateBorderlessButton(border, tooltip, onClick);
+        if (!string.IsNullOrWhiteSpace(tooltip))
+        {
+            System.Windows.Automation.AutomationProperties.SetName(btn, tooltip);
+        }
         btn.MouseEnter += (_, _) => border.Background = LumenPalette.Brush(LumenPalette.WithAlpha(palette.AccentColor, 0.14));
         btn.MouseLeave += (_, _) => border.Background = Brushes.Transparent;
         return btn;
@@ -819,6 +823,9 @@ public static class LumenUiFactory
         };
 
         var btn = CreateBorderlessButton(border, null, onClick);
+        // Pill buttons draw icon+text children, so WPF cannot derive an
+        // automation name from content; expose the label explicitly.
+        System.Windows.Automation.AutomationProperties.SetName(btn, label);
         btn.MouseEnter += (_, _) =>
         {
             border.Opacity = 0.88;

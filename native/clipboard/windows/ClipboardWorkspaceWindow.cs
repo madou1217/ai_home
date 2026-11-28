@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shell;
+using System.Windows.Threading;
 
 namespace AihLumenClipboard;
 
@@ -75,6 +76,7 @@ public sealed class ClipboardWorkspaceWindow : Window
     private readonly HashSet<string> _multiSelectedIds = new(StringComparer.Ordinal);
     private string? _selectionAnchorId;
     private readonly Dictionary<string, FrameworkElement> _itemVisuals = new(StringComparer.Ordinal);
+    private int _listRenderGeneration;
 
     public event Action? OpenOrbitRequested;
     public event Action<string>? QuickOrbitPositionChanged;
@@ -137,6 +139,9 @@ public sealed class ClipboardWorkspaceWindow : Window
 
         SourceInitialized += (_, _) => ApplyDwmBackdrop();
         PreviewKeyDown += OnWindowPreviewKeyDown;
+        // Space is also claimed by list/scroll controls; bind it on the window
+        // so Quick Look always opens from the keyboard.
+        InputBindings.Add(new KeyBinding(new LumenWindowCommand(OpenPreviewForSelection), Key.Space, ModifierKeys.None));
         Closing += (_, e) =>
         {
             if (!_allowRealClose)
@@ -471,7 +476,7 @@ public sealed class ClipboardWorkspaceWindow : Window
         _sidebar.DestinationSelected += SelectDestination;
 
         _inspector.CopySingleRequested += item => _ = CopyItemAsync(item);
-        _inspector.PreviewSingleRequested += item => OpenPreview(new[] { item }, item.Id);
+        _inspector.PreviewSingleRequested += item => OpenPreview(_filteredItems.Count > 0 ? _filteredItems : new[] { item }, item.Id);
         _inspector.PinSingleRequested += item => _ = TogglePinAsync(item);
         _inspector.DeleteSingleRequested += item => _ = DeleteSingleAsync(item);
         _inspector.BatchPreviewRequested += items => OpenPreview(items, _selectedId);
@@ -672,6 +677,13 @@ public sealed class ClipboardWorkspaceWindow : Window
         _galleryScroll.Visibility = _isListMode ? Visibility.Collapsed : Visibility.Visible;
         _itemVisuals.Clear();
 
+        // Each row is a full custom control; building hundreds of them on the UI
+        // thread blocks the first paint for seconds. Plan the rows now and
+        // materialize them in background-priority batches so the window opens
+        // immediately and stays responsive.
+        var generation = ++_listRenderGeneration;
+        var plans = new List<Action>();
+
         if (_isListMode)
         {
             _listStack.Children.Clear();
@@ -679,8 +691,13 @@ public sealed class ClipboardWorkspaceWindow : Window
             {
                 if (_filteredItems.Count > 0)
                 {
-                    _listStack.Children.Add(MakeSectionHeader("按标题", _filteredItems.Count, palette));
-                    foreach (var item in _filteredItems) AppendListRow(item, palette);
+                    var header = MakeSectionHeader("按标题", _filteredItems.Count, palette);
+                    plans.Add(() => _listStack.Children.Add(header));
+                    foreach (var item in _filteredItems)
+                    {
+                        var captured = item;
+                        plans.Add(() => AppendListRow(captured, palette));
+                    }
                 }
             }
             else
@@ -695,8 +712,13 @@ public sealed class ClipboardWorkspaceWindow : Window
                 foreach (var (name, group) in sections)
                 {
                     if (group.Count == 0) continue;
-                    _listStack.Children.Add(MakeSectionHeader(name, group.Count, palette));
-                    foreach (var item in group) AppendListRow(item, palette);
+                    var header = MakeSectionHeader(name, group.Count, palette);
+                    plans.Add(() => _listStack.Children.Add(header));
+                    foreach (var item in group)
+                    {
+                        var captured = item;
+                        plans.Add(() => AppendListRow(captured, palette));
+                    }
                 }
             }
         }
@@ -706,19 +728,39 @@ public sealed class ClipboardWorkspaceWindow : Window
             foreach (var item in _filteredItems)
             {
                 var captured = item;
-                var card = LumenHistoryItemFactory.CreateGalleryCard(
-                    captured,
-                    IsItemSelected(captured.Id),
-                    palette,
-                    _ => ChooseItem(captured.Id, Keyboard.Modifiers),
-                    () => _ = CopyItemAsync(captured),
-                    () => ShowItemContextMenu(captured));
-                _itemVisuals[captured.Id] = card;
-                _galleryWrap.Children.Add(card);
+                plans.Add(() =>
+                {
+                    var card = LumenHistoryItemFactory.CreateGalleryCard(
+                        captured,
+                        IsItemSelected(captured.Id),
+                        palette,
+                        _ => ChooseItem(captured.Id, Keyboard.Modifiers),
+                        () => _ = CopyItemAsync(captured),
+                        () => ShowItemContextMenu(captured));
+                    _itemVisuals[captured.Id] = card;
+                    _galleryWrap.Children.Add(card);
+                });
             }
         }
 
+        PumpRowPlans(plans, generation);
         UpdateFooter();
+    }
+
+    private const int RowBatchSize = 24;
+
+    private void PumpRowPlans(List<Action> plans, int generation, int offset = 0)
+    {
+        if (generation != _listRenderGeneration) return;
+        var end = Math.Min(plans.Count, offset + RowBatchSize);
+        for (var i = offset; i < end; i++)
+        {
+            plans[i]();
+        }
+        if (end < plans.Count)
+        {
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => PumpRowPlans(plans, generation, end)));
+        }
     }
 
     private void AppendListRow(LumenClipboardItem item, LumenPalette palette)
@@ -770,7 +812,7 @@ public sealed class ClipboardWorkspaceWindow : Window
         var copyItem = new MenuItem { Header = "复制到剪贴板 (↵)" };
         copyItem.Click += (_, _) => _ = CopyItemAsync(item);
         var previewItem = new MenuItem { Header = "完整预览 (Space)" };
-        previewItem.Click += (_, _) => OpenPreview(new[] { item }, item.Id);
+        previewItem.Click += (_, _) => OpenPreview(_filteredItems.Count > 0 ? _filteredItems : new[] { item }, item.Id);
         var pinItem = new MenuItem { Header = item.Pinned ? "取消固定" : "固定记录" };
         pinItem.Click += (_, _) => _ = TogglePinAsync(item);
         var delItem = new MenuItem { Header = "移除记录 (Delete)" };
@@ -878,6 +920,20 @@ public sealed class ClipboardWorkspaceWindow : Window
     {
         if (items.Count == 0) return;
         LumenPreviewWindow.Shared.Open(items, initialId);
+    }
+
+    private void OpenPreviewForSelection()
+    {
+        if (_filteredItems.Count == 0) return;
+        if (_multiSelectedIds.Count > 1)
+        {
+            var batch = _filteredItems.Where(x => _multiSelectedIds.Contains(x.Id)).ToList();
+            OpenPreview(batch, _selectedId);
+            return;
+        }
+        var selected = _filteredItems.FirstOrDefault(x => string.Equals(x.Id, _selectedId, StringComparison.Ordinal))
+                       ?? _filteredItems[0];
+        OpenPreview(_filteredItems, selected.Id);
     }
 
     private async Task TogglePinAsync(LumenClipboardItem item)
@@ -1136,7 +1192,8 @@ public sealed class ClipboardWorkspaceWindow : Window
                 }
                 else if (_filteredItems.FirstOrDefault(x => string.Equals(x.Id, _selectedId, StringComparison.Ordinal)) is { } item)
                 {
-                    OpenPreview(new[] { item }, item.Id);
+                    // Hand the whole list to Quick Look so ←/→ steps the queue.
+                    OpenPreview(_filteredItems, item.Id);
                 }
                 e.Handled = true;
                 break;
@@ -1180,4 +1237,15 @@ public sealed class ClipboardWorkspaceWindow : Window
         var next = Math.Clamp(idx + delta, 0, _filteredItems.Count - 1);
         ChooseItem(_filteredItems[next].Id, mods, scrollVisible: true);
     }
+}
+
+/// <summary>Minimal ICommand adapter so window-level KeyBindings can call
+/// parameterless handlers without pulling in MVVM infrastructure.</summary>
+internal sealed class LumenWindowCommand : System.Windows.Input.ICommand
+{
+    private readonly Action _execute;
+    public LumenWindowCommand(Action execute) => _execute = execute;
+    public event EventHandler? CanExecuteChanged { add { } remove { } }
+    public bool CanExecute(object? parameter) => true;
+    public void Execute(object? parameter) => _execute();
 }

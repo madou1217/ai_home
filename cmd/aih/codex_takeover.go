@@ -39,8 +39,20 @@ func runCodexTakeover(arguments []string, runtime commandRuntime) error {
 		_, _ = fmt.Fprintf(runtime.stdout, "thread %s 的锁文件存在但无人持有（陈旧文件，不影响接管）\n", threadID)
 		return nil
 	}
+	// lsof 和 isCodexProcess 之间进程可能已退出；死 PID 不能当成
+	// “不可确认的持有者”拒绝接管，否则刚结束的 Codex 会把 resume 卡死。
+	liveHolders := make([]int, 0, len(holders))
 	for _, pid := range holders {
+		if !processExists(pid) {
+			continue
+		}
 		_, _ = fmt.Fprintf(runtime.stdout, "占用者: pid=%d %s\n", pid, processSummary(pid))
+		liveHolders = append(liveHolders, pid)
+	}
+	holders = liveHolders
+	if len(holders) == 0 {
+		_, _ = fmt.Fprintf(runtime.stdout, "thread %s 的旧持有者已退出，锁正在释放\n", threadID)
+		return nil
 	}
 	if !force {
 		return fmt.Errorf("thread %s 仍被 %d 个进程持有；确认要结束它们以接管，请加 --force", threadID, len(holders))
@@ -100,6 +112,14 @@ func isCodexProcess(pid int) bool {
 	}
 	name := strings.ToLower(filepath.Base(strings.Trim(first, "\"'")))
 	return name == "aih" || strings.HasPrefix(name, "aih-") || name == "codex" || strings.HasPrefix(name, "codex.")
+}
+
+func processExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	output, err := exec.Command("ps", "-o", "pid=", "-p", strconv.Itoa(pid)).Output()
+	return err == nil && strings.TrimSpace(string(output)) != ""
 }
 
 func processIsCurrentOrAncestor(pid int) bool {

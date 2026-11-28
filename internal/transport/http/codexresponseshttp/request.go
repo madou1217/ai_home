@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -55,8 +56,21 @@ func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, n
 	if err != nil {
 		return nil, nativeRequest{}, err
 	}
+	encoding := strings.ToLower(strings.TrimSpace(request.Header.Get("Content-Encoding")))
+	// 传输层（扩展/代理）可能吞掉 Content-Encoding，却把压缩字节留给服务端。
+	// 明文 JSON 不可能以 zstd/gzip 魔数开头，按魔数识别并解码，避免把可读请求
+	// 误判成 invalid_request_body。
+	sniffed := ""
+	if encoding == "" || encoding == "identity" {
+		switch {
+		case len(payload) >= 4 && payload[0] == 0x28 && payload[1] == 0xb5 && payload[2] == 0x2f && payload[3] == 0xfd:
+			encoding, sniffed = "zstd", "zstd"
+		case len(payload) >= 2 && payload[0] == 0x1f && payload[1] == 0x8b:
+			encoding, sniffed = "gzip", "gzip"
+		}
+	}
 	var decoded io.Reader = bytes.NewReader(payload)
-	switch strings.ToLower(strings.TrimSpace(request.Header.Get("Content-Encoding"))) {
+	switch encoding {
 	case "", "identity":
 	case "gzip":
 		reader, err := gzip.NewReader(decoded)
@@ -80,8 +94,11 @@ func readRequest(response http.ResponseWriter, request *http.Request) ([]byte, n
 	if err != nil {
 		return nil, metadata, err
 	}
-	if json.Unmarshal(body, &metadata) != nil {
-		return nil, metadata, errInvalidRequest
+	if jsonErr := json.Unmarshal(body, &metadata); jsonErr != nil {
+		// 保留可诊断细节：长度、编码来源与前缀魔数足以区分截断/压缩/形状错误，
+		// 不落正文。
+		return nil, metadata, fmt.Errorf("%w: json=%v len=%d encoding=%q sniffed=%q prefix=%x",
+			errInvalidRequest, jsonErr, len(body), encoding, sniffed, bodyPrefix(body, 16))
 	}
 	// model 允许为空：Codex 从 WS 掉到 HTTPS 时，续接帧常常省略 model，
 	// 交由 resolveContinuation 用持久化的响应上下文补回；无上下文时再拒绝。
@@ -97,7 +114,15 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, inferenceapi.ErrRequestTooLarge
 	}
 	if err != nil {
-		return nil, errInvalidRequest
+		return nil, err
 	}
 	return payload, nil
+}
+
+// bodyPrefix 返回最多 n 字节前缀，用于日志识别压缩魔数。
+func bodyPrefix(body []byte, n int) []byte {
+	if len(body) < n {
+		return body
+	}
+	return body[:n]
 }

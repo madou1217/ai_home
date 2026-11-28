@@ -25,7 +25,16 @@ var macSources = []string{
 	"native/chat/ChatPanelContent.swift",
 	"native/chat/ChatPanel.swift",
 	"native/chat/QuickChatWindow.swift",
+	"native/clipboard/LumenModels.swift",
+	"native/clipboard/LumenLocalConfig.swift",
+	"native/clipboard/LumenClipboardAPI.swift",
+	"native/clipboard/LumenTheme.swift",
+	"native/clipboard/LumenPreviewRegistry.swift",
+	"native/clipboard/LumenPreviewRenderers.swift",
+	"native/clipboard/LumenPreviewWindow.swift",
+	"native/clipboard/LumenWorkspaceViews.swift",
 	"native/clipboard/ClipboardWorkspaceWindow.swift",
+	"native/clipboard/LumenOrbitViews.swift",
 	"native/clipboard/QuickOrbitWindow.swift",
 	"native/launcher/LauncherPanelModel.swift",
 	"native/launcher/LauncherPanelViews.swift",
@@ -89,7 +98,7 @@ func buildMac(ctx context.Context, opts Options, root string) (LaunchSpec, error
 		if arch == "x64" {
 			arch = "x86_64"
 		}
-		args = append(args, "-target", arch+"-apple-macosx12.0", "-module-cache-path", filepath.Join(stageRoot, "swift-cache"), "-framework", "AppKit", "-framework", "ApplicationServices", "-framework", "WebKit")
+		args = append(args, "-target", arch+"-apple-macosx12.0", "-module-cache-path", filepath.Join(stageRoot, "swift-cache"), "-framework", "AppKit", "-framework", "ApplicationServices", "-framework", "QuartzCore", "-framework", "PDFKit", "-framework", "AVFoundation", "-framework", "AVKit", "-framework", "WebKit", "-lsqlite3")
 		if _, err := runTool(ctx, 2*time.Minute, opts.RepoRoot, nil, "/usr/bin/xcrun", args...); err != nil {
 			return LaunchSpec{}, err
 		}

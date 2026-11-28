@@ -292,7 +292,8 @@ AihngRegisterWfp(_In_ PDEVICE_OBJECT DeviceObject)
     filter.action.type = FWP_ACTION_CALLOUT_TERMINATING;
     filter.action.calloutKey = AIHNG_CALLOUT_V4_KEY;
     filter.subLayerKey = AIHNG_SUBLAYER_KEY;
-    filter.weight.type = FWP_EMPTY;
+    filter.weight.type = FWP_UINT8;
+    filter.weight.uint8 = 1;
     filter.providerKey = (GUID *)&AIHNG_PROVIDER_KEY;
     filter.context = 4;
     status = FwpmFilterAdd0(g_EngineHandle, &filter, NULL, &g_FilterIdV4);
@@ -304,7 +305,45 @@ AihngRegisterWfp(_In_ PDEVICE_OBJECT DeviceObject)
     filter.action.calloutKey = AIHNG_CALLOUT_V6_KEY;
     filter.context = 6;
     status = FwpmFilterAdd0(g_EngineHandle, &filter, NULL, &g_FilterIdV6);
-    return status;
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    /* A higher-weight permit filter makes loopback reachable before the
+     * blocking callout. The callout's own address reads proved unreliable
+     * across WFP versions, so the exemption is enforced by the filter. */
+    {
+        FWPM_FILTER0 permit;
+        FWPM_FILTER_CONDITION0 condition;
+        FWP_RANGE0 range;
+        FWP_V4_ADDR_MASK mask;
+
+        RtlZeroMemory(&permit, sizeof(permit));
+        RtlZeroMemory(&condition, sizeof(condition));
+        RtlZeroMemory(&range, sizeof(range));
+        RtlZeroMemory(&mask, sizeof(mask));
+        permit.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
+        permit.displayData.name = L"AIH NetGuard Loopback Permit V4";
+        permit.action.type = FWP_ACTION_PERMIT;
+        permit.subLayerKey = AIHNG_SUBLAYER_KEY;
+        permit.weight.type = FWP_UINT8;
+        permit.weight.uint8 = 10;
+        range.valueLow.type = FWP_UINT32;
+        range.valueLow.uint32 = 0x7F000000;
+        range.valueHigh.type = FWP_UINT32;
+        range.valueHigh.uint32 = 0x7FFFFFFF;
+        condition.fieldKey = FWPM_CONDITION_IP_REMOTE_ADDRESS;
+        condition.matchType = FWP_MATCH_RANGE;
+        condition.conditionValue.type = FWP_RANGE_TYPE;
+        condition.conditionValue.rangeValue = &range;
+        permit.filterCondition = &condition;
+        permit.numFilterConditions = 1;
+        status = FwpmFilterAdd0(g_EngineHandle, &permit, NULL, NULL);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+    }
+    return STATUS_SUCCESS;
 }
 
 static VOID

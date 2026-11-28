@@ -175,7 +175,7 @@
 ## Phase 5 — DNS Guard
 
 - [x] Linux：nftables nat 链把 cgroup 的 UDP/TCP 53 redirect 到 DoH bridge；AWS 真机 `getent example.com` 成功且代理日志出现 `CONNECT 1.1.1.1:443`
-- [ ] Windows/macOS 的 DNS 严格阻断
+- [x] 结论：Windows/macOS 无法用当前按 PID 的 guard 阻断 DNS。真机：受保护进程 `Resolve-DnsName` 成功，DNS 包来自 svchost（pid 5988/10888），不在实例集合；macOS sandbox 连 `(deny mach-lookup)` 也仍能解析。必须用 WFP NRPT/DNS 策略或 Network Extension
 - [x] 代理端域名解析验证：DoH over HTTP CONNECT 真机通过（Linux）
 - [ ] 本地 DoH/DoT 桥：DNS 流量走代理（兼容档）
 - [ ] mDNSResponder / Windows Dnscache 特殊处理

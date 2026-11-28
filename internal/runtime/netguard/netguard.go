@@ -133,6 +133,7 @@ type GuardStatus struct {
 	Mode          Mode    `json:"mode"`
 	Backend       string  `json:"backend"` // windivert | wfp | sandbox | cgroup
 	DNSMode       DNSMode `json:"dnsMode,omitempty"`
+	DNSAddr       string  `json:"dnsAddr,omitempty"`
 	ProtectedPIDs int     `json:"protectedPids"`
 	Blocked       uint64  `json:"blocked"`
 	LastError     string  `json:"lastError,omitempty"`

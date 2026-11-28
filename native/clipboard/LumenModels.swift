@@ -108,29 +108,22 @@ struct LumenClipboardItem: Codable, Equatable {
     files.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   }
 
+  var contentIdentity: LumenContentIdentity {
+    LumenContentIdentityRegistry.shared.identity(for: self)
+  }
+
+  var logicalCategory: LumenLogicalCategory {
+    contentIdentity.logicalCategory
+  }
+
   var displayCategory: LumenDisplayCategory {
-    switch kind {
-    case "image":
-      return .image
-    case "link":
-      return .link
-    case "file":
-      if files.count == 1, let path = primaryFilePath {
-        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
-        if LumenClassifier.codeExtensions.contains(ext) {
-          return .code
-        }
-      }
-      return .file
-    default:
-      let body = effectiveText.trimmingCharacters(in: .whitespacesAndNewlines)
-      if LumenClassifier.parseHexColor(body) != nil {
-        return .color
-      }
-      if LumenClassifier.looksLikeCode(body) {
-        return .code
-      }
-      return .text
+    switch logicalCategory {
+    case .image: return .image
+    case .link: return .link
+    case .code: return .code
+    case .color: return .color
+    case .document, .audio, .video, .otherFile: return .file
+    case .all, .text: return .text
     }
   }
 
@@ -178,7 +171,7 @@ struct LumenClipboardItem: Codable, Equatable {
     if !sourceDevice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return sourceDevice
     }
-    return "本机"
+    return "来源未知"
   }
 
   var formattedSize: String {
@@ -186,10 +179,19 @@ struct LumenClipboardItem: Codable, Equatable {
       return "\(files.count) 项文件"
     }
     if byteSize <= 0 {
+      if kind == "file" {
+        if let path = primaryFilePath,
+           let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64),
+           size > 0 {
+          return LumenFormatters.byteCount(size)
+        }
+        return "未知"
+      }
       if kind == "image", width > 0, height > 0 {
         return "\(width) × \(height)"
       }
-      return "\(effectiveText.utf8.count) B"
+      let utf8Len = effectiveText.utf8.count
+      return utf8Len > 0 ? LumenFormatters.byteCount(Int64(utf8Len)) : "未知"
     }
     return LumenFormatters.byteCount(byteSize)
   }
@@ -418,102 +420,19 @@ enum LumenClassifier {
   static let textExtensions: Set<String> = ["txt", "md", "markdown", "log", "csv", "tsv", "ini", "conf", "env"]
 
   static func parseHexColor(_ raw: String) -> NSColor? {
-    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard trimmed.hasPrefix("#") else { return nil }
-    let hex = String(trimmed.dropFirst())
-    guard hex.count == 6 || hex.count == 3 || hex.count == 8,
-          hex.allSatisfy({ $0.isHexDigit }) else {
-      return nil
-    }
-    var expanded = hex
-    if hex.count == 3 {
-      expanded = hex.map { "\($0)\($0)" }.joined()
-    }
-    var value: UInt64 = 0
-    guard Scanner(string: expanded).scanHexInt64(&value) else { return nil }
-    if expanded.count == 8 {
-      let r = CGFloat((value >> 24) & 0xFF) / 255.0
-      let g = CGFloat((value >> 16) & 0xFF) / 255.0
-      let b = CGFloat((value >> 8) & 0xFF) / 255.0
-      let a = CGFloat(value & 0xFF) / 255.0
-      return NSColor(srgbRed: r, green: g, blue: b, alpha: a)
-    }
-    let r = CGFloat((value >> 16) & 0xFF) / 255.0
-    let g = CGFloat((value >> 8) & 0xFF) / 255.0
-    let b = CGFloat(value & 0xFF) / 255.0
-    return NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
+    LumenColorMath.parseAnyColor(raw)
   }
 
   static func looksLikeCode(_ text: String) -> Bool {
-    guard text.count >= 12 else { return false }
-    if (text.hasPrefix("{") && text.hasSuffix("}")) || (text.hasPrefix("[") && text.hasSuffix("]")) {
-      if text.contains("\":") || text.contains("\",") { return true }
-    }
-    let markers = [
-      "func ", "function ", "async function", "const ", "let ", "import ", "package ",
-      "class ", "struct ", "enum ", "def ", "return ", "SELECT ", "<?php", "#!/",
-      "=>", "::", "->", "interface ", "protocol ", "public ", "private "
-    ]
-    var hits = 0
-    for marker in markers where text.contains(marker) {
-      hits += 1
-      if hits >= 2 { return true }
-    }
-    if text.contains("\n") && (text.contains("{") && text.contains("}")) && (text.contains(";") || text.contains("func ") || text.contains("def ")) {
-      return true
-    }
-    return false
+    LumenContentIdentityRegistry.shared.detectHighConfidenceCodeLanguage(content: text) != nil
   }
 
   static func detectLanguage(fileName: String?, content: String) -> String {
-    if let fileName {
-      let ext = URL(fileURLWithPath: fileName).pathExtension.lowercased()
-      switch ext {
-      case "go": return "go"
-      case "swift": return "swift"
-      case "ts", "tsx": return "ts"
-      case "js", "jsx", "mjs", "cjs": return "js"
-      case "py": return "py"
-      case "php": return "php"
-      case "json", "jsonl": return "json"
-      case "css", "scss": return "css"
-      case "rs": return "rust"
-      case "sql": return "sql"
-      case "sh", "zsh", "bash": return "sh"
-      case "yaml", "yml": return "yaml"
-      case "xml", "html", "htm": return "xml"
-      default: break
-      }
-    }
-    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.hasPrefix("<?php") { return "php" }
-    if trimmed.hasPrefix("package ") && content.contains("func ") { return "go" }
-    if content.contains("import AppKit") || content.contains("import Foundation") || content.contains("final class ") { return "swift" }
-    if content.contains("def ") && (content.contains("import ") || content.contains("from ")) { return "py" }
-    if (trimmed.hasPrefix("{") || trimmed.hasPrefix("[")) && content.contains("\":") { return "json" }
-    if content.contains("interface ") || content.contains(": string") || content.contains(": number") { return "ts" }
-    if content.contains("SELECT ") && content.contains("FROM ") { return "sql" }
-    if content.contains("transition:") || content.contains("display:") { return "css" }
-    return "js"
+    LumenContentIdentityRegistry.shared.resolveCodeLanguage(fileName: fileName, content: content)
   }
 
   static func languageDisplayName(_ lang: String) -> String {
-    switch lang.lowercased() {
-    case "go": return "Go"
-    case "swift": return "Swift"
-    case "ts": return "TypeScript"
-    case "js": return "JavaScript"
-    case "py": return "Python"
-    case "php": return "PHP"
-    case "json": return "JSON"
-    case "css": return "CSS"
-    case "rust": return "Rust"
-    case "sql": return "SQL"
-    case "sh": return "Shell"
-    case "yaml": return "YAML"
-    case "xml": return "XML / HTML"
-    default: return lang.uppercased()
-    }
+    LumenContentIdentityRegistry.shared.languageDisplayName(lang)
   }
 }
 

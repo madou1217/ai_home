@@ -26,6 +26,7 @@ var macSources = []string{
 	"native/chat/ChatPanel.swift",
 	"native/chat/QuickChatWindow.swift",
 	"native/clipboard/LumenModels.swift",
+	"native/clipboard/LumenContentIdentity.swift",
 	"native/clipboard/LumenLocalConfig.swift",
 	"native/clipboard/LumenClipboardAPI.swift",
 	"native/clipboard/LumenTheme.swift",

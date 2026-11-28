@@ -11,6 +11,7 @@ APP="$STAGE/AI Home.app"
 mkdir -p "$APP/Contents/MacOS"
 swiftc -O -target "$TARGET" -o "$APP/Contents/MacOS/ai-home" \
   "$ROOT/native/clipboard/LumenModels.swift" \
+  "$ROOT/native/clipboard/LumenContentIdentity.swift" \
   "$ROOT/native/clipboard/LumenLocalConfig.swift" \
   "$ROOT/native/clipboard/LumenClipboardAPI.swift" \
   "$ROOT/native/clipboard/LumenTheme.swift" \

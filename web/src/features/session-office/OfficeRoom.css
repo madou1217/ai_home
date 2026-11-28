@@ -194,9 +194,6 @@
   width: 100%;
   height: 100%;
   outline: none;
-  /* 体素岛在视口边缘自然淡出，避免浮岛被画布硬切成直角。 */
-  -webkit-mask-image: radial-gradient(ellipse at 50% 46%, #000 62%, transparent 100%);
-  mask-image: radial-gradient(ellipse at 50% 46%, #000 62%, transparent 100%);
 }
 
 .office-webgl-hud-top {

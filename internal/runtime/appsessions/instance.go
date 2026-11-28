@@ -60,7 +60,10 @@ type Instance struct {
 	// Adopted means the launch handed off to an already-running instance
 	// (single-instance apps). The desk still shows it, but it was not spawned
 	// by this launch.
-	Adopted    bool   `json:"adopted,omitempty"`
+	Adopted bool `json:"adopted,omitempty"`
+	// Manual rows are registered by a launcher that already knows the PIDs
+	// (Provider open-app); refresh keeps them live until MarkExited.
+	Manual     bool   `json:"manual,omitempty"`
 	Status     string `json:"status"`
 	ExitedAtMs int64  `json:"exitedAtMs,omitempty"`
 }

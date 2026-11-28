@@ -127,6 +127,13 @@ func (store *Store) Add(ctx context.Context, instance Instance) (Instance, error
 			existing.ProxyCountry = instance.ProxyCountry
 			existing.ProxyCity = instance.ProxyCity
 			existing.ProxyRegion = instance.ProxyRegion
+			if existing.Manual {
+				existing.PIDs = instance.PIDs
+				existing.Executable = instance.Executable
+				existing.Live = true
+				existing.Status = StatusRunning
+				existing.ExitedAtMs = 0
+			}
 			if err := store.saveLocked(document); err != nil {
 				return Instance{}, err
 			}
@@ -333,6 +340,74 @@ func (store *Store) SetProxyEntry(ctx context.Context, id string, entry ProxyEnt
 	return ErrNotFound
 }
 
+// MarkExited marks a manual Provider row as ended.
+func (store *Store) MarkExited(id string) error {
+	if store == nil {
+		return errors.New("app_sessions_store_unavailable")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrNotFound
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ID != id {
+			continue
+		}
+		instance.Live = false
+		instance.Status = StatusExited
+		instance.ExitedAtMs = time.Now().UnixMilli()
+		return store.saveLocked(document)
+	}
+	return ErrNotFound
+}
+
+// MarkExitedByProfile ends manual rows for a launcher-owned profile key.
+func (store *Store) MarkExitedByProfile(profileDir string) error {
+	profileDir = strings.TrimSpace(profileDir)
+	if store == nil || profileDir == "" {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	changed := false
+	now := time.Now().UnixMilli()
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ProfileDir != profileDir || !instance.ActiveNow() {
+			continue
+		}
+		instance.Live = false
+		instance.Status = StatusExited
+		instance.ExitedAtMs = now
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return store.saveLocked(document)
+}
+
 // SetGuard records the NetGuard process attached to an instance.
 func (store *Store) SetGuard(id string, pid int, backend, errorText string) error {
 	if store == nil {
@@ -493,6 +568,11 @@ func (store *Store) refreshLocked(document *storeDocument, now time.Time) (bool,
 	changed := false
 	claimed := make(map[int]struct{})
 	apply := func(instance *Instance) bool {
+		if instance.Manual {
+			// The launching surface owns the process identity for these rows;
+			// matching by executable/profile would immediately mark them exited.
+			return false
+		}
 		resolved, adopted, _ := matchPIDs(*instance, processes, now, claimed)
 		for _, pid := range resolved {
 			claimed[pid] = struct{}{}

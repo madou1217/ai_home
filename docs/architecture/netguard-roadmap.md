@@ -203,7 +203,7 @@
 - [x] Guard 生命周期：结束实例/自然退出后回收 Guard PID（真机用假 guard 验证：启动 84932、desk 可见、kill 后进程消失）
 - [x] WebUI：启动弹窗“严格隔离（实验）”开关；实例行显示 Guard 后端/PID 或“Guard 未启用”
 - [x] Provider open-app 路径注册 appsessions（`webuiopenappapi` 成功后写 manual 台账：provider/account/kind、PID、可执行入口；close 标记退出）
-- [ ] Provider 原生 CLI（`aih <provider>` 经 aihcli.App.Run）注册 appsessions
+- [x] Provider 原生 CLI（`aih <provider>` 经 aihcli.App.Run）注册 appsessions manual 行（PID=当前 aih 进程，退出时 MarkExited）
 - [ ] WebUI 看板：换代理、重启、查看 Guard 日志
 - [ ] CLI 等价命令：`aih app` / Provider 查看与管理
 - [ ] 历史/孤儿清理与断链状态
@@ -249,10 +249,10 @@
 | Linux CLI/GUI strict | cgroup 阻断真机通过 | 25% | 🚧 Phase 4 |
 | DNS Guard | 分析完成 | 10% | ⬜ Phase 5 |
 | LaunchProfile / preflight | App Desk 持久化+预填+代理预检真机通过 | 50% | 🚧 Phase 6 |
-| 统一实例台账 / 可观测 | App Desk Guard + Provider open-app 台账 | 60% | 🚧 Phase 7 |
+| 统一实例台账 / 可观测 | App Desk Guard + Provider open-app/原生 CLI 台账 | 65% | 🚧 Phase 7 |
 | 统一编排 / Provider 接入 | 未串接 | 10% | ⬜ Phase 8 |
 | 跨平台验收 / 文档 | 未开始 | 5% | ⬜ Phase 9 |
-| **总目标** | — | **≈36%** | 🚧 |
+| **总目标** | — | **≈37%** | 🚧 |
 
 ---
 

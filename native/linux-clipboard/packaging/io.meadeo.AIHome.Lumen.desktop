@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Paste Lumen
+GenericName=Clipboard Manager
+Comment=AI Home Paste Lumen V7 — Native GTK4/Adwaita Clipboard Manager
+Exec=aih-lumen --app
+Icon=edit-paste
+Terminal=false
+Categories=Utility;Office;
+Keywords=clipboard;paste;lumen;history;orbit;
+StartupNotify=true
+StartupWMClass=io.meadeo.AIHome.Lumen
+Actions=ShowOrbit;NewClip;
+
+[Desktop Action ShowOrbit]
+Name=Open Orbit Edge Rail
+Exec=aih-lumen --toggle-orbit
+
+[Desktop Action NewClip]
+Name=New Clipboard Clip
+Exec=aih-lumen --app

@@ -325,10 +325,6 @@ var docExamples = map[string]docExample{
 		Usage:   "aih peer send <target> \"<正文>\" [--channel native]",
 		Example: "aih peer send build \"部署完成\"",
 	},
-	"aih peer inbox": {
-		Usage:   "aih peer inbox [--self] [--unread]",
-		Example: "aih peer inbox --unread",
-	},
 	"aih clip pick": {
 		Usage:   "aih clip pick [--kind image] [--stdout]",
 		Example: "aih clip pick --kind image --stdout",

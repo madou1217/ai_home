@@ -1497,10 +1497,6 @@ export function watchWebUiTasks(): EventSource {
   return openSharedWebUiEventSource('/v0/webui/tasks/watch');
 }
 
-export function watchPeerMessages(): EventSource {
-  return openSharedWebUiEventSource('/v0/webui/peer/messages/watch');
-}
-
 export function watchSshReverseTunnels(): EventSource {
   return openSharedWebUiEventSource('/v0/webui/ssh-connections/tunnels/watch');
 }

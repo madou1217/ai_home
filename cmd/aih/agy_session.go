@@ -33,7 +33,7 @@ const agySessionUsage = `aih agy session — 一条需求一个常驻 AGY 会话
   - 会话进程常驻：同一进程连续跑多轮，上下文不靠重启恢复；进程退出后 resume 用
     --conversation 续接。
   - 会话同时是 peer 目标（通道 agy-session），因此也可以用
-    aih peer send "<标题>" "..." 投递，回复会写回发送方的收件箱。
+    aih peer send "<会话>" "..." 投递，回复会写回原发送会话。
   - 远端执行依赖已保存的 SSH 连接；--connection 支持连接 id 或标签（例如 AWS）。
 `
 

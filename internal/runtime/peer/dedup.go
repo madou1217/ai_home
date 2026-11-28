@@ -11,7 +11,7 @@ import (
 )
 
 // A content-key index keeps the records lock bounded independently of archive
-// history. It contains only an exact message ID; originals stay in the mailbox.
+// history. It contains only an exact message ID; originals stay in the queue.
 func (s *DispatchStore) CreateMessageDeduplicated(input CreateMessageInput, window time.Duration) (*Record, error) {
 	keyInput := input
 	keyInput.ID = ""

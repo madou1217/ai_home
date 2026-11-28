@@ -260,7 +260,6 @@ export interface OfficeCharacterRig {
   phaseOffset: number;
   availability: SessionAvailability;
   posture: EmployeeVisualPersona['posture'];
-  recentPulse: boolean;
   lastSkinSignature: string;
   lastAccentHex: string;
   lastElapsedSec: number;
@@ -1022,7 +1021,6 @@ export function createOfficeCharacter(
     phaseOffset: (hash % 628) / 100,
     availability: session.availability,
     posture: session.persona.posture,
-    recentPulse: session.activity.recentPulse,
     lastSkinSignature: `${session.sessionKey}|${shirtHex}|${accentHex}`,
     lastAccentHex: accentHex,
     lastElapsedSec: 0,
@@ -1041,7 +1039,6 @@ export function updateOfficeCharacter(
 ): void {
   rig.availability = session.availability;
   rig.posture = session.persona.posture;
-  rig.recentPulse = session.activity.recentPulse;
 
   // 若衬衫或主题强调色变化，原地重绘 64×64 像素皮肤并更新头饰强调色
   const shirtHex = session.persona.avatarTone || palette.accentHex;
@@ -1094,7 +1091,7 @@ export function updateOfficeCharacter(
     rig.visorMaterial.color.set('#ffffff');
     rig.badgeLedMaterial.color.set(palette.successHex);
     rig.badgeLedMaterial.emissive.set(palette.successHex);
-    rig.badgeLedMaterial.emissiveIntensity = session.activity.recentPulse ? 1.45 : 1.0;
+    rig.badgeLedMaterial.emissiveIntensity = 1.0;
   }
 
   // 若角色正在走动或执行行为动画，保持当前姿态不被悬停/选中重同步打断
@@ -1273,7 +1270,6 @@ export function animateOfficeCharacter(
   }
 
   const breath = Math.sin(t * 2.0) * 0.015;
-  const pulseNod = rig.recentPulse ? Math.sin(t * 6.4) * 0.035 : 0;
 
   if (rig.posture === 'typing') {
     const isInteractive = rig.availability === 'interactive';
@@ -1283,14 +1279,14 @@ export function animateOfficeCharacter(
     const leftArmX = -1.67 + Math.sin(t * speed) * amp;
     const rightArmX = -1.67 + Math.sin(t * speed + Math.PI) * amp;
     const headYaw = Math.sin(t * 1.35) * 0.07;
-    const headPitch = 0.04 + Math.sin(t * 2.7) * 0.025 + pulseNod;
+    const headPitch = 0.04 + Math.sin(t * 2.7) * 0.025;
 
     rig.torsoGroup.rotation.set(0.03 + breath, headYaw * 0.18, 0);
     rig.headGroup.rotation.set(headPitch, headYaw, 0);
     rig.leftArmGroup.rotation.set(leftArmX, 0, 0);
     rig.rightArmGroup.rotation.set(rightArmX, 0, 0);
   } else if (rig.posture === 'reading') {
-    const headNod = Math.sin(t * 2.2) * 0.04 + pulseNod;
+    const headNod = Math.sin(t * 2.2) * 0.04;
     const headYaw = Math.sin(t * 0.85) * 0.08;
 
     rig.torsoGroup.rotation.set(-0.02 + breath, 0, 0);
@@ -1302,13 +1298,9 @@ export function animateOfficeCharacter(
     const glance = Math.sin(t * 0.95) * 0.09;
 
     rig.torsoGroup.rotation.set(0.01 + breath, glance * 0.12, 0);
-    rig.headGroup.rotation.set(0.01 + pulseNod, glance, 0);
+    rig.headGroup.rotation.set(0.01, glance, 0);
     rig.leftArmGroup.rotation.set(-1.62 + Math.sin(t * 2.0) * 0.018, 0, 0);
     rig.rightArmGroup.rotation.set(-1.62 + Math.sin(t * 2.0 + 1.8) * 0.018, 0, 0);
-  }
-
-  if (rig.recentPulse && rig.availability === 'interactive') {
-    rig.badgeLedMaterial.emissiveIntensity = 1.0 + Math.abs(Math.sin(t * 5.0)) * 0.7;
   }
 }
 

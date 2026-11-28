@@ -11,7 +11,7 @@ export interface WebTerminalTabIdentity {
  * Legacy v1 tabs without an explicit `origin` field were historically populated
  * by office directory adoption (`adoptSessions`), so they default to `'adopted'`
  * rather than re-waking the global floating overlay. Existing session identities
- * remain intact in manager state for `/terminals` and `/peer-inbox` and are
+ * remain intact in manager state for `/terminals` and are
  * promoted to `'explicit'` whenever the user actively opens or selects them
  * outside the office routes.
  */

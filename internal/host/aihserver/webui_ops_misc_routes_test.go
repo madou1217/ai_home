@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -55,13 +53,6 @@ func (s *stubServerRestarter) Restart(_ context.Context, _ webuiserverrestartapi
 func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.T) {
 	aiHome := t.TempDir()
 	hostHome := t.TempDir()
-	peerPending := filepath.Join(aiHome, "run", "peer", "pending")
-	if err := os.MkdirAll(peerPending, 0o755); err != nil {
-		t.Fatalf("mkdir peer pending: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(peerPending, "pm-1.json"), []byte(`{"id":"pm-1","body":"hello","state":"pending","createdAt":1700000000000}`), 0o600); err != nil {
-		t.Fatalf("write peer message: %v", err)
-	}
 
 	hub := taskhub.NewHub()
 	activityJobs := accountactivity.NewJobManager(time.Now, taskhub.AccountActivityChangedHandler(hub))
@@ -103,14 +94,7 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 		mux.Handle(r.Pattern, r.Handler)
 	}
 
-	// 1. Peer messages
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/management/webui/peer/messages", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"pm-1"`) {
-		t.Fatalf("peer/messages 异常 status=%d body=%s", rec.Code, rec.Body.String())
-	}
-
-	// 2. Tasks hub (用门闩让任务在断言期间保持 running/queued)
+	// Tasks hub (用门闩让任务在断言期间保持 running/queued)
 	release := make(chan struct{})
 	defer close(release)
 	started, errCode := activityJobs.Start(accountactivity.StartRequest{
@@ -127,7 +111,7 @@ func TestBuildWebUIOpsMiscRoutes_NoServeMuxConflictsAndWorksEndToEnd(t *testing.
 		t.Fatalf("创建活动作业失败: %s", errCode)
 	}
 	taskhub.AttachAccountActivityJobs(hub, activityJobs)
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/management/webui/tasks", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), started.Job.ID) {
 		t.Fatalf("tasks 异常 status=%d body=%s", rec.Code, rec.Body.String())

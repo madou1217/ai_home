@@ -16,8 +16,8 @@ type peerArguments struct {
 
 func parsePeerArguments(args []string) (peerArguments, error) {
 	result := peerArguments{verb: "list", values: map[string]string{}, flags: map[string]bool{}}
-	boolean := map[string]bool{"json": true, "self": true, "unread": true, "dry-run": true, "no-envelope": true, "reset-attempts": true, "ack": true, "help": true}
-	values := map[string]bool{"target": true, "provider": true, "channel": true, "mode": true, "from": true, "reply-to": true, "limit": true, "wait": true, "state": true, "subject": true, "summary": true, "purpose": true, "action": true, "reply-policy": true, "priority": true, "auto-deliver-until": true, "expires-at": true, "deadline": true, "supersedes": true, "model": true, "effort": true}
+	boolean := map[string]bool{"json": true, "dry-run": true, "no-envelope": true, "help": true}
+	values := map[string]bool{"provider": true, "channel": true, "mode": true, "from": true, "reply-to": true, "wait": true, "subject": true, "summary": true, "purpose": true, "action": true, "reply-policy": true, "priority": true, "auto-deliver-until": true, "expires-at": true, "deadline": true, "supersedes": true, "model": true, "effort": true}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		result.verb = args[0]
 		args = args[1:]
@@ -82,21 +82,19 @@ func peerTime(value string) (*int64, error) {
 	return &ms, nil
 }
 
-const peerHelp = `aih peer — 给会话发消息，查看自己的收件箱（Go）
+const peerHelp = `aih peer — 给会话直接发消息（Go）
 
   aih peer [list]                     查看可用会话
   aih peer send <会话> "内容"          发送；忙或有草稿时等待
-  aih peer inbox [--self]             查看收件箱，不会标记已读
-  aih peer read <消息ID>              查看原文，不会标记已读
-  aih peer ack <消息ID>               由收件会话确认已读
-  aih peer reply <消息ID> "内容"       回复并确认原消息
-  aih peer cancel|resume <消息ID>      撤回或恢复自己的待发消息
-  aih peer flush                     补投就绪消息
+  aih peer reply <消息ID> "内容"       回复该消息的发送会话
+  aih peer flush                     补投仍在等待窗口内的消息
+
+  没有收件箱、已读或归档概念：投递失败会在自动窗口内重试，
+  过期后消息终止，不保留为待查阅邮件。
 
   --subject "主题" --purpose "缘由" --action "待办"
   --model <模型> --effort <档位>  仅 webui-chat 目标：本轮回合的模型与推理强度（其它通道随会话启动确定）
   --priority high|normal|low      高优先级在同目标消息中先投递
-  --reply-policy required|optional|none
-  --reply-policy none 仅存收件箱，不打断对方。
-  --json 可查看详细状态；已发送不代表对方已读。
+  --reply-policy required|optional
+  --json 可查看详细状态。
 `

@@ -188,15 +188,6 @@ func IsQuiet(lastActivityAtMs, nowMs int64, quietPeriod time.Duration) bool {
 // DeliverRecord 按记录内已持久化的 target descriptor 执行单点投递（不扫全量会话）。
 func DeliverRecord(ctx context.Context, rec Record, opts DeliveryOptions) DeliveryResult {
 	if !opts.DryRun {
-		home := ResolvePeerAIHomeDir(opts.AIHomeDir, opts.HostHomeDir, opts.Getenv)
-		if err := applyReadReceipt(filepath.Join(home, "run", "peer"), &rec); err != nil {
-			return DeliveryResult{Error: "read_receipt_unavailable", Message: err.Error()}
-		}
-		if rec.State == "read" {
-			return DeliveryResult{OK: true, Channel: rec.To.Channel}
-		}
-	}
-	if !opts.DryRun {
 		if err := probeAuthoritative(ctx, rec.To, opts); err != nil {
 			return blockedDelivery(err)
 		}
@@ -473,7 +464,7 @@ func deliverAGYSession(ctx context.Context, rec Record, text string, opts Delive
 		return DeliveryResult{
 			OK:      false,
 			Error:   "agy_session_unavailable",
-			Message: "AIH Server 没在跑或没配 Management Key；消息先留在收件箱。",
+			Message: "AIH Server 没在跑或没配 Management Key；消息先留在投递队列。",
 		}
 	}
 	sessionID := strings.TrimSpace(rec.To.SessionID)
@@ -537,7 +528,7 @@ func deliverWebuiChat(ctx context.Context, rec Record, text string, opts Deliver
 		return DeliveryResult{
 			OK:      false,
 			Error:   "chat_runtime_unavailable",
-			Message: "WebUI chat runtime 没在跑或没配 Management Key；消息先留在收件箱。",
+			Message: "WebUI chat runtime 没在跑或没配 Management Key；消息先留在投递队列。",
 		}
 	}
 	sessionID := strings.TrimSpace(rec.To.SessionID)
@@ -665,7 +656,7 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 				OK:               false,
 				Error:            "target_busy",
 				LastActivityAtMs: lastActivityAtMs,
-				Message:          fmt.Sprintf("会话 %s 正在跑回合（pane 持续有输出），消息先留在收件箱，空闲后自动投递。", sessionName),
+				Message:          fmt.Sprintf("会话 %s 正在跑回合（pane 持续有输出），消息先留在投递队列，空闲后自动投递。", sessionName),
 			}
 		}
 	}
@@ -681,7 +672,7 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 		if composer == "draft" {
 			code = "target_has_draft"
 		}
-		return DeliveryResult{OK: false, Error: code, Message: "输入框已有草稿或状态无法确认，通知保留在收件箱。"}
+		return DeliveryResult{OK: false, Error: code, Message: "输入框已有草稿或状态无法确认，通知保留在投递队列。"}
 	}
 
 	sendTarget := sessionName
@@ -689,28 +680,22 @@ func deliverInject(ctx context.Context, rec Record, text string, opts DeliveryOp
 	if cliName == "codex" {
 		plan, ok := resolveTmuxSubmitPlan(ctx, runner, tmuxCmd, socket, sessionName)
 		if !ok || !plan.recheck(ctx, runner, tmuxCmd, socket) {
-			return DeliveryResult{Error: "target_input_unavailable", Message: "无法确认 Codex 目标输入协议，通知保留在收件箱。"}
+			return DeliveryResult{Error: "target_input_unavailable", Message: "无法确认 Codex 目标输入协议，通知保留在投递队列。"}
 		}
 		if composer := inspectComposer(ctx, runner, tmuxCmd, socket, plan.paneID); composer != "empty" {
 			code := "target_input_unavailable"
 			if composer == "draft" {
 				code = "target_has_draft"
 			}
-			return DeliveryResult{Error: code, Message: "目标 pane 的输入框已有草稿或状态无法确认，通知保留在收件箱。"}
+			return DeliveryResult{Error: code, Message: "目标 pane 的输入框已有草稿或状态无法确认，通知保留在投递队列。"}
 		}
 		sendTarget = plan.paneID
 		submitArgs = plan.submitArgs(socket)
 	}
 
 	// Re-check after the quiet/composer probes, immediately before the first
-	// injection. Once pasted, finish the selected submit even if an ACK arrives meanwhile.
-	home := ResolvePeerAIHomeDir(opts.AIHomeDir, opts.HostHomeDir, opts.Getenv)
-	if err := applyReadReceipt(filepath.Join(home, "run", "peer"), &rec); err != nil {
-		return DeliveryResult{Error: "read_receipt_unavailable", Message: err.Error()}
-	}
-	if rec.State == "read" {
-		return DeliveryResult{OK: true, Channel: "inject"}
-	}
+	// injection. Once pasted, finish the selected submit even if a settlement
+	// lands meanwhile.
 	if err := authorizeTransport(ctx, rec, opts); err != nil {
 		return blockedDelivery(err)
 	}

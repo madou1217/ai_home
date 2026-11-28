@@ -83,10 +83,8 @@ func buildCommandCatalog() []commandNode {
 		vf("--provider", "指定 Provider", kindProvider),
 		vf("--channel", "投递通道", kindEnum, "native", "inject", "webui-chat"),
 		f("--mode", "投递模式"), f("--from", "发送方"),
-		vf("--target", "收件人", kindPeerTarget), vf("--reply-to", "回复指定消息", kindPeerMessage),
-		f("--self", "只看发给自己的"), f("--unread", "只看未读"),
-		vf("--state", "按消息状态过滤", kindEnum, "pending", "delivered", "read", "failed", "unread", "all"),
-		f("--limit", "最多返回多少条"), f("--wait", "等待可投递后再发"),
+		vf("--reply-to", "回复指定消息", kindPeerMessage),
+		f("--wait", "等待可投递后再发"),
 		f("--no-envelope", "发送时不带信封"), f("--dry-run", "只打印将要做的改动"), jsonFlag,
 	}
 	mcpOptions := []optionSpec{vf("--provider", "指定 Provider", kindProvider), jsonFlag}
@@ -315,13 +313,11 @@ func buildCommandCatalog() []commandNode {
 			n("capabilities", "某 harness 的审批/提问/计划确认支持级别").withOptions(jsonFlag).withPositionals(p(kindProvider)),
 			n("probe", "现在实际会选中哪个 adapter").withOptions(jsonFlag).withPositionals(p(kindProvider)),
 		),
-		n("peer", "给另一个正在跑的会话发消息 / 看收件箱（协议 / 注入 / chat 总线）").withOptions(peerOptions...).withChildren(
+		n("peer", "给另一个正在跑的会话直接发消息（协议 / 注入 / chat 总线）").withOptions(peerOptions...).withChildren(
 			n("list", "列出可发消息的会话").withAliases("ls").plusOptions(peerOptions...),
 			n("send", "发一条消息：send <名字|id> \"<正文>\"").withPositionals(p(kindPeerTarget), p(kindFree)).plusOptions(peerOptions...),
-			n("inbox", "看收件箱：inbox [--target <名字>] [--self]").plusOptions(peerOptions...),
-			n("read", "看一条消息全文：read <msg-id>").withPositionals(p(kindPeerMessage)).plusOptions(peerOptions...),
 			n("reply", "回给原发送方：reply <msg-id> \"<正文>\"").withPositionals(p(kindPeerMessage), p(kindFree)).plusOptions(peerOptions...),
-			n("flush", "手动补投一轮待投递消息").plusOptions(peerOptions...),
+			n("flush", "手动补投一轮等待窗口内的消息").plusOptions(peerOptions...),
 			n("channels", "每条通道怎么投递").plusOptions(peerOptions...),
 		),
 		n("export", "导出账号（aih 原生 JSON，含明文凭据）").withPositionals(p(kindFile), pr(kindFile)),

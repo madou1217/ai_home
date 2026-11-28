@@ -1249,17 +1249,6 @@
   flex-wrap: wrap;
 }
 
-/* 邮箱窗口宿主 */
-.session-desktop-mail-host {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--color-surface);
-}
-
 /* ── 底部 OS 任务栏 / Dock ──────────────────────────────────────────────────── */
 .session-desktop-dock {
   display: flex;

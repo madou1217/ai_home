@@ -274,20 +274,21 @@ func listPeerCandidates(environment Environment, hostHome, hostAIHome, cwd strin
 	return choices
 }
 
-// listPeerMessageCandidates 读取收件箱消息 id（最新在前）。
+// listPeerMessageCandidates completes recent message IDs for `aih peer reply`.
+// It is a lookup helper only; there is no mailbox view and nothing is mutated.
 func listPeerMessageCandidates(environment Environment, hostAIHome string) []peerChoice {
-	result, err := peer.ListMessages(hostAIHome, "all", 50)
+	store := peer.NewDispatchStore(hostAIHome, peer.StoreOptions{})
+	records, err := store.RecentRecords(50)
 	if err != nil {
 		return nil
 	}
-	choices := make([]peerChoice, 0, len(result.Messages))
-	for _, message := range result.Messages {
+	choices := make([]peerChoice, 0, len(records))
+	for _, message := range records {
 		from := strings.TrimSpace(message.From.Name)
 		if from == "" {
 			from = "-"
 		}
-		body := message.Body
-		body = whitespaceRunsToSpace(body)
+		body := whitespaceRunsToSpace(message.Body)
 		runes := []rune(body)
 		if len(runes) > 40 {
 			body = string(runes[:40])

@@ -10,7 +10,7 @@ import type {
 
 export type OfficeSceneThemeMode = 'dark' | 'light';
 
-export type OfficeHitKind = 'station' | 'monitor' | 'mail-tray' | 'room-mailbox';
+export type OfficeHitKind = 'station' | 'monitor';
 
 export type OfficeMonitorIndex = 0 | 1;
 
@@ -80,10 +80,6 @@ export interface OfficeSceneSyncState {
   isFallbackRoom: boolean;
   runningCount: number;
   totalSessionCount: number;
-  pendingMailCount: number;
-  crossProjectMailCount: number;
-  roomMessageCount: number;
-  hasRecentPulse: boolean;
   sessions: OfficeSessionItem[];
   selectedSessionKey: string | null;
   computerPreferences: Readonly<Record<string, OfficeComputerPreferences>>;
@@ -95,8 +91,6 @@ export interface OfficeSceneSyncState {
 export interface OfficeSceneCallbacks {
   onSelectStation: (sessionKey: string) => void;
   onOpenMonitor: (sessionKey: string, originRect?: DesktopOriginRect) => void;
-  onOpenSessionMail: (sessionKey: string, originRect?: DesktopOriginRect) => void;
-  onOpenRoomMailbox: () => void;
   onHoverTarget: (info: OfficeHoverInfo | null) => void;
   onActiveEditMonitorChange?: (monitorIndex: OfficeMonitorIndex) => void;
   onPreviewMonitorTransform?: (

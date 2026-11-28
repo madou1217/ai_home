@@ -10,7 +10,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
-  MailOutlined,
   MinusOutlined,
   PoweroffOutlined,
   SettingOutlined,
@@ -50,7 +49,6 @@ export interface OfficeComputerSettingsProps {
   onTabChange: (tab: ComputerSettingsTab) => void;
   onCloseWindow: () => void;
   onFocusTerminal?: () => void;
-  onFocusMail?: () => void;
   serverId: string;
   session: OfficeSessionItem | null;
   room: OfficeProjectRoom | null;
@@ -476,7 +474,6 @@ export default function OfficeComputerSettings({
   onTabChange,
   onCloseWindow,
   onFocusTerminal,
-  onFocusMail,
   serverId,
   session,
   room,
@@ -576,17 +573,6 @@ export default function OfficeComputerSettings({
               aria-label="查看会话终端窗口"
             >
               <CodeOutlined />
-            </button>
-          ) : null}
-          {onFocusMail ? (
-            <button
-              type="button"
-              className="session-desktop-win-btn"
-              onClick={onFocusMail}
-              title="查看协作消息窗口"
-              aria-label="查看协作消息窗口"
-            >
-              <MailOutlined />
             </button>
           ) : null}
           <button

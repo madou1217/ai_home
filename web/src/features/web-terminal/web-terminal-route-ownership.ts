@@ -6,7 +6,7 @@ export function isOfficeTerminalRoute(): boolean {
   if (typeof window === 'undefined') return false;
   const { pathname, hash } = window.location;
   const route = resolveAppRoutePathname(hash.startsWith('#/') ? hash.slice(1) : pathname);
-  return route === '/terminals' || route === '/peer-inbox';
+  return route === '/terminals';
 }
 
 function getOfficeRouteOwnership(): boolean {

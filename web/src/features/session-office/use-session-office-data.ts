@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { message } from 'antd';
-import api, {
+import {
   sessionsAPI,
   terminalAPI,
-  watchPeerMessages,
   type TerminalDirectorySession,
 } from '@/services/api';
 import { useWebTerminalManager, type WebTerminalTab } from '@/features/web-terminal/web-terminal-context';
@@ -12,40 +11,17 @@ import { writeClipboardText } from '@/utils/clipboard';
 import {
   buildOfficeWorkspaceModel,
   buildPreviewCacheKey,
-  computePeerCounts,
-  normalizePeerMessageRecord,
-  resolveEvidencedSessionKeysForMessage,
   type SessionPreviewCacheEntry,
 } from './session-office-model';
 import type {
   OfficeSessionItem,
-  PeerCounts,
-  PeerMessageRecord,
   SessionOfficeDataState,
   TerminateSessionResult,
 } from './session-office-types';
 
 const HIDDEN_STORAGE_PREFIX = 'aih:terminal-overview:hidden:';
 const PREVIEW_BATCH_SIZE = 32;
-const PULSE_DURATION_MS = 4500;
-const WATCH_DEBOUNCE_MS = 180;
 const CLOSE_DIRECTORY_RESYNC_MS = 320;
-
-const EMPTY_COUNTS: PeerCounts = {
-  total: 0,
-  pending: 0,
-  delivered: 0,
-  read: 0,
-  failed: 0,
-};
-
-interface MessageSnapshotEntry {
-  state: string;
-  notificationState: string;
-  deliveredAt: number;
-  readAt: number;
-  canceledAt: number;
-}
 
 interface PreviewTarget {
   cacheKey: string;
@@ -133,20 +109,7 @@ function buildEvidencedSessionStubs(
         badgeCode: '',
         seatIndex: 0,
       },
-      activity: {
-        kind: 'idle',
-        pendingCount: 0,
-        unreadOrDeliveredCount: 0,
-        failedCount: 0,
-        lastMessageAt: 0,
-        recentPulse: false,
-        latestSnippet: '',
-      },
-      inboxCount: 0,
-      sentCount: 0,
-      pendingCount: 0,
-      crossProjectCount: 0,
-    });
+      });
   };
 
   for (const dir of directorySessions) {
@@ -289,12 +252,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     );
   }, [effectiveDirectorySessions, excludedSessionKeys, manager.adoptSessions, terminatingSessionKeys]);
 
-  const [rawMessages, setRawMessages] = useState<PeerMessageRecord[]>([]);
-  const [peerCounts, setPeerCounts] = useState<PeerCounts>(EMPTY_COUNTS);
-  const [peerLoading, setPeerLoading] = useState(false);
-  const [peerError, setPeerError] = useState('');
-  const [recentPulseSessionKeys, setRecentPulseSessionKeys] = useState<ReadonlySet<string>>(() => new Set());
-
   const [previewCache, setPreviewCache] = useState<Map<string, SessionPreviewCacheEntry>>(() => new Map());
 
   const mountedRef = useRef(true);
@@ -334,199 +291,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       manager.serverId,
     ],
   );
-
-  const peerGenerationRef = useRef(0);
-  const hasInitialPeerLoadRef = useRef(false);
-  const prevMessageSnapshotsRef = useRef<Map<string, MessageSnapshotEntry>>(new Map());
-  const pulseExpiryRef = useRef<Map<string, number>>(new Map());
-  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const watchDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearPulseTimer = useCallback(() => {
-    if (pulseTimerRef.current !== null) {
-      clearTimeout(pulseTimerRef.current);
-      pulseTimerRef.current = null;
-    }
-  }, []);
-
-  const syncPulseState = useCallback(() => {
-    clearPulseTimer();
-    const now = Date.now();
-    let nextExpiry = Number.POSITIVE_INFINITY;
-    for (const [key, expiresAt] of pulseExpiryRef.current.entries()) {
-      if (expiresAt <= now) {
-        pulseExpiryRef.current.delete(key);
-      } else if (expiresAt < nextExpiry) {
-        nextExpiry = expiresAt;
-      }
-    }
-    setRecentPulseSessionKeys(new Set(pulseExpiryRef.current.keys()));
-    if (Number.isFinite(nextExpiry)) {
-      const waitMs = Math.max(50, nextExpiry - now + 20);
-      pulseTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) syncPulseState();
-      }, waitMs);
-    }
-  }, [clearPulseTimer]);
-
-  const triggerSessionPulses = useCallback((sessionKeys: string[]) => {
-    if (sessionKeys.length === 0) return;
-    const expiresAt = Date.now() + PULSE_DURATION_MS;
-    for (const key of sessionKeys) {
-      pulseExpiryRef.current.set(key, expiresAt);
-    }
-    syncPulseState();
-  }, [syncPulseState]);
-
-  useEffect(() => {
-    return () => {
-      clearPulseTimer();
-      if (watchDebounceTimerRef.current !== null) {
-        clearTimeout(watchDebounceTimerRef.current);
-        watchDebounceTimerRef.current = null;
-      }
-    };
-  }, [clearPulseTimer]);
-
-  const loadPeerMessages = useCallback(async (detectPulse: boolean) => {
-    const requestServerId = manager.serverId;
-    const requestGeneration = ++peerGenerationRef.current;
-    setPeerLoading(true);
-    try {
-      const response = await api.get<{
-        ok?: boolean;
-        messages?: unknown[];
-        counts?: Partial<PeerCounts>;
-      }>('/webui/peer/messages');
-      if (!mountedRef.current || activeServerRef.current !== requestServerId || peerGenerationRef.current !== requestGeneration) {
-        return;
-      }
-      const payload = response.data || {};
-      const normalized = Array.isArray(payload.messages)
-        ? payload.messages
-          .map((item) => normalizePeerMessageRecord(item))
-          .filter((item): item is PeerMessageRecord => item !== null)
-        : [];
-
-      const computedCounts = computePeerCounts(normalized);
-      const serverCounts = payload.counts;
-      const resolvedCounts: PeerCounts = serverCounts && typeof serverCounts.total === 'number'
-        ? {
-            total: Number(serverCounts.total) || 0,
-            pending: Number(serverCounts.pending) || 0,
-            delivered: Number(serverCounts.delivered) || 0,
-            read: Number(serverCounts.read) || 0,
-            failed: Number(serverCounts.failed) || 0,
-          }
-        : computedCounts;
-
-      const nextSnapshot = new Map<string, MessageSnapshotEntry>();
-      const changedMessages: PeerMessageRecord[] = [];
-      for (const msg of normalized) {
-        const notif = String(msg.notificationState ?? '');
-        const canceledAt = Number(msg.canceledAt) || 0;
-        nextSnapshot.set(msg.id, {
-          state: msg.state,
-          notificationState: notif,
-          deliveredAt: msg.deliveredAt,
-          readAt: msg.readAt,
-          canceledAt,
-        });
-        if (detectPulse && hasInitialPeerLoadRef.current) {
-          const prev = prevMessageSnapshotsRef.current.get(msg.id);
-          if (
-            !prev
-            || prev.state !== msg.state
-            || prev.notificationState !== notif
-            || prev.deliveredAt !== msg.deliveredAt
-            || prev.readAt !== msg.readAt
-            || prev.canceledAt !== canceledAt
-          ) {
-            changedMessages.push(msg);
-          }
-        }
-      }
-
-      prevMessageSnapshotsRef.current = nextSnapshot;
-      hasInitialPeerLoadRef.current = true;
-
-      setRawMessages(normalized);
-      setPeerCounts(resolvedCounts);
-      setPeerError('');
-
-      if (changedMessages.length > 0) {
-        const keysToPulse = new Set<string>();
-        const stubs = sessionStubsRef.current;
-        for (const msg of changedMessages) {
-          for (const key of resolveEvidencedSessionKeysForMessage(msg, stubs)) {
-            keysToPulse.add(key);
-          }
-        }
-        if (keysToPulse.size > 0) {
-          triggerSessionPulses([...keysToPulse]);
-        }
-      }
-    } catch (error: unknown) {
-      if (!mountedRef.current || activeServerRef.current !== requestServerId || peerGenerationRef.current !== requestGeneration) {
-        return;
-      }
-      setPeerError(extractRequestErrorMessage(error, '读取 Peer 收件箱失败'));
-    } finally {
-      if (mountedRef.current && activeServerRef.current === requestServerId && peerGenerationRef.current === requestGeneration) {
-        setPeerLoading(false);
-      }
-    }
-  }, [manager.serverId, triggerSessionPulses]);
-
-  const refreshPeerMessages = useCallback(async () => {
-    await loadPeerMessages(true);
-  }, [loadPeerMessages]);
-
-  useEffect(() => {
-    peerGenerationRef.current += 1;
-    hasInitialPeerLoadRef.current = false;
-    prevMessageSnapshotsRef.current = new Map();
-    pulseExpiryRef.current.clear();
-    clearPulseTimer();
-    setRecentPulseSessionKeys(new Set());
-    setRawMessages([]);
-    setPeerCounts(EMPTY_COUNTS);
-    setPeerError('');
-    void loadPeerMessages(false);
-  }, [clearPulseTimer, loadPeerMessages, manager.serverId]);
-
-  useEffect(() => {
-    const source = watchPeerMessages();
-    const scheduleReload = () => {
-      if (watchDebounceTimerRef.current !== null) {
-        clearTimeout(watchDebounceTimerRef.current);
-      }
-      watchDebounceTimerRef.current = setTimeout(() => {
-        watchDebounceTimerRef.current = null;
-        if (mountedRef.current) {
-          void loadPeerMessages(true);
-        }
-      }, WATCH_DEBOUNCE_MS);
-    };
-
-    source.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(String(event?.data || '{}')) as { type?: string };
-        if (parsed.type === 'ready' || parsed.type === 'peer-unavailable') return;
-      } catch {
-        // Non-JSON or malformed frame still triggers safe debounced refresh.
-      }
-      scheduleReload();
-    };
-
-    return () => {
-      source.close();
-      if (watchDebounceTimerRef.current !== null) {
-        clearTimeout(watchDebounceTimerRef.current);
-        watchDebounceTimerRef.current = null;
-      }
-    };
-  }, [loadPeerMessages, manager.serverId]);
 
   const inFlightPreviewKeysRef = useRef<Set<string>>(new Set());
   const previewEpochRef = useRef(0);
@@ -680,9 +444,7 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       interactiveTabs: effectiveInteractiveTabs,
       unavailableTabs: effectiveUnavailableTabs,
       hiddenSessionKeys: excludedSessionKeys,
-      rawMessages,
       previewsByCacheKey: previewCache,
-      recentPulseSessionKeys,
       query,
       providerFilter,
     }),
@@ -695,8 +457,6 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       previewCache,
       providerFilter,
       query,
-      rawMessages,
-      recentPulseSessionKeys,
     ],
   );
 
@@ -761,8 +521,8 @@ export function useSessionOfficeData(): SessionOfficeDataState {
       }
       return removed ? next : current;
     });
-    await Promise.all([syncCanonicalDirectory(manager.serverId), loadPeerMessages(true)]);
-  }, [loadPeerMessages, manager.serverId, syncCanonicalDirectory]);
+    await syncCanonicalDirectory(manager.serverId);
+  }, [manager.serverId, syncCanonicalDirectory]);
 
   const openNewProjectTerminal = useCallback(async (cwd?: string) => {
     await openProjectTerminal(cwd);
@@ -990,18 +750,10 @@ export function useSessionOfficeData(): SessionOfficeDataState {
     setProviderFilter,
     directoryLoading: directory.loading,
     directoryError: directory.error,
-    peerMessages: workspace.peerMessages,
-    unassignedMessages: workspace.unassignedMessages,
-    fullyUnassignedCount: workspace.fullyUnassignedCount,
-    peerCounts,
-    peerLoading,
-    peerError,
-    recentPulseSessionKeys,
     terminatingSessionKey,
     isSessionTerminating,
     refreshAll,
     refreshDirectory,
-    refreshPeerMessages,
     openNewProjectTerminal,
     terminateWebSession,
     hideSession,

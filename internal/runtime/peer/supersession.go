@@ -32,13 +32,7 @@ func (s *DispatchStore) reconcileSupersedesLocked() (int, error) {
 		if err != nil || rec.Supersedes == "" || rec.SupersedesAppliedAt > 0 {
 			continue
 		}
-		if rec.NotificationState == "manual" && strings.HasPrefix(rec.WaitingReason, "supersedes_") {
-			continue
-		}
-		if err := applyReadReceipt(s.root, rec); err != nil {
-			continue
-		}
-		if rec.State == "read" || rec.DeliveredAt > 0 {
+		if rec.DeliveredAt > 0 {
 			continue
 		}
 		previous, dir, err := s.findExactLocked(rec.Supersedes)
@@ -60,12 +54,16 @@ func (s *DispatchStore) reconcileSupersedesLocked() (int, error) {
 			reason = "supersedes_identity_or_history_conflict"
 		}
 		if reason != "" {
-			if rec.NotificationState != "manual" || rec.WaitingReason != reason {
-				rec.NotificationState, rec.WaitingReason, rec.NextAttemptAt = "manual", reason, 0
-				if err := s.writeRecord("pending", *rec); err != nil {
-					return count, err
-				}
+			// The replacement link cannot be verified. Drop only that link so
+			// the new message can still be delivered on its own.
+			rec.Supersedes, rec.SupersedesAppliedAt = "", 0
+			if rec.Error == "" {
+				rec.Error = reason
 			}
+			if err := s.writeRecord("pending", *rec); err != nil {
+				return count, err
+			}
+			count++
 			continue
 		}
 		if previous.CanceledAt <= 0 {

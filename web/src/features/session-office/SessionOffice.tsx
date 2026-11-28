@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CloseOutlined,
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -8,17 +7,14 @@ import {
   ExclamationCircleOutlined,
   EyeOutlined,
   FolderOutlined,
-  MailOutlined,
   PlusOutlined,
   ReloadOutlined,
   RightOutlined,
 } from '@ant-design/icons';
 import { Button, Input, Modal, Select, Tooltip, message } from 'antd';
 import HudStateView from '@/components/hud/HudStateView';
-import AppButton from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
-import OfficeMailbox from './OfficeMailbox';
 import OfficeRoom from './OfficeRoom';
 import SessionDesktop from './SessionDesktop';
 import {
@@ -29,30 +25,19 @@ import { updateOfficeComputerPreferences } from './office-computer-state';
 import type {
   DesktopOriginRect,
   DesktopWindowLayout,
-  MailboxScope,
   OfficeCameraPreset,
   OfficeProjectRoom,
   OfficeSessionItem,
 } from './session-office-types';
-import { countAttentionPeerMessages } from './session-office-model';
 import { useSessionOfficeData } from './use-session-office-data';
 import './SessionOffice.css';
 
 export interface SessionOfficeProps {
-  defaultOpenMailbox?: boolean;
-  defaultMailboxScope?: MailboxScope;
   defaultRoomKey?: string;
   defaultSessionKey?: string;
 }
 
 const ZOOM_CUE_MS = 260;
-
-const MAILBOX_SCOPE_TITLES: Record<MailboxScope, string> = {
-  session: '当前会话消息',
-  room: '房间协作消息',
-  unassigned: '未归属消息',
-  all: '全部协作消息',
-};
 
 const NATIVE_CLOSE_DISABLED_REASON =
   '原生 CLI 会话由外部独立进程托管；终端 close 接口仅断开借用连接而不会终止原进程，如需结束请前往原 CLI 终端退出。';
@@ -95,8 +80,6 @@ function matchesSessionRef(session: OfficeSessionItem, refKey: string): boolean 
 }
 
 export default function SessionOffice({
-  defaultOpenMailbox = false,
-  defaultMailboxScope,
   defaultRoomKey,
   defaultSessionKey,
 }: SessionOfficeProps) {
@@ -114,12 +97,6 @@ export default function SessionOffice({
     setProviderFilter,
     directoryLoading,
     directoryError,
-    peerMessages,
-    unassignedMessages,
-    fullyUnassignedCount,
-    peerCounts,
-    peerLoading,
-    peerError,
     terminatingSessionKey,
     isSessionTerminating,
     refreshAll,
@@ -137,12 +114,9 @@ export default function SessionOffice({
 
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [desktopInitialMode, setDesktopInitialMode] = useState<DesktopWindowLayout>('terminal-focus');
-  const [desktopMailboxScope, setDesktopMailboxScope] = useState<MailboxScope>('session');
   const [desktopOriginRect, setDesktopOriginRect] = useState<DesktopOriginRect | null>(null);
   const [zoomingSessionId, setZoomingSessionId] = useState<string | null>(null);
 
-  const [mailboxOverlayOpen, setMailboxOverlayOpen] = useState(Boolean(defaultOpenMailbox));
-  const [mailboxScope, setMailboxScope] = useState<MailboxScope>(defaultMailboxScope ?? 'room');
   const [unavailableExpanded, setUnavailableExpanded] = useState(true);
 
   const [confirmTarget, setConfirmTarget] = useState<OfficeSessionItem | null>(null);
@@ -180,8 +154,7 @@ export default function SessionOffice({
   const inFlightConfirmGenRef = useRef<number | null>(null);
 
   const zoomTimerRef = useRef<number | null>(null);
-  const prevDefaultsRef = useRef({ defaultOpenMailbox, defaultMailboxScope });
-  const deepLinkSignature = `${defaultOpenMailbox ? '1' : '0'}|${defaultMailboxScope ?? ''}|${defaultRoomKey ?? ''}|${defaultSessionKey ?? ''}`;
+  const deepLinkSignature = `${defaultRoomKey ?? ''}|${defaultSessionKey ?? ''}`;
   const appliedDeepLinkRef = useRef<string>('');
 
   const clearZoomTimer = useCallback(() => {
@@ -227,23 +200,6 @@ export default function SessionOffice({
     }, ZOOM_CUE_MS);
   }, [clearZoomTimer]);
 
-  // 同步路由级入参（例如从 /terminals 跳转到 /peer-inbox 或带查询参数切换）。
-  useEffect(() => {
-    const prev = prevDefaultsRef.current;
-    if (prev.defaultOpenMailbox !== defaultOpenMailbox) {
-      if (defaultOpenMailbox) {
-        setDesktopOpen(false);
-        setMailboxOverlayOpen(true);
-      } else {
-        setMailboxOverlayOpen(false);
-      }
-    }
-    if (prev.defaultMailboxScope !== defaultMailboxScope && defaultMailboxScope) {
-      setMailboxScope(defaultMailboxScope);
-    }
-    prevDefaultsRef.current = { defaultOpenMailbox, defaultMailboxScope };
-  }, [defaultMailboxScope, defaultOpenMailbox]);
-
   // 深链定位房间或会话（仅在目标就绪后触发一次，避免关闭会话或桌面后被重复拉起）。
   useEffect(() => {
     if (appliedDeepLinkRef.current === deepLinkSignature) return;
@@ -266,12 +222,9 @@ export default function SessionOffice({
     if (matchedSession) {
       setSelectedSessionId(matchedSession.id);
       activateManagerSession(matchedSession.id);
-      if (!defaultOpenMailbox) {
-        setDesktopOriginRect(null);
-        setDesktopInitialMode('terminal-focus');
-        setDesktopMailboxScope('session');
-        setDesktopOpen(true);
-      }
+      setDesktopOriginRect(null);
+      setDesktopInitialMode('terminal-focus');
+      setDesktopOpen(true);
       appliedDeepLinkRef.current = deepLinkSignature;
       return;
     }
@@ -282,7 +235,6 @@ export default function SessionOffice({
     activateManagerSession,
     allSessions,
     deepLinkSignature,
-    defaultOpenMailbox,
     defaultRoomKey,
     defaultSessionKey,
     rooms,
@@ -309,19 +261,6 @@ export default function SessionOffice({
     }
     return filteredRooms[0];
   }, [filteredRooms, selectedRoomKey]);
-
-  const unfilteredActiveRoom = useMemo<OfficeProjectRoom | null>(() => {
-    if (!activeRoom) return null;
-    return rooms.find((room) => room.projectKey === activeRoom.projectKey) ?? activeRoom;
-  }, [activeRoom, rooms]);
-
-  const focusedSession = useMemo<OfficeSessionItem | null>(() => {
-    if (selectedSessionId) {
-      const exact = allSessions.find((session) => session.id === selectedSessionId);
-      if (exact) return exact;
-    }
-    return activeRoom?.sessions[0] ?? null;
-  }, [activeRoom, allSessions, selectedSessionId]);
 
   const desktopSession = useMemo<OfficeSessionItem | null>(() => {
     if (!selectedSessionId) return null;
@@ -355,15 +294,6 @@ export default function SessionOffice({
     return activeRoom.projectPath;
   }, [activeRoom]);
 
-  const peerAttentionCount = useMemo(
-    () => countAttentionPeerMessages(peerMessages),
-    [peerMessages],
-  );
-  const unassignedAttentionCount = useMemo(
-    () => countAttentionPeerMessages(unassignedMessages),
-    [unassignedMessages],
-  );
-
   const handleToggleStationPower = useCallback((station: OfficeSessionItem) => {
     if (isSessionTerminating(station.sessionKey) || !isSessionServerScopeAdmitted(serverId, station)) {
       return;
@@ -384,44 +314,12 @@ export default function SessionOffice({
     [providerOptions],
   );
 
-  useEffect(() => {
-    if (!mailboxOverlayOpen || desktopOpen || Boolean(confirmTarget)) return undefined;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      if (event.target instanceof Element && event.target.closest('.xterm')) return;
-      setMailboxOverlayOpen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [confirmTarget, desktopOpen, mailboxOverlayOpen]);
-
-  const openStandaloneMailbox = useCallback((scope: MailboxScope) => {
-    setDesktopOpen(false);
-    setZoomingSessionId(null);
-    setMailboxScope(scope);
-    setMailboxOverlayOpen(true);
-  }, []);
-
   const handleOpenMonitor = useCallback((session: OfficeSessionItem, originRect?: DesktopOriginRect) => {
-    setMailboxOverlayOpen(false);
     setSelectedRoomKey(session.projectKey);
     setSelectedSessionId(session.id);
     activateManagerSession(session.id);
     setDesktopOriginRect(originRect ?? null);
     setDesktopInitialMode('terminal-focus');
-    setDesktopMailboxScope('session');
-    triggerZoomCue(session.id);
-    setDesktopOpen(true);
-  }, [activateManagerSession, triggerZoomCue]);
-
-  const handleOpenSessionMail = useCallback((session: OfficeSessionItem, originRect?: DesktopOriginRect) => {
-    setMailboxOverlayOpen(false);
-    setSelectedRoomKey(session.projectKey);
-    setSelectedSessionId(session.id);
-    activateManagerSession(session.id);
-    setDesktopOriginRect(originRect ?? null);
-    setDesktopInitialMode('mail-focus');
-    setDesktopMailboxScope('session');
     triggerZoomCue(session.id);
     setDesktopOpen(true);
   }, [activateManagerSession, triggerZoomCue]);
@@ -567,49 +465,6 @@ export default function SessionOffice({
     terminateWebSession,
   ]);
 
-  const handleJumpToSession = useCallback((sessionKey: string, projectKey?: string | null): boolean => {
-    const targetSession = allSessions.find((session) => matchesSessionRef(session, sessionKey)) ?? null;
-    const targetRoom = (targetSession ? rooms.find((room) => room.projectKey === targetSession.projectKey) : null)
-      ?? (projectKey ? rooms.find((room) => room.projectKey === projectKey) : null)
-      ?? null;
-
-    if (targetRoom && !filteredRooms.some((room) => room.projectKey === targetRoom.projectKey)) {
-      setQuery('');
-      setProviderFilter('all');
-    }
-    if (targetRoom) {
-      setSelectedRoomKey(targetRoom.projectKey);
-    }
-
-    if (targetSession) {
-      setSelectedSessionId(targetSession.id);
-      activateManagerSession(targetSession.id);
-      setMailboxOverlayOpen(false);
-      setDesktopOriginRect(null);
-      setDesktopInitialMode('terminal-focus');
-      setDesktopMailboxScope('session');
-      setDesktopOpen(true);
-      return true;
-    }
-
-    if (targetRoom) {
-      setMailboxOverlayOpen(false);
-      setDesktopOpen(false);
-      message.info(`已切换到项目房间「${resolveRoomDisplayTitle(targetRoom)}」，目标会话当前未在线`);
-      return true;
-    }
-
-    message.info('目标会话当前未在线，可在协作消息中继续查看上下文');
-    return false;
-  }, [
-    activateManagerSession,
-    allSessions,
-    filteredRooms,
-    rooms,
-    setProviderFilter,
-    setQuery,
-  ]);
-
   const handleSelectRoom = useCallback((room: OfficeProjectRoom) => {
     setSelectedRoomKey(room.projectKey);
     if (!room.sessions.some((session) => session.id === selectedSessionId)) {
@@ -633,8 +488,8 @@ export default function SessionOffice({
 
           <div className="session-office-metrics" aria-label="办公室实时统计">
             <SettingStatusTag
-              status={directoryError || peerError ? 'error' : directoryLoading || peerLoading ? 'saving' : runningSessionsCount > 0 ? 'applied' : 'unset'}
-              label={directoryError || peerError ? '同步异常' : directoryLoading || peerLoading ? '同步中' : runningSessionsCount > 0 ? `运行中 ${runningSessionsCount}/${allSessions.length}` : '暂无活跃会话'}
+              status={directoryError ? 'error' : directoryLoading ? 'saving' : runningSessionsCount > 0 ? 'applied' : 'unset'}
+              label={directoryError ? '同步异常' : directoryLoading ? '同步中' : runningSessionsCount > 0 ? `运行中 ${runningSessionsCount}/${allSessions.length}` : '暂无活跃会话'}
               compact
               live="off"
             />
@@ -642,11 +497,7 @@ export default function SessionOffice({
               <span className="hud-label">房间</span>
               <strong className="hud-display">{rooms.length}</strong>
             </span>
-            <span className="session-office-metric">
-              <span className="hud-label">待处理消息</span>
-              <strong className="hud-display">{peerAttentionCount}</strong>
-            </span>
-          </div>
+            </div>
         </div>
 
         <div className="session-office-controls">
@@ -667,7 +518,7 @@ export default function SessionOffice({
           />
           <Button
             icon={<ReloadOutlined />}
-            loading={directoryLoading || peerLoading}
+            loading={directoryLoading}
             onClick={() => void refreshAll()}
           >
             刷新
@@ -678,15 +529,6 @@ export default function SessionOffice({
             </Button>
           ) : null}
           <Button
-            icon={<MailOutlined />}
-            onClick={() => openStandaloneMailbox(activeRoom ? 'room' : 'unassigned')}
-          >
-            消息
-            {peerAttentionCount > 0 ? (
-              <span className="session-office-message-count">{peerAttentionCount}</span>
-            ) : null}
-          </Button>
-          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => handleOpenNewTerminal(activeRoomCwd)}
@@ -695,14 +537,9 @@ export default function SessionOffice({
           </Button>
         </div>
 
-        {directoryError || peerError ? (
+        {directoryError ? (
           <div className="session-office-inline-errors">
-            {directoryError ? (
-              <InlineNote tone="error">会话目录：{directoryError}</InlineNote>
-            ) : null}
-            {peerError ? (
-              <InlineNote tone="error">协作消息：{peerError}</InlineNote>
-            ) : null}
+            <InlineNote tone="error">会话目录：{directoryError}</InlineNote>
           </div>
         ) : null}
       </header>
@@ -725,10 +562,7 @@ export default function SessionOffice({
                 const isActive = activeRoom?.projectKey === room.projectKey;
                 const roomTitle = resolveRoomDisplayTitle(room);
                 const pathHint = resolveRoomPathHint(room);
-                const hasAlerts = room.pendingMailCount > 0 || room.crossProjectMailCount > 0;
-                const statusLedClass = room.hasRecentPulse
-                  ? 'hud-led hud-led--info hud-led--live'
-                  : (room.runningCount > 0 ? 'hud-led hud-led--ok' : 'hud-led');
+                const statusLedClass = room.runningCount > 0 ? 'hud-led hud-led--ok' : 'hud-led';
                 return (
                   <Tooltip key={room.projectKey} title={pathHint} placement="right" mouseEnterDelay={0.35}>
                     <button
@@ -749,26 +583,6 @@ export default function SessionOffice({
                       </div>
 
                       <div className="session-office-room-path">{pathHint}</div>
-
-                      {hasAlerts || room.roomMessages.length > 0 ? (
-                        <div className="session-office-room-pills">
-                          {room.pendingMailCount > 0 ? (
-                            <span className="session-office-pill session-office-pill--warn">
-                              待投递 {room.pendingMailCount}
-                            </span>
-                          ) : null}
-                          {room.crossProjectMailCount > 0 ? (
-                            <span className="session-office-pill session-office-pill--cross">
-                              跨项目 {room.crossProjectMailCount}
-                            </span>
-                          ) : null}
-                          {room.roomMessages.length > 0 ? (
-                            <span className="session-office-pill">
-                              消息 {room.roomMessages.length}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </button>
                   </Tooltip>
                 );
@@ -854,35 +668,21 @@ export default function SessionOffice({
                   variant="loading"
                   code="SYS // DISCOVERING"
                   title="正在发现项目房间与运行会话"
-                  description="正在同步当前 Server 上的活跃终端、原生 CLI 会话与协作消息"
+                  description="正在同步当前 Server 上的活跃终端与原生 CLI 会话"
                 />
               ) : (
                 <HudStateView
                   code="NO_ROOMS"
                   title="当前服务器没有活跃项目房间"
-                  description={
-                    peerMessages.length > 0
-                      ? '暂无运行中的终端会话，但仍可查看未归属消息或打开项目终端'
-                      : '打开项目终端，或在账号管理 / AI 会话页启动 CLI 后会自动按项目房间汇聚在此'
-                  }
+                  description="打开项目终端，或在账号管理 / AI 会话页启动 CLI 后会自动按项目房间汇聚在此"
                   extra={(
-                    <>
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => handleOpenNewTerminal()}
-                      >
-                        打开项目终端
-                      </Button>
-                      {peerMessages.length > 0 || unassignedMessages.length > 0 ? (
-                        <Button
-                          icon={<MailOutlined />}
-                          onClick={() => openStandaloneMailbox('unassigned')}
-                        >
-                          查看未归属消息{unassignedAttentionCount > 0 ? ` (${unassignedAttentionCount})` : ''}
-                        </Button>
-                      ) : null}
-                    </>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => handleOpenNewTerminal()}
+                    >
+                      打开项目终端
+                    </Button>
                   )}
                 />
               )}
@@ -913,11 +713,7 @@ export default function SessionOffice({
               zoomingSessionId={zoomingSessionId}
               cameraPreset={cameraPreset}
               onCameraPresetChange={setCameraPreset}
-              unassignedCount={unassignedMessages.length}
               onOpenMonitor={handleOpenMonitor}
-              onOpenSessionMail={handleOpenSessionMail}
-              onOpenRoomMailbox={() => openStandaloneMailbox('room')}
-              onOpenUnassignedMailbox={() => openStandaloneMailbox('unassigned')}
               onCopyIdentity={handleCopyIdentity}
               onOpenNewTerminal={handleOpenNewTerminal}
               directoryLoading={directoryLoading}
@@ -929,74 +725,19 @@ export default function SessionOffice({
         </section>
       </div>
 
-      {/* 独立协作消息浮层：挂在任何 3D 透视/transform 容器之外 */}
-      {mailboxOverlayOpen && !desktopOpen ? (
-        <div
-          className="session-office-mailbox-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label={MAILBOX_SCOPE_TITLES[mailboxScope]}
-        >
-          <div
-            className="session-office-mailbox-scrim"
-            onClick={() => setMailboxOverlayOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="session-office-mailbox-drawer">
-            <Tooltip title="关闭面板 (Esc)">
-              <AppButton
-                size="small"
-                appVariant="icon"
-                className="session-office-mailbox-close"
-                aria-label="关闭消息面板"
-                icon={<CloseOutlined />}
-                onClick={() => setMailboxOverlayOpen(false)}
-              />
-            </Tooltip>
-
-            <div className="session-office-mailbox-body">
-              <OfficeMailbox
-                scope={mailboxScope}
-                onScopeChange={setMailboxScope}
-                focusedSession={focusedSession}
-                activeRoom={unfilteredActiveRoom}
-                allRooms={rooms}
-                allMessages={peerMessages}
-                unassignedMessages={unassignedMessages}
-                fullyUnassignedCount={fullyUnassignedCount}
-                counts={peerCounts}
-                loading={peerLoading}
-                error={peerError}
-                onRefresh={() => void refreshAll()}
-                onJumpToSession={handleJumpToSession}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {/* 员工工位桌面浮层：位于 3D 舞台容器之外 */}
       <SessionDesktop
         open={desktopOpen && Boolean(desktopSession)}
         serverId={serverId}
         session={desktopSession}
         room={desktopRoom}
-        allRooms={rooms}
-        allMessages={peerMessages}
-        unassignedMessages={unassignedMessages}
-        fullyUnassignedCount={fullyUnassignedCount}
-        peerCounts={peerCounts}
-        peerLoading={peerLoading}
-        peerError={peerError}
         initialMode={desktopInitialMode}
-        initialMailboxScope={desktopMailboxScope}
         originRect={desktopOriginRect}
         terminatingSessionKey={terminatingSessionKey}
         terminateConfirmOpen={Boolean(confirmTarget)}
         onTerminateSession={handleRequestTerminateSession}
         onCloseToRoom={handleCloseToRoom}
         onSelectRoomSession={handleSelectRoomSession}
-        onJumpToAnySession={handleJumpToSession}
         onCopyIdentity={handleCopyIdentity}
         onHideSession={handleHideSession}
         onRefreshAll={() => void refreshAll()}

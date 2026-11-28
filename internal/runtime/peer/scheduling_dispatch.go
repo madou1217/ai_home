@@ -32,7 +32,7 @@ func authorizeTransport(ctx context.Context, rec Record, opts DeliveryOptions) e
 	}
 	projectNotificationAt(&rec, TargetGate{}, now().UnixMilli())
 	switch rec.NotificationState {
-	case "canceled", "expired", "manual":
+	case "canceled", "expired":
 		return &policyError{reason: rec.WaitingReason}
 	}
 	return nil
@@ -41,9 +41,6 @@ func authorizeTransport(ctx context.Context, rec Record, opts DeliveryOptions) e
 func blockedDelivery(err error) DeliveryResult {
 	var blocked *policyError
 	if errors.As(err, &blocked) {
-		if blocked.reason == "already_read" {
-			return DeliveryResult{OK: true}
-		}
 		return DeliveryResult{Error: blocked.reason}
 	}
 	if errors.Is(err, ErrClaimLost) {
@@ -63,9 +60,6 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 		return summary, err
 	}
 	if _, err := store.ReconcileSupersedes(); err != nil {
-		return summary, err
-	}
-	if _, err := store.ReconcileRead(); err != nil {
 		return summary, err
 	}
 	if _, err := store.ExpireStale(opts.ExpireAge); err != nil {
@@ -97,7 +91,7 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 		gate, err := store.readTargetGate(rec.To)
 		if err != nil {
 			continue
-		} // damaged target remains visible/manual, healthy targets continue
+		} // damaged target is skipped; healthy targets continue
 		seen[key] = true
 		candidates = append(candidates, candidate{rec, gate.LastProbeAt})
 	}
@@ -173,7 +167,7 @@ func FlushPending(ctx context.Context, store *DispatchStore, opts FlushOptions) 
 				summary.Pending++
 			}
 		}
-		// Losing an old generation is expected after concurrent recovery/ACK;
+		// Losing an old generation is expected after concurrent recovery/settlement;
 		// all other settlement failures must be observable, not silently dropped.
 		if err != nil && !errors.Is(err, ErrClaimLost) {
 			return summary, err

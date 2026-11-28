@@ -55,8 +55,6 @@ const SCREEN_TEXT_LABEL = '#c8dcf2';
 const SCREEN_CYAN_BRIGHT = '#67f3ff';
 const SCREEN_GREEN_BRIGHT = '#63f592';
 const SCREEN_AMBER_BRIGHT = '#ffd25a';
-const SCREEN_DANGER_BRIGHT = '#ff8ca3';
-const SCREEN_VIOLET_BRIGHT = '#d8b4fe';
 const SCREEN_EXITED_BRIGHT = '#cddcf0';
 
 function createPixelCanvasBundle(
@@ -330,7 +328,7 @@ function renderSecondaryCompanionScreen(
     cwdY += 44;
   }
 
-  // 下部双列收件 / 发件计数卡
+  // 下部双列 Provider / Model 信息卡
   const cardY = 392;
   const cardH = 224;
   const gap = 22;
@@ -339,33 +337,19 @@ function renderSecondaryCompanionScreen(
   drawPixelPanel(ctx, 20, cardY, halfCardW, cardH, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
   ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.fillText('收件 INBOX', 44, cardY + 46);
-  ctx.font = `700 74px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = session.inboxCount > 0 ? SCREEN_CYAN_BRIGHT : SCREEN_TEXT_BRIGHT;
-  ctx.fillText(String(session.inboxCount), 44, cardY + 136);
-  if (session.pendingCount > 0) {
-    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = SCREEN_AMBER_BRIGHT;
-    ctx.textAlign = 'right';
-    ctx.fillText(`待投 +${session.pendingCount}`, 20 + halfCardW - 24, cardY + 144);
-    ctx.textAlign = 'left';
-  }
+  ctx.fillText('PROVIDER', 44, cardY + 46);
+  ctx.font = `700 44px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
+  ctx.fillText(truncateToWidth(ctx, session.provider || session.harness || '—', halfCardW - 48), 44, cardY + 136);
 
   const rightX = 20 + halfCardW + gap;
   drawPixelPanel(ctx, rightX, cardY, halfCardW, cardH, SCREEN_PANEL_BG, '#3d5f8a', '#03060c', 4);
   ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.fillText('发件 SENT', rightX + 24, cardY + 46);
-  ctx.font = `700 74px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = session.activity.kind === 'outgoing' ? SCREEN_VIOLET_BRIGHT : SCREEN_TEXT_BRIGHT;
-  ctx.fillText(String(session.sentCount), rightX + 24, cardY + 136);
-  if (session.activity.failedCount > 0) {
-    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
-    ctx.fillStyle = SCREEN_DANGER_BRIGHT;
-    ctx.textAlign = 'right';
-    ctx.fillText(`失败 ${session.activity.failedCount}`, rightX + halfCardW - 24, cardY + 144);
-    ctx.textAlign = 'left';
-  }
+  ctx.fillText('MODEL', rightX + 24, cardY + 46);
+  ctx.font = `700 40px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
+  ctx.fillText(truncateToWidth(ctx, session.model || '—', halfCardW - 48), rightX + 24, cardY + 136);
 }
 
 export function createMonitorScreenBundle(anisotropy: number): CanvasTextureBundle {
@@ -404,11 +388,9 @@ export function updateMonitorScreenTexture(
     session.shortLabel,
     session.availability,
     displayCwd,
-    String(session.inboxCount),
-    String(session.sentCount),
-    String(session.pendingCount),
-    String(session.activity.failedCount),
-    session.activity.kind,
+    session.provider,
+    session.harness || '',
+    session.model || '',
   ].join('|');
 
   if (bundle.lastSignature === signature) {
@@ -480,77 +462,28 @@ export function updateMonitorScreenTexture(
     lineY += 54;
   }
 
-  // 3. 底部收件 / 发件大号计数面板（无杂乱小字，仅保留可读字段）
+  // 3. 底部 Provider / Model 信息面板
   const statY = 416;
   const statH = 200;
   const statGap = 22;
   const statW = Math.floor((SCREEN_W - 40 - statGap) / 2);
 
-  // 收件卡
-  const hasInboxAlert = session.pendingCount > 0;
-  drawPixelPanel(
-    ctx,
-    20,
-    statY,
-    statW,
-    statH,
-    SCREEN_PANEL_BG,
-    hasInboxAlert ? SCREEN_AMBER_BRIGHT : '#486f9e',
-    '#03060c',
-    4
-  );
+  drawPixelPanel(ctx, 20, statY, statW, statH, SCREEN_PANEL_BG, '#486f9e', '#03060c', 4);
   ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.fillText('收件 INBOX', 46, statY + 46);
+  ctx.fillText('PROVIDER', 46, statY + 46);
+  ctx.font = `700 44px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_CYAN_BRIGHT;
+  ctx.fillText(truncateToWidth(ctx, session.provider || session.harness || '—', statW - 52), 46, statY + 132);
 
-  ctx.font = `700 72px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = session.inboxCount > 0 ? SCREEN_CYAN_BRIGHT : SCREEN_TEXT_BRIGHT;
-  ctx.fillText(String(session.inboxCount), 46, statY + 132);
-
-  if (session.pendingCount > 0) {
-    const pendText = `待投 +${session.pendingCount}`;
-    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
-    const pendW = Math.ceil(ctx.measureText(pendText).width) + 32;
-    const pendX = 20 + statW - 22 - pendW;
-    drawPixelPanel(ctx, pendX, statY + 104, pendW, 56, '#261a05', SCREEN_AMBER_BRIGHT, '#03060c', 3);
-    ctx.fillStyle = SCREEN_AMBER_BRIGHT;
-    ctx.textAlign = 'center';
-    ctx.fillText(pendText, pendX + pendW / 2, statY + 133);
-    ctx.textAlign = 'left';
-  }
-
-  // 发件卡
   const rightStatX = 20 + statW + statGap;
-  drawPixelPanel(
-    ctx,
-    rightStatX,
-    statY,
-    statW,
-    statH,
-    SCREEN_PANEL_BG,
-    session.activity.failedCount > 0 ? SCREEN_DANGER_BRIGHT : '#486f9e',
-    '#03060c',
-    4
-  );
+  drawPixelPanel(ctx, rightStatX, statY, statW, statH, SCREEN_PANEL_BG, '#486f9e', '#03060c', 4);
   ctx.font = `700 30px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = SCREEN_TEXT_LABEL;
-  ctx.fillText('发件 SENT', rightStatX + 26, statY + 46);
-
-  ctx.font = `700 72px ${PIXEL_FONT_STACK}`;
-  ctx.fillStyle = session.activity.kind === 'outgoing' ? SCREEN_VIOLET_BRIGHT : SCREEN_TEXT_BRIGHT;
-  ctx.fillText(String(session.sentCount), rightStatX + 26, statY + 132);
-
-  if (session.activity.failedCount > 0) {
-    const failText = `失败 ${session.activity.failedCount}`;
-    ctx.font = `700 28px ${PIXEL_FONT_STACK}`;
-    const failW = Math.ceil(ctx.measureText(failText).width) + 32;
-    const failX = rightStatX + statW - 22 - failW;
-    drawPixelPanel(ctx, failX, statY + 104, failW, 56, '#290d16', SCREEN_DANGER_BRIGHT, '#03060c', 3);
-    ctx.fillStyle = SCREEN_DANGER_BRIGHT;
-    ctx.textAlign = 'center';
-    ctx.fillText(failText, failX + failW / 2, statY + 133);
-    ctx.textAlign = 'left';
-  }
+  ctx.fillText('MODEL', rightStatX + 26, statY + 46);
+  ctx.font = `700 40px ${PIXEL_FONT_STACK}`;
+  ctx.fillStyle = SCREEN_TEXT_BRIGHT;
+  ctx.fillText(truncateToWidth(ctx, session.model || '—', statW - 52), rightStatX + 26, statY + 132);
 
   bundle.texture.needsUpdate = true;
   return true;
@@ -606,7 +539,6 @@ export function updateWallPlaqueTexture(
     state.isFallbackRoom ? '1' : '0',
     String(state.totalSessionCount),
     String(state.runningCount),
-    String(state.crossProjectMailCount),
   ].join('|');
   if (bundle.lastSignature === sig) return false;
   bundle.lastSignature = sig;
@@ -639,7 +571,6 @@ export function updateWallPlaqueTexture(
   const subParts = [
     `${state.totalSessionCount} 工位`,
     `${state.runningCount} 运行`,
-    state.crossProjectMailCount > 0 ? `跨室 ${state.crossProjectMailCount}` : '',
     state.isFallbackRoom ? '通用工区' : formatCompactPath(state.projectPath),
   ].filter(Boolean);
 
@@ -651,7 +582,7 @@ export function updateWallPlaqueTexture(
   return true;
 }
 
-/** 房间邮件终端贴墙方块屏幕（紧凑高对比像素面板，适合 ≤ 2×1 体素贴墙尺寸） */
+/** 房间终端贴墙方块屏幕（紧凑高对比像素面板，适合 ≤ 2×1 体素贴墙尺寸） */
 export function createRoomTerminalBundle(anisotropy: number): CanvasTextureBundle {
   return createPixelCanvasBundle(448, 304, anisotropy);
 }
@@ -663,16 +594,15 @@ export function updateRoomTerminalTexture(
 ): boolean {
   const sig = [
     palette.mode,
-    String(state.roomMessageCount),
-    String(state.pendingMailCount),
-    String(state.crossProjectMailCount),
-    state.hasRecentPulse ? '1' : '0',
+    String(state.totalSessionCount),
+    String(state.runningCount),
+    String(state.sessions.filter((session) => session.availability === 'unavailable').length),
   ].join('|');
   if (bundle.lastSignature === sig) return false;
   bundle.lastSignature = sig;
 
   const { ctx } = bundle;
-  const frameColor = state.hasRecentPulse ? palette.successHex : palette.accentHex;
+  const frameColor = palette.accentHex;
   const panelBg = palette.mode === 'light' ? '#1c2b42' : '#142033';
   const rowBg = palette.mode === 'light' ? '#253854' : '#1d2d47';
   drawPixelPanel(ctx, 0, 0, 448, 304, panelBg, frameColor, '#0b1220', 8);
@@ -680,11 +610,7 @@ export function updateRoomTerminalTexture(
   ctx.textBaseline = 'middle';
   ctx.font = `700 24px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = frameColor;
-  ctx.fillText('ROOM MAIL', 26, 40);
-
-  // 状态方块灯
-  ctx.fillStyle = state.hasRecentPulse ? palette.successHex : palette.accentHex;
-  ctx.fillRect(398, 28, 22, 22);
+  ctx.fillText('ROOM TERMINAL', 26, 40);
 
   const drawStat = (label: string, val: string, y: number, color: string) => {
     drawPixelPanel(ctx, 24, y, 400, 52, rowBg, '#4a6b94', '#0e1726', 2);
@@ -700,23 +626,14 @@ export function updateRoomTerminalTexture(
     ctx.textAlign = 'left';
   };
 
-  drawStat('房间邮件', String(state.roomMessageCount), 72, '#ffffff');
-  drawStat(
-    '待投队列',
-    String(state.pendingMailCount),
-    134,
-    state.pendingMailCount > 0 ? palette.warningHex : '#ffffff'
-  );
-  drawStat(
-    '跨室协作',
-    String(state.crossProjectMailCount),
-    196,
-    state.crossProjectMailCount > 0 ? palette.violetHex : '#ffffff'
-  );
+  const unavailable = state.sessions.filter((session) => session.availability === 'unavailable').length;
+  drawStat('工位', String(state.totalSessionCount), 72, '#ffffff');
+  drawStat('运行', String(state.runningCount), 134, state.runningCount > 0 ? palette.successHex : '#ffffff');
+  drawStat('暂不可用', String(unavailable), 196, unavailable > 0 ? palette.warningHex : '#ffffff');
 
   ctx.font = `700 20px ${PIXEL_FONT_STACK}`;
   ctx.fillStyle = palette.accentHex;
-  ctx.fillText('点击打开房间协作邮箱', 26, 274);
+  ctx.fillText('项目办公室运行终端', 26, 274);
 
   bundle.texture.needsUpdate = true;
   return true;

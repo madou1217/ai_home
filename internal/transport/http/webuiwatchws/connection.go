@@ -38,7 +38,6 @@ var allowedWatchPaths = map[string]struct{}{
 	"/v0/webui/tasks/watch":                                        {},
 	"/v0/webui/projects/watch":                                     {},
 	"/v0/webui/management/watch":                                   {},
-	"/v0/webui/peer/messages/watch":                                {},
 	"/v0/webui/egress-upstreams/watch":                             {},
 	"/v0/webui/ssh-connections/tunnels/watch":                      {},
 	"/v0/webui/openai-models/watch":                                {},

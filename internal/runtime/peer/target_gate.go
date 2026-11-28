@@ -80,17 +80,13 @@ func (s *DispatchStore) writeTargetGate(gate TargetGate) error {
 }
 
 func (s *DispatchStore) projectNotification(rec *Record) {
-	if rec.State == "read" || rec.State == "delivered" || rec.DeliveredAt > 0 {
+	if rec.State == "delivered" || rec.DeliveredAt > 0 {
 		projectNotificationAt(rec, TargetGate{}, s.now().UnixMilli())
 		return
 	}
 	gate, err := s.readTargetGate(rec.To)
 	if err != nil {
 		projectNotificationAt(rec, TargetGate{BusySince: rec.BusySince, ProbeCount: rec.ProbeCount}, s.now().UnixMilli())
-		if rec.NotificationState == "canceled" || rec.NotificationState == "expired" {
-			return
-		}
-		rec.NotificationState, rec.WaitingReason, rec.NextAttemptAt = "manual", "target_gate_unavailable", 0
 		if rec.Error == "" {
 			rec.Error = err.Error()
 		}
@@ -167,7 +163,7 @@ func (s *DispatchStore) settleScheduling(next *Record, state, code, messageID st
 // WakeTarget is an event integration port, not a provider event subscription.
 // Only positively observed idle/composer-empty events can shorten busy probing;
 // notLoaded/unknown/busy do nothing. It never clears cooldown, real-error
-// backoff, budget exhaustion, semantic expiry or a manual/canceled message.
+// backoff, semantic expiry or a terminal message.
 func (s *DispatchStore) WakeTarget(to RecordParty, observedState string) (bool, error) {
 	return s.wakeTarget(to, observedState, 0)
 }
@@ -209,11 +205,11 @@ func (s *DispatchStore) wakeTarget(to RecordParty, observedState string, eventAt
 			continue
 		}
 		rec, err := s.readStoredRecord("pending", item.ID)
-		if err != nil || applyReadReceipt(s.root, rec) != nil {
+		if err != nil {
 			continue
 		}
 		projectNotificationAt(rec, gate, at)
-		if rec.NotificationState == "manual" || rec.NotificationState == "canceled" || rec.NotificationState == "expired" || rec.NotificationState == "delivered" {
+		if rec.NotificationState == "canceled" || rec.NotificationState == "expired" || rec.NotificationState == "delivered" {
 			continue
 		}
 		rec.NextAttemptAt = at

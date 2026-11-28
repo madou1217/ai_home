@@ -704,15 +704,11 @@ export class OfficeBehaviourManager {
 
       const isInteractive = session.availability === 'interactive';
       const isDirOnly = session.availability === 'directory-only';
-      const hasMailOrPulse =
-        session.activity.kind !== 'idle'
-        || session.activity.recentPulse
-        || session.pendingCount > 0;
 
-      // 对齐 OfficeSessionItem：interactive 为「运行中」，directory-only 且无脉冲为「空闲」
-      const isRunningEligible = isInteractive || (isDirOnly && hasMailOrPulse);
-      const isPureIdle = isDirOnly && !hasMailOrPulse;
-      const isIdleActivity = !hasMailOrPulse && (isInteractive || isDirOnly);
+      // 对齐 OfficeSessionItem：interactive 为「运行中」，directory-only 为「空闲」
+      const isRunningEligible = isInteractive;
+      const isPureIdle = isDirOnly;
+      const isIdleActivity = isInteractive || isDirOnly;
 
       let agent = this.agents.get(session.sessionKey);
       if (!agent) {

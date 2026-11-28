@@ -172,7 +172,7 @@ function isEditableOrOverlayEventTarget(target: EventTarget | null): boolean {
     }
     if (
       target.closest(
-        'input, textarea, select, [contenteditable="true"], .xterm, [role="dialog"], [aria-modal="true"], .ant-modal, .ant-drawer, .session-desktop-overlay, .session-office-mailbox-overlay'
+        'input, textarea, select, [contenteditable="true"], .xterm, [role="dialog"], [aria-modal="true"], .ant-modal, .ant-drawer, .session-desktop-overlay'
       )
     ) {
       return true;
@@ -180,7 +180,7 @@ function isEditableOrOverlayEventTarget(target: EventTarget | null): boolean {
   }
   if (typeof document !== 'undefined') {
     const activeOverlay = document.querySelector(
-      '[aria-modal="true"], .session-desktop-overlay, .session-office-mailbox-overlay'
+      '[aria-modal="true"], .session-desktop-overlay'
     );
     if (activeOverlay) {
       return true;
@@ -199,12 +199,7 @@ function isObjectHierarchyVisible(object: THREE.Object3D | null): boolean {
 }
 
 function isOfficeHitKind(value: unknown): value is OfficeHitKind {
-  return (
-    value === 'station'
-    || value === 'monitor'
-    || value === 'mail-tray'
-    || value === 'room-mailbox'
-  );
+  return value === 'station' || value === 'monitor';
 }
 
 function disposeTextureIfPresent(
@@ -995,8 +990,7 @@ export class OfficeSceneController {
       state,
       this.currentPalette,
       metrics.roomWidth,
-      metrics.roomDepth,
-      this.hoveredTarget?.kind === 'room-mailbox'
+      metrics.roomDepth
     );
     this.syncShadowAndLanternBounds();
 
@@ -1151,15 +1145,13 @@ export class OfficeSceneController {
 
   public projectStationPartToRect(
     sessionKey: string,
-    part: 'monitor' | 'mail-tray',
+    part: 'monitor',
     monitorIndex: OfficeMonitorIndex = 0
   ): DesktopOriginRect | undefined {
     const rig = this.stations.get(sessionKey);
     if (!rig) return undefined;
 
-    const targetObj = part === 'monitor'
-      ? getStationMonitorScreenMesh(rig, monitorIndex)
-      : rig.mailTrayGroup;
+    const targetObj = part === 'monitor' ? getStationMonitorScreenMesh(rig, monitorIndex) : null;
     if (!targetObj) return undefined;
 
     const box = new THREE.Box3().setFromObject(targetObj);
@@ -1735,8 +1727,7 @@ export class OfficeSceneController {
           this.currentState,
           this.currentPalette,
           this.currentMetrics.roomWidth,
-          this.currentMetrics.roomDepth,
-          target?.kind === 'room-mailbox'
+          this.currentMetrics.roomDepth
         );
         if (this.rafId === null) {
           this.renderSingleFrame();
@@ -1756,16 +1747,6 @@ export class OfficeSceneController {
     clientX: number,
     clientY: number
   ): OfficeHoverInfo {
-    if (target.kind === 'room-mailbox') {
-      return {
-        kind: target.kind,
-        label: 'ROOM MAIL TERMINAL',
-        hint: '点击打开房间协作邮箱',
-        clientX,
-        clientY,
-      };
-    }
-
     const session = this.currentState?.sessions.find(
       (item) => item.sessionKey === target.sessionKey
     );
@@ -1807,18 +1788,6 @@ export class OfficeSceneController {
         monitorIndex: target.monitorIndex,
         label: prefs.dualMonitor ? `${label} · ${screenTag}` : label,
         hint: '点击打开员工电脑桌面',
-        clientX,
-        clientY,
-      };
-    }
-    if (target.kind === 'mail-tray') {
-      return {
-        kind: 'mail-tray',
-        sessionKey: target.sessionKey,
-        label,
-        hint: session
-          ? `会话邮件 · 收 ${session.inboxCount} / 发 ${session.sentCount}`
-          : '点击打开会话邮箱',
         clientX,
         clientY,
       };
@@ -2190,10 +2159,6 @@ export class OfficeSceneController {
     const target = upTarget ?? downTarget;
     if (!target) return;
 
-    if (target.kind === 'room-mailbox') {
-      this.callbacks.onOpenRoomMailbox();
-      return;
-    }
     if (!target.sessionKey) return;
 
     this.callbacks.onSelectStation(target.sessionKey);
@@ -2207,9 +2172,6 @@ export class OfficeSceneController {
         target.monitorIndex ?? 0
       );
       this.callbacks.onOpenMonitor(target.sessionKey, originRect);
-    } else if (target.kind === 'mail-tray') {
-      const originRect = this.projectStationPartToRect(target.sessionKey, 'mail-tray');
-      this.callbacks.onOpenSessionMail(target.sessionKey, originRect);
     }
   };
 
@@ -2271,17 +2233,12 @@ export class OfficeSceneController {
     const target = this.raycastAtClientPoint(event.clientX, event.clientY);
     if (!target || !target.sessionKey) return;
     this.callbacks.onSelectStation(target.sessionKey);
-    if (target.kind === 'mail-tray') {
-      const originRect = this.projectStationPartToRect(target.sessionKey, 'mail-tray');
-      this.callbacks.onOpenSessionMail(target.sessionKey, originRect);
-    } else {
-      const originRect = this.projectStationPartToRect(
-        target.sessionKey,
-        'monitor',
-        target.monitorIndex ?? 0
-      );
-      this.callbacks.onOpenMonitor(target.sessionKey, originRect);
-    }
+    const originRect = this.projectStationPartToRect(
+      target.sessionKey,
+      'monitor',
+      target.monitorIndex ?? 0
+    );
+    this.callbacks.onOpenMonitor(target.sessionKey, originRect);
   };
 
   private hasStationsSettling(): boolean {

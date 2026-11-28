@@ -90,7 +90,6 @@ export function resolveHudRouteOrder(pathname: string | undefined): number | nul
   const normalized = normalizeNavPath(pathname);
   if (!normalized || normalized === '/chat/quick') return null;
   if (normalized === '/') return NAV_CODES['/dashboard'].order;
-  if (normalized === '/peer-inbox') return NAV_CODES['/terminals'].order;
   if (normalized === '/studio') return NAV_CODES['/studio/image'].order;
   if (normalized === '/translation') return NAV_CODES['/studio/translation'].order;
 

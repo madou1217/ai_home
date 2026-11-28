@@ -73,9 +73,6 @@ func (s *DispatchStore) findExactLocked(id string) (*Record, string, error) {
 		if found != nil {
 			return nil, "", ErrAmbiguousMessage
 		}
-		if err := applyReadReceipt(s.root, rec); err != nil {
-			return nil, "", err
-		}
 		found, dir = rec, candidate
 	}
 	if found == nil {
@@ -88,7 +85,7 @@ func checkLifecycleIdentity(rec *Record, input LifecycleInput) error {
 	if !validSender(input.From) || !validParty(input.To) || !sameSender(rec.From, input.From) || TargetKey(rec.To) != TargetKey(input.To) {
 		return ErrIdentityMismatch
 	}
-	if rec.State == "delivered" || rec.State == "read" || rec.ReadAt > 0 || rec.DeliveredAt > 0 {
+	if rec.State == "delivered" || rec.DeliveredAt > 0 {
 		return ErrMessageSettled
 	}
 	return nil
@@ -121,8 +118,9 @@ func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (
 		}
 		return nil, err
 	}
+	// There is no mailbox: "none" (inbox-only) is no longer a valid policy.
 	switch input.ReplyPolicy {
-	case "", "required", "optional", "none":
+	case "", "required", "optional":
 	default:
 		return nil, ErrInvalidRecord
 	}
@@ -132,10 +130,6 @@ func (s *DispatchStore) createScheduledMessageLocked(input CreateMessageInput) (
 		CreatedAt: s.now().UnixMilli(), State: "pending", Attempts: []AttemptRecord{},
 		NoEnvelope: input.NoEnvelope, FromMode: input.FromMode, Subject: input.Subject, Summary: input.Summary, Purpose: input.Purpose, Action: input.Action, ReplyPolicy: input.ReplyPolicy,
 		ExpiresAt: input.ExpiresAt, Supersedes: NormalizeID(input.Supersedes),
-	}
-	if input.ReplyPolicy == "none" {
-		zero := int64(0)
-		input.AutoDeliverUntil = &zero
 	}
 	if input.AutoDeliverUntil != nil {
 		rec.AutoDeliverUntil = *input.AutoDeliverUntil
@@ -209,101 +203,8 @@ func (s *DispatchStore) cancelLocked(rec *Record, dir string) error {
 	return s.retainLocked(rec, dir)
 }
 
-func (s *DispatchStore) CancelMessage(input LifecycleInput) (*Record, error) {
-	unlock, err := s.lockRecords()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	rec, dir, err := s.findExactLocked(strings.TrimSpace(input.ID))
-	if err != nil {
-		return nil, err
-	}
-	if err := checkLifecycleIdentity(rec, input); err != nil {
-		return nil, err
-	}
-	if dir == "inflight" {
-		return nil, ErrMessageInflight
-	}
-	if rec.CanceledAt > 0 {
-		return rec, nil
-	}
-	if err := s.cancelLocked(rec, dir); err != nil {
-		return nil, err
-	}
-	return rec, nil
-}
-
-func (s *DispatchStore) ResumeMessage(input LifecycleInput) (*Record, error) {
-	unlock, err := s.lockRecords()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	rec, dir, err := s.findExactLocked(strings.TrimSpace(input.ID))
-	if err != nil {
-		return nil, err
-	}
-	if err := checkLifecycleIdentity(rec, input); err != nil {
-		return nil, err
-	}
-	if dir == "inflight" {
-		return nil, ErrMessageInflight
-	}
-	if rec.ReplyPolicy == "none" {
-		return nil, &policyError{reason: "inbox_only"}
-	}
-	at := s.now().UnixMilli()
-	until := at + DefaultAutoHorizon.Milliseconds()
-	if input.AutoDeliverUntil != nil {
-		until = *input.AutoDeliverUntil
-	}
-	if rec.ExpiresAt > 0 && rec.ExpiresAt <= at && input.ExpiresAt == nil {
-		return nil, &policyError{reason: "expired"}
-	}
-	if until <= at || until > at+DefaultAutoHorizon.Milliseconds() {
-		return nil, ErrInvalidRecord
-	}
-	if input.ExpiresAt != nil {
-		if *input.ExpiresAt < 0 {
-			return nil, ErrInvalidRecord
-		}
-		rec.ExpiresAt = *input.ExpiresAt
-	}
-	if rec.ExpiresAt > 0 && rec.ExpiresAt <= at {
-		return nil, &policyError{reason: "expired"}
-	}
-	gate, err := s.readTargetGate(rec.To)
-	if err != nil {
-		return nil, err
-	}
-	if input.ResetAttempts {
-		// Never erase historical attempts; an explicit reset establishes a new
-		// authorized budget baseline, shared through the target gate.
-		gate.FailureCount = 0
-		rec.FailureResetAt = at
-	}
-	rec.State, rec.Error, rec.CanceledAt = "pending", "", 0
-	rec.AutoDeliverUntil, rec.NotificationState, rec.WaitingReason = until, "ready", ""
-	rec.autoDeliverUntilSet = true
-	// Do not bypass successful cooldown, real-error backoff or a live writer.
-	if gate.NextProbeAt <= at {
-		rec.NextAttemptAt = 0
-	} else {
-		rec.NextAttemptAt = gate.NextProbeAt
-	}
-	projectNotificationAt(rec, gate, at)
-	if err := s.retainLocked(rec, dir); err != nil {
-		return nil, err
-	}
-	if err := s.writeTargetGate(gate); err != nil {
-		return nil, err
-	}
-	return rec, nil
-}
-
 // CheckDelivery is reloaded immediately before the first transport write, not
-// merely before activity probing. Cancellation/recovery fencing remains exact.
+// merely before activity probing. Claim fencing remains exact.
 func (s *DispatchStore) CheckDelivery(ctx context.Context, claimed Record) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -316,12 +217,6 @@ func (s *DispatchStore) CheckDelivery(ctx context.Context, claimed Record) error
 	rec, err := s.ownedRecord(&claimed)
 	if err != nil {
 		return err
-	}
-	if err := applyReadReceipt(s.root, rec); err != nil {
-		return &policyError{reason: "read_receipt_unavailable"}
-	}
-	if rec.State == "read" {
-		return &policyError{reason: "already_read"}
 	}
 	gate, err := s.readTargetGate(rec.To)
 	if err != nil {
@@ -343,6 +238,10 @@ func (s *DispatchStore) CheckDelivery(ctx context.Context, claimed Record) error
 	return nil
 }
 
+// refreshScheduling retires queued messages that can no longer be delivered.
+// Without a mailbox there is no user-facing place to hold them forever, so a
+// message past its auto-delivery deadline (or the hard queue age) is archived
+// as failed instead of being retained as manual mail.
 func (s *DispatchStore) refreshScheduling(maxAge time.Duration) (int, error) {
 	pending, err := s.ListPending()
 	if err != nil {
@@ -358,7 +257,7 @@ func (s *DispatchStore) refreshScheduling(maxAge time.Duration) (int, error) {
 		func() {
 			defer unlock()
 			rec, err := s.readStoredRecord("pending", item.ID)
-			if err != nil || applyReadReceipt(s.root, rec) != nil {
+			if err != nil {
 				return
 			}
 			before := *rec
@@ -368,14 +267,18 @@ func (s *DispatchStore) refreshScheduling(maxAge time.Duration) (int, error) {
 			}
 			at := s.now().UnixMilli()
 			projectNotificationAt(rec, gate, at)
-			if maxAge > 0 && at-rec.CreatedAt >= maxAge.Milliseconds() && rec.NotificationState == "ready" {
-				rec.NotificationState, rec.WaitingReason, rec.NextAttemptAt = "manual", "stale_retained", 0
-			}
-			if !reflect.DeepEqual(before, *rec) {
+			switch {
+			case rec.CanceledAt > 0 || rec.NotificationState == "canceled":
+				writeErr = s.retirePendingLocked(rec, "canceled")
+			case rec.NotificationState == "expired":
+				writeErr = s.retirePendingLocked(rec, "expired")
+			case maxAge > 0 && at-rec.CreatedAt >= maxAge.Milliseconds():
+				writeErr = s.retirePendingLocked(rec, "expired")
+			case !reflect.DeepEqual(before, *rec):
 				writeErr = s.writeRecord("pending", *rec)
-				if writeErr == nil {
-					changed++
-				}
+			}
+			if writeErr == nil && !reflect.DeepEqual(before, *rec) {
+				changed++
 			}
 		}()
 		if writeErr != nil {
@@ -383,4 +286,30 @@ func (s *DispatchStore) refreshScheduling(maxAge time.Duration) (int, error) {
 		}
 	}
 	return changed, nil
+}
+
+// retirePendingLocked moves a queued message to the terminal archive bucket.
+// The caller must hold lockRecords.
+func (s *DispatchStore) retirePendingLocked(rec *Record, reason string) error {
+	if _, err := os.Lstat(s.fileIn("archive", rec.ID)); err == nil {
+		return ErrAmbiguousMessage
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	detail := strings.TrimSpace(rec.WaitingReason)
+	if detail == "" {
+		detail = "auto_horizon_elapsed"
+	}
+	rec.State, rec.Error, rec.NotificationState = "failed", reason, reason
+	rec.WaitingReason, rec.NextAttemptAt = detail, 0
+	if reason == "canceled" {
+		rec.WaitingReason = "canceled"
+		if rec.CanceledAt == 0 {
+			rec.CanceledAt = s.now().UnixMilli()
+		}
+	}
+	if err := s.writeRecord("pending", *rec); err != nil {
+		return err
+	}
+	return os.Rename(s.fileIn("pending", rec.ID), s.fileIn("archive", rec.ID))
 }

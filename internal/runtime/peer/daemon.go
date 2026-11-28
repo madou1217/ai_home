@@ -50,7 +50,7 @@ type DispatchDaemonState struct {
 	WakeupError  string       `json:"wakeupError,omitempty"`
 }
 
-// DispatchDaemon 通过目录事件和到期时间触发无等待（timeout=0）的收件箱补投。
+// DispatchDaemon 通过目录事件和到期时间触发无等待（timeout=0）的队列补投。
 type DispatchDaemon struct {
 	store     *DispatchStore
 	aiHomeDir string

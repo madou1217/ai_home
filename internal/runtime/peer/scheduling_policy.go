@@ -52,8 +52,7 @@ func IsWaitingDeliveryError(code string) bool {
 	switch strings.TrimSpace(code) {
 	case "target_busy", "chat_target_busy", "target_has_draft", "target_input_unavailable",
 		"target_state_unknown", "target_probe_unavailable", "activity_probe_failed", "probe_error", "tmux_unavailable", "chat_runtime_unavailable", "target_inflight", "target_cooldown",
-		"read_receipt_unavailable", "peer_claim_lost", "auto_horizon_elapsed", "expired", "canceled",
-		"retry_exhausted", "legacy_attempt_history_uncertain", "manual":
+		"peer_claim_lost":
 		return true
 	}
 	return false
@@ -107,7 +106,7 @@ func autoDeadline(rec Record) int64 {
 	return rec.CreatedAt + DefaultAutoHorizon.Milliseconds()
 }
 
-// projectNotificationAt is pure: list queries never mutate retained records.
+// projectNotificationAt derives the queued delivery state without side effects.
 func projectNotificationAt(rec *Record, gate TargetGate, at int64) {
 	if !rec.autoDeliverUntilSet {
 		rec.AutoDeliverUntil = autoDeadline(*rec)
@@ -117,34 +116,16 @@ func projectNotificationAt(rec *Record, gate TargetGate, at int64) {
 	state, reason := "ready", ""
 	budgetReason := retryBudgetReason(*rec, gate)
 	switch {
-	case rec.ReadAt > 0 || rec.State == "read" || rec.DeliveredAt > 0 || rec.State == "delivered":
+	case rec.DeliveredAt > 0 || rec.State == "delivered":
 		state = "delivered"
 	case rec.CanceledAt > 0 || rec.NotificationState == "canceled":
 		state, reason = "canceled", "canceled"
 	case (rec.ExpiresAt > 0 && at >= rec.ExpiresAt) || rec.NotificationState == "expired":
 		state, reason = "expired", "expired"
-	case rec.NotificationState == "manual":
-		state, reason = "manual", rec.WaitingReason
-		if reason == "retry_exhausted" || reason == "legacy_attempt_history_uncertain" {
-			reason = budgetReason
-			if reason == "" {
-				reason = "manual"
-			}
-		}
-	case rec.State == "failed":
-		state, reason = "manual", rec.Error
-		if reason == "retry_exhausted" || reason == "legacy_attempt_history_uncertain" {
-			reason = budgetReason
-			if reason == "" {
-				reason = "manual"
-			}
-		}
-	case rec.ReplyPolicy == "none":
-		state, reason = "manual", "inbox_only"
 	case rec.AutoDeliverUntil <= 0 || at >= rec.AutoDeliverUntil:
-		state, reason = "manual", "auto_horizon_elapsed"
+		state, reason = "expired", "auto_horizon_elapsed"
 	case budgetReason != "":
-		state, reason = "manual", budgetReason
+		state, reason = "expired", budgetReason
 	case rec.NextAttemptAt > at || gate.NextProbeAt > at:
 		state, reason = "waiting", gate.LastReason
 		if reason == "" {
@@ -155,7 +136,7 @@ func projectNotificationAt(rec *Record, gate TargetGate, at int64) {
 		}
 	}
 	rec.NotificationState, rec.WaitingReason = state, reason
-	if state == "manual" || state == "canceled" || state == "expired" || state == "delivered" {
+	if state == "canceled" || state == "expired" || state == "delivered" {
 		rec.NextAttemptAt = 0
 	} else if gate.NextProbeAt > rec.NextAttemptAt {
 		rec.NextAttemptAt = gate.NextProbeAt

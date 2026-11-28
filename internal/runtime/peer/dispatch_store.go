@@ -23,7 +23,8 @@ const (
 	DefaultInflightStale = 60 * time.Second
 	// DefaultMaxAttemptLog 限制 attempts 明细数组保留的最近条数；总次数仍以 attemptCount 为准。
 	DefaultMaxAttemptLog = 20
-	// DefaultExpireAge is a legacy stale-review threshold; mail is retained as manual, never age-expired or deleted.
+	// DefaultExpireAge is the hard cap for a queued message that never reached
+	// its target. Queued notifications are retired after this age.
 	DefaultExpireAge = 24 * time.Hour
 	// DefaultMaxBodyChars 是单行投递信封允许的最大正文字符数。
 	DefaultMaxBodyChars = 4000
@@ -121,16 +122,14 @@ type Record struct {
 	AttemptCount     int             `json:"attemptCount"`
 	NextAttemptAt    int64           `json:"nextAttemptAt"`
 	DeliveredAt      int64           `json:"deliveredAt"`
-	ReadAt           int64           `json:"readAt"`
 	ChannelMessageID string          `json:"channelMessageId"`
 	Error            string          `json:"error,omitempty"`
 	Claim            *ClaimLease     `json:"claim,omitempty"`
-	ReceiptError     string          `json:"receiptError,omitempty"`
 	// Priority 是 -1/0/1 的发送优先级；旧记录缺省为 0。
 	Priority int `json:"priority,omitempty"`
 }
 
-// CreateMessageInput 定义写入 pending 收件箱的新消息参数。
+// CreateMessageInput 定义写入待投队列的新消息参数。
 type CreateMessageInput struct {
 	NoEnvelope       bool
 	FromMode         string
@@ -169,7 +168,7 @@ type DispatchStore struct {
 	maxAttemptLog int
 }
 
-// NewDispatchStore 构造基于目录原子迁移的 peer 收件箱存储实例。
+// NewDispatchStore 构造基于目录原子迁移的 peer 投递队列存储实例。
 func NewDispatchStore(aiHomeDir string, opts StoreOptions) *DispatchStore {
 	home := strings.TrimSpace(aiHomeDir)
 	root := ""
@@ -252,7 +251,7 @@ func ResolveUnprojectedHostHomeDir(getenv func(string) string) string {
 	return normalizeHostHomeCandidate(getenv("HOME"))
 }
 
-// ResolvePeerAIHomeDir 解析宿主级 peer 收件箱使用的 AIHome 目录，屏蔽账号投影内空壳目录。
+// ResolvePeerAIHomeDir 解析宿主级 peer 队列使用的 AIHome 目录，屏蔽账号投影内空壳目录。
 func ResolvePeerAIHomeDir(explicitAIHomeDir, hostHomeDir string, getenv func(string) string) string {
 	if getenv == nil {
 		getenv = os.Getenv
@@ -424,10 +423,22 @@ func (s *DispatchStore) readStoredRecord(dirName, id string) (*Record, error) {
 func (s *DispatchStore) readRecord(dirName, id string) (*Record, error) {
 	rec, err := s.readStoredRecord(dirName, id)
 	if err == nil {
-		projectReadReceipt(s.root, rec)
 		s.projectNotification(rec)
 	}
 	return rec, err
+}
+
+// stateFromDirectory treats the directory as the authoritative lifecycle
+// bucket: pending/inflight are queued, archive is terminal.
+func stateFromDirectory(dirName, rawState string) string {
+	if dirName == "pending" || dirName == "inflight" {
+		return "pending"
+	}
+	trimmed := strings.TrimSpace(rawState)
+	if trimmed == "failed" {
+		return trimmed
+	}
+	return "delivered"
 }
 
 func (s *DispatchStore) writeRecord(dirName string, rec Record) error {
@@ -502,9 +513,8 @@ func (s *DispatchStore) ListPending() ([]Record, error) {
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
 		rec, err := s.readRecord("pending", id)
-		if err != nil || rec.ReceiptError != "" {
-			// Block only this message. The read-only store keeps its full
-			// projection, including ID and receipt error, visible in the UI.
+		if err != nil {
+			// A damaged queue entry must not block healthy targets.
 			continue
 		}
 		records = append(records, *rec)
@@ -544,13 +554,6 @@ func (s *DispatchStore) Claim(id string) (*Record, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if err := applyReadReceipt(s.root, rec); err != nil {
-		// The error is projected in ListMessages; do not abort healthy peers.
-		return nil, false, nil
-	}
-	if rec.State == "read" {
-		return nil, false, s.archiveReadLocked("pending", rec)
-	}
 	gate, err := s.readTargetGate(rec.To)
 	if err != nil {
 		return nil, false, err
@@ -558,7 +561,7 @@ func (s *DispatchStore) Claim(id string) (*Record, bool, error) {
 	previousState := rec.NotificationState
 	projectNotificationAt(rec, gate, s.now().UnixMilli())
 	if rec.NotificationState != "ready" {
-		if previousState != rec.NotificationState && (rec.NotificationState == "manual" || rec.NotificationState == "expired" || rec.NotificationState == "canceled") {
+		if previousState != rec.NotificationState && (rec.NotificationState == "expired" || rec.NotificationState == "canceled") {
 			return nil, false, s.writeRecord("pending", *rec)
 		}
 		return nil, false, nil
@@ -609,24 +612,11 @@ func (s *DispatchStore) settle(rec *Record, state, errCode, channelMessageID str
 	if err != nil {
 		return nil, err
 	}
-	if err := applyReadReceipt(s.root, next); err != nil {
-		return nil, err
-	}
 	if len(nativeStatus) > 0 {
 		next.NativeStatus = nativeStatus[0]
 	}
 	at := s.now().UnixMilli()
-	acknowledged := next.State == "read"
 	if err := s.settleScheduling(next, state, errCode, channelMessageID, retryAfter, at); err != nil {
-		return nil, err
-	}
-	if acknowledged {
-		next.State = "read"
-		if err := s.ensureReadReceipt(next); err != nil {
-			return nil, err
-		}
-	}
-	if err := applyReadReceipt(s.root, next); err != nil {
 		return nil, err
 	}
 	if err := s.writeRecord("inflight", *next); err != nil {
@@ -681,7 +671,7 @@ func (s *DispatchStore) RecoverStaleInflight() (int, error) {
 		func() {
 			defer unlock()
 			rec, err := s.readStoredRecord("inflight", id)
-			if err != nil || applyReadReceipt(s.root, rec) != nil {
+			if err != nil {
 				return
 			}
 			claimedAt := int64(0)
@@ -691,10 +681,6 @@ func (s *DispatchStore) RecoverStaleInflight() (int, error) {
 				claimedAt = info.ModTime().UnixMilli()
 			}
 			if claimedAt <= 0 || s.now().UnixMilli()-claimedAt < s.inflightStale.Milliseconds() {
-				return
-			}
-			if rec.State == "read" {
-				changed = s.archiveReadLocked("inflight", rec) == nil
 				return
 			}
 			if _, err := os.Lstat(s.fileIn("pending", id)); !errors.Is(err, os.ErrNotExist) {
@@ -720,7 +706,7 @@ func (s *DispatchStore) RecoverStaleInflight() (int, error) {
 	return recovered, nil
 }
 
-// ExpireStale preserves stale mail as manual; only expiresAt is semantic expiry.
+// ExpireStale retires queued notifications that can no longer be delivered.
 func (s *DispatchStore) ExpireStale(maxAge time.Duration) (int, error) {
 	return s.refreshScheduling(maxAge)
 }

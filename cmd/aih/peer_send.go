@@ -102,11 +102,10 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 	}
 	delivery.NoEnvelope = args.flags["no-envelope"]
 	policy := args.values["reply-policy"]
-	// Explicitly informational messages stay in the mailbox: no modal, no TUI
-	// injection. Required/unspecified requests retain automatic delivery.
+	// "none" used to mean "keep it in the inbox without interrupting". There is
+	// no inbox now, so reject it instead of silently queueing forever.
 	if policy == "none" {
-		zero := int64(0)
-		until = &zero
+		return fmt.Errorf("--reply-policy none 已移除：不再有收件箱；请用 required 或 optional")
 	}
 	priority, err := peerPriority(args.values["priority"])
 	if err != nil {
@@ -145,11 +144,6 @@ func sendPeer(ctx context.Context, args peerArguments, runtime commandRuntime, s
 			if err != nil {
 				return err
 			}
-		}
-	}
-	if original != nil {
-		if _, err := store.Acknowledge(original.ID, self); err != nil {
-			return err
 		}
 	}
 	if args.flags["json"] {

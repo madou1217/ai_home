@@ -155,8 +155,6 @@ const OAK_LOG_HORIZONTAL_X: VoxelBlockSpec = {
   layer: 'opaque',
 };
 
-const SCRATCH_STATUS_COLOR = new THREE.Color();
-const WHITE_COLOR = new THREE.Color('#ffffff');
 
 function computeHalfExtent(size: number, minHalf: number): number {
   return Math.max(minHalf, Math.ceil(size / 2));
@@ -305,11 +303,6 @@ function buildRoomTerminalGroup(
   );
   statusCube.position.set(0, 0.46875, 0.03125);
   group.add(statusCube);
-
-  // 所有子节点均写入房间邮箱点击命中标记
-  group.traverse((obj) => {
-    obj.userData.hitKind = 'room-mailbox';
-  });
 
   return { group, screenMesh };
 }
@@ -1297,8 +1290,7 @@ export function syncOfficeRoomRig(
   state: OfficeSceneSyncState,
   palette?: OfficeScenePalette,
   roomWidth?: number,
-  roomDepth?: number,
-  isTerminalHovered?: boolean
+  roomDepth?: number
 ): void {
   const resolvedPalette = palette ?? getOfficeScenePalette(state.theme);
   let resolvedWidth = roomWidth;
@@ -1308,8 +1300,6 @@ export function syncOfficeRoomRig(
     resolvedWidth = resolvedWidth ?? metrics.roomWidth;
     resolvedDepth = resolvedDepth ?? metrics.roomDepth;
   }
-  const hovered = Boolean(isTerminalHovered);
-
   // 仅当整数体素半宽/半深发生变化时才重建体素世界几何，避免无谓重建开销
   const nextHalfW = computeHalfExtent(resolvedWidth, MIN_HALF_W);
   const nextHalfD = computeHalfExtent(resolvedDepth, MIN_HALF_D);
@@ -1325,19 +1315,8 @@ export function syncOfficeRoomRig(
   getSharedVoxelMaterialSet().syncTheme(resolvedPalette.mode);
 
   rig.plaqueScreenMaterial.emissiveIntensity = resolvedPalette.mode === 'dark' ? 0.92 : 0.72;
-  rig.terminalScreenMaterial.emissiveIntensity = hovered ? 1.25 : 0.9;
-
-  // 根据房间实时邮件脉冲与待投状态同步终端顶部体素状态灯，悬停时向高亮方向提亮
-  const statusBaseHex = state.hasRecentPulse
-    ? resolvedPalette.successHex
-    : state.pendingMailCount > 0
-      ? resolvedPalette.warningHex
-      : resolvedPalette.accentHex;
-  SCRATCH_STATUS_COLOR.set(statusBaseHex);
-  if (hovered) {
-    SCRATCH_STATUS_COLOR.lerp(WHITE_COLOR, 0.42);
-  }
-  rig.terminalStatusMaterial.color.copy(SCRATCH_STATUS_COLOR);
+  rig.terminalScreenMaterial.emissiveIntensity = 0.9;
+  rig.terminalStatusMaterial.color.set(resolvedPalette.accentHex);
 
   updateWallPlaqueTexture(rig.plaqueBundle, state, resolvedPalette);
   updateRoomTerminalTexture(rig.terminalBundle, state, resolvedPalette);

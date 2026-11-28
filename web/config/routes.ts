@@ -98,12 +98,6 @@ const nodeRoutes = [
     icon: "schedule",
   },
   {
-    // peer 消息收件箱深度链接：直接打开同一「项目办公室」邮箱上下文，不在侧栏保留重复菜单项。
-    path: "/peer-inbox",
-    component: "./PeerInbox",
-    hideInMenu: true,
-  },
-  {
     path: "/toolkit/install-guide",
     component: "./ToolkitInstallGuide",
     hideInMenu: true,

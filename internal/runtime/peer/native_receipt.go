@@ -14,7 +14,7 @@ import (
 
 // This is an admission observation at send time, not a read receipt. Bound it
 // to the exact registered socket/session and append cursor. The full AIH ID is
-// retained on the native envelope so short preview collisions cannot ACK mail.
+// retained on the native envelope so short preview collisions cannot settle the wrong message.
 type nativeReceiptProbe struct {
 	path      string
 	offset    int64

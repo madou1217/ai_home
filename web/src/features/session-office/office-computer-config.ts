@@ -387,11 +387,11 @@ export function buildOfficeComputerConfigModel({
       ),
     },
     {
-      key: 'peer-mail',
-      label: '协作通信统计',
+      key: 'session-runtime',
+      label: '运行会话',
       value: session
-        ? `收件 ${session.inboxCount} · 发件 ${session.sentCount} · 待投 ${session.pendingCount} · 跨项目 ${session.crossProjectCount}`
-        : `房间消息 ${room?.roomMessages.length ?? 0} · 待投 ${room?.pendingMailCount ?? 0}`,
+        ? `${session.provider || session.harness || '—'} · ${session.model || '默认模型'} · ${session.availability}`
+        : (room ? `${room.sessions.length} 个工位 · ${room.runningCount} 运行` : '未选择工位'),
     },
   ];
 

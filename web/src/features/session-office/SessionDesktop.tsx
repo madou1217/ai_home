@@ -19,7 +19,6 @@ import {
   FolderOutlined,
   GlobalOutlined,
   LoadingOutlined,
-  MailOutlined,
   MinusOutlined,
   PlusOutlined,
   PoweroffOutlined,
@@ -34,7 +33,6 @@ import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
 import OfficeBrowserWindow from './OfficeBrowserWindow';
 import OfficeComputerSettings, { type ComputerSettingsTab } from './OfficeComputerSettings';
-import OfficeMailbox from './OfficeMailbox';
 import {
   OFFICE_DESKTOP_WALLPAPER_MAP,
   useOptionalDesktopWallpaperAsset,
@@ -49,11 +47,8 @@ import {
 import type {
   DesktopOriginRect,
   DesktopWindowLayout,
-  EnrichedPeerMessage,
-  MailboxScope,
   OfficeProjectRoom,
   OfficeSessionItem,
-  PeerCounts,
   SessionAvailability,
 } from './session-office-types';
 import './SessionDesktop.css';
@@ -63,22 +58,13 @@ export interface SessionDesktopProps {
   serverId: string;
   session: OfficeSessionItem | null;
   room: OfficeProjectRoom | null;
-  allRooms: OfficeProjectRoom[];
-  allMessages: EnrichedPeerMessage[];
-  unassignedMessages: EnrichedPeerMessage[];
-  fullyUnassignedCount: number;
-  peerCounts: PeerCounts;
-  peerLoading: boolean;
-  peerError: string;
   initialMode: DesktopWindowLayout;
-  initialMailboxScope?: MailboxScope;
   originRect?: DesktopOriginRect | null;
   terminatingSessionKey: string | null;
   terminateConfirmOpen?: boolean;
   onTerminateSession: (session: OfficeSessionItem) => void;
   onCloseToRoom: () => void;
   onSelectRoomSession: (session: OfficeSessionItem) => void;
-  onJumpToAnySession: (sessionKey: string, projectKey?: string | null) => boolean;
   onCopyIdentity: (session: OfficeSessionItem) => void;
   onHideSession: (sessionId: string) => void;
   onRefreshAll: () => void;
@@ -166,23 +152,6 @@ function getAvailabilityMeta(availability?: SessionAvailability): AvailabilityMe
   }
 }
 
-function getMailboxScopeTitle(
-  scope: MailboxScope,
-  room: OfficeProjectRoom | null,
-  session: OfficeSessionItem | null,
-): string {
-  switch (scope) {
-    case 'session':
-      return session ? `${session.shortLabel || session.label} · 个人收发` : '当前工位';
-    case 'room':
-      return room ? `${room.projectName} · 房间通信` : '当前项目房间';
-    case 'unassigned':
-      return '未归属 / 历史';
-    case 'all':
-      return '服务器全部消息';
-  }
-}
-
 function dispatchTerminalResizeFinished(host: HTMLElement | null): void {
   if (!host) return;
   const panel = host.querySelector('[data-compact="true"]');
@@ -196,35 +165,23 @@ export function SessionDesktop({
   serverId,
   session,
   room,
-  allRooms,
-  allMessages,
-  unassignedMessages,
-  fullyUnassignedCount,
-  peerCounts,
-  peerLoading,
-  peerError,
   initialMode,
-  initialMailboxScope,
   originRect,
   terminatingSessionKey,
   terminateConfirmOpen = false,
   onTerminateSession,
   onCloseToRoom,
   onSelectRoomSession,
-  onJumpToAnySession,
   onCopyIdentity,
   onHideSession,
   onRefreshAll,
   onOpenNewTerminal,
 }: SessionDesktopProps) {
   const [layoutMode, setLayoutMode] = useState<DesktopWindowLayout>(initialMode);
-  const [terminalMinimized, setTerminalMinimized] = useState<boolean>(initialMode === 'mail-focus');
-  const [mailMinimized, setMailMinimized] = useState<boolean>(initialMode === 'terminal-focus');
-  const [mailboxScope, setMailboxScope] = useState<MailboxScope>(initialMailboxScope ?? 'session');
+  const [terminalMinimized, setTerminalMinimized] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [settingsTab, setSettingsTab] = useState<ComputerSettingsTab>('settings');
   const [dualSpanFull, setDualSpanFull] = useState<boolean>(false);
-  const [standbyMailOpen, setStandbyMailOpen] = useState<boolean>(false);
   const [portalOrigin, setPortalOrigin] = useState<DesktopOriginRect | null>(null);
   const [browserWindow, setBrowserWindow] = useState<{ identity: string; minimized: boolean } | null>(null);
 
@@ -233,14 +190,12 @@ export function SessionDesktop({
   const prevOpenRef = useRef(false);
   const prevDesktopIdentityRef = useRef<string | null>(null);
   const prevInitialModeRef = useRef(initialMode);
-  const prevInitialScopeRef = useRef<MailboxScope>(initialMailboxScope ?? 'session');
   const prevTerminalVisibleRef = useRef(false);
   const lastRefitSignatureRef = useRef('');
 
   const resolvedServerId = typeof serverId === 'string' ? serverId : '';
   const resolvedSessionKey = typeof session?.sessionKey === 'string' ? session.sessionKey : null;
   const desktopIdentity = JSON.stringify([resolvedServerId, resolvedSessionKey]);
-  const resolvedInitialMailboxScope: MailboxScope = initialMailboxScope ?? 'session';
 
   const sessionScopeAdmitted = isSessionServerScopeAdmitted(serverId, session);
   const tabScopeAdmitted = isTerminalTabScopeAdmitted(serverId, session);
@@ -314,7 +269,6 @@ export function SessionDesktop({
 
     if (!open) {
       setPortalOrigin(null);
-      setStandbyMailOpen(false);
       prevTerminalVisibleRef.current = false;
       lastRefitSignatureRef.current = '';
       return;
@@ -326,18 +280,9 @@ export function SessionDesktop({
     const modeChanged = prevInitialModeRef.current !== initialMode;
     prevInitialModeRef.current = initialMode;
 
-    const scopeChanged = prevInitialScopeRef.current !== resolvedInitialMailboxScope;
-    prevInitialScopeRef.current = resolvedInitialMailboxScope;
-
     if (justOpened || identityChanged || modeChanged) {
       setLayoutMode(initialMode);
-      setTerminalMinimized(initialMode === 'mail-focus');
-      setMailMinimized(initialMode === 'terminal-focus');
-      setStandbyMailOpen(initialMode === 'mail-focus');
-    }
-
-    if (justOpened || identityChanged || scopeChanged) {
-      setMailboxScope(resolvedInitialMailboxScope);
+      setTerminalMinimized(false);
     }
 
     if (identityChanged) {
@@ -357,7 +302,7 @@ export function SessionDesktop({
         setPortalOrigin(null);
       }
 
-      if (initialMode === 'mail-focus' || !session?.canAttachTerminal || !isPoweredOn) {
+      if (!session?.canAttachTerminal || !isPoweredOn) {
         requestAnimationFrame(() => {
           shellRef.current?.focus({ preventScroll: true });
         });
@@ -369,7 +314,6 @@ export function SessionDesktop({
     isPoweredOn,
     open,
     originRect,
-    resolvedInitialMailboxScope,
     session?.canAttachTerminal,
   ]);
 
@@ -381,12 +325,6 @@ export function SessionDesktop({
     }, 230);
     return () => window.clearTimeout(timer);
   }, [open, portalOrigin]);
-
-  useEffect(() => {
-    if (isPoweredOn) {
-      setStandbyMailOpen(false);
-    }
-  }, [isPoweredOn]);
 
   // Global desktop Escape handling: never intercept Escape while the termination
   // confirmation dialog is open, nor inside xterm or form inputs.
@@ -417,32 +355,26 @@ export function SessionDesktop({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onCloseToRoom, settingsOpen, terminateConfirmOpen]);
 
-  const terminalWanted = isPoweredOn && !terminalMinimized && layoutMode !== 'mail-focus';
-  const rawMailWanted = isPoweredOn
-    ? (!mailMinimized && layoutMode !== 'terminal-focus')
-    : standbyMailOpen;
+  const terminalWanted = isPoweredOn && !terminalMinimized;
 
   const dualGridActive = preferences.dualMonitor && !dualSpanFull;
 
   // In single-monitor mode, when Settings is open alongside Terminal, Settings occupies the
   // second split slot so we never cram 3 panes into one screen.
-  const mailVisible = rawMailWanted && !(settingsOpen && terminalWanted);
   const secondaryWallpaperVisible = Boolean(
     isPoweredOn
     && dualGridActive
     && !settingsOpen
-    && !(terminalWanted && mailVisible)
-    && (terminalWanted || mailVisible),
+    && terminalWanted,
   );
   const primaryIconsSlotVisible = Boolean(
     isPoweredOn
     && dualGridActive
     && settingsOpen
-    && !terminalWanted
-    && !mailVisible,
+    && !terminalWanted,
   );
 
-  const terminalLayoutSignature = `${layoutMode}|${dualGridActive ? '1' : '0'}|${mailVisible ? '1' : '0'}|${settingsOpen ? '1' : '0'}|${tabId ?? ''}`;
+  const terminalLayoutSignature = `${layoutMode}|${dualGridActive ? '1' : '0'}|${settingsOpen ? '1' : '0'}|${tabId ?? ''}`;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -477,24 +409,12 @@ export function SessionDesktop({
   }, [open, shouldMountTerminal, terminalLayoutSignature, terminalWanted]);
 
   const applyLayout = useCallback((nextLayout: DesktopWindowLayout) => {
-    if (!isPoweredOn) {
-      if (nextLayout === 'mail-focus') {
-        setStandbyMailOpen(true);
-      } else {
-        setStandbyMailOpen(false);
-      }
-      return;
-    }
+    if (!isPoweredOn) return;
     setLayoutMode(nextLayout);
     if (nextLayout === 'terminal-focus') {
       setTerminalMinimized(false);
-      setMailMinimized(true);
-    } else if (nextLayout === 'mail-focus') {
-      setTerminalMinimized(true);
-      setMailMinimized(false);
     } else {
       setTerminalMinimized(false);
-      setMailMinimized(false);
       if (!preferences.dualMonitor) {
         setSettingsOpen(false);
       }
@@ -503,25 +423,15 @@ export function SessionDesktop({
 
   const handleRestoreTerminal = useCallback(() => {
     if (!isPoweredOn) {
-      setStandbyMailOpen(false);
       setSettingsOpen(false);
       return;
     }
     setTerminalMinimized(false);
-    if (layoutMode === 'mail-focus') {
-      setLayoutMode('terminal-focus');
-      setMailMinimized(true);
-    }
-  }, [isPoweredOn, layoutMode]);
+  }, [isPoweredOn]);
 
   const handleMinimizeTerminal = useCallback(() => {
-    if (layoutMode === 'split' && !mailMinimized) {
-      setTerminalMinimized(true);
-      setLayoutMode('mail-focus');
-      return;
-    }
     setTerminalMinimized(true);
-  }, [layoutMode, mailMinimized]);
+  }, []);
 
   const handleShellMinimizedChange = useCallback((nextMinimized: boolean) => {
     if (nextMinimized) {
@@ -530,39 +440,6 @@ export function SessionDesktop({
       handleRestoreTerminal();
     }
   }, [handleMinimizeTerminal, handleRestoreTerminal]);
-
-  const handleRestoreMail = useCallback(() => {
-    if (!isPoweredOn) {
-      setSettingsOpen(false);
-      setStandbyMailOpen(true);
-      return;
-    }
-    setMailMinimized(false);
-    if (settingsOpen && terminalWanted) {
-      setSettingsOpen(false);
-    }
-    if (layoutMode === 'terminal-focus') {
-      if (preferences.dualMonitor && !dualSpanFull) {
-        setLayoutMode('split');
-      } else {
-        setLayoutMode('mail-focus');
-        setTerminalMinimized(true);
-      }
-    }
-  }, [dualSpanFull, isPoweredOn, layoutMode, preferences.dualMonitor, settingsOpen, terminalWanted]);
-
-  const handleMinimizeMail = useCallback(() => {
-    if (!isPoweredOn) {
-      setStandbyMailOpen(false);
-      return;
-    }
-    if (layoutMode === 'split' && !terminalMinimized) {
-      setMailMinimized(true);
-      setLayoutMode('terminal-focus');
-      return;
-    }
-    setMailMinimized(true);
-  }, [isPoweredOn, layoutMode, terminalMinimized]);
 
   const handleOpenSettingsTab = useCallback((tab: ComputerSettingsTab) => {
     setSettingsTab(tab);
@@ -580,7 +457,6 @@ export function SessionDesktop({
 
   const handleToggleTerminalDock = useCallback(() => {
     if (!isPoweredOn) {
-      setStandbyMailOpen(false);
       setSettingsOpen(false);
       return;
     }
@@ -591,45 +467,19 @@ export function SessionDesktop({
     }
   }, [handleMinimizeTerminal, handleRestoreTerminal, isPoweredOn, terminalWanted]);
 
-  const handleToggleMailDock = useCallback(() => {
-    if (mailVisible) {
-      handleMinimizeMail();
-    } else {
-      handleRestoreMail();
-    }
-  }, [handleMinimizeMail, handleRestoreMail, mailVisible]);
-
-  const handleJumpToSessionFromMail = useCallback((sessionKey: string, projectKey?: string | null) => {
-    if (!onJumpToAnySession(sessionKey, projectKey)) {
-      return;
-    }
-    setStandbyMailOpen(false);
-    setSettingsOpen(false);
-    setLayoutMode('terminal-focus');
-    setTerminalMinimized(false);
-    setMailMinimized(true);
-    setMailboxScope('session');
-  }, [onJumpToAnySession]);
-
   const handleRequestTerminateCurrent = useCallback(() => {
     if (!session) return;
     onTerminateSession(session);
   }, [onTerminateSession, session]);
 
   const handlePowerOff = useCallback(() => {
-    setStandbyMailOpen(false);
     powerOffComputer();
   }, [powerOffComputer]);
 
   const handleBoot = useCallback(() => {
-    setStandbyMailOpen(false);
     setTerminalMinimized(false);
-    if (layoutMode === 'mail-focus') {
-      setLayoutMode('terminal-focus');
-      setMailMinimized(true);
-    }
     bootComputer();
-  }, [bootComputer, layoutMode]);
+  }, [bootComputer]);
 
   const coworkers = useMemo(() => {
     if (room?.sessions.length) return room.sessions;
@@ -648,16 +498,10 @@ export function SessionDesktop({
   const projectName = room?.projectName || session?.projectName || '当前项目';
   const projectPath = room?.projectPath || session?.cwd || '未指定目录';
   const sessionTitle = session?.shortLabel || session?.label || '未选定会话';
-  const sessionInbox = session?.inboxCount ?? 0;
-  const sessionPending = session?.pendingCount ?? 0;
-  const roomPending = room?.pendingMailCount ?? 0;
-  const mailBadgeCount = sessionInbox > 0 ? sessionInbox : roomPending;
-  const hasMailPulse = Boolean(session?.activity.recentPulse || room?.hasRecentPulse || sessionPending > 0);
   const wallpaperSpec = OFFICE_DESKTOP_WALLPAPER_MAP[preferences.wallpaper];
 
   const activePaneCount =
     Number(terminalWanted)
-    + Number(mailVisible)
     + Number(settingsOpen)
     + Number(secondaryWallpaperVisible)
     + Number(primaryIconsSlotVisible);
@@ -777,23 +621,11 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-layout-btn"
-              data-active={isPoweredOn && layoutMode === 'split' && terminalWanted && mailVisible ? 'true' : undefined}
+              data-active={isPoweredOn && layoutMode === 'split' && terminalWanted ? 'true' : undefined}
               onClick={() => applyLayout('split')}
             >
               <SplitCellsOutlined />
               <span>分屏协同</span>
-            </button>
-            <button
-              type="button"
-              className="session-desktop-layout-btn"
-              data-active={mailVisible && (!isPoweredOn || layoutMode === 'mail-focus') ? 'true' : undefined}
-              onClick={() => applyLayout('mail-focus')}
-            >
-              <MailOutlined />
-              <span>消息客户端</span>
-              {mailBadgeCount > 0 ? (
-                <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
-              ) : null}
             </button>
             <span className="session-desktop-topbar-sep" aria-hidden="true" />
             <button
@@ -938,10 +770,10 @@ export function SessionDesktop({
               <strong>DISPLAY 02 · 扩展副显示器</strong>
               <span>
                 {isPoweredOn
-                  ? (settingsOpen ? '设置与配置视图' : (mailVisible && terminalWanted ? '协作消息视图' : '扩展壁纸桌面'))
+                  ? (settingsOpen ? '设置与配置视图' : '扩展壁纸桌面')
                   : 'STANDBY · 同步待机'}
               </span>
-              {isPoweredOn && (terminalWanted || mailVisible) && !settingsOpen && !(terminalWanted && mailVisible) ? (
+              {isPoweredOn && terminalWanted && !settingsOpen ? (
                 <button
                   type="button"
                   className="session-desktop-bezel-span-btn"
@@ -991,26 +823,6 @@ export function SessionDesktop({
                   </span>
                   <span className="session-desktop-app-title">会话终端</span>
                   <span className="session-desktop-app-meta">{sessionTitle}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="session-desktop-app-icon"
-                  data-active={mailVisible ? 'true' : undefined}
-                  data-pulse={hasMailPulse ? 'true' : undefined}
-                  onClick={handleRestoreMail}
-                >
-                  <span className="session-desktop-app-glyph">
-                    <MailOutlined />
-                    {mailBadgeCount > 0 ? (
-                      <span className="session-desktop-app-badge">{mailBadgeCount}</span>
-                    ) : null}
-                  </span>
-                  <span className="session-desktop-app-title">协作消息</span>
-                  <span className="session-desktop-app-meta">
-                    收件 {sessionInbox} · 待投 {sessionPending}
-                    {roomPending > sessionPending ? ` · 房间待投 ${roomPending}` : ''}
-                  </span>
                 </button>
 
                 <button
@@ -1249,17 +1061,6 @@ export function SessionDesktop({
                     <ControlOutlined />
                     <span>查看电脑配置</span>
                   </button>
-                  <button
-                    type="button"
-                    className="session-desktop-btn"
-                    onClick={handleRestoreMail}
-                  >
-                    <MailOutlined />
-                    <span>查看协作消息</span>
-                    {mailBadgeCount > 0 ? (
-                      <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
-                    ) : null}
-                  </button>
                   {session ? (
                     <button
                       type="button"
@@ -1357,7 +1158,7 @@ export function SessionDesktop({
                     <span className="office-cs-pill">{wallpaperSpec.label}</span>
                   </div>
                   <p className="session-desktop-secondary-desc">
-                    当前终端与消息已收起至任务栏，副屏正在展示电脑设置或配置信息。
+                    当前终端已收起至任务栏，副屏正在展示电脑设置或配置信息。
                   </p>
                   <div className="session-desktop-secondary-actions">
                     <button
@@ -1367,14 +1168,6 @@ export function SessionDesktop({
                     >
                       <CodeOutlined />
                       <span>在主屏恢复会话终端</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="session-desktop-btn"
-                      onClick={handleRestoreMail}
-                    >
-                      <MailOutlined />
-                      <span>打开协作消息</span>
                     </button>
                   </div>
                 </div>
@@ -1397,15 +1190,6 @@ export function SessionDesktop({
                   ) : null}
                 </div>
                 <div className="session-desktop-window-controls">
-                  <button
-                    type="button"
-                    className="session-desktop-win-btn"
-                    onClick={handleRestoreMail}
-                    title="打开或切换到协作消息窗口（终端保持后台运行）"
-                    aria-label="打开协作消息窗口"
-                  >
-                    <MailOutlined />
-                  </button>
                   <button
                     type="button"
                     className="session-desktop-win-btn"
@@ -1622,15 +1406,6 @@ export function SessionDesktop({
                           <PlusOutlined />
                           <span>新建项目终端</span>
                         </button>
-                        <button
-                          type="button"
-                          className="session-desktop-btn"
-                          disabled={isTerminating}
-                          onClick={handleRestoreMail}
-                        >
-                          <MailOutlined />
-                          <span>查看协作消息</span>
-                        </button>
                         {session ? (
                           isWebShell ? (
                             <button
@@ -1665,86 +1440,6 @@ export function SessionDesktop({
               </div>
             </section>
 
-            {/* Mailbox OS Window */}
-            <section
-              className={`session-desktop-window session-desktop-window--mail${mailVisible ? '' : ' session-desktop-window--hidden'}`}
-              aria-label="协作消息窗口"
-              aria-hidden={!mailVisible}
-            >
-              <div className="session-desktop-window-bar">
-                <div className="session-desktop-window-title">
-                  <MailOutlined />
-                  <span className="session-desktop-window-name">
-                    协作消息 — {getMailboxScopeTitle(mailboxScope, room, session)}
-                  </span>
-                  {peerCounts.pending > 0 ? (
-                    <span className="session-desktop-inline-badge">待投 {peerCounts.pending}</span>
-                  ) : null}
-                </div>
-                <div className="session-desktop-window-controls">
-                  {isPoweredOn ? (
-                    <button
-                      type="button"
-                      className="session-desktop-win-btn"
-                      onClick={() => applyLayout('terminal-focus')}
-                      title="切换到会话终端"
-                      aria-label="切换到会话终端"
-                    >
-                      <CodeOutlined />
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="session-desktop-win-btn"
-                    onClick={() => handleToggleSettingsTab('settings')}
-                    title="打开或收起电脑设置"
-                    aria-label="切换电脑设置"
-                  >
-                    <SettingOutlined />
-                  </button>
-                  {isPoweredOn ? (
-                    <button
-                      type="button"
-                      className="session-desktop-win-btn"
-                      onClick={() => applyLayout(layoutMode === 'split' ? 'mail-focus' : 'split')}
-                      title={layoutMode === 'split' ? '独占消息窗口' : '分屏协同'}
-                      aria-label={layoutMode === 'split' ? '独占消息窗口' : '分屏协同'}
-                    >
-                      {layoutMode === 'split' ? <CompressOutlined /> : <SplitCellsOutlined />}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="session-desktop-win-btn"
-                    onClick={handleMinimizeMail}
-                    aria-label="最小化消息窗口"
-                    title="最小化到任务栏"
-                  >
-                    <MinusOutlined />
-                  </button>
-                </div>
-              </div>
-
-              <div className="session-desktop-mail-host">
-                <OfficeMailbox
-                  scope={mailboxScope}
-                  onScopeChange={setMailboxScope}
-                  focusedSession={session}
-                  activeRoom={room}
-                  allRooms={allRooms}
-                  allMessages={allMessages}
-                  unassignedMessages={unassignedMessages}
-                  fullyUnassignedCount={fullyUnassignedCount}
-                  counts={peerCounts}
-                  loading={peerLoading}
-                  error={peerError}
-                  onRefresh={onRefreshAll}
-                  onJumpToSession={handleJumpToSessionFromMail}
-                  compactHeader={true}
-                />
-              </div>
-            </section>
-
             {/* Focused Computer Settings & Configuration Window */}
             <OfficeComputerSettings
               open={settingsOpen}
@@ -1755,10 +1450,6 @@ export function SessionDesktop({
                 setSettingsOpen(false);
                 handleRestoreTerminal();
               } : undefined}
-              onFocusMail={() => {
-                setSettingsOpen(false);
-                handleRestoreMail();
-              }}
               serverId={serverId}
               session={session}
               room={room}
@@ -1788,7 +1479,7 @@ export function SessionDesktop({
                   </div>
 
                   <p className="session-desktop-secondary-desc">
-                    双显示器模式已开启，与 3D 工位双联屏支架实时联动。可在副屏展开协作消息、调节电脑设置或核对工位配置事实。
+                    双显示器模式已开启，与 3D 工位双联屏支架实时联动。可在副屏调节电脑设置或核对工位配置事实。
                   </p>
 
                   {session ? (
@@ -1798,13 +1489,8 @@ export function SessionDesktop({
                         <dd><code>{session.shortLabel || session.label}</code></dd>
                       </div>
                       <div className="session-desktop-meta-row">
-                        <dt>MAILBOX</dt>
-                        <dd>
-                          <span>
-                            收件 {sessionInbox} · 待投 {sessionPending}
-                            {roomPending > sessionPending ? ` · 房间待投 ${roomPending}` : ''}
-                          </span>
-                        </dd>
+                        <dt>MODEL</dt>
+                        <dd><span>{session.model || '默认模型'}</span></dd>
                       </div>
                       <div className="session-desktop-meta-row">
                         <dt>CHASSIS RGB</dt>
@@ -1818,17 +1504,6 @@ export function SessionDesktop({
                   ) : null}
 
                   <div className="session-desktop-secondary-actions">
-                    <button
-                      type="button"
-                      className="session-desktop-btn session-desktop-btn--primary"
-                      onClick={handleRestoreMail}
-                    >
-                      <MailOutlined />
-                      <span>在副屏展开协作消息</span>
-                      {mailBadgeCount > 0 ? (
-                        <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
-                      ) : null}
-                    </button>
                     <button
                       type="button"
                       className="session-desktop-btn"
@@ -1878,22 +1553,6 @@ export function SessionDesktop({
               <CodeOutlined />
               <span className={`hud-led ${isPoweredOn ? availability.ledClass : ''}`} aria-hidden="true" />
               <span>会话终端</span>
-            </button>
-
-            <button
-              type="button"
-              className="session-desktop-dock-pill"
-              data-active={mailVisible ? 'true' : undefined}
-              data-minimized={!mailVisible ? 'true' : undefined}
-              data-pulse={hasMailPulse ? 'true' : undefined}
-              onClick={handleToggleMailDock}
-              title={mailVisible ? '最小化消息窗口' : '打开协作消息'}
-            >
-              <MailOutlined />
-              <span>协作消息</span>
-              {mailBadgeCount > 0 ? (
-                <span className="session-desktop-inline-badge">{mailBadgeCount}</span>
-              ) : null}
             </button>
 
             <button
@@ -1949,7 +1608,6 @@ export function SessionDesktop({
               const isCurrent = coworker.id === session?.id;
               const coworkerMeta = getAvailabilityMeta(coworker.availability);
               const coworkerPower = coworkerPowerMap.get(coworker.sessionKey) ?? 'on';
-              const coworkerMailCount = coworker.pendingCount > 0 ? coworker.pendingCount : coworker.inboxCount;
               return (
                 <button
                   key={coworker.id}
@@ -1966,9 +1624,6 @@ export function SessionDesktop({
                   <span className="session-desktop-coworker-name">{coworker.shortLabel || coworker.label}</span>
                   {coworkerPower === 'off' ? (
                     <PoweroffOutlined className="session-desktop-coworker-poweroff" aria-label="虚拟已关机" />
-                  ) : null}
-                  {coworkerMailCount > 0 ? (
-                    <span className="session-desktop-inline-badge">{coworkerMailCount}</span>
                   ) : null}
                 </button>
               );

@@ -21,15 +21,6 @@ var sessionPositionActions = map[string]bool{"resume": true, "fork": true}
 
 var modelValueFlags = map[string]string{"--model": "model", "-m": "model", "--model-alias": "alias"}
 
-var peerStateCandidates = []namedSummary{
-	{Name: "pending", Summary: "待投递"},
-	{Name: "delivered", Summary: "已送达"},
-	{Name: "read", Summary: "已读"},
-	{Name: "failed", Summary: "投递失败"},
-	{Name: "unread", Summary: "未读（已送达但未读）"},
-	{Name: "all", Summary: "全部状态"},
-}
-
 var peerChannelCandidates = []namedSummary{
 	{Name: "native", Summary: "claude 的本机 UDS 协议（有投递语义）"},
 	{Name: "inject", Summary: "aih 代打进会话的 pane（等价用户手打）"},
@@ -93,7 +84,7 @@ func isManagedValueFlag(flag string, prior []string) bool {
 	}
 	if head == "peer" {
 		switch flag {
-		case "--channel", "--target", "--reply-to", "--state", "--mode":
+		case "--channel", "--reply-to", "--mode":
 			return true
 		}
 	}
@@ -328,7 +319,7 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 			for _, row := range context.peerLister(current) {
 				detail := strings.TrimSpace(row.Detail)
 				if detail == "" {
-					detail = "收件箱消息"
+					detail = "最近消息"
 				}
 				target.add(row.Value, detail, groupSession, detail)
 			}
@@ -337,13 +328,6 @@ func resolveCompletion(words []string, context *resolverContext) []Candidate {
 	case "--reply-to":
 		if head == "peer" {
 			addPeerMessageIds(target, context, current)
-			return target.items
-		}
-	case "--state":
-		if head == "peer" {
-			for _, row := range peerStateCandidates {
-				target.add(row.Name, row.Summary, groupFlag, "")
-			}
 			return target.items
 		}
 	case "--mode":

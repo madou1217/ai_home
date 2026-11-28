@@ -18,9 +18,7 @@ import {
   DesktopOutlined,
   DragOutlined,
   EyeOutlined,
-  InboxOutlined,
   LeftOutlined,
-  MailOutlined,
   MoreOutlined,
   PlusOutlined,
   PoweroffOutlined,
@@ -68,11 +66,7 @@ export interface OfficeRoomProps {
   zoomingSessionId: string | null;
   cameraPreset: OfficeCameraPreset;
   onCameraPresetChange: (preset: OfficeCameraPreset) => void;
-  unassignedCount: number;
   onOpenMonitor: (session: OfficeSessionItem, originRect?: DesktopOriginRect) => void;
-  onOpenSessionMail: (session: OfficeSessionItem, originRect?: DesktopOriginRect) => void;
-  onOpenRoomMailbox: () => void;
-  onOpenUnassignedMailbox: () => void;
   onCopyIdentity: (session: OfficeSessionItem) => void;
   onOpenNewTerminal: (cwd?: string) => void;
   directoryLoading: boolean;
@@ -152,10 +146,6 @@ function resolveRealDockSnippet(session: OfficeSessionItem): {
   if (preview) {
     return { tag: 'PREVIEW', text: preview };
   }
-  const snippet = (session.activity.latestSnippet || '').trim();
-  if (snippet) {
-    return { tag: 'MAIL', text: snippet };
-  }
   const cwd = (session.cwd || '').trim();
   if (cwd && cwd !== '__no_cwd__') {
     return { tag: 'CWD', text: cwd };
@@ -182,11 +172,7 @@ export function OfficeRoom({
   zoomingSessionId,
   cameraPreset,
   onCameraPresetChange,
-  unassignedCount,
   onOpenMonitor,
-  onOpenSessionMail,
-  onOpenRoomMailbox,
-  onOpenUnassignedMailbox,
   onCopyIdentity,
   onOpenNewTerminal,
   directoryLoading,
@@ -334,6 +320,7 @@ export function OfficeRoom({
     return computerPreferencesByKey[activeSession.sessionKey]
       ?? readOfficeComputerPreferences(sid, activeSession.sessionKey);
   }, [activeSession, computerPreferencesByKey, serverId]);
+  const isMonitorEditActive = Boolean(monitorEditMode && activeSession && activeComputerPrefs);
 
   useEffect(() => {
     if (!activeComputerPrefs?.dualMonitor) {
@@ -367,10 +354,6 @@ export function OfficeRoom({
       isFallbackRoom: room.isFallbackRoom,
       runningCount: room.runningCount,
       totalSessionCount: room.sessions.length,
-      pendingMailCount: room.pendingMailCount,
-      crossProjectMailCount: room.crossProjectMailCount,
-      roomMessageCount: room.roomMessages.length,
-      hasRecentPulse: room.hasRecentPulse,
       sessions: visibleSessions,
       selectedSessionKey: effectiveSelectedKey,
       computerPreferences: computerPreferencesByKey,
@@ -396,16 +379,12 @@ export function OfficeRoom({
     serverId: resolvedServerId,
     roomSessions: room?.sessions ?? [],
     onOpenMonitor,
-    onOpenSessionMail,
-    onOpenRoomMailbox,
   });
   latestRef.current = {
     propServerId: serverId,
     serverId: resolvedServerId,
     roomSessions: room?.sessions ?? [],
     onOpenMonitor,
-    onOpenSessionMail,
-    onOpenRoomMailbox,
   };
 
   const latestMonitorEditRef = useRef({
@@ -446,20 +425,6 @@ export function OfficeRoom({
           setFocusedSessionKey(sessionKey);
           latestRef.current.onOpenMonitor(session, originRect);
         }
-      },
-      onOpenSessionMail: (sessionKey, originRect) => {
-        if (effectDisposed) return;
-        const session = latestRef.current.roomSessions.find(
-          (item) => item.sessionKey === sessionKey
-        );
-        if (session) {
-          setFocusedSessionKey(sessionKey);
-          latestRef.current.onOpenSessionMail(session, originRect);
-        }
-      },
-      onOpenRoomMailbox: () => {
-        if (effectDisposed) return;
-        latestRef.current.onOpenRoomMailbox();
       },
       onHoverTarget: (info) => {
         if (effectDisposed) return;
@@ -618,15 +583,6 @@ export function OfficeRoom({
     onOpenMonitor(activeSession, originRect);
   }, [activeSession, onOpenMonitor]);
 
-  const handleOpenSelectedMail = useCallback(() => {
-    if (!activeSession) return;
-    const originRect = controllerRef.current?.projectStationPartToRect(
-      activeSession.sessionKey,
-      'mail-tray'
-    );
-    onOpenSessionMail(activeSession, originRect);
-  }, [activeSession, onOpenSessionMail]);
-
   const handleCopySelectedIdentity = useCallback(() => {
     if (!activeSession) return;
     onCopyIdentity(activeSession);
@@ -662,19 +618,11 @@ export function OfficeRoom({
     handleCameraPresetSelect(key as OfficeCameraPreset);
   };
 
-  const mailCount = activeSession
-    ? activeSession.inboxCount + activeSession.pendingCount
-    : 0;
   const moreMenuItems: MenuProps['items'] = [
     {
       key: 'monitor',
       icon: isMonitorEditActive ? <CheckOutlined /> : <DragOutlined />,
       label: isMonitorEditActive ? '完成显示器调整' : '调整显示器',
-    },
-    {
-      key: 'mail',
-      icon: <MailOutlined />,
-      label: mailCount > 0 ? `会话消息 (${mailCount})` : '会话消息',
     },
     { key: 'copy', icon: <CopyOutlined />, label: '复制标识' },
     ...(onToggleStationPower
@@ -692,10 +640,6 @@ export function OfficeRoom({
   const handleMoreMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (key === 'monitor') {
       setMonitorEditMode((prev) => !prev);
-      return;
-    }
-    if (key === 'mail') {
-      handleOpenSelectedMail();
       return;
     }
     if (key === 'copy') {
@@ -818,11 +762,6 @@ export function OfficeRoom({
               <Button type="primary" icon={<PlusOutlined />} onClick={() => onOpenNewTerminal()}>
                 新建终端
               </Button>
-              {unassignedCount > 0 ? (
-                <Button icon={<InboxOutlined />} onClick={onOpenUnassignedMailbox}>
-                  未归属消息 ({unassignedCount})
-                </Button>
-              ) : null}
             </div>
           )}
         />
@@ -859,13 +798,10 @@ export function OfficeRoom({
           : activeComputerPrefs.monitors[editMonitorIdx]
       )
     : null;
-  const isMonitorEditActive = Boolean(monitorEditMode && activeSession && activeComputerPrefs);
-
   return (
     <section
       className="office-room-root"
       data-camera={cameraPreset}
-      data-has-pulse={room.hasRecentPulse ? 'true' : 'false'}
       data-zooming={zoomingSessionId ? 'true' : 'false'}
       aria-label={`项目办公室 ${room.projectName}`}
     >
@@ -991,9 +927,6 @@ export function OfficeRoom({
                   <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenRoomTerminal}>
                     新建终端
                   </Button>
-                  <Button icon={<MailOutlined />} onClick={onOpenRoomMailbox}>
-                    房间消息 ({room.roomMessages.length})
-                  </Button>
                 </div>
               )}
             />
@@ -1034,7 +967,6 @@ export function OfficeRoom({
             {visibleSessions.map((session) => {
               const isSelected = session.sessionKey === effectiveSelectedKey;
               const availMeta = getAvailabilityMeta(session.availability);
-              const mailTotal = session.inboxCount + session.pendingCount;
               return (
                 <button
                   key={session.sessionKey}
@@ -1044,21 +976,12 @@ export function OfficeRoom({
                   aria-selected={isSelected}
                   className={`office-station-chip${isSelected ? ' is-selected' : ''}`}
                   data-availability={session.availability}
-                  data-pulse={session.activity.recentPulse ? 'true' : 'false'}
                   onClick={() => setFocusedSessionKey(session.sessionKey)}
                   title={`${session.label} (${availMeta.label})`}
                 >
                   <span className={availMeta.ledClass} aria-hidden="true" />
                   <span className="office-station-chip-code">{session.persona.badgeCode}</span>
                   <span className="office-station-chip-name">{session.shortLabel}</span>
-                  {mailTotal > 0 ? (
-                    <span
-                      className={`office-station-chip-mail${session.pendingCount > 0 ? ' is-pending' : ''}`}
-                    >
-                      {session.inboxCount}
-                      {session.pendingCount > 0 ? `+${session.pendingCount}` : ''}
-                    </span>
-                  ) : null}
                 </button>
               );
             })}

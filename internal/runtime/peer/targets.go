@@ -16,7 +16,7 @@ import (
 )
 
 // Target contains addressing metadata only. Listing never connects to a user's
-// inbox socket or types into a terminal just to test availability.
+// messaging socket or types into a terminal just to test availability.
 type Target struct {
 	ID string `json:"id"`
 	RecordParty

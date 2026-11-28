@@ -84,8 +84,6 @@ func ReadableMetadata(rec Record, now time.Time) string {
 		validity = "已过期，仅供查阅，请勿继续旧行动"
 	case rec.NotificationState == "canceled" || rec.CanceledAt > 0:
 		validity = "已撤回，仅供查阅"
-	case rec.NotificationState == "manual":
-		validity = "自动通知期已结束或需手动处理，请先确认当前需要"
 	default:
 		if rec.ExpiresAt > 0 {
 			validity = "有效至 " + formatTime(rec.ExpiresAt)

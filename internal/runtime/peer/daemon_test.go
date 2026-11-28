@@ -291,14 +291,13 @@ func TestFlushPendingFilterBeforeLimitAndRecoverExpire(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(aiHome, "run", "peer", "archive", readyRec.ID+".json")); err != nil {
 		t.Fatalf("expected readyRec archived: %v", err)
 	}
-	// 现行策略：过期只做语义标记（notification=expired），记录保留在收件箱里
-	// 供人工查看，不再自动归档成 failed（见 ExpireStale 的注释）。
-	expiredOld, err := store.readRecord("pending", oldRec.ID)
-	if err != nil || expiredOld.NotificationState != "expired" {
-		t.Fatalf("expected expired record kept with notification=expired, got %+v err=%v", expiredOld, err)
+	// 没有收件箱：过期消息不再留在 pending 供人工查看，直接归档为终止记录。
+	expiredOld, err := store.readRecord("archive", oldRec.ID)
+	if err != nil || expiredOld.NotificationState != "expired" || expiredOld.State != "failed" {
+		t.Fatalf("expected expired record archived as failed, got %+v err=%v", expiredOld, err)
 	}
-	if _, statErr := os.Stat(filepath.Join(aiHome, "run", "peer", "archive", oldRec.ID+".json")); !os.IsNotExist(statErr) {
-		t.Fatalf("expired record must not be archived, stat err=%v", statErr)
+	if _, statErr := os.Stat(filepath.Join(aiHome, "run", "peer", "pending", oldRec.ID+".json")); !os.IsNotExist(statErr) {
+		t.Fatalf("expired record must leave pending, stat err=%v", statErr)
 	}
 }
 

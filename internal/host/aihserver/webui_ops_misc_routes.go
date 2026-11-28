@@ -19,7 +19,6 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/failureprovenanceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiaccountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuicodexresetcreditapi"
-	"github.com/madou1217/ai_home/internal/transport/http/webuipeerapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuischeduledtasksapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuiserverrestartapi"
 	"github.com/madou1217/ai_home/internal/transport/http/webuitasksapi"
@@ -68,7 +67,6 @@ func newNativeActivityExecutor(dependencies webuiRouteDependencies) accountactiv
 }
 
 // buildWebUIOpsMiscRoutes 装配运维与杂项 WebUI 管理路由：
-//   - peer 只读消息与 watch（/v1/management/webui/peer/messages*）
 //   - 账号请求结果汇总视图（/v1/management/webui/account-outcomes）
 //   - 统一活跃任务队列与 watch（/v1/management/webui/tasks*）
 //   - 计划任务调度与运行记录（/v1/management/webui/scheduled-tasks*）
@@ -86,14 +84,6 @@ func buildWebUIOpsMiscRoutesWithPorts(
 	hostHome := strings.TrimSpace(dependencies.HostHomeDir)
 	if aiHome == "" && hostHome != "" {
 		aiHome = filepath.Join(hostHome, ".ai_home")
-	}
-
-	peerHandler, err := webuipeerapi.NewHandler(webuipeerapi.Dependencies{
-		Authorizer: dependencies.Authorizer,
-		AIHomeDir:  aiHome,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("创建 peer 消息只读接口失败: %w", err)
 	}
 
 	// 跳过 nil *sqliteaccount.Store 指针，避免传入类型化 nil accountoutcomes.Reader。
@@ -177,10 +167,6 @@ func buildWebUIOpsMiscRoutesWithPorts(
 	}
 
 	routes := []webuiRoute{
-		{Pattern: "GET " + webuipeerapi.MessagesPath, Handler: peerHandler},
-		{Pattern: "GET " + webuipeerapi.WatchPath, Handler: peerHandler},
-		{Pattern: "POST " + webuipeerapi.MessagesPath + "/cancel", Handler: peerHandler},
-		{Pattern: "POST " + webuipeerapi.MessagesPath + "/resume", Handler: peerHandler},
 		{Pattern: "GET " + webuiaccountoutcomesapi.Path, Handler: outcomesHandler},
 		// 浏览器数据面直接由 Go 应答。
 		{Pattern: "GET " + webuiaccountoutcomesapi.PublicPath, Handler: webuiaccountoutcomesapi.NewPublicAlias(outcomesHandler)},

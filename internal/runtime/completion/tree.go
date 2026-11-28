@@ -374,7 +374,7 @@ func emitTreeValues(target *collector, context *resolverContext, state *treeStat
 			for _, row := range context.peerLister(current) {
 				detail := strings.TrimSpace(row.Detail)
 				if detail == "" {
-					detail = "收件箱消息"
+					detail = "最近消息"
 				}
 				target.add(row.Value, detail, groupSession, detail)
 			}

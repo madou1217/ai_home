@@ -34,7 +34,6 @@
 | R06 `/usage` | [U01–U08 用量](#usage) | `P/ModelUsage.tsx` → `F/model-usage` | modelUsageAPI | 未归属数据不得猜账号 | not verified：全量账单/聚合口径 |
 | R07 `/models` | [M01–M08 全局模型](#models) | `P/Models.tsx` → `F/models` | modelsAPI | 全局目录与账号模型身份分离 | not verified：上游目录和能力 |
 | R08 `/scheduled-tasks` | [J01–J09 计划任务](#tasks) | `P/ScheduledTasks.tsx` | scheduled-tasks / accounts activity | 计划预览不等于已执行 | not verified：时区、重入、外部副作用 |
-| R09 `/peer-inbox` | [N01–N03 收件箱](#inbox) | `P/PeerInbox.tsx` | peer/messages + watch | 只读，不能把查看视作发送/已读写入 | not verified：投递状态与消息正文 |
 | R10 `/toolkit/install-guide` | [T58–T59 命令指南](#toolkit) | `P/ToolkitInstallGuide.tsx` | toolkitAPI.getEnvironmentGuide | 隐藏菜单；仅生成/复制，不自动执行 | not verified：平台指南与转义 |
 | R11 `/toolkit` | [T01–T57 开发工具](#toolkit) | `P/Toolkit.tsx`；`P/toolkit-url-state.ts` | 14 个面板，见分表 | `panel` 驱动，旧 cli-upgrade → apps | not verified：每面板真实可达性 |
 | R12 `/studio`（父） | 灵感工坊导航分组 | `web/config/routes.ts` | 无组件/API | 分组不是独立可用功能 | not verified：导航展示 |
@@ -211,15 +210,6 @@
 | J09 同上 | R 看全部/单任务记录、天数及分页 | 同上 records drawers/table | GET W/scheduled-tasks/records | records 的运行结论不能替代上游到账证据 | not verified：日志敏感性、分页、进程退出 |
 
 <a id="inbox"></a>
-### 3.8 Peer 收件箱
-
-| 入口 | 子功能/动作 | 主源码 | API/领域映射（可证） | 原行为不变量 | 验证缺口 |
-|---|---|---|---|---|---|
-| N01 `/peer-inbox` | R 查看并刷新消息 | `P/PeerInbox.tsx` | GET W/peer/messages；W/peer/messages/watch | 目录变化由 SSE 提示重读，不循环盲轮询 | not verified：连接断开与目录更新 |
-| N02 同上 | R 按 pending/delivered/read/failed 筛选 | 同上 visible/filter | 本地过滤返回消息 | 状态来自服务端，不点击即标已读 | not verified：服务端状态含义及历史规模 |
-| N03 同上 | R 展开正文、回复关系、重试/失败信息 | 同上 expandable | PeerMessage 字段 | 只读，不提供 Web 发送/回复按钮的支持承诺 | not verified：正文转义、隐私与内容完整性 |
-
-<a id="toolkit"></a>
 ### 3.9 开发工具：全部 14 个当前面板与隐藏指南
 
 下面 `TK(panel)` 表示实际入口 `/toolkit?panel=panel`，并非新路由；对应 `P/Toolkit.tsx` 的 renderPanel 分支。所有安装、网络、服务和配置动作只做静态映射，**本次一个也未执行**。

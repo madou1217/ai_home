@@ -89,7 +89,7 @@ func addPeerMessageIds(target *collector, context *resolverContext, current stri
 	for _, row := range context.peerMessageLister(current) {
 		detail := strings.TrimSpace(row.Detail)
 		if detail == "" {
-			detail = "收件箱消息"
+			detail = "最近消息"
 		}
 		target.add(row.Value, detail, groupSession, detail)
 	}

@@ -30,13 +30,8 @@ import {
   type DualMonitorAssemblyRig,
 } from './office-monitor-rig';
 import { getSharedVoxelMaterialSet, type VoxelTileId } from './office-voxel-atlas';
-import { createSolidColorVoxelGeometry, VoxelBoxBuilder } from './office-voxel-builder';
-import {
-  createRectilinearPulseGuideGeometry,
-  createVoxelChestGeometry,
-  createWireframeBoxGeometry,
-  sampleRectilinearPath,
-} from './office-voxel-kit';
+import { VoxelBoxBuilder } from './office-voxel-builder';
+import { createWireframeBoxGeometry } from './office-voxel-kit';
 import {
   SEAT_FACING_YAW,
   SEAT_LOCAL_X,
@@ -47,7 +42,6 @@ import {
 /**
  * Minecraft 体素工位组装模块：
  * - 橡木木板书桌（桌面顶面严格维持 DESK_SURFACE_Y = 0.746）+ 方块椅子 + 羊毛地毯合批构建（1 Draw Call）。
- * - Minecraft 木箱邮件托盘 + InstancedMesh 悬浮上下弹跳邮件包裹（最多 1 Draw Call）+ 3 段直线折线脉冲粒子。
  * - 12 根细长方体拼成的发光选中方框；悬停仅提亮材质不改几何形状。
  * - 完整保留 `hitKind` / `sessionKey` / `monitorIndex` 拾取标签树。
  */
@@ -57,17 +51,6 @@ const CHAIR_SEAT_TOP_Y = 0.375;
 const CHAIR_CENTER_X = 0.5625;
 const CHAIR_CENTER_Z = 0;
 
-const PARCEL_BASE_Y = [0.28125, 0.375, 0.46875] as const;
-
-const PULSE_WAYPOINTS: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3] = [
-  new THREE.Vector3(-0.125, 0.234375, 0),
-  new THREE.Vector3(-0.125, 0.5625, 0),
-  new THREE.Vector3(0.125, 0.5625, 0),
-  new THREE.Vector3(0.125, 0.234375, 0),
-];
-
-const SCRATCH_PULSE_POS = new THREE.Vector3();
-const SCRATCH_PARCEL_MATRIX = new THREE.Matrix4();
 const SCRATCH_FRAME_COLOR = new THREE.Color();
 const FRAME_SOFTEN_BASE = new THREE.Color('#3b738f');
 
@@ -87,22 +70,11 @@ export interface OfficeStationRig {
   monitorAssembly: DualMonitorAssemblyRig;
   screenMesh: THREE.Mesh;
   computerRig: DesktopComputerRig;
-  mailTrayGroup: THREE.Group;
-  mailPacketsMesh: THREE.InstancedMesh;
-  visiblePacketCount: number;
-  trayLedMesh: THREE.Mesh;
-  pulseGuideMesh: THREE.Mesh;
-  pulseCubeMesh: THREE.Mesh;
   selectionFrameMesh: THREE.Mesh;
   character: OfficeCharacterRig;
   badgeBundle: CanvasTextureBundle;
   furnitureMaterial: THREE.MeshLambertMaterial;
   selectionFrameMaterial: THREE.MeshBasicMaterial;
-  trayLedMaterial: THREE.MeshBasicMaterial;
-  pulseGuideMaterial: THREE.MeshBasicMaterial;
-  pulseCubeMaterial: THREE.MeshBasicMaterial;
-  hasActivePulse: boolean;
-  hasPendingMail: boolean;
   phaseOffset: number;
 }
 
@@ -177,7 +149,7 @@ function relocateDesktopPcTowerToFloor(computerRig: DesktopComputerRig): void {
 function tagPickableTree(
   object: THREE.Object3D,
   sessionKey: string,
-  hitKind: 'station' | 'monitor' | 'mail-tray',
+  hitKind: 'station' | 'monitor',
   preserveShadowFlags = false
 ): void {
   object.traverse((child) => {
@@ -188,23 +160,6 @@ function tagPickableTree(
       child.receiveShadow = true;
     }
   });
-}
-
-function updateParcelInstanceMatrices(
-  mesh: THREE.InstancedMesh,
-  count: number,
-  elapsedSec: number,
-  phaseOffset: number,
-  reducedMotion: boolean
-): void {
-  for (let i = 0; i < count; i += 1) {
-    const bob = reducedMotion
-      ? 0
-      : Math.sin(elapsedSec * 3.1 + phaseOffset + i * 0.9) * 0.022;
-    SCRATCH_PARCEL_MATRIX.makeTranslation(0, PARCEL_BASE_Y[i] + bob, 0);
-    mesh.setMatrixAt(i, SCRATCH_PARCEL_MATRIX);
-  }
-  mesh.instanceMatrix.needsUpdate = true;
 }
 
 /** 合批构建橡木书桌、方块椅子与羊毛地毯底座（1 次 Draw Call） */
@@ -394,102 +349,6 @@ function buildVoxelFurnitureGeometry(carpetTile: VoxelTileId): THREE.BufferGeome
   return builder.build(true);
 }
 
-/** 构建 Minecraft 木箱邮件托盘、合批悬浮包裹与 3 段折线脉冲信号 */
-function buildVoxelMailTray(
-  sessionKey: string,
-  trayLedMaterial: THREE.MeshBasicMaterial,
-  pulseGuideMaterial: THREE.MeshBasicMaterial,
-  pulseCubeMaterial: THREE.MeshBasicMaterial
-): {
-  mailTrayGroup: THREE.Group;
-  mailPacketsMesh: THREE.InstancedMesh;
-  trayLedMesh: THREE.Mesh;
-  pulseGuideMesh: THREE.Mesh;
-  pulseCubeMesh: THREE.Mesh;
-} {
-  const shared = getSharedVoxelMaterialSet();
-  const mailTrayGroup = new THREE.Group();
-  mailTrayGroup.position.set(0.125, DESK_SURFACE_Y, 0.375);
-
-  // Minecraft 经典木箱主体
-  const chestGeo = createVoxelChestGeometry(0.25, 0.21875, 0.21875);
-  const chestMesh = new THREE.Mesh(chestGeo, shared.opaque);
-  mailTrayGroup.add(chestMesh);
-
-  // 箱体前缘像素状态指示方块（仅在有待处理或脉冲邮件时显示）
-  const ledGeo = createSolidColorVoxelGeometry([
-    {
-      minX: -0.0625,
-      minY: 0.03125,
-      minZ: 0.109375,
-      maxX: 0.0625,
-      maxY: 0.0625,
-      maxZ: 0.125,
-      shadeFaces: false,
-    },
-  ]);
-  const trayLedMesh = new THREE.Mesh(ledGeo, trayLedMaterial);
-  trayLedMesh.visible = false;
-  trayLedMesh.userData.noShadow = true;
-  mailTrayGroup.add(trayLedMesh);
-
-  // 1~3 个悬浮小邮件包裹方块（合批为 1 个 InstancedMesh，弹跳由正弦垂直位移驱动）
-  const parcelBuilder = new VoxelBoxBuilder();
-  parcelBuilder.addBox({
-    minX: -0.0625,
-    minY: -0.03125,
-    minZ: -0.046875,
-    maxX: 0.0625,
-    maxY: 0.03125,
-    maxZ: 0.046875,
-    tiles: 'mail_parcel',
-  });
-  const sharedParcelGeo = parcelBuilder.build(false);
-  const mailPacketsMesh = new THREE.InstancedMesh(
-    sharedParcelGeo,
-    shared.opaque,
-    PARCEL_BASE_Y.length
-  );
-  mailPacketsMesh.count = 0;
-  mailPacketsMesh.visible = false;
-  updateParcelInstanceMatrices(mailPacketsMesh, PARCEL_BASE_Y.length, 0, 0, true);
-  mailTrayGroup.add(mailPacketsMesh);
-
-  // 3 段直线折线轨道（全部轴对齐长方体）
-  const guideGeo = createRectilinearPulseGuideGeometry(PULSE_WAYPOINTS, 0.015625);
-  const pulseGuideMesh = new THREE.Mesh(guideGeo, pulseGuideMaterial);
-  pulseGuideMesh.visible = false;
-  pulseGuideMesh.userData.noShadow = true;
-  mailTrayGroup.add(pulseGuideMesh);
-
-  // 沿 3 段折线运动的发光方块粒子
-  const cubeGeo = createSolidColorVoxelGeometry([
-    {
-      minX: -0.03125,
-      minY: -0.03125,
-      minZ: -0.03125,
-      maxX: 0.03125,
-      maxY: 0.03125,
-      maxZ: 0.03125,
-      shadeFaces: false,
-    },
-  ]);
-  const pulseCubeMesh = new THREE.Mesh(cubeGeo, pulseCubeMaterial);
-  pulseCubeMesh.visible = false;
-  pulseCubeMesh.userData.noShadow = true;
-  mailTrayGroup.add(pulseCubeMesh);
-
-  tagPickableTree(mailTrayGroup, sessionKey, 'mail-tray');
-
-  return {
-    mailTrayGroup,
-    mailPacketsMesh,
-    trayLedMesh,
-    pulseGuideMesh,
-    pulseCubeMesh,
-  };
-}
-
 export function createWorkstationPod(
   session: OfficeSessionItem,
   palette: OfficeScenePalette,
@@ -509,20 +368,6 @@ export function createWorkstationPod(
     transparent: true,
     opacity: 0.72,
     depthWrite: false,
-  });
-
-  const trayLedMaterial = new THREE.MeshBasicMaterial({
-    color: palette.accentHex,
-  });
-
-  const pulseGuideMaterial = new THREE.MeshBasicMaterial({
-    color: palette.accentHex,
-    transparent: true,
-    opacity: 0.65,
-  });
-
-  const pulseCubeMaterial = new THREE.MeshBasicMaterial({
-    color: palette.accentHex,
   });
 
   // 1. 书桌 + 椅子 + 羊毛地毯底座（单次合批）
@@ -580,21 +425,6 @@ export function createWorkstationPod(
   );
   root.add(monitorAssembly.root);
 
-  // 6. Minecraft 木箱邮件托盘 + 悬浮包裹 + 3 段直线脉冲
-  const {
-    mailTrayGroup,
-    mailPacketsMesh,
-    trayLedMesh,
-    pulseGuideMesh,
-    pulseCubeMesh,
-  } = buildVoxelMailTray(
-    session.sessionKey,
-    trayLedMaterial,
-    pulseGuideMaterial,
-    pulseCubeMaterial
-  );
-  root.add(mailTrayGroup);
-
   const rig: OfficeStationRig = {
     sessionKey: session.sessionKey,
     root,
@@ -602,22 +432,11 @@ export function createWorkstationPod(
     monitorAssembly,
     screenMesh: monitorAssembly.monitors[0].screenMesh,
     computerRig,
-    mailTrayGroup,
-    mailPacketsMesh,
-    visiblePacketCount: 0,
-    trayLedMesh,
-    pulseGuideMesh,
-    pulseCubeMesh,
     selectionFrameMesh,
     character,
     badgeBundle,
     furnitureMaterial,
     selectionFrameMaterial,
-    trayLedMaterial,
-    pulseGuideMaterial,
-    pulseCubeMaterial,
-    hasActivePulse: false,
-    hasPendingMail: false,
     phaseOffset: character.phaseOffset,
   };
 
@@ -710,45 +529,7 @@ export function syncWorkstationPod(
   rig.selectionFrameMaterial.opacity = isHovered ? 0.88 : 0.72;
   rig.selectionFrameMesh.visible = isSelected;
 
-  // 木箱悬浮邮件包裹方块（InstancedMesh 单次 Draw Call）
-  const totalMailIndicator = session.pendingCount + session.inboxCount;
-  const visiblePackets = session.pendingCount > 0 || session.inboxCount > 0
-    ? Math.min(PARCEL_BASE_Y.length, Math.max(1, Math.ceil(totalMailIndicator / 2)))
-    : 0;
-  rig.visiblePacketCount = visiblePackets;
-  rig.mailPacketsMesh.count = visiblePackets;
-  rig.mailPacketsMesh.visible = visiblePackets > 0;
-  if (visiblePackets > 0) {
-    updateParcelInstanceMatrices(rig.mailPacketsMesh, visiblePackets, 0, rig.phaseOffset, true);
   }
-
-  const hasPulse = session.activity.recentPulse;
-  const hasPending = session.pendingCount > 0 || session.activity.unreadOrDeliveredCount > 0;
-  rig.hasActivePulse = hasPulse;
-  rig.hasPendingMail = hasPending;
-
-  let mailSignalHex = palette.accentHex;
-  if (session.activity.failedCount > 0) {
-    mailSignalHex = palette.dangerHex;
-  } else if (session.pendingCount > 0) {
-    mailSignalHex = palette.warningHex;
-  } else if (session.activity.kind === 'outgoing') {
-    mailSignalHex = palette.violetHex;
-  }
-
-  rig.trayLedMaterial.color.set(mailSignalHex);
-  rig.trayLedMesh.visible = hasPulse || hasPending;
-  rig.pulseGuideMaterial.color.set(mailSignalHex);
-  rig.pulseCubeMaterial.color.set(mailSignalHex);
-
-  const showPulse = hasPulse || session.pendingCount > 0;
-  rig.pulseGuideMesh.visible = showPulse;
-  rig.pulseCubeMesh.visible = showPulse;
-  if (showPulse) {
-    sampleRectilinearPath(PULSE_WAYPOINTS, 0.5, SCRATCH_PULSE_POS);
-    rig.pulseCubeMesh.position.copy(SCRATCH_PULSE_POS);
-  }
-}
 
 export function animateWorkstationPod(
   rig: OfficeStationRig,
@@ -778,24 +559,4 @@ export function animateWorkstationPod(
 
   animateOfficeCharacter(rig.character, elapsedSec, reducedMotion, behaviourPose);
   animateDesktopComputerRig(rig.computerRig, elapsedSec, dtSec, reducedMotion);
-
-  // 悬浮邮件包裹正弦弹跳（reducedMotion 时保持静止）
-  if (rig.visiblePacketCount > 0 && rig.mailPacketsMesh.visible) {
-    updateParcelInstanceMatrices(
-      rig.mailPacketsMesh,
-      rig.visiblePacketCount,
-      elapsedSec,
-      rig.phaseOffset,
-      reducedMotion
-    );
-  }
-
-  // 活跃脉冲：方块粒子沿 3 段直线折线路径运动
-  if (rig.pulseCubeMesh.visible) {
-    const u = reducedMotion
-      ? 0.5
-      : ((elapsedSec * (rig.hasActivePulse ? 0.9 : 0.45) + rig.phaseOffset * 0.2) % 1);
-    sampleRectilinearPath(PULSE_WAYPOINTS, u, SCRATCH_PULSE_POS);
-    rig.pulseCubeMesh.position.copy(SCRATCH_PULSE_POS);
-  }
 }

@@ -340,22 +340,6 @@
   white-space: nowrap;
 }
 
-.office-station-chip-mail {
-  padding: 0 4px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-2xs, 2px);
-  background: var(--color-surface-sunken);
-  color: var(--color-accent);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.office-station-chip-mail.is-pending {
-  border-color: color-mix(in srgb, var(--color-warning) 44%, var(--color-border));
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
-}
-
 .office-selected-bar {
   display: flex;
   align-items: center;

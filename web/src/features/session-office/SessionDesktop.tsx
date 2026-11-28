@@ -714,7 +714,7 @@ export function SessionDesktop({
                     key={`${serverId}:${session.tab.id}`}
                     visible={true}
                     persistent={true}
-                    strictExistingSession={true}
+                    strictExistingSession={!session?.tab?.initialCommand}
                     compactChrome={true}
                     allowNewTab={false}
                     layout="tabs"

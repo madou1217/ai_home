@@ -31,6 +31,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
+	"github.com/madou1217/ai_home/internal/adapters/codex/relayhop"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
@@ -417,6 +418,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			retry := false
 			var cooldownReceipt runtimecore.CooldownReceipt
 			trail.attempt(selection.AccountRef, fmt.Sprintf("http_%d", upstream.StatusCode), failure, "", attemptStarted)
+			// 跨机 aih 中继 hop 的 edge 5xx：可重试，但不写冷却、不换号放大。
+			if relayhop.IsCredential(selection.Credential) && relayhop.EdgeStatus(upstream) {
+				_ = upstream.Body.Close()
+				relayhop.LogUnavailable(ctx, upstream, "http")
+				applyCodex429ResponseHeaders(response.Header(), reqState, false, handler.Clock())
+				handler.fail(response, trail, "upstream_temporarily_unavailable")
+				return
+			}
 			if classifyErr == nil && failureErr == nil {
 				cooldownReceipt = handler.recordFailure(ctx, route, selection, failure)
 				recordCodexFailureHint(reqState, failure)

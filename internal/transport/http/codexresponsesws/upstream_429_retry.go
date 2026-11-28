@@ -20,6 +20,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
+	"github.com/madou1217/ai_home/internal/adapters/codex/relayhop"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
@@ -438,9 +439,11 @@ func (handler *Handler) connectUpstreamLegacy(
 	cancelDial()
 	if dialErr != nil {
 		handler.handleDialFailure(
+			session.Context(),
 			session.Client(),
 			route,
 			selection.CredentialObservation(),
+			selection.Credential(),
 			upstreamResponse,
 			dialErr,
 		)
@@ -889,6 +892,19 @@ func (handler *Handler) dialAndRecordHandshake(
 		}
 	}
 
+	// 跨机 aih 中继 hop 的 502/503/530 是 edge/链路瞬态：返回可重试错误，
+	// 但不写账号运行态、不冷却模型，避免一次 Cloudflare 抖动放大成无号可用。
+	if relayhop.IsCredential(selection.Credential()) && relayhop.EdgeStatus(upstreamResponse) {
+		relayhop.LogUnavailable(recordCtx, upstreamResponse, "ws")
+		return wsDialOutcome{
+			wsErr: wsTerminalError{
+				valid:   true,
+				status:  upstreamResponse.StatusCode,
+				code:    "upstream_unavailable",
+				message: "上游服务暂时不可用",
+			},
+		}
+	}
 	failure, err := handler.classifyDialFailure(route, upstreamResponse, prefix, readErr, dialErr)
 	if err != nil || !failure.IsValid() {
 		return wsDialOutcome{

@@ -32,6 +32,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/requestid"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
+	"github.com/madou1217/ai_home/internal/adapters/codex/relayhop"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
@@ -604,9 +605,11 @@ func (handler *Handler) switchModel(
 
 // handleDialFailure 把真实握手 HTTP 错误或传输错误提交到统一运行态。
 func (handler *Handler) handleDialFailure(
+	ctx context.Context,
 	client responseswebsocket.Connection,
 	route runtimecore.ModelRoute,
 	observation accountcredentials.CredentialObservation,
+	credential accountapp.Credential,
 	response *http.Response,
 	dialErr error,
 ) {
@@ -625,6 +628,12 @@ func (handler *Handler) handleDialFailure(
 			"upstream_websocket_invalid",
 			"Codex WebSocket 上游配置无效",
 		)
+		return
+	}
+	// 跨机 aih 中继 hop 的 edge 5xx：可重试，但不写冷却。
+	if relayhop.IsCredential(credential) && relayhop.EdgeStatus(response) {
+		relayhop.LogUnavailable(ctx, response, "ws")
+		writeWebSocketError(client, response.StatusCode, "upstream_unavailable", "上游服务暂时不可用")
 		return
 	}
 	failure, err := handler.classifyDialFailure(route, response, prefix, readErr, dialErr)

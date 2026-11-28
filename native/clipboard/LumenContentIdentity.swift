@@ -536,6 +536,10 @@ final class LumenContentIdentityRegistry {
       )
 
     case "link":
+      let trimmedLink = item.effectiveText.trimmingCharacters(in: .whitespacesAndNewlines)
+      let hasURL = !trimmedLink.isEmpty
+        && (LumenURLSecurityPolicy.externalOpenURL(from: trimmedLink) != nil
+            || URL(string: trimmedLink)?.scheme != nil)
       return makeIdentity(
         family: .link,
         subtype: "url",
@@ -544,8 +548,8 @@ final class LumenContentIdentityRegistry {
         glyphID: "link",
         displayName: "链接",
         category: .link,
-        rendererID: "native.text",
-        availability: .ready,
+        rendererID: "native.webkit.url.isolated",
+        availability: hasURL ? .ready : .unsupported,
         colorHex: "#368e9c"
       )
 
@@ -594,7 +598,7 @@ final class LumenContentIdentityRegistry {
           glyphID: "link",
           displayName: "链接",
           category: .link,
-          rendererID: "native.text",
+          rendererID: "native.webkit.url.isolated",
           availability: .ready,
           colorHex: "#368e9c"
         )
@@ -858,7 +862,7 @@ final class LumenContentIdentityRegistry {
       return makeIdentity(
         family: .link, subtype: "url", language: nil, confidence: .confirmed,
         glyphID: "link", displayName: "链接", category: .link,
-        rendererID: "native.text", availability: .ready, colorHex: "#368e9c"
+        rendererID: "native.webkit.url.isolated", availability: .ready, colorHex: "#368e9c"
       )
     case .image:
       return makeIdentity(
@@ -1059,14 +1063,10 @@ final class LumenContentIdentityRegistry {
 
   private func isSingleURL(_ text: String) -> Bool {
     guard !text.isEmpty,
-          !text.contains(where: { $0.isWhitespace || $0.isNewline }),
-          (text.lowercased().hasPrefix("http://") || text.lowercased().hasPrefix("https://")),
-          let url = URL(string: text),
-          let host = url.host,
-          !host.isEmpty else {
+          !text.contains(where: { $0.isWhitespace || $0.isNewline }) else {
       return false
     }
-    return true
+    return LumenURLSecurityPolicy.externalOpenURL(from: text) != nil
   }
 
   private func matches(_ regex: NSRegularExpression?, in text: String) -> Bool {

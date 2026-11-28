@@ -454,6 +454,7 @@ final class LumenPreviewRegistry {
     register(LumenImageRenderer())
     register(LumenColorRenderer())
     register(LumenCodeRenderer())
+    register(LumenURLRenderer())
     register(LumenCollectionRenderer())
     register(LumenTextRenderer())
     register(LumenFileFallbackRenderer())

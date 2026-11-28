@@ -244,7 +244,7 @@ class LumenWorkspaceWindow(_BaseAppWindow):
 
     def _wire_callbacks(self) -> None:
         self._inspector.on_copy_single = self._copy_item
-        self._inspector.on_preview_single = lambda item: self._open_preview([item], item.id)
+        self._inspector.on_preview_single = lambda item: self._open_preview(self._filtered_items or [item], item.id)
         self._inspector.on_pin_single = self._toggle_pin
         self._inspector.on_delete_single = self._delete_single
         self._inspector.on_batch_preview = lambda items: self._open_preview(items, self._selected_id)
@@ -266,7 +266,7 @@ class LumenWorkspaceWindow(_BaseAppWindow):
         group = Gio.SimpleActionGroup.new()
         for name, cb in (
             ("copy", lambda _a, p: self._action_by_id(p.get_string(), self._copy_item)),
-            ("preview", lambda _a, p: self._action_by_id(p.get_string(), lambda it: self._open_preview([it], it.id))),
+            ("preview", lambda _a, p: self._action_by_id(p.get_string(), lambda it: self._open_preview(self._filtered_items or [it], it.id))),
             ("pin", lambda _a, p: self._action_by_id(p.get_string(), self._toggle_pin)),
             ("delete", lambda _a, p: self._action_by_id(p.get_string(), self._delete_single)),
         ):
@@ -771,7 +771,8 @@ class LumenWorkspaceWindow(_BaseAppWindow):
             else:
                 it = next((x for x in self._filtered_items if x.id == self._selected_id), None)
                 if it is not None:
-                    self._open_preview([it], it.id)
+                    # Whole list so the preview queue can step through it.
+                    self._open_preview(self._filtered_items, it.id)
             return True
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
             it = next((x for x in self._filtered_items if x.id == self._selected_id), None)

@@ -738,6 +738,20 @@ button.lumen-orbit-remove:hover {
 .lumen-dark .lumen-orbit-subbox {
   background-color: rgba(182, 204, 255, 0.10);
 }
+
+/* Adwaita paints a background-image gradient over the button's
+   background-color, which made the primary button a white box with white
+   text on GTK 4.22. Drop the theme image for our custom buttons so their
+   own fill is what the user sees. */
+button.lumen-primary-btn,
+button.lumen-secondary-btn,
+button.lumen-danger-btn,
+button.lumen-pill-btn,
+button.lumen-icon-btn,
+button.lumen-orbit-launch,
+button.lumen-orbit-remove {
+  background-image: none;
+}
 """
 
 

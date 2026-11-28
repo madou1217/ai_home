@@ -35,6 +35,7 @@ func runGlobalSessions(
 ) error {
 	allProjects := false
 	jsonOutput := false
+	previewOutput := false
 	options := make([]string, 0, len(arguments))
 	for _, arg := range arguments {
 		switch arg {
@@ -42,6 +43,8 @@ func runGlobalSessions(
 			allProjects = true
 		case "--json":
 			jsonOutput = true
+		case "--preview":
+			previewOutput = true
 		default:
 			options = append(options, arg)
 		}
@@ -71,7 +74,10 @@ func runGlobalSessions(
 	if jsonOutput {
 		encoder := json.NewEncoder(runtime.stdout)
 		encoder.SetEscapeHTML(false)
-		return encoder.Encode(map[string]any{"ok": true, "sessions": rows})
+		return encoder.Encode(map[string]any{
+			"ok":       true,
+			"sessions": buildGlobalSessionJSONRows(ctx, runtime, rows, previewOutput),
+		})
 	}
 	writeGlobalSessionGroups(runtime.stdout, rows, collectGlobalLabels(ctx, rows, runtime))
 	return nil
@@ -493,4 +499,6 @@ func writeGlobalSessionsUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih ss --list             预览当前项目会话")
 	_, _ = fmt.Fprintln(output, "  aih ss --all-projects     显式查看全部项目（也可用 --all）")
 	_, _ = fmt.Fprintln(output, "  aih ss --refresh          强制重新采集（默认走缓存，打开更快）")
+	_, _ = fmt.Fprintln(output, "  aih ss --list --json      机器可读的会话列表")
+	_, _ = fmt.Fprintln(output, "  aih ss --list --json --preview  附带实时终端/对话内容预览")
 }

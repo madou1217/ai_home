@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Select, message } from 'antd';
+import { Button, Input, Select, message, Tooltip } from 'antd';
 import {
   CheckOutlined,
   CodeOutlined,
   CopyOutlined,
+  FolderOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { globalSessionsAPI, type GlobalSessionRow } from '@/services/api';
+import ProviderIcon from '@/components/chat/ProviderIcon';
+import {
+  globalSessionsAPI,
+  type GlobalSessionPreviewEntry,
+  type GlobalSessionRow,
+} from '@/services/api';
 import { writeClipboardText } from '@/utils/clipboard';
 import './SessionOffice.css';
 
@@ -15,7 +21,8 @@ export interface SessionOfficeProps {
   defaultSessionKey?: string;
 }
 
-const POLL_MS = 15000;
+const POLL_MS = 4000;
+const PREVIEW_LIMIT = 9;
 
 type SessionState = 'working' | 'waiting' | 'idle' | 'ended';
 
@@ -29,6 +36,8 @@ interface SessionItem extends GlobalSessionRow {
   projectName: string;
   lastActive: number;
   latestMessage: string;
+  preview: GlobalSessionPreviewEntry[];
+  previewSource: string;
 }
 
 function resolveState(row: GlobalSessionRow): { state: SessionState; label: string } {
@@ -58,6 +67,7 @@ function toItem(row: GlobalSessionRow): SessionItem {
     : nativeId || `${row.Provider}:${row.Name}`;
   const message = String(row.LastMessage || '').trim();
   const role = String(row.LastMessageRole || '').trim();
+  const preview = Array.isArray(row.Preview) ? row.Preview.filter((entry) => String(entry?.Text || '').trim()) : [];
   return {
     ...row,
     key: sessionKey,
@@ -73,6 +83,8 @@ function toItem(row: GlobalSessionRow): SessionItem {
     projectName: projectNameOf(row.Path || row.StartPath || ''),
     lastActive: Number(row.LastMessageAtMS || row.LastActiveAtMS || row.LastActivityAtMS || row.CreatedAtMS || 0),
     latestMessage: message ? (role ? `${role} · ${message}` : message) : '',
+    preview,
+    previewSource: String(row.PreviewSource || (preview.length > 0 ? 'transcript' : '')),
   };
 }
 
@@ -89,7 +101,34 @@ function entryCommand(item: SessionItem): string {
   return `aih ss ${id}`;
 }
 
-export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: SessionOfficeProps) {
+function providerAccent(provider: string): string {
+  switch (String(provider || '').toLowerCase()) {
+    case 'claude':
+      return '#d97757';
+    case 'codex':
+      return '#10a37f';
+    case 'codebuddy':
+    case 'codebuddycn':
+      return '#4f7cff';
+    case 'gemini':
+    case 'agy':
+      return '#4285f4';
+    case 'grok':
+      return '#8b5cf6';
+    default:
+      return 'var(--color-accent)';
+  }
+}
+
+function entryRoleClass(entry: GlobalSessionPreviewEntry): string {
+  const kind = String(entry.Kind || '').toLowerCase();
+  if (kind === 'screen') return 'is-screen';
+  if (kind === 'user') return 'is-user';
+  if (kind === 'tool') return 'is-tool';
+  return 'is-assistant';
+}
+
+export default function SessionOffice({ defaultSessionKey }: SessionOfficeProps) {
   const [rows, setRows] = useState<GlobalSessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -157,6 +196,7 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
           item.projectPath,
           item.AccountRef,
           item.latestMessage,
+          item.preview.map((entry) => entry.Text).join(' '),
         ].join(' ').toLowerCase();
         return haystack.includes(normalizedQuery);
       })
@@ -167,23 +207,6 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
       });
   }, [items, providerFilter, query]);
 
-  const groups = useMemo(() => {
-    const byProject = new Map<string, SessionItem[]>();
-    for (const item of filtered) {
-      const key = item.projectPath || '__no_cwd__';
-      const bucket = byProject.get(key);
-      if (bucket) bucket.push(item);
-      else byProject.set(key, [item]);
-    }
-    return [...byProject.entries()]
-      .map(([path, sessions]) => ({ path, sessions }))
-      .sort((left, right) => {
-        if (left.path === '__no_cwd__') return 1;
-        if (right.path === '__no_cwd__') return -1;
-        return left.path.localeCompare(right.path);
-      });
-  }, [filtered]);
-
   const counts = useMemo(() => {
     const result = { working: 0, waiting: 0, idle: 0, ended: 0 };
     for (const item of items) result[item.state] += 1;
@@ -191,7 +214,6 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
   }, [items]);
 
   const focusSessionKey = String(defaultSessionKey || '').trim();
-  const focusRoom = String(defaultRoomKey || '').trim();
 
   const handleCopy = useCallback(async (key: string, value: string, label: string) => {
     try {
@@ -209,9 +231,9 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
     <main className="session-list-page">
       <header className="session-list-head">
         <div className="session-list-title-block">
-          <span className="session-list-eyebrow">AIH // SESSIONS</span>
+          <span className="session-list-eyebrow">AIH // LIVE SESSIONS</span>
           <h1>项目办公室</h1>
-          <p>来自 `aih ss` 的活跃与历史会话，不再渲染 3D 办公室。</p>
+          <p>全部 `aih ss` 会话，按卡片实时展示运行状态与最新内容。</p>
         </div>
 
         <div className="session-list-metrics" aria-label="会话统计">
@@ -223,8 +245,8 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
 
         <div className="session-list-controls">
           <Input.Search
-            aria-label="搜索会话"
-            placeholder="搜索名称、Provider、项目、会话 ID"
+            aria-label="搜索会话与实时内容"
+            placeholder="搜索名称、Provider、项目、会话 ID、实时内容"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             allowClear
@@ -243,77 +265,103 @@ export default function SessionOffice({ defaultRoomKey, defaultSessionKey }: Ses
 
       {error ? <div className="session-list-inline-error">{error}</div> : null}
 
-      <section className="session-list-body" aria-label="会话列表">
+      <section className="session-card-grid" aria-label="会话卡片">
         {loading && items.length === 0 ? (
           <div className="session-list-empty">正在读取 aih ss 会话…</div>
-        ) : groups.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="session-list-empty">
-            {focusSessionKey || focusRoom ? '没有匹配当前筛选的会话' : '当前没有 aih ss 会话'}
+            {focusSessionKey || query ? '没有匹配当前筛选的会话' : '当前没有 aih ss 会话'}
           </div>
         ) : (
-          groups.map((group) => (
-            <section key={group.path} className="session-list-group" aria-label={group.path}>
-              <header className="session-list-group-head">
-                <div className="session-list-group-title">
-                  <CodeOutlined />
-                  <strong>{projectNameOf(group.path)}</strong>
-                  <span title={group.path}>{group.path === '__no_cwd__' ? '未指定目录' : group.path}</span>
-                </div>
-                <span className="session-list-group-count">{group.sessions.length}</span>
-              </header>
+          filtered.map((item) => {
+            const isFocus = focusSessionKey
+              && (item.NativeID === focusSessionKey || item.Name === focusSessionKey || item.key === focusSessionKey);
+            const preview = item.preview.slice(-PREVIEW_LIMIT);
+            const sourceLabel = item.previewSource === 'tmux' ? '终端画面' : item.previewSource === 'transcript' ? '实时对话' : '';
+            return (
+              <article
+                key={item.key}
+                className={`session-card${isFocus ? ' is-focus' : ''}`}
+                data-state={item.state}
+                style={{ ['--provider-accent' as string]: providerAccent(item.Provider) }}
+              >
+                <header className="session-card-head">
+                  <span className="session-card-provider">
+                    <ProviderIcon provider={item.Provider} size={18} />
+                    <span>{item.Provider || 'unknown'}</span>
+                  </span>
+                  <span className={`session-card-status session-card-status--${item.state}`}>
+                    <i className={`status-dot status-dot--${item.state}`} aria-hidden="true" />
+                    {item.stateLabel}
+                  </span>
+                </header>
 
-              <div className="session-list-rows" role="list">
-                {group.sessions.map((item) => {
-                  const isFocus = focusSessionKey && (item.NativeID === focusSessionKey || item.Name === focusSessionKey || item.key === focusSessionKey);
-                  return (
-                    <article
-                      key={item.key}
-                      role="listitem"
-                      className={`session-list-row${isFocus ? ' is-focus' : ''}`}
-                      data-state={item.state}
-                    >
-                      <span className={`status-dot status-dot--${item.state}`} aria-hidden="true" />
-                      <div className="session-list-primary">
-                        <div className="session-list-row-title">
-                          <strong title={item.title}>{item.title}</strong>
-                          <span className={`session-state-tag session-state-tag--${item.state}`}>{item.stateLabel}</span>
-                        </div>
-                        <div className="session-list-row-meta">
-                          <span>{item.Provider || 'unknown'}</span>
-                          <span>{item.accountLabel}</span>
-                          <span className="session-list-native-id" title={item.NativeID || item.Name}>
-                            {item.NativeID || item.Name || '-'}
-                          </span>
-                          <span>{formatTime(item.lastActive)}</span>
-                        </div>
-                        {item.latestMessage ? (
-                          <div className="session-list-row-latest" title={item.latestMessage}>
-                            {item.latestMessage}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="session-list-row-actions">
-                        <Button
-                          size="small"
-                          icon={copiedKey === `id:${item.key}` ? <CheckOutlined /> : <CopyOutlined />}
-                          onClick={() => void handleCopy(`id:${item.key}`, item.NativeID || item.Name || item.key, '会话 ID 已复制')}
+                <h2 className="session-card-title" title={item.title}>{item.title}</h2>
+
+                <div className="session-card-meta">
+                  <span className="session-card-project" title={item.projectPath || '未指定目录'}>
+                    <FolderOutlined />
+                    {item.projectName}
+                  </span>
+                  <span>{item.accountLabel}</span>
+                  <span>{formatTime(item.lastActive)}</span>
+                </div>
+
+                <div className="session-card-screen" aria-label={sourceLabel || '实时内容'}>
+                  <div className="session-card-screen-head">
+                    <span className="session-card-screen-label">
+                      {sourceLabel || '实时内容'}
+                      {item.state === 'working' ? <i className="session-card-live" aria-label="正在输出" /> : null}
+                    </span>
+                    <span className="session-card-screen-time">{formatTime(item.lastActive)}</span>
+                  </div>
+                  <div className="session-card-screen-body">
+                    {preview.length === 0 ? (
+                      <span className="session-card-screen-empty">
+                        {item.state === 'ended' ? '会话已结束，无更多内容' : '暂无实时内容'}
+                      </span>
+                    ) : (
+                      preview.map((entry, index) => (
+                        <div
+                          key={`${item.key}-${index}-${entry.AtMS || 0}`}
+                          className={`session-card-line ${entryRoleClass(entry)}`}
                         >
-                          复制 ID
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={copiedKey === `cmd:${item.key}` ? <CheckOutlined /> : <CodeOutlined />}
-                          onClick={() => void handleCopy(`cmd:${item.key}`, entryCommand(item), '进入命令已复制')}
-                        >
-                          复制进入命令
-                        </Button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          ))
+                          <span className="session-card-line-role">{entry.Role || '·'}</span>
+                          <span className="session-card-line-text" title={entry.Text}>{entry.Text}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <footer className="session-card-foot">
+                  <span className="session-card-id" title={item.NativeID || item.Name}>
+                    {item.NativeID || item.Name || '-'}
+                  </span>
+                  <div className="session-card-actions">
+                    <Tooltip title="复制会话 ID">
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="复制会话 ID"
+                        icon={copiedKey === `id:${item.key}` ? <CheckOutlined /> : <CopyOutlined />}
+                        onClick={() => void handleCopy(`id:${item.key}`, item.NativeID || item.Name || item.key, '会话 ID 已复制')}
+                      />
+                    </Tooltip>
+                    <Tooltip title={`复制进入命令：${entryCommand(item)}`}>
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="复制进入命令"
+                        icon={copiedKey === `cmd:${item.key}` ? <CheckOutlined /> : <CodeOutlined />}
+                        onClick={() => void handleCopy(`cmd:${item.key}`, entryCommand(item), '进入命令已复制')}
+                      />
+                    </Tooltip>
+                  </div>
+                </footer>
+              </article>
+            );
+          })
         )}
       </section>
     </main>

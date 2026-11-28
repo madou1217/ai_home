@@ -6,10 +6,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   CodeOutlined,
-  ControlOutlined,
-  CopyOutlined,
   DeleteOutlined,
-  DesktopOutlined,
   MinusOutlined,
   PoweroffOutlined,
   SettingOutlined,
@@ -20,7 +17,6 @@ import SaveActionBar from '@/components/ui/SaveActionBar';
 import SettingStatusTag from '@/components/ui/SettingStatusTag';
 import type { OfficeComputerPreferences } from './office-computer-state';
 import {
-  buildOfficeComputerConfigModel,
   OFFICE_DESKTOP_RGB_SWATCHES,
   OFFICE_DESKTOP_WALLPAPERS,
   sanitizeRgbHexColor,
@@ -32,10 +28,8 @@ import {
   type DesktopActionSemanticItem,
   type SessionDurabilityNote,
 } from './office-computer-power';
-import type { OfficeProjectRoom, OfficeSessionItem } from './session-office-types';
+import type { OfficeSessionItem } from './session-office-types';
 import './OfficeComputerSettings.css';
-
-export type ComputerSettingsTab = 'settings' | 'config';
 
 type AppearancePatch = Pick<
   OfficeComputerPreferences,
@@ -44,22 +38,17 @@ type AppearancePatch = Pick<
 
 export interface OfficeComputerSettingsProps {
   open: boolean;
-  activeTab: ComputerSettingsTab;
-  onTabChange: (tab: ComputerSettingsTab) => void;
   onCloseWindow: () => void;
   onFocusTerminal?: () => void;
   serverId: string;
   session: OfficeSessionItem | null;
-  room: OfficeProjectRoom | null;
   preferences: OfficeComputerPreferences;
   loadedWallpaperAssetUrl: string | null;
-  terminalReadyObserved?: boolean;
   durabilityNote: SessionDurabilityNote;
   isTerminating: boolean;
   onPowerOffComputer: () => void;
   onBootComputer: () => void;
   onUpdateAppearance: (patch: Partial<AppearancePatch>) => void;
-  onCopyIdentity: (session: OfficeSessionItem) => void;
 }
 
 function pickAppearance(preferences: OfficeComputerPreferences): AppearancePatch {
@@ -302,112 +291,19 @@ function OfficeAppearanceSections({
   );
 }
 
-interface ConfigFactsPanelProps {
-  configModel: ReturnType<typeof buildOfficeComputerConfigModel>;
-  session: OfficeSessionItem | null;
-  isTerminating: boolean;
-  onCopyIdentity: (session: OfficeSessionItem) => void;
-  onOpenSettingsTab: () => void;
-}
-
-function OfficeConfigFactsPanel({
-  configModel,
-  session,
-  isTerminating,
-  onCopyIdentity,
-  onOpenSettingsTab,
-}: ConfigFactsPanelProps) {
-  return (
-    <div
-      id="office-cs-panel-config"
-      role="tabpanel"
-      aria-labelledby="office-cs-tab-config"
-      className="office-cs-panel office-cs-config-layout"
-    >
-      <section className="office-cs-section" aria-label={configModel.realFactsTitle}>
-        <div className="office-cs-section-head">
-          <div className="office-cs-section-heading">
-            <CodeOutlined />
-            <h4>{configModel.realFactsTitle}</h4>
-            <SettingStatusTag status="applied" label={configModel.realFactsBadge} compact />
-          </div>
-          {session ? (
-            <button
-              type="button"
-              className="session-desktop-btn"
-              disabled={isTerminating}
-              onClick={() => onCopyIdentity(session)}
-            >
-              <CopyOutlined />
-              <span>复制标识</span>
-            </button>
-          ) : null}
-        </div>
-
-        <p className="office-cs-caption">{configModel.realFactsCaption}</p>
-
-        <dl className="office-cs-kv-list">
-          {configModel.realSessionFacts.map((item) => (
-            <div key={item.key} className="office-cs-kv-row">
-              <dt>{item.label}</dt>
-              <dd>{item.mono ? <code>{item.value}</code> : <span>{item.value}</span>}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <section className="office-cs-section" aria-label={configModel.virtualSpecsTitle}>
-        <div className="office-cs-section-head">
-          <div className="office-cs-section-heading">
-            <DesktopOutlined />
-            <h4>{configModel.virtualSpecsTitle}</h4>
-            <span className="office-cs-pill">{configModel.virtualSpecsBadge}</span>
-          </div>
-          <button
-            type="button"
-            className="session-desktop-btn session-desktop-btn--subtle"
-            onClick={onOpenSettingsTab}
-          >
-            <SettingOutlined />
-            <span>调整外观</span>
-          </button>
-        </div>
-
-        <p className="office-cs-caption">{configModel.virtualDisclaimer}</p>
-
-        <dl className="office-cs-kv-list">
-          {configModel.virtualWorkstationSpecs.map((item) => (
-            <div key={item.key} className="office-cs-kv-row">
-              <dt>{item.label}</dt>
-              <dd>{item.mono ? <code>{item.value}</code> : <span>{item.value}</span>}</dd>
-            </div>
-          ))}
-        </dl>
-
-        <p className="office-cs-caption">{configModel.scenePoseHint}</p>
-      </section>
-    </div>
-  );
-}
-
 export default function OfficeComputerSettings({
   open,
-  activeTab,
-  onTabChange,
   onCloseWindow,
   onFocusTerminal,
   serverId,
   session,
-  room,
   preferences,
   loadedWallpaperAssetUrl,
-  terminalReadyObserved = false,
   durabilityNote,
   isTerminating,
   onPowerOffComputer,
   onBootComputer,
   onUpdateAppearance,
-  onCopyIdentity,
 }: OfficeComputerSettingsProps) {
   const committedAppearance = useMemo(
     () => pickAppearance(preferences),
@@ -421,23 +317,6 @@ export default function OfficeComputerSettings({
     setDraftAppearance(committedAppearance);
     setSaveFeedback('');
   }, [committedAppearance, serverId, session?.id]);
-
-  const effectivePreferences = useMemo<OfficeComputerPreferences>(
-    () => ({ ...preferences, ...draftAppearance }),
-    [draftAppearance, preferences],
-  );
-
-  const configModel = useMemo(
-    () => buildOfficeComputerConfigModel({
-      serverId,
-      session,
-      room,
-      preferences: effectivePreferences,
-      loadedWallpaperAssetUrl,
-      terminalReadyObserved,
-    }),
-    [effectivePreferences, loadedWallpaperAssetUrl, room, serverId, session, terminalReadyObserved],
-  );
 
   if (!open) return null;
 
@@ -466,14 +345,12 @@ export default function OfficeComputerSettings({
   return (
     <section
       className="session-desktop-window office-computer-settings-window"
-      aria-label={`电脑设置与配置 — ${sessionTitle}`}
+      aria-label={`电脑设置 — ${sessionTitle}`}
     >
       <div className="session-desktop-window-bar">
         <div className="session-desktop-window-title">
-          {activeTab === 'settings' ? <SettingOutlined /> : <ControlOutlined />}
-          <span className="session-desktop-window-name">
-            {activeTab === 'settings' ? '电脑设置' : '电脑配置'} — {sessionTitle}
-          </span>
+          <SettingOutlined />
+          <span className="session-desktop-window-name">电脑设置 — {sessionTitle}</span>
           <SettingStatusTag
             status={isPoweredOn ? 'applied' : 'unset'}
             label={isPoweredOn ? '已开机' : '虚拟关机'}
@@ -500,53 +377,12 @@ export default function OfficeComputerSettings({
             type="button"
             className="session-desktop-win-btn"
             onClick={onCloseWindow}
-            title="收起电脑设置与配置窗口"
-            aria-label="关闭电脑设置与配置窗口"
+            title="收起电脑设置窗口"
+            aria-label="关闭电脑设置窗口"
           >
             <CloseOutlined />
           </button>
         </div>
-      </div>
-
-      <div className="office-cs-toolbar">
-        <div className="office-cs-tabs" role="tablist" aria-label="电脑设置与配置视图切换">
-          <button
-            type="button"
-            role="tab"
-            id="office-cs-tab-settings"
-            aria-controls="office-cs-panel-settings"
-            aria-selected={activeTab === 'settings'}
-            className="office-cs-tab"
-            data-active={activeTab === 'settings' ? 'true' : undefined}
-            onClick={() => onTabChange('settings')}
-          >
-            <SettingOutlined />
-            <span>显示与外观</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="office-cs-tab-config"
-            aria-controls="office-cs-panel-config"
-            aria-selected={activeTab === 'config'}
-            className="office-cs-tab"
-            data-active={activeTab === 'config' ? 'true' : undefined}
-            onClick={() => onTabChange('config')}
-          >
-            <ControlOutlined />
-            <span>配置与事实</span>
-          </button>
-        </div>
-
-        {!session ? (
-          <SettingStatusTag status="unset" label="未选定工位（只读）" compact />
-        ) : !canEditPrefs ? (
-          <SettingStatusTag
-            status="unset"
-            label={isTerminating ? '终止中（只读）' : '只读作用域'}
-            compact
-          />
-        ) : null}
       </div>
 
       <div className="office-cs-body">
@@ -562,42 +398,30 @@ export default function OfficeComputerSettings({
           </div>
         ) : null}
 
-        {activeTab === 'settings' ? (
-          <div
-            id="office-cs-panel-settings"
-            role="tabpanel"
-            aria-labelledby="office-cs-tab-settings"
-            className="office-cs-panel"
-          >
-            <OfficePowerSection
-              session={session}
-              isPoweredOn={isPoweredOn}
-              canEditPrefs={canEditPrefs}
-              durabilityNote={durabilityNote}
-              onPowerOffComputer={onPowerOffComputer}
-              onBootComputer={onBootComputer}
-            />
-
-            <OfficeAppearanceSections
-              draft={draftAppearance}
-              canEditPrefs={canEditPrefs}
-              loadedWallpaperAssetUrl={loadedWallpaperAssetUrl}
-              onPatchDraft={handlePatchDraft}
-            />
-          </div>
-        ) : (
-          <OfficeConfigFactsPanel
-            configModel={configModel}
+        <div
+          id="office-cs-panel-settings"
+          role="tabpanel"
+          className="office-cs-panel"
+        >
+          <OfficePowerSection
             session={session}
-            isTerminating={isTerminating}
-            onCopyIdentity={onCopyIdentity}
-            onOpenSettingsTab={() => onTabChange('settings')}
+            isPoweredOn={isPoweredOn}
+            canEditPrefs={canEditPrefs}
+            durabilityNote={durabilityNote}
+            onPowerOffComputer={onPowerOffComputer}
+            onBootComputer={onBootComputer}
           />
-        )}
+
+          <OfficeAppearanceSections
+            draft={draftAppearance}
+            canEditPrefs={canEditPrefs}
+            loadedWallpaperAssetUrl={loadedWallpaperAssetUrl}
+            onPatchDraft={handlePatchDraft}
+          />
+        </div>
       </div>
 
-      {activeTab === 'settings' ? (
-        <footer className="office-cs-footer">
+      <footer className="office-cs-footer">
           <SaveActionBar
             dirty={appearanceDirty}
             disabled={!canEditPrefs}
@@ -609,8 +433,7 @@ export default function OfficeComputerSettings({
             feedback={saveFeedback || undefined}
             feedbackTone={saveFeedback.includes('已应用') ? 'success' : 'muted'}
           />
-        </footer>
-      ) : null}
+      </footer>
     </section>
   );
 }

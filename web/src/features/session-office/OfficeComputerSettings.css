@@ -24,49 +24,6 @@
   background: var(--color-surface);
 }
 
-.office-cs-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-sunken);
-  max-width: 100%;
-}
-
-.office-cs-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2, 4px);
-  height: 26px;
-  padding: 0 var(--space-4, 8px);
-  border: 1px solid transparent;
-  border-radius: var(--hos-radius-xs, 2px);
-  background: transparent;
-  color: var(--color-muted);
-  font-family: var(--font-body);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    border-color var(--motion-fast, 120ms) var(--ease-standard, ease),
-    background-color var(--motion-fast, 120ms) var(--ease-standard, ease),
-    color var(--motion-fast, 120ms) var(--ease-standard, ease);
-}
-
-.office-cs-tab:hover {
-  color: var(--color-heading);
-  background: var(--color-overlay);
-}
-
-.office-cs-tab[data-active='true'] {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-  background: var(--color-surface-raised);
-  color: var(--color-accent);
-}
-
 .office-cs-inline-hint {
   color: var(--color-muted);
   font-family: var(--font-mono);
@@ -92,13 +49,6 @@
   flex-direction: column;
   gap: var(--space-5, 10px);
   min-width: 0;
-}
-
-.office-cs-config-layout {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--space-5, 10px);
-  align-items: start;
 }
 
 .office-cs-section {
@@ -394,51 +344,6 @@
   cursor: pointer;
 }
 
-/* ── 配置事实键值列表 ─────────────────────────────────────────────────────── */
-.office-cs-kv-list {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3, 6px);
-  padding: var(--space-4, 8px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 3px);
-  background: var(--color-surface-sunken);
-}
-
-.office-cs-kv-row {
-  display: grid;
-  grid-template-columns: 108px minmax(0, 1fr);
-  align-items: baseline;
-  gap: var(--space-3, 6px);
-  font-size: var(--hos-text-caption, 12px);
-}
-
-.office-cs-kv-row dt {
-  margin: 0;
-  color: var(--color-faint, var(--color-muted));
-  font-family: var(--font-mono);
-  font-size: var(--hos-text-micro, 11px);
-}
-
-.office-cs-kv-row dd {
-  margin: 0;
-  min-width: 0;
-  color: var(--color-text);
-  overflow-wrap: anywhere;
-}
-
-.office-cs-kv-row code {
-  padding: 1px 5px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-2xs, 2px);
-  background: var(--color-surface);
-  color: var(--color-accent);
-  font-family: var(--font-mono);
-  font-size: var(--hos-text-micro, 11px);
-  user-select: text;
-}
-
 /* ── 底部应用操作栏 ───────────────────────────────────────────────────────── */
 .office-cs-footer {
   flex: 0 0 auto;
@@ -454,11 +359,6 @@
 
   .office-cs-section {
     padding: var(--space-4, 8px);
-  }
-
-  .office-cs-kv-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
   }
 
   .office-cs-footer {

@@ -10,7 +10,6 @@ import {
   ArrowLeftOutlined,
   CodeOutlined,
   CompressOutlined,
-  ControlOutlined,
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
@@ -31,7 +30,7 @@ import { Tooltip } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
 import OfficeBrowserWindow from './OfficeBrowserWindow';
-import OfficeComputerSettings, { type ComputerSettingsTab } from './OfficeComputerSettings';
+import OfficeComputerSettings from './OfficeComputerSettings';
 import {
   OFFICE_DESKTOP_WALLPAPER_MAP,
   useOptionalDesktopWallpaperAsset,
@@ -179,7 +178,6 @@ export function SessionDesktop({
   const [layoutMode, setLayoutMode] = useState<DesktopWindowLayout>(initialMode);
   const [terminalMinimized, setTerminalMinimized] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
-  const [settingsTab, setSettingsTab] = useState<ComputerSettingsTab>('settings');
   const [portalOrigin, setPortalOrigin] = useState<DesktopOriginRect | null>(null);
   const [browserWindow, setBrowserWindow] = useState<{ identity: string; minimized: boolean } | null>(null);
 
@@ -228,7 +226,6 @@ export function SessionDesktop({
   const {
     preferences,
     isPoweredOn,
-    terminalReady,
     bootPhase,
     bootReason,
     shouldMountTerminal,
@@ -418,19 +415,13 @@ export function SessionDesktop({
     }
   }, [handleMinimizeTerminal, handleRestoreTerminal]);
 
-  const handleOpenSettingsTab = useCallback((tab: ComputerSettingsTab) => {
-    setSettingsTab(tab);
+  const handleOpenSettings = useCallback(() => {
     setSettingsOpen(true);
   }, []);
 
-  const handleToggleSettingsTab = useCallback((tab: ComputerSettingsTab) => {
-    if (settingsOpen && settingsTab === tab) {
-      setSettingsOpen(false);
-    } else {
-      setSettingsTab(tab);
-      setSettingsOpen(true);
-    }
-  }, [settingsOpen, settingsTab]);
+  const handleToggleSettings = useCallback(() => {
+    setSettingsOpen((prev) => !prev);
+  }, []);
 
   const handleToggleTerminalDock = useCallback(() => {
     if (!isPoweredOn) {
@@ -604,20 +595,11 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-layout-btn"
-              data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
-              onClick={() => handleToggleSettingsTab('settings')}
+              data-active={settingsOpen ? 'true' : undefined}
+              onClick={() => handleToggleSettings()}
             >
               <SettingOutlined />
               <span>电脑设置</span>
-            </button>
-            <button
-              type="button"
-              className="session-desktop-layout-btn"
-              data-active={settingsOpen && settingsTab === 'config' ? 'true' : undefined}
-              onClick={() => handleToggleSettingsTab('config')}
-            >
-              <ControlOutlined />
-              <span>电脑配置</span>
             </button>
           </div>
 
@@ -756,8 +738,8 @@ export function SessionDesktop({
                 <button
                   type="button"
                   className="session-desktop-app-icon"
-                  data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
-                  onClick={() => handleOpenSettingsTab('settings')}
+                  data-active={settingsOpen ? 'true' : undefined}
+                  onClick={() => handleOpenSettings()}
                 >
                   <span className="session-desktop-app-glyph">
                     <SettingOutlined />
@@ -768,18 +750,6 @@ export function SessionDesktop({
                   </span>
                 </button>
 
-                <button
-                  type="button"
-                  className="session-desktop-app-icon"
-                  data-active={settingsOpen && settingsTab === 'config' ? 'true' : undefined}
-                  onClick={() => handleOpenSettingsTab('config')}
-                >
-                  <span className="session-desktop-app-glyph">
-                    <ControlOutlined />
-                  </span>
-                  <span className="session-desktop-app-title">电脑配置</span>
-                  <span className="session-desktop-app-meta">真实会话事实与建模规格</span>
-                </button>
               </div>
 
               <aside className="session-desktop-identity-widget" aria-label="身份与进程信息">
@@ -840,14 +810,6 @@ export function SessionDesktop({
                 )}
 
                 <div className="session-desktop-widget-actions">
-                  <button
-                    type="button"
-                    className="session-desktop-btn"
-                    onClick={() => handleOpenSettingsTab('config')}
-                  >
-                    <ControlOutlined />
-                    <span>查看电脑配置</span>
-                  </button>
                   {session ? (
                     <button
                       type="button"
@@ -975,18 +937,10 @@ export function SessionDesktop({
                   <button
                     type="button"
                     className="session-desktop-btn"
-                    onClick={() => handleOpenSettingsTab('settings')}
+                    onClick={() => handleOpenSettings()}
                   >
                     <SettingOutlined />
                     <span>电脑设置</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="session-desktop-btn"
-                    onClick={() => handleOpenSettingsTab('config')}
-                  >
-                    <ControlOutlined />
-                    <span>查看电脑配置</span>
                   </button>
                   {session ? (
                     <button
@@ -1057,7 +1011,7 @@ export function SessionDesktop({
                   <button
                     type="button"
                     className="session-desktop-win-btn"
-                    onClick={() => handleToggleSettingsTab('settings')}
+                    onClick={() => handleToggleSettings()}
                     title="打开或收起电脑设置窗口"
                     aria-label="切换电脑设置窗口"
                   >
@@ -1255,14 +1209,6 @@ export function SessionDesktop({
                         </button>
                         <button
                           type="button"
-                          className="session-desktop-btn"
-                          onClick={() => handleOpenSettingsTab('config')}
-                        >
-                          <ControlOutlined />
-                          <span>查看电脑配置</span>
-                        </button>
-                        <button
-                          type="button"
                           className="session-desktop-btn session-desktop-btn--primary"
                           disabled={isTerminating}
                           onClick={() => onOpenNewTerminal(session?.cwd || room?.projectPath)}
@@ -1307,8 +1253,6 @@ export function SessionDesktop({
             {/* Focused Computer Settings & Configuration Window */}
             <OfficeComputerSettings
               open={settingsOpen}
-              activeTab={settingsTab}
-              onTabChange={setSettingsTab}
               onCloseWindow={() => setSettingsOpen(false)}
               onFocusTerminal={isPoweredOn ? () => {
                 setSettingsOpen(false);
@@ -1316,16 +1260,13 @@ export function SessionDesktop({
               } : undefined}
               serverId={serverId}
               session={session}
-              room={room}
               preferences={preferences}
               loadedWallpaperAssetUrl={loadedWallpaperAssetUrl}
-              terminalReadyObserved={terminalReady}
               durabilityNote={durabilityNote}
               isTerminating={isTerminating}
               onPowerOffComputer={handlePowerOff}
               onBootComputer={handleBoot}
               onUpdateAppearance={updateAppearance}
-              onCopyIdentity={onCopyIdentity}
             />
           </div>
           {browserWindowVisible ? (
@@ -1382,26 +1323,15 @@ export function SessionDesktop({
             <button
               type="button"
               className="session-desktop-dock-pill"
-              data-active={settingsOpen && settingsTab === 'settings' ? 'true' : undefined}
-              data-minimized={!(settingsOpen && settingsTab === 'settings') ? 'true' : undefined}
-              onClick={() => handleToggleSettingsTab('settings')}
+              data-active={settingsOpen ? 'true' : undefined}
+              data-minimized={!settingsOpen ? 'true' : undefined}
+              onClick={() => handleToggleSettings()}
               title="切换电脑显示与电源设置窗口"
             >
               <SettingOutlined />
               <span>电脑设置</span>
             </button>
 
-            <button
-              type="button"
-              className="session-desktop-dock-pill"
-              data-active={settingsOpen && settingsTab === 'config' ? 'true' : undefined}
-              data-minimized={!(settingsOpen && settingsTab === 'config') ? 'true' : undefined}
-              onClick={() => handleToggleSettingsTab('config')}
-              title="切换电脑配置与会话事实窗口"
-            >
-              <ControlOutlined />
-              <span>电脑配置</span>
-            </button>
           </div>
 
           <div className="session-desktop-dock-divider" aria-hidden="true" />

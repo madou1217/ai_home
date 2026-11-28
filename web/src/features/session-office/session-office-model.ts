@@ -18,7 +18,6 @@ export interface BuildOfficeWorkspaceInput {
   serverId: string;
   directorySessions: TerminalDirectorySession[];
   interactiveTabs: WebTerminalTab[];
-  unavailableTabs: WebTerminalTab[];
   hiddenSessionKeys: ReadonlySet<string>;
   previewsByCacheKey: ReadonlyMap<string, SessionPreviewCacheEntry>;
   query: string;
@@ -178,23 +177,15 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     interactiveByKey.set(tab.sessionKey, tab);
   }
 
-  const unavailableByKey = new Map<string, WebTerminalTab>();
-  for (const tab of input.unavailableTabs) {
-    if (!tab.sessionKey || input.hiddenSessionKeys.has(tab.sessionKey)) continue;
-    unavailableByKey.set(tab.sessionKey, tab);
-  }
-
   const allKeys = new Set<string>([
     ...dirByKey.keys(),
     ...interactiveByKey.keys(),
-    ...unavailableByKey.keys(),
   ]);
 
   const draftItems: OfficeSessionItem[] = [];
   for (const sessionKey of allKeys) {
     const dir = dirByKey.get(sessionKey);
     const interactiveTab = interactiveByKey.get(sessionKey);
-    const unavailableTab = unavailableByKey.get(sessionKey);
 
     let availability: SessionAvailability;
     let canAttachTerminal = false;
@@ -209,13 +200,7 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
       canAttachTerminal = false;
     } else if (dir) {
       availability = 'directory-only';
-      canAttachTerminal = false;
-    } else if (unavailableTab) {
-      // Saved native tab that the terminal directory cannot currently verify.
-      // Keep the employee visible in the office; the separate "unavailable" list is gone.
-      availability = 'unavailable';
-      canAttachTerminal = false;
-      tab = unavailableTab;
+      canAttachTerminal = true;
     } else {
       continue;
     }
@@ -239,6 +224,18 @@ function buildJoinedSessions(input: BuildOfficeWorkspaceInput): OfficeSessionIte
     const previewModel = cachedPreview?.model?.trim() || undefined;
     const contentPreview = cachedPreview?.preview?.trim() || undefined;
     const model = previewModel || tab?.model;
+    if (availability === 'directory-only') {
+      tab = {
+        id: `web-terminal:${sessionKey}`,
+        sessionKey,
+        label,
+        cwd,
+        serverId: input.serverId,
+        kind,
+        harness: provider || undefined,
+        nativeSessionId,
+      };
+    }
 
     draftItems.push({
       id: tab?.id || `web-terminal:${sessionKey}`,

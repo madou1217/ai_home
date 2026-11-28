@@ -151,7 +151,7 @@
 - [x] 需要 `--no-sandbox` 才能避免 Chromium 嵌套 sandbox 初始化失败（安全降级，需决策）
 - [x] Chromium GUI 沙箱启动（opt-in `AIH_NETGUARD_SANDBOX_GUI=1`）：直接执行 bundle 可执行文件 + sandbox-exec + `--no-sandbox`；真机 Chrome 全部 TCP 只连 127.0.0.1:6152，无外部连接
 - [x] Vendor Electron 沙箱启动：ChatGPT.app 直接可执行文件 + sandbox-exec 启动成功，实例无外部 TCP socket；但它不读环境代理，当前只做到 fail-closed
-- [ ] Vendor App 代理可用性（Electron 系统代理/应用内设置）与 LaunchServices/TCC/更新器
+- ⛔ Vendor App 代理可用性：ChatGPT 无外部 socket 但未验证代理请求；VS Code 单实例交接给已运行实例（仍用原 user-data-dir），不结束用户应用无法隔离
 - [ ] 窗口/TCC/单实例/OAuth 深链/更新器验证
 - [ ] 无法满足时决策 Network Extension（签名扩展）
 - [ ] 系统 XPC/nsurlsessiond/更新器边界文档化

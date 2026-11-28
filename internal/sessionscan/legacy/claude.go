@@ -23,6 +23,7 @@ type claudeRecord struct {
 	Type        string `json:"type"`
 	Cwd         string `json:"cwd"`
 	IsSidechain bool   `json:"isSidechain"`
+	IsMeta      bool   `json:"isMeta"`
 	Message     *struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -142,7 +143,9 @@ func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) 
 				}
 				if !record.IsSidechain {
 					sawMainThread = true
-					if record.Type == "user" && record.Message != nil {
+					// isMeta 是 CLI 自己写入的恢复/上下文记录，不是用户输入；
+					// 把它当标题会让一批会话共用同一句合成文本。
+					if record.Type == "user" && !record.IsMeta && record.Message != nil {
 						if text := contentText(record.Message.Content); text != "" && !skipClaudeTitle(text) {
 							title = truncateTitle(text)
 						}
@@ -166,12 +169,33 @@ func scanClaudeSession(filePath string) (title, cwd string, sawMainThread bool) 
 	return title, cwd, sawMainThread
 }
 
-// skipClaudeTitle 过滤 CLI 注入的伪用户消息。
+// skipClaudeTitle 过滤 CLI 注入的伪用户消息。这些文本不是用户输入，也不能
+// 作为会话标题；漏掉任意一种都会让多个会话显示成同一行。
 func skipClaudeTitle(text string) bool {
-	return strings.HasPrefix(text, "Caveat:") ||
-		strings.HasPrefix(text, "<command-name>") ||
-		strings.HasPrefix(text, "<local-command") ||
-		strings.HasPrefix(text, "<ide_opened_file>")
+	trimmed := strings.TrimSpace(text)
+	for _, prefix := range []string{
+		"A session-scoped Stop hook is now active",
+		"Briefly acknowledge the goal",
+		"Caveat:",
+		"<command-name>",
+		"<command-args>",
+		"<local-command",
+		"<ide_opened_file>",
+		"<system-reminder",
+		"<goal_context",
+		"<environment_context",
+		"<user_instructions",
+		"<session_context",
+		"<codex_internal_context",
+		"<turn_aborted",
+		"<user_shell_command",
+		"# AGENTS.md instructions",
+	} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func readClaudeHistory(hostHome string) map[string]claudeHistoryEntry {

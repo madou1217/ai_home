@@ -47,13 +47,23 @@ type Instance struct {
 	ProxySelector string `json:"proxySelector,omitempty"`
 	ProxyPID      int    `json:"proxyPid,omitempty"`
 
+	// GuardPID/GuardBackend identify the NetGuard process enforcing strict
+	// networking for this instance. GuardError is runtime-only.
+	GuardPID     int    `json:"guardPid,omitempty"`
+	GuardBackend string `json:"guardBackend,omitempty"`
+	GuardActive  bool   `json:"guardActive,omitempty"`
+	GuardError   string `json:"guardError,omitempty"`
+
 	StartedAtMs int64 `json:"startedAtMs"`
 	PIDs        []int `json:"pids,omitempty"`
 	Live        bool  `json:"live"`
 	// Adopted means the launch handed off to an already-running instance
 	// (single-instance apps). The desk still shows it, but it was not spawned
 	// by this launch.
-	Adopted    bool   `json:"adopted,omitempty"`
+	Adopted bool `json:"adopted,omitempty"`
+	// Manual rows are registered by a launcher that already knows the PIDs
+	// (Provider open-app); refresh keeps them live until MarkExited.
+	Manual     bool   `json:"manual,omitempty"`
 	Status     string `json:"status"`
 	ExitedAtMs int64  `json:"exitedAtMs,omitempty"`
 }

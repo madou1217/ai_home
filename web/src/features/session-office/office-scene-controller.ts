@@ -99,8 +99,8 @@ const CLOUD_RING_CLEARANCE = 6.5; // 严格 > outerHalf + 6 的内缘安全距�
 const CLOUD_INNER_BAND_SPAN = 15.5;
 const CLOUD_OUTER_BAND_SPAN = 18.0;
 const CLOUD_ORBIT_SPEED_RAD = 0.014;
-const FOCUS_MONITOR_DISTANCE = 2.7;
-const FOCUS_CAMERA_ELEVATION_OFFSET = 0.98;
+const FOCUS_MONITOR_DISTANCE = 1.75;
+const FOCUS_CAMERA_ELEVATION_OFFSET = 0.36;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function normalizePanKey(event: KeyboardEvent): PanDirectionKey | null {
@@ -429,10 +429,8 @@ export class OfficeSceneController {
 
   private lastRoomKey = '';
   private lastPreset: OfficeCameraPreset = 'isometric';
-  private lastSessionCount = 0;
   private activeCameraGoal: CameraGoal | null = null;
   private applyingCameraTransition = false;
-  private userMovedCamera = false;
 
   private hoveredTarget: OfficeHitTarget | null = null;
   private pointerDownTarget: OfficeHitTarget | null = null;
@@ -558,7 +556,7 @@ export class OfficeSceneController {
       renderer.toneMapping = THREE.NoToneMapping;
       renderer.toneMappingExposure = 1.08;
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFShadowMap;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
       canvas = renderer.domElement;
       canvas.className = 'office-webgl-canvas';
@@ -585,11 +583,10 @@ export class OfficeSceneController {
       controls.zoomSpeed = 1.4;
       controls.zoomToCursor = true;
       controls.panSpeed = 0.85;
-      controls.minDistance = 1.2;
+      controls.minDistance = 0.35;
       controls.maxDistance = 60;
       controls.minPolarAngle = 0.02;
       controls.maxPolarAngle = Math.PI * 0.62;
-
       const anisotropy = Math.max(4, renderer.capabilities.getMaxAnisotropy());
       roomRig = createOfficeRoomRig(this.currentPalette, anisotropy);
       this.scene.add(roomRig.root);
@@ -957,25 +954,17 @@ export class OfficeSceneController {
     );
 
     const presetChanged = state.cameraPreset !== this.lastPreset;
-    const countChanged = state.sessions.length !== this.lastSessionCount;
-    this.lastSessionCount = state.sessions.length;
     if (roomChanged) {
       this.lastRoomKey = state.roomKey;
-      this.userMovedCamera = false;
     }
     if (presetChanged) {
       if (this.monitorDrag?.active) {
         this.cancelMonitorDrag();
       }
       this.lastPreset = state.cameraPreset;
-      this.userMovedCamera = false;
     }
 
-    if (
-      roomChanged
-      || presetChanged
-      || (countChanged && !this.userMovedCamera && !this.monitorDrag?.active)
-    ) {
+    if (roomChanged || presetChanged) {
       this.applyCameraPreset(state.cameraPreset, roomChanged || state.reducedMotion);
     } else {
       this.clampControlsTarget();
@@ -1007,7 +996,6 @@ export class OfficeSceneController {
     }
     const targetPreset = preset ?? this.currentState?.cameraPreset ?? 'isometric';
     this.lastPreset = targetPreset;
-    this.userMovedCamera = false;
     this.applyCameraPreset(targetPreset, Boolean(this.currentState?.reducedMotion));
   }
 
@@ -1041,7 +1029,6 @@ export class OfficeSceneController {
       target: screenTopTarget,
     };
     this.clearKeyboardPanState();
-    this.userMovedCamera = true;
     if (this.currentState?.reducedMotion) {
       this.setCameraImmediate(goal);
     } else {
@@ -1224,7 +1211,6 @@ export class OfficeSceneController {
     this.clampControlsTarget();
     this.controls.update();
     this.updateDynamicSceneForCamera();
-    this.userMovedCamera = true;
     this.renderSingleFrame();
   }
 
@@ -1341,7 +1327,6 @@ export class OfficeSceneController {
 
     event.preventDefault();
     this.activeCameraGoal = null;
-    this.userMovedCamera = true;
     this.panShiftHeld = event.shiftKey;
 
     if (this.currentState?.reducedMotion) {
@@ -1396,7 +1381,6 @@ export class OfficeSceneController {
     this.cameraSettleFrames = 3;
     if (!this.applyingCameraTransition) {
       this.activeCameraGoal = null;
-      this.userMovedCamera = true;
     }
     if (!this.currentState?.reducedMotion) {
       this.syncAnimationSchedule();
@@ -1442,13 +1426,9 @@ export class OfficeSceneController {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(nextW, nextH, false);
 
-    if (!this.userMovedCamera && this.currentState) {
-      this.applyCameraPreset(this.currentState.cameraPreset, true);
-    } else {
-      this.needsStaticRender = true;
-      if (this.rafId === null) {
-        this.renderSingleFrame();
-      }
+    this.needsStaticRender = true;
+    if (this.rafId === null) {
+      this.renderSingleFrame();
     }
   };
 

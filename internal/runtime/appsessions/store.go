@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madou1217/ai_home/internal/runtime/appguard"
 	"github.com/madou1217/ai_home/internal/runtime/proxyregion"
 )
 
@@ -126,6 +127,13 @@ func (store *Store) Add(ctx context.Context, instance Instance) (Instance, error
 			existing.ProxyCountry = instance.ProxyCountry
 			existing.ProxyCity = instance.ProxyCity
 			existing.ProxyRegion = instance.ProxyRegion
+			if existing.Manual {
+				existing.PIDs = instance.PIDs
+				existing.Executable = instance.Executable
+				existing.Live = true
+				existing.Status = StatusRunning
+				existing.ExitedAtMs = 0
+			}
 			if err := store.saveLocked(document); err != nil {
 				return Instance{}, err
 			}
@@ -213,6 +221,7 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 	var results []KillResult
 	now := time.Now()
 	proxyPIDs := make(map[int]struct{})
+	guardPIDs := make(map[int]struct{})
 	for index := range document.Instances {
 		instance := &document.Instances[index]
 		if len(selected) > 0 {
@@ -240,6 +249,11 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 			proxyPIDs[instance.ProxyPID] = struct{}{}
 			instance.ProxyPID = 0
 		}
+		if instance.GuardPID > 0 {
+			guardPIDs[instance.GuardPID] = struct{}{}
+			instance.GuardPID = 0
+			instance.GuardActive = false
+		}
 		results = append(results, KillResult{ID: instance.ID, Name: instance.Name, PIDs: signalled, Killed: true})
 	}
 	// Temporary proxy entries belong to the app instance; do not leave the
@@ -250,10 +264,28 @@ func (store *Store) Kill(ctx context.Context, ids []string) ([]KillResult, error
 		}
 		_, _ = terminateProcesses(ctx, []int{pid})
 	}
+	for pid := range guardPIDs {
+		if guardPIDReferenced(document.Instances, pid) {
+			continue
+		}
+		appguard.Stop(pid)
+	}
 	if err := store.saveLocked(document); err != nil {
 		return results, err
 	}
 	return results, nil
+}
+
+func guardPIDReferenced(instances []Instance, pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	for _, instance := range instances {
+		if instance.ActiveNow() && instance.GuardPID == pid {
+			return true
+		}
+	}
+	return false
 }
 
 func proxyPIDReferenced(instances []Instance, pid int) bool {
@@ -303,6 +335,108 @@ func (store *Store) SetProxyEntry(ctx context.Context, id string, entry ProxyEnt
 		instance.ProxyPID = entry.PID
 		instance.ProxyHealth = ""
 		instance.ProxyHealthDetail = ""
+		return store.saveLocked(document)
+	}
+	return ErrNotFound
+}
+
+// MarkExited marks a manual Provider row as ended.
+func (store *Store) MarkExited(id string) error {
+	if store == nil {
+		return errors.New("app_sessions_store_unavailable")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrNotFound
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ID != id {
+			continue
+		}
+		instance.Live = false
+		instance.Status = StatusExited
+		instance.ExitedAtMs = time.Now().UnixMilli()
+		return store.saveLocked(document)
+	}
+	return ErrNotFound
+}
+
+// MarkExitedByProfile ends manual rows for a launcher-owned profile key.
+func (store *Store) MarkExitedByProfile(profileDir string) error {
+	profileDir = strings.TrimSpace(profileDir)
+	if store == nil || profileDir == "" {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	changed := false
+	now := time.Now().UnixMilli()
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ProfileDir != profileDir || !instance.ActiveNow() {
+			continue
+		}
+		instance.Live = false
+		instance.Status = StatusExited
+		instance.ExitedAtMs = now
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return store.saveLocked(document)
+}
+
+// SetGuard records the NetGuard process attached to an instance.
+func (store *Store) SetGuard(id string, pid int, backend, errorText string) error {
+	if store == nil {
+		return errors.New("app_sessions_store_unavailable")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrNotFound
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	release, lockErr := store.lockDocument()
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+	document, err := store.loadLocked()
+	if err != nil {
+		return err
+	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.ID != id {
+			continue
+		}
+		instance.GuardPID = pid
+		instance.GuardBackend = strings.TrimSpace(backend)
+		instance.GuardActive = pid > 0
+		instance.GuardError = strings.TrimSpace(errorText)
 		return store.saveLocked(document)
 	}
 	return ErrNotFound
@@ -377,10 +511,14 @@ func (store *Store) RemoveHistory(ctx context.Context, ids []string) (int, error
 // user closing the app window themselves, without leaving a serve child behind.
 func (store *Store) reapProxyEntriesLocked(document *storeDocument, now time.Time) bool {
 	referenced := make(map[int]struct{})
+	guards := make(map[int]struct{})
 	for index := range document.Instances {
 		instance := &document.Instances[index]
 		if instance.ActiveNow() && instance.ProxyPID > 0 {
 			referenced[instance.ProxyPID] = struct{}{}
+		}
+		if instance.ActiveNow() && instance.GuardPID > 0 {
+			guards[instance.GuardPID] = struct{}{}
 		}
 	}
 	changed := false
@@ -401,6 +539,22 @@ func (store *Store) reapProxyEntriesLocked(document *storeDocument, now time.Tim
 		instance.ProxyPID = 0
 		changed = true
 	}
+	for index := range document.Instances {
+		instance := &document.Instances[index]
+		if instance.GuardPID <= 0 || instance.ActiveNow() {
+			continue
+		}
+		if _, used := guards[instance.GuardPID]; used {
+			continue
+		}
+		if instance.ExitedAtMs > 0 && now.Sub(time.UnixMilli(instance.ExitedAtMs)) < 3*time.Second {
+			continue
+		}
+		appguard.Stop(instance.GuardPID)
+		instance.GuardPID = 0
+		instance.GuardActive = false
+		changed = true
+	}
 	return changed
 }
 
@@ -414,6 +568,11 @@ func (store *Store) refreshLocked(document *storeDocument, now time.Time) (bool,
 	changed := false
 	claimed := make(map[int]struct{})
 	apply := func(instance *Instance) bool {
+		if instance.Manual {
+			// The launching surface owns the process identity for these rows;
+			// matching by executable/profile would immediately mark them exited.
+			return false
+		}
 		resolved, adopted, _ := matchPIDs(*instance, processes, now, claimed)
 		for _, pid := range resolved {
 			claimed[pid] = struct{}{}

@@ -3,8 +3,8 @@ package main
 // `aih app`：本机应用看台。
 //
 // 看台只展示通过 `aih app` 启动的实例（app-instances.json），把进程、代理、
-// 租约和热替换开关放在同一屏。终端交互沿用 `aih ss` 的原始模式选择器：
-// ↑/↓ 选择、space 标记、r 续约、x 结束、X 全部结束、t 热替换、d 详情。
+// 租约与恢复方式放在同一屏。终端交互沿用 `aih ss` 的原始模式选择器：
+// ↑/↓ 选择、space 标记、r 续约、x 结束、X 全部结束、d 详情。
 
 import (
 	"context"
@@ -47,7 +47,6 @@ type appDeskState struct {
 	historyCount int
 	proxy        proxycontrol.Status
 	proxyErr     string
-	hotSwap      bool
 
 	selected int
 	marked   map[string]bool
@@ -97,7 +96,6 @@ func (state *appDeskState) refresh(ctx context.Context, store *appsessions.Store
 	}
 	state.proxyErr = ""
 	state.proxy = proxycontrol.Status{}
-	state.hotSwap = proxycontrol.LoadSettings(aiHome).HotSwap
 	status := state.proxy
 	if client, err := proxycontrol.Load(aiHome); err != nil {
 		state.proxyErr = err.Error()
@@ -108,7 +106,6 @@ func (state *appDeskState) refresh(ctx context.Context, store *appsessions.Store
 	} else {
 		state.proxy = fetched
 		status = fetched
-		state.hotSwap = fetched.HotSwap
 	}
 	if state.initialized {
 		switch {
@@ -296,17 +293,6 @@ func runAppDeskInteractive(ctx context.Context, runtime commandRuntime, store *a
 					}
 					state.flash(fmt.Sprintf("✓ 已结束 %d 个实例", killed), ansiGreen)
 				}
-			case "hot-swap":
-				if result.err != nil {
-					state.flash("热替换切换失败: "+result.err.Error(), ansiRed)
-				} else {
-					state.proxy = result.status
-					if result.status.HotSwap {
-						state.flash("⚡ 无缝恢复已开启（原地热替换）", ansiMagenta)
-					} else {
-						state.flash("热替换已关闭（周期/手动重建；请求内失效仍会原地重试）", ansiAmber)
-					}
-				}
 			}
 			state.refresh(ctx, store, aiHome)
 			render()
@@ -389,14 +375,6 @@ func runAppDeskInteractive(ctx context.Context, runtime commandRuntime, store *a
 				}
 				state.confirmAll = true
 				state.flash(fmt.Sprintf("再按 y 确认结束全部 %d 个运行实例（其他键取消）", state.liveCount()), ansiRed)
-			case "t":
-				if state.busy != "" {
-					break
-				}
-				state.busy = "hot-swap"
-				state.busyStart = time.Now()
-				enabled := !state.hotSwap
-				go runDeskHotSwap(ctx, aiHome, enabled, results)
 			}
 			render()
 		}
@@ -425,28 +403,6 @@ func runDeskRenew(ctx context.Context, aiHome string, results chan<- deskActionR
 func runDeskKill(ctx context.Context, store *appsessions.Store, ids []string, results chan<- deskActionResult) {
 	result, err := store.Kill(ctx, ids)
 	results <- deskActionResult{kind: "kill", results: result, err: err}
-}
-
-func runDeskHotSwap(ctx context.Context, aiHome string, enabled bool, results chan<- deskActionResult) {
-	client, err := proxycontrol.Load(aiHome)
-	if err != nil {
-		// No running entry: persist so the next start uses it.
-		if saveErr := proxycontrol.SaveSettings(aiHome, proxycontrol.Settings{HotSwap: enabled}); saveErr != nil {
-			results <- deskActionResult{kind: "hot-swap", err: saveErr}
-			return
-		}
-		results <- deskActionResult{kind: "hot-swap", status: proxycontrol.Status{HotSwap: enabled}}
-		return
-	}
-	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	status, setErr := client.SetHotSwap(callCtx, enabled)
-	if setErr != nil {
-		results <- deskActionResult{kind: "hot-swap", status: status, err: setErr}
-		return
-	}
-	_ = proxycontrol.SaveSettings(aiHome, proxycontrol.Settings{HotSwap: enabled})
-	results <- deskActionResult{kind: "hot-swap", status: status}
 }
 
 func renderAppDesk(output io.Writer, state *appDeskState) {
@@ -498,10 +454,10 @@ func renderAppDesk(output io.Writer, state *appDeskState) {
 		}
 	}
 	_, _ = fmt.Fprintf(output, "%s  ──────────────────────────────────────────────────────────────────────────────%s\r\n", ansiDim, ansiReset)
-	_, _ = fmt.Fprintf(output, "  %s↑/↓ 选择  space 标记  r 续约  x 结束  X 全部结束  t 热替换  d 详情  q 退出%s\r\n", ansiDim, ansiReset)
+	_, _ = fmt.Fprintf(output, "  %s↑/↓ 选择  space 标记  r 续约  x 结束  X 全部结束  d 详情  q 退出%s\r\n", ansiDim, ansiReset)
 	if state.busy != "" {
 		frame := spinnerFrames[state.frame%len(spinnerFrames)]
-		label := map[string]string{"renew": "正在续约上游…", "kill": "正在结束进程…", "hot-swap": "正在切换热替换…"}[state.busy]
+		label := map[string]string{"renew": "正在续约上游…", "kill": "正在结束进程…"}[state.busy]
 		_, _ = fmt.Fprintf(output, "  %s%s %s%s %s(%dms)%s\r\n", ansiCyan, frame, label, ansiReset, ansiDim, time.Since(state.busyStart).Milliseconds(), ansiReset)
 	} else if state.toast != "" && time.Now().Before(state.toastUntil) {
 		_, _ = fmt.Fprintf(output, "  %s%s%s\r\n", state.toastTone, state.toast, ansiReset)
@@ -528,17 +484,18 @@ func renderProxyLine(state *appDeskState) string {
 	if status.Region != "" {
 		name += " · " + status.Region
 	}
-	hotSwap := "○ off"
-	if state.hotSwap {
-		hotSwap = "● on"
+	recovery := "—"
+	if status.Running {
+		if status.InPlace {
+			recovery = "原地"
+		} else {
+			recovery = "重建"
+		}
 	}
-	if status.Running && !status.HotSwapAvailable {
-		hotSwap = "— n/a"
-	}
-	return fmt.Sprintf("%s%s%s %s   %s出口%s %s%s%s   %s热替换%s %s%s%s",
+	return fmt.Sprintf("%s%s%s %s   %s出口%s %s%s%s   %s恢复%s %s%s%s",
 		tone, dot, ansiReset, text,
 		ansiDim, ansiReset, ansiBold, name, ansiReset,
-		ansiDim, ansiReset, tone, hotSwap, ansiReset)
+		ansiDim, ansiReset, tone, recovery, ansiReset)
 }
 
 func renderInstanceLine(instance appsessions.Instance, selected, marked bool) string {
@@ -660,7 +617,7 @@ func renderAppDeskPlain(output io.Writer, state *appDeskState) {
 		_, _ = fmt.Fprintln(output, "未运行")
 		return
 	}
-	_, _ = fmt.Fprintf(output, "%s · 租约=%v · 热替换=%v\n", state.proxy.LeaseName, state.proxy.LeaseActive, state.proxy.HotSwap)
+	_, _ = fmt.Fprintf(output, "%s · 租约=%v · 恢复=%s\n", state.proxy.LeaseName, state.proxy.LeaseActive, recoveryLabel(state.proxy))
 }
 
 func renderAppDeskJSON(output io.Writer, state *appDeskState, aiHome string) {
@@ -672,7 +629,6 @@ func renderAppDeskJSON(output io.Writer, state *appDeskState, aiHome string) {
 		"instances":    state.instances,
 		"historyCount": state.historyCount,
 		"proxy":        proxy,
-		"hotSwap":      state.hotSwap,
 	}
 	if state.proxyErr != "" {
 		payload["proxyError"] = state.proxyErr
@@ -760,4 +716,14 @@ func formatDeskDuration(duration time.Duration) string {
 	default:
 		return fmt.Sprintf("%dh%02dm", int(duration.Hours()), int(duration.Minutes())%60)
 	}
+}
+
+func recoveryLabel(status proxycontrol.Status) string {
+	if !status.Running {
+		return "未运行"
+	}
+	if status.InPlace {
+		return "原地"
+	}
+	return "重建"
 }

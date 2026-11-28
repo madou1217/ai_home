@@ -13,8 +13,9 @@ func TestUsableSessionTitle(t *testing.T) {
 		"<goal_context>":                 "",
 		"# AGENTS.md instructions for x": "",
 		"Caveat: x":                      "",
-		"Warmup":                         "",
-		"未命名会话":                          "",
+		"A session-scoped Stop hook is now active with condition: x": "",
+		"Warmup": "",
+		"未命名会话":  "",
 	}
 	for input, want := range cases {
 		if got := usableSessionTitle(input); got != want {

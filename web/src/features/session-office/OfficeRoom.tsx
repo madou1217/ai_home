@@ -780,7 +780,16 @@ export function OfficeRoom({
                   aria-selected={isSelected}
                   className={`office-station-chip${isSelected ? ' is-selected' : ''}`}
                   data-availability={session.availability}
-                  onClick={() => setFocusedSessionKey(session.sessionKey)}
+                  onClick={(event) => {
+                    setFocusedSessionKey(session.sessionKey);
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    onOpenMonitor(session, {
+                      left: rect.left,
+                      top: rect.top,
+                      width: rect.width,
+                      height: rect.height,
+                    });
+                  }}
                   title={`${session.label} (${availMeta.label})`}
                 >
                   <span className={availMeta.ledClass} aria-hidden="true" />

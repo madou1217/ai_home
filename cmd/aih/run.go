@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/host/aihcli"
+	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 	"github.com/madou1217/ai_home/internal/runtime/completion"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
 	"github.com/madou1217/ai_home/internal/runtime/termtext"
@@ -559,9 +561,39 @@ func runProviderLaunch(ctx context.Context, providerID string, arguments []strin
 		BaseURL:   baseURL,
 		ClientKey: clientKey,
 	}
+	_, finishCLIRecord := recordProviderCLI(aiHomeDir, providerID)
 	runErr := app.Run(ctx, providerID, arguments, gateway)
+	finishCLIRecord()
 	closeErr := app.Close()
 	return errors.Join(runErr, closeErr)
+}
+
+// recordProviderCLI registers the running aih process as a manual CLI session
+// in the app ledger. The provider CLI runs inside this process tree; killing
+// the recorded PID from the desk ends the session.
+func recordProviderCLI(aiHomeDir, providerID string) (string, func()) {
+	home := strings.TrimSpace(aiHomeDir)
+	providerID = strings.TrimSpace(providerID)
+	if home == "" || providerID == "" {
+		return "", func() {}
+	}
+	store := appsessions.New(home)
+	pid := os.Getpid()
+	instance, err := store.Add(context.Background(), appsessions.Instance{
+		AppID:       providerID,
+		Name:        providerID + " CLI",
+		Kind:        "cli",
+		ProfileDir:  "provider-cli:" + providerID + ":" + strconv.Itoa(pid),
+		PIDs:        []int{pid},
+		Live:        true,
+		Status:      appsessions.StatusRunning,
+		StartedAtMs: time.Now().UnixMilli(),
+		Manual:      true,
+	})
+	if err != nil {
+		return "", func() {}
+	}
+	return instance.ID, func() { _ = store.MarkExited(instance.ID) }
 }
 
 // isNumericAccountToken 判断 token 是否是 CLI 数字别名。

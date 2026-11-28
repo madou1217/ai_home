@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/madou1217/ai_home/internal/adapters/managementproxy"
@@ -29,14 +28,9 @@ type serveLease struct {
 	anonymous     bool
 	dial          proxyingress.Dial
 	client        *managementproxy.Client
-	// hotSwap enables in-place upstream replacement: a rotation updates
-	// credentials/dial without closing listeners, and the failing dial waits
-	// for that swap and retries once.
-	hotSwap *atomic.Bool
-	// retryOnLoss lets the dial wait for an in-place recovery even when the
-	// hot-swap policy is off. It is an emergency request-level retry; periodic
-	// renewals still follow the hot-swap setting.
-	retryOnLoss bool
+	// inPlace means this entry can swap upstream credentials/dial without
+	// closing listeners; the failing dial waits for that swap and retries once.
+	inPlace bool
 	// lost 由 dial 在 Server 明确丢弃租约（404/410）时投递一次，主循环立即
 	// 换出口；否则要等到下一次 30 分钟续期，浏览器会持续看到 502。
 	lost chan error
@@ -49,7 +43,7 @@ type serveLease struct {
 	closeErr   error
 }
 
-func acquireServeLease(ctx context.Context, runtime commandRuntime, selector string, socks5 bool, httpPort, socksPort int, anonymous, httpPortSet, socksPortSet bool, hotSwap *atomic.Bool, retryOnLoss bool) (*serveLease, error) {
+func acquireServeLease(ctx context.Context, runtime commandRuntime, selector string, socks5 bool, httpPort, socksPort int, anonymous, httpPortSet, socksPortSet bool, inPlace bool) (*serveLease, error) {
 	client, err := managementProxyClient(runtime)
 	if err != nil {
 		return nil, err
@@ -69,7 +63,7 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 	}
 	lease := &serveLease{
 		id: raw.ID, name: raw.Name, username: username, password: password,
-		anonymous: anonymous, client: client, hotSwap: hotSwap, retryOnLoss: retryOnLoss,
+		anonymous: anonymous, client: client, inPlace: inPlace,
 		lost: make(chan error, 1),
 	}
 	lease.dial = func(dialCtx context.Context) (io.ReadWriteCloser, error) {
@@ -89,7 +83,7 @@ func acquireServeLease(ctx context.Context, runtime commandRuntime, selector str
 		case lease.lost <- dialErr:
 		default:
 		}
-		if !lease.retryOnLoss {
+		if !lease.inPlace {
 			return nil, dialErr
 		}
 		if waitErr := lease.waitRecovered(dialCtx); waitErr != nil {

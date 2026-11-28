@@ -17,6 +17,8 @@ import (
 	codebuddyfamilystorage "github.com/madou1217/ai_home/internal/adapters/providerstorage/codebuddyfamily"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
 	"github.com/madou1217/ai_home/internal/runtime/sessionevents"
+	"github.com/madou1217/ai_home/internal/runtime/sessionownership"
+	"github.com/madou1217/ai_home/internal/runtime/sessionproject"
 	"github.com/madou1217/ai_home/internal/sessionscan/sessionread"
 )
 
@@ -39,6 +41,7 @@ type nativeCLIProcess struct {
 	PID        int
 	Provider   string
 	AccountRef string
+	AccountID  string
 	CWD        string
 }
 
@@ -55,6 +58,7 @@ type nativeSelectedSession struct {
 	ID          string
 	CWD         string
 	Title       string
+	TurnState   string
 	LastEventAt int64
 }
 
@@ -102,13 +106,11 @@ func appendNativeProviderRows(ctx context.Context, runtime commandRuntime, rows 
 		if len(selected) == 0 {
 			continue
 		}
-		accountRef := ""
-		if len(group) == 1 {
-			accountRef = strings.TrimSpace(group[0].AccountRef)
-		}
+		accountRef, accountID := sharedNativeAccount(group)
 		for _, session := range selected {
 			row := nativeSessionRow(session)
 			row.AccountRef = accountRef
+			row.AccountID = accountID
 			appended = append(appended, row)
 			known[nativeRowKey(row.Provider, row.NativeID)] = true
 		}
@@ -165,12 +167,40 @@ func nativeSessionRow(session nativeSelectedSession) persistent.SessionRow {
 		StartPath:        session.CWD,
 		Label:            title,
 		NativeID:         session.ID,
+		TurnState:        session.TurnState,
 		Live:             true,
 		NativeOnly:       true,
 		CreatedAtMS:      activity,
 		LastActivityAtMS: activity,
 		LastActiveAtMS:   activity,
 	}
+}
+
+// sharedNativeAccount 只在整组进程账号一致时返回账号身份。混合账号时
+// 不能把第一个进程的账号安到所有会话上，宁可留空等详情页展示。
+func sharedNativeAccount(processes []nativeCLIProcess) (string, string) {
+	refs := make(map[string]bool)
+	ids := make(map[string]bool)
+	for _, process := range processes {
+		if ref := strings.TrimSpace(process.AccountRef); ref != "" {
+			refs[ref] = true
+		}
+		if id := strings.TrimSpace(process.AccountID); id != "" {
+			ids[id] = true
+		}
+	}
+	accountRef, accountID := "", ""
+	if len(refs) == 1 {
+		for ref := range refs {
+			accountRef = ref
+		}
+	}
+	if len(ids) == 1 {
+		for id := range ids {
+			accountID = id
+		}
+	}
+	return accountRef, accountID
 }
 
 func nativeSessionName(providerID, sessionID string) string {
@@ -296,7 +326,7 @@ func selectNativeSessions(
 			}
 		}
 		selected = append(selected, nativeSelectedSession{
-			Provider: providerID, ID: id, CWD: cwd, Title: title, LastEventAt: activity,
+			Provider: providerID, ID: id, CWD: cwd, Title: title, TurnState: state.TurnState, LastEventAt: activity,
 		})
 		used[id] = true
 	}
@@ -349,6 +379,152 @@ func readNativeStateSessions(aiHomeDir string) []nativeStateSession {
 		})
 	}
 	return sessions
+}
+
+// applyNativeTurnStates 用 Provider hook 的最新状态覆盖 rows 的轮次状态。
+// tmux 行和 Codex 写锁行本身没有轮次信息，统一在这里补，避免每个投影
+// 各自维护一份状态映射。
+func applyNativeTurnStates(aiHomeDir string, rows []persistent.SessionRow) {
+	states := readNativeStateSessions(aiHomeDir)
+	if len(states) == 0 {
+		return
+	}
+	// 同一会话会留下多条历史状态文件（completed 旧文件 + working 新文件）。
+	// 只认 LastEventAt 最新的一条，不能按目录遍历顺序覆盖。
+	latestByKey := make(map[string]nativeStateSession, len(states))
+	for _, state := range states {
+		key := nativeRowKey(state.Provider, state.ID)
+		if key == "\x00" || strings.TrimSpace(state.TurnState) == "" {
+			continue
+		}
+		if previous, found := latestByKey[key]; !found || state.LastEventAt >= previous.LastEventAt {
+			latestByKey[key] = state
+		}
+	}
+	owners := sessionownership.LoadAll(aiHomeDir)
+	for index := range rows {
+		id := strings.TrimSpace(rows[index].NativeID)
+		if id == "" {
+			continue
+		}
+		if state, found := latestByKey[nativeRowKey(rows[index].Provider, id)]; found {
+			rows[index].TurnState = state.TurnState
+		}
+		if strings.TrimSpace(rows[index].AccountRef) == "" {
+			if ref := owners[strings.ToLower(strings.TrimSpace(rows[index].Provider))][id]; ref != "" {
+				rows[index].AccountRef = ref
+			}
+		}
+	}
+}
+
+const (
+	recentNativeSessionTTL  = 24 * time.Hour
+	maxRecentNativeIdleRows = 12
+)
+
+// appendRecentNativeSessionRows 把最近 24 小时出现过、但当前没有进程的
+// Provider 原生会话补成空闲行。旧 tmux 会话在进程结束后会一直留在列表里
+// 直到回收；原生启动没有 pane，如果不补这一层，关掉终端后会话就从 ss 消失。
+//
+// 只补有 hook 运行记录（或已有活跃行）的 Provider，避免为了列历史去扫描
+// 所有 Provider 的会话库；结果再按最近活动截断，防止把几百条历史灌进选择器。
+func appendRecentNativeSessionRows(
+	ctx context.Context,
+	runtime commandRuntime,
+	rows *[]persistent.SessionRow,
+	allProjects bool,
+) {
+	if rows == nil || ctx == nil {
+		return
+	}
+	aiHomeDir, err := resolveAIHomeDir(runtime)
+	if err != nil || strings.TrimSpace(aiHomeDir) == "" {
+		return
+	}
+	hostHomeDir := strings.TrimSpace(readEnv(runtime.lookupEnv, "AIH_HOST_HOME"))
+	if hostHomeDir == "" {
+		hostHomeDir, _ = runtime.userHomeDir()
+	}
+	states := readNativeStateSessions(aiHomeDir)
+	cutoff := time.Now().Add(-recentNativeSessionTTL).UnixMilli()
+	providers := make(map[string]bool)
+	for _, row := range *rows {
+		if providerID := strings.ToLower(strings.TrimSpace(row.Provider)); providerID != "" {
+			providers[providerID] = true
+		}
+	}
+	for _, state := range states {
+		if state.LastEventAt >= cutoff {
+			providers[strings.ToLower(strings.TrimSpace(state.Provider))] = true
+		}
+	}
+	if len(providers) == 0 {
+		return
+	}
+	cwd, _ := os.Getwd()
+	known := nativeRowIndex(*rows)
+	candidates := make([]persistent.SessionRow, 0, maxRecentNativeIdleRows)
+	for providerID := range providers {
+		if providerID == "" {
+			continue
+		}
+		index := nativeCandidatesForProvider(ctx, providerID, aiHomeDir, hostHomeDir)
+		for projectPath, sessions := range index {
+			if !allProjects && !sessionproject.MatchesCwd(projectPath, cwd) {
+				continue
+			}
+			if isTransientProjectPath(projectPath) {
+				continue
+			}
+			for _, session := range sessions {
+				id := strings.TrimSpace(session.ID)
+				if id == "" || session.UpdatedAtMS < cutoff || known[nativeRowKey(providerID, id)] {
+					continue
+				}
+				known[nativeRowKey(providerID, id)] = true
+				candidates = append(candidates, persistent.SessionRow{
+					Provider:         providerID,
+					RuntimeScope:     "native",
+					Name:             nativeSessionName(providerID, id),
+					Path:             projectPath,
+					StartPath:        projectPath,
+					Label:            compactGlobalSessionTitle(session.Title),
+					NativeID:         id,
+					TurnState:        "idle",
+					Live:             false,
+					NativeOnly:       true,
+					CreatedAtMS:      session.UpdatedAtMS,
+					LastActivityAtMS: session.UpdatedAtMS,
+					LastActiveAtMS:   session.UpdatedAtMS,
+				})
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return
+	}
+	sort.SliceStable(candidates, func(left, right int) bool {
+		return candidates[left].LastActivityAtMS > candidates[right].LastActivityAtMS
+	})
+	if len(candidates) > maxRecentNativeIdleRows {
+		candidates = candidates[:maxRecentNativeIdleRows]
+	}
+	*rows = append(*rows, candidates...)
+}
+
+// isTransientProjectPath 排除临时目录/测试产物里的会话：这些是验证
+// 脚本留下的，不属于用户工作现场，不能因为"更全"就灌进选择器。
+func isTransientProjectPath(path string) bool {
+	text := strings.ToLower(filepath.ToSlash(filepath.Clean(strings.TrimSpace(path))))
+	for _, prefix := range []string{
+		"/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/",
+	} {
+		if strings.HasPrefix(text, prefix) {
+			return true
+		}
+	}
+	return strings.Contains(text, "/.test-artifacts/")
 }
 
 func isNativeTurnActive(turnState string) bool {
@@ -473,6 +649,7 @@ func liveNativeCLIProcesses(ctx context.Context) []nativeCLIProcess {
 			continue
 		}
 		providerID := ""
+		accountToken := ""
 		nativeManaged := false
 		current := process
 		for depth := 0; depth < 8; depth++ {
@@ -485,7 +662,7 @@ func liveNativeCLIProcesses(ctx context.Context) []nativeCLIProcess {
 					nativeManaged = true
 					break
 				}
-				providerID = nativeProviderFromAIHCommand(parent.command, knownProvider)
+				providerID, accountToken = nativeProviderFromAIHCommand(parent.command, knownProvider)
 				if providerID != "" {
 					break
 				}
@@ -499,6 +676,13 @@ func liveNativeCLIProcesses(ctx context.Context) []nativeCLIProcess {
 			continue
 		}
 		accountRef := ""
+		accountID := ""
+		switch {
+		case strings.HasPrefix(accountToken, "acct_"):
+			accountRef = accountToken
+		case isNumericAccountToken(accountToken):
+			accountID = accountToken
+		}
 		if matches := nativeAccountRefPattern.FindStringSubmatch(process.command); len(matches) == 2 {
 			accountRef = matches[1]
 		}
@@ -506,6 +690,7 @@ func liveNativeCLIProcesses(ctx context.Context) []nativeCLIProcess {
 			PID:        process.pid,
 			Provider:   providerID,
 			AccountRef: accountRef,
+			AccountID:  accountID,
 		})
 		candidatePIDs = append(candidatePIDs, process.pid)
 	}
@@ -588,32 +773,46 @@ func nativeAIHCommand(command string) bool {
 	}
 }
 
-func nativeProviderFromAIHCommand(command string, known map[string]bool) string {
+// nativeProviderFromAIHCommand 从 aih/aih-go 启动命令解析 provider 与账号位。
+// 返回账号 token 是为了让 ss 能显示 #24，而不是把所有原生行都写成 "-"。
+func nativeProviderFromAIHCommand(command string, known map[string]bool) (string, string) {
 	args := strings.Fields(command)
 	if len(args) < 2 {
-		return ""
+		return "", ""
 	}
 	for index := 1; index < len(args); index++ {
 		argument := strings.TrimSpace(args[index])
 		if argument == "--provider" && index+1 < len(args) {
-			return strings.ToLower(strings.TrimSpace(args[index+1]))
+			return strings.ToLower(strings.TrimSpace(args[index+1])), ""
 		}
 		if strings.HasPrefix(argument, "--provider=") {
-			return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(argument, "--provider=")))
+			return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(argument, "--provider="))), ""
 		}
 		if strings.HasPrefix(argument, "-") {
 			continue
 		}
 		normalized := strings.ToLower(argument)
+		// Codex 原生 CLI 的内部入口：codex 二进制由 aih-go 以这个动词拉起，
+		// 进程名不会再出现 aih codex，必须在这里认领。
+		if normalized == "__codex-default-cli" || normalized == "__codex-cli" {
+			return "codex", ""
+		}
 		if known[normalized] {
-			return normalized
+			account := ""
+			if index+1 < len(args) {
+				next := strings.TrimSpace(args[index+1])
+				if isNumericAccountToken(next) || strings.HasPrefix(next, "acct_") {
+					account = next
+				}
+			}
+			return normalized, account
 		}
 		if isNumericAccountToken(normalized) || strings.HasPrefix(normalized, "acct_") {
 			continue
 		}
-		return ""
+		return "", ""
 	}
-	return ""
+	return "", ""
 }
 
 // nativeProcessWorkingDirs 用一次 lsof 读取所有候选进程的 cwd；Linux 优先

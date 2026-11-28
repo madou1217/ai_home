@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
@@ -153,24 +154,112 @@ func sessionUpdatedMillis(session sessionread.Session) int64 {
 
 // usableSessionTitle 过滤合成上下文与占位标题（与 Node isUsableTitle 的核心规则一致）。
 func usableSessionTitle(value string) string {
-	title := strings.Join(strings.Fields(value), " ")
+	title := compactSessionTitle(value)
 	if title == "" || title == "Warmup" || title == "未命名会话" {
 		return ""
 	}
 	for _, prefix := range []string{
+		"A session-scoped Stop hook is now active",
+		"Briefly acknowledge the goal",
 		"<goal_context", "<environment_context", "<user_instructions",
 		"<session_context", "# AGENTS.md instructions", "Caveat:", "<command-name>",
-		"<local-command-stdout", "<local-command-stderr",
-		"<codex_internal_context", "<turn_aborted", "<user_shell_command",
+		"<command-args>", "<local-command-stdout", "<local-command-stderr",
+		"<system-reminder", "<codex_internal_context", "<turn_aborted", "<user_shell_command",
 	} {
 		if strings.HasPrefix(title, prefix) {
 			return ""
 		}
 	}
-	if len([]rune(title)) > 120 {
-		title = string([]rune(title)[:120])
-	}
 	return title
+}
+
+// compactSessionTitle 把标题压成一行并限制显示长度。会话标题来自用户首条
+// 消息时常常是一大段粘贴内容；直接放进选择器会把整屏撑乱。
+func compactSessionTitle(value string) string {
+	text := strings.TrimSpace(value)
+	if index := strings.IndexAny(text, "\r\n"); index >= 0 {
+		text = strings.TrimSpace(text[:index])
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		return ""
+	}
+	const maxRunes = 72
+	runes := []rune(text)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes-1]) + "…"
+	}
+	return text
+}
+
+// displaySessionTitle 返回列表/选择器里真正展示的标题。
+func displaySessionTitle(row persistent.SessionRow) string {
+	for _, candidate := range []string{row.Label, row.Title, row.WindowName} {
+		if title := usableSessionTitle(candidate); title != "" {
+			return title
+		}
+	}
+	if id := strings.TrimSpace(row.NativeID); id != "" {
+		return row.Provider + "-" + shortSessionID(id)
+	}
+	if name := strings.TrimSpace(row.Name); name != "" {
+		return name
+	}
+	return "-"
+}
+
+// ensureUniqueSessionTitles 给同项目下标题相同的行补一个会话身份后缀。
+// Provider 的自动标题可能重复（例如同一批 goal 文本），没有后缀时用户
+// 无法在列表里区分到底哪一行是哪个会话。
+func ensureUniqueSessionTitles(rows []persistent.SessionRow) {
+	if len(rows) < 2 {
+		return
+	}
+	titles := make([]string, len(rows))
+	counts := make(map[string]int, len(rows))
+	for index := range rows {
+		titles[index] = displaySessionTitle(rows[index])
+		counts[sessionTitleKey(rows[index], titles[index])]++
+	}
+	seen := make(map[string]int, len(rows))
+	for index := range rows {
+		key := sessionTitleKey(rows[index], titles[index])
+		rows[index].Label = titles[index]
+		if counts[key] <= 1 {
+			continue
+		}
+		seen[key]++
+		if seen[key] == 1 {
+			continue
+		}
+		rows[index].Label = titles[index] + " · " + sessionTitleSuffix(rows[index], seen[key])
+	}
+}
+
+func sessionTitleKey(row persistent.SessionRow, title string) string {
+	project := strings.TrimSpace(row.Path)
+	if project == "" {
+		project = strings.TrimSpace(row.StartPath)
+	}
+	return strings.ToLower(strings.TrimSpace(row.Provider)) + "\x00" + project + "\x00" + strings.ToLower(strings.TrimSpace(title))
+}
+
+func sessionTitleSuffix(row persistent.SessionRow, duplicateIndex int) string {
+	if id := strings.TrimSpace(row.NativeID); id != "" {
+		return shortSessionID(id)
+	}
+	if name := strings.TrimSpace(row.Name); name != "" {
+		return name
+	}
+	return strconv.Itoa(duplicateIndex)
+}
+
+func shortSessionID(id string) string {
+	text := strings.TrimSpace(id)
+	if len(text) <= 8 {
+		return text
+	}
+	return text[len(text)-8:]
 }
 
 func absInt64(value int64) int64 {

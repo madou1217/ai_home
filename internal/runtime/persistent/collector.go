@@ -114,6 +114,7 @@ func ParseSessionList(stdout string) []SessionRow {
 			windowName      string
 			command         string
 			panePID         string
+			paneDead        string
 			paneCurrentPath string
 			windowActivity  string
 			sessionActivity string
@@ -127,6 +128,7 @@ func ParseSessionList(stdout string) []SessionRow {
 			windowName = parts[5]
 			command = parts[6]
 			panePID = parts[7]
+			paneDead = parts[9]
 			if len(parts) > 12 {
 				paneCurrentPath = parts[12]
 			}
@@ -139,6 +141,7 @@ func ParseSessionList(stdout string) []SessionRow {
 			windowName = fieldAt(parts, 5)
 			command = fieldAt(parts, 6)
 			panePID = fieldAt(parts, 7)
+			paneDead = fieldAt(parts, 9)
 			paneCurrentPath = fieldAt(parts, 10)
 			windowActivity = fieldAt(parts, 12)
 			sessionActivity = fieldAt(parts, 13)
@@ -179,6 +182,7 @@ func ParseSessionList(stdout string) []SessionRow {
 			WindowName:       compactSingleLine(windowName),
 			Command:          compactSingleLine(command),
 			PanePID:          pidVal,
+			PaneDead:         strings.TrimSpace(paneDead) == "1",
 			LastActivityAtMS: winActSec * 1000,
 			LastActiveAtMS:   bestActiveSec * 1000,
 		})

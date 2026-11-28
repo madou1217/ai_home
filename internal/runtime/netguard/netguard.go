@@ -129,12 +129,13 @@ type Profile struct {
 
 // GuardStatus is the observable state of one guard.
 type GuardStatus struct {
-	Active        bool   `json:"active"`
-	Mode          Mode   `json:"mode"`
-	Backend       string `json:"backend"` // windivert | wfp | sandbox | cgroup
-	ProtectedPIDs int    `json:"protectedPids"`
-	Blocked       uint64 `json:"blocked"`
-	LastError     string `json:"lastError,omitempty"`
+	Active        bool    `json:"active"`
+	Mode          Mode    `json:"mode"`
+	Backend       string  `json:"backend"` // windivert | wfp | sandbox | cgroup
+	DNSMode       DNSMode `json:"dnsMode,omitempty"`
+	ProtectedPIDs int     `json:"protectedPids"`
+	Blocked       uint64  `json:"blocked"`
+	LastError     string  `json:"lastError,omitempty"`
 }
 
 // Audit is evidence collected from the guard/host for one instance.

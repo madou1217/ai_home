@@ -23,6 +23,11 @@ export interface AppDeskInstance {
   proxyHealthDetail?: string;
   /** 节点/地区选择器；为空表示本机 6152 或自定义 URL。 */
   proxySelector?: string;
+  /** NetGuard 严格隔离：进程/后端/错误（运行时字段）。 */
+  guardPid?: number;
+  guardBackend?: string;
+  guardActive?: boolean;
+  guardError?: string;
   startedAtMs: number;
   pids?: number[];
   live: boolean;
@@ -42,8 +47,8 @@ export interface AppDeskProxyStatus {
   /** 出口国家/城市（由租约名解析，能解析时才有）。 */
   region?: string;
   leaseActive: boolean;
-  hotSwap: boolean;
-  hotSwapAvailable: boolean;
+  /** 该入口是否支持原地恢复；false 时恢复会重建入口。 */
+  inPlace: boolean;
   lastRenewAtMs?: number;
   lastError?: string;
   reconnects?: number;
@@ -56,7 +61,6 @@ export interface AppDeskView {
   /** 已结束实例数；历史行按需从 /desk/history 拉取。 */
   historyCount: number;
   proxy: AppDeskProxyStatus;
-  hotSwap: boolean;
   proxyError?: string;
 }
 
@@ -74,6 +78,25 @@ export interface LocalApp {
   proxyLabel: string;
 }
 
+/** 记住的上次启动配置（GET /v1/management/webui/apps/profile）。 */
+export interface AppDeskLaunchProfile {
+  target: {
+    provider: string;
+    surface?: string;
+    accountRef?: string;
+    instanceSlot?: string;
+  };
+  policy: {
+    mode: string;
+    proxy: { kind: string; selector?: string; url?: string };
+    dns?: string;
+  };
+  lastProxy?: string;
+  lastRegion?: string;
+  lastSuccess?: number;
+  updatedAt?: number;
+}
+
 export interface LocalAppLaunchInput {
   id?: string;
   query?: string;
@@ -81,6 +104,13 @@ export interface LocalAppLaunchInput {
   proxyUrl?: string;
   /** 节点/地区选择器；与 proxyUrl 互斥，由服务端按候选解析。 */
   proxySelector?: string;
+  /** 预检失败后用户选择“仍然启动”。 */
+  force?: boolean;
+}
+
+export interface AppDeskPreflightWarning {
+  ok: boolean;
+  warning?: string;
 }
 
 export interface LocalAppLaunchResponse {
@@ -91,6 +121,7 @@ export interface LocalAppLaunchResponse {
   proxySelector?: string;
   proxyRegion?: string;
   proxyPid?: number;
+  preflight?: AppDeskPreflightWarning;
 }
 
 export interface AppDeskKillResult {
@@ -116,11 +147,11 @@ export interface AppDeskKillResponse {
   desk?: AppDeskView;
 }
 
-export interface AppDeskHotSwapResponse {
-  ok: boolean;
-  hotSwap: boolean;
-  proxy?: AppDeskProxyStatus;
-  running?: boolean;
+
+export interface AppDeskPreflightFailure {
+  proxyUrl?: string;
+  health?: string;
+  detail?: string;
 }
 
 export interface AppDeskErrorInfo {
@@ -128,6 +159,7 @@ export interface AppDeskErrorInfo {
   message: string;
   status?: number;
   proxy?: AppDeskProxyStatus;
+  preflight?: AppDeskPreflightFailure;
 }
 
 const PUBLIC_BASE = '/webui/apps/desk';
@@ -138,15 +170,13 @@ const MANAGEMENT_APPS_BASE = '/v1/management/webui/apps';
 const DEFAULT_PROXY_STATUS: AppDeskProxyStatus = {
   running: false,
   leaseActive: false,
-  hotSwap: false,
-  hotSwapAvailable: false
+  inPlace: false
 };
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   app_not_proxied: '选中的应用没有使用代理',
   proxy_not_running: '本机代理入口未运行',
   renew_failed: '代理租约续约失败',
-  hot_swap_failed: '切换热替换失败',
   kill_failed: '结束应用进程失败',
   desk_failed: '读取应用看台失败',
   route_not_found: '当前服务端未启用应用看台接口（需要桌面会话）'
@@ -225,8 +255,7 @@ function normalizeProxyStatus(raw?: Partial<AppDeskProxyStatus> | null): AppDesk
     leaseName: typeof raw.leaseName === 'string' && raw.leaseName ? raw.leaseName : undefined,
     region: typeof raw.region === 'string' && raw.region ? raw.region : undefined,
     leaseActive: Boolean(raw.leaseActive),
-    hotSwap: Boolean(raw.hotSwap),
-    hotSwapAvailable: Boolean(raw.hotSwapAvailable),
+    inPlace: Boolean(raw.inPlace),
     lastRenewAtMs: typeof raw.lastRenewAtMs === 'number' && raw.lastRenewAtMs > 0 ? raw.lastRenewAtMs : undefined,
     lastError: typeof raw.lastError === 'string' && raw.lastError ? raw.lastError : undefined,
     reconnects: typeof raw.reconnects === 'number' && raw.reconnects >= 0 ? raw.reconnects : 0,
@@ -240,7 +269,6 @@ function normalizeDeskView(raw?: Partial<AppDeskView> | null): AppDeskView {
     instances: Array.isArray(raw?.instances) ? raw.instances : [],
     historyCount: typeof raw?.historyCount === 'number' && raw.historyCount > 0 ? raw.historyCount : 0,
     proxy,
-    hotSwap: typeof raw?.hotSwap === 'boolean' ? raw.hotSwap : proxy.hotSwap,
     proxyError: typeof raw?.proxyError === 'string' && raw.proxyError ? raw.proxyError : undefined
   };
 }
@@ -253,6 +281,7 @@ export function extractAppDeskError(error: unknown, fallback = '请求失败'): 
         error?: string;
         message?: string;
         proxy?: Partial<AppDeskProxyStatus>;
+        preflight?: AppDeskPreflightFailure;
       };
     };
   })?.response;
@@ -266,7 +295,8 @@ export function extractAppDeskError(error: unknown, fallback = '请求失败'): 
     code,
     message,
     status: response?.status,
-    proxy
+    proxy,
+    preflight: response?.data?.preflight
   };
 }
 
@@ -343,21 +373,6 @@ export const appDeskAPI = {
     };
   },
 
-  async setHotSwap(enabled: boolean): Promise<AppDeskHotSwapResponse> {
-    const data = await requestDesk<{
-      ok: boolean;
-      hotSwap?: boolean;
-      proxy?: Partial<AppDeskProxyStatus>;
-      running?: boolean;
-    }>('POST', '/hot-swap', { enabled });
-    return {
-      ok: Boolean(data.ok),
-      hotSwap: typeof data.hotSwap === 'boolean' ? data.hotSwap : enabled,
-      proxy: data.proxy ? normalizeProxyStatus(data.proxy) : undefined,
-      running: data.running
-    };
-  },
-
   /** 历史：已结束的启动记录（主列表不再混入）。 */
   async history(): Promise<AppDeskInstance[]> {
     const data = await requestDesk<{ ok: boolean; instances?: AppDeskInstance[] }>('GET', '/history');
@@ -376,6 +391,14 @@ export const appDeskAPI = {
   },
 
   /** 本机应用目录（与 alt+space / aih app 同源）。 */
+  async getProfile(id: string): Promise<AppDeskLaunchProfile | null> {
+    const data = await requestApps<{ ok: boolean; profile?: AppDeskLaunchProfile | null }>(
+      'GET',
+      `/profile?id=${encodeURIComponent(id)}`
+    );
+    return data.profile ?? null;
+  },
+
   async listApps(): Promise<LocalApp[]> {
     const data = await requestApps<{ ok: boolean; apps?: LocalApp[] }>('GET', '');
     return Array.isArray(data.apps) ? data.apps : [];

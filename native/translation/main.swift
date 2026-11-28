@@ -372,7 +372,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       launcherEnabled: launcherEnabled
     )
     _ = shortcutRegistry.update([
-      ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
+      ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,", global: false) { [weak self] in
         self?.panel.openSettings()
       },
       ShortcutDescriptor(id: "translation", label: "翻译", shortcut: translation, enabled: translationEnabled) { [weak self] in

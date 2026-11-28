@@ -83,12 +83,16 @@ type WinDivertGuard struct {
 
 	mu       sync.Mutex
 	handle   uintptr
-	pids     map[int]struct{}
-	rootPID  int
+	pids     map[int]uint64
+	roots    map[int]uint64
 	watcher  context.CancelFunc
 	status   GuardStatus
 	blocked  uint64
 	applyErr string
+	// transparent TCP redirect state (AIH_NETGUARD_TRANSPARENT=1).
+	nat     *natTable
+	relay   *redirectRelay
+	inbound uintptr
 }
 
 // NewWinDivertGuard creates a strict Windows guard.
@@ -104,10 +108,12 @@ func NewWinDivertGuard(options Options) (Guard, error) {
 	}
 	return &WinDivertGuard{
 		options: options,
-		pids:    make(map[int]struct{}),
+		pids:    make(map[int]uint64),
+		roots:   make(map[int]uint64),
 		status: GuardStatus{
 			Mode:    ModeStrict,
 			Backend: "windivert",
+			DNSMode: options.Policy.DNS,
 		},
 	}, nil
 }
@@ -158,6 +164,12 @@ func (guard *WinDivertGuard) Start(ctx context.Context) error {
 	guard.mu.Lock()
 	defer guard.mu.Unlock()
 	guard.status.Active = true
+	if transparentEnabled() {
+		if err := guard.startTransparent(ctx); err != nil {
+			guard.status.Active = false
+			return err
+		}
+	}
 	// The caller normally calls SetProcessTree immediately after starting the
 	// target suspended. If PIDs are already present, apply now.
 	if len(guard.pids) > 0 {
@@ -172,17 +184,23 @@ func (guard *WinDivertGuard) SetProcessTree(ctx context.Context, rootPID int, pi
 	}
 	guard.mu.Lock()
 	if rootPID > 0 {
-		guard.rootPID = rootPID
+		created, ok := processCreateTime(rootPID)
+		if winDivertDebug {
+			fmt.Fprintf(os.Stderr, "windivert add root pid=%d created=%d ok=%v\n", rootPID, created, ok)
+		}
+		guard.roots[rootPID] = created
+		guard.pids[rootPID] = created
 	}
 	for _, pid := range pids {
 		if pid > 0 {
-			guard.pids[pid] = struct{}{}
+			created, ok := processCreateTime(pid)
+			if winDivertDebug {
+				fmt.Fprintf(os.Stderr, "windivert add pid=%d created=%d ok=%v\n", pid, created, ok)
+			}
+			guard.pids[pid] = created
 		}
 	}
-	if guard.rootPID > 0 {
-		guard.pids[guard.rootPID] = struct{}{}
-	}
-	startWatcher := guard.watcher == nil && guard.rootPID > 0 && ctx != nil
+	startWatcher := guard.watcher == nil && (len(guard.roots) > 0 || len(guard.pids) > 0) && ctx != nil
 	var watcherCtx context.Context
 	var cancel context.CancelFunc
 	if startWatcher {
@@ -216,20 +234,29 @@ func (guard *WinDivertGuard) trackProcessTree(ctx context.Context) {
 
 func (guard *WinDivertGuard) refreshDescendants() {
 	guard.mu.Lock()
-	root := guard.rootPID
+	changed := guard.pruneLocked()
+	roots := make([]int, 0, len(guard.roots))
+	for root := range guard.roots {
+		roots = append(roots, root)
+	}
 	guard.mu.Unlock()
-	if root <= 0 {
+	if len(roots) == 0 {
+		if changed {
+			guard.mu.Lock()
+			_ = guard.applyFilterLocked()
+			guard.mu.Unlock()
+		}
 		return
 	}
-	children := descendantPIDs(root)
-	if len(children) == 0 {
-		return
+	var children []int
+	for _, root := range roots {
+		children = append(children, descendantPIDs(root)...)
 	}
-	changed := false
 	guard.mu.Lock()
 	for _, pid := range children {
 		if _, exists := guard.pids[pid]; !exists {
-			guard.pids[pid] = struct{}{}
+			created, _ := processCreateTime(pid)
+			guard.pids[pid] = created
 			changed = true
 		}
 	}
@@ -237,6 +264,34 @@ func (guard *WinDivertGuard) refreshDescendants() {
 		_ = guard.applyFilterLocked()
 	}
 	guard.mu.Unlock()
+}
+
+// pruneLocked drops PIDs whose process exited or whose PID was reused by a
+// different process. Without this, a recycled PID would inherit the instance's
+// protection and could cut an unrelated service (including sshd) off the
+// network. The caller holds guard.mu.
+func (guard *WinDivertGuard) pruneLocked() bool {
+	changed := false
+	for pid, created := range guard.roots {
+		if !processStillMatches(pid, created) {
+			if winDivertDebug {
+				fmt.Fprintf(os.Stderr, "windivert prune root pid=%d\n", pid)
+			}
+			delete(guard.roots, pid)
+			delete(guard.pids, pid)
+			changed = true
+		}
+	}
+	for pid, created := range guard.pids {
+		if !processStillMatches(pid, created) {
+			if winDivertDebug {
+				fmt.Fprintf(os.Stderr, "windivert prune pid=%d\n", pid)
+			}
+			delete(guard.pids, pid)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (guard *WinDivertGuard) applyFilterLocked() error {
@@ -304,7 +359,15 @@ func (guard *WinDivertGuard) drain(handle uintptr) {
 			return
 		}
 		payload := packet[:received]
-		if guard.packetBelongsToInstance(payload) {
+		target := guard.packetBelongsToInstance(payload)
+		if target && guard.nat != nil {
+			if rewritten := guard.rewriteOutbound(payload); rewritten != nil {
+				var sent uint32
+				_, _, _ = winDivertSendProc.Call(handle, uintptr(unsafe.Pointer(&rewritten[0])), uintptr(len(rewritten)), uintptr(unsafe.Pointer(&sent)), uintptr(unsafe.Pointer(&address[0])))
+				continue
+			}
+		}
+		if target {
 			atomic.AddUint64(&guard.blocked, 1)
 			continue
 		}
@@ -515,6 +578,9 @@ func (guard *WinDivertGuard) Stop(context.Context) error {
 	handle := guard.handle
 	guard.handle = 0
 	guard.status.Active = false
+	guard.status.ProtectedPIDs = 0
+	guard.pids = make(map[int]uint64)
+	guard.roots = make(map[int]uint64)
 	guard.mu.Unlock()
 	if handle != 0 && handle != invalidHandle {
 		_, _, _ = winDivertShutdownProc.Call(handle, uintptr(winDivertShutdownRecv))
@@ -534,7 +600,7 @@ func (guard *WinDivertGuard) Status() GuardStatus {
 func (guard *WinDivertGuard) Audit(context.Context) (Audit, error) {
 	return Audit{
 		DNSMode: guard.options.Policy.DNS,
-		Notes:   []string{"P0 guard: non-loopback packets from the instance process tree are dropped"},
+		Notes:   []string{"P0 guard: non-loopback packets from the instance process tree are dropped", "Windows Dnscache resolves in svchost; per-PID blocking cannot prove DNS is proxy-side"},
 	}, nil
 }
 

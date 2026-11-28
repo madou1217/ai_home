@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
-	"time"
 
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/runtime/persistent"
@@ -62,17 +61,10 @@ type pickerStore struct {
 	allProjects bool
 }
 
+// Rows 与 --list 走同一个采集入口，避免选择器和列表的标题/状态/去重
+// 规则分叉（关闭会话后的刷新也必须得到同一份行集）。
 func (source pickerStore) Rows(ctx context.Context) ([]persistent.SessionRow, error) {
-	rows, err := source.store.CollectSessions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// 选择器重载（关闭会话后）也补一次缓存标题，避免掉回 pane 名；原生
-	// Codex 没有 tmux pane，必须和 --list 共享同一投影，否则交互 ss 仍显示为空。
-	persistent.ApplySessionCache(rows, persistent.ReadSessionCache(source.store.AIHomeDir, time.Now()))
-	appendNativeCodexRows(ctx, source.runtime, &rows)
-	appendNativeProviderRows(ctx, source.runtime, &rows)
-	return scopeGlobalSessionRows(rows, source.allProjects)
+	return collectGlobalRows(ctx, source.runtime, source.allProjects)
 }
 
 func (source pickerStore) Close(ctx context.Context, row persistent.SessionRow) error {
@@ -89,25 +81,8 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 	if err != nil {
 		return err
 	}
-	var rows []persistent.SessionRow
-	if refresh {
-		// --refresh：忽略缓存，直接用原生会话库解析标题/原生 id，再回写缓存。
-		rows, err = store.CollectSessions(ctx)
-		if err != nil {
-			return fmt.Errorf("读取持久会话失败: %w", err)
-		}
-		resolveSessionTitles(ctx, runtime, rows)
-		appendNativeCodexRows(ctx, runtime, &rows)
-		appendNativeProviderRows(ctx, runtime, &rows)
-		_ = persistent.WriteSessionCache(store.AIHomeDir, rows, time.Now())
-	} else {
-		// 默认走与 --list 相同的采集+缓存补全，picker 里的 c/y 才有原生会话 id。
-		rows, err = collectGlobalRows(ctx, runtime, true)
-		if err != nil {
-			return err
-		}
-	}
-	rows, err = scopeGlobalSessionRows(rows, allProjects...)
+	// 与 --list 共用同一个采集入口；picker 的 c/y 才有原生会话 id。
+	rows, err := collectGlobalRowsMode(ctx, runtime, refresh, allProjects...)
 	if err != nil {
 		return err
 	}
@@ -120,5 +95,5 @@ func runGlobalSessionPicker(ctx context.Context, runtime commandRuntime, refresh
 		store:       store,
 		runtime:     runtime,
 		allProjects: len(allProjects) > 0 && allProjects[0],
-	}, labels)
+	}, rows, labels)
 }

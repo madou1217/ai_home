@@ -28,10 +28,12 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/runtime/appsessions"
 )
 
 const (
@@ -465,6 +467,7 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 		writeLaunchFailure(responseWriter, plan, result)
 		return
 	}
+	handler.recordProviderLaunch(plan, result)
 
 	sessionKey = firstNonEmpty(result.SessionKey, plan.SessionKey)
 	executable := firstNonEmpty(result.Executable, plan.Executable)
@@ -494,6 +497,35 @@ func (handler *Handler) ServeHTTP(responseWriter http.ResponseWriter, request *h
 }
 
 // writeLaunchFailure 把 Launcher 的业务失败翻译成 Node 的状态码与字段。
+func (handler *Handler) recordProviderLaunch(plan Request, result Result) {
+	home := strings.TrimSpace(handler.aiHomeDir)
+	if home == "" {
+		return
+	}
+	profileDir := "provider:" + plan.Provider + ":" + plan.AccountRef + ":" + plan.Kind
+	store := appsessions.New(home)
+	if plan.Action == "close" {
+		_ = store.MarkExitedByProfile(profileDir)
+		return
+	}
+	if len(result.PIDs) == 0 {
+		return
+	}
+	_, _ = store.Add(context.Background(), appsessions.Instance{
+		AppID:       plan.Provider,
+		Name:        plan.Provider + " " + plan.Kind,
+		Path:        result.Executable,
+		Executable:  result.Executable,
+		Kind:        plan.Kind,
+		ProfileDir:  profileDir,
+		PIDs:        append([]int(nil), result.PIDs...),
+		Live:        true,
+		Status:      appsessions.StatusRunning,
+		StartedAtMs: time.Now().UnixMilli(),
+		Manual:      true,
+	})
+}
+
 func writeLaunchFailure(responseWriter http.ResponseWriter, plan Request, result Result) {
 	// 缺安装是「可修复的前置条件」，Node 用 428 让前端弹安装确认；
 	// transport=webui 时不需要本机二进制，不走这条分支。

@@ -1,6 +1,6 @@
 // Package proxycontrol is the loopback control channel for a running
 // `aih proxy serve` process. The CLI dashboard and WebUI use it to renew the
-// upstream lease, toggle hot-swap, and read live proxy state.
+// upstream lease and read live proxy state. Recovery is in-place when the entry supports it.
 //
 // The control file contains a per-process token and lives under run/ with 0600;
 // it is never logged or returned by the management API.
@@ -35,75 +35,16 @@ type Status struct {
 	LeaseName string `json:"leaseName,omitempty"`
 	// Region is the Chinese country/city label derived from LeaseName; empty
 	// when the name carries no recognizable geo ("AWS", custom names).
-	Region           string `json:"region,omitempty"`
-	LeaseActive      bool   `json:"leaseActive"`
-	HotSwap          bool   `json:"hotSwap"`
-	HotSwapAvailable bool   `json:"hotSwapAvailable"`
-	LastRenewAtMs    int64  `json:"lastRenewAtMs,omitempty"`
-	LastError        string `json:"lastError,omitempty"`
-	Reconnects       int    `json:"reconnects,omitempty"`
-	UpdatedAtMs      int64  `json:"updatedAtMs,omitempty"`
-}
-
-// SettingsVersion is the current settings schema. v1 defaulted hotSwap to
-// false; v2 makes seamless in-place recovery the default and keeps forced
-// rebuild as an explicit diagnostic choice.
-const SettingsVersion = 2
-
-// Settings is the persisted proxy desk configuration shared by CLI and WebUI.
-type Settings struct {
-	Version int  `json:"version"`
-	HotSwap bool `json:"hotSwap"`
-}
-
-// SettingsPath returns the settings file under an AIH home.
-func SettingsPath(aiHomeDir string) string {
-	return filepath.Join(strings.TrimSpace(aiHomeDir), "run", "proxy", "settings.json")
-}
-
-// DefaultSettings is the seamless-recovery default.
-func DefaultSettings() Settings {
-	return Settings{Version: SettingsVersion, HotSwap: true}
-}
-
-// LoadSettings reads the desk settings; missing/corrupt files mean defaults.
-// A v1 file (which defaulted off) migrates to the v2 default on; an explicit
-// off choice only exists in v2.
-func LoadSettings(aiHomeDir string) Settings {
-	raw, err := os.ReadFile(SettingsPath(aiHomeDir))
-	if err != nil {
-		return DefaultSettings()
-	}
-	var settings Settings
-	if json.Unmarshal(raw, &settings) != nil {
-		return DefaultSettings()
-	}
-	switch settings.Version {
-	case 1:
-		return DefaultSettings()
-	case SettingsVersion:
-		return settings
-	default:
-		return DefaultSettings()
-	}
-}
-
-// SaveSettings atomically persists the desk settings.
-func SaveSettings(aiHomeDir string, settings Settings) error {
-	path := SettingsPath(aiHomeDir)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	settings.Version = SettingsVersion
-	raw, err := json.Marshal(settings)
-	if err != nil {
-		return err
-	}
-	temporary := path + ".tmp"
-	if err := os.WriteFile(temporary, raw, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(temporary, path)
+	Region      string `json:"region,omitempty"`
+	LeaseActive bool   `json:"leaseActive"`
+	// InPlace reports whether this entry can swap its upstream without
+	// rebinding listeners (anonymous, non-TUN). Recovery is always in-place
+	// when possible, otherwise it falls back to a full rebuild.
+	InPlace       bool   `json:"inPlace"`
+	LastRenewAtMs int64  `json:"lastRenewAtMs,omitempty"`
+	LastError     string `json:"lastError,omitempty"`
+	Reconnects    int    `json:"reconnects,omitempty"`
+	UpdatedAtMs   int64  `json:"updatedAtMs,omitempty"`
 }
 
 // Client talks to one proxy serve control endpoint.
@@ -151,15 +92,10 @@ func (client *Client) Status(ctx context.Context) (Status, error) {
 	return client.call(ctx, http.MethodGet, "/status", nil)
 }
 
-// Renew renews the current lease. When hot-swap is enabled this happens
-// in-place; otherwise the caller may observe a short reconnect.
+// Renew renews the current lease. Recovery is in-place when the entry supports
+// it; otherwise the caller may observe a short rebuild.
 func (client *Client) Renew(ctx context.Context) (Status, error) {
 	return client.call(ctx, http.MethodPost, "/renew", map[string]any{})
-}
-
-// SetHotSwap toggles in-place upstream replacement for automatic recovery.
-func (client *Client) SetHotSwap(ctx context.Context, enabled bool) (Status, error) {
-	return client.call(ctx, http.MethodPost, "/hot-swap", map[string]any{"enabled": enabled})
 }
 
 func (client *Client) call(ctx context.Context, method, path string, payload any) (Status, error) {

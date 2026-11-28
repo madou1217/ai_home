@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 /// A native action descriptor. The registry owns only key matching and conflict
 /// validation; callers provide the action so provider/runtime behavior remains
@@ -8,13 +9,18 @@ struct ShortcutDescriptor {
   let label: String
   let shortcut: String
   let enabled: Bool
+  /// Global shortcuts use a Carbon hot key and fire from any app. App-local
+  /// shortcuts (for example the helper's own settings command) must not steal
+  /// the combination from other applications.
+  let global: Bool
   let action: () -> Void
 
-  init(id: String, label: String, shortcut: String, enabled: Bool = true, action: @escaping () -> Void) {
+  init(id: String, label: String, shortcut: String, enabled: Bool = true, global: Bool = true, action: @escaping () -> Void) {
     self.id = id
     self.label = label
     self.shortcut = shortcut
     self.enabled = enabled
+    self.global = global
     self.action = action
   }
 }
@@ -51,6 +57,14 @@ final class ShortcutRegistry {
 
   private var descriptors: [ShortcutDescriptor] = []
   private var monitors: [Any] = []
+  // Global shortcuts use Carbon hot keys: unlike NSEvent global monitors they
+  // do not need Accessibility permission, so a rebuilt helper keeps working
+  // instead of silently losing every shortcut until the user re-grants it.
+  private var hotKeyRefs: [EventHotKeyRef] = []
+  private var hotKeyActions: [UInt32: () -> Void] = [:]
+  private var hotKeyHandler: EventHandlerRef?
+  private var nextHotKeyID: UInt32 = 1
+  private static let hotKeySignature: OSType = 0x41494854 // 'AIHT'
   private(set) var conflicts: [ShortcutConflict] = []
   private(set) var registrationError: String?
   private let status: (String) -> Void
@@ -86,39 +100,96 @@ final class ShortcutRegistry {
       return registrationError == nil
     }
 
-    let handler: (NSEvent) -> Bool = { [weak self] event in
-      guard let self = self else { return false }
-      guard let descriptor = self.descriptors.first(where: { descriptor in
-        descriptor.enabled && !self.isConflicted(descriptor) && self.matches(event, descriptor: descriptor)
-      }) else { return false }
-      descriptor.action()
-      return true
+    installHotKeyHandlerIfNeeded()
+    let localDescriptors = active.filter { !$0.global }
+    if !localDescriptors.isEmpty {
+      // App-local shortcuts only apply while this process is frontmost, so a
+      // plain local monitor is the right scope (and never steals keys from
+      // other applications).
+      if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown], handler: { [weak self] event in
+        guard let self else { return event }
+        if let descriptor = localDescriptors.first(where: { self.matches(event, descriptor: $0) }) {
+          descriptor.action()
+          return nil
+        }
+        return event
+      }) {
+        monitors.append(monitor)
+      }
     }
-    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown], handler: { event in
-      _ = handler(event)
-    }) {
-      monitors.append(monitor)
-    } else {
-      registrationError = "无法注册全局快捷键；辅助功能助手仍在运行"
-      status(registrationError!)
+    for descriptor in active where descriptor.global {
+      guard let binding = binding(for: descriptor.shortcut) else { continue }
+      var ref: EventHotKeyRef?
+      let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: nextHotKeyID)
+      let registerStatus = RegisterEventHotKey(
+        UInt32(binding.keyCode),
+        carbonModifiers(binding.modifiers),
+        hotKeyID,
+        GetApplicationEventTarget(),
+        0,
+        &ref
+      )
+      if registerStatus == noErr, let ref {
+        hotKeyRefs.append(ref)
+        hotKeyActions[hotKeyID.id] = descriptor.action
+        nextHotKeyID += 1
+      } else if registrationError == nil {
+        registrationError = "\(descriptor.label) 快捷键 \(descriptor.shortcut) 已被其他应用占用"
+        status(registrationError ?? "")
+      }
     }
-    // Global monitors do not receive events from this helper itself. The local
-    // monitor covers the full-app settings shell and swallows matched events to
-    // avoid duplicate window-level handling or system beeps.
-    if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown], handler: { event in
-      return handler(event) ? nil : event
-    }) {
-      monitors.append(monitor)
-    } else if registrationError == nil {
-      registrationError = "无法注册本地快捷键；辅助功能助手仍在运行"
-      status(registrationError!)
-    }
+    // Carbon hot keys also fire while the helper itself is frontmost, so no
+    // extra local monitor is installed.
     return registrationError == nil
+  }
+
+  private func installHotKeyHandlerIfNeeded() {
+    guard hotKeyHandler == nil else { return }
+    var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+    let userData = Unmanaged.passUnretained(self).toOpaque()
+    InstallEventHandler(GetApplicationEventTarget(), { _, event, userData -> OSStatus in
+      guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+      var hotKeyID = EventHotKeyID()
+      let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &hotKeyID
+      )
+      guard status == noErr else { return status }
+      let registry = Unmanaged<ShortcutRegistry>.fromOpaque(userData).takeUnretainedValue()
+      registry.fireHotKey(hotKeyID.id)
+      return noErr
+    }, 1, &eventType, userData, &hotKeyHandler)
+  }
+
+  private func fireHotKey(_ id: UInt32) {
+    hotKeyActions[id]?()
+  }
+
+  private func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+    var result: UInt32 = 0
+    if flags.contains(.command) { result |= UInt32(cmdKey) }
+    if flags.contains(.option) { result |= UInt32(optionKey) }
+    if flags.contains(.control) { result |= UInt32(controlKey) }
+    if flags.contains(.shift) { result |= UInt32(shiftKey) }
+    return result
   }
 
   func unregister() {
     monitors.forEach { NSEvent.removeMonitor($0) }
     monitors.removeAll()
+    hotKeyRefs.forEach { UnregisterEventHotKey($0) }
+    hotKeyRefs.removeAll()
+    hotKeyActions.removeAll()
+    if let hotKeyHandler {
+      RemoveEventHandler(hotKeyHandler)
+      self.hotKeyHandler = nil
+    }
+    nextHotKeyID = 1
   }
 
   func update(_ next: [ShortcutDescriptor]) -> Bool { register(next) }

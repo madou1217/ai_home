@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -271,7 +272,9 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		}
 	}
 	preflightWarning := ""
-	if netguard.Mode(networkMode) == netguard.ModeStrict {
+	strictMode := netguard.Mode(networkMode) == netguard.ModeStrict
+	sandboxGUI := false
+	if strictMode {
 		if proxyURL == "" {
 			writeJSON(response, http.StatusConflict, map[string]any{
 				"ok":      false,
@@ -280,7 +283,18 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 			})
 			return
 		}
-		if err := appguard.Available(appguard.Spec{AIHomeDir: handler.aiHomeDir}); err != nil {
+		if runtime.GOOS == "darwin" {
+			if applaunch.ProxyModeFor(app) != applaunch.ProxyModeChromium {
+				writeJSON(response, http.StatusConflict, map[string]any{
+					"ok":          false,
+					"error":       "guard_unavailable",
+					"message":     "macOS 严格隔离目前只支持 Chromium/Electron 应用（sandbox-exec）",
+					"canContinue": false,
+				})
+				return
+			}
+			sandboxGUI = true
+		} else if err := appguard.Available(appguard.Spec{AIHomeDir: handler.aiHomeDir}); err != nil {
 			writeJSON(response, http.StatusConflict, map[string]any{
 				"ok":          false,
 				"error":       "guard_unavailable",
@@ -314,6 +328,7 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		AIHomeDir:   handler.aiHomeDir,
 		ProfileDir:  applaunch.ProfileDir(app, proxyURL, handler.aiHomeDir),
 		Independent: true,
+		Sandbox:     sandboxGUI,
 	})
 	if err != nil {
 		writeJSON(response, http.StatusInternalServerError, map[string]any{"ok": false, "error": "launch_failed", "message": err.Error()})
@@ -341,8 +356,12 @@ func (handler *Handler) launch(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	guardWarning := ""
-	if netguard.Mode(networkMode) == netguard.ModeStrict {
-		instance, guardWarning = handler.startGuard(instance)
+	if strictMode {
+		if sandboxGUI {
+			instance, guardWarning = handler.recordSandboxGuard(instance)
+		} else {
+			instance, guardWarning = handler.startGuard(instance)
+		}
 	}
 	profile, profileErr := handler.rememberProfile(request, app, entry, proxyURL, selector, customURL, payload.Proxy, networkMode, payload.Remember)
 	responsePayload := map[string]any{
@@ -400,6 +419,24 @@ func (handler *Handler) profile(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(response, http.StatusOK, map[string]any{"ok": true, "profile": profile})
+}
+
+func (handler *Handler) recordSandboxGuard(instance appsessions.Instance) (appsessions.Instance, string) {
+	pid := 0
+	if len(instance.PIDs) > 0 {
+		pid = instance.PIDs[0]
+	}
+	instance.GuardPID = pid
+	instance.GuardBackend = "sandbox-exec"
+	instance.GuardActive = pid > 0
+	if pid == 0 {
+		instance.GuardError = "未匹配到 sandbox 进程 PID"
+	}
+	if err := appsessions.New(handler.aiHomeDir).SetGuard(instance.ID, pid, "sandbox-exec", instance.GuardError); err != nil {
+		instance.GuardError = "记录 sandbox Guard 失败: " + err.Error()
+		return instance, instance.GuardError
+	}
+	return instance, instance.GuardError
 }
 
 func (handler *Handler) startGuard(instance appsessions.Instance) (appsessions.Instance, string) {

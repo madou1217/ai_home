@@ -53,6 +53,8 @@ type ProxyOptions struct {
 	// Independent 强制启动独立实例（即使没有代理）。看台需要可追踪的进程，
 	// 复用已有实例会拿到一个启动前就存在的 PID。
 	Independent bool
+	// Sandbox requests the macOS sandbox-exec launcher (Chromium/Electron).
+	Sandbox bool
 }
 
 // ProxyModeFor 判定应用的代理能力。

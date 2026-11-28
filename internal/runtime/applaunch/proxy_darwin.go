@@ -74,7 +74,7 @@ func openWithProxy(_ context.Context, app launcher.App, mode ProxyMode, proxyURL
 			}
 		}
 	}
-	if proxyURL != "" && os.Getenv("AIH_NETGUARD_SANDBOX_GUI") == "1" && strings.HasSuffix(target, ".app") {
+	if proxyURL != "" && (options.Sandbox || os.Getenv("AIH_NETGUARD_SANDBOX_GUI") == "1") && strings.HasSuffix(target, ".app") {
 		if err := ensureProfileDir(options.ProfileDir); err != nil {
 			return err
 		}

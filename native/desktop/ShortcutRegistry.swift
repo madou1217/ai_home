@@ -9,13 +9,18 @@ struct ShortcutDescriptor {
   let label: String
   let shortcut: String
   let enabled: Bool
+  /// Global shortcuts use a Carbon hot key and fire from any app. App-local
+  /// shortcuts (for example the helper's own settings command) must not steal
+  /// the combination from other applications.
+  let global: Bool
   let action: () -> Void
 
-  init(id: String, label: String, shortcut: String, enabled: Bool = true, action: @escaping () -> Void) {
+  init(id: String, label: String, shortcut: String, enabled: Bool = true, global: Bool = true, action: @escaping () -> Void) {
     self.id = id
     self.label = label
     self.shortcut = shortcut
     self.enabled = enabled
+    self.global = global
     self.action = action
   }
 }
@@ -96,7 +101,23 @@ final class ShortcutRegistry {
     }
 
     installHotKeyHandlerIfNeeded()
-    for descriptor in active {
+    let localDescriptors = active.filter { !$0.global }
+    if !localDescriptors.isEmpty {
+      // App-local shortcuts only apply while this process is frontmost, so a
+      // plain local monitor is the right scope (and never steals keys from
+      // other applications).
+      if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown], handler: { [weak self] event in
+        guard let self else { return event }
+        if let descriptor = localDescriptors.first(where: { self.matches(event, descriptor: $0) }) {
+          descriptor.action()
+          return nil
+        }
+        return event
+      }) {
+        monitors.append(monitor)
+      }
+    }
+    for descriptor in active where descriptor.global {
       guard let binding = binding(for: descriptor.shortcut) else { continue }
       var ref: EventHotKeyRef?
       let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: nextHotKeyID)

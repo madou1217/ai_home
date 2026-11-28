@@ -399,7 +399,7 @@ func writeGlobalSessionGroups(
 				globalSessionStatus(row),
 				row.Provider,
 				globalSessionAccount(row, labels),
-				globalSessionTitle(row),
+				foldedSessionTitle(rows, row),
 				truncateDisplay(pickerLatestMessage(row), 60),
 				globalSessionID(row),
 				globalSessionActivityLabel(row),

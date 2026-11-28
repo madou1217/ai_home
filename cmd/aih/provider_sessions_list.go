@@ -216,6 +216,7 @@ func writeSessionRows(
 	rows []persistent.SessionRow,
 	labels map[string]string,
 ) {
+	originalRows := rows
 	rows = mainSessionRows(rows)
 	if len(rows) == 0 {
 		_, _ = fmt.Fprintf(output, "%s：当前没有活跃的持久会话。\n", providerID)
@@ -233,7 +234,7 @@ func writeSessionRows(
 		if account == "" {
 			account = shortAccountRef(row.AccountRef)
 		}
-		title := displaySessionTitle(row)
+		title := foldedSessionTitle(originalRows, row)
 		project := sessionProjectPath(row)
 		sessionID := strings.TrimSpace(row.Name)
 		if row.NativeOnly {

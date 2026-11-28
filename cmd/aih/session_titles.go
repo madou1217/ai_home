@@ -275,6 +275,17 @@ func sanitizeTerminalText(value string) string {
 
 // mainSessionRows 用于非交互列表：subagent 默认折叠，不单独占一行。
 // 交互 picker 仍保留它们，只是默认不进入 visibleRows。
+// foldedSessionTitle 给有 subagent 的主行加折叠标记，非交互列表也能看出
+// 这一行下面还有隐藏会话；没有子会话时保持原标题。
+func foldedSessionTitle(rows []persistent.SessionRow, row persistent.SessionRow) string {
+	for _, candidate := range rows {
+		if candidate.Subagent && strings.TrimSpace(candidate.ParentID) == strings.TrimSpace(row.NativeID) {
+			return "▸ " + globalSessionTitle(row)
+		}
+	}
+	return globalSessionTitle(row)
+}
+
 func mainSessionRows(rows []persistent.SessionRow) []persistent.SessionRow {
 	selected := make([]persistent.SessionRow, 0, len(rows))
 	for _, row := range rows {

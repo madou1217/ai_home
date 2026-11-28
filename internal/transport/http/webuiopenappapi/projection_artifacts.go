@@ -102,7 +102,25 @@ func writeBytesAtomic(target string, content []byte, mode os.FileMode) error {
 	var suffixBuf [8]byte
 	_, _ = rand.Read(suffixBuf[:])
 	temp := fmt.Sprintf("%s.aih-tmp-%d-%s", target, os.Getpid(), hex.EncodeToString(suffixBuf[:]))
-	if err := os.WriteFile(temp, content, mode); err != nil {
+	handle, err := os.OpenFile(temp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := handle.Write(content); err != nil {
+		_ = handle.Close()
+		_ = os.Remove(temp)
+		return err
+	}
+	// 先刷盘再换名：os.WriteFile 只保证写进系统缓存，断电后换名后的文件会保留长度
+	// 但内容全 0（NTFS Valid Data Length = 0）。2026-11-27 一台机器上的 config.toml
+	// 就是这样变成 7151 个 NUL 的，客户端直接起不来。
+	if err := handle.Sync(); err != nil {
+		_ = handle.Close()
+		_ = os.Remove(temp)
+		return err
+	}
+	if err := handle.Close(); err != nil {
+		_ = os.Remove(temp)
 		return err
 	}
 	_ = os.Chmod(temp, mode)

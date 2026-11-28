@@ -39,6 +39,7 @@ var macSources = []string{
 	"native/clipboard/LumenOrbitOpticalDotsView.swift",
 	"native/clipboard/LumenOrbitDissolveEffect.swift",
 	"native/clipboard/LumenOrbitViewport.swift",
+	"native/clipboard/LumenOrbitDisplayCoordinator.swift",
 	"native/clipboard/QuickOrbitWindow.swift",
 	"native/launcher/LauncherPanelModel.swift",
 	"native/launcher/LauncherPanelViews.swift",

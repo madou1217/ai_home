@@ -676,7 +676,7 @@ final class LumenOrbitCardView: NSView {
   var visualState: VisualState = .idle {
     didSet {
       if visualState != oldValue {
-        updateVisualState(animated: LumenMotion.isEnabled)
+        updateVisualState(animated: !suppressPropertyAnimation && LumenMotion.isEnabled)
       }
     }
   }
@@ -684,9 +684,30 @@ final class LumenOrbitCardView: NSView {
   var isKeyboardFocused: Bool = false {
     didSet {
       if isKeyboardFocused != oldValue {
-        updateHeaderChoreography(animated: LumenMotion.isEnabled)
+        updateHeaderChoreography(animated: !suppressPropertyAnimation && LumenMotion.isEnabled)
       }
     }
+  }
+
+  /// Synchronized hover flag broadcast by `LumenOrbitDisplayCoordinator` across all mounted slices
+  /// of a card straddling two physical displays so time-yield, X reveal, and lift stay lockstepped.
+  var isCoordinatedHover: Bool = false {
+    didSet {
+      if isCoordinatedHover != oldValue {
+        updateHeaderChoreography(animated: !suppressPropertyAnimation && LumenMotion.isEnabled)
+      }
+    }
+  }
+
+  private var suppressPropertyAnimation = false
+
+  func syncCoordinatedState(visualState nextState: VisualState, keyboardFocused: Bool, coordinatedHover: Bool, animated: Bool) {
+    let previousSuppress = suppressPropertyAnimation
+    suppressPropertyAnimation = !animated
+    visualState = nextState
+    isKeyboardFocused = keyboardFocused
+    isCoordinatedHover = coordinatedHover
+    suppressPropertyAnimation = previousSuppress
   }
 
   var onSelectAndPaste: ((String) -> Void)?
@@ -869,15 +890,28 @@ final class LumenOrbitCardView: NSView {
   }
 
   override func mouseDown(with event: NSEvent) {
-    (enclosingScrollView as? LumenOrbitRailScrollView)?.beginRailDrag(with: event)
+    if let rail = superview as? LumenOrbitRailViewportView {
+      rail.beginRailDrag(with: event)
+    } else {
+      (enclosingScrollView as? LumenOrbitRailScrollView)?.beginRailDrag(with: event)
+    }
   }
 
   override func mouseDragged(with event: NSEvent) {
-    (enclosingScrollView as? LumenOrbitRailScrollView)?.continueRailDrag(with: event)
+    if let rail = superview as? LumenOrbitRailViewportView {
+      rail.continueRailDrag(with: event)
+    } else {
+      (enclosingScrollView as? LumenOrbitRailScrollView)?.continueRailDrag(with: event)
+    }
   }
 
   override func mouseUp(with event: NSEvent) {
-    let wasDrag = (enclosingScrollView as? LumenOrbitRailScrollView)?.endRailDrag() ?? false
+    let wasDrag: Bool
+    if let rail = superview as? LumenOrbitRailViewportView {
+      wasDrag = rail.endRailDrag()
+    } else {
+      wasDrag = (enclosingScrollView as? LumenOrbitRailScrollView)?.endRailDrag() ?? false
+    }
     if wasDrag { return }
     let pt = convert(event.locationInWindow, from: nil)
     let lifted = NSPoint(x: pt.x, y: pt.y - currentLiftY)
@@ -1451,7 +1485,7 @@ final class LumenOrbitCardView: NSView {
   /// - Leave: remove X exits immediately (delay 0ms), time returns 43 → 12 DIP after 100ms delay.
   /// - Time label NEVER changes opacity or truncates.
   private func updateHeaderChoreography(animated: Bool) {
-    let shouldYield = isPointerInside || isKeyboardFocused
+    let shouldYield = isPointerInside || isCoordinatedHover || isKeyboardFocused
     guard shouldYield != isTimeYielded else { return }
     isTimeYielded = shouldYield
     timeReturnWork?.cancel()

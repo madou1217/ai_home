@@ -3,19 +3,19 @@ import CoreGraphics
 import Foundation
 import QuartzCore
 
-// MARK: - Premultiplied Soft-Glow Particle Sprite Cache (§18.4 — Zero Hard Crosshairs)
+// MARK: - Soft Particle Sprite Cache (Zero Hard Crosshairs / Sparkles, §18.4, A66)
 
+/// Caches small premultiplied soft-radial cotton-light CGImage sprites keyed by quantized RGB.
+/// Ensures zero hard star/crosshair spikes and low per-frame CPU/GPU cost even on 120/144Hz displays.
 final class LumenSoftParticleSpriteCache {
   static let shared = LumenSoftParticleSpriteCache()
 
   private var cache: [String: CGImage] = [:]
   private var keyOrder: [String] = []
-  private let limit = 64
-
-  private init() {}
+  private let limit = 160
 
   func sprite(r: UInt8, g: UInt8, b: UInt8, glowEnabled: Bool) -> CGImage? {
-    // Quantize to 16-step buckets so sprite memory remains strictly bounded
+    // Quantize to 16-level buckets to keep cache bounded while preserving exact card hues
     let qr = (r >> 4) << 4
     let qg = (g >> 4) << 4
     let qb = (b >> 4) << 4
@@ -118,19 +118,19 @@ struct LumenSampledCardTexture {
     let a = rgbaBytes[offset + 3]
     guard a > 24 else { return (0, 0, 0, 0) }
     // Un-premultiply gently and lift luminosity slightly toward soft cotton-light
-    let af = max(0.1, CGFloat(a) / 255.0)
-    let rawR = min(1.0, (CGFloat(rgbaBytes[offset]) / 255.0) / af)
-    let rawG = min(1.0, (CGFloat(rgbaBytes[offset + 1]) / 255.0) / af)
-    let rawB = min(1.0, (CGFloat(rgbaBytes[offset + 2]) / 255.0) / af)
-    let lift: CGFloat = 0.26
-    let r = UInt8(min(255, Int(((rawR * (1 - lift) + 0.92 * lift) * 255).rounded())))
-    let g = UInt8(min(255, Int(((rawG * (1 - lift) + 0.96 * lift) * 255).rounded())))
-    let b = UInt8(min(255, Int(((rawB * (1 - lift) + 1.00 * lift) * 255).rounded())))
+    let invA = 255.0 / max(1.0, Double(a))
+    let rawR = min(255.0, Double(rgbaBytes[offset]) * invA)
+    let rawG = min(255.0, Double(rgbaBytes[offset + 1]) * invA)
+    let rawB = min(255.0, Double(rgbaBytes[offset + 2]) * invA)
+    let lift: Double = 0.24
+    let r = UInt8(min(255, Int(rawR + (248.0 - rawR) * lift)))
+    let g = UInt8(min(255, Int(rawG + (251.0 - rawG) * lift)))
+    let b = UInt8(min(255, Int(rawB + (255.0 - rawB) * lift)))
     return (r, g, b, a)
   }
 
   private func rgbBytes(from color: NSColor) -> (UInt8, UInt8, UInt8, UInt8) {
-    let rgb = color.usingColorSpace(.sRGB) ?? color
+    let rgb = color.usingColorSpace(.sRGB) ?? NSColor(srgbRed: 0.72, green: 0.85, blue: 1.0, alpha: 1.0)
     return (
       UInt8(max(0, min(255, Int((rgb.redComponent * 255).rounded())))),
       UInt8(max(0, min(255, Int((rgb.greenComponent * 255).rounded())))),
@@ -140,16 +140,19 @@ struct LumenSampledCardTexture {
   }
 }
 
-// MARK: - Soft Dissolution & Aggregation Overlay View (§17.2, §18.4, §16.4)
+// MARK: - Shared Multi-Display Effects Clock & Particle Engine (§4, §16.4, §17.2, §18.4, A70)
 
-/// Non-interactive composited overlay hosted above an Orbit viewport rail.
-/// Drives:
-/// 1. Texture-driven soft dissolution on delete (`front ≈ 480ms`, particles `320–500ms`, peak alpha `≈ 0.58`),
-///    invoking `onParticlesFinished` strictly AFTER every tail particle extinguishes.
-/// 2. Reverse soft-particle aggregation on live capture or undo restore (`≈ 900ms`).
-/// 3. Shared display-synced continuous reflow ticks (`420ms`) so zero extra timers run when idle.
-final class LumenOrbitEffectsOverlayView: NSView {
-  private struct SoftParticle {
+/// Single unified animation clock and particle field owner shared across ALL participating `OrbitViewport` panels.
+///
+/// Why a single shared engine matters for multi-display Orbit (§4, A70):
+/// - A card straddling two monitors or dissolving near a monitor seam uses ONE particle array,
+///   ONE captured `LumenSampledCardTexture`, ONE monotonic timestamp (`CACurrentMediaTime()`),
+///   and ONE completion trigger (`onParticlesFinished`).
+/// - Each viewport's `LumenOrbitEffectsOverlayView` renders only the local coordinate slice
+///   intersecting its `railRange`, so the diagonal dissolution front and drifting particles cross
+///   physical bezels seamlessly even when displays run at different refresh rates (e.g. 60Hz + 120Hz).
+final class LumenOrbitEffectsEngine {
+  struct SoftParticle {
     let u: CGFloat
     let v: CGFloat
     let phase: Double
@@ -163,7 +166,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
     let seed: CGFloat
   }
 
-  private final class DissolveJob {
+  final class DissolveJob {
     let itemID: String
     let texture: LumenSampledCardTexture?
     let particles: [SoftParticle]
@@ -171,8 +174,10 @@ final class LumenOrbitEffectsOverlayView: NSView {
     let glowEnabled: Bool
     let startTime: TimeInterval
     let finishTime: TimeInterval
-    let anchorFrameProvider: () -> NSRect?
-    let clipRectProvider: () -> NSRect
+    /// Returns the slot's current frame in GLOBAL scrolled rail coordinates:
+    /// horizontal: `(globalCardOriginX - scrollOffset, topY, w, h)`
+    /// vertical: `(x, globalCardOriginY - scrollOffset, w, h)`
+    let globalAnchorFrameProvider: () -> NSRect?
     let onParticlesFinished: () -> Void
     var finished = false
 
@@ -184,8 +189,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
       glowEnabled: Bool,
       startTime: TimeInterval,
       finishTime: TimeInterval,
-      anchorFrameProvider: @escaping () -> NSRect?,
-      clipRectProvider: @escaping () -> NSRect,
+      globalAnchorFrameProvider: @escaping () -> NSRect?,
       onParticlesFinished: @escaping () -> Void
     ) {
       self.itemID = itemID
@@ -195,43 +199,39 @@ final class LumenOrbitEffectsOverlayView: NSView {
       self.glowEnabled = glowEnabled
       self.startTime = startTime
       self.finishTime = finishTime
-      self.anchorFrameProvider = anchorFrameProvider
-      self.clipRectProvider = clipRectProvider
+      self.globalAnchorFrameProvider = globalAnchorFrameProvider
       self.onParticlesFinished = onParticlesFinished
     }
   }
 
-  private final class AggregateJob {
+  final class AggregateJob {
     let itemID: String
-    weak var targetView: NSView?
     let texture: LumenSampledCardTexture?
     let particles: [SoftParticle]
     let glowEnabled: Bool
     let startTime: TimeInterval
     let duration: TimeInterval
-    let anchorFrameProvider: () -> NSRect?
-    let clipRectProvider: () -> NSRect
+    let globalAnchorFrameProvider: () -> NSRect?
+    let onSetTargetAlpha: (CGFloat) -> Void
 
     init(
       itemID: String,
-      targetView: NSView,
       texture: LumenSampledCardTexture?,
       particles: [SoftParticle],
       glowEnabled: Bool,
       startTime: TimeInterval,
       duration: TimeInterval,
-      anchorFrameProvider: @escaping () -> NSRect?,
-      clipRectProvider: @escaping () -> NSRect
+      globalAnchorFrameProvider: @escaping () -> NSRect?,
+      onSetTargetAlpha: @escaping (CGFloat) -> Void
     ) {
       self.itemID = itemID
-      self.targetView = targetView
       self.texture = texture
       self.particles = particles
       self.glowEnabled = glowEnabled
       self.startTime = startTime
       self.duration = duration
-      self.anchorFrameProvider = anchorFrameProvider
-      self.clipRectProvider = clipRectProvider
+      self.globalAnchorFrameProvider = globalAnchorFrameProvider
+      self.onSetTargetAlpha = onSetTargetAlpha
     }
   }
 
@@ -244,32 +244,48 @@ final class LumenOrbitEffectsOverlayView: NSView {
     }
   }
 
-  private var dissolveJobs: [String: DissolveJob] = [:]
-  private var aggregateJobs: [String: AggregateJob] = [:]
-  private var tickTasks: [UUID: TickTask] = [:]
-  private var displayTimer: Timer?
-
-  override var isFlipped: Bool { true }
-
-  override init(frame frameRect: NSRect) {
-    super.init(frame: frameRect)
-    wantsLayer = true
-    layer?.masksToBounds = false
+  private final class WeakOverlayBox {
+    weak var overlay: LumenOrbitEffectsOverlayView?
+    init(_ overlay: LumenOrbitEffectsOverlayView) { self.overlay = overlay }
   }
 
-  required init?(coder: NSCoder) { nil }
+  private(set) var dissolveJobs: [String: DissolveJob] = [:]
+  private(set) var aggregateJobs: [String: AggregateJob] = [:]
+  private var tickTasks: [UUID: TickTask] = [:]
+  private var overlayBoxes: [WeakOverlayBox] = []
+  private var displayTimer: Timer?
+
+  /// Unified frame timestamp updated once per tick so all participating viewports sample the exact same instant.
+  private(set) var currentFrameTime: TimeInterval = CACurrentMediaTime()
 
   deinit {
     stopAll()
   }
 
-  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  func attachOverlay(_ overlay: LumenOrbitEffectsOverlayView) {
+    overlayBoxes.removeAll { $0.overlay == nil || $0.overlay === overlay }
+    overlayBoxes.append(WeakOverlayBox(overlay))
+    overlay.engine = self
+    overlay.needsDisplay = true
+  }
+
+  func detachOverlay(_ overlay: LumenOrbitEffectsOverlayView) {
+    overlayBoxes.removeAll { $0.overlay == nil || $0.overlay === overlay }
+    if overlay.engine === self {
+      overlay.engine = nil
+    }
+    overlay.needsDisplay = true
+  }
 
   func hasActiveDissolve(for itemID: String) -> Bool {
     dissolveJobs[itemID] != nil
   }
 
-  /// Registers a shared-clock animation tick (used for 420ms continuous slot collapse/expand).
+  func isAggregating(itemID: String) -> Bool {
+    aggregateJobs[itemID] != nil
+  }
+
+  /// Registers a shared-clock animation tick (used for 420ms continuous slot reflow & smooth cross-screen scroll).
   @discardableResult
   func addTickTask(_ step: @escaping (TimeInterval) -> Bool) -> UUID {
     let task = TickTask(step: step)
@@ -283,16 +299,15 @@ final class LumenOrbitEffectsOverlayView: NSView {
     stopTimerIfIdle()
   }
 
-  /// Launches Phase 1 of V14/V15 Soft Dissolution for a card being removed.
-  /// Invokes `onParticlesFinished` only after every tail particle has fully extinguished.
+  /// Launches Phase 1 of V14/V15 Soft Dissolution for a card being removed across 1..N screens.
+  /// Invokes `onParticlesFinished` strictly AFTER every tail particle has extinguished.
   func startDissolve(
     itemID: String,
     cardView: NSView,
     fallbackTint: NSColor,
     particlesEnabled: Bool,
     glowEnabled: Bool,
-    anchorFrameProvider: @escaping () -> NSRect?,
-    clipRectProvider: @escaping () -> NSRect,
+    globalAnchorFrameProvider: @escaping () -> NSRect?,
     onParticlesFinished: @escaping () -> Void
   ) {
     cancelAggregation(for: itemID)
@@ -300,6 +315,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
 
     let texture = LumenSampledCardTexture.capture(from: cardView)
     let now = CACurrentMediaTime()
+    currentFrameTime = now
 
     if !particlesEnabled {
       let job = DissolveJob(
@@ -310,13 +326,12 @@ final class LumenOrbitEffectsOverlayView: NSView {
         glowEnabled: glowEnabled,
         startTime: now,
         finishTime: now + LumenV15Tokens.dissolveNoParticlesHold,
-        anchorFrameProvider: anchorFrameProvider,
-        clipRectProvider: clipRectProvider,
+        globalAnchorFrameProvider: globalAnchorFrameProvider,
         onParticlesFinished: onParticlesFinished
       )
       dissolveJobs[itemID] = job
       ensureTimerRunning()
-      needsDisplay = true
+      markOverlaysDirty()
       return
     }
 
@@ -335,13 +350,12 @@ final class LumenOrbitEffectsOverlayView: NSView {
       glowEnabled: glowEnabled,
       startTime: now,
       finishTime: now + maxEnd,
-      anchorFrameProvider: anchorFrameProvider,
-      clipRectProvider: clipRectProvider,
+      globalAnchorFrameProvider: globalAnchorFrameProvider,
       onParticlesFinished: onParticlesFinished
     )
     dissolveJobs[itemID] = job
     ensureTimerRunning()
-    needsDisplay = true
+    markOverlaysDirty()
   }
 
   /// Launches reverse cotton-light aggregation for a newly captured or undone card (§16.4, §18.4).
@@ -351,71 +365,84 @@ final class LumenOrbitEffectsOverlayView: NSView {
     fallbackTint: NSColor,
     particlesEnabled: Bool,
     glowEnabled: Bool,
-    anchorFrameProvider: @escaping () -> NSRect?,
-    clipRectProvider: @escaping () -> NSRect
+    globalAnchorFrameProvider: @escaping () -> NSRect?,
+    onSetTargetAlpha: @escaping (CGFloat) -> Void
   ) {
     cancelAggregation(for: itemID)
     guard LumenMotion.isEnabled else {
-      cardView.alphaValue = 1
+      onSetTargetAlpha(1)
       return
     }
     guard particlesEnabled else {
-      cardView.alphaValue = 0
-      NSAnimationContext.runAnimationGroup { ctx in
-        ctx.duration = 0.28
-        ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
-        cardView.animator().alphaValue = 1
+      onSetTargetAlpha(0)
+      let startTime = CACurrentMediaTime()
+      let duration: TimeInterval = 0.28
+      _ = addTickTask { now in
+        let t = min(1.0, max(0.0, (now - startTime) / duration))
+        let eased = LumenMotion.cubicBezier(t, 0.2, 0.8, 0.2, 1.0)
+        onSetTargetAlpha(CGFloat(eased))
+        if t >= 1.0 {
+          onSetTargetAlpha(1)
+          return false
+        }
+        return true
       }
       return
     }
 
-    // Capture texture while card is temporarily opaque, then hide real card until aggregation finishes
-    cardView.alphaValue = 1
+    // Capture full unclipped texture while card is opaque, then hide all live slices until aggregation finishes.
+    onSetTargetAlpha(1)
     cardView.layoutSubtreeIfNeeded()
     let texture = LumenSampledCardTexture.capture(from: cardView)
     let particles = buildParticles(width: cardView.bounds.width, height: cardView.bounds.height, texture: texture, fallbackTint: fallbackTint)
-    cardView.alphaValue = 0
+    onSetTargetAlpha(0)
 
+    let now = CACurrentMediaTime()
+    currentFrameTime = now
     let job = AggregateJob(
       itemID: itemID,
-      targetView: cardView,
       texture: texture,
       particles: particles,
       glowEnabled: glowEnabled,
-      startTime: CACurrentMediaTime(),
+      startTime: now,
       duration: LumenV15Tokens.captureAggregateDuration,
-      anchorFrameProvider: anchorFrameProvider,
-      clipRectProvider: clipRectProvider
+      globalAnchorFrameProvider: globalAnchorFrameProvider,
+      onSetTargetAlpha: onSetTargetAlpha
     )
     aggregateJobs[itemID] = job
     ensureTimerRunning()
-    needsDisplay = true
+    markOverlaysDirty()
   }
 
   func cancelDissolve(for itemID: String) {
     dissolveJobs.removeValue(forKey: itemID)
-    needsDisplay = true
+    markOverlaysDirty()
     stopTimerIfIdle()
   }
 
   func cancelAggregation(for itemID: String) {
     if let existing = aggregateJobs.removeValue(forKey: itemID) {
-      existing.targetView?.alphaValue = 1
+      existing.onSetTargetAlpha(1)
     }
-    needsDisplay = true
+    markOverlaysDirty()
     stopTimerIfIdle()
   }
 
   func stopAll() {
     dissolveJobs.removeAll()
     for job in aggregateJobs.values {
-      job.targetView?.alphaValue = 1
+      job.onSetTargetAlpha(1)
     }
     aggregateJobs.removeAll()
     tickTasks.removeAll()
     displayTimer?.invalidate()
     displayTimer = nil
-    needsDisplay = true
+    markOverlaysDirty()
+  }
+
+  func invalidateOverlays() {
+    currentFrameTime = CACurrentMediaTime()
+    markOverlaysDirty()
   }
 
   // MARK: Particle Generation
@@ -448,21 +475,21 @@ final class LumenOrbitEffectsOverlayView: NSView {
         let life = LumenV15Tokens.dissolveParticleLifeMin + rng.nextDouble() * (LumenV15Tokens.dissolveParticleLifeMax - LumenV15Tokens.dissolveParticleLifeMin)
         let dx = 8.0 + rng.nextCGFloat() * 37.0 + (u - 0.5) * 22.0
         // Flipped Y: negative dy drifts gently upward
-        let dy = -(10.0 + rng.nextCGFloat() * 43.0) + (v - 0.5) * 18.0
-        let size = 0.6 + pow(rng.nextCGFloat(), 1.7) * 1.5
-        let seed = rng.nextCGFloat() * 6.2831853
+        let dy = -(6.0 + rng.nextCGFloat() * 31.0 + (0.5 - v) * 16.0)
+        let size = 1.65 + rng.nextCGFloat() * 2.10
+        let seed = rng.nextCGFloat() * .pi * 2.0
         result.append(SoftParticle(u: u, v: v, phase: phase, life: life, dx: dx, dy: dy, size: size, r: r, g: g, b: b, seed: seed))
       }
     }
     return result
   }
 
-  // MARK: Shared Frame Clock
+  // MARK: Shared Unified Clock Loop
 
   private func ensureTimerRunning() {
     guard displayTimer == nil else { return }
     let timer = Timer(timeInterval: 1.0 / 90.0, repeats: true) { [weak self] _ in
-      self?.tickFrame()
+      self?.tick()
     }
     RunLoop.main.add(timer, forMode: .common)
     displayTimer = timer
@@ -475,31 +502,28 @@ final class LumenOrbitEffectsOverlayView: NSView {
     }
   }
 
-  private func tickFrame() {
+  private func tick() {
     let now = CACurrentMediaTime()
+    currentFrameTime = now
 
-    // 1. Advance continuous layout/reflow tick tasks
+    // 1. Advance shared-clock tick tasks (e.g. 420ms reservation collapse & smooth cross-screen scroll)
     if !tickTasks.isEmpty {
-      var finishedTaskIDs: [UUID] = []
-      for (id, task) in tickTasks {
-        if !task.step(now) {
-          finishedTaskIDs.append(id)
+      let currentTasks = Array(tickTasks.values)
+      for task in currentTasks {
+        let keepRunning = task.step(now)
+        if !keepRunning {
+          tickTasks.removeValue(forKey: task.id)
         }
-      }
-      for id in finishedTaskIDs {
-        tickTasks.removeValue(forKey: id)
       }
     }
 
-    // 2. Check dissolve completions (strictly after all tail particles extinguish)
+    // 2. Check dissolve job completions (strictly after every tail particle extinguishes)
     var completedDissolves: [DissolveJob] = []
     for (id, job) in dissolveJobs {
-      if now >= job.finishTime || job.anchorFrameProvider() == nil {
+      if now >= job.finishTime && !job.finished {
+        job.finished = true
+        completedDissolves.append(job)
         dissolveJobs.removeValue(forKey: id)
-        if !job.finished {
-          job.finished = true
-          completedDissolves.append(job)
-        }
       }
     }
     for job in completedDissolves {
@@ -507,53 +531,125 @@ final class LumenOrbitEffectsOverlayView: NSView {
     }
 
     // 3. Check aggregation completions
-    var completedAggregations: [String] = []
     for (id, job) in aggregateJobs {
-      if now - job.startTime >= job.duration || job.anchorFrameProvider() == nil {
-        job.targetView?.alphaValue = 1
-        completedAggregations.append(id)
+      if now >= job.startTime + job.duration {
+        job.onSetTargetAlpha(1)
+        aggregateJobs.removeValue(forKey: id)
       }
     }
-    for id in completedAggregations {
-      aggregateJobs.removeValue(forKey: id)
-    }
 
-    if !dissolveJobs.isEmpty || !aggregateJobs.isEmpty {
-      needsDisplay = true
-    } else if !completedDissolves.isEmpty || !completedAggregations.isEmpty {
-      needsDisplay = true
+    // 4. Redraw participating overlays whenever visual effects ran or just finished
+    if !dissolveJobs.isEmpty || !aggregateJobs.isEmpty || !completedDissolves.isEmpty {
+      markOverlaysDirty()
     }
 
     stopTimerIfIdle()
   }
 
-  // MARK: Rendering
+  private func markOverlaysDirty() {
+    overlayBoxes.removeAll { $0.overlay == nil }
+    for box in overlayBoxes {
+      box.overlay?.needsDisplay = true
+    }
+  }
+}
+
+// MARK: - Per-Viewport Non-Interactive Effects Overlay Slice
+
+/// Lightweight per-viewport overlay mounted above `railViewport`.
+/// Translates each active job in `LumenOrbitEffectsEngine` from global rail coordinates into
+/// this viewport's local coordinate frame and clips cleanly to its card-rail strip.
+final class LumenOrbitEffectsOverlayView: NSView {
+  weak var engine: LumenOrbitEffectsEngine?
+  var viewportRailRange: ClosedRange<CGFloat> = 0...1440
+  var railLeadingInsetInOverlay: CGFloat = 0
+  var isHorizontalRail: Bool = true
+
+  override var isFlipped: Bool { true }
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layer?.masksToBounds = false
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  func attachEngine(_ engine: LumenOrbitEffectsEngine) {
+    engine.attachOverlay(self)
+  }
+
+  func detachEngine() {
+    engine?.detachOverlay(self)
+  }
+
+  private func localFrame(from globalFrame: NSRect) -> NSRect {
+    if isHorizontalRail {
+      return NSRect(
+        x: railLeadingInsetInOverlay + globalFrame.minX - viewportRailRange.lowerBound,
+        y: globalFrame.minY,
+        width: globalFrame.width,
+        height: globalFrame.height
+      )
+    }
+    return NSRect(
+      x: globalFrame.minX,
+      y: globalFrame.minY - viewportRailRange.lowerBound,
+      width: globalFrame.width,
+      height: globalFrame.height
+    )
+  }
+
+  private func localRailClipRect() -> NSRect {
+    if isHorizontalRail {
+      return NSRect(
+        x: railLeadingInsetInOverlay,
+        y: 0,
+        width: max(0, bounds.width - railLeadingInsetInOverlay),
+        height: bounds.height
+      )
+    }
+    return bounds
+  }
 
   override func draw(_ dirtyRect: NSRect) {
-    guard !dissolveJobs.isEmpty || !aggregateJobs.isEmpty,
-          let ctx = NSGraphicsContext.current?.cgContext else {
-      return
-    }
-    let now = CACurrentMediaTime()
+    guard let engine,
+          !engine.dissolveJobs.isEmpty || !engine.aggregateJobs.isEmpty,
+          let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-    for job in dissolveJobs.values {
-      drawDissolveJob(job, now: now, in: ctx)
+    let now = engine.currentFrameTime
+    let clipRect = localRailClipRect()
+
+    for job in engine.dissolveJobs.values {
+      drawDissolveJob(job, now: now, clipRect: clipRect, in: ctx)
     }
-    for job in aggregateJobs.values {
-      drawAggregateJob(job, now: now, in: ctx)
+    for job in engine.aggregateJobs.values {
+      drawAggregateJob(job, now: now, clipRect: clipRect, in: ctx)
     }
   }
 
-  private func drawDissolveJob(_ job: DissolveJob, now: TimeInterval, in ctx: CGContext) {
-    guard let frame = job.anchorFrameProvider(), frame.width > 1, frame.height > 1 else { return }
-    let clipRect = job.clipRectProvider()
+  private func drawDissolveJob(
+    _ job: LumenOrbitEffectsEngine.DissolveJob,
+    now: TimeInterval,
+    clipRect: NSRect,
+    in ctx: CGContext
+  ) {
+    guard let globalFrame = job.globalAnchorFrameProvider(),
+          globalFrame.width > 1,
+          globalFrame.height > 1 else { return }
+
+    let frame = localFrame(from: globalFrame)
+    // Cull jobs completely outside this viewport (including particle drift margin)
+    guard frame.insetBy(dx: -110, dy: -110).intersects(bounds) else { return }
+
     let elapsed = max(0, now - job.startTime)
 
     ctx.saveGState()
     ctx.clip(to: clipRect.insetBy(dx: 0, dy: -90))
 
     if !job.particlesEnabled {
-      // Short smooth dissolve when particles are off (§17.2)
       let t = min(1.0, elapsed / max(0.01, LumenV15Tokens.dissolveNoParticlesHold))
       if let img = job.texture?.snapshot {
         let scale = CGFloat(1.0 - 0.045 * t)
@@ -570,7 +666,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
       return
     }
 
-    // 1. Draw progressively dissolved card ghost with wide feathered diagonal front (front ≈ 480ms, §18.4)
+    // 1. Progressively dissolved card ghost with wide feathered diagonal front (front ≈ 480ms, §18.4)
     let frontProgress = max(-0.13, min(1.15, ((elapsed - 0.015) / LumenV15Tokens.dissolveFrontDuration) * 1.30 - 0.19))
     if let img = job.texture?.snapshot, frontProgress < 1.14 {
       let ghostAlpha = CGFloat(1.0 - 0.18 * min(1.0, elapsed / LumenV15Tokens.dissolveFrontDuration))
@@ -585,7 +681,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
       )
     }
 
-    // 2. Draw cotton-light particles drifting outward-upward (peak alpha ≈ 0.58)
+    // 2. Shared cotton-light particles drifting seamlessly across viewport boundaries (peak alpha ≈ 0.58)
     for p in job.particles {
       let f = (elapsed - (0.02 + p.phase * 0.365)) / p.life
       if f <= 0 || f >= 1 { continue }
@@ -594,22 +690,34 @@ final class LumenOrbitEffectsOverlayView: NSView {
       let curl = sin(ff * .pi) * 5.0
       let px = frame.minX + p.u * frame.width + p.dx * k + sin(p.seed + ff * 3.0) * curl
       let py = frame.minY + p.v * frame.height + p.dy * k + cos(p.seed + ff * 3.0) * curl
-      let alpha = pow(max(0, sin(.pi * ff)), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
       let sz = p.size * (1.0 - 0.35 * ff) * 8.0
+      let pRect = CGRect(x: px - sz / 2, y: py - sz / 2, width: sz, height: sz)
+      guard pRect.intersects(bounds) else { continue }
+      let alpha = pow(max(0, sin(.pi * ff)), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
       if let sprite = LumenSoftParticleSpriteCache.shared.sprite(r: p.r, g: p.g, b: p.b, glowEnabled: job.glowEnabled) {
         ctx.setAlpha(alpha)
-        ctx.draw(sprite, in: CGRect(x: px - sz / 2, y: py - sz / 2, width: sz, height: sz))
+        ctx.draw(sprite, in: pRect)
       }
     }
     ctx.setAlpha(1.0)
     ctx.restoreGState()
   }
 
-  private func drawAggregateJob(_ job: AggregateJob, now: TimeInterval, in ctx: CGContext) {
-    guard let frame = job.anchorFrameProvider(), frame.width > 1, frame.height > 1 else { return }
-    let clipRect = job.clipRectProvider()
+  private func drawAggregateJob(
+    _ job: LumenOrbitEffectsEngine.AggregateJob,
+    now: TimeInterval,
+    clipRect: NSRect,
+    in ctx: CGContext
+  ) {
+    guard let globalFrame = job.globalAnchorFrameProvider(),
+          globalFrame.width > 1,
+          globalFrame.height > 1 else { return }
+
+    let frame = localFrame(from: globalFrame)
+    guard frame.insetBy(dx: -110, dy: -110).intersects(bounds) else { return }
+
     let t = max(0.0, min(1.0, (now - job.startTime) / max(0.01, job.duration)))
-    let q = 1.0 - t // reverse dissolution field for cotton-light aggregation (§16.4, §18.4)
+    let q = 1.0 - t
 
     ctx.saveGState()
     ctx.clip(to: clipRect.insetBy(dx: 0, dy: -90))
@@ -638,11 +746,13 @@ final class LumenOrbitEffectsOverlayView: NSView {
       let curl = sin(ff * .pi) * 8.0
       let px = frame.minX + p.u * frame.width + p.dx * ease + sin(p.seed + ff * 3.5) * curl
       let py = frame.minY + p.v * frame.height + p.dy * ease + cos(p.seed + ff * 3.5) * curl
-      let alpha = pow(max(0, sin(.pi * ff)), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
       let sz = p.size * (1.0 - 0.35 * ff) * 8.0
+      let pRect = CGRect(x: px - sz / 2, y: py - sz / 2, width: sz, height: sz)
+      guard pRect.intersects(bounds) else { continue }
+      let alpha = pow(max(0, sin(.pi * ff)), 1.25) * LumenV15Tokens.dissolveParticlePeakAlpha
       if let sprite = LumenSoftParticleSpriteCache.shared.sprite(r: p.r, g: p.g, b: p.b, glowEnabled: job.glowEnabled) {
         ctx.setAlpha(alpha)
-        ctx.draw(sprite, in: CGRect(x: px - sz / 2, y: py - sz / 2, width: sz, height: sz))
+        ctx.draw(sprite, in: pRect)
       }
     }
     ctx.setAlpha(1.0)
@@ -662,7 +772,6 @@ final class LumenOrbitEffectsOverlayView: NSView {
     ctx.restoreGState()
   }
 
-  /// Draws `image` masked by a wide diagonal soft-feathered alpha gradient (68° / 138°).
   private func drawFeatheredMaskedSnapshot(
     _ image: CGImage,
     in frame: CGRect,
@@ -672,7 +781,7 @@ final class LumenOrbitEffectsOverlayView: NSView {
     clipRect: CGRect,
     ctx: CGContext
   ) {
-    guard let maskImg = makeDiagonalMaskImage(width: 96, height: 108, front: front, reversed: reversed) else {
+    guard let maskImg = makeDiagonalMaskImage(width: 96, height: 112, front: front, reversed: reversed) else {
       drawFlippedSnapshot(image, in: frame, cornerRadius: LumenV15Tokens.orbitCardCorner, alpha: alpha, clipRect: clipRect, ctx: ctx)
       return
     }
@@ -682,7 +791,6 @@ final class LumenOrbitEffectsOverlayView: NSView {
     ctx.addPath(rounded)
     ctx.clip()
     ctx.setAlpha(alpha)
-    // Flip local rect so both CGImage snapshot and mask align top-to-bottom
     ctx.translateBy(x: frame.minX, y: frame.maxY)
     ctx.scaleBy(x: 1, y: -1)
     let localRect = CGRect(x: 0, y: 0, width: frame.width, height: frame.height)
@@ -705,7 +813,6 @@ final class LumenOrbitEffectsOverlayView: NSView {
 
     let w = CGFloat(width)
     let h = CGFloat(height)
-    // Mask values in device gray: 0 = transparent (dissolved), 1 = opaque (remaining)
     let loc0 = max(0, min(1, front - 0.23))
     let loc1 = max(loc0, min(1, front - 0.09))
     let loc2 = max(loc1, min(1, front + 0.08))

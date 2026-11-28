@@ -203,8 +203,13 @@ final class LumenPreviewWindow: NSObject, NSWindowDelegate, NSTableViewDataSourc
   }
 
   private func positionCenteredOnActiveScreen() {
+    // Prefer the screen hosting the window that invoked the preview; fall back
+    // to the pointer's screen so an Orbit-initiated preview lands where the rail is.
     let pointer = NSEvent.mouseLocation
-    let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+    let invokingScreen = NSApp.keyWindow?.screen
+    let screen = invokingScreen
+      ?? NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) })
+      ?? NSScreen.main ?? NSScreen.screens.first
     guard let visible = screen?.visibleFrame else {
       panel.center()
       return

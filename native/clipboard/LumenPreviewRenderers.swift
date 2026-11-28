@@ -1569,6 +1569,7 @@ final class LumenImageRendererView: LumenPreviewRendererView {
   private let zoomLabel: NSTextField
   private let scrollView = NSScrollView()
   private let imageView = NSImageView()
+  private let failureLabel = NSTextField(wrappingLabelWithString: "")
   private var zoomFactor: CGFloat = 1.0
   private var baseImageSize: NSSize = NSSize(width: 480, height: 320)
   private var loadGeneration = 0
@@ -1613,8 +1614,15 @@ final class LumenImageRendererView: LumenPreviewRendererView {
     scrollView.documentView = imageView
     scrollView.translatesAutoresizingMaskIntoConstraints = false
 
+    failureLabel.alignment = .center
+    failureLabel.font = .systemFont(ofSize: 12)
+    failureLabel.textColor = palette.muted
+    failureLabel.isHidden = true
+    failureLabel.translatesAutoresizingMaskIntoConstraints = false
+
     addSubview(toolbar)
     addSubview(scrollView)
+    addSubview(failureLabel)
 
     NSLayoutConstraint.activate([
       toolbar.topAnchor.constraint(equalTo: topAnchor),
@@ -1628,7 +1636,11 @@ final class LumenImageRendererView: LumenPreviewRendererView {
       scrollView.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
       scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
       scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-      scrollView.bottomAnchor.constraint(equalTo: bottomAnchor)
+      scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+      failureLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+      failureLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+      failureLabel.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.7)
     ])
   }
 
@@ -1645,6 +1657,7 @@ final class LumenImageRendererView: LumenPreviewRendererView {
     let gen = loadGeneration
     zoomFactor = 1.0
     zoomLabel.stringValue = "适配"
+    clearFailure()
 
     if let cached = context.cache.image(for: item.cacheKey) {
       presentImage(cached, item: item)
@@ -1655,21 +1668,38 @@ final class LumenImageRendererView: LumenPreviewRendererView {
     }
     if let url = item.localURL, FileManager.default.fileExists(atPath: url.path) {
       DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-        guard let image = NSImage(contentsOf: url) else { return }
+        let image = NSImage(contentsOf: url)
         DispatchQueue.main.async {
           guard let self, self.loadGeneration == gen else { return }
-          context.cache.storeImage(image, for: item.cacheKey)
-          self.presentImage(image, item: item)
+          if let image {
+            context.cache.storeImage(image, for: item.cacheKey)
+            self.presentImage(image, item: item)
+          } else if let clip = item.clipboardItem {
+            // Protected locations (another app's container) can deny a local
+            // read; the server still has the bytes, so try that before failing.
+            self.loadFromServer(item: item, clip: clip, context: context, gen: gen)
+          } else {
+            self.presentFailure("无法读取该文件，可能被系统隐私保护拦截。", item: item)
+          }
         }
       }
       return
     }
-    guard let clip = item.clipboardItem else { return }
+    guard let clip = item.clipboardItem else {
+      presentFailure("没有可预览的内容。", item: item)
+      return
+    }
+    loadFromServer(item: item, clip: clip, context: context, gen: gen)
+  }
+
+  private func loadFromServer(item: LumenPreviewItem, clip: LumenClipboardItem, context: LumenPreviewContext, gen: Int) {
     let completion: (Result<(Data, String), Error>) -> Void = { [weak self] result in
       guard let self, self.loadGeneration == gen else { return }
       if case .success(let (data, _)) = result, let image = NSImage(data: data) {
         context.cache.storeImage(image, for: item.cacheKey)
         self.presentImage(image, item: item)
+      } else {
+        self.presentFailure("无法读取图片内容。", item: item)
       }
     }
     if clip.kind == "file" {
@@ -1679,7 +1709,19 @@ final class LumenImageRendererView: LumenPreviewRendererView {
     }
   }
 
+  private func presentFailure(_ message: String, item: LumenPreviewItem) {
+    imageView.image = nil
+    failureLabel.stringValue = message
+    failureLabel.isHidden = false
+    infoLabel.stringValue = "图片预览 · \(item.sizeLabel)"
+  }
+
+  private func clearFailure() {
+    failureLabel.isHidden = true
+  }
+
   private func presentImage(_ image: NSImage, item: LumenPreviewItem) {
+    clearFailure()
     imageView.image = image
     baseImageSize = image.size.width > 0 && image.size.height > 0 ? image.size : NSSize(width: 480, height: 320)
     infoLabel.stringValue = "图片 · \(Int(baseImageSize.width)) × \(Int(baseImageSize.height)) · \(item.sizeLabel)"

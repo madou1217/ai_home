@@ -25,7 +25,9 @@ enum LumenDisplayCategory: String, CaseIterable {
 
   var symbolName: String {
     switch self {
-    case .text: return "textformat"
+    // "textformat" has a localized glyph that renders as CJK text in zh_CN;
+    // use a locale-neutral icon so the chip never reads as a label.
+    case .text: return "text.alignleft"
     case .code: return "chevron.left.forwardslash.chevron.right"
     case .image: return "photo"
     case .link: return "link"

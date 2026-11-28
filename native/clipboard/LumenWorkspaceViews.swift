@@ -429,7 +429,8 @@ final class LumenHistoryRowView: NSView {
       excerptLabel.stringValue = "\(cat.label) · \(item.sourceLabel) · \(item.formattedSize)"
     } else {
       let compact = item.effectiveText.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-      excerptLabel.stringValue = compact
+      // Single-line records would otherwise repeat the title verbatim.
+      excerptLabel.stringValue = compact == item.displayTitle ? "" : compact
     }
     timeLabel.stringValue = item.relativeTime
     timeLabel.textColor = palette.muted

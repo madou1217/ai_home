@@ -177,6 +177,9 @@ final class ClipboardWorkspaceWindow: NSObject,
     store.refreshAll()
     rebuildFilteredState()
     window.makeKeyAndOrderFront(nil)
+    // Navigation must work on open; the search field would otherwise take the
+    // key view loop's initial responder and swallow arrows and Space.
+    window.makeFirstResponder(listTable)
     NSApp.activate(ignoringOtherApps: true)
     _ = NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
   }
@@ -464,7 +467,12 @@ final class ClipboardWorkspaceWindow: NSObject,
     }
 
     inspectorView.onCopySingle = { [weak self] item in self?.copyItem(item) }
-    inspectorView.onPreviewSingle = { [weak self] item in self?.openPreview(items: [item], initialID: item.id) }
+    inspectorView.onPreviewSingle = { [weak self] item in
+      guard let self else { return }
+      // Carry the whole filtered list so the preview queue can step through it.
+      let queue = self.filteredItems.isEmpty ? [item] : self.filteredItems
+      self.openPreview(items: queue, initialID: item.id)
+    }
     inspectorView.onPinSingle = { [weak self] item in self?.togglePin(item) }
     inspectorView.onDeleteSingle = { [weak self] item in self?.deleteSingle(item) }
     inspectorView.onBatchPreview = { [weak self] items in self?.openPreview(items: items, initialID: self?.selectedID) }
@@ -925,7 +933,11 @@ final class ClipboardWorkspaceWindow: NSObject,
   }
 
   @objc private func contextCopy() { if let item = contextTargetItem() { copyItem(item) } }
-  @objc private func contextPreview() { if let item = contextTargetItem() { openPreview(items: [item], initialID: item.id) } }
+  @objc private func contextPreview() {
+    guard let item = contextTargetItem() else { return }
+    let queue = filteredItems.isEmpty ? [item] : filteredItems
+    openPreview(items: queue, initialID: item.id)
+  }
   @objc private func contextPin() { if let item = contextTargetItem() { togglePin(item) } }
   @objc private func contextDelete() { if let item = contextTargetItem() { deleteSingle(item) } }
 
@@ -987,7 +999,7 @@ final class ClipboardWorkspaceWindow: NSObject,
         let batch = filteredItems.filter { multiSelectedIDs.contains($0.id) }
         openPreview(items: batch, initialID: selectedID)
       } else if let item = filteredItems.first(where: { $0.id == selectedID }) {
-        openPreview(items: [item], initialID: item.id)
+        openPreview(items: filteredItems, initialID: item.id)
       }
       return true
     case 36: // Enter -> Copy

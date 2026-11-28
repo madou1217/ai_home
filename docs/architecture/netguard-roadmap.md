@@ -62,7 +62,7 @@
 - [x] 改为 5-tuple → Windows TCP/UDP owner table → PID 的桥接方案
 - [x] 目标进程 IPv4 TCP 直连阻断（真机：目标 `DIRECT_ERROR`，`blocked=3`）
 - [x] 非目标进程不受影响（真机：另一个进程 `DIRECT_OK 200`）
-- [ ] UDP owner table 命中（真机 first attempt：目标 UDP 仍 `UDP_OK`，blocked=0，需修复）
+- [ ] UDP owner table 命中（真机：owner-table 重注入会让目标 UDP 超时但 blocked=0，系统 UDP 也可能被误伤；当前 P0 过滤器明确只采集 TCP，UDP 不声称已控制）
 - [ ] IPv6 外部流量归因/阻断（P0 未实现）
 - [ ] 启动 suspended / Job Object：消除初始进程跟踪竞态
 - [ ] 代理 loopback 放行验证（过滤器排除 loopback，但未做正向请求验收）
@@ -73,7 +73,8 @@
 
 ### 2.1a WFP 前置条件（当前阻塞）
 
-- [ ] WDK 安装：`winget Microsoft.WindowsWDK.10.0.26100` 失败 1714，原因 `Windows SDK ARM64 Desktop Tools` 旧版本无法卸载；需要修复 VS/SDK 组件或用 VS Installer 重装
+- [ ] WDK 安装：26100/28000 均失败 1714；阻塞包 `SDK ARM64 Additions`（`{7D0E0601-E6CC-870D-0002-C93DD14EDA30}`）无法卸载（msiexec 返回 1612，安装源不可用）；需要修复 VS/SDK 组件或用 EWDK/VS Installer
+- [ ] VS Installer `--add Microsoft.VisualStudio.Component.WDK` 未产出 km 头文件，需要进一步修复安装
 - [ ] test signing：Secure Boot 已关闭，可开启；需要重启
 - [ ] 驱动签名策略：开发期 test signing；产品期 EV 证书 + Microsoft attestation
 - [ ] WFP callout 驱动骨架（C/C++）待在 WDK 可用后开始

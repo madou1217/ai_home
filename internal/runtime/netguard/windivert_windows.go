@@ -63,9 +63,10 @@ type processEntry32 struct {
 // the local proxy continue to work because loopback is outside the filter;
 // apps that bypass it fail closed.
 //
-// Scope/limits of this prototype: UDP attribution, IPv6, suspended launch and
-// sub-250ms child races are not yet solved. It is not the final strict
-// guarantee; the WFP callout adapter owns that contract.
+// Scope/limits of this prototype: only IPv4 TCP is enforced. UDP attribution
+// (including DNS), IPv6, suspended launch and sub-250ms child races are not
+// solved. UDP is deliberately not captured until the owner-table reinjection
+// is correct; the WFP callout adapter owns the final strict contract.
 type WinDivertGuard struct {
 	options Options
 
@@ -346,7 +347,7 @@ func lookupOwnerPID(protocol byte, port uint16) int {
 	key := fmt.Sprintf("%d:%d", protocol, port)
 	if value, ok := ownerCache.Load(key); ok {
 		entry := value.(ownerCacheEntry)
-		if time.Since(entry.at) < 3*time.Second {
+		if entry.pid > 0 && time.Since(entry.at) < 3*time.Second {
 			return entry.pid
 		}
 	}
@@ -356,7 +357,9 @@ func lookupOwnerPID(protocol byte, port uint16) int {
 	} else {
 		pid = udpOwnerPID(port)
 	}
-	ownerCache.Store(key, ownerCacheEntry{pid: pid, at: time.Now()})
+	if pid > 0 {
+		ownerCache.Store(key, ownerCacheEntry{pid: pid, at: time.Now()})
+	}
 	return pid
 }
 
